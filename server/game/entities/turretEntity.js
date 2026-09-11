@@ -277,22 +277,30 @@ class turretEntity extends EventEmitter {
     };
 
     camera() {
-        return {
-            type: 0x01,
-            index: this.index,
-            size: this.size,
-            realSize: this.realSize,
-            facing: this.facing,
-            angle: this.bound.angle,
-            direction: this.bound.direction,
-            offset: this.bound.offset,
-            sizeFactor: this.bound.size,
-            mirrorMasterAngle: this.settings.mirrorMasterAngle ?? false,
-            layer: this.bound.layer,
-            color: this.color.compiled,
-            guns: Array.from(this.guns.values()).map(gun => gun.getPhotoInfo()),
-            turrets: Array.from(this.turrets.values()).map(turret => turret.camera()),
-        };
+        let guns = this._camGuns;
+        if (!guns) guns = this._camGuns = [];
+        guns.length = 0;
+        for (const gun of this.guns.values()) guns.push(gun.getPhotoInfo());
+        let turrets = this._camTurrets;
+        if (!turrets) turrets = this._camTurrets = [];
+        turrets.length = 0;
+        for (const turret of this.turrets.values()) turrets.push(turret.camera());
+        let cameraInfo = this._camInfo;
+        if (!cameraInfo) cameraInfo = this._camInfo = { type: 0x01 };
+        cameraInfo.index = this.index;
+        cameraInfo.size = this.size;
+        cameraInfo.realSize = this.realSize;
+        cameraInfo.facing = this.facing;
+        cameraInfo.angle = this.bound.angle;
+        cameraInfo.direction = this.bound.direction;
+        cameraInfo.offset = this.bound.offset;
+        cameraInfo.sizeFactor = this.bound.size;
+        cameraInfo.mirrorMasterAngle = this.settings.mirrorMasterAngle ?? false;
+        cameraInfo.layer = this.bound.layer;
+        cameraInfo.color = this.color.compiled;
+        cameraInfo.guns = guns;
+        cameraInfo.turrets = turrets;
+        return cameraInfo;
     };
 
     destroy() {

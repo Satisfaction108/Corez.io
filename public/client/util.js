@@ -487,7 +487,20 @@ const util = (function() {
                 global.cached.indexes.push(index);
             }
             if (data.isProp) {
-                return {
+                const cached = data._imgCache;
+                if (cached &&
+                    cached.index === image.index &&
+                    cached.sizeFactor === data.sizeFactor &&
+                    cached.color === data.color &&
+                    cached.angle === data.angle &&
+                    cached.offset === data.offset &&
+                    cached.direction === data.direction &&
+                    cached.layer === data.layer) {
+                    cached.facing = data.direction + data.angle;
+                    cached.forceAngle = data.forceAngle;
+                    return cached;
+                }
+                const built = {
                     index: image.index,
                     name: image.name,
                     color: data.color,
@@ -508,7 +521,9 @@ const util = (function() {
                     turrets: image.turrets,
                     mirrorMasterAngle: true,
                     isImage: true,
-                }
+                };
+                data._imgCache = built;
+                return built;
             } else return image;
         }
     }

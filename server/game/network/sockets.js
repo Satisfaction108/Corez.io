@@ -1643,8 +1643,12 @@ class socketManager {
 
         output.push(data.guns.length);
         for (let i = 0; i < data.guns.length; i++) {
-            for (let k in data.guns[i])
-                output.push(data.guns[i][k]);
+            const g = data.guns[i];
+            output.push(
+                g.time, g.power, g.color, g.alpha, g.strokeWidth,
+                g.borderless, g.drawFill, g.drawAbove,
+                g.length, g.width, g.aspect, g.angle, g.direction, g.offset
+            );
         }
 
         output.push(data.turrets.length);
@@ -1869,20 +1873,29 @@ class socketManager {
                 camera.fov += Math.max((fovNow - camera.fov) / 30, fovNow - camera.fov);
 
                 if (camera.lastUpdate - lastVisibleUpdate > Config.visible_list_interval) {
-
                     lastVisibleUpdate = camera.lastUpdate;
-
                     nearby.clear();
-
                     const camFovBroad = camera.fov * (global.gameManager.arenaClosed ? 1.6 : 1);
-                    const camXBound = camFovBroad + 100;
-                    const camYBound = camFovBroad * 0.5625 + 100;
-
-                    for (const entity of entities.values()) {
-
-                        if (Math.abs(entity.x - camera.x) < camXBound + 1.5 * entity.size &&
-                            Math.abs(entity.y - camera.y) < camYBound + 1.5 * entity.size) {
-                            nearby.set(entity.id, entity);
+                    const extra = 800;
+                    const camXBound = camFovBroad + 100 + extra;
+                    const camYBound = camFovBroad * 0.5625 + 100 + extra;
+                    const g = global.grid;
+                    if (g) {
+                        const found = g.query(
+                            camera.x - camXBound,
+                            camera.y - camYBound,
+                            camera.x + camXBound,
+                            camera.y + camYBound
+                        );
+                        for (let i = 0; i < found.length; i++) {
+                            nearby.set(found[i].id, found[i]);
+                        }
+                    } else {
+                        for (const entity of entities.values()) {
+                            if (Math.abs(entity.x - camera.x) < camXBound - extra + 1.5 * entity.size &&
+                                Math.abs(entity.y - camera.y) < camYBound - extra + 1.5 * entity.size) {
+                                nearby.set(entity.id, entity);
+                            }
                         }
                     }
                 }
@@ -1936,7 +1949,11 @@ class socketManager {
                     }
                 }
 
-                const view = [].concat(...visible);
+                const view = [];
+                for (let i = 0; i < visible.length; i++) {
+                    const src = visible[i];
+                    for (let j = 0, n = src.length; j < n; j++) view.push(src[j]);
+                }
                 if (!Config.load_all_mockups) {
                     for (let upgrade of (player.body?.upgrades || [])) {
                         if (player.body.skill.level >= upgrade.level) {

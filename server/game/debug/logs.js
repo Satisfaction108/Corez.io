@@ -3,12 +3,13 @@ class Logger {
         this.logTimes = [];
         this.trackingStart = performance.now();
         this.tallyCount = 0;
+        this._hot = process.env.PERF_LOGS === "1";
     }
     set() {
-        this.trackingStart = performance.now();
+        if (this._hot) this.trackingStart = performance.now();
     }
     mark() {
-        this.logTimes.push(performance.now() - this.trackingStart);
+        if (this._hot) this.logTimes.push(performance.now() - this.trackingStart);
     }
     record() {
         let average = util.averageArray(this.logTimes);

@@ -752,70 +752,79 @@ class Entity extends EventEmitter {
     }
 
     camera() {
-        // Get bound data
-        const turretsAndProps = Array.from(this.turrets.values()).concat(Array.from(this.props.values()));
-        turretsAndProps.sort((a, b) => a.bound.layer - b.bound.layer);
-        
-        // Calculate type value more efficiently
-        const typeValue = (this.settings.drawHealth ? 0x02 : 0) + 
+        const turrets = this.turrets;
+        const props = this.props;
+        let kids = this._camKids;
+        if (!kids) kids = this._camKids = [];
+        kids.length = 0;
+        if (turrets.size) {
+            for (const t of turrets.values()) kids.push(t);
+        }
+        if (props.size) {
+            for (const p of props.values()) kids.push(p);
+        }
+        if (kids.length > 1) kids.sort((a, b) => a.bound.layer - b.bound.layer);
+
+        const typeValue = (this.settings.drawHealth ? 0x02 : 0) +
                           (((this.type === "tank" || this.type === "miniboss") && this.displayName) ? 0x04 : 0);
-        
-        // Determine layer value more efficiently
-        const layerValue = this.layerID || (this.bond != null ? this.bound.layer : 
-                          (this.type === "wall" ? 11 : 
-                           this.type === "food" ? 10 : 
-                           this.type === "tank" ? 5 : 
+
+        const layerValue = this.layerID || (this.bond != null ? this.bound.layer :
+                          (this.type === "wall" ? 11 :
+                           this.type === "food" ? 10 :
+                           this.type === "tank" ? 5 :
                            this.type === "crasher" ? 1 : 0));
 
-        // Split the score in half if we are in incognito mode
         let score = this.skill.score;
         if (this.incognito) {
             if (this.skill.level < 56) score = 26263;
             if (this.skill.level > 56) score = score / 2;
         }
-        // Dig Wars: the score other players see over your head is your
-        // wealth (carried + banked) — the same number the leaderboard and
-        // death screen use, never the vestigial level score.
         if ((this.isPlayer || (this.isBot && Config.bots_count_on_scoreboard)) && global.gameManager && global.gameManager.terrainGrid) {
             const banked = this.socket ? this.socket.gemBanked : this.botBanked;
             score = (this.carriedGems | 0) + ((banked || 0) | 0);
         }
-        // Create camera info object
-        const cameraInfo = {
-            type: typeValue,
-            invuln: this.invuln,
-            id: this.id,
-            index: this.index,
-            x: this.x,
-            y: this.y,
-            vx: this.velocity.x,
-            vy: this.velocity.y,
-            size: this.size,
-            realSize: this.realSize,
-            health: this.health.display(),
-            shield: this.shield.display(),
-            alpha: this.alpha,
-            // Hit feedback. hitFlash decays 1 -> 0 over HIT_FLASH_MS; the client
-            // only watches for the rising edge and animates its own smooth curve
-            // off it, so a dropped packet costs at most one blink. maxHealth lets
-            // the client turn the 0-1 health ratio into a real damage number.
-            hitFlash: this.hitAt ? Math.max(0, 1 - (Date.now() - this.hitAt) / HIT_FLASH_MS) : 0,
-            maxHealth: Math.round(this.health.max),
-            facing: this.facing,
-            vfacing: this.vfacing,
-            twiggle: forceTwiggle.includes(this.facingType) || this.eastereggs.braindamage || 
+
+        let guns = this._camGuns;
+        if (!guns) guns = this._camGuns = [];
+        guns.length = 0;
+        for (const gun of this.guns.values()) guns.push(gun.getPhotoInfo());
+
+        let turretPhotos = this._camTurretPhotos;
+        if (!turretPhotos) turretPhotos = this._camTurretPhotos = [];
+        turretPhotos.length = 0;
+        for (let i = 0; i < kids.length; i++) turretPhotos.push(kids[i].camera());
+
+        let cameraInfo = this._camInfo;
+        if (!cameraInfo) cameraInfo = this._camInfo = {};
+        cameraInfo.type = typeValue;
+        cameraInfo.invuln = this.invuln;
+        cameraInfo.id = this.id;
+        cameraInfo.index = this.index;
+        cameraInfo.x = this.x;
+        cameraInfo.y = this.y;
+        cameraInfo.vx = this.velocity.x;
+        cameraInfo.vy = this.velocity.y;
+        cameraInfo.size = this.size;
+        cameraInfo.realSize = this.realSize;
+        cameraInfo.health = this.health.display();
+        cameraInfo.shield = this.shield.display();
+        cameraInfo.alpha = this.alpha;
+        cameraInfo.hitFlash = this.hitAt ? Math.max(0, 1 - (Date.now() - this.hitAt) / HIT_FLASH_MS) : 0;
+        cameraInfo.maxHealth = Math.round(this.health.max);
+        cameraInfo.facing = this.facing;
+        cameraInfo.vfacing = this.vfacing;
+        cameraInfo.twiggle = forceTwiggle.includes(this.facingType) || this.eastereggs.braindamage ||
                     this.settings.connectChildrenOnCamera || (this.facingType === "locksFacing" && this.control.alt) ||
-                    this.syncWithTank,
-            layer: layerValue,
-            color: this.color.compiled,
-            borderless: this.borderless,
-            drawFill: this.drawFill,
-            name: (this.nameColor || "#ffffff") + this.name,
-            score: this.settings.scoreLabel || score,
-            digWarsGoal: this.isBot ? (this._digWarsGoal || "wander") : "",
-            guns: Array.from(this.guns.values()).map(gun => gun.getPhotoInfo()),
-            turrets: turretsAndProps.map(turret => turret.camera()),
-        };
+                    this.syncWithTank;
+        cameraInfo.layer = layerValue;
+        cameraInfo.color = this.color.compiled;
+        cameraInfo.borderless = this.borderless;
+        cameraInfo.drawFill = this.drawFill;
+        cameraInfo.name = (this.nameColor || "#ffffff") + this.name;
+        cameraInfo.score = this.settings.scoreLabel || score;
+        cameraInfo.digWarsGoal = this.isBot ? (this._digWarsGoal || "wander") : "";
+        cameraInfo.guns = guns;
+        cameraInfo.turrets = turretPhotos;
         
         // Process child camera connections if needed
         if (this.settings.connectChildrenOnCamera) {

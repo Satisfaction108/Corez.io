@@ -404,8 +404,7 @@ function dropGemsOnDeath(body, killers = []) {
 }
 
 function tickGem(gem, tg, players) {
-    
-    
+    const now = Date.now();
     const p = tg.pushCircleFromVoronoi(gem, gem.realSize);
     if (p.dx !== 0 || p.dy !== 0) {
         const pl = Math.hypot(p.dx, p.dy);
@@ -473,7 +472,7 @@ function tickGem(gem, tg, players) {
         const isKillerBot = body.isBot &&
             gem.gemLootKillerIds?.includes(body.id);
         if (body.isBot && gem.gemLootFromPlayer && !isKillerBot &&
-            Date.now() - (gem.gemBornAt || 0) < 15000) continue;
+            now - (gem.gemBornAt || 0) < 15000) continue;
         const dx = body.x - gem.x, dy = body.y - gem.y;
         const d = Math.hypot(dx, dy) || 1;
         // A drop reserved for a tutorial player behaves toward everyone else
@@ -520,7 +519,7 @@ function tickGem(gem, tg, players) {
         // Every "breaker gets a head start" variant ended the same way - a
         // gem fleeing from the player standing on it toward the bot that
         // mined it, which felt like the gem had no collision at all.
-        const killerPriority = isKillerBot && Date.now() < (body._collectLootUntil || 0) ? 850 : 0;
+        const killerPriority = isKillerBot && now < (body._collectLootUntil || 0) ? 850 : 0;
         if (d - killerPriority < bestScore) {
             bestScore = d - killerPriority;
             bestD = d;

@@ -809,8 +809,8 @@ import * as tutorial from './tutorial.js';
 
     let CalcScreenSize = () => Math.max(global.vscreenSize, (16 / 9) * global.vscreenSizey) / global.player.renderv,
         handleScreenDistance = (alpha, instance, fade = true) => {
-            let indexes = instance.index.split("-"),
-            m = global.mockups[parseInt(indexes[0])] ?? global.missingno[0];
+            let indexes = instance.index,
+            m = global.mockups[parseInt(indexes, 10)] ?? global.missingno[0];
             switch (fade) {
                 case true:
                     GetScreenDistance(instance.render.x - global.player.loc.x, instance.render.y - global.player.loc.y, instance.size) ||
@@ -1787,6 +1787,9 @@ import * as tutorial from './tutorial.js';
             );
         },
         DEAIC = (assignedContext, Alpha, shape, glow, gunLength, turretsLength) => {
+            // Offscreen blit is for faded bodies so guns+hull share one alpha.
+            // Full-opacity tanks used to go through it too, which resized a
+            // canvas per gun-tank per frame. Keep the path for transparency.
             if (global.gameUpdate && config.graphical.fancyAnimations && assignedContext != ctx2) {
                 if (Alpha < 1) {
                     if (config.graphical.optimizeMode) {
@@ -1796,8 +1799,6 @@ import * as tutorial from './tutorial.js';
                         return true;
                     }
                 }
-
-                if (!assignedContext && gunLength > 0) return true;
             }
             return false;
         },
@@ -1817,21 +1818,22 @@ import * as tutorial from './tutorial.js';
                 } else {
                     if ("string" === typeof sides) {
                         if (sides.startsWith('image=')) {
+                            let img = drawPolyImgs[sides];
+                            if (!img) {
                             const defaultDirectory = sides.startsWith("image=/");
                             const clientRootDirectory = sides.startsWith("image=./");
                             const onlineDirectory = sides.startsWith("image=https");
-                            drawPolyImgs[sides] = new Image();
-                            drawPolyImgs[sides].src =
+                            img = drawPolyImgs[sides] = new Image();
+                            img.src =
                             defaultDirectory ?
                             `img${sides.slice(6)}` :
                             clientRootDirectory || onlineDirectory ?
                             `${onlineDirectory ? sides.slice(6) : sides.slice(7)}` :
                             "img/missingno.png";
-                            drawPolyImgs[sides].onerror = function() {
-                                drawPolyImgs[sides].src = "img/missingno.png";
+                            img.onerror = function() {
+                                img.src = "img/missingno.png";
                             }
-
-                            let img = drawPolyImgs[sides];
+                            }
                             context.translate(centerX, centerY);
                             context.rotate(angle);
                             context.imageSmoothingEnabled = imageInterpolation;
@@ -3631,8 +3633,11 @@ import * as tutorial from './tutorial.js';
             if (global.glCanvas) ctx[1].drawImage(global.glCanvas, 0, 0, global.screenWidth, global.screenHeight);
         } else if (document.getElementById("gameCanvas-background").style.display === "none") document.getElementById("gameCanvas-background").style.display = "block";
 
+        const motion = compensation();
+        let livingPred = false;
         for (let instance of global.entities) {
             if (!instance.render.draws) {
+                instance._onScreen = false;
                 continue;
             }
             // Dig Wars: the outpost banner is drawn entirely by the floor-layer
@@ -3650,9 +3655,9 @@ import * as tutorial from './tutorial.js';
                 } else if (rst === 1 && instance.deathSounded) {
                     instance.deathSounded = false;
                 }
+                instance._onScreen = false;
                 continue;
             }
-            let motion = compensation();
             let rst = instance.render.status.getFade();
             // first frame of a death fade: play a size-appropriate sound
             if (rst < 1 && !instance.deathSounded) {
@@ -3663,8 +3668,12 @@ import * as tutorial from './tutorial.js';
                 instance.deathSounded = false; // entity recovered/reused
             }
             if (rst === 1) {
-                motion.set();
+                if (!livingPred) {
+                    motion.set();
+                    livingPred = true;
+                }
             } else {
+                livingPred = false;
                 if (config.graphical.lerpAnimations) {
                     instance.x += instance.vx * global.metrics.updatetime / global.metrics.rendertime;
                     instance.y += instance.vy * global.metrics.updatetime / global.metrics.rendertime;
@@ -3708,6 +3717,13 @@ import * as tutorial from './tutorial.js';
             }
             x += global.screenWidth / 2;
             y += global.screenHeight / 2;
+            const rad = (isize || instance.size) * ratio + 80;
+            const onScreen = instance.id === gui.playerid ||
+                (x >= -rad && y >= -rad && x <= global.screenWidth + rad && y <= global.screenHeight + rad);
+            instance._onScreen = onScreen;
+            instance._sx = x;
+            instance._sy = y;
+            if (!onScreen) continue;
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance, false);
             // treasury gems inside a chamber ring: the real gem look (halo +
@@ -3723,22 +3739,24 @@ import * as tutorial from './tutorial.js';
         for (let instance of global.entities) {
             // Dig Wars: same banner skip as the shape pass - the generic entity
             // health bar must not stack over the pad's custom HP bar.
+            if (!instance._onScreen) continue;
             if (isOutpostBannerEntity(instance)) continue;
             if (isCoreChamberEntity(instance)) continue;
             if (isContainedChamberGem(instance)) continue;
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance);
-            let x = instance.id === gui.playerid ? global.player.screenx : ratio * instance.render.x - px,
-                y = instance.id === gui.playerid ? global.player.screeny : ratio * instance.render.y - py;
+            let x = instance.id === gui.playerid ? global.player.screenx : instance._sx - global.screenWidth / 2,
+                y = instance.id === gui.playerid ? global.player.screeny : instance._sy - global.screenHeight / 2;
             drawHealth(x, y, instance, ratio, gui.visibleEntities ? 1 : alpha, instance.size);
             drawName(x, y, instance, ratio, gui.visibleEntities ? alpha * 0.75 + 0.25 : alpha, instance.size);
         }
         for (let instance of global.entities) {
+            if (!instance._onScreen) continue;
             if (isContainedChamberGem(instance)) continue;
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance);
-            let x = instance.id === gui.playerid ? global.player.screenx : ratio * instance.render.x - px,
-                y = instance.id === gui.playerid ? global.player.screeny : ratio * instance.render.y - py;
+            let x = instance.id === gui.playerid ? global.player.screenx : instance._sx - global.screenWidth / 2,
+                y = instance.id === gui.playerid ? global.player.screeny : instance._sy - global.screenHeight / 2;
             drawChatMessages(x, false, py, instance, ratio, gui.visibleEntities ? 1 : alpha, instance.size, px, py);
             drawChatInput(x, y, instance, ratio, instance.size);
         }
@@ -7357,7 +7375,7 @@ import * as tutorial from './tutorial.js';
         for (let context of ctx) {
             context.lineCap = "round";
             context.lineJoin = "round";
-            context.clearRect(0, 0, window.innerWidth + 1000, window.innerHeight + 1000);
+            context.clearRect(0, 0, context.canvas.width, context.canvas.height);
         }
 
         if (isNaN(global.player.renderx) && isNaN(global.player.rendery)) {

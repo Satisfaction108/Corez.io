@@ -363,26 +363,28 @@ class bulletEntity { // Basically an (Entity) but with heavy limitations to impr
     }
 
     camera() {
-        return {
-            type: 0x10,
-            id: this.id,
-            index: this.index,
-            x: this.x,
-            y: this.y,
-            vx: this.velocity.x,
-            vy: this.velocity.y,
-            size: this.size,
-            realSize: this.realSize,
-            health: this.health.display(),
-            shield: 0,
-            alpha: this.alpha,
-            facing: this.facing,
-            vfacing: this.vfacing,
-            layer: this.layerID ? this.layerID : this.type === "wall" ? 11 : this.type === "food" ? 10 : this.type === "tank" ? 5 : this.type === "crasher" ? 1 : 0,
-            color: this.color.compiled,
-            guns: Array.from(this.guns.values()).map(gun => gun.getPhotoInfo()),
-            turrets: [],
-        };
+        let guns = this._camGuns;
+        if (!guns) guns = this._camGuns = [];
+        guns.length = 0;
+        for (const gun of this.guns.values()) guns.push(gun.getPhotoInfo());
+        let cameraInfo = this._camInfo;
+        if (!cameraInfo) cameraInfo = this._camInfo = { type: 0x10, shield: 0, turrets: [] };
+        cameraInfo.id = this.id;
+        cameraInfo.index = this.index;
+        cameraInfo.x = this.x;
+        cameraInfo.y = this.y;
+        cameraInfo.vx = this.velocity.x;
+        cameraInfo.vy = this.velocity.y;
+        cameraInfo.size = this.size;
+        cameraInfo.realSize = this.realSize;
+        cameraInfo.health = this.health.display();
+        cameraInfo.alpha = this.alpha;
+        cameraInfo.facing = this.facing;
+        cameraInfo.vfacing = this.vfacing;
+        cameraInfo.layer = this.layerID ? this.layerID : this.type === "wall" ? 11 : this.type === "food" ? 10 : this.type === "tank" ? 5 : this.type === "crasher" ? 1 : 0;
+        cameraInfo.color = this.color.compiled;
+        cameraInfo.guns = guns;
+        return cameraInfo;
     };
 
     takeSelfie() {

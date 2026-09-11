@@ -78,26 +78,30 @@ class Prop {
         }
     }
     camera() {
-        return {
-            type: 0x01,
-            id: this.id,
-            index: this.index,
-            size: this.size,
-            realSize: this.realSize,
-            facing: this.facing,
-            angle: this.bound.angle,
-            direction: this.bound.direction,
-            offset: this.bound.offset,
-            sizeFactor: this.bound.size,
-            mirrorMasterAngle: this.settings.mirrorMasterAngle,
-            layer: this.bound.layer,
-            color: this.color.compiled,
-            strokeWidth: this.strokeWidth,
-            borderless: this.borderless,
-            drawFill: this.drawFill,
-            guns: this.guns.map((gun) => gun.getPhotoInfo()),
-            turrets: this.turrets,
-        };
+        let guns = this._camGuns;
+        if (!guns) guns = this._camGuns = [];
+        guns.length = 0;
+        for (let i = 0; i < this.guns.length; i++) guns.push(this.guns[i].getPhotoInfo());
+        let cameraInfo = this._camInfo;
+        if (!cameraInfo) cameraInfo = this._camInfo = { type: 0x01 };
+        cameraInfo.id = this.id;
+        cameraInfo.index = this.index;
+        cameraInfo.size = this.size;
+        cameraInfo.realSize = this.realSize;
+        cameraInfo.facing = this.facing;
+        cameraInfo.angle = this.bound.angle;
+        cameraInfo.direction = this.bound.direction;
+        cameraInfo.offset = this.bound.offset;
+        cameraInfo.sizeFactor = this.bound.size;
+        cameraInfo.mirrorMasterAngle = this.settings.mirrorMasterAngle;
+        cameraInfo.layer = this.bound.layer;
+        cameraInfo.color = this.color.compiled;
+        cameraInfo.strokeWidth = this.strokeWidth;
+        cameraInfo.borderless = this.borderless;
+        cameraInfo.drawFill = this.drawFill;
+        cameraInfo.guns = guns;
+        cameraInfo.turrets = this.turrets;
+        return cameraInfo;
     }
 }
 

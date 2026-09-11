@@ -427,42 +427,28 @@ class gameHandler {
             }
 
             // Reset collision array once at the beginning
-            instance.collisionArray = [];
+            instance.collisionArray.length = 0;
 
             // Handle physics only if not bonded
             if (instance.bond == null) {
-                // Resolve the physical behavior from the last collision cycle.
-                logs.physics.set();
                 instance.physics();
-                logs.physics.mark();
             }
 
             if (instance.activation.active || instance.isPlayer) {
                 logs.entities.tally();
-                // Think about my actions.
-                logs.life.set();
                 instance.life();
-                logs.life.mark();
-                // Take a selfie.
-                logs.selfie.set();
                 instance.takeSelfie();
-                logs.selfie.mark();
-                // Apply friction.
                 instance.friction();
                 instance.confinementToTheseEarthlyShackles();
             }
 
             // Terrain collision handled by the dedicated terrain loop below
 
-            // Update axis-aligned bounding box
             instance.updateAABB(instance.activation.active);
-            // Check collisions.
-            logs.collide.set();
-            for (const other of grid.query(instance.minX, instance.minY, instance.maxX, instance.maxY).values()) {
+            for (const other of grid.query(instance.minX, instance.minY, instance.maxX, instance.maxY)) {
                 this.collide(instance, other);
             }
             if (instance.isInGrid) grid.insert(instance, instance.minX, instance.minY, instance.maxX, instance.maxY);
-            logs.collide.mark();
             if ((instance.touchingSizeWall === false || instance.collisionArray.length === 0) && instance.originalSize) {
                 instance.SIZE = instance.originalSize;
                 instance.originalSize = undefined;
@@ -471,10 +457,7 @@ class gameHandler {
                 instance.FOV = instance.originalFov;
                 instance.originalFov = undefined;
             }
-            // Check whether we want to live.
-            logs.activation.set();
             instance.activation.update();
-            logs.activation.mark();
 
             instance.emit('tick', { body: instance });
         }
@@ -1609,29 +1592,25 @@ class gameHandler {
             const growingNow = _tg.growingRocks().length > 0;
             const gemActors = this.gemActors();
             for (const instance of global.entities.values()) {
-                if (!instance || instance.isDead?.()) continue;
-                if (instance.noclip || instance.godmode || instance.isArenaCloser) continue;
-                
-                
-                
-                
-                
-                if (instance.isOutpostBanner || instance.isCoreChamber) continue;
-
+                if (!instance) continue;
                 if (instance.isGemPickup) {
-                    
-                    
+                    if (instance.isDead?.()) continue;
+                    if (instance.noclip || instance.godmode || instance.isArenaCloser) continue;
                     if (instance.chamberHome !== undefined) {
                         coreChambers.tickContainedGem(instance);
                     } else {
-                        
                         gems.tickGem(instance, _tg, gemActors);
-                        
-                        
                         if (growingNow) _tg.pushCircleFromGrowing(instance, instance.realSize, tickNow);
                     }
-                } else if (instance.type === 'tank' || instance.type === 'miniboss' ||
-                           instance.type === 'minion') {
+                    continue;
+                }
+                if (instance.type !== 'tank' && instance.type !== 'miniboss' && instance.type !== 'minion' &&
+                    instance.type !== 'bullet' && instance.type !== 'drone' && instance.type !== 'trap' &&
+                    instance.type !== 'satellite' && instance.type !== 'swarm') continue;
+                if (instance.isDead?.()) continue;
+                if (instance.noclip || instance.godmode || instance.isArenaCloser) continue;
+                if (instance.isOutpostBanner || instance.isCoreChamber) continue;
+                if (instance.type === 'tank' || instance.type === 'miniboss' || instance.type === 'minion') {
                     // Keep the satchel on the tank's back. Has to run per tick
                     // rather than on gem change, because "back" tracks movement
                     // and aim, which change constantly while the load does not.
@@ -1639,7 +1618,7 @@ class gameHandler {
                     const r = instance.realSize;
                     const p = _tg.pushCircleFromVoronoi(instance, r);
                     let dx = p.dx, dy = p.dy;
-                    const nowT = Date.now();
+                    const nowT = tickNow;
                     
                     
                     

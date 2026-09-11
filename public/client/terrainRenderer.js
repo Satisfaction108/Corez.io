@@ -2100,7 +2100,14 @@ class TerrainRenderer {
             ctx.clip(dmgBatch.holes || this._silClip, 'evenodd');
             ctx.globalAlpha = 1;
             let rockImg, rockImgIsBitmap = false;
-            if (typeof this._glCanvas.transferToImageBitmap === 'function') {
+            // ImageBitmap snapshot is only needed when we blit the same rock
+            // texture more than once (damage stages, shakes, regrowth).
+            // Undamaged views can draw the GL canvas directly and skip the
+            // per-frame GPU readback.
+            const needManyBlits = (dmgBatch.groups && dmgBatch.groups.length) ||
+                (dmgBatch.shaking && dmgBatch.shaking.length) ||
+                this._growing.size || this._landed.size;
+            if (needManyBlits && typeof this._glCanvas.transferToImageBitmap === 'function') {
                 rockImg = this._glCanvas.transferToImageBitmap();
                 rockImgIsBitmap = true;
             } else {

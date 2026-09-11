@@ -2,6 +2,7 @@ module.exports = class HashGrid {
 	static stride = 1 << 16;
 
 	cells = new Map();
+	_queryTick = 0;
 	constructor(cellSize) {
 		this.cellSize = cellSize;
 	}
@@ -26,8 +27,9 @@ module.exports = class HashGrid {
 		const cells = this.cells;
 		const cellSize = this.cellSize;
 		const stride = HashGrid.stride;
+		const tick = ++this._queryTick;
+		const output = [];
 
-		const output = new Set();
 		const endX = maxX >> cellSize;
 		const endY = maxY >> cellSize;
 		for (let x = minX >> cellSize; x <= endX; x++) {
@@ -37,8 +39,10 @@ module.exports = class HashGrid {
 				if (cell !== undefined) {
 					for (const entity of cell) {
 						if (entity.bond) continue;
+						if (entity._hgTick === tick) continue;
 						if (entity.minX < maxX && entity.maxX > minX && entity.minY < maxY && entity.maxY > minY) {
-							output.add(entity);
+							entity._hgTick = tick;
+							output.push(entity);
 						}
 					}
 				}
@@ -48,6 +52,11 @@ module.exports = class HashGrid {
 	}
 
 	clear() {
-		this.cells.clear();
+		this._clearN = (this._clearN | 0) + 1;
+		if ((this._clearN & 63) === 0) {
+			this.cells.clear();
+			return;
+		}
+		for (const cell of this.cells.values()) cell.length = 0;
 	}
 }
