@@ -561,10 +561,9 @@ class TerrainRenderer {
         const { cx, cy } = cell;
         const kk = cell.k & 0xffff;
         const jc = (i, s) => this._h(i, kk, s);
-        // ~50 black rock chips bursting outward - small rotated squares,
-        
+        // Rock chips bursting outward - small rotated squares.
         const parts = [];
-        for (let e = 0; e < 70; e++) {
+        for (let e = 0; e < 32; e++) {
             parts.push({
                 ang:  jc(e, 28) * Math.PI * 2,
                 sp:   0.7 + jc(e, 29) * 3.6,
@@ -580,7 +579,7 @@ class TerrainRenderer {
         
         
         const palette = TerrainRenderer.ORE_FX[tier] || FW_COLORS;
-        const nSparks = tier ? (tier === 4 ? 56 : tier === 3 ? 44 : 32) : 24;
+        const nSparks = tier ? (tier === 4 ? 28 : tier === 3 ? 22 : 16) : 12;
         const sparks = [];
         for (let e = 0; e < nSparks; e++) {
             sparks.push({
@@ -591,7 +590,7 @@ class TerrainRenderer {
         }
         this._fx.push({ parts, sparks, colors: palette, cx, cy, path: cell.path,
                         born: now ?? performance.now() });
-        if (this._fx.length > 40) this._fx.shift(); 
+        if (this._fx.length > 24) this._fx.shift(); 
     }
 
     
@@ -2646,7 +2645,7 @@ class TerrainRenderer {
                     const fe  = 1 - Math.pow(1 - fly, 3);
                     const al  = tc < 0.5 ? 0.9 : 0.9 * (1 - (tc - 0.5) / 0.5);
                     ctx.globalAlpha = al;
-                    for (let s = 0; s < (im.small ? 5 : 12); s++) {
+                    for (let s = 0; s < (im.small ? 4 : 8); s++) {
                         const ang = baseAng + (this._h(s, im.seed, 55) - 0.5) * 1.5;
                         const sp  = (0.2 + this._h(s, im.seed, 56) * 0.75) * rockSz * isc;
                         const sz  = (0.016 + this._h(s, im.seed, 57) * 0.028) * rockSz * (im.small ? 0.8 : 1);
@@ -2677,7 +2676,7 @@ class TerrainRenderer {
                 ctx.restore();
             }
 
-            // ── Shatter: brief flash + dust ring, then ~50 black rock chips
+            // ── Shatter: brief flash + dust ring, then rock chips
             
             if (this._fx.length) {
                 const CHIPS = ['rgb(5,4,7)', 'rgb(14,12,19)', 'rgb(26,23,33)'];
@@ -2701,7 +2700,7 @@ class TerrainRenderer {
                         const rq = 1 - Math.pow(1 - rt, 4);          // easeOutQuart
                         ctx.beginPath();
                         ctx.arc(fx.cx, fx.cy, (0.25 + (rgi ? 1.9 : 3.0) * rq) * rockSz, 0, Math.PI * 2);
-                        ctx.strokeStyle = `rgba(110,100,125,${Math.pow(1 - rt, 1.5) * 0.6})`;
+                        ctx.strokeStyle = `rgba(110,100,125,${Math.pow(1 - rt, 1.5) * 0.35})`;
                         ctx.lineWidth   = 0.12 * rockSz * (1 - rt) + 0.01;
                         ctx.stroke();
                     }

@@ -225,11 +225,12 @@ function spawnContainedGem(c, tier, spawnScale) {
     const g = gems.spawnGem(c.x + Math.cos(ang) * rad, c.y + Math.sin(ang) * rad,
                             tier.value, tier.cls, tier.size);
     g.chamberHome = c;          // routes this gem to the containment tick
-    
-    
-    
+    // Stay on the spatial grid so cameras can still see them. Pulling them
+    // out made the hoard vanish ~250ms after spawn (and after every regrow)
+    // because the view list is rebuilt from grid queries. They already have
+    // NO_COLLISIONS, so they will not fight tanks or each other.
     g.settings.diesAtRange = false;
-    g.range = 9e99;
+    g.RANGE = g.range = 9e99;
     
     
     
@@ -247,18 +248,22 @@ function spawnContainedGem(c, tier, spawnScale) {
     g._orbitJag = 0.02 + Math.random() * 0.03;
     g._orbitEcc = 0.08 + Math.random() * 0.10;
     g._orbitBreathe = 0.05 + Math.random() * 0.06;
-    
-    
-    
-    
-    
-    
-    g.updateAABB = () => { g.isInGrid = false; };
-    g.addToGrid = () => {};
-    g.removeFromGrid = () => {};
-    g.isInGrid = false;
     c.containedGems.push(g);
     return g;
+}
+
+function pruneContainedGems(c) {
+    for (let i = c.containedGems.length - 1; i >= 0; i--) {
+        const g = c.containedGems[i];
+        if (!g || g.isDead?.()) c.containedGems.splice(i, 1);
+    }
+}
+
+function refillTreasuryIfEmpty(c) {
+    pruneContainedGems(c);
+    if (c.containedGems.length || c._pending.length) return;
+    armTreasury(c);
+    spawnPendingGems(c, 1);
 }
 
 function spawnPendingGems(c, scale) {
@@ -347,6 +352,8 @@ function tick(dtMs) {
                     c._armed = true;
                     armTreasury(c);
                     spawnPendingGems(c, 1);
+                } else {
+                    refillTreasuryIfEmpty(c);
                 }
                 
                 
@@ -371,6 +378,7 @@ function tick(dtMs) {
                 c.state = 'regrowing';
                 c.regrowStart = now;
                 c._hpTrack = 0;
+                c._armed = true;
                 armTreasury(c);
                 spawnStructure(c);
             }
@@ -392,6 +400,9 @@ function tick(dtMs) {
                 c.state = 'alive';
                 c._exposed = false;
                 c._lastHitAt = now;
+                c._armed = true;
+                spawnPendingGems(c, 1);
+                refillTreasuryIfEmpty(c);
                 announce(`The ${c.name} has reformed.`);
             }
         }

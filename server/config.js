@@ -48,7 +48,7 @@ module.exports = {
 
             properties: {
                 teams: 2,
-                bot_cap: 40
+                bot_cap: 16
             }
         },
         {
@@ -150,9 +150,9 @@ module.exports = {
     tier_cap: 100,
     tier_multiplier: 15,
 
-    // Keep matches populated. 40 total, 20 per side so neither team hoards them.
-    bot_cap: 40,
-    bot_team_cap: 20,
+    // Keep matches populated without drowning the sim. 16 total, 8 per side.
+    bot_cap: 16,
+    bot_team_cap: 8,
     bot_xp_gain: 60,
     bot_start_level: 100,
     bot_skill_upgrade_chances: [1, 1, 3, 4, 4, 4, 4, 2, 1, 1],
