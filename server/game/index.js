@@ -1653,7 +1653,7 @@ class gameHandler {
                         instance.velocity.x = 0; instance.velocity.y = 0;
                         instance.accel.x = 0;    instance.accel.y = 0;
                     }
-                    if (entombed && !instance.invuln) crush(instance, tickMs);
+                    if (entombed && !instance.invuln && !instance.royaleLobby) crush(instance, tickMs);
                     else instance._crushedNoted = false;
                     if (dx !== 0 || dy !== 0) {
                         const pLen = Math.hypot(dx, dy);

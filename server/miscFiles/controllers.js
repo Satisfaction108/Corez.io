@@ -2806,8 +2806,30 @@ class io_digWarsGoals extends IO {
     think(input) {
         const body = this.body, now = Date.now();
         if (!body.isBot || body.type !== 'tank') return {};
-        if (body.royaleFrozen || body.royaleLobby) {
+        if (body.royaleFrozen) {
             return { goal: { x: body.x, y: body.y }, fire: false, main: false, alt: false };
+        }
+        if (body.royaleLobby) {
+            const plaza = (Config.dig_royale && require('../game/gamemodes/scripts/dig_royale.js').lobbyPos)
+                ? require('../game/gamemodes/scripts/dig_royale.js').lobbyPos()
+                : { x: 0, y: 0, r: 280 };
+            if (!this._lobbyUntil || now > this._lobbyUntil) {
+                this._lobbyIdle = Math.random() < 0.4;
+                const r = (plaza.r || 280) * 0.55;
+                this._lobbyGoal = {
+                    x: plaza.x + (Math.random() - 0.5) * r * 2,
+                    y: plaza.y + (Math.random() - 0.5) * r * 2,
+                };
+                this._lobbyUntil = now + 700 + Math.random() * 2200;
+            }
+            if (this._lobbyIdle) {
+                return { goal: { x: body.x, y: body.y }, fire: false, main: false, alt: false };
+            }
+            return {
+                goal: this._lobbyGoal,
+                target: { x: this._lobbyGoal.x - body.x, y: this._lobbyGoal.y - body.y },
+                fire: false, main: false, alt: false,
+            };
         }
         // A replying bot stops for a beat so chat reads as a real
         // interruption instead of text appearing while it keeps farming.

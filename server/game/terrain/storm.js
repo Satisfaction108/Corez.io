@@ -3,8 +3,8 @@
 // BR pacing: lobby 100s + loadout 30s + 8min storm ≈ 10.2min total,
 // so the whole match is always over well within ~12 minutes.
 
-const DAMAGE_FRAC = 0.22;
-const DAMAGE_EVERY_MS = 450;
+const DAMAGE_FRAC = 0.07;
+const DAMAGE_EVERY_MS = 1100;
 const CLOSE_MS = 8 * 60 * 1000;
 
 let state = {

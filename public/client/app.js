@@ -3407,6 +3407,30 @@ import * as tutorial from './tutorial.js';
         const t = Math.min(1, Math.max(0, (performance.now() - global.royale.at) / 250));
         return Object.assign({}, s, { r: (s.r || 0) + ((s.n || s.r) - s.r) * t });
     }
+    function circleRadiusWorld() {
+        const s = global.royale && global.royale.storm;
+        if (s && s.max > 0) return s.max;
+        return Math.min(global.gameWidth, global.gameHeight) / 2;
+    }
+    function fillStormOnMap(c, mapX, mapY, scale, x, y, w, h) {
+        const s = stormSnap();
+        if (!s) return;
+        const cx = mapX(s.cx || 0), cy = mapY(s.cy || 0);
+        const maxR = (s.max || circleRadiusWorld()) * scale;
+        const rr = Math.max(2, (s.r || 0) * scale);
+        c.save();
+        c.beginPath();
+        c.rect(x, y, w, h);
+        c.arc(cx, cy, rr, 0, Math.PI * 2, true);
+        c.fillStyle = "rgba(88, 48, 120, 0.38)";
+        c.fill("evenodd");
+        c.strokeStyle = "#5a2a78";
+        c.lineWidth = 2;
+        c.beginPath();
+        c.arc(cx, cy, rr, 0, Math.PI * 2);
+        c.stroke();
+        c.restore();
+    }
     function playerInStorm() {
         const s = stormSnap();
         if (!s) return false;
@@ -3414,23 +3438,9 @@ import * as tutorial from './tutorial.js';
         const dx = px - (s.cx || 0), dy = py - (s.cy || 0);
         return dx * dx + dy * dy > (s.r || 0) * (s.r || 0);
     }
-    function strokeStormCircle(c, mapX, mapY, scale) {
-        const s = stormSnap();
-        if (!s) return;
-        const cx = mapX(s.cx || 0), cy = mapY(s.cy || 0);
-        const rr = Math.max(2, (s.r || 0) * scale);
-        c.save();
-        c.strokeStyle = color.black;
-        c.lineWidth = 3;
-        c.beginPath();
-        c.arc(cx, cy, rr, 0, Math.PI * 2);
-        c.stroke();
-        c.strokeStyle = color.red;
-        c.lineWidth = 1.5;
-        c.beginPath();
-        c.arc(cx, cy, rr, 0, Math.PI * 2);
-        c.stroke();
-        c.restore();
+    function strokeStormCircle(c, mapX, mapY, scale, x, y, w, h) {
+        if (x == null) return;
+        fillStormOnMap(c, mapX, mapY, scale, x, y, w, h);
     }
     function drawStorm(roomX, roomY, ratio) {
         const s = stormSnap();
@@ -3445,19 +3455,19 @@ import * as tutorial from './tutorial.js';
         c.rect(-40, -40, global.screenWidth + 80, global.screenHeight + 80);
         c.arc(cx, cy, rr, 0, Math.PI * 2, true);
         c.clip("evenodd");
-        c.fillStyle = "#3a1010";
-        c.globalAlpha = 0.5;
+        c.fillStyle = "rgba(72, 38, 96, 0.46)";
+        c.globalAlpha = 1;
         c.fillRect(-40, -40, global.screenWidth + 80, global.screenHeight + 80);
         c.restore();
         c.save();
-        const wall = Math.max(14, 22 * ratio);
+        const wall = Math.max(18, 28 * ratio);
         c.beginPath();
         c.arc(cx, cy, rr + wall, 0, Math.PI * 2);
-        c.arc(cx, cy, rr, 0, Math.PI * 2, true);
-        c.fillStyle = "#b42a2a";
+        c.arc(cx, cy, Math.max(0, rr - 2), 0, Math.PI * 2, true);
+        c.fillStyle = "#6a3a78";
         c.fill("evenodd");
-        c.strokeStyle = color.black;
-        c.lineWidth = Math.max(4, 5 * ratio);
+        c.strokeStyle = "#2a1028";
+        c.lineWidth = Math.max(3, 4 * ratio);
         c.beginPath();
         c.arc(cx, cy, rr, 0, Math.PI * 2);
         c.stroke();
@@ -5129,8 +5139,15 @@ import * as tutorial from './tutorial.js';
         for (let i = 0; i < feed.length; i++) {
             const f = feed[feed.length - 1 - i];
             if (!f) continue;
-            const line = f.by ? (f.by + "  >  " + f.name) : (f.name + "  >  Storm");
-            drawText(line, 18, 42 + i * 18, 13, color.guiwhite, "left");
+            const y = 42 + i * 18;
+            const right = global.screenWidth - 18;
+            if (f.storm) {
+                drawText((f.name || "Someone") + " was lost in the storm", right, y, 13, color.guiwhite, "right");
+            } else {
+                const verb = f.verb || "killed";
+                drawText("§gold§" + (f.by || "Someone") + "§reset§ " + verb + " " + (f.name || "someone"),
+                         right, y, 13, color.guiwhite, "right");
+            }
         }
         if (playerInStorm() && r.phase === "live") {
             const c = ctx[2];
@@ -6036,8 +6053,41 @@ import * as tutorial from './tutorial.js';
             s: s2,
         };
         drawMapMarkers(T, x, y, size, size, 8.5, 3.4);
-        strokeStormCircle(ctx[2], T.X, T.Y, T.s);
+        strokeStormCircle(ctx[2], T.X, T.Y, T.s, x, y, size, size);
         ctx[2].restore();
+    }
+
+    function drawRoyaleFullMinimap(x, y, size) {
+        const gw = global.gameWidth, gh = global.gameHeight;
+        if (!gw || !gh) return;
+        const c = ctx[2];
+        c.save();
+        c.beginPath();
+        c.rect(x, y, size, size);
+        c.clip();
+        const T = drawWorldWindow(c, x, y, size, size, -gw / 2, -gh / 2, gw);
+        const cr = circleRadiusWorld();
+        c.beginPath();
+        c.rect(x - 2, y - 2, size + 4, size + 4);
+        c.arc(T.X(0), T.Y(0), Math.max(2, cr * T.s), 0, Math.PI * 2, true);
+        c.fillStyle = "#0d0d0c";
+        c.fill("evenodd");
+        if (!royaleLobbyPhase()) drawMapMarkers(T, x, y, size, size, 6, 2.8);
+        else {
+            const px = T.X(global.player.renderx), py = T.Y(global.player.rendery);
+            c.fillStyle = color.guiwhite;
+            c.beginPath();
+            c.arc(px, py, 3, 0, Math.PI * 2);
+            c.fill();
+        }
+        strokeStormCircle(c, T.X, T.Y, T.s, x, y, size, size);
+        c.restore();
+        c.lineWidth = 3;
+        c.strokeStyle = color.black;
+        c.strokeRect(x, y, size, size);
+        const keyEl = document.querySelector('#controlSettings b[data-key="KEY_TOGGLE_MAP"]');
+        const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "F";
+        drawText("[" + keyName + "] map", x + size / 2, y + size + 16, 11, color.guiwhite, "center");
     }
 
     
@@ -6105,7 +6155,7 @@ import * as tutorial from './tutorial.js';
             drawRoyaleFTabBody(px0, py0 + tabH, panelW, panelH - tabH, tab);
         } else {
         const T = drawWorldWindow(ctx[2], px0, py0, panelW, panelH, wx0, wy0, span);
-        strokeStormCircle(ctx[2], T.X, T.Y, T.s);
+        strokeStormCircle(ctx[2], T.X, T.Y, T.s, px0, py0 + tabH, panelW, panelH - tabH);
         
         
         const mScale = global.canvas ? global.canvas.height / global.screenHeight : 1;
@@ -6204,7 +6254,9 @@ import * as tutorial from './tutorial.js';
     function drawRoyaleFTabBody(x, y, w, h, tab) {
         const rows = tab === "feed"
             ? (global.royale.feed || []).slice().reverse().map(f => ({
-                name: f.by ? (f.by + " > " + f.name) : ((f.name || "Unnamed") + " > Storm"),
+                name: f.storm
+                    ? ((f.name || "Unnamed") + " was lost in the storm")
+                    : ((f.by || "Someone") + " " + (f.verb || "killed") + " " + (f.name || "Unnamed")),
                 extra: f.place ? ("#" + f.place) : "",
             }))
             : tab === "alive"
@@ -6259,15 +6311,14 @@ import * as tutorial from './tutorial.js';
         let y = global.mobile ? spacing : global.screenHeight - height - spacing - 5;
         if (global.GUIStatus.renderMinimap) {
             
-            if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0 && !global.mobile) {
+            if (royaleActive() && !global.mobile) {
+                const mx = global.screenWidth - spacing - len - 5;
+                const my = global.screenHeight - len - spacing - 22;
+                drawRoyaleFullMinimap(mx, my, len);
+            } else if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0 && !global.mobile) {
                 const mx = global.screenWidth - spacing - len - 5;
                 const my = global.screenHeight - len - spacing - 5;
                 drawFortniteMinimap(mx, my, len);
-                if (royaleActive() && !global.mobile) {
-                    const keyEl = document.querySelector('#controlSettings b[data-key="KEY_TOGGLE_MAP"]');
-                    const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "F";
-                    drawText("[" + keyName + "] map", mx + len / 2, my - 10, 11, color.guiwhite, "center");
-                }
             } else {
             if (global.mobile) {
                 y += global.canUpgrade ? (alcoveSize / 1.5) * mobileUpgradeGlide.get() * upgradeColumns / 1.5 + spacing * (upgradeColumns + 1.55) + 9 : 0;
@@ -6400,7 +6451,7 @@ import * as tutorial from './tutorial.js';
                 }
             }
 
-            strokeStormCircle(ctx[2], mmX, mmY, len / mmW);
+            strokeStormCircle(ctx[2], mmX, mmY, len / mmW, x, y, len, height);
 
             ctx[2].globalAlpha = 1;
             ctx[2].lineWidth = 1;
@@ -7378,7 +7429,7 @@ import * as tutorial from './tutorial.js';
                  cx, py + 124, 14, color.guiwhite, "center");
         const cause = global.finalCause || "";
         const killedBy = cause === "rock" ? "Crushed by the living rock"
-            : cause === "storm" ? "The storm closed in"
+            : cause === "storm" ? "Lost in the storm"
             : global.finalKillers.length
                 ? "Taken down by " + global.finalKillers.join(" and ")
                 : "Nobody finished you off";
@@ -7390,7 +7441,13 @@ import * as tutorial from './tutorial.js';
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         const ga = global.lerp(3, 3.25, glide);
         if (!global.disconnected) {
-            drawButton(cx - 90, by, 150, 32, ga, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
+            const phase = global.royale && global.royale.phase;
+            const canRequeue = phase === 'lobby' || phase === 'idle';
+            if (canRequeue) {
+                drawButton(cx - 90, by, 150, 32, ga, "rect", "Play", 15, false, false, false, true, "deathRespawn", cr, 0);
+            } else {
+                drawButton(cx - 90, by, 150, 32, ga, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
+            }
             drawButton(cx + 90, by, 150, 32, ga, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
         }
     };
@@ -7411,9 +7468,15 @@ import * as tutorial from './tutorial.js';
         const place = global.royale.place | 0;
         drawText("Spectating" + (place > 0 ? ("  #" + place) : ""), x + barW / 2, y + 24, 14, color.guiwhite, "center");
         const cr = global.canvas.height / global.screenHeight / global.ratio;
+        const phase = global.royale && global.royale.phase;
         drawButton(x + 48, y + 4, 84, 28, 1, "rect", "Prev", 13, false, false, false, true, "royalePrev", cr, 0);
         drawButton(x + 138, y + 4, 84, 28, 1, "rect", "Next", 13, false, false, false, true, "royaleNext", cr, 0);
-        drawButton(x + barW - 52, y + 4, 88, 28, 1, "rect", "Home", 13, false, false, false, true, "exitGame", cr, 0);
+        if (phase === 'lobby' || phase === 'idle') {
+            drawButton(x + barW - 150, y + 4, 84, 28, 1, "rect", "Play", 13, false, false, false, true, "deathRespawn", cr, 0);
+            drawButton(x + barW - 52, y + 4, 88, 28, 1, "rect", "Home", 13, false, false, false, true, "exitGame", cr, 0);
+        } else {
+            drawButton(x + barW - 52, y + 4, 88, 28, 1, "rect", "Home", 13, false, false, false, true, "exitGame", cr, 0);
+        }
     };
     const applyScreenShake = (type = "camera", returnOption = false) => {
         let properties = type == "gui" ? config.graphical.shakeProperties.UIShake : config.graphical.shakeProperties.CameraShake;

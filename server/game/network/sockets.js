@@ -972,8 +972,12 @@ class socketManager {
                 socket.status.forceNewBroadcast = true;
             } break;
             case "RS": {
-                if (!socket.status.deceased) return;
-                cycleSpectate(socket, (m[0] | 0) < 0 ? -1 : 1);
+                if (!socket.status.deceased) return 1;
+                cycleSpectate(socket, (m[0] | 0) === 0 ? -1 : 1);
+                if (socket.spectateEntity && socket.camera) {
+                    socket.camera.x = socket.spectateEntity.x;
+                    socket.camera.y = socket.spectateEntity.y;
+                }
             } break;
             default: {
                 console.log(m)
@@ -1908,8 +1912,8 @@ class socketManager {
                     if (socket.spectateEntity) {
                         
                         
-                        camera.x += (socket.spectateEntity.x - camera.x) * 0.06;
-                        camera.y += (socket.spectateEntity.y - camera.y) * 0.06;
+                        camera.x = socket.spectateEntity.x;
+                        camera.y = socket.spectateEntity.y;
                     }
                 }
 

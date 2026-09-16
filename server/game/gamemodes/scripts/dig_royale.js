@@ -6,9 +6,10 @@ const gems = require('../../terrain/gems.js');
 const LOBBY_MS = 100_000;
 const LOADOUT_MS = 30_000;
 const OVER_MS = 9_000;
-const FILL_CAP = 20;
+const FILL_CAP = 30;
 const OCCUPY_MS = 10_000;
 const LOCKOUT_MS = 10_000;
+const KILL_VERBS = ["killed", "slaughtered", "demolished", "wrecked", "ended", "cooked"];
 
 let phase = 'idle';
 let phaseAt = 0;
@@ -19,6 +20,8 @@ let occupy = new Map(); // outpostId -> { ownerId, enteredAt }
 let lockout = new Map(); // `${outpostId}:${bodyId}` -> until
 let matchId = 0;
 let matchStartAt = 0;
+let boardMemory = new Map();
+let lastLobbyFillAt = 0;
 
 function now() { return Date.now(); }
 
@@ -28,8 +31,17 @@ function humans() {
         .filter(b => b && b.isPlayer && !b.isDead?.() && !b.isGhost);
 }
 
-function humanSockets() {
-    return global.gameManager.socketManager?.clients || [];
+function connectedClients() {
+    return (global.gameManager.socketManager?.clients || []).filter(c => c && !c.terminated);
+}
+
+function rememberBoard(body) {
+    if (!body) return;
+    boardMemory.set(body.id, {
+        name: body.name || "Unnamed",
+        kills: (body.killCount && body.killCount.solo | 0) || 0,
+        gems: gemsOf(body),
+    });
 }
 
 function combatants() {
@@ -76,8 +88,8 @@ function setLobby(body, on) {
     if (!body) return;
     body.royaleLobby = !!on;
     body.passive = !!on;
-    // Invuln blocks guns (gun.live). Lobby uses passive so you can fire
-    // and mine, but nobody can hurt anybody.
+    // Guns still work. Combat and rock-crush damage are skipped while
+    // royaleLobby is set (see gun.live / terrain crush).
     body.invuln = false;
     if (on) {
         body.godmode = false;
@@ -107,6 +119,7 @@ function boardSnapshot() {
             alive: true,
             place: 0,
         });
+        rememberBoard(body);
     }
     for (const [id, place] of placements) {
         if (seen.has(id)) {
@@ -114,8 +127,15 @@ function boardSnapshot() {
             if (row) { row.place = place; }
             continue;
         }
-        // recently dead: keep them on the board with their placement
-        out.push({ id, name: "Eliminated", kills: 0, gems: 0, alive: false, place });
+        const mem = boardMemory.get(id) || {};
+        out.push({
+            id,
+            name: mem.name || "Eliminated",
+            kills: mem.kills | 0,
+            gems: mem.gems | 0,
+            alive: false,
+            place,
+        });
     }
     // attach names for dead where we still know them via feed
     for (const row of out) {
@@ -124,7 +144,7 @@ function boardSnapshot() {
             if (f && f.name) row.name = f.name;
         }
     }
-    return out.slice(0, 24);
+    return out.slice(0, 32);
 }
 
 function broadcast(extra = {}) {
@@ -136,7 +156,7 @@ function broadcast(extra = {}) {
     const st = storm.snapshot(t);
     const alive = phase === 'live' || phase === 'loadout' ? combatants().length : 0;
     const board = boardSnapshot();
-    for (const client of humanSockets()) {
+    for (const client of connectedClients()) {
         const youPlace = (client && client.royalePlace) || 0;
         const payload = JSON.stringify({
             phase,
@@ -242,24 +262,50 @@ function resetRoyaleBody(body) {
     if (body.shield) body.shield.amount = body.shield.max;
 }
 
+function spawnLobbyBot() {
+    const handler = global.gameManager.gameHandler;
+    if (!handler) return;
+    const plaza = lobbyPos();
+    const team = getRandomTeam();
+    handler.spawnBots({
+        x: plaza.x + (Math.random() - 0.5) * 160,
+        y: plaza.y + (Math.random() - 0.5) * 160,
+    }, team);
+    const bot = handler.bots[handler.bots.length - 1];
+    if (!bot) return;
+    bot.team = team;
+    bot.botRespawnsRemaining = 0;
+    setLobby(bot, true);
+    gems.initSatchel(bot);
+}
+
+function fillLobbyBots() {
+    const t = now();
+    if (t - lastLobbyFillAt < 400) return;
+    const have = combatants().length;
+    if (have >= FILL_CAP) return;
+    lastLobbyFillAt = t;
+    spawnLobbyBot();
+}
+
 function scatter() {
     matchId++;
     matchStartAt = now();
     placements = new Map();
     killFeed = [];
+    boardMemory = new Map();
     occupy.clear();
     lockout.clear();
-    // clear leftover loot from the last match / lobby so nobody drops onto gems
     try {
         for (const e of [...entities.values()]) {
             if (e && e.isGemPickup && !e.isDead?.()) e.kill();
         }
     } catch { /* */ }
-    const list = combatants();
-    const holes = pits().slice();
+    try { require('../../terrain/royaleLayout.js').carveMatchPois(global.gameManager.terrainGrid); } catch { /* */ }
     const handler = global.gameManager.gameHandler;
+    let list = combatants();
+    const holes = pits().slice();
     const need = Math.max(0, FILL_CAP - list.length);
-    // bot fill spawns at separated holes too
     const fillHoles = pickSeparatedHoles(holes, Math.min(holes.length, list.length + need));
     for (let i = 0; i < need; i++) {
         const hole = fillHoles[(list.length + i) % fillHoles.length] || { x: 0, y: 0 };
@@ -271,13 +317,11 @@ function scatter() {
             bot.botRespawnsRemaining = 0;
             bot.botWakeAt = now();
             bot.botNextUpgradeAt = now();
-            // bots use the freeze to pick class + stats fast
             bot.leftoverUpgrades = Math.max(bot.leftoverUpgrades || 0, 4);
             gems.initSatchel(bot);
         }
     }
     const all = combatants();
-    try { require('../../terrain/royaleLayout.js').carveMatchPois(global.gameManager.terrainGrid); } catch { /* */ }
     const spots = pickSeparatedHoles(holes, all.length);
     all.forEach((body, i) => {
         const hole = spots[i % spots.length] || { x: 0, y: 0 };
@@ -293,9 +337,10 @@ function scatter() {
             body.team = getRandomTeam();
         body.health.amount = body.health.max;
         gems.initSatchel(body);
+        rememberBoard(body);
         if (body.socket) {
             body.socket.royaleEliminated = false;
-            // bots upgrade on their own; humans get max-level points to spend
+            body.socket.royalePlace = 0;
             if (body.skill) {
                 try {
                     const target = Config.level_cap_cheat || 45;
@@ -308,7 +353,6 @@ function scatter() {
                 } catch { /* */ }
             }
         } else {
-            // bot loadout: force quick upgrade path during the freeze
             body.botWakeAt = now();
             body.botNextUpgradeAt = now();
             body.leftoverUpgrades = Math.max(body.leftoverUpgrades || 0, 4);
@@ -329,12 +373,17 @@ function startLive() {
 
 function place(body) {
     if (!body || placements.has(body.id)) return;
+    rememberBoard(body);
     const remaining = combatants().filter(b => b !== body).length;
     placements.set(body.id, remaining + 1);
+    const stormKill = body.deathCause === "storm";
     const killer = body._lastDamageSource;
+    const byName = !stormKill && killer && (killer.isPlayer || killer.isBot) ? (killer.name || "Unnamed") : "";
     killFeed.push({
         name: body.name || "Unnamed",
-        by: killer && (killer.isPlayer || killer.isBot) ? (killer.name || "Unnamed") : (body.deathCause === "storm" ? "Storm" : ""),
+        by: stormKill ? "" : byName,
+        verb: stormKill ? "lost" : KILL_VERBS[(Math.random() * KILL_VERBS.length) | 0],
+        storm: stormKill ? 1 : 0,
         place: remaining + 1,
         at: now(),
     });
@@ -369,12 +418,14 @@ function resetMatch() {
     occupy.clear();
     lockout.clear();
     winner = null;
+    killFeed = [];
+    placements = new Map();
+    boardMemory = new Map();
     const handler = global.gameManager.gameHandler;
     for (const bot of (handler.bots || []).slice()) {
         if (bot && !bot.isDead()) bot.kill();
     }
     handler.bots.length = 0;
-    // clear match loot so the next lobby starts clean
     try {
         for (const e of [...entities.values()]) {
             if (e && e.isGemPickup && !e.isDead?.()) e.kill();
@@ -383,15 +434,18 @@ function resetMatch() {
     outposts.resetRoyale && outposts.resetRoyale();
     const plaza = lobbyPos();
     for (const body of humans()) {
-        moveTo(body, plaza.x + (Math.random() - 0.5) * 220, plaza.y + (Math.random() - 0.5) * 220);
+        moveTo(body, plaza.x + (Math.random() - 0.5) * 80, plaza.y + (Math.random() - 0.5) * 80);
         resetRoyaleBody(body);
         setLobby(body, true);
         body.royaleAlive = false;
-        if (body.socket) body.socket.royaleEliminated = false;
-        if (body.socket) body.socket.royalePlace = 0;
+        if (body.socket) {
+            body.socket.royaleEliminated = false;
+            body.socket.royalePlace = 0;
+        }
         body.health.amount = body.health.max;
     }
-    if (humans().length) go('lobby');
+    lastLobbyFillAt = 0;
+    if (connectedClients().length) go('lobby');
     else go('idle');
 }
 
@@ -399,7 +453,7 @@ function onHumanJoin(body) {
     if (!Config.dig_royale || !body) return;
     const plaza = lobbyPos();
     if (phase === 'idle' || phase === 'lobby') {
-        moveTo(body, plaza.x + (Math.random() - 0.5) * 220, plaza.y + (Math.random() - 0.5) * 220);
+        moveTo(body, plaza.x + (Math.random() - 0.5) * 70, plaza.y + (Math.random() - 0.5) * 70);
         setLobby(body, true);
         if (phase === 'idle') go('lobby');
     }
@@ -408,14 +462,16 @@ function onHumanJoin(body) {
 function tick() {
     if (!Config.dig_royale) return;
     const t = now();
-    const people = humans();
+    const connected = connectedClients();
 
     if (phase === 'idle') {
-        if (people.length) go('lobby');
+        if (connected.length) go('lobby');
         storm.stop();
         return;
     }
-    if (!people.length && phase !== 'over') {
+    // Only cancel a running match if every client left. Dead humans stay as
+    // spectators while bots finish the round.
+    if (!connected.length && phase !== 'over') {
         for (const bot of (global.gameManager.gameHandler.bots || []).slice()) {
             if (bot && !bot.isDead()) bot.kill();
         }
@@ -426,7 +482,8 @@ function tick() {
     }
 
     if (phase === 'lobby') {
-        for (const body of people) setLobby(body, true);
+        for (const body of combatants()) setLobby(body, true);
+        fillLobbyBots();
         if (t - phaseAt >= LOBBY_MS) {
             go('loadout');
             scatter();
@@ -440,6 +497,15 @@ function tick() {
     } else if (phase === 'live') {
         storm.tickDamage(t);
         tickOutpostRules(t);
+        for (const body of combatants()) {
+            const rMax = (global.gameManager.terrainGrid && global.gameManager.terrainGrid.circleRadius) || 2700;
+            const d = Math.hypot(body.x, body.y);
+            if (d > rMax - 24) {
+                const s = (rMax - 24) / (d || 1);
+                body.x *= s;
+                body.y *= s;
+            }
+        }
         checkWinner();
     } else if (phase === 'over') {
         if (t - phaseAt >= OVER_MS) resetMatch();

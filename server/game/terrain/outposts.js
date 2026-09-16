@@ -94,24 +94,35 @@ function spawnStructure(site, team, owner = null) {
         o.health.amount = o.health.max;
         if (o.shield) { o.shield.max = 0; o.shield.amount = 0; }
     }
+    o.on('damage', ({ damageInflictor = [] } = {}) => {
+        const attacker = damageInflictor
+            .map(source => {
+                let root = source, hops = 0;
+                while (root?.master && root.master !== root && hops++ < 8) root = root.master;
+                return root;
+            })
+            .find(root => root && (root.isPlayer || root.isBot));
+        if (attacker) site._lastHitter = attacker;
+    });
     o.on('dead', () => onStructureDeath(site));
     site.banner = o;
     site._hpTrack = o.health.max;   
     site._lastHitAt = 0;            
 }
 
-function killerOf(dead) {
+function killerOf(dead, site) {
     for (const k of (dead && dead.finalKillers) || []) {
         if (k && (k.isPlayer || k.isBot)) return k;
     }
-    return null;
+    if (site && site._lastHitter && !site._lastHitter.isDead?.()) return site._lastHitter;
+    return site && site._lastHitter || null;
 }
 
 function onStructureDeath(site) {
     const dead = site.banner;
     site.banner = null;
     if (Config.dig_royale) {
-        const killer = killerOf(dead);
+        const killer = killerOf(dead, site);
         if (killer && killer.id !== site.ownerId) {
             spawnStructure(site, killer.team, killer);
             announce(`${killer.name || "Someone"} captured the ${site.name}!`);
@@ -189,7 +200,7 @@ function tick(players, dtMs) {
             if (b.health.amount < (site._hpTrack ?? b.health.amount)) site._lastHitAt = now;
             site._hpTrack = b.health.amount;
             if (b.health.amount < b.health.max &&
-                now - (site._lastHitAt || 0) >= HEAL_GRACE_MS) {
+                now - (site._lastHitAt || 0) >= (Config.dig_royale ? 12000 : HEAL_GRACE_MS)) {
                 b.health.amount = Math.min(b.health.max,
                     b.health.amount + b.health.max * HEAL_FRAC_PS * (dtMs / 1000));
             }

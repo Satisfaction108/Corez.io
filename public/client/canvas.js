@@ -144,10 +144,12 @@ class Canvas {
     }
 
     respawn() {
-        // Royale: no respawns - dead players spectate then requeue from home.
-        if (global.royaleDied) return;
+        const phase = global.royale && global.royale.phase;
+        if (global.royaleDied && phase !== 'lobby' && phase !== 'idle') return;
         if (global.died && !global.cannotRespawn && !global.respawnPending) {
             global.respawnPending = true;
+            global.royaleDied = false;
+            global.royaleSpectating = false;
             this.socket.talk('s', global.playerName, 0, 1 * config.game.autoLevelUp, false, 1 * config.game.incognitoMode);
             // Keep the death screen until the server confirms the new body.
             // This makes a missed packet retryable instead of hiding the button.
@@ -200,7 +202,11 @@ class Canvas {
             case global.KEY_ENTER:
                 // Enter to respawn (or to spectate in Royale)
                 if (global.died) {
-                    if (global.royaleDied) { global.royaleSpectating = true; break; }
+                    if (global.royaleDied) {
+                        global.royaleSpectating = true;
+                        this.socket.talk('RS', 1);
+                        break;
+                    }
                     if (!global.cannotRespawn) { this.respawn(); break; }
                     break;
                 }
@@ -225,7 +231,7 @@ class Canvas {
             case global.KEY_LEFT_ARROW:
                 if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = -this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_LEFT:
-                if (global.royaleDied && global.died) { this.socket.talk('RS', -1); break; }
+                if (global.royaleDied && global.died) { this.socket.talk('RS', 0); break; }
                 this.socket.cmd.set(2, true);
                 break;
             case global.KEY_RIGHT_ARROW:
@@ -633,15 +639,19 @@ class Canvas {
                     global.searchBarActive = false;
                 }
                 if (respawnCheck !== -1 && !global.disconnected) {
-                    if (global.royaleDied) { global.royaleSpectating = true; gameSound.uiClick(); }
-                    else { this.respawn(); gameSound.uiClick(); }
+                    if (global.royaleDied && global.royale.phase !== 'lobby' && global.royale.phase !== 'idle') {
+                        global.royaleSpectating = true;
+                        this.socket.talk('RS', 1);
+                        gameSound.uiClick();
+                    } else { this.respawn(); gameSound.uiClick(); }
                 } else
                 if (global.clickables.royaleSpectate.check(mpos) !== -1 && !global.disconnected && global.died) {
                     global.royaleSpectating = true;
+                    this.socket.talk('RS', 1);
                     gameSound.uiClick();
                 } else
                 if (global.clickables.royalePrev.check(mpos) !== -1 && global.died) {
-                    this.socket.talk('RS', -1);
+                    this.socket.talk('RS', 0);
                     gameSound.uiClick();
                 } else
                 if (global.clickables.royaleNext.check(mpos) !== -1 && global.died) {

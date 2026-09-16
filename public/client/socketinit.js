@@ -1201,6 +1201,10 @@ let incoming = async function(message, socket) {
                     r.feed = d.feed || [];
                     r.board = d.board || [];
                     r.at = performance.now();
+                    if ((d.matchId | 0) && (d.matchId | 0) !== (r.matchId | 0)) {
+                        r.place = global.royaleDied ? r.place : 0;
+                    }
+                    r.matchId = d.matchId | 0;
                     if (d.youPlace > 0) r.place = d.youPlace | 0;
                     if (r.phase === 'over' && !wasOver) r.victoryAt = performance.now();
                     if (r.phase !== 'over') r.victoryAt = 0;
@@ -1564,9 +1568,9 @@ let incoming = async function(message, socket) {
             global.died = true;
             const deathPlace = m[13 + m[8]] | 0;
             if (deathPlace > 0) global.royale.place = deathPlace;
-            if (global.royale && global.royale.at > 0 &&
+            if (global.finalCause === "storm" || (global.royale && global.royale.at > 0 &&
                 (global.royale.place > 0 || global.royale.phase === 'live' ||
-                 global.royale.phase === 'loadout' || global.royale.phase === 'over')) {
+                 global.royale.phase === 'loadout' || global.royale.phase === 'over'))) {
                 global.royaleDied = true;
             }
             global.royaleSpectating = false;

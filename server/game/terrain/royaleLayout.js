@@ -1,12 +1,12 @@
 const { ORE, ORE_HP } = require('./terrainGrid.js');
 
 const OUTPOSTS = [
-    { name: "North Outpost",     color: "#e03e41", ang: -Math.PI / 2,       dist: 0.70 },
-    { name: "Northeast Outpost", color: "#8abc3f", ang: -Math.PI / 2 + 1.05, dist: 0.68 },
-    { name: "East Outpost",      color: "#8d6adf", ang: 0,                  dist: 0.70 },
-    { name: "South Outpost",     color: "#efc74b", ang: Math.PI / 2,        dist: 0.70 },
-    { name: "Southwest Outpost", color: "#3d7cf0", ang: Math.PI / 2 + 0.95, dist: 0.68 },
-    { name: "West Outpost",      color: "#ec7b0f", ang: Math.PI,            dist: 0.70 },
+    { name: "North Base",     color: "#e03e41", ang: -Math.PI / 2,       dist: 0.70 },
+    { name: "Northeast Base", color: "#8abc3f", ang: -Math.PI / 2 + 1.05, dist: 0.68 },
+    { name: "East Base",      color: "#8d6adf", ang: 0,                  dist: 0.70 },
+    { name: "South Base",     color: "#efc74b", ang: Math.PI / 2,        dist: 0.70 },
+    { name: "Southwest Base", color: "#3d7cf0", ang: Math.PI / 2 + 0.95, dist: 0.68 },
+    { name: "West Base",      color: "#ec7b0f", ang: Math.PI,            dist: 0.70 },
 ];
 
 const VAULTS = [
@@ -96,12 +96,24 @@ function carveMatchPois(grid) {
 }
 
 function carveDisk(grid, wx, wy, r, canyonKeys) {
-    const r2 = r * r;
+    const killR = r + 70;
+    const r2 = killR * killR;
     for (const rock of grid.rocks.values()) {
         if (!rock.alive) continue;
         const dx = (rock.worldCx || rock.wx) - wx;
         const dy = (rock.worldCy || rock.wy) - wy;
-        if (dx * dx + dy * dy <= r2) killRock(rock, canyonKeys);
+        if (dx * dx + dy * dy <= r2) {
+            killRock(rock, canyonKeys);
+            continue;
+        }
+        if (!rock.worldPoly) continue;
+        for (const p of rock.worldPoly) {
+            const px = p[0] - wx, py = p[1] - wy;
+            if (px * px + py * py <= r * r) {
+                killRock(rock, canyonKeys);
+                break;
+            }
+        }
     }
 }
 
@@ -155,6 +167,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     // or outposts until scatter (carveMatchPois).
     grid.vaultSites = VAULTS.map((v, i) => {
         const x = v.x * circleR, y = v.y * circleR;
+        if (!v.lobby) carveDisk(grid, x, y, VAULT_R, canyonKeys);
         return { id: i, name: v.name, x, y, r: 95, team: 0, rainbow: true };
     });
     carveDisk(grid, 0, 0, LOBBY_R, canyonKeys);
@@ -164,6 +177,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     for (const spec of OUTPOSTS) {
         const x = Math.cos(spec.ang) * spec.dist * circleR;
         const y = Math.sin(spec.ang) * spec.dist * circleR;
+        carveDisk(grid, x, y, OUTPOST_R, canyonKeys);
         const rock = nearestRock(grid, x, y) || { k: 0, worldCx: x, worldCy: y };
         outpostCells.push({
             key: rock.k,
