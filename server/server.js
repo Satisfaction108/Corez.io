@@ -134,10 +134,11 @@ server = http.createServer((req, res) => {
     let selectedHeader = null;
 
     // Set CORS headers if enabled in the configuration or allow only the children servers.
-    for (let server of global.servers) if (server.ip !== Config.host && server.ip) {
-        let http = server.ip.startsWith("localhost") ? `http://${server.ip}` : `https://${server.ip}`;
+    for (let server of (global.servers || [])) {
+        if (!server || !server.ip || server.ip === Config.host) continue;
+        let http = String(server.ip).startsWith("localhost") ? `http://${server.ip}` : `https://${server.ip}`;
         serversIP.push(http);
-    };
+    }
     if (Config.allow_ACAO || serversIP.includes(req.headers.origin)) {
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -294,7 +295,7 @@ server = http.createServer((req, res) => {
 
     // If an API endpoint was handled, send the JSON response
     if (ok) {
-        res.writeHead(200);
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
         res.end(readString);
     }
     } catch (e) {

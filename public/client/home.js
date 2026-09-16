@@ -66,78 +66,81 @@
         return localStorage.getItem(TUT_DONE_KEY) === '1';
     }
 
-    // Local `node index.js` is for iterating on the live game. Nest / production
-    // still force first-run Play into the tutorial so newcomers get taught.
-    function isLocalHost() {
-        var h = location.hostname;
-        return h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+    function whenClientReady(ok, fail) {
+        var n = 0;
+        (function tick() {
+            if (window.global && window.global.startGame) return ok(window.global);
+            if (++n > 200) return fail && fail();
+            setTimeout(tick, 50);
+        })();
+    }
+
+    function gameHost(sv) {
+        // Always dial the page we are on. Config.host can disagree with the
+        // public URL, and a stale host:port would try a nest port Caddy does
+        // not expose (and has crashed Chrome on some machines).
+        if (sv && sv.proxyPath) return location.host;
+        return (sv && sv.ip) || location.host;
     }
 
     function launchTutorial(btn) {
         if (btn) { btn.disabled = true; }
-        fetch('/getTutorialServer.json')
-            .then(function (r) { return r.json(); })
-            .then(function (sv) {
-                if (!sv || !sv.ip) throw new Error('tutorial server unavailable');
-                if (sv.players >= sv.maxPlayers) {
+        whenClientReady(function (g) {
+            fetch('/getTutorialServer.json', { cache: 'no-store' })
+                .then(function (r) {
+                    if (!r.ok) throw new Error('tutorial http ' + r.status);
+                    return r.json();
+                })
+                .then(function (sv) {
+                    if (!sv || !(sv.ip || sv.proxyPath)) throw new Error('tutorial server unavailable');
+                    if (sv.maxPlayers && sv.players >= sv.maxPlayers) {
+                        if (btn) { btn.disabled = false; }
+                        alert('All training grounds are in use right now - please try again in a minute.');
+                        return;
+                    }
+                    g.serverAdd = gameHost(sv);
+                    g.serverPath = sv.proxyPath || "";
+                    g.tutorialMode = true;
+                    g.tutorialPlot = null;
+                    g.launchingTutorial = true;
+                    location.hash = '#tut';
+                    g.startGame();
+                })
+                .catch(function () {
                     if (btn) { btn.disabled = false; }
-                    alert('All training grounds are in use right now - please try again in a minute.');
-                    return;
-                }
-                var g = window.global;
-                if (!g || !g.startGame) throw new Error('client not ready');
-                // The host routes only one port to the domain, and two game
-                // servers cannot share one process, so the tutorial is reached
-                // through the main port: the main server proxies /tut to the
-                // tutorial worker. sv.proxyPath is what it listens for.
-                g.serverAdd = sv.proxyPath ? sv.mainHost : sv.ip;
-                g.serverPath = sv.proxyPath || "";
-                g.tutorialMode = true;    // read by client/tutorial.js
-                g.tutorialPlot = null;    // set only by the tutorial server
-                g.launchingTutorial = true;
-                location.hash = '#tut';
-                g.startGame();
-
-                // The tutorial server listens on its own port. If that port is
-                // not reachable from outside (a proxy that only forwards the
-                // main one), the socket quietly lands on the LIVE game instead
-                // - which would put a beginner in a real match. The tutorial
-                // server proves itself by sending TUTI; if that never arrives,
-                // bail out rather than let them play on believing otherwise.
-                setTimeout(function () {
-                    if (g.tutorialPlot) return;      // genuinely on the tutorial server
-                    if (!g.gameStart) return;        // never connected at all
-                    try { g.canvas.socket.close(); } catch (e) { }
-                    location.reload();
-                    alert('Could not reach the tutorial server, so you were not '
-                        + 'put into a live game. Please try again shortly.');
-                }, 12000);
-            })
-            .catch(function () {
-                if (btn) { btn.disabled = false; }
-                alert('The tutorial server is not reachable right now. Please try again in a moment.');
-            });
+                    alert('The tutorial server is not reachable right now. Please try again in a moment.');
+                });
+        }, function () {
+            if (btn) { btn.disabled = false; }
+            alert('The game is still loading. Please wait a second and try again.');
+        });
     }
 
     function launchDigWars(btn) {
         if (btn) { btn.disabled = true; }
-        fetch('/getDigWarsServer.json')
-            .then(function (r) { return r.json(); })
-            .then(function (sv) {
-                if (!sv || !sv.ip) throw new Error('dig wars server unavailable');
-                var g = window.global;
-                if (!g || !g.startGame) throw new Error('client not ready');
-                g.serverAdd = sv.proxyPath ? sv.mainHost : sv.ip;
-                g.serverPath = sv.proxyPath || "";
-                g.tutorialMode = false;
-                g.launchingDigWars = true;
-                location.hash = '#dw';
-                g.startGame();
-            })
-            .catch(function () {
-                if (btn) { btn.disabled = false; }
-                alert('Dig Wars 2TDM is not reachable right now. Please try again in a moment.');
-            });
+        whenClientReady(function (g) {
+            fetch('/getDigWarsServer.json', { cache: 'no-store' })
+                .then(function (r) {
+                    if (!r.ok) throw new Error('dig wars http ' + r.status);
+                    return r.json();
+                })
+                .then(function (sv) {
+                    if (!sv || !(sv.ip || sv.proxyPath)) throw new Error('dig wars server unavailable');
+                    g.serverAdd = gameHost(sv);
+                    g.serverPath = sv.proxyPath || "";
+                    g.tutorialMode = false;
+                    g.launchingDigWars = true;
+                    location.hash = '#dw';
+                    g.startGame();
+                })
+                .catch(function () {
+                    if (btn) { btn.disabled = false; }
+                    alert('Dig Wars 2TDM is not reachable right now. Please try again in a moment.');
+                });
+        }, function () {
+            if (btn) { btn.disabled = false; }
+            alert('The game is still loading. Please wait a second and try again.');
+        });
     }
 
     function initTutorialEntry() {
@@ -154,21 +157,7 @@
 
         if (badge && !tutorialCompleted()) badge.hidden = false;
         btn.onclick = function () { launchTutorial(btn); };
-
-        // First-ever visit on nest/production: Play routes into the tutorial
-        // once, so a brand-new player cannot walk into a live match without
-        // ever being taught. Skip that hijack on localhost so Play hits the
-        // Dig Royale worker (with bots) and the URL's #br is actually #br.
-        var start = document.getElementById('startButton');
-        if (start && !tutorialCompleted() && !isLocalHost()) {
-            start.addEventListener('click', function firstRun(e) {
-                if (tutorialCompleted()) return;
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                start.removeEventListener('click', firstRun, true);
-                launchTutorial(btn);
-            }, true);
-        }
+        // Play always starts Dig Royale. Tutorial is its own button.
     }
 
     document.addEventListener('DOMContentLoaded', function () {
