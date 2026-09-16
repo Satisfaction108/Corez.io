@@ -44,7 +44,7 @@ function killRock(rock, canyonKeys) {
 }
 
 function stretchRocksToCircle(grid, circleR) {
-    const rim = circleR * 0.48;
+        const rim = circleR * 0.32;
     for (const rock of grid.rocks.values()) {
         if (!rock.alive || !rock.worldPoly) continue;
         const cx = rock.worldCx || rock.wx, cy = rock.worldCy || rock.wy;

@@ -299,12 +299,13 @@ class gameServer {
                     extrusionChance: cfg.extrusion_chance ?? 0.40,
                     // Royale keeps the FULL rectangle lattice on purpose. The
                     // old circle:true carved cells before buildVoronoi, which
-                    // collapsed the lattice bounds into a thin strip. The disk
-                    // is cut later in royaleLayout by killing whole Voronoi
-                    // rocks outside the circle, so edges end naturally instead
-                    // of being cropped mid-polygon. Room confinement + minimap
-                    // still treat the circle as the map (arena_shape circle).
+                    // collapsed the lattice bounds into a thin strip. 2TDM's
+                    // left/right EMPTY lanes would also leave the disk bald on
+                    // east/west, so fullLattice skips those. The disk is cut
+                    // later in royaleLayout by killing whole Voronoi rocks
+                    // outside the circle.
                     circle: false,
+                    fullLattice: !!Config.dig_royale,
                 });
                 // Tutorial: replace the lane map with isolated learner arenas.
                 // carveTerrain sets the cell grid buildContour derives its
