@@ -2521,19 +2521,27 @@ import * as tutorial from './tutorial.js';
     }
 
     // Dig Wars: the team Vault - THE bank, drawn in the game's own flat
-    // style: bold shapes, dark outlines, gem-gold heart. Pre-rendered
-    // layers keep the per-frame cost at a few drawImages; sparkles and a
-    // pulsing gold aura make it unmistakably the most valuable object in
-    // the base.
-    let vaultSprites = null;
+    // style: bold shapes, dark outlines, a team-colored gem heart. Gold is
+    // reserved for gem dust (deposit stream / progress), so a blue vault
+    // never sits in a yellow halo on a blue floor.
     let vaultDust = [];   // deposit stream + completion burst particles
-    // Team palettes for the vault heart + gold accents. The base vaults use
-    // the classic gold; outpost doors swap in the owner's color (or the
-    // neutral yellow while contested).
     const GOLD_PAL   = { main: "#efc74b", light: "#f7dd8a", high: "#fff6d8" };
-    const BLUE_PAL   = { main: "#4a7bff", light: "#8fb0ff", high: "#c8d9ff" };
-    const RED_PAL    = { main: "#e04848", light: "#f28b8b", high: "#f8c4c4" };
-    const YELLOW_PAL = { main: "#d9c24a", light: "#efe09a", high: "#fbf4d6" };
+    const BLUE_PAL   = { main: "#3d8fff", light: "#9ec5ff", high: "#e8f1ff" };
+    const RED_PAL    = { main: "#ff3b4a", light: "#ff8b93", high: "#ffe0e2" };
+    const YELLOW_PAL = { main: "#e0c04a", light: "#f3e39a", high: "#fff8de" };
+    function hexToRgb(hex) {
+        if (typeof hex !== "string" || hex[0] !== "#") return [61, 143, 255];
+        const h = hex.length === 4
+            ? hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3]
+            : hex.slice(1, 7);
+        const n = parseInt(h, 16);
+        if (!Number.isFinite(n)) return [61, 143, 255];
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    function rgba(hex, a) {
+        const [r, g, b] = hexToRgb(hex);
+        return `rgba(${r},${g},${b},${a})`;
+    }
     const vaultSpritesTeam = {};   // team-keyed door sprite sets
     function getVaultSpritesForTeam(team) {
         const key = team === -1 ? "blue" : team === -2 ? "red" : "yellow";
@@ -2566,21 +2574,25 @@ import * as tutorial from './tutorial.js';
         };
         // static base: flat armored disc, arras-style dark borders
         const plate = layer((c) => {
-            c.fillStyle = "#474e5c";
+            c.fillStyle = "#2a2e38";
             c.beginPath(); c.arc(0, 0, S * 0.47, 0, Math.PI * 2); c.fill();
-            c.lineWidth = 7; c.strokeStyle = "#16181d"; c.stroke();
+            c.lineWidth = 7; c.strokeStyle = "#0d0f14"; c.stroke();
+            c.lineWidth = 10; c.strokeStyle = pal.main;
+            c.beginPath(); c.arc(0, 0, S * 0.455, 0, Math.PI * 2); c.stroke();
+            c.lineWidth = 4; c.strokeStyle = "#0d0f14";
+            c.beginPath(); c.arc(0, 0, S * 0.47, 0, Math.PI * 2); c.stroke();
             // team-colored stud bolts on the rim
             for (let i = 0; i < 8; i++) {
                 const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
                 const bx = Math.cos(a) * S * 0.415, by = Math.sin(a) * S * 0.415;
                 c.fillStyle = pal.main;
                 c.beginPath(); c.arc(bx, by, S * 0.026, 0, Math.PI * 2); c.fill();
-                c.lineWidth = 3; c.strokeStyle = "#16181d"; c.stroke();
+                c.lineWidth = 3; c.strokeStyle = "#0d0f14"; c.stroke();
             }
             // recessed inner disc
-            c.fillStyle = "#3a404c";
+            c.fillStyle = "#1e222b";
             c.beginPath(); c.arc(0, 0, S * 0.33, 0, Math.PI * 2); c.fill();
-            c.lineWidth = 5; c.strokeStyle = "#16181d"; c.stroke();
+            c.lineWidth = 5; c.strokeStyle = "#0d0f14"; c.stroke();
         });
         // rotating lock ring: flat teeth, team-tipped
         const cog = layer((c) => {
@@ -2633,7 +2645,6 @@ import * as tutorial from './tutorial.js';
 
     function drawVaults(roomX, roomY, ratio) {
         if (!global.vaults.length) return;
-        if (!vaultSprites) vaultSprites = makeVaultSprites();
         const now = performance.now();
         const v0 = global.vault;
         const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
@@ -2647,11 +2658,12 @@ import * as tutorial from './tutorial.js';
             const depositing = v0.total > 0 && v0.onPad;
             const doneFlash = Math.max(0, 1 - (now - v0.doneAt) / 700);
             const teamCol = gameDraw.getColor(v.team === -1 ? "blue" : "red");
+            const pal = v.team === -1 ? BLUE_PAL : RED_PAL;
+            const doorSprites = getVaultSpritesForTeam(v.team);
 
             c.save();
             c.translate(sx, sy);
-            // grounding shadow + breathing gold aura: THE vault, from afar
-            c.fillStyle = "rgba(0,0,0,0.45)";
+            c.fillStyle = "rgba(0,0,0,0.5)";
             c.beginPath(); c.arc(3, 5, R, 0, Math.PI * 2); c.fill();
             // flat octagonal foundation: tanks are round, structures are
             // not - the pad keeps the vault from reading as one more tank
@@ -2662,43 +2674,50 @@ import * as tutorial from './tutorial.js';
                 i ? c.lineTo(ox, oy) : c.moveTo(ox, oy);
             }
             c.closePath();
-            c.fillStyle = "#23262d";
+            c.fillStyle = "#16181e";
             c.fill();
+            c.globalAlpha = 0.35;
+            c.fillStyle = teamCol;
+            c.fill();
+            c.globalAlpha = 1;
             c.lineWidth = Math.max(3, R * 0.07);
             c.lineJoin = "round";
-            c.strokeStyle = "#111318";
+            c.strokeStyle = teamCol;
+            c.stroke();
+            c.lineWidth = Math.max(2, R * 0.03);
+            c.strokeStyle = "#0d0f14";
             c.stroke();
             const pulse = 0.5 + 0.5 * Math.sin(now / 650);
-            const aura = c.createRadialGradient(0, 0, R * 0.8, 0, 0, R * (1.5 + 0.15 * pulse));
-            aura.addColorStop(0, `rgba(239,199,75,${0.12 + 0.10 * pulse + doneFlash * 0.4})`);
-            aura.addColorStop(1, "rgba(239,199,75,0)");
+            const aura = c.createRadialGradient(0, 0, R * 0.55, 0, 0, R * (1.28 + 0.08 * pulse));
+            aura.addColorStop(0, rgba(teamCol, 0.22 + 0.10 * pulse + doneFlash * 0.28));
+            aura.addColorStop(1, rgba(teamCol, 0));
             c.fillStyle = aura;
-            c.beginPath(); c.arc(0, 0, R * 1.7, 0, Math.PI * 2); c.fill();
+            c.beginPath(); c.arc(0, 0, R * 1.35, 0, Math.PI * 2); c.fill();
             // team claim ring
-            c.globalAlpha = 0.55 + 0.25 * pulse;
+            c.globalAlpha = 0.75 + 0.2 * pulse;
             c.lineWidth = Math.max(2.5, R * 0.06);
-            c.strokeStyle = doneFlash > 0 ? "#ffd75e" : teamCol;
+            c.strokeStyle = doneFlash > 0 ? pal.high : teamCol;
             c.beginPath(); c.arc(0, 0, R * 1.06, 0, Math.PI * 2); c.stroke();
             c.globalAlpha = 1;
 
             // door layers: plate static, cog & emblem counter-rotating
             const spin = depositing ? now / 200 : now / 6000;
-            c.drawImage(vaultSprites.plate, -R, -R, R * 2, R * 2);
+            c.drawImage(doorSprites.plate, -R, -R, R * 2, R * 2);
             c.save(); c.rotate(spin * 0.7);
-            c.drawImage(vaultSprites.cog, -R, -R, R * 2, R * 2);
+            c.drawImage(doorSprites.cog, -R, -R, R * 2, R * 2);
             c.restore();
             c.save(); c.rotate(-spin * 0.4);
-            c.drawImage(vaultSprites.wheel, -R, -R, R * 2, R * 2);
+            c.drawImage(doorSprites.wheel, -R, -R, R * 2, R * 2);
             c.restore();
 
-            // sparkle: the gold heart glints on its own clock
+            // sparkle: the team heart glints on its own clock
             const sparkT = ((now / 2600 + (v.team === -1 ? 0 : 0.5)) % 1);
             if (sparkT < 0.16) {
                 const ga = Math.sin(sparkT / 0.16 * Math.PI);
                 const gr = R * 0.10 * ga;
                 c.save();
                 c.globalAlpha = ga * 0.9;
-                c.strokeStyle = "#fff6d8";
+                c.strokeStyle = pal.high;
                 c.lineWidth = Math.max(1.5, gr * 0.3);
                 c.beginPath();
                 for (let aI = 0; aI < 4; aI++) {
@@ -2711,12 +2730,12 @@ import * as tutorial from './tutorial.js';
                 c.restore();
             }
 
-            // channel progress arc + dust stream from the tank to the door
+            // gold is gem-dust: only while cashing out
             if (depositing && v0.total > 0) {
                 const frac = 1 - v0.remaining / v0.total;
                 c.lineWidth = Math.max(3.5, R * 0.09);
                 c.lineCap = "round";
-                c.strokeStyle = "#ffd75e";
+                c.strokeStyle = GOLD_PAL.main;
                 c.beginPath();
                 c.arc(0, 0, R * 0.96, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
                 c.stroke();
@@ -2829,10 +2848,16 @@ import * as tutorial from './tutorial.js';
                 i ? c.lineTo(ox, oy) : c.moveTo(ox, oy);
             }
             c.closePath();
-            c.fillStyle = "#23262d";
+            c.fillStyle = "#16181e";
             c.fill();
+            if (st.t) {
+                c.globalAlpha = 0.28;
+                c.fillStyle = ownCol;
+                c.fill();
+                c.globalAlpha = 1;
+            }
             c.lineWidth = Math.max(3, R * 0.06);
-            c.strokeStyle = "#111318";
+            c.strokeStyle = st.t ? ownCol : "#111318";
             c.stroke();
             // recessed inner disc
             c.fillStyle = "#31363f";
@@ -2982,7 +3007,7 @@ import * as tutorial from './tutorial.js';
                     const rr = R * (0.4 + 2.8 * eo);
                     const sz = Math.max(1.5, R * 0.06 * (1 - t * 0.7));
                     c.globalAlpha = a * (0.7 + 0.3 * Math.sin(i * 1.7));
-                    c.fillStyle = i % 4 === 0 ? "#ffffff" : i % 3 ? ownCol : "#ffd75e";
+                    c.fillStyle = i % 4 === 0 ? "#ffffff" : ownCol;
                     c.beginPath();
                     c.arc(sx + Math.cos(ang) * rr, sy + Math.sin(ang) * rr, sz, 0, Math.PI * 2);
                     c.fill();
@@ -3174,11 +3199,11 @@ import * as tutorial from './tutorial.js';
             c.globalAlpha = mode === 1 ? 0.16 : (regrowing ? 0.6 : 1);
             const a0 = c.globalAlpha;
 
-            c.globalAlpha = a0 * 0.06;                 // floor tint
+            c.globalAlpha = a0 * 0.18;                 // floor tint
             c.fillStyle = teamCol;
             c.fill(art.inner);
-            c.strokeStyle = "#ffffff";                 // buttress spokes
-            c.lineWidth = wu * 0.3;
+            c.strokeStyle = teamCol;                    // buttress spokes
+            c.lineWidth = wu * 0.34;
             c.stroke(art.spokes);
 
             c.globalAlpha = a0;                        // the wall, flat
@@ -3390,13 +3415,16 @@ import * as tutorial from './tutorial.js';
                     ctx[0].globalAlpha = 0.3;
                     if (tile.color == 'none') tile.color = 'border';
                     let tileColor = gameDraw.getColor(tile.color, true);
-                    // the blue base used to melt into the teal floor and
-                    // read as clutter - deepen it toward cobalt and tint a
-                    // touch stronger so it separates as cleanly as red
+                    // Team floors are deep, saturated islands. Structures on
+                    // top then wear a brighter team jewel so blue never sits
+                    // on yellow and red never reads as rust-on-dirt.
                     let tintAlpha = 0.3;
                     if (tile.color === "blue") {
-                        try { tileColor = gameDraw.mixColors(tileColor, "#1737a8", 0.5); } catch (e) { /* keep */ }
-                        tintAlpha = 0.4;
+                        try { tileColor = gameDraw.mixColors(tileColor, "#1a46c8", 0.62); } catch (e) { /* keep */ }
+                        tintAlpha = 0.52;
+                    } else if (tile.color === "red") {
+                        try { tileColor = gameDraw.mixColors(tileColor, "#c31828", 0.55); } catch (e) { /* keep */ }
+                        tintAlpha = 0.48;
                     }
 
                     if (tileColor !== color.white) {
@@ -4729,7 +4757,7 @@ import * as tutorial from './tutorial.js';
         optionsMenu_drawRoundedRect(x, y, W, H, 12);
         c.stroke();
         drawText(v.isOutpost ? "OUTPOST BANK · 80% CREDIT" : "TEAM VAULT",
-                 x + W / 2, y + 21, 15, "#ffd75e", "center");
+                 x + W / 2, y + 21, 15, teamCol, "center");
         c.fillStyle = teamCol;
         c.fillRect(x + W / 2 - 56, y + 28, 112, 2.5);
         drawText("Banked  " + util.formatLargeNumber(g.banked | 0), x + 16, y + 46, 12, color.teal, "left");

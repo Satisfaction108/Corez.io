@@ -36,7 +36,7 @@ var color = {
         // a slightly muted cobalt — the old #379fc6 was a teal-leaning
         // cyan that melted into the cavern floor; #3a6ff0 read a touch
         // too electric, so the saturation is eased back
-        "blue": "#4472e2", // Blue Team (also the player's own color)
+        "blue": "#3d7cf0", // Blue Team (also the player's own color)
         "green": "#8abc3f", // Green Team
         "red": "#ff6c6e", // Red Team
         "magenta": "#c8679b", // Purple Team
