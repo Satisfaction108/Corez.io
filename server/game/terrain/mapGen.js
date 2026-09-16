@@ -21,6 +21,17 @@ function generate(cfg) {
 
     const lo = Math.max(2, SUBCELLS - 3);
 
+    if (cfg.circle) {
+        const cx = (cols - 1) / 2, cy = (rows - 1) / 2;
+        const rad = Math.min(cols, rows) / 2 - 1.2;
+        const rad2 = rad * rad;
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const dx = c - cx, dy = r - cy;
+                if (dx * dx + dy * dy > rad2) grid.set(c, r, CELL.EMPTY);
+            }
+        }
+    } else {
     // Straight left/right carved boundaries: the solid body is a clean
     // rectangle. The natural-looking rocky border comes from the Voronoi
     // cells that overlap the rect edge (client render + server colliders).
@@ -29,6 +40,7 @@ function generate(cfg) {
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < leftEdge; c++)         grid.set(c, r, CELL.EMPTY);
         for (let c = rightEdge + 1; c < cols; c++) grid.set(c, r, CELL.EMPTY);
+    }
     }
     // Top/bottom are NOT carved: no bases there, so rock fills full height and
     // covers all empty space. The jagged top/bottom silhouette is added on the

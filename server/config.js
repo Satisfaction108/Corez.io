@@ -36,14 +36,33 @@ module.exports = {
 
             host: publicHost || 'localhost:3100',
             port: process.env.SINGLE_PROCESS === "true" ? (parseInt(process.env.PORT) || 3000) : 3100,
+            id: 'br',
+
+            region: "Local",
+            gamemode: ['dig_royale'],
+            player_cap: 20,
+
+            featured: true,
+            unlisted: false,
+            private: false,
+
+            properties: {
+                teams: 1,
+                bot_cap: 0
+            }
+        },
+        {
+            share_client_server: false,
+            host: publicHost ? publicHost + ':3102' : 'localhost:3102',
+            port: 3102,
             id: 'dw',
 
             region: "Local",
             gamemode: ['dig_wars'],
             player_cap: 16,
 
-            featured: true,
-            unlisted: false,
+            featured: false,
+            unlisted: true,
             private: false,
 
             properties: {

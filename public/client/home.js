@@ -119,6 +119,27 @@
             });
     }
 
+    function launchDigWars(btn) {
+        if (btn) { btn.disabled = true; }
+        fetch('/getDigWarsServer.json')
+            .then(function (r) { return r.json(); })
+            .then(function (sv) {
+                if (!sv || !sv.ip) throw new Error('dig wars server unavailable');
+                var g = window.global;
+                if (!g || !g.startGame) throw new Error('client not ready');
+                g.serverAdd = sv.proxyPath ? sv.mainHost : sv.ip;
+                g.serverPath = sv.proxyPath || "";
+                g.tutorialMode = false;
+                g.launchingDigWars = true;
+                location.hash = '#dw';
+                g.startGame();
+            })
+            .catch(function () {
+                if (btn) { btn.disabled = false; }
+                alert('Dig Wars 2TDM is not reachable right now. Please try again in a moment.');
+            });
+    }
+
     function initTutorialEntry() {
         var btn = document.getElementById('tutorialButton');
         var badge = document.getElementById('tutorialBadge');
@@ -137,7 +158,7 @@
         // First-ever visit on nest/production: Play routes into the tutorial
         // once, so a brand-new player cannot walk into a live match without
         // ever being taught. Skip that hijack on localhost so Play hits the
-        // Dig Wars worker (with bots) and the URL's #dw is actually #dw.
+        // Dig Royale worker (with bots) and the URL's #br is actually #br.
         var start = document.getElementById('startButton');
         if (start && !tutorialCompleted() && !isLocalHost()) {
             start.addEventListener('click', function firstRun(e) {
@@ -153,6 +174,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         initMobileGate();
         initTutorialEntry();
+        if (location.hash === '#dw') launchDigWars();
 
         applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
 

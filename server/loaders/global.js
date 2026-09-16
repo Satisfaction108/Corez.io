@@ -210,10 +210,27 @@ global.bringToLife = (() => {
         my.control.alt = b.alt ?? false;
         my.control.power = b.power == null ? 1 : b.power;
 
+        if (my.royaleFrozen) {
+            my.control.fire = false;
+            my.control.main = false;
+            my.control.alt = false;
+            my.control.goal = { x: my.x, y: my.y };
+            my.velocity.x = 0;
+            my.velocity.y = 0;
+            my.accel.x = 0;
+            my.accel.y = 0;
+        }
+        if (my.royaleLobby) {
+            my.control.fire = false;
+            my.control.main = false;
+            my.control.alt = false;
+            my.invuln = true;
+        }
+
         // Spawn protection ends as soon as the tank commits to movement or
         // fires. Bots do not have player key flags, so the resolved control
         // state is the reliable source for both kinds of input.
-        if (my.invuln && my.type === 'tank') {
+        if (my.invuln && my.type === 'tank' && !my.royaleLobby && !my.royaleFrozen) {
             const moving = my.control.goal &&
                 (Math.abs(my.control.goal.x - my.x) > 1 || Math.abs(my.control.goal.y - my.y) > 1);
             if (moving || my.control.fire || my.control.main || my.control.alt) my.invuln = false;

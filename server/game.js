@@ -20,7 +20,8 @@ const getName = (name, gamemodeData) => {
 
         tdm: `${gamemodeData.teams}TDM`,
             open_tdm: `Open ${gamemodeData.teams}TDM`,
-        dig_wars: "Dig Wars",
+        dig_wars: "Dig Wars 2TDM",
+        dig_royale: "Dig Royale",
 
         train_wars: "Train Wars",
 
@@ -285,15 +286,18 @@ class gameServer {
 
             this.setRoom();
 
-            if (Config.dig_wars) {
+            if (Config.dig_wars || Config.dig_royale) {
                 const { generate } = require('./game/terrain/mapGen.js');
-                const cfg = Config.dig_wars_terrain || {};
+                const cfg = Config.dig_royale
+                    ? (Config.dig_royale_terrain || {})
+                    : (Config.dig_wars_terrain || {});
                 this.terrainGrid = generate({
                     cols: Config.roomWidth,
                     rows: Config.roomHeight,
                     tileWidth: Config.map_tile_width,
                     seed: cfg.seed ?? 7,
                     extrusionChance: cfg.extrusion_chance ?? 0.40,
+                    circle: !!Config.dig_royale,
                 });
                 // Tutorial: replace the lane map with isolated learner arenas.
                 // carveTerrain sets the cell grid buildContour derives its

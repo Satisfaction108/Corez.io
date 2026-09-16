@@ -899,7 +899,7 @@ class gameHandler {
             }
         }
         
-        if (!global.gameManager.arenaClosed && !global.cannotRespawn &&
+        if (!global.gameManager.arenaClosed && !global.cannotRespawn && !Config.dig_royale &&
             this.bots.length + this.pendingBotRespawns < Config.bot_cap && Date.now() >= this.nextBotSpawnAt) {
             this.nextBotSpawnAt = Date.now() + 900 + Math.random() * 700;
             let team = this.botSpawnTeam(),
@@ -1086,8 +1086,9 @@ class gameHandler {
         }
         this.configureBotStats(o);
         o.botStatsFixed = true;
+        if (Config.dig_royale) o.botRespawnsRemaining = 0;
         if (team) o.team = team;
-        if (Config.dig_wars) gems.initSatchel(o);
+        if (Config.dig_wars || Config.dig_royale) gems.initSatchel(o);
         // Remember the last enemy that actually damaged this tank. The goal
         // controller uses this for a short, common-sense "fight back or run"
         // reaction instead of continuing to mine through incoming fire.
@@ -1172,7 +1173,12 @@ class gameHandler {
             // A bot is a little persistent character, not a disposable tank.
             // Keep its name through a small run of deaths, then let the slot
             // receive a genuinely new bot with a new name.
-            const respawnsRemaining = o.botRespawnsRemaining || 0;
+            const respawnsRemaining = Config.dig_royale ? 0 : (o.botRespawnsRemaining || 0);
+            if (Config.dig_royale) {
+                try { require('./gamemodes/scripts/dig_royale.js').onCombatantDead(o); } catch (e) { /* */ }
+                ran.releaseBotName(o.botNameKey);
+                return;
+            }
             if (respawnsRemaining > 0 && !global.gameManager.arenaClosed && !global.cannotRespawn) {
                 this.pendingBotRespawns++;
                 setTimeout(() => {
@@ -1769,9 +1775,13 @@ class gameHandler {
             
             outposts.tick(global.gameManager.socketManager.players,
                           Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);
-            
-            coreChambers.tick(Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);
+            if (!Config.dig_royale) {
+                coreChambers.tick(Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);
+            }
             this._lastVaultTick = vNow;
+            if (Config.dig_royale) {
+                try { require('./gamemodes/scripts/dig_royale.js').tick(); } catch (e) { /* */ }
+            }
 
             
             

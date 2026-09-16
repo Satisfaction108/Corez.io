@@ -1721,6 +1721,17 @@ class io_digWarsGoals extends IO {
     }
 
     ownVault() {
+        if (Config.dig_royale) {
+            const mine = digWarsOutposts.getOutposts().find(site => site.ownerId === this.body.id);
+            if (mine) return mine;
+            const vaults = digWarsVault.getVaults();
+            let best = null, bestD = Infinity;
+            for (const vault of vaults) {
+                const d = this.distanceTo(vault);
+                if (d < bestD) { bestD = d; best = vault; }
+            }
+            return best;
+        }
         return digWarsVault.getVaults().find(vault => vault.team === this.body.team) || null;
     }
 
@@ -1975,15 +1986,25 @@ class io_digWarsGoals extends IO {
         }
         const outpostStates = new Map(digWarsOutposts.stateSnapshot().map(state => [state.id, state]));
         for (const site of digWarsOutposts.getOutposts()) {
-            if (site.team === body.team || !site.banner || site.banner.isDead()) continue;
+            const owned = Config.dig_royale ? site.ownerId === body.id : site.team === body.team;
+            if (owned || !site.banner || site.banner.isDead()) continue;
             if ((this.objectiveBlacklist.get(site) || 0) > nowMs) continue;
             const state = outpostStates.get(site.id);
+            let score = this.distanceTo(site) + (state ? state.h : 1) * 260 - (site.team === 0 || !site.ownerId ? 300 : 0);
+            if (Config.dig_royale) {
+                const storm = require('../game/terrain/storm.js');
+                if (storm.inStorm(site.x, site.y)) continue;
+                const r = storm.radius();
+                const d = Math.hypot(site.x, site.y);
+                if (r > 80 && d > r - 450) score -= 220;
+            }
             options.push({
                 kind: 'outpost', point: site,
-                score: this.distanceTo(site) + (state ? state.h : 1) * 260 - (site.team === 0 ? 300 : 0),
+                score,
             });
         }
         const chamberStates = new Map(digWarsChambers.stateSnapshot().map(state => [state.id, state]));
+        if (!Config.dig_royale) {
         for (const chamber of digWarsChambers.getChambers()) {
             const state = chamberStates.get(chamber.id);
             if (!state || state.st !== 0) continue;
@@ -1997,6 +2018,7 @@ class io_digWarsGoals extends IO {
                 kind: 'chamber', point: chamber,
                 score: this.distanceTo(chamber) * 0.7 + state.h * 380,
             });
+        }
         }
         const push = body._botPushTarget && (body._botPushTargetUntil || 0) > Date.now()
             ? body._botPushTarget : null;
@@ -2217,11 +2239,20 @@ class io_digWarsGoals extends IO {
         const trap = this.trappedInChamber();
         if (trap) return { kind: 'objective', point: trap, structure: 'chamber', trapped: true };
 
+        if (Config.dig_royale) {
+            const royale = require('../game/gamemodes/scripts/dig_royale.js');
+            const flee = royale.stormFleePoint && royale.stormFleePoint(body);
+            if (flee) return { kind: 'survive', point: flee };
+        }
+
         // Below a quarter tank, disengage no matter what the temperament
         // says - pressing a fight from there is just delivering the kill.
         if (health < 0.25 || (threatened && (health < this.retreatAt() || (outnumbered && health < 0.6) ||
             (this.feared(view.enemy, now) && health < 0.75))))
             return { kind: 'survive', point: this.retreatPoint() };
+        if (Config.dig_royale && view.enemy && view.enemyDistance < 1200 &&
+            this.canInitiateFight(view.enemy, now))
+            return { kind: 'fight', target: view.enemy };
         // Bank on threshold, and also just periodically: a bot wandering
         // around with an hour of unbanked loot never showed anyone what the
         // vault is for.
@@ -2773,6 +2804,9 @@ class io_digWarsGoals extends IO {
     think(input) {
         const body = this.body, now = Date.now();
         if (!body.isBot || body.type !== 'tank') return {};
+        if (body.royaleFrozen || body.royaleLobby) {
+            return { goal: { x: body.x, y: body.y }, fire: false, main: false, alt: false };
+        }
         // A replying bot stops for a beat so chat reads as a real
         // interruption instead of text appearing while it keeps farming.
         if (body._chatPending || (body._chatPauseUntil || 0) > now) {

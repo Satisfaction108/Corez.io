@@ -16,17 +16,19 @@ const NEUTRAL_YELLOW = "#caca4e";
 let outposts = null;
 
 function getOutposts() {
-    if (outposts) return outposts;
+    if (outposts && outposts.length) return outposts;
     const tg = global.gameManager && global.gameManager.terrainGrid;
-    if (!tg || !tg.outpostSites || !tg.outpostSites.length) return [];
+    if (!tg || !tg.outpostSites || !tg.outpostSites.length) return outposts || [];
     outposts = tg.outpostSites.map(s => ({
         id: s.id,
         name: s.name,
         x: s.x,
         y: s.y,
         r: PAD_RADIUS,
-        team: 0,           
-        banner: null,      
+        team: 0,
+        ownerId: 0,
+        color: s.color || null,
+        banner: null,
     }));
     return outposts;
 }
@@ -38,10 +40,13 @@ function snapshot() {
 function stateSnapshot() {
     return getOutposts().map(o => ({
         id: o.id,
-        t: o.team,
+        t: Config.dig_royale ? (o.ownerId || 0) : o.team,
         h: o.banner && !o.banner.isDead()
             ? Math.max(0, Math.min(1, o.banner.health.amount / o.banner.health.max))
             : 0,
+        c: o.color || "",
+        o: o.ownerId || 0,
+        l: o.occupyLeft || 0,
     }));
 }
 
@@ -59,12 +64,18 @@ function announce(msg) {
 
 const teamName = (team) => team === TEAM_BLUE ? "Blue" : team === TEAM_RED ? "Red" : "Someone";
 
-function spawnStructure(site, team) {
+function spawnStructure(site, team, owner = null) {
     site.team = team;
+    site.ownerId = owner && owner.id ? owner.id : 0;
     const o = new Entity({ x: site.x, y: site.y });
     o.define('outpostBanner');
     o.team = team === 0 ? TEAM_ENEMIES : team;
-    o.color.base = team === 0 ? NEUTRAL_YELLOW : getTeamColor(team);
+    if (Config.dig_royale) {
+        o.color.base = site.ownerId && site.color ? site.color : "#6a6f7a";
+        o.team = site.ownerId ? (owner.team || TEAM_ENEMIES) : TEAM_ENEMIES;
+    } else {
+        o.color.base = team === 0 ? NEUTRAL_YELLOW : getTeamColor(team);
+    }
     
     
     o.name = "";
@@ -89,9 +100,27 @@ function spawnStructure(site, team) {
     site._lastHitAt = 0;            
 }
 
+function killerOf(dead) {
+    for (const k of (dead && dead.finalKillers) || []) {
+        if (k && (k.isPlayer || k.isBot)) return k;
+    }
+    return null;
+}
+
 function onStructureDeath(site) {
     const dead = site.banner;
     site.banner = null;
+    if (Config.dig_royale) {
+        const killer = killerOf(dead);
+        if (killer && killer.id !== site.ownerId) {
+            spawnStructure(site, killer.team, killer);
+            announce(`${killer.name || "Someone"} captured the ${site.name}!`);
+        } else {
+            spawnStructure(site, 0, null);
+            if (site.ownerId) announce(`The ${site.name} has fallen!`);
+        }
+        return;
+    }
     if (site.team === 0) {
         
         let team = 0;
@@ -169,7 +198,9 @@ function tick(players, dtMs) {
         }
 
         
-        const onOwnPad = !!(pad && pad.team === body.team && pad.banner && !pad.banner.isDead());
+        const onOwnPad = Config.dig_royale
+            ? !!(pad && pad.ownerId === body.id && pad.banner && !pad.banner.isDead())
+            : !!(pad && pad.team === body.team && pad.banner && !pad.banner.isDead());
         const was = !!body.outpostOnPad;
         body.outpostOnPad = onOwnPad;
         if (was !== onOwnPad && body.socket) {
@@ -278,4 +309,14 @@ function requestCancel(socket) {
 module.exports = {
     tick, snapshot, stateSnapshot, ownedBy, getOutposts,
     requestDeposit, requestCancel, EFFICIENCY,
+    resetRoyale() {
+        for (const site of getOutposts()) {
+            site.ownerId = 0;
+            site.team = 0;
+            if (site.banner && !site.banner.isDead()) {
+                site.banner.team = TEAM_ENEMIES;
+                if (site.banner.health) site.banner.health.amount = site.banner.health.max;
+            } else spawnStructure(site, 0, null);
+        }
+    },
 };

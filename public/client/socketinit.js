@@ -1187,6 +1187,31 @@ let incoming = async function(message, socket) {
                 w.at = performance.now();
                 if (w.over && !wasOver) w.victoryAt = performance.now();
             } break;
+            case 'RY': {
+                try {
+                    const d = JSON.parse(m[0]);
+                    const r = global.royale;
+                    const wasOver = r.phase === 'over';
+                    r.phase = d.phase || 'idle';
+                    r.left = d.left | 0;
+                    r.alive = d.alive | 0;
+                    r.toast = d.toast || '';
+                    r.winner = d.winner || null;
+                    r.storm = d.storm || r.storm;
+                    r.feed = d.feed || [];
+                    r.at = performance.now();
+                    if (r.phase === 'over' && !wasOver) r.victoryAt = performance.now();
+                    if (r.phase !== 'over') r.victoryAt = 0;
+                    if (r.phase === 'lobby' || r.phase === 'idle') r.place = 0;
+                } catch (e) { /* ignore */ }
+            } break;
+            case 'RYP': {
+                global.royale.place = m[0] | 0;
+            } break;
+            case 'RYO': {
+                global.royale.occupy = m[1] | 0;
+                global.royale.lockout = m[2] | 0;
+            } break;
             case 'DMG': {
                 // Combat text: targetId, amount (0-100 of max hp), tier
                 // (0/1/2), taken (0 = we dealt it, 1 = we took it).

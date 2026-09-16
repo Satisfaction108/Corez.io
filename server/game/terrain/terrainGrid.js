@@ -549,7 +549,7 @@ class TerrainGrid {
         const canyonKeys = new Set();
         const outpostCells = [];   
         const chamberCells = [];   
-        {
+        if (!Config.dig_royale) {
             const spanV = Math.max(1, vjHi - vjLo);
             const spanH = Math.max(1, viHi - viLo);
             const viMid = Math.round((viLo + viHi) / 2);
@@ -833,15 +833,21 @@ class TerrainGrid {
 
         
         
+        if (Config.dig_royale) {
+            require('./royaleLayout.js').apply(this, { canyonKeys, outpostCells, chamberCells });
+            this._canyonKeys = canyonKeys;
+        }
+
         this.outpostSites = [];
         for (let i = 0; i < outpostCells.length; i++) {
-            const rock = this.rocks.get(outpostCells[i].key);
-            if (!rock || !rock.worldPoly) continue;
+            const cell = outpostCells[i];
+            const rock = this.rocks.get(cell.key);
             this.outpostSites.push({
                 id: this.outpostSites.length,
-                name: outpostCells[i].name,
-                x: rock.worldCx,
-                y: rock.worldCy,
+                name: cell.name,
+                x: cell.x ?? rock?.worldCx ?? 0,
+                y: cell.y ?? rock?.worldCy ?? 0,
+                color: cell.color || null,
             });
         }
 

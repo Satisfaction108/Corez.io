@@ -11,6 +11,15 @@ const PROGRESS_MS  = 50;
 let vaults = null;
 
 function getVaults() {
+    if (Config.dig_royale) {
+        if (vaults && vaults.length) return vaults;
+        const tg = global.gameManager && global.gameManager.terrainGrid;
+        if (!tg || !tg.vaultSites || !tg.vaultSites.length) return [];
+        vaults = tg.vaultSites.map(s => ({
+            x: s.x, y: s.y, r: s.r || PAD_RADIUS, team: 0, rainbow: true,
+        }));
+        return vaults;
+    }
     if (vaults) return vaults;
     // Tutorial: one pad per learner plot instead of the two team vaults.
     if (Config.tutorial) {
@@ -29,7 +38,7 @@ function getVaults() {
 
 // Compact list for the TG snapshot so every client can draw the doors.
 function snapshot() {
-    return getVaults().map(v => ({ x: v.x, y: v.y, r: v.r, team: v.team }));
+    return getVaults().map(v => ({ x: v.x, y: v.y, r: v.r, team: v.team, rainbow: !!v.rainbow }));
 }
 
 function talkProgress(body) {
@@ -99,7 +108,7 @@ function tick(actors, dtMs) {
 
         let pad = null;
         for (const v of list) {
-            if (v.team !== body.team) continue;
+            if (!Config.dig_royale && v.team !== body.team) continue;
             const dx = body.x - v.x, dy = body.y - v.y;
             if (dx * dx + dy * dy < v.r * v.r) { pad = v; break; }
         }

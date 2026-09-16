@@ -354,6 +354,19 @@ const global = {
     
     chambers: [],
     chamberState: [],
+    royale: {
+        phase: 'idle',
+        left: 0,
+        alive: 0,
+        toast: '',
+        winner: null,
+        storm: { a: 0, r: 0, max: 1, cx: 0, cy: 0 },
+        feed: [],
+        occupy: 0,
+        lockout: 0,
+        place: 0,
+        at: -1e9,
+    },
     bandwidth: {
         currentHa: 0,
         currentFa: 0,

@@ -1169,12 +1169,13 @@ import * as tutorial from './tutorial.js';
         global.gameLoading = true;
         // Play must not inherit a leftover /tut path or tutorial overlay from
         // a previous click. Only launchTutorial() sets launchingTutorial.
-        if (!global.launchingTutorial) {
+        if (!global.launchingTutorial && !global.launchingDigWars) {
             global.tutorialMode = false;
             global.tutorialPlot = null;
             global.serverPath = "";
         }
         global.launchingTutorial = false;
+        global.launchingDigWars = false;
         if (global.mobile) {
             var d = document.body;
             d.requestFullscreen ? d.requestFullscreen()
@@ -2543,6 +2544,25 @@ import * as tutorial from './tutorial.js';
         return `rgba(${r},${g},${b},${a})`;
     }
     const vaultSpritesTeam = {};   // team-keyed door sprite sets
+    function palFromHex(hex) {
+        return { main: hex, light: hex, high: "#ffffff" };
+    }
+    function hsvRgb(h) {
+        const s = 0.85, v = 1;
+        const f = (n) => {
+            const k = (n + h / 60) % 6;
+            return v - v * s * Math.max(Math.min(k, 4 - k, 1), 0);
+        };
+        return [Math.round(f(5) * 255), Math.round(f(3) * 255), Math.round(f(1) * 255)];
+    }
+    const GREY_PAL = { main: "#8a90a0", light: "#c5cad6", high: "#f2f4f8" };
+    function getVaultSpritesForColor(hex) {
+        const key = hex || "grey";
+        if (!vaultSpritesTeam[key]) {
+            vaultSpritesTeam[key] = makeVaultSprites(hex ? palFromHex(hex) : GREY_PAL);
+        }
+        return vaultSpritesTeam[key];
+    }
     function getVaultSpritesForTeam(team) {
         const key = team === -1 ? "blue" : team === -2 ? "red" : "yellow";
         if (!vaultSpritesTeam[key]) {
@@ -2550,6 +2570,13 @@ import * as tutorial from './tutorial.js';
             vaultSpritesTeam[key] = makeVaultSprites(pal);
         }
         return vaultSpritesTeam[key];
+    }
+    function hsvCss(h) {
+        const [r, g, b] = hsvRgb(h);
+        return `rgb(${r},${g},${b})`;
+    }
+    function royaleActive() {
+        return global.royale && performance.now() - global.royale.at < 8000;
     }
     function makeVaultSprites(pal = GOLD_PAL) {
         const S = 256, C = S / 2;
@@ -2657,9 +2684,13 @@ import * as tutorial from './tutorial.js';
                 sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
             const depositing = v0.total > 0 && v0.onPad;
             const doneFlash = Math.max(0, 1 - (now - v0.doneAt) / 700);
-            const teamCol = gameDraw.getColor(v.team === -1 ? "blue" : "red");
-            const pal = v.team === -1 ? BLUE_PAL : RED_PAL;
-            const doorSprites = getVaultSpritesForTeam(v.team);
+            const rainbow = !!v.rainbow;
+            const teamCol = rainbow ? hsvCss((now / 12) % 360)
+                : gameDraw.getColor(v.team === -1 ? "blue" : "red");
+            const pal = rainbow ? { main: teamCol, light: "#ffffff", high: "#ffffff" }
+                : (v.team === -1 ? BLUE_PAL : RED_PAL);
+            const doorSprites = rainbow ? getVaultSpritesForColor("#c5cad6")
+                : getVaultSpritesForTeam(v.team);
 
             c.save();
             c.translate(sx, sy);
@@ -2830,13 +2861,16 @@ import * as tutorial from './tutorial.js';
             const R = o.r * ratio;
             if (sx < -R * 2 || sx > global.screenWidth + R * 2 ||
                 sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
-            const ownCol = st.t === -1 ? gameDraw.getColor("blue")
+            const ownCol = (st.o && st.c) ? st.c
+                        : st.t === -1 ? gameDraw.getColor("blue")
                         : st.t === -2 ? gameDraw.getColor("red")
-                        : "#6a6f7a";
-            // the capturable structure's body color: team blue/red, neutral yellow
-            const bodyCol = st.t === -1 ? gameDraw.getColor("blue")
+                        : "#8a90a0";
+            // the capturable structure's body color: team blue/red, or the
+            // site's sketch color once owned in Royale. Neutral is grey.
+            const bodyCol = (st.o && st.c) ? st.c
+                         : st.t === -1 ? gameDraw.getColor("blue")
                          : st.t === -2 ? gameDraw.getColor("red")
-                         : gameDraw.getColor("yellow");
+                         : (royaleActive() ? "#8a90a0" : gameDraw.getColor("yellow"));
             c.save();
             c.translate(sx, sy);
             c.lineJoin = "round";
@@ -2850,14 +2884,19 @@ import * as tutorial from './tutorial.js';
             c.closePath();
             c.fillStyle = "#16181e";
             c.fill();
-            if (st.t) {
+            if (st.t || st.o) {
                 c.globalAlpha = 0.28;
                 c.fillStyle = ownCol;
                 c.fill();
                 c.globalAlpha = 1;
+            } else if (royaleActive()) {
+                c.globalAlpha = 0.16 + 0.08 * Math.sin(now / 700 + o.id);
+                c.fillStyle = "#8a90a0";
+                c.fill();
+                c.globalAlpha = 1;
             }
             c.lineWidth = Math.max(3, R * 0.06);
-            c.strokeStyle = st.t ? ownCol : "#111318";
+            c.strokeStyle = (st.t || st.o) ? ownCol : (royaleActive() ? "#8a90a0" : "#111318");
             c.stroke();
             // recessed inner disc
             c.fillStyle = "#31363f";
@@ -3049,21 +3088,24 @@ import * as tutorial from './tutorial.js';
                                            // clearly ON TOP of the structure
             if (sx < -R * 3 || sx > global.screenWidth + R * 3 ||
                 sy < -R * 3 || sy > global.screenHeight + R * 3) continue;
-            const ownCol = st.t === -1 ? gameDraw.getColor("blue")
+            const ownCol = (st.o && st.c) ? st.c
+                        : st.t === -1 ? gameDraw.getColor("blue")
                         : st.t === -2 ? gameDraw.getColor("red")
-                        : gameDraw.getColor("yellow");
+                        : (royaleActive() ? "#8a90a0" : gameDraw.getColor("yellow"));
             c.save();
             c.translate(sx, sy);
             // ownership claim ring, exactly like the base vaults wear
             const pulse = 0.5 + 0.5 * Math.sin(now / 650 + o.id);
-            c.globalAlpha = st.t ? 0.55 + 0.25 * pulse : 0.35;
+            c.globalAlpha = (st.t || st.o) ? 0.55 + 0.25 * pulse : 0.35;
             c.lineWidth = Math.max(2.5, R * 0.06);
             c.strokeStyle = ownCol;
             c.beginPath(); c.arc(0, 0, R * 1.06, 0, Math.PI * 2); c.stroke();
             c.globalAlpha = 1;
             // the same three door layers the base vaults use, recolored for
-            // the owner (blue / red) or the neutral yellow while contested
-            const doorSprites = getVaultSpritesForTeam(st.t);
+            // the owner (blue / red) or the site color / grey in Royale
+            const doorSprites = (st.o && st.c)
+                ? getVaultSpritesForColor(st.c)
+                : (royaleActive() && !st.o ? getVaultSpritesForColor(null) : getVaultSpritesForTeam(st.t));
             const spin = now / 2200;
             c.drawImage(doorSprites.plate, -R, -R, R * 2, R * 2);
             c.save(); c.rotate(spin * 0.7);
@@ -3312,9 +3354,15 @@ import * as tutorial from './tutorial.js';
             const R = o.r * ratio;
             if (sx < -R * 2 || sx > global.screenWidth + R * 2 ||
                 sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
+            const st = global.outpostState.find(s => s.id === o.id) || {};
             drawText(o.name, sx, sy - o.r * ratio * 1.55 - 4.5,
                      Math.min(32, o.r * ratio * 0.42),
                      color.guiwhite, "center", false, 1, true, c);
+            if (royaleActive() && st.l > 0) {
+                drawText(st.l + "s", sx, sy + o.r * ratio * 1.05,
+                         Math.min(22, o.r * ratio * 0.28),
+                         st.c || color.guiwhite, "center", false, 1, true, c);
+            }
         }
         // core chambers wear their name above the boulder too - and only once
         // the ring is fully regrown (st.st === 0): no name while the pocket is
@@ -3335,6 +3383,77 @@ import * as tutorial from './tutorial.js';
                      ch.team === -1 ? gameDraw.getColor("blue") : gameDraw.getColor("red"),
                      "center", false, 1, true, c);
         }
+    }
+
+    function stormSnap() {
+        const s = global.royale && global.royale.storm;
+        if (!s || !s.a) return null;
+        if (s.n == null) return s;
+        const t = Math.min(1, Math.max(0, (performance.now() - global.royale.at) / 250));
+        return Object.assign({}, s, { r: (s.r || 0) + ((s.n || s.r) - s.r) * t });
+    }
+    function playerInStorm() {
+        const s = stormSnap();
+        if (!s) return false;
+        const px = global.player.renderx, py = global.player.rendery;
+        const dx = px - (s.cx || 0), dy = py - (s.cy || 0);
+        return dx * dx + dy * dy > (s.r || 0) * (s.r || 0);
+    }
+    function strokeStormCircle(c, mapX, mapY, scale) {
+        const s = stormSnap();
+        if (!s) return;
+        const cx = mapX(s.cx || 0), cy = mapY(s.cy || 0);
+        const rr = Math.max(2, (s.r || 0) * scale);
+        c.save();
+        c.strokeStyle = "#7b5cff";
+        c.lineWidth = 2.5;
+        c.beginPath();
+        c.arc(cx, cy, rr, 0, Math.PI * 2);
+        c.stroke();
+        c.strokeStyle = "rgba(201, 182, 255, 0.9)";
+        c.lineWidth = 1.2;
+        c.beginPath();
+        c.arc(cx, cy, rr, 0, Math.PI * 2);
+        c.stroke();
+        c.restore();
+    }
+    function drawStorm(roomX, roomY, ratio) {
+        const s = stormSnap();
+        if (!s) return;
+        const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
+        const cx = roomX + ((s.cx || 0) + halfW) * ratio;
+        const cy = roomY + ((s.cy || 0) + halfH) * ratio;
+        const rr = Math.max(0, (s.r || 0) * ratio);
+        const c = ctx[0];
+        c.save();
+        c.beginPath();
+        c.rect(0, 0, global.screenWidth, global.screenHeight);
+        c.arc(cx, cy, rr, 0, Math.PI * 2, true);
+        c.clip("evenodd");
+        c.fillStyle = "rgba(48, 22, 92, 0.28)";
+        c.fillRect(0, 0, global.screenWidth, global.screenHeight);
+        c.strokeStyle = "rgba(123, 92, 255, 0.18)";
+        c.lineWidth = 10;
+        const step = 42;
+        c.beginPath();
+        for (let x = -global.screenHeight; x < global.screenWidth + global.screenHeight; x += step) {
+            c.moveTo(x, 0);
+            c.lineTo(x + global.screenHeight, global.screenHeight);
+        }
+        c.stroke();
+        c.restore();
+        c.save();
+        c.lineWidth = Math.max(5, 8 * ratio);
+        c.strokeStyle = "#5a2ee8";
+        c.beginPath();
+        c.arc(cx, cy, rr, 0, Math.PI * 2);
+        c.stroke();
+        c.lineWidth = Math.max(2.5, 4 * ratio);
+        c.strokeStyle = "#c9b6ff";
+        c.beginPath();
+        c.arc(cx, cy, rr, 0, Math.PI * 2);
+        c.stroke();
+        c.restore();
     }
 
     function drawFloor(px, py, ratio, tick) {
@@ -3472,6 +3591,7 @@ import * as tutorial from './tutorial.js';
             window.terrainRenderer.draw(ctx[0], px, py, ratio, gameWidth, gameHeight, global.screenWidth, global.screenHeight);
         }
         ctx[0].globalAlpha = 1;
+        drawStorm(roomX, roomY, ratio);
         // Dig Wars: team vault doors, set into the base floors
         drawVaults(roomX, roomY, ratio);
         // Dig Wars: forward outpost pads, carved into the wall
@@ -3763,6 +3883,20 @@ import * as tutorial from './tutorial.js';
                 continue;
             }
             drawEntity(baseColor, x, y, instance, ratio, instance.alpha * alpha, 1, 1, instance.render.f, false, false, false, instance.render, isize);
+            if (global.royale && global.outpostState) {
+                const owned = global.outpostState.find(s => s.o === instance.id && s.c);
+                if (owned) {
+                    const c = ctx[1];
+                    c.save();
+                    c.globalAlpha = (instance.alpha * alpha) * (0.7 + 0.3 * Math.sin(performance.now() / 400));
+                    c.strokeStyle = owned.c;
+                    c.lineWidth = Math.max(3, isize * ratio * 0.14);
+                    c.beginPath();
+                    c.arc(x, y, isize * ratio * 1.38, 0, Math.PI * 2);
+                    c.stroke();
+                    c.restore();
+                }
+            }
         }
         for (let instance of global.entities) {
             // Dig Wars: same banner skip as the shape pass - the generic entity
@@ -4931,6 +5065,7 @@ import * as tutorial from './tutorial.js';
     
     let warBarFrac = 0.5;
     function drawTeamBankBar() {
+        if (royaleActive()) return;
         const w = global.war;
         if (!config.game.warBar || !w) return;
         const now = performance.now();
@@ -4956,8 +5091,80 @@ import * as tutorial from './tutorial.js';
         drawText(util.formatLargeNumber(red), x + bw + 10, cy + 5, 13, color.red, "left");
     }
 
+    function drawRoyaleHUD() {
+        if (!royaleActive()) return;
+        const r = global.royale;
+        const c = ctx[2];
+        const cx = global.screenWidth / 2;
+        if (r.phase === "lobby" || r.phase === "loadout") {
+            const title = r.phase === "lobby" ? "BATTLE BEGINS IN" : "UPGRADE YOUR BUILD";
+            const sub = r.phase === "lobby" ? (r.left | 0) + "s" : (r.left | 0) + "s — upgrades only";
+            drawText(title, cx, 52, 18, color.guiwhite, "center");
+            drawText(sub, cx, 92, r.phase === "lobby" ? 44 : 28, color.gold, "center");
+            if (r.toast) drawText(r.toast, cx, 128, 16, color.guiwhite, "center");
+        } else if (r.phase === "live") {
+            drawText("ALIVE  " + (r.alive | 0), cx, 38, 22, color.guiwhite, "center");
+            if (r.place > 0) drawText("#" + r.place, cx, 66, 16, color.gold, "center");
+        } else if (r.phase === "idle") {
+            drawText("WAITING FOR PLAYERS", cx, 48, 18, color.guiwhite, "center");
+        }
+        if (r.occupy > 0) {
+            drawText("Pad eject in " + r.occupy + "s", cx, global.screenHeight - 56, 16, color.gold, "center");
+        } else if (r.lockout > 0) {
+            drawText("Re-enter in " + r.lockout + "s", cx, global.screenHeight - 56, 16, "#c9b6ff", "center");
+        }
+        const feed = r.feed || [];
+        for (let i = 0; i < feed.length; i++) {
+            const f = feed[feed.length - 1 - i];
+            if (!f) continue;
+            const line = f.by ? (f.by + "  »  " + f.name) : (f.name + "  »  Storm");
+            drawText(line, 18, 42 + i * 18, 13, color.guiwhite, "left");
+        }
+        if (playerInStorm() && r.phase === "live") {
+            c.save();
+            const g = c.createLinearGradient(0, 0, 0, 70);
+            g.addColorStop(0, "rgba(90, 46, 232, 0.35)");
+            g.addColorStop(1, "rgba(90, 46, 232, 0)");
+            c.fillStyle = g;
+            c.fillRect(0, 0, global.screenWidth, 90);
+            const g2 = c.createLinearGradient(0, global.screenHeight, 0, global.screenHeight - 80);
+            g2.addColorStop(0, "rgba(90, 46, 232, 0.32)");
+            g2.addColorStop(1, "rgba(90, 46, 232, 0)");
+            c.fillStyle = g2;
+            c.fillRect(0, global.screenHeight - 80, global.screenWidth, 80);
+            c.restore();
+        }
+    }
+
     // Full-screen victory/defeat banner while the war round is being decided.
     function drawWarBanner() {
+        const r = global.royale;
+        if (royaleActive() && r.phase === "over") {
+            const now = performance.now();
+            const since = Math.max(0, now - (r.victoryAt || r.at || now));
+            const fade = Math.min(1, since / 450);
+            const name = (r.winner && r.winner.name) || "Someone";
+            const col = color.gold;
+            const c = ctx[2];
+            const cx = global.screenWidth / 2, cy = global.screenHeight * 0.30;
+            c.save();
+            c.globalAlpha = fade;
+            c.fillStyle = "rgba(90, 46, 232, 0.18)";
+            c.fillRect(0, 0, global.screenWidth, global.screenHeight);
+            const bw = Math.min(580, global.screenWidth - 60);
+            const bx = cx - bw / 2;
+            roundRectPath(c, bx, cy - 46, bw, 92, 14);
+            c.fillStyle = "rgba(16,17,22,0.95)";
+            c.fill();
+            c.lineWidth = 3;
+            c.strokeStyle = col;
+            c.stroke();
+            drawText(name.toUpperCase() + " WINS", cx, cy - 12, 32, col, "center");
+            drawText("Last one standing — new match in " + Math.max(0, r.left | 0) + "s",
+                     cx, cy + 26, 15, color.guiwhite, "center");
+            c.restore();
+            return;
+        }
         const w = global.war;
         if (!w || !w.over || !config.game.warBar || global.died) return;
         const now = performance.now();
@@ -5603,9 +5810,10 @@ import * as tutorial from './tutorial.js';
             const st = global.outpostState.find(s => s.id === o.id) || {};
             const mx = T.X(o.x), my = T.Y(o.y);
             if (!inside(mx, my)) continue;
-            const ownCol = st.t === -1 ? gameDraw.getColor("blue")
+            const ownCol = (st.o && st.c) ? st.c
+                        : st.t === -1 ? gameDraw.getColor("blue")
                         : st.t === -2 ? gameDraw.getColor("red")
-                        : gameDraw.getColor("yellow");   
+                        : (royaleActive() ? "#8a90a0" : gameDraw.getColor("yellow")); 
             const s2 = dotR * 1.2;
             c.save();
             c.translate(mx, my);
@@ -5814,6 +6022,7 @@ import * as tutorial from './tutorial.js';
             s: s2,
         };
         drawMapMarkers(T, x, y, size, size, 8.5, 3.4);
+        strokeStormCircle(ctx[2], T.X, T.Y, T.s);
         // soft inner vignette (cached overlay, cheap blit)
         if (!cornerVign.canvas || cornerVign.size !== size) {
             cornerVign.canvas = document.createElement("canvas");
@@ -5892,6 +6101,7 @@ import * as tutorial from './tutorial.js';
         optionsMenu_drawRoundedRect(px0, py0, panelW, panelH, 11);
         ctx[2].clip();
         const T = drawWorldWindow(ctx[2], px0, py0, panelW, panelH, wx0, wy0, span);
+        strokeStormCircle(ctx[2], T.X, T.Y, T.s);
         
         
         const mScale = global.canvas ? global.canvas.height / global.screenHeight : 1;
@@ -6122,6 +6332,8 @@ import * as tutorial from './tutorial.js';
                     ctx[2].stroke();
                 }
             }
+
+            strokeStormCircle(ctx[2], mmX, mmY, len / mmW);
 
             ctx[2].globalAlpha = 1;
             ctx[2].lineWidth = 1;
@@ -7153,6 +7365,7 @@ import * as tutorial from './tutorial.js';
             drawLowHealthVignette();
             drawSatchelDanger();
             drawTeamBankBar();
+            drawRoyaleHUD();
             drawMessages(spacing, alcoveSize);
             drawMilestones();
             drawWarBanner();

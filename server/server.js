@@ -156,6 +156,18 @@ server = http.createServer((req, res) => {
                 proxyPath: TUTORIAL_PROXY_PATH,
             } : null);
         } break;
+        case "/getDigWarsServer.json": {
+            const dw = servers.find((s) => s && s.id === "dw");
+            readString = JSON.stringify(dw ? {
+                ip: dw.ip,
+                port: dw.port,
+                players: dw.players,
+                maxPlayers: dw.maxPlayers,
+                id: dw.id,
+                mainHost: Config.host,
+                proxyPath: DIG_WARS_PROXY_PATH,
+            } : null);
+        } break;
         case "/getTotalPlayers": {
             let countPlayers = 0;
             servers.forEach((s) => {
@@ -393,20 +405,22 @@ server.listen(Config.port, () => {
 // socket arriving at <main host>/tut is spliced straight through to the
 // tutorial worker on loopback. No extra domain, no extra open port.
 const TUTORIAL_PROXY_PATH = "/tut";
+const DIG_WARS_PROXY_PATH = "/dw";
 
-function tutorialPort() {
-    const tut = (Config.servers || []).find((s) => s && s.id === "tut");
-    return tut ? tut.port : null;
+function workerPort(id) {
+    const s = (Config.servers || []).find((server) => server && server.id === id);
+    return s ? s.port : null;
 }
 
-function proxyUpgradeToTutorial(req, socket, head) {
-    const port = tutorialPort();
+function tutorialPort() {
+    return workerPort("tut");
+}
+
+function proxyUpgradeToWorker(req, socket, head, proxyPath, port) {
     if (!port) return socket.destroy();
 
     const upstream = net.connect(port, "127.0.0.1", () => {
-        // Replay the handshake verbatim, minus the /tut prefix the worker
-        // knows nothing about, then let the two sockets talk directly.
-        const path = req.url.slice(TUTORIAL_PROXY_PATH.length) || "/";
+        const path = req.url.slice(proxyPath.length) || "/";
         let raw = `GET ${path} HTTP/1.1\r\n`;
         for (let i = 0; i < req.rawHeaders.length; i += 2) {
             raw += `${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`;
@@ -422,11 +436,19 @@ function proxyUpgradeToTutorial(req, socket, head) {
     socket.on("error", bail);
 }
 
+function proxyUpgradeToTutorial(req, socket, head) {
+    return proxyUpgradeToWorker(req, socket, head, TUTORIAL_PROXY_PATH, tutorialPort());
+}
+
 server.on("upgrade", (req, socket, head) => {
     const url = req.url || "";
     if (url === TUTORIAL_PROXY_PATH || url.startsWith(TUTORIAL_PROXY_PATH + "/") ||
         url.startsWith(TUTORIAL_PROXY_PATH + "?")) {
         return proxyUpgradeToTutorial(req, socket, head);
+    }
+    if (url === DIG_WARS_PROXY_PATH || url.startsWith(DIG_WARS_PROXY_PATH + "/") ||
+        url.startsWith(DIG_WARS_PROXY_PATH + "?")) {
+        return proxyUpgradeToWorker(req, socket, head, DIG_WARS_PROXY_PATH, workerPort("dw"));
     }
     wsServer.handleUpgrade(req, socket, head, (ws) => {
         try {

@@ -338,6 +338,8 @@ class socketManager {
                 let loop = setInterval(() => {
 
                     if (!global.cannotRespawn && !global.gameManager.arenaClosed && socket.status.readyToSpawn) {
+                        if (Config.dig_royale && !require('../gamemodes/scripts/dig_royale.js').canSpawn())
+                            return;
                         clearInterval(loop);
                         let epackage = {};
                         epackage.name = name;
@@ -439,6 +441,12 @@ class socketManager {
             player.body.reverseTank = reverseTank;
 
             if (player.command != null) {
+            if (player.body && (player.body.royaleFrozen || player.body.royaleLobby)) {
+                player.command.lmb = player.command.mmb = player.command.rmb = 0;
+                if (player.body.royaleFrozen) {
+                    player.command.up = player.command.down = player.command.left = player.command.right = 0;
+                }
+            } else {
                 player.command.up = commands & 1;
                 player.command.down = (commands & 2) >> 1;
                 player.command.left = (commands & 4) >> 2;
@@ -446,6 +454,7 @@ class socketManager {
                 player.command.lmb = (commands & 16) >> 4;
                 player.command.mmb = (commands & 32) >> 5;
                 player.command.rmb = (commands & 64) >> 6;
+            }
             }
             } break;
             case "#": {
@@ -1441,7 +1450,7 @@ class socketManager {
         
         
         
-        if (Config.dig_wars) require('../terrain/gems.js').initSatchel(body);
+        if (Config.dig_wars || Config.dig_royale) require('../terrain/gems.js').initSatchel(body);
         socket.status.daily_tank_watched_ad = false;
         socket.status.daily_tank_watched_ad_client = false;
 
@@ -1489,6 +1498,7 @@ class socketManager {
             }
         }
         this.preparePlayer(socket, player, body);
+        if (Config.dig_royale) require('../gamemodes/scripts/dig_royale.js').onHumanJoin(body);
         return player;
     };
 
@@ -1821,6 +1831,10 @@ class socketManager {
                             
                             socket.lastDeathX = player.body.x;
                             socket.lastDeathY = player.body.y;
+
+                            if (Config.dig_royale) {
+                                try { require('../gamemodes/scripts/dig_royale.js').onCombatantDead(player.body); } catch (e) { /* */ }
+                            }
 
                             
                             
@@ -2301,6 +2315,7 @@ class socketManager {
             // the top-center bar on every client.
             let bankBlue = 0, bankRed = 0;
             const gemMode = !!global.gameManager.terrainGrid;
+            const royaleMode = !!Config.dig_royale;
             if (gemMode) {
                 for (const s of this.clients) {
                     if (!s.player) continue;
@@ -2403,12 +2418,14 @@ class socketManager {
                 }
                 socket.talk("LA", leaderID, leaderX, leaderY, leaderTeam);
                 if (gemMode) {
+                    if (!royaleMode) {
                     socket.talk("TB", bankBlue, bankRed);
                     const myTeam = socket.player && (socket.player.body ? socket.player.body.team : socket.player.team);
                     const tm = myTeam === TEAM_RED ? tmRed : tmBlue;
                     socket.talk("TM", tm.length, ...tm.flat());
+                    }
                     if (opState) socket.talk("OP", opState);
-                    if (ccState) socket.talk("CC", ccState);
+                    if (ccState && !royaleMode) socket.talk("CC", ccState);
                 }
             }
             logs.minimap.mark();
