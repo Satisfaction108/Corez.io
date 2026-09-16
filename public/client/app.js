@@ -1615,6 +1615,18 @@ import * as tutorial from './tutorial.js';
         ctx[2].fill();
     }
 
+    function guiToClientRect(gx, gy, gw, gh) {
+        const el = (global.canvas && global.canvas.cv) || document.getElementById("gameCanvas");
+        if (!el || !global.screenWidth || !global.screenHeight) return { x: gx, y: gy, w: gw, h: gh };
+        const br = el.getBoundingClientRect();
+        return {
+            x: br.left + gx / global.screenWidth * br.width,
+            y: br.top + gy / global.screenHeight * br.height,
+            w: gw / global.screenWidth * br.width,
+            h: gh / global.screenHeight * br.height,
+        };
+    }
+
     function drawButton(x, y, width, height, alpha, type = "rect", text, textSize, color1, color2, color3, clickable = false, clickType, clickableRatio, index) {
 
         if (width == true) width = measureText(text, height);
@@ -3422,9 +3434,9 @@ import * as tutorial from './tutorial.js';
         c.beginPath();
         c.rect(x, y, w, h);
         c.arc(cx, cy, rr, 0, Math.PI * 2, true);
-        c.fillStyle = "rgba(70, 78, 92, 0.42)";
+        c.fillStyle = "rgba(88, 48, 120, 0.38)";
         c.fill("evenodd");
-        c.strokeStyle = "#3a4250";
+        c.strokeStyle = "#5a2a78";
         c.lineWidth = 2;
         c.beginPath();
         c.arc(cx, cy, rr, 0, Math.PI * 2);
@@ -3455,52 +3467,22 @@ import * as tutorial from './tutorial.js';
         c.rect(-40, -40, global.screenWidth + 80, global.screenHeight + 80);
         c.arc(cx, cy, rr, 0, Math.PI * 2, true);
         c.clip("evenodd");
-        c.fillStyle = "rgba(58, 64, 78, 0.50)";
+        c.fillStyle = "rgba(72, 38, 96, 0.46)";
         c.globalAlpha = 1;
         c.fillRect(-40, -40, global.screenWidth + 80, global.screenHeight + 80);
         c.restore();
-        drawStormClouds(c, cx, cy, rr, ratio);
         c.save();
-        const wall = Math.max(22, 34 * ratio);
+        const wall = Math.max(8, 12 * ratio);
         c.beginPath();
         c.arc(cx, cy, rr + wall, 0, Math.PI * 2);
-        c.arc(cx, cy, Math.max(0, rr - 4), 0, Math.PI * 2, true);
-        c.fillStyle = "#4a5364";
+        c.arc(cx, cy, Math.max(0, rr - 2), 0, Math.PI * 2, true);
+        c.fillStyle = "#6a3a78";
         c.fill("evenodd");
-        c.strokeStyle = "#1c2028";
-        c.lineWidth = Math.max(3, 4 * ratio);
+        c.strokeStyle = "#2a1028";
+        c.lineWidth = Math.max(2, 2.5 * ratio);
         c.beginPath();
         c.arc(cx, cy, rr, 0, Math.PI * 2);
         c.stroke();
-        c.beginPath();
-        c.arc(cx, cy, rr + wall, 0, Math.PI * 2);
-        c.stroke();
-        c.restore();
-    }
-    function drawStormClouds(c, cx, cy, rr, ratio) {
-        const t = performance.now() / 1000;
-        c.save();
-        c.beginPath();
-        c.rect(-40, -40, global.screenWidth + 80, global.screenHeight + 80);
-        c.arc(cx, cy, Math.max(0, rr - 8), 0, Math.PI * 2, true);
-        c.clip("evenodd");
-        const n = 28;
-        for (let i = 0; i < n; i++) {
-            const a = i * 0.9 + t * 0.07 * (i % 2 ? 1 : -1);
-            const wobble = Math.sin(t * 0.6 + i) * 18 * ratio;
-            const dist = rr + 70 * ratio + (i % 5) * 28 * ratio + wobble;
-            const x = cx + Math.cos(a) * dist;
-            const y = cy + Math.sin(a) * dist * 0.92;
-            const rad = (42 + (i % 7) * 10) * ratio;
-            c.beginPath();
-            c.arc(x, y, rad, 0, Math.PI * 2);
-            c.fillStyle = i % 3 === 0 ? "rgba(90,98,112,0.55)" : "rgba(62,68,82,0.48)";
-            c.fill();
-            c.beginPath();
-            c.arc(x + rad * 0.45, y - rad * 0.18, rad * 0.62, 0, Math.PI * 2);
-            c.fillStyle = "rgba(120,128,140,0.28)";
-            c.fill();
-        }
         c.restore();
     }
 
@@ -3609,7 +3591,6 @@ import * as tutorial from './tutorial.js';
                 }
             }
         }
-        global.advanced.roundMap && ctx[0].restore();
         let gridsize = 30 * ratio;
         if (config.graphical.showGrid && 2.5 < gridsize) {
             ctx[0].save();
@@ -3638,6 +3619,7 @@ import * as tutorial from './tutorial.js';
             ctx[0].globalAlpha = 0.9;
             window.terrainRenderer.draw(ctx[0], px, py, ratio, gameWidth, gameHeight, global.screenWidth, global.screenHeight);
         }
+        global.advanced.roundMap && ctx[0].restore();
         ctx[0].globalAlpha = 1;
         drawStorm(roomX, roomY, ratio);
         // Dig Wars: team vault doors, set into the base floors
@@ -3931,7 +3913,7 @@ import * as tutorial from './tutorial.js';
                 continue;
             }
             drawEntity(baseColor, x, y, instance, ratio, instance.alpha * alpha, 1, 1, instance.render.f, false, false, false, instance.render, isize);
-            if (global.royale && global.outpostState) {
+            if (global.royale && global.outpostState && !royaleLobbyPhase() && global.royale.phase === "live") {
                 const owned = global.outpostState.find(s => s.o === instance.id && s.c);
                 if (owned) {
                     const c = ctx[1];
@@ -5223,8 +5205,13 @@ import * as tutorial from './tutorial.js';
             drawText(youWin ? "VICTORY" : "CROWNED", cx, cy - 58, 18, color.guiwhite, "center");
             drawText(name.toUpperCase(), cx, cy - 8, 42 * pulse, color.gold, "center");
             drawText("WINS THE ROYALE", cx, cy + 36, 22, color.guiwhite, "center");
-            drawText("Last one standing  ·  next drop in " + Math.max(0, r.left | 0) + "s",
-                     cx, cy + 68, 14, color.guiwhite, "center");
+            drawText("Press Play for the next drop", cx, cy + 68, 14, color.guiwhite, "center");
+            const cr = global.canvas.height / global.screenHeight / global.ratio;
+            drawButton(cx - 90, cy + 92, 150, 34, 1, "rect", "Play", 16, false, false, false, true, "deathRespawn", cr, 0);
+            drawButton(cx + 90, cy + 92, 150, 34, 1, "rect", "Home", 16, false, false, false, true, "exitGame", cr, 0);
+            global.royaleBarHits = global.royaleBarHits || {};
+            global.royaleBarHits.play = guiToClientRect(cx - 90 - 75, cy + 92, 150, 34);
+            global.royaleBarHits.home = guiToClientRect(cx + 90 - 75, cy + 92, 150, 34);
             c.restore();
             return;
         }
@@ -5778,8 +5765,20 @@ import * as tutorial from './tutorial.js';
         
         c.fillStyle = "#0e1418";
         c.fillRect(rx, ry, rw, rh);
-        c.fillStyle = "#22323b";
-        c.fillRect(X(-gw / 2), Y(-gh / 2), gw * s, gh * s);
+        if (royaleActive()) {
+            const cr = circleRadiusWorld();
+            c.beginPath();
+            c.arc(X(0), Y(0), Math.max(2, cr * s), 0, Math.PI * 2);
+            c.fillStyle = "#1e1d1b";
+            c.fill();
+            c.save();
+            c.beginPath();
+            c.arc(X(0), Y(0), Math.max(2, cr * s), 0, Math.PI * 2);
+            c.clip();
+        } else {
+            c.fillStyle = "#22323b";
+            c.fillRect(X(-gw / 2), Y(-gh / 2), gw * s, gh * s);
+        }
 
         
         if (global.roomSetup.length) {
@@ -5859,6 +5858,7 @@ import * as tutorial from './tutorial.js';
             c.stroke();
         }
 
+        if (royaleActive()) c.restore();
         return { X, Y, s };
     }
 
@@ -6153,11 +6153,9 @@ import * as tutorial from './tutorial.js';
         
         const pop = 0.97 + 0.03 * fade;
         const fitW = sw * 0.72, fitH = sh * 0.8;
-        const disc = royaleActive();
         const fit = Math.min(fitW / gw, fitH / gh) * pop;
-        let panelW = disc ? Math.min(fitW, fitH) * pop : gw * fit;
-        let panelH = disc ? panelW : gh * fit;
-        let px0 = (sw - panelW) / 2, py0 = (sh - panelH) / 2;
+        const panelW = gw * fit, panelH = gh * fit;
+        const px0 = (sw - panelW) / 2, py0 = (sh - panelH) / 2;
         
         // Tutorial: the room holds several learners' plots, but a learner
         // should only ever see their own training ground. Lock the frame to
@@ -6167,7 +6165,7 @@ import * as tutorial from './tutorial.js';
             bm.zoom = gw / tp.size;
             bm.cx = tp.cx;
             bm.cy = tp.cy;
-        } else if (disc) {
+        } else if (royaleActive()) {
             bm.zoom = 1;
             bm.cx = 0;
             bm.cy = 0;
@@ -6176,7 +6174,7 @@ import * as tutorial from './tutorial.js';
         }
         const span = gw / bm.zoom;
         const spanY = gh / bm.zoom;
-        if (!(tp && tp.size) && !disc) {
+        if (!(tp && tp.size) && !royaleActive()) {
             bm.cx = Math.max(-gw / 2 + span / 2, Math.min(gw / 2 - span / 2, bm.cx || 0));
             bm.cy = Math.max(-gh / 2 + spanY / 2, Math.min(gh / 2 - spanY / 2, bm.cy || 0));
         }
@@ -6184,20 +6182,6 @@ import * as tutorial from './tutorial.js';
         
         bm._panel = { x: px0, y: py0, w: panelW, h: panelH, s: panelW / span, wx0, wy0 };
         const tabH = royaleActive() ? 30 : 0;
-        if (disc) {
-            py0 += 8;
-            const midx = px0 + panelW / 2, midy = py0 + tabH + (panelH - tabH) / 2;
-            const rad = Math.min(panelW, panelH - tabH) / 2;
-            ctx[2].beginPath();
-            ctx[2].arc(midx, midy, rad + 4, 0, Math.PI * 2);
-            ctx[2].fillStyle = "#111318";
-            ctx[2].fill();
-            if (royaleActive()) drawRoyaleFTabs(px0, py0, panelW, tabH);
-            ctx[2].save();
-            ctx[2].beginPath();
-            ctx[2].arc(midx, midy, rad, 0, Math.PI * 2);
-            ctx[2].clip();
-        } else {
         optionsMenu_drawRoundedRect(px0 - 4, py0 - 4, panelW + 8, panelH + 8, 8);
         ctx[2].fillStyle = "#111318";
         ctx[2].fill();
@@ -6206,7 +6190,6 @@ import * as tutorial from './tutorial.js';
         ctx[2].beginPath();
         ctx[2].rect(px0, py0 + tabH, panelW, panelH - tabH);
         ctx[2].clip();
-        }
         const tab = (global.royaleBoard && global.royaleBoard.tab) || 'map';
         if (royaleActive() && tab !== 'map') {
             ctx[2].fillStyle = "#16181e";
@@ -6271,15 +6254,7 @@ import * as tutorial from './tutorial.js';
         ctx[2].restore();
         ctx[2].lineWidth = 3;
         ctx[2].strokeStyle = color.black;
-        if (disc) {
-            const midx = px0 + panelW / 2, midy = py0 + tabH + (panelH - tabH) / 2;
-            const rad = Math.min(panelW, panelH - tabH) / 2;
-            ctx[2].beginPath();
-            ctx[2].arc(midx, midy, rad + 2, 0, Math.PI * 2);
-            ctx[2].stroke();
-        } else {
-            ctx[2].strokeRect(px0 - 2, py0 - 2, panelW + 4, panelH + 4);
-        }
+        ctx[2].strokeRect(px0 - 2, py0 - 2, panelW + 4, panelH + 4);
         const keyEl = document.querySelector('#controlSettings b[data-key="KEY_TOGGLE_MAP"]');
         const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "F";
         drawText("[" + keyName + "] close",
@@ -6327,16 +6302,16 @@ import * as tutorial from './tutorial.js';
                 extra: f.place ? ("#" + f.place) : "",
             }))
             : tab === "alive"
-                ? ((global.royale.board || []).filter(r => r.alive !== false)).map((r, i) => ({
+                ? ((global.royale.board || []).filter(r => r.alive)).map((r, i) => ({
                     name: (i + 1) + ". " + (r.name || "Unnamed"),
-                    extra: r.kills ? (r.kills + " elims") : "",
+                    extra: (r.kills | 0) ? ((r.kills | 0) + " elims") : "alive",
                 }))
                 : royaleBoardRows().map((r, i) => ({
                     name: (i + 1) + ". " + (r.name || "Unnamed") + (r.alive === false ? "  X" : ""),
                     extra: (r.kills | 0) + " elims   " + util.formatLargeNumber(r.gems | 0),
                 }));
         if (!rows.length) {
-            drawText("Nobody here yet", x + w / 2, y + h / 2, 16, color.guiwhite, "center");
+            drawText(tab === "alive" ? "Nobody is alive" : "Nobody here yet", x + w / 2, y + h / 2, 16, color.guiwhite, "center");
             return;
         }
         const rowH = 28;
@@ -7521,10 +7496,11 @@ import * as tutorial from './tutorial.js';
             }
             drawButton(cx + 90, by, 150, 32, ga, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
             global.royaleBarHits = {
-                spectate: canRequeue ? null : { x: cx - 90 - 75, y: by, w: 150, h: 32 },
-                play: canRequeue ? { x: cx - 90 - 75, y: by, w: 150, h: 32 } : null,
+                spectate: canRequeue ? null : guiToClientRect(cx - 90 - 75, by, 150, 32),
+                play: canRequeue ? guiToClientRect(cx - 90 - 75, by, 150, 32) : null,
                 prev: null,
                 next: null,
+                home: guiToClientRect(cx + 90 - 75, by, 150, 32),
             };
         }
     };
@@ -7546,20 +7522,24 @@ import * as tutorial from './tutorial.js';
         drawText("Spectating" + (place > 0 ? ("  #" + place) : ""), x + barW / 2, y + 24, 14, color.guiwhite, "center");
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         const phase = global.royale && global.royale.phase;
-        drawButton(x + 48, y + 4, 84, 28, 1, "rect", "Prev", 13, false, false, false, true, "royalePrev", cr, 0);
-        drawButton(x + 138, y + 4, 84, 28, 1, "rect", "Next", 13, false, false, false, true, "royaleNext", cr, 0);
+        const canPlay = phase === "lobby" || phase === "idle" || phase === "over";
+        drawButton(x + 56, y + 3, 100, 30, 1, "rect", "Prev", 14, false, false, false, true, "royalePrev", cr, 0);
+        drawButton(x + 166, y + 3, 100, 30, 1, "rect", "Next", 14, false, false, false, true, "royaleNext", cr, 0);
         global.royaleBarHits = {
-            prev: { x: x + 48 - 42, y: y + 4, w: 84, h: 28 },
-            next: { x: x + 138 - 42, y: y + 4, w: 84, h: 28 },
+            prev: guiToClientRect(x + 56 - 50, y + 3, 100, 30),
+            next: guiToClientRect(x + 166 - 50, y + 3, 100, 30),
             spectate: null,
             play: null,
+            home: null,
         };
-        if (phase === 'lobby' || phase === 'idle') {
-            drawButton(x + barW - 150, y + 4, 84, 28, 1, "rect", "Play", 13, false, false, false, true, "deathRespawn", cr, 0);
-            drawButton(x + barW - 52, y + 4, 88, 28, 1, "rect", "Home", 13, false, false, false, true, "exitGame", cr, 0);
-            global.royaleBarHits.play = { x: x + barW - 150 - 42, y: y + 4, w: 84, h: 28 };
+        if (canPlay) {
+            drawButton(x + barW - 160, y + 3, 90, 30, 1, "rect", "Play", 14, false, false, false, true, "deathRespawn", cr, 0);
+            drawButton(x + barW - 58, y + 3, 90, 30, 1, "rect", "Home", 14, false, false, false, true, "exitGame", cr, 0);
+            global.royaleBarHits.play = guiToClientRect(x + barW - 160 - 45, y + 3, 90, 30);
+            global.royaleBarHits.home = guiToClientRect(x + barW - 58 - 45, y + 3, 90, 30);
         } else {
-            drawButton(x + barW - 52, y + 4, 88, 28, 1, "rect", "Home", 13, false, false, false, true, "exitGame", cr, 0);
+            drawButton(x + barW - 58, y + 3, 90, 30, 1, "rect", "Home", 14, false, false, false, true, "exitGame", cr, 0);
+            global.royaleBarHits.home = guiToClientRect(x + barW - 58 - 45, y + 3, 90, 30);
         }
     };
     const applyScreenShake = (type = "camera", returnOption = false) => {

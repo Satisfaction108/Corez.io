@@ -60,7 +60,12 @@ function pits() {
 }
 
 function canSpawn() {
-    return phase === 'idle' || phase === 'lobby';
+    return phase === 'idle' || phase === 'lobby' || phase === 'over';
+}
+
+function requestPlay() {
+    if (phase === 'over') resetMatch();
+    return canSpawn();
 }
 
 function isLobbyPhase() {
@@ -84,6 +89,21 @@ function setFrozen(body, frozen) {
 // but invulnerable + passive so nobody can hurt or kill anyone. Gems are
 // suppressed separately in spawnOreBurst (royaleLobby check), and vaults/
 // outposts are gated by isLobbyPhase so there is nothing to bank at.
+function killMinions(body) {
+    if (!body) return;
+    try {
+        for (const e of [...entities.values()]) {
+            if (!e || e === body || e.type === "tank") continue;
+            const mine = e.master === body || e.source === body || e.parent === body;
+            if (!mine) continue;
+            e.invuln = false;
+            e.passive = false;
+            e.royaleLobby = false;
+            try { e.kill(); } catch { /* */ }
+        }
+    } catch { /* */ }
+}
+
 function setLobby(body, on) {
     if (!body) return;
     body.royaleLobby = !!on;
@@ -250,6 +270,7 @@ function uniqueDropSpots(n) {
 // level grant so the 30s freeze is actually spent upgrading.
 function resetRoyaleBody(body) {
     if (!body || body.isDead?.()) return;
+    killMinions(body);
     try {
         body.define(Config.spawn_class || 'basic');
     } catch { /* keep current class if define fails */ }
@@ -485,6 +506,7 @@ function onHumanJoin(body) {
     if (phase === 'idle' || phase === 'lobby') {
         moveTo(body, plaza.x + (Math.random() - 0.5) * 70, plaza.y + (Math.random() - 0.5) * 70);
         setLobby(body, true);
+        killMinions(body);
         if (phase === 'idle') go('lobby');
     }
 }
@@ -495,13 +517,12 @@ function tick() {
     const connected = connectedClients();
 
     if (phase === 'idle') {
-        if (connected.length) go('lobby');
         storm.stop();
         return;
     }
     // Only cancel a running match if every client left. Dead humans stay as
     // spectators while bots finish the round.
-    if (!connected.length && phase !== 'over') {
+    if (!connected.length) {
         for (const bot of (global.gameManager.gameHandler.bots || []).slice()) {
             if (bot && !bot.isDead()) bot.kill();
         }
@@ -538,7 +559,8 @@ function tick() {
         }
         checkWinner();
     } else if (phase === 'over') {
-        if (t - phaseAt >= OVER_MS) resetMatch();
+        // Stay on the win screen until someone presses Play. Do not roll a
+        // new lobby/match on a timer while people are still spectating.
     }
 
     if (t - (tick._broadcastAt || 0) >= 200) {
@@ -618,6 +640,6 @@ class DigRoyale {
 }
 
 module.exports = {
-    DigRoyale, canSpawn, onHumanJoin, onCombatantDead, phase: () => phase, isLobbyPhase, stormFleePoint,
+    DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, phase: () => phase, isLobbyPhase, stormFleePoint,
     lobbyPos, tick, FILL_CAP,
 };

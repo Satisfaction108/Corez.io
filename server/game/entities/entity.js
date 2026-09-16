@@ -1098,7 +1098,9 @@ class Entity extends EventEmitter {
     contemplationOfMortality() {
         if (this.invuln || this.godmode || this.passive || this.royaleLobby) {
             this.damageReceived = 0;
-            return 0;
+            // Drones/swarms still expire. Returning here let Overlord pile
+            // infinite kids in the lobby because range-death never ran.
+            if (this.type === "tank") return 0;
         }
         if (this.damageReceived > 0) {
             let damageInflictor = []

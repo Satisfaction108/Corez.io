@@ -1443,6 +1443,8 @@ let incoming = async function(message, socket) {
                     camy = m[2];
                 global.player.cx.x = camx;
                 global.player.cy.y = camy;
+                global.player.renderx = camx;
+                global.player.rendery = camy;
                 global.player.loc = { x: camx, y: camy };
                 global.player.animX.add(m[1]);
                 global.player.animY.add(m[2]);
@@ -1572,6 +1574,7 @@ let incoming = async function(message, socket) {
             if (global.finalCause === "storm" || (global.royale && global.royale.at > 0 &&
                 rp !== 'lobby' && rp !== 'idle')) {
                 global.royaleDied = true;
+                global.royaleSpectating = true;
             }
             global.royaleSpectating = false;
             global.autoSpin = false;

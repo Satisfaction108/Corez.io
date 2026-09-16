@@ -44,30 +44,33 @@ function killRock(rock, canyonKeys) {
 }
 
 function stretchRocksToCircle(grid, circleR) {
+    const rim = circleR * 0.48;
     for (const rock of grid.rocks.values()) {
         if (!rock.alive || !rock.worldPoly) continue;
         const cx = rock.worldCx || rock.wx, cy = rock.worldCy || rock.wy;
         const d = Math.hypot(cx, cy);
-        if (d < circleR * 0.55) continue;
-        let maxR = 0;
+        let maxR = 0, minR = Infinity;
         for (const p of rock.worldPoly) {
             const pr = Math.hypot(p[0], p[1]);
             if (pr > maxR) maxR = pr;
+            if (pr < minR) minR = pr;
             if (pr > circleR && pr > 1e-6) {
                 const s = circleR / pr;
                 p[0] *= s;
                 p[1] *= s;
             }
         }
-        if (maxR < circleR * 0.97 && d > circleR * 0.62) {
+        // Pull the outer face of every rim rock out to the circle so the
+        // wall is a full disk, not a smaller rock blob inside a round clip.
+        if (d > rim) {
             for (const p of rock.worldPoly) {
                 const pr = Math.hypot(p[0], p[1]);
-                if (pr < d * 0.35 || pr < 1e-6) continue;
+                if (pr < d * 0.28 || pr < 1e-6) continue;
                 const s = circleR / pr;
                 if (s > 1) { p[0] *= s; p[1] *= s; }
             }
         }
-        rock.maxPolyRadius = Math.max(rock.maxPolyRadius || 0, circleR - d + 8);
+        rock.maxPolyRadius = Math.max(rock.maxPolyRadius || 0, Math.max(8, circleR - d + 12));
     }
 }
 
@@ -163,11 +166,10 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     }
     stretchRocksToCircle(grid, circleR);
 
-    // Sites exist for later, but lobby is plaza-only: do not carve vaults
-    // or outposts until scatter (carveMatchPois).
+    // Sites exist for later. Lobby is plaza-only: do not punch vault or
+    // outpost holes until scatter, or the circle is missing rocks on the sides.
     grid.vaultSites = VAULTS.map((v, i) => {
         const x = v.x * circleR, y = v.y * circleR;
-        if (!v.lobby) carveDisk(grid, x, y, VAULT_R, canyonKeys);
         return { id: i, name: v.name, x, y, r: 95, team: 0, rainbow: true };
     });
     carveDisk(grid, 0, 0, LOBBY_R, canyonKeys);
@@ -177,7 +179,6 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     for (const spec of OUTPOSTS) {
         const x = Math.cos(spec.ang) * spec.dist * circleR;
         const y = Math.sin(spec.ang) * spec.dist * circleR;
-        carveDisk(grid, x, y, OUTPOST_R, canyonKeys);
         const rock = nearestRock(grid, x, y) || { k: 0, worldCx: x, worldCy: y };
         outpostCells.push({
             key: rock.k,

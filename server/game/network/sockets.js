@@ -266,8 +266,12 @@ class socketManager {
                 }
                 socket.status.deceased = true;
                 socket.status.readyToSpawn = true;
-                if (Config.dig_royale && require('../gamemodes/scripts/dig_royale.js').canSpawn()) {
-                    socket.royaleNeedClick = false;
+                if (Config.dig_royale) {
+                    const dr = require('../gamemodes/scripts/dig_royale.js');
+                    dr.requestPlay();
+                    if (dr.canSpawn()) socket.royaleNeedClick = false;
+                    const stillLive = socket.player?.body && !socket.player.body.isDead();
+                    if (stillLive) return 1;
                 }
                 if (!global.gameManager.webProperties.maxPlayers < 1 && this.clients.length > global.gameManager.webProperties.maxPlayers) return (
                     socket.talk("message", "This server is full, please rejoin later."),
@@ -992,6 +996,10 @@ class socketManager {
                     socket.camera.y = socket.spectateEntity.y;
                     socket.talk("u", true, socket.camera.x, socket.camera.y);
                 }
+            } break;
+            case "RQ": {
+                if (!Config.dig_royale) return 1;
+                require('../gamemodes/scripts/dig_royale.js').requestPlay();
             } break;
             default: {
                 console.log(m)
