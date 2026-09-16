@@ -678,7 +678,6 @@ class Canvas {
                 const scale = (this.cv && this.cv.height ? this.cv.height : (global.canvas && global.canvas.height) || 1) / Math.max(1, global.screenHeight);
                 const gx = mpos.x / scale, gy = mpos.y / scale;
                 const inRect = (r) => !!r && gx >= r.x && gx <= r.x + r.w && gy >= r.y && gy <= r.y + r.h;
-                const bar = global.royaleBarHits || {};
                 if (respawnCheck !== -1 && !global.disconnected) {
                     if (global.royaleDied && global.royale.phase !== 'lobby' && global.royale.phase !== 'idle') {
                         global.royaleSpectating = true;
