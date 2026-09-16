@@ -79,6 +79,29 @@ mimeSet = {
 let wsServer; // WebSocket server instance
 let server; // HTTP server instance
 
+// Tutorial / Dig Wars workers live on loopback ports. The public host only
+// exposes the main port, so the homepage talks to these paths and we splice
+// the websocket through.
+const TUTORIAL_PROXY_PATH = "/tut";
+const DIG_WARS_PROXY_PATH = "/dw";
+
+function listedServer(id) {
+    const live = (global.servers || []).find((s) => s && s.id === id);
+    const cfg = (Config.servers || []).find((s) => s && s.id === id);
+    if (!live && !cfg) return null;
+    return {
+        ip: (live && live.ip) || (cfg && cfg.host) || Config.host,
+        port: (live && live.port) || (cfg && cfg.port),
+        players: (live && live.players) | 0,
+        maxPlayers: (live && live.maxPlayers) || (cfg && cfg.player_cap) || 0,
+        id,
+        featured: !!(live && live.featured),
+        region: (live && live.region) || (cfg && cfg.region) || "",
+        gameMode: (live && live.gameMode) || "",
+        hidden: !!(cfg && cfg.unlisted) || !!(live && live.hidden),
+    };
+}
+
 // Attempt to create a WebSocket server instance using the 'ws' package
 try {
     const WebSocketServer = require("ws").WebSocketServer;
@@ -96,6 +119,7 @@ if (Config.allow_ACAO && Config.startup_logs) {
 
 // Create an HTTP server to handle both API and static file requests
 server = http.createServer((req, res) => {
+    try {
     let query = {};
     let pathname = req.url.split("?")[0];
     if (req.url.includes("?")) req.url.split("?")[1].split("&").map(i => {
@@ -128,7 +152,7 @@ server = http.createServer((req, res) => {
     switch (pathname) {
         case "/getServers.json": {
             // Serve a list of active servers (excluding hidden ones)
-            readString = JSON.stringify(servers.filter((s) => s && !s.hidden).map((server) => ({
+            readString = JSON.stringify((global.servers || []).filter((s) => s && s.id && !s.hidden).map((server) => ({
                 ip: server.ip,
                 players: server.players,
                 maxPlayers: server.maxPlayers,
@@ -142,7 +166,7 @@ server = http.createServer((req, res) => {
         // never shows up on the region picker. The homepage Tutorial button
         // asks for it here instead, by id.
         case "/getTutorialServer.json": {
-            const tut = servers.find((s) => s && s.id === "tut");
+            const tut = listedServer("tut");
             readString = JSON.stringify(tut ? {
                 ip: tut.ip,
                 port: tut.port,
@@ -157,7 +181,7 @@ server = http.createServer((req, res) => {
             } : null);
         } break;
         case "/getDigWarsServer.json": {
-            const dw = servers.find((s) => s && s.id === "dw");
+            const dw = listedServer("dw");
             readString = JSON.stringify(dw ? {
                 ip: dw.ip,
                 port: dw.port,
@@ -170,9 +194,9 @@ server = http.createServer((req, res) => {
         } break;
         case "/getTotalPlayers": {
             let countPlayers = 0;
-            servers.forEach((s) => {
-                countPlayers += s.players;
-            });
+            for (const s of (global.servers || [])) {
+                if (s && s.players) countPlayers += s.players;
+            }
             readString = JSON.stringify(countPlayers);
         } break;
         case "/version": {
@@ -273,20 +297,33 @@ server = http.createServer((req, res) => {
         res.writeHead(200);
         res.end(readString);
     }
+    } catch (e) {
+        console.error("[HTTP ERROR] " + ((e && e.stack) || e));
+        try {
+            if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
+            res.end("null");
+        } catch (_) { /* already closed */ }
+    }
 });
 
 // Loads a game server
 function loadGameServer(loadViaMain = false, host, port, gamemode, region, webProperties, properties, isFeatured, isUnlisted = false) {
-    // Determine the new server index and initialize an empty object in the global servers array
+    const id = webProperties && webProperties.id;
+    // Two games cannot share one process. A second share_client_server used
+    // to process.exit(1) and take the whole site down (tutorial included).
+    if (loadViaMain && (global.launchedOnMainServer || global._mainLoadScheduled)) {
+        console.warn("Already loading a main-process game; " + id + " will run as a worker.");
+        loadViaMain = false;
+    }
+
     if (!loadViaMain) {
         let index = global.servers.length;
-        global.servers.push({});
+        global.servers.push({ id, hidden: !!isUnlisted, port, ip: host });
 
-        // Create a new worker thread to load the game server asynchronously
         let worker = new Worker("./server/serverLoader.js", {
             workerData: {
                 host,
-                port: port, // Increment port for each server
+                port: port,
                 gamemode,
                 region,
                 webProperties,
@@ -296,34 +333,35 @@ function loadGameServer(loadViaMain = false, host, port, gamemode, region, webPr
             }
         });
 
-        // Listen for messages from the worker to update the server's status
+        worker.on("error", (err) => {
+            console.error("[WORKER ERROR] " + id + ": " + ((err && err.stack) || err));
+        });
+        worker.on("exit", (code) => {
+            if (code !== 0) console.error("[WORKER EXIT] " + id + " code " + code);
+        });
+
         worker.on("message", message => {
             const flag = message.shift();
             switch (flag) {
                 case false:
-                    // Initial load: store server details
                     global.servers[index] = message.shift();
-                    // Unlisted servers (the tutorial) stay out of
-                    // /getServers.json, so the region picker never shows them.
-                    // They remain reachable directly by their id.
                     global.servers[index].hidden = !!isUnlisted;
                     break;
                 case true:
-                    // Update: change the server's player count
-                    global.servers[index].players = message.shift();
+                    if (global.servers[index]) global.servers[index].players = message.shift();
                     break;
                 case "doneLoading":
-                    // Once loading is complete, trigger the server loaded callback
                     onServerLoaded();
                     break;
             }
         });
     } else {
-        global.servers.push({ loadedViaMainServer: true });
-        setTimeout(() => { // Space it a little out.
+        global._mainLoadScheduled = true;
+        global.servers.push({ loadedViaMainServer: true, id });
+        setTimeout(() => {
             if (global.launchedOnMainServer) {
-                console.warn("Only one server can be loaded via through the main server!\nProcess terminated.");
-                process.exit(1);
+                console.warn("Main-process game already running; not starting " + id + " on the web port.");
+                return;
             }
             global.launchedOnMainServer = true;
             new (require("./game.js").gameServer)(Config.host, Config.port, gamemode, region, webProperties, properties, isFeatured, false);
@@ -396,17 +434,6 @@ server.listen(Config.port, () => {
 });
 
 // Upgrade HTTP connections to WebSocket connections if applicable
-// Tutorial WebSocket proxy.
-//
-// Two game servers cannot share one process (Config and global.gameManager are
-// process-wide), so the tutorial runs as its own worker on its own port. But
-// the container routes exactly one port to the domain, so that worker is
-// unreachable from outside. The fix is to forward the upgrade ourselves: a
-// socket arriving at <main host>/tut is spliced straight through to the
-// tutorial worker on loopback. No extra domain, no extra open port.
-const TUTORIAL_PROXY_PATH = "/tut";
-const DIG_WARS_PROXY_PATH = "/dw";
-
 function workerPort(id) {
     const s = (Config.servers || []).find((server) => server && server.id === id);
     return s ? s.port : null;
