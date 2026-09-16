@@ -24,8 +24,12 @@ function cycleSpectate(socket, dir) {
         return;
     }
     let i = list.findIndex(e => e === socket.spectateEntity);
-    if (i < 0) i = 0;
-    else i = (i + (dir < 0 ? -1 : 1) + list.length) % list.length;
+    if (i < 0) {
+        socket.spectateEntity = list[0];
+        return;
+    }
+    if (!dir) return;
+    i = (i + (dir < 0 ? -1 : 1) + list.length) % list.length;
     socket.spectateEntity = list[i];
 }
 
@@ -262,6 +266,9 @@ class socketManager {
                 }
                 socket.status.deceased = true;
                 socket.status.readyToSpawn = true;
+                if (Config.dig_royale && require('../gamemodes/scripts/dig_royale.js').canSpawn()) {
+                    socket.royaleNeedClick = false;
+                }
                 if (!global.gameManager.webProperties.maxPlayers < 1 && this.clients.length > global.gameManager.webProperties.maxPlayers) return (
                     socket.talk("message", "This server is full, please rejoin later."),
                     socket.kick("Server full.")
@@ -361,8 +368,13 @@ class socketManager {
                 let loop = setInterval(() => {
 
                     if (!global.cannotRespawn && !global.gameManager.arenaClosed && socket.status.readyToSpawn) {
-                        if (Config.dig_royale && !require('../gamemodes/scripts/dig_royale.js').canSpawn())
-                            return;
+                        if (Config.dig_royale) {
+                            const dr = require('../gamemodes/scripts/dig_royale.js');
+                            // Dead players stay dead until they click Play in lobby.
+                            // The 20ms retry must not auto-spawn when a match rolls over.
+                            if (!dr.canSpawn()) return;
+                            if (socket.royaleNeedClick) return;
+                        }
                         clearInterval(loop);
                         let epackage = {};
                         epackage.name = name;
@@ -967,16 +979,18 @@ class socketManager {
                         socket.status.daily_tank_watched_ad_client = true;
                     }, `${time}000`)
                 }, socket.camera.ping);
-            }
+            } break;
             case "NWB": {
                 socket.status.forceNewBroadcast = true;
             } break;
             case "RS": {
                 if (!socket.status.deceased) return 1;
-                cycleSpectate(socket, (m[0] | 0) === 0 ? -1 : 1);
+                const code = m[0] | 0;
+                cycleSpectate(socket, code === 2 ? 0 : (code === 0 ? -1 : 1));
                 if (socket.spectateEntity && socket.camera) {
                     socket.camera.x = socket.spectateEntity.x;
                     socket.camera.y = socket.spectateEntity.y;
+                    socket.talk("u", true, socket.camera.x, socket.camera.y);
                 }
             } break;
             default: {
@@ -1527,7 +1541,7 @@ class socketManager {
         }
         this.preparePlayer(socket, player, body);
         if (Config.dig_royale) require('../gamemodes/scripts/dig_royale.js').onHumanJoin(body);
-        if (body.royaleLobby) body.invuln = false;
+        socket.royaleNeedClick = false;
         return player;
     };
 
@@ -1864,6 +1878,8 @@ class socketManager {
 
                             if (Config.dig_royale) {
                                 try { require('../gamemodes/scripts/dig_royale.js').onCombatantDead(player.body); } catch (e) { /* */ }
+                                socket.royaleNeedClick = true;
+                                socket.status.readyToSpawn = false;
                             }
 
                             

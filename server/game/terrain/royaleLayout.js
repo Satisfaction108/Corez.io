@@ -15,7 +15,7 @@ const VAULTS = [
     { name: "Basin Vault",  x: 0.36, y: 0.40 },
 ];
 
-const SPAWN_PITS = 24;
+const SPAWN_PITS = 40;
 const VAULT_R = 150;
 const OUTPOST_R = 135;
 const LOBBY_R = 320;
@@ -258,7 +258,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     }
 
     const pits = [];
-    const minSep = 420;
+    const minSep = 310;
     // Farthest-point sampling so drop holes are not clustered.
     if (candidates.length) {
         pits.push(candidates[(Math.random() * candidates.length) | 0]);
@@ -285,13 +285,21 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         y: rock.worldCy || rock.wy,
     }));
     if (!grid.spawnPits.length) {
-        for (let i = 0; i < 12; i++) {
-            const a = (i / 12) * Math.PI * 2;
+        for (let i = 0; i < SPAWN_PITS; i++) {
+            const a = (i / SPAWN_PITS) * Math.PI * 2;
             grid.spawnPits.push({
-                x: Math.cos(a) * circleR * 0.45,
-                y: Math.sin(a) * circleR * 0.45,
+                x: Math.cos(a) * circleR * 0.48,
+                y: Math.sin(a) * circleR * 0.48,
             });
         }
+    }
+    while (grid.spawnPits.length < SPAWN_PITS) {
+        const i = grid.spawnPits.length;
+        const a = (i + 0.5) * 2.399963;
+        const r = circleR * (0.42 + 0.06 * (i % 3));
+        const x = Math.cos(a) * r, y = Math.sin(a) * r;
+        carveDisk(grid, x, y, 70, canyonKeys);
+        grid.spawnPits.push({ x, y });
     }
 }
 

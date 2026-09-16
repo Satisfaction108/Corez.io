@@ -122,6 +122,13 @@ function onStructureDeath(site) {
     const dead = site.banner;
     site.banner = null;
     if (Config.dig_royale) {
+        try {
+            if (require('../gamemodes/scripts/dig_royale.js').isLobbyPhase()) {
+                site.ownerId = 0;
+                site.team = 0;
+                return;
+            }
+        } catch { /* */ }
         const killer = killerOf(dead, site);
         if (killer && killer.id !== site.ownerId) {
             spawnStructure(site, killer.team, killer);
@@ -174,12 +181,17 @@ function tick(players, dtMs) {
                     const body = player.body;
                     if (body) body.outpostOnPad = false;
                 }
-                // still pin banners so they do not drift, but do not spawn
-                // new ones - the lobby is rocks only
+                // Drop banners without a death event so capture spam cannot fire.
                 for (const site of list) {
-                    if (site.banner && !site.banner.isDead()) {
-                        site.banner.kill();
-                        site.banner = null;
+                    site.ownerId = 0;
+                    site.team = 0;
+                    const b = site.banner;
+                    site.banner = null;
+                    if (b && !b.isDead?.()) {
+                        try { if (b.removeAllListeners) b.removeAllListeners("dead"); } catch { /* */ }
+                        try { b.destroy(); } catch {
+                            try { b.health.amount = -100; } catch { /* */ }
+                        }
                     }
                 }
                 return;
@@ -344,10 +356,12 @@ module.exports = {
         for (const site of getOutposts()) {
             site.ownerId = 0;
             site.team = 0;
-            if (site.banner && !site.banner.isDead()) {
-                site.banner.team = TEAM_ENEMIES;
-                if (site.banner.health) site.banner.health.amount = site.banner.health.max;
-            } else spawnStructure(site, 0, null);
+            const b = site.banner;
+            site.banner = null;
+            if (b && !b.isDead?.()) {
+                try { if (b.removeAllListeners) b.removeAllListeners("dead"); } catch { /* */ }
+                try { b.destroy(); } catch { try { b.health.amount = -100; } catch { /* */ } }
+            }
         }
     },
 };

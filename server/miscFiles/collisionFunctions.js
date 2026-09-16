@@ -247,7 +247,11 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
         } else if (my.type === my.settings.necroTypes && n.settings.necroTypes.includes(my.shape)) {
             bail = n.necro(my);
         }
-        if (!bail && !my.invuln && !n.invuln) {
+        const lobbySafe = (e) => {
+            const root = e && (e.master || e);
+            return !!(root && (root.royaleLobby || root.passive));
+        };
+        if (!bail && !my.invuln && !n.invuln && !lobbySafe(my) && !lobbySafe(n)) {
             // Calculate base damage
             let resistDiff = my.health.resist - n.health.resist,
                 damage = {

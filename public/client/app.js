@@ -3422,9 +3422,9 @@ import * as tutorial from './tutorial.js';
         c.beginPath();
         c.rect(x, y, w, h);
         c.arc(cx, cy, rr, 0, Math.PI * 2, true);
-        c.fillStyle = "rgba(88, 48, 120, 0.38)";
+        c.fillStyle = "rgba(70, 78, 92, 0.42)";
         c.fill("evenodd");
-        c.strokeStyle = "#5a2a78";
+        c.strokeStyle = "#3a4250";
         c.lineWidth = 2;
         c.beginPath();
         c.arc(cx, cy, rr, 0, Math.PI * 2);
@@ -3455,18 +3455,19 @@ import * as tutorial from './tutorial.js';
         c.rect(-40, -40, global.screenWidth + 80, global.screenHeight + 80);
         c.arc(cx, cy, rr, 0, Math.PI * 2, true);
         c.clip("evenodd");
-        c.fillStyle = "rgba(72, 38, 96, 0.46)";
+        c.fillStyle = "rgba(58, 64, 78, 0.50)";
         c.globalAlpha = 1;
         c.fillRect(-40, -40, global.screenWidth + 80, global.screenHeight + 80);
         c.restore();
+        drawStormClouds(c, cx, cy, rr, ratio);
         c.save();
-        const wall = Math.max(18, 28 * ratio);
+        const wall = Math.max(22, 34 * ratio);
         c.beginPath();
         c.arc(cx, cy, rr + wall, 0, Math.PI * 2);
-        c.arc(cx, cy, Math.max(0, rr - 2), 0, Math.PI * 2, true);
-        c.fillStyle = "#6a3a78";
+        c.arc(cx, cy, Math.max(0, rr - 4), 0, Math.PI * 2, true);
+        c.fillStyle = "#4a5364";
         c.fill("evenodd");
-        c.strokeStyle = "#2a1028";
+        c.strokeStyle = "#1c2028";
         c.lineWidth = Math.max(3, 4 * ratio);
         c.beginPath();
         c.arc(cx, cy, rr, 0, Math.PI * 2);
@@ -3474,6 +3475,32 @@ import * as tutorial from './tutorial.js';
         c.beginPath();
         c.arc(cx, cy, rr + wall, 0, Math.PI * 2);
         c.stroke();
+        c.restore();
+    }
+    function drawStormClouds(c, cx, cy, rr, ratio) {
+        const t = performance.now() / 1000;
+        c.save();
+        c.beginPath();
+        c.rect(-40, -40, global.screenWidth + 80, global.screenHeight + 80);
+        c.arc(cx, cy, Math.max(0, rr - 8), 0, Math.PI * 2, true);
+        c.clip("evenodd");
+        const n = 28;
+        for (let i = 0; i < n; i++) {
+            const a = i * 0.9 + t * 0.07 * (i % 2 ? 1 : -1);
+            const wobble = Math.sin(t * 0.6 + i) * 18 * ratio;
+            const dist = rr + 70 * ratio + (i % 5) * 28 * ratio + wobble;
+            const x = cx + Math.cos(a) * dist;
+            const y = cy + Math.sin(a) * dist * 0.92;
+            const rad = (42 + (i % 7) * 10) * ratio;
+            c.beginPath();
+            c.arc(x, y, rad, 0, Math.PI * 2);
+            c.fillStyle = i % 3 === 0 ? "rgba(90,98,112,0.55)" : "rgba(62,68,82,0.48)";
+            c.fill();
+            c.beginPath();
+            c.arc(x + rad * 0.45, y - rad * 0.18, rad * 0.62, 0, Math.PI * 2);
+            c.fillStyle = "rgba(120,128,140,0.28)";
+            c.fill();
+        }
         c.restore();
     }
 
@@ -5167,26 +5194,37 @@ import * as tutorial from './tutorial.js';
         if (royaleActive() && r.phase === "over") {
             const now = performance.now();
             const since = Math.max(0, now - (r.victoryAt || r.at || now));
-            const fade = Math.min(1, since / 450);
+            const fade = Math.min(1, since / 280);
             const name = (r.winner && r.winner.name) || "Someone";
-            const col = color.gold;
+            const youWin = r.winner && gui && r.winner.id === gui.playerid;
             const c = ctx[2];
-            const cx = global.screenWidth / 2, cy = global.screenHeight * 0.30;
+            const cx = global.screenWidth / 2, cy = global.screenHeight * 0.38;
             c.save();
             c.globalAlpha = fade;
-            c.fillStyle = "rgba(0,0,0,0.25)";
+            c.fillStyle = "rgba(0,0,0," + (0.45 + 0.12 * Math.sin(now / 400)) + ")";
             c.fillRect(0, 0, global.screenWidth, global.screenHeight);
-            const bw = Math.min(580, global.screenWidth - 60);
-            const bx = cx - bw / 2;
-            roundRectPath(c, bx, cy - 46, bw, 92, 14);
-            c.fillStyle = "rgba(16,17,22,0.95)";
-            c.fill();
-            c.lineWidth = 3;
-            c.strokeStyle = col;
-            c.stroke();
-            drawText(name.toUpperCase() + " WINS", cx, cy - 12, 32, col, "center");
-            drawText("Last one standing - new match in " + Math.max(0, r.left | 0) + "s",
-                     cx, cy + 26, 15, color.guiwhite, "center");
+            const pulse = 1 + 0.04 * Math.sin(now / 180);
+            for (let i = 3; i >= 1; i--) {
+                c.beginPath();
+                c.arc(cx, cy - 10, (90 + i * 38) * pulse, 0, Math.PI * 2);
+                c.strokeStyle = i === 1 ? color.gold : "rgba(255,215,94," + (0.18 / i) + ")";
+                c.lineWidth = i === 1 ? 4 : 2;
+                c.stroke();
+            }
+            const bits = 42;
+            for (let i = 0; i < bits; i++) {
+                const a = (now / 700) + i * (Math.PI * 2 / bits);
+                const rad = 130 + (i % 5) * 16 + 10 * Math.sin(now / 200 + i);
+                const x = cx + Math.cos(a) * rad;
+                const y = cy - 10 + Math.sin(a) * rad * 0.55;
+                c.fillStyle = i % 2 ? color.gold : color.guiwhite;
+                c.fillRect(x - 2, y - 2, 4, 4);
+            }
+            drawText(youWin ? "VICTORY" : "CROWNED", cx, cy - 58, 18, color.guiwhite, "center");
+            drawText(name.toUpperCase(), cx, cy - 8, 42 * pulse, color.gold, "center");
+            drawText("WINS THE ROYALE", cx, cy + 36, 22, color.guiwhite, "center");
+            drawText("Last one standing  ·  next drop in " + Math.max(0, r.left | 0) + "s",
+                     cx, cy + 68, 14, color.guiwhite, "center");
             c.restore();
             return;
         }
@@ -6115,9 +6153,11 @@ import * as tutorial from './tutorial.js';
         
         const pop = 0.97 + 0.03 * fade;
         const fitW = sw * 0.72, fitH = sh * 0.8;
+        const disc = royaleActive();
         const fit = Math.min(fitW / gw, fitH / gh) * pop;
-        const panelW = gw * fit, panelH = gh * fit;
-        const px0 = (sw - panelW) / 2, py0 = (sh - panelH) / 2;
+        let panelW = disc ? Math.min(fitW, fitH) * pop : gw * fit;
+        let panelH = disc ? panelW : gh * fit;
+        let px0 = (sw - panelW) / 2, py0 = (sh - panelH) / 2;
         
         // Tutorial: the room holds several learners' plots, but a learner
         // should only ever see their own training ground. Lock the frame to
@@ -6127,12 +6167,16 @@ import * as tutorial from './tutorial.js';
             bm.zoom = gw / tp.size;
             bm.cx = tp.cx;
             bm.cy = tp.cy;
+        } else if (disc) {
+            bm.zoom = 1;
+            bm.cx = 0;
+            bm.cy = 0;
         } else {
             bm.zoom = Math.max(1, Math.min(4, bm.zoom || 1));
         }
         const span = gw / bm.zoom;
         const spanY = gh / bm.zoom;
-        if (!(tp && tp.size)) {
+        if (!(tp && tp.size) && !disc) {
             bm.cx = Math.max(-gw / 2 + span / 2, Math.min(gw / 2 - span / 2, bm.cx || 0));
             bm.cy = Math.max(-gh / 2 + spanY / 2, Math.min(gh / 2 - spanY / 2, bm.cy || 0));
         }
@@ -6140,6 +6184,20 @@ import * as tutorial from './tutorial.js';
         
         bm._panel = { x: px0, y: py0, w: panelW, h: panelH, s: panelW / span, wx0, wy0 };
         const tabH = royaleActive() ? 30 : 0;
+        if (disc) {
+            py0 += 8;
+            const midx = px0 + panelW / 2, midy = py0 + tabH + (panelH - tabH) / 2;
+            const rad = Math.min(panelW, panelH - tabH) / 2;
+            ctx[2].beginPath();
+            ctx[2].arc(midx, midy, rad + 4, 0, Math.PI * 2);
+            ctx[2].fillStyle = "#111318";
+            ctx[2].fill();
+            if (royaleActive()) drawRoyaleFTabs(px0, py0, panelW, tabH);
+            ctx[2].save();
+            ctx[2].beginPath();
+            ctx[2].arc(midx, midy, rad, 0, Math.PI * 2);
+            ctx[2].clip();
+        } else {
         optionsMenu_drawRoundedRect(px0 - 4, py0 - 4, panelW + 8, panelH + 8, 8);
         ctx[2].fillStyle = "#111318";
         ctx[2].fill();
@@ -6148,6 +6206,7 @@ import * as tutorial from './tutorial.js';
         ctx[2].beginPath();
         ctx[2].rect(px0, py0 + tabH, panelW, panelH - tabH);
         ctx[2].clip();
+        }
         const tab = (global.royaleBoard && global.royaleBoard.tab) || 'map';
         if (royaleActive() && tab !== 'map') {
             ctx[2].fillStyle = "#16181e";
@@ -6212,7 +6271,15 @@ import * as tutorial from './tutorial.js';
         ctx[2].restore();
         ctx[2].lineWidth = 3;
         ctx[2].strokeStyle = color.black;
-        ctx[2].strokeRect(px0 - 2, py0 - 2, panelW + 4, panelH + 4);
+        if (disc) {
+            const midx = px0 + panelW / 2, midy = py0 + tabH + (panelH - tabH) / 2;
+            const rad = Math.min(panelW, panelH - tabH) / 2;
+            ctx[2].beginPath();
+            ctx[2].arc(midx, midy, rad + 2, 0, Math.PI * 2);
+            ctx[2].stroke();
+        } else {
+            ctx[2].strokeRect(px0 - 2, py0 - 2, panelW + 4, panelH + 4);
+        }
         const keyEl = document.querySelector('#controlSettings b[data-key="KEY_TOGGLE_MAP"]');
         const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "F";
         drawText("[" + keyName + "] close",
@@ -6314,7 +6381,10 @@ import * as tutorial from './tutorial.js';
             if (royaleActive() && !global.mobile) {
                 const mx = global.screenWidth - spacing - len - 5;
                 const my = global.screenHeight - len - spacing - 22;
-                drawRoyaleFullMinimap(mx, my, len);
+                drawFortniteMinimap(mx, my, len);
+                const keyEl = document.querySelector('#controlSettings b[data-key="KEY_TOGGLE_MAP"]');
+                const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "F";
+                drawText("[" + keyName + "] map", mx + len / 2, my + len + 16, 11, color.guiwhite, "center");
             } else if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0 && !global.mobile) {
                 const mx = global.screenWidth - spacing - len - 5;
                 const my = global.screenHeight - len - spacing - 5;
@@ -7265,6 +7335,7 @@ import * as tutorial from './tutorial.js';
         // Royale owns its death screen (placement + spectate + home, no respawn).
         if (global.royaleDied && (global.royaleSpectating || global.showBigMap)) {
             global.clickables.royaleSpectate.hide();
+            global.clickables.deathRespawn.hide();
             return;
         }
         if (global.royaleDied) {
@@ -7449,6 +7520,12 @@ import * as tutorial from './tutorial.js';
                 drawButton(cx - 90, by, 150, 32, ga, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
             }
             drawButton(cx + 90, by, 150, 32, ga, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
+            global.royaleBarHits = {
+                spectate: canRequeue ? null : { x: cx - 90 - 75, y: by, w: 150, h: 32 },
+                play: canRequeue ? { x: cx - 90 - 75, y: by, w: 150, h: 32 } : null,
+                prev: null,
+                next: null,
+            };
         }
     };
     const drawRoyaleSpectateBar = () => {
@@ -7471,9 +7548,16 @@ import * as tutorial from './tutorial.js';
         const phase = global.royale && global.royale.phase;
         drawButton(x + 48, y + 4, 84, 28, 1, "rect", "Prev", 13, false, false, false, true, "royalePrev", cr, 0);
         drawButton(x + 138, y + 4, 84, 28, 1, "rect", "Next", 13, false, false, false, true, "royaleNext", cr, 0);
+        global.royaleBarHits = {
+            prev: { x: x + 48 - 42, y: y + 4, w: 84, h: 28 },
+            next: { x: x + 138 - 42, y: y + 4, w: 84, h: 28 },
+            spectate: null,
+            play: null,
+        };
         if (phase === 'lobby' || phase === 'idle') {
             drawButton(x + barW - 150, y + 4, 84, 28, 1, "rect", "Play", 13, false, false, false, true, "deathRespawn", cr, 0);
             drawButton(x + barW - 52, y + 4, 88, 28, 1, "rect", "Home", 13, false, false, false, true, "exitGame", cr, 0);
+            global.royaleBarHits.play = { x: x + barW - 150 - 42, y: y + 4, w: 84, h: 28 };
         } else {
             drawButton(x + barW - 52, y + 4, 88, 28, 1, "rect", "Home", 13, false, false, false, true, "exitGame", cr, 0);
         }

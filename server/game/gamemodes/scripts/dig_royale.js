@@ -88,9 +88,7 @@ function setLobby(body, on) {
     if (!body) return;
     body.royaleLobby = !!on;
     body.passive = !!on;
-    // Guns still work. Combat and rock-crush damage are skipped while
-    // royaleLobby is set (see gun.live / terrain crush).
-    body.invuln = false;
+    body.invuln = !!on;
     if (on) {
         body.godmode = false;
         setFrozen(body, false);
@@ -114,7 +112,7 @@ function boardSnapshot() {
         out.push({
             id: body.id,
             name: body.name || "Unnamed",
-            kills: (body.killCount && body.killCount.solo | 0) || 0,
+            kills: isLobbyPhase() ? 0 : ((body.killCount && body.killCount.solo | 0) || 0),
             gems: gemsOf(body),
             alive: true,
             place: 0,
@@ -229,6 +227,25 @@ function pickSeparatedHoles(holes, n) {
     return picked;
 }
 
+function uniqueDropSpots(n) {
+    const holes = pits().slice();
+    const out = [];
+    const taken = new Set();
+    const shuffled = pickSeparatedHoles(holes, holes.length);
+    for (let i = 0; i < n; i++) {
+        if (i < shuffled.length) {
+            out.push(shuffled[i]);
+            taken.add(shuffled[i].x + "," + shuffled[i].y);
+            continue;
+        }
+        const a = (i + 0.37) * 2.399963;
+        const ring = 0.38 + 0.08 * (i % 4);
+        const r = ((global.gameManager.terrainGrid && global.gameManager.terrainGrid.circleRadius) || 2600) * ring;
+        out.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+    }
+    return out;
+}
+
 // Fresh loadout for every combatant: back to Basic, skills wiped, then a full
 // level grant so the 30s freeze is actually spent upgrading.
 function resetRoyaleBody(body) {
@@ -304,11 +321,10 @@ function scatter() {
     try { require('../../terrain/royaleLayout.js').carveMatchPois(global.gameManager.terrainGrid); } catch { /* */ }
     const handler = global.gameManager.gameHandler;
     let list = combatants();
-    const holes = pits().slice();
     const need = Math.max(0, FILL_CAP - list.length);
-    const fillHoles = pickSeparatedHoles(holes, Math.min(holes.length, list.length + need));
+    const spots = uniqueDropSpots(list.length + need);
     for (let i = 0; i < need; i++) {
-        const hole = fillHoles[(list.length + i) % fillHoles.length] || { x: 0, y: 0 };
+        const hole = spots[list.length + i] || { x: 0, y: 0 };
         const team = getRandomTeam();
         handler.spawnBots({ x: hole.x, y: hole.y }, team);
         const bot = handler.bots[handler.bots.length - 1];
@@ -322,9 +338,8 @@ function scatter() {
         }
     }
     const all = combatants();
-    const spots = pickSeparatedHoles(holes, all.length);
     all.forEach((body, i) => {
-        const hole = spots[i % spots.length] || { x: 0, y: 0 };
+        const hole = spots[i] || { x: 0, y: 0 };
         resetRoyaleBody(body);
         moveTo(body, hole.x + (Math.random() - 0.5) * 30, hole.y + (Math.random() - 0.5) * 30);
         setLobby(body, false);
@@ -432,7 +447,21 @@ function resetMatch() {
         }
     } catch { /* */ }
     outposts.resetRoyale && outposts.resetRoyale();
+    occupy.clear();
+    lockout.clear();
     const plaza = lobbyPos();
+    for (const client of connectedClients()) {
+        client.royalePlace = 0;
+        // Stay dead until Play. Do not auto-spawn the lobby.
+        if (!client.player || !client.player.body || client.player.body.isDead?.()) {
+            client.royaleNeedClick = true;
+            client.status.readyToSpawn = false;
+            client.status.deceased = true;
+        } else {
+            client.royaleEliminated = false;
+            client.royaleNeedClick = false;
+        }
+    }
     for (const body of humans()) {
         moveTo(body, plaza.x + (Math.random() - 0.5) * 80, plaza.y + (Math.random() - 0.5) * 80);
         resetRoyaleBody(body);
@@ -441,6 +470,7 @@ function resetMatch() {
         if (body.socket) {
             body.socket.royaleEliminated = false;
             body.socket.royalePlace = 0;
+            body.socket.royaleNeedClick = false;
         }
         body.health.amount = body.health.max;
     }

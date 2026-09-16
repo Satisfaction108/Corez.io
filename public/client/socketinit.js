@@ -1568,9 +1568,9 @@ let incoming = async function(message, socket) {
             global.died = true;
             const deathPlace = m[13 + m[8]] | 0;
             if (deathPlace > 0) global.royale.place = deathPlace;
+            const rp = global.royale && global.royale.phase;
             if (global.finalCause === "storm" || (global.royale && global.royale.at > 0 &&
-                (global.royale.place > 0 || global.royale.phase === 'live' ||
-                 global.royale.phase === 'loadout' || global.royale.phase === 'over'))) {
+                rp !== 'lobby' && rp !== 'idle')) {
                 global.royaleDied = true;
             }
             global.royaleSpectating = false;

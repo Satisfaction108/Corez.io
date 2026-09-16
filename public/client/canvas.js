@@ -204,7 +204,7 @@ class Canvas {
                 if (global.died) {
                     if (global.royaleDied) {
                         global.royaleSpectating = true;
-                        this.socket.talk('RS', 1);
+                        this.socket.talk('RS', 2);
                         break;
                     }
                     if (!global.cannotRespawn) { this.respawn(); break; }
@@ -231,13 +231,13 @@ class Canvas {
             case global.KEY_LEFT_ARROW:
                 if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = -this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_LEFT:
-                if (global.royaleDied && global.died) { this.socket.talk('RS', 0); break; }
+                if ((global.royaleDied || global.royaleSpectating) && global.died) { this.socket.talk('RS', 0); break; }
                 this.socket.cmd.set(2, true);
                 break;
             case global.KEY_RIGHT_ARROW:
                 if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = +this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_RIGHT:
-                if (global.royaleDied && global.died) { this.socket.talk('RS', 1); break; }
+                if ((global.royaleDied || global.royaleSpectating) && global.died) { this.socket.talk('RS', 1); break; }
                 this.socket.cmd.set(3, true);
                 break;
             case global.KEY_MOUSE_0:
@@ -638,24 +638,34 @@ class Canvas {
                 } else {
                     global.searchBarActive = false;
                 }
+                const scale = (this.cv && this.cv.height ? this.cv.height : (global.canvas && global.canvas.height) || 1) / Math.max(1, global.screenHeight);
+                const gx = mpos.x / scale, gy = mpos.y / scale;
+                const inRect = (r) => !!r && gx >= r.x && gx <= r.x + r.w && gy >= r.y && gy <= r.y + r.h;
+                const bar = global.royaleBarHits || {};
                 if (respawnCheck !== -1 && !global.disconnected) {
                     if (global.royaleDied && global.royale.phase !== 'lobby' && global.royale.phase !== 'idle') {
                         global.royaleSpectating = true;
-                        this.socket.talk('RS', 1);
+                        this.socket.talk('RS', 2);
                         gameSound.uiClick();
                     } else { this.respawn(); gameSound.uiClick(); }
                 } else
-                if (global.clickables.royaleSpectate.check(mpos) !== -1 && !global.disconnected && global.died) {
+                if ((global.clickables.royaleSpectate.check(mpos) !== -1 || inRect(bar.spectate)) && !global.disconnected && global.died) {
+                    global.royaleSpectating = true;
+                    this.socket.talk('RS', 2);
+                    gameSound.uiClick();
+                } else
+                if ((global.clickables.royalePrev.check(mpos) !== -1 || inRect(bar.prev)) && global.died) {
+                    global.royaleSpectating = true;
+                    this.socket.talk('RS', 0);
+                    gameSound.uiClick();
+                } else
+                if ((global.clickables.royaleNext.check(mpos) !== -1 || inRect(bar.next)) && global.died) {
                     global.royaleSpectating = true;
                     this.socket.talk('RS', 1);
                     gameSound.uiClick();
                 } else
-                if (global.clickables.royalePrev.check(mpos) !== -1 && global.died) {
-                    this.socket.talk('RS', 0);
-                    gameSound.uiClick();
-                } else
-                if (global.clickables.royaleNext.check(mpos) !== -1 && global.died) {
-                    this.socket.talk('RS', 1);
+                if (inRect(bar.play) && global.died && !global.disconnected) {
+                    this.respawn();
                     gameSound.uiClick();
                 } else
                 if (global.clickables.royaleTab.check(mpos) !== -1) {

@@ -1096,7 +1096,7 @@ class Entity extends EventEmitter {
     }
 
     contemplationOfMortality() {
-        if (this.invuln || this.godmode) {
+        if (this.invuln || this.godmode || this.passive || this.royaleLobby) {
             this.damageReceived = 0;
             return 0;
         }
@@ -1210,6 +1210,7 @@ class Entity extends EventEmitter {
 
                 switch (this.type) {
                     case "tank":
+                        if (this.royaleLobby || instance.royaleLobby) break;
                         killers.length > 1 ? instance.killCount.assists++ : instance.killCount.solo++;
                         break;
 
