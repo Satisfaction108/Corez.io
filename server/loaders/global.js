@@ -221,11 +221,8 @@ global.bringToLife = (() => {
             my.accel.y = 0;
         }
         if (my.royaleLobby) {
-            // BR lobby playground: invulnerable + passive (can't hurt or be
-            // hurt), but movement + firing + mining all work for warm-up fun.
-            // Gems are suppressed in spawnOreBurst and banking is gated by
-            // isLobbyPhase, so this is pure destruction with no economy.
-            my.invuln = true;
+            my.invuln = false;
+            my.passive = true;
         }
 
         // Spawn protection ends as soon as the tank commits to movement or

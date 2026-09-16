@@ -6,9 +6,32 @@ let bans = global.bans || (global.bans = []);
 let permBans = global.permBans || (global.permBans = []);
 global.chatID = 0;
 
+function livingSpectateList() {
+    const out = [];
+    for (const e of entities.values()) {
+        if (!e || e.isGhost) continue;
+        if (!(e.isPlayer || e.isBot)) continue;
+        if (typeof e.isDead === "function" && e.isDead()) continue;
+        out.push(e);
+    }
+    return out;
+}
+
+function cycleSpectate(socket, dir) {
+    const list = livingSpectateList();
+    if (!list.length) {
+        socket.spectateEntity = null;
+        return;
+    }
+    let i = list.findIndex(e => e === socket.spectateEntity);
+    if (i < 0) i = 0;
+    else i = (i + (dir < 0 ? -1 : 1) + list.length) % list.length;
+    socket.spectateEntity = list[i];
+}
+
 // Walk a killer (bullet/drone/tank) up to the living player or bot to follow.
 function livingSpectateTarget(killers) {
-    if (!Array.isArray(killers)) return null;
+    if (!Array.isArray(killers)) return livingSpectateList()[0] || null;
     for (const e of killers) {
         if (!e) continue;
         let root = e;
@@ -16,7 +39,7 @@ function livingSpectateTarget(killers) {
         if (typeof root.isDead === "function" && root.isDead()) continue;
         if (root.isPlayer || root.isBot) return root;
     }
-    return null;
+    return livingSpectateList()[0] || null;
 }
 
 class socketManager {
@@ -441,23 +464,6 @@ class socketManager {
             player.body.reverseTank = reverseTank;
 
             if (player.command != null) {
-            if (player.body && (player.body.royaleFrozen || player.body.royaleLobby)) {
-                // Frozen (loadout): no move, no fire — upgrades only.
-                // Lobby: free move + free fire for warm-up; damage to players
-                // is nullified by invuln+passive, gems/banking gated elsewhere.
-                if (player.body.royaleFrozen) {
-                    player.command.lmb = player.command.mmb = player.command.rmb = 0;
-                    player.command.up = player.command.down = player.command.left = player.command.right = 0;
-                } else {
-                    player.command.up = commands & 1;
-                    player.command.down = (commands & 2) >> 1;
-                    player.command.left = (commands & 4) >> 2;
-                    player.command.right = (commands & 8) >> 3;
-                    player.command.lmb = (commands & 16) >> 4;
-                    player.command.mmb = (commands & 32) >> 5;
-                    player.command.rmb = (commands & 64) >> 6;
-                }
-            } else {
                 player.command.up = commands & 1;
                 player.command.down = (commands & 2) >> 1;
                 player.command.left = (commands & 4) >> 2;
@@ -465,7 +471,10 @@ class socketManager {
                 player.command.lmb = (commands & 16) >> 4;
                 player.command.mmb = (commands & 32) >> 5;
                 player.command.rmb = (commands & 64) >> 6;
-            }
+                if (player.body && player.body.royaleFrozen) {
+                    player.command.lmb = player.command.mmb = player.command.rmb = 0;
+                    player.command.up = player.command.down = player.command.left = player.command.right = 0;
+                }
             }
             } break;
             case "#": {
@@ -961,6 +970,10 @@ class socketManager {
             }
             case "NWB": {
                 socket.status.forceNewBroadcast = true;
+            } break;
+            case "RS": {
+                if (!socket.status.deceased) return;
+                cycleSpectate(socket, (m[0] | 0) < 0 ? -1 : 1);
             } break;
             default: {
                 console.log(m)
@@ -1510,6 +1523,7 @@ class socketManager {
         }
         this.preparePlayer(socket, player, body);
         if (Config.dig_royale) require('../gamemodes/scripts/dig_royale.js').onHumanJoin(body);
+        if (body.royaleLobby) body.invuln = false;
         return player;
     };
 
@@ -1566,6 +1580,7 @@ class socketManager {
                     ? socket.gemDeathCarried
                     : (player.body.carriedGems | 0)) | 0,
                 player.body.deathCause || "",
+                (socket && socket.royalePlace) | 0,
             ];
         }
 
@@ -1886,6 +1901,9 @@ class socketManager {
                     let hops = 0;
                     while (socket.spectateEntity && socket.spectateEntity.isDead() && hops++ < 8) {
                         socket.spectateEntity = livingSpectateTarget(socket.spectateEntity.finalKillers);
+                    }
+                    if (!socket.spectateEntity || socket.spectateEntity.isDead()) {
+                        cycleSpectate(socket, 1);
                     }
                     if (socket.spectateEntity) {
                         

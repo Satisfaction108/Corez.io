@@ -215,8 +215,9 @@ class Gun extends EventEmitter {
         // Decides what to do based on child-counting settings
         let shootPermission = this.checkShootPermission();
 
-        // Dont shoot when invuln/not active
-        if (this.body.master.invuln || !this.body.master.activation.check()) {
+        // Dont shoot when invuln/not active. Lobby still fires.
+        if ((this.body.master.invuln && !this.body.master.royaleLobby) ||
+            !this.body.master.activation.check()) {
             shootPermission = false;
         }
         if (this.body.master.maxBullets !== undefined && this.body.master.maxBullets < (this.body.master.bulletchildren.length + 1)) {

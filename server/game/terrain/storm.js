@@ -3,8 +3,8 @@
 // BR pacing: lobby 100s + loadout 30s + 8min storm ≈ 10.2min total,
 // so the whole match is always over well within ~12 minutes.
 
-const DAMAGE_FRAC = 0.05;
-const DAMAGE_EVERY_MS = 1500;
+const DAMAGE_FRAC = 0.22;
+const DAMAGE_EVERY_MS = 450;
 const CLOSE_MS = 8 * 60 * 1000;
 
 let state = {
@@ -21,7 +21,7 @@ function maxRadius() {
     if (tg && tg.circleRadius) return tg.circleRadius;
     const room = global.gameManager && global.gameManager.room;
     if (!room) return 2800;
-    return Math.min(room.width, room.height) / 2 * 0.96;
+    return Math.min(room.width, room.height) / 2;
 }
 
 function start() {
@@ -69,14 +69,22 @@ function tickDamage(now = Date.now()) {
         if (body.royaleFrozen || body.royaleLobby) continue;
         if (!inStorm(body.x, body.y, now)) {
             body._stormHurtAt = 0;
+            body._inStorm = false;
             continue;
         }
+        body._inStorm = true;
+        body.invuln = false;
         if (now - (body._stormHurtAt || 0) < DAMAGE_EVERY_MS) continue;
         body._stormHurtAt = now;
         if (!body.health || !(body.health.max > 0)) continue;
-        body.invuln = false;
         const dmg = body.health.max * DAMAGE_FRAC;
-        body.health.amount -= dmg;
+        if (body.shield && body.shield.amount > 0) {
+            const soak = Math.min(body.shield.amount, dmg);
+            body.shield.amount -= soak;
+            body.health.amount -= (dmg - soak);
+        } else {
+            body.health.amount -= dmg;
+        }
         if (body.health.amount <= 0) {
             body.deathCause = "storm";
             body.dontSendDeathMessage = true;

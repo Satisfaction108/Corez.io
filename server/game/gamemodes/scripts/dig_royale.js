@@ -76,7 +76,9 @@ function setLobby(body, on) {
     if (!body) return;
     body.royaleLobby = !!on;
     body.passive = !!on;
-    body.invuln = !!on;
+    // Invuln blocks guns (gun.live). Lobby uses passive so you can fire
+    // and mine, but nobody can hurt anybody.
+    body.invuln = false;
     if (on) {
         body.godmode = false;
         setFrozen(body, false);
@@ -133,29 +135,34 @@ function broadcast(extra = {}) {
         : 0;
     const st = storm.snapshot(t);
     const alive = phase === 'live' || phase === 'loadout' ? combatants().length : 0;
-    const payload = JSON.stringify({
-        phase,
-        left: Math.ceil(left / 1000),
-        alive,
-        fill: FILL_CAP,
-        humans: humans().length,
-        winner: winner ? { name: winner.name || "Unnamed", id: winner.id } : null,
-        storm: st,
-        toast: extra.toast || "",
-        feed: killFeed.slice(-6),
-        board: boardSnapshot(),
-        matchId,
-        occupyMs: OCCUPY_MS,
-        lockoutMs: LOCKOUT_MS,
-        ...extra,
-    });
-    for (const client of humanSockets()) client.talk('RY', payload);
+    const board = boardSnapshot();
+    for (const client of humanSockets()) {
+        const youPlace = (client && client.royalePlace) || 0;
+        const payload = JSON.stringify({
+            phase,
+            left: Math.ceil(left / 1000),
+            alive,
+            fill: FILL_CAP,
+            humans: humans().length,
+            winner: winner ? { name: winner.name || "Unnamed", id: winner.id } : null,
+            storm: st,
+            toast: extra.toast || "",
+            feed: killFeed.slice(-6),
+            board,
+            youPlace,
+            matchId,
+            occupyMs: OCCUPY_MS,
+            lockoutMs: LOCKOUT_MS,
+            ...extra,
+        });
+        client.talk('RY', payload);
+    }
 }
 
 function go(next) {
     phase = next;
     phaseAt = now();
-    broadcast({ toast: next === 'lobby' ? 'Drop in — break rocks, warm up, no gems yet'
+    broadcast({ toast: next === 'lobby' ? 'Drop in - break rocks, warm up, no gems yet'
         : next === 'loadout' ? 'Upgrade your build and tanks'
         : next === 'live' ? 'Last one standing wins'
         : next === 'over' ? ((winner && winner.name) || 'Someone') + ' wins'
@@ -270,6 +277,7 @@ function scatter() {
         }
     }
     const all = combatants();
+    try { require('../../terrain/royaleLayout.js').carveMatchPois(global.gameManager.terrainGrid); } catch { /* */ }
     const spots = pickSeparatedHoles(holes, all.length);
     all.forEach((body, i) => {
         const hole = spots[i % spots.length] || { x: 0, y: 0 };
@@ -332,6 +340,7 @@ function place(body) {
     });
     if (body.socket) {
         body.socket.royaleEliminated = true;
+        body.socket.royalePlace = remaining + 1;
         body.socket.talk('RYP', remaining + 1);
     }
 }
@@ -379,6 +388,7 @@ function resetMatch() {
         setLobby(body, true);
         body.royaleAlive = false;
         if (body.socket) body.socket.royaleEliminated = false;
+        if (body.socket) body.socket.royalePlace = 0;
         body.health.amount = body.health.max;
     }
     if (humans().length) go('lobby');

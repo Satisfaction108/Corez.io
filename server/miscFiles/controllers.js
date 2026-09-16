@@ -1771,6 +1771,7 @@ class io_digWarsGoals extends IO {
     // Is there anything solid in the way? Bots used to empty a magazine into
     // the chamber wall they were standing behind.
     clearShot(entity) {
+        if (Config.dig_royale) return true;
         if (this.isRammer()) return true;
         const body = this.body;
         const distance = Math.hypot(entity.x - body.x, entity.y - body.y);
@@ -1785,7 +1786,7 @@ class io_digWarsGoals extends IO {
         for (let i = 1; i < steps && ok; i++) {
             const t = i / steps;
             const x = body.x + (entity.x - body.x) * t, y = body.y + (entity.y - body.y) * t;
-            if (tg?.pointInRock && tg.pointInRock(x, y)) ok = false;
+            if (tg?.pointInRock && tg.pointInRock(x, y) && !Config.dig_royale) ok = false;
             else if (this.nav.structureBlocks(x, y, 6)) ok = false;
         }
         if (this.losCache.size > 24) this.losCache.clear();
@@ -2190,7 +2191,7 @@ class io_digWarsGoals extends IO {
         // Somebody parked in an outpost pocket with the walls between us is
         // not a duel we can have - the objective system sieges the outpost
         // itself; "fighting" them just hoses the scenery.
-        if (!this.clearShot(target)) {
+        if (!this.clearShot(target) && !Config.dig_royale) {
             for (const site of digWarsOutposts.getOutposts()) {
                 const dx = target.x - site.x, dy = target.y - site.y;
                 if (dx * dx + dy * dy < 300 * 300) return false;
@@ -2239,10 +2240,14 @@ class io_digWarsGoals extends IO {
         const trap = this.trappedInChamber();
         if (trap) return { kind: 'objective', point: trap, structure: 'chamber', trapped: true };
 
+        if (Config.dig_royale && view.enemy && view.enemyDistance < 1400 &&
+            this.canInitiateFight(view.enemy, now))
+            return { kind: 'fight', target: view.enemy };
         if (Config.dig_royale) {
             const royale = require('../game/gamemodes/scripts/dig_royale.js');
             const flee = royale.stormFleePoint && royale.stormFleePoint(body);
-            if (flee) return { kind: 'survive', point: flee };
+            if (flee && !(view.enemy && view.enemyDistance < 1100))
+                return { kind: 'survive', point: flee };
         }
 
         // Below a quarter tank, disengage no matter what the temperament
@@ -2250,9 +2255,6 @@ class io_digWarsGoals extends IO {
         if (health < 0.25 || (threatened && (health < this.retreatAt() || (outnumbered && health < 0.6) ||
             (this.feared(view.enemy, now) && health < 0.75))))
             return { kind: 'survive', point: this.retreatPoint() };
-        if (Config.dig_royale && view.enemy && view.enemyDistance < 1200 &&
-            this.canInitiateFight(view.enemy, now))
-            return { kind: 'fight', target: view.enemy };
         // Bank on threshold, and also just periodically: a bot wandering
         // around with an hour of unbanked loot never showed anyone what the
         // vault is for.

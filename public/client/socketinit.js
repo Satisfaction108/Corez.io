@@ -1201,9 +1201,10 @@ let incoming = async function(message, socket) {
                     r.feed = d.feed || [];
                     r.board = d.board || [];
                     r.at = performance.now();
+                    if (d.youPlace > 0) r.place = d.youPlace | 0;
                     if (r.phase === 'over' && !wasOver) r.victoryAt = performance.now();
                     if (r.phase !== 'over') r.victoryAt = 0;
-                    if (r.phase === 'lobby' || r.phase === 'idle') {
+                    if ((r.phase === 'lobby' || r.phase === 'idle') && !global.royaleDied) {
                         r.place = 0;
                         global.royaleSpectating = false;
                     }
@@ -1561,15 +1562,14 @@ let incoming = async function(message, socket) {
             global.finalCause = m[12 + m[8]] || "";
             global.canvas.reverseDirection = false;
             global.died = true;
-            global.royaleSpectating = false;
-            // Remember royale deaths across phase changes (live → over → lobby)
-            // so the BR screen (spectate/home, never respawn) owns the whole
-            // arc until the player spawns again or leaves.
-            if (global.royale && performance.now() - (global.royale.at || 0) < 8000 &&
+            const deathPlace = m[13 + m[8]] | 0;
+            if (deathPlace > 0) global.royale.place = deathPlace;
+            if (global.royale && global.royale.at > 0 &&
                 (global.royale.place > 0 || global.royale.phase === 'live' ||
                  global.royale.phase === 'loadout' || global.royale.phase === 'over')) {
                 global.royaleDied = true;
             }
+            global.royaleSpectating = false;
             global.autoSpin = false;
             global.syncingWithTank = false;
             global.clickables.mobileButtons.active = false;

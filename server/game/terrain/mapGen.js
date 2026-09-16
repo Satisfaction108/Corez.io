@@ -23,7 +23,7 @@ function generate(cfg) {
 
     if (cfg.circle) {
         const cx = (cols - 1) / 2, cy = (rows - 1) / 2;
-        const rad = Math.min(cols, rows) / 2 - 1.2;
+        const rad = Math.min(cols, rows) / 2 - 0.15;
         const rad2 = rad * rad;
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {

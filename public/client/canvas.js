@@ -144,7 +144,7 @@ class Canvas {
     }
 
     respawn() {
-        // Royale: no respawns — dead players spectate then requeue from home.
+        // Royale: no respawns - dead players spectate then requeue from home.
         if (global.royaleDied) return;
         if (global.died && !global.cannotRespawn && !global.respawnPending) {
             global.respawnPending = true;
@@ -225,11 +225,13 @@ class Canvas {
             case global.KEY_LEFT_ARROW:
                 if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = -this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_LEFT:
+                if (global.royaleDied && global.died) { this.socket.talk('RS', -1); break; }
                 this.socket.cmd.set(2, true);
                 break;
             case global.KEY_RIGHT_ARROW:
                 if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = +this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_RIGHT:
+                if (global.royaleDied && global.died) { this.socket.talk('RS', 1); break; }
                 this.socket.cmd.set(3, true);
                 break;
             case global.KEY_MOUSE_0:
@@ -248,21 +250,15 @@ class Canvas {
                 global.statMaxing = true;
                 break;
             case global.KEY_TOGGLE_MAP:
-                // Royale: F toggles the minimap leaderboard above the minimap.
-                // Everywhere else it toggles the big map as before.
-                if (global.royale && performance.now() - (global.royale.at || 0) < 8000 &&
-                    global.gameStart && !global.disconnected) {
-                    global.royaleBoard.open = !global.royaleBoard.open;
-                    gameSound.uiClick();
-                    break;
-                }
+                if (!global.gameStart || global.disconnected) break;
                 global.showBigMap = !global.showBigMap;
                 if (global.showBigMap) {
+                    global.royaleBoard.tab = global.royaleBoard.tab || 'map';
                     global.bigMap.zoom = 1;
                     global.bigMap.cx = 0;
                     global.bigMap.cy = 0;
                     global.bigMap.dragging = false;
-                    this.releaseMovement();
+                    if (!global.died) this.releaseMovement();
                 }
                 break;
             case global.KEY_SUICIDE:
@@ -288,7 +284,7 @@ class Canvas {
                     this.socket.talk("t", 2, true);
                     break;
                 case global.KEY_AUTO_ALT: {
-                    // G: enemy ping — drops a team-wide danger marker at
+                // G: enemy ping - drops a team-wide danger marker at
                     // the cursor's world position
                     const nowP = Date.now();
                     if (!this._lastEnemyPing || nowP - this._lastEnemyPing > 600) {
@@ -486,9 +482,10 @@ class Canvas {
                     global.clickables.skipUpgrades.check(mpos) == -1 &&
                     global.clickables.dailyTankUpgrade.check(mpos) == false &&
                     global.clickables.dailyTankAd.check(mpos) === false &&
-                    global.clickables.royaleBoardGems.check(mpos) == -1 &&
-                    global.clickables.royaleBoardKills.check(mpos) == -1 &&
+                    global.clickables.royaleTab.check(mpos) == -1 &&
                     global.clickables.royaleSpectate.check(mpos) == -1 &&
+                    global.clickables.royalePrev.check(mpos) == -1 &&
+                    global.clickables.royaleNext.check(mpos) == -1 &&
                     upgradeCheck == -1 &&
                     !global.died
                 ) this.socket.cmd.set(primaryFire, true);
@@ -513,6 +510,12 @@ class Canvas {
                     y: mouse.clientY * global.ratio,
                 };
                 if (global.showBigMap) {
+                    const tab = global.clickables.royaleTab.check(mpos);
+                    if (tab !== -1) {
+                        global.royaleBoard.tab = ['map', 'standings', 'feed', 'alive'][tab] || 'map';
+                        gameSound.uiClick();
+                        break;
+                    }
                     global.bigMap.dragging = false;
                     break;
                 }
@@ -637,15 +640,18 @@ class Canvas {
                     global.royaleSpectating = true;
                     gameSound.uiClick();
                 } else
-                if (global.clickables.royaleBoardGems.check(mpos) !== -1) {
-                    global.royaleBoard.sort = 'gems';
-                    global.royaleBoard.open = true;
+                if (global.clickables.royalePrev.check(mpos) !== -1 && global.died) {
+                    this.socket.talk('RS', -1);
                     gameSound.uiClick();
-                    break;
                 } else
-                if (global.clickables.royaleBoardKills.check(mpos) !== -1) {
-                    global.royaleBoard.sort = 'kills';
-                    global.royaleBoard.open = true;
+                if (global.clickables.royaleNext.check(mpos) !== -1 && global.died) {
+                    this.socket.talk('RS', 1);
+                    gameSound.uiClick();
+                } else
+                if (global.clickables.royaleTab.check(mpos) !== -1) {
+                    const tab = global.clickables.royaleTab.check(mpos);
+                    global.royaleBoard.tab = ['map', 'standings', 'feed', 'alive'][tab] || 'map';
+                    global.showBigMap = true;
                     gameSound.uiClick();
                     break;
                 } else

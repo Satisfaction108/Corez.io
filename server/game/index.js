@@ -554,7 +554,10 @@ class gameHandler {
     }
 
     regenHealthAndShield() {
+        const storm = Config.dig_royale ? require('./terrain/storm.js') : null;
         for (let instance of entities.values()) {
+            if (instance._inStorm) continue;
+            if (storm && storm.inStorm(instance.x, instance.y)) continue;
             if (instance.shield.max) {
                 instance.shield.regenerate();
             }

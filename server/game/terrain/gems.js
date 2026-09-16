@@ -67,7 +67,7 @@ function spawnGem(x, y, value, cls, size, vx = 0, vy = 0) {
 
 function spawnOreBurst(rock, breaker) {
     if (!rock.ore) return;
-    // BR lobby is pure destruction for fun — no gems until the match starts.
+    // BR lobby is pure destruction for fun - no gems until the match starts.
     if (breaker && breaker.royaleLobby) return;
     const cls = ORE_CLASS[rock.ore];
     const deposits = rock.deposits && rock.deposits.length

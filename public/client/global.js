@@ -233,8 +233,9 @@ const global = {
         dailyTankAd: Clickable(),
         dailyTankCloseAd: Clickable(),
         royaleSpectate: Region(1),
-        royaleBoardGems: Region(1),
-        royaleBoardKills: Region(1),
+        royalePrev: Region(1),
+        royaleNext: Region(1),
+        royaleTab: Region(4),
         optionsMenu: {
             switchButton: Region(2),
             toggleBoxes: Region(100),
@@ -373,7 +374,8 @@ const global = {
     },
     royaleBoard: {
         open: false,
-        sort: 'gems', // 'gems' | 'kills'
+        tab: 'map', // map | standings | feed | alive
+        sort: 'gems',
     },
     royaleSpectating: false,
     royaleDied: false,

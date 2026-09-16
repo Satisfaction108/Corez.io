@@ -43,6 +43,58 @@ function killRock(rock, canyonKeys) {
     rock.deposits = null;
 }
 
+function stretchRocksToCircle(grid, circleR) {
+    for (const rock of grid.rocks.values()) {
+        if (!rock.alive || !rock.worldPoly) continue;
+        const cx = rock.worldCx || rock.wx, cy = rock.worldCy || rock.wy;
+        const d = Math.hypot(cx, cy);
+        if (d < circleR * 0.55) continue;
+        let maxR = 0;
+        for (const p of rock.worldPoly) {
+            const pr = Math.hypot(p[0], p[1]);
+            if (pr > maxR) maxR = pr;
+            if (pr > circleR && pr > 1e-6) {
+                const s = circleR / pr;
+                p[0] *= s;
+                p[1] *= s;
+            }
+        }
+        if (maxR < circleR * 0.97 && d > circleR * 0.62) {
+            for (const p of rock.worldPoly) {
+                const pr = Math.hypot(p[0], p[1]);
+                if (pr < d * 0.35 || pr < 1e-6) continue;
+                const s = circleR / pr;
+                if (s > 1) { p[0] *= s; p[1] *= s; }
+            }
+        }
+        rock.maxPolyRadius = Math.max(rock.maxPolyRadius || 0, circleR - d + 8);
+    }
+}
+
+function broadcastKills(grid, beforeAlive) {
+    if (!grid.rockEvents) return;
+    for (const rock of grid.rocks.values()) {
+        if (beforeAlive.has(rock.k) && !rock.alive) {
+            grid.rockEvents.push({ k: rock.k, h: 0, d: 1 });
+        }
+    }
+}
+
+function carveMatchPois(grid) {
+    if (!grid) return;
+    const canyonKeys = grid._canyonKeys || new Set();
+    const before = new Set();
+    for (const rock of grid.rocks.values()) if (rock.alive) before.add(rock.k);
+    for (const v of (grid.vaultSites || [])) {
+        const r = (v.x === 0 && v.y === 0) ? 0 : VAULT_R;
+        if (r > 0) carveDisk(grid, v.x, v.y, r, canyonKeys);
+    }
+    const list = grid.outpostSites || [];
+    for (const o of list) carveDisk(grid, o.x, o.y, OUTPOST_R, canyonKeys);
+    grid._canyonKeys = canyonKeys;
+    broadcastKills(grid, before);
+}
+
 function carveDisk(grid, wx, wy, r, canyonKeys) {
     const r2 = r * r;
     for (const rock of grid.rocks.values()) {
@@ -80,20 +132,29 @@ function radialOre(rock, circleR, salt) {
 function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     const room = global.gameManager && global.gameManager.room;
     const half = Math.min(room?.width || 5460, room?.height || 5460) / 2;
-    const circleR = half * 0.96;
+    const circleR = half * 0.998;
     grid.circleRadius = circleR;
     grid.lobbyPos = { x: 0, y: 0, r: LOBBY_R };
 
-    // Whole-cell disk cut: a rock lives or dies by its CENTER, never cropped
-    // mid-polygon. Edges end on natural Voronoi seams.
+    // Keep rocks that touch the disk, then pull the rim out to the circle
+    // so the wall meets the storm/map border instead of stopping short.
     for (const rock of grid.rocks.values()) {
         const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
-        if (x * x + y * y > circleR * circleR) killRock(rock, canyonKeys);
+        let keep = x * x + y * y <= circleR * circleR;
+        if (!keep && rock.worldPoly) {
+            for (const p of rock.worldPoly) {
+                const px = p[0], py = p[1];
+                if (px * px + py * py <= circleR * circleR) { keep = true; break; }
+            }
+        }
+        if (!keep) killRock(rock, canyonKeys);
     }
+    stretchRocksToCircle(grid, circleR);
 
+    // Sites exist for later, but lobby is plaza-only: do not carve vaults
+    // or outposts until scatter (carveMatchPois).
     grid.vaultSites = VAULTS.map((v, i) => {
         const x = v.x * circleR, y = v.y * circleR;
-        carveDisk(grid, x, y, v.lobby ? LOBBY_R : VAULT_R, canyonKeys);
         return { id: i, name: v.name, x, y, r: 95, team: 0, rainbow: true };
     });
     carveDisk(grid, 0, 0, LOBBY_R, canyonKeys);
@@ -103,7 +164,6 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     for (const spec of OUTPOSTS) {
         const x = Math.cos(spec.ang) * spec.dist * circleR;
         const y = Math.sin(spec.ang) * spec.dist * circleR;
-        carveDisk(grid, x, y, OUTPOST_R, canyonKeys);
         const rock = nearestRock(grid, x, y) || { k: 0, worldCx: x, worldCy: y };
         outpostCells.push({
             key: rock.k,
@@ -221,4 +281,4 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     }
 }
 
-module.exports = { apply, OUTPOSTS, ORE };
+module.exports = { apply, carveMatchPois, OUTPOSTS, ORE };
