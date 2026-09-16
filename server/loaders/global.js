@@ -221,9 +221,10 @@ global.bringToLife = (() => {
             my.accel.y = 0;
         }
         if (my.royaleLobby) {
-            my.control.fire = false;
-            my.control.main = false;
-            my.control.alt = false;
+            // BR lobby playground: invulnerable + passive (can't hurt or be
+            // hurt), but movement + firing + mining all work for warm-up fun.
+            // Gems are suppressed in spawnOreBurst and banking is gated by
+            // isLobbyPhase, so this is pure destruction with no economy.
             my.invuln = true;
         }
 

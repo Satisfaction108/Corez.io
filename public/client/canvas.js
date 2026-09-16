@@ -144,6 +144,8 @@ class Canvas {
     }
 
     respawn() {
+        // Royale: no respawns — dead players spectate then requeue from home.
+        if (global.royaleDied) return;
         if (global.died && !global.cannotRespawn && !global.respawnPending) {
             global.respawnPending = true;
             this.socket.talk('s', global.playerName, 0, 1 * config.game.autoLevelUp, false, 1 * config.game.incognitoMode);
@@ -196,9 +198,10 @@ class Canvas {
                 break;
 
             case global.KEY_ENTER:
-                // Enter to respawn
-                if (global.died && !global.cannotRespawn) {
-                    this.respawn();
+                // Enter to respawn (or to spectate in Royale)
+                if (global.died) {
+                    if (global.royaleDied) { global.royaleSpectating = true; break; }
+                    if (!global.cannotRespawn) { this.respawn(); break; }
                     break;
                 }
 
@@ -245,6 +248,14 @@ class Canvas {
                 global.statMaxing = true;
                 break;
             case global.KEY_TOGGLE_MAP:
+                // Royale: F toggles the minimap leaderboard above the minimap.
+                // Everywhere else it toggles the big map as before.
+                if (global.royale && performance.now() - (global.royale.at || 0) < 8000 &&
+                    global.gameStart && !global.disconnected) {
+                    global.royaleBoard.open = !global.royaleBoard.open;
+                    gameSound.uiClick();
+                    break;
+                }
                 global.showBigMap = !global.showBigMap;
                 if (global.showBigMap) {
                     global.bigMap.zoom = 1;
@@ -475,6 +486,9 @@ class Canvas {
                     global.clickables.skipUpgrades.check(mpos) == -1 &&
                     global.clickables.dailyTankUpgrade.check(mpos) == false &&
                     global.clickables.dailyTankAd.check(mpos) === false &&
+                    global.clickables.royaleBoardGems.check(mpos) == -1 &&
+                    global.clickables.royaleBoardKills.check(mpos) == -1 &&
+                    global.clickables.royaleSpectate.check(mpos) == -1 &&
                     upgradeCheck == -1 &&
                     !global.died
                 ) this.socket.cmd.set(primaryFire, true);
@@ -616,15 +630,31 @@ class Canvas {
                     global.searchBarActive = false;
                 }
                 if (respawnCheck !== -1 && !global.disconnected) {
-                    this.respawn();
+                    if (global.royaleDied) { global.royaleSpectating = true; gameSound.uiClick(); }
+                    else { this.respawn(); gameSound.uiClick(); }
+                } else
+                if (global.clickables.royaleSpectate.check(mpos) !== -1 && !global.disconnected && global.died) {
+                    global.royaleSpectating = true;
                     gameSound.uiClick();
+                } else
+                if (global.clickables.royaleBoardGems.check(mpos) !== -1) {
+                    global.royaleBoard.sort = 'gems';
+                    global.royaleBoard.open = true;
+                    gameSound.uiClick();
+                    break;
+                } else
+                if (global.clickables.royaleBoardKills.check(mpos) !== -1) {
+                    global.royaleBoard.sort = 'kills';
+                    global.royaleBoard.open = true;
+                    gameSound.uiClick();
+                    break;
                 } else
                 if (reconnectCheck !== -1) {
                     if (global.disconnected) global.reconnect();
                     gameSound.uiClick();
                 } else
                 if (exitGame !== -1) {
-                    if (global.disconnected || (global.died && !global.cannotRespawn)) global.exit();
+                    if (global.disconnected || global.died) global.exit();
                     gameSound.uiClick();
                 } else 
                 if (upgradeIndex !== -1 && upgradeIndex < gui.upgrades.length && !global.dailyTankAd.renderUI) {

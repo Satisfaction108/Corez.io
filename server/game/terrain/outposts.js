@@ -155,6 +155,28 @@ function onStructureDeath(site) {
 function tick(players, dtMs) {
     const list = getOutposts();
     if (!list.length) return;
+    // BR lobby/idle: playground only — outposts do nothing until live.
+    if (Config.dig_royale) {
+        try {
+            if (require('../gamemodes/scripts/dig_royale.js').isLobbyPhase()) {
+                for (const player of players) {
+                    const body = player.body;
+                    if (body) body.outpostOnPad = false;
+                }
+                // still pin banners so the map looks right, but skip pads
+                for (const site of list) {
+                    if (!site.banner) spawnStructure(site, site.team);
+                    const b = site.banner;
+                    if (b) {
+                        b.x = site.x; b.y = site.y;
+                        b.velocity.x = 0; b.velocity.y = 0;
+                        b.accel.x = 0;    b.accel.y = 0;
+                    }
+                }
+                return;
+            }
+        } catch { /* fall through */ }
+    }
     const now = Date.now();
 
     for (const site of list) {

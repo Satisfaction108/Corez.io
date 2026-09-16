@@ -1199,10 +1199,14 @@ let incoming = async function(message, socket) {
                     r.winner = d.winner || null;
                     r.storm = d.storm || r.storm;
                     r.feed = d.feed || [];
+                    r.board = d.board || [];
                     r.at = performance.now();
                     if (r.phase === 'over' && !wasOver) r.victoryAt = performance.now();
                     if (r.phase !== 'over') r.victoryAt = 0;
-                    if (r.phase === 'lobby' || r.phase === 'idle') r.place = 0;
+                    if (r.phase === 'lobby' || r.phase === 'idle') {
+                        r.place = 0;
+                        global.royaleSpectating = false;
+                    }
                 } catch (e) { /* ignore */ }
             } break;
             case 'RYP': {
@@ -1353,6 +1357,8 @@ let incoming = async function(message, socket) {
                 // the acknowledgement for the respawn request.
                 global.respawnPending = false;
                 global.died = false;
+                global.royaleSpectating = false;
+                global.royaleDied = false;
                 global.player.renderx = global.player.cx.x = m[0];
                 global.player.rendery = global.player.cy.y = m[1];
                 global.player.renderv = global.player.view = m[2];
@@ -1555,6 +1561,15 @@ let incoming = async function(message, socket) {
             global.finalCause = m[12 + m[8]] || "";
             global.canvas.reverseDirection = false;
             global.died = true;
+            global.royaleSpectating = false;
+            // Remember royale deaths across phase changes (live → over → lobby)
+            // so the BR screen (spectate/home, never respawn) owns the whole
+            // arc until the player spawns again or leaves.
+            if (global.royale && performance.now() - (global.royale.at || 0) < 8000 &&
+                (global.royale.place > 0 || global.royale.phase === 'live' ||
+                 global.royale.phase === 'loadout' || global.royale.phase === 'over')) {
+                global.royaleDied = true;
+            }
             global.autoSpin = false;
             global.syncingWithTank = false;
             global.clickables.mobileButtons.active = false;
@@ -1828,6 +1843,8 @@ const socketInit = () => {
 
 const resync = () => {
     let socket = global.socket;
+    global.royaleDied = false;
+    global.royaleSpectating = false;
     startSettings.neededtoresync = true;
     startSettings.allowtostartgame = false;
     sync = [];
@@ -1842,6 +1859,9 @@ const resync = () => {
 };
 
 global.resetSocket = () => {
+    global.royaleDied = false;
+    global.royaleSpectating = false;
+    global.royaleBoard.open = false;
     sync = [];
     clockDiff = 0;
     serverStart = 0;

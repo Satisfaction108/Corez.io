@@ -442,9 +442,20 @@ class socketManager {
 
             if (player.command != null) {
             if (player.body && (player.body.royaleFrozen || player.body.royaleLobby)) {
-                player.command.lmb = player.command.mmb = player.command.rmb = 0;
+                // Frozen (loadout): no move, no fire — upgrades only.
+                // Lobby: free move + free fire for warm-up; damage to players
+                // is nullified by invuln+passive, gems/banking gated elsewhere.
                 if (player.body.royaleFrozen) {
+                    player.command.lmb = player.command.mmb = player.command.rmb = 0;
                     player.command.up = player.command.down = player.command.left = player.command.right = 0;
+                } else {
+                    player.command.up = commands & 1;
+                    player.command.down = (commands & 2) >> 1;
+                    player.command.left = (commands & 4) >> 2;
+                    player.command.right = (commands & 8) >> 3;
+                    player.command.lmb = (commands & 16) >> 4;
+                    player.command.mmb = (commands & 32) >> 5;
+                    player.command.rmb = (commands & 64) >> 6;
                 }
             } else {
                 player.command.up = commands & 1;

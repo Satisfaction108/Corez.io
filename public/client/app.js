@@ -2578,6 +2578,13 @@ import * as tutorial from './tutorial.js';
     function royaleActive() {
         return global.royale && performance.now() - global.royale.at < 8000;
     }
+    function royaleBoardRows() {
+        const b = (global.royale && global.royale.board) || [];
+        const sort = (global.royaleBoard && global.royaleBoard.sort) || 'gems';
+        return b.slice().sort((x, y) =>
+            sort === 'kills' ? (y.kills - x.kills) || (y.gems - x.gems)
+                             : (y.gems - x.gems) || (y.kills - x.kills));
+    }
     function makeVaultSprites(pal = GOLD_PAL) {
         const S = 256, C = S / 2;
         const GEM = [[-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95]];
@@ -3347,6 +3354,8 @@ import * as tutorial from './tutorial.js';
     }
 
     function drawOutpostLabels(px, py, ratio) {
+        // BR lobby is rocks-only playground — no POI labels until scatter.
+        if (royaleActive() && (global.royale.phase === 'lobby' || global.royale.phase === 'idle')) return;
         const c = ctx[2];
         for (const o of global.outposts) {
             const sx = -px + global.screenWidth / 2 + ratio * (o.x);
@@ -5096,15 +5105,20 @@ import * as tutorial from './tutorial.js';
         const r = global.royale;
         const c = ctx[2];
         const cx = global.screenWidth / 2;
-        if (r.phase === "lobby" || r.phase === "loadout") {
-            const title = r.phase === "lobby" ? "BATTLE BEGINS IN" : "UPGRADE YOUR BUILD";
-            const sub = r.phase === "lobby" ? (r.left | 0) + "s" : (r.left | 0) + "s — upgrades only";
-            drawText(title, cx, 52, 18, color.guiwhite, "center");
-            drawText(sub, cx, 92, r.phase === "lobby" ? 44 : 28, color.gold, "center");
-            if (r.toast) drawText(r.toast, cx, 128, 16, color.guiwhite, "center");
+        if (r.phase === "lobby") {
+            drawText("WARM-UP — BATTLE BEGINS IN", cx, 46, 17, color.guiwhite, "center");
+            drawText((r.left | 0) + "s", cx, 88, 44, color.gold, "center");
+            drawText("Break rocks for fun · no gems yet · nobody can hurt you · [F] standings",
+                      cx, 122, 14, color.guiwhite, "center");
+            if (r.toast) drawText(r.toast, cx, 144, 13, "#c9b6ff", "center");
+        } else if (r.phase === "loadout") {
+            drawText("UPGRADE YOUR BUILD", cx, 46, 19, "#c9b6ff", "center");
+            drawText((r.left | 0) + "s — upgrades only", cx, 88, 26, color.gold, "center");
+            if (r.toast) drawText(r.toast, cx, 122, 14, color.guiwhite, "center");
         } else if (r.phase === "live") {
-            drawText("ALIVE  " + (r.alive | 0), cx, 38, 22, color.guiwhite, "center");
-            if (r.place > 0) drawText("#" + r.place, cx, 66, 16, color.gold, "center");
+            drawText("ALIVE  " + (r.alive | 0), cx, 36, 22, color.guiwhite, "center");
+            if (r.place > 0) drawText("#" + r.place, cx, 64, 16, color.gold, "center");
+            else drawText("[F] standings", cx, 62, 12, "#c9b6ff", "center");
         } else if (r.phase === "idle") {
             drawText("WAITING FOR PLAYERS", cx, 48, 18, color.guiwhite, "center");
         }
@@ -5970,6 +5984,7 @@ import * as tutorial from './tutorial.js';
     function drawFortniteMinimap(x, y, size) {
         const gw = global.gameWidth, gh = global.gameHeight;
         if (!gw || !gh) return;
+        const circle = royaleActive(); // BR disk reads as a circle, not a square
         const span = 2800;          
         const cSpan = span * 1.35;  
         
@@ -6004,8 +6019,14 @@ import * as tutorial from './tutorial.js';
             cornerCache.epoch = epoch;
         }
         ctx[2].save();
-        optionsMenu_drawRoundedRect(x, y, size, size, 12);
-        ctx[2].clip();
+        if (circle) {
+            ctx[2].beginPath();
+            ctx[2].arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+            ctx[2].clip();
+        } else {
+            optionsMenu_drawRoundedRect(x, y, size, size, 12);
+            ctx[2].clip();
+        }
         
         
         const ppw = S / cSpan;
@@ -6037,11 +6058,26 @@ import * as tutorial from './tutorial.js';
         }
         ctx[2].drawImage(cornerVign.canvas, x, y, size, size);
         ctx[2].restore();
-        
-        optionsMenu_drawRoundedRect(x, y, size, size, 12);
-        ctx[2].lineWidth = 3.5;
-        ctx[2].strokeStyle = color.black;
-        ctx[2].stroke();
+
+        if (circle) {
+            ctx[2].save();
+            ctx[2].beginPath();
+            ctx[2].arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+            ctx[2].lineWidth = 3.5;
+            ctx[2].strokeStyle = "#5a2ee8";
+            ctx[2].stroke();
+            ctx[2].beginPath();
+            ctx[2].arc(x + size / 2, y + size / 2, size / 2 - 2, 0, Math.PI * 2);
+            ctx[2].lineWidth = 1.5;
+            ctx[2].strokeStyle = "rgba(201,182,255,0.8)";
+            ctx[2].stroke();
+            ctx[2].restore();
+        } else {
+            optionsMenu_drawRoundedRect(x, y, size, size, 12);
+            ctx[2].lineWidth = 3.5;
+            ctx[2].strokeStyle = color.black;
+            ctx[2].stroke();
+        }
     }
 
     
@@ -6050,6 +6086,8 @@ import * as tutorial from './tutorial.js';
     
     let bigMapFade = 0;
     function drawBigMap() {
+        // Royale uses the circular minimap + F standings instead of the big map.
+        if (royaleActive()) { bigMapFade = 0; return; }
         const mapTarget = global.showBigMap ? 1 : 0;
         bigMapFade = util.lerp(bigMapFade, mapTarget, mapTarget ? 0.1 : 0.28, true);
         const fade = bigMapFade;
@@ -6497,6 +6535,81 @@ import * as tutorial from './tutorial.js';
             }
         }
         leaderboardUpdate++;
+    }
+
+    // Royale standings above the minimap (F to toggle, tabs sort by gems/kills).
+    // Replaces the top-right leaderboard in BR — no screen space wasted.
+    function drawRoyaleBoard(spacing, alcoveSize) {
+        if (!royaleActive()) {
+            global.clickables.royaleBoardGems.hide();
+            global.clickables.royaleBoardKills.hide();
+            return;
+        }
+        if (!global.royaleBoard.open) {
+            global.clickables.royaleBoardGems.hide();
+            global.clickables.royaleBoardKills.hide();
+            if (!global.mobile) {
+                const len = alcoveSize;
+                const hx = global.screenWidth - spacing - len - 5 + len;
+                const hy = global.screenHeight - spacing - 5;
+                drawText("[F] standings", hx - 4, hy - 8, 11, "#c9b6ff", "right");
+            }
+            return;
+        }
+        const rows = royaleBoardRows().slice(0, 8);
+        const len = alcoveSize;
+        const height = (len / (global.gameWidth || 1)) * (global.gameHeight || 1);
+        const x = global.mobile ? spacing : global.screenWidth - spacing - len - 5;
+        const rowH = 21, headH = 30;
+        const panelH = headH + Math.max(1, rows.length) * rowH + 10;
+        const mmY = global.mobile ? spacing : global.screenHeight - height - spacing - 5;
+        const y = mmY - panelH - 10;
+        const c = ctx[2];
+        const cr = global.canvas.height / global.screenHeight / global.ratio;
+        c.save();
+        roundRectPath(c, x, y, len, panelH, 10);
+        c.fillStyle = "rgba(16,17,26,0.92)";
+        c.fill();
+        c.lineWidth = 2.5;
+        c.strokeStyle = "#5a2ee8";
+        c.stroke();
+        // tabs
+        const sort = global.royaleBoard.sort || 'gems';
+        const tabW = len / 2;
+        c.fillStyle = sort === 'gems' ? "rgba(255,215,94,0.16)" : "rgba(255,255,255,0.03)";
+        c.fillRect(x + 2, y + 2, tabW - 2, 24);
+        c.fillStyle = sort === 'kills' ? "rgba(255,215,94,0.16)" : "rgba(255,255,255,0.03)";
+        c.fillRect(x + tabW, y + 2, tabW - 2, 24);
+        drawText("◆ GEMS", x + tabW / 2, y + 19, 12,
+            sort === 'gems' ? color.gold : color.guiwhite, "center");
+        drawText("⚔ KILLS", x + tabW + tabW / 2, y + 19, 12,
+            sort === 'kills' ? color.gold : color.guiwhite, "center");
+        global.clickables.royaleBoardGems.place(0, x * cr, y * cr, tabW * cr, 26 * cr);
+        global.clickables.royaleBoardKills.place(0, (x + tabW) * cr, y * cr, tabW * cr, 26 * cr);
+        // rows
+        const myId = gui.playerid;
+        let ry = y + headH + 4;
+        if (!rows.length) {
+            drawText("Waiting for combatants…", x + len / 2, ry + 12, 12, color.grey, "center");
+        }
+        for (let i = 0; i < rows.length; i++) {
+            const e = rows[i];
+            const val = sort === 'kills' ? e.kills : e.gems;
+            const medal = i === 0 ? "#ffd75e" : i === 1 ? "#cfd6e4" : i === 2 ? "#f0a35e" : color.guiwhite;
+            if (e.id === myId) {
+                c.fillStyle = "rgba(123,92,255,0.22)";
+                c.fillRect(x + 4, ry - 2, len - 8, rowH);
+            }
+            drawText((i + 1) + ".", x + 12, ry + 13, 12, medal, "left");
+            let nm = String(e.name || "Unnamed");
+            if (nm.length > 12) nm = nm.slice(0, 11) + "…";
+            drawText(nm + (e.alive === false ? "  ✕" : ""), x + 32, ry + 13, 12,
+                e.id === myId ? color.gold : color.guiwhite, "left");
+            drawText(sort === 'kills' ? String(val) : util.formatLargeNumber(val),
+                x + len - 10, ry + 13, 12, sort === 'kills' ? "#ff8f8f" : color.gold, "right");
+            ry += rowH;
+        }
+        c.restore();
     }
 
     function drawAvailableUpgrades(spacing, alcoveSize) {
@@ -7134,6 +7247,11 @@ import * as tutorial from './tutorial.js';
     };
 
     const gameDrawDead = () => {
+        // Royale owns its death screen (placement + spectate + home, no respawn).
+        if (global.royaleDied) {
+            gameDrawDeadRoyale();
+            return;
+        }
         let glide = global.deathAnimation.get();
         clearScreen(color.black, 0.32 + 0.28 * global.lerp(0, 0.5, glide), ctx[2]);
         let ratio = util.getScreenRatio();
@@ -7265,6 +7383,122 @@ import * as tutorial from './tutorial.js';
             }
         }
     };
+    // ── Royale death screen ──────────────────────────────────────────────
+    // Fortnite-style: huge placement, run stats, spectate-or-home. No respawn.
+    const gameDrawDeadRoyale = () => {
+        if (global.royaleSpectating) {
+            global.clickables.royaleSpectate.hide();
+            drawRoyaleSpectateBar();
+            return;
+        }
+        let glide = global.deathAnimation.get();
+        clearScreen("#120e24", 0.45 + 0.25 * global.lerp(0, 0.5, glide), ctx[2]);
+        let ratio = util.getScreenRatio();
+        scaleScreenRatio(ratio, true);
+        const c = ctx[2];
+        const cx = global.screenWidth / 2;
+        const place = global.royale.place | 0;
+        const won = place === 1;
+        const PW = Math.min(560, global.screenWidth - 40);
+        const PH = 430;
+        const px = cx - PW / 2;
+        const py = Math.max(12, global.screenHeight / 2 - PH / 2 - 10)
+                 - 700 * (1 - global.lerp(0, 1, glide));
+        // panel with violet BR frame
+        c.save();
+        const grad = c.createLinearGradient(px, py, px, py + PH);
+        grad.addColorStop(0, "rgba(38,24,84,0.97)");
+        grad.addColorStop(1, "rgba(16,17,26,0.97)");
+        roundRectPath(c, px, py, PW, PH, 18);
+        c.fillStyle = grad;
+        c.fill();
+        c.lineWidth = 4;
+        c.strokeStyle = won ? "#ffd75e" : "#5a2ee8";
+        c.stroke();
+        c.lineWidth = 1.5;
+        c.strokeStyle = won ? "rgba(255,215,94,0.5)" : "rgba(201,182,255,0.4)";
+        c.stroke();
+        c.restore();
+        // crown + headline
+        drawText(won ? "👑" : "⚔", cx, py + 44, 34, won ? "#ffd75e" : "#c9b6ff", "center");
+        if (won) {
+            drawText("VICTORY ROYALE!", cx, py + 84, 32, "#ffd75e", "center");
+            drawText("Last one standing", cx, py + 110, 14, color.guiwhite, "center");
+        } else {
+            drawText("YOU PLACED", cx, py + 76, 15, "#c9b6ff", "center");
+            drawText("#" + (place || "?"), cx, py + 122, 52, color.gold, "center");
+            const alive = global.royale.alive | 0;
+            drawText(alive > 0 ? alive + " still in the storm" : "match over",
+                      cx, py + 146, 13, color.guiwhite, "center");
+        }
+        // stats strip
+        const kills = Math.round(global.finalKills[0].get());
+        const gems = (global.finalBanked | 0) + (global.finalCarried | 0);
+        const rocks = global.finalRocks | 0;
+        const surv = compactTime(global.finalLifetime.get());
+        const stats = [
+            [String(kills), "ELIMS", "combat"],
+            [util.formatLargeNumber(gems), "GEMS", "gem"],
+            [String(rocks), "MINED", "pickaxe"],
+            [surv, "SURVIVED", "clock"],
+        ];
+        const sw = (PW - 56) / 4;
+        for (let i = 0; i < stats.length; i++) {
+            const bx = px + 20 + i * sw, by = py + 168;
+            c.save();
+            c.globalAlpha = global.lerp(0.6 + i * 0.2, 0.9 + i * 0.2, glide);
+            roundRectPath(c, bx, by, sw - 8, 62, 9);
+            c.fillStyle = "rgba(255,255,255,0.06)";
+            c.fill();
+            c.lineWidth = 2;
+            c.strokeStyle = "rgba(0,0,0,0.5)";
+            c.stroke();
+            c.restore();
+            if (stats[i][2]) drawDeathIcon(stats[i][2], bx + (sw - 8) / 2, by + 16, 15, 1);
+            drawText(stats[i][0], bx + (sw - 8) / 2, by + 42, 16, color.guiwhite, "center");
+            drawText(stats[i][1], bx + (sw - 8) / 2, by + 56, 9, color.grey, "center");
+        }
+        // who got you
+        const cause = global.finalCause || "";
+        const killedBy = cause === "rock" ? "Crushed by the living rock"
+            : global.finalKillers.length
+                ? "Taken down by " + global.finalKillers.join(" and ")
+                : cause === "storm" ? "The storm closed in"
+                : "Nobody finished you off";
+        drawText(killedBy, cx, py + 262, 13, color.grey, "center");
+        drawText("No respawns — spectate the finish or queue again from home.",
+                 cx, py + 282, 12, "#c9b6ff", "center");
+        // buttons: Spectate + Home (no respawn, ever)
+        const by = py + PH - 64;
+        const cr = global.canvas.height / global.screenHeight / global.ratio;
+        const ga = global.lerp(3, 3.25, glide);
+        if (!global.disconnected) {
+            if (!global.mobile && !global.gamepadMode) {
+                drawButton(cx - 95, by + 16, 170, 40, ga, "rect", "👁 Spectate", 16, false, false, false, true, "royaleSpectate", cr, 0);
+                drawButton(cx + 95, by + 16, 170, 40, ga, "rect", "⌂ Home", 16, false, false, false, true, "exitGame", cr, 0);
+            } else {
+                drawButton(cx, by + 8, 200, 44, ga, "rect", "👁 Spectate", 18, false, false, false, true, "royaleSpectate", cr, 0);
+                drawButton(cx, by + 58, 200, 40, ga, "rect", "⌂ Home", 16, false, false, false, true, "exitGame", cr, 0);
+            }
+        }
+    };
+    // Thin top bar while spectating a finished run.
+    const drawRoyaleSpectateBar = () => {
+        const c = ctx[2];
+        const cx = global.screenWidth / 2;
+        const place = global.royale.place | 0;
+        c.save();
+        roundRectPath(c, cx - 220, 10, 440, 40, 12);
+        c.fillStyle = "rgba(16,17,26,0.88)";
+        c.fill();
+        c.lineWidth = 2;
+        c.strokeStyle = "#5a2ee8";
+        c.stroke();
+        c.restore();
+        drawText("👁 Spectating  ·  placed #" + (place || "?"), cx - 40, 35, 14, color.guiwhite, "center");
+        const cr = global.canvas.height / global.screenHeight / global.ratio;
+        drawButton(cx + 150, 30, 100, 28, 1, "rect", "⌂ Home", 13, false, false, false, true, "exitGame", cr, 0);
+    };
     const applyScreenShake = (type = "camera", returnOption = false) => {
         let properties = type == "gui" ? config.graphical.shakeProperties.UIShake : config.graphical.shakeProperties.CameraShake;
         var cdx = 0;
@@ -7378,7 +7612,10 @@ import * as tutorial from './tutorial.js';
             drawMinimapAndDebug(spacing, alcoveSize, global.GRAPHDATA, tick);
             // Tutorial: a leaderboard is competition furniture; the server
             // sends an empty one there anyway (nobody is leaderboardable).
-            if (global.GUIStatus.renderLeaderboard && !global.tutorialMode) drawLeaderboard(spacing, alcoveSize, max);
+            // Royale: top-right board is gone — F toggles standings above the
+            // minimap instead (drawRoyaleBoard).
+            drawRoyaleBoard(spacing, alcoveSize);
+            if (global.GUIStatus.renderLeaderboard && !global.tutorialMode && !royaleActive()) drawLeaderboard(spacing, alcoveSize, max);
             if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
             // leader arrow + enemy pings moved to drawTopIndicators(), which
             // runs at the very end of the frame - here they were being covered

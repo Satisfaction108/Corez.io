@@ -96,6 +96,18 @@ function requestCancel(socket) {
 function tick(actors, dtMs) {
     const list = getVaults();
     if (!list.length) return;
+    // BR lobby/idle: playground only — no banking until scatter.
+    if (Config.dig_royale) {
+        try {
+            if (require('../gamemodes/scripts/dig_royale.js').isLobbyPhase()) {
+                for (const actor of actors) {
+                    const body = actorBody(actor);
+                    if (body) body.vaultOnPad = false;
+                }
+                return;
+            }
+        } catch { /* fall through */ }
+    }
     const now = Date.now();
     for (const actor of actors) {
         const body = actorBody(actor);
