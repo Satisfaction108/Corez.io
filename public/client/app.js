@@ -3534,7 +3534,10 @@ import * as tutorial from './tutorial.js';
             roomY = -py + global.screenHeight / 2 - ratio * gameHeight / 2,
             roomWidth = ratio * gameWidth,
             roomHeight = ratio * gameHeight;
-        if (global.advanced.roundMap) {
+        // Royale is a circle island but the border stays raw: the rocks
+        // define the edge, never a perfect canvas clip that slices them.
+        const royaleRoundClip = global.advanced.roundMap && !royaleActive();
+        if (royaleRoundClip) {
             ctx[0].save();
             ctx[0].beginPath();
             ctx[0].arc(
@@ -3650,7 +3653,7 @@ import * as tutorial from './tutorial.js';
             ctx[0].globalAlpha = 0.9;
             window.terrainRenderer.draw(ctx[0], px, py, ratio, gameWidth, gameHeight, global.screenWidth, global.screenHeight);
         }
-        global.advanced.roundMap && ctx[0].restore();
+        global.advanced.roundMap && !royaleActive() && ctx[0].restore();
         ctx[0].globalAlpha = 1;
         drawStorm(roomX, roomY, ratio);
         // Dig Wars: team vault doors, set into the base floors
@@ -4951,7 +4954,7 @@ import * as tutorial from './tutorial.js';
         c.strokeStyle = teamCol;
         optionsMenu_drawRoundedRect(x, y, W, H, 12);
         c.stroke();
-        drawText(v.isOutpost ? "OUTPOST BANK · 80% CREDIT" : "TEAM VAULT",
+        drawText(v.isOutpost ? "BASE BANK · 80% CREDIT" : (royaleActive() ? "VAULT · 100% CREDIT" : "TEAM VAULT"),
                  x + W / 2, y + 21, 15, teamCol, "center");
         c.fillStyle = teamCol;
         c.fillRect(x + W / 2 - 56, y + 28, 112, 2.5);
@@ -6323,8 +6326,8 @@ import * as tutorial from './tutorial.js';
                     extra: (r.kills | 0) ? ((r.kills | 0) + " kills") : "alive",
                 }))
                 : royaleBoardRows().map((r, i) => ({
-                    name: (i + 1) + ". " + (r.name || "Unnamed") + (r.alive === false ? "  X" : ""),
-                    extra: util.formatLargeNumber(r.score || r.gems | 0) + " pts  " + (r.kills | 0) + " kills  " + ((r.holds | 0) + " holds"),
+                    name: (i + 1) + ". " + (r.name || "Unnamed"),
+                    extra: util.formatLargeNumber(r.score || r.gems | 0) + " pts  " + (r.kills | 0) + " kills",
                 }));
         if (!rows.length) {
             drawText(tab === "alive" ? "Nobody is alive" : "Nobody here yet", x + w / 2, y + h / 2, 16, color.guiwhite, "center");
@@ -6333,7 +6336,7 @@ import * as tutorial from './tutorial.js';
         const rowH = 28;
         let headH = 0;
         if (tab === "standings") {
-            drawText("PTS = banked gems + 300 per kill + 200 per hold", x + 18, y + 16, 12, color.grey, "left");
+            drawText("PTS = banked + 200 per kill + 50% carried", x + 18, y + 16, 12, color.grey, "left");
             headH = 22;
         }
         for (let i = 0; i < rows.length && i < Math.floor((h - 20 - headH) / rowH); i++) {
@@ -6412,9 +6415,9 @@ import * as tutorial from './tutorial.js';
             ctx[2].globalAlpha = 0.4;
             ctx[2].save();
             ctx[2].fillStyle = color.white;
-            global.advanced.roundMap ? drawGuiCircle(x + len / 2, y + height / 2, len / 2) : drawGuiRect(x, y, len, height);
+            (global.advanced.roundMap && !royaleActive()) ? drawGuiCircle(x + len / 2, y + height / 2, len / 2) : drawGuiRect(x, y, len, height);
             ctx[2].beginPath();
-            global.advanced.roundMap ? ctx[2].arc(x + len / 2, y + height / 2, len / 2, 0, 2 * Math.PI) : ctx[2].rect(x, y, len, height);
+            (global.advanced.roundMap && !royaleActive()) ? ctx[2].arc(x + len / 2, y + height / 2, len / 2, 0, 2 * Math.PI) : ctx[2].rect(x, y, len, height);
             ctx[2].clip();
 
             if (global.roomSetup.length) {
@@ -6530,7 +6533,7 @@ import * as tutorial from './tutorial.js';
             ctx[2].fillStyle = color.black;
 
             ctx[2].lineWidth = 3;
-            global.advanced.roundMap ? drawGuiCircle(x + len / 2, y + height / 2, len / 2, true) : drawGuiRect(x, y, len, height, true);
+            (global.advanced.roundMap && !royaleActive()) ? drawGuiCircle(x + len / 2, y + height / 2, len / 2, true) : drawGuiRect(x, y, len, height, true);
             }
         }
         if (global.mobile || !global.GUIStatus.renderMinimap) {
@@ -7333,6 +7336,15 @@ import * as tutorial from './tutorial.js';
     };
 
     const gameDrawDead = () => {
+        // Killer cam: clean 3s on the killer, no panel yet.
+        if (global.died && global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) {
+            global.clickables.royaleSpectate.hide();
+            global.clickables.deathRespawn.hide();
+            global.clickables.royalePrev.hide();
+            global.clickables.royaleNext.hide();
+            global.clickables.royalePlay.hide();
+            return;
+        }
         // Royale owns its death screen (placement + spectate + home, no respawn).
         if (global.royaleDied && global.royaleSpectating) {
             global.clickables.royaleSpectate.hide();
@@ -7526,7 +7538,7 @@ import * as tutorial from './tutorial.js';
             ["BANKED (KEPT)", util.formatLargeNumber((you.banked != null ? you.banked : global.finalBanked) | 0), "gem"],
             ["SATCHEL LOST", util.formatLargeNumber(global.finalCarried | 0), "gem"],
             ["KILLS", String((you.kills != null ? you.kills : Math.round(global.finalKills[0].get())) | 0), "combat"],
-            ["BASES HELD", String((you.holds | 0) || 0), "pulse"],
+            ["CARRIED (50% PTS)", util.formatLargeNumber((you.carried != null ? you.carried : 0) | 0), "gem"],
             ["ROCKS MINED", String(global.finalRocks | 0), "pickaxe"],
             ["SURVIVED", compactTime(global.finalLifetime.get()), "clock"],
         ];
@@ -7566,6 +7578,8 @@ import * as tutorial from './tutorial.js';
         const by = py + PH - 46;
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         const ga = global.lerp(3, 3.25, glide);
+        // DOM Spectate/Home live below the panel and take the clicks.
+        if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) return;
         if (!global.disconnected) {
             drawButton(cx - 90, by, 150, 32, ga, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
             drawButton(cx + 90, by, 150, 32, ga, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
@@ -7585,16 +7599,13 @@ import * as tutorial from './tutorial.js';
         c.strokeStyle = color.black;
         c.strokeRect(x, y, barW, h);
         c.restore();
-        // Death is a 15s tax: spectate to look around, auto-rejoin when it
-        // lapses, Play to rejoin now, Home to exit. Locked storm pauses all.
+        // Spectating is manual: Prev/Next hop, Play rejoins (queues through
+        // the 15s tax), Home exits. No auto-rejoin while watching.
         const locked = !!(global.royale.lock && global.royale.at > 0);
         const lockLeft = Math.max(0, global.royale.lockLeft | 0);
         const place = global.royale.place | 0;
         const queued = !global.died && global.raidQueued;
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
-        if (!locked && global.raidRespawnAt > 0 && global.died && waitMs <= 0 && !global.disconnected && !global.respawnPending) {
-            try { global.canvas.respawn(); } catch { /* */ }
-        }
         const bw = barW < 480 ? 64 : 86;
         const prevCx = x + 6 + bw / 2;
         const nextCx = x + 12 + bw * 1.5;
@@ -7606,6 +7617,15 @@ import * as tutorial from './tutorial.js';
             : ("Spectating" + (place > 0 ? ("  #" + place) : "") +
                (global.died ? (waitMs > 0 ? ("  -  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  -  Rejoining") : ""));
         fitText(label, x + barW / 2, y + 24, 14, Math.max(60, barW - 4 * bw - 60), color.guiwhite);
+        // DOM buttons (Prev/Next/Play/Home) sit just below this bar and take
+        // the clicks. Skip the canvas twins so there is one working set.
+        if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) {
+            global.clickables.royalePrev.hide();
+            global.clickables.royaleNext.hide();
+            global.clickables.royalePlay.hide();
+            global.clickables.exitGame.hide();
+            return;
+        }
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         drawButton(prevCx, y + 3, bw, 30, 1, "rect", "Prev", 14, false, false, false, true, "royalePrev", cr, 0);
         drawButton(nextCx, y + 3, bw, 30, 1, "rect", "Next", 14, false, false, false, true, "royaleNext", cr, 0);
@@ -7720,6 +7740,7 @@ import * as tutorial from './tutorial.js';
             drawTeamBankBar();
             drawRoyaleHUD();
             if (global.royaleSpectating) drawRoyaleSpectateBar();
+            try { updateRoyaleDomButtons(); } catch { /* */ }
             drawRoyaleBoard();
             drawMessages(spacing, alcoveSize);
             drawMilestones();
@@ -7812,6 +7833,99 @@ import * as tutorial from './tutorial.js';
     
     
     let ingameSettingsBtn = null;
+    let royaleDomBuilt = false;
+    function royaleDomAct(kind) {
+        try {
+            const cv = global.canvas;
+            if (kind === "prev") {
+                global.royaleSpectating = true;
+                cv && cv.socket && cv.socket.talk('RS', 0);
+            } else if (kind === "next") {
+                global.royaleSpectating = true;
+                cv && cv.socket && cv.socket.talk('RS', 1);
+            } else if (kind === "spectate") {
+                global.royaleSpectating = true;
+                cv && cv.socket && cv.socket.talk('RS', 2);
+            } else if (kind === "play") {
+                cv && cv.respawn && cv.respawn();
+            } else if (kind === "home") {
+                global.exit && global.exit();
+            }
+        } catch { /* */ }
+        try {
+            const cv = document.getElementById("gameCanvas");
+            if (cv && global.gameStart) cv.focus();
+        } catch { /* */ }
+    }
+    function royaleDomBtn(id, text) {
+        const b = document.createElement("button");
+        b.id = id;
+        b.textContent = text;
+        b.style.height = "38px";
+        b.style.padding = "0 14px";
+        b.style.borderRadius = "10px";
+        b.style.border = "2px solid #000";
+        b.style.background = "#16171d";
+        b.style.color = "#f2ecdc";
+        b.style.cursor = "pointer";
+        b.style.font = "700 12px Rubik, Ubuntu, sans-serif";
+        b.style.boxShadow = "0 2px 0 rgba(0,0,0,.4)";
+        return b;
+    }
+    function getRoyaleDomButtons() {
+        if (royaleDomBuilt) return;
+        royaleDomBuilt = true;
+        const spec = document.createElement("div");
+        spec.id = "royaleSpecDom";
+        spec.style.cssText = "position:fixed;top:52px;left:50%;transform:translateX(-50%);z-index:31;display:none;gap:8px;align-items:center;";
+        const prev = royaleDomBtn("royaleDomPrev", "Prev");
+        const next = royaleDomBtn("royaleDomNext", "Next");
+        const play = royaleDomBtn("royaleDomPlay", "Play");
+        const homeS = royaleDomBtn("royaleDomHomeSpec", "Home");
+        prev.onclick = () => royaleDomAct("prev");
+        next.onclick = () => royaleDomAct("next");
+        play.onclick = () => royaleDomAct("play");
+        homeS.onclick = () => royaleDomAct("home");
+        spec.append(prev, next, play, homeS);
+        document.body.appendChild(spec);
+        const dead = document.createElement("div");
+        dead.id = "royaleDeadDom";
+        dead.style.cssText = "position:fixed;left:50%;bottom:8%;transform:translateX(-50%);z-index:31;display:none;gap:8px;align-items:center;";
+        const sp = royaleDomBtn("royaleDomSpectate", "Spectate");
+        const homeD = royaleDomBtn("royaleDomHomeDead", "Home");
+        sp.onclick = () => royaleDomAct("spectate");
+        homeD.onclick = () => royaleDomAct("home");
+        dead.append(sp, homeD);
+        document.body.appendChild(dead);
+        try { updateRoyaleDomButtons(); } catch { /* */ }
+    }
+    function updateRoyaleDomButtons() {
+        getRoyaleDomButtons();
+        const spec = document.getElementById("royaleSpecDom");
+        const dead = document.getElementById("royaleDeadDom");
+        if (!spec || !dead) return;
+        const inGame = !!(global.gameStart && !global.disconnected);
+        if (global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) {
+            spec.style.display = "none";
+            dead.style.display = "none";
+            return;
+        }
+        const spectating = !!(inGame && global.royaleSpectating);
+        const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating);
+        spec.style.display = spectating ? "flex" : "none";
+        dead.style.display = deadShow ? "flex" : "none";
+        const play = document.getElementById("royaleDomPlay");
+        if (play) {
+            const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);
+            const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
+            let label = "Play";
+            if (locked) label = Math.max(0, global.royale.lockLeft | 0) + "s";
+            else if (global.respawnPending) label = "Wait";
+            else if (global.died && waitMs > 0) label = "Play (" + Math.ceil(waitMs / 1000) + "s)";
+            play.textContent = label;
+            play.style.opacity = (!global.died || locked || global.respawnPending) ? "0.55" : "1";
+        }
+    }
     function getIngameSettingsBtn() {
         if (ingameSettingsBtn) return ingameSettingsBtn;
         
@@ -7850,6 +7964,13 @@ import * as tutorial from './tutorial.js';
         };
         document.body.appendChild(chatBtn);
 
+        // Raid spectate/death controls as DOM buttons, same as the gear and
+        // Global Chat toggle. Canvas clickables kept missing (map drag eats
+        // mousedown, auto-respawn cleared died before mouseup), so Prev goes
+        // to the previous spectate target, Next to the next, Play rejoins,
+        // Home exits. No canvas coordinate math to drift.
+        getRoyaleDomButtons();
+
         // The in-game "?" replay button is gone on purpose: the tutorial now
         // lives on its own server, so replaying it mid-match would mean
         // yanking a player out of a live fight. It is reachable from the
@@ -7859,6 +7980,7 @@ import * as tutorial from './tutorial.js';
             const show = (global.gameStart && !global.died && !global.disconnected) ? "flex" : "none";
             btn.style.display = show;
             chatBtn.style.display = show;
+            try { updateRoyaleDomButtons(); } catch { /* */ }
         }, 250);
         
         const panel = document.getElementById("homeSettingsPanel");
@@ -7904,6 +8026,14 @@ import * as tutorial from './tutorial.js';
     let drawConnectingScreen = () => {
         let ratio = util.getScreenRatio();
         scaleScreenRatio(ratio, true);
+        const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);
+        if (locked) {
+            const left = Math.max(0, global.royale.lockLeft | 0);
+            clearScreen(color.white, 1, ctx[2]);
+            drawText("Final storm phase - No spawns, please wait " + left + " seconds!", global.screenWidth / 2, global.screenHeight / 2, 22, color.guiwhite, "center");
+            drawText("The raid keeps going. You drop in when it lifts.", global.screenWidth / 2, global.screenHeight / 2 + 34, 15, color.gold, "center");
+            return;
+        }
         clearScreen(color.white, 1, ctx[2]);
         drawText("Connecting...", global.screenWidth / 2, global.screenHeight / 2, 30, color.guiwhite, "center");
         drawText(global.message, global.screenWidth / 2, global.screenHeight / 2 + 30, 15, color.lgreen, "center");

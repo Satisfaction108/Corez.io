@@ -112,7 +112,10 @@ function ejectFromPad(body, pad, msg) {
     body.velocity.x = Math.cos(n) * 9;
     body.velocity.y = Math.sin(n) * 9;
     body._vaultPadSince = 0;
-    if (msg) { try { body.sendMessage(msg); } catch { /* */ } }
+    // Kicked out means out: no re-entry for 5s so the pad can't be
+    // instantly re-camped.
+    body._padReentryUntil = Date.now() + 5000;
+    if (msg) { try { body.sendMessage(msg + " (5s no re-entry)"); } catch { /* */ } }
 }
 
 const MIN_DEPOSIT = 15;  
@@ -256,6 +259,16 @@ function tick(actors, dtMs) {
         const was = !!body.vaultOnPad;
         body.vaultOnPad = !!pad;
         body.onVaultPad = !!pad;
+        // 5s no re-entry after a kick: bounce them straight back out, no
+        // deposit, no pad timer restart.
+        if (pad && body._padReentryUntil && now < body._padReentryUntil) {
+            cancelDeposit(body, !!body.socket);
+            pushOut(body, pad, 9, now);
+            if (was !== true && body.socket) body.socket.talk('VU', 1);
+            body.vaultOnPad = true;
+            body.onVaultPad = true;
+            continue;
+        }
         if (Config.dig_royale) {
             if (pad && !was) body._vaultPadSince = now;
             if (!pad) {

@@ -12,8 +12,7 @@ const RESPAWN_MIN_MS = 15000;
 const RESPAWN_MAX_MS = 15000;
 const WEAK_DRILL_MS = 30_000;
 const STARTER_GEMS = 75;
-const KILL_SCORE = 300;
-const HOLD_SCORE = 200;
+const KILL_SCORE = 200;
 
 let raidId = 0;
 let raidStartAt = 0;
@@ -114,18 +113,22 @@ function ensureStat(body) {
     if (!key) return null;
     let s = raidStats.get(key);
     if (!s) {
-        s = { key, name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, alive: true, id: body.id, isBot: !!body.isBot, lastSeen: now() };
+        s = { key, name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, carried: 0, alive: true, id: body.id, isBot: !!body.isBot, lastSeen: now() };
         raidStats.set(key, s);
     }
     s.name = body.name || s.name;
     s.id = body.id;
     s.alive = true;
     s.lastSeen = now();
+    // Live carried refresh so PTS tracks the satchel: death zeroes it,
+    // respawn rebuilds it. Score reads this, never a stale copy.
+    try { s.carried = Math.max(0, (body.carriedGems || 0) | 0); } catch { /* */ }
     return s;
 }
 
 function scoreOf(s) {
-    return (s.banked | 0) + (s.kills | 0) * KILL_SCORE + (s.holds | 0) * HOLD_SCORE;
+    // PTS = banked + 200 per kill + 50% of carried. No holds.
+    return (s.banked | 0) + (s.kills | 0) * KILL_SCORE + Math.floor((s.carried | 0) / 2);
 }
 
 function gemsOf(body) {
@@ -142,6 +145,7 @@ function boardSnapshot() {
         kills: s.kills | 0,
         gems: s.banked | 0,
         holds: s.holds | 0,
+        carried: s.carried | 0,
         score: scoreOf(s),
         alive: !!s.alive,
         place: 0,
@@ -199,6 +203,13 @@ function broadcast(extra = {}) {
                 banked: mine.banked | 0,
                 kills: mine.kills | 0,
                 holds: mine.holds | 0,
+                carried: (() => {
+                    try {
+                        const b = client.player && client.player.body;
+                        if (b && !b.isDead?.()) return Math.max(0, (b.carriedGems || 0) | 0);
+                    } catch { /* */ }
+                    return mine.carried | 0;
+                })(),
             } : null,
             lock,
             lockLeft,
@@ -285,7 +296,9 @@ function giveStarterKit(body, isRespawn) {
     try { gems.initSatchel(body); } catch { /* */ }
     const bonus = body.socket ? ((body.socket.raidBonus || 0) | 0) : 0;
     if (body.socket) body.socket.raidBonus = 0;
-    const grant = STARTER_GEMS + bonus;
+    // Respawn is broke: satchel dropped on death, no free dust back.
+    // First join of the raid keeps the 75 starter, top-10 bonus still pays.
+    const grant = (isRespawn ? 0 : STARTER_GEMS) + bonus;
     body.carriedGems = Math.max(body.carriedGems | 0, grant);
     try { gems.updateSatchel(body); gems.talkGems(body, grant); } catch { /* */ }
     if (isRespawn) body.weakDrillUntil = now() + WEAK_DRILL_MS;
@@ -375,7 +388,7 @@ function onCombatantDead(body) {
     const key = statKeyFor(body);
     if (key) {
         const s = raidStats.get(key) || ensureStat(body);
-        if (s) s.alive = false;
+        if (s) { s.alive = false; s.carried = 0; }
     }
     // Credit comes from the authoritative killer list, so human-vs-human
     // kills count (the old _lastDamageSource was only set for bot victims).
@@ -491,7 +504,7 @@ function disconnectCleanup(socket, body) {
             body.royaleAlive = false;
             const key = statKeyFor(body);
             const s = key ? raidStats.get(key) : null;
-            if (s) s.alive = false;
+            if (s) { s.alive = false; s.carried = 0; }
         }
         if (body) {
             try { require('../../terrain/vault.js').cancelDeposit(body, false); } catch { /* */ }
@@ -520,6 +533,15 @@ function tickOutpostRules(t) {
             const key = site.id + ':' + body.id;
             const lockedUntil = lockout.get(key) || 0;
             const inside = d < site.r;
+            // 5s no re-entry after any kick: bounce straight back out.
+            if (inside && body._padReentryUntil && t < body._padReentryUntil) {
+                if (body.outpostDeposit) {
+                    body.outpostDeposit = null;
+                    try { body.socket && body.socket.talk('VP', 0, 0); } catch { /* */ }
+                }
+                pushOut(body, site.x, site.y, site.r + 10, 9, t, "reentry:" + site.id);
+                continue;
+            }
             if (ownerId && body.id !== ownerId && inside) {
                 pushOut(body, site.x, site.y, site.r + 10, 9, t, "bounce:" + site.id);
                 site._contestedUntil = t + 8000;
@@ -546,8 +568,9 @@ function tickOutpostRules(t) {
                     if (out) {
                         occupy.delete(site.id);
                         lockout.set(key, t + LOCKOUT_MS);
+                        body._padReentryUntil = t + 5000;
                         if (body.socket) body.socket.talk('RYO', site.id, 0, Math.ceil(LOCKOUT_MS / 1000));
-                        try { body.sendMessage("You cannot camp your base. It stays yours."); } catch { /* */ }
+                        try { body.sendMessage("You cannot camp your base. It stays yours. (5s no re-entry)"); } catch { /* */ }
                     }
                 }
             } else if (ownerId === body.id && !inside) {

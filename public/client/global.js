@@ -393,6 +393,7 @@ const global = {
     },
     royaleSpectating: false,
     royaleDied: false,
+    royaleKillerCamUntil: 0,
     bandwidth: {
         currentHa: 0,
         currentFa: 0,
@@ -545,6 +546,7 @@ const global = {
         global.disconnected = false;
         global.royaleSpectating = false;
         global.royaleDied = false;
+        global.royaleKillerCamUntil = 0;
         global.raidRespawnAt = 0;
         global.raidQueued = false;
         global.royaleBarHits = null;

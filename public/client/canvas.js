@@ -156,6 +156,7 @@ class Canvas {
             global.respawnPending = true;
             global.royaleDied = false;
             global.royaleSpectating = false;
+            global.royaleKillerCamUntil = 0;
             global.raidRespawnAt = 0;
             global.raidQueued = true;
             this.socket.talk('s', global.playerName, 0, 1 * config.game.autoLevelUp, false, 1 * config.game.incognitoMode);

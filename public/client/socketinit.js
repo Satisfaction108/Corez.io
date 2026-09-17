@@ -1213,7 +1213,8 @@ let incoming = async function(message, socket) {
                     r.you = d.you || null;
                     r.matchId = d.matchId | 0;
                     // Died before the first RY: promote to the raid screen now.
-                    if (global.died && !global.royaleDied && (d.raidId || d.matchId)) {
+                    // Killer cam owns the first 3s after F, so hands off here.
+                    if (global.died && !global.royaleDied && !(global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) && (d.raidId || d.matchId)) {
                         global.royaleDied = true;
                         global.royaleSpectating = false;
                         if (!global.raidRespawnAt) global.raidRespawnAt = performance.now() + 15000;
@@ -1384,6 +1385,7 @@ let incoming = async function(message, socket) {
                 global.died = false;
                 global.royaleSpectating = false;
                 global.royaleDied = false;
+                global.royaleKillerCamUntil = 0;
                 global.raidRespawnAt = 0;
                 global.raidQueued = false;
                 global.royaleBarHits = null;
@@ -1612,9 +1614,25 @@ let incoming = async function(message, socket) {
                 global.player.rendery = dy;
             } catch { /* */ }
             if (global.royale && (global.royale.at > 0 || global.royale.raidId || global.royale.matchId)) {
-                global.royaleDied = true;
-                global.royaleSpectating = false;
+                // Killer cam: follow the killer 3s, then fade in the death
+                // panel. Respawn tax still runs from death, not the panel.
+                global.royaleDied = false;
+                global.royaleSpectating = true;
+                global.royaleKillerCamUntil = performance.now() + 3000;
                 global.raidRespawnAt = performance.now() + 15000;
+                try { global.canvas.socket.talk('RS', 2); } catch { /* */ }
+                const camToken = global.royaleKillerCamUntil;
+                setTimeout(() => {
+                    if (!global.died) return;
+                    if (global.royaleKillerCamUntil !== camToken) return;
+                    global.royaleDied = true;
+                    global.royaleSpectating = false;
+                    global.royaleKillerCamUntil = 0;
+                    try {
+                        global.deathAnimation = util.AdvancedSmoothBar(0, 4, 1);
+                        global.deathAnimation.set(4);
+                    } catch { /* */ }
+                }, 3000);
                 // A dead miner leaves every pad panel behind.
                 try {
                     global.vault.onPad = false;

@@ -1,13 +1,13 @@
 const { ORE, ORE_HP } = require('./terrainGrid.js');
 
 const OUTPOSTS = [
-    { name: "North Base",     color: "#e03e41", ang: -Math.PI / 2,       dist: 0.70 },
-    { name: "Northeast Base", color: "#8abc3f", ang: -Math.PI / 2 + 1.05, dist: 0.68 },
-    { name: "East Base",      color: "#8d6adf", ang: 0,                  dist: 0.70 },
-    { name: "South Base",     color: "#efc74b", ang: Math.PI / 2,        dist: 0.70 },
-    { name: "Southwest Base", color: "#3d7cf0", ang: Math.PI / 2 + 0.95, dist: 0.68 },
-    { name: "West Base",      color: "#ec7b0f", ang: Math.PI,            dist: 0.70 },
-];
+    { name: "North Base Bank",     color: "#e03e41", ang: -Math.PI / 2,       dist: 0.70 },
+    { name: "Northeast Base Bank", color: "#8abc3f", ang: -Math.PI / 2 + 1.05, dist: 0.68 },
+    { name: "East Base Bank",      color: "#8d6adf", ang: 0,                  dist: 0.70 },
+    { name: "South Base Bank",     color: "#efc74b", ang: Math.PI / 2,        dist: 0.70 },
+    { name: "Southwest Base Bank", color: "#3d7cf0", ang: Math.PI / 2 + 0.95, dist: 0.68 },
+    { name: "West Base Bank",      color: "#ec7b0f", ang: Math.PI,            dist: 0.70 },
+    ];
 
 const VAULTS = [
     { name: "Center Vault", x: 0, y: 0, lobby: true },
@@ -123,6 +123,28 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     // Do not crop rocks to the storm circle. The lattice fills the square
     // like 2TDM; the jagged Voronoi faces ARE the border. Storm is a
     // separate overlay.
+    // Circle map, raw border: kill whole rocks outside a noisy ring so the
+    // island reads as a circle but no rock is ever sliced to a perfect arc.
+    // Center + poly test keeps rocks that touch the disk; per-rock hash
+    // jitters the keep radius +-90 so the edge stays jagged like 2TDM.
+    const salt2 = grid.oreSalt || 7;
+    const circleR2 = circleR * circleR;
+    for (const rock of grid.rocks.values()) {
+        if (!rock.alive) continue;
+        const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+        const jitter = hash01(rock.vi, rock.vj, salt2 + 500) * 180 - 90;
+        const keepR = circleR + jitter;
+        const keepR2 = keepR * keepR;
+        if (rx * rx + ry * ry <= keepR2) continue;
+        let touches = false;
+        if (rock.worldPoly) {
+            for (const p of rock.worldPoly) {
+                const px = p[0], py = p[1];
+                if (px * px + py * py <= circleR2) { touches = true; break; }
+            }
+        }
+        if (!touches) killRock(rock, canyonKeys);
+    }
 
     // Sites exist for later. Lobby is plaza-only: do not punch vault or
     // outpost holes until scatter, or the circle is missing rocks on the sides.
