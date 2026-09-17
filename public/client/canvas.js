@@ -231,21 +231,23 @@ class Canvas {
             case global.KEY_LEFT_ARROW:
                 if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = -this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_LEFT:
-                if ((global.royaleDied || global.royaleSpectating) && global.died) {
-                    global.royaleSpectating = true;
+                // A is movement. Never start spectate from it — key-repeat after
+                // death was jumping the camera to a random player.
+                if (global.royaleSpectating && global.died && !event.repeat) {
                     this.socket.talk('RS', 0);
                     break;
                 }
+                if (global.died) break;
                 this.socket.cmd.set(2, true);
                 break;
             case global.KEY_RIGHT_ARROW:
                 if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = +this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_RIGHT:
-                if ((global.royaleDied || global.royaleSpectating) && global.died) {
-                    global.royaleSpectating = true;
+                if (global.royaleSpectating && global.died && !event.repeat) {
                     this.socket.talk('RS', 1);
                     break;
                 }
+                if (global.died) break;
                 this.socket.cmd.set(3, true);
                 break;
             case global.KEY_MOUSE_0:
@@ -458,40 +460,6 @@ class Canvas {
                     x: mouse.clientX * global.ratio,
                     y: mouse.clientY * global.ratio,
                 };
-                // Raid bar buttons (spectate/death screens) win over the map:
-                // otherwise an open map swallows Home/Play/Prev/Next clicks.
-                {
-                    const bar = global.royaleBarHits || {};
-                    const canWatch = global.died || global.raidQueued;
-                    if (hitClientRect(mouse, bar.prev) && canWatch) {
-                        global.royaleSpectating = true;
-                        this.socket.talk('RS', 0);
-                        gameSound.uiClick();
-                        break;
-                    }
-                    if (hitClientRect(mouse, bar.next) && canWatch) {
-                        global.royaleSpectating = true;
-                        this.socket.talk('RS', 1);
-                        gameSound.uiClick();
-                        break;
-                    }
-                    if (hitClientRect(mouse, bar.spectate) && canWatch && !global.disconnected) {
-                        global.royaleSpectating = true;
-                        this.socket.talk('RS', 2);
-                        gameSound.uiClick();
-                        break;
-                    }
-                    if (hitClientRect(mouse, bar.play) && !global.disconnected) {
-                        this.respawn();
-                        gameSound.uiClick();
-                        break;
-                    }
-                    if (hitClientRect(mouse, bar.home) && (global.died || global.disconnected)) {
-                        global.exit();
-                        gameSound.uiClick();
-                        break;
-                    }
-                }
                 // full-map overlay swallows clicks: start a drag, never fire
                 if (global.showBigMap) {
                     const mScale = this.height / global.screenHeight;
@@ -534,6 +502,7 @@ class Canvas {
                     global.clickables.royaleSpectate.check(mpos) == -1 &&
                     global.clickables.royalePrev.check(mpos) == -1 &&
                     global.clickables.royaleNext.check(mpos) == -1 &&
+                    global.clickables.royalePlay.check(mpos) == -1 &&
                     upgradeCheck == -1 &&
                     !global.died
                 ) this.socket.cmd.set(primaryFire, true);
@@ -557,6 +526,47 @@ class Canvas {
                     x: mouse.clientX * global.ratio,
                     y: mouse.clientY * global.ratio,
                 };
+                let upgradeIndex = global.clickables.upgrade.check(mpos);
+                let dailyTankUpgrade = global.clickables.dailyTankUpgrade.check(mpos);
+                let dailyTankAd = global.clickables.dailyTankAd.check(mpos);
+                let dailyTankCloseAd = global.clickables.dailyTankCloseAd.check(mpos);
+                let respawnCheck = global.clickables.deathRespawn.check(mpos);
+                let exitGame = global.clickables.exitGame.check(mpos);
+                let reconnectCheck = global.clickables.reconnect.check(mpos);
+                // Death / spectate buttons use the same clickable regions as
+                // settings and chat. Check them before the map overlay.
+                if (respawnCheck !== -1 && !global.disconnected) {
+                    this.respawn(); gameSound.uiClick();
+                    break;
+                }
+                if (global.clickables.royaleSpectate.check(mpos) !== -1 && !global.disconnected && global.died) {
+                    global.royaleSpectating = true;
+                    this.socket.talk('RS', 2);
+                    gameSound.uiClick();
+                    break;
+                }
+                if (global.clickables.royalePrev.check(mpos) !== -1 && global.died) {
+                    global.royaleSpectating = true;
+                    this.socket.talk('RS', 0);
+                    gameSound.uiClick();
+                    break;
+                }
+                if (global.clickables.royaleNext.check(mpos) !== -1 && global.died) {
+                    global.royaleSpectating = true;
+                    this.socket.talk('RS', 1);
+                    gameSound.uiClick();
+                    break;
+                }
+                if (global.clickables.royalePlay.check(mpos) !== -1 && global.died && !global.disconnected) {
+                    this.respawn();
+                    gameSound.uiClick();
+                    break;
+                }
+                if (exitGame !== -1 && (global.disconnected || global.died)) {
+                    global.exit();
+                    gameSound.uiClick();
+                    break;
+                }
                 if (global.showBigMap) {
                     const tab = global.clickables.royaleTab.check(mpos);
                     if (tab !== -1) {
@@ -567,13 +577,6 @@ class Canvas {
                     global.bigMap.dragging = false;
                     break;
                 }
-                let upgradeIndex = global.clickables.upgrade.check(mpos);
-                let dailyTankUpgrade = global.clickables.dailyTankUpgrade.check(mpos);
-                let dailyTankAd = global.clickables.dailyTankAd.check(mpos);
-                let dailyTankCloseAd = global.clickables.dailyTankCloseAd.check(mpos);
-                let respawnCheck = global.clickables.deathRespawn.check(mpos);
-                let exitGame = global.clickables.exitGame.check(mpos);
-                let reconnectCheck = global.clickables.reconnect.check(mpos);
                 let optionsMenu_Switch = global.clickables.optionsMenu.switchButton.check(mpos);
                 let optionsMenu_toggleBox = global.clickables.optionsMenu.toggleBoxes.check(mpos);
                 let optionsMenu_tabClick = global.optionsMenu_Anim.tabClickables ? global.optionsMenu_Anim.tabClickables.check(mpos) : -1;
@@ -680,46 +683,17 @@ class Canvas {
                 } else {
                     global.searchBarActive = false;
                 }
-                const scale = (this.cv && this.cv.height ? this.cv.height : (global.canvas && global.canvas.height) || 1) / Math.max(1, global.screenHeight);
-                const gx = mpos.x / scale, gy = mpos.y / scale;
-                const inRect = (r) => !!r && gx >= r.x && gx <= r.x + r.w && gy >= r.y && gy <= r.y + r.h;
-                if (respawnCheck !== -1 && !global.disconnected) {
-                    this.respawn(); gameSound.uiClick();
-                } else
-                if ((global.clickables.royaleSpectate.check(mpos) !== -1 || inRect(bar.spectate)) && !global.disconnected && global.died) {
-                    global.royaleSpectating = true;
-                    this.socket.talk('RS', 2);
-                    gameSound.uiClick();
-                } else
-                if ((global.clickables.royalePrev.check(mpos) !== -1 || inRect(bar.prev)) && global.died) {
-                    global.royaleSpectating = true;
-                    this.socket.talk('RS', 0);
-                    gameSound.uiClick();
-                } else
-                if ((global.clickables.royaleNext.check(mpos) !== -1 || inRect(bar.next)) && global.died) {
-                    global.royaleSpectating = true;
-                    this.socket.talk('RS', 1);
-                    gameSound.uiClick();
-                } else
-                if (inRect(bar.play) && global.died && !global.disconnected) {
-                    this.respawn();
-                    gameSound.uiClick();
-                } else
                 if (global.clickables.royaleTab.check(mpos) !== -1) {
                     const tab = global.clickables.royaleTab.check(mpos);
                     global.royaleBoard.tab = ['map', 'standings', 'feed', 'alive'][tab] || 'map';
                     global.showBigMap = true;
                     gameSound.uiClick();
                     break;
-                } else
+                }
                 if (reconnectCheck !== -1) {
                     if (global.disconnected) global.reconnect();
                     gameSound.uiClick();
                 } else
-                if (exitGame !== -1) {
-                    if (global.disconnected || global.died) global.exit();
-                    gameSound.uiClick();
-                } else 
                 if (upgradeIndex !== -1 && upgradeIndex < gui.upgrades.length && !global.dailyTankAd.renderUI) {
                     this.socket.talk('U', upgradeIndex, parseInt(gui.upgrades[upgradeIndex][0]));
                     gameSound.uiClick();
@@ -912,41 +886,41 @@ class Canvas {
         e.preventDefault();
         // Raid bar buttons first: tap-anywhere-respawn must not eat them.
         for (let touch of e.changedTouches) {
-            const bar = global.royaleBarHits || {};
-            const canWatch = global.died || global.raidQueued;
-            const pt = { clientX: touch.clientX, clientY: touch.clientY };
-            if (hitClientRect(pt, bar.prev) && canWatch) {
+            let mpos = {
+                x: touch.clientX * global.ratio,
+                y: touch.clientY * global.ratio,
+            };
+            if (global.clickables.royalePrev.check(mpos) !== -1 && global.died) {
                 global.royaleSpectating = true;
                 this.socket.talk('RS', 0);
                 gameSound.uiClick();
                 return;
             }
-            if (hitClientRect(pt, bar.next) && canWatch) {
+            if (global.clickables.royaleNext.check(mpos) !== -1 && global.died) {
                 global.royaleSpectating = true;
                 this.socket.talk('RS', 1);
                 gameSound.uiClick();
                 return;
             }
-            if (hitClientRect(pt, bar.spectate) && canWatch && !global.disconnected) {
+            if (global.clickables.royaleSpectate.check(mpos) !== -1 && global.died && !global.disconnected) {
                 global.royaleSpectating = true;
                 this.socket.talk('RS', 2);
                 gameSound.uiClick();
                 return;
             }
-            if (hitClientRect(pt, bar.play) && !global.disconnected) {
+            if (global.clickables.royalePlay.check(mpos) !== -1 && global.died && !global.disconnected) {
                 this.respawn();
                 gameSound.uiClick();
                 return;
             }
-            if (hitClientRect(pt, bar.home) && (global.died || global.disconnected)) {
+            if (global.clickables.exitGame.check(mpos) !== -1 && (global.died || global.disconnected)) {
                 global.exit();
                 gameSound.uiClick();
                 return;
             }
         }
-        if (global.died && !global.cannotRespawn) {
-            this.respawn();
-            global.resetTarget();
+        if (global.died) {
+            return;
         } else {
             for (let touch of e.changedTouches) {
                 let mpos = {

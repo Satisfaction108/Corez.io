@@ -1391,6 +1391,7 @@ let incoming = async function(message, socket) {
                 if (global.bigMap) global.bigMap.dragging = false;
                 global.royale.occupy = 0;
                 global.royale.lockout = 0;
+                global.pullUpgradeMenu = false;
                 global.player.renderx = global.player.cx.x = m[0];
                 global.player.rendery = global.player.cy.y = m[1];
                 global.player.renderv = global.player.view = m[2];
@@ -1601,7 +1602,16 @@ let incoming = async function(message, socket) {
             if (deathPlace > 0) global.royale.place = deathPlace;
             global.royale.occupy = 0;
             global.royale.lockout = 0;
-            if (global.royale && global.royale.at > 0) {
+            global.royaleSpectating = false;
+            try {
+                config.graphical.shakeProperties.CameraShake.shakeStartTime = -1;
+                const dx = global.player.cx.x, dy = global.player.cy.y;
+                global.player.animX.add(dx); global.player.animX.add(dx);
+                global.player.animY.add(dy); global.player.animY.add(dy);
+                global.player.renderx = dx;
+                global.player.rendery = dy;
+            } catch { /* */ }
+            if (global.royale && (global.royale.at > 0 || global.royale.raidId || global.royale.matchId)) {
                 global.royaleDied = true;
                 global.royaleSpectating = false;
                 global.raidRespawnAt = performance.now() + 15000;

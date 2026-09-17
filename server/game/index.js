@@ -1619,6 +1619,21 @@ class gameHandler {
                 if (instance.isDead?.()) continue;
                 if (instance.noclip || instance.godmode || instance.isArenaCloser) continue;
                 if (instance.isOutpostBanner || instance.isCoreChamber) continue;
+                if (Config.dig_royale && instance.type === 'minion') {
+                    const pads = vault.getVaults();
+                    const root = instance.master;
+                    for (let vi = 0; vi < pads.length; vi++) {
+                        const v = pads[vi];
+                        const vdx = instance.x - v.x, vdy = instance.y - v.y;
+                        if (vdx * vdx + vdy * vdy < v.r * v.r) {
+                            if (!root || !root.vaultOnPad) {
+                                instance.kill();
+                            }
+                            break;
+                        }
+                    }
+                    if (instance.isDead?.()) continue;
+                }
                 if (instance.type === 'tank' || instance.type === 'miniboss' || instance.type === 'minion') {
                     // Keep the satchel on the tank's back. Has to run per tick
                     // rather than on gem change, because "back" tracks movement
@@ -1742,16 +1757,15 @@ class gameHandler {
                 } else if (instance.type === 'bullet' || instance.type === 'drone' ||
                            instance.type === 'trap'   || instance.type === 'satellite' ||
                            instance.type === 'swarm') {
-                    // Raid vaults are hard cover: incoming bullets/traps/
-                    // swarms fizzle at the pad edge, occupied or not. Nobody
-                    // shoots the miner mid-deposit (their own shots fizzle
-                    // too, so step out to fight).
-                    if (Config.dig_royale && (instance.type === 'bullet' || instance.type === 'trap' || instance.type === 'swarm')) {
+                    // Raid vaults are hard cover. Every projectile dies at the
+                    // pad, including drones. Step out to fight.
+                    if (Config.dig_royale) {
                         const pads = vault.getVaults();
                         for (let vi = 0; vi < pads.length; vi++) {
                             const v = pads[vi];
                             const vdx = instance.x - v.x, vdy = instance.y - v.y;
-                            if (vdx * vdx + vdy * vdy < v.r * v.r) {
+                            const rr = (v.r + 8) * (v.r + 8);
+                            if (vdx * vdx + vdy * vdy < rr) {
                                 instance.velocity.x = 0; instance.velocity.y = 0;
                                 instance.accel.x = 0;    instance.accel.y = 0;
                                 instance.kill();

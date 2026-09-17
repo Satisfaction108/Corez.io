@@ -249,7 +249,7 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
         }
         const lobbySafe = (e) => {
             const root = e && (e.master || e);
-            return !!(root && (root.royaleLobby || root.passive));
+            return !!(root && (root.royaleLobby || root.passive || (Config.dig_royale && root.vaultOnPad)));
         };
         if (!bail && !my.invuln && !n.invuln && !lobbySafe(my) && !lobbySafe(n)) {
             // Calculate base damage

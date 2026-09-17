@@ -193,6 +193,34 @@ function tick(actors, dtMs) {
         } catch { /* fall through */ }
     }
     const now = Date.now();
+    if (Config.dig_royale) {
+        for (const v of list) v._onPad = [];
+        for (const actor of actors) {
+            const body = actorBody(actor);
+            if (!body || body.isGhost || body.isDead?.()) continue;
+            for (const v of list) {
+                const dx = body.x - v.x, dy = body.y - v.y;
+                if (dx * dx + dy * dy < v.r * v.r) { v._onPad.push(body); break; }
+            }
+        }
+        for (const v of list) {
+            const on = v._onPad || [];
+            let keep = null;
+            if (v._depositor && on.includes(v._depositor)) keep = v._depositor;
+            else if (v._occupant && on.includes(v._occupant)) keep = v._occupant;
+            else keep = on[0] || null;
+            v._occupant = keep;
+            for (const body of on) {
+                if (body === keep) continue;
+                cancelDeposit(body, !!body.socket);
+                if (!body._vaultPush || body._vaultPush.pad !== v) {
+                    ejectFromPad(body, v, "Vault is occupied.");
+                } else {
+                    pushOut(body, v, 9, now);
+                }
+            }
+        }
+    }
     for (const actor of actors) {
         const body = actorBody(actor);
         if (!body || body.isGhost) continue;

@@ -1028,7 +1028,16 @@ class socketManager {
                 if (!socket.status.deceased) return 1;
                 socket.royaleWantsSpectate = true;
                 const code = m[0] | 0;
-                cycleSpectate(socket, code === 2 ? 0 : (code === 0 ? -1 : 1));
+                if (code === 2) {
+                    const killer = socket.spectateKiller;
+                    if (killer && !killer.isDead?.() && (killer.isPlayer || killer.isBot)) {
+                        socket.spectateEntity = killer;
+                    } else {
+                        nearestSpectate(socket, socket.lastDeathX || socket.camera.x, socket.lastDeathY || socket.camera.y);
+                    }
+                } else {
+                    cycleSpectate(socket, code === 0 ? -1 : 1);
+                }
                 if (socket.spectateEntity && socket.camera) {
                     socket.camera.x = socket.spectateEntity.x;
                     socket.camera.y = socket.spectateEntity.y;
@@ -1534,6 +1543,7 @@ class socketManager {
         }
         body.become(player);
         socket.spectateEntity = null;
+        socket.spectateKiller = null;
         socket.royaleWantsSpectate = false;
         body.invuln = true;
         player.body = body;
@@ -1936,14 +1946,14 @@ class socketManager {
                                 socket.status.readyToSpawn = true;
                             }
 
-                            
-                            
-                            
-                            socket.spectateEntity = livingSpectateTarget(player.body.finalKillers);
-                            // Raid: the camera holds at the corpse. It only
-                            // follows a spectate target after Spectate/Prev/
-                            // Next is pressed (RS sets royaleWantsSpectate).
-                            if (Config.dig_royale) socket.royaleWantsSpectate = false;
+                            socket.spectateKiller = livingSpectateTarget(player.body.finalKillers);
+                            socket.spectateEntity = socket.spectateKiller;
+                            // Raid: freeze on the corpse until Spectate is pressed.
+                            if (Config.dig_royale) {
+                                socket.royaleWantsSpectate = false;
+                                socket.camera.x = socket.lastDeathX;
+                                socket.camera.y = socket.lastDeathY;
+                            }
 
                             socket.talk("F", ...player.records());
                             purge();
@@ -1976,7 +1986,10 @@ class socketManager {
                     camera.scoping = false;
 
                     const holdCorpse = Config.dig_royale && !socket.royaleWantsSpectate;
-                    if (!holdCorpse) {
+                    if (holdCorpse) {
+                        if (socket.lastDeathX != null) camera.x = socket.lastDeathX;
+                        if (socket.lastDeathY != null) camera.y = socket.lastDeathY;
+                    } else {
                         let hops = 0;
                         while (socket.spectateEntity && socket.spectateEntity.isDead() && hops++ < 8) {
                             socket.spectateEntity = livingSpectateTarget(socket.spectateEntity.finalKillers);

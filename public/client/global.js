@@ -235,6 +235,7 @@ const global = {
         royaleSpectate: Region(1),
         royalePrev: Region(1),
         royaleNext: Region(1),
+        royalePlay: Region(1),
         royaleTab: Region(4),
         optionsMenu: {
             switchButton: Region(2),

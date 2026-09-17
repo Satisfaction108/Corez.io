@@ -6711,6 +6711,11 @@ import * as tutorial from './tutorial.js';
         if (!global.royaleSpectating) {
             global.clickables.royalePrev.hide();
             global.clickables.royaleNext.hide();
+            global.clickables.royalePlay.hide();
+        }
+        if (!global.died) {
+            global.clickables.royaleSpectate.hide();
+            global.clickables.royalePlay.hide();
         }
     }
 
@@ -7350,7 +7355,7 @@ import * as tutorial from './tutorial.js';
 
     const gameDrawDead = () => {
         // Royale owns its death screen (placement + spectate + home, no respawn).
-        if (global.royaleDied && (global.royaleSpectating || global.showBigMap)) {
+        if (global.royaleDied && global.royaleSpectating) {
             global.clickables.royaleSpectate.hide();
             global.clickables.deathRespawn.hide();
             return;
@@ -7568,7 +7573,7 @@ import * as tutorial from './tutorial.js';
 
         const locked = !!(global.royale.lock && global.royale.at > 0);
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
-        if (!locked && waitMs <= 0 && !global.disconnected && !global.respawnPending) {
+        if (!locked && global.raidRespawnAt > 0 && waitMs <= 0 && !global.disconnected && !global.respawnPending) {
             try { global.canvas.respawn(); } catch { /* */ }
         }
         drawText(locked
@@ -7577,6 +7582,7 @@ import * as tutorial from './tutorial.js';
                  cx, gy + 3 * 46 + 56, 14, color.gold, "center");
         global.clickables.royalePrev.hide();
         global.clickables.royaleNext.hide();
+        global.clickables.royalePlay.hide();
         global.clickables.deathRespawn.hide();
         const by = py + PH - 46;
         const cr = global.canvas.height / global.screenHeight / global.ratio;
@@ -7584,13 +7590,6 @@ import * as tutorial from './tutorial.js';
         if (!global.disconnected) {
             drawButton(cx - 90, by, 150, 32, ga, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
             drawButton(cx + 90, by, 150, 32, ga, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
-            global.royaleBarHits = {
-                spectate: guiToClientRect(cx - 90 - 75, by, 150, 32),
-                play: null,
-                prev: null,
-                next: null,
-                home: guiToClientRect(cx + 90 - 75, by, 150, 32),
-            };
         }
     };
     const drawRoyaleSpectateBar = () => {
@@ -7614,7 +7613,7 @@ import * as tutorial from './tutorial.js';
         const place = global.royale.place | 0;
         const queued = !global.died && global.raidQueued;
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
-        if (!locked && global.died && waitMs <= 0 && !global.disconnected && !global.respawnPending) {
+        if (!locked && global.raidRespawnAt > 0 && global.died && waitMs <= 0 && !global.disconnected && !global.respawnPending) {
             try { global.canvas.respawn(); } catch { /* */ }
         }
         const bw = barW < 480 ? 64 : 86;
@@ -7633,20 +7632,12 @@ import * as tutorial from './tutorial.js';
         drawButton(nextCx, y + 3, bw, 30, 1, "rect", "Next", 14, false, false, false, true, "royaleNext", cr, 0);
         const canPlay = global.died && !locked && !global.respawnPending && !global.disconnected;
         if (canPlay) {
-            // Clicks land through royaleBarHits (see canvas mouseUp), so this
-            // stays unregistered like the other bar buttons' hit rects.
-            drawButton(playCx, y + 3, bw, 30, 1, "rect", "Play", 14, false, false, false, false, "royalePlay", cr, 0);
+            drawButton(playCx, y + 3, bw, 30, 1, "rect", "Play", 14, false, false, false, true, "royalePlay", cr, 0);
         } else {
+            global.clickables.royalePlay.hide();
             drawButton(playCx, y + 3, bw, 30, 0.45, "rect", locked ? (lockLeft + "s") : "Wait", 14, false, false, false, false, "royalePlay", cr, 0);
         }
         drawButton(homeCx, y + 3, bw, 30, 1, "rect", "Home", 14, false, false, false, true, "exitGame", cr, 0);
-        global.royaleBarHits = {
-            prev: guiToClientRect(prevCx - bw / 2, y + 3, bw, 30),
-            next: guiToClientRect(nextCx - bw / 2, y + 3, bw, 30),
-            spectate: null,
-            play: canPlay ? guiToClientRect(playCx - bw / 2, y + 3, bw, 30) : null,
-            home: guiToClientRect(homeCx - bw / 2, y + 3, bw, 30),
-        };
     };
     const applyScreenShake = (type = "camera", returnOption = false) => {
         let properties = type == "gui" ? config.graphical.shakeProperties.UIShake : config.graphical.shakeProperties.CameraShake;
