@@ -394,6 +394,7 @@ const global = {
     royaleSpectating: false,
     royaleDied: false,
     royaleKillerCamUntil: 0,
+    digRoyaleMode: false,
     bandwidth: {
         currentHa: 0,
         currentFa: 0,

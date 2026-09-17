@@ -396,6 +396,7 @@ class socketManager {
                             
                             
                             JSON.stringify(require('../terrain/coreChambers.js').snapshot()),
+                            Config.dig_royale ? 1 : 0,
                         );
                     }
                     return;

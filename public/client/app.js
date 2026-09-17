@@ -2611,6 +2611,11 @@ import * as tutorial from './tutorial.js';
     function royaleActive() {
         return !!(global.royale && global.royale.at > 0);
     }
+    function royaleMode() {
+        // The island is circular from the moment you join (lobby included),
+        // not just once the raid goes live.
+        return !!(global.digRoyaleMode || royaleActive());
+    }
     function royaleLobbyPhase() {
         return false;
     }
@@ -3534,10 +3539,12 @@ import * as tutorial from './tutorial.js';
             roomY = -py + global.screenHeight / 2 - ratio * gameHeight / 2,
             roomWidth = ratio * gameWidth,
             roomHeight = ratio * gameHeight;
-        // Royale is a circle island but the border stays raw: the rocks
-        // define the edge, never a perfect canvas clip that slices them.
-        const royaleRoundClip = global.advanced.roundMap && !royaleActive();
-        if (royaleRoundClip) {
+        // Circular dirt island for round maps and dig royale alike (lobby
+        // included - the map is a circle from the moment you join). The dirt
+        // is clipped to a perfect circle, but the ROCKS draw unclipped after
+        // the restore below, so rim rocks overhang raw and are never sliced.
+        const circleClip = global.advanced.roundMap || royaleMode();
+        if (circleClip) {
             ctx[0].save();
             ctx[0].beginPath();
             ctx[0].arc(
@@ -3551,7 +3558,7 @@ import * as tutorial from './tutorial.js';
         }
         // Square dirt base for normal modes. Royale paints its dirt under
         // the rocks only (below), leaving void at the raw rock edge.
-        if (!royaleActive() || !getMapPaths()) ctx[0].fillRect(roomX, roomY, roomWidth, roomHeight);
+        if (!royaleMode() || !getMapPaths()) ctx[0].fillRect(roomX, roomY, roomWidth, roomHeight);
         // muddy cavern floor: repeat the dirt tile across the room,
         // anchored to world coordinates and scaled with the camera so the
         // ground never "swims". PERF: only the visible slice of the room is
@@ -3560,7 +3567,7 @@ import * as tutorial from './tutorial.js';
         // Royale island: dirt lives ONLY under the rocks (their combined
         // path), so the void starts exactly at the rocks' raw edge. No
         // square dirt corners, no rock ever cut or culled for it.
-        if (royaleActive()) {
+        if (royaleMode()) {
             const islPaths = getMapPaths();
             if (islPaths) {
                 if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
@@ -3577,7 +3584,7 @@ import * as tutorial from './tutorial.js';
             }
         }
         if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
-        if (!royaleActive() || !getMapPaths()) {
+        if (!royaleMode() || !getMapPaths()) {
             const vx0 = Math.max(roomX, 0), vy0 = Math.max(roomY, 0);
             const vx1 = Math.min(roomX + roomWidth, global.screenWidth);
             const vy1 = Math.min(roomY + roomHeight, global.screenHeight);
@@ -3666,6 +3673,9 @@ import * as tutorial from './tutorial.js';
             ctx[0].globalAlpha = 1;
             ctx[0].restore();
         }
+        // Unclip for the rocks: the dirt is a perfect circle, the rocks are
+        // raw and overhang it. Round (non-royale) maps keep the clip.
+        if (royaleMode() && circleClip) ctx[0].restore();
         // the rock wall first - the vaults and outposts sit ON TOP of it, so
         // nothing ever washes over the doors or their labels
         if (window.terrainRenderer && window.terrainRenderer.ready) {
@@ -3674,7 +3684,7 @@ import * as tutorial from './tutorial.js';
             ctx[0].globalAlpha = 0.9;
             window.terrainRenderer.draw(ctx[0], px, py, ratio, gameWidth, gameHeight, global.screenWidth, global.screenHeight);
         }
-        global.advanced.roundMap && !royaleActive() && ctx[0].restore();
+        if (circleClip && !royaleMode()) ctx[0].restore();
         ctx[0].globalAlpha = 1;
         drawStorm(roomX, roomY, ratio);
         // Dig Wars: team vault doors, set into the base floors
@@ -5836,7 +5846,7 @@ import * as tutorial from './tutorial.js';
         
         c.fillStyle = "#0e1418";
         c.fillRect(rx, ry, rw, rh);
-        if (royaleActive()) {
+        if (royaleMode()) {
             // Island dirt only under the rocks: the map edge is the rocks.
             const islP = getMapPaths();
             if (islP) {
@@ -7551,7 +7561,11 @@ import * as tutorial from './tutorial.js';
     // (paused during the final-storm spawn lock). Death is a tax, not an end.
     const gameDrawDeadRoyale = () => {
         let glide = global.deathAnimation.get();
-        clearScreen(color.black, 0.32 + 0.28 * global.lerp(0, 0.5, glide), ctx[2]);
+        // The whole card fades in first (panelA), then the staggered rows
+        // play on top. Backdrop ramps from nothing - no more 0.32 dim pop.
+        const panelA = global.lerp(0, 0.7, glide);
+        const rise = (1 - panelA) * 18;
+        clearScreen(color.black, 0.62 * global.lerp(0, 0.6, glide), ctx[2]);
         const c = ctx[2];
         const cx = global.screenWidth / 2;
         const you = global.royale.you || {};
@@ -7560,9 +7574,10 @@ import * as tutorial from './tutorial.js';
         const PW = Math.min(620, global.screenWidth - 40);
         const PH = 474;
         const px = cx - PW / 2;
-        const py = Math.max(12, global.screenHeight / 2 - PH / 2 - 6);
+        const py = Math.max(12, global.screenHeight / 2 - PH / 2 - 6) + rise;
         // panel: dark card, black keyline, gold raid frame
         c.save();
+        c.globalAlpha = panelA;
         roundRectPath(c, px, py, PW, PH, 16);
         c.fillStyle = "rgba(16,17,22,0.94)";
         c.fill();
@@ -7574,13 +7589,13 @@ import * as tutorial from './tutorial.js';
         c.stroke();
         c.restore();
 
-        drawText("YOU DIED", cx, py + 34, 26, color.gold, "center");
-        drawText("RAID CONTINUES - DEATH IS A TAX", cx, py + 54, 11, color.grey, "center");
+        drawText("YOU DIED", cx, py + 34, 26 * (0.8 + 0.2 * panelA), color.gold, "center", true, panelA);
+        drawText("RAID CONTINUES - DEATH IS A TAX", cx, py + 54, 11, color.grey, "center", true, panelA);
 
         // headline score + place
         const bx = px + 22, bw = PW - 44;
         c.save();
-        c.globalAlpha = global.lerp(0, 1, glide);
+        c.globalAlpha = global.lerp(0, 1, glide) * (0.25 + 0.75 * panelA);
         roundRectPath(c, bx, py + 66, bw, 58, 9);
         c.fillStyle = "rgba(255,215,94,0.10)";
         c.fill();
@@ -7588,9 +7603,9 @@ import * as tutorial from './tutorial.js';
         c.strokeStyle = "rgba(255,215,94,0.35)";
         c.stroke();
         c.restore();
-        drawText("RAID SCORE", bx + 14, py + 79, 11, color.grey, "left");
-        drawText(util.formatLargeNumber(Math.round(score)), bx + 14, py + 105, 24, color.gold, "left");
-        if (place > 0) drawText("#" + place, bx + bw - 14, py + 105, 24, color.guiwhite, "right");
+        drawText("RAID SCORE", bx + 14, py + 79, 11, color.grey, "left", true, panelA);
+        drawText(util.formatLargeNumber(Math.round(score)), bx + 14, py + 105, 24, color.gold, "left", true, panelA);
+        if (place > 0) drawText("#" + place, bx + bw - 14, py + 105, 24, color.guiwhite, "right", true, panelA);
 
         // the run in numbers: kept vs lost is the whole raid economy
         const half = (bw - 8) / 2;
@@ -7620,7 +7635,7 @@ import * as tutorial from './tutorial.js';
         c.globalAlpha = global.lerp(2.4, 2.7, glide);
         drawText(killedBy, cx, gy + 3 * 46 + 14, 13, color.grey, "center");
         c.restore();
-        drawText("Banked gems kept. Satchel dropped. Drill weak for 30s.", cx, gy + 3 * 46 + 34, 12, color.guiwhite, "center");
+        drawText("Banked gems kept. Satchel dropped. Drill weak for 30s.", cx, gy + 3 * 46 + 34, 12, color.guiwhite, "center", true, panelA);
 
         const locked = !!(global.royale.lock && global.royale.at > 0);
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
@@ -7630,7 +7645,7 @@ import * as tutorial from './tutorial.js';
         drawText(locked
                 ? ("Final storm - no spawns for " + Math.max(0, global.royale.lockLeft | 0) + "s")
                 : (waitMs > 0 ? ("Respawning in " + Math.ceil(waitMs / 1000) + "s") : "Respawning"),
-                 cx, gy + 3 * 46 + 56, 14, color.gold, "center");
+                 cx, gy + 3 * 46 + 56, 14, color.gold, "center", true, panelA);
         global.clickables.royalePrev.hide();
         global.clickables.royaleNext.hide();
         global.clickables.royalePlay.hide();
@@ -7735,9 +7750,12 @@ import * as tutorial from './tutorial.js';
 
         let playerx = global.player.animX.get(tick);
         let playery = global.player.animY.get(tick);
-        if (config.graphical.lerpAnimations) {
+        if (global._specGlide) {
+            // Spectate glide owns the camera: the chase below would drag it
+            // back toward the corpse every frame and end in a snap. The glide
+            // retargets live from server updates, then hands off smoothly.
+        } else if (config.graphical.lerpAnimations) {
             // lerp toward the INTERPOLATED position - chasing raw 30Hz
-            
             global.player.renderx = util.lerp(global.player.renderx, playerx, 0.15, true);
             global.player.rendery = util.lerp(global.player.rendery, playery, 0.15, true);
         } else if (config.graphical.smoothcamera && config.graphical.shakeProperties.CameraShake.shakeStartTime == -1) {
@@ -8174,7 +8192,7 @@ import * as tutorial from './tutorial.js';
                 global._specGlide = null;
             } else {
                 const k = Math.min(1, (performance.now() - g.t0) / g.dur);
-                const e = 1 - Math.pow(1 - k, 3);
+                const e = k * k * k * (k * (k * 6 - 15) + 10);
                 global.player.renderx = g.x0 + (g.x1 - g.x0) * e;
                 global.player.rendery = g.y0 + (g.y1 - g.y0) * e;
                 if (k >= 1) {

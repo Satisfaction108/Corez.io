@@ -1089,6 +1089,7 @@ let incoming = async function(message, socket) {
                 global.advanced.blackout.active = blackoutData.active;
                 global.advanced.blackout.color = blackoutData.color;
                 global.advanced.roundMap = m[6] == "circle" ? true : false;
+                global.digRoyaleMode = false;
 
                 socket.talk('S', getNow());
             } break;
@@ -1108,6 +1109,7 @@ let incoming = async function(message, socket) {
                 global.vaults   = m[6] ? JSON.parse(m[6]) : [];
                 global.outposts = m[7] ? JSON.parse(m[7]) : [];
                 global.chambers = m[8] ? JSON.parse(m[8]) : [];
+                global.digRoyaleMode = m[9] === 1;
                 if (window.terrainRenderer) window.terrainRenderer.init(cells, cols, rows, rockState, oreState, oreSalt);
             } break;
             case 'TUTI': {
@@ -1486,12 +1488,12 @@ let incoming = async function(message, socket) {
                 global.player.loc = { x: camx, y: camy };
                 global.player.animX.add(m[1]);
                 global.player.animY.add(m[2]);
-                // Spectate glide: a far jump (new target) eases over ~0.7s
+                // Spectate glide: a jump to a new target eases over ~0.85s
                 // while tracking steps stay live. Render lerps in animloop.
                 if (global.died && isFinite(global.player.renderx) && isFinite(global.player.rendery)) {
                     const jump = Math.hypot(camx - global.player.renderx, camy - global.player.rendery);
-                    if (jump > 700 && !global._specGlide) {
-                        global._specGlide = { x0: global.player.renderx, y0: global.player.rendery, x1: camx, y1: camy, t0: performance.now(), dur: 700 };
+                    if (jump > 260 && !global._specGlide) {
+                        global._specGlide = { x0: global.player.renderx, y0: global.player.rendery, x1: camx, y1: camy, t0: performance.now(), dur: 850 };
                     } else if (global._specGlide) {
                         global._specGlide.x1 = camx;
                         global._specGlide.y1 = camy;
