@@ -1212,6 +1212,17 @@ let incoming = async function(message, socket) {
                     r.lockLeft = d.lockLeft | 0;
                     r.you = d.you || null;
                     r.matchId = d.matchId | 0;
+                    // Died before the first RY: promote to the raid screen now.
+                    if (global.died && !global.royaleDied && (d.raidId || d.matchId)) {
+                        global.royaleDied = true;
+                        global.royaleSpectating = false;
+                        if (!global.raidRespawnAt) global.raidRespawnAt = performance.now() + 15000;
+                        try {
+                            global.vault.onPad = false;
+                            global.vault.remaining = 0;
+                            global.vault.total = 0;
+                        } catch { /* */ }
+                    }
                     if (d.youPlace > 0) r.place = d.youPlace | 0;
                     // Queued for the final storm: watch until the reset drops us in.
                     if (r.lock && global.raidQueued && !global.died && !global.disconnected) {
@@ -1375,6 +1386,11 @@ let incoming = async function(message, socket) {
                 global.royaleDied = false;
                 global.raidRespawnAt = 0;
                 global.raidQueued = false;
+                global.royaleBarHits = null;
+                global.showBigMap = false;
+                if (global.bigMap) global.bigMap.dragging = false;
+                global.royale.occupy = 0;
+                global.royale.lockout = 0;
                 global.player.renderx = global.player.cx.x = m[0];
                 global.player.rendery = global.player.cy.y = m[1];
                 global.player.renderv = global.player.view = m[2];
@@ -1428,7 +1444,8 @@ let incoming = async function(message, socket) {
 
                     socket.talk('s', global.playerName, 0, 1 * config.game.autoLevelUp, global.bodyID ? global.bodyID : false, 1 * config.game.incognitoMode);
                     global.bodyID = undefined;
-                    global.raidQueued = true;
+                    // Queue only on the initial join, not on mid-game resyncs.
+                    if (!global.gameStart) global.raidQueued = true;
                 }
             } break;
         case 'm': {
@@ -1582,6 +1599,8 @@ let incoming = async function(message, socket) {
             global.died = true;
             const deathPlace = m[13 + m[8]] | 0;
             if (deathPlace > 0) global.royale.place = deathPlace;
+            global.royale.occupy = 0;
+            global.royale.lockout = 0;
             if (global.royale && global.royale.at > 0) {
                 global.royaleDied = true;
                 global.royaleSpectating = false;

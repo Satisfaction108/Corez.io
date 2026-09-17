@@ -1167,10 +1167,27 @@ import * as tutorial from './tutorial.js';
 
         if (global.gameLoading) return;
         global.gameLoading = true;
+        // Fresh start: no raid state leaks in from a previous game.
         global.raidQueued = false;
         global.royaleSpectating = false;
         global.royaleDied = false;
         global.raidRespawnAt = 0;
+        global.royaleBarHits = null;
+        global.showBigMap = false;
+        if (global.bigMap) global.bigMap.dragging = false;
+        try {
+            Object.assign(global.royale, {
+                phase: 'idle', left: 0, alive: 0, toast: '', winner: null,
+                storm: { a: 0, r: 0, max: 1, cx: 0, cy: 0 },
+                feed: [], occupy: 0, lockout: 0, place: 0, board: [],
+                at: -1e9, raidId: 0, raidLeft: 0, youScore: 0, youPB: 0,
+                objectives: [], bloom: null, chest: null, results: null,
+                lock: 0, lockLeft: 0, you: null,
+            });
+            global.vault.onPad = false;
+            global.vault.remaining = 0;
+            global.vault.total = 0;
+        } catch { /* */ }
         // Play must not inherit a leftover /tut path or tutorial overlay from
         // a previous click. Only launchTutorial() sets launchingTutorial.
         if (!global.launchingTutorial && !global.launchingDigWars) {
@@ -7560,6 +7577,7 @@ import * as tutorial from './tutorial.js';
                  cx, gy + 3 * 46 + 56, 14, color.gold, "center");
         global.clickables.royalePrev.hide();
         global.clickables.royaleNext.hide();
+        global.clickables.deathRespawn.hide();
         const by = py + PH - 46;
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         const ga = global.lerp(3, 3.25, glide);

@@ -532,7 +532,7 @@ const global = {
             global.canvas.tankTreeProps.enabled = false;
         }
     },
-    exit: () => { 
+    exit: () => {
         document.getElementById("gameAreaWrapper").style.display = "none";
         global.socket && global.socket.close();
         document.getElementById("startMenuWrapper").style.display = "block";
@@ -542,6 +542,22 @@ const global = {
         global.gameUpdate = false;
         global.died = false;
         global.disconnected = false;
+        global.royaleSpectating = false;
+        global.royaleDied = false;
+        global.raidRespawnAt = 0;
+        global.raidQueued = false;
+        global.royaleBarHits = null;
+        global.showBigMap = false;
+        try {
+            Object.assign(global.royale, {
+                phase: 'idle', at: -1e9, lock: 0, lockLeft: 0, place: 0,
+                occupy: 0, lockout: 0, you: null, youScore: 0, results: null,
+                toast: '', board: [], feed: [],
+            });
+            global.vault.onPad = false;
+            global.vault.remaining = 0;
+            global.vault.total = 0;
+        } catch { /* */ }
         global.entities = [];
         global.roomSetup = [];
         global.messages = [];

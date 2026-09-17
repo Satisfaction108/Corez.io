@@ -346,13 +346,26 @@ function fillBots() {
 function onBanked(body, amount) {
     if (!body || !(amount > 0)) return;
     const s = ensureStat(body);
-    if (s) s.banked = (s.banked | 0) + Math.round(amount);
+    // Float accumulate; every read truncates. Rounding per-chunk used to
+    // overcount outpost banking (~4%) because chunks are rarely multiples of 5.
+    if (s) s.banked = (s.banked || 0) + amount;
 }
 
 function onCapture(body, site) {
     if (!body || !site) return;
     const s = ensureStat(body);
     if (s) s.holds = (s.holds | 0) + 1;
+}
+
+function killerOf(body) {
+    for (const k of (body && body.finalKillers) || []) {
+        if (!k || k === body) continue;
+        let root = k, hops = 0;
+        while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+        if (!root || root === body) continue;
+        if ((root.isPlayer || root.isBot) && !root.isDead?.()) return root;
+    }
+    return null;
 }
 
 function onCombatantDead(body) {
@@ -364,10 +377,11 @@ function onCombatantDead(body) {
         const s = raidStats.get(key) || ensureStat(body);
         if (s) s.alive = false;
     }
+    // Credit comes from the authoritative killer list, so human-vs-human
+    // kills count (the old _lastDamageSource was only set for bot victims).
     const stormKill = body.deathCause === "storm";
-    const killer = body._lastDamageSource;
-    const killerBody = killer && (killer.isPlayer || killer.isBot) ? killer : null;
-    if (killerBody && killerBody !== body && !stormKill) {
+    const killerBody = stormKill ? null : killerOf(body);
+    if (killerBody) {
         const ks = ensureStat(killerBody);
         if (ks) ks.kills = (ks.kills | 0) + 1;
     }
@@ -468,6 +482,32 @@ function markHumanDeath(socket) {
     if (socket) socket.lastRaidDeathAt = now();
 }
 
+// A socket is gone: mark the stat dead (no feed entry), drop any deposit,
+// and release owned bases so they do not brick for everyone else.
+function disconnectCleanup(socket, body) {
+    if (!Config.dig_royale) return;
+    try {
+        if (body && body.royaleAlive !== false) {
+            body.royaleAlive = false;
+            const key = statKeyFor(body);
+            const s = key ? raidStats.get(key) : null;
+            if (s) s.alive = false;
+        }
+        if (body) {
+            try { require('../../terrain/vault.js').cancelDeposit(body, false); } catch { /* */ }
+            body.vaultDeposit = null;
+            body._vaultSite = null;
+            body._vaultPush = null;
+            body._vaultPadSince = 0;
+            body._padPush = null;
+            body.outpostDeposit = null;
+        }
+        if (socket && socket.id && outposts.releaseOwner) {
+            outposts.releaseOwner("s:" + socket.id);
+        }
+    } catch { /* */ }
+}
+
 function tickOutpostRules(t) {
     const list = outposts.getOutposts();
     const bodies = combatants();
@@ -551,6 +591,7 @@ function wipeWall() {
 }
 
 function startRaid(first) {
+    if (first && raidId) return;
     raidId++;
     raidStartAt = now();
     raidEndsAt = raidStartAt + RAID_MS;
@@ -574,6 +615,25 @@ function startRaid(first) {
         try { outposts.resetRoyale && outposts.resetRoyale(); } catch { /* */ }
         occupy.clear();
         lockout.clear();
+        // Live bodies keep no raid state across the wall: deposits, pad
+        // pushes, and contest fields all end at the reset.
+        try {
+            const vaultMod = require('../../terrain/vault.js');
+            for (const body of combatants()) {
+                if (body.vaultDeposit && vaultMod.cancelDeposit) vaultMod.cancelDeposit(body, false);
+                else { body.vaultDeposit = null; }
+                body._vaultSite = null;
+                body._vaultPush = null;
+                body._vaultPadSince = 0;
+                body._padPush = null;
+                body.outpostDeposit = null;
+            }
+            for (const site of outposts.getOutposts()) {
+                site._contestedUntil = 0;
+                site._lastHitter = null;
+                site.occupyLeft = 0;
+            }
+        } catch { /* */ }
         for (const body of combatants()) {
             const hole = safeSpawnSpot();
             moveTo(body, hole.x, hole.y);
@@ -591,6 +651,8 @@ function startRaid(first) {
 }
 
 function endRaid() {
+    // Synchronous guard: an event-loop stall must not double-pay top 10.
+    raidEndsAt = Infinity;
     const board = boardSnapshot();
     const top = board.slice(0, 10);
     const bonuses = [500, 350, 250, 180, 140, 110, 90, 70, 50, 40];
@@ -669,6 +731,18 @@ function tick() {
     for (const s of raidStats.values()) {
         if (t - s.lastSeen > 30000) s.alive = false;
     }
+    // Sweep every 30s: drop long-dead rows (bot churn mints one per bot
+    // life; the dead only stay dead if they disconnected) and expired
+    // lockouts. The dead auto-respawn in 15s, so 5min dead means gone.
+    if (t - (tick._sweepAt || 0) > 30000) {
+        tick._sweepAt = t;
+        for (const [k, s] of raidStats) {
+            if (!s.alive && t - (s.lastSeen || 0) > 5 * 60 * 1000) raidStats.delete(k);
+        }
+        for (const [k, u] of lockout) {
+            if (u <= t) lockout.delete(k);
+        }
+    }
     if (t - (tick._broadcastAt || 0) >= 500) {
         tick._broadcastAt = t;
         broadcast();
@@ -693,6 +767,6 @@ class DigRoyale {
 }
 
 module.exports = {
-    DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, phase, isLobbyPhase, stormFleePoint,
+    DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
     lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked,
 };

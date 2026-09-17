@@ -49,6 +49,14 @@ function checkBanked(body) {
     sock._milestoneIdx = idx;
 
     if (paid) gems.talkGems(body, 0);
+    // Raid board tracks banked separately: forward the bonus delta or the
+    // board permanently undercounts the wallet.
+    if (paid && Config.dig_royale) {
+        try {
+            const after = (sock.gemBanked || 0) | 0;
+            if (after > total) require('../gamemodes/scripts/dig_royale.js').onBanked(body, after - total);
+        } catch { /* */ }
+    }
 }
 
 module.exports = { checkBanked, BANK_MILESTONES };

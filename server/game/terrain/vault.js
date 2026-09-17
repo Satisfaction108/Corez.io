@@ -154,7 +154,7 @@ function depositFor(body, amount) {
     body.vaultDeposit = {
         remaining: total,
         total,
-        spill: 0,
+        spill: (body.vaultDeposit && body.vaultDeposit.spill) || 0,
         lastHealth: body.health.amount,
         lastTalk: 0,
     };
@@ -174,6 +174,12 @@ function requestCancel(socket) {
 function tick(actors, dtMs) {
     const list = getVaults();
     if (!list.length) return;
+    // Drop locks held by bodies that left the world without a release
+    // (destroyed alive). A live deposit always carries its deposit object.
+    for (const v of list) {
+        const d = v._depositor;
+        if (d && (d.isGhost || d.isDead?.() || !d.vaultDeposit)) v._depositor = null;
+    }
     // BR lobby/idle: playground only - no banking until scatter.
     if (Config.dig_royale) {
         try {
@@ -241,8 +247,9 @@ function tick(actors, dtMs) {
         const d = body.vaultDeposit;
         if (!d) continue;
 
-        
-        if (body.health.amount < d.lastHealth - 1e-3) {
+        // Storm chips do not interrupt a deposit (only bullets/ram do).
+        // Dying in the storm still cancels through the dead branch.
+        if (body.health.amount < d.lastHealth - 1e-3 && !body._inStorm) {
             cancelDeposit(body);
             continue;
         }
@@ -290,4 +297,4 @@ function tick(actors, dtMs) {
     }
 }
 
-module.exports = { tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults };
+module.exports = { tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, cancelDeposit };

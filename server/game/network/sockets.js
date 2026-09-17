@@ -188,6 +188,16 @@ class socketManager {
         let player = socket.player,
             index = this.players.indexOf(player);
 
+        if (socket._spawnLoop) {
+            try { clearInterval(socket._spawnLoop); } catch { /* */ }
+            socket._spawnLoop = null;
+        }
+        if (Config.dig_royale && player && player.body) {
+            try {
+                require('../gamemodes/scripts/dig_royale.js').disconnectCleanup(socket, player.body);
+            } catch { /* */ }
+        }
+
         if (socket.group) groups.removeMember(socket);
 
         if (index != -1) {
@@ -390,7 +400,10 @@ class socketManager {
                     }
                     return;
                 }
-                let loop = setInterval(() => {
+                if (socket._spawnLoop) {
+                    try { clearInterval(socket._spawnLoop); } catch { /* */ }
+                }
+                let loop = socket._spawnLoop = setInterval(() => {
 
                     if (!global.cannotRespawn && !global.gameManager.arenaClosed && socket.status.readyToSpawn) {
                         if (Config.dig_royale) {
@@ -399,8 +412,11 @@ class socketManager {
                             // The 20ms retry must not auto-spawn when a match rolls over.
                             if (!dr.canSpawn()) return;
                             if (socket.royaleNeedClick) return;
+                            // Server-side backstop for the 15s death tax.
+                            if (socket.royaleRespawnAt && Date.now() < socket.royaleRespawnAt) return;
                         }
                         clearInterval(loop);
+                        if (socket._spawnLoop === loop) socket._spawnLoop = null;
                         let epackage = {};
                         epackage.name = name;
                         epackage.autoLVLup = autoLVLup;
@@ -1356,6 +1372,9 @@ class socketManager {
         };
 
         socket.status.deceased = false;
+        // Consume the request: a second 's' parks a fresh loop instead of
+        // spawning a second body next to this one.
+        socket.status.readyToSpawn = false;
         socket.status.readyToSpawn = true;
 
         if (this.players.indexOf(socket.player) != -1) { util.remove(this.players, this.players.indexOf(socket.player));  }

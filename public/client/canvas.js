@@ -231,13 +231,21 @@ class Canvas {
             case global.KEY_LEFT_ARROW:
                 if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = -this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_LEFT:
-                if ((global.royaleDied || global.royaleSpectating) && global.died) { this.socket.talk('RS', 0); break; }
+                if ((global.royaleDied || global.royaleSpectating) && global.died) {
+                    global.royaleSpectating = true;
+                    this.socket.talk('RS', 0);
+                    break;
+                }
                 this.socket.cmd.set(2, true);
                 break;
             case global.KEY_RIGHT_ARROW:
                 if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = +this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_RIGHT:
-                if ((global.royaleDied || global.royaleSpectating) && global.died) { this.socket.talk('RS', 1); break; }
+                if ((global.royaleDied || global.royaleSpectating) && global.died) {
+                    global.royaleSpectating = true;
+                    this.socket.talk('RS', 1);
+                    break;
+                }
                 this.socket.cmd.set(3, true);
                 break;
             case global.KEY_MOUSE_0:
@@ -450,6 +458,40 @@ class Canvas {
                     x: mouse.clientX * global.ratio,
                     y: mouse.clientY * global.ratio,
                 };
+                // Raid bar buttons (spectate/death screens) win over the map:
+                // otherwise an open map swallows Home/Play/Prev/Next clicks.
+                {
+                    const bar = global.royaleBarHits || {};
+                    const canWatch = global.died || global.raidQueued;
+                    if (hitClientRect(mouse, bar.prev) && canWatch) {
+                        global.royaleSpectating = true;
+                        this.socket.talk('RS', 0);
+                        gameSound.uiClick();
+                        break;
+                    }
+                    if (hitClientRect(mouse, bar.next) && canWatch) {
+                        global.royaleSpectating = true;
+                        this.socket.talk('RS', 1);
+                        gameSound.uiClick();
+                        break;
+                    }
+                    if (hitClientRect(mouse, bar.spectate) && canWatch && !global.disconnected) {
+                        global.royaleSpectating = true;
+                        this.socket.talk('RS', 2);
+                        gameSound.uiClick();
+                        break;
+                    }
+                    if (hitClientRect(mouse, bar.play) && !global.disconnected) {
+                        this.respawn();
+                        gameSound.uiClick();
+                        break;
+                    }
+                    if (hitClientRect(mouse, bar.home) && (global.died || global.disconnected)) {
+                        global.exit();
+                        gameSound.uiClick();
+                        break;
+                    }
+                }
                 // full-map overlay swallows clicks: start a drag, never fire
                 if (global.showBigMap) {
                     const mScale = this.height / global.screenHeight;
@@ -515,36 +557,6 @@ class Canvas {
                     x: mouse.clientX * global.ratio,
                     y: mouse.clientY * global.ratio,
                 };
-                const bar = global.royaleBarHits || {};
-                const canWatch = global.died || global.raidQueued;
-                if (hitClientRect(mouse, bar.prev) && canWatch) {
-                    global.royaleSpectating = true;
-                    this.socket.talk('RS', 0);
-                    gameSound.uiClick();
-                    break;
-                }
-                if (hitClientRect(mouse, bar.next) && canWatch) {
-                    global.royaleSpectating = true;
-                    this.socket.talk('RS', 1);
-                    gameSound.uiClick();
-                    break;
-                }
-                if (hitClientRect(mouse, bar.spectate) && canWatch && !global.disconnected) {
-                    global.royaleSpectating = true;
-                    this.socket.talk('RS', 2);
-                    gameSound.uiClick();
-                    break;
-                }
-                if (hitClientRect(mouse, bar.play) && !global.disconnected) {
-                    this.respawn();
-                    gameSound.uiClick();
-                    break;
-                }
-                if (hitClientRect(mouse, bar.home) && (global.died || global.disconnected)) {
-                    global.exit();
-                    gameSound.uiClick();
-                    break;
-                }
                 if (global.showBigMap) {
                     const tab = global.clickables.royaleTab.check(mpos);
                     if (tab !== -1) {
@@ -898,6 +910,40 @@ class Canvas {
     // MOBILE SUPPORT
     touchStart(e) {
         e.preventDefault();
+        // Raid bar buttons first: tap-anywhere-respawn must not eat them.
+        for (let touch of e.changedTouches) {
+            const bar = global.royaleBarHits || {};
+            const canWatch = global.died || global.raidQueued;
+            const pt = { clientX: touch.clientX, clientY: touch.clientY };
+            if (hitClientRect(pt, bar.prev) && canWatch) {
+                global.royaleSpectating = true;
+                this.socket.talk('RS', 0);
+                gameSound.uiClick();
+                return;
+            }
+            if (hitClientRect(pt, bar.next) && canWatch) {
+                global.royaleSpectating = true;
+                this.socket.talk('RS', 1);
+                gameSound.uiClick();
+                return;
+            }
+            if (hitClientRect(pt, bar.spectate) && canWatch && !global.disconnected) {
+                global.royaleSpectating = true;
+                this.socket.talk('RS', 2);
+                gameSound.uiClick();
+                return;
+            }
+            if (hitClientRect(pt, bar.play) && !global.disconnected) {
+                this.respawn();
+                gameSound.uiClick();
+                return;
+            }
+            if (hitClientRect(pt, bar.home) && (global.died || global.disconnected)) {
+                global.exit();
+                gameSound.uiClick();
+                return;
+            }
+        }
         if (global.died && !global.cannotRespawn) {
             this.respawn();
             global.resetTarget();

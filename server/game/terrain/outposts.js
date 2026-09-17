@@ -42,6 +42,23 @@ function ownerKeyFor(body) {
     return null;
 }
 
+// Release every site owned by `key` back to neutral (disconnect cleanup).
+function releaseOwner(key) {
+    if (!key) return;
+    for (const site of getOutposts()) {
+        if (site.ownerKey !== key) continue;
+        site.ownerId = 0;
+        site.ownerKey = null;
+        site.team = 0;
+        if (site.banner && !site.banner.isDead?.()) {
+            try {
+                site.banner.team = TEAM_ENEMIES;
+                site.banner.color.base = "#6a6f7a";
+            } catch { /* */ }
+        }
+    }
+}
+
 // Point every site owned by `key` at the owner's fresh body.
 function rebindOwner(key, body) {
     if (!key || !body) return;
@@ -240,7 +257,26 @@ function tick(players, dtMs) {
     const now = Date.now();
 
     for (const site of list) {
-        
+        // Owner body is gone from the world. A connected owner's claim
+        // survives death (they respawn onto it); anything else releases so
+        // a ghost's base never bounces everyone forever.
+        if (site.ownerId) {
+            try {
+                if (typeof entities !== "undefined" && !entities.has(site.ownerId)) {
+                    let awaitRespawn = false;
+                    if (site.ownerKey && site.ownerKey.startsWith("s:")) {
+                        const sid = site.ownerKey.slice(2);
+                        const clients = (global.gameManager && global.gameManager.socketManager &&
+                            global.gameManager.socketManager.clients) || [];
+                        awaitRespawn = clients.some(c => c && c.id === sid);
+                    }
+                    if (!awaitRespawn) {
+                        site.ownerId = 0;
+                        site.ownerKey = null;
+                    }
+                }
+            } catch { /* */ }
+        }
         if (!site.banner) spawnStructure(site, site.team);
         
         
@@ -299,7 +335,7 @@ function tick(players, dtMs) {
 
         const d = body.outpostDeposit;
         if (!d) continue;
-        if (body.health.amount < d.lastHealth - 1e-3) {
+        if (body.health.amount < d.lastHealth - 1e-3 && !body._inStorm) {
             body.outpostDeposit = null;
             talkOutpostProgress(body);
             continue;
@@ -379,7 +415,7 @@ function requestDeposit(socket, amount) {
     body.outpostDeposit = {
         remaining: credited,
         total: credited,
-        spill: 0,
+        spill: (body.outpostDeposit && body.outpostDeposit.spill) || 0,
         lastHealth: body.health.amount,
         lastTalk: 0,
     };
@@ -396,7 +432,7 @@ function requestCancel(socket) {
 
 module.exports = {
     tick, snapshot, stateSnapshot, ownedBy, getOutposts,
-    requestDeposit, requestCancel, EFFICIENCY, ownerKeyFor, rebindOwner,
+    requestDeposit, requestCancel, EFFICIENCY, ownerKeyFor, rebindOwner, releaseOwner,
     resetRoyale() {
         for (const site of getOutposts()) {
             site.ownerId = 0;
