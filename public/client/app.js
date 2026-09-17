@@ -5145,8 +5145,8 @@ import * as tutorial from './tutorial.js';
         const objs = r.objectives || [];
         for (let i = 0; i < Math.min(3, objs.length); i++) {
             const o = objs[i];
-            const label = o.kind === "bloom" ? "Ore bloom active" : o.kind === "chest" ? "Loot chest dropped" : (o.name || "Outpost") + " contested";
-            drawText(label, cx, 110 + i * 17, 12, color.gold, "center");
+            if (o.kind !== "contest") continue;
+            drawText((o.name || "Outpost") + " contested", cx, 110 + i * 17, 12, color.gold, "center");
         }
         if (r.occupy > 0) {
             drawText("Pad eject in " + r.occupy + "s", cx, global.screenHeight - 56, 16, color.gold, "center");
@@ -5159,9 +5159,7 @@ import * as tutorial from './tutorial.js';
             if (!f) continue;
             const y = 42 + i * 18;
             const right = global.screenWidth - 18;
-            if (f.chest) {
-                drawText((f.name || "Someone") + " claimed the loot chest", right, y, 13, color.gold, "right");
-            } else if (f.storm) {
+            if (f.storm) {
                 drawText((f.name || "Someone") + " was lost in the storm", right, y, 13, color.guiwhite, "right");
             } else {
                 const verb = f.verb || "killed";
@@ -5994,35 +5992,6 @@ import * as tutorial from './tutorial.js';
             const rr = global.royale || {};
             const tnow = Date.now();
             const pulse = 1 + 0.18 * Math.sin(performance.now() / 240);
-            if (rr.bloom) {
-                const mx = T.X(rr.bloom.x), my = T.Y(rr.bloom.y);
-                if (inside(mx, my)) {
-                    c.save();
-                    c.beginPath();
-                    c.arc(mx, my, Math.max(5, dotR * 2.6 * pulse), 0, Math.PI * 2);
-                    c.fillStyle = "rgba(239,199,75,0.85)";
-                    c.fill();
-                    c.lineWidth = 2;
-                    c.strokeStyle = color.black;
-                    c.stroke();
-                    c.restore();
-                    if (nameSize > 0) drawText("BLOOM", Math.round(mx), Math.round(my - dotR * 3.4), nameSize * 0.85, "#efc74b", "center");
-                }
-            }
-            if (rr.chest) {
-                const mx = T.X(rr.chest.x), my = T.Y(rr.chest.y);
-                if (inside(mx, my)) {
-                    const s = dotR * 2.2 * pulse;
-                    c.save();
-                    c.fillStyle = "#7de08a";
-                    c.strokeStyle = color.black;
-                    c.lineWidth = 2;
-                    c.fillRect(mx - s / 2, my - s / 2, s, s);
-                    c.strokeRect(mx - s / 2, my - s / 2, s, s);
-                    c.restore();
-                    if (nameSize > 0) drawText("CHEST", Math.round(mx), Math.round(my - s), nameSize * 0.85, "#7de08a", "center");
-                }
-            }
             for (const o of (rr.objectives || [])) {
                 if (o.kind !== "contest" || (o.until && o.until < tnow)) continue;
                 const mx = T.X(o.x), my = T.Y(o.y);
@@ -6338,9 +6307,7 @@ import * as tutorial from './tutorial.js';
     function drawRoyaleFTabBody(x, y, w, h, tab) {
         const rows = tab === "feed"
             ? (global.royale.feed || []).slice().reverse().map(f => ({
-                name: f.chest
-                    ? ((f.name || "Unnamed") + " claimed the loot chest")
-                    : f.storm
+                name: f.storm
                     ? ((f.name || "Unnamed") + " was lost in the storm")
                     : ((f.by || "Someone") + " " + (f.verb || "killed") + " " + (f.name || "Unnamed")),
                 extra: f.place ? ("#" + f.place) : "",
@@ -6348,19 +6315,24 @@ import * as tutorial from './tutorial.js';
             : tab === "alive"
                 ? ((global.royale.board || []).filter(r => r.alive)).map((r, i) => ({
                     name: (i + 1) + ". " + (r.name || "Unnamed"),
-                    extra: (r.kills | 0) ? ((r.kills | 0) + " elims") : "alive",
+                    extra: (r.kills | 0) ? ((r.kills | 0) + " kills") : "alive",
                 }))
                 : royaleBoardRows().map((r, i) => ({
                     name: (i + 1) + ". " + (r.name || "Unnamed") + (r.alive === false ? "  X" : ""),
-                    extra: util.formatLargeNumber(r.score || r.gems | 0) + " pts  " + (r.kills | 0) + "K " + ((r.holds | 0) + "H"),
+                    extra: util.formatLargeNumber(r.score || r.gems | 0) + " pts  " + (r.kills | 0) + " kills  " + ((r.holds | 0) + " holds"),
                 }));
         if (!rows.length) {
             drawText(tab === "alive" ? "Nobody is alive" : "Nobody here yet", x + w / 2, y + h / 2, 16, color.guiwhite, "center");
             return;
         }
         const rowH = 28;
-        for (let i = 0; i < rows.length && i < Math.floor((h - 20) / rowH); i++) {
-            const ry = y + 16 + i * rowH;
+        let headH = 0;
+        if (tab === "standings") {
+            drawText("PTS = banked gems + 300 per kill + 200 per hold", x + 18, y + 16, 12, color.grey, "left");
+            headH = 22;
+        }
+        for (let i = 0; i < rows.length && i < Math.floor((h - 20 - headH) / rowH); i++) {
+            const ry = y + 16 + headH + i * rowH;
             drawText(rows[i].name, x + 18, ry, 14, color.guiwhite, "left");
             if (rows[i].extra) drawText(rows[i].extra, x + w - 18, ry, 14, color.gold, "right");
         }
@@ -7515,7 +7487,7 @@ import * as tutorial from './tutorial.js';
         drawText(place > 0 ? ("#" + place + "  " + util.formatLargeNumber(global.royale.youScore | 0) + " pts") : "Raid continues", cx, py + 80, 20, color.guiwhite, "center");
         const kills = Math.round(global.finalKills[0].get());
         const gems = (global.finalBanked | 0) + (global.finalCarried | 0);
-        drawText(kills + " elims   " + util.formatLargeNumber(gems) + " gems   " + compactTime(global.finalLifetime.get()),
+        drawText(kills + " kills   " + util.formatLargeNumber(gems) + " gems   " + compactTime(global.finalLifetime.get()),
                  cx, py + 110, 14, color.guiwhite, "center");
         const cause = global.finalCause || "";
         const killedBy = cause === "rock" ? "Crushed by the living rock"

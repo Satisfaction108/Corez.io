@@ -1650,6 +1650,28 @@ class gameHandler {
                     
                     if (_tg.pointInRock(instance.x, instance.y)) {
                         entombed = true;
+                        // Center is inside an alive rock, past the reach of the
+                        // edge push above. That state should never persist: a
+                        // regrow landing on a tank, a spawn overlap, or a
+                        // missed edge. Crush ticks below, and spit the tank
+                        // out to the nearest open ground so it cannot live
+                        // inside the wall.
+                        const step = Math.max(48, r * 2);
+                        for (let ring = 1; ring <= 8; ring++) {
+                            let freed = false;
+                            for (let i = 0; i < 12; i++) {
+                                const a = (i / 12) * Math.PI * 2 + ring * 0.35;
+                                const nx = instance.x + Math.cos(a) * step * ring;
+                                const ny = instance.y + Math.sin(a) * step * ring;
+                                if (_tg.pointInRock(nx, ny)) continue;
+                                instance.x = nx;
+                                instance.y = ny;
+                                _tg.pushCircleFromVoronoi(instance, r);
+                                freed = true;
+                                break;
+                            }
+                            if (freed) break;
+                        }
                         instance.velocity.x = 0; instance.velocity.y = 0;
                         instance.accel.x = 0;    instance.accel.y = 0;
                     }

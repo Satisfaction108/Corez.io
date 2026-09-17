@@ -12,11 +12,6 @@ const RESPAWN_MIN_MS = 5000;
 const RESPAWN_MAX_MS = 8000;
 const WEAK_DRILL_MS = 30_000;
 const STARTER_GEMS = 75;
-const BLOOM_EVERY_MS = 3 * 60 * 1000;
-const BLOOM_R = 420;
-const BLOOM_TTL_MS = 90 * 1000;
-const CHEST_EVERY_MS = 4 * 60 * 1000;
-const CHEST_TTL_MS = 120 * 1000;
 const KILL_SCORE = 300;
 const HOLD_SCORE = 200;
 
@@ -27,10 +22,6 @@ let raidStats = new Map();
 let killFeed = [];
 let occupy = new Map();
 let lockout = new Map();
-let bloom = null;
-let nextBloomAt = 0;
-let chest = null;
-let nextChestAt = 0;
 let raidResults = null;
 let raidResultsAt = 0;
 let poisCarved = false;
@@ -152,7 +143,9 @@ function boardSnapshot() {
     }));
     rows.sort((a, b) => (b.score - a.score) || (b.gems - a.gems) || (b.kills - a.kills));
     rows.forEach((r, i) => { r.place = i + 1; });
-    return rows.slice(0, 32);
+    const aliveRows = rows.filter(r => r.alive);
+    const deadRows = rows.filter(r => !r.alive);
+    return aliveRows.concat(deadRows).slice(0, Math.max(32, aliveRows.length));
 }
 
 function objectivesSnapshot(t) {
@@ -163,8 +156,6 @@ function objectivesSnapshot(t) {
             out.push({ kind: "contest", id: site.id, name: site.name, x: Math.round(site.x), y: Math.round(site.y), until: site._contestedUntil });
         }
     }
-    if (bloom && bloom.until > t) out.push({ kind: "bloom", x: Math.round(bloom.x), y: Math.round(bloom.y), r: Math.round(bloom.r), until: bloom.until });
-    if (chest && chest.until > t && !chest.claimed) out.push({ kind: "chest", x: Math.round(chest.x), y: Math.round(chest.y), until: chest.until });
     return out;
 }
 
@@ -189,7 +180,7 @@ function broadcast(extra = {}) {
             toast: extra.toast || "",
             feed: killFeed.slice(-6),
             board,
-            youPlace: mine ? (board.findIndex(r => r.name === mine.name && r.score === scoreOf(mine)) + 1) : 0,
+            youPlace: mine ? (board.findIndex(r => r.id === mine.id) + 1) : 0,
             youScore: mine ? scoreOf(mine) : 0,
             youPB: (client.raidPB || 0) | 0,
             matchId: raidId,
@@ -199,8 +190,8 @@ function broadcast(extra = {}) {
             occupyMs: OCCUPY_MS,
             lockoutMs: LOCKOUT_MS,
             objectives,
-            bloom: bloom && bloom.until > t ? { x: Math.round(bloom.x), y: Math.round(bloom.y), r: Math.round(bloom.r) } : null,
-            chest: chest && chest.until > t && !chest.claimed ? { x: Math.round(chest.x), y: Math.round(chest.y) } : null,
+            bloom: null,
+            chest: null,
             results: raidResults,
             ...extra,
         });
@@ -217,9 +208,43 @@ function moveTo(body, x, y) {
     if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
 }
 
-function randomPit() {
+function openGroundNear(tg, x, y) {
+    if (!tg || !tg.pointInRock) return { x, y };
+    if (!tg.pointInRock(x, y)) return { x, y };
+    for (let ring = 1; ring <= 8; ring++) {
+        for (let i = 0; i < 12; i++) {
+            const a = (i / 12) * Math.PI * 2 + ring * 0.3;
+            const nx = x + Math.cos(a) * 60 * ring, ny = y + Math.sin(a) * 60 * ring;
+            if (!tg.pointInRock(nx, ny)) return { x: nx, y: ny };
+        }
+    }
+    return { x, y };
+}
+
+function safeSpawnSpot() {
+    const t = now();
+    const st = storm.snapshot(t);
     const holes = pits();
-    return holes[(Math.random() * holes.length) | 0] || { x: 0, y: 0 };
+    const bodies = combatants();
+    const margin = 260;
+    const safeR = Math.max(80, (st.r || 0) - margin);
+    const cands = holes.filter(h => Math.hypot(h.x - st.cx, h.y - st.cy) < safeR);
+    if (!cands.length) {
+        const tg = global.gameManager.terrainGrid;
+        return openGroundNear(tg, st.cx || 0, st.cy || 0);
+    }
+    const scored = cands.map(h => {
+        let m = Infinity;
+        for (const b of bodies) {
+            const dx = h.x - b.x, dy = h.y - b.y;
+            const d = dx * dx + dy * dy;
+            if (d < m) m = d;
+        }
+        return { h, m };
+    }).sort((a, b) => b.m - a.m);
+    const top = scored.slice(0, Math.max(1, Math.min(6, scored.length)));
+    const pick = top[(Math.random() * top.length) | 0].h;
+    return { x: pick.x, y: pick.y };
 }
 
 function giveStarterKit(body, isRespawn) {
@@ -252,7 +277,7 @@ function freshRaidBody(body) {
     killMinions(body);
     setLobby(body, false);
     setFrozen(body, false);
-    body.invuln = false;
+    body.invuln = true;
     body.passive = false;
     body.royaleAlive = true;
     body.deathCause = "";
@@ -263,7 +288,7 @@ function freshRaidBody(body) {
 function spawnRaidBot() {
     const handler = global.gameManager.gameHandler;
     if (!handler) return;
-    const hole = randomPit();
+    const hole = safeSpawnSpot();
     const team = getRandomTeam();
     handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team);
     const bot = handler.bots[handler.bots.length - 1];
@@ -330,7 +355,7 @@ function onCombatantDead(body) {
 
 function onHumanJoin(body) {
     if (!Config.dig_royale || !body) return;
-    const hole = randomPit();
+    const hole = safeSpawnSpot();
     const isRespawn = !!(body.socket && body.socket.lastRaidDeathAt);
     moveTo(body, hole.x + (Math.random() - 0.5) * 30, hole.y + (Math.random() - 0.5) * 30);
     freshRaidBody(body);
@@ -403,91 +428,6 @@ function tickOutpostRules(t) {
     }
 }
 
-function tickBloom(t) {
-    if (bloom && bloom.until <= t) bloom = null;
-    if (!bloom && t >= nextBloomAt) {
-        const tg = global.gameManager.terrainGrid;
-        const circleR = (tg && tg.circleRadius) || 2600;
-        const a = Math.random() * Math.PI * 2;
-        const r = circleR * (0.25 + Math.random() * 0.45);
-        const bx = Math.cos(a) * r, by = Math.sin(a) * r;
-        let upgraded = 0;
-        try {
-            const { ORE, ORE_HP } = require('../../terrain/terrainGrid.js');
-            for (const rock of tg.rocks.values()) {
-                if (!rock.alive || rock.growing) continue;
-                const dx = (rock.worldCx || rock.wx) - bx, dy = (rock.worldCy || rock.wy) - by;
-                if (dx * dx + dy * dy > BLOOM_R * BLOOM_R) continue;
-                if (rock.ore === ORE.EMERALD || rock.ore === ORE.SHARD) continue;
-                if (Math.random() < 0.45) continue;
-                rock.ore = Math.random() < 0.3 ? ORE.SHARD : ORE.VEIN;
-                rock.maxHealth = (tg.baseRockHealth * 1.3) * (ORE_HP[rock.ore] || 1);
-                rock.health = rock.maxHealth;
-                try { rock.deposits = tg._buildDeposits(rock); } catch { rock.deposits = null; }
-                upgraded++;
-            }
-        } catch { /* */ }
-        bloom = { x: bx, y: by, r: BLOOM_R, until: t + BLOOM_TTL_MS };
-        nextBloomAt = t + BLOOM_EVERY_MS;
-        if (upgraded > 0) {
-            try { global.gameManager.socketManager.broadcast("Ore bloom spotted. Rich veins for 90s."); } catch { /* */ }
-            broadcast({ toast: "Ore bloom. Follow the gold." });
-        }
-    }
-}
-
-function openGroundNear(tg, x, y) {
-    if (!tg || !tg.pointInRock) return { x, y };
-    if (!tg.pointInRock(x, y)) return { x, y };
-    for (let ring = 1; ring <= 8; ring++) {
-        for (let i = 0; i < 12; i++) {
-            const a = (i / 12) * Math.PI * 2 + ring * 0.3;
-            const nx = x + Math.cos(a) * 60 * ring, ny = y + Math.sin(a) * 60 * ring;
-            if (!tg.pointInRock(nx, ny)) return { x: nx, y: ny };
-        }
-    }
-    return { x, y };
-}
-
-function tickChest(t) {
-    if (chest && (chest.until <= t || chest.claimed)) chest = null;
-    if (!chest && t >= nextChestAt) {
-        const tg = global.gameManager.terrainGrid;
-        const circleR = (tg && tg.circleRadius) || 2600;
-        const a = Math.random() * Math.PI * 2;
-        const r = circleR * (0.2 + Math.random() * 0.5);
-        let spot = openGroundNear(tg, Math.cos(a) * r, Math.sin(a) * r);
-        chest = { x: spot.x, y: spot.y, until: t + CHEST_TTL_MS, claimed: false };
-        nextChestAt = t + CHEST_EVERY_MS;
-        try {
-            const total = 900 + ((Math.random() * 600) | 0);
-            const n = 6;
-            for (let i = 0; i < n; i++) {
-                const ga = (i / n) * Math.PI * 2;
-                gems.spawnGem(spot.x + Math.cos(ga) * 40, spot.y + Math.sin(ga) * 40,
-                    Math.round(total / n), 'gemPickupLoot', 12, Math.cos(ga), Math.sin(ga));
-            }
-        } catch { /* */ }
-        try { global.gameManager.socketManager.broadcast("Loot chest dropped. First tank there takes it."); } catch { /* */ }
-        broadcast({ toast: "Loot chest. Go take it." });
-    }
-    if (chest && !chest.claimed) {
-        for (const body of combatants()) {
-            const dx = body.x - chest.x, dy = body.y - chest.y;
-            if (dx * dx + dy * dy < 120 * 120) {
-                chest.claimed = true;
-                try {
-                    body.carriedGems = (body.carriedGems | 0) + 150;
-                    gems.updateSatchel(body);
-                    gems.talkGems(body, 150);
-                } catch { /* */ }
-                killFeed.push({ name: body.name || "Unnamed", by: "", verb: "claimed", storm: 0, place: 0, at: t, chest: 1 });
-                break;
-            }
-        }
-    }
-}
-
 function tickVaultPinch(t) {
     if (t - lastVaultPinchAt < 15000) return;
     const st = storm.snapshot(t);
@@ -527,10 +467,6 @@ function startRaid(first) {
     killFeed = [];
     occupy.clear();
     lockout.clear();
-    bloom = null;
-    chest = null;
-    nextBloomAt = now() + 45_000;
-    nextChestAt = now() + 90_000;
     raidResults = null;
     if (!poisCarved) {
         try { require('../../terrain/royaleLayout.js').carveMatchPois(global.gameManager.terrainGrid); } catch { /* */ }
@@ -548,7 +484,7 @@ function startRaid(first) {
         occupy.clear();
         lockout.clear();
         for (const body of combatants()) {
-            const hole = randomPit();
+            const hole = safeSpawnSpot();
             moveTo(body, hole.x, hole.y);
             freshRaidBody(body);
             giveStarterKit(body, false);
@@ -572,7 +508,7 @@ function endRaid() {
         for (const client of connectedClients()) {
             const key = client.id ? "s:" + client.id : null;
             const s = key ? raidStats.get(key) : null;
-            if (s && s.name === row.name && scoreOf(s) === row.score) {
+            if (s && s.id === row.id) {
                 client.raidBonus = (client.raidBonus | 0) + bonuses[i];
                 const sc = scoreOf(s);
                 if (sc > (client.raidPB | 0)) client.raidPB = sc;
@@ -625,8 +561,6 @@ function tick() {
     storm.ensureActive();
     storm.tickDamage(t);
     tickOutpostRules(t);
-    tickBloom(t);
-    tickChest(t);
     tickVaultPinch(t);
     fillBots();
     const rMax = (global.gameManager.terrainGrid && global.gameManager.terrainGrid.circleRadius) || 2700;
