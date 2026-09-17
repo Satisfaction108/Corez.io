@@ -533,6 +533,11 @@ class Canvas {
                 let respawnCheck = global.clickables.deathRespawn.check(mpos);
                 let exitGame = global.clickables.exitGame.check(mpos);
                 let reconnectCheck = global.clickables.reconnect.check(mpos);
+                if (reconnectCheck !== -1 && global.disconnected) {
+                    global.reconnect();
+                    gameSound.uiClick();
+                    break;
+                }
                 // Death / spectate buttons use the same clickable regions as
                 // settings and chat. Check them before the map overlay.
                 if (respawnCheck !== -1 && !global.disconnected) {
@@ -567,7 +572,7 @@ class Canvas {
                     gameSound.uiClick();
                     break;
                 }
-                if (global.showBigMap) {
+                if (global.showBigMap && !global.disconnected) {
                     const tab = global.clickables.royaleTab.check(mpos);
                     if (tab !== -1) {
                         global.royaleBoard.tab = ['map', 'standings', 'feed', 'alive'][tab] || 'map';
@@ -691,7 +696,6 @@ class Canvas {
                     break;
                 }
                 if (reconnectCheck !== -1) {
-                    if (global.disconnected) global.reconnect();
                     gameSound.uiClick();
                 } else
                 if (upgradeIndex !== -1 && upgradeIndex < gui.upgrades.length && !global.dailyTankAd.renderUI) {

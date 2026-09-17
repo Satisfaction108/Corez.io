@@ -186,7 +186,16 @@ function tick(actors, dtMs) {
             if (require('../gamemodes/scripts/dig_royale.js').isLobbyPhase()) {
                 for (const actor of actors) {
                     const body = actorBody(actor);
-                    if (body) body.vaultOnPad = false;
+                    if (!body || body.isGhost) continue;
+                    let on = false;
+                    if (!body.isDead()) {
+                        for (const v of list) {
+                            const dx = body.x - v.x, dy = body.y - v.y;
+                            if (dx * dx + dy * dy < v.r * v.r) { on = true; break; }
+                        }
+                    }
+                    body.onVaultPad = on;
+                    body.vaultOnPad = false;
                 }
                 return;
             }
@@ -228,6 +237,7 @@ function tick(actors, dtMs) {
             // Close the client panel too, or it stays open after respawn.
             if (body.vaultOnPad && body.socket) body.socket.talk('VU', 0);
             body.vaultOnPad = false;
+            body.onVaultPad = false;
             if (body.vaultDeposit || body._vaultSite) {
                 cancelDeposit(body, !!body.socket);
                 if (body.socket) body.socket.talk('VP', 0, 0);
@@ -245,6 +255,7 @@ function tick(actors, dtMs) {
 
         const was = !!body.vaultOnPad;
         body.vaultOnPad = !!pad;
+        body.onVaultPad = !!pad;
         if (Config.dig_royale) {
             if (pad && !was) body._vaultPadSince = now;
             if (!pad) {

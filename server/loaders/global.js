@@ -210,15 +210,17 @@ global.bringToLife = (() => {
         my.control.alt = b.alt ?? false;
         my.control.power = b.power == null ? 1 : b.power;
 
-        if (my.royaleFrozen) {
+        if (my.royaleFrozen || (Config.dig_royale && (my.vaultOnPad || my.onVaultPad || my.onBasePad))) {
             my.control.fire = false;
             my.control.main = false;
             my.control.alt = false;
-            my.control.goal = { x: my.x, y: my.y };
-            my.velocity.x = 0;
-            my.velocity.y = 0;
-            my.accel.x = 0;
-            my.accel.y = 0;
+            if (my.royaleFrozen) {
+                my.control.goal = { x: my.x, y: my.y };
+                my.velocity.x = 0;
+                my.velocity.y = 0;
+                my.accel.x = 0;
+                my.accel.y = 0;
+            }
         }
         if (my.royaleLobby) {
             my.invuln = false;

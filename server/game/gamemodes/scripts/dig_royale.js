@@ -716,14 +716,7 @@ function tick() {
     tickOutpostRules(t);
     tickVaultPinch(t);
     fillBots();
-    const rMax = (global.gameManager.terrainGrid && global.gameManager.terrainGrid.circleRadius) || 2700;
     for (const body of combatants()) {
-        const d = Math.hypot(body.x, body.y);
-        if (d > rMax - 24) {
-            const s = (rMax - 24) / (d || 1);
-            body.x *= s;
-            body.y *= s;
-        }
         const key = statKeyFor(body);
         const s = key ? raidStats.get(key) : null;
         if (s) { s.alive = true; s.lastSeen = t; }

@@ -1882,6 +1882,7 @@ const socketInit = () => {
         clearInterval(global.socketMotionCycle);
         if (global.dailyTankAd.render) global.dailyTankAd.exit();
         socket.open = false;
+        global.showBigMap = false;
         global.disconnected = true;
     };
 

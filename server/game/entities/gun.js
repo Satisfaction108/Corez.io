@@ -217,7 +217,8 @@ class Gun extends EventEmitter {
 
         // Dont shoot when invuln/not active. Lobby still fires.
         if ((this.body.master.invuln && !this.body.master.royaleLobby) ||
-            !this.body.master.activation.check()) {
+            !this.body.master.activation.check() ||
+            (Config.dig_royale && (this.body.master.vaultOnPad || this.body.master.onVaultPad || this.body.master.onBasePad))) {
             shootPermission = false;
         }
         if (this.body.master.maxBullets !== undefined && this.body.master.maxBullets < (this.body.master.bulletchildren.length + 1)) {

@@ -120,23 +120,9 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     grid.circleRadius = circleR;
     grid.lobbyPos = { x: 0, y: 0, r: CENTER_CLEAR_R };
 
-    // Keep rocks that touch the disk plus a full rocky rim beyond it. The rim
-    // keeps its natural Voronoi shape - the rocks define the border, nothing
-    // clips or stretches them to the circle. (Stretching worldPoly used to
-    // corrupt grow anchors, deposits, and growing-rock collision rim-wide.)
-    const keepR = circleR + 150;
-    const keepR2 = keepR * keepR;
-    for (const rock of grid.rocks.values()) {
-        const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
-        let keep = x * x + y * y <= keepR2;
-        if (!keep && rock.worldPoly) {
-            for (const p of rock.worldPoly) {
-                const px = p[0], py = p[1];
-                if (px * px + py * py <= keepR2) { keep = true; break; }
-            }
-        }
-        if (!keep) killRock(rock, canyonKeys);
-    }
+    // Do not crop rocks to the storm circle. The lattice fills the square
+    // like 2TDM; the jagged Voronoi faces ARE the border. Storm is a
+    // separate overlay.
 
     // Sites exist for later. Lobby is plaza-only: do not punch vault or
     // outpost holes until scatter, or the circle is missing rocks on the sides.

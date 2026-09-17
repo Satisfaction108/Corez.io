@@ -307,6 +307,7 @@ function tick(players, dtMs) {
             if (body.outpostDeposit) { body.outpostDeposit = null; talkOutpostProgress(body); }
             if (body.outpostOnPad && body.socket) body.socket.talk('OU', 0);
             body.outpostOnPad = false;
+            body.onBasePad = false;
             continue;
         }
 
@@ -321,6 +322,7 @@ function tick(players, dtMs) {
         const onOwnPad = Config.dig_royale
             ? !!(pad && pad.ownerId === body.id && pad.banner && !pad.banner.isDead())
             : !!(pad && pad.team === body.team && pad.banner && !pad.banner.isDead());
+        body.onBasePad = !!pad;
         const was = !!body.outpostOnPad;
         body.outpostOnPad = onOwnPad;
         if (was !== onOwnPad && body.socket) {

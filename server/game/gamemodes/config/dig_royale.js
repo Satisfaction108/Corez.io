@@ -10,7 +10,7 @@ module.exports = {
     dig_royale: true,
     war_enabled: false,
     random_body_colors: true,
-    arena_shape: "circle",
+    arena_shape: "square",
     bot_cap: 0,
     bot_team_cap: 0,
     dig_royale_terrain: {

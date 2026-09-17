@@ -591,12 +591,21 @@ const global = {
         }, 10);
     },
     reconnect: () => {
+        try {
+            const old = global.socket;
+            if (old && typeof old.close === "function") {
+                old.onclose = () => {};
+                old.onerror = () => {};
+                old.close();
+            }
+        } catch { /* */ }
         global.player = global.initPlayer();
         global.gameLoading = false;
         global.gameStart = false;
         global.gameUpdate = false;
         global.died = false;
         global.disconnected = false;
+        global.showBigMap = false;
         global.gameConnecting = true;
         global.message = "";
         global.entities = [];

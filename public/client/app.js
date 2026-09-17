@@ -5786,15 +5786,8 @@ import * as tutorial from './tutorial.js';
         c.fillStyle = "#0e1418";
         c.fillRect(rx, ry, rw, rh);
         if (royaleActive()) {
-            const cr = circleRadiusWorld();
-            c.beginPath();
-            c.arc(X(0), Y(0), Math.max(2, cr * s), 0, Math.PI * 2);
             c.fillStyle = "#1e1d1b";
-            c.fill();
-            c.save();
-            c.beginPath();
-            c.arc(X(0), Y(0), Math.max(2, cr * s), 0, Math.PI * 2);
-            c.clip();
+            c.fillRect(X(-gw / 2), Y(-gh / 2), gw * s, gh * s);
         } else {
             c.fillStyle = "#22323b";
             c.fillRect(X(-gw / 2), Y(-gh / 2), gw * s, gh * s);
@@ -5878,7 +5871,6 @@ import * as tutorial from './tutorial.js';
             c.stroke();
         }
 
-        if (royaleActive()) c.restore();
         return { X, Y, s };
     }
 
@@ -6070,7 +6062,6 @@ import * as tutorial from './tutorial.js';
     function drawFortniteMinimap(x, y, size) {
         const gw = global.gameWidth, gh = global.gameHeight;
         if (!gw || !gh) return;
-        const circle = royaleActive(); // BR disk reads as a circle, not a square
         const span = 2800;          
         const cSpan = span * 1.35;  
         
@@ -6105,14 +6096,8 @@ import * as tutorial from './tutorial.js';
             cornerCache.epoch = epoch;
         }
         ctx[2].save();
-        if (circle) {
-            ctx[2].beginPath();
-            ctx[2].arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-            ctx[2].clip();
-        } else {
-            optionsMenu_drawRoundedRect(x, y, size, size, 12);
-            ctx[2].clip();
-        }
+        optionsMenu_drawRoundedRect(x, y, size, size, 12);
+        ctx[2].clip();
         
         
         const ppw = S / cSpan;
@@ -6141,12 +6126,6 @@ import * as tutorial from './tutorial.js';
         c.rect(x, y, size, size);
         c.clip();
         const T = drawWorldWindow(c, x, y, size, size, -gw / 2, -gh / 2, gw);
-        const cr = circleRadiusWorld();
-        c.beginPath();
-        c.rect(x - 2, y - 2, size + 4, size + 4);
-        c.arc(T.X(0), T.Y(0), Math.max(2, cr * T.s), 0, Math.PI * 2, true);
-        c.fillStyle = "#0d0d0c";
-        c.fill("evenodd");
         if (!royaleLobbyPhase()) drawMapMarkers(T, x, y, size, size, 6, 2.8);
         else {
             const px = T.X(global.player.renderx), py = T.Y(global.player.rendery);
