@@ -1,0 +1,28 @@
+First 30 seconds (solo player, fresh spawn)
+Land with impact. Drop-in from the sky with a dust ring and a soft thud — spawning should feel like arriving, not like a light switching on.
+A rock in your face. Guarantee 2–3 drillable rocks within one screen of every spawn, and make the first rock you touch unusually weak — it cracks in ~2 seconds and showers gems. First crack fast = the player instantly "gets" the game.
+Gem magnet + pitch ladder. Gems fly to you (they mostly do), but add a rising musical pitch per pickup in a chain — mining starts to sound like a slot machine paying out. Addictive, nearly free.
+Combo meter for mining. Chaining rock cracks without pausing builds a ×2…×5 crack-speed or dust-bonus combo with a little meter under the tank. Suddenly even solo mining is a rhythm game.
+A visible promise. Always have a loot chest visible (not reachable, visible) from spawn, shimmering. Curiosity is the cheapest motivator in games — the player walks toward it and learns movement, camera, and drilling on the way.
+No dry starts, ever. Copper guaranteed near spawn; pity logic so a new player can never whiff the first 30s. Nothing kills a game faster than drilling three rocks and getting nothing.
+First quest in 5 seconds. A small toast, not a popup: "Bank 100 dust → keep it forever." One line, a progress number, a reward. Purpose within one glance.
+Core loop tension (mine → carry → risk → bank)
+Carriers glow. The more you carry, the more you shimmer — predators can spot a fat satchel across the map. Greed becomes visible, and every player feels rich and hunted at the same time.
+The walk back is the game. Banks should be just far enough that the return trip itches. Add shortcuts with costs (a launch pad that's loud and visible, a shortcut through a narrow rock canyon) so routing is a decision, not a commute.
+Near-miss feedback. When you bank with <10% HP or with the storm a second behind you, say so: "Banked by a heartbeat!" Players remember close calls more than wins.
+Fights worth having (not random deathmatch)
+Everything valuable is loud. Chests, blooms, boss fights all ping the minimap. Fights should erupt over things, with both sides knowing the other is coming — that's drama instead of ambush.
+Contested windows, not camping. Banks announce "contested" already — lean in: a capture bar both sides can see, so breaking a bank becomes a timed fight rather than backdooring an empty pad.
+Bounties + revenge (from before) — the two cheapest drama engines: everyone hunts #1, and everyone gets a personal villain per life.
+Power fantasy
+Temp overdrive pickups. A rare drop: 20s of double drill speed or a wider beam. Short, loud, fun — and it expires, so no balance damage.
+Streaks with a cost. Kill streaks pay escalating bonus but put you on the minimap. Power and danger in one mechanic.
+Boss = slot machine. The warden doesn't just die — it erupts, gems bouncing everywhere with magnet delay so you scramble to vacuum. The kill is the foreplay; the scramble is the fun.
+Dead time & downtime (secretly important)
+Dead betting. While waiting out the 15s tax, let dead players predict the raid winner from the standings for a small dust prize. Spectating goes from boring to invested instantly.
+Kill recap, not just killer cam. One line on the death screen: "Outdrilled, outgunned — 412 dust lost, 900 kept." Loss stings less when the ledger is clear, and "kept" softens everything.
+Queue toys. Final-storm queue should let you fly the camera around the map freely. A bored queued player is a lost player.
+Variety (raid #50 must surprise)
+Raid modifiers. Each raid rolls one twist shown on the banner: "Copper Rush," "Fast Storm," "Bounty Week," "Iron Rocks." One line of variety, endless water-cooler.
+Random events mid-raid. Meteor shower seeds ore in the open; gem rain in the safe zone pulls cowards out of corners. Announced, visible, optional.
+If I had to pick the three that do the most work: weak first rock + pitch-ladder pickups (first 30s feel), carriers glow (the whole risk loop in one visual), and dead betting (turns your worst moment into a game). Say the word if you want any of these specced out properly.

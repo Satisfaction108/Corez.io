@@ -1751,7 +1751,8 @@ class socketManager {
                 output.push(
                      data.name,
                      data.score,
-                     data.digWarsGoal || ""
+                     data.digWarsGoal || "",
+                     data.gemGlow || 0
                 );
             }
         };

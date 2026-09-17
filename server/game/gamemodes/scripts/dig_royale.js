@@ -302,16 +302,32 @@ function giveStarterKit(body, isRespawn) {
     if (isRespawn) body.weakDrillUntil = now() + WEAK_DRILL_MS;
     else body.weakDrillUntil = 0;
     try {
+        // Rock in your face, guaranteed: the 3 nearest rocks get soft (first
+        // one pays copper), so the opening drill always cracks fast no matter
+        // which pit you land in. Shared rocks - late neighbours benefit too.
         const tg = global.gameManager.terrainGrid;
-        if (tg && tg.nearestRockWhere) {
-            const rock = tg.nearestRockWhere(body.x, body.y, 520, r => r && r.alive && !r.ore);
-            if (rock) {
-                const { ORE, ORE_HP } = require('../../terrain/terrainGrid.js');
-                rock.ore = ORE.COPPER;
-                rock.maxHealth = (tg.baseRockHealth * 1.3) * (ORE_HP[ORE.COPPER] || 1);
-                rock.health = rock.maxHealth;
-                try { rock.deposits = tg._buildDeposits(rock); } catch { rock.deposits = null; }
+        if (tg && tg.rocks) {
+            const near = [];
+            for (const rock of tg.rocks.values()) {
+                if (!rock || !rock.alive) continue;
+                const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+                const dx = rx - body.x, dy = ry - body.y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 <= 560 * 560) near.push({ rock, d2 });
             }
+            near.sort((a, b) => a.d2 - b.d2);
+            const { ORE, ORE_HP } = require('../../terrain/terrainGrid.js');
+            near.slice(0, 3).forEach(({ rock }, i) => {
+                try {
+                    if (i === 0 && !rock.ore) {
+                        rock.ore = ORE.COPPER;
+                        rock.maxHealth = (tg.baseRockHealth * 1.3) * (ORE_HP[ORE.COPPER] || 1);
+                        try { rock.deposits = tg._buildDeposits(rock); } catch { rock.deposits = null; }
+                    }
+                    rock.maxHealth = Math.max(10, rock.maxHealth * 0.35);
+                    rock.health = Math.min(rock.health, rock.maxHealth);
+                } catch { /* that rock stays hard */ }
+            });
         }
     } catch { /* */ }
 }

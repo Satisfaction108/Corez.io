@@ -784,6 +784,14 @@ class Entity extends EventEmitter {
             score = (this.carriedGems | 0) + ((banked || 0) | 0);
         }
 
+        // Carrier glow rung 0-6, mirroring the satchel size rungs so the halo
+        // and the pack always agree about how loaded you are.
+        let gemGlow = 0;
+        if (global.gameManager && global.gameManager.terrainGrid && (this.carriedGems | 0) > 0) {
+            const gc = this.carriedGems | 0;
+            gemGlow = gc >= 3200 ? 6 : gc >= 2000 ? 5 : gc >= 1000 ? 4 : gc >= 400 ? 3 : gc >= 100 ? 2 : 1;
+        }
+
         let guns = this._camGuns;
         if (!guns) guns = this._camGuns = [];
         guns.length = 0;
@@ -823,6 +831,7 @@ class Entity extends EventEmitter {
         cameraInfo.name = (this.nameColor || "#ffffff") + this.name;
         cameraInfo.score = this.settings.scoreLabel || score;
         cameraInfo.digWarsGoal = this.isBot ? (this._digWarsGoal || "wander") : "";
+        cameraInfo.gemGlow = gemGlow;
         cameraInfo.guns = guns;
         cameraInfo.turrets = turretPhotos;
         

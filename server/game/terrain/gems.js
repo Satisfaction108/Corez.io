@@ -39,12 +39,13 @@ const PICKUP_SLOP  = 1.0;
 
 const GEM_MAX_SPEED = 6;
 
-function spawnGem(x, y, value, cls, size, vx = 0, vy = 0) {
+function spawnGem(x, y, value, cls, size, vx = 0, vy = 0, ore = null) {
     const o = new Entity({ x, y });
     o.define(cls);
     o.team = TEAM_ROOM;
     o.isGemPickup = true;
     o.gemValue = value;
+    o.gemOre = ore;
     o.coreSize = o.SIZE = size;
     o.velocity.x = vx;
     o.velocity.y = vy;
@@ -85,7 +86,7 @@ function spawnOreBurst(rock, breaker) {
             ? Math.atan2(breaker.y - d.wy, breaker.x - d.wx)
             : (Math.atan2(d.wy - rock.wy, d.wx - rock.wx) || Math.random() * Math.PI * 2);
         const gem = spawnGem(d.wx, d.wy, value, d.big ? bigCls : cls, size,
-                             Math.cos(ang) * 1.5, Math.sin(ang) * 1.5);
+                             Math.cos(ang) * 1.5, Math.sin(ang) * 1.5, rock.ore);
         if (gem && breaker && breaker.id !== undefined) gem.gemSourceId = breaker.id;
         // (The old tutorial ran inside live matches and had to reserve its
         // drops so a passing veteran could not vulture the one pickup a lesson
@@ -99,10 +100,11 @@ function spawnOreBurst(rock, breaker) {
 // Banking already reports delta 0 (the vault decrements carriedGems itself and
 // then re-syncs), so today a negative delta could only be a death - but that is
 // an accident of the deposit path, not a contract. The flag says it outright.
-function talkGems(body, delta, lost = 0) {
+function talkGems(body, delta, lost = 0, combo = null) {
     if (body.socket) {
         body.socket.talk('GEM', body.carriedGems | 0, body.gemCap | 0, delta | 0,
-                         (body.socket.gemBanked || 0) | 0, lost | 0);
+                         (body.socket.gemBanked || 0) | 0, lost | 0,
+                         (combo ?? body._comboN) | 0);
     }
 }
 
@@ -348,6 +350,11 @@ function initSatchel(body) {
 
 function dropGemsOnDeath(body, killers = []) {
     const carried = body.carriedGems | 0;
+    body._comboN = 0;
+    // Death replays what you ate: tier history (newest first) dresses the
+    // drop, so a shard haul bursts purple, not generic yellow loot.
+    const deathHist = ((body.gemTierHist || []).filter(t => t) || []).slice(-16).reverse();
+    body.gemTierHist = [];
     const raidMode = !!Config.dig_royale;
     // Keep the bot killers attached to the loot they created. A player can
     // still reclaim the drop, but the bot that earned it should not have to
@@ -373,12 +380,13 @@ function dropGemsOnDeath(body, killers = []) {
     }
     if (carried <= 0 && bankLoss <= 0) return;
     body.carriedGems = 0;
+    const hist = deathHist;
     if (bankLoss > 0) setBanked(body, banked - bankLoss);
     updateSatchel(body);
     talkGems(body, -carried, 1);
     const drop = Math.floor(carried * DEATH_DROP) + bankLoss;
     if (drop <= 0) return;
-    
+
     const n = Math.min(8, Math.max(3, Math.ceil(drop / 150)));
     const values = [];
     let left = drop;
@@ -388,14 +396,17 @@ function dropGemsOnDeath(body, killers = []) {
         left -= values[values.length - 1];
     }
     values.push(left);
-    for (const v of values) {
+    for (let i = 0; i < values.length; i++) {
+        const v = values[i];
         if (v <= 0) continue;
         const ang = Math.random() * Math.PI * 2;
 
         const sp  = 1.6 * (0.45 + Math.random() * 0.55);
-        const gem = spawnGem(body.x, body.y, v, 'gemPickupLoot',
+        const tier = hist.length ? hist[i % hist.length] : null;
+        const cls = (tier && ORE_CLASS[tier]) || 'gemPickupLoot';
+        const gem = spawnGem(body.x, body.y, v, cls,
                  Math.max(6.5, Math.min(15, 4.5 + 1.1 * Math.sqrt(v))),
-                 Math.cos(ang) * sp, Math.sin(ang) * sp);
+                 Math.cos(ang) * sp, Math.sin(ang) * sp, tier);
         // A player's death drop is reserved from unrelated bots for a grace
         // window so the player can run back for it. The bot that made the
         // kill gets an immediate claim and can collect its winnings.
@@ -531,7 +542,22 @@ function tickGem(gem, tg, players) {
     }
 
     if (toucher) {
-        const v = gem.gemValue;
+        // Mining combo: chain pickups inside 2.5s for up to +50% dust.
+        // Banking keeps it (fun), death resets it (dropGemsOnDeath).
+        const tnow = Date.now();
+        if (tnow < (toucher._comboUntil || 0)) toucher._comboN = (toucher._comboN || 0) + 1;
+        else toucher._comboN = 1;
+        toucher._comboUntil = tnow + 2500;
+        // Fresh haul, fresh memory: tier history restarts from empty so a
+        // death drop replays THIS run's mix, not last life's leftovers.
+        if ((toucher.carriedGems | 0) <= 0) toucher.gemTierHist = [];
+        if (gem.gemOre) {
+            const hist = toucher.gemTierHist || (toucher.gemTierHist = []);
+            hist.push(gem.gemOre);
+            if (hist.length > 16) hist.shift();
+        }
+        const bonus = Math.min(0.5, 0.05 * ((toucher._comboN || 1) - 1));
+        const v = gem.gemValue + Math.round(gem.gemValue * bonus);
         gem.gemValue = 0;
         toucher.carriedGems = (toucher.carriedGems | 0) + v;
         updateSatchel(toucher);

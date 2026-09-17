@@ -755,6 +755,7 @@ const process = (z = {}) => {
             z.name = get.next();
             z.score = get.next();
             z.digWarsGoal = get.next();
+            z.gemGlow = get.next() | 0;
         }
         z.nameplate = type & 0x04;
 
@@ -1299,6 +1300,8 @@ let incoming = async function(message, socket) {
                 const g = global.gems;
                 const now = performance.now();
                 if (delta > 0) {
+                    g.mcombo = m[5] | 0;
+                    g.mcomboAt = now;
                     
                     
                     
@@ -1318,6 +1321,7 @@ let incoming = async function(message, socket) {
                     g.flashAt = now;
                 } else if (delta < 0) {
                     g.combo = 0;
+                    g.mcombo = 0;
                     g.popups.length = 0;
                     // Emptied by death, not by banking (m[4]). The run you were
                     // in the middle of just ended - say so, loudly. Scaled by
@@ -1360,6 +1364,20 @@ let incoming = async function(message, socket) {
                     v.total = 0;
                     v.remaining = 0;
                     if (config.game.gemSounds) gameSound.depositDone();
+                    // Near-miss feedback: banking on fumes or with the storm
+                    // breathing down your neck gets called out by name.
+                    try {
+                        const me = global.entities.find(e => e.id === gui.playerid);
+                        const hp = me ? me.health : 1;
+                        const st = (global.royale && global.royale.storm) || null;
+                        let stormGap = Infinity;
+                        if (st && st.r > 0 && isFinite(global.player.renderx) && isFinite(global.player.rendery)) {
+                            const d = Math.hypot(global.player.renderx - (st.cx || 0), global.player.rendery - (st.cy || 0));
+                            stormGap = (st.r || 0) - d;
+                        }
+                        if (hp < 0.35) global.createMessage("Banked on fumes!", 3500);
+                        else if (stormGap < 500) global.createMessage(stormGap < 0 ? "Banked inside the storm!" : "Banked ahead of the storm!", 3500);
+                    } catch { /* banked quietly */ }
                 }
             } break;
             case 'TR': {

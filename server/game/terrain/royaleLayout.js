@@ -1,12 +1,12 @@
 const { ORE, ORE_HP } = require('./terrainGrid.js');
 
 const OUTPOSTS = [
-    { name: "North Base Bank",     color: "#e03e41", ang: -Math.PI / 2,       dist: 0.70 },
-    { name: "Northeast Base Bank", color: "#8abc3f", ang: -Math.PI / 2 + 1.05, dist: 0.68 },
-    { name: "East Base Bank",      color: "#8d6adf", ang: 0,                  dist: 0.70 },
-    { name: "South Base Bank",     color: "#efc74b", ang: Math.PI / 2,        dist: 0.70 },
-    { name: "Southwest Base Bank", color: "#3d7cf0", ang: Math.PI / 2 + 0.95, dist: 0.68 },
-    { name: "West Base Bank",      color: "#ec7b0f", ang: Math.PI,            dist: 0.70 },
+    { name: "North Base Bank",     color: "#e03e41", ang: -Math.PI / 2, dist: 0.70 },
+    { name: "Northeast Base Bank", color: "#8abc3f", ang: -Math.PI / 4, dist: 0.68 },
+    { name: "East Base Bank",      color: "#8d6adf", ang: 0,            dist: 0.70 },
+    { name: "South Base Bank",     color: "#efc74b", ang: Math.PI / 2,  dist: 0.70 },
+    { name: "Southwest Base Bank", color: "#3d7cf0", ang: 3 * Math.PI / 4, dist: 0.68 },
+    { name: "West Base Bank",      color: "#ec7b0f", ang: Math.PI,      dist: 0.70 },
     ];
 
 const VAULTS = [
@@ -282,6 +282,27 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         carveDisk(grid, x, y, 70, canyonKeys);
         grid.spawnPits.push({ x, y });
     }
+
+    // Rock-in-your-face: every spawn pit and the lobby plaza ring get soft
+    // neighbors. Same ore, quarter health - the first crack always comes
+    // fast. Emeralds are never softened. h stays 1 so no crack visuals.
+    try {
+        const step = grid.cellSize || 200;
+        const zones = [{ x: 0, y: 0, r: CENTER_CLEAR_R + step * 1.4 }];
+        for (const p of grid.spawnPits) zones.push({ x: p.x, y: p.y, r: step * 1.6 });
+        for (const rock of grid.rocks.values()) {
+            if (!rock.alive || rock.ore === ORE.EMERALD) continue;
+            const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+            let soft = false;
+            for (const z of zones) {
+                const dx = rx - z.x, dy = ry - z.y;
+                if (dx * dx + dy * dy <= z.r * z.r) { soft = true; break; }
+            }
+            if (!soft) continue;
+            rock.maxHealth = Math.max(10, rock.maxHealth * 0.3);
+            rock.health = rock.maxHealth;
+        }
+    } catch { /* spawns stay normal strength */ }
 }
 
 module.exports = { apply, carveMatchPois, OUTPOSTS, ORE, radialOre, hash01 };

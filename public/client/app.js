@@ -2149,6 +2149,32 @@ import * as tutorial from './tutorial.js';
 
             if (drawSize < 0.1) return;
 
+            // Carrier glow: a fat satchel broadcasts. Soft gold halo plus a
+            // breathing rim, scaled by the synced glow rung (1-6, matching
+            // the satchel size rungs so halo and pack always agree).
+            const glowRung = (!turretInfo && (instance.gemGlow | 0)) || 0;
+            if (glowRung > 0) {
+                const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 480);
+                const haloR = drawSize * (1.45 + 0.22 * glowRung);
+                const ha = (0.10 + 0.05 * glowRung) * alphaFade * (0.8 + 0.2 * pulse);
+                const hg = context.createRadialGradient(x, y, drawSize * 0.5, x, y, haloR);
+                hg.addColorStop(0, "rgba(255,215,94,0)");
+                hg.addColorStop(0.55, "rgba(255,205,90," + (ha * 0.7).toFixed(3) + ")");
+                hg.addColorStop(1, "rgba(255,205,90,0)");
+                context.save();
+                context.fillStyle = hg;
+                context.beginPath();
+                context.arc(x, y, haloR, 0, Math.PI * 2);
+                context.fill();
+                context.globalAlpha = alphaFade * (0.22 + 0.09 * glowRung) * (0.65 + 0.35 * pulse);
+                context.strokeStyle = "#ffd75e";
+                context.lineWidth = Math.max(1.5, drawSize * 0.045);
+                context.beginPath();
+                context.arc(x, y, drawSize * (1.08 + 0.03 * pulse), 0, Math.PI * 2);
+                context.stroke();
+                context.restore();
+            }
+
             const turrets = instance.isImage ? source.turrets : [...source.turrets, ...m.props];
             if (m.props) turrets.sort((a, b) => a.layer - b.layer);
 
@@ -5112,6 +5138,33 @@ import * as tutorial from './tutorial.js';
     
     
     
+    // Mining combo meter: server-counted chain (2.5s window, up to +50%
+    // dust), drawn under the tank with a depleting fuse bar. Starts at ×2 -
+    // a lone pickup is not a combo.
+    function drawMineCombo() {
+        const g = global.gems;
+        if (!g || !config.game.gemPopups) return;
+        const n = g.mcombo | 0;
+        if (n < 2) return;
+        const now = performance.now();
+        const left = 1 - (now - (g.mcomboAt || 0)) / 2500;
+        if (left <= 0) return;
+        const bonus = Math.min(50, 5 * (n - 1));
+        const cx = global.screenWidth / 2, cy = global.screenHeight / 2 + 88;
+        const a = Math.min(1, left * 3);
+        const c = ctx[2];
+        c.save();
+        drawText("MINING ×" + n, cx, cy, 17, "#ffd75e", "center", true, a, 5);
+        drawText("+" + bonus + "% DUST", cx, cy + 20, 11, color.guiwhite, "center", true, a, 4);
+        const bw = 120, bx = cx - bw / 2, by = cy + 30;
+        c.globalAlpha = a;
+        c.fillStyle = "rgba(0,0,0,0.55)";
+        c.fillRect(bx - 1, by - 1, bw + 2, 6);
+        c.fillStyle = "#ffd75e";
+        c.fillRect(bx, by, bw * Math.max(0, left), 4);
+        c.restore();
+    }
+
     const leaderArrow = { a: 0, x: 0, y: 0, ang: 0 };
     function drawLeaderArrow() {
         if (royaleActive()) return;
@@ -7831,6 +7884,7 @@ import * as tutorial from './tutorial.js';
             if (global.GUIStatus.renderPlayerBars) {
                 drawSelfInfo(max);
                 drawGemPopups();   // +N numbers + pickup ring over the tank
+                drawMineCombo();    // mining chain meter under the tank
                 drawVaultUI();     
             }
             drawMinimapAndDebug(spacing, alcoveSize, global.GRAPHDATA, tick);

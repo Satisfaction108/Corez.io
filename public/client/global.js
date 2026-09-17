@@ -301,6 +301,8 @@ const global = {
         flashAt: -1e9,
         fullAt: -1e9,
         popups: [],
+        mcombo: 0,
+        mcomboAt: -1e9,
     },
 
     // The war layer: per-round team score, win target and victory state.
