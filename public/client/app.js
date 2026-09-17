@@ -7589,12 +7589,16 @@ import * as tutorial from './tutorial.js';
         c.strokeStyle = color.black;
         c.strokeRect(x, y, barW, h);
         c.restore();
-        // Spectating is manual: no auto-respawn here. Play rejoins (when the
-        // storm allows), Home exits, Prev/Next hop between live players.
+        // Death is a 15s tax: spectate to look around, auto-rejoin when it
+        // lapses, Play to rejoin now, Home to exit. Locked storm pauses all.
         const locked = !!(global.royale.lock && global.royale.at > 0);
         const lockLeft = Math.max(0, global.royale.lockLeft | 0);
         const place = global.royale.place | 0;
         const queued = !global.died && global.raidQueued;
+        const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
+        if (!locked && global.died && waitMs <= 0 && !global.disconnected && !global.respawnPending) {
+            try { global.canvas.respawn(); } catch { /* */ }
+        }
         const bw = barW < 480 ? 64 : 86;
         const prevCx = x + 6 + bw / 2;
         const nextCx = x + 12 + bw * 1.5;
@@ -7603,7 +7607,8 @@ import * as tutorial from './tutorial.js';
         const label = locked
             ? ("Final storm " + lockLeft + "s" + (place > 0 ? ("  #" + place) : ""))
             : queued ? "Dropping in..."
-            : ("Spectating" + (place > 0 ? ("  #" + place) : "") + "  -  Play to rejoin");
+            : ("Spectating" + (place > 0 ? ("  #" + place) : "") +
+               (global.died ? (waitMs > 0 ? ("  -  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  -  Rejoining") : ""));
         fitText(label, x + barW / 2, y + 24, 14, Math.max(60, barW - 4 * bw - 60), color.guiwhite);
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         drawButton(prevCx, y + 3, bw, 30, 1, "rect", "Prev", 14, false, false, false, true, "royalePrev", cr, 0);

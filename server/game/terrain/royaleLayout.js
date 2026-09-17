@@ -120,17 +120,19 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     grid.circleRadius = circleR;
     grid.lobbyPos = { x: 0, y: 0, r: CENTER_CLEAR_R };
 
-    // Keep rocks that touch the disk. The rim keeps its natural Voronoi
-    // shape - the rocks define the border, nothing clips or stretches them
-    // to the circle. (Stretching worldPoly used to corrupt grow anchors,
-    // deposits, and growing-rock collision across the whole rim.)
+    // Keep rocks that touch the disk plus a full rocky rim beyond it. The rim
+    // keeps its natural Voronoi shape - the rocks define the border, nothing
+    // clips or stretches them to the circle. (Stretching worldPoly used to
+    // corrupt grow anchors, deposits, and growing-rock collision rim-wide.)
+    const keepR = circleR + 150;
+    const keepR2 = keepR * keepR;
     for (const rock of grid.rocks.values()) {
         const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
-        let keep = x * x + y * y <= circleR * circleR;
+        let keep = x * x + y * y <= keepR2;
         if (!keep && rock.worldPoly) {
             for (const p of rock.worldPoly) {
                 const px = p[0], py = p[1];
-                if (px * px + py * py <= circleR * circleR) { keep = true; break; }
+                if (px * px + py * py <= keepR2) { keep = true; break; }
             }
         }
         if (!keep) killRock(rock, canyonKeys);

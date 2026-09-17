@@ -269,6 +269,8 @@ function tick(players, dtMs) {
         if (!body || body.isGhost) continue;
         if (body.isDead()) {
             if (body.outpostDeposit) { body.outpostDeposit = null; talkOutpostProgress(body); }
+            if (body.outpostOnPad && body.socket) body.socket.talk('OU', 0);
+            body.outpostOnPad = false;
             continue;
         }
 

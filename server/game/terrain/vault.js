@@ -74,17 +74,41 @@ function cancelDeposit(body, notify = true) {
     if (notify) talkProgress(body);
 }
 
+function pushOut(body, pad, speed, now) {
+    const dx = body.x - pad.x, dy = body.y - pad.y;
+    const d = Math.hypot(dx, dy);
+    const r = pad.r + 8;
+    if (d >= r) {
+        if (body._vaultPush && body._vaultPush.pad === pad) body._vaultPush = null;
+        return true;
+    }
+    const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
+    if (!body._vaultPush || body._vaultPush.pad !== pad) {
+        body._vaultPush = { pad, until: now + 2000 };
+    }
+    body.velocity.x = Math.cos(n) * speed;
+    body.velocity.y = Math.sin(n) * speed;
+    if (now > body._vaultPush.until) {
+        body.x = pad.x + Math.cos(n) * (r + 6);
+        body.y = pad.y + Math.sin(n) * (r + 6);
+        try {
+            const tg = global.gameManager.terrainGrid;
+            if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
+        } catch { /* */ }
+        body.velocity.x = Math.cos(n) * speed;
+        body.velocity.y = Math.sin(n) * speed;
+        body._vaultPush = null;
+        return true;
+    }
+    return false;
+}
+
 function ejectFromPad(body, pad, msg) {
     if (!body || body.isDead?.()) return;
     const dx = body.x - pad.x, dy = body.y - pad.y;
     const d = Math.hypot(dx, dy);
     const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
-    body.x = pad.x + Math.cos(n) * (pad.r + 28);
-    body.y = pad.y + Math.sin(n) * (pad.r + 28);
-    try {
-        const tg = global.gameManager.terrainGrid;
-        if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
-    } catch { /* */ }
+    body._vaultPush = { pad, until: Date.now() + 2000 };
     body.velocity.x = Math.cos(n) * 9;
     body.velocity.y = Math.sin(n) * 9;
     body._vaultPadSince = 0;
@@ -167,8 +191,14 @@ function tick(actors, dtMs) {
         const body = actorBody(actor);
         if (!body || body.isGhost) continue;
         if (body.isDead()) {
-            if (body.vaultOnPad) { body.vaultOnPad = false; }
-            cancelDeposit(body, false);
+            // Close the client panel too, or it stays open after respawn.
+            if (body.vaultOnPad && body.socket) body.socket.talk('VU', 0);
+            body.vaultOnPad = false;
+            if (body.vaultDeposit || body._vaultSite) {
+                cancelDeposit(body, !!body.socket);
+                if (body.socket) body.socket.talk('VP', 0, 0);
+            } else cancelDeposit(body, false);
+            body._vaultPadSince = 0;
             continue;
         }
 
@@ -185,6 +215,7 @@ function tick(actors, dtMs) {
             if (pad && !was) body._vaultPadSince = now;
             if (!pad) {
                 body._vaultPadSince = 0;
+                body._vaultPush = null;
                 if (was) cancelDeposit(body, !!body.socket);
             } else if (body._vaultPadSince && now - body._vaultPadSince > PAD_EJECT_MS) {
                 const had = !!body.vaultDeposit;
@@ -196,6 +227,10 @@ function tick(actors, dtMs) {
                 if (!claimPad(pad, body)) { cancelDeposit(body, !!body.socket); continue; }
             } else if (body.vaultDeposit && !body._vaultSite) {
                 if (!claimPad(pad, body)) { cancelDeposit(body, !!body.socket); continue; }
+            }
+            if (body._vaultPush) {
+                if (body._vaultPush.pad !== pad) body._vaultPush = null;
+                else if (pushOut(body, pad, 9, now)) continue;
             }
         }
         if (was !== body.vaultOnPad && body.socket) {
@@ -255,14 +290,4 @@ function tick(actors, dtMs) {
     }
 }
 
-// Vaults with a live cash-out in progress. Bullets fizzle inside these.
-function occupiedVaults() {
-    const out = [];
-    for (const v of getVaults()) {
-        const d = v._depositor;
-        if (d && !d.isDead?.() && d.vaultDeposit) out.push(v);
-    }
-    return out;
-}
-
-module.exports = { tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, occupiedVaults };
+module.exports = { tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults };

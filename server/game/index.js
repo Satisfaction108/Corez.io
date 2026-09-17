@@ -1742,11 +1742,12 @@ class gameHandler {
                 } else if (instance.type === 'bullet' || instance.type === 'drone' ||
                            instance.type === 'trap'   || instance.type === 'satellite' ||
                            instance.type === 'swarm') {
-                    // Raid vaults: while someone is cashing out, incoming
-                    // bullets/traps/swarms fizzle at the pad edge. You cannot
-                    // shoot the miner mid-deposit (their own shots fizzle too).
+                    // Raid vaults are hard cover: incoming bullets/traps/
+                    // swarms fizzle at the pad edge, occupied or not. Nobody
+                    // shoots the miner mid-deposit (their own shots fizzle
+                    // too, so step out to fight).
                     if (Config.dig_royale && (instance.type === 'bullet' || instance.type === 'trap' || instance.type === 'swarm')) {
-                        const pads = vault.occupiedVaults();
+                        const pads = vault.getVaults();
                         for (let vi = 0; vi < pads.length; vi++) {
                             const v = pads[vi];
                             const vdx = instance.x - v.x, vdy = instance.y - v.y;

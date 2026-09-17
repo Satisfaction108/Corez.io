@@ -8,8 +8,8 @@ const FILL_CAP = 10;
 const OCCUPY_MS = 10_000;
 const LOCKOUT_MS = 10_000;
 const KILL_VERBS = ["killed", "slaughtered", "demolished", "wrecked", "ended", "cooked"];
-const RESPAWN_MIN_MS = 5000;
-const RESPAWN_MAX_MS = 8000;
+const RESPAWN_MIN_MS = 15000;
+const RESPAWN_MAX_MS = 15000;
 const WEAK_DRILL_MS = 30_000;
 const STARTER_GEMS = 75;
 const KILL_SCORE = 300;
@@ -258,15 +258,22 @@ function safeSpawnSpot() {
     }
     const free = cands.filter(h => (pitReservations.get(pitKey(h)) || 0) <= t);
     if (free.length) cands = free;
-    const scored = cands.map(h => {
+    const nearestBody = (h) => {
         let m = Infinity;
         for (const b of bodies) {
             const dx = h.x - b.x, dy = h.y - b.y;
             const d = dx * dx + dy * dy;
             if (d < m) m = d;
         }
-        return { h, m };
-    }).sort((a, b) => b.m - a.m);
+        return Math.sqrt(m);
+    };
+    // Hard separation first: 2 rock-widths from any living combatant, then
+    // 1 rock-width, then anything safe. Only a dead storm forces sharing.
+    const TWO_ROCKS = 230, ONE_ROCK = 120;
+    let pool = cands.filter(h => nearestBody(h) >= TWO_ROCKS);
+    if (!pool.length) pool = cands.filter(h => nearestBody(h) >= ONE_ROCK);
+    if (!pool.length) pool = cands;
+    const scored = pool.map(h => ({ h, m: nearestBody(h) })).sort((a, b) => b.m - a.m);
     const top = scored.slice(0, Math.max(1, Math.min(6, scored.length)));
     const pick = top[(Math.random() * top.length) | 0].h;
     pitReservations.set(pitKey(pick), t + 6000);
@@ -390,6 +397,37 @@ function ownedSiteFor(body) {
     } catch { return null; }
 }
 
+// Shove a body out of a pad circle with velocity, not a snap. Only if they
+// fight the push for 2s straight do they get placed outside (anti-camp
+// fallback). Returns true once the body is outside.
+function pushOut(body, cx, cy, r, speed, t, tag) {
+    const dx = body.x - cx, dy = body.y - cy;
+    const d = Math.hypot(dx, dy);
+    if (d >= r) {
+        if (body._padPush && body._padPush.tag === tag) body._padPush = null;
+        return true;
+    }
+    const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
+    if (!body._padPush || body._padPush.tag !== tag) {
+        body._padPush = { tag, until: t + 2000 };
+    }
+    body.velocity.x = Math.cos(n) * speed;
+    body.velocity.y = Math.sin(n) * speed;
+    if (t > body._padPush.until) {
+        body.x = cx + Math.cos(n) * (r + 8);
+        body.y = cy + Math.sin(n) * (r + 8);
+        try {
+            const tg = global.gameManager.terrainGrid;
+            if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
+        } catch { /* */ }
+        body.velocity.x = Math.cos(n) * speed;
+        body.velocity.y = Math.sin(n) * speed;
+        body._padPush = null;
+        return true;
+    }
+    return false;
+}
+
 function onHumanJoin(body) {
     if (!Config.dig_royale || !body) return;
     try {
@@ -443,22 +481,15 @@ function tickOutpostRules(t) {
             const lockedUntil = lockout.get(key) || 0;
             const inside = d < site.r;
             if (ownerId && body.id !== ownerId && inside) {
-                const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
-                body.x = site.x + Math.cos(n) * (site.r + 18);
-                body.y = site.y + Math.sin(n) * (site.r + 18);
-                try {
-                    const tg = global.gameManager.terrainGrid;
-                    if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
-                } catch { /* */ }
-                body.velocity.x = Math.cos(n) * 8;
-                body.velocity.y = Math.sin(n) * 8;
+                pushOut(body, site.x, site.y, site.r + 10, 9, t, "bounce:" + site.id);
                 site._contestedUntil = t + 8000;
                 continue;
             }
+            if (body._padPush && body._padPush.tag === "bounce:" + site.id && !inside) {
+                body._padPush = null;
+            }
             if (ownerId === body.id && lockedUntil > t && d < site.r + 10) {
-                const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
-                body.x = site.x + Math.cos(n) * (site.r + 22);
-                body.y = site.y + Math.sin(n) * (site.r + 22);
+                pushOut(body, site.x, site.y, site.r + 12, 9, t, "lock:" + site.id);
                 continue;
             }
             if (ownerId === body.id && inside) {
@@ -471,19 +502,13 @@ function tickOutpostRules(t) {
                 site.occupyLeft = Math.max(0, Math.ceil(left / 1000));
                 if (body.socket) body.socket.talk('RYO', site.id, Math.max(0, Math.ceil(left / 1000)), 0);
                 if (left <= 0) {
-                    const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
-                    body.x = site.x + Math.cos(n) * (site.r + 28);
-                    body.y = site.y + Math.sin(n) * (site.r + 28);
-                    try {
-                        const tg = global.gameManager.terrainGrid;
-                        if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
-                    } catch { /* */ }
-                    body.velocity.x = Math.cos(n) * 11;
-                    body.velocity.y = Math.sin(n) * 11;
-                    occupy.delete(site.id);
-                    lockout.set(key, t + LOCKOUT_MS);
-                    if (body.socket) body.socket.talk('RYO', site.id, 0, Math.ceil(LOCKOUT_MS / 1000));
-                    try { body.sendMessage("You cannot camp your base. It stays yours."); } catch { /* */ }
+                    const out = pushOut(body, site.x, site.y, site.r + 14, 12, t, "camp:" + site.id);
+                    if (out) {
+                        occupy.delete(site.id);
+                        lockout.set(key, t + LOCKOUT_MS);
+                        if (body.socket) body.socket.talk('RYO', site.id, 0, Math.ceil(LOCKOUT_MS / 1000));
+                        try { body.sendMessage("You cannot camp your base. It stays yours."); } catch { /* */ }
+                    }
                 }
             } else if (ownerId === body.id && !inside) {
                 occupy.delete(site.id);

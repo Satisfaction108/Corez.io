@@ -17,6 +17,19 @@ function livingSpectateList() {
     return out;
 }
 
+// Nearest living combatant to a point: the calm auto-hop when a spectate
+// target dies. Never jumps across the map the way list[0] used to.
+function nearestSpectate(socket, x, y) {
+    let best = null, bestD = Infinity;
+    for (const e of livingSpectateList()) {
+        if (e === socket.spectateEntity) continue;
+        const dx = e.x - x, dy = e.y - y;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = e; }
+    }
+    socket.spectateEntity = best || livingSpectateList()[0] || null;
+}
+
 function cycleSpectate(socket, dir) {
     const list = livingSpectateList();
     if (!list.length) {
@@ -1950,9 +1963,11 @@ class socketManager {
                             socket.spectateEntity = livingSpectateTarget(socket.spectateEntity.finalKillers);
                         }
                         if (!socket.spectateEntity || socket.spectateEntity.isDead()) {
-                            cycleSpectate(socket, 1);
+                            const lx = socket.spectateEntity ? socket.spectateEntity.x : camera.x;
+                            const ly = socket.spectateEntity ? socket.spectateEntity.y : camera.y;
+                            nearestSpectate(socket, lx, ly);
                         }
-                        if (socket.spectateEntity) {
+                        if (socket.spectateEntity && !socket.spectateEntity.isDead()) {
                             camera.x = socket.spectateEntity.x;
                             camera.y = socket.spectateEntity.y;
                         }

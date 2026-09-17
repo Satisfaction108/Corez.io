@@ -1585,7 +1585,14 @@ let incoming = async function(message, socket) {
             if (global.royale && global.royale.at > 0) {
                 global.royaleDied = true;
                 global.royaleSpectating = false;
-                global.raidRespawnAt = performance.now() + 5000 + Math.random() * 3000;
+                global.raidRespawnAt = performance.now() + 15000;
+                // A dead miner leaves every pad panel behind.
+                try {
+                    global.vault.onPad = false;
+                    global.vault.remaining = 0;
+                    global.vault.total = 0;
+                    global.vault.doneAt = 0;
+                } catch { /* */ }
             }
             global.autoSpin = false;
             global.syncingWithTank = false;
