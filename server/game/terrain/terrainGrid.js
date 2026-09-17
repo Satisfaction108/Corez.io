@@ -1111,16 +1111,22 @@ class TerrainGrid {
 
     
     startRegrow(rock, now) {
-        if (rock.canyon) return;   
+        if (rock.canyon) return;
         if (!rock.worldPoly || rock.alive || rock.growing) return;
         rock.gen++;
         rock.growing    = true;
         rock.growStart  = now;
         rock.growDamage = 0;
         rock.diedAt     = 0;
-        rock.alive      = false;   
-        rock.ore        = this._oreTierFor(rock.vi, rock.vj, this._voroViLo, this._voroViHi,
-                                          rock.gen * REGROW.ORE_GEN_STRIDE);
+        rock.alive      = false;
+        if (Config.dig_royale && this.circleRadius) {
+            try {
+                const rl = require('./royaleLayout.js');
+                rock.ore = rl.radialOre(rock, this.circleRadius, (this.oreSalt || 7) + rock.gen * 131);
+            } catch { rock.ore = this._oreTierFor(rock.vi, rock.vj, this._voroViLo, this._voroViHi, rock.gen * REGROW.ORE_GEN_STRIDE); }
+        } else {
+            rock.ore = this._oreTierFor(rock.vi, rock.vj, this._voroViLo, this._voroViHi, rock.gen * REGROW.ORE_GEN_STRIDE);
+        }
         rock.maxHealth  = ROCK_HEALTH * ORE_HP[rock.ore];
         rock.health     = rock.maxHealth * REGROW.HP_FLOOR;
         rock.deposits   = rock.ore ? this._buildDeposits(rock) : null;

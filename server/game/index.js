@@ -1776,7 +1776,7 @@ class gameHandler {
             vault.tick(gemActors,
                        Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);
             
-            outposts.tick(global.gameManager.socketManager.players,
+            outposts.tick(gemActors,
                           Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);
             if (!Config.dig_royale) {
                 coreChambers.tick(Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);

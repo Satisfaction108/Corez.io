@@ -102,7 +102,17 @@ function spawnStructure(site, team, owner = null) {
                 return root;
             })
             .find(root => root && (root.isPlayer || root.isBot));
-        if (attacker) site._lastHitter = attacker;
+        if (attacker) {
+            site._lastHitter = attacker;
+            if (Config.dig_royale && site.ownerId && attacker.id !== site.ownerId) {
+                const t = Date.now();
+                site._contestedUntil = t + 10000;
+                if (t - (site._contestAnnAt || 0) > 25000) {
+                    site._contestAnnAt = t;
+                    announce(site.name + " is contested. " + (attacker.name || "Someone") + " is breaking it.");
+                }
+            }
+        }
     });
     o.on('dead', () => onStructureDeath(site));
     site.banner = o;
@@ -133,6 +143,7 @@ function onStructureDeath(site) {
         if (killer && killer.id !== site.ownerId) {
             spawnStructure(site, killer.team, killer);
             announce(`${killer.name || "Someone"} captured the ${site.name}!`);
+            try { require('../gamemodes/scripts/dig_royale.js').onCapture(killer, site); } catch { /* */ }
         } else {
             spawnStructure(site, 0, null);
             if (site.ownerId) announce(`The ${site.name} has fallen!`);
@@ -170,15 +181,18 @@ function onStructureDeath(site) {
     }
 }
 
+function actorBody(actor) {
+    return actor && actor.body ? actor.body : actor;
+}
+
 function tick(players, dtMs) {
     const list = getOutposts();
     if (!list.length) return;
-    // BR lobby/idle: playground only - outposts do nothing until live.
     if (Config.dig_royale) {
         try {
             if (require('../gamemodes/scripts/dig_royale.js').isLobbyPhase()) {
                 for (const player of players) {
-                    const body = player.body;
+                    const body = actorBody(player);
                     if (body) body.outpostOnPad = false;
                 }
                 // Drop banners without a death event so capture spam cannot fire.
@@ -226,7 +240,7 @@ function tick(players, dtMs) {
     }
 
     for (const player of players) {
-        const body = player.body;
+        const body = actorBody(player);
         if (!body || body.isGhost) continue;
         if (body.isDead()) {
             if (body.outpostDeposit) { body.outpostDeposit = null; talkOutpostProgress(body); }
@@ -285,13 +299,17 @@ function tick(players, dtMs) {
         body.carriedGems = Math.max(0, (body.carriedGems | 0) - chunk);
         const socket = body.socket;
         if (socket) {
-            
             socket.gemBanked = (socket.gemBanked || 0) + chunk * EFFICIENCY;
             body.bankedGems = socket.gemBanked;
-            // Personal achievements fire here too - outpost-banked gems count
-            // toward the same lifetime rungs as vault deposits.
             milestones.checkBanked(body);
             war.add(body.team, chunk * EFFICIENCY);
+            if (Config.dig_royale) {
+                try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, chunk * EFFICIENCY); } catch { /* */ }
+            }
+        } else if (Config.dig_royale) {
+            body.botBanked = (body.botBanked || 0) + chunk * EFFICIENCY;
+            body.bankedGems = body.botBanked;
+            try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, chunk * EFFICIENCY); } catch { /* */ }
         }
         const done = d.remaining <= 0.5;
         if (done || now - d.lastTalk >= PROGRESS_MS) {

@@ -348,6 +348,7 @@ function initSatchel(body) {
 
 function dropGemsOnDeath(body, killers = []) {
     const carried = body.carriedGems | 0;
+    const raidMode = !!Config.dig_royale;
     // Keep the bot killers attached to the loot they created. A player can
     // still reclaim the drop, but the bot that earned it should not have to
     // wait through the normal anti-vulture grace period.
@@ -357,7 +358,7 @@ function dropGemsOnDeath(body, killers = []) {
         .map(killer => killer.id);
     
     const banked  = bankedFor(body);
-    const bankLoss = Math.floor(banked * BANK_DEATH_LOSS);
+    const bankLoss = raidMode ? 0 : Math.floor(banked * BANK_DEATH_LOSS);
     // The death screen shows the wealth you had at the moment you died -
     // carried + banked BEFORE the drop. Snapshot it here because this runs
     // (on 'dead') before the death packet's records() is built.

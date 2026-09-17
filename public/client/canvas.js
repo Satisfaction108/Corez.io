@@ -150,16 +150,11 @@ class Canvas {
     }
 
     respawn() {
-        const phase = global.royale && global.royale.phase;
-        if (phase === 'over' && !global.died) {
-            this.socket.talk('RQ');
-            return;
-        }
-        if (global.royaleDied && phase !== 'lobby' && phase !== 'idle' && phase !== 'over') return;
         if (global.died && !global.cannotRespawn && !global.respawnPending) {
             global.respawnPending = true;
             global.royaleDied = false;
             global.royaleSpectating = false;
+            global.raidRespawnAt = 0;
             this.socket.talk('s', global.playerName, 0, 1 * config.game.autoLevelUp, false, 1 * config.game.incognitoMode);
             setTimeout(() => {
                 if (global.respawnPending) global.respawnPending = false;
@@ -208,13 +203,7 @@ class Canvas {
                 break;
 
             case global.KEY_ENTER:
-                // Enter to respawn (or to spectate in Royale)
                 if (global.died) {
-                    if (global.royaleDied) {
-                        global.royaleSpectating = true;
-                        this.socket.talk('RS', 2);
-                        break;
-                    }
                     if (!global.cannotRespawn) { this.respawn(); break; }
                     break;
                 }
@@ -679,11 +668,7 @@ class Canvas {
                 const gx = mpos.x / scale, gy = mpos.y / scale;
                 const inRect = (r) => !!r && gx >= r.x && gx <= r.x + r.w && gy >= r.y && gy <= r.y + r.h;
                 if (respawnCheck !== -1 && !global.disconnected) {
-                    if (global.royaleDied && global.royale.phase !== 'lobby' && global.royale.phase !== 'idle') {
-                        global.royaleSpectating = true;
-                        this.socket.talk('RS', 2);
-                        gameSound.uiClick();
-                    } else { this.respawn(); gameSound.uiClick(); }
+                    this.respawn(); gameSound.uiClick();
                 } else
                 if ((global.clickables.royaleSpectate.check(mpos) !== -1 || inRect(bar.spectate)) && !global.disconnected && global.died) {
                     global.royaleSpectating = true;

@@ -371,7 +371,16 @@ const global = {
         place: 0,
         board: [],
         at: -1e9,
+        raidId: 0,
+        raidLeft: 0,
+        youScore: 0,
+        youPB: 0,
+        objectives: [],
+        bloom: null,
+        chest: null,
+        results: null,
     },
+    raidRespawnAt: 0,
     royaleBoard: {
         open: false,
         tab: 'map', // map | standings | feed | alive

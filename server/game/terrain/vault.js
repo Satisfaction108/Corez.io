@@ -159,6 +159,9 @@ function tick(actors, dtMs) {
         setBanked(body, banked + chunk);
         war.add(body.team, chunk);
         milestones.checkBanked(body);
+        if (Config.dig_royale) {
+            try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, chunk); } catch { /* */ }
+        }
 
         const done = d.remaining <= 0;
         if (done || now - d.lastTalk >= PROGRESS_MS) {

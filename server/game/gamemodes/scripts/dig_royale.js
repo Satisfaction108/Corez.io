@@ -3,25 +3,39 @@ const vault = require('../../terrain/vault.js');
 const outposts = require('../../terrain/outposts.js');
 const gems = require('../../terrain/gems.js');
 
-const LOBBY_MS = 100_000;
-const LOADOUT_MS = 30_000;
-const OVER_MS = 9_000;
+const RAID_MS = 2 * 60 * 60 * 1000;
 const FILL_CAP = 30;
 const OCCUPY_MS = 10_000;
 const LOCKOUT_MS = 10_000;
 const KILL_VERBS = ["killed", "slaughtered", "demolished", "wrecked", "ended", "cooked"];
+const RESPAWN_MIN_MS = 5000;
+const RESPAWN_MAX_MS = 8000;
+const WEAK_DRILL_MS = 30_000;
+const STARTER_GEMS = 75;
+const BLOOM_EVERY_MS = 3 * 60 * 1000;
+const BLOOM_R = 420;
+const BLOOM_TTL_MS = 90 * 1000;
+const CHEST_EVERY_MS = 4 * 60 * 1000;
+const CHEST_TTL_MS = 120 * 1000;
+const KILL_SCORE = 300;
+const HOLD_SCORE = 200;
 
-let phase = 'idle';
-let phaseAt = 0;
-let winner = null;
-let placements = new Map();
+let raidId = 0;
+let raidStartAt = 0;
+let raidEndsAt = 0;
+let raidStats = new Map();
 let killFeed = [];
-let occupy = new Map(); // outpostId -> { ownerId, enteredAt }
-let lockout = new Map(); // `${outpostId}:${bodyId}` -> until
-let matchId = 0;
-let matchStartAt = 0;
-let boardMemory = new Map();
-let lastLobbyFillAt = 0;
+let occupy = new Map();
+let lockout = new Map();
+let bloom = null;
+let nextBloomAt = 0;
+let chest = null;
+let nextChestAt = 0;
+let raidResults = null;
+let raidResultsAt = 0;
+let poisCarved = false;
+let lastFillAt = 0;
+let lastVaultPinchAt = 0;
 
 function now() { return Date.now(); }
 
@@ -33,15 +47,6 @@ function humans() {
 
 function connectedClients() {
     return (global.gameManager.socketManager?.clients || []).filter(c => c && !c.terminated);
-}
-
-function rememberBoard(body) {
-    if (!body) return;
-    boardMemory.set(body.id, {
-        name: body.name || "Unnamed",
-        kills: (body.killCount && body.killCount.solo | 0) || 0,
-        gems: gemsOf(body),
-    });
 }
 
 function combatants() {
@@ -59,18 +64,10 @@ function pits() {
     return global.gameManager.terrainGrid?.spawnPits || [{ x: 0, y: 0 }];
 }
 
-function canSpawn() {
-    return phase === 'idle' || phase === 'lobby' || phase === 'over';
-}
-
-function requestPlay() {
-    if (phase === 'over') resetMatch();
-    return canSpawn();
-}
-
-function isLobbyPhase() {
-    return phase === 'idle' || phase === 'lobby';
-}
+function canSpawn() { return true; }
+function requestPlay() { return true; }
+function isLobbyPhase() { return false; }
+function phase() { return 'live'; }
 
 function setFrozen(body, frozen) {
     if (!body) return;
@@ -85,10 +82,6 @@ function setFrozen(body, frozen) {
     }
 }
 
-// Lobby = Fortnite playground: free movement + free shooting/mining for fun,
-// but invulnerable + passive so nobody can hurt or kill anyone. Gems are
-// suppressed separately in spawnOreBurst (royaleLobby check), and vaults/
-// outposts are gated by isLobbyPhase so there is nothing to bank at.
 function killMinions(body) {
     if (!body) return;
     try {
@@ -106,13 +99,37 @@ function killMinions(body) {
 
 function setLobby(body, on) {
     if (!body) return;
-    body.royaleLobby = !!on;
-    body.passive = !!on;
-    body.invuln = !!on;
+    body.royaleLobby = false;
     if (on) {
-        body.godmode = false;
-        setFrozen(body, false);
+        body.passive = false;
+        body.invuln = false;
     }
+}
+
+function statKeyFor(body) {
+    if (!body) return null;
+    if (body.socket && body.socket.id) return "s:" + body.socket.id;
+    if (body.botFamilyId !== undefined) return "b:" + body.botFamilyId;
+    return "b:" + body.id;
+}
+
+function ensureStat(body) {
+    const key = statKeyFor(body);
+    if (!key) return null;
+    let s = raidStats.get(key);
+    if (!s) {
+        s = { key, name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, alive: true, id: body.id, isBot: !!body.isBot, lastSeen: now() };
+        raidStats.set(key, s);
+    }
+    s.name = body.name || s.name;
+    s.id = body.id;
+    s.alive = true;
+    s.lastSeen = now();
+    return s;
+}
+
+function scoreOf(s) {
+    return (s.banked | 0) + (s.kills | 0) * KILL_SCORE + (s.holds | 0) * HOLD_SCORE;
 }
 
 function gemsOf(body) {
@@ -121,90 +138,74 @@ function gemsOf(body) {
     return carried + banked;
 }
 
-// Standings for the F-toggle minimap board. Alive first, then dead by
-// placement. Client sorts by gems or kills.
 function boardSnapshot() {
+    for (const body of combatants()) ensureStat(body);
+    const rows = [...raidStats.values()].map(s => ({
+        id: s.id,
+        name: s.name || "Unnamed",
+        kills: s.kills | 0,
+        gems: s.banked | 0,
+        holds: s.holds | 0,
+        score: scoreOf(s),
+        alive: !!s.alive,
+        place: 0,
+    }));
+    rows.sort((a, b) => (b.score - a.score) || (b.gems - a.gems) || (b.kills - a.kills));
+    rows.forEach((r, i) => { r.place = i + 1; });
+    return rows.slice(0, 32);
+}
+
+function objectivesSnapshot(t) {
     const out = [];
-    const seen = new Set();
-    for (const body of combatants()) {
-        if (!body || seen.has(body.id)) continue;
-        seen.add(body.id);
-        out.push({
-            id: body.id,
-            name: body.name || "Unnamed",
-            kills: isLobbyPhase() ? 0 : ((body.killCount && body.killCount.solo | 0) || 0),
-            gems: gemsOf(body),
-            alive: true,
-            place: 0,
-        });
-        rememberBoard(body);
-    }
-    for (const [id, place] of placements) {
-        if (seen.has(id)) {
-            const row = out.find(r => r.id === id);
-            if (row) { row.place = place; }
-            continue;
-        }
-        const mem = boardMemory.get(id) || {};
-        out.push({
-            id,
-            name: mem.name || "Eliminated",
-            kills: mem.kills | 0,
-            gems: mem.gems | 0,
-            alive: false,
-            place,
-        });
-    }
-    // attach names for dead where we still know them via feed
-    for (const row of out) {
-        if (row.name === "Eliminated") {
-            const f = killFeed.find(k => k.place === row.place);
-            if (f && f.name) row.name = f.name;
+    const list = outposts.getOutposts();
+    for (const site of list) {
+        if (site._contestedUntil && site._contestedUntil > t) {
+            out.push({ kind: "contest", id: site.id, name: site.name, x: Math.round(site.x), y: Math.round(site.y), until: site._contestedUntil });
         }
     }
-    return out.slice(0, 32);
+    if (bloom && bloom.until > t) out.push({ kind: "bloom", x: Math.round(bloom.x), y: Math.round(bloom.y), r: Math.round(bloom.r), until: bloom.until });
+    if (chest && chest.until > t && !chest.claimed) out.push({ kind: "chest", x: Math.round(chest.x), y: Math.round(chest.y), until: chest.until });
+    return out;
 }
 
 function broadcast(extra = {}) {
     const t = now();
-    const left = phase === 'lobby' ? Math.max(0, LOBBY_MS - (t - phaseAt))
-        : phase === 'loadout' ? Math.max(0, LOADOUT_MS - (t - phaseAt))
-        : phase === 'over' ? Math.max(0, OVER_MS - (t - phaseAt))
-        : 0;
     const st = storm.snapshot(t);
-    const alive = phase === 'live' || phase === 'loadout' ? combatants().length : 0;
+    const alive = combatants().length;
     const board = boardSnapshot();
+    const raidLeft = Math.max(0, Math.ceil((raidEndsAt - t) / 1000));
+    const objectives = objectivesSnapshot(t);
     for (const client of connectedClients()) {
-        const youPlace = (client && client.royalePlace) || 0;
+        const key = client.id ? "s:" + client.id : null;
+        const mine = key ? raidStats.get(key) : null;
         const payload = JSON.stringify({
-            phase,
-            left: Math.ceil(left / 1000),
+            phase: 'live',
+            left: raidLeft,
             alive,
             fill: FILL_CAP,
             humans: humans().length,
-            winner: winner ? { name: winner.name || "Unnamed", id: winner.id } : null,
+            winner: null,
             storm: st,
             toast: extra.toast || "",
             feed: killFeed.slice(-6),
             board,
-            youPlace,
-            matchId,
+            youPlace: mine ? (board.findIndex(r => r.name === mine.name && r.score === scoreOf(mine)) + 1) : 0,
+            youScore: mine ? scoreOf(mine) : 0,
+            youPB: (client.raidPB || 0) | 0,
+            matchId: raidId,
+            raidId,
+            raidLeft,
+            raidMs: RAID_MS,
             occupyMs: OCCUPY_MS,
             lockoutMs: LOCKOUT_MS,
+            objectives,
+            bloom: bloom && bloom.until > t ? { x: Math.round(bloom.x), y: Math.round(bloom.y), r: Math.round(bloom.r) } : null,
+            chest: chest && chest.until > t && !chest.claimed ? { x: Math.round(chest.x), y: Math.round(chest.y) } : null,
+            results: raidResults,
             ...extra,
         });
         client.talk('RY', payload);
     }
-}
-
-function go(next) {
-    phase = next;
-    phaseAt = now();
-    broadcast({ toast: next === 'lobby' ? 'Drop in - break rocks, warm up, no gems yet'
-        : next === 'loadout' ? 'Upgrade your build and tanks'
-        : next === 'live' ? 'Last one standing wins'
-        : next === 'over' ? ((winner && winner.name) || 'Someone') + ' wins'
-        : '' });
 }
 
 function moveTo(body, x, y) {
@@ -216,357 +217,135 @@ function moveTo(body, x, y) {
     if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
 }
 
-// Pick N holes maximally separated: greedy farthest-point subset from a
-// random seed, so neighbours never drop side by side.
-function pickSeparatedHoles(holes, n) {
-    if (!holes.length) return [];
-    if (n >= holes.length) {
-        const shuffled = holes.slice();
-        for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = (Math.random() * (i + 1)) | 0;
-            const tmp = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = tmp;
-        }
-        return shuffled;
-    }
-    const picked = [holes[(Math.random() * holes.length) | 0]];
-    while (picked.length < n) {
-        let best = null, bestMin = -1;
-        for (const h of holes) {
-            if (picked.includes(h)) continue;
-            let m = Infinity;
-            for (const p of picked) {
-                const dx = h.x - p.x, dy = h.y - p.y;
-                const d = dx * dx + dy * dy;
-                if (d < m) m = d;
+function randomPit() {
+    const holes = pits();
+    return holes[(Math.random() * holes.length) | 0] || { x: 0, y: 0 };
+}
+
+function giveStarterKit(body, isRespawn) {
+    if (!body) return;
+    try { gems.initSatchel(body); } catch { /* */ }
+    const bonus = body.socket ? ((body.socket.raidBonus || 0) | 0) : 0;
+    if (body.socket) body.socket.raidBonus = 0;
+    const grant = STARTER_GEMS + bonus;
+    body.carriedGems = Math.max(body.carriedGems | 0, grant);
+    try { gems.updateSatchel(body); gems.talkGems(body, grant); } catch { /* */ }
+    if (isRespawn) body.weakDrillUntil = now() + WEAK_DRILL_MS;
+    else body.weakDrillUntil = 0;
+    try {
+        const tg = global.gameManager.terrainGrid;
+        if (tg && tg.nearestRockWhere) {
+            const rock = tg.nearestRockWhere(body.x, body.y, 520, r => r && r.alive && !r.ore);
+            if (rock) {
+                const { ORE, ORE_HP } = require('../../terrain/terrainGrid.js');
+                rock.ore = ORE.COPPER;
+                rock.maxHealth = (tg.baseRockHealth * 1.3) * (ORE_HP[ORE.COPPER] || 1);
+                rock.health = rock.maxHealth;
+                try { rock.deposits = tg._buildDeposits(rock); } catch { rock.deposits = null; }
             }
-            if (m > bestMin) { bestMin = m; best = h; }
         }
-        if (!best) break;
-        picked.push(best);
-    }
-    return picked;
+    } catch { /* */ }
 }
 
-function uniqueDropSpots(n) {
-    const holes = pits().slice();
-    const out = [];
-    const taken = new Set();
-    const shuffled = pickSeparatedHoles(holes, holes.length);
-    for (let i = 0; i < n; i++) {
-        if (i < shuffled.length) {
-            out.push(shuffled[i]);
-            taken.add(shuffled[i].x + "," + shuffled[i].y);
-            continue;
-        }
-        const a = (i + 0.37) * 2.399963;
-        const ring = 0.38 + 0.08 * (i % 4);
-        const r = ((global.gameManager.terrainGrid && global.gameManager.terrainGrid.circleRadius) || 2600) * ring;
-        out.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
-    }
-    return out;
-}
-
-// Fresh loadout for every combatant: back to Basic, skills wiped, then a full
-// level grant so the 30s freeze is actually spent upgrading.
-function resetRoyaleBody(body) {
+function freshRaidBody(body) {
     if (!body || body.isDead?.()) return;
     killMinions(body);
-    try {
-        body.define(Config.spawn_class || 'basic');
-    } catch { /* keep current class if define fails */ }
-    try {
-        if (body.skill) {
-            body.skill.reset();
-            const target = Config.level_cap_cheat || 45;
-            let guard = 0;
-            while (body.skill.level < target && guard++ < 500) {
-                body.skill.score += body.skill.levelScore;
-                body.skill.maintain();
-            }
-            body.skill.points = (body.skill.points || 0);
-            body.refreshBodyAttributes();
-        }
-    } catch { /* best effort */ }
-    try {
-        body.killCount.solo = 0;
-        body.killCount.assists = 0;
-    } catch { /* keep */ }
-    body.carriedGems = 0;
-    if (body.socket) { body.socket.gemBanked = 0; body.bankedGems = 0; }
-    else { body.botBanked = 0; body.bankedGems = 0; }
-    try { gems.initSatchel(body); } catch { /* */ }
-    try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
-    body.health.amount = body.health.max;
-    if (body.shield) body.shield.amount = body.shield.max;
+    setLobby(body, false);
+    setFrozen(body, false);
+    body.invuln = false;
+    body.passive = false;
+    body.royaleAlive = true;
+    body.deathCause = "";
+    try { body.health.amount = body.health.max; } catch { /* */ }
+    try { if (body.shield) body.shield.amount = body.shield.max; } catch { /* */ }
 }
 
-function spawnLobbyBot() {
+function spawnRaidBot() {
     const handler = global.gameManager.gameHandler;
     if (!handler) return;
-    const plaza = lobbyPos();
+    const hole = randomPit();
     const team = getRandomTeam();
-    handler.spawnBots({
-        x: plaza.x + (Math.random() - 0.5) * 160,
-        y: plaza.y + (Math.random() - 0.5) * 160,
-    }, team);
+    handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team);
     const bot = handler.bots[handler.bots.length - 1];
     if (!bot) return;
     bot.team = team;
     bot.botRespawnsRemaining = 0;
-    setLobby(bot, true);
-    gems.initSatchel(bot);
+    bot.royaleAlive = true;
+    bot.weakDrillUntil = 0;
+    try { gems.initSatchel(bot); } catch { /* */ }
+    ensureStat(bot);
 }
 
-function fillLobbyBots() {
+function fillBots() {
     const t = now();
-    if (t - lastLobbyFillAt < 400) return;
-    const have = combatants().length;
-    if (have >= FILL_CAP) return;
-    lastLobbyFillAt = t;
-    spawnLobbyBot();
+    if (t - lastFillAt < 400) return;
+    if (combatants().length >= FILL_CAP) return;
+    lastFillAt = t;
+    spawnRaidBot();
 }
 
-function scatter() {
-    matchId++;
-    matchStartAt = now();
-    placements = new Map();
-    killFeed = [];
-    boardMemory = new Map();
-    occupy.clear();
-    lockout.clear();
-    try {
-        for (const e of [...entities.values()]) {
-            if (e && e.isGemPickup && !e.isDead?.()) e.kill();
-        }
-    } catch { /* */ }
-    try { require('../../terrain/royaleLayout.js').carveMatchPois(global.gameManager.terrainGrid); } catch { /* */ }
-    const handler = global.gameManager.gameHandler;
-    let list = combatants();
-    const need = Math.max(0, FILL_CAP - list.length);
-    const spots = uniqueDropSpots(list.length + need);
-    for (let i = 0; i < need; i++) {
-        const hole = spots[list.length + i] || { x: 0, y: 0 };
-        const team = getRandomTeam();
-        handler.spawnBots({ x: hole.x, y: hole.y }, team);
-        const bot = handler.bots[handler.bots.length - 1];
-        if (bot) {
-            bot.team = team;
-            bot.botRespawnsRemaining = 0;
-            bot.botWakeAt = now();
-            bot.botNextUpgradeAt = now();
-            bot.leftoverUpgrades = Math.max(bot.leftoverUpgrades || 0, 4);
-            gems.initSatchel(bot);
-        }
-    }
-    const all = combatants();
-    all.forEach((body, i) => {
-        const hole = spots[i] || { x: 0, y: 0 };
-        resetRoyaleBody(body);
-        moveTo(body, hole.x + (Math.random() - 0.5) * 30, hole.y + (Math.random() - 0.5) * 30);
-        setLobby(body, false);
-        setFrozen(body, true);
-        body.invuln = true;
-        body.passive = true;
-        body.royaleAlive = true;
-        body.partySize = 1;
-        if (!body.team || body.team === TEAM_BLUE || body.team === TEAM_RED)
-            body.team = getRandomTeam();
-        body.health.amount = body.health.max;
-        gems.initSatchel(body);
-        rememberBoard(body);
-        if (body.socket) {
-            body.socket.royaleEliminated = false;
-            body.socket.royalePlace = 0;
-            if (body.skill) {
-                try {
-                    const target = Config.level_cap_cheat || 45;
-                    let guard = 0;
-                    while (body.skill.level < target && guard++ < 500) {
-                        body.skill.score += body.skill.levelScore;
-                        body.skill.maintain();
-                    }
-                    body.refreshBodyAttributes();
-                } catch { /* */ }
-            }
-        } else {
-            body.botWakeAt = now();
-            body.botNextUpgradeAt = now();
-            body.leftoverUpgrades = Math.max(body.leftoverUpgrades || 0, 4);
-        }
-    });
+function onBanked(body, amount) {
+    if (!body || !(amount > 0)) return;
+    const s = ensureStat(body);
+    if (s) s.banked = (s.banked | 0) + Math.round(amount);
 }
 
-function startLive() {
-    for (const body of combatants()) {
-        setFrozen(body, false);
-        setLobby(body, false);
-        body.invuln = false;
-        body.passive = false;
-        body.royaleAlive = true;
-    }
-    storm.start();
-}
-
-function place(body) {
-    if (!body || placements.has(body.id)) return;
-    rememberBoard(body);
-    const remaining = combatants().filter(b => b !== body).length;
-    placements.set(body.id, remaining + 1);
-    const stormKill = body.deathCause === "storm";
-    const killer = body._lastDamageSource;
-    const byName = !stormKill && killer && (killer.isPlayer || killer.isBot) ? (killer.name || "Unnamed") : "";
-    killFeed.push({
-        name: body.name || "Unnamed",
-        by: stormKill ? "" : byName,
-        verb: stormKill ? "lost" : KILL_VERBS[(Math.random() * KILL_VERBS.length) | 0],
-        storm: stormKill ? 1 : 0,
-        place: remaining + 1,
-        at: now(),
-    });
-    if (body.socket) {
-        body.socket.royaleEliminated = true;
-        body.socket.royalePlace = remaining + 1;
-        body.socket.talk('RYP', remaining + 1);
-    }
+function onCapture(body, site) {
+    if (!body || !site) return;
+    const s = ensureStat(body);
+    if (s) s.holds = (s.holds | 0) + 1;
 }
 
 function onCombatantDead(body) {
     if (!Config.dig_royale || !body) return;
-    if (phase !== 'live' && phase !== 'loadout') return;
     if (body.royaleAlive === false) return;
     body.royaleAlive = false;
-    place(body);
-}
-
-function checkWinner() {
-    if (phase !== 'live') return;
-    const live = combatants();
-    if (live.length > 1) return;
-    winner = live[0] || null;
-    if (winner) placements.set(winner.id, 1);
-    storm.stop();
-    for (const body of combatants()) setFrozen(body, true);
-    go('over');
-}
-
-function resetMatch() {
-    storm.stop();
-    occupy.clear();
-    lockout.clear();
-    winner = null;
-    killFeed = [];
-    placements = new Map();
-    boardMemory = new Map();
-    const handler = global.gameManager.gameHandler;
-    for (const bot of (handler.bots || []).slice()) {
-        if (bot && !bot.isDead()) bot.kill();
+    const key = statKeyFor(body);
+    if (key) {
+        const s = raidStats.get(key) || ensureStat(body);
+        if (s) s.alive = false;
     }
-    handler.bots.length = 0;
-    try {
-        for (const e of [...entities.values()]) {
-            if (e && e.isGemPickup && !e.isDead?.()) e.kill();
-        }
-    } catch { /* */ }
-    outposts.resetRoyale && outposts.resetRoyale();
-    occupy.clear();
-    lockout.clear();
-    const plaza = lobbyPos();
-    for (const client of connectedClients()) {
-        client.royalePlace = 0;
-        // Stay dead until Play. Do not auto-spawn the lobby.
-        if (!client.player || !client.player.body || client.player.body.isDead?.()) {
-            client.royaleNeedClick = true;
-            client.status.readyToSpawn = false;
-            client.status.deceased = true;
-        } else {
-            client.royaleEliminated = false;
-            client.royaleNeedClick = false;
-        }
+    const stormKill = body.deathCause === "storm";
+    const killer = body._lastDamageSource;
+    const killerBody = killer && (killer.isPlayer || killer.isBot) ? killer : null;
+    if (killerBody && killerBody !== body && !stormKill) {
+        const ks = ensureStat(killerBody);
+        if (ks) ks.kills = (ks.kills | 0) + 1;
     }
-    for (const body of humans()) {
-        moveTo(body, plaza.x + (Math.random() - 0.5) * 80, plaza.y + (Math.random() - 0.5) * 80);
-        resetRoyaleBody(body);
-        setLobby(body, true);
-        body.royaleAlive = false;
-        if (body.socket) {
-            body.socket.royaleEliminated = false;
-            body.socket.royalePlace = 0;
-            body.socket.royaleNeedClick = false;
-        }
-        body.health.amount = body.health.max;
+    killFeed.push({
+        name: body.name || "Unnamed",
+        by: stormKill ? "" : (killerBody ? (killerBody.name || "Unnamed") : ""),
+        verb: stormKill ? "lost" : KILL_VERBS[(Math.random() * KILL_VERBS.length) | 0],
+        storm: stormKill ? 1 : 0,
+        place: 0,
+        at: now(),
+    });
+    if (killFeed.length > 24) killFeed.splice(0, killFeed.length - 24);
+    if (body.socket) {
+        body.socket.royaleRespawnAt = now() + RESPAWN_MIN_MS + Math.random() * (RESPAWN_MAX_MS - RESPAWN_MIN_MS);
+        body.socket.royaleNeedClick = false;
+        body.socket.status.readyToSpawn = true;
     }
-    lastLobbyFillAt = 0;
-    if (connectedClients().length) go('lobby');
-    else go('idle');
 }
 
 function onHumanJoin(body) {
     if (!Config.dig_royale || !body) return;
-    const plaza = lobbyPos();
-    if (phase === 'idle' || phase === 'lobby') {
-        moveTo(body, plaza.x + (Math.random() - 0.5) * 70, plaza.y + (Math.random() - 0.5) * 70);
-        setLobby(body, true);
-        killMinions(body);
-        if (phase === 'idle') go('lobby');
+    const hole = randomPit();
+    const isRespawn = !!(body.socket && body.socket.lastRaidDeathAt);
+    moveTo(body, hole.x + (Math.random() - 0.5) * 30, hole.y + (Math.random() - 0.5) * 30);
+    freshRaidBody(body);
+    giveStarterKit(body, isRespawn);
+    ensureStat(body);
+    if (body.socket) {
+        body.socket.royaleEliminated = false;
+        body.socket.royalePlace = 0;
+        body.socket.royaleNeedClick = false;
+        body.socket.lastRaidDeathAt = 0;
     }
 }
 
-function tick() {
-    if (!Config.dig_royale) return;
-    const t = now();
-    const connected = connectedClients();
-
-    if (phase === 'idle') {
-        storm.stop();
-        return;
-    }
-    // Only cancel a running match if every client left. Dead humans stay as
-    // spectators while bots finish the round.
-    if (!connected.length) {
-        for (const bot of (global.gameManager.gameHandler.bots || []).slice()) {
-            if (bot && !bot.isDead()) bot.kill();
-        }
-        global.gameManager.gameHandler.bots.length = 0;
-        storm.stop();
-        go('idle');
-        return;
-    }
-
-    if (phase === 'lobby') {
-        for (const body of combatants()) setLobby(body, true);
-        fillLobbyBots();
-        if (t - phaseAt >= LOBBY_MS) {
-            go('loadout');
-            scatter();
-        }
-    } else if (phase === 'loadout') {
-        for (const body of combatants()) setFrozen(body, true);
-        if (t - phaseAt >= LOADOUT_MS) {
-            startLive();
-            go('live');
-        }
-    } else if (phase === 'live') {
-        storm.tickDamage(t);
-        tickOutpostRules(t);
-        for (const body of combatants()) {
-            const rMax = (global.gameManager.terrainGrid && global.gameManager.terrainGrid.circleRadius) || 2700;
-            const d = Math.hypot(body.x, body.y);
-            if (d > rMax - 24) {
-                const s = (rMax - 24) / (d || 1);
-                body.x *= s;
-                body.y *= s;
-            }
-        }
-        checkWinner();
-    } else if (phase === 'over') {
-        // Stay on the win screen until someone presses Play. Do not roll a
-        // new lobby/match on a timer while people are still spectating.
-    }
-
-    if (t - (tick._broadcastAt || 0) >= 200) {
-        tick._broadcastAt = t;
-        broadcast();
-    }
+function markHumanDeath(socket) {
+    if (socket) socket.lastRaidDeathAt = now();
 }
 
 function tickOutpostRules(t) {
@@ -581,13 +360,13 @@ function tickOutpostRules(t) {
             const key = site.id + ':' + body.id;
             const lockedUntil = lockout.get(key) || 0;
             const inside = d < site.r;
-
             if (ownerId && body.id !== ownerId && inside) {
                 const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
                 body.x = site.x + Math.cos(n) * (site.r + 18);
                 body.y = site.y + Math.sin(n) * (site.r + 18);
                 body.velocity.x = Math.cos(n) * 8;
                 body.velocity.y = Math.sin(n) * 8;
+                site._contestedUntil = t + 8000;
                 continue;
             }
             if (ownerId === body.id && lockedUntil > t && d < site.r + 10) {
@@ -624,22 +403,271 @@ function tickOutpostRules(t) {
     }
 }
 
+function tickBloom(t) {
+    if (bloom && bloom.until <= t) bloom = null;
+    if (!bloom && t >= nextBloomAt) {
+        const tg = global.gameManager.terrainGrid;
+        const circleR = (tg && tg.circleRadius) || 2600;
+        const a = Math.random() * Math.PI * 2;
+        const r = circleR * (0.25 + Math.random() * 0.45);
+        const bx = Math.cos(a) * r, by = Math.sin(a) * r;
+        let upgraded = 0;
+        try {
+            const { ORE, ORE_HP } = require('../../terrain/terrainGrid.js');
+            for (const rock of tg.rocks.values()) {
+                if (!rock.alive || rock.growing) continue;
+                const dx = (rock.worldCx || rock.wx) - bx, dy = (rock.worldCy || rock.wy) - by;
+                if (dx * dx + dy * dy > BLOOM_R * BLOOM_R) continue;
+                if (rock.ore === ORE.EMERALD || rock.ore === ORE.SHARD) continue;
+                if (Math.random() < 0.45) continue;
+                rock.ore = Math.random() < 0.3 ? ORE.SHARD : ORE.VEIN;
+                rock.maxHealth = (tg.baseRockHealth * 1.3) * (ORE_HP[rock.ore] || 1);
+                rock.health = rock.maxHealth;
+                try { rock.deposits = tg._buildDeposits(rock); } catch { rock.deposits = null; }
+                upgraded++;
+            }
+        } catch { /* */ }
+        bloom = { x: bx, y: by, r: BLOOM_R, until: t + BLOOM_TTL_MS };
+        nextBloomAt = t + BLOOM_EVERY_MS;
+        if (upgraded > 0) {
+            try { global.gameManager.socketManager.broadcast("Ore bloom spotted. Rich veins for 90s."); } catch { /* */ }
+            broadcast({ toast: "Ore bloom. Follow the gold." });
+        }
+    }
+}
+
+function openGroundNear(tg, x, y) {
+    if (!tg || !tg.pointInRock) return { x, y };
+    if (!tg.pointInRock(x, y)) return { x, y };
+    for (let ring = 1; ring <= 8; ring++) {
+        for (let i = 0; i < 12; i++) {
+            const a = (i / 12) * Math.PI * 2 + ring * 0.3;
+            const nx = x + Math.cos(a) * 60 * ring, ny = y + Math.sin(a) * 60 * ring;
+            if (!tg.pointInRock(nx, ny)) return { x: nx, y: ny };
+        }
+    }
+    return { x, y };
+}
+
+function tickChest(t) {
+    if (chest && (chest.until <= t || chest.claimed)) chest = null;
+    if (!chest && t >= nextChestAt) {
+        const tg = global.gameManager.terrainGrid;
+        const circleR = (tg && tg.circleRadius) || 2600;
+        const a = Math.random() * Math.PI * 2;
+        const r = circleR * (0.2 + Math.random() * 0.5);
+        let spot = openGroundNear(tg, Math.cos(a) * r, Math.sin(a) * r);
+        chest = { x: spot.x, y: spot.y, until: t + CHEST_TTL_MS, claimed: false };
+        nextChestAt = t + CHEST_EVERY_MS;
+        try {
+            const total = 900 + ((Math.random() * 600) | 0);
+            const n = 6;
+            for (let i = 0; i < n; i++) {
+                const ga = (i / n) * Math.PI * 2;
+                gems.spawnGem(spot.x + Math.cos(ga) * 40, spot.y + Math.sin(ga) * 40,
+                    Math.round(total / n), 'gemPickupLoot', 12, Math.cos(ga), Math.sin(ga));
+            }
+        } catch { /* */ }
+        try { global.gameManager.socketManager.broadcast("Loot chest dropped. First tank there takes it."); } catch { /* */ }
+        broadcast({ toast: "Loot chest. Go take it." });
+    }
+    if (chest && !chest.claimed) {
+        for (const body of combatants()) {
+            const dx = body.x - chest.x, dy = body.y - chest.y;
+            if (dx * dx + dy * dy < 120 * 120) {
+                chest.claimed = true;
+                try {
+                    body.carriedGems = (body.carriedGems | 0) + 150;
+                    gems.updateSatchel(body);
+                    gems.talkGems(body, 150);
+                } catch { /* */ }
+                killFeed.push({ name: body.name || "Unnamed", by: "", verb: "claimed", storm: 0, place: 0, at: t, chest: 1 });
+                break;
+            }
+        }
+    }
+}
+
+function tickVaultPinch(t) {
+    if (t - lastVaultPinchAt < 15000) return;
+    const st = storm.snapshot(t);
+    if (!st.a) return;
+    const list = vault.getVaults();
+    for (const v of list) {
+        const d = Math.hypot(v.x - st.cx, v.y - st.cy);
+        const margin = st.r - d;
+        if (margin > 0 && margin < st.max * 0.18) {
+            lastVaultPinchAt = t;
+            broadcast({ toast: "Storm is about to pinch a vault. Bank now or move." });
+            return;
+        }
+    }
+}
+
+function wipeWall() {
+    const tg = global.gameManager.terrainGrid;
+    if (!tg || !tg.rocks) return;
+    const t = now();
+    let queued = 0;
+    for (const rock of tg.rocks.values()) {
+        if (rock.alive || rock.growing) continue;
+        if (!rock.diedAt) continue;
+        if (rock.canyon) continue;
+        try { tg.startRegrow(rock, t + (queued % 20) * 50); } catch { /* */ }
+        queued++;
+        if (queued > 900) break;
+    }
+}
+
+function startRaid(first) {
+    raidId++;
+    raidStartAt = now();
+    raidEndsAt = raidStartAt + RAID_MS;
+    raidStats = new Map();
+    killFeed = [];
+    occupy.clear();
+    lockout.clear();
+    bloom = null;
+    chest = null;
+    nextBloomAt = now() + 45_000;
+    nextChestAt = now() + 90_000;
+    raidResults = null;
+    if (!poisCarved) {
+        try { require('../../terrain/royaleLayout.js').carveMatchPois(global.gameManager.terrainGrid); } catch { /* */ }
+        poisCarved = true;
+    }
+    storm.start();
+    if (!first) {
+        wipeWall();
+        try {
+            for (const e of [...entities.values()]) {
+                if (e && e.isGemPickup && !e.isDead?.()) e.kill();
+            }
+        } catch { /* */ }
+        try { outposts.resetRoyale && outposts.resetRoyale(); } catch { /* */ }
+        occupy.clear();
+        lockout.clear();
+        for (const body of combatants()) {
+            const hole = randomPit();
+            moveTo(body, hole.x, hole.y);
+            freshRaidBody(body);
+            giveStarterKit(body, false);
+            ensureStat(body);
+        }
+        for (const client of connectedClients()) {
+            if (client.player && client.player.body && !client.player.body.isDead?.()) continue;
+            client.royaleNeedClick = false;
+            client.status.readyToSpawn = true;
+        }
+    }
+    broadcast({ toast: first ? "Raid live. Mine, bank, fight. Storm is the clock." : "New raid. Wall regrowing. Go." });
+}
+
+function endRaid() {
+    const board = boardSnapshot();
+    const top = board.slice(0, 10);
+    const bonuses = [500, 350, 250, 180, 140, 110, 90, 70, 50, 40];
+    for (let i = 0; i < top.length; i++) {
+        const row = top[i];
+        for (const client of connectedClients()) {
+            const key = client.id ? "s:" + client.id : null;
+            const s = key ? raidStats.get(key) : null;
+            if (s && s.name === row.name && scoreOf(s) === row.score) {
+                client.raidBonus = (client.raidBonus | 0) + bonuses[i];
+                const sc = scoreOf(s);
+                if (sc > (client.raidPB | 0)) client.raidPB = sc;
+            }
+        }
+    }
+    for (const client of connectedClients()) {
+        const key = client.id ? "s:" + client.id : null;
+        const s = key ? raidStats.get(key) : null;
+        if (s) {
+            const sc = scoreOf(s);
+            if (sc > (client.raidPB | 0)) client.raidPB = sc;
+        }
+    }
+    raidResults = { raidId, top, at: now() };
+    raidResultsAt = now();
+    try {
+        const names = top.slice(0, 3).map((r, i) => "#" + (i + 1) + " " + r.name).join(", ");
+        global.gameManager.socketManager.broadcast("Raid over. Top: " + (names || "no scores") + ". New raid starting.");
+    } catch { /* */ }
+    broadcast({ toast: "Raid over. Paying top 10. New raid starting." });
+    setTimeout(() => {
+        try {
+            for (const client of connectedClients()) {
+                if (client.socket) { /* noop */ }
+                if (client.gemBanked) client.gemBanked = 0;
+                client._milestoneIdx = 0;
+            }
+            for (const body of combatants()) {
+                body.carriedGems = 0;
+                body.botBanked = 0;
+                body.bankedGems = 0;
+                if (body.socket) body.socket.gemBanked = 0;
+                try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
+            }
+        } catch { /* */ }
+        startRaid(false);
+    }, 8000);
+}
+
+function tick() {
+    if (!Config.dig_royale) return;
+    const t = now();
+    if (!raidId) startRaid(true);
+    if (t >= raidEndsAt && !raidResults) {
+        endRaid();
+        return;
+    }
+    if (raidResults && t - raidResultsAt > 8000) raidResults = null;
+    storm.ensureActive();
+    storm.tickDamage(t);
+    tickOutpostRules(t);
+    tickBloom(t);
+    tickChest(t);
+    tickVaultPinch(t);
+    fillBots();
+    const rMax = (global.gameManager.terrainGrid && global.gameManager.terrainGrid.circleRadius) || 2700;
+    for (const body of combatants()) {
+        const d = Math.hypot(body.x, body.y);
+        if (d > rMax - 24) {
+            const s = (rMax - 24) / (d || 1);
+            body.x *= s;
+            body.y *= s;
+        }
+        const key = statKeyFor(body);
+        const s = key ? raidStats.get(key) : null;
+        if (s) { s.alive = true; s.lastSeen = t; }
+    }
+    for (const s of raidStats.values()) {
+        if (t - s.lastSeen > 30000) s.alive = false;
+    }
+    if (t - (tick._broadcastAt || 0) >= 500) {
+        tick._broadcastAt = t;
+        broadcast();
+    }
+}
+
 function stormFleePoint(body) {
     if (!storm.inStorm(body.x, body.y)) return null;
     const r = Math.max(40, storm.radius() - 80);
-    const d = Math.hypot(body.x, body.y) || 1;
-    return { x: (body.x / d) * r, y: (body.y / d) * r };
+    const d = Math.hypot(body.x - storm.snapshot().cx, body.y - storm.snapshot().cy) || 1;
+    const st = storm.snapshot();
+    const dx = (body.x - st.cx) / d, dy = (body.y - st.cy) / d;
+    return { x: st.cx + dx * r, y: st.cy + dy * r };
 }
 
 class DigRoyale {
     constructor(gameManager) { this.gameManager = gameManager; }
-    start() { go('idle'); storm.stop(); }
-    loop() { /* occupancy + clock run from the terrain tick */ }
-    reset() { resetMatch(); }
+    start() { startRaid(true); }
+    loop() { /* clock runs from the terrain tick */ }
+    reset() { startRaid(false); }
     redefine(gm) { this.gameManager = gm; }
 }
 
 module.exports = {
-    DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, phase: () => phase, isLobbyPhase, stormFleePoint,
-    lobbyPos, tick, FILL_CAP,
+    DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, phase, isLobbyPhase, stormFleePoint,
+    lobbyPos, tick, onBanked, onCapture, FILL_CAP,
 };

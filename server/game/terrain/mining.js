@@ -59,10 +59,14 @@ function rockHitsFor(owner, projectile) {
 
 function skillFactor(owner) {
     const raw = owner && owner.skill && owner.skill.raw;
-    if (!raw) return 1;
-    const cap = Config.skill_cap || 9;
-    const invested = (raw[1] + raw[2] + raw[3]) / (3 * cap);
-    return 0.1 + 0.9 * Math.min(1, invested);
+    let f = 1;
+    if (raw) {
+        const cap = Config.skill_cap || 9;
+        const invested = (raw[1] + raw[2] + raw[3]) / (3 * cap);
+        f = 0.1 + 0.9 * Math.min(1, invested);
+    }
+    if (owner && owner.weakDrillUntil && Date.now() < owner.weakDrillUntil) f *= 0.55;
+    return f;
 }
 
 // ── Body grinding: how ram tanks (and ram builds) mine ───────────────────
@@ -72,17 +76,15 @@ function skillFactor(owner) {
 function grindSecondsFor(owner) {
     const raw = owner && owner.skill && owner.skill.raw;
     const b = raw ? raw[6] : 0;
-    // A gunless tank - the whole smasher branch - has no projectiles and so no
-    // other way to mine at all. It always grinds; body damage only sets how
-    // fast. Everything else still needs a point in body damage first.
     const gunless = !!(owner && owner.guns && owner.guns.size === 0);
-    // A gunless tank mines ONLY by grinding, so it must never be unable to.
-    // The old floor of 0.75 was technically non-zero but so slow it read as
-    // broken, so treat an uninvested rammer as if it had 3 points. Investing
-    // still speeds it up threefold on the way to the cap.
-    if (gunless) return 18.5 / Math.max(b, 3);
-    if (!(b >= 1)) return null;
-    return 18.5 / b;
+    let sec;
+    if (gunless) sec = 18.5 / Math.max(b, 3);
+    else {
+        if (!(b >= 1)) return null;
+        sec = 18.5 / b;
+    }
+    if (owner && owner.weakDrillUntil && Date.now() < owner.weakDrillUntil) sec *= 1.8;
+    return sec;
 }
 
 module.exports = { rockHitsFor, skillFactor, grindSecondsFor, MINE_HITS, MINE_HITS_DEFAULT };

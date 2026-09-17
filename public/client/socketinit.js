@@ -1191,8 +1191,7 @@ let incoming = async function(message, socket) {
                 try {
                     const d = JSON.parse(m[0]);
                     const r = global.royale;
-                    const wasOver = r.phase === 'over';
-                    r.phase = d.phase || 'idle';
+                    r.phase = d.phase || 'live';
                     r.left = d.left | 0;
                     r.alive = d.alive | 0;
                     r.toast = d.toast || '';
@@ -1201,16 +1200,21 @@ let incoming = async function(message, socket) {
                     r.feed = d.feed || [];
                     r.board = d.board || [];
                     r.at = performance.now();
-                    if ((d.matchId | 0) && (d.matchId | 0) !== (r.matchId | 0)) {
-                        r.place = global.royaleDied ? r.place : 0;
-                    }
+                    r.raidId = d.raidId | 0 || d.matchId | 0 || r.raidId;
+                    r.raidLeft = d.raidLeft | 0 || d.left | 0;
+                    r.youScore = d.youScore | 0;
+                    r.youPB = d.youPB | 0;
+                    r.objectives = d.objectives || [];
+                    r.bloom = d.bloom || null;
+                    r.chest = d.chest || null;
+                    r.results = d.results || null;
                     r.matchId = d.matchId | 0;
                     if (d.youPlace > 0) r.place = d.youPlace | 0;
-                    if (r.phase === 'over' && !wasOver) r.victoryAt = performance.now();
-                    if (r.phase !== 'over') r.victoryAt = 0;
-                    if ((r.phase === 'lobby' || r.phase === 'idle') && !global.royaleDied) {
-                        r.place = 0;
-                        global.royaleSpectating = false;
+                    if (d.youPB > 0) {
+                        try {
+                            const prev = parseInt(localStorage.getItem('digwarsRaidPB') || '0', 10) || 0;
+                            if (d.youPB > prev) localStorage.setItem('digwarsRaidPB', String(d.youPB));
+                        } catch { /* */ }
                     }
                 } catch (e) { /* ignore */ }
             } break;
@@ -1358,12 +1362,11 @@ let incoming = async function(message, socket) {
                 global.serverStats.players = m[1];
             } break;
             case 'c': {
-                // The camera packet is sent after a successful spawn. Use it as
-                // the acknowledgement for the respawn request.
                 global.respawnPending = false;
                 global.died = false;
                 global.royaleSpectating = false;
                 global.royaleDied = false;
+                global.raidRespawnAt = 0;
                 global.player.renderx = global.player.cx.x = m[0];
                 global.player.rendery = global.player.cy.y = m[1];
                 global.player.renderv = global.player.view = m[2];
@@ -1570,13 +1573,11 @@ let incoming = async function(message, socket) {
             global.died = true;
             const deathPlace = m[13 + m[8]] | 0;
             if (deathPlace > 0) global.royale.place = deathPlace;
-            const rp = global.royale && global.royale.phase;
-            if (global.finalCause === "storm" || (global.royale && global.royale.at > 0 &&
-                rp !== 'lobby' && rp !== 'idle')) {
+            if (global.royale && global.royale.at > 0) {
                 global.royaleDied = true;
-                global.royaleSpectating = true;
+                global.royaleSpectating = false;
+                global.raidRespawnAt = performance.now() + 5000 + Math.random() * 3000;
             }
-            global.royaleSpectating = false;
             global.autoSpin = false;
             global.syncingWithTank = false;
             global.clickables.mobileButtons.active = false;

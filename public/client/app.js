@@ -2591,15 +2591,22 @@ import * as tutorial from './tutorial.js';
         return !!(global.royale && global.royale.at > 0);
     }
     function royaleLobbyPhase() {
-        const p = global.royale && global.royale.phase;
-        return royaleActive() && (p === 'lobby' || p === 'idle');
+        return false;
     }
     function royaleBoardRows() {
         const b = (global.royale && global.royale.board) || [];
-        const sort = (global.royaleBoard && global.royaleBoard.sort) || 'gems';
-        return b.slice().sort((x, y) =>
-            sort === 'kills' ? (y.kills - x.kills) || (y.gems - x.gems)
-                             : (y.gems - x.gems) || (y.kills - x.kills));
+        const sort = (global.royaleBoard && global.royaleBoard.sort) || 'score';
+        return b.slice().sort((x, y) => {
+            if (sort === 'kills') return (y.kills - x.kills) || ((y.score || y.gems) - (x.score || x.gems));
+            if (sort === 'gems') return (y.gems - x.gems) || (y.kills - x.kills);
+            return ((y.score || y.gems) - (x.score || x.gems)) || (y.kills - x.kills);
+        });
+    }
+    function fmtRaidClock(sec) {
+        sec = Math.max(0, sec | 0);
+        const h = (sec / 3600) | 0, m = ((sec % 3600) / 60) | 0, s = sec % 60;
+        if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+        return m + ":" + String(s).padStart(2, "0");
     }
     function makeVaultSprites(pal = GOLD_PAL) {
         const S = 256, C = S / 2;
@@ -5126,18 +5133,20 @@ import * as tutorial from './tutorial.js';
         if (!royaleActive()) return;
         const r = global.royale;
         const cx = global.screenWidth / 2;
-        if (r.phase === "lobby") {
-            drawText("BATTLE BEGINS IN", cx, 42, 16, color.guiwhite, "center");
-            drawText((r.left | 0) + "s", cx, 82, 40, color.gold, "center");
-            drawText("Warm-up - rocks only, nobody can hurt you", cx, 114, 13, color.guiwhite, "center");
-        } else if (r.phase === "loadout") {
-            drawText("UPGRADE YOUR BUILD", cx, 42, 18, color.guiwhite, "center");
-            drawText((r.left | 0) + "s - upgrades only", cx, 80, 24, color.gold, "center");
-        } else if (r.phase === "live") {
-            drawText("ALIVE  " + (r.alive | 0), cx, 36, 20, color.guiwhite, "center");
-            if (r.place > 0) drawText("#" + r.place, cx, 62, 16, color.gold, "center");
-        } else if (r.phase === "idle") {
-            drawText("WAITING FOR PLAYERS", cx, 48, 18, color.guiwhite, "center");
+        drawText("RAID " + fmtRaidClock(r.raidLeft | 0) + "   ALIVE " + (r.alive | 0), cx, 30, 15, color.guiwhite, "center");
+        const st = r.storm || {};
+        if (st.a) {
+            const label = st.hold ? ("STORM HOLD " + (st.left | 0) + "s") : ("STORM SHRINKS " + (st.left | 0) + "s");
+            drawText(label + "  C" + ((st.c | 0) + 1), cx, 50, 13, st.hold ? color.gold : color.guiwhite, "center");
+        }
+        if (r.place > 0) drawText("#" + r.place + "  " + util.formatLargeNumber(r.youScore | 0) + " pts", cx, 70, 13, color.gold, "center");
+        else if (r.youScore > 0) drawText(util.formatLargeNumber(r.youScore | 0) + " pts", cx, 70, 13, color.gold, "center");
+        if (r.toast) drawText(r.toast, cx, 90, 13, color.guiwhite, "center");
+        const objs = r.objectives || [];
+        for (let i = 0; i < Math.min(3, objs.length); i++) {
+            const o = objs[i];
+            const label = o.kind === "bloom" ? "Ore bloom active" : o.kind === "chest" ? "Loot chest dropped" : (o.name || "Outpost") + " contested";
+            drawText(label, cx, 110 + i * 17, 12, color.gold, "center");
         }
         if (r.occupy > 0) {
             drawText("Pad eject in " + r.occupy + "s", cx, global.screenHeight - 56, 16, color.gold, "center");
@@ -5150,7 +5159,9 @@ import * as tutorial from './tutorial.js';
             if (!f) continue;
             const y = 42 + i * 18;
             const right = global.screenWidth - 18;
-            if (f.storm) {
+            if (f.chest) {
+                drawText((f.name || "Someone") + " claimed the loot chest", right, y, 13, color.gold, "right");
+            } else if (f.storm) {
                 drawText((f.name || "Someone") + " was lost in the storm", right, y, 13, color.guiwhite, "right");
             } else {
                 const verb = f.verb || "killed";
@@ -5158,7 +5169,7 @@ import * as tutorial from './tutorial.js';
                          right, y, 13, color.guiwhite, "right");
             }
         }
-        if (playerInStorm() && r.phase === "live") {
+        if (playerInStorm()) {
             const c = ctx[2];
             c.save();
             c.fillStyle = "rgba(160, 35, 35, 0.28)";
@@ -5170,49 +5181,34 @@ import * as tutorial from './tutorial.js';
         }
     }
 
+    function drawRaidResults() {
+        const r = global.royale;
+        if (!royaleActive() || !r.results || !r.results.top) return;
+        const c = ctx[2];
+        const cx = global.screenWidth / 2, cy = global.screenHeight * 0.34;
+        const rows = r.results.top.slice(0, 10);
+        const PW = Math.min(420, global.screenWidth - 40);
+        const PH = 64 + rows.length * 22;
+        const px = cx - PW / 2, py = cy - PH / 2;
+        c.save();
+        c.fillStyle = "rgba(16,17,22,0.94)";
+        c.fillRect(px, py, PW, PH);
+        c.lineWidth = 3;
+        c.strokeStyle = color.black;
+        c.strokeRect(px, py, PW, PH);
+        c.restore();
+        drawText("RAID OVER. TOP 10 PAID.", cx, py + 26, 16, color.gold, "center");
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            drawText("#" + (i + 1) + " " + (row.name || "Unnamed") + "  " + util.formatLargeNumber(row.score | 0),
+                cx, py + 52 + i * 22, 13, color.guiwhite, "center");
+        }
+    }
+
     // Full-screen victory/defeat banner while the war round is being decided.
     function drawWarBanner() {
-        const r = global.royale;
-        if (royaleActive() && r.phase === "over") {
-            const now = performance.now();
-            const since = Math.max(0, now - (r.victoryAt || r.at || now));
-            const fade = Math.min(1, since / 280);
-            const name = (r.winner && r.winner.name) || "Someone";
-            const youWin = r.winner && gui && r.winner.id === gui.playerid;
-            const c = ctx[2];
-            const cx = global.screenWidth / 2, cy = global.screenHeight * 0.38;
-            c.save();
-            c.globalAlpha = fade;
-            c.fillStyle = "rgba(0,0,0," + (0.45 + 0.12 * Math.sin(now / 400)) + ")";
-            c.fillRect(0, 0, global.screenWidth, global.screenHeight);
-            const pulse = 1 + 0.04 * Math.sin(now / 180);
-            for (let i = 3; i >= 1; i--) {
-                c.beginPath();
-                c.arc(cx, cy - 10, (90 + i * 38) * pulse, 0, Math.PI * 2);
-                c.strokeStyle = i === 1 ? color.gold : "rgba(255,215,94," + (0.18 / i) + ")";
-                c.lineWidth = i === 1 ? 4 : 2;
-                c.stroke();
-            }
-            const bits = 42;
-            for (let i = 0; i < bits; i++) {
-                const a = (now / 700) + i * (Math.PI * 2 / bits);
-                const rad = 130 + (i % 5) * 16 + 10 * Math.sin(now / 200 + i);
-                const x = cx + Math.cos(a) * rad;
-                const y = cy - 10 + Math.sin(a) * rad * 0.55;
-                c.fillStyle = i % 2 ? color.gold : color.guiwhite;
-                c.fillRect(x - 2, y - 2, 4, 4);
-            }
-            drawText(youWin ? "VICTORY" : "CROWNED", cx, cy - 58, 18, color.guiwhite, "center");
-            drawText(name.toUpperCase(), cx, cy - 8, 42 * pulse, color.gold, "center");
-            drawText("WINS THE ROYALE", cx, cy + 36, 22, color.guiwhite, "center");
-            drawText("Press Play for the next drop", cx, cy + 68, 14, color.guiwhite, "center");
-            const cr = global.canvas.height / global.screenHeight / global.ratio;
-            drawButton(cx - 90, cy + 92, 150, 34, 1, "rect", "Play", 16, false, false, false, true, "deathRespawn", cr, 0);
-            drawButton(cx + 90, cy + 92, 150, 34, 1, "rect", "Home", 16, false, false, false, true, "exitGame", cr, 0);
-            global.royaleBarHits = global.royaleBarHits || {};
-            global.royaleBarHits.play = guiToClientRect(cx - 90 - 75, cy + 92, 150, 34);
-            global.royaleBarHits.home = guiToClientRect(cx + 90 - 75, cy + 92, 150, 34);
-            c.restore();
+        if (royaleActive() && global.royale.results) {
+            drawRaidResults();
             return;
         }
         const w = global.war;
@@ -5994,7 +5990,53 @@ import * as tutorial from './tutorial.js';
                 drawText(t.name || "Player", Math.round(mx), Math.round(my - dotR - 5), nameSize, color.guiwhite, "center");
             }
         }
-        
+        if (royaleActive()) {
+            const rr = global.royale || {};
+            const tnow = Date.now();
+            const pulse = 1 + 0.18 * Math.sin(performance.now() / 240);
+            if (rr.bloom) {
+                const mx = T.X(rr.bloom.x), my = T.Y(rr.bloom.y);
+                if (inside(mx, my)) {
+                    c.save();
+                    c.beginPath();
+                    c.arc(mx, my, Math.max(5, dotR * 2.6 * pulse), 0, Math.PI * 2);
+                    c.fillStyle = "rgba(239,199,75,0.85)";
+                    c.fill();
+                    c.lineWidth = 2;
+                    c.strokeStyle = color.black;
+                    c.stroke();
+                    c.restore();
+                    if (nameSize > 0) drawText("BLOOM", Math.round(mx), Math.round(my - dotR * 3.4), nameSize * 0.85, "#efc74b", "center");
+                }
+            }
+            if (rr.chest) {
+                const mx = T.X(rr.chest.x), my = T.Y(rr.chest.y);
+                if (inside(mx, my)) {
+                    const s = dotR * 2.2 * pulse;
+                    c.save();
+                    c.fillStyle = "#7de08a";
+                    c.strokeStyle = color.black;
+                    c.lineWidth = 2;
+                    c.fillRect(mx - s / 2, my - s / 2, s, s);
+                    c.strokeRect(mx - s / 2, my - s / 2, s, s);
+                    c.restore();
+                    if (nameSize > 0) drawText("CHEST", Math.round(mx), Math.round(my - s), nameSize * 0.85, "#7de08a", "center");
+                }
+            }
+            for (const o of (rr.objectives || [])) {
+                if (o.kind !== "contest" || (o.until && o.until < tnow)) continue;
+                const mx = T.X(o.x), my = T.Y(o.y);
+                if (!inside(mx, my)) continue;
+                c.save();
+                c.beginPath();
+                c.arc(mx, my, dotR * 2.1 * pulse, 0, Math.PI * 2);
+                c.strokeStyle = "#e03e41";
+                c.lineWidth = 2.5;
+                c.stroke();
+                c.restore();
+            }
+        }
+
         const px = T.X(global.player.renderx), py = T.Y(global.player.rendery);
         if (inside(px, py)) {
             const ang = Math.atan2(global.target.y, global.target.x);
@@ -6296,7 +6338,9 @@ import * as tutorial from './tutorial.js';
     function drawRoyaleFTabBody(x, y, w, h, tab) {
         const rows = tab === "feed"
             ? (global.royale.feed || []).slice().reverse().map(f => ({
-                name: f.storm
+                name: f.chest
+                    ? ((f.name || "Unnamed") + " claimed the loot chest")
+                    : f.storm
                     ? ((f.name || "Unnamed") + " was lost in the storm")
                     : ((f.by || "Someone") + " " + (f.verb || "killed") + " " + (f.name || "Unnamed")),
                 extra: f.place ? ("#" + f.place) : "",
@@ -6308,7 +6352,7 @@ import * as tutorial from './tutorial.js';
                 }))
                 : royaleBoardRows().map((r, i) => ({
                     name: (i + 1) + ". " + (r.name || "Unnamed") + (r.alive === false ? "  X" : ""),
-                    extra: (r.kills | 0) + " elims   " + util.formatLargeNumber(r.gems | 0),
+                    extra: util.formatLargeNumber(r.score || r.gems | 0) + " pts  " + (r.kills | 0) + "K " + ((r.holds | 0) + "H"),
                 }));
         if (!rows.length) {
             drawText(tab === "alive" ? "Nobody is alive" : "Nobody here yet", x + w / 2, y + h / 2, 16, color.guiwhite, "center");
@@ -7449,7 +7493,7 @@ import * as tutorial from './tutorial.js';
         }
     };
     // ── Royale death screen ──────────────────────────────────────────────
-    // Fortnite-style: huge placement, run stats, spectate-or-home. No respawn.
+    // Raid: death is a tax. Short countdown, auto respawn, weak drill on return.
     const gameDrawDeadRoyale = () => {
         let glide = global.deathAnimation.get();
         clearScreen(color.black, 0.32 + 0.28 * global.lerp(0, 0.5, glide), ctx[2]);
@@ -7457,7 +7501,7 @@ import * as tutorial from './tutorial.js';
         const cx = global.screenWidth / 2;
         const place = global.royale.place | 0;
         const PW = Math.min(480, global.screenWidth - 40);
-        const PH = 250;
+        const PH = 270;
         const px = cx - PW / 2;
         const py = Math.max(20, global.screenHeight / 2 - PH / 2);
         c.save();
@@ -7468,36 +7512,35 @@ import * as tutorial from './tutorial.js';
         c.strokeRect(px, py, PW, PH);
         c.restore();
         drawText("YOU DIED", cx, py + 36, 22, color.gold, "center");
-        drawText(place > 0 ? ("#" + place) : "Eliminated", cx, py + 84, 36, color.guiwhite, "center");
+        drawText(place > 0 ? ("#" + place + "  " + util.formatLargeNumber(global.royale.youScore | 0) + " pts") : "Raid continues", cx, py + 80, 20, color.guiwhite, "center");
         const kills = Math.round(global.finalKills[0].get());
         const gems = (global.finalBanked | 0) + (global.finalCarried | 0);
         drawText(kills + " elims   " + util.formatLargeNumber(gems) + " gems   " + compactTime(global.finalLifetime.get()),
-                 cx, py + 124, 14, color.guiwhite, "center");
+                 cx, py + 110, 14, color.guiwhite, "center");
         const cause = global.finalCause || "";
         const killedBy = cause === "rock" ? "Crushed by the living rock"
             : cause === "storm" ? "Lost in the storm"
             : global.finalKillers.length
                 ? "Taken down by " + global.finalKillers.join(" and ")
                 : "Nobody finished you off";
-        drawText(killedBy, cx, py + 150, 13, color.grey, "center");
-        drawText("No respawns - spectate or return home", cx, py + 174, 12, color.guiwhite, "center");
+        drawText(killedBy, cx, py + 134, 13, color.grey, "center");
+        drawText("Banked gems kept. Satchel dropped. Drill weak for 30s.", cx, py + 156, 12, color.guiwhite, "center");
+        const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
+        if (waitMs <= 0 && !global.disconnected && !global.respawnPending) {
+            try { global.canvas.respawn(); } catch { /* */ }
+        }
+        drawText(waitMs > 0 ? ("Respawning in " + Math.ceil(waitMs / 1000) + "s") : "Respawning", cx, py + 180, 14, color.gold, "center");
         global.clickables.royalePrev.hide();
         global.clickables.royaleNext.hide();
         const by = py + PH - 46;
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         const ga = global.lerp(3, 3.25, glide);
         if (!global.disconnected) {
-            const phase = global.royale && global.royale.phase;
-            const canRequeue = phase === 'lobby' || phase === 'idle';
-            if (canRequeue) {
-                drawButton(cx - 90, by, 150, 32, ga, "rect", "Play", 15, false, false, false, true, "deathRespawn", cr, 0);
-            } else {
-                drawButton(cx - 90, by, 150, 32, ga, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
-            }
+            drawButton(cx - 90, by, 150, 32, ga, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
             drawButton(cx + 90, by, 150, 32, ga, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
             global.royaleBarHits = {
-                spectate: canRequeue ? null : guiToClientRect(cx - 90 - 75, by, 150, 32),
-                play: canRequeue ? guiToClientRect(cx - 90 - 75, by, 150, 32) : null,
+                spectate: guiToClientRect(cx - 90 - 75, by, 150, 32),
+                play: null,
                 prev: null,
                 next: null,
                 home: guiToClientRect(cx + 90 - 75, by, 150, 32),
@@ -7506,7 +7549,7 @@ import * as tutorial from './tutorial.js';
     };
     const drawRoyaleSpectateBar = () => {
         const sw = global.screenWidth;
-        const barW = Math.min(560, sw - 40);
+        const barW = Math.min(620, sw - 40);
         const x = (sw - barW) / 2;
         const y = 10;
         const h = 36;
@@ -7519,10 +7562,13 @@ import * as tutorial from './tutorial.js';
         c.strokeRect(x, y, barW, h);
         c.restore();
         const place = global.royale.place | 0;
-        drawText("Spectating" + (place > 0 ? ("  #" + place) : ""), x + barW / 2, y + 24, 14, color.guiwhite, "center");
+        const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
+        if (waitMs <= 0 && global.died && !global.disconnected && !global.respawnPending) {
+            try { global.canvas.respawn(); } catch { /* */ }
+        }
+        const label = "Spectating" + (place > 0 ? ("  #" + place) : "") + (waitMs > 0 ? ("  Respawn " + Math.ceil(waitMs / 1000) + "s") : "");
+        drawText(label, x + barW / 2, y + 24, 14, color.guiwhite, "center");
         const cr = global.canvas.height / global.screenHeight / global.ratio;
-        const phase = global.royale && global.royale.phase;
-        const canPlay = phase === "lobby" || phase === "idle" || phase === "over";
         drawButton(x + 56, y + 3, 100, 30, 1, "rect", "Prev", 14, false, false, false, true, "royalePrev", cr, 0);
         drawButton(x + 166, y + 3, 100, 30, 1, "rect", "Next", 14, false, false, false, true, "royaleNext", cr, 0);
         global.royaleBarHits = {
@@ -7532,15 +7578,8 @@ import * as tutorial from './tutorial.js';
             play: null,
             home: null,
         };
-        if (canPlay) {
-            drawButton(x + barW - 160, y + 3, 90, 30, 1, "rect", "Play", 14, false, false, false, true, "deathRespawn", cr, 0);
-            drawButton(x + barW - 58, y + 3, 90, 30, 1, "rect", "Home", 14, false, false, false, true, "exitGame", cr, 0);
-            global.royaleBarHits.play = guiToClientRect(x + barW - 160 - 45, y + 3, 90, 30);
-            global.royaleBarHits.home = guiToClientRect(x + barW - 58 - 45, y + 3, 90, 30);
-        } else {
-            drawButton(x + barW - 58, y + 3, 90, 30, 1, "rect", "Home", 14, false, false, false, true, "exitGame", cr, 0);
-            global.royaleBarHits.home = guiToClientRect(x + barW - 58 - 45, y + 3, 90, 30);
-        }
+        drawButton(x + barW - 58, y + 3, 90, 30, 1, "rect", "Home", 14, false, false, false, true, "exitGame", cr, 0);
+        global.royaleBarHits.home = guiToClientRect(x + barW - 58 - 45, y + 3, 90, 30);
     };
     const applyScreenShake = (type = "camera", returnOption = false) => {
         let properties = type == "gui" ? config.graphical.shakeProperties.UIShake : config.graphical.shakeProperties.CameraShake;

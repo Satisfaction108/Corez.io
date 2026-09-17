@@ -304,4 +304,4 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     }
 }
 
-module.exports = { apply, carveMatchPois, OUTPOSTS, ORE };
+module.exports = { apply, carveMatchPois, OUTPOSTS, ORE, radialOre, hash01 };

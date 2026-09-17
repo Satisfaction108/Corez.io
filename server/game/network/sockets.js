@@ -1885,9 +1885,13 @@ class socketManager {
                             socket.lastDeathY = player.body.y;
 
                             if (Config.dig_royale) {
-                                try { require('../gamemodes/scripts/dig_royale.js').onCombatantDead(player.body); } catch (e) { /* */ }
-                                socket.royaleNeedClick = true;
-                                socket.status.readyToSpawn = false;
+                                try {
+                                    const dr = require('../gamemodes/scripts/dig_royale.js');
+                                    dr.onCombatantDead(player.body);
+                                    if (dr.markHumanDeath) dr.markHumanDeath(socket);
+                                } catch (e) { /* */ }
+                                socket.royaleNeedClick = false;
+                                socket.status.readyToSpawn = true;
                             }
 
                             
