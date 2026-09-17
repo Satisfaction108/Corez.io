@@ -161,7 +161,7 @@ function objectivesSnapshot(t) {
     const list = outposts.getOutposts();
     for (const site of list) {
         if (site._contestedUntil && site._contestedUntil > t) {
-            out.push({ kind: "contest", id: site.id, name: site.name, x: Math.round(site.x), y: Math.round(site.y), until: site._contestedUntil });
+            out.push({ kind: "contest", id: site.id, name: site.name, c: site.color || null, x: Math.round(site.x), y: Math.round(site.y), until: site._contestedUntil });
         }
     }
     return out;

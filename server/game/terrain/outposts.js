@@ -105,6 +105,10 @@ function announce(msg) {
 
 const teamName = (team) => team === TEAM_BLUE ? "Blue" : team === TEAM_RED ? "Red" : "Someone";
 
+// Base-bank names wear the bank's fixed color in announcements (royale only;
+// drawText §codes accept raw hex, other modes fall back to plain names).
+const siteName = (s) => (Config.dig_royale && s && s.color ? "§" + s.color + "§" + s.name + "§reset§" : (s ? s.name : "Outpost"));
+
 function spawnStructure(site, team, owner = null) {
     site.team = team;
     site.ownerId = owner && owner.id ? owner.id : 0;
@@ -151,7 +155,7 @@ function spawnStructure(site, team, owner = null) {
                 site._contestedUntil = t + 10000;
                 if (t - (site._contestAnnAt || 0) > 25000) {
                     site._contestAnnAt = t;
-                    announce(site.name + " is contested. " + (attacker.name || "Someone") + " is breaking it.");
+                    announce(siteName(site) + " is contested. " + (attacker.name || "Someone") + " is breaking it.");
                 }
             }
         }
@@ -184,11 +188,11 @@ function onStructureDeath(site) {
         const killer = killerOf(dead, site);
         if (killer && killer.id !== site.ownerId) {
             spawnStructure(site, killer.team, killer);
-            announce(`${killer.name || "Someone"} captured the ${site.name}!`);
+            announce(`${killer.name || "Someone"} captured the ${siteName(site)}!`);
             try { require('../gamemodes/scripts/dig_royale.js').onCapture(killer, site); } catch { /* */ }
         } else {
             spawnStructure(site, 0, null);
-            if (site.ownerId) announce(`The ${site.name} has fallen!`);
+            if (site.ownerId) announce(`The ${siteName(site)} has fallen!`);
         }
         return;
     }

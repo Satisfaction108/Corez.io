@@ -2779,7 +2779,7 @@ import * as tutorial from './tutorial.js';
             // team claim ring
             c.globalAlpha = 0.75 + 0.2 * pulse;
             c.lineWidth = Math.max(2.5, R * 0.06);
-            c.strokeStyle = doneFlash > 0 ? pal.high : teamCol;
+            c.strokeStyle = doneFlash > 0 ? (rainbow ? teamCol : pal.high) : teamCol;
             c.beginPath(); c.arc(0, 0, R * 1.06, 0, Math.PI * 2); c.stroke();
             c.globalAlpha = 1;
 
@@ -3412,7 +3412,7 @@ import * as tutorial from './tutorial.js';
             const st = global.outpostState.find(s => s.id === o.id) || {};
             drawText(o.name, sx, sy - o.r * ratio * 1.55 - 4.5,
                      Math.min(32, o.r * ratio * 0.42),
-                     color.guiwhite, "center", false, 1, true, c);
+                     o.color || st.c || color.guiwhite, "center", false, 1, true, c);
             if (royaleActive() && st.l > 0) {
                 drawText(st.l + "s", sx, sy + o.r * ratio * 1.05,
                          Math.min(22, o.r * ratio * 0.28),
@@ -5003,7 +5003,9 @@ import * as tutorial from './tutorial.js';
             const bx = x + 20, bw = W - 40, by = y + 60, bh = 16;
             drawBar(bx, bx + bw, by + bh / 2, bh + config.graphical.barChunk, color.black);
             drawBar(bx, bx + bw, by + bh / 2, bh, color.grey);
-            drawBar(bx, bx + Math.max(6, bw * frac), by + bh / 2, bh - 1, "#ffd75e");
+            // Rainbow vaults bank in the vault's live hue; base banks stay gold.
+            const chanCol = (royaleActive() && !v.isOutpost) ? hsvCss((now / 12) % 360) : "#ffd75e";
+            drawBar(bx, bx + Math.max(6, bw * frac), by + bh / 2, bh - 1, chanCol);
             if (frac > 0.03) {
                 const shx = bx + ((now / 900) % 1) * bw * frac;
                 c.save();
@@ -5186,6 +5188,12 @@ import * as tutorial from './tutorial.js';
         drawText(util.formatLargeNumber(red), x + bw + 10, cy + 5, 13, color.red, "left");
     }
 
+    // Flat player-body hex for tinting your own banners and cards, or null.
+    function playerHexCol() {
+        const h = gameDraw.getColor(gui.color);
+        return (typeof h === "string" && h[0] === "#") ? h : null;
+    }
+
     function drawRoyaleHUD() {
         if (!royaleActive()) return;
         const r = global.royale;
@@ -5194,10 +5202,10 @@ import * as tutorial from './tutorial.js';
         const st = r.storm || {};
         if (st.a) {
             const label = st.hold ? ("STORM HOLD " + (st.left | 0) + "s") : ("STORM SHRINKS " + (st.left | 0) + "s");
-            drawText(label + "  C" + ((st.c | 0) + 1), cx, 50, 13, st.hold ? color.gold : color.guiwhite, "center");
+            drawText(label + "  C" + ((st.c | 0) + 1), cx, 50, 13, st.hold ? color.gold : "#b678e0", "center");
         }
         if (r.lock) {
-            drawText("FINAL STORM - NO RESPAWNS " + Math.max(0, r.lockLeft | 0) + "s", cx, 90, 13, "#ff7a7a", "center");
+            drawText("FINAL STORM - NO RESPAWNS " + Math.max(0, r.lockLeft | 0) + "s", cx, 90, 13, "#b678e0", "center");
         } else if (r.toast) drawText(r.toast, cx, 90, 13, color.guiwhite, "center");
         if (r.place > 0) drawText("#" + r.place + "  " + util.formatLargeNumber(r.youScore | 0) + " pts", cx, 70, 13, color.gold, "center");
         else if (r.youScore > 0) drawText(util.formatLargeNumber(r.youScore | 0) + " pts", cx, 70, 13, color.gold, "center");
@@ -5205,7 +5213,7 @@ import * as tutorial from './tutorial.js';
         for (let i = 0; i < Math.min(3, objs.length); i++) {
             const o = objs[i];
             if (o.kind !== "contest") continue;
-            drawText((o.name || "Outpost") + " contested", cx, 110 + i * 17, 12, color.gold, "center");
+            drawText((o.name || "Outpost") + " contested", cx, 110 + i * 17, 12, o.c || color.gold, "center");
         }
         if (r.occupy > 0) {
             drawText("Pad eject in " + r.occupy + "s", cx, global.screenHeight - 56, 16, color.gold, "center");
@@ -5224,7 +5232,12 @@ import * as tutorial from './tutorial.js';
                 drawText((f.name || "Someone") + " was crushed by the rock", right, y, 13, color.guiwhite, "right");
             } else {
                 const verb = f.verb || "killed";
-                drawText("§gold§" + (f.by || "Someone") + "§reset§ " + verb + " " + (f.name || "someone"),
+                // Your own name wears your body color in the feed; everyone else stays gold.
+                const myHex = playerHexCol(), myName = global.playerName || "";
+                const byCol = (myHex && (f.by || "") === myName) ? myHex : "gold";
+                const vic = (myHex && (f.name || "") === myName)
+                    ? ("§" + myHex + "§" + f.name + "§reset§") : (f.name || "someone");
+                drawText("§" + byCol + "§" + (f.by || "Someone") + "§reset§ " + verb + " " + vic,
                          right, y, 13, color.guiwhite, "right");
             }
         }
@@ -5327,17 +5340,18 @@ import * as tutorial from './tutorial.js';
 
             c.save();
             c.globalAlpha = a * 0.55;
+            const myCol = playerHexCol() || color.gold;
             const pw = 280 * pop, ph = 118 * pop;
             roundRectPath(c, cx - pw / 2, cy - ph / 2 - 8, pw, ph, 16);
             c.fillStyle = "rgba(18, 16, 10, 0.82)";
             c.fill();
             c.lineWidth = 3;
-            c.strokeStyle = color.gold;
+            c.strokeStyle = myCol;
             c.stroke();
             c.restore();
 
             c.save();
-            c.strokeStyle = color.gold;
+            c.strokeStyle = myCol;
             c.lineCap = "round";
             for (let r = 0; r < 3; r++) {
                 const ring = (40 + r * 22) + Math.min(120, age * (0.14 - r * 0.03));
@@ -5353,10 +5367,10 @@ import * as tutorial from './tutorial.js';
             c.globalAlpha = a;
             const titleSize = 42 * pop;
             const bonusSize = 26 * pop;
-            drawText("BANKED", cx, cy - 36 * pop, 14, color.gold, "center", true, 1, 7);
+            drawText("BANKED", cx, cy - 36 * pop, 14, myCol, "center", true, 1, 7);
             drawText(t.title, cx, cy + 2, titleSize, color.guiwhite, "center", true, 1, 4.5);
             if (t.bonus) {
-                drawText(t.bonus, cx, cy + 44 * pop, bonusSize, color.gold, "center", true, 1, 4.5);
+                drawText(t.bonus, cx, cy + 44 * pop, bonusSize, myCol, "center", true, 1, 4.5);
             }
             c.restore();
             break;
@@ -5565,8 +5579,10 @@ import * as tutorial from './tutorial.js';
             x = Math.max(56, Math.min(global.screenWidth - 56, x));
             y = Math.max(56, Math.min(global.screenHeight - 70, y));
 
+            // Your kill banner wears your body color.
+            const myCol = playerHexCol() || color.guiwhite;
             c.save();
-            c.strokeStyle = color.guiwhite;
+            c.strokeStyle = myCol;
             c.lineCap = "round";
             for (let r = 0; r < 2; r++) {
                 c.globalAlpha = fade * (0.7 - r * 0.28) * Math.max(0, 1 - age / 1100);
@@ -5585,7 +5601,7 @@ import * as tutorial from './tutorial.js';
             } else {
                 drawKillSkull(c, x, y - 12 * pop * ratio, 22 * pop * ratio);
             }
-            drawText("DEAD", x, y + 28 * pop * ratio, 17 * pop * ratio, color.guiwhite, "center", true, 1, 5.5);
+            drawText("DEAD", x, y + 28 * pop * ratio, 17 * pop * ratio, myCol, "center", true, 1, 5.5);
             c.restore();
         }
     }
@@ -6292,7 +6308,7 @@ import * as tutorial from './tutorial.js';
         if (hoverOutpost) {
             const st = global.outpostState.find(s => s.id === hoverOutpost.id) || {};
             const mx = T.X(hoverOutpost.x), my = T.Y(hoverOutpost.y);
-            drawText(hoverOutpost.name, Math.round(mx), Math.round(my - 16), 14, color.gold, "center");
+            drawText(hoverOutpost.name, Math.round(mx), Math.round(my - 16), 14, hoverOutpost.color || color.gold, "center");
             if (st.h > 0) {
                 const ownCol = st.t === -1 ? gameDraw.getColor("blue")
                             : st.t === -2 ? gameDraw.getColor("red") : gameDraw.getColor("yellow");
