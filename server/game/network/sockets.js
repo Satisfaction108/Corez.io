@@ -270,6 +270,14 @@ class socketManager {
                     const dr = require('../gamemodes/scripts/dig_royale.js');
                     dr.requestPlay();
                     if (dr.canSpawn()) socket.royaleNeedClick = false;
+                    else {
+                        // Final storm: no spawns. Queue them watching instead -
+                        // the spawn loop below drops them in when it lifts.
+                        socket.royaleWantsSpectate = true;
+                        if (!socket.spectateEntity || socket.spectateEntity.isDead?.()) {
+                            cycleSpectate(socket, 0);
+                        }
+                    }
                     const stillLive = socket.player?.body && !socket.player.body.isDead();
                     if (stillLive) return 1;
                 }
@@ -989,6 +997,7 @@ class socketManager {
             } break;
             case "RS": {
                 if (!socket.status.deceased) return 1;
+                socket.royaleWantsSpectate = true;
                 const code = m[0] | 0;
                 cycleSpectate(socket, code === 2 ? 0 : (code === 0 ? -1 : 1));
                 if (socket.spectateEntity && socket.camera) {
@@ -1493,6 +1502,7 @@ class socketManager {
         }
         body.become(player);
         socket.spectateEntity = null;
+        socket.royaleWantsSpectate = false;
         body.invuln = true;
         player.body = body;
         body.socket = socket;
@@ -1898,6 +1908,10 @@ class socketManager {
                             
                             
                             socket.spectateEntity = livingSpectateTarget(player.body.finalKillers);
+                            // Raid: the camera holds at the corpse. It only
+                            // follows a spectate target after Spectate/Prev/
+                            // Next is pressed (RS sets royaleWantsSpectate).
+                            if (Config.dig_royale) socket.royaleWantsSpectate = false;
 
                             socket.talk("F", ...player.records());
                             purge();
@@ -1928,20 +1942,20 @@ class socketManager {
                 if (player.body == null) {
                     fovNow = 2000;
                     camera.scoping = false;
-                    
-                    
-                    let hops = 0;
-                    while (socket.spectateEntity && socket.spectateEntity.isDead() && hops++ < 8) {
-                        socket.spectateEntity = livingSpectateTarget(socket.spectateEntity.finalKillers);
-                    }
-                    if (!socket.spectateEntity || socket.spectateEntity.isDead()) {
-                        cycleSpectate(socket, 1);
-                    }
-                    if (socket.spectateEntity) {
-                        
-                        
-                        camera.x = socket.spectateEntity.x;
-                        camera.y = socket.spectateEntity.y;
+
+                    const holdCorpse = Config.dig_royale && !socket.royaleWantsSpectate;
+                    if (!holdCorpse) {
+                        let hops = 0;
+                        while (socket.spectateEntity && socket.spectateEntity.isDead() && hops++ < 8) {
+                            socket.spectateEntity = livingSpectateTarget(socket.spectateEntity.finalKillers);
+                        }
+                        if (!socket.spectateEntity || socket.spectateEntity.isDead()) {
+                            cycleSpectate(socket, 1);
+                        }
+                        if (socket.spectateEntity) {
+                            camera.x = socket.spectateEntity.x;
+                            camera.y = socket.spectateEntity.y;
+                        }
                     }
                 }
 

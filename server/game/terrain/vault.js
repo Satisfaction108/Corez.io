@@ -4,9 +4,10 @@ const gems = require('./gems.js');
 const war = require('./war.js');
 const milestones = require('./milestones.js');
 
-const PAD_RADIUS   = 95;    
-const DEPOSIT_RATE = 300;   
-const PROGRESS_MS  = 50;   
+const PAD_RADIUS   = 95;
+const DEPOSIT_RATE = 300;
+const PROGRESS_MS  = 50;
+const PAD_EJECT_MS = 10_000;
 
 let vaults = null;
 
@@ -47,10 +48,47 @@ function talkProgress(body) {
     body.socket.talk('VP', d ? Math.ceil(d.remaining) : 0, d ? d.total : 0);
 }
 
+function releasePad(body) {
+    const v = body && body._vaultSite;
+    body._vaultSite = null;
+    if (v && v._depositor === body) v._depositor = null;
+}
+
+function padBusy(pad, body) {
+    const d = pad && pad._depositor;
+    return !!(d && d !== body && !d.isDead?.() && d.vaultDeposit);
+}
+
+function claimPad(pad, body) {
+    if (!pad || padBusy(pad, body)) return false;
+    releasePad(body);
+    pad._depositor = body;
+    body._vaultSite = pad;
+    return true;
+}
+
 function cancelDeposit(body, notify = true) {
-    if (!body.vaultDeposit) return;
+    if (!body || !body.vaultDeposit) { if (body) releasePad(body); return; }
     body.vaultDeposit = null;
+    releasePad(body);
     if (notify) talkProgress(body);
+}
+
+function ejectFromPad(body, pad, msg) {
+    if (!body || body.isDead?.()) return;
+    const dx = body.x - pad.x, dy = body.y - pad.y;
+    const d = Math.hypot(dx, dy);
+    const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
+    body.x = pad.x + Math.cos(n) * (pad.r + 28);
+    body.y = pad.y + Math.sin(n) * (pad.r + 28);
+    try {
+        const tg = global.gameManager.terrainGrid;
+        if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
+    } catch { /* */ }
+    body.velocity.x = Math.cos(n) * 9;
+    body.velocity.y = Math.sin(n) * 9;
+    body._vaultPadSince = 0;
+    if (msg) { try { body.sendMessage(msg); } catch { /* */ } }
 }
 
 const MIN_DEPOSIT = 15;  
@@ -72,6 +110,22 @@ function depositFor(body, amount) {
     amount = Math.floor(amount);
     const carried = body.carriedGems | 0;
     if (!(amount > 0) || carried < MIN_DEPOSIT) return false;
+    if (Config.dig_royale) {
+        let pad = null;
+        for (const v of getVaults()) {
+            const dx = body.x - v.x, dy = body.y - v.y;
+            if (dx * dx + dy * dy < v.r * v.r) { pad = v; break; }
+        }
+        if (!pad) return false;
+        if (!claimPad(pad, body)) {
+            const t = Date.now();
+            if (t - (body._vaultBusyAt || 0) > 3000) {
+                body._vaultBusyAt = t;
+                try { body.sendMessage("Vault is busy. One miner at a time."); } catch { /* */ }
+            }
+            return false;
+        }
+    }
     const total = Math.min(amount, carried);
     body.vaultDeposit = {
         remaining: total,
@@ -127,6 +181,23 @@ function tick(actors, dtMs) {
 
         const was = !!body.vaultOnPad;
         body.vaultOnPad = !!pad;
+        if (Config.dig_royale) {
+            if (pad && !was) body._vaultPadSince = now;
+            if (!pad) {
+                body._vaultPadSince = 0;
+                if (was) cancelDeposit(body, !!body.socket);
+            } else if (body._vaultPadSince && now - body._vaultPadSince > PAD_EJECT_MS) {
+                const had = !!body.vaultDeposit;
+                cancelDeposit(body, !!body.socket);
+                ejectFromPad(body, pad, had ? "Time up. Move along." : "No camping the vault.");
+                continue;
+            } else if (body.vaultDeposit && body._vaultSite && body._vaultSite !== pad) {
+                // Walked to a different pad mid-deposit: move the lock or stop.
+                if (!claimPad(pad, body)) { cancelDeposit(body, !!body.socket); continue; }
+            } else if (body.vaultDeposit && !body._vaultSite) {
+                if (!claimPad(pad, body)) { cancelDeposit(body, !!body.socket); continue; }
+            }
+        }
         if (was !== body.vaultOnPad && body.socket) {
             body.socket.talk('VU', body.vaultOnPad ? 1 : 0);
             if (!body.vaultOnPad) cancelDeposit(body);
@@ -172,13 +243,26 @@ function tick(actors, dtMs) {
             else talkProgress(body);
         }
         if (done) {
+            const padDone = pad;
             body.vaultDeposit = null;
+            releasePad(body);
             body.carriedGems = body.carriedGems | 0;
             const banked = body.socket ? (body.socket.gemBanked || 0) : (body.botBanked || 0);
             setBanked(body, Math.round(banked));
             gems.updateSatchel(body);
+            if (Config.dig_royale && padDone) ejectFromPad(body, padDone, "Cashed out. Move along.");
         }
     }
 }
 
-module.exports = { tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults };
+// Vaults with a live cash-out in progress. Bullets fizzle inside these.
+function occupiedVaults() {
+    const out = [];
+    for (const v of getVaults()) {
+        const d = v._depositor;
+        if (d && !d.isDead?.() && d.vaultDeposit) out.push(v);
+    }
+    return out;
+}
+
+module.exports = { tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, occupiedVaults };

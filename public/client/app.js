@@ -1167,6 +1167,10 @@ import * as tutorial from './tutorial.js';
 
         if (global.gameLoading) return;
         global.gameLoading = true;
+        global.raidQueued = false;
+        global.royaleSpectating = false;
+        global.royaleDied = false;
+        global.raidRespawnAt = 0;
         // Play must not inherit a leftover /tut path or tutorial overlay from
         // a previous click. Only launchTutorial() sets launchingTutorial.
         if (!global.launchingTutorial && !global.launchingDigWars) {
@@ -3423,7 +3427,10 @@ import * as tutorial from './tutorial.js';
         const s = global.royale && global.royale.storm;
         if (!s || !s.a) return null;
         if (s.n == null) return s;
-        const t = Math.min(1, Math.max(0, (performance.now() - global.royale.at) / 250));
+        // RY lands every 500ms but n predicts +250ms. Clamping at 1 used to
+        // glide, freeze, glide (the stutter). Extrapolate at the same rate
+        // instead so the edge moves continuously; the cap only guards stalls.
+        const t = Math.min(4, Math.max(0, (performance.now() - global.royale.at) / 250));
         return Object.assign({}, s, { r: (s.r || 0) + ((s.n || s.r) - s.r) * t });
     }
     function circleRadiusWorld() {
@@ -5139,9 +5146,11 @@ import * as tutorial from './tutorial.js';
             const label = st.hold ? ("STORM HOLD " + (st.left | 0) + "s") : ("STORM SHRINKS " + (st.left | 0) + "s");
             drawText(label + "  C" + ((st.c | 0) + 1), cx, 50, 13, st.hold ? color.gold : color.guiwhite, "center");
         }
+        if (r.lock) {
+            drawText("FINAL STORM - NO RESPAWNS " + Math.max(0, r.lockLeft | 0) + "s", cx, 90, 13, "#ff7a7a", "center");
+        } else if (r.toast) drawText(r.toast, cx, 90, 13, color.guiwhite, "center");
         if (r.place > 0) drawText("#" + r.place + "  " + util.formatLargeNumber(r.youScore | 0) + " pts", cx, 70, 13, color.gold, "center");
         else if (r.youScore > 0) drawText(util.formatLargeNumber(r.youScore | 0) + " pts", cx, 70, 13, color.gold, "center");
-        if (r.toast) drawText(r.toast, cx, 90, 13, color.guiwhite, "center");
         const objs = r.objectives || [];
         for (let i = 0; i < Math.min(3, objs.length); i++) {
             const o = objs[i];
@@ -7464,44 +7473,91 @@ import * as tutorial from './tutorial.js';
             }
         }
     };
-    // ── Royale death screen ──────────────────────────────────────────────
-    // Raid: death is a tax. Short countdown, auto respawn, weak drill on return.
+    // ── Raid death screen ────────────────────────────────────────────────
+    // The raid's only death screen: gold-framed, full run stats, auto respawn
+    // (paused during the final-storm spawn lock). Death is a tax, not an end.
     const gameDrawDeadRoyale = () => {
         let glide = global.deathAnimation.get();
         clearScreen(color.black, 0.32 + 0.28 * global.lerp(0, 0.5, glide), ctx[2]);
         const c = ctx[2];
         const cx = global.screenWidth / 2;
-        const place = global.royale.place | 0;
-        const PW = Math.min(480, global.screenWidth - 40);
-        const PH = 270;
+        const you = global.royale.you || {};
+        const place = (you.place || global.royale.place) | 0;
+        const score = (you.score != null ? you.score : global.royale.youScore) | 0;
+        const PW = Math.min(620, global.screenWidth - 40);
+        const PH = 474;
         const px = cx - PW / 2;
-        const py = Math.max(20, global.screenHeight / 2 - PH / 2);
+        const py = Math.max(12, global.screenHeight / 2 - PH / 2 - 6);
+        // panel: dark card, black keyline, gold raid frame
         c.save();
-        c.fillStyle = "rgba(16,17,22,0.93)";
-        c.fillRect(px, py, PW, PH);
-        c.lineWidth = 3;
-        c.strokeStyle = color.black;
-        c.strokeRect(px, py, PW, PH);
+        roundRectPath(c, px, py, PW, PH, 16);
+        c.fillStyle = "rgba(16,17,22,0.94)";
+        c.fill();
+        c.lineWidth = 4;
+        c.strokeStyle = "#111318";
+        c.stroke();
+        c.lineWidth = 2;
+        c.strokeStyle = "rgba(255,215,94,0.75)";
+        c.stroke();
         c.restore();
-        drawText("YOU DIED", cx, py + 36, 22, color.gold, "center");
-        drawText(place > 0 ? ("#" + place + "  " + util.formatLargeNumber(global.royale.youScore | 0) + " pts") : "Raid continues", cx, py + 80, 20, color.guiwhite, "center");
-        const kills = Math.round(global.finalKills[0].get());
-        const gems = (global.finalBanked | 0) + (global.finalCarried | 0);
-        drawText(kills + " kills   " + util.formatLargeNumber(gems) + " gems   " + compactTime(global.finalLifetime.get()),
-                 cx, py + 110, 14, color.guiwhite, "center");
+
+        drawText("YOU DIED", cx, py + 34, 26, color.gold, "center");
+        drawText("RAID CONTINUES - DEATH IS A TAX", cx, py + 54, 11, color.grey, "center");
+
+        // headline score + place
+        const bx = px + 22, bw = PW - 44;
+        c.save();
+        c.globalAlpha = global.lerp(0, 1, glide);
+        roundRectPath(c, bx, py + 66, bw, 58, 9);
+        c.fillStyle = "rgba(255,215,94,0.10)";
+        c.fill();
+        c.lineWidth = 2;
+        c.strokeStyle = "rgba(255,215,94,0.35)";
+        c.stroke();
+        c.restore();
+        drawText("RAID SCORE", bx + 14, py + 79, 11, color.grey, "left");
+        drawText(util.formatLargeNumber(Math.round(score)), bx + 14, py + 105, 24, color.gold, "left");
+        if (place > 0) drawText("#" + place, bx + bw - 14, py + 105, 24, color.guiwhite, "right");
+
+        // the run in numbers: kept vs lost is the whole raid economy
+        const half = (bw - 8) / 2;
+        const rows = [
+            ["BANKED (KEPT)", util.formatLargeNumber((you.banked != null ? you.banked : global.finalBanked) | 0), "gem"],
+            ["SATCHEL LOST", util.formatLargeNumber(global.finalCarried | 0), "gem"],
+            ["KILLS", String((you.kills != null ? you.kills : Math.round(global.finalKills[0].get())) | 0), "combat"],
+            ["BASES HELD", String((you.holds | 0) || 0), "pulse"],
+            ["ROCKS MINED", String(global.finalRocks | 0), "pickaxe"],
+            ["SURVIVED", compactTime(global.finalLifetime.get()), "clock"],
+        ];
+        const gy = py + 134;
+        for (let i = 0; i < rows.length; i++) {
+            const col = i % 2, row = (i / 2) | 0;
+            const a = global.lerp(1 + i * 0.2, 1.25 + i * 0.2, glide);
+            deathStat(rows[i][0], rows[i][1], rows[i][2],
+                      bx + col * (half + 8), gy + row * 46, half, a);
+        }
+
         const cause = global.finalCause || "";
         const killedBy = cause === "rock" ? "Crushed by the living rock"
             : cause === "storm" ? "Lost in the storm"
             : global.finalKillers.length
                 ? "Taken down by " + global.finalKillers.join(" and ")
                 : "Nobody finished you off";
-        drawText(killedBy, cx, py + 134, 13, color.grey, "center");
-        drawText("Banked gems kept. Satchel dropped. Drill weak for 30s.", cx, py + 156, 12, color.guiwhite, "center");
+        c.save();
+        c.globalAlpha = global.lerp(2.4, 2.7, glide);
+        drawText(killedBy, cx, gy + 3 * 46 + 14, 13, color.grey, "center");
+        c.restore();
+        drawText("Banked gems kept. Satchel dropped. Drill weak for 30s.", cx, gy + 3 * 46 + 34, 12, color.guiwhite, "center");
+
+        const locked = !!(global.royale.lock && global.royale.at > 0);
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
-        if (waitMs <= 0 && !global.disconnected && !global.respawnPending) {
+        if (!locked && waitMs <= 0 && !global.disconnected && !global.respawnPending) {
             try { global.canvas.respawn(); } catch { /* */ }
         }
-        drawText(waitMs > 0 ? ("Respawning in " + Math.ceil(waitMs / 1000) + "s") : "Respawning", cx, py + 180, 14, color.gold, "center");
+        drawText(locked
+                ? ("Final storm - no spawns for " + Math.max(0, global.royale.lockLeft | 0) + "s")
+                : (waitMs > 0 ? ("Respawning in " + Math.ceil(waitMs / 1000) + "s") : "Respawning"),
+                 cx, gy + 3 * 46 + 56, 14, color.gold, "center");
         global.clickables.royalePrev.hide();
         global.clickables.royaleNext.hide();
         const by = py + PH - 46;
@@ -7533,25 +7589,41 @@ import * as tutorial from './tutorial.js';
         c.strokeStyle = color.black;
         c.strokeRect(x, y, barW, h);
         c.restore();
+        // Spectating is manual: no auto-respawn here. Play rejoins (when the
+        // storm allows), Home exits, Prev/Next hop between live players.
+        const locked = !!(global.royale.lock && global.royale.at > 0);
+        const lockLeft = Math.max(0, global.royale.lockLeft | 0);
         const place = global.royale.place | 0;
-        const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
-        if (waitMs <= 0 && global.died && !global.disconnected && !global.respawnPending) {
-            try { global.canvas.respawn(); } catch { /* */ }
-        }
-        const label = "Spectating" + (place > 0 ? ("  #" + place) : "") + (waitMs > 0 ? ("  Respawn " + Math.ceil(waitMs / 1000) + "s") : "");
-        drawText(label, x + barW / 2, y + 24, 14, color.guiwhite, "center");
+        const queued = !global.died && global.raidQueued;
+        const bw = barW < 480 ? 64 : 86;
+        const prevCx = x + 6 + bw / 2;
+        const nextCx = x + 12 + bw * 1.5;
+        const homeCx = x + barW - 6 - bw / 2;
+        const playCx = x + barW - 12 - bw * 1.5;
+        const label = locked
+            ? ("Final storm " + lockLeft + "s" + (place > 0 ? ("  #" + place) : ""))
+            : queued ? "Dropping in..."
+            : ("Spectating" + (place > 0 ? ("  #" + place) : "") + "  -  Play to rejoin");
+        fitText(label, x + barW / 2, y + 24, 14, Math.max(60, barW - 4 * bw - 60), color.guiwhite);
         const cr = global.canvas.height / global.screenHeight / global.ratio;
-        drawButton(x + 56, y + 3, 100, 30, 1, "rect", "Prev", 14, false, false, false, true, "royalePrev", cr, 0);
-        drawButton(x + 166, y + 3, 100, 30, 1, "rect", "Next", 14, false, false, false, true, "royaleNext", cr, 0);
+        drawButton(prevCx, y + 3, bw, 30, 1, "rect", "Prev", 14, false, false, false, true, "royalePrev", cr, 0);
+        drawButton(nextCx, y + 3, bw, 30, 1, "rect", "Next", 14, false, false, false, true, "royaleNext", cr, 0);
+        const canPlay = global.died && !locked && !global.respawnPending && !global.disconnected;
+        if (canPlay) {
+            // Clicks land through royaleBarHits (see canvas mouseUp), so this
+            // stays unregistered like the other bar buttons' hit rects.
+            drawButton(playCx, y + 3, bw, 30, 1, "rect", "Play", 14, false, false, false, false, "royalePlay", cr, 0);
+        } else {
+            drawButton(playCx, y + 3, bw, 30, 0.45, "rect", locked ? (lockLeft + "s") : "Wait", 14, false, false, false, false, "royalePlay", cr, 0);
+        }
+        drawButton(homeCx, y + 3, bw, 30, 1, "rect", "Home", 14, false, false, false, true, "exitGame", cr, 0);
         global.royaleBarHits = {
-            prev: guiToClientRect(x + 56 - 50, y + 3, 100, 30),
-            next: guiToClientRect(x + 166 - 50, y + 3, 100, 30),
+            prev: guiToClientRect(prevCx - bw / 2, y + 3, bw, 30),
+            next: guiToClientRect(nextCx - bw / 2, y + 3, bw, 30),
             spectate: null,
-            play: null,
-            home: null,
+            play: canPlay ? guiToClientRect(playCx - bw / 2, y + 3, bw, 30) : null,
+            home: guiToClientRect(homeCx - bw / 2, y + 3, bw, 30),
         };
-        drawButton(x + barW - 58, y + 3, 90, 30, 1, "rect", "Home", 14, false, false, false, true, "exitGame", cr, 0);
-        global.royaleBarHits.home = guiToClientRect(x + barW - 58 - 45, y + 3, 90, 30);
     };
     const applyScreenShake = (type = "camera", returnOption = false) => {
         let properties = type == "gui" ? config.graphical.shakeProperties.UIShake : config.graphical.shakeProperties.CameraShake;

@@ -379,8 +379,12 @@ const global = {
         bloom: null,
         chest: null,
         results: null,
+        lock: 0,
+        lockLeft: 0,
+        you: null,
     },
     raidRespawnAt: 0,
+    raidQueued: false,
     royaleBoard: {
         open: false,
         tab: 'map', // map | standings | feed | alive

@@ -16,7 +16,7 @@ module.exports = {
     dig_royale_terrain: {
         seed: 11,
         extrusion_chance: 0.40,
-        room_width: 13,
-        room_height: 13,
+        room_width: 15,
+        room_height: 15,
     },
 };

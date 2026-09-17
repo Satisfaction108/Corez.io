@@ -1742,6 +1742,23 @@ class gameHandler {
                 } else if (instance.type === 'bullet' || instance.type === 'drone' ||
                            instance.type === 'trap'   || instance.type === 'satellite' ||
                            instance.type === 'swarm') {
+                    // Raid vaults: while someone is cashing out, incoming
+                    // bullets/traps/swarms fizzle at the pad edge. You cannot
+                    // shoot the miner mid-deposit (their own shots fizzle too).
+                    if (Config.dig_royale && (instance.type === 'bullet' || instance.type === 'trap' || instance.type === 'swarm')) {
+                        const pads = vault.occupiedVaults();
+                        for (let vi = 0; vi < pads.length; vi++) {
+                            const v = pads[vi];
+                            const vdx = instance.x - v.x, vdy = instance.y - v.y;
+                            if (vdx * vdx + vdy * vdy < v.r * v.r) {
+                                instance.velocity.x = 0; instance.velocity.y = 0;
+                                instance.accel.x = 0;    instance.accel.y = 0;
+                                instance.kill();
+                                break;
+                            }
+                        }
+                        if (instance.isDead?.()) continue;
+                    }
                     
                     
                     

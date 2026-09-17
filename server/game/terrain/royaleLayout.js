@@ -15,10 +15,10 @@ const VAULTS = [
     { name: "Basin Vault",  x: 0.36, y: 0.40 },
 ];
 
-const SPAWN_PITS = 40;
-const VAULT_R = 150;
+const SPAWN_PITS = 48;
+const VAULT_R = 115;
 const OUTPOST_R = 135;
-const LOBBY_R = 320;
+const CENTER_CLEAR_R = 150;
 
 function nearestRock(grid, wx, wy) {
     let best = null, bestD = Infinity;
@@ -41,37 +41,6 @@ function killRock(rock, canyonKeys) {
     rock.canyon = true;
     rock.ore = ORE.NONE;
     rock.deposits = null;
-}
-
-function stretchRocksToCircle(grid, circleR) {
-        const rim = circleR * 0.32;
-    for (const rock of grid.rocks.values()) {
-        if (!rock.alive || !rock.worldPoly) continue;
-        const cx = rock.worldCx || rock.wx, cy = rock.worldCy || rock.wy;
-        const d = Math.hypot(cx, cy);
-        let maxR = 0, minR = Infinity;
-        for (const p of rock.worldPoly) {
-            const pr = Math.hypot(p[0], p[1]);
-            if (pr > maxR) maxR = pr;
-            if (pr < minR) minR = pr;
-            if (pr > circleR && pr > 1e-6) {
-                const s = circleR / pr;
-                p[0] *= s;
-                p[1] *= s;
-            }
-        }
-        // Pull the outer face of every rim rock out to the circle so the
-        // wall is a full disk, not a smaller rock blob inside a round clip.
-        if (d > rim) {
-            for (const p of rock.worldPoly) {
-                const pr = Math.hypot(p[0], p[1]);
-                if (pr < d * 0.28 || pr < 1e-6) continue;
-                const s = circleR / pr;
-                if (s > 1) { p[0] *= s; p[1] *= s; }
-            }
-        }
-        rock.maxPolyRadius = Math.max(rock.maxPolyRadius || 0, Math.max(8, circleR - d + 12));
-    }
 }
 
 function broadcastKills(grid, beforeAlive) {
@@ -149,10 +118,12 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     const half = Math.min(room?.width || 5460, room?.height || 5460) / 2;
     const circleR = half * 0.998;
     grid.circleRadius = circleR;
-    grid.lobbyPos = { x: 0, y: 0, r: LOBBY_R };
+    grid.lobbyPos = { x: 0, y: 0, r: CENTER_CLEAR_R };
 
-    // Keep rocks that touch the disk, then pull the rim out to the circle
-    // so the wall meets the storm/map border instead of stopping short.
+    // Keep rocks that touch the disk. The rim keeps its natural Voronoi
+    // shape - the rocks define the border, nothing clips or stretches them
+    // to the circle. (Stretching worldPoly used to corrupt grow anchors,
+    // deposits, and growing-rock collision across the whole rim.)
     for (const rock of grid.rocks.values()) {
         const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
         let keep = x * x + y * y <= circleR * circleR;
@@ -164,7 +135,6 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         }
         if (!keep) killRock(rock, canyonKeys);
     }
-    stretchRocksToCircle(grid, circleR);
 
     // Sites exist for later. Lobby is plaza-only: do not punch vault or
     // outpost holes until scatter, or the circle is missing rocks on the sides.
@@ -172,7 +142,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         const x = v.x * circleR, y = v.y * circleR;
         return { id: i, name: v.name, x, y, r: 95, team: 0, rainbow: true };
     });
-    carveDisk(grid, 0, 0, LOBBY_R, canyonKeys);
+    carveDisk(grid, 0, 0, CENTER_CLEAR_R, canyonKeys);
 
     chamberCells.length = 0;
     outpostCells.length = 0;
@@ -249,7 +219,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         if (!rock.alive || canyonKeys.has(rock.k)) continue;
         const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
         const d = Math.hypot(x, y);
-        if (d < LOBBY_R + 80 || d > circleR - 160) continue;
+        if (d < CENTER_CLEAR_R + 80 || d > circleR - 160) continue;
         let ok = true;
         for (const b of blocked) {
             const dx = x - b.x, dy = y - b.y;

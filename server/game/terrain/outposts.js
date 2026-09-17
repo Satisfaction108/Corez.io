@@ -27,10 +27,34 @@ function getOutposts() {
         r: PAD_RADIUS,
         team: 0,
         ownerId: 0,
+        ownerKey: null,
         color: s.color || null,
         banner: null,
     }));
     return outposts;
+}
+
+// Persistent owner identity: survives death + respawn (body ids do not).
+function ownerKeyFor(body) {
+    if (!body) return null;
+    if (body.socket && body.socket.id) return "s:" + body.socket.id;
+    if (body.isBot) return "b:" + (body.botFamilyId ?? body.id);
+    return null;
+}
+
+// Point every site owned by `key` at the owner's fresh body.
+function rebindOwner(key, body) {
+    if (!key || !body) return;
+    for (const site of getOutposts()) {
+        if (site.ownerKey !== key) continue;
+        site.ownerId = body.id;
+        if (site.banner && !site.banner.isDead?.()) {
+            try {
+                site.banner.team = body.team;
+                if (Config.dig_royale && site.color) site.banner.color.base = site.color;
+            } catch { /* */ }
+        }
+    }
 }
 
 function snapshot() {
@@ -67,6 +91,7 @@ const teamName = (team) => team === TEAM_BLUE ? "Blue" : team === TEAM_RED ? "Re
 function spawnStructure(site, team, owner = null) {
     site.team = team;
     site.ownerId = owner && owner.id ? owner.id : 0;
+    site.ownerKey = owner ? ownerKeyFor(owner) : null;
     const o = new Entity({ x: site.x, y: site.y });
     o.define('outpostBanner');
     o.team = team === 0 ? TEAM_ENEMIES : team;
@@ -369,10 +394,11 @@ function requestCancel(socket) {
 
 module.exports = {
     tick, snapshot, stateSnapshot, ownedBy, getOutposts,
-    requestDeposit, requestCancel, EFFICIENCY,
+    requestDeposit, requestCancel, EFFICIENCY, ownerKeyFor, rebindOwner,
     resetRoyale() {
         for (const site of getOutposts()) {
             site.ownerId = 0;
+            site.ownerKey = null;
             site.team = 0;
             const b = site.banner;
             site.banner = null;

@@ -4,7 +4,7 @@ const outposts = require('../../terrain/outposts.js');
 const gems = require('../../terrain/gems.js');
 
 const RAID_MS = 2 * 60 * 60 * 1000;
-const FILL_CAP = 30;
+const FILL_CAP = 10;
 const OCCUPY_MS = 10_000;
 const LOCKOUT_MS = 10_000;
 const KILL_VERBS = ["killed", "slaughtered", "demolished", "wrecked", "ended", "cooked"];
@@ -27,6 +27,8 @@ let raidResultsAt = 0;
 let poisCarved = false;
 let lastFillAt = 0;
 let lastVaultPinchAt = 0;
+// Spawn-pit reservations so simultaneous joins never share a hole.
+let pitReservations = new Map();
 
 function now() { return Date.now(); }
 
@@ -55,7 +57,10 @@ function pits() {
     return global.gameManager.terrainGrid?.spawnPits || [{ x: 0, y: 0 }];
 }
 
-function canSpawn() { return true; }
+function stormLocked() {
+    try { return storm.locked(now()); } catch { return false; }
+}
+function canSpawn() { return !stormLocked(); }
 function requestPlay() { return true; }
 function isLobbyPhase() { return false; }
 function phase() { return 'live'; }
@@ -143,6 +148,7 @@ function boardSnapshot() {
     }));
     rows.sort((a, b) => (b.score - a.score) || (b.gems - a.gems) || (b.kills - a.kills));
     rows.forEach((r, i) => { r.place = i + 1; });
+    // place is the score rank. Display order keeps the living on top.
     const aliveRows = rows.filter(r => r.alive);
     const deadRows = rows.filter(r => !r.alive);
     return aliveRows.concat(deadRows).slice(0, Math.max(32, aliveRows.length));
@@ -166,9 +172,13 @@ function broadcast(extra = {}) {
     const board = boardSnapshot();
     const raidLeft = Math.max(0, Math.ceil((raidEndsAt - t) / 1000));
     const objectives = objectivesSnapshot(t);
+    const lock = stormLocked() ? 1 : 0;
+    let lockLeft = 0;
+    try { lockLeft = storm.lockLeftSec(t); } catch { /* */ }
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
         const mine = key ? raidStats.get(key) : null;
+        const myRow = mine ? board.find(r => r.id === mine.id) : null;
         const payload = JSON.stringify({
             phase: 'live',
             left: raidLeft,
@@ -180,9 +190,18 @@ function broadcast(extra = {}) {
             toast: extra.toast || "",
             feed: killFeed.slice(-6),
             board,
-            youPlace: mine ? (board.findIndex(r => r.id === mine.id) + 1) : 0,
+            youPlace: myRow ? (myRow.place | 0) : 0,
             youScore: mine ? scoreOf(mine) : 0,
             youPB: (client.raidPB || 0) | 0,
+            you: mine ? {
+                score: scoreOf(mine),
+                place: myRow ? (myRow.place | 0) : 0,
+                banked: mine.banked | 0,
+                kills: mine.kills | 0,
+                holds: mine.holds | 0,
+            } : null,
+            lock,
+            lockLeft,
             matchId: raidId,
             raidId,
             raidLeft,
@@ -228,11 +247,17 @@ function safeSpawnSpot() {
     const bodies = combatants();
     const margin = 260;
     const safeR = Math.max(80, (st.r || 0) - margin);
-    const cands = holes.filter(h => Math.hypot(h.x - st.cx, h.y - st.cy) < safeR);
+    for (const [k, until] of pitReservations) {
+        if (until <= t) pitReservations.delete(k);
+    }
+    const pitKey = (h) => Math.round(h.x) + ":" + Math.round(h.y);
+    let cands = holes.filter(h => Math.hypot(h.x - st.cx, h.y - st.cy) < safeR);
     if (!cands.length) {
         const tg = global.gameManager.terrainGrid;
         return openGroundNear(tg, st.cx || 0, st.cy || 0);
     }
+    const free = cands.filter(h => (pitReservations.get(pitKey(h)) || 0) <= t);
+    if (free.length) cands = free;
     const scored = cands.map(h => {
         let m = Infinity;
         for (const b of bodies) {
@@ -244,6 +269,7 @@ function safeSpawnSpot() {
     }).sort((a, b) => b.m - a.m);
     const top = scored.slice(0, Math.max(1, Math.min(6, scored.length)));
     const pick = top[(Math.random() * top.length) | 0].h;
+    pitReservations.set(pitKey(pick), t + 6000);
     return { x: pick.x, y: pick.y };
 }
 
@@ -304,6 +330,7 @@ function spawnRaidBot() {
 function fillBots() {
     const t = now();
     if (t - lastFillAt < 400) return;
+    if (stormLocked()) return;
     if (combatants().length >= FILL_CAP) return;
     lastFillAt = t;
     spawnRaidBot();
@@ -353,11 +380,41 @@ function onCombatantDead(body) {
     }
 }
 
+function ownedSiteFor(body) {
+    if (!body) return null;
+    try {
+        const key = outposts.ownerKeyFor ? outposts.ownerKeyFor(body) : null;
+        if (!key) return null;
+        const list = outposts.getOutposts();
+        return list.find(s => s.ownerKey === key && s.banner && !s.banner.isDead?.()) || null;
+    } catch { return null; }
+}
+
 function onHumanJoin(body) {
     if (!Config.dig_royale || !body) return;
-    const hole = safeSpawnSpot();
+    try {
+        if (outposts.rebindOwner) {
+            const key = outposts.ownerKeyFor ? outposts.ownerKeyFor(body) : null;
+            if (key) outposts.rebindOwner(key, body);
+        }
+    } catch { /* */ }
     const isRespawn = !!(body.socket && body.socket.lastRaidDeathAt);
-    moveTo(body, hole.x + (Math.random() - 0.5) * 30, hole.y + (Math.random() - 0.5) * 30);
+    const home = ownedSiteFor(body);
+    let homeSpawn = false;
+    if (home) {
+        let inStorm = false;
+        try { inStorm = storm.inStorm(home.x, home.y); } catch { /* */ }
+        if (!inStorm) {
+            homeSpawn = true;
+            occupy.delete(home.id);
+            moveTo(body, home.x + (Math.random() - 0.5) * 30, home.y + (Math.random() - 0.5) * 30);
+            try { body.sendMessage("Back on your base. 10 seconds, then move along."); } catch { /* */ }
+        }
+    }
+    if (!homeSpawn) {
+        const hole = safeSpawnSpot();
+        moveTo(body, hole.x + (Math.random() - 0.5) * 30, hole.y + (Math.random() - 0.5) * 30);
+    }
     freshRaidBody(body);
     giveStarterKit(body, isRespawn);
     ensureStat(body);
@@ -389,6 +446,10 @@ function tickOutpostRules(t) {
                 const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
                 body.x = site.x + Math.cos(n) * (site.r + 18);
                 body.y = site.y + Math.sin(n) * (site.r + 18);
+                try {
+                    const tg = global.gameManager.terrainGrid;
+                    if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
+                } catch { /* */ }
                 body.velocity.x = Math.cos(n) * 8;
                 body.velocity.y = Math.sin(n) * 8;
                 site._contestedUntil = t + 8000;
@@ -413,11 +474,16 @@ function tickOutpostRules(t) {
                     const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
                     body.x = site.x + Math.cos(n) * (site.r + 28);
                     body.y = site.y + Math.sin(n) * (site.r + 28);
+                    try {
+                        const tg = global.gameManager.terrainGrid;
+                        if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
+                    } catch { /* */ }
                     body.velocity.x = Math.cos(n) * 11;
                     body.velocity.y = Math.sin(n) * 11;
                     occupy.delete(site.id);
                     lockout.set(key, t + LOCKOUT_MS);
                     if (body.socket) body.socket.talk('RYO', site.id, 0, Math.ceil(LOCKOUT_MS / 1000));
+                    try { body.sendMessage("You cannot camp your base. It stays yours."); } catch { /* */ }
                 }
             } else if (ownerId === body.id && !inside) {
                 occupy.delete(site.id);
@@ -603,5 +669,5 @@ class DigRoyale {
 
 module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, phase, isLobbyPhase, stormFleePoint,
-    lobbyPos, tick, onBanked, onCapture, FILL_CAP,
+    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked,
 };

@@ -1208,8 +1208,15 @@ let incoming = async function(message, socket) {
                     r.bloom = d.bloom || null;
                     r.chest = d.chest || null;
                     r.results = d.results || null;
+                    r.lock = d.lock | 0;
+                    r.lockLeft = d.lockLeft | 0;
+                    r.you = d.you || null;
                     r.matchId = d.matchId | 0;
                     if (d.youPlace > 0) r.place = d.youPlace | 0;
+                    // Queued for the final storm: watch until the reset drops us in.
+                    if (r.lock && global.raidQueued && !global.died && !global.disconnected) {
+                        global.royaleSpectating = true;
+                    }
                     if (d.youPB > 0) {
                         try {
                             const prev = parseInt(localStorage.getItem('digwarsRaidPB') || '0', 10) || 0;
@@ -1367,6 +1374,7 @@ let incoming = async function(message, socket) {
                 global.royaleSpectating = false;
                 global.royaleDied = false;
                 global.raidRespawnAt = 0;
+                global.raidQueued = false;
                 global.player.renderx = global.player.cx.x = m[0];
                 global.player.rendery = global.player.cy.y = m[1];
                 global.player.renderv = global.player.view = m[2];
@@ -1420,6 +1428,7 @@ let incoming = async function(message, socket) {
 
                     socket.talk('s', global.playerName, 0, 1 * config.game.autoLevelUp, global.bodyID ? global.bodyID : false, 1 * config.game.incognitoMode);
                     global.bodyID = undefined;
+                    global.raidQueued = true;
                 }
             } break;
         case 'm': {

@@ -2,9 +2,12 @@
 // collide, holds, then resets and squeezes again. Nobody wins the server.
 const DAMAGE_FRAC = 0.07;
 const DAMAGE_EVERY_MS = 1100;
-const SHRINK_MS = 4 * 60 * 1000;
-const HOLD_MS = 30 * 1000;
-const MIN_FRAC = 0.12;
+const SHRINK_MS = 6 * 60 * 1000;
+const HOLD_MS = 60 * 1000;
+const MIN_FRAC = 0.20;
+// Final-zone spawn lock: nobody (re)spawns in the last 90s of a cycle
+// (last stretch of the shrink + the full hold). The dead spectate.
+const LOCK_MS = 90 * 1000;
 
 let state = {
     active: false,
@@ -82,6 +85,21 @@ function phaseLeftSec(now = Date.now()) {
     return 0;
 }
 
+function resetAt() {
+    return state.cycleStartAt + SHRINK_MS + HOLD_MS;
+}
+
+function locked(now = Date.now()) {
+    if (!state.active) return false;
+    if (cyclePhase(now) === "roll") return false;
+    return resetAt() - now <= LOCK_MS;
+}
+
+function lockLeftSec(now = Date.now()) {
+    if (!locked(now)) return 0;
+    return Math.max(0, Math.ceil((resetAt() - now) / 1000));
+}
+
 function inStorm(x, y, now = Date.now()) {
     if (!state.active) return false;
     const r = radius(now);
@@ -101,6 +119,8 @@ function snapshot(now = Date.now()) {
         c: state.cycle | 0,
         hold: cyclePhase(now) === "hold" ? 1 : 0,
         left: phaseLeftSec(now),
+        lock: locked(now) ? 1 : 0,
+        lockLeft: lockLeftSec(now),
     };
 }
 
@@ -137,4 +157,4 @@ function tickDamage(now = Date.now()) {
     }
 }
 
-module.exports = { start, stop, ensureActive, radius, inStorm, snapshot, tickDamage, cyclePhase, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS };
+module.exports = { start, stop, ensureActive, radius, inStorm, snapshot, tickDamage, cyclePhase, locked, lockLeftSec, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, LOCK_MS };

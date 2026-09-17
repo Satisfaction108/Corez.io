@@ -150,11 +150,14 @@ class Canvas {
     }
 
     respawn() {
+        // Final storm: no spawns. Hold the death UI until the reset.
+        if (global.royale && global.royale.lock && global.royale.at > 0) return;
         if (global.died && !global.cannotRespawn && !global.respawnPending) {
             global.respawnPending = true;
             global.royaleDied = false;
             global.royaleSpectating = false;
             global.raidRespawnAt = 0;
+            global.raidQueued = true;
             this.socket.talk('s', global.playerName, 0, 1 * config.game.autoLevelUp, false, 1 * config.game.incognitoMode);
             setTimeout(() => {
                 if (global.respawnPending) global.respawnPending = false;
@@ -513,19 +516,20 @@ class Canvas {
                     y: mouse.clientY * global.ratio,
                 };
                 const bar = global.royaleBarHits || {};
-                if (hitClientRect(mouse, bar.prev) && global.died) {
+                const canWatch = global.died || global.raidQueued;
+                if (hitClientRect(mouse, bar.prev) && canWatch) {
                     global.royaleSpectating = true;
                     this.socket.talk('RS', 0);
                     gameSound.uiClick();
                     break;
                 }
-                if (hitClientRect(mouse, bar.next) && global.died) {
+                if (hitClientRect(mouse, bar.next) && canWatch) {
                     global.royaleSpectating = true;
                     this.socket.talk('RS', 1);
                     gameSound.uiClick();
                     break;
                 }
-                if (hitClientRect(mouse, bar.spectate) && global.died && !global.disconnected) {
+                if (hitClientRect(mouse, bar.spectate) && canWatch && !global.disconnected) {
                     global.royaleSpectating = true;
                     this.socket.talk('RS', 2);
                     gameSound.uiClick();

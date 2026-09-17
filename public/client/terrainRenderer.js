@@ -255,6 +255,19 @@ class TerrainRenderer {
         sh.shakeAmount    = amount;
     }
 
+    // Camera juice only for rocks breaking near the player. Anything merely
+    // on screen used to freeze the frame (hit-stop) and shake the camera,
+    // which read as the view randomly shifting while mining.
+    _shakeNearCell(cell, amount, duration, delay = 0, stopMs = 0) {
+        const w = this._world;
+        if (!cell || !w) return;
+        const wx = cell.cx * w.s - w.hw, wy = cell.cy * w.s - w.hh;
+        const dx = wx - global.player.renderx, dy = wy - global.player.rendery;
+        if (dx * dx + dy * dy > 800 * 800) return;
+        if (stopMs) global.hitStop = Math.max(global.hitStop || 0, Date.now() + stopMs);
+        this._shake(amount, duration, delay);
+    }
+
     applyRockEvents(events) {
         if (!this.ready || !events) return;
         const now = performance.now();
@@ -308,10 +321,7 @@ class TerrainRenderer {
                     const onscreen = this._onScreen(cell.cx, cell.cy);
                     const delay = onscreen ? 55 : 0;
                     this._spawnShatter(cell, now + delay, tier);
-                    if (onscreen) {
-                        global.hitStop = Date.now() + delay;
-                        this._shake(tier ? 5 : 4, 240, delay);
-                    }
+                    if (onscreen) this._shakeNearCell(cell, tier ? 5 : 4, 240, delay, delay);
                     if (this._world) {
                         const w = this._world;
                         const wx = cell.cx * w.s - w.hw, wy = cell.cy * w.s - w.hh;
@@ -330,8 +340,7 @@ class TerrainRenderer {
                     
                     
                     const cell = this._cellPolys.get(ev.k);
-                    if (cell && this._onScreen(cell.cx, cell.cy))
-                        this._shake(2, 140);
+                    if (cell) this._shakeNearCell(cell, 2, 140);
                 }
                 if (ev.x !== undefined) {
                     
@@ -469,7 +478,7 @@ class TerrainRenderer {
             
             this._growFx.push({ k, born: now });
             if (this._growFx.length > 24) this._growFx.shift();
-            this._shake(3, 160);
+            this._shakeNearCell(cell, 3, 160);
             
             const kk = k & 0xffff;
             for (let i = 0; i < 12 && this._pebbles.length < 80; i++) {
@@ -509,10 +518,7 @@ class TerrainRenderer {
         const onscreen = this._onScreen(cell.cx, cell.cy);
         const delay = onscreen ? 55 : 0;
         this._spawnShatter(cell, now + delay, 0);
-        if (onscreen) {
-            global.hitStop = Date.now() + delay;
-            this._shake(4, 220, delay);
-        }
+        if (onscreen) this._shakeNearCell(cell, 4, 220, delay, delay);
     }
 
     
