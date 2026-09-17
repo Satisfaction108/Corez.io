@@ -7406,8 +7406,12 @@ import * as tutorial from './tutorial.js';
     };
 
     const gameDrawDead = () => {
-        // Killer cam: clean 3s on the killer, no panel yet.
-        if (global.died && global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) {
+        // Killer cam: clean 3s on the killer, no panel yet. The handoff guard
+        // covers the gap between the cam expiring and its timer firing
+        // (timers can land late / throttled), so the classic screen never
+        // flashes a frame before the raid panel takes over.
+        const killerCamLive = global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil;
+        if (global.died && (killerCamLive || (!global.royaleDied && global.royaleSpectating))) {
             global.clickables.royaleSpectate.hide();
             global.clickables.deathRespawn.hide();
             global.clickables.royalePrev.hide();
