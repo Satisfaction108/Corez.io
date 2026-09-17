@@ -1383,6 +1383,7 @@ let incoming = async function(message, socket) {
             case 'c': {
                 global.respawnPending = false;
                 global.died = false;
+                global._specGlide = null;
                 global.royaleSpectating = false;
                 global.royaleDied = false;
                 global.royaleKillerCamUntil = 0;
@@ -1473,13 +1474,35 @@ let incoming = async function(message, socket) {
             if (m[0] == true) {
                 let camx = m[1],
                     camy = m[2];
+                // Pre-spawn camera drip (final-storm queue): enter the game
+                // on it so queued players watch the wait view with a live
+                // countdown instead of a dead connecting screen.
+                if (!global.gameStart && startSettings.allowtostartgame) {
+                    global.gameStart = true;
+                    global.gameConnecting = false;
+                }
                 global.player.cx.x = camx;
                 global.player.cy.y = camy;
-                global.player.renderx = camx;
-                global.player.rendery = camy;
                 global.player.loc = { x: camx, y: camy };
                 global.player.animX.add(m[1]);
                 global.player.animY.add(m[2]);
+                // Spectate glide: a far jump (new target) eases over ~0.7s
+                // while tracking steps stay live. Render lerps in animloop.
+                if (global.died && isFinite(global.player.renderx) && isFinite(global.player.rendery)) {
+                    const jump = Math.hypot(camx - global.player.renderx, camy - global.player.rendery);
+                    if (jump > 700 && !global._specGlide) {
+                        global._specGlide = { x0: global.player.renderx, y0: global.player.rendery, x1: camx, y1: camy, t0: performance.now(), dur: 700 };
+                    } else if (global._specGlide) {
+                        global._specGlide.x1 = camx;
+                        global._specGlide.y1 = camy;
+                    } else {
+                        global.player.renderx = camx;
+                        global.player.rendery = camy;
+                    }
+                } else if (!global._specGlide) {
+                    global.player.renderx = camx;
+                    global.player.rendery = camy;
+                }
                 return;
             }
             let camtime = m[0],
@@ -1602,6 +1625,18 @@ let incoming = async function(message, socket) {
             global.died = true;
             const deathPlace = m[13 + m[8]] | 0;
             if (deathPlace > 0) global.royale.place = deathPlace;
+            // Death notice goes to the notification stack too, like autofire
+            // toggles, so it reads even while spectating or queued.
+            try {
+                const dcause = global.finalCause || "";
+                global.createMessage(
+                    dcause === "rock" ? "Crushed by the living rock"
+                    : dcause === "storm" ? "Lost in the storm"
+                    : dcause === "base" ? "Shot down by the enemy base"
+                    : global.finalKillers.length ? ("Taken down by " + global.finalKillers.join(" and "))
+                    : "You died",
+                    5000);
+            } catch { /* */ }
             global.royale.occupy = 0;
             global.royale.lockout = 0;
             global.royaleSpectating = false;

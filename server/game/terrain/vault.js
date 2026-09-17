@@ -259,16 +259,24 @@ function tick(actors, dtMs) {
         const was = !!body.vaultOnPad;
         body.vaultOnPad = !!pad;
         body.onVaultPad = !!pad;
-        // 5s no re-entry after a kick: bounce them straight back out, no
-        // deposit, no pad timer restart.
+        // 5s no re-entry after a kick: hard deny, parked outside every tick.
+        // No deposit, no pad timer games, and the timer restarts cleanly the
+        // next time they step in fresh.
         if (pad && body._padReentryUntil && now < body._padReentryUntil) {
             cancelDeposit(body, !!body.socket);
-            pushOut(body, pad, 9, now);
-            if (was !== true && body.socket) body.socket.talk('VU', 1);
-            body.vaultOnPad = true;
-            body.onVaultPad = true;
+            const dxn = body.x - pad.x, dyn = body.y - pad.y;
+            const nn = (dxn === 0 && dyn === 0) ? Math.random() * Math.PI * 2 : Math.atan2(dyn, dxn);
+            body.x = pad.x + Math.cos(nn) * (pad.r + 18);
+            body.y = pad.y + Math.sin(nn) * (pad.r + 18);
+            body.velocity.x = 0; body.velocity.y = 0;
+            body._vaultPush = null;
+            body._vaultPadSince = 0;
+            body.vaultOnPad = false;
+            body.onVaultPad = false;
+            if (was && body.socket) { body.socket.talk('VU', 0); cancelDeposit(body); }
             continue;
         }
+        if (pad && !body._vaultPadSince) body._vaultPadSince = now;
         if (Config.dig_royale) {
             if (pad && !was) body._vaultPadSince = now;
             if (!pad) {

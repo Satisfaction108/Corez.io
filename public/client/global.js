@@ -389,7 +389,7 @@ const global = {
     royaleBoard: {
         open: false,
         tab: 'map', // map | standings | feed | alive
-        sort: 'gems',
+        sort: 'score',
     },
     royaleSpectating: false,
     royaleDied: false,
@@ -547,6 +547,7 @@ const global = {
         global.royaleSpectating = false;
         global.royaleDied = false;
         global.royaleKillerCamUntil = 0;
+        global._specGlide = null;
         global.raidRespawnAt = 0;
         global.raidQueued = false;
         global.royaleBarHits = null;
@@ -608,6 +609,7 @@ const global = {
         global.died = false;
         global.disconnected = false;
         global.showBigMap = false;
+        global._specGlide = null;
         global.gameConnecting = true;
         global.message = "";
         global.entities = [];

@@ -3549,14 +3549,35 @@ import * as tutorial from './tutorial.js';
             );
             ctx[0].clip();
         }
-        ctx[0].fillRect(roomX, roomY, roomWidth, roomHeight);
+        // Square dirt base for normal modes. Royale paints its dirt under
+        // the rocks only (below), leaving void at the raw rock edge.
+        if (!royaleActive() || !getMapPaths()) ctx[0].fillRect(roomX, roomY, roomWidth, roomHeight);
         // muddy cavern floor: repeat the dirt tile across the room,
         // anchored to world coordinates and scaled with the camera so the
         // ground never "swims". PERF: only the visible slice of the room is
         // pattern-filled - filling the whole room rect each frame was a
         // fullscreen-and-then-some rasterization for nothing.
+        // Royale island: dirt lives ONLY under the rocks (their combined
+        // path), so the void starts exactly at the rocks' raw edge. No
+        // square dirt corners, no rock ever cut or culled for it.
+        if (royaleActive()) {
+            const islPaths = getMapPaths();
+            if (islPaths) {
+                if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
+                ctx[0].save();
+                ctx[0].translate(roomX + roomWidth / 2, roomY + roomHeight / 2);
+                ctx[0].scale(ratio, ratio);
+                ctx[0].fillStyle = "#1e1d1b";
+                ctx[0].fill(islPaths.alive);
+                ctx[0].fill(islPaths.dead);
+                ctx[0].fillStyle = floorPattern;
+                ctx[0].fill(islPaths.alive);
+                ctx[0].fill(islPaths.dead);
+                ctx[0].restore();
+            }
+        }
         if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
-        {
+        if (!royaleActive() || !getMapPaths()) {
             const vx0 = Math.max(roomX, 0), vy0 = Math.max(roomY, 0);
             const vx1 = Math.min(roomX + roomWidth, global.screenWidth);
             const vy1 = Math.min(roomY + roomHeight, global.screenHeight);
@@ -4409,6 +4430,13 @@ import * as tutorial from './tutorial.js';
         let height = 18;
         let x = global.screenWidth / 2;
         let y = spacing + 5;
+        // Royale: stack runs top-right under the kill feed so the raid
+        // clock and storm timer keep top-center to themselves.
+        const msgRight = typeof royaleActive === "function" && royaleActive();
+        if (msgRight) {
+            const feedN = Math.min(6, ((global.royale && global.royale.feed) || []).length);
+            y = 42 + feedN * 18 + 12;
+        }
         if (global.mobile) {
             if (global.canUpgrade) {
                 mobileUpgradeGlide.set(0 + (global.canUpgrade || global.upgradeHover));
@@ -4440,13 +4468,14 @@ import * as tutorial from './tutorial.js';
                 })
                 ctx[2].globalAlpha = 0.5 * K;
 
-                drawBarAdvanced(x - len / 2, x + len / 2, y + yy / 2, height, color.black, 17.5 * (msg.textJSON.length) - 17.5 + 1);
+                const jx = msgRight ? global.screenWidth - 18 - len : x - len / 2;
+                drawBarAdvanced(jx, jx + len, y + yy / 2, height, color.black, 17.5 * (msg.textJSON.length) - 17.5 + 1);
                 ctx[2].globalAlpha = K;
 
                 msg.textobjs = [];
                 msg.textJSON.forEach((txt) => {
                     msg.textobjs[msg.textobjs.length] = function () { };
-                    drawText(txt, x - len / 2 + 2, y + 16 + 17.5 * (msg.textobjs.length - 1), height - 4.3, color.guiwhite, "left", false, 1, 5.5);
+                    drawText(txt, jx + 2, y + 16 + 17.5 * (msg.textobjs.length - 1), height - 4.3, color.guiwhite, "left", false, 1, 5.5);
                 })
                 y += 23 * K + 17.5 * (3 - 2 * K) * (msg.textJSON.length - 1) * K * K;
             } else {
@@ -4454,10 +4483,11 @@ import * as tutorial from './tutorial.js';
                 if (msg.len == null) msg.len = measureText(text, height - 4.3);
 
                 ctx[2].globalAlpha = 0.5 * K;
-                drawBar(x - msg.len / 2, x + msg.len / 2, y + yy / 2, height + 2, color.black);
+                const bx = msgRight ? global.screenWidth - 18 - msg.len : x - msg.len / 2;
+                drawBar(bx, bx + msg.len, y + yy / 2, height + 2, color.black);
 
                 ctx[2].globalAlpha = K;
-                drawText(text, x, y + yy / 1.3, height - 4.3, color.guiwhite, "center", false, 1, 5.5);
+                drawText(text, bx + msg.len / 2, y + yy / 1.3, height - 4.3, color.guiwhite, "center", false, 1, 5.5);
                 y += 23 * (3 - 2 * K) * K * K;
             }
         }
@@ -5190,6 +5220,8 @@ import * as tutorial from './tutorial.js';
             const right = global.screenWidth - 18;
             if (f.storm) {
                 drawText((f.name || "Someone") + " was lost in the storm", right, y, 13, color.guiwhite, "right");
+            } else if (f.rock) {
+                drawText((f.name || "Someone") + " was crushed by the rock", right, y, 13, color.guiwhite, "right");
             } else {
                 const verb = f.verb || "killed";
                 drawText("§gold§" + (f.by || "Someone") + "§reset§ " + verb + " " + (f.name || "someone"),
@@ -5789,8 +5821,20 @@ import * as tutorial from './tutorial.js';
         c.fillStyle = "#0e1418";
         c.fillRect(rx, ry, rw, rh);
         if (royaleActive()) {
-            c.fillStyle = "#1e1d1b";
-            c.fillRect(X(-gw / 2), Y(-gh / 2), gw * s, gh * s);
+            // Island dirt only under the rocks: the map edge is the rocks.
+            const islP = getMapPaths();
+            if (islP) {
+                c.save();
+                c.translate(rx - wx0 * s, ry - wy0 * s);
+                c.scale(s, s);
+                c.fillStyle = "#1e1d1b";
+                c.fill(islP.alive);
+                c.fill(islP.dead);
+                c.restore();
+            } else {
+                c.fillStyle = "#1e1d1b";
+                c.fillRect(X(-gw / 2), Y(-gh / 2), gw * s, gh * s);
+            }
         } else {
             c.fillStyle = "#22323b";
             c.fillRect(X(-gw / 2), Y(-gh / 2), gw * s, gh * s);
@@ -8106,6 +8150,23 @@ import * as tutorial from './tutorial.js';
         if (isNaN(global.player.renderx) && isNaN(global.player.rendery)) {
             global.player.renderx = global.player.cx.x;
             global.player.rendery = global.player.cy.y;
+        }
+        // Spectate glide consumer: ease the camera onto a far jump target.
+        if (global._specGlide) {
+            const g = global._specGlide;
+            if (!global.died) {
+                global._specGlide = null;
+            } else {
+                const k = Math.min(1, (performance.now() - g.t0) / g.dur);
+                const e = 1 - Math.pow(1 - k, 3);
+                global.player.renderx = g.x0 + (g.x1 - g.x0) * e;
+                global.player.rendery = g.y0 + (g.y1 - g.y0) * e;
+                if (k >= 1) {
+                    global.player.renderx = g.x1;
+                    global.player.rendery = g.y1;
+                    global._specGlide = null;
+                }
+            }
         }
 
         if (global.gameUpdate && !global.disconnected) {

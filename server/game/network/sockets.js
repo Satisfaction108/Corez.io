@@ -1953,6 +1953,15 @@ class socketManager {
                                 socket.royaleWantsSpectate = false;
                                 socket.camera.x = socket.lastDeathX;
                                 socket.camera.y = socket.lastDeathY;
+                                // Environmental deaths (storm, rock crush, base)
+                                // have no killer: clear any stale attacker so
+                                // the death cam stays near the corpse instead
+                                // of jumping to a lookalike across the map.
+                                const dc = player.body.deathCause;
+                                if (dc === "storm" || dc === "rock" || dc === "base") {
+                                    socket.spectateKiller = null;
+                                    socket.spectateEntity = null;
+                                }
                             }
 
                             socket.talk("F", ...player.records());

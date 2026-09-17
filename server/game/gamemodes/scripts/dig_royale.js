@@ -152,10 +152,8 @@ function boardSnapshot() {
     }));
     rows.sort((a, b) => (b.score - a.score) || (b.gems - a.gems) || (b.kills - a.kills));
     rows.forEach((r, i) => { r.place = i + 1; });
-    // place is the score rank. Display order keeps the living on top.
-    const aliveRows = rows.filter(r => r.alive);
-    const deadRows = rows.filter(r => !r.alive);
-    return aliveRows.concat(deadRows).slice(0, Math.max(32, aliveRows.length));
+    // Pure points order, living and dead mixed. The Alive tab filters.
+    return rows.slice(0, Math.max(32, rows.filter(r => r.alive).length));
 }
 
 function objectivesSnapshot(t) {
@@ -392,17 +390,22 @@ function onCombatantDead(body) {
     }
     // Credit comes from the authoritative killer list, so human-vs-human
     // kills count (the old _lastDamageSource was only set for bot victims).
+    // Storm, rock crushes and base shots are environmental: no credit, no
+    // killer cam to a stale attacker across the map.
+    const envKill = body.deathCause === "storm" || body.deathCause === "rock" || body.deathCause === "base";
     const stormKill = body.deathCause === "storm";
-    const killerBody = stormKill ? null : killerOf(body);
+    const rockKill = body.deathCause === "rock";
+    const killerBody = envKill ? null : killerOf(body);
     if (killerBody) {
         const ks = ensureStat(killerBody);
         if (ks) ks.kills = (ks.kills | 0) + 1;
     }
     killFeed.push({
         name: body.name || "Unnamed",
-        by: stormKill ? "" : (killerBody ? (killerBody.name || "Unnamed") : ""),
-        verb: stormKill ? "lost" : KILL_VERBS[(Math.random() * KILL_VERBS.length) | 0],
+        by: envKill ? "" : (killerBody ? (killerBody.name || "Unnamed") : ""),
+        verb: stormKill ? "lost" : rockKill ? "crushed" : KILL_VERBS[(Math.random() * KILL_VERBS.length) | 0],
         storm: stormKill ? 1 : 0,
+        rock: rockKill ? 1 : 0,
         place: 0,
         at: now(),
     });
@@ -533,13 +536,21 @@ function tickOutpostRules(t) {
             const key = site.id + ':' + body.id;
             const lockedUntil = lockout.get(key) || 0;
             const inside = d < site.r;
-            // 5s no re-entry after any kick: bounce straight back out.
+            // 5s no re-entry after any kick: hard deny, not a soft push.
+            // While blocked the body is parked outside the pad every tick so
+            // it cannot be overpowered, and the occupy timer is wiped so no
+            // stale entry causes an instant re-kick later.
             if (inside && body._padReentryUntil && t < body._padReentryUntil) {
                 if (body.outpostDeposit) {
                     body.outpostDeposit = null;
                     try { body.socket && body.socket.talk('VP', 0, 0); } catch { /* */ }
                 }
-                pushOut(body, site.x, site.y, site.r + 10, 9, t, "reentry:" + site.id);
+                occupy.delete(site.id);
+                const n = Math.atan2(body.y - site.y, body.x - site.x);
+                body.x = site.x + Math.cos(n) * (site.r + 26);
+                body.y = site.y + Math.sin(n) * (site.r + 26);
+                body.velocity.x = 0; body.velocity.y = 0;
+                body._padPush = null;
                 continue;
             }
             if (ownerId && body.id !== ownerId && inside) {
