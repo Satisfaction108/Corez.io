@@ -113,7 +113,7 @@ function ensureStat(body) {
     if (!key) return null;
     let s = raidStats.get(key);
     if (!s) {
-        s = { key, name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, carried: 0, alive: true, id: body.id, isBot: !!body.isBot, lastSeen: now() };
+        s = { key, name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, carried: 0, alive: true, id: body.id, isBot: !!body.isBot, lastSeen: now(), revengeOn: null, revengeBonus: 0 };
         raidStats.set(key, s);
     }
     s.name = body.name || s.name;
@@ -127,8 +127,8 @@ function ensureStat(body) {
 }
 
 function scoreOf(s) {
-    // PTS = banked + 200 per kill + 50% of carried. No holds.
-    return (s.banked | 0) + (s.kills | 0) * KILL_SCORE + Math.floor((s.carried | 0) / 2);
+    // PTS = banked + 200 per kill + 50% of carried + revenge bonuses. No holds.
+    return (s.banked | 0) + (s.kills | 0) * KILL_SCORE + Math.floor((s.carried | 0) / 2) + (s.revengeBonus | 0);
 }
 
 function gemsOf(body) {
@@ -177,10 +177,39 @@ function broadcast(extra = {}) {
     const lock = stormLocked() ? 1 : 0;
     let lockLeft = 0;
     try { lockLeft = storm.lockLeftSec(t); } catch { /* */ }
+    // Key -> living body, built once per broadcast for revenge resolves.
+    const bodyByKey = new Map();
+    try {
+        for (const b of combatants()) {
+            if (!b || b.isDead?.()) continue;
+            const k = statKeyFor(b);
+            if (k && !bodyByKey.has(k)) bodyByKey.set(k, b);
+        }
+    } catch { /* revenge markers skip this tick */ }
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
         const mine = key ? raidStats.get(key) : null;
         const myRow = mine ? board.find(r => r.id === mine.id) : null;
+        // Revenge target, resolved live per broadcast: position + alive so
+        // the client's minimap and screen markers track the real tank. Dead
+        // targets hide; respawn brings the marker straight back.
+        let revenge = null;
+        try {
+            const rk = mine && mine.revengeOn;
+            if (rk) {
+                const ts = raidStats.get(rk);
+                const tb = bodyByKey.get(rk) || null;
+                if (ts) {
+                    revenge = {
+                        name: ts.name || "Someone",
+                        x: tb ? Math.round(tb.x) : 0,
+                        y: tb ? Math.round(tb.y) : 0,
+                        id: tb ? tb.id : (ts.id || 0),
+                        alive: !!tb,
+                    };
+                } else if (mine) mine.revengeOn = null;
+            }
+        } catch { revenge = null; }
         const payload = JSON.stringify({
             phase: 'live',
             left: raidLeft,
@@ -201,6 +230,7 @@ function broadcast(extra = {}) {
                 banked: mine.banked | 0,
                 kills: mine.kills | 0,
                 holds: mine.holds | 0,
+                revenge,
                 carried: (() => {
                     try {
                         const b = client.player && client.player.body;
@@ -412,16 +442,33 @@ function onCombatantDead(body) {
     const stormKill = body.deathCause === "storm";
     const rockKill = body.deathCause === "rock";
     const killerBody = envKill ? null : killerOf(body);
-    if (killerBody) {
+    const killerKey = killerBody ? statKeyFor(killerBody) : null;
+    // Revenge: killing the tank that killed you pays double (kill 200 +
+    // bonus 200). The mark lives on the victim pointing at their killer, so
+    // the bonus fires when the KILLER's mark points at the body dying now.
+    // The avenge consumes the killer's mark; the victim gets a fresh mark on
+    // their new killer (env deaths clear it). Target-alive gating happens at
+    // broadcast: dead targets hide until they respawn.
+    let avenged = false;
+    if (killerBody && killerKey && killerKey !== key) {
         const ks = ensureStat(killerBody);
-        if (ks) ks.kills = (ks.kills | 0) + 1;
+        if (ks) {
+            ks.kills = (ks.kills | 0) + 1;
+            if (ks.revengeOn && ks.revengeOn === key) {
+                avenged = true;
+                ks.revengeBonus = (ks.revengeBonus | 0) + KILL_SCORE;
+                ks.revengeOn = null;
+            }
+        }
     }
+    if (s) s.revengeOn = (killerBody && killerKey && killerKey !== key) ? killerKey : null;
     killFeed.push({
         name: body.name || "Unnamed",
         by: envKill ? "" : (killerBody ? (killerBody.name || "Unnamed") : ""),
-        verb: stormKill ? "lost" : rockKill ? "crushed" : KILL_VERBS[(Math.random() * KILL_VERBS.length) | 0],
+        verb: avenged ? "avenged" : stormKill ? "lost" : rockKill ? "crushed" : KILL_VERBS[(Math.random() * KILL_VERBS.length) | 0],
         storm: stormKill ? 1 : 0,
         rock: rockKill ? 1 : 0,
+        revenge: avenged ? 1 : 0,
         place: 0,
         at: now(),
     });
@@ -446,6 +493,13 @@ function ownedSiteFor(body) {
 // Shove a body out of a pad circle with velocity, not a snap. Only if they
 // fight the push for 2s straight do they get placed outside (anti-camp
 // fallback). Returns true once the body is outside.
+// Pad boundaries are edge-to-edge, not center-to-center: a tank whose hull
+// touches the pad is ON the pad. Exclusion parking puts the hull edge
+// exactly on the pad edge - perfect circle collision, no mush, no nose-inside.
+function padEdge(site, body, margin = 0) {
+    return site.r + (body.realSize || 60) + margin;
+}
+
 function pushOut(body, cx, cy, r, speed, t, tag) {
     const dx = body.x - cx, dy = body.y - cy;
     const d = Math.hypot(dx, dy);
@@ -532,6 +586,8 @@ function disconnectCleanup(socket, body) {
             body._vaultPush = null;
             body._vaultPadSince = 0;
             body._padPush = null;
+            body._padReentryUntil = 0;
+            body._padReentryPad = null;
             body.outpostDeposit = null;
         }
         if (socket && socket.id && outposts.releaseOwner) {
@@ -551,57 +607,72 @@ function tickOutpostRules(t) {
             const d = Math.hypot(dx, dy);
             const key = site.id + ':' + body.id;
             const lockedUntil = lockout.get(key) || 0;
+            const bodyR = body.realSize || 60;
             const inside = d < site.r;
+            // Edge overlap: hull touching the pad counts as on it. Every
+            // exclusion below uses this, so nobody can nose inside.
+            const touching = d < site.r + bodyR;
             // 5s no re-entry after any kick: hard deny, not a soft push.
-            // While blocked the body is parked outside the pad every tick so
+            // While blocked the body is parked hull-to-edge every tick so
             // it cannot be overpowered, and the occupy timer is wiped so no
             // stale entry causes an instant re-kick later.
-            if (inside && body._padReentryUntil && t < body._padReentryUntil) {
+            if (touching && body._padReentryUntil && t < body._padReentryUntil &&
+                (!body._padReentryPad || body._padReentryPad === site)) {
                 if (body.outpostDeposit) {
                     body.outpostDeposit = null;
                     try { body.socket && body.socket.talk('VP', 0, 0); } catch { /* */ }
                 }
                 occupy.delete(site.id);
-                const n = Math.atan2(body.y - site.y, body.x - site.x);
-                body.x = site.x + Math.cos(n) * (site.r + 26);
-                body.y = site.y + Math.sin(n) * (site.r + 26);
+                const n = (dx === 0 && dy === 0) ? 0 : Math.atan2(dy, dx);
+                const park = padEdge(site, body, 3);
+                body.x = site.x + Math.cos(n) * park;
+                body.y = site.y + Math.sin(n) * park;
                 body.velocity.x = 0; body.velocity.y = 0;
                 body._padPush = null;
                 continue;
             }
-            if (ownerId && body.id !== ownerId && inside) {
-                pushOut(body, site.x, site.y, site.r + 10, 9, t, "bounce:" + site.id);
+            if (ownerId && body.id !== ownerId && touching) {
+                pushOut(body, site.x, site.y, padEdge(site, body, 6), 9, t, "bounce:" + site.id);
                 site._contestedUntil = t + 8000;
                 continue;
             }
-            if (body._padPush && body._padPush.tag === "bounce:" + site.id && !inside) {
+            if (body._padPush && body._padPush.tag === "bounce:" + site.id && !touching) {
                 body._padPush = null;
             }
-            if (ownerId === body.id && lockedUntil > t && d < site.r + 10) {
-                pushOut(body, site.x, site.y, site.r + 12, 9, t, "lock:" + site.id);
+            if (ownerId === body.id && lockedUntil > t && d < site.r + bodyR + 4) {
+                pushOut(body, site.x, site.y, padEdge(site, body, 6), 9, t, "lock:" + site.id);
                 continue;
             }
             if (ownerId === body.id && inside) {
                 let rec = occupy.get(site.id);
-                if (!rec || rec.ownerId !== body.id) {
-                    rec = { ownerId: body.id, enteredAt: t };
+                if (!rec || rec.ownerId !== body.id || ((rec.leftAt || 0) && t - rec.leftAt > 5000)) {
+                    rec = { ownerId: body.id, enteredAt: t, leftAt: 0 };
                     occupy.set(site.id, rec);
+                } else if (rec.leftAt) {
+                    rec.leftAt = 0;
                 }
                 const left = OCCUPY_MS - (t - rec.enteredAt);
                 site.occupyLeft = Math.max(0, Math.ceil(left / 1000));
                 if (body.socket) body.socket.talk('RYO', site.id, Math.max(0, Math.ceil(left / 1000)), 0);
                 if (left <= 0) {
-                    const out = pushOut(body, site.x, site.y, site.r + 14, 12, t, "camp:" + site.id);
+                    const out = pushOut(body, site.x, site.y, padEdge(site, body, 6), 12, t, "camp:" + site.id);
                     if (out) {
                         occupy.delete(site.id);
                         lockout.set(key, t + LOCKOUT_MS);
                         body._padReentryUntil = t + 5000;
+                        body._padReentryPad = site;
                         if (body.socket) body.socket.talk('RYO', site.id, 0, Math.ceil(LOCKOUT_MS / 1000));
                         try { body.sendMessage("You cannot camp your base. It stays yours. (5s no re-entry)"); } catch { /* */ }
                     }
                 }
             } else if (ownerId === body.id && !inside) {
-                occupy.delete(site.id);
+                // Stepping out pauses, not resets: back within 5s resumes the
+                // camp timer, so dipping out at 9s can't dodge the kick.
+                const rec = occupy.get(site.id);
+                if (rec && rec.ownerId === body.id) {
+                    if (!rec.leftAt) rec.leftAt = t;
+                    else if (t - rec.leftAt > 5000) occupy.delete(site.id);
+                }
                 if (lockedUntil > t && body.socket)
                     body.socket.talk('RYO', site.id, 0, Math.ceil((lockedUntil - t) / 1000));
             }

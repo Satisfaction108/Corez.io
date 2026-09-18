@@ -3431,6 +3431,42 @@ import * as tutorial from './tutorial.js';
         }
     }
 
+    // Revenge marker, crown-style: a red diamond + tag floating over your
+    // mark's live position, clamped on-screen like the kill banners. Dead
+    // targets send no marker; the server re-adds it the tick they respawn.
+    function drawRevengeMarker(px, py, ratio) {
+        if (!royaleActive()) return;
+        const rev = (global.royale.you && global.royale.you.revenge) || null;
+        if (!rev || !rev.alive || !isFinite(rev.x) || !isFinite(rev.y)) return;
+        let sx = ratio * rev.x - px + global.screenWidth / 2;
+        let sy = ratio * rev.y - py + global.screenHeight / 2;
+        sx = Math.max(70, Math.min(global.screenWidth - 70, sx));
+        sy = Math.max(90, Math.min(global.screenHeight - 90, sy));
+        const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 300);
+        const s = 13 + 2 * pulse;
+        const c = ctx[2];
+        c.save();
+        c.translate(sx, sy - 44);
+        c.rotate(Math.PI / 4);
+        c.fillStyle = "#e03e41";
+        c.strokeStyle = color.black;
+        c.lineWidth = 2.5;
+        c.beginPath();
+        c.rect(-s / 2, -s / 2, s, s);
+        c.fill();
+        c.stroke();
+        c.restore();
+        c.save();
+        c.globalAlpha = 0.55 + 0.35 * pulse;
+        c.strokeStyle = "#e03e41";
+        c.lineWidth = 2;
+        c.beginPath();
+        c.arc(sx, sy - 44, s * (1.1 + 0.25 * pulse), 0, Math.PI * 2);
+        c.stroke();
+        c.restore();
+        drawText("REVENGE ×2", sx, sy - 44 + 22, 12, "#ff7a6b", "center", true, 1, 5);
+    }
+
     function drawOutpostLabels(px, py, ratio) {
         if (royaleLobbyPhase()) return;
         const c = ctx[2];
@@ -3444,6 +3480,24 @@ import * as tutorial from './tutorial.js';
             drawText(o.name, sx, sy - o.r * ratio * 1.55 - 4.5,
                      Math.min(32, o.r * ratio * 0.42),
                      o.color || st.c || color.guiwhite, "center", false, 1, true, c);
+            // Contested window, visible to both sides: callout + the
+            // banner's remaining HP as the break bar. Attackers see what
+            // they must finish, defenders see what they must save.
+            if (st.cont) {
+                const blink = 0.65 + 0.35 * Math.sin(performance.now() / 240);
+                drawText("UNDER ATTACK", sx, sy - o.r * ratio * 1.55 - 30,
+                         Math.min(24, o.r * ratio * 0.3),
+                         "#ff6b5e", "center", false, blink, true, c);
+                const bw2 = Math.min(110, o.r * ratio), bh2 = 7;
+                const bx2 = sx - bw2 / 2, by2 = sy - o.r * ratio * 1.55 - 22;
+                c.save();
+                c.globalAlpha = blink;
+                c.fillStyle = color.black;
+                c.fillRect(bx2 - 1, by2 - 1, bw2 + 2, bh2 + 2);
+                c.fillStyle = "#e03e41";
+                c.fillRect(bx2, by2, bw2 * Math.max(0, Math.min(1, st.h || 0)), bh2);
+                c.restore();
+            }
             if (royaleActive() && st.l > 0) {
                 drawText(st.l + "s", sx, sy + o.r * ratio * 1.05,
                          Math.min(22, o.r * ratio * 0.28),
@@ -5278,6 +5332,12 @@ import * as tutorial from './tutorial.js';
             if (o.kind !== "contest") continue;
             drawText((o.name || "Outpost") + " contested", cx, 110 + i * 17, 12, o.c || color.gold, "center");
         }
+        // Revenge bounty, loud and red under the top cluster: who pays double.
+        const rev = (r.you && r.you.revenge) || null;
+        if (rev && rev.alive) {
+            const blink = 0.75 + 0.25 * Math.sin(performance.now() / 280);
+            drawText("REVENGE ×2 — " + (rev.name || "Someone"), cx, 150, 14, "#e05b4a", "center", true, blink, 5);
+        }
         if (r.occupy > 0) {
             drawText("Pad eject in " + r.occupy + "s", cx, global.screenHeight - 56, 16, color.gold, "center");
         } else if (r.lockout > 0) {
@@ -5293,6 +5353,9 @@ import * as tutorial from './tutorial.js';
                 drawText((f.name || "Someone") + " was lost in the storm", right, y, 13, color.guiwhite, "right");
             } else if (f.rock) {
                 drawText((f.name || "Someone") + " was crushed by the rock", right, y, 13, color.guiwhite, "right");
+            } else if (f.revenge) {
+                drawText("§red§" + (f.by || "Someone") + "§reset§ avenged " + (f.name || "someone") + " ×2",
+                         right, y, 13, color.guiwhite, "right");
             } else {
                 const verb = f.verb || "killed";
                 // Your own name wears your body color in the feed; everyone else stays gold.
@@ -6147,6 +6210,32 @@ import * as tutorial from './tutorial.js';
                 c.lineWidth = 2.5;
                 c.stroke();
                 c.restore();
+            }
+            // Revenge mark: red diamond + pulse ring, tracking live.
+            const revm = (rr.you && rr.you.revenge) || null;
+            if (revm && revm.alive && isFinite(revm.x) && isFinite(revm.y)) {
+                const mx = T.X(revm.x), my = T.Y(revm.y);
+                if (inside(mx, my)) {
+                    const s2 = dotR * 1.5;
+                    c.save();
+                    c.translate(mx, my);
+                    c.rotate(Math.PI / 4);
+                    c.fillStyle = "#e03e41";
+                    c.strokeStyle = color.black;
+                    c.lineWidth = 1.6;
+                    c.beginPath();
+                    c.rect(-s2, -s2, s2 * 2, s2 * 2);
+                    c.fill();
+                    c.stroke();
+                    c.restore();
+                    c.save();
+                    c.beginPath();
+                    c.arc(mx, my, dotR * 2.3 * pulse, 0, Math.PI * 2);
+                    c.strokeStyle = "#e03e41";
+                    c.lineWidth = 2;
+                    c.stroke();
+                    c.restore();
+                }
             }
         }
 
@@ -7839,6 +7928,7 @@ import * as tutorial from './tutorial.js';
         drawFloor(px, py, ratio, tick);
         drawEntities(px, py, ratio, tick, spacing);
         drawOutpostLabels(px, py, ratio);
+        drawRevengeMarker(px, py, ratio);
         // Same camera transform the entities just used, so the numbers sit
         // exactly over the bodies that took the hit. Drawn before the HUD so
         // the HUD always wins the overlap.

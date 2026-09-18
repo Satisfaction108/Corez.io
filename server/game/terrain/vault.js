@@ -77,7 +77,9 @@ function cancelDeposit(body, notify = true) {
 function pushOut(body, pad, speed, now) {
     const dx = body.x - pad.x, dy = body.y - pad.y;
     const d = Math.hypot(dx, dy);
-    const r = pad.r + 8;
+    // Edge-to-edge: the hull counts, so exclusion ends at the pad's visible
+    // rim, not somewhere inside it.
+    const r = pad.r + (body.realSize || 60) + 8;
     if (d >= r) {
         if (body._vaultPush && body._vaultPush.pad === pad) body._vaultPush = null;
         return true;
@@ -113,8 +115,10 @@ function ejectFromPad(body, pad, msg) {
     body.velocity.y = Math.sin(n) * 9;
     body._vaultPadSince = 0;
     // Kicked out means out: no re-entry for 5s so the pad can't be
-    // instantly re-camped.
+    // instantly re-camped. Scoped to THIS pad - a vault kick never locks
+    // some other pad.
     body._padReentryUntil = Date.now() + 5000;
+    body._padReentryPad = pad;
     if (msg) { try { body.sendMessage(msg + " (5s no re-entry)"); } catch { /* */ } }
 }
 
@@ -259,15 +263,27 @@ function tick(actors, dtMs) {
         const was = !!body.vaultOnPad;
         body.vaultOnPad = !!pad;
         body.onVaultPad = !!pad;
-        // 5s no re-entry after a kick: hard deny, parked outside every tick.
-        // No deposit, no pad timer games, and the timer restarts cleanly the
-        // next time they step in fresh.
-        if (pad && body._padReentryUntil && now < body._padReentryUntil) {
+        // 5s no re-entry after a kick: hard deny, parked hull-to-edge every
+        // tick. Touch (hull overlap) counts, not just center-inside, so the
+        // nose can never get in and the timer restarts cleanly next visit.
+        let denyPad = pad;
+        if (!denyPad) {
+            const br = body.realSize || 60;
+            for (const v of list) {
+                if (!Config.dig_royale && v.team !== body.team) continue;
+                const ddx = body.x - v.x, ddy = body.y - v.y;
+                const tr = v.r + br;
+                if (ddx * ddx + ddy * ddy < tr * tr) { denyPad = v; break; }
+            }
+        }
+        if (denyPad && body._padReentryUntil && now < body._padReentryUntil &&
+            (!body._padReentryPad || body._padReentryPad === denyPad)) {
             cancelDeposit(body, !!body.socket);
-            const dxn = body.x - pad.x, dyn = body.y - pad.y;
-            const nn = (dxn === 0 && dyn === 0) ? Math.random() * Math.PI * 2 : Math.atan2(dyn, dxn);
-            body.x = pad.x + Math.cos(nn) * (pad.r + 18);
-            body.y = pad.y + Math.sin(nn) * (pad.r + 18);
+            const dxn = body.x - denyPad.x, dyn = body.y - denyPad.y;
+            const nn = (dxn === 0 && dyn === 0) ? 0 : Math.atan2(dyn, dxn);
+            const park = denyPad.r + (body.realSize || 60) + 3;
+            body.x = denyPad.x + Math.cos(nn) * park;
+            body.y = denyPad.y + Math.sin(nn) * park;
             body.velocity.x = 0; body.velocity.y = 0;
             body._vaultPush = null;
             body._vaultPadSince = 0;

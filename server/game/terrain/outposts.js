@@ -88,6 +88,7 @@ function stateSnapshot() {
         c: o.color || "",
         o: o.ownerId || 0,
         l: o.occupyLeft || 0,
+        cont: ((o._contestedUntil || 0) > Date.now()) ? 1 : 0,
     }));
 }
 

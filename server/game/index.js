@@ -1744,10 +1744,13 @@ class gameHandler {
                                         
                                         
                                         if (destroyed) instance.rocksMined = (instance.rocksMined || 0) + 1;
-                                        if (destroyed && rock.ore && !wasGrowing) {
-                                            instance.gemsMined = (instance.gemsMined || 0) + 1;
-                                            gems.spawnOreBurst(rock, instance);
-                                            if (rock.ore === 4) announceEmerald(instance);
+                                        if (destroyed && !wasGrowing) {
+                                            if (!rock.ore) gems.pityBurst(rock, instance);
+                                            if (rock.ore) {
+                                                instance.gemsMined = (instance.gemsMined || 0) + 1;
+                                                gems.spawnOreBurst(rock, instance);
+                                                if (rock.ore === 4) announceEmerald(instance);
+                                            }
                                         }
                                     }
                                 }
@@ -1810,10 +1813,13 @@ class gameHandler {
                             
                             
                             if (destroyed) owner.rocksMined = (owner.rocksMined || 0) + 1;
-                            if (destroyed && rock.ore && !wasGrowing) {
-                                owner.gemsMined = (owner.gemsMined || 0) + 1;
-                                gems.spawnOreBurst(rock, owner);
-                                if (rock.ore === 4) announceEmerald(owner);
+                            if (destroyed && !wasGrowing) {
+                                if (!rock.ore) gems.pityBurst(rock, owner);
+                                if (rock.ore) {
+                                    owner.gemsMined = (owner.gemsMined || 0) + 1;
+                                    gems.spawnOreBurst(rock, owner);
+                                    if (rock.ore === 4) announceEmerald(owner);
+                                }
                             }
                         }
                         

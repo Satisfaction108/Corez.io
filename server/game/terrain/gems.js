@@ -66,6 +66,25 @@ function spawnGem(x, y, value, cls, size, vx = 0, vy = 0, ore = null) {
     return o;
 }
 
+// Pity: nobody whiffs the opening. A tank that broke 3+ rocks with no payout
+// and is still holding pocket change forces its next dry break to pay
+// copper. gemsMined++ on payout resets the drought automatically; fresh
+// bodies start fresh. Lobby excluded (bursts don't pay there anyway).
+function pityBurst(rock, breaker) {
+    if (!rock || rock.ore || rock.growing) return false;
+    if (!breaker || breaker.isDead?.() || breaker.royaleLobby) return false;
+    if ((breaker.carriedGems | 0) >= 60) return false;
+    if (((breaker.rocksMined | 0) - (breaker.gemsMined | 0)) < 3) return false;
+    const { ORE, ORE_HP } = require('./terrainGrid.js');
+    const tg = global.gameManager && global.gameManager.terrainGrid;
+    rock.ore = ORE.COPPER;
+    if (tg) {
+        rock.maxHealth = (tg.baseRockHealth * 1.3) * (ORE_HP[ORE.COPPER] || 1);
+        try { rock.deposits = tg._buildDeposits(rock); } catch { rock.deposits = null; }
+    }
+    return true;
+}
+
 function spawnOreBurst(rock, breaker) {
     if (!rock.ore) return;
     // BR lobby is pure destruction for fun - no gems until the match starts.
@@ -353,7 +372,7 @@ function dropGemsOnDeath(body, killers = []) {
     body._comboN = 0;
     // Death replays what you ate: tier history (newest first) dresses the
     // drop, so a shard haul bursts purple, not generic yellow loot.
-    const deathHist = ((body.gemTierHist || []).filter(t => t) || []).slice(-16).reverse();
+    const deathHist = ((body.gemTierHist || []).filter(t => t && t.o && t.v > 0) || []).slice(-48).reverse();
     body.gemTierHist = [];
     const raidMode = !!Config.dig_royale;
     // Keep the bot killers attached to the loot they created. A player can
@@ -380,33 +399,48 @@ function dropGemsOnDeath(body, killers = []) {
     }
     if (carried <= 0 && bankLoss <= 0) return;
     body.carriedGems = 0;
-    const hist = deathHist;
     if (bankLoss > 0) setBanked(body, banked - bankLoss);
     updateSatchel(body);
     talkGems(body, -carried, 1);
-    const drop = Math.floor(carried * DEATH_DROP) + bankLoss;
+    // Raid drops the FULL satchel. (2TDM keeps its 85% tax.)
+    const drop = Math.floor(carried * (raidMode ? 1 : DEATH_DROP)) + bankLoss;
     if (drop <= 0) return;
 
-    const n = Math.min(8, Math.max(3, Math.ceil(drop / 150)));
-    const values = [];
-    let left = drop;
-    for (let i = n; i > 1; i--) {
-        const v = Math.max(1, Math.round(left / i * (0.7 + Math.random() * 0.6)));
-        values.push(Math.min(v, left - (i - 1)));
-        left -= values[values.length - 1];
+    // 1:1 identity: newest pickups drop back as themselves at full size, so
+    // 9 coppers + a vein + a shard comes back out as exactly that. Banking
+    // shrinks the satchel without trimming history, so oldest entries merge
+    // away first until the individuals fit the drop. Whatever the history
+    // can't account for (starter dust, combo bonus, bank loss) rides as
+    // generic loot filler. Capped at 24 individuals + 3 filler so a copper
+    // mountain can't flood the world with entities.
+    const indiv = deathHist.slice(0, 24);
+    let indivTotal = indiv.reduce((a, e) => a + (e.v | 0), 0);
+    while (indiv.length && indivTotal > drop) {
+        const old = indiv.pop();
+        indivTotal -= old.v | 0;
     }
-    values.push(left);
-    for (let i = 0; i < values.length; i++) {
-        const v = values[i];
-        if (v <= 0) continue;
+    const drops = indiv.map(e => ({ v: e.v | 0, tier: e.o }));
+    let filler = drop - indivTotal;
+    if (filler > 0) {
+        const nf = Math.min(3, Math.max(1, Math.ceil(filler / 150)));
+        let left = filler;
+        for (let i = nf; i > 1; i--) {
+            const v = Math.max(1, Math.round(left / i * (0.7 + Math.random() * 0.6)));
+            const vv = Math.min(v, left - (i - 1));
+            drops.push({ v: vv, tier: null });
+            left -= vv;
+        }
+        drops.push({ v: left, tier: null });
+    }
+    for (const g of drops) {
+        if (g.v <= 0) continue;
         const ang = Math.random() * Math.PI * 2;
 
         const sp  = 1.6 * (0.45 + Math.random() * 0.55);
-        const tier = hist.length ? hist[i % hist.length] : null;
-        const cls = (tier && ORE_CLASS[tier]) || 'gemPickupLoot';
-        const gem = spawnGem(body.x, body.y, v, cls,
-                 Math.max(6.5, Math.min(15, 4.5 + 1.1 * Math.sqrt(v))),
-                 Math.cos(ang) * sp, Math.sin(ang) * sp, tier);
+        const cls = (g.tier && ORE_CLASS[g.tier]) || 'gemPickupLoot';
+        const gem = spawnGem(body.x, body.y, g.v, cls,
+                 Math.max(8, Math.min(30, 6 + 1.4 * Math.sqrt(g.v))),
+                 Math.cos(ang) * sp, Math.sin(ang) * sp, g.tier);
         // A player's death drop is reserved from unrelated bots for a grace
         // window so the player can run back for it. The bot that made the
         // kill gets an immediate claim and can collect its winnings.
@@ -552,9 +586,12 @@ function tickGem(gem, tg, players) {
         // death drop replays THIS run's mix, not last life's leftovers.
         if ((toucher.carriedGems | 0) <= 0) toucher.gemTierHist = [];
         if (gem.gemOre) {
+            // Identity memory: every gem is remembered (tier + full value)
+            // so the death drop replays the run 1:1. Combo bonus lands as
+            // filler later - only the gem's own worth is recorded.
             const hist = toucher.gemTierHist || (toucher.gemTierHist = []);
-            hist.push(gem.gemOre);
-            if (hist.length > 16) hist.shift();
+            hist.push({ o: gem.gemOre, v: gem.gemValue });
+            if (hist.length > 48) hist.shift();
         }
         const bonus = Math.min(0.5, 0.05 * ((toucher._comboN || 1) - 1));
         const v = gem.gemValue + Math.round(gem.gemValue * bonus);
@@ -602,4 +639,4 @@ function tickGem(gem, tg, players) {
     }
 }
 
-module.exports = { spawnOreBurst, spawnGem, initSatchel, updateSatchel, orientSatchel, dropGemsOnDeath, tickGem, talkGems, setBanked, SATCHEL_CAP };
+module.exports = { spawnOreBurst, pityBurst, spawnGem, initSatchel, updateSatchel, orientSatchel, dropGemsOnDeath, tickGem, talkGems, setBanked, SATCHEL_CAP };
