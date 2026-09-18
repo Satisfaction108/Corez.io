@@ -430,10 +430,8 @@ function onCombatantDead(body) {
     if (body.royaleAlive === false) return;
     body.royaleAlive = false;
     const key = statKeyFor(body);
-    if (key) {
-        const s = raidStats.get(key) || ensureStat(body);
-        if (s) { s.alive = false; s.carried = 0; }
-    }
+    const s = key ? (raidStats.get(key) || ensureStat(body)) : null;
+    if (s) { s.alive = false; s.carried = 0; }
     // Credit comes from the authoritative killer list, so human-vs-human
     // kills count (the old _lastDamageSource was only set for bot victims).
     // Storm, rock crushes and base shots are environmental: no credit, no
@@ -459,6 +457,11 @@ function onCombatantDead(body) {
                 ks.revengeBonus = (ks.revengeBonus | 0) + KILL_SCORE;
                 ks.revengeOn = null;
             }
+            // The hunt goes both ways: a plain (non-avenge) kill marks the
+            // victim for the killer too, so re-kills pay double - unless the
+            // killer is already hunting someone else. Deaths always overwrite
+            // toward the new killer (below).
+            if (!avenged && !ks.revengeOn) ks.revengeOn = key;
         }
     }
     if (s) s.revengeOn = (killerBody && killerKey && killerKey !== key) ? killerKey : null;
@@ -599,6 +602,17 @@ function disconnectCleanup(socket, body) {
 function tickOutpostRules(t) {
     const list = outposts.getOutposts();
     const bodies = combatants();
+    // Hard exclusion: park the hull edge exactly on the pad rim every tick.
+    // Velocity pushes can be overpowered by a determined driver (the old
+    // mush); a positional clamp cannot. Tangential slide still works, so
+    // circling the pad feels like a wall, not glue.
+    const parkOutside = (site, body, n) => {
+        const park = padEdge(site, body, 3);
+        body.x = site.x + Math.cos(n) * park;
+        body.y = site.y + Math.sin(n) * park;
+        body.velocity.x = 0; body.velocity.y = 0;
+        body._padPush = null;
+    };
     for (const site of list) {
         site.occupyLeft = 0;
         const ownerId = site.ownerId;
@@ -624,23 +638,26 @@ function tickOutpostRules(t) {
                 }
                 occupy.delete(site.id);
                 const n = (dx === 0 && dy === 0) ? 0 : Math.atan2(dy, dx);
-                const park = padEdge(site, body, 3);
-                body.x = site.x + Math.cos(n) * park;
-                body.y = site.y + Math.sin(n) * park;
-                body.velocity.x = 0; body.velocity.y = 0;
-                body._padPush = null;
+                parkOutside(site, body, n);
                 continue;
             }
             if (ownerId && body.id !== ownerId && touching) {
-                pushOut(body, site.x, site.y, padEdge(site, body, 6), 9, t, "bounce:" + site.id);
+                if (body.outpostDeposit) {
+                    body.outpostDeposit = null;
+                    try { body.socket && body.socket.talk('VP', 0, 0); } catch { /* */ }
+                }
+                const n = (dx === 0 && dy === 0) ? 0 : Math.atan2(dy, dx);
+                parkOutside(site, body, n);
                 site._contestedUntil = t + 8000;
                 continue;
             }
             if (body._padPush && body._padPush.tag === "bounce:" + site.id && !touching) {
                 body._padPush = null;
             }
-            if (ownerId === body.id && lockedUntil > t && d < site.r + bodyR + 4) {
-                pushOut(body, site.x, site.y, padEdge(site, body, 6), 9, t, "lock:" + site.id);
+            if (ownerId === body.id && lockedUntil > t && touching) {
+                const n = (dx === 0 && dy === 0) ? 0 : Math.atan2(dy, dx);
+                parkOutside(site, body, n);
+                if (body.socket) body.socket.talk('RYO', site.id, 0, Math.ceil((lockedUntil - t) / 1000));
                 continue;
             }
             if (ownerId === body.id && inside) {
@@ -667,10 +684,17 @@ function tickOutpostRules(t) {
                 }
             } else if (ownerId === body.id && !inside) {
                 // Stepping out pauses, not resets: back within 5s resumes the
-                // camp timer, so dipping out at 9s can't dodge the kick.
+                // camp timer, so dipping out at 9s can't dodge the kick. The
+                // HUD countdown is cleared on the way out so it never goes
+                // stale showing "eject in Xs" while you're off the pad.
                 const rec = occupy.get(site.id);
                 if (rec && rec.ownerId === body.id) {
-                    if (!rec.leftAt) rec.leftAt = t;
+                    if (!rec.leftAt) {
+                        rec.leftAt = t;
+                        if (body.socket) {
+                            try { body.socket.talk('RYO', site.id, 0, 0); } catch { /* */ }
+                        }
+                    }
                     else if (t - rec.leftAt > 5000) occupy.delete(site.id);
                 }
                 if (lockedUntil > t && body.socket)
@@ -882,5 +906,5 @@ class DigRoyale {
 
 module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
-    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked,
+    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf,
 };
