@@ -273,9 +273,19 @@ import * as tutorial from './tutorial.js';
             localStorage.setItem("uiScaleSettings", null);
         }
         if (!localStorage.getItem("uiScaleSettings") || document.getElementById("optUiScale").value === "") {
-            document.getElementById("optUiScale").value = global.mobile ? "mobile" : "normal";
+            document.getElementById("optUiScale").value = global.mobile ? "mobile" : "small";
             util.submitToLocalStorage("optUiScale");
             localStorage.setItem("uiScaleSettings", "true");
+        }
+        // Desktop default moved from Normal to Small (Normal crowds a 1080p
+        // screen). Players still on the old default get moved over once;
+        // anyone who picks Normal again afterwards keeps it.
+        if (!localStorage.getItem("uiScaleSmallDefault")) {
+            if (!global.mobile && document.getElementById("optUiScale").value === "normal") {
+                document.getElementById("optUiScale").value = "small";
+                util.submitToLocalStorage("optUiScale");
+            }
+            localStorage.setItem("uiScaleSmallDefault", "1");
         }
         loadSettings();
 
@@ -4875,6 +4885,8 @@ import * as tutorial from './tutorial.js';
 
         var Bd = Date.now();
         var yy = config.animationSettings.ScaleBar;
+        // the right-hand stack stops above the minimap instead of running into it
+        const yLimit = msgRight && !global.mobile ? global.screenHeight - alcoveSize - spacing - 22 - 30 : Infinity;
         for (let i = global.messages.length - 1; i >= 0; i--) {
             let msg = global.messages[i],
                 txt = msg.text,
@@ -4886,6 +4898,7 @@ import * as tutorial from './tutorial.js';
                  global.messages.splice(i, 1);
                  continue;
             }
+            if (y > yLimit) continue;
 
             let K = Math.max(0, Math.min(1, time / 300, duration / 300));
             if (msg.textJSON) {
@@ -5692,6 +5705,14 @@ import * as tutorial from './tutorial.js';
     const GEAR_TAG = { scanner: "SCN", magnet: "MAG", satchel: "SAT", insurance: "INS", cloak: "CLK", boots: "TRD", plating: "PLT", express: "EXP", mark: "MRK", wind: "WND" };
     const shopGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
     const kitGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
+    let kitBoxTop = 0;   // 0 while the kit box is hidden
+    // Highest point the bottom-left block (kit box, else the 11 stat bars and
+    // their points counter) can reach. The upgrade tiles and the quest and
+    // override cards all have to stop above it.
+    function leftColumnFloor() {
+        if (kitBoxTop > 0) return kitBoxTop;
+        return global.screenHeight - 20 - 5.5 - 14 - 10 * (14 + 5) - 30;
+    }
     const bossGlide = Smoothbar(0, 2, 3, 0.08, 0.025, true);
     let royaleFeedBottom = 0;
     const GEM_ICON = [[-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95]];
@@ -5846,10 +5867,11 @@ import * as tutorial from './tutorial.js';
         if (standingsRect) out.push(standingsRect);
         out.push({ x: sw / 2 - 240, y: 0, w: 480, h: hudTopBottom + 6 });
         out.push({ x: sw / 2 - 250, y: sh - 112, w: 500, h: 112 });   // name + wallet row
-        out.push({ x: 0, y: sh - 357, w: 232, h: 357 });
+        const lf = leftColumnFloor();
+        out.push({ x: 0, y: lf, w: 232, h: sh - lf });
         out.push({ x: sw - 252, y: sh - 262, w: 252, h: 262 });
         // class-upgrade tiles and the quest card under them
-        if ((global.upgradeBoxBottom | 0) > 0) out.push({ x: 0, y: 0, w: 280, h: global.upgradeBoxBottom + 8 });
+        if ((global.upgradeBoxBottom | 0) > 0) out.push({ x: 0, y: 0, w: Math.max(280, (global.upgradeBoxRight | 0) + 8), h: global.upgradeBoxBottom + 8 });
         if (questRect) out.push(questRect);
         if (overrideRect) out.push(overrideRect);
         return out;
@@ -6135,6 +6157,7 @@ import * as tutorial from './tutorial.js';
         let standBottom = 36;
         hudSafe("standings", () => { standBottom = drawRoyaleStandings(); });
         hudSafe("feed", () => drawRoyaleFeed(standBottom + 14));
+        hudSafe("cards", layoutLeftCards);
         hudSafe("quest", drawQuestCard);
         hudSafe("override", drawOverrideCard);
         hudSafe("storm", () => {
@@ -6319,24 +6342,44 @@ import * as tutorial from './tutorial.js';
 
     // ── quest tracker ──────────────────────────────────────────────────
     let questRect = null, overrideRect = null;
+    // ── left cards: the quest card with the override card right under it,
+    // in the gap between the class-upgrade tiles and the kit box. When the
+    // gap is too short the override drops its description; when even that
+    // won't fit (a tall upgrade grid) both cards move beside the tiles.
+    let leftCards = null;
+    const CARD_W = 214, QUEST_H = 54, CARD_GAP = 6;
+    const overrideH = n => n ? 44 + n * 13 : 38;
+    function layoutLeftCards() {
+        const r = global.royale;
+        const q = !global.died && r.you && r.you.quest ? r.you.quest : null;
+        const mod = !global.died && r.mod && r.mod.name ? r.mod : null;
+        if (!q && !mod) { leftCards = null; return; }
+        const lines = mod ? wrapLines(String(mod.desc || ""), 10, CARD_W - 20).slice(0, 3) : [];
+        const stackH = n => (q ? QUEST_H : 0) + (mod ? (q ? CARD_GAP : 0) + overrideH(n) : 0);
+        const floor = leftColumnFloor() - 10;
+        const tiles = (global.upgradeBoxBottom | 0) > 0;
+        const top = tiles ? global.upgradeBoxBottom + 12 : 16;
+        const pref = Math.max(global.screenHeight * 0.42, 330, top);
+        for (const n of [lines.length, 0]) {
+            const y = Math.round(Math.min(pref, floor - stackH(n)));
+            if (y >= top) { leftCards = { x: 20, y, q, mod, lines: lines.slice(0, n) }; return; }
+        }
+        const x = Math.round((global.upgradeBoxRight | 0) + 16);
+        let y = Math.round(global.upgradeBoxTop || 70);
+        // keep clear of the raid clock cluster at top centre
+        if (x + CARD_W > global.screenWidth / 2 - 250) y = Math.max(y, hudTopBottom + 8);
+        leftCards = { x, y, q, mod, lines };
+    }
     // ── raid override card: this raid's twist and what it does, in the same
     // tile language as the quest card, right under it
     function drawOverrideCard() {
-        const r = global.royale;
-        const mod = r.mod;
-        if (!mod || !mod.name || global.died) { overrideRect = null; return; }
-        const W = 214;
-        const lines = wrapLines(String(mod.desc || ""), 10, W - 20).slice(0, 3);
-        const H = 44 + lines.length * 13;
-        const kitTop = global.screenHeight - 342;
-        let y;
-        if (questRect) y = questRect.y + questRect.h;
-        else {
-            const tilesBottom = (global.upgradeBoxBottom | 0) > 0 ? global.upgradeBoxBottom + 12 : 0;
-            y = Math.round(Math.min(Math.max(global.screenHeight * 0.42, 330, tilesBottom), kitTop - 70));
-        }
-        if (y + H > kitTop - 6) y = kitTop - 6 - H;
-        const x = 20;
+        const L = leftCards;
+        const mod = L && L.mod;
+        if (!mod) { overrideRect = null; return; }
+        const W = CARD_W;
+        const lines = L.lines;
+        const H = overrideH(lines.length);
+        const x = L.x, y = L.q ? L.y + QUEST_H + CARD_GAP : L.y;
         overrideRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
         const c = ctx[2];
         c.save();
@@ -6353,14 +6396,11 @@ import * as tutorial from './tutorial.js';
         for (const ln of lines) { drawText(ln, x + 10, ly, 10, "#b9c3d1", "left", true); ly += 13; }
     }
     function drawQuestCard() {
-        const r = global.royale;
-        const q = r.you && r.you.quest;
-        if (!q || global.died) { questRect = null; return; }
-        const W = 214, H = 54;
-        // below the class-upgrade tiles when they are open, above the kit box
-        const kitTop = global.screenHeight - 342;
-        const tilesBottom = (global.upgradeBoxBottom | 0) > 0 ? global.upgradeBoxBottom + 12 : 0;
-        const x = 20, y = Math.round(Math.min(Math.max(global.screenHeight * 0.42, 330, tilesBottom), kitTop - 70));
+        const L = leftCards;
+        const q = L && L.q;
+        if (!q) { questRect = null; return; }
+        const W = CARD_W, H = QUEST_H;
+        const x = L.x, y = L.y;
         questRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
         const c = ctx[2];
         c.save();
@@ -6592,6 +6632,7 @@ import * as tutorial from './tutorial.js';
             (!global.tutorialMode || (window.dwTutUi === "kit" || (window.dwTutAllow || "").includes("kit") || (global.shop.state && (global.shop.state.kitOrder || []).length)));
         kitGlide.set(want ? 1 : 0);
         const g = kitGlide.get();
+        kitBoxTop = 0;
         if (g < 0.02) { global.clickables.kit.hide(); return; }
         const sh = global.shop, st = sh.state || {};
         const catalog = sh.catalog || [];
@@ -6603,6 +6644,7 @@ import * as tutorial from './tutorial.js';
         const W = alcoveSize - 10, H = 118;
         const x = spacing + 3;
         const y = barsTop - 26 - H + (1 - g) * 14;
+        kitBoxTop = barsTop - 26 - H;
         const c = ctx[2];
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         const hov = global.clickables.kit.check({ x: global.mouse.x, y: global.mouse.y });
@@ -8854,6 +8896,26 @@ import * as tutorial from './tutorial.js';
             let height = len;
 
             global.columnCount = Math.max(global.mobile ? 9 : 3, Math.floor(gui.upgrades.length ** 0.55));
+            // Desktop: add columns while the grid would run down into the kit
+            // box / stat bars (short windows, big trees). Six at most, past
+            // that it would reach the raid clock at top centre instead.
+            if (!global.mobile) {
+                const gridBottom = cols => {
+                    let gy = spacing - height - internalSpacing + 5 + 46, tick = cols, branch = -1;
+                    for (const u of gui.upgrades) {
+                        if (tick === cols || u[0] != branch) {
+                            gy += height + internalSpacing;
+                            if (u[0] != branch && u[1] != "undefined" && String(u[1]).length > 0) gy += 3 * internalSpacing;
+                            branch = u[0];
+                            tick = 0;
+                        }
+                        tick++;
+                    }
+                    return gy + height + internalSpacing - 5 + 19.1 + 6;
+                };
+                const limit = leftColumnFloor() - 8;
+                while (global.columnCount < 6 && gridBottom(global.columnCount) > limit) global.columnCount++;
+            }
             if (!global.canUpgrade) {
                 upgradeMenu.force(-global.columnCount * 3)
                 global.canUpgrade = true;
@@ -8879,6 +8941,7 @@ import * as tutorial from './tutorial.js';
             let clickableRatio = global.canvas.height / global.screenHeight / global.ratio;
             let lastBranch = -1;
             let upgradeHoverIndex = global.clickables.upgrade.check({ x: global.mouse.x, y: global.mouse.y });
+            let gridTop = null, gridRight = 0;
 
             for (let i = 0; i < gui.upgrades.length; i++) {
                 let upgrade = gui.upgrades[i];
@@ -8903,6 +8966,8 @@ import * as tutorial from './tutorial.js';
                 }
 
                 if (y > initialY) initialY = y;
+                if (gridTop === null) gridTop = y;
+                gridRight = Math.max(gridRight, x + len);
                 rowWidth = x;
                 !global.optionsMenu_Anim.isOpened && global.clickables.upgrade.place(i, x * clickableRatio, y * clickableRatio, len * clickableRatio, height * clickableRatio);
                 let upgradeKey = getClassUpgradeKey(upgradeNum);
@@ -8920,7 +8985,11 @@ import * as tutorial from './tutorial.js';
                 buttonX = initialX + (rowWidth + len - initialX) / 2,
                 buttonY = initialY + height + internalSpacing - 5;
             // the quest card sits below this edge while the tiles are on screen
-            if (glide > -0.5) global.upgradeBoxBottom = buttonY + h + 6;
+            if (glide > -0.5) {
+                global.upgradeBoxBottom = buttonY + h + 6;
+                global.upgradeBoxTop = gridTop;
+                global.upgradeBoxRight = gridRight;
+            }
 
             // Tutorial: declining is not a choice a lesson offers - and the
             // decline only clears the menu locally, so the evolve step would
@@ -9904,7 +9973,12 @@ import * as tutorial from './tutorial.js';
         let ratio = util.getScreenRatio();
 
         let spacing = 20;
-        let alcoveSize = 200 / ratio;
+        // Desktop: 200 UI units, so the upgrade tiles, stat bars, kit box and
+        // minimap follow the UI Scale setting like everything else. It used
+        // to be 200 device pixels, which made that column huge on small or
+        // Low Resolution screens and never shrank it on Small. The mobile
+        // layout is tuned around the old sizing, so it keeps it.
+        let alcoveSize = global.mobile ? 200 / ratio : 200;
         gui.__s.update();
         let lb = leaderboard.get();
         let max = lb.max;

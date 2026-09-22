@@ -47,7 +47,7 @@ const util = (function() {
                 else scale = global.UIscale;
                 return Math.max(global.screenWidth, 16 * global.screenHeight / 9) / scale;
             } catch (e) {
-                document.getElementById("optUiScale").value = global.mobile ? "mobile" : "normal",
+                document.getElementById("optUiScale").value = global.mobile ? "mobile" : "small",
                 util.submitToLocalStorage("optUiScale");
                 location.reload();
             }

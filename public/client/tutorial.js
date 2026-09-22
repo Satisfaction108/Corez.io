@@ -1217,7 +1217,7 @@ function uiRect(kind) {
         // (drawMinimapAndDebug). Dig Wars swaps in a square terrain minimap on
         // desktop once the satchel exists; mobile keeps the top-left rect one.
         const spacing = 20;
-        const len = 200 / util.getScreenRatio();
+        const len = global.mobile ? 200 / util.getScreenRatio() : 200;   // app.js alcoveSize
         const square = !global.mobile && terr() && global.gems && global.gems.cap > 0;
         const h = square ? len : (len / Math.max(1, global.gameWidth)) * global.gameHeight;
         const x = global.mobile ? spacing : SW() - spacing - len - 5;

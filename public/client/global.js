@@ -379,6 +379,8 @@ const global = {
     // world fx rings (meteor hits, charges, boss death)
     fx: [],
     upgradeBoxBottom: 0,
+    upgradeBoxTop: 0,
+    upgradeBoxRight: 0,
     lowFx: false,          // automatic: heavy trims when the frame rate sags
     royale: {
         phase: 'idle',
