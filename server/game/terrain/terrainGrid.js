@@ -1196,11 +1196,32 @@ class TerrainGrid {
     completeRegrow(rock) {
         rock.growing    = false;
         rock.alive      = true;
-        rock.health     = rock.maxHealth;
+        // Keep the damage it took while rising. Resetting to full here meant
+        // a rock you were shooting as it finished growing jumped back to 100%
+        // and looked like an ordinary rock that refused to break.
+        rock.health     = Math.max(1, rock.maxHealth - (rock.growDamage || 0));
         rock.growDamage = 0;
         rock._cp = null;
         this._unlistGrowing(rock);
         this.rockEvents.push({ k: rock.k, r: 2 });
+        if (rock.health < rock.maxHealth) this.rockEvents.push({ k: rock.k, h: rock.health / rock.maxHealth, hl: 1 });
+    }
+
+    // Support Strut: nothing inside the circle may start regrowing until
+    // `until`, including rocks that die there after the strut went down.
+    addNoRegrowZone(x, y, r, until) {
+        const now = Date.now();
+        this._noRegrowZones = (this._noRegrowZones || []).filter(z => z.until > now);
+        this._noRegrowZones.push({ x, y, r2: r * r, until });
+    }
+    _inNoRegrowZone(rock, now) {
+        const zones = this._noRegrowZones;
+        if (!zones || !zones.length) return false;
+        const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+        for (const z of zones) {
+            if (z.until > now && (rx - z.x) ** 2 + (ry - z.y) ** 2 <= z.r2) return true;
+        }
+        return false;
     }
 
     
@@ -1274,6 +1295,7 @@ class TerrainGrid {
             }
             if (now - rock.diedAt < (bloomRock ? 2500 : delay)) continue;
             if (rock.noRegrowUntil && now < rock.noRegrowUntil) continue;
+            if (this._inNoRegrowZone(rock, now)) continue;
             if (!bloomRock && !this._hasLivingNeighbour(rock)) continue;
             this.startRegrow(rock, now);
             if (bloomRock) rock.growStart = now - REGROW.GROW_MS * 0.45;   // rises in about 4 seconds

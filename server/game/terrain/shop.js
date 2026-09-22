@@ -29,13 +29,14 @@ const ITEMS = [
     { id: "wind",      cat: "gear", name: "Second Wind",        price: 800,  desc: "Respawn in 7 seconds instead of 15 for the next 5 minutes.", on: "You now respawn in 7 seconds." },
     // kit: consumables, 3 distinct types at a time, used with Z / Q / N
     { id: "charge",    cat: "kit", name: "Seismic Charge", price: 350, max: 3, desc: "Throws a charge at your cursor (up to 500 away) that shatters every rock within 150." },
-    { id: "strut",     cat: "kit", name: "Support Strut",  price: 250, max: 3, desc: "Props open the rocks within 220 of you so they can't grow back for 3 minutes." },
+    { id: "strut",     cat: "kit", name: "Support Strut",  price: 250, max: 3, desc: "Props open everything within 320 of you for 3 minutes: nothing grows back there, and rock that is already regrowing crumbles." },
     { id: "medkit",    cat: "kit", name: "Medkit",         price: 300, max: 3, desc: "Heals half your health on the spot and keeps the storm off you for 3 seconds." },
     { id: "overdrive", cat: "kit", name: "Overdrive Core", price: 450, max: 2, desc: "Double mining power and 30% faster reload for 20 seconds." },
     { id: "anchor",    cat: "kit", name: "Storm Anchor",   price: 400, max: 2, desc: "The storm can't hurt you for 15 seconds." },
     { id: "flash",     cat: "kit", name: "Flash Vault",    price: 500, max: 2, desc: "Banks up to 300 of the gems you're carrying from wherever you are, minus a 30% fee." },
     { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Instantly regrows the dead rock within 260 of you. Instant cover." },
     { id: "decoy",     cat: "kit", name: "Decoy Satchel",  price: 250, max: 3, desc: "Makes you look like you're hauling a full satchel for 20 seconds. Bait." },
+    { id: "barrage",   cat: "kit", name: "Rock Barrage",   price: 3000, max: 1, desc: "Hurls 10 chunks of rock at your cursor. Each one that lands takes 9% of a tank's health straight through its shield, so a full volley kills anyone who isn't at full health. Every chunk smashes through two rocks on the way." },
     // sidearms: one mounted at a time, fired with right click
     { id: "flak",  cat: "arm", name: "Annihilator", price: 1500, desc: "Right click fires one huge annihilator shell at your cursor. 7 second reload." },
     { id: "lance", cat: "arm", name: "Drill Lance", price: 1200, desc: "Right click fires a bolt that shatters any rock it hits. 5 second reload." },
@@ -334,8 +335,133 @@ function grantKit(socket, itemId, count = 1) {
 }
 
 function randomKitId() {
-    const pool = ITEMS.filter(i => i.cat === "kit").map(i => i.id);
+    const pool = ITEMS.filter(i => i.cat === "kit" && i.id !== "barrage").map(i => i.id);
     return pool[(Math.random() * pool.length) | 0];
+}
+
+// ── Rock Barrage ───────────────────────────────────────────────────────
+// Ten rock chunks fan out toward the cursor. They are noclip entities moved
+// by hand here, so the engine's collision maths never touches them and the
+// damage is exactly what the shop says: 9% of the target's max health per
+// chunk, straight through the shield (ten landing = 90%). Each chunk
+// smashes up to two rocks, and dies on a third, on a raid vault pad, or at
+// the end of its range.
+const STRUT_RADIUS = 320;
+const BARRAGE = { count: 10, speed: 30, range: 950, spread: 0.26, hitFrac: 0.09, bossFrac: 0.015, pierce: 2, radius: 14 };
+const barrageShards = [];
+
+function launchBarrage(body, tx, ty) {
+    let dx = (+tx || 0) - body.x, dy = (+ty || 0) - body.y;
+    if (!(Math.hypot(dx, dy) > 1)) { dx = Math.cos(body.facing || 0); dy = Math.sin(body.facing || 0); }
+    const base = Math.atan2(dy, dx);
+    const now = Date.now();
+    for (let i = 0; i < BARRAGE.count; i++) {
+        // an even fan with a little scatter, and staggered speeds so the
+        // volley arrives as a spray rather than a flat wall
+        const t = BARRAGE.count > 1 ? i / (BARRAGE.count - 1) - 0.5 : 0;
+        const a = base + t * BARRAGE.spread * 2 + (Math.random() - 0.5) * 0.06;
+        const sp = BARRAGE.speed * (0.85 + Math.random() * 0.3);
+        const start = (body.realSize || 30) + 10;
+        let o;
+        try {
+            o = new Entity({ x: body.x + Math.cos(a) * start, y: body.y + Math.sin(a) * start }, body);
+            o.define('rockBarrageShard');
+            o.team = body.team;
+            o.source = body;
+            o.noclip = true;
+            o.settings.diesAtRange = false;
+            o.alwaysActive = true;
+            o.refreshBodyAttributes();
+            o.damage = 1;      // killer credit reads instance.damage
+            o.velocity.x = 0; o.velocity.y = 0;
+        } catch (e) { continue; }
+        barrageShards.push({ e: o, owner: body, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, left: BARRAGE.range, pierce: BARRAGE.pierce, at: now });
+    }
+}
+
+function barrageTargets(owner) {
+    const out = [];
+    for (const e of entities.values()) {
+        if (!e || e === owner || e.isDead?.()) continue;
+        if (!(e.isPlayer || e.isBot || e.isRoyaleBoss)) continue;
+        if (e.team === owner.team) continue;
+        if (e.invuln || e.godmode || e.passive || e.padSafe || e.royaleLobby) continue;
+        out.push(e);
+    }
+    return out;
+}
+
+function hitWithRock(target, shard, owner) {
+    const frac = target.isRoyaleBoss ? BARRAGE.bossFrac : BARRAGE.hitFrac;
+    const dmg = (target.health.max || 0) * frac;
+    if (!(dmg > 0)) return;
+    target.health.amount -= dmg;
+    target.hitAt = Date.now();
+    try { target.reportDamageNumber && target.reportDamageNumber(dmg); } catch { /* */ }
+    // Credit the owner: the next mortality check reads collisionArray before
+    // it is cleared, and a sliver of damageReceived raises the usual damage
+    // event (bots fight back, bases go contested).
+    target.collisionArray.push(shard.e);
+    target.damageReceived = (target.damageReceived || 0) + 1e-6;
+    target._lastDamageSource = owner;
+    target._lastDamageAt = Date.now();
+}
+
+function tickBarrage() {
+    if (!barrageShards.length) return;
+    const tg = global.gameManager && global.gameManager.terrainGrid;
+    const now = Date.now();
+    const vaults = (() => { try { return Config.dig_royale ? require('./vault.js').getVaults() : []; } catch { return []; } })();
+    const gems = require('./gems.js');
+    const targetsByOwner = new Map();
+    for (let i = barrageShards.length - 1; i >= 0; i--) {
+        const s = barrageShards[i];
+        const e = s.e;
+        const dt = Math.min(3, Math.max(0.2, (now - s.at) / 33.3));
+        s.at = now;
+        let dead = !e || e.isDead?.() || !s.owner || s.left <= 0;
+        if (!dead) {
+            // sub-steps so a fast chunk cannot skip over a small tank or rock
+            const steps = Math.max(1, Math.ceil(Math.hypot(s.vx, s.vy) * dt / BARRAGE.radius));
+            const sx = s.vx * dt / steps, sy = s.vy * dt / steps;
+            let targets = targetsByOwner.get(s.owner);
+            if (!targets) { targets = barrageTargets(s.owner); targetsByOwner.set(s.owner, targets); }
+            for (let k = 0; k < steps && !dead; k++) {
+                e.x += sx; e.y += sy;
+                s.left -= Math.hypot(sx, sy);
+                for (const t of targets) {
+                    if (t.isDead?.()) continue;
+                    const r = BARRAGE.radius + (t.realSize || t.size || 30);
+                    if ((t.x - e.x) ** 2 + (t.y - e.y) ** 2 > r * r) continue;
+                    hitWithRock(t, s, s.owner);
+                    dead = true;
+                    break;
+                }
+                if (dead) break;
+                for (const v of vaults) {
+                    if (require('./vault.js').onPadShape(v, e.x - v.x, e.y - v.y, 8)) { dead = true; break; }
+                }
+                if (dead || !tg) break;
+                const rock = tg.rockHitByCircle(e.x, e.y, BARRAGE.radius)
+                    || (tg.growingRockHitByCircle ? tg.growingRockHitByCircle(e.x, e.y, BARRAGE.radius, now) : null);
+                if (rock) {
+                    const wasGrowing = rock.growing;
+                    const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+                    if (tg.damageRock(rock, rock.health + 1, e.x, e.y, false, s.owner)) {
+                        s.owner.rocksMined = (s.owner.rocksMined || 0) + 1;
+                        if (!wasGrowing && rock.ore) { s.owner.gemsMined = (s.owner.gemsMined || 0) + 1; try { gems.spawnOreBurst(rock, s.owner); } catch { /* */ } }
+                    }
+                    if (--s.pierce <= 0) dead = true;
+                }
+                if (s.left <= 0) dead = true;
+            }
+            e.velocity.x = 0; e.velocity.y = 0; e.accel.x = 0; e.accel.y = 0;
+        }
+        if (dead) {
+            try { if (e && !e.isDead?.()) { e.kill(); } } catch { /* */ }
+            barrageShards.splice(i, 1);
+        }
+    }
 }
 
 // ── kit usage ──────────────────────────────────────────────────────────
@@ -398,16 +524,28 @@ function useKit(socket, slot, tx, ty, itemId) {
         }
         case "strut": {
             if (!tg) break;
-            let n = 0;
+            // A zone, not a list of rocks: anything that dies inside it later
+            // stays open too, and rock that was already mid-regrow crumbles
+            // (the old version skipped those, so struts looked like they
+            // did nothing while the wall kept coming back).
+            const R = STRUT_RADIUS;
+            tg.addNoRegrowZone(body.x, body.y, R, now + 180_000);
+            let crumbled = 0;
             for (const rock of tg.rocks.values()) {
-                if (!rock || rock.canyon) continue;
+                if (!rock || rock.canyon || !rock.growing) continue;
                 const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
-                if ((rx - body.x) ** 2 + (ry - body.y) ** 2 > 220 * 220) continue;
-                rock.noRegrowUntil = now + 180_000;
-                n++;
+                if ((rx - body.x) ** 2 + (ry - body.y) ** 2 > R * R) continue;
+                if (tg.damageRock(rock, rock.health + 1, rx, ry, false, null)) crumbled++;
             }
             used = true;
-            msg = "Strut placed. " + n + " rocks stay open for 3 minutes.";
+            msg = "Strut placed. Nothing grows back within " + R + " of here for 3 minutes" + (crumbled ? ", and " + crumbled + " regrowing rocks crumbled." : ".");
+            break;
+        }
+        case "barrage": {
+            if (!tg) break;
+            launchBarrage(body, tx, ty);
+            used = true;
+            msg = "Rock Barrage away.";
             break;
         }
         case "medkit": {
@@ -523,6 +661,7 @@ function shopEject(body, pad, msg, lockMs) {
 // A shop pad is a restroom: one shopper at a time, bots never set foot on it,
 // and nobody inside can be shot or shoot (padSafe, set in the loader).
 function tick(actors) {
+    tickBarrage();
     const list = getShops();
     if (!list.length) return;
     const now = Date.now();
@@ -610,5 +749,5 @@ module.exports = {
     ITEMS, BY_ID, getShops, snapshot, catalog, stateOf, freshState, resetAll, talkState, dropKit,
     miningMult, hasGear, magnetMult, satchelCap, depositRateMult, stormDamageMult, respawnMs, killBonus,
     keepsDrillOnRespawn, applyPassives, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, onDeath, tick,
-    PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE,
+    PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE, launchBarrage, BARRAGE, STRUT_RADIUS,
 };

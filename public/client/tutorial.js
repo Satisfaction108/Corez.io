@@ -39,7 +39,7 @@ const FONT = "Rubik, Ubuntu, sans-serif";
 const DEFAULTS = {
     KEY_UP: "W", KEY_DOWN: "S", KEY_LEFT: "A", KEY_RIGHT: "D",
     KEY_AUTO_FIRE: "E", KEY_AUTO_SPIN: "C",
-    KEY_AUTO_ALT: "G", KEY_TOGGLE_MAP: "F", KEY_OVER_RIDE: "R",
+    KEY_AUTO_ALT: "G", KEY_TOGGLE_MAP: "M", KEY_OVER_RIDE: "R",
     KEY_UPGRADE_ATK: "1", KEY_UPGRADE_SHI: "0", KEY_UPGRADE_MIN: "-",
     KEY_KIT_1: "Z", KEY_KIT_2: "Q", KEY_KIT_3: "N",
 };

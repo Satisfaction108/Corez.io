@@ -1005,6 +1005,7 @@ function wipeWall() {
     if (!tg || !tg.rocks) return;
     const t = now();
     let queued = 0;
+    tg._noRegrowZones = [];          // struts from the last raid are gone too
     for (const rock of tg.rocks.values()) {
         if (rock.alive || rock.growing) continue;
         if (!rock.diedAt) continue;

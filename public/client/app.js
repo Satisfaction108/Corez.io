@@ -5726,7 +5726,7 @@ import * as tutorial from './tutorial.js';
     // ═════════════════════════════════════════════════════════════════════
     const SHOP_TABS = [["drill", "Drills"], ["gear", "Gear"], ["kit", "Kit"], ["arm", "Sidearms"]];
     const SHOP_ACCENT = "#5ce0d8";
-    const KIT_SHORT = { charge: "CHARGE", strut: "STRUT", medkit: "MEDKIT", overdrive: "OVERDRV", anchor: "ANCHOR", flash: "FLASH", bulwark: "BULWARK", decoy: "DECOY" };
+    const KIT_SHORT = { charge: "CHARGE", strut: "STRUT", medkit: "MEDKIT", overdrive: "OVERDRV", anchor: "ANCHOR", flash: "FLASH", bulwark: "BULWARK", decoy: "DECOY", barrage: "BARRAGE" };
     const GEAR_TAG = { scanner: "SCN", magnet: "MAG", satchel: "SAT", insurance: "INS", cloak: "CLK", boots: "TRD", plating: "PLT", express: "EXP", mark: "MRK", wind: "WND" };
     const shopGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
     const kitGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
@@ -6536,6 +6536,7 @@ import * as tutorial from './tutorial.js';
     const KIT_CARD = {
         medkit: "#3fbf7a", charge: "#e07c2f", strut: "#8a93a6", overdrive: "#f0a030",
         anchor: "#4d8be0", flash: "#38b8b0", bulwark: "#7a8494", decoy: "#d4a83a",
+        barrage: "#b0413e",
     };
     function drawKitGlyph(c, id, u, col) {
         // every glyph is painted twice: a dark outline pass, then the white
@@ -6593,6 +6594,24 @@ import * as tutorial from './tutorial.js';
                         c.stroke();
                     }
                     break;
+                case "barrage": {
+                    // three rock chunks flying up and right, with speed lines
+                    const chunk = (x, y, r) => {
+                        c.beginPath();
+                        const k = [[-1, -0.3], [-0.4, -1], [0.5, -0.8], [1, 0], [0.6, 0.8], [-0.3, 1], [-0.9, 0.5]];
+                        k.forEach((p, i) => i ? c.lineTo(x + p[0] * r, y + p[1] * r) : c.moveTo(x + p[0] * r, y + p[1] * r));
+                        c.closePath(); c.fill(); if (extra) { c.lineWidth = extra; c.stroke(); }
+                    };
+                    chunk(u * 0.3, -u * 0.32, u * 0.3);
+                    chunk(-u * 0.22, u * 0.05, u * 0.26);
+                    chunk(u * 0.2, u * 0.42, u * 0.22);
+                    c.lineWidth = Math.max(1.2, u * 0.12) + extra;
+                    c.beginPath();
+                    c.moveTo(-u * 0.75, -u * 0.25); c.lineTo(-u * 0.5, -u * 0.42);
+                    c.moveTo(-u * 0.8, u * 0.35); c.lineTo(-u * 0.55, u * 0.2);
+                    c.stroke();
+                    break;
+                }
                 case "decoy":
                     c.setLineDash([u * 0.24, u * 0.16]);
                     gemPath(c, 0, u * 0.02, u * 0.66); c.stroke();
@@ -7061,6 +7080,7 @@ import * as tutorial from './tutorial.js';
     const KIT_FX = {
         medkit: "#6ff5a8", overdrive: "#ffb347", anchor: "#7fb1f2", flash: "#5ce0d8",
         bulwark: "#b9c3d1", decoy: "#ffd75e", strut: "#c9c9d6", charge: "#ffe0a8",
+        barrage: "#ff8a6b",
     };
     const chestSeenAt = new Map();
     function drawRoyaleWorldMarkers(px, py, ratio) {
@@ -8357,7 +8377,7 @@ import * as tutorial from './tutorial.js';
         c.strokeStyle = color.black;
         c.strokeRect(x, y, size, size);
         const keyEl = document.querySelector('#controlSettings b[data-key="KEY_TOGGLE_MAP"]');
-        const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "F";
+        const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "M";
         drawText("[" + keyName + "] map", x + size / 2, y + size + 16, 11, color.guiwhite, "center");
     }
 
@@ -8490,7 +8510,7 @@ import * as tutorial from './tutorial.js';
         ctx[2].strokeStyle = color.black;
         ctx[2].strokeRect(px0 - 2, py0 - 2, panelW + 4, panelH + 4);
         const keyEl = document.querySelector('#controlSettings b[data-key="KEY_TOGGLE_MAP"]');
-        const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "F";
+        const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "M";
         drawText("[" + keyName + "] close",
                  sw / 2, py0 + panelH + 22, 13, color.guiwhite, "center");
         ctx[2].restore();
@@ -8599,7 +8619,7 @@ import * as tutorial from './tutorial.js';
                 const my = global.screenHeight - len - spacing - 22;
                 drawFortniteMinimap(mx, my, len);
                 const keyEl = document.querySelector('#controlSettings b[data-key="KEY_TOGGLE_MAP"]');
-                const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "F";
+                const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "M";
                 drawText("[" + keyName + "] map", mx + len / 2, my + len + 16, 11, color.guiwhite, "center");
             } else if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0 && !global.mobile) {
                 const mx = global.screenWidth - spacing - len - 5;

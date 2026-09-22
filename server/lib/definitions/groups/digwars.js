@@ -203,3 +203,30 @@ Class.coreChamber = {
     IGNORED_BY_AI: true,
     HITS_OWN_TYPE: "never",   
 };
+
+// Rock Barrage kit item: a chunk of rock hurled at the cursor. Flight, hits
+// and damage are all run by shop.js (tickBarrage); the entity is noclip and
+// only here to be drawn.
+Class.rockBarrageShard = {
+    TYPE: "bullet",
+    LABEL: "Rock Chunk",
+    SHAPE: [[-1, -0.35], [-0.45, -0.95], [0.4, -0.85], [1, -0.2], [0.7, 0.75], [-0.2, 1], [-0.85, 0.55]],
+    COLOR: "#8b847a",
+    SIZE: 13,
+    STROKE_WIDTH: 1.1,
+    NO_COLLISIONS: true,
+    IGNORED_BY_AI: true,
+    DRAW_HEALTH: false,
+    DIE_AT_RANGE: false,
+    HEALTH_WITH_LEVEL: false,
+    DAMAGE_EFFECTS: false,
+    FACING_TYPE: ["spin", { speed: 0.12 }],
+    BODY: {
+        DAMAGE: 1,
+        HEALTH: 1000,
+        SPEED: 0,
+        PUSHABILITY: 0,
+        DENSITY: 1,
+        RANGE: 1000,
+    },
+};
