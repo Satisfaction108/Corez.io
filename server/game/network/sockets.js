@@ -59,6 +59,14 @@ function livingSpectateTarget(killers) {
     return livingSpectateList()[0] || null;
 }
 
+
+// The colour a player sees their own tank (and HUD) in. Tutorial learners all
+// share TEAM_BLUE internally but each wears a Dig Royale palette colour.
+function ownTankColor(body) {
+    if (Config.tutorial && body && body.socket && body.socket._tutColor != null) return body.socket._tutColor;
+    return !Config.random_body_colors && (Config.groups || (Config.mode == 'ffa' || Config.mode == 'clan' && !Config.tag)) ? 10 : global.getTeamColor(body.team);
+}
+
 class socketManager {
     constructor(parent) {
         this.permissionsDict = {};
@@ -837,6 +845,10 @@ class socketManager {
                     // A weakened training copy of a raid boss.
                     case "boss": tut.spawnBoss(plot, typeof m[1] === "string" ? m[1] : "warden"); break;
                     case "bossclear": tut.clearBoss(plot); break;
+                    // Fresh start: this plot's base back to neutral and locked.
+                    case "reset": tut.resetBase(plot); break;
+                    // The base lesson has begun: the base can be shot now.
+                    case "openbase": tut.openBase(plot); break;
                 }
             } break;
             case "EP": {
@@ -1666,6 +1678,17 @@ class socketManager {
                 body.team = player.team;
                 body.color.base = global.getTeamColor(player.body.team);
                 socket.rememberedTeam = body.team;
+                if (tutorialHome) {
+                    // Tutorial: a Dig Royale palette colour, not team blue.
+                    const c = require('../tutorialSession.js').learnerColor(socket);
+                    body.color.base = c;
+                    body.leaderboardColor = c;
+                    body.minimapColor = c;
+                    try {
+                        const key = require('../terrain/outposts.js').ownerKeyFor(body);
+                        if (key) require('../terrain/outposts.js').rebindOwner(key, body);
+                    } catch (e) { }
+                }
             } break;
             case 'tag': {
                 body.team = player.team;
@@ -1719,7 +1742,7 @@ class socketManager {
     preparePlayer(socket, player, body, doNotTakeAction = {}) {
 
         player._tcTeam = body.team;
-        player.teamColor = new Color(!Config.random_body_colors && (Config.groups || (Config.mode == 'ffa' || Config.mode == 'clan' && !Config.tag)) ? 10 : global.getTeamColor(body.team)).compiled;
+        player.teamColor = new Color(ownTankColor(body)).compiled;
 
         player.target = { x: 0, y: 0 };
 
@@ -1920,7 +1943,7 @@ class socketManager {
 
                 if (player._tcTeam !== player.body.team || !player.teamColor) {
                     player._tcTeam = player.body.team;
-                    player.teamColor = new Color(!Config.random_body_colors && (Config.groups || (Config.mode == 'ffa' || Config.mode == 'clan' && !Config.tag)) ? 10 : global.getTeamColor(player.body.team)).compiled;
+                    player.teamColor = new Color(ownTankColor(player.body)).compiled;
                 }
 
                 if (player.command.autospin) {

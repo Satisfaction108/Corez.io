@@ -2664,6 +2664,15 @@ import * as tutorial from './tutorial.js';
     function royaleLobbyPhase() {
         return false;
     }
+    // Tutorial: the learner's round practice island ({x, y, r}), else null.
+    function tutorialIsland() {
+        const tp = global.tutorialMode && global.tutorialPlot;
+        return tp && tp.island && tp.island.r > 0 ? tp.island : null;
+    }
+    // Pads drawn the Dig Royale way (grey neutral bases, site colours).
+    function royaleLook() {
+        return royaleActive() || !!global.tutorialMode;
+    }
     function royaleBoardRows() {
         const b = (global.royale && global.royale.board) || [];
         const sort = (global.royaleBoard && global.royaleBoard.sort) || 'score';
@@ -2988,7 +2997,7 @@ import * as tutorial from './tutorial.js';
             const bodyCol = (st.o && st.c) ? st.c
                          : st.t === -1 ? gameDraw.getColor("blue")
                          : st.t === -2 ? gameDraw.getColor("red")
-                         : (royaleActive() ? "#8a90a0" : gameDraw.getColor("yellow"));
+                         : (royaleLook() ? "#8a90a0" : gameDraw.getColor("yellow"));
             c.save();
             c.translate(sx, sy);
             c.lineJoin = "round";
@@ -3007,14 +3016,14 @@ import * as tutorial from './tutorial.js';
                 c.fillStyle = ownCol;
                 c.fill();
                 c.globalAlpha = 1;
-            } else if (royaleActive()) {
+            } else if (royaleLook()) {
                 c.globalAlpha = 0.16 + 0.08 * Math.sin(now / 700 + o.id);
                 c.fillStyle = "#8a90a0";
                 c.fill();
                 c.globalAlpha = 1;
             }
             c.lineWidth = Math.max(3, R * 0.06);
-            c.strokeStyle = (st.t || st.o) ? ownCol : (royaleActive() ? "#8a90a0" : "#111318");
+            c.strokeStyle = (st.t || st.o) ? ownCol : (royaleLook() ? "#8a90a0" : "#111318");
             c.stroke();
             // recessed inner disc
             c.fillStyle = "#31363f";
@@ -3634,9 +3643,25 @@ import * as tutorial from './tutorial.js';
             );
             ctx[0].clip();
         }
+        // Tutorial: dirt on the learner's round island only, void around it,
+        // like a small copy of the raid map. Rim rocks overhang it unclipped.
+        const island = tutorialIsland();
+        if (island) {
+            if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
+            ctx[0].save();
+            ctx[0].translate(roomX + roomWidth / 2, roomY + roomHeight / 2);
+            ctx[0].scale(ratio, ratio);
+            ctx[0].beginPath();
+            ctx[0].arc(island.x, island.y, island.r + 40, 0, Math.PI * 2);
+            ctx[0].fillStyle = "#1e1d1b";
+            ctx[0].fill();
+            ctx[0].fillStyle = floorPattern;
+            ctx[0].fill();
+            ctx[0].restore();
+        }
         // Square dirt base for normal modes. Royale paints its dirt under
         // the rocks only (below), leaving void at the raw rock edge.
-        if (!royaleMode() || !getMapPaths()) ctx[0].fillRect(roomX, roomY, roomWidth, roomHeight);
+        if (!island && (!royaleMode() || !getMapPaths())) ctx[0].fillRect(roomX, roomY, roomWidth, roomHeight);
         // muddy cavern floor: repeat the dirt tile across the room,
         // anchored to world coordinates and scaled with the camera so the
         // ground never "swims". PERF: only the visible slice of the room is
@@ -3662,7 +3687,7 @@ import * as tutorial from './tutorial.js';
             }
         }
         if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
-        if (!royaleMode() || !getMapPaths()) {
+        if (!island && (!royaleMode() || !getMapPaths())) {
             const vx0 = Math.max(roomX, 0), vy0 = Math.max(roomY, 0);
             const vx1 = Math.min(roomX + roomWidth, global.screenWidth);
             const vy1 = Math.min(roomY + roomHeight, global.screenHeight);
@@ -7919,7 +7944,13 @@ import * as tutorial from './tutorial.js';
         
         c.fillStyle = "#0e1418";
         c.fillRect(rx, ry, rw, rh);
-        if (royaleMode()) {
+        const isl = tutorialIsland();
+        if (isl) {
+            c.fillStyle = "#1e1d1b";
+            c.beginPath();
+            c.arc(X(isl.x), Y(isl.y), (isl.r + 40) * s, 0, Math.PI * 2);
+            c.fill();
+        } else if (royaleMode()) {
             // Island dirt only under the rocks: the map edge is the rocks.
             const islP = getMapPaths();
             if (islP) {
@@ -8433,7 +8464,8 @@ import * as tutorial from './tutorial.js';
             const mx = T.X(hoverOutpost.x), my = T.Y(hoverOutpost.y);
             drawText(hoverOutpost.name, Math.round(mx), Math.round(my - 16), 14, hoverOutpost.color || color.gold, "center");
             if (st.h > 0) {
-                const ownCol = st.t === -1 ? gameDraw.getColor("blue")
+                const ownCol = (st.o && st.c) ? st.c
+                            : st.t === -1 ? gameDraw.getColor("blue")
                             : st.t === -2 ? gameDraw.getColor("red") : gameDraw.getColor("yellow");
                 const bw = 52, bh = 5, bx = mx - bw / 2, by = my + 10;
                 ctx[2].fillStyle = color.black;

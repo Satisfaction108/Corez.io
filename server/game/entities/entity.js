@@ -1060,6 +1060,18 @@ class Entity extends EventEmitter {
             // like the edge of the real map - lean on it and you slow to a
             // stop, rather than being snapped back a step.
             const ab = this.arenaBounds;
+            if (ab && ab.r) {
+                // round arena (the tutorial island): push back toward the middle
+                const f = Config.room_bound_force / global.gameManager.roomSpeed;
+                const dx = this.x - ab.cx, dy = this.y - ab.cy;
+                const d = Math.hypot(dx, dy);
+                const over = d + this.realSize - ab.r + 50;
+                if (over > 0 && d > 0) {
+                    this.accel.x -= (dx / d) * over * f;
+                    this.accel.y -= (dy / d) * over * f;
+                }
+                return;
+            }
             if (ab) {
                 const f = Config.room_bound_force / global.gameManager.roomSpeed;
                 this.accel.x -= Math.min(this.x - this.realSize - ab.x0 + 50, 0) * f;

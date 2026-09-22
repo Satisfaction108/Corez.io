@@ -15,7 +15,7 @@ const padGeom = require('./padGeom.js');
 const OCT_SCALE = padGeom.OCT.scale;
 function insideOctagon(dx, dy, R) { return padGeom.insideNgon(dx, dy, R, 8); }
 function onPadShape(v, dx, dy, extra = 0) {
-    if (Config.dig_royale) return padGeom.insideNgon(dx, dy, v.r * OCT_SCALE + extra, 8);
+    if (Config.dig_royale || v.rainbow) return padGeom.insideNgon(dx, dy, v.r * OCT_SCALE + extra, 8);
     const r = v.r + extra;
     return dx * dx + dy * dy < r * r;
 }

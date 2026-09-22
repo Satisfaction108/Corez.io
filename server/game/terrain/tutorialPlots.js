@@ -2,27 +2,34 @@
 //
 // The engine runs one shared room per server process, so "every learner gets
 // their own world" is bought a different way: the room is carved into a grid of
-// ARENAS, each one a miniature of the real dig-wars map, separated by a gutter
-// wide enough that no learner can ever see into a neighbour's arena.
+// ARENAS, separated by a gutter wide enough that no learner can ever see into a
+// neighbour's arena.
 //
 // ── what an arena looks like ──────────────────────────────────────────────
-// PLOT_TILES x PLOT_TILES tiles, a small Dig Royale practice ground:
+// A small copy of the Dig Royale map: a round island of solid rock with the
+// same landmarks the real raid has, in the same visual language.
 //
-//     col  0      : the vault pad, on the learner's side
-//     cols 1-2    : open ground - spawn, practice bots, the shop pad, the drill
-//     cols 3-8    : the rock wall, split by a corridor at y = 0 with the
-//                   practice base pad where the corridor crosses the middle
-//     cols 9-11   : open ground on the far side (no team bases: Dig Royale
-//                   has no teams)
+//                         (solid rock, richest ore
+//                          and the emeralds up here)
+//
+//        ( spawn  )=========[ VAULT ]=========[ BASE ]
+//        (clearing)             ||
+//                               ||
+//                            < SHOP >
+//
+//   - the rainbow vault sits in the middle, exactly like the Center Vault;
+//   - the learner starts in a dug-out clearing on the west side, big enough
+//     for the practice fights, chests and the training boss;
+//   - three tunnels, the kind other miners leave behind, link the clearing,
+//     the vault, the practice base (east) and the shop (south);
+//   - everything else is rock, with ore graded like the real map: copper near
+//     the middle, azurite further out, shards near the rim.
 //
 // ── why rocks are shaped by KILLING them ──────────────────────────────────
 // The cell grid does NOT decide where rock exists. buildContour() reads the
-// cells only to derive the voronoi lattice bounds (viLo/viHi/vjLo/vjHi) and
-// then fills that whole rectangle with rocks - every lattice cell in range
-// becomes a real collider whether the cells under it are solid or not. The
-// previous version of this file carved elliptical patches into the cells and
-// assumed that removed the rock; it did not. It left the entire room full of
-// invisible colliders.
+// cells only to derive the voronoi lattice bounds and then fills that whole
+// rectangle with rocks - every lattice cell in range becomes a real collider
+// whether the cells under it are solid or not.
 //
 // So: carveTerrain() fills the cells SOLID (giving lattice bounds that cover
 // the room), and sculpt() then kills every rock that should not exist. Dead
@@ -32,35 +39,25 @@
 // is what keeps the four mirrored implementations in sync.
 //
 // Cells must NOT be modified after buildContour(): the client recomputes the
-// lattice bounds from the transmitted cell array, so changing them post-hoc
-// would shift every rock key by a different amount on each side.
+// lattice bounds from the transmitted cell array.
 
 const { CELL, ORE, ORE_HP } = require('./terrainGrid.js');
 
 const TILE = 420;          // world units per room tile (Config.map_tile_width)
-const SUBCELLS = 8;        // terrain cells per tile, matches mapGen.SUBCELLS
 
-// The arena a learner actually plays in, and the dead space around it.
+// The arena and the dead space around it.
 //
-// The gutter is sized from what can reach the screen, not from taste. Entities
-// are culled by sockets.eyes() at roughly camera.fov (~2000) across and
-// fov*0.5625 (~1125) down - but TERRAIN is never culled, so a neighbour's rock
-// wall appears the moment it falls inside the viewport, which is about the same
-// distance and grows with the FOV stat.
-//
-// The nearest thing in a neighbouring arena is that wall: 3 tiles (1260) in
-// from the left/right edge and 2 tiles (840) down from the top, less roughly
-// 100 units of polygon overhang. A 3-tile gutter (1260) puts it ~2400 away
-// horizontally and ~2000 vertically, so a learner pinned against their own
-// fence sees nothing but empty ground on every side.
+// Terrain is never view-culled, so a neighbour's rock shows up the moment it
+// falls inside the viewport (about 2000 across at the default FOV). The island
+// is 1900 in radius inside a 2520 half-arena, and learners are fenced to the
+// island, so two islands' rims are 2 * 620 + a 3-tile gutter = ~2500 apart:
+// nothing but void on every side of your own island.
 const PLOT_TILES   = 12;
 const GUTTER_TILES = 3;
 const PITCH_TILES  = PLOT_TILES + GUTTER_TILES;   // arena-to-arena spacing
 
-// A SQUARE grid on purpose: it makes the room a whole number of pitches on
-// both axes, so the in-game full map can lock to exactly one arena with a
-// single zoom factor (room / arena) - see app.js. A non-square grid needs a
-// different zoom per axis and bleeds the neighbouring arenas into view.
+// A SQUARE grid on purpose: the in-game full map can lock to exactly one arena
+// with a single zoom factor (room / arena) - see app.js.
 const PLOT_COLS = 2;       // 2 x 2 = 4 concurrent learners
 const PLOT_ROWS = 2;
 
@@ -69,72 +66,65 @@ const PITCH_SIZE   = PITCH_TILES * TILE;   // 5880 - arena + gutter
 const ROOM_TILES_X = PLOT_COLS * PITCH_TILES;
 const ROOM_TILES_Y = PLOT_ROWS * PITCH_TILES;
 
-// ─── arena layout ─────────────────────────────────────────────────────────
-// Everything below is in FRACTIONS of PLOT_SIZE, measured from the arena
-// centre, so retuning PLOT_TILES moves the furniture with it.
+// ─── island layout ────────────────────────────────────────────────────────
+// World units from the arena centre.
 
-// Centre of arena tile column/row `i`, as a fraction of PLOT_SIZE.
-const AT = (i) => (i + 0.5) / PLOT_TILES - 0.5;
-// Edge of arena tile column/row `i` (its low side).
-const AE = (i) => i / PLOT_TILES - 0.5;
+const ISLAND_R = 1900;
+// Soft fence, a little past the rim: the rim rock is the real wall, the fence
+// only stops someone who has mined through it from driving into the void.
+const FENCE_R = ISLAND_R + 90;
 
-const BASE_COL_BLUE = 0;                 // friendly base column
-const BASE_COL_RED  = PLOT_TILES - 1;    // lethal enemy base column
-
-// The rock wall, in arena tile coordinates. Inset from the top and bottom so
-// the gutter maths above holds on the vertical axis too.
-const ROCK_COL0 = 3, ROCK_COL1 = 8;
-const ROCK_ROW0 = 2, ROCK_ROW1 = 9;
-
-// The corridor cut through the wall at y = 0, linking the two open fields via
-// the chambers and the outpost. Half-height as a fraction of PLOT_SIZE; 0.055
-// is 277 units, comfortably wider than a tank and wider than a chamber ring's
-// clearance requirement (CHAMBER_RADIUS 160 + 26 margin).
-const CORRIDOR_HALF = 0.055;
+const CLEARING = { x: -960, y: 0, r: 500 };
+const VAULT_AT = { x: 0, y: 0 };
+const BASE_AT  = { x: 1180, y: 0 };
+const SHOP_AT  = { x: 0, y: 820 };
 
 const LAYOUT = {
-    // Just outside the friendly base, facing the wall.
-    spawn:       { x: -0.40,          y:  0.00 },
-    // Vaults sit at the centre of their own base column, exactly as vault.js
-    // places them in the real game.
-    vaultBlue:   { x: AT(BASE_COL_BLUE), y: 0.00 },
-    vaultRed:    { x: AT(BASE_COL_RED),  y: 0.00 },
-    // "base" is the LETHAL one - the lesson points here and the guard below
-    // keeps everyone out of it.
-    base:        { x: AT(BASE_COL_RED),  y: 0.00 },
-    homeBase:    { x: AT(BASE_COL_BLUE), y: 0.00 },
-    // One outpost, dead centre, where the corridor crosses the arena's spine.
-    outpost:     { x:  0.00,          y:  0.00 },
-    // One chamber per team, buried in the wall either side of the outpost.
-    chamberBlue: { x: -0.17,          y:  0.00 },
-    chamberRed:  { x:  0.17,          y:  0.00 },
-    // Where the mining lesson points: the near face of the wall.
-    rocks:       { x: -0.22,          y:  0.00 },
-    // Practice targets sit in the open field between base and wall. The view
-    // cull is tighter vertically than horizontally, so a target parked far
-    // down the arena never reaches the learner's client at all - it simply
-    // never appears, and the lesson waits forever on a bot that is "there".
-    dummy:       { x: -0.33,          y: -0.10 },
-    fighter:     { x: -0.33,          y:  0.10 },
-    // Dig Royale chapter. The shop pad sits down the open field so the
-    // learner drives to it; the chest and the training boss land beside the
-    // learner wherever they are, these are only the fallback anchors.
-    shop:        { x: -0.33,          y:  0.20 },
-    chest:       { x: -0.36,          y: -0.20 },
-    boss:        { x: -0.31,          y:  0.00 },
+    // The middle of the dug-out clearing.
+    spawn:    { x: CLEARING.x, y: CLEARING.y },
+    clearing: { x: CLEARING.x, y: CLEARING.y },
+    // The rainbow vault, dead centre like the real Center Vault.
+    vault:    VAULT_AT,
+    // The practice base (an outpost pad the learner captures).
+    outpost:  BASE_AT,
+    // The shop pad, down the south tunnel.
+    shop:     SHOP_AT,
+    // Where the mining lesson looks first: the clearing's north face, where
+    // the teaching row of ores is placed.
+    rocks:    { x: CLEARING.x, y: CLEARING.y - CLEARING.r },
+    // Fallback anchors for things that normally land beside the learner.
+    dummy:    { x: CLEARING.x + 280, y: CLEARING.y - 140 },
+    fighter:  { x: CLEARING.x + 280, y: CLEARING.y + 140 },
+    chest:    { x: CLEARING.x - 200, y: CLEARING.y - 260 },
+    boss:     { x: CLEARING.x + 150, y: CLEARING.y },
 };
+
+// Holes in the rock. Discs carve the pads and the clearing, capsules carve the
+// tunnels between them. Every hole also kills rocks whose centre is within
+// r + 70 and any whose corner is within r, so a tunnel of r 60 comes out
+// roughly 300 units wide. Pad radii match
+// royaleLayout's pad carving.
+const HOLES = [
+    { kind: 'disc', x: CLEARING.x, y: CLEARING.y, r: CLEARING.r },
+    { kind: 'disc', x: VAULT_AT.x, y: VAULT_AT.y, r: 150 },
+    { kind: 'disc', x: BASE_AT.x,  y: BASE_AT.y,  r: 170 },
+    { kind: 'disc', x: SHOP_AT.x,  y: SHOP_AT.y,  r: 120 },
+    { kind: 'tube', x0: CLEARING.x, y0: 0, x1: VAULT_AT.x, y1: 0, r: 60 },
+    { kind: 'tube', x0: VAULT_AT.x, y0: 0, x1: BASE_AT.x,  y1: 0, r: 60 },
+    { kind: 'tube', x0: 0, y0: VAULT_AT.y, x1: 0, y1: SHOP_AT.y, r: 60 },
+];
+// A few spawn pits, the small holes players drop into on the real map.
+for (const [deg, dist] of [[-62, 1150], [-118, 1250], [-25, 1500], [35, 1250], [140, 1350], [-160, 1500]]) {
+    const a = deg * Math.PI / 180;
+    HOLES.push({ kind: 'disc', x: Math.cos(a) * dist, y: Math.sin(a) * dist, r: 55 });
+}
 
 const plotCount = () => PLOT_COLS * PLOT_ROWS;
 
-// Where an arena starts inside its pitch cell, in whole tiles. It has to be an
-// integer: base columns are painted as room TILES, so an arena that started
-// half a tile in would put its base on a fractional index. An odd gutter is
-// therefore split unevenly (1 tile before, 2 after) - which changes only the
-// margin at the room border, never the 3-tile gap BETWEEN two arenas.
+// Where an arena starts inside its pitch cell, in whole tiles.
 const PLOT_INSET_TILES = Math.floor((PITCH_TILES - PLOT_TILES) / 2);
 
-// Arena tile origin (top-left arena tile) in ROOM tile coordinates. Used by
-// room_tutorial.js to paint the base columns.
+// Arena tile origin (top-left arena tile) in ROOM tile coordinates.
 function plotTileOrigin(index) {
     const gx = index % PLOT_COLS;
     const gy = Math.floor(index / PLOT_COLS) % PLOT_ROWS;
@@ -144,9 +134,7 @@ function plotTileOrigin(index) {
     };
 }
 
-// Plot index -> arena centre in world coordinates. Derived from the very same
-// tile origin the base columns are painted at, so world geometry and room
-// tiles can never drift apart.
+// Plot index -> arena centre in world coordinates.
 function plotCenter(index) {
     const o = plotTileOrigin(index);
     const roomW = ROOM_TILES_X * TILE;
@@ -162,10 +150,10 @@ function plotPoint(index, key) {
     const c = plotCenter(index);
     const l = LAYOUT[key];
     if (!l) throw new Error(`tutorialPlots: unknown layout point "${key}"`);
-    return { x: c.x + l.x * PLOT_SIZE, y: c.y + l.y * PLOT_SIZE };
+    return { x: c.x + l.x, y: c.y + l.y };
 }
 
-// The arena's playable rectangle in world coordinates.
+// The arena's square in world coordinates (the island sits inside it).
 function plotRect(index) {
     const c = plotCenter(index);
     return {
@@ -174,10 +162,13 @@ function plotRect(index) {
     };
 }
 
+// The fence a learner is held inside: a circle just past the island rim.
+function plotFence(index) {
+    const c = plotCenter(index);
+    return { cx: c.x, cy: c.y, r: FENCE_R };
+}
+
 // Which arena a world position falls in (-1 when in a gutter or outside).
-// Note this is NOT a pure pitch-cell lookup: a point in the gutter belongs to
-// nobody, which is what makes it safe to use for "kill everything that is not
-// inside somebody's arena".
 function plotAt(x, y) {
     const roomW = ROOM_TILES_X * TILE;
     const roomH = ROOM_TILES_Y * TILE;
@@ -194,16 +185,15 @@ function plotAt(x, y) {
 
 // Fill every cell solid. This is what gives buildContour() lattice bounds that
 // span the whole room; the actual shape of the rock is decided by sculpt().
-// See the header for why the cells cannot be carved instead.
 function carveTerrain(grid) {
     for (let r = 0; r < grid.rows; r++) {
         for (let c = 0; c < grid.cols; c++) grid.set(c, r, CELL.BASALT);
     }
 }
 
-// Deterministic 0..1 roll for a rock, so ore placement is stable across
-// restarts and identical for every arena.
-function oreRoll(vi, vj, salt) {
+// Deterministic 0..1 roll for a rock, so the island is identical for every
+// arena and across restarts.
+function hash01(vi, vj, salt) {
     let h = (Math.imul(vi + 1, 374761393) ^ Math.imul(vj + 1, 1284865837) ^
              Math.imul((salt | 0) + 1, 668265263)) | 0;
     h = Math.imul(h ^ (h >>> 13), 1540483477);
@@ -232,42 +222,51 @@ function reviveRock(rock, unitHealth) {
 }
 
 // Where a rock sits relative to its arena: null when it is in no arena, else
-// { index, lx, ly } with lx/ly as fractions of PLOT_SIZE from the centre.
+// { index, lx, ly } in world units from the arena centre.
 function localiseRock(rock) {
     const index = plotAt(rock.worldCx, rock.worldCy);
     if (index < 0) return null;
     const c = plotCenter(index);
-    return {
-        index,
-        lx: (rock.worldCx - c.x) / PLOT_SIZE,
-        ly: (rock.worldCy - c.y) / PLOT_SIZE,
-    };
+    return { index, lx: rock.worldCx - c.x, ly: rock.worldCy - c.y };
 }
 
-// Is this arena-local point inside the standing rock wall?
-function inWall(lx, ly) {
-    if (lx < AE(ROCK_COL0) || lx > AE(ROCK_COL1 + 1)) return false;
-    if (ly < AE(ROCK_ROW0) || ly > AE(ROCK_ROW1 + 1)) return false;
-    if (Math.abs(ly) <= CORRIDOR_HALF) return false;          // the corridor
-    // Breathing room around the three structures, in case the corridor is ever
-    // narrowed below what a chamber ring needs.
-    for (const key of ['outpost']) {
-        const p = LAYOUT[key];
-        const r = 190 / PLOT_SIZE;
-        const dx = lx - p.x, dy = ly - p.y;
-        if (dx * dx + dy * dy <= r * r) return false;
+// Distance from (px, py) to the segment (x0,y0)-(x1,y1).
+function segDist(px, py, x0, y0, x1, y1) {
+    const dx = x1 - x0, dy = y1 - y0;
+    const len2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / len2));
+    return Math.hypot(px - (x0 + dx * t), py - (y0 + dy * t));
+}
+function holeDist(h, x, y) {
+    return h.kind === 'disc' ? Math.hypot(x - h.x, y - h.y) : segDist(x, y, h.x0, h.y0, h.x1, h.y1);
+}
+
+// Does this rock belong on the island? Same rules as royaleLayout: a rock
+// survives the rim if its centre is inside a jittered radius or any corner
+// touches the circle, so the edge is ragged rock rather than a clean arc; a
+// hole kills a rock whose centre is within r + 70 or any corner within r.
+function keepRock(rock, loc) {
+    const cx = loc.lx, cy = loc.ly;
+    const jitter = hash01(rock.vi, rock.vj, 500) * 180 - 90;
+    let inside = Math.hypot(cx, cy) <= ISLAND_R + jitter;
+    const pts = [];
+    if (rock.worldPoly) {
+        const ox = rock.worldCx - cx, oy = rock.worldCy - cy;
+        for (const p of rock.worldPoly) pts.push([p[0] - ox, p[1] - oy]);
+    }
+    if (!inside) inside = pts.some(p => Math.hypot(p[0], p[1]) <= ISLAND_R);
+    if (!inside) return false;
+    for (const h of HOLES) {
+        if (holeDist(h, cx, cy) <= h.r + 70) return false;
+        if (pts.some(p => holeDist(h, p[0], p[1]) <= h.r)) return false;
     }
     return true;
 }
 
 // Shape the rock, then seed the ore. Runs AFTER buildContour(), which is what
-// creates the rocks in the first place.
-//
-// buildContour also runs the live game's room-wide passes (two canyon lanes,
-// three emerald cells, a pocket per core-chamber site). All of that is aimed at
-// a 15x15 arena with one wall down the middle and is meaningless here, so this
-// pass simply overrules it: every rock is re-decided from scratch, and the ones
-// those passes killed are revived if they fall inside a wall.
+// creates the rocks in the first place. buildContour also runs the live game's
+// room-wide passes (canyon lanes, emerald cells, chamber pockets), none of
+// which mean anything here, so every rock is re-decided from scratch.
 function sculpt(grid) {
     // ROCK_HEALTH is not exported, but every rock was built as
     // ROCK_HEALTH * ORE_HP[ore], so one live rock recovers the unit.
@@ -279,7 +278,7 @@ function sculpt(grid) {
     for (const rock of grid.rocks.values()) {
         if (!rock.worldPoly) { killRock(rock); continue; }
         const loc = localiseRock(rock);
-        if (!loc || !inWall(loc.lx, loc.ly)) { killRock(rock); continue; }
+        if (!loc || !keepRock(rock, loc)) { killRock(rock); continue; }
         rock.ore = ORE.NONE;
         reviveRock(rock, unitHealth);
     }
@@ -287,16 +286,13 @@ function sculpt(grid) {
     seedOres(grid, unitHealth);
 }
 
-// "Different types of rock" is the lesson, so ore is placed deliberately
-// rather than left to a room-wide depth roll (which, on a room this shape,
-// would hand one arena all the emerald and another none).
-//
-// Two things happen per arena:
-//   1. a teaching row - the four rocks nearest the near face of the wall are
-//      forced to copper, vein, shard and emerald, so the mining lesson can
-//      always show every tier no matter which rock the learner picks;
-//   2. a scatter over the rest, richest toward the middle of the wall, so the
-//      arena reads like the real map rather than a uniform slab.
+// Ore graded like the real map (royaleLayout.radialOre): about a quarter of
+// rocks carry ore, copper in the middle, azurite further out, shards near the
+// rim. On top of that, per arena:
+//   - two emeralds deep in the north rock, something to dig toward;
+//   - a teaching row: the four rocks nearest the clearing's north face are
+//     copper, azurite, shard and emerald, so the mining lesson can always
+//     show every tier no matter which rock the learner picks.
 function seedOres(grid, unitHealth) {
     if (!unitHealth) {
         for (const rock of grid.rocks.values()) {
@@ -319,32 +315,37 @@ function seedOres(grid, unitHealth) {
         rock.deposits = ore ? grid._buildDeposits(rock) : null;
     };
 
+    const salt = grid.oreSalt | 0;
     for (let i = 0; i < byPlot.length; i++) {
         const list = byPlot[i];
         if (!list.length) continue;
 
-        // 2. scatter first, so the teaching row can overwrite it.
         for (const e of list) {
-            // depth: 0 at the wall's faces, 1 at its spine.
-            const halfSpan = (AE(ROCK_COL1 + 1) - AE(ROCK_COL0)) / 2;
-            const depth = 1 - Math.abs(e.lx - (AE(ROCK_COL0) + halfSpan)) / halfSpan;
-            const roll = oreRoll(e.rock.vi, e.rock.vj, grid.oreSalt + 101);
+            const d = Math.min(1, Math.hypot(e.lx, e.ly) / ISLAND_R);
+            const r1 = hash01(e.rock.vi, e.rock.vj, salt + 101);
+            const t = hash01(e.rock.vi, e.rock.vj, salt + 102);
             let ore = ORE.NONE;
-            if (roll < 0.06 * depth)      ore = ORE.SHARD;
-            else if (roll < 0.20 * depth) ore = ORE.VEIN;
-            else if (roll < 0.42)         ore = ORE.COPPER;
+            if (r1 < 0.26) {
+                if (d <= 0.35) ore = t < 0.75 ? ORE.COPPER : ORE.NONE;
+                else if (d <= 0.65) ore = t < 0.35 ? ORE.VEIN : t < 0.85 ? ORE.COPPER : ORE.NONE;
+                else ore = t < 0.12 ? ORE.SHARD : t < 0.52 ? ORE.VEIN : t < 0.9 ? ORE.COPPER : ORE.NONE;
+            }
             setOre(e.rock, ore);
         }
 
-        // A pair of emeralds deep in the wall, well away from the corridor so
-        // they are something to dig toward rather than something to trip over.
         const deep = list
-            .filter(e => Math.abs(e.ly) > CORRIDOR_HALF * 2.2)
-            .map(e => ({ e, s: oreRoll(e.rock.vi, e.rock.vj, grid.oreSalt + 202) - Math.abs(e.lx) }))
+            .filter(e => e.ly < -500 && Math.hypot(e.lx, e.ly) < ISLAND_R * 0.85)
+            .map(e => ({ e, s: hash01(e.rock.vi, e.rock.vj, salt + 202) - Math.abs(e.lx) / ISLAND_R }))
             .sort((a, b) => b.s - a.s);
-        for (let k = 0; k < 2 && k < deep.length; k++) setOre(deep[k].e.rock, ORE.EMERALD);
+        let placed = 0;
+        for (const { e } of deep) {
+            if (placed >= 2) break;
+            // keep the pair apart so they read as two finds, not one lump
+            if (placed === 1 && Math.hypot(e.lx - deep[0].e.lx, e.ly - deep[0].e.ly) < 700) continue;
+            setOre(e.rock, ORE.EMERALD);
+            placed++;
+        }
 
-        // 1. the teaching row, nearest the face the learner arrives at.
         const face = plotPoint(i, 'rocks');
         const near = list
             .map(e => ({
@@ -361,9 +362,8 @@ function seedOres(grid, unitHealth) {
 
 // ─── structures ───────────────────────────────────────────────────────────
 
-// One outpost dead centre and one core chamber per team, per arena. Replaces
-// the lane-based dig-wars sites entirely. Called after buildContour(), which is
-// what populates rocks/sites in the first place.
+// One practice base and one shop per arena. Site ids equal the plot index, so
+// tutorialSession can reset/unlock "this learner's base" by id.
 function installSites(grid) {
     grid.outpostSites = [];
     grid.coreChamberSites = [];
@@ -371,113 +371,59 @@ function installSites(grid) {
     for (let i = 0; i < plotCount(); i++) {
         const sp = plotPoint(i, 'shop');
         grid.shopSites.push({
-            id: grid.shopSites.length,
+            id: i,
             name: 'Practice Shop',
             x: sp.x, y: sp.y, r: 95, color: '#5ce0d8',
         });
         const o = plotPoint(i, 'outpost');
         grid.outpostSites.push({
-            id: grid.outpostSites.length,
+            id: i,
             name: 'Practice Base',
             x: o.x, y: o.y,
+            color: '#ec7b0f',
         });
-        // no core chambers: that was Dig Wars, and this ground teaches Dig Royale
     }
 }
 
-// One vault pad per arena, on the learner's side of the field. It is on the
-// learner's team so vault.js (which is team-aware off the royale server)
-// lets them bank on it.
+// One rainbow vault per arena, dead centre. It keeps a team so vault.js (which
+// is team-aware off the royale server) lets the learner bank on it; learners
+// all play on TEAM_BLUE internally, whatever colour their tank is.
 function vaultSites() {
     const out = [];
     for (let i = 0; i < plotCount(); i++) {
-        const b = plotPoint(i, 'vaultBlue');
-        out.push({ x: b.x, y: b.y, r: 95, team: TEAM_BLUE });
+        const v = plotPoint(i, 'vault');
+        out.push({ x: v.x, y: v.y, r: 95, team: TEAM_BLUE, rainbow: true });
     }
     return out;
 }
 
-// ─── keeping learners where they belong ───────────────────────────────────
+// ─── keeping things where they belong ─────────────────────────────────────
 
-// The base lesson has to teach that touching a base deletes you - without ever
-// deleting anyone. Dying in a tutorial is confusing (the learner does not yet
-// know what killed them) and it drops their satchel, which the banking lesson
-// then depends on. So the base stays genuinely lethal, and we simply never let
-// them reach it: the barrier below stops the tank at the edge on EVERY step,
-// not just the one that mentions bases.
-const BASE_KEEPOUT = 90;
-
-// The enemy base column in world coordinates, plus the keep-out margin.
-function baseRect(index) {
-    const c = plotCenter(index);
-    return {
-        x0: c.x + AE(BASE_COL_RED) * PLOT_SIZE - BASE_KEEPOUT,
-        y0: c.y - PLOT_SIZE / 2 - BASE_KEEPOUT,
-        x1: c.x + PLOT_SIZE / 2 + BASE_KEEPOUT,
-        y1: c.y + PLOT_SIZE / 2 + BASE_KEEPOUT,
-    };
-}
-
-// Keep a body out of its arena's enemy base.
-//
-// Two layers, because a purely soft push can be barged through at speed and
-// the penalty for getting through is instant death:
-//   - an accelerating shove that starts BASE_SOFT units out, so the approach
-//     feels like leaning on the room border rather than hitting an invisible
-//     pane of glass;
-//   - a hard stop right at the keep-out line, which nobody should ever reach.
-const BASE_SOFT = 260;
-
-function pushOutOfBase(body, index) {
-    const r = baseRect(index);
-    // Only the left face matters in practice - the base is a full-height
-    // column down the arena's right edge - but the rect handles all four so a
-    // body that somehow ends up inside still leaves by the shortest way.
-    const softX0 = r.x0 - BASE_SOFT;
-    if (body.x > softX0 && body.y > r.y0 && body.y < r.y1) {
-        const depth = body.x - softX0;
-        if (body.accel) body.accel.x -= depth * 0.06;
-        if (body.velocity && body.velocity.x > 0) body.velocity.x *= 0.86;
-    }
-    if (body.x <= r.x0 || body.x >= r.x1 || body.y <= r.y0 || body.y >= r.y1) return false;
-
-    const dLeft = body.x - r.x0, dRight = r.x1 - body.x;
-    const dTop = body.y - r.y0, dBottom = r.y1 - body.y;
-    const min = Math.min(dLeft, dRight, dTop, dBottom);
-    if (min === dLeft) body.x = r.x0;
-    else if (min === dRight) body.x = r.x1;
-    else if (min === dTop) body.y = r.y0;
-    else body.y = r.y1;
+// Hard backstop for scripted bots: snap anything outside the island fence back
+// onto it. Learners get the soft push in entity.js instead (arenaBounds).
+function keepInPlot(body, index) {
+    const f = plotFence(index);
+    const dx = body.x - f.cx, dy = body.y - f.cy;
+    const d = Math.hypot(dx, dy);
+    const lim = f.r - 60;
+    if (d <= lim || d === 0) return false;
+    body.x = f.cx + dx * (lim / d);
+    body.y = f.cy + dy * (lim / d);
     if (body.velocity) { body.velocity.x *= 0.1; body.velocity.y *= 0.1; }
     return true;
 }
 
-// Hold a body inside its own arena.
-//
-// Without this a learner can simply drive out of the top, bottom or left of
-// their arena - the enemy base only blocks the right - and wander into the
-// gutter or a neighbour's world, which is precisely what plot isolation is
-// supposed to make impossible. The fence sits on the arena boundary, which the
-// gutter maths above assumes.
-const FENCE_MARGIN = 30;
-
-function keepInPlot(body, index) {
-    const r = plotRect(index);
-    const m = FENCE_MARGIN;
-    let hit = false;
-    if (body.x < r.x0 + m) { body.x = r.x0 + m; hit = true; }
-    else if (body.x > r.x1 - m) { body.x = r.x1 - m; hit = true; }
-    if (body.y < r.y0 + m) { body.y = r.y0 + m; hit = true; }
-    else if (body.y > r.y1 - m) { body.y = r.y1 - m; hit = true; }
-    if (hit && body.velocity) { body.velocity.x *= 0.1; body.velocity.y *= 0.1; }
-    return hit;
+// Is this point open ground on the island (for dropping a bot or chest)?
+function onIsland(index, x, y, margin = 150) {
+    const c = plotCenter(index);
+    return Math.hypot(x - c.x, y - c.y) <= ISLAND_R - margin;
 }
 
 module.exports = {
-    BASE_KEEPOUT, baseRect, pushOutOfBase, keepInPlot, plotRect,
+    keepInPlot, plotRect, plotFence, onIsland,
     TILE, PLOT_TILES, GUTTER_TILES, PITCH_TILES, PLOT_COLS, PLOT_ROWS,
-    PLOT_SIZE, PITCH_SIZE, ROOM_TILES_X, ROOM_TILES_Y,
-    LAYOUT, BASE_COL_BLUE, BASE_COL_RED,
+    PLOT_SIZE, PITCH_SIZE, ROOM_TILES_X, ROOM_TILES_Y, ISLAND_R, CLEARING,
+    LAYOUT,
     plotCount, plotCenter, plotPoint, plotTileOrigin, plotAt,
     carveTerrain, sculpt, installSites, vaultSites, seedOres,
 };

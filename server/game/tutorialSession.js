@@ -28,6 +28,7 @@ function claimPlot(socket) {
         if (owners[i] === null) {
             owners[i] = socket;
             socket._tutorialPlot = i;
+            resetBase(i);
             return i;
         }
     }
@@ -40,6 +41,28 @@ function releasePlot(socket) {
     owners[i] = null;
     socket._tutorialPlot = null;
     clearBots(i);
+    resetBase(i);
+}
+
+// The practice base starts neutral and LOCKED: shots bounce off it until the
+// base lesson opens it, so nobody captures it by accident three chapters
+// early. A new learner in the plot must never inherit the last one's base.
+function resetBase(plotIndex) {
+    try { require('./terrain/outposts.js').resetSite(plotIndex, true); } catch (e) { }
+}
+function openBase(plotIndex) {
+    try { require('./terrain/outposts.js').lockSite(plotIndex, false); } catch (e) { }
+}
+
+// Learners play on TEAM_BLUE internally (vault and base rules key off it), but
+// their tank wears a colour from the Dig Royale palette like it would in a
+// raid. Red is left out: every practice bot and boss is red.
+function learnerColor(socket) {
+    if (socket && socket._tutColor != null) return socket._tutColor;
+    const pal = (global.ROYALE_PALETTE || [10]).filter(c => c !== 12);
+    const c = pal[Math.floor(Math.random() * pal.length)];
+    if (socket) socket._tutColor = c;
+    return c;
 }
 
 function freePlots() {
@@ -71,12 +94,16 @@ function plotInfo(index) {
     return {
         plot: index,
         spawn: pt('spawn'),
+        clearing: pt('clearing'),
         rocks: pt('rocks'),
-        vault: pt('vaultBlue'),        // the one vault on this ground
+        vault: pt('vault'),            // the one vault on this ground
         outpost: pt('outpost'),        // the practice base
         shop: pt('shop'),
         chest: pt('chest'),
         boss: pt('boss'),
+        // The round island the floor is painted on (and the fence).
+        island: { x: Math.round(c.x), y: Math.round(c.y), r: plots.ISLAND_R },
+        clearingR: plots.CLEARING.r,
         // Frame for the full map, and the filter for every world lookup.
         cx: Math.round(c.x), cy: Math.round(c.y),
         size: plots.PLOT_SIZE,
@@ -122,7 +149,7 @@ function spawnChest(plotIndex) {
     if (!slot) return null;
     if (slot.chest && !slot.chest.isDead() && !slot.chest._opened) return slot.chest;
     const chests = require('./terrain/chests.js');
-    const at = besidePlayer(plotIndex, 380, -170);
+    const at = besidePlayer(plotIndex, 340, -170);
     const o = chests.spawnChest(at.x, at.y, false, { gems: 120, item: 'medkit' });
     if (o) { o.isTutorialBot = true; plots.keepInPlot(o, plotIndex); }
     slot.chest = o;
@@ -142,7 +169,7 @@ function spawnBoss(plotIndex, kindId) {
     const bosses = require('./terrain/bosses.js');
     const id = bosses.KINDS[kindId] ? kindId : 'warden';
     const kind = bosses.KINDS[id];
-    const at = besidePlayer(plotIndex, 560, 0);
+    const at = besidePlayer(plotIndex, 430, 0);
     const o = new Entity(at);
     o.define(kind.cls);
     o.team = TEAM_RED;
@@ -246,20 +273,11 @@ function baseTarget(loc, name, opts = {}) {
     return o;
 }
 
-// Is this spot clear enough to drop a tank on?
-//
-// Two things a practice target must never spawn in: solid rock, which wedges
-// it in the collision geometry where the learner cannot reach it, and the
-// enemy base, whose tiles delete any wrong-team entity outright - the bot
-// would appear and die in the same second, over and over.
+// Is this spot clear enough to drop a tank on? It must be on the island and
+// out of solid rock, which would wedge it in the collision geometry where the
+// learner cannot reach it.
 function spawnClear(plotIndex, x, y) {
-    const r = plots.plotRect(plotIndex);
-    const m = 200;
-    if (x < r.x0 + m || x > r.x1 - m || y < r.y0 + m || y > r.y1 - m) return false;
-
-    const b = plots.baseRect(plotIndex);
-    const pad = 320;   // well clear, not merely outside
-    if (x > b.x0 - pad && x < b.x1 + pad && y > b.y0 - pad && y < b.y1 + pad) return false;
+    if (!plots.onIsland(plotIndex, x, y, 200)) return false;
 
     const grid = global.gameManager && global.gameManager.terrainGrid;
     if (grid && grid.nearestRock) {
@@ -314,7 +332,7 @@ function spawnDummy(plotIndex) {
     if (!slot) return null;
     if (slot.dummy && !slot.dummy.isDead()) return slot.dummy;
 
-    const o = baseTarget(besidePlayer(plotIndex, 460, -110), 'Practice Dummy');
+    const o = baseTarget(besidePlayer(plotIndex, 400, -110), 'Practice Dummy');
     o.controllers = [];               // no AI at all
     o.define({ CONTROLLERS: [] }, false, false, false);
     o.settings.hasNoRecoil = true;    // its own guns never fire, but be sure
@@ -336,7 +354,7 @@ function spawnFighter(plotIndex) {
     if (!slot) return null;
     if (slot.fighter && !slot.fighter.isDead()) return slot.fighter;
 
-    const o = baseTarget(besidePlayer(plotIndex, 520, 140), 'Rookie');
+    const o = baseTarget(besidePlayer(plotIndex, 420, 130), 'Rookie');
     // Stay a Basic. baseTarget already defined spawn_class and levels to 45
     // so the tank is the same size as a real opponent.
     o.define({ CONTROLLERS: ["tutorialDuelist"] }, false, false, false);
@@ -421,8 +439,7 @@ function teleport(socket, key) {
     const i = plotOf(socket);
     const body = socket && socket.player && socket.player.body;
     if (i < 0 || !body || body.isDead()) return;
-    const ALIAS = { vault: "vaultBlue" };
-    const layoutKey = ALIAS[key] || key;
+    const layoutKey = key;
     let p;
     try { p = plots.plotPoint(i, layoutKey); } catch (e) { return; }
     // Land beside a structure rather than inside it: dropping a tank on top of
@@ -441,10 +458,9 @@ function teleportTo(socket, x, y) {
     if (i < 0 || !body || body.isDead()) return;
     x = +x; y = +y;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    const r = plots.plotRect(i);
-    const m = 90;
-    x = Math.max(r.x0 + m, Math.min(r.x1 - m, x));
-    y = Math.max(r.y0 + m, Math.min(r.y1 - m, y));
+    const f = plots.plotFence(i);
+    const dx = x - f.cx, dy = y - f.cy, d = Math.hypot(dx, dy), lim = f.r - 150;
+    if (d > lim) { x = f.cx + dx * (lim / d); y = f.cy + dy * (lim / d); }
     if (Math.hypot(body.x - x, body.y - y) < 120) return;
     body._tutorialGlide = {
         fromX: body.x, fromY: body.y,
@@ -644,7 +660,7 @@ function tickBaseGuard() {
         const socket = owners[i];
         const body = socket && socket.player && socket.player.body;
         if (!body || body.isDead()) continue;
-        body.arenaBounds = plots.plotRect(i);
+        body.arenaBounds = plots.plotFence(i);
     }
 }
 
@@ -663,6 +679,7 @@ function tickReap() {
 
 module.exports = {
     claimPlot, releasePlot, plotOf, freePlots, spawnPointFor,
+    resetBase, openBase, learnerColor,
     plotInfo, talkPlotInfo,
     spawnDummy, spawnFighter, clearBots,
     spawnChest, spawnBoss, clearBoss, setBanked, grantKit, grantArm, grantGear,

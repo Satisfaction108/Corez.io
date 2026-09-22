@@ -15,6 +15,11 @@ const NEUTRAL_YELLOW = "#caca4e";
 
 let outposts = null;
 
+// The tutorial teaches the Dig Royale base: owned by one player, drawn in the
+// site's own colour. Everything royale-only (lobby, raid scoring) stays
+// behind Config.dig_royale.
+const ownerBases = () => !!(Config.dig_royale || Config.tutorial);
+
 function getOutposts() {
     if (outposts && outposts.length) return outposts;
     const tg = global.gameManager && global.gameManager.terrainGrid;
@@ -30,6 +35,7 @@ function getOutposts() {
         ownerKey: null,
         color: s.color || null,
         banner: null,
+        locked: false,
     }));
     return outposts;
 }
@@ -68,7 +74,7 @@ function rebindOwner(key, body) {
         if (site.banner && !site.banner.isDead?.()) {
             try {
                 site.banner.team = body.team;
-                if (Config.dig_royale && site.color) site.banner.color.base = site.color;
+                if (ownerBases() && site.color) site.banner.color.base = site.color;
             } catch { /* */ }
         }
     }
@@ -81,7 +87,7 @@ function snapshot() {
 function stateSnapshot() {
     return getOutposts().map(o => ({
         id: o.id,
-        t: Config.dig_royale ? (o.ownerId || 0) : o.team,
+        t: ownerBases() ? (o.ownerId || 0) : o.team,
         h: o.banner && !o.banner.isDead()
             ? Math.max(0, Math.min(1, o.banner.health.amount / o.banner.health.max))
             : 0,
@@ -117,7 +123,7 @@ function spawnStructure(site, team, owner = null) {
     const o = new Entity({ x: site.x, y: site.y });
     o.define('outpostBanner');
     o.team = team === 0 ? TEAM_ENEMIES : team;
-    if (Config.dig_royale) {
+    if (ownerBases()) {
         o.color.base = site.ownerId && site.color ? site.color : "#6a6f7a";
         o.team = site.ownerId ? (owner.team || TEAM_ENEMIES) : TEAM_ENEMIES;
     } else {
@@ -133,6 +139,8 @@ function spawnStructure(site, team, owner = null) {
     
     o.pinX = site.x;
     o.pinY = site.y;
+    // Tutorial: locked until the base lesson, so it can't be taken early.
+    if (site.locked) o.godmode = true;
     // Tutorial: the lesson is "an outpost is a thing you break to take", and
     // a beginner is not going to chew 9000 HP off a RESIST-50 structure to
     // learn it. Thin it right down so the objective lands in a few seconds -
@@ -179,8 +187,8 @@ function killerOf(dead, site) {
 function onStructureDeath(site) {
     const dead = site.banner;
     site.banner = null;
-    if (Config.dig_royale) {
-        try {
+    if (ownerBases()) {
+        if (Config.dig_royale) try {
             if (require('../gamemodes/scripts/dig_royale.js').isLobbyPhase()) {
                 site.ownerId = 0;
                 site.team = 0;
@@ -191,7 +199,7 @@ function onStructureDeath(site) {
         if (killer && killer.id !== site.ownerId) {
             spawnStructure(site, killer.team, killer);
             announce(`${killer.name || "Someone"} captured the ${siteName(site)}!`);
-            try { require('../gamemodes/scripts/dig_royale.js').onCapture(killer, site); } catch { /* */ }
+            if (Config.dig_royale) try { require('../gamemodes/scripts/dig_royale.js').onCapture(killer, site); } catch { /* */ }
         } else {
             spawnStructure(site, 0, null);
             if (site.ownerId) announce(`The ${siteName(site)} has fallen!`);
@@ -325,7 +333,7 @@ function tick(players, dtMs) {
         }
 
         
-        const onOwnPad = Config.dig_royale
+        const onOwnPad = ownerBases()
             ? !!(pad && pad.ownerId === body.id && pad.banner && !pad.banner.isDead())
             : !!(pad && pad.team === body.team && pad.banner && !pad.banner.isDead());
         body.onBasePad = !!pad;
@@ -443,6 +451,29 @@ function requestCancel(socket) {
 module.exports = {
     tick, snapshot, stateSnapshot, ownedBy, getOutposts,
     requestDeposit, requestCancel, EFFICIENCY, ownerKeyFor, rebindOwner, releaseOwner,
+    // Tutorial: put one site back to neutral (optionally locked), fresh banner.
+    resetSite(id, locked = false) {
+        const site = getOutposts().find(s => s.id === id);
+        if (!site) return;
+        site.locked = !!locked;
+        site.ownerId = 0;
+        site.ownerKey = null;
+        site.team = 0;
+        site._lastHitter = null;
+        const b = site.banner;
+        site.banner = null;
+        if (b && !b.isDead?.()) {
+            try { if (b.removeAllListeners) b.removeAllListeners("dead"); } catch { /* */ }
+            try { b.destroy(); } catch { try { b.health.amount = -100; } catch { /* */ } }
+        }
+        spawnStructure(site, 0, null);
+    },
+    lockSite(id, locked) {
+        const site = getOutposts().find(s => s.id === id);
+        if (!site) return;
+        site.locked = !!locked;
+        if (site.banner && !site.banner.isDead?.()) site.banner.godmode = !!locked;
+    },
     resetRoyale() {
         for (const site of getOutposts()) {
             site.ownerId = 0;
