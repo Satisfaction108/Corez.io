@@ -19,9 +19,12 @@ class speedcheckloop {
         let loops = logs.loops.getTallyCount();
 
         global.fps = (1000/sum).toFixed(2);
+        // the measured tick time (index.js tickStats) is what the client shows
+        // as mspt; the legacy sum below is kept for the warning path
+        const shown = (global.tickStats && global.tickStats.ema) ? global.tickStats.ema : sum;
         for (let e of entities.values()) {
             if (e.isPlayer && e.socket) {
-                e.socket.talk("svInfo", global.gameManager.name, (sum).toFixed(1));
+                e.socket.talk("svInfo", global.gameManager.name, (shown).toFixed(1));
             }
         }
         if (sum > 1000 / global.gameManager.roomSpeed / 30) {

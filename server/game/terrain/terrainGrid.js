@@ -1127,7 +1127,16 @@ class TerrainGrid {
         } else {
             rock.ore = this._oreTierFor(rock.vi, rock.vj, this._voroViLo, this._voroViHi, rock.gen * REGROW.ORE_GEN_STRIDE);
         }
-        rock.maxHealth  = ROCK_HEALTH * ORE_HP[rock.ore];
+        // a bloom rock regrows as ore every time while the bloom lasts
+        if (Config.dig_royale && this._bloomNow) {
+            const bl = this._bloomNow;
+            if (((rock.wx - bl.x) ** 2 + (rock.wy - bl.y) ** 2) <= bl.r * bl.r) {
+                const copperOnly = global.royaleMods && global.royaleMods.ore === 'copper';
+                rock.ore = copperOnly ? ORE.COPPER : (Math.random() < 0.28 ? ORE.SHARD : ORE.VEIN);
+                rock.bloomed = true;
+            }
+        }
+        rock.maxHealth  = ROCK_HEALTH * ORE_HP[rock.ore] * ((global.royaleMods && global.royaleMods.rockHpMult) || 1);
         rock.health     = rock.maxHealth * REGROW.HP_FLOOR;
         rock.deposits   = rock.ore ? this._buildDeposits(rock) : null;
 
@@ -1198,6 +1207,7 @@ class TerrainGrid {
     
     regrowTick(now) {
         if (!this._voronoiMap) return;
+        if (Config.dig_royale) { try { this._bloomNow = require('./blooms.js').current(); } catch { this._bloomNow = null; } }
         if (now - this._lastRegrowTick < REGROW.PACING_MS) return;
         this._lastRegrowTick = now;
 
@@ -1255,13 +1265,26 @@ class TerrainGrid {
             const delay = side === -1
                 ? Math.min(this._regrowDelay[0], this._regrowDelay[1])
                 : this._regrowDelay[side];
-            if (now - rock.diedAt < delay) continue;
-            if (!this._hasLivingNeighbour(rock)) continue;
+            // inside a live ore bloom the wall heals in seconds, so the
+            // patch keeps paying until the bloom ends
+            let bloomRock = false;
+            if (Config.dig_royale) {
+                const bl = this._bloomNow || null;
+                if (bl && ((rock.wx - bl.x) ** 2 + (rock.wy - bl.y) ** 2) <= bl.r * bl.r) bloomRock = true;
+            }
+            if (now - rock.diedAt < (bloomRock ? 2500 : delay)) continue;
+            if (rock.noRegrowUntil && now < rock.noRegrowUntil) continue;
+            if (!bloomRock && !this._hasLivingNeighbour(rock)) continue;
             this.startRegrow(rock, now);
+            if (bloomRock) rock.growStart = now - REGROW.GROW_MS * 0.45;   // rises in about 4 seconds
         }
 
         
-        if (this._pendingEmeralds.length) this._tickEmeraldRespawns(now);
+        // the replant scans every rock twice; twice a second is more than enough
+        if (this._pendingEmeralds.length && now - (this._emeraldTickAt || 0) > 2000) {
+            this._emeraldTickAt = now;
+            this._tickEmeraldRespawns(now);
+        }
     }
 
     
@@ -1437,7 +1460,7 @@ class TerrainGrid {
             
             
             if (!wasGrowing && rock.ore === ORE.EMERALD)
-                this._pendingEmeralds.push({ at: rock.diedAt + REGROW.EMERALD_RESPAWN_MS });
+                this._pendingEmeralds.push({ at: rock.diedAt + ((global.royaleMods && global.royaleMods.emeraldRespawnMs) || REGROW.EMERALD_RESPAWN_MS) });
         }
         const ev = { k: rock.k, h: rock.health / rock.maxHealth, d: destroyed ? 1 : 0 };
         // grind flag: hull scraping - clients draw soft grind sparks

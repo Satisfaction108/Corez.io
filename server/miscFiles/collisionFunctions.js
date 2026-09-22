@@ -13,6 +13,20 @@ function simplecollide(my, n) {
     n.accel.y -= fy;
 }
 
+// Walk the master chain to the entity that owns this one and ask whether a
+// human player is behind it.
+function rootIsPlayer(e) {
+    let root = e, hops = 0;
+    while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+    return !!(root && root.isPlayer && !root.isBot);
+}
+// chests take damage from any tank, human or bot (bots just never get the item)
+function rootIsTank(e) {
+    let root = e, hops = 0;
+    while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+    return !!(root && (root.isPlayer || root.isBot));
+}
+
 function firmcollide(my, n, buffer = 0) {
     // Cache positions and motions
     const mx = my.x + my.xMotion, myy = my.y + my.yMotion;
@@ -296,8 +310,13 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
             // Now apply it
             // my.damageReceived += damage._n * deathFactor._n;
             // n.damageReceived += damage._me * deathFactor._me;
-            const __my = damage._n * deathFactor._n;
-            const __n = damage._me * deathFactor._me;
+            let __my = damage._n * deathFactor._n;
+            let __n = damage._me * deathFactor._me;
+            // Loot chests are for players: a bot (or its bullets) bouncing
+            // off one leaves it whole, so six chests stay six until a human
+            // breaks them.
+            if (my.isLootChest && !rootIsTank(n)) { __my = 0; my._gatedN = (my._gatedN | 0) + 1; }
+            if (n.isLootChest && !rootIsTank(my)) { __n = 0; n._gatedN = (n._gatedN | 0) + 1; }
             my.damageReceived += __my * Number(__my > 0
                 ? my.team != n.team
                 : !!n.healer && n.team == my.team && my.type == "tank" && n.master.id != my.id);

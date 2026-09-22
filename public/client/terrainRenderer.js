@@ -295,6 +295,14 @@ class TerrainRenderer {
             }
             if (ev.r === 2) { this._finishGrowth(ev.k, now); continue; }
             if (ev.e === 1) { this._revealOre(ev.k, 4, now); continue; }
+            // bloom / raid twist: an alive rock changes ore tier in place
+            if (ev.bl === 1) {
+                if (ev.ore) this._revealOre(ev.k, ev.ore | 0, now);
+                else { this._ore.delete(ev.k); this._veinCache.delete(ev.k); this._sproutArt.delete(ev.k); this._oreSprout.delete(ev.k); }
+                if (typeof ev.h === "number") this._rockHealth.set(ev.k, ev.h);
+                this._damageDirty = true;
+                continue;
+            }
             if (ev.d && this._growing.has(ev.k)) {
                 this._collapseGrowth(ev.k, now);
                 rebuilt = true;   
@@ -371,10 +379,13 @@ class TerrainRenderer {
             }
         }
         if (rebuilt) {
-            this._silClip = this._buildVoronoiBoundary();
+            // One rebuild per burst, from draw(): a packet per rock death
+            // used to rebuild the silhouette immediately, several times a
+            // second while bots mined. The shatter effect covers the gap.
             this._debugVoronoiSegs = null;
-            this._landed.clear();   
-            this._silRebuildAt = 0;
+            this._landed.clear();
+            const nowR = performance.now();
+            this._silRebuildAt = this._silRebuildAt ? Math.min(this._silRebuildAt, nowR + 40) : nowR + 40;
         }
     }
 
@@ -389,6 +400,47 @@ class TerrainRenderer {
 
     // Same 4-tick mark rocks use, in the same cell space so outposts and
     // chambers match size and fade exactly.
+    // ── Extra cells: things that are not rocks but must crack and break
+    // exactly like one (ore chests). They live in tile space under negative
+    // keys so they never collide with lattice keys, and the net / crack /
+    // bite caches work on them unchanged.
+    _cellFor(k) {
+        return this._cellPolys.get(k) || (this._extraCells ? this._extraCells.get(k) : undefined);
+    }
+    registerCell(k, cell) {
+        if (!this._extraCells) this._extraCells = new Map();
+        if (this._extraCells.has(k)) this.dropCell(k);
+        this._extraCells.set(k, cell);
+    }
+    dropCell(k) {
+        if (this._extraCells) this._extraCells.delete(k);
+        for (let st = 0; st <= 6; st++) { this._crackCache.delete(k + ':' + st); if (this._pockCache) this._pockCache.delete(k + ':' + st); }
+        if (this._fracCache) this._fracCache.delete(k);
+        if (this._biteCache) this._biteCache.delete(k);
+        this._hitFlash.delete(k); this._crackSnap.delete(k);
+    }
+    worldToTile(wx, wy) {
+        const w = this._world;
+        if (!w) return null;
+        return { x: (wx + w.hw) / w.s, y: (wy + w.hh) / w.s, s: w.s };
+    }
+    // A rock-style break at a world point: the same chips, sparks, flash,
+    // dust and shake a rock cell gets, sized to a radius in world units.
+    shatterAt(wx, wy, rUnits, tier = 0, delay = 0, k = 0) {
+        const t = this.worldToTile(wx, wy);
+        if (!t || !this.ready) return false;
+        const rt = rUnits / t.s;
+        const poly = [];
+        for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; poly.push([t.x + Math.cos(a) * rt, t.y + Math.sin(a) * rt]); }
+        const path = new Path2D();
+        poly.forEach((pt, i) => i ? path.lineTo(pt[0], pt[1]) : path.moveTo(pt[0], pt[1]));
+        path.closePath();
+        const cell = { k: k | 0, cx: t.x, cy: t.y, poly, path };
+        const now = performance.now();
+        this._spawnShatter(cell, now + delay, tier | 0);
+        this._shakeNearCell(cell, tier ? 5 : 4, 240, delay, delay);
+        return true;
+    }
     addHitMarker(wx, wy) {
         if (!this.ready || !this._world) return;
         const w = this._world;
@@ -702,7 +754,7 @@ class TerrainRenderer {
     _getRockNet(k) {
         let net = this._fracCache.get(k);
         if (net !== undefined) return net;
-        const cell = this._cellPolys.get(k);
+        const cell = this._cellFor(k);
         if (!cell) return null;
         const { poly } = cell;
         const kk = k & 0xffff;
@@ -825,7 +877,7 @@ class TerrainRenderer {
         const ck = k + ':' + stage;
         let cached = this._crackCache.get(ck);
         if (cached !== undefined) return cached;
-        const cell = this._cellPolys.get(k);
+        const cell = this._cellFor(k);
         const net = this._getRockNet(k);
         if (!cell || !net) { this._crackCache.set(ck, null); return null; }
         const { cx, cy } = cell;
@@ -908,7 +960,7 @@ class TerrainRenderer {
         const pk = k + ':' + stage;
         let p = this._pockCache.get(pk);
         if (p !== undefined) return p;
-        const cell = this._cellPolys.get(k);
+        const cell = this._cellFor(k);
         if (!cell) { this._pockCache.set(pk, null); return null; }
         const { poly } = cell;
         const kk = k & 0xffff;
@@ -1116,8 +1168,6 @@ class TerrainRenderer {
         const viLo = Math.round(vxMin), viHi = Math.round(vxMax) - 1;
         const vjLo = 0,                 vjHi = Math.round(rows / rockSz) - 1;
 
-        const incCache = new Map();
-        const polyCache = new Map();
 
         // The lattice polygons depend only on (cols, rows, hash) - never on
         // which rocks are alive - so they are identical on every rebuild. This
@@ -1162,58 +1212,56 @@ class TerrainRenderer {
                     for (let pi = 1; pi < tilePoly.length; pi++)
                         tilePath.lineTo(tilePoly[pi][0], tilePoly[pi][1]);
                     tilePath.closePath();
+                    // Which lattice cell sits across each edge never changes
+                    // either, so it is resolved once here. A rebuild is then a
+                    // plain "is my neighbour alive" test per edge instead of a
+                    // 24-site nearest search (that search ran ~360k times per
+                    // rebuild and cost 50-85ms on a half-mined map).
+                    const nb = new Array(poly.length);
+                    for (let e = 0; e < poly.length; e++) {
+                        const [vax, vay] = poly[e], [vbx, vby] = poly[(e+1)%poly.length];
+                        const emx = (vax+vbx)/2, emy = (vay+vby)/2;
+                        const edx = vbx-vax, edy = vby-vay;
+                        const elen = Math.hypot(edx, edy);
+                        if (elen < 1e-6) { nb[e] = key; continue; }   // degenerate edge: never a boundary
+                        let nnx = -edy/elen, nny = edx/elen;
+                        if ((sx-emx)*nnx + (sy-emy)*nny > 0) { nnx = -nnx; nny = -nny; }
+                        const px = emx + nnx * 0.01, py = emy + nny * 0.01;
+                        let minDist = Infinity, nVi = vi, nVj = vj;
+                        for (let dj = -2; dj <= 2; dj++) {
+                            for (let di = -2; di <= 2; di++) {
+                                if (di === 0 && dj === 0) continue;
+                                const [nhx, nhy] = h2(vi+di, vj+dj);
+                                const nx = vi+di+nhx, ny = vj+dj+nhy;
+                                const d = (px-nx)*(px-nx) + (py-ny)*(py-ny);
+                                if (d < minDist) { minDist = d; nVi = vi+di; nVj = vj+dj; }
+                            }
+                        }
+                        nb[e] = nVi * 100003 + nVj;
+                    }
                     lattice.set(key, {
-                        poly, sx, sy,
+                        poly, sx, sy, nb,
                         cell: { k: key, poly: tilePoly, cx: pcx, cy: pcy, path: tilePath },
                     });
                 }
             }
         }
 
-        for (const [key, L] of lattice) {
-            this._cellPolys.set(key, L.cell);
-            if (this._rockDead.has(key)) { incCache.set(key, false); continue; }
-            incCache.set(key, true);
-            polyCache.set(key, L);
-        }
+        if (this._cellPolys.size !== lattice.size)
+            for (const [key, L] of lattice) this._cellPolys.set(key, L.cell);
 
-        const isInc = (vi, vj) => incCache.get(vi * 100003 + vj) || false;
-
+        const dead = this._rockDead;
         const boundaryEdges = [];
-
-        for (let vj = vjLo; vj <= vjHi; vj++) {
-            for (let vi = viLo; vi <= viHi; vi++) {
-                const key = vi * 100003 + vj;
-                if (!incCache.get(key)) continue;
-                const { poly, sx, sy } = polyCache.get(key);
-
-                for (let e = 0; e < poly.length; e++) {
-                    const [vax, vay] = poly[e], [vbx, vby] = poly[(e+1)%poly.length];
-                    const emx = (vax+vbx)/2, emy = (vay+vby)/2;
-                    const edx = vbx-vax, edy = vby-vay;
-                    const elen = Math.hypot(edx, edy);
-                    if (elen < 1e-6) continue;
-
-                    let nnx = -edy/elen, nny = edx/elen;
-                    if ((sx-emx)*nnx + (sy-emy)*nny > 0) { nnx = -nnx; nny = -nny; }
-
-                    const px = emx + nnx * 0.01, py = emy + nny * 0.01;
-
-                    let minDist = Infinity, nVi = vi, nVj = vj;
-                    for (let dj = -2; dj <= 2; dj++) {
-                        for (let di = -2; di <= 2; di++) {
-                            if (di === 0 && dj === 0) continue;
-                            const [nhx, nhy] = h2(vi+di, vj+dj);
-                            const nx = vi+di+nhx, ny = vj+dj+nhy;
-                            const d = (px-nx)*(px-nx) + (py-ny)*(py-ny);
-                            if (d < minDist) { minDist = d; nVi = vi+di; nVj = vj+dj; }
-                        }
-                    }
-
-                    if (!isInc(nVi, nVj)) {
-                        boundaryEdges.push([vax*rockSz, vay*rockSz, vbx*rockSz, vby*rockSz]);
-                    }
-                }
+        for (const [key, L] of lattice) {
+            if (dead.has(key)) continue;
+            const poly = L.poly, nb = L.nb;
+            for (let e = 0; e < poly.length; e++) {
+                const nk = nb[e];
+                if (nk === key) continue;
+                const other = lattice.get(nk);
+                if (other && !dead.has(nk)) continue;      // solid on both sides
+                const [vax, vay] = poly[e], [vbx, vby] = poly[(e+1)%poly.length];
+                boundaryEdges.push([vax*rockSz, vay*rockSz, vbx*rockSz, vby*rockSz]);
             }
         }
 

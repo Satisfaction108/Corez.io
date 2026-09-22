@@ -11,7 +11,19 @@ function stubDep(rel) {
     m.loaded = true;
     require.cache[abs] = m;
 }
-for (const d of ['../../terrain/storm.js', '../../terrain/vault.js', '../../terrain/outposts.js', '../../terrain/gems.js']) stubDep(d);
+for (const d of ['../../terrain/storm.js', '../../terrain/vault.js', '../../terrain/outposts.js', '../../terrain/gems.js',
+    '../../terrain/chests.js', '../../terrain/bosses.js', '../../terrain/blooms.js', '../../terrain/raidEvents.js']) stubDep(d);
+// shop and raidMods are pure enough to stub with the queries the death path uses
+{
+    const abs = require.resolve('../../terrain/shop.js', { paths: [scriptDir] });
+    const m = new Module(abs, module);
+    m.exports = { killBonus: () => 0, onDeath: () => ({ drillLost: 0 }), respawnMs: () => 15000, keepsDrillOnRespawn: () => false, hasGear: () => false, stateOf: () => ({ drill: 0 }), applyPassives: () => {}, talkState: () => {}, resetAll: () => {} };
+    m.loaded = true; require.cache[abs] = m;
+    const abs2 = require.resolve('../../terrain/raidMods.js', { paths: [scriptDir] });
+    const m2 = new Module(abs2, module);
+    m2.exports = { num: (k, d) => d, get: () => null, roll: () => null, snapshot: () => null, gemValueMult: () => 1 };
+    m2.loaded = true; require.cache[abs2] = m2;
+}
 
 global.Config = { dig_royale: true };
 global.gameManager = { gameHandler: { bots: [] }, socketManager: { players: [] } };
@@ -50,7 +62,7 @@ dr.onCombatantDead(K2);
 rows = dr.boardSnapshot();
 const vRow2 = rows.find(r => r.name === 'Me');
 check('avenger has 1 kill', vRow2 && vRow2.kills === 1);
-check('avenge pays double (400)', vRow2 && vRow2.score === 400);
+check('re-kill pays single (200) - revenge bonus retired', vRow2 && vRow2.score === 200);
 
 // 3. Plain re-kill without a mark pays single.
 const K3 = mkBot(5, 8); K3.isDead = () => true; K3.finalKillers = [V2]; K3.royaleAlive = true;
@@ -58,7 +70,7 @@ dr.onCombatantDead(K3);
 rows = dr.boardSnapshot();
 const vRow3 = rows.find(r => r.name === 'Me');
 check('second victim: kills = 2', vRow3 && vRow3.kills === 2);
-check('second victim pays single (600 total)', vRow3 && vRow3.score === 600);
+check('second victim pays single (400 total)', vRow3 && vRow3.score === 400);
 
 // 4. Env death clears the mark: storm death sets nothing, no crash.
 const V4 = mkHuman('x1', 10);

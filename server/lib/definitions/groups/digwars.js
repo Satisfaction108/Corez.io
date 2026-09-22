@@ -107,19 +107,19 @@ const HOARD_FACET_LIFT = 30;
 Class.gemHoardEmerald = {
     LABEL: "Hoard",
     SHAPE: 0,
-    COLOR: { BASE: "blue", BRIGHTNESS_SHIFT: HOARD_LIFT },
+    COLOR: { BASE: "mirror", BRIGHTNESS_SHIFT: HOARD_LIFT },
     STROKE_WIDTH: 1.1,
 };
 Class.gemHoardEmeraldFacet = { LABEL: "Hoard", SHAPE: 0,
-    COLOR: { BASE: "blue", BRIGHTNESS_SHIFT: HOARD_FACET_LIFT }, BORDERLESS: true };
+    COLOR: { BASE: "mirror", BRIGHTNESS_SHIFT: HOARD_FACET_LIFT }, BORDERLESS: true };
 Class.gemHoardShard = {
     LABEL: "Hoard",
     SHAPE: 0,
-    COLOR: { BASE: "red", BRIGHTNESS_SHIFT: HOARD_LIFT },
+    COLOR: { BASE: "mirror", BRIGHTNESS_SHIFT: HOARD_LIFT },
     STROKE_WIDTH: 1.1,
 };
 Class.gemHoardShardFacet = { LABEL: "Hoard", SHAPE: 0,
-    COLOR: { BASE: "red", BRIGHTNESS_SHIFT: HOARD_FACET_LIFT }, BORDERLESS: true };
+    COLOR: { BASE: "mirror", BRIGHTNESS_SHIFT: HOARD_FACET_LIFT }, BORDERLESS: true };
 
 Class.outpostBanner = {
     PARENT: "genericTank",

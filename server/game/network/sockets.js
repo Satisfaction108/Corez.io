@@ -397,7 +397,13 @@ class socketManager {
                             
                             JSON.stringify(require('../terrain/coreChambers.js').snapshot()),
                             Config.dig_royale ? 1 : 0,
+                            JSON.stringify(require('../terrain/shop.js').snapshot()),
                         );
+                        if (Config.dig_royale || Config.tutorial) {
+                            const shopMod = require('../terrain/shop.js');
+                            socket.talk('SHC', JSON.stringify(shopMod.catalog()));
+                            shopMod.talkState(socket);
+                        }
                     }
                     return;
                 }
@@ -621,7 +627,7 @@ class socketManager {
                 }
                 let number = m[0],
                     max = m[1],
-                    stat = ["atk", "hlt", "spd", "str", "pen", "dam", "rld", "mob", "rgn", "shi"][number];
+                    stat = ["atk", "hlt", "spd", "str", "pen", "dam", "rld", "mob", "rgn", "shi", "min"][number];
 
                 if (typeof number != "number") {
                     socket.kick("Weird stat upgrade request number.");
@@ -818,6 +824,19 @@ class socketManager {
 
                     // Clear the plot's scripted bots (leaving a lesson, replay).
                     case "clear": tut.clearBots(plot); break;
+
+                    // ── Dig Royale chapter ──
+                    // Banked gems for the shop lesson.
+                    case "banked": tut.setBanked(body, parseInt(m[1], 10) || 0); break;
+                    // Put a kit item in the learner's slots / mount a sidearm.
+                    case "kit": tut.grantKit(socket, typeof m[1] === "string" ? m[1] : "medkit"); break;
+                    case "arm": tut.grantArm(socket, typeof m[1] === "string" ? m[1] : "flak"); break;
+                    case "gear": tut.grantGear(socket, typeof m[1] === "string" ? m[1] : "boots"); break;
+                    // A loot chest beside the learner.
+                    case "chest": tut.spawnChest(plot); break;
+                    // A weakened training copy of a raid boss.
+                    case "boss": tut.spawnBoss(plot, typeof m[1] === "string" ? m[1] : "warden"); break;
+                    case "bossclear": tut.clearBoss(plot); break;
                 }
             } break;
             case "EP": {
@@ -1049,6 +1068,90 @@ class socketManager {
                 if (!Config.dig_royale) return 1;
                 require('../gamemodes/scripts/dig_royale.js').requestPlay();
             } break;
+            case "sb": {
+                // shop buy: item id string
+                if (!Config.dig_royale && !Config.tutorial) return 1;
+                if (m.length !== 1 || typeof m[0] !== "string" || m[0].length > 24) { socket.kick("Bad shop request."); return 1; }
+                if (Config.tutorial && !require('../tutorialSession.js').allows(player.body, 'shop')) return;
+                const nowB = Date.now();
+                if (nowB - (socket._lastBuyAt || 0) < 120) return;
+                socket._lastBuyAt = nowB;
+                require('../terrain/shop.js').buy(socket, m[0]);
+            } break;
+            case "kd": {
+                // kit drop: slot (dragged out of the box)
+                if (!Config.dig_royale && !Config.tutorial) return 1;
+                if (typeof m[0] !== "number" || m[0] < 0 || m[0] > 2) return;
+                require('../terrain/shop.js').dropKit(socket, m[0] | 0);
+            } break;
+            case "sk": {
+                // kit use: slot, world x, world y
+                if (!Config.dig_royale && !Config.tutorial) return 1;
+                if ((m.length !== 3 && m.length !== 4) || typeof m[0] !== "number" || typeof m[1] !== "number" || typeof m[2] !== "number") { socket.kick("Bad kit request."); return 1; }
+                if (Config.tutorial && !require('../tutorialSession.js').allows(player.body, 'kit')) return;
+                if (m[0] < 0 || m[0] > 2) return;
+                require('../terrain/shop.js').useKit(socket, m[0] | 0, m[1], m[2], typeof m[3] === "string" && m[3].length <= 24 ? m[3] : undefined);
+            } break;
+            case "DBG": {
+                // local verification only: never active without ROYALE_DEBUG,
+                // except the banked-gem grant, which a localhost client may use
+                // to try items (window.dwGems(n) in the console)
+                const what = String(m[0] || "");
+                const localSocket = /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(String(socket.ip || ""));
+                if (!Config.dig_royale) return 1;
+                if (!process.env.ROYALE_DEBUG && !(localSocket && what === "gems")) return 1;
+                const b = player && player.body;
+                try {
+                    if (what === "gems" && b) { const gm = require('../terrain/gems.js'); gm.setBanked(b, Math.max(0, Math.min(1e6, (m[1] | 0) || 5000))); gm.talkGems(b, 0); }
+                    else if (what === "shop" && b) { const sh = require('../terrain/shop.js').getShops()[m[1] | 0]; if (sh) { b.x = sh.x; b.y = sh.y; b.velocity.x = 0; b.velocity.y = 0; } }
+                    else if (what === "vault" && b) { const v = require('../terrain/vault.js').getVaults()[m[1] | 0]; if (v) { b.x = v.x; b.y = v.y; b.velocity.x = 0; b.velocity.y = 0; } }
+                    else if (what === "boss") require('../terrain/bosses.js').spawn(m[1] ? String(m[1]) : undefined);
+                    else if (what === "chests") socket.talk('KC', 'chest', JSON.stringify(require('../terrain/chests.js').debugInfo()), 0);
+                    else if (what === "toepic" && b) {
+                        // beside the nearest epic chest, on its open side
+                        const list = require('../terrain/chests.js').alive().filter(c => c.chestRare && !c._opened);
+                        list.sort((p, q) => ((p.x - b.x) ** 2 + (p.y - b.y) ** 2) - ((q.x - b.x) ** 2 + (q.y - b.y) ** 2));
+                        const ch = list[0];
+                        if (ch) {
+                            const tg = global.gameManager.terrainGrid;
+                            let spot = null;
+                            for (const [dx, dy] of [[160, 0], [-160, 0], [0, 160], [0, -160], [120, 120], [-120, -120]]) {
+                                if (!tg.pointInRock || !tg.pointInRock(ch.x + dx, ch.y + dy)) { spot = { x: ch.x + dx, y: ch.y + dy }; break; }
+                            }
+                            if (spot) { b.x = spot.x; b.y = spot.y; b.velocity.x = 0; b.velocity.y = 0; }
+                        }
+                    }
+                    else if (what === "tobot" && b) {
+                        // beside the nearest live bot, for kill/revenge testing
+                        let best = null, bd = Infinity;
+                        for (const e of entities.values()) {
+                            if (!e || !e.isBot || e.isDead?.() || e === b) continue;
+                            const d = (e.x - b.x) ** 2 + (e.y - b.y) ** 2;
+                            if (d < bd) { bd = d; best = e; }
+                        }
+                        if (best) { b.x = best.x + 140; b.y = best.y; b.velocity.x = 0; b.velocity.y = 0; b.invuln = false; }
+                    }
+                    else if (what === "bosskill") { const bs = require('../terrain/bosses.js').current(); if (bs) bs.health.amount = -1; }
+                    else if (what === "bloom") { const bl = require('../terrain/blooms.js').start(); if (bl) require('../gamemodes/scripts/dig_royale.js').onBloom(bl); }
+                    else if (what === "meteor") { const ev = require('../terrain/raidEvents.js').startMeteor(Date.now()); if (ev) require('../gamemodes/scripts/dig_royale.js').onEvent(ev); }
+                    else if (what === "rain") { const ev = require('../terrain/raidEvents.js').startRain(Date.now()); if (ev) require('../gamemodes/scripts/dig_royale.js').onEvent(ev); }
+                    else if (what === "chest" && b) require('../terrain/chests.js').spawnChest(b.x + 120, b.y, !!m[1]);
+                    else if (what === "kill" && b) { b.health.amount = -1; }
+                    else if (what === "god" && b) { b.godmode = !b.godmode; }
+                    else if (what === "chesthp" && b) {
+                        const list = require('../terrain/chests.js').alive();
+                        let best = null, bd = 1e12;
+                        for (const c of list) { const d = (c.x - b.x) ** 2 + (c.y - b.y) ** 2; if (d < bd) { bd = d; best = c; } }
+                        const info = best ? { hp: +(best.health.amount).toFixed(1), max: best.health.max, dmgN: best._dmgN | 0, gated: best._gatedN | 0, lastDmgAgo: best._lastDmgAt ? Date.now() - best._lastDmgAt : null, hitters: best.hitters ? best.hitters.size : 0, invuln: !!best.invuln, opened: !!best._opened, dist: Math.round(Math.sqrt(bd)), realSize: Math.round(best.realSize), myInvuln: !!b.invuln, myGod: !!b.godmode, myGrace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()) } : null;
+                        socket.talk('KC', 'chest', JSON.stringify(info), 0);
+                    }
+                    else if (what === "carry" && b) { b.carriedGems = (b.carriedGems | 0) + (m[1] | 0 || 500); require('../terrain/gems.js').updateSatchel(b); require('../terrain/gems.js').talkGems(b, 0); }
+                    else if (what === "tobos" && b) { const bs = require('../terrain/bosses.js').current(); if (bs) { b.x = bs.x + 300; b.y = bs.y; } }
+                    else if (what === "tobloom" && b) { const bl = require('../terrain/blooms.js').current(); if (bl) { b.x = bl.x + 200; b.y = bl.y + 200; } }
+                    else if (what === "toevent" && b) { const ev = require('../terrain/raidEvents.js').current(); if (ev) { b.x = ev.x + 250; b.y = ev.y; } }
+                    else if (what === "tochest" && b) { const ch = require('../terrain/chests.js').alive()[0]; if (ch) { b.x = ch.x + 160; b.y = ch.y; } }
+                } catch (e) { console.error("[DBG]", e && e.stack); }
+            } break;
             default: {
                 console.log(m)
                 console.log("Invalid registered packet." + m);
@@ -1154,7 +1257,7 @@ class socketManager {
         let vars = [],
             skills = player.body.skill,
             out = [],
-            statnames = ["atk", "hlt", "spd", "str", "pen", "dam", "rld", "mob", "rgn", "shi"];
+            statnames = ["atk", "hlt", "spd", "str", "pen", "dam", "rld", "mob", "rgn", "shi", "min"];
 
         for (let i = 0; i < statnames.length; i++) {
             vars.push(this.floppy());
@@ -1209,6 +1312,7 @@ class socketManager {
         val += s.amount("spd").toString(16).padStart(2, '0');
         val += s.amount("hlt").toString(16).padStart(2, '0');
         val += s.amount("atk").toString(16).padStart(2, '0');
+        val += s.amount("min").toString(16).padStart(2, '0');
         return val;
     }
 
@@ -1589,7 +1693,13 @@ class socketManager {
             default: {
                 let team = getRandomTeam();
                 body.team = team;
-                body.color.base = Config.random_body_colors ?
+                if (Config.dig_royale) {
+                    // one palette colour per player, shared by hull, HUD, leaderboard and minimap
+                    const c = global.assignTeamColor(team);
+                    body.color.base = c;
+                    body.leaderboardColor = c;
+                    body.minimapColor = c;
+                } else body.color.base = Config.random_body_colors ?
                     ran.choose([ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 ]) : getTeamColor(TEAM_RED);
                 let loop = setInterval(() => {
                     for (let e of entities.values()) {
@@ -1608,6 +1718,7 @@ class socketManager {
 
     preparePlayer(socket, player, body, doNotTakeAction = {}) {
 
+        player._tcTeam = body.team;
         player.teamColor = new Color(!Config.random_body_colors && (Config.groups || (Config.mode == 'ffa' || Config.mode == 'clan' && !Config.tag)) ? 10 : global.getTeamColor(body.team)).compiled;
 
         player.target = { x: 0, y: 0 };
@@ -1660,6 +1771,10 @@ class socketManager {
                     : (player.body.carriedGems | 0)) | 0,
                 player.body.deathCause || "",
                 (socket && socket.royalePlace) | 0,
+                // raid extras: streak lost, drill tier lost, insured gems
+                (socket && socket.raidDeathStreak) | 0,
+                (socket && socket.raidDeathDrillLost) | 0,
+                (socket && socket.gemDeathInsured) | 0,
             ];
         }
 
@@ -1803,7 +1918,10 @@ class socketManager {
             if (player.body.id === e.master.id) {
                 data = data.slice();
 
-                player.teamColor = new Color(!Config.random_body_colors && (Config.groups || (Config.mode == 'ffa' || Config.mode == 'clan' && !Config.tag)) ? 10 : global.getTeamColor(player.body.team)).compiled;
+                if (player._tcTeam !== player.body.team || !player.teamColor) {
+                    player._tcTeam = player.body.team;
+                    player.teamColor = new Color(!Config.random_body_colors && (Config.groups || (Config.mode == 'ffa' || Config.mode == 'clan' && !Config.tag)) ? 10 : global.getTeamColor(player.body.team)).compiled;
+                }
 
                 if (player.command.autospin) {
                     data[10] = 1;

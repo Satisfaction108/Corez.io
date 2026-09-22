@@ -6,14 +6,14 @@
 // wide enough that no learner can ever see into a neighbour's arena.
 //
 // ── what an arena looks like ──────────────────────────────────────────────
-// PLOT_TILES x PLOT_TILES tiles, laid out exactly like room_dig_wars.js:
+// PLOT_TILES x PLOT_TILES tiles, a small Dig Royale practice ground:
 //
-//     col  0      : friendly (blue) base column, blue vault at its centre
-//     cols 1-2    : open ground - spawn, practice bots, room to fight
-//     cols 3-8    : the rock wall, split by a corridor at y = 0
-//                     blue core chamber - outpost - red core chamber
-//     cols 9-10   : open ground on the far side
-//     col  11     : enemy (red) base column, red vault at its centre
+//     col  0      : the vault pad, on the learner's side
+//     cols 1-2    : open ground - spawn, practice bots, the shop pad, the drill
+//     cols 3-8    : the rock wall, split by a corridor at y = 0 with the
+//                   practice base pad where the corridor crosses the middle
+//     cols 9-11   : open ground on the far side (no team bases: Dig Royale
+//                   has no teams)
 //
 // ── why rocks are shaped by KILLING them ──────────────────────────────────
 // The cell grid does NOT decide where rock exists. buildContour() reads the
@@ -116,6 +116,12 @@ const LAYOUT = {
     // never appears, and the lesson waits forever on a bot that is "there".
     dummy:       { x: -0.33,          y: -0.10 },
     fighter:     { x: -0.33,          y:  0.10 },
+    // Dig Royale chapter. The shop pad sits down the open field so the
+    // learner drives to it; the chest and the training boss land beside the
+    // learner wherever they are, these are only the fallback anchors.
+    shop:        { x: -0.33,          y:  0.20 },
+    chest:       { x: -0.36,          y: -0.20 },
+    boss:        { x: -0.31,          y:  0.00 },
 };
 
 const plotCount = () => PLOT_COLS * PLOT_ROWS;
@@ -245,9 +251,9 @@ function inWall(lx, ly) {
     if (Math.abs(ly) <= CORRIDOR_HALF) return false;          // the corridor
     // Breathing room around the three structures, in case the corridor is ever
     // narrowed below what a chamber ring needs.
-    for (const key of ['outpost', 'chamberBlue', 'chamberRed']) {
+    for (const key of ['outpost']) {
         const p = LAYOUT[key];
-        const r = key === 'outpost' ? 190 / PLOT_SIZE : 200 / PLOT_SIZE;
+        const r = 190 / PLOT_SIZE;
         const dx = lx - p.x, dy = ly - p.y;
         if (dx * dx + dy * dy <= r * r) return false;
     }
@@ -361,36 +367,32 @@ function seedOres(grid, unitHealth) {
 function installSites(grid) {
     grid.outpostSites = [];
     grid.coreChamberSites = [];
+    grid.shopSites = [];
     for (let i = 0; i < plotCount(); i++) {
+        const sp = plotPoint(i, 'shop');
+        grid.shopSites.push({
+            id: grid.shopSites.length,
+            name: 'Practice Shop',
+            x: sp.x, y: sp.y, r: 95, color: '#5ce0d8',
+        });
         const o = plotPoint(i, 'outpost');
         grid.outpostSites.push({
             id: grid.outpostSites.length,
-            name: 'Training Outpost',
+            name: 'Practice Base',
             x: o.x, y: o.y,
         });
-
-        for (const [key, team, name] of [
-            ['chamberBlue', TEAM_BLUE, 'Blue Core Chamber'],
-            ['chamberRed',  TEAM_RED,  'Red Core Chamber'],
-        ]) {
-            const ch = plotPoint(i, key);
-            grid.coreChamberSites.push({
-                id: grid.coreChamberSites.length,
-                name, team, x: ch.x, y: ch.y,
-            });
-        }
+        // no core chambers: that was Dig Wars, and this ground teaches Dig Royale
     }
 }
 
-// Two vault pads per arena, one at the centre of each base column - the same
-// placement vault.js uses on the real map.
+// One vault pad per arena, on the learner's side of the field. It is on the
+// learner's team so vault.js (which is team-aware off the royale server)
+// lets them bank on it.
 function vaultSites() {
     const out = [];
     for (let i = 0; i < plotCount(); i++) {
         const b = plotPoint(i, 'vaultBlue');
         out.push({ x: b.x, y: b.y, r: 95, team: TEAM_BLUE });
-        const r = plotPoint(i, 'vaultRed');
-        out.push({ x: r.x, y: r.y, r: 95, team: TEAM_RED });
     }
     return out;
 }

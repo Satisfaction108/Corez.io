@@ -127,6 +127,7 @@ function spawnStructure(site, team, owner = null) {
     
     o.name = "";
     o.isOutpostBanner = true;
+    o.padSite = site;             // the pad this structure stands on (base wall)
     
     
     
@@ -351,7 +352,9 @@ function tick(players, dtMs) {
         
         
         
-        d.spill = (d.spill || 0) + (DEPOSIT_RATE * dtMs) / 1000;
+        let rateMult = 1;
+        if (body.socket) { try { rateMult = require('./shop.js').depositRateMult(body); } catch { /* */ } }
+        d.spill = (d.spill || 0) + (DEPOSIT_RATE * rateMult * dtMs) / 1000;
         const chunk = Math.min(
             Math.ceil(d.remaining / EFFICIENCY - 1e-9),
             body.carriedGems | 0,

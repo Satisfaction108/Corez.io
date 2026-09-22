@@ -9,7 +9,22 @@ const skcnv = {
     hlt: 7,
     rgn: 8,
     mob: 9,
+    min: 10,
 };
+
+// 11 stats: the ten arras stats plus Mining Power (index 10). Every array
+// that flows in here may still be the old 10-long shape, so pad() is the
+// one place that tolerates both.
+const SKILL_COUNT = 11;
+
+function pad(arr, fill) {
+    const out = Array(SKILL_COUNT);
+    for (let i = 0; i < SKILL_COUNT; i++) {
+        const v = arr && arr[i];
+        out[i] = (typeof v === "number" && isFinite(v)) ? v : fill;
+    }
+    return out;
+}
 
 let curvePoints = [];
 
@@ -24,11 +39,11 @@ function apply(f, x) {
 }
 
 class Skill {
-    constructor(inital = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) {
+    constructor(inital = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) {
         // Just skill stuff.
-        this.raw = inital;
+        this.raw = pad(inital, 0);
         this.caps = [];
-        this.setCaps(Array(10).fill(Config.skill_cap));
+        this.setCaps(Array(SKILL_COUNT).fill(Config.skill_cap));
         this.name = [
             "Reload",
             "Bullet Penetration",
@@ -40,6 +55,7 @@ class Skill {
             "Max Health",
             "Shield Regeneration",
             "Movement Speed",
+            "Mining Power",
         ];
         this.atk = 0;
         this.hlt = 0;
@@ -55,6 +71,7 @@ class Skill {
         this.brst = 0;
         this.ghost = 0;
         this.acl = 0;
+        this.mine = 1;
         this.reset();
     }
     reset(resetLSPF = true) {
@@ -64,18 +81,18 @@ class Skill {
         this.level = 0;
         this.levelUpScore = 1;
         if (resetLSPF) this.LSPF = null;
-        this.set([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        this.set(Array(SKILL_COUNT).fill(0));
         this.maintain();
     }
     update() {
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < SKILL_COUNT; i++) {
             if (this.raw[i] > this.caps[i]) {
                 this.points += this.raw[i] - this.caps[i];
                 this.raw[i] = this.caps[i];
             }
         }
         let attrib = [];
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < SKILL_COUNT; i++) {
             attrib[i] = curve(this.raw[i] / Config.skill_cap);
         }
         this.rld = Math.pow(0.5, attrib[skcnv.rld]);
@@ -92,31 +109,17 @@ class Skill {
         this.mob = apply(0.8, attrib[skcnv.mob]);
         this.rgn = apply(25, attrib[skcnv.rgn]);
         this.brst = 0.3 * (0.5 * attrib[skcnv.atk] + 0.5 * attrib[skcnv.hlt] + attrib[skcnv.rgn]);
+        // linear on purpose: a point of mining is always worth the same
+        this.mine = 1 + 2.1 * (this.raw[skcnv.min] / Config.skill_cap);
     }
     set(thing) {
-        this.raw[0] = thing[0];
-        this.raw[1] = thing[1];
-        this.raw[2] = thing[2];
-        this.raw[3] = thing[3];
-        this.raw[4] = thing[4];
-        this.raw[5] = thing[5];
-        this.raw[6] = thing[6];
-        this.raw[7] = thing[7];
-        this.raw[8] = thing[8];
-        this.raw[9] = thing[9];
+        const t = pad(thing, 0);
+        for (let i = 0; i < SKILL_COUNT; i++) this.raw[i] = t[i];
         this.update();
     }
     setCaps(thing) {
-        this.caps[0] = thing[0];
-        this.caps[1] = thing[1];
-        this.caps[2] = thing[2];
-        this.caps[3] = thing[3];
-        this.caps[4] = thing[4];
-        this.caps[5] = thing[5];
-        this.caps[6] = thing[6];
-        this.caps[7] = thing[7];
-        this.caps[8] = thing[8];
-        this.caps[9] = thing[9];
+        const t = pad(thing, Config.skill_cap);
+        for (let i = 0; i < SKILL_COUNT; i++) this.caps[i] = t[i];
         this.update();
     }
     maintain() {
@@ -164,4 +167,4 @@ class Skill {
     }
 }
 
-module.exports = { Skill };
+module.exports = { Skill, SKILL_COUNT, skcnv };

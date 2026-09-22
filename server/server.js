@@ -205,12 +205,8 @@ server = http.createServer((req, res) => {
         } break;
         
         case "/api/getAddonAuthors": {
-            if (!query.token || query.token !== process.env.DEVELOPER) {
-                res.writeHead(403);
-                res.end("Forbidden");
-                return;
-            }
-            readString = JSON.stringify(global.addonAuthorInfos);
+            // no token: empty list instead of a 403 the client logs on every load
+            readString = (!query.token || query.token !== process.env.DEVELOPER) ? "[]" : JSON.stringify(global.addonAuthorInfos);
         } break;
 
         case "/api/sendPlayer": {
@@ -272,7 +268,9 @@ server = http.createServer((req, res) => {
 
             // Determine the file's MIME type based on its extension and serve the file stream
             const extension = fileToGet.split(".").pop();
-            res.writeHead(200, { "Content-Type": mimeSet[extension] || "text/html" });
+            // No heuristic caching: a client must never run a stale app.js
+            // against a freshly restarted server.
+            res.writeHead(200, { "Content-Type": mimeSet[extension] || "text/html", "Cache-Control": "no-cache" });
             fs.createReadStream(fileToGet).pipe(res);
         } break;
 
@@ -288,7 +286,9 @@ server = http.createServer((req, res) => {
 
             // Determine the file's MIME type based on its extension and serve the file stream
             const extension = fileToGet.split(".").pop();
-            res.writeHead(200, { "Content-Type": mimeSet[extension] || "text/html" });
+            // No heuristic caching: a client must never run a stale app.js
+            // against a freshly restarted server.
+            res.writeHead(200, { "Content-Type": mimeSet[extension] || "text/html", "Cache-Control": "no-cache" });
             fs.createReadStream(fileToGet).pipe(res);
         } break;
     }
@@ -476,6 +476,7 @@ server.on("upgrade", (req, socket, head) => {
     }
     if (url === DIG_WARS_PROXY_PATH || url.startsWith(DIG_WARS_PROXY_PATH + "/") ||
         url.startsWith(DIG_WARS_PROXY_PATH + "?")) {
+        if (!workerPort("dw")) { try { socket.destroy(); } catch (e) { /* */ } return; }
         return proxyUpgradeToWorker(req, socket, head, DIG_WARS_PROXY_PATH, workerPort("dw"));
     }
     wsServer.handleUpgrade(req, socket, head, (ws) => {

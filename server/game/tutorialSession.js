@@ -12,7 +12,7 @@ const plots = require('./terrain/tutorialPlots.js');
 const owners = new Array(plots.plotCount()).fill(null);
 
 // Per-plot scripted bots: { dummy: Entity|null, fighter: Entity|null }
-const bots = new Array(plots.plotCount()).fill(null).map(() => ({ dummy: null, fighter: null }));
+const bots = new Array(plots.plotCount()).fill(null).map(() => ({ dummy: null, fighter: null, boss: null, chest: null }));
 
 function plotOf(socket) {
     return socket && socket._tutorialPlot != null ? socket._tutorialPlot : -1;
@@ -72,12 +72,11 @@ function plotInfo(index) {
         plot: index,
         spawn: pt('spawn'),
         rocks: pt('rocks'),
-        base: pt('base'),              // the lethal, red one
-        homeBase: pt('homeBase'),
-        vault: pt('vaultBlue'),        // the one they can actually bank at
-        outpost: pt('outpost'),
-        chamberBlue: pt('chamberBlue'),
-        chamberRed: pt('chamberRed'),
+        vault: pt('vaultBlue'),        // the one vault on this ground
+        outpost: pt('outpost'),        // the practice base
+        shop: pt('shop'),
+        chest: pt('chest'),
+        boss: pt('boss'),
         // Frame for the full map, and the filter for every world lookup.
         cx: Math.round(c.x), cy: Math.round(c.y),
         size: plots.PLOT_SIZE,
@@ -108,7 +107,114 @@ function clearBots(plotIndex) {
     if (!slot) return;
     killBot(slot.dummy);
     killBot(slot.fighter);
-    slot.dummy = slot.fighter = null;
+    killBot(slot.boss);
+    killBot(slot.chest);
+    slot.dummy = slot.fighter = slot.boss = slot.chest = null;
+}
+
+// ─── Dig Royale chapter ───────────────────────────────────────────────────
+
+// A loot chest beside the learner. Always carries a Medkit so the kit lesson
+// that follows has something in slot one to fire.
+function spawnChest(plotIndex) {
+  try {
+    const slot = bots[plotIndex];
+    if (!slot) return null;
+    if (slot.chest && !slot.chest.isDead() && !slot.chest._opened) return slot.chest;
+    const chests = require('./terrain/chests.js');
+    const at = besidePlayer(plotIndex, 380, -170);
+    const o = chests.spawnChest(at.x, at.y, false, { gems: 120, item: 'medkit' });
+    if (o) { o.isTutorialBot = true; plots.keepInPlot(o, plotIndex); }
+    slot.chest = o;
+    return o;
+  } catch (e) { util.warn("tutorial: chest spawn failed - " + (e && e.message)); return null; }
+}
+
+// A training copy of a raid boss: the real class, the real guns, a fraction
+// of the health, and its shots scaled so it can chip the learner without
+// dumping them. It erupts gems on death exactly like the live one.
+const BOSS_HEALTH_FRAC = 0.10;
+function spawnBoss(plotIndex, kindId) {
+  try {
+    const slot = bots[plotIndex];
+    if (!slot) return null;
+    if (slot.boss && !slot.boss.isDead()) return slot.boss;
+    const bosses = require('./terrain/bosses.js');
+    const id = bosses.KINDS[kindId] ? kindId : 'warden';
+    const kind = bosses.KINDS[id];
+    const at = besidePlayer(plotIndex, 560, 0);
+    const o = new Entity(at);
+    o.define(kind.cls);
+    o.team = TEAM_RED;
+    o.name = kind.name;
+    o.isRoyaleBoss = true;
+    o.isTutorialBot = true;
+    o.isBot = false;
+    o.bossKind = id;
+    o.bossContact = !!kind.contact;
+    o.bossDigs = false;                       // the training ground keeps its wall
+    o.bossHome = { x: at.x, y: at.y, r: 240 }; // roam here, not toward a storm
+    o.alwaysActive = true;
+    o.settings.leaderboardable = false;
+    o.HEALTH *= BOSS_HEALTH_FRAC;
+    o.SHIELD *= BOSS_HEALTH_FRAC;
+    o.tutorialChipDamage = 0.22;
+    o.refreshBodyAttributes();
+    o.health.amount = o.health.max;
+    if (o.shield) o.shield.amount = o.shield.max;
+    try { global.gameManager.terrainGrid.pushCircleFromVoronoi(o, o.realSize || 60); } catch (e) { }
+    o.on('dead', () => { try { bosses.erupt(o.x, o.y, 900); } catch (e) { } });
+    slot.boss = o;
+    return o;
+  } catch (e) { util.warn("tutorial: boss spawn failed - " + (e && e.message)); return null; }
+}
+
+function clearBoss(plotIndex) {
+    const slot = bots[plotIndex];
+    if (!slot) return;
+    killBot(slot.boss);
+    slot.boss = null;
+}
+
+// Banked gems for the shop lesson - the shop takes nothing else.
+function setBanked(body, n) {
+    if (!body) return;
+    const gems = require('./terrain/gems.js');
+    gems.setBanked(body, Math.max(0, n | 0));
+    gems.talkGems(body, 0);
+}
+
+// Kit and sidearm hand-outs, so the lessons can show the item before the
+// learner has bought anything.
+function grantKit(socket, id) {
+    const shop = require('./terrain/shop.js');
+    return shop.grantKit(socket, String(id || 'medkit'));
+}
+// A running gear item, so the lesson can point at the GEAR row and its
+// timer before the learner has bought one.
+function grantGear(socket, id) {
+    const shop = require('./terrain/shop.js');
+    const body = socket && socket.player && socket.player.body;
+    const item = shop.BY_ID.get(String(id || 'boots'));
+    if (!body || !item || item.cat !== 'gear') return false;
+    const s = shop.stateOf(socket);
+    if (!s) return false;
+    s.gear[item.id] = Date.now() + 300_000;
+    shop.applyPassives(body);
+    shop.talkState(socket, item.name + " is running for the next 5 minutes. " + (item.on || ""), true);
+    return true;
+}
+function grantArm(socket, id) {
+    const shop = require('./terrain/shop.js');
+    const body = socket && socket.player && socket.player.body;
+    const item = shop.BY_ID.get(String(id || 'flak'));
+    if (!body || !item || item.cat !== 'arm') return false;
+    const s = shop.stateOf(socket);
+    if (!s) return false;
+    s.arm = item.id;
+    shop.attachSidearm(body, item.id);
+    shop.talkState(socket, item.name + " mounted. Fire it with right click.", true);
+    return true;
 }
 
 // Shared setup for both practice targets. They are real tanks on the enemy
@@ -264,6 +370,8 @@ function setStats(body, list) {
         const v = Math.max(0, Math.min(Config.skill_cap, list[i] | 0));
         raw[DISPLAY_TO_RAW[i]] = v;
     }
+    // eleventh value: Mining Power, raw index 10, same slot both ways
+    if (list.length > 10 && raw.length > 10) raw[10] = Math.max(0, Math.min(Config.skill_cap, list[10] | 0));
     // set() clamps to caps and refunds the overflow into points, which is
     // exactly right: asking a rammer for bullet damage should hand the point
     // back rather than silently vanish it.
@@ -320,7 +428,7 @@ function teleport(socket, key) {
     // Land beside a structure rather than inside it: dropping a tank on top of
     // a chamber ring wedges it in the collision geometry. The vault pad is
     // meant to be stood on, so it gets no offset.
-    const off = (layoutKey === "outpost" || layoutKey === "chamberRed" || layoutKey === "chamberBlue") ? -260 : 0;
+    const off = layoutKey === "outpost" ? -260 : 0;
     teleportTo(socket, p.x + off, p.y);
 }
 
@@ -385,7 +493,7 @@ function setCommand(socket, name, on) {
 //
 // Movement and firing are never gated: being unable to drive feels broken,
 // and every lesson is easier to follow while you can move.
-const CAPS = ['stats', 'upgrade', 'bank'];
+const CAPS = ['stats', 'upgrade', 'bank', 'shop', 'kit'];
 
 function setAllowed(body, csv) {
     const list = String(csv || '').split(',').map(x => x.trim()).filter(Boolean);
@@ -403,7 +511,7 @@ function setAllowed(body, csv) {
         caps.add(cap);
         if (cap === 'stats' && arg !== undefined) {
             const i = parseInt(arg, 10);
-            if (i >= 0 && i <= 9) body._tutorialStat = i;
+            if (i >= 0 && i <= 10) body._tutorialStat = i;
         }
     }
     body._tutorialAllow = caps;
@@ -503,12 +611,13 @@ function tickLeash() {
         const slot = bots[i];
         const socket = owners[i];
         const player = socket && socket.player && socket.player.body;
-        for (const key of ['dummy', 'fighter']) {
+        for (const key of ['dummy', 'fighter', 'boss']) {
             const o = slot[key];
             if (!o || o.isDead()) continue;
             // Anchor on the learner, not on a fixed point: the lesson has to
             // happen where they can see it, wherever that is.
             const home = (player && !player.isDead()) ? player : plots.plotPoint(i, key);
+            if (key === 'boss' && o.bossHome && player && !player.isDead()) { o.bossHome.x = player.x; o.bossHome.y = player.y; }
             const dx = o.x - home.x, dy = o.y - home.y;
             const d = Math.hypot(dx, dy);
             if (d <= LEASH_RADIUS) continue;
@@ -536,7 +645,6 @@ function tickBaseGuard() {
         const body = socket && socket.player && socket.player.body;
         if (!body || body.isDead()) continue;
         body.arenaBounds = plots.plotRect(i);
-        plots.pushOutOfBase(body, i);
     }
 }
 
@@ -557,6 +665,7 @@ module.exports = {
     claimPlot, releasePlot, plotOf, freePlots, spawnPointFor,
     plotInfo, talkPlotInfo,
     spawnDummy, spawnFighter, clearBots,
+    spawnChest, spawnBoss, clearBoss, setBanked, grantKit, grantArm, grantGear,
     lockUpgrades, unlockUpgrades, upgradeAllowed, morph,
     setAllowed, allows, allowsStat,
     setStats, fillStats, grantPoints, teleport, teleportTo, setCommand, heal,

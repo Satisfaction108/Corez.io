@@ -73,8 +73,34 @@ global.teamColors = [
     "cyan"
 ]
 global.getTeamName = team => [...global.teamNames, , "DREADNOUGHT"][-team - 1] ?? "NEUTRAL";
+// Dig Royale: every player is their own team. Those ids have no entry in
+// teamColors and used to fall through to 3 (yellow), so each viewer saw their
+// own tank yellow. Colours are handed out from a palette at spawn instead;
+// a dead team frees its colour.
+global.royaleTeamColors = new Map();
+global.ROYALE_PALETTE = [10, 12, 11, 14, 2, 0, 4, 5, 15, 13, 1];
+global.assignTeamColor = (team) => {
+    const live = new Map();
+    const all = global.entities ? global.entities.values() : [];
+    for (const e of all) {
+        if (!e || !(e.isPlayer || e.isBot) || e.isDead?.()) continue;
+        if (global.royaleTeamColors.has(e.team)) live.set(e.team, global.royaleTeamColors.get(e.team));
+    }
+    for (const t of [...global.royaleTeamColors.keys()]) if (!live.has(t) && t !== team) global.royaleTeamColors.delete(t);
+    const inUse = new Set(live.values());
+    let pick = global.ROYALE_PALETTE.find(c => !inUse.has(c));
+    if (pick === undefined) {
+        const counts = new Map();
+        for (const c of live.values()) counts.set(c, (counts.get(c) || 0) + 1);
+        pick = global.ROYALE_PALETTE.slice().sort((a, b) => (counts.get(a) || 0) - (counts.get(b) || 0))[0];
+    }
+    global.royaleTeamColors.set(team, pick);
+    return pick;
+};
 global.getTeamColor = (team, fixMode = false) => {
-    let color = ([...global.teamColors, , "aqua"][-team - 1] ?? 3);
+    let color = (global.royaleTeamColors && global.royaleTeamColors.has(team))
+        ? global.royaleTeamColors.get(team)
+        : ([...global.teamColors, , "aqua"][-team - 1] ?? 3);
     if (fixMode) color = color + " 0 1 0 false";
     return color;
 }
@@ -120,7 +146,8 @@ global.getWeakestTeam = () => {
         }
     return parseInt(!entries.length ? -Math.ceil(Math.random() * Config.teams) : ran.choose(entries)[0]);
 };
-global.getRandomTeam = () => -Math.floor(Math.random() * 3000) + 1;
+// keep clear of every reserved team id (-1..-4 teams, -100 room, -101 enemies)
+global.getRandomTeam = () => -200 - Math.floor(Math.random() * 3000);
 
 global.Class = {};
 global.tileClass = {};
@@ -210,7 +237,8 @@ global.bringToLife = (() => {
         my.control.alt = b.alt ?? false;
         my.control.power = b.power == null ? 1 : b.power;
 
-        if (my.royaleFrozen || (Config.dig_royale && (my.vaultOnPad || my.onVaultPad || my.onBasePad))) {
+        my.padSafe = !!(Config.dig_royale && (my.vaultOnPad || my.onVaultPad || my.shopOnPad));
+        if (my.royaleFrozen || (Config.dig_royale && (my.vaultOnPad || my.onVaultPad || my.onBasePad || my.shopOnPad))) {
             my.control.fire = false;
             my.control.main = false;
             my.control.alt = false;

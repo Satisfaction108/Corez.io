@@ -1,23 +1,39 @@
 const { ORE, ORE_HP } = require('./terrainGrid.js');
 
+// Six bases on one ring: the four cardinals plus the NE/SW diagonals. The
+// two side vaults sit on the other diagonals (NW/SE) so every 45 degrees
+// holds a landmark and the ring reads balanced from any seat.
+const BASE_DIST = 0.70;
 const OUTPOSTS = [
-    { name: "North Base Bank",     color: "#e03e41", ang: -Math.PI / 2, dist: 0.70 },
-    { name: "Northeast Base Bank", color: "#8abc3f", ang: -Math.PI / 4, dist: 0.68 },
-    { name: "East Base Bank",      color: "#8d6adf", ang: 0,            dist: 0.70 },
-    { name: "South Base Bank",     color: "#efc74b", ang: Math.PI / 2,  dist: 0.70 },
-    { name: "Southwest Base Bank", color: "#3d7cf0", ang: 3 * Math.PI / 4, dist: 0.68 },
-    { name: "West Base Bank",      color: "#ec7b0f", ang: Math.PI,      dist: 0.70 },
-    ];
+    { name: "North Base Bank",     color: "#e03e41", ang: -Math.PI / 2,     dist: BASE_DIST, shop: true },
+    { name: "Northeast Base Bank", color: "#8abc3f", ang: -Math.PI / 4,     dist: BASE_DIST },
+    { name: "East Base Bank",      color: "#8d6adf", ang: 0,                dist: BASE_DIST, shop: true },
+    { name: "South Base Bank",     color: "#efc74b", ang: Math.PI / 2,      dist: BASE_DIST, shop: true },
+    { name: "Southwest Base Bank", color: "#3d7cf0", ang: 3 * Math.PI / 4,  dist: BASE_DIST },
+    { name: "West Base Bank",      color: "#ec7b0f", ang: Math.PI,          dist: BASE_DIST, shop: true },
+];
 
+const SIDE_VAULT_DIST = 0.52;
 const VAULTS = [
     { name: "Center Vault", x: 0, y: 0, lobby: true },
-    { name: "Ridge Vault",  x: -0.38, y: -0.32 },
-    { name: "Basin Vault",  x: 0.36, y: 0.40 },
+    { name: "Ridge Vault",  x: Math.cos(-3 * Math.PI / 4) * SIDE_VAULT_DIST, y: Math.sin(-3 * Math.PI / 4) * SIDE_VAULT_DIST },
+    { name: "Basin Vault",  x: Math.cos(Math.PI / 4) * SIDE_VAULT_DIST,      y: Math.sin(Math.PI / 4) * SIDE_VAULT_DIST },
 ];
+
+// One shop per cardinal base, halfway out on the same ray.
+const SHOP_DIST = 0.38;
+const SHOPS = OUTPOSTS.filter(o => o.shop).map((o, i) => ({
+    id: i,
+    name: o.name.replace(" Base Bank", " Shop"),
+    ang: o.ang,
+    dist: SHOP_DIST,
+    color: o.color,
+}));
 
 const SPAWN_PITS = 48;
 const VAULT_R = 115;
 const OUTPOST_R = 135;
+const SHOP_R = 110;
 const CENTER_CLEAR_R = 150;
 
 function nearestRock(grid, wx, wy) {
@@ -63,6 +79,7 @@ function carveMatchPois(grid) {
     }
     const list = grid.outpostSites || [];
     for (const o of list) carveDisk(grid, o.x, o.y, OUTPOST_R, canyonKeys);
+    for (const s of (grid.shopSites || [])) carveDisk(grid, s.x, s.y, SHOP_R, canyonKeys);
     grid._canyonKeys = canyonKeys;
     broadcastKills(grid, before);
 }
@@ -107,6 +124,7 @@ function radialOre(rock, circleR, salt) {
     const d = Math.min(1, Math.hypot(x, y) / Math.max(1, circleR));
     const r1 = hash01(rock.vi, rock.vj, salt + 101);
     if (r1 >= 0.24) return ORE.NONE; // ~24% of rocks hold ore, spread evenly
+    if (global.royaleMods && global.royaleMods.ore === 'copper') return ORE.COPPER;
     const t = hash01(rock.vi, rock.vj, salt + 102);
     if (d <= 0.35) return t < 0.70 ? ORE.COPPER : ORE.NONE;                    // plaza ring: copper only
     if (d <= 0.65) return t < 0.35 ? ORE.VEIN : t < 0.85 ? ORE.COPPER : ORE.NONE; // mid: bread + butter
@@ -152,6 +170,14 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         const x = v.x * circleR, y = v.y * circleR;
         return { id: i, name: v.name, x, y, r: 95, team: 0, rainbow: true };
     });
+    grid.shopSites = SHOPS.map(s => ({
+        id: s.id,
+        name: s.name,
+        x: Math.cos(s.ang) * s.dist * circleR,
+        y: Math.sin(s.ang) * s.dist * circleR,
+        r: 95,
+        color: s.color,
+    }));
     carveDisk(grid, 0, 0, CENTER_CLEAR_R, canyonKeys);
 
     chamberCells.length = 0;
@@ -216,6 +242,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
 
     const blocked = [];
     for (const v of grid.vaultSites) blocked.push({ x: v.x, y: v.y, r: 380 });
+    for (const s of grid.shopSites) blocked.push({ x: s.x, y: s.y, r: 340 });
     for (const o of OUTPOSTS) {
         blocked.push({
             x: Math.cos(o.ang) * o.dist * circleR,
@@ -305,4 +332,4 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     } catch { /* spawns stay normal strength */ }
 }
 
-module.exports = { apply, carveMatchPois, OUTPOSTS, ORE, radialOre, hash01 };
+module.exports = { apply, carveMatchPois, OUTPOSTS, SHOPS, ORE, radialOre, hash01, carveDisk, killRock };

@@ -7,7 +7,19 @@ const milestones = require('./milestones.js');
 const PAD_RADIUS   = 95;
 const DEPOSIT_RATE = 300;
 const PROGRESS_MS  = 50;
-const PAD_EJECT_MS = 10_000;
+const PAD_EJECT_MS = 10_000;      // idle time on the pad before a kick
+const CASHED_LOCK_MS = 20_000;    // one visit per deposit
+// The raid pad is drawn as a flat-topped octagon 1.15x the pad radius; the
+// collision uses the same shape so the door is where it looks.
+const padGeom = require('./padGeom.js');
+const OCT_SCALE = padGeom.OCT.scale;
+function insideOctagon(dx, dy, R) { return padGeom.insideNgon(dx, dy, R, 8); }
+function onPadShape(v, dx, dy, extra = 0) {
+    if (Config.dig_royale) return padGeom.insideNgon(dx, dy, v.r * OCT_SCALE + extra, 8);
+    const r = v.r + extra;
+    return dx * dx + dy * dy < r * r;
+}
+const vaultKey = (pad) => 'vault:' + Math.round(pad.x) + ':' + Math.round(pad.y);
 
 let vaults = null;
 
@@ -74,52 +86,25 @@ function cancelDeposit(body, notify = true) {
     if (notify) talkProgress(body);
 }
 
+// Hull-to-rim exclusion, firm but not bouncy (see padGeom.keepOut).
 function pushOut(body, pad, speed, now) {
-    const dx = body.x - pad.x, dy = body.y - pad.y;
-    const d = Math.hypot(dx, dy);
-    // Edge-to-edge: the hull counts, so exclusion ends at the pad's visible
-    // rim, not somewhere inside it.
-    const r = pad.r + (body.realSize || 60) + 8;
-    if (d >= r) {
-        if (body._vaultPush && body._vaultPush.pad === pad) body._vaultPush = null;
-        return true;
-    }
-    const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
-    if (!body._vaultPush || body._vaultPush.pad !== pad) {
-        body._vaultPush = { pad, until: now + 2000 };
-    }
-    body.velocity.x = Math.cos(n) * speed;
-    body.velocity.y = Math.sin(n) * speed;
-    if (now > body._vaultPush.until) {
-        body.x = pad.x + Math.cos(n) * (r + 6);
-        body.y = pad.y + Math.sin(n) * (r + 6);
-        try {
-            const tg = global.gameManager.terrainGrid;
-            if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
-        } catch { /* */ }
-        body.velocity.x = Math.cos(n) * speed;
-        body.velocity.y = Math.sin(n) * speed;
-        body._vaultPush = null;
-        return true;
-    }
-    return false;
+    const clear = padGeom.keepOut(body, pad, 8, vaultKey(pad), 'expel');
+    if (clear && body._vaultPush && body._vaultPush.pad === pad) body._vaultPush = null;
+    return clear;
 }
 
-function ejectFromPad(body, pad, msg) {
+function ejectFromPad(body, pad, msg, lockMs = 5000) {
     if (!body || body.isDead?.()) return;
-    const dx = body.x - pad.x, dy = body.y - pad.y;
-    const d = Math.hypot(dx, dy);
-    const n = d < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
-    body._vaultPush = { pad, until: Date.now() + 2000 };
-    body.velocity.x = Math.cos(n) * 9;
-    body.velocity.y = Math.sin(n) * 9;
+    body._vaultPush = { pad, until: Date.now() + 4000 };
+    body._padHold = null;
+    padGeom.keepOut(body, pad, 8, vaultKey(pad), 'expel');   // a steady shove, no snap
     body._vaultPadSince = 0;
     // Kicked out means out: no re-entry for 5s so the pad can't be
     // instantly re-camped. Scoped to THIS pad - a vault kick never locks
     // some other pad.
-    body._padReentryUntil = Date.now() + 5000;
+    body._padReentryUntil = Date.now() + lockMs;
     body._padReentryPad = pad;
-    if (msg) { try { body.sendMessage(msg + " (5s no re-entry)"); } catch { /* */ } }
+    if (msg) { try { body.sendMessage(msg + " You can come back in " + Math.round(lockMs / 1000) + " seconds."); } catch { /* */ } }
 }
 
 const MIN_DEPOSIT = 15;  
@@ -152,7 +137,7 @@ function depositFor(body, amount) {
             const t = Date.now();
             if (t - (body._vaultBusyAt || 0) > 3000) {
                 body._vaultBusyAt = t;
-                try { body.sendMessage("Vault is busy. One miner at a time."); } catch { /* */ }
+                try { body.sendMessage("Someone's already using this vault. One at a time."); } catch { /* */ }
             }
             return false;
         }
@@ -197,8 +182,7 @@ function tick(actors, dtMs) {
                     let on = false;
                     if (!body.isDead()) {
                         for (const v of list) {
-                            const dx = body.x - v.x, dy = body.y - v.y;
-                            if (dx * dx + dy * dy < v.r * v.r) { on = true; break; }
+                            if (onPadShape(v, body.x - v.x, body.y - v.y)) { on = true; break; }
                         }
                     }
                     body.onVaultPad = on;
@@ -215,22 +199,24 @@ function tick(actors, dtMs) {
             const body = actorBody(actor);
             if (!body || body.isGhost || body.isDead?.()) continue;
             for (const v of list) {
-                const dx = body.x - v.x, dy = body.y - v.y;
-                if (dx * dx + dy * dy < v.r * v.r) { v._onPad.push(body); break; }
+                if (onPadShape(v, body.x - v.x, body.y - v.y)) { v._onPad.push(body); break; }
             }
         }
         for (const v of list) {
             const on = v._onPad || [];
+            const humansOn = on.filter(b => !!b.socket);
+            // A human always outranks a bot for the pad.
+            const eligible = (b) => b && on.includes(b) && (b.socket || !humansOn.length);
             let keep = null;
-            if (v._depositor && on.includes(v._depositor)) keep = v._depositor;
-            else if (v._occupant && on.includes(v._occupant)) keep = v._occupant;
-            else keep = on[0] || null;
+            if (eligible(v._depositor)) keep = v._depositor;
+            else if (eligible(v._occupant)) keep = v._occupant;
+            else keep = humansOn[0] || on[0] || null;
             v._occupant = keep;
             for (const body of on) {
                 if (body === keep) continue;
                 cancelDeposit(body, !!body.socket);
                 if (!body._vaultPush || body._vaultPush.pad !== v) {
-                    ejectFromPad(body, v, "Vault is occupied.");
+                    ejectFromPad(body, v, body.socket ? "Someone's already in this vault. One at a time." : "");
                 } else {
                     pushOut(body, v, 9, now);
                 }
@@ -256,8 +242,7 @@ function tick(actors, dtMs) {
         let pad = null;
         for (const v of list) {
             if (!Config.dig_royale && v.team !== body.team) continue;
-            const dx = body.x - v.x, dy = body.y - v.y;
-            if (dx * dx + dy * dy < v.r * v.r) { pad = v; break; }
+            if (onPadShape(v, body.x - v.x, body.y - v.y)) { pad = v; break; }
         }
 
         const was = !!body.vaultOnPad;
@@ -271,21 +256,17 @@ function tick(actors, dtMs) {
             const br = body.realSize || 60;
             for (const v of list) {
                 if (!Config.dig_royale && v.team !== body.team) continue;
-                const ddx = body.x - v.x, ddy = body.y - v.y;
-                const tr = v.r + br;
-                if (ddx * ddx + ddy * ddy < tr * tr) { denyPad = v; break; }
+                if (onPadShape(v, body.x - v.x, body.y - v.y, br)) { denyPad = v; break; }
             }
         }
         if (denyPad && body._padReentryUntil && now < body._padReentryUntil &&
             (!body._padReentryPad || body._padReentryPad === denyPad)) {
             cancelDeposit(body, !!body.socket);
-            const dxn = body.x - denyPad.x, dyn = body.y - denyPad.y;
-            const nn = (dxn === 0 && dyn === 0) ? 0 : Math.atan2(dyn, dxn);
-            const park = denyPad.r + (body.realSize || 60) + 3;
-            body.x = denyPad.x + Math.cos(nn) * park;
-            body.y = denyPad.y + Math.sin(nn) * park;
-            body.velocity.x = 0; body.velocity.y = 0;
-            body._vaultPush = null;
+            // still rolling off after a kick: keep shoving until the hull is
+            // clear; only then is the rim a wall (a wall now would snap the
+            // half-out hull to the edge)
+            if (body._vaultPush && body._vaultPush.pad === denyPad) pushOut(body, denyPad, 9, now);
+            else padGeom.keepOut(body, denyPad, 3, vaultKey(denyPad), true);
             body._vaultPadSince = 0;
             body.vaultOnPad = false;
             body.onVaultPad = false;
@@ -294,15 +275,16 @@ function tick(actors, dtMs) {
         }
         if (pad && !body._vaultPadSince) body._vaultPadSince = now;
         if (Config.dig_royale) {
-            if (pad && !was) body._vaultPadSince = now;
+            if (pad && !was) { body._vaultPadSince = now; body._vaultIdleSince = now; }
+            // The pad is a safe room: the clock only runs while you stand
+            // there doing nothing. A running deposit always finishes.
+            if (pad && body.vaultDeposit) body._vaultIdleSince = now;
             if (!pad) {
                 body._vaultPadSince = 0;
-                body._vaultPush = null;
+                if (body._vaultPush && now > body._vaultPush.until) body._vaultPush = null;
                 if (was) cancelDeposit(body, !!body.socket);
-            } else if (body._vaultPadSince && now - body._vaultPadSince > PAD_EJECT_MS) {
-                const had = !!body.vaultDeposit;
-                cancelDeposit(body, !!body.socket);
-                ejectFromPad(body, pad, had ? "Time up. Move along." : "No camping the vault.");
+            } else if (!body.vaultDeposit && body._vaultIdleSince && now - body._vaultIdleSince > PAD_EJECT_MS) {
+                ejectFromPad(body, pad, "No camping on the vault.");
                 continue;
             } else if (body.vaultDeposit && body._vaultSite && body._vaultSite !== pad) {
                 // Walked to a different pad mid-deposit: move the lock or stop.
@@ -334,7 +316,9 @@ function tick(actors, dtMs) {
         
         
         
-        d.spill = (d.spill || 0) + (DEPOSIT_RATE * dtMs) / 1000;
+        let rateMult = 1;
+        if (body.socket) { try { rateMult = require('./shop.js').depositRateMult(body); } catch { /* */ } }
+        d.spill = (d.spill || 0) + (DEPOSIT_RATE * rateMult * dtMs) / 1000;
         const chunk = Math.min(d.remaining, body.carriedGems | 0, Math.floor(d.spill));
         if (chunk <= 0) {
             if ((body.carriedGems | 0) <= 0 || d.remaining <= 0) cancelDeposit(body);
@@ -344,12 +328,14 @@ function tick(actors, dtMs) {
         d.remaining -= chunk;
         body.carriedGems = Math.max(0, (body.carriedGems | 0) - chunk);
         const banked = body.socket ? (body.socket.gemBanked || 0) : (body.botBanked || 0);
-        if (body.isBot) body.botGemsBanked = (body.botGemsBanked || 0) + chunk;
-        setBanked(body, banked + chunk);
-        war.add(body.team, chunk);
+        // deep pockets pays a premium at the vault
+        const credit = chunk * ((global.royaleMods && global.royaleMods.bankMult) || 1);
+        if (body.isBot) body.botGemsBanked = (body.botGemsBanked || 0) + credit;
+        setBanked(body, banked + credit);
+        war.add(body.team, credit);
         milestones.checkBanked(body);
         if (Config.dig_royale) {
-            try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, chunk); } catch { /* */ }
+            try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, credit); } catch { /* */ }
         }
 
         const done = d.remaining <= 0;
@@ -368,9 +354,9 @@ function tick(actors, dtMs) {
             const banked = body.socket ? (body.socket.gemBanked || 0) : (body.botBanked || 0);
             setBanked(body, Math.round(banked));
             gems.updateSatchel(body);
-            if (Config.dig_royale && padDone) ejectFromPad(body, padDone, "Cashed out. Move along.");
+            if (Config.dig_royale && padDone) ejectFromPad(body, padDone, "Cashed out. Make room for the next miner.", CASHED_LOCK_MS);
         }
     }
 }
 
-module.exports = { tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, cancelDeposit };
+module.exports = { tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, cancelDeposit, insideOctagon, onPadShape, OCT_SCALE };

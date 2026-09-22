@@ -333,6 +333,7 @@ class Entity extends EventEmitter {
             move_speed: set.STAT_NAMES?.MOVE_SPEED ?? 'Movement Speed',
             shield_regen: set.STAT_NAMES?.SHIELD_REGEN ?? 'Shield Regeneration',
             shield_cap: set.STAT_NAMES?.SHIELD_CAP ?? 'Shield Capacity',
+            mining_power: set.STAT_NAMES?.MINING_POWER ?? 'Mining Power',
         };
         if (set.AI != null) this.aiSettings = set.AI;
         if (set.INVISIBLE != null) this.invisible = set.INVISIBLE;
@@ -362,7 +363,7 @@ class Entity extends EventEmitter {
         }
         if (set.RESET_UPGRADES || set.RESET_STATS) {
             let caps = this.skill.caps.map(x => x);
-            this.skill.setCaps(Array(10).fill(0));
+            this.skill.setCaps(Array(11).fill(0));
             this.skill.setCaps(caps);
             this.upgrades = [];
             this.isArenaCloser = false;
@@ -425,16 +426,19 @@ class Entity extends EventEmitter {
             "BODY_DAMAGE",
             "MAX_HEALTH",
             "SHIELD_REGENERATION",
-            "MOVEMENT_SPEED"
+            "MOVEMENT_SPEED",
+            "MINING_POWER"
         ];
         if (set.SKILL_CAP != null) {
             let skillCapsToSet = Array.isArray(set.SKILL_CAP) ? set.SKILL_CAP : SKILL_ORDER.map(name => 
                 set.SKILL_CAP[name] !== undefined ? set.SKILL_CAP[name] : 9 // Default max skill points to 9, cant decide if it should be 9 or 0
             );
 
-            if (skillCapsToSet.length !== 10) {
+            if (skillCapsToSet.length !== 10 && skillCapsToSet.length !== 11) {
                 throw "Inappropriate skill cap amount.";
             }
+            // legacy 10-long caps: mining power keeps the default cap
+            if (skillCapsToSet.length === 10) skillCapsToSet = [...skillCapsToSet, Config.skill_cap];
             this.skill.setCaps(skillCapsToSet);
         }
 
@@ -443,9 +447,10 @@ class Entity extends EventEmitter {
                 set.SKILL[name] !== undefined ? set.SKILL[name] : 0 // Default current skill points to 0, cant decide if it should be 9 or 0
             );
 
-            if (skillsToSet.length !== 10) {
+            if (skillsToSet.length !== 10 && skillsToSet.length !== 11) {
                 throw "Inappropriate skill raws.";
             }
+            if (skillsToSet.length === 10) skillsToSet = [...skillsToSet, 0];
             this.skill.set(skillsToSet);
         }
         if (set.VALUE != null) this.skill.score = Math.max(this.skill.score, set.VALUE * this.squiggle);
@@ -653,6 +658,26 @@ class Entity extends EventEmitter {
         this.knockback = this.KNOCKBACK ?? false;
         this.sizeMultiplier = 1;
         this.recoilMultiplier = this.RECOIL_MULTIPLIER * 1;
+        // shop passives and raid modifiers sit on top of the skill math
+        if (this.bonusSpeedMult && this.bonusSpeedMult !== 1) {
+            this.topSpeed *= this.bonusSpeedMult;
+            this.acceleration *= this.bonusSpeedMult;
+        }
+        if (this.bonusHealthMult && this.bonusHealthMult !== 1) {
+            this.health.set(this.health.max * this.bonusHealthMult);
+        }
+        if ((this.isPlayer || this.isBot) && global.royaleMods) {
+            const rm = global.royaleMods;
+            if (rm.speedMult && rm.speedMult !== 1) { this.topSpeed *= rm.speedMult; this.acceleration *= rm.speedMult; }
+            if (rm.sizeMult && rm.sizeMult !== 1) this.sizeMultiplier = rm.sizeMult;
+            if (rm.healthMult && rm.healthMult !== 1) this.health.set(this.health.max * rm.healthMult);
+        }
+        // damage twists reach the shots too: anything whose root is a tank
+        if (global.royaleMods && global.royaleMods.damageMult && global.royaleMods.damageMult !== 1) {
+            let root = this, hops = 0;
+            while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+            if (root && (root.isPlayer || root.isBot)) this.damage *= global.royaleMods.damageMult;
+        }
     }
 
     updateBodyInfo() { this.fov = 1 * this.FOV * 275 * Math.sqrt(this.size); }
@@ -791,6 +816,7 @@ class Entity extends EventEmitter {
             const gc = this.carriedGems | 0;
             gemGlow = gc >= 3200 ? 6 : gc >= 2000 ? 5 : gc >= 1000 ? 4 : gc >= 400 ? 3 : gc >= 100 ? 2 : 1;
         }
+        if (this.decoyUntil && Date.now() < this.decoyUntil) gemGlow = 6;
 
         let guns = this._camGuns;
         if (!guns) guns = this._camGuns = [];
@@ -1105,7 +1131,7 @@ class Entity extends EventEmitter {
     }
 
     contemplationOfMortality() {
-        if (this.invuln || this.godmode || this.passive || this.royaleLobby) {
+        if (this.invuln || this.godmode || this.passive || this.royaleLobby || this.padSafe) {
             this.damageReceived = 0;
             // Drones/swarms still expire. Returning here let Overlord pile
             // infinite kids in the lobby because range-death never ran.

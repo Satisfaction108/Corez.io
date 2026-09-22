@@ -39,6 +39,9 @@ const PICKUP_SLOP  = 1.0;
 
 const GEM_MAX_SPEED = 6;
 
+let _shopMod = null;
+function shopMod() { return _shopMod || (_shopMod = require('./shop.js')); }
+
 function spawnGem(x, y, value, cls, size, vx = 0, vy = 0, ore = null) {
     const o = new Entity({ x, y });
     o.define(cls);
@@ -54,6 +57,14 @@ function spawnGem(x, y, value, cls, size, vx = 0, vy = 0, ore = null) {
     
     o.RANGE = o.range = 5400 + Math.random() * 900;
     o.gemBornAt = Date.now();
+    // every gem turns at its own pace and direction, from its own angle, so a
+    // pile of them never spins in lockstep
+    o.facing = Math.random() * Math.PI * 2;
+    o.gemSpin = (0.008 + Math.random() * 0.026) * (Math.random() < 0.5 ? -1 : 1);
+    o.facingTypeArgs = { speed: o.gemSpin };
+    // which way it curls in when a magnet grabs it, so a haul spirals in
+    // from all sides instead of forming a single file
+    o.gemSwirl = (0.35 + Math.random() * 0.55) * (Math.random() < 0.5 ? -1 : 1);
     o.refreshBodyAttributes();
     
     const facetCls = FACET_CLASS[cls];
@@ -96,11 +107,12 @@ function spawnOreBurst(rock, breaker) {
     for (const d of deposits) {
         
         
-        const value = d.big && rock.ore === ORE.SHARD ? SHARD_BIG : DEPOSIT_VALUE[rock.ore];
+        let value = d.big && rock.ore === ORE.SHARD ? SHARD_BIG : DEPOSIT_VALUE[rock.ore];
+        try { value = Math.round(value * require('./raidMods.js').gemValueMult(rock.ore)); } catch { /* */ }
         const bigCls = rock.ore === ORE.EMERALD ? 'gemPickupEmeraldCore' : 'gemPickupShardCore';
         
         
-        const size  = Math.max(6, Math.min(34, d.wr));
+        const size  = Math.max(14, Math.min(34, d.wr));
         const ang   = breaker && breaker.x !== undefined
             ? Math.atan2(breaker.y - d.wy, breaker.x - d.wx)
             : (Math.atan2(d.wy - rock.wy, d.wx - rock.wx) || Math.random() * Math.PI * 2);
@@ -161,9 +173,40 @@ const SATCHEL_OFFSET = 1.02;
 function applySatchelTeamColor(body) {
     if (body._satchelTeam === body.team) return;
     body._satchelTeam = body.team;
-    const kind = body.team === TEAM_RED ? 'gemHoardShard' : 'gemHoardEmerald';
-    if (body.gemHoardProp) body.gemHoardProp.define(kind);
-    if (body.gemHoardFacetProp) body.gemHoardFacetProp.define(kind + 'Facet');
+    // the hoard classes mirror the hull colour, so one class fits every team
+    if (body.gemHoardProp) body.gemHoardProp.define('gemHoardEmerald');
+    if (body.gemHoardFacetProp) body.gemHoardFacetProp.define('gemHoardEmeraldFacet');
+}
+
+// Split a gem total into real ore pieces whose values add up EXACTLY to the
+// total. share: fraction of the value per ore tier (4 emerald, 3 shard,
+// 2 azurite, 1 copper); whatever the shares leave over becomes copper, and
+// the last rounding remainder folds into the final piece. Never yellow.
+const PIECE_VALUE = { 4: 110, 3: 60, 2: 30, 1: 15 };
+// the same sizes the wall's own deposits use, so a burst never sprinkles
+// smaller "dust" copper next to regular copper
+const PIECE_SIZE = { 4: 30, 3: 26, 2: 20, 1: 16 };
+function splitValue(total, opts = {}) {
+    total = Math.max(0, Math.round(total));
+    const share = opts.share || { 4: 0.2, 3: 0.3, 2: 0.3, 1: 0.2 };
+    const maxPieces = opts.maxPieces || 40;
+    const val = Object.assign({}, PIECE_VALUE);
+    if (opts.shardValue) val[3] = opts.shardValue;
+    const pieces = [];
+    let left = total;
+    for (const ore of [4, 3, 2, 1]) {
+        let budget = Math.round(total * (share[ore] || 0));
+        while (budget >= val[ore] && left >= val[ore] && pieces.length < maxPieces) {
+            pieces.push({ ore, v: val[ore], cls: ORE_CLASS[ore], size: PIECE_SIZE[ore] });
+            budget -= val[ore]; left -= val[ore];
+        }
+    }
+    while (left >= val[1] && pieces.length < maxPieces) { pieces.push({ ore: 1, v: val[1], cls: ORE_CLASS[1], size: PIECE_SIZE[1] }); left -= val[1]; }
+    if (left > 0) {
+        if (pieces.length) pieces[pieces.length - 1].v += left;
+        else pieces.push({ ore: 1, v: left, cls: ORE_CLASS[1], size: PIECE_SIZE[1] });
+    }
+    return pieces;
 }
 
 // Entity.define() unconditionally clears body.props, but only re-fires the
@@ -209,7 +252,9 @@ function updateSatchel(body) {
         // Truncate, same as the HUD (`carried | 0`). Rounding a banking
         // residue like 0.6 kept a ghost pack on an "empty" tank.
         const carried = (body.carriedGems || 0) | 0;
-        const size = satchelVisualSize(carried);
+        const decoy = !!(body.decoyUntil && Date.now() < body.decoyUntil);
+        body._decoyShown = decoy;
+        const size = decoy ? SATCHEL_SIZE_RUNGS[SATCHEL_SIZE_RUNGS.length - 1].size : satchelVisualSize(carried);
         p.bound.size = size;
         p.bound.offset = size > 0 ? SATCHEL_OFFSET : 0;
         if (f) {
@@ -312,7 +357,13 @@ function easeAngle(from, to, k) {
 // the (common) empty satchel, since an empty pack is not drawn anyway.
 function orientSatchel(body) {
     const p = body.gemHoardProp;
-    if (!p || ((body.carriedGems || 0) | 0) < 1) return;
+    if (!p) return;
+    // Nothing else re-sizes the pack when a Decoy lapses, so watch the window
+    // flip here; and orient whenever the pack is drawn (a decoy pack on an
+    // empty tank used to keep angle 0, i.e. it sat on the barrel).
+    const decoyOn = !!(body.decoyUntil && Date.now() < body.decoyUntil);
+    if (!!body._decoyShown !== decoyOn) updateSatchel(body);
+    if (!(p.bound.size > 0)) return;
     applySatchelTeamColor(body);
     ensureSatchelProps(body);
 
@@ -335,7 +386,8 @@ function orientSatchel(body) {
 
 function initSatchel(body) {
     body.carriedGems ??= 0;
-    body.gemCap = SATCHEL_CAP;
+    body.gemCap = SATCHEL_CAP * ((global.royaleMods && global.royaleMods.satchelMult) || 1);
+    if (body.socket) { try { body.gemCap = require('./shop.js').satchelCap(body); } catch { /* */ } }
     
     
     body.botBanked ??= 0;
@@ -385,6 +437,13 @@ function dropGemsOnDeath(body, killers = []) {
     
     const banked  = bankedFor(body);
     const bankLoss = raidMode ? 0 : Math.floor(banked * BANK_DEATH_LOSS);
+    // insurance: a quarter of the satchel goes to the bank before the drop
+    let insured = 0;
+    if (raidMode && body.socket && carried > 0) {
+        try {
+            if (require('./shop.js').hasGear(body, "insurance")) insured = Math.floor(carried * 0.25);
+        } catch { /* */ }
+    }
     // The death screen shows the wealth you had at the moment you died -
     // carried + banked BEFORE the drop. Snapshot it here because this runs
     // (on 'dead') before the death packet's records() is built.
@@ -400,10 +459,15 @@ function dropGemsOnDeath(body, killers = []) {
     if (carried <= 0 && bankLoss <= 0) return;
     body.carriedGems = 0;
     if (bankLoss > 0) setBanked(body, banked - bankLoss);
+    if (insured > 0) {
+        setBanked(body, bankedFor(body) + insured);
+        if (body.socket) body.socket.gemDeathInsured = insured;
+        try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, insured); } catch { /* */ }
+    } else if (body.socket) body.socket.gemDeathInsured = 0;
     updateSatchel(body);
     talkGems(body, -carried, 1);
-    // Raid drops the FULL satchel. (2TDM keeps its 85% tax.)
-    const drop = Math.floor(carried * (raidMode ? 1 : DEATH_DROP)) + bankLoss;
+    // Raid drops the FULL satchel minus insurance. (2TDM keeps its 85% tax.)
+    const drop = Math.floor((carried - insured) * (raidMode ? 1 : DEATH_DROP)) + bankLoss;
     if (drop <= 0) return;
 
     // 1:1 identity: newest pickups drop back as themselves at full size, so
@@ -422,25 +486,25 @@ function dropGemsOnDeath(body, killers = []) {
     const drops = indiv.map(e => ({ v: e.v | 0, tier: e.o }));
     let filler = drop - indivTotal;
     if (filler > 0) {
-        const nf = Math.min(3, Math.max(1, Math.ceil(filler / 150)));
-        let left = filler;
-        for (let i = nf; i > 1; i--) {
-            const v = Math.max(1, Math.round(left / i * (0.7 + Math.random() * 0.6)));
-            const vv = Math.min(v, left - (i - 1));
-            drops.push({ v: vv, tier: null });
-            left -= vv;
+        // untracked value comes back as real ore, never as yellow "loot"
+        for (const p of splitValue(filler, { share: { 3: 0.4, 2: 0.35, 1: 0.25 }, shardValue: SHARD_BIG, maxPieces: 6 })) {
+            drops.push({ v: p.v, tier: p.ore });
         }
-        drops.push({ v: left, tier: null });
     }
-    for (const g of drops) {
-        if (g.v <= 0) continue;
-        const ang = Math.random() * Math.PI * 2;
-
-        const sp  = 1.6 * (0.45 + Math.random() * 0.55);
-        const cls = (g.tier && ORE_CLASS[g.tier]) || 'gemPickupLoot';
+    const dropNow = Date.now();
+    drops.forEach((g, i) => {
+        if (g.v <= 0) return;
+        // spread evenly round the wreck with a bit of wobble, and fast enough
+        // to actually leave the spot: a slow drop just sat there as one pile
+        const ang = (i / drops.length) * Math.PI * 2 + (Math.random() - 0.5) * 0.7;
+        const sp  = 4.2 * (0.55 + Math.random() * 0.45);
+        const cls = ORE_CLASS[g.tier] || ORE_CLASS[ORE.COPPER];
+        // one size per ore, the same the wall's deposits use
         const gem = spawnGem(body.x, body.y, g.v, cls,
-                 Math.max(8, Math.min(30, 6 + 1.4 * Math.sqrt(g.v))),
+                 PIECE_SIZE[g.tier] || PIECE_SIZE[1],
                  Math.cos(ang) * sp, Math.sin(ang) * sp, g.tier);
+        // fly free for a beat before any magnet can pull them back into a heap
+        if (gem) gem.gemNoMagnetUntil = dropNow + 700 + i * 25;
         // A player's death drop is reserved from unrelated bots for a grace
         // window so the player can run back for it. The bot that made the
         // kill gets an immediate claim and can collect its winnings.
@@ -448,11 +512,29 @@ function dropGemsOnDeath(body, killers = []) {
             gem.gemLootFromPlayer = !!body.socket;
             if (killerBotIds.length) gem.gemLootKillerIds = killerBotIds;
         }
-    }
+    });
 }
 
+// Loose gems do not litter the floor: ten seconds at rest and they fade out.
+// A dead player's drop gets longer so the run back is still worth it.
+const GEM_TTL_MS = 10_000;
+const GEM_TTL_PLAYER_MS = 30_000;
+const GEM_FADE_MS = 2_000;
+const GEM_STILL_SPEED = 0.35;
+const GEM_REACH2 = 1400 * 1400;   // beyond this an actor cannot touch or pull a gem
+const GEM_MAX_LIFE_MS = 45_000;
 function tickGem(gem, tg, players) {
     const now = Date.now();
+    if (gem.gemOwnerId === undefined && !gem.chamberBias) {
+        const sp2 = gem.velocity.x * gem.velocity.x + gem.velocity.y * gem.velocity.y;
+        if (sp2 > GEM_STILL_SPEED * GEM_STILL_SPEED || !gem.gemRestAt) gem.gemRestAt = now;
+        const ttl = gem.gemLootFromPlayer ? GEM_TTL_PLAYER_MS : GEM_TTL_MS;
+        const idle = now - gem.gemRestAt;
+        if (idle > ttl || now - (gem.gemBornAt || now) > GEM_MAX_LIFE_MS) { gem.kill(); return; }
+        // the client blinks invuln entities: that is the fade-out warning
+        const fading = idle > ttl - GEM_FADE_MS;
+        if (fading !== !!gem.invuln) gem.invuln = fading;
+    }
     const p = tg.pushCircleFromVoronoi(gem, gem.realSize);
     if (p.dx !== 0 || p.dy !== 0) {
         const pl = Math.hypot(p.dx, p.dy);
@@ -522,7 +604,9 @@ function tickGem(gem, tg, players) {
         if (body.isBot && gem.gemLootFromPlayer && !isKillerBot &&
             now - (gem.gemBornAt || 0) < 15000) continue;
         const dx = body.x - gem.x, dy = body.y - gem.y;
-        const d = Math.hypot(dx, dy) || 1;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > GEM_REACH2) continue;              // far actors: nothing to do
+        const d = Math.sqrt(d2) || 1;
         // A drop reserved for a tutorial player behaves toward everyone else
         // exactly like loot does around a full satchel: shoved away, never
         // collected. Trapping it or body-blocking it changes nothing.
@@ -612,31 +696,31 @@ function tickGem(gem, tg, players) {
         gem.velocity.y *= GEM_MAX_SPEED / spNow;
     }
     if (!best) return;
+    // boss eruptions and chest bursts fly free for a beat before the magnet grabs them
+    if (gem.gemNoMagnetUntil && now < gem.gemNoMagnetUntil) return;
 
-    const magR = (best.realSize * 2.6 + MAGNET_BONUS) * (bias ? 1.45 : 1);
+    let magBoost = 1;
+    if (best.socket) { try { magBoost = shopMod().magnetMult(best); } catch { /* */ } }
+    const magR = (best.realSize * 2.6 + MAGNET_BONUS) * (bias ? 1.45 : 1) * magBoost;
     if (bestD < magR) {
         
         
         const pull  = 1 - bestD / magR;
         const speed = 1.4 * pull + 4 * pull * pull;
         const ux = (best.x - gem.x) / bestD, uy = (best.y - gem.y) / bestD;
-        gem.velocity.x += (ux * speed - gem.velocity.x) * 0.25;
-        gem.velocity.y += (uy * speed - gem.velocity.y) * 0.25;
-        // the crystal leans into the pull: pavilion point easing onto its
-        
-        
-        
-        const want = Math.atan2(uy, ux) - Math.PI / 2;
-        let turn = want - gem.facing;
-        while (turn >  Math.PI) turn -= Math.PI * 2;
-        while (turn < -Math.PI) turn += Math.PI * 2;
-        gem.facingType = 'manual';
-        gem.facingTypeArgs = { angle: gem.facing + turn * 0.15 };
+        // curl in sideways while still far out, straight in for the last bit,
+        // so a pile of gems arrives as a spiral rather than a stack
+        const swirl = (gem.gemSwirl || 0) * (1 - pull) * (1 - pull);
+        const wx = ux - uy * swirl, wy = uy + ux * swirl;
+        gem.velocity.x += (wx * speed - gem.velocity.x) * 0.4;   // 30 Hz tick
+        gem.velocity.y += (wy * speed - gem.velocity.y) * 0.4;
+        // keep spinning at its own pace: lining every gem up with its path
+        // is what made a haul look like one stacked, sliding block
+        if (gem.facingType !== 'spin') { gem.facingType = 'spin'; gem.facingTypeArgs = { speed: gem.gemSpin || 0.02 }; }
     } else if (gem.facingType !== 'spin') {
-        // out of everyone's reach again - resume the lazy treasure spin
         gem.facingType = 'spin';
-        gem.facingTypeArgs = { speed: 0.02 };
+        gem.facingTypeArgs = { speed: gem.gemSpin || 0.02 };
     }
 }
 
-module.exports = { spawnOreBurst, pityBurst, spawnGem, initSatchel, updateSatchel, orientSatchel, dropGemsOnDeath, tickGem, talkGems, setBanked, SATCHEL_CAP };
+module.exports = { spawnOreBurst, pityBurst, spawnGem, initSatchel, updateSatchel, orientSatchel, dropGemsOnDeath, tickGem, talkGems, setBanked, splitValue, SATCHEL_CAP };

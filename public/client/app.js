@@ -47,6 +47,11 @@ import * as tutorial from './tutorial.js';
         defaultKeybinds = {},
         keybinds = {};
 
+    // qa hook: forwards a packet to the live socket (server ignores debug packets unless enabled)
+    window.royaleTalk = (...m) => { try { return global.socket && global.socket.talk && global.socket.talk(...m); } catch (e) { return e; } };
+    window.royaleState = () => global;
+    // console helper for trying items on a local server: window.dwGems(10000)
+    window.dwGems = (n = 10000) => window.royaleTalk("DBG", "gems", n | 0);
     global.clearUpgrades = (clearNow = false) => {
         if (clearNow) gui.upgrades = [];
         else {
@@ -204,6 +209,12 @@ import * as tutorial from './tutorial.js';
         localStorage.removeItem("optMobileValue"); 
 
         util.retrieveFromLocalStorage("optRenderGui");
+        // A hidden GUI is a screenshot-only state: never carry it across
+        // sessions. Starting with a blank HUD reads as a broken game.
+        if (!document.getElementById("optRenderGui").checked) {
+            document.getElementById("optRenderGui").checked = true;
+            util.submitToLocalStorage("optRenderGui");
+        }
         util.retrieveFromLocalStorage("optRenderLeaderboard");
         util.retrieveFromLocalStorage("optRenderUpgrades");
         util.retrieveFromLocalStorage("optRenderMinimap");
@@ -1088,6 +1099,8 @@ import * as tutorial from './tutorial.js';
         config.graphical.coloredHealthbars = true; 
         config.graphical.separatedHealthbars = document.getElementById("separatedHealthbars").checked;
         config.graphical.lowResolution = document.getElementById("optLowResolution").checked;
+        global.userLowRes = config.graphical.lowResolution;
+        if (global.userLowRes) global.autoLowRes = false;
         config.graphical.coloredNest = true;      
         config.graphical.slowerFOV = document.getElementById("optSlowerFOV").checked;
         config.graphical.optimizeMode = document.getElementById("optOptimizeMode").checked;
@@ -1183,7 +1196,13 @@ import * as tutorial from './tutorial.js';
                 at: -1e9, raidId: 0, raidLeft: 0, youScore: 0, youPB: 0,
                 objectives: [], bloom: null, chest: null, results: null,
                 lock: 0, lockLeft: 0, you: null,
+                chests: [], boss: null, event: null, mod: null, pings: [], lastPlace: 0, bossSeenId: 0,
             });
+            global.shop.onPad = false;
+            global.shop.dismissed = false;
+            global.shop.state = { drill: 0, gear: [], kit: {}, kitOrder: [], arm: null };
+            global.callouts.length = 0;
+            global.fx.length = 0;
             global.vault.onPad = false;
             global.vault.remaining = 0;
             global.vault.total = 0;
@@ -1634,18 +1653,6 @@ import * as tutorial from './tutorial.js';
         ctx[2].roundRect(x1 - width / 2, y - width / 2, x2 - x1 + width, h2 + width, [width / 2]);
         ctx[2].fillStyle = color;
         ctx[2].fill();
-    }
-
-    function guiToClientRect(gx, gy, gw, gh) {
-        const el = (global.canvas && global.canvas.cv) || document.getElementById("gameCanvas");
-        if (!el || !global.screenWidth || !global.screenHeight) return { x: gx, y: gy, w: gw, h: gh };
-        const br = el.getBoundingClientRect();
-        return {
-            x: br.left + gx / global.screenWidth * br.width,
-            y: br.top + gy / global.screenHeight * br.height,
-            w: gw / global.screenWidth * br.width,
-            h: gh / global.screenHeight * br.height,
-        };
     }
 
     function drawButton(x, y, width, height, alpha, type = "rect", text, textSize, color1, color2, color3, clickable = false, clickType, clickableRatio, index) {
@@ -2152,22 +2159,23 @@ import * as tutorial from './tutorial.js';
             // Carrier glow: a fat satchel broadcasts. Soft gold halo plus a
             // breathing rim, scaled by the synced glow rung (1-6, matching
             // the satchel size rungs so halo and pack always agree).
-            const glowRung = (!turretInfo && (instance.gemGlow | 0)) || 0;
+            const glowRung = (!turretInfo && !global.lowFx && (instance.gemGlow | 0)) || 0;
             if (glowRung > 0) {
                 const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 480);
                 const haloR = drawSize * (1.45 + 0.22 * glowRung);
                 const ha = (0.10 + 0.05 * glowRung) * alphaFade * (0.8 + 0.2 * pulse);
-                const hg = context.createRadialGradient(x, y, drawSize * 0.5, x, y, haloR);
-                hg.addColorStop(0, "rgba(255,215,94,0)");
-                hg.addColorStop(0.55, "rgba(255,205,90," + (ha * 0.7).toFixed(3) + ")");
-                hg.addColorStop(1, "rgba(255,205,90,0)");
+                // The halo is the tank's own colour: a loaded carrier reads as
+                // "that tank, glowing", not as a generic gold blob.
+                let bodyCol = "#ffd75e";
+                try { bodyCol = gameDraw.modifyColor(instance.color) || bodyCol; } catch (e) { /* */ }
+                const bodyRgb = toRgb(bodyCol) || { r: 255, g: 215, b: 94 };
+                const tint = bodyRgb.r + "," + bodyRgb.g + "," + bodyRgb.b;
+                const spr = haloSprite("halo|" + tint, tint, [[0.35, 0], [0.65, 0.7], [1, 0]]);
                 context.save();
-                context.fillStyle = hg;
-                context.beginPath();
-                context.arc(x, y, haloR, 0, Math.PI * 2);
-                context.fill();
+                context.globalAlpha = ha;
+                context.drawImage(spr, x - haloR, y - haloR, haloR * 2, haloR * 2);
                 context.globalAlpha = alphaFade * (0.22 + 0.09 * glowRung) * (0.65 + 0.35 * pulse);
-                context.strokeStyle = "#ffd75e";
+                context.strokeStyle = bodyCol;
                 context.lineWidth = Math.max(1.5, drawSize * 0.045);
                 context.beginPath();
                 context.arc(x, y, drawSize * (1.08 + 0.03 * pulse), 0, Math.PI * 2);
@@ -2265,6 +2273,7 @@ import * as tutorial from './tutorial.js';
 
                 for (let i = 0; i < gunLength; ++i) {
                     const g = gunConfig[i];
+                    if (g.hidden) continue;
 
                     if ((drawAbove === 0 && g.drawAbove) || (drawAbove === 1 && !g.drawAbove)) {
                         continue;
@@ -2802,11 +2811,26 @@ import * as tutorial from './tutorial.js';
             c.strokeStyle = "#0d0f14";
             c.stroke();
             const pulse = 0.5 + 0.5 * Math.sin(now / 650);
-            const aura = c.createRadialGradient(0, 0, R * 0.55, 0, 0, R * (1.28 + 0.08 * pulse));
-            aura.addColorStop(0, rgba(teamCol, 0.22 + 0.10 * pulse + doneFlash * 0.28));
-            aura.addColorStop(1, rgba(teamCol, 0));
-            c.fillStyle = aura;
-            c.beginPath(); c.arc(0, 0, R * 1.35, 0, Math.PI * 2); c.fill();
+            {
+                const auraR = R * (1.28 + 0.08 * pulse);
+                // the rainbow vault cycles through 12 baked hues; a fixed team
+                // colour bakes once
+                let tintA = null;
+                if (rainbow) {
+                    const [hr, hg, hb] = hsvRgb((Math.round(((now / 12) % 360) / 30) * 30) % 360);
+                    tintA = hr + "," + hg + "," + hb;
+                } else {
+                    const rgbA = toRgb(teamCol);
+                    if (rgbA) tintA = rgbA.r + "," + rgbA.g + "," + rgbA.b;
+                }
+                if (tintA) {
+                    const spr = haloSprite("aura|" + tintA, tintA, [[0.42, 1], [1, 0]]);
+                    c.save();
+                    c.globalAlpha = 0.22 + 0.10 * pulse + doneFlash * 0.28;
+                    c.drawImage(spr, -auraR, -auraR, auraR * 2, auraR * 2);
+                    c.restore();
+                }
+            }
             // team claim ring
             c.globalAlpha = 0.75 + 0.2 * pulse;
             c.lineWidth = Math.max(2.5, R * 0.06);
@@ -3431,42 +3455,6 @@ import * as tutorial from './tutorial.js';
         }
     }
 
-    // Revenge marker, crown-style: a red diamond + tag floating over your
-    // mark's live position, clamped on-screen like the kill banners. Dead
-    // targets send no marker; the server re-adds it the tick they respawn.
-    function drawRevengeMarker(px, py, ratio) {
-        if (!royaleActive()) return;
-        const rev = (global.royale.you && global.royale.you.revenge) || null;
-        if (!rev || !rev.alive || !isFinite(rev.x) || !isFinite(rev.y)) return;
-        let sx = ratio * rev.x - px + global.screenWidth / 2;
-        let sy = ratio * rev.y - py + global.screenHeight / 2;
-        sx = Math.max(70, Math.min(global.screenWidth - 70, sx));
-        sy = Math.max(90, Math.min(global.screenHeight - 90, sy));
-        const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 300);
-        const s = 13 + 2 * pulse;
-        const c = ctx[2];
-        c.save();
-        c.translate(sx, sy - 44);
-        c.rotate(Math.PI / 4);
-        c.fillStyle = "#e03e41";
-        c.strokeStyle = color.black;
-        c.lineWidth = 2.5;
-        c.beginPath();
-        c.rect(-s / 2, -s / 2, s, s);
-        c.fill();
-        c.stroke();
-        c.restore();
-        c.save();
-        c.globalAlpha = 0.55 + 0.35 * pulse;
-        c.strokeStyle = "#e03e41";
-        c.lineWidth = 2;
-        c.beginPath();
-        c.arc(sx, sy - 44, s * (1.1 + 0.25 * pulse), 0, Math.PI * 2);
-        c.stroke();
-        c.restore();
-        drawText("REVENGE ×2", sx, sy - 44 + 22, 12, "#ff7a6b", "center", true, 1, 5);
-    }
-
     function drawOutpostLabels(px, py, ratio) {
         if (royaleLobbyPhase()) return;
         const c = ctx[2];
@@ -3477,7 +3465,7 @@ import * as tutorial from './tutorial.js';
             if (sx < -R * 2 || sx > global.screenWidth + R * 2 ||
                 sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
             const st = global.outpostState.find(s => s.id === o.id) || {};
-            drawText(o.name, sx, sy - o.r * ratio * 1.55 - 4.5,
+            drawText(o.name, sx, sy - o.r * ratio * 1.55 - 26,
                      Math.min(32, o.r * ratio * 0.42),
                      o.color || st.c || color.guiwhite, "center", false, 1, true, c);
             // Contested window, visible to both sides: callout + the
@@ -3485,11 +3473,11 @@ import * as tutorial from './tutorial.js';
             // they must finish, defenders see what they must save.
             if (st.cont) {
                 const blink = 0.65 + 0.35 * Math.sin(performance.now() / 240);
-                drawText("UNDER ATTACK", sx, sy - o.r * ratio * 1.55 - 30,
+                drawText("UNDER ATTACK", sx, sy - o.r * ratio * 1.55 - 86,
                          Math.min(24, o.r * ratio * 0.3),
                          "#ff6b5e", "center", false, blink, true, c);
                 const bw2 = Math.min(110, o.r * ratio), bh2 = 7;
-                const bx2 = sx - bw2 / 2, by2 = sy - o.r * ratio * 1.55 - 22;
+                const bx2 = sx - bw2 / 2, by2 = sy - o.r * ratio * 1.55 - 66;
                 c.save();
                 c.globalAlpha = blink;
                 c.fillStyle = color.black;
@@ -3766,9 +3754,13 @@ import * as tutorial from './tutorial.js';
         }
         if (circleClip && !royaleMode()) ctx[0].restore();
         ctx[0].globalAlpha = 1;
+        drawBloomGlow(roomX, roomY, ratio);
+        drawEventZone(roomX, roomY, ratio);
+        drawChestGlow(roomX, roomY, ratio);
         drawStorm(roomX, roomY, ratio);
         // Dig Wars: team vault doors, set into the base floors
         drawVaults(roomX, roomY, ratio);
+        drawShops(roomX, roomY, ratio);
         // Dig Wars: forward outpost pads, carved into the wall
         drawOutposts(roomX, roomY, ratio);
         // Dig Wars: core chamber boulders beside each vault (one big rock per
@@ -3811,6 +3803,19 @@ import * as tutorial from './tutorial.js';
     // allocation. Gem pickups near a ring's outline are included (they read
     // the same, and the test is a cheap distance check). Returns the gem class
     // when contained (also used as a truthy skip test), "" otherwise.
+    // Every gem pickup draws from its baked sprite (glow included). Sending
+    // loose gems through drawEntity meant one live shadowBlur pass per gem
+    // per frame, which is what made a Retina laptop crawl with 15 gems on
+    // screen. The class is cached on the instance once the mockup is known.
+    function gemSpriteClass(instance) {
+        if (!instance || !instance.index) return "";
+        if (instance._gemCls !== undefined) return instance._gemCls;
+        const m = global.mockups[parseInt(instance.index.split("-")[0])];
+        if (!m) return "";
+        const cls = (m.className && m.className.startsWith("gemPickup") && GEM_SPRITE_PAL[m.className]) ? m.className : "";
+        instance._gemCls = cls;
+        return cls;
+    }
     function isContainedChamberGem(instance) {
         if (!global.chambers.length || !instance || !instance.index) return "";
         const _obM = global.mockups[parseInt(instance.index.split("-")[0])];
@@ -3949,12 +3954,328 @@ import * as tutorial from './tutorial.js';
         drawContainedGem(c, x, y, bodyPx / isize, alpha, isize, facing, cls);
     };
 
+    // ── Baked radial halos: one gradient per colour, drawn as an image ──
+    // A live createRadialGradient per entity per frame was the single most
+    // expensive thing in the render path.
+    const haloSprites = new Map();
+    function haloSprite(key, rgb, stops) {
+        let spr = haloSprites.get(key);
+        if (spr) return spr;
+        const S = 192;
+        spr = document.createElement("canvas");
+        spr.width = spr.height = S;
+        const c = spr.getContext("2d");
+        const g = c.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+        for (const [pos, a] of stops) g.addColorStop(pos, "rgba(" + rgb + "," + a + ")");
+        c.fillStyle = g;
+        c.fillRect(0, 0, S, S);
+        if (haloSprites.size > 128) haloSprites.delete(haloSprites.keys().next().value);
+        haloSprites.set(key, spr);
+        return spr;
+    }
+    // Full-screen vignettes, baked at half resolution per size/colour.
+    const vignetteSprites = new Map();
+    function vignetteSprite(w, h, inner, rgb) {
+        inner = Math.round(inner * 20) / 20;
+        const key = (w | 0) + "x" + (h | 0) + "|" + inner + "|" + rgb;
+        let spr = vignetteSprites.get(key);
+        if (spr) return spr;
+        const cw = Math.max(2, Math.ceil(w / 2)), chh = Math.max(2, Math.ceil(h / 2));
+        spr = document.createElement("canvas");
+        spr.width = cw; spr.height = chh;
+        const c = spr.getContext("2d");
+        const r = Math.hypot(cw, chh) / 2;
+        const gd = c.createRadialGradient(cw / 2, chh / 2, Math.max(1, r * inner), cw / 2, chh / 2, r);
+        gd.addColorStop(0, "rgba(" + rgb + ",0)");
+        gd.addColorStop(1, "rgba(" + rgb + ",1)");
+        c.fillStyle = gd;
+        c.fillRect(0, 0, cw, chh);
+        if (vignetteSprites.size > 24) vignetteSprites.delete(vignetteSprites.keys().next().value);
+        vignetteSprites.set(key, spr);
+        return spr;
+    }
+    function shakeCamera(amount, duration) {
+        const sh = config.graphical.shakeProperties.CameraShake;
+        if (sh.shakeStartTime !== -1 && sh.shakeAmount > amount && Date.now() - sh.shakeStartTime < sh.shakeDuration) return;
+        sh.shakeStartTime = Date.now();
+        sh.shakeDuration = duration;
+        sh.shakeAmount = amount;
+    }
+
+    // ── Ore chests are boulders ────────────────────────────────────────
+    // A chest is a rock with a vein of ore in it. It cracks like the wall as
+    // it takes damage and shatters like the wall when it breaks (drawFx).
+    // The server entity only supplies position, size and health.
+    const CHEST_NAMES = ["Copper Chest", "Epic Chest"];
+    function isLootChestEntity(instance) {
+        if (!instance || !instance.index) return null;
+        if (instance._chest !== undefined) return instance._chest;
+        const m = global.mockups[parseInt(instance.index.split("-")[0])];
+        if (!m) return null;
+        let kind = null;
+        if (m.name === "Copper Chest" || m.className === "lootChest") kind = { epic: false };
+        else if (m.name === "Epic Chest" || m.className === "lootChestRare") kind = { epic: true };
+        instance._chest = kind;
+        return kind;
+    }
+    // ── Raid bosses wear an aura: a floor halo in their colour, two
+    // counter-rotating dashed rings and five orbiting shards. Cheap (one
+    // baked sprite plus a few strokes) and unmistakable from across the map.
+    const BOSS_NAME_RE = /Vault Warden|Magma Drillhead|Geode Colossus|Shard Wraith/;
+    function isRoyaleBossEntity(instance) {
+        if (!instance || !instance.index) return false;
+        if (instance._isBoss !== undefined) return instance._isBoss;
+        const m = global.mockups[parseInt(instance.index.split("-")[0])];
+        if (!m) return false;
+        instance._isBoss = BOSS_NAME_RE.test(m.name || "");
+        return instance._isBoss;
+    }
+    function drawBossAura(c, x, y, instance, ratio, alpha) {
+        const now = performance.now();
+        const R = (instance.size || 40) * ratio;
+        if (R < 4) return;
+        const b = (global.royale && global.royale.boss) || global._lastBoss;
+        const col = (b && b.c) || "#c9a8ff";
+        const rgb = toRgb(col) || { r: 201, g: 168, b: 255 };
+        const tint = rgb.r + "," + rgb.g + "," + rgb.b;
+        const pulse = 0.5 + 0.5 * Math.sin(now / 420);
+        c.save();
+        c.globalAlpha = alpha * (0.5 + 0.25 * pulse);
+        const hr = R * (2.1 + 0.15 * pulse);
+        c.drawImage(haloSprite("bossaura|" + tint, tint, [[0, 0.6], [0.45, 0.22], [1, 0]]), x - hr, y - hr, hr * 2, hr * 2);
+        c.globalAlpha = alpha * 0.75;
+        c.strokeStyle = col; c.lineCap = "round";
+        c.lineWidth = Math.max(1.5, R * 0.05);
+        c.setLineDash([R * 0.35, R * 0.22]); c.lineDashOffset = -now / 28;
+        c.beginPath(); c.arc(x, y, R * 1.32, 0, Math.PI * 2); c.stroke();
+        c.globalAlpha = alpha * 0.5;
+        c.lineWidth = Math.max(1, R * 0.03);
+        c.setLineDash([R * 0.18, R * 0.3]); c.lineDashOffset = now / 40;
+        c.beginPath(); c.arc(x, y, R * 1.58, 0, Math.PI * 2); c.stroke();
+        c.setLineDash([]);
+        c.globalAlpha = alpha * 0.9;
+        c.fillStyle = col; c.strokeStyle = "rgba(5,4,7,0.9)"; c.lineWidth = Math.max(1, R * 0.025);
+        for (let i = 0; i < 5; i++) {
+            const a = (now / 900) * (i % 2 ? -1 : 1) + i * (Math.PI * 2 / 5);
+            const rr = R * (1.45 + 0.08 * Math.sin(now / 300 + i));
+            gemPath(c, x + Math.cos(a) * rr, y + Math.sin(a) * rr, R * 0.13);
+            c.fill(); c.stroke();
+        }
+        c.restore();
+    }
+    function lcg(seed) {
+        let h = (Math.abs(seed | 0) * 2654435761) >>> 0;
+        return () => { h = (h * 1664525 + 1013904223) >>> 0; return h / 4294967296; };
+    }
+    function chestStageOf(frac) {
+        return frac > 5 / 6 ? 0 : frac > 4 / 6 ? 1 : frac > 3 / 6 ? 2 : frac > 2 / 6 ? 3 : frac > 1 / 6 ? 4 : 5;
+    }
+    // Per-chest geometry in unit space (radius 1): faceted body, ore core,
+    // veins and five cumulative crack stages. Seeded by id so nothing flickers.
+    const chestGeoms = new Map();
+    function chestGeom(id, epic) {
+        const key = (id | 0) + (epic ? "e" : "c");
+        let g = chestGeoms.get(key);
+        if (g) return g;
+        const rnd = lcg((id | 0) + (epic ? 977 : 0));
+        const n = epic ? 10 : 9;
+        const pts = [];
+        for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + (rnd() - 0.5) * 0.44;
+            const r = 0.84 + rnd() * 0.24;
+            pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+        }
+        const body = new Path2D();
+        pts.forEach((p, i) => i ? body.lineTo(p[0], p[1]) : body.moveTo(p[0], p[1]));
+        body.closePath();
+        // two lighter facets and a darker lower half give it the rock's
+        // flat-shaded look without a texture
+        const facets = new Path2D();
+        for (let f = 0; f < 2; f++) {
+            const i = Math.floor(rnd() * n);
+            const a = pts[i], b = pts[(i + 1) % n];
+            facets.moveTo(0.05, -0.05); facets.lineTo(a[0], a[1]); facets.lineTo(b[0], b[1]); facets.closePath();
+        }
+        const shade = new Path2D();
+        const lower = pts.filter(p => p[0] + p[1] > 0.15);
+        if (lower.length >= 2) {
+            shade.moveTo(0.1, 0.1);
+            for (const p of lower) shade.lineTo(p[0], p[1]);
+            shade.closePath();
+        }
+        g = { body, facets, shade, pts };
+        if (chestGeoms.size > 64) chestGeoms.delete(chestGeoms.keys().next().value);
+        chestGeoms.set(key, g);
+        return g;
+    }
+    const chestSpawnByEnt = new Map();   // entity id -> when it landed (performance clock)
+    const chestGoneAt = (global.chestGoneAt = new Map());   // entity id -> when it broke (set by the FX packet)
+    const CHEST_FALLBACK = {
+        1: { pal: { mid: "rgba(201,111,46,0.95)", light: "rgba(237,167,102,0.95)", core: "rgba(255,233,209,0.9)" }, crack: { deep: "140,62,15", hot: "235,140,60", hair: "255,218,175" } },
+        3: { pal: { mid: "rgba(177,62,207,0.95)", light: "rgba(217,138,240,0.95)", core: "rgba(251,230,255,0.9)" }, crack: { deep: "110,25,140", hot: "200,95,240", hair: "242,205,255" } },
+    };
+    const chestCellKey = (id) => -(1000000 + (id | 0));
+    function drawChestBoulder(c, x, y, instance, ratio, alpha, isize, kind) {
+        const now = performance.now();
+        // A fading chest is either broken (the FX packet drew the shatter)
+        // or simply out of view; either way the body stops here.
+        if (instance.render.status.getFade() < 1) return;
+        const R = isize * ratio;
+        if (R < 0.5) return;
+        const tr = window.terrainRenderer;
+        const g = chestGeom(instance.id, kind.epic);
+        const tier = kind.epic ? 3 : 1;
+        const TR = tr && tr.constructor;
+        const cpal = (TR && TR.CRACK_PAL && TR.CRACK_PAL[tier]) || CHEST_FALLBACK[tier].crack;
+        // the chest is a cell of the terrain renderer too: same crack
+        // generator, same fracture net, same caches
+        const key = chestCellKey(instance.id);
+        let cell = null, tilePx = 0, rockSz = 2.4;
+        if (tr && tr.ready && tr._world) {
+            const w = tr._world;
+            tilePx = ratio * w.s;
+            rockSz = Math.min(tr._cols, 120) / 50.0;
+            if (!instance._chestCell || instance._chestCellR !== isize ||
+                Math.abs(instance._chestCellX - instance.render.x) > 2 || Math.abs(instance._chestCellY - instance.render.y) > 2) {
+                const cx = (instance.render.x + w.hw) / w.s, cy = (instance.render.y + w.hh) / w.s, rt = isize / w.s;
+                const poly = g.pts.map(pt => [cx + pt[0] * rt, cy + pt[1] * rt]);
+                const path = new Path2D();
+                poly.forEach((pt, i) => i ? path.lineTo(pt[0], pt[1]) : path.moveTo(pt[0], pt[1]));
+                path.closePath();
+                instance._chestCell = { k: key, poly, cx, cy, path };
+                instance._chestCellR = isize; instance._chestCellX = instance.render.x; instance._chestCellY = instance.render.y;
+                tr.registerCell(key, instance._chestCell);
+            }
+            cell = instance._chestCell;
+        }
+        // landing: drop in from above, squash on touchdown, one dust ring
+        let sx = 1, sy = 1, shadowK = 1, landDust = 0;
+        const spawn = chestSpawnByEnt.get(instance.id);
+        if (spawn !== undefined) {
+            const age = now - spawn;
+            if (age < 500) {
+                const k = age / 500;
+                if (k < 0.6) { const u = k / 0.6; const sc = 1.6 - 0.6 * u * u; sx = sy = sc; shadowK = 1 / sc; }
+                else { const u = (k - 0.6) / 0.4; const e = 1 - Math.pow(1 - u, 3); sx = 1 + 0.18 * (1 - e); sy = 1 - 0.16 * (1 - e); }
+                if (k >= 0.6 && !instance._thudDone) {
+                    instance._thudDone = true;
+                    const d = Math.hypot(instance.render.x - global.player.renderx, instance.render.y - global.player.rendery);
+                    if (d < 700) {
+                        shakeCamera(6, 160);
+                        try { gameSound.rockHit(instance.render.x, instance.render.y, 3, false); } catch (e) { /* */ }
+                    }
+                }
+                if (age > 300) landDust = (age - 300) / 220;
+            }
+        }
+        const hp = typeof instance.health === "number" ? instance.health : 1;
+        const stage = chestStageOf(hp);
+        if (instance._chestStage !== undefined && stage > instance._chestStage) {
+            instance._chestSnapAt = now;
+            const d = Math.hypot(instance.render.x - global.player.renderx, instance.render.y - global.player.rendery);
+            if (d < 800) shakeCamera(2, 140);
+        }
+        instance._chestStage = stage;
+        const hitB = instance.render.hitAt ? Math.max(0, 1 - (now - instance.render.hitAt) / 150) : 0;
+        const snapT = instance._chestSnapAt ? Math.max(0, 1 - (now - instance._chestSnapAt) / 220) : 0;
+        const snap = snapT * snapT;
+        const boost = Math.max(hitB, snap);
+        c.save();
+        c.globalAlpha = alpha;
+        if (landDust > 0 && landDust < 1) {
+            const q = 1 - Math.pow(1 - landDust, 4);
+            c.beginPath(); c.arc(x, y, R * (0.6 + 1.8 * q), 0, Math.PI * 2);
+            c.strokeStyle = "rgba(110,100,125," + (Math.pow(1 - landDust, 1.5) * 0.45).toFixed(3) + ")";
+            c.lineWidth = 0.12 * R * (1 - landDust) + 0.5;
+            c.stroke();
+        }
+        // drop shadow
+        c.save();
+        c.translate(x + 0.06 * R, y + 0.09 * R);
+        c.scale(R * shadowK, R * shadowK);
+        c.fillStyle = "rgba(0,0,0,0.38)";
+        c.fill(g.body);
+        c.restore();
+        // body: the wall's own palette and border weight
+        c.save();
+        c.translate(x, y);
+        let trX = 0, trY = 0;
+        if (stage >= 5) {
+            trX = Math.sin(now / 17 + (instance.id % 13)) * 0.02 * R; trY = Math.cos(now / 23 + (instance.id % 7)) * 0.02 * R;
+            c.translate(trX, trY);
+            c.scale(1.05, 1.05);
+        }
+        c.scale(R * sx, R * sy);
+        c.lineJoin = "round"; c.lineCap = "round";
+        c.fillStyle = "rgb(38,34,48)"; c.fill(g.body);
+        c.fillStyle = "rgb(47,43,59)"; c.fill(g.facets);
+        c.fillStyle = "rgba(5,4,7,0.28)"; c.fill(g.shade);
+        if (stage >= 1) { c.fillStyle = "rgba(5,4,7," + (0.06 * stage).toFixed(2) + ")"; c.fill(g.body); }
+        const borderPx = tilePx ? 0.072 * rockSz * tilePx : Math.max(2, 3 * ratio);
+        c.lineWidth = borderPx / R; c.strokeStyle = "rgb(5,4,7)"; c.stroke(g.body);
+        if (hitB > 0) { c.fillStyle = "rgba(255,244,210," + (0.35 * hitB).toFixed(3) + ")"; c.fill(g.body); }
+        c.restore();
+        // cracks: the terrain renderer's, in its tile space
+        if (cell && stage >= 1 && tr._getCrackPath) {
+            const path = tr._getCrackPath(key, stage);
+            if (path) {
+                c.save();
+                c.translate(x + trX - cell.cx * tilePx, y + trY - cell.cy * tilePx);
+                c.scale(tilePx, tilePx);
+                c.lineCap = "round"; c.lineJoin = "round";
+                const a = 0.30 + 0.035 * stage;
+                const w = 0.035 * rockSz * (0.28 + 0.075 * stage) * (1 + snap);
+                c.strokeStyle = "rgba(5,4,7,0.8)"; c.lineWidth = w * 2.1; c.stroke(path);
+                c.strokeStyle = "rgba(" + cpal.deep + "," + a.toFixed(2) + ")"; c.lineWidth = w * 1.2; c.stroke(path);
+                c.strokeStyle = "rgba(" + cpal.hot + "," + Math.min(1, a * 0.9 + boost * 0.45).toFixed(2) + ")"; c.lineWidth = w * 0.5; c.stroke(path);
+                c.strokeStyle = "rgba(" + cpal.hair + "," + Math.max(0.08 + 0.025 * stage, boost * 0.6).toFixed(2) + ")"; c.lineWidth = w * 0.2; c.stroke(path);
+                c.restore();
+            }
+        }
+        c.restore();
+        // the prize: one ore gem set into the rock, drawn from the same
+        // baked sprite the loose gems use (glow included)
+        // The prize is set INTO the rock: a pocket cut below the surface, the
+        // gem sitting low in it with only its crown showing (no glow, flat
+        // fills like everything else on the wall), an inner shadow from the
+        // pocket's upper edge, and the rock's own border running over the
+        // gem's edge with a lip of stone across its foot.
+        const gemK = 0.40 * sy;
+        const gx = x + trX, gy = y + trY, gr = R * gemK;
+        const gpal = kind.epic ? { body: "#b13ecf", facet: "#d98af0", deep: "#6d2287" } : { body: "#c96f2e", facet: "#eda766", deep: "#7a4018" };
+        const pocket = () => gemPath(c, gx, gy + gr * 0.1, gr * 1.28);
+        c.save();
+        c.globalAlpha = alpha;
+        pocket(); c.fillStyle = "rgb(12,10,16)"; c.fill();
+        c.save();
+        pocket(); c.clip();
+        gemPath(c, gx, gy + gr * 0.14, gr * 0.98);
+        c.fillStyle = gpal.deep; c.fill();
+        c.save();
+        gemPath(c, gx, gy + gr * 0.14, gr * 0.98); c.clip();
+        c.fillStyle = gpal.body; c.fillRect(gx - gr, gy - gr, gr * 2, gr * 0.92);
+        c.fillStyle = gpal.facet;
+        c.beginPath(); c.moveTo(gx - gr * 0.55, gy - gr * 0.72); c.lineTo(gx + gr * 0.12, gy - gr * 0.72); c.lineTo(gx - gr * 0.22, gy - gr * 0.18); c.closePath(); c.fill();
+        c.restore();
+        // inner shadow: two flat bands under the pocket's top edge
+        c.fillStyle = "rgba(5,4,7,0.45)"; c.fillRect(gx - gr * 1.4, gy - gr * 1.2, gr * 2.8, gr * 0.55);
+        c.fillStyle = "rgba(5,4,7,0.2)";  c.fillRect(gx - gr * 1.4, gy - gr * 0.65, gr * 2.8, gr * 0.35);
+        // a lip of rock over the gem's foot
+        c.fillStyle = "rgb(38,34,48)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, gr * 1.3);
+        c.fillStyle = "rgba(5,4,7,0.7)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, Math.max(1, R * 0.04));
+        c.restore();
+        pocket();
+        c.lineJoin = "round"; c.lineWidth = Math.max(1.5, borderPx * 0.8); c.strokeStyle = "rgb(5,4,7)"; c.stroke();
+        c.restore();
+    }
+    let bgCanvasEl = null, bgHidden = false;
     function drawEntities(px, py, ratio, tick) {
+        const bgEl = bgCanvasEl || (bgCanvasEl = document.getElementById("gameCanvas-background"));
         if (global.advanced.blackout.active) {
-            document.getElementById("gameCanvas-background").style.display = "none";
+            if (!bgHidden) { bgEl.style.display = "none"; bgHidden = true; }
             ctx[1].drawImage(ctx[0].canvas, 0, 0, global.screenWidth, global.screenHeight);
             if (global.glCanvas) ctx[1].drawImage(global.glCanvas, 0, 0, global.screenWidth, global.screenHeight);
-        } else if (document.getElementById("gameCanvas-background").style.display === "none") document.getElementById("gameCanvas-background").style.display = "block";
+        } else if (bgHidden) { bgEl.style.display = "block"; bgHidden = false; }
 
         const motion = compensation();
         let livingPred = false;
@@ -3983,9 +4304,10 @@ import * as tutorial from './tutorial.js';
             }
             let rst = instance.render.status.getFade();
             // first frame of a death fade: play a size-appropriate sound
+            // (chests break with the rock sound from the FX handler instead)
             if (rst < 1 && !instance.deathSounded) {
                 instance.deathSounded = true;
-                gameSound.die(instance.render.x, instance.render.y,
+                if (!isLootChestEntity(instance)) gameSound.die(instance.render.x, instance.render.y,
                               instance.realSize || instance.size || 20);
             } else if (rst === 1 && instance.deathSounded) {
                 instance.deathSounded = false; // entity recovered/reused
@@ -4052,23 +4374,37 @@ import * as tutorial from './tutorial.js';
             // treasury gems inside a chamber ring: the real gem look (halo +
             // body + outline + facet + sparkle) restacked from cached paths,
             // skipping the whole body+prop+spin pipeline
-            const _gcls = isContainedChamberGem(instance);
+            const _gcls = gemSpriteClass(instance);
             if (_gcls) {
-                drawContainedGem(ctx[1], x, y, ratio, instance.alpha * alpha, isize, instance.render.f, _gcls);
+                let ga = instance.alpha * alpha * instance.render.status.getFade();
+                // expiring gems blink like any invulnerable entity would
+                if (instance.invuln && 100 > (Date.now() - instance.invuln) % 200) ga *= 0.55;
+                if (ga > 0.01) drawContainedGem(ctx[1], x, y, ratio, ga, isize, instance.render.f, _gcls);
                 continue;
             }
+            const _chest = isLootChestEntity(instance);
+            if (_chest) {
+                drawChestBoulder(ctx[1], x, y, instance, ratio, instance.alpha * alpha, isize, _chest);
+                continue;
+            }
+            if (isRoyaleBossEntity(instance)) drawBossAura(ctx[1], x, y, instance, ratio, instance.alpha * alpha);
             drawEntity(baseColor, x, y, instance, ratio, instance.alpha * alpha, 1, 1, instance.render.f, false, false, false, instance.render, isize);
             if (global.royale && global.outpostState && !royaleLobbyPhase() && global.royale.phase === "live") {
-                const owned = global.outpostState.find(s => s.o === instance.id && s.c);
-                if (owned) {
+                const ownedAll = global.outpostState.filter(s => s.o === instance.id && s.c);
+                if (ownedAll.length) {
+                    // one ring per owned base, stacked outward and touching, each
+                    // in that base's colour
                     const c = ctx[1];
+                    const lw = Math.max(3, isize * ratio * 0.14);
                     c.save();
                     c.globalAlpha = (instance.alpha * alpha) * (0.7 + 0.3 * Math.sin(performance.now() / 400));
-                    c.strokeStyle = owned.c;
-                    c.lineWidth = Math.max(3, isize * ratio * 0.14);
-                    c.beginPath();
-                    c.arc(x, y, isize * ratio * 1.38, 0, Math.PI * 2);
-                    c.stroke();
+                    c.lineWidth = lw;
+                    for (let oi = 0; oi < ownedAll.length && oi < 4; oi++) {
+                        c.strokeStyle = ownedAll[oi].c;
+                        c.beginPath();
+                        c.arc(x, y, isize * ratio * 1.38 + oi * lw, 0, Math.PI * 2);
+                        c.stroke();
+                    }
                     c.restore();
                 }
             }
@@ -4079,7 +4415,8 @@ import * as tutorial from './tutorial.js';
             if (!instance._onScreen) continue;
             if (isOutpostBannerEntity(instance)) continue;
             if (isCoreChamberEntity(instance)) continue;
-            if (isContainedChamberGem(instance)) continue;
+            if (gemSpriteClass(instance)) continue;
+            if (isLootChestEntity(instance)) continue;
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance);
             let x = instance.id === gui.playerid ? global.player.screenx : instance._sx - global.screenWidth / 2,
@@ -4089,7 +4426,8 @@ import * as tutorial from './tutorial.js';
         }
         for (let instance of global.entities) {
             if (!instance._onScreen) continue;
-            if (isContainedChamberGem(instance)) continue;
+            if (gemSpriteClass(instance)) continue;
+            if (isLootChestEntity(instance)) continue;
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance);
             let x = instance.id === gui.playerid ? global.player.screenx : instance._sx - global.screenWidth / 2,
@@ -4525,7 +4863,7 @@ import * as tutorial from './tutorial.js';
         const msgRight = typeof royaleActive === "function" && royaleActive();
         if (msgRight) {
             const feedN = Math.min(6, ((global.royale && global.royale.feed) || []).length);
-            y = 42 + feedN * 18 + 12;
+            y = Math.max(42 + feedN * 18 + 12, (royaleFeedBottom || 0) + 12);
         }
         if (global.mobile) {
             if (global.canUpgrade) {
@@ -4806,6 +5144,13 @@ import * as tutorial from './tutorial.js';
                 var name = instance.name.substring(7, instance.name.length + 1);
                 var namecolor = instance.name.substring(0, 7);
                 ctx[1].globalAlpha = alpha * alpha * fade;
+                // raid bosses: a fixed-size title above the hull, no score line
+                const bossMock = global.mockups[parseInt(String(instance.index).split("-")[0])];
+                if (bossMock && bossMock.className && String(bossMock.className).startsWith("royale")) {
+                    drawText(name.toUpperCase(), x, y - size - 26, 17, namecolor == "#ffffff" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
+                    ctx[1].globalAlpha = 1;
+                    return;
+                }
                 let g = Math.max(20, size);
                 if (global.GUIStatus.renderPlayerNames) drawText(name, x, y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45), 0.55 * g, namecolor == "#ffffff" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
                 if (global.GUIStatus.renderPlayerScores || typeof instance.score === "string") drawText(typeof instance.score === "string" ? instance.score : util.handleLargeNumber(instance.score), x, y - 1.45 * g, 0.3 * g, namecolor == "#ffffff" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
@@ -4850,11 +5195,17 @@ import * as tutorial from './tutorial.js';
         }
         let clickableRatio = global.canvas.height / global.screenHeight / global.ratio;
 
-        for (let i = 0; i < gui.skills.length; i++) {
-            ticker--;
-
+        const minKeyName = keyLabel("KEY_UPGRADE_MIN", "-");
+        // Draw order (bottom → top): Mining Power first as the final stat,
+        // then skills[0..9] which map to stats 9..0.
+        const order = [];
+        if (gui.skills.length > 10) order.push(10);
+        for (let i = 0; i < Math.min(10, gui.skills.length); i++) order.push(i);
+        for (const i of order) {
+            if (i !== 10) ticker--;
+            const statIdx = i === 10 ? 10 : ticker - 1;
             let skill = gui.skills[i],
-                name = namedata[ticker - 1],
+                name = namedata[statIdx],
                 level = skill.amount,
                 col = color[skill.color],
                 cap = skill.softcap,
@@ -4893,10 +5244,13 @@ import * as tutorial from './tutorial.js';
             let textcolor = level == maxLevel ? col : !gui.points || (cap !== maxLevel && level == cap) ? color.grey : color.guiwhite;
             drawText(name, Math.round(x + len / 2) - 5.5, y + height / 2, height - 4.1, textcolor, "center", true);
 
-            drawText("[" + (ticker % 10) + "]", Math.round(x + len - height * 0.25) - 14.5, y + height / 2, height - 6, textcolor, "right", true);
+            const keyTxt = statIdx === 10 ? minKeyName : String((statIdx + 1) % 10);
+            // fixed column: every key label centred on the same x, so "-"
+            // lines up with the digits above it
+            drawText("[" + keyTxt + "]", Math.round(x + save * ska(maxLevel) - height * 0.25) - 22, y + height / 2, height - 6, textcolor, "center", true);
             if (textcolor === color.guiwhite) {
 
-                global.clickables.stat.place(ticker - 1, x * clickableRatio, y * clickableRatio, len * clickableRatio, height * clickableRatio);
+                global.clickables.stat.place(statIdx, x * clickableRatio, y * clickableRatio, len * clickableRatio, height * clickableRatio);
             }
 
             if (level) {
@@ -4956,7 +5310,7 @@ import * as tutorial from './tutorial.js';
                 rx2 = x + width - scorewidth - scorelength,
                 ry = y + height / 2,
                 capR = (height - 3) / 2,
-                mid = rx1 + (rx2 - rx1) * 0.54,
+                mid = rx1 + (rx2 - rx1) * 0.44,
                 carX2 = mid - capR - 3,
                 bankX1 = mid + capR + 3,
                 load = g.cap > 0 ? Math.min(1, g.carried / g.cap) : 0,
@@ -4964,11 +5318,20 @@ import * as tutorial from './tutorial.js';
             drawBar(rx1, carX2, ry, height - 3 + config.graphical.barChunk, color.black);
             drawBar(rx1, carX2, ry, height - 3, color.grey);
             if (load > 0.004) drawBar(rx1, rx1 + (carX2 - rx1) * load, ry, height - 3.5, blink ? "#eb4034" : color.gold);
-            drawText("Carried: " + util.formatLargeNumber(g.carried | 0), (rx1 + carX2) / 2 + 0.5, ry + 6, 13, color.guiwhite, "center");
+            {
+                // text never leaves its pill: shrink to fit
+                const carTxt = "Carried: " + util.formatLargeNumber(g.carried | 0);
+                let cs2 = 13; while (cs2 > 9 && measureText(carTxt, cs2) > (carX2 - rx1) - 10) cs2 -= 0.5;
+                drawText(carTxt, (rx1 + carX2) / 2 + 0.5, ry + 6 - (13 - cs2) * 0.35, cs2, color.guiwhite, "center");
+            }
             drawBar(bankX1, rx2, ry, height - 3 + config.graphical.barChunk, color.black);
             drawBar(bankX1, rx2, ry, height - 3, color.grey);
             drawBar(bankX1, rx2, ry, height - 3.5, color.teal);
-            drawText("Banked: " + util.formatLargeNumber(g.banked | 0), (bankX1 + rx2) / 2 + 0.5, ry + 6, 13, color.guiwhite, "center");
+            {
+                const bankTxt = "Banked: " + util.formatLargeNumber(g.banked | 0);
+                let bs2 = 13; while (bs2 > 9 && measureText(bankTxt, bs2) > (rx2 - bankX1) - 10) bs2 -= 0.5;
+                drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, color.guiwhite, "center");
+            }
         }
         ctx[2].lineWidth = 4;
         var name = global.player.name.substring(7, global.player.name.length + 1);
@@ -5084,7 +5447,7 @@ import * as tutorial from './tutorial.js';
         global.clickables.vault.hide();
         if (belowMin) {
             hideVaultInput();
-            drawText("You need at least " + VAULT_MIN_DEPOSIT + " gem dust to cash out!",
+            drawText("Need at least " + VAULT_MIN_DEPOSIT + " dust to cash out.",
                      x + W / 2, y + 70, 12.5, "#ff9a8c", "center");
         } else if (active) {
             // ── channeling: gold progress + live count + cancel ──
@@ -5116,7 +5479,7 @@ import * as tutorial from './tutorial.js';
             global.clickables.vault.place(11, cbx * cr, cby * cr, cbw * cr, cbh * cr);
         } else {
             
-            drawText("How much dust do you want to cash out?", x + W / 2, y + 66, 12, color.guiwhite, "center");
+            drawText("How much dust to cash out?", x + W / 2, y + 66, 12, color.guiwhite, "center");
             const el = getVaultInput();
             const iw = 150, ih = 30;
             const ix = x + W / 2 - iw / 2 - 62, iy = y + 78;
@@ -5307,67 +5670,475 @@ import * as tutorial from './tutorial.js';
 
     // Flat player-body hex for tinting your own banners and cards, or null.
     function playerHexCol() {
-        const h = gameDraw.getColor(gui.color);
-        return (typeof h === "string" && h[0] === "#") ? h : null;
+        // gui.color arrives compiled ("11 0 1 0 false"); modifyColor resolves it
+        let h = null;
+        try { h = gameDraw.modifyColor(gui.color); } catch (e) { h = null; }
+        if (!(typeof h === "string" && h[0] === "#")) { const g2 = gameDraw.getColor(gui.color); h = (typeof g2 === "string" && g2[0] === "#") ? g2 : null; }
+        return h;
     }
+    window.dwGuiColor = () => ({ color: gui.color, hex: playerHexCol() });
 
-    function drawRoyaleHUD() {
-        if (!royaleActive()) return;
-        const r = global.royale;
-        const cx = global.screenWidth / 2;
-        drawText("RAID " + fmtRaidClock(r.raidLeft | 0) + "   ALIVE " + (r.alive | 0), cx, 30, 15, color.guiwhite, "center");
-        const st = r.storm || {};
-        if (st.a) {
-            const label = st.hold ? ("STORM HOLD " + (st.left | 0) + "s") : ("STORM SHRINKS " + (st.left | 0) + "s");
-            drawText(label + "  C" + ((st.c | 0) + 1), cx, 50, 13, st.hold ? color.gold : "#b678e0", "center");
+    // ═════════════════════════════════════════════════════════════════════
+    // Dig Royale HUD. One thing per screen region:
+    //   top centre   raid clock, storm + twist, your place, toast, boss bar
+    //   top right    standings, then the kill feed, then system notices
+    //   mid left     quest tracker
+    //   bottom left  kit box above the skill bars
+    //   centre       kill callouts (one at a time)
+    // ═════════════════════════════════════════════════════════════════════
+    const SHOP_TABS = [["drill", "Drills"], ["gear", "Gear"], ["kit", "Kit"], ["arm", "Sidearms"]];
+    const SHOP_ACCENT = "#5ce0d8";
+    const KIT_SHORT = { charge: "CHARGE", strut: "STRUT", medkit: "MEDKIT", overdrive: "OVERDRV", anchor: "ANCHOR", flash: "FLASH", bulwark: "BULWARK", decoy: "DECOY" };
+    const GEAR_TAG = { scanner: "SCN", magnet: "MAG", satchel: "SAT", insurance: "INS", cloak: "CLK", boots: "TRD", plating: "PLT", express: "EXP", mark: "MRK", wind: "WND" };
+    const shopGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
+    const kitGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
+    const bossGlide = Smoothbar(0, 2, 3, 0.08, 0.025, true);
+    let royaleFeedBottom = 0;
+    const GEM_ICON = [[-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95]];
+
+    function shopUiMode() { return royaleActive() || !!global.tutorialMode; }
+    function shopOpenWanted() {
+        return shopUiMode() && global.shop.onPad && !global.shop.dismissed && !global.died && !global.showBigMap;
+    }
+    function fmtNum(n) { return util.formatLargeNumber(Math.round(n || 0)); }
+    function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "k" : String(Math.round(d)); }
+    function gemPath(c, x, y, r) {
+        c.beginPath();
+        for (let i = 0; i < GEM_ICON.length; i++) {
+            const px = x + GEM_ICON[i][0] * r, py = y + GEM_ICON[i][1] * r;
+            i ? c.lineTo(px, py) : c.moveTo(px, py);
         }
-        if (r.lock) {
-            drawText("FINAL STORM - NO RESPAWNS " + Math.max(0, r.lockLeft | 0) + "s", cx, 90, 13, "#b678e0", "center");
-        } else if (r.toast) drawText(r.toast, cx, 90, 13, color.guiwhite, "center");
-        if (r.place > 0) drawText("#" + r.place + "  " + util.formatLargeNumber(r.youScore | 0) + " pts", cx, 70, 13, color.gold, "center");
-        else if (r.youScore > 0) drawText(util.formatLargeNumber(r.youScore | 0) + " pts", cx, 70, 13, color.gold, "center");
-        const objs = r.objectives || [];
-        for (let i = 0; i < Math.min(3, objs.length); i++) {
-            const o = objs[i];
-            if (o.kind !== "contest") continue;
-            drawText((o.name || "Outpost") + " contested", cx, 110 + i * 17, 12, o.c || color.gold, "center");
+        c.closePath();
+    }
+    function polyPath(c, x, y, r, n, rot = 0) {
+        c.beginPath();
+        for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + rot;
+            const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+            i ? c.lineTo(px, py) : c.moveTo(px, py);
         }
-        // Revenge bounty, loud and red under the top cluster: who pays double.
-        const rev = (r.you && r.you.revenge) || null;
-        if (rev && rev.alive) {
-            const blink = 0.75 + 0.25 * Math.sin(performance.now() / 280);
-            drawText("REVENGE ×2 — " + (rev.name || "Someone"), cx, 150, 14, "#e05b4a", "center", true, blink, 5);
+        c.closePath();
+    }
+    function wrapLines(text, size, maxW) {
+        const words = String(text || "").split(/\s+/);
+        const lines = [];
+        let cur = "";
+        for (const w of words) {
+            const t = cur ? cur + " " + w : w;
+            if (measureText(t, size) > maxW && cur) { lines.push(cur); cur = w; }
+            else cur = t;
         }
-        if (r.occupy > 0) {
-            drawText("Pad eject in " + r.occupy + "s", cx, global.screenHeight - 56, 16, color.gold, "center");
-        } else if (r.lockout > 0) {
-            drawText("Re-enter in " + r.lockout + "s", cx, global.screenHeight - 56, 16, color.guiwhite, "center");
-        }
-        const feed = r.feed || [];
-        for (let i = 0; i < feed.length; i++) {
-            const f = feed[feed.length - 1 - i];
-            if (!f) continue;
-            const y = 42 + i * 18;
-            const right = global.screenWidth - 18;
-            if (f.storm) {
-                drawText((f.name || "Someone") + " was lost in the storm", right, y, 13, color.guiwhite, "right");
-            } else if (f.rock) {
-                drawText((f.name || "Someone") + " was crushed by the rock", right, y, 13, color.guiwhite, "right");
-            } else if (f.revenge) {
-                drawText("§red§" + (f.by || "Someone") + "§reset§ avenged " + (f.name || "someone") + " ×2",
-                         right, y, 13, color.guiwhite, "right");
-            } else {
-                const verb = f.verb || "killed";
-                // Your own name wears your body color in the feed; everyone else stays gold.
-                const myHex = playerHexCol(), myName = global.playerName || "";
-                const byCol = (myHex && (f.by || "") === myName) ? myHex : "gold";
-                const vic = (myHex && (f.name || "") === myName)
-                    ? ("§" + myHex + "§" + f.name + "§reset§") : (f.name || "someone");
-                drawText("§" + byCol + "§" + (f.by || "Someone") + "§reset§ " + verb + " " + vic,
-                         right, y, 13, color.guiwhite, "right");
+        if (cur) lines.push(cur);
+        return lines;
+    }
+    function shortName(n, max) {
+        n = String(n || "Unnamed");
+        return n.length > max ? n.slice(0, max - 1) + "…" : n;
+    }
+    // Keybind labels change rarely; querying the DOM per frame does not pay.
+    const keyLabelCache = { at: 0, map: {} };
+    function keyLabel(id, dflt) {
+        const now = performance.now();
+        if (now - keyLabelCache.at > 1500) {
+            keyLabelCache.at = now;
+            keyLabelCache.map = {};
+            for (const k of ["KEY_UPGRADE_MIN", "KEY_KIT_1", "KEY_KIT_2", "KEY_KIT_3", "KEY_TOGGLE_MAP"]) {
+                const el = document.querySelector('#controlSettings b[data-key="' + k + '"]');
+                if (el && el.textContent) keyLabelCache.map[k] = el.textContent;
             }
         }
-        if (playerInStorm()) {
+        return keyLabelCache.map[id] || dflt;
+    }
+    // Off-screen indicator inside a HUD-safe frame: clear of the top cluster,
+    // the right-hand panels and the bottom row.
+    // "#rrggbb" / "#rgb" / "rgb(...)" to channels, for tinted gradients.
+    function toRgb(str) {
+        if (typeof str !== "string") return null;
+        let m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(str.trim());
+        if (m) {
+            let h = m[1];
+            if (h.length === 3) h = h.split("").map(ch => ch + ch).join("");
+            const n = parseInt(h, 16);
+            return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+        }
+        m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(str);
+        return m ? { r: +m[1], g: +m[2], b: +m[3] } : null;
+    }
+    // Interpolated world positions for things the raid packet reports only
+    // twice a second (boss, revenge target, marked streakers): extrapolate
+    // along the last observed velocity and ease onto it, so markers and
+    // minimap dots move at frame rate instead of stepping every 500ms.
+    const posTracks = new Map();
+    function trackPos(key, x, y, maxSpeed = 0.6) {
+        const now = performance.now();
+        let t = posTracks.get(key);
+        if (!t || !isFinite(t.sx) || !isFinite(t.sy)) {
+            t = { tx: x, ty: y, vx: 0, vy: 0, at: now, sx: x, sy: y, last: now };
+            posTracks.set(key, t);
+            return { x, y };
+        }
+        if (x !== t.tx || y !== t.ty) {
+            const dt = Math.max(80, now - t.at);
+            if (Math.hypot(x - t.tx, y - t.ty) > 1200) { t.vx = 0; t.vy = 0; t.sx = x; t.sy = y; }
+            else {
+                t.vx = Math.max(-maxSpeed, Math.min(maxSpeed, (x - t.tx) / dt));
+                t.vy = Math.max(-maxSpeed, Math.min(maxSpeed, (y - t.ty) / dt));
+            }
+            t.tx = x; t.ty = y; t.at = now;
+        }
+        const age = Math.min(700, now - t.at);
+        const px = t.tx + t.vx * age, py = t.ty + t.vy * age;
+        const fdt = Math.min(100, now - t.last);
+        t.last = now;
+        const k = 1 - Math.pow(0.82, fdt / 16.7);
+        t.sx += (px - t.sx) * k;
+        t.sy += (py - t.sy) * k;
+        return { x: t.sx, y: t.sy };
+    }
+    let trackSweepAt = 0;
+    function sweepTracks() {
+        const now = performance.now();
+        if (now - trackSweepAt < 5000) return;
+        trackSweepAt = now;
+        for (const [k, t] of posTracks) if (now - t.last > 4000) posTracks.delete(k);
+    }
+    function drawSkull(c, x, y, r, col) {
+        c.save();
+        c.translate(x, y);
+        c.fillStyle = col;
+        c.strokeStyle = color.black;
+        c.lineWidth = Math.max(1.5, r * 0.18);
+        c.lineJoin = "round";
+        // cranium + jaw
+        c.beginPath();
+        c.arc(0, -r * 0.12, r, Math.PI * 0.78, Math.PI * 2.22);
+        c.lineTo(r * 0.5, r * 0.62);
+        c.lineTo(r * 0.5, r * 0.98);
+        c.lineTo(-r * 0.5, r * 0.98);
+        c.lineTo(-r * 0.5, r * 0.62);
+        c.closePath();
+        c.fill();
+        c.stroke();
+        // eyes and nose
+        c.fillStyle = color.black;
+        c.beginPath();
+        c.arc(-r * 0.38, -r * 0.1, r * 0.25, 0, Math.PI * 2);
+        c.arc(r * 0.38, -r * 0.1, r * 0.25, 0, Math.PI * 2);
+        c.fill();
+        c.beginPath();
+        c.moveTo(0, r * 0.22); c.lineTo(-r * 0.13, r * 0.5); c.lineTo(r * 0.13, r * 0.5); c.closePath();
+        c.fill();
+        // teeth
+        c.strokeStyle = color.black;
+        c.lineWidth = Math.max(1, r * 0.1);
+        for (const tx of [-0.25, 0, 0.25]) {
+            c.beginPath(); c.moveTo(tx * r, r * 0.66); c.lineTo(tx * r, r * 0.98); c.stroke();
+        }
+        c.restore();
+    }
+    // Panels an edge marker must not sit on. The standings rect and the top
+    // cluster are recorded by the functions that draw them.
+    let standingsRect = null;
+    let hudTopBottom = 60;
+    function hudAvoidRects() {
+        const sw = global.screenWidth, sh = global.screenHeight;
+        const out = [];
+        if (standingsRect) out.push(standingsRect);
+        out.push({ x: sw / 2 - 240, y: 0, w: 480, h: hudTopBottom + 6 });
+        out.push({ x: sw / 2 - 250, y: sh - 112, w: 500, h: 112 });   // name + wallet row
+        out.push({ x: 0, y: sh - 357, w: 232, h: 357 });
+        out.push({ x: sw - 252, y: sh - 262, w: 252, h: 262 });
+        // class-upgrade tiles and the quest card under them
+        if ((global.upgradeBoxBottom | 0) > 0) out.push({ x: 0, y: 0, w: 280, h: global.upgradeBoxBottom + 8 });
+        if (questRect) out.push(questRect);
+        if (overrideRect) out.push(overrideRect);
+        return out;
+    }
+    // Step a point out of a panel by the shortest move that stays on screen
+    // (a panel on the bottom edge must push the marker UP, not off-screen).
+    function nudgeOut(p, r, b) {
+        if (p.x < r.x || p.x > r.x + r.w || p.y < r.y || p.y > r.y + r.h) return;
+        // Wide panels (wallet row, top cluster, standings) are left by
+        // moving vertically, tall ones (skill bars, minimap) horizontally:
+        // sliding along a wide panel only parks the label beside it.
+        const vert = [
+            { x: p.x, y: r.y - 3, d: p.y - r.y },
+            { x: p.x, y: r.y + r.h + 3, d: r.y + r.h - p.y },
+        ];
+        const horiz = [
+            { x: r.x - 3, y: p.y, d: p.x - r.x },
+            { x: r.x + r.w + 3, y: p.y, d: r.x + r.w - p.x },
+        ];
+        const inB = c => c.x >= b.left && c.x <= b.right && c.y >= b.top && c.y <= b.bottom;
+        let cands = (r.w >= r.h ? vert : horiz).filter(inB);
+        if (!cands.length) cands = (r.w >= r.h ? horiz : vert).filter(inB);
+        if (!cands.length) return;
+        cands.sort((a, c) => a.d - c.d);
+        p.x = cands[0].x;
+        p.y = cands[0].y;
+    }
+    // Where the ray from screen centre toward an off-screen point meets the
+    // screen edge (a small margin in), stepped off any HUD panel it lands on.
+    function edgePoint(dx, dy) {
+        const sw = global.screenWidth, sh = global.screenHeight;
+        const left = 16, right = sw - 16, top = 16, bottom = sh - 20;
+        const cx = sw / 2, cy = sh / 2;
+        const ang = Math.atan2(dy, dx);
+        const c = Math.cos(ang), s = Math.sin(ang);
+        const tx = c > 0 ? (right - cx) / c : c < 0 ? (left - cx) / c : Infinity;
+        const ty = s > 0 ? (bottom - cy) / s : s < 0 ? (top - cy) / s : Infinity;
+        const t = Math.max(0, Math.min(tx, ty));
+        const p = { x: cx + c * t, y: cy + s * t, ang };
+        const bounds = { left, right, top, bottom };
+        for (const r of hudAvoidRects()) nudgeOut(p, r, bounds);
+        p.x = Math.max(left, Math.min(right, p.x));
+        p.y = Math.max(top, Math.min(bottom, p.y));
+        return p;
+    }
+    // Soft light under every chest so they read from far away.
+    function drawChestGlow(roomX, roomY, ratio) {
+        if (!royaleActive() || global.lowFx) return;
+        const list = (global.royale && global.royale.chests) || [];
+        if (!list.length) return;
+        const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
+        const c = ctx[0];
+        const now = performance.now();
+        for (const ch of list) {
+            const sx = roomX + (ch.x + halfW) * ratio, sy = roomY + (ch.y + halfH) * ratio;
+            const R = (ch.rare ? 100 : 78) * ratio;
+            if (sx < -R || sx > global.screenWidth + R || sy < -R || sy > global.screenHeight + R) continue;
+            const pulse = 0.5 + 0.5 * Math.sin(now / 700 + (ch.id | 0));
+            let a = 0.7 + 0.3 * pulse;
+            const gone = ch.e != null ? chestGoneAt.get(ch.e) : undefined;
+            if (gone !== undefined) { a *= Math.max(0, 1 - (now - gone) / 150); if (a <= 0) continue; }
+            const spr = haloSprite(ch.rare ? "chest-e" : "chest-c", ch.rare ? "220,140,248" : "240,160,96", [[0, 0.40], [0.55, 0.11], [1, 0]]);
+            c.save();
+            c.globalAlpha = a;
+            c.drawImage(spr, sx - R, sy - R, R * 2, R * 2);
+            c.restore();
+        }
+    }
+    // ── floor layer: shop pads, bloom glow, event zones ────────────────
+    function drawShops(roomX, roomY, ratio) {
+        if (!global.shops.length || !(royaleMode() || global.tutorialMode)) return;
+        const now = performance.now();
+        const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
+        const c = ctx[0];
+        const spr = getVaultSpritesForColor(SHOP_ACCENT);
+        for (const s of global.shops) {
+            const sx = roomX + (s.x + halfW) * ratio, sy = roomY + (s.y + halfH) * ratio;
+            const R = (s.r || 95) * ratio;
+            if (sx < -R * 2 || sx > global.screenWidth + R * 2 || sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
+            const mine = global.shop.onPad && global.shop.padId === s.id;
+            const pulse = 0.5 + 0.5 * Math.sin(now / 650 + s.id);
+            c.save();
+            c.translate(sx, sy);
+            // drop shadow, then the flat hexagonal foundation (the hitbox)
+            c.fillStyle = "rgba(0,0,0,0.5)";
+            polyPath(c, 3, 5, R * 1.16, 6, Math.PI / 6); c.fill();
+            polyPath(c, 0, 0, R * 1.16, 6, Math.PI / 6);
+            c.fillStyle = "#16181e"; c.fill();
+            c.globalAlpha = 0.35; c.fillStyle = SHOP_ACCENT; c.fill(); c.globalAlpha = 1;
+            c.lineJoin = "round";
+            c.lineWidth = Math.max(3, R * 0.07); c.strokeStyle = SHOP_ACCENT; c.stroke();
+            c.lineWidth = Math.max(2, R * 0.03); c.strokeStyle = "#0d0f14"; c.stroke();
+            if (!global.lowFx) {
+                const auraR = R * (1.30 + 0.08 * pulse);
+                const halo = haloSprite("aura|92,224,216", "92,224,216", [[0.42, 1], [1, 0]]);
+                c.save();
+                c.globalAlpha = 0.16 + 0.08 * pulse + (mine ? 0.12 : 0);
+                c.drawImage(halo, -auraR, -auraR, auraR * 2, auraR * 2);
+                c.restore();
+            }
+            // claim ring: hexagonal, dashed and turning while you stand on it
+            c.globalAlpha = mine ? 0.9 : 0.55 + 0.2 * pulse;
+            c.lineWidth = Math.max(2.5, R * 0.055);
+            c.strokeStyle = mine ? "#ffffff" : SHOP_ACCENT;
+            if (mine) { c.setLineDash([R * 0.18, R * 0.12]); c.lineDashOffset = -now / 45; }
+            polyPath(c, 0, 0, R * 1.0, 6, Math.PI / 6); c.stroke();
+            c.setLineDash([]); c.globalAlpha = 1;
+            // armoured plate and a slow gem wheel, same sprites as the vault
+            const pr = R * 0.66;
+            c.drawImage(spr.plate, -pr, -pr, pr * 2, pr * 2);
+            c.save();
+            c.rotate(now / 6000 + s.id);
+            c.drawImage(spr.wheel, -pr, -pr, pr * 2, pr * 2);
+            c.restore();
+            // the coin: what this pad is for
+            const cr = R * 0.24;
+            c.beginPath(); c.arc(0, 0, cr, 0, Math.PI * 2);
+            c.fillStyle = "#1b2430"; c.fill();
+            c.lineWidth = Math.max(2, R * 0.04); c.strokeStyle = SHOP_ACCENT; c.stroke();
+            gemPath(c, 0, cr * 0.05, cr * 0.62);
+            c.fillStyle = color.gold; c.fill();
+            c.lineWidth = Math.max(1, R * 0.02); c.strokeStyle = "#5a4310"; c.stroke();
+            c.restore();
+            drawText("SHOP", sx, sy - R * 1.36, Math.max(11, R * 0.17), SHOP_ACCENT, "center", true, 1, 5, ctx[0]);
+            drawText(String(s.name || "").replace(" Shop", "").toUpperCase(), sx, sy + R * 1.44, Math.max(9, R * 0.12), "#b9c3d1", "center", true, 1, 5, ctx[0]);
+        }
+    }
+
+    function drawBloomGlow(roomX, roomY, ratio) {
+        if (!royaleActive()) return;
+        const b = global.royale.bloom;
+        if (!b || !(b.until > Date.now())) return;
+        const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
+        const sx = roomX + (b.x + halfW) * ratio, sy = roomY + (b.y + halfH) * ratio;
+        const R = (b.r || 340) * ratio;
+        if (sx < -R * 2 || sx > global.screenWidth + R * 2 || sy < -R * 2 || sy > global.screenHeight + R * 2) return;
+        const now = performance.now();
+        const pulse = 0.5 + 0.5 * Math.sin(now / 520);
+        const left = Math.max(0, (b.until - Date.now()) / 1000);
+        const fade = Math.min(1, left / 8);
+        const c = ctx[0];
+        c.save();
+        if (!global.lowFx) {
+            const spr = haloSprite("bloom", "255,205,90", [[0, 1], [0.7, 0.46], [1, 0]]);
+            c.globalAlpha = (0.28 + 0.10 * pulse) * fade;
+            const rr = R * 1.15;
+            c.drawImage(spr, sx - rr, sy - rr, rr * 2, rr * 2);
+        }
+        c.globalAlpha = (0.45 + 0.35 * pulse) * fade;
+        c.strokeStyle = "#ffd76e";
+        c.lineWidth = Math.max(2, 5 * ratio);
+        c.setLineDash([R * 0.12, R * 0.08]);
+        c.lineDashOffset = -now / 25;
+        c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2); c.stroke();
+        c.restore();
+        drawText("ORE BLOOM  " + Math.ceil(left) + "s", sx, sy - R - 14 * ratio, Math.max(11, 16 * ratio), "#ffd76e", "center", true, fade, 5, ctx[0]);
+    }
+
+    function drawEventZone(roomX, roomY, ratio) {
+        if (!royaleActive()) return;
+        const ev = global.royale.event;
+        if (!ev || !(ev.until > Date.now())) return;
+        const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
+        const sx = roomX + (ev.x + halfW) * ratio, sy = roomY + (ev.y + halfH) * ratio;
+        const R = (ev.r || 380) * ratio;
+        if (sx < -R * 2 || sx > global.screenWidth + R * 2 || sy < -R * 2 || sy > global.screenHeight + R * 2) return;
+        const now = performance.now();
+        const warn = Date.now() < ev.liveAt;
+        const meteor = ev.kind === "meteor";
+        const col = meteor ? (warn ? "#ff6c3a" : "#ffb07a") : "#7fb1f2";
+        const c = ctx[0];
+        c.save();
+        c.globalAlpha = warn ? 0.35 + 0.35 * Math.abs(Math.sin(now / 160)) : 0.3;
+        c.strokeStyle = col;
+        c.lineWidth = Math.max(2, 6 * ratio);
+        c.setLineDash([R * 0.1, R * 0.07]);
+        c.lineDashOffset = now / 30;
+        c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2); c.stroke();
+        c.setLineDash([]);
+        c.globalAlpha = 0.08;
+        c.fillStyle = col;
+        c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2); c.fill();
+        c.restore();
+        const label = meteor ? (warn ? "METEORS IN " + Math.ceil((ev.liveAt - Date.now()) / 1000) : "METEOR SHOWER") : (warn ? "GEM RAIN IN " + Math.ceil((ev.liveAt - Date.now()) / 1000) : "GEM RAIN");
+        drawText(label, sx, sy - R - 14 * ratio, Math.max(11, 16 * ratio), col, "center", true, 1, 5, ctx[0]);
+    }
+
+    // ── top cluster ────────────────────────────────────────────────────
+    // Each region draws inside its own guard: a failure in one panel logs
+    // once and shows a small red note instead of blanking the whole HUD.
+    const hudErrLogged = new Set();
+    let hudErrText = "";
+    function hudSafe(label, fn) {
+        try { fn(); } catch (e) {
+            hudErrText = label + ": " + (e && e.message || e);
+            if (!hudErrLogged.has(label)) { hudErrLogged.add(label); console.error("[HUD] " + label + " failed", e); }
+        }
+    }
+    let hudWaitSince = 0;
+    // Automatic effects trim: when frames stay slow for a few seconds the
+    // halos, vignettes and half the debris go away; they come back once the
+    // frame rate has been healthy for a while. Resolution never changes.
+    const fxQ = { last: 0, ema: 16.7, slowSince: 0, fastSince: 0 };
+    function tickAdaptiveQuality() {
+        const now = performance.now();
+        if (fxQ.last) {
+            const dt = Math.min(250, now - fxQ.last);
+            fxQ.ema = fxQ.ema * 0.9 + dt * 0.1;
+        }
+        fxQ.last = now;
+        if (document.hidden) return;
+        if (fxQ.ema > 34) { fxQ.fastSince = 0; if (!fxQ.slowSince) fxQ.slowSince = now; }
+        else if (fxQ.ema < 20) { fxQ.slowSince = 0; if (!fxQ.fastSince) fxQ.fastSince = now; }
+        else { fxQ.slowSince = 0; fxQ.fastSince = 0; }
+        if (!global.lowFx && fxQ.slowSince && now - fxQ.slowSince > 3000) { global.lowFx = true; fxQ.slowSince = 0; }
+        if (global.lowFx && fxQ.fastSince && now - fxQ.fastSince > 6000) { global.lowFx = false; fxQ.fastSince = 0; }
+    }
+    function drawRoyaleHUD() {
+        const cx = global.screenWidth / 2;
+        const now = performance.now();
+        if (!royaleActive()) {
+            // Raid data has not arrived yet: say so rather than show nothing.
+            if (global.digRoyaleMode && global.gameStart && !global.tutorialMode) {
+                if (!hudWaitSince) hudWaitSince = now;
+                else if (now - hudWaitSince > 4000) drawText("Waiting for raid data...", cx, 30, 13, color.grey, "center");
+            }
+            return;
+        }
+        hudWaitSince = 0;
+        hudErrText = "";
+        tickAdaptiveQuality();
+        const r = global.royale;
+        if (!global.died) spectateBarBottom = 0;
+        const top0 = global.died && spectateBarBottom > 0 ? spectateBarBottom : 0;
+        let y = 50 + top0;
+        hudSafe("top", () => {
+            drawText("RAID " + fmtRaidClock(r.raidLeft | 0) + "     ALIVE " + (r.alive | 0), cx, 28 + top0, 15, color.guiwhite, "center", true);
+            const st = r.storm || {};
+            if (st.a) {
+                drawText(st.hold ? ("Storm holding for " + (st.left | 0) + "s") : ("Storm closes in " + fmtRaidClock(st.left | 0)), cx, y, 12, st.hold ? color.gold : "#b678e0", "center", true);
+                y += 18;
+            }
+            y += 3;
+            if (r.place > 0) drawText("#" + r.place + "   ·   " + fmtNum(r.youScore | 0) + " pts", cx, y, 13, color.gold, "center", true);
+            else if (r.youScore > 0) drawText(fmtNum(r.youScore | 0) + " pts", cx, y, 13, color.gold, "center", true);
+            y += 21;
+            if (r.lock) { drawText("Final storm, " + Math.max(0, r.lockLeft | 0) + "s left. Nobody respawns now.", cx, y, 12.5, "#b678e0", "center", true); y += 20; }
+            else if (r.toast) { drawText(r.toast, cx, y, 12.5, color.guiwhite, "center", true); y += 20; }
+        });
+        hudSafe("boss", () => {
+            bossGlide.set(r.boss ? 1 : 0);
+            const bg = bossGlide.get();
+            // the row is reserved in full while the bar is visible: alpha
+            // fades, nothing below it slides
+            if (bg > 0.02) { drawBossBar(cx, y, bg); y += BOSS_H + BOSS_GAP; }
+        });
+        hudSafe("status", () => {
+            const objs = r.objectives || [];
+            for (let i = 0; i < Math.min(2, objs.length); i++) {
+                const o = objs[i];
+                if (o.kind !== "contest") continue;
+                drawText((o.name || "Outpost") + " contested", cx, y, 12, o.c || color.gold, "center", true);
+                y += 18;
+            }
+            const myStreak = (r.you && r.you.streak) | 0;
+            if (myStreak >= 4 && !global.died) {
+                const blink = 0.7 + 0.3 * Math.sin(now / 240);
+                drawText(myStreak + " kill streak. You're marked on everyone's map", cx, y, 12, "#ffb347", "center", true, blink, 5);
+                y += 18;
+            }
+            const you = r.you || {};
+            if (you.overdrive > 0 || you.anchor > 0) {
+                const parts = [];
+                if (you.overdrive > 0) parts.push("OVERDRIVE " + you.overdrive + "s");
+                if (you.anchor > 0) parts.push("STORM ANCHOR " + you.anchor + "s");
+                drawText(parts.join("   "), cx, y, 12, color.teal, "center", true);
+                y += 18;
+            }
+            if (r.occupy > 0) drawText("You can stay " + r.occupy + "s longer", cx, global.screenHeight - 56, 15, color.gold, "center");
+            else if (r.lockout > 0) drawText("You can come back in " + r.lockout + "s", cx, global.screenHeight - 56, 15, color.guiwhite, "center");
+        });
+        hudTopBottom = y;
+        let standBottom = 36;
+        hudSafe("standings", () => { standBottom = drawRoyaleStandings(); });
+        hudSafe("feed", () => drawRoyaleFeed(standBottom + 14));
+        hudSafe("quest", drawQuestCard);
+        hudSafe("override", drawOverrideCard);
+        hudSafe("storm", () => {
+            if (!playerInStorm()) return;
             const c = ctx[2];
             c.save();
             c.fillStyle = "rgba(160, 35, 35, 0.28)";
@@ -5376,9 +6147,1163 @@ import * as tutorial from './tutorial.js';
             c.fillRect(0, 0, 10, global.screenHeight);
             c.fillRect(global.screenWidth - 10, 0, 10, global.screenHeight);
             c.restore();
+        });
+        if (hudErrText) drawText("HUD error: " + hudErrText, cx, global.screenHeight - 78, 11, "#ff7a6b", "center");
+    }
+    const BOSS_H = 50, BOSS_GAP = 8;
+    let spectateBarBottom = 0;   // the top cluster starts under the spectate bar while dead
+    function drawBossBar(cx, y, a) {
+        const b = global.royale.boss || global._lastBoss;
+        if (!b) return;
+        global._lastBoss = b;
+        const c = ctx[2];
+        const W = Math.min(400, global.screenWidth - 60), H = BOSS_H;
+        const x = cx - W / 2;
+        const col = b.c || "#c9a8ff";
+        const dist = Math.hypot((b.x || 0) - global.player.renderx, (b.y || 0) - global.player.rendery);
+        c.save();
+        c.globalAlpha = a;
+        roundRectPath(c, x, y, W, H, 10);
+        c.fillStyle = "rgba(14,12,20,0.9)";
+        c.fill();
+        c.lineWidth = 2;
+        c.strokeStyle = col;
+        c.stroke();
+        polyPath(c, x + 18, y + 13, 8, 8, Math.PI / 8);
+        c.fillStyle = col; c.fill();
+        c.strokeStyle = color.black; c.lineWidth = 1.5; c.stroke();
+        c.restore();
+        // three fixed rows: name and bounty, health bar, percent and range
+        const gemsTxt = fmtNum(b.gems) + " GEMS";
+        const gemsW = measureText(gemsTxt, 11.5);
+        fitText(String(b.name || "Boss").toUpperCase(), x + 34 + (W - 34 - gemsW - 24) / 2, y + 13, 12.5, W - 34 - gemsW - 24, col);
+        drawText(gemsTxt, x + W - 12, y + 13, 11.5, color.gold, "right", true, a);
+        const bx = x + 12, bw = W - 24, byc = y + 27, bh = 9;
+        c.save();
+        c.globalAlpha = a;
+        drawBar(bx, bx + bw, byc, bh + config.graphical.barChunk, color.black);
+        drawBar(bx, bx + bw, byc, bh, "#2c2434");
+        const hp = Math.max(0, Math.min(1, b.hp || 0));
+        if (hp > 0) drawBar(bx, bx + Math.max(4, bw * hp), byc, bh - 1, hp > 0.5 ? col : hp > 0.2 ? color.gold : "#eb4034");
+        if (b.sh > 0.01) {
+            c.globalAlpha = a * 0.55;
+            drawBar(bx, bx + Math.max(3, bw * b.sh), byc, bh - 3, color.teal);
+        }
+        c.restore();
+        drawText(Math.round(hp * 100) + "%", bx, y + 42, 10, color.grey, "left", true, a);
+        if (isFinite(dist) && dist < 1e6) drawText(fmtDist(dist) + " away", bx + bw, y + 42, 10, color.grey, "right", true, a);
+    }
+
+    // ── race panel: top three plus you, with your gap to first ──────────
+    const standingsFit = new Map();
+    function drawRoyaleStandings() {
+        const r = global.royale;
+        const board = r.board || [];
+        if (!board.length) { standingsRect = null; return 36; }
+        const W = Math.min(262, global.screenWidth * 0.3), rowH = 20;
+        const x = global.screenWidth - 18 - W, y0 = 36;
+        const myPlace = r.place | 0;
+        const top = board.slice(0, 3);
+        const me = myPlace > 3 ? board.find(row => row.place === myPlace) : null;
+        const rows = me ? top.concat([me]) : top;
+        const H = 26 + rows.length * rowH + (myPlace > 1 ? 18 : 8);
+        standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: H + 16 };
+        const c = ctx[2];
+        c.save();
+        roundRectPath(c, x, y0, W, H, 9);
+        c.fillStyle = "rgba(12,13,18,0.84)";
+        c.fill();
+        c.lineWidth = 1.5;
+        c.strokeStyle = "rgba(255,255,255,0.10)";
+        c.stroke();
+        c.fillStyle = "rgba(255,255,255,0.06)";
+        c.fillRect(x + 10, y0 + 20, W - 20, 1);
+        c.restore();
+        drawText("STANDINGS", x + 10, y0 + 11, 10, color.grey, "left", true);
+        drawText("PTS", x + W - 10, y0 + 11, 10, color.grey, "right", true);
+        const myHex = playerHexCol() || color.gold;
+        let ry = y0 + 26;
+        for (const row of rows) {
+            const isMe = row.place === myPlace && myPlace > 0;
+            // your row: only the name changes colour, no band behind it
+            const nameCol = isMe ? myHex : color.guiwhite;
+            const rankCol = row.place === 1 ? color.gold : row.place === 2 ? "#d8dce6" : row.place === 3 ? "#c9955a" : color.grey;
+            const rowMid = ry + rowH / 2 - 1;
+            drawText("#" + row.place, x + 12, rowMid, 11, rankCol, "left", true);
+            const scoreTxt = fmtNum(row.score | 0);
+            const scoreW = measureText(scoreTxt, 12);
+            const nameTxt = shortName(row.name, 18) + (row.streak >= 4 ? "  §#ff7a6b§x" + row.streak : "");
+            const plain = shortName(row.name, 18) + (row.streak >= 4 ? "  x" + row.streak : "");
+            // shrink-to-fit is measured once per row per name width, not per frame
+            const fitKey = plain + "|" + ((W - 40 - scoreW - 22) | 0);
+            let ns = standingsFit.get(fitKey);
+            if (ns === undefined) {
+                ns = 12; while (ns > 8 && measureText(plain, ns) > W - 40 - scoreW - 22) ns -= 0.5;
+                if (standingsFit.size > 64) standingsFit.clear();
+                standingsFit.set(fitKey, ns);
+            }
+            drawText(nameTxt, x + 40, rowMid, ns, nameCol, "left", true);
+            drawText(scoreTxt, x + W - 10, rowMid, 12, nameCol, "right", true);
+            ry += rowH;
+        }
+        if (myPlace > 1 && top[0]) {
+            const gap = (top[0].score | 0) - (r.youScore | 0);
+            drawText(fmtNum(gap) + " behind #1", x + W - 10, ry + 7, 10, color.grey, "right", true);
+        }
+        return y0 + H;
+    }
+
+    // ── kill feed: one line, one badge at most, quiet ───────────────────
+    function feedLine(f) {
+        const myHex = playerHexCol(), myName = global.playerName || "";
+        const tag = (n, col) => "§" + col + "§" + n + "§reset§";
+        const who = (n, dflt, max = 13) => {
+            const nm = shortName(n || dflt, max);
+            return (myHex && (n || "") === myName) ? tag(nm, myHex) : nm;
+        };
+        let badge = null;
+        if (f.boss) {
+            const nm = tag(f.name || "Boss", f.c || "#c9a8ff");
+            if (f.spawn) return { text: nm + " has surfaced", badge: null };
+            if (f.gone) return { text: nm + " burrowed away", badge: null };
+            if (f.slain) return { text: tag(shortName(f.by || "The wall", 14), (myHex && (f.by || "") === myName) ? myHex : color.gold) + " took down " + nm, badge: f.pts ? { t: "+" + fmtNum(f.pts), col: color.gold } : null };
+        }
+        if (f.chest) return { text: who(f.name, "Someone") + " cracked an epic chest", badge: null };
+        if (f.bloom) return { text: "Ore bloom in " + (f.name || "the wall"), badge: null };
+        if (f.event) return { text: f.kind === "meteor" ? "Meteor shower over " + (f.name || "the map") : "Gem rain over the safe zone", badge: null };
+        if (f.storm) return { text: who(f.name, "Someone") + " got caught by the storm", badge: null };
+        if (f.rock) return { text: who(f.name, "Someone") + " got crushed by the wall", badge: null };
+        const vic = who(f.name, "someone");
+        if (f.verb === "was devoured by") return { text: vic + " fed the " + tag(shortName(f.by || "boss", 16), "#c9a8ff"), badge: null };
+        const byCol = (myHex && (f.by || "") === myName) ? myHex : "gold";
+        const text = tag(shortName(f.by || "Someone", 13), byCol) + "  ›  " + vic;
+        if (f.shutdown) badge = { t: "SHUTDOWN", col: "#ff9a5a" };
+        else if (f.streak >= 4) badge = { t: "x" + f.streak, col: "#ff7a6b" };
+        else if (f.loot) badge = { t: "+" + fmtNum(f.loot), col: color.teal };
+        return { text, badge };
+    }
+
+    function drawRoyaleFeed(yTop) {
+        const feed = (global.royale.feed || []).slice(-6);
+        const now = Date.now();
+        const right = global.screenWidth - 18;
+        let y = yTop;
+        const c = ctx[2];
+        for (let i = feed.length - 1; i >= 0; i--) {
+            const f = feed[i];
+            if (!f) continue;
+            const age = now - (f.at || now);
+            if (age > 11000) continue;
+            const a = age > 8500 ? Math.max(0.12, 1 - (age - 8500) / 2500) : 1;
+            const line = feedLine(f);
+            let bx = right;
+            if (line.badge) {
+                const bw = measureText(line.badge.t, 9.5) + 12;
+                c.save();
+                c.globalAlpha = a;
+                roundRectPath(c, right - bw, y + 1, bw, 15, 4);
+                c.fillStyle = "rgba(12,13,18,0.85)";
+                c.fill();
+                c.lineWidth = 1;
+                c.strokeStyle = line.badge.col;
+                c.stroke();
+                c.restore();
+                drawText(line.badge.t, right - bw / 2, y + 9, 9.5, line.badge.col, "center", true, a);
+                bx = right - bw - 8;
+            }
+            drawText(String(line.text).replace(/§reset§$/, ""), bx, y + 9, 12, color.guiwhite, "right", true, a, 5);
+            y += 21;
+        }
+        royaleFeedBottom = y;
+    }
+
+    // ── quest tracker ──────────────────────────────────────────────────
+    let questRect = null, overrideRect = null;
+    // ── raid override card: this raid's twist and what it does, in the same
+    // tile language as the quest card, right under it
+    function drawOverrideCard() {
+        const r = global.royale;
+        const mod = r.mod;
+        if (!mod || !mod.name || global.died) { overrideRect = null; return; }
+        const W = 214;
+        const lines = wrapLines(String(mod.desc || ""), 10, W - 20).slice(0, 3);
+        const H = 44 + lines.length * 13;
+        const kitTop = global.screenHeight - 342;
+        let y;
+        if (questRect) y = questRect.y + questRect.h;
+        else {
+            const tilesBottom = (global.upgradeBoxBottom | 0) > 0 ? global.upgradeBoxBottom + 12 : 0;
+            y = Math.round(Math.min(Math.max(global.screenHeight * 0.42, 330, tilesBottom), kitTop - 70));
+        }
+        if (y + H > kitTop - 6) y = kitTop - 6 - H;
+        const x = 20;
+        overrideRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
+        const c = ctx[2];
+        c.save();
+        roundRectPath(c, x, y, W, H, 9);
+        c.fillStyle = "rgba(12,13,18,0.84)";
+        c.fill();
+        c.lineWidth = 1.5;
+        c.strokeStyle = "rgba(201,168,255,0.5)";
+        c.stroke();
+        c.restore();
+        drawText("THIS RAID'S OVERRIDE", x + 10, y + 12, 10, color.grey, "left", true);
+        drawText(String(mod.name).toUpperCase(), x + 10, y + 28, 12.5, "#c9a8ff", "left", true);
+        let ly = y + 44;
+        for (const ln of lines) { drawText(ln, x + 10, ly, 10, "#b9c3d1", "left", true); ly += 13; }
+    }
+    function drawQuestCard() {
+        const r = global.royale;
+        const q = r.you && r.you.quest;
+        if (!q || global.died) { questRect = null; return; }
+        const W = 214, H = 54;
+        // below the class-upgrade tiles when they are open, above the kit box
+        const kitTop = global.screenHeight - 342;
+        const tilesBottom = (global.upgradeBoxBottom | 0) > 0 ? global.upgradeBoxBottom + 12 : 0;
+        const x = 20, y = Math.round(Math.min(Math.max(global.screenHeight * 0.42, 330, tilesBottom), kitTop - 70));
+        questRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
+        const c = ctx[2];
+        c.save();
+        roundRectPath(c, x, y, W, H, 9);
+        c.fillStyle = "rgba(12,13,18,0.84)";
+        c.fill();
+        c.lineWidth = 1.5;
+        c.strokeStyle = "rgba(110,206,220,0.45)";
+        c.stroke();
+        c.restore();
+        drawText("QUEST " + ((q.idx | 0) + 1) + "/" + (q.total | 0), x + 10, y + 12, 10, color.grey, "left", true);
+        drawText("+" + fmtNum(q.reward) + " gems", x + W - 10, y + 12, 10, color.teal, "right", true);
+        // progress first, then the quest text gets whatever width is left
+        const progTxt = fmtNum(q.prog || 0) + " / " + fmtNum(q.goal);
+        const progW = measureText(progTxt, 10);
+        const maxTW = W - 20 - progW - 8;
+        let qs = 12, txt = String(q.text || "");
+        while (qs > 9.5 && measureText(txt, qs) > maxTW) qs -= 0.5;
+        if (measureText(txt, qs) > maxTW) {
+            while (txt.length > 2 && measureText(txt + "…", qs) > maxTW) txt = txt.slice(0, -1);
+            txt += "…";
+        }
+        drawText(txt, x + 10, y + 29, qs, color.guiwhite, "left", true);
+        drawText(progTxt, x + W - 10, y + 29, 10, color.grey, "right", true);
+        const bx = x + 10, bw = W - 20, by = y + 40, bh = 6;
+        drawBar(bx, bx + bw, by + bh / 2, bh + 3, color.black);
+        drawBar(bx, bx + bw, by + bh / 2, bh, "#2a2e38");
+        const frac = q.goal > 0 ? Math.min(1, (q.prog || 0) / q.goal) : 0;
+        if (frac > 0) drawBar(bx, bx + Math.max(3, bw * frac), by + bh / 2, bh - 1, color.teal);
+    }
+
+    // ── centre callouts ────────────────────────────────────────────────
+    function drawKillCallouts() {
+        const list = global.callouts;
+        if (!list || !list.length) return;
+        if (!shopUiMode()) { list.length = 0; return; }
+        const now = performance.now();
+        const DUR0 = 2300;
+        const c = ctx[2];
+        const cx = global.screenWidth / 2, cy = Math.round(global.screenHeight * 0.37);
+        for (let k = list.length - 1; k >= 0; k--) {
+            const t = list[k];
+            const DUR = t.dur || DUR0;
+            const age = now - t.born;
+            if (age > DUR) { list.splice(k, 1); continue; }
+            if (age < 0) continue;
+            const inT = Math.min(1, age / 160);
+            const outT = age > DUR - 500 ? 1 - (age - (DUR - 500)) / 500 : 1;
+            const a = (inT * inT * (3 - 2 * inT)) * Math.max(0, outT);
+            const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
+            const col = t.kind === "override" ? "#c9a8ff" : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
+                : t.kind === "chest" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b" : color.guiwhite;
+            const size = (t.kind === "streak" ? 15 : 21) * pop;
+            const len = measureText(t.text, size) + 44;
+            c.save();
+            c.globalAlpha = a * 0.6;
+            roundRectPath(c, cx - len / 2, cy - size * 0.9, len, size * 1.8 + (t.pts ? 22 : 0), 10);
+            c.fillStyle = "rgba(10,11,16,0.85)";
+            c.fill();
+            c.restore();
+            drawText(t.text, cx, cy, size, col, "center", true, a, 4.5);
+            if (t.pts) drawText("+" + fmtNum(t.pts) + " pts", cx, cy + size * 0.95 + 8, 14 * pop, color.gold, "center", true, a, 4.5);
+            if (t.sub) drawText(t.sub, cx, cy + size * 0.95 + 8, 12.5, "#d8dce6", "center", true, a, 4.5);
+            break;
         }
     }
 
+    // ── kit box: sits above the skill bars, styled like them ───────────
+    // Tooltips: anything hoverable queues one; drawTooltips paints the last
+    // one after every panel so it sits on top.
+    let pendingTip = null;
+    function queueTip(title, body, ax, ay, above = true) { pendingTip = { title, body, ax, ay, above }; }
+    let tipKey = "", tipAt = 0;
+    function drawTooltips() {
+        const tip = pendingTip;
+        pendingTip = null;
+        if (!tip) { tipKey = ""; return; }
+        const now = performance.now();
+        const key = tip.title + "|" + tip.body;
+        if (key !== tipKey) { tipKey = key; tipAt = now; }
+        const inT = Math.min(1, (now - tipAt) / 140);
+        const ease = inT * inT * (3 - 2 * inT);
+        const c = ctx[2];
+        const maxW = 230;
+        const lines = wrapLines(tip.body || "", 10.5, maxW - 20);
+        const w = Math.max(measureText(tip.title, 11.5) + 20, ...lines.map(l => measureText(l, 10.5) + 20), 90);
+        const h = 24 + lines.length * 14 + (lines.length ? 6 : 0);
+        let x = Math.max(6, Math.min(global.screenWidth - w - 6, tip.ax - w / 2));
+        let y = tip.above ? tip.ay - h - 8 : tip.ay + 8;
+        if (y < 6) y = tip.ay + 8;
+        y += (tip.above ? 1 : -1) * 6 * (1 - ease);
+        c.save();
+        c.globalAlpha = ease;
+        roundRectPath(c, x, y, w, h, 7);
+        c.fillStyle = "rgba(10,11,16,0.94)";
+        c.fill();
+        c.lineWidth = 1.2;
+        c.strokeStyle = "rgba(255,255,255,0.18)";
+        c.stroke();
+        c.restore();
+        drawText(tip.title, x + 10, y + 12, 11.5, color.guiwhite, "left", true, ease);
+        let ly = y + 30;
+        for (const l of lines) { drawText(l, x + 10, ly, 10.5, "#b9c3d1", "left", true, ease); ly += 14; }
+    }
+    const ROMAN = ["", "I", "II", "III", "IV", "V"];
+    // A tiny card per kit item: rounded corners, the item's colour, a glyph
+    // you can tell apart at 22px. Used in the kit slots.
+    const KIT_CARD = {
+        medkit: "#3fbf7a", charge: "#e07c2f", strut: "#8a93a6", overdrive: "#f0a030",
+        anchor: "#4d8be0", flash: "#38b8b0", bulwark: "#7a8494", decoy: "#d4a83a",
+    };
+    function drawKitGlyph(c, id, u, col) {
+        // every glyph is painted twice: a dark outline pass, then the white
+        // pass, so it reads on any card colour at 26px
+        const passes = [["rgba(0,0,0,0.7)", 2.4], ["#ffffff", 0]];
+        c.lineCap = "round"; c.lineJoin = "round";
+        for (const [paint, extra] of passes) {
+            c.fillStyle = paint; c.strokeStyle = paint;
+            const lw = Math.max(1.6, u * 0.2) + extra;
+            c.lineWidth = lw;
+            switch (id) {
+                case "medkit":
+                    c.lineWidth = u * 0.42 + extra;
+                    c.beginPath(); c.moveTo(0, -u * 0.6); c.lineTo(0, u * 0.6); c.moveTo(-u * 0.6, 0); c.lineTo(u * 0.6, 0); c.stroke();
+                    break;
+                case "charge":
+                    c.beginPath();
+                    c.moveTo(u * 0.18, -u * 0.78); c.lineTo(-u * 0.4, u * 0.08); c.lineTo(u * 0.02, u * 0.08);
+                    c.lineTo(-u * 0.18, u * 0.78); c.lineTo(u * 0.42, -u * 0.1); c.lineTo(u * 0.02, -u * 0.1);
+                    c.closePath(); c.fill(); if (extra) { c.lineWidth = extra; c.stroke(); }
+                    break;
+                case "strut":
+                    c.lineWidth = u * 0.22 + extra;
+                    c.beginPath(); c.moveTo(-u * 0.55, -u * 0.6); c.lineTo(u * 0.55, -u * 0.6); c.moveTo(-u * 0.55, u * 0.6); c.lineTo(u * 0.55, u * 0.6); c.moveTo(0, -u * 0.55); c.lineTo(0, u * 0.55); c.stroke();
+                    break;
+                case "overdrive":
+                    c.beginPath(); c.arc(0, u * 0.15, u * 0.62, Math.PI * 1.05, Math.PI * 1.95); c.stroke();
+                    c.beginPath(); c.moveTo(0, u * 0.15); c.lineTo(u * 0.42, -u * 0.28); c.stroke();
+                    c.beginPath(); c.arc(0, u * 0.15, u * 0.12 + extra * 0.4, 0, Math.PI * 2); c.fill();
+                    break;
+                case "anchor":
+                    c.beginPath(); c.arc(0, -u * 0.55, u * 0.14 + extra * 0.3, 0, Math.PI * 2); c.stroke();
+                    c.beginPath(); c.moveTo(0, -u * 0.4); c.lineTo(0, u * 0.62); c.stroke();
+                    c.beginPath(); c.moveTo(-u * 0.38, -u * 0.12); c.lineTo(u * 0.38, -u * 0.12); c.stroke();
+                    c.beginPath(); c.arc(0, u * 0.12, u * 0.5, Math.PI * 0.12, Math.PI * 0.88); c.stroke();
+                    c.beginPath(); c.moveTo(-u * 0.5, u * 0.3); c.lineTo(-u * 0.62, u * 0.5); c.moveTo(u * 0.5, u * 0.3); c.lineTo(u * 0.62, u * 0.5); c.stroke();
+                    break;
+                case "flash":
+                    gemPath(c, 0, u * 0.02, u * 0.66); c.fill(); if (extra) { c.lineWidth = extra; c.stroke(); }
+                    if (!extra) {
+                        c.fillStyle = col;
+                        c.beginPath();
+                        c.moveTo(u * 0.1, -u * 0.38); c.lineTo(-u * 0.2, u * 0.04); c.lineTo(u * 0.02, u * 0.04);
+                        c.lineTo(-u * 0.1, u * 0.42); c.lineTo(u * 0.22, -u * 0.02); c.lineTo(u * 0.02, -u * 0.02);
+                        c.closePath(); c.fill();
+                    }
+                    break;
+                case "bulwark":
+                    c.fillRect(-u * 0.64 - extra / 2, -u * 0.6 - extra / 2, u * 1.28 + extra, u * 1.2 + extra);
+                    if (!extra) {
+                        c.strokeStyle = col; c.lineWidth = Math.max(1, u * 0.1);
+                        c.beginPath();
+                        for (let r = 1; r < 3; r++) { const yy = -u * 0.6 + r * u * 0.4; c.moveTo(-u * 0.64, yy); c.lineTo(u * 0.64, yy); }
+                        c.moveTo(0, -u * 0.6); c.lineTo(0, -u * 0.2); c.moveTo(-u * 0.32, -u * 0.2); c.lineTo(-u * 0.32, u * 0.2); c.moveTo(u * 0.32, -u * 0.2); c.lineTo(u * 0.32, u * 0.2); c.moveTo(0, u * 0.2); c.lineTo(0, u * 0.6);
+                        c.stroke();
+                    }
+                    break;
+                case "decoy":
+                    c.setLineDash([u * 0.24, u * 0.16]);
+                    gemPath(c, 0, u * 0.02, u * 0.66); c.stroke();
+                    c.setLineDash([]);
+                    c.beginPath(); c.arc(0, 0, u * 0.14 + extra * 0.3, 0, Math.PI * 2); c.fill();
+                    break;
+                default:
+                    gemPath(c, 0, 0, u * 0.6); c.fill();
+            }
+        }
+    }
+    const kitIconSprites = new Map();
+    function kitIconSprite(id, s) {
+        const key = id + "@" + s;
+        let spr = kitIconSprites.get(key);
+        if (spr) return spr;
+        const col = KIT_CARD[id] || "#8a93a6";
+        const scale = 2, pad = 4;
+        const S = (s + pad * 2) * scale;
+        spr = document.createElement("canvas");
+        spr.width = spr.height = S;
+        const c = spr.getContext("2d");
+        c.scale(scale, scale);
+        c.translate(s / 2 + pad, s / 2 + pad);
+        const h = s / 2, rr = s * 0.24;
+        c.save();
+        c.translate(0.6, 1.4);
+        roundRectPath(c, -h, -h, s, s, rr);
+        c.fillStyle = "rgba(0,0,0,0.45)"; c.fill();
+        c.restore();
+        roundRectPath(c, -h, -h, s, s, rr);
+        const grad = c.createLinearGradient(0, -h, 0, h);
+        grad.addColorStop(0, gameDraw.mixColors(col, "#ffffff", 0.18));
+        grad.addColorStop(1, gameDraw.mixColors(col, "#000000", 0.22));
+        c.fillStyle = grad; c.fill();
+        c.save();
+        c.clip();
+        c.fillStyle = "rgba(255,255,255,0.14)";
+        c.fillRect(-h, -h, s, s * 0.42);
+        c.restore();
+        c.lineWidth = 1.5;
+        c.strokeStyle = "rgba(0,0,0,0.7)";
+        roundRectPath(c, -h + 0.75, -h + 0.75, s - 1.5, s - 1.5, rr - 0.5); c.stroke();
+        c.save();
+        c.translate(0.5, 0.5);
+        c.globalAlpha = 0.35;
+        c.fillStyle = "#000000"; c.strokeStyle = "#000000";
+        drawKitGlyph(c, id, h * 0.92, "#000000");
+        c.restore();
+        drawKitGlyph(c, id, h * 0.92, col);
+        if (kitIconSprites.size > 40) kitIconSprites.clear();
+        kitIconSprites.set(key, spr);
+        return spr;
+    }
+    function drawKitIcon(c, id, cx, cy, s) {
+        const spr = kitIconSprite(id, s);
+        const half = spr.width / 4;   // sprite is baked at 2x with padding
+        c.drawImage(spr, cx - half, cy - half, half * 2, half * 2);
+    }
+    function drawKitBox(spacing, alcoveSize) {
+        const want = shopUiMode() && !global.died && !global.mobile && global.gems && global.gems.cap > 0 &&
+            (!global.tutorialMode || (window.dwTutUi === "kit" || (window.dwTutAllow || "").includes("kit") || (global.shop.state && (global.shop.state.kitOrder || []).length)));
+        kitGlide.set(want ? 1 : 0);
+        const g = kitGlide.get();
+        if (g < 0.02) { global.clickables.kit.hide(); return; }
+        const sh = global.shop, st = sh.state || {};
+        const catalog = sh.catalog || [];
+        const byId = id => catalog.find(i => i.id === id);
+        const now = performance.now();
+        // same anchors as drawSkillBars: 11 bars of 14 + 5, counter row above
+        const barH = 14, vsp = 5, bars = 11;
+        const barsTop = global.screenHeight - spacing - 5.5 - barH - (bars - 1) * (barH + vsp);
+        const W = alcoveSize - 10, H = 118;
+        const x = spacing + 3;
+        const y = barsTop - 26 - H + (1 - g) * 14;
+        const c = ctx[2];
+        const cr = global.canvas.height / global.screenHeight / global.ratio;
+        const hov = global.clickables.kit.check({ x: global.mouse.x, y: global.mouse.y });
+        global.clickables.kit.hide();
+        c.save();
+        c.globalAlpha = g;
+        roundRectPath(c, x, y, W, H, 8);
+        c.fillStyle = "rgba(0,0,0,0.46)";
+        c.fill();
+        c.lineWidth = 1.5;
+        c.strokeStyle = "rgba(255,255,255,0.10)";
+        c.stroke();
+        // top row: two equal chips, drill and sidearm, aligned to the slot grid
+        const pad = 8, gap = 6;
+        const chipY = y + 7, chipH = 17, chipW = (W - pad * 2 - gap) / 2;
+        const drillItem = st.drill > 0 ? byId("drill" + st.drill) : null;
+        const armItem = st.arm ? byId(st.arm) : null;
+        const chips = [
+            { i: 3, x: x + pad, text: st.drill > 0 ? "DRILL " + ROMAN[st.drill] : "NO DRILL", col: st.drill > 0 ? "#eda766" : color.grey, on: st.drill > 0,
+              flash: sh.drillFlashAt, tip: drillItem ? [drillItem.name, drillItem.desc] : ["Drill", "Sold at any shop. Each tier chews rock faster."] },
+            { i: 4, x: x + pad + chipW + gap, text: armItem ? (shortName(armItem.name, st.armUntil > Date.now() ? 9 : 14).toUpperCase() + (st.armUntil > Date.now() ? "  " + fmtRaidClock(Math.ceil((st.armUntil - Date.now()) / 1000)) : "")) : "NO SIDEARM", col: armItem ? "#c9a8ff" : color.grey, on: !!armItem,
+              flash: sh.armFlashAt, tip: armItem ? [armItem.name + "  ·  right click", armItem.desc] : ["Sidearm", "A second gun on right click. Sold at any shop."] },
+        ];
+        for (const ch of chips) {
+            const fl = ch.flash ? Math.max(0, 1 - (now - ch.flash) / 700) : 0;
+            roundRectPath(c, ch.x, chipY, chipW, chipH, 5);
+            c.fillStyle = ch.on ? "rgba(255,255,255," + (0.07 + 0.25 * fl) + ")" : "rgba(255,255,255,0.035)";
+            c.fill();
+            if (hov === ch.i) { c.lineWidth = 1; c.strokeStyle = "rgba(255,255,255,0.35)"; c.stroke(); }
+            drawText(ch.text, ch.x + chipW / 2, chipY + chipH / 2 + 0.5, 9, ch.col, "center", true, g);
+            global.clickables.kit.place(ch.i, ch.x * cr, chipY * cr, chipW * cr, chipH * cr);
+            if (hov === ch.i) queueTip(ch.tip[0], ch.tip[1], ch.x + chipW / 2, y);
+        }
+        // gear row: every passive you own, as a small tag with a tooltip
+        const gearY = chipY + chipH + 6, gearH = 16;
+        const gearIds = (st.gear || []).filter(id => byId(id));
+        drawText("GEAR", x + pad + 2, gearY + gearH / 2, 8, color.grey, "left", true, g);
+        if (!gearIds.length) {
+            drawText("none yet", x + pad + 34, gearY + gearH / 2, 8, "rgba(160,168,180,0.7)", "left", true, g);
+        } else {
+            const gx0 = x + pad + 32, gwAll = W - pad * 2 - 32;
+            const bw = Math.min(36, (gwAll - 3 * (gearIds.length - 1)) / gearIds.length);
+            const nowG = Date.now();
+            for (let i = 0; i < gearIds.length; i++) {
+                const item = byId(gearIds[i]);
+                const bx = gx0 + i * (bw + 3);
+                const until = +((st.gearUntil || {})[item.id]) || 0;
+                const leftMs = until > 1 ? Math.max(0, until - nowG) : -1;
+                const frac = leftMs < 0 ? 1 : Math.min(1, leftMs / 300000);
+                const ending = leftMs >= 0 && leftMs < 30000 && (nowG % 600) < 300;
+                roundRectPath(c, bx, gearY, bw, gearH, 4);
+                c.fillStyle = hov === 10 + i ? "rgba(92,224,216,0.32)" : ending ? "rgba(255,120,110,0.28)" : "rgba(92,224,216,0.16)";
+                c.fill();
+                c.lineWidth = 1; c.strokeStyle = ending ? "rgba(255,120,110,0.7)" : "rgba(92,224,216,0.45)"; c.stroke();
+                // time left: a thin bar along the bottom edge of the tag
+                c.fillStyle = ending ? "#ff9a8c" : SHOP_ACCENT;
+                c.fillRect(bx + 2, gearY + gearH - 3, (bw - 4) * frac, 2);
+                drawText(GEAR_TAG[item.id] || item.name.slice(0, 3).toUpperCase(), bx + bw / 2, gearY + gearH / 2 - 0.5, bw < 30 ? 6.5 : 7.5, ending ? "#ff9a8c" : SHOP_ACCENT, "center", true, g);
+                global.clickables.kit.place(10 + i, bx * cr, gearY * cr, bw * cr, gearH * cr);
+                if (hov === 10 + i) queueTip(item.name + (leftMs >= 0 ? "  ·  " + fmtRaidClock(Math.ceil(leftMs / 1000)) + " left" : ""), item.desc, bx + bw / 2, y);
+            }
+        }
+        // slots: key badge top-left, count top-right, name below
+        const keys = [keyLabel("KEY_KIT_1", "Z"), keyLabel("KEY_KIT_2", "Q"), keyLabel("KEY_KIT_3", "N")];
+        const slotY = gearY + gearH + 7, slotH = H - (slotY - y) - 7;
+        const slotW = (W - pad * 2 - gap * 2) / 3;
+        for (let i = 0; i < 3; i++) {
+            const sx = x + pad + i * (slotW + gap);
+            const id = (st.kitOrder || [])[i];
+            const item = id ? byId(id) : null;
+            const count = id ? (st.kit[id] | 0) : 0;
+            const fl = id && sh.slotFlash && sh.slotFlash[id] ? sh.slotFlash[id] : null;
+            const flT = fl ? Math.max(0, 1 - (now - fl.at) / 650) : 0;
+            roundRectPath(c, sx, slotY, slotW, slotH, 6);
+            c.fillStyle = item ? "rgba(255,215,94," + (0.10 + (fl && fl.kind === "get" ? 0.35 * flT : 0)) + ")" : "rgba(255,255,255,0.03)";
+            c.fill();
+            c.lineWidth = hov === i ? 1.6 : 1;
+            c.strokeStyle = item ? (fl && fl.kind === "use" ? "rgba(255,255,255," + (0.45 + 0.5 * flT) + ")" : "rgba(255,215,94,0.5)") : "rgba(255,255,255,0.08)";
+            c.stroke();
+            // key badge
+            roundRectPath(c, sx + 4, slotY + 4, 15, 12, 3);
+            c.fillStyle = item ? "rgba(255,215,94,0.22)" : "rgba(255,255,255,0.06)";
+            c.fill();
+            drawText(keys[i], sx + 11.5, slotY + 10.5, 8, item ? color.gold : color.grey, "center", true, g);
+            if (item) {
+                drawText("x" + count, sx + slotW - 5, slotY + 10.5, 8.5, color.teal, "right", true, g);
+                // the item's card: rounded corners, its own colour, its own glyph
+                drawKitIcon(c, item.id, sx + slotW / 2, slotY + 30, 26);
+                drawText(KIT_SHORT[item.id] || item.name.slice(0, 7).toUpperCase(), sx + slotW / 2, slotY + slotH - 8, 8, color.guiwhite, "center", true, g);
+                global.clickables.kit.place(i, sx * cr, slotY * cr, slotW * cr, slotH * cr);
+                if (hov === i) queueTip(item.name + "  ·  " + keys[i], item.desc + " Drag it out of the box to throw it away.", sx + slotW / 2, y);
+                if (fl && fl.kind === "use" && flT > 0) {
+                    c.save();
+                    c.globalAlpha = g * flT * 0.8;
+                    c.strokeStyle = "#ffffff";
+                    c.lineWidth = 2;
+                    roundRectPath(c, sx - 4 * (1 - flT), slotY - 4 * (1 - flT), slotW + 8 * (1 - flT), slotH + 8 * (1 - flT), 7);
+                    c.stroke();
+                    c.restore();
+                }
+            } else {
+                // empty card outline so the slot still reads as a card
+                c.save();
+                c.globalAlpha = g * 0.35;
+                roundRectPath(c, sx + slotW / 2 - 13, slotY + 17, 26, 26, 6);
+                c.setLineDash([3, 3]);
+                c.lineWidth = 1; c.strokeStyle = "#ffffff"; c.stroke();
+                c.restore();
+                drawText("empty", sx + slotW / 2, slotY + slotH - 8, 8, color.grey, "center", true, g);
+                global.clickables.kit.place(i, sx * cr, slotY * cr, slotW * cr, slotH * cr);
+                if (hov === i) queueTip("Kit slot " + (i + 1) + "  ·  " + keys[i], "Holds one kit item type. Buy at a shop or break a chest.", sx + slotW / 2, y);
+            }
+        }
+        global.kitBoxRectCanvas = { x: x * cr, y: y * cr, w: W * cr, h: H * cr };
+        // drag ghost: the item's card follows the cursor; outside the box it
+        // reads DROP
+        const dragK = global.kitDrag;
+        if (dragK) {
+            const id = (st.kitOrder || [])[dragK.slot];
+            const mx = global.mouse.x / cr, my = global.mouse.y / cr;
+            if (id && Math.hypot(global.mouse.x - dragK.x, global.mouse.y - dragK.y) > 14) {
+                const outside = mx < x || mx > x + W || my < y || my > y + H;
+                c.save();
+                c.globalAlpha = 0.9;
+                drawKitIcon(c, id, mx, my, 26);
+                c.restore();
+                drawText(outside ? "DROP" : "", mx, my + 24, 9, "#ff9a8c", "center", true);
+            }
+        }
+        c.restore();
+    }
+    // ── shop panel ─────────────────────────────────────────────────────
+    function shopStatus(item) {
+        const st = global.shop.state || {};
+        if (item.cat === "drill") {
+            if ((st.drill | 0) >= item.tier) return { text: "OWNED", col: SHOP_ACCENT, buy: false };
+            if (item.tier !== (st.drill | 0) + 1) return { text: "LOCKED", col: color.grey, buy: false };
+            return { text: "NEXT", col: color.gold, buy: true };
+        }
+        if (item.cat === "gear") {
+            if ((st.gear || []).includes(item.id)) return { text: "RUNNING", col: SHOP_ACCENT, buy: false };
+            if ((st.gear || []).length >= 4) return { text: "GEAR FULL", col: color.grey, buy: false };
+            return { text: "", col: color.grey, buy: true };
+        }
+        if (item.cat === "kit") {
+            const have = (st.kit || {})[item.id] | 0;
+            if (have >= item.max) return { text: "x" + have + " FULL", col: SHOP_ACCENT, buy: false };
+            if (!have && (st.kitOrder || []).length >= 3) return { text: "KIT FULL", col: color.grey, buy: false };
+            return { text: have ? "x" + have : "", col: SHOP_ACCENT, buy: true };
+        }
+        if (item.cat === "arm") return st.arm === item.id ? { text: "MOUNTED", col: SHOP_ACCENT, buy: false } : { text: "", col: color.grey, buy: true };
+        return { text: "", col: color.grey, buy: true };
+    }
+
+    // Hover states ease in and out over 140 ms instead of snapping.
+    const hoverEases = new Map();
+    function hoverEase(id, on, now) {
+        let e = hoverEases.get(id);
+        if (!e) { e = { v: on ? 1 : 0, t: now }; hoverEases.set(id, e); return e.v; }
+        const step = Math.min(100, now - e.t) / 140;
+        e.t = now;
+        e.v = on ? Math.min(1, e.v + step) : Math.max(0, e.v - step);
+        if (hoverEases.size > 200) hoverEases.clear();
+        return e.v;
+    }
+    // One flat tile: opaque face, lighter on hover, bottom shade strip,
+    // black border. The same recipe the class-upgrade tiles use.
+    function drawFlatTile(c, x, y, w, h, fill, hoverT, alpha, sel, selCol) {
+        c.save();
+        c.globalAlpha = alpha;
+        c.fillStyle = fill;
+        c.fillRect(x, y, w, h);
+        if (hoverT > 0) {
+            c.globalAlpha = alpha * 0.22 * hoverT;
+            c.fillStyle = color.guiwhite;
+            c.fillRect(x, y, w, h);
+            c.globalAlpha = alpha * 0.8 * hoverT;
+            c.lineWidth = 1.5;
+            c.strokeStyle = selCol || SHOP_ACCENT;
+            c.strokeRect(x + 3, y + 3, w - 6, h - 6);
+        }
+        c.globalAlpha = alpha * 0.25;
+        c.fillStyle = color.black;
+        c.fillRect(x, y + h * 0.6, w, h * 0.4);
+        c.globalAlpha = alpha;
+        c.lineWidth = 3;
+        c.strokeStyle = color.black;
+        c.strokeRect(x, y, w, h);
+        if (sel) {
+            c.lineWidth = 2;
+            c.strokeStyle = selCol || SHOP_ACCENT;
+            c.strokeRect(x + 3, y + 3, w - 6, h - 6);
+        }
+        c.restore();
+    }
+    const SHOP_PANEL = "#1b1e26", SHOP_HEAD = "#1f3437", SHOP_CARD = "#262a35", SHOP_CARD_OFF = "#1e2028", SHOP_CARD_SEL = "#1e3c40";
+    const shopMeasure = new Map();
+    function shopMeasureText(txt, size) {
+        const k = txt + "|" + size;
+        let w = shopMeasure.get(k);
+        if (w === undefined) { w = measureText(txt, size); if (shopMeasure.size > 400) shopMeasure.clear(); shopMeasure.set(k, w); }
+        return w;
+    }
+    function drawShopUI() {
+        const want = shopOpenWanted();
+        shopGlide.set(want ? 1 : 0);
+        const g = shopGlide.get();
+        if (g < 0.02) { global.clickables.shop.hide(); global.shop.tabItems = []; return; }
+        const sh = global.shop;
+        const catalog = sh.catalog || [];
+        const now = performance.now();
+        const sw = global.screenWidth, shh = global.screenHeight;
+        const W = Math.min(720, sw - 40), H = Math.min(440, shh - 130);
+        const x = Math.round((sw - W) / 2), y = Math.round(Math.max(76, (shh - H) / 2 - 20) + (1 - g) * 22);
+        const cr = global.canvas.height / shh / global.ratio;
+        const c = ctx[2];
+        global.clickables.shop.hide();
+        // frame
+        c.save();
+        c.globalAlpha = g;
+        c.fillStyle = "rgba(0,0,0,0.35)";
+        c.fillRect(x + 4, y + 6, W, H);
+        c.fillStyle = SHOP_PANEL;
+        c.fillRect(x, y, W, H);
+        c.fillStyle = SHOP_HEAD;
+        c.fillRect(x, y, W, 46);
+        c.globalAlpha = g * 0.25;
+        c.fillStyle = color.black;
+        c.fillRect(x, y + 46 * 0.6, W, 46 * 0.4);
+        c.globalAlpha = g;
+        c.lineWidth = 3;
+        c.strokeStyle = color.black;
+        c.strokeRect(x, y, W, H);
+        c.beginPath(); c.moveTo(x, y + 46); c.lineTo(x + W, y + 46); c.stroke();
+        gemPath(c, x + 30, y + 23, 9);
+        c.fillStyle = color.gold; c.fill();
+        c.lineWidth = 1.2; c.strokeStyle = "#5a4310"; c.stroke();
+        c.restore();
+        drawText("SHOP", x + 48, y + 23, 17, SHOP_ACCENT, "left", true, g);
+        drawText(String(sh.padName || "").replace(" Shop", "").toUpperCase(), x + 48 + shopMeasureText("SHOP", 17) + 12, y + 24, 10.5, color.grey, "left", true, g);
+        const bankTxt = fmtNum(global.gems.banked | 0);
+        drawText(bankTxt, x + W - 62, y + 23, 14, color.teal, "right", true, g);
+        drawText("BANKED", x + W - 62 - shopMeasureText(bankTxt, 14) - 10, y + 23, 10, color.grey, "right", true, g);
+        // close
+        const cbs = 24, cbx = x + W - 42, cby = y + 11;
+        drawButton(cbx + cbs / 2, cby, cbs, cbs, g, "rect", "X", 12, "#8a3a3a", false, false, true, "shop", cr, 41);
+        c.globalAlpha = 1;
+        // tabs
+        const tabY = y + 58, tabH = 26, tabW = (W - 40) / SHOP_TABS.length;
+        for (let i = 0; i < SHOP_TABS.length; i++) {
+            const [id, label] = SHOP_TABS[i];
+            const tx = x + 20 + i * tabW;
+            const on = sh.tab === id;
+            drawButton(tx + tabW / 2, tabY, tabW - 6, tabH, g, "rect", label.toUpperCase(), 11, on ? SHOP_ACCENT : color.grey, false, on ? SHOP_ACCENT : false, true, "shop", cr, i);
+            c.globalAlpha = 1;
+        }
+        // item grid + detail
+        const items = catalog.filter(it => it.cat === sh.tab);
+        sh.tabItems = items;
+        if (!sh.sel || !items.find(it => it.id === sh.sel)) sh.sel = items.length ? items[0].id : null;
+        const gridX = x + 20, gridY = tabY + tabH + 14;
+        const detailW = 240;
+        const gridW = W - 40 - detailW - 14;
+        const cols = gridW >= 430 ? 3 : 2;
+        const cardW = (gridW - (cols - 1) * 8) / cols, cardH = 58;
+        const hover = global.clickables.shop.check({ x: global.mouse.x, y: global.mouse.y });
+        const kitFull = ((sh.state && sh.state.kitOrder) || []).length >= 3;
+        for (let i = 0; i < items.length && i < 36; i++) {
+            const it = items[i];
+            const col = i % cols, row = (i / cols) | 0;
+            const ix = gridX + col * (cardW + 8), iy = gridY + row * (cardH + 8);
+            if (iy + cardH > y + H - 32) break;
+            const sel = it.id === sh.sel;
+            const hov = hover === 4 + i;
+            const hT = hoverEase("card:" + it.id, hov, now);
+            const status = shopStatus(it);
+            const afford = (global.gems.banked | 0) >= it.price;
+            drawFlatTile(c, ix, iy, cardW, cardH, sel ? SHOP_CARD_SEL : status.buy ? SHOP_CARD : SHOP_CARD_OFF, hT, g, sel, SHOP_ACCENT);
+            let nameX = ix + 10;
+            if (it.cat === "kit") { drawKitIcon(c, it.id, ix + 18, iy + 17, 18); nameX = ix + 32; }
+            const nameW = cardW - (nameX - ix) - 10;
+            let ns = 12; while (ns > 9 && shopMeasureText(it.name, ns) > nameW) ns -= 0.5;
+            drawText(it.name, nameX, iy + 17, ns, status.buy ? color.guiwhite : "#9aa2b0", "left", true, g);
+            c.save(); c.globalAlpha = g;
+            gemPath(c, ix + 12, iy + cardH - 16, 5);
+            c.fillStyle = afford ? color.gold : "#7a5a5a"; c.fill();
+            c.restore();
+            drawText(fmtNum(it.price), ix + 22, iy + cardH - 16, 11.5, afford ? color.gold : "#ff9a8c", "left", true, g);
+            if (status.text) drawText(status.text, ix + cardW - 8, iy + cardH - 16, 9, status.col, "right", true, g);
+            global.clickables.shop.place(4 + i, ix * cr, iy * cr, cardW * cr, cardH * cr);
+            if (hov && it.id !== sh.sel) queueTip(it.name + "  ·  " + fmtNum(it.price) + " banked", it.desc, ix + cardW / 2, iy);
+        }
+        // detail pane
+        const dx = x + W - 20 - detailW, dy = gridY, dh = y + H - 32 - gridY;
+        drawFlatTile(c, dx, dy, detailW, dh, "#20242e", 0, g, false);
+        const sel = items.find(it => it.id === sh.sel);
+        if (sel) {
+            const status = shopStatus(sel);
+            const catName = (SHOP_TABS.find(t => t[0] === sel.cat) || ["", ""])[1].toUpperCase();
+            let tx = dx + 14;
+            if (sel.cat === "kit") { drawKitIcon(c, sel.id, dx + 27, dy + 24, 26); tx = dx + 48; }
+            drawText(sel.name, tx, dy + 18, 15, color.guiwhite, "left", true, g);
+            drawText(catName + (sel.cat === "kit" ? "  ·  MAX " + sel.max + " PER SLOT" : sel.cat === "drill" ? "  ·  TIER " + sel.tier : sel.cat === "arm" ? "  ·  RIGHT CLICK" : "  ·  PASSIVE"), tx, dy + 36, 9.5, color.grey, "left", true, g);
+            const lines = wrapLines(sel.desc, 11.5, detailW - 28);
+            let ly = dy + 60;
+            for (const ln of lines.slice(0, 5)) { drawText(ln, dx + 14, ly, 11.5, "#d8dce6", "left", true, g); ly += 16; }
+            if (sel.cat === "kit" && !status.buy && status.text === "KIT FULL") {
+                for (const ln of wrapLines("Your kit holds 3 kinds of item. Use one up to make room.", 10.5, detailW - 28)) {
+                    drawText(ln, dx + 14, ly + 2, 10.5, "#ff9a8c", "left", true, g); ly += 14;
+                }
+            }
+            const afford = (global.gems.banked | 0) >= sel.price;
+            c.save(); c.globalAlpha = g;
+            gemPath(c, dx + 20, dy + dh - 52, 6);
+            c.fillStyle = afford ? color.gold : "#ff9a8c"; c.fill();
+            c.restore();
+            drawText(fmtNum(sel.price) + " banked", dx + 32, dy + dh - 52, 13, afford ? color.gold : "#ff9a8c", "left", true, g);
+            const can = status.buy && afford;
+            const bbx = dx + 14, bby = dy + dh - 40, bbw = detailW - 28, bbh = 28;
+            const btnText = !status.buy ? (status.text === "KIT FULL" ? "KIT FULL (3 SLOTS)" : status.text || "UNAVAILABLE") : !afford ? "NOT ENOUGH BANKED" : "BUY";
+            drawButton(bbx + bbw / 2, bby, bbw, bbh, g, "rect", btnText, 12.5, can ? color.gold : color.grey, false, can ? color.gold : false, can, "shop", cr, 40);
+            c.globalAlpha = 1;
+        }
+        const msgAge = now - (sh.msgAt || -1e9);
+        if (sh.msg && msgAge < 3200) {
+            drawText(sh.msg, x + W / 2, y + H - 15, 11.5, sh.msgOk ? color.teal : "#ff9a8c", "center", true, g * (msgAge > 2600 ? 1 - (msgAge - 2600) / 600 : 1));
+        }
+    }
+
+    // ── world layer: boss and bloom edge markers, streak marks, fx ──────
+    // `placed` collects pill rects so two markers on the same edge slide
+    // apart instead of stacking.
+    function drawEdgeMarker(c, e, col, glyph, name, distText, placed) {
+        const sw = global.screenWidth, sh = global.screenHeight;
+        const label = name + (distText ? "  " + distText : "");
+        const tw = measureText(label, 10.5);
+        const pw = tw + 36, ph = 21;
+        const inX = -Math.cos(e.ang), inY = -Math.sin(e.ang);
+        const horiz = Math.abs(inX) > Math.abs(inY);
+        const pillAt = () => {
+            let px = e.x + inX * (13 + (horiz ? pw / 2 : 0));
+            let py = e.y + inY * (13 + (horiz ? 0 : ph / 2));
+            px = Math.max(pw / 2 + 4, Math.min(sw - pw / 2 - 4, px));
+            py = Math.max(ph / 2 + 4, Math.min(sh - ph / 2 - 4, py));
+            return { x: px - pw / 2, y: py - ph / 2, w: pw, h: ph, cx: px, cy: py };
+        };
+        let rect = pillAt();
+        if (placed) {
+            // the pill itself must clear other pills AND the HUD panels
+            const blockers = placed.concat(hudAvoidRects());
+            for (let tries = 0; tries < 6; tries++) {
+                const hit = blockers.find(r => rect.x < r.x + r.w + 6 && rect.x + rect.w + 6 > r.x && rect.y < r.y + r.h + 6 && rect.y + rect.h + 6 > r.y);
+                if (!hit) break;
+                // slide along the edge, away from the other pill
+                if (horiz) e.y += (rect.cy >= hit.y + hit.h / 2 ? 1 : -1) * (ph + 8);
+                else e.x += (rect.cx >= hit.x + hit.w / 2 ? 1 : -1) * (pw + 8);
+                e.x = Math.max(16, Math.min(sw - 16, e.x));
+                e.y = Math.max(16, Math.min(sh - 20, e.y));
+                rect = pillAt();
+            }
+            placed.push(rect);
+        }
+        const px = rect.cx, py = rect.cy;
+        c.save();
+        c.translate(e.x, e.y);
+        c.rotate(e.ang);
+        c.fillStyle = col; c.strokeStyle = color.black; c.lineWidth = 2; c.lineJoin = "round";
+        c.beginPath(); c.moveTo(10, 0); c.lineTo(-6, -8); c.lineTo(-3, 0); c.lineTo(-6, 8); c.closePath();
+        c.fill(); c.stroke();
+        c.restore();
+        c.save();
+        roundRectPath(c, px - pw / 2, py - ph / 2, pw, ph, 10.5);
+        c.fillStyle = "rgba(10,11,16,0.86)";
+        c.fill();
+        c.lineWidth = 1.5;
+        c.strokeStyle = col;
+        c.stroke();
+        c.fillStyle = col; c.strokeStyle = color.black; c.lineWidth = 1.2;
+        const gx = px - pw / 2 + 12, gy = py;
+        if (glyph === "boss") { polyPath(c, gx, gy, 6.5, 8, Math.PI / 8); c.fill(); c.stroke(); }
+        else if (glyph === "gem") { gemPath(c, gx, gy + 0.5, 6.5); c.fill(); c.stroke(); }
+        else if (glyph === "skull") { c.restore(); drawSkull(c, gx, gy, 6, col); c.save(); }
+        else { c.beginPath(); c.moveTo(gx, gy - 6); c.lineTo(gx + 6, gy + 5); c.lineTo(gx - 6, gy + 5); c.closePath(); c.fill(); c.stroke(); }
+        c.restore();
+        drawText(label, px - pw / 2 + 23, py + 0.5, 10.5, color.guiwhite, "left", true, 1, 5);
+    }
+    // Damage reads on the chest itself: jagged cracks grow from the centre
+    // as health falls, seeded per chest so they do not flicker.
+    const KIT_FX = {
+        medkit: "#6ff5a8", overdrive: "#ffb347", anchor: "#7fb1f2", flash: "#5ce0d8",
+        bulwark: "#b9c3d1", decoy: "#ffd75e", strut: "#c9c9d6", charge: "#ffe0a8",
+    };
+    const chestSeenAt = new Map();
+    function drawRoyaleWorldMarkers(px, py, ratio) {
+        if (!royaleActive() || global.died) return;
+        sweepTracks();
+        const r = global.royale;
+        const c = ctx[2];
+        const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
+        const now = performance.now();
+        const pulse = 0.5 + 0.5 * Math.sin(now / 300);
+        const toScreen = (wx, wy) => ({ x: ratio * wx - px + cx, y: ratio * wy - py + cy });
+        const onScreen = (s, m) => s.x > -m && s.x < global.screenWidth + m && s.y > -m && s.y < global.screenHeight + m;
+        const me = { x: global.player.renderx, y: global.player.rendery };
+        const marks = [];
+        if (r.boss) {
+            const p = trackPos("boss", r.boss.x, r.boss.y, 0.6);
+            const s = toScreen(p.x, p.y);
+            if (!onScreen(s, -60)) marks.push({ pri: 1, s, col: r.boss.c || "#c9a8ff", glyph: "boss", name: String(r.boss.name || "BOSS").toUpperCase(), d: Math.hypot(p.x - me.x, p.y - me.y) });
+        }
+        if (r.bloom && r.bloom.until > Date.now()) {
+            const s = toScreen(r.bloom.x, r.bloom.y);
+            const d = Math.hypot(r.bloom.x - me.x, r.bloom.y - me.y);
+            if (!onScreen(s, -(r.bloom.r || 300) * ratio) && d < 3400) marks.push({ pri: 2, s, col: "#ffd76e", glyph: "gem", name: "ORE BLOOM", d });
+        }
+        // marked streakers: a red mark over the tank on screen, the nearest
+        // one off screen gets an edge marker
+        let nearest = null;
+        for (const p of (r.pings || [])) {
+            if (p.id === gui.playerid) continue;
+            const tp = trackPos("ping" + p.id, p.x, p.y, 0.6);
+            const s = toScreen(tp.x, tp.y);
+            const d = Math.hypot(tp.x - me.x, tp.y - me.y);
+            if (onScreen(s, -20)) {
+                const yy = s.y - 62 * Math.min(1.4, ratio) - 8;
+                c.save();
+                c.translate(s.x, yy);
+                c.fillStyle = "#e03e41"; c.strokeStyle = color.black; c.lineWidth = 2.2; c.lineJoin = "round";
+                c.beginPath(); c.moveTo(0, 9); c.lineTo(-8, -4); c.lineTo(8, -4); c.closePath();
+                c.fill(); c.stroke();
+                c.restore();
+                drawText("STREAK x" + p.streak, s.x, yy - 13, 10.5, "#ffb347", "center", true, 0.7 + 0.3 * pulse, 5);
+            } else if (!nearest || d < nearest.d) {
+                nearest = { pri: 3, s, col: "#ffb347", glyph: "streak", name: "STREAK x" + p.streak + " " + shortName(p.name, 10).toUpperCase(), d };
+            }
+        }
+        if (nearest) marks.push(nearest);
+        marks.sort((a, b) => a.pri - b.pri);
+        const placed = [];
+        for (const mk of marks.slice(0, 3)) {
+            const e = edgePoint(mk.s.x - cx, mk.s.y - cy);
+            drawEdgeMarker(c, e, mk.col, mk.glyph, mk.name, fmtDist(mk.d), placed);
+        }
+        // a chest seen for the first time while still young plays its landing
+        const seen = new Set();
+        for (const ch of (r.chests || [])) {
+            seen.add(ch.id);
+            if (!chestSeenAt.has(ch.id)) {
+                const fresh = ch.a != null && ch.a < 900;
+                chestSeenAt.set(ch.id, now);
+                if (fresh && ch.e != null) chestSpawnByEnt.set(ch.e, now);
+            }
+        }
+        for (const id of chestSeenAt.keys()) if (!seen.has(id)) chestSeenAt.delete(id);
+        for (const [eid, t0] of chestSpawnByEnt) if (now - t0 > 5000) chestSpawnByEnt.delete(eid);
+        for (const [eid, t0] of chestGoneAt) if (now - t0 > 2000) { chestGoneAt.delete(eid); if (window.terrainRenderer && window.terrainRenderer.dropCell) window.terrainRenderer.dropCell(chestCellKey(eid)); }
+    }
+    const ROCK_CHIPS = ["rgb(5,4,7)", "rgb(14,12,19)", "rgb(26,23,33)"];
+    // Boss death: a white-out, a tinted vignette pulse, a core bloom, light
+    // rays, three shockwaves and a debris field in the boss's colour.
+    function buildBossBurst(f) {
+        const rnd = lcg(((f.born | 0) ^ 0x5bd1) >>> 0 || 11);
+        f.parts = [];
+        for (let e = 0; e < 56; e++) f.parts.push({ ang: rnd() * Math.PI * 2, sp: 0.35 + rnd() * 1, size: 3 + rnd() * 9, dark: rnd() < 0.6, shade: Math.floor(rnd() * 3), spin: (rnd() - 0.5) * 16, sq: 0.45 + rnd() * 0.55 });
+        f.sparks = [];
+        for (let e = 0; e < 44; e++) f.sparks.push({ ang: rnd() * Math.PI * 2, sp: 0.5 + rnd() * 1, white: rnd() < 0.3 });
+        f.rays = [];
+        for (let e = 0; e < 18; e++) f.rays.push({ ang: rnd() * Math.PI * 2, len0: 40 + rnd() * 40, len: 260 + rnd() * 320, w: 3 + rnd() * 5, a: 0.5 + rnd() * 0.45 });
+    }
+    function drawFx(px, py, ratio) {
+        const list = global.fx;
+        if (!list || !list.length) return;
+        const now = performance.now();
+        const c = ctx[2];
+        const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
+        for (let i = list.length - 1; i >= 0; i--) {
+            const f = list[i];
+            const big = f.kind === "boss" || f.kind === "bossdead" || f.kind === "bloom";
+            const DUR = f.kind === "bossdead" ? 2200 : big ? 1400 : 800;
+            const age = now - f.born;
+            if (age > DUR) { list.splice(i, 1); continue; }
+            if (age < 0) continue;                 // hit-stop: the burst starts after the freeze
+            const t = age / DUR;
+            const sx = ratio * f.x - px + cx, sy = ratio * f.y - py + cy;
+            if (sx < -300 || sx > global.screenWidth + 300 || sy < -300 || sy > global.screenHeight + 300) continue;
+            if (f.kind.startsWith("kit_")) {
+                // kit use: a coloured pulse around the tank plus a few shards
+                const id = f.kind.slice(4);
+                const col = KIT_FX[id] || "#ffd76e";
+                const DUR2 = 700;
+                if (age > DUR2) { list.splice(i, 1); continue; }
+                const t2 = age / DUR2;
+                c.save();
+                c.globalAlpha = (1 - t2) * 0.85;
+                c.strokeStyle = col;
+                c.lineWidth = Math.max(1.5, 5 * (1 - t2) * ratio);
+                c.beginPath(); c.arc(sx, sy, (30 + 120 * t2) * ratio, 0, Math.PI * 2); c.stroke();
+                if (id === "medkit") {
+                    // a cross that rises and fades
+                    c.globalAlpha = (1 - t2) * 0.9;
+                    c.fillStyle = col;
+                    const s3 = 14 * ratio, w3 = 5 * ratio, yy = sy - 40 * ratio - 40 * ratio * t2;
+                    c.fillRect(sx - w3 / 2, yy - s3, w3, s3 * 2);
+                    c.fillRect(sx - s3, yy - w3 / 2, s3 * 2, w3);
+                } else if (id === "anchor" || id === "bulwark") {
+                    c.globalAlpha = (1 - t2) * 0.6;
+                    polyPath(c, sx, sy, (44 + 30 * t2) * ratio, 6, Math.PI / 6);
+                    c.lineWidth = Math.max(1.5, 3 * ratio); c.stroke();
+                } else {
+                    c.fillStyle = col; c.strokeStyle = color.black; c.lineWidth = 1;
+                    c.globalAlpha = Math.max(0, 1 - t2 * 1.1);
+                    for (let k = 0; k < 8; k++) {
+                        const a = (k / 8) * Math.PI * 2 + t2 * 0.8;
+                        const dist = (26 + 70 * t2) * ratio;
+                        gemPath(c, sx + Math.cos(a) * dist, sy + Math.sin(a) * dist - 20 * ratio * t2, Math.max(2, (6 - 3 * t2) * ratio));
+                        c.fill(); c.stroke();
+                    }
+                }
+                c.restore();
+                continue;
+            }
+            if (f.kind === "bossdead") {
+                if (!f.parts) buildBossBurst(f);
+                const bcol = f.col || "#c9a8ff";
+                const rgb = toRgb(bcol) || { r: 201, g: 168, b: 255 };
+                const tint = rgb.r + "," + rgb.g + "," + rgb.b;
+                const sw = global.screenWidth, shh = global.screenHeight;
+                const eo = 1 - Math.pow(1 - t, 3);
+                c.save();
+                if (t < 0.18) { c.globalAlpha = (1 - t / 0.18) * 0.6; c.fillStyle = "#ffffff"; c.fillRect(0, 0, sw, shh); }
+                if (t < 0.7 && !global.lowFx) { c.globalAlpha = (1 - t / 0.7) * 0.5; c.drawImage(vignetteSprite(sw, shh, 0.35, tint), 0, 0, sw, shh); }
+                {
+                    const hr = (80 + 520 * eo) * ratio;
+                    c.globalAlpha = Math.max(0, 1 - t * 1.4) * 0.9;
+                    c.drawImage(haloSprite("bossdead|" + tint, tint, [[0, 1], [0.4, 0.55], [1, 0]]), sx - hr, sy - hr, hr * 2, hr * 2);
+                }
+                c.lineCap = "round";
+                for (const r of f.rays) {
+                    const len = (r.len0 + r.len * eo) * ratio;
+                    c.globalAlpha = Math.max(0, 1 - t * 1.25) * r.a;
+                    c.strokeStyle = "#ffffff";
+                    c.lineWidth = Math.max(1, r.w * (1 - t) * ratio);
+                    c.beginPath(); c.moveTo(sx + Math.cos(r.ang) * len * 0.15, sy + Math.sin(r.ang) * len * 0.15); c.lineTo(sx + Math.cos(r.ang) * len, sy + Math.sin(r.ang) * len); c.stroke();
+                }
+                for (let i = 0; i < 3; i++) {
+                    const tt = (t - i * 0.09) / (1 - i * 0.09);
+                    if (tt <= 0) continue;
+                    const e2 = 1 - Math.pow(1 - tt, 3);
+                    const Rw = (40 + (1100 - i * 260) * e2) * ratio;
+                    c.globalAlpha = (1 - tt) * (i === 0 ? 0.9 : 0.55);
+                    c.strokeStyle = i === 1 ? "#ffffff" : bcol;
+                    c.lineWidth = Math.max(1.5, (14 - i * 3) * (1 - tt) * ratio);
+                    c.beginPath(); c.arc(sx, sy, Rw, 0, Math.PI * 2); c.stroke();
+                }
+                const fadeA = t < 0.55 ? 1 : 1 - (t - 0.55) / 0.45;
+                for (const sp of f.sparks) {
+                    const r2 = eo * sp.sp * 420 * ratio, r1 = r2 * 0.55;
+                    c.globalAlpha = fadeA * 0.95;
+                    c.strokeStyle = sp.white ? "#ffffff" : bcol;
+                    c.lineWidth = Math.max(1, 3.5 * (1 - t * 0.6) * ratio);
+                    c.beginPath(); c.moveTo(sx + Math.cos(sp.ang) * r1, sy + Math.sin(sp.ang) * r1); c.lineTo(sx + Math.cos(sp.ang) * r2, sy + Math.sin(sp.ang) * r2); c.stroke();
+                }
+                c.globalAlpha = fadeA;
+                for (let pi = 0; pi < f.parts.length; pi += global.lowFx ? 2 : 1) {
+                    const p = f.parts[pi];
+                    const dist = eo * p.sp * 380 * ratio;
+                    const gx = sx + Math.cos(p.ang) * dist, gy = sy + Math.sin(p.ang) * dist + 60 * ratio * t * t;
+                    const s2 = p.size * ratio * (1 - t * 0.5);
+                    c.save();
+                    c.translate(gx, gy);
+                    c.rotate(p.ang + p.spin * eo);
+                    c.fillStyle = p.dark ? ROCK_CHIPS[p.shade] : bcol;
+                    c.fillRect(-s2, -s2 * p.sq, s2 * 2, s2 * 2 * p.sq);
+                    c.restore();
+                }
+                c.restore();
+                continue;
+            }
+            const col = f.kind === "meteor" ? "#ff9a5a" : f.kind === "charge" ? "#ffe0a8" : f.kind === "bossdead" ? "#c9a8ff"
+                : f.kind === "boss" ? "#c9a8ff" : "#ffd76e";
+            const R = (big ? 40 + t * 420 : 16 + t * 170) * ratio;
+            c.save();
+            c.globalAlpha = (1 - t) * (big ? 0.7 : 0.6);
+            c.strokeStyle = col;
+            c.lineWidth = Math.max(1.5, (big ? 6 : 4) * (1 - t) * ratio);
+            c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2); c.stroke();
+            if (f.kind === "meteor" || f.kind === "charge" || f.kind === "bossdead") {
+                c.globalAlpha = (1 - t) * 0.25;
+                c.fillStyle = col;
+                c.beginPath(); c.arc(sx, sy, R * 0.55, 0, Math.PI * 2); c.fill();
+            }
+            c.restore();
+        }
+    }
+    // ── minimap / big map extras ────────────────────────────────────────
+    function drawRoyaleMapExtras(T, rx, ry, rw, rh, dotR) {
+        const r = global.royale;
+        const c = ctx[2];
+        const inside = (x, y) => x > rx - 8 && x < rx + rw + 8 && y > ry - 8 && y < ry + rh + 8;
+        const now = performance.now();
+        const tnow = Date.now();
+        const pulse = 1 + 0.18 * Math.sin(now / 240);
+        // labels scale with the map: tiny on the minimap, readable on the big map
+        const labelPx = Math.max(7, Math.min(12, dotR * 2.6));
+        const mapLabel = (text, mx, my, above, col) => drawText(text, mx, my + (above ? -1 : 1) * (above ? labelPx * 0.6 + 2 : labelPx * 0.9 + 2), labelPx, col, "center", true, 0.95, 4);
+        for (const s of (global.shops || [])) {
+            const mx = T.X(s.x), my = T.Y(s.y);
+            if (!inside(mx, my)) continue;
+            polyPath(c, mx, my, dotR * 1.5, 6, Math.PI / 6);
+            c.fillStyle = "#12191f"; c.fill();
+            c.lineWidth = 1.6; c.strokeStyle = SHOP_ACCENT; c.stroke();
+            gemPath(c, mx, my, dotR * 0.7);
+            c.fillStyle = color.gold; c.fill();
+        }
+        if (r.bloom && r.bloom.until > tnow) {
+            const mx = T.X(r.bloom.x), my = T.Y(r.bloom.y);
+            if (inside(mx, my)) {
+                const rr = Math.max(dotR * 2.4, (r.bloom.r || 340) * T.s);
+                c.save();
+                c.globalAlpha = 0.28;
+                c.fillStyle = "#ffd76e";
+                c.beginPath(); c.arc(mx, my, rr, 0, Math.PI * 2); c.fill();
+                c.globalAlpha = 0.9;
+                c.strokeStyle = "#ffd76e"; c.lineWidth = 2;
+                c.beginPath(); c.arc(mx, my, rr * pulse, 0, Math.PI * 2); c.stroke();
+                c.restore();
+                mapLabel("ORE BLOOM", mx, my - rr, true, "#ffd76e");
+            }
+        }
+        if (r.event && r.event.until > tnow) {
+            const mx = T.X(r.event.x), my = T.Y(r.event.y);
+            if (inside(mx, my)) {
+                c.save();
+                c.globalAlpha = 0.85;
+                c.strokeStyle = r.event.kind === "meteor" ? "#ff9a5a" : "#7fb1f2";
+                c.lineWidth = 2;
+                c.setLineDash([4, 3]);
+                const er = Math.max(dotR * 2.2, (r.event.r || 380) * T.s);
+                c.beginPath(); c.arc(mx, my, er * pulse, 0, Math.PI * 2); c.stroke();
+                c.restore();
+                mapLabel(r.event.kind === "meteor" ? "METEORS" : "GEM RAIN", mx, my - er, true, r.event.kind === "meteor" ? "#ff9a5a" : "#7fb1f2");
+            }
+        }
+        for (const ch of (r.chests || [])) {
+            const mx = T.X(ch.x), my = T.Y(ch.y);
+            if (!inside(mx, my)) continue;
+            gemPath(c, mx, my, dotR * (ch.rare ? 1.2 : 0.95));
+            c.fillStyle = ch.rare ? "#dc8cf8" : "#f0a060";
+            c.strokeStyle = color.black; c.lineWidth = 1.2; c.fill(); c.stroke();
+        }
+        const scan = (r.you && r.you.scan) || null;
+        if (scan && scan.length) {
+            // Ore Scanner: the vein gem as before, ringed so it reads as "found"
+            for (const o of scan) {
+                const mx = T.X(o.x), my = T.Y(o.y);
+                if (!inside(mx, my)) continue;
+                const colS = o.o === 4 ? "#6ff5a8" : "#d98af0";
+                c.save();
+                c.globalAlpha = 0.85;
+                c.strokeStyle = colS; c.lineWidth = 1.2;
+                c.beginPath(); c.arc(mx, my, dotR * 1.9, 0, Math.PI * 2); c.stroke();
+                c.restore();
+                gemPath(c, mx, my, dotR * 0.9);
+                c.fillStyle = colS; c.strokeStyle = color.black; c.lineWidth = 1; c.fill(); c.stroke();
+            }
+        }
+        for (const p of (r.pings || [])) {
+            if (p.id === gui.playerid) continue;
+            const tp = trackPos("ping" + p.id, p.x, p.y, 0.6);
+            const mx = T.X(tp.x), my = T.Y(tp.y);
+            if (!inside(mx, my)) continue;
+            c.save();
+            c.translate(mx, my);
+            c.fillStyle = "#ffb347"; c.strokeStyle = color.black; c.lineWidth = 1.5; c.lineJoin = "round";
+            const s2 = dotR * 1.6;
+            c.beginPath(); c.moveTo(0, -s2); c.lineTo(s2, s2 * 0.8); c.lineTo(-s2, s2 * 0.8); c.closePath();
+            c.fill(); c.stroke();
+            c.restore();
+            if (p.streak) drawText("x" + p.streak, mx, my - dotR * 2.6, 8, "#ffb347", "center", true);
+            c.save();
+            c.globalAlpha = 0.8;
+            c.strokeStyle = "#ffb347"; c.lineWidth = 1.5;
+            c.beginPath(); c.arc(mx, my, dotR * 2.6 * pulse, 0, Math.PI * 2); c.stroke();
+            c.restore();
+        }
+        if (r.boss) {
+            const bp = trackPos("boss", r.boss.x, r.boss.y, 0.6);
+            const mx = T.X(bp.x), my = T.Y(bp.y);
+            if (inside(mx, my)) {
+                const col = r.boss.c || "#c9a8ff";
+                polyPath(c, mx, my, dotR * 2.1, 8, Math.PI / 8);
+                c.fillStyle = col; c.strokeStyle = color.black; c.lineWidth = 1.8; c.fill(); c.stroke();
+                c.save();
+                c.globalAlpha = 0.85;
+                c.strokeStyle = col; c.lineWidth = 2;
+                c.beginPath(); c.arc(mx, my, dotR * 3.4 * pulse, 0, Math.PI * 2); c.stroke();
+                c.restore();
+                mapLabel(String(r.boss.name || "BOSS").toUpperCase(), mx, my + dotR * 3.4, false, col);
+            }
+        }
+    }
     function drawRaidResults() {
         const r = global.royale;
         if (!royaleActive() || !r.results || !r.results.top) return;
@@ -5770,39 +7695,27 @@ import * as tutorial from './tutorial.js';
             const peak = (0.07 + 0.40 * lowHpLevel) * (0.84 + 0.16 * pulse);
             const inner = 0.78 - 0.30 * lowHpLevel;
             c.save();
-            const gd = c.createRadialGradient(w / 2, h / 2, r * inner, w / 2, h / 2, r);
-            gd.addColorStop(0, "rgba(170,16,16,0)");
-            gd.addColorStop(1, "rgba(170,16,16," + peak.toFixed(3) + ")");
-            c.fillStyle = gd;
-            c.fillRect(0, 0, w, h);
+            c.globalAlpha = peak;
+            c.drawImage(vignetteSprite(w, h, inner, "170,16,16"), 0, 0, w, h);
             c.restore();
         }
 
         if (hurt > 0.01) {
             c.save();
-            const gd = c.createRadialGradient(w / 2, h / 2, r * 0.52, w / 2, h / 2, r);
-            gd.addColorStop(0, "rgba(210,28,28,0)");
-            gd.addColorStop(1, "rgba(210,28,28," + (0.34 * hurt).toFixed(3) + ")");
-            c.fillStyle = gd;
-            c.fillRect(0, 0, w, h);
+            c.globalAlpha = 0.34 * hurt;
+            c.drawImage(vignetteSprite(w, h, 0.52, "210,28,28"), 0, 0, w, h);
             c.restore();
         }
         if (cele > 0.01) {
             c.save();
-            const gd = c.createRadialGradient(w / 2, h / 2, r * 0.5, w / 2, h / 2, r);
-            gd.addColorStop(0, "rgba(239,199,75,0)");
-            gd.addColorStop(1, "rgba(239,199,75," + (0.34 * cele).toFixed(3) + ")");
-            c.fillStyle = gd;
-            c.fillRect(0, 0, w, h);
+            c.globalAlpha = 0.34 * cele;
+            c.drawImage(vignetteSprite(w, h, 0.5, "239,199,75"), 0, 0, w, h);
             c.restore();
         }
         if (dead > 0.01) {
             c.save();
-            const gd = c.createRadialGradient(w / 2, h / 2, r * 0.58, w / 2, h / 2, r);
-            gd.addColorStop(0, "rgba(255,255,255,0)");
-            gd.addColorStop(1, "rgba(255,255,255," + (0.28 * dead).toFixed(3) + ")");
-            c.fillStyle = gd;
-            c.fillRect(0, 0, w, h);
+            c.globalAlpha = 0.28 * dead;
+            c.drawImage(vignetteSprite(w, h, 0.58, "255,255,255"), 0, 0, w, h);
             c.restore();
         }
     }
@@ -5851,19 +7764,17 @@ import * as tutorial from './tutorial.js';
         // instead of blinking on and off.
         const a = (0.035 + 0.10 * t) + (0.03 + 0.13 * t) * beat;
         // The vignette also closes in: tunnel vision as the load grows.
-        const inner = r * (0.80 - 0.20 * t - 0.03 * beat);
+        const inner = 0.80 - 0.20 * t - 0.03 * beat;
+        if (global.lowFx) return;
         c.save();
-        const gd = c.createRadialGradient(w / 2, h / 2, Math.max(1, inner), w / 2, h / 2, r);
-        gd.addColorStop(0, "rgba(" + rgb + ",0)");
-        gd.addColorStop(1, "rgba(" + rgb + "," + a.toFixed(3) + ")");
-        c.fillStyle = gd;
-        c.fillRect(0, 0, w, h);
+        c.globalAlpha = a;
+        c.drawImage(vignetteSprite(w, h, inner, rgb), 0, 0, w, h);
         c.restore();
 
         if (full) {
             c.save();
             c.globalAlpha = 0.68 + 0.32 * beat;
-            drawText("Gem limit reached, please bank it!", w / 2, 112, 16, "#eb4034", "center");
+            drawText("Your satchel is full. Go bank it.", w / 2, 112, 16, "#eb4034", "center");
             c.restore();
         }
     }
@@ -5901,10 +7812,14 @@ import * as tutorial from './tutorial.js';
     
     
     let mapPaths = null;
+    const MAP_PATHS_MIN_MS = 700;
     function getMapPaths() {
         const tr = window.terrainRenderer;
         if (!tr || !tr.ready || !tr._cellPolys.size) return null;
-        if (!mapPaths || tr.mapDirty) {
+        // mapDirty flips on every rock death and regrow; while anyone mines
+        // that is every frame, so the rebuild is rate limited
+        const nowMP = performance.now();
+        if (!mapPaths || (tr.mapDirty && nowMP - (mapPaths.builtAt || 0) >= MAP_PATHS_MIN_MS)) {
             tr.mapDirty = false;
             const gw = global.gameWidth, gh = global.gameHeight;
             const cols = tr._cols, rows = tr._rows;
@@ -5920,7 +7835,7 @@ import * as tutorial from './tutorial.js';
                     p.lineTo((poly[i][0] / cols - 0.5) * gw, (poly[i][1] / rows - 0.5) * gh);
                 p.closePath();
             }
-            mapPaths = { alive, dead, epoch: (mapPaths ? mapPaths.epoch : 0) + 1 };
+            mapPaths = { alive, dead, epoch: (mapPaths ? mapPaths.epoch : 0) + 1, builtAt: nowMP };
         }
         return mapPaths;
     }
@@ -6239,6 +8154,7 @@ import * as tutorial from './tutorial.js';
             }
         }
 
+        if (royaleActive()) drawRoyaleMapExtras(T, rx, ry, rw, rh, dotR);
         const px = T.X(global.player.renderx), py = T.Y(global.player.rendery);
         if (inside(px, py)) {
             const ang = Math.atan2(global.target.y, global.target.x);
@@ -6290,11 +8206,14 @@ import * as tutorial from './tutorial.js';
         const dpr = Math.max(1, Math.min(2, global.ratio || 1));
         const S = Math.ceil(size * dpr * (cSpan / span));
         const margin = (cSpan - span) / 2;
-        const needs = !cornerCache.canvas || cornerCache.sizePx !== S ||
-            cornerCache.epoch !== epoch ||
+        const nowMM = performance.now();
+        const needsNow = !cornerCache.canvas || cornerCache.sizePx !== S ||
             Math.abs(cxNow - cornerCache.cx) > margin * 0.7 ||
             Math.abs(cyNow - cornerCache.cy) > margin * 0.7;
-        if (needs) {
+        const needsEpoch = cornerCache.epoch !== epoch && nowMM - (cornerCache.bakedAt || 0) >= MAP_PATHS_MIN_MS;
+        if (needsNow || needsEpoch) {
+            cornerCache.bakedAt = nowMM;
+            cornerCache.bakes = (cornerCache.bakes | 0) + 1;
             if (!cornerCache.canvas || cornerCache.sizePx !== S) {
                 cornerCache.canvas = document.createElement("canvas");
                 cornerCache.canvas.width = cornerCache.canvas.height = S;
@@ -6311,10 +8230,10 @@ import * as tutorial from './tutorial.js';
             cornerCache.epoch = epoch;
         }
         ctx[2].save();
-        optionsMenu_drawRoundedRect(x, y, size, size, 12);
+        // round island, round map
+        ctx[2].beginPath();
+        ctx[2].arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
         ctx[2].clip();
-        
-        
         const ppw = S / cSpan;
         ctx[2].imageSmoothingEnabled = true;
         ctx[2].drawImage(cornerCache.canvas,
@@ -6329,6 +8248,16 @@ import * as tutorial from './tutorial.js';
         };
         drawMapMarkers(T, x, y, size, size, 8.5, 3.4);
         strokeStormCircle(ctx[2], T.X, T.Y, T.s, x, y, size, size);
+        ctx[2].restore();
+        ctx[2].save();
+        ctx[2].beginPath();
+        ctx[2].arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+        ctx[2].lineWidth = 4;
+        ctx[2].strokeStyle = "rgba(0,0,0,0.6)";
+        ctx[2].stroke();
+        ctx[2].lineWidth = 1.5;
+        ctx[2].strokeStyle = "rgba(255,255,255,0.22)";
+        ctx[2].stroke();
         ctx[2].restore();
     }
 
@@ -6527,19 +8456,19 @@ import * as tutorial from './tutorial.js';
     function drawRoyaleFTabBody(x, y, w, h, tab) {
         const rows = tab === "feed"
             ? (global.royale.feed || []).slice().reverse().map(f => ({
-                name: f.storm
-                    ? ((f.name || "Unnamed") + " was lost in the storm")
-                    : ((f.by || "Someone") + " " + (f.verb || "killed") + " " + (f.name || "Unnamed")),
-                extra: f.place ? ("#" + f.place) : "",
+                name: feedLine(f).text,
+                extra: f.pts ? ("+" + f.pts) : "",
             }))
             : tab === "alive"
-                ? ((global.royale.board || []).filter(r => r.alive)).map((r, i) => ({
+                ? ((global.royale.board || []).filter(r => r.alive || r.here)).map((r, i) => ({
                     name: (i + 1) + ". " + (r.name || "Unnamed"),
-                    extra: (r.kills | 0) ? ((r.kills | 0) + " kills") : "alive",
+                    extra: !r.alive ? "respawning" : (r.kills | 0) ? ((r.kills | 0) + " kills") : "alive",
+                    me: r.id === gui.playerid || (r.place > 0 && r.place === (global.royale.place | 0)),
                 }))
                 : royaleBoardRows().map((r, i) => ({
                     name: (i + 1) + ". " + (r.name || "Unnamed"),
                     extra: util.formatLargeNumber(r.score || r.gems | 0) + " pts  " + (r.kills | 0) + " kills",
+                    me: r.id === gui.playerid || (r.place > 0 && r.place === (global.royale.place | 0)),
                 }));
         if (!rows.length) {
             drawText(tab === "alive" ? "Nobody is alive" : "Nobody here yet", x + w / 2, y + h / 2, 16, color.guiwhite, "center");
@@ -6551,9 +8480,11 @@ import * as tutorial from './tutorial.js';
             drawText("PTS = banked + 200 per kill + 50% carried", x + 18, y + 16, 12, color.grey, "left");
             headH = 22;
         }
+        const meHex = playerHexCol() || color.gold;
         for (let i = 0; i < rows.length && i < Math.floor((h - 20 - headH) / rowH); i++) {
             const ry = y + 16 + headH + i * rowH;
-            drawText(rows[i].name, x + 18, ry, 14, color.guiwhite, "left");
+            // your row: your colour on the name only, nothing behind it
+            drawText(rows[i].name, x + 18, ry, 14, rows[i].me ? meHex : color.guiwhite, "left");
             if (rows[i].extra) drawText(rows[i].extra, x + w - 18, ry, 14, color.gold, "right");
         }
     }
@@ -6916,6 +8847,7 @@ import * as tutorial from './tutorial.js';
     function drawAvailableUpgrades(spacing, alcoveSize) {
 
         if (global.optionsMenu_Anim.isOpened) global.clickables.upgrade.hide();
+        global.upgradeBoxBottom = 0;
         if (gui.upgrades.length > 0) {
             let internalSpacing = 15;
             let len = alcoveSize / 2;
@@ -6987,6 +8919,8 @@ import * as tutorial from './tutorial.js';
                 m = measureText(msg, textScale),
                 buttonX = initialX + (rowWidth + len - initialX) / 2,
                 buttonY = initialY + height + internalSpacing - 5;
+            // the quest card sits below this edge while the tiles are on screen
+            if (glide > -0.5) global.upgradeBoxBottom = buttonY + h + 6;
 
             // Tutorial: declining is not a choice a lesson offers - and the
             // decline only clears the menu locally, so the evolve step would
@@ -7196,10 +9130,11 @@ import * as tutorial from './tutorial.js';
 
                 if (softcap <= 0) continue;
 
+                const mStat = i === 10 ? 10 : 9 - i;
                 let amount = skill.amount,
                     skillColor = color[skill.color],
                     cap = skill.cap,
-                    name = statNames[9 - i].split(/\s+/),
+                    name = statNames[mStat].split(/\s+/),
                     halfNameLength = Math.floor(name.length / 2),
                     [name1, name2] = name.length === 1 ? [name[0], null] : [name.slice(0, halfNameLength).join(" "), name.slice(halfNameLength).join(" ")];
 
@@ -7225,7 +9160,7 @@ import * as tutorial from './tutorial.js';
                     drawGuiLine(width, spacing + q * 2 / 3, width, spacing + q);
                 }
 
-                cap === 0 || !gui.points || softcap !== cap && amount === softcap || global.clickables.stat.place(9 - i, x * clickableRatio, spacing * clickableRatio, t * clickableRatio, q * clickableRatio);
+                cap === 0 || !gui.points || softcap !== cap && amount === softcap || global.clickables.stat.place(mStat, x * clickableRatio, spacing * clickableRatio, t * clickableRatio, q * clickableRatio);
 
                 if (name2) {
                     drawText(name2, x + t / 2, spacing + q * 0.55, q / 5, color.guiwhite, "center");
@@ -7519,8 +9454,12 @@ import * as tutorial from './tutorial.js';
         c.stroke();
         c.restore();
         if (iconKind) drawDeathIcon(iconKind, bx + 20, by + 20, 17, alpha);
-        drawText(label, bx + 40, by + 12, 11, color.grey, "left");
-        drawText(value, bx + 40, by + 31, 16, color.guiwhite, "left");
+        // shrink to fit the box: long labels and six-figure values both happen
+        const maxW = bw - 50;
+        let ls = 11; while (ls > 7.5 && measureText(label, ls) > maxW) ls -= 0.5;
+        let vs = 16; while (vs > 9 && measureText(value, vs) > maxW) vs -= 0.5;
+        drawText(label, bx + 40, by + 12, ls, color.grey, "left");
+        drawText(value, bx + 40, by + 31, vs, color.guiwhite, "left");
     };
     const roundRectPath = (c, x, y, w, h, r) => {
         r = Math.min(r, w / 2, h / 2);
@@ -7736,7 +9675,7 @@ import * as tutorial from './tutorial.js';
         c.restore();
 
         drawText("YOU DIED", cx, py + 34, 26 * (0.8 + 0.2 * panelA), color.gold, "center", true, panelA);
-        drawText("RAID CONTINUES - DEATH IS A TAX", cx, py + 54, 11, color.grey, "center", true, panelA);
+        drawText("The raid keeps going without you for a bit", cx, py + 54, 11, color.grey, "center", true, panelA);
 
         // headline score + place
         const bx = px + 22, bw = PW - 44;
@@ -7781,7 +9720,11 @@ import * as tutorial from './tutorial.js';
         c.globalAlpha = global.lerp(2.4, 2.7, glide);
         drawText(killedBy, cx, gy + 3 * 46 + 14, 13, color.grey, "center");
         c.restore();
-        drawText("Banked gems kept. Satchel dropped. Drill weak for 30s.", cx, gy + 3 * 46 + 34, 12, color.guiwhite, "center", true, panelA);
+        const extras = [];
+        if ((global.finalInsured | 0) > 0) extras.push("Your insurance saved " + util.formatLargeNumber(global.finalInsured | 0) + " of it");
+        if ((global.finalStreak | 0) >= 3) extras.push("Your " + (global.finalStreak | 0) + " kill streak is over");
+        if (global.finalDrillLost) extras.push("Your drill dropped a tier");
+        drawText(extras.length ? extras.join(". ") + "." : "You dropped everything you were carrying, but your bank is safe.", cx, gy + 3 * 46 + 34, 12, extras.length ? color.gold : color.guiwhite, "center", true, panelA);
 
         const locked = !!(global.royale.lock && global.royale.at > 0);
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
@@ -7811,6 +9754,7 @@ import * as tutorial from './tutorial.js';
         const barW = Math.min(620, sw - 40);
         const x = (sw - barW) / 2;
         const y = 10;
+        spectateBarBottom = y + 58;
         const h = 36;
         const c = ctx[2];
         c.save();
@@ -7833,10 +9777,10 @@ import * as tutorial from './tutorial.js';
         const homeCx = x + barW - 6 - bw / 2;
         const playCx = x + barW - 12 - bw * 1.5;
         const label = locked
-            ? ("Final storm " + lockLeft + "s" + (place > 0 ? ("  #" + place) : ""))
+            ? ("Final storm " + lockLeft + "s" + (place > 0 ? ("  #" + place) : "") + "  ·  no respawns")
             : queued ? "Dropping in..."
             : ("Spectating" + (place > 0 ? ("  #" + place) : "") +
-               (global.died ? (waitMs > 0 ? ("  -  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  -  Rejoining") : ""));
+               (global.died ? (waitMs > 0 ? ("  ·  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  ·  Rejoining") : ""));
         fitText(label, x + barW / 2, y + 24, 14, Math.max(60, barW - 4 * bw - 60), color.guiwhite);
         // DOM buttons (Prev/Next/Play/Home) sit just below this bar and take
         // the clicks. Skip the canvas twins so there is one working set.
@@ -7900,6 +9844,20 @@ import * as tutorial from './tutorial.js';
             // Spectate glide owns the camera: the chase below would drag it
             // back toward the corpse every frame and end in a snap. The glide
             // retargets live from server updates, then hands off smoothly.
+        } else if (global.died && royaleActive()) {
+            // Spectating: ease onto whoever the camera follows so a target
+            // swap or a respawn never snaps. Frame-time compensated here, so
+            // no syncWithFps (that would double-compensate and overshoot).
+            const dt = Math.min(250, tickMotion || 16.7);
+            const k = Math.min(1, 1 - Math.pow(0.80, dt / 16.7));
+            const far = Math.hypot(playerx - global.player.renderx, playery - global.player.rendery);
+            if (!isFinite(far) || far > 6000) {
+                global.player.renderx = playerx;
+                global.player.rendery = playery;
+            } else {
+                global.player.renderx = util.lerp(global.player.renderx, playerx, k);
+                global.player.rendery = util.lerp(global.player.rendery, playery, k);
+            }
         } else if (config.graphical.lerpAnimations) {
             // lerp toward the INTERPOLATED position - chasing raw 30Hz
             global.player.renderx = util.lerp(global.player.renderx, playerx, 0.15, true);
@@ -7928,7 +9886,8 @@ import * as tutorial from './tutorial.js';
         drawFloor(px, py, ratio, tick);
         drawEntities(px, py, ratio, tick, spacing);
         drawOutpostLabels(px, py, ratio);
-        drawRevengeMarker(px, py, ratio);
+        drawRoyaleWorldMarkers(px, py, ratio);
+        drawFx(px, py, ratio);
         // Same camera transform the entities just used, so the numbers sit
         // exactly over the bodies that took the hit. Drawn before the HUD so
         // the HUD always wins the overlap.
@@ -7958,12 +9917,16 @@ import * as tutorial from './tutorial.js';
             drawMobileButtons(spacing, alcoveSize);
         }
         if (global.gamepadMode) drawCrosshair();
+        if (!global.GUIStatus.renderGUI && global.gameStart) {
+            drawText("GUI hidden. Turn it on under Settings > Graphics.", global.screenWidth / 2, global.screenHeight - 24, 12, color.grey, "center");
+        }
         if (global.GUIStatus.renderGUI) {
             updateMapSmoothing();
             drawLowHealthVignette();
             drawSatchelDanger();
             drawTeamBankBar();
             drawRoyaleHUD();
+            drawKillCallouts();
             if (global.royaleSpectating) drawRoyaleSpectateBar();
             try { updateRoyaleDomButtons(); } catch { /* */ }
             drawRoyaleBoard();
@@ -7975,7 +9938,10 @@ import * as tutorial from './tutorial.js';
                 drawSelfInfo(max);
                 drawGemPopups();   // +N numbers + pickup ring over the tank
                 drawMineCombo();    // mining chain meter under the tank
-                drawVaultUI();     
+                drawKitBox(spacing, alcoveSize);
+                drawVaultUI();
+                drawShopUI();
+                drawTooltips();
             }
             drawMinimapAndDebug(spacing, alcoveSize, global.GRAPHDATA, tick);
             // Tutorial: a leaderboard is competition furniture; the server
@@ -8256,8 +10222,8 @@ import * as tutorial from './tutorial.js';
         if (locked) {
             const left = Math.max(0, global.royale.lockLeft | 0);
             clearScreen(color.white, 1, ctx[2]);
-            drawText("Final storm phase - No spawns, please wait " + left + " seconds!", global.screenWidth / 2, global.screenHeight / 2, 22, color.guiwhite, "center");
-            drawText("The raid keeps going. You drop in when it lifts.", global.screenWidth / 2, global.screenHeight / 2 + 34, 15, color.gold, "center");
+            drawText("Final storm. No respawns for " + left + "s.", global.screenWidth / 2, global.screenHeight / 2, 22, color.guiwhite, "center");
+            drawText("The raid keeps going. You drop back in when it lifts.", global.screenWidth / 2, global.screenHeight / 2 + 34, 15, color.gold, "center");
             return;
         }
         clearScreen(color.white, 1, ctx[2]);
@@ -8305,6 +10271,12 @@ import * as tutorial from './tutorial.js';
             return;
         }
         animationFrame(animloop);
+        renderFrame(tick);
+    }
+    // One frame of the game, separate from the scheduler so QA tooling can
+    // step frames in a background tab where requestAnimationFrame is paused.
+    window.dwRenderFrame = renderFrame;
+    function renderFrame(tick) {
         // Hit-stop: hold the last frame for a beat when a rock is destroyed
         if (global.hitStop && Date.now() < global.hitStop) return;
         if (global.gameStart) {
@@ -8326,10 +10298,18 @@ import * as tutorial from './tutorial.js';
         for (let context of ctx) {
             context.lineCap = "round";
             context.lineJoin = "round";
+            // The contexts stay scaled to the UI ratio between frames. When
+            // the canvas is smaller than the UI scale (small window, Low
+            // Resolution mode) a clearRect in scaled units only wipes part
+            // of the canvas and the GUI layer smears old text over new. Clear
+            // in device pixels, then put the scale back.
+            context.save();
+            context.setTransform(1, 0, 0, 1, 0, 0);
             context.clearRect(0, 0, context.canvas.width, context.canvas.height);
+            context.restore();
         }
 
-        if (isNaN(global.player.renderx) && isNaN(global.player.rendery)) {
+        if (!isFinite(global.player.renderx) || !isFinite(global.player.rendery)) {
             global.player.renderx = global.player.cx.x;
             global.player.rendery = global.player.cy.y;
         }

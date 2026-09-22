@@ -32,6 +32,7 @@ gui = {
             data?.move_speed ?? 'Movement Speed',
             data?.shield_regen ?? 'Shield Regeneration',
             data?.shield_cap ?? 'Shield Capacity',
+            data?.mining_power ?? 'Mining Power',
         ]
     },
     skills: [
@@ -44,7 +45,8 @@ gui = {
         { amount: 0, color: 'green' , cap: 1, softcap: 1 },
         { amount: 0, color: 'teal'  , cap: 1, softcap: 1 },
         { amount: 0, color: 'gold'  , cap: 1, softcap: 1 },
-        { amount: 0, color: 'orange', cap: 1, softcap: 1 }
+        { amount: 0, color: 'orange', cap: 1, softcap: 1 },
+        { amount: 0, color: 'tangerine', cap: 1, softcap: 1 }
     ],
     points: 0,
     upgrades: [],
@@ -582,10 +584,13 @@ function spawnStructureHit(z) {
     if (!m) return;
     const chamber = m.className === "coreChamber" || m.name === "Core Chamber";
     const outpost = m.className === "outpostBanner" || m.name === "Outpost";
-    if (!chamber && !outpost) return;
+    const chest = m.name === "Copper Chest" || m.name === "Epic Chest";
+    if (!chamber && !outpost && !chest) return;
 
     let cx = z.x, cy = z.y, rim;
-    if (chamber) {
+    if (chest) {
+        rim = (z.size || 26) * 0.92;
+    } else if (chamber) {
         const ch = (global.chambers || []).find(c => Math.hypot(c.x - z.x, c.y - z.y) < 80);
         if (ch) { cx = ch.x; cy = ch.y; }
         const st = ch && (global.chamberState || []).find(s => s.id === ch.id);
@@ -816,7 +821,10 @@ const process = (z = {}) => {
     if (isNew) {
         z.guns = GunContainer(gunnumb);
     } else if (gunnumb !== z.guns.length) {
-        throw new Error('Mismatch between data gun number and remembered gun number!');
+        // A tank can gain or lose a barrel without changing class (a shop
+        // sidearm mounts on the live body). Rebuild the container instead of
+        // aborting the whole update packet.
+        z.guns = GunContainer(gunnumb);
     }
 
     for (let i = 0; i < gunnumb; i++) {
@@ -951,6 +959,10 @@ const convert = {
                 gui.skills[i].cap = get.next();
                 gui.skills[i].softcap = get.next();
             }
+            // mining power rides last on the wire
+            gui.skills[10].name = get.next();
+            gui.skills[10].cap = get.next();
+            gui.skills[10].softcap = get.next();
         }
         if (indices.skills) {
             let skk = get.next();
@@ -964,6 +976,7 @@ const convert = {
             gui.skills[7].amount = parseInt(skk.slice(14, 16), 16);
             gui.skills[8].amount = parseInt(skk.slice(16, 18), 16);
             gui.skills[9].amount = parseInt(skk.slice(18, 20), 16);
+            gui.skills[10].amount = skk.length >= 22 ? parseInt(skk.slice(20, 22), 16) : 0;
         }
         if (indices.accel) {
             gui.accel = get.next();
@@ -1111,6 +1124,7 @@ let incoming = async function(message, socket) {
                 global.outposts = m[7] ? JSON.parse(m[7]) : [];
                 global.chambers = m[8] ? JSON.parse(m[8]) : [];
                 global.digRoyaleMode = m[9] === 1;
+                try { global.shops = m[10] ? JSON.parse(m[10]) : []; } catch (e) { global.shops = []; }
                 if (window.terrainRenderer) window.terrainRenderer.init(cells, cols, rows, rockState, oreState, oreSalt);
             } break;
             case 'TUTI': {
@@ -1215,6 +1229,40 @@ let incoming = async function(message, socket) {
                     r.lockLeft = d.lockLeft | 0;
                     r.you = d.you || null;
                     r.matchId = d.matchId | 0;
+                    r.chests = d.chests || [];
+                    r.event = d.event || null;
+                    r.mod = d.mod || null;
+                    // a new override: a popup that says what it does. The first
+                    // one after joining waits a moment so it is not lost in the
+                    // spawn messages.
+                    if (r.mod && r.mod.id && r.mod.id !== r._modSeenId) {
+                        const firstMod = !r._modSeenId;
+                        r._modSeenId = r.mod.id;
+                        global.callouts = global.callouts || [];
+                        global.callouts.push({ kind: "override", text: (firstMod ? "OVERRIDE: " : "NEW OVERRIDE: ") + String(r.mod.name).toUpperCase(), sub: String(r.mod.desc || ""), born: performance.now() + (firstMod ? 1800 : 0), dur: 4500 });
+                    }
+                    r.pings = d.pings || [];
+                    // boss surfaced / gone: sound + camera punch once
+                    const bossNow = d.boss || null;
+                    if (bossNow && bossNow.id !== r.bossSeenId) {
+                        r.bossSeenId = bossNow.id;
+                        punchCamera(18, 380, true);
+                        if (gameSound.oreBreak) gameSound.oreBreak(global.player.renderx, global.player.rendery, 3);
+                    } else if (!bossNow) r.bossSeenId = 0;
+                    r.boss = bossNow;
+                    // leaderboard hits: passing someone, or getting passed
+                    const placeNow = d.youPlace | 0;
+                    if (placeNow > 0 && r.lastPlace > 0 && placeNow !== r.lastPlace && !global.died && r.board && r.board.length) {
+                        if (placeNow < r.lastPlace) {
+                            const below = r.board.find(row => row.place === placeNow + 1);
+                            global.createMessage("You passed " + (below ? below.name : "someone") + " - now #" + placeNow, 3200);
+                            if (gameSound.gemPickup) gameSound.gemPickup(3);
+                        } else {
+                            const above = r.board.find(row => row.place === placeNow - 1);
+                            global.createMessage((above ? above.name : "Someone") + " passed you - now #" + placeNow, 3200);
+                        }
+                    }
+                    if (placeNow > 0) r.lastPlace = placeNow;
                     // Died before the first RY: promote to the raid screen now.
                     // Killer cam owns the first 3s after F, so hands off here.
                     if (global.died && !global.royaleDied && !(global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) && (d.raidId || d.matchId)) {
@@ -1242,6 +1290,89 @@ let incoming = async function(message, socket) {
             } break;
             case 'RYP': {
                 global.royale.place = m[0] | 0;
+            } break;
+            case 'SHC': {
+                try { global.shop.catalog = JSON.parse(m[0]) || []; } catch (e) { global.shop.catalog = []; }
+            } break;
+            case 'SHP': {
+                try {
+                    const d = JSON.parse(m[0]);
+                    const sh = global.shop;
+                    const prevArm = sh.state.arm, prevDrill = sh.state.drill;
+                    const prevKit = sh.state.kit || {};
+                    sh.state = { drill: d.drill | 0, gear: d.gear || [], kit: d.kit || {}, kitOrder: d.kitOrder || [], arm: d.arm || null, armUntil: +d.armUntil || 0, gearUntil: d.gearUntil || {} };
+                    // slot flashes: gold when an item arrives, white when one is spent
+                    sh.slotFlash = sh.slotFlash || {};
+                    const nowF = performance.now();
+                    for (const id of new Set([...Object.keys(prevKit), ...Object.keys(sh.state.kit)])) {
+                        const a = prevKit[id] | 0, b = sh.state.kit[id] | 0;
+                        if (b > a) sh.slotFlash[id] = { at: nowF, kind: "get" };
+                        else if (b < a) sh.slotFlash[id] = { at: nowF, kind: "use" };
+                    }
+                    if ((sh.state.drill | 0) > (prevDrill | 0)) sh.drillFlashAt = nowF;
+                    if (sh.state.arm && sh.state.arm !== prevArm) sh.armFlashAt = nowF;
+                    if (d.msg) { sh.msg = d.msg; sh.msgAt = performance.now(); sh.msgOk = !!d.ok; }
+                    if (d.msg && d.ok && gameSound.bankCelebrate) gameSound.bankCelebrate();
+                    else if (d.msg && gameSound.uiClick) gameSound.uiClick();
+                } catch (e) { /* */ }
+            } break;
+            case 'SHU': {
+                const sh = global.shop;
+                const on = !!m[0];
+                if (on && !sh.onPad) { sh.dismissed = false; sh.sel = null; sh.hover = -1; }
+                sh.onPad = on;
+                sh.padId = m[1] | 0;
+                sh.padName = m[2] || "";
+            } break;
+            case 'KC': {
+                // kind, text, points: the big centre callout
+                const list = global.callouts;
+                const prev = list.length ? list[list.length - 1].born : -1e9;
+                list.push({ kind: m[0] || "kill", text: m[1] || "", pts: m[2] | 0, sub: typeof m[3] === "string" ? m[3] : undefined, born: Math.max(performance.now(), prev + 700) });
+                if (list.length > 5) list.shift();
+                if (m[0] === "boss" || m[0] === "quest") { punchUI(8, 260); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
+            } break;
+            case 'FX': {
+                const kindF = m[2] || "ring";
+                const nowF = performance.now();
+                const fx = { x: m[0] | 0, y: m[1] | 0, kind: kindF, born: nowF };
+                const dxf = fx.x - global.player.renderx, dyf = fx.y - global.player.rendery;
+                const nearF = Math.hypot(dxf, dyf);
+                let pushFx = true;
+                if (kindF === "chest" || kindF === "chestrare") {
+                    // the terrain renderer breaks the chest exactly like a rock
+                    // cell (chips, sparks, flash, dust, shake); the floor halo
+                    // fades out from this moment
+                    const rows = (global.royale && global.royale.chests) || [];
+                    const row = rows.find(r => Math.abs(r.x - fx.x) < 60 && Math.abs(r.y - fx.y) < 60);
+                    const eid = row && row.e != null ? row.e : 0;
+                    const size = (row ? row.rare : kindF === "chestrare") ? 40 : 36;
+                    if (eid && global.chestGoneAt) global.chestGoneAt.set(eid, nowF);
+                    const hold = nearF < 800 ? 55 : 0;
+                    if (hold) global.hitStop = Math.max(global.hitStop || 0, Date.now() + hold);
+                    const tr = window.terrainRenderer;
+                    if (tr && tr.shatterAt) {
+                        tr.shatterAt(fx.x, fx.y, size * 1.02, kindF === "chestrare" ? 3 : 1, hold, -(1000000 + eid));
+                        if (eid && tr.dropCell) tr.dropCell(-(1000000 + eid));
+                    }
+                    pushFx = false;
+                }
+                if (kindF === "bossdead") {
+                    const b = (global.royale && global.royale.boss) || global._lastBoss;
+                    fx.col = (b && b.c) || "#c9a8ff";
+                    if (nearF < 1600) global.hitStop = Math.max(global.hitStop || 0, Date.now() + 90);
+                }
+                if (pushFx) {
+                    global.fx.push(fx);
+                    if (global.fx.length > 24) global.fx.shift();
+                }
+                try {
+                    if (nearF < 900) {
+                        if (m[2] === "meteor" || m[2] === "charge") { punchCamera(14, 260, true); gameSound.rockBreak(m[0] | 0, m[1] | 0); }
+                        if (m[2] === "bossdead") { punchCamera(44, 650, true); gameSound.oreBreak(m[0] | 0, m[1] | 0, 4); }
+                        if (m[2] === "chest" || m[2] === "chestrare") { punchCamera(m[2] === "chestrare" ? 16 : 10, 240, true); gameSound.oreBreak(m[0] | 0, m[1] | 0, m[2] === "chestrare" ? 3 : 2); }
+                    }
+                } catch (e) { /* */ }
             } break;
             case 'RYO': {
                 global.royale.occupy = m[1] | 0;
@@ -1415,11 +1546,18 @@ let incoming = async function(message, socket) {
                 global.royale.occupy = 0;
                 global.royale.lockout = 0;
                 global.pullUpgradeMenu = false;
+                global.shop.onPad = false;
+                global.shop.dismissed = false;
+                global.callouts.length = 0;
                 global.player.renderx = global.player.cx.x = m[0];
                 global.player.rendery = global.player.cy.y = m[1];
                 global.player.renderv = global.player.view = m[2];
-                global.player.animX.add(m[0]);
-                global.player.animY.add(m[1]);
+                global.player.loc = { x: m[0], y: m[1] };
+                // twice: the interpolator keeps the previous sample as its
+                // start point, and one add would sweep the camera from the
+                // old (spectate) spot to the tank instead of cutting to it
+                global.player.animX.add(m[0]); global.player.animX.add(m[0]);
+                global.player.animY.add(m[1]); global.player.animY.add(m[1]);
             } break;
             case 'S': {
                 let clientTime = m[0],
@@ -1496,11 +1634,15 @@ let incoming = async function(message, socket) {
                     camy = m[2];
                 // Pre-spawn camera drip (final-storm queue): enter the game
                 // on it so queued players watch the wait view with a live
-                // countdown instead of a dead connecting screen.
-                if (!global.gameStart && startSettings.allowtostartgame) {
+                // countdown instead of a dead connecting screen. A normal
+                // spawn skips it: otherwise the first frames show a random
+                // spot near the storm before the tank exists.
+                const queued = global.raidQueued || !!(global.royale && global.royale.lock);
+                if (!global.gameStart && startSettings.allowtostartgame && queued) {
                     global.gameStart = true;
                     global.gameConnecting = false;
                 }
+                if (!global.gameStart && !global.died) return;
                 global.player.cx.x = camx;
                 global.player.cy.y = camy;
                 global.player.loc = { x: camx, y: camy };
@@ -1510,12 +1652,14 @@ let incoming = async function(message, socket) {
                 // while tracking steps stay live. Render lerps in animloop.
                 if (global.died && isFinite(global.player.renderx) && isFinite(global.player.rendery)) {
                     const jump = Math.hypot(camx - global.player.renderx, camy - global.player.rendery);
-                    if (jump > 260 && !global._specGlide) {
-                        global._specGlide = { x0: global.player.renderx, y0: global.player.rendery, x1: camx, y1: camy, t0: performance.now(), dur: 850 };
+                    if (jump > 180 && !global._specGlide) {
+                        global._specGlide = { x0: global.player.renderx, y0: global.player.rendery, x1: camx, y1: camy, t0: performance.now(), dur: 900 };
                     } else if (global._specGlide) {
                         global._specGlide.x1 = camx;
                         global._specGlide.y1 = camy;
-                    } else {
+                    } else if (!(global.royale && global.royale.at > 0)) {
+                        // Dig Royale eases the render position in animloop;
+                        // other modes keep the direct follow.
                         global.player.renderx = camx;
                         global.player.rendery = camy;
                     }
@@ -1645,6 +1789,10 @@ let incoming = async function(message, socket) {
             global.died = true;
             const deathPlace = m[13 + m[8]] | 0;
             if (deathPlace > 0) global.royale.place = deathPlace;
+            global.finalStreak = m[14 + m[8]] | 0;
+            global.finalDrillLost = m[15 + m[8]] | 0;
+            global.finalInsured = m[16 + m[8]] | 0;
+            global.shop.onPad = false;
             // Death notice goes to the notification stack too, like autofire
             // toggles, so it reads even while spectating or queued.
             try {

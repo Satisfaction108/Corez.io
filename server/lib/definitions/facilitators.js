@@ -73,7 +73,7 @@ exports.setBuild = (build) => {
     return [6, 4, 3, 5, 2, 9, 0, 1, 8, 7].map((r) => skills[r]);
 }
 exports.skillSet = (args) => {
-    let skills = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let skills = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     for (let s in args) {
         if (!args.hasOwnProperty(s)) continue;
         skills[skcnv[s]] = Math.round(skill_cap * args[s]);
@@ -806,7 +806,7 @@ exports.makeMenu = (name = -1, options = {}) => {
         UPGRADE_TOOLTIP: options.tooltip,
         SHAPE: options.shape ??= 0,
         IGNORED_BY_AI: true,
-        SKILL_CAP: Array(10).fill(dfltskl),
+        SKILL_CAP: Array(11).fill(dfltskl),
         RESET_CHILDREN: true,
         GUNS: options.guns ??= [
             {

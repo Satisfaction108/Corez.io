@@ -140,7 +140,7 @@ const global = {
     KEY_REVERSE_MOUSE: 66,
     KEY_SPIN_LOCK: 88,
 
-    KEY_LEVEL_UP: 78, 
+    KEY_LEVEL_UP: 221, 
     KEY_TOKEN: 80,
     KEY_CLASS_TREE: 84,
     KEY_MAX_STAT: 77,
@@ -149,8 +149,8 @@ const global = {
     KEY_ZOOM_IN: 61,
     KEY_DEBUG: 76,
 
-    KEY_SCREENSHOT: 81,
-    KEY_RECORD: 90,
+    KEY_SCREENSHOT: 120,
+    KEY_RECORD: 121,
     KEY_TOGGLE_MAP: 70,
 
     KEY_UPGRADE_ATK: 49,
@@ -163,6 +163,10 @@ const global = {
     KEY_UPGRADE_MOB: 56,
     KEY_UPGRADE_RGN: 57,
     KEY_UPGRADE_SHI: 48,
+    KEY_UPGRADE_MIN: 189,
+    KEY_KIT_1: 90,
+    KEY_KIT_2: 81,
+    KEY_KIT_3: 78,
     KEY_MOUSE_0: 32,
     KEY_MOUSE_1: 86,
     KEY_MOUSE_2: 16,
@@ -216,7 +220,9 @@ const global = {
     pullUpgradeMenu: false,
     pullSkillBar: false,
     clickables: {
-        stat: Region(10),
+        stat: Region(11),
+        shop: Region(48),
+        kit: Region(24),
         upgrade: Region(100),
         clicked: false,
         hover: Region(1),
@@ -361,6 +367,19 @@ const global = {
     
     chambers: [],
     chamberState: [],
+    // outfitter pads + the shop panel state
+    shops: [],
+    shop: {
+        onPad: false, padId: -1, padName: "", catalog: [],
+        state: { drill: 0, gear: [], kit: {}, kitOrder: [], arm: null },
+        tab: 'drill', sel: null, msg: "", msgAt: -1e9, dismissed: false, hover: -1,
+    },
+    // centre-screen kill / quest / boss callouts, one at a time
+    callouts: [],
+    // world fx rings (meteor hits, charges, boss death)
+    fx: [],
+    upgradeBoxBottom: 0,
+    lowFx: false,          // automatic: heavy trims when the frame rate sags
     royale: {
         phase: 'idle',
         left: 0,
@@ -385,6 +404,13 @@ const global = {
         lock: 0,
         lockLeft: 0,
         you: null,
+        chests: [],
+        boss: null,
+        event: null,
+        mod: null,
+        pings: [],
+        lastPlace: 0,
+        bossSeenId: 0,
     },
     raidRespawnAt: 0,
     raidQueued: false,

@@ -68,7 +68,9 @@ class Gun extends EventEmitter {
             if (info.PROPERTIES.STROKE_WIDTH != null) this.strokeWidth = info.PROPERTIES.STROKE_WIDTH;
             if (info.PROPERTIES.BORDERLESS != null) this.borderless = info.PROPERTIES.BORDERLESS;
             if (info.PROPERTIES.DRAW_FILL != null) this.drawFill = info.PROPERTIES.DRAW_FILL;
+            if (info.PROPERTIES.HIDDEN) { this.hidden = true; this.alpha = 0; }
             this.drawAbove = (info.PROPERTIES.DRAW_ABOVE == null) ? false : info.PROPERTIES.DRAW_ABOVE;
+            this.rockPower = info.PROPERTIES.ROCK_POWER || 0;
             this.stack = (info.PROPERTIES.STACK_GUN == null) ? true : info.PROPERTIES.STACK_GUN;
             this.identifier = info.PROPERTIES.IDENTIFIER ?? null;
             if (info.PROPERTIES.TYPE != null) {
@@ -228,7 +230,9 @@ class Gun extends EventEmitter {
         if (shootPermission || !this.waitToCycle) {
             let speed = this.fixedReload ? global.gameManager.roomSpeed : global.gameManager.runSpeed;
             if (this.cycleTimer < 1) {
-                this.cycleTimer += 1 / (this.settings.reload * speed * (this.calculator == "necro" || this.calculator == "fixed reload" ? 1 : sk.rld));
+                // overdrive core: +30% reload for its 20s window
+                const odBoost = (this.body.overdriveUntil && Date.now() < this.body.overdriveUntil) ? 1.3 : 1;
+                this.cycleTimer += odBoost / (this.settings.reload * speed * (this.calculator == "necro" || this.calculator == "fixed reload" ? 1 : sk.rld));
             }
         }
         // Firing routines
@@ -447,6 +451,7 @@ class Gun extends EventEmitter {
         };
         o.source = this.body;
         o.facing = o.velocity.direction;
+        if (this.rockPower) o.rockPower = this.rockPower;
         // Set all necroType gun references to parent gun
         for (let shape of o.settings.necroTypes) {
             o.settings.necroDefineGuns[shape] = this;
@@ -604,6 +609,7 @@ class Gun extends EventEmitter {
         p.borderless = this.borderless;
         p.drawFill = this.drawFill;
         p.drawAbove = this.drawAbove;
+        p.hidden = !!this.hidden;
         p.length = this.length;
         p.width = this.width;
         p.aspect = this.aspect;

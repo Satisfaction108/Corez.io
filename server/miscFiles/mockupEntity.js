@@ -29,7 +29,9 @@ class MockupEntityGun {
         this.borderless = false;
         this.drawFill = true;
         this.drawAbove = false;
+        this.hidden = false;
         if (info.PROPERTIES != null) {
+            if (info.PROPERTIES.HIDDEN) { this.hidden = true; this.alpha = 0; }
             if (info.PROPERTIES.COLOR != null) {
                 if (typeof info.PROPERTIES.COLOR === "number" || typeof info.PROPERTIES.COLOR === "string") {
                     if (!isNaN(info.PROPERTIES.COLOR) && !isNaN(parseFloat(info.PROPERTIES.COLOR)) || /^[a-zA-Z]*$/.test(info.PROPERTIES.COLOR))
@@ -292,6 +294,7 @@ class MockupEntity {
             move_speed: set.STAT_NAMES?.MOVE_SPEED ?? 'Movement Speed',
             shield_regen: set.STAT_NAMES?.SHIELD_REGEN ?? 'Shield Regeneration',
             shield_cap: set.STAT_NAMES?.SHIELD_CAP ?? 'Shield Capacity',
+            mining_power: set.STAT_NAMES?.MINING_POWER ?? 'Mining Power',
         };
         if (set.ALPHA != null) {
             this.alpha = ("number" === typeof set.ALPHA) ? set.ALPHA : set.ALPHA[1];

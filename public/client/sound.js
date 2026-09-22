@@ -332,12 +332,15 @@ class GameSound {
     _playSample(name, { peak = 1, pan = 0, rate = 1, delay = 0, duck = true } = {}) {
         const buf = this._buf[name];
         if (!buf || !this.dry) return false;
-        const t0 = this.ctx.currentTime + delay;
+        if (!isFinite(peak) || !isFinite(pan) || !isFinite(rate) || !isFinite(delay)) return false;
+        const t0 = this.ctx.currentTime + Math.max(0, delay);
         const s = this.ctx.createBufferSource();
         s.buffer = buf;
-        s.playbackRate.value = rate;
+        s.playbackRate.value = Math.max(0.1, Math.min(4, rate));
         const g = this.ctx.createGain();
-        const vol = Math.max(0.0001, peak * (duck ? this._busyGain() : 1));
+        const vol = Math.max(0.0001, Math.min(4, peak * (duck ? this._busyGain() : 1)));
+        if (!isFinite(vol)) return false;
+        pan = Math.max(-1, Math.min(1, pan));
         g.gain.setValueAtTime(vol, t0);
         s.connect(g);
         let node = g;
@@ -427,7 +430,7 @@ class GameSound {
         const dx = x - lx, dy = y - ly;
         const d  = Math.hypot(dx, dy);
         const MAXD = this.farSounds ? 3200 : 1400;
-        if (d > MAXD) return null;
+        if (!isFinite(d) || d > MAXD) return null;
         const t   = Math.max(0, (d - 500) / (MAXD - 500));
         const vol = (1 - t) * (1 - t);
         const pan = this.headphones3d ? Math.max(-0.75, Math.min(0.75, dx / 1600)) : 0;

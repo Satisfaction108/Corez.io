@@ -1,9 +1,11 @@
+const CHEST_HITTERS = new Set(["bullet", "drone", "trap", "satellite", "swarm"]);
 const fs = require('fs');
 const path = require('path');
 const gems = require('./terrain/gems.js');
 const mining = require('./terrain/mining.js');
 const vault = require('./terrain/vault.js');
 const outposts = require('./terrain/outposts.js');
+const shop = require('./terrain/shop.js');
 const coreChambers = require('./terrain/coreChambers.js');
 const { REGROW: TG_REGROW } = require('./terrain/terrainGrid.js');
 const { inEnemyBase } = require('../miscFiles/controllers.js');
@@ -127,7 +129,9 @@ class gameHandler {
     // Gem and vault systems consume body-like actors. Keep socket players in
     // their existing wrapper shape and append bot bodies, which have no socket.
     gemActors = () => {
-        const actors = [];
+        // one reusable buffer: the list is consumed synchronously within a tick
+        const actors = this._gemActorsBuf || (this._gemActorsBuf = []);
+        actors.length = 0;
         for (const player of global.gameManager.socketManager.players) {
             const body = player && player.body;
             if (body && !body.isDead() && !body.isGhost) actors.push(player);
@@ -224,6 +228,19 @@ class gameHandler {
                 
                 const banner = instance.isOutpostBanner ? instance : other;
                 const body = instance.isOutpostBanner ? other : instance;
+                if (Config.dig_royale && banner.padSite && (body.isPlayer || body.isBot)) {
+                    // Dig Royale: the pad's drawn octagon is the wall. Applied here,
+                    // inside the physics pass, so a hull stops at the border instead
+                    // of sinking into the structure and bouncing off it.
+                    const dr = this._royaleScript || (this._royaleScript = require('./gamemodes/scripts/dig_royale.js'));
+                    try { dr.baseWall(body, banner.padSite); } catch { /* */ }
+                    if (banner.pinX !== undefined) {
+                        banner.x = banner.pinX; banner.y = banner.pinY;
+                        banner.velocity.x = 0;  banner.velocity.y = 0;
+                        banner.accel.x = 0;     banner.accel.y = 0;
+                    }
+                    return;
+                }
                 if (banner.team === body.team) return;
                 if (["bullet", "drone", "trap", "satellite", "swarm"].includes(body.type)) {
                     
@@ -288,6 +305,43 @@ class gameHandler {
                         chamber.accel.x = 0;     chamber.accel.y = 0;
                     }
                 }
+            } break;
+            case instance.isLootChest || other.isLootChest: {
+                // Ore chests are hard cover: a projectile deals its damage
+                // (players only, see collisionFunctions) and dies on the rim.
+                const chest = instance.isLootChest ? instance : other;
+                const hit = chest === instance ? other : instance;
+                if (hit.isLootChest || chest.isDead?.() || hit.type === 'wall') break;
+                if (CHEST_HITTERS.has(hit.type)) {
+                    advancedcollide(instance, other, true, true);
+                    hit.velocity.x = 0; hit.velocity.y = 0;
+                    hit.accel.x = 0;    hit.accel.y = 0;
+                    hit.kill();
+                } else {
+                    // a hull meets the chest like it meets rock: placed back on
+                    // the rim, no bounce; a player ramming it grinds it down
+                    const dx = hit.x - chest.x, dy = hit.y - chest.y;
+                    const d = Math.hypot(dx, dy) || 1;
+                    const min = (chest.realSize || chest.size || 36) + (hit.realSize || hit.size || 30);
+                    if (d < min) {
+                        const nx = dx / d, ny = dy / d;
+                        hit.x += nx * (min - d); hit.y += ny * (min - d);
+                        const vIn = hit.velocity.x * nx + hit.velocity.y * ny;
+                        if (vIn < 0) { hit.velocity.x -= vIn * nx; hit.velocity.y -= vIn * ny; }
+                        let root = hit, hops = 0;
+                        while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+                        if (root && (root.isPlayer || root.isBot) && chest.health) {
+                            const grind = (hit.damage || 0) * 0.35;
+                            if (grind > 0) { chest.health.amount -= grind; try { chest.emit('damage', { damageInflictor: [hit] }); } catch (e) { /* */ } }
+                        }
+                        // a raid boss ploughs straight through: the chest bursts
+                        // in a few ticks instead of pinning the boss in place
+                        if (root && root.isRoyaleBoss && chest.health) chest.health.amount -= chest.health.max * 0.34;
+                    }
+                }
+                chest.velocity.x = 0; chest.velocity.y = 0;
+                chest.accel.x = 0;    chest.accel.y = 0;
+                if (chest.pinX !== undefined) { chest.x = chest.pinX; chest.y = chest.pinY; }
             } break;
             case instance.team === other.team &&
                 (instance.settings.hitsOwnType === "pushOnlyTeam" ||
@@ -408,14 +462,19 @@ class gameHandler {
     };
 
     gameloop() {
+        this._tickStart = performance.now();
         logs.loops.tally();
         logs.master.set();
 
         // Do entities life
         logs.entities.set();
         grid.clear();
+        const _prof = this._stageProf || (this._stageProf = { mortality: 0, physics: 0, selfie: 0, misc: 0, aabb: 0, activation: 0, tick: 0 });
         for (const instance of entities.values()) {
-            if (instance.contemplationOfMortality() === 1) {
+            const _p0 = performance.now();
+            const _dead = instance.contemplationOfMortality() === 1;
+            _prof.mortality += performance.now() - _p0;
+            if (_dead) {
                 if (Config.outbreak && !instance.zombified && (instance.isPlayer || instance.isBot)) {
                     instance.zombified = true;
                     instance.settings.no_collisions = true;
@@ -430,24 +489,37 @@ class gameHandler {
             instance.collisionArray.length = 0;
 
             // Handle physics only if not bonded
+            const _p1 = performance.now();
             if (instance.bond == null) {
                 instance.physics();
             }
+            _prof.physics += performance.now() - _p1;
 
             if (instance.activation.active || instance.isPlayer) {
                 logs.entities.tally();
+                const _lt0 = performance.now();
                 instance.life();
+                const _lt = performance.now() - _lt0;
+                if (_lt > 0.5) { const key = instance.isBot ? "bot" : instance.isPlayer ? "player" : (instance.type || "?"); const prof = this._lifeProf || (this._lifeProf = {}); prof[key] = (prof[key] || 0) + _lt; }
+                const _p2 = performance.now();
                 instance.takeSelfie();
+                _prof.selfie += performance.now() - _p2;
+                const _p3 = performance.now();
                 instance.friction();
                 instance.confinementToTheseEarthlyShackles();
+                _prof.misc += performance.now() - _p3;
             }
 
             // Terrain collision handled by the dedicated terrain loop below
 
+            const _p4 = performance.now();
             instance.updateAABB(instance.activation.active);
+            _prof.aabb += performance.now() - _p4;
+            const _ct0 = performance.now();
             for (const other of grid.query(instance.minX, instance.minY, instance.maxX, instance.maxY)) {
                 this.collide(instance, other);
             }
+            this._collideMs = (this._collideMs || 0) + (performance.now() - _ct0);
             if (instance.isInGrid) grid.insert(instance, instance.minX, instance.minY, instance.maxX, instance.maxY);
             if ((instance.touchingSizeWall === false || instance.collisionArray.length === 0) && instance.originalSize) {
                 instance.SIZE = instance.originalSize;
@@ -457,12 +529,17 @@ class gameHandler {
                 instance.FOV = instance.originalFov;
                 instance.originalFov = undefined;
             }
+            const _p5 = performance.now();
             instance.activation.update();
-
+            _prof.activation += performance.now() - _p5;
+            const _p6 = performance.now();
             instance.emit('tick', { body: instance });
+            _prof.tick += performance.now() - _p6;
         }
         logs.entities.mark();
         logs.master.mark();
+        const _tGaze0 = performance.now();
+        this._tickEntMs = _tGaze0 - (this._tickStart || _tGaze0);
         // Update lastCycle only once
         global.gameManager.room.lastCycle = util.time();
         for (let i = 0; i < global.gameManager.clients.length; i++) {
@@ -471,6 +548,7 @@ class gameHandler {
                 client.view.gazeUpon();
             }
         }
+        this._tickGazeMs = performance.now() - _tGaze0;
     };
 
     foodloop() {
@@ -664,14 +742,15 @@ class gameHandler {
         // The old one-size spread put bullet health at 2, so any max-pen
         // player build deleted bot bullets on contact and every trade was
         // lost before it started.
+        // 11th slot is mining power: bots dig like a player who bought in
         let raw;
-        if (rammer) raw = [0, 0, 0, 0, 0, 9, 9, 9, 6, 9];
+        if (rammer) raw = [0, 0, 0, 0, 0, 9, 9, 9, 6, 9, 5];
         else if (/sniper|assassin|ranger|marksman|stalker|rifle|predator|hunter|deadeye|sidewinder/.test(defs))
-            raw = [6, 9, 4, 9, 7, 0, 0, 3, 0, 4];
+            raw = [6, 9, 4, 9, 7, 0, 0, 3, 0, 4, 5];
         else if (/destroyer|artillery|mortar|launcher|ordnance|annihilator|hybrid/.test(defs))
-            raw = [6, 9, 8, 9, 2, 0, 0, 4, 0, 4];
+            raw = [6, 9, 8, 9, 2, 0, 0, 4, 0, 4, 5];
         else
-            raw = [9, 8, 6, 9, 3, 0, 0, 3, 0, 4];
+            raw = [9, 8, 6, 9, 3, 0, 0, 3, 0, 4, 5];
         // High-skill bots invest deeper, up to ~14 extra points spread over
         // the stats they already use. Without this, every bot fought like a
         // half-built tank and a maxed player build shredded the whole lobby
@@ -874,7 +953,7 @@ class gameHandler {
             let o = this.bots[i];
             if (!o.botStatsFixed) {
                 o.skill.maintain();
-                o.skillUp([ "atk", "hlt", "spd", "str", "pen", "dam", "rld", "mob", "rgn", "shi" ][ran.chooseChance(...Config.bot_skill_upgrade_chances)]);
+                o.skillUp([ "atk", "hlt", "spd", "str", "pen", "dam", "rld", "mob", "rgn", "shi", "min" ][ran.chooseChance(...Config.bot_skill_upgrade_chances)]);
                 o.refreshSkills();
             }
             const upgradeIndex = o.botStatsFixed ? this.botUpgradeIndex(o) : ran.irandomRange(0, o.upgrades.length);
@@ -902,7 +981,15 @@ class gameHandler {
             }
         }
         
-        if (!global.gameManager.arenaClosed && !global.cannotRespawn && !Config.dig_royale &&
+        // nobody connected: stop refilling, and after a while stand the bots down
+        const anyClients = (global.gameManager.socketManager?.clients || []).length > 0 || !!Config.bot_soak_mode;
+        if (!anyClients) {
+            if (!this._idleSince) this._idleSince = now;
+            else if (now - this._idleSince > 45_000 && this.bots.length) {
+                for (const b of this.bots.slice()) { try { b.invuln = false; b.kill(); } catch { /* */ } }
+            }
+        } else this._idleSince = 0;
+        if (anyClients && !global.gameManager.arenaClosed && !global.cannotRespawn && !Config.dig_royale &&
             this.bots.length + this.pendingBotRespawns < Config.bot_cap && Date.now() >= this.nextBotSpawnAt) {
             this.nextBotSpawnAt = Date.now() + 900 + Math.random() * 700;
             let team = this.botSpawnTeam(),
@@ -1078,7 +1165,8 @@ class gameHandler {
         o.botArmed = false;
         o.botDidUpgrade = false;
         o.botSettleAt = 0;
-        let color = Config.random_body_colors ? Math.floor(Math.random() * 20) : team ? getTeamColor(team) : "darkGrey";
+        let color = Config.dig_royale ? global.assignTeamColor(team)
+            : (Config.random_body_colors ? Math.floor(Math.random() * 20) : team ? getTeamColor(team) : "darkGrey");
         o.color.base = color;
         o.leaderboardColor = color;
         o.minimapColor = color;
@@ -1517,20 +1605,48 @@ class gameHandler {
                 this.stop();
             }, Config.bot_soak_duration_ms);
         }
+        // Tick health: every stage is timed and a slow tick is logged once
+        // per second with its breakdown, so a stall shows up in the console
+        // instead of only as a ping spike on the client.
+        const tickStats = global.tickStats = { n: 0, ema: 0, max: 0, slow: 0, lastLog: 0, terrainEma: 0, terrainMax: 0, modeMax: 0 };
+        let lastTickAt = performance.now();
         let gameLoop = setInterval(() => {
             if (!this.active) return clearInterval(gameLoop);
             if (this.checkUsers()) {
                 try {
                     const cycleStarted = performance.now();
+                    this._lifeProf = null; this._collideMs = 0; this._stageProf = null; global.botProf = {};
+                    const late = cycleStarted - lastTickAt - 1000 / 30;
+                    lastTickAt = cycleStarted;
                     this.gameloop();
+                    const tEnt = this._tickEntMs || 0, tGaze = this._tickGazeMs || 0;
+                    const tA = performance.now();
                     if (Config.bot_soak_mode) {
-                        this.soakMspt.push(performance.now() - cycleStarted);
+                        this.soakMspt.push(tA - cycleStarted);
                         if (this.soakMspt.length > 3000) this.soakMspt.shift();
                     }
                     syncedDelaysLoop();
                     if (Config.enable_food) this.foodloop();
                     global.gameManager.roomLoop();
                     global.gameManager.gamemodeManager.request("quickloop");
+                    const total = performance.now() - cycleStarted;
+                    tickStats.n++;
+                    tickStats.ema = tickStats.ema ? tickStats.ema * 0.95 + total * 0.05 : total;
+                    if (total > tickStats.max) tickStats.max = total;
+                    if ((total > 60 || late > 120) && performance.now() - tickStats.lastLog > 1000) {
+                        tickStats.slow++;
+                        tickStats.lastLog = performance.now();
+                        const prof = this._lifeProf || {};
+                        const top = Object.entries(prof).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => k + "=" + v.toFixed(0)).join(" ");
+                        const sp = this._stageProf || {};
+                        const stages = Object.entries(sp).map(([k, v]) => k + "=" + v.toFixed(0)).join(" ");
+                        const bp = Object.entries(global.botProf || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + "=" + v.toFixed(0)).join(" ");
+                        console.log(`[SLOW TICK] life: ${top} collide=${(this._collideMs || 0).toFixed(0)} | ${stages} | bots: ${bp}`);
+                        console.log(`[SLOW TICK] ${total.toFixed(0)}ms (entities ${tEnt.toFixed(0)} / views ${tGaze.toFixed(0)} / rest ${(total - (tA - cycleStarted)).toFixed(0)})` +
+                            (late > 120 ? ` started ${late.toFixed(0)}ms late (event loop blocked elsewhere)` : "") +
+                            ` entities=${entities.size} clients=${global.gameManager.clients.length} terrainMax=${tickStats.terrainMax.toFixed(0)} modeMax=${tickStats.modeMax.toFixed(0)}`);
+                        tickStats.terrainMax = 0; tickStats.modeMax = 0;
+                    }
                 } catch (e) {
                     global.gameManager.gameSpeedCheckHandler.onError(e);
                     this.stop();
@@ -1540,7 +1656,10 @@ class gameHandler {
         let maintainloop = setInterval(() => {
             if (!this.active) return clearInterval(maintainloop);
             global.gameManager.gameSpeedCheckHandler.update();
+            const _modeT0 = performance.now();
             global.gameManager.gamemodeManager.request("loop");
+            const _modeMs = performance.now() - _modeT0;
+            if (global.tickStats && _modeMs > global.tickStats.modeMax) global.tickStats.modeMax = _modeMs;
             this.maintainloop();
         }, 1000);
         let otherloop = setInterval(() => {
@@ -1591,15 +1710,26 @@ class gameHandler {
             if (!this.active) return clearInterval(terrainLoop);
             const _tg = global.gameManager.terrainGrid;
             if (!_tg || !_tg._voronoiMap) return;
+            // An empty server (the tutorial worker with nobody in it) has no
+            // one to mine, magnet or crush: skip the whole pass and give the
+            // CPU to the worker that has players.
+            if (!this.checkUsers()) return;
             if (mineBudget.size > 256) mineBudget.clear(); // stale-id backstop
             
             
             const tickNow = Date.now();
             const tickMs = Math.min(50, tickNow - lastTerrainTick) || 8;
             lastTerrainTick = tickNow;
+            const _terrainT0 = performance.now();
+            this._terrainTimer = _terrainT0;
             _tg.regrowTick(tickNow);
+            this._terrainRegrowMs = performance.now() - _terrainT0;
             const growingNow = _tg.growingRocks().length > 0;
             const gemActors = this.gemActors();
+            // Loose gems run at 30 Hz: half the gem x actor work, same feel
+            // (the magnet blend is tuned for it in gems.tickGem).
+            this._terrainTickN = (this._terrainTickN | 0) + 1;
+            const gemsThisTick = (this._terrainTickN & 1) === 0;
             for (const instance of global.entities.values()) {
                 if (!instance) continue;
                 if (instance.isGemPickup) {
@@ -1607,7 +1737,7 @@ class gameHandler {
                     if (instance.noclip || instance.godmode || instance.isArenaCloser) continue;
                     if (instance.chamberHome !== undefined) {
                         coreChambers.tickContainedGem(instance);
-                    } else {
+                    } else if (gemsThisTick) {
                         gems.tickGem(instance, _tg, gemActors);
                         if (growingNow) _tg.pushCircleFromGrowing(instance, instance.realSize, tickNow);
                     }
@@ -1624,8 +1754,7 @@ class gameHandler {
                     const root = instance.master;
                     for (let vi = 0; vi < pads.length; vi++) {
                         const v = pads[vi];
-                        const vdx = instance.x - v.x, vdy = instance.y - v.y;
-                        if (vdx * vdx + vdy * vdy < v.r * v.r) {
+                        if (vault.onPadShape(v, instance.x - v.x, instance.y - v.y)) {
                             if (!root || !root.vaultOnPad) {
                                 instance.kill();
                             }
@@ -1640,6 +1769,17 @@ class gameHandler {
                     // and aim, which change constantly while the load does not.
                     gems.orientSatchel(instance);
                     const r = instance.realSize;
+                    // the drillhead boss chews straight through the wall
+                    if (instance.bossDigs && (!instance._digAt || tickNow - instance._digAt >= 140)) {
+                        instance._digAt = tickNow;
+                        const drock = _tg.rockHitByCircle(instance.x, instance.y, r * 1.15)
+                            || (growingNow ? _tg.growingRockHitByCircle(instance.x, instance.y, r * 1.15, tickNow) : null);
+                        if (drock) {
+                            const wasGrowing = drock.growing;
+                            const destroyed = _tg.damageRock(drock, drock.maxHealth * (instance.bossDigRate || 0.3), instance.x, instance.y, false, null);
+                            if (destroyed && !wasGrowing && drock.ore) gems.spawnOreBurst(drock, null);
+                        }
+                    }
                     const p = _tg.pushCircleFromVoronoi(instance, r);
                     let dx = p.dx, dy = p.dy;
                     const nowT = tickNow;
@@ -1767,8 +1907,9 @@ class gameHandler {
                         for (let vi = 0; vi < pads.length; vi++) {
                             const v = pads[vi];
                             const vdx = instance.x - v.x, vdy = instance.y - v.y;
-                            const rr = (v.r + 8) * (v.r + 8);
-                            if (vdx * vdx + vdy * vdy < rr) {
+                            const vr = v.r * 1.15 + 8 + (instance.realSize || 0);
+                            if (vdx * vdx + vdy * vdy > vr * vr) continue;   // cheap reject before the octagon test
+                            if (vault.onPadShape(v, vdx, vdy, 8)) {
                                 instance.velocity.x = 0; instance.velocity.y = 0;
                                 instance.accel.x = 0;    instance.accel.y = 0;
                                 instance.kill();
@@ -1802,9 +1943,11 @@ class gameHandler {
                         
                         
                         
+                        const rp = instance.rockPower || 0;
                         const raw = _tg.baseRockHealth / mining.rockHitsFor(owner, instance)
-                                  * mining.skillFactor(owner);
-                        const dmg = Math.min(raw, mb.left);
+                                  * mining.skillFactor(owner) * (rp || 1);
+                        // lance bolts are rate-limited by their own reload, not the budget
+                        const dmg = rp ? raw : Math.min(raw, mb.left);
                         if (dmg > 0) {
                             mb.left -= dmg;
                             const wasGrowing = rock.growing;
@@ -1838,12 +1981,22 @@ class gameHandler {
             
             outposts.tick(gemActors,
                           Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);
+            if (Config.dig_royale || Config.tutorial) {
+                try { shop.tick(gemActors); } catch (e) { /* */ }
+                try { require('./terrain/chests.js').tick(gemActors, _tg); } catch (e) { /* */ }
+            }
             if (!Config.dig_royale) {
                 coreChambers.tick(Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);
             }
             this._lastVaultTick = vNow;
             if (Config.dig_royale) {
-                try { require('./gamemodes/scripts/dig_royale.js').tick(); } catch (e) { /* */ }
+                try { require('./gamemodes/scripts/dig_royale.js').tick(); } catch (e) {
+                    const tNow = Date.now();
+                    if (tNow - (this._raidTickErrAt || 0) > 10000) {
+                        this._raidTickErrAt = tNow;
+                        console.error('[RAID] tick failed:', e && e.stack || e);
+                    }
+                }
             }
 
             
@@ -1858,7 +2011,16 @@ class gameHandler {
                     client.talk('TR', payload);
                 }
             }
-        }, 8);
+            if (global.tickStats && this._terrainTimer) {
+                const _tMs = performance.now() - this._terrainTimer;
+                global.tickStats.terrainEma = global.tickStats.terrainEma ? global.tickStats.terrainEma * 0.95 + _tMs * 0.05 : _tMs;
+                if (_tMs > global.tickStats.terrainMax) global.tickStats.terrainMax = _tMs;
+                if (_tMs > 60 && performance.now() - (this._terrainLogAt || 0) > 1000) {
+                    this._terrainLogAt = performance.now();
+                    console.log(`[SLOW TERRAIN] ${_tMs.toFixed(0)}ms regrow=${(this._terrainRegrowMs || 0).toFixed(0)} gems=${gemActors ? gemActors.length : 0} growing=${growingNow ? 1 : 0} entities=${entities.size}`);
+                }
+            }
+        }, 16);
     }
     stop() {
         this.active = false;

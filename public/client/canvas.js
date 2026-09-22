@@ -167,6 +167,38 @@ class Canvas {
         }
     }
 
+    // ── Dig Royale input: kit slots and the shop panel ───────────────────
+    royaleKeyDown(event) {
+        if (!(global.royale && global.royale.at > 0) && !global.tutorialMode) return false;
+        const kc = event.keyCode;
+        if (!global.died && !event.repeat && (kc === global.KEY_KIT_1 || kc === global.KEY_KIT_2 || kc === global.KEY_KIT_3)) {
+            const slot = kc === global.KEY_KIT_1 ? 0 : kc === global.KEY_KIT_2 ? 1 : 2;
+            const ko = (global.shop.state && global.shop.state.kitOrder) || [];
+            if (!ko[slot]) return false;     // empty slot: the key keeps its other job
+            this.useKitSlot(slot);
+            return true;
+        }
+        if (kc === global.KEY_ESC && global.shop.onPad && !global.shop.dismissed) {
+            global.shop.dismissed = true;
+            gameSound.uiClick();
+            return true;
+        }
+        return false;
+    }
+    royaleKeyUp() { return false; }
+    useKitSlot(slot) {
+        const ko = (global.shop.state && global.shop.state.kitOrder) || [];
+        if (!ko[slot]) {
+            global.createMessage("Kit slot " + (slot + 1) + " is empty. Buy items at a shop.", 2200);
+            return;
+        }
+        const wr = util.getRatio();
+        let wx = global.player.renderx + global.target.x / wr;
+        let wy = global.player.rendery + global.target.y / wr;
+        if (!isFinite(wx) || !isFinite(wy)) { wx = global.player.renderx; wy = global.player.rendery; }
+        this.socket.talk('sk', slot, Math.round(wx), Math.round(wy));
+        gameSound.uiClick();
+    }
     keyDown(event) {
         if (global.dailyTankAd.renderUI) return;
         if (global.specialPressed) {
@@ -175,6 +207,8 @@ class Canvas {
             this.socket.talk("#", ...global.specialKeysPressed);
             return;
         }
+        // raid kit, shop and free-camera keys take priority
+        if (this.royaleKeyDown(event)) return;
 
         // Handle search input when tree is open and search bar is active
         if (global.showTree && global.searchBarActive) {
@@ -346,8 +380,10 @@ class Canvas {
                     global.KEY_UPGRADE_ATK, global.KEY_UPGRADE_HTL, global.KEY_UPGRADE_SPD,
                     global.KEY_UPGRADE_STR, global.KEY_UPGRADE_PEN, global.KEY_UPGRADE_DAM,
                     global.KEY_UPGRADE_RLD, global.KEY_UPGRADE_MOB, global.KEY_UPGRADE_RGN,
-                    global.KEY_UPGRADE_SHI
+                    global.KEY_UPGRADE_SHI, global.KEY_UPGRADE_MIN
                 ].indexOf(event.keyCode);
+                // firefox minus is 173
+                if (skill < 0 && event.keyCode === 173 && global.KEY_UPGRADE_MIN === 189) skill = 10;
                 // Numpad 1-9/0 as a second path to the same stats. Keyboards
                 // block certain simultaneous key combinations in their wiring,
                 // so a particular stat can be unreachable while you are holding
@@ -356,6 +392,7 @@ class Canvas {
                 if (skill < 0 && event.location === 3) {
                     if (event.keyCode >= 97 && event.keyCode <= 105) skill = event.keyCode - 97;
                     else if (event.keyCode === 96) skill = 9;
+                    else if (event.keyCode === 109) skill = 10;
                 }
                 if (skill >= 0) {
                     this.socket.talk('x', skill, 1 * global.statMaxing);
@@ -394,6 +431,7 @@ class Canvas {
     }
     keyUp(event) {
         if (global.dailyTankAd.renderUI) return;
+        if (this.royaleKeyUp(event)) return;
         switch (event.keyCode) {
             case global.KEY_SPECIAL:
                 global.specialPressed = false;
@@ -478,6 +516,12 @@ class Canvas {
                     global.classTreeDrag.momentum = { x: 0, y: 0 };
                     break;
                 }
+                // a press on a kit slot starts a drag; release decides (mouseUp)
+                const kitHit = global.clickables.kit.check(mpos);
+                if (kitHit !== -1 && kitHit < 3 && !global.died) {
+                    global.kitDrag = { slot: kitHit, x: mpos.x, y: mpos.y };
+                    break;
+                }
                 let statIndex = global.clickables.stat.check(mpos);
                 let upgradeCheck = global.clickables.upgrade.check(mpos);
                 if (statIndex !== -1) {
@@ -505,6 +549,8 @@ class Canvas {
                     global.clickables.royalePrev.check(mpos) == -1 &&
                     global.clickables.royaleNext.check(mpos) == -1 &&
                     global.clickables.royalePlay.check(mpos) == -1 &&
+                    global.clickables.shop.check(mpos) == -1 &&
+                    global.clickables.kit.check(mpos) == -1 &&
                     upgradeCheck == -1 &&
                     !global.died
                 ) this.socket.cmd.set(primaryFire, true);
@@ -528,6 +574,17 @@ class Canvas {
                     x: mouse.clientX * global.ratio,
                     y: mouse.clientY * global.ratio,
                 };
+                if (global.kitDrag) {
+                    // a tap uses the item; a drag out of the box throws it away;
+                    // a drag that ends inside the box does nothing
+                    const d = global.kitDrag;
+                    global.kitDrag = null;
+                    const moved = Math.hypot(mpos.x - d.x, mpos.y - d.y) > 14;
+                    const overSlot = global.clickables.kit.check(mpos) === d.slot;
+                    if (!moved || overSlot) { if (!moved) this.useKitSlot(d.slot); }
+                    else if (!global.died) { this.socket.talk('kd', d.slot); global.kitDropped = (global.kitDropped | 0) + 1; gameSound.uiClick(); }
+                    break;
+                }
                 let upgradeIndex = global.clickables.upgrade.check(mpos);
                 let dailyTankUpgrade = global.clickables.dailyTankUpgrade.check(mpos);
                 let dailyTankAd = global.clickables.dailyTankAd.check(mpos);
@@ -572,6 +629,26 @@ class Canvas {
                 if (exitGame !== -1 && (global.disconnected || global.died)) {
                     global.exit();
                     gameSound.uiClick();
+                    break;
+                }
+                // outfitter panel: tabs 0-3, items 4-39, buy 40, close 41
+                const shopClick = global.clickables.shop.check(mpos);
+                if (shopClick !== -1 && global.shop.onPad && !global.died) {
+                    const sh = global.shop;
+                    if (shopClick < 4) sh.tab = ['drill', 'gear', 'kit', 'arm'][shopClick];
+                    else if (shopClick === 40) { if (sh.sel) this.socket.talk('sb', String(sh.sel)); }
+                    else if (shopClick === 41) sh.dismissed = true;
+                    else {
+                        const it = (sh.tabItems || [])[shopClick - 4];
+                        if (it) sh.sel = it.id;
+                    }
+                    gameSound.uiClick();
+                    break;
+                }
+                const kitClick = global.clickables.kit.check(mpos);
+                if (kitClick !== -1 && !global.died) {
+                    // slots are handled by the press/drag path above; chips and
+                    // gear tags are hover-only
                     break;
                 }
                 if (global.showBigMap && !global.disconnected) {

@@ -3,12 +3,13 @@ import { util } from "./util.js";
 import { gui } from "./socketinit.js";
 import { gameSound } from "./sound.js";
 
-// ── Dig Wars - guided descent ──────────────────────────────────────────
-// A diegetic, objective-driven tutorial. Instead of a dialog box telling you
-// to "go break a rock", it *picks a rock*, paints its real silhouette in the
-// world, walks a trail of chevrons to it, tracks that specific rock's health
-// as you chip it, and bursts when it dies. Then it points at the gems that
-// fell out. Then at your vault.
+// ── Dig Royale - the practice ground ───────────────────────────────────
+// An objective-driven tutorial. Instead of a dialog box telling you to "go
+// break a rock", it *picks a rock*, paints its real silhouette in the world,
+// walks a trail of chevrons to it, tracks that specific rock's health as you
+// chip it, and bursts when it dies. Then it points at the gems that fell
+// out. Then at the vault, the base, the shop, a chest, a boss, and finally
+// a storm drill drawn right here on the client.
 //
 // Two render passes, both on the game's own canvases:
 //   drawWorld(px, py, ratio)  - world-anchored markers, called from
@@ -22,7 +23,7 @@ import { gameSound } from "./sound.js";
 // Versioned: the retired in-game tutorial used "digwarsTutorialDone". Bumping
 // this re-runs the (completely different, far larger) curriculum for everyone
 // who "finished" the old one. home.js clears the old keys outright.
-const STORAGE_KEY = "digwarsTutorialDone_v2";
+const STORAGE_KEY = "digRoyaleTutorialDone_v1";
 
 // socketinit.js pings this on every terrain rock event; keep a cheap counter
 // so steps can notice "something broke" without diffing the whole terrain.
@@ -39,7 +40,8 @@ const DEFAULTS = {
     KEY_UP: "W", KEY_DOWN: "S", KEY_LEFT: "A", KEY_RIGHT: "D",
     KEY_AUTO_FIRE: "E", KEY_AUTO_SPIN: "C",
     KEY_AUTO_ALT: "G", KEY_TOGGLE_MAP: "F", KEY_OVER_RIDE: "R",
-    KEY_UPGRADE_ATK: "1", KEY_UPGRADE_SHI: "0",
+    KEY_UPGRADE_ATK: "1", KEY_UPGRADE_SHI: "0", KEY_UPGRADE_MIN: "-",
+    KEY_KIT_1: "Z", KEY_KIT_2: "Q", KEY_KIT_3: "N",
 };
 let keyLabelCache = null;
 function lbl(id) {
@@ -241,16 +243,17 @@ function settingsOpen() {
 // and bullet damage (server: mining.skillFactor), while a rammer grinds rock
 // with body damage (server: mining.grindSecondsFor).
 const STAT_INFO = [
-    { i: 0, why: "How hard you hurt anything you drive into - and every tank grinds rock by ramming it, so this is your mining speed on contact no matter what you pilot." },
-    { i: 1, why: "How much punishment you can take before you pop." },
-    { i: 2, why: "How fast what you fire travels, so it lands before the target moves." },
-    { i: 3, why: "How much what you fire can survive - it chews through rock faster too." },
-    { i: 4, why: "How many things one shot punches through, rock included." },
-    { i: 5, why: "How hard your shots hit, and how quickly they break rock." },
+    { i: 0, why: "How much it hurts when you ram something. Every tank can grind rock by driving into it, so this is your contact mining speed too." },
+    { i: 1, why: "How much you can take before you pop." },
+    { i: 2, why: "How fast your shots travel. Quick shots land before people can move." },
+    { i: 3, why: "How long a shot lives before it fizzles out. Tougher shots chew rock faster as well." },
+    { i: 4, why: "How many things one shot punches through. Rock counts." },
+    { i: 5, why: "How hard each shot hits, rock included." },
     { i: 6, why: "How fast you fire." },
-    { i: 7, why: "How fast you drive." },
-    { i: 8, why: "How quickly your shield starts refilling." },
-    { i: 9, why: "How much shield you carry." },
+    { i: 7, why: "How fast you drive. People underrate this one." },
+    { i: 8, why: "How quickly your shield starts coming back after a hit." },
+    { i: 9, why: "How much shield you've got sitting on top of your health." },
+    { i: 10, why: "How fast you chew through rock. Ore is the whole game, so most miners fill this one first." },
 ];
 function statName(i) {
     const m = myMockup();
@@ -265,18 +268,20 @@ function statWhy(i) {
     const base = (STAT_INFO.find(x => x.i === i) || {}).why || "";
     if (i !== 6) return base;
     const n = statName(i);
-    if (/engine/i.test(n)) return "How hard you accelerate - how quickly you build up ramming speed and close on a target.";
-    if (/max drone/i.test(n)) return "How many drones you can keep in the air at once.";
-    if (/respawn/i.test(n)) return "How quickly drones you lose are replaced.";
-    if (/density/i.test(n)) return "How heavy what you throw is.";
+    if (/engine/i.test(n)) return "How hard you accelerate. That's your ramming speed, and how fast you close on someone.";
+    if (/max drone/i.test(n)) return "How many drones you can have out at once.";
+    if (/respawn/i.test(n)) return "How quickly a drone you lose gets replaced.";
+    if (/density/i.test(n)) return "How heavy the stuff you throw is.";
     return base;
 }
-function statSkill(i) { return (gui.skills || [])[9 - i] || null; }
+// Bars 0..9 are stored reversed in gui.skills; Mining Power is the eleventh
+// entry and sits at the bottom of the bar stack as the final stat.
+function statSkill(i) { return (gui.skills || [])[i === 10 ? 10 : 9 - i] || null; }
 // The digit the HUD prints beside a stat bar, and the key that spends a point
 // into it. app.js draws "[" + (ticker % 10) + "]" with ticker = i + 1, so the
 // tenth bar is labelled [0] rather than [10] - quote the same thing back at
 // the learner or the card is telling them to press a key that is not there.
-function statKey(i) { return String((i + 1) % 10); }
+function statKey(i) { return i === 10 ? lbl("KEY_UPGRADE_MIN") : String((i + 1) % 10); }
 function statUsable(i) {
     const sk = statSkill(i);
     return !!sk && sk.cap > 0;
@@ -336,6 +341,16 @@ const state = {
     outpostHurt: 0,
     outpostMine: false,
     outpostDust: false,
+    // Dig Royale chapter
+    chestSeen: false,   // the chest existed before it vanished (= was opened)
+    chestBase: 0,
+    kitPeak: 0,         // most kit items held this step; a drop means one fired
+    altDown: false,     // right mouse held (sidearm lesson)
+    altMs: 0,
+    bossSeen: false,
+    lootBase: 0,
+    kitDropBase: 0,     // global.kitDropped when the drop lesson began
+    stormDemo: null,    // the client-side storm drill (see the "storm" step)
 };
 
 function snapshot() {
@@ -426,6 +441,50 @@ function nearestGem() {
     return best;
 }
 
+// ── Dig Royale lookups ─────────────────────────────────────────────────
+const CHEST_NAMES = ["Copper Chest", "Epic Chest"];
+const BOSS_NAMES = ["Vault Warden", "Magma Drillhead", "Geode Colossus", "Shard Wraith"];
+function nearestNamed(names) {
+    const px = global.player.renderx, py = global.player.rendery;
+    let best = null, bestD = Infinity;
+    for (const e of global.entities) {
+        if (!e || !e.index) continue;
+        const m = global.mockups[String(e.index).split("-")[0]];
+        if (!m || !names.includes(m.name)) continue;
+        if (!inArena(e.x, e.y)) continue;
+        const d = Math.hypot(e.x - px, e.y - py);
+        if (d < bestD) { bestD = d; best = e; }
+    }
+    return best;
+}
+const nearestChest = () => nearestNamed(CHEST_NAMES);
+const bossEntity = () => nearestNamed(BOSS_NAMES);
+function hpFracOf(e) {
+    if (!e || e.health === undefined) return 1;
+    const h = typeof e.health === "object" ? e.health : { amount: e.health, max: 1 };
+    const max = h.max || 1;
+    return clamp((h.amount != null ? h.amount : max) / max, 0, 1);
+}
+function kitTotal() {
+    const k = (global.shop && global.shop.state && global.shop.state.kit) || {};
+    let n = 0;
+    for (const id in k) n += k[id] | 0;
+    return n;
+}
+// Is a gear item running? SHP carries gear as a list of ids.
+function hasGear(id) {
+    const g = global.shop && global.shop.state && global.shop.state.gear;
+    if (!g) return false;
+    return Array.isArray(g) ? g.includes(id) : !!g[id];
+}
+// Which kit key fires the Medkit: it lands in whichever slot was free.
+function medkitKey() {
+    const ko = (global.shop && global.shop.state && global.shop.state.kitOrder) || [];
+    const i = Math.max(0, ko.indexOf("medkit"));
+    return ["{{KEY_KIT_1}}", "{{KEY_KIT_2}}", "{{KEY_KIT_3}}"][i] || "{{KEY_KIT_1}}";
+}
+function shopPad() { return landmark("shop", "vault", 95); }
+
 // How far the cursor has swung, in radians, since the step began. Used by the
 // aiming lesson: the point is that the barrel FOLLOWS the mouse, so we want to
 // see real sweep, not one twitch.
@@ -452,8 +511,8 @@ const ALL_STEPS = [
         // Clear any bots left over from a previous run at the START, not the
         // end: doing it on completion races with the spawns of later steps.
         onEnter: () => { tut("hello"); tut("clear"); },
-        title: "DIG WARS",
-        subtitle: "A private training ground. Nobody else can see you here.",
+        title: "DIG ROYALE",
+        subtitle: "This is your own practice ground. Nobody else can get in here, so take your time.",
         card: true,
         done: () => T() - state.stepAt > 2800,
     },
@@ -462,7 +521,7 @@ const ALL_STEPS = [
     {
         id: "aim",
         label: "Aim with your mouse",
-        hint: () => "Your tank always points where your cursor is. *Move your mouse in a circle* and watch the barrel follow.",
+        hint: () => "Your barrel follows the cursor. *Swing the mouse round in a circle* and watch it turn.",
         target: () => ({ kind: "self" }),
         onEnter: () => { state.aimTotal = 0; state.aimLast = null; },
         progress: () => clamp(aimSweep() / (Math.PI * 3), 0, 1),
@@ -471,7 +530,7 @@ const ALL_STEPS = [
     {
         id: "move",
         label: "Drive",
-        hint: () => "{{KEY_UP}}{{KEY_LEFT}}{{KEY_DOWN}}{{KEY_RIGHT}} to drive. Your left hand drives, your right hand aims - *they work independently*.",
+        hint: () => "*{{KEY_UP}} {{KEY_LEFT}} {{KEY_DOWN}} {{KEY_RIGHT}}* to drive. Left hand steers, right hand aims, and neither one cares what the other is doing. *Go for a spin.*",
         target: () => ({ kind: "self" }),
         progress: () => clamp(Math.hypot(
             global.player.renderx - state.base.x,
@@ -482,8 +541,8 @@ const ALL_STEPS = [
     },
     {
         id: "moveAim",
-        label: "Do both at once",
-        hint: () => "Now the hard part: *keep your cursor on one spot while you drive somewhere else*. This is the whole game.",
+        label: "Both at once",
+        hint: () => "Now *park the cursor on one spot and drive somewhere else*. That's the trick to this whole game.",
         target: () => ({ kind: "self" }),
         onEnter: () => { state.aimTotal = 0; state.aimLast = null; state.bothAt = 0; },
         progress: () => clamp(state.bothAt / 1400, 0, 1),
@@ -493,8 +552,8 @@ const ALL_STEPS = [
         id: "autofire",
         label: "Auto-fire",
         hint: () => global.mobile
-            ? "*Tap Autofire* to keep shooting without holding the screen - most players leave it on. *Tap it again* to switch it off."
-            : "*Press {{KEY_AUTO_FIRE}}* to keep firing without holding the button - most players leave this on. *Press it again* to switch it off.",
+            ? "*Tap Autofire* and your gun keeps firing on its own. Nearly everyone leaves it on. *Tap it again* to turn it off."
+            : "*Press {{KEY_AUTO_FIRE}}* and your gun keeps firing on its own. Nearly everyone leaves it on. *Press it again* to turn it off.",
         target: () => ({ kind: "self" }),
         // Auto-fire is a server-side toggle with nothing mirrored on the
         // client, so there is no state to read back - count the toggles.
@@ -505,11 +564,9 @@ const ALL_STEPS = [
         id: "autospin",
         label: "Auto-spin",
         hint: () => global.mobile
-            ? "*Tap Autospin* to set your barrels sweeping on their own while you drive. *Tap it again* to stop."
-            : "*Press {{KEY_AUTO_SPIN}}* to set your barrels sweeping on their own while you drive. *Press it again* to stop.",
+            ? "*Tap Autospin* and your barrels sweep round by themselves while you drive. *Tap it again* to stop."
+            : "*Press {{KEY_AUTO_SPIN}}* and your barrels sweep round by themselves while you drive. *Press it again* to stop.",
         target: () => ({ kind: "self" }),
-        // Unlike auto-fire this one IS real client state, so watch the actual
-        // on-then-off cycle rather than counting keypresses.
         progress: () => state.spinOn ? (global.autoSpin ? 0.5 : 1) : 0,
         done: () => state.spinOn && !global.autoSpin,
     },
@@ -519,14 +576,10 @@ const ALL_STEPS = [
         id: "points",
         allow: "",
         label: "Find your points",
-        title: "YOU HAVE POINTS TO SPEND",
-        hint: () => `Bottom-left, just above the bars: \`x${gui.points || 42}\` is *how many stat points you have left*. You spawn with all of them - *spend them* or you fight at half strength.`,
-        // Box the counter itself, not the whole skill bar: the number IS the
-        // lesson here, and the bars get their own step next.
+        title: "YOU'VE GOT POINTS TO SPEND",
+        hint: () => `Bottom left, just above the bars: that \`x${gui.points || 50}\` is *how many stat points you've got*. You start with all of them. *Spend them*, or you're fighting at half strength.`,
         ui: "points",
         next: true,
-        // Next is the way out; the timer is only a backstop so a learner who
-        // never finds the button is not parked here forever.
         done: () => T() - state.stepAt > 40000,
     },
     {
@@ -539,58 +592,34 @@ const ALL_STEPS = [
         done: () => gui.points <= 0,
     },
 
-    // ── first build + first kill ───────────────────────────────────────
+    // ── first build, first fights ──────────────────────────────────────
     {
         id: "evolveBullet",
         allow: "upgrade",
         label: "Become a Penta Shot",
-        // The menu is pinned to one choice per tier - the next rung of the
-        // Twin - Triple Shot - Penta Shot ladder - so "pick the highlighted
-        // class" is never ambiguous and never empty.
-        hint: () => "Tanks evolve in steps. We have pinned the menu to one choice at a time: *keep picking it* - Twin, then Triple Shot, then Penta Shot.",
+        hint: () => "Tanks upgrade in steps. I've pinned the menu to one choice at a time, so *just keep picking it*: Twin, then Triple Shot, then Penta Shot.",
         ui: "upgrades",
         onEnter: () => tut("lock", "Twin,Triple Shot,Penta Shot"),
         settle: 900,
         progress: () => clamp(state.evolveCount / 3, 0, 1),
         done: () => state.evolveCount >= 3 && !(gui.upgrades || []).length,
     },
-    // Health comes BEFORE the first fight, not after it. Being told what your
-    // health bar is once you have already won a fight without needing it is
-    // the wrong order; knowing what the bar is before anything shoots at you
-    // is the point of teaching it at all.
     {
         id: "health",
         label: "Watch your health",
-        title: "YOUR HEALTH BAR",
-        hint: () => "We just took a chunk out of you. The bar under your tank is your *health*, and the thinner one behind it is your *shield*. *Both refill on their own* once you stop taking hits - watch them climb back. Backing off is usually better than pushing on.",
+        title: "YOUR HEALTH",
+        hint: () => "That hit was me, sorry. The bar under your tank is your *health*, the thin one behind it is your *shield*. *Both come back on their own* once you stop getting shot. Backing off wins more fights than pushing on.",
         onEnter: () => { tut("unlock"); tut("hurt"); },
-        // Box the bar itself so there is no doubt which of the several bars on
-        // screen the card is talking about.
         ui: "hp",
         target: () => ({ kind: "self" }),
         progress: () => clamp((T() - state.stepAt) / 15000, 0, 1),
-        // Fifteen seconds of actually watching it, or Next for anyone who has
-        // seen enough. Regeneration is slow enough that waiting for a full bar
-        // is a wait, not a lesson.
         next: true,
         done: () => T() - state.stepAt > 15000,
     },
     {
-        id: "ping",
-        label: "Place an enemy marker",
-        hint: () => global.mobile
-            ? "Press *Enemy Marker* to drop a red diamond your whole team can see. On a phone, *Next* if you have no ping key."
-            : "Press *Enemy Marker* ({{KEY_AUTO_ALT}}) to drop a red diamond *your whole team can see*. Point wherever you want it and press the key.",
-        onEnter: () => tut("heal"),
-        target: () => ({ kind: "self" }),
-        progress: () => (state.pingSeen || global.enemyPings.length > (state.base.pings || 0)) ? 1 : 0,
-        done: () => state.pingSeen || global.enemyPings.length > (state.base.pings || 0),
-        next: true,
-    },
-    {
         id: "dummy",
-        label: "Destroy the practice dummy",
-        hint: () => "It cannot shoot back and it does not move. *Point your cursor at it and hold left click*.",
+        label: "Wreck the practice dummy",
+        hint: () => "It can't shoot and it can't move. *Put your cursor on it and hold left click.*",
         onEnter: () => { tut("heal"); tut("dummy"); },
         acquire: () => {
             const b = practiceBot("Dummy");
@@ -604,9 +633,9 @@ const ALL_STEPS = [
     },
     {
         id: "readyFight",
-        label: "A real opponent",
+        label: "Someone who shoots back",
         title: "READY?",
-        hint: () => "Next you will fight a *moving bot that shoots back*. It is a Basic — it can chip you, it should not kill you. *Press Go when you want it.*",
+        hint: () => "Next up is a bot that *moves and fires back*. It's a Basic, so it'll sting but it won't kill you. *Hit Go when you're ready.*",
         onEnter: () => tut("heal"),
         target: () => ({ kind: "self" }),
         next: true,
@@ -617,8 +646,8 @@ const ALL_STEPS = [
     },
     {
         id: "fighter",
-        label: "Beat a real opponent",
-        hint: () => "A Basic with a thin stat spread. It shoots back. *Circle it, keep firing*, and use your health bar to decide when to back off.",
+        label: "Beat the rookie",
+        hint: () => "*Circle it and keep shooting.* Keep one eye on your health bar. If it's getting low, back off and let it fill before you go in again.",
         acquire: () => {
             const b = practiceBot("Rookie");
             return b ? { kind: "point", id: b.id, x: b.x, y: b.y } : null;
@@ -631,21 +660,17 @@ const ALL_STEPS = [
     },
     {
         id: "harder",
-        title: "THAT ONE WAS EASY",
-        subtitle: "Real players and bots aim better and hit harder. You will lose fights early on - everybody does. You get better fast.",
+        title: "THAT WAS THE EASY ONE",
+        subtitle: "Real miners aim better and hit a lot harder. You'll lose fights early on. Everyone does. You get good quicker than you'd think.",
         card: true,
         done: () => T() - state.stepAt > 4200,
     },
 
-    // ── the economy ────────────────────────────────────────────────────
+    // ── mining and money ───────────────────────────────────────────────
     {
         id: "rock",
         label: "Break the marked rock",
-        hint: () => "Gems live inside rock, and *the richer the ore the tougher the rock*. Shoot the marked one until it shatters.",
-        // Pick ONCE, on arrival, and never re-pick. The old version re-ran
-        // acquire every frame, so the marker hopped to whichever rock happened
-        // to be at a nice stand-off as the learner moved - you could never
-        // tell which rock you were supposed to be shooting.
+        hint: () => "Gems live inside rock, and *the richer the ore, the tougher the rock*. *Shoot the marked one until it shatters.*",
         onEnter: () => {
             state.lockedRock = null;
             state.rockBaseCarried = global.gems.carried;
@@ -655,15 +680,11 @@ const ALL_STEPS = [
             const r = acquireRock(true);
             if (r) {
                 state.lockedRock = { kind: "rock", ...r };
-                // Land next to THIS rock. A generic "rocks" landmark can sit on
-                // the far side of the wall from the cell we just marked.
                 const px = global.player.renderx, py = global.player.rendery;
                 const dx = px - r.x, dy = py - r.y;
                 const d = Math.hypot(dx, dy) || 1;
                 const standOff = 150;
-                if (d > 220) {
-                    tut("gotoxy", r.x + (dx / d) * standOff, r.y + (dy / d) * standOff);
-                }
+                if (d > 220) tut("gotoxy", r.x + (dx / d) * standOff, r.y + (dy / d) * standOff);
             }
             return state.lockedRock;
         },
@@ -674,18 +695,13 @@ const ALL_STEPS = [
             const h = t._rockHealth.get(k);
             return h === undefined ? 0 : clamp(1 - h, 0, 1);
         },
-        // Remember where it died so the next objective can point at the gems
-        // it dropped - by the time that step runs the rock is gone.
         onDone: (tg) => { if (tg) state.lastBreak = { x: tg.x, y: tg.y }; },
         done: () => state.target ? !rockAlive(terr(), state.target.k) : false,
     },
     {
         id: "gems",
-        label: "Collect the gems",
-        hint: () => "*Drive over the loose gems* to scoop them up. They ride in your satchel until you bank them.",
-        // Chase the real pickups, not the spot the rock died: they scatter on
-        // the burst, and a marker pinned to a patch of empty floor is worse
-        // than no marker.
+        label: "Grab the gems",
+        hint: () => "*Drive over the loose gems* to scoop them up. They sit in your satchel until you bank them, and they fade if you leave them lying there too long.",
         acquire: () => {
             const g = nearestGem();
             if (g) return { kind: "point", id: g.id, x: g.x, y: g.y };
@@ -704,16 +720,26 @@ const ALL_STEPS = [
     {
         id: "ores",
         title: "NOT ALL ROCK IS EQUAL",
-        subtitle: "Every rock carries one of these. The richer it is, the longer it takes to break.",
+        subtitle: "Every rock has one of these in it. The better the ore, the longer it takes to break, and the more it pays.",
         card: true,
-        gems: true,             // draw the four tiers under the card
+        gems: true,
         done: () => T() - state.stepAt > 7000,
+    },
+    {
+        id: "loaded",
+        label: "Look at yourself",
+        title: "YOU'RE LOADED",
+        hint: () => "I've filled your satchel to the brim: *4,000 gems*, which is all it holds. See the glow round your tank? *Everyone on the map can see that too.* Die like this and you drop the lot for whoever's closest. When you look like this, *go bank*.",
+        onEnter: () => tut("gems", 4000),
+        target: () => ({ kind: "self" }),
+        next: true,
+        done: () => T() - state.stepAt > 14000,
     },
     {
         id: "bank",
         allow: "bank",
         label: "Bank your gems",
-        hint: () => "*Carried gems drop when you die. Banked gems stay yours.* Drive onto *your vault pad*, press *DEPOSIT*, and wait until the bar finishes and your satchel is empty.",
+        hint: () => "*Drive onto the vault pad*, hit *DEPOSIT* and wait for the bar to fill. Vaults take *one miner at a time*, boot you if you loiter, and lock you out for a bit once you've cashed out.",
         onEnter: () => {
             const v = nearestVault();
             const px = global.player.renderx, py = global.player.rendery;
@@ -731,56 +757,49 @@ const ALL_STEPS = [
             const b = state.base.carried || 1;
             return clamp(1 - global.gems.carried / b, 0, 1);
         },
-        // Every last gem, not the first tick of the deposit: the drone chapter
-        // hands out a build and the satchel must be settled before it does.
         done: () => global.gems.carried === 0 && global.gems.banked > state.base.banked,
+    },
+    {
+        id: "bankRules",
+        title: "BANKED BEATS CARRIED",
+        subtitle: "Your score is your banked gems, plus 200 for every kill, plus half of whatever you're carrying. Banked gems stay yours when you die, and they're the only thing the shop takes. Carried gems are a target painted on your back.",
+        card: true,
+        next: true,
+        done: () => T() - state.stepAt > 11000,
     },
 
     // ── the other tank families ────────────────────────────────────────
-    // Each family gets the same three beats: here is what it is, here is
-    // override, here is what auto-fire does to it. Reading about a drone tank
-    // teaches nothing; flying one for twenty seconds teaches it properly.
+    // Reading about a drone tank teaches nothing; flying one for twenty
+    // seconds does. Two beats each: what it is, and override.
     {
         id: "droneIntro",
-        label: "You are an Overlord",
+        label: "Fly an Overlord",
         title: "DRONE TANKS",
-        hint: () => "*Drone tanks fire nothing.* They launch drones that fly on their own and *chase wherever your cursor is*. *Hold left click* to send them out, *release* to call them home. We have switched auto-fire off and given you a build so you can feel it.",
-        // A Penta Shot cannot evolve into Overlord - the tree does not cross
-        // branches - so the server morphs the tank outright.
+        hint: () => "*Drone tanks don't shoot.* They send out drones that *chase your cursor*. *Hold left click* to send them, *let go* to call them home. I've given you a drone build and turned auto-fire off so you can feel it.",
         onEnter: () => {
             tut("morph", "overlord");
             tut("lock", "none");
             tut("cmd", "autofire", 0);
-            // max reload / bullet health / bullet damage / bullet penetration,
-            // 6 bullet speed - the build the lesson describes.
             tut("stats", "0,0,6,9,9,9,9,0,0,0");
         },
         target: () => ({ kind: "self" }),
         next: true,
         settle: 0,
-        done: () => T() - state.stepAt > 22000,
+        done: () => T() - state.stepAt > 20000,
     },
     {
         id: "droneOverride",
         label: "Take direct control",
-        hint: () => "*Press {{KEY_OVER_RIDE}}* for override: your drones stop hunting and *hold formation on your cursor* instead. *Press it again* to let them loose.",
+        hint: () => "*Press {{KEY_OVER_RIDE}}* and the drones stop hunting and *sit in formation on your cursor*. *Press it again* to let them loose. One more thing: with auto-fire on they stay out, but you lose the recall.",
         target: () => ({ kind: "self" }),
         progress: () => clamp(state.overrideCount / 2, 0, 1),
         done: () => state.overrideCount >= 2,
     },
     {
-        id: "droneAutofire",
-        label: "Auto-fire with drones",
-        hint: () => "One more thing worth knowing: with *auto-fire on*, your drones stay out permanently instead of returning when you let go. Handy - *but you give up the recall*. You do not have to turn it on now.",
-        target: () => ({ kind: "self" }),
-        next: true,
-        done: () => T() - state.stepAt > 14000,
-    },
-    {
         id: "autoIntro",
-        label: "You are an Auto-5",
+        label: "Drive an Auto-5",
         title: "AUTO TANKS",
-        hint: () => "*Auto tanks carry turrets that pick their own targets and fire by themselves.* You can drive and let them work - which is why they are forgiving to learn on, and why they never quite hit as hard as aiming yourself.",
+        hint: () => "*Auto tanks carry turrets that pick their own targets* and fire by themselves. Drive around and let them work. Easy to learn, never quite as sharp as aiming yourself.",
         onEnter: () => {
             tut("morph", "auto5");
             tut("lock", "none");
@@ -789,55 +808,38 @@ const ALL_STEPS = [
         },
         target: () => ({ kind: "self" }),
         next: true,
-        done: () => T() - state.stepAt > 20000,
+        done: () => T() - state.stepAt > 16000,
     },
     {
         id: "autoOverride",
-        label: "Override the turrets",
-        hint: () => "Here is something to point them at. *Press {{KEY_OVER_RIDE}}* and the turrets stop choosing for themselves - *they aim exactly where you point*. *Press it again* to hand them back.",
-        // The target arrives with the step that needs one. Spawning it during
-        // the intro left it standing around being shot by turrets nobody was
-        // controlling yet, and it was often dead before the lesson began.
+        label: "Point the turrets yourself",
+        hint: () => "Here's a dummy for them. *Press {{KEY_OVER_RIDE}}* and the turrets *aim where you point* instead of choosing for themselves. *Press it again* to hand them back. Override plus auto-fire is how these are really played.",
         onEnter: () => tut("dummy"),
         target: () => ({ kind: "self" }),
         progress: () => clamp(state.overrideCount / 2, 0, 1),
         done: () => state.overrideCount >= 2,
     },
     {
-        id: "autoAutofire",
-        label: "Fire them yourself",
-        hint: () => global.mobile
-            ? "*Tap Autofire* and the turrets shoot where you aim instead of where they like. That combination - *override plus auto-fire* - is how an auto tank is really flown."
-            : "*Press {{KEY_AUTO_FIRE}}* and the turrets shoot where you aim instead of where they like. That combination - *override plus auto-fire* - is how an auto tank is really flown.",
-        target: () => ({ kind: "self" }),
-        progress: () => clamp(state.autofireCount / 1, 0, 1),
-        done: () => state.autofireCount >= 1,
-    },
-    {
         id: "rammerIntro",
-        label: "You are a Smasher",
+        label: "Drive a Smasher",
         title: "RAMMERS",
-        hint: () => "*Rammers have no guns at all.* You are the weapon: *drive into things* to kill them, and *drive into rock* to mine it. In exchange for the guns you get far more health, speed and body damage than anything that shoots.",
+        hint: () => "*Rammers have no guns at all.* You are the weapon: *drive into tanks* to kill them and *into rock* to mine it. In return you get far more health, speed and body damage than anything that shoots.",
         onEnter: () => {
             tut("morph", "smasher");
             tut("lock", "none");
             tut("cmd", "autofire", 0);
             tut("cmd", "autospin", 0);
-            // Every stat a Smasher can use goes to its cap EXCEPT engine
-            // acceleration, and exactly one point is left in hand for it. The
-            // server works out which stats those are and what they cap at, so
-            // this cannot drift if the class is ever retuned.
             tut("fill", 6, 1);
         },
         target: () => ({ kind: "self" }),
         next: true,
-        done: () => T() - state.stepAt > 20000,
+        done: () => T() - state.stepAt > 16000,
     },
     {
         id: "rammerStat",
         allow: "stats:6",
         label: () => statName(6) || "Engine Acceleration",
-        hint: () => `Half your bars just went dark - a rammer has no bullets to improve, so those points came back. In their place is *${statName(6) || "Engine Acceleration"}*: *how hard you accelerate*, which is how fast you build up ramming speed. *Put a point into it.*`,
+        hint: () => `Half your bars just went dark. A rammer has no bullets to improve, so those points came back. Instead you get *${statName(6) || "Engine Acceleration"}*: *how hard you accelerate*, which is your ramming speed. *Put a point into it.*`,
         ui: "stat:6",
         statIndex: 6,
         progress: () => {
@@ -853,26 +855,26 @@ const ALL_STEPS = [
     {
         id: "rammerRules",
         label: "How a rammer plays",
-        hint: () => "A rammer has *no auto-fire, no auto-spin and no override* - there is nothing to fire, sweep or aim. It has *one* attack and *one* mining tool, and they are the same thing: *your body*.",
+        hint: () => "No auto-fire, no auto-spin, no override. There's nothing to fire or aim. *One attack, one mining tool, and they're the same thing: your body.* Right, back to the Penta Shot.",
         target: () => ({ kind: "self" }),
-        // Back to the bullet tank the rest of the tutorial is written for.
         onDone: () => {
             tut("morph", "pentaShot");
             tut("unlock");
             tut("stats", "0,3,6,9,9,9,9,3,0,0");
         },
         next: true,
-        done: () => T() - state.stepAt > 14000,
+        done: () => T() - state.stepAt > 12000,
     },
 
-    // ── the map ────────────────────────────────────────────────────────
+    // ── bases ──────────────────────────────────────────────────────────
     {
-        id: "outpost",
-        label: "Take the outpost",
-        hint: () => "*Outposts are capture points.* Break the one in the middle and it comes back flying your colours - it then *heals your team and lets you respawn there*. We have given you an absurd build for this.",
+        id: "base",
+        label: "Take the base",
+        title: "BASES",
+        hint: () => "*Bases are the octagon pads with a structure standing on them.* Break the structure and the base is yours: you *respawn there*, it *heals you*, and you can *bank there*. I've maxed your stats for this one.",
         onEnter: () => {
             tut("goto", "outpost");
-            tut("stats", "9,9,9,9,9,9,9,9,9,9");
+            tut("stats", "9,9,9,9,9,9,9,9,9,9,9");
         },
         acquire: () => landmark("outpost", "vault", 95),
         revalidate: () => landmark("outpost", "vault", 95),
@@ -880,17 +882,10 @@ const ALL_STEPS = [
         done: () => state.outpostMine,
     },
     {
-        id: "outpostHard",
-        title: "THAT WAS THE EASY VERSION",
-        subtitle: "A real outpost has twenty times that health and someone defending it. Bring friends.",
-        card: true,
-        done: () => T() - state.stepAt > 4600,
-    },
-    {
-        id: "outpostBank",
+        id: "baseBank",
         allow: "bank",
-        label: "Bank at the outpost",
-        hint: () => "Outposts let you cash out in the field, but you only get *80%* of what you put in. We put *200 gem dust* in your satchel. Drive onto *your outpost pad*, press *DEPOSIT*, and wait until the bar finishes.",
+        label: "Bank at your base",
+        hint: () => "A base cashes out at *80%*, but it's usually a lot closer than a vault when you're loaded. You've got *200 gems* on you. *Drive onto your base and press DEPOSIT.*",
         onEnter: () => {
             tut("gems", 200);
             const p = (global.tutorialPlot || {}).outpost;
@@ -903,54 +898,262 @@ const ALL_STEPS = [
         done: () => state.outpostDust && global.gems.carried === 0 && global.gems.banked > state.base.banked,
     },
     {
-        id: "chamber",
-        label: "Crack the red core chamber",
-        title: "CORE CHAMBERS",
-        hint: () => "A core chamber is a team's treasury - *4000 gems* behind a ring. *Break the ring* and the whole hoard spills out. We have emptied your satchel so you can see exactly what it is worth.",
-        // The enemy's, past the outpost: the blue one on the near side is
-        // theirs to defend, not to crack open.
-        onEnter: () => {
-            tut("goto", "chamberRed");
-            tut("gems", 0);
+        id: "baseRules",
+        title: "BASE RULES",
+        subtitle: "You get 10 seconds on your base at a time, then it shoves you off and won't let you back for 10 more. Nobody else can set foot on it. Own more than one and the rings round your tank stack up. When someone's shooting yours, UNDER ATTACK shows over it wherever you are.",
+        card: true,
+        next: true,
+        done: () => T() - state.stepAt > 12000,
+    },
+
+    // ── the shop ───────────────────────────────────────────────────────
+    {
+        id: "shop",
+        allow: "shop",
+        label: "Find the shop",
+        title: "THE SHOP",
+        hint: () => "*Four shop pads* sit round the map. They only take *banked gems*, and you've got *2,500 in the bank*. *Drive onto the marked pad* and it opens.",
+        onEnter: () => tut("banked", 2500),
+        acquire: shopPad,
+        revalidate: shopPad,
+        progress: () => {
+            const p = shopPad();
+            if (!p) return 0;
+            const d = Math.hypot(global.player.renderx - p.x, global.player.rendery - p.y);
+            return clamp(1 - d / 1400, 0, 0.9);
         },
-        acquire: () => landmark("chamberRed", "point"),
-        revalidate: () => landmark("chamberRed", "point"),
-        // The hoard is 4000 and the satchel holds exactly 4000, but the gems
-        // scatter as the ring falls and chasing the last few hundred is
-        // busywork - half of it is plenty to have made the point.
-        progress: () => clamp(global.gems.carried / 2000, 0, 1),
-        done: () => global.gems.carried >= 2000,
+        done: () => !!global.shop.onPad,
     },
     {
-        id: "chamberHard",
-        title: "THAT WAS THE EASY VERSION",
-        subtitle: "A real chamber takes a team several minutes, under fire, with the other side arriving.",
+        id: "shopBuy",
+        allow: "shop",
+        label: "Buy Drill I",
+        hint: () => "*Drills* make every shot chew rock faster, and Drill V even survives dying. Open the *DRILLS* tab, pick *Drill I*, press *BUY*.",
+        onEnter: () => {
+            global.shop.dismissed = false;
+            if (!global.shop.onPad) tut("goto", "shop");
+        },
+        acquire: shopPad,
+        revalidate: shopPad,
+        progress: () => (global.shop.state && global.shop.state.drill > 0) ? 1 : 0,
+        done: () => !!(global.shop.state && global.shop.state.drill > 0),
+    },
+    {
+        id: "shopGear",
+        allow: "shop",
+        label: "Buy a Gem Magnet",
+        title: "GEAR",
+        hint: () => "*Gear* is a buff that runs for *5 minutes*, four at once at most. The *GEAR row above your kit* shows what's running and how long it's got left. Open the *GEAR* tab and buy the *Gem Magnet*. Gems will start flying at you from farther off.",
+        onEnter: () => {
+            global.shop.dismissed = false;
+            if (!global.shop.onPad) tut("goto", "shop");
+        },
+        acquire: shopPad,
+        revalidate: shopPad,
+        progress: () => hasGear("magnet") ? 1 : 0,
+        done: () => hasGear("magnet"),
+    },
+
+    // ── kit ────────────────────────────────────────────────────────────
+    {
+        id: "kit",
+        allow: "kit",
+        label: "Use a kit item",
+        title: "KIT",
+        hint: () => `Kit items sit in the *three slots above your stat bars* and fire with *{{KEY_KIT_1}} {{KEY_KIT_2}} {{KEY_KIT_3}}*. I've chipped your health and put a *Medkit* in your kit. *Press ${medkitKey()}.*`,
+        onEnter: () => {
+            tut("kit", "medkit");
+            tut("hurt");
+            state.kitPeak = kitTotal();
+        },
+        ui: "kit",
+        target: () => ({ kind: "self" }),
+        progress: () => kitTotal() < state.kitPeak ? 1 : 0,
+        done: () => state.kitPeak > 0 && kitTotal() < state.kitPeak,
+    },
+    {
+        id: "kitDrop",
+        allow: "kit",
+        label: "Throw one away",
+        hint: () => global.mobile
+            ? "Your kit holds *three kinds of item*. To make room, *drag an item out of the box and let go*. No refunds. I've given you a *Storm Anchor*. *Drag it out.*"
+            : "Your kit holds *three kinds of item*. To make room, *drag an item out of the box and let go*. No refunds. I've given you a *Storm Anchor*. *Drag it out of the kit.*",
+        onEnter: () => {
+            tut("heal");
+            tut("kit", "anchor");
+            state.kitDropBase = global.kitDropped | 0;
+        },
+        ui: "kit",
+        target: () => ({ kind: "self" }),
+        progress: () => (global.kitDropped | 0) > state.kitDropBase ? 1 : 0,
+        done: () => (global.kitDropped | 0) > state.kitDropBase,
+    },
+
+    // ── sidearms ───────────────────────────────────────────────────────
+    {
+        id: "sidearm",
+        label: "Fire your sidearm",
+        title: "SIDEARMS",
+        hint: () => global.mobile
+            ? "The shop also sells *sidearms*, a second weapon on the *alt-fire button*. I've bolted *Swarm Barrels* to your sides. *Hold alt-fire* and send the drones at the wall. They burn out after two and a half minutes. The *Drill Lance* one-shots rock and the *Annihilator* fires one massive shell."
+            : "The shop also sells *sidearms*, a second weapon on *right click*. I've bolted *Swarm Barrels* to your sides. *Hold right click* and send the drones at the wall. They burn out after two and a half minutes. The *Drill Lance* one-shots rock and the *Annihilator* fires one massive shell.",
+        onEnter: () => {
+            tut("arm", "pod");
+            state.altDown = false;
+            state.altMs = 0;
+        },
+        target: () => ({ kind: "self" }),
+        progress: () => clamp(state.altMs / 1500, 0, 1),
+        done: () => state.altMs >= 1500,
+    },
+
+    // ── chests ─────────────────────────────────────────────────────────
+    {
+        id: "chest",
+        label: "Crack the chest",
+        title: "CHESTS",
+        hint: () => "*Six chests* sit round the map, *four copper and two epic*. They break like rock. Copper pays about *250 gems* and sometimes a kit item, epic pays *500* and always drops one. *Shoot the marked one until it shatters.*",
+        onEnter: () => {
+            state.chestSeen = false;
+            state.chestBase = global.gems.carried;
+            tut("chest");
+        },
+        acquire: () => {
+            const ch = nearestChest();
+            return ch ? { kind: "point", id: ch.id, x: ch.x, y: ch.y } : null;
+        },
+        revalidate: () => {
+            const ch = nearestChest();
+            return ch ? { kind: "point", id: ch.id, x: ch.x, y: ch.y } : null;
+        },
+        progress: () => (state.chestSeen && !nearestChest()) ? 1 : 0,
+        settle: 500,
+        done: () => state.chestSeen && !nearestChest(),
+    },
+
+    // ── bosses ─────────────────────────────────────────────────────────
+    {
+        id: "boss",
+        label: "Take down the Vault Warden",
+        title: "BOSSES",
+        hint: () => "Every so often a *boss digs up out of the wall*. It's marked at the edge of your screen and on the map. This one's a training copy with a tenth of the health. *Keep your distance and keep shooting.* Two people can take a real one down.",
+        onEnter: () => {
+            state.bossSeen = false;
+            tut("heal");
+            tut("boss", "warden");
+        },
+        acquire: () => {
+            const b = bossEntity();
+            return b ? { kind: "point", id: b.id, x: b.x, y: b.y } : null;
+        },
+        revalidate: () => {
+            const b = bossEntity();
+            return b ? { kind: "point", id: b.id, x: b.x, y: b.y } : null;
+        },
+        progress: () => {
+            const b = bossEntity();
+            if (!b) return state.bossSeen ? 1 : 0;
+            return clamp(1 - hpFracOf(b), 0, 1);
+        },
+        settle: 700,
+        done: () => state.bossSeen && !bossEntity(),
+    },
+    {
+        id: "bossLoot",
+        label: "Scoop the payout",
+        hint: () => "*Grab what it dropped.* A boss is the biggest single payday in a raid, and everyone just watched it die on their feed. Expect company.",
+        onEnter: () => { state.lootBase = global.gems.carried; },
+        acquire: () => {
+            const g = nearestGem();
+            return g ? { kind: "point", id: g.id, x: g.x, y: g.y } : null;
+        },
+        revalidate: () => {
+            const g = nearestGem();
+            return g ? { kind: "point", id: g.id, x: g.x, y: g.y } : null;
+        },
+        progress: () => clamp((global.gems.carried - state.lootBase) / 400, 0, 1),
+        done: () => global.gems.carried - state.lootBase >= 400 ||
+            (T() - state.stepAt > 6000 && !nearestGem()),
+    },
+
+    // ── the map's weather ──────────────────────────────────────────────
+    {
+        id: "events",
+        title: "BLOOMS, METEORS, GEM RAIN",
+        subtitle: "An ore bloom turns a patch of wall rich and keeps regrowing it full of ore until it fades. Meteor showers and gem rain dump loose gems on the floor. All three get a label on your minimap, so when you see one, go.",
         card: true,
-        done: () => T() - state.stepAt > 4600,
-    },
-    {
-        id: "chamberSides",
-        label: "Yours and theirs",
-        title: "TWO CHAMBERS, TWO JOBS",
-        hint: () => "There is one of these per team. *Break the red one* - and *defend the blue one*, because the enemy wants your 4000 just as badly. Bank what you take before somebody takes it back off your corpse.",
-        onEnter: () => tut("goto", "chamberBlue"),
-        acquire: () => landmark("chamberBlue", "point"),
-        revalidate: () => landmark("chamberBlue", "point"),
         next: true,
-        done: () => T() - state.stepAt > 13000,
+        done: () => T() - state.stepAt > 11000,
+    },
+
+    // ── the storm, as a drill ──────────────────────────────────────────
+    // Drawn entirely on the client: a purple wall closes on a marked circle
+    // near the learner, and the step only clears once they are standing
+    // inside it when it stops. Outside the wall the screen burns red.
+    {
+        id: "storm",
+        label: "Get inside the circle",
+        title: "THE STORM",
+        hint: () => "The purple wall is the *storm*. In a real raid it takes about *six minutes to close in*, sits there for a minute, then opens back up. That whole cycle is one *raid*. *Outside the wall you burn*, worse every cycle. Here's a quick one: *get inside the marked circle before the wall reaches you.*",
+        onEnter: () => {
+            tut("heal");
+            const sp0 = (global.tutorialPlot || {}).spawn || { x: global.player.renderx, y: global.player.rendery };
+            const px = global.player.renderx, py = global.player.rendery;
+            const dirY = py > sp0.y ? -1 : 1;
+            const cx = sp0.x, cy = sp0.y + dirY * 640;
+            const dist = Math.hypot(px - cx, py - cy);
+            state.stormDemo = {
+                cx, cy, r0: Math.max(1500, dist + 320), r1: 260,
+                startAt: T() + 1600, dur: 14000,
+                t: 0, r: Math.max(1500, dist + 320), outside: false,
+                burnMs: 0, safeSince: 0, fails: 0,
+            };
+        },
+        acquire: () => state.stormDemo ? { kind: "zone", x: state.stormDemo.cx, y: state.stormDemo.cy } : null,
+        revalidate: () => state.stormDemo ? { kind: "zone", x: state.stormDemo.cx, y: state.stormDemo.cy } : null,
+        progress: () => state.stormDemo ? clamp(state.stormDemo.t, 0, 1) : 0,
+        onDone: () => { state.stormDemo = null; },
+        done: () => {
+            const d = state.stormDemo;
+            return !!d && d.t >= 1 && !d.outside && d.safeSince > 0 && T() - d.safeSince > 1200;
+        },
     },
     {
-        id: "base",
-        title: "NEVER TOUCH A BASE",
-        subtitle: "The red column on their side is the enemy base. It does not damage you - it deletes you, satchel and all.",
+        id: "override",
+        title: "EVERY RAID, A NEW OVERRIDE",
+        subtitle: "Each raid rolls a rule change. Everyone's a giant. Double damage, half health. An Annihilator for all. Twelve chests instead of six. It sits in the card under your quests, and a popup tells you when it changes.",
         card: true,
         next: true,
-        done: () => T() - state.stepAt > 7000,
+        done: () => T() - state.stepAt > 11000,
+    },
+    {
+        id: "quests",
+        title: "QUESTS AND STREAKS",
+        subtitle: "The quest card under the clock pays banked gems for your first bank, chest, kill and shop visit each raid. Four kills in a row and you're marked on everyone's map with double bounty on your head. Great, if you can hold it.",
+        card: true,
+        next: true,
+        done: () => T() - state.stepAt > 11000,
+    },
+    {
+        id: "death",
+        title: "DYING",
+        subtitle: "Die and you drop everything you're carrying, then sit out 15 seconds. You come back with a 4 second shield that holds until you move or shoot. Insurance from the shop banks a quarter of your satchel instead of dropping it.",
+        card: true,
+        next: true,
+        done: () => T() - state.stepAt > 11000,
+    },
+    {
+        id: "finalStorm",
+        title: "THE FINAL STORM",
+        subtitle: "Near the end of the two hours the storm closes and stays closed. Nobody respawns. Last miner standing takes the raid, and the top ten get paid.",
+        card: true,
+        next: true,
+        done: () => T() - state.stepAt > 9000,
     },
     {
         id: "minimap",
         label: "Read the map",
-        hint: () => "*Press {{KEY_TOGGLE_MAP}}* to open the full map, then *press it again* to close it. You are the arrow.",
+        hint: () => "*Press {{KEY_TOGGLE_MAP}}* for the full map. Bosses, chests, blooms, your bases and marked players are all on it, and the *Standings* tab has the scores with your name in your colour. *Press it again* to close it.",
         ui: "minimap",
         progress: () => state.mapOpened ? (global.showBigMap ? 0.5 : 1) : 0,
         done: () => state.mapOpened && !global.showBigMap,
@@ -960,12 +1163,9 @@ const ALL_STEPS = [
     {
         id: "keys",
         group: "keys", groupPos: 1, groupLen: 3,
-        // Rebinding keys is meaningless on a touch device, and the Keybinds
-        // tab is literally not rendered there (sp-desktop-only), so the whole
-        // chapter drops out rather than pointing at nothing.
         omit: () => global.mobile,
         label: "Open settings",
-        hint: () => "Last thing. *Hit the settings button* - everything you can control lives in there.",
+        hint: () => "Last thing. *Hit the settings button.* Everything you can change lives in there.",
         ui: "dom:#ingameSettingsBtn",
         done: () => settingsOpen(),
     },
@@ -974,7 +1174,7 @@ const ALL_STEPS = [
         group: "keys", groupPos: 2, groupLen: 3,
         omit: () => global.mobile,
         label: "Find your keybinds",
-        hint: () => "*Open the Keybinds tab.* Every control is listed, and *you can click any of them* to rebind it to a key you prefer.",
+        hint: () => "*Open the Keybinds tab.* Every control is listed, and *you can click any of them* to move it to a key you like better.",
         ui: "dom:.sp-tab[data-tab='sp-keybinds']",
         done: () => keybindsTabOpen() || !settingsOpen(),
     },
@@ -983,16 +1183,16 @@ const ALL_STEPS = [
         group: "keys", groupPos: 3, groupLen: 3,
         omit: () => global.mobile,
         label: "Close settings",
-        hint: () => "*Close it with the X* when you are done looking.",
+        hint: () => "*Close it with the X* when you've seen enough.",
         ui: "dom:#homeSettingsClose",
         settle: 300,
         done: () => !settingsOpen(),
     },
     {
         id: "done",
-        allow: "stats,upgrade,bank",
-        title: "GOOD LUCK, MINER",
-        subtitle: () => "Mine deep, bank often, and stay off their base.",
+        allow: "stats,upgrade,bank,shop,kit",
+        title: "GOOD LUCK OUT THERE",
+        subtitle: () => "Dig deep, bank often, and don't stand still when the storm's coming.",
         card: true,
         final: true,
         done: () => T() - state.stepAt > 3600,
@@ -1057,6 +1257,9 @@ function uiRect(kind) {
     }
     if (kind && kind.indexOf("stat:") === 0) {
         rs.push(cl.stat.rect(parseInt(kind.slice(5))));
+    } else if (kind === "kit") {
+        if (!cl.kit) return null;
+        for (let i = 0; i < cl.kit.size(); i++) rs.push(cl.kit.rect(i));
     } else if (kind === "skills") {
         for (let i = 0; i < cl.stat.size(); i++) rs.push(cl.stat.rect(i));
     } else if (kind === "upgrades") {
@@ -1124,7 +1327,7 @@ function statSteps() {
             label: () => statName(si.i),
             hint: () => statWhy(si.i) + (global.mobile
                 ? "  *Tap the bar* to put a point into it."
-                : `  *Press [[${statKey(si.i)}]]* - or click the bar - to *put a point into it*.`),
+                : `  *Press [[${statKey(si.i)}]]* or click the bar to *put a point into it*.`),
             ui: "stat:" + si.i,
             statIndex: si.i,
             progress: () => {
@@ -1149,7 +1352,7 @@ function statSteps() {
         label: "Spend the rest",
         hint: () => global.mobile
             ? "Now pour the remaining points wherever suits your build."
-            : "Now pour the remaining points wherever suits your build - {{KEY_UPGRADE_ATK}}–{{KEY_UPGRADE_SHI}} or click the bars.",
+            : "Now pour the remaining points wherever suits your build. {{KEY_UPGRADE_ATK}} to {{KEY_UPGRADE_SHI}} and {{KEY_UPGRADE_MIN}}, or click the bars.",
         ui: "skills",
         settle: 700,
         progress: () => {
@@ -1265,7 +1468,7 @@ function update() {
     // The outpost objective. global.outpostState is room-wide, so match on the
     // one whose position is our arena's - id ordering is a server-build detail
     // and not something the client should lean on.
-    if (s.id === "outpost") {
+    if (s.id === "base") {
         const mine = (global.tutorialPlot || {}).outpost;
         for (const o of (global.outpostState || [])) {
             const site = (global.outposts || []).find(x => x.id === o.id);
@@ -1275,7 +1478,53 @@ function update() {
             if (o.t === myTeam()) state.outpostMine = true;
         }
     }
-    if (s.id === "outpostBank" && (global.gems.carried | 0) >= 150) state.outpostDust = true;
+    if (s.id === "baseBank" && (global.gems.carried | 0) >= 150) state.outpostDust = true;
+
+    // Dig Royale chapter: presence before absence, same rule as the bots.
+    if (s.id === "chest" && nearestChest()) state.chestSeen = true;
+    if (s.id === "boss" && bossEntity()) state.bossSeen = true;
+    if (s.id === "kit") {
+        state.kitPeak = Math.max(state.kitPeak, kitTotal());
+        // A maxed tank regenerates to full in seconds and a Medkit at full
+        // health is refused, so keep the bar visibly low until it is used.
+        if (state.hpFrac > 0.6 && T() - (state.lastHurtAt || 0) > 3000) {
+            tut("hurt");
+            state.lastHurtAt = T();
+        }
+    }
+    if (s.id === "sidearm") {
+        // Real elapsed time while the button is held, not a frame count, so a
+        // slow machine is not asked to hold it ten times longer.
+        const mobileAlt = !!(global.clickables && global.clickables.mobileButtons && global.clickables.mobileButtons.altFire);
+        const now = T();
+        if (state.altDown || mobileAlt) state.altMs += Math.min(100, now - (state.altLast || now));
+        state.altLast = now;
+    }
+
+    // The storm drill: shrink the wall, notice when the learner is outside it,
+    // and once it has stopped, either count them safe or start it over.
+    if (s.id === "storm" && state.stormDemo) {
+        const d = state.stormDemo;
+        const now = T();
+        d.t = clamp((now - d.startAt) / d.dur, 0, 1);
+        d.r = lerp(d.r0, d.r1, smooth(d.t));
+        const dist = Math.hypot(global.player.renderx - d.cx, global.player.rendery - d.cy);
+        d.outside = now >= d.startAt && dist > d.r;
+        if (d.outside) d.burnMs += 16;
+        if (d.t >= 1) {
+            if (!d.outside) { if (!d.safeSince) d.safeSince = now; }
+            else {
+                d.safeSince = 0;
+                // stood outside when it stopped: open it back up and go again
+                if (now - d.startAt > d.dur + 2600) {
+                    d.fails++;
+                    d.startAt = now + 800;
+                    d.r0 = Math.max(1500, dist + 320);
+                    d.t = 0;
+                }
+            }
+        }
+    }
 
     // Our own health, for the regeneration lesson.
     const me = global.entities.find(e => e.id === gui.playerid);
@@ -1380,6 +1629,14 @@ export function drawWorld(px, py, ratio) {
     if (fade <= 0) return;
 
     if (tg.kind === "self") { drawSelfRing(c, px, py, ratio, fade); return; }
+    if (tg.kind === "zone") {
+        drawStormDrill(c, px, py, ratio, fade);
+        const zp = w2s(tg.x, tg.y, px, py, ratio);
+        const zOn = zp.x > -60 && zp.x < SW() + 60 && zp.y > -60 && zp.y < SH() + 60;
+        if (zOn) drawChevrons(c, zp, px, py, ratio, fade);
+        else state.edge = { sp: { x: zp.x, y: zp.y }, tg: { x: tg.x, y: tg.y }, fade, at: T() };
+        return;
+    }
 
     const sp = w2s(tg.x, tg.y, px, py, ratio);
     const onScreen = sp.x > -60 && sp.x < SW() + 60 && sp.y > -60 && sp.y < SH() + 60;
@@ -1421,6 +1678,69 @@ function drawSelfRing(c, px, py, ratio, fade) {
         c.stroke();
     }
     c.restore();
+}
+
+// The storm drill: the same purple wall the real game draws, closing on a
+// gold safe circle. Everything outside the wall is dimmed like the real storm.
+function drawStormDrill(c, px, py, ratio, fade) {
+    const d = state.stormDemo;
+    if (!d) return;
+    const now = T();
+    const sp = w2s(d.cx, d.cy, px, py, ratio);
+    const rr = Math.max(0, d.r * ratio);
+    c.save();
+    c.globalAlpha = fade;
+    c.beginPath();
+    c.rect(-40, -40, SW() + 80, SH() + 80);
+    c.arc(sp.x, sp.y, rr, 0, Math.PI * 2, true);
+    c.clip("evenodd");
+    c.fillStyle = "rgba(72, 38, 96, 0.46)";
+    c.fillRect(-40, -40, SW() + 80, SH() + 80);
+    c.restore();
+    c.save();
+    c.globalAlpha = fade;
+    const wall = Math.max(8, 12 * ratio);
+    c.beginPath();
+    c.arc(sp.x, sp.y, rr + wall, 0, Math.PI * 2);
+    c.arc(sp.x, sp.y, Math.max(0, rr - 2), 0, Math.PI * 2, true);
+    c.fillStyle = "#6a3a78";
+    c.fill("evenodd");
+    c.strokeStyle = "#2a1028";
+    c.lineWidth = Math.max(2, 2.5 * ratio);
+    c.beginPath(); c.arc(sp.x, sp.y, rr, 0, Math.PI * 2); c.stroke();
+    // the safe circle: where the wall will stop
+    const pulse = 0.5 + 0.5 * Math.sin(now / 320);
+    const zr = d.r1 * ratio;
+    c.globalAlpha = (0.55 + 0.4 * pulse) * fade;
+    c.strokeStyle = `rgb(${GOLD})`;
+    c.lineWidth = 3;
+    c.setLineDash([12, 10]);
+    c.lineDashOffset = -now / 30;
+    c.beginPath(); c.arc(sp.x, sp.y, zr, 0, Math.PI * 2); c.stroke();
+    c.setLineDash([]);
+    c.globalAlpha = 0.10 * fade;
+    c.fillStyle = `rgb(${GOLD})`;
+    c.beginPath(); c.arc(sp.x, sp.y, zr, 0, Math.PI * 2); c.fill();
+    c.restore();
+    drawCaret(c, sp.x, sp.y - zr - 26, fade);
+}
+
+// Red edges and a line of text while the learner stands in the drill's storm.
+function drawStormDrillHud(c) {
+    const d = state.stormDemo;
+    if (!d || !d.outside) return;
+    const S = US();
+    const cx = SW() / 2, cy = SH() / 2;
+    const pulse = 0.5 + 0.5 * Math.sin(T() / 130);
+    c.save();
+    const g = c.createRadialGradient(cx, cy, Math.min(SW(), SH()) * 0.28, cx, cy, Math.max(SW(), SH()) * 0.72);
+    g.addColorStop(0, "rgba(140,30,50,0)");
+    g.addColorStop(1, `rgba(140,30,50,${0.42 + 0.18 * pulse})`);
+    c.fillStyle = g;
+    c.fillRect(0, 0, SW(), SH());
+    c.restore();
+    trackedText(c, "YOU'RE IN THE STORM. GET INSIDE.", cx, SH() * 0.68, 18 * S, "#ff8a7a", 1.6 * S, 0.85 + 0.15 * pulse);
+    c.globalAlpha = 1;
 }
 
 // the marked rock: its real silhouette, breathing brackets, damage arc
@@ -1872,7 +2192,10 @@ function drawTitleCard(c, s) {
     c.fillStyle = g;
     c.fillRect(0, 0, SW(), SH());
 
-    const size = Math.min(54 * S, SW() / (s.title.length * 0.62));
+    // Tracked capitals: each glyph ~0.62em plus 0.16em of letter spacing, so
+    // long titles ("THAT WAS THE EASY VERSION") shrink to fit narrow windows.
+    const n = s.title.length;
+    const size = Math.min(54 * S, (SW() * 0.94) / (n * 0.62 + Math.max(0, n - 1) * 0.16));
     const rise = (1 - inA) * 14;
     trackedText(c, s.title, cx, cy - rise, size, `rgb(${GOLD})`, size * 0.16, a);
 
@@ -2235,6 +2558,10 @@ function onTouchStart(e) {
 function onMouseDown(e) {
     if (!state.running) return;
     if (e.button === 0) state.fireSeen = true;
+    if (e.button === 2) state.altDown = true;
+}
+function onMouseUp(e) {
+    if (e.button === 2) state.altDown = false;
 }
 
 // Tell the server we are mid-tutorial so gems from rocks we break are held for
@@ -2354,6 +2681,7 @@ export function hook() {
             if (!domMode) hideDomStep();
             // highlight first so the objective card always reads on top of it
             if (s && s.ui && !domMode) drawUiHighlight(c, s.ui);
+            if (s && s.id === "storm") drawStormDrillHud(c);
             drawObjective(c);   // positions the skip control under its card
             showSkip(true);
             refreshNav();
@@ -2364,8 +2692,18 @@ export function hook() {
 
 document.addEventListener("keydown", onKeyDown);
 document.addEventListener("mousedown", onMouseDown);
+document.addEventListener("mouseup", onMouseUp);
+window.addEventListener("blur", () => { state.altDown = false; });
 document.addEventListener("touchstart", onTouchStart, { passive: true });
 
 // read-only handle for debugging/automation: which objective is live and what
 // it is currently pointing at
 window.dwTut = state;
+// QA hook: jump straight to a lesson by id (the chain is built on open()).
+window.dwTutJump = (id) => {
+    if (!state.running) return false;
+    const i = STEPS.findIndex(st => st.id === id);
+    if (i < 0) return false;
+    enterStep(i);
+    return true;
+};

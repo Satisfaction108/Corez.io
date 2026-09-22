@@ -60,7 +60,7 @@
        The storage key is versioned: bumping _v2 re-runs the tutorial for
        everyone who completed the old in-game one, which taught a different
        (and much smaller) curriculum. */
-    var TUT_DONE_KEY = 'digwarsTutorialDone_v2';
+    var TUT_DONE_KEY = 'digRoyaleTutorialDone_v1';
 
     function tutorialCompleted() {
         return localStorage.getItem(TUT_DONE_KEY) === '1';
@@ -163,7 +163,9 @@
     document.addEventListener('DOMContentLoaded', function () {
         initMobileGate();
         initTutorialEntry();
-        if (location.hash === '#dw') launchDigWars();
+        // Dig Wars is parked: #dw no longer routes anywhere. Drop a stale
+        // hash so Play behaves normally.
+        if (location.hash === '#dw') { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; } }
 
         applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
 

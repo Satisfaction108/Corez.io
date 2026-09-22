@@ -34,8 +34,9 @@ module.exports = {
             // as an env var on Render (locally this stays false / worker mode).
             share_client_server: process.env.SINGLE_PROCESS === "true",
 
-            host: publicHost || 'localhost:3100',
-            port: process.env.SINGLE_PROCESS === "true" ? (parseInt(process.env.PORT) || 3000) : 3100,
+            // BR_PORT lets a second local copy run beside the main one (profiling).
+            host: publicHost || ('localhost:' + (parseInt(process.env.BR_PORT) || 3100)),
+            port: process.env.SINGLE_PROCESS === "true" ? (parseInt(process.env.PORT) || 3000) : (parseInt(process.env.BR_PORT) || 3100),
             id: 'br',
 
             region: "Local",
@@ -51,25 +52,26 @@ module.exports = {
                 bot_cap: 0
             }
         },
-        {
-            share_client_server: false,
-            host: publicHost ? publicHost + ':3102' : 'localhost:3102',
-            port: 3102,
-            id: 'dw',
-
-            region: "Local",
-            gamemode: ['dig_wars'],
-            player_cap: 16,
-
-            featured: false,
-            unlisted: true,
-            private: false,
-
-            properties: {
-                teams: 2,
-                bot_cap: 16
-            }
-        },
+        // Dig Wars 2TDM is parked for now: no worker, and #dw routes nowhere.
+        // {
+        //     share_client_server: false,
+        //     host: publicHost ? publicHost + ':3102' : 'localhost:3102',
+        //     port: 3102,
+        //     id: 'dw',
+        // 
+        //     region: "Local",
+        //     gamemode: ['dig_wars'],
+        //     player_cap: 16,
+        // 
+        //     featured: false,
+        //     unlisted: true,
+        //     private: false,
+        // 
+        //     properties: {
+        //         teams: 2,
+        //         bot_cap: 16
+        //     }
+        // },
         {
             // TUTORIAL. Deliberately `unlisted` so it never appears on the
             // region/server picker - the only way in is the homepage Tutorial
@@ -87,8 +89,8 @@ module.exports = {
             // client dials the main domain - i.e. the live game - instead.
             // NOTE: this only works once port 3101 is reachable from outside;
             // by default the host proxies only the main port.
-            host: publicHost ? publicHost + ':3101' : 'localhost:3101',
-            port: 3101,
+            host: publicHost ? publicHost + ':3101' : ('localhost:' + (parseInt(process.env.TUT_PORT) || 3101)),
+            port: parseInt(process.env.TUT_PORT) || 3101,
             id: 'tut',
 
             region: "Tutorial",
@@ -136,10 +138,11 @@ module.exports = {
     room_bound_force: 0.01,
     soft_max_skill: 0.59,
 
+    // 50 points at level 45: 2..39 pay one each (38), 40..45 pay two (12).
     defineLevelSkillPoints: level => {
         if (level < 2) return 0;
-        if (level <= 40) return 1;
-        if (level <= 45 && level & 1 === 1) return 1;
+        if (level <= 39) return 1;
+        if (level <= 45) return 2;
         return 0;
     },
 
@@ -174,7 +177,7 @@ module.exports = {
     bot_team_cap: 8,
     bot_xp_gain: 60,
     bot_start_level: 100,
-    bot_skill_upgrade_chances: [1, 1, 3, 4, 4, 4, 4, 2, 1, 1],
+    bot_skill_upgrade_chances: [1, 1, 3, 4, 4, 4, 4, 2, 1, 1, 3],
     bot_class_upgrade_chances: [1, 5, 20, 37, 37],
     // Bots use procedurally generated names that are indistinguishable from
     // real players. Leave the prefix empty so the leaderboard stays clean.
