@@ -540,8 +540,19 @@ class gameHandler {
         logs.master.mark();
         const _tGaze0 = performance.now();
         this._tickEntMs = _tGaze0 - (this._tickStart || _tGaze0);
-        // Update lastCycle only once
-        global.gameManager.room.lastCycle = util.time();
+        // Update lastCycle only once. Stamped on an even grid (one cycleSpeed
+        // per tick, drifting 10% toward the wall clock) rather than the raw
+        // clock: the client interpolates over the gap between stamps while
+        // entities always move one fixed step per tick, so timer jitter in
+        // the raw stamps showed up as visible micro-stutter.
+        {
+            const wall = util.time(), step = global.gameManager.room.cycleSpeed, prev = this._stampClock;
+            let stamp = prev == null ? wall : prev + step + (wall - (prev + step)) * 0.1;
+            if (Math.abs(stamp - wall) > 150) stamp = wall;   // resync after a real stall
+            if (prev != null && stamp <= prev) stamp = prev + 1;
+            this._stampClock = stamp;
+            global.gameManager.room.lastCycle = stamp;
+        }
         for (let i = 0; i < global.gameManager.clients.length; i++) {
             let client = global.gameManager.clients[i];
             if (client.status.readyToBroadcast) {
@@ -1612,13 +1623,25 @@ class gameHandler {
         let lastTickAt = performance.now();
         let gameLoop = setInterval(() => {
             if (!this.active) return clearInterval(gameLoop);
+            // measured every interval, occupied or not: an empty room used to
+            // skip this, so the first tick after idling logged as "late"
+            const cycleStarted = performance.now();
+            const late = cycleStarted - lastTickAt - 1000 / 30;
+            lastTickAt = cycleStarted;
             if (this.checkUsers()) {
                 try {
-                    const cycleStarted = performance.now();
                     this._lifeProf = null; this._collideMs = 0; this._stageProf = null; global.botProf = {};
-                    const late = cycleStarted - lastTickAt - 1000 / 30;
-                    lastTickAt = cycleStarted;
                     this.gameloop();
+                    // Terrain, gems, pads and the raid clock run right after the
+                    // entity step, on the same 30 Hz beat. They used to have their
+                    // own 16 ms timer, which competed with this one (uneven ticks)
+                    // and redid half its work on positions that had not moved.
+                    try { terrainPass(); } catch (e) {
+                        if (Date.now() - (this._terrainErrAt || 0) > 10000) {
+                            this._terrainErrAt = Date.now();
+                            console.error('[TERRAIN] pass failed:', e && e.stack || e);
+                        }
+                    }
                     const tEnt = this._tickEntMs || 0, tGaze = this._tickGazeMs || 0;
                     const tA = performance.now();
                     if (Config.bot_soak_mode) {
@@ -1633,7 +1656,15 @@ class gameHandler {
                     tickStats.n++;
                     tickStats.ema = tickStats.ema ? tickStats.ema * 0.95 + total * 0.05 : total;
                     if (total > tickStats.max) tickStats.max = total;
-                    if ((total > 60 || late > 120) && performance.now() - tickStats.lastLog > 1000) {
+                    if (total > 33) tickStats.over33 = (tickStats.over33 | 0) + 1;
+                    if (late > 25) tickStats.lateN = (tickStats.lateN | 0) + 1;
+                    if (performance.now() - (tickStats.minuteAt || 0) > 60000) {
+                        if (tickStats.minuteAt && (tickStats.over33 || tickStats.lateN))
+                            console.log(`[TICK] last minute: ${tickStats.over33 | 0} ticks over 33ms, ${tickStats.lateN | 0} started 25ms+ late, avg ${tickStats.ema.toFixed(1)}ms, max ${tickStats.max.toFixed(0)}ms`);
+                        tickStats.minuteAt = performance.now();
+                        tickStats.over33 = 0; tickStats.lateN = 0; tickStats.max = 0;
+                    }
+                    if ((total > 40 || late > 120) && performance.now() - tickStats.lastLog > 1000) {
                         tickStats.slow++;
                         tickStats.lastLog = performance.now();
                         const prof = this._lifeProf || {};
@@ -1706,8 +1737,12 @@ class gameHandler {
             }
         };
         let lastTerrainTick = Date.now();
-        let terrainLoop = setInterval(() => {
-            if (!this.active) return clearInterval(terrainLoop);
+        // required once, lazily (both pull in half the game at load time)
+        let chestsMod = null, digRoyaleMod = null;
+        // Called from the game loop above, once per tick. (That callback only
+        // runs after run() returns, so this const exists by then.)
+        const terrainPass = () => {
+            if (!this.active) return;
             const _tg = global.gameManager.terrainGrid;
             if (!_tg || !_tg._voronoiMap) return;
             // An empty server (the tutorial worker with nobody in it) has no
@@ -1718,7 +1753,7 @@ class gameHandler {
             
             
             const tickNow = Date.now();
-            const tickMs = Math.min(50, tickNow - lastTerrainTick) || 8;
+            const tickMs = Math.min(66, tickNow - lastTerrainTick) || 33;
             lastTerrainTick = tickNow;
             const _terrainT0 = performance.now();
             this._terrainTimer = _terrainT0;
@@ -1726,10 +1761,9 @@ class gameHandler {
             this._terrainRegrowMs = performance.now() - _terrainT0;
             const growingNow = _tg.growingRocks().length > 0;
             const gemActors = this.gemActors();
-            // Loose gems run at 30 Hz: half the gem x actor work, same feel
-            // (the magnet blend is tuned for it in gems.tickGem).
-            this._terrainTickN = (this._terrainTickN | 0) + 1;
-            const gemsThisTick = (this._terrainTickN & 1) === 0;
+            // Loose gems run at 30 Hz (the magnet blend is tuned for it in
+            // gems.tickGem), which is now simply every pass.
+            const gemsThisTick = true;
             for (const instance of global.entities.values()) {
                 if (!instance) continue;
                 if (instance.isGemPickup) {
@@ -1859,7 +1893,8 @@ class gameHandler {
                         if (gsec) {
                             instance.grindAcc = Math.min(
                                 _tg.baseRockHealth * 0.6, 
-                                (instance.grindAcc || 0) + (_tg.baseRockHealth / gsec) * 0.008
+                                // 0.008 per 16 ms pass, scaled to the real pass length
+                                (instance.grindAcc || 0) + (_tg.baseRockHealth / gsec) * 0.008 * (tickMs / 16)
                             );
                             if (!instance.grindLast || nowT - instance.grindLast >= 150) {
                                 instance.grindLast = nowT;
@@ -1976,21 +2011,19 @@ class gameHandler {
 
             
             const vNow = Date.now();
-            vault.tick(gemActors,
-                       Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);
-            
-            outposts.tick(gemActors,
-                          Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);
+            const padDt = Math.min(66, vNow - (this._lastVaultTick || vNow)) || 33;
+            vault.tick(gemActors, padDt);
+            outposts.tick(gemActors, padDt);
             if (Config.dig_royale || Config.tutorial) {
                 try { shop.tick(gemActors); } catch (e) { /* */ }
-                try { require('./terrain/chests.js').tick(gemActors, _tg); } catch (e) { /* */ }
+                try { (chestsMod ||= require('./terrain/chests.js')).tick(gemActors, _tg); } catch (e) { /* */ }
             }
             if (!Config.dig_royale) {
-                coreChambers.tick(Math.min(50, vNow - (this._lastVaultTick || vNow)) || 8);
+                coreChambers.tick(padDt);
             }
             this._lastVaultTick = vNow;
             if (Config.dig_royale) {
-                try { require('./gamemodes/scripts/dig_royale.js').tick(); } catch (e) {
+                try { (digRoyaleMod ||= require('./gamemodes/scripts/dig_royale.js')).tick(); } catch (e) {
                     const tNow = Date.now();
                     if (tNow - (this._raidTickErrAt || 0) > 10000) {
                         this._raidTickErrAt = tNow;
@@ -2020,7 +2053,7 @@ class gameHandler {
                     console.log(`[SLOW TERRAIN] ${_tMs.toFixed(0)}ms regrow=${(this._terrainRegrowMs || 0).toFixed(0)} gems=${gemActors ? gemActors.length : 0} growing=${growingNow ? 1 : 0} entities=${entities.size}`);
                 }
             }
-        }, 16);
+        };
     }
     stop() {
         this.active = false;

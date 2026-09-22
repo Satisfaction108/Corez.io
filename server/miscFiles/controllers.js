@@ -1648,10 +1648,78 @@ const GOAL_HOLD = {
     defend: 4500, objective: 9000, rally: 6000, chest: 7000, mine: 5000, explore: 9000,
 };
 
+// A bot's hands on a keyboard.
+//
+// Players drive with WASD, so a real tank only ever moves in eight directions,
+// at full speed or not at all, and changes direction in whole key presses.
+// Bots used to steer at any angle along smooth curves and at odd throttles
+// (cruising at 85%, creeping at 30% while "settling", slowly circling a rock
+// while mining). No keyboard can do any of that, and it was the first thing
+// that gave them away. Every bot movement now goes through this: the brain
+// still decides where to go, this turns it into key presses.
+const OCT_VEC = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+class BotKeys {
+    constructor(body) {
+        this.body = body;
+        this.oct = -1;          // held direction, -1 = no keys down
+        this.changedAt = 0;
+        this.holdMs = 0;
+        this.settling = false;
+        this.pressing = false;
+    }
+    skill() { return util.clamp(this.body.botSkill ?? 0.5, 0, 1); }
+    // out.goal is a world point, out.power a throttle; returns the same
+    // shape a player's keys produce (goal = body + key vector, no power).
+    apply(out, now, urgent = false) {
+        const body = this.body;
+        if (!out || !out.goal) return out;
+        const dx = out.goal.x - body.x, dy = out.goal.y - body.y;
+        const dist = Math.hypot(dx, dy);
+        const p = out.power ?? 1;
+        // Settling onto a drifting point (a mining spot, an orbit slot):
+        // stand still, and only tap back when it has drifted a real distance.
+        let want = true;
+        if (p <= 0.35) {
+            if (!this.settling) { this.settling = true; this.pressing = false; }
+            if (!this.pressing && dist > 60) this.pressing = true;
+            else if (this.pressing && dist < 22) this.pressing = false;
+            want = this.pressing;
+        } else {
+            this.settling = false;
+            want = p > 0.05 && dist > 6;
+        }
+        const skill = this.skill();
+        if (!want) {
+            // letting go of the keys takes a moment too
+            if (this.oct !== -1 && now - this.changedAt >= 40 + (1 - skill) * 60) { this.oct = -1; this.changedAt = now; }
+        } else {
+            const theta = Math.atan2(dy, dx);
+            const c = ((Math.round(theta / (Math.PI / 4)) % 8) + 8) % 8;
+            if (this.oct === -1) {
+                this.oct = c; this.changedAt = now;
+                this.holdMs = 60 + Math.random() * (70 + (1 - skill) * 90);
+            } else if (c !== this.oct) {
+                const off = Math.abs(wrapAngle(theta - this.oct * Math.PI / 4));
+                // stay on the held keys until the wanted heading is clearly
+                // closer to another direction, and never faster than a finger
+                if (off > Math.PI / 8 + 0.14 && (urgent || now - this.changedAt >= this.holdMs)) {
+                    this.oct = c; this.changedAt = now;
+                    this.holdMs = 60 + Math.random() * (70 + (1 - skill) * 90);
+                }
+            }
+        }
+        const v = this.oct === -1 ? [0, 0] : OCT_VEC[this.oct];
+        out.goal = { x: body.x + v[0], y: body.y + v[1] };
+        delete out.power;
+        return out;
+    }
+}
+
 class io_digWarsGoals extends IO {
     constructor(body) {
         super(body);
         this.nav = new BotNav(body);
+        this.keys = new BotKeys(body);
         this.goal = null;
         this.goalStartedAt = 0;
         this.holdUntil = 0;
@@ -1975,7 +2043,8 @@ class io_digWarsGoals extends IO {
         const body = this.body;
         if ((body.carriedGems || 0) >= (body.gemCap || 4000) * 0.98) return null;
         let best = null, bestScore = Infinity;
-        for (const gem of (botWorldScan().gemsFree || botWorldScan().gems)) {
+        const scan = botWorldScan();
+        for (const gem of (scan.gemsFree || scan.gems)) {
             // Chamber loot carries the owning team, and that team is physically
             // repelled from it, so chasing it is a guaranteed wasted trip.
             if (gem.chamberBias && gem.chamberBias === body.team) continue;
@@ -1990,12 +2059,15 @@ class io_digWarsGoals extends IO {
                 now - (gem.gemBornAt || 0) < 15000) continue;
             const distance = this.distanceTo(gem);
             if (distance > 700) continue;
-            if (this.gemSealedInChamber(gem)) continue;
             const killerPriority = isKillerBot && now < (body._collectLootUntil || 0) ? 1000 : 0;
             const score = distance - killerPriority
                 - (gem.gemSourceId === body.id ? 350 : 0)
                 - Math.min(250, gem.gemValue * 0.4);
-            if (score < bestScore) { bestScore = score; best = gem; }
+            if (score >= bestScore) continue;
+            // the chamber geometry test is the expensive part: only run it
+            // for a gem that would actually win
+            if (this.gemSealedInChamber(gem)) continue;
+            bestScore = score; best = gem;
         }
         return best;
     }
@@ -2743,21 +2815,43 @@ class io_digWarsGoals extends IO {
     // whatever is shooting it, exactly like a person would.
     weapon(now) {
         const body = this.body, goal = this.goal;
-        // Idle cursor drifts around the direction of travel the way a real
-        // mouse hand does, instead of staying welded to the exact heading.
-        const wander = this.nav.heading + Math.sin(now / 1300 + (body.id % 10)) * 0.5;
-        const forward = { x: Math.cos(wander) * 120, y: Math.sin(wander) * 120 };
+        // Idle cursor: a resting hand drifts around the direction of travel
+        // (a slow random walk, not a metronome sine), and every few seconds
+        // the eyes go somewhere: a gem, the nearest rock, a far tank, or just
+        // off to the side, then come back.
+        const drift = this.idleDrift || (this.idleDrift = { off: 0, at: now, glance: null, nextGlance: now + 1500 + Math.random() * 3000 });
+        const dt = Math.min(200, now - drift.at); drift.at = now;
+        drift.off = util.clamp(drift.off * (1 - 0.0015 * dt) + ran.gauss(0, 0.012 * Math.sqrt(dt)), -0.9, 0.9);
+        if (now > drift.nextGlance) {
+            const v = this.view, pts = [];
+            if (v.gem) pts.push(v.gem);
+            if (v.rock) pts.push({ x: v.rock.wx, y: v.rock.wy });
+            if (v.enemy && v.enemyDistance < 1800) pts.push(v.enemy);
+            const pick = pts.length && ran.chance(0.75) ? pts[(Math.random() * pts.length) | 0] : null;
+            const ang = pick ? Math.atan2(pick.y - body.y, pick.x - body.x) : this.nav.heading + ran.gauss(0, 1.2);
+            drift.glance = { ang, until: now + 350 + Math.random() * 700, dist: 90 + Math.random() * 220 };
+            drift.nextGlance = now + 2000 + Math.random() * 4500;
+        }
+        const glancing = drift.glance && now < drift.glance.until;
+        const wander = glancing ? drift.glance.ang : this.nav.heading + drift.off;
+        const reach = glancing ? drift.glance.dist : 120;
+        // lazy: aimVector advances the aim spring, so call it at most once a tick
+        const forward = () => this.aimVector(Math.cos(wander) * reach, Math.sin(wander) * reach, now);
         if (this.isRammer()) {
             const target = goal.kind === 'fight' && goal.target ? goal.target
                 : goal.kind === 'mine' && goal.rock ? { x: goal.rock.wx, y: goal.rock.wy } : null;
-            return { target: target ? { x: target.x - body.x, y: target.y - body.y } : forward, fire: false };
+            return { target: target ? { x: target.x - body.x, y: target.y - body.y } : forward(), fire: false };
         }
         const enemy = this.view.enemy;
         // Any enemy inside weapon range gets shot at, full stop. Etiquette
         // (mercy, dogpile caps, chase break-offs) governs whether a bot
         // PURSUES somebody - gating the trigger on it left bots silently
         // watching enemies drive past, which looked completely broken.
-        if (enemy && this.view.enemyDistance < this.weaponRange() && this.clearShot(enemy))
+        // ...once they have registered: a new face takes a human reaction time
+        // (160-700 ms by skill) before the cursor swings onto it. Snapping
+        // onto whoever enters range on the very tick they appear is aimbot.
+        const noticed = now - (this._enemySeenAt || 0) >= (this.reactionMs || 250);
+        if (enemy && noticed && this.view.enemyDistance < this.weaponRange() && this.clearShot(enemy))
             return { target: this.leadAim(enemy, now), fire: this.triggerHeld(now) };
         if (goal.kind === 'fight' && goal.target && this.distanceTo(goal.target) < this.weaponRange()) {
             // Only shoot AT the target when the shells can reach them. A
@@ -2807,15 +2901,13 @@ class io_digWarsGoals extends IO {
         }
         if (this.travelRock && this.travelRock.alive)
             return { target: this.aimVector(this.travelRock.wx - body.x, this.travelRock.wy - body.y, now), fire: true };
-        return { target: forward, fire: false };
+        return { target: forward(), fire: false };
     }
 
-    // Nobody holds the throttle pinned: each bot has its own cruising pace
-    // that breathes a little, and a change of plan starts with a short stall.
+    // Keys are on or off: a change of plan is a beat with the keys up, not a
+    // slow roll at part throttle (nobody can half-press W).
     tempo(now) {
-        if (now < (this.hesitateUntil || 0)) return 0.2;
-        const k = this.body.botTempo || (this.body.botTempo = 0.85 + Math.random() * 0.15);
-        return k * (0.9 + 0.1 * Math.sin(now / (900 + (this.body.id % 5) * 130)));
+        return now < (this.hesitateUntil || 0) ? 0 : 1;
     }
 
     act(now) {
@@ -2919,7 +3011,7 @@ class io_digWarsGoals extends IO {
         const weapon = this.weapon(now);
         return {
             goal: movement ? { x: movement.x, y: movement.y } : { x: body.x, y: body.y },
-            power: movement ? (movement.power ?? 1) * this.tempo(now) : 1,
+            power: movement ? (movement.power ?? 1) * this.tempo(now) : 0,
             target: weapon.target,
             fire: weapon.fire,
             // main must stay false: every auto-turret IO treats input.main as
@@ -2932,6 +3024,26 @@ class io_digWarsGoals extends IO {
     }
 
     think(input) {
+        const out = this.thinkInner(input);
+        const body = this.body, now = Date.now();
+        if (!out || !out.goal || body.royaleFrozen) return out;
+        // Distracted for a moment: checking the map, spending a point, reading
+        // chat. Only when nothing hostile is near and nothing is urgent.
+        const kind = this.goal && this.goal.kind;
+        const calm = this.view.enemyDistance > 1300 && kind !== 'survive' && kind !== 'fight' && kind !== 'defend';
+        if (!this.distractAt) this.distractAt = now + 15000 + Math.random() * 40000;
+        if (calm && now > this.distractAt) {
+            this.distractUntil = now + 450 + Math.random() * 1300;
+            this.distractAt = now + 25000 + Math.random() * 60000;
+        }
+        if (now < (this.distractUntil || 0)) {
+            if (!calm) this.distractUntil = 0;
+            else out.goal = { x: body.x, y: body.y }, out.power = 0;
+        }
+        return this.keys.apply(out, now, now < this.nav.escapeUntil || kind === 'survive');
+    }
+
+    thinkInner(input) {
         const body = this.body, now = Date.now();
         if (!body.isBot || body.type !== 'tank') return {};
         if (body.royaleFrozen) {

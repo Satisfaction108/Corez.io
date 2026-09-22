@@ -631,9 +631,19 @@ body.mobile h1 { font-size: 28px; }
     font: 700 46px/1.15 Ubuntu;
     text-align: center;
     letter-spacing: -1px;
-    margin: 4px 0 18px;
+    margin: 0 0 12px;
+    line-height: 0;
 }
-body.mobile .game-title { font-size: 34px; margin: 2px 0 14px; }
+.game-logo {
+    height: 80px;
+    width: auto;
+    max-width: 100%;
+    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .35));
+    user-select: none;
+    -webkit-user-drag: none;
+}
+body.mobile .game-title { margin: 0 0 10px; }
+body.mobile .game-logo { height: 58px; }
 
 /* two-column row: name (left) + region dropdown (right) */
 .menu-row {

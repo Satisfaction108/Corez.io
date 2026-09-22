@@ -1062,7 +1062,9 @@ const protocols = {
     "https:": "wss://"
 };
 let incoming = async function(message, socket) {
-    await new Promise(Resolve => setTimeout(Resolve, window.fakeLagMS));
+    // only defer when fake lag is actually on: a 0 ms setTimeout still pushes
+    // every packet to a later task, sometimes behind a whole render frame
+    if (window.fakeLagMS > 0) await new Promise(Resolve => setTimeout(Resolve, window.fakeLagMS));
 
     global.bandwidth.currentFa += message.data.byteLength;
     let m = protocol.decode(message.data);
@@ -2081,7 +2083,7 @@ const socketInit = () => {
     };
 
     socket.talk = async (...message) => {
-        await new Promise(Resolve => setTimeout(Resolve, window.fakeLagMS));
+        if (window.fakeLagMS > 0) await new Promise(Resolve => setTimeout(Resolve, window.fakeLagMS));
 
         if (!socket.open) return 1;
         message = protocol.encode(message)
