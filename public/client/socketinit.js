@@ -1061,6 +1061,20 @@ const protocols = {
     "http:": "ws://",
     "https:": "wss://"
 };
+// One id per tab (survives a refresh, not shared between tabs). Sent on every
+// connect so the server can hand a dropped player their raid back.
+const resumeToken = (() => {
+    try {
+        let t = sessionStorage.getItem("dwResumeToken");
+        if (!t) {
+            t = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
+            sessionStorage.setItem("dwResumeToken", t);
+        }
+        return t;
+    } catch (e) { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+})();
+const RECONNECT_TRIES = 8;
+
 let incoming = async function(message, socket) {
     // only defer when fake lag is actually on: a 0 ms setTimeout still pushes
     // every packet to a later task, sometimes behind a whole render frame
@@ -1089,6 +1103,7 @@ let incoming = async function(message, socket) {
 
             case 'w': {
                 if (m[0]) {
+                    socket.talk('RZ', resumeToken);
                     socket.talk('s', "", 1, 0, false, 0);
                 }
             }; break;
@@ -1526,9 +1541,11 @@ let incoming = async function(message, socket) {
                 if (window.dwTutorialRock) window.dwTutorialRock();
             } break;
             case "temporaryban": {
+                global.noAutoReconnect = true;
                 global.message = "You have been temporarily banned from the game. You will be able to rejoin after a server restart.";
             } break;
             case "permanentban": {
+                global.noAutoReconnect = true;
                 global.message = "You have been banned from the game.";
             } break;
             case "svInfo": {
@@ -1541,6 +1558,7 @@ let incoming = async function(message, socket) {
                 global.serverStats.players = m[1];
             } break;
             case 'c': {
+                if (global.autoReconnect) { global.autoReconnect = null; global.createMessage && global.createMessage("Reconnected.", 3000); }
                 global.spawnedAt = performance.now();
                 global.shieldSeen = false;
                 global.respawnPending = false;
@@ -2116,6 +2134,20 @@ const socketInit = () => {
         if (global.dailyTankAd.render) global.dailyTankAd.exit();
         socket.open = false;
         global.showBigMap = false;
+        // A drop mid-game (proxy reload, wifi blip) reconnects on its own; the
+        // server keeps your raid for two minutes under the tab's resume token.
+        const tries = global.autoReconnect ? global.autoReconnect.tries : 0;
+        if ((global.gameStart || global.autoReconnect) && !global.noAutoReconnect && tries < RECONNECT_TRIES) {
+            global.autoReconnect = { tries: tries + 1, at: Date.now() };
+            const wait = Math.min(4000, 500 + tries * 500);
+            setTimeout(() => {
+                if (!global.autoReconnect) return;
+                global.reconnect();
+                global.message = "Connection dropped. Reconnecting (try " + global.autoReconnect.tries + " of " + RECONNECT_TRIES + ")...";
+            }, wait);
+            return;
+        }
+        global.autoReconnect = null;
         global.disconnected = true;
     };
 

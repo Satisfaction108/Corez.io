@@ -200,9 +200,9 @@ class socketManager {
             try { clearInterval(socket._spawnLoop); } catch { /* */ }
             socket._spawnLoop = null;
         }
-        if (Config.dig_royale && player && player.body) {
+        if (Config.dig_royale && player) {
             try {
-                require('../gamemodes/scripts/dig_royale.js').disconnectCleanup(socket, player.body);
+                require('../gamemodes/scripts/dig_royale.js').disconnectCleanup(socket, player.body || null);
             } catch { /* */ }
         }
 
@@ -1074,6 +1074,17 @@ class socketManager {
                     socket.camera.x = socket.spectateEntity.x;
                     socket.camera.y = socket.spectateEntity.y;
                     socket.talk("u", true, socket.camera.x, socket.camera.y);
+                }
+            } break;
+            case "RZ": {
+                // resume token: a per-tab id the client re-sends after a drop
+                if (typeof m[0] !== "string" || !/^[a-z0-9]{8,64}$/i.test(m[0])) return;
+                if (socket.resumeToken) return;
+                socket.resumeToken = m[0];
+                if (process.env.RESUME_DEBUG) console.log('[RESUME] token set on', String(socket.id).slice(0, 6));
+                if (Config.dig_royale) {
+                    const ok = require('../gamemodes/scripts/dig_royale.js').claimResume(socket, m[0]);
+                    if (ok) util.log("[INFO]: A dropped player reconnected and resumed their raid.");
                 }
             } break;
             case "RQ": {

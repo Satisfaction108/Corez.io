@@ -566,6 +566,7 @@ const global = {
         }
     },
     exit: () => {
+        global.autoReconnect = null;
         document.getElementById("gameAreaWrapper").style.display = "none";
         global.socket && global.socket.close();
         document.getElementById("startMenuWrapper").style.display = "block";

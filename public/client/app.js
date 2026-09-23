@@ -10457,7 +10457,7 @@ import * as tutorial from './tutorial.js';
             return;
         }
         clearScreen(color.white, 1, ctx[2]);
-        drawText("Connecting...", global.screenWidth / 2, global.screenHeight / 2, 30, color.guiwhite, "center");
+        drawText(global.autoReconnect ? "Reconnecting..." : "Connecting...", global.screenWidth / 2, global.screenHeight / 2, 30, color.guiwhite, "center");
         drawText(global.message, global.screenWidth / 2, global.screenHeight / 2 + 30, 15, color.lgreen, "center");
         drawText(global.tips, global.screenWidth / 2, global.screenHeight / 2 + 60, 15, color.guiwhite, "center");
     };

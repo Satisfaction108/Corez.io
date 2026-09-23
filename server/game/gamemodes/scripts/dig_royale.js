@@ -820,7 +820,9 @@ function onHumanJoin(body) {
         }
     } catch { /* */ }
     freshRaidBody(body);
-    giveStarterKit(body, isRespawn);
+    // a resumed player already had their starter kit: no second one
+    const resuming = !!(body.socket && body.socket._resume);
+    if (!resuming) giveStarterKit(body, isRespawn);
     try { shop.applyPassives(body); } catch { /* */ }
     ensureStat(body);
     if (body.socket) {
@@ -830,7 +832,7 @@ function onHumanJoin(body) {
         body.socket.lastRaidDeathAt = 0;
         body.socket.freeCam = false;
         questOf(body.socket);
-        if (!isRespawn) {
+        if (!isRespawn && !resuming) {
             try { chests.ensureNearSpawn(body); } catch { /* */ }
             const mod = raidMods.get();
             try {
@@ -839,7 +841,94 @@ function onHumanJoin(body) {
             } catch { /* */ }
         }
         try { shop.talkState(body.socket); } catch { /* */ }
+        const rs = body.socket._resume;
+        if (rs) { body.socket._resume = null; applyResume(body, rs); }
     }
+}
+
+// ── reconnect / resume ────────────────────────────────────────────────────
+// A dropped connection (proxy reload, wifi blip, a refresh) used to cost the
+// whole raid: bank, shop, score and tank all lived on the old socket. The
+// client now reconnects on its own and sends the same per-tab token, and for
+// two minutes the new socket inherits everything the old one had. Carried
+// gems only come back if nothing had hit you for 8 s, so pulling the plug is
+// not a way out of a losing fight.
+const RESUME_MS = 120_000;
+const RESUME_SAFE_MS = 8000;
+const resumeStore = new Map();
+function saveResume(socket, body) {
+    const token = socket && socket.resumeToken;
+    if (!token) return;
+    const t = now();
+    for (const [k, v] of resumeStore) if (t - v.at > RESUME_MS) resumeStore.delete(k);
+    // a dead player has no body but still has a bank, a shop and a score
+    const alive = !!body && !body.isDead?.() && body.royaleAlive !== false && !body.royaleLobby;
+    const hitAgo = body ? Math.min(t - (body._lastDamageAt || 0), Date.now() - (body.hitAt || 0)) : 0;
+    const snap = {
+        at: t, raidId, statKey: body ? statKeyFor(body) : "s:" + socket.id, alive,
+        sock: {
+            gemBanked: socket.gemBanked || 0, shop: socket.shop || null, raidQuest: socket.raidQuest || null,
+            raidBonus: socket.raidBonus || 0, raidPB: socket.raidPB || 0, _milestoneIdx: socket._milestoneIdx || 0,
+            raidDeathStreak: socket.raidDeathStreak || 0, royaleRespawnAt: socket.royaleRespawnAt || 0,
+            lastRaidDeathAt: socket.lastRaidDeathAt || 0,
+        },
+        carried: 0,
+    };
+    if (alive) {
+        snap.x = body.x; snap.y = body.y;
+        snap.defs = (body.defs || []).slice();
+        snap.skillRaw = body.skill ? body.skill.raw.slice() : null;
+        snap.points = body.skill ? body.skill.points : 0;
+        snap.modSkill = !!body._modSkillGiven;
+        snap.hp = body.health && body.health.max ? body.health.amount / body.health.max : 1;
+        if (hitAgo > RESUME_SAFE_MS) {
+            snap.carried = (body.carriedGems | 0);
+            body.carriedGems = 0;     // kept for the resume, so it must not also drop
+        }
+    }
+    resumeStore.set(token, snap);
+    if (process.env.RESUME_DEBUG) console.log('[RESUME] saved', token.slice(0, 6), 'alive', snap.alive, 'banked', snap.sock.gemBanked, 'carried', snap.carried, 'raid', raidId);
+}
+// Called when a new socket presents its token (before it spawns).
+function claimResume(socket, token) {
+    if (!Config.dig_royale || !socket || !token) return false;
+    const snap = resumeStore.get(token);
+    if (process.env.RESUME_DEBUG) console.log('[RESUME] claim', token.slice(0, 6), 'found', !!snap, snap ? ('age ' + (now() - snap.at) + ' raid ' + snap.raidId + '/' + raidId) : '');
+    if (!snap) return false;
+    resumeStore.delete(token);
+    if (now() - snap.at > RESUME_MS || snap.raidId !== raidId) return false;
+    Object.assign(socket, snap.sock);
+    const newKey = "s:" + socket.id;
+    const old = snap.statKey ? raidStats.get(snap.statKey) : null;
+    if (old && snap.statKey !== newKey) { raidStats.delete(snap.statKey); old.key = newKey; raidStats.set(newKey, old); }
+    socket._resume = snap;
+    return true;
+}
+function applyResume(body, snap) {
+    const socket = body.socket;
+    try {
+        if (snap.alive && snap.defs && snap.defs.length) {
+            body.define(snap.defs.length === 1 ? snap.defs[0] : snap.defs);
+            if (snap.skillRaw) { body.skill.set(snap.skillRaw); body.skill.points = snap.points | 0; }
+            body._modSkillGiven = snap.modSkill || body._modSkillGiven;
+            body.refreshBodyAttributes();
+            if (body.syncSkillsToGuns) body.syncSkillsToGuns();
+            // back where you were, unless that spot is now rock or storm
+            let safe = true;
+            try { if (storm.inStorm(snap.x, snap.y)) safe = false; } catch { /* */ }
+            try { const tg = global.gameManager.terrainGrid; if (tg && tg.pointInRock && tg.pointInRock(snap.x, snap.y)) safe = false; } catch { /* */ }
+            if (safe) moveTo(body, snap.x, snap.y);
+            body.health.amount = body.health.max * Math.max(0.25, Math.min(1, snap.hp || 1));
+            body.carriedGems = snap.carried | 0;
+            try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
+            const st = shop.stateOf(socket);
+            if (st && st.arm) { try { shop.attachSidearm(body, st.arm); } catch { /* */ } }
+        }
+        body.bankedGems = socket.gemBanked || 0;
+        try { shop.applyPassives(body); shop.talkState(socket); gems.talkGems(body, 0); } catch { /* */ }
+        ensureStat(body);
+        try { body.sendMessage("Reconnected. Your raid picked up where you left off."); } catch { /* */ }
+    } catch (e) { console.error('[RAID] resume failed', e && e.message); }
 }
 
 function markHumanDeath(socket) {
@@ -848,6 +937,7 @@ function markHumanDeath(socket) {
 
 function disconnectCleanup(socket, body) {
     if (!Config.dig_royale) return;
+    try { saveResume(socket, body); } catch (e) { console.error('[RAID] resume save failed', e && e.message); }
     try {
         if (body && body.royaleAlive !== false) {
             body.royaleAlive = false;
@@ -1349,7 +1439,7 @@ class DigRoyale {
 
 module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
-    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall,
+    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume,
     onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout, QUESTS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
