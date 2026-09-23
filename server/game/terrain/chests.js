@@ -89,7 +89,7 @@ function chestNear(x, y, minD = CHEST_GAP) {
 // A spot near (x, y) that is open ground and not on a pad or another chest.
 function clearSpot(tg, x, y) {
     const pads = allPads();
-    const ok = (px, py) => !(tg && tg.pointInRock && tg.pointInRock(px, py)) && !padsBlocked(px, py, 300, pads) && !chestNear(px, py);
+    const ok = (px, py) => !(tg && tg.pointInRock && tg.pointInRock(px, py)) && (!tg || roomForChest(tg, px, py)) && !padsBlocked(px, py, 300, pads) && !chestNear(px, py);
     if (ok(x, y)) return { x, y };
     for (let ring = 1; ring <= 10; ring++) {
         for (let i = 0; i < 12; i++) {
@@ -125,6 +125,33 @@ function hasOpenSide(tg, rock) {
            !tg.pointInRock(rock.wx, rock.wy + s) || !tg.pointInRock(rock.wx, rock.wy - s);
 }
 
+// Chest hulls are SIZE 36/40; this is the clear radius around the centre.
+const CHEST_CLEAR_R = 58;
+const CHEST_ZONE_R = 130;      // neighbours inside this may not regrow into it
+function roomForChest(tg, x, y) {
+    if (tg.rockHitByCircle && tg.rockHitByCircle(x, y, CHEST_CLEAR_R)) return false;
+    if (tg.growingRockHitByCircle && tg.growingRockHitByCircle(x, y, CHEST_CLEAR_R, Date.now())) return false;
+    return true;
+}
+
+// No spot with room (a fresh map is all rock but the small spawn pits): the
+// chest smashes a landing pocket out of the rock it would overlap. Never
+// through an emerald. The pocket stays open until the chest is opened.
+function carvePocket(tg, x, y) {
+    const hits = [];
+    for (const rock of tg.rocks.values()) {
+        if (!rock || !(rock.alive || rock.growing) || !rock.worldPoly) continue;
+        const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+        if ((rx - x) ** 2 + (ry - y) ** 2 > (CHEST_CLEAR_R + 160) ** 2) continue;
+        let touch = (rx - x) ** 2 + (ry - y) ** 2 <= CHEST_CLEAR_R * CHEST_CLEAR_R;
+        if (!touch) for (const p of rock.worldPoly) { if ((p[0] - x) ** 2 + (p[1] - y) ** 2 <= CHEST_CLEAR_R * CHEST_CLEAR_R) { touch = true; break; } }
+        if (touch) hits.push(rock);
+    }
+    if (hits.some(r => r.ore === 4)) return false;
+    for (const rock of hits) tg.damageRock(rock, rock.health + 1, rock.worldCx || rock.wx, rock.worldCy || rock.wy, false, null);
+    return !tg.rockHitByCircle || !tg.rockHitByCircle(x, y, CHEST_CLEAR_R);
+}
+
 function pickCell(opts = {}) {
     const tg = global.gameManager.terrainGrid;
     if (!tg || !tg.rocks) return null;
@@ -141,6 +168,7 @@ function pickCell(opts = {}) {
     const near = opts.near || null;
     const pads = allPads();
     const tankList = tanks();
+    const tight = [];
     for (let i = 0; i < 90; i++) {
         const rock = cells[(Math.random() * cells.length) | 0];
         const x = rock.wx, y = rock.wy;
@@ -151,8 +179,12 @@ function pickCell(opts = {}) {
         if (chestNear(x, y)) continue;
         if (tanksNear(x, y, near ? 120 : 380, tankList)) continue;
         if (!hasOpenSide(tg, rock)) continue;
+        // the whole boulder has to fit: a small dead cell with one open side
+        // used to put a chest half on top of the live rock around it
+        if (!roomForChest(tg, x, y)) { if (tight.length < 8) tight.push(rock); continue; }
         return rock;
     }
+    for (const rock of tight) if (carvePocket(tg, rock.wx, rock.wy)) return rock;
     return null;
 }
 
@@ -161,6 +193,11 @@ function lockCell(chest, rock) {
     rock.chestLock = chest.chestId;            // one chest per cell
     if (!rock.canyon) rock.noRegrowUntil = Number.MAX_SAFE_INTEGER;
     chest.lockRock = rock;
+    // and the cells around it stay open while the chest stands
+    try {
+        const tg = global.gameManager.terrainGrid;
+        if (tg && tg.addNoRegrowZone) chest._zone = tg.addNoRegrowZone(rock.wx, rock.wy, CHEST_ZONE_R, Number.MAX_SAFE_INTEGER);
+    } catch { /* */ }
 }
 
 function releaseCell(chest) {
@@ -170,6 +207,11 @@ function releaseCell(chest) {
         rock.chestLock = 0;
         // a short grace so the rock does not pop back over the loose gems
         if (!rock.canyon) rock.noRegrowUntil = Date.now() + 8000;
+    }
+    if (chest._zone) {
+        // the neighbours get the same short grace, then may regrow
+        chest._zone.until = Date.now() + 8000;
+        chest._zone = null;
     }
     chest.lockRock = null;
 }

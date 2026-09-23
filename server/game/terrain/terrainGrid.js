@@ -1212,7 +1212,9 @@ class TerrainGrid {
     addNoRegrowZone(x, y, r, until) {
         const now = Date.now();
         this._noRegrowZones = (this._noRegrowZones || []).filter(z => z.until > now);
-        this._noRegrowZones.push({ x, y, r2: r * r, until });
+        const zone = { x, y, r2: r * r, until };
+        this._noRegrowZones.push(zone);
+        return zone;       // callers may shorten `until` later (chests do)
     }
     _inNoRegrowZone(rock, now) {
         const zones = this._noRegrowZones;

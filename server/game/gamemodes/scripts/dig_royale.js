@@ -11,7 +11,9 @@ const raidEvents = require('../../terrain/raidEvents.js');
 const raidMods = require('../../terrain/raidMods.js');
 
 const RAID_MS = 2 * 60 * 60 * 1000;
-const FILL_CAP = 10;
+// Raid size including humans: a solo player gets 5 bots, and each real
+// player who joins takes a bot's place.
+const FILL_CAP = 6;
 const OCCUPY_MS = 10_000;
 const LOCKOUT_MS = 10_000;
 const KILL_VERBS = ["killed", "slaughtered", "demolished", "wrecked", "ended", "cooked"];
@@ -45,6 +47,10 @@ const PIT_RESERVE_MS = 20_000;
 const PIT_RESERVE_R = 260;
 let lockout = new Map();
 let raidResults = null;
+// Between "raid over" and the next raid: everyone is down, nobody spawns.
+let raidEnding = false;
+const RAID_END_BEAT_MS = 1600;     // the "RAID OVER" moment before everyone goes down
+const RAID_END_WAIT_MS = 15_000;   // then everyone waits this long, together
 let raidResultsAt = 0;
 let poisCarved = false;
 let lastFillAt = 0;
@@ -90,7 +96,7 @@ function pits() {
 function stormLocked() {
     try { return storm.locked(now()); } catch { return false; }
 }
-function canSpawn() { return !stormLocked(); }
+function canSpawn() { return !stormLocked() && !raidEnding; }
 function requestPlay() { return true; }
 function isLobbyPhase() { return false; }
 function phase() { return 'live'; }
@@ -579,7 +585,7 @@ function fillBots() {
     }
     idleSince = 0;
     if (t - lastFillAt < 400) return;
-    if (stormLocked()) return;
+    if (stormLocked() || raidEnding) return;
     if (combatants().length >= FILL_CAP) return;
     lastFillAt = t;
     spawnRaidBot();
@@ -622,7 +628,8 @@ function onCombatantDead(body) {
         ? (body.socket.gemDeathCarried | 0) : (s ? (s.carried | 0) : 0);
     const victimStreak = s ? (s.streak | 0) : 0;
     if (s) { s.alive = false; s.carried = 0; s.streak = 0; }
-    const envKill = body.deathCause === "storm" || body.deathCause === "rock" || body.deathCause === "base";
+    const raidEndDeath = body.deathCause === "raidend";
+    const envKill = raidEndDeath || body.deathCause === "storm" || body.deathCause === "rock" || body.deathCause === "base";
     const stormKill = body.deathCause === "storm";
     const rockKill = body.deathCause === "rock";
     const killerBody = envKill ? null : killerOf(body);
@@ -666,7 +673,7 @@ function onCombatantDead(body) {
             }
         }
     }
-    pushFeed({
+    if (!raidEndDeath) pushFeed({
         name: body.name || "Unnamed",
         by: envKill ? "" : (killerAny ? (killerAny.name || "Unnamed") : ""),
         verb: avenged ? "avenged" : stormKill ? "lost" : rockKill ? "crushed" : bossKill ? "was devoured by" : KILL_VERBS[(Math.random() * KILL_VERBS.length) | 0],
@@ -684,7 +691,7 @@ function onCombatantDead(body) {
         const dl = shop.onDeath(body);
         body.socket.raidDeathStreak = victimStreak;
         body.socket.raidDeathDrillLost = dl && dl.drillLost ? 1 : 0;
-        body.socket.royaleRespawnAt = now() + shop.respawnMs(body);
+        body.socket.royaleRespawnAt = now() + (raidEndDeath ? RAID_END_WAIT_MS : shop.respawnMs(body));
         body.socket.royaleNeedClick = false;
         body.socket.status.readyToSpawn = true;
     }
@@ -1073,6 +1080,7 @@ function startRaid(first) {
     const mod = raidMods.roll();
     lastMods = mod;
     storm.start();
+    try { twistCycleSeen = storm.snapshot(now()).c | 0; } catch { /* */ }
     try { applyModsToWorld(prevMod, mod); } catch (e) { console.error('[RAID] mod apply failed', e && e.message); }
     try { bosses.resetRaid(); } catch { /* */ }
     try { blooms.reset(); } catch { /* */ }
@@ -1160,7 +1168,29 @@ function endRaid() {
         const names = top.slice(0, 3).map((r, i) => "#" + (i + 1) + " " + r.name).join(", ");
         global.gameManager.socketManager.broadcast("Raid over. Top: " + (names || "no scores") + ". New raid starting.");
     } catch { /* */ }
-    broadcast({ toast: "Raid over. The top 10 get paid. Next one starts soon." });
+    broadcast({ toast: "Raid over. Everyone goes down. The next raid starts in 15 seconds." });
+    raidEnding = true;
+    const winner = top[0] ? top[0].name || "Unnamed" : "";
+    for (const client of connectedClients()) {
+        try { client.talk('KC', 'raidend', 'RAID OVER', 0, winner ? ("#1 " + winner) : "Nobody scored"); } catch { /* */ }
+    }
+    setTimeout(() => {
+        // everyone goes down at once; nothing drops, it is not a kill
+        for (const body of combatants()) {
+            try {
+                body.carriedGems = 0;
+                try { gems.updateSatchel(body); } catch { /* */ }
+                body.invuln = false;
+                body.godmode = false;
+                body.padSafe = false;
+                body.passive = false;
+                body.spawnGraceUntil = 0;
+                body.deathCause = "raidend";
+                body.dontSendDeathMessage = true;
+                body.health.amount = -1;
+            } catch { /* */ }
+        }
+    }, RAID_END_BEAT_MS);
     setTimeout(() => {
         try {
             for (const client of connectedClients()) {
@@ -1177,8 +1207,9 @@ function endRaid() {
             // the shop is a per-raid ladder: everyone climbs again
             try { shop.resetAll(); } catch { /* */ }
         } catch { /* */ }
+        raidEnding = false;
         startRaid(false);
-    }, 8000);
+    }, RAID_END_BEAT_MS + RAID_END_WAIT_MS);
 }
 
 // One storm cycle (shrink, hold, reset) is a "raid" to the players, so each
@@ -1193,6 +1224,9 @@ function twistCycleWatch(t) {
     const first = twistCycleSeen === -1;
     twistCycleSeen = cyc;
     if (first) return;
+    applyNewTwist();
+}
+function applyNewTwist(forceId) {
     // revoke what the previous twist handed out
     for (const client of connectedClients()) {
         try {
@@ -1204,11 +1238,18 @@ function twistCycleWatch(t) {
             if (body && !body.isDead?.()) shop.applyPassives(body);
         } catch { /* */ }
     }
-    const mod = raidMods.roll();
+    const mod = raidMods.roll(forceId);
     for (const b of combatants()) { try { b.refreshBodyAttributes(); } catch { /* */ } }
     for (const client of connectedClients()) {
         const body = client.player && client.player.body;
         if (body && !body.isDead?.()) { try { grantTwist(body); } catch { /* */ } }
+    }
+    if ((mod.extraSkill | 0) > 0) {
+        for (const b of combatants()) {
+            if (b.socket || b._modSkillGiven) continue;
+            b._modSkillGiven = true;
+            try { b.skill.points += mod.extraSkill | 0; } catch { /* */ }
+        }
     }
     setToastAndSay("New override: " + mod.name + ". " + (mod.desc || ""), 7000);
 }
@@ -1219,6 +1260,12 @@ function grantTwist(body) {
     if (mod.freeArm) { shop.grantArm(body.socket, mod.freeArm, true); st._twistArm = mod.freeArm; }
     if (mod.freeGear) { for (const gid of mod.freeGear) st.gear[gid] = true; st._twistGear = mod.freeGear.slice(); shop.applyPassives(body); }
     if (mod.kitStart) for (const [kid, n] of Object.entries(mod.kitStart)) shop.grantKit(body.socket, kid, n);
+    // Overclocked used to be applied only in freshRaidBody, i.e. on the next
+    // spawn: a twist that started mid-raid showed the popup and gave nothing.
+    if ((mod.extraSkill | 0) > 0 && !body._modSkillGiven) {
+        body._modSkillGiven = true;
+        try { body.skill.points += mod.extraSkill | 0; } catch { /* */ }
+    }
 }
 
 function tick() {
@@ -1230,7 +1277,13 @@ function tick() {
         endRaid();
         return;
     }
-    if (raidResults && t - raidResultsAt > 8000) raidResults = null;
+    if (raidResults && t - raidResultsAt > RAID_END_BEAT_MS + RAID_END_WAIT_MS) raidResults = null;
+    // everyone is down between raids: no storm, bosses, chests or bots, just
+    // keep the HUD fed (results panel, countdown)
+    if (raidEnding) {
+        if (t - (tick._broadcastAt || 0) >= 500) { tick._broadcastAt = t; guard('broadcast', () => broadcast()); }
+        return;
+    }
     // Every stage is isolated: one bad stage must never take the raid
     // broadcast (and with it the whole HUD) down with it.
     guard('storm', () => { storm.ensureActive(); storm.tickDamage(t); });
@@ -1298,4 +1351,6 @@ module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
     lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall,
     onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout, QUESTS,
+    // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
+    debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
 };

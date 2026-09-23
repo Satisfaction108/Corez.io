@@ -4404,6 +4404,7 @@ import * as tutorial from './tutorial.js';
             instance._sx = x;
             instance._sy = y;
             if (!onScreen) continue;
+            if (instance.id === gui.playerid && !global.died) drawSpawnShield(ctx[1], x, y, (isize || instance.size) * ratio, instance.invuln);
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance, false);
             // treasury gems inside a chamber ring: the real gem look (halo +
@@ -7391,6 +7392,106 @@ import * as tutorial from './tutorial.js';
             }
         }
     }
+    // ── spawn shield: make "moving drops it" impossible to miss ────────────
+    // The server holds the shield for 4 s no matter what, then drops it on the
+    // first move or shot. The only old sign was a faint blink on the tank.
+    const SHIELD_GRACE_MS = 4000;
+    let shieldOnPrev = false;
+    function drawSpawnShield(c, x, y, R, invuln) {
+        const on = !!invuln;
+        if (shieldOnPrev && !on && global.spawnedAt && performance.now() - global.spawnedAt < 120000) {
+            try { global.createMessage("Shield's gone. You can be hit now.", 3000); } catch { /* */ }
+        }
+        shieldOnPrev = on;
+        if (!on) return;
+        global.shieldSeen = true;
+        const now = performance.now();
+        const pulse = 0.5 + 0.5 * Math.sin(now / 180);
+        c.save();
+        c.globalAlpha = 0.18 + 0.1 * pulse;
+        c.fillStyle = "#7fe3ff";
+        c.beginPath(); c.arc(x, y, R * 1.55, 0, Math.PI * 2); c.fill();
+        c.globalAlpha = 0.75;
+        c.lineWidth = Math.max(2, R * 0.09);
+        c.strokeStyle = "#bff2ff";
+        c.setLineDash([R * 0.35, R * 0.22]);
+        c.lineDashOffset = -now / 40;
+        c.beginPath(); c.arc(x, y, R * 1.55, 0, Math.PI * 2); c.stroke();
+        c.restore();
+    }
+    function drawSpawnShieldHint() {
+        if (global.died || !global.shieldSeen || !shieldOnPrev) return;
+        const since = performance.now() - (global.spawnedAt || 0);
+        const left = Math.ceil((SHIELD_GRACE_MS - since) / 1000);
+        const line = left > 0
+            ? "Spawn shield: safe for " + left + "s, then moving or shooting drops it"
+            : "Spawn shield: moving or shooting drops it";
+        const y = global.screenHeight / 2 + 120, size = 22;
+        const w = measureText(line, size) + 36, h = size + 18;
+        const c = ctx[2];
+        c.save();
+        c.globalAlpha = 0.8;
+        roundRectPath(c, global.screenWidth / 2 - w / 2, y - h / 2, w, h, h / 2);
+        c.fillStyle = "rgba(8,24,32,0.85)"; c.fill();
+        c.lineWidth = 2; c.strokeStyle = "rgba(127,227,255,0.8)"; c.stroke();
+        c.restore();
+        drawText(line, global.screenWidth / 2, y, size, "#bff2ff", "center", true);
+    }
+
+    // ── raid over: flash, shockwave, the title, then the wait ─────────────
+    function drawRaidEndFx() {
+        const fx = global.raidEndFx;
+        if (!fx) return;
+        const t = performance.now() - fx.at;
+        const TOTAL = 16600;
+        if (t > TOTAL) { global.raidEndFx = null; return; }
+        const c = ctx[2];
+        const W = c.canvas.width, H = c.canvas.height, u = Math.min(W, H);
+        c.save();
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        // darkening that settles, and eases off before the respawn
+        const out = t > TOTAL - 900 ? (TOTAL - t) / 900 : 1;
+        c.globalAlpha = Math.min(0.5, t / 900 * 0.5) * out;
+        c.fillStyle = "#0a0604"; c.fillRect(0, 0, W, H);
+        // two shockwaves from the centre
+        for (const [delay, col] of [[0, "255,215,110"], [260, "255,255,255"]]) {
+            const k = (t - delay) / 1400;
+            if (k < 0 || k > 1) continue;
+            c.globalAlpha = (1 - k) * 0.8;
+            c.lineWidth = u * 0.03 * (1 - k) + 2;
+            c.strokeStyle = "rgba(" + col + ",1)";
+            c.beginPath(); c.arc(W / 2, H / 2, u * 0.08 + k * Math.max(W, H) * 0.8, 0, Math.PI * 2); c.stroke();
+        }
+        // the flash
+        if (t < 380) { c.globalAlpha = 0.85 * (1 - t / 380); c.fillStyle = "#fff6dc"; c.fillRect(0, 0, W, H); }
+        // the title: pops in, holds, and moves up once the death card appears
+        const pop = t < 260 ? 1.35 - 0.35 * (t / 260) : 1;
+        const lift = t < 1800 ? 0 : Math.min(1, (t - 1800) / 500);
+        const ty = H * (0.42 - 0.26 * lift);
+        const fs = Math.round(u * 0.12 * pop * (1 - 0.35 * lift));
+        c.globalAlpha = Math.min(1, t / 160) * out;
+        c.textAlign = "center"; c.textBaseline = "middle";
+        c.font = "700 " + fs + "px Ubuntu, sans-serif";
+        c.lineJoin = "round";
+        c.lineWidth = Math.max(4, fs * 0.12);
+        c.strokeStyle = "#1b1510";
+        const shake = t < 700 ? (1 - t / 700) * u * 0.012 : 0;
+        const sx = W / 2 + (Math.random() - 0.5) * shake, sy = ty + (Math.random() - 0.5) * shake;
+        c.strokeText("RAID OVER", sx, sy);
+        c.fillStyle = "#ffcf4d"; c.fillText("RAID OVER", sx, sy);
+        const small = Math.round(u * 0.034 * (1 - 0.25 * lift));
+        c.font = "700 " + small + "px Ubuntu, sans-serif";
+        c.lineWidth = Math.max(3, small * 0.18);
+        if (fx.sub) { c.strokeText(fx.sub, W / 2, sy + fs * 0.62); c.fillStyle = "#ffffff"; c.fillText(fx.sub, W / 2, sy + fs * 0.62); }
+        if (t > 1600) {
+            const secs = Math.max(0, Math.ceil((TOTAL - t) / 1000));
+            const line = "Everyone went down. New raid in " + secs + "s";
+            c.strokeText(line, W / 2, sy + fs * 0.62 + small * 1.5);
+            c.fillStyle = "#c9c1ad"; c.fillText(line, W / 2, sy + fs * 0.62 + small * 1.5);
+        }
+        c.restore();
+    }
+
     function drawRaidResults() {
         const r = global.royale;
         if (!royaleActive() || !r.results || !r.results.top) return;
@@ -9730,7 +9831,8 @@ import * as tutorial from './tutorial.js';
 
         // who got you
         const cause = global.finalCause || "";
-        const killedBy = cause === "rock" ? "Crushed by the living rock"
+        const killedBy = cause === "raidend" ? "The raid ended. Everyone went down together"
+            : cause === "rock" ? "Crushed by the living rock"
             : cause === "base" ? "Shot down by the enemy base"
             : global.finalKillers.length
                 ? "Taken down by " + global.finalKillers.join(" and ")
@@ -9832,7 +9934,8 @@ import * as tutorial from './tutorial.js';
         }
 
         const cause = global.finalCause || "";
-        const killedBy = cause === "rock" ? "Crushed by the living rock"
+        const killedBy = cause === "raidend" ? "The raid ended. Everyone went down together"
+            : cause === "rock" ? "Crushed by the living rock"
             : cause === "storm" ? "Lost in the storm"
             : global.finalKillers.length
                 ? "Taken down by " + global.finalKillers.join(" and ")
@@ -10059,6 +10162,7 @@ import * as tutorial from './tutorial.js';
             drawMessages(spacing, alcoveSize);
             drawMilestones();
             drawWarBanner();
+            drawSpawnShieldHint();
             if (global.GUIStatus.renderUpgrades) drawSkillBars(spacing, alcoveSize);
             if (global.GUIStatus.renderPlayerBars) {
                 drawSelfInfo(max);
@@ -10518,6 +10622,7 @@ import * as tutorial from './tutorial.js';
             if (global.died) {
                 gameDrawDead();
             }
+            drawRaidEndFx();
             if (global.showBigMap) drawBigMap();
             if (isNaN(global.time)) drawResyncScreen();
             if (global.disconnected) {

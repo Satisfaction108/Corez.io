@@ -1327,6 +1327,13 @@ let incoming = async function(message, socket) {
                 sh.padName = m[2] || "";
             } break;
             case 'KC': {
+                // Raid over: its own full-screen moment, not a queued callout.
+                if (m[0] === "raidend") {
+                    global.raidEndFx = { at: performance.now(), sub: typeof m[3] === "string" ? m[3] : "" };
+                    global.callouts.length = 0;
+                    if (gameSound.bankCelebrate) gameSound.bankCelebrate();
+                    break;
+                }
                 // kind, text, points: the big centre callout
                 const list = global.callouts;
                 const prev = list.length ? list[list.length - 1].born : -1e9;
@@ -1534,6 +1541,8 @@ let incoming = async function(message, socket) {
                 global.serverStats.players = m[1];
             } break;
             case 'c': {
+                global.spawnedAt = performance.now();
+                global.shieldSeen = false;
                 global.respawnPending = false;
                 global.died = false;
                 global._specGlide = null;
@@ -1800,7 +1809,8 @@ let incoming = async function(message, socket) {
             try {
                 const dcause = global.finalCause || "";
                 global.createMessage(
-                    dcause === "rock" ? "Crushed by the living rock"
+                    dcause === "raidend" ? "The raid ended. Everyone went down together"
+                    : dcause === "rock" ? "Crushed by the living rock"
                     : dcause === "storm" ? "Lost in the storm"
                     : dcause === "base" ? "Shot down by the enemy base"
                     : global.finalKillers.length ? ("Taken down by " + global.finalKillers.join(" and "))

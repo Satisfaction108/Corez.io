@@ -1162,6 +1162,22 @@ class socketManager {
                     else if (what === "tobloom" && b) { const bl = require('../terrain/blooms.js').current(); if (bl) { b.x = bl.x + 200; b.y = bl.y + 200; } }
                     else if (what === "toevent" && b) { const ev = require('../terrain/raidEvents.js').current(); if (ev) { b.x = ev.x + 250; b.y = ev.y; } }
                     else if (what === "tochest" && b) { const ch = require('../terrain/chests.js').alive()[0]; if (ch) { b.x = ch.x + 160; b.y = ch.y; } }
+                    else if (what === "twist") require('../gamemodes/scripts/dig_royale.js').debugTwist(m[1] ? String(m[1]) : undefined);
+                    else if (what === "raidend") require('../gamemodes/scripts/dig_royale.js').debugEndRaid();
+                    // beside base N (or the nearest), on its open side
+                    else if ((what === "tobase" || what === "takebase") && b) {
+                        const ops = require('../terrain/outposts.js').getOutposts();
+                        let site = m[1] !== undefined && m[1] !== "" ? ops[m[1] | 0] : null;
+                        if (!site) { let bd = 1e12; for (const o of ops) { const d = (o.x - b.x) ** 2 + (o.y - b.y) ** 2; if (d < bd) { bd = d; site = o; } } }
+                        if (site) {
+                            if (what === "takebase" && site.banner && !site.banner.isDead?.()) { site._lastHitter = b; site.banner.godmode = false; site.banner.health.amount = -1; }
+                            const tg = global.gameManager.terrainGrid;
+                            for (const [dx, dy] of [[-260, 0], [260, 0], [0, 260], [0, -260], [190, 190], [-190, -190]]) {
+                                if (!tg.pointInRock || !tg.pointInRock(site.x + dx, site.y + dy)) { b.x = site.x + dx; b.y = site.y + dy; break; }
+                            }
+                            b.velocity.x = 0; b.velocity.y = 0;
+                        }
+                    }
                 } catch (e) { console.error("[DBG]", e && e.stack); }
             } break;
             default: {
@@ -2101,7 +2117,7 @@ class socketManager {
                                 // the death cam stays near the corpse instead
                                 // of jumping to a lookalike across the map.
                                 const dc = player.body.deathCause;
-                                if (dc === "storm" || dc === "rock" || dc === "base") {
+                                if (dc === "storm" || dc === "rock" || dc === "base" || dc === "raidend") {
                                     socket.spectateKiller = null;
                                     socket.spectateEntity = null;
                                 }

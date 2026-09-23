@@ -646,7 +646,7 @@ const padGeom = require('./padGeom.js');
 const HEX_SCALE = padGeom.HEX.scale;
 function insideHexagon(dx, dy, R) { return padGeom.insideNgon(dx, dy, R, 6); }
 const shopKey = (pad) => 'shop:' + pad.id;
-const SHOP_IDLE_MS = 20_000;      // browse time before the shop closes on you
+const SHOP_IDLE_MS = 60_000;      // browse time before the shop closes on you
 const SHOP_LOCK_MS = 20_000;      // one visit per purchase
 const ARM_BURN_MS = 150_000;      // swarm barrels burn out after 2.5 minutes
 const GEAR_MS = 300_000;          // every gear item runs for 5 minutes
