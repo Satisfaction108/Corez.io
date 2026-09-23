@@ -1571,7 +1571,12 @@ class socketManager {
             }
         }
 
-        util.log(`[INFO]: ${name == "" ? "An unnamed player" : name} has spawned into the game on team ${socket.player.body.team}! Players: ${this.players.length}`);
+        // Reconnecting player: put their build, satchel and spot back now that
+        // the level-45 fill above is done.
+        if (Config.dig_royale && socket._resume) {
+            try { require('../gamemodes/scripts/dig_royale.js').applyPendingResume(socket); } catch (e) { console.error('[RESUME]', e && e.message); }
+        }
+                util.log(`[INFO]: ${name == "" ? "An unnamed player" : name} has spawned into the game on team ${socket.player.body.team}! Players: ${this.players.length}`);
 
         socket.timeout.stop();
     }

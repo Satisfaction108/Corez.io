@@ -2147,6 +2147,10 @@ const socketInit = () => {
             }, wait);
             return;
         }
+        if (global.autoReconnect && !global.noAutoReconnect) {
+            // every retry failed: the game server never heard from us
+            global.message = "Can't reach the server from your network. School and work networks sometimes block games. Check your connection, then press Reconnect.";
+        }
         global.autoReconnect = null;
         global.disconnected = true;
     };

@@ -841,8 +841,9 @@ function onHumanJoin(body) {
             } catch { /* */ }
         }
         try { shop.talkState(body.socket); } catch { /* */ }
-        const rs = body.socket._resume;
-        if (rs) { body.socket._resume = null; applyResume(body, rs); }
+        // the resume itself waits for sockets.initalizePlayer to finish the
+        // level-45 fill, or those level-up points would land on top of the
+        // restored build (applyPendingResume)
     }
 }
 
@@ -887,7 +888,7 @@ function saveResume(socket, body) {
         }
     }
     resumeStore.set(token, snap);
-    if (process.env.RESUME_DEBUG) console.log('[RESUME] saved', token.slice(0, 6), 'alive', snap.alive, 'banked', snap.sock.gemBanked, 'carried', snap.carried, 'raid', raidId);
+    if (process.env.RESUME_DEBUG) console.log('[RESUME] saved', token.slice(0, 6), 'alive', snap.alive, 'banked', snap.sock.gemBanked, 'carried', snap.carried, 'drill', snap.sock.shop && snap.sock.shop.drill, 'raw', (snap.skillRaw || []).join(','), 'pts', snap.points, 'raid', raidId);
 }
 // Called when a new socket presents its token (before it spawns).
 function claimResume(socket, token) {
@@ -904,6 +905,13 @@ function claimResume(socket, token) {
     socket._resume = snap;
     return true;
 }
+function applyPendingResume(socket) {
+    const body = socket && socket.player && socket.player.body;
+    const rs = socket && socket._resume;
+    if (!rs || !body) return;
+    socket._resume = null;
+    applyResume(body, rs);
+}
 function applyResume(body, snap) {
     const socket = body.socket;
     try {
@@ -914,10 +922,18 @@ function applyResume(body, snap) {
             body.refreshBodyAttributes();
             if (body.syncSkillsToGuns) body.syncSkillsToGuns();
             // back where you were, unless that spot is now rock or storm
-            let safe = true;
-            try { if (storm.inStorm(snap.x, snap.y)) safe = false; } catch { /* */ }
-            try { const tg = global.gameManager.terrainGrid; if (tg && tg.pointInRock && tg.pointInRock(snap.x, snap.y)) safe = false; } catch { /* */ }
-            if (safe) moveTo(body, snap.x, snap.y);
+            // back where you were: out of the rock if you were pressed into
+            // it, but not back into the storm (you keep the fresh spawn then)
+            let inStorm = false;
+            try { inStorm = storm.inStorm(snap.x, snap.y); } catch { /* */ }
+            if (!inStorm) {
+                let x = snap.x, y = snap.y;
+                try {
+                    const tg = global.gameManager.terrainGrid;
+                    if (tg && tg.pointInRock && tg.pointInRock(x, y)) { const o = openGroundNear(tg, x, y); x = o.x; y = o.y; }
+                } catch { /* */ }
+                moveTo(body, x, y);
+            }
             body.health.amount = body.health.max * Math.max(0.25, Math.min(1, snap.hp || 1));
             body.carriedGems = snap.carried | 0;
             try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
@@ -928,6 +944,7 @@ function applyResume(body, snap) {
         try { shop.applyPassives(body); shop.talkState(socket); gems.talkGems(body, 0); } catch { /* */ }
         ensureStat(body);
         try { body.sendMessage("Reconnected. Your raid picked up where you left off."); } catch { /* */ }
+        if (process.env.RESUME_DEBUG) console.log('[RESUME] applied: banked', socket.gemBanked | 0, 'carried', body.carriedGems | 0, 'drill', (shop.stateOf(socket) || {}).drill, 'class', (body.defs || []).join('/'), 'raw', body.skill.raw.join(','), 'pts', body.skill.points, 'pos', Math.round(body.x) + ',' + Math.round(body.y), 'was', Math.round(snap.x) + ',' + Math.round(snap.y));
     } catch (e) { console.error('[RAID] resume failed', e && e.message); }
 }
 
@@ -1439,7 +1456,7 @@ class DigRoyale {
 
 module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
-    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume,
+    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume,
     onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout, QUESTS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },

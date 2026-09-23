@@ -739,11 +739,69 @@ import * as tutorial from './tutorial.js';
     customThemeDisplayHandler();
     snowAndFireworkEffects();
 
+    // ── automatic resolution ───────────────────────────────────────────────
+    // The canvases are drawn at the screen's full pixel density, and there
+    // are three of them stacked. On a machine without working GPU canvas
+    // acceleration (school laptops, Chromebooks, blocklisted drivers) the cost
+    // is almost all per pixel: about 45 ms a frame at 1080p and 250-500 ms at
+    // 4K/retina, i.e. single-digit fps. So the pixel count adapts: when frames
+    // stay slow it steps down a budget, when they have been smooth for a while
+    // it tries a step back up, and the level that works is remembered.
+    const AUTO_RES_BUDGET = [Infinity, 1920 * 1080, 1400 * 1000, 1100 * 820, 860 * 640];
+    let autoResLevel = 0;
+    try { autoResLevel = Math.max(0, Math.min(AUTO_RES_BUDGET.length - 1, parseInt(localStorage.getItem("dwAutoResLevel"), 10) || 0)); } catch (e) { }
+    const autoRes = { ema: 16.7, last: 0, slowSince: 0, smoothSince: 0, changedAt: 0, noUpUntil: 0, upAt: 0, told: false };
+    function setAutoResLevel(level, why) {
+        level = Math.max(0, Math.min(AUTO_RES_BUDGET.length - 1, level));
+        if (level === autoResLevel) return;
+        const down = level > autoResLevel;
+        autoResLevel = level;
+        try { localStorage.setItem("dwAutoResLevel", String(level)); } catch (e) { }
+        autoRes.changedAt = performance.now();
+        autoRes.slowSince = autoRes.smoothSince = 0;
+        resizeEvent();
+        if (down && !autoRes.told) {
+            autoRes.told = true;
+            try { global.createMessage("Lowered the resolution to keep the game smooth on this device.", 4000); } catch (e) { }
+        }
+    }
+    function autoResTick(now) {
+        const dt = autoRes.last ? now - autoRes.last : 16.7;
+        autoRes.last = now;
+        // tab switches, hidden panes and the menu are not slow frames
+        if (document.hidden || dt > 400 || !global.gameStart) { autoRes.slowSince = autoRes.smoothSince = 0; return; }
+        autoRes.ema = autoRes.ema * 0.92 + dt * 0.08;
+        if (now - autoRes.changedAt < 1500) return;          // let a change settle
+        // under ~26 fps. Not 30: Chrome's battery saver pins rAF to 30 fps,
+        // and that is a steady cap, not a slow machine.
+        if (autoRes.ema > 38) {
+            autoRes.smoothSince = 0;
+            if (!autoRes.slowSince) autoRes.slowSince = now;
+            if (now - autoRes.slowSince > 2000 && autoResLevel < AUTO_RES_BUDGET.length - 1) {
+                // stepping up just caused this: go back and stay there a while
+                if (autoRes.upAt && now - autoRes.upAt < 12000) autoRes.noUpUntil = now + 300000;
+                setAutoResLevel(autoResLevel + 1);
+            }
+        } else if (autoRes.ema < 19) {                       // holding ~60 fps or better
+            autoRes.slowSince = 0;
+            if (!autoRes.smoothSince) autoRes.smoothSince = now;
+            if (autoResLevel > 0 && now > autoRes.noUpUntil && now - autoRes.smoothSince > 20000) {
+                autoRes.upAt = now;
+                setAutoResLevel(autoResLevel - 1);
+            }
+        } else { autoRes.slowSince = 0; autoRes.smoothSince = 0; }
+    }
+    window.dwAutoRes = () => ({ level: autoResLevel, fpsEma: +(1000 / autoRes.ema).toFixed(1), canvas: global.screenWidth + "x" + global.screenHeight });
+
     function resizeEvent() {
-        let scale = window.devicePixelRatio;
+        // never more than 2x density (a 3x phone panel is 9x the pixels)
+        let scale = Math.min(2, window.devicePixelRatio || 1);
         if (config.graphical.lowResolution) {
             scale *= 0.5;
         }
+        const budget = AUTO_RES_BUDGET[autoResLevel] || Infinity;
+        const pixels = window.innerWidth * window.innerHeight * scale * scale;
+        if (pixels > budget) scale *= Math.sqrt(budget / pixels);
         global.screenWidth = global.vscreenSize = window.innerWidth * scale;
         global.screenHeight = global.vscreenSizey = window.innerHeight * scale;
         c.resize(global.screenWidth, global.screenHeight);
@@ -10501,6 +10559,7 @@ import * as tutorial from './tutorial.js';
             return;
         }
         animationFrame(animloop);
+        try { autoResTick(performance.now()); } catch (e) { }
         renderFrame(tick);
     }
     // One frame of the game, separate from the scheduler so QA tooling can

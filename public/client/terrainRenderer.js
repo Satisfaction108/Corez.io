@@ -184,6 +184,7 @@ class TerrainRenderer {
         this._growDust.clear();
         this._growFx.length = 0;
         this._silRebuildAt = 0;
+        this._rockCache = null;
         const nowInit = performance.now();
         if (rockState) for (const ev of rockState) {
             this._rockHealth.set(ev.k, ev.h);
@@ -2030,6 +2031,90 @@ class TerrainRenderer {
         ];
     }
 
+    // The rock texture depends only on world position (the shader has no
+    // time input), so it is rendered once into an image a bit larger than
+    // the screen and reused while the camera pans. It used to be shaded per
+    // pixel every frame: cheap on a real GPU, but with software WebGL
+    // (hardware acceleration off, blocklisted GPUs, many school laptops)
+    // that alone took ~220ms a frame at 1080p. Returns the image and the
+    // cell-space rect it covers.
+    _rockTexture(view, cellW, cellH) {
+        const c = this._rockCache;
+        const quality = this._rockQuality ?? (this._rockQuality = this._detectRockQuality());
+        const want = cellW * quality;
+        if (c && c.cols === this._cols && view.tlx >= c.x && view.tly >= c.y &&
+            view.tlx + view.tlw <= c.x + c.w && view.tly + view.tlh <= c.y + c.h &&
+            c.density > want * 0.8 && c.density < want * 1.25) return c;
+
+        // margin so ordinary panning stays inside the cache for a while
+        const m = Math.max(view.tlw, view.tlh) * 0.2;
+        const x = view.tlx - m, y = view.tly - m, w = view.tlw + m * 2, h = view.tlh + m * 2;
+        const ratioY = cellH / cellW;
+        let density = want;
+        const maxDim = 4096;
+        if (w * density > maxDim) density = maxDim / w;
+        if (h * density * ratioY > maxDim) density = maxDim / (h * ratioY);
+        const pw = Math.max(1, Math.ceil(w * density)), ph = Math.max(1, Math.ceil(h * density * ratioY));
+        let img = null;
+
+        if (this._gl) {
+            const gl = this._gl, glc = this._glCanvas;
+            if (glc.width !== pw || glc.height !== ph) { glc.width = pw; glc.height = ph; }
+            gl.viewport(0, 0, pw, ph);
+            gl.uniform2f(this._glOriginU, -x * density, -y * density * ratioY);
+            gl.uniform2f(this._glCellSzU, density, density * ratioY);
+            gl.uniform1f(this._glShU, ph);
+            gl.uniform1f(this._glRockSzU, Math.min(this._cols, 120) / 50.0);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            if (typeof glc.transferToImageBitmap === 'function') img = glc.transferToImageBitmap();
+            else {
+                const out = (c && c.canvas) || document.createElement('canvas');
+                out.width = pw; out.height = ph;
+                out.getContext('2d').drawImage(glc, 0, 0);
+                img = out;
+            }
+        } else {
+            // No WebGL at all: flat facets from the same lattice polygons,
+            // so the rocks are at least where the collision says they are.
+            const out = (c && c.canvas) || document.createElement('canvas');
+            out.width = pw; out.height = ph;
+            const g = out.getContext('2d');
+            g.fillStyle = 'rgb(38,34,48)';
+            g.fillRect(0, 0, pw, ph);
+            g.setTransform(density, 0, 0, density * ratioY, -x * density, -y * density * ratioY);
+            const tones = ['rgb(33,30,42)', 'rgb(40,36,50)', 'rgb(49,44,59)'];
+            const rockSz = Math.min(this._cols, 120) / 50.0;
+            g.strokeStyle = 'rgb(5,4,7)';
+            g.lineWidth = 0.072 * rockSz;
+            g.lineJoin = 'round';
+            for (const cell of this._cellPolys.values()) {
+                if (cell.cx < x - 3 || cell.cx > x + w + 3 || cell.cy < y - 3 || cell.cy > y + h + 3) continue;
+                g.fillStyle = tones[((cell.k * 2654435761) >>> 0) % 3];
+                g.fill(cell.path);
+                g.stroke(cell.path);
+            }
+            img = out;
+        }
+        if (c && c.img && c.img !== img && typeof c.img.close === 'function') c.img.close();
+        this._rockCache = { img, canvas: img instanceof HTMLCanvasElement ? img : null,
+                            x, y, w: pw / density, h: ph / (density * ratioY), density, cols: this._cols };
+        return this._rockCache;
+    }
+
+    // Full resolution on a real GPU. Software WebGL shades on the CPU, so it
+    // gets a third of the pixels per axis: the silhouette edges are vector
+    // clips drawn at full resolution anyway, only the facet texture softens.
+    _detectRockQuality() {
+        const gl = this._gl;
+        if (!gl) return 0.5;
+        try {
+            const info = gl.getExtension('WEBGL_debug_renderer_info');
+            const name = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
+            if (/swiftshader|llvmpipe|softpipe|software|basic render/i.test(name)) return 0.35;
+        } catch (e) { }
+        return 1;
+    }
+
     draw(ctx, px, py, ratio, gameWidth, gameHeight, screenW, screenH) {
         if (!this.ready) return;
 
@@ -2089,20 +2174,7 @@ class TerrainRenderer {
             [[-1.95, 1.70],[-0.70, 2.35],[ 0.45, 2.45],[ 1.45, 2.05],[ 2.25, 1.35]],
         ];
 
-        if (this.useVoronoi && this._gl && this._silClip) {
-            const gl = this._gl;
-
-            if (this._glCanvas.width !== screenW || this._glCanvas.height !== screenH) {
-                this._glCanvas.width  = screenW;
-                this._glCanvas.height = screenH;
-                gl.viewport(0, 0, screenW, screenH);
-            }
-
-            gl.uniform2f(this._glOriginU, originX, originY);
-            gl.uniform2f(this._glCellSzU, cellW,   cellH);
-            gl.uniform1f(this._glShU,     screenH);
-            gl.uniform1f(this._glRockSzU, Math.min(this._cols, 120) / 50.0);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        if (this.useVoronoi && this._silClip) {
 
             
             
@@ -2113,6 +2185,7 @@ class TerrainRenderer {
             const tlh =  screenH  / cellH;
             this._view = { tlx, tly, tlw, tlh };
             const nowMs = performance.now();
+            const tex = this._rockTexture(this._view, cellW, cellH);
 
             
             
@@ -2152,21 +2225,8 @@ class TerrainRenderer {
             ctx.save();
             ctx.clip(dmgBatch.holes || this._silClip, 'evenodd');
             ctx.globalAlpha = 1;
-            let rockImg, rockImgIsBitmap = false;
-            // ImageBitmap snapshot is only needed when we blit the same rock
-            // texture more than once (damage stages, shakes, regrowth).
-            // Undamaged views can draw the GL canvas directly and skip the
-            // per-frame GPU readback.
-            const needManyBlits = (dmgBatch.groups && dmgBatch.groups.length) ||
-                (dmgBatch.shaking && dmgBatch.shaking.length) ||
-                this._growing.size || this._landed.size;
-            if (needManyBlits && typeof this._glCanvas.transferToImageBitmap === 'function') {
-                rockImg = this._glCanvas.transferToImageBitmap();
-                rockImgIsBitmap = true;
-            } else {
-                rockImg = this._glCanvas;
-            }
-            ctx.drawImage(rockImg, tlx, tly, tlw, tlh);
+            const rockImg = tex.img;
+            ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
             ctx.restore();
 
             const rockSz = Math.min(this._cols, 120) / 50.0;
@@ -2187,7 +2247,7 @@ class TerrainRenderer {
                 ctx.save();
                 ctx.globalAlpha = g.alpha;
                 ctx.clip(g.path);
-                ctx.drawImage(rockImg, tlx, tly, tlw, tlh);
+                ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
                 ctx.restore();
             }
             for (const cell of dmgBatch.shaking) {
@@ -2200,7 +2260,7 @@ class TerrainRenderer {
                 ctx.translate(cell.cx + ox, cell.cy + oy);
                 ctx.scale(1.05, 1.05);
                 ctx.translate(-cell.cx, -cell.cy);
-                ctx.drawImage(rockImg, tlx, tly, tlw, tlh);
+                ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
                 
                 
                 ctx.lineJoin    = 'round';
@@ -2233,7 +2293,7 @@ class TerrainRenderer {
                 const drawRockPoly = () => {   
                     ctx.save();
                     ctx.clip();
-                    ctx.drawImage(rockImg, tlx, tly, tlw, tlh);
+                    ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
                     ctx.restore();
                     ctx.strokeStyle = 'rgb(5,4,7)';
                     ctx.lineWidth = 0.072 * rockSz;
@@ -2294,7 +2354,7 @@ class TerrainRenderer {
                     ctx.translate(ax2, ay2);
                     ctx.scale(sc, sc);
                     ctx.translate(-g.ax, -g.ay);
-                    ctx.drawImage(rockImg, tlx, tly, tlw, tlh);
+                    ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
                     ctx.restore();
                     ctx.strokeStyle = 'rgb(5,4,7)';
                     ctx.lineWidth = 0.072 * rockSz;
@@ -2380,8 +2440,6 @@ class TerrainRenderer {
                 }
                 ctx.restore();
             }
-
-            if (rockImgIsBitmap) rockImg.close();
 
             // ── Damage overlay per rock: darkening + pockmarks, bite notches
             

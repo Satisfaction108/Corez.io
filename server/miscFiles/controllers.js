@@ -3121,7 +3121,12 @@ class io_digWarsGoals extends IO {
 // idle. Bots never reach this: their own goal controller owns mining.
 // ── bot cost profile (read by the slow-tick log in index.js) ──────────
 global.botProf = global.botProf || {};
-for (const [proto, names] of [[BotNav.prototype, ["structureBlocks", "clearance", "steer"]], [io_digWarsGoals.prototype, ["findGem", "bankTarget", "think"]]]) {
+// BOT_PROF_ALL=1 times every bot-brain method (profiling only)
+const _botProfAll = process.env.BOT_PROF_ALL ? [
+    [BotNav.prototype, Object.getOwnPropertyNames(BotNav.prototype).filter(k => k !== "constructor")],
+    [io_digWarsGoals.prototype, Object.getOwnPropertyNames(io_digWarsGoals.prototype).filter(k => k !== "constructor")],
+] : null;
+for (const [proto, names] of _botProfAll || [[BotNav.prototype, ["structureBlocks", "clearance", "steer"]], [io_digWarsGoals.prototype, ["findGem", "bankTarget", "think"]]]) {
     for (const n of names) {
         const orig = proto[n];
         if (typeof orig !== "function") continue;
