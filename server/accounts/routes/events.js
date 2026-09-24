@@ -199,7 +199,7 @@ function scheduleReset() {
 
 function getEvents(ctx) {
     const a = ctx.requireAuth();
-    if (total >= MAX_TOTAL) throw new HttpError(503, 'busy', 'Too many live connections. Try again soon.', { retryAfter: 30 }, { 'Retry-After': '30' });
+    if (total >= MAX_TOTAL) throw new HttpError(503, 'busy', "The server's packed right now. Try again soon!", { retryAfter: 30 }, { 'Retry-After': '30' });
     const userId = a.user.id;
     const set = byUser.get(userId) || new Set();
     while (set.size >= MAX_PER_USER) close(set.values().next().value);

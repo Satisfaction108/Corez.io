@@ -317,7 +317,7 @@ function viewPick() {
         const code = r.data && r.data.error && r.data.error.code;
         if (code === 'username_taken' || code === 'invalid_username') { uf.setError(humanError(r)); uf.focus(); }
         if (r.status === 401 || r.status === 410 || /pending|expired/.test(code || '')) {
-            showAlert(alert, 'Your Discord sign-in expired. Start again with Log in with Discord.');
+            showAlert(alert, 'Your Discord login timed out. Hit Log in with Discord to try again.');
             return;
         }
         showAlert(alert, humanError(r));
@@ -337,17 +337,17 @@ function viewPick() {
 function viewCode(opts) {
     const code = String(opts.code || '');
     const name = opts.username || '';
-    const title = { recover: 'You’re back in', regen: 'Your new recovery code' }[opts.context] || 'Save your recovery code';
+    const title = { recover: 'You’re back in!', regen: 'Your new recovery code' }[opts.context] || 'Save your recovery code';
     const lead = {
-        discord: 'It gets you back in if you ever lose your Discord.',
-        recover: 'Here’s a fresh recovery code. The old one won’t work anymore.',
-        regen: 'The old one won’t work anymore.',
-    }[opts.context] || 'It gets you back in if you forget your password.';
+        discord: 'It’s your way back in if you ever lose your Discord.',
+        recover: 'Here’s a fresh recovery code. Your old one won’t work anymore.',
+        regen: 'Your old one won’t work anymore.',
+    }[opts.context] || 'It’s your way back in if you forget your password.';
 
     const copyBtn = h('button', { type: 'button', class: 'dw-btn' }, icon('copy'), h('span', { text: 'Copy' }));
     copyBtn.onclick = async () => {
         const ok = await copyText(code);
-        copyBtn.lastChild.textContent = ok ? 'Copied' : 'Copy failed';
+        copyBtn.lastChild.textContent = ok ? 'Copied!' : 'Couldn’t copy';
         copyBtn.classList.toggle('done', ok);
         setTimeout(() => { copyBtn.lastChild.textContent = 'Copy'; copyBtn.classList.remove('done'); }, 1800);
     };
@@ -413,13 +413,13 @@ function viewRecover(opts) {
             return;
         }
         const ec = (r.data && r.data.error && r.data.error.code) || '';
-        if (r.status === 401 || /credential|code|recovery/.test(ec)) showAlert(alert, 'That username and recovery code don’t match.');
+        if (r.status === 401 || /credential|code|recovery/.test(ec)) showAlert(alert, 'That code doesn’t match that username. Try again!');
         else showAlert(alert, humanError(r));
     });
     return h('div', { class: 'wl-recover' },
         topBar(() => show('auth', { tab: 'login' })),
         h('div', { class: 'wl-h', text: 'Forgot password?' }),
-        h('p', { class: 'wl-p', text: 'Use the recovery code you saved to set a new one.' }),
+        h('p', { class: 'wl-p', text: 'No worries! Use your saved recovery code to set a new one.' }),
         form);
 }
 
@@ -446,12 +446,12 @@ function viewReset(opts) {
         if (r.ok && r.data && r.data.user) {
             hooks.onAuthed(r.data.user, 'reset');
             close();
-            toast('Password saved. You’re logged in as ' + r.data.user.username + '.', { kind: 'ok' });
+            toast('Password saved! You’re in as ' + r.data.user.username + '.', { kind: 'ok' });
             return;
         }
         const ec = (r.data && r.data.error && r.data.error.code) || '';
         if (ec === 'invalid_token' || /token/.test(ec)) {
-            showAlert(alert, 'This link has expired or was already used. Ask for a new one.');
+            showAlert(alert, 'This link expired or was already used. Ask for a new one!');
             go.disabled = true;
         } else showAlert(alert, humanError(r));
     });
@@ -459,6 +459,6 @@ function viewReset(opts) {
         topBar(dismissable ? null : () => show('choose')),
         h('div', { class: 'wl-badge' }, icon('key')),
         h('div', { class: 'wl-h', text: 'Set a new password' }),
-        h('p', { class: 'wl-p', text: 'Pick a new password for your account. You’ll be logged in right after.' }),
+        h('p', { class: 'wl-p', text: 'Pick a new password. You’ll be logged in right after.' }),
         form);
 }

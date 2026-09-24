@@ -78,7 +78,7 @@ function getProfile(ctx) {
     const a = ctx.requireAuth();
     const row = lookup(ctx.query.get('u'));
     if (!row || (row.id !== a.user.id && friends.blockedEitherWay(a.user.id, row.id))) {
-        throw new HttpError(404, 'user_not_found', 'No such player.');
+        throw new HttpError(404, 'user_not_found', "Couldn't find that player.");
     }
     ctx.json(200, profileOf(row, a.user.id));
 }

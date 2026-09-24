@@ -40,10 +40,23 @@ async function main() {
         console.error('Missing ' + missing.join(', ') + ' (environment or server/.env).');
         process.exit(1);
     }
-    const g = await rest.putCommands(bot.appId, null, PLAYER_COMMANDS);
+    // Direct PUTs, not the shared rate-limit queue: a one-off script has no
+    // other traffic, and the queue could leave it waiting forever.
+    const put = async (guildId, commands) => {
+        const route = guildId ? `/applications/${bot.appId}/guilds/${guildId}/commands` : `/applications/${bot.appId}/commands`;
+        const r = await fetch(rest.API + route, {
+            method: 'PUT', signal: AbortSignal.timeout(20000),
+            headers: { Authorization: 'Bot ' + bot.botToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify(commands),
+        });
+        const j = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(`Discord PUT ${route} -> ${r.status}: ${JSON.stringify(j)}`);
+        return j;
+    };
+    const g = await put(null, PLAYER_COMMANDS);
     console.log(`global: ${g.map(c => '/' + c.name).join(' ')}`);
     if (bot.adminGuildId) {
-        const a = await rest.putCommands(bot.appId, bot.adminGuildId, ADMIN_COMMANDS);
+        const a = await put(bot.adminGuildId, ADMIN_COMMANDS);
         console.log(`guild ${bot.adminGuildId}: ${a.map(c => '/' + c.name).join(' ')}`);
     } else {
         console.warn('DISCORD_ADMIN_GUILD_ID is not set: admin commands were not registered.');

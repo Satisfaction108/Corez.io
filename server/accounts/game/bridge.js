@@ -81,7 +81,7 @@ function init(socketManager) {
         if (!msg || !manager) return;
         if (msg.t === 'kick') {
             for (const s of manager.clients.slice()) {
-                if (s.account && s.account.id === msg.userId) kickOut(s, msg.reason || 'You were signed out.');
+                if (s.account && s.account.id === msg.userId) kickOut(s, msg.reason || 'You got signed out. Log in again!');
             }
         } else if (msg.t === 'blocksChanged') {
             for (const s of manager.clients) if (s.account && s.account.id === msg.userId) loadBlocks(s);
@@ -167,7 +167,7 @@ function onConnect(socket, req, socketManager) {
     // tab's auto-reconnect. (Limiting supersedes locked out players whose
     // flaky wifi left half-open sockets behind on every reconnect.)
     for (const o of socketManager.clients.slice()) {
-        if (o !== socket && o.account && o.account.id === user.id) kickOut(o, 'You logged in somewhere else.');
+        if (o !== socket && o.account && o.account.id === user.id) kickOut(o, 'You logged in on another tab or device.');
     }
     try { accounts.bus.toMain({ t: 'join', userId: user.id, sid: socket.id }); } catch (e) { /* */ }
 }

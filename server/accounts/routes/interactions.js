@@ -47,12 +47,12 @@ async function interactions(ctx) {
         let res;
         try { res = commands.handle(i); } catch (e) {
             console.error('[discord] command /' + ((i.data && i.data.name) || '?') + ' failed: ' + ((e && e.stack) || e));
-            res = commands.reply('Something went wrong running that command.', { ephemeral: true });
+            res = commands.reply('Oops, that command broke. Try again in a bit.', { ephemeral: true });
         }
         return ctx.json(200, res);
     }
     // components / autocomplete / modals: none registered
-    return ctx.json(200, commands.reply('Nothing to do here.', { ephemeral: true }));
+    return ctx.json(200, commands.reply('Nothing to do here!', { ephemeral: true }));
 }
 
 function register(router) {

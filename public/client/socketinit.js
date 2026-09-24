@@ -1596,7 +1596,7 @@ let incoming = async function(message, socket) {
                     if (d.done && prev && prev.id === d.id && !prev.done) {
                         const v = (+d.rewardMilli || 0) / 1000;
                         const amt = Number.isInteger(v) ? String(v) : String(+v.toFixed(2));
-                        global.createMessage('+' + amt + ' gemdust \u2014 quest done', 4500);
+                        global.createMessage('Quest complete! +' + amt + ' gemdust', 4500);
                     }
                 } catch (e) { /* ignore */ }
             } break;
@@ -1604,7 +1604,7 @@ let incoming = async function(message, socket) {
                 // an achievement unlocked
                 try {
                     const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
-                    if (d && d.id) global.createMessage('Achievement unlocked: ' + (d.name || d.id), 5000);
+                    if (d && d.id) global.createMessage('Achievement unlocked: ' + (d.name || d.id) + '!', 5000);
                 } catch (e) { /* ignore */ }
             } break;
             case 'KO': {
@@ -1612,7 +1612,7 @@ let incoming = async function(message, socket) {
                 // the server closes it next, and it must not auto-reconnect.
                 global.noAutoReconnect = true;
                 global.autoReconnect = null;
-                global.message = String(m[0] || "You were disconnected from your account.");
+                global.message = String(m[0] || "You got signed out of your account.");
             } break;
             case "svInfo": {
 

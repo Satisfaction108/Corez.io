@@ -154,7 +154,7 @@ function lifeEnd(s, reason, opts = {}) {
             lifeId: s.lifeId, userId, reason, now: t, basis, countedBefore: a.counted,
             durationMs: t - (s.lifeStartAt || t), noFare: !!s.lifeNoFare,
             kills: s.lifeKills | 0, botKills: s.lifeBotKills | 0,
-            sources: [['Banked', banked], ['Kills', kills], ['Carried', carriedHalf], ['Bonus', bonus]],
+            sources: [['Banked', banked], ['KOs', kills], ['Carried', carriedHalf], ['Bonus', bonus]],
             dust: { lifeMilli: s.lifeDust | 0, balanceMilli: balance },
         });
     } catch (e) { logErr('settle', e); }

@@ -36,7 +36,7 @@ const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const easeOut = (k) => 1 - Math.pow(1 - k, 3);
 const fmtInt = (n) => Math.round(n || 0).toLocaleString('en-US');
 const fmtDust = (milli) => (Math.max(0, milli || 0) / 1000).toFixed(2);
-const nameOf = (i) => (R() ? R().nameOf(i) : (i == null ? 'Unranked' : 'Division ' + (i + 1)));
+const nameOf = (i) => (R() ? R().nameOf(i) : (i == null ? 'Unranked' : 'Rank ' + (i + 1)));
 
 /* ── state in ────────────────────────────────────────────────────────── */
 export function setAccount(ac) { S.acct = !!ac; }
@@ -91,7 +91,7 @@ export function setResult(rk) {
     S.acct = true;
     S.guest = null;
     S.parts = Array.isArray(rk.parts) ? rk.parts.slice(0, 5) : [];
-    if (rk.fare > 0 && !S.parts.some((p) => /fare/i.test(p[0]))) S.parts.push(['Fare', -rk.fare]);
+    if (rk.fare > 0 && !S.parts.some((p) => /fare/i.test(p[0]))) S.parts.push(['Entry fee', -rk.fare]);
     S.capped = !!rk.capped;
     S.dustMilli += (rk.dust && rk.dust.lifeMilli) | 0;
     addStep('life', rk.before, rk.after, rk.delta, { placement: rk.placement, tierUp: rk.tierUp });
@@ -100,7 +100,7 @@ export function setResult(rk) {
 export function setRaidBonus(p) {
     if (!p || typeof p !== 'object') return;
     S.acct = true;
-    if (p.bonusRP) S.parts.push(['Raid #' + (p.place | 0), p.bonusRP | 0]);
+    if (p.bonusRP) S.parts.push(['#' + (p.place | 0) + ' in raid', p.bonusRP | 0]);
     S.dustMilli += p.bonusDustMilli | 0;
     addStep('raid', p.before, p.after, p.bonusRP, { tierUp: p.tierUp });
 }
@@ -326,10 +326,10 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     if (S.guest) {
         drawBadge(c, bx, by, 64, 'placement', { alpha: alpha * 0.7 });
         A.drawText('RANKED', x0, y + 22, 10, grey, 'left', true, alpha);
-        const t = 'Make an account to start ranking';
+        const t = 'Make an account to get ranked!';
         A.drawText(t, x0, y + 46, fitSize(A, t, 17, x1 - x0), white, 'left', true, alpha);
         const wb = S.guest.wouldBe;
-        const line = wb && wb.name ? 'This life would have reached ' + wb.name : 'Your raids would count toward a rank';
+        const line = wb && wb.name ? 'That game would’ve put you in ' + wb.name : 'Every raid counts once you’re ranked';
         A.drawText(line, x0, y + 72, fitSize(A, line, 12, x1 - x0), SOFT, 'left', true, alpha);
         return true;
     }
@@ -342,7 +342,7 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
         drawBadge(c, bx, by, 64, 'placement', { alpha: alpha * pulse });
         A.drawText('RANK', x0, y + 30, 10, grey, 'left', true, alpha);
         const dots = '.'.repeat(1 + (Math.floor(now / 380) % 3));
-        A.drawText(waited > 7000 ? 'Your rank will update soon' : 'Calculating' + dots, x0, y + 54, 16, SOFT, 'left', true, alpha);
+        A.drawText(waited > 7000 ? 'Your rank will show up soon' : 'Counting points' + dots, x0, y + 54, 16, SOFT, 'left', true, alpha);
         return true;
     }
 
@@ -377,7 +377,7 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     // label + name
     const placing = v.division == null;
     A.drawText(placing ? 'PLACEMENT' : st.kind === 'raid' && st.phase !== 'done' ? 'RAID BONUS' : 'RANK', x0, y + 14, 10, grey, 'left', true, alpha);
-    let name = placing ? 'Life ' + Math.min(3, Math.max(1, st.reveal ? 3 : st.a.lives)) + ' of 3' : nameOf(v.division);
+    let name = placing ? 'Game ' + Math.min(3, Math.max(1, st.reveal ? 3 : st.a.lives)) + ' of 3' : nameOf(v.division);
     const nameMax = x1 - x0 - pw - 12;
     const ns = fitSize(A, name, 18, nameMax, 12);
     A.drawText(name, x0, y + 32, ns, col.text, 'left', true, alpha);
@@ -396,9 +396,9 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     if (v.pips) {
         pipRow(c, A, x0, y + 58, v, alpha);
         const left = 3 - v.pips.have;
-        if (st.reveal && st.phase !== 'wait') line = 'Placement done';
-        else if (st.phase !== 'wait' && st.inPlacement && st.a.lives <= st.b.lives) line = 'That life was too short to count';
-        else line = left <= 0 ? 'Placement done' : left + ' more ' + (left === 1 ? 'life' : 'lives') + ' to find your rank';
+        if (st.reveal && st.phase !== 'wait') line = 'Placement complete!';
+        else if (st.phase !== 'wait' && st.inPlacement && st.a.lives <= st.b.lives) line = 'Too quick to count. Survive longer!';
+        else line = left <= 0 ? 'Placement complete!' : left + ' more ' + (left === 1 ? 'game' : 'games') + ' to get your rank';
         A.drawText(line, x0 + 96, y + 58, fitSize(A, line, 12, x1 - x0 - 96), SOFT, 'left', true, alpha);
         line = '';
     } else {
@@ -416,7 +416,7 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
 
     // where the points came from, small
     const bits = S.parts.filter((p) => p && p[1]).map((p) => p[0] + ' ' + (p[1] > 0 ? '+' : '−') + Math.abs(p[1] | 0));
-    if (S.capped) bits.push('Life cap');
+    if (S.capped) bits.push('Max per game');
     if (bits.length) {
         const t = bits.join('  ·  ');
         A.drawText(t, x0, y + 97, fitSize(A, t, 10, x1 - x0, 8), SOFT, 'left', true, alpha);

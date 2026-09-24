@@ -380,7 +380,7 @@ export function drawFrame(c, ev, prep, t) {
     // words
     if (t >= T.title) {
         const k = clamp((t - T.title) / 240);
-        const title = ev.kind === 'reveal' ? 'RANK REVEALED' : big ? 'NEW TIER!' : 'RANKED UP!';
+        const title = ev.kind === 'reveal' ? 'YOU’RE RANKED!' : big ? 'NEW TIER!' : 'RANKED UP!';
         const size = clamp(S * (big ? 0.24 : 0.21), 26, 64);
         c.save();
         c.globalAlpha = clamp(k * 1.6) * fade;
@@ -402,7 +402,7 @@ export function drawFrame(c, ev, prep, t) {
         c.textAlign = 'center';
         c.textBaseline = 'middle';
         c.fillStyle = '#c9c1ad';
-        c.fillText('Click to continue', cx, Math.min(H - 28, cy + S * 1.25));
+        c.fillText('Click anywhere to continue', cx, Math.min(H - 28, cy + S * 1.25));
         c.globalAlpha = 1;
     }
     c.restore();

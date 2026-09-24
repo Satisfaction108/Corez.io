@@ -86,8 +86,8 @@ function lists(id) {
 }
 
 function targetOrFail(me, row) {
-    if (!row) fail(404, 'user_not_found', 'No player with that name.');
-    if (row.id === me) fail(400, 'self', 'That is you.');
+    if (!row) fail(404, 'user_not_found', "Couldn't find anyone with that name.");
+    if (row.id === me) fail(400, 'self', "That's you!");
     return row;
 }
 
@@ -100,7 +100,7 @@ function makeFriends(a, b, now) {
 
 function checkFriendRoom(me, other) {
     if (friendCount(me) >= MAX_FRIENDS) fail(409, 'friend_limit', `You can have up to ${MAX_FRIENDS} friends.`);
-    if (friendCount(other) >= MAX_FRIENDS) fail(409, 'their_friend_limit', 'Their friends list is full.');
+    if (friendCount(other) >= MAX_FRIENDS) fail(409, 'their_friend_limit', 'Their friends list is full!');
 }
 
 // request(me, username) -> {status:'pending'|'accepted', user:row, notify:{type, to}|null}
@@ -108,8 +108,8 @@ function request(me, username, now = Date.now()) {
     const d = h();
     return d.tx(() => {
         const to = targetOrFail(me, users.byUsername(username));
-        if (areFriends(me, to.id)) fail(409, 'already_friends', 'You are already friends.');
-        if (hasBlocked(me, to.id)) fail(409, 'you_blocked', 'Unblock them first.');
+        if (areFriends(me, to.id)) fail(409, 'already_friends', "You're already friends.");
+        if (hasBlocked(me, to.id)) fail(409, 'you_blocked', 'You blocked them. Unblock them first!');
         const theyBlocked = hasBlocked(to.id, me);
         const theirs = !theyBlocked && d.get('SELECT silent FROM friend_requests WHERE from_id = ? AND to_id = ?', to.id, me);
         if (theirs && !theirs.silent) {
@@ -146,17 +146,17 @@ function respond(me, from, accept, now = Date.now()) {
 
 // cancel(me, toRow) -> {user, silent}
 function cancel(me, to) {
-    if (!to) fail(404, 'no_request', 'No such request.');
+    if (!to) fail(404, 'no_request', 'That request is gone.');
     const r = h().get('SELECT silent FROM friend_requests WHERE from_id = ? AND to_id = ?', me, to.id);
-    if (!r) fail(404, 'no_request', 'No such request.');
+    if (!r) fail(404, 'no_request', 'That request is gone.');
     h().run('DELETE FROM friend_requests WHERE from_id = ? AND to_id = ?', me, to.id);
     return { user: to, silent: !!r.silent };
 }
 
 function remove(me, other) {
-    if (!other) fail(404, 'not_friends', 'You are not friends.');
+    if (!other) fail(404, 'not_friends', "You're not friends.");
     const [lo, hi] = pair(me, other.id);
-    if (!h().run('DELETE FROM friendships WHERE user_lo = ? AND user_hi = ?', lo, hi).changes) fail(404, 'not_friends', 'You are not friends.');
+    if (!h().run('DELETE FROM friendships WHERE user_lo = ? AND user_hi = ?', lo, hi).changes) fail(404, 'not_friends', "You're not friends.");
     return { user: other };
 }
 
@@ -181,7 +181,7 @@ function block(me, target, now = Date.now()) {
 
 function unblock(me, target) {
     if (!target || !h().run('DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?', me, target.id).changes) {
-        fail(404, 'not_blocked', 'That player is not blocked.');
+        fail(404, 'not_blocked', "That player isn't blocked.");
     }
     return { user: target };
 }

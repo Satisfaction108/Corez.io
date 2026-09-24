@@ -63,9 +63,9 @@ const ADMIN_COMMANDS = [
 ].map(c => ({ ...c, type: 1, default_member_permissions: '0', dm_permission: false }));
 
 const PLAYER_COMMANDS = [
-    { name: 'profile', description: 'A Dig Wars player profile', options: [{ type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 }] },
-    { name: 'rank', description: 'A Dig Wars player rank', options: [{ type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 }] },
-    { name: 'leaderboard', description: 'The Dig Wars top 10' },
+    { name: 'profile', description: "See a player's Dig Wars profile", options: [{ type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 }] },
+    { name: 'rank', description: "See a player's Dig Wars rank", options: [{ type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 }] },
+    { name: 'leaderboard', description: 'See the Dig Wars top 10' },
 ].map(c => ({ ...c, type: 1 }));
 
 const ADMIN_NAMES = new Set(ADMIN_COMMANDS.map(c => c.name));
@@ -105,7 +105,7 @@ const dustText = milli => ((milli | 0) / 1000).toLocaleString('en-US', { maximum
 
 function rankLine(row) {
     const s = rankStore.snapshot(row);
-    if (s.division == null) return `Placement (${s.placement.lives}/${s.placement.of} lives)`;
+    if (s.division == null) return `Placement (${s.placement.lives} of ${s.placement.of} games played)`;
     const legend = s.division === R.LEGEND && s.legendNo ? ` #${s.legendNo}` : '';
     const into = s.division === R.LEGEND ? '' : ` · ${Math.floor(s.pct * 100)}% to next`;
     return `${s.name}${legend} (${(s.rp | 0).toLocaleString('en-US')} RP${into})`;
@@ -196,8 +196,8 @@ function grantDust(i, caller) {
     const reason = String(opt(i, 'reason') || '').trim().slice(0, 200);
     if (!row) return reply('No account matches that.', { ephemeral: true });
     const want = Math.round(amount * 1000);
-    if (!Number.isFinite(amount) || !want || Math.abs(want) > MAX_GRANT_MILLI) return reply('Amount must be a non-zero number of dust up to 100,000.', { ephemeral: true });
-    if (!reason) return reply('Give a reason.', { ephemeral: true });
+    if (!Number.isFinite(amount) || !want || Math.abs(want) > MAX_GRANT_MILLI) return reply('Amount must be a non-zero number, up to 100,000 dust.', { ephemeral: true });
+    if (!reason) return reply('Please add a reason.', { ephemeral: true });
     const d = db.handle();
     const now = Date.now();
     const res = d.tx(() => {
@@ -231,7 +231,7 @@ function ban(i, caller) {
     if (!row) return reply('No account matches that.', { ephemeral: true });
     const ms = { '7d': 7 * DAY, '30d': 30 * DAY, perm: 0 }[duration];
     if (ms === undefined) return reply('Duration must be 7d, 30d or perm.', { ephemeral: true });
-    if (!reason) return reply('Give a reason.', { ephemeral: true });
+    if (!reason) return reply('Please add a reason.', { ephemeral: true });
     const now = Date.now();
     const until = ms ? now + ms : PERMANENT;
     const d = db.handle();
@@ -255,7 +255,7 @@ function unban(i, caller) {
     db.handle().run('UPDATE users SET banned_until = NULL, ban_reason = NULL WHERE id = ?', row.id);
     audit(caller, row.id, 'admin_unban', { username: row.username, wasBanned: !!was, previousUntil: row.banned_until || null, reason: reason || null });
     try { require('../routes/profile').clearCache(); } catch (e) { /* */ }
-    return reply(was ? `Unbanned **${md(row.username)}**.` : `**${md(row.username)}** was not banned (cleared anyway).`, { ephemeral: true });
+    return reply(was ? `Unbanned **${md(row.username)}**.` : `**${md(row.username)}** wasn't banned (cleared anyway).`, { ephemeral: true });
 }
 
 const ADMIN_HANDLERS = { lookup, resetpassword: resetPassword, relink, grantdust: grantDust, ban, unban };
@@ -266,7 +266,7 @@ function targetFor(i, caller) {
     const name = opt(i, 'username');
     if (name != null && String(name).trim()) {
         const row = resolveUser(name);
-        return row ? { row } : { error: 'No such player.' };
+        return row ? { row } : { error: "Couldn't find that player." };
     }
     const row = users.byDiscordId(caller.id);
     return row ? { row } : { error: `Your Discord isn't linked to a Dig Wars account. Log in with Discord at ${config.publicOrigin} or pass a username.` };
@@ -287,12 +287,12 @@ function profile(i, caller) {
             { name: 'Rank', value: rankLine(row), inline: false },
             { name: 'Peak', value: snap.peak.division == null ? '-' : snap.peak.name, inline: true },
             { name: 'Achievements', value: `${got}/${achievements.DEFS.length}`, inline: true },
-            { name: 'Lives', value: n(s.lives), inline: true },
-            { name: 'Kills', value: n(s.kills), inline: true },
+            { name: 'Games', value: n(s.lives), inline: true },
+            { name: 'Knockouts', value: n(s.kills), inline: true },
             { name: 'Raid wins', value: n(s.raidWins), inline: true },
             { name: 'Top 3s', value: n(s.top3), inline: true },
             { name: 'Gems banked', value: n(s.gemsBanked), inline: true },
-            { name: 'Best life', value: n(s.bestLife) + ' pts', inline: true },
+            { name: 'Best game', value: n(s.bestLife) + ' pts', inline: true },
         ],
         footer: { text: row.public_id + ' · playing since ' + new Date(row.created_at).toISOString().slice(0, 10) },
     };
@@ -307,7 +307,7 @@ function rank(i, caller) {
 
 function leaderboard() {
     const rows = require('../routes/profile').topRows(Date.now()).slice(0, 10);
-    if (!rows.length) return reply('Nobody is ranked yet. Finish your 3 placement lives to be first!');
+    if (!rows.length) return reply("Nobody's ranked yet. Finish your 3 placement games to be first!");
     const lines = rows.map(r => `${r.place}. **${md(r.username)}** · ${r.name}${r.legendNo ? ' #' + r.legendNo : ''} · ${r.rp.toLocaleString('en-US')} RP`);
     return reply('', { embeds: [{ title: 'Dig Wars top 10', color: COLOR, description: lines.join('\n'), footer: { text: 'Full Top 100 at ' + config.publicOrigin } }] });
 }
@@ -325,19 +325,19 @@ function isAdmin(i, caller) {
 function handle(i) {
     const name = String((i.data && i.data.name) || '');
     const caller = callerOf(i);
-    if (!db.handle()) return reply('Dig Wars accounts are offline right now. Try again later.', { ephemeral: true });
+    if (!db.handle()) return reply('Dig Wars accounts are down right now. Try again later.', { ephemeral: true });
     if (ADMIN_NAMES.has(name)) {
         if (!isAdmin(i, caller)) {
             try {
                 users.audit(null, 'admin_denied', { command: name, guildId: i.guild_id || null, discordName: caller.name.slice(0, 64) },
                     { actor: 'discord:' + (caller.id || '?') });
             } catch (e) { /* audit only */ }
-            return reply('You are not allowed to use this command.', { ephemeral: true });
+            return reply("Sorry, you're not allowed to use this command.", { ephemeral: true });
         }
         return ADMIN_HANDLERS[name](i, caller);
     }
     const fn = PLAYER_HANDLERS[name];
-    if (!fn) return reply('Unknown command.', { ephemeral: true });
+    if (!fn) return reply("I don't know that command.", { ephemeral: true });
     return fn(i, caller);
 }
 

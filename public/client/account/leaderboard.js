@@ -31,7 +31,7 @@ async function load(el) {
         if (cache) return;
         clear(el);
         el.appendChild(h('div', { class: 'shop-empty' },
-            h('div', { class: 'shop-empty-h', text: 'The leaderboard didn’t load' }),
+            h('div', { class: 'shop-empty-h', text: 'Couldn’t load the leaderboard' }),
             h('div', { class: 'shop-empty-p', text: humanError(r) }),
             h('button', { type: 'button', class: 'dw-btn sm', text: 'Try again', onclick: () => render(el) })));
         return;
@@ -63,8 +63,8 @@ function paint(el, d) {
             h('span', { class: 'lb-rp', role: 'columnheader', text: 'RP' })));
     if (!d.rows.length) {
         el.append(head, h('div', { class: 'fr-empty' },
-            h('div', { class: 'fr-empty-h', text: 'Nobody’s ranked yet' }),
-            h('div', { class: 'fr-empty-p', text: 'Finish your 3 placement lives to be the first on the board.' })));
+            h('div', { class: 'fr-empty-h', text: 'Nobody’s ranked yet!' }),
+            h('div', { class: 'fr-empty-p', text: 'Finish your 3 placement games and grab the #1 spot.' })));
         return;
     }
     const body = h('div', { class: 'lb-body', role: 'rowgroup' });
@@ -80,10 +80,10 @@ function paint(el, d) {
         el.appendChild(h('div', { class: 'lb-pin' }, row(me, true, loggedIn)));
     } else if (!loggedIn) {
         el.appendChild(h('div', { class: 'lb-guest' },
-            h('span', { text: 'Want your name up here? Make a free account to get ranked.' }),
+            h('span', { text: 'Want your name up here? Make a free account and get ranked!' }),
             h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'Log in', onclick: () => hooks.onLogin() })));
     } else if (!me) {
-        el.appendChild(h('div', { class: 'lb-guest', text: 'Finish your 3 placement lives to get on the board.' }));
+        el.appendChild(h('div', { class: 'lb-guest', text: 'Finish your 3 placement games to get on the board!' }));
     }
     animate(table, [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
 }

@@ -19,10 +19,10 @@ let handlers = { onChip() {}, onNameBox() {}, onNav() {}, onLogin() {} };
 // What a guest is told about each account-only pane. The nav keeps these
 // visible (with a lock) so guests can see what an account gets them.
 const LOCKED = {
-    shop: { tip: 'Log in to use the Item Shop', title: 'The Item Shop needs an account' },
-    locker: { tip: 'Log in to use your Locker', title: 'The Locker needs an account' },
-    friends: { tip: 'Log in to add friends', title: 'Friends need an account' },
-    profile: { tip: 'Log in to see your profile', title: 'Your profile needs an account' },
+    shop: { tip: 'Log in to use the Item Shop', title: 'Log in to go shopping!' },
+    locker: { tip: 'Log in to use your Locker', title: 'Log in to open your Locker!' },
+    friends: { tip: 'Log in to add friends', title: 'Log in to add friends!' },
+    profile: { tip: 'Log in to see your profile', title: 'Log in to see your profile!' },
 };
 
 export function init(hs) {
@@ -34,7 +34,7 @@ export function init(hs) {
             const pane = b.dataset.pane;
             if (b.classList.contains('locked')) return lockedPrompt(pane);
             if (b.getAttribute('aria-disabled') === 'true') {
-                toast(b.dataset.label + ' is coming soon.');
+                toast(b.dataset.label + ' is coming soon!');
                 return;
             }
             handlers.onNav(pane);
@@ -49,10 +49,10 @@ export function init(hs) {
 function lockedPrompt(pane) {
     const L = LOCKED[pane];
     if (!L) return;
-    if (store.get('offline')) { toast('Accounts are offline right now.'); return; }
+    if (store.get('offline')) { toast('Accounts are down right now. Try again soon!'); return; }
     const m = modal({
         title: L.title, cls: 'dw-modal-sm dw-modal-lock',
-        message: 'It’s free, and it keeps your rank and gemdust.',
+        message: 'It’s free, and it saves your rank and gemdust!',
         body: h('div', { class: 'dw-modal-actions' },
             h('button', { type: 'button', class: 'dw-btn', text: 'Not now', onclick: () => m.close() }),
             h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Log in', onclick: () => { m.close(); handlers.onLogin(); } })),
@@ -122,7 +122,7 @@ function renderNameBox(name, rank, st) {
     nameText.textContent = '';
     if (name && st) nameText.appendChild(styledName(name, st, 15, 'dw-name-cv an-name'));
     else nameText.textContent = name;
-    nameBox.title = name ? (v.text + '. Change your username in Account settings') : 'Change your username in Account settings';
+    nameBox.title = name ? (v.text + '. Change your name in Account settings') : 'Change your name in Account settings';
     if (!name) return;
     const img = badgeImg(v.div, 22, 'an-badge');
     if (img) nameBox.insertBefore(img, nameText);
@@ -140,7 +140,7 @@ function renderNav(s) {
         b.classList.toggle('locked', guest);
         if (guest) {
             b.removeAttribute('aria-disabled');
-            b.title = s.offline ? 'Accounts are offline right now' : L.tip;
+            b.title = s.offline ? 'Accounts are down right now' : L.tip;
             b.setAttribute('aria-label', b.dataset.label + ', needs an account');
         } else if (READY.has(b.dataset.pane)) {
             b.removeAttribute('aria-disabled');
@@ -195,15 +195,15 @@ export function render() {
         renderNameBox(name, rank, styleOf(u));
     } else {
         chip.classList.add('guest');
-        chip.title = s.offline ? 'Accounts are offline right now' : 'Create an account';
-        chip.setAttribute('aria-label', s.offline ? 'Playing as guest. Accounts are offline.' : 'Playing as guest. Create an account.');
+        chip.title = s.offline ? 'Accounts are down right now' : 'Make an account';
+        chip.setAttribute('aria-label', s.offline ? 'Playing as a guest. Accounts are down.' : 'Playing as a guest. Make an account.');
         chip.append(
             guestAvatar(26),
             h('span', { class: 'ac-text' },
                 h('span', { class: 'ac-name', text: 'Guest' }),
                 s.offline
-                    ? h('span', { class: 'ac-sub', text: 'Accounts offline' })
-                    : h('span', { class: 'ac-sub ac-link', text: 'Create account' })));
+                    ? h('span', { class: 'ac-sub', text: 'Accounts down' })
+                    : h('span', { class: 'ac-sub ac-link', text: 'Make an account' })));
         renderNameBox('', null);
     }
     renderNav(s);

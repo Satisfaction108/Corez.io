@@ -34,16 +34,16 @@ async function requireCredential(ctx, a, currentPassword) {
     const pw = str(currentPassword, PW_MAX);
     if (pw && a.user.password_hash) {
         if (await checkPassword(ctx, a.user, pw)) return;
-        throw new HttpError(401, 'bad_password', 'Wrong password.');
+        throw new HttpError(401, 'bad_password', 'Wrong password. Try again!');
     }
     if (sessions.isFresh(a.session, ctx.now)) return;
     if (a.user.password_hash) throw new HttpError(401, 'bad_password', 'Enter your current password.');
-    throw new HttpError(403, 'reauth_required', 'Confirm it is you with Discord first.');
+    throw new HttpError(403, 'reauth_required', 'Quick Discord check first, please!');
 }
 
 function cooldown(availableAt, now) {
     const retryAfter = Math.max(1, Math.ceil((availableAt - now) / 1000));
-    return new HttpError(429, 'cooldown', 'You can change your username again later.', { availableAt, retryAfter }, { 'Retry-After': String(retryAfter) });
+    return new HttpError(429, 'cooldown', 'You can change your name again later.', { availableAt, retryAfter }, { 'Retry-After': String(retryAfter) });
 }
 
 function begin(ctx) {
@@ -66,10 +66,10 @@ async function changeUsername(ctx) {
         if (r.code === 'cooldown') throw cooldown(r.availableAt, Date.now());
         if (r.code === 'username_taken') {
             throw new HttpError(409, 'username_taken', r.reason === 'held'
-                ? 'That username was used recently and is reserved for now.'
-                : 'That username is taken.', { reason: r.reason });
+                ? 'Someone used that name recently. Try another!'
+                : "That name's taken. Try another!", { reason: r.reason });
         }
-        throw new HttpError(404, 'not_found', 'Account not found.');
+        throw new HttpError(404, 'not_found', "Couldn't find that account.");
     }
     ctx.json(200, { user: users.toPublic(r.user) });
 }
@@ -83,7 +83,7 @@ async function changePassword(ctx) {
     if (hadPassword) {
         const current = str(ctx.body.currentPassword, PW_MAX);
         if (current) {
-            if (!(await checkPassword(ctx, a.user, current))) throw new HttpError(401, 'bad_password', 'Wrong password.');
+            if (!(await checkPassword(ctx, a.user, current))) throw new HttpError(401, 'bad_password', 'Wrong password. Try again!');
         } else if (!sessions.isFresh(a.session, ctx.now)) {
             throw new HttpError(401, 'bad_password', 'Enter your current password.');
         }
@@ -91,7 +91,7 @@ async function changePassword(ctx) {
         // A first password on a Discord-only account also needs a fresh
         // Discord login: otherwise anything riding the session (a stolen
         // cookie, XSS) could set one, unlink Discord and own the account.
-        throw new HttpError(403, 'reauth_required', 'Confirm it is you with Discord first.');
+        throw new HttpError(403, 'reauth_required', 'Quick Discord check first, please!');
     }
     const hash = await crypto.hashPassword(newPassword);
     db.handle().tx(() => {
@@ -117,9 +117,9 @@ async function regenerateRecovery(ctx) {
 async function unlinkDiscord(ctx) {
     const a = begin(ctx);
     if (!a.user.discord_id) return ctx.noContent();
-    if (!a.user.password_hash) throw new HttpError(409, 'no_password', 'Set a password before unlinking Discord, or you could not log in.');
+    if (!a.user.password_hash) throw new HttpError(409, 'no_password', "Add a password before unlinking Discord, or you won't be able to log in.");
     const current = str(ctx.body.currentPassword, PW_MAX);
-    if (!current || !(await checkPassword(ctx, a.user, current))) throw new HttpError(401, 'bad_password', 'Wrong password.');
+    if (!current || !(await checkPassword(ctx, a.user, current))) throw new HttpError(401, 'bad_password', 'Wrong password. Try again!');
     users.unlinkDiscord(a.user.id, { ip: ctx.ip });
     ctx.noContent();
 }
@@ -129,7 +129,7 @@ async function deleteAccount(ctx) {
     if (ctx.body.confirm !== 'DELETE') throw new HttpError(400, 'confirm_required', 'Type DELETE to confirm.');
     await requireCredential(ctx, a, ctx.body.currentPassword);
     users.softDelete(a.user.id, { now: Date.now(), ip: ctx.ip });
-    bus.toGame({ t: 'kick', userId: a.user.id, reason: 'This account was deleted.' });
+    bus.toGame({ t: 'kick', userId: a.user.id, reason: 'This account was deleted. Thanks for playing!' });
     ctx.setCookie(sessions.clearCookie());
     ctx.noContent();
 }
@@ -153,8 +153,8 @@ function listSessions(ctx) {
 function revokeSession(ctx) {
     const a = begin(ctx);
     const id = Number(ctx.body.id);
-    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'bad_request', 'Missing session id.');
-    if (!sessions.revokeForUser(a.user.id, id)) throw new HttpError(404, 'not_found', 'No such session.');
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'bad_request', 'Something went wrong. Refresh and try again.');
+    if (!sessions.revokeForUser(a.user.id, id)) throw new HttpError(404, 'not_found', 'That device is already logged out.');
     if (id === a.session.id) ctx.setCookie(sessions.clearCookie());
     ctx.noContent();
 }

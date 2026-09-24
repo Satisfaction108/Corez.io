@@ -99,12 +99,12 @@ function isReserved(name) {
 
 const USERNAME_MESSAGES = {
     type: 'Pick a username.',
-    too_short: 'Usernames need at least 3 characters.',
-    too_long: 'Usernames can be at most 16 characters.',
+    too_short: 'Names need at least 3 characters.',
+    too_long: 'Names can be 16 characters max.',
     invalid_chars: 'Use only letters, numbers and underscores.',
-    underscores: 'Too many underscores.',
-    reserved: 'That username is reserved.',
-    profanity: "That username isn't allowed.",
+    underscores: 'Too many underscores in a row.',
+    reserved: "That name's off-limits. Try another!",
+    profanity: "That name isn't allowed. Try another!",
 };
 
 // -> {ok:true} | {ok:false, reason, message}. Does not check availability
@@ -194,9 +194,9 @@ digwars digwars1 digwars123 digwars2024 digwars2025 digwars2026 arras123 arrasio
 const PASSWORD_MESSAGES = {
     type: 'Enter a password.',
     too_short: 'Passwords need at least 8 characters.',
-    too_long: 'Passwords can be at most 128 characters.',
+    too_long: 'Passwords can be 128 characters max.',
     same_as_username: "Your password can't be your username.",
-    common: 'That password is too common. Pick something less guessable.',
+    common: "That password's too easy to guess. Try another!",
 };
 
 // -> {ok:true} | {ok:false, reason, message}

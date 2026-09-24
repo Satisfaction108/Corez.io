@@ -114,7 +114,7 @@ function loggedOut(message) {
 
 function onDeleted() {
     ls.del(NAME);
-    loggedOut('Your account was deleted.');
+    loggedOut('Your account is deleted. Thanks for playing!');
 }
 
 function openAccount(opts) {
@@ -133,7 +133,7 @@ function applyMe(res, initial) {
         if (html.getAttribute('data-acct') === 'user') {
             // keep the hint so they're recognised once accounts are back
             setMode('guest');
-            if (!offlineToastShown) { offlineToastShown = true; ui.toast('Accounts are offline right now, so you’re playing as a guest.'); }
+            if (!offlineToastShown) { offlineToastShown = true; ui.toast('Accounts are down right now, so you’re playing as a guest.'); }
         } else if (html.getAttribute('data-acct') === 'new') {
             welcome.open('choose');
         }
@@ -184,23 +184,23 @@ function schedule() {
 /* ── ?auth= / ?link= ────────────────────────────────────────────────── */
 const DISCORD_ERRORS = {
     discord_disabled: 'Discord login isn’t set up on this server yet.',
-    access_denied: 'Discord login was cancelled.',
-    cancelled: 'Discord login was cancelled.',
+    access_denied: 'Discord login cancelled.',
+    cancelled: 'Discord login cancelled.',
     state: 'That Discord login link expired. Please try again.',
     bad_state: 'That Discord login link expired. Please try again.',
     invalid_state: 'That Discord login link expired. Please try again.',
     expired: 'That Discord login link expired. Please try again.',
     banned: 'This account is banned.',
-    rate_limited: 'Too many attempts. Wait a minute, then try again.',
+    rate_limited: 'Whoa, too many tries! Wait a minute and try again.',
     not_logged_in: 'Log in first, then link Discord.',
     no_session: 'Log in first, then link Discord.',
     reauth_mismatch: 'That wasn’t the Discord account linked to this Dig Wars account.',
     wrong_account: 'That wasn’t the Discord account linked to this Dig Wars account.',
-    accounts_disabled: 'Accounts are offline right now.',
-    accounts_unavailable: 'Accounts are offline right now.',
+    accounts_disabled: 'Accounts are down right now.',
+    accounts_unavailable: 'Accounts are down right now.',
     reauth_required: 'Confirm your password first, then link Discord.',
     already_linked: 'This account already has a Discord linked. Unlink it first.',
-    busy: 'The server is busy. Try again in a few seconds.',
+    busy: 'The server’s busy. Try again in a few seconds!',
 };
 
 function readParams() {
@@ -216,8 +216,8 @@ function readParams() {
 
 function handleParams(p) {
     const user = store.get('user');
-    if (p.auth === 'ok' && user) ui.toast('Logged in as ' + user.username + '.', { kind: 'ok' });
-    if (p.auth === 'pick-username' && !store.get('pending') && !user) ui.toast('That Discord sign-in expired. Please try again.', { kind: 'error' });
+    if (p.auth === 'ok' && user) ui.toast('Welcome, ' + user.username + '!', { kind: 'ok' });
+    if (p.auth === 'pick-username' && !store.get('pending') && !user) ui.toast('That Discord login timed out. Please try again.', { kind: 'error' });
     if (p.auth === 'error') {
         account.clearIntent();
         const why = DISCORD_ERRORS[String(p.reason || '').toLowerCase()] || 'Discord login didn’t work. Please try again.';
@@ -225,7 +225,7 @@ function handleParams(p) {
         ui.toast(why, { kind: 'error' });
     }
     if (p.auth === 'reauth-ok') resumeIntent();
-    if (p.link === 'ok' && user) { ui.toast('Discord linked.', { kind: 'ok' }); openAccount(); }
+    if (p.link === 'ok' && user) { ui.toast('Discord linked!', { kind: 'ok' }); openAccount(); }
     if (p.link === 'already_linked') { ui.toast('This account already has a Discord linked. Unlink it first to link a different one.', { kind: 'error', duration: 6000 }); openAccount(); }
     if (p.link === 'taken') { ui.toast('That Discord account is already linked to another Dig Wars account.', { kind: 'error', duration: 6000 }); openAccount(); }
 }
@@ -237,8 +237,8 @@ function resumeIntent() {
     const act = intent && intent.action;
     if (act === 'delete') account.openDelete({ reauthed: true });
     else if (act === 'recovery') account.regenAfterReauth();
-    else if (act === 'username') { account.focusUsername(intent.value); ui.toast('Discord confirmed it’s you. Press Save to finish.', { kind: 'ok' }); }
-    else ui.toast('Discord confirmed it’s you. Try that again now.', { kind: 'ok' });
+    else if (act === 'username') { account.focusUsername(intent.value); ui.toast('Discord says it’s you. Hit Save to finish.', { kind: 'ok' }); }
+    else ui.toast('Discord says it’s you. Go ahead and try that again!', { kind: 'ok' });
 }
 
 /* ── #reset=<token> ─────────────────────────────────────────────────── */
@@ -254,7 +254,7 @@ function readResetToken() {
     return token || null;
 }
 function openReset(token) {
-    if (store.get('offline')) { ui.toast('Accounts are offline right now. Try the link again later.', { kind: 'error' }); return; }
+    if (store.get('offline')) { ui.toast('Accounts are down right now. Try the link again later.', { kind: 'error' }); return; }
     hub.close();
     welcome.open('reset', { token, dismissable: store.get('mode') !== 'new' });
 }
@@ -296,7 +296,7 @@ async function boot() {
     menu.init({
         onChip() {
             if (store.get('user')) return hub.isOpen() && hub.currentPane() === 'account' ? hub.close() : openAccount();
-            if (store.get('offline')) return ui.toast('Accounts are offline right now.');
+            if (store.get('offline')) return ui.toast('Accounts are down right now. Try again soon!');
             welcome.open('auth', { tab: 'signup', dismissable: true });
         },
         onNameBox() { openAccount({ focus: 'username' }); },

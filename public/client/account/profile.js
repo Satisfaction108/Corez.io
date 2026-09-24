@@ -43,8 +43,8 @@ async function load(el, opts) {
     if (!r.ok || !r.data || !r.data.username) {
         el.appendChild(backLink(opts));
         el.appendChild(h('div', { class: 'shop-empty' },
-            h('div', { class: 'shop-empty-h', text: r.status === 404 ? 'Player not found' : 'The profile didn’t load' }),
-            h('div', { class: 'shop-empty-p', text: r.status === 404 ? 'They may have changed their name.' : humanError(r) }),
+            h('div', { class: 'shop-empty-h', text: r.status === 404 ? 'Player not found' : 'Couldn’t load this profile' }),
+            h('div', { class: 'shop-empty-p', text: r.status === 404 ? 'Maybe they changed their name?' : humanError(r) }),
             r.status === 404 ? null : h('button', { type: 'button', class: 'dw-btn sm', text: 'Try again', onclick: () => render(el, opts) })));
         return;
     }
@@ -71,7 +71,7 @@ function paint(el, p, opts) {
         const pl = rk.placement || { lives: 0, of: 3 };
         const left = Math.max(0, (pl.of || 3) - (pl.lives | 0));
         barPct = (pl.lives | 0) / (pl.of || 3);
-        barText = left > 0 ? left + ' placement ' + (left === 1 ? 'life' : 'lives') + ' to go' : 'Rank coming up';
+        barText = left > 0 ? left + ' placement ' + (left === 1 ? 'game' : 'games') + ' left' : 'Rank reveal incoming!';
     } else if ((rk.division | 0) >= 18) {
         barPct = 1;
         barText = fmtNum(rk.rp) + ' RP';
@@ -89,7 +89,7 @@ function paint(el, p, opts) {
     const skin = p.skinNid ? cos.skinOf(p.skinNid) : null;
     const tank = h('div', { class: 'pf-tank', title: skin ? skin.name : 'No skin' },
         pv.tankPreview({ w: 150, h: 128, skin: skin || 0, size: 34, cls: 'dw-prev pf-tankcv' }),
-        h('span', { class: 'pf-tank-l', text: skin ? skin.name : 'Plain hull' }));
+        h('span', { class: 'pf-tank-l', text: skin ? skin.name : 'Default' }));
 
     const top = h('div', { class: 'pf-top' },
         h('div', { class: 'pf-badge' }, badge(v.div, 112, 'pf-badge-img', { legendNo: v.legendNo })),
@@ -141,7 +141,7 @@ function actions(p) {
             break;
         case 'outgoing':
             row.append(
-                h('span', { class: 'pf-note', text: 'Friend request sent.' }),
+                h('span', { class: 'pf-note', text: 'Request sent!' }),
                 btn('Cancel request', '', async () => {
                     const r = await api.friendCancel(p.userId);
                     if (!r.ok) { toast(social.friendError(r), { kind: 'error' }); return false; }
@@ -156,10 +156,10 @@ function actions(p) {
                     if (!r.ok) { toast(social.friendError(r), { kind: 'error' }); return false; }
                     if (r.data && r.data.status === 'accepted') {
                         social.apply('friend', r.data.friend || Object.assign({ since: Date.now(), presence: null }, person));
-                        toast('You and ' + p.username + ' are now friends.', { kind: 'ok' });
+                        toast('You and ' + p.username + ' are now friends!', { kind: 'ok' });
                     } else {
                         social.apply('outgoing', Object.assign({ at: Date.now() }, person));
-                        toast('Request sent to ' + p.username + '.', { kind: 'ok' });
+                        toast('Friend request sent to ' + p.username + '!', { kind: 'ok' });
                     }
                     return true;
                 }),
@@ -180,7 +180,7 @@ function tiers(p) {
     TIERS.forEach((t, i) => {
         const on = have.has(t);
         const div = i === 6 ? 18 : i * 3;
-        row.appendChild(h('div', { class: 'pf-tier' + (on ? ' on' : ''), title: on ? TIER_NAME[t] + ' reached' : TIER_NAME[t] + ' not reached yet' },
+        row.appendChild(h('div', { class: 'pf-tier' + (on ? ' on' : ''), title: on ? TIER_NAME[t] + ' unlocked!' : TIER_NAME[t] + ': not yet' },
             badge(div, 48, 'pf-tier-img'),
             h('span', { class: 'pf-tier-l', text: TIER_NAME[t] })));
     });
@@ -208,12 +208,12 @@ function achievements(p) {
 function stats(p) {
     const s = p.stats || {};
     const tiles = [
-        ['Lives played', fmtNum(s.lives)],
+        ['Games played', fmtNum(s.lives)],
         ['Knockouts', fmtNum(s.kills)],
         ['Raid wins', fmtNum(s.raidWins)],
         ['Top 3 finishes', fmtNum(s.top3)],
         ['Gems banked', fmtNum(s.gemsBanked)],
-        ['Best life', fmtNum(s.bestLife) + ' pts'],
+        ['Best game', fmtNum(s.bestLife) + ' pts'],
     ];
     return section('Stats', null, h('div', { class: 'pf-stats' },
         tiles.map(([k, val]) => h('div', { class: 'pf-stat' }, h('span', { class: 'pf-stat-v', text: val }), h('span', { class: 'pf-stat-k', text: k })))));

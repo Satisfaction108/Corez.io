@@ -67,7 +67,7 @@ function paint() {
         side.hidden = next === 'none';
         if (next === 'guest') {
             side.appendChild(h('button', { type: 'button', class: 'q-guest', onclick: () => hooks.onLogin() },
-                icon('quest'), h('span', { text: 'Log in for daily quests' })));
+                icon('quest'), h('span', { text: 'Log in for Daily Quests' })));
         }
         return;
     }
@@ -84,7 +84,7 @@ function paint() {
     const resetEl = h('span', { class: 'q-reset' });
     const tick = () => {
         const left = (+data.resetsAt || 0) - (Date.now() + (data._skew || 0));
-        resetEl.textContent = left > 0 ? 'New in ' + fmtIn(left) : 'New quests soon';
+        resetEl.textContent = left > 0 ? 'New in ' + fmtIn(left) : 'New quests soon!';
         if (left <= 0) { clearInterval(tickTimer); setTimeout(refresh, 3000); }
     };
     if (sig === next && side.querySelector('.q-reset')) {
@@ -104,7 +104,7 @@ function paint() {
     const card = h('div', { class: 'q-card' + (doneN === quests.length && quests.length ? ' all' : '') },
         h('div', { class: 'q-head' }, h('span', { class: 'q-title', text: 'Daily Quests' }), resetEl),
         h('div', { class: 'q-list' }, quests.map(row)),
-        doneN === quests.length && quests.length ? h('div', { class: 'q-foot', text: 'All done for today. Nice!' }) : null);
+        doneN === quests.length && quests.length ? h('div', { class: 'q-foot', text: 'All done for today. Nice work!' }) : null);
     side.appendChild(card);
     tick();
     tickTimer = setInterval(tick, 30000);

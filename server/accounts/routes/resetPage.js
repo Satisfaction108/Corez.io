@@ -41,19 +41,19 @@ a{color:var(--accent)}
   try { history.replaceState(null, '', location.pathname); } catch (e) {}
   var f = document.getElementById('f'), msg = document.getElementById('msg'), go = document.getElementById('go');
   function say(t, cls){ msg.textContent = t; msg.className = cls || ''; }
-  if (!token || token.length < 20) { f.hidden = true; say('This reset link is incomplete. Ask an admin for a new one.', 'bad'); return; }
+  if (!token || token.length < 20) { f.hidden = true; say('This reset link is broken. Ask an admin for a new one!', 'bad'); return; }
   f.addEventListener('submit', function(ev){
     ev.preventDefault();
     var a = document.getElementById('pw').value, b = document.getElementById('pw2').value;
-    if (a !== b) return say('The two passwords are different.', 'bad');
+    if (a !== b) return say("The passwords don't match.", 'bad');
     go.disabled = true; say('Saving...');
     fetch('/api/auth/reset', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token, newPassword: a }) })
       .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, j: j }; }); })
       .then(function(res){
-        if (res.ok) { f.hidden = true; say('Password changed. You are logged in' + (res.j.user ? ' as ' + res.j.user.username : '') + '.', 'ok');
+        if (res.ok) { f.hidden = true; say('Password changed! You are logged in' + (res.j.user ? ' as ' + res.j.user.username : '') + '.', 'ok');
           var a2 = document.createElement('a'); a2.href = '/'; a2.textContent = 'Play Dig Wars'; msg.appendChild(document.createElement('br')); msg.appendChild(a2); return; }
-        go.disabled = false; say((res.j.error && res.j.error.message) || 'That did not work. Try again.', 'bad');
-      }, function(){ go.disabled = false; say('Could not reach the server. Try again.', 'bad'); });
+        go.disabled = false; say((res.j.error && res.j.error.message) || "That didn't work. Try again!", 'bad');
+      }, function(){ go.disabled = false; say("Couldn't reach the server. Try again!", 'bad'); });
   });
 })();
 </script></body></html>`;

@@ -22,12 +22,12 @@ class HttpError extends Error {
     }
 }
 
-function rateLimited(retryAfter, code = 'rate_limited', message = 'Too many attempts. Try again later.') {
+function rateLimited(retryAfter, code = 'rate_limited', message = 'Whoa, slow down! Try again in a bit.') {
     return new HttpError(429, code, message, { retryAfter }, { 'Retry-After': String(retryAfter) });
 }
 
 function busyError() {
-    return new HttpError(503, 'busy', 'The server is busy. Try again in a moment.', { retryAfter: 2 }, { 'Retry-After': '2' });
+    return new HttpError(503, 'busy', "The server's busy. Try again in a moment!", { retryAfter: 2 }, { 'Retry-After': '2' });
 }
 
 // server/lib/clientIp.js trusts X-Forwarded-For only from TRUSTED_PROXIES.
@@ -80,7 +80,7 @@ function readJson(req, limit = BODY_LIMIT) {
     return new Promise((resolve, reject) => {
         const declared = Number(req.headers['content-length']);
         if (declared > limit) {
-            reject(new HttpError(413, 'payload_too_large', 'Request body too large.', null, { Connection: 'close' }));
+            reject(new HttpError(413, 'payload_too_large', 'Something went wrong. Refresh and try again.', null, { Connection: 'close' }));
             return;
         }
         const chunks = [];
@@ -90,7 +90,7 @@ function readJson(req, limit = BODY_LIMIT) {
             size += chunk.length;
             if (size > limit) {
                 done = true;
-                reject(new HttpError(413, 'payload_too_large', 'Request body too large.', null, { Connection: 'close' }));
+                reject(new HttpError(413, 'payload_too_large', 'Something went wrong. Refresh and try again.', null, { Connection: 'close' }));
                 return;
             }
             chunks.push(chunk);
@@ -104,17 +104,17 @@ function readJson(req, limit = BODY_LIMIT) {
             try {
                 body = JSON.parse(text);
             } catch (e) {
-                return reject(new HttpError(400, 'bad_json', 'Request body is not valid JSON.'));
+                return reject(new HttpError(400, 'bad_json', 'Something went wrong. Refresh and try again.'));
             }
             if (!body || typeof body !== 'object' || Array.isArray(body)) {
-                return reject(new HttpError(400, 'bad_json', 'Request body must be a JSON object.'));
+                return reject(new HttpError(400, 'bad_json', 'Something went wrong. Refresh and try again.'));
             }
             resolve(body);
         });
         req.on('error', e => {
             if (done) return;
             done = true;
-            reject(new HttpError(400, 'bad_request', 'Request body could not be read.'));
+            reject(new HttpError(400, 'bad_request', 'Something went wrong. Refresh and try again.'));
         });
     });
 }
@@ -202,7 +202,7 @@ class Ctx {
 
     requireAuth() {
         const a = this.auth();
-        if (!a) throw new HttpError(401, 'unauthorized', 'Log in first.');
+        if (!a) throw new HttpError(401, 'unauthorized', 'Log in first!');
         if (users.isBanned(a.user, this.now)) throw bannedError(a.user);
         return a;
     }
@@ -262,11 +262,11 @@ function bannedError(user) {
 // and a JSON body. A cross-site form or fetch fails at least one of these.
 function csrfGuard(ctx) {
     const origin = ctx.header('origin');
-    if (!origin || !config.isAllowedOrigin(origin)) throw new HttpError(403, 'bad_origin', 'Request origin not allowed.');
+    if (!origin || !config.isAllowedOrigin(origin)) throw new HttpError(403, 'bad_origin', 'Something went wrong. Refresh and try again.');
     const site = ctx.header('sec-fetch-site');
-    if (site && site !== 'same-origin') throw new HttpError(403, 'bad_origin', 'Cross-site request refused.');
+    if (site && site !== 'same-origin') throw new HttpError(403, 'bad_origin', 'Something went wrong. Refresh and try again.');
     const type = String(ctx.header('content-type') || '').split(';')[0].trim().toLowerCase();
-    if (type !== 'application/json') throw new HttpError(415, 'unsupported_media_type', 'Send the request body as application/json.');
+    if (type !== 'application/json') throw new HttpError(415, 'unsupported_media_type', 'Something went wrong. Refresh and try again.');
 }
 
 // path -> {METHOD: {handler, opts}}

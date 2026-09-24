@@ -74,7 +74,7 @@ async function load(el) {
         if (data) return; // keep what is on screen
         clear(el);
         el.appendChild(h('div', { class: 'shop-empty' },
-            h('div', { class: 'shop-empty-h', text: 'The shop didn’t load' }),
+            h('div', { class: 'shop-empty-h', text: 'Couldn’t load the shop' }),
             h('div', { class: 'shop-empty-p', text: humanError(r) }),
             h('button', { type: 'button', class: 'dw-btn sm', text: 'Try again', onclick: () => render(el) })));
         return;
@@ -99,7 +99,7 @@ function paint(el) {
     el.appendChild(top);
     el.appendChild(section('Featured', data.featured.map((it) => card(it, 'feat')), 'feat'));
     el.appendChild(section('Daily', data.daily.map((it) => card(it, 'daily')), 'daily'));
-    if (data.permanent && data.permanent.length) el.appendChild(section('Always here', data.permanent.map((it) => card(it, 'perm')), 'perm'));
+    if (data.permanent && data.permanent.length) el.appendChild(section('Always in stock', data.permanent.map((it) => card(it, 'perm')), 'perm'));
     const tick = () => {
         const left = (+data.resetsAt || 0) - serverNow();
         count.textContent = fmtLeft(left);
@@ -172,7 +172,7 @@ export function colorEditor(initial, onChange) {
         if (from !== 'hex') hex.value = good ? c : hex.value;
         const allowed = good && ok(c);
         hex.classList.toggle('bad', !allowed);
-        msg.textContent = !good ? 'Use a hex colour like #7ad3ff.' : allowed ? '' : 'Too dark to read on the cave floor. Pick a lighter one.';
+        msg.textContent = !good ? 'Try a hex colour like #7ad3ff.' : allowed ? '' : 'Too dark to see in the caves. Try a lighter one!';
         msg.classList.toggle('show', !allowed);
         presets.querySelectorAll('.lk-preset').forEach((b) => b.classList.toggle('on', b.title === val));
         if (onChange) onChange(val, allowed && good);
@@ -188,20 +188,20 @@ export function colorEditor(initial, onChange) {
 
 /* ── the item modal ─────────────────────────────────────────────────── */
 const ERR = {
-    insufficient_dust: 'Not enough gemdust yet.',
-    already_owned: 'You already own that.',
-    not_in_shop: 'That isn’t in today’s shop any more.',
-    shop_rotated: 'The shop just changed. Take a look at the new items.',
-    bad_color: 'That colour is too dark to read. Pick a lighter one.',
+    insufficient_dust: 'Not enough gemdust yet. Keep digging!',
+    already_owned: 'You already have that!',
+    not_in_shop: 'That’s not in today’s shop any more.',
+    shop_rotated: 'The shop just refreshed. Check out the new stuff!',
+    bad_color: 'Too dark to see in the caves. Try a lighter one!',
     color_required: 'Pick a colour first.',
-    not_owned: 'You don’t own that.',
+    not_owned: 'You don’t have that one.',
     not_friends: 'You can only gift to friends.',
-    friends_too_new: 'You can gift to a friend 48 hours after you add them.',
-    recipient_owns: 'They already own that.',
-    gift_limit: 'You’ve sent 5 gifts today. Try again tomorrow.',
-    no_refund_tokens: 'You have no refund tokens left.',
-    refund_expired: 'Refunds only work in the first 24 hours.',
-    already_refunded: 'That was already refunded.',
+    friends_too_new: 'You can gift a friend 2 days after you add them.',
+    recipient_owns: 'They already have that one!',
+    gift_limit: 'That’s 5 gifts today! Send more tomorrow.',
+    no_refund_tokens: 'You’re out of refund tokens.',
+    refund_expired: 'Too late! Refunds only work for 24 hours.',
+    already_refunded: 'You already refunded that.',
     gift_not_refundable: 'Gifts can’t be refunded.',
 };
 export function storeError(res) {
@@ -265,21 +265,21 @@ export function openItem(raw) {
             actions.append(
                 h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Equip', onclick: (e) => doEquip(e.currentTarget) }),
                 h('button', { type: 'button', class: 'dw-btn', text: 'Gift', onclick: () => openGift(it) }));
-            note.textContent = 'In your Locker. Changes show on your next spawn.';
+            note.textContent = 'It’s in your Locker. Shows up next time you spawn.';
             return;
         }
         const short = Math.max(0, it.price - bal);
         const buy = h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Buy', onclick: (e) => doBuy(e.currentTarget) });
         if (short > 0 || (editor && !editor.valid())) buy.disabled = true;
         actions.append(buy, h('button', { type: 'button', class: 'dw-btn', text: 'Gift', onclick: () => openGift(it) }));
-        if (short > 0) note.textContent = 'You need ' + fmtPrice(short) + ' more gemdust.';
+        if (short > 0) note.textContent = 'You need ' + fmtPrice(short) + ' more gemdust. Keep digging!';
     }
     paintActions();
 
     async function doBuy(btn) {
         const yes = await confirm({
             title: 'Buy ' + it.name + '?',
-            message: 'It costs ' + fmtPrice(it.price) + ' gemdust. You have ' + fmtDust(data ? data.balance : 0) + '.',
+            message: 'That’s ' + fmtPrice(it.price) + ' gemdust. You have ' + fmtDust(data ? data.balance : 0) + '.',
             confirmLabel: 'Buy',
         });
         if (!yes) return;
@@ -319,12 +319,12 @@ function pop(el) {
 }
 
 function describe(it) {
-    if (it.id === cos.CUSTOM_ID) return 'Your name in one colour you pick. Buy once, change it any time.';
-    if (it.cat === 'skin') return isAnimated(it) ? 'A pattern on your tank’s body that glows and moves.' : 'A pattern on your tank’s body, in your team colour.';
+    if (it.id === cos.CUSTOM_ID) return 'Your name in any colour you like. Buy once, change it whenever!';
+    if (it.cat === 'skin') return isAnimated(it) ? 'A glowing, moving pattern for your tank.' : 'A cool pattern for your tank, in your team colour.';
     const s = it.style || {};
-    if (s.kind === 'prism') return 'Your name in a shifting rainbow, with a glint.';
-    if (s.kind === 'scroll') return s.glint ? 'Your name in flowing colour, with a glint.' : 'Your name in flowing colour.';
-    return 'Your name in a colour fade.';
+    if (s.kind === 'prism') return 'Your name in a shifting rainbow that sparkles.';
+    if (s.kind === 'scroll') return s.glint ? 'Your name in flowing colour that sparkles.' : 'Your name in flowing colour.';
+    return 'Your name in a smooth colour fade.';
 }
 
 // After a buy: mark it owned in the cached store, update the balance.
@@ -346,7 +346,7 @@ export async function equipItem(it, color, alertEl) {
         if (alertEl) { alertEl.textContent = msg; alertEl.className = 'dw-alert show'; } else toast(msg, { kind: 'error' });
         return false;
     }
-    toast(it.name + ' equipped. You’ll see it on your next spawn.', { kind: 'ok' });
+    toast(it.name + ' equipped! You’ll see it next time you spawn.', { kind: 'ok' });
     handlers.refreshMe();
     return true;
 }
@@ -375,8 +375,8 @@ async function openGift(it) {
         body.querySelector('.shop-glabel').hidden = true;
         list.appendChild(h('div', { class: 'shop-gnone' },
             icon('friends'),
-            h('div', { class: 'shop-gnone-h', text: 'Add friends to send gifts' }),
-            h('div', { class: 'shop-gnone-p', text: 'Once you’ve been friends for 2 days, you can gift them anything in the shop.' })));
+            h('div', { class: 'shop-gnone-h', text: 'Add friends to send them gifts!' }),
+            h('div', { class: 'shop-gnone-p', text: 'After you’ve been friends for 2 days, you can gift them anything in the shop.' })));
         send.hidden = true;
         return;
     }
@@ -390,7 +390,7 @@ async function openGift(it) {
     });
     send.addEventListener('click', async () => {
         if (!to) return;
-        const yes = await confirm({ title: 'Send ' + it.name + '?', message: 'To ' + (to.username || 'your friend') + ', for ' + fmtPrice(it.price) + ' gemdust. Gifts can’t be refunded.', confirmLabel: 'Send' });
+        const yes = await confirm({ title: 'Send ' + it.name + '?', message: 'To ' + (to.username || 'your friend') + ', for ' + fmtPrice(it.price) + ' gemdust. Heads up: gifts can’t be refunded.', confirmLabel: 'Send' });
         if (!yes) return;
         setBusy(send, true, 'Sending…');
         const g = await api.gift(it.id, data ? data.day : 0, to.userId || to.id, api.idemKey(), preset);
@@ -411,7 +411,7 @@ async function openHistory() {
         title: 'Purchases', cls: 'shop-histm',
         body: h('div', {},
             h('div', { class: 'shop-tokens' }, h('span', { text: 'Refund tokens' }), pips),
-            h('div', { class: 'shop-tokens-p', text: 'Changed your mind? Refund a purchase within 24 hours. You get 3 refunds, ever.' }),
+            h('div', { class: 'shop-tokens-p', text: 'Changed your mind? Refund within 24 hours. You get 3 refunds total.' }),
             list,
             h('div', { class: 'dw-modal-actions' }, h('button', { type: 'button', class: 'dw-btn', text: 'Close', onclick: () => m.close() }))),
     });
@@ -424,7 +424,7 @@ async function openHistory() {
         for (let i = 0; i < 3; i++) pips.appendChild(h('span', { class: 'shop-pip' + (i < tokens ? ' on' : '') }));
         pips.setAttribute('aria-label', tokens + ' of 3 refund tokens left');
         const rows = r.data.entries || [];
-        if (!rows.length) { list.appendChild(h('div', { class: 'shop-hnone', text: 'No purchases yet.' })); return; }
+        if (!rows.length) { list.appendChild(h('div', { class: 'shop-hnone', text: 'Nothing bought yet.' })); return; }
         for (const e of rows) list.appendChild(histRow(e, tokens, fill));
     }
     fill();
@@ -440,7 +440,7 @@ function histRow(e, tokens, refill) {
             const btn = ev.currentTarget;
             const yes = await confirm({
                 title: 'Refund ' + e.name + '?',
-                message: 'You get ' + fmtPrice(e.priceMilli) + ' gemdust back and it leaves your Locker. This uses 1 of your ' + tokens + ' refund token' + (tokens === 1 ? '' : 's') + '.',
+                message: 'You’ll get ' + fmtPrice(e.priceMilli) + ' gemdust back and it leaves your Locker. Uses 1 of your ' + tokens + ' refund token' + (tokens === 1 ? '' : 's') + '.',
                 confirmLabel: 'Refund', danger: true,
             });
             if (!yes) return;
@@ -448,7 +448,7 @@ function histRow(e, tokens, refill) {
             const r = await api.refund(e.purchaseId);
             setBusy(btn, false);
             if (!r.ok) { toast(storeError(r), { kind: 'error' }); return; }
-            toast(e.name + ' refunded.', { kind: 'ok' });
+            toast(e.name + ' refunded!', { kind: 'ok' });
             if (data) { data.balance = r.data.balance; data.balanceMilli = r.data.balanceMilli; for (const l of [data.featured, data.daily, data.permanent || []]) for (const x of l) if (x.id === e.itemId) x.owned = false; data._sig = null; handlers.onBalance(data.balance); }
             handlers.refreshMe();
             if (paneEl && paneEl.isConnected) { stopTimer(); pv.stopUnder(paneEl); clear(paneEl); paint(paneEl); }

@@ -62,14 +62,14 @@ export const fmtNum = (n) => (Math.round(+n || 0)).toLocaleString();
 export function presenceText(p, rank) {
     const st = (p && p.state) || 'offline';
     if (st === 'raid') {
-        const bits = ['In raid'];
+        const bits = ['In a raid'];
         const r = rank && rank.division != null ? rankOf(rank).text : '';
         if (r) bits.push(r);
         if (p.score != null && p.alive !== false) bits.push(fmtNum(p.score) + ' pts');
         else if (p.alive === false) bits.push('respawning');
         return bits.join(' · ');
     }
-    if (st === 'menu') return 'In menu';
+    if (st === 'menu') return 'In the lobby';
     return p && p.lastSeen ? 'Offline · ' + fmtAgo(p.lastSeen) : 'Offline';
 }
 export const presenceState = (p) => (p && (p.state === 'raid' || p.state === 'menu') ? p.state : 'offline');

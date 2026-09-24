@@ -222,16 +222,16 @@ async function dispatch(req, res, pathname, query) {
     let route = null;
     try {
         const methods = router.lookup(pathname);
-        if (!methods) throw new http.HttpError(404, 'not_found', 'No such endpoint.');
+        if (!methods) throw new http.HttpError(404, 'not_found', 'Nothing here.');
         route = methods[ctx.method];
         if (!route) {
-            throw new http.HttpError(405, 'method_not_allowed', 'Method not allowed.', null, { Allow: Object.keys(methods).join(', ') });
+            throw new http.HttpError(405, 'method_not_allowed', 'Something went wrong. Refresh and try again.', null, { Allow: Object.keys(methods).join(', ') });
         }
         const isApi = pathname.startsWith('/api/');
         if (isApi && ctx.method !== 'GET') http.csrfGuard(ctx);
         if (!ctx.accountsOn && !route.opts.alwaysOn) {
             if (route.opts.navigation) return ctx.redirect('/?auth=error&reason=accounts_unavailable');
-            throw new http.HttpError(503, 'accounts_unavailable', 'Accounts are unavailable right now. You can still play as a guest.');
+            throw new http.HttpError(503, 'accounts_unavailable', 'Accounts are down right now. You can still play as a guest!');
         }
         // /api/config and /api/me always answer 200 (the menu boots from them).
         // Always per IP, so rotating sessions (or made-up cookies) cannot
@@ -253,7 +253,7 @@ async function dispatch(req, res, pathname, query) {
         console.error(`[accounts] ${req.method} ${pathname} failed: ` + ((e && e.stack) || e));
         if (!ctx.responded) {
             if (route && route.opts.navigation) return ctx.redirect('/?auth=error&reason=server');
-            return ctx.fail(500, 'server_error', 'Something went wrong. Try again.');
+            return ctx.fail(500, 'server_error', 'Oops, something went wrong. Try again!');
         }
         try { res.end(); } catch (_) { /* already gone */ }
     }

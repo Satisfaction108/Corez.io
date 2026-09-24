@@ -272,7 +272,7 @@ export function formModal(opts) {
             const r = await opts.submit(values);
             setBusy(go, false);
             if (r && r.ok) { result = r.value === undefined ? true : r.value; m.close(); }
-            else showAlert(alert, (r && r.error) || 'Something went wrong. Try again.');
+            else showAlert(alert, (r && r.error) || 'Oops, something went wrong. Try again!');
         });
         const m = modal({ title: opts.title, message: opts.message, body: form, onClose: () => resolve(result) });
     });
@@ -322,13 +322,13 @@ export function toast(message, opts) {
 
 /* ── errors → words ──────────────────────────────────────────────────── */
 const NAME_REASONS = {
-    taken: 'That username is taken.',
-    username_taken: 'That username is taken.',
-    reserved: 'That name is reserved.',
+    taken: 'That name’s taken. Try another!',
+    username_taken: 'That name’s taken. Try another!',
+    reserved: 'That name’s off-limits. Try another!',
     profane: 'That name isn’t allowed.',
     profanity: 'That name isn’t allowed.',
     offensive: 'That name isn’t allowed.',
-    held: 'That name was used recently and is on hold for now.',
+    held: 'Someone used that name recently. Try another!',
     too_short: 'Use at least 3 characters.',
     short: 'Use at least 3 characters.',
     too_long: 'Use at most 16 characters.',
@@ -338,7 +338,7 @@ const NAME_REASONS = {
     charset: 'Only letters, numbers and _ are allowed.',
     format: 'Only letters, numbers and _ are allowed.',
     invalid: 'Only letters, numbers and _ are allowed.',
-    underscores: 'Too many underscores.',
+    underscores: 'Too many underscores in a row.',
     same: 'That’s already your username.',
 };
 const PASSWORD_REASONS = {
@@ -366,27 +366,27 @@ export function humanError(res) {
     const err = (res && res.data && res.data.error) || {};
     const code = err.code || '';
     switch (code) {
-        case 'network': return 'Can’t reach the server. Check your connection and try again.';
-        case 'timeout': return 'The server took too long to answer. Try again.';
-        case 'bad_credentials': return 'That username and password don’t match.';
-        case 'bad_password': return 'That password isn’t right.';
-        case 'username_taken': return 'That username is taken.';
+        case 'network': return 'Can’t reach the server. Check your internet and try again!';
+        case 'timeout': return 'The server’s taking too long. Try again!';
+        case 'bad_credentials': return 'Wrong username or password. Try again!';
+        case 'bad_password': return 'Wrong password. Try again!';
+        case 'username_taken': return 'That name’s taken. Try another!';
         case 'invalid_username': return reasonText(NAME_REASONS, err.reason, err.message || 'That username isn’t allowed.');
         case 'weak_password': return reasonText(PASSWORD_REASONS, err.reason, err.message || 'Pick a stronger password.');
-        case 'rate_limited': return 'Too many attempts. Try again ' + fmtRetry(err.retryAfter) + '.';
+        case 'rate_limited': return 'Whoa, slow down! Try again ' + fmtRetry(err.retryAfter) + '.';
         case 'banned': return 'This account is banned' + (err.until ? ' until ' + fmtDateTime(err.until) : '') + '.' + (err.reason ? ' Reason: ' + err.reason : '');
-        case 'cooldown': return 'You can change your username again on ' + fmtDate(err.availableAt) + '.';
-        case 'no_password': return 'Set a password first, so you can still log in without Discord.';
-        case 'reauth_required': return 'Please confirm with Discord first.';
-        case 'unauthorized': case 'not_logged_in': case 'no_session': return 'You’re not logged in any more. Log in again.';
-        case 'accounts_disabled': case 'accounts_unavailable': return 'Accounts are offline right now. You can still play as a guest.';
-        case 'busy': return 'The server is busy. Try again in a few seconds.';
+        case 'cooldown': return 'You can change your name again on ' + fmtDate(err.availableAt) + '.';
+        case 'no_password': return 'Add a password first, so you can still log in without Discord.';
+        case 'reauth_required': return 'Quick Discord check first, please!';
+        case 'unauthorized': case 'not_logged_in': case 'no_session': return 'You got logged out. Log in again!';
+        case 'accounts_disabled': case 'accounts_unavailable': return 'Accounts are down right now. You can still play as a guest!';
+        case 'busy': return 'The server’s busy. Try again in a few seconds!';
         case 'already_linked': return 'This account already has a Discord linked. Unlink it first.';
     }
-    if (res && res.status === 429) return 'Too many attempts. Try again ' + fmtRetry(err.retryAfter) + '.';
+    if (res && res.status === 429) return 'Whoa, slow down! Try again ' + fmtRetry(err.retryAfter) + '.';
     if (err.message && /\s/.test(err.message)) return err.message;
-    if (res && res.status >= 500) return 'The server had a problem. Try again in a moment.';
-    return 'Something went wrong' + (res && res.status ? ' (' + res.status + ')' : '') + '. Try again.';
+    if (res && res.status >= 500) return 'Oops, the server hiccuped. Try again in a moment!';
+    return 'Oops, something went wrong' + (res && res.status ? ' (' + res.status + ')' : '') + '. Try again!';
 }
 
 /* ── formatters ──────────────────────────────────────────────────────── */

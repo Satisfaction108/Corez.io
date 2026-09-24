@@ -14,18 +14,18 @@
 const db = require('./db');
 
 const DEFS = [
-    { id: 'first_blood', name: 'First Blood', desc: 'Eliminate another player',       kind: 'stat',    stat: 'kills',       goal: 1 },
-    { id: 'bot_buster',  name: 'Bot Buster',  desc: 'Eliminate 50 bots',              kind: 'stat',    stat: 'bot_kills',   goal: 50 },
+    { id: 'first_blood', name: 'First Blood', desc: 'Knock out another player',       kind: 'stat',    stat: 'kills',       goal: 1 },
+    { id: 'bot_buster',  name: 'Bot Buster',  desc: 'Knock out 50 bots',              kind: 'stat',    stat: 'bot_kills',   goal: 50 },
     { id: 'banker',      name: 'Banker',      desc: 'Bank 10,000 gems',               kind: 'stat',    stat: 'gems_banked', goal: 10000 },
     { id: 'tycoon',      name: 'Tycoon',      desc: 'Bank 250,000 gems',              kind: 'stat',    stat: 'gems_banked', goal: 250000 },
     { id: 'podium',      name: 'Podium',      desc: 'Finish a raid in the top 3',     kind: 'stat',    stat: 'top3',        goal: 1 },
     { id: 'champion',    name: 'Champion',    desc: 'Win a raid',                     kind: 'stat',    stat: 'raid_wins',   goal: 1 },
-    { id: 'boss_slayer', name: 'Boss Slayer', desc: 'Land the final blow on a boss',  kind: 'event',                        goal: 1 },
-    { id: 'survivor',    name: 'Survivor',    desc: 'Stay alive 30 minutes in one life', kind: 'event',                     goal: 1 },
-    { id: 'streaker',    name: 'Streaker',    desc: 'Reach a 5 kill streak',          kind: 'event',                        goal: 1 },
+    { id: 'boss_slayer', name: 'Boss Slayer', desc: 'Land the final hit on a boss',   kind: 'event',                        goal: 1 },
+    { id: 'survivor',    name: 'Survivor',    desc: 'Survive 30 minutes without dying', kind: 'event',                     goal: 1 },
+    { id: 'streaker',    name: 'Streaker',    desc: 'Get a 5-knockout streak',        kind: 'event',                        goal: 1 },
     { id: 'hoarder',     name: 'Hoarder',     desc: 'Carry 3,000 gems at once',       kind: 'event',                        goal: 1 },
-    { id: 'emerald_eye', name: 'Emerald Eye', desc: 'Pick up 25 emeralds',            kind: 'counter',                      goal: 25 },
-    { id: 'veteran',     name: 'Veteran',     desc: 'Play 250 lives',                 kind: 'stat',    stat: 'lives',       goal: 250 },
+    { id: 'emerald_eye', name: 'Emerald Eye', desc: 'Grab 25 emeralds',               kind: 'counter',                      goal: 25 },
+    { id: 'veteran',     name: 'Veteran',     desc: 'Play 250 games',                 kind: 'stat',    stat: 'lives',       goal: 250 },
 ];
 const BY_ID = new Map(DEFS.map(a => [a.id, a]));
 const STAT_DEFS = DEFS.filter(a => a.kind === 'stat');
