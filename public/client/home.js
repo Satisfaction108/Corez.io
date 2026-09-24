@@ -12,6 +12,7 @@
     }
 
     applyTheme(localStorage.getItem(THEME_KEY) || 'dark'); // immediate, no flash
+    document.documentElement.setAttribute('data-acct', localStorage.getItem('dwAcctHint') || 'new'); // account gate, see client/account/main.js
 
     /* ── Mobile / tablet gate ──────────────────────────────────────────
        Dig Wars needs keyboard + mouse, so we block touch-primary devices.

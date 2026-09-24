@@ -8,6 +8,15 @@ let bans = global.bans || (global.bans = []);
 const FLOW_SLACK_MS = +process.env.FLOW_SLACK_MS || 250;
 let permBans = global.permBans || (global.permBans = []);
 global.chatID = 0;
+const { clientIp } = require("../../lib/clientIp.js");
+const accountBridge = require("../../accounts/game/bridge.js");
+
+// Same rule as the accounts config: NODE_ENV, or a real public hostname.
+function isProduction() {
+    const host = String(process.env.PUBLIC_HOST || "");
+    return process.env.NODE_ENV === "production" ||
+        (!!host && !/^(localhost|127\.0\.0\.1|\[?::1\]?)(:\d+)?$/i.test(host));
+}
 
 function livingSpectateList() {
     const out = [];
@@ -72,7 +81,7 @@ function ownTankColor(body) {
 
 class socketManager {
     constructor(parent) {
-        this.permissionsDict = {};
+        this.permissionsDict = Object.create(null);
         this.clients = parent.clients;
         this.gamemode = parent.gamemode;
         this.players = [];
@@ -81,7 +90,12 @@ class socketManager {
         this.bans = [];
 
         for (let entry of require("../permissions.js")) {
-            this.permissionsDict[entry.key] = entry;
+            // An unset env token used to land here under the key "undefined",
+            // so typing "undefined" granted that tier. Short keys and the
+            // .env.example placeholders are skipped for the same reason.
+            const key = typeof entry.key === "string" ? entry.key.trim() : "";
+            if (key.length < 16 || /^change_me/i.test(key)) continue;
+            this.permissionsDict[key] = entry;
         }
     };
 
@@ -203,11 +217,13 @@ class socketManager {
             try { clearInterval(socket._spawnLoop); } catch { /* */ }
             socket._spawnLoop = null;
         }
-        if (Config.dig_royale && player) {
+        // an account kicked for a newer session already saved its resume
+        if (Config.dig_royale && player && !socket._drCleaned) {
             try {
                 require('../gamemodes/scripts/dig_royale.js').disconnectCleanup(socket, player.body || null);
             } catch { /* */ }
         }
+        try { accountBridge.onClose(socket); } catch { /* */ }
 
         if (socket.group) groups.removeMember(socket);
 
@@ -237,12 +253,17 @@ class socketManager {
             util.log("[INFO]: A player disconnected before entering the game.");
         }
 
-        util.remove(global.gameManager.views, global.gameManager.views.indexOf(socket.view));
+        // util.remove(arr, -1) would evict someone else: sockets turned away
+        // before they joined clients (bans, a newer tab winning) have no slot
+        const viewIndex = global.gameManager.views.indexOf(socket.view);
+        if (viewIndex !== -1) util.remove(global.gameManager.views, viewIndex);
 
         // Hand the learner's plot (and its scripted bots) back to the pool.
         if (Config.tutorial) require('../tutorialSession.js').releasePlot(socket);
 
-        util.remove(this.clients, this.clients.indexOf(socket));
+        const clientIndex = this.clients.indexOf(socket);
+        if (clientIndex === -1) return;
+        util.remove(this.clients, clientIndex);
         if (!global.gameManager.parentPort) {
             for (let i = 0; i < global.servers.length; i++) {
                 let server = global.servers[i];
@@ -275,10 +296,11 @@ class socketManager {
                 if (m.length === 1) {
                     let key = m[0].toString().trim();
                     socket.permissions = this.permissionsDict[key];
+                    // Never log the token itself: logs are not a secret store.
                     if (socket.permissions) {
-                        util.log(`[INFO]: A socket was verified with the token: ${key}`);
-                    } else {
-                        util.log(`[WARNING]: A socket failed to verify with the token: ${key}`);
+                        util.log(`[INFO]: A socket was verified with a perk token (${socket.permissions.class}, ${socket.permissions.name}).`);
+                    } else if (key) {
+                        util.log(`[WARNING]: A socket failed to verify with a perk token.`);
                     }
                     socket.key = key;
                 }
@@ -353,14 +375,21 @@ class socketManager {
                 };
 
                 if (typeof name != "string") { socket.kick("Bad spawn request. (name)"); return 1; }
-                if (encodeURI(name).split(/%..|./).length > 48) { socket.kick("Shorten your name!"); return 1; }
+                let nameBytes = 0;
+                try { nameBytes = encodeURI(name).split(/%..|./).length; } catch { nameBytes = Infinity; }   // lone surrogate
+                if (nameBytes > 48) { socket.kick("Shorten your name!"); return 1; }
                 if (typeof m[1] !== "number") { socket.kick("Bad spawn request. (needsRoom)"); return 1; }
                 if (typeof autoLVLup !== "number") { socket.kick("Bad spawn request. (autoLVLup)"); return 1; }
                 if (typeof incognitoMode !== "number") { socket.kick("Bad spawn request. (incognito)"); return 1; }
                 if (transferbodyID && typeof transferbodyID != "string") { socket.kick("Bad body transfer. (transferbodyID)"); return 1; }
+                // Body transfer only exists for server travel; elsewhere an id
+                // would let a client claim another player's travelling body.
+                if (!Config.allow_server_travel) transferbodyID = "";
                 if (transferbodyID) transferbodyID = transferbodyID.replace(name, "");
 
-                name = name.replace(Config.banned_characters, '');
+                name = name.replace(Config.banned_characters, '').replace(/\s+/g, ' ').trim();
+                // accounts play under their username; guests get a cleaned name
+                if (Config.dig_royale) name = accountBridge.resolveName(socket, name);
 
                 if (needsRoom) {
                     if (Config.hidden) return socket.close();
@@ -1131,8 +1160,10 @@ class socketManager {
                 // except the banked-gem grant, which a localhost client may use
                 // to try items (window.dwGems(n) in the console)
                 const what = String(m[0] || "");
+                // socket.ip comes from clientIp(), so a forged X-Forwarded-For
+                // can't pass for localhost. Production never takes DBG at all.
                 const localSocket = /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(String(socket.ip || ""));
-                if (!Config.dig_royale) return 1;
+                if (!Config.dig_royale || isProduction()) return 1;
                 if (!process.env.ROYALE_DEBUG && !(localSocket && what === "gems")) return 1;
                 const b = player && player.body;
                 try {
@@ -1696,6 +1727,7 @@ class socketManager {
             }
         }
         body.name = name;
+        accountBridge.applyIdentity(socket, body);
         body.incognito = socket.status.incognito ?? false;
         if (socket.permissions && socket.permissions.nameColor) {
             body.nameColor = socket.permissions.nameColor;
@@ -2939,26 +2971,12 @@ class socketManager {
         socket.makeView = () => { socket.view = this.eyes(socket); };
         socket.makeView();
 
-        let store = req.headers['fastly-client-ip'] || req.headers["cf-connecting-ip"] || req.headers['x-forwarded-for'] || req.headers['z-forwarded-for'] ||
-                    req.headers['forwarded'] || req.headers['x-real-ip'] || req.connection.remoteAddress,
-            ips = store.split(',');
-
-        if (!ips) {
-            return socket.kick("Missing IP: " + store);
+        // X-Forwarded-For is only believed from TRUSTED_PROXIES (lib/clientIp.js);
+        // the old header sniffing let any client pick its own IP.
+        socket.ip = clientIp(req);
+        if (!socket.ip) {
+            return socket.kick("Missing IP.");
         }
-
-        for (let i = 0; i < ips.length; i++) {
-            if (net.isIPv6(ips[i])) {
-                ips[i] = ips[i].trim();
-            } else {
-                ips[i] = ips[i].split(':')[0].trim();
-            }
-            if (!net.isIP(ips[i])) {
-                return socket.kick("Invalid IP(s): " + store);
-            }
-        }
-
-        socket.ip = ips[0];
 
         try {
             if (fs.existsSync(PERMABAN_FILE)) {
@@ -2974,6 +2992,13 @@ class socketManager {
         }
 
         util.log("[INFO]: New socket opened with ip " + socket.ip);
+
+        // session cookie -> socket.account; kicks an older tab of the same
+        // account, or this socket if the account is banned
+        try { accountBridge.onConnect(socket, req, this); } catch (e) {
+            console.error("[accounts] connect failed: " + ((e && e.stack) || e));
+        }
+        if (socket.readyState !== socket.OPEN) return;
 
         this.clients.push(socket);
 

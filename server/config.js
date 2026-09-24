@@ -121,6 +121,10 @@ module.exports = {
     chat_message_duration: 9_000,
     popup_message_duration: 10_000,
     sanitize_chat_input: true,
+    // Stripped from player names (sockets.js 's'). '§' opens the in-name
+    // colour codes, so typing it would fake a paid name colour; control,
+    // zero-width and bidi-override characters hide or reorder text.
+    banned_characters: /[\u00a7\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g,
 
     fireworks: false,
     thanksgiving: false,

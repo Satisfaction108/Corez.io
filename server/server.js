@@ -7,7 +7,9 @@ const fs = require("fs");
 const http = require("http");
 const net = require("net");
 const url = require("url");
+const crypto = require("crypto");
 const pjson = require('../package.json')
+const { clientIp } = require("./lib/clientIp.js");
 
 const { Worker } = require("worker_threads");
 
@@ -37,12 +39,19 @@ try {
     const envContent = fs.readFileSync(path.join(__dirname, "./.env")).toString();
     const environment = dotenv(envContent);
 
-    // Set each environment variable in process.env
+    // Set each environment variable in process.env; a variable already set
+    // (pm2, the shell, a test run) wins over the file, as with dotenv
     for (const key in environment) {
-        process.env[key] = environment[key];
+        if (process.env[key] === undefined) process.env[key] = environment[key];
     }
 } catch (e) {
     if (e.code !== "ENOENT") console.error("[ENV LOAD ERROR] " + ((e && e.stack) || e));
+}
+
+// Accounts (sessions, Discord login, SQLite). Guest-only if unavailable.
+const accounts = require("./accounts");
+try { accounts.initMain(); } catch (e) {
+    console.error("[accounts] init failed; running guest-only: " + ((e && e.stack) || e));
 }
 
 // Load all necessary modules and files via the loader
@@ -74,7 +83,70 @@ mimeSet = {
     md: "text/markdown",
     png: "image/png",
     svg: "image/svg+xml",
+    txt: "text/plain; charset=utf-8",
+    ico: "image/x-icon",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+    gif: "image/gif",
+    ttf: "font/ttf",
+    woff: "font/woff",
+    woff2: "font/woff2",
+    wav: "audio/wav",
+    mp3: "audio/mpeg",
+    ogg: "audio/ogg",
+    mp4: "video/mp4",
 };
+
+// Map a request path onto a real file inside public/. Returns the absolute
+// path; null when it names nothing servable (the caller falls back to the
+// menu page); undefined when the path itself is malformed (400).
+// Traversal ("/../server/.env", "/%2e%2e/...", "/..%2f...") is clamped by
+// normalising against "/" first, then re-checked against the resolved root,
+// and dotfiles (.env, .DS_Store, .git) are never served.
+const publicRootAbs = path.resolve(publicRoot);
+let publicRootReal = publicRootAbs;
+try { publicRootReal = fs.realpathSync(publicRootAbs); } catch (e) { /* keep the resolved path */ }
+const insideDir = (dir, file) => file === dir || file.startsWith(dir + path.sep);
+function publicFile(pathname) {
+    let rel;
+    try {
+        rel = decodeURIComponent(pathname);
+    } catch (e) {
+        return undefined;
+    }
+    if (rel.includes("\0")) return undefined;
+    // Backslash is a separator on Windows; treat it as one everywhere.
+    const normal = path.posix.normalize("/" + rel.replace(/\\/g, "/"));
+    if (normal.split("/").some((seg) => seg.startsWith("."))) return null;
+    const file = path.resolve(publicRootAbs, "." + normal);
+    if (!insideDir(publicRootAbs, file)) return null;
+    try {
+        // lstat: symlinks are not served (same as before this check existed).
+        if (!fs.lstatSync(file).isFile()) return null;
+        if (!insideDir(publicRootReal, fs.realpathSync(file))) return null;
+    } catch (e) {
+        return null;
+    }
+    return file;
+}
+
+function sendStatic(res, file) {
+    const extension = file.split(".").pop();
+    // No heuristic caching: a client must never run a stale app.js
+    // against a freshly restarted server.
+    res.writeHead(200, { "Content-Type": mimeSet[extension] || "text/html", "Cache-Control": "no-cache" });
+    fs.createReadStream(file).on("error", () => res.destroy()).pipe(res);
+}
+
+// /api/sendPlayer is server-to-server. It stays shut unless API_KEY is a real
+// secret: with API_KEY unset, a body without a "key" used to match undefined.
+function apiKeyMatches(given) {
+    const expected = process.env.API_KEY;
+    if (typeof expected !== "string" || expected.length < 24 || typeof given !== "string") return false;
+    const a = Buffer.from(given), b = Buffer.from(expected);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 let wsServer; // WebSocket server instance
 let server; // HTTP server instance
@@ -120,6 +192,12 @@ if (Config.allow_ACAO && Config.startup_logs) {
 // Create an HTTP server to handle both API and static file requests
 server = http.createServer((req, res) => {
     try {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    // /api/*, /auth/*, /discord/* belong to accounts (before the CORS block,
+    // so account responses never carry Access-Control-Allow-Origin)
+    if (accounts.handleHttp(req, res)) return;
     let query = {};
     let pathname = req.url.split("?")[0];
     if (req.url.includes("?")) req.url.split("?")[1].split("&").map(i => {
@@ -212,14 +290,19 @@ server = http.createServer((req, res) => {
         case "/api/sendPlayer": {
             ok = false;
             let body = "";
-            req.on("data", c => body += c);
+            req.on("data", c => {
+                if (res.headersSent) return;
+                body += c;
+                if (body.length > 65536) { res.writeHead(413); res.end("Too large"); req.destroy(); }
+            });
             req.on("end", () => {
+                if (res.headersSent) return;
                 let json = null;
                 try {
                     json = JSON.parse(body);
               } catch { }
                   if (json) {
-                      if (json.key === process.env.API_KEY) {
+                      if (apiKeyMatches(json.key)) {
                             let { id, name, definition, score, level, skillcap, skill, points, killCount } = json;
                             global.travellingPlayers.push({ id, name, definition, score, level, skillcap, skill, points, killCount });
                             res.writeHead(200);
@@ -259,37 +342,34 @@ server = http.createServer((req, res) => {
         case selectedHeader: {
             // For all other routes, serve static files from the public directory
             ok = false;
-            let fileToGet = path.join(publicRoot, req.url);
-
-            // If the requested file doesn't exist or isn't a file, default to the INDEX_HTML file
-            if (!fs.existsSync(fileToGet) || !fs.lstatSync(fileToGet).isFile()) {
-                fileToGet = path.join(publicRoot, `${selectedHeader}/index.html`);
+            let fileToGet = publicFile(pathname);
+            if (fileToGet === undefined) {
+                res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+                res.end("Bad request");
+                break;
             }
 
-            // Determine the file's MIME type based on its extension and serve the file stream
-            const extension = fileToGet.split(".").pop();
-            // No heuristic caching: a client must never run a stale app.js
-            // against a freshly restarted server.
-            res.writeHead(200, { "Content-Type": mimeSet[extension] || "text/html", "Cache-Control": "no-cache" });
-            fs.createReadStream(fileToGet).pipe(res);
+            // If the requested file doesn't exist or isn't a file, default to the INDEX_HTML file
+            if (!fileToGet) fileToGet = path.join(publicRoot, `${selectedHeader}/index.html`);
+
+            sendStatic(res, fileToGet);
         } break;
 
         default: {
             // For all other routes, serve static files from the public directory
             ok = false;
-            let fileToGet = path.join(publicRoot, pathname);
-
-            // If the requested file doesn't exist or isn't a file, default to the main_menu file
-            if (!fs.existsSync(fileToGet) || !fs.lstatSync(fileToGet).isFile()) {
-                fileToGet = path.join(publicRoot, Config.main_menu);
+            let fileToGet = publicFile(pathname);
+            if (fileToGet === undefined) {
+                res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+                res.end("Bad request");
+                break;
             }
 
-            // Determine the file's MIME type based on its extension and serve the file stream
-            const extension = fileToGet.split(".").pop();
-            // No heuristic caching: a client must never run a stale app.js
-            // against a freshly restarted server.
-            res.writeHead(200, { "Content-Type": mimeSet[extension] || "text/html", "Cache-Control": "no-cache" });
-            fs.createReadStream(fileToGet).pipe(res);
+            // If the requested file doesn't exist, isn't a file, or lies
+            // outside public/, default to the main_menu file
+            if (!fileToGet) fileToGet = path.join(publicRoot, Config.main_menu);
+
+            sendStatic(res, fileToGet);
         } break;
     }
 
@@ -308,6 +388,14 @@ server = http.createServer((req, res) => {
 });
 
 // Loads a game server
+// main -> game account messages (kicks) reach games running in workers too
+global.gameWorkers = new Map();
+accounts.bus.setWorkerPoster(msg => {
+    for (const w of global.gameWorkers.values()) {
+        try { w.postMessage(["acct", msg]); } catch (e) { /* worker gone */ }
+    }
+});
+
 function loadGameServer(loadViaMain = false, host, port, gamemode, region, webProperties, properties, isFeatured, isUnlisted = false) {
     const id = webProperties && webProperties.id;
     // Two games cannot share one process. A second share_client_server used
@@ -341,9 +429,13 @@ function loadGameServer(loadViaMain = false, host, port, gamemode, region, webPr
             if (code !== 0) console.error("[WORKER EXIT] " + id + " code " + code);
         });
 
+        global.gameWorkers.set(id, worker);
         worker.on("message", message => {
             const flag = message.shift();
             switch (flag) {
+                case "acct":
+                    accounts.bus.fromGame(id, message.shift());
+                    break;
                 case false:
                     global.servers[index] = message.shift();
                     global.servers[index].hidden = !!isUnlisted;
@@ -444,6 +536,10 @@ function tutorialPort() {
     return workerPort("tut");
 }
 
+const FORWARDING_HEADERS = new Set([
+    "x-forwarded-for", "forwarded", "x-real-ip", "cf-connecting-ip", "fastly-client-ip", "z-forwarded-for",
+]);
+
 function proxyUpgradeToWorker(req, socket, head, proxyPath, port) {
     if (!port) return socket.destroy();
 
@@ -451,8 +547,13 @@ function proxyUpgradeToWorker(req, socket, head, proxyPath, port) {
         const path = req.url.slice(proxyPath.length) || "/";
         let raw = `GET ${path} HTTP/1.1\r\n`;
         for (let i = 0; i < req.rawHeaders.length; i += 2) {
+            // Forwarding headers from outside are dropped; the worker trusts
+            // loopback, so the one X-Forwarded-For it gets must be ours.
+            if (FORWARDING_HEADERS.has(String(req.rawHeaders[i]).toLowerCase())) continue;
             raw += `${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`;
         }
+        const ip = clientIp(req);
+        if (ip) raw += `X-Forwarded-For: ${ip}\r\n`;
         upstream.write(raw + "\r\n");
         if (head && head.length) upstream.write(head);
         upstream.pipe(socket);
@@ -508,3 +609,14 @@ let bunLoop = setInterval(() => {
 
 // Log that the web server has been initialized if logging is enabled
 if (Config.startup_logs) console.log("Web Server initialized.");
+
+// pm2 restarts send SIGINT: close the database cleanly (WAL checkpoint).
+let shuttingDown = false;
+for (const sig of ["SIGINT", "SIGTERM"]) {
+    process.on(sig, () => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        try { accounts.shutdown(); } catch (e) { console.error("[accounts] shutdown failed: " + ((e && e.stack) || e)); }
+        process.exit(0);
+    });
+}

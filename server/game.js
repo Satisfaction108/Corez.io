@@ -4,12 +4,22 @@ const http = require("http");
 const ws = require("ws");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 let { socketManager } = require("./game/network/sockets.js");
 let { LagLogger } = require("./game/debug/lagLogger.js");
 let { speedcheckloop } = require("./game/debug/speedLoop.js");
 let { gameHandler } = require("./game/index.js");
 let { gamemodeManager } = require("./game/gamemodeManager.js");
+
+// /api/sendPlayer is server-to-server. It stays shut unless API_KEY is a real
+// secret: with API_KEY unset, a body without a "key" used to match undefined.
+function apiKeyMatches(given) {
+    const expected = process.env.API_KEY;
+    if (typeof expected !== "string" || expected.length < 24 || typeof given !== "string") return false;
+    const a = Buffer.from(given), b = Buffer.from(expected);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 const getName = (name, gamemodeData) => {
     const nameMap = {
@@ -154,14 +164,19 @@ class gameServer {
             switch (req.url) {
                 case "/api/sendPlayer": {
                     let body = "";
-                    req.on("data", c => body += c);
+                    req.on("data", c => {
+                        if (res.headersSent) return;
+                        body += c;
+                        if (body.length > 65536) { res.writeHead(413); res.end("Too large"); req.destroy(); }
+                    });
                     req.on("end", () => {
+                        if (res.headersSent) return;
                         let json = null;
                         try {
                             json = JSON.parse(body);
                     } catch { }
                         if (json) {
-                            if (json.key === process.env.API_KEY) {
+                            if (apiKeyMatches(json.key)) {
                                 let { id, name, definition, score, level, skillcap, skill, points, killCount } = json;
                                 global.travellingPlayers.push({ id, name, definition, score, level, skillcap, skill, points, killCount });
                                 res.writeHead(200);
@@ -238,6 +253,23 @@ class gameServer {
         this.startWebServer(this.socketManager);
 
         this.start();
+
+        // Accounts in a worker: its own DB connection (the main thread
+        // migrated it) and the main <-> game message bus over parentPort.
+        if (Config.dig_royale && !Config.tutorial) {
+            try {
+                const accounts = require("./accounts");
+                accounts.initWorker();
+                accounts.bus.setMainPoster(msg => this.parentPort.postMessage(["acct", msg]));
+            } catch (e) {
+                console.error("[accounts] worker init failed; guest-only here: " + ((e && e.stack) || e));
+            }
+        }
+        this.parentPort.on("message", m => {
+            if (Array.isArray(m) && m[0] === "acct") {
+                try { require("./accounts").bus.toGame(m[1]); } catch (e) { /* accounts off here */ }
+            }
+        });
 
         console.log("Game server " + this.name + " successfully started. Listening on port", this.port);
 

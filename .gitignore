@@ -21,3 +21,9 @@ devlog.md
 .aider*
 Agents.md
 .freebuff/
+
+# accounts database (server/accounts) - never commit player data
+data/
+*.db
+*.db-wal
+*.db-shm

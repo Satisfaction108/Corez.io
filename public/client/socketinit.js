@@ -1548,6 +1548,13 @@ let incoming = async function(message, socket) {
                 global.noAutoReconnect = true;
                 global.message = "You have been banned from the game.";
             } break;
+            case 'KO': {
+                // Account kicked this socket (logged in elsewhere, banned):
+                // the server closes it next, and it must not auto-reconnect.
+                global.noAutoReconnect = true;
+                global.autoReconnect = null;
+                global.message = String(m[0] || "You were disconnected from your account.");
+            } break;
             case "svInfo": {
 
                 global.serverStats.serverGamemodeName = m[0];

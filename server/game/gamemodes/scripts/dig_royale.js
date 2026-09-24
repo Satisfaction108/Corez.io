@@ -857,16 +857,33 @@ function onHumanJoin(body) {
 const RESUME_MS = 120_000;
 const RESUME_SAFE_MS = 8000;
 const resumeStore = new Map();
+// Keyed by the tab's token and, for accounts, by the account too: a newer
+// tab of the same account (which has its own token) picks the raid up.
+function resumeKeysFor(socket) {
+    const keys = [];
+    if (socket && socket.resumeToken) keys.push(socket.resumeToken);
+    if (socket && socket.account && socket.account.id) keys.push("acct:" + socket.account.id);
+    return keys;
+}
 function saveResume(socket, body) {
-    const token = socket && socket.resumeToken;
-    if (!token) return;
+    const keys = resumeKeysFor(socket);
+    if (!keys.length) return;
+    const token = keys[0];
     const t = now();
+    // dropped again between claiming a raid and spawning into it: keep the
+    // claimed snapshot (tank, spot, satchel) rather than an empty one
+    if (!body && socket._resume && socket._resume.raidId === raidId) {
+        const again = Object.assign({}, socket._resume, { at: t, keys, accountId: (socket.account && socket.account.id) || null });
+        for (const k of keys) resumeStore.set(k, again);
+        return;
+    }
     for (const [k, v] of resumeStore) if (t - v.at > RESUME_MS) resumeStore.delete(k);
     // a dead player has no body but still has a bank, a shop and a score
     const alive = !!body && !body.isDead?.() && body.royaleAlive !== false && !body.royaleLobby;
     const hitAgo = body ? Math.min(t - (body._lastDamageAt || 0), Date.now() - (body.hitAt || 0)) : 0;
     const snap = {
         at: t, raidId, statKey: body ? statKeyFor(body) : "s:" + socket.id, alive,
+        keys, accountId: (socket.account && socket.account.id) || null,
         sock: {
             gemBanked: socket.gemBanked || 0, shop: socket.shop || null, raidQuest: socket.raidQuest || null,
             raidBonus: socket.raidBonus || 0, raidPB: socket.raidPB || 0, _milestoneIdx: socket._milestoneIdx || 0,
@@ -887,16 +904,21 @@ function saveResume(socket, body) {
             body.carriedGems = 0;     // kept for the resume, so it must not also drop
         }
     }
-    resumeStore.set(token, snap);
+    for (const k of keys) resumeStore.set(k, snap);
     if (process.env.RESUME_DEBUG) console.log('[RESUME] saved', token.slice(0, 6), 'alive', snap.alive, 'banked', snap.sock.gemBanked, 'carried', snap.carried, 'drill', snap.sock.shop && snap.sock.shop.drill, 'raw', (snap.skillRaw || []).join(','), 'pts', snap.points, 'raid', raidId);
 }
 // Called when a new socket presents its token (before it spawns).
 function claimResume(socket, token) {
     if (!Config.dig_royale || !socket || !token) return false;
-    const snap = resumeStore.get(token);
+    const myId = (socket.account && socket.account.id) || null;
+    // a guest's raid never becomes an account's, and never someone else's;
+    // a token holding another identity's raid falls through to the account's
+    let snap = resumeStore.get(token);
+    if (snap && (snap.accountId || null) !== myId) snap = null;
+    if (!snap && myId) snap = resumeStore.get("acct:" + myId) || null;
     if (process.env.RESUME_DEBUG) console.log('[RESUME] claim', token.slice(0, 6), 'found', !!snap, snap ? ('age ' + (now() - snap.at) + ' raid ' + snap.raidId + '/' + raidId) : '');
     if (!snap) return false;
-    resumeStore.delete(token);
+    for (const k of snap.keys || [token]) resumeStore.delete(k);
     if (now() - snap.at > RESUME_MS || snap.raidId !== raidId) return false;
     Object.assign(socket, snap.sock);
     const newKey = "s:" + socket.id;

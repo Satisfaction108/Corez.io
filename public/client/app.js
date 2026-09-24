@@ -399,7 +399,7 @@ import * as tutorial from './tutorial.js';
                         
                         unselectElement();
                     }
-                } else if (key === global.KEY_ENTER && !global.gameStart) {
+                } else if (key === global.KEY_ENTER && !global.gameStart && !(window.dwAccount && window.dwAccount.blocksEnter())) {
                     startGame();
                 }
             }
@@ -1249,6 +1249,9 @@ import * as tutorial from './tutorial.js';
         if (global.gameLoading) return;
         global.gameLoading = true;
         // Fresh start: no raid state leaks in from a previous game.
+        // (A kick or ban sets noAutoReconnect for that socket only; the
+        // server repeats it if the new connection is refused too.)
+        global.noAutoReconnect = false;
         global.raidQueued = false;
         global.royaleSpectating = false;
         global.royaleDied = false;
@@ -1333,9 +1336,12 @@ import * as tutorial from './tutorial.js';
         let autolevelUpInput = document.getElementById("autoLevelUp").checked;
         global.autolvlUp = autolevelUpInput;
 
-        util.submitToLocalStorage("playerNameInput");
+        // Logged-in players play under their username (the server enforces it
+        // too); the guest name in the input and localStorage is left alone.
+        const accountName = window.dwAccount ? window.dwAccount.playName() : null;
+        if (!accountName) util.submitToLocalStorage("playerNameInput");
         util.submitToLocalStorage("playerKeyInput");
-        global.playerName = global.player.name = playerNameInput.value;
+        global.playerName = global.player.name = accountName || playerNameInput.value;
         global.playerKey = playerKeyInput.value.replace(/(<([^>]+)>)/gi, "").substring(0, 64);
 
         global.screenWidth = window.innerWidth;
