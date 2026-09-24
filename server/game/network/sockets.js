@@ -3,6 +3,9 @@ let crypto = require("crypto"),
     fs = require("fs");
     PERMABAN_FILE = "./permabans.json";
 let bans = global.bans || (global.bans = []);
+// How much queueing past the base round trip a client may build up before
+// snapshots are skipped instead of sent.
+const FLOW_SLACK_MS = +process.env.FLOW_SLACK_MS || 250;
 let permBans = global.permBans || (global.permBans = []);
 global.chatID = 0;
 
@@ -498,6 +501,14 @@ class socketManager {
                 socket.status.receiving = 0;
                 socket.camera.ping = util.time() - time;
                 socket.camera.lastDowndate = util.time();
+                // flow control bookkeeping, see gazeUpon
+                const flow = socket.flow;
+                while (flow.sent.length && flow.sent[0] <= time) flow.sent.shift();
+                const rtt = util.time() - time;
+                if (rtt >= 0 && (flow.rttMin == null || rtt < flow.rttMin || util.time() - flow.rttMinAt > 15000)) {
+                    flow.rttMin = rtt;
+                    flow.rttMinAt = util.time();
+                }
             } break;
             case "C": {
 
@@ -2081,6 +2092,21 @@ class socketManager {
             remove: e => { nearby.delete(e.id) },
             check: (e) => { return check(socket.camera, e); },
             gazeUpon: (updateCam = false) => {
+                // Flow control. Snapshots are full state, so one the player
+                // cannot take yet is better skipped than queued. With no limit,
+                // a slow PC or a thin link let seconds of stale snapshots pile
+                // up in the socket and the proxy in front of it, and every ping
+                // and input waited behind them (7000ms pings from South
+                // America). The client acks each snapshot with 'd'; allow about
+                // one base round trip in flight plus slack, and never go
+                // silent for more than a second.
+                const flow = socket.flow, nowFlow = util.time();
+                if (!updateCam && flow.sent.length &&
+                    nowFlow - flow.sent[0] > (flow.rttMin ?? 300) + FLOW_SLACK_MS &&
+                    nowFlow - flow.lastSentAt < 1000) {
+                    flow.skipped++;
+                    return;
+                }
                 logs.network.set();
 
                 let lastCycle = global.gameManager.room.lastCycle;
@@ -2305,6 +2331,9 @@ class socketManager {
                         visible.length,
                         ...view
                     );
+                    flow.sent.push(lastCycle);
+                    if (flow.sent.length > 120) flow.sent.shift();
+                    flow.lastSentAt = nowFlow;
                 }
                 logs.network.mark();
             },
@@ -2906,6 +2935,7 @@ class socketManager {
             fov: 2000,
         };
 
+        socket.flow = { sent: [], rttMin: null, rttMinAt: 0, lastSentAt: 0, skipped: 0 };
         socket.makeView = () => { socket.view = this.eyes(socket); };
         socket.makeView();
 
