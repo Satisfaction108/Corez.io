@@ -19,6 +19,7 @@ let devSecret = null;
 
 const config = {
     load,
+    parseBackupKey,
     isAllowedOrigin,
     // Filled by load():
     isProd: false,
@@ -33,6 +34,7 @@ const config = {
     dbPath: path.join(REPO_ROOT, 'data', 'digwars.db'),
     discord: { clientId: '', clientSecret: '', redirectUri: '' },
     discordLogin: false,
+    shopSeedSalt: 'dw-shop-v1',
     cookies: { session: 'dw_sid', oauth: 'dw_oauth', pending: 'dw_pending', dev: 'dw_dev' },
 };
 
@@ -99,6 +101,34 @@ function load(env = process.env) {
     };
     config.discordLogin = !!(config.discord.clientId && config.discord.clientSecret);
 
+    config.shopSeedSalt = String(env.SHOP_SEED_SALT || '').trim() || 'dw-shop-v1';
+
+    // Discord bot (HTTP interactions + REST). Each part switches on by itself:
+    // the interactions endpoint needs APP_ID + PUBLIC_KEY, messages need the
+    // bot token and a channel, admin commands need the guild and admin ids.
+    const snow = v => { const s = String(v || '').trim(); return /^\d{5,25}$/.test(s) ? s : ''; };
+    const bot = {
+        appId: snow(env.DISCORD_APP_ID),
+        publicKey: String(env.DISCORD_PUBLIC_KEY || '').trim().toLowerCase(),
+        botToken: String(env.DISCORD_BOT_TOKEN || '').trim(),
+        adminGuildId: snow(env.DISCORD_ADMIN_GUILD_ID),
+        adminIds: new Set(String(env.ADMIN_DISCORD_IDS || '').split(',').map(snow).filter(Boolean)),
+        announceChannelId: snow(env.DISCORD_ANNOUNCE_CHANNEL_ID),
+        backupChannelId: snow(env.DISCORD_BACKUP_CHANNEL_ID),
+    };
+    if (!/^[0-9a-f]{64}$/.test(bot.publicKey)) bot.publicKey = '';
+    bot.interactions = !!(bot.appId && bot.publicKey);
+    bot.rest = !!bot.botToken;
+    config.discordBot = bot;
+
+    // Nightly encrypted backups: BACKUP_ENCRYPTION_KEY is 32 bytes, base64 or
+    // hex (openssl rand -base64 32). Unset or malformed = backups off.
+    config.backupKey = parseBackupKey(env.BACKUP_ENCRYPTION_KEY);
+    config.backupKeyError = String(env.BACKUP_ENCRYPTION_KEY || '').trim() && !config.backupKey
+        ? 'BACKUP_ENCRYPTION_KEY must decode to exactly 32 bytes (openssl rand -base64 32); backups are off' : '';
+    const hour = parseInt(env.BACKUP_HOUR_UTC, 10);
+    config.backupHourUtc = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 3;
+
     // __Host- cookies must be Secure, Path=/ and host-only, so the prefix is
     // only used over https. The others are path-scoped and cannot use it.
     config.cookies = {
@@ -108,6 +138,18 @@ function load(env = process.env) {
         dev: 'dw_dev',
     };
     return config;
+}
+
+// -> 32-byte Buffer | null. Base64 (or base64url) first, then 64 hex chars.
+function parseBackupKey(value) {
+    const s = String(value || '').trim();
+    if (!s) return null;
+    if (/^[0-9a-fA-F]{64}$/.test(s)) return Buffer.from(s, 'hex');
+    if (/^[A-Za-z0-9+/_-]{43}=?$/.test(s)) {
+        const b = Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+        if (b.length === 32) return b;
+    }
+    return null;
 }
 
 // Exact match against PUBLIC_ORIGIN + ALLOWED_ORIGINS; outside production any

@@ -5,7 +5,7 @@
 // #wlDyn.
 import * as api from './api.js';
 import * as store from './state.js';
-import { h, icon, clear, pushLayer, popLayer, focusFirst, toast, humanError, showAlert, setBusy, copyText, downloadText, avatar, fmtDate } from './ui.js';
+import { h, icon, clear, pushLayer, popLayer, focusFirst, toast, humanError, showAlert, setBusy, copyText, downloadText, avatar, fmtDate, animate, reducedMotion, T_FAST, T_MID } from './ui.js';
 import { usernameField, passwordPair, passwordInput } from './fields.js';
 
 const root = document.getElementById('dwWelcome');
@@ -36,13 +36,14 @@ export function setAvailability(accounts, discord) {
 export const isOpen = () => opened;
 export const currentView = () => view;
 
-// view: 'choose' | 'auth' | 'pick' | 'code' | 'recover'
+// view: 'choose' | 'auth' | 'pick' | 'code' | 'recover' | 'reset'
 export function open(name, opts) {
     opts = opts || {};
     dismissable = !!opts.dismissable;
     root.classList.toggle('wl-dismissable', dismissable);
     if (!opened) {
         opened = true;
+        stopClosing();
         root.classList.add('open');
         document.documentElement.classList.add('dw-wl-open');
         pushLayer(root, { onEsc, autofocus: false });
@@ -54,23 +55,50 @@ export function close() {
     if (!opened) return;
     opened = false;
     view = null;
-    root.classList.remove('open');
+    // the menu comes back underneath while the gate fades away
     document.documentElement.classList.remove('dw-wl-open');
     popLayer(root);
-    clear(dyn);
-    dyn.hidden = true;
-    chooseView.hidden = false;
+    const reset = () => {
+        closing = null;
+        if (opened) return;
+        root.classList.remove('open', 'wl-closing');
+        clear(dyn);
+        dyn.hidden = true;
+        chooseView.hidden = false;
+    };
+    if (reducedMotion() || !root.animate) return reset();
+    root.classList.add('wl-closing');
+    closing = root.animate([{ opacity: 1 }, { opacity: 0 }], { duration: T_MID, easing: 'ease', fill: 'forwards' });
+    animate(document.getElementById('wlCard'), [{ transform: 'none' }, { transform: 'translateY(6px) scale(.98)' }], { duration: T_MID, fill: 'forwards' });
+    closing.onfinish = reset;
+}
+let closing = null;
+function stopClosing() {
+    if (!closing) return;
+    closing.onfinish = null;
+    closing.cancel();
+    closing = null;
+    root.classList.remove('wl-closing');
+    const card = document.getElementById('wlCard');
+    if (card.getAnimations) card.getAnimations().forEach((a) => a.cancel());
 }
 
 function onEsc() {
     if (view === 'code') return; // must tick the box first
     if (view === 'recover') return show('auth', { tab: 'login' });
+    if (view === 'reset' && dismissable) return close();
     if (view && view !== 'choose') return show('choose');
     if (dismissable) close();
 }
 
+// Order of the views, so a change slides forward (in from the right) or
+// back (in from the left).
+const DEPTH = { choose: 0, auth: 1, pick: 1, reset: 1, recover: 2, code: 3 };
+
 function show(name, opts) {
     opts = opts || {};
+    const prev = view;
+    const swap = beginSwap(prev, name);
     view = name;
     root.dataset.view = name;
     if (name === 'choose') {
@@ -78,23 +106,64 @@ function show(name, opts) {
         dyn.hidden = true;
         chooseView.hidden = false;
         closeBtn.hidden = !dismissable;
+        swap(chooseView);
         return settle();
     }
     chooseView.hidden = true;
     closeBtn.hidden = true;
     clear(dyn);
     dyn.hidden = false;
-    const build = { auth: viewAuth, pick: viewPick, code: viewCode, recover: viewRecover }[name];
+    const build = { auth: viewAuth, pick: viewPick, code: viewCode, recover: viewRecover, reset: viewReset }[name];
     dyn.appendChild(build(opts));
+    swap(dyn);
     settle(opts.focus);
 }
 
 function settle(selector) {
-    const card = document.getElementById('wlCard');
-    card.classList.remove('wl-swap');
-    void card.offsetWidth; // restart the fade for the new view
-    card.classList.add('wl-swap');
     setTimeout(() => { if (opened) focusFirst(view === 'choose' ? chooseView : dyn, selector); }, 30);
+}
+
+// Cross-fade between two views: a copy of the old one fades and slides
+// out on top while the new one slides in, and the card's height glides
+// from one to the other. Returns a function to call once the new view is
+// in the DOM.
+function beginSwap(from, to) {
+    const card = document.getElementById('wlCard');
+    if (!opened || from == null || from === to && to === 'choose' || reducedMotion() || !card.animate) return () => {};
+    const old = !chooseView.hidden ? chooseView : !dyn.hidden ? dyn : null;
+    const h0 = card.offsetHeight;
+    const dir = (DEPTH[to] || 0) >= (DEPTH[from] || 0) ? 1 : -1;
+    let ghost = null;
+    if (old) {
+        ghost = old.cloneNode(true);
+        // the copy loses its ids (no duplicates), so it keeps the layout
+        // and the hidden bits the ids gave it by value instead
+        const cs = getComputedStyle(old);
+        for (const k of ['display', 'flexDirection', 'textAlign', 'gap']) ghost.style[k] = cs[k];
+        const src = old.querySelectorAll('*'), dst = ghost.querySelectorAll('*');
+        for (let i = 0; i < src.length && i < dst.length; i++) {
+            if (src[i].id && getComputedStyle(src[i]).display === 'none') dst[i].style.display = 'none';
+        }
+        ghost.removeAttribute('id');
+        ghost.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
+        ghost.setAttribute('aria-hidden', 'true');
+        ghost.setAttribute('inert', '');
+        ghost.classList.add('wl-ghost');
+        Object.assign(ghost.style, { top: old.offsetTop + 'px', left: old.offsetLeft + 'px', width: old.offsetWidth + 'px' });
+    }
+    return (neu) => {
+        if (ghost) {
+            card.appendChild(ghost);
+            animate(ghost, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(' + (-dir * 16) + 'px)' }], { duration: T_FAST, fill: 'forwards' })
+                .then(() => ghost.remove());
+        }
+        animate(neu, [{ opacity: 0, transform: 'translateX(' + (dir * 16) + 'px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID, delay: 40, fill: 'backwards' });
+        const h1 = card.offsetHeight;
+        if (Math.abs(h1 - h0) > 1) {
+            card.style.overflow = 'hidden';
+            animate(card, [{ height: h0 + 'px' }, { height: h1 + 'px' }], { duration: T_MID }).then(() => { card.style.overflow = ''; });
+        }
+    };
 }
 
 /* ── pieces ─────────────────────────────────────────────────────────── */
@@ -135,9 +204,12 @@ function viewAuth(opts) {
     const tLogin = h('button', { type: 'button', class: 'wl-tab', role: 'tab', text: 'Log in', onclick: () => render('login') });
     const tSignup = h('button', { type: 'button', class: 'wl-tab', role: 'tab', text: 'Sign up', onclick: () => render('signup') });
     const body = h('div', { class: 'wl-tabbody' });
+    // the active pill is one element that slides between the two tabs
+    const tabs = h('div', { class: 'wl-tabs', role: 'tablist' }, h('span', { class: 'wl-tab-pill', 'aria-hidden': 'true' }), tLogin, tSignup);
+    let tabDir = 0;
     const wrap = h('div', { class: 'wl-auth' },
         topBar(() => show('choose')),
-        h('div', { class: 'wl-tabs', role: 'tablist' }, tLogin, tSignup),
+        tabs,
         body);
 
     function render(t) {
@@ -146,7 +218,15 @@ function viewAuth(opts) {
         tSignup.classList.toggle('active', t === 'signup');
         tLogin.setAttribute('aria-selected', String(t === 'login'));
         tSignup.setAttribute('aria-selected', String(t === 'signup'));
+        const was = body.firstChild ? tabDir : 0;
         clear(body).appendChild(t === 'login' ? loginForm(opts) : signupForm());
+        tabs.dataset.tab = t;
+        if (was) {
+            // the form slides in from the side of the tab you picked
+            const dx = t === 'signup' ? 14 : -14;
+            animate(body, [{ opacity: 0, transform: 'translateX(' + dx + 'px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
+        }
+        tabDir = 1;
         if (opened && view === 'auth') setTimeout(() => focusFirst(body), 0);
     }
     render(tab);
@@ -340,5 +420,45 @@ function viewRecover(opts) {
         topBar(() => show('auth', { tab: 'login' })),
         h('div', { class: 'wl-h', text: 'Forgot password?' }),
         h('p', { class: 'wl-p', text: 'Use the recovery code you saved to set a new one.' }),
+        form);
+}
+
+/* ── a reset link (#reset=<token>) ──────────────────────────────────── */
+function viewReset(opts) {
+    const pp = passwordPair({ label: 'New password', confirmLabel: 'Type it again' });
+    const alert = h('div', { class: 'dw-alert', role: 'alert' });
+    const go = submitBtn('Save password');
+    pp.pw.setAttribute('data-autofocus', '');
+    const form = h('form', { class: 'wl-form', novalidate: true }, pp.els, alert, go);
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const bad = pp.problem();
+        if (bad) {
+            const longEnough = pp.pw.value.length >= 8;
+            showAlert(alert, bad);
+            (longEnough ? pp.cf : pp.pw).focus();
+            return;
+        }
+        showAlert(alert, '');
+        setBusy(go, true, 'Saving…');
+        const r = await api.reset(opts.token || '', pp.value);
+        setBusy(go, false);
+        if (r.ok && r.data && r.data.user) {
+            hooks.onAuthed(r.data.user, 'reset');
+            close();
+            toast('Password saved. You’re logged in as ' + r.data.user.username + '.', { kind: 'ok' });
+            return;
+        }
+        const ec = (r.data && r.data.error && r.data.error.code) || '';
+        if (ec === 'invalid_token' || /token/.test(ec)) {
+            showAlert(alert, 'This link has expired or was already used. Ask for a new one.');
+            go.disabled = true;
+        } else showAlert(alert, humanError(r));
+    });
+    return h('div', { class: 'wl-reset' },
+        topBar(dismissable ? null : () => show('choose')),
+        h('div', { class: 'wl-badge' }, icon('key')),
+        h('div', { class: 'wl-h', text: 'Set a new password' }),
+        h('p', { class: 'wl-p', text: 'Pick a new password for your account. You’ll be logged in right after.' }),
         form);
 }

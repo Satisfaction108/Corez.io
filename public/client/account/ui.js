@@ -15,7 +15,7 @@ export function h(tag, props, ...kids) {
             if (v == null || v === false) continue;
             if (k === 'class') el.setAttribute('class', v);
             else if (k === 'text') el.textContent = v;
-            else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+            else if (k === 'style' && typeof v === 'object') { for (const sk in v) { if (sk.startsWith('--')) el.style.setProperty(sk, v[sk]); else el.style[sk] = v[sk]; } }
             else if (k === 'dataset') Object.assign(el.dataset, v);
             else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
             else if (k === 'value' && !svg) el.value = v;
@@ -51,6 +51,53 @@ export function esc(s) {
 export function clear(el) {
     while (el.firstChild) el.removeChild(el.firstChild);
     return el;
+}
+
+/* ── motion ──────────────────────────────────────────────────────────── */
+// One easing and three durations for every account UI animation (the CSS
+// side uses the same values: --dw-ease, --dw-t1/2/3 in home.css). Only
+// transform and opacity move, except the row forms, which grow in height.
+export const EASE = 'cubic-bezier(.2,.8,.2,1)';
+export const T_FAST = 150, T_MID = 220, T_SLOW = 300;
+export function reducedMotion() {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
+}
+// el.animate() that resolves when done, and does nothing (resolves at once)
+// under reduced motion or without Web Animations.
+export function animate(el, frames, opts) {
+    if (!el || !el.animate || reducedMotion()) return Promise.resolve();
+    const a = el.animate(frames, Object.assign({ duration: T_MID, easing: EASE }, opts || {}));
+    return new Promise((res) => { a.onfinish = res; a.oncancel = res; });
+}
+// A block that just appeared grows from nothing to its height.
+export function expandIn(el) {
+    if (!el || reducedMotion()) return Promise.resolve();
+    const hgt = el.offsetHeight;
+    if (!hgt) return Promise.resolve();
+    el.style.overflow = 'hidden';
+    return animate(el, [{ height: '0px', opacity: 0 }, { height: hgt + 'px', opacity: 1 }], { duration: T_MID })
+        .then(() => { el.style.overflow = ''; });
+}
+// ...and shrinks away before it is removed.
+export function collapseOut(el) {
+    if (!el || reducedMotion()) return Promise.resolve();
+    const hgt = el.offsetHeight;
+    if (!hgt) return Promise.resolve();
+    el.style.overflow = 'hidden';
+    return animate(el, [{ height: hgt + 'px', opacity: 1 }, { height: '0px', opacity: 0 }], { duration: T_FAST + 30, fill: 'forwards' });
+}
+// Siblings slide into the space an element leaves (FLIP, transform only).
+function glideSiblings(parent, removeFn) {
+    const kids = Array.prototype.slice.call(parent.children);
+    const before = new Map(kids.map((k) => [k, k.getBoundingClientRect().top]));
+    removeFn();
+    if (reducedMotion()) return;
+    for (const k of parent.children) {
+        const b = before.get(k);
+        if (b == null) continue;
+        const dy = b - k.getBoundingClientRect().top;
+        if (Math.abs(dy) > 0.5) animate(k, [{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }], { duration: T_MID });
+    }
 }
 
 /* ── overlay stack ───────────────────────────────────────────────────── */
@@ -164,7 +211,12 @@ export function modal(opts) {
         closed = true;
         modalDepth = Math.max(0, modalDepth - 1);
         popLayer(layerEl);
-        layerEl.remove();
+        // fade and settle out, then go; clicks already pass through
+        layerEl.classList.add('closing');
+        Promise.all([
+            animate(layerEl, [{ opacity: 1 }, { opacity: 0 }], { duration: T_FAST, fill: 'forwards' }),
+            animate(card, [{ transform: 'none' }, { transform: 'translateY(4px) scale(.97)' }], { duration: T_FAST, fill: 'forwards' }),
+        ]).then(() => layerEl.remove());
         if (opts.onClose) opts.onClose(result);
     }
     layerEl.addEventListener('mousedown', (e) => { if (e.target === layerEl && dismissable) close(null); });
@@ -257,7 +309,8 @@ export function toast(message, opts) {
         if (t._gone) return;
         t._gone = true;
         t.classList.add('hide');
-        setTimeout(() => t.remove(), 300);
+        // after it fades up and out, the toasts under it glide into place
+        setTimeout(() => { if (t.parentNode) glideSiblings(t.parentNode, () => t.remove()); }, T_MID);
     };
     (opts.actions || []).forEach((a) => {
         t.appendChild(h('button', { type: 'button', class: 'dw-toast-act', text: a.label, onclick: () => { dismiss(); a.onClick && a.onClick(); } }));

@@ -79,6 +79,11 @@ class Entity extends EventEmitter {
         this.sizeMultiplier = 1;
         this.define("genericEntity");
         this.nameColor = "#ffffff";
+        // nameplate extras (accounts): name style / skin nids (Phase 3), rank code
+        // (0 none, 1..19 division + 1, 20 placement; shared/ranks.js rankCode)
+        this.nameStyleNid = 0;
+        this.rankCode = 0;
+        this.skinNid = 0;
         // Initalize physics and collision
         this.alwaysShowOnMinimap = false;
         this.allowedOnMinimap = true;
@@ -858,6 +863,9 @@ class Entity extends EventEmitter {
         cameraInfo.score = this.settings.scoreLabel || score;
         cameraInfo.digWarsGoal = this.isBot ? (this._digWarsGoal || "wander") : "";
         cameraInfo.gemGlow = gemGlow;
+        cameraInfo.nameStyle = this.nameStyleNid | 0;
+        cameraInfo.rankCode = this.rankCode | 0;
+        cameraInfo.skin = this.skinNid | 0;
         cameraInfo.guns = guns;
         cameraInfo.turrets = turretPhotos;
         

@@ -31,6 +31,10 @@ const WINDOWS = {
     passwordFail:  { limit: 5,   windowMs: 15 * MIN },  // current-password checks per account
     accountWrite:  { limit: 30,  windowMs: 10 * MIN },  // account setting changes per account
     api:           { limit: 240, windowMs: 1 * MIN },   // every /api request per IP, and per session too
+    purchase:      { limit: 10,  windowMs: 1 * MIN },   // store purchases + gifts + refunds per account
+    equip:         { limit: 60,  windowMs: 1 * MIN },   // locker equips per account
+    friendRequest: { limit: 20,  windowMs: 60 * MIN },  // friend requests sent per account
+    social:        { limit: 60,  windowMs: 10 * MIN },  // blocks + unblocks per account
 };
 
 const BACKOFFS = {

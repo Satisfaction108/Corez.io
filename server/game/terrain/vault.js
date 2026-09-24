@@ -13,6 +13,9 @@ const CASHED_LOCK_MS = 20_000;    // one visit per deposit
 // collision uses the same shape so the door is where it looks.
 const padGeom = require('./padGeom.js');
 const OCT_SCALE = padGeom.OCT.scale;
+let _dustHooks = null;
+function dustHooks() { return _dustHooks || (_dustHooks = require('../../accounts/game/dustHooks.js')); }
+
 function insideOctagon(dx, dy, R) { return padGeom.insideNgon(dx, dy, R, 8); }
 function onPadShape(v, dx, dy, extra = 0) {
     if (Config.dig_royale || v.rainbow) return padGeom.insideNgon(dx, dy, v.r * OCT_SCALE + extra, 8);
@@ -326,7 +329,10 @@ function tick(actors, dtMs) {
         }
         d.spill -= chunk;
         d.remaining -= chunk;
-        body.carriedGems = Math.max(0, (body.carriedGems | 0) - chunk);
+        const carriedBefore = body.carriedGems | 0;
+        body.carriedGems = Math.max(0, carriedBefore - chunk);
+        // gemdust leaves with its share of the satchel, at full efficiency
+        if (Config.dig_royale) { try { dustHooks().onSatchelOut(body, chunk, carriedBefore, 1); } catch { /* */ } }
         const banked = body.socket ? (body.socket.gemBanked || 0) : (body.botBanked || 0);
         // deep pockets pays a premium at the vault
         const credit = chunk * ((global.royaleMods && global.royaleMods.bankMult) || 1);
@@ -354,6 +360,7 @@ function tick(actors, dtMs) {
             const banked = body.socket ? (body.socket.gemBanked || 0) : (body.botBanked || 0);
             setBanked(body, Math.round(banked));
             gems.updateSatchel(body);
+            if (Config.dig_royale) { try { dustHooks().onBankDone(body); } catch { /* */ } }
             if (Config.dig_royale && padDone) ejectFromPad(body, padDone, "Cashed out. Make room for the next miner.", CASHED_LOCK_MS);
         }
     }

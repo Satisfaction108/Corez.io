@@ -577,6 +577,14 @@ function useKit(socket, slot, tx, ty, itemId) {
             const credit = Math.floor(take * 0.7);
             const gems = require('./gems.js');
             body.carriedGems = carried - take;
+            // its share of the gemdust banks at the flash vault's 70%
+            if (Config.dig_royale) {
+                try {
+                    const dh = require('../../accounts/game/dustHooks.js');
+                    dh.onSatchelOut(body, take, carried, 0.7);
+                    dh.onBankDone(body);
+                } catch { /* */ }
+            }
             gems.setBanked(body, bankedOf(socket) + credit);
             try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
             if (Config.dig_royale) try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, credit); } catch { /* */ }

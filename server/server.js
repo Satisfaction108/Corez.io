@@ -616,7 +616,12 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
     process.on(sig, () => {
         if (shuttingDown) return;
         shuttingDown = true;
+        // a game in a worker thread settles its open ranked lives on its own
+        // connection; give it a moment before the process goes
+        const workers = global.gameWorkers ? global.gameWorkers.size : 0;
+        if (workers) { try { accounts.bus.toGame({ t: "shutdown" }); } catch (e) { /* */ } }
         try { accounts.shutdown(); } catch (e) { console.error("[accounts] shutdown failed: " + ((e && e.stack) || e)); }
-        process.exit(0);
+        if (workers) setTimeout(() => process.exit(0), 300);
+        else process.exit(0);
     });
 }

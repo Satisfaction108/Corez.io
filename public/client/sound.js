@@ -854,6 +854,71 @@ class GameSound {
         this._tone({ freq: 494, type: 'sine', dur: 0.3, peak: 0.07 * m, delay: 0.1, attack: 0.024 });
         this._tone({ freq: 587, type: 'sine', dur: 0.34, peak: 0.045 * m, delay: 0.16, attack: 0.03 });
     }
+
+    // ── Ranked ──────────────────────────────────────────────────────────────
+    // The ceremony's beats. Same rounded vocabulary: a crack is a dry tok with
+    // a glassy tick on top (brighter each stage), the shatter is an impact
+    // with a spill of falling ticks, the rank-up is a warm major lift that
+    // opens up an octave for a whole new tier.
+    rankCrack(stage = 1) {
+        const m = this._mix('celebration');
+        if (!m || !this._throttle('rankCrack', 90)) return;
+        const s = Math.max(1, Math.min(3, stage | 0));
+        this._impact({ sub: 80, body: 190 + s * 20, bodyTo: 110, air: 700, weight: (0.18 + s * 0.05) * m, dur: 0.09 });
+        this._tone({ freq: 880 + s * 160, glideTo: 620 + s * 90, type: 'sine', dur: 0.05, peak: 0.05 * m, delay: 0.005, attack: 0.004 });
+        this._puff({ kind: 'pink', cut: 1500, cutTo: 900, Q: 0.9, dur: 0.04, peak: 0.035 * m, attack: 0.006 });
+    }
+
+    rankShatter() {
+        const m = this._mix('celebration');
+        if (!m || !this._throttle('rankShatter', 300)) return;
+        this._impact({ sub: 60, body: 150, bodyTo: 70, air: 520, weight: 0.5 * m, dur: 0.22 });
+        this._puff({ kind: 'brown', cut: 900, cutTo: 300, Q: 0.6, dur: 0.3, peak: 0.1 * m, attack: 0.01 });
+        // the bits landing: quick bright ticks falling in pitch
+        const notes = [1318, 1175, 988, 1109, 880, 784];
+        for (let i = 0; i < notes.length; i++) {
+            this._tone({ freq: notes[i], glideTo: notes[i] * 0.86, type: 'sine', dur: 0.05,
+                         peak: 0.04 * m * (1 - i * 0.1), delay: 0.04 + i * 0.045 + Math.random() * 0.02, attack: 0.004 });
+        }
+    }
+
+    rankUp(big = false) {
+        const m = this._mix('celebration');
+        if (!m || !this._throttle('rankUp', 600)) return;
+        this._impact({ sub: 55, body: 130, bodyTo: 62, air: 360, weight: (big ? 0.62 : 0.5) * m, dur: 0.26 });
+        // G major lift; a new tier climbs on to the octave and rings longer
+        const notes = big ? [392, 494, 587, 784, 988] : [392, 494, 587, 784];
+        for (let i = 0; i < notes.length; i++) {
+            this._tone({ freq: notes[i], type: 'sine', dur: (big ? 0.42 : 0.32) + i * 0.03,
+                         peak: (0.1 - i * 0.012) * m, delay: 0.05 + i * 0.075, attack: 0.018 });
+        }
+        this._ring({ freqs: [big ? 1175 : 988, big ? 1568 : 1318], dur: big ? 0.7 : 0.5, peak: 0.05 * m, delay: 0.05 + notes.length * 0.075 });
+        if (big) this._playSample('bankCelebrate', { peak: 0.7 * m, delay: 0.12, duck: false });
+    }
+
+    // Rank points going down (a fare). Soft on purpose: it is a small loss.
+    rankDown() {
+        const m = this._mix('celebration');
+        if (!m || !this._throttle('rankDown', 800)) return;
+        this._tone({ freq: 392, glideTo: 370, type: 'sine', dur: 0.16, peak: 0.06 * m, attack: 0.016 });
+        this._tone({ freq: 330, glideTo: 294, type: 'sine', dur: 0.24, peak: 0.05 * m, delay: 0.12, attack: 0.02 });
+    }
+
+    // Gemdust: a tiny high bell for a pop, a two-note rise when it banks.
+    dustPop() {
+        const m = this._mix('gems');
+        if (!m || !this._throttle('dustPop', 120)) return;
+        this._tone({ freq: 1319, type: 'sine', dur: 0.12, peak: 0.06 * m, attack: 0.008 });
+        this._tone({ freq: 1976, type: 'sine', dur: 0.09, peak: 0.022 * m, delay: 0.01, attack: 0.01 });
+    }
+
+    dustBank() {
+        const m = this._mix('gems');
+        if (!m || !this._throttle('dustBank', 300)) return;
+        this._tone({ freq: 880, type: 'sine', dur: 0.14, peak: 0.06 * m, attack: 0.01 });
+        this._tone({ freq: 1175, type: 'sine', dur: 0.2, peak: 0.055 * m, delay: 0.08, attack: 0.012 });
+        this._puff({ kind: 'pink', cut: 1200, cutTo: 2000, Q: 0.8, dur: 0.12, peak: 0.02 * m, attack: 0.02 });
+    }
 }
 
 export const gameSound = new GameSound();

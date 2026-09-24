@@ -9,6 +9,10 @@ const bosses = require('../../terrain/bosses.js');
 const blooms = require('../../terrain/blooms.js');
 const raidEvents = require('../../terrain/raidEvents.js');
 const raidMods = require('../../terrain/raidMods.js');
+// ranked lives + gemdust (accounts); every call below is guarded
+const rankHooks = require('../../../accounts/game/rankHooks.js');
+const dustHooks = require('../../../accounts/game/dustHooks.js');
+const progressHooks = require('../../../accounts/game/progressHooks.js');   // daily quests + achievements
 
 const RAID_MS = 2 * 60 * 60 * 1000;
 // Raid size including humans: a solo player gets 5 bots, and each real
@@ -155,6 +159,9 @@ function ensureStat(body) {
     }
     s.name = body.name || s.name;
     s.id = body.id;
+    // nameplate cosmetics for the board rows (bridge.applyIdentity)
+    s.ns = body.nameStyleNid | 0;
+    s.nc = body.customNameColor || null;
     s.alive = true;
     s.lastSeen = now();
     try { s.carried = Math.max(0, (body.carriedGems || 0) | 0); } catch { /* */ }
@@ -172,6 +179,17 @@ function gemsOf(body) {
     const carried = (body.carriedGems || 0) | 0;
     const banked = body.socket ? ((body.socket.gemBanked || 0) | 0) : ((body.botBanked || 0) | 0);
     return carried + banked;
+}
+
+// The board order: score, then banked, then kills (stable, insertion order).
+const boardCmp = (a, b) => (b.score - a.score) || (b.gems - a.gems) || (b.kills - a.kills);
+
+// Every stat in board order, bots included: the raid placement bonus reads
+// places from this. -> [{s, score, gems, kills}]
+function boardOrder() {
+    return [...raidStats.values()]
+        .map(s => ({ s, score: scoreOf(s), gems: s.banked | 0, kills: s.kills | 0 }))
+        .sort(boardCmp);
 }
 
 function boardSnapshot() {
@@ -199,9 +217,12 @@ function boardSnapshot() {
         streak: s.streak | 0,
         boss: s.bossKills | 0,
         bot: s.isBot ? 1 : 0,
+        rk: s.rankCode | 0,
+        ns: s.ns | 0,
+        nc: s.nc || undefined,
         place: 0,
     }));
-    rows.sort((a, b) => (b.score - a.score) || (b.gems - a.gems) || (b.kills - a.kills));
+    rows.sort(boardCmp);
     rows.forEach((r, i) => { r.place = i + 1; });
     // Everyone in the game right now always makes the board, then the best of
     // the fallen. The old top-32-by-score cut dropped fresh spawns (score 0)
@@ -543,6 +564,7 @@ function freshRaidBody(body) {
     body.spawnGraceUntil = now() + SPAWN_GRACE_MS;
     body.passive = false;
     body.royaleAlive = true;
+    body.royaleBornAt = now();     // a kill inside 15 s of this pays nothing (ranked)
     body.deathCause = "";
     const extra = raidMods.num('extraSkill', 0);
     if (extra > 0 && !body._modSkillGiven) {
@@ -564,6 +586,7 @@ function spawnRaidBot() {
     bot.team = team;
     bot.botRespawnsRemaining = 0;
     bot.royaleAlive = true;
+    bot.royaleBornAt = now();
     bot.weakDrillUntil = 0;
     try { gems.initSatchel(bot); } catch { /* */ }
     try { bot.refreshBodyAttributes(); } catch { /* */ }
@@ -602,6 +625,7 @@ function onCapture(body, site) {
     if (!body || !site) return;
     const s = ensureStat(body);
     if (s) s.holds = (s.holds | 0) + 1;
+    if (body.socket) { try { progressHooks.onCapture(body); } catch (e) { guardLog('progress capture', e); } }
 }
 
 // Living killer for credit; `any` also returns a killer who died in the same
@@ -645,10 +669,13 @@ function onCombatantDead(body) {
         if (ks) {
             ks.kills = (ks.kills | 0) + 1;
             pts += killScore();
+            // booked at today's price, so a later twist can't re-price it (ranked basis)
+            ks.killPts = (ks.killPts | 0) + killScore();
             // streak: escalating bonus past the mark, shutdown bounty for ending one
             ks.streak = (ks.streak | 0) + 1;
             streakNow = ks.streak;
             if (ks.streak > ks.bestStreak) ks.bestStreak = ks.streak;
+            if (killerBody.socket) { try { progressHooks.onStreak(killerBody, ks.streak); } catch (e) { guardLog('progress streak', e); } }
             if (ks.streak > STREAK_MARK_AT) {
                 const sb = STREAK_BONUS_PER * (ks.streak - STREAK_MARK_AT);
                 ks.extra = (ks.extra | 0) + sb;
@@ -661,6 +688,8 @@ function onCombatantDead(body) {
             }
             const mark = shop.killBonus(killerBody);
             if (mark) { ks.extra = (ks.extra | 0) + mark; pts += mark; }
+            // ranked kill filters (bot half, same victim, spawn kill) + kill dust
+            try { rankHooks.onKillCredited(killerBody, ks, body, s, pts); } catch (e) { guardLog('rank kill', e); }
         }
         if (killerBody.socket) {
             questProgress(killerBody, "kill", 1);
@@ -688,6 +717,9 @@ function onCombatantDead(body) {
         place: 0,
     });
     if (body.socket) {
+        // settle the ranked life now; its RK follows the death packet (a
+        // raid-end death was settled at endRaid, so this skips it)
+        try { rankHooks.onDeath(body, s); } catch (e) { guardLog('rank death', e); }
         const dl = shop.onDeath(body);
         body.socket.raidDeathStreak = victimStreak;
         body.socket.raidDeathDrillLost = dl && dl.drillLost ? 1 : 0;
@@ -719,6 +751,7 @@ function onBossDead(o, kind, killer, burrowed) {
         }
         by = killer.name || "Unnamed";
         callout(killer, "boss", "BOSS DOWN: " + kind.name, kind.score);
+        if (killer.socket) { try { progressHooks.onBoss(killer); } catch (e) { guardLog('progress boss', e); } }
     }
     // everyone else gets the banner too (no points on theirs)
     for (const client of connectedClients()) {
@@ -736,6 +769,7 @@ function onChestOpened(body, chest, itemMsg) {
     if (s) s.chests = (s.chests | 0) + 1;
     if (body.socket) {
         questProgress(body, "chest", 1);
+        try { progressHooks.onChest(body); } catch (e) { guardLog('progress chest', e); }
         const text = (chest.chestRare ? "Epic chest cracked open" : "Copper chest cracked open") + (itemMsg ? ". " + itemMsg : "");
         callout(body, "chest", text, chest.chestGems | 0);
     }
@@ -824,7 +858,9 @@ function onHumanJoin(body) {
     const resuming = !!(body.socket && body.socket._resume);
     if (!resuming) giveStarterKit(body, isRespawn);
     try { shop.applyPassives(body); } catch { /* */ }
-    ensureStat(body);
+    const joinStat = ensureStat(body);
+    // a ranked life opens here; a resume keeps the one already open
+    try { rankHooks.lifeStart(body, joinStat); } catch (e) { guardLog('rank life', e); }
     if (body.socket) {
         body.socket.royaleEliminated = false;
         body.socket.royalePlace = 0;
@@ -854,7 +890,9 @@ function onHumanJoin(body) {
 // two minutes the new socket inherits everything the old one had. Carried
 // gems only come back if nothing had hit you for 8 s, so pulling the plug is
 // not a way out of a losing fight.
-const RESUME_MS = 120_000;
+// ROYALE_RESUME_MS shortens the window for local tests (ROYALE_DEBUG only).
+const RESUME_MS = (process.env.ROYALE_DEBUG && parseInt(process.env.ROYALE_RESUME_MS, 10) > 0)
+    ? parseInt(process.env.ROYALE_RESUME_MS, 10) : 120_000;
 const RESUME_SAFE_MS = 8000;
 const resumeStore = new Map();
 // Keyed by the tab's token and, for accounts, by the account too: a newer
@@ -902,6 +940,8 @@ function saveResume(socket, body) {
         if (hitAgo > RESUME_SAFE_MS) {
             snap.carried = (body.carriedGems | 0);
             body.carriedGems = 0;     // kept for the resume, so it must not also drop
+            // its gemdust goes with it
+            try { snap.dustCarried = dustHooks.stash(body); } catch { /* */ }
         }
     }
     for (const k of keys) resumeStore.set(k, snap);
@@ -958,6 +998,7 @@ function applyResume(body, snap) {
             }
             body.health.amount = body.health.max * Math.max(0.25, Math.min(1, snap.hp || 1));
             body.carriedGems = snap.carried | 0;
+            try { dustHooks.restore(body, snap.dustCarried | 0); } catch { /* */ }
             try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
             const st = shop.stateOf(socket);
             if (st && st.arm) { try { shop.attachSidearm(body, st.arm); } catch { /* */ } }
@@ -977,6 +1018,11 @@ function markHumanDeath(socket) {
 function disconnectCleanup(socket, body) {
     if (!Config.dig_royale) return;
     try { saveResume(socket, body); } catch (e) { console.error('[RAID] resume save failed', e && e.message); }
+    // an open ranked life settles as a disconnect if nobody resumes it
+    try {
+        const ls = raidStats.get(body ? statKeyFor(body) : "s:" + (socket && socket.id));
+        rankHooks.onDisconnect(socket, ls);
+    } catch (e) { guardLog('rank disconnect', e); }
     try {
         if (body && body.royaleAlive !== false) {
             body.royaleAlive = false;
@@ -1197,6 +1243,7 @@ function startRaid(first) {
     raidStartAt = now();
     raidEndsAt = raidStartAt + RAID_MS;
     raidStats = new Map();
+    try { rankHooks.onRaidStart(); } catch (e) { guardLog('rank raid start', e); }
     killFeed = [];
     occupy.clear();
     lockout.clear();
@@ -1253,7 +1300,8 @@ function startRaid(first) {
             freshRaidBody(body);
             giveStarterKit(body, false);
             try { shop.applyPassives(body); } catch { /* */ }
-            ensureStat(body);
+            const rs = ensureStat(body);
+            if (body.socket) { try { rankHooks.lifeStart(body, rs); } catch (e) { guardLog('rank life', e); } }
         }
         for (const client of connectedClients()) {
             if (client.player && client.player.body && !client.player.body.isDead?.()) continue;
@@ -1293,6 +1341,9 @@ function endRaid() {
     }
     raidResults = { raidId, top, at: now() };
     raidResultsAt = now();
+    // ranked: every open life settles now (the carried half counts), then the
+    // placement bonus; all before the mass death below
+    try { rankHooks.onRaidEnd(); } catch (e) { guardLog('rank raid end', e); }
     try {
         const names = top.slice(0, 3).map((r, i) => "#" + (i + 1) + " " + r.name).join(", ");
         global.gameManager.socketManager.broadcast("Raid over. Top: " + (names || "no scores") + ". New raid starting.");
@@ -1308,6 +1359,7 @@ function endRaid() {
         for (const body of combatants()) {
             try {
                 body.carriedGems = 0;
+                dustHooks.zero(body);          // unbanked dust ends with the raid
                 try { gems.updateSatchel(body); } catch { /* */ }
                 body.invuln = false;
                 body.godmode = false;
@@ -1328,6 +1380,7 @@ function endRaid() {
             }
             for (const body of combatants()) {
                 body.carriedGems = 0;
+                dustHooks.zero(body);
                 body.botBanked = 0;
                 body.bankedGems = 0;
                 if (body.socket) body.socket.gemBanked = 0;
@@ -1407,6 +1460,8 @@ function tick() {
         return;
     }
     if (raidResults && t - raidResultsAt > RAID_END_BEAT_MS + RAID_END_WAIT_MS) raidResults = null;
+    // coalesced DU packets and the 5 s dust flush (accounts)
+    guard('accounts', () => rankHooks.tick(t));
     // everyone is down between raids: no storm, bosses, chests or bots, just
     // keep the HUD fed (results panel, countdown)
     if (raidEnding) {
@@ -1435,7 +1490,9 @@ function tick() {
     if (t - (tick._sweepAt || 0) > 30000) {
         tick._sweepAt = t;
         for (const [k, s] of raidStats) {
-            if (!s.alive && t - (s.lastSeen || 0) > 5 * 60 * 1000) raidStats.delete(k);
+            // a stat with an open ranked life (a disconnect waiting out its
+            // resume window) stays until that life settles
+            if (!s.alive && !s.lifeOpen && t - (s.lastSeen || 0) > 5 * 60 * 1000) raidStats.delete(k);
         }
         for (const [k, u] of lockout) {
             if (u <= t) lockout.delete(k);
@@ -1450,14 +1507,25 @@ function tick() {
 // Run one raid stage; log a failure at most once every 10s per stage.
 const guardLogAt = new Map();
 function guard(label, fn) {
-    try { fn(); } catch (e) {
-        const t = Date.now();
-        if (t - (guardLogAt.get(label) || 0) > 10000) {
-            guardLogAt.set(label, t);
-            console.error('[RAID] ' + label + ' failed:', e && e.stack || e);
-        }
+    try { fn(); } catch (e) { guardLog(label, e); }
+}
+function guardLog(label, e) {
+    const t = Date.now();
+    if (t - (guardLogAt.get(label) || 0) > 10000) {
+        guardLogAt.set(label, t);
+        console.error('[RAID] ' + label + ' failed:', e && e.stack || e);
     }
 }
+
+// What the ranked hooks may read of the raid.
+rankHooks.attach({
+    stats: () => raidStats,
+    clients: connectedClients,
+    raidId: () => raidId,
+    board: boardOrder,
+    resumeMs: RESUME_MS,
+    serverId: 'royale',
+});
 
 function stormFleePoint(body) {
     if (!storm.inStorm(body.x, body.y)) return null;

@@ -6,8 +6,9 @@
 import * as api from './api.js';
 import * as store from './state.js';
 import * as welcome from './welcome.js';
-import { h, icon, clear, modal, confirm, formModal, toast, humanError, showAlert, setBusy, avatar, fmtDate, fmtDust, copyText } from './ui.js';
+import { h, icon, clear, modal, confirm, formModal, toast, humanError, showAlert, setBusy, avatar, fmtDate, fmtDust, copyText, expandIn, collapseOut } from './ui.js';
 import { usernameField, passwordPair, passwordInput } from './fields.js';
+import { rankView, badgeImg } from './menu.js';
 
 const INTENT_KEY = 'dwReauthIntent';
 let hooks = { refresh() {}, onLoggedOut() {}, onDeleted() {}, setUser() {} };
@@ -79,11 +80,21 @@ function focusIn(cardEl, value) {
         inp.focus();
     }, 40);
 }
-const toggler = (key, build, open) => (e) => {
+// Open a row's form (it grows in under the row) or close it (it shrinks
+// away first, then the row goes back to one line).
+async function setRow(key, rowEl, build, open) {
+    if (!rowEl || rowEl._dwBusy) return null;
     expanded[key] = open;
-    const next = swap(e.currentTarget.closest('.as-row'), build);
-    if (open) focusIn(next);
-};
+    if (!open) {
+        rowEl._dwBusy = true;
+        await collapseOut(rowEl.querySelector('.as-form'));
+        return swap(rowEl, build);
+    }
+    const next = swap(rowEl, build);
+    if (next) { expandIn(next.querySelector('.as-form')); focusIn(next); }
+    return next;
+}
+const toggler = (key, build, open) => (e) => { setRow(key, e.currentTarget.closest('.as-row'), build, open); };
 
 // One line per setting: what it is, what it's set to, one button. A form
 // opens underneath when there's something to fill in.
@@ -108,7 +119,7 @@ function profile(u) {
         h('div', { class: 'as-who' },
             h('div', { class: 'as-uname', text: u.username }),
             h('div', { class: 'as-meta' },
-                h('span', { text: (u.rank && u.rank.name) || 'Unranked' }),
+                (() => { const v = rankView(u.rank); return h('span', { class: 'as-rank' }, badgeImg(v.div, 18, 'as-badge'), h('span', { text: v.text })); })(),
                 h('span', { class: 'as-dot', text: '·' }),
                 h('span', { class: 'as-dustline' }, icon('dust'), fmtDust(u.dust) + ' gemdust'),
                 u.createdAt ? h('span', { class: 'as-dot', text: '·' }) : null,
@@ -149,6 +160,7 @@ function usernameCard(u) {
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
             expanded.username = false;
+            await collapseOut(form);
             hooks.setUser(r.data.user);
             toast('You’re now ' + r.data.user.username + '.', { kind: 'ok' });
             return;
@@ -165,7 +177,9 @@ function usernameCard(u) {
 export function focusUsername(value) {
     expanded.username = true;
     const cur = document.querySelector('#dwHub .as-card-username');
-    focusIn(swap(cur, usernameCard), value || '');
+    const next = swap(cur, usernameCard);
+    if (next) expandIn(next.querySelector('.as-form'));
+    focusIn(next, value || '');
 }
 
 /* ── password ───────────────────────────────────────────────────────── */
@@ -192,8 +206,7 @@ function passwordCard(u) {
         const r = await api.changePassword(cur ? cur.value : undefined, pp.value);
         setBusy(go, false);
         if (r.ok) {
-            expanded.password = false;
-            swap(form.closest('.as-row'), passwordCard);
+            await setRow('password', form.closest('.as-row'), passwordCard, false);
             toast(u.hasPassword ? 'Password changed.' : 'Password added. You can log in with your username now.', { kind: 'ok' });
             hooks.refresh();
             return;

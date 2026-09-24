@@ -818,13 +818,13 @@ body.mobile .game-title { font-size: 34px; margin: 2px 0 14px; }
     letter-spacing: .02em;
     box-shadow: none;
     opacity: 0;
-    transform: translateY(-8px);
-    animation: toastIn .25s ease forwards;
+    transform: translateY(-10px) scale(.98);
+    animation: toastIn var(--dw-t3, .3s) var(--dw-ease, ease) forwards;
     pointer-events: auto;
 }
-.toast.hide { animation: toastOut .25s ease forwards; }
-@keyframes toastIn { to { opacity: 1; transform: translateY(0); } }
-@keyframes toastOut { to { opacity: 0; transform: translateY(-8px); } }
+.toast.hide { animation: toastOut var(--dw-t2, .22s) var(--dw-ease, ease) forwards; pointer-events: none; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes toastOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-8px) scale(.98); } }
 
 .serverSelector tr { color: var(--text2); cursor: pointer; transition: color .12s; text-shadow: none; }
 .serverSelector tr:hover { color: var(--text); }
@@ -1425,6 +1425,15 @@ body.mobile .region-dropdown-menu { position: static; }
     --online: #5fd24c;
     --hub-bg: #140f08;      /* --panel-bg without the see-through */
 }
+/* motion: one easing and three durations for every account UI animation
+   (ui.js EASE / T_FAST / T_MID / T_SLOW match). Transform and opacity only,
+   except the Account rows, which grow in height. */
+:root {
+    --dw-ease: cubic-bezier(.2, .8, .2, 1);
+    --dw-t1: 150ms;
+    --dw-t2: 220ms;
+    --dw-t3: 300ms;
+}
 [data-theme="light"] {
     --dust: #6f44d8;
     --danger: #c8372d;
@@ -1491,13 +1500,25 @@ body:not(.in-game) .toast-container { top: 68px; }
     letter-spacing: .02em;
     white-space: nowrap;
     cursor: pointer;
-    transition: background .12s, color .12s;
+    transition: background-color var(--dw-t1) var(--dw-ease), color var(--dw-t1) var(--dw-ease), opacity var(--dw-t2) var(--dw-ease), transform var(--dw-t1) var(--dw-ease);
 }
 .dw-nav-btn .dw-ic { width: 15px; height: 15px; }
 .dw-nav-btn:hover { color: var(--text); background: var(--surface); }
+.dw-nav-btn:active { transform: scale(.96); }
 .dw-nav-btn.active, .dw-nav-btn.active:hover { background: var(--tab-bg); color: var(--tab-fg); }
+/* accounts: later panes say "Coming soon" */
 .dw-nav-btn[aria-disabled="true"] { opacity: .45; cursor: default; }
 .dw-nav-btn[aria-disabled="true"]:hover { background: transparent; color: var(--text2); }
+.dw-nav-btn[aria-disabled="true"]:active { transform: none; }
+/* guests: the same panes are account-only, marked with a small lock (from
+   CSS, so it is there on first paint) and a log-in prompt on click */
+.dw-nav-lock { display: none; width: 11px !important; height: 11px !important; margin-left: -2px; opacity: .7; }
+html[data-acct="guest"] .dw-nav-btn[aria-disabled="true"],
+.dw-nav-btn.locked { opacity: 1; cursor: pointer; }
+html[data-acct="guest"] .dw-nav-btn[aria-disabled="true"]:hover,
+.dw-nav-btn.locked:hover { color: var(--text); background: var(--surface); }
+html[data-acct="guest"] .dw-nav-btn[data-pane]:not([data-pane="play"]) .dw-nav-lock,
+.dw-nav-btn.locked .dw-nav-lock { display: block; }
 @media (max-width: 1200px) {
     .dw-nav-btn { padding: 0 11px; }
     .dw-nav-btn span { display: none; }
@@ -1526,8 +1547,10 @@ body:has(#homeSettingsPanel.open, #homeChangelogPanel.open, #contributorsPanel.o
     font: inherit;
     text-align: left;
     cursor: pointer;
-    transition: border-color .15s, background .15s;
+    transition: border-color var(--dw-t1) var(--dw-ease), background-color var(--dw-t1) var(--dw-ease), transform var(--dw-t1) var(--dw-ease);
 }
+#accountChip.ready { animation: dwFade var(--dw-t2) var(--dw-ease) both; }
+#accountChip:active { transform: scale(.98); }
 #accountChip.guest { padding-right: 12px; }
 #accountChip:empty { visibility: hidden; }
 #accountChip:hover, #accountChip.active { border-color: var(--border-hl); background: var(--surface); }
@@ -1542,6 +1565,8 @@ body:has(#homeSettingsPanel.open, #homeChangelogPanel.open, #contributorsPanel.o
 }
 .ac-sub { color: var(--text2); font: 500 10.5px/1.15 Ubuntu; letter-spacing: .03em; white-space: nowrap; }
 .ac-sub.ac-link { color: var(--link); font-weight: 700; }
+.ac-sub.ac-rank { display: inline-flex; align-items: center; gap: 3px; margin-left: -1px; }
+.ac-badge { width: 16px; height: 16px; flex: none; display: block; margin: -1px 0; }
 #accountChip:hover .ac-link { text-decoration: underline; }
 /* narrow windows: the chip shrinks to avatar + dust so it clears the nav */
 @media (max-width: 1000px) {
@@ -1610,9 +1635,14 @@ html[data-acct="user"] #acctNameBox { display: flex; }
     color: var(--heading);
     font: 700 15px Ubuntu;
     cursor: pointer;
-    transition: border-color .15s;
+    gap: 7px;
+    transition: border-color var(--dw-t1) var(--dw-ease), transform var(--dw-t1) var(--dw-ease);
 }
 #acctNameBox:hover { border-color: var(--border-hl); }
+#acctNameBox:active { transform: scale(.99); }
+/* your rank badge, left of the name; nudged so its middle meets the
+   letters' middle rather than the line box's */
+.an-badge { width: 22px; height: 22px; flex: none; display: block; margin: -1px 0 0 -2px; animation: dwFade var(--dw-t2) var(--dw-ease) both; }
 #acctNameText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #acctNameBox .dw-ic { position: absolute; right: 13px; top: 50%; width: 13px; height: 13px; margin-top: -7px; color: var(--text2); }
 
@@ -1681,8 +1711,9 @@ input.dw-input.mono::placeholder { letter-spacing: .12em; }
     letter-spacing: .02em;
     white-space: nowrap;
     cursor: pointer;
-    transition: border-color .12s, background .12s, color .12s;
+    transition: border-color var(--dw-t1) var(--dw-ease), background-color var(--dw-t1) var(--dw-ease), color var(--dw-t1) var(--dw-ease), opacity var(--dw-t1) var(--dw-ease), transform var(--dw-t1) var(--dw-ease);
 }
+.dw-btn:active:not(:disabled) { transform: translateY(1px) scale(.985); }
 .dw-btn .dw-ic { width: 15px; height: 15px; }
 .dw-btn:hover { border-color: var(--border-hl); }
 .dw-btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -1725,8 +1756,9 @@ input.dw-input.mono::placeholder { letter-spacing: .12em; }
     padding: 24px;
     box-sizing: border-box;
     background: rgba(0,0,0,.5);
-    animation: dwFade .15s ease both;
+    animation: dwFade var(--dw-t2) var(--dw-ease) both;
 }
+.dw-layer.closing { pointer-events: none; }
 .dw-modal {
     width: 380px;
     max-width: 100%;
@@ -1739,8 +1771,9 @@ input.dw-input.mono::placeholder { letter-spacing: .12em; }
     border-radius: 16px;
     box-shadow: 0 16px 48px var(--shadow);
     color: var(--text);
-    animation: dwPop .18s ease both;
+    animation: dwPop var(--dw-t2) var(--dw-ease) both;
 }
+.dw-modal-sm { width: 340px; }
 .dw-modal-danger { border-top: 3px solid var(--danger); }
 .dw-modal-h { margin-bottom: 8px; color: var(--heading); font: 700 17px/1.25 Ubuntu; }
 .dw-modal-p { margin-bottom: 16px; color: var(--text2); font: 400 13px/1.5 Ubuntu; }
@@ -1748,11 +1781,16 @@ input.dw-input.mono::placeholder { letter-spacing: .12em; }
 .dw-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .as-kbd { color: var(--heading); font-family: 'Ubuntu Mono', monospace; letter-spacing: .08em; }
 @keyframes dwFade { from { opacity: 0; } }
-@keyframes dwPop { from { opacity: 0; transform: scale(.97); } }
+@keyframes dwPop { from { opacity: 0; transform: translateY(6px) scale(.97); } }
 
 /* ── hub panel ── */
-#dwHubOverlay { position: fixed; inset: 0; z-index: 299; display: none; background: rgba(0,0,0,.4); }
-#dwHubOverlay.visible { display: block; }
+#dwHubOverlay {
+    position: fixed; inset: 0; z-index: 299;
+    background: rgba(0,0,0,.4);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity var(--dw-t2) ease, visibility 0s var(--dw-t2);
+}
+#dwHubOverlay.visible { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity var(--dw-t2) ease; }
 #dwHub {
     position: fixed;
     top: 66px; left: 50%;
@@ -1770,15 +1808,16 @@ input.dw-input.mono::placeholder { letter-spacing: .12em; }
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transform: translateX(-50%) translateY(-6px);
-    transition: transform .18s ease, opacity .18s ease, visibility 0s .18s;
+    transform: translateX(-50%) translateY(-8px) scale(.98);
+    transform-origin: 50% 0;
+    transition: transform var(--dw-t1) var(--dw-ease), opacity var(--dw-t1) ease, visibility 0s var(--dw-t1);
 }
 #dwHub.open {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
     transform: translateX(-50%);
-    transition: transform .18s ease, opacity .18s ease;
+    transition: transform var(--dw-t3) var(--dw-ease), opacity var(--dw-t2) ease;
 }
 .hub-head {
     display: flex;
@@ -1802,7 +1841,9 @@ input.dw-input.mono::placeholder { letter-spacing: .12em; }
     color: var(--text2);
     cursor: pointer;
 }
+.hub-close, .wl-x, .wl-back, .as-copy { transition: background-color var(--dw-t1) var(--dw-ease), color var(--dw-t1) var(--dw-ease), transform var(--dw-t1) var(--dw-ease); }
 .hub-close:hover, .wl-x:hover { color: var(--text); background: var(--surface2); }
+.hub-close:active, .wl-x:active, .wl-back:active, .as-copy:active { transform: scale(.94); }
 .hub-body {
     flex: 1;
     min-height: 0;
@@ -1829,6 +1870,8 @@ input.dw-input.mono::placeholder { letter-spacing: .12em; }
 .as-uname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--heading); font: 700 21px/1.2 Ubuntu; }
 .as-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 3px; color: var(--text2); font: 500 12px Ubuntu; }
 .as-dot { opacity: .6; }
+.as-rank { display: inline-flex; align-items: center; gap: 4px; }
+.as-badge { width: 18px; height: 18px; flex: none; display: block; margin: -2px 0 -2px -1px; }
 .as-dustline { display: inline-flex; align-items: center; gap: 4px; color: var(--dust); font-weight: 700; }
 .as-dustline .dw-ic { width: 12px; height: 12px; }
 .as-tags { display: flex; gap: 6px; margin-top: 8px; }
@@ -1962,7 +2005,8 @@ input.dw-input.mono::placeholder { letter-spacing: .12em; }
     box-sizing: border-box;
     background: color-mix(in srgb, var(--bg) 62%, transparent);
 }
-html[data-acct="new"] #dwWelcome, #dwWelcome.open { display: flex; }
+html[data-acct="new"] #dwWelcome, #dwWelcome.open { display: flex; animation: dwFade var(--dw-t2) ease both; }
+#dwWelcome.wl-closing { pointer-events: none; }
 /* the menu card would fight the welcome card; the drifting tanks stay */
 html[data-acct="new"] .mainWrapper, html.dw-wl-open .mainWrapper,
 html[data-acct="new"] #menuNav, html.dw-wl-open #menuNav,
@@ -1979,9 +2023,10 @@ html[data-acct="new"] #accountChip, html.dw-wl-open #accountChip { visibility: h
     border-radius: 16px;
     box-shadow: 0 18px 50px var(--shadow);
     color: var(--text);
-    animation: dwPop .22s ease both;
+    animation: dwPop var(--dw-t3) var(--dw-ease) both;
 }
-.wl-card.wl-swap .wl-view { animation: dwFade .18s ease both; }
+/* the old view, fading out on top while the next one slides in */
+.wl-ghost { position: absolute; margin: 0; pointer-events: none; }
 .wl-view[hidden] { display: none !important; }
 .wl-close { position: absolute; top: 12px; right: 12px; }
 .wl-close[hidden] { display: none; }
@@ -2006,8 +2051,9 @@ html[data-acct="new"] #accountChip, html.dw-wl-open #accountChip { visibility: h
     color: var(--heading);
     font: 600 15px Ubuntu;
     cursor: pointer;
-    transition: border-color .15s, background .15s;
+    transition: border-color var(--dw-t1) var(--dw-ease), background-color var(--dw-t1) var(--dw-ease), transform var(--dw-t1) var(--dw-ease);
 }
+.wl-opt:active { transform: scale(.985); }
 .wl-opt:hover { border-color: var(--border-hl); background: color-mix(in srgb, var(--surface2) 85%, var(--surface)); }
 .wl-opt > .dw-ic { position: absolute; left: 18px; width: 19px; height: 19px; }
 .wl-opt-guest > .dw-ic { color: var(--play); }
@@ -2051,6 +2097,7 @@ html[data-acct="new"] #accountChip, html.dw-wl-open #accountChip { visibility: h
 .wl-form { display: flex; flex-direction: column; gap: 12px; }
 .wl-form .dw-btn.block { margin-top: 2px; }
 .wl-tabs {
+    position: relative;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 3px;
@@ -2070,10 +2117,23 @@ html[data-acct="new"] #accountChip, html.dw-wl-open #accountChip { visibility: h
     font: 700 13px Ubuntu;
     letter-spacing: .03em;
     cursor: pointer;
-    transition: background .12s, color .12s;
+    position: relative;
+    z-index: 1;
+    transition: color var(--dw-t2) var(--dw-ease);
 }
 .wl-tab:hover { color: var(--text); }
-.wl-tab.active { background: var(--tab-bg); color: var(--tab-fg); }
+.wl-tab.active { color: var(--tab-fg); }
+/* one pill slides under whichever tab is active */
+.wl-tab-pill {
+    position: absolute;
+    top: 3px; left: 3px;
+    width: calc(50% - 4.5px);
+    height: 34px;
+    border-radius: 8px;
+    background: var(--tab-bg);
+    transition: transform var(--dw-t2) var(--dw-ease);
+}
+.wl-tabs[data-tab="signup"] .wl-tab-pill { transform: translateX(calc(100% + 3px)); }
 .wl-foot { margin-top: 2px; text-align: center; }
 .wl-note { color: var(--text2); font: 500 11.5px/1.45 Ubuntu; }
 .wl-note-left { text-align: left; }
@@ -2140,3 +2200,604 @@ body.in-game #dwHub,
 body.in-game #dwHubOverlay,
 body.in-game #dwWelcome,
 body.in-game #dwModalRoot { display: none !important; }
+
+/* reduced motion: things still change, they just don't travel */
+@media (prefers-reduced-motion: reduce) {
+    #menuNav, #menuNav *, #accountChip, #accountChip *, #acctNameBox, .an-badge,
+    #dwHub, #dwHub *, #dwHubOverlay, #dwWelcome, #dwWelcome *, #dwModalRoot, #dwModalRoot *, .toast {
+        animation-duration: 1ms !important;
+        animation-delay: 0ms !important;
+        transition-duration: 1ms !important;
+        transition-delay: 0ms !important;
+    }
+}
+
+/* ── Item Shop and Locker (Phase 3) ────────────────────────────────────
+   Flat like the rest: rarity is a border, a 4px band and a text colour
+   (--rc, set per rarity class). The only gradients are inside the name
+   styles, drawn on canvas. Preview wells are the cave floor colour. */
+:root, [data-theme="dark"], [data-theme="light"] {
+    --r-common: #b4b8bd;
+    --r-uncommon: #5fd068;
+    --r-rare: #4aa3ff;
+    --r-epic: #b06bff;
+    --r-legendary: #ffb23d;
+    --dw-floor: #1e1d1b;
+}
+[data-theme="light"] { --r-common: #8a8f96; --r-uncommon: #2f9e3a; --r-rare: #2f7fd6; --r-epic: #8a45d6; --r-legendary: #c77f0a; }
+.r-common { --rc: var(--r-common); }
+.r-uncommon { --rc: var(--r-uncommon); }
+.r-rare { --rc: var(--r-rare); }
+.r-epic { --rc: var(--r-epic); }
+.r-legendary { --rc: var(--r-legendary); }
+.r-none { --rc: var(--text2); }
+.dw-prev, .dw-name-cv { display: block; }
+
+/* the nav's "new items" dot */
+.dw-nav-btn.has-new { position: relative; }
+.dw-nav-btn.has-new::after {
+    content: '';
+    position: absolute;
+    top: 5px; right: 6px;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--danger);
+    box-shadow: 0 0 0 2px var(--surface2);
+    animation: dwPop var(--dw-t2) var(--dw-ease) both;
+}
+.dw-nav-btn.active.has-new::after { box-shadow: 0 0 0 2px var(--tab-bg); }
+/* styled names in the chip and the name box */
+.ac-name-cv { max-width: 150px; margin: -2px 0 -1px -2px; }
+#acctNameText .an-name { margin: 0 auto; }
+
+.shop-loading { padding: 40px 0; color: var(--text2); font: 500 13px Ubuntu; text-align: center; animation: dwFade var(--dw-t3) var(--dw-ease) both; }
+.shop-empty { padding: 34px 12px; text-align: center; }
+.shop-empty-h { color: var(--heading); font: 700 16px Ubuntu; }
+.shop-empty-p { margin: 6px 0 14px; color: var(--text2); font: 400 13px/1.5 Ubuntu; }
+
+.shop-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.shop-reset {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    padding: 7px 13px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 999px;
+}
+.shop-reset-l { color: var(--text2); font: 500 12px Ubuntu; }
+.shop-count { color: var(--heading); font: 700 13px Ubuntu; font-variant-numeric: tabular-nums; transition: color var(--dw-t2) var(--dw-ease); }
+.shop-count.soon { color: var(--danger-text); }
+.shop-top-r { display: flex; align-items: center; gap: 10px; }
+.shop-bal {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 32px; padding: 0 11px;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--dust) 15%, transparent);
+    color: var(--dust);
+    font: 700 13.5px/1 Ubuntu;
+}
+.shop-bal .dw-ic { width: 14px; height: 14px; }
+
+.shop-sec { margin-top: 18px; animation: dwPop var(--dw-t3) var(--dw-ease) both; }
+.shop-sec + .shop-sec { animation-delay: 40ms; }
+.shop-sec + .shop-sec + .shop-sec { animation-delay: 80ms; }
+.shop-h { margin: 0 0 8px 2px; color: var(--text2); font: 700 11.5px Ubuntu; letter-spacing: .09em; text-transform: uppercase; }
+.shop-grid { display: grid; gap: 12px; }
+.shop-grid.feat { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.shop-grid.daily { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.shop-grid.perm { grid-template-columns: repeat(auto-fill, minmax(200px, 250px)); }
+@media (max-width: 680px) {
+    .shop-grid.daily { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .shop-grid.feat { grid-template-columns: minmax(0, 1fr); }
+}
+
+.shop-card {
+    position: relative;
+    display: flex; flex-direction: column;
+    min-width: 0;
+    margin: 0; padding: 0;
+    overflow: hidden;
+    background: var(--surface2);
+    border: 1.5px solid color-mix(in srgb, var(--rc) 45%, var(--border));
+    border-radius: 12px;
+    color: var(--text);
+    font: inherit; text-align: left;
+    cursor: pointer;
+    transition: transform var(--dw-t2) var(--dw-ease), border-color var(--dw-t1) var(--dw-ease), background-color var(--dw-t1) var(--dw-ease);
+}
+.shop-card:hover { transform: translateY(-2px); border-color: var(--rc); }
+.shop-card:active { transform: translateY(0) scale(.985); transition-duration: var(--dw-t1); }
+.shop-card:focus-visible { outline: 2px solid var(--rc); outline-offset: 2px; }
+.shop-band { display: block; height: 4px; flex: none; background: var(--rc); }
+.shop-prev { display: block; line-height: 0; background: var(--dw-floor); }
+.shop-prev canvas { width: 100%; height: auto; }
+.shop-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 9px 11px 11px; }
+.shop-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--heading); font: 700 14px/1.2 Ubuntu; }
+.feat .shop-name { font-size: 16px; }
+.shop-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 0; color: var(--text2); font: 500 11.5px/1.3 Ubuntu; }
+.shop-rar { color: var(--rc); font-weight: 700; }
+.shop-tag {
+    margin-left: 6px; padding: 1px 6px;
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--rc) 16%, transparent);
+    color: var(--rc);
+    font: 700 10px/1.5 Ubuntu; letter-spacing: .04em;
+}
+.shop-foot { display: flex; align-items: center; margin-top: 5px; min-height: 20px; }
+.shop-price { display: inline-flex; align-items: center; gap: 4px; color: var(--dust); font: 700 13.5px/1 Ubuntu; font-variant-numeric: tabular-nums; }
+.shop-price .dw-ic { width: 13px; height: 13px; }
+.shop-price.big { font-size: 22px; gap: 6px; }
+.shop-price.big .dw-ic { width: 19px; height: 19px; }
+.shop-price.sm { font-size: 12.5px; }
+.shop-owned {
+    display: inline-flex; align-items: center;
+    height: 20px; padding: 0 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--online) 16%, transparent);
+    color: var(--online);
+    font: 700 11px/1 Ubuntu; letter-spacing: .06em; text-transform: uppercase;
+}
+
+/* item modal */
+.dw-modal.shop-modal { width: 660px; padding: 0; border-top: 4px solid var(--rc); }
+.shop-mbody { position: relative; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 22px; padding: 20px 22px 20px 20px; }
+.shop-mx { position: absolute; top: 10px; right: 10px; }
+.shop-mprev { width: 300px; height: 300px; overflow: hidden; border-radius: 12px; background: var(--dw-floor); line-height: 0; }
+.shop-swatches, .lk-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.shop-swatches { margin-top: 10px; }
+.shop-sw {
+    width: 20px; height: 20px;
+    margin: 0; padding: 0;
+    border: 2px solid rgba(0,0,0,.35); border-radius: 50%;
+    cursor: pointer;
+    transition: transform var(--dw-t1) var(--dw-ease);
+}
+.shop-sw.sm { width: 16px; height: 16px; }
+.shop-sw:hover { transform: scale(1.12); }
+.shop-sw.on { outline: 2px solid var(--heading); outline-offset: 2px; }
+.lk-swatches .shop-sw.on { outline-color: #f2f2f2; }
+.shop-tankrow { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--text2); font: 500 12px Ubuntu; }
+select.dw-input {
+    height: 32px; padding: 0 10px;
+    background: var(--input-bg); border: 1px solid var(--input-bd); border-radius: 8px;
+    color: var(--input-fg);
+    font: 500 13px Ubuntu;
+    cursor: pointer;
+}
+.shop-minfo { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 6px; }
+.shop-mrar { color: var(--rc); font: 700 11.5px Ubuntu; letter-spacing: .08em; text-transform: uppercase; }
+.shop-mname { margin-top: -4px; color: var(--heading); font: 700 25px/1.15 Ubuntu; }
+.shop-mdesc { color: var(--text2); font: 400 13px/1.5 Ubuntu; }
+.shop-mprice { display: flex; margin: 6px 0 2px; transform-origin: 0 50%; }
+.shop-mact { display: flex; gap: 8px; flex-wrap: wrap; }
+.shop-mact .dw-btn { min-width: 96px; }
+.shop-mnote { color: var(--text2); font: 400 12px/1.45 Ubuntu; }
+.shop-mnote:empty { display: none; }
+@media (max-width: 700px) {
+    .shop-mbody { grid-template-columns: minmax(0, 1fr); }
+    .shop-mprev { margin: 0 auto; }
+}
+
+/* gifts */
+.shop-gift { display: flex; flex-direction: column; gap: 10px; }
+.shop-gline { display: flex; align-items: center; justify-content: space-between; color: var(--text2); font: 500 13px Ubuntu; }
+.shop-glist { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.shop-gfriend, .shop-gmsg {
+    margin: 0; padding: 0 12px;
+    background: var(--surface2); border: 1.5px solid var(--border); border-radius: 9px;
+    color: var(--text); font: 600 13px Ubuntu; text-align: left;
+    cursor: pointer;
+    transition: border-color var(--dw-t1) var(--dw-ease), background-color var(--dw-t1) var(--dw-ease);
+}
+.shop-gfriend { height: 40px; }
+.shop-gmsg { height: 32px; }
+.shop-gfriend:hover, .shop-gmsg:hover { border-color: var(--border-hl); }
+.shop-gfriend.on, .shop-gmsg.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface2)); }
+.shop-glabel { color: var(--text2); font: 700 11.5px Ubuntu; letter-spacing: .08em; text-transform: uppercase; }
+.shop-gmsgs { display: flex; flex-wrap: wrap; gap: 6px; }
+.shop-gnone { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 10px 8px; text-align: center; color: var(--text2); }
+.shop-gnone .dw-ic { width: 28px; height: 28px; color: var(--accent); }
+.shop-gnone-h { color: var(--heading); font: 700 15px Ubuntu; }
+.shop-gnone-p { font: 400 12.5px/1.5 Ubuntu; max-width: 280px; }
+
+/* history + refund tokens */
+.dw-modal.shop-histm { width: 460px; }
+.shop-tokens { display: flex; align-items: center; justify-content: space-between; color: var(--heading); font: 700 13.5px Ubuntu; }
+.shop-tokens-p { margin: 4px 0 12px; color: var(--text2); font: 400 12.5px/1.5 Ubuntu; }
+.shop-pips { display: inline-flex; gap: 7px; }
+.shop-pip {
+    width: 10px; height: 10px;
+    border: 2px solid var(--dust); border-radius: 3px;
+    transform: rotate(45deg);
+    transition: background-color var(--dw-t2) var(--dw-ease);
+}
+.shop-pip.on { background: var(--dust); }
+.shop-hist { display: flex; flex-direction: column; max-height: 340px; overflow-y: auto; margin-bottom: 8px; }
+.shop-hrow { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-top: 1px solid var(--border); }
+.shop-hdot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--rc); }
+.shop-hmain { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.shop-hname { color: var(--heading); font: 700 13.5px Ubuntu; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shop-hsub { color: var(--text2); font: 400 11.5px Ubuntu; }
+.shop-htag { padding: 2px 7px; border-radius: 6px; background: var(--surface2); color: var(--text2); font: 700 10.5px Ubuntu; letter-spacing: .04em; }
+.shop-hnone { padding: 22px 0; color: var(--text2); font: 400 13px Ubuntu; text-align: center; }
+
+/* Locker */
+.lk-stagewrap { position: relative; overflow: hidden; border-radius: 12px; background: var(--dw-floor); line-height: 0; animation: dwPop var(--dw-t3) var(--dw-ease) both; }
+.lk-stage canvas { width: 100%; height: auto; }
+.lk-swatches { position: absolute; left: 12px; bottom: 11px; gap: 5px; line-height: normal; }
+.lk-tabs { display: inline-flex; gap: 2px; margin: 14px 0 12px; padding: 3px; background: var(--surface2); border: 1px solid var(--border); border-radius: 11px; }
+.lk-tab {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 30px; margin: 0; padding: 0 14px;
+    border: 0; border-radius: 8px;
+    background: transparent; color: var(--text2);
+    font: 700 13px Ubuntu; cursor: pointer;
+    transition: background-color var(--dw-t1) var(--dw-ease), color var(--dw-t1) var(--dw-ease);
+}
+.lk-tab:hover { color: var(--text); }
+.lk-tab.on { background: var(--tab-bg); color: var(--tab-fg); }
+.lk-count { min-width: 18px; padding: 1px 5px; border-radius: 6px; background: color-mix(in srgb, currentColor 16%, transparent); font-size: 11px; text-align: center; }
+.lk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+.lk-tile {
+    position: relative;
+    display: flex; flex-direction: column;
+    min-width: 0; margin: 0; padding: 0 0 9px;
+    overflow: hidden;
+    background: var(--surface2);
+    border: 1.5px solid var(--border); border-radius: 11px;
+    color: var(--text); font: inherit; text-align: left;
+    cursor: pointer;
+    transition: transform var(--dw-t2) var(--dw-ease), border-color var(--dw-t1) var(--dw-ease);
+}
+.lk-tile:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--rc) 70%, var(--border)); }
+.lk-tile:active { transform: scale(.98); }
+.lk-tile.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.lk-tprev { display: flex; align-items: center; justify-content: center; height: 92px; background: var(--dw-floor); line-height: 0; }
+.lk-tprev canvas { max-width: 100%; }
+.lk-tname { padding: 8px 10px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--heading); font: 700 12.5px Ubuntu; }
+.lk-tsub { padding: 1px 10px 0; color: var(--rc); font: 600 11px Ubuntu; }
+.lk-ribbon {
+    position: absolute; top: 6px; left: 6px; z-index: 1;
+    padding: 3px 6px;
+    border-radius: 5px;
+    background: var(--play); color: #fff;
+    font: 700 9.5px/1 Ubuntu; letter-spacing: .08em;
+}
+.lk-empty { grid-column: 1 / -1; padding: 16px 10px 6px; text-align: center; }
+.lk-empty-h { color: var(--heading); font: 700 14px Ubuntu; }
+.lk-empty-p { margin: 4px 0 12px; color: var(--text2); font: 400 12.5px/1.5 Ubuntu; }
+.lk-bar { margin-top: 12px; padding: 12px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; }
+.lk-bar-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.lk-bar-name { color: var(--heading); font: 700 15px Ubuntu; }
+.lk-bar-sub { margin-top: 2px; color: var(--text2); font: 500 12px Ubuntu; }
+.lk-bar-r { display: flex; align-items: center; gap: 8px; }
+.lk-eqlabel { color: var(--online); font: 700 13px Ubuntu; }
+.lk-note { margin-top: 10px; color: var(--text2); font: 400 12px Ubuntu; text-align: center; }
+.lk-color { margin-top: 12px; }
+.lk-crow { display: flex; align-items: center; gap: 8px; }
+.lk-picker { width: 44px; height: 44px; flex: none; margin: 0; padding: 2px; background: var(--input-bg); border: 1px solid var(--input-bd); border-radius: 10px; cursor: pointer; }
+input.dw-input.lk-hex { width: 128px; height: 44px; font-family: 'Ubuntu Mono', monospace; letter-spacing: .06em; text-transform: lowercase; }
+input.dw-input.lk-hex.bad { border-color: var(--danger); }
+.lk-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.lk-preset {
+    width: 24px; height: 24px; margin: 0; padding: 0;
+    border: 2px solid rgba(0,0,0,.3); border-radius: 50%;
+    cursor: pointer;
+    transition: transform var(--dw-t1) var(--dw-ease);
+}
+.lk-preset:hover { transform: scale(1.12); }
+.lk-preset.on { outline: 2px solid var(--heading); outline-offset: 2px; }
+.lk-cmsg { max-height: 0; overflow: hidden; color: var(--danger-text); font: 500 12px/1.4 Ubuntu; opacity: 0; transition: max-height var(--dw-t2) var(--dw-ease), opacity var(--dw-t2) var(--dw-ease), margin var(--dw-t2) var(--dw-ease); }
+.lk-cmsg.show { max-height: 40px; margin-top: 8px; opacity: 1; }
+
+/* ── Friends, Profile, Leaderboard, Daily Quests (Phases 4 and 5) ──────
+   Same flat language: tints come from color-mix(), tier colours arrive as
+   --tc (people.js tierColor), achievement colours as --ac. */
+:root, [data-theme="dark"] {
+    --in-raid: #ffb23d;
+    --medal-gold: #ffc34f;
+    --medal-silver: #c2cbd8;
+    --medal-bronze: #cf7634;
+}
+[data-theme="light"] {
+    --in-raid: #c77f0a;
+    --medal-gold: #e3a21f;
+    --medal-silver: #9aa4b4;
+    --medal-bronze: #b8652b;
+}
+
+/* the nav's request count */
+.dw-nav-btn[data-count] { position: relative; }
+.dw-nav-count {
+    position: absolute;
+    top: -5px; right: -4px;
+    min-width: 16px; height: 16px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    background: var(--danger);
+    box-shadow: 0 0 0 2px var(--surface2);
+    color: #fff;
+    font: 700 10px/16px Ubuntu;
+    text-align: center;
+    pointer-events: none;
+    animation: dwPop var(--dw-t2) var(--dw-ease) both;
+}
+.dw-nav-btn.active .dw-nav-count { box-shadow: 0 0 0 2px var(--tab-bg); }
+.dw-nav-btn .dw-nav-count { display: block; }   /* stays when the labels hide on narrow screens */
+html[data-acct="guest"] .dw-nav-count, html[data-acct="new"] .dw-nav-count { display: none; }
+
+/* names and badges shared by the panes */
+.pp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--heading); font: 700 14px Ubuntu; }
+.pp-name-cv { max-width: 100%; margin: -2px 0 -2px -2px; }
+.pp-nobadge { display: inline-block; flex: none; }
+
+/* ── Friends ── */
+.fr-add { margin-bottom: 4px; }
+.fr-add-row { display: flex; gap: 8px; }
+input.dw-input.fr-add-in { flex: 1; min-width: 0; height: 40px; background: var(--surface); }
+.fr-add-go { height: 40px; min-width: 76px; }
+.fr-add-msg { max-height: 0; overflow: hidden; opacity: 0; color: var(--text2); font: 500 12.5px/1.4 Ubuntu; transition: max-height var(--dw-t2) var(--dw-ease), opacity var(--dw-t2) var(--dw-ease), margin var(--dw-t2) var(--dw-ease); }
+.fr-add-msg.show { max-height: 40px; margin-top: 8px; opacity: 1; }
+.fr-add-msg.ok { color: var(--online); }
+.fr-add-msg.bad { color: var(--danger-text); }
+.lk-count.fr-hot { background: var(--danger); color: #fff; }
+.lk-tab.on .lk-count.fr-hot { background: #fff; color: var(--danger); }
+.fr-list { display: flex; flex-direction: column; gap: 2px; min-height: 120px; }
+.fr-h { margin: 10px 0 4px 4px; color: var(--text2); font: 700 11px Ubuntu; letter-spacing: .09em; text-transform: uppercase; }
+.fr-h:first-child { margin-top: 0; }
+.fr-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px 6px 6px;
+    border-radius: 12px;
+    transition: background-color var(--dw-t1) var(--dw-ease);
+    animation: dwFade var(--dw-t2) var(--dw-ease) both;
+}
+.fr-row:hover { background: var(--surface2); }
+.fr-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    padding: 2px;
+    border: 0;
+    border-radius: 10px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.fr-main.static { cursor: default; }
+.fr-main:focus-visible { outline: 2px solid var(--border-hl); outline-offset: 2px; }
+.fr-avwrap { position: relative; flex: none; line-height: 0; }
+.fr-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--text2);
+    box-shadow: 0 0 0 2.5px var(--hub-bg);
+    transition: background-color var(--dw-t2) var(--dw-ease);
+}
+.fr-avwrap .fr-dot { position: absolute; right: -1px; bottom: -1px; }
+.fr-row:hover .fr-avwrap .fr-dot { box-shadow: 0 0 0 2.5px var(--surface2); }
+.fr-dot.menu { background: var(--online); }
+.fr-dot.raid { background: var(--in-raid); }
+.fr-dot.offline { background: color-mix(in srgb, var(--text2) 60%, transparent); }
+.fr-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.fr-badge { width: 26px; height: 26px; flex: none; display: block; }
+.fr-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fr-name { display: flex; align-items: center; min-width: 0; height: 20px; }
+.fr-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text2); font: 500 12px Ubuntu; }
+.fr-sub.st-raid { color: var(--in-raid); font-weight: 700; }
+.fr-sub.st-menu { color: var(--online); font-weight: 700; }
+.fr-row.st-offline .fr-name { opacity: .8; }
+.fr-acts { display: flex; align-items: center; gap: 6px; flex: none; }
+.fr-ic {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px; height: 32px;
+    margin: 0; padding: 0;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text2);
+    cursor: pointer;
+    transition: background-color var(--dw-t1) var(--dw-ease), color var(--dw-t1) var(--dw-ease), transform var(--dw-t1) var(--dw-ease);
+}
+.fr-ic .dw-ic { width: 16px; height: 16px; }
+.fr-ic:hover { background: var(--surface); color: var(--text); }
+.fr-ic.bad:hover { color: var(--danger-text); }
+.fr-ic:active { transform: scale(.92); }
+.fr-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 34px 16px 26px; color: var(--text2); text-align: center; }
+.fr-empty .dw-ic { width: 30px; height: 30px; margin-bottom: 4px; color: var(--accent); }
+.fr-empty-h { color: var(--heading); font: 700 15px Ubuntu; }
+.fr-empty-p { max-width: 340px; font: 400 12.5px/1.5 Ubuntu; }
+
+/* ── Profile ── */
+.wl-back.pf-back { margin: -6px 0 10px -6px; }
+.pf-top {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr) 150px;
+    align-items: center;
+    gap: 20px;
+    padding: 16px 18px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+}
+.pf-badge { width: 112px; height: 112px; line-height: 0; }
+.pf-badge-img { width: 112px; height: 112px; display: block; animation: dwPop var(--dw-t3) var(--dw-ease) both; }
+.pf-id { display: flex; flex-direction: column; min-width: 0; }
+.pf-name { display: flex; align-items: center; min-height: 34px; min-width: 0; }
+.pf-name .pp-name { font-size: 24px; }
+.pf-rank { margin-top: 2px; color: var(--tc, var(--heading)); font: 700 16px Ubuntu; letter-spacing: .01em; }
+[data-theme="light"] .pf-rank { color: var(--heading); }
+.pf-bar { position: relative; height: 8px; margin-top: 10px; overflow: hidden; border-radius: 4px; background: color-mix(in srgb, var(--text2) 22%, transparent); }
+.pf-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 4px; background: var(--tc, var(--accent)); transition: width 700ms var(--dw-ease); }
+[data-theme="light"] .pf-fill { background: color-mix(in srgb, var(--tc, var(--accent)) 70%, #000); }
+.pf-bartext { margin-top: 6px; color: var(--text); font: 600 12px Ubuntu; font-variant-numeric: tabular-nums; }
+.pf-meta { margin-top: 3px; color: var(--text2); font: 500 12px Ubuntu; }
+.pf-pres { display: flex; align-items: center; gap: 7px; margin-top: 7px; color: var(--text2); font: 700 12px Ubuntu; }
+.pf-pres .fr-dot { box-shadow: none; width: 8px; height: 8px; }
+.pf-pres.st-raid { color: var(--in-raid); }
+.pf-pres.st-menu { color: var(--online); }
+.pf-tank { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0 0 8px; overflow: hidden; border-radius: 12px; background: var(--dw-floor); }
+.pf-tankcv { display: block; }
+.pf-tank-l { max-width: 138px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c9c1ad; font: 600 11px Ubuntu; }
+.pf-acts { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.pf-acts:empty { display: none; }
+.pf-note { margin-right: auto; color: var(--text2); font: 500 12.5px Ubuntu; }
+.pf-sec { margin-top: 20px; animation: dwPop var(--dw-t3) var(--dw-ease) both; }
+.pf-sec + .pf-sec { animation-delay: 40ms; }
+.pf-sec + .pf-sec + .pf-sec { animation-delay: 80ms; }
+.pf-h { display: flex; align-items: baseline; justify-content: space-between; margin: 0 2px 9px; color: var(--text2); font: 700 11.5px Ubuntu; letter-spacing: .09em; text-transform: uppercase; }
+.pf-h-r { letter-spacing: .02em; text-transform: none; font-weight: 600; }
+.pf-tiers { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.pf-tier { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 2px 8px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--border); }
+.pf-tier-img { width: 48px; height: 48px; display: block; transition: transform var(--dw-t2) var(--dw-ease); }
+.pf-tier.on:hover .pf-tier-img { transform: translateY(-2px) scale(1.05); }
+.pf-tier:not(.on) .pf-tier-img { filter: brightness(0) invert(1); opacity: .1; }
+[data-theme="light"] .pf-tier:not(.on) .pf-tier-img { filter: brightness(0); opacity: .14; }
+.pf-tier-l { color: var(--text); font: 700 11px Ubuntu; }
+.pf-tier:not(.on) .pf-tier-l { color: var(--text2); opacity: .7; }
+.pf-achs { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.pf-ach { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--border); }
+.pf-ach.on { border-color: color-mix(in srgb, var(--ac) 45%, var(--border)); }
+.pf-ach-ic { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex: none; border-radius: 50%; background: color-mix(in srgb, var(--text2) 14%, transparent); color: var(--text2); }
+.pf-ach.on .pf-ach-ic { background: color-mix(in srgb, var(--ac) 20%, transparent); color: var(--ac); }
+[data-theme="light"] .pf-ach.on .pf-ach-ic { color: color-mix(in srgb, var(--ac) 70%, #000); }
+.pf-ach-ic .dw-ic { width: 20px; height: 20px; }
+.pf-ach-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pf-ach-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--heading); font: 700 13px Ubuntu; }
+.pf-ach-d { color: var(--text2); font: 500 11.5px/1.3 Ubuntu; }
+.pf-ach:not(.on) .pf-ach-n { color: var(--text2); }
+.pf-ach:not(.on) { opacity: .72; }
+.pf-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pf-stat { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--border); }
+.pf-stat-v { color: var(--heading); font: 700 20px Ubuntu; font-variant-numeric: tabular-nums; }
+.pf-stat-k { color: var(--text2); font: 600 11.5px Ubuntu; }
+@media (max-width: 640px) {
+    .pf-top { grid-template-columns: 84px minmax(0, 1fr); }
+    .pf-badge, .pf-badge-img { width: 84px; height: 84px; }
+    .pf-tank { display: none; }
+    .pf-tiers { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .pf-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ── Leaderboard ── */
+.lb-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.lb-title { display: flex; align-items: baseline; gap: 8px; color: var(--heading); font: 700 16px Ubuntu; }
+.lb-sub, .lb-upd { color: var(--text2); font: 500 12px Ubuntu; }
+.lb-table { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--surface2); }
+.lb-row {
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr) 128px 76px;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 16px 0 10px;
+    box-sizing: border-box;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    background: transparent;
+    color: var(--text);
+    font: 500 13px Ubuntu;
+    text-align: left;
+}
+.lb-head { min-height: 34px; border-top: 0; color: var(--text2); font: 700 11px Ubuntu; letter-spacing: .08em; text-transform: uppercase; }
+.lb-row.click { cursor: pointer; transition: background-color var(--dw-t1) var(--dw-ease); }
+.lb-row.click:hover { background: var(--surface); }
+.lb-row.click:focus-visible { outline: 2px solid var(--border-hl); outline-offset: -2px; }
+.lb-row.me { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.lb-row.me.click:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.lb-place { display: flex; justify-content: center; }
+.lb-pl { min-width: 28px; height: 24px; padding: 0 6px; box-sizing: border-box; border-radius: 12px; color: var(--text2); font: 700 13px/24px Ubuntu; text-align: center; font-variant-numeric: tabular-nums; }
+.lb-pl.gold { background: var(--medal-gold); color: #462905; }
+.lb-pl.silver { background: var(--medal-silver); color: #222834; }
+.lb-pl.bronze { background: var(--medal-bronze); color: #fff3e6; }
+.lb-row.top .lb-name.pp-name { font-size: 14.5px; }
+.lb-player { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.lb-badge { width: 26px; height: 26px; flex: none; display: block; }
+.lb-you { flex: none; padding: 1px 7px; border-radius: 6px; background: var(--accent); color: #fff; font: 700 10.5px/16px Ubuntu; letter-spacing: .04em; }
+.lb-rank { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tc, var(--text)); font-weight: 700; }
+[data-theme="light"] .lb-rank { color: var(--text); }
+.lb-head .lb-rank { color: var(--text2); }
+.lb-rp { color: var(--heading); font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.lb-head .lb-rp { color: var(--text2); }
+.lb-pin { position: sticky; bottom: -20px; margin-top: 10px; padding-bottom: 2px; border-radius: 14px; background: var(--hub-bg); }
+.lb-pin .lb-row { border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--border)); border-radius: 14px; }
+.lb-guest { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--border); color: var(--text2); font: 500 12.5px Ubuntu; }
+@media (max-width: 560px) {
+    .lb-row { grid-template-columns: 44px minmax(0, 1fr) 64px; }
+    .lb-rank { display: none; }
+}
+
+/* ── Daily Quests (beside the menu card) ── */
+.startMenu { position: relative; }
+#lobbySide {
+    position: absolute;
+    top: 0;
+    left: calc(100% + 16px);
+    width: 264px;
+    z-index: 1;
+}
+#lobbySide[hidden], body.in-game #lobbySide, body.mobile #lobbySide { display: none; }
+@media (max-width: 1040px) { #lobbySide { display: none; } }
+.q-card {
+    padding: 14px 16px 12px;
+    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 32px var(--shadow);
+    transition: background-color .25s, border-color .25s;
+}
+.q-skel { min-height: 150px; }
+.q-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.q-title { color: var(--heading); font: 700 14px Ubuntu; letter-spacing: .01em; }
+.q-reset { color: var(--text2); font: 500 11.5px Ubuntu; white-space: nowrap; }
+.q-list { display: flex; flex-direction: column; gap: 11px; }
+.q-row { display: flex; flex-direction: column; gap: 6px; }
+.q-line { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.q-text { color: var(--text); font: 500 12.5px/1.35 Ubuntu; }
+.q-row.done .q-text { color: var(--text2); }
+.q-reward { display: inline-flex; align-items: center; gap: 3px; flex: none; color: var(--dust); font: 700 12px/1.35 Ubuntu; }
+.q-reward .dw-ic { width: 11px; height: 11px; }
+.q-row.done .q-reward { opacity: .6; }
+.q-barrow { display: flex; align-items: center; gap: 8px; }
+.q-bar { position: relative; flex: 1; height: 6px; overflow: hidden; border-radius: 3px; background: color-mix(in srgb, var(--text2) 22%, transparent); }
+.q-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 3px; background: var(--accent); transition: width 600ms var(--dw-ease); }
+.q-row.done .q-fill { background: var(--play); }
+.q-num { min-width: 42px; color: var(--text2); font: 600 11px Ubuntu; text-align: right; font-variant-numeric: tabular-nums; }
+.q-done { display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; min-width: 42px; color: var(--play); font: 700 11px Ubuntu; }
+.q-done .dw-ic { width: 11px; height: 11px; }
+.q-foot { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--play); font: 700 12px Ubuntu; text-align: center; }
+.q-guest {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--surface);
+    color: var(--text2);
+    font: 600 12px Ubuntu;
+    cursor: pointer;
+    transition: border-color var(--dw-t1) var(--dw-ease), color var(--dw-t1) var(--dw-ease);
+    animation: dwFade var(--dw-t2) var(--dw-ease) both;
+}
+.q-guest .dw-ic { width: 15px; height: 15px; color: var(--accent); }
+.q-guest:hover { border-color: var(--border-hl); color: var(--text); }
+
+/* the reset-password view */
+.wl-reset .wl-badge { margin-top: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+    #lobbySide, #lobbySide *, .dw-nav-count { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}

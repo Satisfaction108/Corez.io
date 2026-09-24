@@ -20,6 +20,9 @@ let outposts = null;
 // behind Config.dig_royale.
 const ownerBases = () => !!(Config.dig_royale || Config.tutorial);
 
+let _dustHooks = null;
+function dustHooks() { return _dustHooks || (_dustHooks = require('../../accounts/game/dustHooks.js')); }
+
 function getOutposts() {
     if (outposts && outposts.length) return outposts;
     const tg = global.gameManager && global.gameManager.terrainGrid;
@@ -377,7 +380,10 @@ function tick(players, dtMs) {
         }
         d.spill -= chunk;
         d.remaining = Math.max(0, d.remaining - chunk * EFFICIENCY);
-        body.carriedGems = Math.max(0, (body.carriedGems | 0) - chunk);
+        const carriedBefore = body.carriedGems | 0;
+        body.carriedGems = Math.max(0, carriedBefore - chunk);
+        // gemdust leaves with its share of the satchel, at the base's efficiency
+        if (Config.dig_royale) { try { dustHooks().onSatchelOut(body, chunk, carriedBefore, EFFICIENCY); } catch { /* */ } }
         const socket = body.socket;
         if (socket) {
             socket.gemBanked = (socket.gemBanked || 0) + chunk * EFFICIENCY;
@@ -408,6 +414,7 @@ function tick(players, dtMs) {
                 body.bankedGems = socket.gemBanked;
             }
             gems.updateSatchel(body);
+            if (Config.dig_royale) { try { dustHooks().onBankDone(body); } catch { /* */ } }
         }
     }
 }

@@ -505,7 +505,11 @@ test('signup: creates the account, returns the User shape, recovery code and ses
     assert.equal(u.discord, null);
     assert.equal(typeof u.createdAt, 'number');
     assert.equal(u.usernameChangeAt, 0);
-    assert.deepEqual(u.rank, { division: null, name: 'Unranked', placement: { done: false, lives: 0, of: 3 } });
+    // RankSnap (Phase 2): a new account is in placement
+    assert.deepEqual(u.rank, {
+        division: null, name: 'Unranked', tier: null, rp: 0, into: 0, size: 0, pct: 0,
+        placement: { done: false, lives: 0, of: 3 }, legendNo: 0, peak: { division: null, name: 'Unranked' },
+    });
     assert.equal(u.dust, 0);
     assert.equal(u.refundTokens, 3);
     assert.deepEqual(u.equipped, { nameStyle: null, skin: null, customColor: null });

@@ -195,6 +195,8 @@ class socketManager {
                 if (chats[id]) {
                     array.push({ id: id, messages: [] });
                     let index = array.length - 1;
+                    // blocked accounts (either way) never see each other's chat
+                    if (entity.accountId && accountBridge.chatHidden(view.socket, entity)) continue;
                     for (let chat of chats[id].messages) {
                         
                         if (chat.team != null && chat.team !== viewTeam) continue;
@@ -1211,6 +1213,34 @@ class socketManager {
                         socket.talk('KC', 'chest', JSON.stringify(info), 0);
                     }
                     else if (what === "carry" && b) { b.carriedGems = (b.carriedGems | 0) + (m[1] | 0 || 500); require('../terrain/gems.js').updateSatchel(b); require('../terrain/gems.js').talkGems(b, 0); }
+                    // real gem entities of one ore (1 copper .. 4 emerald) dropped on you: the pickup path
+                    else if (what === "gem" && b) {
+                        const ore = Math.max(1, Math.min(4, m[1] | 0 || 1)), n = Math.max(1, Math.min(40, m[2] | 0 || 1));
+                        const cls = { 1: 'gemPickupCopper', 2: 'gemPickupVein', 3: 'gemPickupShard', 4: 'gemPickupEmerald' }[ore];
+                        const value = { 1: 15, 2: 30, 3: 150, 4: 500 }[ore];
+                        for (let i = 0; i < n; i++) require('../terrain/gems.js').spawnGem(b.x, b.y, value, cls, 16, 0, 0, ore);
+                    }
+                    // the longest-lived bot off the pads dies to you (kill credit through the normal
+                    // collision path), if it is at least m[1] ms old; answers KC 'dbg' {killbot, ageMs}
+                    else if (what === "killbot" && b) {
+                        let best = null;
+                        for (const e of entities.values()) {
+                            if (!e || !e.isBot || e.isDead?.() || e.isGhost || e.padSafe || e.onVaultPad || e.outpostOnPad) continue;
+                            if (!best || (e.royaleBornAt || 0) < (best.royaleBornAt || 0)) best = e;
+                        }
+                        const ageMs = best ? Date.now() - (best.royaleBornAt || 0) : -1;
+                        const hit = !!best && ageMs >= Math.max(0, m[1] | 0);
+                        if (hit) {
+                            best.invuln = false; best.godmode = false; best.passive = false;
+                            best.collisionArray.push(b);
+                            best.damageReceived = (best.damageReceived || 0) + 1e-6;
+                            best.health.amount = -1;
+                        }
+                        socket.talk('KC', 'dbg', JSON.stringify({ killbot: hit ? 1 : 0, ageMs }), 0);
+                    }
+                    // accounts test hooks: ROYALE_DEBUG + ACCOUNTS_ALLOW_DEBUG=1 only (bridge.debugOn)
+                    else if (what === "rank" && accountBridge.debugOn()) require('../../accounts/game/rankHooks.js').debugRank(socket, m[1] | 0);
+                    else if (what === "dust" && b && accountBridge.debugOn()) require('../../accounts/game/dustHooks.js').debugSetCarried(b, m[1] | 0);
                     else if (what === "tobos" && b) { const bs = require('../terrain/bosses.js').current(); if (bs) { b.x = bs.x + 300; b.y = bs.y; } }
                     else if (what === "tobloom" && b) { const bl = require('../terrain/blooms.js').current(); if (bl) { b.x = bl.x + 200; b.y = bl.y + 200; } }
                     else if (what === "toevent" && b) { const ev = require('../terrain/raidEvents.js').current(); if (ev) { b.x = ev.x + 250; b.y = ev.y; } }
@@ -1965,7 +1995,11 @@ class socketManager {
                      data.name,
                      data.score,
                      data.digWarsGoal || "",
-                     data.gemGlow || 0
+                     data.gemGlow || 0,
+                     // [25] name style nid, [26] rank code, [27] skin nid
+                     data.nameStyle || 0,
+                     data.rankCode || 0,
+                     data.skin || 0
                 );
             }
         };
@@ -2198,6 +2232,8 @@ class socketManager {
                             }
 
                             socket.talk("F", ...player.records());
+                            // the ranked life result, settled a moment ago
+                            try { accountBridge.afterDeathPacket(socket); } catch (e) { /* */ }
                             purge();
 
                             socket.timeout.start();

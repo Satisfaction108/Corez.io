@@ -1,7 +1,7 @@
 // The hub panel (#dwHub): one panel under the top nav whose panes are the
-// account features. Phase 1 registers only the Account pane; the nav's other
-// entries stay disabled until their panes exist.
-import { h, clear, pushLayer, popLayer } from './ui.js';
+// account features (Item Shop, Locker, Friends, Profile, Leaderboard,
+// Account).
+import { h, clear, pushLayer, popLayer, animate, T_MID } from './ui.js';
 
 const hub = document.getElementById('dwHub');
 const overlay = document.getElementById('dwHubOverlay');
@@ -20,18 +20,23 @@ export function register(name, def) {
 }
 
 export const has = (name) => !!panes[name];
+// A pane may name itself once it knows more (a profile shows the player).
+export function setTitle(text) { if (current) titleEl.textContent = text; }
 export const isOpen = () => !!current;
 export const currentPane = () => current;
 
 export function open(name, opts) {
     const def = panes[name];
     if (!def) return;
+    const switching = !!current && current !== name;
     for (const k in panes) panes[k].el.classList.toggle('active', k === name);
     titleEl.textContent = def.title;
     current = name;
     clear(def.el);
     def.render(def.el, opts || {});
     body.scrollTop = 0;
+    // a pane change inside an open hub fades the new pane up into place
+    if (switching) animate(def.el, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
     hub.classList.add('open');
     hub.setAttribute('aria-hidden', 'false');
     overlay.classList.add('visible');

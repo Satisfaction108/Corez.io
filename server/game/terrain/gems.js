@@ -41,6 +41,9 @@ const GEM_MAX_SPEED = 6;
 
 let _shopMod = null;
 function shopMod() { return _shopMod || (_shopMod = require('./shop.js')); }
+// gemdust rides on gems (accounts/game/dustHooks.js); raid only, never throws out of here
+let _dustMod = null;
+function dustMod() { return _dustMod || (_dustMod = require('../../accounts/game/dustHooks.js')); }
 
 function spawnGem(x, y, value, cls, size, vx = 0, vy = 0, ore = null) {
     const o = new Entity({ x, y });
@@ -456,19 +459,27 @@ function dropGemsOnDeath(body, killers = []) {
         body.socket.gemDeathCarried = carried;
         body.socket.gemDeathBanked = banked;
     }
-    if (carried <= 0 && bankLoss <= 0) return;
+    if (carried <= 0 && bankLoss <= 0) {
+        if (raidMode) { try { dustMod().onDeathDrop(body, []); } catch { /* */ } }
+        return;
+    }
     body.carriedGems = 0;
     if (bankLoss > 0) setBanked(body, banked - bankLoss);
     if (insured > 0) {
         setBanked(body, bankedFor(body) + insured);
         if (body.socket) body.socket.gemDeathInsured = insured;
+        // a quarter of the carried dust is banked with the insured gems
+        try { dustMod().onInsured(body); } catch { /* */ }
         try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, insured); } catch { /* */ }
     } else if (body.socket) body.socket.gemDeathInsured = 0;
     updateSatchel(body);
     talkGems(body, -carried, 1);
     // Raid drops the FULL satchel minus insurance. (2TDM keeps its 85% tax.)
     const drop = Math.floor((carried - insured) * (raidMode ? 1 : DEATH_DROP)) + bankLoss;
-    if (drop <= 0) return;
+    if (drop <= 0) {
+        if (raidMode) { try { dustMod().onDeathDrop(body, []); } catch { /* */ } }
+        return;
+    }
 
     // 1:1 identity: newest pickups drop back as themselves at full size, so
     // 9 coppers + a vein + a shard comes back out as exactly that. Banking
@@ -491,6 +502,9 @@ function dropGemsOnDeath(body, killers = []) {
             drops.push({ v: p.v, tier: p.ore });
         }
     }
+    // the rest of the carried dust rides on the pieces, split by value
+    let dustShares = null;
+    if (raidMode) { try { dustShares = dustMod().onDeathDrop(body, drops.map(g => g.v)); } catch { /* */ } }
     const dropNow = Date.now();
     drops.forEach((g, i) => {
         if (g.v <= 0) return;
@@ -511,6 +525,7 @@ function dropGemsOnDeath(body, killers = []) {
         if (gem) {
             gem.gemLootFromPlayer = !!body.socket;
             if (killerBotIds.length) gem.gemLootKillerIds = killerBotIds;
+            if (dustShares) gem.gemDust = dustShares[i] | 0;
         }
     });
 }
@@ -681,6 +696,8 @@ function tickGem(gem, tg, players) {
         const v = gem.gemValue + Math.round(gem.gemValue * bonus);
         gem.gemValue = 0;
         toucher.carriedGems = (toucher.carriedGems | 0) + v;
+        // dust per gem entity, never per value: the combo bonus mints none
+        if (Config.dig_royale) { try { dustMod().onPickup(toucher, gem); } catch { /* */ } }
         updateSatchel(toucher);
         talkGems(toucher, v);
         gem.kill();

@@ -8,12 +8,12 @@
 const db = require('./db');
 const crypto = require('./crypto');
 const names = require('./names');
+const rankStore = require('./rankStore');
 
 const DAY = 24 * 60 * 60 * 1000;
 const RENAME_COOLDOWN_MS = 14 * DAY;
 const NAME_HOLD_MS = 30 * DAY;
 const RESET_TTL_MS = 30 * 60 * 1000;
-const PLACEMENT_LIVES = 3;
 
 function h() { return db.handle(); }
 
@@ -271,9 +271,9 @@ function discordAvatarUrl(discordId, avatar) {
     return `https://cdn.discordapp.com/avatars/${discordId}/${avatar}.png?size=64`;
 }
 
-// The User object every account endpoint returns. Rank, dust and equipped
-// are Phase 1 placeholders read from their real columns (all defaults for
-// now); the shape is final.
+// The User object every account endpoint returns. rank is the RankSnap
+// (rankStore.snapshot), dust the balance in dust units; equipped is still
+// the Phase 1 placeholder read from its real columns.
 function toPublic(row, now = Date.now()) {
     if (!row) return null;
     const next = nextRenameAt(row);
@@ -288,11 +288,7 @@ function toPublic(row, now = Date.now()) {
         } : null,
         createdAt: row.created_at,
         usernameChangeAt: next > now ? next : 0,
-        rank: {
-            division: null,
-            name: 'Unranked',
-            placement: { done: false, lives: Math.min(PLACEMENT_LIVES, row.placement_lives | 0), of: PLACEMENT_LIVES },
-        },
+        rank: rankStore.snapshot(row, { now }),
         dust: (Number(row.dust_milli) || 0) / 1000,
         refundTokens: row.refund_tokens == null ? 3 : row.refund_tokens,
         equipped: {

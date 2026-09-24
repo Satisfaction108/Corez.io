@@ -8,6 +8,11 @@ import * as socketStuff from "./socketinit.js";
 import './terrainRenderer.js';
 import { gameSound } from "./sound.js";
 import * as tutorial from './tutorial.js';
+import * as rankBadges from './account/rankBadges.js';
+import * as rankPanel from './account/rankPanel.js';
+import * as rankCeremony from './account/rankCeremony.js';
+import * as dustHud from './account/dustHud.js';
+import * as cosmetics from './account/cosmetics.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -1244,10 +1249,23 @@ import * as tutorial from './tutorial.js';
         global.refreshMonitorColoring(gameDraw);
     }
 
+    // Ranked: the death card's result, the dust HUD and the account snapshot
+    // belong to one game. The rank-up ceremony waits for the RAID OVER title
+    // to lift before it starts.
+    rankCeremony.setGate(() => !global.raidEndFx || performance.now() - global.raidEndFx.at > 2400);
+    {
+        const exit0 = global.exit;
+        global.exit = function () {
+            try { rankPanel.clear(); dustHud.reset(); global.acct = null; } catch (e) { /* */ }
+            return exit0.apply(this, arguments);
+        };
+    }
+
     function startGame() {
 
         if (global.gameLoading) return;
         global.gameLoading = true;
+        try { rankPanel.clear(); dustHud.reset(); global.acct = null; } catch (e) { /* */ }
         // Fresh start: no raid state leaks in from a previous game.
         // (A kick or ban sets noAutoReconnect for that socket only; the
         // server repeats it if the new connection is refused too.)
@@ -2390,12 +2408,11 @@ import * as tutorial from './tutorial.js';
                     context.globalAlpha = !useFancyCanvas && alphaFade < 1 && config.graphical.fancyAnimations ? alphaFade : 1;
                     context.lineWidth = initStrokeWidth * m.strokeWidth;
 
-                    let bodyColor = gameDraw.mixColors(
-                        gameDraw.modifyColor(instance.color, baseColor),
-                        statusColor,
-                        blend
-                    );
-                    global.gameUpdate && instance.invuln !== 0 && 100 > (Date.now() - instance.invuln) % 200 && ((bodyColor = gameDraw.mixColors(gameDraw.modifyColor(instance.color, baseColor), gameDraw.getColor(6), 0.3)));
+                    // bodyBase: the unmixed hull colour (skins are built from it)
+                    const bodyBase = gameDraw.modifyColor(instance.color, baseColor);
+                    const invulnBlink = !!(global.gameUpdate && instance.invuln !== 0 && 100 > (Date.now() - instance.invuln) % 200);
+                    let bodyColor = gameDraw.mixColors(bodyBase, statusColor, blend);
+                    if (invulnBlink) bodyColor = gameDraw.mixColors(bodyBase, gameDraw.getColor(6), 0.3);
                     if (hitBlend > 0) bodyColor = gameDraw.mixColors(bodyColor, HIT_BLINK_COLOR, hitBlend);
                     gameDraw.setColor(context, bodyColor);
 
@@ -2435,6 +2452,15 @@ import * as tutorial from './tutorial.js';
                     }
 
                     drawBody(context, xx, yy, sizeRatio, m.shape, rot, m.borderless, m.drawFill, m.imageInterpolation);
+                    // tank skin (accounts): the hull only, never turrets or guns
+                    if (turretInfo === false && instance.skin) {
+                        try {
+                            cosmetics.paintHull(context, xx, yy, sizeRatio, m.shape, rot, instance.skin, bodyBase, {
+                                statusColor, blend, flash: invulnBlink, flashColor: gameDraw.getColor(6), hitBlend, hitColor: HIT_BLINK_COLOR,
+                                borderless: m.borderless, fill: m.drawFill, lowFx: global.lowFx || config.graphical.optimizeMode, force: !!instance.skinForce,
+                            });
+                        } catch (e) { /* a skin never breaks the frame */ }
+                    }
                 }
             }
 
@@ -5222,6 +5248,52 @@ import * as tutorial from './tutorial.js';
         c.restore();
     }
 
+    // Which badge a name gets, as a wire code (0 = none). Ranked divisions
+    // (1..19) show for everyone; the placement "?" (20) only on your own
+    // name, so a new account sees its rank is on its way.
+    function nameBadgeCode(code, self) {
+        code = code | 0;
+        return (code >= 1 && code <= 19) || (self && code === 20) ? code : 0;
+    }
+    // Room a badge takes left of a name (badge + gap), so callers can centre
+    // badge and name together.
+    const nameBadgeRoom = (code, size) => code ? 1.65 * size : 0;
+    // Rank badge just left of a name drawn by drawText (code from
+    // nameBadgeCode). The badge is 1.25x the font size and centred on the
+    // text's own middle, which drawText puts 0.35 of a size above y unless
+    // centred. Returns the width it took (0 when nothing drew).
+    function drawNameBadge(code, text, x, y, size, align = "center", c = ctx[2], centered = false) {
+        code = code | 0;
+        if (!code) return 0;
+        const fs = size + config.graphical.fontSizeBoost;
+        const bh = 1.25 * size;
+        const tw = align === "left" ? 0 : measureText(text, size);
+        // drawText's glyphs start size/20 left of the measured box
+        const left = (align === "center" ? x - tw / 2 : align === "right" ? x - tw : x) - 0.05 * fs;
+        const cy = centered ? y - 0.035 * fs : y - 0.35 * fs;
+        rankBadges.drawBadge(c, left - bh * 0.5 - size * 0.4, cy, bh, code === 20 ? "placement" : code - 1);
+        return nameBadgeRoom(code, size);
+    }
+
+    // Name style (accounts): what drawText should draw for a name and with
+    // which fill. The fill is a colour, or a gradient laid over the exact box
+    // drawText will draw the name in (its left edge is size/20 left of x);
+    // legendary styles also get their suffix glyph as a colour code. Below
+    // 8 px, or with no style, it is the plain colour. `solid` is the colour
+    // the name would have had (a Custom Color's own hex rides in there).
+    function styledName(name, nid, solid, x, size, align = "left", context = ctx[2]) {
+        const st = nid ? cosmetics.nameStyleOf(nid) : null;
+        if (!st || !name) return { text: name, fill: solid };
+        const text = cosmetics.withGlyph(name, st);
+        const fs = size + config.graphical.fontSizeBoost;
+        if (fs < 8) return { text, fill: cosmetics.solidOf(st, solid) };
+        const full = measureText(text, size);
+        const w = text === name ? full : measureText(name, size);
+        const a = align === "center" ? 0.5 : align === "right" ? 1 : 0;
+        return { text, fill: cosmetics.nameFill(context, st, solid, x - full * a - fs / 20, w, { still: !!global.lowFx }) };
+    }
+    const hexOr = (v, dflt) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v : dflt;
+
     function drawName(x, y, instance, ratio, alpha, isize) {
         if (!(0.02 > alpha)) {
             let fade = instance.render.status.getFade();
@@ -5255,7 +5327,14 @@ import * as tutorial from './tutorial.js';
                     return;
                 }
                 let g = Math.max(20, size);
-                if (global.GUIStatus.renderPlayerNames) drawText(name, x, y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45), 0.55 * g, namecolor == "#ffffff" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
+                if (global.GUIStatus.renderPlayerNames) {
+                    const ny = y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45);
+                    // badge and name are centred over the hull as one
+                    const code = nameBadgeCode(instance.rankCode, false), nx = x + nameBadgeRoom(code, 0.55 * g) / 2;
+                    const sn = styledName(name, instance.nameStyle, namecolor == "#ffffff" ? color.guiwhite : namecolor, nx, 0.55 * g, "center", ctx[1]);
+                    drawText(sn.text, nx, ny, 0.55 * g, sn.fill, "center", false, 1, true, ctx[1]);
+                    drawNameBadge(code, sn.text, nx, ny, 0.55 * g, "center", ctx[1]);
+                }
                 if (global.GUIStatus.renderPlayerScores || typeof instance.score === "string") drawText(typeof instance.score === "string" ? instance.score : util.handleLargeNumber(instance.score), x, y - 1.45 * g, 0.3 * g, namecolor == "#ffffff" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
                 if (global.showDebug && instance.digWarsGoal) {
                     drawText(`goal: ${instance.digWarsGoal}`, x, y + 1.2 * g, 0.28 * g, color.teal, "center", false, 1, true, ctx[1]);
@@ -5435,10 +5514,26 @@ import * as tutorial from './tutorial.js';
                 let bs2 = 13; while (bs2 > 9 && measureText(bankTxt, bs2) > (rx2 - bankX1) - 10) bs2 -= 0.5;
                 drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, color.guiwhite, "center");
             }
+            // gemdust (accounts): satchel dust under Carried, balance under Banked
+            try { dustHud.draw(ctx[2], { carX: (rx1 + carX2) / 2, bankX: (bankX1 + rx2) / 2, y: ry + 19 }, { drawText, measureText }); } catch (e) { /* never break the HUD */ }
         }
         ctx[2].lineWidth = 4;
         var name = global.player.name.substring(7, global.player.name.length + 1);
-        drawText(name, Math.round(x + width / 2) + 1.5, Math.round(y - 10 - 4) - 1, 31, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, "center");
+        // your rank badge (placement "?" included) and name, centred as one
+        const myCode = name ? nameBadgeCode(myRankCode(), true) : 0;
+        const nameX = Math.round(x + width / 2 + nameBadgeRoom(myCode, 31) / 2) + 1.5, nameY = Math.round(y - 10 - 4) - 1;
+        const mySn = styledName(name, global.myNameStyle, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, nameX, 31, "center");
+        drawText(mySn.text, nameX, nameY, 31, mySn.fill, "center");
+        drawNameBadge(myCode, mySn.text, nameX, nameY, 31, "center", ctx[2]);
+    }
+
+    // Your own rank as a wire code (0 guest, 1..19 ranked, 20 placement),
+    // from the 'AC' snapshot socketinit keeps current through RK / RKP.
+    function myRankCode() {
+        const r = global.acct && global.acct.rank;
+        if (!r) return 0;
+        if (r.division == null) return 20;
+        return (r.division | 0) + 1;
     }
 
     // Dig Wars: the Vault panel - fades and slides in while you stand on
@@ -6335,6 +6430,10 @@ import * as tutorial from './tutorial.js';
         drawText("STANDINGS", x + 10, y0 + 11, 10, color.grey, "left", true);
         drawText("PTS", x + W - 10, y0 + 11, 10, color.grey, "right", true);
         const myHex = playerHexCol() || color.gold;
+        // rank badges sit between place and name; the column only opens when
+        // someone on the board has one, so names stay aligned either way
+        const codeOf = (row) => row.place === myPlace && myPlace > 0 ? nameBadgeCode(myRankCode() || row.rk, true) : nameBadgeCode(row.rk, false);
+        const rkCol = rows.some(row => codeOf(row)) ? 18 : 0;
         let ry = y0 + 26;
         for (const row of rows) {
             const isMe = row.place === myPlace && myPlace > 0;
@@ -6348,14 +6447,20 @@ import * as tutorial from './tutorial.js';
             const nameTxt = shortName(row.name, 18) + (row.streak >= 4 ? "  §#ff7a6b§x" + row.streak : "");
             const plain = shortName(row.name, 18) + (row.streak >= 4 ? "  x" + row.streak : "");
             // shrink-to-fit is measured once per row per name width, not per frame
-            const fitKey = plain + "|" + ((W - 40 - scoreW - 22) | 0);
+            const nameRoom = W - 40 - rkCol - scoreW - 22;
+            const fitKey = plain + "|" + (nameRoom | 0);
             let ns = standingsFit.get(fitKey);
             if (ns === undefined) {
-                ns = 12; while (ns > 8 && measureText(plain, ns) > W - 40 - scoreW - 22) ns -= 0.5;
+                ns = 12; while (ns > 8 && measureText(plain, ns) > nameRoom) ns -= 0.5;
                 if (standingsFit.size > 64) standingsFit.clear();
                 standingsFit.set(fitKey, ns);
             }
-            drawText(nameTxt, x + 40, rowMid, ns, nameCol, "left", true);
+            const rk = codeOf(row);
+            if (rk) rankBadges.drawBadge(c, x + 47, rowMid - 0.5, 15, rk === 20 ? "placement" : rk - 1);
+            // a name style replaces the plain colour (yours included)
+            const rowName = shortName(row.name, 18);
+            const rowSn = styledName(rowName, row.ns, hexOr(row.nc, nameCol), x + 40 + rkCol, ns, "left", c);
+            drawText(rowSn.text + nameTxt.slice(rowName.length), x + 40 + rkCol, rowMid, ns, rowSn.fill, "left", true);
             drawText(scoreTxt, x + W - 10, rowMid, 12, nameCol, "right", true);
             ry += rowH;
         }
@@ -8720,12 +8825,12 @@ import * as tutorial from './tutorial.js';
             }))
             : tab === "alive"
                 ? ((global.royale.board || []).filter(r => r.alive || r.here)).map((r, i) => ({
-                    name: (i + 1) + ". " + (r.name || "Unnamed"),
+                    num: (i + 1) + ".", name: r.name || "Unnamed", rk: r.rk | 0, ns: r.ns | 0, nc: r.nc,
                     extra: !r.alive ? "respawning" : (r.kills | 0) ? ((r.kills | 0) + " kills") : "alive",
                     me: r.id === gui.playerid || (r.place > 0 && r.place === (global.royale.place | 0)),
                 }))
                 : royaleBoardRows().map((r, i) => ({
-                    name: (i + 1) + ". " + (r.name || "Unnamed"),
+                    num: (i + 1) + ".", name: r.name || "Unnamed", rk: r.rk | 0, ns: r.ns | 0, nc: r.nc,
                     extra: util.formatLargeNumber(r.score || r.gems | 0) + " pts  " + (r.kills | 0) + " kills",
                     me: r.id === gui.playerid || (r.place > 0 && r.place === (global.royale.place | 0)),
                 }));
@@ -8740,10 +8845,21 @@ import * as tutorial from './tutorial.js';
             headH = 22;
         }
         const meHex = playerHexCol() || color.gold;
+        // board tabs: place number in its own column, then the rank badge
+        // column (only when someone has a rank), then the name
+        for (const r of rows) if (r.num) r.rk = nameBadgeCode(r.me ? myRankCode() || r.rk : r.rk, r.me);
+        const rkCol = rows.some(r => r.rk) ? 24 : 0;
+        const numW = rows[0] && rows[0].num ? measureText(rows.length + ".", 14) + 8 : 0;
         for (let i = 0; i < rows.length && i < Math.floor((h - 20 - headH) / rowH); i++) {
             const ry = y + 16 + headH + i * rowH;
+            const col = rows[i].me ? meHex : color.guiwhite;
             // your row: your colour on the name only, nothing behind it
-            drawText(rows[i].name, x + 18, ry, 14, rows[i].me ? meHex : color.guiwhite, "left");
+            if (rows[i].num) {
+                drawText(rows[i].num, x + 18 + numW - 8, ry, 14, col, "right");
+                if (rows[i].rk) rankBadges.drawBadge(ctx[2], x + 18 + numW + 9, ry - 5.4, 18, rows[i].rk === 20 ? "placement" : rows[i].rk - 1);
+                const fSn = styledName(rows[i].name, rows[i].ns, hexOr(rows[i].nc, col), x + 18 + numW + rkCol, 14, "left");
+                drawText(fSn.text, x + 18 + numW + rkCol, ry, 14, fSn.fill, "left");
+            } else drawText(rows[i].name, x + 18, ry, 14, col, "left");
             if (rows[i].extra) drawText(rows[i].extra, x + w - 18, ry, 14, color.gold, "right");
         }
     }
@@ -10016,13 +10132,19 @@ import * as tutorial from './tutorial.js';
 
         const locked = !!(global.royale.lock && global.royale.at > 0);
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
-        if (!locked && global.raidRespawnAt > 0 && waitMs <= 0 && !global.disconnected && !global.respawnPending) {
+        if (!locked && global.raidRespawnAt > 0 && waitMs <= 0 && !global.disconnected && !global.respawnPending && !rankCeremony.isPlaying()) {
             try { global.canvas.respawn(); } catch { /* */ }
         }
         drawText(locked
                 ? ("Final storm - no spawns for " + Math.max(0, global.royale.lockLeft | 0) + "s")
                 : (waitMs > 0 ? ("Respawning in " + Math.ceil(waitMs / 1000) + "s") : "Respawning"),
                  cx, gy + 3 * 46 + 56, 14, color.gold, "center", true, panelA);
+        // ranked: the life's rank result in the strip under the stats
+        try {
+            rankPanel.draw(c, bx, py + 346, bw, 106,
+                { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk },
+                global.lerp(2.3, 2.8, glide) * panelA);
+        } catch (e) { /* never break the death screen */ }
         global.clickables.royalePrev.hide();
         global.clickables.royaleNext.hide();
         global.clickables.royalePlay.hide();
@@ -10336,6 +10458,11 @@ import * as tutorial from './tutorial.js';
                 cv && cv.respawn && cv.respawn();
             } else if (kind === "home") {
                 global.exit && global.exit();
+            } else if (kind === "signup") {
+                // back to the menu, where the sign-up form opens
+                global.exit && global.exit();
+                if (window.dwAccount && window.dwAccount.openSignup) window.dwAccount.openSignup();
+                return;
             }
         } catch { /* */ }
         try {
@@ -10381,7 +10508,13 @@ import * as tutorial from './tutorial.js';
         const homeD = royaleDomBtn("royaleDomHomeDead", "Home");
         sp.onclick = () => royaleDomAct("spectate");
         homeD.onclick = () => royaleDomAct("home");
-        dead.append(sp, homeD);
+        // guests: the rank card's nudge has its button here, with the others
+        const signup = royaleDomBtn("royaleDomSignup", "Create account");
+        signup.style.borderColor = "#a98bff";
+        signup.style.color = "#d8c9ff";
+        signup.style.display = "none";
+        signup.onclick = () => royaleDomAct("signup");
+        dead.append(sp, homeD, signup);
         document.body.appendChild(dead);
         try { updateRoyaleDomButtons(); } catch { /* */ }
     }
@@ -10400,6 +10533,8 @@ import * as tutorial from './tutorial.js';
         const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating);
         spec.style.display = spectating ? "flex" : "none";
         dead.style.display = deadShow ? "flex" : "none";
+        const signup = document.getElementById("royaleDomSignup");
+        if (signup) signup.style.display = deadShow && rankPanel.isGuestNudge() ? "" : "none";
         const play = document.getElementById("royaleDomPlay");
         if (play) {
             const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);

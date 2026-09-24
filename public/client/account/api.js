@@ -64,3 +64,31 @@ export const deleteAccount = (currentPassword) => post('/api/account/delete', cu
 
 // Discord OAuth is a full-page redirect, not a fetch.
 export const discordStartUrl = (mode) => '/auth/discord/start?mode=' + encodeURIComponent(mode || 'login');
+
+// Item Shop and Locker (Phase 3). Money routes carry an idempotency key so
+// a retried click never charges twice.
+export function idemKey() {
+    const b = new Uint8Array(12);
+    (window.crypto || window.msCrypto).getRandomValues(b);
+    return 'k' + Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+}
+export const store = () => get('/api/store');
+export const purchase = (itemId, day, idempotencyKey, color) => post('/api/store/purchase', color ? { itemId, day, idempotencyKey, color } : { itemId, day, idempotencyKey });
+export const gift = (itemId, day, toUserId, idempotencyKey, preset) => post('/api/store/gift', { itemId, day, toUserId, idempotencyKey, preset });
+export const refund = (purchaseId) => post('/api/store/refund', { purchaseId });
+export const storeHistory = () => get('/api/store/history');
+export const locker = () => get('/api/locker');
+export const equip = (slot, itemId, color) => post('/api/locker/equip', color ? { slot, itemId, color } : { slot, itemId });
+// Friends, profiles, the leaderboard and daily quests (Phases 4 and 5).
+export const friends = () => get('/api/friends');
+export const friendRequest = (username) => post('/api/friends/request', { username });
+export const friendRespond = (userId, accept) => post('/api/friends/respond', { userId, accept: !!accept });
+export const friendCancel = (userId) => post('/api/friends/cancel', { userId });
+export const friendRemove = (userId) => post('/api/friends/remove', { userId });
+export const friendBlock = (who) => post('/api/friends/block', /^DW-/i.test(String(who || '')) ? { userId: who } : { username: who });
+export const friendUnblock = (userId) => post('/api/friends/unblock', { userId });
+export const profile = (u) => get('/api/profile?u=' + encodeURIComponent(u));
+export const leaderboard = (limit) => get('/api/leaderboard?limit=' + (limit || 100));
+export const quests = () => get('/api/quests');
+// Server-Sent Events: a URL, since EventSource does its own fetching.
+export const EVENTS_URL = '/api/events';

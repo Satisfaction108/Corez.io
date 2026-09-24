@@ -3,6 +3,8 @@ import { util } from "./util.js";
 import { config } from "./config.js";
 import { protocol } from "./protocol.js";
 import { gameSound } from "./sound.js";
+import * as rankPanel from "./account/rankPanel.js";
+import * as dustHud from "./account/dustHud.js";
 window.fakeLagMS = 0;
 var sync = [];
 var clockDiff = 0;
@@ -761,6 +763,12 @@ const process = (z = {}) => {
             z.score = get.next();
             z.digWarsGoal = get.next();
             z.gemGlow = get.next() | 0;
+            // accounts (Phase 2 wire): name style nid, rank code, skin nid
+            z.nameStyle = get.next() | 0;
+            z.rankCode = get.next() | 0;
+            z.skin = get.next() | 0;
+            // your own style, for the HUD name (your nameplate is not drawn)
+            if (z.id === gui.playerid) global.myNameStyle = z.nameStyle;
         }
         z.nameplate = type & 0x04;
 
@@ -1548,6 +1556,57 @@ let incoming = async function(message, socket) {
                 global.noAutoReconnect = true;
                 global.message = "You have been banned from the game.";
             } break;
+            case 'AC': {
+                // account snapshot at spawn: rank for the HUD badge, dust for the HUD
+                try {
+                    const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
+                    global.acct = d && typeof d === 'object' ? d : null;
+                    rankPanel.setAccount(global.acct);
+                    if (global.acct) dustHud.syncUnits(global.acct.dust, global.acct.dustCarried);
+                } catch (e) { /* ignore */ }
+            } break;
+            case 'DU': {
+                // [carriedMilli, balanceMilli, deltaMilli, kind]
+                try { dustHud.onPacket(m[0], m[1], m[2], m[3]); } catch (e) { /* ignore */ }
+            } break;
+            case 'RK': {
+                // the life's rank result, right after 'F' (never cleared by it)
+                try {
+                    const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
+                    rankPanel.setResult(d);
+                    if (d && !d.guest && d.after && global.acct) global.acct.rank = d.after;
+                } catch (e) { /* ignore */ }
+            } break;
+            case 'RKP': {
+                // raid-end placement bonus (top 10 accounts)
+                try {
+                    const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
+                    rankPanel.setRaidBonus(d);
+                    if (d && d.after && global.acct) global.acct.rank = d.after;
+                } catch (e) { /* ignore */ }
+            } break;
+            case 'DQ': {
+                // a daily quest's progress: a small note when one gets done
+                try {
+                    const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
+                    if (!d || typeof d !== 'object') break;
+                    const seen = global.dqSeen || (global.dqSeen = {});
+                    const prev = seen[d.slot];
+                    seen[d.slot] = { id: d.id, done: !!d.done };
+                    if (d.done && prev && prev.id === d.id && !prev.done) {
+                        const v = (+d.rewardMilli || 0) / 1000;
+                        const amt = Number.isInteger(v) ? String(v) : String(+v.toFixed(2));
+                        global.createMessage('+' + amt + ' gemdust \u2014 quest done', 4500);
+                    }
+                } catch (e) { /* ignore */ }
+            } break;
+            case 'ACH': {
+                // an achievement unlocked
+                try {
+                    const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
+                    if (d && d.id) global.createMessage('Achievement unlocked: ' + (d.name || d.id), 5000);
+                } catch (e) { /* ignore */ }
+            } break;
             case 'KO': {
                 // Account kicked this socket (logged in elsewhere, banned):
                 // the server closes it next, and it must not auto-reconnect.
@@ -1571,6 +1630,7 @@ let incoming = async function(message, socket) {
                 global.respawnPending = false;
                 global.died = false;
                 global._specGlide = null;
+                rankPanel.clear();
                 global.royaleSpectating = false;
                 global.royaleDied = false;
                 global.royaleKillerCamUntil = 0;
@@ -1829,6 +1889,8 @@ let incoming = async function(message, socket) {
             global.finalDrillLost = m[15 + m[8]] | 0;
             global.finalInsured = m[16 + m[8]] | 0;
             global.shop.onPad = false;
+            // RK follows this packet; the rank card waits for it
+            rankPanel.onDeath();
             // Death notice goes to the notification stack too, like autofire
             // toggles, so it reads even while spectating or queued.
             try {

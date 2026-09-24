@@ -10,6 +10,14 @@ import * as welcome from './welcome.js';
 import * as hub from './hub.js';
 import * as menu from './menu.js';
 import * as account from './accountSettings.js';
+import * as rankCeremony from './rankCeremony.js';
+import * as shop from './shop.js';
+import * as locker from './locker.js';
+import * as social from './social.js';
+import * as friendsPane from './friendsPane.js';
+import * as profile from './profile.js';
+import * as leaderboard from './leaderboard.js';
+import * as dailyQuests from './dailyQuests.js';
 
 const html = document.documentElement;
 const HINT = 'dwAcctHint';
@@ -60,8 +68,23 @@ window.dwAccount = {
         return ui.hasLayers() || html.getAttribute('data-acct') === 'new';
     },
     me() { return store.get('user'); },
+    // what you have on, as wire numbers: { nameStyle, skin, customColor }
+    equippedCos() {
+        const u = store.get('user'), eq = u && u.equipped, C = window.DWCosmetics;
+        if (!eq || !C) return { nameStyle: 0, skin: 0, customColor: null };
+        const ns = C.byId(eq.nameStyle), sk = C.byId(eq.skin);
+        return { nameStyle: ns ? ns.nid : 0, skin: sk ? sk.nid : 0, customColor: eq.customColor || null };
+    },
     refresh: () => refresh(),
+    // the raid death screen's "Create account": opens sign-up once the
+    // menu is back (the game is still sliding away when it is called)
+    openSignup() {
+        if (store.get('offline')) return;
+        if (inGame()) { signupOnMenu = true; return; }
+        welcome.open('auth', { tab: 'signup', dismissable: true });
+    },
 };
+let signupOnMenu = false;
 
 /* ── transitions ────────────────────────────────────────────────────── */
 function goGuest() {
@@ -80,6 +103,7 @@ function onAuthed(user) {
 
 function loggedOut(message) {
     setUser(null);
+    ls.del('dwAcctRank');
     ls.set(HINT, 'new');
     hub.close();
     ui.closeAllModals();
@@ -120,7 +144,7 @@ function applyMe(res, initial) {
     store.set({ pending });
     if (user) {
         setUser(user);
-        if (welcome.isOpen() && welcome.currentView() !== 'code') welcome.close();
+        if (welcome.isOpen() && welcome.currentView() !== 'code' && welcome.currentView() !== 'reset') welcome.close();
         return;
     }
     const wasUser = store.get('mode') === 'user';
@@ -144,9 +168,9 @@ function applyMe(res, initial) {
 }
 
 let lastFetch = 0, pollTimer = 0, inflight = null;
-async function refresh() {
+async function refresh(force) {
     if (inGame() || store.get('offline')) return;
-    if (inflight) return inflight;
+    if (inflight && !force) return inflight;
     lastFetch = Date.now();
     inflight = api.me().then((r) => { inflight = null; if (!inGame()) applyMe(r, false); });
     return inflight;
@@ -217,11 +241,58 @@ function resumeIntent() {
     else ui.toast('Discord confirmed it’s you. Try that again now.', { kind: 'ok' });
 }
 
+/* ── #reset=<token> ─────────────────────────────────────────────────── */
+// A password-reset link. The token leaves the address bar at once, so it
+// isn't kept in history or shared by accident.
+function readResetToken() {
+    const m = /(?:^#|&)reset=([^&]+)/.exec(location.hash || '');
+    if (!m) return null;
+    let token = '';
+    try { token = decodeURIComponent(m[1]); } catch (e) { token = m[1]; }
+    const rest = location.hash.replace(/^#/, '').split('&').filter((x) => x && !/^reset=/.test(x)).join('&');
+    try { history.replaceState(history.state, '', location.pathname + location.search + (rest ? '#' + rest : '')); } catch (e) { /* */ }
+    return token || null;
+}
+function openReset(token) {
+    if (store.get('offline')) { ui.toast('Accounts are offline right now. Try the link again later.', { kind: 'error' }); return; }
+    hub.close();
+    welcome.open('reset', { token, dismissable: store.get('mode') !== 'new' });
+}
+
 /* ── boot ───────────────────────────────────────────────────────────── */
 async function boot() {
     welcome.init({ onAuthed, onGuest: goGuest });
     account.init({ refresh, onLoggedOut: loggedOut, onDeleted, setUser });
     hub.register('account', { title: 'Account', render: account.render, onClose: account.onClose });
+    hub.register('shop', { title: 'Item Shop', render: shop.render, onClose: shop.onClose });
+    hub.register('locker', { title: 'Locker', render: locker.render, onClose: locker.onClose });
+    // the leaderboard is open to guests; every other pane needs an account
+    const openPane = (p, opts) => {
+        if (welcome.isOpen()) return;
+        if (p === 'play') return hub.close();
+        if (p === 'leaderboard' || store.get('user')) hub.open(p, opts);
+    };
+    const openProfile = (from) => (p) => openPane('profile', { u: p.userId || p.username, from });
+    hub.register('friends', { title: 'Friends', render: friendsPane.render, onClose: friendsPane.onClose });
+    hub.register('profile', { title: 'Profile', render: profile.render, onClose: profile.onClose });
+    hub.register('leaderboard', { title: 'Leaderboard', render: leaderboard.render, onClose: leaderboard.onClose });
+    friendsPane.init({ openProfile: openProfile('friends') });
+    profile.init({ openPane, setTitle: hub.setTitle });
+    leaderboard.init({ openProfile: openProfile('leaderboard'), onLogin: () => welcome.open('choose', { dismissable: true }) });
+    dailyQuests.init({ onLogin: () => { if (!store.get('offline')) welcome.open('choose', { dismissable: true }); } });
+    social.init({
+        onRevoked: () => loggedOut('You were logged out.'),
+        refreshMe: () => refresh(true),
+        openPane,
+        onStoreReset() { menu.render(); dailyQuests.refresh(); },
+    });
+    shop.init({
+        refreshMe: () => refresh(true),
+        openLocker: () => openPane('locker'),
+        // the chip shows the new balance at once, before /api/me answers
+        onBalance(dust) { const u = store.get('user'); if (u && typeof dust === 'number' && u.dust !== dust) setUser(Object.assign({}, u, { dust })); },
+    });
+    locker.init({ refreshMe: () => refresh(true), openShop: () => openPane('shop') });
     menu.init({
         onChip() {
             if (store.get('user')) return hub.isOpen() && hub.currentPane() === 'account' ? hub.close() : openAccount();
@@ -229,9 +300,11 @@ async function boot() {
             welcome.open('auth', { tab: 'signup', dismissable: true });
         },
         onNameBox() { openAccount({ focus: 'username' }); },
+        // a guest clicked a locked nav item and chose "Log in"
+        onLogin() { welcome.open('choose', { dismissable: true }); },
         onNav(pane) {
             if (pane === 'play') return hub.close();
-            if (hub.has(pane)) openAccount(); // later phases register their panes
+            if (hub.has(pane)) openPane(pane);
         },
     });
     store.on((s, changed) => {
@@ -244,6 +317,7 @@ async function boot() {
     if (store.get('mode') === 'new') welcome.open('choose');
 
     const params = readParams();
+    const resetToken = readResetToken();
     if (params.auth === 'pick-username') ss.del('dwPickDismissed');
 
     const [cfg, me] = await Promise.all([api.config(), api.me()]);
@@ -253,7 +327,10 @@ async function boot() {
     lastFetch = Date.now();
     applyMe(me, true);
     handleParams(params);
+    if (resetToken) openReset(resetToken);
     schedule();
+    social.sync();
+    window.addEventListener('hashchange', () => { const t = readResetToken(); if (t) openReset(t); });
 
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) return clearTimeout(pollTimer);
@@ -276,6 +353,12 @@ async function boot() {
             if (html.getAttribute('data-acct') === 'new') welcome.open('choose');
             refresh();
             schedule();
+            if (signupOnMenu) {
+                signupOnMenu = false;
+                setTimeout(() => { if (!inGame() && !store.get('user')) welcome.open('auth', { tab: 'signup', dismissable: true }); }, 350);
+            }
+            // a rank-up the game never got to show plays here
+            setTimeout(() => { if (!inGame() && !welcome.isOpen()) rankCeremony.playPending(); }, 700);
         }
     }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 }
