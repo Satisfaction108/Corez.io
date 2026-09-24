@@ -4,6 +4,10 @@
 // Server-Sent Events stream at /api/events while the menu shows. If the
 // stream can't be used, /api/friends is polled every 15 s instead. The
 // stream closes when a game starts and opens again back in the menu.
+// Chat: each friend row carries {unread, last}; the open chat view
+// (chat.js) says which friend it shows, so their messages don't count as
+// unread or toast. DMs that land while in a raid (or while the stream was
+// closed for one) come back as one toast in the menu.
 import * as api from './api.js';
 import * as store from './state.js';
 import { toast } from './ui.js';
@@ -14,6 +18,8 @@ const ES_RETRY_MS = 120000;   // after falling back, try the stream again this o
 
 const data = { loaded: false, friends: [], incoming: [], outgoing: [], blocked: [] };
 const subs = new Set();
+const dmSubs = new Set();
+let activeChat = null;   // userId of the chat on screen, or null
 let hooks = { onRevoked() {}, refreshMe() {}, openPane() {}, onStoreReset() {} };
 
 export const get = () => data;
@@ -21,6 +27,36 @@ export function on(fn) { subs.add(fn); return () => subs.delete(fn); }
 function emit(why) {
     paintBadge();
     subs.forEach((fn) => { try { fn(data, why); } catch (e) { console.error(e); } });
+}
+
+// fn({type:'dm', peer, message} | {type:'dmRead', peer, upTo, by})
+export function onDm(fn) { dmSubs.add(fn); return () => dmSubs.delete(fn); }
+function emitDm(ev) { dmSubs.forEach((fn) => { try { fn(ev); } catch (e) { console.error(e); } }); }
+let activeShown = null;
+// shown(): whether that chat is really on screen right now (the hub can
+// switch panes without closing the Friends one)
+export function setActiveChat(id, shown) { activeChat = id || null; activeShown = id ? shown || null : null; }
+const chatOnScreen = (id) => !!activeChat && activeChat === id && (!activeShown || activeShown());
+export const totalUnread = () => data.friends.reduce((n, f) => n + (f.unread | 0), 0);
+export const friendById = (id) => data.friends.find((f) => f.userId === id) || null;
+function patchFriend(id, fn) {
+    let hit = false;
+    data.friends = data.friends.map((f) => { if (f.userId !== id) return f; hit = true; return Object.assign({}, f, fn(f)); });
+    return hit;
+}
+// The chat view read everything up to now.
+export function markReadLocal(id) {
+    const f = friendById(id);
+    if (!f || !(f.unread | 0)) return;
+    patchFriend(id, () => ({ unread: 0 }));
+    emit('read');
+}
+// After a send / an incoming message: the row's preview line.
+export function setLast(id, m) {
+    if (!m) return;
+    const f = friendById(id);
+    if (f && f.last && (f.last.at || 0) > (m.at || 0)) return;
+    patchFriend(id, () => ({ last: { body: m.body, at: m.at, from: m.from } }));
 }
 
 const inGame = () => document.body.classList.contains('in-game');
@@ -31,6 +67,7 @@ const arr = (x) => (Array.isArray(x) ? x : []);
 function setLists(d, opts) {
     if (!d || typeof d !== 'object') return;
     const before = new Set(data.incoming.map((x) => x.userId));
+    const unreadBefore = new Map(data.friends.map((f) => [f.userId, f.unread | 0]));
     const had = data.loaded;
     data.friends = arr(d.friends);
     data.incoming = arr(d.incoming);
@@ -42,6 +79,14 @@ function setLists(d, opts) {
         const fresh = data.incoming.filter((x) => !before.has(x.userId));
         if (fresh.length === 1) requestToast(fresh[0]);
         else if (fresh.length > 1) menuToast(fresh.length + ' new friend requests!', { actions: [{ label: 'View', onClick: () => hooks.openPane('friends', { tab: 'requests' }) }] });
+        // messages that came in while the stream was closed (a raid, a blip)
+        for (const f of data.friends) {
+            const n = (f.unread | 0) - (unreadBefore.get(f.userId) || 0);
+            if (n <= 0 || chatOnScreen(f.userId)) continue;
+            dmPend.n += n;
+            dmPend.last = f.last && f.last.from === 'them' ? { userId: f.userId, username: f.username, body: f.last.body } : null;
+        }
+        flushDm();
     }
     emit('lists');
 }
@@ -91,13 +136,17 @@ export const isFriend = (id) => data.friends.some((f) => f.userId === id);
 function paintBadge() {
     const b = document.querySelector('.dw-nav-btn[data-pane="friends"]');
     if (!b) return;
-    let n = loggedIn() ? data.incoming.length : 0;
+    const reqs = loggedIn() ? data.incoming.length : 0, unread = loggedIn() ? totalUnread() : 0;
+    const n = reqs + unread;
     let pill = b.querySelector('.dw-nav-count');
     if (!n) { if (pill) pill.remove(); b.removeAttribute('data-count'); return; }
     if (!pill) { pill = document.createElement('span'); pill.className = 'dw-nav-count'; b.appendChild(pill); }
     pill.textContent = n > 9 ? '9+' : String(n);
     b.setAttribute('data-count', String(n));
-    b.setAttribute('aria-label', 'Friends, ' + n + ' request' + (n === 1 ? '' : 's'));
+    const bits = [];
+    if (reqs) bits.push(reqs + ' request' + (reqs === 1 ? '' : 's'));
+    if (unread) bits.push(unread + ' unread message' + (unread === 1 ? '' : 's'));
+    b.setAttribute('aria-label', 'Friends, ' + bits.join(', '));
 }
 
 /* ── toasts (menu only) ─────────────────────────────────────────────── */
@@ -108,6 +157,30 @@ function menuToast(msg, opts) {
 }
 export function flushToasts() {
     while (queued.length && !inGame()) { const [m, o] = queued.shift(); toast(m, o); }
+    flushDm();
+}
+
+// DMs: "Sam: hey!" [Reply] in the menu; in a raid they add up and come
+// back as one toast.
+const dmPend = { n: 0, last: null };
+const clip = (s, n) => { const a = Array.from(String(s || '')); return a.length > n ? a.slice(0, n - 1).join('') + '…' : a.join(''); };
+function showDm(p) {
+    toast(p.username + ': ' + clip(p.body, 48), {
+        duration: 6000,
+        actions: [{ label: 'Reply', onClick: () => hooks.openPane('friends', { chat: p.userId }) }],
+    });
+}
+function dmToast(p) {
+    dmPend.n++;
+    dmPend.last = p;
+    flushDm();
+}
+function flushDm() {
+    if (inGame() || !dmPend.n) return;
+    const { n, last } = dmPend;
+    dmPend.n = 0; dmPend.last = null;
+    if (n === 1 && last) return showDm(last);
+    toast(n + ' new message' + (n === 1 ? '' : 's'), { duration: 6000, actions: [{ label: 'View', onClick: () => hooks.openPane('friends', { tab: 'friends' }) }] });
 }
 
 function requestToast(p) {
@@ -171,6 +244,16 @@ function onEvent(type, d) {
             data.incoming = drop(data.incoming, d.userId);
             emit('friendRequestCanceled');
             break;
+        case 'outgoingAdded':
+            if (!d || !d.userId || isFriend(d.userId)) break;
+            data.outgoing = upsert(data.outgoing, d);
+            emit('outgoing');
+            break;
+        case 'outgoingRemoved':
+            if (!d || !d.userId) break;
+            data.outgoing = drop(data.outgoing, d.userId);
+            emit('canceled');
+            break;
         case 'friendAccepted':
             if (!d || !d.userId) break;
             apply('friend', d);
@@ -203,6 +286,27 @@ function onEvent(type, d) {
             });
             break;
         }
+        case 'dm': {
+            const m = d && d.message;
+            if (!m || !m.id || !d.from || !d.to) break;
+            const peer = m.from === 'me' ? d.to : d.from;
+            if (!isFriend(peer.userId)) break;
+            setLast(peer.userId, m);
+            const mine = m.from === 'me';
+            if (!mine && !chatOnScreen(peer.userId)) {
+                patchFriend(peer.userId, (f) => ({ unread: (f.unread | 0) + 1 }));
+                dmToast({ userId: peer.userId, username: peer.username, body: m.body });
+            }
+            emitDm({ type: 'dm', peer: peer.userId, message: m });
+            emit('dm');
+            break;
+        }
+        case 'dmRead':
+            if (!d || !d.userId) break;
+            if (d.by === 'me') patchFriend(d.userId, () => ({ unread: 0 }));
+            emitDm({ type: 'dmRead', peer: d.userId, upTo: d.upTo | 0, by: d.by });
+            emit('dmRead');
+            break;
         case 'storeReset': hooks.onStoreReset(d); break;
         case 'sessionRevoked':
             revoked = true;
@@ -212,7 +316,7 @@ function onEvent(type, d) {
     }
 }
 
-const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'storeReset', 'sessionRevoked'];
+const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'sessionRevoked'];
 let es = null, esFails = 0, pollTimer = 0, esRetryTimer = 0, revoked = false;
 
 function openStream() {
@@ -287,6 +391,7 @@ export function init(hs) {
             revoked = false;
             stop();
             Object.assign(data, { loaded: false, friends: [], incoming: [], outgoing: [], blocked: [] });
+            dmPend.n = 0; dmPend.last = null; activeChat = null; activeShown = null;
             emit('reset');
         }
         sync();

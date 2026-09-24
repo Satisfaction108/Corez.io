@@ -9,9 +9,15 @@
 //   presence         {updates:[{userId, state, alive, score, place, lastSeen}]}   coalesced per recipient, 2 s
 //   friendRequest    {userId, username, at, rank}
 //   friendRequestCanceled {userId}
+//   outgoingAdded    {userId, username, rank, at}       you sent a request (from another tab too)
+//   outgoingRemoved  {userId}                           you canceled one
 //   friendAccepted   {userId, username, since, rank, presence}
 //   friendRemoved    {userId}
 //   friendRankUp     {userId, username, division, name, tier, tierUp}
+//   dm               {from:{userId, username}, to:{userId, username}, message:{id, from:'me'|'them', body, at, read}}
+//                    to the recipient, and to the sender's streams (message.from 'me')
+//   dmRead           {userId, upTo, by:'them'|'me'}   'them': that friend read your messages up to id upTo;
+//                    'me': you read theirs (in another tab)
 //   gift             {purchaseId, itemId, preset, from:{userId, username}}
 //   storeReset       {day, resetsAt}                    at 00:00 UTC (daily quests reset too)
 //   ach              {id, name, desc, at}               an achievement unlocked in a raid
@@ -25,6 +31,7 @@ const bus = require('../bus');
 const db = require('../db');
 const users = require('../users');
 const friends = require('../friends');
+const messages = require('../messages');
 const presence = require('../presence');
 const { BASE_HEADERS, HttpError } = require('../http');
 const R = require('../../../shared/ranks.js');
@@ -99,8 +106,12 @@ function personView(row) {
 
 function listsView(userId) {
     const l = friends.lists(userId);
+    const unread = messages.unreadCounts(userId), last = messages.lastMessages(userId);
     return {
-        friends: l.friends.map(friendView),
+        friends: l.friends.map(r => {
+            const m = last.get(r.id);
+            return { ...friendView(r), unread: unread.get(r.id) || 0, last: m ? messages.preview(userId, m) : null };
+        }),
         incoming: l.incoming.map(personView),
         outgoing: l.outgoing.map(personView),
         blocked: l.blocked.map(r => ({ userId: r.public_id, username: r.username, at: r._at })),

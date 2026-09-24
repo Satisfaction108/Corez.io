@@ -35,6 +35,9 @@ const WINDOWS = {
     equip:         { limit: 60,  windowMs: 1 * MIN },   // locker equips per account
     friendRequest: { limit: 20,  windowMs: 60 * MIN },  // friend requests sent per account
     social:        { limit: 60,  windowMs: 10 * MIN },  // blocks + unblocks per account
+    dm:            { limit: 20,  windowMs: 1 * MIN },   // friend chat messages sent per account
+    dmBurst:       { limit: 5,   windowMs: 5 * 1000 },  // ...and no more than 5 in any 5 s
+    dmRead:        { limit: 120, windowMs: 1 * MIN },   // read receipts per account
 };
 
 const BACKOFFS = {

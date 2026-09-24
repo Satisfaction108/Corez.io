@@ -11,7 +11,12 @@
         if (icon) icon.textContent = t === 'light' ? '\u2600' : '\u263E';
     }
 
-    applyTheme(localStorage.getItem(THEME_KEY) || 'dark'); // immediate, no flash
+    // Light is the default. Everyone gets moved over once (dwThemeV2); after
+    // that the toggle is theirs to keep.
+    try {
+        if (!localStorage.getItem('dwThemeV2')) { localStorage.setItem(THEME_KEY, 'light'); localStorage.setItem('dwThemeV2', '1'); }
+    } catch (e) { /* private mode: default below */ }
+    applyTheme(localStorage.getItem(THEME_KEY) || 'light'); // immediate, no flash
     document.documentElement.setAttribute('data-acct', localStorage.getItem('dwAcctHint') || 'new'); // account gate, see client/account/main.js
 
     /* ── Mobile / tablet gate ──────────────────────────────────────────

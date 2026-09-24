@@ -87,6 +87,10 @@ export const friendCancel = (userId) => post('/api/friends/cancel', { userId });
 export const friendRemove = (userId) => post('/api/friends/remove', { userId });
 export const friendBlock = (who) => post('/api/friends/block', /^DW-/i.test(String(who || '')) ? { userId: who } : { username: who });
 export const friendUnblock = (userId) => post('/api/friends/unblock', { userId });
+// Chat with friends.
+export const friendMessages = (userId, before) => get('/api/friends/messages?userId=' + encodeURIComponent(userId) + (before ? '&before=' + encodeURIComponent(before) : '') + '&limit=50');
+export const friendSend = (userId, body) => post('/api/friends/messages', { userId, body });
+export const friendRead = (userId, upTo) => post('/api/friends/messages/read', { userId, upTo });
 export const profile = (u) => get('/api/profile?u=' + encodeURIComponent(u));
 export const leaderboard = (limit) => get('/api/leaderboard?limit=' + (limit || 100));
 export const quests = () => get('/api/quests');

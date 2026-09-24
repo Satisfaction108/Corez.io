@@ -331,7 +331,8 @@ test('http + SSE: friends routes, events, profile 404 when blocked, rank-up toas
         assert.equal(r.json.friend.presence.state, 'offline');
         const list = (await srv.get('/api/friends', ca)).json;
         assert.equal(list.friends.length, 1);
-        assert.deepEqual(Object.keys(list.friends[0]).sort(), ['presence', 'rank', 'since', 'userId', 'username']);
+        assert.deepEqual(Object.keys(list.friends[0]).sort(), ['last', 'presence', 'rank', 'since', 'unread', 'userId', 'username']);
+        assert.deepEqual([list.friends[0].unread, list.friends[0].last], [0, null]);
 
         // b comes online in a raid -> a gets a coalesced presence update
         presence.onBus('main', { t: 'join', userId: b.id, sid: 'x1' });
@@ -379,6 +380,85 @@ test('http + SSE: friends routes, events, profile 404 when blocked, rank-up toas
         assert.equal(last, 429);
     } finally {
         if (s) s.close();
+        srv.close();
+    }
+});
+
+// ---- chat ----
+
+test('messages: friends only, sanitised, pruned to 200, read receipts, unfriend hides, delete cascades', () => {
+    const messages = require('../../server/accounts/messages');
+    const a = mkUser('dm'), b = mkUser('dm'), c = mkUser('dm');
+    const msg = (fn) => code(fn);
+    assert.equal(msg(() => messages.send(a.id, b, 'hi', NOW)), '403:not_friends');
+    friends.request(a.id, b.username, NOW); friends.respond(b.id, a, true, NOW);
+    const m = messages.send(a.id, b, '  hey\n\u202Ethere\u200B   you  ', NOW);
+    assert.equal(m.body, 'hey there you');
+    assert.equal(msg(() => messages.send(a.id, b, ' \u200B\n ', NOW)), '400:empty');
+    assert.equal(msg(() => messages.send(a.id, b, 'x'.repeat(301), NOW)), '400:too_long');
+    assert.equal(messages.send(a.id, b, '\u{1F600}'.repeat(300), NOW).body.length, 600, 'code points, not UTF-16 units');
+    assert.equal(msg(() => messages.page(c.id, a, 0)), '403:not_friends');
+    for (let i = 0; i < 205; i++) messages.send(i % 2 ? a.id : b.id, i % 2 ? b : a, 'm' + i, NOW + i);
+    assert.equal(d().get('SELECT count(*) AS n FROM friend_messages WHERE min(from_id, to_id) = ? AND max(from_id, to_id) = ?', Math.min(a.id, b.id), Math.max(a.id, b.id)).n, 200);
+    let p = messages.page(a.id, b, 0, 50);
+    assert.equal(p.rows.length, 50);
+    assert.ok(p.hasMore);
+    assert.equal(p.rows[49].body, 'm204', 'newest last');
+    const older = messages.page(a.id, b, p.rows[0].id, 50);
+    assert.ok(older.rows[49].id < p.rows[0].id);
+    assert.equal(messages.unreadCounts(a.id).get(b.id), 100, 'the even ones that survived the prune');
+    const last = messages.lastMessages(a.id).get(b.id);
+    assert.deepEqual(messages.preview(a.id, last), { body: 'm204', at: NOW + 204, from: 'them' });
+    const r = messages.markRead(a.id, b, p.rows[49].id, NOW);
+    assert.equal(r.upTo, p.rows[49].id);
+    assert.equal(messages.unreadCounts(a.id).get(b.id) || 0, 0);
+    assert.equal(messages.markRead(a.id, b, 0, NOW).upTo, 0, 'nothing left');
+    assert.equal(messages.view(b.id, p.rows[49]).from, 'me');
+    // unfriend: rows stay, reads refused; block likewise
+    friends.remove(a.id, b);
+    assert.equal(msg(() => messages.page(a.id, b, 0)), '403:not_friends');
+    assert.ok(d().get('SELECT count(*) AS n FROM friend_messages WHERE from_id = ?', a.id).n > 0);
+    friends.request(a.id, b.username, NOW); friends.respond(b.id, a, true, NOW);
+    friends.block(b.id, a, NOW);
+    assert.equal(msg(() => messages.send(a.id, b, 'yo', NOW)), '403:not_friends');
+    users.softDelete(a.id, { now: NOW });
+    assert.equal(d().get('SELECT count(*) AS n FROM friend_messages WHERE from_id = ? OR to_id = ?', a.id, a.id).n, 0);
+});
+
+test('http + SSE: chat routes, dm / dmRead events, rate limit', async () => {
+    const srv = await server();
+    const a = mkUser('chat'), b = mkUser('chat');
+    friends.request(a.id, b.username, NOW); friends.respond(b.id, a, true, NOW);
+    const ca = srv.cookieFor(a), cb = srv.cookieFor(b);
+    let sa = null, sb = null;
+    try {
+        sa = await sse(srv, ca); sb = await sse(srv, cb);
+        await sa.next('hello'); await sb.next('hello');
+        let r = await srv.post('/api/friends/messages', { userId: b.public_id, body: 'hey!' }, ca);
+        assert.equal(r.status, 200);
+        assert.deepEqual([r.json.message.from, r.json.message.body, r.json.message.read], ['me', 'hey!', false]);
+        const got = await sb.next('dm');
+        assert.deepEqual([got.from.userId, got.to.userId, got.message.from, got.message.id], [a.public_id, b.public_id, 'them', r.json.message.id]);
+        assert.equal((await sa.next('dm')).message.from, 'me', "sender's other tabs hear it too");
+        const lb = (await srv.get('/api/friends', cb)).json.friends[0];
+        assert.deepEqual([lb.unread, lb.last.body, lb.last.from], [1, 'hey!', 'them']);
+        r = await srv.get('/api/friends/messages?userId=' + a.public_id, cb);
+        assert.deepEqual([r.json.messages.length, r.json.hasMore, r.json.messages[0].from], [1, false, 'them']);
+        r = await srv.post('/api/friends/messages/read', { userId: a.public_id, upTo: r.json.messages[0].id }, cb);
+        assert.ok(r.json.upTo > 0);
+        const rd = await sa.next('dmRead');
+        assert.deepEqual([rd.userId, rd.by], [b.public_id, 'them']);
+        assert.equal((await srv.post('/api/friends/messages', { userId: b.public_id, body: '   ' }, ca)).status, 400);
+        const c = mkUser('chat');
+        assert.equal((await srv.post('/api/friends/messages', { userId: c.public_id, body: 'hi' }, ca)).status, 403);
+        assert.equal((await srv.get('/api/friends/messages?userId=' + c.public_id, ca)).status, 403);
+        // burst guard: 5 in 5 s (one already sent)
+        const st = [];
+        for (let i = 0; i < 5; i++) st.push((await srv.post('/api/friends/messages', { userId: b.public_id, body: 'x' + i }, ca)).status);
+        assert.deepEqual(st, [200, 200, 200, 200, 429]);
+    } finally {
+        if (sa) sa.close();
+        if (sb) sb.close();
         srv.close();
     }
 });

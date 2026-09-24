@@ -349,7 +349,7 @@ test('db: file permissions, schema, pragmas', () => {
     const tables = d.all("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map(r => r.name);
     for (const t of ['users', 'username_holds', 'sessions', 'password_resets', 'rank_lives', 'raid_results', 'dust_ledger',
         'purchases', 'owned_items', 'shop_rotations', 'friendships', 'friend_requests', 'blocks', 'user_stats',
-        'user_achievements', 'daily_quests', 'audit_log', 'meta']) {
+        'user_achievements', 'daily_quests', 'audit_log', 'meta', 'friend_messages']) {
         assert.ok(tables.includes(t), 'table ' + t);
         assert.match(d.get("SELECT sql FROM sqlite_master WHERE name = ?", t).sql, /\)\s*STRICT\s*$/, t + ' is STRICT');
     }
@@ -384,10 +384,10 @@ test('migrations: idempotent, pre-migrate backup, newer schema refused', () => {
     const dir = path.join(ROOT, 'mig');
     const file = path.join(dir, 'a.db');
     const a = dbmod.open({ path: file, migrate: true });
-    assert.equal(a.userVersion(), 1);
+    assert.equal(a.userVersion(), migrations.latestVersion());
     a.close();
     const b = dbmod.open({ path: file, migrate: true });
-    assert.equal(b.userVersion(), 1);
+    assert.equal(b.userVersion(), migrations.latestVersion());
     assert.deepEqual(migrations.apply(b).applied, [], 'second run applies nothing');
     b.close();
     assert.ok(!fs.existsSync(path.join(dir, 'backups')), 'no backup for a brand new file or a no-op');
@@ -398,7 +398,7 @@ test('migrations: idempotent, pre-migrate backup, newer schema refused', () => {
     raw.exec("CREATE TABLE legacy (x INTEGER) STRICT; INSERT INTO legacy VALUES (7);");
     raw.close();
     const m = dbmod.open({ path: legacy, migrate: true, backupDir: path.join(dir, 'backups') });
-    assert.equal(m.userVersion(), 1);
+    assert.equal(m.userVersion(), migrations.latestVersion());
     m.close();
     const backups = fs.readdirSync(path.join(dir, 'backups'));
     assert.equal(backups.length, 1);

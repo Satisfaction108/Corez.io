@@ -273,8 +273,27 @@ CREATE TABLE meta (
 ) STRICT;
 `;
 
+// v2: direct messages between friends. The pair index is on (lower id,
+// higher id, at) so one conversation reads in order; routes/friends.js keeps
+// at most the last 200 per pair.
+const V2 = `
+CREATE TABLE friend_messages (
+    id      INTEGER PRIMARY KEY,
+    from_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    to_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body    TEXT    NOT NULL CHECK (length(body) BETWEEN 1 AND 300),
+    at      INTEGER NOT NULL,
+    read_at INTEGER,
+    CHECK (from_id <> to_id)
+) STRICT;
+CREATE INDEX friend_messages_pair   ON friend_messages(min(from_id, to_id), max(from_id, to_id), at);
+CREATE INDEX friend_messages_unread ON friend_messages(to_id, from_id) WHERE read_at IS NULL;
+CREATE INDEX friend_messages_from   ON friend_messages(from_id);
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
+    { version: 2, up(db) { db.exec(V2); } },
 ];
 
 function latestVersion() {

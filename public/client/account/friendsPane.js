@@ -2,8 +2,10 @@
 // Friends are sorted in a raid, then in the menu, then offline, and show
 // what they're up to. Everything reads social.js, so a live event (a new
 // request, a friend starting a raid) repaints the open pane in place.
+// Clicking a friend slides their chat in (chat.js) over the lists.
 import * as api from './api.js';
 import * as social from './social.js';
+import * as chat from './chat.js';
 import { h, icon, clear, confirm, toast, setBusy, animate, collapseOut, avatar, T_MID } from './ui.js';
 import { rankOf, badge, nameEl, presenceText, presenceState, byPresence, fmtAgo } from './people.js';
 import * as pv from './previews.js';
@@ -12,24 +14,75 @@ let hooks = { openProfile() {} };
 export function init(hs) { Object.assign(hooks, hs); }
 
 let paneEl = null, tab = 'friends', unsub = null, listEl = null, tabsEl = null;
+let homeEl = null, chatView = null, chatWith = null;   // chatWith: userId whose chat is open
+
+const hubOpen = () => { const hub = document.getElementById('dwHub'); return !!hub && hub.classList.contains('open'); };
+const paneShown = () => !!paneEl && paneEl.isConnected && paneEl.classList.contains('active') && hubOpen();
 
 export function render(el, opts) {
     paneEl = el;
-    if (opts && opts.tab) tab = opts.tab;
+    if (opts && opts.tab) { tab = opts.tab; if (!opts.chat) chatWith = null; }
+    if (opts && opts.chat) { chatWith = opts.chat; tab = 'friends'; }
+    closeChat(false);
     pv.stopUnder(el);
     clear(el);
-    el.appendChild(addForm());
+    homeEl = h('div', { class: 'fr-home' });
+    homeEl.appendChild(addForm());
     tabsEl = h('div', { class: 'lk-tabs fr-tabs', role: 'tablist' });
     listEl = h('div', { class: 'fr-list', role: 'tabpanel' });
-    el.append(tabsEl, listEl);
+    homeEl.append(tabsEl, listEl);
+    el.appendChild(homeEl);
     paint(false);
     if (unsub) unsub();
-    unsub = social.on((d, why) => { if (paneEl && paneEl.isConnected && paneEl.classList.contains('active')) paint(false, why); });
+    unsub = social.on((d, why) => {
+        if (!paneEl || !paneEl.isConnected || !paneEl.classList.contains('active')) return;
+        paint(false, why);
+        // a chat asked for before the lists arrived (a toast's Reply)
+        if (chatWith && !chatView && d.loaded) { const f = social.friendById(chatWith); if (f) openChat(f, false); else chatWith = null; }
+    });
     social.load();
+    if (chatWith) { const f = social.friendById(chatWith); if (f) openChat(f, false); else if (social.get().loaded) chatWith = null; }
 }
 export function onClose() {
     if (unsub) { unsub(); unsub = null; }
+    closeChat(false);
+    chatWith = null;
     if (paneEl) pv.stopUnder(paneEl);
+}
+
+/* ── the chat view ──────────────────────────────────────────────────── */
+function openChat(f, slide = true) {
+    if (!paneEl || !homeEl) return;
+    closeChat(false);
+    chatWith = f.userId;
+    chatView = chat.mount(paneEl, f, {
+        onBack: () => backToList(),
+        openProfile: (p) => hooks.openProfile(p),
+        isShown: paneShown,
+    });
+    homeEl.hidden = true;
+    const body = paneEl.closest('.hub-body');
+    if (body) body.scrollTop = 0;
+    if (slide) animate(chatView.el, [{ opacity: 0, transform: 'translateX(24px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
+    setTimeout(() => { if (chatView) chatView.focus(); }, slide ? 60 : 30);
+}
+function closeChat(show) {
+    if (chatView) {
+        chatView.destroy();
+        chatView.el.remove();
+        chatView = null;
+    }
+    if (show && homeEl) homeEl.hidden = false;
+}
+function backToList() {
+    if (!chatView) return;
+    const id = chatWith;
+    chatWith = null;
+    closeChat(true);
+    paint(false);
+    animate(homeEl, [{ opacity: 0, transform: 'translateX(-16px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
+    const r = id && rowOf(id);
+    if (r) { const b = r.querySelector('.fr-main'); if (b) try { b.focus({ preventScroll: true }); } catch (e) { /* */ } }
 }
 
 function addForm() {
@@ -63,13 +116,15 @@ function addForm() {
 function paintTabs() {
     const d = social.get();
     clear(tabsEl);
-    const defs = [['friends', 'Friends', d.friends.length], ['requests', 'Requests', d.incoming.length], ['blocked', 'Blocked', d.blocked.length]];
-    for (const [k, label, n] of defs) {
-        const hot = k === 'requests' && n > 0;
+    // Requests counts both ways; only incoming ones get the red "look here"
+    const defs = [['friends', 'Friends', d.friends.length, 0], ['requests', 'Requests', d.incoming.length + d.outgoing.length, d.incoming.length], ['blocked', 'Blocked', d.blocked.length, 0]];
+    for (const [k, label, n, hot] of defs) {
         tabsEl.appendChild(h('button', {
             type: 'button', class: 'lk-tab' + (tab === k ? ' on' : ''), role: 'tab', 'aria-selected': tab === k ? 'true' : 'false',
+            'aria-label': label + ', ' + n + (hot ? ', ' + hot + ' new' : ''),
             onclick: () => { if (tab === k) return; tab = k; paint(true); },
-        }, h('span', { text: label }), (k !== 'blocked' || n) ? h('span', { class: 'lk-count' + (hot ? ' fr-hot' : ''), text: String(n) }) : null));
+        }, h('span', { text: label }), (k !== 'blocked' || n) ? h('span', { class: 'lk-count', text: String(n) }) : null,
+        hot ? h('span', { class: 'fr-hotdot', title: hot + ' waiting for you' }) : null));
     }
 }
 
@@ -78,7 +133,7 @@ function paint(fade, why) {
     paintTabs();
     // presence changes arrive every few seconds: when the order
     // holds, only the words and dots change, so nothing jumps or loses focus
-    if (why === 'presence' && tab === 'friends' && patchFriends()) return;
+    if (PATCHABLE.has(why) && tab === 'friends' && patchFriends()) return;
     const d = social.get();
     pv.stopUnder(listEl);
     clear(listEl);
@@ -88,6 +143,8 @@ function paint(fade, why) {
     else paintBlocked(d);
     if (fade) animate(listEl, [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
 }
+
+const PATCHABLE = new Set(['presence', 'dm', 'dmRead', 'read']);
 
 function empty(title, text) {
     return h('div', { class: 'fr-empty' }, icon('friends'), h('div', { class: 'fr-empty-h', text: title }), h('div', { class: 'fr-empty-p', text }));
@@ -105,9 +162,9 @@ function who(p, sub, subCls) {
 function row(p, sub, actions, opts) {
     opts = opts || {};
     const st = opts.presence ? presenceState(p.presence) : null;
-    const main = h('button', { type: 'button', class: 'fr-main', title: 'View profile', onclick: () => hooks.openProfile(p) },
+    const main = h('button', { type: 'button', class: 'fr-main', title: opts.chat ? 'Chat' : 'View profile', onclick: () => (opts.chat ? openChat(p) : hooks.openProfile(p)) },
         h('span', { class: 'fr-avwrap' }, avatarFor(p), st ? h('span', { class: 'fr-dot ' + st, title: st === 'raid' ? 'In a raid' : st === 'menu' ? 'In the lobby' : 'Offline' }) : null),
-        who(p, sub, st ? 'st-' + st : ''));
+        who(p, sub, opts.subCls || (st ? 'st-' + st : '')));
     return h('div', { class: 'fr-row' + (st ? ' st-' + st : ''), 'data-id': p.userId }, main, h('div', { class: 'fr-acts' }, actions));
 }
 const avatarFor = (p) => avatar(p.username, null, 34);
@@ -131,16 +188,32 @@ function patchFriends() {
         if (!prev || prev[1] !== presenceState(list[i].presence)) return false;
     }
     list.forEach((f, i) => {
+        const s = subOf(f);
         const sub = rows[i].querySelector('.fr-sub');
-        if (sub) sub.textContent = presenceText(f.presence, f.rank);
+        if (sub) { sub.textContent = s.text; sub.className = 'fr-sub ' + s.cls; }
+        const acts = rows[i].querySelector('.fr-acts');
+        const old = acts && acts.querySelector('.fr-unread');
+        const n = f.unread | 0;
+        if (old && !n) old.remove();
+        else if (n && old) old.textContent = n > 99 ? '99+' : String(n);
+        else if (n && acts) acts.insertBefore(unreadPill(n), acts.firstChild);
     });
     return true;
+}
+
+// A friend's second line: their newest unread message, else what they're up to.
+function subOf(f) {
+    if ((f.unread | 0) > 0 && f.last && f.last.from === 'them') return { text: f.last.body, cls: 'st-msg' };
+    return { text: presenceText(f.presence, f.rank), cls: 'st-' + presenceState(f.presence) };
+}
+function unreadPill(n) {
+    return h('span', { class: 'fr-unread', title: n + ' unread', text: n > 99 ? '99+' : String(n) });
 }
 
 function paintFriends(d) {
     const list = d.friends.slice().sort(byPresence);
     if (!list.length) {
-        listEl.appendChild(empty('No friends yet', 'Add someone by name up top. Once they say yes, you’ll see when they’re online!'));
+        listEl.appendChild(empty('No friends yet', 'Add someone by name up top. Once they say yes, you can chat and see when they’re online!'));
         return;
     }
     const groups = { raid: [], menu: [], offline: [] };
@@ -150,11 +223,13 @@ function paintFriends(d) {
         if (!groups[k].length) continue;
         listEl.appendChild(h('div', { class: 'fr-h', text: label[k] + ' · ' + groups[k].length }));
         for (const f of groups[k]) {
-            listEl.appendChild(row(f, presenceText(f.presence, f.rank), [
+            const s = subOf(f);
+            listEl.appendChild(row(f, s.text, [
+                (f.unread | 0) > 0 ? unreadPill(f.unread | 0) : null,
                 h('button', { type: 'button', class: 'dw-btn sm', text: 'Profile', onclick: () => hooks.openProfile(f) }),
                 icBtn('unfriend', 'Remove friend', () => removeFriend(f)),
                 icBtn('block', 'Block', () => blockUser(f), 'bad'),
-            ], { presence: true }));
+            ], { presence: true, chat: true, subCls: s.cls }));
         }
     }
 }
@@ -240,6 +315,7 @@ export async function removeFriend(p) {
     const r = await api.friendRemove(p.userId);
     if (!r.ok) { toast(social.friendError(r), { kind: 'error' }); return false; }
     await leave(rowOf(p.userId));
+    chat.forget(p.userId);
     social.apply('removed', p);
     toast(p.username + ' is no longer your friend.');
     return true;
@@ -251,6 +327,7 @@ export async function blockUser(p) {
     const r = await api.friendBlock(p.userId || p.username);
     if (!r.ok) { toast(social.friendError(r), { kind: 'error' }); return false; }
     await leave(rowOf(p.userId));
+    chat.forget(p.userId);
     social.apply('blocked', (r.data && r.data.blocked) || { userId: p.userId, username: p.username, at: Date.now() });
     toast(p.username + ' is blocked.');
     return true;

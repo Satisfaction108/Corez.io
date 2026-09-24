@@ -230,6 +230,7 @@ function softDelete(userId, opts = {}) {
         d.run('DELETE FROM friendships WHERE user_lo = ? OR user_hi = ?', u.id, u.id);
         d.run('DELETE FROM friend_requests WHERE from_id = ? OR to_id = ?', u.id, u.id);
         d.run('DELETE FROM blocks WHERE blocker_id = ?', u.id);
+        d.run('DELETE FROM friend_messages WHERE from_id = ? OR to_id = ?', u.id, u.id);
         audit(u.id, 'account_delete', { username: u.username, discordId: u.discord_id || null }, opts);
         return true;
     });

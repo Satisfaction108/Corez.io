@@ -167,6 +167,15 @@ function sanitizeGuestName(name) {
     return s;
 }
 
+// Friend chat: line breaks and tabs read as spaces, then the same strip as
+// guest names (control, bidi, zero-width, fillers), stacked marks capped,
+// whitespace collapsed. The caller checks the length (in code points).
+function sanitizeMessage(body) {
+    let s = String(body == null ? '' : body).normalize('NFC').replace(/[\t\n\v\f\r\u0085\u2028\u2029]/g, ' ').replace(STRIP_RE, '');
+    s = s.replace(/(\p{M}{2})\p{M}+/gu, '$1');
+    return s.replace(/\s+/gu, ' ').trim();
+}
+
 // About 200 of the most common passwords that pass the length rule, plus a
 // few game-specific ones. Compared case-insensitively.
 const COMMON_PASSWORDS = new Set(`
@@ -216,6 +225,7 @@ module.exports = {
     validateUsername,
     validatePassword,
     sanitizeGuestName,
+    sanitizeMessage,
     foldConfusables,
     isReserved,
     isProfane,

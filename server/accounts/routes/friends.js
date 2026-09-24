@@ -1,15 +1,17 @@
 // Friends: GET /api/friends and POST /api/friends/{request,respond,cancel,
-// remove,block,unblock}. Accounts only. userId in bodies and responses is
+// remove,block,unblock}, plus chat: GET /api/friends/messages and POST
+// /api/friends/messages{,/read} (rules in ../messages.js). Accounts only. userId in bodies and responses is
 // the public DW- id. The rules live in ../friends.js; live updates go out
 // through ./events.js, and block changes reach the game over the bus
 // ({t:'blocksChanged', userId}) so in-game chat filtering follows at once.
 'use strict';
 
 const friends = require('../friends');
+const messages = require('../messages');
 const users = require('../users');
 const bus = require('../bus');
 const events = require('./events');
-const { str } = require('../http');
+const { str, HttpError } = require('../http');
 
 function byPublic(v) {
     return users.byPublicId(str(v, 32));
@@ -39,6 +41,8 @@ function postRequest(ctx) {
         events.push(u.id, 'friendAccepted', events.friendView({ ...me, _since: r.since }));
     }
     const out = { status: r.status, user: { userId: u.public_id, username: u.username, rank: friends.rankLite(u) } };
+    // the sender's other tabs keep their Requests count right
+    if (r.status === 'pending' && r.at) events.push(me.id, 'outgoingAdded', { ...out.user, at: r.at });
     if (r.status === 'accepted') out.friend = events.friendView({ ...u, _since: r.since });
     ctx.json(200, out);
 }
@@ -60,6 +64,7 @@ function postCancel(ctx) {
     const a = ctx.requireAuth();
     const r = friends.cancel(a.user.id, byPublic(ctx.body.userId));
     if (!r.silent) events.push(r.user.id, 'friendRequestCanceled', { userId: a.user.public_id });
+    events.push(a.user.id, 'outgoingRemoved', { userId: r.user.public_id });
     ctx.json(200, { ok: true });
 }
 
@@ -91,6 +96,47 @@ function postUnblock(ctx) {
     ctx.json(200, { ok: true });
 }
 
+// ---- chat ----
+
+const who = row => ({ userId: row.public_id, username: row.username });
+
+// ?userId=DW-..&before=<id>&limit=50 -> {messages:[{id, from, body, at, read}], hasMore}
+function getMessages(ctx) {
+    const a = ctx.requireAuth();
+    const other = byPublic(ctx.query.get('userId') || '');
+    const r = messages.page(a.user.id, other, ctx.query.get('before'), parseInt(ctx.query.get('limit'), 10) || messages.PAGE_MAX);
+    ctx.json(200, { messages: r.rows.map(m => messages.view(a.user.id, m)), hasMore: r.hasMore });
+}
+
+// {userId, body} -> {message}
+function postMessage(ctx) {
+    const a = ctx.requireAuth();
+    const me = a.user;
+    const other = byPublic(ctx.body.userId);
+    // bad bodies and non-friends are refused before the rate limit is charged
+    messages.clean(ctx.body.body);
+    if (!other || !messages.canMessage(me.id, other.id)) throw new HttpError(403, 'not_friends', 'You can only chat with friends.');
+    ctx.charge(['dmBurst', me.id], ['dm', me.id]);
+    const row = messages.send(me.id, other, ctx.body.body, Date.now());
+    const mine = messages.view(me.id, row);
+    events.push(other.id, 'dm', { from: who(me), to: who(other), message: messages.view(other.id, row) });
+    events.push(me.id, 'dm', { from: who(me), to: who(other), message: mine });
+    ctx.json(200, { message: mine });
+}
+
+// {userId, upTo} -> {ok, upTo}
+function postRead(ctx) {
+    const a = ctx.requireAuth();
+    ctx.limit('dmRead', a.user.id);
+    const other = byPublic(ctx.body.userId);
+    const r = messages.markRead(a.user.id, other, ctx.body.upTo, Date.now());
+    if (r.upTo) {
+        events.push(other.id, 'dmRead', { userId: a.user.public_id, upTo: r.upTo, by: 'them' });
+        events.push(a.user.id, 'dmRead', { userId: other.public_id, upTo: r.upTo, by: 'me' });
+    }
+    ctx.json(200, { ok: true, upTo: r.upTo });
+}
+
 function register(router) {
     router.add('GET', '/api/friends', getFriends);
     router.add('POST', '/api/friends/request', postRequest);
@@ -99,6 +145,9 @@ function register(router) {
     router.add('POST', '/api/friends/remove', postRemove);
     router.add('POST', '/api/friends/block', postBlock);
     router.add('POST', '/api/friends/unblock', postUnblock);
+    router.add('GET', '/api/friends/messages', getMessages);
+    router.add('POST', '/api/friends/messages', postMessage);
+    router.add('POST', '/api/friends/messages/read', postRead);
 }
 
 module.exports = { register };
