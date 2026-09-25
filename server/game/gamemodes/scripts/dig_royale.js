@@ -372,6 +372,10 @@ function broadcast(extra = {}) {
         }
     } catch { /* */ }
     const pings = pingsSnapshot(bodyByKey);
+    // between raids (RAID OVER -> next raid): seconds until the next one, so
+    // a player joining in that window gets a real countdown
+    const ending = raidEnding ? 1 : 0;
+    const nextIn = raidEnding ? Math.max(0, Math.ceil((raidResultsAt + RAID_END_BEAT_MS + RAID_END_WAIT_MS - t) / 1000)) : 0;
     const bossSnap = bosses.snapshot();
     const chestSnap = chests.snapshot();
     const bloomSnap = blooms.snapshot();
@@ -384,7 +388,7 @@ function broadcast(extra = {}) {
         phase: 'live', left: raidLeft, alive, fill: FILL_CAP, humans: humanCount, winner: null, storm: st, toast: liveToast,
         feed: killFeed.slice(-8), board, lock, lockLeft, matchId: raidId, raidId, raidLeft, raidMs: RAID_MS,
         occupyMs: OCCUPY_MS, lockoutMs: LOCKOUT_MS, objectives, bloom: bloomSnap, chest: null, chests: chestSnap,
-        boss: bossSnap, event: eventSnap, mod: modSnap, pings, results: raidResults, ...extra,
+        boss: bossSnap, event: eventSnap, mod: modSnap, pings, results: raidResults, ending, nextIn, ...extra,
     });
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;

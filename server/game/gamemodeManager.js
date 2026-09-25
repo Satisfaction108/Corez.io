@@ -62,6 +62,10 @@ class gamemodeManager {
         if (type == "quickloop") {
             if (Config.sandbox) this.gameSandbox.update();
             if (Config.train) this.gameTrain.loop();
+            // Every tick, not in the 1 Hz "loop": the tutorial's glide, bot
+            // leash and health floor are motion and safety, and at 1 Hz the
+            // glide landed as one jump and bots snapped back once a second.
+            if (Config.tutorial) this.gameTutorial.quickloop();
         }
     }
 

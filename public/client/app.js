@@ -2542,50 +2542,141 @@ import * as cosmetics from './account/cosmetics.js';
         return iconColorOrder[colorIndex % 12].toString();
     }
 
-    function drawEntityIcon(model, x, y, len, height, lineWidthMult, angle, alpha, colorIndex, upgradeKey, hover = false, extraScale = 1) {
-        let picture = (typeof model == "object") ? model : util.getEntityImageFromMockup(model, gui.color),
-            position = picture.position,
-            scale = (0.6 * len * extraScale) / position.axis,
-            entityX = x + 0.5 * len,
-            entityY = y + 0.5 * height,
-            baseColor = picture.color;
+    // ─── upgrade tiles (menu + class tree), HUD look ────────────────────
+    // One chunky plate per tank: flat palette face over a darker lip, ink
+    // outline, a dark name band with the tank name in Lilita One, and the
+    // choose key as a keycap. Everything but the tank preview is static, so
+    // it is rasterised once per (colour, size, state, name, key) at device
+    // resolution and blitted; drawEntity draws the live tank between the
+    // plate and the label. Sizes are quantised so a zooming class tree does
+    // not mint a fresh bitmap every frame.
+    const upgTileCache = new Map();
+    let upgFontOk = false;
+    const UPG_BAND = 0.25;              // name band, fraction of the face
+    const UPG_LIP = 4;                  // lip depth at a 100-unit tile
+    function upgTileColors(model, colorIndex) {
+        let face = model.upgradeColor != null
+            ? gameDraw.modifyColor(model.upgradeColor)
+            : gameDraw.getColor(getIconColor(colorIndex));
+        if (typeof face !== "string" || face[0] !== "#" || face.length !== 7) return [face || HUD.face, HUD.faceDk];
+        // calm the raw palette a touch so the tiles sit with the dark plates
+        return [gameDraw.mixColors(face, HUD.wellSolid, 0.18), gameDraw.mixColors(face, HUD.ink, 0.5)];
+    }
+    function upgTileBitmap(kind, w, h, dpr, parts, paint) {
+        // quantise the device size to ~4% steps; blit scales the rest
+        const q = Math.max(8, Math.round(Math.pow(1.04, Math.round(Math.log(w * dpr) / Math.log(1.04)))));
+        // until Lilita One has loaded, labels rasterise in the fallback font;
+        // key on it so they are redrawn once the real face arrives
+        if (!upgFontOk) { try { upgFontOk = !document.fonts || document.fonts.check('12px "Lilita One"'); } catch (e) { upgFontOk = true; } }
+        const k = kind + "|" + q + "|" + (h / w).toFixed(3) + "|" + parts + "|" + config.graphical.fontSizeBoost + "|" + upgFontOk;
+        let bm = upgTileCache.get(k);
+        if (bm) return bm;
+        const u = q / w;                                 // device px per UI unit
+        const pad = 4;                                   // room for outline + lip line
+        const cv = document.createElement("canvas");
+        cv.width = Math.ceil((w + pad * 2) * u);
+        cv.height = Math.ceil((h + pad * 2) * u);
+        const c = cv.getContext("2d");
+        c.scale(u, u);
+        c.translate(pad, pad);
+        paint(c);
+        bm = { cv, pad };
+        if (upgTileCache.size > 500) upgTileCache.clear();
+        upgTileCache.set(k, bm);
+        return bm;
+    }
+    function upgBlit(bm, x, y, w, h) {
+        ctx[2].drawImage(bm.cv, x - bm.pad, y - bm.pad, w + bm.pad * 2, h + bm.pad * 2);
+    }
+    // state: 0 idle, 1 hover, 2 pressed. key: keycap label or false.
+    function drawUpgradeTile(model, x, y, len, height, colorIndex, key, state = 0, angle = -Math.PI / 4, lineWidthMult = 1, alpha = 1) {
+        const picture = (typeof model == "object") ? model : util.getEntityImageFromMockup(model, gui.color);
+        const position = picture.position;
+        const t = ctx[2].getTransform();
+        const dpr = Math.hypot(t.a, t.b) || 1;
+        const k = len / 100;                             // tile scale vs the 100-unit design
+        const lip = UPG_LIP * k;
+        const down = state === 2 ? Math.min(2 * k, lip - 1) : 0;
+        const faceH = height - lip;
+        const band = faceH * UPG_BAND;
+        const r = Math.max(3, 10 * k);
+        const [face, lipCol] = upgTileColors(picture, colorIndex);
+        const name = String(picture.upgradeName ?? picture.name ?? "");
 
-        let xShift = position.middle.x * Math.cos(angle) - position.middle.y * Math.sin(angle),
+        const plate = upgTileBitmap("p" + face + lipCol, len, height, dpr, state, (c) => {
+            // lip, then the face lifted off it (pressed: sunk into it)
+            roundRectPath(c, 0, down, len, height - down, r);
+            c.fillStyle = lipCol;
+            c.fill();
+            roundRectPath(c, 0, down, len, faceH, r);
+            c.fillStyle = face;
+            c.fill();
+            if (state === 1) { c.fillStyle = "rgba(255,255,255,0.16)"; c.fill(); }
+            else if (state === 2) { c.fillStyle = "rgba(18,14,21,0.14)"; c.fill(); }
+            // flat top highlight strip, like the menu's plates
+            roundRectPath(c, 3 * k, down + 3 * k, len - 6 * k, Math.max(2, 5 * k), 2.5 * k);
+            c.fillStyle = "rgba(255,255,255,0.13)";
+            c.fill();
+        });
+        const label = upgTileBitmap("l" + name, len, height, dpr, (key || "") + state, (c) => {
+            // name band across the bottom of the face, inside the plate
+            c.save();
+            roundRectPath(c, 0, down, len, faceH, r);
+            c.clip();
+            c.fillStyle = "rgba(18,14,21,0.5)";
+            c.fillRect(0, down + faceH - band, len, band);
+            c.restore();
+            // one line if it fits near full size, else two lines, else shrink
+            const base = Math.max(6, band * 0.62), room = len - 10 * k;
+            const mid = down + faceH - band / 2;
+            const words = name.split(" ");
+            let size = base;
+            while (size > base * 0.8 && hudTitleW(name, size) > room) size -= 0.5;
+            if (hudTitleW(name, size) <= room || words.length < 2) {
+                while (size > 6 && hudTitleW(name, size) > room) size -= 0.5;
+                hudTitle(name, len / 2, mid, size, HUD.head, "center", 1, c);
+            } else {
+                // split where the two halves come out most even
+                let best = 1, bestW = Infinity;
+                for (let i = 1; i < words.length; i++) {
+                    const w = Math.max(hudTitleW(words.slice(0, i).join(" "), 10), hudTitleW(words.slice(i).join(" "), 10));
+                    if (w < bestW) { bestW = w; best = i; }
+                }
+                const l1 = words.slice(0, best).join(" "), l2 = words.slice(best).join(" ");
+                size = Math.min(base * 0.72, band * 0.46);
+                while (size > 5 && Math.max(hudTitleW(l1, size), hudTitleW(l2, size)) > room) size -= 0.5;
+                hudTitle(l1, len / 2, mid - size * 0.52, size, HUD.head, "center", 1, c);
+                hudTitle(l2, len / 2, mid + size * 0.52, size, HUD.head, "center", 1, c);
+            }
+            if (key) hudKey(c, 5 * k, down + 5 * k, key, Math.max(10, 17 * k));
+            // outline + ink drop last so nothing paints over the edge
+            c.lineJoin = "round";
+            c.lineWidth = Math.max(1.5, 3 * k);
+            c.strokeStyle = HUD.ink;
+            roundRectPath(c, 0, down, len, height - down, r);
+            c.stroke();
+            c.lineWidth = Math.max(1, 2 * k);
+            c.beginPath();
+            c.moveTo(r * 0.6, down + faceH);
+            c.lineTo(len - r * 0.6, down + faceH);
+            c.stroke();
+        });
+
+        ctx[2].save();
+        ctx[2].globalAlpha *= alpha;
+        upgBlit(plate, x, y, len, height);
+        // the live tank, centred in the face above the name band
+        const scale = (0.55 * len) / position.axis;
+        const areaH = faceH - band;
+        let entityX = x + 0.5 * len, entityY = y + down + areaH * 0.5 + 1;
+        const xShift = position.middle.x * Math.cos(angle) - position.middle.y * Math.sin(angle),
             yShift = position.middle.x * Math.sin(angle) + position.middle.y * Math.cos(angle);
         entityX -= scale * xShift;
         entityY -= scale * yShift;
-
+        drawEntity(picture.color, entityX, entityY, picture, 1, 1, scale / picture.size, lineWidthMult, angle, true, ctx[2]);
         ctx[2].globalAlpha = alpha;
-        ctx[2].fillStyle = picture.upgradeColor != null
-            ? gameDraw.modifyColor(picture.upgradeColor)
-            : gameDraw.getColor(getIconColor(colorIndex));
-        drawGuiRect(x, y, len, height);
-
-        if (hover) {
-            if (global.clickables.clicked) {
-                ctx[2].globalAlpha = 0.2;
-                ctx[2].fillStyle = color.black;
-            } else {
-                ctx[2].globalAlpha = 0.15;
-                ctx[2].fillStyle = color.guiwhite;
-            }
-            drawGuiRect(x, y, len, height);
-        }
-        ctx[2].globalAlpha = 0.25 * alpha;
-        ctx[2].fillStyle = color.black;
-        drawGuiRect(x, y + height * 0.6, len, height * 0.4);
-        ctx[2].globalAlpha = 1;
-
-        drawEntity(baseColor, entityX, entityY, picture, 1, 1, scale / picture.size, lineWidthMult, angle, true, ctx[2]);
-
-        drawText(picture.upgradeName ?? picture.name, x + (upgradeKey ? 0.9 * len : len) / 2, y + height * 0.94, height / 10, color.guiwhite, "center");
-
-        if (upgradeKey) {
-            drawText("[" + upgradeKey + "]", x + len - 4, y + height - 6, height / 8 - 5, color.guiwhite, "right");
-        }
-        ctx[2].strokeStyle = color.black;
-        ctx[2].lineWidth = 3 * lineWidthMult;
-        drawGuiRect(x, y, len, height, true);
+        upgBlit(label, x, y, len, height);
+        ctx[2].restore();
     }
 
     // Dig Wars: the cavern floor - a seamless tile drawn in the GAME'S OWN
@@ -4761,8 +4852,9 @@ import * as cosmetics from './account/cosmetics.js';
             return;
         }
 
-        ctx[2].globalAlpha = 0.5;
-        ctx[2].fillStyle = color.guiwhite;
+        // dark ink wash, like the big map and the death screen
+        ctx[2].globalAlpha = 0.78;
+        ctx[2].fillStyle = HUD.wellSolid;
         ctx[2].fillRect(0, 0, global.screenWidth, global.screenHeight);
         ctx[2].globalAlpha = 1;
 
@@ -4820,8 +4912,9 @@ import * as cosmetics from './account/cosmetics.js';
             const scaledSpacing = tileSpacing * global.treeScale;
             const halfSize = 0.5 * size;
 
-            ctx[2].strokeStyle = color.black;
-            ctx[2].lineWidth = 2 * global.treeScale;
+            ctx[2].strokeStyle = HUD.text2;
+            ctx[2].lineWidth = 3 * global.treeScale;
+            ctx[2].lineCap = "round";
             ctx[2].beginPath();
 
             for (let [start, end] of branches) {
@@ -4848,7 +4941,7 @@ import * as cosmetics from './account/cosmetics.js';
                 if (ax < -scaledTileSize - CULL_MARGIN || ax > global.screenWidth + CULL_MARGIN ||
                     ay < -scaledTileSize - CULL_MARGIN || ay > global.screenHeight + CULL_MARGIN) continue;
 
-                drawEntityIcon(index.toString(), ax, ay, scaledTileSize, scaledTileSize, global.treeScale, angle, 1, colorIndex, false, false, 1);
+                drawUpgradeTile(index.toString(), ax, ay, scaledTileSize, scaledTileSize, colorIndex, false, 0, angle, global.treeScale);
             }
         }
 
@@ -4867,97 +4960,40 @@ import * as cosmetics from './account/cosmetics.js';
         const buttonSize = 40;
         const buttonSpacing = 10;
 
-        drawText("Arrow keys or mouse to navigate the class tree. Shift to navigate faster. Scroll wheel, (+/- keys) or zoom buttons to zoom in/out.", global.screenWidth / 2, spacing + 10, 17, color.guiwhite, "center");
+        drawText("Arrow keys or drag to move, Shift for faster. Scroll wheel, +/- or the buttons to zoom.", global.screenWidth / 2, spacing + 8, 12, HUD.text2, "center");
 
         const searchBarWidth = 300;
         const searchBarHeight = 35;
         const searchBarX = global.screenWidth / 2 - searchBarWidth / 2;
-        const searchBarY = uiY;
+        const searchBarY = uiY;           // canvas.js hit-tests the bar at this y
 
-        ctx[2].globalAlpha = global.searchBarActive ? 0.95 : 0.8;
-        ctx[2].fillStyle = global.searchBarActive ? color.vlgrey : color.white;
-        ctx[2].fillRect(searchBarX, searchBarY, searchBarWidth, searchBarHeight);
-        ctx[2].strokeStyle = global.searchBarActive ? color.blue : color.black;
-        ctx[2].lineWidth = global.searchBarActive ? 3 : 2;
-        ctx[2].strokeRect(searchBarX, searchBarY, searchBarWidth, searchBarHeight);
-        ctx[2].globalAlpha = 1;
+        hudWell(ctx[2], searchBarX, searchBarY, searchBarWidth, searchBarHeight, HUD.rSmall, HUD.wellSolid,
+            global.searchBarActive ? HUD.gold : HUD.ink, global.searchBarActive ? 3 : 2.5);
 
         const displayText = global.searchBarActive && !global.searchQuery
             ? "Type to search..."
             : global.searchQuery || "Click to search tanks...";
-        const textColor = color.white;
         const showCursor = global.searchBarActive && Date.now() % 1000 < 500;
 
         drawText(
             displayText + (showCursor ? "|" : ""),
-            searchBarX + 10,
+            searchBarX + 12,
             searchBarY + searchBarHeight / 2,
             14,
-            textColor,
+            global.searchQuery ? HUD.head : HUD.text2,
             "left",
             true
         );
 
+        const cr = global.canvas.height / global.screenHeight / global.ratio;
         const zoomInX = searchBarX + searchBarWidth + buttonSpacing + 20;
         const zoomOutX = zoomInX + buttonSize + buttonSpacing;
-
-        drawButton(
-            zoomInX,
-            searchBarY,
-            buttonSize,
-            searchBarHeight,
-            1,
-            "rect",
-            "+",
-            20,
-            color.grey,
-            color.black,
-            color.black,
-            true,
-            "classTreeZoomIn",
-            global.canvas.height / global.screenHeight / global.ratio,
-            0
-        );
-
-        drawButton(
-            zoomOutX,
-            searchBarY,
-            buttonSize,
-            searchBarHeight,
-            1,
-            "rect",
-            "-",
-            20,
-            color.grey,
-            color.black,
-            color.black,
-            true,
-            "classTreeZoomOut",
-            global.canvas.height / global.screenHeight / global.ratio,
-            1
-        );
+        hudButton(ctx[2], zoomInX, searchBarY, buttonSize, searchBarHeight, "+", { size: 20, type: "classTreeZoomIn", index: 0, cr });
+        hudButton(ctx[2], zoomOutX, searchBarY, buttonSize, searchBarHeight, "-", { size: 20, type: "classTreeZoomOut", index: 1, cr });
 
         const closeButtonSize = 35;
         const closeButtonX = searchBarX - buttonSpacing * 2.6;
-        const closeButtonY = uiY;
-
-        drawButton(
-            closeButtonX,
-            closeButtonY,
-            closeButtonSize,
-            closeButtonSize,
-            1,
-            "rect",
-            "✕",
-            24,
-            color.red,
-            color.black,
-            color.black,
-            true,
-            "classTreeClose",
-            global.canvas.height / global.screenHeight / global.ratio,
-            0
-        );
+        hudButton(ctx[2], closeButtonX, searchBarY, closeButtonSize, closeButtonSize, "X", { size: 17, type: "classTreeClose", index: 0, cr, fill: HUD.danger, lipCol: HUD.dangerDk });
 
         const instructionY = searchBarY + searchBarHeight + 5;
         if (global.searchQuery) {
@@ -5391,6 +5427,10 @@ import * as cosmetics from './account/cosmetics.js';
                 maxLevel = skill.cap;
 
             if (!cap) continue;
+            // Tutorial: bars the current lesson is not about are dimmed and
+            // take no clicks (the server refuses them anyway).
+            const tutLocked = global.tutorialMode && window.dwTutStatOpen && !window.dwTutStatOpen(statIdx);
+            ctx[2].globalAlpha = tutLocked ? 0.35 : 1;
 
             len = save;
             let max = 0,
@@ -5427,7 +5467,7 @@ import * as cosmetics from './account/cosmetics.js';
             // fixed column: every key label centred on the same x, so "-"
             // lines up with the digits above it
             drawText("[" + keyTxt + "]", Math.round(x + save * ska(maxLevel) - height * 0.25) - 22, y + height / 2, height - 6, textcolor, "center", true);
-            if (textcolor === color.guiwhite) {
+            if (textcolor === color.guiwhite && !tutLocked) {
 
                 global.clickables.stat.place(statIdx, x * clickableRatio, y * clickableRatio, len * clickableRatio, height * clickableRatio);
             }
@@ -5435,6 +5475,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (level) {
                 drawText("+" + level, Math.round(x + len + 4) - 5.5, y + height / 2, height - 5, col, "left", true);
             }
+            ctx[2].globalAlpha = 1;
 
             y -= height + vspacing;
         }
@@ -5600,7 +5641,10 @@ import * as cosmetics from './account/cosmetics.js';
         const v = global.vault, g = global.gems;
         const active = v.total > 0;
         const belowMin = !active && (g.carried | 0) < VAULT_MIN_DEPOSIT;
-        const wantOpen = v.onPad && !global.died;
+        // Tutorial: the deposit panel only opens on the pad the lesson is about.
+        const tutBank = !global.tutorialMode ||
+            (window.dwTutAllow || "").split(",").includes(v.isOutpost ? "bank:base" : "bank:vault");
+        const wantOpen = v.onPad && !global.died && tutBank;
         vaultGlide.set(wantOpen ? 1 : 0);
         const glide = vaultGlide.get();
         if (glide < 0.02) {
@@ -6076,7 +6120,9 @@ import * as cosmetics from './account/cosmetics.js';
 
     function shopUiMode() { return royaleActive() || !!global.tutorialMode; }
     function shopOpenWanted() {
-        return shopUiMode() && global.shop.onPad && !global.shop.dismissed && !global.died && !global.showBigMap;
+        return shopUiMode() && global.shop.onPad && !global.shop.dismissed && !global.died && !global.showBigMap &&
+            // Tutorial: the panel only opens in the steps that sell something.
+            (!global.tutorialMode || /(^|,)shop:/.test(window.dwTutAllow || ""));
     }
     function fmtNum(n) { return util.formatLargeNumber(Math.round(n || 0)); }
     function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "k" : String(Math.round(d)); }
@@ -8344,18 +8390,32 @@ import * as cosmetics from './account/cosmetics.js';
             tr.mapDirty = false;
             const gw = global.gameWidth, gh = global.gameHeight;
             const cols = tr._cols, rows = tr._rows;
-            const alive = new Path2D(), dead = new Path2D();
+            // PERF: built as small per-region paths and then joined with
+            // addPath. Appending contours to one huge Path2D gets slower the
+            // bigger it grows (every moveTo/closePath walks it): a 10k-cell
+            // map took ~390ms that way, a hitch on EVERY rock that broke
+            // (worst with the Drill Lance, one rock per shot). Chunked it is
+            // ~10ms.
+            const MAP_CHUNKS = 12;
+            const aliveC = new Map(), deadC = new Map();
             for (const [k, cell] of tr._cellPolys) {
                 
                 
                 const backAsRock = tr._growing && tr._growing.get(k)?.mapped;
-                const p = (tr._rockDead.has(k) && !backAsRock) ? dead : alive;
+                const bucket = (tr._rockDead.has(k) && !backAsRock) ? deadC : aliveC;
+                const ck = Math.min(MAP_CHUNKS - 1, Math.max(0, Math.floor(cell.cx / cols * MAP_CHUNKS))) * MAP_CHUNKS +
+                           Math.min(MAP_CHUNKS - 1, Math.max(0, Math.floor(cell.cy / rows * MAP_CHUNKS)));
+                let p = bucket.get(ck);
+                if (!p) { p = new Path2D(); bucket.set(ck, p); }
                 const poly = cell.poly;
                 p.moveTo((poly[0][0] / cols - 0.5) * gw, (poly[0][1] / rows - 0.5) * gh);
                 for (let i = 1; i < poly.length; i++)
                     p.lineTo((poly[i][0] / cols - 0.5) * gw, (poly[i][1] / rows - 0.5) * gh);
                 p.closePath();
             }
+            const alive = new Path2D(), dead = new Path2D();
+            for (const p of aliveC.values()) alive.addPath(p);
+            for (const p of deadC.values()) dead.addPath(p);
             mapPaths = { alive, dead, epoch: (mapPaths ? mapPaths.epoch : 0) + 1, builtAt: nowMP };
         }
         return mapPaths;
@@ -9470,7 +9530,7 @@ import * as cosmetics from './account/cosmetics.js';
                     y += height + internalSpacing;
                     if (upgradeBranch != lastBranch) {
                         if (upgradeBranchLabel.length > 0) {
-                            drawText(" " + upgradeBranchLabel, xStart, y + internalSpacing * 2, internalSpacing * 2.3, color.guiwhite, "left", false);
+                            hudTitle(upgradeBranchLabel, xStart + 2, y + internalSpacing * 2, internalSpacing * 1.9, HUD.head, "left");
                             y += 3 * internalSpacing;
                         }
                         colorIndex = 0;
@@ -9488,7 +9548,8 @@ import * as cosmetics from './account/cosmetics.js';
                 !global.optionsMenu_Anim.isOpened && global.clickables.upgrade.place(i, x * clickableRatio, y * clickableRatio, len * clickableRatio, height * clickableRatio);
                 let upgradeKey = getClassUpgradeKey(upgradeNum);
 
-                drawEntityIcon(model, x, y, len, height, 1, upgradeSpin, 0.6, colorIndex++, !global.mobile ? upgradeKey : false, !global.mobile ? upgradeNum == upgradeHoverIndex : false);
+                const tileState = !global.mobile && upgradeNum == upgradeHoverIndex ? (global.clickables.clicked ? 2 : 1) : 0;
+                drawUpgradeTile(model, x, y, len, height, colorIndex++, !global.mobile ? upgradeKey : false, tileState, upgradeSpin);
 
                 ticker++;
                 upgradeNum++;
@@ -9515,8 +9576,8 @@ import * as cosmetics from './account/cosmetics.js';
                 let image = util.requestEntityImage(gui.dailyTank.tank, gui.color);
                 let hover = global.clickables.dailyTankUpgrade.check({ x: global.mouse.x, y: global.mouse.y });
                 image.upgradeColor = "36 0 1 0 false";
-                drawEntityIcon(image, xStart, initialY + height + internalSpacing + 50, len, height, 1, upgradeSpin, 0.4, 10, false, hover);
-                drawText("Daily Tank!", xStart + 50, initialY + height + internalSpacing + 67, 12, gameDraw.getColor(36), "center");
+                drawUpgradeTile(image, xStart, initialY + height + internalSpacing + 50, len, height, 10, false, hover ? (global.clickables.clicked ? 2 : 1) : 0, upgradeSpin);
+                hudTitle("Daily Tank!", xStart + len / 2, initialY + height + internalSpacing + 40, 13, HUD.gold, "center");
                 global.clickables.dailyTankUpgrade.set(xStart * clickableRatio, (initialY + height + internalSpacing + 50) * clickableRatio, len * clickableRatio, height * clickableRatio);
                 gui.dailyTank.ads && drawButton(xStart + 50, initialY + height + internalSpacing + 160, m, h, 1, "rect", "Watch An Ad", 9.8, false, false, false, true, "dailyTankAd", clickableRatio, false);
             }
@@ -9533,16 +9594,13 @@ import * as cosmetics from './account/cosmetics.js';
 
                     for (let line of splitTooltip) boxWidth = Math.max(boxWidth, measureText(line, alcoveSize / 15));
 
-                    gameDraw.setColor(ctx[2], color.dgrey);
-                    ctx[2].lineWidth /= 1.5;
-                    drawGuiRect(boxX, boxY, boxWidth + boxPadding * 3, alcoveSize * (splitTooltip.length + 1) / 10 + boxPadding * 3, false);
-                    drawGuiRect(boxX, boxY, boxWidth + boxPadding * 3, alcoveSize * (splitTooltip.length + 1) / 10 + boxPadding * 3, true);
-                    ctx[2].lineWidth *= 1.5;
-                    drawText(picture.name, boxX + boxPadding * 1.5, textY, alcoveSize / 10, color.guiwhite);
+                    boxWidth = Math.max(boxWidth, hudTitleW(picture.name, alcoveSize / 10));
+                    hudPanel(ctx[2], boxX, boxY, boxWidth + boxPadding * 3, alcoveSize * (splitTooltip.length + 1) / 10 + boxPadding * 3, { fill: HUD.solid, r: HUD.rSmall });
+                    hudTitle(picture.name, boxX + boxPadding * 1.5, textY - alcoveSize / 30, alcoveSize / 10, HUD.head);
 
                     for (let t of splitTooltip) {
                         textY += boxPadding + alcoveSize / 15
-                        drawText(t, boxX + boxPadding * 1.5, textY, alcoveSize / 15, color.guiwhite);
+                        drawText(t, boxX + boxPadding * 1.5, textY, alcoveSize / 15, HUD.text);
                     }
                 }
             }
@@ -9715,6 +9773,7 @@ import * as cosmetics from './account/cosmetics.js';
                 if (softcap <= 0) continue;
 
                 const mStat = i === 10 ? 10 : 9 - i;
+                const tutLocked = global.tutorialMode && window.dwTutStatOpen && !window.dwTutStatOpen(mStat);
                 let amount = skill.amount,
                     skillColor = color[skill.color],
                     cap = skill.cap,
@@ -9722,15 +9781,16 @@ import * as cosmetics from './account/cosmetics.js';
                     halfNameLength = Math.floor(name.length / 2),
                     [name1, name2] = name.length === 1 ? [name[0], null] : [name.slice(0, halfNameLength).join(" "), name.slice(halfNameLength).join(" ")];
 
-                ctx[2].globalAlpha = 0.5;
+                const tA = tutLocked ? 0.35 : 1;
+                ctx[2].globalAlpha = 0.5 * tA;
                 ctx[2].fillStyle = skillColor;
                 drawGuiRect(x, spacing, t, 2 * q / 3);
 
-                ctx[2].globalAlpha = 0.1;
+                ctx[2].globalAlpha = 0.1 * tA;
                 ctx[2].fillStyle = color.black;
                 drawGuiRect(x, spacing + q * 2 / 3 * 2 / 3, t, q * 2 / 3 / 3);
 
-                ctx[2].globalAlpha = 1;
+                ctx[2].globalAlpha = tA;
                 ctx[2].fillStyle = color.guiwhite;
                 drawGuiRect(x, spacing + q * 2 / 3, t, q / 3);
 
@@ -9744,7 +9804,7 @@ import * as cosmetics from './account/cosmetics.js';
                     drawGuiLine(width, spacing + q * 2 / 3, width, spacing + q);
                 }
 
-                cap === 0 || !gui.points || softcap !== cap && amount === softcap || global.clickables.stat.place(mStat, x * clickableRatio, spacing * clickableRatio, t * clickableRatio, q * clickableRatio);
+                tutLocked || cap === 0 || !gui.points || softcap !== cap && amount === softcap || global.clickables.stat.place(mStat, x * clickableRatio, spacing * clickableRatio, t * clickableRatio, q * clickableRatio);
 
                 if (name2) {
                     drawText(name2, x + t / 2, spacing + q * 0.55, q / 5, color.guiwhite, "center");
@@ -9758,10 +9818,11 @@ import * as cosmetics from './account/cosmetics.js';
                 }
 
                 ctx[2].strokeStyle = color.black;
-                ctx[2].globalAlpha = 1;
+                ctx[2].globalAlpha = tA;
                 ctx[2].lineWidth = 3;
                 drawGuiLine(x, spacing + q * 2 / 3, x + t, spacing + q * 2 / 3);
                 drawGuiRect(x, spacing, t, q, true);
+                ctx[2].globalAlpha = 1;
 
                 x += n * (t + 14);
             }
@@ -10657,7 +10718,7 @@ import * as cosmetics from './account/cosmetics.js';
             dead.style.display = "none";
             return;
         }
-        const spectating = !!(inGame && global.royaleSpectating);
+        const spectating = !!(inGame && global.royaleSpectating && !joinUp);
         const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating);
         spec.style.display = spectating ? "flex" : "none";
         dead.style.display = deadShow ? "flex" : "none";
@@ -10772,34 +10833,151 @@ import * as cosmetics from './account/cosmetics.js';
         }, 500);
     }
 
+    // Canvas side of the connecting / disconnected states: just the backdrop.
+    // The message plate and its buttons are DOM (#dwJoin, updateJoinState).
     let drawConnectingScreen = () => {
         let ratio = util.getScreenRatio();
         scaleScreenRatio(ratio, true);
-        const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);
-        if (locked) {
-            const left = Math.max(0, global.royale.lockLeft | 0);
-            clearScreen(color.white, 1, ctx[2]);
-            drawText("Final storm. No respawns for " + left + "s.", global.screenWidth / 2, global.screenHeight / 2, 22, color.guiwhite, "center");
-            drawText("The raid keeps going. You drop back in when it lifts.", global.screenWidth / 2, global.screenHeight / 2 + 34, 15, color.gold, "center");
-            return;
-        }
-        clearScreen(color.white, 1, ctx[2]);
-        drawText(global.autoReconnect ? "Reconnecting..." : "Connecting...", global.screenWidth / 2, global.screenHeight / 2, 30, color.guiwhite, "center");
-        drawText(global.message, global.screenWidth / 2, global.screenHeight / 2 + 30, 15, color.lgreen, "center");
-        drawText(global.tips, global.screenWidth / 2, global.screenHeight / 2 + 60, 15, color.guiwhite, "center");
+        clearScreen(HUD.wellSolid, 1, ctx[2]);
     };
 
     const drawDisconnectedScreen = () => {
         let ratio = util.getScreenRatio();
         scaleScreenRatio(ratio, true);
-        clearScreen(gameDraw.mixColors(color.red, color.guiblack, 0.3), global.gameStart ? 0.25 : 1, ctx[2]);
-        drawText("Disconnected", global.screenWidth / 2, global.screenHeight / 2, 30, color.guiwhite, "center");
-        if (global.message === '') global.message = 'The connection has closed. you may attempt to regain score or reload the game.';
-        drawText(global.message, global.screenWidth / 2, global.screenHeight / 2 + 30, 15, color.orange, "center");
+        clearScreen(HUD.wellSolid, global.gameStart ? 0.35 : 1, ctx[2]);
         lastPing = 0;
-        drawButton(global.screenWidth / 2 - 80, global.screenHeight / 2 + 135, 130, 30, 1, "rect", "Back", 15, false, false, false, true, "exitGame", global.canvas.height / global.screenHeight / global.ratio, 0);
-        drawButton(global.screenWidth / 2 + 80, global.screenHeight / 2 + 135, 130, 30, 1, "rect", "Reconnect", 15, false, false, false, true, "reconnect", global.canvas.height / global.screenHeight / global.ratio, 0);
+        global.clickables.reconnect.hide();
     };
+
+    // ── Join / connection states (#dwJoin) ────────────────────────────────
+    // One calm plate for every "you're not playing yet" moment: connecting,
+    // reconnecting, disconnected / kicked, and the wait before your first
+    // spawn (final-storm lock, the between-raids window, a slow spawn).
+    // Timing comes from the RY packet: lockLeft / raidLeft while the storm
+    // lock is on, nextIn while the raid is over.
+    var joinEl = null, joinKey = "", joinUp = false, joinMode = "", joinModeAt = 0;   // var: read by updateRoyaleDomButtons above
+    function joinClock(sec) {
+        sec = Math.max(0, Math.ceil(sec));
+        return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+    }
+    function getJoinEl() {
+        if (joinEl) return joinEl;
+        const el = document.createElement("div");
+        el.id = "dwJoin";
+        el.setAttribute("role", "status");
+        el.setAttribute("aria-live", "polite");
+        el.innerHTML =
+            '<div class="dwj-card">' +
+                '<img class="dwj-logo" src="/img/logo.svg" alt="" width="72" height="72">' +
+                '<div class="dwj-title"></div>' +
+                '<div class="dwj-count"><span class="dwj-count-lbl"></span><b class="dwj-count-n"></b></div>' +
+                '<div class="dwj-line"></div>' +
+                '<div class="dwj-dots" aria-hidden="true"><i></i><i></i><i></i></div>' +
+                '<div class="dwj-btns">' +
+                    '<button type="button" class="dw-btn dwj-back">Back to menu</button>' +
+                    '<button type="button" class="dw-btn primary dwj-re">Reconnect</button>' +
+                '</div>' +
+            '</div>';
+        el.querySelector(".dwj-back").onclick = () => { try { gameSound.uiClick(); } catch { /* */ } global.exit && global.exit(); hideJoinState(); };
+        el.querySelector(".dwj-re").onclick = () => { try { gameSound.uiClick(); } catch { /* */ } if (global.disconnected) global.reconnect(); };
+        document.body.appendChild(el);
+        joinEl = el;
+        return el;
+    }
+    function hideJoinState() {
+        if (!joinUp) return;
+        joinUp = false;
+        joinKey = "";
+        joinMode = "";
+        if (joinEl) joinEl.classList.remove("open");
+    }
+    // What the plate should say right now, or null when you're playing.
+    function joinState() {
+        const now = performance.now();
+        const r = global.royale || {};
+        const ra = global.autoReconnect;
+        if (global.disconnected) {
+            const msg = String(global.message || "");
+            let title = "Lost connection";
+            if (global.noAutoReconnect) {
+                title = /another tab|somewhere else|another device/i.test(msg) ? "Open somewhere else"
+                    : /banned/i.test(msg) ? "You're banned"
+                    : /signed out|log in/i.test(msg) ? "Signed out"
+                    : "Disconnected";
+            }
+            return { mode: "down", title, line: msg || "The connection closed. Reconnect to pick your raid back up.",
+                back: true, re: true, dots: false, see: !!global.gameStart };
+        }
+        if (ra) {
+            return { mode: "retry", title: "Lost connection", line: "Trying again (" + (ra.tries | 0) + "/8)", back: true, dots: true, see: !!global.gameStart };
+        }
+        if (global.gameConnecting && !global.gameStart) {
+            const slow = joinMode === "connect" && now - joinModeAt > 7000;
+            const msg = String(global.message || "");
+            return { mode: "connect", title: "Connecting…",
+                line: msg || (slow ? "Taking longer than usual. Hang tight." : String(global.tips || "")),
+                back: true, dots: true };
+        }
+        // in the game, not spawned yet
+        if (global.gameStart && !global.died && global.raidQueued) {
+            const live = r.at > 0;
+            const age = live ? (now - r.at) / 1000 : 0;
+            if (live && r.ending) {
+                const n = (r.nextIn | 0) - age;
+                return { mode: "ending", title: "Raid over", lbl: n > 0.5 ? "Next one starts in" : "", n: n > 0.5 ? joinClock(n) : "",
+                    line: n > 0.5 ? "Everyone's down between raids. You'll drop in with the rest." : "The next raid is starting…",
+                    back: true, dots: true };
+            }
+            if (live && r.lock) {
+                const lockN = (r.lockLeft | 0) - age;
+                const raidN = (r.raidLeft | 0) - age;
+                if ((r.raidLeft | 0) > 0 && (r.raidLeft | 0) <= (r.lockLeft | 0)) {
+                    // the raid ends before the storm lock lifts
+                    const n = raidN + 17;
+                    return { mode: "late", title: "Raid's almost over", lbl: "Next raid starts in", n: joinClock(n),
+                        line: "The final storm is closing. You'll start fresh in the next raid.", back: true, dots: true };
+                }
+                return { mode: "lock", title: "Final storm", lbl: lockN > 0.5 ? "Spawning you in" : "", n: lockN > 0.5 ? joinClock(lockN) : "",
+                    line: lockN > 0.5 ? "Nobody spawns while the storm closes. You drop in the moment it resets." : "Spawning you now…",
+                    back: true, dots: true };
+            }
+            // a normal spawn is near-instant: only speak up if it isn't
+            if (joinMode !== "join" && !joinUp) {
+                if (!joinState._waitAt) joinState._waitAt = now;
+                if (now - joinState._waitAt < 600) return null;
+            }
+            const slow = joinMode === "join" && now - joinModeAt > 8000;
+            return { mode: "join", title: "Getting you in…", line: slow ? "Taking a little longer than usual. Hang tight." : "Finding you a safe spot to drop in.",
+                back: true, dots: true };
+        }
+        joinState._waitAt = 0;
+        return null;
+    }
+    function updateJoinState() {
+        const st = joinState();
+        if (!st) { hideJoinState(); return; }
+        const el = getJoinEl();
+        if (st.mode !== joinMode) { joinMode = st.mode; joinModeAt = performance.now(); }
+        const key = [st.mode, st.title, st.lbl, st.n, st.line, st.back, st.re, st.dots, st.see].join("|");
+        if (key !== joinKey) {
+            joinKey = key;
+            el.dataset.mode = st.mode;
+            el.classList.toggle("see", !!st.see);
+            el.querySelector(".dwj-title").textContent = st.title;
+            const cnt = el.querySelector(".dwj-count");
+            cnt.hidden = !st.n;
+            el.querySelector(".dwj-count-lbl").textContent = st.lbl || "";
+            el.querySelector(".dwj-count-n").textContent = st.n || "";
+            const line = el.querySelector(".dwj-line");
+            line.textContent = st.line || "";
+            line.hidden = !st.line;
+            el.querySelector(".dwj-dots").hidden = !st.dots;
+            el.querySelector(".dwj-back").hidden = !st.back;
+            el.querySelector(".dwj-re").hidden = !st.re;
+        }
+        if (!joinUp) { joinUp = true; el.classList.add("open"); }
+    }
+    window.dwJoinState = { update: updateJoinState, hide: hideJoinState };
 
     const drawResyncScreen = () => {
         let ratio = util.getScreenRatio();
@@ -10824,6 +11002,7 @@ import * as cosmetics from './account/cosmetics.js';
     ((a) => setTimeout(() => a(Date.now()), 1e3 / 60));
     function animloop(tick) {
         if (document.getElementById("gameAreaWrapper").style.display === "none") {
+            hideJoinState();
             setTimeout(() => animloop(Date.now()), 200);
             return;
         }
@@ -10956,6 +11135,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (global.disconnected) {
                 drawDisconnectedScreen();
             }
+            try { updateJoinState(); } catch (e) { /* never break the frame */ }
             if (global.dailyTankAd.renderUI) drawAdScreen();
             drawOptionsMenu(tick, 20, util.getScreenRatio());
             if (global.GUIStatus.fullHDMode) ctx[2].translate(-0.5, -0.5);

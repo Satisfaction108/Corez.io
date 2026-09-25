@@ -486,12 +486,40 @@ function teleportTo(socket, x, y) {
     const f = plots.plotFence(i);
     const dx = x - f.cx, dy = y - f.cy, d = Math.hypot(dx, dy), lim = f.r - 150;
     if (d > lim) { x = f.cx + dx * (lim / d); y = f.cy + dy * (lim / d); }
+    // Land on open ground. A destination inside rock used to be fixed by the
+    // entombed-tank rescue in the physics pass, which spat the tank out to
+    // the nearest gap a moment after it arrived: a second, unexplained jump.
+    const open = openGround(i, x, y, (body.realSize || 60) + 10);
+    x = open.x; y = open.y;
     if (Math.hypot(body.x - x, body.y - y) < 120) return;
     body._tutorialGlide = {
         fromX: body.x, fromY: body.y,
         toX: x, toY: y,
         at: Date.now(),
     };
+}
+
+function openGround(plotIndex, x, y, r) {
+    const grid = global.gameManager && global.gameManager.terrainGrid;
+    if (!grid || !grid.pointInRock) return { x, y };
+    const clear = (px, py) => {
+        if (!plots.onIsland(plotIndex, px, py, 150)) return false;
+        if (grid.pointInRock(px, py)) return false;
+        for (let k = 0; k < 8; k++) {
+            const a = k * Math.PI / 4;
+            if (grid.pointInRock(px + Math.cos(a) * r, py + Math.sin(a) * r)) return false;
+        }
+        return true;
+    };
+    if (clear(x, y)) return { x, y };
+    for (let ring = 1; ring <= 10; ring++) {
+        for (let k = 0; k < 12; k++) {
+            const a = k / 12 * Math.PI * 2 + ring * 0.4;
+            const px = x + Math.cos(a) * ring * 50, py = y + Math.sin(a) * ring * 50;
+            if (clear(px, py)) return { x: px, y: py };
+        }
+    }
+    return { x, y };
 }
 
 function tickGlide() {
@@ -536,42 +564,80 @@ function setCommand(socket, name, on) {
 // and every lesson is easier to follow while you can move.
 const CAPS = ['stats', 'upgrade', 'bank', 'shop', 'kit'];
 
+// Where the permissions live. The SOCKET, not the body: a respawn hands the
+// learner a fresh body, and a lesson whose permissions vanished with the old
+// one would silently refuse the very thing it is asking for.
+function gateOf(body) {
+    if (!body) return null;
+    return body.socket || body;
+}
+
+// csv items:
+//   "stats"              every stat bar
+//   "stats:2.3.4.5.6"    only these bars (skill-bar / x-packet indices)
+//   "budget:3"           at most this many stat points this step
+//   "bank:vault"         deposit at a vault only ("bank:base" = own base only)
+//   "shop:drill"         buy from these shop categories only
+//   "kit:medkit"         fire only these kit items (no arg = any, and drops)
+//   "upgrade"            evolve
+// The whole set is replaced on every step, so no lock outlives its lesson.
 function setAllowed(body, csv) {
+    const g = gateOf(body);
+    if (!g) return;
     const list = String(csv || '').split(',').map(x => x.trim()).filter(Boolean);
-    const caps = new Set();
-    // "stats" opens the whole bar; "stats:6" opens exactly one of them, by the
-    // index the skill bar (and the x packet) uses. The per-stat objectives are
-    // about ONE stat, and a learner who dumps the lot into the first bar has
-    // skipped nine lessons without noticing. Carried on `allow` rather than a
-    // command of its own because allow is re-sent on every step, so the lock
-    // cannot outlive the objective that set it.
-    body._tutorialStat = -1;
+    const caps = new Map();
+    let budget = Infinity;
     for (const item of list) {
         const [cap, arg] = item.split(':');
-        if (!CAPS.includes(cap)) continue;
-        caps.add(cap);
-        if (cap === 'stats' && arg !== undefined) {
-            const i = parseInt(arg, 10);
-            if (i >= 0 && i <= 10) body._tutorialStat = i;
+        if (cap === 'budget') {
+            const n = parseInt(arg, 10);
+            if (n >= 0) budget = n;
+            continue;
         }
+        if (!CAPS.includes(cap)) continue;
+        const args = arg === undefined ? null
+            : new Set(String(arg).split('.').map(x => x.trim()).filter(Boolean));
+        caps.set(cap, args);
     }
-    body._tutorialAllow = caps;
+    g._tutorialAllow = caps;
+    g._tutStatBudget = budget;
 }
 
 // Default-closed: if a step never declared its permissions, assume the strict
 // set. A missing declaration should not silently unlock the whole game.
-function allows(body, cap) {
+// `arg` narrows the check ("vault", "drill", "medkit"); a cap declared without
+// a list allows every arg.
+function allows(body, cap, arg) {
     if (!Config.tutorial) return true;
-    if (!body || !body._tutorialAllow) return false;
-    return body._tutorialAllow.has(cap);
+    const g = gateOf(body);
+    if (!g || !g._tutorialAllow) return false;
+    if (!g._tutorialAllow.has(cap)) return false;
+    const args = g._tutorialAllow.get(cap);
+    if (!args || arg === undefined) return true;
+    return args.has(String(arg));
 }
 
-// Which stat index the current step permits (-1 = any).
+// A cap declared with NO arg list: the unrestricted form. Kit drops use it,
+// since throwing an item away would otherwise pass for "using" it.
+function allowsAll(body, cap) {
+    if (!Config.tutorial) return true;
+    const g = gateOf(body);
+    return !!(g && g._tutorialAllow && g._tutorialAllow.has(cap) && !g._tutorialAllow.get(cap));
+}
+
+// May this stat bar take a point right now? The bar has to be one the step
+// teaches and the step's point budget must not be spent.
 function allowsStat(body, index) {
     if (!Config.tutorial) return true;
-    if (!allows(body, 'stats')) return false;
-    const only = body._tutorialStat;
-    return only === undefined || only < 0 || only === index;
+    if (!allows(body, 'stats', index)) return false;
+    const g = gateOf(body);
+    return !(g._tutStatBudget <= 0);
+}
+
+// Called after every point the learner actually placed.
+function noteStatSpent(body) {
+    const g = gateOf(body);
+    if (g && Number.isFinite(g._tutStatBudget)) g._tutStatBudget = Math.max(0, g._tutStatBudget - 1);
 }
 
 // ─── forced upgrade path ──────────────────────────────────────────────────
@@ -598,6 +664,7 @@ function unlockUpgrades(body) {
 
 // Consulted by sockets.js while it builds the offered-upgrade list.
 function upgradeAllowed(body, upgrade) {
+    if (body && body._tutBorrowing) return false;
     if (!body || !body._tutorialLock) return true;
     for (const c of (upgrade.class || [])) {
         if (!c) continue;
@@ -626,15 +693,95 @@ function upgradeAllowed(body, upgrade) {
 // Every tank the curriculum walks through, plus the bullet tank it returns to
 // between chapters. Allowlisted so a crafted TUT packet cannot morph anyone
 // into an arbitrary class.
-const MORPHS = ['director', 'overlord', 'auto3', 'auto5', 'smasher', 'pentaShot'];
+const MORPHS = ['director', 'overlord', 'auto3', 'auto5', 'smasher', 'pentaShot',
+    'destroyer', 'pounder', 'sniper', 'machineGun'];
 
 function morph(body, className) {
     try {
         const key = String(className || '').trim();
         if (!MORPHS.includes(key) || !Class[key]) return;
+        // define() APPENDS the new class's upgrades; without this the menu
+        // would carry the old tank's choices along.
+        body.upgrades = [];
         body.define(key);
         body.refreshBodyAttributes();
     } catch (e) { util.warn("tutorial: morph failed - " + (e && e.message)); }
+}
+
+// "Try this tank for a moment": morph, but remember what the learner picked
+// so the lesson can hand their own tank back afterwards. Only the FIRST try
+// saves, so two tries in a row still restore the learner's real choice.
+//
+// While borrowing, evolving is off outright (menu hidden, U packets dropped):
+// the borrowed tank sits at level 45 with its own upgrade list, and a click or
+// a number key there used to evolve the LOAN - the learner was told "you're a
+// Destroyer" and walked away as something else.
+function tryTank(body, className) {
+    if (!body) return;
+    const key = String(className || '').trim();
+    if (!MORPHS.includes(key) || !Class[key]) return;
+    if (!body._tutSavedDefs && Array.isArray(body.defs)) body._tutSavedDefs = body.defs.slice();
+    body._tutBorrowing = key;
+    morph(body, key);
+}
+function untry(body) {
+    if (!body) return;
+    const saved = body._tutSavedDefs;
+    body._tutBorrowing = null;
+    if (!saved) return;
+    body._tutSavedDefs = null;
+    try {
+        body.upgrades = [];
+        body.define(saved);
+        body.refreshBodyAttributes();
+    } catch (e) { util.warn("tutorial: untry failed - " + (e && e.message)); }
+}
+function borrowing(body) { return !!(body && body._tutBorrowing); }
+
+// The "pick an upgrade" step allows exactly ONE evolve. At level 45 every tier
+// is open, so the menu refills with the next tier the instant a pick lands; a
+// double click or a held number key used to chain Twin > Triple > Penta before
+// the step moved on. The first pick spends the permission.
+function noteUpgraded(body) {
+    const g = gateOf(body);
+    if (g && g._tutorialAllow) g._tutorialAllow.delete('upgrade');
+}
+
+// Back to the spawn tank, for a clean replay of the tank chapter: a learner
+// who re-enters it as a Twin would otherwise be offered Twin's upgrades and
+// told "you've got your own tank back" about a tank from last time.
+function baseTank(body) {
+    if (!body) return;
+    try {
+        body._tutSavedDefs = null;
+        body._tutBorrowing = null;
+        body.upgrades = [];
+        body.define(Config.spawn_class);
+        body.refreshBodyAttributes();
+    } catch (e) { util.warn("tutorial: base tank failed - " + (e && e.message)); }
+}
+
+// Shop state back to nothing (drill, gear, kit, sidearm) so the shop chapter
+// replays cleanly: a Drill I left from last time would make "Buy Drill I"
+// impossible, a running Gem Magnet cannot be bought twice, and a full kit
+// refuses the Medkit the kit lesson hands out.
+function resetShop(socket) {
+    try {
+        const shop = require('./terrain/shop.js');
+        socket.shop = shop.freshState();
+        const body = socket.player && socket.player.body;
+        if (body && !body.isDead()) {
+            shop.detachSidearm(body);
+            shop.applyPassives(body);
+        }
+        shop.talkState(socket);
+    } catch (e) { util.warn("tutorial: shop reset failed - " + (e && e.message)); }
+}
+
+// Fallback for the base lesson: hand the learner their practice base outright
+// when they could not break it themselves in time.
+function giveBase(plotIndex, body) {
+    try { require('./terrain/outposts.js').claimSite(plotIndex, body); } catch (e) { }
 }
 
 // Keep each practice bot on the learner's screen.
@@ -701,6 +848,8 @@ function tickBaseGuard() {
 const HEALTH_FLOOR = 0.2;
 const FIGHTER_PATIENCE_MS = 60000;
 const FIGHTER_WILT_MS = 30000;
+// The practice boss gets longer (it is tougher on purpose) but wilts the same way.
+const BOSS_PATIENCE_MS = 75000;
 function tickSafety() {
     const now = Date.now();
     for (let i = 0; i < owners.length; i++) {
@@ -722,6 +871,16 @@ function tickSafety() {
                 const cap = f.health.max * Math.max(0, 1 - over / FIGHTER_WILT_MS);
                 if (cap <= f.health.max * 0.02) { killBot(f); slot.fighter = null; }
                 else if (f.health.amount > cap) f.health.amount = cap;
+            }
+        }
+        const b = slot.boss;
+        if (live(b)) {
+            if (!b._tutBornAt) b._tutBornAt = now;
+            const over = now - b._tutBornAt - BOSS_PATIENCE_MS;
+            if (over > 0 && b.health && b.health.max) {
+                const cap = b.health.max * Math.max(0.01, 1 - over / FIGHTER_WILT_MS);
+                if (b.health.amount > cap) b.health.amount = cap;
+                if (b.shield && b.shield.amount > 0) b.shield.amount = 0;
             }
         }
     }
@@ -746,8 +905,8 @@ module.exports = {
     plotInfo, talkPlotInfo,
     spawnDummy, spawnFighter, clearBots,
     spawnChest, spawnBoss, clearBoss, setBanked, grantKit, grantArm, grantGear,
-    lockUpgrades, unlockUpgrades, upgradeAllowed, morph,
-    setAllowed, allows, allowsStat,
+    lockUpgrades, unlockUpgrades, upgradeAllowed, morph, tryTank, untry, borrowing, noteUpgraded, giveBase,
+    setAllowed, allows, allowsAll, allowsStat, noteStatSpent, baseTank, resetShop,
     setStats, fillStats, grantPoints, spendRest, teleport, teleportTo, setCommand, heal,
     tickLeash, tickReap, tickBaseGuard, tickGlide, tickSafety,
     plotCount: plots.plotCount,

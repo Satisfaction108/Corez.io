@@ -1814,7 +1814,13 @@ class gameHandler {
                             if (destroyed && !wasGrowing && drock.ore) gems.spawnOreBurst(drock, null);
                         }
                     }
-                    const p = _tg.pushCircleFromVoronoi(instance, r);
+                    // A tutorial glide (tutorialSession.teleportTo) moves the
+                    // tank in a straight line, through rock. Resolving rock
+                    // contacts mid-glide pinned it against the first wall and
+                    // then "spat it out" to open ground, which read as a
+                    // random teleport. It lands on open ground; collide after.
+                    const gliding = !!instance._tutorialGlide;
+                    const p = gliding ? { dx: 0, dy: 0 } : _tg.pushCircleFromVoronoi(instance, r);
                     let dx = p.dx, dy = p.dy;
                     const nowT = tickNow;
                     
@@ -1822,7 +1828,7 @@ class gameHandler {
                     
                     
                     let entombed = false;
-                    if (growingNow) {
+                    if (growingNow && !gliding) {
                         const g = _tg.pushCircleFromGrowing(instance, r, tickNow);
                         entombed = g.entombed;
                         if (g.dx !== 0 || g.dy !== 0) { dx += g.dx; dy += g.dy; }
@@ -1837,7 +1843,7 @@ class gameHandler {
                     
                     
                     
-                    if (_tg.pointInRock(instance.x, instance.y)) {
+                    if (!gliding && _tg.pointInRock(instance.x, instance.y)) {
                         entombed = true;
                         // Center is inside an alive rock, past the reach of the
                         // edge push above. That state should never persist: a

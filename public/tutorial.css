@@ -1,0 +1,179 @@
+/* ── tutorial chapters (client/tutorial.js) ─────────────────────────────
+   Injected by tutorial.js on top of the base card styles in home.css (the
+   "tutorial" block there). Everything here is tutorial-only: the chapter
+   list, the "Got it" button, card illustrations, and the chapter entrance.
+   Sized in em off --dwt-s like the rest of the card. */
+
+/* top row: eyebrow shrinks first, dots and buttons keep their size */
+#dwTut .dwt-top { gap: .45em; }
+#dwTut .dwt-eyebrow { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+#dwTut .dwt-dots { flex: 1 1 auto; min-width: 0; }
+#dwTut .dwt-skip { flex: none; }
+#dwTut .dwt-chapters { opacity: 1; color: var(--heading); }
+
+/* info steps: no progress bar, a chunky "Got it" instead */
+.dwt-next {
+    display: none;
+    pointer-events: auto;
+    margin: .7em 0 0 auto;
+    padding: .38em 1.1em .46em;
+    border: 3px solid var(--ink);
+    border-radius: .55em;
+    background: var(--play);
+    box-shadow: inset 0 -.2em 0 var(--play-dk), 0 .14em 0 var(--ink);
+    color: #fff;
+    font: 400 1.02em/1 var(--display);
+    letter-spacing: .02em;
+    cursor: pointer;
+    transition: transform 60ms ease-out, filter .12s;
+}
+.dwt-next:hover { filter: brightness(1.06); }
+.dwt-next:active { transform: translateY(.1em); box-shadow: inset 0 -.08em 0 var(--play-dk), 0 0 0 var(--ink); }
+.dwt-card.info .dwt-next { display: block; }
+.dwt-card.info .dwt-bar { display: none; }
+.dwt-card.info.done .dwt-next { visibility: hidden; }
+
+/* a new chapter: the card drops in a little bigger, eyebrow flashes gold */
+.dwt-card.chapter.enter { animation: dwtChapterIn .5s cubic-bezier(.2, 1.5, .4, 1); }
+@keyframes dwtChapterIn {
+    0%   { transform: translateY(-.8em) scale(.9); opacity: 0; }
+    100% { transform: none; opacity: 1; }
+}
+.dwt-card.chapter .dwt-eyebrow { animation: dwtEyebrow 1.4s ease; }
+@keyframes dwtEyebrow { 0%, 60% { color: var(--gold); } 100% { color: var(--accent); } }
+
+/* illustrations under the text */
+.dwt-extra { margin-top: .55em; }
+.dwt-ores { display: grid; grid-template-columns: repeat(4, 1fr); gap: .4em; }
+.dwt-ore {
+    display: flex; flex-direction: column; align-items: center; gap: .1em;
+    padding: .35em .2em .45em;
+    border: 2px solid var(--ink);
+    border-radius: .6em;
+    background: var(--input-bg);
+}
+.dwt-ore canvas { width: 2.8em; height: 2.8em; }
+.dwt-ore-name { font: 400 .8em/1.1 var(--display); color: var(--heading); text-align: center; }
+.dwt-ore-val { font-size: .78em; font-weight: 700; color: var(--gold); }
+.dwt-ore-val::after { content: " gems"; font-weight: 500; color: var(--text); opacity: .75; }
+.dwt-keys {
+    display: grid; grid-template-columns: 1fr 1fr; gap: .3em .8em;
+    padding: .45em .6em;
+    border: 2px solid var(--ink);
+    border-radius: .6em;
+    background: var(--input-bg);
+    font-size: .84em;
+    line-height: 1.3;
+}
+.dwt-key { display: flex; align-items: center; gap: .45em; min-width: 0; }
+.dwt-key-caps { flex: none; white-space: nowrap; }
+#dwTut .dwt-key kbd { font-size: .9em; }
+
+#dwTut.compact .dwt-extra, #dwTut.compact .dwt-next { display: none; }
+#dwTut.short .dwt-extra { margin-top: .35em; }
+#dwTut.short .dwt-ore { padding: .15em .2em .25em; }
+#dwTut.short .dwt-ore canvas { width: 1.9em; height: 1.9em; }
+#dwTut.short .dwt-keys { display: none; }
+#dwTut.short .dwt-card.info .dwt-next { margin-top: .4em; }
+
+/* ── the chapter list ────────────────────────────────────────────── */
+#dwTutMenu {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: var(--dim);
+    font-size: calc(16px * var(--dwt-s));
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s ease;
+}
+#dwTutMenu.show { opacity: 1; pointer-events: auto; }
+#dwTutMenu.hidden { visibility: hidden; }
+#dwTutMenu .dwt-end-card { transform: scale(.94); }
+#dwTutMenu.show .dwt-end-card { transform: none; }
+.dwt-menu-card { width: min(30em, 100%); }
+.dwt-menu-card .dwt-end-title { font-size: 2.1em; }
+.dwt-menu-card .dwt-end-sub { margin: .45em 0 .75em; }
+
+.dwt-ch-list {
+    list-style: none;
+    margin: 0 0 1em;
+    padding: .25em;
+    border: 3px solid var(--ink);
+    border-radius: .8em;
+    background: var(--input-bg);
+    text-align: left;
+}
+.dwt-ch-list li + li { margin-top: .2em; }
+.dwt-ch-list button {
+    display: flex;
+    align-items: center;
+    gap: .65em;
+    width: 100%;
+    padding: .38em .55em;
+    border: 2px solid transparent;
+    border-radius: .55em;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.dwt-ch-list button:hover { background: var(--face); border-color: var(--ink); }
+.dwt-ch-list button.cur { background: var(--face); border-color: var(--ink); box-shadow: inset 0 -.14em 0 var(--face-dk); }
+.dwt-ch-num {
+    flex: none;
+    display: grid; place-items: center;
+    width: 1.75em; height: 1.75em;
+    border: 2px solid var(--ink);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--heading);
+    font: 400 .9em/1 var(--display);
+}
+.dwt-ch-list button.cur .dwt-ch-num { background: var(--gold); color: var(--ink); }
+.dwt-ch-num { position: relative; }
+.dwt-ch-list button.done .dwt-ch-num { background: var(--play); color: transparent; }
+.dwt-ch-list button.done .dwt-ch-num::after {
+    content: "\2713";
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    color: #fff;
+    font: 700 1.05em/1 Rubik, Ubuntu, sans-serif;
+}
+.dwt-ch-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dwt-ch-name { font: 400 1em/1.15 var(--display); color: var(--heading); }
+.dwt-ch-blurb { font-size: .78em; line-height: 1.3; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dwt-ch-meta { flex: none; font-size: .74em; font-weight: 600; opacity: .7; }
+.dwt-ch-list button.done .dwt-ch-meta { color: var(--play); opacity: 1; }
+
+/* the send-off's quiet "Chapters" link */
+.dwt-replay {
+    display: block;
+    margin: .7em auto 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--link);
+    font: 600 .82em Rubik, Ubuntu, sans-serif;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* short screens: the list tightens up so the Start button stays in view */
+@media (max-height: 560px) {
+    .dwt-menu-card { padding: .9em 1em .8em; }
+    .dwt-menu-card .dwt-end-badge, .dwt-menu-card .dwt-end-sub { display: none; }
+    .dwt-menu-card .dwt-end-title { font-size: 1.6em; margin-bottom: .35em; }
+    .dwt-ch-list { margin-bottom: .6em; display: grid; grid-template-columns: 1fr 1fr; gap: .15em .3em; }
+    .dwt-ch-list li + li { margin-top: 0; }
+    .dwt-menu-card { width: min(36em, 100%); }
+    .dwt-ch-list button { padding: .22em .45em; }
+    .dwt-ch-blurb { display: none; }
+    .dwt-menu-card .dwt-play { font-size: 1.5em; }
+    .dwt-menu-card .dwt-menu { margin-top: .5em; padding: .4em 0 .45em; }
+}

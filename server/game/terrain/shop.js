@@ -739,11 +739,16 @@ function tick(actors) {
         if (on) {
             // the browse clock only counts idle time
             const busyAt = Math.max(body._shopSince || now, body._shopLastBuyAt || 0);
-            if (now - busyAt > SHOP_IDLE_MS) {
+            // Tutorial: no browse clock. The learner is alone on the pad and
+            // the lesson is waiting for them to shop.
+            if (!Config.tutorial && now - busyAt > SHOP_IDLE_MS) {
                 shopEject(body, pad, "Shop closed. Move along.", 10_000);
                 on = false;
             }
-        } else if (was && body._shopBought && body._shopPad) {
+        } else if (was && body._shopBought && body._shopPad && !Config.tutorial) {
+            // (not in the tutorial: the drill and gear lessons are two
+            // purchases on one pad, and a 20 s lockout between them reads
+            // as the shop being broken)
             // walked off after buying: one visit per purchase
             shopEject(body, body._shopPad, "Come back for more later.", SHOP_LOCK_MS);
         }

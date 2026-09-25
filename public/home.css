@@ -148,7 +148,7 @@ body {
     justify-content: center;
     transition: transform 60ms ease-out, box-shadow 60ms ease-out;
 }
-#themeToggleBtn:hover { transform: translateY(-1px); box-shadow: inset 0 -4px 0 var(--face-dk), 0 5px 0 var(--ink); }
+#themeToggleBtn:hover { box-shadow: inset 0 -4px 0 var(--face-dk), 0 5px 0 var(--ink); }
 #themeToggleBtn:active { transform: translateY(4px); box-shadow: inset 0 -2px 0 var(--face-dk), 0 0 0 var(--ink); }
 #themeIcon { display: none; }
 #themeToggleBtn .dw-ic { width: var(--bar-ic); height: var(--bar-ic); }
@@ -186,7 +186,7 @@ body {
     justify-content: center;
     transition: transform 60ms ease-out, box-shadow 60ms ease-out;
 }
-#homeSettingsBtn:hover, #homeChangelogBtn:hover, #homeSidebar .social-btn:hover { transform: translateY(-1px); box-shadow: inset 0 -4px 0 var(--face-dk), 0 5px 0 var(--ink); border-color: var(--ink); }
+#homeSettingsBtn:hover, #homeChangelogBtn:hover, #homeSidebar .social-btn:hover { box-shadow: inset 0 -4px 0 var(--face-dk), 0 5px 0 var(--ink); border-color: var(--ink); }
 #homeSettingsBtn:active, #homeChangelogBtn:active, #homeSidebar .social-btn:active { transform: translateY(4px); box-shadow: inset 0 -2px 0 var(--face-dk), 0 0 0 var(--ink); }
 #homeSidebar .dw-ic { width: var(--bar-ic); height: var(--bar-ic); }
 #homeSettingsBtn .dw-ic { transition: transform .25s cubic-bezier(.3,1.6,.5,1); }
@@ -1012,7 +1012,10 @@ input:focus { border-color: var(--border-hl); }
     position: relative;
     top: -3px;
 }
-#startButton:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: inset 0 -7px 0 var(--play-dk), inset 0 3px 0 rgba(255,255,255,.35), 0 6px 0 var(--ink); }
+/* main.css (legacy) shrinks the button to 38px on :hover/:active; pin the
+   box so hovering can't resize it or move its edge out from under the cursor */
+#startButton, #startButton:hover, #startButton:active { position: relative; height: 72px; margin: 0; border: 3px solid var(--ink); background: var(--play); outline: none; }
+#startButton:hover { filter: brightness(1.06); box-shadow: inset 0 -7px 0 var(--play-dk), inset 0 3px 0 rgba(255,255,255,.35), 0 6px 0 var(--ink); }
 #startButton:active {
     transform: translateY(5px);
     box-shadow: inset 0 -3px 0 var(--play-dk), inset 0 3px 0 rgba(255,255,255,.25), 0 0 0 var(--ink);
@@ -1528,7 +1531,7 @@ body.in-game #homeSettingsPanel .kb-row b.kb-editing {
     position: relative;
     top: -.06em;
 }
-.dwt-play:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.dwt-play:hover { filter: brightness(1.06); }
 .dwt-play:active { transform: translateY(.1em); box-shadow: inset 0 -.07em 0 var(--play-dk), 0 0 0 var(--ink); }
 .dwt-menu {
     display: block;
@@ -1634,7 +1637,7 @@ body.mobile .region-dropdown-menu { position: static; }
     transition: transform 60ms ease-out, box-shadow 60ms ease-out;
 }
 #tutorialButton b { font-weight: 400; position: relative; top: -2px; }
-#tutorialButton:hover { transform: translateY(-1px); box-shadow: inset 0 -4px 0 var(--face-dk), 0 4px 0 var(--ink); }
+#tutorialButton:hover { box-shadow: inset 0 -4px 0 var(--face-dk), 0 4px 0 var(--ink); }
 #tutorialButton:active { transform: translateY(3px); box-shadow: inset 0 -2px 0 var(--face-dk), 0 0 0 var(--ink); }
 #tutorialButton:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
@@ -1862,7 +1865,7 @@ body:has(#homeSettingsPanel.open, #homeChangelogPanel.open, #contributorsPanel.o
     transition: transform 60ms ease-out, box-shadow 60ms ease-out;
 }
 #accountChip.ready { animation: dwFade var(--dw-t2) var(--dw-ease) both; }
-#accountChip:hover { transform: translateY(-1px); box-shadow: inset 0 -4px 0 var(--face-dk), 0 5px 0 var(--ink); }
+#accountChip:hover { box-shadow: inset 0 -4px 0 var(--face-dk), 0 5px 0 var(--ink); }
 #accountChip:active, #accountChip.active { transform: translateY(4px); box-shadow: inset 0 -2px 0 var(--face-dk), 0 0 0 var(--ink); }
 #accountChip.guest { padding-right: 14px; }
 #accountChip:empty { visibility: hidden; }
@@ -3433,3 +3436,84 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 .igc-toast-k { color: var(--text2); font: 600 10.5px Ubuntu; }
 .igc-toast-k kbd { padding: 0 4px; border: 1.5px solid var(--ink); border-radius: 4px; color: var(--heading); font: 700 10px 'Ubuntu Mono', monospace; }
 @media (prefers-reduced-motion: reduce) { .igc-toast, .igc-toast.show { transition: none; } .igc, .igc-pip.hot { animation: none; } }
+
+/* ── Hover/press stability for chunky buttons ──
+   Hover never moves or resizes a button (only colour/lip). Press still drops
+   the face with translateY, which would pull the top edge out from under the
+   cursor and eat the click (mouseup lands on the parent); while pressed, an
+   invisible shim re-covers the original box. Lifted cards get the same shim
+   below them on hover so their bottom edge doesn't flicker. */
+/* (the pressed transform makes each button the shim's containing block) */
+:is(#startButton, #tutorialButton, #themeToggleBtn, #accountChip, #homeSettingsBtn, #homeChangelogBtn,
+    #homeSidebar .social-btn, #homeSettingsClose, #homeChangelogClose, .dw-btn, .wl-opt, .dwt-play,
+    .dwt-menu, .fr-ic, .fr-back, .hub-close, .wl-x, .dw-toast-act,
+    #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, .dw-igbtn):active::after {
+    content: ''; position: absolute; left: -4px; right: -4px; top: -10px; bottom: -4px; z-index: -1;
+}
+.shop-grid .shop-card:hover::after, .lk-tile:hover::after {
+    content: ''; position: absolute; left: -2px; right: -2px; top: -2px; bottom: -8px; z-index: -1;
+}
+
+/* ── Join / connection plate (app.js updateJoinState) ──
+   Connecting, reconnecting, disconnected / kicked, and the wait before your
+   first spawn. Always the dark cave palette, like the in-game buttons. */
+#dwJoin {
+    --surface: #2b2533; --surface2: #352e3f; --ink: #120e15; --bevel: rgba(255,255,255,.07);
+    --text: #e9e0cc; --text2: #a597b0; --heading: #fff3d9; --gold: #f2b83c; --copper: #e07b2e;
+    --play: #4fcf5c; --play-dk: #2c8f37; --face: #4a4156; --face-dk: #2e2837;
+    position: fixed; inset: 0; z-index: 60;
+    display: none; align-items: center; justify-content: center;
+    padding: 16px; box-sizing: border-box;
+    background: radial-gradient(ellipse at 50% 42%, #231d2b 0%, #16121b 70%);
+    color: var(--text);
+    user-select: none;
+}
+#dwJoin.open { display: flex; animation: dwFade 180ms ease both; }
+/* disconnected mid-game: the world stays faintly visible behind the plate */
+#dwJoin.see { background: rgba(14, 11, 18, .66); }
+.dwj-card {
+    position: relative;
+    width: 380px; max-width: 100%;
+    padding: 20px 24px 22px; box-sizing: border-box;
+    background: var(--surface);
+    border: 3px solid var(--ink);
+    border-radius: 18px 15px 19px 16px;
+    box-shadow: inset 0 0 0 3px var(--bevel), 0 7px 0 var(--ink);
+    text-align: center;
+    animation: dwPop 300ms cubic-bezier(.3, 1.5, .6, 1) both;
+}
+.dwj-logo { display: block; width: 72px; height: 72px; margin: -2px auto 4px; transform: rotate(-8deg); -webkit-user-drag: none; }
+.dwj-title {
+    color: var(--heading);
+    font: 400 34px/1.05 var(--display);
+    letter-spacing: .01em;
+    -webkit-text-stroke: 5px var(--ink); paint-order: stroke fill;
+    text-shadow: 0 3px 0 var(--ink);
+}
+#dwJoin[data-mode="down"] .dwj-title { color: #ff8f7e; }
+#dwJoin[data-mode="lock"] .dwj-title, #dwJoin[data-mode="late"] .dwj-title { color: var(--gold); }
+.dwj-count {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    margin: 12px auto 0; padding: 8px 18px 10px; width: max-content; max-width: 100%;
+    background: #1e1924; border: 2px solid var(--ink); border-radius: 12px;
+}
+.dwj-count[hidden], .dwj-line[hidden], .dwj-dots[hidden], .dwj-btns [hidden] { display: none; }
+.dwj-count-lbl { color: var(--text2); font: 400 14px/1 var(--display); letter-spacing: .04em; }
+.dwj-count-n {
+    color: #fff; font: 400 44px/1 var(--display); font-variant-numeric: tabular-nums;
+    -webkit-text-stroke: 6px var(--ink); paint-order: stroke fill; text-shadow: 0 3px 0 var(--ink);
+}
+.dwj-line { margin: 12px 4px 0; color: var(--text); font: 600 14px/1.4 Ubuntu, sans-serif; }
+.dwj-dots { display: flex; justify-content: center; gap: 7px; height: 12px; margin-top: 14px; }
+.dwj-dots i {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--copper); border: 2px solid var(--ink); box-sizing: border-box;
+    animation: dwjDot 1.2s ease-in-out infinite;
+}
+.dwj-dots i:nth-child(2) { animation-delay: .15s; }
+.dwj-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes dwjDot { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-5px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dwj-dots i { animation-duration: 2.4s; } .dwj-card { animation: none; } }
+.dwj-btns { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
+.dwj-btns .dw-btn { min-width: 132px; }
+@media (max-width: 420px) { .dwj-title { font-size: 28px; } .dwj-btns .dw-btn { min-width: 0; flex: 1; } }

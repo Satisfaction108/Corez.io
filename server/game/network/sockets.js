@@ -505,8 +505,9 @@ class socketManager {
                 if (typeof m[0] !== "number" || !isFinite(m[0])) { socket.kick("Weird vault deposit."); return 1; }
                 const vBody = socket.player && socket.player.body;
                 // Tutorial: banking is its own lesson; other steps refuse it.
+                // "bank:vault" / "bank:base" narrow it to the pad the step is about.
                 if (Config.tutorial && vBody &&
-                    !require('../tutorialSession.js').allows(vBody, 'bank')) return;
+                    !require('../tutorialSession.js').allows(vBody, 'bank', vBody.outpostOnPad ? 'base' : 'vault')) return;
                 if (vBody && vBody.outpostOnPad) require('../terrain/outposts.js').requestDeposit(socket, m[0]);
                 else require('../terrain/vault.js').requestDeposit(socket, m[0]);
             } break;
@@ -652,6 +653,8 @@ class socketManager {
                         const tut = require('../tutorialSession.js');
                         // Only the step that teaches evolving may evolve.
                         if (!tut.allows(player.body, 'upgrade')) return;
+                        // A borrowed tank is on loan: never evolve it.
+                        if (tut.borrowing(player.body)) return;
                         // While a path lock is active the client's indexes are
                         // meaningless: it clicks position N of the FILTERED
                         // menu, but upgrade() indexes the raw list - the same
@@ -662,9 +665,13 @@ class socketManager {
                             const b = player.body;
                             const idx = b.upgrades.findIndex(u =>
                                 b.skill.level >= u.level && tut.upgradeAllowed(b, u));
-                            if (idx >= 0) b.upgrade(idx, 0);
+                            if (idx >= 0) { b.upgrade(idx, 0); tut.noteUpgraded(b); }
                             return;
                         }
+                        const before = player.body.index;
+                        player.body.upgrade(upgrade, branchId);
+                        if (player.body.index !== before) tut.noteUpgraded(player.body);
+                        return;
                     }
                     player.body.upgrade(upgrade, branchId);
                 }
@@ -701,8 +708,21 @@ class socketManager {
                 // lessons, and each of those permits exactly one bar. Gated
                 // here rather than in the UI because 1-0 and M go straight to
                 // the socket without ever touching the bars.
-                if (Config.tutorial && player.body &&
-                    !require('../tutorialSession.js').allowsStat(player.body, number)) return;
+                if (Config.tutorial && player.body) {
+                    const tut = require('../tutorialSession.js');
+                    if (!tut.allowsStat(player.body, number)) return;
+                    // Point by point, so a max-out (F + key) still stops at
+                    // the step's budget instead of dumping the lot.
+                    const b = player.body;
+                    let limit = 256;
+                    do {
+                        const before = b.skill.points;
+                        b.skillUp(stat);
+                        if (b.skill.points < before) tut.noteStatSpent(b);
+                        else break;
+                    } while (limit-- && max && b.skill.points && b.skill.amount(stat) < b.skill.cap(stat) && tut.allowsStat(b, number));
+                    return;
+                }
 
                 if (player.body != null) {
                     let limit = 256;
@@ -792,6 +812,19 @@ class socketManager {
                         if (typeof m[1] !== "string") return;
                         tut.morph(body, m[1]);
                         break;
+                    // Borrow a tank for a quick try, then hand the learner's
+                    // own pick back ("untry").
+                    case "try":
+                        if (typeof m[1] !== "string") return;
+                        tut.tryTank(body, m[1]);
+                        break;
+                    case "untry": tut.untry(body); break;
+                    // Back to the spawn tank (tank chapter replay).
+                    case "basetank": tut.baseTank(body); break;
+                    // Drill, gear, kit and sidearm back to nothing (shop chapter replay).
+                    case "shopreset": tut.resetShop(socket); break;
+                    // Base lesson fallback: the practice base is yours.
+                    case "givebase": tut.giveBase(plot, body); break;
 
                     // Chip the learner's health so the HP bar visibly moves and
                     // regeneration can be demonstrated. Never lethal: it clamps
@@ -1141,7 +1174,11 @@ class socketManager {
                 // shop buy: item id string
                 if (!Config.dig_royale && !Config.tutorial) return 1;
                 if (m.length !== 1 || typeof m[0] !== "string" || m[0].length > 24) { socket.kick("Bad shop request."); return 1; }
-                if (Config.tutorial && !require('../tutorialSession.js').allows(player.body, 'shop')) return;
+                if (Config.tutorial) {
+                    // Each shop step sells one category ("shop:drill").
+                    const it = require('../terrain/shop.js').BY_ID.get(m[0]);
+                    if (!require('../tutorialSession.js').allows(player.body, 'shop', it ? it.cat : '?')) return;
+                }
                 const nowB = Date.now();
                 if (nowB - (socket._lastBuyAt || 0) < 120) return;
                 socket._lastBuyAt = nowB;
@@ -1151,14 +1188,23 @@ class socketManager {
                 // kit drop: slot (dragged out of the box)
                 if (!Config.dig_royale && !Config.tutorial) return 1;
                 if (typeof m[0] !== "number" || m[0] < 0 || m[0] > 2) return;
+                // Tutorial: throwing an item away would pass for using it, so
+                // drops only work where every kit item is fair game.
+                if (Config.tutorial && !require('../tutorialSession.js').allowsAll(player.body, 'kit')) return;
                 require('../terrain/shop.js').dropKit(socket, m[0] | 0);
             } break;
             case "sk": {
                 // kit use: slot, world x, world y
                 if (!Config.dig_royale && !Config.tutorial) return 1;
                 if ((m.length !== 3 && m.length !== 4) || typeof m[0] !== "number" || typeof m[1] !== "number" || typeof m[2] !== "number") { socket.kick("Bad kit request."); return 1; }
-                if (Config.tutorial && !require('../tutorialSession.js').allows(player.body, 'kit')) return;
                 if (m[0] < 0 || m[0] > 2) return;
+                if (Config.tutorial) {
+                    // "kit:medkit": only the item the step is about fires.
+                    const shopMod = require('../terrain/shop.js');
+                    const st = shopMod.stateOf(socket);
+                    const kid = (typeof m[3] === "string" && m[3]) || (st && st.kitOrder && st.kitOrder[m[0] | 0]) || '?';
+                    if (!require('../tutorialSession.js').allows(player.body, 'kit', kid)) return;
+                }
                 require('../terrain/shop.js').useKit(socket, m[0] | 0, m[1], m[2], typeof m[3] === "string" && m[3].length <= 24 ? m[3] : undefined);
             } break;
             case "DBG": {
@@ -1463,7 +1509,7 @@ class socketManager {
         // not merely inert - it is absent. Showing clickable tanks whose
         // clicks are refused reads as a broken game, not a locked lesson.
         const tutGate = Config.tutorial ? require('../tutorialSession.js') : null;
-        const tutHideMenu = tutGate && !tutGate.allows(b, 'upgrade');
+        const tutHideMenu = tutGate && (!tutGate.allows(b, 'upgrade') || tutGate.borrowing(b));
         for (let i = 0; i < b.upgrades.length; i++) {
             let upgrade = b.upgrades[i];
             if (tutHideMenu) continue;

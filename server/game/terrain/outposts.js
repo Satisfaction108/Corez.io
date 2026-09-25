@@ -475,6 +475,21 @@ module.exports = {
         }
         spawnStructure(site, 0, null);
     },
+    // Tutorial fallback: hand a site straight to `body` (fresh banner in its
+    // colours), for a learner who could not break the practice base in time.
+    claimSite(id, body) {
+        const site = getOutposts().find(s => s.id === id);
+        if (!site || !body) return;
+        site.locked = false;
+        site._lastHitter = null;
+        const b = site.banner;
+        site.banner = null;
+        if (b && !b.isDead?.()) {
+            try { if (b.removeAllListeners) b.removeAllListeners("dead"); } catch { /* */ }
+            try { b.destroy(); } catch { try { b.health.amount = -100; } catch { /* */ } }
+        }
+        spawnStructure(site, body.team, body);
+    },
     lockSite(id, locked) {
         const site = getOutposts().find(s => s.id === id);
         if (!site) return;
