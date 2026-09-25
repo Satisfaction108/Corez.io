@@ -393,6 +393,11 @@ class Entity extends EventEmitter {
                         let e = ensureIsClass(k);
                         index += e.index + "-";
                     }
+                    // define() appends; a second define of the same class
+                    // without clearing first used to list every choice twice
+                    // (18 tiles for Basic). One entry per tank and tier.
+                    const upgIndex = index.substring(0, index.length - 1);
+                    if (this.upgrades.some(u => u.branch === 0 && u.tier === i && u.index === upgIndex)) continue;
                     this.upgrades.push({
                         class: trueUpgrades,
                         level: Config.tier_multiplier * i,

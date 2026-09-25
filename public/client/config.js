@@ -85,8 +85,7 @@ function resetTarget() {
 }
 import { global } from "./global.js";
 global.tips = [[
-        "Tip: You can view and edit your keybinds in the options menu.",
-        "Tip: You can play on mobile by just going to [host link here] on your phone!" // TODO: make this automatically change to the host
+        "Tip: You can view and edit your keybinds in the options menu."
     ], [
         "Tip: You can have the shield and health bar be separated by going to the options menu.",
         "Tip: If the game is having a low frame rate, you can try enabling low graphics in the options menu.",

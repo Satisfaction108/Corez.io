@@ -448,7 +448,7 @@ const kc = (id) => `{{${id}}}`;
 //   allow      what the server permits this step ("stats", "bank", ...)
 //   ui         HUD part to highlight (skills | stats:a,b | upgrades | kit)
 //   next       info step: a "Got it" button finishes it
-//   extra      a small illustration under the text ("ores" | "keys")
+//   extra      a small illustration under the text ("ores" | "keys" | "families")
 //   target()   world marker for this frame, or null
 //   progress() 0..1, drives the bar and the idle-hint timer
 //   done()     true = step complete
@@ -638,7 +638,8 @@ const CHAPTERS = [
             {
                 id: "familiesCard", next: true,
                 title: "Tank types",
-                text: () => `${state.ownType && tankName(state.ownType) ? `Your *${tankName(state.ownType)}*'s` : "Your tank's"} back. Rough idea: *Twin* and *Machine Gun* are for fighting, *Pounder* and *Sniper* dig fast, *Smasher* just rams through rock.`,
+                text: () => `${state.ownType && tankName(state.ownType) ? `Your *${tankName(state.ownType)}*'s` : "Your tank's"} back. The first pick is just where a branch starts, it keeps upgrading from there. Pounder side digs fastest, Machine Gun side wins fights.`,
+                extra: "families",
                 praise: "ok",
             },
         ],
@@ -1914,6 +1915,26 @@ function extraHtml(kind) {
         return '<div class="dwt-ores">' + ORES.map((o, i) =>
             `<div class="dwt-ore"><canvas data-ore="${i}"></canvas><span class="dwt-ore-name">${o.name}</span><span class="dwt-ore-val">${o.val}</span></div>`
         ).join("") + "</div>";
+    }
+    if (kind === "families") {
+        // Each tier-1 tank and where it goes (server/lib/definitions
+        // groups/tanks.js class tree). "dig" is from mining.js MINE_HITS:
+        // fewer hits per rock = faster digging.
+        const rows = [
+            ["Pounder", "Destroyer, Annihilator, Artillery", "dig", "best digger, 2-3 shots a rock"],
+            ["Sniper", "Assassin, Ranger, Hunter", "both", "long range, digs well too"],
+            ["Smasher", "Spike, Landmine", "dig", "no guns, rams through rock"],
+            ["Twin", "Triple Shot, Penta Shot, Gunner", "fight", "tons of bullets"],
+            ["Machine Gun", "Minigun, Sprayer, Gunner", "fight", "melts tanks, slow on rock"],
+            ["Flank Guard", "Tri-Angle, Hexa Tank, Auto-3", "fight", "fast, covers your back"],
+            ["Director", "Overseer, Overlord, Cruiser", "fight", "drones do the work"],
+            ["Trapper", "Builder, Tri-Trapper", "both", "walls, good for holding a base"],
+            ["Desmos", "Helix, Triplex", "fight", "wavy shots, weird but fun"],
+        ];
+        return '<div class="dwt-fams">' + rows.map(r =>
+            `<div class="dwt-fam"><span class="dwt-fam-tag ${r[2]}">${r[2]}</span>` +
+            `<span class="dwt-fam-body"><b>${esc(r[0])}</b> <span class="dwt-fam-path">&rarr; ${esc(r[1])}</span>` +
+            `<span class="dwt-fam-note">${esc(r[3])}</span></span></div>`).join("") + "</div>";
     }
     if (kind === "keys") {
         const rows = [

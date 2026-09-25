@@ -69,11 +69,36 @@
 .dwt-key-caps { flex: none; white-space: nowrap; }
 #dwTut .dwt-key kbd { font-size: .9em; }
 
+.dwt-fams {
+    display: grid; gap: .22em;
+    padding: .4em .5em;
+    border: 2px solid var(--ink);
+    border-radius: .6em;
+    background: var(--input-bg);
+    font-size: .8em;
+    line-height: 1.25;
+}
+.dwt-fam { display: flex; align-items: baseline; gap: .5em; min-width: 0; }
+.dwt-fam-tag {
+    flex: none; width: 3.3em; padding: .1em 0 .15em;
+    border: 2px solid var(--ink); border-radius: .45em;
+    font: 400 .82em/1 var(--display); text-align: center; color: #fff;
+    background: var(--accent);
+}
+.dwt-fam-tag.dig { background: #c9731f; }
+.dwt-fam-tag.fight { background: #c2453b; }
+.dwt-fam-tag.both { background: #6d5a9e; }
+.dwt-fam-body { min-width: 0; }
+.dwt-fam-body b { font: 400 1.05em/1 var(--display); color: var(--heading); letter-spacing: .01em; }
+.dwt-fam-path { color: var(--heading); opacity: .85; }
+.dwt-fam-note { display: block; color: var(--text); opacity: .75; font-size: .92em; }
+
 #dwTut.compact .dwt-extra, #dwTut.compact .dwt-next { display: none; }
 #dwTut.short .dwt-extra { margin-top: .35em; }
 #dwTut.short .dwt-ore { padding: .15em .2em .25em; }
 #dwTut.short .dwt-ore canvas { width: 1.9em; height: 1.9em; }
 #dwTut.short .dwt-keys { display: none; }
+#dwTut.short .dwt-fam-note { display: none; }
 #dwTut.short .dwt-card.info .dwt-next { margin-top: .4em; }
 
 /* ── the chapter list ────────────────────────────────────────────── */
