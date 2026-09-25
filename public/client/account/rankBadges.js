@@ -720,6 +720,34 @@ function pipsTiny(c, n, tier, px, bottom) {
     for (let i = 0; i < n; i++) c.fillRect((x0 + 1 + i * (pw + gap)) * u, (y0 + 1) * u, pw * u, pw * u);
 }
 
+/* ── high-quality small badges ──────────────────────────────────────── */
+// Small badges used to switch to simplified art, which read as a different
+// icon. Now every size is the real (full-detail) badge, painted large and
+// shrunk in halving steps so it stays smooth instead of aliasing.
+function paintShrunk(c, division, devPx, opts) {
+    const MASTER = Math.max(160, devPx * 4);
+    const pad = Math.ceil(MASTER * 0.06) + 2;
+    let cv = document.createElement('canvas');
+    cv.width = cv.height = MASTER + pad * 2;
+    let g = cv.getContext('2d');
+    g.translate(cv.width / 2, cv.height / 2);
+    paintBadge(g, division, MASTER, Object.assign({}, opts, { lod: 'full' }));
+    let size = cv.width;
+    const target = Math.max(1, Math.round(cv.width * devPx / MASTER));
+    while (size / 2 >= target * 1.5) {
+        const half = Math.ceil(size / 2), nx = document.createElement('canvas');
+        nx.width = nx.height = half;
+        const h = nx.getContext('2d');
+        h.imageSmoothingEnabled = true; h.imageSmoothingQuality = 'high';
+        h.drawImage(cv, 0, 0, half, half);
+        cv = nx; size = half;
+    }
+    c.save();
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+    c.drawImage(cv, -target / 2, -target / 2, target, target);
+    c.restore();
+}
+
 /* ── sprite cache ────────────────────────────────────────────────────── */
 const cache = new Map();
 const CACHE_MAX = 160;
@@ -735,7 +763,8 @@ function sprite(division, devPx, opts) {
     cv.width = cv.height = devPx + pad * 2 + ((devPx + pad * 2) & 1);
     const c = cv.getContext('2d');
     c.translate(cv.width / 2, cv.height / 2);
-    paintBadge(c, division, devPx, { legendNo: plate });
+    if (devPx >= 64) paintBadge(c, division, devPx, { legendNo: plate, lod: 'full' });
+    else paintShrunk(c, division, devPx, { legendNo: plate });
     s = { cv, pad };
     cache.set(key, s);
     if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
@@ -791,7 +820,8 @@ export function badgeDataUrl(division, cssPx, opts) {
     c.translate(devPx / 2, devPx / 2);
     // scale down slightly so the rim never touches the edge of the image
     c.scale(0.94, 0.94);
-    paintBadge(c, division, devPx, opts);
+    if (devPx >= 64) paintBadge(c, division, devPx, Object.assign({}, opts, { lod: 'full' }));
+    else paintShrunk(c, division, devPx, opts);
     u = cv.toDataURL('image/png');
     urlCache.set(key, u);
     if (urlCache.size > 64) urlCache.delete(urlCache.keys().next().value);
