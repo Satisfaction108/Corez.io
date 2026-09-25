@@ -255,6 +255,8 @@
                 setTimeout(function () { toast.remove(); }, 300);
             }, 2600);
         }
+        var ytSoon = document.getElementById('ytSoon');
+        if (ytSoon) ytSoon.onclick = function () { showToast('No YouTube yet. Stay tuned!'); };
 
         function updateRegionLabel() {
             if (!ddLabel) return;

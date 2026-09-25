@@ -512,7 +512,7 @@ const ALL_STEPS = [
         // end: doing it on completion races with the spawns of later steps.
         // "reset" puts this plot's practice base back to neutral and locked.
         onEnter: () => { tut("hello"); tut("clear"); tut("reset"); },
-        title: "COREZ ROYALE",
+        title: "COREZ.IO",
         subtitle: "This is your own copy of the raid map, just smaller. Nobody else can get in, nothing here can really hurt you, and each step waits until you've done it.",
         card: true,
         done: () => T() - state.stepAt > 3600,
