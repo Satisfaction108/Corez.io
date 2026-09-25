@@ -37,8 +37,8 @@ function softCap(earned, grossMilli) {
 }
 
 // One transaction for every account in `list`:
-//   [{userId, gems, kill, day, earned, gemsBanked, ref}]
-// gems/kill are milli-dust already past the soft cap. -> Map userId -> balance
+//   [{userId, gems, kill, other, day, earned, gemsBanked, ref}]
+// gems/kill/other are milli-dust already past the soft cap. -> Map userId -> balance
 // (accounts deleted meanwhile are skipped). Throws if the write fails; the
 // caller keeps the dust pending and tries again.
 function flush(list, now = Date.now()) {
@@ -47,17 +47,20 @@ function flush(list, now = Date.now()) {
     if (!d || !list.length) return out;
     d.tx(() => {
         for (const e of list) {
-            const add = (e.gems | 0) + (e.kill | 0);
+            const add = (e.gems | 0) + (e.kill | 0) + (e.other | 0);
             const r = d.run('UPDATE users SET dust_milli = dust_milli + ?, earn_day = ?, earn_day_milli = ? WHERE id = ? AND deleted_at IS NULL',
                 add, e.day | 0, Math.max(0, e.earned | 0), e.userId);
             if (!r.changes) continue;
             let balance = d.get('SELECT dust_milli FROM users WHERE id = ?', e.userId).dust_milli | 0;
             // one ledger row per kind, balance after each
-            const kill = e.kill | 0, gems = e.gems | 0;
+            // (other: chest / boss / shop rewards, R.REWARDS)
+            const kill = e.kill | 0, gems = e.gems | 0, other = e.other | 0;
             if (gems) d.run('INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, ref, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                e.userId, gems, balance - kill, 'gems', e.ref || null, now);
+                e.userId, gems, balance - kill - other, 'gems', e.ref || null, now);
             if (kill) d.run('INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, ref, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                e.userId, kill, balance, 'kill', e.ref || null, now);
+                e.userId, kill, balance - other, 'kill', e.ref || null, now);
+            if (other) d.run('INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, ref, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                e.userId, other, balance, 'other', e.ref || null, now);
             if (add || e.gemsBanked) {
                 d.run('INSERT OR IGNORE INTO user_stats (user_id, updated_at) VALUES (?, ?)', e.userId, now);
                 d.run('UPDATE user_stats SET dust_earned_milli = dust_earned_milli + ?, gems_banked = gems_banked + ?, updated_at = ? WHERE user_id = ?',

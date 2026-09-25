@@ -58,19 +58,123 @@ export function setGate(fn) { gate = typeof fn === 'function' ? fn : () => true;
 export const isPlaying = () => !!cur;
 export const pending = () => queue.length > 0;
 
-// Remember a rank-up that should be shown. Returns the event; start() it
-// when the moment is right, or it plays in the menu later.
+// ── what this player has already been shown ───────────────────────────
+// Every rank-up has to play exactly once, however it happened: a life, the
+// raid-end placement bonus, several divisions at once, a life settled while
+// the player was dead / in the menu / gone. So the ceremony keeps its own
+// mark per account: the division the player last SAW (-1 = placement). Any
+// report of a higher division than the mark owes one ceremony from the
+// mark to it; queued rank-ups that haven't started merge into one (Silver
+// II -> Gold I plays once, as a new tier). The mark moves when a ceremony
+// starts, and silently when the rank drops (fares), so a re-climb plays.
+const MARK_KEY = 'dwRankSeen_v1';
+let userKey = null;
+function loadMarks() { try { return JSON.parse(localStorage.getItem(MARK_KEY) || '{}') || {}; } catch (e) { return {}; } }
+function markOf(key = userKey) {
+    if (!key) return undefined;
+    const v = loadMarks()[key];
+    return typeof v === 'number' ? v : undefined;
+}
+function setMark(div, key = userKey) {
+    if (!key || typeof div !== 'number') return;
+    try {
+        const m = loadMarks();
+        m[key] = div;
+        localStorage.setItem(MARK_KEY, JSON.stringify(m));
+    } catch (e) { /* private mode: the in-memory queue still dedupes */ }
+}
+const divOfSnap = (snap) => (!snap || typeof snap !== 'object') ? undefined : snap.division == null ? -1 : snap.division | 0;
+function kindFor(from, to) {
+    if (from === -1 || from === 'placement') return 'reveal';
+    return TIER_ORDER.indexOf(tierOf(to)) > TIER_ORDER.indexOf(tierOf(from)) ? 'tier' : 'up';
+}
+const TIER_ORDER = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'emerald', 'legend'];
+function highestOwed() {
+    let hi = -Infinity;
+    for (const e of queue) if (!e._merged) hi = Math.max(hi, e.to);
+    if (cur && cur.ev) hi = Math.max(hi, cur.ev.to);
+    return hi;
+}
+
+// The account this client plays as (public id), with its current rank.
+// First sight of an account just records where it stands; later reports
+// owe a ceremony if it went up.
+export function setUser(key, snap) {
+    userKey = key ? String(key) : null;
+    if (!userKey) return null;
+    return report(snap);
+}
+
+// A rank snapshot from anywhere (AC, /api/me, RK, RKP). -> the owed event
+// (queued, not started) or null.
+export function report(snap) {
+    const div = divOfSnap(snap);
+    if (div === undefined || !userKey) return null;
+    const mark = markOf();
+    if (mark === undefined) { setMark(div); return null; }
+    if (div < mark && highestOwed() < div) { setMark(div); return null; }   // a drop: nothing to celebrate
+    if (div <= mark || div === -1) return null;
+    return owe(mark, div, snap && snap.legendNo);
+}
+
+// A rank-up from `from` to `to` (divisions, -1 / null = placement) that
+// should be shown. Returns the event to start() when the moment is right
+// (the death card does that after its bar fill), or null when the player
+// has already seen it. Anything never started plays in the menu or right
+// after the next spawn.
+export function owe(from, to, legendNo = 0) {
+    if (from == null || from === 'placement') from = -1;
+    if (to == null || to < 0) return null;
+    to |= 0;
+    const mark = markOf();
+    if (mark !== undefined && to <= mark) return findCovering(to);
+    if (to <= highestOwed()) return findCovering(to);
+    // fold into a queued one that hasn't started
+    const open = queue.find((e) => !e._merged && !e._played);
+    if (open) {
+        const lo = Math.min(open.fromDiv, mark !== undefined ? mark : from);
+        open.fromDiv = lo;
+        open.from = lo === -1 ? 'placement' : lo;
+        open.to = to;
+        open.kind = kindFor(lo, to);
+        open.legendNo = legendNo | 0;
+        return open;
+    }
+    const lo = mark !== undefined ? Math.min(mark, to - 1) : Math.min(from, to - 1);
+    const e = normalize({ kind: kindFor(lo, to), from: lo === -1 ? 'placement' : lo, to, legendNo });
+    e.fromDiv = lo;
+    queue.push(e);
+    return e;
+}
+function findCovering(to) {
+    if (cur && cur.ev && cur.ev.to >= to) return cur.ev;
+    return queue.find((e) => !e._merged && e.to >= to) || null;
+}
+
+// Old API: queue an explicit event (kept for harnesses).
 export function enqueue(ev) {
+    if (ev && ev.to != null) {
+        const e = owe(ev.kind === 'reveal' ? -1 : ev.from, ev.to, ev.legendNo);
+        if (e) return e;
+    }
     const e = normalize(ev);
+    e.fromDiv = e.from === 'placement' ? -1 : e.from;
     queue.push(e);
     return e;
 }
 
-// Play ev now (or once the gate opens). onDone runs when it has faded out.
+// Play ev now (or once the gate opens). onDone runs when it has faded out,
+// or right away if this rank-up already played.
 export function start(ev, onDone) {
+    if (!ev) { if (onDone) setTimeout(onDone, 0); return; }
+    if (ev._played) {
+        if (cur && cur.ev === ev) (cur.after || (cur.after = [])).push(onDone);
+        else if (onDone) setTimeout(onDone, 0);
+        return;
+    }
     const i = queue.indexOf(ev);
     if (i >= 0) queue.splice(i, 1);
-    else if (!ev || ev.kind == null) ev = normalize(ev || {});
+    else if (ev.kind == null) ev = normalize(ev);
     if (cur) {
         // one at a time: play right after the current one
         queue.unshift(ev);
@@ -81,7 +185,8 @@ export function start(ev, onDone) {
     begin(ev, onDone);
 }
 
-// Menu: play whatever the game never got to show, one after another.
+// Menu (or right after a respawn): play whatever never got shown, one
+// after another.
 export function playPending() {
     if (cur || !queue.length) return false;
     const ev = queue.shift();
@@ -469,6 +574,8 @@ function cue(name, stage) {
 }
 
 function begin(ev, onDone) {
+    ev._played = true;
+    if (typeof ev.to === 'number') setMark(ev.to);
     ensureCanvas();
     const { W, H, dpr } = size();
     cur = { ev, prep: prepare(ev, W, H, dpr), t0: null, fired: new Set(), onDone, gatedAt: performance.now() };
@@ -480,11 +587,13 @@ function begin(ev, onDone) {
 
 function finish() {
     const done = cur && cur.onDone;
+    const after = (cur && cur.after) || [];
     cur = null;
     canvas.style.display = 'none';
     window.removeEventListener('keydown', onKey, true);
     window.removeEventListener('keyup', onKey, true);
     if (done) { try { done(); } catch (e) { console.error(e); } }
+    for (const f of after) { try { if (f) f(); } catch (e) { console.error(e); } }
     if (!cur && queue.length && queue[0]._asap) {
         const next = queue.shift();
         begin(next, next._onDone);
@@ -520,5 +629,5 @@ function tick() {
 
 // Harness / debugging: step a live ceremony to an exact time.
 if (typeof window !== 'undefined') {
-    window.dwRankCeremony = { enqueue, start, playPending, pending, isPlaying, renderAt, timings: TIMES };
+    window.dwRankCeremony = { enqueue, owe, report, setUser, start, playPending, pending, isPlaying, renderAt, timings: TIMES, _queue: queue };
 }

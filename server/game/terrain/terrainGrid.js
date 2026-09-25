@@ -1111,8 +1111,11 @@ class TerrainGrid {
 
     
     startRegrow(rock, now) {
-        if (rock.canyon) return;
-        if (!rock.worldPoly || rock.alive || rock.growing) return;
+        if (rock.canyon) return false;
+        if (!rock.worldPoly || rock.alive || rock.growing) return false;
+        // a loot chest holds its pocket and its way out (chests.js holdRock);
+        // nothing - regrowth, Bulwark, anything - may grow rock there
+        if (rock.chestLock || rock._chestHolds > 0) return false;
         rock.gen++;
         rock.growing    = true;
         rock.growStart  = now;
@@ -1185,6 +1188,7 @@ class TerrainGrid {
             ax: Math.round((rock.growAx + halfW) / this.cellSize * 100) / 100,
             ay: Math.round((rock.growAy + halfH) / this.cellSize * 100) / 100,
         });
+        return true;
     }
 
     _unlistGrowing(rock) {

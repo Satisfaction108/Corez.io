@@ -60,6 +60,30 @@
     const DUST_MILLI_PER_GEM = { 1: 10, 2: 20, 3: 50, 4: 100 };   // copper, azurite, purple, emerald
     const KILL_DUST_MILLI = { player: 250, bot: 125 };
     const DAILY_SOFT_CAP_MILLI = 50000;
+
+    // In-raid rewards, all in one place to tune. dustMilli goes to account
+    // holders through the same pending pot as gem and kill dust (daily soft
+    // cap applies, ledger kind 'other', a DU pop on the HUD); pts are raid
+    // points on the board score (s.extra), so they count toward the rank
+    // basis and turn into RP like everything else. Kills keep
+    // KILL_DUST_MILLI above; the boss's own score is bosses.js kind.score.
+    const REWARDS = Object.freeze({
+        chest: Object.freeze({
+            common: Object.freeze({ dustMilli: 50, pts: 25 }),     // 0.05 gemdust
+            epic: Object.freeze({ dustMilli: 150, pts: 60 }),      // 0.15 gemdust
+        }),
+        boss: Object.freeze({
+            finalDustMilli: 500,        // the final blow (plus the boss score)
+            assistDustMilli: 200,       // anyone else with >= assistShare of the damage
+            assistPts: 40,
+            assistShare: 0.15,
+        }),
+        shop: Object.freeze({
+            dustMilli: 20,              // 0.02 gemdust per purchase at a shop pad
+            pts: 5,
+            perRaidCap: 10,             // purchases per account per raid that pay
+        }),
+    });
     const SOFT_CAP_RATE = 0.25;
 
     function clampIndex(i) { return Math.max(0, Math.min(LEGEND, i | 0)); }
@@ -94,7 +118,7 @@
     return Object.freeze({
         RULES_VERSION, TIERS, TIER_NAMES, DIVISIONS, LEGEND, CURVE, curve, LIFE_CAP,
         PLACEMENT_LIVES, placementStart, PLACEMENT_BONUS_RP, PLACEMENT_BONUS_DUST_MILLI,
-        DUST_MILLI_PER_GEM, KILL_DUST_MILLI, DAILY_SOFT_CAP_MILLI, SOFT_CAP_RATE,
+        DUST_MILLI_PER_GEM, KILL_DUST_MILLI, DAILY_SOFT_CAP_MILLI, SOFT_CAP_RATE, REWARDS,
         divisionOf, floorOf, nameOf, tierOf, isTierUp, progressOf,
         CODE_NONE, CODE_PLACEMENT, rankCode, fromCode,
     });

@@ -71,7 +71,7 @@ function splitDeath(total, values) {
 // ---- per-account pending dust ----
 
 // userId -> {id, balance (database, as of the last flush), day, earned
-// (gross today), gems, kill (pending, past the cap), remK, gemsBanked}
+// (gross today), gems, kill, other (pending, past the cap), remK, gemsBanked}
 const accts = new Map();
 let lastFlushAt = 0;
 let lastErrAt = 0;
@@ -86,7 +86,7 @@ function stateOf(userId) {
     if (a) return a;
     const s = dust.loadState(userId);
     if (!s) return null;
-    a = { id: userId, balance: s.balance, day: s.day, earned: s.earned, gems: 0, kill: 0, remK: 0, gemsBanked: 0, ref: null };
+    a = { id: userId, balance: s.balance, day: s.day, earned: s.earned, gems: 0, kill: 0, other: 0, remK: 0, gemsBanked: 0, ref: null };
     accts.set(userId, a);
     return a;
 }
@@ -114,7 +114,7 @@ function earn(a, grossMilli, kind, now = Date.now()) {
 
 function balanceOf(userId) {
     const a = userId ? stateOf(userId) : null;
-    return a ? a.balance + a.gems + a.kill : 0;
+    return a ? a.balance + a.gems + a.kill + a.other : 0;
 }
 
 function carriedOf(body) {
@@ -130,8 +130,8 @@ function valuesFor(socket) {
 function flushList(list, now = Date.now()) {
     const rows = [];
     for (const a of list) {
-        if (a.gems || a.kill || a.gemsBanked) {
-            rows.push({ userId: a.id, gems: a.gems, kill: a.kill, day: a.day, earned: a.earned, gemsBanked: a.gemsBanked, ref: a.ref });
+        if (a.gems || a.kill || a.other || a.gemsBanked) {
+            rows.push({ userId: a.id, gems: a.gems, kill: a.kill, other: a.other, day: a.day, earned: a.earned, gemsBanked: a.gemsBanked, ref: a.ref });
         }
     }
     if (!rows.length) return true;
@@ -143,10 +143,10 @@ function flushList(list, now = Date.now()) {
     }
     const banked = [];
     for (const a of list) {
-        if (!(a.gems || a.kill || a.gemsBanked)) continue;
+        if (!(a.gems || a.kill || a.other || a.gemsBanked)) continue;
         if (res.has(a.id)) a.balance = res.get(a.id);
         if (a.gemsBanked) banked.push(a.id);
-        a.gems = 0; a.kill = 0; a.gemsBanked = 0;
+        a.gems = 0; a.kill = 0; a.other = 0; a.gemsBanked = 0;
     }
     // gems_banked moved: banker / tycoon
     for (const id of banked) {
@@ -160,7 +160,7 @@ function flushAccount(userId, now = Date.now()) {
     const a = accts.get(userId);
     if (!a) return balanceOf(userId);
     flushList([a], now);
-    return a.balance + a.gems + a.kill;
+    return a.balance + a.gems + a.kill + a.other;
 }
 
 function flushAll(now = Date.now()) {
@@ -245,6 +245,16 @@ function creditKill(socket, milli) {
     return got;
 }
 
+// Chest / boss / shop rewards (R.REWARDS): soft-capped like kill dust,
+// ledger kind 'other', a DU pop (kind 7) on the HUD.
+function creditReward(socket, milli) {
+    if (!socket || !socket.account || !on() || !(milli > 0)) return 0;
+    const a = stateOf(socket.account.id);
+    const got = earn(a, milli | 0, 'other');
+    if (a) bridge().du(socket, got, 7);
+    return got;
+}
+
 // Exempt credit already written to the database (placement bonus).
 function noteExternalCredit(userId, milli, balanceAfter) {
     const a = accts.get(userId);
@@ -286,7 +296,7 @@ function onClose(socket) {
     if (!id || !accts.has(id)) return;
     flushAccount(id);
     const a = accts.get(id);
-    if (a && !a.gems && !a.kill && !a.gemsBanked) accts.delete(id);
+    if (a && !a.gems && !a.kill && !a.other && !a.gemsBanked) accts.delete(id);
 }
 
 // DBG dust <milli> (debug mode only; the caller checks).
@@ -299,7 +309,7 @@ function debugSetCarried(body, milli) {
 module.exports = {
     FLUSH_MS, bankShare, effCredit, insuranceShare, splitDeath,
     setCreditListener, setRef, balanceOf, carriedOf, valuesFor, flushAccount, flushAll, tick,
-    onPickup, onSatchelOut, onBankDone, onInsured, onDeathDrop, creditKill, noteExternalCredit, reloadBalance,
+    onPickup, onSatchelOut, onBankDone, onInsured, onDeathDrop, creditKill, creditReward, noteExternalCredit, reloadBalance,
     stash, restore, zero, onClose, debugSetCarried,
     _accts: accts,
 };

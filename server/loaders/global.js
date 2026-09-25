@@ -258,7 +258,13 @@ global.bringToLife = (() => {
         // Spawn protection ends as soon as the tank commits to movement or
         // fires. Bots do not have player key flags, so the resolved control
         // state is the reliable source for both kinds of input.
-        if (my.invuln && my.type === 'tank' && !my.royaleLobby && !my.royaleFrozen) {
+        // Never inside the spawn grace (spawnGraceUntil), and never for a Dig
+        // Royale player: io_listenToPlayer owns that rule (fresh input only),
+        // because a held key, the respawn click or autofire left on made
+        // this check strip the shield on the very first tick, before it was
+        // ever drawn.
+        const inGrace = (my.spawnGraceUntil || 0) > Date.now();
+        if (my.invuln && my.type === 'tank' && !my.royaleLobby && !my.royaleFrozen && !inGrace && !(Config.dig_royale && my.socket)) {
             const moving = my.control.goal &&
                 (Math.abs(my.control.goal.x - my.x) > 1 || Math.abs(my.control.goal.y - my.y) > 1);
             if (moving || my.control.fire || my.control.main || my.control.alt) my.invuln = false;

@@ -736,7 +736,19 @@ function onBossSpawned(o, kind, id) {
     fxAt(o.x, o.y, "boss");
 }
 
-function onBossDead(o, kind, killer, burrowed) {
+// ── in-raid rewards (R.REWARDS in shared/ranks.js) ─────────────────────────
+// Raid points on the board (they reach the rank basis like any other score)
+// and a little gemdust for account holders. Humans only: bots have no rank.
+const REWARDS = require('../../../../shared/ranks.js').REWARDS;
+let shopRewardCount = new Map();    // account id (or stat key) -> paid purchases this raid
+function grantReward(body, pts, dustMilli) {
+    if (!body || !body.socket || body.isBot) return;
+    const s = ensureStat(body);
+    if (s && pts > 0) s.extra = (s.extra | 0) + (pts | 0);
+    if (dustMilli > 0) { try { dustHooks.creditReward(body.socket, dustMilli); } catch (e) { guardLog('reward dust', e); } }
+}
+
+function onBossDead(o, kind, killer, burrowed, shares = []) {
     if (burrowed) {
         pushFeed({ boss: 1, gone: 1, name: kind.name, c: kind.color });
         setToastAndSay("The " + kind.name + " burrowed back into the wall.", 4000);
@@ -752,6 +764,13 @@ function onBossDead(o, kind, killer, burrowed) {
         by = killer.name || "Unnamed";
         callout(killer, "boss", "BOSS DOWN: " + kind.name, kind.score);
         if (killer.socket) { try { progressHooks.onBoss(killer); } catch (e) { guardLog('progress boss', e); } }
+        grantReward(killer, 0, REWARDS.boss.finalDustMilli);
+    }
+    // everyone else who did a real share of the work
+    for (const h of shares) {
+        if (!h.body || h.body === killer || !(h.share >= REWARDS.boss.assistShare)) continue;
+        if (h.body.isDead?.()) continue;
+        grantReward(h.body, REWARDS.boss.assistPts, REWARDS.boss.assistDustMilli);
     }
     // everyone else gets the banner too (no points on theirs)
     for (const client of connectedClients()) {
@@ -767,6 +786,8 @@ function onChestOpened(body, chest, itemMsg) {
     if (!body) return;
     const s = ensureStat(body);
     if (s) s.chests = (s.chests | 0) + 1;
+    const cr = chest.chestRare ? REWARDS.chest.epic : REWARDS.chest.common;
+    grantReward(body, cr.pts, cr.dustMilli);
     if (body.socket) {
         questProgress(body, "chest", 1);
         try { progressHooks.onChest(body); } catch (e) { guardLog('progress chest', e); }
@@ -794,7 +815,14 @@ function onEvent(ev) {
 }
 
 function onShopBuy(body, item) {
-    if (body && body.socket) questProgress(body, "shop", 1);
+    if (!body || !body.socket) return;
+    questProgress(body, "shop", 1);
+    // a few purchases per raid pay a little; the cap keeps it unfarmable
+    const key = (body.socket.account && body.socket.account.id) ? 'a:' + body.socket.account.id : statKeyFor(body);
+    const n = shopRewardCount.get(key) | 0;
+    if (n >= REWARDS.shop.perRaidCap) return;
+    shopRewardCount.set(key, n + 1);
+    grantReward(body, REWARDS.shop.pts, REWARDS.shop.dustMilli);
 }
 
 function ownedSiteFor(body) {
@@ -1244,6 +1272,7 @@ function startRaid(first) {
     raidEndsAt = raidStartAt + RAID_MS;
     raidStats = new Map();
     try { rankHooks.onRaidStart(); } catch (e) { guardLog('rank raid start', e); }
+    shopRewardCount = new Map();
     killFeed = [];
     occupy.clear();
     lockout.clear();

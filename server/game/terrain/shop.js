@@ -602,7 +602,7 @@ function useKit(socket, slot, tx, ty, itemId) {
                 const d2 = (rx - body.x) ** 2 + (ry - body.y) ** 2;
                 if (d2 > 260 * 260 || d2 < 110 * 110) continue;
                 rock.noRegrowUntil = 0;
-                try { tg.startRegrow(rock, now + n * 40); n++; } catch { /* */ }
+                try { if (tg.startRegrow(rock, now + n * 40) !== false) n++; } catch { /* */ }
                 if (n >= 14) break;
             }
             used = n > 0;

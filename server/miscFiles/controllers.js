@@ -202,7 +202,8 @@ class io_listenToPlayer extends IO {
             // respawned you, a key you never let go of) does not count: the
             // shield only drops on something you press fresh.
             const c = this.player.command;
-            const held = !!(c.right || c.left || c.up || c.down || c.lmb);
+            // autofire left on from the last life counts as held, not fresh
+            const held = !!(c.right || c.left || c.up || c.down || c.lmb || c.autofire);
             const grace = this.body.spawnGraceUntil && Date.now() < this.body.spawnGraceUntil;
             if (grace) this._heldThroughGrace = held;
             else if (!held) this._heldThroughGrace = false;

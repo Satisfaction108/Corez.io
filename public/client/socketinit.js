@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { protocol } from "./protocol.js";
 import { gameSound } from "./sound.js";
 import * as rankPanel from "./account/rankPanel.js";
+import * as rankCeremony from "./account/rankCeremony.js";
 import * as dustHud from "./account/dustHud.js";
 window.fakeLagMS = 0;
 var sync = [];
@@ -1562,6 +1563,11 @@ let incoming = async function(message, socket) {
                     const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
                     global.acct = d && typeof d === 'object' ? d : null;
                     rankPanel.setAccount(global.acct);
+                    // a rank-up settled while this player was away (a
+                    // disconnect, the raid bonus after they left) plays now
+                    if (global.acct && global.acct.userId && rankCeremony.setUser(global.acct.userId, global.acct.rank)) {
+                        setTimeout(() => { try { if (!global.died) rankCeremony.playPending(); } catch (e) { /* */ } }, 1500);
+                    }
                     if (global.acct) dustHud.syncUnits(global.acct.dust, global.acct.dustCarried);
                 } catch (e) { /* ignore */ }
             } break;
@@ -1575,6 +1581,7 @@ let incoming = async function(message, socket) {
                     const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
                     rankPanel.setResult(d);
                     if (d && !d.guest && d.after && global.acct) global.acct.rank = d.after;
+                    if (d && !d.guest && d.after) rankCeremony.report(d.after);
                 } catch (e) { /* ignore */ }
             } break;
             case 'RKP': {
@@ -1583,6 +1590,7 @@ let incoming = async function(message, socket) {
                     const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
                     rankPanel.setRaidBonus(d);
                     if (d && d.after && global.acct) global.acct.rank = d.after;
+                    if (d && d.after) rankCeremony.report(d.after);
                 } catch (e) { /* ignore */ }
             } break;
             case 'DQ': {
@@ -1630,7 +1638,7 @@ let incoming = async function(message, socket) {
                 global.respawnPending = false;
                 global.died = false;
                 global._specGlide = null;
-                rankPanel.clear();
+                rankPanel.clear({ spawned: true });
                 global.royaleSpectating = false;
                 global.royaleDied = false;
                 global.royaleKillerCamUntil = 0;

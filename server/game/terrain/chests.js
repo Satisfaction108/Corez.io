@@ -152,6 +152,70 @@ function carvePocket(tg, x, y) {
     return !tg.rockHitByCircle || !tg.rockHitByCircle(x, y, CHEST_CLEAR_R);
 }
 
+// ── reachability ───────────────────────────────────────────────────────
+// Room around the chest is not enough: a pocket of dead cells ringed by live
+// rock (or one carvePocket smashed out of solid wall) is a chest sealed in
+// stone, and from outside it just looks like another rock. A chest only
+// lands where a walk over open cells reaches carved floor (the canyon cells:
+// lanes, pads, pits, the arena - they never regrow), and that walk is held
+// open for as long as the chest stands.
+const PATH_MAX = 24;           // cells (~110u each)
+const PASS_R = 24;             // a tank must fit through each step
+function lat(tg, i, j) { return tg.rocks.get(i * 100003 + j); }
+function openCell(r) { return r && !r.alive && !r.growing && r.worldPoly && Number.isFinite(r.wx); }
+function exitPath(tg, start) {
+    if (!openCell(start)) return null;
+    if (start.canyon) return [start];
+    const prev = new Map([[start.k, null]]);
+    let frontier = [start];
+    for (let depth = 0; depth < PATH_MAX && frontier.length; depth++) {
+        const next = [];
+        for (const r of frontier) {
+            for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nb = lat(tg, r.vi + di, r.vj + dj);
+                if (!openCell(nb) || prev.has(nb.k)) continue;
+                const mx = (r.wx + nb.wx) / 2, my = (r.wy + nb.wy) / 2;
+                if (tg.rockHitByCircle && tg.rockHitByCircle(mx, my, PASS_R)) continue;
+                if (tg.growingRockHitByCircle && tg.growingRockHitByCircle(mx, my, PASS_R)) continue;
+                prev.set(nb.k, r);
+                if (nb.canyon) {
+                    const path = [];
+                    for (let c = nb; c; c = prev.get(c.k)) path.push(c);
+                    return path;
+                }
+                next.push(nb);
+            }
+        }
+        frontier = next;
+    }
+    return null;
+}
+
+// Every rock (live or dead) whose outline comes within `r` of (x, y).
+function rocksTouching(tg, x, y, r) {
+    const out = [];
+    for (const rock of tg.rocks.values()) {
+        if (!rock || !rock.worldPoly) continue;
+        const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+        const reach = (rock.maxPolyRadius || 120) + r;
+        if ((rx - x) ** 2 + (ry - y) ** 2 > reach * reach) continue;
+        if (polyDist(rock.worldPoly, x, y) <= r) out.push(rock);
+    }
+    return out;
+}
+function polyDist(poly, x, y) {
+    let inside = false, best = Infinity;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [ax, ay] = poly[j], [bx, by] = poly[i];
+        if (((ay > y) !== (by > y)) && x < (bx - ax) * (y - ay) / ((by - ay) || 1e-9) + ax) inside = !inside;
+        const ex = bx - ax, ey = by - ay, l2 = ex * ex + ey * ey || 1e-9;
+        const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / l2));
+        const d = Math.hypot(x - (ax + t * ex), y - (ay + t * ey));
+        if (d < best) best = d;
+    }
+    return inside ? 0 : best;
+}
+
 function pickCell(opts = {}) {
     const tg = global.gameManager.terrainGrid;
     if (!tg || !tg.rocks) return null;
@@ -179,41 +243,73 @@ function pickCell(opts = {}) {
         if (chestNear(x, y)) continue;
         if (tanksNear(x, y, near ? 120 : 380, tankList)) continue;
         if (!hasOpenSide(tg, rock)) continue;
+        // sealed pockets are out, whatever their size
+        const path = exitPath(tg, rock);
+        if (!path) continue;
         // the whole boulder has to fit: a small dead cell with one open side
         // used to put a chest half on top of the live rock around it
-        if (!roomForChest(tg, x, y)) { if (tight.length < 8) tight.push(rock); continue; }
+        if (!roomForChest(tg, x, y)) { if (tight.length < 8) tight.push({ rock, path }); continue; }
+        rock._exitPath = path;
         return rock;
     }
-    for (const rock of tight) if (carvePocket(tg, rock.wx, rock.wy)) return rock;
+    // carving only removes rock, so a tight cell that already has a way out
+    // keeps it
+    for (const t of tight) if (carvePocket(tg, t.rock.wx, t.rock.wy)) { t.rock._exitPath = t.path; return t.rock; }
     return null;
 }
 
+// Holds are counted so two chests sharing a corridor cell don't release it
+// for each other. terrainGrid.startRegrow refuses any held rock.
+function holdRock(chest, rock) {
+    if (!rock || rock.canyon || chest._held.has(rock)) return;
+    chest._held.add(rock);
+    rock._chestHolds = (rock._chestHolds | 0) + 1;
+}
+
+// Lock the area a chest stands in: its own cell, every rock whose outline
+// comes near the hull (a neighbour can't grow into it), and the walk out.
+function lockArea(chest, x, y, rock, path) {
+    const tg = global.gameManager.terrainGrid;
+    chest._held = chest._held || new Set();
+    if (rock) {
+        rock.chestLock = chest.chestId;            // one chest per cell
+        chest.lockRock = rock;
+    }
+    if (!tg || !tg.rocks) return;
+    for (const r of rocksTouching(tg, x, y, CHEST_CLEAR_R + 30)) if (!r.alive) holdRock(chest, r);
+    for (const r of (path || [])) holdRock(chest, r);
+    try { if (tg.addNoRegrowZone) chest._zone = tg.addNoRegrowZone(x, y, CHEST_ZONE_R, Number.MAX_SAFE_INTEGER); } catch { /* */ }
+}
 function lockCell(chest, rock) {
     if (!rock) return;
-    rock.chestLock = chest.chestId;            // one chest per cell
-    if (!rock.canyon) rock.noRegrowUntil = Number.MAX_SAFE_INTEGER;
-    chest.lockRock = rock;
-    // and the cells around it stay open while the chest stands
-    try {
-        const tg = global.gameManager.terrainGrid;
-        if (tg && tg.addNoRegrowZone) chest._zone = tg.addNoRegrowZone(rock.wx, rock.wy, CHEST_ZONE_R, Number.MAX_SAFE_INTEGER);
-    } catch { /* */ }
+    lockArea(chest, rock.wx, rock.wy, rock, rock._exitPath);
+    rock._exitPath = null;
 }
 
 function releaseCell(chest) {
-    const rock = chest && chest.lockRock;
-    if (!rock) return;
-    if (rock.chestLock === chest.chestId) {
+    if (!chest) return;
+    const rock = chest.lockRock;
+    const until = Date.now() + 8000;
+    if (rock && rock.chestLock === chest.chestId) {
         rock.chestLock = 0;
         // a short grace so the rock does not pop back over the loose gems
-        if (!rock.canyon) rock.noRegrowUntil = Date.now() + 8000;
+        if (!rock.canyon) rock.noRegrowUntil = until;
+    }
+    if (chest._held) {
+        for (const r of chest._held) {
+            r._chestHolds = Math.max(0, (r._chestHolds | 0) - 1);
+            if (!r.canyon && !r._chestHolds) r.noRegrowUntil = Math.max(r.noRegrowUntil || 0, until);
+        }
+        chest._held = null;
     }
     if (chest._zone) {
         // the neighbours get the same short grace, then may regrow
-        chest._zone.until = Date.now() + 8000;
+        chest._zone.until = until;
         chest._zone = null;
     }
-    chest.lockRock = null;
+    // (debug / tutorial chests never had a cell: leave lockRock undefined so
+    // onTaken queues no replacement for them)
+    if (rock) chest.lockRock = null;
 }
 
 function spawnChest(x, y, rare, opts = {}) {
@@ -247,7 +343,11 @@ function spawnChest(x, y, rare, opts = {}) {
     });
     o.on('dead', () => { try { onDestroyed(o); } catch (e) { console.error('[CHEST] onDestroyed', e && e.stack); } });
     if (opts.cell) lockCell(o, opts.cell);
-    else { try { if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(o, o.realSize || 24); } catch { /* */ } }
+    else {
+        try { if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(o, o.realSize || 24); } catch { /* */ }
+        // tutorial / debug drops: nothing may grow back over these either
+        lockArea(o, o.x, o.y, null, null);
+    }
     o.pinX = o.x; o.pinY = o.y;        // a ram never budges it
     chests.push(o);
     return o;

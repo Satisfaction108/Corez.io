@@ -1198,13 +1198,26 @@ class socketManager {
                         }
                         if (best) { b.x = best.x + 140; b.y = best.y; b.velocity.x = 0; b.velocity.y = 0; b.invuln = false; }
                     }
-                    else if (what === "bosskill") { const bs = require('../terrain/bosses.js').current(); if (bs) bs.health.amount = -1; }
+                    else if (what === "bosskill") {
+                        // bosskill 1: you land the final blow (and the damage), for reward tests
+                        const bm = require('../terrain/bosses.js'), bs = bm.current();
+                        if (bs && b && m[1]) { bm.debugHit(b, 1000); bs.finalKillers = [b]; }
+                        if (bs) bs.health.amount = -1;
+                    }
+                    else if (what === "openchest" && b) {
+                        // open the nearest chest as if you broke it
+                        const cm = require('../terrain/chests.js');
+                        let best = null, bd = Infinity;
+                        for (const c of cm.alive()) { if (c._opened) continue; const d = (c.x - b.x) ** 2 + (c.y - b.y) ** 2; if (d < bd) { bd = d; best = c; } }
+                        if (best) cm.openChest(best, b);
+                    }
                     else if (what === "bloom") { const bl = require('../terrain/blooms.js').start(); if (bl) require('../gamemodes/scripts/dig_royale.js').onBloom(bl); }
                     else if (what === "meteor") { const ev = require('../terrain/raidEvents.js').startMeteor(Date.now()); if (ev) require('../gamemodes/scripts/dig_royale.js').onEvent(ev); }
                     else if (what === "rain") { const ev = require('../terrain/raidEvents.js').startRain(Date.now()); if (ev) require('../gamemodes/scripts/dig_royale.js').onEvent(ev); }
                     else if (what === "chest" && b) require('../terrain/chests.js').spawnChest(b.x + 120, b.y, !!m[1]);
                     else if (what === "kill" && b) { b.health.amount = -1; }
                     else if (what === "god" && b) { b.godmode = !b.godmode; }
+                    else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), x: Math.round(b.x), y: Math.round(b.y), dead: !!(b.isDead && b.isDead()) } : { nobody: true }), 0);
                     else if (what === "chesthp" && b) {
                         const list = require('../terrain/chests.js').alive();
                         let best = null, bd = 1e12;

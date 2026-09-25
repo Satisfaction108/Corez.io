@@ -12,7 +12,7 @@ const GEM = [[-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95]];
 const FLY_MS = 560;
 
 // DU kinds (contract)
-export const KIND = { SYNC: 0, PICKUP: 1, BANK: 2, KILL: 3, DEATH: 4, PLACEMENT: 5, QUEST: 6 };
+export const KIND = { SYNC: 0, PICKUP: 1, BANK: 2, KILL: 3, DEATH: 4, PLACEMENT: 5, QUEST: 6, REWARD: 7 };   // REWARD: chest / boss / shop
 
 const D = {
     on: false,
@@ -69,7 +69,7 @@ export function onPacket(carriedMilli, balanceMilli, deltaMilli, kind) {
         D.balTarget = b;
     }
     if (kind === KIND.PICKUP) D.bumpAt = now;
-    if (kind === KIND.KILL || kind === KIND.PLACEMENT || kind === KIND.QUEST) {
+    if (kind === KIND.KILL || kind === KIND.PLACEMENT || kind === KIND.QUEST || kind === KIND.REWARD) {
         const amt = d > 0 ? d : Math.max(dB, dC);
         if (amt > 0) {
             // pop where the dust went: the satchel, or straight to the balance

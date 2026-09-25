@@ -46,7 +46,13 @@ export function onDeath() {
     S.shownAt = 0;
 }
 
-export function clear() {
+// opts.spawned: a respawn ('c'). A rank-up the card never got to play (a
+// quick respawn, a late RK) plays right away instead of waiting for the menu.
+export function clear(opts = {}) {
+    const owed = S.steps.some((st) => st.cer && !st.cerDone && st.phase !== 'cer');
+    if (opts.spawned && (owed || ceremony.pending())) {
+        setTimeout(() => { try { ceremony.playPending(); } catch (e) { /* */ } }, 900);
+    }
     S.diedAt = 0;
     S.shownAt = 0;
     S.guest = null;
@@ -80,9 +86,25 @@ function addStep(kind, before, after, delta, flags) {
         placement, phase: 'wait', t0: 0, cer: null, cerDone: false, swapAt: 0, soundDone: false,
     };
     if (reveal || up) {
-        step.cer = ceremony.enqueue({ kind: reveal ? 'reveal' : step.tierUp ? 'tier' : 'up', from: reveal ? 'placement' : b.division, to: a.division, legendNo: a.legendNo });
+        // owe() folds this into any rank-up still waiting (a life and the
+        // raid bonus crossing divisions back to back play once, from the
+        // rank the player last saw) and returns null if it already played
+        step.cer = ceremony.owe(reveal ? -1 : b.division, a.division, a.legendNo);
+    }
+    // The raid-end bonus (RKP) goes out before the mass death, so it lands
+    // BEFORE the life's RK. The card reads in order: the life first, then
+    // the bonus on top of it.
+    if (kind === 'life') {
+        const i = S.steps.findIndex((s2) => s2.kind === 'raid' && s2.phase === 'wait');
+        if (i >= 0) { S.steps.splice(i, 0, step); return; }
     }
     S.steps.push(step);
+}
+
+// The death screen's auto-respawn waits while a rank-up on this card is
+// still to play (the app caps the wait).
+export function holdsRespawn() {
+    return S.steps.some((st) => st.cer && !st.cerDone);
 }
 
 export function setResult(rk) {
@@ -90,7 +112,9 @@ export function setResult(rk) {
     if (rk.guest) { S.guest = rk; return; }
     S.acct = true;
     S.guest = null;
-    S.parts = Array.isArray(rk.parts) ? rk.parts.slice(0, 5) : [];
+    // the raid bonus line may already be here (RKP lands before RK at raid end)
+    const bonusParts = S.parts.filter((p) => p && p._raid);
+    S.parts = (Array.isArray(rk.parts) ? rk.parts.slice(0, 5) : []).concat(bonusParts);
     if (rk.fare > 0 && !S.parts.some((p) => /fare/i.test(p[0]))) S.parts.push(['Entry fee', -rk.fare]);
     S.capped = !!rk.capped;
     S.dustMilli += (rk.dust && rk.dust.lifeMilli) | 0;
@@ -100,7 +124,7 @@ export function setResult(rk) {
 export function setRaidBonus(p) {
     if (!p || typeof p !== 'object') return;
     S.acct = true;
-    if (p.bonusRP) S.parts.push(['#' + (p.place | 0) + ' in raid', p.bonusRP | 0]);
+    if (p.bonusRP) { const part = ['#' + (p.place | 0) + ' in raid', p.bonusRP | 0]; part._raid = true; S.parts.push(part); }
     S.dustMilli += p.bonusDustMilli | 0;
     addStep('raid', p.before, p.after, p.bonusRP, { tierUp: p.tierUp });
 }

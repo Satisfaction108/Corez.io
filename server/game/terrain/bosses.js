@@ -89,10 +89,18 @@ function spawn(forceKind) {
     spawnedAt = Date.now();
     expiresAt = spawnedAt + LIFETIME_MS;
     o.on('damage', ({ damageInflictor = [] } = {}) => {
+        // this tick's damage, split evenly between the tanks behind it (the
+        // boss-reward assist share reads dmg)
+        const roots = new Set();
         for (const src of damageInflictor) {
             let root = src, hops = 0;
             while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
-            if (root && (root.isPlayer || root.isBot)) hitters.set(root.id, { body: root, at: Date.now() });
+            if (root && (root.isPlayer || root.isBot)) roots.add(root);
+        }
+        const per = roots.size ? Math.max(0, +o.damageReceived || 0) / roots.size : 0;
+        for (const root of roots) {
+            const h = hitters.get(root.id);
+            hitters.set(root.id, { body: root, at: Date.now(), dmg: (h ? h.dmg : 0) + per });
         }
     });
     o.on('dead', () => onDead(o));
@@ -143,7 +151,11 @@ function onDead(o) {
             chests.spawnChest(x, y, true, { gems: 200, item: require('./shop.js').randomKitId() });
         } catch { /* */ }
     }
-    try { royale().onBossDead(o, kind, killer, burrowed); } catch (e) { console.error('[BOSS] onBossDead', e && e.stack); }
+    // damage shares, for the assist reward
+    let total = 0;
+    for (const h of hitters.values()) total += h.dmg || 0;
+    const shares = burrowed || !(total > 0) ? [] : [...hitters.values()].map(h => ({ body: h.body, share: (h.dmg || 0) / total }));
+    try { royale().onBossDead(o, kind, killer, burrowed, shares); } catch (e) { console.error('[BOSS] onBossDead', e && e.stack); }
     scheduleNext();
 }
 
@@ -182,4 +194,11 @@ function snapshot() {
 function current() { return boss && !boss.isDead?.() ? boss : null; }
 function nextIn() { return Math.max(0, nextAt - Date.now()); }
 
-module.exports = { KINDS, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };
+// DBG only: book damage for a tank (reward tests)
+function debugHit(body, dmg) {
+    if (!body) return;
+    const h = hitters.get(body.id);
+    hitters.set(body.id, { body, at: Date.now(), dmg: (h ? h.dmg : 0) + (+dmg || 0) });
+}
+
+module.exports = { debugHit, KINDS, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };

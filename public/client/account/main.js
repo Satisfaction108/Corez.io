@@ -46,6 +46,13 @@ function setMode(mode) {
 // 60 s poll doesn't re-render open forms.
 let userSig = 'null';
 function setUser(user) {
+    // a rank-up the player never saw (settled after they left a raid, or on
+    // a disconnect) is owed from the rank this browser last showed
+    try {
+        if (user && user.userId && rankCeremony.setUser(user.userId, user.rank) && !inGame()) {
+            setTimeout(() => { if (!inGame() && !welcome.isOpen()) rankCeremony.playPending(); }, 700);
+        }
+    } catch (e) { /* the menu must never break over this */ }
     const sig = JSON.stringify(user || null);
     if (sig === userSig) return;
     userSig = sig;

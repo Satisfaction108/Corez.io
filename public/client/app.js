@@ -7122,15 +7122,25 @@ import * as cosmetics from './account/cosmetics.js';
         const gridX = x + 20, gridY = tabY + tabH + 14;
         const detailW = 240;
         const gridW = W - 40 - detailW - 14;
-        const cols = gridW >= 430 ? 3 : 2;
-        const cardW = (gridW - (cols - 1) * 8) / cols, cardH = 58;
+        // Every item in the tab has to fit: rows used to be a fixed 58 tall,
+        // so a tab with more than 8 items (Kit: Rock Barrage is the 9th;
+        // Gear has 10) silently lost its last cards at the grid's bottom.
+        // Cards shrink to fit, and a third column opens if that's too tight.
+        const gridH = y + H - 32 - gridY;
+        const rowsFor = (n) => Math.max(1, Math.ceil(items.length / n));
+        const fitH = (n) => Math.floor((gridH - (rowsFor(n) - 1) * 8) / rowsFor(n));
+        let cols = gridW >= 430 ? 3 : 2;
+        let cardH = Math.min(58, fitH(cols));
+        if (cardH < 44 && cols < 3) { cols = 3; cardH = Math.min(58, fitH(cols)); }
+        cardH = Math.max(36, cardH);
+        const cardW = (gridW - (cols - 1) * 8) / cols;
         const hover = global.clickables.shop.check({ x: global.mouse.x, y: global.mouse.y });
         const kitFull = ((sh.state && sh.state.kitOrder) || []).length >= 3;
         for (let i = 0; i < items.length && i < 36; i++) {
             const it = items[i];
             const col = i % cols, row = (i / cols) | 0;
             const ix = gridX + col * (cardW + 8), iy = gridY + row * (cardH + 8);
-            if (iy + cardH > y + H - 32) break;
+            if (iy + cardH > y + H - 32 + 1) break;
             const sel = it.id === sh.sel;
             const hov = hover === 4 + i;
             const hT = hoverEase("card:" + it.id, hov, now);
@@ -7138,10 +7148,10 @@ import * as cosmetics from './account/cosmetics.js';
             const afford = (global.gems.banked | 0) >= it.price;
             drawFlatTile(c, ix, iy, cardW, cardH, sel ? SHOP_CARD_SEL : status.buy ? SHOP_CARD : SHOP_CARD_OFF, hT, g, sel, SHOP_ACCENT);
             let nameX = ix + 10;
-            if (it.cat === "kit") { drawKitIcon(c, it.id, ix + 18, iy + 17, 18); nameX = ix + 32; }
+            if (it.cat === "kit") { drawKitIcon(c, it.id, ix + 18, iy + Math.min(17, cardH * 0.3), Math.min(18, cardH * 0.34)); nameX = ix + 32; }
             const nameW = cardW - (nameX - ix) - 10;
             let ns = 12; while (ns > 9 && shopMeasureText(it.name, ns) > nameW) ns -= 0.5;
-            drawText(it.name, nameX, iy + 17, ns, status.buy ? color.guiwhite : "#9aa2b0", "left", true, g);
+            drawText(it.name, nameX, iy + Math.min(17, cardH * 0.3), ns, status.buy ? color.guiwhite : "#9aa2b0", "left", true, g);
             c.save(); c.globalAlpha = g;
             gemPath(c, ix + 12, iy + cardH - 16, 5);
             c.fillStyle = afford ? color.gold : "#7a5a5a"; c.fill();
@@ -10132,7 +10142,9 @@ import * as cosmetics from './account/cosmetics.js';
 
         const locked = !!(global.royale.lock && global.royale.at > 0);
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
-        if (!locked && global.raidRespawnAt > 0 && waitMs <= 0 && !global.disconnected && !global.respawnPending && !rankCeremony.isPlaying()) {
+        // a rank-up still to play on the card holds the respawn (8 s at most)
+        const rankHold = rankPanel.holdsRespawn() && waitMs > -8000;
+        if (!locked && global.raidRespawnAt > 0 && waitMs <= 0 && !global.disconnected && !global.respawnPending && !rankCeremony.isPlaying() && !rankHold) {
             try { global.canvas.respawn(); } catch { /* */ }
         }
         drawText(locked
