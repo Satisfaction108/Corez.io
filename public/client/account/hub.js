@@ -71,7 +71,21 @@ function markActive(name) {
         b.classList.toggle('active', b.dataset.pane === (name || 'play'));
     });
     chip.classList.toggle('active', name === 'account');
+    placeNotch(name);
 }
+
+// The hub hangs off the nav: a little notch on its top edge points up at
+// the button that opened it (none for the Account pane, which is the chip).
+function placeNotch(name) {
+    const b = name && nav.querySelector('.dw-nav-btn[data-pane="' + name + '"]');
+    if (!b) { hub.style.removeProperty('--notch-x'); hub.classList.remove('has-notch'); return; }
+    const r = b.getBoundingClientRect();
+    const x = r.left + r.width / 2 - (window.innerWidth - hub.offsetWidth) / 2;
+    const ok = x > 30 && x < hub.offsetWidth - 30;
+    hub.classList.toggle('has-notch', ok);
+    if (ok) hub.style.setProperty('--notch-x', Math.round(x) + 'px');
+}
+window.addEventListener('resize', () => { if (current) placeNotch(current); });
 
 overlay.addEventListener('click', close);
 document.getElementById('dwHubClose').addEventListener('click', close);

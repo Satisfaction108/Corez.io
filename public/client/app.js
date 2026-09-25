@@ -1126,8 +1126,8 @@ import * as cosmetics from './account/cosmetics.js';
                     timeZone: "UTC"
                 }))
             }
-            c[3] && f.push(c[3]);
-            y.innerHTML = f.join(" - ");
+            // the title first, then a small "Update · 24 September 2026" tag
+            y.innerHTML = c[3] ? c[3] + " <small>" + f.join(" · ") + "</small>" : f.join(" · ");
             d.appendChild(y);
             let g = document.createElement("ul");
             let l;
@@ -10521,9 +10521,9 @@ import * as cosmetics from './account/cosmetics.js';
         sp.onclick = () => royaleDomAct("spectate");
         homeD.onclick = () => royaleDomAct("home");
         // guests: the rank card's nudge has its button here, with the others
-        const signup = royaleDomBtn("royaleDomSignup", "Create account");
-        signup.style.borderColor = "#a98bff";
-        signup.style.color = "#d8c9ff";
+        const signup = royaleDomBtn("royaleDomSignup", "Get an account");
+        signup.style.borderColor = "#e07b2e";
+        signup.style.color = "#ffc58f";
         signup.style.display = "none";
         signup.onclick = () => royaleDomAct("signup");
         dead.append(sp, homeD, signup);

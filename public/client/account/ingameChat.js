@@ -163,8 +163,8 @@ function paintList() {
     const d = social.get();
     const had = listEl.contains(document.activeElement) ? document.activeElement.dataset.id : null;
     clear(listEl);
-    if (!d.loaded) { listEl.appendChild(h('div', { class: 'igc-empty', text: 'Finding your friends…' })); return; }
-    if (!d.friends.length) { listEl.appendChild(h('div', { class: 'igc-empty', text: 'No friends yet. Add some from the menu!' })); return; }
+    if (!d.loaded) { listEl.appendChild(h('div', { class: 'igc-empty', text: 'Finding your friends...' })); return; }
+    if (!d.friends.length) { listEl.appendChild(h('div', { class: 'igc-empty', text: 'No friends yet. Add some from the menu.' })); return; }
     // unread first, then who's around
     const list = d.friends.slice().sort((a, b) => ((b.unread | 0) > 0) - ((a.unread | 0) > 0) || byPresence(a, b));
     for (const f of list) {

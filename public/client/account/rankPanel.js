@@ -350,10 +350,10 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     if (S.guest) {
         drawBadge(c, bx, by, 64, 'placement', { alpha: alpha * 0.7 });
         A.drawText('RANKED', x0, y + 22, 10, grey, 'left', true, alpha);
-        const t = 'Make an account to get ranked!';
+        const t = 'Get an account to go ranked';
         A.drawText(t, x0, y + 46, fitSize(A, t, 17, x1 - x0), white, 'left', true, alpha);
         const wb = S.guest.wouldBe;
-        const line = wb && wb.name ? 'That game would’ve put you in ' + wb.name : 'Every raid counts once you’re ranked';
+        const line = wb && wb.name ? 'That game would’ve got you ' + wb.name : 'Every raid counts once you’re ranked';
         A.drawText(line, x0, y + 72, fitSize(A, line, 12, x1 - x0), SOFT, 'left', true, alpha);
         return true;
     }
@@ -366,7 +366,7 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
         drawBadge(c, bx, by, 64, 'placement', { alpha: alpha * pulse });
         A.drawText('RANK', x0, y + 30, 10, grey, 'left', true, alpha);
         const dots = '.'.repeat(1 + (Math.floor(now / 380) % 3));
-        A.drawText(waited > 7000 ? 'Your rank will show up soon' : 'Counting points' + dots, x0, y + 54, 16, SOFT, 'left', true, alpha);
+        A.drawText(waited > 7000 ? 'Rank shows up in a sec' : 'Counting' + dots, x0, y + 54, 16, SOFT, 'left', true, alpha);
         return true;
     }
 
@@ -420,9 +420,9 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     if (v.pips) {
         pipRow(c, A, x0, y + 58, v, alpha);
         const left = 3 - v.pips.have;
-        if (st.reveal && st.phase !== 'wait') line = 'Placement complete!';
-        else if (st.phase !== 'wait' && st.inPlacement && st.a.lives <= st.b.lives) line = 'Too quick to count. Survive longer!';
-        else line = left <= 0 ? 'Placement complete!' : left + ' more ' + (left === 1 ? 'game' : 'games') + ' to get your rank';
+        if (st.reveal && st.phase !== 'wait') line = 'Placements done';
+        else if (st.phase !== 'wait' && st.inPlacement && st.a.lives <= st.b.lives) line = 'Too short to count. Stay alive longer';
+        else line = left <= 0 ? 'Placements done' : left + ' more ' + (left === 1 ? 'game' : 'games') + ' till your rank';
         A.drawText(line, x0 + 96, y + 58, fitSize(A, line, 12, x1 - x0 - 96), SOFT, 'left', true, alpha);
         line = '';
     } else {

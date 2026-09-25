@@ -40,7 +40,7 @@ export function achIcon(id, cls) {
     s.setAttribute('focusable', 'false');
     s.setAttribute('fill', 'none');
     s.setAttribute('stroke', 'currentColor');
-    s.setAttribute('stroke-width', '1.9');
+    s.setAttribute('stroke-width', '2.4');
     s.setAttribute('stroke-linecap', 'round');
     s.setAttribute('stroke-linejoin', 'round');
     for (const part of (a ? a.d : [])) {

@@ -10,10 +10,10 @@ const RULE_HINT = '3–16 letters, numbers or _';
 // Returns null when the name passes, else { level: 'hint'|'bad', text }.
 export function localNameProblem(n) {
     if (!n) return { level: 'hint', text: RULE_HINT };
-    if (/[^A-Za-z0-9_]/.test(n)) return { level: 'bad', text: 'Only letters, numbers and _ are allowed.' };
-    if (/^_+$/.test(n) || n.indexOf('___') >= 0) return { level: 'bad', text: 'Too many underscores in a row.' };
-    if (n.length < 3) return { level: 'hint', text: 'At least 3 characters.' };
-    if (n.length > 16) return { level: 'bad', text: 'At most 16 characters.' };
+    if (/[^A-Za-z0-9_]/.test(n)) return { level: 'bad', text: 'Letters, numbers and _ only' };
+    if (/^_+$/.test(n) || n.indexOf('___') >= 0) return { level: 'bad', text: 'Too many underscores in a row' };
+    if (n.length < 3) return { level: 'hint', text: '3 letters minimum' };
+    if (n.length > 16) return { level: 'bad', text: '16 letters max' };
     return null;
 }
 
@@ -30,11 +30,11 @@ export function usernameField(opts) {
     const input = h('input', {
         class: 'dw-input', type: 'text', name: 'username', maxlength: 16, spellcheck: 'false',
         autocapitalize: 'off', autocomplete: opts.autocomplete || 'username',
-        placeholder: opts.placeholder || 'Username', value: opts.value || '',
+        placeholder: opts.placeholder || 'your name', value: opts.value || '',
     });
     const hint = h('div', { class: 'dw-hint', 'aria-live': 'polite' });
     const el = h('label', { class: 'dw-field' },
-        opts.label === false ? null : h('span', { class: 'field-label', text: opts.label || 'Username' }), input, opts.check ? hint : null);
+        opts.label === false ? null : h('span', { class: 'field-label', text: opts.label || 'Name' }), input, opts.check ? hint : null);
     let status = 'empty', timer = 0, seq = 0;
     const notify = () => { if (opts.onChange) opts.onChange(status); };
 
@@ -45,17 +45,17 @@ export function usernameField(opts) {
         if (!opts.check) { status = n ? 'ok' : 'empty'; return notify(); }
         const p = localNameProblem(n);
         if (p) { status = p.level === 'bad' ? 'bad' : 'empty'; setHint(hint, input, p.level, p.text); return notify(); }
-        if (opts.current && n === opts.current) { status = 'same'; setHint(hint, input, 'hint', 'That’s your current username.'); return notify(); }
-        if (opts.current && n.toLowerCase() === opts.current.toLowerCase()) { status = 'ok'; setHint(hint, input, 'ok', 'Only the capitals change.'); return notify(); }
+        if (opts.current && n === opts.current) { status = 'same'; setHint(hint, input, 'hint', 'That’s your name already'); return notify(); }
+        if (opts.current && n.toLowerCase() === opts.current.toLowerCase()) { status = 'ok'; setHint(hint, input, 'ok', 'Just changing the capitals'); return notify(); }
         status = 'checking';
-        setHint(hint, input, 'hint', 'Checking…');
+        setHint(hint, input, 'hint', 'checking...');
         notify();
         timer = setTimeout(async () => {
             const r = await api.usernameAvailable(n);
             if (my !== seq) return;
-            if (r.ok && r.data && r.data.available === true) { status = 'ok'; setHint(hint, input, 'ok', '✓ ' + n + ' is available'); }
+            if (r.ok && r.data && r.data.available === true) { status = 'ok'; setHint(hint, input, 'ok', n + ' is free'); }
             else if (r.ok && r.data && r.data.available === false) { status = 'taken'; setHint(hint, input, 'bad', nameReason(r.data.reason || 'taken')); }
-            else { status = 'unknown'; setHint(hint, input, 'hint', 'Couldn’t check right now. You can still try it.'); }
+            else { status = 'unknown'; setHint(hint, input, 'hint', 'Couldn’t check. Try it anyway'); }
             notify();
         }, 400);
     }
@@ -69,11 +69,11 @@ export function usernameField(opts) {
         // why the name can't be submitted yet, or '' when it can
         problem() {
             const n = input.value.trim();
-            if (!n) return 'Pick a username.';
+            if (!n) return 'Pick a name first';
             const p = localNameProblem(n);
             if (p) return p.level === 'bad' ? p.text : RULE_HINT + '.';
-            if (status === 'taken' || status === 'bad') return hint.textContent || 'That name isn’t available.';
-            if (status === 'same') return 'That’s already your username.';
+            if (status === 'taken' || status === 'bad') return hint.textContent || 'Can’t use that name';
+            if (status === 'same') return 'That’s your name already';
             return '';
         },
         setError(msg) { status = 'taken'; setHint(hint, input, 'bad', msg); notify(); },
@@ -85,29 +85,29 @@ export function usernameField(opts) {
 export function passwordPair(opts) {
     opts = opts || {};
     const mk = (name, ph) => h('input', { class: 'dw-input', type: 'password', name, autocomplete: 'new-password', maxlength: 128, placeholder: ph });
-    const pw = mk('new-password', 'At least 8 characters');
-    const cf = mk('confirm-password', 'Type it again');
+    const pw = mk('new-password', 'password');
+    const cf = mk('confirm-password', 'same again');
     const pwHint = h('div', { class: 'dw-hint', 'aria-live': 'polite' });
     const cfHint = h('div', { class: 'dw-hint', 'aria-live': 'polite' });
     let valid = false;
 
     function problem() {
         const p = pw.value, c = cf.value, u = (opts.username ? opts.username() : '') || '';
-        if (p.length < 8) return 'Use at least 8 characters for your password.';
-        if (u && p.toLowerCase() === u.toLowerCase()) return 'Your password can’t be your username.';
-        if (c !== p) return c ? 'The two passwords don’t match.' : 'Type your password again to confirm it.';
+        if (p.length < 8) return 'Password needs 8+ characters';
+        if (u && p.toLowerCase() === u.toLowerCase()) return 'Password can’t be your name';
+        if (c !== p) return c ? 'Passwords don’t match' : 'Type the password again';
         return '';
     }
     function update() {
         const p = pw.value, c = cf.value, u = (opts.username ? opts.username() : '') || '';
         let pOk = false;
-        if (!p) setHint(pwHint, pw, 'hint', 'At least 8 characters.');
-        else if (p.length < 8) setHint(pwHint, pw, 'hint', (8 - p.length) + ' more character' + (8 - p.length === 1 ? '' : 's') + '.');
-        else if (u && p.toLowerCase() === u.toLowerCase()) setHint(pwHint, pw, 'bad', 'Can’t be the same as your username.');
-        else { setHint(pwHint, pw, 'ok', '✓ Long enough'); pOk = true; }
+        if (!p) setHint(pwHint, pw, 'hint', '8+ characters');
+        else if (p.length < 8) setHint(pwHint, pw, 'hint', (8 - p.length) + ' more to go');
+        else if (u && p.toLowerCase() === u.toLowerCase()) setHint(pwHint, pw, 'bad', 'Can’t be your name');
+        else { setHint(pwHint, pw, 'ok', 'good'); pOk = true; }
         if (!c) setHint(cfHint, cf, 'hint', '');
-        else if (c !== p) setHint(cfHint, cf, 'bad', 'Passwords don’t match.');
-        else setHint(cfHint, cf, pOk ? 'ok' : 'hint', pOk ? '✓ Passwords match' : '');
+        else if (c !== p) setHint(cfHint, cf, 'bad', 'Doesn’t match');
+        else setHint(cfHint, cf, pOk ? 'ok' : 'hint', pOk ? 'matches' : '');
         valid = !problem();
         if (opts.onChange) opts.onChange(valid);
     }
@@ -117,7 +117,7 @@ export function passwordPair(opts) {
 
     const els = [
         h('label', { class: 'dw-field' }, h('span', { class: 'field-label', text: opts.label || 'Password' }), pw, pwHint),
-        h('label', { class: 'dw-field' }, h('span', { class: 'field-label', text: opts.confirmLabel || 'Confirm password' }), cf, cfHint),
+        h('label', { class: 'dw-field' }, h('span', { class: 'field-label', text: opts.confirmLabel || 'Again' }), cf, cfHint),
     ];
     return {
         els, pw, cf, update, problem,

@@ -22,7 +22,7 @@ export function render(el) {
     paneEl = el;
     pv.stopUnder(el);
     clear(el);
-    el.appendChild(h('div', { class: 'shop-loading', text: 'Opening your Locker…' }));
+    el.appendChild(h('div', { class: 'shop-loading', text: 'Opening your locker...' }));
     load(el);
 }
 export function onClose() { if (paneEl) pv.stopUnder(paneEl); }
@@ -35,9 +35,9 @@ async function load(el) {
     clear(el);
     if (!r.ok || !r.data) {
         el.appendChild(h('div', { class: 'shop-empty' },
-            h('div', { class: 'shop-empty-h', text: 'Couldn’t open your Locker' }),
+            h('div', { class: 'shop-empty-h', text: 'Locker didn’t open' }),
             h('div', { class: 'shop-empty-p', text: humanError(r) }),
-            h('button', { type: 'button', class: 'dw-btn sm', text: 'Try again', onclick: () => render(el) })));
+            h('button', { type: 'button', class: 'dw-btn sm', text: 'Retry', onclick: () => render(el) })));
         return;
     }
     owned = (r.data.owned || []).map((x) => full(typeof x === 'string' ? { id: x } : x)).filter((x) => x && x.cat);
@@ -64,7 +64,7 @@ function paint(el) {
     el.append(
         h('div', { class: 'lk-stagewrap' }, stage, swatches),
         tabs, grid, bar,
-        h('div', { class: 'lk-note', text: 'You’ll see changes next time you spawn.' }));
+        h('div', { class: 'lk-note', text: 'Changes show up next spawn.' }));
 
     function drawStage() {
         pv.stopUnder(stage);
@@ -75,7 +75,7 @@ function paint(el) {
     }
     function paintTabs() {
         clear(tabs);
-        for (const [k, label] of [['skin', 'Skins'], ['nameStyle', 'Name Styles']]) {
+        for (const [k, label] of [['skin', 'Skins'], ['nameStyle', 'Names']]) {
             const n = owned.filter((x) => x.cat === k).length;
             tabs.appendChild(h('button', {
                 type: 'button', class: 'lk-tab' + (tab === k ? ' on' : ''), role: 'tab', 'aria-selected': tab === k ? 'true' : 'false',
@@ -92,8 +92,8 @@ function paint(el) {
         if (!mine.length) {
             grid.appendChild(h('div', { class: 'lk-empty' },
                 h('div', { class: 'lk-empty-h', text: tab === 'skin' ? 'No skins yet' : 'No name styles yet' }),
-                h('div', { class: 'lk-empty-p', text: 'Grab some in the Item Shop. New stuff every day!' }),
-                h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'Go to the Item Shop', onclick: () => handlers.openShop() })));
+                h('div', { class: 'lk-empty-p', text: 'The shop changes every day.' }),
+                h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'To the shop', onclick: () => handlers.openShop() })));
         }
         if (fade) animate(grid, [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
     }
@@ -116,10 +116,10 @@ function paint(el) {
             title: it ? it.name : 'Default',
             onclick: () => { sel[tab] = id; paintGrid(); paintBar(); drawStage(); },
         },
-            isEq ? h('span', { class: 'lk-ribbon', text: 'EQUIPPED' }) : null,
+            isEq ? h('span', { class: 'lk-ribbon', text: 'On' }) : null,
             h('span', { class: 'lk-tprev' }, prev),
             h('span', { class: 'lk-tname', text: it ? it.name : 'Default' }),
-            h('span', { class: 'lk-tsub', text: it ? rarityName(it.rarity) : (tab === 'skin' ? 'No skin' : 'No style') }));
+            h('span', { class: 'lk-tsub', text: it ? rarityName(it.rarity) : (tab === 'skin' ? 'plain' : 'plain') }));
     }
     function paintBar() {
         clear(bar);
@@ -130,7 +130,7 @@ function paint(el) {
         const colorChanged = custom && isEq && draftColor && draftColor !== equipped.customColor;
         const left = h('div', { class: 'lk-bar-l' },
             h('div', { class: 'lk-bar-name', text: it ? it.name : 'Default' }),
-            h('div', { class: 'lk-bar-sub', text: it ? rarityName(it.rarity) + ' ' + catName(it.cat) + (isAnimated(it) ? ' · Animated' : '') : (tab === 'skin' ? 'No skin' : 'No name style') }));
+            h('div', { class: 'lk-bar-sub', text: it ? rarityName(it.rarity) + ' ' + catName(it.cat) + (isAnimated(it) ? ' · moves' : '') : (tab === 'skin' ? 'No skin' : 'No name style') }));
         const right = h('div', { class: 'lk-bar-r' });
         let editor = null;
         if (custom) {
@@ -140,22 +140,22 @@ function paint(el) {
                 draftColor = c;
                 if (was !== c) { drawStage(); refreshCustomTile(); }
                 const changed = isEq && c !== equipped.customColor;
-                if (go) { go.disabled = false; go.textContent = isEq ? 'Save color' : 'Equip'; go.hidden = isEq && !changed; }
+                if (go) { go.disabled = false; go.textContent = isEq ? 'Save colour' : 'Wear it'; go.hidden = isEq && !changed; }
                 if (eqLabel) eqLabel.hidden = !(isEq && !changed);
             });
         }
         let go = null, eqLabel = null;
         if (!isEq || colorChanged || custom) {
-            go = h('button', { type: 'button', class: 'dw-btn primary', text: isEq ? 'Save color' : 'Equip', onclick: () => doEquip(go, id, editor) });
+            go = h('button', { type: 'button', class: 'dw-btn primary', text: isEq ? 'Save colour' : 'Wear it', onclick: () => doEquip(go, id, editor) });
             if (isEq && !colorChanged) go.hidden = true;
             right.appendChild(go);
         }
-        if (!isEq) right.appendChild(h('button', { type: 'button', class: 'dw-btn', text: 'Undo', title: 'Go back to what you have on', onclick: () => { sel[tab] = equipped[tab] || null; draftColor = equipped.customColor; paintGrid(); paintBar(); drawStage(); } }));
+        if (!isEq) right.appendChild(h('button', { type: 'button', class: 'dw-btn', text: 'Undo', title: 'Back to what you have on', onclick: () => { sel[tab] = equipped[tab] || null; draftColor = equipped.customColor; paintGrid(); paintBar(); drawStage(); } }));
         if (isEq) {
-            eqLabel = h('span', { class: 'lk-eqlabel', text: 'Equipped' });
+            eqLabel = h('span', { class: 'lk-eqlabel', text: 'Wearing it' });
             if (colorChanged) eqLabel.hidden = true;
             right.appendChild(eqLabel);
-            if (id) right.appendChild(h('button', { type: 'button', class: 'dw-btn', text: 'Unequip', onclick: (e) => doEquip(e.currentTarget, null) }));
+            if (id) right.appendChild(h('button', { type: 'button', class: 'dw-btn', text: 'Take off', onclick: (e) => doEquip(e.currentTarget, null) }));
         }
         bar.append(h('div', { class: 'lk-bar-row' }, left, right));
         if (editor) bar.appendChild(editor.el);
@@ -170,7 +170,7 @@ function paint(el) {
     }
     async function doEquip(btn, id, editor) {
         if (editor && !editor.valid()) return;
-        setBusy(btn, true, id ? 'Equipping…' : 'Unequipping…');
+        setBusy(btn, true, id ? 'Putting on...' : 'Taking off...');
         const r = await api.equip(tab, id, id === cos.CUSTOM_ID ? (editor ? editor.value() : draftColor) : null);
         setBusy(btn, false);
         if (!r.ok) { toast(storeError(r), { kind: 'error' }); return; }
@@ -179,7 +179,7 @@ function paint(el) {
         draftColor = equipped.customColor || draftColor;
         sel[tab] = equipped[tab] || null;
         const it = itemById(id);
-        toast(id ? (it ? it.name : 'Item') + ' equipped! You’ll see it next time you spawn.' : 'Unequipped!', { kind: 'ok' });
+        toast(id ? (it ? it.name : 'Item') + ' on. Shows up next spawn' : 'Took it off', { kind: 'ok' });
         handlers.refreshMe();
         paintGrid();
         paintBar();

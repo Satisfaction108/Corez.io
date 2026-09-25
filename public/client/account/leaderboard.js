@@ -17,7 +17,7 @@ export function render(el) {
     pv.stopUnder(el);
     clear(el);
     if (cache && Date.now() - cachedAt < 60000 && cache._for === who()) paint(el, cache);
-    else el.appendChild(h('div', { class: 'shop-loading', text: 'Loading the leaderboard…' }));
+    else el.appendChild(h('div', { class: 'shop-loading', text: 'Loading...' }));
     load(el);
 }
 export function onClose() { if (paneEl) pv.stopUnder(paneEl); }
@@ -31,9 +31,9 @@ async function load(el) {
         if (cache) return;
         clear(el);
         el.appendChild(h('div', { class: 'shop-empty' },
-            h('div', { class: 'shop-empty-h', text: 'Couldn’t load the leaderboard' }),
+            h('div', { class: 'shop-empty-h', text: 'Didn’t load' }),
             h('div', { class: 'shop-empty-p', text: humanError(r) }),
-            h('button', { type: 'button', class: 'dw-btn sm', text: 'Try again', onclick: () => render(el) })));
+            h('button', { type: 'button', class: 'dw-btn sm', text: 'Retry', onclick: () => render(el) })));
         return;
     }
     const sig = JSON.stringify([r.data.updatedAt, r.data.rows.length, r.data.me && r.data.me.rp]);
@@ -53,8 +53,8 @@ function paint(el, d) {
     const meId = me ? me.userId : who();
     const loggedIn = !!store.get('user');
     const head = h('div', { class: 'lb-top' },
-        h('div', { class: 'lb-title' }, h('span', { text: 'Top 100' }), h('span', { class: 'lb-sub', text: 'by rank points' })),
-        d.updatedAt ? h('span', { class: 'lb-upd', text: 'Updated ' + fmtAgo(d.updatedAt) }) : null);
+        h('div', { class: 'lb-title' }, h('span', { text: 'Best diggers' }), h('span', { class: 'lb-sub', text: 'by RP' })),
+        d.updatedAt ? h('span', { class: 'lb-upd', text: 'updated ' + fmtAgo(d.updatedAt) }) : null);
     const table = h('div', { class: 'lb-table', role: 'table', 'aria-label': 'Top 100 players' },
         h('div', { class: 'lb-row lb-head', role: 'row' },
             h('span', { class: 'lb-place', role: 'columnheader', text: '#' }),
@@ -63,8 +63,8 @@ function paint(el, d) {
             h('span', { class: 'lb-rp', role: 'columnheader', text: 'RP' })));
     if (!d.rows.length) {
         el.append(head, h('div', { class: 'fr-empty' },
-            h('div', { class: 'fr-empty-h', text: 'Nobody’s ranked yet!' }),
-            h('div', { class: 'fr-empty-p', text: 'Finish your 3 placement games and grab the #1 spot.' })));
+            h('div', { class: 'fr-empty-h', text: 'Nobody’s ranked yet' }),
+            h('div', { class: 'fr-empty-p', text: 'Play 3 placement games and #1 is yours.' })));
         return;
     }
     const body = h('div', { class: 'lb-body', role: 'rowgroup' });
@@ -80,10 +80,10 @@ function paint(el, d) {
         el.appendChild(h('div', { class: 'lb-pin' }, row(me, true, loggedIn)));
     } else if (!loggedIn) {
         el.appendChild(h('div', { class: 'lb-guest' },
-            h('span', { text: 'Want your name up here? Make a free account and get ranked!' }),
+            h('span', { text: 'Want your name here? Get an account and play ranked.' }),
             h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'Log in', onclick: () => hooks.onLogin() })));
     } else if (!me) {
-        el.appendChild(h('div', { class: 'lb-guest', text: 'Finish your 3 placement games to get on the board!' }));
+        el.appendChild(h('div', { class: 'lb-guest', text: 'Play your 3 placement games to show up here.' }));
     }
     animate(table, [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
 }
@@ -103,5 +103,5 @@ function row(r, mine, clickable) {
     ];
     const cls = 'lb-row' + (mine ? ' me' : '') + (r.place <= 3 ? ' top' + medal : '');
     if (!clickable) return h('div', { class: cls, role: 'row' }, kids);
-    return h('button', { type: 'button', class: cls + ' click', role: 'row', title: 'View ' + r.username + '’s profile', onclick: () => hooks.openProfile(r) }, kids);
+    return h('button', { type: 'button', class: cls + ' click', role: 'row', title: r.username + '’s profile', onclick: () => hooks.openProfile(r) }, kids);
 }

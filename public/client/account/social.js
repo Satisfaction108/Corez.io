@@ -79,7 +79,7 @@ function setLists(d, opts) {
     if (had && opts && opts.announce) {
         const fresh = data.incoming.filter((x) => !before.has(x.userId));
         if (fresh.length === 1) requestToast(fresh[0]);
-        else if (fresh.length > 1) menuToast(fresh.length + ' new friend requests!', { actions: [{ label: 'View', onClick: () => hooks.openPane('friends', { tab: 'requests' }) }] });
+        else if (fresh.length > 1) menuToast(fresh.length + ' friend requests', { actions: [{ label: 'View', onClick: () => hooks.openPane('friends', { tab: 'requests' }) }] });
         // messages that came in while the stream was closed (a raid, a blip)
         for (const f of data.friends) {
             const n = (f.unread | 0) - (unreadBefore.get(f.userId) || 0);
@@ -185,11 +185,11 @@ function flushDm() {
     const { n, last } = dmPend;
     dmPend.n = 0; dmPend.last = null;
     if (n === 1 && last) return showDm(last);
-    toast(n + ' new message' + (n === 1 ? '' : 's'), { duration: 6000, actions: [{ label: 'View', onClick: () => hooks.openPane('friends', { tab: 'friends' }) }] });
+    toast(n + ' new message' + (n === 1 ? '' : 's'), { duration: 6000, actions: [{ label: 'Read', onClick: () => hooks.openPane('friends', { tab: 'friends' }) }] });
 }
 
 function requestToast(p) {
-    menuToast(p.username + ' wants to be friends!', {
+    menuToast(p.username + ' wants to be friends', {
         duration: 8000,
         actions: [{ label: 'Accept', onClick: () => acceptRequest(p) }],
     });
@@ -199,26 +199,26 @@ export async function acceptRequest(p) {
     const r = await api.friendRespond(p.userId, true);
     if (!r.ok) { toast(friendError(r), { kind: 'error' }); return false; }
     apply('friend', (r.data && r.data.friend) || { userId: p.userId, username: p.username, since: Date.now(), rank: p.rank, presence: null });
-    toast('You and ' + p.username + ' are now friends!', { kind: 'ok' });
+    toast('You and ' + p.username + ' are friends now', { kind: 'ok' });
     return true;
 }
 
 const ERR = {
-    user_not_found: 'Couldn’t find anyone with that name.',
-    self: 'That’s you!',
-    already_friends: 'You’re already friends.',
-    you_blocked: 'You blocked them. Unblock them first!',
-    outgoing_limit: 'Too many requests waiting. Cancel a few first.',
-    friend_limit: 'Your friends list is full!',
-    their_friend_limit: 'Their friends list is full!',
-    not_found: 'That request is gone.',
+    user_not_found: 'Nobody’s called that',
+    self: 'That’s you lol',
+    already_friends: 'Already friends',
+    you_blocked: 'You blocked them. Unblock first',
+    outgoing_limit: 'Too many requests out. Cancel some first',
+    friend_limit: 'Your friends list is full',
+    their_friend_limit: 'Their friends list is full',
+    not_found: 'That request is gone',
 };
 export function friendError(r) {
     const code = r && r.data && r.data.error && r.data.error.code;
     if (code && ERR[code]) return ERR[code];
     if (r && r.status === 404) return ERR.user_not_found;
-    if (r && r.status === 429) return 'Whoa, slow down! Try again in a minute.';
-    return (r && r.data && r.data.error && r.data.error.message) || 'That didn’t work. Try again!';
+    if (r && r.status === 429) return 'Too fast. Wait a minute';
+    return (r && r.data && r.data.error && r.data.error.message) || 'Didn’t work. Try again?';
 }
 
 /* ── live events ────────────────────────────────────────────────────── */
@@ -262,7 +262,7 @@ function onEvent(type, d) {
         case 'friendAccepted':
             if (!d || !d.userId) break;
             apply('friend', d);
-            menuToast(d.username + ' accepted your friend request.', { kind: 'ok' });
+            menuToast(d.username + ' said yes', { kind: 'ok' });
             break;
         case 'friendRemoved':
             if (!d || !d.userId) break;
@@ -275,7 +275,7 @@ function onEvent(type, d) {
             emit('rank');
             const R = window.DWRanks;
             const tierName = R && d.tier && R.TIER_NAMES ? R.TIER_NAMES[d.tier] : null;
-            menuToast(d.tierUp && tierName ? d.username + ' reached ' + tierName + '!' : d.username + ' ranked up to ' + rankOf(rank).text + '!', {
+            menuToast(d.tierUp && tierName ? d.username + ' hit ' + tierName : d.username + ' ranked up to ' + rankOf(rank).text, {
                 actions: [{ label: 'Profile', onClick: () => hooks.openPane('profile', { u: d.userId, from: 'friends' }) }],
             });
             break;
@@ -283,9 +283,9 @@ function onEvent(type, d) {
         case 'gift': {
             const C = window.DWCosmetics;
             const it = C && d ? C.byId(d.itemId) : null;
-            const who = (d && d.from && d.from.username) || 'A friend';
+            const who = (d && d.from && d.from.username) || 'Someone';
             hooks.refreshMe();
-            menuToast(who + ' sent you ' + (it ? it.name : 'a gift') + '!', {
+            menuToast(who + ' sent you ' + (it ? it.name : 'a gift'), {
                 kind: 'ok', duration: 8000,
                 actions: [{ label: 'Locker', onClick: () => hooks.openPane('locker') }],
             });

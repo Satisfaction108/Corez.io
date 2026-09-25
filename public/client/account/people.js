@@ -70,7 +70,7 @@ export function presenceText(p, rank) {
         return bits.join(' · ');
     }
     if (st === 'menu') return 'In the lobby';
-    return p && p.lastSeen ? 'Offline · ' + fmtAgo(p.lastSeen) : 'Offline';
+    return p && p.lastSeen ? 'seen ' + fmtAgo(p.lastSeen) : 'Offline';
 }
 export const presenceState = (p) => (p && (p.state === 'raid' || p.state === 'menu') ? p.state : 'offline');
 const ORDER = { raid: 0, menu: 1, offline: 2 };

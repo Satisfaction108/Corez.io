@@ -87,7 +87,7 @@ function backToList() {
 }
 
 function addForm() {
-    const input = h('input', { class: 'dw-input fr-add-in', type: 'text', maxlength: 16, spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', placeholder: 'Add a friend by name', 'aria-label': 'Username to add' });
+    const input = h('input', { class: 'dw-input fr-add-in', type: 'text', maxlength: 16, spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', placeholder: 'add someone by name', 'aria-label': 'Username to add' });
     const go = h('button', { type: 'submit', class: 'dw-btn primary fr-add-go', text: 'Add' });
     const msg = h('div', { class: 'fr-add-msg', role: 'status' });
     const form = h('form', { class: 'fr-add', novalidate: true }, h('div', { class: 'fr-add-row' }, input, go), msg);
@@ -97,7 +97,7 @@ function addForm() {
         e.preventDefault();
         const name = input.value.trim();
         if (!name) { input.focus(); return; }
-        setBusy(go, true, 'Adding…');
+        setBusy(go, true, '...');
         const r = await api.friendRequest(name);
         setBusy(go, false);
         if (!r.ok) { say(social.friendError(r), 'bad'); return; }
@@ -105,10 +105,10 @@ function addForm() {
         input.value = '';
         if (r.data && r.data.status === 'accepted') {
             social.apply('friend', r.data.friend || Object.assign({ since: Date.now(), presence: null }, u));
-            say('You and ' + u.username + ' are now friends!', 'ok');
+            say('You and ' + u.username + ' are friends now', 'ok');
         } else {
             social.apply('outgoing', Object.assign({ at: Date.now() }, u));
-            say('Friend request sent to ' + u.username + '!', 'ok');
+            say('Sent. Now wait for ' + u.username, 'ok');
         }
     });
     return form;
@@ -138,7 +138,7 @@ function paint(fade, why) {
     const d = social.get();
     pv.stopUnder(listEl);
     clear(listEl);
-    if (!d.loaded) { listEl.appendChild(h('div', { class: 'shop-loading', text: 'Finding your friends…' })); return; }
+    if (!d.loaded) { listEl.appendChild(h('div', { class: 'shop-loading', text: 'Finding your friends...' })); return; }
     if (tab === 'friends') paintFriends(d);
     else if (tab === 'requests') paintRequests(d);
     else paintBlocked(d);
@@ -221,12 +221,12 @@ function setChatCount(b, n) {
 function paintFriends(d) {
     const list = d.friends.slice().sort(byPresence);
     if (!list.length) {
-        listEl.appendChild(empty('No friends yet', 'Add someone by name up top. Once they say yes, you can chat and see when they’re online!'));
+        listEl.appendChild(empty('Nobody here yet', 'Type a name up top. Once they say yes you can chat and see when they’re on.'));
         return;
     }
     const groups = { raid: [], menu: [], offline: [] };
     for (const f of list) groups[presenceState(f.presence)].push(f);
-    const label = { raid: 'In a raid', menu: 'Online', offline: 'Offline' };
+    const label = { raid: 'In a raid', menu: 'On', offline: 'Off' };
     for (const k of ['raid', 'menu', 'offline']) {
         if (!groups[k].length) continue;
         listEl.appendChild(h('div', { class: 'fr-h', text: label[k] + ' · ' + groups[k].length }));
@@ -234,7 +234,6 @@ function paintFriends(d) {
             const s = subOf(f);
             listEl.appendChild(row(f, s.text, [
                 chatBtn(f),
-                h('button', { type: 'button', class: 'dw-btn sm', text: 'Profile', onclick: () => hooks.openProfile(f) }),
                 icBtn('unfriend', 'Remove friend', () => removeFriend(f)),
                 icBtn('block', 'Block', () => blockUser(f), 'bad'),
             ], { presence: true, subCls: s.cls }));
@@ -244,14 +243,14 @@ function paintFriends(d) {
 
 function paintRequests(d) {
     if (!d.incoming.length && !d.outgoing.length) {
-        listEl.appendChild(empty('No requests', 'Friend requests you send or get show up here.'));
+        listEl.appendChild(empty('No requests', 'Ones you send or get land here.'));
         return;
     }
     if (d.incoming.length) {
-        listEl.appendChild(h('div', { class: 'fr-h', text: 'Wants to be friends · ' + d.incoming.length }));
+        listEl.appendChild(h('div', { class: 'fr-h', text: 'Want to be friends · ' + d.incoming.length }));
         for (const p of d.incoming.slice().sort((a, b) => (b.at || 0) - (a.at || 0))) {
-            listEl.appendChild(row(p, 'Sent ' + fmtAgo(p.at), [
-                h('button', { type: 'button', class: 'dw-btn sm primary', text: 'Accept', onclick: async (e) => {
+            listEl.appendChild(row(p, fmtAgo(p.at), [
+                h('button', { type: 'button', class: 'dw-btn sm primary', text: 'Yes', onclick: async (e) => {
                     const b = e.currentTarget; setBusy(b, true);
                     const el = rowOf(p.userId);
                     const r = await api.friendRespond(p.userId, true);
@@ -259,9 +258,9 @@ function paintRequests(d) {
                     if (!r.ok) { toast(social.friendError(r), { kind: 'error' }); return; }
                     await leave(el);
                     social.apply('friend', (r.data && r.data.friend) || Object.assign({ since: Date.now(), presence: null }, p));
-                    toast('You and ' + p.username + ' are now friends!', { kind: 'ok' });
+                    toast('You and ' + p.username + ' are friends now', { kind: 'ok' });
                 } }),
-                h('button', { type: 'button', class: 'dw-btn sm', text: 'Decline', onclick: async (e) => {
+                h('button', { type: 'button', class: 'dw-btn sm', text: 'No', onclick: async (e) => {
                     const b = e.currentTarget; setBusy(b, true);
                     const el = rowOf(p.userId);
                     const r = await api.friendRespond(p.userId, false);
@@ -277,8 +276,8 @@ function paintRequests(d) {
     if (d.outgoing.length) {
         listEl.appendChild(h('div', { class: 'fr-h', text: 'Sent · ' + d.outgoing.length }));
         for (const p of d.outgoing.slice().sort((a, b) => (b.at || 0) - (a.at || 0))) {
-            listEl.appendChild(row(p, 'Waiting · sent ' + fmtAgo(p.at), [
-                h('button', { type: 'button', class: 'dw-btn sm', text: 'Cancel', onclick: async (e) => {
+            listEl.appendChild(row(p, 'waiting · ' + fmtAgo(p.at), [
+                h('button', { type: 'button', class: 'dw-btn sm', text: 'Take back', onclick: async (e) => {
                     const b = e.currentTarget; setBusy(b, true);
                     const el = rowOf(p.userId);
                     const r = await api.friendCancel(p.userId);
@@ -294,7 +293,7 @@ function paintRequests(d) {
 
 function paintBlocked(d) {
     if (!d.blocked.length) {
-        listEl.appendChild(empty('Nobody blocked', 'Blocked players can’t add you or see your profile.'));
+        listEl.appendChild(empty('Nobody blocked', 'Blocked people can’t add you or see your profile.'));
         return;
     }
     for (const p of d.blocked.slice().sort((a, b) => (b.at || 0) - (a.at || 0))) {
@@ -302,7 +301,7 @@ function paintBlocked(d) {
             h('div', { class: 'fr-main static' }, h('span', { class: 'fr-avwrap' }, avatarFor(p)),
                 h('div', { class: 'fr-who' }, h('div', { class: 'fr-txt' },
                     h('div', { class: 'fr-name' }, h('span', { class: 'pp-name', text: p.username })),
-                    h('div', { class: 'fr-sub', text: 'Blocked ' + fmtAgo(p.at) })))),
+                    h('div', { class: 'fr-sub', text: 'blocked ' + fmtAgo(p.at) })))),
             h('div', { class: 'fr-acts' }, h('button', { type: 'button', class: 'dw-btn sm', text: 'Unblock', onclick: async (e) => {
                 const b = e.currentTarget; setBusy(b, true);
                 const r = await api.friendUnblock(p.userId);
@@ -310,7 +309,7 @@ function paintBlocked(d) {
                 if (!r.ok) { toast(social.friendError(r), { kind: 'error' }); return; }
                 await leave(el);
                 social.apply('unblocked', p);
-                toast(p.username + ' is unblocked.');
+                toast(p.username + ' unblocked');
             } })));
         listEl.appendChild(el);
     }
@@ -318,25 +317,25 @@ function paintBlocked(d) {
 
 /* ── remove / block (also used by the Profile pane) ─────────────────── */
 export async function removeFriend(p) {
-    const yes = await confirm({ title: 'Remove ' + p.username + '?', message: 'You can always add each other again later.', confirmLabel: 'Remove', danger: true });
+    const yes = await confirm({ title: 'Remove ' + p.username + '?', message: 'You can add each other again later.', confirmLabel: 'Remove', danger: true });
     if (!yes) return false;
     const r = await api.friendRemove(p.userId);
     if (!r.ok) { toast(social.friendError(r), { kind: 'error' }); return false; }
     await leave(rowOf(p.userId));
     chat.forget(p.userId);
     social.apply('removed', p);
-    toast(p.username + ' is no longer your friend.');
+    toast(p.username + ' removed');
     return true;
 }
 
 export async function blockUser(p) {
-    const yes = await confirm({ title: 'Block ' + p.username + '?', message: 'They’ll be unfriended and won’t be able to add you or see your profile.', confirmLabel: 'Block', danger: true });
+    const yes = await confirm({ title: 'Block ' + p.username + '?', message: 'Unfriends them. They can’t add you or see your profile.', confirmLabel: 'Block', danger: true });
     if (!yes) return false;
     const r = await api.friendBlock(p.userId || p.username);
     if (!r.ok) { toast(social.friendError(r), { kind: 'error' }); return false; }
     await leave(rowOf(p.userId));
     chat.forget(p.userId);
     social.apply('blocked', (r.data && r.data.blocked) || { userId: p.userId, username: p.username, at: Date.now() });
-    toast(p.username + ' is blocked.');
+    toast(p.username + ' blocked');
     return true;
 }

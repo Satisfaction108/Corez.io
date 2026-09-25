@@ -59,6 +59,9 @@ export function close() {
     document.documentElement.classList.remove('dw-wl-open');
     popLayer(root);
     const reset = () => {
+        // a finished fill:'forwards' fade would keep the gate invisible the
+        // next time it opens
+        if (closing) closing.cancel();
         closing = null;
         if (opened) return;
         root.classList.remove('open', 'wl-closing');
@@ -202,7 +205,7 @@ function submitBtn(label) {
 function viewAuth(opts) {
     let tab = opts.tab === 'login' ? 'login' : 'signup';
     const tLogin = h('button', { type: 'button', class: 'wl-tab', role: 'tab', text: 'Log in', onclick: () => render('login') });
-    const tSignup = h('button', { type: 'button', class: 'wl-tab', role: 'tab', text: 'Sign up', onclick: () => render('signup') });
+    const tSignup = h('button', { type: 'button', class: 'wl-tab', role: 'tab', text: 'New account', onclick: () => render('signup') });
     const body = h('div', { class: 'wl-tabbody' });
     // the active pill is one element that slides between the two tabs
     const tabs = h('div', { class: 'wl-tabs', role: 'tablist' }, h('span', { class: 'wl-tab-pill', 'aria-hidden': 'true' }), tLogin, tSignup);
@@ -234,29 +237,29 @@ function viewAuth(opts) {
 }
 
 function loginForm(opts) {
-    const user = h('input', { class: 'dw-input', type: 'text', name: 'username', autocomplete: 'username', spellcheck: 'false', autocapitalize: 'off', maxlength: 16, placeholder: 'Username', value: opts.username || cachedName() });
-    const pw = passwordInput('Password', { placeholder: 'Password' });
+    const user = h('input', { class: 'dw-input', type: 'text', name: 'username', autocomplete: 'username', spellcheck: 'false', autocapitalize: 'off', maxlength: 16, placeholder: 'your name', value: opts.username || cachedName() });
+    const pw = passwordInput('Password', { placeholder: 'password' });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
     const go = submitBtn('Log in');
     const form = h('form', { class: 'wl-form', novalidate: true },
-        h('label', { class: 'dw-field' }, h('span', { class: 'field-label', text: 'Username' }), user),
+        h('label', { class: 'dw-field' }, h('span', { class: 'field-label', text: 'Name' }), user),
         pw.el, alert, go,
         h('div', { class: 'wl-foot' },
-            h('button', { type: 'button', class: 'dw-link', text: 'Forgot password?', onclick: () => show('recover', { username: user.value.trim() }) })));
+            h('button', { type: 'button', class: 'dw-link', text: 'forgot password?', onclick: () => show('recover', { username: user.value.trim() }) })));
     // focus the empty field
     if (user.value) pw.input.setAttribute('data-autofocus', '');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const name = user.value.trim();
-        if (!name || !pw.value) return showAlert(alert, 'Enter your username and password.');
+        if (!name || !pw.value) return showAlert(alert, 'Need your name and password');
         showAlert(alert, '');
-        setBusy(go, true, 'Logging in…');
+        setBusy(go, true, 'Logging in...');
         const r = await api.login(name, pw.value);
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
             hooks.onAuthed(r.data.user, 'login');
             close();
-            toast('Welcome back, ' + r.data.user.username + '!', { kind: 'ok' });
+            toast('Hey ' + r.data.user.username + ', welcome back', { kind: 'ok' });
             return;
         }
         showAlert(alert, humanError(r));
@@ -266,15 +269,15 @@ function loginForm(opts) {
 }
 
 function signupForm() {
-    const uf = usernameField({ check: true, autocomplete: 'username', placeholder: 'Pick a username' });
+    const uf = usernameField({ check: true, autocomplete: 'username', placeholder: 'pick a name' });
     const pp = passwordPair({ username: () => uf.value });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
-    const go = submitBtn('Create account');
+    const go = submitBtn('Make it');
     const form = h('form', { class: 'wl-form', novalidate: true }, uf.el, pp.els, alert, go);
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (stopAtFirstProblem(alert, uf, pp)) return;
-        setBusy(go, true, 'Creating account…');
+        setBusy(go, true, 'Making it...');
         const r = await api.signup(uf.value, pp.value);
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
@@ -293,19 +296,19 @@ function signupForm() {
 function viewPick() {
     const pend = store.get('pending') || {};
     const suggestion = String(pend.name || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
-    const uf = usernameField({ check: true, label: false, autocomplete: 'username', placeholder: 'Username', value: suggestion.length >= 3 ? suggestion : '' });
+    const uf = usernameField({ check: true, label: false, autocomplete: 'username', placeholder: 'your name', value: suggestion.length >= 3 ? suggestion : '' });
     const pp = passwordPair({ username: () => uf.value, label: 'Password (optional)' });
     const pwBox = h('div', { class: 'wl-optional', hidden: true }, pp.els);
     const pwToggle = h('button', { type: 'button', class: 'dw-link wl-addpw', onclick: () => { pwBox.hidden = false; pwToggle.hidden = true; pp.pw.focus(); } },
-        'Add a password too (optional)');
+        '+ add a password too');
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
-    const go = submitBtn('Create account');
+    const go = submitBtn('Done');
     const form = h('form', { class: 'wl-form', novalidate: true }, uf.el, pwToggle, pwBox, alert, go);
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const usePw = !pwBox.hidden && (pp.pw.value || pp.cf.value);
         if (stopAtFirstProblem(alert, uf, usePw ? pp : null)) return;
-        setBusy(go, true, 'Creating account…');
+        setBusy(go, true, 'Saving...');
         const r = await api.discordComplete(uf.value, usePw ? pp.value : undefined);
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
@@ -317,7 +320,7 @@ function viewPick() {
         const code = r.data && r.data.error && r.data.error.code;
         if (code === 'username_taken' || code === 'invalid_username') { uf.setError(humanError(r)); uf.focus(); }
         if (r.status === 401 || r.status === 410 || /pending|expired/.test(code || '')) {
-            showAlert(alert, 'Your Discord login timed out. Hit Log in with Discord to try again.');
+            showAlert(alert, 'Discord login timed out. Hit Discord again');
             return;
         }
         showAlert(alert, humanError(r));
@@ -327,9 +330,9 @@ function viewPick() {
         h('div', { class: 'wl-who' },
             avatar(pend.name || '?', pend.avatarUrl, 48),
             h('div', { class: 'wl-who-txt' },
-                h('span', { class: 'wl-who-k', text: 'Signed in with Discord' }),
+                h('span', { class: 'wl-who-k', text: 'From Discord' }),
                 h('b', { text: pend.name || 'Discord user' }))),
-        h('div', { class: 'wl-h', text: 'Choose a username' }),
+        h('div', { class: 'wl-h', text: 'Pick your name' }),
         form);
 }
 
@@ -337,17 +340,17 @@ function viewPick() {
 function viewCode(opts) {
     const code = String(opts.code || '');
     const name = opts.username || '';
-    const title = { recover: 'You’re back in!', regen: 'Your new recovery code' }[opts.context] || 'Save your recovery code';
+    const title = { recover: 'You’re back in', regen: 'New backup code' }[opts.context] || 'Save this code';
     const lead = {
-        discord: 'It’s your way back in if you ever lose your Discord.',
-        recover: 'Here’s a fresh recovery code. Your old one won’t work anymore.',
-        regen: 'Your old one won’t work anymore.',
-    }[opts.context] || 'It’s your way back in if you forget your password.';
+        discord: 'If you ever lose your Discord, this gets you back in.',
+        recover: 'Here’s a fresh one. The old one is dead now.',
+        regen: 'The old one is dead now.',
+    }[opts.context] || 'Forget your password? This gets you back in.';
 
     const copyBtn = h('button', { type: 'button', class: 'dw-btn' }, icon('copy'), h('span', { text: 'Copy' }));
     copyBtn.onclick = async () => {
         const ok = await copyText(code);
-        copyBtn.lastChild.textContent = ok ? 'Copied!' : 'Couldn’t copy';
+        copyBtn.lastChild.textContent = ok ? 'Copied' : 'Didn’t copy';
         copyBtn.classList.toggle('done', ok);
         setTimeout(() => { copyBtn.lastChild.textContent = 'Copy'; copyBtn.classList.remove('done'); }, 1800);
     };
@@ -360,19 +363,19 @@ function viewCode(opts) {
             'Recovery code: ' + code,
             'Saved: ' + fmtDate(Date.now()),
             '',
-            'Forgot your password? Go to ' + origin + ', choose "Username & password",',
-            'then "Forgot password? Use a recovery code". Each code works once;',
-            'you get a new one when you use it. Keep this file private.',
+            'Forgot your password? Go to ' + origin + ', hit "Username",',
+            'then "forgot password?" and use this code. Each code works once,',
+            'you get a new one after. Don\'t share this file.',
             '',
         ].join('\r\n'));
-    } }, icon('download'), h('span', { text: 'Download' }));
+    } }, icon('download'), h('span', { text: 'Save' }));
     const check = h('input', { type: 'checkbox', class: 'checkbox' });
-    const go = h('button', { type: 'button', class: 'dw-btn primary block', text: 'Continue', disabled: true });
+    const go = h('button', { type: 'button', class: 'dw-btn primary block', text: 'Done', disabled: true });
     check.onchange = () => { go.disabled = !check.checked; };
     go.onclick = () => {
         close();
         if (opts.onDone) opts.onDone();
-        else if (opts.context === 'signup' || opts.context === 'discord') toast('You’re all set, ' + name + '!', { kind: 'ok' });
+        else if (opts.context === 'signup' || opts.context === 'discord') toast('You’re in, ' + name, { kind: 'ok' });
     };
     return h('div', { class: 'wl-codeview' },
         h('div', { class: 'wl-badge' }, icon('key')),
@@ -380,31 +383,31 @@ function viewCode(opts) {
         h('p', { class: 'wl-p', text: lead }),
         h('div', { class: 'wl-code', tabindex: '0', 'aria-label': 'Recovery code ' + code.split('').join(' '), text: code }),
         h('div', { class: 'wl-code-actions' }, copyBtn, dlBtn),
-        h('label', { class: 'container wl-check' }, check, h('span', { class: 'checkmark' }), 'I’ve saved it'),
+        h('label', { class: 'container wl-check' }, check, h('span', { class: 'checkmark' }), 'I saved it'),
         go);
 }
 
 /* ── log in with a recovery code ────────────────────────────────────── */
 function viewRecover(opts) {
-    const user = h('input', { class: 'dw-input', type: 'text', name: 'username', autocomplete: 'username', spellcheck: 'false', autocapitalize: 'off', maxlength: 16, placeholder: 'Username', value: opts.username || cachedName() });
+    const user = h('input', { class: 'dw-input', type: 'text', name: 'username', autocomplete: 'username', spellcheck: 'false', autocapitalize: 'off', maxlength: 16, placeholder: 'your name', value: opts.username || cachedName() });
     const codeIn = h('input', { class: 'dw-input mono', type: 'text', name: 'recovery-code', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'characters', maxlength: 24, placeholder: 'XXXX-XXXX-XXXX' });
-    const pp = passwordPair({ username: () => user.value.trim(), label: 'New password', confirmLabel: 'Confirm new password' });
+    const pp = passwordPair({ username: () => user.value.trim(), label: 'New password', confirmLabel: 'Again' });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
-    const go = submitBtn('Reset password');
+    const go = submitBtn('Reset');
     if (user.value) codeIn.setAttribute('data-autofocus', '');
     const form = h('form', { class: 'wl-form', novalidate: true },
-        h('label', { class: 'dw-field' }, h('span', { class: 'field-label', text: 'Username' }), user),
-        h('label', { class: 'dw-field' }, h('span', { class: 'field-label', text: 'Recovery code' }), codeIn),
+        h('label', { class: 'dw-field' }, h('span', { class: 'field-label', text: 'Name' }), user),
+        h('label', { class: 'dw-field' }, h('span', { class: 'field-label', text: 'Backup code' }), codeIn),
         pp.els, alert, go);
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const name = user.value.trim();
         const code = codeIn.value.trim();
-        if (!name || !code) return showAlert(alert, 'Enter your username and recovery code.');
+        if (!name || !code) return showAlert(alert, 'Need your name and code');
         const bad = pp.problem();
         if (bad) return showAlert(alert, bad);
         showAlert(alert, '');
-        setBusy(go, true, 'Checking code…');
+        setBusy(go, true, 'Checking...');
         const r = await api.recover(name, code, pp.value);
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
@@ -413,21 +416,21 @@ function viewRecover(opts) {
             return;
         }
         const ec = (r.data && r.data.error && r.data.error.code) || '';
-        if (r.status === 401 || /credential|code|recovery/.test(ec)) showAlert(alert, 'That code doesn’t match that username. Try again!');
+        if (r.status === 401 || /credential|code|recovery/.test(ec)) showAlert(alert, 'That code isn’t for that name');
         else showAlert(alert, humanError(r));
     });
     return h('div', { class: 'wl-recover' },
         topBar(() => show('auth', { tab: 'login' })),
-        h('div', { class: 'wl-h', text: 'Forgot password?' }),
-        h('p', { class: 'wl-p', text: 'No worries! Use your saved recovery code to set a new one.' }),
+        h('div', { class: 'wl-h', text: 'Forgot it?' }),
+        h('p', { class: 'wl-p', text: 'Use the backup code you saved to set a new one.' }),
         form);
 }
 
 /* ── a reset link (#reset=<token>) ──────────────────────────────────── */
 function viewReset(opts) {
-    const pp = passwordPair({ label: 'New password', confirmLabel: 'Type it again' });
+    const pp = passwordPair({ label: 'New password', confirmLabel: 'Again' });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
-    const go = submitBtn('Save password');
+    const go = submitBtn('Save');
     pp.pw.setAttribute('data-autofocus', '');
     const form = h('form', { class: 'wl-form', novalidate: true }, pp.els, alert, go);
     form.addEventListener('submit', async (e) => {
@@ -440,25 +443,25 @@ function viewReset(opts) {
             return;
         }
         showAlert(alert, '');
-        setBusy(go, true, 'Saving…');
+        setBusy(go, true, 'Saving...');
         const r = await api.reset(opts.token || '', pp.value);
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
             hooks.onAuthed(r.data.user, 'reset');
             close();
-            toast('Password saved! You’re in as ' + r.data.user.username + '.', { kind: 'ok' });
+            toast('Saved. you’re in as ' + r.data.user.username, { kind: 'ok' });
             return;
         }
         const ec = (r.data && r.data.error && r.data.error.code) || '';
         if (ec === 'invalid_token' || /token/.test(ec)) {
-            showAlert(alert, 'This link expired or was already used. Ask for a new one!');
+            showAlert(alert, 'This link is old or already used. Get a new one');
             go.disabled = true;
         } else showAlert(alert, humanError(r));
     });
     return h('div', { class: 'wl-reset' },
         topBar(dismissable ? null : () => show('choose')),
         h('div', { class: 'wl-badge' }, icon('key')),
-        h('div', { class: 'wl-h', text: 'Set a new password' }),
-        h('p', { class: 'wl-p', text: 'Pick a new password. You’ll be logged in right after.' }),
+        h('div', { class: 'wl-h', text: 'New password' }),
+        h('p', { class: 'wl-p', text: 'Pick one. You get logged in right after.' }),
         form);
 }

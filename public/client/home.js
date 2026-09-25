@@ -256,7 +256,7 @@
             }, 2600);
         }
         var ytSoon = document.getElementById('ytSoon');
-        if (ytSoon) ytSoon.onclick = function () { showToast('No YouTube yet. Stay tuned!'); };
+        if (ytSoon) ytSoon.onclick = function () { showToast('No YouTube yet. Maybe soon'); };
 
         function updateRegionLabel() {
             if (!ddLabel) return;

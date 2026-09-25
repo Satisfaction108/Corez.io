@@ -67,7 +67,7 @@ function paint() {
         side.hidden = next === 'none';
         if (next === 'guest') {
             side.appendChild(h('button', { type: 'button', class: 'q-guest', onclick: () => hooks.onLogin() },
-                icon('quest'), h('span', { text: 'Log in for Daily Quests' })));
+                icon('quest'), h('span', { text: 'Log in for daily quests' })));
         }
         return;
     }
@@ -77,14 +77,14 @@ function paint() {
         sig = next;
         clear(side);
         side.hidden = next === 'none';
-        if (next === 'loading') side.appendChild(h('div', { class: 'q-card q-skel' }, h('div', { class: 'q-head' }, h('span', { class: 'q-title', text: 'Daily Quests' }))));
+        if (next === 'loading') side.appendChild(h('div', { class: 'q-card q-skel' }, h('div', { class: 'q-head' }, h('span', { class: 'q-title', text: 'Quests' }))));
         return;
     }
     const next = JSON.stringify(data.quests.map((q) => [q.id, q.progress, q.done])) + data.day;
     const resetEl = h('span', { class: 'q-reset' });
     const tick = () => {
         const left = (+data.resetsAt || 0) - (Date.now() + (data._skew || 0));
-        resetEl.textContent = left > 0 ? 'New in ' + fmtIn(left) : 'New quests soon!';
+        resetEl.textContent = left > 0 ? 'new in ' + fmtIn(left) : 'new ones soon';
         if (left <= 0) { clearInterval(tickTimer); setTimeout(refresh, 3000); }
     };
     if (sig === next && side.querySelector('.q-reset')) {
@@ -102,9 +102,9 @@ function paint() {
     const quests = data.quests.slice().sort((a, b) => a.slot - b.slot);
     const doneN = quests.filter((q) => q.done).length;
     const card = h('div', { class: 'q-card' + (doneN === quests.length && quests.length ? ' all' : '') },
-        h('div', { class: 'q-head' }, h('span', { class: 'q-title', text: 'Daily Quests' }), resetEl),
+        h('div', { class: 'q-head' }, h('span', { class: 'q-title', text: 'Quests' }), resetEl),
         h('div', { class: 'q-list' }, quests.map(row)),
-        doneN === quests.length && quests.length ? h('div', { class: 'q-foot', text: 'All done for today. Nice work!' }) : null);
+        doneN === quests.length && quests.length ? h('div', { class: 'q-foot', text: 'All done. Come back tomorrow' }) : null);
     side.appendChild(card);
     tick();
     tickTimer = setInterval(tick, 30000);
@@ -122,11 +122,11 @@ function row(q) {
     return h('div', { class: 'q-row' + (q.done ? ' done' : '') },
         h('div', { class: 'q-line' },
             h('span', { class: 'q-text', text: q.text || 'Quest' }),
-            h('span', { class: 'q-reward', title: 'Gemdust reward' }, icon('dust'), h('span', { text: '+' + fmtReward(q.rewardMilli) }))),
+            h('span', { class: 'q-reward', title: 'Gemdust' }, icon('dust'), h('span', { text: '+' + fmtReward(q.rewardMilli) }))),
         h('div', { class: 'q-barrow' },
             h('span', { class: 'q-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(goal), 'aria-valuenow': String(prog), 'aria-label': (q.text || 'Quest') + ', ' + prog + ' of ' + goal },
                 h('span', { class: 'q-fill', dataset: { w: pct + '%' } })),
-            q.done ? h('span', { class: 'q-done' }, icon('check'), h('span', { text: 'Done' }))
+            q.done ? h('span', { class: 'q-done' }, icon('check'), h('span', { text: 'done' }))
                 : h('span', { class: 'q-num', text: fmtNum(prog) + '/' + fmtNum(goal) })));
 }
 const fmtNum = (n) => (Math.round(+n || 0)).toLocaleString();

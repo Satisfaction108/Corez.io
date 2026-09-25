@@ -22,7 +22,7 @@ export function fmtPrice(milli) {
     return Number.isInteger(v) ? String(v) : fmtDust(v);
 }
 export function rarityName(r) { return (RAR()[r] && RAR()[r].name) || 'Common'; }
-export function catName(cat) { return cat === 'skin' ? 'Skin' : 'Name Style'; }
+export function catName(cat) { return cat === 'skin' ? 'skin' : 'name'; }
 export function isAnimated(it) {
     return it.cat === 'skin' ? !!(it.skin && it.skin.emissive) : cos.isAnimatedStyle(it);
 }
@@ -60,7 +60,7 @@ export function render(el) {
     clear(el);
     if (data && Date.now() - fetchedAt < 30000) paint(el);
     else {
-        el.appendChild(h('div', { class: 'shop-loading', text: 'Loading the shop…' }));
+        el.appendChild(h('div', { class: 'shop-loading', text: 'Opening the shop...' }));
     }
     load(el);
 }
@@ -74,9 +74,9 @@ async function load(el) {
         if (data) return; // keep what is on screen
         clear(el);
         el.appendChild(h('div', { class: 'shop-empty' },
-            h('div', { class: 'shop-empty-h', text: 'Couldn’t load the shop' }),
+            h('div', { class: 'shop-empty-h', text: 'Shop didn’t load' }),
             h('div', { class: 'shop-empty-p', text: humanError(r) }),
-            h('button', { type: 'button', class: 'dw-btn sm', text: 'Try again', onclick: () => render(el) })));
+            h('button', { type: 'button', class: 'dw-btn sm', text: 'Retry', onclick: () => render(el) })));
         return;
     }
     const sig = JSON.stringify([r.data.day, r.data.balanceMilli, r.data.featured.map((x) => x.id + x.owned), r.data.daily.map((x) => x.id + x.owned), (r.data.permanent || []).map((x) => x.owned)]);
@@ -92,14 +92,15 @@ async function load(el) {
 function paint(el) {
     const bal = h('span', { class: 'shop-bal', title: 'Your gemdust' }, icon('dust'), h('span', { text: fmtDust(data.balance) }));
     const count = h('span', { class: 'shop-count' });
+    // purchases + refunds are a quiet link, not a button
     const top = h('div', { class: 'shop-top' },
-        h('div', { class: 'shop-reset' }, h('span', { class: 'shop-reset-l', text: 'New items in' }), count),
-        h('div', { class: 'shop-top-r' }, bal,
-            h('button', { type: 'button', class: 'dw-btn sm', text: 'History', onclick: openHistory })));
+        h('div', { class: 'shop-reset' }, h('span', { class: 'shop-reset-l', text: 'new stuff in' }), count),
+        h('div', { class: 'shop-top-r' },
+            h('button', { type: 'button', class: 'dw-link', text: 'my purchases', onclick: openHistory }), bal));
     el.appendChild(top);
-    el.appendChild(section('Featured', data.featured.map((it) => card(it, 'feat')), 'feat'));
+    el.appendChild(section('Today’s big ones', data.featured.map((it) => card(it, 'feat')), 'feat'));
     el.appendChild(section('Daily', data.daily.map((it) => card(it, 'daily')), 'daily'));
-    if (data.permanent && data.permanent.length) el.appendChild(section('Always in stock', data.permanent.map((it) => card(it, 'perm')), 'perm'));
+    if (data.permanent && data.permanent.length) el.appendChild(section('Always here', data.permanent.map((it) => card(it, 'perm')), 'perm'));
     const tick = () => {
         const left = (+data.resetsAt || 0) - serverNow();
         count.textContent = fmtLeft(left);
@@ -112,7 +113,7 @@ function paint(el) {
 function stopTimer() { if (timer) { clearInterval(timer); timer = 0; } }
 
 function section(title, cards, kind) {
-    return h('div', { class: 'shop-sec' },
+    return h('div', { class: 'shop-sec ' + kind },
         h('div', { class: 'shop-h', text: title }),
         h('div', { class: 'shop-grid ' + kind }, cards));
 }
@@ -123,14 +124,14 @@ function card(raw, kind) {
     const [w, hh] = big ? [340, 172] : kind === 'perm' ? [220, 100] : [164, 112];
     const prev = itemPreview(it, w, hh, { custom: it.id === cos.CUSTOM_ID ? customNow() : null, px: big ? 26 : 18 });
     const tags = [];
-    if (isAnimated(it)) tags.push(h('span', { class: 'shop-tag', text: 'Animated' }));
+    if (isAnimated(it)) tags.push(h('span', { class: 'shop-tag', text: 'moves' }));
     return h('button', { type: 'button', class: 'shop-card r-' + (it.rarity || 'common') + (it.owned ? ' owned' : ''), 'data-id': it.id, onclick: () => openItem(it) },
         h('span', { class: 'shop-band' }),
         h('span', { class: 'shop-prev' }, prev),
         h('span', { class: 'shop-meta' },
             h('span', { class: 'shop-name', text: it.name }),
             h('span', { class: 'shop-sub' }, h('span', { class: 'shop-rar', text: rarityName(it.rarity) }), h('span', { text: '\u00a0· ' + catName(it.cat) }), tags),
-            h('span', { class: 'shop-foot' }, it.owned ? h('span', { class: 'shop-owned', text: 'Owned' }) : priceTag(it.price))));
+            h('span', { class: 'shop-foot' }, it.owned ? h('span', { class: 'shop-owned', text: 'Got it' }) : priceTag(it.price))));
 }
 function customNow() {
     const u = me();
@@ -172,7 +173,7 @@ export function colorEditor(initial, onChange) {
         if (from !== 'hex') hex.value = good ? c : hex.value;
         const allowed = good && ok(c);
         hex.classList.toggle('bad', !allowed);
-        msg.textContent = !good ? 'Try a hex colour like #7ad3ff.' : allowed ? '' : 'Too dark to see in the caves. Try a lighter one!';
+        msg.textContent = !good ? 'Needs a hex colour, like #7ad3ff' : allowed ? '' : 'Too dark, nobody will see it in the caves';
         msg.classList.toggle('show', !allowed);
         presets.querySelectorAll('.lk-preset').forEach((b) => b.classList.toggle('on', b.title === val));
         if (onChange) onChange(val, allowed && good);
@@ -188,21 +189,21 @@ export function colorEditor(initial, onChange) {
 
 /* ── the item modal ─────────────────────────────────────────────────── */
 const ERR = {
-    insufficient_dust: 'Not enough gemdust yet. Keep digging!',
-    already_owned: 'You already have that!',
-    not_in_shop: 'That’s not in today’s shop any more.',
-    shop_rotated: 'The shop just refreshed. Check out the new stuff!',
-    bad_color: 'Too dark to see in the caves. Try a lighter one!',
-    color_required: 'Pick a colour first.',
-    not_owned: 'You don’t have that one.',
-    not_friends: 'You can only gift to friends.',
-    friends_too_new: 'You can gift a friend 2 days after you add them.',
-    recipient_owns: 'They already have that one!',
-    gift_limit: 'That’s 5 gifts today! Send more tomorrow.',
-    no_refund_tokens: 'You’re out of refund tokens.',
-    refund_expired: 'Too late! Refunds only work for 24 hours.',
-    already_refunded: 'You already refunded that.',
-    gift_not_refundable: 'Gifts can’t be refunded.',
+    insufficient_dust: 'Not enough gemdust',
+    already_owned: 'You already have it',
+    not_in_shop: 'That’s gone from the shop',
+    shop_rotated: 'Shop just changed. New stuff is up',
+    bad_color: 'Too dark, nobody will see it in the caves',
+    color_required: 'Pick a colour first',
+    not_owned: 'You don’t have that one',
+    not_friends: 'Friends only',
+    friends_too_new: 'You can gift someone 2 days after you add them',
+    recipient_owns: 'They have it already',
+    gift_limit: '5 gifts a day max. More tomorrow',
+    no_refund_tokens: 'No refunds left',
+    refund_expired: 'Too late, refunds are 24h only',
+    already_refunded: 'Already refunded',
+    gift_not_refundable: 'Gifts don’t refund',
 };
 export function storeError(res) {
     const code = res && res.data && res.data.error && res.data.error.code;
@@ -244,13 +245,13 @@ export function openItem(raw) {
         h('div', { class: 'shop-mname', text: it.name }),
         h('div', { class: 'shop-mdesc', text: describe(it) }),
         editor ? editor.el : null,
-        h('div', { class: 'shop-mprice' }, it.owned ? h('span', { class: 'shop-owned', text: 'Owned' }) : priceTag(it.price, 'big')),
+        h('div', { class: 'shop-mprice' }, it.owned ? h('span', { class: 'shop-owned', text: 'Got it' }) : priceTag(it.price, 'big')),
         actions, note, alert);
     const m = modal({
         title: '', cls: 'shop-modal r-' + (it.rarity || 'common'),
         body: h('div', { class: 'shop-mbody' },
             h('button', { type: 'button', class: 'hub-close shop-mx', title: 'Close', 'aria-label': 'Close', onclick: () => m.close() }, icon('close')),
-            h('div', { class: 'shop-mleft' }, stage, sw, h('label', { class: 'shop-tankrow' }, h('span', { text: 'Tank' }), tankSel)),
+            h('div', { class: 'shop-mleft' }, stage, sw, h('label', { class: 'shop-tankrow' }, h('span', { text: 'Try on' }), tankSel)),
             info),
         onClose: () => pv.stopUnder(stage),
     });
@@ -263,27 +264,27 @@ export function openItem(raw) {
         const bal = data ? +data.balanceMilli || Math.round((+data.balance || 0) * 1000) : 0;
         if (it.owned) {
             actions.append(
-                h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Equip', onclick: (e) => doEquip(e.currentTarget) }),
-                h('button', { type: 'button', class: 'dw-btn', text: 'Gift', onclick: () => openGift(it) }));
-            note.textContent = 'It’s in your Locker. Shows up next time you spawn.';
+                h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Wear it', onclick: (e) => doEquip(e.currentTarget) }),
+                h('button', { type: 'button', class: 'dw-link', text: 'or gift one', onclick: () => openGift(it) }));
+            note.textContent = 'In your locker. Shows up next spawn.';
             return;
         }
         const short = Math.max(0, it.price - bal);
         const buy = h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Buy', onclick: (e) => doBuy(e.currentTarget) });
         if (short > 0 || (editor && !editor.valid())) buy.disabled = true;
-        actions.append(buy, h('button', { type: 'button', class: 'dw-btn', text: 'Gift', onclick: () => openGift(it) }));
-        if (short > 0) note.textContent = 'You need ' + fmtPrice(short) + ' more gemdust. Keep digging!';
+        actions.append(buy, h('button', { type: 'button', class: 'dw-link', text: 'or gift it', onclick: () => openGift(it) }));
+        if (short > 0) note.textContent = fmtPrice(short) + ' more gemdust to go.';
     }
     paintActions();
 
     async function doBuy(btn) {
         const yes = await confirm({
-            title: 'Buy ' + it.name + '?',
-            message: 'That’s ' + fmtPrice(it.price) + ' gemdust. You have ' + fmtDust(data ? data.balance : 0) + '.',
-            confirmLabel: 'Buy',
+            title: it.name + '?',
+            message: fmtPrice(it.price) + ' gemdust. You have ' + fmtDust(data ? data.balance : 0) + '.',
+            confirmLabel: 'Buy', cancelLabel: 'Nah',
         });
         if (!yes) return;
-        setBusy(btn, true, 'Buying…');
+        setBusy(btn, true, 'Buying...');
         alert.className = 'dw-alert';
         const r = await api.purchase(it.id, data ? data.day : 0, api.idemKey(), editor ? editor.value() : null);
         setBusy(btn, false);
@@ -297,19 +298,19 @@ export function openItem(raw) {
         markOwned(it.id, r.data);
         paintActions();
         swapPrice();
-        const t = toast(it.name + ' is yours!', { kind: 'ok', actions: [{ label: 'Equip', onClick: () => equipItem(it, editor ? editor.value() : null) }] });
+        const t = toast('Got ' + it.name, { kind: 'ok', actions: [{ label: 'Wear it', onClick: () => equipItem(it, editor ? editor.value() : null) }] });
         pop(m.card.querySelector('.shop-mprice'));
         return t;
     }
     async function doEquip(btn) {
-        setBusy(btn, true, 'Equipping…');
+        setBusy(btn, true, 'Putting on...');
         const ok = await equipItem(it, editor ? editor.value() : null, alert);
         setBusy(btn, false);
         if (ok) m.close();
     }
     function swapPrice() {
         const p = m.card.querySelector('.shop-mprice');
-        if (p) { clear(p); p.appendChild(h('span', { class: 'shop-owned', text: 'Owned' })); }
+        if (p) { clear(p); p.appendChild(h('span', { class: 'shop-owned', text: 'Got it' })); }
     }
     function reload() { if (paneEl && paneEl.isConnected) { data = null; render(paneEl); } }
 }
@@ -319,12 +320,12 @@ function pop(el) {
 }
 
 function describe(it) {
-    if (it.id === cos.CUSTOM_ID) return 'Your name in any colour you like. Buy once, change it whenever!';
-    if (it.cat === 'skin') return isAnimated(it) ? 'A glowing, moving pattern for your tank.' : 'A cool pattern for your tank, in your team colour.';
+    if (it.id === cos.CUSTOM_ID) return 'Any colour you want for your name. Buy once, change it whenever.';
+    if (it.cat === 'skin') return isAnimated(it) ? 'Glows and moves. Goes on your tank.' : 'A pattern for your tank, in your team colour.';
     const s = it.style || {};
-    if (s.kind === 'prism') return 'Your name in a shifting rainbow that sparkles.';
-    if (s.kind === 'scroll') return s.glint ? 'Your name in flowing colour that sparkles.' : 'Your name in flowing colour.';
-    return 'Your name in a smooth colour fade.';
+    if (s.kind === 'prism') return 'Rainbow name that sparkles.';
+    if (s.kind === 'scroll') return s.glint ? 'Name with colours that flow and sparkle.' : 'Name with colours that flow.';
+    return 'Name that fades between colours.';
 }
 
 // After a buy: mark it owned in the cached store, update the balance.
@@ -346,16 +347,16 @@ export async function equipItem(it, color, alertEl) {
         if (alertEl) { alertEl.textContent = msg; alertEl.className = 'dw-alert show'; } else toast(msg, { kind: 'error' });
         return false;
     }
-    toast(it.name + ' equipped! You’ll see it next time you spawn.', { kind: 'ok' });
+    toast(it.name + ' on. Shows up next spawn', { kind: 'ok' });
     handlers.refreshMe();
     return true;
 }
 
 /* ── gifting ────────────────────────────────────────────────────────── */
 async function openGift(it) {
-    const list = h('div', { class: 'shop-glist' }, h('div', { class: 'shop-loading', text: 'Loading friends…' }));
+    const list = h('div', { class: 'shop-glist' }, h('div', { class: 'shop-loading', text: 'Finding friends...' }));
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
-    const send = h('button', { type: 'button', class: 'dw-btn primary', text: 'Send gift', disabled: true });
+    const send = h('button', { type: 'button', class: 'dw-btn primary', text: 'Send', disabled: true });
     let to = null, preset = 0;
     const msgs = h('div', { class: 'shop-gmsgs', role: 'radiogroup', 'aria-label': 'Message' },
         GIFT_MESSAGES.map((t, i) => h('button', {
@@ -363,9 +364,9 @@ async function openGift(it) {
             onclick: (e) => { preset = i; msgs.querySelectorAll('.shop-gmsg').forEach((b, j) => { b.classList.toggle('on', j === i); b.setAttribute('aria-checked', j === i ? 'true' : 'false'); }); },
         })));
     const body = h('div', { class: 'shop-gift' },
-        h('div', { class: 'shop-gline' }, h('span', { text: 'Costs' }), priceTag(it.price)),
-        list, h('div', { class: 'shop-glabel', text: 'Message' }), msgs, alert,
-        h('div', { class: 'dw-modal-actions' }, h('button', { type: 'button', class: 'dw-btn', text: 'Cancel', onclick: () => m.close() }), send));
+        h('div', { class: 'shop-gline' }, h('span', { text: 'Costs you' }), priceTag(it.price)),
+        list, h('div', { class: 'shop-glabel', text: 'Note' }), msgs, alert,
+        h('div', { class: 'dw-modal-actions' }, h('button', { type: 'button', class: 'dw-btn', text: 'Back', onclick: () => m.close() }), send));
     const m = modal({ title: 'Gift ' + it.name, cls: 'shop-giftm', body });
     const r = await api.friends();
     const friends = (r.ok && r.data && (r.data.friends || r.data.list)) || [];
@@ -375,8 +376,8 @@ async function openGift(it) {
         body.querySelector('.shop-glabel').hidden = true;
         list.appendChild(h('div', { class: 'shop-gnone' },
             icon('friends'),
-            h('div', { class: 'shop-gnone-h', text: 'Add friends to send them gifts!' }),
-            h('div', { class: 'shop-gnone-p', text: 'After you’ve been friends for 2 days, you can gift them anything in the shop.' })));
+            h('div', { class: 'shop-gnone-h', text: 'No friends to gift yet' }),
+            h('div', { class: 'shop-gnone-p', text: 'Add some. After 2 days you can gift them anything here.' })));
         send.hidden = true;
         return;
     }
@@ -390,30 +391,30 @@ async function openGift(it) {
     });
     send.addEventListener('click', async () => {
         if (!to) return;
-        const yes = await confirm({ title: 'Send ' + it.name + '?', message: 'To ' + (to.username || 'your friend') + ', for ' + fmtPrice(it.price) + ' gemdust. Heads up: gifts can’t be refunded.', confirmLabel: 'Send' });
+        const yes = await confirm({ title: 'Send ' + it.name + '?', message: 'To ' + (to.username || 'your friend') + ' for ' + fmtPrice(it.price) + ' gemdust. Gifts don’t refund.', confirmLabel: 'Send' });
         if (!yes) return;
-        setBusy(send, true, 'Sending…');
+        setBusy(send, true, 'Sending...');
         const g = await api.gift(it.id, data ? data.day : 0, to.userId || to.id, api.idemKey(), preset);
         setBusy(send, false);
         if (!g.ok) { alert.textContent = storeError(g); alert.className = 'dw-alert show'; return; }
         if (data && g.data && g.data.balance != null) { data.balance = g.data.balance; data.balanceMilli = g.data.balanceMilli; handlers.onBalance(data.balance); }
         handlers.refreshMe();
         m.close();
-        toast('Gift sent to ' + (to.username || 'your friend') + '!', { kind: 'ok' });
+        toast('Sent to ' + (to.username || 'your friend'), { kind: 'ok' });
     });
 }
 
 /* ── purchase history + refunds ─────────────────────────────────────── */
 async function openHistory() {
-    const list = h('div', { class: 'shop-hist' }, h('div', { class: 'shop-loading', text: 'Loading…' }));
-    const pips = h('span', { class: 'shop-pips', title: 'Refund tokens' });
+    const list = h('div', { class: 'shop-hist' }, h('div', { class: 'shop-loading', text: 'Loading...' }));
+    const pips = h('span', { class: 'shop-pips', title: 'Refunds left' });
     const m = modal({
-        title: 'Purchases', cls: 'shop-histm',
+        title: 'My purchases', cls: 'shop-histm',
         body: h('div', {},
-            h('div', { class: 'shop-tokens' }, h('span', { text: 'Refund tokens' }), pips),
-            h('div', { class: 'shop-tokens-p', text: 'Changed your mind? Refund within 24 hours. You get 3 refunds total.' }),
+            h('div', { class: 'shop-tokens' }, h('span', { text: 'Refunds left' }), pips),
+            h('div', { class: 'shop-tokens-p', text: 'Regret it? You can refund within 24h. 3 refunds total, ever.' }),
             list,
-            h('div', { class: 'dw-modal-actions' }, h('button', { type: 'button', class: 'dw-btn', text: 'Close', onclick: () => m.close() }))),
+            h('div', { class: 'dw-modal-actions' }, h('button', { type: 'button', class: 'dw-btn', text: 'Done', onclick: () => m.close() }))),
     });
     async function fill() {
         const r = await api.storeHistory();
@@ -422,33 +423,33 @@ async function openHistory() {
         const tokens = r.data.refundTokens | 0;
         clear(pips);
         for (let i = 0; i < 3; i++) pips.appendChild(h('span', { class: 'shop-pip' + (i < tokens ? ' on' : '') }));
-        pips.setAttribute('aria-label', tokens + ' of 3 refund tokens left');
+        pips.setAttribute('aria-label', tokens + ' of 3 refunds left');
         const rows = r.data.entries || [];
-        if (!rows.length) { list.appendChild(h('div', { class: 'shop-hnone', text: 'Nothing bought yet.' })); return; }
+        if (!rows.length) { list.appendChild(h('div', { class: 'shop-hnone', text: 'Nothing here yet.' })); return; }
         for (const e of rows) list.appendChild(histRow(e, tokens, fill));
     }
     fill();
 }
 
 function histRow(e, tokens, refill) {
-    const what = e.direction === 'sent' ? 'Gift to ' + ((e.to && e.to.username) || 'a friend')
-        : e.direction === 'received' ? 'Gift from ' + ((e.from && e.from.username) || 'a friend') : 'Bought';
+    const what = e.direction === 'sent' ? 'gift to ' + ((e.to && e.to.username) || 'a friend')
+        : e.direction === 'received' ? 'gift from ' + ((e.from && e.from.username) || 'a friend') : 'bought';
     const right = [];
-    if (e.refundedAt) right.push(h('span', { class: 'shop-htag', text: 'Refunded' }));
+    if (e.refundedAt) right.push(h('span', { class: 'shop-htag', text: 'refunded' }));
     else if (e.refundable) {
         right.push(h('button', { type: 'button', class: 'dw-btn sm', text: 'Refund', onclick: async (ev) => {
             const btn = ev.currentTarget;
             const yes = await confirm({
                 title: 'Refund ' + e.name + '?',
-                message: 'You’ll get ' + fmtPrice(e.priceMilli) + ' gemdust back and it leaves your Locker. Uses 1 of your ' + tokens + ' refund token' + (tokens === 1 ? '' : 's') + '.',
+                message: 'You get ' + fmtPrice(e.priceMilli) + ' gemdust back and it leaves your locker. Uses 1 of your ' + tokens + ' refund' + (tokens === 1 ? '' : 's') + '.',
                 confirmLabel: 'Refund', danger: true,
             });
             if (!yes) return;
-            setBusy(btn, true, 'Refunding…');
+            setBusy(btn, true, 'Refunding...');
             const r = await api.refund(e.purchaseId);
             setBusy(btn, false);
             if (!r.ok) { toast(storeError(r), { kind: 'error' }); return; }
-            toast(e.name + ' refunded!', { kind: 'ok' });
+            toast(e.name + ' refunded', { kind: 'ok' });
             if (data) { data.balance = r.data.balance; data.balanceMilli = r.data.balanceMilli; for (const l of [data.featured, data.daily, data.permanent || []]) for (const x of l) if (x.id === e.itemId) x.owned = false; data._sig = null; handlers.onBalance(data.balance); }
             handlers.refreshMe();
             if (paneEl && paneEl.isConnected) { stopTimer(); pv.stopUnder(paneEl); clear(paneEl); paint(paneEl); }
