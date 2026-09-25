@@ -335,11 +335,12 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
 
     c.save();
     c.globalAlpha = alpha;
-    rrect(c, x, y, w, h, 9);
-    c.fillStyle = 'rgba(255,255,255,0.045)';
+    // the HUD's recessed well (app.js hudWell): dark fill, ink keyline
+    rrect(c, x, y, w, h, 10);
+    c.fillStyle = 'rgba(14,11,18,0.55)';
     c.fill();
     c.lineWidth = 2;
-    c.strokeStyle = 'rgba(0,0,0,0.45)';
+    c.strokeStyle = '#120e15';
     c.stroke();
     c.restore();
 

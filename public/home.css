@@ -1157,226 +1157,395 @@ i.reset::after {
 .tdCenter { width: 350px; }
 h3 { font-size: 14px; line-height: 16px; color: var(--text2); text-align: center; padding: 0; margin: 9px 0 0; }
 
-/* ── Dig Wars settings restyle ─────────────────────────────────────────
-   One dark, game-styled panel shared by the homepage gear and the in-game
-   gear (#ingameSettingsBtn). Colors mirror the in-game HUD: dark plates,
-   heavy black borders, gold accents. */
-/* homepage gear follows the site theme; only the IN-GAME buttons are the
-   dark game plates */
-#ingameSettingsBtn {
+/* ── in-game DOM chrome ────────────────────────────────────────────────
+   The gear, the chat toggle, the spectate / death buttons and the settings
+   panel opened from the game are the MENU's own pieces (chunky face, ink
+   outline, lip, hard ink drop, Lilita labels), always in the dark cave
+   palette so they match the canvas HUD (app.js HUD tokens) whatever the
+   site theme is. Dark tokens are scoped to these elements only. */
+#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, .dw-igbtn,
+body.in-game #homeSettingsPanel, body.in-game #homeSettingsOverlay,
+body.in-game .igc, body.in-game .igc-pip {
+    --surface: #2b2533; --surface2: #352e3f; --panel-bg: #2b2533; --hub-bg: #2b2533;
+    --border: #4b4158; --border-hl: #e07b2e;
+    --text: #e9e0cc; --text2: #a597b0; --heading: #fff3d9;
+    --input-bg: #1e1924; --ink: #120e15;
+    --copper: #e07b2e; --copper-dk: #9e4a14; --gold: #f2b83c;
+    --play: #4fcf5c; --play-dk: #2c8f37; --check: #4fcf5c; --sel: #4fcf5c;
+    --face: #4a4156; --face-dk: #2e2837; --bevel: rgba(255,255,255,.07);
+    --kb-bg: #352e3f; --kb-bd: #4b4158; --kb-hl: #f0b53a;
+    --scroll-t: #4b4158; --dim: rgba(8,6,12,.62);
+    --danger: #e0473b; --danger-dk: #9c2a21;
+}
+/* one button recipe for all of them: .dw-btn / #homeSettingsBtn */
+#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, .dw-igbtn {
     position: fixed;
-    top: 6px; left: 16px;
+    top: 10px;
     z-index: 30;
-    width: 40px; height: 40px;
-    border-radius: 10px;
-    border: 2px solid #000;
-    background: #16171d;
-    color: #f2ecdc;
+    height: 42px;
+    margin: 0;
+    padding: 0 0 4px;
+    box-sizing: border-box;
+    border-radius: 11px;
+    border: 3px solid var(--ink);
+    background: var(--face);
+    box-shadow: inset 0 -4px 0 var(--face-dk), 0 3px 0 var(--ink);
+    color: var(--heading);
     cursor: pointer;
     display: none;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 0 rgba(0,0,0,.4);
-    transition: background .12s, transform .05s;
+    font: 400 15px/1 var(--display);
+    letter-spacing: .03em;
+    white-space: nowrap;
+    transition: transform 60ms ease-out, box-shadow 60ms ease-out, filter 80ms;
 }
-#ingameSettingsBtn:hover { background: #23252e; }
-#ingameSettingsBtn:active { transform: scale(.95); }
+#ingameSettingsBtn { left: 10px; width: 42px; }
+#ingameSettingsBtn .dw-ic { width: 24px; height: 24px; transition: transform .25s cubic-bezier(.3,1.6,.5,1); }
+#ingameSettingsBtn:hover .dw-ic { transform: rotate(45deg); }
+#ingameChatModeBtn { left: 62px; padding: 0 14px 4px; }
+#ingameTutorialBtn { left: 170px; width: 42px; color: var(--gold); font-size: 20px; }
+#ingameSettingsBtn:hover, #ingameChatModeBtn:hover, #ingameTutorialBtn:hover, .dw-igbtn:hover { filter: brightness(1.08); }
+#ingameSettingsBtn:active, #ingameChatModeBtn:active, #ingameTutorialBtn:active, .dw-igbtn:active {
+    transform: translateY(3px);
+    box-shadow: inset 0 -2px 0 var(--face-dk), 0 0 0 var(--ink);
+}
+/* spectate / death rows (app.js royaleDomBtn): same face, in a flex row */
+.dw-igbtn { position: static; display: inline-flex; padding: 0 16px 4px; min-width: 84px; }
+.dw-igbtn.accent { background: var(--copper); box-shadow: inset 0 -4px 0 var(--copper-dk), 0 3px 0 var(--ink); color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.28); }
+.dw-igbtn.accent:active { box-shadow: inset 0 -2px 0 var(--copper-dk), 0 0 0 var(--ink); }
 
-/* In-game: the settings panel is the dark game-styled plate (dark by default,
-   and users can't switch it in-game). On the homepage the panel follows the
-   site theme, so these overrides are scoped to body.in-game only. */
-body.in-game #homeSettingsPanel {
-    background: #16171d;
-    border: 3px solid #000;
-    border-radius: 14px;
-    color: #e8e3d4;
-    box-shadow: 0 12px 44px rgba(0,0,0,.6);
-    width: 400px;
-}
-body.in-game #homeSettingsPanel .sp-header { background: #101116; border-bottom: 2px solid #000; border-radius: 11px 11px 0 0; }
-body.in-game #homeSettingsPanel .sp-header span { color: #ffd75e; }
-body.in-game #homeSettingsPanel #homeSettingsClose { background: transparent; border: none; color: #e8e3d4; cursor: pointer; font-size: 15px; }
-body.in-game #homeSettingsPanel #homeSettingsClose:hover { color: #eb4034; }
-body.in-game #homeSettingsPanel .sp-tabs { background: #101116; border-bottom: 2px solid #000; }
-body.in-game #homeSettingsPanel .sp-tab { color: #9b968a; background: transparent; }
-body.in-game #homeSettingsPanel .sp-tab.active { background: #23252e; color: #ffd75e; }
-body.in-game #homeSettingsPanel .sp-label { color: #ffd75e; }
-body.in-game #homeSettingsPanel .container { color: #e8e3d4; }
-body.in-game #homeSettingsPanel .checkmark { background: #0d0e14; border: 2px solid #000; }
-body.in-game #homeSettingsPanel .container:hover .checkmark { background: #23252e; }
-body.in-game #homeSettingsPanel .container input:checked ~ .checkmark { background: #ffd75e; border-color: #000; }
-body.in-game #homeSettingsPanel .container input:checked ~ .checkmark:after { border-color: #101116; }
-body.in-game #homeSettingsPanel select, body.in-game #homeSettingsPanel #optCustom {
-    background: #0d0e14;
-    color: #e8e3d4;
-    border: 2px solid #000;
-    border-radius: 8px;
-}
-body.in-game #homeSettingsPanel select:hover { border-color: #ffd75e; }
-body.in-game #homeSettingsPanel .kb-section { color: #ffd75e; }
-body.in-game #homeSettingsPanel .kb-row b { background: #0d0e14; color: #ffd75e; border: 2px solid #000; border-radius: 6px; cursor: pointer; }
-body.in-game #homeSettingsPanel .kb-row b:hover { background: #23252e; color: #ffd75e; border-color: #ffd75e; }
-body.in-game #homeSettingsPanel .kb-row span { color: #b7b1a2; }
-body.in-game #homeSettingsPanel .kb-note { color: #9b968a; }
-body.in-game #homeSettingsOverlay { background: rgba(0,0,0,.55); }
-body.in-game #homeSettingsPanel .kb-row { background: #0d0e14; border: 1px solid #000; border-radius: 8px; }
-body.in-game #homeSettingsPanel .sp-slider,
-body.in-game #homeSettingsPanel .sp-mix-row { color: #e8e3d4; }
-body.in-game #homeSettingsPanel .sp-slider b,
-body.in-game #homeSettingsPanel .sp-mix-row b { color: #9b968a; }
-body.in-game #homeSettingsPanel input[type=range] { accent-color: #ffd75e; }
-body.in-game #homeSettingsPanel .kb-header span { color: #ffd75e; }
+/* In-game the settings panel is simply the menu's dark panel (tokens
+   above); only the keybind "press a key" state needs its own look. */
 body.in-game #homeSettingsPanel .kb-row b.kb-editing {
-    border-color: #ffd75e;
-    background: #33290f;
+    border-color: var(--gold);
+    background: #3a2e14;
     color: #fff;
-    box-shadow: 0 0 8px rgba(255, 215, 94, .45);
     animation: kbPulse 1s ease-in-out infinite;
 }
 @keyframes kbPulse {
-    50% { box-shadow: 0 0 3px rgba(255, 215, 94, .2); }
+    50% { border-color: var(--copper); }
 }
-/* changelog button now lives inside the left sidebar (styled above) */
-/* in-game Global/Team chat toggle, docked beside the gear */
-#ingameChatModeBtn {
-    position: fixed;
-    top: 6px; left: 62px;
-    z-index: 30;
-    height: 38px;
-    padding: 0 14px;
-    border-radius: 10px;
-    border: 2px solid #000;
-    background: #16171d;
-    color: #f2ecdc;
-    cursor: pointer;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    font: 700 12px Rubik, Ubuntu, sans-serif;
-    box-shadow: 0 2px 0 rgba(0,0,0,.4);
-    transition: background .12s, transform .05s;
-}
-#ingameChatModeBtn:hover { background: #23252e; }
-#ingameChatModeBtn:active { transform: scale(.96); }
 
-/* In-game "?" tutorial button, docked right of the chat toggle */
-#ingameTutorialBtn {
+/* ── tutorial (client/tutorial.js) ─────────────────────────────────────
+   One instruction card, top-centre, in the menu's chunky style: ink outline,
+   flat surface, Lilita heading, keycaps for keys. Everything is sized in em
+   off --dwt-s, which tutorial.js sets from the UI Scale option and the
+   viewport, so it tracks the HUD and never outgrows a phone. */
+:root { --dwt-s: 1; }
+#dwTut {
     position: fixed;
-    top: 6px; left: 170px;
-    z-index: 30;
-    width: 40px; height: 40px;
-    border-radius: 10px;
-    border: 2px solid #000;
-    background: #16171d;
-    color: #ffd75e;
-    cursor: pointer;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    font: 800 20px Rubik, Ubuntu, sans-serif;
-    box-shadow: 0 2px 0 rgba(0,0,0,.4);
-    transition: background .12s, transform .05s;
-}
-#ingameTutorialBtn:hover { background: #23252e; }
-#ingameTutorialBtn:active { transform: scale(.95); }
-
-/* ── tutorial: skip controls ───────────────────────────────────────────
-   The tutorial itself is drawn on the game canvas; these are the pieces
-   that stay DOM so they are reliably clickable/tappable. The bar's vertical
-   position is synced each frame to sit with the objective card. */
-#dwTutSkipBar {
-    position: fixed;
+    top: 12px;
     left: 50%;
-    top: 120px;
-    transform: translateX(-50%) translateY(-4px);
-    z-index: 41;
-    display: flex;
-    gap: 8px;
-    align-items: center;
+    z-index: 45;
+    width: min(calc(470px * var(--dwt-s)), calc(100vw - 24px));
+    transform: translate(-50%, -14px);
+    font-size: calc(16px * var(--dwt-s));
     opacity: 0;
     pointer-events: none;
-    transition: opacity .3s ease, transform .3s ease;
+    transition: opacity .25s ease, transform .3s cubic-bezier(.2, 1.4, .4, 1);
 }
-#dwTutSkipBar.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+#dwTut.show { opacity: 1; transform: translate(-50%, 0); }
+#dwTut.hidden, #dwTutEnd.hidden { visibility: hidden; }
+#dwTut.mobile { top: 8px; width: min(calc(430px * var(--dwt-s)), 60vw); }
+/* short screens (phones in landscape): the card must stay clear of the tank
+   at dead centre, so drop the chrome and let a hint stand in for the text */
+#dwTut.short .dwt-eyebrow, #dwTut.short .dwt-bar { display: none; }
+#dwTut.short .dwt-card { padding: .5em .75em .6em; }
+#dwTut.short .dwt-title { font-size: 1.25em; }
+#dwTut.short .dwt-hint.show ~ .dwt-text, #dwTut.short .dwt-card.hinting .dwt-text { display: none; }
+#dwTut.short .dwt-hint { margin-top: .35em; padding-top: .35em; }
 
-.dwTutSkipBtn {
-    padding: 7px 16px;
-    border: 0;
+.dwt-card {
+    position: relative;
+    padding: .7em .95em .8em;
+    border: 3px solid var(--ink);
+    border-radius: .9em;
+    background: var(--surface);
+    box-shadow: inset 0 -.25em 0 var(--face-dk), 0 .3em 0 var(--ink);
+    color: var(--text);
+    font-family: Rubik, Ubuntu, sans-serif;
+}
+.dwt-card.enter { animation: dwtIn .38s cubic-bezier(.2, 1.5, .4, 1); }
+@keyframes dwtIn {
+    0%   { transform: translateY(-.5em) scale(.96); opacity: 0; }
+    100% { transform: none; opacity: 1; }
+}
+
+.dwt-top { display: flex; align-items: center; gap: .6em; margin-bottom: .25em; }
+.dwt-eyebrow {
+    font: 400 .72em/1 var(--display);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--accent);
+    white-space: nowrap;
+}
+.dwt-dots { display: flex; gap: .28em; align-items: center; flex: 1; }
+.dwt-dots i {
+    display: block;
+    width: .55em; height: .55em;
+    border: 2px solid var(--ink);
     border-radius: 999px;
-    background: rgba(10,11,15,.72);
-    color: #9a9384;
-    font: 600 12px Rubik, Ubuntu, sans-serif;
-    letter-spacing: .04em;
+    background: var(--input-bg);
+    transition: width .25s ease, background .2s;
+}
+.dwt-dots i.cur { width: 1.4em; background: var(--gold); }
+.dwt-dots i.on { background: var(--play); }
+.dwt-dots i.pop { animation: dwtPop .45s cubic-bezier(.2, 1.8, .4, 1); }
+@keyframes dwtPop { 0% { transform: scale(1); } 40% { transform: scale(1.6); } 100% { transform: scale(1); } }
+
+.dwt-skip {
+    pointer-events: auto;
+    padding: .28em .6em .34em;
+    border: 2px solid var(--ink);
+    border-radius: .5em;
+    background: var(--face);
+    box-shadow: inset 0 -.14em 0 var(--face-dk);
+    color: var(--muted, var(--text));
+    font: 400 .72em/1 var(--display);
+    letter-spacing: .02em;
     cursor: pointer;
     white-space: nowrap;
-    transition: color .15s, background .15s, transform .05s;
+    opacity: .85;
+    transition: opacity .12s, transform 60ms;
 }
-.dwTutSkipBtn:hover { background: rgba(18,20,26,.9); color: #f2ead6; }
-.dwTutSkipBtn:active { transform: scale(.96); }
+.dwt-skip:hover { opacity: 1; }
+.dwt-skip:active { transform: translateY(1px); }
 
-/* Next is offered only by steps that declare it - see showNext() in
-   client/tutorial.js. It reads as the primary action when it is there. */
-.dwTutNext { display: none; }
-#dwTutSkipBar.hasnext .dwTutNext { display: inline-block; }
-.dwTutNext {
-    color: #0b0d10;
-    background: #ffd75e;
-    font-weight: 700;
+.dwt-title {
+    font: 400 1.5em/1.1 var(--display);
+    color: var(--heading);
+    letter-spacing: .01em;
+    -webkit-text-stroke: 0;
 }
-.dwTutNext:hover { background: #ffe693; color: #0b0d10; }
+.dwt-text {
+    margin-top: .3em;
+    font-size: .92em;
+    font-weight: 500;
+    line-height: 1.55;
+}
+.dwt-text b, .dwt-hint b { color: var(--gold); font-weight: 700; }
+#dwTut kbd, .dwt-end-card kbd {
+    display: inline-block;
+    min-width: 1.55em;
+    padding: .1em .38em .16em;
+    margin: 0 .06em;
+    border: 2px solid var(--ink);
+    border-bottom-width: 4px;
+    border-radius: .42em;
+    background: var(--face);
+    color: var(--heading);
+    font: 400 .95em/1.1 var(--display);
+    text-align: center;
+    vertical-align: .05em;
+}
 
-/* Steps that point at DOM controls need DOM chrome: the settings panel sits at
-   z-index 300 with a dimming overlay, so a canvas-drawn box is both underneath
-   the button it is meant to outline and behind the veil. */
-#dwTutSpot {
-    position: fixed;
-    z-index: 320;
-    /* border-box, or the border is added outside the width and the outline
-       sits 5px further right and lower than the element it is squaring */
-    box-sizing: border-box;
-    border-radius: 10px;
-    border: 2.5px solid #ffd75e;
-    box-shadow: 0 0 0 3px rgba(255,215,94,.18), 0 0 22px rgba(255,215,94,.35);
-    pointer-events: none;
+.dwt-bar {
+    height: .6em;
+    margin-top: .55em;
+    border: 2px solid var(--ink);
+    border-radius: 999px;
+    background: var(--input-bg);
+    overflow: hidden;
+}
+.dwt-bar i {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: var(--gold);
+    box-shadow: inset 0 -.15em 0 var(--gold-dk);
+    transition: width .25s ease, background .2s;
+}
+.dwt-card.done .dwt-bar i { background: var(--play); box-shadow: inset 0 -.15em 0 var(--play-dk); }
+
+.dwt-hint {
+    display: none;
+    align-items: center;
+    gap: .5em;
+    flex-wrap: wrap;
+    margin-top: .6em;
+    padding-top: .55em;
+    border-top: 2px dashed var(--border);
+    font-size: .84em;
+    line-height: 1.45;
+}
+.dwt-hint.show { display: flex; animation: dwtIn .3s ease; }
+.dwt-hint-text { flex: 1; min-width: 10em; }
+.dwt-tip {
+    padding: .18em .45em .24em;
+    border: 2px solid var(--ink);
+    border-radius: .4em;
+    background: var(--gold);
+    color: var(--ink);
+    font: 400 .85em/1 var(--display);
+    transform: rotate(-4deg);
+}
+.dwt-stuck {
+    display: none;
+    pointer-events: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--link);
+    font: 600 .95em Rubik, Ubuntu, sans-serif;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.dwt-hint.stuck .dwt-stuck { display: inline; }
+
+/* step complete: the card flashes green and a sticker slaps on */
+.dwt-stamp {
+    position: absolute;
+    top: 1.55em;
+    right: .9em;
+    padding: .25em .6em .32em;
+    border: 3px solid var(--ink);
+    border-radius: .5em;
+    background: var(--play);
+    color: #fff;
+    font: 400 1.05em/1 var(--display);
+    -webkit-text-stroke: 4px var(--ink);
+    paint-order: stroke fill;
+    box-shadow: 0 .18em 0 var(--ink);
     opacity: 0;
-    transition: opacity .18s ease, left .12s ease, top .12s ease, width .12s ease, height .12s ease;
-    animation: dwSpotPulse 1.5s ease-in-out infinite;
+    transform: rotate(8deg) scale(.4);
+    pointer-events: none;
 }
-#dwTutSpot.show { opacity: 1; }
-@keyframes dwSpotPulse {
-    0%, 100% { box-shadow: 0 0 0 3px rgba(255,215,94,.16), 0 0 18px rgba(255,215,94,.28); }
-    50%      { box-shadow: 0 0 0 5px rgba(255,215,94,.26), 0 0 28px rgba(255,215,94,.45); }
+.dwt-card.done .dwt-stamp { animation: dwtStamp .5s cubic-bezier(.2, 1.7, .4, 1) forwards; }
+@keyframes dwtStamp {
+    0%   { opacity: 0; transform: rotate(18deg) scale(2); }
+    100% { opacity: 1; transform: rotate(6deg) scale(1); }
+}
+.dwt-card.done { animation: dwtFlash .5s ease; }
+@keyframes dwtFlash {
+    0%   { box-shadow: inset 0 -.25em 0 var(--face-dk), 0 .3em 0 var(--ink), 0 0 0 0 var(--play); }
+    35%  { box-shadow: inset 0 -.25em 0 var(--face-dk), 0 .3em 0 var(--ink), 0 0 0 .35em var(--play); }
+    100% { box-shadow: inset 0 -.25em 0 var(--face-dk), 0 .3em 0 var(--ink), 0 0 0 0 var(--play); }
 }
 
-#dwTutDomCard {
+/* over the shop panel: one line only, so it never sits on the shop's tabs */
+#dwTut.compact .dwt-text, #dwTut.compact .dwt-bar,
+#dwTut.compact .dwt-hint, #dwTut.compact .dwt-eyebrow, #dwTut.compact .dwt-dots { display: none; }
+#dwTut.compact .dwt-card { display: flex; align-items: center; flex-direction: row-reverse; gap: .7em; padding: .45em .7em; }
+#dwTut.compact .dwt-top { margin: 0; }
+#dwTut.compact .dwt-title { font-size: 1.15em; flex: 1; }
+
+/* ── the send-off ─────────────────────────────────────────────────── */
+#dwTutEnd {
     position: fixed;
-    z-index: 320;
-    width: min(320px, calc(100vw - 24px));
-    padding: 14px 16px;
-    border-radius: 12px;
-    background: rgba(10,11,15,.94);
-    border: 1.5px solid rgba(255,215,94,.3);
-    box-shadow: 0 10px 34px rgba(0,0,0,.55);
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: var(--dim);
+    font-size: calc(16px * var(--dwt-s));
     opacity: 0;
     pointer-events: none;
-    transition: opacity .2s ease;
+    transition: opacity .3s ease;
 }
-#dwTutDomCard.show { opacity: 1; }
-.dwTutDomTitle {
-    font: 800 14px Rubik, Ubuntu, sans-serif;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    color: #ffd75e;
-    margin-bottom: 6px;
+#dwTutEnd.show { opacity: 1; pointer-events: auto; }
+#dwTutEnd.leaving { opacity: 0; transition: opacity .2s ease; }
+.dwt-end-card {
+    position: relative;
+    width: min(26em, 100%);
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: 1.5em 1.5em 1.1em;
+    border: 3px solid var(--ink);
+    border-radius: 1.1em;
+    background: var(--surface);
+    box-shadow: inset 0 -.3em 0 var(--face-dk), 0 .4em 0 var(--ink);
+    color: var(--text);
+    font-family: Rubik, Ubuntu, sans-serif;
+    text-align: center;
+    transform: scale(.9);
+    transition: transform .4s cubic-bezier(.2, 1.5, .4, 1);
 }
-.dwTutDomBody { font: 500 13px/1.45 Rubik, Ubuntu, sans-serif; color: #f2ead6; }
-
-/* the controls have to clear the settings panel too */
-#dwTutSkipBar.above { z-index: 321; }
-
-@media (max-width: 640px) {
-    .dwTutSkipBtn { padding: 9px 16px; font-size: 12.5px; }
+#dwTutEnd.show .dwt-end-card { transform: none; }
+.dwt-end-badge {
+    display: inline-block;
+    margin-bottom: .55em;
+    padding: .28em .7em .34em;
+    border: 2px solid var(--ink);
+    border-radius: .45em;
+    background: var(--gold);
+    color: var(--ink);
+    font: 400 .82em/1 var(--display);
+    white-space: nowrap;
+    transform: rotate(-3deg);
 }
+.dwt-end-title {
+    font: 400 2.5em/1 var(--display);
+    color: var(--gold);
+    -webkit-text-stroke: 7px var(--ink);
+    paint-order: stroke fill;
+    text-shadow: 0 .08em 0 var(--ink);
+    letter-spacing: .01em;
+}
+.dwt-end-sub { margin: .5em 0 .9em; font-size: .9em; opacity: .85; }
+.dwt-end-list {
+    list-style: none;
+    margin: 0 0 1.1em;
+    padding: .2em .9em;
+    border: 3px solid var(--ink);
+    border-radius: .8em;
+    background: var(--input-bg);
+    text-align: left;
+}
+.dwt-end-list li {
+    display: flex;
+    align-items: center;
+    gap: .75em;
+    padding: .6em 0;
+    font-size: .92em;
+    line-height: 1.4;
+}
+.dwt-end-list li + li { border-top: 2px dashed var(--border); }
+.dwt-end-list svg { flex: none; width: 2.1em; height: 2.1em; }
+.dwt-end-list b { color: var(--heading); font-weight: 700; }
+.dwt-play {
+    display: block;
+    width: 100%;
+    border: 3px solid var(--ink);
+    border-radius: .32em .32em .37em .37em;
+    background: var(--play);
+    box-shadow: inset 0 -.17em 0 var(--play-dk), inset 0 .07em 0 rgba(255,255,255,.35), 0 .12em 0 var(--ink);
+    color: #fff;
+    font: 400 1.9em/1 var(--display);
+    height: 1.7em;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: transform 60ms ease-out, box-shadow 60ms ease-out, filter .12s;
+}
+.dwt-play b {
+    font-weight: 400;
+    -webkit-text-stroke: 5px var(--ink);
+    paint-order: stroke fill;
+    text-shadow: 0 .07em 0 var(--ink);
+    position: relative;
+    top: -.06em;
+}
+.dwt-play:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.dwt-play:active { transform: translateY(.1em); box-shadow: inset 0 -.07em 0 var(--play-dk), 0 0 0 var(--ink); }
+.dwt-menu {
+    display: block;
+    width: 100%;
+    margin-top: .75em;
+    padding: .55em 0 .62em;
+    border: 3px solid var(--ink);
+    border-radius: .6em;
+    background: var(--face);
+    box-shadow: inset 0 -.22em 0 var(--face-dk), 0 .16em 0 var(--ink);
+    color: var(--heading);
+    font: 400 1.05em/1 var(--display);
+    cursor: pointer;
+    transition: transform 60ms ease-out;
+}
+.dwt-menu:active { transform: translateY(.12em); box-shadow: inset 0 -.1em 0 var(--face-dk), 0 0 0 var(--ink); }
+.dwt-end-foot { margin-top: .9em; font-size: .78em; opacity: .7; }
 
 /* ── responsive menu: stacked fields + inline dropdown on small screens ── */
 @media (max-width: 640px) {

@@ -825,6 +825,10 @@ class socketManager {
                         tut.grantPoints(body, parseInt(m[1], 10) || 0);
                         break;
 
+                    // Spend every point still in hand on an all-round build
+                    // (after the stat lesson has had the learner place a few).
+                    case "spendrest": tut.spendRest(body); break;
+
                     // Max every stat this tank can use except one, and leave
                     // exactly that many points in hand for it: "fill,6,1".
                     case "fill":

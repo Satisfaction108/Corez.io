@@ -149,6 +149,31 @@
         });
     }
 
+    /* The tutorial's send-off card has a Play button. It can't start a real
+       game from inside the tutorial connection (that socket, server path and
+       hash all belong to the training server), so it leaves a note and
+       reloads the menu; we pick the note up here and press Play for them as
+       soon as the region list has picked a server. If an account overlay
+       (first-visit welcome, sign-in) is up, we leave them on the menu. */
+    var PLAY_AFTER_KEY = 'dwPlayAfterTutorial';
+    function playAfterTutorial() {
+        var want = false;
+        try { want = sessionStorage.getItem(PLAY_AFTER_KEY) === '1'; sessionStorage.removeItem(PLAY_AFTER_KEY); } catch (e) { }
+        if (!want) return;
+        var n = 0;
+        (function tick() {
+            var g = window.global;
+            var blocked = window.dwAccount && window.dwAccount.blocksEnter && window.dwAccount.blocksEnter();
+            if (g && g.startGame && g.serverAdd && !g.gameStart && !g.gameLoading && !blocked) {
+                var b = document.getElementById('startButton');
+                if (b && !b.disabled) b.click(); else g.startGame();
+                return;
+            }
+            if (++n > 120) return;          // ~12 s: just stay on the menu
+            setTimeout(tick, 100);
+        })();
+    }
+
     function initTutorialEntry() {
         var btn = document.getElementById('tutorialButton');
         var badge = document.getElementById('tutorialBadge');
@@ -169,6 +194,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         initMobileGate();
         initTutorialEntry();
+        playAfterTutorial();
         // Dig Wars is parked: #dw no longer routes anywhere. Drop a stale
         // hash so Play behaves normally.
         if (location.hash === '#dw') { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; } }

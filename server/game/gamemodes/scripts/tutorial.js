@@ -9,6 +9,7 @@ class Tutorial {
         session.tickReap();
         session.tickLeash();
         session.tickBaseGuard();
+        session.tickSafety();
         // After the guards, so a glide in progress is not fought by the fence
         // on the same tick.
         session.tickGlide();

@@ -425,6 +425,31 @@ function fillStats(body, exceptDisplay, spare) {
     body.refreshBodyAttributes();
 }
 
+// Pour whatever points are still unspent into a sensible all-round build.
+// The stat lesson only asks the learner to place a few points themselves (the
+// point is learning that the bars exist), then this finishes the job so the
+// mining and fight lessons are not played on a half-built tank. Round-robin
+// over a priority list in Skill.raw order, respecting each stat's cap, so a
+// class that cannot use a stat simply skips it.
+//   raw: [rld, pen, str, dam, spd, shi, atk, hlt, rgn, mob, mine]
+const REST_PRIORITY = [10, 3, 0, 1, 2, 7, 4, 9, 5, 8, 6];
+function spendRest(body) {
+    if (!body || !body.skill) return;
+    const sk = body.skill;
+    let guard = 400;
+    while (sk.points > 0 && guard-- > 0) {
+        let spent = false;
+        for (const r of REST_PRIORITY) {
+            if (sk.points <= 0) break;
+            if (r >= sk.raw.length) continue;
+            if (sk.raw[r] < sk.caps[r]) { sk.raw[r]++; sk.points--; spent = true; }
+        }
+        if (!spent) break;
+    }
+    sk.update();
+    body.refreshBodyAttributes();
+}
+
 // Put the learner on top of the landmark the lesson is about. Walking 2000
 // units in silence is not a lesson, and the edge arrow only helps if you
 // already know why you are walking.
@@ -664,6 +689,44 @@ function tickBaseGuard() {
     }
 }
 
+// The fight lesson promises "it can't kill you", and a promise in a tutorial
+// has to be kept by the server, not by tuning. While a practice bot or boss is
+// up in a plot:
+//  - the learner's health never drops below a floor, so a bad fight is a
+//    lesson in backing off rather than a death screen;
+//  - the bot re-targets the learner's CURRENT body (a respawn makes a new one,
+//    and the duelist would otherwise stand still aiming at a corpse);
+//  - a fighter that has been alive too long slowly wilts, so someone who just
+//    cannot land shots still finishes the lesson instead of soft-locking it.
+const HEALTH_FLOOR = 0.2;
+const FIGHTER_PATIENCE_MS = 60000;
+const FIGHTER_WILT_MS = 30000;
+function tickSafety() {
+    const now = Date.now();
+    for (let i = 0; i < owners.length; i++) {
+        const slot = bots[i];
+        const socket = owners[i];
+        const body = socket && socket.player && socket.player.body;
+        const live = (o) => o && !o.isDead();
+        const threat = live(slot.fighter) || live(slot.boss);
+        if (threat && body && !body.isDead() && body.health && body.health.max) {
+            const floor = body.health.max * HEALTH_FLOOR;
+            if (body.health.amount < floor) body.health.amount = floor;
+        }
+        const f = slot.fighter;
+        if (live(f)) {
+            if (body && !body.isDead()) f.tutorialFoe = body;
+            if (!f._tutBornAt) f._tutBornAt = now;
+            const over = now - f._tutBornAt - FIGHTER_PATIENCE_MS;
+            if (over > 0 && f.health && f.health.max) {
+                const cap = f.health.max * Math.max(0, 1 - over / FIGHTER_WILT_MS);
+                if (cap <= f.health.max * 0.02) { killBot(f); slot.fighter = null; }
+                else if (f.health.amount > cap) f.health.amount = cap;
+            }
+        }
+    }
+}
+
 // Drop plots whose owner vanished (disconnect, crash, tab close).
 function tickReap() {
     for (let i = 0; i < owners.length; i++) {
@@ -685,8 +748,8 @@ module.exports = {
     spawnChest, spawnBoss, clearBoss, setBanked, grantKit, grantArm, grantGear,
     lockUpgrades, unlockUpgrades, upgradeAllowed, morph,
     setAllowed, allows, allowsStat,
-    setStats, fillStats, grantPoints, teleport, teleportTo, setCommand, heal,
-    tickLeash, tickReap, tickBaseGuard, tickGlide,
+    setStats, fillStats, grantPoints, spendRest, teleport, teleportTo, setCommand, heal,
+    tickLeash, tickReap, tickBaseGuard, tickGlide, tickSafety,
     plotCount: plots.plotCount,
     plotPoint: plots.plotPoint,
 };

@@ -5023,10 +5023,8 @@ import * as cosmetics from './account/cosmetics.js';
                 msg.textJSON.forEach((txt) => {
                     if (len < measureText(txt, height - 4.25, false)) len = measureText(txt, height - 4.25, false)
                 })
-                ctx[2].globalAlpha = 0.5 * K;
-
-                const jx = msgRight ? global.screenWidth - 18 - len : x - len / 2;
-                drawBarAdvanced(jx, jx + len, y + yy / 2, height, color.black, 17.5 * (msg.textJSON.length) - 17.5 + 1);
+                const jx = msgRight ? global.screenWidth - HUD.edge - 10 - len : x - len / 2;
+                hudPanel(ctx[2], jx - 10, y + yy / 2 - height / 2 - 1, len + 20, height + 2 + 17.5 * (msg.textJSON.length - 1), { alpha: K, r: 8, lw: 2, lip: 2, bevel: false });
                 ctx[2].globalAlpha = K;
 
                 msg.textobjs = [];
@@ -5034,18 +5032,17 @@ import * as cosmetics from './account/cosmetics.js';
                     msg.textobjs[msg.textobjs.length] = function () { };
                     drawText(txt, jx + 2, y + 16 + 17.5 * (msg.textobjs.length - 1), height - 4.3, color.guiwhite, "left", false, 1, 5.5);
                 })
-                y += 23 * K + 17.5 * (3 - 2 * K) * (msg.textJSON.length - 1) * K * K;
+                y += 28 * K + 17.5 * (3 - 2 * K) * (msg.textJSON.length - 1) * K * K;
             } else {
 
                 if (msg.len == null) msg.len = measureText(text, height - 4.3);
 
-                ctx[2].globalAlpha = 0.5 * K;
-                const bx = msgRight ? global.screenWidth - 18 - msg.len : x - msg.len / 2;
-                drawBar(bx, bx + msg.len, y + yy / 2, height + 2, color.black);
+                const bx = msgRight ? global.screenWidth - HUD.edge - 10 - msg.len : x - msg.len / 2;
+                hudPanel(ctx[2], bx - 10, y + yy / 2 - height / 2 - 2, msg.len + 20, height + 4, { alpha: K, r: 8, lw: 2, lip: 2, bevel: false });
 
                 ctx[2].globalAlpha = K;
                 drawText(text, bx + msg.len / 2, y + yy / 1.3, height - 4.3, color.guiwhite, "center", false, 1, 5.5);
-                y += 23 * (3 - 2 * K) * K * K;
+                y += 28 * (3 - 2 * K) * K * K;
             }
         }
         // Remember where the stack ended so the milestone cards can sit under
@@ -5366,7 +5363,7 @@ import * as cosmetics from './account/cosmetics.js';
         let gap = 44.5;
         let len = alcoveSize - 10;
         let save = len;
-        let x = spacing + 3 + (statMenu.get() - 1) * (height + 50 + len * ska(gui.skills.reduce((largest, skill) => Math.max(largest, skill.cap), 0)));
+        let x = HUD.edge + (statMenu.get() - 1) * (height + 50 + len * ska(gui.skills.reduce((largest, skill) => Math.max(largest, skill.cap), 0)));
         let y = global.screenHeight - spacing - 5.5 - height;
         let ticker = 11;
         let namedata;
@@ -5497,21 +5494,18 @@ import * as cosmetics from './account/cosmetics.js';
                 bankX1 = mid + capR + 3,
                 load = g.cap > 0 ? Math.min(1, g.carried / g.cap) : 0,
                 blink = load >= 1 && Math.floor(Date.now() / 160) % 2 === 0;
-            drawBar(rx1, carX2, ry, height - 3 + config.graphical.barChunk, color.black);
-            drawBar(rx1, carX2, ry, height - 3, color.grey);
-            if (load > 0.004) drawBar(rx1, rx1 + (carX2 - rx1) * load, ry, height - 3.5, blink ? "#eb4034" : color.gold);
+            const pillH = height + 1;
+            hudBar(ctx[2], rx1 - capR, ry - pillH / 2, carX2 - rx1 + capR * 2, pillH, load, blink ? HUD.danger : HUD.gold);
             {
                 // text never leaves its pill: shrink to fit
                 const carTxt = "Carried: " + util.formatLargeNumber(g.carried | 0);
-                let cs2 = 13; while (cs2 > 9 && measureText(carTxt, cs2) > (carX2 - rx1) - 10) cs2 -= 0.5;
+                let cs2 = 13; while (cs2 > 9 && hudTextW(carTxt, cs2) > (carX2 - rx1) - 10) cs2 -= 0.5;
                 drawText(carTxt, (rx1 + carX2) / 2 + 0.5, ry + 6 - (13 - cs2) * 0.35, cs2, color.guiwhite, "center");
             }
-            drawBar(bankX1, rx2, ry, height - 3 + config.graphical.barChunk, color.black);
-            drawBar(bankX1, rx2, ry, height - 3, color.grey);
-            drawBar(bankX1, rx2, ry, height - 3.5, color.teal);
+            hudBar(ctx[2], bankX1 - capR, ry - pillH / 2, rx2 - bankX1 + capR * 2, pillH, 1, color.teal);
             {
                 const bankTxt = "Banked: " + util.formatLargeNumber(g.banked | 0);
-                let bs2 = 13; while (bs2 > 9 && measureText(bankTxt, bs2) > (rx2 - bankX1) - 10) bs2 -= 0.5;
+                let bs2 = 13; while (bs2 > 9 && hudTextW(bankTxt, bs2) > (rx2 - bankX1) - 10) bs2 -= 0.5;
                 drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, color.guiwhite, "center");
             }
             // gemdust (accounts): satchel dust under Carried, balance under Banked
@@ -5558,9 +5552,9 @@ import * as cosmetics from './account/cosmetics.js';
         vaultInput.autocomplete = "off";
         vaultInput.style.cssText =
             "position:fixed;display:none;z-index:40;text-align:center;" +
-            "background:#0d0e14;color:#ffd75e;border:2px solid #ffd75e;" +
-            "border-radius:8px;outline:none;font-family:Rubik,Ubuntu,sans-serif;" +
-            "font-weight:bold;box-shadow:0 0 14px #ffd75e33 inset;";
+            "background:#1e1924;color:#fff3d9;border:3px solid #120e15;" +
+            "border-radius:9px;outline:none;font-family:'Lilita One',Rubik,Ubuntu,sans-serif;" +
+            "box-shadow:inset 0 3px 0 rgba(0,0,0,.35);";
         vaultInput.oninput = () => {
             // digits only, clamped to what's actually carried
             let n = vaultInput.value.replace(/[^0-9]/g, "");
@@ -5628,19 +5622,13 @@ import * as cosmetics from './account/cosmetics.js';
 
         c.save();
         c.globalAlpha = glide;
-        c.fillStyle = "rgba(16,17,23,0.93)";
-        optionsMenu_drawRoundedRect(x, y, W, H, 12);
-        c.fill();
-        c.lineWidth = 3;
-        c.strokeStyle = teamCol;
-        optionsMenu_drawRoundedRect(x, y, W, H, 12);
-        c.stroke();
-        drawText(v.isOutpost ? "BASE BANK · 80% CREDIT" : (royaleActive() ? "VAULT · 100% CREDIT" : "TEAM VAULT"),
-                 x + W / 2, y + 21, 15, teamCol, "center");
-        c.fillStyle = teamCol;
-        c.fillRect(x + W / 2 - 56, y + 28, 112, 2.5);
-        drawText("Banked  " + util.formatLargeNumber(g.banked | 0), x + 16, y + 46, 12, color.teal, "left");
-        drawText("Carried  " + util.formatLargeNumber(g.carried | 0), x + W - 16, y + 46, 12, color.gold, "right");
+        hudPanel(c, x, y, W, H, { fill: HUD.solid, r: HUD.r + 2 });
+        hudTitle(v.isOutpost ? "Base bank · 80% credit" : (royaleActive() ? "Vault · 100% credit" : "Team vault"),
+                 x + W / 2, y + 19, 17, teamCol, "center");
+        c.fillStyle = "rgba(18,14,21,0.6)";
+        c.fillRect(x + 14, y + 33, W - 28, 2);
+        drawText("Banked  " + util.formatLargeNumber(g.banked | 0), x + 16, y + 49, 12, color.teal, "left", true);
+        drawText("Carried  " + util.formatLargeNumber(g.carried | 0), x + W - 16, y + 49, 12, HUD.gold, "right", true);
 
         global.clickables.vault.hide();
         if (belowMin) {
@@ -5651,12 +5639,10 @@ import * as cosmetics from './account/cosmetics.js';
             // ── channeling: gold progress + live count + cancel ──
             hideVaultInput();
             const frac = 1 - v.remaining / v.total;
-            const bx = x + 20, bw = W - 40, by = y + 60, bh = 16;
-            drawBar(bx, bx + bw, by + bh / 2, bh + config.graphical.barChunk, color.black);
-            drawBar(bx, bx + bw, by + bh / 2, bh, color.grey);
+            const bx = x + 20, bw = W - 40, by = y + 62, bh = 16;
             // Rainbow vaults bank in the vault's live hue; base banks stay gold.
-            const chanCol = (royaleActive() && !v.isOutpost) ? hsvCss((now / 12) % 360) : "#ffd75e";
-            drawBar(bx, bx + Math.max(6, bw * frac), by + bh / 2, bh - 1, chanCol);
+            const chanCol = (royaleActive() && !v.isOutpost) ? hsvCss((now / 12) % 360) : HUD.gold;
+            hudBar(c, bx, by, bw, bh, Math.max(0.04, frac), chanCol);
             if (frac > 0.03) {
                 const shx = bx + ((now / 900) % 1) * bw * frac;
                 c.save();
@@ -5668,19 +5654,13 @@ import * as cosmetics from './account/cosmetics.js';
             drawText(util.formatLargeNumber(Math.round(v.total - v.remaining)) + " / " +
                      util.formatLargeNumber(v.total) + "  secured…",
                      x + W / 2, by + bh + 18, 12.5, color.guiwhite, "center");
-            const cbx = x + W / 2 - 46, cby = y + H - 30, cbw = 92, cbh = 20;
-            c.fillStyle = "#33191c";
-            optionsMenu_drawRoundedRect(cbx, cby, cbw, cbh, 6); c.fill();
-            c.lineWidth = 2; c.strokeStyle = "#e05b4a";
-            optionsMenu_drawRoundedRect(cbx, cby, cbw, cbh, 6); c.stroke();
-            drawText("CANCEL", cbx + cbw / 2, cby + 14.5, 12, "#ff9a8c", "center");
-            global.clickables.vault.place(11, cbx * cr, cby * cr, cbw * cr, cbh * cr);
+            hudButton(c, x + W / 2, y + H - 33, 110, 26, "Cancel", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 14, type: "vault", index: 11, cr });
         } else {
             
-            drawText("How much dust to cash out?", x + W / 2, y + 66, 12, color.guiwhite, "center");
+            drawText("How much dust to cash out?", x + W / 2, y + 71, 12, HUD.text, "center", true);
             const el = getVaultInput();
             const iw = 150, ih = 30;
-            const ix = x + W / 2 - iw / 2 - 62, iy = y + 78;
+            const ix = x + W / 2 - iw / 2 - 62, iy = y + 86;
             el.style.left = (ix * cr) + "px";
             el.style.top = (iy * cr) + "px";
             el.style.width = (iw * cr - 4) + "px";
@@ -5694,15 +5674,8 @@ import * as cosmetics from './account/cosmetics.js';
                 
                 
             }
-            const dbx = x + W / 2 + 26, dby = y + 78, dbw = 108, dbh = 30;
-            const dpulse = 0.8 + 0.2 * Math.sin(now / 380);
-            c.fillStyle = "#3d3110";
-            optionsMenu_drawRoundedRect(dbx, dby, dbw, dbh, 7); c.fill();
-            c.lineWidth = 3;
-            c.strokeStyle = `rgba(255,215,94,${dpulse * glide})`;
-            optionsMenu_drawRoundedRect(dbx, dby, dbw, dbh, 7); c.stroke();
-            drawText("DEPOSIT", dbx + dbw / 2, dby + 20, 14, "#ffd75e", "center");
-            global.clickables.vault.place(10, dbx * cr, dby * cr, dbw * cr, dbh * cr);
+            const dbx = x + W / 2 + 26, dby = y + 85, dbw = 108, dbh = 32;
+            hudButton(c, dbx + dbw / 2, dby, dbw, dbh, "Deposit", { fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff", size: 16, type: "vault", index: 10, cr });
         }
         c.restore();
     }
@@ -5877,6 +5850,205 @@ import * as cosmetics from './account/cosmetics.js';
     window.dwGuiColor = () => ({ color: gui.color, hex: playerHexCol() });
 
     // ═════════════════════════════════════════════════════════════════════
+    // HUD look: the menu's chunky plates (home.css), drawn on the canvas.
+    // One ink, one outline weight, one radius family, flat fills from the
+    // game palette, Lilita One for headings. Every in-game panel, chip,
+    // button and bar goes through these so they read as one family.
+    // Paths only: no shadows, no filters, nothing measured per frame that
+    // isn't cached.
+    // ═════════════════════════════════════════════════════════════════════
+    const HUD = {
+        ink: "#120e15",
+        panel: "rgba(43,37,51,0.84)",     // --surface, see-through for combat
+        solid: "rgba(43,37,51,0.97)",     // modal plates (shop, death, map)
+        raised: "#352e3f",                // --surface2: cards on a plate
+        well: "rgba(14,11,18,0.55)",      // recessed slots and tracks
+        wellSolid: "#1e1924",             // --input-bg
+        face: "#4a4156", faceDk: "#2e2837",
+        bevel: "rgba(255,255,255,0.07)",
+        head: "#fff3d9", text: "#e9e0cc", text2: "#a597b0",
+        copper: "#e07b2e", copperDk: "#9e4a14",
+        gold: "#f2b83c", goldDk: "#a8750f",
+        emerald: "#3fcf7a", play: "#4fcf5c", playDk: "#2c8f37",
+        danger: "#e0473b", dangerDk: "#9c2a21",
+        lilac: "#b98bff", sky: "#4ec4e8",
+        r: 10, rSmall: 7, rBig: 14,        // radius family
+        lw: 3, lip: 3,                     // outline + the hard ink drop
+        edge: 25,                          // margin from every screen edge
+        font: '"Lilita One", Rubik, Ubuntu, sans-serif',
+    };
+    try { document.fonts && document.fonts.load('20px "Lilita One"'); } catch (e) { /* falls back to Rubik */ }
+    // bottom edge of a rounded rect, used for the ink drop under a plate
+    function hudLipPath(c, x, y, w, h, r, d) {
+        r = Math.min(r, w / 2, h / 2);
+        c.beginPath();
+        c.moveTo(x, y + h - r + d);
+        c.arcTo(x, y + h + d, x + r, y + h + d, r);
+        c.lineTo(x + w - r, y + h + d);
+        c.arcTo(x + w, y + h + d, x + w, y + h - r + d, r);
+    }
+    // A plate: flat fill, faint inner bevel, 3px ink outline, ink drop.
+    // o: { fill, r, lw, lip, bevel:false, stroke, alpha }
+    function hudPanel(c, x, y, w, h, o = {}) {
+        const r = o.r != null ? o.r : HUD.r, lw = o.lw != null ? o.lw : HUD.lw;
+        const lip = o.lip != null ? o.lip : HUD.lip;
+        c.save();
+        if (o.alpha != null) c.globalAlpha *= o.alpha;
+        roundRectPath(c, x, y, w, h, r);
+        c.fillStyle = o.fill || HUD.panel;
+        c.fill();
+        c.lineWidth = lw;
+        c.lineJoin = "round";
+        c.strokeStyle = o.stroke || HUD.ink;
+        c.stroke();
+        if (lip > 0) {
+            hudLipPath(c, x, y, w, h, r, lip);
+            c.stroke();
+        }
+        if (o.bevel !== false && w > 2 * lw + 4 && h > 2 * lw + 4) {
+            roundRectPath(c, x + lw * 0.5 + 1, y + lw * 0.5 + 1, w - lw - 2, h - lw - 2, Math.max(1, r - lw * 0.5 - 1));
+            c.lineWidth = 1.5;
+            c.strokeStyle = HUD.bevel;
+            c.stroke();
+        }
+        c.restore();
+    }
+    // A recessed slot inside a plate: darker fill, thin ink keyline.
+    function hudWell(c, x, y, w, h, r = HUD.rSmall, fill = HUD.well, line = HUD.ink, lw = 2) {
+        roundRectPath(c, x, y, w, h, r);
+        c.fillStyle = fill;
+        c.fill();
+        if (lw > 0) { c.lineWidth = lw; c.strokeStyle = line; c.stroke(); }
+    }
+    // Progress bar: dark track, flat fill, ink keyline, fully rounded.
+    function hudBar(c, x, y, w, h, frac, col, track = HUD.wellSolid) {
+        roundRectPath(c, x, y, w, h, h / 2);
+        c.fillStyle = track;
+        c.fill();
+        frac = Math.max(0, Math.min(1, frac || 0));
+        if (frac > 0.001) {
+            roundRectPath(c, x, y, Math.max(h, w * frac), h, h / 2);
+            c.fillStyle = col;
+            c.fill();
+            // lighter top third, like the menu's quest bars
+            if (h >= 8) {
+                roundRectPath(c, x + 2, y + 1.5, Math.max(h - 4, w * frac - 4), h * 0.3, h * 0.15);
+                c.fillStyle = "rgba(255,255,255,0.22)";
+                c.fill();
+            }
+        }
+        roundRectPath(c, x, y, w, h, h / 2);
+        c.lineWidth = 2;
+        c.strokeStyle = HUD.ink;
+        c.stroke();
+    }
+    // Display text (Lilita One) with the ink outline, centred on y.
+    function hudTitle(text, x, y, size, col, align = "left", alpha = 1, c = ctx[2]) {
+        size += config.graphical.fontSizeBoost;
+        c.save();
+        if (alpha < 1) c.globalAlpha *= Math.max(0, alpha);
+        c.font = size + "px " + HUD.font;
+        c.textAlign = align;
+        c.textBaseline = "middle";
+        c.lineJoin = "round";
+        c.lineWidth = Math.max(2, size * 0.24);
+        c.strokeStyle = HUD.ink;
+        c.strokeText(text, x, y + size * 0.06);
+        c.fillStyle = col;
+        c.fillText(text, x, y + size * 0.06);
+        c.restore();
+    }
+    const hudTitleWidths = new Map();
+    function hudTitleW(text, size) {
+        size += config.graphical.fontSizeBoost;
+        const k = text + "|" + size;
+        let w = hudTitleWidths.get(k);
+        if (w === undefined) {
+            const c = ctx[2];
+            c.save(); c.font = size + "px " + HUD.font; w = c.measureText(text).width; c.restore();
+            if (hudTitleWidths.size > 300) hudTitleWidths.clear();
+            hudTitleWidths.set(k, w);
+        }
+        return w;
+    }
+    // Cached measureText for HUD strings that repeat frame to frame.
+    const hudTextWidths = new Map();
+    function hudTextW(text, size) {
+        const k = text + "|" + size;
+        let w = hudTextWidths.get(k);
+        if (w === undefined) {
+            w = measureText(text, size);
+            if (hudTextWidths.size > 400) hudTextWidths.clear();
+            hudTextWidths.set(k, w);
+        }
+        return w;
+    }
+    // A keycap: small raised face, Lilita letter. Returns its width.
+    function hudKey(c, x, y, label, h = 18, alpha = 1) {
+        const size = h * 0.62;
+        const w = Math.max(h, hudTitleW(label, size) + h * 0.55);
+        c.save();
+        if (alpha < 1) c.globalAlpha *= alpha;
+        roundRectPath(c, x, y, w, h, h * 0.28);
+        c.fillStyle = HUD.faceDk;
+        c.fill();
+        roundRectPath(c, x, y, w, h - 2.5, h * 0.28);
+        c.fillStyle = HUD.face;
+        c.fill();
+        roundRectPath(c, x, y, w, h, h * 0.28);
+        c.lineWidth = 2;
+        c.strokeStyle = HUD.ink;
+        c.stroke();
+        c.restore();
+        hudTitle(label, x + w / 2, y + (h - 2.5) / 2, size, HUD.head, "center", alpha, c);
+        return w;
+    }
+    // Chunky button with a lip, like .dw-btn. Registers the same clickables
+    // drawButton does (index false = set, else place).
+    // o: { fill, lipCol, textCol, size, enabled, type, index, cr, alpha }
+    function hudButton(c, cx, y, w, h, label, o = {}) {
+        const x = cx - w / 2;
+        const alpha = o.alpha != null ? o.alpha : 1;
+        const on = o.enabled !== false;
+        let hover = false;
+        if (o.type && on) {
+            const cl = global.clickables[o.type];
+            if (o.index === false || o.index == null) cl.set(x * o.cr, y * o.cr, w * o.cr, h * o.cr);
+            else cl.place(o.index, x * o.cr, y * o.cr, w * o.cr, h * o.cr);
+            const hv = cl.check({ x: global.mouse.x, y: global.mouse.y });
+            hover = (o.index === false || o.index == null) ? hv === true : hv === o.index;
+        }
+        const down = hover && global.clickables.clicked ? 2 : 0;
+        const fill = o.fill || HUD.face, lipCol = o.lipCol || HUD.faceDk;
+        const r = o.r != null ? o.r : 8;
+        c.save();
+        c.globalAlpha *= alpha * (on ? 1 : 0.55);
+        const yy = y + down;
+        roundRectPath(c, x, yy, w, h - down, r);
+        c.fillStyle = lipCol;
+        c.fill();
+        roundRectPath(c, x, yy, w, h - down - 4 + down, r);
+        c.fillStyle = fill;
+        c.fill();
+        if (hover && !down) {
+            c.fillStyle = "rgba(255,255,255,0.12)";
+            c.fill();
+        }
+        roundRectPath(c, x, yy, w, h - down, r);
+        c.lineWidth = 2.5;
+        c.strokeStyle = HUD.ink;
+        c.stroke();
+        if (!down) { hudLipPath(c, x, yy, w, h, r, 2.5); c.stroke(); }
+        c.restore();
+        if (label) {
+            let s = o.size || Math.min(16, h * 0.5);
+            while (s > 8 && hudTitleW(label, s) > w - 12) s -= 0.5;
+            hudTitle(label, cx, yy + (h - 4) / 2, s, o.textCol || HUD.head, "center", alpha * (on ? 1 : 0.7), c);
+        }
+        return hover;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
     // Dig Royale HUD. One thing per screen region:
     //   top centre   raid clock, storm + twist, your place, toast, boss bar
     //   top right    standings, then the kill feed, then system notices
@@ -5925,7 +6097,18 @@ import * as cosmetics from './account/cosmetics.js';
         }
         c.closePath();
     }
+    // memoized: the same tooltip / override text wraps every frame
+    const wrapCache = new Map();
     function wrapLines(text, size, maxW) {
+        const key = (size + config.graphical.fontSizeBoost) + "|" + (maxW | 0) + "|" + text;
+        const hit = wrapCache.get(key);
+        if (hit) return hit;
+        const lines = wrapLinesRaw(text, size, maxW);
+        if (wrapCache.size > 200) wrapCache.clear();
+        wrapCache.set(key, lines);
+        return lines;
+    }
+    function wrapLinesRaw(text, size, maxW) {
         const words = String(text || "").split(/\s+/);
         const lines = [];
         let cur = "";
@@ -6291,20 +6474,45 @@ import * as cosmetics from './account/cosmetics.js';
         const r = global.royale;
         if (!global.died) spectateBarBottom = 0;
         const top0 = global.died && spectateBarBottom > 0 ? spectateBarBottom : 0;
-        let y = 50 + top0;
+        let y = HUD.edge + top0;
         hudSafe("top", () => {
-            drawText("RAID " + fmtRaidClock(r.raidLeft | 0) + "     ALIVE " + (r.alive | 0), cx, 28 + top0, 15, color.guiwhite, "center", true);
+            // one plate: raid clock | alive, then your place and the storm
+            const c = ctx[2];
             const st = r.storm || {};
-            if (st.a) {
-                drawText(st.hold ? ("Storm holding for " + (st.left | 0) + "s") : ("Storm closes in " + fmtRaidClock(st.left | 0)), cx, y, 12, st.hold ? color.gold : "#b678e0", "center", true);
-                y += 18;
+            const placeTxt = r.place > 0 ? "#" + r.place + "  ·  " + fmtNum(r.youScore | 0) + " pts"
+                : r.youScore > 0 ? fmtNum(r.youScore | 0) + " pts" : "";
+            const stormTxt = st.a ? (st.hold ? "Storm holds " + (st.left | 0) + "s" : "Storm in " + fmtRaidClock(st.left | 0)) : "";
+            const PW = 300, rowH = 38, footH = (placeTxt || stormTxt) ? 24 : 0, PH = rowH + footH;
+            const px = Math.round(cx - PW / 2), py = y;
+            hudPanel(c, px, py, PW, PH);
+            const pair = (label, value, zx) => {
+                const lw2 = hudTitleW(label, 12), vw = hudTitleW(value, 21), gap = 7;
+                const x0 = zx - (lw2 + gap + vw) / 2;
+                hudTitle(label, x0, py + rowH / 2, 12, HUD.text2, "left");
+                hudTitle(value, x0 + lw2 + gap, py + rowH / 2, 21, HUD.head, "left");
+            };
+            pair("RAID", fmtRaidClock(r.raidLeft | 0), px + PW * 0.25);
+            pair("ALIVE", String(r.alive | 0), px + PW * 0.75);
+            c.fillStyle = "rgba(18,14,21,0.55)";
+            c.fillRect(cx - 1, py + 9, 2, rowH - 18);
+            if (footH) {
+                c.fillRect(px + 10, py + rowH - 1, PW - 20, 2);
+                const fy = py + rowH + footH / 2;
+                const stormCol = st.hold ? HUD.gold : HUD.lilac;
+                if (placeTxt && stormTxt) {
+                    drawText(placeTxt, px + 14, fy, 12, HUD.gold, "left", true);
+                    drawText(stormTxt, px + PW - 14, fy, 12, stormCol, "right", true);
+                } else drawText(placeTxt || stormTxt, cx, fy, 12, placeTxt ? HUD.gold : stormCol, "center", true);
             }
-            y += 3;
-            if (r.place > 0) drawText("#" + r.place + "   ·   " + fmtNum(r.youScore | 0) + " pts", cx, y, 13, color.gold, "center", true);
-            else if (r.youScore > 0) drawText(fmtNum(r.youScore | 0) + " pts", cx, y, 13, color.gold, "center", true);
-            y += 21;
-            if (r.lock) { drawText("Final storm, " + Math.max(0, r.lockLeft | 0) + "s left. Nobody respawns now.", cx, y, 12.5, "#b678e0", "center", true); y += 20; }
-            else if (r.toast) { drawText(r.toast, cx, y, 12.5, color.guiwhite, "center", true); y += 20; }
+            y = py + PH + HUD.lip + 10;
+            const pill = (txt, col) => {
+                const tw = hudTextW(txt, 12.5), ph = 24;
+                hudPanel(c, Math.round(cx - tw / 2 - 14), y, tw + 28, ph, { r: ph / 2, lw: 2.5, lip: 2.5, bevel: false });
+                drawText(txt, cx, y + ph / 2, 12.5, col, "center", true);
+                y += ph + 2.5 + 8;
+            };
+            if (r.lock) pill("Final storm, " + Math.max(0, r.lockLeft | 0) + "s left. Nobody respawns now.", HUD.lilac);
+            else if (r.toast) pill(r.toast, color.guiwhite);
         });
         hudSafe("boss", () => {
             bossGlide.set(r.boss ? 1 : 0);
@@ -6358,48 +6566,44 @@ import * as cosmetics from './account/cosmetics.js';
         });
         if (hudErrText) drawText("HUD error: " + hudErrText, cx, global.screenHeight - 78, 11, "#ff7a6b", "center");
     }
-    const BOSS_H = 50, BOSS_GAP = 8;
+    const BOSS_H = 50, BOSS_GAP = 12;
     let spectateBarBottom = 0;   // the top cluster starts under the spectate bar while dead
     function drawBossBar(cx, y, a) {
         const b = global.royale.boss || global._lastBoss;
         if (!b) return;
         global._lastBoss = b;
         const c = ctx[2];
-        const W = Math.min(400, global.screenWidth - 60), H = BOSS_H;
+        const W = Math.min(300, global.screenWidth - 60), H = BOSS_H;
         const x = cx - W / 2;
         const col = b.c || "#c9a8ff";
         const dist = Math.hypot((b.x || 0) - global.player.renderx, (b.y || 0) - global.player.rendery);
+        hudPanel(c, x, y, W, H, { alpha: a });
         c.save();
         c.globalAlpha = a;
-        roundRectPath(c, x, y, W, H, 10);
-        c.fillStyle = "rgba(14,12,20,0.9)";
-        c.fill();
-        c.lineWidth = 2;
-        c.strokeStyle = col;
-        c.stroke();
-        polyPath(c, x + 18, y + 13, 8, 8, Math.PI / 8);
+        polyPath(c, x + 18, y + 14, 8, 8, Math.PI / 8);
         c.fillStyle = col; c.fill();
-        c.strokeStyle = color.black; c.lineWidth = 1.5; c.stroke();
+        c.strokeStyle = HUD.ink; c.lineWidth = 2; c.stroke();
         c.restore();
         // three fixed rows: name and bounty, health bar, percent and range
-        const gemsTxt = fmtNum(b.gems) + " GEMS";
-        const gemsW = measureText(gemsTxt, 11.5);
-        fitText(String(b.name || "Boss").toUpperCase(), x + 34 + (W - 34 - gemsW - 24) / 2, y + 13, 12.5, W - 34 - gemsW - 24, col);
-        drawText(gemsTxt, x + W - 12, y + 13, 11.5, color.gold, "right", true, a);
-        const bx = x + 12, bw = W - 24, byc = y + 27, bh = 9;
+        const gemsTxt = fmtNum(b.gems) + " gems";
+        const gemsW = hudTitleW(gemsTxt, 13);
+        const nameTxt = String(b.name || "Boss");
+        let ns = 15; while (ns > 10 && hudTitleW(nameTxt, ns) > W - 34 - gemsW - 24) ns -= 0.5;
+        hudTitle(nameTxt, x + 32, y + 14, ns, col, "left", a);
+        hudTitle(gemsTxt, x + W - 12, y + 14, 13, HUD.gold, "right", a);
+        const bx = x + 12, bw = W - 24, bh = 10, byTop = y + 24;
+        const hp = Math.max(0, Math.min(1, b.hp || 0));
         c.save();
         c.globalAlpha = a;
-        drawBar(bx, bx + bw, byc, bh + config.graphical.barChunk, color.black);
-        drawBar(bx, bx + bw, byc, bh, "#2c2434");
-        const hp = Math.max(0, Math.min(1, b.hp || 0));
-        if (hp > 0) drawBar(bx, bx + Math.max(4, bw * hp), byc, bh - 1, hp > 0.5 ? col : hp > 0.2 ? color.gold : "#eb4034");
+        hudBar(c, bx, byTop, bw, bh, hp, hp > 0.5 ? col : hp > 0.2 ? HUD.gold : HUD.danger);
         if (b.sh > 0.01) {
-            c.globalAlpha = a * 0.55;
-            drawBar(bx, bx + Math.max(3, bw * b.sh), byc, bh - 3, color.teal);
+            c.globalAlpha = a * 0.6;
+            roundRectPath(c, bx + 2, byTop + 2, Math.max(3, (bw - 4) * b.sh), bh - 4, (bh - 4) / 2);
+            c.fillStyle = color.teal; c.fill();
         }
         c.restore();
-        drawText(Math.round(hp * 100) + "%", bx, y + 42, 10, color.grey, "left", true, a);
-        if (isFinite(dist) && dist < 1e6) drawText(fmtDist(dist) + " away", bx + bw, y + 42, 10, color.grey, "right", true, a);
+        drawText(Math.round(hp * 100) + "%", bx + 2, y + 43, 10, HUD.text2, "left", true, a);
+        if (isFinite(dist) && dist < 1e6) drawText(fmtDist(dist) + " away", bx + bw - 2, y + 43, 10, HUD.text2, "right", true, a);
     }
 
     // ── race panel: top three plus you, with your gap to first ──────────
@@ -6409,41 +6613,34 @@ import * as cosmetics from './account/cosmetics.js';
         const board = r.board || [];
         if (!board.length) { standingsRect = null; return 36; }
         const W = Math.min(262, global.screenWidth * 0.3), rowH = 20;
-        const x = global.screenWidth - 18 - W, y0 = 36;
+        const x = global.screenWidth - HUD.edge - W, y0 = HUD.edge;
         const myPlace = r.place | 0;
         const top = board.slice(0, 3);
         const me = myPlace > 3 ? board.find(row => row.place === myPlace) : null;
         const rows = me ? top.concat([me]) : top;
-        const H = 26 + rows.length * rowH + (myPlace > 1 ? 18 : 8);
+        const H = 32 + rows.length * rowH + (myPlace > 1 ? 18 : 6);
         standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: H + 16 };
         const c = ctx[2];
-        c.save();
-        roundRectPath(c, x, y0, W, H, 9);
-        c.fillStyle = "rgba(12,13,18,0.84)";
-        c.fill();
-        c.lineWidth = 1.5;
-        c.strokeStyle = "rgba(255,255,255,0.10)";
-        c.stroke();
-        c.fillStyle = "rgba(255,255,255,0.06)";
-        c.fillRect(x + 10, y0 + 20, W - 20, 1);
-        c.restore();
-        drawText("STANDINGS", x + 10, y0 + 11, 10, color.grey, "left", true);
-        drawText("PTS", x + W - 10, y0 + 11, 10, color.grey, "right", true);
+        hudPanel(c, x, y0, W, H);
+        c.fillStyle = "rgba(18,14,21,0.55)";
+        c.fillRect(x + 10, y0 + 27, W - 20, 2);
+        hudTitle("Standings", x + 12, y0 + 15, 14, HUD.head, "left");
+        hudTitle("PTS", x + W - 12, y0 + 15, 11, HUD.text2, "right");
         const myHex = playerHexCol() || color.gold;
         // rank badges sit between place and name; the column only opens when
         // someone on the board has one, so names stay aligned either way
         const codeOf = (row) => row.place === myPlace && myPlace > 0 ? nameBadgeCode(myRankCode() || row.rk, true) : nameBadgeCode(row.rk, false);
         const rkCol = rows.some(row => codeOf(row)) ? 18 : 0;
-        let ry = y0 + 26;
+        let ry = y0 + 32;
         for (const row of rows) {
             const isMe = row.place === myPlace && myPlace > 0;
             // your row: only the name changes colour, no band behind it
             const nameCol = isMe ? myHex : color.guiwhite;
-            const rankCol = row.place === 1 ? color.gold : row.place === 2 ? "#d8dce6" : row.place === 3 ? "#c9955a" : color.grey;
+            const rankCol = row.place === 1 ? HUD.gold : row.place === 2 ? "#d8dce6" : row.place === 3 ? "#d98a4e" : HUD.text2;
             const rowMid = ry + rowH / 2 - 1;
             drawText("#" + row.place, x + 12, rowMid, 11, rankCol, "left", true);
             const scoreTxt = fmtNum(row.score | 0);
-            const scoreW = measureText(scoreTxt, 12);
+            const scoreW = hudTextW(scoreTxt, 12);
             const nameTxt = shortName(row.name, 18) + (row.streak >= 4 ? "  §#ff7a6b§x" + row.streak : "");
             const plain = shortName(row.name, 18) + (row.streak >= 4 ? "  x" + row.streak : "");
             // shrink-to-fit is measured once per row per name width, not per frame
@@ -6461,12 +6658,12 @@ import * as cosmetics from './account/cosmetics.js';
             const rowName = shortName(row.name, 18);
             const rowSn = styledName(rowName, row.ns, hexOr(row.nc, nameCol), x + 40 + rkCol, ns, "left", c);
             drawText(rowSn.text + nameTxt.slice(rowName.length), x + 40 + rkCol, rowMid, ns, rowSn.fill, "left", true);
-            drawText(scoreTxt, x + W - 10, rowMid, 12, nameCol, "right", true);
+            drawText(scoreTxt, x + W - 12, rowMid, 12, nameCol, "right", true);
             ry += rowH;
         }
         if (myPlace > 1 && top[0]) {
             const gap = (top[0].score | 0) - (r.youScore | 0);
-            drawText(fmtNum(gap) + " behind #1", x + W - 10, ry + 7, 10, color.grey, "right", true);
+            drawText(fmtNum(gap) + " behind #1", x + W - 12, ry + 7, 10, HUD.text2, "right", true);
         }
         return y0 + H;
     }
@@ -6504,7 +6701,7 @@ import * as cosmetics from './account/cosmetics.js';
     function drawRoyaleFeed(yTop) {
         const feed = (global.royale.feed || []).slice(-6);
         const now = Date.now();
-        const right = global.screenWidth - 18;
+        const right = global.screenWidth - HUD.edge;
         let y = yTop;
         const c = ctx[2];
         for (let i = feed.length - 1; i >= 0; i--) {
@@ -6516,17 +6713,24 @@ import * as cosmetics from './account/cosmetics.js';
             const line = feedLine(f);
             let bx = right;
             if (line.badge) {
-                const bw = measureText(line.badge.t, 9.5) + 12;
+                // a flat colour chip with an ink keyline, like the menu's tags
+                const bw = hudTitleW(line.badge.t, 11) + 12;
                 c.save();
                 c.globalAlpha = a;
-                roundRectPath(c, right - bw, y + 1, bw, 15, 4);
-                c.fillStyle = "rgba(12,13,18,0.85)";
+                roundRectPath(c, right - bw, y + 1, bw, 16, 5);
+                c.fillStyle = line.badge.col;
                 c.fill();
-                c.lineWidth = 1;
-                c.strokeStyle = line.badge.col;
+                c.lineWidth = 2;
+                c.strokeStyle = HUD.ink;
                 c.stroke();
                 c.restore();
-                drawText(line.badge.t, right - bw / 2, y + 9, 9.5, line.badge.col, "center", true, a);
+                c.save();
+                c.globalAlpha = a;
+                c.font = (11 + config.graphical.fontSizeBoost) + "px " + HUD.font;
+                c.textAlign = "center"; c.textBaseline = "middle";
+                c.fillStyle = HUD.ink;
+                c.fillText(line.badge.t, right - bw / 2, y + 9.5);
+                c.restore();
                 bx = right - bw - 8;
             }
             drawText(String(line.text).replace(/§reset§$/, ""), bx, y + 9, 12, color.guiwhite, "right", true, a, 5);
@@ -6542,14 +6746,16 @@ import * as cosmetics from './account/cosmetics.js';
     // gap is too short the override drops its description; when even that
     // won't fit (a tall upgrade grid) both cards move beside the tiles.
     let leftCards = null;
-    const CARD_W = 214, QUEST_H = 54, CARD_GAP = 6;
-    const overrideH = n => n ? 44 + n * 13 : 38;
+    // same width and left edge as the kit box below, so the column is one
+    // straight edge
+    const CARD_W = 190, QUEST_H = 58, CARD_GAP = 10;
+    const overrideH = n => n ? 48 + n * 13 : 40;
     function layoutLeftCards() {
         const r = global.royale;
         const q = !global.died && r.you && r.you.quest ? r.you.quest : null;
         const mod = !global.died && r.mod && r.mod.name ? r.mod : null;
         if (!q && !mod) { leftCards = null; return; }
-        const lines = mod ? wrapLines(String(mod.desc || ""), 10, CARD_W - 20).slice(0, 3) : [];
+        const lines = mod ? wrapLines(String(mod.desc || ""), 10, CARD_W - 24).slice(0, 3) : [];
         const stackH = n => (q ? QUEST_H : 0) + (mod ? (q ? CARD_GAP : 0) + overrideH(n) : 0);
         const floor = leftColumnFloor() - 10;
         const tiles = (global.upgradeBoxBottom | 0) > 0;
@@ -6557,7 +6763,7 @@ import * as cosmetics from './account/cosmetics.js';
         const pref = Math.max(global.screenHeight * 0.42, 330, top);
         for (const n of [lines.length, 0]) {
             const y = Math.round(Math.min(pref, floor - stackH(n)));
-            if (y >= top) { leftCards = { x: 20, y, q, mod, lines: lines.slice(0, n) }; return; }
+            if (y >= top) { leftCards = { x: HUD.edge, y, q, mod, lines: lines.slice(0, n) }; return; }
         }
         const x = Math.round((global.upgradeBoxRight | 0) + 16);
         let y = Math.round(global.upgradeBoxTop || 70);
@@ -6577,19 +6783,15 @@ import * as cosmetics from './account/cosmetics.js';
         const x = L.x, y = L.q ? L.y + QUEST_H + CARD_GAP : L.y;
         overrideRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
         const c = ctx[2];
-        c.save();
-        roundRectPath(c, x, y, W, H, 9);
-        c.fillStyle = "rgba(12,13,18,0.84)";
-        c.fill();
-        c.lineWidth = 1.5;
-        c.strokeStyle = "rgba(201,168,255,0.5)";
-        c.stroke();
-        c.restore();
-        drawText("THIS RAID'S OVERRIDE", x + 10, y + 12, 10, color.grey, "left", true);
-        drawText(String(mod.name).toUpperCase(), x + 10, y + 28, 12.5, "#c9a8ff", "left", true);
-        let ly = y + 44;
-        for (const ln of lines) { drawText(ln, x + 10, ly, 10, "#b9c3d1", "left", true); ly += 13; }
+        hudPanel(c, x, y, W, H);
+        hudTitle("Raid override", x + 12, y + 14, 12, HUD.text2, "left");
+        const name = String(mod.name);
+        let ns = 16; while (ns > 11 && hudTitleW(name, ns) > W - 24) ns -= 0.5;
+        hudTitle(name, x + 12, y + 31, ns, HUD.lilac, "left");
+        let ly = y + 49;
+        for (const ln of lines) { drawText(ln, x + 12, ly, 10, HUD.text, "left", true); ly += 13; }
     }
+    const questFit = new Map();
     function drawQuestCard() {
         const L = leftCards;
         const q = L && L.q;
@@ -6598,33 +6800,31 @@ import * as cosmetics from './account/cosmetics.js';
         const x = L.x, y = L.y;
         questRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
         const c = ctx[2];
-        c.save();
-        roundRectPath(c, x, y, W, H, 9);
-        c.fillStyle = "rgba(12,13,18,0.84)";
-        c.fill();
-        c.lineWidth = 1.5;
-        c.strokeStyle = "rgba(110,206,220,0.45)";
-        c.stroke();
-        c.restore();
-        drawText("QUEST " + ((q.idx | 0) + 1) + "/" + (q.total | 0), x + 10, y + 12, 10, color.grey, "left", true);
-        drawText("+" + fmtNum(q.reward) + " gems", x + W - 10, y + 12, 10, color.teal, "right", true);
-        // progress first, then the quest text gets whatever width is left
-        const progTxt = fmtNum(q.prog || 0) + " / " + fmtNum(q.goal);
-        const progW = measureText(progTxt, 10);
-        const maxTW = W - 20 - progW - 8;
-        let qs = 12, txt = String(q.text || "");
-        while (qs > 9.5 && measureText(txt, qs) > maxTW) qs -= 0.5;
-        if (measureText(txt, qs) > maxTW) {
-            while (txt.length > 2 && measureText(txt + "…", qs) > maxTW) txt = txt.slice(0, -1);
-            txt += "…";
+        hudPanel(c, x, y, W, H);
+        hudTitle("Quest " + ((q.idx | 0) + 1) + "/" + (q.total | 0), x + 12, y + 14, 13, HUD.copper, "left");
+        hudTitle("+" + fmtNum(q.reward) + " gems", x + W - 12, y + 14, 13, HUD.emerald, "right");
+        // the quest text gets the full width; shrink, then ellipsize (cached)
+        const maxTW = W - 24;
+        const raw = String(q.text || "");
+        let fit = questFit.get(raw);
+        if (!fit) {
+            let qs = 12, txt = raw;
+            while (qs > 9.5 && measureText(txt, qs) > maxTW) qs -= 0.5;
+            if (measureText(txt, qs) > maxTW) {
+                while (txt.length > 2 && measureText(txt + "…", qs) > maxTW) txt = txt.slice(0, -1);
+                txt += "…";
+            }
+            fit = { txt, qs };
+            if (questFit.size > 32) questFit.clear();
+            questFit.set(raw, fit);
         }
-        drawText(txt, x + 10, y + 29, qs, color.guiwhite, "left", true);
-        drawText(progTxt, x + W - 10, y + 29, 10, color.grey, "right", true);
-        const bx = x + 10, bw = W - 20, by = y + 40, bh = 6;
-        drawBar(bx, bx + bw, by + bh / 2, bh + 3, color.black);
-        drawBar(bx, bx + bw, by + bh / 2, bh, "#2a2e38");
+        drawText(fit.txt, x + 12, y + 32, fit.qs, color.guiwhite, "left", true);
+        const progTxt = fmtNum(q.prog || 0) + " / " + fmtNum(q.goal);
+        const progW = hudTextW(progTxt, 10);
+        const bx = x + 12, bw = W - 24 - progW - 8, by = y + 42, bh = 8;
         const frac = q.goal > 0 ? Math.min(1, (q.prog || 0) / q.goal) : 0;
-        if (frac > 0) drawBar(bx, bx + Math.max(3, bw * frac), by + bh / 2, bh - 1, color.teal);
+        hudBar(c, bx, by, bw, bh, frac, HUD.emerald);
+        drawText(progTxt, x + W - 12, by + bh / 2, 10, HUD.text2, "right", true);
     }
 
     // ── centre callouts ────────────────────────────────────────────────
@@ -6648,17 +6848,14 @@ import * as cosmetics from './account/cosmetics.js';
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
             const col = t.kind === "override" ? "#c9a8ff" : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
                 : t.kind === "chest" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b" : color.guiwhite;
-            const size = (t.kind === "streak" ? 15 : 21) * pop;
-            const len = measureText(t.text, size) + 44;
-            c.save();
-            c.globalAlpha = a * 0.6;
-            roundRectPath(c, cx - len / 2, cy - size * 0.9, len, size * 1.8 + (t.pts ? 22 : 0), 10);
-            c.fillStyle = "rgba(10,11,16,0.85)";
-            c.fill();
-            c.restore();
-            drawText(t.text, cx, cy, size, col, "center", true, a, 4.5);
-            if (t.pts) drawText("+" + fmtNum(t.pts) + " pts", cx, cy + size * 0.95 + 8, 14 * pop, color.gold, "center", true, a, 4.5);
-            if (t.sub) drawText(t.sub, cx, cy + size * 0.95 + 8, 12.5, "#d8dce6", "center", true, a, 4.5);
+            const base = t.kind === "streak" ? 16 : 23, size = base * pop;
+            const len = (hudTitleW(t.text, base) + 44) * pop;
+            const extra = (t.pts || t.sub) ? 22 * pop : 0;
+            const ph = size * 1.7 + extra;
+            hudPanel(c, cx - len / 2, cy - size * 0.85, len, ph, { alpha: a, fill: "rgba(43,37,51,0.72)", r: HUD.r * pop });
+            hudTitle(t.text, cx, cy, size, col, "center", a);
+            if (t.pts) hudTitle("+" + fmtNum(t.pts) + " pts", cx, cy + size * 0.95 + 5, 15 * pop, HUD.gold, "center", a);
+            if (t.sub) drawText(t.sub, cx, cy + size * 0.95 + 5, 12.5, "#d8dce6", "center", true, a, 4.5);
             break;
         }
     }
@@ -6681,24 +6878,16 @@ import * as cosmetics from './account/cosmetics.js';
         const c = ctx[2];
         const maxW = 230;
         const lines = wrapLines(tip.body || "", 10.5, maxW - 20);
-        const w = Math.max(measureText(tip.title, 11.5) + 20, ...lines.map(l => measureText(l, 10.5) + 20), 90);
-        const h = 24 + lines.length * 14 + (lines.length ? 6 : 0);
+        const w = Math.max(hudTitleW(tip.title, 13) + 24, ...lines.map(l => hudTextW(l, 10.5) + 24), 90);
+        const h = 26 + lines.length * 14 + (lines.length ? 6 : 0);
         let x = Math.max(6, Math.min(global.screenWidth - w - 6, tip.ax - w / 2));
         let y = tip.above ? tip.ay - h - 8 : tip.ay + 8;
         if (y < 6) y = tip.ay + 8;
         y += (tip.above ? 1 : -1) * 6 * (1 - ease);
-        c.save();
-        c.globalAlpha = ease;
-        roundRectPath(c, x, y, w, h, 7);
-        c.fillStyle = "rgba(10,11,16,0.94)";
-        c.fill();
-        c.lineWidth = 1.2;
-        c.strokeStyle = "rgba(255,255,255,0.18)";
-        c.stroke();
-        c.restore();
-        drawText(tip.title, x + 10, y + 12, 11.5, color.guiwhite, "left", true, ease);
-        let ly = y + 30;
-        for (const l of lines) { drawText(l, x + 10, ly, 10.5, "#b9c3d1", "left", true, ease); ly += 14; }
+        hudPanel(c, x, y, w, h, { alpha: ease, fill: HUD.solid, r: HUD.rSmall + 1, lw: 2.5, lip: 2.5 });
+        hudTitle(tip.title, x + 12, y + 14, 13, HUD.head, "left", ease);
+        let ly = y + 32;
+        for (const l of lines) { drawText(l, x + 12, ly, 10.5, HUD.text, "left", true, ease); ly += 14; }
     }
     const ROMAN = ["", "I", "II", "III", "IV", "V"];
     // A tiny card per kit item: rounded corners, the item's colour, a glyph
@@ -6856,7 +7045,7 @@ import * as cosmetics from './account/cosmetics.js';
         const barH = 14, vsp = 5, bars = 11;
         const barsTop = global.screenHeight - spacing - 5.5 - barH - (bars - 1) * (barH + vsp);
         const W = alcoveSize - 10, H = 118;
-        const x = spacing + 3;
+        const x = HUD.edge;
         const y = barsTop - 26 - H + (1 - g) * 14;
         kitBoxTop = barsTop - 26 - H;
         const c = ctx[2];
@@ -6865,12 +7054,7 @@ import * as cosmetics from './account/cosmetics.js';
         global.clickables.kit.hide();
         c.save();
         c.globalAlpha = g;
-        roundRectPath(c, x, y, W, H, 8);
-        c.fillStyle = "rgba(0,0,0,0.46)";
-        c.fill();
-        c.lineWidth = 1.5;
-        c.strokeStyle = "rgba(255,255,255,0.10)";
-        c.stroke();
+        hudPanel(c, x, y, W, H);
         // top row: two equal chips, drill and sidearm, aligned to the slot grid
         const pad = 8, gap = 6;
         const chipY = y + 7, chipH = 17, chipW = (W - pad * 2 - gap) / 2;
@@ -6884,10 +7068,7 @@ import * as cosmetics from './account/cosmetics.js';
         ];
         for (const ch of chips) {
             const fl = ch.flash ? Math.max(0, 1 - (now - ch.flash) / 700) : 0;
-            roundRectPath(c, ch.x, chipY, chipW, chipH, 5);
-            c.fillStyle = ch.on ? "rgba(255,255,255," + (0.07 + 0.25 * fl) + ")" : "rgba(255,255,255,0.035)";
-            c.fill();
-            if (hov === ch.i) { c.lineWidth = 1; c.strokeStyle = "rgba(255,255,255,0.35)"; c.stroke(); }
+            hudWell(c, ch.x, chipY, chipW, chipH, 5, hov === ch.i ? "rgba(255,255,255,0.14)" : fl > 0 ? "rgba(255,255,255," + (0.25 * fl) + ")" : HUD.well, HUD.ink, 1.5);
             drawText(ch.text, ch.x + chipW / 2, chipY + chipH / 2 + 0.5, 9, ch.col, "center", true, g);
             global.clickables.kit.place(ch.i, ch.x * cr, chipY * cr, chipW * cr, chipH * cr);
             if (hov === ch.i) queueTip(ch.tip[0], ch.tip[1], ch.x + chipW / 2, y);
@@ -6895,9 +7076,9 @@ import * as cosmetics from './account/cosmetics.js';
         // gear row: every passive you own, as a small tag with a tooltip
         const gearY = chipY + chipH + 6, gearH = 16;
         const gearIds = (st.gear || []).filter(id => byId(id));
-        drawText("GEAR", x + pad + 2, gearY + gearH / 2, 8, color.grey, "left", true, g);
+        hudTitle("Gear", x + pad + 1, gearY + gearH / 2, 10, HUD.text2, "left", g);
         if (!gearIds.length) {
-            drawText("none yet", x + pad + 34, gearY + gearH / 2, 8, "rgba(160,168,180,0.7)", "left", true, g);
+            drawText("none yet", x + pad + 34, gearY + gearH / 2, 8, HUD.text2, "left", true, g);
         } else {
             const gx0 = x + pad + 32, gwAll = W - pad * 2 - 32;
             const bw = Math.min(36, (gwAll - 3 * (gearIds.length - 1)) / gearIds.length);
@@ -6909,10 +7090,7 @@ import * as cosmetics from './account/cosmetics.js';
                 const leftMs = until > 1 ? Math.max(0, until - nowG) : -1;
                 const frac = leftMs < 0 ? 1 : Math.min(1, leftMs / 300000);
                 const ending = leftMs >= 0 && leftMs < 30000 && (nowG % 600) < 300;
-                roundRectPath(c, bx, gearY, bw, gearH, 4);
-                c.fillStyle = hov === 10 + i ? "rgba(92,224,216,0.32)" : ending ? "rgba(255,120,110,0.28)" : "rgba(92,224,216,0.16)";
-                c.fill();
-                c.lineWidth = 1; c.strokeStyle = ending ? "rgba(255,120,110,0.7)" : "rgba(92,224,216,0.45)"; c.stroke();
+                hudWell(c, bx, gearY, bw, gearH, 4, hov === 10 + i ? "rgba(92,224,216,0.32)" : ending ? "rgba(255,120,110,0.28)" : "rgba(92,224,216,0.14)", HUD.ink, 1.5);
                 // time left: a thin bar along the bottom edge of the tag
                 c.fillStyle = ending ? "#ff9a8c" : SHOP_ACCENT;
                 c.fillRect(bx + 2, gearY + gearH - 3, (bw - 4) * frac, 2);
@@ -6932,19 +7110,13 @@ import * as cosmetics from './account/cosmetics.js';
             const count = id ? (st.kit[id] | 0) : 0;
             const fl = id && sh.slotFlash && sh.slotFlash[id] ? sh.slotFlash[id] : null;
             const flT = fl ? Math.max(0, 1 - (now - fl.at) / 650) : 0;
-            roundRectPath(c, sx, slotY, slotW, slotH, 6);
-            c.fillStyle = item ? "rgba(255,215,94," + (0.10 + (fl && fl.kind === "get" ? 0.35 * flT : 0)) + ")" : "rgba(255,255,255,0.03)";
-            c.fill();
-            c.lineWidth = hov === i ? 1.6 : 1;
-            c.strokeStyle = item ? (fl && fl.kind === "use" ? "rgba(255,255,255," + (0.45 + 0.5 * flT) + ")" : "rgba(255,215,94,0.5)") : "rgba(255,255,255,0.08)";
-            c.stroke();
-            // key badge
-            roundRectPath(c, sx + 4, slotY + 4, 15, 12, 3);
-            c.fillStyle = item ? "rgba(255,215,94,0.22)" : "rgba(255,255,255,0.06)";
-            c.fill();
-            drawText(keys[i], sx + 11.5, slotY + 10.5, 8, item ? color.gold : color.grey, "center", true, g);
+            hudWell(c, sx, slotY, slotW, slotH, 6,
+                item ? "rgba(242,184,60," + (0.12 + (fl && fl.kind === "get" ? 0.35 * flT : 0) + (hov === i ? 0.08 : 0)) + ")" : (hov === i ? "rgba(255,255,255,0.08)" : HUD.well),
+                item && fl && fl.kind === "use" ? "rgba(255,255,255," + (0.45 + 0.5 * flT) + ")" : HUD.ink, 2);
+            // key badge: a little keycap, dim when the slot is empty
+            hudKey(c, sx + 4, slotY + 4, keys[i], 14, item ? 1 : 0.55);
             if (item) {
-                drawText("x" + count, sx + slotW - 5, slotY + 10.5, 8.5, color.teal, "right", true, g);
+                drawText("x" + count, sx + slotW - 5, slotY + 11, 8.5, color.teal, "right", true, g);
                 // the item's card: rounded corners, its own colour, its own glyph
                 drawKitIcon(c, item.id, sx + slotW / 2, slotY + 30, 26);
                 drawText(KIT_SHORT[item.id] || item.name.slice(0, 7).toUpperCase(), sx + slotW / 2, slotY + slotH - 8, 8, color.guiwhite, "center", true, g);
@@ -7027,34 +7199,32 @@ import * as cosmetics from './account/cosmetics.js';
     // One flat tile: opaque face, lighter on hover, bottom shade strip,
     // black border. The same recipe the class-upgrade tiles use.
     function drawFlatTile(c, x, y, w, h, fill, hoverT, alpha, sel, selCol) {
+        // a card on a plate: flat face, ink keyline, small ink drop; the
+        // picked one gets the menu's copper ring
         c.save();
         c.globalAlpha = alpha;
+        const r = 8;
+        roundRectPath(c, x, y, w, h, r);
         c.fillStyle = fill;
-        c.fillRect(x, y, w, h);
+        c.fill();
         if (hoverT > 0) {
-            c.globalAlpha = alpha * 0.22 * hoverT;
-            c.fillStyle = color.guiwhite;
-            c.fillRect(x, y, w, h);
-            c.globalAlpha = alpha * 0.8 * hoverT;
-            c.lineWidth = 1.5;
-            c.strokeStyle = selCol || SHOP_ACCENT;
-            c.strokeRect(x + 3, y + 3, w - 6, h - 6);
+            c.fillStyle = "rgba(255,255,255," + (0.1 * hoverT) + ")";
+            c.fill();
         }
-        c.globalAlpha = alpha * 0.25;
-        c.fillStyle = color.black;
-        c.fillRect(x, y + h * 0.6, w, h * 0.4);
-        c.globalAlpha = alpha;
-        c.lineWidth = 3;
-        c.strokeStyle = color.black;
-        c.strokeRect(x, y, w, h);
+        c.lineWidth = 2.5;
+        c.strokeStyle = HUD.ink;
+        c.stroke();
+        hudLipPath(c, x, y, w, h, r, 2.5);
+        c.stroke();
         if (sel) {
-            c.lineWidth = 2;
-            c.strokeStyle = selCol || SHOP_ACCENT;
-            c.strokeRect(x + 3, y + 3, w - 6, h - 6);
+            roundRectPath(c, x - 4, y - 4, w + 8, h + 8 + 2.5, r + 3);
+            c.lineWidth = 3;
+            c.strokeStyle = selCol || HUD.copper;
+            c.stroke();
         }
         c.restore();
     }
-    const SHOP_PANEL = "#1b1e26", SHOP_HEAD = "#1f3437", SHOP_CARD = "#262a35", SHOP_CARD_OFF = "#1e2028", SHOP_CARD_SEL = "#1e3c40";
+    const SHOP_CARD = HUD.raised, SHOP_CARD_OFF = "#29232f", SHOP_CARD_SEL = "#43384f";
     const shopMeasure = new Map();
     function shopMeasureText(txt, size) {
         const k = txt + "|" + size;
@@ -7076,50 +7246,48 @@ import * as cosmetics from './account/cosmetics.js';
         const cr = global.canvas.height / shh / global.ratio;
         const c = ctx[2];
         global.clickables.shop.hide();
-        // frame
+        // frame: one solid plate, heading row, divider
         c.save();
         c.globalAlpha = g;
-        c.fillStyle = "rgba(0,0,0,0.35)";
-        c.fillRect(x + 4, y + 6, W, H);
-        c.fillStyle = SHOP_PANEL;
-        c.fillRect(x, y, W, H);
-        c.fillStyle = SHOP_HEAD;
-        c.fillRect(x, y, W, 46);
-        c.globalAlpha = g * 0.25;
-        c.fillStyle = color.black;
-        c.fillRect(x, y + 46 * 0.6, W, 46 * 0.4);
-        c.globalAlpha = g;
-        c.lineWidth = 3;
-        c.strokeStyle = color.black;
-        c.strokeRect(x, y, W, H);
-        c.beginPath(); c.moveTo(x, y + 46); c.lineTo(x + W, y + 46); c.stroke();
-        gemPath(c, x + 30, y + 23, 9);
-        c.fillStyle = color.gold; c.fill();
-        c.lineWidth = 1.2; c.strokeStyle = "#5a4310"; c.stroke();
+        hudPanel(c, x, y, W, H, { fill: HUD.solid, r: HUD.rBig });
+        c.fillStyle = "rgba(18,14,21,0.6)";
+        c.fillRect(x + 14, y + 50, W - 28, 2);
+        gemPath(c, x + 28, y + 26, 10);
+        c.fillStyle = HUD.gold; c.fill();
+        c.lineWidth = 2; c.strokeStyle = HUD.ink; c.stroke();
         c.restore();
-        drawText("SHOP", x + 48, y + 23, 17, SHOP_ACCENT, "left", true, g);
-        drawText(String(sh.padName || "").replace(" Shop", "").toUpperCase(), x + 48 + shopMeasureText("SHOP", 17) + 12, y + 24, 10.5, color.grey, "left", true, g);
+        hudTitle("Shop", x + 46, y + 26, 24, HUD.head, "left", g);
+        hudTitle(String(sh.padName || "").replace(" Shop", ""), x + 46 + hudTitleW("Shop", 24) + 10, y + 28, 14, HUD.text2, "left", g);
+        // banked: a dark wallet pill like the menu's gem counter
         const bankTxt = fmtNum(global.gems.banked | 0);
-        drawText(bankTxt, x + W - 62, y + 23, 14, color.teal, "right", true, g);
-        drawText("BANKED", x + W - 62 - shopMeasureText(bankTxt, 14) - 10, y + 23, 10, color.grey, "right", true, g);
-        // close
-        const cbs = 24, cbx = x + W - 42, cby = y + 11;
-        drawButton(cbx + cbs / 2, cby, cbs, cbs, g, "rect", "X", 12, "#8a3a3a", false, false, true, "shop", cr, 41);
-        c.globalAlpha = 1;
-        // tabs
-        const tabY = y + 58, tabH = 26, tabW = (W - 40) / SHOP_TABS.length;
+        const bw2 = hudTitleW(bankTxt, 16) + 40, bh2 = 30, bx2 = x + W - 58 - bw2, by2 = y + 11;
+        c.save();
+        c.globalAlpha = g;
+        hudWell(c, bx2, by2, bw2, bh2, bh2 / 2, HUD.wellSolid, HUD.ink, 2.5);
+        gemPath(c, bx2 + 16, by2 + bh2 / 2, 7);
+        c.fillStyle = HUD.gold; c.fill();
+        c.lineWidth = 1.5; c.strokeStyle = HUD.ink; c.stroke();
+        c.restore();
+        hudTitle(bankTxt, bx2 + bw2 - 12, by2 + bh2 / 2, 16, HUD.head, "right", g);
+        hudTitle("Banked", bx2 - 8, by2 + bh2 / 2, 12, HUD.text2, "right", g);
+        // close: the menu's little red button
+        const cbs = 30;
+        hudButton(c, x + W - 14 - cbs / 2, y + 11, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15, type: "shop", index: 41, cr, alpha: g });
+        // tabs: chunky toggles, the picked one copper
+        const tabY = y + 62, tabH = 30, tabW = (W - 40) / SHOP_TABS.length;
         for (let i = 0; i < SHOP_TABS.length; i++) {
             const [id, label] = SHOP_TABS[i];
             const tx = x + 20 + i * tabW;
             const on = sh.tab === id;
-            drawButton(tx + tabW / 2, tabY, tabW - 6, tabH, g, "rect", label.toUpperCase(), 11, on ? SHOP_ACCENT : color.grey, false, on ? SHOP_ACCENT : false, true, "shop", cr, i);
-            c.globalAlpha = 1;
+            hudButton(c, tx + tabW / 2, tabY, tabW - 8, tabH, label, on
+                ? { fill: HUD.copper, lipCol: HUD.copperDk, textCol: "#fff", size: 14, type: "shop", index: i, cr, alpha: g }
+                : { size: 14, type: "shop", index: i, cr, alpha: g, textCol: HUD.text });
         }
         // item grid + detail
         const items = catalog.filter(it => it.cat === sh.tab);
         sh.tabItems = items;
         if (!sh.sel || !items.find(it => it.id === sh.sel)) sh.sel = items.length ? items[0].id : null;
-        const gridX = x + 20, gridY = tabY + tabH + 14;
+        const gridX = x + 20, gridY = tabY + tabH + 16, GAP = 10;
         const detailW = 240;
         const gridW = W - 40 - detailW - 14;
         // Every item in the tab has to fit: rows used to be a fixed 58 tall,
@@ -7128,30 +7296,30 @@ import * as cosmetics from './account/cosmetics.js';
         // Cards shrink to fit, and a third column opens if that's too tight.
         const gridH = y + H - 32 - gridY;
         const rowsFor = (n) => Math.max(1, Math.ceil(items.length / n));
-        const fitH = (n) => Math.floor((gridH - (rowsFor(n) - 1) * 8) / rowsFor(n));
+        const fitH = (n) => Math.floor((gridH - (rowsFor(n) - 1) * GAP) / rowsFor(n));
         let cols = gridW >= 430 ? 3 : 2;
         let cardH = Math.min(58, fitH(cols));
         if (cardH < 44 && cols < 3) { cols = 3; cardH = Math.min(58, fitH(cols)); }
         cardH = Math.max(36, cardH);
-        const cardW = (gridW - (cols - 1) * 8) / cols;
+        const cardW = (gridW - (cols - 1) * GAP) / cols;
         const hover = global.clickables.shop.check({ x: global.mouse.x, y: global.mouse.y });
         const kitFull = ((sh.state && sh.state.kitOrder) || []).length >= 3;
         for (let i = 0; i < items.length && i < 36; i++) {
             const it = items[i];
             const col = i % cols, row = (i / cols) | 0;
-            const ix = gridX + col * (cardW + 8), iy = gridY + row * (cardH + 8);
+            const ix = gridX + col * (cardW + GAP), iy = gridY + row * (cardH + GAP);
             if (iy + cardH > y + H - 32 + 1) break;
             const sel = it.id === sh.sel;
             const hov = hover === 4 + i;
             const hT = hoverEase("card:" + it.id, hov, now);
             const status = shopStatus(it);
             const afford = (global.gems.banked | 0) >= it.price;
-            drawFlatTile(c, ix, iy, cardW, cardH, sel ? SHOP_CARD_SEL : status.buy ? SHOP_CARD : SHOP_CARD_OFF, hT, g, sel, SHOP_ACCENT);
+            drawFlatTile(c, ix, iy, cardW, cardH, sel ? SHOP_CARD_SEL : status.buy ? SHOP_CARD : SHOP_CARD_OFF, hT, g, sel, HUD.copper);
             let nameX = ix + 10;
             if (it.cat === "kit") { drawKitIcon(c, it.id, ix + 18, iy + Math.min(17, cardH * 0.3), Math.min(18, cardH * 0.34)); nameX = ix + 32; }
             const nameW = cardW - (nameX - ix) - 10;
             let ns = 12; while (ns > 9 && shopMeasureText(it.name, ns) > nameW) ns -= 0.5;
-            drawText(it.name, nameX, iy + Math.min(17, cardH * 0.3), ns, status.buy ? color.guiwhite : "#9aa2b0", "left", true, g);
+            drawText(it.name, nameX, iy + Math.min(17, cardH * 0.3), ns, status.buy ? color.guiwhite : HUD.text2, "left", true, g);
             c.save(); c.globalAlpha = g;
             gemPath(c, ix + 12, iy + cardH - 16, 5);
             c.fillStyle = afford ? color.gold : "#7a5a5a"; c.fill();
@@ -7163,18 +7331,21 @@ import * as cosmetics from './account/cosmetics.js';
         }
         // detail pane
         const dx = x + W - 20 - detailW, dy = gridY, dh = y + H - 32 - gridY;
-        drawFlatTile(c, dx, dy, detailW, dh, "#20242e", 0, g, false);
+        c.save(); c.globalAlpha = g;
+        hudWell(c, dx, dy, detailW, dh, 10, HUD.wellSolid, HUD.ink, 2.5);
+        c.restore();
         const sel = items.find(it => it.id === sh.sel);
         if (sel) {
             const status = shopStatus(sel);
             const catName = (SHOP_TABS.find(t => t[0] === sel.cat) || ["", ""])[1].toUpperCase();
             let tx = dx + 14;
             if (sel.cat === "kit") { drawKitIcon(c, sel.id, dx + 27, dy + 24, 26); tx = dx + 48; }
-            drawText(sel.name, tx, dy + 18, 15, color.guiwhite, "left", true, g);
-            drawText(catName + (sel.cat === "kit" ? "  ·  MAX " + sel.max + " PER SLOT" : sel.cat === "drill" ? "  ·  TIER " + sel.tier : sel.cat === "arm" ? "  ·  RIGHT CLICK" : "  ·  PASSIVE"), tx, dy + 36, 9.5, color.grey, "left", true, g);
+            let ns2 = 18; while (ns2 > 12 && hudTitleW(sel.name, ns2) > dx + detailW - 12 - tx) ns2 -= 0.5;
+            hudTitle(sel.name, tx, dy + 19, ns2, HUD.head, "left", g);
+            drawText(catName + (sel.cat === "kit" ? "  ·  MAX " + sel.max + " PER SLOT" : sel.cat === "drill" ? "  ·  TIER " + sel.tier : sel.cat === "arm" ? "  ·  RIGHT CLICK" : "  ·  PASSIVE"), tx, dy + 37, 9.5, HUD.text2, "left", true, g);
             const lines = wrapLines(sel.desc, 11.5, detailW - 28);
             let ly = dy + 60;
-            for (const ln of lines.slice(0, 5)) { drawText(ln, dx + 14, ly, 11.5, "#d8dce6", "left", true, g); ly += 16; }
+            for (const ln of lines.slice(0, 5)) { drawText(ln, dx + 14, ly, 11.5, HUD.text, "left", true, g); ly += 16; }
             if (sel.cat === "kit" && !status.buy && status.text === "KIT FULL") {
                 for (const ln of wrapLines("Your kit holds 3 kinds of item. Use one up to make room.", 10.5, detailW - 28)) {
                     drawText(ln, dx + 14, ly + 2, 10.5, "#ff9a8c", "left", true, g); ly += 14;
@@ -7182,14 +7353,18 @@ import * as cosmetics from './account/cosmetics.js';
             }
             const afford = (global.gems.banked | 0) >= sel.price;
             c.save(); c.globalAlpha = g;
-            gemPath(c, dx + 20, dy + dh - 52, 6);
-            c.fillStyle = afford ? color.gold : "#ff9a8c"; c.fill();
+            gemPath(c, dx + 20, dy + dh - 60, 6.5);
+            c.fillStyle = afford ? HUD.gold : "#ff9a8c"; c.fill();
+            c.lineWidth = 1.5; c.strokeStyle = HUD.ink; c.stroke();
             c.restore();
-            drawText(fmtNum(sel.price) + " banked", dx + 32, dy + dh - 52, 13, afford ? color.gold : "#ff9a8c", "left", true, g);
+            hudTitle(fmtNum(sel.price) + " banked", dx + 32, dy + dh - 60, 15, afford ? HUD.gold : "#ff9a8c", "left", g);
             const can = status.buy && afford;
-            const bbx = dx + 14, bby = dy + dh - 40, bbw = detailW - 28, bbh = 28;
-            const btnText = !status.buy ? (status.text === "KIT FULL" ? "KIT FULL (3 SLOTS)" : status.text || "UNAVAILABLE") : !afford ? "NOT ENOUGH BANKED" : "BUY";
-            drawButton(bbx + bbw / 2, bby, bbw, bbh, g, "rect", btnText, 12.5, can ? color.gold : color.grey, false, can ? color.gold : false, can, "shop", cr, 40);
+            const bbx = dx + 14, bby = dy + dh - 48, bbw = detailW - 28, bbh = 36;
+            const cap = t => t.charAt(0) + t.slice(1).toLowerCase();
+            const btnText = !status.buy ? (status.text === "KIT FULL" ? "Kit full (3 slots)" : cap(status.text || "UNAVAILABLE")) : !afford ? "Not enough banked" : "Buy";
+            hudButton(c, bbx + bbw / 2, bby, bbw, bbh, btnText, can
+                ? { fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff", size: 17, type: "shop", index: 40, cr, alpha: g }
+                : { enabled: false, size: 14, alpha: g, textCol: HUD.text });
             c.globalAlpha = 1;
         }
         const msgAge = now - (sh.msgAt || -1e9);
@@ -7204,7 +7379,7 @@ import * as cosmetics from './account/cosmetics.js';
     function drawEdgeMarker(c, e, col, glyph, name, distText, placed) {
         const sw = global.screenWidth, sh = global.screenHeight;
         const label = name + (distText ? "  " + distText : "");
-        const tw = measureText(label, 10.5);
+        const tw = hudTextW(label, 10.5);
         const pw = tw + 36, ph = 21;
         const inX = -Math.cos(e.ang), inY = -Math.sin(e.ang);
         const horiz = Math.abs(inX) > Math.abs(inY);
@@ -7241,12 +7416,12 @@ import * as cosmetics from './account/cosmetics.js';
         c.restore();
         c.save();
         roundRectPath(c, px - pw / 2, py - ph / 2, pw, ph, 10.5);
-        c.fillStyle = "rgba(10,11,16,0.86)";
+        c.fillStyle = HUD.panel;
         c.fill();
-        c.lineWidth = 1.5;
-        c.strokeStyle = col;
+        c.lineWidth = 2;
+        c.strokeStyle = HUD.ink;
         c.stroke();
-        c.fillStyle = col; c.strokeStyle = color.black; c.lineWidth = 1.2;
+        c.fillStyle = col; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
         const gx = px - pw / 2 + 12, gy = py;
         if (glyph === "boss") { polyPath(c, gx, gy, 6.5, 8, Math.PI / 8); c.fill(); c.stroke(); }
         else if (glyph === "gem") { gemPath(c, gx, gy + 0.5, 6.5); c.fill(); c.stroke(); }
@@ -7608,12 +7783,7 @@ import * as cosmetics from './account/cosmetics.js';
         const y = global.screenHeight / 2 + 120, size = 22;
         const w = measureText(line, size) + 36, h = size + 18;
         const c = ctx[2];
-        c.save();
-        c.globalAlpha = 0.8;
-        roundRectPath(c, global.screenWidth / 2 - w / 2, y - h / 2, w, h, h / 2);
-        c.fillStyle = "rgba(8,24,32,0.85)"; c.fill();
-        c.lineWidth = 2; c.strokeStyle = "rgba(127,227,255,0.8)"; c.stroke();
-        c.restore();
+        hudPanel(c, global.screenWidth / 2 - w / 2, y - h / 2, w, h, { alpha: 0.9, r: h / 2, bevel: false });
         drawText(line, global.screenWidth / 2, y, size, "#bff2ff", "center", true);
     }
 
@@ -7650,10 +7820,10 @@ import * as cosmetics from './account/cosmetics.js';
         const fs = Math.round(u * 0.12 * pop * (1 - 0.35 * lift));
         c.globalAlpha = Math.min(1, t / 160) * out;
         c.textAlign = "center"; c.textBaseline = "middle";
-        c.font = "700 " + fs + "px Ubuntu, sans-serif";
+        c.font = fs + "px " + HUD.font;
         c.lineJoin = "round";
-        c.lineWidth = Math.max(4, fs * 0.12);
-        c.strokeStyle = "#1b1510";
+        c.lineWidth = Math.max(4, fs * 0.16);
+        c.strokeStyle = HUD.ink;
         const shake = t < 700 ? (1 - t / 700) * u * 0.012 : 0;
         const sx = W / 2 + (Math.random() - 0.5) * shake, sy = ty + (Math.random() - 0.5) * shake;
         c.strokeText("RAID OVER", sx, sy);
@@ -7680,14 +7850,8 @@ import * as cosmetics from './account/cosmetics.js';
         const PW = Math.min(420, global.screenWidth - 40);
         const PH = 64 + rows.length * 22;
         const px = cx - PW / 2, py = cy - PH / 2;
-        c.save();
-        c.fillStyle = "rgba(16,17,22,0.94)";
-        c.fillRect(px, py, PW, PH);
-        c.lineWidth = 3;
-        c.strokeStyle = color.black;
-        c.strokeRect(px, py, PW, PH);
-        c.restore();
-        drawText("RAID OVER. TOP 10 PAID.", cx, py + 26, 16, color.gold, "center");
+        hudPanel(c, px, py, PW, PH, { fill: HUD.solid, r: HUD.rBig });
+        hudTitle("Raid over. Top 10 paid.", cx, py + 24, 19, HUD.gold, "center");
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             drawText("#" + (i + 1) + " " + (row.name || "Unnamed") + "  " + util.formatLargeNumber(row.score | 0),
@@ -7719,13 +7883,8 @@ import * as cosmetics from './account/cosmetics.js';
         // banner panel
         const bw = Math.min(580, global.screenWidth - 60);
         const bx = cx - bw / 2;
-        roundRectPath(c, bx, cy - 46, bw, 92, 14);
-        c.fillStyle = "rgba(16,17,22,0.95)";
-        c.fill();
-        c.lineWidth = 3;
-        c.strokeStyle = col;
-        c.stroke();
-        drawText(name + " TEAM WINS THE WAR", cx, cy - 12, 30, col, "center");
+        hudPanel(c, bx, cy - 46, bw, 92, { fill: HUD.solid, r: HUD.rBig });
+        hudTitle(name.charAt(0) + name.slice(1).toLowerCase() + " team wins the war", cx, cy - 14, 32, col, "center");
         const secs = Math.max(0, Math.ceil((w.resetIn || 0) / 1000));
         drawText("+" + util.formatLargeNumber(w.bonus || 0) + " gems for every " + name.toLowerCase() +
                  " miner - new war in " + secs + "s", cx, cy + 26, 15, color.guiwhite, "center");
@@ -7760,13 +7919,8 @@ import * as cosmetics from './account/cosmetics.js';
             c.globalAlpha = a * 0.55;
             const myCol = playerHexCol() || color.gold;
             const pw = 280 * pop, ph = 118 * pop;
-            roundRectPath(c, cx - pw / 2, cy - ph / 2 - 8, pw, ph, 16);
-            c.fillStyle = "rgba(18, 16, 10, 0.82)";
-            c.fill();
-            c.lineWidth = 3;
-            c.strokeStyle = myCol;
-            c.stroke();
             c.restore();
+            hudPanel(c, cx - pw / 2, cy - ph / 2 - 8, pw, ph, { alpha: a * 0.9, r: HUD.rBig * pop });
 
             c.save();
             c.strokeStyle = myCol;
@@ -7785,10 +7939,10 @@ import * as cosmetics from './account/cosmetics.js';
             c.globalAlpha = a;
             const titleSize = 42 * pop;
             const bonusSize = 26 * pop;
-            drawText("BANKED", cx, cy - 36 * pop, 14, myCol, "center", true, 1, 7);
-            drawText(t.title, cx, cy + 2, titleSize, color.guiwhite, "center", true, 1, 4.5);
+            hudTitle("Banked", cx, cy - 38 * pop, 16, myCol, "center");
+            hudTitle(t.title, cx, cy + 2, titleSize, HUD.head, "center");
             if (t.bonus) {
-                drawText(t.bonus, cx, cy + 44 * pop, bonusSize, myCol, "center", true, 1, 4.5);
+                hudTitle(t.bonus, cx, cy + 42 * pop, bonusSize, myCol, "center");
             }
             c.restore();
             break;
@@ -8622,16 +8776,17 @@ import * as cosmetics from './account/cosmetics.js';
         drawMapMarkers(T, x, y, size, size, 8.5, 3.4);
         strokeStormCircle(ctx[2], T.X, T.Y, T.s, x, y, size, size);
         ctx[2].restore();
-        ctx[2].save();
-        ctx[2].beginPath();
-        ctx[2].arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-        ctx[2].lineWidth = 4;
-        ctx[2].strokeStyle = "rgba(0,0,0,0.6)";
-        ctx[2].stroke();
-        ctx[2].lineWidth = 1.5;
-        ctx[2].strokeStyle = "rgba(255,255,255,0.22)";
-        ctx[2].stroke();
-        ctx[2].restore();
+        // the plate's rim: ink ring, ink drop underneath, faint inner bevel
+        const c2 = ctx[2], mcx = x + size / 2, mcy = y + size / 2, R = size / 2;
+        c2.save();
+        c2.lineWidth = HUD.lw;
+        c2.strokeStyle = HUD.ink;
+        c2.beginPath(); c2.arc(mcx, mcy, R, 0, Math.PI * 2); c2.stroke();
+        c2.beginPath(); c2.arc(mcx, mcy + HUD.lip, R, 0.05 * Math.PI, 0.95 * Math.PI); c2.stroke();
+        c2.lineWidth = 1.5;
+        c2.strokeStyle = "rgba(255,255,255,0.12)";
+        c2.beginPath(); c2.arc(mcx, mcy, R - 2.5, 0, Math.PI * 2); c2.stroke();
+        c2.restore();
     }
 
     function drawRoyaleFullMinimap(x, y, size) {
@@ -8685,10 +8840,11 @@ import * as cosmetics from './account/cosmetics.js';
         ctx[2].fillRect(0, 0, sw, sh);
         
         const pop = 0.97 + 0.03 * fade;
-        const fitW = sw * 0.72, fitH = sh * 0.8;
+        // leaves the name + wallet row at the bottom uncovered
+        const fitW = sw * 0.72, fitH = sh * 0.76;
         const fit = Math.min(fitW / gw, fitH / gh) * pop;
         const panelW = gw * fit, panelH = gh * fit;
-        const px0 = (sw - panelW) / 2, py0 = (sh - panelH) / 2;
+        const px0 = (sw - panelW) / 2, py0 = (sh - panelH) / 2 - sh * 0.02;
         
         // Tutorial: the room holds several learners' plots, but a learner
         // should only ever see their own training ground. Lock the frame to
@@ -8714,18 +8870,19 @@ import * as cosmetics from './account/cosmetics.js';
         const wx0 = bm.cx - span / 2, wy0 = bm.cy - spanY / 2;
         
         bm._panel = { x: px0, y: py0, w: panelW, h: panelH, s: panelW / span, wx0, wy0 };
-        const tabH = royaleActive() ? 30 : 0;
-        optionsMenu_drawRoundedRect(px0 - 4, py0 - 4, panelW + 8, panelH + 8, 8);
-        ctx[2].fillStyle = "#111318";
-        ctx[2].fill();
-        if (royaleActive()) drawRoyaleFTabs(px0, py0, panelW, tabH);
+        const tabH = royaleActive() ? 34 : 0;
+        hudPanel(ctx[2], px0 - 8, py0 - 8, panelW + 16, panelH + 16, { fill: HUD.solid, r: HUD.rBig });
+        // raid: the close hint sits at the end of the tab strip, so nothing
+        // hangs under the plate onto the name and wallet row
+        const closeW = tabH ? 104 : 0;
+        if (royaleActive()) drawRoyaleFTabs(px0, py0, panelW - closeW, tabH);
         ctx[2].save();
         ctx[2].beginPath();
         ctx[2].rect(px0, py0 + tabH, panelW, panelH - tabH);
         ctx[2].clip();
         const tab = (global.royaleBoard && global.royaleBoard.tab) || 'map';
         if (royaleActive() && tab !== 'map') {
-            ctx[2].fillStyle = "#16181e";
+            ctx[2].fillStyle = HUD.raised;
             ctx[2].fillRect(px0, py0 + tabH, panelW, panelH - tabH);
             drawRoyaleFTabBody(px0, py0 + tabH, panelW, panelH - tabH, tab);
         } else {
@@ -8786,43 +8943,51 @@ import * as cosmetics from './account/cosmetics.js';
         }
         } // end map-tab world draw
         ctx[2].restore();
-        ctx[2].lineWidth = 3;
-        ctx[2].strokeStyle = color.black;
-        ctx[2].strokeRect(px0 - 2, py0 - 2, panelW + 4, panelH + 4);
-        const keyEl = document.querySelector('#controlSettings b[data-key="KEY_TOGGLE_MAP"]');
-        const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "M";
-        drawText("[" + keyName + "] close",
-                 sw / 2, py0 + panelH + 22, 13, color.guiwhite, "center");
+        // keyline round the map/list well, under the tab strip
+        roundRectPath(ctx[2], px0, py0 + tabH, panelW, panelH - tabH, 6);
+        ctx[2].lineWidth = 2.5;
+        ctx[2].strokeStyle = HUD.ink;
+        ctx[2].stroke();
+        const keyName = keyLabel("KEY_TOGGLE_MAP", "M");
+        const kw = Math.max(20, hudTitleW(keyName, 12.4) + 11);
+        const rowW = kw + 6 + hudTitleW("Close", 14);
+        const rx0 = tabH ? px0 + panelW - closeW / 2 - rowW / 2 : sw / 2 - rowW / 2;
+        const ky = tabH ? py0 + tabH / 2 - 7 : py0 + panelH + 18;
+        hudKey(ctx[2], rx0, ky, keyName, 20);
+        hudTitle("Close", rx0 + kw + 6, ky + 8.75, 14, HUD.text2, "left");
         ctx[2].restore();
     }
 
     function drawRoyaleFTabs(x, y, w, h) {
+        // the settings panel's tabs: the picked one is a raised face joined
+        // to the list below, the rest are just labels on the plate
         const tabs = ["Map", "Standings", "Feed", "Alive"];
         const ids = ["map", "standings", "feed", "alive"];
         const tab = (global.royaleBoard && global.royaleBoard.tab) || "map";
         const tw = w / tabs.length;
         const c = ctx[2];
         const cr = global.canvas.height / global.screenHeight / global.ratio;
+        const hov = global.clickables.royaleTab.check({ x: global.mouse.x, y: global.mouse.y });
         c.save();
-        c.fillStyle = "#111318";
-        c.fillRect(x, y, w, h);
-        c.strokeStyle = color.black;
-        c.lineWidth = 3;
-        c.strokeRect(x, y, w, h);
         for (let i = 0; i < tabs.length; i++) {
             const tx = x + i * tw;
             const on = tab === ids[i];
             if (on) {
-                c.fillStyle = "#2a2e38";
-                c.fillRect(tx, y, tw, h);
+                const r = 9, tx0 = tx + 3, tw0 = tw - 6, ty0 = y + 3;
+                c.beginPath();
+                c.moveTo(tx0, y + h + 1);
+                c.lineTo(tx0, ty0 + r);
+                c.arcTo(tx0, ty0, tx0 + r, ty0, r);
+                c.lineTo(tx0 + tw0 - r, ty0);
+                c.arcTo(tx0 + tw0, ty0, tx0 + tw0, ty0 + r, r);
+                c.lineTo(tx0 + tw0, y + h + 1);
+                c.fillStyle = HUD.raised;
+                c.fill();
+                c.lineWidth = 2.5;
+                c.strokeStyle = HUD.ink;
+                c.stroke();
             }
-            c.strokeStyle = color.black;
-            c.lineWidth = 2;
-            c.beginPath();
-            c.moveTo(tx, y);
-            c.lineTo(tx, y + h);
-            c.stroke();
-            drawText(tabs[i], tx + tw / 2, y + h / 2 + 5, 13, on ? color.gold : color.guiwhite, "center");
+            hudTitle(tabs[i], tx + tw / 2, y + h / 2 + 2, 15, on ? HUD.head : hov === i ? HUD.text : HUD.text2, "center");
             global.clickables.royaleTab.place(i, tx * cr, y * cr, tw * cr, h * cr);
         }
         c.restore();
@@ -8851,7 +9016,7 @@ import * as cosmetics from './account/cosmetics.js';
         const rowH = 28;
         let headH = 0;
         if (tab === "standings") {
-            drawText("PTS = banked + 200 per kill + 50% carried", x + 18, y + 16, 12, color.grey, "left");
+            drawText("PTS = banked + 200 per kill + 50% carried", x + 18, y + 16, 12, HUD.text2, "left");
             headH = 22;
         }
         const meHex = playerHexCol() || color.gold;
@@ -8906,12 +9071,15 @@ import * as cosmetics from './account/cosmetics.js';
         if (global.GUIStatus.renderMinimap) {
             
             if (royaleActive() && !global.mobile) {
-                const mx = global.screenWidth - spacing - len - 5;
-                const my = global.screenHeight - len - spacing - 22;
+                const mx = global.screenWidth - HUD.edge - len;
+                const my = global.screenHeight - len - HUD.edge - HUD.lip;
                 drawFortniteMinimap(mx, my, len);
-                const keyEl = document.querySelector('#controlSettings b[data-key="KEY_TOGGLE_MAP"]');
-                const keyName = keyEl && keyEl.textContent ? keyEl.textContent : "M";
-                drawText("[" + keyName + "] map", mx + len / 2, my + len + 16, 11, color.guiwhite, "center");
+                // map key as a keycap in the corner the round map leaves free
+                const keyName = keyLabel("KEY_TOGGLE_MAP", "M");
+                const kh = 20, kw0 = Math.max(kh, hudTitleW(keyName, kh * 0.62) + kh * 0.55);
+                const kx = Math.round(mx + len * 0.5 - len * 0.5 * Math.SQRT1_2 - kw0 * 0.5), ky = Math.round(my + len * 0.5 + len * 0.5 * Math.SQRT1_2 - kh * 0.5);
+                hudKey(ctx[2], kx, ky, keyName, kh);
+                hudTitle("Map", kx - 5, ky + (kh - 2.5) / 2, 13, HUD.head, "right");
             } else if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0 && !global.mobile) {
                 const mx = global.screenWidth - spacing - len - 5;
                 const my = global.screenHeight - len - spacing - 5;
@@ -9239,12 +9407,17 @@ import * as cosmetics from './account/cosmetics.js';
             let height = len;
 
             global.columnCount = Math.max(global.mobile ? 9 : 3, Math.floor(gui.upgrades.length ** 0.55));
+            // Room for the DOM gear + chat buttons (10px + 42px + 3px drop,
+            // CSS px) above the first row: on a small window at Small scale
+            // 46 UI units is less than that and the tiles slid under them.
+            const cssPerUi = global.canvas.height / global.screenHeight / global.ratio;
+            const topPad = global.mobile ? 46 : Math.max(46, Math.ceil(63 / (cssPerUi || 1)) - spacing - 5);
             // Desktop: add columns while the grid would run down into the kit
             // box / stat bars (short windows, big trees). Six at most, past
             // that it would reach the raid clock at top centre instead.
             if (!global.mobile) {
                 const gridBottom = cols => {
-                    let gy = spacing - height - internalSpacing + 5 + 46, tick = cols, branch = -1;
+                    let gy = spacing - height - internalSpacing + 5 + topPad, tick = cols, branch = -1;
                     for (const u of gui.upgrades) {
                         if (tick === cols || u[0] != branch) {
                             gy += height + internalSpacing;
@@ -9254,7 +9427,7 @@ import * as cosmetics from './account/cosmetics.js';
                         }
                         tick++;
                     }
-                    return gy + height + internalSpacing - 5 + 19.1 + 6;
+                    return gy + height + internalSpacing - 5 + 24 + 2.5 + 6;
                 };
                 const limit = leftColumnFloor() - 8;
                 while (global.columnCount < 6 && gridBottom(global.columnCount) > limit) global.columnCount++;
@@ -9273,7 +9446,7 @@ import * as cosmetics from './account/cosmetics.js';
 
             let x = glide * 2 * spacing + spacing + 5;
             
-            let y = spacing - height - internalSpacing + 5 + 46;
+            let y = spacing - height - internalSpacing + 5 + topPad;
             let xStart = x;
             let initialX = x;
             let rowWidth = 0;
@@ -9321,15 +9494,14 @@ import * as cosmetics from './account/cosmetics.js';
                 upgradeNum++;
             }
 
-            let h = 19.1,
-                textScale = h - 6,
-                msg = "Don't Upgrade",
-                m = measureText(msg, textScale),
+            let h = 24,
+                msg = "Don't upgrade",
+                m = hudTitleW(msg, 13) + 24,
                 buttonX = initialX + (rowWidth + len - initialX) / 2,
                 buttonY = initialY + height + internalSpacing - 5;
             // the quest card sits below this edge while the tiles are on screen
             if (glide > -0.5) {
-                global.upgradeBoxBottom = buttonY + h + 6;
+                global.upgradeBoxBottom = buttonY + h + 2.5 + 6;
                 global.upgradeBoxTop = gridTop;
                 global.upgradeBoxRight = gridRight;
             }
@@ -9337,7 +9509,7 @@ import * as cosmetics from './account/cosmetics.js';
             // Tutorial: declining is not a choice a lesson offers - and the
             // decline only clears the menu locally, so the evolve step would
             // stall on an empty box the server never repopulates.
-            if (!global.tutorialMode) drawButton(buttonX, buttonY, m, h, 1, "rect", msg, textScale - 3.3, false, false, false, true, "skipUpgrades", clickableRatio, 0);
+            if (!global.tutorialMode) hudButton(ctx[2], buttonX, buttonY, m, h, msg, { size: 13, type: "skipUpgrades", index: 0, cr: clickableRatio, textCol: HUD.text });
 
             if (gui.dailyTank && gui.dailyTank.tank) {
                 let image = util.requestEntityImage(gui.dailyTank.tank, gui.color);
@@ -9346,7 +9518,7 @@ import * as cosmetics from './account/cosmetics.js';
                 drawEntityIcon(image, xStart, initialY + height + internalSpacing + 50, len, height, 1, upgradeSpin, 0.4, 10, false, hover);
                 drawText("Daily Tank!", xStart + 50, initialY + height + internalSpacing + 67, 12, gameDraw.getColor(36), "center");
                 global.clickables.dailyTankUpgrade.set(xStart * clickableRatio, (initialY + height + internalSpacing + 50) * clickableRatio, len * clickableRatio, height * clickableRatio);
-                gui.dailyTank.ads && drawButton(xStart + 50, initialY + height + internalSpacing + 160, m, h, 1, "rect", "Watch An Ad", textScale - 3.3, false, false, false, true, "dailyTankAd", clickableRatio, false);
+                gui.dailyTank.ads && drawButton(xStart + 50, initialY + height + internalSpacing + 160, m, h, 1, "rect", "Watch An Ad", 9.8, false, false, false, true, "dailyTankAd", clickableRatio, false);
             }
 
             if (upgradeHoverIndex > -1 && upgradeHoverIndex < gui.upgrades.length && !global.mobile) {
@@ -9858,20 +10030,15 @@ import * as cosmetics from './account/cosmetics.js';
         const c = ctx[2];
         c.save();
         c.globalAlpha = alpha;
-        roundRectPath(c, bx, by, bw, 40, 7);
-        c.fillStyle = "rgba(255,255,255,0.045)";
-        c.fill();
-        c.lineWidth = 2;
-        c.strokeStyle = "rgba(0,0,0,0.45)";
-        c.stroke();
+        hudWell(c, bx, by, bw, 40, 8, HUD.well, HUD.ink, 2);
         c.restore();
         if (iconKind) drawDeathIcon(iconKind, bx + 20, by + 20, 17, alpha);
         // shrink to fit the box: long labels and six-figure values both happen
         const maxW = bw - 50;
-        let ls = 11; while (ls > 7.5 && measureText(label, ls) > maxW) ls -= 0.5;
-        let vs = 16; while (vs > 9 && measureText(value, vs) > maxW) vs -= 0.5;
-        drawText(label, bx + 40, by + 12, ls, color.grey, "left");
-        drawText(value, bx + 40, by + 31, vs, color.guiwhite, "left");
+        let ls = 11; while (ls > 7.5 && hudTextW(label, ls) > maxW) ls -= 0.5;
+        let vs = 17; while (vs > 9 && hudTitleW(value, vs) > maxW) vs -= 0.5;
+        drawText(label, bx + 40, by + 12, ls, HUD.text2, "left");
+        hudTitle(value, bx + 40, by + 27, vs, HUD.head, "left", alpha);
     };
     const roundRectPath = (c, x, y, w, h, r) => {
         r = Math.min(r, w / 2, h / 2);
@@ -9936,30 +10103,15 @@ import * as cosmetics from './account/cosmetics.js';
                  - 700 * (1 - global.lerp(0, 1, glide));
 
         // panel
-        c.save();
-        roundRectPath(c, px, py, PW, PH, 16);
-        c.fillStyle = "rgba(16,17,22,0.93)";
-        c.fill();
-        c.lineWidth = 4;
-        c.strokeStyle = "#111318";
-        c.stroke();
-        c.lineWidth = 1.5;
-        c.strokeStyle = "rgba(255,215,94,0.22)";
-        c.stroke();
-        c.restore();
+        hudPanel(c, px, py, PW, PH, { fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
 
-        drawText("YOU DIED", cx, py + 34, 27, color.gold, "center");
+        hudTitle("You died", cx, py + 32, 32, HUD.gold, "center");
 
         // ── left column: portrait recess + tank name ──────────────────────
         const COLW = 176;
         const lx = px + 22, ly = py + 62;
         c.save();
-        roundRectPath(c, lx, ly, COLW, 210, 12);
-        c.fillStyle = "rgba(255,255,255,0.04)";
-        c.fill();
-        c.lineWidth = 2;
-        c.strokeStyle = "rgba(0,0,0,0.5)";
-        c.stroke();
+        hudWell(c, lx, ly, COLW, 210, 12, HUD.well, HUD.ink, 2);
         c.restore();
         try {
             const picture = util.getEntityImageFromMockup(gui.type, gui.color);
@@ -9988,12 +10140,7 @@ import * as cosmetics from './account/cosmetics.js';
         // headline score
         c.save();
         c.globalAlpha = global.lerp(0, 1, glide);
-        roundRectPath(c, rx, ry, rw, 58, 9);
-        c.fillStyle = "rgba(255,215,94,0.10)";
-        c.fill();
-        c.lineWidth = 2;
-        c.strokeStyle = "rgba(255,215,94,0.35)";
-        c.stroke();
+        hudWell(c, rx, ry, rw, 58, 10, "rgba(242,184,60,0.12)", HUD.ink, 2.5);
         c.restore();
         drawText("SCORE", rx + 14, ry + 15, 11, color.grey, "left");
         drawText(util.formatLargeNumber(Math.round(global.finalScore.get())),
@@ -10074,36 +10221,20 @@ import * as cosmetics from './account/cosmetics.js';
         const px = cx - PW / 2;
         const py = Math.max(12, global.screenHeight / 2 - PH / 2 - 6) + rise;
         // panel: dark card, black keyline, gold raid frame
-        c.save();
-        c.globalAlpha = panelA;
-        roundRectPath(c, px, py, PW, PH, 16);
-        c.fillStyle = "rgba(16,17,22,0.94)";
-        c.fill();
-        c.lineWidth = 4;
-        c.strokeStyle = "#111318";
-        c.stroke();
-        c.lineWidth = 2;
-        c.strokeStyle = "rgba(255,215,94,0.75)";
-        c.stroke();
-        c.restore();
+        hudPanel(c, px, py, PW, PH, { alpha: panelA, fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
 
-        drawText("YOU DIED", cx, py + 34, 26 * (0.8 + 0.2 * panelA), color.gold, "center", true, panelA);
-        drawText("The raid keeps going without you for a bit", cx, py + 54, 11, color.grey, "center", true, panelA);
+        hudTitle("You died", cx, py + 32, 32 * (0.8 + 0.2 * panelA), HUD.gold, "center", panelA);
+        drawText("The raid keeps going without you for a bit", cx, py + 55, 11, HUD.text2, "center", true, panelA);
 
         // headline score + place
         const bx = px + 22, bw = PW - 44;
         c.save();
         c.globalAlpha = global.lerp(0, 1, glide) * (0.25 + 0.75 * panelA);
-        roundRectPath(c, bx, py + 66, bw, 58, 9);
-        c.fillStyle = "rgba(255,215,94,0.10)";
-        c.fill();
-        c.lineWidth = 2;
-        c.strokeStyle = "rgba(255,215,94,0.35)";
-        c.stroke();
+        hudWell(c, bx, py + 66, bw, 58, 10, "rgba(242,184,60,0.12)", HUD.ink, 2.5);
         c.restore();
-        drawText("RAID SCORE", bx + 14, py + 79, 11, color.grey, "left", true, panelA);
-        drawText(util.formatLargeNumber(Math.round(score)), bx + 14, py + 105, 24, color.gold, "left", true, panelA);
-        if (place > 0) drawText("#" + place, bx + bw - 14, py + 105, 24, color.guiwhite, "right", true, panelA);
+        drawText("RAID SCORE", bx + 14, py + 79, 11, HUD.text2, "left", true, panelA);
+        hudTitle(util.formatLargeNumber(Math.round(score)), bx + 14, py + 102, 28, HUD.gold, "left", panelA);
+        if (place > 0) hudTitle("#" + place, bx + bw - 14, py + 102, 28, HUD.head, "right", panelA);
 
         // the run in numbers: kept vs lost is the whole raid economy
         const half = (bw - 8) / 2;
@@ -10132,7 +10263,7 @@ import * as cosmetics from './account/cosmetics.js';
                 : "Nobody finished you off";
         c.save();
         c.globalAlpha = global.lerp(2.4, 2.7, glide);
-        drawText(killedBy, cx, gy + 3 * 46 + 14, 13, color.grey, "center");
+        drawText(killedBy, cx, gy + 3 * 46 + 14, 13, HUD.text2, "center");
         c.restore();
         const extras = [];
         if ((global.finalInsured | 0) > 0) extras.push("Your insurance saved " + util.formatLargeNumber(global.finalInsured | 0) + " of it");
@@ -10150,7 +10281,7 @@ import * as cosmetics from './account/cosmetics.js';
         drawText(locked
                 ? ("Final storm - no spawns for " + Math.max(0, global.royale.lockLeft | 0) + "s")
                 : (waitMs > 0 ? ("Respawning in " + Math.ceil(waitMs / 1000) + "s") : "Respawning"),
-                 cx, gy + 3 * 46 + 56, 14, color.gold, "center", true, panelA);
+                 cx, gy + 3 * 46 + 56, 14, HUD.gold, "center", true, panelA);
         // ranked: the life's rank result in the strip under the stats
         try {
             rankPanel.draw(c, bx, py + 346, bw, 106,
@@ -10179,13 +10310,7 @@ import * as cosmetics from './account/cosmetics.js';
         spectateBarBottom = y + 58;
         const h = 36;
         const c = ctx[2];
-        c.save();
-        c.fillStyle = "rgba(16,17,22,0.92)";
-        c.fillRect(x, y, barW, h);
-        c.lineWidth = 3;
-        c.strokeStyle = color.black;
-        c.strokeRect(x, y, barW, h);
-        c.restore();
+        hudPanel(c, x, y, barW, h, { fill: HUD.solid });
         // Spectating is manual: Prev/Next hop, Play rejoins (queues through
         // the 15s tax), Home exits. No auto-rejoin while watching.
         const locked = !!(global.royale.lock && global.royale.at > 0);
@@ -10486,15 +10611,7 @@ import * as cosmetics from './account/cosmetics.js';
         const b = document.createElement("button");
         b.id = id;
         b.textContent = text;
-        b.style.height = "38px";
-        b.style.padding = "0 14px";
-        b.style.borderRadius = "10px";
-        b.style.border = "2px solid #000";
-        b.style.background = "#16171d";
-        b.style.color = "#f2ecdc";
-        b.style.cursor = "pointer";
-        b.style.font = "700 12px Rubik, Ubuntu, sans-serif";
-        b.style.boxShadow = "0 2px 0 rgba(0,0,0,.4)";
+        b.className = "dw-igbtn";   // home.css: the menu's chunky button
         return b;
     }
     function getRoyaleDomButtons() {
@@ -10502,7 +10619,7 @@ import * as cosmetics from './account/cosmetics.js';
         royaleDomBuilt = true;
         const spec = document.createElement("div");
         spec.id = "royaleSpecDom";
-        spec.style.cssText = "position:fixed;top:52px;left:50%;transform:translateX(-50%);z-index:31;display:none;gap:8px;align-items:center;";
+        spec.style.cssText = "position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:31;display:none;gap:10px;align-items:center;";
         const prev = royaleDomBtn("royaleDomPrev", "Prev");
         const next = royaleDomBtn("royaleDomNext", "Next");
         const play = royaleDomBtn("royaleDomPlay", "Play");
@@ -10515,15 +10632,14 @@ import * as cosmetics from './account/cosmetics.js';
         document.body.appendChild(spec);
         const dead = document.createElement("div");
         dead.id = "royaleDeadDom";
-        dead.style.cssText = "position:fixed;left:50%;bottom:8%;transform:translateX(-50%);z-index:31;display:none;gap:8px;align-items:center;";
+        dead.style.cssText = "position:fixed;left:50%;bottom:8%;transform:translateX(-50%);z-index:31;display:none;gap:10px;align-items:center;";
         const sp = royaleDomBtn("royaleDomSpectate", "Spectate");
         const homeD = royaleDomBtn("royaleDomHomeDead", "Home");
         sp.onclick = () => royaleDomAct("spectate");
         homeD.onclick = () => royaleDomAct("home");
         // guests: the rank card's nudge has its button here, with the others
         const signup = royaleDomBtn("royaleDomSignup", "Get an account");
-        signup.style.borderColor = "#e07b2e";
-        signup.style.color = "#ffc58f";
+        signup.classList.add("accent");
         signup.style.display = "none";
         signup.onclick = () => royaleDomAct("signup");
         dead.append(sp, homeD, signup);
