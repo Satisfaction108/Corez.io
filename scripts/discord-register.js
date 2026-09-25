@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Registers the Dig Wars slash commands with Discord (bulk overwrite, so a
+// Registers the Corez slash commands with Discord (bulk overwrite, so a
 // command removed from the list disappears too):
 //   global           /profile /rank /leaderboard       (can take up to an hour to show)
 //   admin guild      /lookup /resetpassword /relink /grantdust /ban /unban

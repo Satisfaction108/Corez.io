@@ -15,7 +15,7 @@ function page(nonce) {
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Reset password · Dig Wars</title>
+<title>Reset password · Corez</title>
 <style nonce="${nonce}">
 :root{color-scheme:dark;--bg:#16181d;--card:#20232b;--line:#343945;--text:#e8eaef;--dim:#9aa1ae;--accent:#3fb6a8;--bad:#e06c6c}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:16px}
@@ -27,7 +27,7 @@ button{margin-top:18px;width:100%;padding:11px;border:0;border-radius:6px;backgr
 button:disabled{opacity:.6;cursor:default}#msg{margin-top:14px;font-size:14px;min-height:1.4em}.bad{color:var(--bad)}.ok{color:var(--accent)}
 a{color:var(--accent)}
 </style></head><body><main>
-<h1>Reset password</h1><p id="who">Choose a new password for your Dig Wars account.</p>
+<h1>Reset password</h1><p id="who">Choose a new password for your Corez account.</p>
 <form id="f" autocomplete="off">
 <label for="pw">New password</label><input id="pw" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
 <label for="pw2">Type it again</label><input id="pw2" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
@@ -51,7 +51,7 @@ a{color:var(--accent)}
       .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, j: j }; }); })
       .then(function(res){
         if (res.ok) { f.hidden = true; say('Password changed! You are logged in' + (res.j.user ? ' as ' + res.j.user.username : '') + '.', 'ok');
-          var a2 = document.createElement('a'); a2.href = '/'; a2.textContent = 'Play Dig Wars'; msg.appendChild(document.createElement('br')); msg.appendChild(a2); return; }
+          var a2 = document.createElement('a'); a2.href = '/'; a2.textContent = 'Play Corez'; msg.appendChild(document.createElement('br')); msg.appendChild(a2); return; }
         go.disabled = false; say((res.j.error && res.j.error.message) || "That didn't work. Try again!", 'bad');
       }, function(){ go.disabled = false; say("Couldn't reach the server. Try again!", 'bad'); });
   });

@@ -1,13 +1,14 @@
 // Friends data and the live connection. One copy of the lists (friends,
 // requests both ways, blocked) that the Friends pane, the nav badge and the
 // gift picker read; it is filled by GET /api/friends and kept fresh by the
-// Server-Sent Events stream at /api/events while the menu shows. If the
-// stream can't be used, /api/friends is polled every 15 s instead. The
-// stream closes when a game starts and opens again back in the menu.
+// Server-Sent Events stream at /api/events while logged in (menu and game:
+// the in-game friend chat needs DMs). If the stream can't be used,
+// /api/friends is polled every 15 s instead. Events are rare, so keeping it
+// open in a raid costs the frame loop nothing.
 // Chat: each friend row carries {unread, last}; the open chat view
 // (chat.js) says which friend it shows, so their messages don't count as
-// unread or toast. DMs that land while in a raid (or while the stream was
-// closed for one) come back as one toast in the menu.
+// unread or toast. DMs that land in a raid go to the in-game chat
+// (ingameChat.js) when it is listening, else they add up into one menu toast.
 import * as api from './api.js';
 import * as store from './state.js';
 import { toast } from './ui.js';
@@ -170,7 +171,11 @@ function showDm(p) {
         actions: [{ label: 'Reply', onClick: () => hooks.openPane('friends', { chat: p.userId }) }],
     });
 }
+// ingameChat.js: fn({userId, username, body}) for DMs that land in a raid
+let gameDm = null;
+export function setGameDmHandler(fn) { gameDm = fn || null; }
 function dmToast(p) {
+    if (inGame() && gameDm) { try { gameDm(p); } catch (e) { console.error(e); } return; }
     dmPend.n++;
     dmPend.last = p;
     flushDm();
@@ -311,13 +316,15 @@ function onEvent(type, d) {
         case 'sessionRevoked':
             revoked = true;
             stop();
-            hooks.onRevoked();
+            // never pull the welcome gate up over a running raid
+            if (inGame()) revokePending = true;
+            else hooks.onRevoked();
             break;
     }
 }
 
 const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'sessionRevoked'];
-let es = null, esFails = 0, pollTimer = 0, esRetryTimer = 0, revoked = false;
+let es = null, esFails = 0, pollTimer = 0, esRetryTimer = 0, revoked = false, revokePending = false;
 
 function openStream() {
     if (es || typeof EventSource !== 'function') return false;
@@ -369,10 +376,10 @@ function stop() {
     clearTimeout(esRetryTimer);
 }
 
-const wanted = () => loggedIn() && !inGame() && !revoked && !store.get('offline');
+const wanted = () => loggedIn() && !revoked && !store.get('offline');
 
-// Match the connection to the page: open in the menu, closed in a game or
-// when logged out.
+// Match the connection to the page: open while logged in (menu or game),
+// closed when logged out.
 export function sync() {
     if (!wanted()) { stop(); return; }
     if (es || pollTimer) return;
@@ -388,7 +395,7 @@ export function init(hs) {
         if (id !== lastUserId) {
             // a different (or no) account: forget the old lists
             lastUserId = id;
-            revoked = false;
+            revoked = false; revokePending = false;
             stop();
             Object.assign(data, { loaded: false, friends: [], incoming: [], outgoing: [], blocked: [] });
             dmPend.n = 0; dmPend.last = null; activeChat = null; activeShown = null;
@@ -398,6 +405,7 @@ export function init(hs) {
     });
     new MutationObserver(() => {
         sync();
+        if (!inGame() && revokePending) { revokePending = false; hooks.onRevoked(); }
         if (!inGame()) setTimeout(flushToasts, 600);
     }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 }

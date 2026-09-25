@@ -2627,6 +2627,17 @@ input.dw-input.fr-add-in { flex: 1; min-width: 0; height: 40px; background: var(
     animation: dwPop var(--dw-t2) var(--dw-ease) both;
 }
 .fr-sub.st-msg { color: var(--heading); font-weight: 700; }
+.fr-chatbtn { position: relative; }
+.fr-chatbtn .dw-ic { width: 18px; height: 18px; }
+.fr-chatbtn.hot { color: var(--accent); }
+.fr-ic-count {
+    position: absolute; top: -3px; right: -4px;
+    min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box;
+    border-radius: 9px; background: var(--accent); box-shadow: 0 0 0 2px var(--hub-bg); color: #fff;
+    font: 700 10px/17px Ubuntu; text-align: center; font-variant-numeric: tabular-nums;
+    pointer-events: none; animation: dwPop var(--dw-t2) var(--dw-ease) both;
+}
+.fr-row:hover .fr-ic-count { box-shadow: 0 0 0 2px var(--surface2); }
 
 /* Chat */
 .fr-home[hidden] { display: none; }
@@ -2900,3 +2911,96 @@ input.dw-input.fr-chat-in { width: 100%; height: 42px; box-sizing: border-box; p
 @media (prefers-reduced-motion: reduce) {
     #lobbySide, #lobbySide *, .dw-nav-count { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
+
+/* ── In-game friend chat (client/account/ingameChat.js) ──
+   right edge, middle height: clear of the leaderboard, minimap and the
+   HUD centre. Flat, opaque, one easing. */
+.igc {
+    position: fixed; right: 14px; top: 50%; z-index: 60;
+    display: flex; flex-direction: column;
+    width: 300px; max-width: calc(100vw - 28px);
+    height: min(420px, calc(100vh - 120px));
+    margin-top: calc(min(420px, calc(100vh - 120px)) / -2);
+    box-sizing: border-box; padding: 10px 12px 12px;
+    border: 1px solid var(--border); border-radius: 14px;
+    background: var(--hub-bg); color: var(--text);
+    box-shadow: 0 8px 28px var(--shadow);
+    font-family: Ubuntu, sans-serif;
+}
+.igc[hidden] { display: none; }
+.igc-head { display: flex; align-items: center; gap: 8px; flex: none; padding: 0 0 8px 2px; }
+.igc-title { color: var(--heading); font: 700 14px Ubuntu; }
+.igc-hint { flex: 1; color: var(--text2); font: 500 11px Ubuntu; text-align: right; opacity: .8; }
+.igc-x {
+    display: inline-flex; align-items: center; justify-content: center; flex: none;
+    width: 26px; height: 26px; margin: 0; padding: 0; border: 0; border-radius: 8px;
+    background: transparent; color: var(--text2); cursor: pointer;
+    transition: background-color var(--dw-t1) var(--dw-ease), color var(--dw-t1) var(--dw-ease);
+}
+.igc-x .dw-ic { width: 14px; height: 14px; }
+.igc-x:hover { background: var(--surface2); color: var(--text); }
+.igc-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.igc-list {
+    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column; gap: 2px;
+    scrollbar-width: thin; scrollbar-color: var(--scroll-t) transparent;
+}
+.igc-row {
+    display: flex; align-items: center; gap: 10px; flex: none;
+    margin: 0; padding: 6px 8px 6px 6px; border: 0; border-radius: 10px;
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    transition: background-color var(--dw-t1) var(--dw-ease);
+}
+.igc-row:hover, .igc-row:focus-visible { background: var(--surface2); outline: none; }
+.igc-row .fr-txt { flex: 1; }
+.igc-row .fr-name { height: 18px; }
+.igc-row .fr-avwrap .fr-dot { width: 9px; height: 9px; }
+.igc-row:hover .fr-avwrap .fr-dot, .igc-row:focus-visible .fr-avwrap .fr-dot { box-shadow: 0 0 0 2.5px var(--surface2); }
+.igc-row.st-offline .fr-name { opacity: .8; }
+.igc-empty { padding: 40px 12px; color: var(--text2); font: 500 12.5px/1.5 Ubuntu; text-align: center; animation: dwFade var(--dw-t2) var(--dw-ease) both; }
+.igc .fr-chat { flex: 1; min-height: 0; height: auto; margin: 0; }
+.igc .fr-chat-head { padding-bottom: 8px; }
+.igc .fr-chat-who { pointer-events: none; }
+.igc .fr-msg { max-width: 86%; }
+.igc .fr-bubble { font-size: 13px; padding: 6px 11px 7px; }
+.igc input.dw-input.fr-chat-in { height: 38px; }
+.igc .fr-chat-send { height: 38px; min-width: 60px; }
+.igc .fr-chat-empty { padding: 24px 12px; }
+
+/* the pip: tiny, faint until something's unread */
+.igc-pip {
+    position: fixed; right: 14px; top: 50%; z-index: 59;
+    display: none; align-items: center; gap: 5px;
+    height: 28px; margin: -14px 0 0; padding: 0 8px; box-sizing: border-box;
+    border: 1px solid var(--border); border-radius: 14px;
+    background: var(--hub-bg); color: var(--text2); cursor: pointer;
+    opacity: .5;
+    transition: opacity var(--dw-t2) var(--dw-ease), color var(--dw-t2) var(--dw-ease), transform var(--dw-t1) var(--dw-ease);
+}
+.igc-pip.show { display: inline-flex; }
+.igc-pip:hover { opacity: 1; }
+.igc-pip:active { transform: scale(.94); }
+.igc-pip .dw-ic { width: 15px; height: 15px; }
+.igc-pip.hot { opacity: 1; color: var(--accent); }
+.igc-pip-n:empty { display: none; }
+.igc-pip-n {
+    min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
+    background: var(--accent); color: #fff; font: 700 10px/16px Ubuntu; text-align: center; font-variant-numeric: tabular-nums;
+    animation: dwPop var(--dw-t2) var(--dw-ease) both;
+}
+
+/* a DM with the panel shut: slides in just above the pip */
+.igc-toast {
+    position: fixed; right: 14px; top: 50%; z-index: 59;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+    max-width: min(280px, calc(100vw - 28px)); margin: -58px 0 0; padding: 7px 12px; box-sizing: border-box;
+    border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px;
+    background: var(--hub-bg); color: var(--text); cursor: pointer; text-align: right;
+    opacity: 0; visibility: hidden; transform: translateX(10px); pointer-events: none;
+    transition: opacity var(--dw-t2) var(--dw-ease), transform var(--dw-t2) var(--dw-ease), visibility 0s var(--dw-t2);
+}
+.igc-toast.show { opacity: 1; visibility: visible; transform: none; pointer-events: auto; transition: opacity var(--dw-t2) var(--dw-ease), transform var(--dw-t2) var(--dw-ease); }
+.igc-toast-t { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 12.5px Ubuntu; }
+.igc-toast-k { color: var(--text2); font: 500 10.5px Ubuntu; }
+.igc-toast-k kbd { padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; color: var(--heading); font: 700 10px 'Ubuntu Mono', monospace; }
+@media (prefers-reduced-motion: reduce) { .igc-toast, .igc-toast.show { transition: none; } }

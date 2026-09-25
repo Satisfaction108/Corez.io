@@ -30,8 +30,8 @@ const getName = (name, gamemodeData) => {
 
         tdm: `${gamemodeData.teams}TDM`,
             open_tdm: `Open ${gamemodeData.teams}TDM`,
-        dig_wars: "Dig Wars 2TDM",
-        dig_royale: "Dig Royale",
+        dig_wars: "Corez 2TDM",
+        dig_royale: "Corez Royale",
 
         train_wars: "Train Wars",
 

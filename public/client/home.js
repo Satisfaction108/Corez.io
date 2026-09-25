@@ -141,7 +141,7 @@
                 })
                 .catch(function () {
                     if (btn) { btn.disabled = false; }
-                    alert('Dig Wars 2TDM is not reachable right now. Please try again in a moment.');
+                    alert('Corez 2TDM is not reachable right now. Please try again in a moment.');
                 });
         }, function () {
             if (btn) { btn.disabled = false; }

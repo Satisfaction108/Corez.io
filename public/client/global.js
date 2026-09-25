@@ -176,6 +176,7 @@ const global = {
     KEY_CHOOSE_4: 72,
     KEY_CHOOSE_5: 74,
     KEY_CHOOSE_6: 75,
+    KEY_FRIEND_CHAT: 27,   // in-game friend chat (account/ingameChat.js)
 
     showTree: false,
     scrollX: 0,

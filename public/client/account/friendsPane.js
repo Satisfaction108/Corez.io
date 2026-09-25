@@ -2,7 +2,8 @@
 // Friends are sorted in a raid, then in the menu, then offline, and show
 // what they're up to. Everything reads social.js, so a live event (a new
 // request, a friend starting a raid) repaints the open pane in place.
-// Clicking a friend slides their chat in (chat.js) over the lists.
+// A friend row opens their profile; its chat button slides their chat in
+// (chat.js) over the lists, with the unread count on the button.
 import * as api from './api.js';
 import * as social from './social.js';
 import * as chat from './chat.js';
@@ -82,7 +83,7 @@ function backToList() {
     paint(false);
     animate(homeEl, [{ opacity: 0, transform: 'translateX(-16px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
     const r = id && rowOf(id);
-    if (r) { const b = r.querySelector('.fr-main'); if (b) try { b.focus({ preventScroll: true }); } catch (e) { /* */ } }
+    if (r) { const b = r.querySelector('.fr-chatbtn') || r.querySelector('.fr-main'); if (b) try { b.focus({ preventScroll: true }); } catch (e) { /* */ } }
 }
 
 function addForm() {
@@ -162,7 +163,7 @@ function who(p, sub, subCls) {
 function row(p, sub, actions, opts) {
     opts = opts || {};
     const st = opts.presence ? presenceState(p.presence) : null;
-    const main = h('button', { type: 'button', class: 'fr-main', title: opts.chat ? 'Chat' : 'View profile', onclick: () => (opts.chat ? openChat(p) : hooks.openProfile(p)) },
+    const main = h('button', { type: 'button', class: 'fr-main', title: 'View profile', onclick: () => hooks.openProfile(p) },
         h('span', { class: 'fr-avwrap' }, avatarFor(p), st ? h('span', { class: 'fr-dot ' + st, title: st === 'raid' ? 'In a raid' : st === 'menu' ? 'In the lobby' : 'Offline' }) : null),
         who(p, sub, opts.subCls || (st ? 'st-' + st : '')));
     return h('div', { class: 'fr-row' + (st ? ' st-' + st : ''), 'data-id': p.userId }, main, h('div', { class: 'fr-acts' }, actions));
@@ -191,12 +192,8 @@ function patchFriends() {
         const s = subOf(f);
         const sub = rows[i].querySelector('.fr-sub');
         if (sub) { sub.textContent = s.text; sub.className = 'fr-sub ' + s.cls; }
-        const acts = rows[i].querySelector('.fr-acts');
-        const old = acts && acts.querySelector('.fr-unread');
-        const n = f.unread | 0;
-        if (old && !n) old.remove();
-        else if (n && old) old.textContent = n > 99 ? '99+' : String(n);
-        else if (n && acts) acts.insertBefore(unreadPill(n), acts.firstChild);
+        const btn = rows[i].querySelector('.fr-chatbtn');
+        if (btn) setChatCount(btn, f.unread | 0);
     });
     return true;
 }
@@ -206,8 +203,19 @@ function subOf(f) {
     if ((f.unread | 0) > 0 && f.last && f.last.from === 'them') return { text: f.last.body, cls: 'st-msg' };
     return { text: presenceText(f.presence, f.rank), cls: 'st-' + presenceState(f.presence) };
 }
-function unreadPill(n) {
-    return h('span', { class: 'fr-unread', title: n + ' unread', text: n > 99 ? '99+' : String(n) });
+// The chat button, with the unread count sitting on its corner.
+function chatBtn(f) {
+    const b = h('button', { type: 'button', class: 'fr-ic fr-chatbtn', title: 'Chat', onclick: () => openChat(f) }, icon('chat'));
+    setChatCount(b, f.unread | 0);
+    return b;
+}
+function setChatCount(b, n) {
+    let c = b.querySelector('.fr-ic-count');
+    b.classList.toggle('hot', n > 0);
+    b.setAttribute('aria-label', n ? 'Chat, ' + n + ' unread' : 'Chat');
+    if (!n) { if (c) c.remove(); return; }
+    if (!c) { c = h('span', { class: 'fr-ic-count' }); b.appendChild(c); }
+    c.textContent = n > 99 ? '99+' : String(n);
 }
 
 function paintFriends(d) {
@@ -225,11 +233,11 @@ function paintFriends(d) {
         for (const f of groups[k]) {
             const s = subOf(f);
             listEl.appendChild(row(f, s.text, [
-                (f.unread | 0) > 0 ? unreadPill(f.unread | 0) : null,
+                chatBtn(f),
                 h('button', { type: 'button', class: 'dw-btn sm', text: 'Profile', onclick: () => hooks.openProfile(f) }),
                 icBtn('unfriend', 'Remove friend', () => removeFriend(f)),
                 icBtn('block', 'Block', () => blockUser(f), 'bad'),
-            ], { presence: true, chat: true, subCls: s.cls }));
+            ], { presence: true, subCls: s.cls }));
         }
     }
 }

@@ -3,20 +3,20 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
-    <meta name="description" content="Dig Wars - an io-style arena battler. Dig, mine, level up, and battle other tanks. Play free in your browser!">
+    <meta name="description" content="Corez - an io-style arena battler. Dig, mine, level up, and battle other tanks. Play free in your browser!">
     <meta name="robots" content="index, follow">
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="Dig Wars">
-    <meta property="og:title" content="Dig Wars - io arena battler">
+    <meta property="og:site_name" content="Corez">
+    <meta property="og:title" content="Corez - io arena battler">
     <meta property="og:description" content="Dig, mine, level up, and battle other tanks in this io-style arena game. Play free in your browser!">
     <meta property="og:url" content="https://digwars.hackclub.app/">
-    <meta property="og:image" content="/img/logo.svg">
+    <meta property="og:image" content="/img/logo.png">
     <meta property="og:image:width" content="100">
     <meta property="og:image:height" content="100">
     <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Dig Wars - io arena battler">
+    <meta name="twitter:title" content="Corez - io arena battler">
     <meta name="twitter:description" content="Dig, mine, level up, and battle other tanks in this io-style arena game. Play free in your browser!">
-    <title>Dig Wars</title>
+    <title>Corez</title>
     <link rel="stylesheet" href="./font.css"/>
     <link rel="stylesheet" href="./main.css"/>
     <link rel="stylesheet" href="./home.css"/>
@@ -42,6 +42,7 @@
             <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 18 8.5 12l6-6"/></symbol>
             <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20H5.5A1.5 1.5 0 0 1 4 18.5v-13A1.5 1.5 0 0 1 5.5 4H9"/><path d="m15.5 16.5 4.5-4.5-4.5-4.5M20 12H9.5"/></symbol>
             <!-- gemdust: the in-game GEM_ICON pentagon plus two loose grains -->
+            <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4.5h12a2.5 2.5 0 0 1 2.5 2.5v7.5A2.5 2.5 0 0 1 18 17h-6.5l-4.5 3.5V17H6a2.5 2.5 0 0 1-2.5-2.5V7A2.5 2.5 0 0 1 6 4.5z"/><path d="M8.5 10.8h.01M12 10.8h.01M15.5 10.8h.01" stroke-width="2.6"/></symbol>
             <symbol id="i-unfriend" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="8.5" cy="7.5" r="3.5"/><path d="M16.5 11h6"/></symbol>
             <symbol id="i-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="m6 18 12-12"/></symbol>
             <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
@@ -338,7 +339,7 @@
                 <path d="M8 20.5h8M12 16.5v4"/>
             </svg>
             <h2>Built for desktop</h2>
-            <p>Dig Wars needs a keyboard and mouse to play. A proper touch version is in the works &mdash; check back soon.</p>
+            <p>Corez needs a keyboard and mouse to play. A proper touch version is in the works &mdash; check back soon.</p>
             <button type="button" id="mobileGateOverride">I have a keyboard and mouse &mdash; continue anyway</button>
         </div>
     </div>
@@ -356,8 +357,8 @@
                     <div class="sliderHolder">
                         <div class="slider startMenuSlidingContent">
 
-                            <!-- Dig Wars title, free-standing on top, with the emblem (scripts/make-logo.py) -->
-                            <h1 class="game-title"><img class="game-logo" src="/img/logo.svg" alt="" width="100" height="100">Dig Wars</h1>
+                            <!-- Corez title, free-standing on top, with the emblem (scripts/make-logo.py) -->
+                            <h1 class="game-title"><img class="game-logo" src="/img/logo.svg" alt="" width="100" height="100">Corez</h1>
 
                             <!-- name (left) + region dropdown (right) -->
                             <div class="menu-row">
@@ -432,7 +433,7 @@
                                         <tr><td><div><b data-key="KEY_UPGRADE_ATK">1</b><span> - </span>skill 1</div></td><td><div><b data-key="KEY_UPGRADE_HTL">2</b><span> - </span>skill 2</div></td><td><div><b data-key="KEY_UPGRADE_SPD">3</b><span> - </span>skill 3</div></td></tr>
                                         <tr><td><div><b data-key="KEY_UPGRADE_STR">4</b><span> - </span>skill 4</div></td><td><div><b data-key="KEY_UPGRADE_PEN">5</b><span> - </span>skill 5</div></td><td><div><b data-key="KEY_UPGRADE_DAM">6</b><span> - </span>skill 6</div></td></tr>
                                         <tr><td><div><b data-key="KEY_UPGRADE_RLD">7</b><span> - </span>skill 7</div></td><td><div><b data-key="KEY_UPGRADE_MOB">8</b><span> - </span>skill 8</div></td><td><div><b data-key="KEY_UPGRADE_RGN">9</b><span> - </span>skill 9</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_UPGRADE_MIN">-</b><span> - </span>mining power</div></td><td><div><b data-key="KEY_UPGRADE_SHI">0</b><span> - </span>skill 0</div></td><td><div></div></td></tr>
+                                        <tr><td><div><b data-key="KEY_UPGRADE_MIN">-</b><span> - </span>mining power</div></td><td><div><b data-key="KEY_UPGRADE_SHI">0</b><span> - </span>skill 0</div></td><td><div><b data-key="KEY_FRIEND_CHAT">Esc</b><span> - </span>friend chat</div></td></tr>
                                         <tr><td><div><b data-key="KEY_KIT_1">Z</b><span> - </span>kit slot 1</div></td><td><div><b data-key="KEY_KIT_2">Q</b><span> - </span>kit slot 2</div></td><td><div><b data-key="KEY_KIT_3">N</b><span> - </span>kit slot 3</div></td></tr>
                                     </tbody></table>
                                 </div>
@@ -464,7 +465,7 @@
             <button type="button" class="wl-x wl-close" id="wlClose" title="Close" aria-label="Close" hidden><svg class="dw-ic"><use href="#i-close"/></svg></button>
             <div class="wl-view" id="wlChoose">
                 <img class="wl-logo" src="/img/logo.svg" alt="" width="64" height="64">
-                <div class="wl-title" id="wlTitle">Dig Wars</div>
+                <div class="wl-title" id="wlTitle">Corez</div>
                 <div class="wl-opts">
                     <button type="button" class="wl-opt wl-opt-discord" id="wlDiscord">
                         <svg class="dw-ic"><use href="#i-discord"/></svg><span>Log in with Discord</span>

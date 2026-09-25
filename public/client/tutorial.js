@@ -512,7 +512,7 @@ const ALL_STEPS = [
         // end: doing it on completion races with the spawns of later steps.
         // "reset" puts this plot's practice base back to neutral and locked.
         onEnter: () => { tut("hello"); tut("clear"); tut("reset"); },
-        title: "DIG ROYALE",
+        title: "COREZ ROYALE",
         subtitle: "This is your own copy of the raid map, just smaller. Nobody else can get in, nothing here can really hurt you, and each step waits until you've done it.",
         card: true,
         done: () => T() - state.stepAt > 3600,
@@ -671,7 +671,7 @@ const ALL_STEPS = [
     {
         id: "rock",
         label: "Break the marked rock",
-        hint: () => "Everything in Dig Royale comes from mining. Gems are inside the rock, and *shooting rock breaks it*. The better the ore inside, the more shots it takes. *Shoot the marked rock until it breaks.*",
+        hint: () => "Everything in Corez comes from mining. Gems are inside the rock, and *shooting rock breaks it*. The better the ore inside, the more shots it takes. *Shoot the marked rock until it breaks.*",
         onEnter: () => {
             state.lockedRock = null;
             state.rockBaseCarried = global.gems.carried;

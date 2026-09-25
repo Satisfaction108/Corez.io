@@ -42,7 +42,7 @@ const ADMIN_COMMANDS = [
         name: 'relink', description: 'Set the Discord account linked to a player', options: [
             userOpt(),
             { type: T.USER, name: 'discord', description: 'The Discord account to link', required: true },
-            { type: T.BOOLEAN, name: 'force', description: 'Take it from another Dig Wars account that has it', required: false },
+            { type: T.BOOLEAN, name: 'force', description: 'Take it from another Corez account that has it', required: false },
         ],
     },
     {
@@ -63,9 +63,9 @@ const ADMIN_COMMANDS = [
 ].map(c => ({ ...c, type: 1, default_member_permissions: '0', dm_permission: false }));
 
 const PLAYER_COMMANDS = [
-    { name: 'profile', description: "See a player's Dig Wars profile", options: [{ type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 }] },
-    { name: 'rank', description: "See a player's Dig Wars rank", options: [{ type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 }] },
-    { name: 'leaderboard', description: 'See the Dig Wars top 10' },
+    { name: 'profile', description: "See a player's Corez profile", options: [{ type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 }] },
+    { name: 'rank', description: "See a player's Corez rank", options: [{ type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 }] },
+    { name: 'leaderboard', description: 'See the Corez top 10' },
 ].map(c => ({ ...c, type: 1 }));
 
 const ADMIN_NAMES = new Set(ADMIN_COMMANDS.map(c => c.name));
@@ -269,7 +269,7 @@ function targetFor(i, caller) {
         return row ? { row } : { error: "Couldn't find that player." };
     }
     const row = users.byDiscordId(caller.id);
-    return row ? { row } : { error: `Your Discord isn't linked to a Dig Wars account. Log in with Discord at ${config.publicOrigin} or pass a username.` };
+    return row ? { row } : { error: `Your Discord isn't linked to a Corez account. Log in with Discord at ${config.publicOrigin} or pass a username.` };
 }
 
 function profile(i, caller) {
@@ -309,7 +309,7 @@ function leaderboard() {
     const rows = require('../routes/profile').topRows(Date.now()).slice(0, 10);
     if (!rows.length) return reply("Nobody's ranked yet. Finish your 3 placement games to be first!");
     const lines = rows.map(r => `${r.place}. **${md(r.username)}** · ${r.name}${r.legendNo ? ' #' + r.legendNo : ''} · ${r.rp.toLocaleString('en-US')} RP`);
-    return reply('', { embeds: [{ title: 'Dig Wars top 10', color: COLOR, description: lines.join('\n'), footer: { text: 'Full Top 100 at ' + config.publicOrigin } }] });
+    return reply('', { embeds: [{ title: 'Corez top 10', color: COLOR, description: lines.join('\n'), footer: { text: 'Full Top 100 at ' + config.publicOrigin } }] });
 }
 
 const PLAYER_HANDLERS = { profile, rank, leaderboard };
@@ -325,7 +325,7 @@ function isAdmin(i, caller) {
 function handle(i) {
     const name = String((i.data && i.data.name) || '');
     const caller = callerOf(i);
-    if (!db.handle()) return reply('Dig Wars accounts are down right now. Try again later.', { ephemeral: true });
+    if (!db.handle()) return reply('Corez accounts are down right now. Try again later.', { ephemeral: true });
     if (ADMIN_NAMES.has(name)) {
         if (!isAdmin(i, caller)) {
             try {

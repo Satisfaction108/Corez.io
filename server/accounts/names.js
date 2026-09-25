@@ -16,14 +16,14 @@ const RESERVED = new Set([
     'owner', 'dev', 'devs', 'developer', 'developers', 'official', 'server', 'console', 'bot',
     'bots', 'guest', 'guests', 'anonymous', 'anon', 'unknown', 'unnamed', 'player', 'players',
     'nobody', 'everyone', 'here', 'null', 'undefined', 'nan', 'true', 'false', 'none', 'void',
-    'deleted', 'banned', 'removed', 'digwars', 'digwar', 'digroyale', 'arras', 'arrasio',
+    'deleted', 'banned', 'removed', 'digwars', 'digwar', 'digroyale', 'corez', 'corezroyale', 'arras', 'arrasio',
     'hackclub', 'discord', 'discordapp', 'clyde', 'api', 'www', 'http', 'https', 'account',
     'accounts', 'login', 'logout', 'signin', 'signup', 'register', 'settings', 'profile',
     'leaderboard', 'shop', 'store', 'itemshop', 'locker', 'friends', 'security', 'legend',
     'announcement', 'announcements', 'news', 'info', 'contact', 'abuse', 'noreply',
 ]);
-// Names that merely start with these are also reserved ("Admin_Bob", "DigWarsTeam").
-const RESERVED_PREFIXES = ['admin', 'moderator', 'digwars', 'official', 'sysadmin', 'staffteam'];
+// Names that merely start with these are also reserved ("Admin_Bob", "CorezTeam").
+const RESERVED_PREFIXES = ['admin', 'moderator', 'digwars', 'corez', 'official', 'sysadmin', 'staffteam'];
 
 // Severe terms: matched anywhere in the normalised name.
 const SEVERE = ['nigger', 'nigga', 'faggot', 'fagot', 'hitler', 'kkk', 'pedophile', 'paedophile'];

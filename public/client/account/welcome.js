@@ -353,8 +353,8 @@ function viewCode(opts) {
     };
     const dlBtn = h('button', { type: 'button', class: 'dw-btn', onclick: () => {
         const origin = (store.get('config') && store.get('config').publicOrigin) || location.origin;
-        downloadText('digwars-recovery-' + name.replace(/[^A-Za-z0-9_]/g, '') + '.txt', [
-            'Dig Wars recovery code',
+        downloadText('corez-recovery-' + name.replace(/[^A-Za-z0-9_]/g, '') + '.txt', [
+            'Corez recovery code',
             '',
             'Username: ' + name,
             'Recovery code: ' + code,

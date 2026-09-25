@@ -18,6 +18,7 @@ import * as friendsPane from './friendsPane.js';
 import * as profile from './profile.js';
 import * as leaderboard from './leaderboard.js';
 import * as dailyQuests from './dailyQuests.js';
+import * as ingameChat from './ingameChat.js';
 
 const html = document.documentElement;
 const HINT = 'dwAcctHint';
@@ -194,8 +195,8 @@ const DISCORD_ERRORS = {
     rate_limited: 'Whoa, too many tries! Wait a minute and try again.',
     not_logged_in: 'Log in first, then link Discord.',
     no_session: 'Log in first, then link Discord.',
-    reauth_mismatch: 'That wasn’t the Discord account linked to this Dig Wars account.',
-    wrong_account: 'That wasn’t the Discord account linked to this Dig Wars account.',
+    reauth_mismatch: 'That wasn’t the Discord account linked to this Corez account.',
+    wrong_account: 'That wasn’t the Discord account linked to this Corez account.',
     accounts_disabled: 'Accounts are down right now.',
     accounts_unavailable: 'Accounts are down right now.',
     reauth_required: 'Confirm your password first, then link Discord.',
@@ -227,7 +228,7 @@ function handleParams(p) {
     if (p.auth === 'reauth-ok') resumeIntent();
     if (p.link === 'ok' && user) { ui.toast('Discord linked!', { kind: 'ok' }); openAccount(); }
     if (p.link === 'already_linked') { ui.toast('This account already has a Discord linked. Unlink it first to link a different one.', { kind: 'error', duration: 6000 }); openAccount(); }
-    if (p.link === 'taken') { ui.toast('That Discord account is already linked to another Dig Wars account.', { kind: 'error', duration: 6000 }); openAccount(); }
+    if (p.link === 'taken') { ui.toast('That Discord account is already linked to another Corez account.', { kind: 'error', duration: 6000 }); openAccount(); }
 }
 
 function resumeIntent() {
@@ -277,6 +278,7 @@ async function boot() {
     hub.register('profile', { title: 'Profile', render: profile.render, onClose: profile.onClose });
     hub.register('leaderboard', { title: 'Leaderboard', render: leaderboard.render, onClose: leaderboard.onClose });
     friendsPane.init({ openProfile: openProfile('friends') });
+    ingameChat.init();
     profile.init({ openPane, setTitle: hub.setTitle });
     leaderboard.init({ openProfile: openProfile('leaderboard'), onLogin: () => welcome.open('choose', { dismissable: true }) });
     dailyQuests.init({ onLogin: () => { if (!store.get('offline')) welcome.open('choose', { dismissable: true }); } });

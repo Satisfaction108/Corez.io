@@ -43,7 +43,7 @@ def build(body=('#5dd6ff', '#0a8fd1')):
     g.append(f'<path d="M{cx - R * .7:.1f} {cy - R * .05:.1f} A{R * .7:.1f} {R * .7:.1f} 0 0 1 {cx - R * .05:.1f} {cy - R * .7:.1f}" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity=".45"/>')
     return '\n'.join([
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">',
-        '<title>Dig Wars</title>',
+        '<title>Corez</title>',
         '<defs>',
         f'<linearGradient id="bd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{body[0]}"/><stop offset="1" stop-color="{body[1]}"/></linearGradient>',
         '<linearGradient id="steel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f1f3f6"/><stop offset="1" stop-color="#a7adb6"/></linearGradient>',
