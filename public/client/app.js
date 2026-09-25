@@ -367,7 +367,7 @@ import * as cosmetics from './account/cosmetics.js';
                 global.version = ve.ver;
                 if (ve.devBuild) {
                     global.devBuild = true;
-                    global.createTabMenu(`This server is running a development build of Corez. (${global.version})`, "warning");
+                    global.createTabMenu(`This server is running a development build of Corez.io. (${global.version})`, "warning");
                 }
 
                 let keyValue = localStorage.getItem('playerKeyInputValue');
@@ -469,7 +469,7 @@ import * as cosmetics from './account/cosmetics.js';
 
         let i_div = document.createElement("div");
         i_div.classList.add("optionsHeader");
-        i_div.textContent = `Corez ${global.version}` + `${global.devBuild ? "-dev" : ""}`;
+        i_div.textContent = `Corez.io ${global.version}` + `${global.devBuild ? "-dev" : ""}`;
         mainDoc.appendChild(i_div);
 
         for (let e of data) {

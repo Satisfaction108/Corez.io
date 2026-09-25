@@ -266,7 +266,7 @@ async function discordComplete(ctx) {
     if (!av.available) throw usernameTaken(av.reason);
     if (users.byDiscordId(pending.id)) {
         ctx.setCookie(discordOAuth.clearPendingCookie());
-        throw new HttpError(409, 'discord_taken', 'That Discord already has a Corez account. Just log in with Discord!');
+        throw new HttpError(409, 'discord_taken', 'That Discord already has a Corez.io account. Just log in with Discord!');
     }
 
     let recovery = null;
@@ -279,7 +279,7 @@ async function discordComplete(ctx) {
         });
     });
     if (!r.ok) {
-        if (r.code === 'discord_taken') throw new HttpError(409, 'discord_taken', 'That Discord already has a Corez account.');
+        if (r.code === 'discord_taken') throw new HttpError(409, 'discord_taken', 'That Discord already has a Corez.io account.');
         throw usernameTaken(r.reason);
     }
     users.audit(r.user.id, 'signup', { method: 'discord', discordId: pending.id }, { ip: ctx.ip });

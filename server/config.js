@@ -113,7 +113,7 @@ module.exports = {
     map_tile_width: 420,
     map_tile_height: 420,
 
-    spawn_message: "You have spawned! Welcome to Corez.\n"
+    spawn_message: "You have spawned! Welcome to Corez.io.\n"
                  + "You will be invulnerable until you move or shoot.\n"
                  + "Please report any bugs you encounter!",
     token_message: "Friendly reminder: Please do not repeatedly kill others with an overpowered tank.",

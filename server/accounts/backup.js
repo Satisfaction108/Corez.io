@@ -62,7 +62,7 @@ function encrypt(plain, key) {
 function decrypt(buf, key) {
     if (!Buffer.isBuffer(key) || key.length !== 32) throw new Error('backup key must be 32 bytes');
     if (!Buffer.isBuffer(buf) || buf.length < HEADER_LEN || !buf.subarray(0, MAGIC.length).equals(MAGIC)) {
-        throw new Error('not a Corez backup (missing DWB1 header)');
+        throw new Error('not a Corez.io backup (missing DWB1 header)');
     }
     const iv = buf.subarray(MAGIC.length, MAGIC.length + IV_LEN);
     const tag = buf.subarray(MAGIC.length + IV_LEN, HEADER_LEN);
@@ -174,7 +174,7 @@ async function upload(file, bytes, when, sha) {
     const parts = splitParts(bytes);
     for (let k = 0; k < parts.length; k++) {
         const partName = parts.length > 1 ? `${name}.part${k + 1}of${parts.length}` : name;
-        const text = `Corez backup ${new Date(when).toISOString().replace('.000', '')} · ${human(bytes.length)} · sha256 \`${sha.slice(0, 16)}\`` +
+        const text = `Corez.io backup ${new Date(when).toISOString().replace('.000', '')} · ${human(bytes.length)} · sha256 \`${sha.slice(0, 16)}\`` +
             (parts.length > 1 ? ` · part ${k + 1}/${parts.length}` : '');
         await rest.sendFile(bot.backupChannelId, text, partName, parts[k]);
     }

@@ -195,8 +195,8 @@ const DISCORD_ERRORS = {
     rate_limited: 'Whoa, too many tries! Wait a minute and try again.',
     not_logged_in: 'Log in first, then link Discord.',
     no_session: 'Log in first, then link Discord.',
-    reauth_mismatch: 'That wasn’t the Discord account linked to this Corez account.',
-    wrong_account: 'That wasn’t the Discord account linked to this Corez account.',
+    reauth_mismatch: 'That wasn’t the Discord account linked to this Corez.io account.',
+    wrong_account: 'That wasn’t the Discord account linked to this Corez.io account.',
     accounts_disabled: 'Accounts are down right now.',
     accounts_unavailable: 'Accounts are down right now.',
     reauth_required: 'Confirm your password first, then link Discord.',
@@ -228,7 +228,7 @@ function handleParams(p) {
     if (p.auth === 'reauth-ok') resumeIntent();
     if (p.link === 'ok' && user) { ui.toast('Discord linked!', { kind: 'ok' }); openAccount(); }
     if (p.link === 'already_linked') { ui.toast('This account already has a Discord linked. Unlink it first to link a different one.', { kind: 'error', duration: 6000 }); openAccount(); }
-    if (p.link === 'taken') { ui.toast('That Discord account is already linked to another Corez account.', { kind: 'error', duration: 6000 }); openAccount(); }
+    if (p.link === 'taken') { ui.toast('That Discord account is already linked to another Corez.io account.', { kind: 'error', duration: 6000 }); openAccount(); }
 }
 
 function resumeIntent() {

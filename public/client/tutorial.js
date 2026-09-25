@@ -671,7 +671,7 @@ const ALL_STEPS = [
     {
         id: "rock",
         label: "Break the marked rock",
-        hint: () => "Everything in Corez comes from mining. Gems are inside the rock, and *shooting rock breaks it*. The better the ore inside, the more shots it takes. *Shoot the marked rock until it breaks.*",
+        hint: () => "Everything in Corez.io comes from mining. Gems are inside the rock, and *shooting rock breaks it*. The better the ore inside, the more shots it takes. *Shoot the marked rock until it breaks.*",
         onEnter: () => {
             state.lockedRock = null;
             state.rockBaseCarried = global.gems.carried;
