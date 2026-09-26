@@ -1010,6 +1010,11 @@ function applyResume(body, snap) {
     const socket = body.socket;
     try {
         if (snap.alive && snap.defs && snap.defs.length) {
+            // define() appends to the upgrade menu, and the fresh body was
+            // just defined as the spawn class: without this a resumed Twin
+            // was offered Basic's whole tree again (and on mobile the stale
+            // menu kept the stat bars hidden). entity.upgrade() does the same.
+            body.upgrades = [];
             body.define(snap.defs.length === 1 ? snap.defs[0] : snap.defs);
             if (snap.skillRaw) { body.skill.set(snap.skillRaw); body.skill.points = snap.points | 0; }
             body._modSkillGiven = snap.modSkill || body._modSkillGiven;

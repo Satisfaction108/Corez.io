@@ -1162,6 +1162,17 @@ class socketManager {
                 socket.resumeToken = m[0];
                 if (process.env.RESUME_DEBUG) console.log('[RESUME] token set on', String(socket.id).slice(0, 6));
                 if (Config.dig_royale) {
+                    // The same tab is back while its old socket still looks
+                    // open (a half-open drop: the heartbeat takes minutes to
+                    // notice). Retire the old one now, as the accounts'
+                    // newest-session rule does, so its raid is saved for this
+                    // claim instead of a fresh spawn next to an orphaned tank.
+                    const myAcct = (socket.account && socket.account.id) || null;
+                    for (const o of this.clients.slice()) {
+                        if (o === socket || o.resumeToken !== m[0]) continue;
+                        if (((o.account && o.account.id) || null) !== myAcct) continue;
+                        try { accountBridge.kickOut(o, 'You opened the game in another tab.'); } catch (e) { console.error('[RESUME] supersede', e && e.message); }
+                    }
                     const ok = require('../gamemodes/scripts/dig_royale.js').claimResume(socket, m[0]);
                     if (ok) util.log("[INFO]: A dropped player reconnected and resumed their raid.");
                 }

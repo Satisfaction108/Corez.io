@@ -1786,8 +1786,6 @@ import * as cosmetics from './account/cosmetics.js';
         else if (type == "bar") drawBarStroke(x - width / 2, y, width, color3 ? color3 : color.black, height);
     }
 
-    // Set (to an outline colour) only while an upgrade tile draws its tank.
-    let previewInk = null;
     const drawEntity = (() => {
         let drawPolyImgs = [],
         drawPoly3D = new Map(),
@@ -2378,13 +2376,6 @@ import * as cosmetics from './account/cosmetics.js';
                     global.gameUpdate && instance.invuln !== 0 && 100 > (Date.now() - instance.invuln) % 200 && ((mixedColor = gameDraw.mixColors(gunColor, gameDraw.getColor(6), 0.3)));
                     if (hitBlend > 0) mixedColor = gameDraw.mixColors(mixedColor, HIT_BLINK_COLOR, hitBlend);
                     gameDraw.setColor(context, mixedColor);
-                    // menu previews: lift the barrels off the dark ink and
-                    // outline them in ink, so a Twin's pair or a Machine
-                    // Gun's flare still reads on a 60px tile
-                    if (previewInk) {
-                        context.fillStyle = gameDraw.mixColors(mixedColor, "#ffffff", 0.32);
-                        context.strokeStyle = previewInk;
-                    }
 
                     drawGun(
                         context,
@@ -2413,7 +2404,6 @@ import * as cosmetics from './account/cosmetics.js';
                     if (invulnBlink) bodyColor = gameDraw.mixColors(bodyBase, gameDraw.getColor(6), 0.3);
                     if (hitBlend > 0) bodyColor = gameDraw.mixColors(bodyColor, HIT_BLINK_COLOR, hitBlend);
                     gameDraw.setColor(context, bodyColor);
-                    if (previewInk) context.strokeStyle = previewInk;
 
                     const glow = m.glow;
                     const glowRadius = glow.radius;
@@ -2664,20 +2654,15 @@ import * as cosmetics from './account/cosmetics.js';
         ctx[2].save();
         ctx[2].globalAlpha *= alpha;
         upgBlit(plate, x, y, len, height);
-        // the live tank, centred in the face above the name band. Fit the
-        // whole silhouette (barrels included, position.axis) to the art
-        // area, so long guns never poke into the band or past the edge.
+        // the live tank, centred in the face above the name band
+        const scale = (0.55 * len) / position.axis;
         const areaH = faceH - band;
-        const scale = Math.min(0.64 * len, 0.9 * areaH) / position.axis;
         let entityX = x + 0.5 * len, entityY = y + down + areaH * 0.5 + 1;
         const xShift = position.middle.x * Math.cos(angle) - position.middle.y * Math.sin(angle),
             yShift = position.middle.x * Math.sin(angle) + position.middle.y * Math.cos(angle);
         entityX -= scale * xShift;
         entityY -= scale * yShift;
-        previewInk = HUD.ink;
-        try {
-            drawEntity(picture.color, entityX, entityY, picture, 1, 1, scale / picture.size, lineWidthMult * 1.5, angle, true, ctx[2]);
-        } finally { previewInk = null; }
+        drawEntity(picture.color, entityX, entityY, picture, 1, 1, scale / picture.size, lineWidthMult, angle, true, ctx[2]);
         ctx[2].globalAlpha = alpha;
         upgBlit(label, x, y, len, height);
         ctx[2].restore();
@@ -4089,19 +4074,9 @@ import * as cosmetics from './account/cosmetics.js';
     // The bake runs colors through gameDraw.modifyColor too, so the sprite is
     // byte-for-byte the same colors a loose gem draws one screen over.
     const GEM_SPRITES = {};
-    const HUD_INK = "#120e15";   // HUD.ink (HUD is declared further down)
-    // Facet planes of GEM_CUT: girdle at y=-0.38, table from y=-0.95 to -0.62.
-    const GEM_FACETS = [
-        ["pavL",   [[-1, -0.38], [-0.38, -0.38], [0, 0.95]]],
-        ["pavM",   [[-0.38, -0.38], [0.38, -0.38], [0, 0.95]]],
-        ["pavR",   [[0.38, -0.38], [1, -0.38], [0, 0.95]]],
-        ["crownL", [[-1, -0.38], [-0.55, -0.95], [-0.3, -0.62], [-0.38, -0.38]]],
-        ["crownM", [[-0.38, -0.38], [-0.3, -0.62], [0.3, -0.62], [0.38, -0.38]]],
-        ["crownR", [[0.38, -0.38], [0.3, -0.62], [0.55, -0.95], [1, -0.38]]],
-        ["table",  [[-0.55, -0.95], [0.55, -0.95], [0.3, -0.62], [-0.3, -0.62]]],
-    ];
     const GEM_SPRITE_HALF = 6.0;    // unit span covered (biggest glow ~2.4)
     const GEM_SPRITE_SCALE = 64;    // px per world unit inside the sprite
+    const GEM_RIM_UNITS = 7.2 * 0.55; // borderChunk * strokeWidth, cut-units per SIZE=1
     function gemSprite(cls) {
         let s = GEM_SPRITES[cls];
         if (s) return s;
@@ -4128,55 +4103,30 @@ import * as cosmetics from './account/cosmetics.js';
         c.globalAlpha = 1;
         c.shadowBlur = 0;
 
-        // Flat-cut body in the tanks' language: hard facet planes (no
-        // gradients), one light source up-left, a thick dark outline.
-        const mix = gameDraw.mixColors;
-        const ink = mix(rim, HUD_INK, 0.7);
-        const tones = {
-            table: mix(facet, "#ffffff", 0.18),
-            crownL: facet,
-            crownM: mix(facet, body, 0.45),
-            crownR: body,
-            pavL: mix(body, facet, 0.18),
-            pavM: mix(body, rim, 0.3),
-            pavR: mix(body, rim, 0.62),
-        };
-        for (const [k, pts] of GEM_FACETS) {
-            c.beginPath();
-            pts.forEach((pt, i) => i ? c.lineTo(pt[0], pt[1]) : c.moveTo(pt[0], pt[1]));
-            c.closePath();
-            c.fillStyle = tones[k];
-            c.fill();
-            // a hair of overdraw so facet seams never show the halo through
-            c.lineWidth = 0.012;
-            c.strokeStyle = tones[k];
-            c.stroke();
-        }
-        // faint seams on the girdle and the table edge only
+        // body: stroke first, then fill hides the inner half (real pipeline)
         c.lineJoin = "round";
         c.lineCap = "round";
-        c.globalAlpha = 0.28;
-        c.strokeStyle = ink;
-        c.lineWidth = 0.05;
-        c.beginPath();
-        c.moveTo(-1, -0.38); c.lineTo(1, -0.38);
-        c.moveTo(-0.3, -0.62); c.lineTo(0.3, -0.62);
-        c.stroke();
-        c.globalAlpha = 1;
-
-        // outline on top, full width. Thicker (relative) on the small cuts
-        // so copper keeps a readable edge, capped so loot crumbs stay gems.
-        c.lineWidth = Math.max(0.12, Math.min(0.2, 3.6 / (pal.size || 7)));
-        c.strokeStyle = ink;
+        c.lineWidth = GEM_RIM_UNITS / (pal.size || 7);
+        c.strokeStyle = rim;
         c.stroke(GEM_CUT_PATH);
+        c.fillStyle = body;
+        c.fill(GEM_CUT_PATH);
 
-        // small flat glint on the table, up-left
+        // facet prop (0.525 scale, 0.12 toward the crown, aligned with body)
         c.save();
-        c.translate(-0.2, -0.78);
+        c.translate(0, -0.12);
+        c.scale(0.525, 0.525);
+        c.fillStyle = facet;
+        c.fill(GEM_CUT_PATH);
+        c.restore();
+
+        // sparkle prop (0.2 scale, 0.405 offset at direction+angle = up-left,
+        // spun 12deg exactly like the real gemSparkle's t.angle)
+        c.save();
+        c.translate(-0.148, -0.377);
         c.rotate(0.20944);
-        c.scale(0.16, 0.16);
+        c.scale(0.2, 0.2);
         c.fillStyle = "#ffffff";
-        c.globalAlpha = 0.9;
         c.fill(GEM_CUT_PATH);
         c.restore();
 
@@ -5433,161 +5383,98 @@ import * as cosmetics from './account/cosmetics.js';
         statMenu.set(0 + (global.died || global.statHover || (global.canSkill && !gui.skills.every(skill => skill.cap === skill.amount))));
         global.clickables.stat.hide();
 
+        let vspacing = 5;
+        let height = 14;
+        let gap = 44.5;
+        let len = alcoveSize - 10;
+        let save = len;
+        let x = HUD.edge + (statMenu.get() - 1) * (height + 50 + len * ska(gui.skills.reduce((largest, skill) => Math.max(largest, skill.cap), 0)));
+        let y = global.screenHeight - spacing - 5.5 - height;
+        let ticker = 11;
         let namedata;
         try {
             namedata = gui.getStatNames(global.mockups[parseInt(gui.type.split("-")[0])].statnames);
         } catch (e) {
             namedata = gui.getStatNames(global.missingno[0].statnames);
         }
-        const cr = global.canvas.height / global.screenHeight / global.ratio;
-        // the plate spans the kit box's column exactly; rows sit inside it
-        const L = STAT_LAYOUT, rowW = alcoveSize - 10 - L.padX * 2;
-        const glide = statMenu.get();
-        const x = HUD.edge + L.padX + (glide - 1) * (alcoveSize + HUD.edge + 6);
-        const bottom = global.screenHeight - spacing - 5.5;
+        let clickableRatio = global.canvas.height / global.screenHeight / global.ratio;
 
-        // Rows bottom → top: Mining Power (skills[10]) first, then
-        // skills[0..9], which are stats 9..0.
+        const minKeyName = keyLabel("KEY_UPGRADE_MIN", "-");
+        // Draw order (bottom → top): Mining Power first as the final stat,
+        // then skills[0..9] which map to stats 9..0.
         const order = [];
         if (gui.skills.length > 10) order.push(10);
         for (let i = 0; i < Math.min(10, gui.skills.length); i++) order.push(i);
-        const rows = [];
-        let ticker = 11;
         for (const i of order) {
             if (i !== 10) ticker--;
             const statIdx = i === 10 ? 10 : ticker - 1;
-            const skill = gui.skills[i];
-            if (!skill || !skill.softcap) continue;
-            const tutLocked = !!(global.tutorialMode && window.dwTutStatOpen && !window.dwTutStatOpen(statIdx));
-            const level = skill.amount | 0, cap = skill.softcap | 0, maxLevel = skill.cap | 0;
-            // 2 maxed, 1 can take a point, 0 cannot
-            const state = level >= maxLevel ? 2 : (!gui.points || (cap !== maxLevel && level >= cap)) ? 0 : 1;
-            rows.push({ statIdx, name: statShortName(namedata[statIdx] || ""), level, cap, maxLevel, col: color[skill.color] || HUD.face,
-                key: keyLabel(STAT_KEY_IDS[statIdx], statIdx === 10 ? "-" : String((statIdx + 1) % 10)),
-                state, tutLocked });
-        }
-        if (!rows.length) return;
-        const top = bottom - rows.length * L.h - (rows.length - 1) * L.gap;
-        const hov = global.clickables.stat.check({ x: global.mouse.x, y: global.mouse.y });
-        const panel = statPanelBitmap(rows, rowW, gui.points | 0);
-        const c = ctx[2];
-        c.save();
-        c.drawImage(panel.cv, x - panel.ox, top - panel.oy, panel.w, panel.h);
-        rows.forEach((r, n) => {
-            const ry = bottom - L.h - n * (L.h + L.gap);
-            if (r.state === 1 && !r.tutLocked) {
-                global.clickables.stat.place(r.statIdx, x * cr, ry * cr, rowW * cr, L.h * cr);
-                if (hov === r.statIdx) {
-                    roundRectPath(c, x - 2, ry - 1.5, rowW + 4, L.h + 3, 5);
-                    c.fillStyle = "rgba(255,243,217,0.12)";
-                    c.fill();
-                }
-            }
-        });
-        c.restore();
-        global.clickables.hover.place(0, 0, (top - L.head - 4) * cr, (x + rowW + L.padX) * cr, (global.screenHeight - top + L.head + 4) * cr);
-    }
+            let skill = gui.skills[i],
+                name = namedata[statIdx],
+                level = skill.amount,
+                col = color[skill.color],
+                cap = skill.softcap,
+                maxLevel = skill.cap;
 
-    // ─── stat panel (bottom left), HUD look ─────────────────────────────
-    // One plate: "Stats" header with the unspent points, then a row per
-    // stat - the stat's keycap, its name in Lilita One, and a chunky bar cut
-    // into one segment per level in the stat's colour. Levels above the
-    // soft cap show as locked slots. Everything is rasterised at device
-    // resolution and only rebuilt when a level, cap, point count, key or
-    // scale changes; per frame it is one drawImage plus the hover strip.
-    const STAT_LAYOUT = { h: 16, gap: 3, head: 20, padX: 6, padY: 5, key: 16 };
-    const STAT_KEY_IDS = ["KEY_UPGRADE_ATK", "KEY_UPGRADE_HTL", "KEY_UPGRADE_SPD", "KEY_UPGRADE_STR", "KEY_UPGRADE_PEN",
-        "KEY_UPGRADE_DAM", "KEY_UPGRADE_RLD", "KEY_UPGRADE_MOB", "KEY_UPGRADE_RGN", "KEY_UPGRADE_SHI", "KEY_UPGRADE_MIN"];
-    let statPanelCache = null;
-    // The long stat names, cut so one text size fits the column.
-    function statShortName(n) {
-        return String(n).replace(/Penetration/g, "Pen.").replace(/Regeneration/g, "Regen")
-            .replace(/^Movement /, "Move ").replace(/Capacity/g, "Cap.");
-    }
-    function statPanelBitmap(rows, rowW, points) {
-        const L = STAT_LAYOUT;
-        const t = ctx[2].getTransform();
-        const dpr = Math.hypot(t.a, t.b) || 1;
-        if (!upgFontOk) { try { upgFontOk = !document.fonts || document.fonts.check('12px "Lilita One"'); } catch (e) { upgFontOk = true; } }
-        const sig = dpr.toFixed(3) + "|" + rowW + "|" + points + "|" + upgFontOk + "|" + config.graphical.fontSizeBoost + "|" +
-            rows.map(r => [r.name, r.level, r.cap, r.maxLevel, r.col, r.key, r.state, r.tutLocked ? 1 : 0].join(",")).join(";");
-        if (statPanelCache && statPanelCache.sig === sig) return statPanelCache;
-        const n = rows.length;
-        const bodyH = n * L.h + (n - 1) * L.gap;
-        const pw = rowW + L.padX * 2, ph = bodyH + L.head + L.padY * 2;
-        const ox = L.padX + 3, oy = L.head + L.padY + 3;       // row origin inside the bitmap (+3 for outline/lip)
-        const w = pw + 6, h = ph + 8;
-        const cv = (statPanelCache && statPanelCache.cv) || document.createElement("canvas");
-        cv.width = Math.ceil(w * dpr);
-        cv.height = Math.ceil(h * dpr);
-        const c = cv.getContext("2d");
-        c.setTransform(dpr, 0, 0, dpr, 0, 0);
-        c.clearRect(0, 0, w, h);
-        hudPanel(c, 3, 3, pw, ph, { fill: HUD.panel, r: HUD.r });
-        // header: title left, unspent points right
-        const hy = 3 + L.padY + L.head / 2 - 1;
-        hudTitle("Stats", ox, hy, 13, HUD.head, "left", 1, c);
-        if (points > 0) {
-            const txt = points + (points === 1 ? " point" : " points");
-            const tw = hudTitleW(txt, 12) + 14;
-            const px = ox + rowW - tw;
-            roundRectPath(c, px, hy - 8, tw, 16, 8);
-            c.fillStyle = HUD.gold;
-            c.fill();
-            c.lineWidth = 2;
-            c.strokeStyle = HUD.ink;
-            c.stroke();
-            hudTitle(txt, px + tw / 2, hy, 12, "#fff", "center", 1, c);
-        }
-        const nameW = Math.round(rowW * 0.47);                  // fixed name column
-        // one text size for the whole column: the biggest the longest fits
-        const nameRoom = nameW - L.key - 5;
-        let nameSize = 11;
-        for (const r of rows) while (nameSize > 8 && hudTitleW(r.name, nameSize) > nameRoom) nameSize -= 0.5;
-        rows.forEach((r, i) => {
-            const ry = oy + bodyH - L.h - i * (L.h + L.gap);
-            c.save();
-            if (r.tutLocked) c.globalAlpha = 0.35;
-            // keycap
-            const kw = hudKey(c, ox, ry, r.key, L.key);
-            // name, shrunk to fit its column
-            const nx = ox + Math.max(kw, L.key) + 5;
-            const room = nameW - (nx - ox);
-            let size = nameSize;
-            while (size > 6 && hudTitleW(r.name, size) > room) size -= 0.5;
-            const nameCol = r.state === 2 ? gameDraw.mixColors(r.col, "#ffffff", 0.35) : r.state === 1 ? HUD.head : HUD.text2;
-            hudTitle(r.name, nx, ry + L.h / 2 - 0.5, size, nameCol, "left", 1, c);
-            // segmented bar: one slot per level up to the hard cap
-            const bx = ox + nameW + 3, bw = rowW - nameW - 3, bh = L.h - 3, by = ry + 1.5;
-            const slots = Math.max(1, r.maxLevel);
-            hudWell(c, bx, by, bw, bh, bh / 2.2, HUD.wellSolid, HUD.ink, 2);
-            const inset = 2.5, sg = slots > 12 ? 1 : 1.5;
-            const sw = (bw - inset * 2 - sg * (slots - 1)) / slots;
-            for (let k = 0; k < slots; k++) {
-                const sx = bx + inset + k * (sw + sg), sy = by + inset, shh = bh - inset * 2;
-                const rr = Math.min(2.5, sw / 2, shh / 2);
-                if (k < r.level) {
-                    roundRectPath(c, sx, sy, sw, shh, rr);
-                    c.fillStyle = r.col;
-                    c.fill();
-                    roundRectPath(c, sx, sy, sw, Math.max(1.5, shh * 0.34), rr);
-                    c.fillStyle = "rgba(255,255,255,0.28)";
-                    c.fill();
-                } else if (k >= r.cap) {
-                    // above the soft cap: a locked slot
-                    roundRectPath(c, sx, sy, sw, shh, rr);
-                    c.fillStyle = "rgba(0,0,0,0.35)";
-                    c.fill();
-                } else {
-                    roundRectPath(c, sx, sy, sw, shh, rr);
-                    c.fillStyle = "rgba(255,255,255,0.06)";
-                    c.fill();
+            if (!cap) continue;
+            // Tutorial: bars the current lesson is not about are dimmed and
+            // take no clicks (the server refuses them anyway).
+            const tutLocked = global.tutorialMode && window.dwTutStatOpen && !window.dwTutStatOpen(statIdx);
+            ctx[2].globalAlpha = tutLocked ? 0.35 : 1;
+
+            len = save;
+            let max = 0,
+                extension = cap > max,
+                blocking = cap < maxLevel;
+            if (extension) {
+                max = cap;
+            }
+
+            drawBar(x + height / 2, x - height / 2 + len * ska(cap) - 14, y + height / 2, height - 2.8 + config.graphical.barChunk, color.black);
+            drawBar(x + height / 2, x + height / 2 + len * ska(cap) - gap, y + height / 2, height - 3, color.grey);
+            drawBar(x + height / 2, x + height / 2 + len * ska(level) - gap, y + height / 2, height - 5.5 + config.graphical.barChunk, color.black);
+            drawBar(x + height / 2, x + height / 2 + len * ska(level) - gap, y + height / 2, height - 3.5, col);
+
+            if (blocking) {
+                ctx[2].lineWidth = 1;
+                ctx[2].strokeStyle = color.grey;
+                for (let j = cap + 1; j < max; j++) {
+                    drawGuiLine(x + len * ska(j) - gap, y + 1.5, x + len * ska(j) - gap, y - 3 + height);
                 }
             }
-            c.restore();
-        });
-        statPanelCache = { sig, cv, w, h, ox, oy: oy };
-        return statPanelCache;
+
+            ctx[2].strokeStyle = color.black;
+            ctx[2].lineWidth = 1;
+            for (let j = 1; j < level + 1; j++) {
+                drawGuiLine(x + len * ska(j) - gap, y + 1.5, x + len * ska(j) - gap, y - 3 + height);
+            }
+
+            len = save * ska(max);
+            let textcolor = level == maxLevel ? col : !gui.points || (cap !== maxLevel && level == cap) ? color.grey : color.guiwhite;
+            // stat name in the HUD display face with its ink outline
+            hudTitle(name, Math.round(x + len / 2) - 5.5, y + height / 2, height - 3.6, textcolor, "center");
+
+            const keyTxt = statIdx === 10 ? minKeyName : String((statIdx + 1) % 10);
+            // fixed column: every key label centred on the same x, so "-"
+            // lines up with the digits above it
+            drawText("[" + keyTxt + "]", Math.round(x + save * ska(maxLevel) - height * 0.25) - 22, y + height / 2, height - 6, textcolor, "center", true);
+            if (textcolor === color.guiwhite && !tutLocked) {
+
+                global.clickables.stat.place(statIdx, x * clickableRatio, y * clickableRatio, len * clickableRatio, height * clickableRatio);
+            }
+
+            if (level) {
+                hudTitle("+" + level, Math.round(x + len + 4) - 5.5, y + height / 2, height - 4.5, col, "left");
+            }
+            ctx[2].globalAlpha = 1;
+
+            y -= height + vspacing;
+        }
+
+        global.clickables.hover.place(0, 0, y * clickableRatio, 0.8 * len * clickableRatio, (global.screenHeight - y) * clickableRatio);
+        if (gui.points !== 0) {
+
+            drawText("x" + gui.points, Math.round(x + len - 2) - 13, Math.round(y + height - 4) + 2, 18.5, color.guiwhite, "right");
+        }
     }
 
     function drawSelfInfo(max) {
@@ -6249,7 +6136,7 @@ import * as cosmetics from './account/cosmetics.js';
     // override cards all have to stop above it.
     function leftColumnFloor() {
         if (kitBoxTop > 0) return kitBoxTop;
-        return global.screenHeight - 20 - 5.5 - STAT_LAYOUT.h - 10 * (STAT_LAYOUT.h + STAT_LAYOUT.gap) - STAT_LAYOUT.head - STAT_LAYOUT.padY - 8;
+        return global.screenHeight - 20 - 5.5 - 14 - 10 * (14 + 5) - 30;
     }
     const bossGlide = Smoothbar(0, 2, 3, 0.08, 0.025, true);
     let royaleFeedBottom = 0;
@@ -7228,14 +7115,13 @@ import * as cosmetics from './account/cosmetics.js';
         const catalog = sh.catalog || [];
         const byId = id => catalog.find(i => i.id === id);
         const now = performance.now();
-        // same anchors as drawSkillBars (STAT_LAYOUT): 11 rows, header above
-        const barH = STAT_LAYOUT.h, vsp = STAT_LAYOUT.gap, bars = 11;
+        // same anchors as drawSkillBars: 11 bars of 14 + 5, counter row above
+        const barH = 14, vsp = 5, bars = 11;
         const barsTop = global.screenHeight - spacing - 5.5 - barH - (bars - 1) * (barH + vsp);
         const W = alcoveSize - 10, H = 118;
         const x = HUD.edge;
-        const lift = STAT_LAYOUT.head + STAT_LAYOUT.padY + 8;
-        const y = barsTop - lift - H + (1 - g) * 14;
-        kitBoxTop = barsTop - lift - H;
+        const y = barsTop - 26 - H + (1 - g) * 14;
+        kitBoxTop = barsTop - 26 - H;
         const c = ctx[2];
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         const hov = global.clickables.kit.check({ x: global.mouse.x, y: global.mouse.y });

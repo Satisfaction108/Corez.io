@@ -1,7 +1,7 @@
 // GET /api/events: the menu's Server-Sent Events stream (accounts only).
 //
 // On open: "retry: 5000", then a `hello` event carrying the same body as
-// GET /api/friends plus {now}. A ": ping" comment every 25 s; at most 5
+// GET /api/friends plus {now}. A ": ping" comment every 10 s; at most 5
 // streams per account (the oldest is closed) and 5000 overall.
 //
 // Events (event: <type>, data: JSON):
@@ -36,7 +36,9 @@ const presence = require('../presence');
 const { BASE_HEADERS, HttpError } = require('../http');
 const R = require('../../../shared/ranks.js');
 
-const PING_MS = 25 * 1000;
+// Under the ~30 s UDP idle timeout of many home routers: over HTTP/3 a
+// quieter stream gets its NAT mapping dropped (ERR_QUIC_PROTOCOL_ERROR).
+const PING_MS = 10 * 1000;
 const COALESCE_MS = 2000;
 const MAX_PER_USER = 5;
 const MAX_TOTAL = 5000;
