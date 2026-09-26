@@ -1898,6 +1898,8 @@ let incoming = async function(message, socket) {
             global.finalStreak = m[14 + m[8]] | 0;
             global.finalDrillLost = m[15 + m[8]] | 0;
             global.finalInsured = m[16 + m[8]] | 0;
+            // the server's own respawn wait (Second Wind shortens it)
+            const respawnWaitMs = m[17 + m[8]] | 0;
             global.shop.onPad = false;
             // RK follows this packet; the rank card waits for it
             rankPanel.onDeath();
@@ -1931,7 +1933,7 @@ let incoming = async function(message, socket) {
                 global.royaleDied = false;
                 global.royaleSpectating = true;
                 global.royaleKillerCamUntil = performance.now() + 3000;
-                global.raidRespawnAt = performance.now() + 15000;
+                global.raidRespawnAt = performance.now() + (respawnWaitMs > 0 ? respawnWaitMs : 15000);
                 try { global.canvas.socket.talk('RS', 2); } catch { /* */ }
                 const camToken = global.royaleKillerCamUntil;
                 setTimeout(() => {

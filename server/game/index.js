@@ -2018,14 +2018,19 @@ class gameHandler {
             
             const vNow = Date.now();
             const padDt = Math.min(66, vNow - (this._lastVaultTick || vNow)) || 33;
-            vault.tick(gemActors, padDt);
-            outposts.tick(gemActors, padDt);
+            // One bad pad must not take the whole server down with it.
+            this._padTickErr ||= (name, e) => {
+                const t = Date.now(); this._padErrAt ||= {};
+                if (t - (this._padErrAt[name] || 0) > 10000) { this._padErrAt[name] = t; console.error('[' + name + ']', e); }
+            };
+            try { vault.tick(gemActors, padDt); } catch (e) { this._padTickErr('vault.tick', e); }
+            try { outposts.tick(gemActors, padDt); } catch (e) { this._padTickErr('outposts.tick', e); }
             if (Config.dig_royale || Config.tutorial) {
                 try { shop.tick(gemActors); } catch (e) { /* */ }
                 try { (chestsMod ||= require('./terrain/chests.js')).tick(gemActors, _tg); } catch (e) { /* */ }
             }
             if (!Config.dig_royale) {
-                coreChambers.tick(padDt);
+                try { coreChambers.tick(padDt); } catch (e) { this._padTickErr('coreChambers.tick', e); }
             }
             this._lastVaultTick = vNow;
             if (Config.dig_royale) {

@@ -50,4 +50,10 @@ Then open http://localhost:3000. Server settings live in `server/config.js`, and
 
 ## Credits
 
-Built on top of the open-source arras.io project. See `credits.md` for everyone who helped, and `LICENSE` for the license.
+Built on top of the open-source arras.io project. See `credits.md` for everyone who helped.
+
+## License
+
+Corez.io is free software under the **GNU Affero General Public License v3.0 or later** (see `LICENSE`). You can read, run, change and share the code. If you host a modified version that other people play, you have to publish your complete source under the same license.
+
+The arras.io code it's built on stays under its original MIT License (`LICENSE-ARRAS`). The Corez.io name and logo aren't covered by the license, so if you run your own copy, give it its own name and logo. See `NOTICE` for the details.

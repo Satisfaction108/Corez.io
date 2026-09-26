@@ -3,6 +3,7 @@
 const gems = require('./gems.js');
 const war = require('./war.js');
 const milestones = require('./milestones.js');
+const padGeom = require('./padGeom.js');
 
 const PAD_RADIUS   = 95;
 const EFFICIENCY   = 0.8;     
@@ -329,8 +330,12 @@ function tick(players, dtMs) {
         }
 
         
+        // Royale bases are the drawn octagon (padGeom), the same shape the
+        // occupy clock and the wall use; a bare r circle left an outer ring
+        // where the clock ran but the deposit panel never opened.
         let pad = null;
         for (const o of list) {
+            if (ownerBases()) { if (padGeom.insidePad(o, body.x, body.y)) { pad = o; break; } continue; }
             const dx = body.x - o.x, dy = body.y - o.y;
             if (dx * dx + dy * dy < o.r * o.r) { pad = o; break; }
         }

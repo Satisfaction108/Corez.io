@@ -969,6 +969,10 @@ function saveResume(socket, body) {
         snap.points = body.skill ? body.skill.points : 0;
         snap.modSkill = !!body._modSkillGiven;
         snap.hp = body.health && body.health.max ? body.health.amount / body.health.max : 1;
+        // the spawn shield is part of the life: a player who had already
+        // moved or shot must not get a fresh one by reloading
+        snap.shielded = !!body.invuln;
+        snap.graceLeft = Math.max(0, (body.spawnGraceUntil || 0) - t);
         if (hitAgo > RESUME_SAFE_MS) {
             snap.carried = (body.carriedGems | 0);
             body.carriedGems = 0;     // kept for the resume, so it must not also drop
@@ -1034,6 +1038,10 @@ function applyResume(body, snap) {
                 moveTo(body, x, y);
             }
             body.health.amount = body.health.max * Math.max(0.25, Math.min(1, snap.hp || 1));
+            // freshRaidBody shielded this body like a new spawn; a resume
+            // keeps the old life's shield state (and what was left of its grace)
+            body.invuln = !!snap.shielded;
+            body.spawnGraceUntil = snap.shielded ? now() + Math.min(SPAWN_GRACE_MS, snap.graceLeft | 0) : 0;
             body.carriedGems = snap.carried | 0;
             try { dustHooks.restore(body, snap.dustCarried | 0); } catch { /* */ }
             try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
@@ -1302,6 +1310,9 @@ function startRaid(first) {
     try { chests.clearAll(); } catch { /* */ }
     for (const client of connectedClients()) {
         client.raidQuest = { idx: 0, prog: 0, doneAt: 0 };
+        // everyone went down at the raid end: the first spawn of the new raid
+        // is a fresh start (starter gems, full drill), not a death respawn
+        client.lastRaidDeathAt = 0;
     }
     if (!first) {
         wipeWall();
@@ -1477,7 +1488,8 @@ function grantTwist(body) {
     const mod = raidMods.get() || {};
     if (!body || !body.socket) return;
     const st = shop.stateOf(body.socket);
-    if (mod.freeArm) { shop.grantArm(body.socket, mod.freeArm, true); st._twistArm = mod.freeArm; }
+    // never over a sidearm the player paid for (buy() clears _twistArm)
+    if (mod.freeArm && (!st.arm || st._twistArm)) { shop.grantArm(body.socket, mod.freeArm, true); st._twistArm = mod.freeArm; }
     if (mod.freeGear) { for (const gid of mod.freeGear) st.gear[gid] = true; st._twistGear = mod.freeGear.slice(); shop.applyPassives(body); }
     if (mod.kitStart) for (const [kid, n] of Object.entries(mod.kitStart)) shop.grantKit(body.socket, kid, n);
     // Overclocked used to be applied only in freshRaidBody, i.e. on the next

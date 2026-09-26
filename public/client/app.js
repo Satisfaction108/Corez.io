@@ -3149,128 +3149,65 @@ import * as cosmetics from './account/cosmetics.js';
             c.save();
             c.translate(sx, sy);
             c.lineJoin = "round";
-            // flat octagonal foundation (the vault's structural language)
-            c.beginPath();
-            for (let i = 0; i < 8; i++) {
-                const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
-                const ox = Math.cos(a) * R * 1.08, oy = Math.sin(a) * R * 1.08;
-                i ? c.lineTo(ox, oy) : c.moveTo(ox, oy);
-            }
-            c.closePath();
-            c.fillStyle = "#16181e";
-            c.fill();
-            if (st.t || st.o) {
-                c.globalAlpha = 0.28;
-                c.fillStyle = ownCol;
-                c.fill();
-                c.globalAlpha = 1;
-            } else if (royaleLook()) {
-                c.globalAlpha = 0.16 + 0.08 * Math.sin(now / 700 + o.id);
-                c.fillStyle = "#8a90a0";
-                c.fill();
-                c.globalAlpha = 1;
-            }
-            c.lineWidth = Math.max(3, R * 0.06);
-            c.strokeStyle = (st.t || st.o) ? ownCol : (royaleLook() ? "#8a90a0" : "#111318");
-            c.stroke();
-            // recessed inner disc
-            c.fillStyle = "#31363f";
-            c.beginPath(); c.arc(0, 0, R * 0.74, 0, Math.PI * 2); c.fill();
-            c.lineWidth = Math.max(2, R * 0.045);
-            c.strokeStyle = "#16181d";
-            c.stroke();
-            // the capturable STRUCTURE: a big team-colored octagon standing on
-            // the pad, drawn semi-transparent so it reads as a built thing.
-            // the real banner entity is suppressed in drawEntities so players
-            // always render ON TOP of the outpost (like the base vaults).
-            if (st.t || st.h) {
-                const bodyR = R * 1.33;   // matches the banner entity's realSize
+            // The vault's plate language: hard ink drop, a deep shade of the
+            // claim colour for the face, one ink outline, a bright rim band.
+            const lw = Math.max(1.5, R * 0.035);
+            const band = Math.max(2, R * 0.065);
+            const pulse = 0.5 + 0.5 * Math.sin(now / 650 + o.id);
+            const claimed = !!(st.t || st.h);
+            const hue = hexToRgb(claimed ? bodyCol : ownCol);
+            if (claimed) {
+                // the capturable STRUCTURE: the big octagon standing on the
+                // pad (matches the banner entity's realSize). The real banner
+                // entity is suppressed in drawEntities so players always
+                // render ON TOP of the outpost (like the base vaults).
+                const bodyR = R * 1.33;
                 const tgtH = Math.max(0, Math.min(1, st.h || 0));
                 if (o._smoothH === undefined) o._smoothH = tgtH;
                 o._smoothH += (tgtH - o._smoothH) * 0.12;
                 const frac = o._smoothH;
-                const corePulse = 0.5 + 0.5 * Math.sin(now / 500 + o.id * 2);
-                const coreAlpha = (0.18 + 0.12 * corePulse) * (0.4 + 0.6 * frac);
-                const coreGrad = c.createRadialGradient(0, 0, 0, 0, 0, bodyR * 1.3);
-                coreGrad.addColorStop(0, bodyCol);
-                coreGrad.addColorStop(0.5, bodyCol);
-                coreGrad.addColorStop(1, "rgba(0,0,0,0)");
-                c.globalAlpha = coreAlpha;
-                c.fillStyle = coreGrad;
-                c.beginPath(); c.arc(0, 0, bodyR * 1.3, 0, Math.PI * 2); c.fill();
-                c.globalAlpha = 1;
-                c.globalAlpha = 0.55;
-                c.beginPath();
-                for (let i = 0; i < 8; i++) {
-                    const a = (i / 8) * Math.PI * 2;
-                    const ox = Math.cos(a) * bodyR, oy = Math.sin(a) * bodyR;
-                    i ? c.lineTo(ox, oy) : c.moveTo(ox, oy);
-                }
-                c.closePath();
-                c.fillStyle = bodyCol;
+                polyPath(c, 0, R * 0.08, bodyR, 8, 0);
+                c.fillStyle = "rgba(18,14,21,0.6)";
                 c.fill();
-                c.lineWidth = Math.max(3, R * 0.06);
-                c.strokeStyle = "rgba(0,0,0,0.4)";
-                c.stroke();
-                c.globalAlpha = 0.15;
-                c.lineWidth = Math.max(1.5, R * 0.025);
-                c.strokeStyle = "#ffffff";
-                for (let i = 0; i < 8; i++) {
-                    const a = (i / 8) * Math.PI * 2;
-                    c.beginPath();
-                    c.moveTo(0, 0);
-                    c.lineTo(Math.cos(a) * bodyR, Math.sin(a) * bodyR);
-                    c.stroke();
-                }
+                polyPath(c, 0, 0, bodyR, 8, 0);
+                c.fillStyle = inkShade(hue, 0.6);
+                c.fill();
+                c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
+                polyPath(c, 0, 0, bodyR * 0.915, 8, 0);
+                c.globalAlpha = 0.8 + 0.2 * pulse;
+                c.lineWidth = band; c.strokeStyle = bodyCol; c.stroke();
                 c.globalAlpha = 1;
-                const orbSpin = now / 4000 + o.id;
-                c.save();
-                c.rotate(orbSpin);
-                c.globalAlpha = 0.4 + 0.2 * corePulse;
-                c.lineWidth = Math.max(2, R * 0.03);
-                c.strokeStyle = bodyCol;
-                for (let i = 0; i < 6; i++) {
-                    const a = (i / 6) * Math.PI * 2;
-                    c.beginPath();
-                    c.arc(0, 0, bodyR * 1.18, a - 0.12, a + 0.12);
-                    c.stroke();
-                }
-                c.restore();
-                c.globalAlpha = 1;
-                const ringR = bodyR * 1.12;
-                c.lineWidth = Math.max(3, R * 0.05);
-                c.lineCap = "round";
-                c.globalAlpha = 0.2;
-                c.strokeStyle = "#000000";
-                c.beginPath(); c.arc(0, 0, ringR, 0, Math.PI * 2); c.stroke();
+                // the pad it stands on, one step down
+                polyPath(c, 0, 0, R * 1.02, 8, Math.PI / 8);
+                c.fillStyle = inkShade(hue, 0.74);
+                c.fill();
+                c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
+                // banner HP: the HUD bar bent into a ring round the structure
+                // (ink keyline, dark track, flat cream fill)
+                const ringR = bodyR * 1.1, bw = Math.max(4, R * 0.085);
+                c.beginPath(); c.arc(0, 0, ringR, 0, Math.PI * 2);
+                c.lineWidth = bw + lw * 2; c.strokeStyle = HUD.ink; c.stroke();
+                c.lineWidth = bw; c.strokeStyle = HUD.wellSolid; c.stroke();
                 if (frac > 0.001) {
-                    c.globalAlpha = 0.85;
-                    c.strokeStyle = "#ffffff";
                     c.beginPath();
                     c.arc(0, 0, ringR, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-                    c.stroke();
+                    c.lineCap = "round"; c.strokeStyle = HUD.head; c.stroke();
+                    c.lineCap = "butt";
                 }
+            } else {
+                // neutral pad: the same plate, grey (or the site colour)
+                polyPath(c, 0, R * 0.07, R * 1.08, 8, Math.PI / 8);
+                c.fillStyle = "rgba(18,14,21,0.6)";
+                c.fill();
+                polyPath(c, 0, 0, R * 1.08, 8, Math.PI / 8);
+                c.fillStyle = inkShade(hue, 0.6);
+                c.fill();
+                c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
+                polyPath(c, 0, 0, R * 0.97, 8, Math.PI / 8);
+                c.globalAlpha = 0.55 + 0.2 * pulse;
+                c.lineWidth = band; c.strokeStyle = ownCol; c.stroke();
                 c.globalAlpha = 1;
-                // HP bar: sits ~5-6 px below the structure octagon's bottom edge
-                const barW = R * 2.6, barH = Math.max(3, R * 0.06);
-                const barY = bodyR + 5.5;
-                c.fillStyle = "rgba(0,0,0,0.6)";
-                c.fillRect(-barW / 2, barY, barW, barH);
-                if (frac > 0.003) {
-                    c.fillStyle = bodyCol;
-                    c.fillRect(-barW / 2 + 1, barY + 1, (barW - 2) * frac, barH - 2);
-                }
-                c.lineWidth = 1.5;
-                c.strokeStyle = "rgba(0,0,0,0.7)";
-                c.strokeRect(-barW / 2, barY, barW, barH);
             }
-            // ownership ring: breathes in the owner's color, dim grey neutral
-            const pulse = 0.5 + 0.5 * Math.sin(now / 700 + o.id);
-            c.globalAlpha = st.t ? 0.55 + 0.25 * pulse : 0.35;
-            c.lineWidth = Math.max(2.5, R * 0.055);
-            c.strokeStyle = ownCol;
-            c.beginPath(); c.arc(0, 0, R * 0.92, 0, Math.PI * 2); c.stroke();
-            c.globalAlpha = 1;
             c.restore();
             // CONQUEST BLAST: ownership just changed hands - a big double
             // shockwave in the new owner's color rolls off the site
@@ -3283,60 +3220,31 @@ import * as cosmetics from './account/cosmetics.js';
                 const t = (now - o._blastAt) / 1200;
                 const eo = 1 - Math.pow(1 - t, 3);
                 const a = Math.pow(1 - t, 1.4);
+                // flat, like the rest of the HUD: two shockwave bands (a cream
+                // lead with an ink keyline, the owner's colour behind it) and
+                // a ring of flat sparks - no gradients, no beam
                 c.save();
-                for (let ring = 0; ring < 3; ring++) {
-                    const rt = Math.max(0, eo - ring * 0.12);
+                for (let ring = 1; ring >= 0; ring--) {
+                    const rt = Math.max(0, eo - ring * 0.14);
                     if (rt <= 0) continue;
+                    const w = Math.max(2, R * (0.12 - ring * 0.04) * (1 - t));
                     c.beginPath();
                     c.arc(sx, sy, R * (0.5 + 3.0 * rt), 0, Math.PI * 2);
-                    c.strokeStyle = ring === 0 ? "#ffffff" : ownCol;
-                    c.globalAlpha = a * (ring === 0 ? 0.8 : 0.5 - ring * 0.12);
-                    c.lineWidth = Math.max(2, R * (0.14 - ring * 0.03) * (1 - t));
+                    c.globalAlpha = a * (ring === 0 ? 0.9 : 0.6);
+                    if (ring === 0) { c.lineWidth = w + 3; c.strokeStyle = HUD.ink; c.stroke(); }
+                    c.lineWidth = w;
+                    c.strokeStyle = ring === 0 ? HUD.head : ownCol;
                     c.stroke();
                 }
-                const beamH = R * (1.5 + 3.5 * eo);
-                const beamGrad = c.createLinearGradient(0, sy, 0, sy - beamH);
-                beamGrad.addColorStop(0, ownCol);
-                beamGrad.addColorStop(0.4, ownCol);
-                beamGrad.addColorStop(1, "rgba(0,0,0,0)");
-                c.globalAlpha = a * 0.5;
-                c.fillStyle = beamGrad;
-                const beamW = R * 0.35 * (1 - t * 0.5);
-                c.beginPath();
-                c.moveTo(sx - beamW, sy);
-                c.lineTo(sx + beamW, sy);
-                c.lineTo(sx + beamW * 0.3, sy - beamH);
-                c.lineTo(sx - beamW * 0.3, sy - beamH);
-                c.closePath();
-                c.fill();
-                c.globalAlpha = a * 0.4;
-                const glowGrad = c.createRadialGradient(sx, sy, 0, sx, sy, R * (1 + eo));
-                glowGrad.addColorStop(0, "#ffffff");
-                glowGrad.addColorStop(0.3, ownCol);
-                glowGrad.addColorStop(1, "rgba(0,0,0,0)");
-                c.fillStyle = glowGrad;
-                c.beginPath(); c.arc(sx, sy, R * (1 + eo), 0, Math.PI * 2); c.fill();
+                const sz = Math.max(1.5, R * 0.06 * (1 - t * 0.7));
+                const rr = R * (0.4 + 2.8 * eo);
                 for (let i = 0; i < 22; i++) {
                     const ang = (i / 22) * Math.PI * 2 + o.id;
-                    const rr = R * (0.4 + 2.8 * eo);
-                    const sz = Math.max(1.5, R * 0.06 * (1 - t * 0.7));
                     c.globalAlpha = a * (0.7 + 0.3 * Math.sin(i * 1.7));
-                    c.fillStyle = i % 4 === 0 ? "#ffffff" : ownCol;
+                    c.fillStyle = i % 4 === 0 ? HUD.head : ownCol;
                     c.beginPath();
                     c.arc(sx + Math.cos(ang) * rr, sy + Math.sin(ang) * rr, sz, 0, Math.PI * 2);
                     c.fill();
-                }
-                c.globalAlpha = a * 0.5;
-                c.lineWidth = Math.max(1.5, R * 0.03);
-                c.strokeStyle = ownCol;
-                for (let i = 0; i < 16; i++) {
-                    const ang = (i / 16) * Math.PI * 2 + o.id + 0.1;
-                    const rr = R * (0.4 + 2.6 * eo);
-                    const tr = R * (0.4 + 2.2 * eo);
-                    c.beginPath();
-                    c.moveTo(sx + Math.cos(ang) * tr, sy + Math.sin(ang) * tr);
-                    c.lineTo(sx + Math.cos(ang) * rr, sy + Math.sin(ang) * rr);
-                    c.stroke();
                 }
                 c.restore();
             }
@@ -3370,13 +3278,7 @@ import * as cosmetics from './account/cosmetics.js';
                         : (royaleActive() ? "#8a90a0" : gameDraw.getColor("yellow"));
             c.save();
             c.translate(sx, sy);
-            // ownership claim ring, exactly like the base vaults wear
-            const pulse = 0.5 + 0.5 * Math.sin(now / 650 + o.id);
-            c.globalAlpha = (st.t || st.o) ? 0.55 + 0.25 * pulse : 0.35;
-            c.lineWidth = Math.max(2.5, R * 0.06);
-            c.strokeStyle = ownCol;
-            c.beginPath(); c.arc(0, 0, R * 1.06, 0, Math.PI * 2); c.stroke();
-            c.globalAlpha = 1;
+            // (the claim colour lives on the pad's rim band, as on the vault)
             // the same three door layers the base vaults use, recolored for
             // the owner (blue / red) or the site color / grey in Royale
             const doorSprites = (st.o && st.c)
@@ -3632,31 +3534,30 @@ import * as cosmetics from './account/cosmetics.js';
             if (sx < -R * 2 || sx > global.screenWidth + R * 2 ||
                 sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
             const st = global.outpostState.find(s => s.id === o.id) || {};
-            drawText(o.name, sx, sy - o.r * ratio * 1.55 - 26,
-                     Math.min(32, o.r * ratio * 0.42),
-                     o.color || st.c || color.guiwhite, "center", false, 1, true, c);
+            // names in the HUD's display face; the site keeps its colour.
+            // Parked just clear of the top of what is drawn: the HP ring
+            // round a standing structure, else the bare pad.
+            const fs = Math.min(30, Math.max(13, R * 0.4));
+            const top = (st.t || st.h) ? R * 1.33 * 1.1 + Math.max(4, R * 0.085) : R * 1.08;
+            const ty = sy - top - fs * 0.5 - Math.max(6, R * 0.12);
+            hudTitle(o.name, sx, ty, fs, o.color || st.c || HUD.head, "center", 1, c);
             // Contested window, visible to both sides: callout + the
             // banner's remaining HP as the break bar. Attackers see what
             // they must finish, defenders see what they must save.
             if (st.cont) {
                 const blink = 0.65 + 0.35 * Math.sin(performance.now() / 240);
-                drawText("UNDER ATTACK", sx, sy - o.r * ratio * 1.55 - 86,
-                         Math.min(24, o.r * ratio * 0.3),
-                         "#ff6b5e", "center", false, blink, true, c);
-                const bw2 = Math.min(110, o.r * ratio), bh2 = 7;
-                const bx2 = sx - bw2 / 2, by2 = sy - o.r * ratio * 1.55 - 66;
+                const as = Math.min(22, Math.max(11, R * 0.28));
+                const bw2 = Math.min(110, R), bh2 = 8, by2 = ty - fs * 0.5 - 8 - bh2;
+                hudTitle("UNDER ATTACK", sx, by2 - 6 - as * 0.5, as, "#ff6b5e", "center", blink, c);
                 c.save();
                 c.globalAlpha = blink;
-                c.fillStyle = color.black;
-                c.fillRect(bx2 - 1, by2 - 1, bw2 + 2, bh2 + 2);
-                c.fillStyle = "#e03e41";
-                c.fillRect(bx2, by2, bw2 * Math.max(0, Math.min(1, st.h || 0)), bh2);
+                hudBar(c, sx - bw2 / 2, by2, bw2, bh2, st.h || 0, HUD.danger);
                 c.restore();
             }
             if (royaleActive() && st.l > 0) {
-                drawText(st.l + "s", sx, sy + o.r * ratio * 1.05,
-                         Math.min(22, o.r * ratio * 0.28),
-                         st.c || color.guiwhite, "center", false, 1, true, c);
+                hudTitle(st.l + "s", sx, sy + R * 1.05,
+                         Math.min(20, Math.max(11, R * 0.26)),
+                         st.c || HUD.head, "center", 1, c);
             }
         }
         // core chambers wear their name above the boulder too - and only once

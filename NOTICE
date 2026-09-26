@@ -1,0 +1,34 @@
+Corez.io
+Copyright (C) 2026 ZyroX and the Corez.io contributors
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or (at your
+option) any later version. See LICENSE for the full text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+details.
+
+If you run a modified version of this game on a server that other people can
+play on, the AGPL requires you to offer those players the complete source
+code of your version, under this same license.
+
+Source: https://github.com/Satisfaction108/Corez.io
+
+
+Third-party code
+----------------
+Corez.io is built on the open-source arras.io project ("Open Source Arras"),
+which is released under the MIT License. That code keeps its original
+copyright notice and license, reproduced in LICENSE-ARRAS. Other bundled
+libraries keep their own licenses.
+
+
+Name and logo
+-------------
+"Corez.io" and the Corez.io logo are the names and marks of this project.
+The AGPL gives you rights to the code; it does not give you permission to
+use the Corez.io name or logo to brand your own copy or to suggest it is the
+official game. If you run a fork, give it a different name and logo.

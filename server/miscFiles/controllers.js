@@ -201,13 +201,26 @@ class io_listenToPlayer extends IO {
             // was already down when the grace ran out (the click that
             // respawned you, a key you never let go of) does not count: the
             // shield only drops on something you press fresh.
+            //
+            // Only the fire inputs that were already down when the shield went
+            // up are exempt (the respawn click, autofire left on), and only
+            // until they are let go. A movement key never is: holding one past
+            // the grace means you are moving. The old rule exempted anything
+            // held across the end of the grace until every key was released,
+            // so a player who kept a key down moved freely shielded forever,
+            // and since the shield blocks guns, could not shoot either.
             const c = this.player.command;
-            // autofire left on from the last life counts as held, not fresh
-            const held = !!(c.right || c.left || c.up || c.down || c.lmb || c.autofire);
-            const grace = this.body.spawnGraceUntil && Date.now() < this.body.spawnGraceUntil;
-            if (grace) this._heldThroughGrace = held;
-            else if (!held) this._heldThroughGrace = false;
-            else if (!this._heldThroughGrace) this.body.invuln = false;
+            const bits = (c.up ? 1 : 0) | (c.down ? 2 : 0) | (c.left ? 4 : 0) | (c.right ? 8 : 0) |
+                (c.lmb ? 16 : 0) | (c.autofire ? 32 : 0);
+            const graceUntil = this.body.spawnGraceUntil || 0;
+            if (this._shieldBody !== this.body || this._shieldGrace !== graceUntil) {
+                this._shieldBody = this.body;
+                this._shieldGrace = graceUntil;
+                this._heldAtShield = bits & (16 | 32);
+            }
+            this._heldAtShield &= bits;     // let go: pressing it again is fresh
+            const grace = graceUntil && Date.now() < graceUntil;
+            if (!grace && (bits & ~this._heldAtShield)) this.body.invuln = false;
         }
         this.body.autoOverride = this.player.command.override;
         return {

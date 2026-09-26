@@ -308,6 +308,9 @@ function buy(socket, itemId) {
     } else if (item.cat === "arm") {
         s.arm = item.id;
         s.armUntil = item.id === "pod" ? Date.now() + ARM_BURN_MS : 0;
+        // a bought arm replaces a twist's free one: the twist ending (or a
+        // respawn re-granting it) must not take the paid one away
+        s._twistArm = null;
         attachSidearm(body, item.id);
         msg = item.name + " mounted. Fire it with right click.";
     }

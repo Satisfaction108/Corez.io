@@ -131,9 +131,10 @@ function depositFor(body, amount) {
     if (!(amount > 0) || carried < MIN_DEPOSIT) return false;
     if (Config.dig_royale) {
         let pad = null;
+        // the same shape tick() uses to open the panel (the octagon reaches
+        // past v.r), or the outer ring showed the panel but refused deposits
         for (const v of getVaults()) {
-            const dx = body.x - v.x, dy = body.y - v.y;
-            if (dx * dx + dy * dy < v.r * v.r) { pad = v; break; }
+            if (onPadShape(v, body.x - v.x, body.y - v.y)) { pad = v; break; }
         }
         if (!pad) return false;
         if (!claimPad(pad, body)) {

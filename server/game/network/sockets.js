@@ -243,6 +243,13 @@ class socketManager {
                     // inherit it. (the old 60s ip-keyed "recovery" let any new
                     // connection from the same ip spawn as the previous player)
                     if (Config.clan_wars) Config.clan_wars_ft.remove(player.body);
+                    // destroy() below removes the body before its 'dead' event
+                    // can run, so the satchel drops here: a player who pulls
+                    // the plug mid-fight (saveResume leaves those gems on the
+                    // body) leaves the loot behind instead of deleting it
+                    if (Config.dig_royale && (player.body.carriedGems | 0) > 0 && !player.body.isDead()) {
+                        try { require('../terrain/gems.js').dropGemsOnDeath(player.body, []); } catch (e) { console.error('[RAID] disconnect drop', e && e.message); }
+                    }
                     player.body.invuln = false;
                     player.body.kill();
                     player.body.destroy();
@@ -1977,6 +1984,10 @@ class socketManager {
                 (socket && socket.raidDeathStreak) | 0,
                 (socket && socket.raidDeathDrillLost) | 0,
                 (socket && socket.gemDeathInsured) | 0,
+                // raid: ms until the server lets you back in (15 s, 7 s with
+                // Second Wind); the client counted a fixed 15 s, so a bought
+                // Second Wind never shortened anything
+                (socket && socket.royaleRespawnAt ? Math.max(0, socket.royaleRespawnAt - Date.now()) : 0) | 0,
             ];
         }
 

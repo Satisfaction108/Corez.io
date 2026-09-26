@@ -72,11 +72,11 @@ test('catalog: unique ids/nids, cats, prices from the plan, colour stops readabl
         if (it.skin) assert.ok(it.skin.pattern && it.skin.accent && it.skin.altAccent, it.id);
     }
     const price = id => C.byId(id).price;
-    assert.equal(price('ns_custom'), 10000);
-    assert.equal(price('ns_sunset'), 30000);
-    assert.equal(price('ns_prism_shard'), 300000);
-    assert.equal(price('sk_hazard_stripes'), 40000);
-    assert.equal(price('sk_molten_core'), 600000);
+    assert.equal(price('ns_custom'), 8000);
+    assert.equal(price('ns_sunset'), 25000);
+    assert.equal(price('ns_prism_shard'), 250000);
+    assert.equal(price('sk_hazard_stripes'), 35000);
+    assert.equal(price('sk_molten_core'), 500000);
     assert.deepEqual(C.byId('ns_sunset').style.stops, ['#ffb347', '#ff6a5c', '#c850c0']);
     assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle').length, 13);
     assert.equal(C.ITEMS.filter(i => i.cat === 'skin').length, 12);

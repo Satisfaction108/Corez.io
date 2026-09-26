@@ -60,6 +60,30 @@ const ADMIN_COMMANDS = [
         ],
     },
     { name: 'unban', description: 'Lift a ban', options: [userOpt(), reasonOpt(false)] },
+    {
+        name: 'users', description: 'List every account', options: [
+            {
+                type: T.STRING, name: 'sort', description: 'Order (default: newest)', required: false, choices: [
+                    { name: 'Newest', value: 'new' }, { name: 'Last seen', value: 'seen' },
+                    { name: 'Rank points', value: 'rp' }, { name: 'Gemdust', value: 'dust' },
+                ],
+            },
+            { type: T.INTEGER, name: 'page', description: 'Page (20 per page)', required: false, min_value: 1, max_value: 10000 },
+        ],
+    },
+    {
+        name: 'history', description: "A player's records", options: [
+            userOpt(),
+            {
+                type: T.STRING, name: 'what', description: 'Which records (default: gemdust)', required: false, choices: [
+                    { name: 'Gemdust changes', value: 'dust' }, { name: 'Purchases and gifts', value: 'buys' },
+                    { name: 'Games (ranked lives)', value: 'games' }, { name: 'Raid finishes', value: 'raids' },
+                    { name: 'Items owned', value: 'items' }, { name: 'Audit log', value: 'audit' },
+                ],
+            },
+        ],
+    },
+    { name: 'stats', description: 'Totals: accounts, activity, gemdust, purchases' },
 ].map(c => ({ ...c, type: 1, default_member_permissions: '0', dm_permission: false }));
 
 const PLAYER_COMMANDS = [
@@ -258,7 +282,134 @@ function unban(i, caller) {
     return reply(was ? `Unbanned **${md(row.username)}**.` : `**${md(row.username)}** wasn't banned (cleared anyway).`, { ephemeral: true });
 }
 
-const ADMIN_HANDLERS = { lookup, resetpassword: resetPassword, relink, grantdust: grantDust, ban, unban };
+// ---- admin: browsing the data ----
+
+const PAGE = 20;
+const cosmeticName = id => { try { const it = require('../../../shared/cosmetics.js').byId(id); return it ? it.name : id; } catch (e) { return id; } };
+const shortDiv = row => { const s = rankStore.snapshot(row); return s.division == null ? 'Placement' : s.name; };
+const presenceOf = id => { try { return require('../presence').get(id).state; } catch (e) { return 'offline'; } };
+const STATE_ICON = { raid: '🟢 raid', menu: '🟡 menu', offline: '' };
+
+function listUsers(i, caller) {
+    const sort = String(opt(i, 'sort') || 'new');
+    const order = { new: 'created_at DESC', seen: 'COALESCE(last_seen_at, 0) DESC', rp: 'rp DESC', dust: 'dust_milli DESC' }[sort] || 'created_at DESC';
+    const d = db.handle();
+    const total = d.get('SELECT count(*) AS n FROM users WHERE deleted_at IS NULL').n | 0;
+    const pages = Math.max(1, Math.ceil(total / PAGE));
+    const page = Math.min(pages, Math.max(1, (opt(i, 'page') | 0) || 1));
+    const rows = d.all(`SELECT * FROM users WHERE deleted_at IS NULL ORDER BY ${order}, id LIMIT ? OFFSET ?`, PAGE, (page - 1) * PAGE);
+    audit(caller, null, 'admin_list_users', { sort, page });
+    if (!rows.length) return reply('No accounts yet.', { ephemeral: true });
+    const lines = rows.map((r, k) => {
+        const st = STATE_ICON[presenceOf(r.id)];
+        const ban = r.banned_until && r.banned_until > Date.now() ? ' · **banned**' : '';
+        return `${(page - 1) * PAGE + k + 1}. **${md(r.username)}** \`${r.public_id}\`${r.discord_id ? ' · <@' + r.discord_id + '>' : ''}` +
+            ` · ${shortDiv(r)} · ${dustText(r.dust_milli)} dust · seen ${ts(r.last_seen_at, 'R')}${st ? ' · ' + st : ''}${ban}`;
+    });
+    return reply('', {
+        ephemeral: true, embeds: [{
+            title: `Accounts (${total.toLocaleString('en-US')})`, color: COLOR,
+            description: lines.join('\n').slice(0, 4000),
+            footer: { text: `Page ${page} of ${pages} · sorted by ${{ new: 'newest', seen: 'last seen', rp: 'rank points', dust: 'gemdust' }[sort] || 'newest'} · guests are not stored` },
+        }],
+    });
+}
+
+function history(i, caller) {
+    const row = resolveUser(opt(i, 'user'));
+    const what = String(opt(i, 'what') || 'dust');
+    audit(caller, row && row.id, 'admin_history', { query: String(opt(i, 'user') || '').slice(0, 64), what, found: !!row });
+    if (!row) return reply('No account matches that.', { ephemeral: true });
+    const d = db.handle();
+    const signed = m => (m > 0 ? '+' : m < 0 ? '−' : '') + dustText(Math.abs(m));
+    let title, lines, extra = '';
+    if (what === 'buys') {
+        title = 'Purchases and gifts';
+        const rs = d.all(`SELECT p.*, b.username AS buyer, r.username AS recipient FROM purchases p
+            JOIN users b ON b.id = p.user_id LEFT JOIN users r ON r.id = p.recipient_id
+            WHERE p.user_id = ? OR p.recipient_id = ? ORDER BY p.created_at DESC LIMIT 25`, row.id, row.id);
+        lines = rs.map(p => {
+            const who = p.is_gift ? (p.user_id === row.id ? ` → gift to **${md(p.recipient || 'deleted')}**` : ` ← gift from **${md(p.buyer)}**`) : '';
+            return `${ts(p.created_at, 'd')} **${md(cosmeticName(p.item_id))}** · ${dustText(p.price_milli)} dust${who}${p.refunded_at ? ' · refunded ' + ts(p.refunded_at, 'd') : ''}`;
+        });
+    } else if (what === 'games') {
+        title = 'Games (ranked lives)';
+        const rs = d.all('SELECT * FROM rank_lives WHERE user_id = ? ORDER BY started_at DESC LIMIT 20', row.id);
+        lines = rs.map(l => `${ts(l.started_at, 'd')} ${l.ended_at ? l.end_reason || 'ended' : '**playing**'} · ${(l.basis | 0).toLocaleString('en-US')} pts · ${l.kills | 0} KOs (${l.bot_kills | 0} bots)` +
+            ` · RP ${l.rp_before}${l.rp_after == null ? '' : ' → ' + l.rp_after}${l.placement ? ' · placement' : ''}${l.dust_milli ? ' · ' + dustText(l.dust_milli) + ' dust' : ''}`);
+    } else if (what === 'raids') {
+        title = 'Raid finishes';
+        const rs = d.all('SELECT * FROM raid_results WHERE user_id = ? ORDER BY created_at DESC LIMIT 20', row.id);
+        lines = rs.map(r => `${ts(r.created_at, 'd')} **#${r.place}** of ${r.board_rows} · ${(r.score | 0).toLocaleString('en-US')} pts · ${Math.round(r.raid_ms / 60000)} min` +
+            `${r.rp_bonus ? ' · +' + r.rp_bonus + ' RP' : ''}${r.dust_milli ? ' · +' + dustText(r.dust_milli) + ' dust' : ''}`);
+    } else if (what === 'items') {
+        title = 'Items owned';
+        const rs = d.all('SELECT * FROM owned_items WHERE user_id = ? ORDER BY acquired_at DESC', row.id);
+        lines = rs.map(o => `**${md(cosmeticName(o.item_id))}** · ${o.source} · ${ts(o.acquired_at, 'd')}`);
+        extra = `Wearing: ${row.equip_name_style ? cosmeticName(row.equip_name_style) : 'no name style'}, ${row.equip_skin ? cosmeticName(row.equip_skin) : 'no skin'}${row.custom_color ? ' · colour ' + row.custom_color : ''}`;
+    } else if (what === 'audit') {
+        title = 'Audit log';
+        const rs = d.all('SELECT at, actor, action, detail FROM audit_log WHERE user_id = ? ORDER BY at DESC LIMIT 20', row.id);
+        lines = rs.map(a => {
+            let det = '';
+            try { const o = JSON.parse(a.detail || 'null'); if (o && typeof o === 'object') det = Object.entries(o).filter(([k]) => !/hash|token|ip|secret/i.test(k)).slice(0, 4).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', '); } catch (e) { /* */ }
+            return `${ts(a.at, 'd')} \`${a.action}\`${a.actor !== 'self' ? ' by ' + (/^admin:\d+$/.test(a.actor) ? '<@' + a.actor.slice(6) + '>' : md(a.actor)) : ''}${det ? ' · ' + md(det).slice(0, 120) : ''}`;
+        });
+    } else {
+        title = 'Gemdust changes';
+        const rs = d.all('SELECT * FROM dust_ledger WHERE user_id = ? ORDER BY id DESC LIMIT 25', row.id);
+        lines = rs.map(l => `${ts(l.created_at, 'd')} **${signed(l.delta_milli)}** ${l.kind} → ${dustText(l.balance_milli)}`);
+        const sum = d.get(`SELECT COALESCE(SUM(CASE WHEN delta_milli > 0 THEN delta_milli END), 0) AS earned,
+            COALESCE(-SUM(CASE WHEN delta_milli < 0 THEN delta_milli END), 0) AS spent, count(*) AS n FROM dust_ledger WHERE user_id = ?`, row.id);
+        extra = `Balance ${dustText(row.dust_milli)} · earned ${dustText(sum.earned)} · spent ${dustText(sum.spent)} · ${sum.n} changes`;
+    }
+    return reply('', {
+        ephemeral: true, embeds: [{
+            title: `${md(row.username)} · ${title}`, color: COLOR,
+            description: ((extra ? extra + '\n\n' : '') + (lines.length ? lines.join('\n') : 'Nothing yet.')).slice(0, 4000),
+            footer: { text: row.public_id + (lines.length >= 20 ? ' · newest first, latest entries only' : '') },
+        }],
+    });
+}
+
+function stats(i, caller) {
+    const d = db.handle(), now = Date.now();
+    const one = (sql, ...a) => d.get(sql, ...a) || {};
+    const acc = one(`SELECT count(*) AS n, COALESCE(SUM(discord_id IS NOT NULL), 0) AS discord, COALESCE(SUM(password_hash IS NOT NULL), 0) AS pw,
+        COALESCE(SUM(created_at > ?), 0) AS new1, COALESCE(SUM(created_at > ?), 0) AS new7,
+        COALESCE(SUM(last_seen_at > ?), 0) AS act1, COALESCE(SUM(last_seen_at > ?), 0) AS act7,
+        COALESCE(SUM(dust_milli), 0) AS dust, COALESCE(SUM(banned_until > ?), 0) AS banned
+        FROM users WHERE deleted_at IS NULL`, now - DAY, now - 7 * DAY, now - DAY, now - 7 * DAY, now);
+    const buys = one('SELECT count(*) AS n, COALESCE(SUM(price_milli), 0) AS dust, COALESCE(SUM(is_gift), 0) AS gifts, COALESCE(SUM(refunded_at IS NOT NULL), 0) AS refunds FROM purchases');
+    const earned = one("SELECT COALESCE(SUM(delta_milli), 0) AS m FROM dust_ledger WHERE delta_milli > 0 AND kind <> 'refund'");
+    const lives = one('SELECT count(*) AS n, COALESCE(SUM(started_at > ?), 0) AS day FROM rank_lives', now - DAY);
+    let online = { raid: 0, menu: 0 };
+    try {
+        const p = require('../presence');
+        for (const r of d.all('SELECT id FROM users WHERE deleted_at IS NULL AND last_seen_at > ?', now - DAY)) {
+            const st = p.get(r.id).state; if (online[st] != null) online[st]++;
+        }
+    } catch (e) { /* */ }
+    const n = v => (v | 0).toLocaleString('en-US');
+    audit(caller, null, 'admin_stats', {});
+    return reply('', {
+        ephemeral: true, embeds: [{
+            title: 'Corez.io stats', color: COLOR, fields: [
+                { name: 'Accounts', value: `${n(acc.n)} (${n(acc.discord)} Discord, ${n(acc.pw)} password)`, inline: false },
+                { name: 'New', value: `${n(acc.new1)} today · ${n(acc.new7)} this week`, inline: true },
+                { name: 'Active', value: `${n(acc.act1)} today · ${n(acc.act7)} this week`, inline: true },
+                { name: 'Online now', value: `${n(online.raid)} in a raid · ${n(online.menu)} in the menu`, inline: false },
+                { name: 'Gemdust', value: `${dustText(acc.dust)} held · ${dustText(earned.m)} ever earned`, inline: false },
+                { name: 'Purchases', value: `${n(buys.n)} (${n(buys.gifts)} gifts, ${n(buys.refunds)} refunded) · ${dustText(buys.dust)} dust spent`, inline: false },
+                { name: 'Games', value: `${n(lives.n)} total · ${n(lives.day)} today`, inline: true },
+                { name: 'Banned', value: n(acc.banned), inline: true },
+            ],
+            footer: { text: 'Accounts only; guests are not stored' },
+        }],
+    });
+}
+
+const ADMIN_HANDLERS = { lookup, resetpassword: resetPassword, relink, grantdust: grantDust, ban, unban, users: listUsers, history, stats };
 
 // ---- players ----
 
