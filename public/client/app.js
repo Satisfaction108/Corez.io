@@ -3925,28 +3925,38 @@ import * as cosmetics from './account/cosmetics.js';
         return p;
     })();
 
-    // right half of the cut, the one flat shade (mirrors GEM_SHADE in
-    // terrainRenderer)
+    // The cut's tone facets (mirror addGem in terrainRenderer): the
+    // lower-right pavilion, the table and the core, as unit paths.
     const GEM_SHADE_PATH = (() => {
         const p = new Path2D();
-        p.moveTo(0, -0.95); p.lineTo(0.55, -0.95); p.lineTo(1, -0.38); p.lineTo(0, 0.95);
+        p.moveTo(0, -0.38); p.lineTo(1, -0.38); p.lineTo(0, 0.95);
         p.closePath();
         return p;
     })();
-    // Flat tones per class: the SAME base/shade/glint as the ore gems in the
-    // rocks (TerrainRenderer.ORE_PAL, tiers 1-4) so a gem looks identical in
-    // the wall and on the floor. `ink` is the outline width in cut units.
-    const GEM_INK = "rgb(16,13,22)";   // TerrainRenderer.ROCK_INK
+    const gemCutCopy = (k, ox, oy) => {
+        const p = new Path2D();
+        GEM_CUT.forEach((pt, i) => {
+            const x = pt[0] * k + ox, y = pt[1] * k + oy;
+            if (i === 0) p.moveTo(x, y); else p.lineTo(x, y);
+        });
+        p.closePath();
+        return p;
+    };
+    const GEM_TABLE_PATH = gemCutCopy(0.52, 0, -0.12);
+    const GEM_CORE_PATH = gemCutCopy(0.2, -0.22, -0.3);
+    // Tones per class: the SAME as the ore gems in the rocks
+    // (TerrainRenderer.ORE_PAL, tiers 1-4) so a gem looks identical in the
+    // wall and on the floor. `rim` width is in cut units.
     const GEM_FLAT = (() => {
-        const t1 = { base: "rgb(240,136,60)", shade: "rgb(192,88,34)",  glint: "rgb(255,230,196)", ink: 0.2 };
-        const t2 = { base: "rgb(66,146,255)", shade: "rgb(38,94,218)",  glint: "rgb(218,238,255)", ink: 0.2 };
-        const t3 = { base: "rgb(208,96,242)", shade: "rgb(150,52,200)", glint: "rgb(252,226,255)", ink: 0.17 };
-        const t4 = { base: "rgb(46,218,124)", shade: "rgb(20,158,88)",  glint: "rgb(216,255,234)", ink: 0.17 };
+        const t1 = { base: "rgb(226,122,52)", shade: "rgb(178,84,30)",  table: "rgb(250,180,118)", core: "rgb(255,240,222)", rim: "rgb(122,58,20)",  rimW: 0.1 };
+        const t2 = { base: "rgb(60,136,240)", shade: "rgb(36,90,200)",  table: "rgb(136,190,255)", core: "rgb(232,244,255)", rim: "rgb(20,56,138)",  rimW: 0.09 };
+        const t3 = { base: "rgb(190,80,226)", shade: "rgb(136,44,180)", table: "rgb(230,154,250)", core: "rgb(252,236,255)", rim: "rgb(86,24,116)",  rimW: 0.07 };
+        const t4 = { base: "rgb(36,200,112)", shade: "rgb(16,146,80)",  table: "rgb(122,242,176)", core: "rgb(234,255,244)", rim: "rgb(8,94,52)",    rimW: 0.07 };
         return {
             gemPickupCopper: t1, gemPickupVein: t2,
             gemPickupShard: t3, gemPickupShardCore: t3,
             gemPickupEmerald: t4, gemPickupEmeraldCore: t4,
-            gemPickupLoot: { base: "rgb(250,196,64)", shade: "rgb(214,146,30)", glint: "rgb(255,244,206)", ink: 0.26 },
+            gemPickupLoot: { base: "rgb(236,178,58)", shade: "rgb(196,132,28)", table: "rgb(250,214,130)", core: "rgb(255,248,226)", rim: "rgb(128,84,14)", rimW: 0.14 },
         };
     })();
 
@@ -3970,7 +3980,7 @@ import * as cosmetics from './account/cosmetics.js';
 
     // Baked sprites. Every gem pickup is pre-rendered once per class onto a
     // hidden canvas: the soft glow halo (shadowBlur under a borderless body
-    // fill at the glow's alpha), then the flat cartoon cut from GEM_FLAT.
+    // fill at the glow's alpha), then the cut stone from GEM_FLAT.
     const GEM_SPRITES = {};
     const GEM_SPRITE_HALF = 6.0;    // unit span covered (biggest glow ~2.4)
     const GEM_SPRITE_SCALE = 64;    // px per world unit inside the sprite
@@ -3998,24 +4008,22 @@ import * as cosmetics from './account/cosmetics.js';
         c.globalAlpha = 1;
         c.shadowBlur = 0;
 
-        // body: the flat cartoon cut the ore gems in the rocks use
-        // (terrainRenderer addGem/paintGem): uniform ink outline (double
-        // stroke, the fill hides its inner half), flat base, the right half
-        // in one shade, one oval glint on the lit upper-left
+        // body: the same cut stone as the ore gems in the rocks
+        // (terrainRenderer addGem/paintGem): flat base, darker pavilion,
+        // light table, bright core, thin same-hue rim on top
         const tone = GEM_FLAT[cls] || GEM_FLAT.gemPickupVein;
-        c.lineJoin = "round";
-        c.lineCap = "round";
-        c.lineWidth = tone.ink * 2;
-        c.strokeStyle = GEM_INK;
-        c.stroke(GEM_CUT_PATH);
         c.fillStyle = tone.base;
         c.fill(GEM_CUT_PATH);
         c.fillStyle = tone.shade;
         c.fill(GEM_SHADE_PATH);
-        c.fillStyle = tone.glint;
-        c.beginPath();
-        c.ellipse(-0.5, -0.6, 0.23, 0.095, -0.9, 0, Math.PI * 2);
-        c.fill();
+        c.fillStyle = tone.table;
+        c.fill(GEM_TABLE_PATH);
+        c.fillStyle = tone.core;
+        c.fill(GEM_CORE_PATH);
+        c.lineJoin = "round";
+        c.lineWidth = tone.rimW;
+        c.strokeStyle = tone.rim;
+        c.stroke(GEM_CUT_PATH);
 
         s = { canvas, half: GEM_SPRITE_HALF };
         GEM_SPRITES[cls] = s;
@@ -4299,8 +4307,8 @@ import * as cosmetics from './account/cosmetics.js';
         }
         c.scale(R * sx, R * sy);
         c.lineJoin = "round"; c.lineCap = "round";
-        c.fillStyle = "rgb(46,41,59)"; c.fill(g.body);
-        c.fillStyle = "rgb(52,47,67)"; c.fill(g.facets);
+        c.fillStyle = "rgb(43,39,55)"; c.fill(g.body);
+        c.fillStyle = "rgb(61,55,77)"; c.fill(g.facets);
         c.fillStyle = "rgba(16,13,22,0.34)"; c.fill(g.shade);
         if (stage >= 1) { c.fillStyle = "rgba(16,13,22," + (0.07 * stage).toFixed(2) + ")"; c.fill(g.body); }
         const borderPx = tilePx ? 0.072 * rockSz * tilePx : Math.max(2, 3 * ratio);
@@ -4353,7 +4361,7 @@ import * as cosmetics from './account/cosmetics.js';
         c.fillStyle = "rgba(5,4,7,0.45)"; c.fillRect(gx - gr * 1.4, gy - gr * 1.2, gr * 2.8, gr * 0.55);
         c.fillStyle = "rgba(5,4,7,0.2)";  c.fillRect(gx - gr * 1.4, gy - gr * 0.65, gr * 2.8, gr * 0.35);
         // a lip of rock over the gem's foot
-        c.fillStyle = "rgb(46,41,59)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, gr * 1.3);
+        c.fillStyle = "rgb(43,39,55)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, gr * 1.3);
         c.fillStyle = "rgba(5,4,7,0.7)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, Math.max(1, R * 0.04));
         c.restore();
         pocket();
