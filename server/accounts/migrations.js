@@ -291,9 +291,33 @@ CREATE INDEX friend_messages_unread ON friend_messages(to_id, from_id) WHERE rea
 CREATE INDEX friend_messages_from   ON friend_messages(from_id);
 `;
 
+// v3: guests. One row per browser (a random id kept in localStorage), so the
+// admin commands can see who plays without an account. No IP, no cookie tie;
+// converted_user_id is set when that browser later plays logged in.
+const V3 = `
+CREATE TABLE guests (
+    guest_id          TEXT    NOT NULL PRIMARY KEY CHECK (length(guest_id) = 32),
+    name              TEXT,
+    first_seen        INTEGER NOT NULL,
+    last_seen         INTEGER NOT NULL,
+    visits            INTEGER NOT NULL DEFAULT 0,
+    games             INTEGER NOT NULL DEFAULT 0,
+    kills             INTEGER NOT NULL DEFAULT 0,
+    bot_kills         INTEGER NOT NULL DEFAULT 0,
+    best_score        INTEGER NOT NULL DEFAULT 0,
+    total_score       INTEGER NOT NULL DEFAULT 0,
+    play_ms           INTEGER NOT NULL DEFAULT 0,
+    converted_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    converted_at      INTEGER
+) STRICT;
+CREATE INDEX guests_last_seen ON guests(last_seen);
+CREATE INDEX guests_converted ON guests(converted_user_id) WHERE converted_user_id IS NOT NULL;
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
+    { version: 3, up(db) { db.exec(V3); } },
 ];
 
 function latestVersion() {

@@ -105,6 +105,7 @@ function lifeStart(body, s) {
     s.lifeDust = 0;
     s.lifeRowOk = false;
     s.accountId = account ? account.id : 0;
+    s.guestId = !body.socket.account && body.socket.guestId ? body.socket.guestId : null;
     s.rankCode = account ? body.rankCode | 0 : 0;
     if (!account) return;
     const a = acctFor(account.id, t);
@@ -140,7 +141,12 @@ function lifeEnd(s, reason, opts = {}) {
     const basis = Math.max(0, Math.floor(basisOf(s) + carriedHalf - (s.lifeBase || 0)));
     const userId = s.accountId | 0;
     if (openByAcct.get(userId) === s) openByAcct.delete(userId);
-    if (!userId) return on() ? guestResult(basis) : null;
+    if (!userId) {
+        if (s.guestId && accounts.enabled()) {
+            require('../guests').life(s.guestId, { score: basis, kills: s.lifeKills, botKills: s.lifeBotKills, ms: t - (s.lifeStartAt || t) }, t);
+        }
+        return on() ? guestResult(basis) : null;
+    }
     const a = acctFor(userId, t);
     let balance = 0;
     try { balance = dustHooks.flushAccount(userId, t); } catch (e) { logErr('dust flush', e); }

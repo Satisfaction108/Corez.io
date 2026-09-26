@@ -83,7 +83,19 @@ const ADMIN_COMMANDS = [
             },
         ],
     },
-    { name: 'stats', description: 'Totals: accounts, activity, gemdust, purchases' },
+    {
+        name: 'guests', description: 'List players without an account', options: [
+            {
+                type: T.STRING, name: 'sort', description: 'Order (default: last seen)', required: false, choices: [
+                    { name: 'Last seen', value: 'seen' }, { name: 'First seen', value: 'new' },
+                    { name: 'Most games', value: 'games' }, { name: 'Best score', value: 'best' },
+                    { name: 'Most time played', value: 'time' }, { name: 'Made an account', value: 'converted' },
+                ],
+            },
+            { type: T.INTEGER, name: 'page', description: 'Page (20 per page)', required: false, min_value: 1, max_value: 10000 },
+        ],
+    },
+    { name: 'stats', description: 'Totals: accounts, guests, activity, gemdust, purchases' },
 ].map(c => ({ ...c, type: 1, default_member_permissions: '0', dm_permission: false }));
 
 const PLAYER_COMMANDS = [
@@ -303,14 +315,15 @@ function listUsers(i, caller) {
     const lines = rows.map((r, k) => {
         const st = STATE_ICON[presenceOf(r.id)];
         const ban = r.banned_until && r.banned_until > Date.now() ? ' · **banned**' : '';
-        return `${(page - 1) * PAGE + k + 1}. **${md(r.username)}** \`${r.public_id}\`${r.discord_id ? ' · <@' + r.discord_id + '>' : ''}` +
+        const login = [r.discord_id ? 'Discord <@' + r.discord_id + '>' : '', r.password_hash ? 'password' : ''].filter(Boolean).join(' + ');
+        return `${(page - 1) * PAGE + k + 1}. **${md(r.username)}** \`${r.public_id}\` · ${login || 'no login'}` +
             ` · ${shortDiv(r)} · ${dustText(r.dust_milli)} dust · seen ${ts(r.last_seen_at, 'R')}${st ? ' · ' + st : ''}${ban}`;
     });
     return reply('', {
         ephemeral: true, embeds: [{
             title: `Accounts (${total.toLocaleString('en-US')})`, color: COLOR,
             description: lines.join('\n').slice(0, 4000),
-            footer: { text: `Page ${page} of ${pages} · sorted by ${{ new: 'newest', seen: 'last seen', rp: 'rank points', dust: 'gemdust' }[sort] || 'newest'} · guests are not stored` },
+            footer: { text: `Page ${page} of ${pages} · sorted by ${{ new: 'newest', seen: 'last seen', rp: 'rank points', dust: 'gemdust' }[sort] || 'newest'} · /guests for players without an account` },
         }],
     });
 }
@@ -372,6 +385,32 @@ function history(i, caller) {
     });
 }
 
+const hm = ms => { const m = Math.round((ms || 0) / 60000); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
+
+function listGuests(i, caller) {
+    const sort = String(opt(i, 'sort') || 'seen');
+    const order = { seen: 'g.last_seen DESC', new: 'g.first_seen DESC', games: 'g.games DESC', best: 'g.best_score DESC', time: 'g.play_ms DESC', converted: 'g.converted_at DESC' }[sort] || 'g.last_seen DESC';
+    const where = sort === 'converted' ? 'WHERE g.converted_user_id IS NOT NULL' : '';
+    const d = db.handle();
+    const total = d.get(`SELECT count(*) AS n FROM guests g ${where}`).n | 0;
+    const pages = Math.max(1, Math.ceil(total / PAGE));
+    const page = Math.min(pages, Math.max(1, (opt(i, 'page') | 0) || 1));
+    const rows = d.all(`SELECT g.*, u.username AS account FROM guests g LEFT JOIN users u ON u.id = g.converted_user_id AND u.deleted_at IS NULL
+        ${where} ORDER BY ${order}, g.guest_id LIMIT ? OFFSET ?`, PAGE, (page - 1) * PAGE);
+    audit(caller, null, 'admin_list_guests', { sort, page });
+    if (!rows.length) return reply(sort === 'converted' ? 'No guest has made an account yet.' : 'No guests recorded yet.', { ephemeral: true });
+    const lines = rows.map((g, k) => `${(page - 1) * PAGE + k + 1}. **${md(g.name || 'unnamed')}** \`${g.guest_id.slice(0, 6)}\`` +
+        ` · ${g.visits} visit${g.visits === 1 ? '' : 's'} · ${g.games} game${g.games === 1 ? '' : 's'} · best ${(g.best_score | 0).toLocaleString('en-US')}` +
+        ` · ${g.kills} KOs · ${hm(g.play_ms)} · seen ${ts(g.last_seen, 'R')}${g.account ? ' · → **' + md(g.account) + '**' : ''}`);
+    return reply('', {
+        ephemeral: true, embeds: [{
+            title: `Guests (${total.toLocaleString('en-US')})`, color: COLOR,
+            description: lines.join('\n').slice(0, 4000),
+            footer: { text: `Page ${page} of ${pages} · one row per browser · → = later played logged in as that account` },
+        }],
+    });
+}
+
 function stats(i, caller) {
     const d = db.handle(), now = Date.now();
     const one = (sql, ...a) => d.get(sql, ...a) || {};
@@ -383,6 +422,9 @@ function stats(i, caller) {
     const buys = one('SELECT count(*) AS n, COALESCE(SUM(price_milli), 0) AS dust, COALESCE(SUM(is_gift), 0) AS gifts, COALESCE(SUM(refunded_at IS NOT NULL), 0) AS refunds FROM purchases');
     const earned = one("SELECT COALESCE(SUM(delta_milli), 0) AS m FROM dust_ledger WHERE delta_milli > 0 AND kind <> 'refund'");
     const lives = one('SELECT count(*) AS n, COALESCE(SUM(started_at > ?), 0) AS day FROM rank_lives', now - DAY);
+    const g = one(`SELECT count(*) AS n, COALESCE(SUM(first_seen > ?), 0) AS new1, COALESCE(SUM(last_seen > ?), 0) AS act1,
+        COALESCE(SUM(last_seen > ?), 0) AS act7, COALESCE(SUM(games), 0) AS games, COALESCE(SUM(converted_user_id IS NOT NULL), 0) AS conv FROM guests`,
+        now - DAY, now - DAY, now - 7 * DAY);
     let online = { raid: 0, menu: 0 };
     try {
         const p = require('../presence');
@@ -398,18 +440,19 @@ function stats(i, caller) {
                 { name: 'Accounts', value: `${n(acc.n)} (${n(acc.discord)} Discord, ${n(acc.pw)} password)`, inline: false },
                 { name: 'New', value: `${n(acc.new1)} today · ${n(acc.new7)} this week`, inline: true },
                 { name: 'Active', value: `${n(acc.act1)} today · ${n(acc.act7)} this week`, inline: true },
-                { name: 'Online now', value: `${n(online.raid)} in a raid · ${n(online.menu)} in the menu`, inline: false },
+                { name: 'Online now', value: `${n(online.raid)} in a raid · ${n(online.menu)} in the menu (accounts)`, inline: false },
+                { name: 'Guests', value: `${n(g.n)} ever · ${n(g.new1)} new today · ${n(g.act1)} active today · ${n(g.act7)} this week · ${n(g.games)} games · ${n(g.conv)} made an account`, inline: false },
                 { name: 'Gemdust', value: `${dustText(acc.dust)} held · ${dustText(earned.m)} ever earned`, inline: false },
                 { name: 'Purchases', value: `${n(buys.n)} (${n(buys.gifts)} gifts, ${n(buys.refunds)} refunded) · ${dustText(buys.dust)} dust spent`, inline: false },
                 { name: 'Games', value: `${n(lives.n)} total · ${n(lives.day)} today`, inline: true },
                 { name: 'Banned', value: n(acc.banned), inline: true },
             ],
-            footer: { text: 'Accounts only; guests are not stored' },
+            footer: { text: 'Guests are counted per browser' },
         }],
     });
 }
 
-const ADMIN_HANDLERS = { lookup, resetpassword: resetPassword, relink, grantdust: grantDust, ban, unban, users: listUsers, history, stats };
+const ADMIN_HANDLERS = { lookup, resetpassword: resetPassword, relink, grantdust: grantDust, ban, unban, users: listUsers, guests: listGuests, history, stats };
 
 // ---- players ----
 

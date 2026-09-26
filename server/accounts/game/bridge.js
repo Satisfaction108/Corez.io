@@ -3,6 +3,7 @@
 //
 // sockets.js calls:
 //   bridge.onConnect(socket, req, manager)  as a socket is welcomed
+//   bridge.onGuestId(socket)                the 'GI' packet (guest tracking)
 //   bridge.resolveName(socket, name)        in the 's' spawn packet
 //   bridge.applyIdentity(socket, body)      when the body is created (sends AC + DU)
 //   bridge.afterDeathPacket(socket)         right after 'F' (sends the stored RK)
@@ -172,6 +173,15 @@ function onConnect(socket, req, socketManager) {
     try { accounts.bus.toMain({ t: 'join', userId: user.id, sid: socket.id }); } catch (e) { /* */ }
 }
 
+// The 'GI' packet: this browser's lasting guest id (sockets.js). Guests get
+// a visit counted; a logged-in socket marks that guest as converted.
+function onGuestId(socket) {
+    if (!active() || !socket.guestId) return;
+    const guests = require('../guests');
+    if (socket.account) guests.converted(socket.guestId, socket.account.id);
+    else guests.seen(socket.guestId);
+}
+
 // Chat filter (sockets.js chatLoop): hide what `speaker` says from `viewer`.
 function chatHidden(viewer, speaker) {
     const b = viewer && viewer.account && viewer.account.blocked;
@@ -193,6 +203,7 @@ function resolveName(socket, name) {
     if (clean && active()) {
         try { if (accounts.users.isRegisteredName(clean)) clean = '~' + clean.slice(0, 23); } catch (e) { /* */ }
     }
+    if (socket.guestId && active()) require('../guests').named(socket.guestId, clean);
     return clean;
 }
 
@@ -327,6 +338,6 @@ function socketOf(userId, except = null) {
 }
 
 module.exports = {
-    init, active, rankedOn, debugOn, onConnect, resolveName, applyIdentity, sendAccount, afterDeathPacket,
+    init, active, rankedOn, debugOn, onConnect, onGuestId, resolveName, applyIdentity, sendAccount, afterDeathPacket,
     du, tickDU, onClose, kickOut, chatHidden, sendStatus, loadBlocks, socketOf,
 };

@@ -1082,6 +1082,18 @@ const resumeToken = (() => {
         return t;
     } catch (e) { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 })();
+// One id per browser (localStorage), so admin stats can count returning
+// guests. Random, never tied to a name, IP or account on the client side.
+const guestId = (() => {
+    try {
+        let g = localStorage.getItem("dwGuestId");
+        if (!/^[a-f0-9]{32}$/.test(g || "")) {
+            g = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
+            localStorage.setItem("dwGuestId", g);
+        }
+        return g;
+    } catch (e) { return null; }
+})();
 const RECONNECT_TRIES = 8;
 
 let incoming = async function(message, socket) {
@@ -1112,6 +1124,7 @@ let incoming = async function(message, socket) {
 
             case 'w': {
                 if (m[0]) {
+                    if (guestId) socket.talk('GI', guestId);
                     socket.talk('RZ', resumeToken);
                     socket.talk('s', "", 1, 0, false, 0);
                 }

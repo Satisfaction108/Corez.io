@@ -1162,6 +1162,12 @@ class socketManager {
                     socket.talk("u", true, socket.camera.x, socket.camera.y);
                 }
             } break;
+            case "GI": {
+                // guest id: this browser's lasting random id (admin guest stats)
+                if (socket.guestId || typeof m[0] !== "string" || !/^[a-f0-9]{32}$/.test(m[0])) return;
+                socket.guestId = m[0];
+                try { accountBridge.onGuestId(socket); } catch (e) { /* tracking only */ }
+            } break;
             case "RZ": {
                 // resume token: a per-tab id the client re-sends after a drop
                 if (typeof m[0] !== "string" || !/^[a-z0-9]{8,64}$/i.test(m[0])) return;
