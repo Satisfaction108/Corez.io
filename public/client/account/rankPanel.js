@@ -114,7 +114,7 @@ export function setResult(rk) {
     S.guest = null;
     // the raid bonus line may already be here (RKP lands before RK at raid end)
     const bonusParts = S.parts.filter((p) => p && p._raid);
-    S.parts = (Array.isArray(rk.parts) ? rk.parts.slice(0, 5) : []).concat(bonusParts);
+    S.parts = (Array.isArray(rk.parts) ? rk.parts.slice(0, 6) : []).concat(bonusParts);
     if (rk.fare > 0 && !S.parts.some((p) => /fare/i.test(p[0]))) S.parts.push(['Entry fee', -rk.fare]);
     S.capped = !!rk.capped;
     S.dustMilli += (rk.dust && rk.dust.lifeMilli) | 0;

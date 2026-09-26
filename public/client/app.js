@@ -4291,12 +4291,12 @@ import * as cosmetics from './account/cosmetics.js';
         }
         c.scale(R * sx, R * sy);
         c.lineJoin = "round"; c.lineCap = "round";
-        c.fillStyle = "rgb(38,34,48)"; c.fill(g.body);
-        c.fillStyle = "rgb(47,43,59)"; c.fill(g.facets);
-        c.fillStyle = "rgba(5,4,7,0.28)"; c.fill(g.shade);
-        if (stage >= 1) { c.fillStyle = "rgba(5,4,7," + (0.06 * stage).toFixed(2) + ")"; c.fill(g.body); }
+        c.fillStyle = "rgb(56,49,78)"; c.fill(g.body);
+        c.fillStyle = "rgb(65,57,90)"; c.fill(g.facets);
+        c.fillStyle = "rgba(16,13,22,0.34)"; c.fill(g.shade);
+        if (stage >= 1) { c.fillStyle = "rgba(16,13,22," + (0.07 * stage).toFixed(2) + ")"; c.fill(g.body); }
         const borderPx = tilePx ? 0.072 * rockSz * tilePx : Math.max(2, 3 * ratio);
-        c.lineWidth = borderPx / R; c.strokeStyle = "rgb(5,4,7)"; c.stroke(g.body);
+        c.lineWidth = borderPx / R; c.strokeStyle = "rgb(16,13,22)"; c.stroke(g.body);
         if (hitB > 0) { c.fillStyle = "rgba(255,244,210," + (0.35 * hitB).toFixed(3) + ")"; c.fill(g.body); }
         c.restore();
         // cracks: the terrain renderer's, in its tile space
@@ -4345,7 +4345,7 @@ import * as cosmetics from './account/cosmetics.js';
         c.fillStyle = "rgba(5,4,7,0.45)"; c.fillRect(gx - gr * 1.4, gy - gr * 1.2, gr * 2.8, gr * 0.55);
         c.fillStyle = "rgba(5,4,7,0.2)";  c.fillRect(gx - gr * 1.4, gy - gr * 0.65, gr * 2.8, gr * 0.35);
         // a lip of rock over the gem's foot
-        c.fillStyle = "rgb(38,34,48)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, gr * 1.3);
+        c.fillStyle = "rgb(56,49,78)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, gr * 1.3);
         c.fillStyle = "rgba(5,4,7,0.7)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, Math.max(1, R * 0.04));
         c.restore();
         pocket();
@@ -8428,7 +8428,7 @@ import * as cosmetics from './account/cosmetics.js';
             c.scale(s, s);
             c.fillStyle = "#2b2320";
             c.fill(paths.dead);
-            c.fillStyle = "#413c4c";
+            c.fillStyle = "#3b3452";
             c.fill(paths.alive);
             const borderW = 0.09 * (Math.min(tr._cols, 120) / 50.0) * (gw / tr._cols); 
             if (borderW * s > 0.45) {

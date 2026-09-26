@@ -577,6 +577,14 @@ class socketManager {
             }
             if (player.body == null) return;
 
+            // fresh input (keys/buttons changed, or the aim moved): ranked
+            // survival only counts players active within the last 20 s
+            if ((commands & 127) !== socket._inBits || Math.abs(target.x - (socket._inX || 0)) + Math.abs(target.y - (socket._inY || 0)) > 4) {
+                socket._inBits = commands & 127;
+                socket._inX = target.x; socket._inY = target.y;
+                socket.lastInputAt = Date.now();
+            }
+
             if (!socket.player.body.eastereggs.braindamage) player.target = target;
 
             player.body.reverseTank = reverseTank;
@@ -1272,6 +1280,19 @@ class socketManager {
                         }
                         if (best) { b.x = best.x + 140; b.y = best.y; b.velocity.x = 0; b.velocity.y = 0; b.invuln = false; }
                     }
+                    else if (what === "tohuman" && b) {
+                        // beside the nearest other live human, for ranked damage tests
+                        let best = null, bd = Infinity;
+                        for (const e of entities.values()) {
+                            if (!e || !e.socket || e.type !== "tank" || e.isDead?.() || e === b) continue;
+                            const d = (e.x - b.x) ** 2 + (e.y - b.y) ** 2;
+                            if (d < bd) { bd = d; best = e; }
+                        }
+                        const off = Math.max(60, Math.min(400, (m[1] | 0) || 140));
+                        if (best) { b.x = best.x + off; b.y = best.y; b.velocity.x = 0; b.velocity.y = 0; }
+                    }
+                    // ranked rank-only counters of this socket's open life
+                    else if (what === "rankpts") socket.talk('KC', 'dbg', JSON.stringify({ rankpts: require('../../accounts/game/rankHooks.js').debugPts(socket) }), 0);
                     else if (what === "bosskill") {
                         // bosskill 1: you land the final blow (and the damage), for reward tests
                         const bm = require('../terrain/bosses.js'), bs = bm.current();
@@ -1291,7 +1312,7 @@ class socketManager {
                     else if (what === "chest" && b) require('../terrain/chests.js').spawnChest(b.x + 120, b.y, !!m[1]);
                     else if (what === "kill" && b) { b.health.amount = -1; }
                     else if (what === "god" && b) { b.godmode = !b.godmode; }
-                    else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), x: Math.round(b.x), y: Math.round(b.y), dead: !!(b.isDead && b.isDead()) } : { nobody: true }), 0);
+                    else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), x: Math.round(b.x), y: Math.round(b.y), hp: Math.round(b.health.amount), sh: Math.round(b.shield.amount), dead: !!(b.isDead && b.isDead()) } : { nobody: true }), 0);
                     else if (what === "chesthp" && b) {
                         const list = require('../terrain/chests.js').alive();
                         let best = null, bd = 1e12;

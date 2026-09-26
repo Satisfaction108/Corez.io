@@ -530,14 +530,14 @@ function dropGemsOnDeath(body, killers = []) {
     });
 }
 
-// Loose gems do not litter the floor: ten seconds at rest and they fade out.
+// Loose gems do not litter the floor: fifteen seconds at rest and they fade out.
 // A dead player's drop gets longer so the run back is still worth it.
-const GEM_TTL_MS = 10_000;
-const GEM_TTL_PLAYER_MS = 30_000;
-const GEM_FADE_MS = 2_000;
+const GEM_TTL_MS = 15_000;
+const GEM_TTL_PLAYER_MS = 40_000;
+const GEM_FADE_MS = 3_000;
 const GEM_STILL_SPEED = 0.35;
 const GEM_REACH2 = 1400 * 1400;   // beyond this an actor cannot touch or pull a gem
-const GEM_MAX_LIFE_MS = 45_000;
+const GEM_MAX_LIFE_MS = 60_000;
 function tickGem(gem, tg, players) {
     const now = Date.now();
     if (gem.gemOwnerId === undefined && !gem.chamberBias) {

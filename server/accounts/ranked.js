@@ -142,6 +142,33 @@ function killFilter({ victimIsBot, victimAliveMs, priorKills, pts }) {
     return { discount: 0, dustMilli: R.KILL_DUST_MILLI.player, spawnKill: false, filtered: false };
 }
 
+// Survival: does this check count as active play? Not dead, not shielded
+// (spawn shield or its grace), not on a safe pad or frozen, and the player
+// moved or pressed something fresh within REWARDS.survive.activeWindowMs.
+function survivalActive({ dead, invuln, safe, frozen, graceLeftMs, sinceActiveMs }) {
+    if (dead || invuln || safe || frozen || graceLeftMs > 0) return false;
+    return sinceActiveMs >= 0 && sinceActiveMs <= R.REWARDS.survive.activeWindowMs;
+}
+
+// Whole survival points for `activeMs` of active play in one life (capped).
+function survivalPts(activeMs) {
+    const S = R.REWARDS.survive;
+    return Math.min(S.perLife, Math.floor(Math.max(0, +activeMs || 0) * S.ptsPerMin / 60000));
+}
+
+// Damage to one real player: `prevShare` of their max health+shield dealt
+// so far this life, `addShare` more now, `lifePts` damage points this life
+// already. -> {share, gain} (gain: whole points, within both caps)
+function damageGain(prevShare, addShare, lifePts) {
+    const D = R.REWARDS.damage;
+    const p = Math.max(0, +prevShare || 0);
+    const share = p + Math.max(0, +addShare || 0);
+    const before = Math.min(D.perVictim, Math.floor(p * D.ptsPerBar));
+    const after = Math.min(D.perVictim, Math.floor(share * D.ptsPerBar));
+    const room = Math.max(0, D.perLife - Math.max(0, lifePts | 0));
+    return { share, gain: Math.max(0, Math.min(room, after - before)) };
+}
+
 // Legend #N: 1 + Legends with more RP; equal RP goes to whoever reached
 // Legend first (then the older account). rows: [{id, rp, legendAt}].
 function legendOrder(rows) {
@@ -170,4 +197,5 @@ module.exports = {
     MIN_FARE_MS, PLACEMENT_MIN_MS, SPAWN_KILL_MS, SAME_VICTIM_PAID, BONUS_MIN_RAID_MS, NO_FARE_REASONS,
     curveUnits, curveGain, lifeGain, fareFor, applyDelta, countsForPlacement, placementFinish, settle,
     placementBonus, killFilter, legendOrder, legendNo, splitParts,
+    survivalActive, survivalPts, damageGain,
 };

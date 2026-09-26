@@ -83,6 +83,20 @@
             pts: 5,
             perRaidCap: 10,             // purchases per account per raid that pay
         }),
+        // Rank-only points (s.rankOnly): they go into the rank basis (curve,
+        // fare, LIFE_CAP as usual) but never onto the raid board score.
+        // For scale: a kill is 200 pts, and the first 1500 pts of a raid
+        // pay 1 RP per 12.
+        survive: Object.freeze({
+            ptsPerMin: 15,              // per active minute alive: 10 min = 150 pts (~12 RP), under a kill
+            activeWindowMs: 20000,      // moved or pressed something fresh within this: active
+            perLife: 300,               // 20 active minutes; staying alive past that pays nothing more
+        }),
+        damage: Object.freeze({
+            ptsPerBar: 40,              // one full health+shield bar of a real player's damage
+            perVictim: 40,              // per victim per life: one bar; the kill (200) pays the rest
+            perLife: 200,               // five victims' worth per life
+        }),
     });
     const SOFT_CAP_RATE = 0.25;
 

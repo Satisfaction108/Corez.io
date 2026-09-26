@@ -8,10 +8,16 @@
 // twist that changes the kill score mid-raid does not re-price old kills.
 // The carried half only counts when the raid ends under you.
 //
+// Rank-only points (s.rankOnly, raid-cumulative, never on the board): active
+// survival (surviveCheck, every SURVIVE_STEP_MS) and damage dealt to real
+// players (onPlayerDamaged). Rates and caps: REWARDS.survive / .damage in
+// shared/ranks.js; the rules: ranked.survivalActive/survivalPts/damageGain.
+//
 // Life fields on the stat: lifeOpen, lifeId, lifeBase, lifeStartAt,
 // lifeKills, lifeBotKills, lifeKillPts, lifeBanked0, lifeNoFare, lifeDust,
-// accountId, rankCode. A resume re-keys the stat (claimResume) and keeps the
-// open life. raidAcct (per account, cleared when a raid starts) holds the
+// lifeSurviveMs, lifeSurvivePts, lifeDmgPts, lifeDmg (victim key -> share of
+// a bar dealt), survAt, survX/survY/survMovedAt, accountId, rankCode. A
+// resume re-keys the stat (claimResume) and keeps the open life. raidAcct (per account, cleared when a raid starts) holds the
 // raid-cumulative counted points for the diminishing-returns curve, who
 // this account killed, and when it joined.
 //
@@ -44,6 +50,9 @@ const raidAcct = new Map();        // accountId -> {counted, victims:Map, joined
 const openByAcct = new Map();      // accountId -> stat with the open life
 const ALIVE_CHECK_MS = 5000;
 let aliveCheckAt = 0;
+const SURVIVE_STEP_MS = 5000;
+const SURVIVE_MOVE_MIN = 80;       // world units between checks that count as moving
+let surviveCheckAt = 0;
 let errAt = 0;
 
 function logErr(what, e) {
@@ -66,7 +75,7 @@ function attach(c) {
 }
 
 function basisOf(s) {
-    return Math.floor(+s.banked || 0) + (s.killPts | 0) + (s.revengeBonus | 0) + (s.extra | 0) - (s.rankDiscount || 0);
+    return Math.floor(+s.banked || 0) + (s.killPts | 0) + (s.revengeBonus | 0) + (s.extra | 0) + (s.rankOnly | 0) - (s.rankDiscount || 0);
 }
 
 function acctFor(userId, t) {
@@ -103,6 +112,13 @@ function lifeStart(body, s) {
     s.lifeBanked0 = +s.banked || 0;
     s.lifeNoFare = false;
     s.lifeDust = 0;
+    s.lifeSurviveMs = 0;
+    s.lifeSurvivePts = 0;
+    s.lifeDmgPts = 0;
+    s.lifeDmg = null;
+    s.survAt = t;
+    s.survMovedAt = 0;
+    s.survX = body.x; s.survY = body.y;
     s.lifeRowOk = false;
     s.accountId = account ? account.id : 0;
     s.guestId = !body.socket.account && body.socket.guestId ? body.socket.guestId : null;
@@ -152,7 +168,9 @@ function lifeEnd(s, reason, opts = {}) {
     try { balance = dustHooks.flushAccount(userId, t); } catch (e) { logErr('dust flush', e); }
     const banked = Math.max(0, Math.floor((+s.banked || 0) - (s.lifeBanked0 || 0)));
     const kills = Math.max(0, s.lifeKillPts | 0);
-    const bonus = Math.max(0, basis - banked - kills - carriedHalf);
+    const survived = Math.max(0, s.lifeSurvivePts | 0);
+    const damage = Math.max(0, s.lifeDmgPts | 0);
+    const bonus = Math.max(0, basis - banked - kills - carriedHalf - survived - damage);
     let payload = null;
     try {
         if (!s.lifeRowOk) openRow(s, a);
@@ -160,7 +178,7 @@ function lifeEnd(s, reason, opts = {}) {
             lifeId: s.lifeId, userId, reason, now: t, basis, countedBefore: a.counted,
             durationMs: t - (s.lifeStartAt || t), noFare: !!s.lifeNoFare,
             kills: s.lifeKills | 0, botKills: s.lifeBotKills | 0,
-            sources: [['Banked', banked], ['KOs', kills], ['Carried', carriedHalf], ['Bonus', bonus]],
+            sources: [['Banked', banked], ['KOs', kills], ['Survived', survived], ['Damage', damage], ['Carried', carriedHalf], ['Bonus', bonus]],
             dust: { lifeMilli: s.lifeDust | 0, balanceMilli: balance },
         });
     } catch (e) { logErr('settle', e); }
@@ -210,6 +228,80 @@ function onKillCredited(killer, ks, victim, vs, pts) {
     if (f.dustMilli && killerId) dustHooks.creditKill(killer.socket, f.dustMilli);
     if (killerId && !f.filtered) {
         try { progress.onKill(killer.socket, victimIsBot); } catch (e) { logErr('progress', e); }
+    }
+}
+
+// Damage a real player took this tick (entity.contemplationOfMortality via
+// dig_royale): `dealt` health+shield actually removed, `inflictors` the
+// colliding things' masters. Split evenly between the human tanks behind
+// it, like the boss assist share. Bots, self, teammates and the victim's
+// own account earn nothing; the victim's share of a bar is capped per
+// victim and per life (ranked.damageGain).
+function onPlayerDamaged(victim, dealt, inflictors) {
+    if (!ctx || !victim || !victim.socket || !(dealt > 0) || !inflictors || !inflictors.length) return;
+    const max = ((victim.health && victim.health.max) || 0) + ((victim.shield && victim.shield.max) || 0);
+    if (!(max > 0)) return;
+    // distinct human roots, no allocation for the usual one or two
+    let r0 = null, r1 = null, r2 = null, n = 0;
+    for (let i = 0; i < inflictors.length; i++) {
+        let root = inflictors[i], hops = 0;
+        while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+        if (!root || root === victim || !root.socket || root === r0 || root === r1 || root === r2) continue;
+        if (n === 0) r0 = root; else if (n === 1) r1 = root; else if (n === 2) r2 = root; else break;
+        n++;
+    }
+    if (!n) return;
+    const share = Math.min(dealt, max) / max / n;
+    const stats = ctx.stats();
+    const vAcct = victim.socket.account && victim.socket.account.id;
+    const vkey = vAcct ? 'a:' + vAcct : 's:' + victim.socket.id;
+    for (let i = 0; i < n; i++) {
+        const root = i === 0 ? r0 : i === 1 ? r1 : r2;
+        if (root.team != null && root.team === victim.team) continue;
+        if (vAcct && root.socket.account && root.socket.account.id === vAcct) continue;
+        const s = stats.get('s:' + root.socket.id);
+        if (!s || !s.lifeOpen) continue;
+        if (!s.lifeDmg) s.lifeDmg = new Map();
+        const g = ranked.damageGain(s.lifeDmg.get(vkey) || 0, share, s.lifeDmgPts | 0);
+        s.lifeDmg.set(vkey, g.share);
+        if (g.gain > 0) {
+            s.lifeDmgPts = (s.lifeDmgPts | 0) + g.gain;
+            s.rankOnly = (s.rankOnly | 0) + g.gain;
+        }
+    }
+}
+
+// Active survival, every SURVIVE_STEP_MS: each human with an open life
+// that counts as active at this check is credited the time since the last
+// one (at most two steps, so a stall or a resume gap pays nothing extra).
+function surviveCheck(t) {
+    if (!ctx || (ctx.live && !ctx.live())) return;
+    const stats = ctx.stats();
+    for (const c of ctx.clients()) {
+        if (!c || !c.id) continue;
+        const s = stats.get('s:' + c.id);
+        if (!s || !s.lifeOpen) continue;
+        const body = c.player && c.player.body;
+        const dt = Math.min(2 * SURVIVE_STEP_MS, Math.max(0, t - (s.survAt || t)));
+        s.survAt = t;
+        if (!body || body.socket !== c) continue;
+        const dx = body.x - (s.survX || 0), dy = body.y - (s.survY || 0);
+        if (dx * dx + dy * dy >= SURVIVE_MOVE_MIN * SURVIVE_MOVE_MIN) s.survMovedAt = t;
+        s.survX = body.x; s.survY = body.y;
+        const lastActive = Math.max(c.lastInputAt || 0, s.survMovedAt || 0);
+        const active = ranked.survivalActive({
+            dead: !!(body.isDead && body.isDead()), invuln: !!body.invuln || !!body.godmode,
+            safe: !!body.padSafe || !!body.passive || !!body.royaleLobby, frozen: !!body.royaleFrozen,
+            graceLeftMs: (body.spawnGraceUntil || 0) - t, sinceActiveMs: lastActive ? t - lastActive : -1,
+        });
+        if (!active || !dt) continue;
+        s.lifeSurviveMs = (s.lifeSurviveMs || 0) + dt;
+        const pts = ranked.survivalPts(s.lifeSurviveMs);
+        const inc = pts - (s.lifeSurvivePts | 0);
+        if (inc > 0) {
+            s.lifeSurvivePts = pts;
+            s.rankOnly = (s.rankOnly | 0) + inc;
+        }
     }
 }
 
@@ -330,6 +422,10 @@ function checkAlive(t) {
 function tick(t) {
     dustHooks.tick(t);
     try { progress.tick(t); } catch (e) { logErr('progress', e); }
+    if (t - surviveCheckAt >= SURVIVE_STEP_MS) {
+        surviveCheckAt = t;
+        try { surviveCheck(t); } catch (e) { logErr('survive', e); }
+    }
     if (t - aliveCheckAt >= ALIVE_CHECK_MS) {
         aliveCheckAt = t;
         try { checkAlive(t); } catch (e) { logErr('alive', e); }
@@ -350,8 +446,20 @@ function debugRank(socket, rp) {
     return true;
 }
 
+// DBG rankpts (ROYALE_DEBUG only; the caller checks): the rank-only counters.
+function debugPts(socket) {
+    const s = ctx && socket ? ctx.stats().get('s:' + socket.id) : null;
+    if (!s) return null;
+    return {
+        open: !!s.lifeOpen, surviveMs: s.lifeSurviveMs | 0, survivePts: s.lifeSurvivePts | 0,
+        dmgPts: s.lifeDmgPts | 0, rankOnly: s.rankOnly | 0, lifeBasis: basisOf(s) - (s.lifeBase || 0),
+        sinceInputMs: socket.lastInputAt ? Date.now() - socket.lastInputAt : -1,
+        safe: !!(socket.player && socket.player.body && (socket.player.body.padSafe || socket.player.body.passive)),
+    };
+}
+
 module.exports = {
     BOOT_ID, attach, basisOf, raidKey, lifeStart, lifeEnd, onDeath, onKillCredited, onDisconnect,
-    onRaidStart, onRaidEnd, onShutdown, tick, debugRank, on,
+    onPlayerDamaged, surviveCheck, onRaidStart, onRaidEnd, onShutdown, tick, debugRank, debugPts, on,
     _raidAcct: raidAcct,
 };

@@ -190,6 +190,42 @@ test('kill filters: bot half, player full, 3rd kill of one account, spawn kills'
     assert.deepEqual(k({ victimIsBot: true, victimAliveMs: 3000 }).dustMilli, 0);
 });
 
+test('survival: active only unshielded, unsafe, alive and with fresh input; rate and per-life cap', () => {
+    const S = R.REWARDS.survive;
+    const a = (o) => ranked.survivalActive({ dead: false, invuln: false, safe: false, frozen: false, graceLeftMs: 0, sinceActiveMs: 1000, ...o });
+    assert.equal(a({}), true);
+    assert.equal(a({ sinceActiveMs: S.activeWindowMs }), true);
+    assert.equal(a({ sinceActiveMs: S.activeWindowMs + 1 }), false, 'AFK');
+    assert.equal(a({ sinceActiveMs: -1 }), false, 'never pressed anything');
+    for (const k of ['dead', 'invuln', 'safe', 'frozen']) assert.equal(a({ [k]: true }), false, k);
+    assert.equal(a({ graceLeftMs: 500 }), false, 'spawn grace');
+    assert.equal(ranked.survivalPts(0), 0);
+    assert.equal(ranked.survivalPts(59999), S.ptsPerMin - 1);
+    assert.equal(ranked.survivalPts(60000), S.ptsPerMin);
+    assert.equal(ranked.survivalPts(10 * 60000), 10 * S.ptsPerMin);
+    assert.equal(ranked.survivalPts(10 * 60 * 60000), S.perLife, 'per-life cap');
+    // 10 active minutes: noticeable, but under one kill
+    assert.ok(ranked.lifeGain(0, ranked.survivalPts(10 * 60000)) >= 10);
+    assert.ok(ranked.survivalPts(10 * 60000) < 200);
+});
+
+test('damage: proportional to the victim bar, capped per victim and per life', () => {
+    const D = R.REWARDS.damage;
+    let g = ranked.damageGain(0, 0.5, 0);
+    assert.deepEqual(g, { share: 0.5, gain: D.ptsPerBar / 2 });
+    g = ranked.damageGain(g.share, 0.5, g.gain);
+    assert.equal(g.gain, D.perVictim - D.ptsPerBar / 2);
+    assert.equal(ranked.damageGain(1, 3, D.perVictim).gain, 0, 'per-victim cap');
+    // fractions accumulate: 100 hits of 1% pay the same as one full bar
+    let share = 0, pts = 0;
+    for (let i = 0; i < 100; i++) { const r = ranked.damageGain(share, 0.01 + 1e-12, pts); share = r.share; pts += r.gain; }
+    assert.equal(pts, Math.min(D.perVictim, D.ptsPerBar));
+    // the life cap
+    assert.equal(ranked.damageGain(0, 1, D.perLife - 5).gain, 5);
+    assert.equal(ranked.damageGain(0, 1, D.perLife).gain, 0);
+    assert.equal(ranked.damageGain(0, -1, 0).gain, 0);
+});
+
 test('Legend #N: more RP first, ties to whoever got there first, then the older account', () => {
     const rows = [
         { id: 1, rp: 13000, legendAt: 500 }, { id: 2, rp: 14000, legendAt: 900 },
@@ -583,6 +619,84 @@ test('hooks: a spawn-killed victim pays no fare; guests get the guest RK', () =>
     assert.equal(g.basis, 2000 + 200);                 // the first (paid) player kill counts for a guest
     const gain = ranked.lifeGain(0, g.basis);
     assert.deepEqual(g.wouldBe, { division: R.divisionOf(gain), name: R.nameOf(R.divisionOf(gain)) });
+    H.clients.length = 0; H.stats.clear();
+});
+
+test('hooks: survival and damage are rank-only points in the basis and the RK parts', () => {
+    const D = R.REWARDS.damage;
+    const aU = mkUser('hk'), vU = mkUser('hk');
+    const asock = mkSocket(aU), vsock = mkSocket(vU), gsock = mkSocket(null);
+    H.clients.push(asock, vsock, gsock);
+    const bar = { health: { max: 100 }, shield: { max: 100 } };
+    const ab = mkBody(asock, { x: 0, y: 0, team: -1, ...bar });
+    const vb = mkBody(vsock, { x: 0, y: 0, team: -2, ...bar });
+    const gb = mkBody(gsock, { x: 0, y: 0, team: -3, ...bar });
+    const bot = mkBody(null, { team: -4 });
+    const ast = mkStat('s:' + asock.id), vst = mkStat('s:' + vsock.id), gst = mkStat('s:' + gsock.id);
+    for (const [b, s] of [[ab, ast], [vb, vst], [gb, gst]]) rankHooks.lifeStart(b, s);
+    const bullet = (m) => ({ master: m });
+    // damage: a bullet of the attacker takes half the victim's bar, twice
+    rankHooks.onPlayerDamaged(vb, 100, [bullet(ab)]);
+    assert.equal(ast.lifeDmgPts, D.ptsPerBar / 2);
+    rankHooks.onPlayerDamaged(vb, 1000, [bullet(ab), ab]);   // one root, however many things hit
+    assert.equal(ast.lifeDmgPts, D.perVictim, 'per-victim cap');
+    // bots, self, the same account and teammates earn nothing
+    rankHooks.onPlayerDamaged(bot, 200, [bullet(ab)]);
+    rankHooks.onPlayerDamaged(ab, 200, [bullet(ab)]);
+    rankHooks.onPlayerDamaged(ab, 200, [bullet(bot)]);
+    assert.equal(ast.lifeDmgPts, D.perVictim);
+    assert.equal(vst.lifeDmgPts | 0, 0);
+    gb.team = -1;
+    rankHooks.onPlayerDamaged(gb, 200, [bullet(ab)]);
+    assert.equal(ast.lifeDmgPts, D.perVictim, 'teammate');
+    gb.team = -3;
+    // two attackers split the tick; the guest victim is keyed by socket
+    rankHooks.onPlayerDamaged(gb, 200, [bullet(ab), bullet(vb)]);
+    assert.equal(ast.lifeDmgPts, D.perVictim + D.ptsPerBar / 2);
+    assert.equal(vst.lifeDmgPts, D.ptsPerBar / 2);
+    // survival: shielded, AFK and active checks
+    const t0 = Date.now();
+    ab.invuln = true; asock.lastInputAt = t0;
+    ast.survAt = t0 - 5000;
+    rankHooks.surviveCheck(t0);
+    assert.equal(ast.lifeSurviveMs, 0, 'shielded');
+    ab.invuln = false; asock.lastInputAt = t0 - 30000; ast.survAt = t0 - 5000;
+    rankHooks.surviveCheck(t0);
+    assert.equal(ast.lifeSurviveMs, 0, 'AFK');
+    asock.lastInputAt = t0;
+    let t = t0;
+    for (let i = 0; i < 24; i++) { t += 5000; asock.lastInputAt = t; rankHooks.surviveCheck(t); }   // 2 active minutes
+    assert.equal(ast.lifeSurviveMs, 120000);
+    assert.equal(ast.lifeSurvivePts, 2 * R.REWARDS.survive.ptsPerMin);
+    // a stall credits at most two steps
+    asock.lastInputAt = t + 60000;
+    rankHooks.surviveCheck(t + 60000);
+    assert.equal(ast.lifeSurviveMs, 130000);
+    // moving counts as active without key changes
+    vsock.lastInputAt = 0; vst.survAt = t0; vb.x = 500;
+    rankHooks.surviveCheck(t0 + 5000);
+    assert.equal(vst.lifeSurviveMs, 5000);
+    // the board score is untouched; the basis carries them
+    const surv = ast.lifeSurvivePts, dmg = ast.lifeDmgPts;
+    assert.equal(ast.extra, 0);
+    assert.equal(rankHooks.basisOf(ast) - ast.lifeBase, surv + dmg);
+    ast.banked = 300;
+    rankHooks.onDeath(ab, ast);
+    const rk = asock._rkPending;
+    assert.equal(rk.basis, 300 + surv + dmg);
+    const labels = rk.parts.map(p => p[0]);
+    assert.ok(labels.includes('Survived') && labels.includes('Damage') && labels.includes('Banked'), JSON.stringify(rk.parts));
+    assert.equal(rk.parts.reduce((a, p) => a + p[1], 0), rk.gain);
+    // a new life starts from zero
+    rankHooks.lifeStart(ab, ast);
+    rankHooks.onPlayerDamaged(vb, 200, [bullet(ab)]);
+    assert.equal(ast.lifeDmgPts, D.perVictim);
+    // the guest's preview includes them through the basis
+    gst.survAt = 0;
+    rankHooks.onPlayerDamaged(vb, 200, [bullet(gb)]);
+    rankHooks.onDeath(gb, gst);
+    assert.equal(gsock._rkPending.guest, true);
+    assert.equal(gsock._rkPending.basis, D.perVictim);
     H.clients.length = 0; H.stats.clear();
 });
 

@@ -1167,8 +1167,9 @@ class Entity extends EventEmitter {
             // death screen and spectated - a live-looking corpse.
             if (this.type === "tank" && !this.isDead()) return 0;
         }
+        let inflictors = null, dealt = 0;
         if (this.damageReceived > 0) {
-            let damageInflictor = []
+            let damageInflictor = inflictors = []
             let damageTool = []
 
             for (let i = 0; i < this.collisionArray.length; i++) {
@@ -1191,6 +1192,7 @@ class Entity extends EventEmitter {
                 let shieldDamage = this.shield.getDamage(this.damageReceived);
                 this.damageReceived -= shieldDamage;
                 this.shield.amount -= shieldDamage;
+                dealt += shieldDamage;
                 // A hit soaked entirely by shield still blinks - it just won't
                 // raise a damage number, since health never moved.
                 if (shieldDamage > 0) this.hitAt = Date.now();
@@ -1206,8 +1208,13 @@ class Entity extends EventEmitter {
             this.hitAt = Date.now();
             this.health.amount -= healthDamage;
             this.reportDamageNumber(healthDamage);
+            dealt += healthDamage;
         }
         this.damageReceived = 0;
+        // a real player took damage: Dig Royale's ranked damage points
+        if (dealt > 0 && inflictors && this.socket && global.royaleOnPlayerDamage) {
+            try { global.royaleOnPlayerDamage(this, dealt, inflictors); } catch (e) { /* never in the way of damage */ }
+        }
 
         // Check for death
         if (this.readyToDie) return 1;

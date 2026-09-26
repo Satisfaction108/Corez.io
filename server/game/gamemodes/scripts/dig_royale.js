@@ -1575,7 +1575,14 @@ rankHooks.attach({
     board: boardOrder,
     resumeMs: RESUME_MS,
     serverId: 'royale',
+    live: () => !raidEnding,
 });
+// entity.contemplationOfMortality calls this when a real player takes damage
+// (ranked damage points; rank-only, not on the board)
+global.royaleOnPlayerDamage = (victim, dealt, inflictors) => {
+    if (!Config.dig_royale || raidEnding) return;
+    try { rankHooks.onPlayerDamaged(victim, dealt, inflictors); } catch (e) { guardLog('rank damage', e); }
+};
 
 function stormFleePoint(body) {
     if (!storm.inStorm(body.x, body.y)) return null;

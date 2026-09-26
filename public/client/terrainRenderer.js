@@ -22,6 +22,46 @@ const BASE_TILE_SUBCELLS = 8;
 const GEM_CUT = [
     [-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95],
 ];
+// Cartoon gem, matched to the flat rock style: flat base, ONE flat shade
+// (the right half, split straight down the middle), ONE rounded glint on
+// the lit upper-left, and one uniform-width ink outline. No facet lines.
+const GEM_SHADE = [[0, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95]];
+const GEM_GLINT = { x: -0.5, y: -0.6, rx: 0.23, ry: 0.095, rot: -0.9 };
+// one stone into the cached paths in `g` (body/shade/glint)
+function addGem(g, x, y, r, rot) {
+    const c = Math.cos(rot), s = Math.sin(rot);
+    const poly = (path, pts) => {
+        for (let i = 0; i < pts.length; i++) {
+            const px = pts[i][0] * r, py = pts[i][1] * r;
+            const wx = x + px * c - py * s, wy = y + px * s + py * c;
+            if (i === 0) path.moveTo(wx, wy); else path.lineTo(wx, wy);
+        }
+        path.closePath();
+    };
+    poly(g.body, GEM_CUT);
+    poly(g.shade, GEM_SHADE);
+    const gx = GEM_GLINT.x * r, gy = GEM_GLINT.y * r;
+    const ex = x + gx * c - gy * s, ey = y + gx * s + gy * c;
+    g.glint.moveTo(ex + Math.cos(rot + GEM_GLINT.rot) * GEM_GLINT.rx * r,
+                   ey + Math.sin(rot + GEM_GLINT.rot) * GEM_GLINT.rx * r);
+    g.glint.ellipse(ex, ey, GEM_GLINT.rx * r, GEM_GLINT.ry * r, rot + GEM_GLINT.rot, 0, Math.PI * 2);
+}
+// four flat ops: ink (a double-width stroke the body fill then covers,
+// leaving one even outside outline), base, shade, glint
+function paintGem(ctx, g, pal, lw) {
+    ctx.strokeStyle = TerrainRenderer.ROCK_INK;
+    ctx.lineWidth = lw * 2;
+    ctx.stroke(g.body);
+    ctx.fillStyle = pal.base;
+    ctx.fill(g.body);
+    ctx.fillStyle = pal.shade;
+    ctx.fill(g.shade);
+    ctx.fillStyle = pal.glint;
+    ctx.fill(g.glint);
+}
+const newGemPaths = () => ({ body: new Path2D(), shade: new Path2D(), glint: new Path2D() });
+// outline weight for a stone of radius r (tile units)
+const gemInk = (r, rockSz) => rockSz * 0.02 + r * 0.09;
 
 class TerrainRenderer {
     
@@ -33,15 +73,12 @@ class TerrainRenderer {
     };
     
     
+    // flat gem tones (see addGem): base, the one shade, the one glint
     static ORE_PAL = {
-        1: { dark: 'rgba(90,44,14,0.9)',  mid: 'rgba(201,111,46,0.95)',
-             light: 'rgba(237,167,102,0.95)', core: 'rgba(255,233,209,0.9)' },
-        2: { dark: 'rgba(14,44,90,0.9)',  mid: 'rgba(59,124,224,0.95)',
-             light: 'rgba(127,177,242,0.95)', core: 'rgba(226,240,255,0.9)' },
-        3: { dark: 'rgba(61,14,74,0.9)',  mid: 'rgba(177,62,207,0.95)',
-             light: 'rgba(217,138,240,0.95)', core: 'rgba(251,230,255,0.9)' },
-        4: { dark: 'rgba(8,66,38,0.92)',  mid: 'rgba(31,191,107,0.95)',
-             light: 'rgba(111,245,168,0.95)', core: 'rgba(232,255,242,0.95)' },
+        1: { base: 'rgb(240,136,60)',  shade: 'rgb(192,88,34)',  glint: 'rgb(255,230,196)' },
+        2: { base: 'rgb(66,146,255)',  shade: 'rgb(38,94,218)',  glint: 'rgb(218,238,255)' },
+        3: { base: 'rgb(208,96,242)',  shade: 'rgb(150,52,200)', glint: 'rgb(252,226,255)' },
+        4: { base: 'rgb(46,218,124)',  shade: 'rgb(20,158,88)',  glint: 'rgb(216,255,234)' },
     };
     
     
@@ -53,6 +90,22 @@ class TerrainRenderer {
         3: { deep: '110,25,140', hot: '200,95,240', hair: '242,205,255' },
         4: { deep: '12,110,60',  hot: '60,225,135', hair: '205,255,228' },
     };
+
+    // Rock look (cartoon boulders, see the voronoi shader). The shader and
+    // the no-WebGL fallback share these tones; keep them in step.
+    static ROCK_INK  = 'rgb(16,13,22)';
+    static ROCK_LIP  = 'rgb(32,27,46)';
+    static ROCK_FACE = 'rgb(56,49,78)';
+    static ROCK_RIM  = 'rgb(82,73,112)';
+    static ROCK_CHIP = ['rgb(16,13,22)', 'rgb(32,27,46)', 'rgb(56,49,78)'];
+    // silhouette stroke (tile units per rockSz): drawn under the rock and
+    // dropped a little, so it shows as an outline heavier on the bottom
+    static SIL_W    = 0.12;
+    static SIL_DROP = 0.028;
+    // contact shadow: the same outline again, translucent and dropped
+    // further, a tight flat band where the boulders meet the floor
+    static SHADOW_RGBA = 'rgba(0,0,0,0.5)';
+    static SHADOW_DROP = 0.085;
 
     constructor() {
         this.ready       = false;
@@ -596,21 +649,11 @@ class TerrainRenderer {
         const h = (i, s) => this._h(i, kk, (s + this._oreSalt + gsalt) | 0);
         const deposits = this._depositLayout(tier, cell.poly, cell.cx, cell.cy, rockSz, h);
         if (!deposits.length) { this._sproutArt.set(k, null); return null; }
-        const put = (path, r, rot, scale, ox, oy) => {
-            const c = Math.cos(rot), s = Math.sin(rot);
-            GEM_CUT.forEach((p, i) => {
-                const px = p[0] * r * scale + ox, py = p[1] * r * scale + oy;
-                const wx = px * c - py * s, wy = px * s + py * c;
-                if (i === 0) path.moveTo(wx, wy); else path.lineTo(wx, wy);
-            });
-            path.closePath();
-        };
         parts = deposits.map(d => {
-            const body = new Path2D(), facet = new Path2D(), core = new Path2D();
-            put(body,  d.r, d.rot, 1,    0,            0);
-            put(facet, d.r, d.rot, 0.52, 0,            -d.r * 0.12);
-            put(core,  d.r, d.rot, 0.20, -d.r * 0.22,  -d.r * 0.30);
-            return { x: d.x, y: d.y, r: d.r, body, facet, core, big: d.big };
+            const g = newGemPaths();
+            const lw = gemInk(d.r, rockSz);
+            addGem(g, 0, 0, d.r, d.rot);
+            return Object.assign(g, { x: d.x, y: d.y, r: d.r, lw, big: d.big });
         });
         this._sproutArt.set(k, parts);
         return parts;
@@ -1105,31 +1148,23 @@ class TerrainRenderer {
         const deposits = this._depositLayout(tier, poly, cx, cy, rockSz, h);
         if (!deposits.length) { this._veinCache.set(k, null); return null; }
 
-        const body = new Path2D(), facet = new Path2D(), core = new Path2D();
+        const g = newGemPaths();
         const glintPts = [];
         let big = null;
-        const put = (path, x, y, r, rot, scale, ox, oy) => {
-            const c = Math.cos(rot), s = Math.sin(rot);
-            GEM_CUT.forEach((p, i) => {
-                const px = p[0] * r * scale + ox, py = p[1] * r * scale + oy;
-                const wx = x + px * c - py * s;
-                const wy = y + px * s + py * c;
-                if (i === 0) path.moveTo(wx, wy); else path.lineTo(wx, wy);
-            });
-            path.closePath();
-        };
+        // one ink weight per rock: its stones share a size class
+        let rSum = 0;
+        for (const d of deposits) rSum += d.r;
+        const lw = gemInk(rSum / deposits.length, rockSz);
         for (const d of deposits) {
-            put(body,  d.x, d.y, d.r, d.rot, 1,    0,           0);
-            put(facet, d.x, d.y, d.r, d.rot, 0.52, 0,           -d.r * 0.12);
-            put(core,  d.x, d.y, d.r, d.rot, 0.20, -d.r * 0.22, -d.r * 0.30);
-            
+            addGem(g, d.x, d.y, d.r, d.rot);
+
             const gc = Math.cos(d.rot), gs = Math.sin(d.rot);
             glintPts.push([d.x + (-0.35 * d.r) * gc - (-0.6 * d.r) * gs,
                            d.y + (-0.35 * d.r) * gs + (-0.6 * d.r) * gc]);
             if (d.big) big = [d.x, d.y];
         }
 
-        art = { tier, body, facet, core, glintPts, big };
+        art = Object.assign(g, { tier, lw, glintPts, big });
         this._veinCache.set(k, art);
         return art;
     }
@@ -1374,27 +1409,47 @@ class TerrainRenderer {
                     if(d<md){md=d;mr=r;mg=g;}
                 }
 
-                float bd=8.;
+                // Cartoon boulder, style only (cell shapes untouched). For
+                // every edge e with inward distance d and outward normal m:
+                //   bd - the plain edge distance (ink line)
+                //   fd - the edge pushed by the face offset S: the face is
+                //        the cell slid up-left, what it uncovers at the
+                //        bottom/right is the dark lip (the rock's side)
+                //   hd - the edge pushed by T: a thin light rim along the
+                //        top-left edges catching the light
+                // smin rounds the face/rim corners so they read soft.
+                const vec2 S=vec2(-.035,-.15);
+                const vec2 T=vec2(.042,.05);
+                float bd=8., fd=8., hd=8.;
                 for(int j=-2;j<=2;j++) for(int i=-2;i<=2;i++){
                     vec2 g=mg+vec2(float(i),float(j));
                     vec2 r=g+hash2(n+g)-f;
-                    if(dot(mr-r,mr-r)>1e-4)
-                        bd=min(bd,dot(.5*(mr+r),normalize(r-mr)));
+                    if(dot(mr-r,mr-r)>1e-4){
+                        vec2 m=normalize(r-mr);
+                        float d=dot(.5*(mr+r),m);
+                        bd=min(bd,d);
+                        float a=d+dot(S,m), b=d+dot(T,m);
+                        float ka=max(.05-abs(fd-a),0.)/.05; fd=min(fd,a)-ka*ka*.0125;
+                        float kb=max(.04-abs(hd-b),0.)/.04; hd=min(hd,b)-kb*kb*.01;
+                    }
                 }
 
-                float nl=length(mr);
+                // one quiet tone step per cell so the wall isn't a flat sheet
                 vec2 lh=hash2(n+mg);
-                float la=(lh.x-.5)*.9;
-                vec2 ldir=vec2(sin(la),-cos(la));
-                float lit=nl>1e-3?dot(mr/nl,ldir):0.;
-                float t=clamp(lit*.5+.5,0.,1.);
-                vec3 shadowC=vec3(20.,18.,25.)/255.;
-                vec3 mainC  =vec3(38.,34.,48.)/255.;
-                vec3 tintC  =vec3(58.,52.,68.)/255.;
-                vec3 cellC=t<0.33?shadowC:(t<0.67?mainC:tintC);
-                vec3 borderC=vec3(5.,4.,7.)/255.;
-                float isEdge=bd<0.036?1.:0.;
-                gl_FragColor=vec4(mix(cellC,borderC,isEdge),1.);
+                float v=1.+(lh.x-.5)*.07;
+                vec3 inkC =vec3(16.,13.,22.)/255.;
+                vec3 lipC =vec3(32.,27.,46.)/255.;
+                vec3 faceC=vec3(56.,49.,78.)/255.*v;
+                vec3 rimC =vec3(82.,73.,112.)/255.*v;
+                // bands are anti-aliased over one texel (texel size known
+                // from the uniforms - no derivatives extension needed)
+                const float INK=.024;
+                float aa=.6/(u_cellSz.x*u_rockSz);
+                vec3 col=faceC;
+                col=mix(col,rimC,1.-smoothstep(INK-aa,INK+aa,hd));
+                col=mix(col,lipC,1.-smoothstep(INK-aa,INK+aa,fd));
+                col=mix(col,inkC,1.-smoothstep(INK-aa,INK+aa,bd));
+                gl_FragColor=vec4(col,1.);
             }`;
 
         const mkSh = (type, src) => {
@@ -2079,18 +2134,32 @@ class TerrainRenderer {
             const out = (c && c.canvas) || document.createElement('canvas');
             out.width = pw; out.height = ph;
             const g = out.getContext('2d');
-            g.fillStyle = 'rgb(38,34,48)';
+            const TR = TerrainRenderer;
+            g.fillStyle = TR.ROCK_FACE;
             g.fillRect(0, 0, pw, ph);
             g.setTransform(density, 0, 0, density * ratioY, -x * density, -y * density * ratioY);
-            const tones = ['rgb(33,30,42)', 'rgb(40,36,50)', 'rgb(49,44,59)'];
             const rockSz = Math.min(this._cols, 120) / 50.0;
-            g.strokeStyle = 'rgb(5,4,7)';
-            g.lineWidth = 0.072 * rockSz;
+            // same cartoon boulder as the shader: lip, face slid up-left
+            // over it, face slid down-right over a rim, ink on top
+            const sx = -0.035 * rockSz, sy = -0.15 * rockSz;
+            const tx = 0.042 * rockSz, ty = 0.05 * rockSz;
+            g.strokeStyle = TR.ROCK_INK;
+            g.lineWidth = 0.048 * rockSz;
             g.lineJoin = 'round';
             for (const cell of this._cellPolys.values()) {
                 if (cell.cx < x - 3 || cell.cx > x + w + 3 || cell.cy < y - 3 || cell.cy > y + h + 3) continue;
-                g.fillStyle = tones[((cell.k * 2654435761) >>> 0) % 3];
+                g.save();
+                g.clip(cell.path);
+                g.fillStyle = TR.ROCK_LIP;
                 g.fill(cell.path);
+                g.translate(sx, sy);
+                g.fillStyle = TR.ROCK_RIM;
+                g.fill(cell.path);
+                g.clip(cell.path);
+                g.translate(tx - sx, ty - sy);
+                g.fillStyle = TR.ROCK_FACE;
+                g.fill(cell.path);
+                g.restore();
                 g.stroke(cell.path);
             }
             img = out;
@@ -2199,28 +2268,41 @@ class TerrainRenderer {
             
             if (this._damageDirty || !this._damageBatch) {
                 this._damageDirty = false;
-                const batch = { holes: null, groups: [], shaking: [] };
-                const byStage = new Map();
+                // Damaged rocks stay opaque (they darken in the damage
+                // overlay below instead of fading to show the dirt through,
+                // which read as murky). Only the trembling last stage is cut
+                // out of the wall, since it's drawn nudged on its own.
+                const batch = { holes: null, shaking: [] };
                 for (const [k, frac] of this._rockHealth) {
                     if (this._rockDead.has(k)) continue;
-                    const stage = this._stageOf(frac);
-                    if (stage < 1) continue;
+                    if (this._stageOf(frac) < 5) continue;
                     const cell = this._cellPolys.get(k);
                     if (!cell) continue;
                     if (!batch.holes) batch.holes = new Path2D(this._silClip);
                     batch.holes.addPath(cell.path);
-                    if (stage >= 5) batch.shaking.push(cell);
-                    else {
-                        let g = byStage.get(stage);
-                        if (!g) { g = new Path2D(); byStage.set(stage, g); }
-                        g.addPath(cell.path);
-                    }
+                    batch.shaking.push(cell);
                 }
-                for (const [stage, path] of byStage)
-                    batch.groups.push({ path, alpha: 1 - 0.55 * Math.pow(stage / 5, 2) });
                 this._damageBatch = batch;
             }
             const dmgBatch = this._damageBatch;
+
+            const rockSz = Math.min(this._cols, 120) / 50.0;
+            // The wall's outline, stroked UNDER the rock and nudged down: the
+            // rock covers its inner half, so what's left is one clean ink
+            // line that is a touch heavier on the bottom - the wall's drop
+            // shadow for free (still exactly one stroke per frame).
+            ctx.save();
+            ctx.globalAlpha = 1;
+            ctx.lineJoin    = 'round';
+            ctx.lineCap     = 'round';
+            ctx.lineWidth   = TerrainRenderer.SIL_W * rockSz;
+            ctx.strokeStyle = TerrainRenderer.SHADOW_RGBA;
+            ctx.translate(0, TerrainRenderer.SHADOW_DROP * rockSz);
+            ctx.stroke(this._silClip);
+            ctx.strokeStyle = TerrainRenderer.ROCK_INK;
+            ctx.translate(0, (TerrainRenderer.SIL_DROP - TerrainRenderer.SHADOW_DROP) * rockSz);
+            ctx.stroke(this._silClip);
+            ctx.restore();
 
             ctx.save();
             ctx.clip(dmgBatch.holes || this._silClip, 'evenodd');
@@ -2229,32 +2311,15 @@ class TerrainRenderer {
             ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
             ctx.restore();
 
-            const rockSz = Math.min(this._cols, 120) / 50.0;
-            ctx.save();
-            ctx.globalAlpha = 1;
-            ctx.lineJoin    = 'round';
-            ctx.lineCap     = 'round';
-            ctx.strokeStyle = 'rgb(5,4,7)';
-            ctx.lineWidth   = 0.072 * rockSz;
-            ctx.stroke(this._silClip);
-            ctx.restore();
-
             
             
             
             
-            for (const g of dmgBatch.groups) {
-                ctx.save();
-                ctx.globalAlpha = g.alpha;
-                ctx.clip(g.path);
-                ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
-                ctx.restore();
-            }
             for (const cell of dmgBatch.shaking) {
                 if (cell.cx < tlx - 3 || cell.cx > tlx + tlw + 3 ||
                     cell.cy < tly - 3 || cell.cy > tly + tlh + 3) continue;
                 ctx.save();
-                ctx.globalAlpha = 0.45;
+                ctx.globalAlpha = 1;
                 ctx.clip(cell.path);
                 const [ox, oy] = this._trembleOf(cell.k, nowMs);
                 ctx.translate(cell.cx + ox, cell.cy + oy);
@@ -2264,8 +2329,8 @@ class TerrainRenderer {
                 
                 
                 ctx.lineJoin    = 'round';
-                ctx.strokeStyle = 'rgb(5,4,7)';
-                ctx.lineWidth   = 0.11 * rockSz;
+                ctx.strokeStyle = TerrainRenderer.ROCK_INK;
+                ctx.lineWidth   = 0.07 * rockSz;
                 ctx.stroke(cell.path);
                 ctx.restore();
             }
@@ -2290,14 +2355,24 @@ class TerrainRenderer {
                         i ? ctx.lineTo(poly[i][0], poly[i][1]) : ctx.moveTo(poly[i][0], poly[i][1]);
                     ctx.closePath();
                 };
+                // same outline as the wall: dropped ink stroke under the rock
+                const inkUnder = (sc) => {
+                    ctx.save();
+                    ctx.lineWidth = TerrainRenderer.SIL_W * rockSz;
+                    ctx.translate(0, TerrainRenderer.SHADOW_DROP * rockSz * sc);
+                    ctx.strokeStyle = TerrainRenderer.SHADOW_RGBA;
+                    ctx.stroke();
+                    ctx.translate(0, (TerrainRenderer.SIL_DROP - TerrainRenderer.SHADOW_DROP) * rockSz * sc);
+                    ctx.strokeStyle = TerrainRenderer.ROCK_INK;
+                    ctx.stroke();
+                    ctx.restore();
+                };
                 const drawRockPoly = () => {   
+                    inkUnder(1);
                     ctx.save();
                     ctx.clip();
                     ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
                     ctx.restore();
-                    ctx.strokeStyle = 'rgb(5,4,7)';
-                    ctx.lineWidth = 0.072 * rockSz;
-                    ctx.stroke();
                 };
                 
                 for (const k of this._landed) {
@@ -2349,6 +2424,9 @@ class TerrainRenderer {
                     
                     
                     
+                    // the ink drop grows in with the rock so a sprouting
+                    // pebble doesn't sit on a slab of shadow
+                    inkUnder(sc);
                     ctx.save();
                     ctx.clip();
                     ctx.translate(ax2, ay2);
@@ -2356,9 +2434,6 @@ class TerrainRenderer {
                     ctx.translate(-g.ax, -g.ay);
                     ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
                     ctx.restore();
-                    ctx.strokeStyle = 'rgb(5,4,7)';
-                    ctx.lineWidth = 0.072 * rockSz;
-                    ctx.stroke();
 
                     
                     
@@ -2382,7 +2457,7 @@ class TerrainRenderer {
                             ctx.translate(-g.ax, -g.ay);
                             ctx.lineCap = 'round';
                             const w = 0.035 * rockSz * (0.28 + 0.075 * stage) / sc;
-                            ctx.strokeStyle = 'rgba(5,4,7,0.8)';
+                            ctx.strokeStyle = 'rgba(16,13,22,0.8)';
                             ctx.lineWidth = w * 2.1;
                             ctx.stroke(cpath);
                             const cpal = TerrainRenderer.CRACK_PAL[this._ore.get(k) ?? 0]
@@ -2463,7 +2538,7 @@ class TerrainRenderer {
                     
                     
                     if (stage >= 1) {
-                        ctx.fillStyle = `rgba(5,4,7,${0.06 * stage})`;
+                        ctx.fillStyle = `rgba(16,13,22,${0.07 * stage + 0.3 * Math.pow(stage / 5, 2)})`;
                         ctx.fill(cell.path);
                     }
                     
@@ -2481,7 +2556,7 @@ class TerrainRenderer {
                     
                     
                     if (bites) {
-                        ctx.fillStyle = 'rgb(5,4,7)';
+                        ctx.fillStyle = TerrainRenderer.ROCK_INK;
                         ctx.fill(bites);
                     }
                     if (path) {
@@ -2503,7 +2578,7 @@ class TerrainRenderer {
                         const cpal = TerrainRenderer.CRACK_PAL[this._ore.get(k) ?? 0]
                                   || TerrainRenderer.CRACK_PAL[0];
                         
-                        ctx.strokeStyle = 'rgba(5,4,7,0.8)';
+                        ctx.strokeStyle = 'rgba(16,13,22,0.8)';
                         ctx.lineWidth   = w * 2.1;
                         ctx.stroke(path);
                         
@@ -2627,15 +2702,7 @@ class TerrainRenderer {
                                 ctx.save();
                                 ctx.translate(d.x, d.y);
                                 ctx.scale(os, os);
-                                ctx.fillStyle = pal.mid;
-                                ctx.fill(d.body);
-                                ctx.strokeStyle = pal.dark;
-                                ctx.lineWidth = 0.022 * rockSz / os;
-                                ctx.stroke(d.body);
-                                ctx.fillStyle = pal.light;
-                                ctx.fill(d.facet);
-                                ctx.fillStyle = pal.core;
-                                ctx.fill(d.core);
+                                paintGem(ctx, d, pal, d.lw);
                                 ctx.restore();
                                 // the tick of light as it breaks the surface
                                 if (dt < 0.4) {
@@ -2652,16 +2719,8 @@ class TerrainRenderer {
                             }
                         }
                     } else {
-                    // the layered cut: dark rim, mid body, light table, core
-                    ctx.fillStyle = pal.mid;
-                    ctx.fill(art.body);
-                    ctx.strokeStyle = pal.dark;
-                    ctx.lineWidth = 0.022 * rockSz;
-                    ctx.stroke(art.body);
-                    ctx.fillStyle = pal.light;
-                    ctx.fill(art.facet);
-                    ctx.fillStyle = pal.core;
-                    ctx.fill(art.core);
+                    // the flat cartoon cut (see paintGem)
+                    paintGem(ctx, art, pal, art.lw);
 
                     
                     
@@ -2706,7 +2765,7 @@ class TerrainRenderer {
             
             
             if (this._impacts.length || this._pebbles.length) {
-                const CHIPC = ['rgb(5,4,7)', 'rgb(14,12,19)', 'rgb(26,23,33)'];
+                const CHIPC = TerrainRenderer.ROCK_CHIP;
                 ctx.save();
                 for (let i = this._impacts.length - 1; i >= 0; i--) {
                     const im = this._impacts[i];
@@ -2791,7 +2850,7 @@ class TerrainRenderer {
             // ── Shatter: brief flash + dust ring, then rock chips
             
             if (this._fx.length) {
-                const CHIPS = ['rgb(5,4,7)', 'rgb(14,12,19)', 'rgb(26,23,33)'];
+                const CHIPS = TerrainRenderer.ROCK_CHIP;
                 ctx.save();
                 for (let i = this._fx.length - 1; i >= 0; i--) {
                     const fx = this._fx[i];
