@@ -2792,6 +2792,11 @@ import * as cosmetics from './account/cosmetics.js';
         return `rgba(${r},${g},${b},${a})`;
     }
     const vaultSpritesTeam = {};   // team-keyed door sprite sets
+    // [r,g,b] pulled toward the HUD ink by k (0..1), as a css colour
+    function inkShade(rgb, k) {
+        return "rgb(" + Math.round(rgb[0] + (18 - rgb[0]) * k) + "," +
+            Math.round(rgb[1] + (14 - rgb[1]) * k) + "," + Math.round(rgb[2] + (21 - rgb[2]) * k) + ")";
+    }
     function palFromHex(hex) {
         return { main: hex, light: hex, high: "#ffffff" };
     }
@@ -2858,8 +2863,12 @@ import * as cosmetics from './account/cosmetics.js';
         if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
         return m + ":" + String(s).padStart(2, "0");
     }
+    // The door art, baked once per colour: the HUD's flat look - rock-purple
+    // faces, one ink outline per shape, a hard ink drop under the plate, the
+    // colour kept to the rim, the bolts and the gem heart.
     function makeVaultSprites(pal = GOLD_PAL) {
         const S = 256, C = S / 2;
+        const INK = "#120e15", LW = 5;
         const GEM = [[-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95]];
         const layer = (draw) => {
             const cv = document.createElement("canvas");
@@ -2867,85 +2876,75 @@ import * as cosmetics from './account/cosmetics.js';
             const c = cv.getContext("2d");
             c.translate(C, C);
             c.lineJoin = "round";
+            c.lineCap = "round";
             draw(c);
             return cv;
         };
-        const ring = (c, r, w, fill, stroke, sw = 5) => {
-            c.lineWidth = w;
-            c.strokeStyle = fill;
-            c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.stroke();
-            c.lineWidth = sw;
-            c.strokeStyle = stroke;
-            c.beginPath(); c.arc(0, 0, r + w / 2, 0, Math.PI * 2); c.stroke();
-            c.beginPath(); c.arc(0, 0, r - w / 2, 0, Math.PI * 2); c.stroke();
+        const disc = (c, r, fill, lw = LW, y = 0) => {
+            c.beginPath(); c.arc(0, y, r, 0, Math.PI * 2);
+            c.fillStyle = fill; c.fill();
+            if (lw) { c.lineWidth = lw; c.strokeStyle = INK; c.stroke(); }
         };
-        // static base: flat armored disc, arras-style dark borders
+        // static base: ink drop, flat plate, coloured rim, recessed well
         const plate = layer((c) => {
-            c.fillStyle = "#2a2e38";
-            c.beginPath(); c.arc(0, 0, S * 0.47, 0, Math.PI * 2); c.fill();
-            c.lineWidth = 7; c.strokeStyle = "#0d0f14"; c.stroke();
-            c.lineWidth = 10; c.strokeStyle = pal.main;
-            c.beginPath(); c.arc(0, 0, S * 0.455, 0, Math.PI * 2); c.stroke();
-            c.lineWidth = 4; c.strokeStyle = "#0d0f14";
-            c.beginPath(); c.arc(0, 0, S * 0.47, 0, Math.PI * 2); c.stroke();
-            // team-colored stud bolts on the rim
-            for (let i = 0; i < 8; i++) {
-                const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
-                const bx = Math.cos(a) * S * 0.415, by = Math.sin(a) * S * 0.415;
-                c.fillStyle = pal.main;
-                c.beginPath(); c.arc(bx, by, S * 0.026, 0, Math.PI * 2); c.fill();
-                c.lineWidth = 3; c.strokeStyle = "#0d0f14"; c.stroke();
-            }
-            // recessed inner disc
-            c.fillStyle = "#1e222b";
-            c.beginPath(); c.arc(0, 0, S * 0.33, 0, Math.PI * 2); c.fill();
-            c.lineWidth = 5; c.strokeStyle = "#0d0f14"; c.stroke();
+            disc(c, S * 0.46, INK, 0, S * 0.024);
+            disc(c, S * 0.46, "#3a3245");
+            c.lineWidth = S * 0.032; c.strokeStyle = pal.main;
+            c.beginPath(); c.arc(0, 0, S * 0.425, 0, Math.PI * 2); c.stroke();
+            c.lineWidth = 3; c.strokeStyle = INK;
+            c.beginPath(); c.arc(0, 0, S * 0.405, 0, Math.PI * 2); c.stroke();
+            disc(c, S * 0.325, "#1e1924");
         });
-        // rotating lock ring: flat teeth, team-tipped
+        // rotating lock ring: a flat purple band with short teeth, every
+        // third one in the door colour
         const cog = layer((c) => {
-            ring(c, S * 0.375, S * 0.045, "#565e6e", "#16181d", 4);
+            c.lineWidth = S * 0.045 + LW; c.strokeStyle = INK;
+            c.beginPath(); c.arc(0, 0, S * 0.365, 0, Math.PI * 2); c.stroke();
+            c.lineWidth = S * 0.045; c.strokeStyle = "#4a4156";
+            c.stroke();
             for (let i = 0; i < 12; i++) {
                 c.save();
                 c.rotate((i / 12) * Math.PI * 2);
-                c.fillStyle = i % 3 === 0 ? pal.main : "#6a7385";
-                c.fillRect(S * 0.345, -S * 0.016, S * 0.062, S * 0.032);
-                c.lineWidth = 3; c.strokeStyle = "#16181d";
-                c.strokeRect(S * 0.345, -S * 0.016, S * 0.062, S * 0.032);
+                c.beginPath();
+                c.rect(S * 0.335, -S * 0.019, S * 0.06, S * 0.038);
+                c.fillStyle = i % 3 === 0 ? pal.main : "#6b5f7a";
+                c.fill();
+                c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
                 c.restore();
             }
         });
-        // the heart: a big team-color gem-cut emblem + three flat handles.
-        // Same silhouette as every gem in the game - this is where they go.
+        // the heart: a big gem-cut emblem in the door colour + three solid
+        // handles. Same silhouette as every gem in the game.
         const wheel = layer((c) => {
-            c.lineCap = "round";
-            for (let i = 0; i < 3; i++) {
-                const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
-                c.lineWidth = S * 0.05;
-                c.strokeStyle = "#6a7385";
+            const spoke = (w, col) => {
+                c.lineWidth = w; c.strokeStyle = col;
                 c.beginPath();
-                c.moveTo(Math.cos(a) * S * 0.12, Math.sin(a) * S * 0.12);
-                c.lineTo(Math.cos(a) * S * 0.27, Math.sin(a) * S * 0.27);
+                for (let i = 0; i < 3; i++) {
+                    const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+                    c.moveTo(Math.cos(a) * S * 0.12, Math.sin(a) * S * 0.12);
+                    c.lineTo(Math.cos(a) * S * 0.25, Math.sin(a) * S * 0.25);
+                }
                 c.stroke();
-                c.lineWidth = S * 0.018;
-                c.strokeStyle = "#16181d";
-                c.beginPath();
-                c.moveTo(Math.cos(a) * S * 0.12, Math.sin(a) * S * 0.12);
-                c.lineTo(Math.cos(a) * S * 0.27, Math.sin(a) * S * 0.27);
-                c.stroke();
-            }
-            const drawGem = (scale, fill) => {
-                c.fillStyle = fill;
+            };
+            spoke(S * 0.045 + LW, INK);
+            spoke(S * 0.045, "#6b5f7a");
+            const gem = (scale, dy) => {
                 c.beginPath();
                 GEM.forEach((p, i) => {
-                    const px = p[0] * S * scale, py = p[1] * S * scale;
+                    const px = p[0] * S * scale, py = p[1] * S * scale + dy;
                     i ? c.lineTo(px, py) : c.moveTo(px, py);
                 });
-                c.closePath(); c.fill();
+                c.closePath();
             };
-            drawGem(0.155, pal.main);
-            c.lineWidth = 5; c.strokeStyle = "#16181d"; c.stroke();
-            drawGem(0.085, pal.light);
-            drawGem(0.038, pal.high);
+            gem(0.15, 0); c.fillStyle = pal.main; c.fill();
+            c.lineWidth = LW; c.strokeStyle = INK; c.stroke();
+            // one flat lighter facet across the crown, like the gem pickups
+            c.save();
+            gem(0.15, 0); c.clip();
+            c.fillStyle = "rgba(255,255,255,0.28)";
+            c.fillRect(-S * 0.15, -S * 0.15, S * 0.3, S * 0.085);
+            c.restore();
+            gem(0.15, 0); c.lineWidth = LW; c.strokeStyle = INK; c.stroke();
         });
         return { plate, cog, wheel };
     }
@@ -2975,56 +2974,28 @@ import * as cosmetics from './account/cosmetics.js';
 
             c.save();
             c.translate(sx, sy);
-            c.fillStyle = "rgba(0,0,0,0.5)";
-            c.beginPath(); c.arc(3, 5, R, 0, Math.PI * 2); c.fill();
-            // flat octagonal foundation: tanks are round, structures are
-            // not - the pad keeps the vault from reading as one more tank
-            c.beginPath();
-            for (let i = 0; i < 8; i++) {
-                const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
-                const ox = Math.cos(a) * R * 1.22, oy = Math.sin(a) * R * 1.22;
-                i ? c.lineTo(ox, oy) : c.moveTo(ox, oy);
-            }
-            c.closePath();
-            c.fillStyle = "#16181e";
-            c.fill();
-            c.globalAlpha = 0.35;
-            c.fillStyle = teamCol;
-            c.fill();
-            c.globalAlpha = 1;
-            c.lineWidth = Math.max(3, R * 0.07);
             c.lineJoin = "round";
-            c.strokeStyle = teamCol;
-            c.stroke();
-            c.lineWidth = Math.max(2, R * 0.03);
-            c.strokeStyle = "#0d0f14";
+            const lw = Math.max(1.5, R * 0.035);
+            const hue = rainbow ? hsvRgb((now / 12) % 360) : hexToRgb(teamCol);
+            // flat octagonal foundation: tanks are round, structures are
+            // not - the pad keeps the vault from reading as one more tank.
+            // HUD plate language: hard ink drop, a deep shade of the team
+            // colour, one ink outline, then a bright rim band for the claim.
+            polyPath(c, 0, R * 0.07, R * 1.22, 8, Math.PI / 8);
+            c.fillStyle = "rgba(18,14,21,0.6)";
+            c.fill();
+            polyPath(c, 0, 0, R * 1.22, 8, Math.PI / 8);
+            c.fillStyle = inkShade(hue, 0.6);
+            c.fill();
+            c.lineWidth = lw;
+            c.strokeStyle = HUD.ink;
             c.stroke();
             const pulse = 0.5 + 0.5 * Math.sin(now / 650);
-            {
-                const auraR = R * (1.28 + 0.08 * pulse);
-                // the rainbow vault cycles through 12 baked hues; a fixed team
-                // colour bakes once
-                let tintA = null;
-                if (rainbow) {
-                    const [hr, hg, hb] = hsvRgb((Math.round(((now / 12) % 360) / 30) * 30) % 360);
-                    tintA = hr + "," + hg + "," + hb;
-                } else {
-                    const rgbA = toRgb(teamCol);
-                    if (rgbA) tintA = rgbA.r + "," + rgbA.g + "," + rgbA.b;
-                }
-                if (tintA) {
-                    const spr = haloSprite("aura|" + tintA, tintA, [[0.42, 1], [1, 0]]);
-                    c.save();
-                    c.globalAlpha = 0.22 + 0.10 * pulse + doneFlash * 0.28;
-                    c.drawImage(spr, -auraR, -auraR, auraR * 2, auraR * 2);
-                    c.restore();
-                }
-            }
-            // team claim ring
-            c.globalAlpha = 0.75 + 0.2 * pulse;
-            c.lineWidth = Math.max(2.5, R * 0.06);
-            c.strokeStyle = doneFlash > 0 ? (rainbow ? teamCol : pal.high) : teamCol;
-            c.beginPath(); c.arc(0, 0, R * 1.06, 0, Math.PI * 2); c.stroke();
+            polyPath(c, 0, 0, R * 1.11, 8, Math.PI / 8);
+            c.globalAlpha = 0.8 + 0.2 * pulse;
+            c.lineWidth = Math.max(2, R * 0.065);
+            c.strokeStyle = doneFlash > 0 ? HUD.head : teamCol;
+            c.stroke();
             c.globalAlpha = 1;
 
             // door layers: plate static, cog & emblem counter-rotating
@@ -3058,14 +3029,21 @@ import * as cosmetics from './account/cosmetics.js';
             }
 
             // gold is gem-dust: only while cashing out
+            // (the HUD bar bent into a ring: ink keyline, dark track, flat fill)
             if (depositing && v0.total > 0) {
-                const frac = 1 - v0.remaining / v0.total;
-                c.lineWidth = Math.max(3.5, R * 0.09);
-                c.lineCap = "round";
-                c.strokeStyle = GOLD_PAL.main;
-                c.beginPath();
-                c.arc(0, 0, R * 0.96, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-                c.stroke();
+                const frac = Math.max(0, Math.min(1, 1 - v0.remaining / v0.total));
+                const bw = Math.max(4, R * 0.085), br = R * 0.96;
+                c.beginPath(); c.arc(0, 0, br, 0, Math.PI * 2);
+                c.lineWidth = bw + lw * 2; c.strokeStyle = HUD.ink; c.stroke();
+                c.lineWidth = bw; c.strokeStyle = HUD.wellSolid; c.stroke();
+                if (frac > 0.001) {
+                    c.beginPath();
+                    c.arc(0, 0, br, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+                    c.lineCap = "round";
+                    c.strokeStyle = HUD.gold;
+                    c.stroke();
+                    c.lineCap = "butt";
+                }
             }
             c.restore();
 
@@ -3086,8 +3064,8 @@ import * as cosmetics from './account/cosmetics.js';
                     });
                 }
             }
-            // a small fully-opaque white "Vault" label floats above the door
-            drawText("Vault", sx, sy - R * 1.38, R * 0.24, "#ffffff", "center", false, 1, 10, c);
+            // the name floats above the door in the HUD's display face
+            hudTitle("Vault", sx, sy - R * 1.42, Math.max(13, R * 0.28), HUD.head, "center", 1, c);
 
             if (doneFlash > 0) {
                 // completion burst: one-off ring of gold sparks
@@ -6126,6 +6104,7 @@ import * as cosmetics from './account/cosmetics.js';
     // ═════════════════════════════════════════════════════════════════════
     const SHOP_TABS = [["drill", "Drills"], ["gear", "Gear"], ["kit", "Kit"], ["arm", "Sidearms"]];
     const SHOP_ACCENT = "#5ce0d8";
+    const SHOP_FACE = inkShade(hexToRgb(SHOP_ACCENT), 0.66);
     const KIT_SHORT = { charge: "CHARGE", strut: "STRUT", medkit: "MEDKIT", overdrive: "OVERDRV", anchor: "ANCHOR", flash: "FLASH", bulwark: "BULWARK", decoy: "DECOY", barrage: "BARRAGE" };
     const GEAR_TAG = { scanner: "SCN", magnet: "MAG", satchel: "SAT", insurance: "INS", cloak: "CLK", boots: "TRD", plating: "PLT", express: "EXP", mark: "MRK", wind: "WND" };
     const shopGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
@@ -6397,31 +6376,27 @@ import * as cosmetics from './account/cosmetics.js';
             const pulse = 0.5 + 0.5 * Math.sin(now / 650 + s.id);
             c.save();
             c.translate(sx, sy);
-            // drop shadow, then the flat hexagonal foundation (the hitbox)
-            c.fillStyle = "rgba(0,0,0,0.5)";
-            polyPath(c, 3, 5, R * 1.16, 6, Math.PI / 6); c.fill();
-            polyPath(c, 0, 0, R * 1.16, 6, Math.PI / 6);
-            c.fillStyle = "#16181e"; c.fill();
-            c.globalAlpha = 0.35; c.fillStyle = SHOP_ACCENT; c.fill(); c.globalAlpha = 1;
             c.lineJoin = "round";
-            c.lineWidth = Math.max(3, R * 0.07); c.strokeStyle = SHOP_ACCENT; c.stroke();
-            c.lineWidth = Math.max(2, R * 0.03); c.strokeStyle = "#0d0f14"; c.stroke();
-            if (!global.lowFx) {
-                const auraR = R * (1.30 + 0.08 * pulse);
-                const halo = haloSprite("aura|92,224,216", "92,224,216", [[0.42, 1], [1, 0]]);
-                c.save();
-                c.globalAlpha = 0.16 + 0.08 * pulse + (mine ? 0.12 : 0);
-                c.drawImage(halo, -auraR, -auraR, auraR * 2, auraR * 2);
-                c.restore();
+            const lw = Math.max(1.5, R * 0.04);
+            // the vault's plate language on a hexagon (the hitbox): hard ink
+            // drop, deep teal face, one ink outline, bright rim band
+            polyPath(c, 0, R * 0.07, R * 1.16, 6, Math.PI / 6);
+            c.fillStyle = "rgba(18,14,21,0.6)"; c.fill();
+            polyPath(c, 0, 0, R * 1.16, 6, Math.PI / 6);
+            c.fillStyle = SHOP_FACE; c.fill();
+            c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
+            polyPath(c, 0, 0, R * 1.0, 6, Math.PI / 6);
+            c.lineWidth = Math.max(2, R * 0.065);
+            c.globalAlpha = 0.8 + 0.2 * pulse;
+            c.strokeStyle = SHOP_ACCENT; c.stroke();
+            c.globalAlpha = 1;
+            // yours: cream dashes run round the band while you stand on it
+            if (mine) {
+                c.setLineDash([R * 0.18, R * 0.12]); c.lineDashOffset = -now / 45;
+                c.lineWidth = Math.max(1.5, R * 0.035); c.strokeStyle = HUD.head; c.stroke();
+                c.setLineDash([]);
             }
-            // claim ring: hexagonal, dashed and turning while you stand on it
-            c.globalAlpha = mine ? 0.9 : 0.55 + 0.2 * pulse;
-            c.lineWidth = Math.max(2.5, R * 0.055);
-            c.strokeStyle = mine ? "#ffffff" : SHOP_ACCENT;
-            if (mine) { c.setLineDash([R * 0.18, R * 0.12]); c.lineDashOffset = -now / 45; }
-            polyPath(c, 0, 0, R * 1.0, 6, Math.PI / 6); c.stroke();
-            c.setLineDash([]); c.globalAlpha = 1;
-            // armoured plate and a slow gem wheel, same sprites as the vault
+            // plate and a slow gem wheel, same sprites as the vault
             const pr = R * 0.66;
             c.drawImage(spr.plate, -pr, -pr, pr * 2, pr * 2);
             c.save();
@@ -6431,14 +6406,18 @@ import * as cosmetics from './account/cosmetics.js';
             // the coin: what this pad is for
             const cr = R * 0.24;
             c.beginPath(); c.arc(0, 0, cr, 0, Math.PI * 2);
-            c.fillStyle = "#1b2430"; c.fill();
-            c.lineWidth = Math.max(2, R * 0.04); c.strokeStyle = SHOP_ACCENT; c.stroke();
+            c.fillStyle = HUD.wellSolid; c.fill();
+            c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
             gemPath(c, 0, cr * 0.05, cr * 0.62);
-            c.fillStyle = color.gold; c.fill();
-            c.lineWidth = Math.max(1, R * 0.02); c.strokeStyle = "#5a4310"; c.stroke();
+            c.fillStyle = HUD.gold; c.fill();
+            c.save(); c.clip();
+            c.fillStyle = "rgba(255,255,255,0.3)";
+            c.fillRect(-cr, cr * 0.05 - cr * 0.62, cr * 2, cr * 0.36);
             c.restore();
-            drawText("SHOP", sx, sy - R * 1.36, Math.max(11, R * 0.17), SHOP_ACCENT, "center", true, 1, 5, ctx[0]);
-            drawText(String(s.name || "").replace(" Shop", "").toUpperCase(), sx, sy + R * 1.44, Math.max(9, R * 0.12), "#b9c3d1", "center", true, 1, 5, ctx[0]);
+            c.lineWidth = Math.max(1.2, R * 0.028); c.strokeStyle = HUD.ink; c.stroke();
+            c.restore();
+            hudTitle("Shop", sx, sy - R * 1.4, Math.max(13, R * 0.25), SHOP_ACCENT, "center", 1, c);
+            hudTitle(String(s.name || "").replace(" Shop", ""), sx, sy + R * 1.42, Math.max(11, R * 0.17), HUD.text2, "center", 1, c);
         }
     }
 

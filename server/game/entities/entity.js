@@ -1160,7 +1160,12 @@ class Entity extends EventEmitter {
             this.damageReceived = 0;
             // Drones/swarms still expire. Returning here let Overlord pile
             // infinite kids in the lobby because range-death never ran.
-            if (this.type === "tank") return 0;
+            // Protection blocks new damage, not a death already dealt: the
+            // storm, rock crush, base tiles and kill() write health directly.
+            // Returning here left a player on a vault/shop pad at <= 0 hp
+            // standing in the world while their socket (isDead) went to the
+            // death screen and spectated - a live-looking corpse.
+            if (this.type === "tank" && !this.isDead()) return 0;
         }
         if (this.damageReceived > 0) {
             let damageInflictor = []
