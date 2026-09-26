@@ -3925,6 +3925,31 @@ import * as cosmetics from './account/cosmetics.js';
         return p;
     })();
 
+    // right half of the cut, the one flat shade (mirrors GEM_SHADE in
+    // terrainRenderer)
+    const GEM_SHADE_PATH = (() => {
+        const p = new Path2D();
+        p.moveTo(0, -0.95); p.lineTo(0.55, -0.95); p.lineTo(1, -0.38); p.lineTo(0, 0.95);
+        p.closePath();
+        return p;
+    })();
+    // Flat tones per class: the SAME base/shade/glint as the ore gems in the
+    // rocks (TerrainRenderer.ORE_PAL, tiers 1-4) so a gem looks identical in
+    // the wall and on the floor. `ink` is the outline width in cut units.
+    const GEM_INK = "rgb(16,13,22)";   // TerrainRenderer.ROCK_INK
+    const GEM_FLAT = (() => {
+        const t1 = { base: "rgb(240,136,60)", shade: "rgb(192,88,34)",  glint: "rgb(255,230,196)", ink: 0.2 };
+        const t2 = { base: "rgb(66,146,255)", shade: "rgb(38,94,218)",  glint: "rgb(218,238,255)", ink: 0.2 };
+        const t3 = { base: "rgb(208,96,242)", shade: "rgb(150,52,200)", glint: "rgb(252,226,255)", ink: 0.17 };
+        const t4 = { base: "rgb(46,218,124)", shade: "rgb(20,158,88)",  glint: "rgb(216,255,234)", ink: 0.17 };
+        return {
+            gemPickupCopper: t1, gemPickupVein: t2,
+            gemPickupShard: t3, gemPickupShardCore: t3,
+            gemPickupEmerald: t4, gemPickupEmeraldCore: t4,
+            gemPickupLoot: { base: "rgb(250,196,64)", shade: "rgb(214,146,30)", glint: "rgb(255,244,206)", ink: 0.26 },
+        };
+    })();
+
     // Per-class art. body / facet / glow(+radius+alpha) are the gemPickup* +
     // gemFacet* + GLOW values from digwars.js, so the baked gems carry the
     // exact same palette AND halo as the loose pickups the full entity
@@ -3943,27 +3968,18 @@ import * as cosmetics from './account/cosmetics.js';
         gemPickupLoot:        { size: 7,  body: "#e0a63b", facet: "#f2cf7f", glow: "#f5cf6e", glowR: 1.2,  glowA: 0.4 },
     };
 
-    // Baked, full-fidelity sprites. Every contained gem is pre-rendered once
-    // per class onto a hidden canvas that replicates the REAL drawEntity
-    // output for a gem pickup: soft glow halo (shadowBlur under a borderless
-    // body fill at the glow's alpha), the filled gem cut, its darkened rim
-    // (stroke first, so the fill hides the inner half - exactly like the real
-    // pipeline), then the facet + sparkle Props at their true size/offset/
-    // angle (0.525 / 0.2 of the body, 0.12 crown / 0.405 offset, 12deg spin).
-    // The bake runs colors through gameDraw.modifyColor too, so the sprite is
-    // byte-for-byte the same colors a loose gem draws one screen over.
+    // Baked sprites. Every gem pickup is pre-rendered once per class onto a
+    // hidden canvas: the soft glow halo (shadowBlur under a borderless body
+    // fill at the glow's alpha), then the flat cartoon cut from GEM_FLAT.
     const GEM_SPRITES = {};
     const GEM_SPRITE_HALF = 6.0;    // unit span covered (biggest glow ~2.4)
     const GEM_SPRITE_SCALE = 64;    // px per world unit inside the sprite
-    const GEM_RIM_UNITS = 7.2 * 0.55; // borderChunk * strokeWidth, cut-units per SIZE=1
     function gemSprite(cls) {
         let s = GEM_SPRITES[cls];
         if (s) return s;
         const pal = GEM_SPRITE_PAL[cls] || GEM_SPRITE_PAL.gemPickupVein;
         const body  = gameDraw.modifyColor(pal.body + " 0 1 0 false");
-        const rim   = gameDraw.getColorDark(body);
         const glow  = gameDraw.modifyColor(pal.glow + " 0 1 0 false");
-        const facet = gameDraw.modifyColor(pal.facet + " 0 1 0 false");
 
         const canvas = document.createElement("canvas");
         canvas.width = canvas.height = Math.ceil(GEM_SPRITE_HALF * 2 * GEM_SPRITE_SCALE);
@@ -3982,32 +3998,24 @@ import * as cosmetics from './account/cosmetics.js';
         c.globalAlpha = 1;
         c.shadowBlur = 0;
 
-        // body: stroke first, then fill hides the inner half (real pipeline)
+        // body: the flat cartoon cut the ore gems in the rocks use
+        // (terrainRenderer addGem/paintGem): uniform ink outline (double
+        // stroke, the fill hides its inner half), flat base, the right half
+        // in one shade, one oval glint on the lit upper-left
+        const tone = GEM_FLAT[cls] || GEM_FLAT.gemPickupVein;
         c.lineJoin = "round";
         c.lineCap = "round";
-        c.lineWidth = GEM_RIM_UNITS / (pal.size || 7);
-        c.strokeStyle = rim;
+        c.lineWidth = tone.ink * 2;
+        c.strokeStyle = GEM_INK;
         c.stroke(GEM_CUT_PATH);
-        c.fillStyle = body;
+        c.fillStyle = tone.base;
         c.fill(GEM_CUT_PATH);
-
-        // facet prop (0.525 scale, 0.12 toward the crown, aligned with body)
-        c.save();
-        c.translate(0, -0.12);
-        c.scale(0.525, 0.525);
-        c.fillStyle = facet;
-        c.fill(GEM_CUT_PATH);
-        c.restore();
-
-        // sparkle prop (0.2 scale, 0.405 offset at direction+angle = up-left,
-        // spun 12deg exactly like the real gemSparkle's t.angle)
-        c.save();
-        c.translate(-0.148, -0.377);
-        c.rotate(0.20944);
-        c.scale(0.2, 0.2);
-        c.fillStyle = "#ffffff";
-        c.fill(GEM_CUT_PATH);
-        c.restore();
+        c.fillStyle = tone.shade;
+        c.fill(GEM_SHADE_PATH);
+        c.fillStyle = tone.glint;
+        c.beginPath();
+        c.ellipse(-0.5, -0.6, 0.23, 0.095, -0.9, 0, Math.PI * 2);
+        c.fill();
 
         s = { canvas, half: GEM_SPRITE_HALF };
         GEM_SPRITES[cls] = s;
@@ -4291,8 +4299,8 @@ import * as cosmetics from './account/cosmetics.js';
         }
         c.scale(R * sx, R * sy);
         c.lineJoin = "round"; c.lineCap = "round";
-        c.fillStyle = "rgb(56,49,78)"; c.fill(g.body);
-        c.fillStyle = "rgb(65,57,90)"; c.fill(g.facets);
+        c.fillStyle = "rgb(46,41,59)"; c.fill(g.body);
+        c.fillStyle = "rgb(52,47,67)"; c.fill(g.facets);
         c.fillStyle = "rgba(16,13,22,0.34)"; c.fill(g.shade);
         if (stage >= 1) { c.fillStyle = "rgba(16,13,22," + (0.07 * stage).toFixed(2) + ")"; c.fill(g.body); }
         const borderPx = tilePx ? 0.072 * rockSz * tilePx : Math.max(2, 3 * ratio);
@@ -4345,7 +4353,7 @@ import * as cosmetics from './account/cosmetics.js';
         c.fillStyle = "rgba(5,4,7,0.45)"; c.fillRect(gx - gr * 1.4, gy - gr * 1.2, gr * 2.8, gr * 0.55);
         c.fillStyle = "rgba(5,4,7,0.2)";  c.fillRect(gx - gr * 1.4, gy - gr * 0.65, gr * 2.8, gr * 0.35);
         // a lip of rock over the gem's foot
-        c.fillStyle = "rgb(56,49,78)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, gr * 1.3);
+        c.fillStyle = "rgb(46,41,59)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, gr * 1.3);
         c.fillStyle = "rgba(5,4,7,0.7)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, Math.max(1, R * 0.04));
         c.restore();
         pocket();
@@ -8428,7 +8436,7 @@ import * as cosmetics from './account/cosmetics.js';
             c.scale(s, s);
             c.fillStyle = "#2b2320";
             c.fill(paths.dead);
-            c.fillStyle = "#3b3452";
+            c.fillStyle = "#413c4c";
             c.fill(paths.alive);
             const borderW = 0.09 * (Math.min(tr._cols, 120) / 50.0) * (gw / tr._cols); 
             if (borderW * s > 0.45) {

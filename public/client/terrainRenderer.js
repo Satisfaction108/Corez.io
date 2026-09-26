@@ -46,6 +46,29 @@ function addGem(g, x, y, r, rot) {
                    ey + Math.sin(rot + GEM_GLINT.rot) * GEM_GLINT.rx * r);
     g.glint.ellipse(ex, ey, GEM_GLINT.rx * r, GEM_GLINT.ry * r, rot + GEM_GLINT.rot, 0, Math.PI * 2);
 }
+// How far to nudge a stone UP so its outline clears the rock's bottom lip
+// (a gem over the lip strip reads as floating off the face). Measured
+// straight down from each corner to the cell edge below it; never lifts
+// past the edge above. Draw-only: the deposit layout itself is untouched.
+function gemLift(poly, x, y, r, rot, lw, rockSz) {
+    const c = Math.cos(rot), s = Math.sin(rot);
+    const need = (TerrainRenderer.ROCK_LIP_H + TerrainRenderer.ROCK_INK_W) * rockSz + lw;
+    const room = TerrainRenderer.ROCK_INK_W * rockSz + lw;
+    let deficit = 0, slack = Infinity;
+    for (const p of GEM_CUT) {
+        const px = x + (p[0] * c - p[1] * s) * r, py = y + (p[0] * s + p[1] * c) * r;
+        let below = Infinity, above = Infinity;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const ax = poly[j][0], ay = poly[j][1], bx = poly[i][0], by = poly[i][1];
+            if ((ax > px) === (bx > px)) continue;
+            const ey = ay + (by - ay) * (px - ax) / (bx - ax);
+            if (ey >= py) below = Math.min(below, ey - py); else above = Math.min(above, py - ey);
+        }
+        if (below !== Infinity) deficit = Math.max(deficit, need - below);
+        if (above !== Infinity) slack = Math.min(slack, above - room);
+    }
+    return Math.max(0, Math.min(deficit, slack));
+}
 // four flat ops: ink (a double-width stroke the body fill then covers,
 // leaving one even outside outline), base, shade, glint
 function paintGem(ctx, g, pal, lw) {
@@ -94,18 +117,17 @@ class TerrainRenderer {
     // Rock look (cartoon boulders, see the voronoi shader). The shader and
     // the no-WebGL fallback share these tones; keep them in step.
     static ROCK_INK  = 'rgb(16,13,22)';
-    static ROCK_LIP  = 'rgb(32,27,46)';
-    static ROCK_FACE = 'rgb(56,49,78)';
-    static ROCK_RIM  = 'rgb(82,73,112)';
-    static ROCK_CHIP = ['rgb(16,13,22)', 'rgb(32,27,46)', 'rgb(56,49,78)'];
+    static ROCK_LIP  = 'rgb(33,29,43)';
+    static ROCK_FACE = 'rgb(46,41,59)';
+    static ROCK_CHIP = ['rgb(16,13,22)', 'rgb(33,29,43)', 'rgb(46,41,59)'];
+    // the face sits this far (tile units per rockSz) above the cell: the
+    // strip it uncovers along the bottom edges is the lip
+    static ROCK_LIP_H = 0.055;
+    static ROCK_INK_W = 0.024;
     // silhouette stroke (tile units per rockSz): drawn under the rock and
-    // dropped a little, so it shows as an outline heavier on the bottom
+    // dropped a hair, so the outline is only faintly heavier on the bottom
     static SIL_W    = 0.12;
-    static SIL_DROP = 0.028;
-    // contact shadow: the same outline again, translucent and dropped
-    // further, a tight flat band where the boulders meet the floor
-    static SHADOW_RGBA = 'rgba(0,0,0,0.5)';
-    static SHADOW_DROP = 0.085;
+    static SIL_DROP = 0.012;
 
     constructor() {
         this.ready       = false;
@@ -649,11 +671,15 @@ class TerrainRenderer {
         const h = (i, s) => this._h(i, kk, (s + this._oreSalt + gsalt) | 0);
         const deposits = this._depositLayout(tier, cell.poly, cell.cx, cell.cy, rockSz, h);
         if (!deposits.length) { this._sproutArt.set(k, null); return null; }
+        // same ink weight and lip lift as the settled art (_getVeinArt)
+        let rSum = 0;
+        for (const d of deposits) rSum += d.r;
+        const lw = gemInk(rSum / deposits.length, rockSz);
         parts = deposits.map(d => {
             const g = newGemPaths();
-            const lw = gemInk(d.r, rockSz);
             addGem(g, 0, 0, d.r, d.rot);
-            return Object.assign(g, { x: d.x, y: d.y, r: d.r, lw, big: d.big });
+            const y = d.y - gemLift(cell.poly, d.x, d.y, d.r, d.rot, lw, rockSz);
+            return Object.assign(g, { x: d.x, y, r: d.r, lw, big: d.big });
         });
         this._sproutArt.set(k, parts);
         return parts;
@@ -1156,12 +1182,14 @@ class TerrainRenderer {
         for (const d of deposits) rSum += d.r;
         const lw = gemInk(rSum / deposits.length, rockSz);
         for (const d of deposits) {
-            addGem(g, d.x, d.y, d.r, d.rot);
+            // drawn clear of the bottom lip (see gemLift)
+            const dy = d.y - gemLift(poly, d.x, d.y, d.r, d.rot, lw, rockSz);
+            addGem(g, d.x, dy, d.r, d.rot);
 
             const gc = Math.cos(d.rot), gs = Math.sin(d.rot);
             glintPts.push([d.x + (-0.35 * d.r) * gc - (-0.6 * d.r) * gs,
-                           d.y + (-0.35 * d.r) * gs + (-0.6 * d.r) * gc]);
-            if (d.big) big = [d.x, d.y];
+                           dy + (-0.35 * d.r) * gs + (-0.6 * d.r) * gc]);
+            if (d.big) big = [d.x, dy];
         }
 
         art = Object.assign(g, { tier, lw, glintPts, big });
@@ -1409,18 +1437,17 @@ class TerrainRenderer {
                     if(d<md){md=d;mr=r;mg=g;}
                 }
 
-                // Cartoon boulder, style only (cell shapes untouched). For
-                // every edge e with inward distance d and outward normal m:
+                // Flat cartoon boulder, style only (cell shapes untouched):
+                // one face tone, one ink line, and a thin darker bottom
+                // edge. For every edge with inward distance d and outward
+                // normal m:
                 //   bd - the plain edge distance (ink line)
                 //   fd - the edge pushed by the face offset S: the face is
-                //        the cell slid up-left, what it uncovers at the
-                //        bottom/right is the dark lip (the rock's side)
-                //   hd - the edge pushed by T: a thin light rim along the
-                //        top-left edges catching the light
-                // smin rounds the face/rim corners so they read soft.
-                const vec2 S=vec2(-.035,-.15);
-                const vec2 T=vec2(.042,.05);
-                float bd=8., fd=8., hd=8.;
+                //        the cell slid up a touch, what it uncovers at the
+                //        bottom is the thin lip (the rock's side)
+                // smin rounds the face corners so they read soft.
+                const vec2 S=vec2(0.,-.055);
+                float bd=8., fd=8.;
                 for(int j=-2;j<=2;j++) for(int i=-2;i<=2;i++){
                     vec2 g=mg+vec2(float(i),float(j));
                     vec2 r=g+hash2(n+g)-f;
@@ -1428,25 +1455,22 @@ class TerrainRenderer {
                         vec2 m=normalize(r-mr);
                         float d=dot(.5*(mr+r),m);
                         bd=min(bd,d);
-                        float a=d+dot(S,m), b=d+dot(T,m);
+                        float a=d+dot(S,m);
                         float ka=max(.05-abs(fd-a),0.)/.05; fd=min(fd,a)-ka*ka*.0125;
-                        float kb=max(.04-abs(hd-b),0.)/.04; hd=min(hd,b)-kb*kb*.01;
                     }
                 }
 
-                // one quiet tone step per cell so the wall isn't a flat sheet
+                // a barely-there tone step per cell so the wall isn't one sheet
                 vec2 lh=hash2(n+mg);
-                float v=1.+(lh.x-.5)*.07;
+                float v=1.+(lh.x-.5)*.025;
                 vec3 inkC =vec3(16.,13.,22.)/255.;
-                vec3 lipC =vec3(32.,27.,46.)/255.;
-                vec3 faceC=vec3(56.,49.,78.)/255.*v;
-                vec3 rimC =vec3(82.,73.,112.)/255.*v;
+                vec3 lipC =vec3(33.,29.,43.)/255.;
+                vec3 faceC=vec3(46.,41.,59.)/255.*v;
                 // bands are anti-aliased over one texel (texel size known
                 // from the uniforms - no derivatives extension needed)
                 const float INK=.024;
                 float aa=.6/(u_cellSz.x*u_rockSz);
                 vec3 col=faceC;
-                col=mix(col,rimC,1.-smoothstep(INK-aa,INK+aa,hd));
                 col=mix(col,lipC,1.-smoothstep(INK-aa,INK+aa,fd));
                 col=mix(col,inkC,1.-smoothstep(INK-aa,INK+aa,bd));
                 gl_FragColor=vec4(col,1.);
@@ -2139,10 +2163,9 @@ class TerrainRenderer {
             g.fillRect(0, 0, pw, ph);
             g.setTransform(density, 0, 0, density * ratioY, -x * density, -y * density * ratioY);
             const rockSz = Math.min(this._cols, 120) / 50.0;
-            // same cartoon boulder as the shader: lip, face slid up-left
-            // over it, face slid down-right over a rim, ink on top
-            const sx = -0.035 * rockSz, sy = -0.15 * rockSz;
-            const tx = 0.042 * rockSz, ty = 0.05 * rockSz;
+            // same flat boulder as the shader: lip, face slid up over it,
+            // ink on top
+            const sy = -TR.ROCK_LIP_H * rockSz;
             g.strokeStyle = TR.ROCK_INK;
             g.lineWidth = 0.048 * rockSz;
             g.lineJoin = 'round';
@@ -2152,11 +2175,7 @@ class TerrainRenderer {
                 g.clip(cell.path);
                 g.fillStyle = TR.ROCK_LIP;
                 g.fill(cell.path);
-                g.translate(sx, sy);
-                g.fillStyle = TR.ROCK_RIM;
-                g.fill(cell.path);
-                g.clip(cell.path);
-                g.translate(tx - sx, ty - sy);
+                g.translate(0, sy);
                 g.fillStyle = TR.ROCK_FACE;
                 g.fill(cell.path);
                 g.restore();
@@ -2296,11 +2315,8 @@ class TerrainRenderer {
             ctx.lineJoin    = 'round';
             ctx.lineCap     = 'round';
             ctx.lineWidth   = TerrainRenderer.SIL_W * rockSz;
-            ctx.strokeStyle = TerrainRenderer.SHADOW_RGBA;
-            ctx.translate(0, TerrainRenderer.SHADOW_DROP * rockSz);
-            ctx.stroke(this._silClip);
             ctx.strokeStyle = TerrainRenderer.ROCK_INK;
-            ctx.translate(0, (TerrainRenderer.SIL_DROP - TerrainRenderer.SHADOW_DROP) * rockSz);
+            ctx.translate(0, TerrainRenderer.SIL_DROP * rockSz);
             ctx.stroke(this._silClip);
             ctx.restore();
 
@@ -2359,10 +2375,7 @@ class TerrainRenderer {
                 const inkUnder = (sc) => {
                     ctx.save();
                     ctx.lineWidth = TerrainRenderer.SIL_W * rockSz;
-                    ctx.translate(0, TerrainRenderer.SHADOW_DROP * rockSz * sc);
-                    ctx.strokeStyle = TerrainRenderer.SHADOW_RGBA;
-                    ctx.stroke();
-                    ctx.translate(0, (TerrainRenderer.SIL_DROP - TerrainRenderer.SHADOW_DROP) * rockSz * sc);
+                    ctx.translate(0, TerrainRenderer.SIL_DROP * rockSz * sc);
                     ctx.strokeStyle = TerrainRenderer.ROCK_INK;
                     ctx.stroke();
                     ctx.restore();
