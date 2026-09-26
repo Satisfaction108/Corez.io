@@ -6,7 +6,6 @@ import { gameSound } from "./sound.js";
 import * as rankPanel from "./account/rankPanel.js";
 import * as rankCeremony from "./account/rankCeremony.js";
 import * as dustHud from "./account/dustHud.js";
-import { predictor } from "./predict.js";
 window.fakeLagMS = 0;
 var sync = [];
 var clockDiff = 0;
@@ -1377,7 +1376,9 @@ let incoming = async function(message, socket) {
                 // kind, text, points: the big centre callout
                 const list = global.callouts;
                 const prev = list.length ? list[list.length - 1].born : -1e9;
-                list.push({ kind: m[0] || "kill", text: m[1] || "", pts: m[2] | 0, sub: typeof m[3] === "string" ? m[3] : undefined, born: Math.max(performance.now(), prev + 700) });
+                // optional 5th field: how long it stays up (ms), e.g. the late-join note
+                list.push({ kind: m[0] || "kill", text: m[1] || "", pts: m[2] | 0, sub: typeof m[3] === "string" ? m[3] : undefined,
+                    dur: typeof m[4] === "number" && m[4] > 0 ? Math.min(15000, m[4]) : undefined, born: Math.max(performance.now(), prev + 700) });
                 if (list.length > 5) list.shift();
                 if (m[0] === "boss" || m[0] === "quest") { punchUI(8, 260); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
             } break;
@@ -1649,7 +1650,6 @@ let incoming = async function(message, socket) {
             } break;
             case 'c': {
                 if (global.autoReconnect) { global.autoReconnect = null; global.createMessage && global.createMessage("Reconnected.", 3000); }
-                predictor.reset("spawn");
                 global.spawnedAt = performance.now();
                 global.shieldSeen = false;
                 global.respawnPending = false;
@@ -1834,16 +1834,6 @@ let incoming = async function(message, socket) {
 
                 global.player.isScoping = camscoping;
                 moveCompensation.reset();
-                // own-tank prediction: reconcile against this authoritative position
-                try {
-                    let meSize = 0;
-                    if (!global.died && gui.playerid >= 0) {
-                        const me = global.entities.find(e => e.id === gui.playerid);
-                        if (me) meSize = me.realSize || me.size || 0;
-                    }
-                    predictor.onSnapshot(camtime, camx, camy, camvx, camvy, gui.accel, gui.topspeed,
-                        meSize > 0 ? gui.playerid : -1, meSize);
-                } catch (e) { /* prediction must never break the snapshot path */ }
 
                 global.player.animX.add(m[1]);
                 global.player.animY.add(m[2]);
@@ -1918,7 +1908,6 @@ let incoming = async function(message, socket) {
             global.finalCause = m[12 + m[8]] || "";
             global.canvas.reverseDirection = false;
             global.died = true;
-            predictor.reset("death");
             const deathPlace = m[13 + m[8]] | 0;
             if (deathPlace > 0) global.royale.place = deathPlace;
             global.finalStreak = m[14 + m[8]] | 0;

@@ -1,6 +1,6 @@
 # Announcement [2026-09-24] We're Corez.io now
 - New name, new logo (it's an octo-tank with an emerald in it, yes really).
-- We have a <a href="https://discord.gg/qtwajWhaGc">Discord</a> now. Come say hi.
+- We have a <a href="https://discord.gg/bx5FK3CMwp">Discord</a> now. Come say hi.
 
 # Update [2026-09-24] Friends + chat
 - Add people by name and see if they're in the menu, in a raid or off.

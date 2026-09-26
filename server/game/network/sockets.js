@@ -1355,6 +1355,10 @@ class socketManager {
                     else if (what === "tochest" && b) { const ch = require('../terrain/chests.js').alive()[0]; if (ch) { b.x = ch.x + 160; b.y = ch.y; } }
                     else if (what === "twist") require('../gamemodes/scripts/dig_royale.js').debugTwist(m[1] ? String(m[1]) : undefined);
                     else if (what === "raidend") require('../gamemodes/scripts/dig_royale.js').debugEndRaid();
+                    // jump the storm to N seconds into its cycle (300 = a minute before the hold)
+                    else if (what === "stormat") require('../terrain/storm.js').debugSeek(m[1] | 0);
+                    // end the raid N seconds from now (late-join note, raid-over wait)
+                    else if (what === "raidleft") require('../gamemodes/scripts/dig_royale.js').debugRaidLeft(m[1] | 0);
                     // beside base N (or the nearest), on its open side
                     else if ((what === "tobase" || what === "takebase") && b) {
                         const ops = require('../terrain/outposts.js').getOutposts();

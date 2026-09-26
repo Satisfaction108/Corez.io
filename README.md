@@ -4,7 +4,7 @@ Corez.io is a free, fast top-down battle royale you play right in your browser. 
 
 Every raid runs for two hours and you can jump in any time. A storm keeps closing in, so fights come to you whether you like it or not. Crack open loot chests, grab kit items from the shop pads, team up on giant bosses guarding the richest veins, and try to finish the raid at the top of the board.
 
-Play at **https://digwars.hackclub.app** and come hang out on our **[Discord](https://discord.gg/qtwajWhaGc)**.
+Play at **https://digwars.hackclub.app** and come hang out on our **[Discord](https://discord.gg/bx5FK3CMwp)**.
 
 ## What's in it
 

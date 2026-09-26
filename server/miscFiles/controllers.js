@@ -480,6 +480,9 @@ class io_nearestDifferentMaster extends IO {
         if (theirMaster.ignoredByAi) return false;
         if (e.bond) return false;
         if (e.invuln || e.godmode || theirMaster.godmode || theirMaster.passive || myMaster.passive) return false;
+        // a bot's auto turrets / drones, and raid bosses, honour a fresh
+        // spawn's bot grace too
+        if ((myMaster.isBot || myMaster.isRoyaleBoss) && inBotGrace(theirMaster, Date.now())) return false;
         if (isNaN(e.dangerValue)) return false;
         if (!(aiSettings.seeInvisible || this.body.isArenaCloser || e.alpha > 0.5)) return false;
         if (!io_nearestDifferentMaster.validEntityTypes.has(e.type)) {
@@ -1410,6 +1413,28 @@ function inEnemyBase(team, x, y) {
 // list of tanks and gems, so it is built once per 110ms and reused instead
 // of each bot walking every entity several times a second.
 const botScan = { at: 0, tanks: [], gems: [] };
+// Dig Royale fresh-spawn rules (dig_royale.js FIRST_MINUTES): a player in
+// bot grace is invisible to bots until it expires or they shoot a bot; a new
+// player is ranked lower and only NEW_MAX_HUNTERS bots may be on them at once.
+let firstMinutesCfg = null;
+function firstMinutes() {
+    if (firstMinutesCfg) return firstMinutesCfg;
+    try { firstMinutesCfg = require('../game/gamemodes/scripts/dig_royale.js').FIRST_MINUTES || null; } catch { /* */ }
+    return firstMinutesCfg || { NEW_TARGET_PENALTY: 350, NEW_MAX_HUNTERS: 1 };
+}
+function inBotGrace(root, now) {
+    return !!(root && root.isPlayer && (root.botGraceUntil || 0) > now);
+}
+// bots other than `self` currently aiming at / chasing `target`
+function botsOn(target, self) {
+    let n = 0;
+    for (const tank of botWorldScan().tanks) {
+        if (!tank.isBot || tank === self || tank.isDead?.()) continue;
+        if (tank._botEnemyId === target.id || tank._fightingPlayerId === target.id) n++;
+    }
+    return n;
+}
+
 function botWorldScan() {
     const now = Date.now();
     if (now - botScan.at < 110) return botScan;
@@ -2004,6 +2029,11 @@ class io_digWarsGoals extends IO {
             if (!this.isEnemy(root)) continue;
             if (root.alpha != null && root.alpha <= 0.5 && !seeInvisible) continue;
             if (distance > fov * 1.25) continue;
+            // fresh spawn in bot grace: not a target, not even counted
+            if (inBotGrace(root, now)) continue;
+            // a new player already has a bot on them: leave them to it
+            // (self-defence still wins below through the attacker override)
+            if (root.isPlayer && root.botNewbie && botsOn(root, body) >= firstMinutes().NEW_MAX_HUNTERS) continue;
             // Counted a bit past visual range: the second attacker in a 1v2
             // usually hangs just outside the old 800 radius, so the bot never
             // knew it was outnumbered and kept pushing.
@@ -2012,7 +2042,7 @@ class io_digWarsGoals extends IO {
             // a little. Treating players as the only target is what made bots
             // ignore the tank shooting them to walk at a distant player.
             const score = distance
-                - (root.isPlayer ? 80 : 0)
+                - (root.isPlayer ? (root.botNewbie ? -firstMinutes().NEW_TARGET_PENALTY : 80) : 0)
                 - Math.min(400, (root.carriedGems || 0) * 0.12)
                 + (this.clearShot(root) ? 0 : 220);
             if (score < bestScore) { bestScore = score; best = root; }
@@ -2031,6 +2061,7 @@ class io_digWarsGoals extends IO {
             this.reactionMs = 160 + (1 - this.skill()) * 380 + Math.random() * 160;
         }
         view.enemy = best;
+        body._botEnemyId = best ? best.id : 0;   // read by botsOn() (new-player hunter cap)
         view.enemyDistance = best ? Math.hypot(best.x - body.x, best.y - body.y) : Infinity;
         view.enemies = enemies;
         view.allies = allies;
@@ -2341,6 +2372,9 @@ class io_digWarsGoals extends IO {
         const attackedMe = this.body._lastDamageSource === target &&
             now - (this.body._lastDamageAt || 0) < 3000;
         if (attackedMe) return true;
+        // fresh spawn (bot grace) / a new player somebody is already on
+        if (inBotGrace(target, now)) return false;
+        if (target.botNewbie && botsOn(target, this.body) >= firstMinutes().NEW_MAX_HUNTERS) return false;
         // Recently gave up chasing them: leave them alone for a while.
         if ((this.playerBreakUntil.get(target.id) || 0) > now) return false;
         // Mercy: somebody dying over and over to bots gets space to recover.

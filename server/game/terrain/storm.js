@@ -12,7 +12,10 @@ const MIN_FRAC = 0.20;
 // back end of the hold). The dead spectate. Never longer than 3/4 of the hold
 // even when a raid twist stretches the cycle.
 const LOCK_MS = 45 * 1000;
-function lockMs() { return Math.min(LOCK_MS, holdMs() * 0.75); }
+// dig_royale sets the live value from its FIRST_MINUTES block (setLockMs)
+let lockOverride = 0;
+function setLockMs(ms) { lockOverride = Math.max(0, +ms || 0); }
+function lockMs() { return Math.min(lockOverride || LOCK_MS, holdMs() * 0.75); }
 
 let state = {
     active: false,
@@ -45,6 +48,12 @@ function start() {
     const c = pickCenter(state.maxR);
     state.cx = c.x;
     state.cy = c.y;
+}
+
+// ROYALE_DEBUG (DBG stormat): jump to `sec` seconds into the current cycle
+function debugSeek(sec) {
+    if (!state.active) start();
+    state.cycleStartAt = Date.now() - Math.max(0, +sec || 0) * 1000;
 }
 
 function stop() {
@@ -167,4 +176,4 @@ function tickDamage(now = Date.now()) {
     }
 }
 
-module.exports = { start, stop, ensureActive, radius, inStorm, snapshot, tickDamage, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, LOCK_MS };
+module.exports = { start, stop, setLockMs, debugSeek, ensureActive, radius, inStorm, snapshot, tickDamage, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, LOCK_MS };

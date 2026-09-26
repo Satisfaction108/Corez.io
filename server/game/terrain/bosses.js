@@ -99,6 +99,8 @@ function spawn(forceKind) {
         }
         const per = roots.size ? Math.max(0, +o.damageReceived || 0) / roots.size : 0;
         for (const root of roots) {
+            // shooting the boss ends a fresh spawn's bot grace (dig_royale FIRST_MINUTES)
+            if (root.isPlayer && root.botGraceUntil) root.botGraceUntil = 0;
             const h = hitters.get(root.id);
             hitters.set(root.id, { body: root, at: Date.now(), dmg: (h ? h.dmg : 0) + per });
         }

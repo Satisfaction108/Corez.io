@@ -847,37 +847,34 @@ class Canvas {
         }
     }
     record() {
+        // Merges the stacked game canvases into one each frame for the
+        // recorder. The recorder saves the file itself when it stops.
         let AdvancedCanvasCapturer = () => {
-            let canvas = this.cvb.cloneNode();
-            let ctx = canvas.getContext("2d");
-            let toMerge = [];
+            let canvas = document.createElement("canvas");
+            let ctx = canvas.getContext("2d", { alpha: false });
+            let layers = [];
             let stop = false;
             return {
                 init: () => {
-                    let glCanvas = global.glCanvas || null;
-                    // Merge all layers, including WebGL2 if present
-                    toMerge = glCanvas
-                    ? [this.cvb, glCanvas, this.cvg, this.cvu]
-                    : [this.cvb, this.cvg, this.cvu];
-                    ctx.canvas.width = this.cv.width;
-                    ctx.canvas.height = this.cv.height;
+                    layers = [this.cvb, global.glCanvas || null, this.cvg, this.cvu].filter(Boolean);
+                    canvas.width = this.cv.width;
+                    canvas.height = this.cv.height;
                 },
                 start: () => {
-                    stop = false; // Reset flag
-                    ctx.canvas.width = this.cv.width; // Set Width
-                    ctx.canvas.height = this.cv.height; // Set Height
+                    stop = false;
+                    canvas.width = this.cv.width;
+                    canvas.height = this.cv.height;
                     const anim = () => {
                         if (stop) return;
-                        if (ctx.canvas.width !== this.cv.width || ctx.canvas.height !== this.cv.height) {
-                            global.createMessage("Recorder stopped due to resize change. Saving file...", 5_000);
-                            this.videoRecorder.stop();
+                        if (canvas.width !== this.cv.width || canvas.height !== this.cv.height) {
+                            global.createMessage("Recording stopped because the window resized. Saving...", 5_000);
                             this.videoRecorderCanvas.stop();
-                            setTimeout(() => this.videoRecorder.download(), 200);
+                            if (this.videoRecorder.state === "recording") this.videoRecorder.stop();
+                            return;
                         }
-                        ctx.fillRect(0, 0, this.cv.width, this.cv.height);
-                        toMerge.forEach(layer => {
-                            if (layer) ctx.drawImage(layer, 0, 0);
-                        });
+                        ctx.fillStyle = "#000";
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        for (const layer of layers) ctx.drawImage(layer, 0, 0, canvas.width, canvas.height);
                         requestAnimationFrame(anim);
                     };
                     anim();
@@ -886,28 +883,28 @@ class Canvas {
                 getCanvas: () => canvas
             }
         }
-        if (this.cv.captureStream && window.MediaRecorder) {
-            if (this.videoRecorder) {
-                switch (this.videoRecorder.state) {
-                    case "inactive":
-                        global.createMessage("Recorder Started!", 2_000);
-                        this.videoRecorderCanvas.start();
-                        this.videoRecorder.start();
-                        break;
-                    case "recording":
-                        global.createMessage("Recorder Stopped! Saving file...", 5_000);
-                        this.videoRecorder.stop();
-                        this.videoRecorderCanvas.stop();
-                        setTimeout(() => this.videoRecorder.download(), 200);
-                }
-            } else {
-                this.videoRecorderCanvas = AdvancedCanvasCapturer();
-                this.videoRecorderCanvas.init();
-                this.videoRecorderCanvas.start();
-                this.videoRecorder = new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 60);
-                global.createMessage("Recorder Started!", 2_000);
-                this.videoRecorder.start();
-            }
+        if (!this.cv.captureStream || !window.MediaRecorder) {
+            global.createMessage("Your browser can't record video.", 4_000);
+            return;
+        }
+        if (this.videoRecorder && this.videoRecorder.state === "recording") {
+            global.createMessage("Recording saved!", 4_000);
+            this.videoRecorderCanvas.stop();
+            this.videoRecorder.stop();
+            return;
+        }
+        // a fresh recorder each time: the canvas size may have changed
+        this.videoRecorderCanvas = AdvancedCanvasCapturer();
+        this.videoRecorderCanvas.init();
+        this.videoRecorderCanvas.start();
+        try {
+            this.videoRecorder = new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 60);
+            this.videoRecorder.start();
+            global.createMessage("Recording... press the record key again to stop.", 3_000);
+        } catch (e) {
+            this.videoRecorderCanvas.stop();
+            this.videoRecorder = null;
+            global.createMessage("Couldn't start recording.", 4_000);
         }
     }
     screenshot() {

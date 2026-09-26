@@ -141,7 +141,7 @@ const global = {
     KEY_SPIN_LOCK: 88,
 
     KEY_LEVEL_UP: 221, 
-    KEY_TOKEN: 80,
+    KEY_TOKEN: -1,         // admin testbed reset, unbound (P records now)
     KEY_CLASS_TREE: 84,
     KEY_MAX_STAT: 70,
     KEY_SUICIDE: 79,
@@ -150,7 +150,7 @@ const global = {
     KEY_DEBUG: 76,
 
     KEY_SCREENSHOT: 120,
-    KEY_RECORD: 121,
+    KEY_RECORD: 80,        // P
     KEY_TOGGLE_MAP: 77,
 
     KEY_UPGRADE_ATK: 49,

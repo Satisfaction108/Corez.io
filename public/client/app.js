@@ -6,7 +6,6 @@ import { color as colors } from "./color.js";
 import { gameDraw } from "./gameDraw.js";
 import * as socketStuff from "./socketinit.js";
 import './terrainRenderer.js';
-import { predictor } from "./predict.js";
 import { gameSound } from "./sound.js";
 import * as tutorial from './tutorial.js';
 import * as rankBadges from './account/rankBadges.js';
@@ -4414,34 +4413,6 @@ import * as cosmetics from './account/cosmetics.js';
             instance.render.f = !config.graphical.interpolation ?
                 motion.predictFacing(instance.render.lastf, instance.facing) :
                 instance.render.faceAnim.get(tick, 1 !== rst);
-            // our own tank sits at the predicted position (predict.js)
-            if (instance.id === gui.playerid && global.player.predOn && rst === 1) {
-                // how far ahead of the server-driven spot we draw ourselves
-                global.player.predDX = global.player.predX - instance.render.x;
-                global.player.predDY = global.player.predY - instance.render.y;
-                global.player.predColor = instance.color;
-                global.player.predSrvX = instance.render.x;
-                global.player.predSrvY = instance.render.y;
-                global.player.predSize = instance.size;
-                instance.render.x = global.player.predX;
-                instance.render.y = global.player.predY;
-            } else if (global.player.predOn && instance.render.predShot !== false) {
-                // Our own new shots leave the server-side muzzle, which trails
-                // the predicted tank by the same offset; start them from the
-                // drawn tank and ease onto their real path over 250 ms.
-                if (instance.render.predShot === undefined) {
-                    const ps = global.player.predSize || 0;
-                    const near = ps > 0 && !instance.nameplate && instance.color === global.player.predColor &&
-                        instance.size < ps && Math.hypot(instance.x - global.player.predSrvX, instance.y - global.player.predSrvY) < ps * 4 + 40;
-                    instance.render.predShot = near ? { dx: global.player.predDX || 0, dy: global.player.predDY || 0, t0: performance.now() } : false;
-                }
-                const s = instance.render.predShot;
-                if (s) {
-                    const k = 1 - (performance.now() - s.t0) / 250;
-                    if (k <= 0) instance.render.predShot = false;
-                    else { instance.render.x += s.dx * k; instance.render.y += s.dy * k; }
-                }
-            }
 
             instance.id === gui.playerid &&
                 !global.autoSpin &&
@@ -6816,10 +6787,10 @@ import * as cosmetics from './account/cosmetics.js';
             const outT = age > DUR - 500 ? 1 - (age - (DUR - 500)) / 500 : 1;
             const a = (inT * inT * (3 - 2 * inT)) * Math.max(0, outT);
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
-            const col = t.kind === "override" ? "#c9a8ff" : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
+            const col = t.kind === "override" || t.kind === "late" ? "#c9a8ff" : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
                 : t.kind === "chest" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b" : color.guiwhite;
             const base = t.kind === "streak" ? 16 : 23, size = base * pop;
-            const len = (hudTitleW(t.text, base) + 44) * pop;
+            const len = (Math.max(hudTitleW(t.text, base), t.sub ? hudTextW(t.sub, 12.5) : 0) + 44) * pop;
             const extra = (t.pts || t.sub) ? 22 * pop : 0;
             const ph = size * 1.7 + extra;
             hudPanel(c, cx - len / 2, cy - size * 0.85, len, ph, { alpha: a, fill: "rgba(43,37,51,0.72)", r: HUD.r * pop });
@@ -10372,11 +10343,6 @@ import * as cosmetics from './account/cosmetics.js';
 
         let playerx = global.player.animX.get(tick);
         let playery = global.player.animY.get(tick);
-        // Own-tank prediction (predict.js): the camera and our tank follow
-        // the locally simulated position instead of the round-trip-old one.
-        let pred = null;
-        try { pred = predictor.frame(performance.now()); } catch (e) { pred = null; }
-        if (pred) { playerx = pred.x; playery = pred.y; }
         if (global._specGlide) {
             // Spectate glide owns the camera: the chase below would drag it
             // back toward the corpse every frame and end in a snap. The glide
@@ -10395,10 +10361,6 @@ import * as cosmetics from './account/cosmetics.js';
                 global.player.renderx = util.lerp(global.player.renderx, playerx, k);
                 global.player.rendery = util.lerp(global.player.rendery, playery, k);
             }
-        } else if (pred && !(config.graphical.smoothcamera && config.graphical.shakeProperties.CameraShake.shakeStartTime == -1)) {
-            // already smooth and current: no extra lerp (that would add lag back)
-            global.player.renderx = pred.x;
-            global.player.rendery = pred.y;
         } else if (config.graphical.lerpAnimations) {
             // lerp toward the INTERPOLATED position - chasing raw 30Hz
             global.player.renderx = util.lerp(global.player.renderx, playerx, 0.15, true);

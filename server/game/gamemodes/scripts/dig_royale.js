@@ -25,6 +25,53 @@ const RESPAWN_MIN_MS = 15000;
 const WEAK_DRILL_MS = 30_000;
 const STARTER_GEMS = 75;
 const SPAWN_GRACE_MS = 4000;   // spawn shield holds this long even if you move
+
+// ── First minutes ─────────────────────────────────────────────────────────
+// Every knob for the late-joiner / new-player experience: where a fresh
+// spawn lands, how long bots leave it alone, how crowded the closing circle
+// may get, and the "you joined late" note. (Tester churn, Sep 2026: joined in
+// the final circle, spawned into five bots, died over and over, quit.)
+const FIRST_MINUTES = {
+    // Safe spawn: candidates are the drop pits plus random open ground inside
+    // the safe zone; the one farthest from every threat wins.
+    SPAWN_CLEAR: 1500,            // wanted room to the nearest bot/player at full storm
+    SPAWN_CLEAR_STORM_FRAC: 0.8,  // ...capped at this share of the storm radius
+    SPAWN_EDGE_MARGIN: 420,       // stay this far inside the storm edge
+    SPAWN_EDGE_MARGIN_FRAC: 0.3,  // ...but at most this share of the radius (small final circle)
+    SPAWN_STORM_AHEAD_S: 25,      // ...measured against where the edge will be this many seconds from now
+    SPAWN_MAP_MARGIN: 220,        // and this far inside the map circle
+    SPAWN_SAMPLES: 60,            // random points sampled in the zone each pick (plus pits and mined-out cells)
+    SPAWN_CARVE_GAIN: 100,        // dig a pocket in solid rock only if that buys this much more room
+    SPAWN_CARVE_R: 75,            // landing pocket radius
+    SPAWN_PAD_CLEAR: 140,         // never on (or hugging) a vault / shop / base pad
+    SPAWN_FIGHT_MS: 4000,         // a tank hit this recently is in a fight
+    SPAWN_FIGHT_MULT: 0.55,       // a fight counts as this much closer (distance x mult)
+    SPAWN_BOSS_MULT: 0.5,         // a boss counts as this much closer (distance x mult)
+    SPAWN_BOT_HUMAN_MULT: 0.6,    // a bot dropping in keeps extra room from humans
+    // Bot grace: bots neither target nor shoot a fresh spawn for this long,
+    // unless that player damages a bot first (on top of the spawn shield).
+    BOT_GRACE_MS: 15_000,
+    BOT_GRACE_NEW_MS: 30_000,     // new players
+    NEW_PLAYER_LIVES: 5,          // career lives (guest games / account lives) + this session's, under this = new
+    NEW_TARGET_PENALTY: 350,      // bots rank a new player as if this much farther away
+    NEW_MAX_HUNTERS: 1,           // bots that may aim at / chase one new player at once
+    NEW_RESPAWN_MS: 8000,         // a new player's respawn wait (everyone else: shop.respawnMs, 15 s)
+    // Closing-circle density: fighters allowed = (storm radius / DENSITY_R)^2,
+    // bots fill what the humans leave. No refills past it, extras trimmed.
+    DENSITY_R: 380,
+    DENSITY_MIN_BOTS: 1,          // with a human in the raid, never fewer bots than this
+    DENSITY_TRIM_MS: 2500,        // at most one extra bot removed this often
+    DENSITY_TRIM_AWAY: 900,       // removed bots are this far from every human (off screen) or in the storm
+    DENSITY_FORCE_MS: 15_000,     // extras that never get far enough: after this, the farthest idle one...
+    DENSITY_FORCE_AWAY: 600,      // ...that is at least this far away goes
+    // Storm spawn lock (storm.js): nobody (re)spawns in the last N ms of a cycle
+    STORM_LOCK_MS: 20_000,
+    // Late-join note: a callout on spawn when the raid or the storm cycle is nearly done
+    LATE_RAID_SEC: 600,
+    LATE_STORM_SEC: 100,          // storm cycle seconds left (end of the squeeze + the hold)
+    LATE_NOTE_MS: 7000,
+};
+try { storm.setLockMs(FIRST_MINUTES.STORM_LOCK_MS); } catch { /* */ }
 const KILL_SCORE = 200;
 // Streaks: three kills marks you on every minimap. Each kill past that pays
 // more, and whoever ends you collects a shutdown bounty.
@@ -448,55 +495,134 @@ function openGroundNear(tg, x, y) {
     return { x, y };
 }
 
-function safeSpawnSpot() {
+// Smash every rock touching a circle of radius R at (x, y): a landing pocket.
+// Refuses (and digs nothing) when an emerald is in the way.
+function carveSpawnPocket(tg, x, y, R) {
+    if (!tg || !tg.rocks || !tg.damageRock) return false;
+    const hits = [];
+    for (const rock of tg.rocks.values()) {
+        if (!rock || !(rock.alive || rock.growing)) continue;
+        const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+        const d2 = (rx - x) ** 2 + (ry - y) ** 2;
+        if (d2 > (R + 160) ** 2) continue;
+        let touch = d2 <= R * R;
+        if (!touch && rock.worldPoly) for (const p of rock.worldPoly) { if ((p[0] - x) ** 2 + (p[1] - y) ** 2 <= R * R) { touch = true; break; } }
+        if (touch) hits.push(rock);
+    }
+    if (hits.some(rk => rk.ore === 4)) return false;
+    for (const rock of hits) {
+        try { tg.damageRock(rock, rock.health + 1, rock.worldCx || rock.wx, rock.worldCy || rock.wy, false, null); } catch { /* */ }
+    }
+    return !(tg.pointInRock && tg.pointInRock(x, y));
+}
+
+// Where a fresh body drops in. `self` is the body being placed (left out of
+// the threat list); `forBot` keeps a dropping bot extra far from humans.
+// The drop pits sit on a ring outside the plaza, so once the storm closed
+// past them there used to be no candidate at all and EVERY spawn, bots
+// included, landed on the storm centre: the final circle's pile-up point.
+// Open ground inside the safe zone is sampled as well now, and the spot
+// farthest from every threat (fights and bosses count as closer) wins.
+function safeSpawnSpot(self, forBot) {
+    const FM = FIRST_MINUTES;
     const t = now();
     const st = storm.snapshot(t);
     const holes = pits();
-    const bodies = combatants();
-    const margin = 420;   // well inside the storm edge: a fresh spawn never lands in it
-    const safeR = Math.max(80, (st.r || 0) - margin);
-    for (const [k, until] of pitReservations) {
-        if (until <= t) pitReservations.delete(k);
-    }
+    const bodies = combatants().filter(b => b !== self);
+    // plan for the circle a little ahead (st.n is the radius 250 ms from now),
+    // so a fresh spawn is not in the storm half a minute later either
+    const rNow = st.r || 0;
+    const r = Math.max(0, rNow - Math.max(0, rNow - (st.n || rNow)) * (FM.SPAWN_STORM_AHEAD_S * 4));
+    const margin = Math.min(FM.SPAWN_EDGE_MARGIN, r * FM.SPAWN_EDGE_MARGIN_FRAC);   // a fresh spawn never lands in the storm
+    const safeR = Math.max(80, r - margin);
     const tgS = global.gameManager.terrainGrid;
+    const mapR = ((tgS && tgS.circleRadius) || 2700) - FM.SPAWN_MAP_MARGIN;
     // a pit the wall has grown back over is rock now, not a spawn point
     const open = (h) => !(tgS && tgS.pointInRock && tgS.pointInRock(h.x, h.y));
-    let cands = holes.filter(h => Math.hypot(h.x - st.cx, h.y - st.cy) < safeR && open(h));
-    if (!cands.length) {
-        return openGroundNear(tgS, st.cx || 0, st.cy || 0);
+    const inSafe = (h) => Math.hypot(h.x - st.cx, h.y - st.cy) < safeR;
+    let pads = [];
+    try { pads = [...vault.getVaults(), ...outposts.getOutposts(), ...shop.getShops()].filter(Boolean); } catch { /* */ }
+    const offPad = (h) => !pads.some(p => padGeom.insidePad(p, h.x, h.y, FM.SPAWN_PAD_CLEAR));
+    let cands = holes.filter(h => inSafe(h) && open(h)).map(h => ({ x: h.x, y: h.y, pit: true }));
+    // every mined-out cell (and canyon) inside the zone is open ground
+    if (tgS && tgS.rocks) {
+        for (const rk of tgS.rocks.values()) {
+            if (!rk || rk.alive || rk.growing) continue;
+            const h = { x: rk.worldCx || rk.wx, y: rk.worldCy || rk.wy, pit: false };
+            if (inSafe(h) && Math.hypot(h.x, h.y) < mapR && open(h) && offPad(h)) cands.push(h);
+        }
+    }
+    // random points: open ones are candidates as they are; ones in solid rock
+    // are kept aside in case a pocket has to be dug (below)
+    const rockCands = [];
+    for (let i = 0; i < FM.SPAWN_SAMPLES; i++) {
+        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * safeR;
+        const h = { x: st.cx + Math.cos(a) * d, y: st.cy + Math.sin(a) * d, pit: false };
+        if (!(Math.hypot(h.x, h.y) < mapR) || !offPad(h)) continue;
+        if (open(h)) cands.push(h); else rockCands.push(h);
     }
     // A reservation is a hard no for PIT_RESERVE_MS, by radius: nobody drops
     // into a gap somebody landed in moments ago, even if they already left.
     const live = [];
-    for (const [k, r] of pitReservations) { if (r.until > t) live.push(r); else pitReservations.delete(k); }
+    // A human ignores spots bots reserved: the bots themselves are already
+    // threats above, and in a small circle their reservations covered every
+    // gap, pushing the human onto whatever scrap was left.
+    for (const [k, r] of pitReservations) {
+        if (r.until <= t) { pitReservations.delete(k); continue; }
+        if (!forBot && r.bot) continue;
+        live.push(r);
+    }
     const reservedBy = (h) => live.find(r => (h.x - r.x) ** 2 + (h.y - r.y) ** 2 < PIT_RESERVE_R * PIT_RESERVE_R);
     const free = cands.filter(h => !reservedBy(h));
     if (free.length) cands = free;
-    else cands = [cands.slice().sort((a, b) => reservedBy(a).until - reservedBy(b).until)[0]];
+    else if (cands.length) cands = [cands.slice().sort((a, b) => reservedBy(a).until - reservedBy(b).until)[0]];
     const boss = bosses.current();
-    const nearestBody = (h) => {
+    const fightCut = t - FM.SPAWN_FIGHT_MS;
+    const threats = [];
+    for (const b of bodies) {
+        let mult = Math.max(b._lastDamageAt || 0, b.hitAt || 0) > fightCut ? FM.SPAWN_FIGHT_MULT : 1;
+        if (forBot && b.socket) mult *= FM.SPAWN_BOT_HUMAN_MULT;
+        threats.push({ x: b.x, y: b.y, mult });
+    }
+    for (const rv of live) threats.push({ x: rv.x, y: rv.y, mult: 1 });
+    if (boss) threats.push({ x: boss.x, y: boss.y, mult: FM.SPAWN_BOSS_MULT });
+    const clearOf = (h) => {
         let m = Infinity;
-        for (const b of bodies) {
-            const dx = h.x - b.x, dy = h.y - b.y;
-            const d = dx * dx + dy * dy;
+        for (const q of threats) {
+            const d = Math.hypot(h.x - q.x, h.y - q.y) * q.mult;
             if (d < m) m = d;
         }
-        for (const r of live) {
-            const d = (h.x - r.x) ** 2 + (h.y - r.y) ** 2;
-            if (d < m) m = d;
-        }
-        if (boss) {
-            const d = (h.x - boss.x) ** 2 + (h.y - boss.y) ** 2;
-            if (d < m) m = d;
-        }
-        return Math.sqrt(m);
+        return m;
     };
-    const scored = cands.map(h => ({ h, m: nearestBody(h) })).sort((a, b) => b.m - a.m);
-    // the farthest gap wins; only near-ties (within 5%) are shuffled
-    const best = scored[0].m;
-    const top = scored.filter(s => s.m >= best * 0.95);
-    const pick = top[(Math.random() * top.length) | 0].h;
-    pitReservations.set(Math.round(pick.x) + ":" + Math.round(pick.y), { x: pick.x, y: pick.y, until: t + PIT_RESERVE_MS });
+    const scored = cands.map(h => ({ h, m: clearOf(h) })).sort((a, b) => b.m - a.m);
+    // Clear enough (1500 at full storm, less as it closes): a drop pit if one
+    // qualifies (they are the map's own drop points), else open ground, a
+    // random one of the three roomiest so drops spread out. Nothing clear
+    // enough (the final circle): the farthest spot, near-ties shuffled.
+    const want = Math.min(FM.SPAWN_CLEAR, r * FM.SPAWN_CLEAR_STORM_FRAC);
+    let pick = null;
+    if (scored.length) {
+        let top = scored.filter(s => s.h.pit && s.m >= want).slice(0, 3);
+        if (!top.length) top = scored.filter(s => s.m >= want).slice(0, 3);
+        // (clearance can be negative next to a boss, so the tie band is |best|-based)
+        if (!top.length) top = scored.filter(s => s.m >= scored[0].m - Math.abs(scored[0].m) * 0.05);
+        if (!top.length) top = [scored[0]];
+        pick = top[(Math.random() * top.length) | 0].h;
+    }
+    // A closing circle is mostly solid rock: when no open spot is clear
+    // enough and a spot inside the rock is clearly roomier, dig a landing
+    // pocket there (never through an emerald), like the drop pits.
+    const bestOpen = scored.length ? scored[0].m : -Infinity;
+    if (bestOpen < want && rockCands.length && tgS) {
+        const rs = rockCands.filter(h => !reservedBy(h)).map(h => ({ h, m: clearOf(h) })).sort((a, b) => b.m - a.m);
+        for (const cand of rs.slice(0, 3)) {
+            if (!(cand.m > bestOpen + FM.SPAWN_CARVE_GAIN)) break;
+            if (carveSpawnPocket(tgS, cand.h.x, cand.h.y, FM.SPAWN_CARVE_R)) { pick = cand.h; pick.carved = true; break; }
+        }
+    }
+    if (!pick) return openGroundNear(tgS, st.cx || 0, st.cy || 0);
+    if (process.env.SPAWN_DEBUG) console.log('[SPAWN]', forBot ? 'bot' : 'human', 'r', Math.round(rNow), '->', Math.round(r), 'safeR', Math.round(safeR), 'cands', cands.length, 'rock', rockCands.length, 'pits', cands.filter(c => c.pit).length, 'threats', threats.length, 'want', Math.round(want), 'bestOpen', Math.round(bestOpen), 'pick', Math.round(clearOf(pick)), pick.carved ? 'CARVED' : '', 'at', Math.round(pick.x), Math.round(pick.y), 'bots', bodies.filter(b => b.isBot).map(b => Math.round(Math.hypot(b.x - pick.x, b.y - pick.y))).join(','));
+    pitReservations.set(Math.round(pick.x) + ":" + Math.round(pick.y), { x: pick.x, y: pick.y, until: t + PIT_RESERVE_MS, bot: !!forBot });
     return { x: pick.x, y: pick.y };
 }
 
@@ -570,6 +696,14 @@ function freshRaidBody(body) {
     body.royaleAlive = true;
     body.royaleBornAt = now();     // a kill inside 15 s of this pays nothing (ranked)
     body.deathCause = "";
+    // bot grace (controllers.js sense / canInitiateFight / auto turrets):
+    // bots leave a fresh spawn alone until this, or until it damages a bot
+    // (game/index.js clears it); new players get longer and softer focus
+    if (body.socket) {
+        const fresh = isNewPlayer(body.socket);
+        body.botNewbie = fresh;
+        body.botGraceUntil = now() + (fresh ? FIRST_MINUTES.BOT_GRACE_NEW_MS : FIRST_MINUTES.BOT_GRACE_MS);
+    }
     const extra = raidMods.num('extraSkill', 0);
     if (extra > 0 && !body._modSkillGiven) {
         body._modSkillGiven = true;
@@ -579,10 +713,144 @@ function freshRaidBody(body) {
     try { if (body.shield) body.shield.amount = body.shield.max; } catch { /* */ }
 }
 
+// ── new players ───────────────────────────────────────────────────────────
+// Lives played before this session: guest games (guests table) or account
+// lives (user_stats), read once per socket. Unknown identity -> 0, asked again.
+function careerLives(socket) {
+    if (!socket) return 0;
+    if (socket._careerLives !== undefined) return socket._careerLives;
+    let n = null;
+    try {
+        const d = require('../../../accounts/db').handle();
+        if (d) {
+            if (socket.account && socket.account.id) {
+                const row = d.get('SELECT lives FROM user_stats WHERE user_id = ?', socket.account.id);
+                n = row ? (row.lives | 0) : 0;
+            } else if (socket.guestId) {
+                const row = d.get('SELECT games FROM guests WHERE guest_id = ?', socket.guestId);
+                n = row ? (row.games | 0) : 0;
+            }
+        }
+    } catch { n = null; }
+    if (n === null) return 0;
+    socket._careerLives = n;
+    return n;
+}
+function isNewPlayer(socket) {
+    if (!socket) return false;
+    return careerLives(socket) + (socket._royaleLives | 0) < FIRST_MINUTES.NEW_PLAYER_LIVES;
+}
+
+// Humans taking part: alive, or dead and on their way back. Counting only
+// live bodies let a bot take a dead player's slot, so every death grew the
+// bot count by one for the rest of the cycle.
+function humansInRaid() {
+    let n = 0;
+    for (const c of connectedClients()) {
+        const b = c.player && c.player.body;
+        if ((b && b.isPlayer && !b.isDead?.() && !b.isGhost) || (c._royaleLives | 0) > 0) n++;
+    }
+    return n;
+}
+
+// Bots the raid wants right now: fill up to FILL_CAP with the humans, but a
+// closing storm only holds (r / DENSITY_R)^2 fighters in all.
+function botCapNow() {
+    const FM = FIRST_MINUTES;
+    const hs = humansInRaid();
+    let cap = FILL_CAP - hs;
+    try {
+        const st = storm.snapshot(now());
+        if (st && st.a) {
+            const total = Math.floor(((st.r || 0) / FM.DENSITY_R) ** 2);
+            cap = Math.min(cap, Math.max(hs ? FM.DENSITY_MIN_BOTS : 0, total - hs));
+        }
+    } catch { /* */ }
+    return Math.max(0, cap);
+}
+
+function liveBots() {
+    return (global.gameManager.gameHandler?.bots || []).filter(b => b && !b.isDead() && !b.isGhost);
+}
+
+// A bot leaving quietly: nothing drops, no feed line, no credit.
+function despawnBot(bot) {
+    try {
+        bot.carriedGems = 0;
+        try { gems.updateSatchel(bot); } catch { /* */ }
+        bot.invuln = false; bot.godmode = false; bot.passive = false;
+        bot.deathCause = "despawn";
+        bot.dontSendDeathMessage = true;
+        bot.kill();
+    } catch { /* */ }
+}
+
+// Too many bots for the circle: one leaves every DENSITY_TRIM_MS. Only one
+// that is out of every fight and off every human's screen (or out in the
+// storm); if none ever qualifies, after DENSITY_FORCE_MS the farthest idle
+// one that is at least DENSITY_FORCE_AWAY away.
+let lastTrimAt = 0, overCapSince = 0;
+function trimBots(t) {
+    const FM = FIRST_MINUTES;
+    const bots = liveBots();
+    const cap = botCapNow();
+    if (bots.length <= cap) { overCapSince = 0; return; }
+    if (!overCapSince) overCapSince = t;
+    if (t - lastTrimAt < FM.DENSITY_TRIM_MS) return;
+    const hs = humans();
+    let best = null, bestScore = -Infinity, far = null, farD = -1;
+    for (const b of bots) {
+        if (t - Math.max(b._lastDamageAt || 0, b.hitAt || 0) < 5000) continue;   // mid-fight
+        if (b._fightingPlayerId) continue;
+        let d = Infinity;
+        for (const h of hs) { const dd = Math.hypot(h.x - b.x, h.y - b.y); if (dd < d) d = dd; }
+        let lost = false;
+        try { lost = storm.inStorm(b.x, b.y); } catch { /* */ }
+        if (d >= FM.DENSITY_TRIM_AWAY || lost) {
+            const score = (lost ? 1e6 : 0) + d;
+            if (score > bestScore) { bestScore = score; best = b; }
+        } else if (d > farD) { farD = d; far = b; }
+    }
+    if (!best && far && farD >= FM.DENSITY_FORCE_AWAY && t - overCapSince >= FM.DENSITY_FORCE_MS) best = far;
+    if (!best) return;
+    lastTrimAt = t;
+    despawnBot(best);
+}
+
+// "You joined late": one callout per raid end / storm cycle per player.
+function fmtClock(sec) {
+    sec = Math.max(0, Math.ceil(sec));
+    return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+}
+function lateJoinNote(body) {
+    const FM = FIRST_MINUTES;
+    const sock = body && body.socket;
+    if (!sock) return;
+    const t = now();
+    const raidLeft = Math.max(0, Math.ceil((raidEndsAt - t) / 1000));
+    let st = null;
+    try { st = storm.snapshot(t); } catch { /* */ }
+    const cycleLeft = st && st.a ? (st.hold ? st.left : st.left + Math.round(storm.holdMs() / 1000)) : Infinity;
+    let key, title, sub;
+    if (raidLeft > 0 && raidLeft <= FM.LATE_RAID_SEC) {
+        key = "raid:" + raidId;
+        title = "Final minutes of this raid";
+        sub = "A fresh raid starts in " + fmtClock(raidLeft + (RAID_END_BEAT_MS + RAID_END_WAIT_MS) / 1000) + ". Bank what you can!";
+    } else if (cycleLeft <= FM.LATE_STORM_SEC) {
+        key = "storm:" + raidId + ":" + (st.c | 0);
+        title = "The storm's almost shut";
+        sub = "It opens back up in " + fmtClock(cycleLeft) + ". Stay inside and bank what you can.";
+    } else return;
+    if (sock._lateNoteKey === key) return;
+    sock._lateNoteKey = key;
+    try { sock.talk('KC', 'late', title, 0, sub, FM.LATE_NOTE_MS); } catch { /* */ }
+    try { body.sendMessage(title + ". " + sub); } catch { /* */ }
+}
+
 function spawnRaidBot() {
     const handler = global.gameManager.gameHandler;
     if (!handler) return;
-    const hole = safeSpawnSpot();
+    const hole = safeSpawnSpot(null, true);
     const team = getRandomTeam();
     handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team);
     const bot = handler.bots[handler.bots.length - 1];
@@ -611,9 +879,11 @@ function fillBots() {
         return;
     }
     idleSince = 0;
+    if (raidEnding) return;
+    trimBots(t);
     if (t - lastFillAt < 400) return;
-    if (stormLocked() || raidEnding) return;
-    if (combatants().length >= FILL_CAP) return;
+    if (stormLocked()) return;
+    if (liveBots().length >= botCapNow()) return;
     lastFillAt = t;
     spawnRaidBot();
 }
@@ -656,7 +926,8 @@ function onCombatantDead(body) {
         ? (body.socket.gemDeathCarried | 0) : (s ? (s.carried | 0) : 0);
     const victimStreak = s ? (s.streak | 0) : 0;
     if (s) { s.alive = false; s.carried = 0; s.streak = 0; }
-    const raidEndDeath = body.deathCause === "raidend";
+    // a density trim (despawnBot) is as quiet as the raid-end mass death
+    const raidEndDeath = body.deathCause === "raidend" || body.deathCause === "despawn";
     const envKill = raidEndDeath || body.deathCause === "storm" || body.deathCause === "rock" || body.deathCause === "base";
     const stormKill = body.deathCause === "storm";
     const rockKill = body.deathCause === "rock";
@@ -727,7 +998,9 @@ function onCombatantDead(body) {
         const dl = shop.onDeath(body);
         body.socket.raidDeathStreak = victimStreak;
         body.socket.raidDeathDrillLost = dl && dl.drillLost ? 1 : 0;
-        body.socket.royaleRespawnAt = now() + (raidEndDeath ? RAID_END_WAIT_MS : shop.respawnMs(body));
+        let wait = raidEndDeath ? RAID_END_WAIT_MS : shop.respawnMs(body);
+        if (!raidEndDeath && body.botNewbie) wait = Math.min(wait, FIRST_MINUTES.NEW_RESPAWN_MS);
+        body.socket.royaleRespawnAt = now() + wait;
         body.socket.royaleNeedClick = false;
         body.socket.status.readyToSpawn = true;
     }
@@ -873,7 +1146,7 @@ function onHumanJoin(body) {
         }
     }
     if (!homeSpawn) {
-        const hole = safeSpawnSpot();
+        const hole = safeSpawnSpot(body);
         moveTo(body, hole.x + (Math.random() - 0.5) * 30, hole.y + (Math.random() - 0.5) * 30);
     }
     // never leave a fresh body inside rock: the terrain loop would crush or
@@ -909,6 +1182,9 @@ function onHumanJoin(body) {
             } catch { /* */ }
         }
         try { shop.talkState(body.socket); } catch { /* */ }
+        // this life counts toward "new player" from the next spawn on
+        if (!resuming) body.socket._royaleLives = (body.socket._royaleLives | 0) + 1;
+        try { lateJoinNote(body); } catch { /* */ }
         // the resume itself waits for sockets.initalizePlayer to finish the
         // level-45 fill, or those level-up points would land on top of the
         // restored build (applyPendingResume)
@@ -960,6 +1236,7 @@ function saveResume(socket, body) {
             gemDeposited: socket.gemDeposited || 0,
             raidDeathStreak: socket.raidDeathStreak || 0, royaleRespawnAt: socket.royaleRespawnAt || 0,
             lastRaidDeathAt: socket.lastRaidDeathAt || 0,
+            _royaleLives: socket._royaleLives || 0, _lateNoteKey: socket._lateNoteKey || "",
         },
         carried: 0,
     };
@@ -974,6 +1251,9 @@ function saveResume(socket, body) {
         // moved or shot must not get a fresh one by reloading
         snap.shielded = !!body.invuln;
         snap.graceLeft = Math.max(0, (body.spawnGraceUntil || 0) - t);
+        // ...and so is the bot grace: a reload never starts a fresh one
+        snap.botGraceLeft = Math.max(0, (body.botGraceUntil || 0) - t);
+        snap.botNewbie = !!body.botNewbie;
         if (hitAgo > RESUME_SAFE_MS) {
             snap.carried = (body.carriedGems | 0);
             body.carriedGems = 0;     // kept for the resume, so it must not also drop
@@ -1050,6 +1330,8 @@ function applyResume(body, snap) {
             // keeps the old life's shield state (and what was left of its grace)
             body.invuln = !!snap.shielded;
             body.spawnGraceUntil = snap.shielded ? now() + Math.min(SPAWN_GRACE_MS, snap.graceLeft | 0) : 0;
+            body.botGraceUntil = (snap.botGraceLeft | 0) > 0 ? now() + (snap.botGraceLeft | 0) : 0;
+            body.botNewbie = !!snap.botNewbie;
             body.carriedGems = snap.carried | 0;
             try { dustHooks.restore(body, snap.dustCarried | 0); } catch { /* */ }
             try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
@@ -1372,7 +1654,7 @@ function startRaid(first) {
             }
         } catch { /* */ }
         for (const body of combatants()) {
-            const hole = safeSpawnSpot();
+            const hole = safeSpawnSpot(body, !body.socket);
             moveTo(body, hole.x, hole.y);
             respecForNewRaid(body);
             freshRaidBody(body);
@@ -1635,6 +1917,8 @@ module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
     lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, baseReserved,
     onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout, QUESTS,
+    FIRST_MINUTES, isNewPlayer,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
+    debugRaidLeft: (sec) => { if (!raidEnding && raidResults === null) raidEndsAt = now() + Math.max(1, sec | 0) * 1000; },
 };

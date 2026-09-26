@@ -1205,6 +1205,9 @@ class gameHandler {
             if (attacker) {
                 o._lastDamageSource = attacker;
                 o._lastDamageAt = Date.now();
+                // a fresh spawn that shoots a bot has ended its own bot grace
+                // (dig_royale FIRST_MINUTES; read in controllers.js)
+                if (attacker.isPlayer && attacker.botGraceUntil) attacker.botGraceUntil = 0;
                 // Tell the team. Nearby teammates rally to this marker, which
                 // is how a skirmish grows into a fight instead of staying a
                 // series of unrelated 1v1s.
