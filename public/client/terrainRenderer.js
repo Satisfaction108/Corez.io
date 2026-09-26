@@ -74,7 +74,23 @@ class TerrainRenderer {
     };
     
     
-    // flat gem tones (see addGem): base, the one shade, the one glint
+    // The gem drawing, shared with app.js so loose pickups are drawn by the
+    // very same code as the ore gems: unit-radius paths + the painter.
+    static paintGem = paintGem;
+    static GEM_RIM  = GEM_RIM;
+    static _gemUnit = null;
+    static gemUnit() {
+        if (!TerrainRenderer._gemUnit) {
+            const g = newGemPaths();
+            addGem(g, 0, 0, 1, 0);
+            TerrainRenderer._gemUnit = g;
+        }
+        return TerrainRenderer._gemUnit;
+    }
+    // gold loot gem (no ore tier), same structure as ORE_PAL
+    static GEM_LOOT_PAL = { base: 'rgb(236,178,58)', shade: 'rgb(196,132,28)', table: 'rgb(250,214,130)',
+                            core: 'rgb(255,248,226)', rim: 'rgb(128,84,14)' };
+    // gem tones per ore tier (see paintGem)
     static ORE_PAL = {
         1: { base: 'rgb(226,122,52)', shade: 'rgb(178,84,30)',  table: 'rgb(250,180,118)',
              core: 'rgb(255,240,222)', rim: 'rgb(122,58,20)' },

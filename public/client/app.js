@@ -3925,49 +3925,35 @@ import * as cosmetics from './account/cosmetics.js';
         return p;
     })();
 
-    // The cut's tone facets (mirror addGem in terrainRenderer): the
-    // lower-right pavilion, the table and the core, as unit paths.
-    const GEM_SHADE_PATH = (() => {
-        const p = new Path2D();
-        p.moveTo(0, -0.38); p.lineTo(1, -0.38); p.lineTo(0, 0.95);
-        p.closePath();
-        return p;
-    })();
-    const gemCutCopy = (k, ox, oy) => {
-        const p = new Path2D();
-        GEM_CUT.forEach((pt, i) => {
-            const x = pt[0] * k + ox, y = pt[1] * k + oy;
-            if (i === 0) p.moveTo(x, y); else p.lineTo(x, y);
-        });
-        p.closePath();
-        return p;
+    // Loose gems are drawn by the SAME code as the ore gems in the rocks
+    // (TerrainRenderer.gemUnit/paintGem): same cut, tones, rim weight and
+    // live vector edges, so a gem looks identical in the wall and on the
+    // floor. Class -> ore tier palette.
+    const GEM_TIER = {
+        gemPickupCopper: 1, gemPickupVein: 2, gemPickupShard: 3, gemPickupShardCore: 3,
+        gemPickupEmerald: 4, gemPickupEmeraldCore: 4,
     };
-    const GEM_TABLE_PATH = gemCutCopy(0.52, 0, -0.12);
-    const GEM_CORE_PATH = gemCutCopy(0.2, -0.22, -0.3);
-    // Tones per class: the SAME as the ore gems in the rocks
-    // (TerrainRenderer.ORE_PAL, tiers 1-4) so a gem looks identical in the
-    // wall and on the floor. `rim` width is in cut units.
-    const GEM_FLAT = (() => {
-        const t1 = { base: "rgb(226,122,52)", shade: "rgb(178,84,30)",  table: "rgb(250,180,118)", core: "rgb(255,240,222)", rim: "rgb(122,58,20)",  rimW: 0.1 };
-        const t2 = { base: "rgb(60,136,240)", shade: "rgb(36,90,200)",  table: "rgb(136,190,255)", core: "rgb(232,244,255)", rim: "rgb(20,56,138)",  rimW: 0.09 };
-        const t3 = { base: "rgb(190,80,226)", shade: "rgb(136,44,180)", table: "rgb(230,154,250)", core: "rgb(252,236,255)", rim: "rgb(86,24,116)",  rimW: 0.07 };
-        const t4 = { base: "rgb(36,200,112)", shade: "rgb(16,146,80)",  table: "rgb(122,242,176)", core: "rgb(234,255,244)", rim: "rgb(8,94,52)",    rimW: 0.07 };
-        return {
-            gemPickupCopper: t1, gemPickupVein: t2,
-            gemPickupShard: t3, gemPickupShardCore: t3,
-            gemPickupEmerald: t4, gemPickupEmeraldCore: t4,
-            gemPickupLoot: { base: "rgb(236,178,58)", shade: "rgb(196,132,28)", table: "rgb(250,214,130)", core: "rgb(255,248,226)", rim: "rgb(128,84,14)", rimW: 0.14 },
-        };
-    })();
+    function gemPal(TR, cls) {
+        return cls === "gemPickupLoot" ? TR.GEM_LOOT_PAL : TR.ORE_PAL[GEM_TIER[cls] || 2];
+    }
+    // the ore gems' rim in world units (a fixed tile-space width there)
+    function gemRimWorld() {
+        const tr = window.terrainRenderer;
+        const cols = tr && tr._cols;
+        if (!cols) return 0;
+        return tr.constructor.GEM_RIM * (Math.min(cols, 120) / 50) * (global.gameWidth / cols);
+    }
+    // the ore gems' fixed small tilt (their layout uses +-0.45 rad); a loose
+    // gem takes a stable one from its id instead of spinning with facing
+    function gemTilt(instance) {
+        const id = (instance && instance.id) | 0;
+        return (((id * 0.6180339) % 1) - 0.5) * 0.7;
+    }
 
-    // Per-class art. body / facet / glow(+radius+alpha) are the gemPickup* +
-    // gemFacet* + GLOW values from digwars.js, so the baked gems carry the
-    // exact same palette AND halo as the loose pickups the full entity
-    // pipeline draws elsewhere. The rim is gameDraw.getColorDark(body) - the
-    // same darkened tint the pipeline gives every real pickup, theme-aware.
-    // `size` is the treasury tier's SIZE for that class: the real pipeline's
-    // outline is a fixed world-space width (borderChunk * strokeWidth, not
-    // proportional to the gem), so the bake divides it by each class's size.
+    // Per-class halo: body / glow(+radius+alpha) are the gemPickup* + GLOW
+    // values from digwars.js. `size` is the class's SIZE (the tutorial card
+    // sizes its gem from it). `facet` is unused since the stone is drawn by
+    // TerrainRenderer.paintGem.
     const GEM_SPRITE_PAL = {
         gemPickupCopper:      { size: 16, body: "#c96f2e", facet: "#eda766", glow: "#e8a05c", glowR: 0.8,  glowA: 0.3 },
         gemPickupVein:        { size: 20, body: "#3b7ce0", facet: "#7fb1f2", glow: "#6fa3f2", glowR: 1,    glowA: 0.35 },
@@ -3978,9 +3964,8 @@ import * as cosmetics from './account/cosmetics.js';
         gemPickupLoot:        { size: 7,  body: "#e0a63b", facet: "#f2cf7f", glow: "#f5cf6e", glowR: 1.2,  glowA: 0.4 },
     };
 
-    // Baked sprites. Every gem pickup is pre-rendered once per class onto a
-    // hidden canvas: the soft glow halo (shadowBlur under a borderless body
-    // fill at the glow's alpha), then the cut stone from GEM_FLAT.
+    // Baked glow halos, one per class (shadowBlur under a borderless body
+    // fill at the glow's alpha); the stone itself is drawn live on top.
     const GEM_SPRITES = {};
     const GEM_SPRITE_HALF = 6.0;    // unit span covered (biggest glow ~2.4)
     const GEM_SPRITE_SCALE = 64;    // px per world unit inside the sprite
@@ -3996,8 +3981,6 @@ import * as cosmetics from './account/cosmetics.js';
         const c = canvas.getContext("2d");
         c.translate(canvas.width / 2, canvas.height / 2);
         c.scale(GEM_SPRITE_SCALE, GEM_SPRITE_SCALE);
-
-        // glow pass: borderless body fill at the glow alpha casts the halo
         c.globalAlpha = pal.glowA;
         c.shadowColor = glow;
         c.shadowBlur = pal.glowR * GEM_SPRITE_SCALE;
@@ -4005,53 +3988,41 @@ import * as cosmetics from './account/cosmetics.js';
         c.shadowOffsetY = 0;
         c.fillStyle = body;
         c.fill(GEM_CUT_PATH);
-        c.globalAlpha = 1;
-        c.shadowBlur = 0;
-
-        // body: the same cut stone as the ore gems in the rocks
-        // (terrainRenderer addGem/paintGem): flat base, darker pavilion,
-        // light table, bright core, thin same-hue rim on top
-        const tone = GEM_FLAT[cls] || GEM_FLAT.gemPickupVein;
-        c.fillStyle = tone.base;
-        c.fill(GEM_CUT_PATH);
-        c.fillStyle = tone.shade;
-        c.fill(GEM_SHADE_PATH);
-        c.fillStyle = tone.table;
-        c.fill(GEM_TABLE_PATH);
-        c.fillStyle = tone.core;
-        c.fill(GEM_CORE_PATH);
-        c.lineJoin = "round";
-        c.lineWidth = tone.rimW;
-        c.strokeStyle = tone.rim;
-        c.stroke(GEM_CUT_PATH);
 
         s = { canvas, half: GEM_SPRITE_HALF };
         GEM_SPRITES[cls] = s;
         return s;
     }
 
-    // Draw a contained gem from its cached sprite: one rotated drawImage, no
-    // per-frame shadowBlur or allocation. `isize` is the gem's render size
-    // (world units); the real pipeline maps the unit cut to `isize * ratio`
-    // pixels, so the sprite is blitted at exactly that scale.
-    function drawContainedGem(c, x, y, ratio, alpha, isize, facing, cls) {
-        const spr = gemSprite(cls);
+    // Draw a loose gem: its baked halo, then the stone with the ore gems'
+    // own painter. `isize` is the gem's render size (world units): the unit
+    // cut maps to `isize * ratio` pixels. `rimPx` overrides the rim width.
+    function drawContainedGem(c, x, y, ratio, alpha, isize, tilt, cls, rimPx) {
         const k = isize * ratio;
-        if (k < 0.1) return; // sub-pixel (the real pipeline skips below 0.1 too)
+        if (k < 0.1) return; // sub-pixel
+        const TR = window.terrainRenderer && window.terrainRenderer.constructor;
+        const spr = gemSprite(cls);
         c.save();
         c.translate(x, y);
-        c.rotate(facing);
+        c.rotate(tilt);
         c.globalAlpha = alpha;
         const h = spr.half * k;
         c.drawImage(spr.canvas, -h, -h, h * 2, h * 2);
+        if (TR && TR.paintGem) {
+            const rw = rimPx !== undefined ? rimPx : gemRimWorld() * ratio;
+            c.scale(k, k);
+            c.lineJoin = "round";
+            c.lineCap = "round";
+            TR.paintGem(c, TR.gemUnit(), gemPal(TR, cls), (rw || k * 0.1) / k);
+        }
         c.restore();
     }
-    // Tutorial ore-tier card: same baked sprite the world gems use, sized in
+    // Tutorial ore-tier card: the same drawing the world gems use, sized in
     // pixels so the legend cannot drift into a mockup/icon version.
     window.dwDrawGem = function (c, x, y, bodyPx, alpha, facing, cls) {
         const pal = GEM_SPRITE_PAL[cls] || GEM_SPRITE_PAL.gemPickupVein;
         const isize = pal.size || 16;
-        drawContainedGem(c, x, y, bodyPx / isize, alpha, isize, facing, cls);
+        drawContainedGem(c, x, y, bodyPx / isize, alpha, isize, facing, cls, bodyPx * 0.1);
     };
 
     // ── Baked radial halos: one gradient per colour, drawn as an image ──
@@ -4480,7 +4451,7 @@ import * as cosmetics from './account/cosmetics.js';
                 let ga = instance.alpha * alpha * instance.render.status.getFade();
                 // expiring gems blink like any invulnerable entity would
                 if (instance.invuln && 100 > (Date.now() - instance.invuln) % 200) ga *= 0.55;
-                if (ga > 0.01) drawContainedGem(ctx[1], x, y, ratio, ga, isize, instance.render.f, _gcls);
+                if (ga > 0.01) drawContainedGem(ctx[1], x, y, ratio, ga, isize, gemTilt(instance), _gcls);
                 continue;
             }
             const _chest = isLootChestEntity(instance);
