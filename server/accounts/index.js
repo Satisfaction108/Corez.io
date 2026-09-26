@@ -42,6 +42,7 @@ const announce = require('./discord/announce');
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const HARD_DELETE_AFTER_MS = 30 * DAY;
+const IP_KEEP_MS = 90 * DAY;
 
 const router = http.createRouter();
 require('./routes/auth').register(router);
@@ -63,7 +64,7 @@ function enabled() {
 }
 
 // Expired sessions, holds and reset tokens; accounts 30 days past soft
-// deletion (cascades to their rows everywhere else).
+// deletion (cascades to their rows everywhere else); audit-log IPs past 90 days.
 function sweep(now = Date.now()) {
     const d = db.handle();
     if (!d || state.role !== 'main') return null;
@@ -73,6 +74,8 @@ function sweep(now = Date.now()) {
             holds: d.run('DELETE FROM username_holds WHERE expires_at <= ?', now).changes,
             resets: d.run('DELETE FROM password_resets WHERE expires_at <= ? OR (used_at IS NOT NULL AND used_at <= ?)', now, now - DAY).changes,
             users: d.run('DELETE FROM users WHERE deleted_at IS NOT NULL AND deleted_at <= ?', now - HARD_DELETE_AFTER_MS).changes,
+            // the privacy policy promises IPs in security records go after 90 days
+            auditIps: d.run('UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND at <= ?', now - IP_KEEP_MS).changes,
         }));
         d.exec('PRAGMA optimize');
         return r;

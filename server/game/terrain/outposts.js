@@ -69,12 +69,30 @@ function releaseOwner(key) {
     }
 }
 
+// Move every site owned by `from` to the identity `to`, leaving the banner,
+// its colour and ownerId alone. A dropped player whose raid is saved for
+// resume keeps their base under a reservation key ("r:<n>", dig_royale
+// disconnectCleanup) until they reconnect (claimResume hands it to the new
+// socket, onHumanJoin rebinds it to the new body) or the resume lapses.
+function rekeyOwner(from, to) {
+    if (!from || !to || from === to) return 0;
+    let n = 0;
+    for (const site of getOutposts()) {
+        if (site.ownerKey !== from) continue;
+        site.ownerKey = to;
+        n++;
+    }
+    return n;
+}
+
 // Point every site owned by `key` at the owner's fresh body.
 function rebindOwner(key, body) {
     if (!key || !body) return;
     for (const site of getOutposts()) {
         if (site.ownerKey !== key) continue;
         site.ownerId = body.id;
+        // a respawn or resume gets a new team id: ownedBy(team) reads this
+        if (ownerBases() && site.team) site.team = body.team;
         if (site.banner && !site.banner.isDead?.()) {
             try {
                 site.banner.team = body.team;
@@ -288,7 +306,14 @@ function tick(players, dtMs) {
                             global.gameManager.socketManager.clients) || [];
                         awaitRespawn = clients.some(c => c && c.id === sid);
                     }
-                    if (!awaitRespawn) {
+                    // a dropped owner's raid saved for resume: the base waits
+                    // for them exactly as it waits for a dead owner's respawn,
+                    // and goes neutral once the resume window lapses
+                    if (site.ownerKey && site.ownerKey.startsWith("r:")) {
+                        let reserved = false;
+                        try { reserved = require('../gamemodes/scripts/dig_royale.js').baseReserved(site.ownerKey); } catch { /* */ }
+                        if (!reserved) releaseOwner(site.ownerKey);
+                    } else if (!awaitRespawn) {
                         site.ownerId = 0;
                         site.ownerKey = null;
                     }
@@ -393,7 +418,7 @@ function tick(players, dtMs) {
         if (socket) {
             socket.gemBanked = (socket.gemBanked || 0) + chunk * EFFICIENCY;
             body.bankedGems = socket.gemBanked;
-            milestones.checkBanked(body);
+            milestones.checkBanked(body, chunk * EFFICIENCY);
             war.add(body.team, chunk * EFFICIENCY);
             if (Config.dig_royale) {
                 try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, chunk * EFFICIENCY); } catch { /* */ }
@@ -462,7 +487,7 @@ function requestCancel(socket) {
 
 module.exports = {
     tick, snapshot, stateSnapshot, ownedBy, getOutposts,
-    requestDeposit, requestCancel, EFFICIENCY, ownerKeyFor, rebindOwner, releaseOwner,
+    requestDeposit, requestCancel, EFFICIENCY, ownerKeyFor, rebindOwner, releaseOwner, rekeyOwner,
     // Tutorial: put one site back to neutral (optionally locked), fresh banner.
     resetSite(id, locked = false) {
         const site = getOutposts().find(s => s.id === id);

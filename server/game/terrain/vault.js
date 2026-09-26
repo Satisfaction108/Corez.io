@@ -340,7 +340,7 @@ function tick(actors, dtMs) {
         if (body.isBot) body.botGemsBanked = (body.botGemsBanked || 0) + credit;
         setBanked(body, banked + credit);
         war.add(body.team, credit);
-        milestones.checkBanked(body);
+        milestones.checkBanked(body, credit);
         if (Config.dig_royale) {
             try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, credit); } catch { /* */ }
         }

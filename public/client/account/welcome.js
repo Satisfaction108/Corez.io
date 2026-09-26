@@ -273,7 +273,10 @@ function signupForm() {
     const pp = passwordPair({ username: () => uf.value });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
     const go = submitBtn('Make it');
-    const form = h('form', { class: 'wl-form', novalidate: true }, uf.el, pp.els, alert, go);
+    const legal = h('div', { class: 'wl-foot wl-note' }, 'By making an account you agree to the ',
+        h('a', { href: '/terms.html', target: '_blank', rel: 'noopener', text: 'Terms' }), ' and ',
+        h('a', { href: '/privacy.html', target: '_blank', rel: 'noopener', text: 'Privacy Policy' }), '.');
+    const form = h('form', { class: 'wl-form', novalidate: true }, uf.el, pp.els, alert, go, legal);
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (stopAtFirstProblem(alert, uf, pp)) return;

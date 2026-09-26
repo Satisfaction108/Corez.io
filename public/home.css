@@ -2489,6 +2489,8 @@ html[data-acct="new"] #accountChip, html.dw-wl-open #accountChip { visibility: h
 .wl-tab-pill { display: none; }
 .wl-foot { margin-top: 2px; text-align: center; }
 .wl-note { color: var(--text2); font: 500 11.5px/1.45 Ubuntu; }
+.wl-note a, .wl-legal a { color: var(--text2); text-decoration: underline; text-underline-offset: 2px; }
+.wl-legal { margin-top: 14px; text-align: center; color: var(--text2); font: 500 11.5px/1.45 Ubuntu; opacity: .8; }
 .wl-note-left { text-align: left; }
 .wl-addpw { align-self: flex-start; }
 .wl-addpw[hidden], .wl-optional[hidden] { display: none; }

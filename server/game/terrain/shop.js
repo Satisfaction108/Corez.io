@@ -591,7 +591,7 @@ function useKit(socket, slot, tx, ty, itemId) {
             gems.setBanked(body, bankedOf(socket) + credit);
             try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
             if (Config.dig_royale) try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, credit); } catch { /* */ }
-            try { require('./milestones.js').checkBanked(body); } catch { /* */ }
+            try { require('./milestones.js').checkBanked(body, credit); } catch { /* */ }
             used = true;
             msg = "Flash vault: " + credit + " gems banked.";
             break;

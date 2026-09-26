@@ -945,7 +945,7 @@ function saveResume(socket, body) {
     if (!body && socket._resume && socket._resume.raidId === raidId) {
         const again = Object.assign({}, socket._resume, { at: t, keys, accountId: (socket.account && socket.account.id) || null });
         for (const k of keys) resumeStore.set(k, again);
-        return;
+        return again;
     }
     for (const [k, v] of resumeStore) if (t - v.at > RESUME_MS) resumeStore.delete(k);
     // a dead player has no body but still has a bank, a shop and a score
@@ -957,6 +957,7 @@ function saveResume(socket, body) {
         sock: {
             gemBanked: socket.gemBanked || 0, shop: socket.shop || null, raidQuest: socket.raidQuest || null,
             raidBonus: socket.raidBonus || 0, raidPB: socket.raidPB || 0, _milestoneIdx: socket._milestoneIdx || 0,
+            gemDeposited: socket.gemDeposited || 0,
             raidDeathStreak: socket.raidDeathStreak || 0, royaleRespawnAt: socket.royaleRespawnAt || 0,
             lastRaidDeathAt: socket.lastRaidDeathAt || 0,
         },
@@ -982,6 +983,7 @@ function saveResume(socket, body) {
     }
     for (const k of keys) resumeStore.set(k, snap);
     if (process.env.RESUME_DEBUG) console.log('[RESUME] saved', token.slice(0, 6), 'alive', snap.alive, 'banked', snap.sock.gemBanked, 'carried', snap.carried, 'drill', snap.sock.shop && snap.sock.shop.drill, 'raw', (snap.skillRaw || []).join(','), 'pts', snap.points, 'raid', raidId);
+    return snap;
 }
 // Called when a new socket presents its token (before it spawns).
 function claimResume(socket, token) {
@@ -995,8 +997,14 @@ function claimResume(socket, token) {
     if (process.env.RESUME_DEBUG) console.log('[RESUME] claim', token.slice(0, 6), 'found', !!snap, snap ? ('age ' + (now() - snap.at) + ' raid ' + snap.raidId + '/' + raidId) : '');
     if (!snap) return false;
     for (const k of snap.keys || [token]) resumeStore.delete(k);
-    if (now() - snap.at > RESUME_MS || snap.raidId !== raidId) return false;
+    if (now() - snap.at > RESUME_MS || snap.raidId !== raidId) {
+        if (snap.baseKey) { try { outposts.releaseOwner(snap.baseKey); } catch { /* */ } }
+        return false;
+    }
     Object.assign(socket, snap.sock);
+    // the base kept for this raid follows the player onto the new socket;
+    // onHumanJoin rebinds it to the new body (ownerId, banner team, colour)
+    if (snap.baseKey) { try { outposts.rekeyOwner(snap.baseKey, "s:" + socket.id); } catch { /* */ } }
     const newKey = "s:" + socket.id;
     const old = snap.statKey ? raidStats.get(snap.statKey) : null;
     if (old && snap.statKey !== newKey) { raidStats.delete(snap.statKey); old.key = newKey; raidStats.set(newKey, old); }
@@ -1056,13 +1064,26 @@ function applyResume(body, snap) {
     } catch (e) { console.error('[RAID] resume failed', e && e.message); }
 }
 
+// A dropped owner's base is held under snap.baseKey for as long as the
+// resume that carries it could still be claimed (outposts.tick asks).
+let baseResvSeq = 0;
+function baseReserved(key) {
+    if (!key) return false;
+    const t = now();
+    for (const v of resumeStore.values()) {
+        if (v.baseKey === key) return t - v.at <= RESUME_MS && v.raidId === raidId;
+    }
+    return false;
+}
+
 function markHumanDeath(socket) {
     if (socket) socket.lastRaidDeathAt = now();
 }
 
 function disconnectCleanup(socket, body) {
     if (!Config.dig_royale) return;
-    try { saveResume(socket, body); } catch (e) { console.error('[RAID] resume save failed', e && e.message); }
+    let snap = null;
+    try { snap = saveResume(socket, body); } catch (e) { console.error('[RAID] resume save failed', e && e.message); }
     // an open ranked life settles as a disconnect if nobody resumes it
     try {
         const ls = raidStats.get(body ? statKeyFor(body) : "s:" + (socket && socket.id));
@@ -1088,7 +1109,15 @@ function disconnectCleanup(socket, body) {
             body.outpostDeposit = null;
         }
         if (socket && socket.id && outposts.releaseOwner) {
-            outposts.releaseOwner("s:" + socket.id);
+            // a raid saved for resume keeps its base (dead or alive, as a
+            // connected owner's claim survives death); anything else frees it
+            const key = "s:" + socket.id;
+            if (snap && snap.raidId === raidId && outposts.rekeyOwner) {
+                snap.baseKey = "r:" + (++baseResvSeq);
+                outposts.rekeyOwner(key, snap.baseKey);
+            } else {
+                outposts.releaseOwner(key);
+            }
         }
     } catch { /* */ }
 }
@@ -1426,6 +1455,7 @@ function endRaid() {
             for (const client of connectedClients()) {
                 if (client.gemBanked) client.gemBanked = 0;
                 client._milestoneIdx = 0;
+                client.gemDeposited = 0;
             }
             for (const body of combatants()) {
                 body.carriedGems = 0;
@@ -1603,7 +1633,7 @@ class DigRoyale {
 
 module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
-    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume,
+    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, baseReserved,
     onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout, QUESTS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
