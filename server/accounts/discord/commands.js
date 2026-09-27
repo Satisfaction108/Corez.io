@@ -8,7 +8,8 @@
 // refused, is written to audit_log (actor 'admin:<discord id>'), and every
 // admin reply is ephemeral.
 //
-// Player commands (/profile, /rank, /leaderboard) are global and public.
+// Player commands (/profile, /rank, /achievements, /leaderboard, /shop, /online,
+// /play) are global and public, and work in DMs and user installs too.
 //
 // All work is synchronous SQLite, so every command answers inline (type 4);
 // nothing here needs a deferred response.
@@ -98,11 +99,18 @@ const ADMIN_COMMANDS = [
     { name: 'stats', description: 'Totals: accounts, guests, activity, gemdust, purchases' },
 ].map(c => ({ ...c, type: 1, default_member_permissions: '0', dm_permission: false }));
 
+const nameOpt = { type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 };
 const PLAYER_COMMANDS = [
-    { name: 'profile', description: "See a player's Corez.io profile", options: [{ type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 }] },
-    { name: 'rank', description: "See a player's Corez.io rank", options: [{ type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 }] },
+    { name: 'profile', description: "See a player's Corez.io profile", options: [nameOpt] },
+    { name: 'rank', description: "See a player's Corez.io rank", options: [nameOpt] },
+    { name: 'achievements', description: "See a player's Corez.io medals", options: [nameOpt] },
     { name: 'leaderboard', description: 'See the Corez.io top 10' },
-].map(c => ({ ...c, type: 1 }));
+    { name: 'shop', description: "What's in the Corez.io Item Shop today" },
+    { name: 'online', description: 'How many people are playing Corez.io right now' },
+    { name: 'play', description: 'Get the link to play Corez.io' },
+// usable everywhere: servers the bot is in, DMs with the bot, and (when a
+// player adds the app to their own account) any server or DM they're in
+].map(c => ({ ...c, type: 1, integration_types: [0, 1], contexts: [0, 1, 2] }));
 
 const ADMIN_NAMES = new Set(ADMIN_COMMANDS.map(c => c.name));
 
@@ -506,7 +514,61 @@ function leaderboard() {
     return reply('', { embeds: [{ title: 'Corez.io top 10', color: COLOR, description: lines.join('\n'), footer: { text: 'Full Top 100 at ' + config.publicOrigin } }] });
 }
 
-const PLAYER_HANDLERS = { profile, rank, leaderboard };
+function achievementsCmd(i, caller) {
+    const t = targetFor(i, caller);
+    if (t.error) return reply(t.error, { ephemeral: true });
+    const list = achievements.list(t.row.id);
+    const got = list.filter(a => a.unlockedAt != null).length;
+    const n = v => (v | 0).toLocaleString('en-US');
+    const lines = list.map(a => a.unlockedAt != null
+        ? `✅ **${md(a.name)}**: ${md(a.desc)}`
+        : `▫️ ${md(a.name)}: ${md(a.desc)}${a.goal > 1 ? ` (${n(a.progress)}/${n(a.goal)})` : ''}`);
+    return reply('', { embeds: [{ title: `${md(t.row.username)} · medals ${got}/${list.length}`, color: COLOR, description: lines.join('\n').slice(0, 4000) }] });
+}
+
+function shopCmd() {
+    const store = require('../store');
+    const C = require('../../../shared/cosmetics.js');
+    const now = Date.now();
+    const rot = store.rotationFor(store.dayOf(now), undefined, now);
+    const line = id => {
+        const it = C.byId(id);
+        if (!it) return null;
+        const kind = it.cat === 'skin' ? 'skin' : 'name style';
+        return `**${md(it.name)}** · ${it.rarity || kind} ${kind} · ${dustText(it.price)} gemdust`;
+    };
+    const featured = rot.featured.map(line).filter(Boolean);
+    const daily = rot.daily.map(line).filter(Boolean);
+    return reply('', {
+        embeds: [{
+            title: "Today's Item Shop", color: COLOR,
+            fields: [
+                { name: 'Featured', value: featured.join('\n') || '-', inline: false },
+                { name: 'Daily', value: daily.join('\n') || '-', inline: false },
+            ],
+            footer: { text: 'New shop ' + 'in ' + Math.max(1, Math.round((store.resetsAt(store.dayOf(now)) - now) / 3600000)) + 'h · earn gemdust by banking gems at ' + config.publicOrigin.replace(/^https?:\/\//, '') },
+        }],
+    });
+}
+
+function onlineCmd() {
+    const list = (global.servers || []).filter(s => s && s.id && !s.hidden && s.id !== 'tut');
+    const mode = s => (s.mode === 'duo' || /duo/i.test(s.gameMode || '')) ? 'Duos' : 'Solo';
+    const total = list.reduce((a, s) => a + (s.players | 0), 0);
+    const rows = list.map(s => `**${mode(s)}** · ${s.players | 0} playing${s.region ? ' · ' + md(s.region) : ''}`);
+    return reply('', {
+        embeds: [{
+            title: total === 1 ? '1 person is playing Corez.io' : `${total} people are playing Corez.io`, color: COLOR,
+            description: (rows.join('\n') || 'The servers are starting up.') + `\n\nJump in: ${config.publicOrigin}`,
+        }],
+    });
+}
+
+function playCmd() {
+    return reply(`**Corez.io**: mine, loot, fight, buy upgrades and climb the leaderboard in a free browser battle royale.\nPlay now: ${config.publicOrigin}`);
+}
+
+const PLAYER_HANDLERS = { profile, rank, leaderboard, achievements: achievementsCmd, shop: shopCmd, online: onlineCmd, play: playCmd };
 
 // ---- entry ----
 
