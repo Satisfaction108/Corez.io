@@ -1264,6 +1264,13 @@ import * as cosmetics from './account/cosmetics.js';
     function startGame() {
 
         if (global.gameLoading) return;
+        // Duos: the first Play press gets a party ticket from party.js (async)
+        // and comes back here armed. A reconnect keeps the duo session as is.
+        if (!global.launchingTutorial && !global.launchingDigWars && !global.duoArmed && !global._reconnecting &&
+            window.dwParty && window.dwParty.wantsDuo()) {
+            window.dwParty.arm();
+            return;
+        }
         global.gameLoading = true;
         try { rankPanel.clear(); dustHud.reset(); global.acct = null; } catch (e) { /* */ }
         // Fresh start: no raid state leaks in from a previous game.
@@ -1284,7 +1291,7 @@ import * as cosmetics from './account/cosmetics.js';
                 feed: [], occupy: 0, lockout: 0, place: 0, board: [],
                 at: -1e9, raidId: 0, raidLeft: 0, youScore: 0, youPB: 0,
                 objectives: [], bloom: null, chest: null, results: null,
-                lock: 0, lockLeft: 0, you: null,
+                lock: 0, lockLeft: 0, you: null, duos: 0, teams: null, duo: null,
                 chests: [], boss: null, event: null, mod: null, pings: [], lastPlace: 0, bossSeenId: 0,
             });
             global.shop.onPad = false;
@@ -1301,8 +1308,23 @@ import * as cosmetics from './account/cosmetics.js';
         if (!global.launchingTutorial && !global.launchingDigWars) {
             global.tutorialMode = false;
             global.tutorialPlot = null;
-            global.serverPath = "";
+            if (global.duoArmed) {
+                // the duo server lives behind this host at /duo
+                if (!global.duoSession) global._soloServerAdd = global.serverAdd;
+                global.duoSession = global.duoArmed;
+                global.serverAdd = location.host;
+                global.serverPath = global.duoArmed.path || "/duo";
+            } else if (!(global._reconnecting && global.duoSession)) {
+                if (global.duoSession && global._soloServerAdd) global.serverAdd = global._soloServerAdd;
+                global.duoSession = null;
+                global.serverPath = "";
+            }
+        } else if (global.duoSession) {
+            if (global._soloServerAdd) global.serverAdd = global._soloServerAdd;
+            global.duoSession = null;
         }
+        global.duoArmed = null;
+        global._reconnecting = false;
         global.launchingTutorial = false;
         global.launchingDigWars = false;
         if (global.mobile) {
@@ -3925,35 +3947,14 @@ import * as cosmetics from './account/cosmetics.js';
         return p;
     })();
 
-    // Loose gems are drawn by the SAME code as the ore gems in the rocks
-    // (TerrainRenderer.gemUnit/paintGem): same cut, tones, rim weight and
-    // live vector edges, so a gem looks identical in the wall and on the
-    // floor. Class -> ore tier palette.
-    const GEM_TIER = {
-        gemPickupCopper: 1, gemPickupVein: 2, gemPickupShard: 3, gemPickupShardCore: 3,
-        gemPickupEmerald: 4, gemPickupEmeraldCore: 4,
-    };
-    function gemPal(TR, cls) {
-        return cls === "gemPickupLoot" ? TR.GEM_LOOT_PAL : TR.ORE_PAL[GEM_TIER[cls] || 2];
-    }
-    // the ore gems' rim in world units (a fixed tile-space width there)
-    function gemRimWorld() {
-        const tr = window.terrainRenderer;
-        const cols = tr && tr._cols;
-        if (!cols) return 0;
-        return tr.constructor.GEM_RIM * (Math.min(cols, 120) / 50) * (global.gameWidth / cols);
-    }
-    // the ore gems' fixed small tilt (their layout uses +-0.45 rad); a loose
-    // gem takes a stable one from its id instead of spinning with facing
-    function gemTilt(instance) {
-        const id = (instance && instance.id) | 0;
-        return (((id * 0.6180339) % 1) - 0.5) * 0.7;
-    }
-
-    // Per-class halo: body / glow(+radius+alpha) are the gemPickup* + GLOW
-    // values from digwars.js. `size` is the class's SIZE (the tutorial card
-    // sizes its gem from it). `facet` is unused since the stone is drawn by
-    // TerrainRenderer.paintGem.
+    // Per-class art. body / facet / glow(+radius+alpha) are the gemPickup* +
+    // gemFacet* + GLOW values from digwars.js, so the baked gems carry the
+    // exact same palette AND halo as the loose pickups the full entity
+    // pipeline draws elsewhere. The rim is gameDraw.getColorDark(body) - the
+    // same darkened tint the pipeline gives every real pickup, theme-aware.
+    // `size` is the treasury tier's SIZE for that class: the real pipeline's
+    // outline is a fixed world-space width (borderChunk * strokeWidth, not
+    // proportional to the gem), so the bake divides it by each class's size.
     const GEM_SPRITE_PAL = {
         gemPickupCopper:      { size: 16, body: "#c96f2e", facet: "#eda766", glow: "#e8a05c", glowR: 0.8,  glowA: 0.3 },
         gemPickupVein:        { size: 20, body: "#3b7ce0", facet: "#7fb1f2", glow: "#6fa3f2", glowR: 1,    glowA: 0.35 },
@@ -3964,23 +3965,35 @@ import * as cosmetics from './account/cosmetics.js';
         gemPickupLoot:        { size: 7,  body: "#e0a63b", facet: "#f2cf7f", glow: "#f5cf6e", glowR: 1.2,  glowA: 0.4 },
     };
 
-    // Baked glow halos, one per class (shadowBlur under a borderless body
-    // fill at the glow's alpha); the stone itself is drawn live on top.
+    // Baked, full-fidelity sprites. Every contained gem is pre-rendered once
+    // per class onto a hidden canvas that replicates the REAL drawEntity
+    // output for a gem pickup: soft glow halo (shadowBlur under a borderless
+    // body fill at the glow's alpha), the filled gem cut, its darkened rim
+    // (stroke first, so the fill hides the inner half - exactly like the real
+    // pipeline), then the facet + sparkle Props at their true size/offset/
+    // angle (0.525 / 0.2 of the body, 0.12 crown / 0.405 offset, 12deg spin).
+    // The bake runs colors through gameDraw.modifyColor too, so the sprite is
+    // byte-for-byte the same colors a loose gem draws one screen over.
     const GEM_SPRITES = {};
     const GEM_SPRITE_HALF = 6.0;    // unit span covered (biggest glow ~2.4)
     const GEM_SPRITE_SCALE = 64;    // px per world unit inside the sprite
+    const GEM_RIM_UNITS = 7.2 * 0.55; // borderChunk * strokeWidth, cut-units per SIZE=1
     function gemSprite(cls) {
         let s = GEM_SPRITES[cls];
         if (s) return s;
         const pal = GEM_SPRITE_PAL[cls] || GEM_SPRITE_PAL.gemPickupVein;
         const body  = gameDraw.modifyColor(pal.body + " 0 1 0 false");
+        const rim   = gameDraw.getColorDark(body);
         const glow  = gameDraw.modifyColor(pal.glow + " 0 1 0 false");
+        const facet = gameDraw.modifyColor(pal.facet + " 0 1 0 false");
 
         const canvas = document.createElement("canvas");
         canvas.width = canvas.height = Math.ceil(GEM_SPRITE_HALF * 2 * GEM_SPRITE_SCALE);
         const c = canvas.getContext("2d");
         c.translate(canvas.width / 2, canvas.height / 2);
         c.scale(GEM_SPRITE_SCALE, GEM_SPRITE_SCALE);
+
+        // glow pass: borderless body fill at the glow alpha casts the halo
         c.globalAlpha = pal.glowA;
         c.shadowColor = glow;
         c.shadowBlur = pal.glowR * GEM_SPRITE_SCALE;
@@ -3988,41 +4001,63 @@ import * as cosmetics from './account/cosmetics.js';
         c.shadowOffsetY = 0;
         c.fillStyle = body;
         c.fill(GEM_CUT_PATH);
+        c.globalAlpha = 1;
+        c.shadowBlur = 0;
+
+        // body: stroke first, then fill hides the inner half (real pipeline)
+        c.lineJoin = "round";
+        c.lineCap = "round";
+        c.lineWidth = GEM_RIM_UNITS / (pal.size || 7);
+        c.strokeStyle = rim;
+        c.stroke(GEM_CUT_PATH);
+        c.fillStyle = body;
+        c.fill(GEM_CUT_PATH);
+
+        // facet prop (0.525 scale, 0.12 toward the crown, aligned with body)
+        c.save();
+        c.translate(0, -0.12);
+        c.scale(0.525, 0.525);
+        c.fillStyle = facet;
+        c.fill(GEM_CUT_PATH);
+        c.restore();
+
+        // sparkle prop (0.2 scale, 0.405 offset at direction+angle = up-left,
+        // spun 12deg exactly like the real gemSparkle's t.angle)
+        c.save();
+        c.translate(-0.148, -0.377);
+        c.rotate(0.20944);
+        c.scale(0.2, 0.2);
+        c.fillStyle = "#ffffff";
+        c.fill(GEM_CUT_PATH);
+        c.restore();
 
         s = { canvas, half: GEM_SPRITE_HALF };
         GEM_SPRITES[cls] = s;
         return s;
     }
 
-    // Draw a loose gem: its baked halo, then the stone with the ore gems'
-    // own painter. `isize` is the gem's render size (world units): the unit
-    // cut maps to `isize * ratio` pixels. `rimPx` overrides the rim width.
-    function drawContainedGem(c, x, y, ratio, alpha, isize, tilt, cls, rimPx) {
-        const k = isize * ratio;
-        if (k < 0.1) return; // sub-pixel
-        const TR = window.terrainRenderer && window.terrainRenderer.constructor;
+    // Draw a contained gem from its cached sprite: one rotated drawImage, no
+    // per-frame shadowBlur or allocation. `isize` is the gem's render size
+    // (world units); the real pipeline maps the unit cut to `isize * ratio`
+    // pixels, so the sprite is blitted at exactly that scale.
+    function drawContainedGem(c, x, y, ratio, alpha, isize, facing, cls) {
         const spr = gemSprite(cls);
+        const k = isize * ratio;
+        if (k < 0.1) return; // sub-pixel (the real pipeline skips below 0.1 too)
         c.save();
         c.translate(x, y);
-        c.rotate(tilt);
+        c.rotate(facing);
         c.globalAlpha = alpha;
         const h = spr.half * k;
         c.drawImage(spr.canvas, -h, -h, h * 2, h * 2);
-        if (TR && TR.paintGem) {
-            const rw = rimPx !== undefined ? rimPx : gemRimWorld() * ratio;
-            c.scale(k, k);
-            c.lineJoin = "round";
-            c.lineCap = "round";
-            TR.paintGem(c, TR.gemUnit(), gemPal(TR, cls), (rw || k * 0.1) / k);
-        }
         c.restore();
     }
-    // Tutorial ore-tier card: the same drawing the world gems use, sized in
+    // Tutorial ore-tier card: same baked sprite the world gems use, sized in
     // pixels so the legend cannot drift into a mockup/icon version.
     window.dwDrawGem = function (c, x, y, bodyPx, alpha, facing, cls) {
         const pal = GEM_SPRITE_PAL[cls] || GEM_SPRITE_PAL.gemPickupVein;
         const isize = pal.size || 16;
-        drawContainedGem(c, x, y, bodyPx / isize, alpha, isize, facing, cls, bodyPx * 0.1);
+        drawContainedGem(c, x, y, bodyPx / isize, alpha, isize, facing, cls);
     };
 
     // ── Baked radial halos: one gradient per colour, drawn as an image ──
@@ -4233,7 +4268,7 @@ import * as cosmetics from './account/cosmetics.js';
                     const d = Math.hypot(instance.render.x - global.player.renderx, instance.render.y - global.player.rendery);
                     if (d < 700) {
                         shakeCamera(6, 160);
-                        try { gameSound.rockHit(instance.render.x, instance.render.y, 3, false); } catch (e) { /* */ }
+                        try { gameSound.chestLand(instance.render.x, instance.render.y); } catch (e) { /* */ }
                     }
                 }
                 if (age > 300) landDust = (age - 300) / 220;
@@ -4451,7 +4486,7 @@ import * as cosmetics from './account/cosmetics.js';
                 let ga = instance.alpha * alpha * instance.render.status.getFade();
                 // expiring gems blink like any invulnerable entity would
                 if (instance.invuln && 100 > (Date.now() - instance.invuln) % 200) ga *= 0.55;
-                if (ga > 0.01) drawContainedGem(ctx[1], x, y, ratio, ga, isize, gemTilt(instance), _gcls);
+                if (ga > 0.01) drawContainedGem(ctx[1], x, y, ratio, ga, isize, instance.render.f, _gcls);
                 continue;
             }
             const _chest = isLootChestEntity(instance);
@@ -5222,6 +5257,21 @@ import * as cosmetics from './account/cosmetics.js';
                     const sn = styledName(name, instance.nameStyle, namecolor == "#ffffff" ? color.guiwhite : namecolor, nx, 0.55 * g, "center", ctx[1]);
                     drawText(sn.text, nx, ny, 0.55 * g, sn.fill, "center", false, 1, true, ctx[1]);
                     drawNameBadge(code, sn.text, nx, ny, 0.55 * g, "center", ctx[1]);
+                    // duos: a little diamond in your team colour over your partner
+                    const dm = global.royale && global.royale.duos && global.royale.duo && global.royale.duo.mate;
+                    if (dm && dm.id === instance.id) {
+                        const ds = Math.max(9, 0.42 * g), dyy = ny - 0.55 * g - ds * 0.9 - 3;
+                        const dc = ctx[1];
+                        dc.save();
+                        dc.translate(x, dyy);
+                        dc.rotate(Math.PI / 4);
+                        dc.fillStyle = playerHexCol() || HUD.sky;
+                        dc.strokeStyle = HUD.ink;
+                        dc.lineWidth = Math.max(1.5, ds * 0.35);
+                        dc.fillRect(-ds / 2, -ds / 2, ds, ds);
+                        dc.strokeRect(-ds / 2, -ds / 2, ds, ds);
+                        dc.restore();
+                    }
                 }
                 if (global.GUIStatus.renderPlayerScores || typeof instance.score === "string") drawText(typeof instance.score === "string" ? instance.score : util.handleLargeNumber(instance.score), x, y - 1.45 * g, 0.3 * g, namecolor == "#ffffff" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
                 if (global.showDebug && instance.digWarsGoal) {
@@ -6183,6 +6233,7 @@ import * as cosmetics from './account/cosmetics.js';
         if ((global.upgradeBoxBottom | 0) > 0) out.push({ x: 0, y: 0, w: Math.max(280, (global.upgradeBoxRight | 0) + 8), h: global.upgradeBoxBottom + 8 });
         if (questRect) out.push(questRect);
         if (overrideRect) out.push(overrideRect);
+        if (duoRect) out.push(duoRect);
         return out;
     }
     // Step a point out of a panel by the shortest move that stays on screen
@@ -6492,6 +6543,7 @@ import * as cosmetics from './account/cosmetics.js';
         hudSafe("standings", () => { standBottom = drawRoyaleStandings(); });
         hudSafe("feed", () => drawRoyaleFeed(standBottom + 14));
         hudSafe("cards", layoutLeftCards);
+        hudSafe("duo", drawDuoCard);
         hudSafe("quest", drawQuestCard);
         hudSafe("override", drawOverrideCard);
         hudSafe("storm", () => {
@@ -6549,8 +6601,58 @@ import * as cosmetics from './account/cosmetics.js';
 
     // ── race panel: top three plus you, with your gap to first ──────────
     const standingsFit = new Map();
+    // duos: team rows ("Alex & Sam", combined score); your team's names in your colour
+    function drawTeamStandings() {
+        const r = global.royale;
+        const teams = r.teams || [];
+        if (!teams.length) { standingsRect = null; return 36; }
+        const W = Math.min(262, global.screenWidth * 0.3), rowH = 20;
+        const x = global.screenWidth - HUD.edge - W, y0 = HUD.edge;
+        const myTm = r.duo ? r.duo.tm : null;
+        const myPlace = r.duo ? r.duo.place | 0 : 0;
+        const top = teams.slice(0, 3);
+        const me = myPlace > 3 ? teams.find(t => t.tm === myTm) : null;
+        const rows = me ? top.concat([me]) : top;
+        const H = 32 + rows.length * rowH + (myPlace > 1 ? 18 : 6);
+        standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: H + 16 };
+        const c = ctx[2];
+        hudPanel(c, x, y0, W, H);
+        c.fillStyle = "rgba(18,14,21,0.55)";
+        c.fillRect(x + 10, y0 + 27, W - 20, 2);
+        hudTitle("Team standings", x + 12, y0 + 15, 14, HUD.head, "left");
+        hudTitle("PTS", x + W - 12, y0 + 15, 11, HUD.text2, "right");
+        const myHex = playerHexCol() || color.gold;
+        let ry = y0 + 32;
+        for (const t of rows) {
+            const isMe = myTm != null && t.tm === myTm;
+            const nameCol = isMe ? myHex : color.guiwhite;
+            const rankCol = t.place === 1 ? HUD.gold : t.place === 2 ? "#d8dce6" : t.place === 3 ? "#d98a4e" : HUD.text2;
+            const rowMid = ry + rowH / 2 - 1;
+            drawText("#" + t.place, x + 12, rowMid, 11, rankCol, "left", true);
+            const scoreTxt = fmtNum(t.score | 0);
+            const scoreW = hudTextW(scoreTxt, 12);
+            const names = (t.names || []).map(n => shortName(n, t.names.length > 1 ? 9 : 16)).join(" & ");
+            const room = W - 40 - scoreW - 22;
+            const fitKey = names + "|" + (room | 0);
+            let ns = standingsFit.get(fitKey);
+            if (ns === undefined) {
+                ns = 12; while (ns > 8 && measureText(names, ns) > room) ns -= 0.5;
+                if (standingsFit.size > 64) standingsFit.clear();
+                standingsFit.set(fitKey, ns);
+            }
+            drawText(names, x + 40, rowMid, ns, t.alive ? nameCol : HUD.text2, "left", true);
+            drawText(scoreTxt, x + W - 12, rowMid, 12, nameCol, "right", true);
+            ry += rowH;
+        }
+        if (myPlace > 1 && top[0]) {
+            const gap = (top[0].score | 0) - ((r.duo && r.duo.score) | 0);
+            drawText(fmtNum(Math.max(0, gap)) + " behind #1", x + W - 12, ry + 7, 10, HUD.text2, "right", true);
+        }
+        return y0 + H;
+    }
     function drawRoyaleStandings() {
         const r = global.royale;
+        if (r.duos && r.teams) return drawTeamStandings();
         const board = r.board || [];
         if (!board.length) { standingsRect = null; return 36; }
         const W = Math.min(262, global.screenWidth * 0.3), rowH = 20;
@@ -6695,22 +6797,25 @@ import * as cosmetics from './account/cosmetics.js';
         const r = global.royale;
         const q = !global.died && r.you && r.you.quest ? r.you.quest : null;
         const mod = !global.died && r.mod && r.mod.name ? r.mod : null;
-        if (!q && !mod) { leftCards = null; return; }
+        // duos: the teammate card tops the stack (dead or alive)
+        const duo = r.duos && r.duo ? r.duo : null;
+        if (!q && !mod && !duo) { leftCards = null; return; }
         const lines = mod ? wrapLines(String(mod.desc || ""), 10, CARD_W - 24).slice(0, 3) : [];
-        const stackH = n => (q ? QUEST_H : 0) + (mod ? (q ? CARD_GAP : 0) + overrideH(n) : 0);
+        const duoOff = duo ? DUO_H + ((q || mod) ? CARD_GAP : 0) : 0;
+        const stackH = n => duoOff + (q ? QUEST_H : 0) + (mod ? (q ? CARD_GAP : 0) + overrideH(n) : 0);
         const floor = leftColumnFloor() - 10;
         const tiles = (global.upgradeBoxBottom | 0) > 0;
         const top = tiles ? global.upgradeBoxBottom + 12 : 16;
         const pref = Math.max(global.screenHeight * 0.42, 330, top);
         for (const n of [lines.length, 0]) {
             const y = Math.round(Math.min(pref, floor - stackH(n)));
-            if (y >= top) { leftCards = { x: HUD.edge, y, q, mod, lines: lines.slice(0, n) }; return; }
+            if (y >= top) { leftCards = { x: HUD.edge, y, q, mod, lines: lines.slice(0, n), duo, duoOff }; return; }
         }
         const x = Math.round((global.upgradeBoxRight | 0) + 16);
         let y = Math.round(global.upgradeBoxTop || 70);
         // keep clear of the raid clock cluster at top centre
         if (x + CARD_W > global.screenWidth / 2 - 250) y = Math.max(y, hudTopBottom + 8);
-        leftCards = { x, y, q, mod, lines };
+        leftCards = { x, y, q, mod, lines, duo, duoOff };
     }
     // ── raid override card: this raid's twist and what it does, in the same
     // tile language as the quest card, right under it
@@ -6721,7 +6826,7 @@ import * as cosmetics from './account/cosmetics.js';
         const W = CARD_W;
         const lines = L.lines;
         const H = overrideH(lines.length);
-        const x = L.x, y = L.q ? L.y + QUEST_H + CARD_GAP : L.y;
+        const x = L.x, y = (L.q ? L.y + QUEST_H + CARD_GAP : L.y) + (L.duoOff | 0);
         overrideRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
         const c = ctx[2];
         hudPanel(c, x, y, W, H);
@@ -6738,7 +6843,7 @@ import * as cosmetics from './account/cosmetics.js';
         const q = L && L.q;
         if (!q) { questRect = null; return; }
         const W = CARD_W, H = QUEST_H;
-        const x = L.x, y = L.y;
+        const x = L.x, y = L.y + (L.duoOff | 0);
         questRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
         const c = ctx[2];
         hudPanel(c, x, y, W, H);
@@ -6766,6 +6871,76 @@ import * as cosmetics from './account/cosmetics.js';
         const frac = q.goal > 0 ? Math.min(1, (q.prog || 0) / q.goal) : 0;
         hudBar(c, bx, by, bw, bh, frac, HUD.emerald);
         drawText(progTxt, x + W - 12, by + bh / 2, 10, HUD.text2, "right", true);
+    }
+
+    // ── duos: the teammate card (top of the left stack) ─────────────────
+    // Your partner's name in your shared colour, their health, and what
+    // they're up to; alone, it says so (and whether someone may join).
+    const DUO_H = 58;
+    let duoRect = null;
+    const duoFit = new Map();
+    function fitTitle(text, size, min, room) {
+        const k = text + "|" + size + "|" + (room | 0);
+        let ns = duoFit.get(k);
+        if (ns === undefined) {
+            ns = size; while (ns > min && hudTitleW(text, ns) > room) ns -= 0.5;
+            if (duoFit.size > 48) duoFit.clear();
+            duoFit.set(k, ns);
+        }
+        return ns;
+    }
+    function drawDuoCard() {
+        const L = leftCards;
+        const d = L && L.duo;
+        if (!d) { duoRect = null; return; }
+        const W = CARD_W, H = DUO_H, x = L.x, y = L.y;
+        duoRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
+        const c = ctx[2];
+        hudPanel(c, x, y, W, H);
+        const col = playerHexCol() || HUD.sky;
+        const m = d.mate;
+        if (!m) {
+            hudTitle("Duo", x + 12, y + 14, 12, HUD.text2, "left");
+            const title = d.party ? "Waiting for your mate" : "Playing without a teammate";
+            hudTitle(title, x + 12, y + 31, fitTitle(title, 14, 10, W - 24), HUD.head, "left");
+            drawText(d.party ? "They drop in next to you" : d.fill ? "Someone may join you" : "Fill is off", x + 12, y + 47, 10, HUD.text2, "left", true);
+            return;
+        }
+        // a diamond in the team colour, then the name
+        c.save();
+        c.translate(x + 17, y + 15);
+        c.rotate(Math.PI / 4);
+        c.fillStyle = col; c.strokeStyle = HUD.ink; c.lineWidth = 2;
+        c.fillRect(-4.5, -4.5, 9, 9); c.strokeRect(-4.5, -4.5, 9, 9);
+        c.restore();
+        const name = shortName(m.name || "Teammate", 16);
+        let status, stCol = HUD.text2;
+        if (m.away) status = "Dropped out";
+        else if (!m.alive) { status = m.back > 0 ? "Back in " + m.back + "s" : "Down"; stCol = HUD.danger; }
+        else if (m.fight) { status = "Fighting"; stCol = HUD.gold; }
+        else status = "";
+        const stW = status ? hudTextW(status, 10.5) + 8 : 0;
+        hudTitle(name, x + 28, y + 15, fitTitle(name, 15, 10, W - 40 - stW), col, "left");
+        if (status) drawText(status, x + W - 12, y + 15, 10.5, stCol, "right", true);
+        const bx = x + 12, bw = W - 24, bh = 10, by = y + 26;
+        const hp = m.alive ? Math.max(0, Math.min(1, +m.hp || 0)) : 0;
+        hudBar(c, bx, by, bw, bh, hp, hp > 0.5 ? HUD.emerald : hp > 0.25 ? HUD.gold : HUD.danger);
+        if (m.alive && m.sh > 0.01) {
+            c.save();
+            c.globalAlpha = 0.6;
+            roundRectPath(c, bx + 2, by + 2, Math.max(3, (bw - 4) * m.sh), bh - 4, (bh - 4) / 2);
+            c.fillStyle = color.teal; c.fill();
+            c.restore();
+        }
+        let foot = "";
+        if (m.alive && m.x != null) {
+            const tp = trackPos("duomate", m.x, m.y, 0.8);
+            const dist = Math.hypot(tp.x - global.player.renderx, tp.y - global.player.rendery);
+            foot = global.died ? "Still fighting" : dist < 700 ? "Right by you" : fmtDist(dist) + " away";
+        } else if (m.away) foot = "Their spot stays open 2 min";
+        else foot = "Stay alive till they're back";
+        drawText(foot, x + 12, y + 47, 10, HUD.text2, "left", true);
+        if (m.alive) drawText(Math.round(hp * 100) + "%", x + W - 12, y + 47, 10, HUD.text2, "right", true);
     }
 
     // ── centre callouts ────────────────────────────────────────────────
@@ -7367,6 +7542,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (glyph === "boss") { polyPath(c, gx, gy, 6.5, 8, Math.PI / 8); c.fill(); c.stroke(); }
         else if (glyph === "gem") { gemPath(c, gx, gy + 0.5, 6.5); c.fill(); c.stroke(); }
         else if (glyph === "skull") { c.restore(); drawSkull(c, gx, gy, 6, col); c.save(); }
+        else if (glyph === "mate") { c.save(); c.translate(gx, gy); c.rotate(Math.PI / 4); c.fillRect(-4.5, -4.5, 9, 9); c.strokeRect(-4.5, -4.5, 9, 9); c.restore(); }
         else { c.beginPath(); c.moveTo(gx, gy - 6); c.lineTo(gx + 6, gy + 5); c.lineTo(gx - 6, gy + 5); c.closePath(); c.fill(); c.stroke(); }
         c.restore();
         drawText(label, px - pw / 2 + 23, py + 0.5, 10.5, color.guiwhite, "left", true, 1, 5);
@@ -7423,6 +7599,13 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
         if (nearest) marks.push(nearest);
+        // duos: your partner off screen gets an arrow in your colour
+        const dmate = r.duos && r.duo && r.duo.mate;
+        if (dmate && dmate.alive && dmate.x != null) {
+            const tp = trackPos("duomate", dmate.x, dmate.y, 0.8);
+            const s = toScreen(tp.x, tp.y);
+            if (!onScreen(s, -30)) marks.push({ pri: 0, s, col: playerHexCol() || HUD.sky, glyph: "mate", name: shortName(dmate.name || "Teammate", 12).toUpperCase(), d: Math.hypot(tp.x - me.x, tp.y - me.y) });
+        }
         marks.sort((a, b) => a.pri - b.pri);
         const placed = [];
         for (const mk of marks.slice(0, 3)) {
@@ -7591,6 +7774,23 @@ import * as cosmetics from './account/cosmetics.js';
         // labels scale with the map: tiny on the minimap, readable on the big map
         const labelPx = Math.max(7, Math.min(12, dotR * 2.6));
         const mapLabel = (text, mx, my, above, col) => drawText(text, mx, my + (above ? -1 : 1) * (above ? labelPx * 0.6 + 2 : labelPx * 0.9 + 2), labelPx, col, "center", true, 0.95, 4);
+        // duos: your partner, a dot in your colour with a ring and their name
+        const dmate = r.duos && r.duo && r.duo.mate;
+        if (dmate && dmate.alive && dmate.x != null) {
+            const tp = trackPos("duomate", dmate.x, dmate.y, 0.8);
+            const mx = T.X(tp.x), my = T.Y(tp.y);
+            if (inside(mx, my)) {
+                const mc = playerHexCol() || HUD.sky;
+                c.save();
+                c.beginPath(); c.arc(mx, my, dotR * 1.25, 0, Math.PI * 2);
+                c.fillStyle = mc; c.strokeStyle = color.black; c.lineWidth = 1.6; c.fill(); c.stroke();
+                c.globalAlpha = 0.85;
+                c.strokeStyle = mc; c.lineWidth = 1.5;
+                c.beginPath(); c.arc(mx, my, dotR * 2.4, 0, Math.PI * 2); c.stroke();
+                c.restore();
+                if (labelPx >= 8) mapLabel(shortName(dmate.name || "Teammate", 12), mx, my - dotR * 2.4, true, mc);
+            }
+        }
         for (const s of (global.shops || [])) {
             const mx = T.X(s.x), my = T.Y(s.y);
             if (!inside(mx, my)) continue;
@@ -7792,7 +7992,7 @@ import * as cosmetics from './account/cosmetics.js';
         const PH = 64 + rows.length * 22;
         const px = cx - PW / 2, py = cy - PH / 2;
         hudPanel(c, px, py, PW, PH, { fill: HUD.solid, r: HUD.rBig });
-        hudTitle("Raid over. Top 10 paid.", cx, py + 24, 19, HUD.gold, "center");
+        hudTitle(r.duos ? "Raid over. Top 10 teams paid." : "Raid over. Top 10 paid.", cx, py + 24, 19, HUD.gold, "center");
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             drawText("#" + (i + 1) + " " + (row.name || "Unnamed") + "  " + util.formatLargeNumber(row.score | 0),
@@ -10546,7 +10746,8 @@ import * as cosmetics from './account/cosmetics.js';
                 cv && cv.socket && cv.socket.talk('RS', 1);
             } else if (kind === "spectate") {
                 global.royaleSpectating = true;
-                cv && cv.socket && cv.socket.talk('RS', 2);
+                // duos: your partner first (3), else your killer (2)
+                cv && cv.socket && cv.socket.talk('RS', duoMateAlive() ? 3 : 2);
             } else if (kind === "play") {
                 cv && cv.respawn && cv.respawn();
             } else if (kind === "home") {
@@ -10563,6 +10764,11 @@ import * as cosmetics from './account/cosmetics.js';
             if (cv && global.gameStart) cv.focus();
         } catch { /* */ }
     }
+    function duoMateAlive() {
+        const d = global.royale && global.royale.duos && global.royale.duo;
+        return !!(d && d.mate && d.mate.alive);
+    }
+    window.dwDuoMateAlive = duoMateAlive;
     function royaleDomBtn(id, text) {
         const b = document.createElement("button");
         b.id = id;
@@ -10617,6 +10823,11 @@ import * as cosmetics from './account/cosmetics.js';
         const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating);
         spec.style.display = spectating ? "flex" : "none";
         dead.style.display = deadShow ? "flex" : "none";
+        const spBtn = document.getElementById("royaleDomSpectate");
+        if (spBtn) {
+            const want = duoMateAlive() ? "Watch " + shortName(global.royale.duo.mate.name || "teammate", 12) : "Spectate";
+            if (spBtn.textContent !== want) spBtn.textContent = want;
+        }
         const signup = document.getElementById("royaleDomSignup");
         if (signup) signup.style.display = deadShow && rankPanel.isGuestNudge() ? "" : "none";
         const play = document.getElementById("royaleDomPlay");

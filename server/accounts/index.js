@@ -54,6 +54,8 @@ require('./routes/profile').register(router);
 require('./routes/progress').register(router);
 require('./routes/interactions').register(router);
 require('./routes/resetPage').register(router);
+const partyRoutes = require('./routes/party');
+partyRoutes.register(router);
 events.register(router);
 
 const state = { initialized: false, enabled: false, role: null, timers: [] };
@@ -102,6 +104,16 @@ function initMain() {
     if (state.initialized) return enabled();
     state.initialized = true;
     config.load();
+    // Duo parties work for guests too, so they start whether or not accounts
+    // do. The ticket secret is set before any game worker exists (workers
+    // copy process.env when they are constructed).
+    try {
+        require('./partyTicket').initMain(config.secretOk ? config.sessionSecret : null);
+        partyRoutes.start();
+        ratelimit.start();
+    } catch (e) {
+        console.error('[party] init failed: ' + ((e && e.stack) || e));
+    }
     if (!config.accountsFlag) {
         console.log('[accounts] disabled (ACCOUNTS_ENABLED=false); running guest-only');
         return false;
@@ -355,4 +367,6 @@ module.exports = {
     achievements,
     backup,
     announce,
+    party: require('./party'),
+    partyTicket: require('./partyTicket'),
 };

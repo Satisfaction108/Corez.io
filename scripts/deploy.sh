@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# pull latest dig-wars + restart the game server under pm2
+# Pull the latest dig-wars branch and restart the game under pm2.
+# Oracle (live): ~/corez, pm2 app "corez". Old Nest box: ~/digwars, app "digwars".
 set -euo pipefail
 
-APP_DIR="${1:-$HOME/digwars}"
+if [ -n "${1:-}" ]; then APP_DIR="$1"
+elif [ -d "$HOME/corez" ]; then APP_DIR="$HOME/corez"
+else APP_DIR="$HOME/digwars"; fi
+APP_NAME="${PM2_APP:-$(basename "$APP_DIR")}"
+
 cd "$APP_DIR"
 git pull --ff-only origin dig-wars
-npm install
-pm2 restart digwars
+npm install --no-audit --no-fund
+pm2 restart "$APP_NAME" --update-env
 pm2 save

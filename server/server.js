@@ -156,6 +156,13 @@ let server; // HTTP server instance
 // the websocket through.
 const TUTORIAL_PROXY_PATH = "/tut";
 const DIG_WARS_PROXY_PATH = "/dw";
+// The duo raid server (a worker, like the tutorial): the menu's DUOS mode
+// dials <this host>/duo and we splice the websocket through to its port.
+const DUO_PROXY_PATH = "/duo";
+
+function serverCfg(id) {
+    return (Config.servers || []).find((s) => s && s.id === id) || null;
+}
 
 function listedServer(id) {
     const live = (global.servers || []).find((s) => s && s.id === id);
@@ -231,15 +238,23 @@ server = http.createServer((req, res) => {
     switch (pathname) {
         case "/getServers.json": {
             // Serve a list of active servers (excluding hidden ones)
-            readString = JSON.stringify((global.servers || []).filter((s) => s && s.id && !s.hidden).map((server) => ({
-                ip: server.ip,
-                players: server.players,
-                maxPlayers: server.maxPlayers,
-                id: server.id,
-                featured: server.featured,
-                region: server.region,
-                gameMode: server.gameMode,
-            })));
+            readString = JSON.stringify((global.servers || []).filter((s) => s && s.id && !s.hidden).map((server) => {
+                const cfg = serverCfg(server.id);
+                const duo = server.mode === "duo" || !!(cfg && cfg.properties && cfg.properties.royale_duos);
+                return {
+                    ip: duo ? Config.host : server.ip,
+                    players: server.players,
+                    maxPlayers: server.maxPlayers,
+                    id: server.id,
+                    featured: server.featured,
+                    region: server.region || (cfg && cfg.region) || "",
+                    gameMode: server.gameMode,
+                    // raid servers say which menu mode they are; the duo one is
+                    // reached through this host at proxyPath, never its own port
+                    mode: duo ? "duo" : (server.mode || undefined),
+                    proxyPath: duo ? DUO_PROXY_PATH : undefined,
+                };
+            }));
         } break;
         // The tutorial server is deliberately absent from /getServers.json so it
         // never shows up on the region picker. The homepage Tutorial button
@@ -484,7 +499,8 @@ global.onServerLoaded = () => {
 
 // Automatically resolve the server's region from the box's public ip so the
 // server-list always reflects where it actually lives. Prefers a
-// SERVER_REGION override, then a quick geo lookup, then Europe (nest default).
+// SERVER_REGION override, then a quick geo lookup (US boxes get East/Central/
+// West from longitude), then Europe.
 async function detectRegion() {
     if (process.env.SERVER_REGION) return process.env.SERVER_REGION;
     const byContinent = { EU: "Europe", NA: "USA", AS: "Asia", OC: "Oceania" };
@@ -493,13 +509,19 @@ async function detectRegion() {
         const timer = setTimeout(() => controller.abort(), 4000);
         const res = await fetch("https://ipapi.co/json/", {
             signal: controller.signal,
-            headers: { "User-Agent": "digwars/1.0 (+https://digwars.hackclub.app)" },
+            headers: { "User-Agent": "corez/1.0 (+https://corez.games)" },
         });
         clearTimeout(timer);
         const data = await res.json();
         const cc = String(data.continent_code || "").toUpperCase();
+        // US boxes get a coast: east of -95 longitude is East, west of -110 West
+        if (data.country_code === "US" || data.country_code === "CA") {
+            const lon = Number(data.longitude);
+            if (isFinite(lon)) return lon > -95 ? "US East" : lon < -110 ? "US West" : "US Central";
+            return "USA";
+        }
         if (byContinent[cc]) return byContinent[cc];
-        return data.country_code === "US" ? "USA" : "Europe";
+        return "Europe";
     } catch (e) {
         return "Europe";
     }
@@ -574,6 +596,11 @@ server.on("upgrade", (req, socket, head) => {
     if (url === TUTORIAL_PROXY_PATH || url.startsWith(TUTORIAL_PROXY_PATH + "/") ||
         url.startsWith(TUTORIAL_PROXY_PATH + "?")) {
         return proxyUpgradeToTutorial(req, socket, head);
+    }
+    if (url === DUO_PROXY_PATH || url.startsWith(DUO_PROXY_PATH + "/") ||
+        url.startsWith(DUO_PROXY_PATH + "?")) {
+        if (!workerPort("duo")) { try { socket.destroy(); } catch (e) { /* */ } return; }
+        return proxyUpgradeToWorker(req, socket, head, DUO_PROXY_PATH, workerPort("duo"));
     }
     if (url === DIG_WARS_PROXY_PATH || url.startsWith(DIG_WARS_PROXY_PATH + "/") ||
         url.startsWith(DIG_WARS_PROXY_PATH + "?")) {

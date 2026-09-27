@@ -10,6 +10,7 @@ import * as chat from './chat.js';
 import { h, icon, clear, confirm, toast, setBusy, animate, collapseOut, avatar, T_MID } from './ui.js';
 import { rankOf, badge, nameEl, presenceText, presenceState, byPresence, fmtAgo } from './people.js';
 import * as pv from './previews.js';
+import * as party from './party.js';
 
 let hooks = { openProfile() {} };
 export function init(hs) { Object.assign(hooks, hs); }
@@ -154,7 +155,7 @@ function empty(title, text) {
 function who(p, sub, subCls) {
     const v = rankOf(p.rank);
     return h('div', { class: 'fr-who' },
-        badge(v.div, 26, 'fr-badge', { legendNo: v.legendNo }),
+        badge(v.div, 30, 'fr-badge', { legendNo: v.legendNo }),
         h('div', { class: 'fr-txt' },
             h('div', { class: 'fr-name' }, nameEl(p.username, p.nameStyleNid, p.nameColor, 14)),
             h('div', { class: 'fr-sub' + (subCls ? ' ' + subCls : ''), text: sub })));
@@ -203,6 +204,18 @@ function subOf(f) {
     if ((f.unread | 0) > 0 && f.last && f.last.from === 'them') return { text: f.last.body, cls: 'st-msg' };
     return { text: presenceText(f.presence, f.rank), cls: 'st-' + presenceState(f.presence) };
 }
+// Invite to duo: friends on the menu only (in a raid they can't take it,
+// offline there's nobody to ask). Already teamed up: a quiet tick.
+function duoBtn(f) {
+    const st = presenceState(f.presence);
+    if (party.partyHas(f.userId)) return h('span', { class: 'fr-ic fr-duo on', title: 'In your duo party', 'aria-label': 'In your duo party' }, icon('duo'));
+    const can = st === 'menu';
+    const label = can ? 'Invite to duo' : st === 'raid' ? 'In a raid, invite them later' : 'Offline';
+    const b = h('button', { type: 'button', class: 'fr-ic fr-duo', title: label, 'aria-label': label, disabled: !can,
+        onclick: async () => { b.disabled = true; await party.inviteFriend(f); b.disabled = false; } }, icon('duo'));
+    return b;
+}
+
 // The chat button, with the unread count sitting on its corner.
 function chatBtn(f) {
     const b = h('button', { type: 'button', class: 'fr-ic fr-chatbtn', title: 'Chat', onclick: () => openChat(f) }, icon('chat'));
@@ -233,6 +246,7 @@ function paintFriends(d) {
         for (const f of groups[k]) {
             const s = subOf(f);
             listEl.appendChild(row(f, s.text, [
+                duoBtn(f),
                 chatBtn(f),
                 icBtn('unfriend', 'Remove friend', () => removeFriend(f)),
                 icBtn('block', 'Block', () => blockUser(f), 'bad'),

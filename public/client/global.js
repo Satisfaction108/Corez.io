@@ -627,6 +627,8 @@ const global = {
         }, 10);
     },
     reconnect: () => {
+        // startGame keeps the server (and a duo session) for a reconnect
+        global._reconnecting = true;
         try {
             const old = global.socket;
             if (old && typeof old.close === "function") {

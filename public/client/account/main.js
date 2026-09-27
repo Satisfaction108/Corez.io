@@ -19,6 +19,7 @@ import * as profile from './profile.js';
 import * as leaderboard from './leaderboard.js';
 import * as dailyQuests from './dailyQuests.js';
 import * as ingameChat from './ingameChat.js';
+import * as party from './party.js';
 
 const html = document.documentElement;
 const HINT = 'dwAcctHint';
@@ -295,6 +296,8 @@ async function boot() {
         openPane,
         onStoreReset() { menu.render(); dailyQuests.refresh(); },
     });
+    // SOLO | DUOS and the duo party panel (guests too)
+    try { party.init(); } catch (e) { console.error('[party] init failed', e); }
     shop.init({
         refreshMe: () => refresh(true),
         openLocker: () => openPane('locker'),

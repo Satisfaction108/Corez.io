@@ -11,6 +11,9 @@ serversDocs;
 let availableServers = [];
 
 global.loadServerSelector = (serverData, text) => {
+    // the duo raid is picked with the menu's SOLO | DUOS toggle and reached
+    // through this host (/duo), so it never sits in this list
+    serverData = (serverData || []).filter(s => s && s.mode !== "duo");
     if (!serverData.length) {
         if (text) loadEmptyServerSelector(text)
         return;
@@ -251,6 +254,7 @@ let initializeFilter = () => {
 global.refreshServerCounts = (data) => {
     if (!Array.isArray(data)) return;
     data.forEach((server) => {
+        if (server && server.mode === "duo") return;   // not in this table (same host as solo)
         const tr = global.serverMap[server.ip];
         if (!tr) return;
         const td3 = tr.querySelector("td:nth-child(3)");

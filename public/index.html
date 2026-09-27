@@ -5,20 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
     <meta name="description" content="Corez.io: Mine, loot, fight, purchase upgrades, and climb the leaderboard in a free browser-based battle royale!">
     <meta name="robots" content="index, follow">
-    <link rel="canonical" href="https://digwars.hackclub.app/">
+    <link rel="canonical" href="https://corez.games/">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Corez.io">
     <meta property="og:title" content="Corez.io: free browser battle royale">
     <meta property="og:description" content="Mine, loot, fight, purchase upgrades, and climb the leaderboard in a free browser-based battle royale!">
-    <meta property="og:url" content="https://digwars.hackclub.app/">
-    <meta property="og:image" content="https://digwars.hackclub.app/img/og.png">
+    <meta property="og:url" content="https://corez.games/">
+    <meta property="og:image" content="https://corez.games/img/og.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="Corez.io gameplay: tanks fighting between rock full of gems">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Corez.io: free browser battle royale">
     <meta name="twitter:description" content="Mine, loot, fight, purchase upgrades, and climb the leaderboard in a free browser-based battle royale!">
-    <meta name="twitter:image" content="https://digwars.hackclub.app/img/og.png">
+    <meta name="twitter:image" content="https://corez.games/img/og.png">
     <link rel="apple-touch-icon" href="/img/logo.png">
     <title>Corez.io: free browser battle royale</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -53,6 +53,7 @@
             <symbol id="i-close" viewBox="0 0 24 24"><g stroke="var(--ink,#1b1510)" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="var(--ic-x,#fff)"/></g></symbol>
             <symbol id="i-back" viewBox="0 0 24 24"><g stroke="var(--ink,#1b1510)" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" fill="var(--ic-x,#fff)"/></g></symbol>
             <symbol id="i-logout" viewBox="0 0 24 24"><g stroke="var(--ink,#1b1510)" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z" fill="#f5c542"/></g></symbol>
+            <symbol id="i-duo" viewBox="0 0 24 24"><g stroke="var(--ink,#1b1510)" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><path d="M13 7.2h7.2v3.6H13z" fill="#b7b2c9"/><circle cx="14.6" cy="9" r="4.9" fill="var(--ic-duo-b,#4ec4e8)"/><path d="M3.8 13.2H11v3.6H3.8z" fill="#b7b2c9"/><circle cx="9.4" cy="15" r="4.9" fill="var(--ic-duo-a,#f0b53a)"/></g></symbol>
             <symbol id="i-chat" viewBox="0 0 24 24"><g stroke="var(--ink,#1b1510)" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z" fill="var(--ic-chat,#fff8e6)"/></g></symbol>
             <symbol id="i-unfriend" viewBox="0 0 24 24"><g stroke="var(--ink,#1b1510)" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zM2 18v2h16v-2c0-2.66-5.33-4-8-4s-8 1.34-8 4z" fill="#ef6b5f"/></g></symbol>
             <symbol id="i-block" viewBox="0 0 24 24"><g stroke="var(--ink,#1b1510)" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z" fill="#ef5a4c"/></g></symbol>
@@ -387,8 +388,8 @@
                                         </button>
                                         <div class="region-dropdown-menu" id="serverDropdownMenu">
                                             <div class="region-list" id="regionSelector">
-                                                <button type="button" class="region-option selected" data-region="Europe"><span class="region-name">Europe</span><span class="region-count">0</span></button>
-                                                <button type="button" class="region-option" data-region="USA"><span class="region-name">USA</span><span class="region-count"></span></button>
+                                                <button type="button" class="region-option" data-region="Europe"><span class="region-name">Europe</span><span class="region-count"></span></button>
+                                                <button type="button" class="region-option selected" data-region="USA"><span class="region-name">US East</span><span class="region-count">0</span></button>
                                                 <button type="button" class="region-option" data-region="Asia"><span class="region-name">Asia</span><span class="region-count"></span></button>
                                             </div>
 
@@ -398,6 +399,13 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- SOLO | DUOS, and the duo party under it (client/account/party.js) -->
+                            <div class="mode-toggle" id="modeToggle" role="radiogroup" aria-label="Mode">
+                                <button type="button" class="mode-opt on" data-mode="solo" role="radio" aria-checked="true"><span class="mode-name">Solo</span><span class="mode-count" data-count="solo"></span></button>
+                                <button type="button" class="mode-opt" data-mode="duo" role="radio" aria-checked="false"><span class="mode-name">Duos</span><span class="mode-count" data-count="duo"></span></button>
+                            </div>
+                            <div id="duoPanel" class="duo-panel" hidden></div>
 
                             <input type="text" class="conceal" tabindex="4" placeholder="Token (optional)" id="playerKeyInput" maxlength="64" />
 

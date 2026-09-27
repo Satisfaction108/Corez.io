@@ -149,6 +149,8 @@ class gameServer {
             featured: this.featured,
             region: this.region,
             gameMode: this.name,
+            // 'duo' | 'solo' for the raid servers (the menu's SOLO | DUOS toggle)
+            mode: this.serverProperties.royale_duos ? 'duo' : (this.gamemode.includes('dig_royale') ? 'solo' : undefined),
             gameManager: includegameManager ? this : false,
         }
     }
@@ -305,6 +307,7 @@ class gameServer {
             };
 
             this.name = this.gamemode.map(x => getName(x, Config) || (x[0].toUpperCase() + x.slice(1))).join(' ');
+            if (Config.royale_duos) this.name = "Battle Royale Duos";
 
             this.showConsoleLoggings = false;
 

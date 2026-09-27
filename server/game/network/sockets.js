@@ -226,6 +226,7 @@ class socketManager {
             } catch { /* */ }
         }
         try { accountBridge.onClose(socket); } catch { /* */ }
+        if (Config.royale_duos) { try { require('../duo/duoRaid.js').onClose(socket); } catch (e) { console.error('[DUO] close', e && e.message); } }
 
         if (socket.group) groups.removeMember(socket);
 
@@ -1154,7 +1155,11 @@ class socketManager {
                 if (!socket.status.deceased) return 1;
                 socket.royaleWantsSpectate = true;
                 const code = m[0] | 0;
-                if (code === 2) {
+                // 3: your duo partner (falls back to the killer / nearest)
+                const mateBody = code === 3 && Config.royale_duos ? require('../duo/duoRaid.js').mateOfSocketBody(socket) : null;
+                if (mateBody) {
+                    socket.spectateEntity = mateBody;
+                } else if (code === 2 || code === 3) {
                     const killer = socket.spectateKiller;
                     if (killer && !killer.isDead?.() && (killer.isPlayer || killer.isBot)) {
                         socket.spectateEntity = killer;
@@ -1197,6 +1202,12 @@ class socketManager {
                     const ok = require('../gamemodes/scripts/dig_royale.js').claimResume(socket, m[0]);
                     if (ok) util.log("[INFO]: A dropped player reconnected and resumed their raid.");
                 }
+            } break;
+            case "DQ": {
+                // duo hello: [party ticket or "", fill 0/1], sent before spawning
+                if (!Config.royale_duos) return;
+                if (m.length !== 2 || typeof m[0] !== "string" || m[0].length > 2048) return;
+                require('../duo/duoRaid.js').onHello(socket, m[0], m[1] === 0 ? 0 : 1);
             } break;
             case "RQ": {
                 if (!Config.dig_royale) return 1;
@@ -1290,6 +1301,40 @@ class socketManager {
                         }
                         const off = Math.max(60, Math.min(400, (m[1] | 0) || 140));
                         if (best) { b.x = best.x + off; b.y = best.y; b.velocity.x = 0; b.velocity.y = 0; }
+                    }
+                    // duos: this socket's team, colour and partner, the bot duo,
+                    // and a friendly-fire probe (tests read it off KC 'dbg')
+                    else if (what === "duo" && Config.royale_duos) {
+                        const dr = require('../duo/duoRaid.js');
+                        const tm = dr.book.teamOf(socket.duoKey);
+                        const mb = b ? dr.mateBody(b) : null;
+                        const bots = (global.gameManager.gameHandler.bots || []).filter(x => x && !x.isDead());
+                        const out = {
+                            key: socket.duoKey || null, pid: socket.duoPid || null, fill: socket.duoFill !== false,
+                            team: b ? b.team : null, color: b ? b.color.base : null, bookTeam: tm ? tm.id : null,
+                            members: tm ? [...tm.members.values()].map(x => ({ mk: x.mk, name: x.name, away: !!x.away })) : [],
+                            mate: mb ? { id: mb.id, name: mb.name, team: mb.team, color: mb.color.base, x: Math.round(mb.x), y: Math.round(mb.y) } : null,
+                            me: b ? { id: b.id, x: Math.round(b.x), y: Math.round(b.y), hp: b.health.amount, invuln: !!b.invuln } : null,
+                            bots: bots.map(x => ({ id: x.id, team: x.team, color: x.color.base, duo: !!x.isDuoBot, mate: x.duoMate && !x.duoMate.isDead() ? x.duoMate.id : 0, x: Math.round(x.x), y: Math.round(x.y) })),
+                            teams: [...dr.book.teams.values()].map(t => ({ id: t.id, pid: t.pid, fill: t.fill, n: t.members.size, color: t.color })),
+                            bases: require('../terrain/outposts.js').getOutposts().map(o => ({ id: o.id, ownerId: o.ownerId, team: o.team, key: o.ownerKey, mine: b ? require('../terrain/outposts.js').isOwner(o, b) : false, x: Math.round(o.x), y: Math.round(o.y) })),
+                            onOwnPad: b ? !!b.outpostOnPad : false,
+                        };
+                        socket.talk('KC', 'dbg', JSON.stringify({ duo: out }), 0);
+                    }
+                    else if (what === "claimbase" && Config.royale_duos && b) {
+                        const op = require('../terrain/outposts.js');
+                        const site = op.getOutposts()[m[1] | 0];
+                        if (site) op.claimSite(site.id, b);
+                    }
+                    else if (what === "tobase" && b) {
+                        const site = require('../terrain/outposts.js').getOutposts()[m[1] | 0];
+                        if (site) { b.x = site.x; b.y = site.y; b.velocity.x = 0; b.velocity.y = 0; }
+                    }
+                    else if (what === "tomate" && Config.royale_duos && b) {
+                        const mb = require('../duo/duoRaid.js').mateBody(b);
+                        const off = Math.max(60, Math.min(600, (m[1] | 0) || 160));
+                        if (mb) { b.x = mb.x + off; b.y = mb.y; b.velocity.x = 0; b.velocity.y = 0; }
                     }
                     // ranked rank-only counters of this socket's open life
                     else if (what === "rankpts") socket.talk('KC', 'dbg', JSON.stringify({ rankpts: require('../../accounts/game/rankHooks.js').debugPts(socket) }), 0);
@@ -1932,6 +1977,10 @@ class socketManager {
             } break;
             default: {
                 let team = getRandomTeam();
+                // Duos: partners share one team (no friendly fire, one colour)
+                if (Config.royale_duos) {
+                    try { team = require('../duo/duoRaid.js').teamForSpawn(socket, name); } catch (e) { console.error('[DUO] team pick failed', e && e.stack || e); }
+                }
                 body.team = team;
                 if (Config.dig_royale) {
                     // one palette colour per player, shared by hull, HUD, leaderboard and minimap
@@ -2387,6 +2436,11 @@ class socketManager {
                         let hops = 0;
                         while (socket.spectateEntity && socket.spectateEntity.isDead() && hops++ < 8) {
                             socket.spectateEntity = livingSpectateTarget(socket.spectateEntity.finalKillers);
+                        }
+                        // duos: when the watched tank goes down, your partner first
+                        if ((!socket.spectateEntity || socket.spectateEntity.isDead()) && Config.royale_duos) {
+                            const mb = require('../duo/duoRaid.js').mateOfSocketBody(socket);
+                            if (mb) socket.spectateEntity = mb;
                         }
                         if (!socket.spectateEntity || socket.spectateEntity.isDead()) {
                             const lx = socket.spectateEntity ? socket.spectateEntity.x : camera.x;

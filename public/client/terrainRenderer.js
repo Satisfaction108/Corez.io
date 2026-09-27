@@ -22,47 +22,6 @@ const BASE_TILE_SUBCELLS = 8;
 const GEM_CUT = [
     [-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95],
 ];
-// Cut gem, tone-separated facets only (no facet lines): mid body, the
-// lower-right pavilion a shade darker, a light table set into the crown,
-// a small bright core glint, and a thin rim in a darker shade of the
-// stone's own colour.
-const GEM_PAVILION = [[0, -0.38], [1, -0.38], [0, 0.95]];
-// [scale, offset x, offset y] of GEM_CUT copies (unit radius)
-const GEM_TABLE = [0.52, 0, -0.12];
-const GEM_CORE  = [0.2, -0.22, -0.3];
-// one stone into the cached paths in `g` (body/shade/table/core)
-function addGem(g, x, y, r, rot) {
-    const c = Math.cos(rot), s = Math.sin(rot);
-    const poly = (path, pts, k = 1, ox = 0, oy = 0) => {
-        for (let i = 0; i < pts.length; i++) {
-            const px = (pts[i][0] * k + ox) * r, py = (pts[i][1] * k + oy) * r;
-            const wx = x + px * c - py * s, wy = y + px * s + py * c;
-            if (i === 0) path.moveTo(wx, wy); else path.lineTo(wx, wy);
-        }
-        path.closePath();
-    };
-    poly(g.body, GEM_CUT);
-    poly(g.shade, GEM_PAVILION);
-    poly(g.table, GEM_CUT, ...GEM_TABLE);
-    poly(g.core, GEM_CUT, ...GEM_CORE);
-}
-// flat fills, then the thin same-hue rim on top
-function paintGem(ctx, g, pal, lw) {
-    ctx.fillStyle = pal.base;
-    ctx.fill(g.body);
-    ctx.fillStyle = pal.shade;
-    ctx.fill(g.shade);
-    ctx.fillStyle = pal.table;
-    ctx.fill(g.table);
-    ctx.fillStyle = pal.core;
-    ctx.fill(g.core);
-    ctx.strokeStyle = pal.rim;
-    ctx.lineWidth = lw;
-    ctx.stroke(g.body);
-}
-const newGemPaths = () => ({ body: new Path2D(), shade: new Path2D(), table: new Path2D(), core: new Path2D() });
-// rim weight (tile units)
-const GEM_RIM = 0.018;
 
 class TerrainRenderer {
     
@@ -74,32 +33,15 @@ class TerrainRenderer {
     };
     
     
-    // The gem drawing, shared with app.js so loose pickups are drawn by the
-    // very same code as the ore gems: unit-radius paths + the painter.
-    static paintGem = paintGem;
-    static GEM_RIM  = GEM_RIM;
-    static _gemUnit = null;
-    static gemUnit() {
-        if (!TerrainRenderer._gemUnit) {
-            const g = newGemPaths();
-            addGem(g, 0, 0, 1, 0);
-            TerrainRenderer._gemUnit = g;
-        }
-        return TerrainRenderer._gemUnit;
-    }
-    // gold loot gem (no ore tier), same structure as ORE_PAL
-    static GEM_LOOT_PAL = { base: 'rgb(236,178,58)', shade: 'rgb(196,132,28)', table: 'rgb(250,214,130)',
-                            core: 'rgb(255,248,226)', rim: 'rgb(128,84,14)' };
-    // gem tones per ore tier (see paintGem)
     static ORE_PAL = {
-        1: { base: 'rgb(226,122,52)', shade: 'rgb(178,84,30)',  table: 'rgb(250,180,118)',
-             core: 'rgb(255,240,222)', rim: 'rgb(122,58,20)' },
-        2: { base: 'rgb(60,136,240)', shade: 'rgb(36,90,200)',  table: 'rgb(136,190,255)',
-             core: 'rgb(232,244,255)', rim: 'rgb(20,56,138)' },
-        3: { base: 'rgb(190,80,226)', shade: 'rgb(136,44,180)', table: 'rgb(230,154,250)',
-             core: 'rgb(252,236,255)', rim: 'rgb(86,24,116)' },
-        4: { base: 'rgb(36,200,112)', shade: 'rgb(16,146,80)',  table: 'rgb(122,242,176)',
-             core: 'rgb(234,255,244)', rim: 'rgb(8,94,52)' },
+        1: { dark: 'rgba(90,44,14,0.9)',  mid: 'rgba(201,111,46,0.95)',
+             light: 'rgba(237,167,102,0.95)', core: 'rgba(255,233,209,0.9)' },
+        2: { dark: 'rgba(14,44,90,0.9)',  mid: 'rgba(59,124,224,0.95)',
+             light: 'rgba(127,177,242,0.95)', core: 'rgba(226,240,255,0.9)' },
+        3: { dark: 'rgba(61,14,74,0.9)',  mid: 'rgba(177,62,207,0.95)',
+             light: 'rgba(217,138,240,0.95)', core: 'rgba(251,230,255,0.9)' },
+        4: { dark: 'rgba(8,66,38,0.92)',  mid: 'rgba(31,191,107,0.95)',
+             light: 'rgba(111,245,168,0.95)', core: 'rgba(232,255,242,0.95)' },
     };
     
     
@@ -363,6 +305,8 @@ class TerrainRenderer {
                     rebuilt = true;
                 }
                 this._beginGrowth(ev.k, ev.o | 0, ev.gen | 0, now, ev.ax, ev.ay);
+                const gc = this._cellPolys.get(ev.k);
+                if (gc && this._world && gameSound.rockRegrow) gameSound.rockRegrow(gc.cx * this._world.s - this._world.hw, gc.cy * this._world.s - this._world.hh);
                 continue;
             }
             if (ev.r === 2) { this._finishGrowth(ev.k, now); continue; }
@@ -428,7 +372,7 @@ class TerrainRenderer {
                     if (this._world) {
                         const w = this._world;
                         gameSound.rockHit(ev.x * w.s - w.hw, ev.y * w.s - w.hh,
-                                          this._stageOf(ev.h), !!ev.g);
+                                          this._stageOf(ev.h), !!ev.g, this._ore.get(ev.k) || 0);
                     }
                     
                     
@@ -667,11 +611,21 @@ class TerrainRenderer {
         const h = (i, s) => this._h(i, kk, (s + this._oreSalt + gsalt) | 0);
         const deposits = this._depositLayout(tier, cell.poly, cell.cx, cell.cy, rockSz, h);
         if (!deposits.length) { this._sproutArt.set(k, null); return null; }
-        const lw = GEM_RIM * rockSz;
+        const put = (path, r, rot, scale, ox, oy) => {
+            const c = Math.cos(rot), s = Math.sin(rot);
+            GEM_CUT.forEach((p, i) => {
+                const px = p[0] * r * scale + ox, py = p[1] * r * scale + oy;
+                const wx = px * c - py * s, wy = px * s + py * c;
+                if (i === 0) path.moveTo(wx, wy); else path.lineTo(wx, wy);
+            });
+            path.closePath();
+        };
         parts = deposits.map(d => {
-            const g = newGemPaths();
-            addGem(g, 0, 0, d.r, d.rot);
-            return Object.assign(g, { x: d.x, y: d.y, r: d.r, lw, big: d.big });
+            const body = new Path2D(), facet = new Path2D(), core = new Path2D();
+            put(body,  d.r, d.rot, 1,    0,            0);
+            put(facet, d.r, d.rot, 0.52, 0,            -d.r * 0.12);
+            put(core,  d.r, d.rot, 0.20, -d.r * 0.22,  -d.r * 0.30);
+            return { x: d.x, y: d.y, r: d.r, body, facet, core, big: d.big };
         });
         this._sproutArt.set(k, parts);
         return parts;
@@ -1166,20 +1120,31 @@ class TerrainRenderer {
         const deposits = this._depositLayout(tier, poly, cx, cy, rockSz, h);
         if (!deposits.length) { this._veinCache.set(k, null); return null; }
 
-        const g = newGemPaths();
+        const body = new Path2D(), facet = new Path2D(), core = new Path2D();
         const glintPts = [];
         let big = null;
-        const lw = GEM_RIM * rockSz;
+        const put = (path, x, y, r, rot, scale, ox, oy) => {
+            const c = Math.cos(rot), s = Math.sin(rot);
+            GEM_CUT.forEach((p, i) => {
+                const px = p[0] * r * scale + ox, py = p[1] * r * scale + oy;
+                const wx = x + px * c - py * s;
+                const wy = y + px * s + py * c;
+                if (i === 0) path.moveTo(wx, wy); else path.lineTo(wx, wy);
+            });
+            path.closePath();
+        };
         for (const d of deposits) {
-            addGem(g, d.x, d.y, d.r, d.rot);
-
+            put(body,  d.x, d.y, d.r, d.rot, 1,    0,           0);
+            put(facet, d.x, d.y, d.r, d.rot, 0.52, 0,           -d.r * 0.12);
+            put(core,  d.x, d.y, d.r, d.rot, 0.20, -d.r * 0.22, -d.r * 0.30);
+            
             const gc = Math.cos(d.rot), gs = Math.sin(d.rot);
             glintPts.push([d.x + (-0.35 * d.r) * gc - (-0.6 * d.r) * gs,
                            d.y + (-0.35 * d.r) * gs + (-0.6 * d.r) * gc]);
             if (d.big) big = [d.x, d.y];
         }
 
-        art = Object.assign(g, { tier, lw, glintPts, big });
+        art = { tier, body, facet, core, glintPts, big };
         this._veinCache.set(k, art);
         return art;
     }
@@ -2705,7 +2670,15 @@ class TerrainRenderer {
                                 ctx.save();
                                 ctx.translate(d.x, d.y);
                                 ctx.scale(os, os);
-                                paintGem(ctx, d, pal, d.lw / os);
+                                ctx.fillStyle = pal.mid;
+                                ctx.fill(d.body);
+                                ctx.strokeStyle = pal.dark;
+                                ctx.lineWidth = 0.022 * rockSz / os;
+                                ctx.stroke(d.body);
+                                ctx.fillStyle = pal.light;
+                                ctx.fill(d.facet);
+                                ctx.fillStyle = pal.core;
+                                ctx.fill(d.core);
                                 ctx.restore();
                                 // the tick of light as it breaks the surface
                                 if (dt < 0.4) {
@@ -2722,8 +2695,16 @@ class TerrainRenderer {
                             }
                         }
                     } else {
-                    // the cut stone (see paintGem)
-                    paintGem(ctx, art, pal, art.lw);
+                    // the layered cut: dark rim, mid body, light table, core
+                    ctx.fillStyle = pal.mid;
+                    ctx.fill(art.body);
+                    ctx.strokeStyle = pal.dark;
+                    ctx.lineWidth = 0.022 * rockSz;
+                    ctx.stroke(art.body);
+                    ctx.fillStyle = pal.light;
+                    ctx.fill(art.facet);
+                    ctx.fillStyle = pal.core;
+                    ctx.fill(art.core);
 
                     
                     

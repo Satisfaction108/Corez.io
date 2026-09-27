@@ -154,7 +154,11 @@ function lifeEnd(s, reason, opts = {}) {
     s.lifeOpen = false;
     const t = Date.now();
     const carriedHalf = opts.carried > 0 ? Math.floor(opts.carried / 2) : 0;
-    const basis = Math.max(0, Math.floor(basisOf(s) + carriedHalf - (s.lifeBase || 0)));
+    const rawBasis = Math.max(0, Math.floor(basisOf(s) + carriedHalf - (s.lifeBase || 0)));
+    // Duo lives count toward the same rank, at a reduced rate: a partner
+    // carries part of the work (R.DUO_RP_MULT, shared/ranks.js). The point
+    // sources below keep their raw sizes; they only split the gain.
+    const basis = Config.royale_duos ? Math.floor(rawBasis * R.DUO_RP_MULT) : rawBasis;
     const userId = s.accountId | 0;
     if (openByAcct.get(userId) === s) openByAcct.delete(userId);
     if (!userId) {
@@ -170,7 +174,7 @@ function lifeEnd(s, reason, opts = {}) {
     const kills = Math.max(0, s.lifeKillPts | 0);
     const survived = Math.max(0, s.lifeSurvivePts | 0);
     const damage = Math.max(0, s.lifeDmgPts | 0);
-    const bonus = Math.max(0, basis - banked - kills - carriedHalf - survived - damage);
+    const bonus = Math.max(0, rawBasis - banked - kills - carriedHalf - survived - damage);
     let payload = null;
     try {
         if (!s.lifeRowOk) openRow(s, a);
@@ -354,7 +358,8 @@ function onRaidEnd() {
     if (on()) {
         const key = raidKey();
         const order = ctx.board();
-        const rows = order.length;
+        // duos: entries carry their team's place and the number of teams
+        const rows = order.length && order[0].rows ? order[0].rows : order.length;
         const top = [];
         order.forEach((e, i) => {
             const s = e.s;
@@ -362,7 +367,7 @@ function onRaidEnd() {
             try {
                 const a = raidAcct.get(s.accountId);
                 const res = rankStore.applyRaidPlacement({
-                    raidKey: key, userId: s.accountId, place: i + 1, rows, score: e.score,
+                    raidKey: key, userId: s.accountId, place: e.place || i + 1, rows, score: e.teamScore != null ? e.teamScore : e.score,
                     raidMs: a ? t - a.joinedAt : 0, now: t,
                 });
                 if (!res) return;

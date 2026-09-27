@@ -284,10 +284,22 @@
         var ytSoon = document.getElementById('ytSoon');
         if (ytSoon) ytSoon.onclick = function () { showToast('No YouTube yet. Maybe soon'); };
 
+        // The region list follows the servers: whichever region(s) report in
+        // get a count and can be picked, the rest say so. The first region
+        // with servers is selected unless the player picked another live one.
+        var regionPicked = false;
+        function normRegion(r) {
+            r = String(r || '').toLowerCase().trim();
+            if (r.indexOf('euro') === 0 || r === 'eu') return 'Europe';
+            if (r.indexOf('amer') === 0 || r.indexOf('usa') === 0 || r === 'us' || r.indexOf('us ') === 0 || r.indexOf('us-') === 0 || r.indexOf('north america') === 0) return 'USA';
+            if (r.indexOf('asia') === 0) return 'Asia';
+            return null;
+        }
+        var liveRegions = {};
         function updateRegionLabel() {
             if (!ddLabel) return;
             var selected = regionSelector ? regionSelector.querySelector('.region-option.selected') : null;
-            var name = (selected && selected.dataset.region) || 'Europe';
+            var name = (selected && selected.querySelector('.region-name') && selected.querySelector('.region-name').textContent) || (selected && selected.dataset.region) || 'USA';
             var countEl = selected ? selected.querySelector('.region-count') : null;
             var count = countEl && countEl.style.display !== 'none' ? countEl.textContent.trim() : '';
             ddLabel.textContent = count ? name + ' \u2022 ' + count : name;
@@ -296,32 +308,38 @@
         // refresh the region options with live server counts
         function renderRegionCounts(serverData) {
             var data = Array.isArray(serverData) ? serverData : [];
-            var counts = {};
-            function norm(r) {
-                r = String(r || '').toLowerCase();
-                if (r.indexOf('euro') === 0 || r === 'eu') return 'Europe';
-                if (r.indexOf('amer') === 0 || r === 'usa' || r === 'us') return 'USA';
-                if (r.indexOf('asia') === 0) return 'Asia';
-                return null;
-            }
+            var counts = {}, labels = {};
             data.forEach(function (s) {
-                var key = norm(s.region);
-                if (key) counts[key] = (counts[key] || 0) + (Number(s.players) || 0);
+                var key = normRegion(s.region);
+                if (!key) return;
+                counts[key] = (counts[key] || 0) + (Number(s.players) || 0);
+                if (!labels[key]) labels[key] = String(s.region);
             });
+            liveRegions = counts;
             if (!regionSelector) return;
-            regionSelector.querySelectorAll('.region-option').forEach(function (opt) {
+            var opts = regionSelector.querySelectorAll('.region-option');
+            opts.forEach(function (opt) {
                 var countEl = opt.querySelector('.region-count');
+                var nameEl = opt.querySelector('.region-name');
+                var key = opt.dataset.region;
+                if (nameEl && labels[key]) nameEl.textContent = key === 'USA' && /east/i.test(labels[key]) ? 'US East' : key;
                 if (!countEl) return;
-                if (counts[opt.dataset.region] !== undefined) {
-                    countEl.textContent = counts[opt.dataset.region];
-                    countEl.style.display = '';
-                } else if (opt.dataset.region === 'Europe') {
-                    countEl.textContent = '0';
+                if (counts[key] !== undefined) {
+                    countEl.textContent = counts[key];
                     countEl.style.display = '';
                 } else {
                     countEl.style.display = 'none';
                 }
             });
+            var selected = regionSelector.querySelector('.region-option.selected');
+            var keys = Object.keys(counts);
+            if (keys.length && (!selected || counts[selected.dataset.region] === undefined || !regionPicked)) {
+                var want = regionSelector.querySelector('.region-option[data-region="' + keys[0] + '"]');
+                if (want && want !== selected) {
+                    if (selected) selected.classList.remove('selected');
+                    want.classList.add('selected');
+                }
+            }
             updateRegionLabel();
         }
         if (window.global) window.global.updateRegionSelector = renderRegionCounts;
@@ -345,7 +363,8 @@
                 var opt = e.target.closest ? e.target.closest('.region-option') : null;
                 if (!opt) return;
                 var selected = regionSelector.querySelector('.region-option.selected');
-                if (opt.dataset.region === 'Europe') {
+                if (liveRegions[opt.dataset.region] !== undefined) {
+                    regionPicked = true;
                     if (selected && selected !== opt) {
                         selected.classList.remove('selected');
                         opt.classList.add('selected');
@@ -353,7 +372,7 @@
                     setDropdownOpen(false);
                     updateRegionLabel();
                 } else {
-                    showToast('Location doesn\u2019t exist');
+                    showToast('No servers in ' + opt.dataset.region + ' yet');
                 }
             });
         }

@@ -1867,9 +1867,15 @@ class io_digWarsGoals extends IO {
         return Math.hypot(point.x - this.body.x, point.y - this.body.y);
     }
 
+    // Duos: the living bot this one is paired with (same team), or null.
+    duoMate() {
+        const m = this.body.duoMate;
+        return m && !m.isDead?.() && m.team === this.body.team ? m : null;
+    }
+
     ownVault() {
         if (Config.dig_royale) {
-            const mine = digWarsOutposts.getOutposts().find(site => site.ownerId === this.body.id);
+            const mine = digWarsOutposts.getOutposts().find(site => site.ownerId === this.body.id || digWarsOutposts.isOwner(site, this.body));
             if (mine) return mine;
             const vaults = digWarsVault.getVaults();
             let best = null, bestD = Infinity;
@@ -2051,8 +2057,17 @@ class io_digWarsGoals extends IO {
         // Whoever is actually shooting us outranks the scoring above.
         const attacker = body._lastDamageSource && now - (body._lastDamageAt || 0) < 3000
             ? body._lastDamageSource : null;
+        // A bot duo covers its partner: whoever is shooting the partner comes
+        // next, ahead of the scoring (but after our own attacker).
+        const mate = Config.royale_duos ? this.duoMate() : null;
+        const mateAttacker = mate && mate._lastDamageSource && now - (mate._lastDamageAt || 0) < 3000 &&
+            this.isEnemy(mate._lastDamageSource) && mate._lastDamageSource.health?.amount > 0 &&
+            Math.hypot(mate._lastDamageSource.x - body.x, mate._lastDamageSource.y - body.y) < fov * 1.4
+            ? mate._lastDamageSource : null;
+        if (mateAttacker && !inBotGrace(mateAttacker, now)) best = mateAttacker;
         if (attacker && this.isEnemy(attacker) && attacker.health?.amount > 0 &&
             Math.hypot(attacker.x - body.x, attacker.y - body.y) < fov * 1.25) best = attacker;
+        view.mateAttacker = mateAttacker;
 
         if (best !== this._lastEnemy) {
             // a new face takes a moment to register before the bot commits
@@ -2156,7 +2171,8 @@ class io_digWarsGoals extends IO {
         }
         const outpostStates = new Map(digWarsOutposts.stateSnapshot().map(state => [state.id, state]));
         for (const site of digWarsOutposts.getOutposts()) {
-            const owned = Config.dig_royale ? site.ownerId === body.id : site.team === body.team;
+            // (duos: the partner's base counts as ours, its banner can't be hurt anyway)
+            const owned = Config.dig_royale ? (site.ownerId === body.id || digWarsOutposts.isOwner(site, body)) : site.team === body.team;
             if (owned || !site.banner || site.banner.isDead()) continue;
             if ((this.objectiveBlacklist.get(site) || 0) > nowMs) continue;
             const state = outpostStates.get(site.id);
@@ -2276,6 +2292,11 @@ class io_digWarsGoals extends IO {
 
     explorePoint(now) {
         const body = this.body;
+        // bot duo: roam where the partner is, not across the map from them
+        const mate = Config.royale_duos ? this.duoMate() : null;
+        if (mate && ran.chance(0.75)) {
+            return { ...this.safePoint(mate.x + ran.gauss(0, 520), mate.y + ran.gauss(0, 520)), until: now + 12000 };
+        }
         const director = body._botDirectorPoint;
         if (director && now < (body._botDirectorUntil || 0) &&
             Math.hypot(director.x - body.x, director.y - body.y) > 300)
@@ -2452,8 +2473,19 @@ class io_digWarsGoals extends IO {
         if (attackedBy && !(outnumbered && health < 0.55) &&
             !(this.feared(attackedBy, now) && health < 0.85))
             return { kind: 'fight', target: attackedBy };
+        // Bot duo: someone is on our partner. Go help (the weapon layer has
+        // already picked them as the target).
+        if (view.mateAttacker && health > 0.35 && this.distanceTo(view.mateAttacker) < 1500 &&
+            !(this.feared(view.mateAttacker, now) && health < 0.6))
+            return { kind: 'fight', target: view.mateAttacker };
         if (view.gem)
             return { kind: 'collect', gem: view.gem };
+        // ...and never drift far from them: past ~1300 away, head back over
+        if (Config.dig_royale && Config.royale_duos) {
+            const mate = this.duoMate();
+            if (mate && this.distanceTo(mate) > 1300 && !(view.enemy && view.enemyDistance < 700))
+                return { kind: 'rally', point: this.safePoint(mate.x + ran.gauss(0, 160), mate.y + ran.gauss(0, 160)), expiresAt: now + 5000 };
+        }
         if (view.defense)
             return { kind: 'defend', point: view.defense.point, target: view.defense.target };
         if (view.objective)

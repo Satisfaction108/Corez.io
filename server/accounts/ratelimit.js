@@ -38,6 +38,10 @@ const WINDOWS = {
     dm:            { limit: 20,  windowMs: 1 * MIN },   // friend chat messages sent per account
     dmBurst:       { limit: 5,   windowMs: 5 * 1000 },  // ...and no more than 5 in any 5 s
     dmRead:        { limit: 120, windowMs: 1 * MIN },   // read receipts per account
+    party:         { limit: 90,  windowMs: 1 * MIN },   // /api/party calls per IP (the menu polls every 3 s)
+    partyAct:      { limit: 40,  windowMs: 10 * MIN },  // party create/join/leave per IP or account
+    partyInvite:   { limit: 30,  windowMs: 10 * MIN },  // duo invites sent per account
+    partyCode:     { limit: 20,  windowMs: 10 * MIN },  // wrong party codes per IP (guessing)
 };
 
 const BACKOFFS = {

@@ -856,7 +856,7 @@ const process = (z = {}) => {
             z.guns.fire(i, power);
             if (z.x !== undefined) {
                 if (gunIsDrone(z, i)) gameSound.droneSpawn(z.x, z.y);
-                else gameSound.shoot(z.x, z.y, power);
+                else gameSound.shoot(z.x, z.y, power, z, i);
             }
         }
     }
@@ -1126,6 +1126,8 @@ let incoming = async function(message, socket) {
                 if (m[0]) {
                     if (guestId) socket.talk('GI', guestId);
                     socket.talk('RZ', resumeToken);
+                    // duos: the party ticket (or "" for a lone queue) and fill
+                    if (global.duoSession) socket.talk('DQ', String(global.duoSession.ticket || ""), global.duoSession.fill === false ? 0 : 1);
                     socket.talk('s', "", 1, 0, false, 0);
                 }
             }; break;
@@ -1177,8 +1179,8 @@ let incoming = async function(message, socket) {
                 if (prev.length) {
                     for (const s of next) {
                         const old = prev.find(p => p.id === s.id);
-                        if (old && s.t && s.t !== old.t && gameSound.bankCelebrate)
-                            gameSound.bankCelebrate();
+                        if (old && s.t && s.t !== old.t && gameSound.outpostCapture)
+                            gameSound.outpostCapture();
                     }
                 }
                 global.outpostState = next;
@@ -1190,8 +1192,8 @@ let incoming = async function(message, socket) {
                 if (prev.length) {
                     for (const s of next) {
                         const old = prev.find(p => p.id === s.id);
-                        if (old && s.st === 1 && old.st !== 1 && gameSound.bankCelebrate)
-                            gameSound.bankCelebrate();
+                        if (old && s.st === 1 && old.st !== 1 && gameSound.chamberOpen)
+                            gameSound.chamberOpen();
                     }
                 }
                 global.chamberState = next;
@@ -1269,6 +1271,9 @@ let incoming = async function(message, socket) {
                     r.ending = d.ending | 0;      // between raids
                     r.nextIn = d.nextIn | 0;      // ...seconds to the next one
                     r.you = d.you || null;
+                    r.duos = d.duos | 0;
+                    r.teams = d.teams || null;
+                    r.duo = d.duo || null;
                     r.matchId = d.matchId | 0;
                     r.chests = d.chests || [];
                     r.event = d.event || null;
@@ -1288,7 +1293,7 @@ let incoming = async function(message, socket) {
                     if (bossNow && bossNow.id !== r.bossSeenId) {
                         r.bossSeenId = bossNow.id;
                         punchCamera(18, 380, true);
-                        if (gameSound.oreBreak) gameSound.oreBreak(global.player.renderx, global.player.rendery, 3);
+                        if (gameSound.bossSurface) gameSound.bossSurface();
                     } else if (!bossNow) r.bossSeenId = 0;
                     r.boss = bossNow;
                     // leaderboard hits: passing someone, or getting passed
@@ -1297,10 +1302,11 @@ let incoming = async function(message, socket) {
                         if (placeNow < r.lastPlace) {
                             const below = r.board.find(row => row.place === placeNow + 1);
                             global.createMessage("You passed " + (below ? below.name : "someone") + " - now #" + placeNow, 3200);
-                            if (gameSound.gemPickup) gameSound.gemPickup(3);
+                            if (gameSound.placeChange) gameSound.placeChange(true);
                         } else {
                             const above = r.board.find(row => row.place === placeNow - 1);
                             global.createMessage((above ? above.name : "Someone") + " passed you - now #" + placeNow, 3200);
+                            if (gameSound.placeChange) gameSound.placeChange(false);
                         }
                     }
                     if (placeNow > 0) r.lastPlace = placeNow;
@@ -1353,8 +1359,7 @@ let incoming = async function(message, socket) {
                     if ((sh.state.drill | 0) > (prevDrill | 0)) sh.drillFlashAt = nowF;
                     if (sh.state.arm && sh.state.arm !== prevArm) sh.armFlashAt = nowF;
                     if (d.msg) { sh.msg = d.msg; sh.msgAt = performance.now(); sh.msgOk = !!d.ok; }
-                    if (d.msg && d.ok && gameSound.bankCelebrate) gameSound.bankCelebrate();
-                    else if (d.msg && gameSound.uiClick) gameSound.uiClick();
+                    if (d.msg && gameSound.shopResult) gameSound.shopResult(!!d.ok);
                 } catch (e) { /* */ }
             } break;
             case 'SHU': {
@@ -1370,7 +1375,7 @@ let incoming = async function(message, socket) {
                 if (m[0] === "raidend") {
                     global.raidEndFx = { at: performance.now(), sub: typeof m[3] === "string" ? m[3] : "" };
                     global.callouts.length = 0;
-                    if (gameSound.bankCelebrate) gameSound.bankCelebrate();
+                    if (gameSound.raidEnd) gameSound.raidEnd();
                     break;
                 }
                 // kind, text, points: the big centre callout
@@ -1380,7 +1385,8 @@ let incoming = async function(message, socket) {
                 list.push({ kind: m[0] || "kill", text: m[1] || "", pts: m[2] | 0, sub: typeof m[3] === "string" ? m[3] : undefined,
                     dur: typeof m[4] === "number" && m[4] > 0 ? Math.min(15000, m[4]) : undefined, born: Math.max(performance.now(), prev + 700) });
                 if (list.length > 5) list.shift();
-                if (m[0] === "boss" || m[0] === "quest") { punchUI(8, 260); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
+                if (m[0] === "boss" || m[0] === "quest") punchUI(8, 260);
+                if (gameSound.callout) gameSound.callout(m[0]);
             } break;
             case 'FX': {
                 const kindF = m[2] || "ring";
@@ -1418,9 +1424,10 @@ let incoming = async function(message, socket) {
                 }
                 try {
                     if (nearF < 900) {
-                        if (m[2] === "meteor" || m[2] === "charge") { punchCamera(14, 260, true); gameSound.rockBreak(m[0] | 0, m[1] | 0); }
-                        if (m[2] === "bossdead") { punchCamera(44, 650, true); gameSound.oreBreak(m[0] | 0, m[1] | 0, 4); }
-                        if (m[2] === "chest" || m[2] === "chestrare") { punchCamera(m[2] === "chestrare" ? 16 : 10, 240, true); gameSound.oreBreak(m[0] | 0, m[1] | 0, m[2] === "chestrare" ? 3 : 2); }
+                        if (m[2] === "meteor" || m[2] === "charge") punchCamera(14, 260, true);
+                        if (m[2] === "bossdead") punchCamera(44, 650, true);
+                        if (m[2] === "chest" || m[2] === "chestrare") punchCamera(m[2] === "chestrare" ? 16 : 10, 240, true);
+                        if (gameSound.fx) gameSound.fx(m[2], m[0] | 0, m[1] | 0);
                     }
                 } catch (e) { /* */ }
             } break;
@@ -1461,7 +1468,7 @@ let incoming = async function(message, socket) {
                     punchCamera(22, 300, true);
                     punchUI(7, 240);
                     global.celebrateAt = performance.now();
-                    if (gameSound.bankCelebrate) gameSound.bankCelebrate();
+                    if (gameSound.play) gameSound.play('milestone');
                 }
             } break;
             case 'LA': {

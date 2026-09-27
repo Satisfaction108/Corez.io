@@ -3162,8 +3162,9 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 .pf-tier:not(.on) { border-style: dashed; border-color: var(--border); background: transparent; }
 .pf-tier-img { width: 50px; height: 50px; display: block; transition: transform .15s var(--dw-pop); }
 .pf-tier.on:hover .pf-tier-img { transform: translateY(-3px) rotate(-5deg) scale(1.06); }
-.pf-tier:not(.on) .pf-tier-img { filter: brightness(0) invert(1); opacity: .1; }
-[data-theme="light"] .pf-tier:not(.on) .pf-tier-img { filter: brightness(0); opacity: .14; }
+/* not reached yet: the real badge, greyed and dimmed, so it stays crisp */
+.pf-tier:not(.on) .pf-tier-img { filter: grayscale(1) brightness(.62); opacity: .5; }
+[data-theme="light"] .pf-tier:not(.on) .pf-tier-img { filter: grayscale(1) brightness(.9); opacity: .45; }
 .pf-tier-l { color: var(--text); font: 400 14px var(--display); letter-spacing: .03em; }
 .pf-tier:not(.on) .pf-tier-l { color: var(--text2); opacity: .7; }
 /* achievements: a tray of little medals. Name and how to get it on hover */
@@ -3519,3 +3520,143 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 .dwj-btns { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
 .dwj-btns .dw-btn { min-width: 132px; }
 @media (max-width: 420px) { .dwj-title { font-size: 28px; } .dwj-btns .dw-btn { min-width: 0; flex: 1; } }
+
+/* ── SOLO | DUOS and the duo party (client/account/party.js) ───────────
+   The toggle is the Locker tab recipe stretched to the card; the party is
+   one plate with two slots, the same ink outlines and lips as everything
+   else on the menu. */
+.mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.mode-opt {
+    position: relative;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 42px; margin: 0 0 3px; padding: 0 12px 3px;
+    border: 2.5px solid var(--ink); border-radius: 10px;
+    background: var(--face);
+    box-shadow: inset 0 -4px 0 var(--face-dk), 0 3px 0 var(--ink);
+    color: var(--text2);
+    font: 400 19px/1 var(--display); letter-spacing: .04em;
+    cursor: pointer;
+    transition: transform 60ms ease-out, box-shadow 60ms ease-out, background-color 80ms, color 80ms;
+}
+.mode-opt:hover { color: var(--text); }
+.mode-opt.on {
+    background: var(--copper); color: #fff;
+    text-shadow: 0 2px 0 rgba(0,0,0,.25);
+    transform: translateY(3px);
+    box-shadow: inset 0 -2px 0 var(--copper-dk), 0 0 0 var(--ink);
+    cursor: default;
+}
+.mode-count:empty { display: none; }
+.mode-count {
+    min-width: 22px; padding: 2px 6px 3px; box-sizing: border-box;
+    border-radius: 6px; background: var(--ink); color: #fff4dc;
+    font: 400 13px/1 var(--display); text-align: center; text-shadow: none;
+    font-variant-numeric: tabular-nums;
+}
+/* in a party but looking at Solo: a dot on Duos */
+.mode-opt.has-party::after {
+    content: ''; position: absolute; top: -6px; right: -6px;
+    width: 12px; height: 12px; box-sizing: border-box;
+    border: 2.5px solid var(--ink); border-radius: 50%; background: var(--play);
+}
+
+.duo-panel {
+    margin-top: 10px; padding: 10px;
+    border: 3px solid var(--ink); border-radius: 12px;
+    background: var(--surface);
+    box-shadow: 0 3px 0 var(--ink);
+    text-align: left;
+    animation: dwFade var(--dw-t2) var(--dw-ease) both;
+}
+.duo-panel[hidden] { display: none; }
+.duo-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.duo-slot {
+    position: relative;
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+    height: 54px; margin: 0; padding: 0 9px 3px;
+    box-sizing: border-box;
+    border: 2.5px solid var(--ink); border-radius: 10px;
+    background: var(--face);
+    box-shadow: inset 0 -4px 0 var(--face-dk);
+    color: var(--text); font: inherit; text-align: left;
+}
+.duo-slot.empty {
+    border-style: dashed; background: transparent; box-shadow: none;
+    cursor: pointer;
+    transition: background-color 80ms, transform 60ms ease-out;
+}
+.duo-slot.empty:hover, .duo-slot.empty.open { background: var(--surface2); }
+.duo-slot.empty:active { transform: translateY(2px); }
+.duo-av, .duo-plus {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; box-sizing: border-box;
+    border: 2.5px solid var(--ink); border-radius: 50%;
+    background: var(--emerald); color: #fff;
+    font: 400 17px/1 var(--display);
+    -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill;
+}
+.duo-slot.you .duo-av { background: var(--copper); }
+.duo-plus { border-style: dashed; background: transparent; color: var(--text2); -webkit-text-stroke: 0; font-size: 22px; }
+.duo-who { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.duo-name { overflow: hidden; color: var(--heading); font: 400 15px/1.05 var(--display); letter-spacing: .02em; text-overflow: ellipsis; white-space: nowrap; }
+.duo-you { color: var(--text2); font-size: 12px; }
+.duo-sub { overflow: hidden; color: var(--text2); font: 700 11px/1.1 Ubuntu; text-overflow: ellipsis; white-space: nowrap; }
+.duo-sub.st-menu { color: var(--online); }
+.duo-sub.st-playing { color: var(--in-raid, var(--gold)); }
+.duo-crown {
+    position: absolute; top: -7px; right: 8px;
+    width: 11px; height: 11px; box-sizing: border-box;
+    border: 2px solid var(--ink); border-radius: 2px;
+    background: var(--gold); transform: rotate(45deg);
+}
+.duo-drawer { margin-top: 10px; padding-top: 8px; border-top: 2px dashed var(--border); animation: dwFade var(--dw-t2) var(--dw-ease) both; }
+.duo-h { margin: 2px 0 6px 3px; color: var(--text2); font: 400 14px/1 var(--display); letter-spacing: .02em; }
+.duo-h + .duo-friends { margin-bottom: 8px; }
+.duo-friends { display: flex; flex-direction: column; gap: 4px; max-height: 152px; overflow-y: auto; }
+.duo-friend { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; min-height: 36px; padding: 0 2px 0 4px; }
+.duo-dot { width: 10px; height: 10px; box-sizing: border-box; border: 2px solid var(--ink); border-radius: 50%; background: var(--text2); }
+.duo-dot.st-menu { background: var(--online); }
+.duo-dot.st-raid { background: var(--in-raid, var(--gold)); }
+.duo-fname { overflow: hidden; color: var(--heading); font: 400 15px var(--display); text-overflow: ellipsis; white-space: nowrap; }
+.duo-fsub { color: var(--text2); font: 700 11px Ubuntu; white-space: nowrap; }
+.duo-friend.st-offline .duo-fname { opacity: .6; }
+.duo-friend .dw-btn { min-width: 66px; }
+.duo-code, .duo-join { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+.duo-join { margin-top: 6px; }
+.duo-lbl { flex: 1; min-width: 0; color: var(--text2); font: 700 12px/1.3 Ubuntu; }
+.duo-code-val {
+    padding: 5px 10px 6px;
+    border: 2.5px solid var(--ink); border-radius: 8px;
+    background: var(--input-bg); color: var(--heading);
+    font: 700 19px/1 'Ubuntu Mono', monospace; letter-spacing: .22em;
+    user-select: all; -webkit-user-select: all;
+}
+input.dw-input.duo-code-in { width: 104px; height: 34px; padding: 0 8px; font-size: 15px; text-align: center; }
+.duo-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; min-height: 30px; }
+.duo-note { color: var(--text2); font: 600 12px/1.35 Ubuntu; }
+.duo-leave { flex: none; --face-c: var(--face); color: var(--danger-text); }
+.duo-leave:hover:not(:disabled) { --face-c: var(--danger); --lip-c: var(--danger-dk); color: #fff; }
+.duo-fill { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--text); font: 700 12px/1.3 Ubuntu; cursor: pointer; user-select: none; }
+.duo-fill input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.duo-check {
+    position: relative; flex: none;
+    width: 20px; height: 20px; box-sizing: border-box;
+    border: 2.5px solid var(--ink); border-radius: 6px;
+    background: var(--input-bg);
+    box-shadow: inset 0 2px 0 rgba(0,0,0,.08);
+}
+.duo-fill input:checked + .duo-check { background: var(--check); }
+.duo-fill input:checked + .duo-check::after {
+    content: ''; position: absolute; left: 5px; top: 1px;
+    width: 5px; height: 10px; box-sizing: border-box;
+    border: solid #fff; border-width: 0 3px 3px 0; transform: rotate(45deg);
+}
+.duo-fill input:focus-visible + .duo-check { box-shadow: 0 0 0 3px var(--copper); }
+/* Friends pane: the invite-to-duo button */
+.fr-duo:disabled { opacity: .35 !important; cursor: not-allowed; }
+.fr-duo.on { --face: color-mix(in srgb, var(--play) 35%, var(--face)); cursor: default; }
+.fr-row .fr-ic.fr-duo:not(:disabled) { opacity: 1; }
+@media (max-width: 420px) {
+    .duo-slots { grid-template-columns: 1fr; }
+    .duo-foot { flex-wrap: wrap; }
+}

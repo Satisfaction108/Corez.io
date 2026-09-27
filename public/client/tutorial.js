@@ -91,30 +91,22 @@ function w2s(wx, wy, px, py, ratio) {
     return { x: -px + SW() / 2 + ratio * wx, y: -py + SH() / 2 + ratio * wy };
 }
 
-// ── audio stingers (built from the game's own synth primitives) ────────
+// ── audio stingers (from the shared sound library) ─────────────────────
 function canSound() {
     try { return !!(gameSound && gameSound._ready && gameSound._ready()); }
     catch (e) { return false; }
 }
 function sfxObjective() {
     if (!canSound()) return;
-    try {
-        gameSound._tone({ freq: 523.25, type: "triangle", dur: 0.12, peak: 0.09, attack: 0.008 });
-        gameSound._tone({ freq: 783.99, type: "triangle", dur: 0.2, peak: 0.08, delay: 0.09, attack: 0.01 });
-        gameSound._ring({ freqs: [1046.5, 1568], dur: 0.22, peak: 0.03, delay: 0.12 });
-    } catch (e) { }
+    try { gameSound.play('questComplete'); } catch (e) { }
 }
 function sfxAdvance() {
     if (!canSound()) return;
-    try { gameSound._tone({ freq: 392, type: "sine", dur: 0.08, peak: 0.04, attack: 0.01 }); }
-    catch (e) { }
+    try { gameSound.play('uiSuccess'); } catch (e) { }
 }
 function sfxFinale() {
     if (!canSound()) return;
-    try {
-        gameSound._ring({ freqs: [261.6, 329.63, 392], dur: 0.55, peak: 0.1 });
-        gameSound._tone({ freq: 523.25, type: "sine", dur: 0.5, peak: 0.07, delay: 0.16, attack: 0.03 });
-    } catch (e) { }
+    try { gameSound.play('milestone'); } catch (e) { }
 }
 
 // ── terrain access ─────────────────────────────────────────────────────

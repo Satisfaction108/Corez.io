@@ -105,7 +105,7 @@ function chipName(name, u) {
 // The chip's second line: a tiny badge and the rank.
 function rankLine(rank) {
     const v = rankView(rank);
-    return h('span', { class: 'ac-sub ac-rank' }, badgeImg(v.div, 16, 'ac-badge'), h('span', { text: v.text }));
+    return h('span', { class: 'ac-sub ac-rank' }, badgeImg(v.div, 15, 'ac-badge'), h('span', { text: v.text }));
 }
 
 // The "Playing as" box: badge, then the name. Only rebuilt when the
@@ -124,7 +124,7 @@ function renderNameBox(name, rank, st) {
     else nameText.textContent = name;
     nameBox.title = name ? (v.text + '. Rename in Account') : 'Rename in Account';
     if (!name) return;
-    const img = badgeImg(v.div, 22, 'an-badge');
+    const img = badgeImg(v.div, 26, 'an-badge');
     if (img) nameBox.insertBefore(img, nameText);
 }
 

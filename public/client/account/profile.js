@@ -181,7 +181,7 @@ function tiers(p) {
         const on = have.has(t);
         const div = i === 6 ? 18 : i * 3;
         row.appendChild(h('div', { class: 'pf-tier' + (on ? ' on' : ''), title: on ? TIER_NAME[t] + ': got it' : TIER_NAME[t] + ': not yet' },
-            badge(div, 48, 'pf-tier-img'),
+            badge(div, 54, 'pf-tier-img'),
             h('span', { class: 'pf-tier-l', text: TIER_NAME[t] })));
     });
     return section('Tiers', have.size + ' / 7', row);

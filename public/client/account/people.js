@@ -62,7 +62,7 @@ export const fmtNum = (n) => (Math.round(+n || 0)).toLocaleString();
 export function presenceText(p, rank) {
     const st = (p && p.state) || 'offline';
     if (st === 'raid') {
-        const bits = ['In a raid'];
+        const bits = [p.mode === 'duo' ? 'In a duo raid' : 'In a raid'];
         const r = rank && rank.division != null ? rankOf(rank).text : '';
         if (r) bits.push(r);
         if (p.score != null && p.alive !== false) bits.push(fmtNum(p.score) + ' pts');

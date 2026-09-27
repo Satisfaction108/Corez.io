@@ -97,7 +97,13 @@
             perVictim: 40,              // per victim per life: one bar; the kill (200) pays the rest
             perLife: 200,               // five victims' worth per life
         }),
+        // Duos: a duo life counts toward the same rank as a solo one, at this
+        // share of its points (a partner does part of the work). Applied to
+        // the life basis in rankHooks.lifeEnd; the raid placement bonus pays
+        // the team's place to both partners.
+        duo: Object.freeze({ rpMult: 0.8 }),
     });
+    const DUO_RP_MULT = REWARDS.duo.rpMult;
     const SOFT_CAP_RATE = 0.25;
 
     function clampIndex(i) { return Math.max(0, Math.min(LEGEND, i | 0)); }
@@ -132,7 +138,7 @@
     return Object.freeze({
         RULES_VERSION, TIERS, TIER_NAMES, DIVISIONS, LEGEND, CURVE, curve, LIFE_CAP,
         PLACEMENT_LIVES, placementStart, PLACEMENT_BONUS_RP, PLACEMENT_BONUS_DUST_MILLI,
-        DUST_MILLI_PER_GEM, KILL_DUST_MILLI, DAILY_SOFT_CAP_MILLI, SOFT_CAP_RATE, REWARDS,
+        DUST_MILLI_PER_GEM, KILL_DUST_MILLI, DAILY_SOFT_CAP_MILLI, SOFT_CAP_RATE, REWARDS, DUO_RP_MULT,
         divisionOf, floorOf, nameOf, tierOf, isTierUp, progressOf,
         CODE_NONE, CODE_PLACEMENT, rankCode, fromCode,
     });

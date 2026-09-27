@@ -14,6 +14,8 @@ async function request(method, path, body) {
         headers: { 'X-DW': '1', 'Accept': 'application/json' },
         signal: ctl ? ctl.signal : undefined,
     };
+    // a guest's duo party identity (party.js keeps it per tab)
+    if (partyGuest && path.startsWith('/api/party')) opts.headers['X-Party-Guest'] = partyGuest;
     // Non-GET routes demand a JSON content type (CSRF gate), even with no fields.
     if (method !== 'GET') {
         opts.headers['Content-Type'] = 'application/json';
@@ -39,6 +41,9 @@ async function request(method, path, body) {
         if (timer) clearTimeout(timer);
     }
 }
+
+let partyGuest = '';
+export function setPartyGuest(token) { partyGuest = typeof token === 'string' ? token : ''; }
 
 const get = (path) => request('GET', path);
 const post = (path, body) => request('POST', path, body);
@@ -96,3 +101,13 @@ export const leaderboard = (limit) => get('/api/leaderboard?limit=' + (limit || 
 export const quests = () => get('/api/quests');
 // Server-Sent Events: a URL, since EventSource does its own fetching.
 export const EVENTS_URL = '/api/events';
+// Duo parties (guests too: they carry the X-Party-Guest token set above).
+export const party = () => get('/api/party');
+export const partyCreate = (name) => post('/api/party/create', { name });
+export const partyJoin = (code, name) => post('/api/party/join', { code, name });
+export const partyInvite = (userId) => post('/api/party/invite', { userId });
+export const partyInviteCancel = (id) => post('/api/party/invite/cancel', { id });
+export const partyRespond = (id, accept) => post('/api/party/respond', { id, accept: !!accept });
+export const partyLeave = () => post('/api/party/leave', {});
+export const partyLaunch = (fill) => post('/api/party/launch', { fill: !!fill });
+export const partyTicket = (fill) => post('/api/party/ticket', { fill: !!fill });

@@ -51,7 +51,8 @@ function raidEntry(userId) {
 // rowLastSeen: users.last_seen_at when the caller already has the row.
 function get(userId, rowLastSeen) {
     const e = raidEntry(userId);
-    if (e) return { state: 'raid', alive: !!e.alive, score: e.score == null ? null : e.score | 0, place: e.place == null ? null : e.place | 0, lastSeen: null };
+    // mode: 'duo' when that raid is the duo server's (the friends list says so)
+    if (e) return { state: 'raid', alive: !!e.alive, score: e.score == null ? null : e.score | 0, place: e.place == null ? null : e.place | 0, lastSeen: null, mode: e.serverId === 'duo' ? 'duo' : 'solo' };
     if ((streams.get(userId) | 0) > 0) return { state: 'menu', alive: false, score: null, place: null, lastSeen: null };
     const mem = seen.get(userId) || 0;
     let ls = rowLastSeen == null ? null : rowLastSeen;

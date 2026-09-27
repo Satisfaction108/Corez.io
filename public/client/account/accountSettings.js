@@ -119,7 +119,7 @@ function profile(u) {
         h('div', { class: 'as-who' },
             h('div', { class: 'as-uname', text: u.username }),
             h('div', { class: 'as-meta' },
-                (() => { const v = rankView(u.rank); return h('span', { class: 'as-rank' }, badgeImg(v.div, 18, 'as-badge'), h('span', { text: v.text })); })(),
+                (() => { const v = rankView(u.rank); return h('span', { class: 'as-rank' }, badgeImg(v.div, 20, 'as-badge'), h('span', { text: v.text })); })(),
                 h('span', { class: 'as-dot', text: '·' }),
                 h('span', { class: 'as-dustline' }, icon('dust'), fmtDust(u.dust)),
                 u.createdAt ? h('span', { class: 'as-dot', text: '·' }) : null,

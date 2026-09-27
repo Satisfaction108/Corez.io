@@ -313,6 +313,9 @@ function onEvent(type, d) {
             emit('dmRead');
             break;
         case 'storeReset': hooks.onStoreReset(d); break;
+        case 'party': case 'partyInvite': case 'partyInviteGone':
+            partySubs.forEach((fn) => { try { fn(type, d || {}); } catch (e) { console.error(e); } });
+            break;
         case 'sessionRevoked':
             revoked = true;
             stop();
@@ -323,7 +326,11 @@ function onEvent(type, d) {
     }
 }
 
-const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'sessionRevoked'];
+const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'sessionRevoked', 'party', 'partyInvite', 'partyInviteGone'];
+// Duo party events (party.js): fn(type, data)
+const partySubs = new Set();
+export function onParty(fn) { partySubs.add(fn); return () => partySubs.delete(fn); }
+export const streamOpen = () => !!es;
 let es = null, esFails = 0, pollTimer = 0, esRetryTimer = 0, revoked = false, revokePending = false;
 
 function openStream() {

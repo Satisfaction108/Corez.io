@@ -79,15 +79,23 @@ global.getTeamName = team => [...global.teamNames, , "DREADNOUGHT"][-team - 1] ?
 // a dead team frees its colour.
 global.royaleTeamColors = new Map();
 global.ROYALE_PALETTE = [10, 12, 11, 14, 2, 0, 4, 5, 15, 13, 1];
+// Duos: a team shares one colour. The duo server holds a team's colour for
+// as long as the team exists (royaleHeldTeamColors), even while both
+// partners are dead, so nobody else is handed it in the meantime.
+global.royaleHeldTeamColors = new Map();
 global.assignTeamColor = (team) => {
+    const held = global.royaleHeldTeamColors;
+    if (held.has(team)) { global.royaleTeamColors.set(team, held.get(team)); return held.get(team); }
     const live = new Map();
     const all = global.entities ? global.entities.values() : [];
     for (const e of all) {
         if (!e || !(e.isPlayer || e.isBot) || e.isDead?.()) continue;
         if (global.royaleTeamColors.has(e.team)) live.set(e.team, global.royaleTeamColors.get(e.team));
     }
-    for (const t of [...global.royaleTeamColors.keys()]) if (!live.has(t) && t !== team) global.royaleTeamColors.delete(t);
-    const inUse = new Set(live.values());
+    // a teammate (bot duo) is already out there: same colour
+    if (live.has(team)) return live.get(team);
+    for (const t of [...global.royaleTeamColors.keys()]) if (!live.has(t) && !held.has(t) && t !== team) global.royaleTeamColors.delete(t);
+    const inUse = new Set([...live.values(), ...held.values()]);
     let pick = global.ROYALE_PALETTE.find(c => !inUse.has(c));
     if (pick === undefined) {
         const counts = new Map();

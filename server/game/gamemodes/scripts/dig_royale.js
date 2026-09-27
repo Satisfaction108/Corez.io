@@ -13,11 +13,16 @@ const raidMods = require('../../terrain/raidMods.js');
 const rankHooks = require('../../../accounts/game/rankHooks.js');
 const dustHooks = require('../../../accounts/game/dustHooks.js');
 const progressHooks = require('../../../accounts/game/progressHooks.js');   // daily quests + achievements
+// duos (only does anything on the duo server: Config.royale_duos)
+const duo = require('../../duo/duoRaid.js');
 
 const RAID_MS = 2 * 60 * 60 * 1000;
 // Raid size including humans: a solo player gets 5 bots, and each real
-// player who joins takes a bot's place.
+// player who joins takes a bot's place. The duo server holds one more, so a
+// party of two still meets 5 bots (two of them a bot duo).
 const FILL_CAP = 6;
+const DUO_FILL_CAP = 7;
+function fillCap() { return Config.royale_duos ? DUO_FILL_CAP : FILL_CAP; }
 const OCCUPY_MS = 10_000;
 const LOCKOUT_MS = 10_000;
 const KILL_VERBS = ["killed", "slaughtered", "demolished", "wrecked", "ended", "cooked"];
@@ -206,6 +211,7 @@ function ensureStat(body) {
     }
     s.name = body.name || s.name;
     s.id = body.id;
+    s.team = body.team;
     // nameplate cosmetics for the board rows (bridge.applyIdentity)
     s.ns = body.nameStyleNid | 0;
     s.nc = body.customNameColor || null;
@@ -234,9 +240,33 @@ const boardCmp = (a, b) => (b.score - a.score) || (b.gems - a.gems) || (b.kills 
 // Every stat in board order, bots included: the raid placement bonus reads
 // places from this. -> [{s, score, gems, kills}]
 function boardOrder() {
-    return [...raidStats.values()]
+    const list = [...raidStats.values()]
         .map(s => ({ s, score: scoreOf(s), gems: s.banked | 0, kills: s.kills | 0 }))
         .sort(boardCmp);
+    if (!Config.royale_duos) return list;
+    // Duos: a team places on its combined score and both partners take that
+    // place (the raid placement bonus reads e.place / e.rows).
+    const teams = new Map();
+    for (const e of list) {
+        const k = e.s.team != null ? e.s.team : 'k' + e.s.key;
+        let t = teams.get(k);
+        if (!t) teams.set(k, t = { score: 0, gems: 0, kills: 0, list: [] });
+        t.score += e.score; t.gems += e.gems; t.kills += e.kills;
+        t.list.push(e);
+    }
+    const order = [...teams.values()].sort(boardCmp);
+    const out = [];
+    order.forEach((t, i) => { for (const e of t.list) out.push(Object.assign(e, { place: i + 1, rows: order.length, teamScore: t.score })); });
+    return out;
+}
+
+// Duos: team rows for the HUD (and the raid results). -> [{tm, names, ids, score, kills, alive, bot, place}]
+function teamRows(board) {
+    return duo.standings(board).map(t => ({
+        tm: t.tm, names: t.rows.map(r => r.name || "Unnamed"), ids: t.rows.map(r => r.id),
+        score: t.score, kills: t.kills, gems: t.gems, alive: t.alive ? 1 : 0, here: t.here ? 1 : 0,
+        bot: t.rows.every(r => r.bot) ? 1 : 0, place: t.place,
+    }));
 }
 
 function boardSnapshot() {
@@ -267,6 +297,7 @@ function boardSnapshot() {
         rk: s.rankCode | 0,
         ns: s.ns | 0,
         nc: s.nc || undefined,
+        tm: Config.royale_duos ? s.team : undefined,
         place: 0,
     }));
     rows.sort(boardCmp);
@@ -431,8 +462,13 @@ function broadcast(extra = {}) {
     const humanCount = humans().length;
     const liveToast = extra.toast || (t < toastUntil ? toastText : "");
     let scanRocks = null;
+    const duos = !!Config.royale_duos;
+    const teamsAll = duos ? teamRows(board) : null;
+    const teamPlace = new Map();
+    if (teamsAll) for (const tr of teamsAll) if (tr.tm != null) teamPlace.set(tr.tm, tr.place);
     const sharedStr = JSON.stringify({
-        phase: 'live', left: raidLeft, alive, fill: FILL_CAP, humans: humanCount, winner: null, storm: st, toast: liveToast,
+        duos: duos ? 1 : 0, teams: teamsAll ? teamsAll.slice(0, 12) : undefined,
+        phase: 'live', left: raidLeft, alive, fill: fillCap(), humans: humanCount, winner: null, storm: st, toast: liveToast,
         feed: killFeed.slice(-8), board, lock, lockLeft, matchId: raidId, raidId, raidLeft, raidMs: RAID_MS,
         occupyMs: OCCUPY_MS, lockoutMs: LOCKOUT_MS, objectives, bloom: bloomSnap, chest: null, chests: chestSnap,
         boss: bossSnap, event: eventSnap, mod: modSnap, pings, results: raidResults, ending, nextIn, ...extra,
@@ -466,9 +502,19 @@ function broadcast(extra = {}) {
                 anchor: bodyLive && body.stormAnchorUntil > t ? Math.ceil((body.stormAnchorUntil - t) / 1000) : 0,
             } : null;
         // shared part stringified once per broadcast; only the per-client tail differs
+        let duoTail = '';
+        if (duos) {
+            const d = duo.hudFor(client, t) || {};
+            const myTm = mine ? mine.team : (bodyLive ? body.team : null);
+            d.tm = myTm != null ? myTm : null;
+            d.place = myTm != null ? (teamPlace.get(myTm) | 0) : 0;
+            d.score = 0;
+            if (teamsAll && myTm != null) { const tr = teamsAll.find(x => x.tm === myTm); if (tr) d.score = tr.score | 0; }
+            duoTail = ',"duo":' + JSON.stringify(d);
+        }
         const payload = sharedStr.slice(0, -1) + ',"youPlace":' + (myRow ? (myRow.place | 0) : 0) +
             ',"youScore":' + (mine ? scoreOf(mine) : 0) + ',"youPB":' + ((client.raidPB || 0) | 0) +
-            ',"you":' + JSON.stringify(you) + '}';
+            ',"you":' + JSON.stringify(you) + duoTail + '}';
         client.talk('RY', payload);
     }
 }
@@ -758,7 +804,9 @@ function humansInRaid() {
 function botCapNow() {
     const FM = FIRST_MINUTES;
     const hs = humansInRaid();
-    let cap = FILL_CAP - hs;
+    // duos: a lone player (who may be filled later) still counts as a pair,
+    // so 1 or 2 humans both meet 5 bots
+    let cap = fillCap() - (Config.royale_duos ? Math.max(2, hs) : hs);
     try {
         const st = storm.snapshot(now());
         if (st && st.a) {
@@ -847,15 +895,55 @@ function lateJoinNote(body) {
     try { body.sendMessage(title + ". " + sub); } catch { /* */ }
 }
 
+// Duos: a spot at a living partner's side, for a (re)spawn. Null when the
+// partner is fighting, in the storm or has an enemy close (then the normal
+// safe spawn applies). `loose`: skip those checks (a new raid placing
+// partners together).
+function spotNearMate(self, mate, loose = false) {
+    if (!mate || mate.isDead?.() || mate.royaleAlive === false) return null;
+    const t = now();
+    const FM = FIRST_MINUTES;
+    const foes = combatants().filter(b => b !== self && b !== mate && b.team !== mate.team);
+    if (!loose) {
+        if (Math.max(mate._lastDamageAt || 0, mate.hitAt || 0) > t - 5000) return null;
+        try { if (storm.inStorm(mate.x, mate.y)) return null; } catch { /* */ }
+        for (const f of foes) if (Math.hypot(f.x - mate.x, f.y - mate.y) < 900) return null;
+    }
+    let pads = [];
+    try { pads = [...vault.getVaults(), ...outposts.getOutposts(), ...shop.getShops()].filter(Boolean); } catch { /* */ }
+    const tg = global.gameManager.terrainGrid;
+    const mapR = ((tg && tg.circleRadius) || 2700) - FM.SPAWN_MAP_MARGIN;
+    let best = null, bestM = -Infinity;
+    for (let i = 0; i < 28; i++) {
+        const a = Math.random() * Math.PI * 2, d = 170 + Math.random() * 260;
+        const x = mate.x + Math.cos(a) * d, y = mate.y + Math.sin(a) * d;
+        if (Math.hypot(x, y) > mapR) continue;
+        if (tg && tg.pointInRock && tg.pointInRock(x, y)) continue;
+        try { if (storm.inStorm(x, y)) continue; } catch { /* */ }
+        if (pads.some(p => padGeom.insidePad(p, x, y, FM.SPAWN_PAD_CLEAR))) continue;
+        let m = Infinity;
+        for (const f of foes) { const dd = Math.hypot(f.x - x, f.y - y); if (dd < m) m = dd; }
+        if (m > bestM) { bestM = m; best = { x, y }; }
+    }
+    if (!best) {
+        const o = openGroundNear(tg, mate.x + 200, mate.y);
+        if (!(tg && tg.pointInRock && tg.pointInRock(o.x, o.y))) best = o;
+    }
+    return best;
+}
+
 function spawnRaidBot() {
     const handler = global.gameManager.gameHandler;
     if (!handler) return;
-    const hole = safeSpawnSpot(null, true);
-    const team = getRandomTeam();
+    // duos: two of the bots are a team (they spawn together and cover each other)
+    const plan = Config.royale_duos ? duo.botSpawnPlan(liveBots()) : null;
+    const hole = (plan && plan.near && spotNearMate(null, plan.near)) || safeSpawnSpot(null, true);
+    const team = plan ? plan.team : getRandomTeam();
     handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team);
     const bot = handler.bots[handler.bots.length - 1];
     if (!bot) return;
     bot.team = team;
+    if (plan) duo.linkBotDuo(bot, liveBots());
     bot.botRespawnsRemaining = 0;
     bot.royaleAlive = true;
     bot.royaleBornAt = now();
@@ -991,6 +1079,13 @@ function onCombatantDead(body) {
         pts,
         place: 0,
     });
+    // duos: your partner hears about it
+    if (Config.royale_duos && body.socket && !raidEndDeath) {
+        try {
+            const mb = duo.mateBody(body);
+            if (mb && mb.socket) mb.sendMessage((body.name || "Your teammate") + " is down. Keep them in the game!");
+        } catch { /* */ }
+    }
     if (body.socket) {
         // settle the ranked life now; its RK follows the death packet (a
         // raid-end death was settled at endRaid, so this skips it)
@@ -1108,7 +1203,8 @@ function ownedSiteFor(body) {
         const key = outposts.ownerKeyFor ? outposts.ownerKeyFor(body) : null;
         if (!key) return null;
         const list = outposts.getOutposts();
-        return list.find(s => s.ownerKey === key && s.banner && !s.banner.isDead?.()) || null;
+        // duos: your partner's base is yours too
+        return list.find(s => (s.ownerKey === key || outposts.isOwner(s, body)) && s.banner && !s.banner.isDead?.()) || null;
     } catch { return null; }
 }
 
@@ -1133,19 +1229,31 @@ function onHumanJoin(body) {
         }
     } catch { /* */ }
     const isRespawn = !!(body.socket && body.socket.lastRaidDeathAt);
-    const home = ownedSiteFor(body);
-    let homeSpawn = false;
+    // duos: next to your partner if they're alive and not in a fight; that
+    // beats the base (which is shared anyway) and a random safe spot
+    let mateSpawn = false;
+    if (Config.royale_duos && !(body.socket && body.socket._resume)) {
+        const mate = duo.mateBody(body);
+        const spot = mate ? spotNearMate(body, mate) : null;
+        if (spot) {
+            mateSpawn = true;
+            moveTo(body, spot.x, spot.y);
+            try { body.sendMessage("You dropped in next to " + (mate.name || "your teammate") + "."); } catch { /* */ }
+        }
+    }
+    const home = mateSpawn ? null : ownedSiteFor(body);
+    let homeSpawn = mateSpawn;
     if (home) {
         let inStorm = false;
         try { inStorm = storm.inStorm(home.x, home.y); } catch { /* */ }
         if (!inStorm) {
             homeSpawn = true;
-            occupy.delete(home.id);
+            occupy.delete(occKey(home, body));
             moveTo(body, home.x + (Math.random() - 0.5) * 30, home.y + (Math.random() - 0.5) * 30);
             try { body.sendMessage("You're back at your base. You can stay 10 seconds."); } catch { /* */ }
         }
     }
-    if (!homeSpawn) {
+    if (!homeSpawn && !mateSpawn) {
         const hole = safeSpawnSpot(body);
         moveTo(body, hole.x + (Math.random() - 0.5) * 30, hole.y + (Math.random() - 0.5) * 30);
     }
@@ -1234,6 +1342,9 @@ function saveResume(socket, body) {
             gemBanked: socket.gemBanked || 0, shop: socket.shop || null, raidQuest: socket.raidQuest || null,
             raidBonus: socket.raidBonus || 0, raidPB: socket.raidPB || 0, _milestoneIdx: socket._milestoneIdx || 0,
             gemDeposited: socket.gemDeposited || 0,
+            // duos: who you are to the team book (a reconnect keeps the team)
+            duoKey: socket.duoKey || null, duoPid: socket.duoPid || null, duoMates: socket.duoMates || null,
+            duoFill: socket.duoFill !== false, _duoJoinSent: !!socket._duoJoinSent,
             raidDeathStreak: socket.raidDeathStreak || 0, royaleRespawnAt: socket.royaleRespawnAt || 0,
             lastRaidDeathAt: socket.lastRaidDeathAt || 0,
             _royaleLives: socket._royaleLives || 0, _lateNoteKey: socket._lateNoteKey || "",
@@ -1397,12 +1508,29 @@ function disconnectCleanup(socket, body) {
             if (snap && snap.raidId === raidId && outposts.rekeyOwner) {
                 snap.baseKey = "r:" + (++baseResvSeq);
                 outposts.rekeyOwner(key, snap.baseKey);
-            } else {
+            } else if (!(Config.royale_duos && handBaseToMate(key, socket))) {
                 outposts.releaseOwner(key);
             }
         }
     } catch { /* */ }
 }
+
+// Duos: a base whose owner is gone for good goes to their partner instead of
+// back to neutral. -> true when a partner took it
+function handBaseToMate(key, socket) {
+    const ms = duo.mateSocket(socket);
+    if (!ms || ms.terminated) return false;
+    const to = "s:" + ms.id;
+    if (!outposts.rekeyOwner(key, to)) return false;
+    const mb = ms.player && ms.player.body;
+    if (mb && !mb.isDead?.()) { try { outposts.rebindOwner(to, mb); } catch { /* */ } }
+    try { if (mb) mb.sendMessage("The base is all yours now."); } catch { /* */ }
+    return true;
+}
+
+// The base occupy clock: per site, or per site and tank on the duo server
+// (both partners stand on the same base)
+function occKey(site, body) { return Config.royale_duos && body ? site.id + ':' + body.id : site.id; }
 
 function tickOutpostRules(t) {
     const list = outposts.getOutposts();
@@ -1423,12 +1551,13 @@ function tickOutpostRules(t) {
             const bodyR = body.realSize || 60;
             const inside = padGeom.insidePad(site, body.x, body.y, 0);
             const touching = padGeom.insidePad(site, body.x, body.y, bodyR);
+            const own = !!ownerId && outposts.isOwner(site, body);
             if (body._baseExpel === site) {
                 // being shoved off: keep shoving until the hull is clear, then
                 // the lockout starts and the rim becomes a wall
                 if (pushOut(body, site, 6, "camp:" + site.id, 'expel')) {
                     body._baseExpel = null;
-                    occupy.delete(site.id);
+                    occupy.delete(occKey(site, body));
                     lockout.set(key, t + LOCKOUT_MS);
                     body._padReentryUntil = t + 5000;
                     body._padReentryPad = site;
@@ -1442,12 +1571,12 @@ function tickOutpostRules(t) {
                     body.outpostDeposit = null;
                     try { body.socket && body.socket.talk('VP', 0, 0); } catch { /* */ }
                 }
-                occupy.delete(site.id);
+                occupy.delete(occKey(site, body));
                 const n = (dx === 0 && dy === 0) ? 0 : Math.atan2(dy, dx);
                 parkOutside(site, body, n);
                 continue;
             }
-            if (ownerId && body.id !== ownerId && touching) {
+            if (ownerId && !own && touching) {
                 if (body.outpostDeposit) {
                     body.outpostDeposit = null;
                     try { body.socket && body.socket.talk('VP', 0, 0); } catch { /* */ }
@@ -1460,17 +1589,17 @@ function tickOutpostRules(t) {
             if (body._padPush && body._padPush.tag === "bounce:" + site.id && !touching) {
                 body._padPush = null;
             }
-            if (ownerId === body.id && lockedUntil > t && touching) {
+            if (own && lockedUntil > t && touching) {
                 const n = (dx === 0 && dy === 0) ? 0 : Math.atan2(dy, dx);
                 parkOutside(site, body, n);
                 if (body.socket) body.socket.talk('RYO', site.id, 0, Math.ceil((lockedUntil - t) / 1000));
                 continue;
             }
-            if (ownerId === body.id && inside) {
-                let rec = occupy.get(site.id);
+            if (own && inside) {
+                let rec = occupy.get(occKey(site, body));
                 if (!rec || rec.ownerId !== body.id || ((rec.leftAt || 0) && t - rec.leftAt > 5000)) {
                     rec = { ownerId: body.id, enteredAt: t, leftAt: 0 };
-                    occupy.set(site.id, rec);
+                    occupy.set(occKey(site, body), rec);
                 } else if (rec.leftAt) {
                     rec.leftAt = 0;
                 }
@@ -1483,8 +1612,8 @@ function tickOutpostRules(t) {
                     site.occupyLeft = 0;
                     try { body.sendMessage("Time's up. Off the base, and no coming back for " + Math.round(LOCKOUT_MS / 1000) + " seconds."); } catch { /* */ }
                 }
-            } else if (ownerId === body.id && !inside) {
-                const rec = occupy.get(site.id);
+            } else if (own && !inside) {
+                const rec = occupy.get(occKey(site, body));
                 if (rec && rec.ownerId === body.id) {
                     if (!rec.leftAt) {
                         rec.leftAt = t;
@@ -1492,7 +1621,7 @@ function tickOutpostRules(t) {
                             try { body.socket.talk('RYO', site.id, 0, 0); } catch { /* */ }
                         }
                     }
-                    else if (t - rec.leftAt > 5000) occupy.delete(site.id);
+                    else if (t - rec.leftAt > 5000) occupy.delete(occKey(site, body));
                 }
                 if (lockedUntil > t && body.socket)
                     body.socket.talk('RYO', site.id, 0, Math.ceil((lockedUntil - t) / 1000));
@@ -1513,7 +1642,7 @@ function baseWall(body, site) {
         return true;
     }
     const key = site.id + ':' + body.id;
-    const denied = site.ownerId !== body.id ||
+    const denied = !outposts.isOwner(site, body) ||
         (lockout.get(key) || 0) > t ||
         (body._padReentryUntil && t < body._padReentryUntil &&
          (!body._padReentryPad || body._padReentryPad === site));
@@ -1653,8 +1782,16 @@ function startRaid(first) {
                 site.occupyLeft = 0;
             }
         } catch { /* */ }
+        const placed = new Set();
         for (const body of combatants()) {
-            const hole = safeSpawnSpot(body, !body.socket);
+            let hole = null;
+            // duos: the second partner lands beside the first
+            if (Config.royale_duos) {
+                const mate = duo.mateBody(body);
+                if (mate && placed.has(mate)) hole = spotNearMate(body, mate, true);
+            }
+            if (!hole) hole = safeSpawnSpot(body, !body.socket);
+            placed.add(body);
             moveTo(body, hole.x, hole.y);
             respecForNewRaid(body);
             freshRaidBody(body);
@@ -1677,14 +1814,19 @@ function startRaid(first) {
 function endRaid() {
     raidEndsAt = Infinity;
     const board = boardSnapshot();
-    const top = board.slice(0, 10);
+    // duos: the results are team rows ("Alex & Sam", combined score) and
+    // both partners get their team's placement bonus
+    const top = Config.royale_duos
+        ? teamRows(board).slice(0, 10).map(t => ({ id: t.ids[0], ids: t.ids, name: t.names.join(" & "), score: t.score, kills: t.kills, gems: t.gems, place: t.place, bot: t.bot, alive: t.alive }))
+        : board.slice(0, 10);
     const bonuses = [500, 350, 250, 180, 140, 110, 90, 70, 50, 40];
     for (let i = 0; i < top.length; i++) {
         const row = top[i];
+        const ids = row.ids || [row.id];
         for (const client of connectedClients()) {
             const key = client.id ? "s:" + client.id : null;
             const s = key ? raidStats.get(key) : null;
-            if (s && s.id === row.id) {
+            if (s && ids.includes(s.id)) {
                 client.raidBonus = (client.raidBonus | 0) + bonuses[i];
                 const sc = scoreOf(s);
                 if (sc > (client.raidPB | 0)) client.raidPB = sc;
@@ -1824,6 +1966,7 @@ function tick() {
     if (raidResults && t - raidResultsAt > RAID_END_BEAT_MS + RAID_END_WAIT_MS) raidResults = null;
     // coalesced DU packets and the 5 s dust flush (accounts)
     guard('accounts', () => rankHooks.tick(t));
+    if (Config.royale_duos) guard('duos', () => duo.tick(t));
     // everyone is down between raids: no storm, bosses, chests or bots, just
     // keep the HUD fed (results panel, countdown)
     if (raidEnding) {
@@ -1886,7 +2029,8 @@ rankHooks.attach({
     raidId: () => raidId,
     board: boardOrder,
     resumeMs: RESUME_MS,
-    serverId: 'royale',
+    // the duo server books its lives apart (Config is set before any raid)
+    get serverId() { return Config.royale_duos ? 'duo' : 'royale'; },
     live: () => !raidEnding,
 });
 // entity.contemplationOfMortality calls this when a real player takes damage

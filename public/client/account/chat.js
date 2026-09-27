@@ -93,7 +93,7 @@ export function mount(host, friend, opts) {
     function paintHead() {
         const f = social.friendById(peer) || friend;
         const v = rankOf(f.rank);
-        clear(badgeWrap).appendChild(badge(v.div, 30, 'fr-badge', { legendNo: v.legendNo }));
+        clear(badgeWrap).appendChild(badge(v.div, 34, 'fr-badge', { legendNo: v.legendNo }));
         clear(nameWrap).appendChild(nameEl(f.username, f.nameStyleNid, f.nameColor, 15));
         const st = presenceState(f.presence);
         dot.className = 'fr-dot ' + st;

@@ -95,7 +95,7 @@ function row(r, mine, clickable) {
     const kids = [
         h('span', { class: 'lb-place', role: 'cell' }, h('span', { class: 'lb-pl' + medal, text: String(r.place) })),
         h('span', { class: 'lb-player', role: 'cell' },
-            badge(v.div, 26, 'lb-badge', { legendNo: v.legendNo }),
+            badge(v.div, 28, 'lb-badge', { legendNo: v.legendNo }),
             nameEl(r.username, r.nameStyleNid, r.nameColor, 14, 'lb-name'),
             mine ? h('span', { class: 'lb-you', text: 'You' }) : null),
         h('span', { class: 'lb-rank', role: 'cell', style: color ? { '--tc': color } : null, text: v.text }),

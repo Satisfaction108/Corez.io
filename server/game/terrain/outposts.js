@@ -52,6 +52,39 @@ function ownerKeyFor(body) {
     return null;
 }
 
+// Does `body` own this base? The owner does; on the duo server so does the
+// owner's partner (a claimed site carries the owner's team, and partners
+// share one), for deposits, the base wall, the occupy clock and respawns.
+function isOwner(site, body) {
+    if (!site || !body || !site.ownerId) return false;
+    if (site.ownerId === body.id) return true;
+    return !!(Config.royale_duos && site.team && body.team === site.team && (body.isPlayer || body.isBot) && !body.isDead?.());
+}
+
+// Duos: a connected partner of the site's team, to inherit a base whose
+// owner is gone for good. -> socket | null
+function duoHeir(site) {
+    if (!Config.royale_duos || !site || !site.team) return null;
+    try {
+        const book = require('../duo/duoRaid.js').book;
+        const team = book.teamById(site.team);
+        if (!team) return null;
+        const clients = (global.gameManager && global.gameManager.socketManager && global.gameManager.socketManager.clients) || [];
+        for (const m of team.members.values()) {
+            const c = clients.find(x => x && !x.terminated && x.duoKey === m.mk);
+            if (c && "s:" + c.id !== site.ownerKey) return c;
+        }
+    } catch { /* */ }
+    return null;
+}
+
+function inherit(site, heir) {
+    const key = "s:" + heir.id;
+    rekeyOwner(site.ownerKey, key);
+    const b = heir.player && heir.player.body;
+    if (b && !b.isDead?.()) rebindOwner(key, b);
+}
+
 // Release every site owned by `key` back to neutral (disconnect cleanup).
 function releaseOwner(key) {
     if (!key) return;
@@ -309,13 +342,18 @@ function tick(players, dtMs) {
                     // a dropped owner's raid saved for resume: the base waits
                     // for them exactly as it waits for a dead owner's respawn,
                     // and goes neutral once the resume window lapses
+                    // duos: a partner who is still here inherits it instead
+                    const heir = !awaitRespawn ? duoHeir(site) : null;
                     if (site.ownerKey && site.ownerKey.startsWith("r:")) {
                         let reserved = false;
                         try { reserved = require('../gamemodes/scripts/dig_royale.js').baseReserved(site.ownerKey); } catch { /* */ }
-                        if (!reserved) releaseOwner(site.ownerKey);
+                        if (!reserved) { if (heir) inherit(site, heir); else releaseOwner(site.ownerKey); }
                     } else if (!awaitRespawn) {
-                        site.ownerId = 0;
-                        site.ownerKey = null;
+                        if (heir) inherit(site, heir);
+                        else {
+                            site.ownerId = 0;
+                            site.ownerKey = null;
+                        }
                     }
                 }
             } catch { /* */ }
@@ -367,7 +405,7 @@ function tick(players, dtMs) {
 
         
         const onOwnPad = ownerBases()
-            ? !!(pad && pad.ownerId === body.id && pad.banner && !pad.banner.isDead())
+            ? !!(pad && isOwner(pad, body) && pad.banner && !pad.banner.isDead())
             : !!(pad && pad.team === body.team && pad.banner && !pad.banner.isDead());
         body.onBasePad = !!pad;
         const was = !!body.outpostOnPad;
@@ -487,7 +525,7 @@ function requestCancel(socket) {
 
 module.exports = {
     tick, snapshot, stateSnapshot, ownedBy, getOutposts,
-    requestDeposit, requestCancel, EFFICIENCY, ownerKeyFor, rebindOwner, releaseOwner, rekeyOwner,
+    requestDeposit, requestCancel, EFFICIENCY, ownerKeyFor, rebindOwner, releaseOwner, rekeyOwner, isOwner,
     // Tutorial: put one site back to neutral (optionally locked), fresh banner.
     resetSite(id, locked = false) {
         const site = getOutposts().find(s => s.id === id);

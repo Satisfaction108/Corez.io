@@ -966,7 +966,7 @@ test('e2e: account socket, dust, death RK, resume, fare, disconnect, raid end (l
     fs.mkdirSync(E2E_DATA_DIR, { recursive: true });
     const env = { ...process.env, ROYALE_DEBUG: '1', ACCOUNTS_ALLOW_DEBUG: '1', ROYALE_RESUME_MS: '5000',
         SESSION_SECRET: SECRET, DATA_DIR: E2E_DATA_DIR, PUBLIC_ORIGIN: origin, PUBLIC_HOST: 'localhost:' + port,
-        TRUSTED_PROXIES: '127.0.0.1', SINGLE_PROCESS: 'true', PORT: String(port), BR_PORT: String(port), TUT_PORT: String(port + 2) };
+        TRUSTED_PROXIES: '127.0.0.1', SINGLE_PROCESS: 'true', PORT: String(port), BR_PORT: String(port), TUT_PORT: String(port + 2), DUO_PORT: String(port + 4) };
     delete env.NODE_ENV;
     const logFile = path.join(ROOT, 'e2e-server.log');
     const out = fs.openSync(logFile, 'w');

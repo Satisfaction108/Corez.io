@@ -1,0 +1,1122 @@
+{
+ "sounds": {
+  "shot_light": {
+   "family": "weapons",
+   "n": 4,
+   "stereo": false,
+   "dur": [
+    0.127,
+    0.127,
+    0.127,
+    0.127
+   ],
+   "bytes": [
+    1829,
+    1829,
+    1829,
+    1829
+   ]
+  },
+  "shot_mg": {
+   "family": "weapons",
+   "n": 4,
+   "stereo": false,
+   "dur": [
+    0.088,
+    0.087,
+    0.088,
+    0.088
+   ],
+   "bytes": [
+    1567,
+    1567,
+    1567,
+    1567
+   ]
+  },
+  "shot_cannon": {
+   "family": "weapons",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.709,
+    0.672,
+    0.702
+   ],
+   "bytes": [
+    7837,
+    7314,
+    7576
+   ]
+  },
+  "shot_sniper": {
+   "family": "weapons",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.376,
+    0.375,
+    0.376
+   ],
+   "bytes": [
+    4441,
+    4441,
+    4441
+   ]
+  },
+  "shot_trap": {
+   "family": "weapons",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.163,
+    0.161,
+    0.162
+   ],
+   "bytes": [
+    2351,
+    2351,
+    2351
+   ]
+  },
+  "drone_launch": {
+   "family": "weapons",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.239,
+    0.241,
+    0.239
+   ],
+   "bytes": [
+    3135,
+    3135,
+    3135
+   ]
+  },
+  "hit_t0": {
+   "family": "combat",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.123,
+    0.123,
+    0.123
+   ],
+   "bytes": [
+    1829,
+    1829,
+    1829
+   ]
+  },
+  "hit_t1": {
+   "family": "combat",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.128,
+    0.128
+   ],
+   "bytes": [
+    1829,
+    1829
+   ]
+  },
+  "hit_t2": {
+   "family": "combat",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.17,
+    0.17
+   ],
+   "bytes": [
+    2351,
+    2351
+   ]
+  },
+  "hurt_light": {
+   "family": "combat",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.284,
+    0.287,
+    0.285
+   ],
+   "bytes": [
+    3396,
+    3396,
+    3396
+   ]
+  },
+  "hurt_heavy": {
+   "family": "combat",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.306,
+    0.309
+   ],
+   "bytes": [
+    3657,
+    3657
+   ]
+  },
+  "kill": {
+   "family": "combat",
+   "n": 2,
+   "stereo": true,
+   "dur": [
+    1.443,
+    1.443
+   ],
+   "bytes": [
+    18181,
+    18181
+   ]
+  },
+  "streak": {
+   "family": "combat",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.678
+   ],
+   "bytes": [
+    21002
+   ]
+  },
+  "shutdown": {
+   "family": "combat",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.04
+   ],
+   "bytes": [
+    25391
+   ]
+  },
+  "revenge": {
+   "family": "combat",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.792
+   ],
+   "bytes": [
+    22256
+   ]
+  },
+  "low_health": {
+   "family": "combat",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.361
+   ],
+   "bytes": [
+    4180
+   ]
+  },
+  "shield_up": {
+   "family": "combat",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.583
+   ],
+   "bytes": [
+    19748
+   ]
+  },
+  "shield_break": {
+   "family": "combat",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.742
+   ],
+   "bytes": [
+    8098
+   ]
+  },
+  "death": {
+   "family": "combat",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.059
+   ],
+   "bytes": [
+    25391
+   ]
+  },
+  "spawn": {
+   "family": "combat",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.926
+   ],
+   "bytes": [
+    23823
+   ]
+  },
+  "die_small": {
+   "family": "combat",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.069,
+    0.068,
+    0.069
+   ],
+   "bytes": [
+    1306,
+    1306,
+    1306
+   ]
+  },
+  "die_med": {
+   "family": "combat",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.295,
+    0.294
+   ],
+   "bytes": [
+    3657,
+    3657
+   ]
+  },
+  "die_large": {
+   "family": "combat",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    1.117,
+    1.207
+   ],
+   "bytes": [
+    11755,
+    12800
+   ]
+  },
+  "rock_hit": {
+   "family": "mining",
+   "n": 4,
+   "stereo": false,
+   "dur": [
+    0.16,
+    0.16,
+    0.16,
+    0.16
+   ],
+   "bytes": [
+    2351,
+    2351,
+    2351,
+    2351
+   ]
+  },
+  "ore_hit_t1": {
+   "family": "mining",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.326,
+    0.326
+   ],
+   "bytes": [
+    3918,
+    3918
+   ]
+  },
+  "ore_hit_t2": {
+   "family": "mining",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.34,
+    0.34
+   ],
+   "bytes": [
+    4180,
+    4180
+   ]
+  },
+  "ore_hit_t3": {
+   "family": "mining",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.347,
+    0.347
+   ],
+   "bytes": [
+    4180,
+    4180
+   ]
+  },
+  "ore_hit_t4": {
+   "family": "mining",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.365,
+    0.367
+   ],
+   "bytes": [
+    4180,
+    4441
+   ]
+  },
+  "rock_break": {
+   "family": "mining",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.547,
+    0.547,
+    0.547
+   ],
+   "bytes": [
+    6008,
+    6008,
+    6008
+   ]
+  },
+  "ore_break_t1": {
+   "family": "mining",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.879
+   ],
+   "bytes": [
+    9404
+   ]
+  },
+  "ore_break_t2": {
+   "family": "mining",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.898
+   ],
+   "bytes": [
+    9665
+   ]
+  },
+  "ore_break_t3": {
+   "family": "mining",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.415
+   ],
+   "bytes": [
+    17867
+   ]
+  },
+  "ore_break_t4": {
+   "family": "mining",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.599
+   ],
+   "bytes": [
+    20062
+   ]
+  },
+  "rock_regrow": {
+   "family": "mining",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.795,
+    0.793
+   ],
+   "bytes": [
+    8620,
+    8620
+   ]
+  },
+  "chest_land": {
+   "family": "mining",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.347
+   ],
+   "bytes": [
+    4180
+   ]
+  },
+  "chest_open": {
+   "family": "mining",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.362
+   ],
+   "bytes": [
+    17240
+   ]
+  },
+  "chest_open_epic": {
+   "family": "mining",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.396
+   ],
+   "bytes": [
+    29466
+   ]
+  },
+  "drill_loop": {
+   "family": "loops",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    2
+   ],
+   "bytes": [
+    20637
+   ]
+  },
+  "gem_t1": {
+   "family": "gems",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.527,
+    0.527
+   ],
+   "bytes": [
+    6008,
+    6008
+   ]
+  },
+  "gem_t2": {
+   "family": "gems",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.539,
+    0.539
+   ],
+   "bytes": [
+    6008,
+    6008
+   ]
+  },
+  "gem_t3": {
+   "family": "gems",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.539,
+    0.538
+   ],
+   "bytes": [
+    6008,
+    6008
+   ]
+  },
+  "gem_t4": {
+   "family": "gems",
+   "n": 2,
+   "stereo": false,
+   "dur": [
+    0.545,
+    0.544
+   ],
+   "bytes": [
+    6008,
+    6008
+   ]
+  },
+  "satchel_full": {
+   "family": "gems",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.475
+   ],
+   "bytes": [
+    5486
+   ]
+  },
+  "satchel_loss": {
+   "family": "gems",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.575
+   ],
+   "bytes": [
+    19748
+   ]
+  },
+  "heartbeat": {
+   "family": "gems",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.453
+   ],
+   "bytes": [
+    5225
+   ]
+  },
+  "dust_pop": {
+   "family": "gems",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.249
+   ],
+   "bytes": [
+    3135
+   ]
+  },
+  "dust_bank": {
+   "family": "gems",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.923
+   ],
+   "bytes": [
+    9927
+   ]
+  },
+  "deposit_tick": {
+   "family": "bank",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.127,
+    0.127,
+    0.127
+   ],
+   "bytes": [
+    1829,
+    1829,
+    1829
+   ]
+  },
+  "deposit_done": {
+   "family": "bank",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.768
+   ],
+   "bytes": [
+    21942
+   ]
+  },
+  "bank_celebrate": {
+   "family": "bank",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.466
+   ],
+   "bytes": [
+    30406
+   ]
+  },
+  "outpost_capture": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.003
+   ],
+   "bytes": [
+    24764
+   ]
+  },
+  "chamber_open": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.785
+   ],
+   "bytes": [
+    34168
+   ]
+  },
+  "boss_surface": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.949
+   ],
+   "bytes": [
+    36049
+   ]
+  },
+  "boss_defeat": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    3.326
+   ],
+   "bytes": [
+    40751
+   ]
+  },
+  "storm_warning": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    3.034
+   ],
+   "bytes": [
+    37302
+   ]
+  },
+  "storm_shrink": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.804
+   ],
+   "bytes": [
+    34481
+   ]
+  },
+  "storm_final": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    3.16
+   ],
+   "bytes": [
+    38556
+   ]
+  },
+  "storm_enter": {
+   "family": "events",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.482
+   ],
+   "bytes": [
+    5486
+   ]
+  },
+  "storm_exit": {
+   "family": "events",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.795
+   ],
+   "bytes": [
+    8620
+   ]
+  },
+  "raid_twist": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.029
+   ],
+   "bytes": [
+    25077
+   ]
+  },
+  "raid_start": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.492
+   ],
+   "bytes": [
+    30720
+   ]
+  },
+  "raid_end": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    3.848
+   ],
+   "bytes": [
+    47020
+   ]
+  },
+  "count_tick": {
+   "family": "events",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.203
+   ],
+   "bytes": [
+    2612
+   ]
+  },
+  "count_go": {
+   "family": "events",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.79
+   ],
+   "bytes": [
+    8620
+   ]
+  },
+  "bloom_start": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.618
+   ],
+   "bytes": [
+    32287
+   ]
+  },
+  "meteor_warn": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.325
+   ],
+   "bytes": [
+    28525
+   ]
+  },
+  "meteor_impact": {
+   "family": "events",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    1.119
+   ],
+   "bytes": [
+    11755
+   ]
+  },
+  "gem_rain": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.895
+   ],
+   "bytes": [
+    35422
+   ]
+  },
+  "quest_complete": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.539
+   ],
+   "bytes": [
+    19121
+   ]
+  },
+  "milestone": {
+   "family": "events",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.967
+   ],
+   "bytes": [
+    24450
+   ]
+  },
+  "place_up": {
+   "family": "events",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.819
+   ],
+   "bytes": [
+    8882
+   ]
+  },
+  "place_down": {
+   "family": "events",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.792
+   ],
+   "bytes": [
+    8620
+   ]
+  },
+  "level_up": {
+   "family": "progress",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.653
+   ],
+   "bytes": [
+    20689
+   ]
+  },
+  "stat_up": {
+   "family": "progress",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.126,
+    0.126,
+    0.126
+   ],
+   "bytes": [
+    1829,
+    1829,
+    1829
+   ]
+  },
+  "tank_upgrade": {
+   "family": "progress",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.736
+   ],
+   "bytes": [
+    21629
+   ]
+  },
+  "shop_buy": {
+   "family": "progress",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    1.12
+   ],
+   "bytes": [
+    11755
+   ]
+  },
+  "shop_denied": {
+   "family": "progress",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.239
+   ],
+   "bytes": [
+    3135
+   ]
+  },
+  "rank_crack1": {
+   "family": "rank",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.622
+   ],
+   "bytes": [
+    6792
+   ]
+  },
+  "rank_crack2": {
+   "family": "rank",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.617
+   ],
+   "bytes": [
+    6792
+   ]
+  },
+  "rank_crack3": {
+   "family": "rank",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.642
+   ],
+   "bytes": [
+    7053
+   ]
+  },
+  "rank_shatter": {
+   "family": "rank",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.518
+   ],
+   "bytes": [
+    19121
+   ]
+  },
+  "rank_up": {
+   "family": "rank",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    2.808
+   ],
+   "bytes": [
+    34481
+   ]
+  },
+  "rank_up_big": {
+   "family": "rank",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    3.73
+   ],
+   "bytes": [
+    45453
+   ]
+  },
+  "rank_down": {
+   "family": "rank",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.987
+   ],
+   "bytes": [
+    10449
+   ]
+  },
+  "ui_click": {
+   "family": "ui",
+   "n": 3,
+   "stereo": false,
+   "dur": [
+    0.059,
+    0.06,
+    0.06
+   ],
+   "bytes": [
+    1306,
+    1306,
+    1306
+   ]
+  },
+  "ui_hover": {
+   "family": "ui",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.03
+   ],
+   "bytes": [
+    1045
+   ]
+  },
+  "ui_tab": {
+   "family": "ui",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.079
+   ],
+   "bytes": [
+    1567
+   ]
+  },
+  "ui_toggle_on": {
+   "family": "ui",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.123
+   ],
+   "bytes": [
+    1829
+   ]
+  },
+  "ui_toggle_off": {
+   "family": "ui",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.123
+   ],
+   "bytes": [
+    1829
+   ]
+  },
+  "ui_play": {
+   "family": "ui",
+   "n": 1,
+   "stereo": true,
+   "dur": [
+    1.517
+   ],
+   "bytes": [
+    19121
+   ]
+  },
+  "ui_success": {
+   "family": "ui",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.518
+   ],
+   "bytes": [
+    5747
+   ]
+  },
+  "ui_error": {
+   "family": "ui",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    0.209
+   ],
+   "bytes": [
+    2612
+   ]
+  },
+  "notify": {
+   "family": "ui",
+   "n": 1,
+   "stereo": false,
+   "dur": [
+    1.106
+   ],
+   "bytes": [
+    11755
+   ]
+  }
+ },
+ "loops": {
+  "drill_loop": 2
+ }
+}

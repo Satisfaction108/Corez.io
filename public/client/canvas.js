@@ -605,7 +605,7 @@ class Canvas {
                 }
                 if (global.clickables.royaleSpectate.check(mpos) !== -1 && !global.disconnected && global.died) {
                     global.royaleSpectating = true;
-                    this.socket.talk('RS', 2);
+                    this.socket.talk('RS', window.dwDuoMateAlive && window.dwDuoMateAlive() ? 3 : 2);
                     gameSound.uiClick();
                     break;
                 }
@@ -984,7 +984,7 @@ class Canvas {
             }
             if (global.clickables.royaleSpectate.check(mpos) !== -1 && global.died && !global.disconnected) {
                 global.royaleSpectating = true;
-                this.socket.talk('RS', 2);
+                this.socket.talk('RS', window.dwDuoMateAlive && window.dwDuoMateAlive() ? 3 : 2);
                 gameSound.uiClick();
                 return;
             }
