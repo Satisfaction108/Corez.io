@@ -57,15 +57,27 @@ import * as cosmetics from './account/cosmetics.js';
     window.royaleState = () => global;
     // console helper for trying items on a local server: window.dwGems(10000)
     window.dwGems = (n = 10000) => window.royaleTalk("DBG", "gems", n | 0);
+    // The server sends the menu only when it changes, so anything cleared
+    // here stays gone until the next evolve. The slide-out clear must never
+    // outlive its menu: it used to wait forever when started with nothing on
+    // screen (Home after dying fully evolved), then wiped the next life's
+    // menu the first time it slid away (tank tree, resync).
+    let upgradeClearLoop = null;
     global.clearUpgrades = (clearNow = false) => {
-        if (clearNow) gui.upgrades = [];
+        if (upgradeClearLoop) { clearInterval(upgradeClearLoop); upgradeClearLoop = null; }
+        if (clearNow || !gui.upgrades.length) gui.upgrades = [];
         else {
             global.pullUpgradeMenu = true;
-            let loop = setInterval(() => {
-                if (upgradeMenu.get() < (-global.columnCount * 3) * 0.9999) {
+            upgradeClearLoop = setInterval(() => {
+                // something brought the menu back (spawn, tree closed): keep it
+                if (!global.pullUpgradeMenu) {
+                    clearInterval(upgradeClearLoop);
+                    upgradeClearLoop = null;
+                } else if (!gui.upgrades.length || upgradeMenu.get() < (-global.columnCount * 3) * 0.9999) {
                     global.pullUpgradeMenu = false;
                     gui.upgrades = [];
-                    clearInterval(loop);
+                    clearInterval(upgradeClearLoop);
+                    upgradeClearLoop = null;
                 }
             }, 10)
         }

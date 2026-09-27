@@ -3540,6 +3540,15 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 @media (prefers-reduced-motion: reduce) { .dwj-dots i { animation-duration: 2.4s; } .dwj-card { animation: none; } }
 .dwj-btns { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
 .dwj-btns .dw-btn { min-width: 132px; }
+/* the connect / waiting card: secondary buttons get their own plate, the
+   flat menu style is the card's own colour here and vanished into it */
+#dwJoin .dwj-btns .dw-btn:not(.primary) {
+    background: #3a3346; color: #f3ecff;
+    border: 1px solid rgba(255, 255, 255, .18);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), inset 0 -3px 0 rgba(0, 0, 0, .28), 0 2px 6px rgba(0, 0, 0, .35);
+}
+#dwJoin .dwj-btns .dw-btn:not(.primary):hover { background: #473f56; }
+#dwJoin .dwj-btns .dw-btn:not(.primary):active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .35); }
 @media (max-width: 420px) { .dwj-title { font-size: 28px; } .dwj-btns .dw-btn { min-width: 0; flex: 1; } }
 
 /* ── SOLO | DUOS and the duo party (client/account/party.js) ───────────

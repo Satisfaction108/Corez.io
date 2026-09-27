@@ -528,6 +528,10 @@ class Canvas {
                     x: mouse.clientX * global.ratio,
                     y: mouse.clientY * global.ratio,
                 };
+                // "Don't upgrade" acts on release, so remember whether the
+                // press began on it: a shot fired elsewhere and let go over
+                // the button used to throw the whole upgrade menu away.
+                this.skipUpgradePressed = global.clickables.skipUpgrades.check(mpos) !== -1;
                 // full-map overlay swallows clicks: start a drag, never fire
                 if (global.showBigMap) {
                     const mScale = this.height / global.screenHeight;
@@ -830,7 +834,8 @@ class Canvas {
                 } else if (dailyTankCloseAd == true && global.dailyTankAd.renderUI) {
                     this.socket.talk("DTAD");
                     gameSound.uiClick();
-                } else if (global.clickables.skipUpgrades.check(mpos) !== -1) {
+                } else if (this.skipUpgradePressed && global.clickables.skipUpgrades.check(mpos) !== -1) {
+                    this.skipUpgradePressed = false;
                     global.clearUpgrades();
                     gameSound.uiClick();
                 } else this.socket.cmd.set(primaryFire, false);
