@@ -4268,7 +4268,7 @@ import * as cosmetics from './account/cosmetics.js';
                     const d = Math.hypot(instance.render.x - global.player.renderx, instance.render.y - global.player.rendery);
                     if (d < 700) {
                         shakeCamera(6, 160);
-                        try { gameSound.chestLand(instance.render.x, instance.render.y); } catch (e) { /* */ }
+                        try { gameSound.rockHit(instance.render.x, instance.render.y, 3, false); } catch (e) { /* */ }
                     }
                 }
                 if (age > 300) landDust = (age - 300) / 220;

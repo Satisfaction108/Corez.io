@@ -305,8 +305,6 @@ class TerrainRenderer {
                     rebuilt = true;
                 }
                 this._beginGrowth(ev.k, ev.o | 0, ev.gen | 0, now, ev.ax, ev.ay);
-                const gc = this._cellPolys.get(ev.k);
-                if (gc && this._world && gameSound.rockRegrow) gameSound.rockRegrow(gc.cx * this._world.s - this._world.hw, gc.cy * this._world.s - this._world.hh);
                 continue;
             }
             if (ev.r === 2) { this._finishGrowth(ev.k, now); continue; }
