@@ -1233,7 +1233,9 @@ import * as cosmetics from './account/cosmetics.js';
                 global.UIscale = 2560;
                 break;
             case "normal":
-                global.UIscale = 1920;
+                // Small's layout, a little bigger (1920 spread the HUD out:
+                // 6-wide upgrade rows, oversized stat bars)
+                global.UIscale = 2240;
                 break;
             case "large":
                 global.UIscale = 1536;
@@ -6294,7 +6296,7 @@ import * as cosmetics from './account/cosmetics.js';
     // the bottom-left stat bars (drawSkillBars); the kit box and the left
     // column floor are anchored to the same numbers. Tall enough that the
     // stat names stay readable on 1366x768 / 1280x720 at Normal scale.
-    const STAT_BAR_H = 19, STAT_BAR_GAP = 5;
+    const STAT_BAR_H = 16, STAT_BAR_GAP = 5;
     // Highest point the bottom-left block (kit box, else the 11 stat bars and
     // their points counter) can reach. The upgrade tiles and the quest and
     // override cards all have to stop above it.

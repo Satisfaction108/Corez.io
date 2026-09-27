@@ -79,7 +79,9 @@ function showToast(text, onClick) {
     build();
     clearTimeout(toastTimer);
     const k = keyName();
-    clear(toastEl).append(h('span', { class: 'igc-toast-t', text }), onClick && k ? h('span', { class: 'igc-toast-k' }, h('kbd', { text: k }), ' to reply') : null);
+    // append(null) prints the word "null": only add the key hint when there is one
+    clear(toastEl).append(h('span', { class: 'igc-toast-t', text }));
+    if (onClick && k) toastEl.append(h('span', { class: 'igc-toast-k' }, h('kbd', { text: k }), ' to reply'));
     toastEl.onclick = (e) => { e.stopPropagation(); hideToast(); if (onClick) onClick(); };
     toastEl.classList.remove('show');
     void toastEl.offsetWidth;   // restart the slide when one replaces another

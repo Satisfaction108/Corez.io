@@ -4007,6 +4007,15 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
     transform: translateY(1px); box-shadow: inset 0 2px 4px var(--well);
 }
 #homeSidebar .dw-ic, #themeToggleBtn .dw-ic { width: 24px; height: 24px; }
+/* rail tiles: a crisp edge so they don't wash into the background; the
+   brand marks (Discord, YouTube) are flat, as the brands draw them */
+#themeToggleBtn, #homeSettingsBtn, #homeChangelogBtn, #homeSidebar .social-btn { border: 1.5px solid var(--ink-line, rgba(27, 21, 16, .28)); }
+[data-theme="dark"] :is(#themeToggleBtn, #homeSettingsBtn, #homeChangelogBtn, #homeSidebar .social-btn) { border-color: rgba(255, 255, 255, .16); }
+#homeSidebar .social-btn .dw-ic { --ic-sw: 0; }
+/* the guest quests pill: even padding so the icon and text sit centred */
+.q-guest { padding: 9px 14px; line-height: 1; box-shadow: 0 1px 1px var(--cast), 0 6px 14px -10px var(--cast); }
+.q-guest span { display: block; }
+.q-guest:active { transform: translateY(1px); box-shadow: inset 0 2px 4px var(--well); }
 #homeSidebar .social-buttons::before { width: 20px; height: 1px; opacity: .5; background: var(--line); }
 
 /* ── top nav: one bar, the open pane lit from below ── */
