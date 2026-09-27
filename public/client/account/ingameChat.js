@@ -19,6 +19,7 @@ import * as chat from './chat.js';
 import { h, icon, clear, animate, T_MID, avatar } from './ui.js';
 import { nameEl, presenceText, presenceState, byPresence } from './people.js';
 import { global } from '../global.js';
+import * as gameToasts from './gameToasts.js';
 
 const TOAST_MS = 5000;
 
@@ -94,7 +95,9 @@ function onGameDm(p) {
     if (!inGame()) return;
     if (open) { if (!view) paintList(); return; }   // the list shows the new count
     toastPeer = p.userId;
-    showToast(p.username + ': ' + clip(p.body, 40), () => openPanel(p.userId));
+    // the raid's notification card (gameToasts.js): top centre, merges a
+    // friend's burst into one card, Esc (this panel's key) replies
+    gameToasts.dm(p, () => openPanel(p.userId));
 }
 
 /* ── open / close ───────────────────────────────────────────────────── */
@@ -120,6 +123,7 @@ function openPanel(peer) {
         animate(root, [{ opacity: 0, transform: 'translateX(12px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
     }
     const f = peer && social.friendById(peer);
+    if (f) gameToasts.clearDm(f.userId);
     if (f) showChat(f, false);
     else showList(false);
     paintPip();
@@ -218,7 +222,9 @@ function onKey(e) {
         if (global.showTree && global.searchBarActive) return;
     }
     e.preventDefault(); e.stopPropagation();
-    if (open) close(); else openPanel(toastEl && toastEl.classList.contains('show') ? toastPeer : null);
+    // a DM card on screen: Esc opens that chat
+    const peer = toastPeer && gameToasts.hasDm(toastPeer) ? toastPeer : null;
+    if (open) close(); else openPanel(peer || (toastEl && toastEl.classList.contains('show') ? toastPeer : null));
 }
 
 /* ── boot ───────────────────────────────────────────────────────────── */

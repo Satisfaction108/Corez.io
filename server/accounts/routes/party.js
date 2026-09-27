@@ -123,7 +123,7 @@ function postInvite(ctx) {
     if (A.users.isBanned(target)) throw new HttpError(403, 'cant_invite', 'You can’t invite them.');
     const pr = A.presence.get(target.id, target.last_seen_at);
     if (pr.state === 'offline') throw new HttpError(409, 'offline', target.username + ' is offline.');
-    if (pr.state === 'raid') throw new HttpError(409, 'in_raid', target.username + ' is in a raid right now.');
+    // a friend in a raid gets the invite as an in-game card and joins after
     const actor = { mk: 'u:' + a.user.id, userId: a.user.id, publicId: a.user.public_id, name: a.user.username, guest: false };
     const res = party.invite(actor, { userId: target.id, name: target.username });
     events().push(target.id, 'partyInvite', { id: res.invite.id, from: { userId: a.user.public_id, username: a.user.username }, at: res.invite.at, exp: res.invite.exp });

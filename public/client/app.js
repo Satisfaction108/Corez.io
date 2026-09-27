@@ -752,12 +752,17 @@ import * as cosmetics from './account/cosmetics.js';
     // 4K/retina, i.e. single-digit fps. So the pixel count adapts: when frames
     // stay slow it steps down a budget, when they have been smooth for a while
     // it tries a step back up, and the level that works is remembered.
-    const AUTO_RES_BUDGET = [Infinity, 1920 * 1080, 1400 * 1000, 1100 * 820, 860 * 640];
+    // The floor is ~1100x820: lower than that, HUD text turns to mush on a
+    // 1080p screen (a player at 49 fps sat at 860x640 for good). A level found
+    // in an earlier session is only trusted one step down; each session
+    // re-learns the rest. "Full HD" in settings keeps it at 1080p or better.
+    const AUTO_RES_BUDGET = [Infinity, 1920 * 1080, 1400 * 1000, 1100 * 820];
+    const fullHDFloor = () => (global.GUIStatus && global.GUIStatus.fullHDMode) ? 1 : AUTO_RES_BUDGET.length - 1;
     let autoResLevel = 0;
-    try { autoResLevel = Math.max(0, Math.min(AUTO_RES_BUDGET.length - 1, parseInt(localStorage.getItem("dwAutoResLevel"), 10) || 0)); } catch (e) { }
+    try { autoResLevel = Math.max(0, Math.min(1, parseInt(localStorage.getItem("dwAutoResLevel"), 10) || 0)); } catch (e) { }
     const autoRes = { ema: 16.7, last: 0, slowSince: 0, smoothSince: 0, changedAt: 0, noUpUntil: 0, upAt: 0, told: false };
     function setAutoResLevel(level, why) {
-        level = Math.max(0, Math.min(AUTO_RES_BUDGET.length - 1, level));
+        level = Math.max(0, Math.min(fullHDFloor(), level));
         if (level === autoResLevel) return;
         const down = level > autoResLevel;
         autoResLevel = level;
@@ -782,15 +787,15 @@ import * as cosmetics from './account/cosmetics.js';
         if (autoRes.ema > 38) {
             autoRes.smoothSince = 0;
             if (!autoRes.slowSince) autoRes.slowSince = now;
-            if (now - autoRes.slowSince > 2000 && autoResLevel < AUTO_RES_BUDGET.length - 1) {
+            if (now - autoRes.slowSince > 2000 && autoResLevel < fullHDFloor()) {
                 // stepping up just caused this: go back and stay there a while
                 if (autoRes.upAt && now - autoRes.upAt < 12000) autoRes.noUpUntil = now + 300000;
                 setAutoResLevel(autoResLevel + 1);
             }
-        } else if (autoRes.ema < 19) {                       // holding ~60 fps or better
+        } else if (autoRes.ema < 24) {                       // holding ~42 fps or better
             autoRes.slowSince = 0;
             if (!autoRes.smoothSince) autoRes.smoothSince = now;
-            if (autoResLevel > 0 && now > autoRes.noUpUntil && now - autoRes.smoothSince > 20000) {
+            if (autoResLevel > 0 && now > autoRes.noUpUntil && now - autoRes.smoothSince > 15000) {
                 autoRes.upAt = now;
                 setAutoResLevel(autoResLevel - 1);
             }
@@ -804,7 +809,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (config.graphical.lowResolution) {
             scale *= 0.5;
         }
-        const budget = AUTO_RES_BUDGET[autoResLevel] || Infinity;
+        const budget = AUTO_RES_BUDGET[Math.min(autoResLevel, fullHDFloor())] || Infinity;
         const pixels = window.innerWidth * window.innerHeight * scale * scale;
         if (pixels > budget) scale *= Math.sqrt(budget / pixels);
         global.screenWidth = global.vscreenSize = window.innerWidth * scale;
@@ -1189,6 +1194,7 @@ import * as cosmetics from './account/cosmetics.js';
         global.GUIStatus.renderhealth = document.getElementById("optRenderHealth").checked;
         global.GUIStatus.minimapReducedInfo = document.getElementById("optReducedInfo").checked;
         global.GUIStatus.fullHDMode = document.getElementById("optFullHD").checked;
+        try { if (typeof resizeEvent === "function" && global.canvas) resizeEvent(); } catch (e) { /* not ready yet */ }
         global.mobileStatus.enableCrosshair = document.getElementById("showCrosshair").checked;
         global.mobileStatus.showJoysticks = document.getElementById("showJoystick").checked;
 
@@ -1278,6 +1284,7 @@ import * as cosmetics from './account/cosmetics.js';
         // server repeats it if the new connection is refused too.)
         global.noAutoReconnect = false;
         global.raidQueued = false;
+        global.duoFill = null;
         global.royaleSpectating = false;
         global.royaleDied = false;
         global.raidRespawnAt = 0;
@@ -4539,9 +4546,11 @@ import * as cosmetics from './account/cosmetics.js';
             alpha = handleScreenDistance(alpha, instance);
             let x = instance.id === gui.playerid ? global.player.screenx : instance._sx - global.screenWidth / 2,
                 y = instance.id === gui.playerid ? global.player.screeny : instance._sy - global.screenHeight / 2;
-            drawChatMessages(x, false, py, instance, ratio, gui.visibleEntities ? 1 : alpha, instance.size, px, py);
+            drawChatMessages(x, y, py, instance, ratio, gui.visibleEntities ? 1 : alpha, instance.size, px, py);
             drawChatInput(x, y, instance, ratio, instance.size);
         }
+        // duos, dead: the chat box to your partner sits under the death card
+        if (global.died && global.showChat && global.canvas.chatBox) drawChatInput(0, 0, null, ratio, 28 / Math.max(0.01, ratio));
         if (global.advanced.blackout.active) {
             let entity = global.entities.find((u) => u.id === gui.playerid);
             if (entity) {
@@ -4978,15 +4987,38 @@ import * as cosmetics from './account/cosmetics.js';
         ctx[2].globalAlpha = 1;
     }
 
+    // ── overhead chat ───────────────────────────────────────────────────
+    // Bubbles sit just above whatever is already over the tank (the hull for
+    // you, the name + rank badge (+ partner diamond) for others), newest at
+    // the bottom, older ones stacked above. Text scales with the tank but is
+    // capped so a big tank doesn't get billboard-sized chat.
+    const chatScale = (size) => Math.min(34, Math.max(20, size));
+    function overheadTop(instance, y, ratio, isize) {
+        const size = isize * ratio, g = Math.max(20, size);
+        const m = global.mockups[parseInt(String(instance.index).split("-")[0])] || global.missingno[0];
+        const realSize = m && m.size ? (size / m.size) * m.realSize : size;
+        let top = y - Math.max(realSize, size) - 3;
+        if (instance.id === gui.playerid || !instance.nameplate) return top;
+        if (m && m.className && String(m.className).startsWith("royale")) return Math.min(top, y - size - 44);
+        if (global.GUIStatus.renderPlayerNames) {
+            const ny = y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45);
+            top = Math.min(top, ny - 0.56 * g);                 // name cap height and the badge top
+            const dm = global.royale && global.royale.duos && global.royale.duo && global.royale.duo.mate;
+            if (dm && dm.id === instance.id) {
+                const ds = Math.max(9, 0.42 * g);
+                top = Math.min(top, ny - 0.55 * g - ds * 1.62 - 3);  // the partner diamond
+            }
+        } else if (global.GUIStatus.renderPlayerScores) top = Math.min(top, y - 1.75 * g);
+        return top;
+    }
     function drawChatMessages(x, y, py, instance, ratio, alpha, isize) {
         if (global.GUIStatus.renderChat === false) return;
         if (!(instance.id === gui.playerid) && instance.alpha < 0.25) return;
-        let size = isize * ratio,
-            g = Math.max(20, size);
-
-        if (!y) y = instance.id === gui.playerid
-            ? global.player.screeny - 1 * global.showChatGlide * g
-            : ratio * instance.render.y - py;
+        let messages = global.chats && global.chats[instance.id];
+        if (!messages || !messages.length) return;
+        const self = instance.id === gui.playerid;
+        const g = chatScale(isize * ratio);
+        const fs = 0.5 * g, bh = 1.5 * fs, step = bh + 0.3 * fs;
 
         let fade = instance.render.status.getFade();
         fade *= fade;
@@ -4994,43 +5026,45 @@ import * as cosmetics from './account/cosmetics.js';
 
         x += global.screenWidth / 2;
         y += global.screenHeight / 2;
-        if (instance.id !== gui.playerid && instance.nameplate) y -= 8 * ratio;
-        let messages = global.chats[instance.id];
-        if (!messages) return;
-
-        const messageSpacing = 25 * 0.04 * g;
+        // the lowest bubble's centre: a small gap over the name / hull, and
+        // above your own chat box while you type
+        let base = overheadTop(instance, y, ratio, isize) - 0.35 * fs - bh / 2;
+        if (self && global.showChatGlide > 0 && global.canvas.chatBox) base -= global.showChatGlide * (0.95 * g + 0.35 * fs);
+        const now = performance.now();
+        const teamCol = playerHexCol() || HUD.sky;
 
         for (let i = 0; i < messages.length; i++) {
             let chatIndex = messages.length - 1 - i;
-            let chat = messages[chatIndex],
-                text = chat.text,
-                msgLengthHalf = measureText(text, 0.5 * g) / 2,
-                crownLift = (config.game.leaderIndicators && global.leader &&
-                             global.leader.id === instance.id) ? 0.55 : 0,
-                barScale = (global.GUIStatus.renderPlayerScores ? 3.05 : 2.65) + crownLift,
-                textScale = (global.GUIStatus.renderPlayerScores ? 2.84 : 2.44) + crownLift,
+            let chat = messages[chatIndex];
+            if (!chat) continue;
+            // team lines are ours (socketinit 'TC'): they expire here
+            if (chat.local && !chat.erased && now > chat.expires) { chat.erased = true; chat.alpha.set(0); }
+            let text = chat.text,
+                msgLengthHalf = measureText(text, fs) / 2,
                 valpha = chat.alpha.get();
 
             if (chat.erased && valpha === 0) {
                 util.remove(global.chats[instance.id], chatIndex);
                 messages.sort((a, b) => a.id - b.id);
+                continue;
             }
             if (chat.targetY === undefined) {
-                chat.targetY = i * messageSpacing;
-                chat.currentY = i === 0 ? 0 : (i-1) * messageSpacing;
+                chat.targetY = i * step;
+                chat.currentY = i === 0 ? 0 : (i - 1) * step;
             }
-            chat.targetY = i * messageSpacing;
+            chat.targetY = i * step;
             const animationSpeed = 10;
-            chat.currentY += (chat.targetY - chat.currentY) * animationSpeed / global.metrics.rendertime;
-            let slideOffset = chat.currentY;
+            chat.currentY += (chat.targetY - chat.currentY) * Math.min(1, animationSpeed / global.metrics.rendertime);
+            const cy = base - chat.currentY;
 
             if (valpha <= 0) continue;
 
-            ctx[1].globalAlpha = 0.5 * valpha * alpha * alpha * fade;
-            drawBar(x - msgLengthHalf, x + msgLengthHalf, y - g * (instance.id === gui.playerid ? 2.7 + crownLift : barScale) - slideOffset, 0.75 * g, gameDraw.getColorDark(gameDraw.getColor(instance.color.split(" ")[0])), ctx[1]);
+            const col = chat.team ? teamCol : gameDraw.getColorDark(gameDraw.getColor(instance.color.split(" ")[0]));
+            ctx[1].globalAlpha = (chat.team ? 0.85 : 0.5) * valpha * alpha * alpha * fade;
+            drawBar(x - msgLengthHalf, x + msgLengthHalf, cy, bh, col, ctx[1]);
             ctx[1].globalAlpha = valpha * alpha * fade;
             config.graphical.fontStrokeRatio *= 1.2;
-            drawText(text, x, y - g * (instance.id === gui.playerid ? 2.49 + crownLift : textScale) - slideOffset, 0.50 * g, color.guiwhite, "center", false, 1, true, ctx[1]);
+            drawText(text, x, cy + 0.42 * fs, fs, color.guiwhite, "center", false, 1, true, ctx[1]);
             config.graphical.fontStrokeRatio /= 1.2;
         }
     }
@@ -5079,9 +5113,11 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    // ── Enemy pings in the world: a bobbing red marker at the spot, and a
-    // small quiet edge indicator when it's off-screen (the subtle cousin
-    // of the leader arrow - informative, never nagging). Pings live 6s. ──
+    // ── Enemy pings in the world: a bobbing red marker at the spot, and an
+    // edge marker (inside the HUD-safe frame) when it's off-screen. Sized to
+    // read at a glance; only the nearest few draw, far ones fade back.
+    // Pings live 20s. ──
+    const ENEMY_PING_MAX = 5;
     function drawEnemyPings() {
         const now = performance.now();
         for (let i = global.enemyPings.length - 1; i >= 0; i--) {
@@ -5090,35 +5126,221 @@ import * as cosmetics from './account/cosmetics.js';
         if (!global.enemyPings.length || global.died) return;
         const wr = util.getRatio();
         const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
-        for (const p of global.enemyPings) {
+        const mx0 = global.player.renderx, my0 = global.player.rendery;
+        const list = global.enemyPings.map(p => ({ p, d: Math.hypot(p.x - mx0, p.y - my0) }))
+            .sort((a, b) => a.d - b.d).slice(0, ENEMY_PING_MAX);
+        const c = ctx[2];
+        for (const { p, d } of list) {
             const age = now - p.at;
-            const fade = age > 19000 ? 1 - (age - 19000) / 1000 : 1;
-            const dx = (p.x - global.player.renderx) * wr;
-            const dy = (p.y - global.player.rendery) * wr;
-            const onScreen = Math.abs(dx) < cx - 30 && Math.abs(dy) < cy - 30;
+            const far = Math.max(0.5, 1 - Math.max(0, d - 2000) / 5000);
+            const fade = (age > 19000 ? 1 - (age - 19000) / 1000 : 1) * far;
+            const dx = (p.x - mx0) * wr;
+            const dy = (p.y - my0) * wr;
+            const onScreen = Math.abs(dx) < cx - 40 && Math.abs(dy) < cy - 40;
             if (onScreen) {
-                const bob = Math.sin(now / 260 + (p.at % 97)) * 3;
-                const r = 13 + 1.5 * Math.sin(now / 200);
-                drawPingDiamond(ctx[2], cx + dx, cy + dy - 16 + bob, r, fade);
+                const bob = Math.sin(now / 260 + (p.at % 97)) * 4;
+                const r = 23 + 2 * Math.sin(now / 200);
+                drawPingDiamond(c, cx + dx, cy + dy - 26 + bob, r, fade);
                 // spawn pulse ring
-                if (age < 650) {
-                    const t = age / 650;
-                    ctx[2].save();
-                    ctx[2].globalAlpha = (1 - t) * 0.6;
-                    ctx[2].strokeStyle = "#eb4034";
-                    ctx[2].lineWidth = 3 * (1 - t) + 1;
-                    ctx[2].beginPath();
-                    ctx[2].arc(cx + dx, cy + dy, 14 + t * 46, 0, Math.PI * 2);
-                    ctx[2].stroke();
-                    ctx[2].restore();
+                if (age < 700) {
+                    const t = age / 700;
+                    c.save();
+                    c.globalAlpha = (1 - t) * 0.7;
+                    c.strokeStyle = "#eb4034";
+                    c.lineWidth = 4.5 * (1 - t) + 1.5;
+                    c.beginPath();
+                    c.arc(cx + dx, cy + dy, 22 + t * 70, 0, Math.PI * 2);
+                    c.stroke();
+                    c.restore();
                 }
             } else {
-                const ang = Math.atan2(dy, dx);
-                const inset = 30;
-                const t2 = Math.min((cx - inset) / (Math.abs(Math.cos(ang)) || 1e-9),
-                                    (cy - inset) / (Math.abs(Math.sin(ang)) || 1e-9));
-                drawPingDiamond(ctx[2], cx + Math.cos(ang) * t2, cy + Math.sin(ang) * t2, 13, fade * 0.7);
+                // HUD-safe edge spot, then an outward arrow and the diamond just inside it
+                const e = edgePoint(dx, dy);
+                const ca = Math.cos(e.ang), sa = Math.sin(e.ang);
+                c.save();
+                c.globalAlpha = fade;
+                c.translate(e.x, e.y);
+                c.rotate(e.ang);
+                c.fillStyle = "#eb4034"; c.strokeStyle = color.black; c.lineWidth = 2.5; c.lineJoin = "round";
+                c.beginPath(); c.moveTo(2, 0); c.lineTo(-10, -9); c.lineTo(-10, 9); c.closePath();
+                c.fill(); c.stroke();
+                c.restore();
+                drawPingDiamond(c, e.x - ca * 32, e.y - sa * 32, 22, fade * 0.95);
             }
+        }
+    }
+
+    // ── duos: quick pings (G or middle mouse; socketinit 'PG') ─────────
+    // A pin at the spot in the ping's colour with its label, a ring on the
+    // ground; off screen an edge marker; on the map a pulsing dot. Your own
+    // ping draws the same so you can see what your partner sees. 5 s.
+    const DUO_PING_MS = 5000;
+    const DUO_PING_LABEL = { here: "Here", enemy: "Enemy", gems: "Gems", base: "Base" };
+    function duoPingCol(p) {
+        return p.kind === "enemy" ? HUD.danger : p.kind === "gems" ? HUD.emerald : p.kind === "base" ? HUD.gold : (playerHexCol() || HUD.sky);
+    }
+    function liveDuoPings() {
+        const now = performance.now();
+        const list = global.duoPings;
+        for (let i = list.length - 1; i >= 0; i--) if (now - list[i].at > DUO_PING_MS) list.splice(i, 1);
+        return list;
+    }
+    function duoPingAlpha(p, now) {
+        const age = now - p.at;
+        return age > DUO_PING_MS - 600 ? Math.max(0, (DUO_PING_MS - age) / 600) : 1;
+    }
+    // the little glyph inside a pin head (and the edge pill)
+    function drawPingGlyph(c, x, y, r, kind) {
+        c.save();
+        c.fillStyle = "#fff3d9"; c.strokeStyle = HUD.ink; c.lineJoin = "round";
+        if (kind === "enemy") {
+            // crosshair
+            c.lineWidth = Math.max(1.6, r * 0.28); c.strokeStyle = "#fff3d9"; c.lineCap = "round";
+            c.beginPath(); c.arc(x, y, r * 0.55, 0, Math.PI * 2); c.stroke();
+            c.beginPath();
+            c.moveTo(x - r * 0.95, y); c.lineTo(x - r * 0.3, y); c.moveTo(x + r * 0.3, y); c.lineTo(x + r * 0.95, y);
+            c.moveTo(x, y - r * 0.95); c.lineTo(x, y - r * 0.3); c.moveTo(x, y + r * 0.3); c.lineTo(x, y + r * 0.95);
+            c.stroke();
+        } else if (kind === "gems") {
+            gemPath(c, x, y + r * 0.05, r * 0.8); c.lineWidth = Math.max(1, r * 0.16); c.fill(); c.stroke();
+        } else if (kind === "base") {
+            polyPath(c, x, y, r * 0.78, 8, Math.PI / 8); c.lineWidth = Math.max(1, r * 0.16); c.fill(); c.stroke();
+        } else {
+            c.beginPath(); c.arc(x, y, r * 0.42, 0, Math.PI * 2); c.fill();
+        }
+        c.restore();
+    }
+    function drawDuoPings() {
+        if (!(global.royale && global.royale.duos)) return;
+        const list = liveDuoPings();
+        if (!list.length) return;
+        const now = performance.now();
+        const c = ctx[2];
+        const wr = util.getRatio();
+        const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
+        const mx0 = global.player.renderx, my0 = global.player.rendery;
+        const placed = [];
+        for (const p of list) {
+            const a = duoPingAlpha(p, now);
+            if (a <= 0) continue;
+            const col = duoPingCol(p);
+            const age = now - p.at;
+            const pop = age < 220 ? 0.6 + 0.4 * (age / 220) + 0.15 * Math.sin((age / 220) * Math.PI) : 1;
+            const label = DUO_PING_LABEL[p.kind] || "Here";
+            const dx = (p.x - mx0) * wr, dy = (p.y - my0) * wr;
+            const sx = cx + dx, sy = cy + dy;
+            const onScreen = Math.abs(dx) < cx - 30 && Math.abs(dy) < cy - 50;
+            if (onScreen) {
+                c.save();
+                c.globalAlpha = a;
+                // ground rings, one a second
+                for (let k = 0; k < 2; k++) {
+                    const t = ((age / 1000) + k * 0.5) % 1;
+                    c.globalAlpha = a * (1 - t) * 0.8;
+                    c.strokeStyle = col; c.lineWidth = 3 * (1 - t) + 1.2;
+                    c.beginPath(); c.ellipse(sx, sy, 12 + t * 34, (12 + t * 34) * 0.55, 0, 0, Math.PI * 2); c.stroke();
+                }
+                // the pin: a head with the glyph, a point on the spot
+                const R = 18 * pop, hy = sy - 36 * pop - Math.sin(now / 280) * 2;
+                c.globalAlpha = a;
+                c.beginPath();
+                c.moveTo(sx, sy - 2);
+                c.lineTo(sx - R * 0.62, hy + R * 0.62);
+                c.arc(sx, hy, R, Math.PI * 0.75, Math.PI * 2.25);
+                c.closePath();
+                c.fillStyle = col; c.strokeStyle = HUD.ink; c.lineWidth = 3; c.lineJoin = "round";
+                c.fill(); c.stroke();
+                c.restore();
+                c.save(); c.globalAlpha = a; drawPingGlyph(c, sx, hy, R * 0.72, p.kind); c.restore();
+                // label over the pin, the sender under it
+                hudTitle(label, sx, hy - R - 12, 17, col, "center", a);
+                drawText(p.mine ? "You" : shortName(p.name || "Teammate", 14), sx, sy + 20, 11.5, HUD.text, "center", true, a, 4.5);
+            } else {
+                const e = edgePoint(dx, dy);
+                const who = p.mine ? "" : shortName(p.name || "Mate", 10).toUpperCase() + ": ";
+                const d = Math.hypot(p.x - mx0, p.y - my0);
+                c.save(); c.globalAlpha = a;
+                drawEdgeMarker(c, e, col, "ping:" + p.kind, who + (p.kind === "here" ? "PING" : label.toUpperCase()), fmtDist(d), placed);
+                c.restore();
+            }
+        }
+    }
+    // minimap / big map: a pulsing dot in the ping colour
+    function drawDuoPingsMap(c, T, inside, dotR) {
+        if (!(global.royale && global.royale.duos)) return;
+        const list = liveDuoPings();
+        const now = performance.now();
+        for (const p of list) {
+            const a = duoPingAlpha(p, now);
+            const mx = T.X(p.x), my = T.Y(p.y);
+            if (a <= 0 || !inside(mx, my)) continue;
+            const col = duoPingCol(p);
+            const t = ((now - p.at) / 900) % 1;
+            c.save();
+            c.globalAlpha = a * (1 - t);
+            c.strokeStyle = col; c.lineWidth = 2;
+            c.beginPath(); c.arc(mx, my, dotR * (2.4 + 3.2 * t), 0, Math.PI * 2); c.stroke();
+            c.globalAlpha = a;
+            c.beginPath(); c.arc(mx, my, dotR * 2.3, 0, Math.PI * 2);
+            c.fillStyle = col; c.strokeStyle = color.black; c.lineWidth = 2; c.fill(); c.stroke();
+            c.restore();
+            drawPingGlyph(c, mx, my, dotR * 1.6, p.kind);
+        }
+    }
+
+    // ── duos: team chat feed, right of the teammate card ───────────────
+    // The last few lines between you and your partner (socketinit 'TC'),
+    // readable whatever the distance and whether either of you is dead.
+    // Lines fade after a while; all of them come back while you type.
+    const TEAM_FEED_MS = 12000, TEAM_FEED_W = 250;
+    let teamFeedRect = null;
+    function drawTeamChatFeed() {
+        teamFeedRect = null;
+        if (global.syncChatModeBtn) global.syncChatModeBtn();
+        if (!(global.royale && global.royale.duos)) return;
+        const list = global.teamChat;
+        if (!list.length) return;
+        const now = performance.now();
+        const typing = !!(global.showChat && global.canvas && global.canvas.chatBox);
+        const rows = list.filter(m => typing || now - m.at < TEAM_FEED_MS).slice(-4);
+        if (!rows.length) return;
+        const c = ctx[2];
+        const sw = global.screenWidth;
+        const W = TEAM_FEED_W;
+        let x, y;
+        if (duoRect) { x = duoRect.x + duoRect.w + 4; y = duoRect.y + 6; }
+        else { x = HUD.edge; y = Math.max(70, hudTopBottom + 8); }
+        // never under the raid clock cluster at top centre
+        if (x + W > sw / 2 - 250 && y < hudTopBottom + 8) y = hudTopBottom + 8;
+        const lineH = 14, padX = 10, padY = 8, headH = 16;
+        const textW = W - padX * 2;
+        const laid = rows.map(m => {
+            const who = m.mine ? "You" : shortName(m.name, 14);
+            const nameW = hudTitleW(who, 12) + 6;
+            let lines = wrapLines(m.text, 11, textW - nameW);
+            if (lines.length > 2) { lines = lines.slice(0, 2); lines[1] = shortName(lines[1], Math.max(4, lines[1].length - 1)); }
+            const age = now - m.at;
+            const a = typing ? 1 : age > TEAM_FEED_MS - 2500 ? Math.max(0, (TEAM_FEED_MS - age) / 2500) : 1;
+            return { m, who, nameW, lines, a };
+        });
+        const H = padY * 2 + headH + laid.reduce((n, r) => n + r.lines.length * lineH + 3, 0);
+        const alpha = Math.max(...laid.map(r => r.a));
+        if (alpha <= 0.01) return;
+        teamFeedRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
+        hudPanel(c, x, y, W, H, { alpha: alpha * 0.95 });
+        const col = playerHexCol() || HUD.sky;
+        hudTitle("Team chat", x + padX, y + padY + 6, 11.5, HUD.text2, "left", alpha);
+        // how to answer
+        if (!typing) {
+            const kw = Math.max(17, hudTitleW("Enter", 17 * 0.62) + 17 * 0.55);
+            drawText("to reply", x + W - padX, y + padY + 6.5, 10, HUD.text2, "right", true, alpha);
+            hudKey(c, x + W - padX - hudTextW("to reply", 10) - kw - 5, y + padY - 3, "Enter", 17, alpha);
+        } else drawText(global.died || !global.duoChatAll ? "Your mate hears you" : "Tab: back to team", x + W - padX, y + padY + 6.5, 10, HUD.text2, "right", true, alpha);
+        let ly = y + padY + headH + 8;
+        for (const r of laid) {
+            hudTitle(r.who, x + padX, ly, 12, r.m.mine ? HUD.text2 : col, "left", r.a);
+            r.lines.forEach((ln, i) => drawText(ln, x + padX + (i ? 0 : r.nameW), ly + i * lineH + 0.5, 11, HUD.text, "left", true, r.a, 4.5));
+            ly += r.lines.length * lineH + 3;
         }
     }
 
@@ -6234,6 +6456,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (questRect) out.push(questRect);
         if (overrideRect) out.push(overrideRect);
         if (duoRect) out.push(duoRect);
+        if (teamFeedRect) out.push(teamFeedRect);
         return out;
     }
     // Step a point out of a panel by the shortest move that stays on screen
@@ -6539,11 +6762,14 @@ import * as cosmetics from './account/cosmetics.js';
             else if (r.lockout > 0) drawText("You can come back in " + r.lockout + "s", cx, global.screenHeight - 56, 15, color.guiwhite, "center");
         });
         hudTopBottom = y;
+        // CSS px, for the DOM notification cards under the clock (gameToasts.js)
+        global.hudTopPx = y * window.innerWidth / Math.max(1, global.screenWidth);
         let standBottom = 36;
         hudSafe("standings", () => { standBottom = drawRoyaleStandings(); });
         hudSafe("feed", () => drawRoyaleFeed(standBottom + 14));
         hudSafe("cards", layoutLeftCards);
         hudSafe("duo", drawDuoCard);
+        if (!global.died) hudSafe("teamchat", drawTeamChatFeed);
         hudSafe("quest", drawQuestCard);
         hudSafe("override", drawOverrideCard);
         hudSafe("storm", () => {
@@ -6913,14 +7139,29 @@ import * as cosmetics from './account/cosmetics.js';
         c.fillStyle = col; c.strokeStyle = HUD.ink; c.lineWidth = 2;
         c.fillRect(-4.5, -4.5, 9, 9); c.strokeRect(-4.5, -4.5, 9, 9);
         c.restore();
-        const name = shortName(m.name || "Teammate", 16);
+        let name = shortName(m.name || "Teammate", 16);
         let status, stCol = HUD.text2;
         if (m.away) status = "Dropped out";
         else if (!m.alive) { status = m.back > 0 ? "Back in " + m.back + "s" : "Down"; stCol = HUD.danger; }
         else if (m.fight) { status = "Fighting"; stCol = HUD.gold; }
         else status = "";
         const stW = status ? hudTextW(status, 10.5) + 8 : 0;
-        hudTitle(name, x + 28, y + 15, fitTitle(name, 15, 10, W - 40 - stW), col, "left");
+        // a bot teammate wears a small BOT tag after its name
+        const tagW = m.bot ? hudTextW("BOT", 8.5) + 10 : 0;
+        const nameRoom = W - 40 - stW - (tagW ? tagW + 6 : 0);
+        const nameSz = fitTitle(name, 15, 10, nameRoom);
+        // still too long at the smallest size: trim it so the tag and status fit
+        for (let n = name.length; hudTitleW(name, nameSz) > nameRoom && n > 4; n--) name = String(m.name || "Teammate").slice(0, n - 1) + "…";
+        hudTitle(name, x + 28, y + 15, nameSz, col, "left");
+        if (m.bot) {
+            const tx = x + 28 + hudTitleW(name, nameSz) + 6;
+            c.save();
+            roundRectPath(c, tx, y + 8, tagW, 14, 5);
+            c.fillStyle = HUD.ink; c.fill();
+            c.lineWidth = 1.5; c.strokeStyle = col; c.globalAlpha = 0.9; c.stroke();
+            c.restore();
+            drawText("BOT", tx + tagW / 2, y + 15.5, 8.5, HUD.text2, "center", true);
+        }
         if (status) drawText(status, x + W - 12, y + 15, 10.5, stCol, "right", true);
         const bx = x + 12, bw = W - 24, bh = 10, by = y + 26;
         const hp = m.alive ? Math.max(0, Math.min(1, +m.hp || 0)) : 0;
@@ -6938,7 +7179,7 @@ import * as cosmetics from './account/cosmetics.js';
             const dist = Math.hypot(tp.x - global.player.renderx, tp.y - global.player.rendery);
             foot = global.died ? "Still fighting" : dist < 700 ? "Right by you" : fmtDist(dist) + " away";
         } else if (m.away) foot = "Their spot stays open 2 min";
-        else foot = "Stay alive till they're back";
+        else foot = m.bot ? "Drops back in beside you" : "Stay alive till they're back";
         drawText(foot, x + 12, y + 47, 10, HUD.text2, "left", true);
         if (m.alive) drawText(Math.round(hp * 100) + "%", x + W - 12, y + 47, 10, HUD.text2, "right", true);
     }
@@ -7543,9 +7784,10 @@ import * as cosmetics from './account/cosmetics.js';
         else if (glyph === "gem") { gemPath(c, gx, gy + 0.5, 6.5); c.fill(); c.stroke(); }
         else if (glyph === "skull") { c.restore(); drawSkull(c, gx, gy, 6, col); c.save(); }
         else if (glyph === "mate") { c.save(); c.translate(gx, gy); c.rotate(Math.PI / 4); c.fillRect(-4.5, -4.5, 9, 9); c.strokeRect(-4.5, -4.5, 9, 9); c.restore(); }
+        else if (glyph.startsWith("ping:")) { c.beginPath(); c.arc(gx, gy, 7, 0, Math.PI * 2); c.fill(); c.stroke(); drawPingGlyph(c, gx, gy, 5, glyph.slice(5)); }
         else { c.beginPath(); c.moveTo(gx, gy - 6); c.lineTo(gx + 6, gy + 5); c.lineTo(gx - 6, gy + 5); c.closePath(); c.fill(); c.stroke(); }
         c.restore();
-        drawText(label, px - pw / 2 + 23, py + 0.5, 10.5, color.guiwhite, "left", true, 1, 5);
+        drawText(label, px - pw / 2 + 23, py + 0.5, 10.5, color.guiwhite, "left", true, c.globalAlpha, 5);
     }
     // Damage reads on the chest itself: jagged cracks grow from the centre
     // as health falls, seeded per chest so they do not flicker.
@@ -7586,14 +7828,14 @@ import * as cosmetics from './account/cosmetics.js';
             const s = toScreen(tp.x, tp.y);
             const d = Math.hypot(tp.x - me.x, tp.y - me.y);
             if (onScreen(s, -20)) {
-                const yy = s.y - 62 * Math.min(1.4, ratio) - 8;
+                const yy = s.y - 62 * Math.min(1.4, ratio) - 14;
                 c.save();
                 c.translate(s.x, yy);
-                c.fillStyle = "#e03e41"; c.strokeStyle = color.black; c.lineWidth = 2.2; c.lineJoin = "round";
-                c.beginPath(); c.moveTo(0, 9); c.lineTo(-8, -4); c.lineTo(8, -4); c.closePath();
+                c.fillStyle = "#e03e41"; c.strokeStyle = color.black; c.lineWidth = 3; c.lineJoin = "round";
+                c.beginPath(); c.moveTo(0, 14); c.lineTo(-13, -6); c.lineTo(13, -6); c.closePath();
                 c.fill(); c.stroke();
                 c.restore();
-                drawText("STREAK x" + p.streak, s.x, yy - 13, 10.5, "#ffb347", "center", true, 0.7 + 0.3 * pulse, 5);
+                drawText("STREAK x" + p.streak, s.x, yy - 18, 13, "#ffb347", "center", true, 0.7 + 0.3 * pulse, 5);
             } else if (!nearest || d < nearest.d) {
                 nearest = { pri: 3, s, col: "#ffb347", glyph: "streak", name: "STREAK x" + p.streak + " " + shortName(p.name, 10).toUpperCase(), d };
             }
@@ -7859,16 +8101,16 @@ import * as cosmetics from './account/cosmetics.js';
             if (!inside(mx, my)) continue;
             c.save();
             c.translate(mx, my);
-            c.fillStyle = "#ffb347"; c.strokeStyle = color.black; c.lineWidth = 1.5; c.lineJoin = "round";
-            const s2 = dotR * 1.6;
+            c.fillStyle = "#ffb347"; c.strokeStyle = color.black; c.lineWidth = 2; c.lineJoin = "round";
+            const s2 = dotR * 2.6;
             c.beginPath(); c.moveTo(0, -s2); c.lineTo(s2, s2 * 0.8); c.lineTo(-s2, s2 * 0.8); c.closePath();
             c.fill(); c.stroke();
             c.restore();
-            if (p.streak) drawText("x" + p.streak, mx, my - dotR * 2.6, 8, "#ffb347", "center", true);
+            if (p.streak) drawText("x" + p.streak, mx, my - dotR * 3.8, 9, "#ffb347", "center", true);
             c.save();
             c.globalAlpha = 0.8;
-            c.strokeStyle = "#ffb347"; c.lineWidth = 1.5;
-            c.beginPath(); c.arc(mx, my, dotR * 2.6 * pulse, 0, Math.PI * 2); c.stroke();
+            c.strokeStyle = "#ffb347"; c.lineWidth = 2;
+            c.beginPath(); c.arc(mx, my, dotR * 3.8 * pulse, 0, Math.PI * 2); c.stroke();
             c.restore();
         }
         if (r.boss) {
@@ -8529,7 +8771,7 @@ import * as cosmetics from './account/cosmetics.js';
         c.lineTo(x - r * 0.8, y);
         c.closePath();
         c.strokeStyle = color.black;
-        c.lineWidth = Math.max(1.4, r * 0.34);
+        c.lineWidth = Math.max(1.4, Math.min(r * 0.34, 2.5 + r * 0.1));
         c.stroke();
         c.fillStyle = "#eb4034";
         c.fill();
@@ -8760,8 +9002,9 @@ import * as cosmetics from './account/cosmetics.js';
             if (age > 20000) continue;
             const mx = T.X(p.x), my = T.Y(p.y);
             if (!inside(mx, my)) continue;
-            drawPingDiamond(c, mx, my, dotR * 2.4, age > 19000 ? 1 - (age - 19000) / 1000 : 1);
+            drawPingDiamond(c, mx, my, dotR * 3.9, age > 19000 ? 1 - (age - 19000) / 1000 : 1);
         }
+        drawDuoPingsMap(c, T, inside, dotR);
         for (const t of global.teammates) {
             if (t.id === gui.playerid) continue;
             // Tutorial: every learner is on blue, but they are strangers in
@@ -8813,13 +9056,13 @@ import * as cosmetics from './account/cosmetics.js';
             if (revm && revm.alive && isFinite(revm.x) && isFinite(revm.y)) {
                 const mx = T.X(revm.x), my = T.Y(revm.y);
                 if (inside(mx, my)) {
-                    const s2 = dotR * 1.5;
+                    const s2 = dotR * 2.4;
                     c.save();
                     c.translate(mx, my);
                     c.rotate(Math.PI / 4);
                     c.fillStyle = "#e03e41";
                     c.strokeStyle = color.black;
-                    c.lineWidth = 1.6;
+                    c.lineWidth = 2;
                     c.beginPath();
                     c.rect(-s2, -s2, s2 * 2, s2 * 2);
                     c.fill();
@@ -8827,9 +9070,9 @@ import * as cosmetics from './account/cosmetics.js';
                     c.restore();
                     c.save();
                     c.beginPath();
-                    c.arc(mx, my, dotR * 2.3 * pulse, 0, Math.PI * 2);
+                    c.arc(mx, my, dotR * 3.6 * pulse, 0, Math.PI * 2);
                     c.strokeStyle = "#e03e41";
-                    c.lineWidth = 2;
+                    c.lineWidth = 2.2;
                     c.stroke();
                     c.restore();
                 }
@@ -9929,11 +10172,30 @@ import * as cosmetics from './account/cosmetics.js';
     };
 
     let ichatInput = 0;
+    // The chat box over your own tank (a DOM input over a canvas-styled
+    // box), just above the hull; bubbles move up out of its way. In duos a
+    // pill on its left says who hears you (Team = your partner, All =
+    // everyone nearby; Tab flips it), and when you are dead it sits under
+    // the death card and always goes to your partner.
+    function chatPill() {
+        const cv = global.canvas;
+        if (!cv.chatPill || !cv.chatPill.isConnected) {
+            const el = document.createElement("span");
+            el.id = "chatModePill";
+            el.style.cssText = "position:absolute;z-index:12;display:none;align-items:center;justify-content:center;box-sizing:border-box;" +
+                "border:2px solid #120e15;border-radius:999px;font-family:'Lilita One',Ubuntu,sans-serif;letter-spacing:.03em;pointer-events:none;white-space:nowrap;";
+            document.getElementById("gameAreaWrapper").appendChild(el);
+            cv.chatPill = el;
+        }
+        return cv.chatPill;
+    }
     function drawChatInput(x, y, instance, ratio, isize) {
         if (global.showChat === 0 || !global.canvas.chatBox) return;
-        if (instance.id === gui.playerid) {
+        const dead = !instance;
+        if (dead || instance.id === gui.playerid) {
+            const duo = !!(global.royale && global.royale.duos);
             let size = isize * ratio,
-                g = Math.max(20, size);
+                g = chatScale(size);
 
             if (!global.showChat) {
                 if (ichatInput === 0) chatInput.force(0);
@@ -9943,19 +10205,54 @@ import * as cosmetics from './account/cosmetics.js';
                 ichatInput = 0;
                 chatInput.force(0);
             }
-            if (global.died && global.showChat) {
-                global.canvas.chatBox.blur();
+            if (global.died && global.showChat && !duo) {
+                global.canvas.chatInput.blur();
                 global.canvas.cv.focus();
                 global.showChat = false;
-                if (global.canvas.chatBox.value) global.canvas.chatBox.value = "";
+                if (global.canvas.chatInput.value) global.canvas.chatInput.value = "";
             }
 
             chatInput.set(1);
             global.showChatGlide = global.showChat ? chatInput.get() : 1 - chatInput.get();
             x += global.screenWidth / 2;
             y += global.screenHeight / 2;
+            const boxH = 0.95 * g;
+            // box top, in GUI units: over the hull, or under the death card
+            const top = dead
+                ? Math.min(global.screenHeight - boxH - 70, global.screenHeight / 2 + 250)
+                : overheadTop(instance, y, ratio, isize) - 0.2 * g - boxH;
             let boxLengthHalf = (10.49 * g) / 2;
+            const toPx = window.innerWidth / global.screenWidth;
             global.canvas.chatBox.loadedProperly = true;
+
+            // duos: who hears this line
+            const pill = chatPill();
+            const team = duo && (global.died || !global.duoChatAll);
+            let pillW = 0;
+            if (duo) {
+                const label = team ? "Team" : "All";
+                // the box's own units: widths are % of the canvas, heights raw px
+                const pillPx = hudTitleW(label, 0.46 * g) + 0.7 * g;
+                pillW = (pillPx + 0.3 * g) / toPx;   // pill + a gap, in layout units
+                pill.textContent = label;
+                pill.style.display = "flex";
+                pill.style.background = team ? (playerHexCol() || HUD.sky) : "#4a4156";
+                pill.style.color = "#fff3d9";
+                pill.style.textShadow = "0 1px 0 #120e15";
+                pill.style.fontSize = 0.46 * g + "px";
+                pill.style.height = 0.64 * g + "px";
+                pill.style.width = pillPx + "px";
+                pill.style.opacity = global.showChatGlide;
+                boxLengthHalf += pillW / 2;
+                pill.style.left = ((x - boxLengthHalf - 0.75 * g / 2) * toPx + 0.3 * g) + "px";
+                // centred on the box as laid out (its CSS padding can make it taller than boxH)
+                const bh = global.canvas.chatBox.offsetHeight || boxH;
+                pill.style.top = (top * toPx + (bh - 0.64 * g) / 2) + "px";
+                global.canvas.chatInput.placeholder = global.died ? "Only your mate hears you" : team ? "To your mate. Tab for all" : "To everyone. Tab for team";
+            } else {
+                pill.style.display = "none";
+                global.canvas.chatInput.placeholder = "";
+            }
 
             global.canvas.chatBox.style.color = color.black;
             global.canvas.chatBox.style.backgroundColor = color.guiwhite;
@@ -9963,18 +10260,24 @@ import * as cosmetics from './account/cosmetics.js';
             global.canvas.chatBox.style.borderWidth = 0.1 * g + 'px';
             global.canvas.chatBox.style.opacity = global.showChatGlide;
             global.canvas.chatBox.style.width = (boxLengthHalf * 2 + 0.75 * g) / global.screenWidth * 100 + `%`;
-            global.canvas.chatBox.style.height = 0.95 * g + `px`;
+            global.canvas.chatBox.style.height = boxH + `px`;
             global.canvas.chatBox.style.left = (x - boxLengthHalf - 0.75 * g / 2) / global.screenWidth * 100 + `%`;
-            global.canvas.chatBox.style.top =  (y - g * (2.26) - 0.55 * g) / global.screenWidth * window.innerWidth + `px`;
+            global.canvas.chatBox.style.top = top * toPx + `px`;
 
             global.canvas.chatInput.style.opacity = global.showChatGlide;
             global.canvas.chatInput.style["font-size"] = 0.5 * g + 'px';
+            // always dark ink on the light box, whatever the site theme did to inputs
             global.canvas.chatInput.style.color = color.black;
-            global.canvas.chatInput.style.width = (boxLengthHalf * 2 + 0.35 * g) / global.screenWidth * 100 + `%`;
-            global.canvas.chatInput.style.height = 0.95 * g + `px`;
-            global.canvas.chatInput.style.left = (x - boxLengthHalf - 0.35 * g / 2) / global.screenWidth * 100 + `%`;
-            global.canvas.chatInput.style.top =  (y - g * (2.26) - 0.55 * g) / global.screenWidth * window.innerWidth + `px`;
-            if (global.canvas.chatBox && global.showChatGlide < 0.005 && !global.showChat) chatInput.force(0), global.canvas.chatInput.remove(), global.canvas.chatBox.remove(), global.canvas.chatBox = false;
+            global.canvas.chatInput.style.caretColor = color.black;
+            global.canvas.chatInput.style.backgroundColor = "transparent";
+            global.canvas.chatInput.style.width = (boxLengthHalf * 2 + 0.35 * g - pillW) / global.screenWidth * 100 + `%`;
+            global.canvas.chatInput.style.height = boxH + `px`;
+            global.canvas.chatInput.style.left = (x - boxLengthHalf - 0.35 * g / 2 + pillW) / global.screenWidth * 100 + `%`;
+            global.canvas.chatInput.style.top = top * toPx + `px`;
+            if (global.canvas.chatBox && global.showChatGlide < 0.005 && !global.showChat) {
+                chatInput.force(0), global.canvas.chatInput.remove(), global.canvas.chatBox.remove(), global.canvas.chatBox = false;
+                pill.style.display = "none";
+            }
         }
     }
     let drawAdScreen = () => {
@@ -10214,6 +10517,7 @@ import * as cosmetics from './account/cosmetics.js';
         // drawGUI has already put us in GUI space; calling scaleScreenRatio
         // again would divide screenWidth a second time every frame
         if (global.died || global.disconnected) return;
+        if (global.GUIStatus.renderGUI) { try { drawDuoPings(); } catch (e) { /* */ } }
         if (global.GUIStatus.renderGUI && global.GUIStatus.renderPlayerBars) {
             drawLeaderArrow();
             drawEnemyPings();
@@ -10871,9 +11175,16 @@ import * as cosmetics from './account/cosmetics.js';
         const chatBtn = document.createElement("button");
         chatBtn.id = "ingameChatModeBtn";
         chatBtn.textContent = "Global Chat";
+        // duos: the same button picks Team (your partner, any distance) or
+        // All (bubbles for everyone nearby); Tab in the chat box flips it too
+        const chatBtnLabel = () => global.royale && global.royale.duos
+            ? (global.duoChatAll ? "All Chat" : "Team Chat")
+            : (global.chatMode === "team" ? "Team Chat" : "Global Chat");
+        global.syncChatModeBtn = () => { const t = chatBtnLabel(); if (chatBtn.textContent !== t) chatBtn.textContent = t; };
         chatBtn.onclick = () => {
-            global.chatMode = global.chatMode === "team" ? "global" : "team";
-            chatBtn.textContent = global.chatMode === "team" ? "Team Chat" : "Global Chat";
+            if (global.royale && global.royale.duos) global.duoChatAll = !global.duoChatAll;
+            else global.chatMode = global.chatMode === "team" ? "global" : "team";
+            global.syncChatModeBtn();
             chatBtn.blur();
             const cv = document.getElementById("gameCanvas");
             if (cv && global.gameStart) cv.focus();
@@ -10982,9 +11293,21 @@ import * as cosmetics from './account/cosmetics.js';
                 '<div class="dwj-btns">' +
                     '<button type="button" class="dw-btn dwj-back">Back to menu</button>' +
                     '<button type="button" class="dw-btn primary dwj-re">Reconnect</button>' +
+                    '<button type="button" class="dw-btn primary dwj-solo">Go solo</button>' +
                 '</div>' +
             '</div>';
-        el.querySelector(".dwj-back").onclick = () => { try { gameSound.uiClick(); } catch { /* */ } global.exit && global.exit(); hideJoinState(); };
+        el.querySelector(".dwj-back").onclick = () => {
+            try { gameSound.uiClick(); } catch { /* */ }
+            // leaving the teammate queue: tell the server first
+            if (global.duoFill) { try { global.socket.talk('DX', 'cancel'); } catch { /* */ } global.duoFill = null; }
+            global.exit && global.exit(); hideJoinState();
+        };
+        el.querySelector(".dwj-solo").onclick = () => {
+            try { gameSound.uiClick(); } catch { /* */ }
+            if (!global.duoFill) return;
+            try { global.socket.talk('DX', 'solo'); } catch { /* */ }
+            global.duoFill = { phase: "solo", waited: 0, name: "", at: performance.now(), mine: true };
+        };
         el.querySelector(".dwj-re").onclick = () => { try { gameSound.uiClick(); } catch { /* */ } if (global.disconnected) global.reconnect(); };
         document.body.appendChild(el);
         joinEl = el;
@@ -11016,6 +11339,24 @@ import * as cosmetics from './account/cosmetics.js';
         }
         if (ra) {
             return { mode: "retry", title: "Lost connection", line: "Trying again (" + (ra.tries | 0) + "/8)", back: true, dots: true, see: !!global.gameStart };
+        }
+        // Duos, alone with Fill on: waiting for a teammate (the 'DW' packet)
+        const df = global.duoFill;
+        if (df && !(global.gameStart && !global.raidQueued && !global.died)) {
+            const age = now - df.at;
+            if (df.phase === "find") {
+                const between = r.at > 0 && r.ending;
+                return { mode: "fill", title: "Finding a teammate…", lbl: "Searching", n: joinClock(Math.floor((df.waited + age) / 1000)),
+                    line: between ? "The raid's wrapping up. You'll team up and drop in with the next one."
+                        : "You'll team up with the next player who joins alone. Nobody around? A bot will partner up with you.",
+                    back: true, backLbl: "Cancel", solo: true, dots: true };
+            }
+            if (df.phase === "bot" && age < 6000)
+                return { mode: "fillbot", title: "No teammates around", line: "Matching you with a bot…", dots: true };
+            if (df.phase === "paired" && age < 6000)
+                return { mode: "paired", title: "Teamed up!", line: "Dropping in with " + (df.name || "your teammate") + "…", dots: true };
+            if (df.phase === "solo" && age < 6000)
+                return { mode: "fillsolo", title: "Going solo", line: df.mine ? "Dropping you in without a teammate…" : "No teammates around right now. Dropping you in solo…", dots: true };
         }
         if (global.gameConnecting && !global.gameStart) {
             const slow = joinMode === "connect" && now - joinModeAt > 7000;
@@ -11064,7 +11405,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (!st) { hideJoinState(); return; }
         const el = getJoinEl();
         if (st.mode !== joinMode) { joinMode = st.mode; joinModeAt = performance.now(); }
-        const key = [st.mode, st.title, st.lbl, st.n, st.line, st.back, st.re, st.dots, st.see].join("|");
+        const key = [st.mode, st.title, st.lbl, st.n, st.line, st.back, st.backLbl, st.re, st.solo, st.dots, st.see].join("|");
         if (key !== joinKey) {
             joinKey = key;
             el.dataset.mode = st.mode;
@@ -11078,8 +11419,12 @@ import * as cosmetics from './account/cosmetics.js';
             line.textContent = st.line || "";
             line.hidden = !st.line;
             el.querySelector(".dwj-dots").hidden = !st.dots;
-            el.querySelector(".dwj-back").hidden = !st.back;
+            const back = el.querySelector(".dwj-back");
+            back.hidden = !st.back;
+            back.textContent = st.backLbl || "Back to menu";
             el.querySelector(".dwj-re").hidden = !st.re;
+            el.querySelector(".dwj-solo").hidden = !st.solo;
+            el.querySelector(".dwj-btns").hidden = !st.back && !st.re && !st.solo;
         }
         if (!joinUp) { joinUp = true; el.classList.add("open"); }
     }
@@ -11234,6 +11579,10 @@ import * as cosmetics from './account/cosmetics.js';
             };
             if (global.died) {
                 gameDrawDead();
+                // duos: your partner's pings and chat stay readable over the death card
+                if (global.GUIStatus.renderGUI && global.royale && global.royale.duos && !global.disconnected) {
+                    try { drawDuoPings(); drawTeamChatFeed(); } catch (e) { /* never break the frame */ }
+                }
             }
             drawRaidEndFx();
             if (global.showBigMap) drawBigMap();

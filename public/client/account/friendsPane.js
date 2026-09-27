@@ -204,13 +204,14 @@ function subOf(f) {
     if ((f.unread | 0) > 0 && f.last && f.last.from === 'them') return { text: f.last.body, cls: 'st-msg' };
     return { text: presenceText(f.presence, f.rank), cls: 'st-' + presenceState(f.presence) };
 }
-// Invite to duo: friends on the menu only (in a raid they can't take it,
-// offline there's nobody to ask). Already teamed up: a quiet tick.
+// Invite to duo: friends on the menu or in a raid (they get a card in the
+// raid and join you after it); offline there's nobody to ask. Already
+// teamed up: a quiet tick.
 function duoBtn(f) {
     const st = presenceState(f.presence);
     if (party.partyHas(f.userId)) return h('span', { class: 'fr-ic fr-duo on', title: 'In your duo party', 'aria-label': 'In your duo party' }, icon('duo'));
-    const can = st === 'menu';
-    const label = can ? 'Invite to duo' : st === 'raid' ? 'In a raid, invite them later' : 'Offline';
+    const can = st === 'menu' || st === 'raid';
+    const label = st === 'menu' ? 'Invite to duo' : st === 'raid' ? 'Invite to duo (they’re in a raid)' : 'Offline';
     const b = h('button', { type: 'button', class: 'fr-ic fr-duo', title: label, 'aria-label': label, disabled: !can,
         onclick: async () => { b.disabled = true; await party.inviteFriend(f); b.disabled = false; } }, icon('duo'));
     return b;

@@ -1214,6 +1214,36 @@ let incoming = async function(message, socket) {
                 global.enemyPings.push({ x: m[0], y: m[1], by, at: performance.now() });
                 if (global.enemyPings.length > 16) global.enemyPings.shift();
             } break;
+            case 'TC': {
+                // duos: team chat [name, text, bodyId, mine]. Reaches you from
+                // your partner at any distance, dead or alive; the feed by the
+                // teammate card shows it, and a bubble over the sender when
+                // they are on screen.
+                const name = String(m[0] || 'Teammate'), text = String(m[1] || ''), bid = m[2] | 0, mine = !!m[3];
+                if (!text) break;
+                const now = performance.now();
+                global.teamChat.push({ name, text, mine, at: now });
+                if (global.teamChat.length > 6) global.teamChat.shift();
+                const id = bid || (mine ? gui.playerid : 0);
+                if (id) {
+                    if (!global.chats) global.chats = {};
+                    const list = global.chats[id] || (global.chats[id] = []);
+                    const alpha = util.AdvancedSmoothBar(0, 0.3, 1.5);
+                    list.push({ text, id: 1e9 + (global.teamChatSeq = (global.teamChatSeq | 0) + 1), alpha, local: true, team: true, expires: now + 9000 });
+                    alpha.set(1);
+                    while (list.filter(c => !c.erased).length > 3) { const old = list.find(c => !c.erased); old.erased = true; old.alpha.set(0); }
+                }
+                if (!mine) { try { gameSound.dustPop(); } catch (e) { /* */ } }
+            } break;
+            case 'PG': {
+                // duos: a quick ping [x, y, kind, name, bodyId, mine]; one per
+                // sender, 5 s
+                const p = { x: +m[0], y: +m[1], kind: String(m[2] || 'here'), name: String(m[3] || ''), by: m[4] | 0, mine: !!m[5], at: performance.now() };
+                if (!isFinite(p.x) || !isFinite(p.y)) break;
+                for (let i = global.duoPings.length - 1; i >= 0; i--) if (global.duoPings[i].mine === p.mine) global.duoPings.splice(i, 1);
+                global.duoPings.push(p);
+                try { if (p.mine) gameSound.uiClick(); else gameSound.dustPop(); } catch (e) { /* */ }
+            } break;
             case 'TM': {
                 
                 const n = m[0];
@@ -1596,6 +1626,18 @@ let incoming = async function(message, socket) {
             case 'DU': {
                 // [carriedMilli, balanceMilli, deltaMilli, kind]
                 try { dustHud.onPacket(m[0], m[1], m[2], m[3]); } catch (e) { /* ignore */ }
+            } break;
+            case 'DW': {
+                // duos fill queue: [phase, waited ms, name] -> the waiting
+                // screen (app.js joinState). 'done' ends it.
+                const ph = String(m[0] || '');
+                const nm = String(m[2] || '').slice(0, 40);
+                if (ph === 'done' || !ph) global.duoFill = null;
+                else global.duoFill = { phase: ph, waited: +m[1] || 0, name: nm, at: performance.now() };
+                if (ph === 'paired') {
+                    global.callouts = global.callouts || [];
+                    global.callouts.push({ kind: "quest", text: "Teamed up with " + (nm || "a teammate") + "!", sub: "Stick together.", born: performance.now() + 900, dur: 3400 });
+                }
             } break;
             case 'RK': {
                 // the life's rank result, right after 'F' (never cleared by it)

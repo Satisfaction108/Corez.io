@@ -19,6 +19,7 @@ import * as profile from './profile.js';
 import * as leaderboard from './leaderboard.js';
 import * as dailyQuests from './dailyQuests.js';
 import * as ingameChat from './ingameChat.js';
+import * as gameToasts from './gameToasts.js';
 import * as party from './party.js';
 
 const html = document.documentElement;
@@ -287,6 +288,7 @@ async function boot() {
     hub.register('leaderboard', { title: 'Top 100', render: leaderboard.render, onClose: leaderboard.onClose });
     friendsPane.init({ openProfile: openProfile('friends') });
     ingameChat.init();
+    gameToasts.init();
     profile.init({ openPane, setTitle: hub.setTitle });
     leaderboard.init({ openProfile: openProfile('leaderboard'), onLogin: () => welcome.open('choose', { dismissable: true }) });
     dailyQuests.init({ onLogin: () => { if (!store.get('offline')) welcome.open('choose', { dismissable: true }); } });

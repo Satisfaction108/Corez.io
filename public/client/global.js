@@ -177,6 +177,7 @@ const global = {
     KEY_CHOOSE_5: 74,
     KEY_CHOOSE_6: 75,
     KEY_FRIEND_CHAT: 27,   // in-game friend chat (account/ingameChat.js)
+    KEY_PARTY_ACCEPT: 113, // F2: join the duo invite on screen (account/gameToasts.js)
 
     showTree: false,
     scrollX: 0,
@@ -347,6 +348,10 @@ const global = {
     teammates: [],
     
     enemyPings: [],
+    // duos: partner talk (socketinit 'TC' / 'PG', drawn in app.js)
+    teamChat: [],
+    duoPings: [],
+    duoChatAll: false,     // duos: chat goes to everyone nearby instead of your partner
     
     chatMode: 'global',
     

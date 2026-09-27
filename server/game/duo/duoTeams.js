@@ -19,10 +19,22 @@
 //   - fill off: a team of one, closed
 //   - a disconnected member keeps their slot for AWAY_MS (the raid's resume
 //     window), then the slot frees; an empty team is gone
+//
+// The fill queue (wait/match): a lone filler with no team does not spawn
+// straight away, they wait. match() pairs two waiters into a fresh team (or
+// seats a waiter in an open team whose partner left for good); a waiter who
+// has waited fillWaitMs gets a team of their own with a bot teammate
+// (team.bot), which never takes a stranger.
+//
+// team.key names one formation of a team (a second member arriving, or a bot
+// teammate): standings group rows by it, so a departed partner's row never
+// merges with whoever takes the slot next, and a team id reused later can't
+// pull strangers into one row.
 'use strict';
 
 const RESERVE_MS = 90 * 1000;
 const AWAY_MS = 120 * 1000;
+const FILL_WAIT_MS = 45 * 1000;
 
 class DuoTeams {
     constructor(opts = {}) {
@@ -30,9 +42,14 @@ class DuoTeams {
         this.newTeamId = opts.newTeamId || (() => -200 - Math.floor(Math.random() * 3000));
         this.reserveMs = opts.reserveMs != null ? opts.reserveMs : RESERVE_MS;
         this.awayMs = opts.awayMs != null ? opts.awayMs : AWAY_MS;
+        this.fillWaitMs = opts.fillWaitMs != null ? opts.fillWaitMs : FILL_WAIT_MS;
         this.teams = new Map();      // id -> team
         this.byMember = new Map();   // mk -> team id
+        this.waiting = new Map();    // mk -> {mk, name, since}  (the fill queue)
+        this.keySeq = 0;
     }
+
+    _newKey(prefix = 'd') { return prefix + (++this.keySeq); }
 
     _freshId() {
         for (let i = 0; i < 100; i++) {
@@ -46,7 +63,7 @@ class DuoTeams {
 
     _make(pid, fill, mates) {
         const t = this.now();
-        const team = { id: this._freshId(), pid: pid || null, fill: !!fill, members: new Map(), expect: new Set(mates || []), createdAt: t, color: null };
+        const team = { id: this._freshId(), pid: pid || null, fill: !!fill, members: new Map(), expect: new Set(mates || []), createdAt: t, color: null, key: null, bot: null };
         this.teams.set(team.id, team);
         return team;
     }
@@ -54,11 +71,15 @@ class DuoTeams {
     _add(team, mk, name) {
         team.members.set(mk, { mk, name: name || '', joinedAt: this.now(), away: 0 });
         this.byMember.set(mk, team.id);
+        this.waiting.delete(mk);
+        // a pair forms (or re-forms around a new partner): a new standings key
+        if (team.members.size === 2) team.key = this._newKey();
     }
 
     // Open for a stranger right now?
     fillable(team, t = this.now()) {
         if (team.members.size !== 1) return false;
+        if (team.bot) return false;                  // has a bot teammate: kept, no swap mid-raid
         if (!team.pid) return team.fill;
         // a party whose mate never showed: open after the reservation, if
         // the member who is here asked for fill
@@ -127,6 +148,7 @@ class DuoTeams {
     }
 
     drop(mk) {
+        this.waiting.delete(mk);
         const id = this.byMember.get(mk);
         if (id == null) return null;
         this.byMember.delete(mk);
@@ -169,17 +191,93 @@ class DuoTeams {
     // Is this team id one of ours (a human duo team)?
     has(id) { return this.teams.has(id); }
 
-    reset() { this.teams.clear(); this.byMember.clear(); }
+    // ---- the fill queue ----
+
+    // A lone filler with no team starts (or keeps) waiting. -> the entry
+    wait(mk, name) {
+        let w = this.waiting.get(mk);
+        if (!w) { w = { mk, name: name || '', since: this.now() }; this.waiting.set(mk, w); }
+        else if (name) w.name = name;
+        return w;
+    }
+
+    unwait(mk) { return this.waiting.delete(mk); }
+
+    isWaiting(mk) { return this.waiting.has(mk); }
+
+    // Settle the queue. -> [{kind:'pair', team, mks:[a, b]}
+    //                      | {kind:'join', team, mk}      (an open team's empty slot)
+    //                      | {kind:'bot', team, mk}]      (waited fillWaitMs: bot teammate)
+    // canBot(): false holds a timed-out waiter in the queue (no bot room).
+    match(canBot = () => true) {
+        const t = this.now();
+        const out = [];
+        const list = [...this.waiting.values()].sort((a, b) => a.since - b.since);
+        // two waiters: one fresh team, both in
+        while (list.length >= 2) {
+            const a = list.shift(), b = list.shift();
+            const team = this._make(null, true);
+            this._add(team, a.mk, a.name);
+            this._add(team, b.mk, b.name);
+            out.push({ kind: 'pair', team, mks: [a.mk, b.mk] });
+        }
+        for (const w of list) {
+            // an open slot: a lone player whose partner left for good (or a
+            // party whose mate never came, past the reservation)
+            let best = null;
+            for (const team of this.teams.values()) {
+                if (!this.fillable(team, t)) continue;
+                const other = [...team.members.values()][0];
+                if (other && other.away) continue;
+                if (!best || team.createdAt < best.createdAt) best = team;
+            }
+            if (best) {
+                this._add(best, w.mk, w.name);
+                out.push({ kind: 'join', team: best, mk: w.mk });
+                continue;
+            }
+            if (t - w.since >= this.fillWaitMs && canBot()) {
+                const team = this._make(null, false);
+                this._add(team, w.mk, w.name);
+                this.attachBot(team);
+                out.push({ kind: 'bot', team, mk: w.mk });
+            }
+        }
+        return out;
+    }
+
+    // A bot teammate for a team of one (never takes a stranger after this).
+    attachBot(team, name) {
+        team.fill = false;
+        team.bot = { name: name || '', fam: null, body: null, respawnAt: 0 };
+        team.key = this._newKey();
+        return team.bot;
+    }
+
+    reset() { this.teams.clear(); this.byMember.clear(); this.waiting.clear(); }
 }
 
-// Team standings: group board rows by team (rows carry tm), sum score and
-// kills, order like the solo board. -> [{tm, rows, score, kills, gems, alive, place}]
+// Team standings: group board rows by team (rows carry tm, the formation
+// key; rows without one stand alone), sum score and kills, order like the
+// solo board. A team is at most two rows: if more ever share a key (a bug
+// upstream), the extras stand alone and it is logged once.
+// -> [{tm, rows, score, kills, gems, alive, place}]
+let overfullLogged = false;
 function teamStandings(rows) {
     const by = new Map();
+    const count = new Map();
     for (const r of rows) {
-        const k = r.tm != null ? r.tm : 'x' + r.id;
+        let k = r.tm != null ? r.tm : 'x' + r.id;
+        if (r.tm != null) {
+            const n = (count.get(k) || 0) + 1;
+            count.set(k, n);
+            if (n > 2) {
+                if (!overfullLogged) { overfullLogged = true; console.warn('[DUO] more than two rows on team key', k, 'split'); }
+                k = 'x' + r.id;
+            }
+        }
         let t = by.get(k);
-        if (!t) { t = { tm: r.tm != null ? r.tm : null, rows: [], score: 0, kills: 0, gems: 0, alive: false, here: false }; by.set(k, t); }
+        if (!t) { t = { tm: typeof k === 'string' && k[0] === 'x' ? null : r.tm, rows: [], score: 0, kills: 0, gems: 0, alive: false, here: false }; by.set(k, t); }
         t.rows.push(r);
         t.score += r.score | 0;
         t.kills += r.kills | 0;
@@ -192,4 +290,4 @@ function teamStandings(rows) {
     return out;
 }
 
-module.exports = { DuoTeams, teamStandings, RESERVE_MS, AWAY_MS };
+module.exports = { DuoTeams, teamStandings, RESERVE_MS, AWAY_MS, FILL_WAIT_MS };

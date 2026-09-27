@@ -310,6 +310,92 @@ test('duo teams: team standings group rows and sum scores', () => {
     assert.equal(t[0].rows.length, 2);
 });
 
+test('duo fill queue: two waiters pair at once, a lone waiter gets a bot after the wait, bot teams take no strangers', () => {
+    const b = book();
+    b.wait('t:a', 'Ann');
+    assert.deepEqual(b.match(), [], 'alone and early: still waiting');
+    assert.equal(b.teamOf('t:a'), null);
+    b.tick(10000);
+    b.wait('t:b', 'Bob');
+    const ev = b.match();
+    assert.equal(ev.length, 1);
+    assert.equal(ev[0].kind, 'pair');
+    assert.deepEqual(ev[0].mks.sort(), ['t:a', 't:b']);
+    assert.equal(b.teamOf('t:a').id, b.teamOf('t:b').id, 'same team');
+    assert.ok(b.teamOf('t:a').key, 'a formed pair has a standings key');
+    assert.equal(b.waiting.size, 0);
+    // a lone waiter: bot after fillWaitMs
+    b.wait('t:c', 'Cy');
+    b.tick(b.fillWaitMs - 1);
+    assert.deepEqual(b.match(), []);
+    b.tick(2);
+    const ev2 = b.match();
+    assert.equal(ev2.length, 1);
+    assert.equal(ev2[0].kind, 'bot');
+    const bt = b.teamOf('t:c');
+    assert.ok(bt.bot && bt.key && bt.members.size === 1);
+    assert.equal(b.fillable(bt), false, 'a bot team never takes a stranger');
+    // a later lone filler waits themselves (no swap)
+    b.wait('t:d', 'Di');
+    assert.deepEqual(b.match(), []);
+    assert.notEqual(b.teamOf('t:d'), bt);
+    // no room for a bot: held in the queue
+    b.tick(b.fillWaitMs + 1);
+    assert.deepEqual(b.match(() => false), []);
+    assert.ok(b.isWaiting('t:d'));
+    b.unwait('t:d');
+    assert.equal(b.isWaiting('t:d'), false);
+});
+
+test('duo fill queue: a waiter takes the empty slot of a player whose partner left for good; a re-formed pair gets a new key', () => {
+    const b = book();
+    b.wait('t:a'); b.wait('t:b');
+    b.match();
+    const team = b.teamOf('t:a');
+    const k1 = team.key;
+    b.away('t:b');
+    b.tick(b.awayMs + 1);
+    b.sweep();
+    assert.equal(team.members.size, 1);
+    b.wait('t:n', 'New');
+    const ev = b.match();
+    assert.equal(ev[0].kind, 'join');
+    assert.equal(b.teamOf('t:n'), team);
+    assert.notEqual(team.key, k1, 'new formation, new key: the departed row stays out');
+    // party members never enter the queue path: join() as before
+    const p = b.join({ mk: 'u:1', pid: 'P', mates: ['u:1', 'u:2'], fill: true });
+    assert.equal(b.isWaiting('u:1'), false);
+    assert.equal(p.team.key, null, 'a party of one has no key yet');
+    b.join({ mk: 'u:2', pid: 'P', mates: ['u:1', 'u:2'], fill: true });
+    assert.ok(p.team.key);
+});
+
+test('duo standings: stale rows with a reused team id never merge; a key never holds more than two rows', () => {
+    // rows as the board makes them: tm is the formation key, solo rows have none.
+    // The same arras team id (-300) was reused by four different bodies over
+    // a raid; only the two that formed a pair share a key.
+    const rows = [
+        { id: 1, tm: 'd1', name: 'Dylan', score: 900, team: -300 },
+        { id: 2, tm: 'd1', name: 'mini_ruby', score: 400, team: -300 },
+        { id: 3, name: 'soggygold', score: 300, team: -300 },         // solo, dead, same old id
+        { id: 4, name: 'carrot', score: 200, team: -300 },            // solo bot, same id
+        { id: 5, tm: 'b7', name: 'BotA', score: 100 },
+        { id: 6, tm: 'b7', name: 'BotB', score: 50 },
+    ];
+    const t = teamStandings(rows);
+    assert.ok(t.every(x => x.rows.length <= 2));
+    assert.deepEqual(t.find(x => x.tm === 'd1').rows.map(r => r.name), ['Dylan', 'mini_ruby']);
+    assert.equal(t.filter(x => x.tm == null).length, 2, 'solo rows stand alone');
+    // defensive cap: a bug that puts four rows on one key splits the extras
+    const bad = teamStandings([
+        { id: 1, tm: 'd9', name: 'A', score: 4 }, { id: 2, tm: 'd9', name: 'B', score: 3 },
+        { id: 3, tm: 'd9', name: 'C', score: 2 }, { id: 4, tm: 'd9', name: 'D', score: 1 },
+    ]);
+    assert.ok(bad.every(x => x.rows.length <= 2));
+    assert.equal(bad.length, 3);
+    assert.deepEqual(bad[0].rows.map(r => r.name), ['A', 'B']);
+});
+
 // ---- HTTP ----
 
 function server() {
@@ -442,7 +528,11 @@ test('http + SSE: account invites a friend on the menu, accept, launch reaches t
         assert.equal(r.json.error.code, 'offline');
         presence.join('duo', c.id, 'sock1');
         r = await srv.post('/api/party/invite', { userId: c.public_id }, ca);
-        assert.equal(r.json.error.code, 'in_raid', 'a friend in a raid can\'t be invited');
+        assert.equal(r.status, 200, 'a friend in a raid can be invited (an in-game card, they join after)');
+        assert.equal(r.json.party.pending[0].to, c.username);
+        r = await srv.post('/api/party/invite/cancel', { id: r.json.invite.id }, ca);
+        assert.equal(r.status, 200);
+        assert.equal(r.json.party.pending.length, 0, 'taken back');
         const stranger = mkUser();
         r = await srv.post('/api/party/invite', { userId: stranger.public_id }, ca);
         assert.equal(r.json.error.code, 'not_friends');

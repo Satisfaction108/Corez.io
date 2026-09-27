@@ -212,6 +212,8 @@ function ensureStat(body) {
     s.name = body.name || s.name;
     s.id = body.id;
     s.team = body.team;
+    // duos: the standings key (only real duo teams have one; see duoRaid.teamKeyOf)
+    if (Config.royale_duos) s.teamKey = duo.teamKeyOf(body);
     // nameplate cosmetics for the board rows (bridge.applyIdentity)
     s.ns = body.nameStyleNid | 0;
     s.nc = body.customNameColor || null;
@@ -248,7 +250,7 @@ function boardOrder() {
     // place (the raid placement bonus reads e.place / e.rows).
     const teams = new Map();
     for (const e of list) {
-        const k = e.s.team != null ? e.s.team : 'k' + e.s.key;
+        const k = e.s.teamKey ? e.s.teamKey : 'k' + e.s.key;
         let t = teams.get(k);
         if (!t) teams.set(k, t = { score: 0, gems: 0, kills: 0, list: [] });
         t.score += e.score; t.gems += e.gems; t.kills += e.kills;
@@ -297,7 +299,7 @@ function boardSnapshot() {
         rk: s.rankCode | 0,
         ns: s.ns | 0,
         nc: s.nc || undefined,
-        tm: Config.royale_duos ? s.team : undefined,
+        tm: Config.royale_duos && s.teamKey ? s.teamKey : undefined,
         place: 0,
     }));
     rows.sort(boardCmp);
@@ -505,7 +507,7 @@ function broadcast(extra = {}) {
         let duoTail = '';
         if (duos) {
             const d = duo.hudFor(client, t) || {};
-            const myTm = mine ? mine.team : (bodyLive ? body.team : null);
+            const myTm = mine && mine.teamKey ? mine.teamKey : (bodyLive ? duo.teamKeyOf(body) : null);
             d.tm = myTm != null ? myTm : null;
             d.place = myTm != null ? (teamPlace.get(myTm) | 0) : 0;
             d.score = 0;
@@ -810,7 +812,8 @@ function botCapNow() {
     try {
         const st = storm.snapshot(now());
         if (st && st.a) {
-            const total = Math.floor(((st.r || 0) / FM.DENSITY_R) ** 2);
+            // bot teammates are fighters too: they share the closing circle
+            const total = Math.floor(((st.r || 0) / FM.DENSITY_R) ** 2) - teamBots().length;
             cap = Math.min(cap, Math.max(hs ? FM.DENSITY_MIN_BOTS : 0, total - hs));
         }
     } catch { /* */ }
@@ -820,6 +823,10 @@ function botCapNow() {
 function liveBots() {
     return (global.gameManager.gameHandler?.bots || []).filter(b => b && !b.isDead() && !b.isGhost);
 }
+// Duos: bot teammates (one per human who got a bot partner) are counted on
+// their own: they never take an enemy bot's slot and are never trimmed.
+function enemyBots() { return liveBots().filter(b => !b.isTeamBot); }
+function teamBots() { return liveBots().filter(b => b.isTeamBot); }
 
 // A bot leaving quietly: nothing drops, no feed line, no credit.
 function despawnBot(bot) {
@@ -840,7 +847,7 @@ function despawnBot(bot) {
 let lastTrimAt = 0, overCapSince = 0;
 function trimBots(t) {
     const FM = FIRST_MINUTES;
-    const bots = liveBots();
+    const bots = enemyBots();
     const cap = botCapNow();
     if (bots.length <= cap) { overCapSince = 0; return; }
     if (!overCapSince) overCapSince = t;
@@ -936,14 +943,15 @@ function spawnRaidBot() {
     const handler = global.gameManager.gameHandler;
     if (!handler) return;
     // duos: two of the bots are a team (they spawn together and cover each other)
-    const plan = Config.royale_duos ? duo.botSpawnPlan(liveBots()) : null;
+    const plan = Config.royale_duos ? duo.botSpawnPlan(enemyBots()) : null;
     const hole = (plan && plan.near && spotNearMate(null, plan.near)) || safeSpawnSpot(null, true);
-    const team = plan ? plan.team : getRandomTeam();
+    // duos: a team id nobody had this raid (stale board rows keep theirs)
+    const team = plan ? plan.team : Config.royale_duos ? duo.freshTeamId() : getRandomTeam();
     handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team);
     const bot = handler.bots[handler.bots.length - 1];
     if (!bot) return;
     bot.team = team;
-    if (plan) duo.linkBotDuo(bot, liveBots());
+    if (plan) duo.linkBotDuo(bot, enemyBots());
     bot.botRespawnsRemaining = 0;
     bot.royaleAlive = true;
     bot.royaleBornAt = now();
@@ -971,9 +979,92 @@ function fillBots() {
     trimBots(t);
     if (t - lastFillAt < 400) return;
     if (stormLocked()) return;
-    if (liveBots().length >= botCapNow()) return;
+    if (enemyBots().length >= botCapNow()) return;
     lastFillAt = t;
     spawnRaidBot();
+}
+
+const TEAM_BOT_CATCHUP_D = 1350;     // this far from its human (past the 1300 regroup leash)...
+const TEAM_BOT_CATCHUP_MS = 6000;    // ...for this long (and out of a fight): skip ahead
+const TEAM_BOT_CATCHUP_R = 850;      // to about this far from them (just off their screen)
+
+// Open ground ~TEAM_BOT_CATCHUP_R from the human, on the bot's side.
+function catchUpSpot(bot, human) {
+    const tg = global.gameManager.terrainGrid;
+    const mapR = ((tg && tg.circleRadius) || 2700) - FIRST_MINUTES.SPAWN_MAP_MARGIN;
+    let pads = [];
+    try { pads = [...vault.getVaults(), ...outposts.getOutposts(), ...shop.getShops()].filter(Boolean); } catch { /* */ }
+    const base = Math.atan2(bot.y - human.y, bot.x - human.x);
+    for (let k = 0; k < 9; k++) {
+        const a = base + (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 0.35;
+        for (const r of [TEAM_BOT_CATCHUP_R, TEAM_BOT_CATCHUP_R * 0.8]) {
+            const x = human.x + Math.cos(a) * r, y = human.y + Math.sin(a) * r;
+            if (Math.hypot(x, y) > mapR) continue;
+            if (tg && tg.rockHitByCircle && tg.rockHitByCircle(x, y, (bot.realSize || 30) + 10)) continue;
+            try { if (storm.inStorm(x, y)) continue; } catch { /* */ }
+            if (pads.some(p => padGeom.insidePad(p, x, y, FIRST_MINUTES.SPAWN_PAD_CLEAR))) continue;
+            return { x, y };
+        }
+    }
+    return null;
+}
+// Duos: a human's bot teammate. Same team (colour, no friendly fire), spawned
+// at their side, same name and board row through every respawn.
+function spawnTeamBot(team, near) {
+    const handler = global.gameManager.gameHandler;
+    if (!handler || !team || !team.bot || !near) return null;
+    const tg = global.gameManager.terrainGrid;
+    let spot = spotNearMate(null, near, true);
+    if (!spot) spot = openGroundNear(tg, near.x + 160, near.y);
+    const tb = team.bot;
+    const lifecycle = tb.fam != null ? { familyId: tb.fam, respawnsRemaining: 0 } : null;
+    handler.spawnBots({ x: spot.x, y: spot.y }, team.id, tb.name || null, lifecycle);
+    const bot = handler.bots[handler.bots.length - 1];
+    if (!bot) return null;
+    bot.team = team.id;
+    const c = team.color != null ? team.color : global.assignTeamColor(team.id);
+    bot.color.base = c; bot.leaderboardColor = c; bot.minimapColor = c;
+    // a steady partner: no showboating, not the timid or the reckless kind
+    bot.botStyle = 'normal';
+    bot.botTemperament = 'balanced';
+    bot.botSkill = Math.max(bot.botSkill || 0, 0.6);
+    duo.adoptTeamBot(team, bot, near);
+    bot.botRespawnsRemaining = 0;
+    bot.royaleAlive = true;
+    bot.royaleBornAt = now();
+    bot.weakDrillUntil = 0;
+    try { gems.initSatchel(bot); } catch { /* */ }
+    try { bot.refreshBodyAttributes(); } catch { /* */ }
+    ensureStat(bot);
+    try { near.sendMessage(bot.name + " dropped in beside you."); } catch { /* */ }
+    return bot;
+}
+
+function tickTeamBots(t) {
+    if (t - (tickTeamBots.at || 0) < 200) return;
+    tickTeamBots.at = t;
+    const bots = liveBots();
+    const work = duo.teamBotWork(t, bots);
+    for (const b of work.despawn) despawnBot(b);
+    if (!canSpawn()) return;
+    for (const w of work.spawn) spawnTeamBot(w.team, w.near);
+    // a bot teammate stranded across the map (its human got back to base,
+    // or the rock between them is a maze) catches up quietly: long enough
+    // apart and out of any fight, it skips ahead to just off its human's
+    // screen, on its own side, and walks the rest
+    for (const b of bots) {
+        if (!b.isTeamBot || b.isDead?.()) continue;
+        const h = b.duoMate;
+        const far = h && !h.isDead?.() && h.team === b.team && Math.hypot(h.x - b.x, h.y - b.y) > TEAM_BOT_CATCHUP_D;
+        if (!far) { b._teamFarSince = 0; continue; }
+        if (!b._teamFarSince) b._teamFarSince = t;
+        const fighting = t - Math.max(b._lastDamageAt || 0, b.hitAt || 0) < 6000 || b._digWarsGoal === 'fight';
+        if (fighting || t - b._teamFarSince < TEAM_BOT_CATCHUP_MS) continue;
+        const spot = catchUpSpot(b, h) || spotNearMate(b, h, true);
+        if (!spot) continue;
+        b._teamFarSince = 0;
+        moveTo(b, spot.x, spot.y);
+    }
 }
 
 function onBanked(body, amount) {
@@ -1232,9 +1323,13 @@ function onHumanJoin(body) {
     // duos: next to your partner if they're alive and not in a fight; that
     // beats the base (which is shared anyway) and a random safe spot
     let mateSpawn = false;
+    if (Config.royale_duos) duo.watchHits(body);
     if (Config.royale_duos && !(body.socket && body.socket._resume)) {
         const mate = duo.mateBody(body);
-        const spot = mate ? spotNearMate(body, mate) : null;
+        // just teamed up from the fill queue: right beside them, fight or not
+        const loose = !!(body.socket && body.socket._duoNearMate);
+        if (body.socket) body.socket._duoNearMate = false;
+        const spot = mate ? spotNearMate(body, mate, loose) : null;
         if (spot) {
             mateSpawn = true;
             moveTo(body, spot.x, spot.y);
@@ -1728,6 +1823,7 @@ function startRaid(first) {
     raidStartAt = now();
     raidEndsAt = raidStartAt + RAID_MS;
     raidStats = new Map();
+    if (Config.royale_duos) { try { duo.newRaid(); } catch (e) { guardLog('duo new raid', e); } }
     try { rankHooks.onRaidStart(); } catch (e) { guardLog('rank raid start', e); }
     shopRewardCount = new Map();
     killFeed = [];
@@ -1966,7 +2062,7 @@ function tick() {
     if (raidResults && t - raidResultsAt > RAID_END_BEAT_MS + RAID_END_WAIT_MS) raidResults = null;
     // coalesced DU packets and the 5 s dust flush (accounts)
     guard('accounts', () => rankHooks.tick(t));
-    if (Config.royale_duos) guard('duos', () => duo.tick(t));
+    if (Config.royale_duos) guard('duos', () => { duo.tick(t); tickTeamBots(t); });
     // everyone is down between raids: no storm, bosses, chests or bots, just
     // keep the HUD fed (results panel, countdown)
     if (raidEnding) {

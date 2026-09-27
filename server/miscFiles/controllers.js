@@ -1491,6 +1491,75 @@ const NAV_OFFSETS = [0, 0.36, -0.36, 0.72, -0.72, 1.1, -1.1, 1.5, -1.5,
 // One committed heading per bot, turned smoothly toward the best open
 // direction. The commitment is the whole point: a bot with two equally good
 // ways around a boulder must keep the one it picked, or it oscillates.
+// Coarse route planning for a bot teammate regrouping with its human (the
+// only bot that needs to cross the map to a moving point on purpose).
+// Only for the last stretch (past REGROUP_MAX_D the server's catch-up in
+// dig_royale moves the bot closer), so a plan stays a few hundred cells.
+const REGROUP_CELL = 140, REGROUP_ROCK_COST = 5, REGROUP_MARGIN = 420, REGROUP_MAX_CELLS = 700, REGROUP_MAX_D = 1800;
+function planRoute(body, to, nav) {
+    const tg = global.gameManager && global.gameManager.terrainGrid;
+    if (!tg || !tg.rockHitByCircle) return null;
+    if (Math.hypot(to.x - body.x, to.y - body.y) > REGROUP_MAX_D) return null;
+    const C = REGROUP_CELL;
+    const x0 = Math.min(body.x, to.x) - REGROUP_MARGIN, y0 = Math.min(body.y, to.y) - REGROUP_MARGIN;
+    const w = Math.ceil((Math.abs(body.x - to.x) + 2 * REGROUP_MARGIN) / C) + 1;
+    const h = Math.ceil((Math.abs(body.y - to.y) + 2 * REGROUP_MARGIN) / C) + 1;
+    if (w * h > REGROUP_MAX_CELLS) return null;
+    const mapR = (tg.circleRadius || 3000) - 120;
+    const radius = Math.max(body.realSize || body.size || 12, 10);
+    const cost = new Float32Array(w * h);       // 0 = unknown, -1 = wall
+    const cellCost = (i) => {
+        if (cost[i]) return cost[i];
+        const cx = x0 + (i % w) * C + C / 2, cy = y0 + Math.floor(i / w) * C + C / 2;
+        let c = 1;
+        if (Math.hypot(cx, cy) > mapR || inEnemyBase(body.team, cx, cy) || (nav && nav.structureBlocks(cx, cy, radius))) c = -1;
+        else if (tg.rockHitByCircle(cx, cy, radius * 0.9)) c = REGROUP_ROCK_COST;
+        cost[i] = c;
+        return c;
+    };
+    const idx = (x, y) => {
+        const cx = Math.floor((x - x0) / C), cy = Math.floor((y - y0) / C);
+        return cx < 0 || cy < 0 || cx >= w || cy >= h ? -1 : cy * w + cx;
+    };
+    const start = idx(body.x, body.y), goal = idx(to.x, to.y);
+    if (start < 0 || goal < 0) return null;
+    const g = new Float32Array(w * h).fill(Infinity), from = new Int32Array(w * h).fill(-1);
+    const heap = [];   // [f, i] binary heap
+    const push = (f, i) => { heap.push([f, i]); let k = heap.length - 1; while (k > 0) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+    const gx = goal % w, gy = Math.floor(goal / w);
+    const hEst = (i) => Math.hypot((i % w) - gx, Math.floor(i / w) - gy);
+    g[start] = 0; push(hEst(start), start);
+    let found = false, pops = 0;
+    while (heap.length && pops++ < REGROUP_MAX_CELLS) {
+        const [, i] = pop();
+        if (i === goal) { found = true; break; }
+        const ix = i % w, iy = Math.floor(i / w);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            const nx = ix + dx, ny = iy + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const j = ny * w + nx;
+            const cj = j === goal ? 1 : cellCost(j);
+            if (cj < 0) continue;
+            const ng = g[i] + cj * (dx && dy ? 1.414 : 1);
+            if (ng < g[j]) { g[j] = ng; from[j] = i; push(ng + hEst(j), j); }
+        }
+    }
+    if (!found) return null;
+    const cells = [];
+    for (let i = goal; i >= 0 && i !== start; i = from[i]) cells.push(i);
+    cells.reverse();
+    // every other cell is plenty of waypoints; mark the rock ones (dig there)
+    const out = [];
+    for (let k = 0; k < cells.length; k++) {
+        if (k % 2 && k !== cells.length - 1) continue;
+        const i = cells[k];
+        out.push({ x: x0 + (i % w) * C + C / 2, y: y0 + Math.floor(i / w) * C + C / 2, rock: cost[i] === REGROUP_ROCK_COST });
+    }
+    return out;
+}
+
 class BotNav {
     constructor(body) {
         this.body = body;
@@ -1679,11 +1748,15 @@ class BotNav {
 // when it is justified (attacked, or a nearby enemy with etiquette
 // satisfied), so its high interrupt value is self-defense, not bloodlust.
 const GOAL_PRIORITY = {
-    survive: 100, bank: 75, fight: 70, objective: 65, rally: 63,
+    survive: 100, regroup: 90, bank: 75, fight: 70, objective: 65, rally: 63,
     collect: 60, defend: 58, chest: 45, mine: 30, explore: 10,
 };
+// Duos, a human's bot teammate: past TEAM_LEASH_FAR from its human it drops
+// whatever it is doing and regroups; past TEAM_LEASH it does when nothing is
+// on it. Fights it picks itself stay within TEAM_FIGHT_R of the human.
+const TEAM_LEASH = 900, TEAM_LEASH_FAR = 1300, TEAM_FIGHT_R = 1000;
 const GOAL_HOLD = {
-    survive: 2200, bank: 7000, fight: 2800, collect: 2600,
+    survive: 2200, regroup: 3000, bank: 7000, fight: 2800, collect: 2600,
     defend: 4500, objective: 9000, rally: 6000, chest: 7000, mine: 5000, explore: 9000,
 };
 
@@ -1873,6 +1946,13 @@ class io_digWarsGoals extends IO {
         return m && !m.isDead?.() && m.team === this.body.team ? m : null;
     }
 
+    // The human a bot teammate looks after (null for every other bot).
+    teamHuman() {
+        if (!this.body.isTeamBot || !Config.royale_duos) return null;
+        const m = this.duoMate();
+        return m && m.isPlayer ? m : null;
+    }
+
     ownVault() {
         if (Config.dig_royale) {
             const mine = digWarsOutposts.getOutposts().find(site => site.ownerId === this.body.id || digWarsOutposts.isOwner(site, this.body));
@@ -1886,6 +1966,13 @@ class io_digWarsGoals extends IO {
             return best;
         }
         return digWarsVault.getVaults().find(vault => vault.team === this.body.team) || null;
+    }
+
+    // A bot teammate banks only where its human is (the team base or a vault
+    // close to them), not on a trip across the map.
+    bankNearHuman(human) {
+        const v = this.ownVault();
+        return !!v && Math.hypot(v.x - human.x, v.y - human.y) < TEAM_LEASH_FAR;
     }
 
     weaponRange() {
@@ -2059,11 +2146,14 @@ class io_digWarsGoals extends IO {
             ? body._lastDamageSource : null;
         // A bot duo covers its partner: whoever is shooting the partner comes
         // next, ahead of the scoring (but after our own attacker).
+        // (a human partner's attacker is kept in _duoHitBy, duoRaid.watchHits)
         const mate = Config.royale_duos ? this.duoMate() : null;
-        const mateAttacker = mate && mate._lastDamageSource && now - (mate._lastDamageAt || 0) < 3000 &&
-            this.isEnemy(mate._lastDamageSource) && mate._lastDamageSource.health?.amount > 0 &&
-            Math.hypot(mate._lastDamageSource.x - body.x, mate._lastDamageSource.y - body.y) < fov * 1.4
-            ? mate._lastDamageSource : null;
+        const mSrc = mate ? (mate.isPlayer ? mate._duoHitBy : mate._lastDamageSource) : null;
+        const mAt = mate ? (mate.isPlayer ? mate._duoHitAt : mate._lastDamageAt) || 0 : 0;
+        const mateAttacker = mSrc && now - mAt < 3000 &&
+            this.isEnemy(mSrc) && mSrc.health?.amount > 0 &&
+            Math.hypot(mSrc.x - body.x, mSrc.y - body.y) < fov * 1.4
+            ? mSrc : null;
         if (mateAttacker && !inBotGrace(mateAttacker, now)) best = mateAttacker;
         if (attacker && this.isEnemy(attacker) && attacker.health?.amount > 0 &&
             Math.hypot(attacker.x - body.x, attacker.y - body.y) < fov * 1.25) best = attacker;
@@ -2101,6 +2191,7 @@ class io_digWarsGoals extends IO {
 
     findGem(now) {
         const body = this.body;
+        const human = this.teamHuman();
         if ((body.carriedGems || 0) >= (body.gemCap || 4000) * 0.98) return null;
         let best = null, bestScore = Infinity;
         const scan = botWorldScan();
@@ -2119,6 +2210,10 @@ class io_digWarsGoals extends IO {
                 now - (gem.gemBornAt || 0) < 15000) continue;
             const distance = this.distanceTo(gem);
             if (distance > 700) continue;
+            // a bot teammate leaves its human's loot alone: their kill's drop,
+            // and anything lying nearer to them than to us
+            if (human && (gem.gemLootKillerIds?.includes(human.id) ||
+                Math.hypot(gem.x - human.x, gem.y - human.y) < Math.min(450, distance))) continue;
             const killerPriority = isKillerBot && now < (body._collectLootUntil || 0) ? 1000 : 0;
             const score = distance - killerPriority
                 - (gem.gemSourceId === body.id ? 350 : 0)
@@ -2294,6 +2389,8 @@ class io_digWarsGoals extends IO {
         const body = this.body;
         // bot duo: roam where the partner is, not across the map from them
         const mate = Config.royale_duos ? this.duoMate() : null;
+        const human = this.teamHuman();
+        if (human) return { ...this.safePoint(human.x + ran.gauss(0, 380), human.y + ran.gauss(0, 380)), until: now + 8000 };
         if (mate && ran.chance(0.75)) {
             return { ...this.safePoint(mate.x + ran.gauss(0, 520), mate.y + ran.gauss(0, 520)), until: now + 12000 };
         }
@@ -2374,6 +2471,11 @@ class io_digWarsGoals extends IO {
     // the human shot first - self-defense is always allowed - and none of it
     // applies to bot-vs-bot fights.
     canInitiateFight(target, now) {
+        // A bot teammate only picks fights near its human (someone who shot
+        // at it, or at the human, is handled before this).
+        const human = this.teamHuman();
+        if (human && Math.hypot(target.x - human.x, target.y - human.y) > TEAM_FIGHT_R &&
+            !(this.body._lastDamageSource === target && now - (this.body._lastDamageAt || 0) < 3000)) return false;
         // Never START a fight the numbers say we lose. Self-defense goes
         // through the attackedBy path, not here.
         if (this.threatRatio(target) > 1.2 || (this.fearUntil.get(target.id) || 0) > now) return false;
@@ -2435,6 +2537,15 @@ class io_digWarsGoals extends IO {
         const trap = this.trappedInChamber();
         if (trap) return { kind: 'objective', point: trap, structure: 'chamber', trapped: true };
 
+        // A bot teammate stays with its human: too far and it heads back,
+        // whatever it was doing (the weapon layer still returns fire).
+        const human = this.teamHuman();
+        if (human) {
+            const dm = this.distanceTo(human);
+            if (dm > TEAM_LEASH_FAR || (dm > TEAM_LEASH && !(threatened && view.enemyDistance < 600)))
+                return { kind: 'regroup', mate: human, expiresAt: now + 6000 };
+        }
+
         if (Config.dig_royale && view.enemy && view.enemyDistance < 1400 &&
             now - (this._enemySeenAt || 0) >= (this.reactionMs || 250) &&
             this.canInitiateFight(view.enemy, now))
@@ -2456,7 +2567,8 @@ class io_digWarsGoals extends IO {
         // vault is for.
         const bankOverdue = (body.carriedGems || 0) >= 25 &&
             now - (body._lastBankAt || this.bornAt) > 75000;
-        if ((body.carriedGems || 0) >= this.bankTarget() || body.vaultDeposit || bankOverdue)
+        if (((body.carriedGems || 0) >= this.bankTarget() || body.vaultDeposit || bankOverdue) &&
+            (!human || body.vaultDeposit || this.bankNearHuman(human)))
             return { kind: 'bank' };
         // Fighting BACK always comes first; picking fights comes near the
         // bottom. That split is what lets a bot besiege a chamber without
@@ -2507,7 +2619,7 @@ class io_digWarsGoals extends IO {
         if (Config.dig_royale && this.role !== 'guard') {
             try {
                 const bl = require('../game/terrain/blooms.js').current();
-                if (bl) {
+                if (bl && !(human && Math.hypot(bl.x - human.x, bl.y - human.y) > TEAM_LEASH)) {
                     const dBl = this.distanceTo(bl);
                     if (dBl > 420 && dBl < 2600 && (body.carriedGems || 0) < this.bankTarget() * 0.8)
                         return { kind: 'explore', point: { x: bl.x + (Math.random() - 0.5) * 220, y: bl.y + (Math.random() - 0.5) * 220, until: Math.min(bl.until, now + 20000) } };
@@ -2709,6 +2821,9 @@ class io_digWarsGoals extends IO {
             }
             case 'rally':
                 return now < (goal.expiresAt || 0) && this.distanceTo(goal.point) > 260;
+            case 'regroup':
+                return now < (goal.expiresAt || 0) && !!goal.mate && !goal.mate.isDead?.() &&
+                    goal.mate.team === body.team && this.distanceTo(goal.mate) > 380;
             case 'explore':
                 return goal.point && now < goal.point.until && this.distanceTo(goal.point) > 220;
         }
@@ -2843,6 +2958,36 @@ class io_digWarsGoals extends IO {
     // The rock a bullet reaches first is the rock this tank is really mining.
     // Aiming past a nearer boulder at a "chosen" one spread damage over half
     // the canyon and broke nothing.
+    // The rock in the straight line toward the human a regrouping teammate
+    // is walking to (within digging reach), cached briefly.
+    regroupRock(goal) {
+        const now = Date.now();
+        if (now - (goal.rockAt || 0) < 300) return goal.rock && goal.rock.alive ? goal.rock : null;
+        goal.rockAt = now;
+        const body = this.body, m = goal.aim || goal.mate;
+        const dx = m.x - body.x, dy = m.y - body.y, d = Math.hypot(dx, dy) || 1;
+        const reach = Math.min(d, Math.max(420, this.weaponRange() * 1.2));
+        goal.rock = this.firstRockAlong({ x: body.x + dx / d * reach, y: body.y + dy / d * reach });
+        return goal.rock && goal.rock.alive ? goal.rock : null;
+    }
+
+    // The next point on a planned route to `to` (replanned every ~2 s), or
+    // null when there is no route worth following. A* over REGROUP_CELL
+    // cells: open ground costs 1, rock REGROUP_ROCK_COST (dug through), the
+    // map edge, enemy bases and structures are walls.
+    regroupWaypoint(goal, to, now) {
+        const body = this.body;
+        if (!goal.path || now >= (goal.planAt || 0)) {
+            goal.planAt = now + 2000;
+            goal.path = planRoute(body, to, this.nav) || null;
+            goal.pi = 0;
+        }
+        const path = goal.path;
+        if (!path || !path.length) return null;
+        while (goal.pi < path.length - 1 && Math.hypot(path[goal.pi].x - body.x, path[goal.pi].y - body.y) < 110) goal.pi++;
+        return path[goal.pi];
+    }
+
     firstRockAlong(target) {
         const tg = global.gameManager && global.gameManager.terrainGrid;
         if (!tg || !tg.pointInRock) return null;
@@ -2947,6 +3092,12 @@ class io_digWarsGoals extends IO {
         }
         if (goal.kind === 'defend' && goal.target)
             return { target: this.leadAim(goal.target, now), fire: this.triggerHeld(now) };
+        // regrouping: dig the straight way to the human
+        if (goal.kind === 'regroup' && goal.mate) {
+            const rock = this.regroupRock(goal);
+            if (rock && this.distanceTo({ x: rock.wx, y: rock.wy }) - (rock.maxPolyRadius || 60) < this.weaponRange() * 0.95)
+                return { target: this.aimVector(rock.wx - body.x, rock.wy - body.y, now), fire: true };
+        }
         // Trapped inside a ring: fire outward at the wall, not at the center
         // we are standing on.
         if (goal.kind === 'objective' && goal.trapped) {
@@ -3082,6 +3233,31 @@ class io_digWarsGoals extends IO {
                 destination = goal.point;
                 arrive = 200;
                 break;
+            case 'regroup': {
+                // to the near side of the human, not onto them
+                const m = goal.mate;
+                const dx = body.x - m.x, dy = body.y - m.y, d = Math.hypot(dx, dy) || 1;
+                destination = { x: m.x + dx / d * 230, y: m.y + dy / d * 230 };
+                arrive = 120;
+                // Far off, a coarse route through the rock maze (planned on a
+                // grid; rock cells cost more, they get dug through).
+                const wp = d > 520 ? this.regroupWaypoint(goal, destination, now) : null;
+                if (wp) { destination = wp; arrive = 50; }
+                goal.aim = destination;
+                // Steering around rock gets nowhere in a maze: no ground made
+                // for a few seconds and rock in the straight line means stand
+                // off from that rock and dig through it (weapon() fires at it).
+                if (goal.best == null || d < goal.best - 40) { goal.best = d; goal.bestAt = now; }
+                const rock = this.regroupRock(goal);
+                if (rock && (now - (goal.bestAt || now) > 2200 || (wp && wp.rock))) {
+                    const rx = rock.wx - body.x, ry = rock.wy - body.y, rd = Math.hypot(rx, ry) || 1;
+                    const stand = Math.max(0, rd - (rock.maxPolyRadius || 60) - this.weaponRange() * 0.5);
+                    destination = { x: body.x + rx / rd * stand, y: body.y + ry / rd * stand };
+                    arrive = 30;
+                }
+                if (process.env.ROYALE_DEBUG) body._regroupDbg = { wp: wp ? [Math.round(wp.x), Math.round(wp.y), wp.rock ? 1 : 0] : null, n: goal.path ? goal.path.length : -1, pi: goal.pi | 0, rock: !!rock, dest: [Math.round(destination.x), Math.round(destination.y)] };
+                break;
+            }
             case 'explore':
                 destination = goal.point;
                 arrive = 150;

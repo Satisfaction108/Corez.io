@@ -15,6 +15,7 @@ import * as api from './api.js';
 import * as store from './state.js';
 import * as social from './social.js';
 import { h, icon, clear, toast, setBusy } from './ui.js';
+import * as gameToasts from './gameToasts.js';
 
 const MODE_KEY = 'dwPlayMode';
 const FILL_KEY = 'dwDuoFill';
@@ -122,6 +123,12 @@ function showInvite(iv) {
     if (!iv || !iv.id || inviteToasts.has(iv.id)) return;
     const left = Math.max(3000, (iv.exp || 0) - Date.now());
     const name = (iv.from && iv.from.username) || 'A friend';
+    // in a raid: the in-game card (Join / No thanks, F2 joins)
+    if (inGame() && gameToasts.invite(iv, { accept: () => respond(iv, true), decline: () => respond(iv, false) })) {
+        inviteToasts.set(iv.id, { dismiss: () => gameToasts.inviteGone(iv.id), game: true });
+        setTimeout(() => inviteToasts.delete(iv.id), Math.min(60000, left) + 500);
+        return;
+    }
     const t = toast(name + ' wants to duo', {
         duration: Math.min(60000, left),
         actions: [
@@ -136,11 +143,25 @@ function showInvite(iv) {
 async function respond(iv, accept) {
     inviteToasts.delete(iv.id);
     const r = await api.partyRespond(iv.id, accept);
-    if (!r.ok) { if (accept) toast(errText(r), { kind: 'error' }); return; }
+    const name = (iv.from && iv.from.username) || 'your friend';
+    if (!r.ok) {
+        if (!accept) return;
+        if (inGame()) gameToasts.note('err' + iv.id, errText(r), { kind: 'error', tag: 'Duos' });
+        else toast(errText(r), { kind: 'error' });
+        return;
+    }
     if (accept) {
         setMode('duo');
         applyParty(r.data.party);
-        toast('You’re teamed up with ' + ((iv.from && iv.from.username) || 'your friend'), { kind: 'ok' });
+        if (inGame()) {
+            // mid-raid: the party is formed; you join them when this raid is
+            // done, or leave now (the menu then has Duos + them ready)
+            const g = window.global;
+            gameToasts.note('joined' + iv.id, 'Teamed up with ' + name, {
+                sub: 'You’ll join ' + name + ' after this raid', ms: 9000,
+                buttons: [{ label: 'Leave raid to join', primary: true, onClick: () => { if (g && g.exit) g.exit(); } }],
+            });
+        } else toast('You’re teamed up with ' + name, { kind: 'ok' });
     }
 }
 
@@ -268,8 +289,8 @@ function friendsDrawer() {
     for (const f of list) {
         const s = (f.presence && f.presence.state) || 'offline';
         const inParty = partyHas(f.userId), pending = invitePending(f.username);
-        const can = s === 'menu' && !inParty;
-        const why = inParty ? 'Teamed up' : s === 'raid' ? (f.presence && f.presence.mode === 'duo' ? 'In a duo raid' : 'In a raid') : s === 'offline' ? 'Offline' : pending ? 'Invited' : 'In the lobby';
+        const can = (s === 'menu' || s === 'raid') && !inParty;
+        const why = inParty ? 'Teamed up' : pending ? 'Invited' : s === 'raid' ? (f.presence && f.presence.mode === 'duo' ? 'In a duo raid' : 'In a raid') : s === 'offline' ? 'Offline' : 'In the lobby';
         const btn = h('button', { type: 'button', class: 'dw-btn sm' + (can && !pending ? ' primary' : ''), text: pending ? 'Again' : 'Invite', disabled: !can,
             onclick: async (e) => { const b = e.currentTarget; setBusy(b, true, '...'); await inviteFriend(f); setBusy(b, false); } });
         box.appendChild(h('div', { class: 'duo-friend st-' + s },
@@ -438,6 +459,10 @@ export function init() {
         if (changed.includes('user')) { st.party = null; st.seenSeq = null; load(); render(); }
     });
     // back on the menu: fresh state at once
-    new MutationObserver(() => { if (!inGame()) { load(); render(); } }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    new MutationObserver(() => {
+        if (inGame()) return;
+        for (const [id, t] of inviteToasts) if (t && t.game) inviteToasts.delete(id);
+        load(); render();
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     window.dwParty = { wantsDuo, arm, mode, setMode, inviteFriend, partyHas, invitePending, showInvite, state: () => st };
 }

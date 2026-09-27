@@ -1168,11 +1168,13 @@ h3 { font-size: 14px; line-height: 16px; color: var(--text2); text-align: center
    site theme is. Dark tokens are scoped to these elements only. */
 #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, .dw-igbtn,
 body.in-game #homeSettingsPanel, body.in-game #homeSettingsOverlay,
-body.in-game .igc, body.in-game .igc-pip {
+body.in-game .igc, body.in-game .igc-pip, .gt-stack {
     --surface: #2b2533; --surface2: #352e3f; --panel-bg: #2b2533; --hub-bg: #2b2533;
     --border: #4b4158; --border-hl: #e07b2e;
     --text: #e9e0cc; --text2: #a597b0; --heading: #fff3d9;
-    --input-bg: #1e1924; --ink: #120e15;
+    /* the field text too: a light site theme left dark ink on this dark
+       field, so friend chat typed after Esc was invisible until sent */
+    --input-bg: #1e1924; --input-fg: #f1e8d4; --input-bd: #0c0a0e; --ink: #120e15;
     --copper: #e07b2e; --copper-dk: #9e4a14; --gold: #f2b83c;
     --play: #4fcf5c; --play-dk: #2c8f37; --check: #4fcf5c; --sel: #4fcf5c;
     --face: #4a4156; --face-dk: #2e2837; --bevel: rgba(255,255,255,.07);
@@ -3495,6 +3497,9 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 }
 #dwJoin[data-mode="down"] .dwj-title { color: #ff8f7e; }
 #dwJoin[data-mode="lock"] .dwj-title, #dwJoin[data-mode="late"] .dwj-title { color: var(--gold); }
+#dwJoin[data-mode="fillbot"] .dwj-title { color: var(--gold); }
+#dwJoin[data-mode="paired"] .dwj-title { color: var(--play); }
+.dwj-btns[hidden] { display: none; }
 .dwj-count {
     display: flex; flex-direction: column; align-items: center; gap: 2px;
     margin: 12px auto 0; padding: 8px 18px 10px; width: max-content; max-width: 100%;
@@ -3660,3 +3665,60 @@ input.dw-input.duo-code-in { width: 104px; height: 34px; padding: 0 8px; font-si
     .duo-slots { grid-template-columns: 1fr; }
     .duo-foot { flex-wrap: wrap; }
 }
+
+/* ── In-raid notification cards (client/account/gameToasts.js) ──
+   top centre under the raid clock (top set from app.js), never in the
+   way: only the cards take clicks. The in-game plate: dark face, ink
+   outline, hard drop, Lilita title. */
+.gt-stack {
+    position: fixed; left: 50%; top: 64px; z-index: 58;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    width: max-content; max-width: calc(100vw - 32px);
+    transform: translateX(-50%);
+    pointer-events: none;
+    font-family: Ubuntu, sans-serif;
+}
+body:not(.in-game) .gt-stack { display: none; }
+.gt-card {
+    pointer-events: auto;
+    display: flex; flex-direction: column; gap: 3px;
+    min-width: 230px; max-width: min(360px, calc(100vw - 32px));
+    box-sizing: border-box; padding: 7px 12px 9px;
+    border: 3px solid var(--ink); border-radius: 12px;
+    background: rgba(43,37,51,0.94); color: var(--text);
+    box-shadow: inset 0 0 0 2px var(--bevel), 0 4px 0 var(--ink);
+    animation: gtIn var(--dw-t2) var(--dw-pop) both;
+}
+.gt-card.click { cursor: pointer; }
+.gt-card.click:hover { filter: brightness(1.08); }
+.gt-card.out { animation: gtOut 170ms ease-in both; }
+@keyframes gtIn { from { opacity: 0; transform: translateY(-10px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes gtOut { to { opacity: 0; transform: translateY(-8px) scale(.97); } }
+.gt-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gt-tag {
+    flex: none; padding: 1px 7px 2px; border: 2px solid var(--ink); border-radius: 999px;
+    background: var(--copper); color: #fff; font: 400 11px/1.1 var(--display); letter-spacing: .03em;
+}
+.gt-dm .gt-tag { background: #4ec4e8; }
+.gt-invite .gt-tag { background: var(--play); }
+.gt-error .gt-tag { background: var(--danger); }
+.gt-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--heading); font: 400 16px/1.15 var(--display); letter-spacing: .02em; }
+.gt-count { flex: none; color: var(--gold); font: 400 13px var(--display); }
+.gt-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 12.5px/1.35 Ubuntu; color: var(--text); }
+.gt-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.gt-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 28px; padding: 0 11px 2px; border: 2.5px solid var(--ink); border-radius: 8px;
+    background: var(--face); box-shadow: inset 0 -3px 0 var(--face-dk), 0 2px 0 var(--ink);
+    color: var(--heading); font: 400 14px/1 var(--display); letter-spacing: .02em; cursor: pointer;
+    transition: transform 60ms ease-out, box-shadow 60ms ease-out;
+}
+.gt-btn.primary { background: var(--play); box-shadow: inset 0 -3px 0 var(--play-dk), 0 2px 0 var(--ink); color: #fff; }
+.gt-btn:hover { filter: brightness(1.08); }
+.gt-btn:active { transform: translateY(2px); box-shadow: inset 0 -1px 0 var(--face-dk), 0 0 0 var(--ink); }
+.gt-card kbd {
+    display: inline-block; min-width: 12px; padding: 0 4px; border: 1.5px solid var(--ink); border-radius: 4px;
+    background: rgba(0,0,0,.22); color: var(--heading); font: 700 10.5px/1.45 'Ubuntu Mono', monospace; text-align: center;
+}
+.gt-hint { margin-left: auto; color: var(--text2); font: 600 11px Ubuntu; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .gt-card, .gt-card.out { animation: none; } }

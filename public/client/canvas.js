@@ -6,6 +6,9 @@ import { AdvancedRecorder } from "./recorder.js";
 import { gameSound } from "./sound.js";
 let { gui } = socketStuff;
 
+// duos: team chat and pings are on (the duo server says so in RY)
+const duoChat = () => !!(global.royale && global.royale.duos);
+
 function hitClientRect(mouse, r) {
     if (!r || mouse == null) return false;
     const x = mouse.clientX, y = mouse.clientY;
@@ -19,15 +22,33 @@ class Canvas {
         this.socket = global.socket;
         this.directions = [];
         this.chatListener = function(id, event) {
+            // duos: Tab flips between your partner (Team) and everyone nearby (All)
+            if (event.keyCode === 9 && duoChat()) {
+                event.preventDefault();
+                global.duoChatAll = !global.duoChatAll;
+                gameSound.uiClick();
+                return;
+            }
             if (![global.KEY_ENTER, global.KEY_ESC].includes(event.keyCode)) return;
             this[id].blur();
             this.cv.focus();
             global.showChat = false;
             setTimeout(() => {
-                if (!this.chatBox.loadedProperly) this.chatBox.remove(), this.chatInput.remove(), this.chatBox = false;
+                if (this.chatBox && !this.chatBox.loadedProperly) this.chatBox.remove(), this.chatInput.remove(), this.chatBox = false;
             }, 50)
             if (!this[id].value) return;
-            if (event.keyCode === global.KEY_ENTER) this.socket.talk('M', this[id].value, global.chatMode === 'team' ? 1 : 0);
+            if (event.keyCode === global.KEY_ENTER) {
+                let text = this[id].value, team = duoChat() && !global.duoChatAll;
+                // "/a hi" says it to all, "/t hi" to your partner, whatever the pill says
+                const pre = /^\/([at])\s+/i.exec(text);
+                if (pre && duoChat()) { team = pre[1].toLowerCase() === 't'; text = text.slice(pre[0].length); }
+                // dead: only your partner can hear you
+                if (duoChat() && global.died) team = true;
+                if (text.trim()) {
+                    if (team) this.socket.talk('TC', text);
+                    else this.socket.talk('M', text, global.chatMode === 'team' ? 1 : 0);
+                }
+            }
             this[id].value = "";
         }
 
@@ -242,6 +263,11 @@ class Canvas {
                 break;
 
             case global.KEY_ENTER:
+                // duos: dead, you can still talk to your partner (respawn is automatic)
+                if (global.died && duoChat() && !global.disconnected) {
+                    this.spawnChatInput();
+                    break;
+                }
                 if (global.died) {
                     if (!global.cannotRespawn) { this.respawn(); break; }
                     break;
@@ -336,6 +362,8 @@ class Canvas {
                     this.socket.talk("t", 2, true);
                     break;
                 case global.KEY_AUTO_ALT: {
+                    // duos: a ping for your partner (dead or alive)
+                    if (duoChat()) { this.duoPing(); break; }
                 // G: enemy ping - drops a team-wide danger marker at
                     // the cursor's world position
                     const nowP = Date.now();
@@ -556,12 +584,25 @@ class Canvas {
                 ) this.socket.cmd.set(primaryFire, true);
                 break;
             case 1:
+                if (duoChat()) this.duoPing();
                 this.socket.cmd.set(5, true);
                 break;
             case 2:
                 this.socket.cmd.set(secondaryFire, true);
                 break;
         }
+    }
+    // duos: ping the spot under the cursor for your partner (the server
+    // names it and rate limits to one a second; this just skips the spam)
+    duoPing() {
+        const now = Date.now();
+        if (this._lastDuoPing && now - this._lastDuoPing < 900) return;
+        this._lastDuoPing = now;
+        const wr = util.getRatio();
+        let wx = global.player.renderx + global.target.x / wr;
+        let wy = global.player.rendery + global.target.y / wr;
+        if (!isFinite(wx) || !isFinite(wy)) { wx = global.player.renderx; wy = global.player.rendery; }
+        if (isFinite(wx) && isFinite(wy)) this.socket.talk('PG', Math.round(wx), Math.round(wy));
     }
     mouseUp(mouse) {
         let primaryFire = 4,

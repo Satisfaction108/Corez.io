@@ -465,6 +465,10 @@ class socketManager {
                     if (!global.cannotRespawn && !global.gameManager.arenaClosed && socket.status.readyToSpawn) {
                         if (Config.dig_royale) {
                             const dr = require('../gamemodes/scripts/dig_royale.js');
+                            // Duos: a lone filler waits here for a teammate (or a
+                            // bot). Ahead of the spawn gates, so the queue runs
+                            // through a final-storm lock or the between-raids wait.
+                            if (Config.royale_duos && require('../duo/duoRaid.js').holdSpawn(socket, name)) return;
                             // Dead players stay dead until they click Play in lobby.
                             // The 20ms retry must not auto-spawn when a match rolls over.
                             if (!dr.canSpawn()) return;
@@ -1209,6 +1213,24 @@ class socketManager {
                 if (m.length !== 2 || typeof m[0] !== "string" || m[0].length > 2048) return;
                 require('../duo/duoRaid.js').onHello(socket, m[0], m[1] === 0 ? 0 : 1);
             } break;
+            case "DX": {
+                // duo waiting screen: "cancel" (leaving for the menu) or "solo"
+                if (!Config.royale_duos) return;
+                if (m.length !== 1 || (m[0] !== "cancel" && m[0] !== "solo")) return;
+                require('../duo/duoRaid.js').onWaitAction(socket, m[0]);
+            } break;
+            case "TC": {
+                // duos: team chat, to your partner only (alive or dead, any distance)
+                if (!Config.royale_duos) return;
+                if (m.length !== 1 || typeof m[0] !== "string" || m[0].length > 200) return;
+                require('../duo/duoComms.js').teamChat(socket, m[0]);
+            } break;
+            case "PG": {
+                // duos: quick ping at a world spot, to your partner only
+                if (!Config.royale_duos) return;
+                if (m.length !== 2 || typeof m[0] !== "number" || typeof m[1] !== "number") return;
+                require('../duo/duoComms.js').ping(socket, m[0], m[1]);
+            } break;
             case "RQ": {
                 if (!Config.dig_royale) return 1;
                 require('../gamemodes/scripts/dig_royale.js').requestPlay();
@@ -1314,13 +1336,35 @@ class socketManager {
                             team: b ? b.team : null, color: b ? b.color.base : null, bookTeam: tm ? tm.id : null,
                             members: tm ? [...tm.members.values()].map(x => ({ mk: x.mk, name: x.name, away: !!x.away })) : [],
                             mate: mb ? { id: mb.id, name: mb.name, team: mb.team, color: mb.color.base, x: Math.round(mb.x), y: Math.round(mb.y) } : null,
-                            me: b ? { id: b.id, x: Math.round(b.x), y: Math.round(b.y), hp: b.health.amount, invuln: !!b.invuln } : null,
-                            bots: bots.map(x => ({ id: x.id, team: x.team, color: x.color.base, duo: !!x.isDuoBot, mate: x.duoMate && !x.duoMate.isDead() ? x.duoMate.id : 0, x: Math.round(x.x), y: Math.round(x.y) })),
-                            teams: [...dr.book.teams.values()].map(t => ({ id: t.id, pid: t.pid, fill: t.fill, n: t.members.size, color: t.color })),
+                            me: b ? { id: b.id, x: Math.round(b.x), y: Math.round(b.y), hp: b.health.amount, invuln: !!b.invuln, hitBy: b._duoHitBy ? b._duoHitBy.id : 0, hitAgo: b._duoHitAt ? Date.now() - b._duoHitAt : -1 } : null,
+                            bots: bots.map(x => ({ id: x.id, name: x.name, team: x.team, color: x.color.base, duo: !!x.isDuoBot, tb: !!x.isTeamBot, key: x.duoTeamKey || null, mate: x.duoMate && !x.duoMate.isDead() ? x.duoMate.id : 0, x: Math.round(x.x), y: Math.round(x.y), hp: x.health.amount, goal: x._digWarsGoal || null, enemy: x._botEnemyId || 0, rg: x._regroupDbg || null })),
+                            teams: [...dr.book.teams.values()].map(t => ({ id: t.id, pid: t.pid, fill: t.fill, n: t.members.size, color: t.color, key: t.key, bot: t.bot ? { name: t.bot.name, id: t.bot.body && !t.bot.body.isDead() ? t.bot.body.id : 0, respawnAt: t.bot.respawnAt } : null })),
+                            waiting: [...dr.book.waiting.values()].map(w => ({ mk: w.mk, name: w.name, since: w.since })),
+                            teamKey: b ? dr.teamKeyOf(b) : null,
                             bases: require('../terrain/outposts.js').getOutposts().map(o => ({ id: o.id, ownerId: o.ownerId, team: o.team, key: o.ownerKey, mine: b ? require('../terrain/outposts.js').isOwner(o, b) : false, x: Math.round(o.x), y: Math.round(o.y) })),
                             onOwnPad: b ? !!b.outpostOnPad : false,
                         };
                         socket.talk('KC', 'dbg', JSON.stringify({ duo: out }), 0);
+                    }
+                    // duos: the nearest enemy bot comes to 450 from you and counts as
+                    // having just shot you (a bot teammate should turn on it)
+                    else if (what === "duohit" && Config.royale_duos && b) {
+                        let best = null, bd = Infinity;
+                        for (const e of entities.values()) {
+                            if (!e || !e.isBot || e.isDead?.() || e.team === b.team) continue;
+                            const d = (e.x - b.x) ** 2 + (e.y - b.y) ** 2;
+                            if (d < bd) { bd = d; best = e; }
+                        }
+                        if (best) {
+                            if (m[1]) { best.x = b.x + (m[1] > 1 ? Math.min(900, m[1]) : 450); best.y = b.y; best.velocity.x = 0; best.velocity.y = 0; }
+                            best.invuln = false;
+                            if (m[2] !== 0) { b._duoHitBy = best; b._duoHitAt = Date.now(); }
+                        }
+                        socket.talk('KC', 'dbg', JSON.stringify({ duohit: best ? { id: best.id, hp: best.health.amount, x: Math.round(best.x), y: Math.round(best.y) } : null }), 0);
+                    }
+                    else if (what === "killteambot" && Config.royale_duos) {
+                        const tb = require('../duo/duoRaid.js').teamBotBody(socket);
+                        if (tb) { tb.invuln = false; tb.godmode = false; tb.health.amount = -1; }
                     }
                     else if (what === "claimbase" && Config.royale_duos && b) {
                         const op = require('../terrain/outposts.js');
