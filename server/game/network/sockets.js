@@ -19,14 +19,30 @@ function isProduction() {
 }
 
 function livingSpectateList() {
-    const out = [];
+    const out = [], stormed = [];
+    // Raid: tanks out in the storm are about to die, and every death hopped
+    // the camera again - the "drifting to a random corner" during the final
+    // hold. Watch the safe circle when anyone is in it.
+    let storm = null;
+    if (Config.dig_royale) { try { storm = require('../terrain/storm.js'); } catch { storm = null; } }
     for (const e of entities.values()) {
         if (!e || e.isGhost) continue;
         if (!(e.isPlayer || e.isBot)) continue;
         if (typeof e.isDead === "function" && e.isDead()) continue;
-        out.push(e);
+        if (storm && storm.inStorm(e.x, e.y)) stormed.push(e);
+        else out.push(e);
     }
-    return out;
+    return out.length ? out : stormed;
+}
+
+// Where the camera parks when there is nobody to watch: the safe circle.
+function spectateParkSpot() {
+    if (!Config.dig_royale) return null;
+    try {
+        const st = require('../terrain/storm.js').snapshot();
+        if (st && st.a && isFinite(st.cx) && isFinite(st.cy)) return { x: st.cx, y: st.cy };
+    } catch { /* */ }
+    return null;
 }
 
 // Nearest living combatant to a point: the calm auto-hop when a spectate
@@ -36,7 +52,8 @@ function nearestSpectate(socket, x, y) {
     for (const e of livingSpectateList()) {
         if (e === socket.spectateEntity) continue;
         const dx = e.x - x, dy = e.y - y;
-        const d = dx * dx + dy * dy;
+        // real players first: a bot counts as 3x as far away
+        const d = (dx * dx + dy * dy) * (e.socket ? 1 : 9);
         if (d < bestD) { bestD = d; best = e; }
     }
     socket.spectateEntity = best || livingSpectateList()[0] || null;
@@ -549,9 +566,20 @@ class socketManager {
                 const flow = socket.flow;
                 while (flow.sent.length && flow.sent[0] <= time) flow.sent.shift();
                 const rtt = util.time() - time;
-                if (rtt >= 0 && (flow.rttMin == null || rtt < flow.rttMin || util.time() - flow.rttMinAt > 15000)) {
-                    flow.rttMin = rtt;
-                    flow.rttMinAt = util.time();
+                // Base RTT = the lowest sample of the last ~30 s (six 5 s
+                // buckets). It used to be *replaced* by the current sample
+                // every 15 s; on a clogged link that sample is the queue
+                // itself, so each reset let more backlog in (1500 ms pings on
+                // a slow link in India). Capped so a bad line can't widen it.
+                if (rtt >= 0) {
+                    const nowR = util.time(), b = Math.floor(nowR / 5000);
+                    const mins = flow.rttMins || (flow.rttMins = []);
+                    if (!mins.length || mins[mins.length - 1].b !== b) { mins.push({ b, v: rtt }); if (mins.length > 6) mins.shift(); }
+                    else if (rtt < mins[mins.length - 1].v) mins[mins.length - 1].v = rtt;
+                    let m = Infinity;
+                    for (const x of mins) if (x.b > b - 6 && x.v < m) m = x.v;
+                    flow.rttMin = Math.min(600, isFinite(m) ? m : rtt);
+                    flow.rttMinAt = nowR;
                 }
             } break;
             case "C": {
@@ -2494,6 +2522,10 @@ class socketManager {
                         if (socket.spectateEntity && !socket.spectateEntity.isDead()) {
                             camera.x = socket.spectateEntity.x;
                             camera.y = socket.spectateEntity.y;
+                        } else {
+                            // nobody left to watch: sit on the safe circle, don't drift
+                            const park = spectateParkSpot();
+                            if (park) { camera.x = park.x; camera.y = park.y; }
                         }
                     }
                 }

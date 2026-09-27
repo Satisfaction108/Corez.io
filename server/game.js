@@ -157,7 +157,18 @@ class gameServer {
 
     startWebServer(socketManager) {
 
-        this.wsServer = new ws.WebSocketServer({ noServer: true });
+        this.wsServer = new ws.WebSocketServer({
+            noServer: true,
+            // Snapshots shrink about in half; matters most on slow, far links.
+            // Level 1 + no context takeover keeps CPU and memory per socket low.
+            perMessageDeflate: {
+                zlibDeflateOptions: { level: 1, memLevel: 7 },
+                threshold: 512,
+                serverNoContextTakeover: true,
+                clientNoContextTakeover: true,
+                concurrencyLimit: 8,
+            },
+        });
 
         this.httpServer = http.createServer((req, res) => {
             res.setHeader('Access-Control-Allow-Origin', '*');

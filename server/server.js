@@ -184,7 +184,18 @@ function listedServer(id) {
 // Attempt to create a WebSocket server instance using the 'ws' package
 try {
     const WebSocketServer = require("ws").WebSocketServer;
-    wsServer = new WebSocketServer({ noServer: true });
+    wsServer = new WebSocketServer({
+        noServer: true,
+        // Snapshots shrink about in half; matters most on slow, far links.
+        // Level 1 + no context takeover keeps CPU and memory per socket low.
+        perMessageDeflate: {
+            zlibDeflateOptions: { level: 1, memLevel: 7 },
+            threshold: 512,
+            serverNoContextTakeover: true,
+            clientNoContextTakeover: true,
+            concurrencyLimit: 8,
+        },
+    });
 } catch (err) {
     throw new Error(
         "Package 'ws' is not installed! To install it, run 'npm install ws' in the terminal."
