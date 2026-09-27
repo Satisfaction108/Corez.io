@@ -574,6 +574,8 @@ const global = {
     exit: () => {
         global.autoReconnect = null;
         document.getElementById("gameAreaWrapper").style.display = "none";
+        // tell the raid this is a real leave, not a dropped connection
+        try { if (global.socket && global.socket.readyState === 1 && global.socket.talk) global.socket.talk('LV'); } catch (e) { /* */ }
         global.socket && global.socket.close();
         document.getElementById("startMenuWrapper").style.display = "block";
         global.player = global.initPlayer();

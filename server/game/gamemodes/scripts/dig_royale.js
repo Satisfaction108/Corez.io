@@ -1406,12 +1406,13 @@ const RESUME_MS = (process.env.ROYALE_DEBUG && parseInt(process.env.ROYALE_RESUM
     ? parseInt(process.env.ROYALE_RESUME_MS, 10) : 120_000;
 const RESUME_SAFE_MS = 8000;
 const resumeStore = new Map();
-// Keyed by the tab's token and, for accounts, by the account too: a newer
-// tab of the same account (which has its own token) picks the raid up.
+// Keyed by the tab's token only. A resume is for a real drop: the same tab
+// reconnecting (or reloading) within the window. Another tab, going to the
+// menu or closing the tab starts fresh - the token lives in sessionStorage,
+// so it dies with the tab, and 'LV' (sent on purpose-exits) skips the save.
 function resumeKeysFor(socket) {
     const keys = [];
     if (socket && socket.resumeToken) keys.push(socket.resumeToken);
-    if (socket && socket.account && socket.account.id) keys.push("acct:" + socket.account.id);
     return keys;
 }
 function saveResume(socket, body) {
@@ -1479,7 +1480,6 @@ function claimResume(socket, token) {
     // a token holding another identity's raid falls through to the account's
     let snap = resumeStore.get(token);
     if (snap && (snap.accountId || null) !== myId) snap = null;
-    if (!snap && myId) snap = resumeStore.get("acct:" + myId) || null;
     if (process.env.RESUME_DEBUG) console.log('[RESUME] claim', token.slice(0, 6), 'found', !!snap, snap ? ('age ' + (now() - snap.at) + ' raid ' + snap.raidId + '/' + raidId) : '');
     if (!snap) return false;
     for (const k of snap.keys || [token]) resumeStore.delete(k);
@@ -1571,11 +1571,18 @@ function markHumanDeath(socket) {
 function disconnectCleanup(socket, body) {
     if (!Config.dig_royale) return;
     let snap = null;
-    try { snap = saveResume(socket, body); } catch (e) { console.error('[RAID] resume save failed', e && e.message); }
+    const leaving = !!(socket && socket.leftOnPurpose);
+    if (leaving) {
+        // menu / Home / another tab took over: nothing to come back to
+        try { for (const k of resumeKeysFor(socket)) resumeStore.delete(k); } catch { /* */ }
+    } else {
+        try { snap = saveResume(socket, body); } catch (e) { console.error('[RAID] resume save failed', e && e.message); }
+    }
     // an open ranked life settles as a disconnect if nobody resumes it
+    // (at once when they left on purpose)
     try {
         const ls = raidStats.get(body ? statKeyFor(body) : "s:" + (socket && socket.id));
-        rankHooks.onDisconnect(socket, ls);
+        rankHooks.onDisconnect(socket, ls, leaving);
     } catch (e) { guardLog('rank disconnect', e); }
     try {
         if (body && body.royaleAlive !== false) {

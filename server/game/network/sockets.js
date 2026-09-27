@@ -1213,6 +1213,10 @@ class socketManager {
                 socket.guestId = m[0];
                 try { accountBridge.onGuestId(socket); } catch (e) { /* tracking only */ }
             } break;
+            case "LV": {
+                // leaving on purpose (menu, Home, exit): no resume for this one
+                socket.leftOnPurpose = true;
+            } break;
             case "RZ": {
                 // resume token: a per-tab id the client re-sends after a drop
                 if (typeof m[0] !== "string" || !/^[a-z0-9]{8,64}$/i.test(m[0])) return;

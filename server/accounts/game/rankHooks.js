@@ -311,8 +311,10 @@ function surviveCheck(t) {
 
 // A socket left mid-life. If nobody resumes it within the resume window,
 // the life settles as a disconnect (with the fare).
-function onDisconnect(socket, s) {
+// immediate: they left on purpose (menu, another tab), so no resume is coming
+function onDisconnect(socket, s, immediate = false) {
     if (!s || !s.lifeOpen) return;
+    if (immediate) { try { lifeEnd(s, 'disconnect'); } catch (e) { logErr('disconnect', e); } return; }
     const gen = s.lifeDiscGen = (s.lifeDiscGen | 0) + 1;
     const lifeId = s.lifeId;
     const wait = ((ctx && ctx.resumeMs) || 120000) + 1000;

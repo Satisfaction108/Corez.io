@@ -128,8 +128,8 @@ function sendStatus() {
     try { accounts.bus.toMain({ t: 'status', players }); } catch (e) { /* main gone */ }
 }
 
-// KO first so the client stops its auto-reconnect, then the resume snapshot
-// (the account key lets the other tab pick the raid up), then the socket.
+// KO first so the client stops its auto-reconnect, then the raid cleanup
+// (a resume snapshot only if the caller didn't mark leftOnPurpose), then the socket.
 function kickOut(socket, reason) {
     try { socket.talk('KO', String(reason)); } catch (e) { /* closing anyway */ }
     if (Config.dig_royale && !socket._drCleaned) {
@@ -168,7 +168,7 @@ function onConnect(socket, req, socketManager) {
     // tab's auto-reconnect. (Limiting supersedes locked out players whose
     // flaky wifi left half-open sockets behind on every reconnect.)
     for (const o of socketManager.clients.slice()) {
-        if (o !== socket && o.account && o.account.id === user.id) kickOut(o, 'You logged in on another tab or device.');
+        if (o !== socket && o.account && o.account.id === user.id) { o.leftOnPurpose = true; kickOut(o, 'You logged in on another tab or device.'); }
     }
     try { accounts.bus.toMain({ t: 'join', userId: user.id, sid: socket.id }); } catch (e) { /* */ }
 }
