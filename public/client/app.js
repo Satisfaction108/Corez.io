@@ -278,19 +278,19 @@ import * as cosmetics from './account/cosmetics.js';
             localStorage.setItem("uiScaleSettings", null);
         }
         if (!localStorage.getItem("uiScaleSettings") || document.getElementById("optUiScale").value === "") {
-            document.getElementById("optUiScale").value = global.mobile ? "mobile" : "small";
+            document.getElementById("optUiScale").value = global.mobile ? "mobile" : "normal";
             util.submitToLocalStorage("optUiScale");
             localStorage.setItem("uiScaleSettings", "true");
         }
-        // Desktop default moved from Normal to Small (Normal crowds a 1080p
-        // screen). Players still on the old default get moved over once;
-        // anyone who picks Normal again afterwards keeps it.
-        if (!localStorage.getItem("uiScaleSmallDefault")) {
-            if (!global.mobile && document.getElementById("optUiScale").value === "normal") {
-                document.getElementById("optUiScale").value = "small";
+        // Desktop default is Normal again (it was Small for a while). Players
+        // moved to Small automatically back then go back to Normal once;
+        // anyone who picks Small afterwards keeps it.
+        if (!localStorage.getItem("uiScaleNormalDefault")) {
+            if (!global.mobile && document.getElementById("optUiScale").value === "small") {
+                document.getElementById("optUiScale").value = "normal";
                 util.submitToLocalStorage("optUiScale");
             }
-            localStorage.setItem("uiScaleSmallDefault", "1");
+            localStorage.setItem("uiScaleNormalDefault", "1");
         }
         loadSettings();
 
@@ -2561,8 +2561,8 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     // ─── upgrade tiles (menu + class tree), HUD look ────────────────────
-    // One chunky plate per tank: flat palette face over a darker lip, ink
-    // outline, a dark name band with the tank name in Lilita One, and the
+    // One plate per tank: flat palette face over a darker lip, a fine
+    // keyline, a dark name band with the tank name (hudTitle), and the
     // choose key as a keycap. Everything but the tank preview is static, so
     // it is rasterised once per (colour, size, state, name, key) at device
     // resolution and blitted; drawEntity draws the live tank between the
@@ -2667,16 +2667,11 @@ import * as cosmetics from './account/cosmetics.js';
                 hudTitle(l2, len / 2, mid + size * 0.52, size, HUD.head, "center", 1, c);
             }
             if (key) hudKey(c, 5 * k, down + 5 * k, key, Math.max(10, 17 * k));
-            // outline + ink drop last so nothing paints over the edge
+            // the fine keyline last so nothing paints over the edge
             c.lineJoin = "round";
-            c.lineWidth = Math.max(1.5, 3 * k);
-            c.strokeStyle = HUD.ink;
+            c.lineWidth = Math.max(1, 1.5 * k);
+            c.strokeStyle = HUD.line;
             roundRectPath(c, 0, down, len, height - down, r);
-            c.stroke();
-            c.lineWidth = Math.max(1, 2 * k);
-            c.beginPath();
-            c.moveTo(r * 0.6, down + faceH);
-            c.lineTo(len - r * 0.6, down + faceH);
             c.stroke();
         });
 
@@ -5524,8 +5519,8 @@ import * as cosmetics from './account/cosmetics.js';
         statMenu.set(0 + (global.died || global.statHover || (global.canSkill && !gui.skills.every(skill => skill.cap === skill.amount))));
         global.clickables.stat.hide();
 
-        let vspacing = 5;
-        let height = 14;
+        let vspacing = STAT_BAR_GAP;
+        let height = STAT_BAR_H;
         let gap = 44.5;
         let len = alcoveSize - 10;
         let save = len;
@@ -5592,19 +5587,24 @@ import * as cosmetics from './account/cosmetics.js';
             len = save * ska(max);
             let textcolor = level == maxLevel ? col : !gui.points || (cap !== maxLevel && level == cap) ? color.grey : color.guiwhite;
             // stat name in the HUD display face with its ink outline
-            hudTitle(name, Math.round(x + len / 2) - 5.5, y + height / 2, height - 3.6, textcolor, "center");
+            // a maxed stat's bar is already full in its colour; a name in that
+            // same colour on top of it can't be read, so it goes light. The
+            // name shrinks (cached widths) only if it would run into the key.
+            let nameSize = height - 4;
+            while (nameSize > 9 && hudTitleW(name, nameSize) > save - 52) nameSize -= 0.5;
+            hudTitle(name, Math.round(x + len / 2) - 5.5, y + height / 2, nameSize, level == maxLevel ? HUD.head : textcolor, "center");
 
             const keyTxt = statIdx === 10 ? minKeyName : String((statIdx + 1) % 10);
             // fixed column: every key label centred on the same x, so "-"
             // lines up with the digits above it
-            drawText("[" + keyTxt + "]", Math.round(x + save * ska(maxLevel) - height * 0.25) - 22, y + height / 2, height - 6, textcolor, "center", true);
+            drawText("[" + keyTxt + "]", Math.round(x + save * ska(maxLevel) - height * 0.25) - 22, y + height / 2, height - 7, textcolor, "center", true);
             if (textcolor === color.guiwhite && !tutLocked) {
 
                 global.clickables.stat.place(statIdx, x * clickableRatio, y * clickableRatio, len * clickableRatio, height * clickableRatio);
             }
 
             if (level) {
-                hudTitle("+" + level, Math.round(x + len + 4) - 5.5, y + height / 2, height - 4.5, col, "left");
+                hudTitle("+" + level, Math.round(x + len + 4) - 5.5, y + height / 2, height - 5, col, "left");
             }
             ctx[2].globalAlpha = 1;
 
@@ -5614,7 +5614,7 @@ import * as cosmetics from './account/cosmetics.js';
         global.clickables.hover.place(0, 0, y * clickableRatio, 0.8 * len * clickableRatio, (global.screenHeight - y) * clickableRatio);
         if (gui.points !== 0) {
 
-            drawText("x" + gui.points, Math.round(x + len - 2) - 13, Math.round(y + height - 4) + 2, 18.5, color.guiwhite, "right");
+            drawText("x" + gui.points, Math.round(x + len - 2) - 13, Math.round(y + height - 4) + 2, 22, color.guiwhite, "right");
         }
     }
 
@@ -5724,9 +5724,9 @@ import * as cosmetics from './account/cosmetics.js';
         vaultInput.autocomplete = "off";
         vaultInput.style.cssText =
             "position:fixed;display:none;z-index:40;text-align:center;" +
-            "background:#1e1924;color:#fff3d9;border:3px solid #120e15;" +
-            "border-radius:9px;outline:none;font-family:'Lilita One',Rubik,Ubuntu,sans-serif;" +
-            "box-shadow:inset 0 3px 0 rgba(0,0,0,.35);";
+            "background:#1e1924;color:#fff3d9;border:1px solid #120e15;" +
+            "border-radius:9px;outline:none;font-family:Rubik,Ubuntu,sans-serif;font-weight:700;" +
+            "box-shadow:inset 0 2px 3px rgba(0,0,0,.35);";
         vaultInput.oninput = () => {
             // digits only, clamped to what's actually carried
             let n = vaultInput.value.replace(/[^0-9]/g, "");
@@ -6059,12 +6059,14 @@ import * as cosmetics from './account/cosmetics.js';
     window.dwGuiColor = () => ({ color: gui.color, hex: playerHexCol() });
 
     // ═════════════════════════════════════════════════════════════════════
-    // HUD look: the menu's chunky plates (home.css), drawn on the canvas.
-    // One ink, one outline weight, one radius family, flat fills from the
-    // game palette, Lilita One for headings. Every in-game panel, chip,
-    // button and bar goes through these so they read as one family.
-    // Paths only: no shadows, no filters, nothing measured per frame that
-    // isn't cached.
+    // HUD look: the menu's plates (home.css), drawn on the canvas.
+    // A fine dark keyline, one top highlight and a soft drop under each
+    // plate (no ink outline, no hard ink lip), one radius family, flat
+    // fills from the game palette. Lilita One only for titles; labels and
+    // anything small are Rubik, like the rest of the HUD text. Every
+    // in-game panel, chip, button and bar goes through these so they read
+    // as one family. Paths only: no shadows, no filters, nothing measured
+    // per frame that isn't cached.
     // ═════════════════════════════════════════════════════════════════════
     const HUD = {
         ink: "#120e15",
@@ -6081,55 +6083,56 @@ import * as cosmetics from './account/cosmetics.js';
         emerald: "#3fcf7a", play: "#4fcf5c", playDk: "#2c8f37",
         danger: "#e0473b", dangerDk: "#9c2a21",
         lilac: "#b98bff", sky: "#4ec4e8",
-        r: 10, rSmall: 7, rBig: 14,        // radius family
-        lw: 3, lip: 3,                     // outline + the hard ink drop
+        r: 9, rSmall: 6, rBig: 13,         // radius family
+        lw: 1.5, lip: 3,                   // keyline + the soft drop under a plate
+        line: "rgba(10,8,13,0.92)",        // the keyline
+        drop: "rgba(0,0,0,0.32)",          // the drop
         edge: 25,                          // margin from every screen edge
         font: '"Lilita One", Rubik, Ubuntu, sans-serif',
+        ui: 'Rubik, Ubuntu, sans-serif',   // labels (weight 700)
+        titleMin: 15,                      // below this a hudTitle is a label: Rubik
     };
     try { document.fonts && document.fonts.load('20px "Lilita One"'); } catch (e) { /* falls back to Rubik */ }
-    // bottom edge of a rounded rect, used for the ink drop under a plate
-    function hudLipPath(c, x, y, w, h, r, d) {
-        r = Math.min(r, w / 2, h / 2);
-        c.beginPath();
-        c.moveTo(x, y + h - r + d);
-        c.arcTo(x, y + h + d, x + r, y + h + d, r);
-        c.lineTo(x + w - r, y + h + d);
-        c.arcTo(x + w, y + h + d, x + w, y + h - r + d, r);
-    }
-    // A plate: flat fill, faint inner bevel, 3px ink outline, ink drop.
-    // o: { fill, r, lw, lip, bevel:false, stroke, alpha }
+    // A plate: a soft drop under it, flat fill, fine keyline, and a single
+    // highlight along the top edge. o: { fill, r, lw, lip, bevel:false, stroke, alpha }
     function hudPanel(c, x, y, w, h, o = {}) {
-        const r = o.r != null ? o.r : HUD.r, lw = o.lw != null ? o.lw : HUD.lw;
+        const r = o.r != null ? o.r : HUD.r;
+        // callers that asked for the old heavy outline get the fine one
+        const lw = Math.min(2, o.lw != null ? o.lw * 0.55 : HUD.lw);
         const lip = o.lip != null ? o.lip : HUD.lip;
         c.save();
         if (o.alpha != null) c.globalAlpha *= o.alpha;
+        if (lip > 0) {
+            // the drop: the plate's own shape, dark and see-through, a few px down
+            roundRectPath(c, x, y + lip * 0.8, w, h + lip * 0.4, r);
+            c.fillStyle = HUD.drop;
+            c.fill();
+        }
         roundRectPath(c, x, y, w, h, r);
         c.fillStyle = o.fill || HUD.panel;
         c.fill();
         c.lineWidth = lw;
         c.lineJoin = "round";
-        c.strokeStyle = o.stroke || HUD.ink;
+        c.strokeStyle = o.stroke || HUD.line;
         c.stroke();
-        if (lip > 0) {
-            hudLipPath(c, x, y, w, h, r, lip);
-            c.stroke();
-        }
-        if (o.bevel !== false && w > 2 * lw + 4 && h > 2 * lw + 4) {
-            roundRectPath(c, x + lw * 0.5 + 1, y + lw * 0.5 + 1, w - lw - 2, h - lw - 2, Math.max(1, r - lw * 0.5 - 1));
-            c.lineWidth = 1.5;
+        if (o.bevel !== false && w > 2 * r + 4 && h > 8) {
+            c.beginPath();
+            c.moveTo(x + r, y + lw + 0.75);
+            c.lineTo(x + w - r, y + lw + 0.75);
+            c.lineWidth = 1.25;
             c.strokeStyle = HUD.bevel;
             c.stroke();
         }
         c.restore();
     }
     // A recessed slot inside a plate: darker fill, thin ink keyline.
-    function hudWell(c, x, y, w, h, r = HUD.rSmall, fill = HUD.well, line = HUD.ink, lw = 2) {
+    function hudWell(c, x, y, w, h, r = HUD.rSmall, fill = HUD.well, line = HUD.line, lw = 1) {
         roundRectPath(c, x, y, w, h, r);
         c.fillStyle = fill;
         c.fill();
-        if (lw > 0) { c.lineWidth = lw; c.strokeStyle = line; c.stroke(); }
+        if (lw > 0) { c.lineWidth = Math.min(1.25, lw * 0.5); c.strokeStyle = line === HUD.ink ? HUD.line : line; c.stroke(); }
     }
-    // Progress bar: dark track, flat fill, ink keyline, fully rounded.
+    // Progress bar: dark track, flat fill, fine keyline, fully rounded.
     function hudBar(c, x, y, w, h, frac, col, track = HUD.wellSolid) {
         roundRectPath(c, x, y, w, h, h / 2);
         c.fillStyle = track;
@@ -6147,24 +6150,30 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
         roundRectPath(c, x, y, w, h, h / 2);
-        c.lineWidth = 2;
-        c.strokeStyle = HUD.ink;
+        c.lineWidth = 1.25;
+        c.strokeStyle = HUD.line;
         c.stroke();
     }
-    // Display text (Lilita One) with the ink outline, centred on y.
+    // Title text, centred on y. Lilita One from HUD.titleMin up; smaller
+    // labels are Rubik bold. A thin dark rim keeps either readable over the
+    // world without the old thick sticker outline.
+    function hudFont(size) {
+        return size >= HUD.titleMin ? size + "px " + HUD.font : "700 " + (size * 0.94).toFixed(2) + "px " + HUD.ui;
+    }
     function hudTitle(text, x, y, size, col, align = "left", alpha = 1, c = ctx[2]) {
         size += config.graphical.fontSizeBoost;
         c.save();
         if (alpha < 1) c.globalAlpha *= Math.max(0, alpha);
-        c.font = size + "px " + HUD.font;
+        c.font = hudFont(size);
         c.textAlign = align;
         c.textBaseline = "middle";
         c.lineJoin = "round";
-        c.lineWidth = Math.max(2, size * 0.24);
-        c.strokeStyle = HUD.ink;
-        c.strokeText(text, x, y + size * 0.06);
+        const dy = size >= HUD.titleMin ? size * 0.06 : size * 0.03;
+        c.lineWidth = Math.max(1.5, size * (size >= HUD.titleMin ? 0.15 : 0.17));
+        c.strokeStyle = HUD.line;
+        c.strokeText(text, x, y + dy);
         c.fillStyle = col;
-        c.fillText(text, x, y + size * 0.06);
+        c.fillText(text, x, y + dy);
         c.restore();
     }
     const hudTitleWidths = new Map();
@@ -6174,7 +6183,7 @@ import * as cosmetics from './account/cosmetics.js';
         let w = hudTitleWidths.get(k);
         if (w === undefined) {
             const c = ctx[2];
-            c.save(); c.font = size + "px " + HUD.font; w = c.measureText(text).width; c.restore();
+            c.save(); c.font = hudFont(size); w = c.measureText(text).width; c.restore();
             if (hudTitleWidths.size > 300) hudTitleWidths.clear();
             hudTitleWidths.set(k, w);
         }
@@ -6192,24 +6201,25 @@ import * as cosmetics from './account/cosmetics.js';
         }
         return w;
     }
-    // A keycap: small raised face, Lilita letter. Returns its width.
+    // A keycap: small raised face over its own darker lip. Returns its width.
     function hudKey(c, x, y, label, h = 18, alpha = 1) {
         const size = h * 0.62;
         const w = Math.max(h, hudTitleW(label, size) + h * 0.55);
+        const lip = Math.max(1.5, h * 0.12);
         c.save();
         if (alpha < 1) c.globalAlpha *= alpha;
-        roundRectPath(c, x, y, w, h, h * 0.28);
+        roundRectPath(c, x, y, w, h, h * 0.24);
         c.fillStyle = HUD.faceDk;
         c.fill();
-        roundRectPath(c, x, y, w, h - 2.5, h * 0.28);
+        roundRectPath(c, x, y, w, h - lip, h * 0.24);
         c.fillStyle = HUD.face;
         c.fill();
-        roundRectPath(c, x, y, w, h, h * 0.28);
-        c.lineWidth = 2;
-        c.strokeStyle = HUD.ink;
+        roundRectPath(c, x, y, w, h, h * 0.24);
+        c.lineWidth = 1;
+        c.strokeStyle = HUD.line;
         c.stroke();
         c.restore();
-        hudTitle(label, x + w / 2, y + (h - 2.5) / 2, size, HUD.head, "center", alpha, c);
+        hudTitle(label, x + w / 2, y + (h - lip) / 2, size, HUD.head, "center", alpha, c);
         return w;
     }
     // Chunky button with a lip, like .dw-btn. Registers the same clickables
@@ -6243,11 +6253,19 @@ import * as cosmetics from './account/cosmetics.js';
             c.fillStyle = "rgba(255,255,255,0.12)";
             c.fill();
         }
+        // top highlight, then the fine keyline; the lip is the drop now
+        if (!down && w > 2 * r) {
+            c.beginPath();
+            c.moveTo(x + r, yy + 1.5);
+            c.lineTo(x + w - r, yy + 1.5);
+            c.lineWidth = 1;
+            c.strokeStyle = "rgba(255,255,255,0.14)";
+            c.stroke();
+        }
         roundRectPath(c, x, yy, w, h - down, r);
-        c.lineWidth = 2.5;
-        c.strokeStyle = HUD.ink;
+        c.lineWidth = 1.25;
+        c.strokeStyle = HUD.line;
         c.stroke();
-        if (!down) { hudLipPath(c, x, yy, w, h, r, 2.5); c.stroke(); }
         c.restore();
         if (label) {
             let s = o.size || Math.min(16, h * 0.5);
@@ -6273,12 +6291,16 @@ import * as cosmetics from './account/cosmetics.js';
     const shopGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
     const kitGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
     let kitBoxTop = 0;   // 0 while the kit box is hidden
+    // the bottom-left stat bars (drawSkillBars); the kit box and the left
+    // column floor are anchored to the same numbers. Tall enough that the
+    // stat names stay readable on 1366x768 / 1280x720 at Normal scale.
+    const STAT_BAR_H = 19, STAT_BAR_GAP = 5;
     // Highest point the bottom-left block (kit box, else the 11 stat bars and
     // their points counter) can reach. The upgrade tiles and the quest and
     // override cards all have to stop above it.
     function leftColumnFloor() {
         if (kitBoxTop > 0) return kitBoxTop;
-        return global.screenHeight - 20 - 5.5 - 14 - 10 * (14 + 5) - 30;
+        return global.screenHeight - 20 - 5.5 - STAT_BAR_H - 10 * (STAT_BAR_H + STAT_BAR_GAP) - 34;
     }
     const bossGlide = Smoothbar(0, 2, 3, 0.08, 0.025, true);
     let royaleFeedBottom = 0;
@@ -7401,13 +7423,13 @@ import * as cosmetics from './account/cosmetics.js';
         const catalog = sh.catalog || [];
         const byId = id => catalog.find(i => i.id === id);
         const now = performance.now();
-        // same anchors as drawSkillBars: 11 bars of 14 + 5, counter row above
-        const barH = 14, vsp = 5, bars = 11;
+        // same anchors as drawSkillBars: 11 bars, counter row above
+        const barH = STAT_BAR_H, vsp = STAT_BAR_GAP, bars = 11;
         const barsTop = global.screenHeight - spacing - 5.5 - barH - (bars - 1) * (barH + vsp);
         const W = alcoveSize - 10, H = 118;
         const x = HUD.edge;
-        const y = barsTop - 26 - H + (1 - g) * 14;
-        kitBoxTop = barsTop - 26 - H;
+        const y = barsTop - 30 - H + (1 - g) * 14;
+        kitBoxTop = barsTop - 30 - H;
         const c = ctx[2];
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         const hov = global.clickables.kit.check({ x: global.mouse.x, y: global.mouse.y });
@@ -7559,8 +7581,8 @@ import * as cosmetics from './account/cosmetics.js';
     // One flat tile: opaque face, lighter on hover, bottom shade strip,
     // black border. The same recipe the class-upgrade tiles use.
     function drawFlatTile(c, x, y, w, h, fill, hoverT, alpha, sel, selCol) {
-        // a card on a plate: flat face, ink keyline, small ink drop; the
-        // picked one gets the menu's copper ring
+        // a card on a plate: flat face, fine keyline; the picked one gets
+        // the menu's copper ring
         c.save();
         c.globalAlpha = alpha;
         const r = 8;
@@ -7571,14 +7593,12 @@ import * as cosmetics from './account/cosmetics.js';
             c.fillStyle = "rgba(255,255,255," + (0.1 * hoverT) + ")";
             c.fill();
         }
-        c.lineWidth = 2.5;
-        c.strokeStyle = HUD.ink;
-        c.stroke();
-        hudLipPath(c, x, y, w, h, r, 2.5);
+        c.lineWidth = 1.25;
+        c.strokeStyle = HUD.line;
         c.stroke();
         if (sel) {
-            roundRectPath(c, x - 4, y - 4, w + 8, h + 8 + 2.5, r + 3);
-            c.lineWidth = 3;
+            roundRectPath(c, x - 3.5, y - 3.5, w + 7, h + 7, r + 3);
+            c.lineWidth = 2.5;
             c.strokeStyle = selCol || HUD.copper;
             c.stroke();
         }
@@ -10186,7 +10206,7 @@ import * as cosmetics from './account/cosmetics.js';
             const el = document.createElement("span");
             el.id = "chatModePill";
             el.style.cssText = "position:absolute;z-index:12;display:none;align-items:center;justify-content:center;box-sizing:border-box;" +
-                "border:2px solid #120e15;border-radius:999px;font-family:'Lilita One',Ubuntu,sans-serif;letter-spacing:.03em;pointer-events:none;white-space:nowrap;";
+                "border:1px solid #120e15;border-radius:999px;font-family:Rubik,Ubuntu,sans-serif;font-weight:700;letter-spacing:.01em;pointer-events:none;white-space:nowrap;";
             document.getElementById("gameAreaWrapper").appendChild(el);
             cv.chatPill = el;
         }

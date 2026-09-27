@@ -1480,6 +1480,9 @@ class socketManager {
                     else if (what === "stormat") require('../terrain/storm.js').debugSeek(m[1] | 0);
                     // end the raid N seconds from now (late-join note, raid-over wait)
                     else if (what === "raidleft") require('../gamemodes/scripts/dig_royale.js').debugRaidLeft(m[1] | 0);
+                    // N extra safe-spawn picks, each checked for a way out; 'trap' plants enclosed pockets first,
+                    // 'reset' clears the tally. Answers KC 'dbg' with the audit
+                    else if (what === "spawnaudit") socket.talk('KC', 'dbg', JSON.stringify({ spawnaudit: require('../gamemodes/scripts/dig_royale.js').debugSpawnAudit(m[1] | 0, m[2] ? String(m[2]) : '') }), 0);
                     // beside base N (or the nearest), on its open side
                     else if ((what === "tobase" || what === "takebase") && b) {
                         const ops = require('../terrain/outposts.js').getOutposts();

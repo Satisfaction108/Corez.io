@@ -36,7 +36,8 @@ function defaultPrefs() {
     let vol = parseFloat(localStorage.getItem(VOLUME_KEY));
     if (isNaN(vol)) vol = 0.7;
     return {
-        enabled: true,
+        // off until the sound pass is redone; players who turned it on keep it
+        enabled: false,
         headphones3d: true,
         volume: vol,
         busyDuck: true,

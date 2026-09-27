@@ -9,6 +9,7 @@ const bosses = require('../../terrain/bosses.js');
 const blooms = require('../../terrain/blooms.js');
 const raidEvents = require('../../terrain/raidEvents.js');
 const raidMods = require('../../terrain/raidMods.js');
+const spawnReach = require('../../terrain/spawnReach.js');
 // ranked lives + gemdust (accounts); every call below is guarded
 const rankHooks = require('../../../accounts/game/rankHooks.js');
 const dustHooks = require('../../../accounts/game/dustHooks.js');
@@ -49,6 +50,22 @@ const FIRST_MINUTES = {
     SPAWN_CARVE_GAIN: 100,        // dig a pocket in solid rock only if that buys this much more room
     SPAWN_CARVE_R: 75,            // landing pocket radius
     SPAWN_PAD_CLEAR: 140,         // never on (or hugging) a vault / shop / base pad
+    // Reachability (terrain/spawnReach.js has the rule and its own knobs):
+    // a spawn must be able to get out, not land in a pocket ringed by ore,
+    // emerald or regrowing rock, or in a mined-out cell about to close.
+    SPAWN_REACH: process.env.SPAWN_REACH !== '0',   // SPAWN_REACH=0: old behaviour (for A/B)
+    SPAWN_STORM_AHEAD_DIG_S: 60,  // a spot that is only escapable by digging must be inside where the edge will be this far ahead
+    SPAWN_POCKET_HOLD_MS: 30_000, // a dug landing pocket and its exit tunnel do not regrow for this long
+    SPAWN_CELL_HOLD_MS: 12_000,   // a mined-out cell picked as the spawn does not regrow for this long
+    SPAWN_TUNNEL_MAX: 8,          // a landing pocket's exit tunnel is at most this many cells (else try another spot)
+    // Storm rescue: a body in its first RESCUE_WINDOW_MS that the storm reaches
+    // while boxed in (the way into the zone costs at least RESCUE_MIN_COST
+    // fresh plain rocks) gets that tunnel cracked open, once per life. Never
+    // through an emerald. Storm damage still applies; they have to walk.
+    RESCUE_WINDOW_MS: 20_000,
+    RESCUE_MIN_COST: 0.5,
+    RESCUE_MAX_CELLS: 10,
+    RESCUE_RETRY_MS: 2000,
     SPAWN_FIGHT_MS: 4000,         // a tank hit this recently is in a fight
     SPAWN_FIGHT_MULT: 0.55,       // a fight counts as this much closer (distance x mult)
     SPAWN_BOSS_MULT: 0.5,         // a boss counts as this much closer (distance x mult)
@@ -545,8 +562,8 @@ function openGroundNear(tg, x, y) {
 
 // Smash every rock touching a circle of radius R at (x, y): a landing pocket.
 // Refuses (and digs nothing) when an emerald is in the way.
-function carveSpawnPocket(tg, x, y, R) {
-    if (!tg || !tg.rocks || !tg.damageRock) return false;
+function pocketRocks(tg, x, y, R) {
+    if (!tg || !tg.rocks) return null;
     const hits = [];
     for (const rock of tg.rocks.values()) {
         if (!rock || !(rock.alive || rock.growing)) continue;
@@ -557,10 +574,59 @@ function carveSpawnPocket(tg, x, y, R) {
         if (!touch && rock.worldPoly) for (const p of rock.worldPoly) { if ((p[0] - x) ** 2 + (p[1] - y) ** 2 <= R * R) { touch = true; break; } }
         if (touch) hits.push(rock);
     }
-    if (hits.some(rk => rk.ore === 4)) return false;
-    for (const rock of hits) {
-        try { tg.damageRock(rock, rock.health + 1, rock.worldCx || rock.wx, rock.worldCy || rock.wy, false, null); } catch { /* */ }
+    if (hits.some(rk => rk.ore === 4)) return null;
+    return hits;
+}
+
+// Break (and hold open for holdMs) every rock in `list`; mined-out cells in
+// it are only held. Emeralds are skipped, always.
+function breakAndHold(tg, list, holdMs) {
+    const until = now() + holdMs;
+    for (const rock of list) {
+        if (!rock || rock.canyon) continue;
+        if (rock.ore === 4 && (rock.alive || rock.growing)) continue;
+        if (rock.alive || rock.growing) {
+            try { tg.damageRock(rock, rock.health + 1, rock.worldCx || rock.wx, rock.worldCy || rock.wy, false, null); } catch { /* */ }
+        }
+        if (!rock.alive && !rock.growing) rock.noRegrowUntil = Math.max(rock.noRegrowUntil || 0, until);
     }
+}
+
+// Where the storm edge will be `aheadS` seconds from now (st: storm.snapshot).
+function stormRAhead(st, aheadS) {
+    const rNow = st.r || 0;
+    return Math.max(0, rNow - Math.max(0, rNow - (st.n || rNow)) * (aheadS * 4));
+}
+
+// With `zone` (spawn reachability on) the pocket also gets an exit tunnel of
+// plain rock to the nearest open region (spawnReach.exitPath: never through
+// an emerald, fresh ore or regrowing rock; routes around them), and pocket
+// and tunnel are held open for SPAWN_POCKET_HOLD_MS. No tunnel within
+// SPAWN_TUNNEL_MAX cells: nothing is dug and the spot is refused.
+function carveSpawnPocket(tg, x, y, R, zone) {
+    if (!tg || !tg.rocks || !tg.damageRock) return false;
+    const hits = pocketRocks(tg, x, y, R);
+    if (!hits) return false;
+    let tunnel = [];
+    if (zone) {
+        const center = spawnReach.cellAt(tg, x, y);
+        const assumeOpen = new Set(hits.map(r => r.k));
+        if (center) assumeOpen.add(center.k);
+        tunnel = spawnReach.exitPath(tg, x, y, { zone, assumeOpen, maxCells: FIRST_MINUTES.SPAWN_TUNNEL_MAX, now: now() });
+        if (!tunnel) return false;
+        tunnel = tunnel.filter(r => !assumeOpen.has(r.k));
+    }
+    if (zone) {
+        breakAndHold(tg, hits.concat(tunnel), FIRST_MINUTES.SPAWN_POCKET_HOLD_MS);
+        const c = spawnReach.cellAt(tg, x, y);
+        if (c) breakAndHold(tg, [c], FIRST_MINUTES.SPAWN_POCKET_HOLD_MS);
+        spawnReach.invalidate();
+    } else {
+        for (const rock of hits) {
+            try { tg.damageRock(rock, rock.health + 1, rock.worldCx || rock.wx, rock.worldCy || rock.wy, false, null); } catch { /* */ }
+        }
+    }
+    carveSpawnPocket.lastTunnel = tunnel.length;
     return !(tg.pointInRock && tg.pointInRock(x, y));
 }
 
@@ -580,10 +646,28 @@ function safeSpawnSpot(self, forBot) {
     // plan for the circle a little ahead (st.n is the radius 250 ms from now),
     // so a fresh spawn is not in the storm half a minute later either
     const rNow = st.r || 0;
-    const r = Math.max(0, rNow - Math.max(0, rNow - (st.n || rNow)) * (FM.SPAWN_STORM_AHEAD_S * 4));
+    const r = stormRAhead(st, FM.SPAWN_STORM_AHEAD_S);
     const margin = Math.min(FM.SPAWN_EDGE_MARGIN, r * FM.SPAWN_EDGE_MARGIN_FRAC);   // a fresh spawn never lands in the storm
     const safeR = Math.max(80, r - margin);
     const tgS = global.gameManager.terrainGrid;
+    // Reachability: the way out may not leave the circle the storm will
+    // have in SPAWN_STORM_AHEAD_S; a spot that only escapes by digging (not
+    // joined to open ground) must also sit inside the edge of
+    // SPAWN_STORM_AHEAD_DIG_S from now, with the same margin.
+    const zone = { x: st.cx || 0, y: st.cy || 0, r };
+    const digR = Math.max(80, stormRAhead(st, FM.SPAWN_STORM_AHEAD_DIG_S) - margin);
+    const reachMemo = new Map();
+    const reachOf = (h) => {
+        const key = Math.round(h.x) + ':' + Math.round(h.y);
+        let res = reachMemo.get(key);
+        if (!res) {
+            res = spawnReach.check(tgS, h.x, h.y, { zone, now: t });
+            if (res.ok && res.via === 'dig' && Math.hypot(h.x - zone.x, h.y - zone.y) > digR) res = { ok: false, reason: 'dig-storm' };
+            reachMemo.set(key, res);
+        }
+        return res;
+    };
+    const reachOk = (h) => !FM.SPAWN_REACH || reachOf(h).ok;
     const mapR = ((tgS && tgS.circleRadius) || 2700) - FM.SPAWN_MAP_MARGIN;
     // a pit the wall has grown back over is rock now, not a spawn point
     const open = (h) => !(tgS && tgS.pointInRock && tgS.pointInRock(h.x, h.y));
@@ -609,6 +693,16 @@ function safeSpawnSpot(self, forBot) {
         if (!(Math.hypot(h.x, h.y) < mapR) || !offPad(h)) continue;
         if (open(h)) cands.push(h); else rockCands.push(h);
     }
+    // nobody lands where they cannot get out (a pocket ringed by ore or
+    // emerald, a mined-out cell about to close, a way out through the storm)
+    const candsAll = cands.length;
+    let noReach = false;
+    if (FM.SPAWN_REACH && tgS) {
+        const ok = cands.filter(reachOk);
+        if (ok.length) cands = ok;
+        else noReach = true;   // dig a pocket with an exit if at all possible (below)
+    }
+    const candsReach = noReach ? 0 : cands.length;
     // A reservation is a hard no for PIT_RESERVE_MS, by radius: nobody drops
     // into a gap somebody landed in moments ago, even if they already left.
     const live = [];
@@ -660,18 +754,126 @@ function safeSpawnSpot(self, forBot) {
     // A closing circle is mostly solid rock: when no open spot is clear
     // enough and a spot inside the rock is clearly roomier, dig a landing
     // pocket there (never through an emerald), like the drop pits.
-    const bestOpen = scored.length ? scored[0].m : -Infinity;
+    // (with reachability on, the pocket gets an exit tunnel and is held
+    // open; when no open spot could be got out of at all, dig regardless
+    // of the gain, and a pocket that finds no tunnel is not dug)
+    const bestOpen = scored.length && !noReach ? scored[0].m : -Infinity;
     if (bestOpen < want && rockCands.length && tgS) {
         const rs = rockCands.filter(h => !reservedBy(h)).map(h => ({ h, m: clearOf(h) })).sort((a, b) => b.m - a.m);
-        for (const cand of rs.slice(0, 3)) {
+        for (const cand of rs.slice(0, noReach ? 8 : 3)) {
             if (!(cand.m > bestOpen + FM.SPAWN_CARVE_GAIN)) break;
-            if (carveSpawnPocket(tgS, cand.h.x, cand.h.y, FM.SPAWN_CARVE_R)) { pick = cand.h; pick.carved = true; break; }
+            if (carveSpawnPocket(tgS, cand.h.x, cand.h.y, FM.SPAWN_CARVE_R, FM.SPAWN_REACH ? zone : null)) { pick = cand.h; pick.carved = true; break; }
         }
     }
-    if (!pick) return openGroundNear(tgS, st.cx || 0, st.cy || 0);
-    if (process.env.SPAWN_DEBUG) console.log('[SPAWN]', forBot ? 'bot' : 'human', 'r', Math.round(rNow), '->', Math.round(r), 'safeR', Math.round(safeR), 'cands', cands.length, 'rock', rockCands.length, 'pits', cands.filter(c => c.pit).length, 'threats', threats.length, 'want', Math.round(want), 'bestOpen', Math.round(bestOpen), 'pick', Math.round(clearOf(pick)), pick.carved ? 'CARVED' : '', 'at', Math.round(pick.x), Math.round(pick.y), 'bots', bodies.filter(b => b.isBot).map(b => Math.round(Math.hypot(b.x - pick.x, b.y - pick.y))).join(','));
+    if (!pick) {
+        const o = openGroundNear(tgS, st.cx || 0, st.cy || 0);
+        spawnAudit(o, forBot, 'fallback', FM.SPAWN_REACH ? reachOf(o) : null);
+        return o;
+    }
+    // a mined-out cell picked as the spawn is held open a little while, so
+    // it does not start regrowing around the body the moment it lands
+    if (FM.SPAWN_REACH && tgS && !pick.pit && !pick.carved) {
+        const c = spawnReach.cellAt(tgS, pick.x, pick.y);
+        if (c && !c.canyon && !c.alive && !c.growing) c.noRegrowUntil = Math.max(c.noRegrowUntil || 0, t + FM.SPAWN_CELL_HOLD_MS);
+    }
+    if (process.env.SPAWN_DEBUG) console.log('[SPAWN]', forBot ? 'bot' : 'human', 'r', Math.round(rNow), '->', Math.round(r), 'safeR', Math.round(safeR), 'cands', cands.length, 'of', candsAll, 'reach', candsReach, 'rock', rockCands.length, 'pits', cands.filter(c => c.pit).length, 'threats', threats.length, 'want', Math.round(want), 'bestOpen', Math.round(bestOpen), 'pick', Math.round(clearOf(pick)), pick.carved ? 'CARVED tunnel ' + (carveSpawnPocket.lastTunnel | 0) : '', 'at', Math.round(pick.x), Math.round(pick.y), 'bots', bodies.filter(b => b.isBot).map(b => Math.round(Math.hypot(b.x - pick.x, b.y - pick.y))).join(','));
+    spawnAudit(pick, forBot, pick.carved ? 'carved' : pick.pit ? 'pit' : 'open', null);
     pitReservations.set(Math.round(pick.x) + ":" + Math.round(pick.y), { x: pick.x, y: pick.y, until: t + PIT_RESERVE_MS, bot: !!forBot });
     return { x: pick.x, y: pick.y };
+}
+
+// Storm rescue (the safety net under the reachability rule): a body in its
+// first RESCUE_WINDOW_MS that the storm has reached, and whose cheapest way
+// back into the zone costs at least RESCUE_MIN_COST fresh plain rocks (ore
+// and regrowing rock included, emerald never), gets that tunnel broken and
+// held open. Once per life; storm damage is untouched, they still walk out.
+const spawnRescue = { n: 0, cells: 0 };
+function tickSpawnRescue(t) {
+    const FM = FIRST_MINUTES;
+    if (!FM.SPAWN_REACH) return;
+    const tg = global.gameManager.terrainGrid;
+    if (!tg || !tg.rocks) return;
+    let st = null;
+    for (const body of combatants()) {
+        if (!body._inStorm || !body.royaleBornAt || t - body.royaleBornAt > FM.RESCUE_WINDOW_MS) continue;
+        if (body._rescueLife === body.royaleBornAt) continue;
+        if (t - (body._rescueTryAt || 0) < FM.RESCUE_RETRY_MS) continue;
+        body._rescueTryAt = t;
+        if (!st) st = storm.snapshot(t);
+        const w = tg._cellWorld || 110;
+        const toZone = { x: st.cx || 0, y: st.cy || 0, r: Math.max(w, (st.r || 0) - w * 1.5) };
+        const path = spawnReach.exitPath(tg, body.x, body.y, { rescue: true, toZone, maxCells: FM.RESCUE_MAX_CELLS, now: t });
+        if (!path) continue;   // nothing within reach (retried every RESCUE_RETRY_MS)
+        body._rescueLife = body.royaleBornAt;
+        const plain = (tg.baseRockHealth || 1) * 1.3 * ((global.royaleMods && global.royaleMods.rockHpMult) || 1);
+        let cost = 0;
+        for (const r of path) if (r.alive || r.growing) cost += (r.health || 0) / plain;
+        if (cost < FM.RESCUE_MIN_COST) continue;   // not boxed in: a short dig or a walk
+        breakAndHold(tg, path, FM.SPAWN_POCKET_HOLD_MS);
+        spawnReach.invalidate();
+        spawnRescue.n++; spawnRescue.cells += path.length;
+        if (process.env.SPAWN_DEBUG) console.log('[SPAWN-RESCUE]', body.name, 'cells', path.length, 'cost', +cost.toFixed(2), 'at', Math.round(body.x), Math.round(body.y));
+        try { if (body.sendMessage) body.sendMessage("The storm cracked the rock open: get back inside!"); } catch { /* */ }
+    }
+}
+
+// ROYALE_DEBUG only: plant `k` gem-ringed pockets (a mined-out cell whose
+// every neighbour is fresh shard/emerald, held open so it stays a pocket)
+// and `k` mined-out cells in plain rock that are about to regrow, inside the
+// storm circle. These are the spots the old spawn picker landed people in.
+function debugPlantTraps(k) {
+    const tg = global.gameManager.terrainGrid;
+    if (!tg || !tg.rocks) return 0;
+    const { ORE, ORE_HP } = require('../../terrain/terrainGrid.js');
+    const adj = spawnReach.adjacency(tg);
+    const st = storm.snapshot(now());
+    const cands = [...tg.rocks.values()].filter(r => r.alive && !r.growing && r.worldPoly && !r.canyon && r.ore !== ORE.EMERALD &&
+        Math.hypot((r.worldCx - st.cx), (r.worldCy - st.cy)) < (st.r || 0) * 0.85 &&
+        (adj.get(r.k) || []).every(n => n.alive && !n.canyon));
+    let planted = 0;
+    const t = now(), plain = tg.baseRockHealth * 1.3;
+    for (let i = 0; i < k * 2 && cands.length; i++) {
+        const r = cands.splice((Math.random() * cands.length) | 0, 1)[0];
+        if (!r.alive || !(adj.get(r.k) || []).every(n => n.alive)) continue;
+        const gem = i % 2 === 0;
+        tg.damageRock(r, r.health + 1, r.worldCx, r.worldCy, false, null);
+        if (gem) {
+            r.noRegrowUntil = t + 120_000;
+            for (const n of adj.get(r.k) || []) {
+                n.ore = Math.random() < 0.25 ? ORE.EMERALD : ORE.SHARD;
+                n.maxHealth = plain * ORE_HP[n.ore]; n.health = n.maxHealth;
+                try { n.deposits = tg._buildDeposits(n); } catch { n.deposits = null; }
+                tg.rockEvents.push({ k: n.k, e: 1 });
+            }
+        } else {
+            r.diedAt = t - 20_000;   // regrows within a few seconds
+        }
+        planted++;
+    }
+    spawnReach.invalidate();
+    return planted;
+}
+
+// Spawn audit (ROYALE_DEBUG DBG 'spawnaudit' reads it): every pick, checked
+// against the reachability rule whether or not the rule is switched on.
+const spawnLog = { n: 0, enclosed: 0, byKind: {}, byReason: {}, recent: [] };
+function spawnAudit(spot, forBot, kind, res) {
+    if (!process.env.ROYALE_DEBUG && !process.env.SPAWN_DEBUG) return;
+    try {
+        const tg = global.gameManager.terrainGrid;
+        const st = storm.snapshot(now());
+        const zone = { x: st.cx || 0, y: st.cy || 0, r: stormRAhead(st, FIRST_MINUTES.SPAWN_STORM_AHEAD_S) };
+        spawnReach.invalidate();
+        const r = res || spawnReach.check(tg, spot.x, spot.y, { zone, now: now() });
+        spawnLog.n++;
+        spawnLog.byKind[kind] = (spawnLog.byKind[kind] | 0) + 1;
+        const tag = r.ok ? 'ok-' + r.via : r.reason;
+        spawnLog.byReason[tag] = (spawnLog.byReason[tag] | 0) + 1;
+        if (!r.ok) spawnLog.enclosed++;
+        spawnLog.recent.push({ x: Math.round(spot.x), y: Math.round(spot.y), bot: !!forBot, kind, tag, sr: Math.round(st.r) });
+        if (spawnLog.recent.length > 40) spawnLog.recent.shift();
+        if (process.env.SPAWN_DEBUG) console.log('[SPAWN-REACH]', forBot ? 'bot' : 'human', kind, tag, 'cost', r.cost != null ? +r.cost.toFixed(2) : '-', 'at', Math.round(spot.x), Math.round(spot.y));
+    } catch (e) { guardLog('spawn audit', e); }
 }
 
 function giveStarterKit(body, isRespawn) {
@@ -920,6 +1122,7 @@ function spotNearMate(self, mate, loose = false) {
     try { pads = [...vault.getVaults(), ...outposts.getOutposts(), ...shop.getShops()].filter(Boolean); } catch { /* */ }
     const tg = global.gameManager.terrainGrid;
     const mapR = ((tg && tg.circleRadius) || 2700) - FM.SPAWN_MAP_MARGIN;
+    const reachable = mateReachTest(tg);
     let best = null, bestM = -Infinity;
     for (let i = 0; i < 28; i++) {
         const a = Math.random() * Math.PI * 2, d = 170 + Math.random() * 260;
@@ -928,15 +1131,34 @@ function spotNearMate(self, mate, loose = false) {
         if (tg && tg.pointInRock && tg.pointInRock(x, y)) continue;
         try { if (storm.inStorm(x, y)) continue; } catch { /* */ }
         if (pads.some(p => padGeom.insidePad(p, x, y, FM.SPAWN_PAD_CLEAR))) continue;
+        if (!reachable(x, y)) continue;   // same rule as a safe spawn: never boxed in
         let m = Infinity;
         for (const f of foes) { const dd = Math.hypot(f.x - x, f.y - y); if (dd < m) m = dd; }
         if (m > bestM) { bestM = m; best = { x, y }; }
     }
     if (!best) {
         const o = openGroundNear(tg, mate.x + 200, mate.y);
-        if (!(tg && tg.pointInRock && tg.pointInRock(o.x, o.y))) best = o;
+        if (!(tg && tg.pointInRock && tg.pointInRock(o.x, o.y)) && reachable(o.x, o.y)) best = o;
     }
+    if (best) spawnAudit(best, !self || !self.socket, 'mate', null);
     return best;
+}
+
+// The safe-spawn reachability rule as a point test (off: always true), for
+// spawns beside a partner and a team bot catching up.
+function mateReachTest(tg) {
+    if (!FIRST_MINUTES.SPAWN_REACH || !tg) return () => true;
+    const t = now();
+    let st = null;
+    try { st = storm.snapshot(t); } catch { return () => true; }
+    const zone = { x: st.cx || 0, y: st.cy || 0, r: stormRAhead(st, FIRST_MINUTES.SPAWN_STORM_AHEAD_S) };
+    const margin = Math.min(FIRST_MINUTES.SPAWN_EDGE_MARGIN, zone.r * FIRST_MINUTES.SPAWN_EDGE_MARGIN_FRAC);
+    const digR = stormRAhead(st, FIRST_MINUTES.SPAWN_STORM_AHEAD_DIG_S) - margin;
+    return (x, y) => {
+        const res = spawnReach.check(tg, x, y, { zone, now: t });
+        if (!res.ok) return false;
+        return res.via !== 'dig' || Math.hypot(x - zone.x, y - zone.y) <= digR;
+    };
 }
 
 function spawnRaidBot() {
@@ -995,6 +1217,7 @@ function catchUpSpot(bot, human) {
     let pads = [];
     try { pads = [...vault.getVaults(), ...outposts.getOutposts(), ...shop.getShops()].filter(Boolean); } catch { /* */ }
     const base = Math.atan2(bot.y - human.y, bot.x - human.x);
+    const reachable = mateReachTest(tg);
     for (let k = 0; k < 9; k++) {
         const a = base + (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 0.35;
         for (const r of [TEAM_BOT_CATCHUP_R, TEAM_BOT_CATCHUP_R * 0.8]) {
@@ -1003,6 +1226,7 @@ function catchUpSpot(bot, human) {
             if (tg && tg.rockHitByCircle && tg.rockHitByCircle(x, y, (bot.realSize || 30) + 10)) continue;
             try { if (storm.inStorm(x, y)) continue; } catch { /* */ }
             if (pads.some(p => padGeom.insidePad(p, x, y, FIRST_MINUTES.SPAWN_PAD_CLEAR))) continue;
+            if (!reachable(x, y)) continue;
             return { x, y };
         }
     }
@@ -2079,6 +2303,7 @@ function tick() {
     // Every stage is isolated: one bad stage must never take the raid
     // broadcast (and with it the whole HUD) down with it.
     guard('storm', () => { storm.ensureActive(); storm.tickDamage(t); });
+    guard('spawn rescue', () => tickSpawnRescue(t));
     guard('outposts', () => tickOutpostRules(t));
     guard('vaults', () => tickVaultPinch(t));
     guard('bots', () => fillBots());
@@ -2167,5 +2392,16 @@ module.exports = {
     FIRST_MINUTES, isNewPlayer,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
+    // DBG spawnaudit [n] [trap|reset]: the spawn audit so far, after `n` extra
+    // safeSpawnSpot picks (bot/human alternating); 'trap' first plants 40
+    // gem-ringed pockets and 40 about-to-close mined cells in the zone
+    debugSpawnAudit: (n, mode) => {
+        if (mode === 'reset') { spawnLog.n = 0; spawnLog.enclosed = 0; spawnLog.byKind = {}; spawnLog.byReason = {}; spawnLog.recent = []; spawnRescue.n = 0; spawnRescue.cells = 0; }
+        let traps = 0;
+        if (mode === 'trap') traps = debugPlantTraps(40);
+        const t0 = Date.now();
+        for (let i = 0; i < Math.min(2000, n | 0); i++) safeSpawnSpot(null, i % 2 === 0);
+        return { traps, ms: Date.now() - t0, reach: FIRST_MINUTES.SPAWN_REACH, n: spawnLog.n, enclosed: spawnLog.enclosed, byKind: spawnLog.byKind, byReason: spawnLog.byReason, rescues: spawnRescue, storm: Math.round(storm.snapshot(now()).r), recent: spawnLog.recent.slice(-5) };
+    },
     debugRaidLeft: (sec) => { if (!raidEnding && raidResults === null) raidEndsAt = now() + Math.max(1, sec | 0) * 1000; },
 };
