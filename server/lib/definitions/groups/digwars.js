@@ -1,5 +1,3 @@
-
-
 const GEM_CUT = [
     [-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95],
 ];
@@ -16,16 +14,15 @@ Class.gemPickupBase = {
     LABEL: "Gems",
     SHAPE: GEM_CUT,
     SIZE: 7,
-    
-    
+
     STROKE_WIDTH: 0.55,
     NO_COLLISIONS: true,
     IGNORED_BY_AI: true,
     DRAW_HEALTH: false,
     CAN_GO_OUTSIDE_ROOM: false,
-    
+
     FACING_TYPE: ["spin", { speed: 0.02 }],
-    
+
     DIE_AT_RANGE: true,
     VARIES_IN_SIZE: false,
     HEALTH_WITH_LEVEL: false,
@@ -90,20 +87,15 @@ Class.gemPickupLoot = {
 };
 
 // The satchel a carrying tank wears on its back. Emerald = blue team, Shard =
-// red team (the names are historical; the colour is now the team's).
+// red team (both use the team colour; the names are just labels).
 //
-// Colour is expressed as the team colour plus a brightness shift rather than a
-// literal hex, so it stays a LIGHTER VERSION OF THE TEAM COLOUR under custom
-// themes instead of drifting off-palette the moment somebody reskins the game.
-// The facet is the same colour lifted further - it is the lit face of the gem.
-// Kept modest on purpose: the client adds this straight onto the base colour's
-// HSL lightness, so a big lift clips to white and throws away the team read -
-// which is the entire point of colouring the pack by team.
+// Colour is the team colour plus a brightness shift, so it stays a lighter team
+// colour under custom themes. The facet is lifted further. Keep the lifts modest:
+// the client adds them to the base HSL lightness, and a big lift clips to white.
 const HOARD_LIFT = 16;   // +0.16 lightness (the client divides this by 100)
 const HOARD_FACET_LIFT = 30;
-// SHAPE 0 is a circle (drawBody treats a falsy side count as an arc). A round
-// bag reads as a satchel; the faceted gem cut read as a jewel stuck to the hull.
-// The facet is a smaller concentric disc - the lighter front panel of the bag.
+// SHAPE 0 is a circle (drawBody treats a falsy side count as an arc).
+// The facet is a smaller concentric disc, the lighter front panel of the bag.
 Class.gemHoardEmerald = {
     LABEL: "Hoard",
     SHAPE: 0,
@@ -130,24 +122,14 @@ Class.outpostBanner = {
     LEVEL: 45,
     LEVEL_CAP: 45,
     SIZE: 60,
-    
-    
-    
+
     SHAPE: 8,
-    
-    
-    
-    
-    
+
     BODY: {
         RESIST: 50,
         SPEED: 0,
         ACCELERATION: 0,
-        
-        
-        
-        
-        
+
         HEALTH: 9000,
         DAMAGE: 0,
         PENETRATION: 0.25,
@@ -158,7 +140,7 @@ Class.outpostBanner = {
     },
     FACING_TYPE: ["spin", { speed: 0.02 }],
     CONTROLLERS: [],
-    
+
     DISPLAY_NAME: false,
     DRAW_HEALTH: true,
     CAN_BE_ON_LEADERBOARD: false,
@@ -178,9 +160,7 @@ Class.coreChamber = {
     LEVEL_CAP: 45,
     SIZE: 160,            
     SHAPE: 15,             
-    
-    
-    
+
     BODY: {
         RESIST: 50,
         SPEED: 0,
@@ -205,8 +185,7 @@ Class.coreChamber = {
 };
 
 // Rock Barrage kit item: a chunk of rock hurled at the cursor. Flight, hits
-// and damage are all run by shop.js (tickBarrage); the entity is noclip and
-// only here to be drawn.
+// and damage run in shop.js (tickBarrage); the entity is noclip, draw-only.
 Class.rockBarrageShard = {
     TYPE: "bullet",
     LABEL: "Rock Chunk",

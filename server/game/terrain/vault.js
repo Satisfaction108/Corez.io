@@ -1,5 +1,3 @@
-
-
 const gems = require('./gems.js');
 const war = require('./war.js');
 const milestones = require('./milestones.js');
@@ -10,7 +8,7 @@ const PROGRESS_MS  = 50;
 const PAD_EJECT_MS = 10_000;      // idle time on the pad before a kick
 const CASHED_LOCK_MS = 20_000;    // one visit per deposit
 // The raid pad is drawn as a flat-topped octagon 1.15x the pad radius; the
-// collision uses the same shape so the door is where it looks.
+// collision uses the same shape.
 const padGeom = require('./padGeom.js');
 const OCT_SCALE = padGeom.OCT.scale;
 let _dustHooks = null;
@@ -52,7 +50,7 @@ function getVaults() {
     return vaults;
 }
 
-// Compact list for the TG snapshot so every client can draw the doors.
+// Compact list for the TG snapshot.
 function snapshot() {
     return getVaults().map(v => ({ x: v.x, y: v.y, r: v.r, team: v.team, rainbow: !!v.rainbow }));
 }
@@ -102,9 +100,7 @@ function ejectFromPad(body, pad, msg, lockMs = 5000) {
     body._padHold = null;
     padGeom.keepOut(body, pad, 8, vaultKey(pad), 'expel');   // a steady shove, no snap
     body._vaultPadSince = 0;
-    // Kicked out means out: no re-entry for 5s so the pad can't be
-    // instantly re-camped. Scoped to THIS pad - a vault kick never locks
-    // some other pad.
+    // no re-entry for lockMs, scoped to this pad only
     body._padReentryUntil = Date.now() + lockMs;
     body._padReentryPad = pad;
     if (msg) { try { body.sendMessage(msg + " You can come back in " + Math.round(lockMs / 1000) + " seconds."); } catch { /* */ } }
@@ -131,8 +127,7 @@ function depositFor(body, amount) {
     if (!(amount > 0) || carried < MIN_DEPOSIT) return false;
     if (Config.dig_royale) {
         let pad = null;
-        // the same shape tick() uses to open the panel (the octagon reaches
-        // past v.r), or the outer ring showed the panel but refused deposits
+        // same shape tick() uses to open the panel (the octagon reaches past v.r)
         for (const v of getVaults()) {
             if (onPadShape(v, body.x - v.x, body.y - v.y)) { pad = v; break; }
         }
@@ -170,13 +165,12 @@ function requestCancel(socket) {
 function tick(actors, dtMs) {
     const list = getVaults();
     if (!list.length) return;
-    // Drop locks held by bodies that left the world without a release
-    // (destroyed alive). A live deposit always carries its deposit object.
+    // drop locks held by bodies that left the world without releasing
     for (const v of list) {
         const d = v._depositor;
         if (d && (d.isGhost || d.isDead?.() || !d.vaultDeposit)) v._depositor = null;
     }
-    // BR lobby/idle: playground only - no banking until scatter.
+    // no banking in the BR lobby
     if (Config.dig_royale) {
         try {
             if (require('../gamemodes/scripts/dig_royale.js').isLobbyPhase()) {
@@ -209,7 +203,7 @@ function tick(actors, dtMs) {
         for (const v of list) {
             const on = v._onPad || [];
             const humansOn = on.filter(b => !!b.socket);
-            // A human always outranks a bot for the pad.
+            // a human always outranks a bot for the pad
             const eligible = (b) => b && on.includes(b) && (b.socket || !humansOn.length);
             let keep = null;
             if (eligible(v._depositor)) keep = v._depositor;
@@ -231,7 +225,7 @@ function tick(actors, dtMs) {
         const body = actorBody(actor);
         if (!body || body.isGhost) continue;
         if (body.isDead()) {
-            // Close the client panel too, or it stays open after respawn.
+            // close the client panel, or it stays open after respawn
             if (body.vaultOnPad && body.socket) body.socket.talk('VU', 0);
             body.vaultOnPad = false;
             body.onVaultPad = false;
@@ -252,9 +246,8 @@ function tick(actors, dtMs) {
         const was = !!body.vaultOnPad;
         body.vaultOnPad = !!pad;
         body.onVaultPad = !!pad;
-        // 5s no re-entry after a kick: hard deny, parked hull-to-edge every
-        // tick. Touch (hull overlap) counts, not just center-inside, so the
-        // nose can never get in and the timer restarts cleanly next visit.
+        // Re-entry lock after a kick: hull overlap counts, not just the
+        // centre, so the nose never gets in.
         let denyPad = pad;
         if (!denyPad) {
             const br = body.realSize || 60;
@@ -267,8 +260,7 @@ function tick(actors, dtMs) {
             (!body._padReentryPad || body._padReentryPad === denyPad)) {
             cancelDeposit(body, !!body.socket);
             // still rolling off after a kick: keep shoving until the hull is
-            // clear; only then is the rim a wall (a wall now would snap the
-            // half-out hull to the edge)
+            // clear, only then treat the rim as a wall (avoids a snap)
             if (body._vaultPush && body._vaultPush.pad === denyPad) pushOut(body, denyPad, 9, now);
             else padGeom.keepOut(body, denyPad, 3, vaultKey(denyPad), true);
             body._vaultPadSince = 0;
@@ -280,8 +272,7 @@ function tick(actors, dtMs) {
         if (pad && !body._vaultPadSince) body._vaultPadSince = now;
         if (Config.dig_royale) {
             if (pad && !was) { body._vaultPadSince = now; body._vaultIdleSince = now; }
-            // The pad is a safe room: the clock only runs while you stand
-            // there doing nothing. A running deposit always finishes.
+            // the idle clock only runs while not depositing
             if (pad && body.vaultDeposit) body._vaultIdleSince = now;
             if (!pad) {
                 body._vaultPadSince = 0;
@@ -291,7 +282,7 @@ function tick(actors, dtMs) {
                 ejectFromPad(body, pad, "No camping on the vault.");
                 continue;
             } else if (body.vaultDeposit && body._vaultSite && body._vaultSite !== pad) {
-                // Walked to a different pad mid-deposit: move the lock or stop.
+                // walked to a different pad mid-deposit: move the lock or stop
                 if (!claimPad(pad, body)) { cancelDeposit(body, !!body.socket); continue; }
             } else if (body.vaultDeposit && !body._vaultSite) {
                 if (!claimPad(pad, body)) { cancelDeposit(body, !!body.socket); continue; }
@@ -309,17 +300,13 @@ function tick(actors, dtMs) {
         const d = body.vaultDeposit;
         if (!d) continue;
 
-        // Storm chips do not interrupt a deposit (only bullets/ram do).
-        // Dying in the storm still cancels through the dead branch.
+        // storm damage doesn't interrupt a deposit; other damage does
         if (body.health.amount < d.lastHealth - 1e-3 && !body._inStorm) {
             cancelDeposit(body);
             continue;
         }
         d.lastHealth = body.health.amount;
 
-        
-        
-        
         let rateMult = 1;
         if (body.socket) { try { rateMult = require('./shop.js').depositRateMult(body); } catch { /* */ } }
         d.spill = (d.spill || 0) + (DEPOSIT_RATE * rateMult * dtMs) / 1000;

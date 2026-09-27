@@ -678,7 +678,6 @@ Class.arenaCloser = {
     ]
 }
 
-
 // ─── Synced from open-source-arras (missing here) ───
 Class.arrasPolice = {
     PARENT: "booster",

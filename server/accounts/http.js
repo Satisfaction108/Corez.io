@@ -39,7 +39,7 @@ let proxyWarned = false;
 
 // In production, X-Forwarded-For from an untrusted peer almost always means
 // TRUSTED_PROXIES is not set for the real reverse proxy: every player then
-// has the proxy's address and shares its rate limits. Said once, loudly.
+// has the proxy's address and shares its rate limits. Warned once.
 function warnUntrustedProxy(req) {
     if (proxyWarned || !config.isProd || !isTrustedProxyImpl || !req.headers || !req.headers['x-forwarded-for']) return;
     const raw = (req.socket && req.socket.remoteAddress) || '';

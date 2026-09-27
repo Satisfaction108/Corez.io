@@ -1,10 +1,7 @@
-// Loot chests: copper and epic. Six sit on the map at once (4 copper, 2
-// epic), each parked in an EMPTY rock cell - a cell whose rock is gone and
-// is held from regrowing until the chest is taken. Shoot or ram one to
-// break it (about three seconds at full damage): it cracks as it goes, then
-// bursts into a mixed spray of copper, azurite, shard and emerald gems.
-// Epic chests always carry a kit item, copper ones rarely. A broken chest
-// comes back somewhere else about 30 seconds later.
+// Loot chests (WANT: 4 copper, 2 epic), each parked in an empty rock cell
+// that is held from regrowing until the chest is taken. Breaking one sprays
+// mixed ore gems; epic chests always carry a kit item, copper ones rarely.
+// A broken chest respawns elsewhere after RESPAWN_MS.
 const gems = require('./gems.js');
 
 const STORM_GRACE_MS = 6000;
@@ -30,8 +27,7 @@ function alive() {
     return chests;
 }
 
-// Every pad on the map, from the live modules first (their lists are the
-// ones players actually stand on) and the grid's site lists as a fallback.
+// Every pad on the map: live module lists first, grid site lists as fallback.
 function allPads() {
     const out = [];
     try { for (const v of require('./vault.js').getVaults()) out.push(v); } catch { /* */ }
@@ -48,8 +44,7 @@ function allPads() {
 function padsBlocked(x, y, minD, pads = allPads()) {
     const tg = global.gameManager.terrainGrid;
     for (const s of pads) {
-        // pads are drawn up to 1.4x their radius; keep the chest's own body
-        // clear of that too
+        // pads are drawn up to 1.4x their radius; keep the chest clear of that
         const keep = Math.max(minD, ((s.r || 95) * 1.4) + 120);
         if ((s.x - x) ** 2 + (s.y - y) ** 2 < keep * keep) return true;
     }
@@ -60,9 +55,7 @@ function padsBlocked(x, y, minD, pads = allPads()) {
     return false;
 }
 
-// Players and bots only: walking every entity (gems, bullets, props) per
-// candidate spot was a few hundred thousand checks whenever a chest kept
-// failing to find a home, and that read as a hitch every second.
+// Players and bots only; scanning every entity per candidate spot is too slow.
 function tanks() {
     const out = [];
     try {
@@ -77,7 +70,7 @@ function tanksNear(x, y, minD, list = tanks()) {
     }
     return false;
 }
-// Other chests: two of them side by side read as one lump and share a wall.
+// minimum spacing between chests
 const CHEST_GAP = 300;
 function chestNear(x, y, minD = CHEST_GAP) {
     for (const c of chests) {
@@ -114,10 +107,9 @@ function openGround(tg, x, y) {
 }
 
 // ── empty cells ────────────────────────────────────────────────────────
-// A cell is empty when its rock is dead and not growing back. The chest
-// holds the cell (noRegrowUntil) so nothing grows over it, and lets go the
-// moment it is opened. At least one side must be open ground, so the chest
-// is never sealed inside solid wall.
+// A cell is empty when its rock is dead and not growing back. The chest holds
+// the cell so nothing grows over it and releases it when opened. At least one
+// side must be open ground.
 function hasOpenSide(tg, rock) {
     if (!tg.pointInRock) return true;
     const s = (tg._voroRockSz || 1) * (tg.cellSize || 40);
@@ -134,9 +126,9 @@ function roomForChest(tg, x, y) {
     return true;
 }
 
-// No spot with room (a fresh map is all rock but the small spawn pits): the
-// chest smashes a landing pocket out of the rock it would overlap. Never
-// through an emerald. The pocket stays open until the chest is opened.
+// No spot with room (a fresh map is nearly all rock): smash a pocket out of
+// the overlapping rock, never through an emerald. It stays open until the
+// chest is opened.
 function carvePocket(tg, x, y) {
     const hits = [];
     for (const rock of tg.rocks.values()) {
@@ -153,12 +145,10 @@ function carvePocket(tg, x, y) {
 }
 
 // ── reachability ───────────────────────────────────────────────────────
-// Room around the chest is not enough: a pocket of dead cells ringed by live
-// rock (or one carvePocket smashed out of solid wall) is a chest sealed in
-// stone, and from outside it just looks like another rock. A chest only
-// lands where a walk over open cells reaches carved floor (the canyon cells:
-// lanes, pads, pits, the arena - they never regrow), and that walk is held
-// open for as long as the chest stands.
+// Room around the chest is not enough: a pocket ringed by live rock is a
+// sealed chest. A chest only lands where a walk over open cells reaches carved
+// floor (canyon cells: lanes, pads, pits, the arena; they never regrow), and
+// that walk is held open while the chest stands.
 const PATH_MAX = 24;           // cells (~110u each)
 const PASS_R = 24;             // a tank must fit through each step
 function lat(tg, i, j) { return tg.rocks.get(i * 100003 + j); }
@@ -221,8 +211,8 @@ function pickCell(opts = {}) {
     if (!tg || !tg.rocks) return null;
     const st = opts.anywhere ? null : storm().snapshot(Date.now());
     const cells = [];
-    // Carved floor (canyon cells: pads, lanes, the arena) counts as empty
-    // too - on a fresh map it is nearly all the empty ground there is.
+    // carved floor (canyon cells) counts as empty too; on a fresh map it is
+    // nearly all the empty ground there is
     for (const rock of tg.rocks.values()) {
         if (!rock || rock.alive || rock.growing || !rock.worldPoly || rock.chestLock) continue;
         if (!Number.isFinite(rock.wx) || !Number.isFinite(rock.wy)) continue;
@@ -246,8 +236,7 @@ function pickCell(opts = {}) {
         // sealed pockets are out, whatever their size
         const path = exitPath(tg, rock);
         if (!path) continue;
-        // the whole boulder has to fit: a small dead cell with one open side
-        // used to put a chest half on top of the live rock around it
+        // the whole chest has to fit, not just its centre cell
         if (!roomForChest(tg, x, y)) { if (tight.length < 8) tight.push({ rock, path }); continue; }
         rock._exitPath = path;
         return rock;
@@ -307,8 +296,8 @@ function releaseCell(chest) {
         chest._zone.until = until;
         chest._zone = null;
     }
-    // (debug / tutorial chests never had a cell: leave lockRock undefined so
-    // onTaken queues no replacement for them)
+    // debug/tutorial chests have no cell: lockRock stays undefined so
+    // onTaken queues no replacement
     if (rock) chest.lockRock = null;
 }
 
@@ -425,7 +414,7 @@ function onDestroyed(chest) {
     onTaken(chest);
 }
 
-// Kept for the tutorial and debug paths: force a chest open without shooting.
+// Tutorial/debug: force a chest open without shooting.
 function openChest(chest, body) {
     if (!chest || chest.isDead?.() || chest._opened) return;
     if (body) chest.hitters.set(body.id, { body, at: Date.now() });
@@ -450,11 +439,10 @@ function tick(actors) {
     }
 }
 
-// Replacements only ever come through the 30s queue now.
+// Replacements only come through the respawn queue.
 function ensureNearSpawn() { /* no-op: fixed budget, timed respawns */ }
 
-// Keep exactly four copper and two epic chests in play; each taken chest
-// respawns RESPAWN_MS later, somewhere else.
+// Keep want() chests in play; each taken chest respawns RESPAWN_MS later.
 function schedule() {
     const now = Date.now();
     if (now - lastScheduleAt < 1000) return;
@@ -462,16 +450,15 @@ function schedule() {
     const live = alive().filter(c => !c._opened);
     const liveEpic = live.filter(c => c.chestRare).length;
     const liveCommon = live.length - liveEpic;
-    // Due entries leave the queue; they become part of the deficit below
-    // (counting them again here is how the map once held ten chests).
+    // Due entries leave the queue and become part of the deficit below; don't
+    // count them twice.
     respawnQueue = respawnQueue.filter(q => q.at > now);
     const queuedEpic = respawnQueue.filter(q => q.rare).length;
     const queuedCommon = respawnQueue.length - queuedEpic;
     const W = want();
     let needCommon = Math.min(W.common - liveCommon, W.common - liveCommon - queuedCommon);
     let needEpic = Math.min(W.epic - liveEpic, W.epic - liveEpic - queuedEpic);
-    // Over budget (debug spawns, an old bug): retire the oldest extras
-    // without a replacement so the map settles back to 4 + 2.
+    // over budget (e.g. debug spawns): retire the oldest extras, no replacement
     const trim = (list, over) => {
         list.sort((a, b) => (a.chestBornAt || 0) - (b.chestBornAt || 0));
         for (let i = 0; i < over && i < list.length; i++) {
@@ -483,8 +470,8 @@ function schedule() {
     };
     if (liveCommon > W.common) trim(live.filter(c => !c.chestRare), liveCommon - W.common);
     if (liveEpic > W.epic) trim(live.filter(c => c.chestRare), liveEpic - W.epic);
-    // Anything the queue still owes is not a deficit; whatever is left over
-    // (raid start, storm losses) spawns now, two per second at most.
+    // what the queue still owes is not a deficit; the rest (raid start, storm
+    // losses) spawns now, at most two per second
     let budget = 2;
     while (budget-- > 0 && (needCommon > 0 || needEpic > 0)) {
         const rare = needEpic > 0 && (needCommon <= 0 || Math.random() < 0.5);
@@ -506,7 +493,7 @@ function clearAll() {
     respawnQueue = [];
 }
 
-// Local verification helper (DBG chests): how the spawner sees the map.
+// DBG chests: how the spawner sees the map.
 function debugInfo() {
     const tg = global.gameManager.terrainGrid;
     let cells = 0, dead = 0, canyon = 0, noPoly = 0, locked = 0, total = 0;

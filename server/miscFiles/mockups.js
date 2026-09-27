@@ -122,7 +122,7 @@ function constructCircumcirle(point1, point2, point3) {
     if (x3 == x1 || x3 == x2) {
         x3 += 1e-5;
     }
-    
+
     let numer1 = x3 ** 2 + y3 ** 2 - x1 ** 2 - y1 ** 2;
     let numer2 = x2 ** 2 + y2 ** 2 - x1 ** 2 - y1 ** 2;
     let factorX1 = 2 * x2 - 2 * x1;
@@ -153,7 +153,7 @@ function sizeEntity(entity, x = 0, y = 0, angle = 0, scale = 1) {
             endPoints.push([x + Math.cos(theta) * scale * lazyRealSizes[numSides], y + Math.sin(theta) * scale * lazyRealSizes[numSides]]);
         }
     }
-    
+
     // Process guns
     for (let g of entity.guns) {
         // Construct a trapezoid at angle 0
@@ -165,7 +165,7 @@ function sizeEntity(entity, x = 0, y = 0, angle = 0, scale = 1) {
         points.push([g.length, widths[0]]);
         points.push([g.length, -widths[0]]);
         points.push([0, -widths[1]]);
-    
+
         for (let point of points) {
             // Rotate it to the new angle via vector rotation
             let newX = point[0] * cosT - point[1] * sinT,

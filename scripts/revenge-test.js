@@ -39,8 +39,8 @@ const check = (name, cond) => {
 const mkBot = (id, fam) => ({ id, name: 'Bot' + id, isBot: true, botFamilyId: fam, isDead: () => false, carriedGems: 0, royaleAlive: true });
 const mkHuman = (sid, id) => ({ id, name: 'Me', isPlayer: true, socket: { id: sid, status: {} }, isDead: () => true, deathCause: '', finalKillers: [], carriedGems: 100, royaleAlive: true });
 
-// 1. Bot K kills human V: credit + V marked on K. Must not throw (the old
-// block-scoped `s` ReferenceError killed feed/credit/respawn silently).
+// 1. Bot K kills human V: credit + V marked on K. Must not throw: a
+// throw here silently skips feed, credit and respawn.
 const K = mkBot(2, 7);
 const V = mkHuman('x1', 1);
 V.finalKillers = [K];

@@ -145,7 +145,6 @@ Class.oneWayRightWall = {
 	]
 }
 
-
 // ─── Synced from open-source-arras (missing here) ───
 Class.labyrinthWall = {
     PARENT: 'wall',

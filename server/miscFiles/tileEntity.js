@@ -23,7 +23,7 @@ class tileEntity {
         this.entities = [];
         this.data = JSON.parse(JSON.stringify(tile.data));
     }
-    randomInside() { // What this does is it spawns an entity in a random location inside that tile.
+    randomInside() { // random world point inside this tile
         return {
             x: global.gameManager.room.tileWidth * (this.gridLoc.x + Math.random()) - global.gameManager.room.width / 2,
             y: global.gameManager.room.tileHeight * (this.gridLoc.y + Math.random()) - global.gameManager.room.height / 2

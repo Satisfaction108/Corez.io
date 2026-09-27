@@ -5,9 +5,7 @@ class Activation {
         this.timer = 15;
     }
     // A bot's bullets, drones and traps must keep simulating with no player
-    // camera nearby, or bots can only mine and fight while being watched -
-    // off-screen their shots died within a tick and every gun bot looked
-    // frozen until someone drove over to it.
+    // camera nearby, or off-screen bots can't mine or fight.
     botOwned() {
         if (this.body._rootIsBot === undefined) {
             let root = this.body, hops = 0;
@@ -23,10 +21,8 @@ class Activation {
         switch (this.active) {
             case false:
                 this.body.removeFromGrid();
-                // A dropped gem is world state, not a projectile. Killing it
-                // the moment no client camera covers it meant every gem mined
-                // away from a player - all bot mining, and anything you walked
-                // away from - silently vanished.
+                // A dropped gem is world state, not a projectile: it must survive
+                // with no client camera covering it.
                 if (this.body.settings.diesAtRange && !this.body.isGemPickup && !this.botOwned()) this.body.kill();
                 if (!(this.timer--)) this.active = true;
                 break;

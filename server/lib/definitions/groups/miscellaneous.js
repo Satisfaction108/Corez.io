@@ -4,8 +4,7 @@ const {makePolyhedron} = require('../facilitators.js')
 const classic_football = false
 
 // Colour each face by its vertex count: a truncated icosahedron (football) has 12 PENTAGONS
-// (5 verts → black) and 20 HEXAGONS (6 verts → white). Reading it from the geometry means the
-// right faces are always coloured, regardless of face order — no hand-made list to get wrong.
+// (5 verts → black) and 20 HEXAGONS (6 verts → white), independent of face order.
 let ballShape = makePolyhedron({
     VERTEXES: [
         [0.742344, 0.28355, -0.350487],

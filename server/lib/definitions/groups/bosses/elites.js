@@ -722,7 +722,6 @@ Class.legionaryCrasherTop = {
                 TYPE: [ "swarm", { INDEPENDENT: true } ],
                 STAT_CALCULATOR: "swarm",
                 AUTOFIRE: true,
-                
             },
         }, {
             POSITION: [4, 9.5, 0.7, 7, -5, 60, 0.5],

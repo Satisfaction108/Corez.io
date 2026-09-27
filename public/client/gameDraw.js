@@ -203,7 +203,7 @@ var gameDraw = {
         gameDraw.animatedColor.lesbian = gameDraw.getRainbow(lesbian_useSecondSet ? lesbian_oredange : lesbian_white, lesbian_useSecondSet ? lesbian_white : lesbian_magenta, (lesbian_useSecondSet ? five_bars : five_bars - 3) / 2);
         gameDraw.animatedColor.gay = gameDraw.hslToRgb(gay_transition, 0.75, 0.5);
         // gameDraw.animatedColor.trans = [trans_blue, trans_pink, trans_white, trans_pink, trans_blue][five_bars];
-        gameDraw.animatedColor.trans = gameDraw.mixColors(trans_white, 2000 > now % 4000 ? trans_blue : trans_pink, Math.max(Math.min(5 * Math.sin(now % 2000 / 2000 * Math.PI) - 2, 1), 0)); // Animated!
+        gameDraw.animatedColor.trans = gameDraw.mixColors(trans_white, 2000 > now % 4000 ? trans_blue : trans_pink, Math.max(Math.min(5 * Math.sin(now % 2000 / 2000 * Math.PI) - 2, 1), 0));
         gameDraw.animatedColor.magenta = gameDraw.hslToRgb(
             light_purple.h + (purple.h - light_purple.h) * ratio,
             light_purple.s + (purple.s - light_purple.s) * ratio,
@@ -269,9 +269,9 @@ var gameDraw = {
                 const gy1 = (y1 ?? 0);
                 const gx2 = (x2 ?? 0);
                 const gy2 = (y2 ?? 0);
-                
+
                 let gradient = ctx.createLinearGradient(gx1, gy1, gx2, gy2);
-                
+
                 // Color stops remain at same percentages
                 for (let i = 0; i < colorNumber.asset.length; i++) {
                     gradient.addColorStop(i, gameDraw.getColor(colorNumber.asset[i].color));
@@ -518,7 +518,7 @@ var gameDraw = {
         return gameDraw.mixColors(givenColor, dark, gameDraw.color.border);
     },
     getBorderColor: (givenColor) => {
-        // Defensive: ensure givenColor is a valid hex string
+        // Ensure givenColor is a valid hex string
         if (typeof givenColor !== "string" || !givenColor.startsWith("#") || givenColor.length !== 7) {
             givenColor = gameDraw.getColor(givenColor);
             if (typeof givenColor !== "string" || !givenColor.startsWith("#") || givenColor.length !== 7) {

@@ -40,7 +40,7 @@ global.getSpawnableArea = (team, gameManager) => {
     let room = gameManager.room;
     const tiles = (team in room.spawnable && room.spawnable[team].length) ? room.spawnable[team] : room.spawnableDefault;
     let loc = ran.choose(tiles).randomInside();
-    // Dig Wars: rocks may overlap the base (intended) — never spawn inside one.
+    // Dig Wars: rocks may overlap the base (intended); never spawn inside one.
     const tg = gameManager.terrainGrid;
     if (tg && tg.circleHitsRock) {
         const SPAWN_R = 50;
@@ -73,10 +73,9 @@ global.teamColors = [
     "cyan"
 ]
 global.getTeamName = team => [...global.teamNames, , "DREADNOUGHT"][-team - 1] ?? "NEUTRAL";
-// Dig Royale: every player is their own team. Those ids have no entry in
-// teamColors and used to fall through to 3 (yellow), so each viewer saw their
-// own tank yellow. Colours are handed out from a palette at spawn instead;
-// a dead team frees its colour.
+// Dig Royale: every player is their own team, and those ids have no entry in
+// teamColors (they would fall through to yellow). Colours are handed out from
+// a palette at spawn instead; a dead team frees its colour.
 global.royaleTeamColors = new Map();
 global.ROYALE_PALETTE = [10, 12, 11, 14, 2, 0, 4, 5, 15, 13, 1];
 // Duos: a team shares one colour. The duo server holds a team's colour for
@@ -267,10 +266,9 @@ global.bringToLife = (() => {
         // fires. Bots do not have player key flags, so the resolved control
         // state is the reliable source for both kinds of input.
         // Never inside the spawn grace (spawnGraceUntil), and never for a Dig
-        // Royale player: io_listenToPlayer owns that rule (fresh input only),
-        // because a held key, the respawn click or autofire left on made
-        // this check strip the shield on the very first tick, before it was
-        // ever drawn.
+        // Royale player: io_listenToPlayer owns that rule (fresh input only), since
+        // a held key, the respawn click or autofire would strip the shield on the
+        // first tick.
         const inGrace = (my.spawnGraceUntil || 0) > Date.now();
         if (my.invuln && my.type === 'tank' && !my.royaleLobby && !my.royaleFrozen && !inGrace && !(Config.dig_royale && my.socket)) {
             const moving = my.control.goal &&
@@ -632,7 +630,7 @@ global.checkIfInView = (() => {
     return (boolean, addToNearby, clients, my) => {
         for (let socket of clients) {
             boolean = my.gameManager.views.some(v => v.check(my));
-        
+
             if (boolean) {
                 if (!socket.nearby.includes(my) && addToNearby) my.onRender = true, socket.nearby.push(my);
             } else my.onRender = false;

@@ -1,7 +1,6 @@
 let fs = require('fs'),
     path = require('path');
 
-
 class definitionCombiner {
     constructor(data) {
         this.groupLoc = data.groups;

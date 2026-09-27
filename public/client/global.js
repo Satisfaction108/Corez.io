@@ -76,20 +76,18 @@ function Clickable() {
         hide: () => {
             active = false;
         },
-        // Unscaled last-placed rect (matches the GUI-space coords passed to set()),
-        // or null if currently hidden/never placed. Lets external code (e.g. the
-        // tutorial overlay) draw highlights around real, live UI geometry instead
-        // of duplicating each layout's position math.
+        // Unscaled last-placed rect (GUI-space coords, as passed to set()), or null
+        // if hidden/never placed. Lets overlays (e.g. the tutorial) highlight live
+        // UI geometry without duplicating each layout's position math.
         rect: () => active ? { x: raw.x, y: raw.y, w: raw.w, h: raw.h } : null,
     };
 }
 let Region = (size) => {
-    
     let data = [];
     for (let i = 0; i < size; i++) {
         data.push(Clickable());
     }
-    
+
     return {
         place: (index, ...a) => {
             if (index >= data.length) {
@@ -111,8 +109,6 @@ let Region = (size) => {
 let gameDraw;
 
 const global = {
-    
-    
     KEY_SPECIAL: 192, 
 
     KEY_ESC: 27,
@@ -141,7 +137,7 @@ const global = {
     KEY_SPIN_LOCK: 88,
 
     KEY_LEVEL_UP: 221, 
-    KEY_TOKEN: -1,         // admin testbed reset, unbound (P records now)
+    KEY_TOKEN: -1,         // unbound
     KEY_CLASS_TREE: 84,
     KEY_MAX_STAT: 70,
     KEY_SUICIDE: 79,
@@ -182,7 +178,7 @@ const global = {
     showTree: false,
     scrollX: 0,
     realScrollX: 0,
-    
+
     screenWidth: window.innerWidth,
     screenHeight: window.innerHeight,
     gameWidth: 0,
@@ -236,7 +232,7 @@ const global = {
         classTreeZoomOut: Region(2),
         classTreeZoomIn: Region(2),
         classTreeClose: Region(1),
-        
+
         dailyTankUpgrade: Clickable(),
         dailyTankAd: Clickable(),
         dailyTankCloseAd: Clickable(),
@@ -250,8 +246,7 @@ const global = {
             toggleBoxes: Region(100),
             HoverBoxes: Region(100),
         },
-        
-        
+
         vault: Region(12)
     },
     dailyTankAd: {
@@ -299,7 +294,7 @@ const global = {
             color: "#000000"
         },
     },
-    
+
     gems: {
         carried: 0,
         cap: 0,
@@ -339,26 +334,24 @@ const global = {
     hurtPower: 0,
     deadFlashAt: -1e9,
     celebrateAt: -1e9,
-    
-    
+
     leader: { id: -1, x: 0, y: 0, team: 0, at: -1e9 },
-    
+
     teamBanked: { blue: 0, red: 0, at: -1e9 },
-    
+
     teammates: [],
-    
+
     enemyPings: [],
     // duos: partner talk (socketinit 'TC' / 'PG', drawn in app.js)
     teamChat: [],
     duoPings: [],
     duoChatAll: false,     // duos: chat goes to everyone nearby instead of your partner
-    
+
     chatMode: 'global',
-    
-    
+
     showBigMap: false,
     bigMap: { zoom: 1, cx: 0, cy: 0, dragging: false, lastX: 0, lastY: 0 },
-    
+
     vaults: [],
     vault: {
         onPad: false,
@@ -367,10 +360,10 @@ const global = {
         total: 0,           
         doneAt: -1e9,       
     },
-    
+
     outposts: [],
     outpostState: [],
-    
+
     chambers: [],
     chamberState: [],
     // outfitter pads + the shop panel state
@@ -505,7 +498,6 @@ const global = {
             tabSlideAnim: util.Smoothbar(0, 0.3, 1.5, 0.03, 0.025, true),
         };
         let list = {
-            
             id: -1,
             x: global.screenWidth / 2,
             y: global.screenHeight / 2,

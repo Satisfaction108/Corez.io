@@ -13,8 +13,7 @@ function simplecollide(my, n) {
     n.accel.y -= fy;
 }
 
-// Walk the master chain to the entity that owns this one and ask whether a
-// human player is behind it.
+// Whether a human player is at the root of this entity's master chain.
 function rootIsPlayer(e) {
     let root = e, hops = 0;
     while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
@@ -312,9 +311,7 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
             // n.damageReceived += damage._me * deathFactor._me;
             let __my = damage._n * deathFactor._n;
             let __n = damage._me * deathFactor._me;
-            // Loot chests are for players: a bot (or its bullets) bouncing
-            // off one leaves it whole, so six chests stay six until a human
-            // breaks them.
+            // loot chests only take damage from tanks and their bullets
             if (my.isLootChest && !rootIsTank(n)) { __my = 0; my._gatedN = (my._gatedN | 0) + 1; }
             if (n.isLootChest && !rootIsTank(my)) { __n = 0; n._gatedN = (n._gatedN | 0) + 1; }
             my.damageReceived += __my * Number(__my > 0
@@ -384,7 +381,7 @@ function mooncollide(moon, bounce) {
     let properCollisionRadius = moon.size + bounce.size
     // Exit if too far
     if (collisionRadius >= properCollisionRadius) return;
-    
+
     // Get elasticity
     let elasticity = bounce.type == 'tank' ? 0 : bounce.type == "bullet" ? 1 : bounce.pushability;
 
@@ -392,7 +389,7 @@ function mooncollide(moon, bounce) {
     let angleFromMoonToBounce = Math.atan2(bounce.y - moon.y, bounce.x - moon.x);
     bounce.x = moon.x + properCollisionRadius * Math.cos(angleFromMoonToBounce);
     bounce.y = moon.y + properCollisionRadius * Math.sin(angleFromMoonToBounce);
-    
+
     // Find relative velocity vectors to the moon's surface
     let velocityDirection = bounce.velocity.direction;
     let tangentVelocity = bounce.velocity.length * Math.sin(angleFromMoonToBounce - velocityDirection);
@@ -408,7 +405,7 @@ function mooncollide(moon, bounce) {
     // Assign velocity after rotating to the new angle
     bounce.velocity.x = newVelocityMagnitude * Math.sin(Math.PI - relativeVelocityAngle - angleFromMoonToBounce);
     bounce.velocity.y = newVelocityMagnitude * Math.cos(Math.PI - relativeVelocityAngle - angleFromMoonToBounce);
-    // So the bots aint a brain dead npc
+    // lets bot AI react to having hit a wall
     bounce.justHittedAWall = true;
 }
 
@@ -493,7 +490,7 @@ function mazewallcustomcollide(wall, bounce) {
             bounce.originalFov = bounce.FOV;
         }
     }
-    
+
     const trueWallSize = wall.size * lazyRealSizes[4] / Math.SQRT2 + 2;
     const isColliding = !(
         bounce.x + bounce.size < wall.x - trueWallSize ||
@@ -501,14 +498,13 @@ function mazewallcustomcollide(wall, bounce) {
         bounce.y + bounce.size < wall.y - trueWallSize ||
         bounce.y - bounce.size > wall.y + trueWallSize
     );
-    
 
     if (!isColliding) {
         bounce.touchingSizeWall = false;
         bounce.touchingFovWall = false;
         return;
     }
-    
+
     const collisionFaces = [
         bounce.x < wall.x,
         bounce.y < wall.y,
@@ -577,7 +573,7 @@ function mazewallcustomcollide(wall, bounce) {
                 }
                 break;
         }
-        
+
         for (let axis in wallPushPositions[i]) {
             bounce[axis] = wallPushPositions[i][axis];
             if (wall.walltype !== 2 && wall.walltype !== 4 && wall.walltype !== 8) {
@@ -599,7 +595,7 @@ function mazewallcustomcollide(wall, bounce) {
         const cornerY = cornerPositions[i].y;
         if (Math.hypot(bounce.x - cornerX, bounce.y - cornerY) > bounce.size) continue;
         bounce.collisionArray.push(wall);
-        
+
         const angleFromCornerToBounce = Math.atan2(bounce.y - cornerY, bounce.x - cornerX);
         switch (wall.walltype) {
             case 2:

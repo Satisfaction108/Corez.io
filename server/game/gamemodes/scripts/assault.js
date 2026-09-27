@@ -4,7 +4,7 @@ class Assault {
         this.choices = ["destroyerDominator", "gunnerDominator", "trapperDominator"];
         this.defineProperties();
     }
-    
+
     spawnDominator(tile, team, type, originalType, saveCurrentType = false) {
         let o = new Entity(tile.loc);
         o.define(type);
@@ -128,7 +128,7 @@ class Assault {
         clearInterval(this.secondaryTimeInterval);
         this.defineProperties();
     }
-    
+
     redefine(theshit) {
         this.room = theshit.room;
         this.defineProperties();

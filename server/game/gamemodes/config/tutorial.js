@@ -16,7 +16,6 @@ module.exports = {
     // talk over the very first one.
     spawn_message: "Welcome to training.",
 
-
     // The tutorial script spawns its own scripted bots (a stationary dummy and
     // a deliberately weak fighter) at the right moment, per plot. The ambient
     // bot filler must stay out of it.

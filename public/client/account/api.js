@@ -1,4 +1,4 @@
-// Thin client for the accounts HTTP API (Phase 1 contract).
+// Thin client for the accounts HTTP API.
 // Every call resolves to { ok, status, data } and never throws: a network
 // failure or timeout comes back as status 0 with a synthetic error body, so
 // callers only ever branch on `ok` and read `data.error.code`.
@@ -26,8 +26,8 @@ async function request(method, path, body) {
         let data = null;
         if (res.status !== 204) {
             const text = await res.text();
-            // An old server answers unknown paths with index.html; treat
-            // anything that is not JSON as "no data".
+            // A server without the accounts API answers unknown paths with
+            // index.html; anything that is not JSON counts as "no data".
             if (text) { try { data = JSON.parse(text); } catch (e) { data = null; } }
         }
         return { ok: res.ok, status: res.status, data };
@@ -70,7 +70,7 @@ export const deleteAccount = (currentPassword) => post('/api/account/delete', cu
 // Discord OAuth is a full-page redirect, not a fetch.
 export const discordStartUrl = (mode) => '/auth/discord/start?mode=' + encodeURIComponent(mode || 'login');
 
-// Item Shop and Locker (Phase 3). Money routes carry an idempotency key so
+// Item Shop and Locker. Money routes carry an idempotency key so
 // a retried click never charges twice.
 export function idemKey() {
     const b = new Uint8Array(12);
@@ -84,7 +84,7 @@ export const refund = (purchaseId) => post('/api/store/refund', { purchaseId });
 export const storeHistory = () => get('/api/store/history');
 export const locker = () => get('/api/locker');
 export const equip = (slot, itemId, color) => post('/api/locker/equip', color ? { slot, itemId, color } : { slot, itemId });
-// Friends, profiles, the leaderboard and daily quests (Phases 4 and 5).
+// Friends, profiles, the leaderboard and daily quests.
 export const friends = () => get('/api/friends');
 export const friendRequest = (username) => post('/api/friends/request', { username });
 export const friendRespond = (userId, accept) => post('/api/friends/respond', { userId, accept: !!accept });
@@ -92,7 +92,7 @@ export const friendCancel = (userId) => post('/api/friends/cancel', { userId });
 export const friendRemove = (userId) => post('/api/friends/remove', { userId });
 export const friendBlock = (who) => post('/api/friends/block', /^DW-/i.test(String(who || '')) ? { userId: who } : { username: who });
 export const friendUnblock = (userId) => post('/api/friends/unblock', { userId });
-// Chat with friends.
+
 export const friendMessages = (userId, before) => get('/api/friends/messages?userId=' + encodeURIComponent(userId) + (before ? '&before=' + encodeURIComponent(before) : '') + '&limit=50');
 export const friendSend = (userId, body) => post('/api/friends/messages', { userId, body });
 export const friendRead = (userId, upTo) => post('/api/friends/messages/read', { userId, upTo });

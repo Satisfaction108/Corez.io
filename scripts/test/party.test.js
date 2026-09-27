@@ -256,7 +256,7 @@ test('duo teams: two lone fillers pair; fill off stays alone; a late filler take
     const d = b.join({ mk: 't:d', fill: true });
     assert.notEqual(d.team.id, off.team.id, 'fill off never gets a stranger');
     assert.equal(d.team.members.size, 1);
-    // c drops for good: d... no, a fresh filler joins a (now alone) after the slot frees
+    // c drops for good; a fresh filler then joins a (now alone) once the slot frees
     b.away('t:c');
     b.tick(b.awayMs + 1);
     b.sweep();
@@ -372,8 +372,8 @@ test('duo fill queue: a waiter takes the empty slot of a player whose partner le
 
 test('duo standings: stale rows with a reused team id never merge; a key never holds more than two rows', () => {
     // rows as the board makes them: tm is the formation key, solo rows have none.
-    // The same arras team id (-300) was reused by four different bodies over
-    // a raid; only the two that formed a pair share a key.
+    // Here one arras team id (-300) is reused by four bodies over a raid;
+    // only the two that formed a pair share a key.
     const rows = [
         { id: 1, tm: 'd1', name: 'Dylan', score: 900, team: -300 },
         { id: 2, tm: 'd1', name: 'mini_ruby', score: 400, team: -300 },

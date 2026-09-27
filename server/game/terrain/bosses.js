@@ -3,8 +3,8 @@
 const gems = require('./gems.js');
 
 const KINDS = {
-    // every boss digs (digRate = share of a rock's health chewed per bite) so
-    // none of them ever sits stuck in the wall when the storm moves
+    // every boss digs (digRate = share of a rock's health per bite) so none
+    // gets stuck in the wall when the storm moves
     warden:    { cls: 'royaleVaultWarden',    name: 'Vault Warden',    gems: 2500, score: 600, color: '#8d6adf', digs: true, digRate: 0.18, blurb: 'Armored. Traps. Sixteen barrels.' },
     drillhead: { cls: 'royaleMagmaDrillhead', name: 'Magma Drillhead', gems: 1800, score: 450, color: '#ff6c3a', digs: true, digRate: 0.3, contact: false, blurb: 'Fast. Digs through the wall. Hits like a truck.' },
     colossus:  { cls: 'royaleGeodeColossus',  name: 'Geode Colossus',  gems: 3200, score: 750, color: '#62caa7', digs: true, digRate: 0.18, blurb: 'The wall itself. Thirteen turrets.' },
@@ -164,9 +164,8 @@ function onDead(o) {
 function tick(t, combatantCount) {
     if (!nextAt) scheduleNext(FIRST_DELAY_MS);
     if (boss) {
-        // health hit zero but the entity's 'dead' event has not fired yet:
-        // settle it here, or the event handler would see a stale boss and
-        // skip the eruption, the chest and the kill effect
+        // Health hit zero before the 'dead' event fired: settle it here, or
+        // the handler sees a stale boss and skips the eruption, chest and fx.
         if (boss.isDead?.()) { onDead(boss); return; }
         if (t > expiresAt) {
             boss.bossBurrowed = true;

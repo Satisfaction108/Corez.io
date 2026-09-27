@@ -32,9 +32,8 @@ function generate(cfg) {
             }
         }
     } else if (!cfg.fullLattice) {
-    // Straight left/right carved boundaries: the solid body is a clean
-    // rectangle. The natural-looking rocky border comes from the Voronoi
-    // cells that overlap the rect edge (client render + server colliders).
+    // Straight left/right carved boundaries; the rocky look comes from the
+    // Voronoi cells overlapping the rect edge.
     const leftEdge  = lo + 2;
     const rightEdge = (cols - 1) - (lo + 2);
     for (let r = 0; r < rows; r++) {
@@ -42,12 +41,9 @@ function generate(cfg) {
         for (let c = rightEdge + 1; c < cols; c++) grid.set(c, r, CELL.EMPTY);
     }
     }
-    // fullLattice (Dig Royale): every cell stays solid. Side-empty strips are
-    // 2TDM base lanes; on a circle they show up as missing rock on east/west.
-    // Top/bottom are NOT carved: no bases there, so rock fills full height and
-    // covers all empty space. The jagged top/bottom silhouette is added on the
-    // client in _smoothClipLoop (jagged outward, not by removing cells).
-
+    // fullLattice (Dig Royale): every cell stays solid; the 2TDM side lanes
+    // would show as missing rock on a circle. Top/bottom are never carved; the
+    // client adds the jagged silhouette in _smoothClipLoop.
 grid.cellSize        = tileWidth / SUBCELLS;
     grid.subCellsPerTile = SUBCELLS;
     grid.tileCols        = tileCols;

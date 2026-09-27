@@ -1,25 +1,10 @@
-// Rank badges: hand-authored flat vector emblems in the game's own look
-// (thick dark rims like the tanks and gems, two or three flat tones per
-// material, light from the top left, one white glint, no gradients).
-//
-// Every badge is drawn on a 100-unit grid centred on (0, 0), y down, from
-// explicit point lists and bezier paths (see GEO). A badge is a list of
-// layers, back to front. It paints in two passes:
-//
-//   1. silhouette: every layer stroked with its ink at the outer rim width,
-//      so the whole emblem gets one thick, even outline;
-//   2. fills: each layer strokes a thinner inner line (so a piece reads
-//      where it overlaps another), fills its mid tone, then its shading:
-//      the right half in the shadow tone, a light band along its top-left
-//      edge, or its own facets.
-//
-// Divisions I / II / III are diamond pips set into a ribbon across the
-// bottom of the emblem. Three levels of detail: 'tiny' (<= 20 px: the
-// silhouette, one glyph and big pixel-snapped pips), 'small' (<= 40 px:
-// no fine detail) and 'full'. Sprites are cached per rank and device-pixel
-// size, so a badge over a tank is one drawImage a frame. Used by the
-// nameplates, the board, the death card, the ceremony and (as a data URL)
-// the menu.
+// Rank badges: flat vector emblems in the game's look (thick dark rims, two
+// or three flat tones per material, top-left light, one white glint).
+// Drawn on a 100-unit grid centred on (0, 0), y down (see GEO), as layers
+// back to front in two passes: a silhouette (every layer stroked at the
+// outer rim width), then fills (inner line, mid tone, shading).
+// Divisions I / II / III are diamond pips in a ribbon along the bottom.
+// Sprites are cached per rank and device-pixel size.
 
 const R = () => (typeof window !== 'undefined' && window.DWRanks) || null;
 
@@ -721,9 +706,8 @@ function pipsTiny(c, n, tier, px, bottom) {
 }
 
 /* ── high-quality small badges ──────────────────────────────────────── */
-// Small badges used to switch to simplified art, which read as a different
-// icon. Now every size is the real (full-detail) badge, painted large and
-// shrunk in halving steps so it stays smooth instead of aliasing.
+// Every size uses the full-detail art (simplified art reads as a different
+// icon), painted large and shrunk in halving steps to avoid aliasing.
 function paintShrunk(c, division, devPx, opts) {
     const MASTER = Math.max(160, devPx * 4);
     const pad = Math.ceil(MASTER * 0.06) + 2;

@@ -1,17 +1,11 @@
 // Client IP resolution behind a reverse proxy.
 //
-// X-Forwarded-For is only believed when the TCP peer is a trusted proxy:
-// TRUSTED_PROXIES (comma list of IPs or CIDRs, IPv4 and IPv6, default
-// "127.0.0.1,::1"). Loopback is always trusted on top of that list, because
-// the main process splices tutorial / Dig Wars sockets to its workers over
-// loopback and stamps X-Forwarded-For itself (server.js proxyUpgradeToWorker).
-//
-// The header is walked right-to-left, skipping our own proxies, so the first
-// untrusted hop is the real client and anything a player wrote into the
-// header themselves (it sits further left) never wins. Every other
-// forwarding header (cf-connecting-ip, fastly-client-ip, x-real-ip,
-// forwarded, z-forwarded-for) is ignored: our proxy does not set them, so any
-// value there came straight from the client.
+// X-Forwarded-For is only honoured when the TCP peer is in TRUSTED_PROXIES
+// (comma list of IPs or CIDRs, default "127.0.0.1,::1"). Loopback is always
+// trusted: the main process proxies worker sockets over loopback and sets
+// X-Forwarded-For itself (server.js proxyUpgradeToWorker).
+// The header is walked right-to-left past trusted hops, so client-written
+// entries (further left) never win. Other forwarding headers are ignored.
 const net = require("net");
 
 const DEFAULT_TRUSTED = "127.0.0.1,::1";
@@ -19,9 +13,8 @@ const ALWAYS_TRUSTED = [["127.0.0.0", 8, "ipv4"], ["::1", 128, "ipv6"]];
 
 let cachedSpec = null;
 let cachedList = null;
-// Untrusted peers already reported as carrying X-Forwarded-For. Capped so a
-// client that spoofs the header cannot flood the log (or be the only name in
-// it and get mistaken for the real proxy).
+// Untrusted peers already reported as sending X-Forwarded-For. Capped so a
+// spoofing client cannot flood the log.
 const reportedPeers = new Set();
 const MAX_REPORTED_PEERS = 5;
 
@@ -80,8 +73,7 @@ function isTrustedProxy(addr) {
     }
 }
 
-// The operator has to learn the proxy's address to configure it, and this is
-// the one place that sees it.
+// Logs an untrusted proxy's address so the operator can add it to TRUSTED_PROXIES.
 function reportProxiedPeer(peer) {
     if (reportedPeers.has(peer) || reportedPeers.size >= MAX_REPORTED_PEERS) return;
     reportedPeers.add(peer);
@@ -99,11 +91,11 @@ function clientIp(req) {
     }
     const hops = String(Array.isArray(xff) ? xff.join(",") : xff).split(",").map(normalize).filter(Boolean);
     for (let i = hops.length - 1; i >= 0; i--) {
-        // A proxy we trust never writes garbage, so this hop was forged.
+        // a trusted proxy never writes garbage, so this hop was forged
         if (!ipType(hops[i])) return peer;
         if (!isTrustedProxy(hops[i])) return hops[i];
     }
-    // Every hop is one of ours (a local client through a local proxy).
+    // every hop is trusted (a local client through a local proxy)
     return hops.length ? hops[0] : peer;
 }
 

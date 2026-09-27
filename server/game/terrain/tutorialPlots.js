@@ -1,13 +1,11 @@
 // TUTORIAL PLOTS
 //
-// The engine runs one shared room per server process, so "every learner gets
-// their own world" is bought a different way: the room is carved into a grid of
-// ARENAS, separated by a gutter wide enough that no learner can ever see into a
-// neighbour's arena.
+// The engine runs one room per process, so the tutorial room is split into a
+// grid of ARENAS (one per learner) separated by gutters wide enough that no
+// learner can see into a neighbour's arena.
 //
-// ── what an arena looks like ──────────────────────────────────────────────
-// A small copy of the Dig Royale map: a round island of solid rock with the
-// same landmarks the real raid has, in the same visual language.
+// Each arena is a small Dig Royale map: a round island of rock with the real
+// raid's landmarks.
 //
 //                         (solid rock, richest ore
 //                          and the emeralds up here)
@@ -17,26 +15,17 @@
 //                               ||
 //                            < SHOP >
 //
-//   - the rainbow vault sits in the middle, exactly like the Center Vault;
-//   - the learner starts in a dug-out clearing on the west side, big enough
-//     for the practice fights, chests and the training boss;
-//   - three tunnels, the kind other miners leave behind, link the clearing,
-//     the vault, the practice base (east) and the shop (south);
-//   - everything else is rock, with ore graded like the real map: copper near
-//     the middle, azurite further out, shards near the rim.
+//   - rainbow vault in the middle (like the Center Vault);
+//   - the learner spawns in a west clearing sized for fights, chests and the boss;
+//   - tunnels link clearing, vault, practice base (east) and shop (south);
+//   - ore graded like the real map: copper middle, azurite out, shards at the rim.
 //
-// ── why rocks are shaped by KILLING them ──────────────────────────────────
-// The cell grid does NOT decide where rock exists. buildContour() reads the
-// cells only to derive the voronoi lattice bounds and then fills that whole
-// rectangle with rocks - every lattice cell in range becomes a real collider
-// whether the cells under it are solid or not.
-//
-// So: carveTerrain() fills the cells SOLID (giving lattice bounds that cover
-// the room), and sculpt() then kills every rock that should not exist. Dead
-// rocks ride the 'TG' snapshot as `{k, h:0, d:1}`, and the client's renderer
-// drops exactly those keys - so client and server agree without either of them
-// re-deriving the layout. The voronoi geometry itself is never touched, which
-// is what keeps the four mirrored implementations in sync.
+// ── rocks are shaped by KILLING them ──────────────────────────────────────
+// Cells do not decide where rock exists: buildContour() uses them only for the
+// voronoi lattice bounds and fills that whole rectangle with rocks. So
+// carveTerrain() fills every cell solid and sculpt() kills unwanted rocks.
+// Dead rocks ride the 'TG' snapshot as `{k, h:0, d:1}` and the client drops
+// those keys, so the voronoi geometry (mirrored in four places) is untouched.
 //
 // Cells must NOT be modified after buildContour(): the client recomputes the
 // lattice bounds from the transmitted cell array.
@@ -45,19 +34,15 @@ const { CELL, ORE, ORE_HP } = require('./terrainGrid.js');
 
 const TILE = 420;          // world units per room tile (Config.map_tile_width)
 
-// The arena and the dead space around it.
-//
-// Terrain is never view-culled, so a neighbour's rock shows up the moment it
-// falls inside the viewport (about 2000 across at the default FOV). The island
-// is 1900 in radius inside a 2520 half-arena, and learners are fenced to the
-// island, so two islands' rims are 2 * 620 + a 3-tile gutter = ~2500 apart:
-// nothing but void on every side of your own island.
+// Terrain is never view-culled, and the viewport is ~2000 across at default
+// FOV. Island radius 1900 in a 2520 half-arena, plus a 3-tile gutter, puts
+// neighbouring rims ~2500 apart, so a fenced learner only sees void around them.
 const PLOT_TILES   = 12;
 const GUTTER_TILES = 3;
 const PITCH_TILES  = PLOT_TILES + GUTTER_TILES;   // arena-to-arena spacing
 
-// A SQUARE grid on purpose: the in-game full map can lock to exactly one arena
-// with a single zoom factor (room / arena) - see app.js.
+// Square grid so the full map can lock to one arena with a single zoom factor
+// (room / arena), see app.js.
 const PLOT_COLS = 2;       // 2 x 2 = 4 concurrent learners
 const PLOT_ROWS = 2;
 
@@ -70,8 +55,8 @@ const ROOM_TILES_Y = PLOT_ROWS * PITCH_TILES;
 // World units from the arena centre.
 
 const ISLAND_R = 1900;
-// Soft fence, a little past the rim: the rim rock is the real wall, the fence
-// only stops someone who has mined through it from driving into the void.
+// Soft fence just past the rim: stops anyone who mined through the rim rock
+// from driving into the void.
 const FENCE_R = ISLAND_R + 90;
 
 const CLEARING = { x: -960, y: 0, r: 500 };
@@ -80,14 +65,11 @@ const BASE_AT  = { x: 1180, y: 0 };
 const SHOP_AT  = { x: 0, y: 820 };
 
 const LAYOUT = {
-    // The middle of the dug-out clearing.
     spawn:    { x: CLEARING.x, y: CLEARING.y },
     clearing: { x: CLEARING.x, y: CLEARING.y },
-    // The rainbow vault, dead centre like the real Center Vault.
     vault:    VAULT_AT,
-    // The practice base (an outpost pad the learner captures).
+    // practice base (an outpost pad the learner captures)
     outpost:  BASE_AT,
-    // The shop pad, down the south tunnel.
     shop:     SHOP_AT,
     // Where the mining lesson looks first: the clearing's north face, where
     // the teaching row of ores is placed.
@@ -99,11 +81,9 @@ const LAYOUT = {
     boss:     { x: CLEARING.x + 150, y: CLEARING.y },
 };
 
-// Holes in the rock. Discs carve the pads and the clearing, capsules carve the
-// tunnels between them. Every hole also kills rocks whose centre is within
-// r + 70 and any whose corner is within r, so a tunnel of r 60 comes out
-// roughly 300 units wide. Pad radii match
-// royaleLayout's pad carving.
+// Holes in the rock: discs for pads and the clearing, capsules for tunnels.
+// A hole kills rocks whose centre is within r + 70 or any corner within r, so
+// an r 60 tunnel is ~300 units wide. Pad radii match royaleLayout.
 const HOLES = [
     { kind: 'disc', x: CLEARING.x, y: CLEARING.y, r: CLEARING.r },
     { kind: 'disc', x: VAULT_AT.x, y: VAULT_AT.y, r: 150 },
@@ -183,8 +163,7 @@ function plotAt(x, y) {
 
 // ─── terrain ──────────────────────────────────────────────────────────────
 
-// Fill every cell solid. This is what gives buildContour() lattice bounds that
-// span the whole room; the actual shape of the rock is decided by sculpt().
+// Every cell solid, so buildContour()'s lattice spans the room; sculpt() shapes it.
 function carveTerrain(grid) {
     for (let r = 0; r < grid.rows; r++) {
         for (let c = 0; c < grid.cols; c++) grid.set(c, r, CELL.BASALT);
@@ -241,10 +220,9 @@ function holeDist(h, x, y) {
     return h.kind === 'disc' ? Math.hypot(x - h.x, y - h.y) : segDist(x, y, h.x0, h.y0, h.x1, h.y1);
 }
 
-// Does this rock belong on the island? Same rules as royaleLayout: a rock
-// survives the rim if its centre is inside a jittered radius or any corner
-// touches the circle, so the edge is ragged rock rather than a clean arc; a
-// hole kills a rock whose centre is within r + 70 or any corner within r.
+// Same rules as royaleLayout: a rock survives the rim if its centre is inside a
+// jittered radius or any corner touches the circle (a ragged edge). Holes kill
+// as described at HOLES.
 function keepRock(rock, loc) {
     const cx = loc.lx, cy = loc.ly;
     const jitter = hash01(rock.vi, rock.vj, 500) * 180 - 90;
@@ -263,10 +241,9 @@ function keepRock(rock, loc) {
     return true;
 }
 
-// Shape the rock, then seed the ore. Runs AFTER buildContour(), which is what
-// creates the rocks in the first place. buildContour also runs the live game's
-// room-wide passes (canyon lanes, emerald cells, chamber pockets), none of
-// which mean anything here, so every rock is re-decided from scratch.
+// Runs AFTER buildContour(), which creates the rocks. Its room-wide live-game
+// passes (canyon lanes, emerald cells, chamber pockets) do not apply here, so
+// every rock is re-decided from scratch.
 function sculpt(grid) {
     // ROCK_HEALTH is not exported, but every rock was built as
     // ROCK_HEALTH * ORE_HP[ore], so one live rock recovers the unit.
@@ -286,13 +263,10 @@ function sculpt(grid) {
     seedOres(grid, unitHealth);
 }
 
-// Ore graded like the real map (royaleLayout.radialOre): about a quarter of
-// rocks carry ore, copper in the middle, azurite further out, shards near the
-// rim. On top of that, per arena:
-//   - two emeralds deep in the north rock, something to dig toward;
+// Ore graded like royaleLayout.radialOre (~26% of rocks). Per arena also:
+//   - two emeralds deep in the north rock;
 //   - a teaching row: the four rocks nearest the clearing's north face are
-//     copper, azurite, shard and emerald, so the mining lesson can always
-//     show every tier no matter which rock the learner picks.
+//     copper, azurite, shard and emerald, so the lesson can show every tier.
 function seedOres(grid, unitHealth) {
     if (!unitHealth) {
         for (const rock of grid.rocks.values()) {

@@ -12,9 +12,8 @@ const skcnv = {
     min: 10,
 };
 
-// 11 stats: the ten arras stats plus Mining Power (index 10). Every array
-// that flows in here may still be the old 10-long shape, so pad() is the
-// one place that tolerates both.
+// 11 stats: the ten arras stats plus Mining Power (index 10). Incoming arrays
+// may still be 10 long; pad() is the one place that tolerates both.
 const SKILL_COUNT = 11;
 
 function pad(arr, fill) {

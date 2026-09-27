@@ -229,7 +229,7 @@ class turretEntity extends EventEmitter {
             this.refreshBodyAttributes();
         }
     };
-    
+
     get size() {
         return this.bond.size * this.bound.size;
     };
@@ -266,7 +266,7 @@ class turretEntity extends EventEmitter {
     };
 
     face() { global.runFace(this) };
-    
+
     syncTurrets() {
         for (let gun of this.guns.values()) gun.syncChildren();
         for (let turret of this.turrets.values()) {

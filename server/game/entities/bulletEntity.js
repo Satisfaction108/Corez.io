@@ -212,7 +212,7 @@ class bulletEntity { // Basically an (Entity) but with heavy limitations to impr
 
                 let savedFacing = host.facing;
                 let savedSize = host.SIZE;
-                
+
                 host.controllers = [];
                 host.define("genericEntity");
                 gun.bulletInit(host);

@@ -8,9 +8,9 @@ let spawnPermanentBaseProtector = (loc, team) => {
 teamCheck = (tile, team) => {
     for (let i = 0; i < tile.entities.length; i++) {
         let entity = tile.entities[i];
-        // Dig Wars: loose gemdust is neutral loot — the base zone must not
+        // Dig Wars: loose gemdust is neutral loot; the base zone must not
         // vaporize it (outer wall rocks overlap the base apron, so their
-        // gems used to die the same tick they spawned)
+        // gems would die the same tick they spawn)
         if (entity.isGemPickup) continue;
         if (entity.team !== team && !entity.ac && !entity.master.master.ac && !entity.isArenaCloser && !entity.master.master.isArenaCloser) {
             // Straight kill() by the tile: no damage, no bullet, nobody in the

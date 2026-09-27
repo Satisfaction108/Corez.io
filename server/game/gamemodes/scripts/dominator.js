@@ -23,9 +23,9 @@ class Domination {
         o.permanentSize = o.SIZE;
         o.isDominator = true;
         o.controllers = [new ioTypes.nearestDifferentMaster(o, {}, global.gameManager), new ioTypes.spin(o, { onlyWhenIdle: true })];
-    
+
         tile.color = colorAsString ? `${color}` : color;
-    
+
         if (!this.teamcounts[team]) {
             this.teamcounts[team] = 0;
         }
@@ -37,10 +37,10 @@ class Domination {
             if (!this.teamcounts[team]) {
                 delete this.teamcounts[team];
             }
-    
+
             let newTeam = TEAM_ENEMIES,
                 newColor = getTeamColor(newTeam);
-    
+
             if (team === TEAM_ENEMIES) {
                 let killers = [];
                 for (let instance of o.collisionArray) {
@@ -48,19 +48,19 @@ class Domination {
                         killers.push(instance);
                     }
                 }
-    
+
                 let killer = ran.choose(killers);
                 killer = killer ? killer.master.master : { team: TEAM_ROOM, color: Config.mode === "tdm" ? 3 : 12 };
-    
+
                 newTeam = killer.team;
                 newColor = getTeamColor(newTeam);
-    
+
                 for (let player of global.gameManager.socketManager.players) {
                     if (player.body && player.body.team === newTeam) {
                         player.body.sendMessage("Press F to take control of the dominator.");
                     }
                 }
-    
+
                 let teamName = newTeam > 0 ? killer.name : getTeamName(newTeam);
                 global.gameManager.socketManager.broadcast(`A dominator is now controlled by ${teamName}!`);
                 if (newTeam !== TEAM_ENEMIES && this.teamcounts[newTeam] >= this.neededToWin && !this.gameWon) {
@@ -72,11 +72,10 @@ class Domination {
                         global.gameManager.closeArena();
                     }, 4500);
                 }
-    
             } else {
                 global.gameManager.socketManager.broadcast("A dominator is being contested!");
             }
-    
+
             this.spawnDominators(tile, newTeam, newColor, type, true);
             global.gameManager.socketManager.broadcastRoom();
         });

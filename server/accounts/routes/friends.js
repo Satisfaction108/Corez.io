@@ -1,8 +1,8 @@
-// Friends: GET /api/friends and POST /api/friends/{request,respond,cancel,
-// remove,block,unblock}, plus chat: GET /api/friends/messages and POST
-// /api/friends/messages{,/read} (rules in ../messages.js). Accounts only. userId in bodies and responses is
-// the public DW- id. The rules live in ../friends.js; live updates go out
-// through ./events.js, and block changes reach the game over the bus
+// Friends: GET /api/friends, POST /api/friends/{request,respond,cancel,
+// remove,block,unblock}; chat: GET /api/friends/messages, POST
+// /api/friends/messages{,/read}. Accounts only; userId is the public DW- id.
+// Rules live in ../friends.js and ../messages.js; live updates go through
+// ./events.js, and block changes reach the game over the bus
 // ({t:'blocksChanged', userId}) so in-game chat filtering follows at once.
 'use strict';
 

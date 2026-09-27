@@ -162,9 +162,7 @@ exports.chooseBotName = (() => {
         return a + (sep || '') + b;
     }
 
-    // ── human-flavored pools ──
-    // What actual lobbies look like: first names, moods, in-jokes - not a
-    // geology glossary.
+    // ── human-flavored pools (first names, moods, in-jokes) ──
     const firstNames = [
         'alex','sam','leo','max','ray','kai','finn','jay','ben','tom',
         'noah','liam','luca','theo','ezra','milo','remy','quinn','ash',
@@ -216,23 +214,20 @@ exports.chooseBotName = (() => {
             if (fmt < 0.5) return '[' + tag + '] ' + w;
             return tag + ' | ' + w;
         }
-        // 5% rare — word with unicode suffix
+        // 5% rare: word with unicode suffix
         return pick(words) + pick(uniSuffixes);
     }
 
     function chooseBotName() {
         for (let tries = 0; tries < 200; tries++) {
             let name = generate();
-            // Cap length at 24
             if (name.length > 24) name = name.slice(0, 24);
-            // Enforce lowercase bias: force fully lowercase for simple-word shapes
-            // (clan-tagged and decorated keep their intentional casing)
             if (!issued.has(name)) {
                 issued.add(name);
                 return name;
             }
         }
-        // Fallback: just use a numbered suffix
+        // fallback: numbered suffix
         let n = pick(words), suffix = 0;
         while (issued.has(n + suffix) && suffix < 9999) suffix++;
         const name = n + suffix;

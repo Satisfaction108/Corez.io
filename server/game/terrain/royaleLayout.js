@@ -1,8 +1,7 @@
 const { ORE, ORE_HP } = require('./terrainGrid.js');
 
-// Six bases on one ring: the four cardinals plus the NE/SW diagonals. The
-// two side vaults sit on the other diagonals (NW/SE) so every 45 degrees
-// holds a landmark and the ring reads balanced from any seat.
+// Six bases on one ring: the four cardinals plus the NE/SW diagonals. The two
+// side vaults sit on the NW/SE diagonals, so every 45 degrees holds a landmark.
 const BASE_DIST = 0.70;
 const OUTPOSTS = [
     { name: "North Base Bank",     color: "#e03e41", ang: -Math.PI / 2,     dist: BASE_DIST, shop: true },
@@ -115,10 +114,9 @@ function hash01(x, y, s) {
     return (h >>> 0) / 0x100000000;
 }
 
-// Radial ore for the BR disk. depth = dist/circleR (0 center → 1 rim).
-// The rim is storm-risk first, so it pays best; the middle stays honest.
-// Rolls are deterministic per rock + oreSalt so every client/server agrees
-// and the tiers split evenly instead of clustering.
+// Radial ore for the BR disk. depth = dist/circleR (0 centre, 1 rim). The rim
+// is riskiest (storm) so it pays best. Rolls are deterministic per rock +
+// oreSalt, so client and server agree.
 function radialOre(rock, circleR, salt) {
     const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
     const d = Math.min(1, Math.hypot(x, y) / Math.max(1, circleR));
@@ -127,7 +125,7 @@ function radialOre(rock, circleR, salt) {
     if (global.royaleMods && global.royaleMods.ore === 'copper') return ORE.COPPER;
     const t = hash01(rock.vi, rock.vj, salt + 102);
     if (d <= 0.35) return t < 0.70 ? ORE.COPPER : ORE.NONE;                    // plaza ring: copper only
-    if (d <= 0.65) return t < 0.35 ? ORE.VEIN : t < 0.85 ? ORE.COPPER : ORE.NONE; // mid: bread + butter
+    if (d <= 0.65) return t < 0.35 ? ORE.VEIN : t < 0.85 ? ORE.COPPER : ORE.NONE; // mid: vein + copper
     return t < 0.10 ? ORE.SHARD : t < 0.50 ? ORE.VEIN : t < 0.90 ? ORE.COPPER : ORE.NONE; // rim: shards live here
 }
 
@@ -138,13 +136,10 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     grid.circleRadius = circleR;
     grid.lobbyPos = { x: 0, y: 0, r: CENTER_CLEAR_R };
 
-    // Do not crop rocks to the storm circle. The lattice fills the square
-    // like 2TDM; the jagged Voronoi faces ARE the border. Storm is a
-    // separate overlay.
-    // Circle map, raw border: kill whole rocks outside a noisy ring so the
-    // island reads as a circle but no rock is ever sliced to a perfect arc.
-    // Center + poly test keeps rocks that touch the disk; per-rock hash
-    // jitters the keep radius +-90 so the edge stays jagged like 2TDM.
+    // Circle map with a raw border: rocks are never cropped to the circle.
+    // Whole rocks outside a noisy ring are killed; a rock is kept if its
+    // centre is within the keep radius (jittered +-90 per rock) or any vertex
+    // touches the disk, so the edge stays jagged Voronoi faces.
     const salt2 = grid.oreSalt || 7;
     const circleR2 = circleR * circleR;
     for (const rock of grid.rocks.values()) {
@@ -164,8 +159,8 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         if (!touches) killRock(rock, canyonKeys);
     }
 
-    // Sites exist for later. Lobby is plaza-only: do not punch vault or
-    // outpost holes until scatter, or the circle is missing rocks on the sides.
+    // Sites are recorded now, but their holes are not punched until scatter
+    // (the lobby is plaza-only).
     grid.vaultSites = VAULTS.map((v, i) => {
         const x = v.x * circleR, y = v.y * circleR;
         return { id: i, name: v.name, x, y, r: 95, team: 0, rainbow: true };
@@ -194,9 +189,8 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         });
     }
 
-    // Re-roll ore radially so gems work across the WHOLE disk and split
-    // evenly. buildVoronoi assigned horizontal 2TDM depth tiers before this
-    // ran, which is meaningless on a circle.
+    // Re-roll ore radially: buildVoronoi assigned 2TDM's horizontal depth
+    // tiers, which mean nothing on a circle.
     const salt = grid.oreSalt || 7;
     for (const rock of grid.rocks.values()) {
         if (!rock.alive || canyonKeys.has(rock.k)) continue;
@@ -267,7 +261,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
 
     const pits = [];
     const minSep = 310;
-    // Farthest-point sampling so drop holes are not clustered.
+    // farthest-point sampling so drop holes are not clustered
     if (candidates.length) {
         pits.push(candidates[(Math.random() * candidates.length) | 0]);
         while (pits.length < SPAWN_PITS && pits.length < candidates.length) {
@@ -310,9 +304,8 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         grid.spawnPits.push({ x, y });
     }
 
-    // Rock-in-your-face: every spawn pit and the lobby plaza ring get soft
-    // neighbors. Same ore, quarter health - the first crack always comes
-    // fast. Emeralds are never softened. h stays 1 so no crack visuals.
+    // Rocks around every spawn pit and the lobby plaza are softened: same ore,
+    // quarter health, never emeralds. h stays 1 so no crack visuals.
     try {
         const step = grid.cellSize || 200;
         const zones = [{ x: 0, y: 0, r: CENTER_CLEAR_R + step * 1.4 }];

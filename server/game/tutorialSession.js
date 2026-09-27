@@ -3,24 +3,21 @@
 // Runtime state for the tutorial server: which learner owns which plot, and the
 // scripted bots each plot spawns on demand.
 //
-// Plot isolation is what makes one room feel like nine private worlds. See
-// terrain/tutorialPlots.js for the geometry and why culling guarantees privacy.
+// Plot geometry and isolation: terrain/tutorialPlots.js.
 
 const plots = require('./terrain/tutorialPlots.js');
 
 // socket -> plot index, and the reverse occupancy table.
 const owners = new Array(plots.plotCount()).fill(null);
 
-// Per-plot scripted bots: { dummy: Entity|null, fighter: Entity|null }
+// Per-plot scripted bots: { dummy, fighter, boss, chest } (Entity|null each)
 const bots = new Array(plots.plotCount()).fill(null).map(() => ({ dummy: null, fighter: null, boss: null, chest: null }));
 
 function plotOf(socket) {
     return socket && socket._tutorialPlot != null ? socket._tutorialPlot : -1;
 }
 
-// Claim the first free plot. Returns -1 when the server is full, which the
-// caller turns into a "come back in a moment" rejection rather than dropping
-// two learners into one world.
+// Claim the first free plot, or -1 when full (the caller rejects the join).
 function claimPlot(socket) {
     const existing = plotOf(socket);
     if (existing >= 0) return existing;
@@ -44,9 +41,8 @@ function releasePlot(socket) {
     resetBase(i);
 }
 
-// The practice base starts neutral and LOCKED: shots bounce off it until the
-// base lesson opens it, so nobody captures it by accident three chapters
-// early. A new learner in the plot must never inherit the last one's base.
+// The practice base starts neutral and LOCKED (shots bounce off) until the base
+// lesson opens it. Reset on claim and release so no learner inherits a base.
 function resetBase(plotIndex) {
     try { require('./terrain/outposts.js').resetSite(plotIndex, true); } catch (e) { }
 }
@@ -54,9 +50,8 @@ function openBase(plotIndex) {
     try { require('./terrain/outposts.js').lockSite(plotIndex, false); } catch (e) { }
 }
 
-// Learners play on TEAM_BLUE internally (vault and base rules key off it), but
-// their tank wears a colour from the Dig Royale palette like it would in a
-// raid. Red is left out: every practice bot and boss is red.
+// Learners are TEAM_BLUE internally (vault and base rules key off it) but wear
+// a Dig Royale palette colour. Red (12) is excluded: practice bots are red.
 function learnerColor(socket) {
     if (socket && socket._tutColor != null) return socket._tutColor;
     const pal = (global.ROYALE_PALETTE || [10]).filter(c => c !== 12);
@@ -75,15 +70,9 @@ function spawnPointFor(socket) {
     return plots.plotPoint(i, 'spawn');
 }
 
-// Everything the client needs to know about its own arena, shipped in the TUTI
-// packet. The client cannot derive any of it: it is handed the room and the
-// terrain, but nothing tells it how the room was divided.
-//
-// The landmarks matter beyond drawing markers. Without them the lesson script
-// falls back on "the first outpost in the list" and "the nearest rock", both of
-// which happily point at a NEIGHBOUR's arena - the outpost list is room-wide
-// and the terrain renderer holds every rock in the room. Every world lookup on
-// the client is filtered through `arena` for that reason.
+// The learner's arena, sent in the TUTI packet; the client cannot derive how
+// the room is divided. Outposts and rocks are room-wide on the client, so every
+// client world lookup is filtered through `arena` and these landmarks.
 function plotInfo(index) {
     const pt = (k) => {
         const p = plots.plotPoint(index, k);
@@ -96,15 +85,15 @@ function plotInfo(index) {
         spawn: pt('spawn'),
         clearing: pt('clearing'),
         rocks: pt('rocks'),
-        vault: pt('vault'),            // the one vault on this ground
+        vault: pt('vault'),
         outpost: pt('outpost'),        // the practice base
         shop: pt('shop'),
         chest: pt('chest'),
         boss: pt('boss'),
-        // The round island the floor is painted on (and the fence).
+        // island the floor is painted on (and the fence)
         island: { x: Math.round(c.x), y: Math.round(c.y), r: plots.ISLAND_R },
         clearingR: plots.CLEARING.r,
-        // Frame for the full map, and the filter for every world lookup.
+        // full-map frame and the world-lookup filter
         cx: Math.round(c.x), cy: Math.round(c.y),
         size: plots.PLOT_SIZE,
         arena: {
@@ -141,8 +130,7 @@ function clearBots(plotIndex) {
 
 // ─── Dig Royale chapter ───────────────────────────────────────────────────
 
-// A loot chest beside the learner. Always carries a Medkit so the kit lesson
-// that follows has something in slot one to fire.
+// A loot chest beside the learner. Always carries a Medkit for the kit lesson.
 function spawnChest(plotIndex) {
   try {
     const slot = bots[plotIndex];
@@ -157,9 +145,8 @@ function spawnChest(plotIndex) {
   } catch (e) { util.warn("tutorial: chest spawn failed - " + (e && e.message)); return null; }
 }
 
-// A training copy of a raid boss: the real class, the real guns, a fraction
-// of the health, and its shots scaled so it can chip the learner without
-// dumping them. It erupts gems on death exactly like the live one.
+// A training copy of a raid boss: real class and guns, a fraction of the health,
+// damage scaled down (tutorialChipDamage). Erupts gems on death like the live one.
 const BOSS_HEALTH_FRAC = 0.10;
 function spawnBoss(plotIndex, kindId) {
   try {
@@ -203,7 +190,7 @@ function clearBoss(plotIndex) {
     slot.boss = null;
 }
 
-// Banked gems for the shop lesson - the shop takes nothing else.
+// Banked gems for the shop lesson (the shop spends only banked gems).
 function setBanked(body, n) {
     if (!body) return;
     const gems = require('./terrain/gems.js');
@@ -211,14 +198,11 @@ function setBanked(body, n) {
     gems.talkGems(body, 0);
 }
 
-// Kit and sidearm hand-outs, so the lessons can show the item before the
-// learner has bought anything.
+// Kit, gear and sidearm hand-outs, so lessons can show items before any purchase.
 function grantKit(socket, id) {
     const shop = require('./terrain/shop.js');
     return shop.grantKit(socket, String(id || 'medkit'));
 }
-// A running gear item, so the lesson can point at the GEAR row and its
-// timer before the learner has bought one.
 function grantGear(socket, id) {
     const shop = require('./terrain/shop.js');
     const body = socket && socket.player && socket.player.body;
@@ -244,9 +228,8 @@ function grantArm(socket, id) {
     return true;
 }
 
-// Shared setup for both practice targets. They are real tanks on the enemy
-// team so damage, health bars, death and gem drops all behave exactly as they
-// will in a real match - the tutorial teaches the real game, not a mock of it.
+// Shared setup for practice targets: real enemy-team tanks, so damage, health
+// bars, death and gem drops behave as in a real match.
 function baseTarget(loc, name, opts = {}) {
     const o = new Entity(loc);
     o.define(Config.spawn_class);
@@ -273,9 +256,7 @@ function baseTarget(loc, name, opts = {}) {
     return o;
 }
 
-// Is this spot clear enough to drop a tank on? It must be on the island and
-// out of solid rock, which would wedge it in the collision geometry where the
-// learner cannot reach it.
+// On the island and out of solid rock (a tank dropped in rock wedges there).
 function spawnClear(plotIndex, x, y) {
     if (!plots.onIsland(plotIndex, x, y, 200)) return false;
 
@@ -287,14 +268,9 @@ function spawnClear(plotIndex, x, y) {
     return true;
 }
 
-// Somewhere just off the learner's shoulder. Practice targets used to spawn at
-// a fixed point in the arena, which meant the learner had to go looking for
-// them - and if they had wandered, the target was off screen when it appeared
-// and the lesson sat there waiting on a bot that was "there".
-//
-// The offset is a PREFERENCE, not a promise: it is tried first, then swept
-// around the learner, because the one thing that matters is that the target
-// lands somewhere reachable and visible.
+// A spot just off the learner's shoulder, so targets spawn on screen. The
+// offset is a preference: it is tried first, then swept around the learner
+// until a reachable spot is found (else the plot's dummy point).
 function besidePlayer(plotIndex, dx, dy) {
     const socket = owners[plotIndex];
     const body = socket && socket.player && socket.player.body;
@@ -303,8 +279,7 @@ function besidePlayer(plotIndex, dx, dy) {
 
     const want = Math.atan2(dy, dx);
     const dist = Math.hypot(dx, dy);
-    // Sweep outward from the requested bearing so the fallback stays as close
-    // to "just there, on your right" as the terrain allows.
+    // sweep outward from the requested bearing
     for (const spread of [0, 0.5, -0.5, 1, -1, 1.6, -1.6, 2.3, -2.3, Math.PI]) {
         for (const scale of [1, 0.75, 1.3]) {
             const a = want + spread;
@@ -316,16 +291,14 @@ function besidePlayer(plotIndex, dx, dy) {
     return home;
 }
 
-// Bring the learner back to full. Used before a fight the lesson wants them to
-// win, right after the lesson that deliberately chewed their health down.
+// Full health and shield, e.g. before a fight after a lesson that drained health.
 function heal(body) {
     if (!body) return;
     if (body.health && body.health.max) body.health.amount = body.health.max;
     if (body.shield && body.shield.max) body.shield.amount = body.shield.max;
 }
 
-// A target that never moves and never shoots: the first kill should be about
-// aiming and holding fire, nothing else.
+// A target that never moves or shoots, for the first kill.
 function spawnDummy(plotIndex) {
   try {
     const slot = bots[plotIndex];
@@ -335,17 +308,14 @@ function spawnDummy(plotIndex) {
     const o = baseTarget(besidePlayer(plotIndex, 400, -110), 'Practice Dummy');
     o.controllers = [];               // no AI at all
     o.define({ CONTROLLERS: [] }, false, false, false);
-    o.settings.hasNoRecoil = true;    // its own guns never fire, but be sure
+    o.settings.hasNoRecoil = true;
     slot.dummy = o;
     return o;
   } catch (e) { util.warn("tutorial: dummy spawn failed - " + (e && e.message)); return null; }
 }
 
-// The first opponent that shoots back.
-//
-// A Basic on a thin stat spread: people were dying to the old Penta Shot
-// practice target, which taught panic instead of backing off. It should chip
-// the health bar, not empty it.
+// The first opponent that shoots back: a Basic on a thin stat spread (display
+// order) that chips the health bar rather than emptying it.
 const FIGHTER_STATS = [0, 0, 3, 1, 0, 1, 4, 3, 0, 0];
 
 function spawnFighter(plotIndex) {
@@ -355,8 +325,7 @@ function spawnFighter(plotIndex) {
     if (slot.fighter && !slot.fighter.isDead()) return slot.fighter;
 
     const o = baseTarget(besidePlayer(plotIndex, 420, 130), 'Rookie');
-    // Stay a Basic. baseTarget already defined spawn_class and levels to 45
-    // so the tank is the same size as a real opponent.
+    // Stays a Basic; baseTarget levelled it so it is real-opponent size.
     o.define({ CONTROLLERS: ["tutorialDuelist"] }, false, false, false);
     o.tutorialFoe = (owners[plotIndex] && owners[plotIndex].player)
         ? owners[plotIndex].player.body : null;
@@ -364,8 +333,7 @@ function spawnFighter(plotIndex) {
     o.botRespawnsRemaining = 0;
     setStats(o, FIGHTER_STATS);
     o.refreshBodyAttributes();
-    // Outgoing shots (and rams) are scaled so a stray volley cannot dump a
-    // learner. A level-45 Basic with this spread can chip the bar, not empty it.
+    // Outgoing shot and ram damage multiplier.
     o.tutorialChipDamage = 0.12;
     slot.fighter = o;
     return o;
@@ -378,7 +346,7 @@ function spawnFighter(plotIndex) {
 //   body damage, max health, bullet speed, bullet health, bullet penetration,
 //   bullet damage, reload, movement speed, shield regen, shield capacity
 // while Skill.raw is ordered [rld, pen, str, dam, spd, shi, atk, hlt, rgn, mob].
-// Lessons talk in the order the player can see, so the mapping lives here once.
+// Lessons use display order.
 const DISPLAY_TO_RAW = [6, 7, 4, 2, 1, 3, 0, 9, 8, 5];
 
 function setStats(body, list) {
@@ -390,9 +358,7 @@ function setStats(body, list) {
     }
     // eleventh value: Mining Power, raw index 10, same slot both ways
     if (list.length > 10 && raw.length > 10) raw[10] = Math.max(0, Math.min(Config.skill_cap, list[10] | 0));
-    // set() clamps to caps and refunds the overflow into points, which is
-    // exactly right: asking a rammer for bullet damage should hand the point
-    // back rather than silently vanish it.
+    // set() clamps to caps; the overflow is refunded into points.
     const spent = raw.reduce((a, b) => a + b, 0);
     const before = body.skill.raw.reduce((a, b) => a + b, 0);
     body.skill.set(raw);
@@ -400,19 +366,14 @@ function setStats(body, list) {
     body.refreshBodyAttributes();
 }
 
-// Hand the learner points to spend. Used when a morph opens up a stat they
-// have never seen (a rammer's Engine Acceleration) after everything was spent.
+// Ensure at least n unspent points (e.g. a morph opens a new stat after all were spent).
 function grantPoints(body, n) {
     if (!body || !body.skill) return;
     body.skill.points = Math.max(body.skill.points, n | 0);
 }
 
-// Every stat this tank can actually use goes to its cap, except one that is
-// left empty with exactly `spare` points in hand to fill it.
-//
-// The rammer chapter needs this: which stats a Smasher can use, and what they
-// cap at, is a property of the class definition, so hard-coding a number here
-// would silently drift the moment the tank is retuned. Ask the skill object.
+// Every stat to its cap except `exceptDisplay`, left empty with `spare` points
+// in hand. Caps come from the skill object so class retunes do not drift.
 function fillStats(body, exceptDisplay, spare) {
     if (!body || !body.skill) return;
     const raw = body.skill.raw.slice();
@@ -425,12 +386,9 @@ function fillStats(body, exceptDisplay, spare) {
     body.refreshBodyAttributes();
 }
 
-// Pour whatever points are still unspent into a sensible all-round build.
-// The stat lesson only asks the learner to place a few points themselves (the
-// point is learning that the bars exist), then this finishes the job so the
-// mining and fight lessons are not played on a half-built tank. Round-robin
-// over a priority list in Skill.raw order, respecting each stat's cap, so a
-// class that cannot use a stat simply skips it.
+// Spend all unspent points on an all-round build, so later lessons are not
+// played half-built. Round-robin over a priority list of Skill.raw indices,
+// respecting caps (stats a class cannot use are skipped).
 //   raw: [rld, pen, str, dam, spd, shi, atk, hlt, rgn, mob, mine]
 const REST_PRIORITY = [10, 3, 0, 1, 2, 7, 4, 9, 5, 8, 6];
 function spendRest(body) {
@@ -450,14 +408,9 @@ function spendRest(body) {
     body.refreshBodyAttributes();
 }
 
-// Put the learner on top of the landmark the lesson is about. Walking 2000
-// units in silence is not a lesson, and the edge arrow only helps if you
-// already know why you are walking.
-//
-// Glided, not snapped: an instant jump reads as a bug or a disconnect, and the
-// client's camera lerps toward the body anyway, so a hard set produced a
-// lurching catch-up. tickGlide walks it there over a few hundred ms - fast
-// enough not to be a journey, slow enough to be legible as movement.
+// Move the learner to the lesson's landmark. Glided (tickGlide) rather than
+// snapped: an instant jump looks like a disconnect and the client camera lerps
+// into a lurch.
 const GLIDE_MS = 420;
 
 function teleport(socket, key) {
@@ -467,16 +420,14 @@ function teleport(socket, key) {
     const layoutKey = key;
     let p;
     try { p = plots.plotPoint(i, layoutKey); } catch (e) { return; }
-    // Land beside a structure rather than inside it: dropping a tank on top of
-    // a chamber ring wedges it in the collision geometry. The vault pad is
-    // meant to be stood on, so it gets no offset.
+    // Land beside the base, not inside it (a tank on a chamber ring wedges).
+    // Pads are meant to be stood on, so get no offset.
     const off = layoutKey === "outpost" ? -260 : 0;
     teleportTo(socket, p.x + off, p.y);
 }
 
-// Glide to an explicit world point, clamped to this learner's arena. Used when
-// the client has already picked the marked rock and needs to land next to THAT
-// cell, not a generic landmark that can be on the other side of the wall.
+// Glide to a world point, clamped to this learner's fence (e.g. beside the
+// rock the client marked).
 function teleportTo(socket, x, y) {
     const i = plotOf(socket);
     const body = socket && socket.player && socket.player.body;
@@ -486,9 +437,8 @@ function teleportTo(socket, x, y) {
     const f = plots.plotFence(i);
     const dx = x - f.cx, dy = y - f.cy, d = Math.hypot(dx, dy), lim = f.r - 150;
     if (d > lim) { x = f.cx + dx * (lim / d); y = f.cy + dy * (lim / d); }
-    // Land on open ground. A destination inside rock used to be fixed by the
-    // entombed-tank rescue in the physics pass, which spat the tank out to
-    // the nearest gap a moment after it arrived: a second, unexplained jump.
+    // Land on open ground, or the physics pass's entombed-tank rescue would
+    // push it out a moment later (a second jump).
     const open = openGround(i, x, y, (body.realSize || 60) + 10);
     x = open.x; y = open.y;
     if (Math.hypot(body.x - x, body.y - y) < 120) return;
@@ -534,7 +484,7 @@ function tickGlide() {
             t = 1;
             body._tutorialGlide = null;
         }
-        // Ease in and out so it starts and stops without a jerk.
+        // smoothstep
         const e = t * t * (3 - 2 * t);
         body.x = g.fromX + (g.toX - g.fromX) * e;
         body.y = g.fromY + (g.toY - g.fromY) * e;
@@ -543,8 +493,7 @@ function tickGlide() {
     }
 }
 
-// Force a player command flag (the drone lesson turns auto-fire off so the
-// learner sees drones recall when they release the button).
+// Force an allowlisted player command flag (e.g. auto-fire off).
 function setCommand(socket, name, on) {
     const p = socket && socket.player;
     if (!p || !p.command) return;
@@ -554,19 +503,13 @@ function setCommand(socket, name, on) {
 
 // ─── step gating ──────────────────────────────────────────────────────────
 //
-// A tutorial step teaches ONE thing, and a learner who wanders off to dump
-// stat points or evolve into something the next lesson is not written for
-// ends up in a state the script cannot recover from. So each step declares
-// what it permits, and everything else is refused at the socket - not merely
-// hidden in the UI, because the keyboard shortcuts bypass the UI entirely.
-//
-// Movement and firing are never gated: being unable to drive feels broken,
-// and every lesson is easier to follow while you can move.
+// Each step declares what it permits; everything else is refused at the socket
+// (not just hidden in the UI, since keyboard shortcuts bypass it). This keeps
+// learners from reaching states the script cannot recover from. Movement and
+// firing are never gated.
 const CAPS = ['stats', 'upgrade', 'bank', 'shop', 'kit'];
 
-// Where the permissions live. The SOCKET, not the body: a respawn hands the
-// learner a fresh body, and a lesson whose permissions vanished with the old
-// one would silently refuse the very thing it is asking for.
+// Permissions live on the SOCKET, not the body, so they survive a respawn.
 function gateOf(body) {
     if (!body) return null;
     return body.socket || body;
@@ -603,10 +546,8 @@ function setAllowed(body, csv) {
     g._tutStatBudget = budget;
 }
 
-// Default-closed: if a step never declared its permissions, assume the strict
-// set. A missing declaration should not silently unlock the whole game.
-// `arg` narrows the check ("vault", "drill", "medkit"); a cap declared without
-// a list allows every arg.
+// Default-closed: no declaration means nothing is allowed. `arg` narrows the
+// check ("vault", "drill", "medkit"); a cap declared without a list allows any arg.
 function allows(body, cap, arg) {
     if (!Config.tutorial) return true;
     const g = gateOf(body);
@@ -617,16 +558,15 @@ function allows(body, cap, arg) {
     return args.has(String(arg));
 }
 
-// A cap declared with NO arg list: the unrestricted form. Kit drops use it,
-// since throwing an item away would otherwise pass for "using" it.
+// A cap declared with NO arg list. Kit drops require it, so dropping an item
+// cannot pass for using it.
 function allowsAll(body, cap) {
     if (!Config.tutorial) return true;
     const g = gateOf(body);
     return !!(g && g._tutorialAllow && g._tutorialAllow.has(cap) && !g._tutorialAllow.get(cap));
 }
 
-// May this stat bar take a point right now? The bar has to be one the step
-// teaches and the step's point budget must not be spent.
+// The bar must be one the step teaches and the step's budget not yet spent.
 function allowsStat(body, index) {
     if (!Config.tutorial) return true;
     if (!allows(body, 'stats', index)) return false;
@@ -642,17 +582,13 @@ function noteStatSpent(body) {
 
 // ─── forced upgrade path ──────────────────────────────────────────────────
 //
-// The tutorial teaches one build at a time: a bullet tank first, a drone tank
-// second. Rather than trusting the learner to pick the right box out of six,
-// the class menu is filtered down to the single tank the lesson is about.
+// The class menu can be filtered down to the tank a lesson is about.
 
 const normalise = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-// The lock takes a comma-separated PATH, not a single tank: a target such as
-// Penta Shot sits several tiers up the tree (basic - Twin - Triple Shot -
-// Penta Shot), and a menu filtered to only the final tank shows NOTHING at
-// tier one - the learner stares at an empty upgrade box. Naming every rung
-// lets each tier offer exactly one choice: the next step along the path.
+// The lock takes a comma-separated PATH, not a single tank: a target several
+// tiers up (Twin, Triple Shot, Penta Shot) would otherwise leave tier one's menu
+// empty. Naming every rung offers exactly one choice per tier.
 function lockUpgrades(body, path) {
     const names = String(path || '').split(',').map(normalise).filter(Boolean);
     body._tutorialLock = names.length ? names : null;
@@ -668,10 +604,9 @@ function upgradeAllowed(body, upgrade) {
     if (!body || !body._tutorialLock) return true;
     for (const c of (upgrade.class || [])) {
         if (!c) continue;
-        // Entries here are usually raw definition KEYS ('twin', 'pentaShot')
-        // - entity.js pushes the unresolved strings - but resolve to the
-        // class object too and match its display label, so lessons can name
-        // tanks the way players see them ("Penta Shot").
+        // Entries are usually raw definition KEYS ('twin', 'pentaShot') from
+        // entity.js; also match the resolved LABEL so lessons can use display
+        // names ("Penta Shot").
         if (typeof c === 'string') {
             if (body._tutorialLock.includes(normalise(c))) return true;
             const def = Class[c];
@@ -685,14 +620,9 @@ function upgradeAllowed(body, upgrade) {
     return false;
 }
 
-// Turn the learner's tank into a specific class outright. The drone lesson
-// needs this: by then they are a Penta Shot at the top of the bullet branch,
-// and the upgrade tree cannot reach Director from there - no menu filtering
-// can teach a drone tank to someone who already finished a different branch.
-// Allowlisted so the TUT packet can never morph anyone into an arbitrary tank.
-// Every tank the curriculum walks through, plus the bullet tank it returns to
-// between chapters. Allowlisted so a crafted TUT packet cannot morph anyone
-// into an arbitrary class.
+// Classes a lesson may morph the learner into outright (for tanks the upgrade
+// tree cannot reach from the current one). Allowlisted so a crafted TUT packet
+// cannot morph anyone into an arbitrary class.
 const MORPHS = ['director', 'overlord', 'auto3', 'auto5', 'smasher', 'pentaShot',
     'destroyer', 'pounder', 'sniper', 'machineGun'];
 
@@ -700,22 +630,17 @@ function morph(body, className) {
     try {
         const key = String(className || '').trim();
         if (!MORPHS.includes(key) || !Class[key]) return;
-        // define() APPENDS the new class's upgrades; without this the menu
-        // would carry the old tank's choices along.
+        // define() APPENDS upgrades; clear the old tank's choices first.
         body.upgrades = [];
         body.define(key);
         body.refreshBodyAttributes();
     } catch (e) { util.warn("tutorial: morph failed - " + (e && e.message)); }
 }
 
-// "Try this tank for a moment": morph, but remember what the learner picked
-// so the lesson can hand their own tank back afterwards. Only the FIRST try
-// saves, so two tries in a row still restore the learner's real choice.
-//
-// While borrowing, evolving is off outright (menu hidden, U packets dropped):
-// the borrowed tank sits at level 45 with its own upgrade list, and a click or
-// a number key there used to evolve the LOAN - the learner was told "you're a
-// Destroyer" and walked away as something else.
+// "Try this tank for a moment": morph, saving the learner's own tank for untry().
+// Only the FIRST try saves, so repeated tries still restore the real choice.
+// While borrowing, evolving is off (menu hidden, U packets dropped) so the
+// loaned tank cannot be evolved.
 function tryTank(body, className) {
     if (!body) return;
     const key = String(className || '').trim();
@@ -738,18 +663,15 @@ function untry(body) {
 }
 function borrowing(body) { return !!(body && body._tutBorrowing); }
 
-// The "pick an upgrade" step allows exactly ONE evolve. At level 45 every tier
-// is open, so the menu refills with the next tier the instant a pick lands; a
-// double click or a held number key used to chain Twin > Triple > Penta before
-// the step moved on. The first pick spends the permission.
+// The "pick an upgrade" step allows exactly ONE evolve: at level 45 the menu
+// refills instantly, so a double click could chain tiers. The first pick
+// spends the permission.
 function noteUpgraded(body) {
     const g = gateOf(body);
     if (g && g._tutorialAllow) g._tutorialAllow.delete('upgrade');
 }
 
-// Back to the spawn tank, for a clean replay of the tank chapter: a learner
-// who re-enters it as a Twin would otherwise be offered Twin's upgrades and
-// told "you've got your own tank back" about a tank from last time.
+// Back to the spawn tank (and forget any loan) for a clean tank-chapter replay.
 function baseTank(body) {
     if (!body) return;
     try {
@@ -761,10 +683,8 @@ function baseTank(body) {
     } catch (e) { util.warn("tutorial: base tank failed - " + (e && e.message)); }
 }
 
-// Shop state back to nothing (drill, gear, kit, sidearm) so the shop chapter
-// replays cleanly: a Drill I left from last time would make "Buy Drill I"
-// impossible, a running Gem Magnet cannot be bought twice, and a full kit
-// refuses the Medkit the kit lesson hands out.
+// Clear shop state (drill, gear, kit, sidearm) so the shop chapter replays:
+// owned items cannot be re-bought and a full kit refuses the lesson's Medkit.
 function resetShop(socket) {
     try {
         const shop = require('./terrain/shop.js');
@@ -778,20 +698,15 @@ function resetShop(socket) {
     } catch (e) { util.warn("tutorial: shop reset failed - " + (e && e.message)); }
 }
 
-// Fallback for the base lesson: hand the learner their practice base outright
-// when they could not break it themselves in time.
+// Base-lesson fallback: give the learner their practice base outright.
 function giveBase(plotIndex, body) {
     try { require('./terrain/outposts.js').claimSite(plotIndex, body); } catch (e) { }
 }
 
-// Keep each practice bot on the learner's screen.
-//
-// The duelist controller already circles the player, so this is a backstop for
-// the cases the controller cannot cover: knockback, a bot spawned before the
-// player moved, and the stationary dummy after the learner has walked off. The
-// radius is set by the VERTICAL view cull (fov * 0.5625, about 1125 units),
-// which is far tighter than the horizontal one - a bot 1200 units above the
-// learner is culled out of their client entirely and reads as "it vanished".
+// Keep each practice bot on the learner's screen. Backstop for what the
+// duelist controller cannot cover (knockback, the stationary dummy). The radius
+// is bounded by the VERTICAL view cull (fov * 0.5625, ~1125 units), which is
+// much tighter than the horizontal one.
 const LEASH_RADIUS = 820;
 
 function tickLeash() {
@@ -802,15 +717,13 @@ function tickLeash() {
         for (const key of ['dummy', 'fighter', 'boss']) {
             const o = slot[key];
             if (!o || o.isDead()) continue;
-            // Anchor on the learner, not on a fixed point: the lesson has to
-            // happen where they can see it, wherever that is.
+            // anchor on the learner, not a fixed point
             const home = (player && !player.isDead()) ? player : plots.plotPoint(i, key);
             if (key === 'boss' && o.bossHome && player && !player.isDead()) { o.bossHome.x = player.x; o.bossHome.y = player.y; }
             const dx = o.x - home.x, dy = o.y - home.y;
             const d = Math.hypot(dx, dy);
             if (d <= LEASH_RADIUS) continue;
-            // Slide it back to the edge of its leash rather than snapping it
-            // home, so a bot circling the learner is nudged, not teleported.
+            // clamp to the leash edge rather than snapping home
             const k = LEASH_RADIUS / d;
             o.x = home.x + dx * k;
             o.y = home.y + dy * k;
@@ -820,13 +733,9 @@ function tickLeash() {
     }
 }
 
-// Hold every learner inside their own arena, and out of its enemy base.
-//
-// The arena fence itself is NOT applied here: entity.confinementToTheseEarthly-
-// Shackles() does it, using the same soft push the real room border uses, so
-// the edge of the training ground feels like the edge of the real map instead
-// of a snap-back. All this loop does is publish the bounds onto the body and
-// keep the lethal base out of reach.
+// Publish each learner's arena fence onto their body. The fence is applied in
+// entity.confinementToTheseEarthlyShackles() with the same soft push as the
+// room border.
 function tickBaseGuard() {
     for (let i = 0; i < owners.length; i++) {
         const socket = owners[i];
@@ -836,19 +745,15 @@ function tickBaseGuard() {
     }
 }
 
-// The fight lesson promises "it can't kill you", and a promise in a tutorial
-// has to be kept by the server, not by tuning. While a practice bot or boss is
-// up in a plot:
-//  - the learner's health never drops below a floor, so a bad fight is a
-//    lesson in backing off rather than a death screen;
-//  - the bot re-targets the learner's CURRENT body (a respawn makes a new one,
-//    and the duelist would otherwise stand still aiming at a corpse);
-//  - a fighter that has been alive too long slowly wilts, so someone who just
-//    cannot land shots still finishes the lesson instead of soft-locking it.
+// The fight lesson promises "it can't kill you". While a practice bot or boss
+// is up in a plot:
+//  - the learner's health never drops below HEALTH_FLOOR;
+//  - the fighter re-targets the learner's CURRENT body (respawns make a new one);
+//  - a fighter (or boss) alive past its patience wilts, so the lesson cannot soft-lock.
 const HEALTH_FLOOR = 0.2;
 const FIGHTER_PATIENCE_MS = 60000;
 const FIGHTER_WILT_MS = 30000;
-// The practice boss gets longer (it is tougher on purpose) but wilts the same way.
+// The practice boss gets longer, then wilts at the same rate.
 const BOSS_PATIENCE_MS = 75000;
 function tickSafety() {
     const now = Date.now();

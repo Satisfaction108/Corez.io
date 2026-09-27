@@ -1,5 +1,5 @@
-// Raid storm: a clock, not a last-man filter. It squeezes the map so people
-// collide, holds, then resets and squeezes again. Nobody wins the server.
+// Raid storm: a repeating cycle, not a last-man filter. It shrinks the zone,
+// holds, then resets and shrinks again.
 const DAMAGE_FRAC = 0.07;
 const DAMAGE_EVERY_MS = 1100;
 const SHRINK_MS = 6 * 60 * 1000;
@@ -8,9 +8,9 @@ const HOLD_MS = 60 * 1000;
 function shrinkMs() { return SHRINK_MS * ((global.royaleMods && global.royaleMods.stormShrinkMult) || 1); }
 function holdMs() { return HOLD_MS * ((global.royaleMods && global.royaleMods.stormHoldMult) || 1); }
 const MIN_FRAC = 0.20;
-// Final-zone spawn lock: nobody (re)spawns in the last 45s of a cycle (the
-// back end of the hold). The dead spectate. Never longer than 3/4 of the hold
-// even when a raid twist stretches the cycle.
+// Final-zone spawn lock: nobody (re)spawns in the last 45s of a cycle (end of
+// the hold); the dead spectate. Capped at 3/4 of the hold when a twist
+// changes the cycle.
 const LOCK_MS = 45 * 1000;
 // dig_royale sets the live value from its FIRST_MINUTES block (setLockMs)
 let lockOverride = 0;

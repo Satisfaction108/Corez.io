@@ -57,7 +57,7 @@
        the same face the in-game HUD text uses */
     --ui: 'Rubik', Ubuntu, sans-serif;
     /* edges and shadows: a hairline in the surface's own family and a soft
-       cast shadow, instead of an ink outline and a hard ink drop */
+       cast shadow */
     --line: #120e16;
     --line-soft: rgba(255,255,255,.06);
     --cast: rgba(0,0,0,.42);
@@ -309,7 +309,7 @@ body {
     border-radius: 11px 11px 0 0;
 }
 .sp-header span { font: 400 22px var(--display); color: var(--heading); letter-spacing: .01em; }
-/* the old panels' ✕ buttons get the same little red button as the hub */
+/* legacy panels' ✕ buttons get the same little red button as the hub */
 #homeSettingsClose, #homeChangelogClose, #contributorsPanel .cl-header button {
     display: inline-flex;
     align-items: center;
@@ -817,8 +817,7 @@ body.mobile .game-logo { width: 56px; height: 56px; }
     transition: max-height .32s cubic-bezier(.4,0,.2,1), opacity .22s ease, transform .32s cubic-bezier(.4,0,.2,1), border-width 0s;
 }
 
-
-/* hide raw server table — regions are the dropdown rows */
+/* hide raw server table; regions are the dropdown rows */
 .region-dropdown-menu .serverSelector,
 .region-dropdown-menu #serverFilterRegion {
     display: none !important;
@@ -916,7 +915,6 @@ body.mobile .game-logo { width: 56px; height: 56px; }
 .serverSelector tr.featured { color: #e8ae00; text-shadow: none; }
 .serverSelector tr.message { color: var(--text2); cursor: default; font-style: italic; }
 .serverSelector tr.selected { color: var(--sel); cursor: default; text-shadow: none; }
-
 
 .shadowScroll {
     overflow-y: scroll;
@@ -1187,8 +1185,8 @@ body.in-game .igc, body.in-game .igc-pip, .gt-stack {
     --surface: #2b2533; --surface2: #352e3f; --panel-bg: #2b2533; --hub-bg: #2b2533;
     --border: #4b4158; --border-hl: #e07b2e;
     --text: #e9e0cc; --text2: #a597b0; --heading: #fff3d9;
-    /* the field text too: a light site theme left dark ink on this dark
-       field, so friend chat typed after Esc was invisible until sent */
+    /* input colours too, or a light site theme leaves dark ink on this
+       dark field and in-game chat text is invisible */
     --input-bg: #1e1924; --input-fg: #f1e8d4; --input-bd: #0c0a0e; --ink: #120e15;
     --copper: #e07b2e; --copper-dk: #9e4a14; --gold: #f2b83c;
     --play: #4fcf5c; --play-dk: #2c8f37; --check: #4fcf5c; --sel: #4fcf5c;
@@ -1722,7 +1720,6 @@ body.mobile .region-dropdown-menu { position: static; }
 
 .dw-ic { width: 16px; height: 16px; flex: none; display: block; overflow: visible; }
 
-/* toasts sit under the nav while on the menu */
 /* on the menu, toasts pop up from the bottom middle, clear of the logo */
 body:not(.in-game) .toast-container { top: auto; bottom: 28px; flex-direction: column-reverse; }
 body:not(.in-game) .toast { animation-name: toastUp; }
@@ -3540,8 +3537,8 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 @media (prefers-reduced-motion: reduce) { .dwj-dots i { animation-duration: 2.4s; } .dwj-card { animation: none; } }
 .dwj-btns { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
 .dwj-btns .dw-btn { min-width: 132px; }
-/* the connect / waiting card: secondary buttons get their own plate, the
-   flat menu style is the card's own colour here and vanished into it */
+/* the connect / waiting card: secondary buttons get their own plate, since
+   the flat menu style is the card's own colour here and would vanish */
 #dwJoin .dwj-btns .dw-btn:not(.primary) {
     background: #3a3346; color: #f3ecff;
     border: 1px solid rgba(255, 255, 255, .18);
@@ -3749,8 +3746,7 @@ body:not(.in-game) .gt-stack { display: none; }
 @media (prefers-reduced-motion: reduce) { .gt-card, .gt-card.out { animation: none; } }
 
 /* ══ Surfaces and controls, by role ═══════════════════════════════════
-   Every panel and button used to be the same thing: a cream card with a
-   thick ink outline and a hard ink drop. Now each role has its own shape:
+   Each role has its own shape (these override the chunky styles above):
      panels      a hairline edge, a soft cast shadow, one top highlight
      keys        the coloured actions (Play, confirm, Discord): a lip in the
                  key's own darker tone that you press it down onto
@@ -3797,7 +3793,7 @@ body.in-game .igc, body.in-game .igc-pip, .gt-stack {
 .hub-head { border-bottom: 1px solid var(--line); border-radius: 15px 15px 0 0; padding: 12px 12px 11px 20px; }
 #dwHub.has-notch::before { border-top: 1px solid var(--line); border-left: 1px solid var(--line); top: -10px; width: 18px; height: 18px; }
 .dw-modal-danger { border-top: 4px solid var(--danger); }
-/* the quests note: a plain side card now, no tape, no tilt */
+/* the quests note: a plain side card, no tape, no tilt */
 .q-card { transform: none; border-radius: 14px; }
 .q-card::before { display: none; }
 .q-guest, .q-guest:active { transform: none; }
@@ -4110,7 +4106,7 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
 .as-profile, .pf-top, .lk-bar, .igc-toast { box-shadow: inset 0 1px 0 var(--line-soft); }
 .pf-top { border-radius: 14px; }
 .pf-stat, .pf-tier { border-radius: 11px; }
-/* cards lift on hover; they no longer wobble */
+/* cards lift on hover, no wobble */
 .shop-grid .shop-card:nth-child(odd):hover, .shop-grid .shop-card:nth-child(even):hover { transform: translateY(-2px); }
 .shop-card { box-shadow: 0 1px 2px var(--cast), 0 6px 14px -8px var(--cast); }
 .shop-card:hover { box-shadow: 0 1px 2px var(--cast), 0 10px 20px -10px var(--cast); }

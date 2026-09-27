@@ -2,17 +2,15 @@
 // the handlers routes/interactions.js calls.
 //
 // Admin commands live in DISCORD_ADMIN_GUILD_ID only, registered with
-// default_member_permissions "0" (hidden from everyone but server admins),
-// and on top of that the caller must be listed in ADMIN_DISCORD_IDS and the
-// command must come from that guild. Every admin command, allowed or
-// refused, is written to audit_log (actor 'admin:<discord id>'), and every
-// admin reply is ephemeral.
+// default_member_permissions "0" (hidden from all but server admins); the
+// caller must also be in ADMIN_DISCORD_IDS and the command must come from
+// that guild. Every admin command, allowed or refused, goes to audit_log
+// (actor 'admin:<discord id>'); admin replies are ephemeral.
 //
 // Player commands (/profile, /rank, /achievements, /leaderboard, /shop, /online,
 // /play) are global and public, and work in DMs and user installs too.
 //
-// All work is synchronous SQLite, so every command answers inline (type 4);
-// nothing here needs a deferred response.
+// All work is synchronous SQLite, so every command answers inline (type 4).
 'use strict';
 
 const config = require('../config');

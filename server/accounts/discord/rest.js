@@ -1,8 +1,7 @@
 // Discord REST through fetch (no discord.js). One request at a time, in
-// order: a 429 waits retry_after and tries again (up to 5 times), and an
-// exhausted bucket (X-RateLimit-Remaining: 0) waits Reset-After before the
-// next request. Every message goes out with allowed_mentions: none, so no
-// text we post (usernames included) can ping anyone.
+// order: a 429 waits retry_after and retries (up to 5 times); an exhausted
+// bucket (X-RateLimit-Remaining: 0) waits Reset-After before the next one.
+// Every message has allowed_mentions: none, so posted text never pings.
 'use strict';
 
 const config = require('../config');
@@ -97,8 +96,7 @@ function putCommands(appId, guildId, commands) {
     return request('PUT', route, jsonBody(commands));
 }
 
-// Markdown-safe text: usernames are [A-Za-z0-9_], but anything we echo is
-// escaped all the same (and mentions are off anyway).
+// Markdown-safe text. Usernames are [A-Za-z0-9_], but all echoed text is escaped.
 function escapeMd(text) {
     return String(text == null ? '' : text).replace(/([\\`*_~|>#\[\]()<:@-])/g, '\\$1').replace(/\n/g, ' ');
 }

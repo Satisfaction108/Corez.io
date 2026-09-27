@@ -1,7 +1,6 @@
-// Dig Royale outfitters: four shop pads on the cardinal rays between the
-// Center Vault and each cardinal base. Everything here is paid from BANKED
-// gems only, lives on the socket (survives death, resets with the raid), and
-// turns the economy into a real progression ladder.
+// Dig Royale shop pads (four, on the cardinal rays between the Center Vault
+// and each base). Paid from banked gems only; state lives on the socket, so it
+// survives death and resets with the raid.
 
 const PAD_RADIUS = 95;
 
@@ -15,8 +14,7 @@ const ITEMS = [
     { id: "drill3", cat: "drill", tier: 3, name: "Drill III", price: 1600, desc: "Mines through rock 80% faster." },
     { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 2600, desc: "Mines through rock 115% faster." },
     { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 4000, desc: "Mines through rock 160% faster, and you keep it when you die." },
-    // gear: passive, permanent for the raid
-    // gear: 5 minutes each; `on` is the message that tells you what it is doing
+    // gear: timed (GEAR_MS); `on` is the message shown when it starts
     { id: "scanner",   cat: "gear", name: "Ore Scanner",        price: 1200, desc: "Shows shard and emerald veins within 1500 units on your minimap for 5 minutes.", on: "Veins near you now show on your minimap." },
     { id: "magnet",    cat: "gear", name: "Gem Magnet",         price: 900,  desc: "Pulls in gems from almost twice as far away for 5 minutes.", on: "Gems now come to you from much farther away." },
     { id: "satchel",   cat: "gear", name: "Reinforced Satchel", price: 700,  desc: "Lets you carry 6,000 gems instead of 4,000 for 5 minutes.", on: "Your satchel now holds 6,000." },
@@ -68,8 +66,8 @@ function freshState() {
 }
 
 // Kit invariants, re-asserted on every read: no zero counts, kitOrder lists
-// exactly the held ids (in acquisition order), counts within each item's
-// max, never more than KIT_SLOTS ids.
+// exactly the held ids in acquisition order, counts within max, at most
+// KIT_SLOTS ids.
 const KIT_SLOTS = 3;
 function normalizeKit(s) {
     if (!s) return s;
@@ -106,7 +104,7 @@ function resetAll() {
     }
 }
 
-// `ok` tells the client whether the message is good news (sound + colour).
+// `ok`: the message is good news (client picks sound + colour).
 function talkState(socket, msg, ok = false) {
     if (!socket || !socket.talk) return;
     const s = normalizeKit(stateOf(socket));
@@ -157,8 +155,8 @@ function applyPassives(body) {
 function sidearmDef(id) {
     const { combineStats } = require('../../lib/definitions/facilitators.js');
     const g = require('../../lib/definitions/gunvals.js');
-    // both hidden: the shell appears at the hull and flies at the cursor
-    // (reload 3.8 is about 5 seconds; 7.6 about 10)
+    // hidden guns: the shot appears at the hull and flies at the cursor
+    // (reload 3.8 is about 5 s)
     if (id === "flak") return {
         POSITION: [18, 20, 1, 0, 0, 0, 0],
         PROPERTIES: {
@@ -173,10 +171,9 @@ function sidearmDef(id) {
             TYPE: "bullet", ALT_FIRE: true, LABEL: "Drill Lance", COLOR: "mirror", HIDDEN: true, ROCK_POWER: 1000,
         },
     };
-    // two battleship barrels a side, seeker drones on right click
-    // Gun X/Y are in the gun's own rotated frame (the client rotates the
-    // offset by direction + angle), so for a sideways gun X is how far out
-    // on the flank it sits and Y is fore/aft. Two per side, like a battleship.
+    // Two battleship barrels a side. Gun X/Y are in the gun's rotated frame
+    // (offset is rotated by direction + angle), so for a sideways gun X is the
+    // distance out on the flank and Y is fore/aft.
     if (id === "pod") return [[7, -4.5, 90, 0], [7, 4.5, 90, 0.5], [7, 4.5, 270, 0.25], [7, -4.5, 270, 0.75]].map(([x, y, ang, delay]) => ({
         POSITION: [9, 7, 0.7, x, y, ang, delay],
         PROPERTIES: {
@@ -249,8 +246,8 @@ function attachSidearm(body, id) {
     return true;
 }
 
-// Twists hand out a sidearm to everyone: mounted for the whole raid, no
-// burn-out, and it comes back on every respawn through the define hook.
+// Twist sidearm grant: no burn-out when permanent; the define hook re-mounts
+// it on respawn.
 function grantArm(socket, id, permanent = true) {
     const body = socket && socket.player && socket.player.body;
     const s = stateOf(socket);
@@ -308,8 +305,8 @@ function buy(socket, itemId) {
     } else if (item.cat === "arm") {
         s.arm = item.id;
         s.armUntil = item.id === "pod" ? Date.now() + ARM_BURN_MS : 0;
-        // a bought arm replaces a twist's free one: the twist ending (or a
-        // respawn re-granting it) must not take the paid one away
+        // a bought arm replaces a twist's free one, so the twist ending must
+        // not take it away
         s._twistArm = null;
         attachSidearm(body, item.id);
         msg = item.name + " mounted. Fire it with right click.";
@@ -343,12 +340,10 @@ function randomKitId() {
 }
 
 // ── Rock Barrage ───────────────────────────────────────────────────────
-// Ten rock chunks fan out toward the cursor. They are noclip entities moved
-// by hand here, so the engine's collision maths never touches them and the
-// damage is exactly what the shop says: 9% of the target's max health per
-// chunk, straight through the shield (ten landing = 90%). Each chunk
-// smashes up to two rocks, and dies on a third, on a raid vault pad, or at
-// the end of its range.
+// Rock chunks fan out toward the cursor. They are noclip entities moved by
+// hand here, so engine collision never touches them and damage is exactly
+// hitFrac of max health per chunk, through the shield. Each chunk smashes
+// `pierce` rocks, and dies on the next, on a vault pad, or at end of range.
 const STRUT_RADIUS = 320;
 const BARRAGE = { count: 10, speed: 30, range: 950, spread: 0.26, hitFrac: 0.09, bossFrac: 0.015, pierce: 2, radius: 14 };
 const barrageShards = [];
@@ -359,8 +354,7 @@ function launchBarrage(body, tx, ty) {
     const base = Math.atan2(dy, dx);
     const now = Date.now();
     for (let i = 0; i < BARRAGE.count; i++) {
-        // an even fan with a little scatter, and staggered speeds so the
-        // volley arrives as a spray rather than a flat wall
+        // even fan with a little scatter and staggered speeds
         const t = BARRAGE.count > 1 ? i / (BARRAGE.count - 1) - 0.5 : 0;
         const a = base + t * BARRAGE.spread * 2 + (Math.random() - 0.5) * 0.06;
         const sp = BARRAGE.speed * (0.85 + Math.random() * 0.3);
@@ -401,9 +395,8 @@ function hitWithRock(target, shard, owner) {
     target.health.amount -= dmg;
     target.hitAt = Date.now();
     try { target.reportDamageNumber && target.reportDamageNumber(dmg); } catch { /* */ }
-    // Credit the owner: the next mortality check reads collisionArray before
-    // it is cleared, and a sliver of damageReceived raises the usual damage
-    // event (bots fight back, bases go contested).
+    // Kill credit: the next mortality check reads collisionArray before it is
+    // cleared; a sliver of damageReceived raises the usual damage event.
     target.collisionArray.push(shard.e);
     target.damageReceived = (target.damageReceived || 0) + 1e-6;
     target._lastDamageSource = owner;
@@ -468,7 +461,7 @@ function tickBarrage() {
 }
 
 // ── kit usage ──────────────────────────────────────────────────────────
-// Dragging an item out of its slot throws the whole stack away. No refund.
+// Discards the whole stack in a slot. No refund.
 function dropKit(socket, slot) {
     const body = socket && socket.player && socket.player.body;
     const s = normalizeKit(stateOf(socket));
@@ -487,8 +480,8 @@ function useKit(socket, slot, tx, ty, itemId) {
     const s = normalizeKit(stateOf(socket));
     if (!body || body.isDead?.() || !s) return false;
     let id = s.kitOrder[slot | 0];
-    // the client names the item it pressed; a slot that compacted since
-    // must never fire a different item
+    // the client names the item it pressed, so a slot that compacted since
+    // never fires a different item
     if (itemId && id !== itemId) {
         const i = s.kitOrder.indexOf(itemId);
         if (i < 0) { talkState(socket, "That item is gone."); return false; }
@@ -528,9 +521,7 @@ function useKit(socket, slot, tx, ty, itemId) {
         case "strut": {
             if (!tg) break;
             // A zone, not a list of rocks: anything that dies inside it later
-            // stays open too, and rock that was already mid-regrow crumbles
-            // (the old version skipped those, so struts looked like they
-            // did nothing while the wall kept coming back).
+            // stays open too, and rock already mid-regrow crumbles now.
             const R = STRUT_RADIUS;
             tg.addNoRegrowZone(body.x, body.y, R, now + 180_000);
             let crumbled = 0;
@@ -554,8 +545,7 @@ function useKit(socket, slot, tx, ty, itemId) {
         case "medkit": {
             if (!body.health || body.health.amount >= body.health.max * 0.995) { msg = "You're already at full health."; break; }
             body.health.amount = Math.min(body.health.max, body.health.amount + body.health.max * 0.5);
-            // inside the storm the heal used to vanish in a second: the medkit
-            // also buys three seconds without storm damage so it visibly lands
+            // 3 s of storm immunity so the heal isn't erased inside the storm
             body.stormAnchorUntil = Math.max(body.stormAnchorUntil || 0, now + 3000);
             used = true;
             msg = "Medkit used. Half your health back, and the storm is off you for 3 seconds.";
@@ -646,13 +636,10 @@ function onDeath(body) {
 }
 
 // ── pad tick ───────────────────────────────────────────────────────────
-// A shop pad is a trigger zone and nothing more: stand on it to browse,
-// step off to close. No cover, no timer, no lockout - the risk of shopping
-// in the open is the whole point.
 function actorBody(actor) { return actor && actor.body ? actor.body : actor; }
 
-// The pad is drawn as a hexagon 1.16x the pad radius (flat top); collide
-// with that shape so the door is exactly where it looks (padGeom.js).
+// The pad is drawn as a flat-top hexagon at 1.16x the pad radius; collide
+// with that shape (padGeom.js).
 const padGeom = require('./padGeom.js');
 const HEX_SCALE = padGeom.HEX.scale;
 function insideHexagon(dx, dy, R) { return padGeom.insideNgon(dx, dy, R, 6); }
@@ -661,7 +648,7 @@ const SHOP_IDLE_MS = 60_000;      // browse time before the shop closes on you
 const SHOP_LOCK_MS = 20_000;      // one visit per purchase
 const ARM_BURN_MS = 150_000;      // swarm barrels burn out after 2.5 minutes
 const GEAR_MS = 300_000;          // every gear item runs for 5 minutes
-const GEAR_MAX = 4;               // at most four running at once
+const GEAR_MAX = 4;               // max gear running at once
 function shopEject(body, pad, msg, lockMs) {
     body._shopExpel = pad;                // a steady shove until the hull is clear
     padGeom.keepOut(body, pad, 4, shopKey(pad), 'expel');
@@ -669,8 +656,8 @@ function shopEject(body, pad, msg, lockMs) {
     body._shopReentryPad = pad;
     if (msg) { try { body.sendMessage(msg + " You can come back in " + Math.round(lockMs / 1000) + " seconds."); } catch { /* */ } }
 }
-// A shop pad is a restroom: one shopper at a time, bots never set foot on it,
-// and nobody inside can be shot or shoot (padSafe, set in the loader).
+// One shopper per pad, bots are kept off, and nobody on it can shoot or be
+// shot (padSafe, set in the loader). Stand on it to browse, step off to close.
 function tick(actors) {
     tickBarrage();
     const list = getShops();
@@ -742,17 +729,14 @@ function tick(actors) {
         if (on) {
             // the browse clock only counts idle time
             const busyAt = Math.max(body._shopSince || now, body._shopLastBuyAt || 0);
-            // Tutorial: no browse clock. The learner is alone on the pad and
-            // the lesson is waiting for them to shop.
+            // no browse clock in the tutorial: the lesson waits for the purchase
             if (!Config.tutorial && now - busyAt > SHOP_IDLE_MS) {
                 shopEject(body, pad, "Shop closed. Move along.", 10_000);
                 on = false;
             }
         } else if (was && body._shopBought && body._shopPad && !Config.tutorial) {
-            // (not in the tutorial: the drill and gear lessons are two
-            // purchases on one pad, and a 20 s lockout between them reads
-            // as the shop being broken)
-            // walked off after buying: one visit per purchase
+            // walked off after buying: one visit per purchase (not in the
+            // tutorial, whose lessons make two purchases on one pad)
             shopEject(body, body._shopPad, "Come back for more later.", SHOP_LOCK_MS);
         }
         if (on) body._shopPad = pad;

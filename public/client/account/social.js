@@ -1,14 +1,9 @@
-// Friends data and the live connection. One copy of the lists (friends,
-// requests both ways, blocked) that the Friends pane, the nav badge and the
-// gift picker read; it is filled by GET /api/friends and kept fresh by the
-// Server-Sent Events stream at /api/events while logged in (menu and game:
-// the in-game friend chat needs DMs). If the stream can't be used,
-// /api/friends is polled every 15 s instead. Events are rare, so keeping it
-// open in a raid costs the frame loop nothing.
-// Chat: each friend row carries {unread, last}; the open chat view
-// (chat.js) says which friend it shows, so their messages don't count as
-// unread or toast. DMs that land in a raid go to the in-game chat
-// (ingameChat.js) when it is listening, else they add up into one menu toast.
+// Friends data and the live connection: one copy of the lists (friends,
+// requests both ways, blocked), filled by GET /api/friends and kept fresh by
+// the SSE stream at /api/events while logged in, in menu and game (the
+// in-game chat needs DMs). Without the stream, /api/friends is polled every 15 s.
+// Each friend row carries {unread, last}; messages for the chat on screen
+// don't count as unread. Raid DMs go to ingameChat.js, else one menu toast.
 import * as api from './api.js';
 import * as store from './state.js';
 import { toast } from './ui.js';

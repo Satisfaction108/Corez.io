@@ -1,10 +1,9 @@
 // In-game video recorder (the record key, see canvas.js).
 //
 // The file is saved from the recorder's own "stop" event: the last chunk only
-// arrives after stop(), so saving on a timer produced empty or cut-off files
-// that would not open. The extension follows the real container (Chrome and
-// Safari give H.264 MP4, Firefox gives WebM), and the bitrate scales with the
-// canvas so a full-screen recording stays sharp.
+// arrives after stop(), so saving on a timer gives empty or truncated files.
+// The extension follows the real container (Chrome and Safari give H.264 MP4,
+// Firefox gives WebM); the bitrate scales with the canvas size.
 const TYPES = [
     "video/mp4;codecs=avc1.64002A",   // H.264 High: opens everywhere
     "video/mp4;codecs=avc1",

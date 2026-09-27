@@ -109,7 +109,7 @@ const util = (function() {
             x = Math.floor(x);
             let days = x;
             let y = '';
-    
+
             function weh(z, text) {
                 if (z) {
                     y = y + ((y === '') ? '' : ', ') + z + ' ' + text + ((z > 1) ? 's' : '');
@@ -257,7 +257,7 @@ const util = (function() {
                 allRoots = [],
                 trueColor = mainMockup.color;
                 if (trueColor == '16 0 1 0 false' && color) trueColor = color;
-            
+
             for (let i of index.split("-")) {
                 let mockup = global.mockups[parseInt(i)];
                 if (!mockup) mockup = global.missingno[0];
@@ -369,7 +369,7 @@ const util = (function() {
                 if (Math.abs(val) < 0.00001) val = 0;
                 return +val.toPrecision(6);
             }
-            
+
             function getFurthestFrom(x, y) {
                 let furthestDistance = 0,
                     furthestPoint = [x, y],
@@ -386,20 +386,20 @@ const util = (function() {
                 endPoints.splice(furthestIndex, 1);
                 return [rounder(furthestPoint[0]), rounder(furthestPoint[1])];
             }
-            
+
             function checkIfSamePoint(p1, p2) {
                 return p1[0] == p2[0] && p1[1] == p2[1];
             }
-            
+
             function checkIfOnLine(endpoint1, endpoint2, checkPoint) {
                 let xDiff = endpoint2[0] - endpoint1[0],
                     yDiff = endpoint2[1] - endpoint1[1];
-                
+
                 // Endpoints on the same vertical line
                 if (xDiff == 0) {
                     return (checkPoint[0] == endpoint1[0]);
                 }
-            
+
                 let slope = yDiff / xDiff,
                     xLengthToCheck = checkPoint[0] - endpoint1[0],
                     predictedY = endpoint1[1] + xLengthToCheck * slope;
@@ -421,7 +421,7 @@ const util = (function() {
                 if (x3 == x1 || x3 == x2) {
                     x3 += 1e-5;
                 }
-                
+
                 let numer1 = x3 ** 2 + y3 ** 2 - x1 ** 2 - y1 ** 2;
                 let numer2 = x2 ** 2 + y2 ** 2 - x1 ** 2 - y1 ** 2;
                 let factorX1 = 2 * x2 - 2 * x1;
@@ -434,7 +434,7 @@ const util = (function() {
 
                 return {x, y, r};
             }
-            
+
             // Draw each mockup circumcircle as a ring of 32 points
             for (let position of positionData) {
                 let {axis, middle} = position;
@@ -448,7 +448,7 @@ const util = (function() {
             endPoints.sort((a, b) => (b[0] ** 2 + b[1] ** 2 - a[0] ** 2 - a[1] ** 2));
             let point1 = getFurthestFrom(0, 0),
                 point2 = getFurthestFrom(...point1);
-            
+
             // Repeat selecting the second point until at least one of the first two points is off the centerline
             while (point1[0] == 0 && point2[0] == 0 || point1[1] == 0 && point2[1] == 0) {
                 point2 = getFurthestFrom(...point1);
@@ -457,12 +457,12 @@ const util = (function() {
             let avgX = (point1[0] + point2[0]) / 2,
                 avgY = (point1[1] + point2[1]) / 2,
                 point3 = getFurthestFrom(avgX, avgY);
-            
+
             // Repeat selecting the third point until it's actually different from the other points and it's not collinear with them
             while (checkIfSamePoint(point3, point1) || checkIfSamePoint(point3, point2) || checkIfOnLine(point1, point2, point3)) {
                 point3 = getFurthestFrom(avgX, avgY);
             }
-            
+
             let {x, y, r} = constructCircumcirle(point1, point2, point3);
 
             return {

@@ -57,8 +57,6 @@ exports.rounder = (val, precision = 6) => {
     return +val.toPrecision(precision);
 }
 
-
-
 /*exports.angleDifference = function(a1, a2) {
     let diff1 = a2 - a1;
     while (diff1 >= 2*Math.PI) {
@@ -92,7 +90,6 @@ exports.loopSmooth = (angle, desired, slowness) => {
     if (angle - min < 0) return min;
     return angle;
 };*/
-
 
 /*exports.pointInArc = function(point, givenAngle, allowedDifference) {
     let len = Math.sqrt(point.x * point.x + point.y * point.y);
@@ -137,7 +134,7 @@ exports.time = () => {
     return Date.now() - exports.serverStartTime;
 };
 
-// Wall-clock stamps for humans. Default is Pacific (your TZ). Override with LOG_TZ.
+// Wall-clock log stamps; LOG_TZ overrides the Pacific default.
 const LOG_TZ = process.env.LOG_TZ || 'America/Los_Angeles';
 const logStampFmt = new Intl.DateTimeFormat('en-US', {
     timeZone: LOG_TZ,

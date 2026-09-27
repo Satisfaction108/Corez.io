@@ -2,14 +2,11 @@ let EventEmitter = require('events');
 global.entitiesIdLog = 0;
 const forceTwiggle = ["autospin", "turnWithSpeed", "spin", "fastspin", "veryfastspin", "withMotion", "smoothWithMotion", "looseWithMotion"];
 const { combineStats } = require('../../lib/definitions/facilitators.js');
-// How long the server reports a body as freshly hit. The client starts its own
-// eased blink from the rising edge, so this only has to outlast a couple of
-// network ticks - long enough that the edge can't be missed, short enough that
-// rapid fire still reads as separate blinks.
+// How long a body reports as freshly hit. The client blinks on the rising edge,
+// so this only needs to outlast a couple of network ticks without merging rapid fire.
 const HIT_FLASH_MS = 160;
-// Combat text is always "out of 100" so a 20-HP tank and an 80-HP tank read
-// the same: 20 means a fifth of their life, not a raw internal chip. Nice /
-// Critical are fractions of max health, so they stay meaningful on bosses.
+// Combat text is scaled "out of 100" of max health. Nice / Critical tiers are
+// fractions of max health, so they stay meaningful on bosses.
 const DMG_DISPLAY_SCALE = 100;
 const DMG_NICE_FRACTION = 0.08;
 const DMG_CRIT_FRACTION = 0.18;
@@ -160,9 +157,7 @@ class Entity extends EventEmitter {
     become(player, dom = false) {
         this.addController(new ioTypes.listenToPlayer(this, { player, static: dom })); // Make it listen.
         // Tutorial: the objective chain is the only voice on the training
-        // ground. Stock messages ("You have spawned!", self-destruct notices,
-        // living-wall deaths) pop up over whichever lesson card is on screen
-        // and read as bugs to someone who has been playing for ninety seconds.
+        // ground; stock popups would cover the lesson cards.
         this.sendMessage = (content, displayTime = Config.popup_message_duration) =>
             Config.tutorial ? undefined
                             : player.socket.talk("m", displayTime, content);
@@ -301,7 +296,7 @@ class Entity extends EventEmitter {
 
                 let savedFacing = host.facing;
                 let savedSize = host.SIZE;
-                
+
                 host.controllers = [];
                 host.define("genericEntity");
                 gun.bulletInit(host);
@@ -393,9 +388,7 @@ class Entity extends EventEmitter {
                         let e = ensureIsClass(k);
                         index += e.index + "-";
                     }
-                    // define() appends; a second define of the same class
-                    // without clearing first used to list every choice twice
-                    // (18 tiles for Basic). One entry per tank and tier.
+                    // define() appends, so skip duplicates: one entry per tank and tier.
                     const upgIndex = index.substring(0, index.length - 1);
                     if (this.upgrades.some(u => u.branch === 0 && u.tier === i && u.index === upgIndex)) continue;
                     this.upgrades.push({
@@ -466,12 +459,9 @@ class Entity extends EventEmitter {
         if (set.VALUE != null) this.skill.score = Math.max(this.skill.score, set.VALUE * this.squiggle);
         if (set.ALT_ABILITIES != null) this.abilities = set.ALT_ABILITIES;
         if (set.GUNS != null) {
-            // Kill anything the OUTGOING guns still owns before dropping them.
-            // Drones, swarms and traps live in gun.children / body.children and
-            // outlive their gun, so a class change used to leave the old tank's
-            // drones orbiting a tank that no longer has a drone gun - they had
-            // no launcher left to recall or replace them and simply never went
-            // away. TURRETS below has always done this; GUNS never did.
+            // Kill anything the outgoing guns still own before dropping them.
+            // Drones, swarms and traps outlive their gun, and with no launcher
+            // left they would never be recalled or replaced.
             for (let old of this.guns.values()) {
                 // destroy() splices the child out of gun.children and
                 // body.children itself, so iterate over a copy.
@@ -634,9 +624,7 @@ class Entity extends EventEmitter {
         if (this.settings.reloadToAcceleration) this.acceleration *= this.skill.acl;
         this.topSpeed = (1 * global.gameManager.runSpeed * this.SPEED * this.skill.mob) / speedReduce;
         if (this.settings.reloadToAcceleration) this.topSpeed /= Math.sqrt(this.skill.acl);
-        // Dig Wars: gems are heavy. The slow scales with the load, down to
-        // −20% at a full satchel (never lower) — rich runners are visibly
-        // rich and visibly slower.
+        // Dig Wars: carried gems slow the tank, scaling to -20% at a full satchel.
         if (this.carriedGems > 0 && this.gemCap) {
             const gemSlow = 1 - 0.2 * Math.min(1, this.carriedGems / this.gemCap);
             this.acceleration *= gemSlow;
@@ -819,8 +807,7 @@ class Entity extends EventEmitter {
             score = (this.carriedGems | 0) + ((banked || 0) | 0);
         }
 
-        // Carrier glow rung 0-6, mirroring the satchel size rungs so the halo
-        // and the pack always agree about how loaded you are.
+        // Carrier glow rung 0-6, mirroring the satchel size rungs.
         let gemGlow = 0;
         if (global.gameManager && global.gameManager.terrainGrid && (this.carriedGems | 0) > 0) {
             const gc = this.carriedGems | 0;
@@ -873,21 +860,21 @@ class Entity extends EventEmitter {
         cameraInfo.skin = this.skinNid | 0;
         cameraInfo.guns = guns;
         cameraInfo.turrets = turretPhotos;
-        
+
         // Process child camera connections if needed
         if (this.settings.connectChildrenOnCamera) {
             if (this.children.length > 0 || this.bulletchildren.length > 0) {
                 // Initialize variables
                 let sumX = cameraInfo.x;
                 let sumY = cameraInfo.y;
-                
+
                 // Process all children in one pass with a single array
                 const allChildren = [...this.children, ...this.bulletchildren];
                 for (let i = 0; i < allChildren.length; i++) {
                     sumX += allChildren[i].x;
                     sumY += allChildren[i].y;
                 }
-                
+
                 // Calculate average position (add 1 to count for this entity)
                 const totalCount = allChildren.length + 1;
                 this.cameraOverrideX = sumX / totalCount;
@@ -897,7 +884,7 @@ class Entity extends EventEmitter {
                 this.cameraOverrideY = null;
             }
         }
-        
+
         return cameraInfo;
     }
 
@@ -1068,10 +1055,7 @@ class Entity extends EventEmitter {
         }
         if (!this.settings.canGoOutsideRoom) {
             // Tutorial: the learner's world is their own arena, not the whole
-            // room. Same soft push as the room border below, against a smaller
-            // rectangle, so the edge of the training ground behaves exactly
-            // like the edge of the real map - lean on it and you slow to a
-            // stop, rather than being snapped back a step.
+            // room. Same soft push as the room border below, against the arena bounds.
             const ab = this.arenaBounds;
             if (ab && ab.r) {
                 // round arena (the tutorial island): push back toward the middle
@@ -1112,17 +1096,12 @@ class Entity extends EventEmitter {
         }
     }
 
-    // Combat text routing. A number is only ever sent to the two people in the
-    // exchange: whoever landed the hit, and whoever took it. Deriving these on
-    // the client from health deltas instead looks fine one-on-one and falls
-    // apart in a real fight - every bot and teammate shooting the same target
-    // stacks their damage onto your screen too. Only the server knows who
-    // actually dealt what. Amounts are scaled to 100 so they stay readable
-    // across tanks with different max health.
+    // Combat text routing: a number goes only to whoever landed the hit and
+    // whoever took it. This is server-side because only the server knows who
+    // dealt what; client health deltas would include everyone's damage.
+    // Amounts are scaled to 100 of max health.
     reportDamageNumber(amount) {
-        // Tanks and minibosses only. Numbers floating over bullets, drones, food
-        // and rock are noise, and bailing here first also keeps this off the hot
-        // path for the hundreds of bullets taking chip damage every tick.
+        // Tanks and minibosses only; bailing early keeps bullets off this path.
         if (this.type !== 'tank' && this.type !== 'miniboss') return;
         const maxH = this.health.max;
         if (!(maxH > 0) || !(amount > 0)) return;
@@ -1132,10 +1111,8 @@ class Entity extends EventEmitter {
         if (amount >= maxH * DMG_CRIT_FRACTION) tier = 2;
         else if (amount >= maxH * DMG_NICE_FRACTION) tier = 1;
 
-        // Whoever landed it: first thing in the collision array that actually
-        // deals damage, walked up to the tank that owns it (bullet -> drone ->
-        // player). Multi-source ticks attribute to one source rather than
-        // splitting, which keeps the numbers honest for the person reading them.
+        // Attacker: first damaging collider, walked up to its owning tank
+        // (bullet -> drone -> player). Multi-source ticks attribute to one source.
         let attacker = null;
         for (let i = 0; i < this.collisionArray.length; i++) {
             const inst = this.collisionArray[i];
@@ -1158,13 +1135,10 @@ class Entity extends EventEmitter {
     contemplationOfMortality() {
         if (this.invuln || this.godmode || this.passive || this.royaleLobby || this.padSafe) {
             this.damageReceived = 0;
-            // Drones/swarms still expire. Returning here let Overlord pile
-            // infinite kids in the lobby because range-death never ran.
-            // Protection blocks new damage, not a death already dealt: the
-            // storm, rock crush, base tiles and kill() write health directly.
-            // Returning here left a player on a vault/shop pad at <= 0 hp
-            // standing in the world while their socket (isDead) went to the
-            // death screen and spectated - a live-looking corpse.
+            // Only tanks return early: drones/swarms must still run range-death.
+            // Protection blocks new damage, not a death already dealt (storm,
+            // rock crush, base tiles and kill() write health directly), so a
+            // dead tank falls through too.
             if (this.type === "tank" && !this.isDead()) return 0;
         }
         let inflictors = null, dealt = 0;
@@ -1193,8 +1167,7 @@ class Entity extends EventEmitter {
                 this.damageReceived -= shieldDamage;
                 this.shield.amount -= shieldDamage;
                 dealt += shieldDamage;
-                // A hit soaked entirely by shield still blinks - it just won't
-                // raise a damage number, since health never moved.
+                // A hit soaked entirely by shield still blinks, but shows no number.
                 if (shieldDamage > 0) this.hitAt = Date.now();
             }
         }
@@ -1202,9 +1175,7 @@ class Entity extends EventEmitter {
         if (this.damageReceived) {
             let healthDamage = this.health.getDamage(this.damageReceived);
             this.blend.amount = 1;
-            // Stamp the hit so the camera photo can report a decaying flash to
-            // the client. A timestamp rather than a per-tick decay keeps the
-            // blink the same length regardless of room speed.
+            // Timestamp (not a per-tick decay) so the hit flash length is independent of room speed.
             this.hitAt = Date.now();
             this.health.amount -= healthDamage;
             this.reportDamageNumber(healthDamage);
@@ -1320,8 +1291,7 @@ class Entity extends EventEmitter {
                     if (this.settings.killMessage) {
                         instance.sendMessage("You " + this.settings.killMessage + " " + name + (killers.length > 1 ? " (with some help)." : "."));
                     }
-                    // kill confirm juice - tanks and bosses only, and only to
-                    // a real player. bots have no socket to celebrate on.
+                    // kill confirm effect: tanks and bosses only, sent to real players.
                     if ((this.type === 'tank' || this.type === 'miniboss') && instance.socket) {
                         instance.socket.talk('DEAD', Math.round(this.x), Math.round(this.y));
                     }
@@ -1384,7 +1354,7 @@ class Entity extends EventEmitter {
                     }
                     usurptText = usurptText.slice(0, -4) + "!";
                 } else {
-                    // died to the world — rocks, polygons, the living wall
+                    // died to the world: rocks, polygons, the living wall
                     usurptText = "The Leader did not survive the fight.";
                 }
                 global.gameManager.socketManager.broadcast(usurptText);
@@ -1400,15 +1370,14 @@ class Entity extends EventEmitter {
     protect() {
         entitiesToAvoid.push(this); this.isProtected = true;
     }
-    
+
     say(message, duration = Config.chat_message_duration) {
         if (!chats[this.id]) {
             chats[this.id] = [];
             chats[this.id].messages = [];
         }
         chats[this.id].messages.unshift({ message, expires: Date.now() + duration, id: global.chatID++ });
-        // Keep NPC chatter readable and avoid stale bot lines piling up when
-        // nobody is looking at the entity.
+        // Cap chat lines so unseen bot chatter doesn't pile up.
         if (chats[this.id].messages.length > 3) chats[this.id].messages.length = 3;
     }
 

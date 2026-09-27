@@ -10,7 +10,7 @@
 // to fromGame('main', msg) in the main thread; onMain listeners receive
 // (serverId, msg).
 //
-// Phase 1 messages (main -> game):
+// Messages (main -> game):
 //   {t:'kick', userId, reason}   close every game socket of that account with
 //                                KO [reason] and no auto-reconnect.
 'use strict';

@@ -1,7 +1,6 @@
-// NOTE: rock lattice size is Math.min(cols, 120) / 50 EVERYWHERE (here, the
-// GLSL uniform below, and server terrainGrid.js). The clamp keeps rocks the
-// same world size on maps wider than the live 15-tile one (the tutorial's
-// multi-plot room); an unclamped copy magnifies every rock. Keep all mirrors
+// Rock lattice size is Math.min(cols, 120) / 50 EVERYWHERE (here, the GLSL
+// uniform below, and server terrainGrid.js). The clamp keeps rocks the same
+// world size on wide maps (the tutorial's multi-plot room). Keep all mirrors
 // identical.
 import { config } from "./config.js";
 import { global } from "./global.js";
@@ -24,15 +23,13 @@ const GEM_CUT = [
 ];
 
 class TerrainRenderer {
-    
     static ORE_FX = {
         1: ['201,111,46', '237,167,102', '160,80,30'],
         2: ['59,124,224', '127,177,242', '35,90,180'],
         3: ['177,62,207', '217,138,240', '130,40,160'],
         4: ['31,191,107', '111,245,168', '18,128,72'],
     };
-    
-    
+
     static ORE_PAL = {
         1: { dark: 'rgba(90,44,14,0.9)',  mid: 'rgba(201,111,46,0.95)',
              light: 'rgba(237,167,102,0.95)', core: 'rgba(255,233,209,0.9)' },
@@ -43,9 +40,7 @@ class TerrainRenderer {
         4: { dark: 'rgba(8,66,38,0.92)',  mid: 'rgba(31,191,107,0.95)',
              light: 'rgba(111,245,168,0.95)', core: 'rgba(232,255,242,0.95)' },
     };
-    
-    
-    
+
     static CRACK_PAL = {
         0: { deep: '150,35,0',   hot: '255,110,20', hair: '255,225,140' },
         1: { deep: '140,62,15',  hot: '235,140,60', hair: '255,218,175' },
@@ -92,10 +87,10 @@ class TerrainRenderer {
         this._loopsSimplified = null;
         this._lineRocks       = null;
         this.useVoronoi  = true;
-        
+
         this.debugCollision      = false;
         this._debugVoronoiSegs   = null;
-        
+
         this._rockHealth = new Map();   
         this._rockDead   = new Set();   
         this._cellPolys  = new Map();   
@@ -113,14 +108,14 @@ class TerrainRenderer {
         this._pebbles    = [];          
         this._lastTrickle = new Map();  
         this._view       = null;        
-        
+
         this._ore        = new Map();   
         this._veinCache  = new Map();   
         this._oreSalt    = 0;           
-        
+
         this._growing    = new Map();   
         this._landed     = new Set();   
-                                        
+
         this._gen        = new Map();   
         this._oreSprout  = new Map();   
         this._sproutArt  = new Map();   
@@ -203,13 +198,9 @@ class TerrainRenderer {
             this._rockHealth.set(ev.k, ev.h);
             if (ev.d) this._rockDead.add(ev.k);
             if (ev.gen) this._gen.set(ev.k, ev.gen);
-            // mid-rise when we joined: pick the animation up where the rest
-            
+            // joined mid-rise: resume the growth animation where the server is
             if (ev.r !== undefined) {
                 if (ev.r < GROW_MS) {
-                    
-                    
-                    
                     this._growing.set(ev.k, { start: nowInit - ev.r, tier: ev.o | 0,
                                               gen: ev.gen | 0, ax: ev.ax, ay: ev.ay,
                                               mapped: false });
@@ -219,17 +210,14 @@ class TerrainRenderer {
             }
         }
         this.mapDirty = true; 
-        
-        
-        
+
         this._ore.clear();
         this._veinCache.clear();
         this._oreSalt = oreSalt | 0;
         if (oreState) for (const [k, tier] of oreState) {
             if (!this._rockDead.has(k)) this._ore.set(k, tier);
         }
-        
-        
+
         for (const [k, g] of this._growing) {
             if (g.tier) this._ore.set(k, g.tier);
         }
@@ -239,7 +227,6 @@ class TerrainRenderer {
         this.ready = true;
     }
 
-    
     _stageOf(frac) {
         return frac > 5/6 ? 0 : frac > 4/6 ? 1 : frac > 3/6 ? 2 :
                frac > 2/6 ? 3 : frac > 1/6 ? 4 : 5;
@@ -251,8 +238,6 @@ class TerrainRenderer {
                       y > v.tly - pad && y < v.tly + v.tlh + pad;
     }
 
-    
-    
     _trembleOf(k, nowMs) {
         const rockSz = Math.min(this._cols, 120) / 50.0;
         return [Math.sin(nowMs / 17 + (k % 13)) * 0.02 * rockSz,
@@ -269,9 +254,8 @@ class TerrainRenderer {
         sh.shakeAmount    = amount;
     }
 
-    // Camera juice only for rocks breaking near the player. Anything merely
-    // on screen used to freeze the frame (hit-stop) and shake the camera,
-    // which read as the view randomly shifting while mining.
+    // Hit-stop and shake only for rocks breaking within 800 units of the player;
+    // shaking for anything on screen reads as the view randomly shifting.
     _shakeNearCell(cell, amount, duration, delay = 0, stopMs = 0) {
         const w = this._world;
         if (!cell || !w) return;
@@ -289,16 +273,13 @@ class TerrainRenderer {
         if (events.length) this._damageDirty = true;
         for (const ev of events) {
             // ── THE LIVING WALL ──
-            // A rising cell stays in _rockDead the whole time it grows: every
-            // system that treats a hole as a hole (silhouette, damage batch,
-            // ore markings, both maps) keeps doing exactly that, and the
-            // growth is drawn as its own layer on top. It only rejoins the
-            // rock when it lands.
+            // A rising cell stays in _rockDead while it grows, so everything
+            // that treats it as a hole (silhouette, damage batch, ore markings,
+            // both maps) still does; the growth is drawn as a layer on top and
+            // rejoins the rock when it lands.
             if (ev.r === 1) {
-                // regrow implies the server considers this cell DEAD; if the
-                // client somehow still thinks it's whole (missed destroy),
-                
-                
+                // regrow implies the server considers this cell DEAD; mark it
+                // dead here too in case a destroy event was missed
                 if (!this._rockDead.has(ev.k)) {
                     this._rockDead.add(ev.k);
                     this.mapDirty = true;
@@ -327,21 +308,17 @@ class TerrainRenderer {
             const prev = this._rockHealth.get(ev.k);
             const oldStage = prev === undefined ? 0 : this._stageOf(prev);
             this._rockHealth.set(ev.k, ev.h);
-            
-            
+
             if (ev.hl) continue;
             this._emitRockNumber(ev);
             if (ev.d && !this._rockDead.has(ev.k)) {
                 const cell = this._cellPolys.get(ev.k);
                 this._rockDead.add(ev.k);
                 this.mapDirty = true; 
-                
-                
+
                 const tier = ev.o ?? this._ore.get(ev.k) ?? 0;
                 this._ore.delete(ev.k);
                 if (cell) {
-                    
-                    
                     const onscreen = this._onScreen(cell.cx, cell.cy);
                     const delay = onscreen ? 55 : 0;
                     this._spawnShatter(cell, now + delay, tier);
@@ -355,29 +332,21 @@ class TerrainRenderer {
                 }
                 rebuilt = true;
             } else if (!ev.d) {
-                
-                
                 this._hitFlash.set(ev.k, now);
                 const stagedUp = this._stageOf(ev.h) > oldStage;
                 if (stagedUp) {
                     this._crackSnap.set(ev.k, now);
-                    
-                    
+
                     const cell = this._cellPolys.get(ev.k);
                     if (cell) this._shakeNearCell(cell, 2, 140);
                 }
                 if (ev.x !== undefined) {
-                    
-                    
                     if (this._world) {
                         const w = this._world;
                         gameSound.rockHit(ev.x * w.s - w.hw, ev.y * w.s - w.hh,
                                           this._stageOf(ev.h), !!ev.g, this._ore.get(ev.k) || 0);
                     }
-                    
-                    
-                    
-                    
+
                     const cell = this._cellPolys.get(ev.k);
                     let dx = 1, dy = 0;
                     if (cell) {
@@ -389,15 +358,12 @@ class TerrainRenderer {
                                          small: !!ev.g,
                                          seed: (ev.k + Math.round(ev.x * 97) + (ev.g ? (now | 0) : 0)) & 0xffff });
                     if (this._impacts.length > 16) this._impacts.shift();
-                    
-                    
                 }
             }
         }
         if (rebuilt) {
-            // One rebuild per burst, from draw(): a packet per rock death
-            // used to rebuild the silhouette immediately, several times a
-            // second while bots mined. The shatter effect covers the gap.
+            // Deferred: one silhouette rebuild per burst, from draw(). The
+            // shatter effect covers the gap.
             this._debugVoronoiSegs = null;
             this._landed.clear();
             const nowR = performance.now();
@@ -414,8 +380,6 @@ class TerrainRenderer {
             global.pushRockDamage(ev.x * w.s - w.hw, ev.y * w.s - w.hh, ev.n | 0, ev.u, ore);
     }
 
-    // Same 4-tick mark rocks use, in the same cell space so outposts and
-    // chambers match size and fade exactly.
     // ── Extra cells: things that are not rocks but must crack and break
     // exactly like one (ore chests). They live in tile space under negative
     // keys so they never collide with lattice keys, and the net / crack /
@@ -473,9 +437,6 @@ class TerrainRenderer {
     }
 
     _beginGrowth(k, tier, gen, now, ax, ay) {
-        
-        
-        
         const cell = this._cellPolys.get(k);
         if (!(Number.isFinite(ax) && Number.isFinite(ay))) {
             ax = cell ? cell.cx : 0; ay = cell ? cell.cy : 0;
@@ -499,8 +460,7 @@ class TerrainRenderer {
         this._oreSprout.delete(k);
         if (tier) this._ore.set(k, tier); else this._ore.delete(k);
         this._damageDirty = true;
-        
-        
+
         if (cell && this._onScreen(cell.cx, cell.cy) && this._pebbles.length < 70) {
             const kk = k & 0xffff;
             for (let i = 0; i < 7; i++) {
@@ -517,8 +477,6 @@ class TerrainRenderer {
         }
     }
 
-    
-    
     _finishGrowth(k, now) {
         const g = this._growing.get(k);
         this._growing.delete(k);
@@ -527,15 +485,12 @@ class TerrainRenderer {
         this._rockHealth.set(k, 1);
         this._damageDirty = true;
         this.mapDirty = true;               
-        
-        
-        
+
         this._landed.add(k);
-        
+
         this._silRebuildAt = this._silRebuildAt
             ? Math.min(this._silRebuildAt, now + 120) : now + 120;
-        
-        
+
         const tier = g ? g.tier : (this._ore.get(k) || 0);
         if (tier) {
             this._ore.set(k, tier);
@@ -543,11 +498,10 @@ class TerrainRenderer {
         }
         const cell = this._cellPolys.get(k);
         if (cell && this._onScreen(cell.cx, cell.cy)) {
-            
             this._growFx.push({ k, born: now });
             if (this._growFx.length > 24) this._growFx.shift();
             this._shakeNearCell(cell, 3, 160);
-            
+
             const kk = k & 0xffff;
             for (let i = 0; i < 12 && this._pebbles.length < 80; i++) {
                 const a = (i / 12) * Math.PI * 2 + this._h(i, kk, 172);
@@ -561,7 +515,6 @@ class TerrainRenderer {
     }
 
     // Shot down before it finished: a husk crumbling, not a rock shattering.
-    
     _collapseGrowth(k, now) {
         const g = this._growing.get(k);
         this._growing.delete(k);
@@ -571,25 +524,20 @@ class TerrainRenderer {
         this._ore.delete(k);
         this._veinCache.delete(k);
         this._rockHealth.set(k, 0);
-        
-        
-        
+
         this._rockDead.add(k);
         this._landed.delete(k);
         this.mapDirty = true;
         this._damageDirty = true;
         const cell = this._cellPolys.get(k);
         if (!cell) return;
-        
-        
-        
+
         const onscreen = this._onScreen(cell.cx, cell.cy);
         const delay = onscreen ? 55 : 0;
         this._spawnShatter(cell, now + delay, 0);
         if (onscreen) this._shakeNearCell(cell, 4, 220, delay, delay);
     }
 
-    
     _revealOre(k, tier, now) {
         this._ore.set(k, tier);
         this._veinCache.delete(k);
@@ -597,9 +545,6 @@ class TerrainRenderer {
         this._oreSprout.set(k, now);   
     }
 
-    
-    
-    
     _getSproutParts(k, tier) {
         let parts = this._sproutArt.get(k);
         if (parts !== undefined) return parts;
@@ -645,13 +590,12 @@ class TerrainRenderer {
                 shade: Math.floor(jc(e, 31) * 3),
                 spin: (jc(e, 32) - 0.5) * 14,
                 sq:   0.5 + jc(e, 33) * 0.5,
-                
+
                 ox:   (jc(e, 34) - 0.5) * 1.1,
                 oy:   (jc(e, 35) - 0.5) * 1.1,
             });
         }
-        
-        
+
         const palette = TerrainRenderer.ORE_FX[tier] || FW_COLORS;
         const nSparks = tier ? (tier === 4 ? 28 : tier === 3 ? 22 : 16) : 12;
         const sparks = [];
@@ -667,13 +611,6 @@ class TerrainRenderer {
         if (this._fx.length > 24) this._fx.shift(); 
     }
 
-    
-    
-    
-    
-    
-    
-    
     _vh2(i, j) {
         const f = Math.fround;
         let px = f(f(i) * f(5.3983));
@@ -687,7 +624,7 @@ class TerrainRenderer {
         let ry = f(pxy * f(97.597));  ry = f(ry - Math.floor(ry));
         rx = f(f(0.5) + f(f(rx - f(0.5)) * f(0.55)));
         ry = f(f(0.5) + f(f(ry - f(0.5)) * f(0.55)));
-        
+
         return [Math.round(rx * 255) / 255, Math.round(ry * 255) / 255];
     }
 
@@ -723,7 +660,6 @@ class TerrainRenderer {
         const vxMin = maxLeft / rockSz;
         const vxMax = (minRight + 1) / rockSz;
 
-        
         const viLo = Math.round(vxMin), viHi = Math.round(vxMax) - 1;
         const vjLo = 0,                 vjHi = Math.round(rows / rockSz) - 1;
 
@@ -761,12 +697,8 @@ class TerrainRenderer {
         return segs;
     }
 
-    // Sub-Voronoi crack skeleton: a fine Voronoi diagram (~40 deterministic
-    
-    
-    
-    
-    
+    // Sub-Voronoi crack skeleton: a fine Voronoi diagram of up to 40
+    // deterministic seeds inside the cell, cached per rock key.
     _getRockNet(k) {
         let net = this._fracCache.get(k);
         if (net !== undefined) return net;
@@ -806,7 +738,6 @@ class TerrainRenderer {
             return Math.sqrt(best);
         };
 
-        
         const seeds = [];
         for (let t = 0; t < 400 && seeds.length < 40; t++) {
             const x = minX + this._h(t, kk, 130) * (maxX - minX);
@@ -860,7 +791,7 @@ class TerrainRenderer {
             for (let e = 0; e < sub.length; e++) {
                 const A = sub[e], B = sub[(e + 1) % sub.length];
                 const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
-                
+
                 if (distToBorder(mx, my) < 0.02) continue;
                 const ek = Math.round(mx * 500) + ':' + Math.round(my * 500);
                 if (edgeSeen.has(ek)) continue;
@@ -883,12 +814,6 @@ class TerrainRenderer {
         return net;
     }
 
-    
-    
-    
-    
-    
-    
     _getCrackPath(k, stage) {
         const ck = k + ':' + stage;
         let cached = this._crackCache.get(ck);
@@ -916,7 +841,7 @@ class TerrainRenderer {
         for (let c = 0; c < stage; c++) {
             let ri = 0;
             const rnd = () => this._h(ri++, kk, 210 + c * 13);
-            
+
             const ta = (off + c / 5) * Math.PI * 2;
             const tx = Math.cos(ta), ty = Math.sin(ta);
             let best = -Infinity, sv = null;
@@ -927,11 +852,11 @@ class TerrainRenderer {
                 if (d > best) { best = d; sv = v; }
             }
             if (!sv) continue;
-            
+
             const sdx = cx - sv[0], sdy = cy - sv[1];
             const sdl = Math.hypot(sdx, sdy) || 1;
             path.moveTo(sv[0] + sdx / sdl * inset, sv[1] + sdy / sdl * inset);
-            
+
             let cur = sv;
             let prevAng = Math.atan2(cy - sv[1], cx - sv[0]);
             const len = 3 + Math.floor(rnd() * 3);
@@ -948,7 +873,7 @@ class TerrainRenderer {
                 if (!nxt) break;
                 used.add(ekey(cur, nxt));
                 path.lineTo(nxt[0], nxt[1]);
-                
+
                 if (s === 1 && rnd() > 0.4) {
                     const bc = net.adj.get(net.vkey(nxt[0], nxt[1]));
                     if (bc) for (const q2 of bc) {
@@ -969,9 +894,6 @@ class TerrainRenderer {
         return path;
     }
 
-    
-    
-    
     _getPockPath(k, stage) {
         const pk = k + ':' + stage;
         let p = this._pockCache.get(pk);
@@ -1001,8 +923,6 @@ class TerrainRenderer {
         return p;
     }
 
-    
-    
     _getBitePath(k) {
         const bites = this._bites.get(k);
         if (!bites || !bites.length) return null;
@@ -1026,13 +946,6 @@ class TerrainRenderer {
         return p;
     }
 
-    
-    
-    
-    
-    
-    
-    
     _depositLayout(tier, poly, cx, cy, rockSz, h) {
         const want  = tier === 4 ? 1
                     : tier === 3 ? 1
@@ -1072,8 +985,7 @@ class TerrainRenderer {
         };
 
         const out = [];
-        
-        
+
         if (tier === 3 || tier === 4) {
             out.push({ x: cx, y: cy, r: (tier === 4 ? 0.34 : 0.30) * rockSz,
                        rot: (h(1, 221) - 0.5) * 0.7, big: true });
@@ -1096,11 +1008,6 @@ class TerrainRenderer {
         return out;
     }
 
-    
-    
-    
-    
-    
     _getVeinArt(k, tier) {
         let art = this._veinCache.get(k);
         if (art !== undefined) return art;
@@ -1109,11 +1016,7 @@ class TerrainRenderer {
         const { poly, cx, cy } = cell;
         const kk = k & 0xffff;
         const rockSz = Math.min(this._cols, 120) / 50.0;
-        // Same salt-mixed closure the server builds in _buildDeposits. The
-        
-        
-        
-        
+        // Same salt-mixed hash closure the server builds in _buildDeposits.
         const gsalt = (this._gen.get(k) || 0) * GROW_GEN_STRIDE;
         const h = (i, s) => this._h(i, kk, (s + this._oreSalt + gsalt) | 0);
 
@@ -1137,7 +1040,7 @@ class TerrainRenderer {
             put(body,  d.x, d.y, d.r, d.rot, 1,    0,           0);
             put(facet, d.x, d.y, d.r, d.rot, 0.52, 0,           -d.r * 0.12);
             put(core,  d.x, d.y, d.r, d.rot, 0.20, -d.r * 0.22, -d.r * 0.30);
-            
+
             const gc = Math.cos(d.rot), gs = Math.sin(d.rot);
             glintPts.push([d.x + (-0.35 * d.r) * gc - (-0.6 * d.r) * gs,
                            d.y + (-0.35 * d.r) * gs + (-0.6 * d.r) * gc]);
@@ -1180,18 +1083,13 @@ class TerrainRenderer {
         const vxMin = maxLeft / rockSz;
         const vxMax = (minRight + 1) / rockSz;
 
-        
         const viLo = Math.round(vxMin), viHi = Math.round(vxMax) - 1;
         const vjLo = 0,                 vjHi = Math.round(rows / rockSz) - 1;
 
-
-        // The lattice polygons depend only on (cols, rows, hash) - never on
-        // which rocks are alive - so they are identical on every rebuild. This
-        // function reruns on a 120ms throttle every time a rock dies, and
-        // re-clipping ~10k cells against 24 neighbours each was the single most
-        // expensive thing that happened while mining. Build them once per map
-        // and keep them; a rebuild then only re-reads _rockDead.
-        // init() clears the cache along with everything else.
+        // Lattice polygons depend only on (cols, rows, hash), never on which
+        // rocks are alive, so they are built once per map (clipping ~10k cells
+        // against 24 neighbours is expensive). A rebuild only re-reads
+        // _rockDead. init() clears the cache.
         let lattice = this._voroLattice;
         if (!lattice) {
             lattice = this._voroLattice = new Map();
@@ -1228,11 +1126,9 @@ class TerrainRenderer {
                     for (let pi = 1; pi < tilePoly.length; pi++)
                         tilePath.lineTo(tilePoly[pi][0], tilePoly[pi][1]);
                     tilePath.closePath();
-                    // Which lattice cell sits across each edge never changes
-                    // either, so it is resolved once here. A rebuild is then a
-                    // plain "is my neighbour alive" test per edge instead of a
-                    // 24-site nearest search (that search ran ~360k times per
-                    // rebuild and cost 50-85ms on a half-mined map).
+                    // The neighbour across each edge never changes either, so
+                    // it is resolved once; a rebuild then does a per-edge
+                    // "is my neighbour alive" test instead of a 24-site search.
                     const nb = new Array(poly.length);
                     for (let e = 0; e < poly.length; e++) {
                         const [vax, vay] = poly[e], [vbx, vby] = poly[(e+1)%poly.length];
@@ -1442,9 +1338,6 @@ class TerrainRenderer {
         gl.enableVertexAttribArray(loc);
         gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
-        
-        
-        
         const seedTex = gl.createTexture();
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, seedTex);
@@ -2054,13 +1947,11 @@ class TerrainRenderer {
         ];
     }
 
-    // The rock texture depends only on world position (the shader has no
-    // time input), so it is rendered once into an image a bit larger than
-    // the screen and reused while the camera pans. It used to be shaded per
-    // pixel every frame: cheap on a real GPU, but with software WebGL
-    // (hardware acceleration off, blocklisted GPUs, many school laptops)
-    // that alone took ~220ms a frame at 1080p. Returns the image and the
-    // cell-space rect it covers.
+    // The rock texture depends only on world position (the shader has no time
+    // input), so it is rendered once into an image a bit larger than the
+    // screen and reused while panning. Per-frame shading is far too slow on
+    // software WebGL (~220ms at 1080p). Returns the image and the cell-space
+    // rect it covers.
     _rockTexture(view, cellW, cellH) {
         const c = this._rockCache;
         const quality = this._rockQuality ?? (this._rockQuality = this._detectRockQuality());
@@ -2098,8 +1989,8 @@ class TerrainRenderer {
                 img = out;
             }
         } else {
-            // No WebGL at all: flat facets from the same lattice polygons,
-            // so the rocks are at least where the collision says they are.
+            // No WebGL: flat facets from the same lattice polygons, so rocks
+            // still match the collision geometry.
             const out = (c && c.canvas) || document.createElement('canvas');
             out.width = pw; out.height = ph;
             const g = out.getContext('2d');
@@ -2162,26 +2053,15 @@ class TerrainRenderer {
     draw(ctx, px, py, ratio, gameWidth, gameHeight, screenW, screenH) {
         if (!this.ready) return;
 
-        
-        
-        
-        
         if (this._silRebuildAt && performance.now() >= this._silRebuildAt) {
             this._silRebuildAt = 0;
             this._silClip = this._buildVoronoiBoundary();
             this._debugVoronoiSegs = null;
             this._landed.clear();   
-            
-            
-            
-            
-            
-            
+
             this._damageDirty = true;
         }
 
-        
-        
         this._world = { s: gameWidth / this._cols,
                         hw: gameWidth / 2, hh: gameHeight / 2 };
 
@@ -2189,9 +2069,9 @@ class TerrainRenderer {
         const originY = screenH / 2 - py - ratio * gameHeight / 2;
         const cellW   = ratio * gameWidth  / this._cols;
         const cellH   = ratio * gameHeight / this._rows;
-        // A zoom/resize/spectate frame can hand us NaN or 0 for a moment.
-        // Skip it: sizing a texture from that throws, and throwing after
-        // ctx.save() below left the canvas transformed for every later frame.
+        // A zoom/resize/spectate frame can briefly give NaN or 0. Skip it:
+        // sizing a texture from that throws, and a throw after ctx.save()
+        // below would leave the canvas transformed for every later frame.
         if (!(cellW > 0 && cellH > 0 && isFinite(cellW) && isFinite(cellH) &&
               isFinite(originX) && isFinite(originY) && screenW > 0 && screenH > 0)) return;
 
@@ -2224,10 +2104,6 @@ class TerrainRenderer {
         ];
 
         if (this.useVoronoi && this._silClip) {
-
-            
-            
-            
             const tlx = -originX / cellW;
             const tly = -originY / cellH;
             const tlw =  screenW  / cellW;
@@ -2237,22 +2113,11 @@ class TerrainRenderer {
             const tex = this._rockTexture(this._view, cellW, cellH);
             if (!tex || !tex.img) { ctx.restore(); return; }   // bad frame size, see above
 
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
             if (this._damageDirty || !this._damageBatch) {
                 this._damageDirty = false;
-                // Damaged rocks stay opaque (they darken in the damage
-                // overlay below instead of fading to show the dirt through,
-                // which read as murky). Only the trembling last stage is cut
-                // out of the wall, since it's drawn nudged on its own.
+                // Damaged rocks stay opaque (they darken in the damage overlay
+                // below). Only the trembling last stage is cut out of the wall,
+                // since it is drawn nudged on its own.
                 const batch = { holes: null, shaking: [] };
                 for (const [k, frac] of this._rockHealth) {
                     if (this._rockDead.has(k)) continue;
@@ -2269,9 +2134,8 @@ class TerrainRenderer {
 
             const rockSz = Math.min(this._cols, 120) / 50.0;
             // The wall's outline, stroked UNDER the rock and nudged down: the
-            // rock covers its inner half, so what's left is one clean ink
-            // line that is a touch heavier on the bottom - the wall's drop
-            // shadow for free (still exactly one stroke per frame).
+            // rock covers its inner half, leaving one ink line slightly heavier
+            // on the bottom (a drop shadow in a single stroke per frame).
             ctx.save();
             ctx.globalAlpha = 1;
             ctx.lineJoin    = 'round';
@@ -2289,10 +2153,6 @@ class TerrainRenderer {
             ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
             ctx.restore();
 
-            
-            
-            
-            
             for (const cell of dmgBatch.shaking) {
                 if (cell.cx < tlx - 3 || cell.cx > tlx + tlw + 3 ||
                     cell.cy < tly - 3 || cell.cy > tly + tlh + 3) continue;
@@ -2304,25 +2164,14 @@ class TerrainRenderer {
                 ctx.scale(1.05, 1.05);
                 ctx.translate(-cell.cx, -cell.cy);
                 ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
-                
-                
+
                 ctx.lineJoin    = 'round';
                 ctx.strokeStyle = TerrainRenderer.ROCK_INK;
                 ctx.lineWidth   = 0.07 * rockSz;
                 ctx.stroke(cell.path);
                 ctx.restore();
             }
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
+
             if (this._growing.size || this._landed.size) {
                 const many = this._growing.size > 12;   
                 ctx.save();
@@ -2349,7 +2198,7 @@ class TerrainRenderer {
                     ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
                     ctx.restore();
                 };
-                
+
                 for (const k of this._landed) {
                     const cell = this._cellPolys.get(k);
                     if (!cell) continue;
@@ -2362,10 +2211,7 @@ class TerrainRenderer {
                     const cell = this._cellPolys.get(k);
                     if (!cell) continue;
                     const p = Math.min(1, Math.max(0, (nowMs - g.start) / GROW_MS));
-                    // self-heal: a growing record with no completion long past
-                    
-                    
-                    
+                    // self-heal: drop a growing record whose completion never arrived
                     if (nowMs - g.start > GROW_MS + 4000) {
                         this._growing.delete(k);
                         this._growDust.delete(k);
@@ -2373,32 +2219,24 @@ class TerrainRenderer {
                         if (g.mapped) this.mapDirty = true;
                         continue;
                     }
-                    
-                    
+
                     if (p >= 0.5 && !g.mapped) { g.mapped = true; this.mapDirty = true; }
                     if (cell.cx < tlx - 4 || cell.cx > tlx + tlw + 4 ||
                         cell.cy < tly - 4 || cell.cy > tly + tlh + 4) continue;
-                    
+
                     if (!(Number.isFinite(g.ax) && Number.isFinite(g.ay))) {
                         g.ax = cell.cx; g.ay = cell.cy;
                     }
-                    
+
                     const sc = GROW_SCALE0 + (1 - GROW_SCALE0) * growEase(p);
-                    
-                    
+
                     const [tox, toy] = this._trembleOf(k, nowMs);
                     const shx = tox * 0.7 * (1 - p * 0.6), shy = toy * 0.7 * (1 - p * 0.6);
                     const ax2 = g.ax + shx, ay2 = g.ay + shy;
                     const spoly = cell.poly.map(pt => [ax2 + (pt[0] - g.ax) * sc,
                                                        ay2 + (pt[1] - g.ay) * sc]);
                     tracePoly(spoly);
-                    
-                    
-                    
-                    
-                    
-                    
-                    
+
                     // the ink drop grows in with the rock so a sprouting
                     // pebble doesn't sit on a slab of shadow
                     inkUnder(sc);
@@ -2410,13 +2248,8 @@ class TerrainRenderer {
                     ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
                     ctx.restore();
 
-                    
-                    
-                    
-                    
-                    
                     const frac = this._rockHealth.get(k);
-                    
+
                     const expect = Math.max(0.25, growEase(p));
                     const intact = frac === undefined ? 1
                         : Math.max(0, Math.min(1, frac / expect));
@@ -2444,8 +2277,6 @@ class TerrainRenderer {
                         }
                     }
 
-                    
-                    
                     if (p < 1 && this._pebbles.length < 80) {
                         const lt = this._growDust.get(k) || 0;
                         if (nowMs - lt > (many ? 260 : 130)) {
@@ -2473,7 +2304,6 @@ class TerrainRenderer {
             }
 
             // ══ Landing: a warm gold rim traces the new face for a beat.
-            
             if (this._growFx.length) {
                 ctx.save();
                 ctx.lineJoin = 'round';
@@ -2492,7 +2322,6 @@ class TerrainRenderer {
             }
 
             // ── Damage overlay per rock: darkening + pockmarks, bite notches
-            
             if (this._rockHealth.size) {
                 ctx.save();
                 ctx.lineJoin = 'round';
@@ -2509,27 +2338,19 @@ class TerrainRenderer {
                     if (!bites && !path) continue;
                     ctx.save();
                     ctx.clip(cell.path);
-                    
-                    
-                    
+
                     if (stage >= 1) {
                         ctx.fillStyle = `rgba(16,13,22,${0.07 * stage + 0.3 * Math.pow(stage / 5, 2)})`;
                         ctx.fill(cell.path);
                     }
-                    
-                    
-                    
+
                     if (stage >= 5) {
                         const [ox, oy] = this._trembleOf(k, nowMs);
                         ctx.translate(cell.cx + ox, cell.cy + oy);
                         ctx.scale(1.05, 1.05);
                         ctx.translate(-cell.cx, -cell.cy);
                     }
-                    
-                    
-                    
-                    
-                    
+
                     if (bites) {
                         ctx.fillStyle = TerrainRenderer.ROCK_INK;
                         ctx.fill(bites);
@@ -2537,40 +2358,36 @@ class TerrainRenderer {
                     if (path) {
                         const ht    = this._hitFlash.get(k);
                         const hitB  = ht !== undefined && nowMs - ht < 150 ? 1 - (nowMs - ht) / 150 : 0;
-                        // a new crack slams in white-hot and over-wide, then
-                        
+                        // a new crack flashes white-hot and over-wide, then settles
                         const st    = this._crackSnap.get(k);
                         const snap  = st !== undefined && nowMs - st < 220
                             ? Math.pow(1 - (nowMs - st) / 220, 2) : 0;
                         const boost = Math.max(hitB, snap);
-                        // discreet: damage whispers, the ore does the
-                        
+                        // kept subtle so ore markings stay the focus
                         const a = 0.30 + 0.035 * stage;
                         const w = 0.035 * rockSz * (0.28 + 0.075 * stage) * (1 + snap);
-                        
-                        
-                        
+
                         const cpal = TerrainRenderer.CRACK_PAL[this._ore.get(k) ?? 0]
                                   || TerrainRenderer.CRACK_PAL[0];
-                        
+
                         ctx.strokeStyle = 'rgba(16,13,22,0.8)';
                         ctx.lineWidth   = w * 2.1;
                         ctx.stroke(path);
-                        
+
                         ctx.strokeStyle = `rgba(${cpal.deep},${a})`;
                         ctx.lineWidth   = w * 1.2;
                         ctx.stroke(path);
-                        
+
                         ctx.strokeStyle = `rgba(${cpal.hot},${Math.min(1, a * 0.9 + boost * 0.45)})`;
                         ctx.lineWidth   = w * 0.5;
                         ctx.stroke(path);
-                        
+
                         ctx.strokeStyle = `rgba(${cpal.hair},${Math.max(0.08 + 0.025 * stage, boost * 0.6)})`;
                         ctx.lineWidth   = w * 0.2;
                         ctx.stroke(path);
                     }
                     ctx.restore();
-                    
+
                     if (stage >= 5 && this._pebbles.length < 80) {
                         const lt = this._lastTrickle.get(k) || 0;
                         if (nowMs - lt > 120) {
@@ -2597,11 +2414,6 @@ class TerrainRenderer {
             }
 
             // ── Ore markings: one crystal per deposit, drawn on the rock
-            
-            
-            
-            
-            
             if (this._ore.size) {
                 ctx.save();
                 ctx.lineJoin = 'round';
@@ -2617,9 +2429,7 @@ class TerrainRenderer {
                     const pal   = TerrainRenderer.ORE_PAL[tier];
                     const frac  = this._rockHealth.get(k);
                     const stage = frac === undefined ? 0 : this._stageOf(frac);
-                    
-                    
-                    
+
                     let sprout = null;
                     const spAt = this._oreSprout.get(k);
                     if (spAt !== undefined) {
@@ -2628,13 +2438,10 @@ class TerrainRenderer {
                         else sprout = Math.max(0, st);
                     }
 
-                    // the core crystal's aura bleeds a little past its cell -
-                    // treasure glowing through the mountain, kept quiet and
-                    // slow so it marks the spot without screaming
+                    // the core crystal's aura bleeds a little past its cell,
+                    // kept faint and slow
                     if ((tier === 3 || tier === 4) && art.big) {
-                        // emeralds breathe faster, wider and brighter - the
-                        // rarest thing in the wall should be felt before
-                        // it's seen
+                        // emeralds pulse faster, wider and brighter
                         const em = tier === 4;
                         const pulse = 0.5 + 0.5 * Math.sin(nowMs / (em ? 1100 : 1400) + (k % 31));
                         const gr = rockSz * (em ? 0.68 + 0.14 * pulse : 0.55 + 0.10 * pulse);
@@ -2664,8 +2471,7 @@ class TerrainRenderer {
                     const baseA = ctx.globalAlpha;
 
                     if (sprout !== null) {
-                        // ── the seam pushing through: one stone at a time,
-                        
+                        // ── the seam pushing through, one stone at a time
                         const parts = this._getSproutParts(k, tier);
                         if (parts) {
                             for (let di = 0; di < parts.length; di++) {
@@ -2713,13 +2519,9 @@ class TerrainRenderer {
                     ctx.fillStyle = pal.core;
                     ctx.fill(art.core);
 
-                    
-                    
-                    
                     const kk = k & 0xffff;
                     const baseAlpha = ctx.globalAlpha;
                     for (let gi = 0; gi < art.glintPts.length; gi++) {
-                        
                         const period = (tier === 4 ? 4500 : 9000) + this._h(gi, kk, 240) * (tier === 4 ? 3000 : 6000);
                         const phase  = this._h(gi, kk, 241) * period;
                         const tt = ((nowMs + phase) % period) / 520;
@@ -2752,9 +2554,6 @@ class TerrainRenderer {
                 ctx.restore();
             }
 
-            
-            
-            
             if (this._impacts.length || this._pebbles.length) {
                 const CHIPC = TerrainRenderer.ROCK_CHIP;
                 ctx.save();
@@ -2767,7 +2566,7 @@ class TerrainRenderer {
                     const baseAng = Math.atan2(im.dy ?? 0, im.dx ?? 1);
                     // grind scrapes render at half scale with fewer chips
                     const isc = im.small ? 0.45 : 1;
-                    
+
                     const ts = dt / 280;
                     if (!im.ticksOnly && ts < 1) {
                         ctx.fillStyle = `rgba(255,235,180,${(1 - ts) * (im.small ? 0.45 : 0.9)})`;
@@ -2801,8 +2600,7 @@ class TerrainRenderer {
                         ctx.globalAlpha = 1;
                         continue;
                     }
-                    // a good spray of rock chips: fly out fast off the rock
-                    
+                    // rock chips flying out fast off the rock
                     const fly = Math.min(1, tc / 0.3);
                     const fe  = 1 - Math.pow(1 - fly, 3);
                     const al  = tc < 0.5 ? 0.9 : 0.9 * (1 - (tc - 0.5) / 0.5);
@@ -2821,7 +2619,7 @@ class TerrainRenderer {
                     }
                     ctx.globalAlpha = 1;
                 }
-                
+
                 for (let i = this._pebbles.length - 1; i >= 0; i--) {
                     const pb = this._pebbles[i];
                     const tp = (nowMs - pb.born) / 1100;
@@ -2839,7 +2637,6 @@ class TerrainRenderer {
             }
 
             // ── Shatter: brief flash + dust ring, then rock chips
-            
             if (this._fx.length) {
                 const CHIPS = TerrainRenderer.ROCK_CHIP;
                 ctx.save();

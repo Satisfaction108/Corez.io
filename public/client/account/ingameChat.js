@@ -1,18 +1,9 @@
-// Friend chat while playing. A key (KEY_FRIEND_CHAT, Esc unless rebound in
-// Controls) opens a small panel on the right edge: friends with an online
-// dot and unread count, click one for the conversation (chat.js, the same
-// view the Friends pane uses). Only chat: no locker, shop or profile here.
-//
-// Input: while focus is inside the panel nothing reaches the game (the
-// canvas never gets the keys, and the root stops them for document
-// listeners); opening it drops held movement / fire; closing hands focus
-// back to the canvas. Clicks land on the panel, not the canvas, so they
-// never shoot.
-//
-// DMs arrive over the same /api/events stream the menu uses (social.js
-// keeps it open in a raid). A DM with the panel shut shows a small toast by
-// the chat pip. Everything here runs on events; nothing touches the DOM per
-// frame.
+// Friend chat while playing. KEY_FRIEND_CHAT (Esc unless rebound) opens a
+// panel on the right edge: friends with presence and unread counts, and the
+// chat.js conversation view. While focus is inside, no keys or clicks reach
+// the game; opening drops held movement / fire, closing refocuses the canvas.
+// DMs come over the /api/events stream (social.js keeps it open in a raid).
+// Event-driven only: nothing touches the DOM per frame.
 import * as social from './social.js';
 import * as store from './state.js';
 import * as chat from './chat.js';

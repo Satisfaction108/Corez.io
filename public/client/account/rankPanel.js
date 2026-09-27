@@ -1,13 +1,7 @@
-// The rank card on the raid death screen: the free strip under the run stats
-// in gameDrawDeadRoyale. Badge on the left; rank name and a +/- RP pill; a
-// bar that shows where you land (a light ghost first) and then eases there
-// while the numbers count; one short line under it, plus the gemdust.
-//
-// Variants: normal, loss (fares, Platinum and up), placement lives (pips),
-// the placement reveal, Legend (#N), a guest nudge, and "Calculating" while
-// the RK packet is on its way. A bar that fills past the division starts the
-// RANKED UP ceremony, then refills in the new division.
-//
+// The rank card on the raid death screen (under the run stats in
+// gameDrawDeadRoyale): badge, rank name, +/- RP pill, and a bar that eases to
+// where you land. A bar that fills past the division starts the RANKED UP
+// ceremony, then refills in the new division.
 // State comes from socketinit ('AC', 'F', 'RK', 'RKP', 'c'). 'F' never
 // clears a result (RK lands right after it); respawn / startGame / exit do.
 import { drawBadge, TIER_COLORS, tierOf } from './rankBadges.js';
@@ -231,7 +225,6 @@ function view(st, now) {
         v.prog = 1;
         return v;
     }
-    // done
     v.bar = a.pct;
     v.ghost = null;
     if (a.division == null) v.pips = { have: a.lives, pop: -1, k: 1 };

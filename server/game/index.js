@@ -11,9 +11,9 @@ const { REGROW: TG_REGROW } = require('./terrain/terrainGrid.js');
 const { inEnemyBase } = require('../miscFiles/controllers.js');
 const { chamberRingHit, chamberFaceRadius, chamberNormal } = coreChambers;
 
-// A natural mirror bounce: the ring reflects a shot off the face it struck,
-// keeping the incoming speed but redirecting it along the surface normal -
-// grazing shots slide off, dead-on shots bounce back. No freeze, no swallow.
+// Mirror bounce: the ring reflects a shot off the face it struck, keeping its
+// speed but redirecting it along the surface normal (grazing shots slide off,
+// dead-on shots bounce back).
 const REBOUND_KEEP = 0.85;    // how much of the shot's speed survives the bounce
 
 function deflectBullet(chamber, body) {
@@ -59,10 +59,9 @@ function pushOutOfChamberRing(chamber, body) {
     }
 }
 
-// Advanced collision impulses are intentionally soft, but two fast tanks can
-// still remain visibly inside each other for a frame. Bots should never occupy
-// the same hull as a player or teammate, so resolve the remaining penetration
-// explicitly after the normal collision response.
+// Advanced collision impulses are soft, so two fast tanks can stay inside each
+// other for a frame. Bots must never share a hull with a player or teammate,
+// so resolve the remaining penetration after the normal collision response.
 function separateBotTanks(first, second) {
     if (first.type !== 'tank' || second.type !== 'tank' ||
         (!first.isBot && !second.isBot)) return;
@@ -120,8 +119,7 @@ class gameHandler {
         Events.on('chatMessage', payload => this.handleBotChat(payload));
     }
     // Keep the simulation alive while bots are present, even if no human has
-    // finished joining a team yet. Previously the whole game loop paused until
-    // a client entered the match, which made idle bots appear frozen.
+    // joined a team yet.
     checkUsers = () => global.gameManager.clients.length >= 1 ||
         this.bots.some(bot => bot && !bot.isDead() && !bot.isGhost) ||
         !!Config.bot_soak_mode;
@@ -141,10 +139,8 @@ class gameHandler {
         }
         return actors;
     };
-    
-    collide = (instance, other) => {
 
-        
+    collide = (instance, other) => {
         if (instance.noclip || other.noclip) return 0;
 
         // Remove an existing bot/tank overlap before advancedcollide computes
@@ -152,7 +148,7 @@ class gameHandler {
         separateBotTanks(instance, other);
         instance.emit('collide', { body: instance, instance, other });
         other.emit('collide', { body: other, instance: other, other: instance });
-        
+
         if (instance.tickHandler) instance.tickHandler(instance, instance, other);
         if (other.tickHandler) other.tickHandler(other, other, instance);
 
@@ -162,7 +158,6 @@ class gameHandler {
             other.master.master.settings.no_collisions
         )  return 0;
 
-        
         for (const obj of [instance, other]) {
             if (obj.isGhost || obj.isDead()) {
                 if (obj.isInGrid) {
@@ -172,13 +167,11 @@ class gameHandler {
             }
         }
 
-        
         if (
             (instance.isArenaCloser && !instance.alpha) ||
             (other.isArenaCloser && !other.alpha)
         ) return 0;
 
-        
         if (
             instance.settings.hitsOwnType === "never" &&
             other.settings.hitsOwnType === "never" &&
@@ -220,18 +213,11 @@ class gameHandler {
                 }
                 break;
             case instance.isOutpostBanner || other.isOutpostBanner: {
-                
-                
-                
-                
-                
-                
                 const banner = instance.isOutpostBanner ? instance : other;
                 const body = instance.isOutpostBanner ? other : instance;
                 if (Config.dig_royale && banner.padSite && (body.isPlayer || body.isBot)) {
-                    // Dig Royale: the pad's drawn octagon is the wall. Applied here,
-                    // inside the physics pass, so a hull stops at the border instead
-                    // of sinking into the structure and bouncing off it.
+                    // Dig Royale: the pad's drawn octagon is the wall. Applied inside the physics
+                    // pass so a hull stops at the border instead of sinking in and bouncing off.
                     const dr = this._royaleScript || (this._royaleScript = require('./gamemodes/scripts/dig_royale.js'));
                     try { dr.baseWall(body, banner.padSite); } catch { /* */ }
                     if (banner.pinX !== undefined) {
@@ -243,20 +229,14 @@ class gameHandler {
                 }
                 if (banner.team === body.team) return;
                 if (["bullet", "drone", "trap", "satellite", "swarm"].includes(body.type)) {
-                    
                     advancedcollide(instance, other, true, true);
                     body.velocity.x = 0; body.velocity.y = 0;
                     body.accel.x = 0;    body.accel.y = 0;
                     body.kill();
                 } else {
-                    
-                    
-                    
                     advancedcollide(instance, other, true, true);
                     firmcollide(instance, other, 2);
-                    
-                    
-                    
+
                     if (banner.pinX !== undefined) {
                         banner.x = banner.pinX; banner.y = banner.pinY;
                         banner.velocity.x = 0;  banner.velocity.y = 0;
@@ -265,18 +245,6 @@ class gameHandler {
                 }
             } break;
             case instance.isCoreChamber || other.isCoreChamber: {
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
                 const chamber = instance.isCoreChamber ? instance : other;
                 const body = instance.isCoreChamber ? other : instance;
                 if (chamber.isDead?.()) break;
@@ -294,11 +262,8 @@ class gameHandler {
                         deflectBullet(chamber, body);
                     }
                 } else {
-                    
-                    
                     pushOutOfChamberRing(chamber, body);
-                    
-                    
+
                     if (chamber.pinX !== undefined) {
                         chamber.x = chamber.pinX; chamber.y = chamber.pinY;
                         chamber.velocity.x = 0;  chamber.velocity.y = 0;
@@ -349,7 +314,7 @@ class gameHandler {
                 {
                     let pusher = instance.settings.hitsOwnType === "pushOnlyTeam" ? instance : other;
                     let entity = instance.settings.hitsOwnType === "pushOnlyTeam" ? other : instance;
-                    
+
                     if (
                         instance.settings.hitsOwnType === other.settings.hitsOwnType ||
                         entity.settings.hitsOwnType === "never"
@@ -372,7 +337,7 @@ class gameHandler {
                 break;
             case instance.team !== other.team ||
                 (instance.team === other.team && (instance.healer && instance.master.id !== other.id) || (other.healer && other.master.id !== instance.id)):
-                
+
                 if (instance.type === "aura") {
                     if (!(this.auraCollideTypes.includes(other.type))) return;
                 } else if (other.type === "aura") {
@@ -443,7 +408,6 @@ class gameHandler {
                                     firmcollide(instance, other);
                                     break;
                             }
-                            
                         };
                         break;
                     case "hardOnlyBosses":
@@ -466,7 +430,6 @@ class gameHandler {
         logs.loops.tally();
         logs.master.set();
 
-        // Do entities life
         logs.entities.set();
         grid.clear();
         const _prof = this._stageProf || (this._stageProf = { mortality: 0, physics: 0, selfie: 0, misc: 0, aabb: 0, activation: 0, tick: 0 });
@@ -485,7 +448,6 @@ class gameHandler {
                 continue;
             }
 
-            // Reset collision array once at the beginning
             instance.collisionArray.length = 0;
 
             // Handle physics only if not bonded
@@ -540,11 +502,10 @@ class gameHandler {
         logs.master.mark();
         const _tGaze0 = performance.now();
         this._tickEntMs = _tGaze0 - (this._tickStart || _tGaze0);
-        // Update lastCycle only once. Stamped on an even grid (one cycleSpeed
-        // per tick, drifting 10% toward the wall clock) rather than the raw
-        // clock: the client interpolates over the gap between stamps while
-        // entities always move one fixed step per tick, so timer jitter in
-        // the raw stamps showed up as visible micro-stutter.
+        // lastCycle is stamped on an even grid (one cycleSpeed per tick, drifting 10%
+        // toward the wall clock), not the raw clock: the client interpolates over the
+        // gap between stamps while entities move one fixed step per tick, so raw-clock
+        // jitter would show up as micro-stutter.
         {
             const wall = util.time(), step = global.gameManager.room.cycleSpeed, prev = this._stampClock;
             let stamp = prev == null ? wall : prev + step + (wall - (prev + step)) * 0.1;
@@ -655,7 +616,7 @@ class gameHandler {
             }
         }
     };
-    
+
     maintainloop = () => {   
         // Upgrade bots's skill
         for (let i = 0; i < this.bots.length; i++) {
@@ -664,7 +625,7 @@ class gameHandler {
                 o.skill.score += Config.bot_xp_gain;            
             }
         }
-        
+
         if (this.checkUsers() && Config.enable_bosses && !this.naturallySpawnedBosses.length && this.bossTimer++ > Config.boss_spawn_cooldown) {
             this.bossTimer = -Config.boss_spawn_delay - 2;
             let selection = Config.boss_types[ran.chooseChance(...Config.boss_types.map((selection) => selection.chance))],
@@ -718,9 +679,9 @@ class gameHandler {
         return count;
     }
 
-    // Per-team ceiling on bots. Whatever picked the team - gem balance,
-    // weakest-team, or a respawning bot keeping its old side - a full team
-    // hands the slot to the other side instead of stacking past the cap.
+    // Per-team ceiling on bots. Whatever picked the team (gem balance, weakest
+    // team, or a respawning bot keeping its old side), a full team hands the slot
+    // to the other side instead of stacking past the cap.
     botBalancedTeam(preferred) {
         if (preferred !== TEAM_BLUE && preferred !== TEAM_RED) return preferred;
         const cap = Config.bot_team_cap || Infinity;
@@ -747,12 +708,10 @@ class gameHandler {
     configureBotStats(bot) {
         const rammer = !bot.guns || bot.guns.size === 0;
         const defs = (bot.defs || []).join(' ').toLowerCase();
-        // A 42-point base - the same budget a level-45 player has - shaped
-        // like the builds players actually win with, per class archetype.
+        // A 42-point base (the budget of a level-45 player), shaped like the builds
+        // players win with, per class archetype. Bullet health must stay high enough
+        // that max-pen player builds don't delete bot bullets on contact.
         // Order: [rld, pen, str, dam, spd, shi, atk, hlt, rgn, mob].
-        // The old one-size spread put bullet health at 2, so any max-pen
-        // player build deleted bot bullets on contact and every trade was
-        // lost before it started.
         // 11th slot is mining power: bots dig like a player who bought in
         let raw;
         if (rammer) raw = [0, 0, 0, 0, 0, 9, 9, 9, 6, 9, 5];
@@ -762,10 +721,8 @@ class gameHandler {
             raw = [6, 9, 8, 9, 2, 0, 0, 4, 0, 4, 5];
         else
             raw = [9, 8, 6, 9, 3, 0, 0, 3, 0, 4, 5];
-        // High-skill bots invest deeper, up to ~14 extra points spread over
-        // the stats they already use. Without this, every bot fought like a
-        // half-built tank and a maxed player build shredded the whole lobby
-        // without ever being pressured.
+        // High-skill bots invest deeper, up to ~14 extra points spread over the stats
+        // they already use, so a maxed player build still meets resistance.
         let bonus = Math.round(util.clamp(bot.botSkill ?? 0.5, 0, 1) * 14);
         for (let pass = 0; pass < 3 && bonus > 0; pass++) {
             for (let i = 0; i < raw.length && bonus > 0; i++) {
@@ -786,10 +743,8 @@ class gameHandler {
         const byTeam = new Map();
         for (const bot of this.bots) {
             if (!bot || bot.isDead() || bot.isGhost || bot.team == null) continue;
-            // A bot the director sent toward a player must not also be drafted
-            // into an outpost push on the far side of the map. The two systems
-            // were pulling the same bots in opposite directions and encounters
-            // dropped by roughly half.
+            // A bot the director sent toward a player must not also be drafted into an
+            // outpost push on the far side of the map; the two would pull it opposite ways.
             if ((bot._botDirectorUntil || 0) > now) {
                 bot._botPushTarget = null;
                 bot._botPushTargetUntil = 0;
@@ -799,10 +754,8 @@ class gameHandler {
             byTeam.get(bot.team).push(bot);
         }
         for (const members of byTeam.values()) {
-            // Squads were sliced out of an id-sorted list, so "teammates" were
-            // often on opposite sides of the map and could never actually push
-            // together. Group by proximity instead: take whoever is left, then
-            // pull in its two nearest unassigned teammates.
+            // Group squads by proximity so they can actually push together: take whoever
+            // is left, then pull in its two nearest unassigned teammates.
             const pool = members.slice();
             const squads = [];
             while (pool.length) {
@@ -818,10 +771,8 @@ class gameHandler {
                 squads.push(squad);
             }
             for (const squad of squads) {
-                // Chambers count as push targets too. Solo bots cannot
-                // out-damage a chamber's self-heal, so chambers only ever
-                // fall to a squad - which is exactly the coordinated moment
-                // players enjoy fighting over.
+                // Chambers count as push targets too. Solo bots cannot out-damage a
+                // chamber's self-heal, so chambers only ever fall to a squad.
                 const candidate = squad.find(bot =>
                     bot._digWarsGoal === 'objective' &&
                     (bot._digWarsObjectiveKind === 'outpost' || bot._digWarsObjectiveKind === 'chamber') &&
@@ -851,10 +802,9 @@ class gameHandler {
     }
 
     botTankExclusions() {
-        // Keep the player-editable checklist as the source of truth. Read it
-        // at selection time so an admin can change [x] entries and restart the
-        // match without another code edit. A missing file means no extra
-        // exclusions, preserving the existing built-in safety filters below.
+        // The editable checklist is the source of truth, read at selection time so an
+        // admin can change [x] entries and restart the match without a code edit. A
+        // missing file means no extra exclusions beyond the built-in filters below.
         try {
             const checklist = fs.readFileSync(
                 path.join(__dirname, '..', '..', 'BOT_TANK_CHECKLIST.md'),
@@ -876,12 +826,10 @@ class gameHandler {
         }
     }
 
-    // Relative pick weights per class key (lowercase). Anything not listed
-    // rolls at weight 1. Stronger meta tanks get higher weights so lobbies
-    // skew toward good builds; tier 1-2 branches that lead to those tanks
-    // are boosted too, otherwise the final-tier weights never get a chance
-    // to matter. This shapes odds only - the max-2-per-tank rule below is
-    // what actually stops a lobby from filling with copies.
+    // Relative pick weights per class key (lowercase); unlisted keys weigh 1.
+    // Stronger meta tanks weigh more, and the tier 1-2 branches leading to them are
+    // boosted too or the final-tier weights would never matter. This only shapes
+    // odds; the max-2-per-tank rule below is what stops a lobby of copies.
     static BOT_TANK_WEIGHTS = {
         // tier 1 branches
         twin: 3, machinegun: 3, flankguard: 3, pounder: 3, sniper: 2,
@@ -929,10 +877,8 @@ class gameHandler {
             !weak.test(textFor(option))
         );
         if (!usable.length) return null;
-        // Lobby variety: at most two living bots may be the same tank at
-        // once. Drop any option that would create a third copy - unless
-        // that removes every option, in which case a duplicate beats a
-        // bot stuck refusing to upgrade.
+        // Lobby variety: at most two living bots may be the same tank at once. Drop
+        // options that would make a third copy, unless that removes every option.
         const classCounts = new Map();
         for (const other of this.bots) {
             if (!other || other === bot || other.isDead?.()) continue;
@@ -968,9 +914,8 @@ class gameHandler {
                 o.refreshSkills();
             }
             const upgradeIndex = o.botStatsFixed ? this.botUpgradeIndex(o) : ran.irandomRange(0, o.upgrades.length);
-            // Entity.upgrade() does not return a success flag, so we watch the
-            // class id. A failed pick means this tank is done upgrading - dump
-            // the rest and let it go instead of waiting forever.
+            // Entity.upgrade() returns no success flag, so watch the class id. A failed
+            // pick means this tank is done upgrading: dump the rest instead of waiting.
             if (o.leftoverUpgrades && now >= (o.botNextUpgradeAt || 0)) {
                 const prev = o.defs?.[0];
                 if (upgradeIndex !== null) o.upgrade(upgradeIndex);
@@ -991,7 +936,7 @@ class gameHandler {
                 if ((!o.leftoverUpgrades && !settling) || stuck) this.armBot(o);
             }
         }
-        
+
         // nobody connected: stop refilling, and after a while stand the bots down
         const anyClients = (global.gameManager.socketManager?.clients || []).length > 0 || !!Config.bot_soak_mode;
         if (!anyClients) {
@@ -1024,19 +969,15 @@ class gameHandler {
         }
     }
 
-    // Keeps the world feeling inhabited.
-    //
-    // Bots roam and mine perfectly well on their own, but a player sees only
-    // about a 618 unit radius of a multi-thousand-unit world. Left alone they
-    // diffuse and the player meets nobody, which reads as a dead server even
-    // though everything is running. This nudges a few of the nearest idle bots
-    // toward whoever is playing, so encounters actually happen. It never
-    // teleports and never targets the player directly: it sets a destination in
-    // their region and lets the bot drive there.
+    // Keeps the world feeling inhabited. A player sees only ~618 units of a
+    // multi-thousand-unit world, so free-roaming bots diffuse and the server looks
+    // dead. This nudges a few of the nearest idle bots toward each player. It never
+    // teleports or targets the player directly: it sets a destination in their
+    // region and lets the bot drive there.
     directorTick() {
         const now = Date.now();
-        // Players under mercy are not hosts: funneling fresh bots toward
-        // somebody who is already losing is manufactured frustration.
+        // Players under mercy are not hosts: don't funnel fresh bots toward someone
+        // who is already losing.
         const humans = (this.socketManagerPlayers?.() || [])
             .filter(b => b && !b.isDead?.() && !b.isGhost &&
                 !((b.socket?.botMercyUntil || 0) > now));
@@ -1045,12 +986,9 @@ class gameHandler {
         const live = this.bots.filter(b => b && !b.isDead() && !b.isGhost);
         if (!live.length) return;
 
-        // NEAR must stay in the same order of magnitude as what the player can
-        // actually SEE (~618 units), not what the server considers close. At
-        // 1500 the director counted bots two screens away as company and went
-        // back to sleep while the player stared at an empty tunnel - the exact
-        // failure it exists to prevent. 900 means "on screen or one beat from
-        // walking onto it".
+        // NEAR must stay close to what the player can actually SEE (~618 units), or
+        // bots two screens away count as company and the director idles while the
+        // player sees nobody. 900 = on screen or one beat from walking onto it.
         const NEAR = 900, WANT = 4;
         for (const host of humans) {
             const near = live.filter(b => Math.hypot(b.x - host.x, b.y - host.y) <= NEAR);
@@ -1063,18 +1001,14 @@ class gameHandler {
 
             for (const bot of candidates.slice(0, WANT - near.length)) {
                 const angle = Math.random() * Math.PI * 2;
-                // Stay inside NEAR: a bot dropped past it does not count as
-                // company, so the director would immediately re-task somebody
-                // else for the same player and thin the crowd it just built.
+                // Stay inside NEAR: a bot dropped past it does not count as company, so the
+                // director would re-task somebody else for the same player.
                 const dist = 380 + Math.random() * 440;
                 bot._botDirectorPoint = {
                     x: host.x + Math.cos(angle) * dist,
                     y: host.y + Math.sin(angle) * dist,
                 };
-                // long enough to actually walk there, then they are free again.
-                // Shorter than it used to be: on a compact map the trip is
-                // shorter, and a bot released sooner can be re-tasked toward
-                // the next player instead of sitting on a stale lease.
+                // long enough to walk there on a compact map, then free to be re-tasked
                 bot._botDirectorUntil = now + 14000;
             }
         }
@@ -1086,8 +1020,8 @@ class gameHandler {
             .filter(b => b && b.isPlayer);
     }
 
-    // Base at match start. Once the team holds an outpost, mix home and pad
-    // so they don't all pour out of one hole - never the open map.
+    // Base at match start. Once the team holds an outpost, mix home and pad so
+    // they don't all pour out of one hole; never the open map.
     botSpawnLocation(team) {
         const base = () => getSpawnableArea(team, global.gameManager);
         const pads = typeof outposts.ownedBy === "function" ? outposts.ownedBy(team) : [];
@@ -1151,8 +1085,8 @@ class gameHandler {
         o.controllers = [];
         o.refreshBodyAttributes();
         o.isBot = true;
-        // Bots should not be put to sleep by view-based activation. Their AI
-        // must keep simulating before a teammate's camera reaches them.
+        // Bots are exempt from view-based activation: their AI must keep simulating
+        // before any camera reaches them.
         o.alwaysActive = true;
         o.botFamilyId = lifecycle?.familyId ?? o.id;
         o.botNameKey = nameKey;
@@ -1164,9 +1098,8 @@ class gameHandler {
         // showoff moments are brief and never interrupt an actual player fight.
         o.botStyle = ran.choose(['normal', 'normal', 'normal', 'dancer', 'spinner']);
         o.botTemperament = ran.choose(['aggressive', 'aggressive', 'balanced', 'balanced', 'passive']);
-        // Body-only tanks are a rare spice - roughly one rammer in fifty
-        // bots. The upgrade picker below also forces the body branch only
-        // for this small group.
+        // Body-only tanks are rare (about one rammer in fifty bots). The upgrade
+        // picker below forces the body branch only for this group.
         o.botRammerAllowed = ran.chance(0.02);
         o.name = botName;
         o.invuln = true;
@@ -1191,9 +1124,8 @@ class gameHandler {
         if (Config.dig_royale) o.botRespawnsRemaining = 0;
         if (team) o.team = team;
         if (Config.dig_wars || Config.dig_royale) gems.initSatchel(o);
-        // Remember the last enemy that actually damaged this tank. The goal
-        // controller uses this for a short, common-sense "fight back or run"
-        // reaction instead of continuing to mine through incoming fire.
+        // Last enemy that damaged this tank: the goal controller uses it for a short
+        // "fight back or run" reaction instead of mining through incoming fire.
         o.on('damage', ({ damageInflictor = [] }) => {
             const attacker = damageInflictor
                 .map(source => {
@@ -1208,9 +1140,8 @@ class gameHandler {
                 // a fresh spawn that shoots a bot has ended its own bot grace
                 // (dig_royale FIRST_MINUTES; read in controllers.js)
                 if (attacker.isPlayer && attacker.botGraceUntil) attacker.botGraceUntil = 0;
-                // Tell the team. Nearby teammates rally to this marker, which
-                // is how a skirmish grows into a fight instead of staying a
-                // series of unrelated 1v1s.
+                // Tell the team: nearby teammates rally to this marker, so a skirmish grows
+                // into a fight.
                 if (Date.now() - (o._lastMarkerAt || 0) > 8000) {
                     o._lastMarkerAt = Date.now();
                     this.addEnemyMarker(o.team, attacker.x, attacker.y, o.id);
@@ -1224,18 +1155,14 @@ class gameHandler {
                 o._lastKillAt = Date.now();
                 o._collectLootUntil = o._lastKillAt + 5000;
             }
-            // Comeback pressure valve: a player losing to bots repeatedly gets
-            // breathing room - bots stop initiating on them and aim worse -
-            // until they take a bot down themselves. Nobody re-queues after
-            // being farmed by machines.
+            // Comeback valve: a player repeatedly losing to bots gets breathing room (bots
+            // stop initiating on them and aim worse) until they take a bot down themselves.
             if (victim?.isPlayer && victim.socket) {
                 const s = victim.socket, now = Date.now();
                 s.botDeathStreak = now - (s.botDeathLastAt || 0) < 90_000 ? (s.botDeathStreak || 0) + 1 : 1;
                 s.botDeathLastAt = now;
-                // Mercy is a soft touch for someone genuinely spiraling, not
-                // a switch that turns the lobby passive. At two deaths it was
-                // firing constantly and bots around an active fighter went
-                // inert, which read as "the bots do nothing".
+                // Mercy is for someone genuinely spiraling, not a switch that makes the lobby
+                // passive; a low threshold leaves bots around an active fighter inert.
                 if (s.botDeathStreak >= 4)
                     s.botMercyUntil = now + 30_000;
                 o._victoryEmoteUntil = now + 1300;
@@ -1267,17 +1194,15 @@ class gameHandler {
             if (stats) stats.deaths++;
             util.remove(this.bots, this.bots.indexOf(o));
 
-            // Killing a bot is the comeback: the moment a player lands one,
-            // mercy ends and bots treat them normally again.
+            // Killing a bot ends mercy.
             const avenger = o._lastDamageSource;
             if (avenger?.isPlayer && avenger.socket && Date.now() - (o._lastDamageAt || 0) < 8000) {
                 avenger.socket.botDeathStreak = 0;
                 avenger.socket.botMercyUntil = 0;
             }
 
-            // A bot is a little persistent character, not a disposable tank.
-            // Keep its name through a small run of deaths, then let the slot
-            // receive a genuinely new bot with a new name.
+            // A bot keeps its name through a small run of deaths, then the slot gets a
+            // new bot with a new name.
             const respawnsRemaining = Config.dig_royale ? 0 : (o.botRespawnsRemaining || 0);
             if (Config.dig_royale) {
                 try { require('./gamemodes/scripts/dig_royale.js').onCombatantDead(o); } catch (e) { /* */ }
@@ -1314,8 +1239,8 @@ class gameHandler {
     };
 
     botChatReply(bot, rawMessage) {
-        // This is intentionally a small, deterministic emergency fallback.
-        // A failed model request must never turn into a random reaction.
+        // Small, deterministic fallback: a failed model request must never turn
+        // into a random reaction.
         const message = String(rawMessage || '').trim().toLowerCase();
         const addressed = this.botNameMentioned(message, bot);
         const saysNo = /^(nah|no|nope|dont|don't|i dont|i don't|not really|maybe not)\b/.test(message);
@@ -1361,9 +1286,8 @@ class gameHandler {
         if (!text || text.length < 2 || text.length > 96) return false;
         if (bot._lastChatReply && text === bot._lastChatReply) return false;
         if (/[<>${}]/.test(text) || /\b(as an ai|as a bot|language model|i cannot comply)\b/.test(text)) return false;
-        // Reject the exact low-information reactions that made the old
-        // fallback feel random. DeepSeek may still use casual slang, but it
-        // must contribute an actual answer.
+        // Reject low-information reactions. Casual slang is fine, but the reply must
+        // contribute an actual answer.
         if (/^(fr|lol yeah|true|same tbh|no way lol|yeah i feel that|lmao|yeah)\W*$/.test(text)) return false;
         if (/\b(discord|dc)\b/.test(message) && !/\b(discord|dc|add|send|drop|have)\b/.test(text)) return false;
         if (/\b(kill|shoot|die|destroy)\b/.test(message) && !/\b(chill|why|me|nah|no|stop|lol|please|fight)\b/.test(text)) return false;
@@ -1401,10 +1325,9 @@ class gameHandler {
     async aiBotChatReply(bot, rawMessage) {
         const fallback = this.botChatReply(bot, rawMessage);
         const now = Date.now();
-        // Every ordinary player message that reaches a nearby bot is sent to
-        // the configured NVIDIA NIM chat model, including short messages such
-        // as just the bot's name. The local reply is only a provider-failure
-        // fallback.
+        // Every ordinary player message that reaches a nearby bot goes to the
+        // configured NVIDIA NIM chat model, even just the bot's name. The local reply
+        // is only a provider-failure fallback.
         if (!Config.bot_chat_ai_enabled || typeof fetch !== 'function') return fallback;
 
         bot._chatHistory ??= [];
@@ -1454,8 +1377,7 @@ class gameHandler {
     }
 
     handleBotChat({ message, socket }) {
-        // Bot chat is switched off for now (owner request). The machinery
-        // below stays so it can be re-enabled by deleting this line.
+        // Bot chat is disabled; delete this return to re-enable it.
         return;
         if (!Config.dig_wars || !socket?.player?.body || typeof message !== 'string') return;
         const player = socket.player.body;
@@ -1471,8 +1393,7 @@ class gameHandler {
         const addressed = nearby.filter(({ bot }) => this.botNameMentioned(text, bot));
         const canAnswer = ({ bot }) => !bot._chatPending && Date.now() >= (bot._nextChatAt || 0);
         const mentionsAnyBot = this.bots.some(bot => bot && !bot.isDead() && this.botNameMentioned(text, bot));
-        // A message aimed at a bot who is farther away must not accidentally
-        // make a random nearby bot answer it.
+        // A message aimed at a farther-away bot must not make a random nearby bot answer.
         if (mentionsAnyBot && !addressed.length) return;
         // A named bot gets first refusal. If it is still thinking or on
         // cooldown, stay quiet rather than handing the message to somebody
@@ -1509,8 +1430,7 @@ class gameHandler {
     }
 
     botAmbientChat() {
-        // Bot-to-bot ambient lines were not player conversation and frequently
-        // looked like random NPC noise. Keep chat player-triggered only.
+        // Bot chat is player-triggered only (no bot-to-bot ambient lines).
         return;
     }
 
@@ -1619,15 +1539,14 @@ class gameHandler {
                 this.stop();
             }, Config.bot_soak_duration_ms);
         }
-        // Tick health: every stage is timed and a slow tick is logged once
-        // per second with its breakdown, so a stall shows up in the console
-        // instead of only as a ping spike on the client.
+        // Tick health: every stage is timed and a slow tick is logged at most once
+        // per second with its breakdown.
         const tickStats = global.tickStats = { n: 0, ema: 0, max: 0, slow: 0, lastLog: 0, terrainEma: 0, terrainMax: 0, modeMax: 0 };
         let lastTickAt = performance.now();
         let gameLoop = setInterval(() => {
             if (!this.active) return clearInterval(gameLoop);
-            // measured every interval, occupied or not: an empty room used to
-            // skip this, so the first tick after idling logged as "late"
+            // measured every interval, occupied or not, so the first tick after idling
+            // doesn't log as "late"
             const cycleStarted = performance.now();
             const late = cycleStarted - lastTickAt - 1000 / 30;
             lastTickAt = cycleStarted;
@@ -1635,10 +1554,9 @@ class gameHandler {
                 try {
                     this._lifeProf = null; this._collideMs = 0; this._stageProf = null; global.botProf = {};
                     this.gameloop();
-                    // Terrain, gems, pads and the raid clock run right after the
-                    // entity step, on the same 30 Hz beat. They used to have their
-                    // own 16 ms timer, which competed with this one (uneven ticks)
-                    // and redid half its work on positions that had not moved.
+                    // Terrain, gems, pads and the raid clock run right after the entity step on
+                    // the same 30 Hz beat; a separate timer would compete with this one and redo
+                    // work on positions that had not moved.
                     try { terrainPass(); } catch (e) {
                         if (Date.now() - (this._terrainErrAt || 0) > 10000) {
                             this._terrainErrAt = Date.now();
@@ -1708,13 +1626,8 @@ class gameHandler {
             this.regenHealthAndShield();
         }, Config.regenerate_tick);
 
-        
-        
-        
-        
         const mineBudget = new Map(); 
-        
-        
+
         const announceEmerald = (miner) => {
             const who = miner && miner.name ? miner.name : "An unnamed player";
             global.gameManager.socketManager.broadcast(`${who} has destroyed an emerald shard!`);
@@ -1724,10 +1637,7 @@ class gameHandler {
             while (m.master && m.master !== m && hops++ < 4) m = m.master;
             return m;
         };
-        
-        
-        
-        
+
         const crush = (instance, ms) => {
             if (!instance.health || !(instance.health.max > 0)) return;
             const dmg = instance.health.max * TG_REGROW.CRUSH_DPS_FRAC * (ms / 1000);
@@ -1742,8 +1652,8 @@ class gameHandler {
         let lastTerrainTick = Date.now();
         // required once, lazily (both pull in half the game at load time)
         let chestsMod = null, digRoyaleMod = null;
-        // Called from the game loop above, once per tick. (That callback only
-        // runs after run() returns, so this const exists by then.)
+        // Called from the game loop above once per tick (that callback only runs
+        // after run() returns, so this const exists by then).
         const terrainPass = () => {
             if (!this.active) return;
             const _tg = global.gameManager.terrainGrid;
@@ -1753,8 +1663,7 @@ class gameHandler {
             // CPU to the worker that has players.
             if (!this.checkUsers()) return;
             if (mineBudget.size > 256) mineBudget.clear(); // stale-id backstop
-            
-            
+
             const tickNow = Date.now();
             const tickMs = Math.min(66, tickNow - lastTerrainTick) || 33;
             lastTerrainTick = tickNow;
@@ -1764,8 +1673,8 @@ class gameHandler {
             this._terrainRegrowMs = performance.now() - _terrainT0;
             const growingNow = _tg.growingRocks().length > 0;
             const gemActors = this.gemActors();
-            // Loose gems run at 30 Hz (the magnet blend is tuned for it in
-            // gems.tickGem), which is now simply every pass.
+            // Loose gems run every pass, at 30 Hz (the magnet blend in gems.tickGem is
+            // tuned for it).
             const gemsThisTick = true;
             for (const instance of global.entities.values()) {
                 if (!instance) continue;
@@ -1817,43 +1726,31 @@ class gameHandler {
                             if (destroyed && !wasGrowing && drock.ore) gems.spawnOreBurst(drock, null);
                         }
                     }
-                    // A tutorial glide (tutorialSession.teleportTo) moves the
-                    // tank in a straight line, through rock. Resolving rock
-                    // contacts mid-glide pinned it against the first wall and
-                    // then "spat it out" to open ground, which read as a
-                    // random teleport. It lands on open ground; collide after.
+                    // A tutorial glide (tutorialSession.teleportTo) moves the tank in a straight
+                    // line through rock and lands on open ground; resolving rock contacts mid-glide
+                    // would pin it against the first wall. Collide after it lands.
                     const gliding = !!instance._tutorialGlide;
                     const p = gliding ? { dx: 0, dy: 0 } : _tg.pushCircleFromVoronoi(instance, r);
                     let dx = p.dx, dy = p.dy;
                     const nowT = tickNow;
-                    
-                    
-                    
-                    
+
                     let entombed = false;
                     if (growingNow && !gliding) {
                         const g = _tg.pushCircleFromGrowing(instance, r, tickNow);
                         entombed = g.entombed;
                         if (g.dx !== 0 || g.dy !== 0) { dx += g.dx; dy += g.dy; }
-                        
-                        
+
                         if (g.buried) {
                             instance.velocity.x = 0; instance.velocity.y = 0;
                             instance.accel.x = 0;    instance.accel.y = 0;
                         }
                     }
-                    
-                    
-                    
-                    
+
                     if (!gliding && _tg.pointInRock(instance.x, instance.y)) {
                         entombed = true;
-                        // Center is inside an alive rock, past the reach of the
-                        // edge push above. That state should never persist: a
-                        // regrow landing on a tank, a spawn overlap, or a
-                        // missed edge. Crush ticks below, and spit the tank
-                        // out to the nearest open ground so it cannot live
-                        // inside the wall.
+                        // Center is inside a live rock, past the reach of the edge push above (a
+                        // regrow landing on a tank, a spawn overlap, a missed edge). Crush ticks
+                        // below, and spit the tank out to the nearest open ground.
                         const step = Math.max(48, r * 2);
                         for (let ring = 1; ring <= 8; ring++) {
                             let freed = false;
@@ -1883,20 +1780,12 @@ class gameHandler {
                             instance.velocity.x -= vDot * nx;
                             instance.velocity.y -= vDot * ny;
                         }
-                        
-                        
-                        
-                        
+
                         instance.grindTouchUntil = nowT + 300;
                         instance.grindNx = nx;
                         instance.grindNy = ny;
                     }
-                    
-                    
-                    
-                    
-                    
-                    
+
                     if (instance.type === 'tank' && instance.grindTouchUntil > nowT) {
                         const gsec = mining.grindSecondsFor(instance);
                         if (gsec) {
@@ -1925,8 +1814,7 @@ class gameHandler {
                                             instance.x - (instance.grindNx || 0) * r,
                                             instance.y - (instance.grindNy || 0) * r,
                                             true, instance);
-                                        
-                                        
+
                                         if (destroyed) instance.rocksMined = (instance.rocksMined || 0) + 1;
                                         if (destroyed && !wasGrowing) {
                                             if (!rock.ore) gems.pityBurst(rock, instance);
@@ -1962,13 +1850,7 @@ class gameHandler {
                         }
                         if (instance.isDead?.()) continue;
                     }
-                    
-                    
-                    
-                    
-                    
-                    
-                    
+
                     const rock = _tg.rockHitByCircle(instance.x, instance.y, instance.realSize)
                         || (growingNow ? _tg.growingRockHitByCircle(instance.x, instance.y, instance.realSize, tickNow) : null);
                     if (rock) {
@@ -1976,17 +1858,10 @@ class gameHandler {
                         const nowT = Date.now();
                         let mb = mineBudget.get(owner.id);
                         if (!mb || nowT - mb.t >= 1000) {
-                            
                             mb = { t: nowT, left: _tg.baseRockHealth * 3 };
                             mineBudget.set(owner.id, mb);
                         }
-                        
-                        
-                        
-                        
-                        
-                        
-                        
+
                         const rp = instance.rockPower || 0;
                         const raw = _tg.baseRockHealth / mining.rockHitsFor(owner, instance)
                                   * mining.skillFactor(owner) * (rp || 1);
@@ -1996,9 +1871,8 @@ class gameHandler {
                             mb.left -= dmg;
                             const wasGrowing = rock.growing;
                             const destroyed = _tg.damageRock(rock, dmg, instance.x, instance.y, false, owner);
-                            // breaking an ore cell erupts its gem payout -
-                            
-                            
+                            // breaking an ore cell erupts its gem payout
+
                             if (destroyed) owner.rocksMined = (owner.rocksMined || 0) + 1;
                             if (destroyed && !wasGrowing) {
                                 if (!rock.ore) gems.pityBurst(rock, owner);
@@ -2009,8 +1883,7 @@ class gameHandler {
                                 }
                             }
                         }
-                        
-                        
+
                         instance.velocity.x = 0; instance.velocity.y = 0;
                         instance.accel.x = 0;    instance.accel.y = 0;
                         instance.kill();
@@ -2018,7 +1891,6 @@ class gameHandler {
                 }
             }
 
-            
             const vNow = Date.now();
             const padDt = Math.min(66, vNow - (this._lastVaultTick || vNow)) || 33;
             // One bad pad must not take the whole server down with it.
@@ -2046,11 +1918,6 @@ class gameHandler {
                 }
             }
 
-            
-            
-            
-            
-            
             if (_tg.rockEvents.length) {
                 const payload = JSON.stringify(_tg.rockEvents);
                 _tg.rockEvents.length = 0;

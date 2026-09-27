@@ -17,8 +17,7 @@
 // checked at start and again at the callback; otherwise
 // /?auth=error&reason=reauth_required.
 // Each state value is accepted once, and the callback is rate limited per IP.
-// Every outcome is a redirect; these routes never fall through to the
-// static file server.
+// Every outcome is a redirect; never falls through to the static server.
 'use strict';
 
 const config = require('../config');
@@ -126,7 +125,7 @@ async function fetchDiscordUser(code) {
         const avatar = typeof me.avatar === 'string' && /^(a_)?[0-9a-f]{32}$/.test(me.avatar) ? me.avatar : null;
         return { id: String(me.id), name, avatar };
     } finally {
-        // Fire and forget: we only needed the identity.
+        // Fire and forget: only the identity is needed.
         Promise.resolve()
             .then(() => formPost(`${DISCORD_API}/oauth2/token/revoke`, { token: tok.access_token, token_type_hint: 'access_token' }))
             .catch(() => { /* Discord expires it anyway */ });

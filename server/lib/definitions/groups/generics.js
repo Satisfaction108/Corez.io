@@ -591,9 +591,9 @@ for (let i = 0; i < 2; i++) {
 // Technical
 Class.bot = {
     FACING_TYPE: 'looseToTarget',
-    // digWarsGoals is authoritative: it decides movement, aim and fire every
-    // tick. Nothing below it may retarget the hull, or the two layers fight
-    // each other and the tank twitches. Turrets keep their own controllers.
+    // digWarsGoals is authoritative for movement, aim and fire every tick.
+    // Nothing below it may retarget the hull, or the layers fight and the tank
+    // twitches. Turrets keep their own controllers.
     CONTROLLERS: [
         "digWarsGoals",
         "mapAltToFire",

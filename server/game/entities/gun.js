@@ -116,7 +116,7 @@ class Gun extends EventEmitter {
             this.recoilDir = 0;
         }
     }
-    
+
     recoil() {
         if (this.motion || this.position) {
             // Simulate recoil
@@ -203,7 +203,7 @@ class Gun extends EventEmitter {
             offsetFinalX = offset_base_x + offset_end_x,
             offsetFinalY = offset_base_y + offset_end_y,
             skill = this.bulletStats === "master" ? this.body.skill : this.bulletStats;
-        
+
         this.fire(offsetFinalX, offsetFinalY, skill);
     }
     live() {
@@ -217,7 +217,7 @@ class Gun extends EventEmitter {
         // Decides what to do based on child-counting settings
         let shootPermission = this.checkShootPermission();
 
-        // Dont shoot when invuln/not active. Lobby still fires.
+        // Don't shoot when invuln/not active. The lobby still fires.
         if ((this.body.master.invuln && !this.body.master.royaleLobby) ||
             !this.body.master.activation.check() ||
             (Config.dig_royale && (this.body.master.vaultOnPad || this.body.master.onVaultPad || this.body.master.onBasePad))) {
@@ -331,7 +331,7 @@ class Gun extends EventEmitter {
             s.y += (this.body.velocity.length * extraBoost * s.y) / len;
           }
         }
-    
+
         //create an independent entity
         let spawnOffset = {
             x: this.body.x + this.body.size * gx - s.x,
@@ -377,7 +377,7 @@ class Gun extends EventEmitter {
             });
             return;
         }
-    
+
         // Create the bullet
         var o;
         switch (this.noentitylimit) {

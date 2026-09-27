@@ -1,5 +1,3 @@
-
-
 const gems = require('./gems.js');
 
 const CHAMBER_SIZE    = 160;      
@@ -16,9 +14,8 @@ const WAVE_SPREAD     = 0.05;
 const ORBIT_SPEED_MIN = 0.0008;
 const ORBIT_SPEED_SPAN = 0.0017;
 
-// The treasury gems are the same size the loose ore gems of that class spawn
-// at (the deposit radii spawn copper ~14-19, vein ~17-23, shard ~16-34,
-// emerald 34) so a chamber hoard reads as the real gems, just a lot of them.
+// Treasury gem sizes match the loose ore gems of each class.
+// at: growth scale at which that tier appears during a regrow.
 const TREASURY = [
     { cls: 'gemPickupEmerald', size: 34, value: 500, count: 2,  at: 0.95 },
     { cls: 'gemPickupShard',   size: 30, value: 150, count: 10, at: 0.75 },
@@ -44,7 +41,6 @@ function chamberRotFor(id, x, y) {
 }
 
 // Radial distance from the center to the polygon edge along angle `ang`.
-
 function polygonEdgeR(sides, apothem, rot, ang) {
     const half = Math.PI / sides;
     const sector = Math.PI * 2 / sides;
@@ -63,8 +59,8 @@ function polygonNormal(sides, rot, ang) {
 }
 
 const APOTHEM_OUTER = CHAMBER_RADIUS * Math.cos(Math.PI / CHAMBER_SIDES);
-// The drawn ring's inner outline is a 15-gon with VERTICES at CHAMBER_INNER,
-// so its apothem is the boundary the treasury gems must never cross.
+// The drawn inner outline is a 15-gon with vertices at CHAMBER_INNER; its
+// apothem is the boundary treasury gems stay inside.
 const APOTHEM_INNER = CHAMBER_INNER * Math.cos(Math.PI / CHAMBER_SIDES);
 
 // The outward unit normal of the face at `ang` for the chamber's rotation.
@@ -78,11 +74,9 @@ function chamberFaceRadius(chamber, ang) {
     return polygonEdgeR(CHAMBER_SIDES, APOTHEM_OUTER * scale, chamber.chamberRot || 0, ang);
 }
 
-// True if the body's circle overlaps the polygon (the ring's outer boundary
-// and everything inside it). The interior is solid for collision even though
-// the ring is drawn hollow: nothing can be inside while it stands - the face
-// blocks every body and absorbs/deflects every bullet - and a ring that grows
-// around a body must push it out rather than swallow it.
+// True if the body's circle overlaps the polygon. The interior is solid for
+// collision even though the ring is drawn hollow, so a ring that grows around
+// a body pushes it out rather than swallowing it.
 function chamberRingHit(chamber, body) {
     const scale = chamber.sizeMultiplier ?? 1;
     const dx = body.x - chamber.x, dy = body.y - chamber.y;
@@ -139,16 +133,14 @@ function stateSnapshot() {
 }
 
 function announce(msg) {
-    // Tutorial: capture/destruction fanfare is noise while someone is being
-    // taught - every event on that server is a scripted lesson beat anyway.
+    // no capture fanfare in the tutorial
     if (Config.tutorial) return;
     global.gameManager.socketManager.broadcast(msg);
 }
 
 const teamName = team => team === TEAM_BLUE ? "Blue" : "Red";
 
-// The smooth ease-in-out curve the living wall grows with - slow right
-// after the sliver appears and slow as the ring closes in.
+// Ease-in-out growth curve.
 function easeGrowth(t) {
     return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
@@ -166,19 +158,16 @@ function spawnStructure(c) {
     o.define('coreChamber');
     o.team = c.team;
     o.color.base = getTeamColor(c.team);
-    // the ring's own label lives in drawChambers - no floating nameplate
+    // the client draws the label (drawChambers), so no nameplate
     o.name = "";
     o.isCoreChamber = true;
     o.chamberAlive = c.state === 'alive';
     o.chamberRot = chamberRotFor(c.id, c.x, c.y);
     o.sizeMultiplier = growScale(c, Date.now());
-    
+
     o.pinX = c.x;
     o.pinY = c.y;
-    // Tutorial: a real ring is meant to take a team a while, which is a fine
-    // design and a terrible lesson - the learner would be holding fire for
-    // half a minute to see what happens. Thin it down; the objective is the
-    // hoard spilling out, not the grind to get there.
+    // Tutorial: a much weaker ring, so the lesson is the hoard spilling out.
     if (Config.tutorial && o.health && o.health.max) {
         o.health.max *= 0.18;
         o.health.amount = o.health.max;
@@ -208,8 +197,6 @@ function onChamberDeath(c) {
 }
 
 function armTreasury(c) {
-    
-    
     c._pending.length = 0;
     for (const tier of TREASURY) {
         for (let i = 0; i < tier.count; i++) {
@@ -220,29 +207,22 @@ function armTreasury(c) {
 
 function spawnContainedGem(c, tier, spawnScale) {
     const ang = Math.random() * Math.PI * 2;
-    // spread across the full disk - the gems can ride out to the inner wall
+    // spread across the full disk, out to the inner wall
     const rad = Math.random() * Math.max(2, APOTHEM_INNER * spawnScale * 0.9);
     const g = gems.spawnGem(c.x + Math.cos(ang) * rad, c.y + Math.sin(ang) * rad,
                             tier.value, tier.cls, tier.size);
     g.chamberHome = c;          // routes this gem to the containment tick
-    // Stay on the spatial grid so cameras can still see them. Pulling them
-    // out made the hoard vanish ~250ms after spawn (and after every regrow)
-    // because the view list is rebuilt from grid queries. They already have
-    // NO_COLLISIONS, so they will not fight tanks or each other.
+    // Stay on the spatial grid: view lists are rebuilt from grid queries, so
+    // off-grid gems would vanish. They have NO_COLLISIONS anyway.
     g.settings.diesAtRange = false;
     g.RANGE = g.range = 9e99;
-    
-    
-    
-    
+
     g._orbitA = ang;
     g._orbitR = Math.max(g.realSize + 2, rad);
     g._orbitW = ORBIT_SPEED_MIN + Math.random() * ORBIT_SPEED_SPAN;
     g._orbitDir = Math.random() < 0.5 ? 1 : -1;   // some drift clockwise, some against
     g._orbitWob = Math.random() * Math.PI * 2;
-    // per-gem motion signature: angular speed breathes, the radius wobbles on
-    // two out-of-phase sine trains, and the whole track is mildly elliptical -
-    // so no two gems ever ride the same uniform circle
+    // per-gem orbit variation: speed, radius wobble, eccentricity
     g._orbitJit = 0.5 + Math.random() * 0.25;
     g._orbitRA  = 0.04 + Math.random() * 0.05;
     g._orbitJag = 0.02 + Math.random() * 0.03;
@@ -278,7 +258,6 @@ function spawnPendingGems(c, scale) {
 function tickContainedGem(gem) {
     const c = gem.chamberHome;
     if (!c || !c.entity || c.state === 'destroyed') {
-        
         if (c) {
             const i = c.containedGems.indexOf(gem);
             if (i >= 0) c.containedGems.splice(i, 1);
@@ -289,13 +268,11 @@ function tickContainedGem(gem) {
         return;
     }
     const scale = growScale(c, Date.now());
-    // the gems may use the whole pocket - the limit is the ring's inner wall
-    // (its apothem × scale) minus the gem's own half-width
+    // limit: the inner wall (apothem x scale) minus the gem's half-width
     const lim = Math.max(gem.realSize + 2, APOTHEM_INNER * scale - gem.realSize);
 
-    // non-monotonous revolution: the angular speed swells and eases around the
-    // track (never stalls or backtracks), the radius rides two wobbles plus a
-    // slow breathe, and a per-gem eccentricity drifts the whole path off-centre
+    // Angular speed varies but never stalls or reverses; the radius has two
+    // wobbles, a slow breathe and a per-gem eccentricity.
     const a0 = gem._orbitA || 0;
     const w = gem._orbitW || 0.001;
     const wob = gem._orbitWob || 0;
@@ -319,12 +296,10 @@ function releaseGems(c) {
         if (!g || g.isDead?.()) continue;
         g.chamberHome = undefined;
         g.chamberBias = c.team;     
-        
-        
+
         g.settings.diesAtRange = true;
         g.range = 5400 + Math.random() * 900;
-        
-        
+
         const ang = Math.atan2(g.y - c.y, g.x - c.x);
         const sp = 1.2 + Math.random() * 1.2;
         g.velocity.x += Math.cos(ang) * sp;
@@ -340,14 +315,11 @@ function tick(dtMs) {
     const now = Date.now();
 
     for (const c of list) {
-        
         if (!c.entity && (c.state === 'alive' || c.state === 'regrowing')) spawnStructure(c);
 
         if (c.state === 'alive') {
             const b = c.entity;
             if (b && !b.isDead()) {
-                
-                
                 if (!c._armed) {
                     c._armed = true;
                     armTreasury(c);
@@ -355,9 +327,7 @@ function tick(dtMs) {
                 } else {
                     refillTreasuryIfEmpty(c);
                 }
-                
-                
-                
+
                 if (b.health.amount < (c._hpTrack ?? b.health.amount)) c._lastHitAt = now;
                 c._hpTrack = b.health.amount;
                 if (b.health.amount < b.health.max &&
@@ -372,8 +342,6 @@ function tick(dtMs) {
                 }
             }
         } else if (c.state === 'destroyed') {
-            
-            
             if (now - c.destroyedAt >= REGROW_DELAY_MS) {
                 c.state = 'regrowing';
                 c.regrowStart = now;
@@ -389,10 +357,9 @@ function tick(dtMs) {
             b.sizeMultiplier = scale;
             b.chamberAlive = false;
             refreshAABB(b);
-            
+
             spawnPendingGems(c, scale);
             if (scale >= 1) {
-                
                 b.sizeMultiplier = 1;
                 b.chamberAlive = true;
                 b.health.amount = b.health.max;
@@ -407,7 +374,6 @@ function tick(dtMs) {
             }
         }
 
-        
         const b = c.entity;
         if (b) {
             b.x = c.x; b.y = c.y;

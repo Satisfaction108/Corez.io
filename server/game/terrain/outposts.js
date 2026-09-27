@@ -1,5 +1,3 @@
-
-
 const gems = require('./gems.js');
 const war = require('./war.js');
 const milestones = require('./milestones.js');
@@ -16,9 +14,8 @@ const NEUTRAL_YELLOW = "#caca4e";
 
 let outposts = null;
 
-// The tutorial teaches the Dig Royale base: owned by one player, drawn in the
-// site's own colour. Everything royale-only (lobby, raid scoring) stays
-// behind Config.dig_royale.
+// Royale and the tutorial use owner bases (one player, site colour); other
+// royale-only behaviour stays behind Config.dig_royale.
 const ownerBases = () => !!(Config.dig_royale || Config.tutorial);
 
 let _dustHooks = null;
@@ -52,9 +49,9 @@ function ownerKeyFor(body) {
     return null;
 }
 
-// Does `body` own this base? The owner does; on the duo server so does the
-// owner's partner (a claimed site carries the owner's team, and partners
-// share one), for deposits, the base wall, the occupy clock and respawns.
+// Does `body` own this base? On the duo server the owner's partner does too
+// (partners share the site's team). Used for deposits, the base wall, the
+// occupy clock and respawns.
 function isOwner(site, body) {
     if (!site || !body || !site.ownerId) return false;
     if (site.ownerId === body.id) return true;
@@ -103,10 +100,10 @@ function releaseOwner(key) {
 }
 
 // Move every site owned by `from` to the identity `to`, leaving the banner,
-// its colour and ownerId alone. A dropped player whose raid is saved for
-// resume keeps their base under a reservation key ("r:<n>", dig_royale
-// disconnectCleanup) until they reconnect (claimResume hands it to the new
-// socket, onHumanJoin rebinds it to the new body) or the resume lapses.
+// its colour and ownerId alone. A dropped player saved for resume holds their
+// base under a reservation key ("r:<n>", dig_royale disconnectCleanup) until
+// they reconnect (claimResume, then onHumanJoin rebinds the body) or the
+// resume lapses.
 function rekeyOwner(from, to) {
     if (!from || !to || from === to) return 0;
     let n = 0;
@@ -159,8 +156,7 @@ function ownedBy(team) {
 }
 
 function announce(msg) {
-    // Tutorial: capture/destruction fanfare is noise while someone is being
-    // taught - every event on that server is a scripted lesson beat anyway.
+    // no capture fanfare in the tutorial
     if (Config.tutorial) return;
     global.gameManager.socketManager.broadcast(msg);
 }
@@ -184,22 +180,16 @@ function spawnStructure(site, team, owner = null) {
     } else {
         o.color.base = team === 0 ? NEUTRAL_YELLOW : getTeamColor(team);
     }
-    
-    
+
     o.name = "";
     o.isOutpostBanner = true;
     o.padSite = site;             // the pad this structure stands on (base wall)
-    
-    
-    
+
     o.pinX = site.x;
     o.pinY = site.y;
     // Tutorial: locked until the base lesson, so it can't be taken early.
     if (site.locked) o.godmode = true;
-    // Tutorial: the lesson is "an outpost is a thing you break to take", and
-    // a beginner is not going to chew 9000 HP off a RESIST-50 structure to
-    // learn it. Thin it right down so the objective lands in a few seconds -
-    // the step that follows says out loud that a real one is far tougher.
+    // Tutorial: a practice base the learner can break in a few seconds.
     if (Config.tutorial && o.health && o.health.max) {
         o.health.max *= 0.045;
         o.health.amount = o.health.max;
@@ -262,7 +252,6 @@ function onStructureDeath(site) {
         return;
     }
     if (site.team === 0) {
-        
         let team = 0;
         for (const k of (dead && dead.finalKillers) || []) {
             if (k && (k.team === TEAM_BLUE || k.team === TEAM_RED)) { team = k.team; break; }
@@ -326,9 +315,9 @@ function tick(players, dtMs) {
     const now = Date.now();
 
     for (const site of list) {
-        // Owner body is gone from the world. A connected owner's claim
-        // survives death (they respawn onto it); anything else releases so
-        // a ghost's base never bounces everyone forever.
+        // Owner body is gone. A connected owner's claim survives death (they
+        // respawn onto it); otherwise release it so a ghost's base can't
+        // keep bouncing everyone.
         if (site.ownerId) {
             try {
                 if (typeof entities !== "undefined" && !entities.has(site.ownerId)) {
@@ -339,10 +328,8 @@ function tick(players, dtMs) {
                             global.gameManager.socketManager.clients) || [];
                         awaitRespawn = clients.some(c => c && c.id === sid);
                     }
-                    // a dropped owner's raid saved for resume: the base waits
-                    // for them exactly as it waits for a dead owner's respawn,
-                    // and goes neutral once the resume window lapses
-                    // duos: a partner who is still here inherits it instead
+                    // A dropped owner saved for resume keeps the base until the
+                    // resume window lapses. Duos: a present partner inherits it.
                     const heir = !awaitRespawn ? duoHeir(site) : null;
                     if (site.ownerKey && site.ownerKey.startsWith("r:")) {
                         let reserved = false;
@@ -359,10 +346,7 @@ function tick(players, dtMs) {
             } catch { /* */ }
         }
         if (!site.banner) spawnStructure(site, site.team);
-        
-        
-        
-        
+
         const b = site.banner;
         if (b && !b.isDead()) {
             if (b.health.amount < (site._hpTrack ?? b.health.amount)) site._lastHitAt = now;
@@ -373,7 +357,7 @@ function tick(players, dtMs) {
                     b.health.amount + b.health.max * HEAL_FRAC_PS * (dtMs / 1000));
             }
         }
-        // PIN the structure back onto its pad each tick - permanent, immovable.
+        // pin the structure back onto its pad each tick
         if (b) {
             b.x = site.x; b.y = site.y;
             b.velocity.x = 0; b.velocity.y = 0;
@@ -392,10 +376,8 @@ function tick(players, dtMs) {
             continue;
         }
 
-        
-        // Royale bases are the drawn octagon (padGeom), the same shape the
-        // occupy clock and the wall use; a bare r circle left an outer ring
-        // where the clock ran but the deposit panel never opened.
+        // Owner bases use the drawn octagon (padGeom), the same shape as the
+        // occupy clock and the wall.
         let pad = null;
         for (const o of list) {
             if (ownerBases()) { if (padGeom.insidePad(o, body.x, body.y)) { pad = o; break; } continue; }
@@ -403,7 +385,6 @@ function tick(players, dtMs) {
             if (dx * dx + dy * dy < o.r * o.r) { pad = o; break; }
         }
 
-        
         const onOwnPad = ownerBases()
             ? !!(pad && isOwner(pad, body) && pad.banner && !pad.banner.isDead())
             : !!(pad && pad.team === body.team && pad.banner && !pad.banner.isDead());
@@ -411,8 +392,6 @@ function tick(players, dtMs) {
         const was = !!body.outpostOnPad;
         body.outpostOnPad = onOwnPad;
         if (was !== onOwnPad && body.socket) {
-            
-            
             body.socket.talk('OU', onOwnPad ? 1 : 0);
             if (!onOwnPad && body.outpostDeposit) {
                 body.outpostDeposit = null;
@@ -428,9 +407,7 @@ function tick(players, dtMs) {
             continue;
         }
         d.lastHealth = body.health.amount;
-        
-        
-        
+
         let rateMult = 1;
         if (body.socket) { try { rateMult = require('./shop.js').depositRateMult(body); } catch { /* */ } }
         d.spill = (d.spill || 0) + (DEPOSIT_RATE * rateMult * dtMs) / 1000;
@@ -500,10 +477,7 @@ function requestDeposit(socket, amount) {
     const carried = body.carriedGems | 0;
     if (!(amount > 0) || carried < MIN_DEPOSIT) return;
     const total = Math.min(amount, carried);
-    
-    
-    
-    
+
     const credited = Math.round(total * EFFICIENCY);
     body.outpostDeposit = {
         remaining: credited,

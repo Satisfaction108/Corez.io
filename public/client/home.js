@@ -11,8 +11,7 @@
         if (icon) icon.textContent = t === 'light' ? '\u2600' : '\u263E';
     }
 
-    // Light is the default. Everyone gets moved over once (dwThemeV2); after
-    // that the toggle is theirs to keep.
+    // Light is the default; dwThemeV2 forces it once, then the toggle sticks.
     try {
         if (!localStorage.getItem('dwThemeV2')) { localStorage.setItem(THEME_KEY, 'light'); localStorage.setItem('dwThemeV2', '1'); }
     } catch (e) { /* private mode: default below */ }
@@ -20,15 +19,10 @@
     document.documentElement.setAttribute('data-acct', localStorage.getItem('dwAcctHint') || 'new'); // account gate, see client/account/main.js
 
     /* ── Mobile / tablet gate ──────────────────────────────────────────
-       Dig Wars needs keyboard + mouse, so we block touch-primary devices.
-       We can't ask the browser "is a real mouse plugged in?", so we go by
-       what the pointer *behaves* like:
-         - hover: hover   → the pointer can rest on things without clicking
-         - pointer: fine  → it can hit small targets (mouse/trackpad, not a finger)
-       Both are true on a laptop (even a touchscreen one) and false on a
-       phone or a bare iPad. iPadOS lies in its user agent (it claims to be
-       a Mac), so we lean on maxTouchPoints instead of the UA string.
-       Anyone the heuristic gets wrong can opt out, and we remember it. */
+       The game needs keyboard + mouse, so touch-primary devices are blocked.
+       "(hover: hover) and (pointer: fine)" is true on laptops (even touchscreen
+       ones) and false on phones and bare iPads. iPadOS claims to be a Mac in
+       its UA, so maxTouchPoints is used instead. The override is remembered. */
     var GATE_KEY = 'digwarsDesktopOverride';
 
     function isTouchOnlyDevice() {
@@ -50,7 +44,7 @@
             gate.hidden = true;
         };
 
-        // Attaching a mouse or trackpad later flips the media query — let them in.
+        // Attaching a mouse or trackpad later flips the media query.
         var mq = window.matchMedia('(hover: hover) and (pointer: fine)');
         var onChange = function (e) { if (e.matches) gate.hidden = true; };
         if (mq.addEventListener) mq.addEventListener('change', onChange);
@@ -58,14 +52,10 @@
     }
 
     /* ── Tutorial entry ────────────────────────────────────────────────
-       The tutorial lives on its own unlisted server (id "tut"), which is
-       deliberately absent from /getServers.json so it never appears on the
-       region picker. We ask for it by id instead, point the socket at it,
-       and start the game exactly as the Play button would.
-
-       The storage key is versioned: bumping _v2 re-runs the tutorial for
-       everyone who completed the old in-game one, which taught a different
-       (and much smaller) curriculum. */
+       The tutorial runs on an unlisted server (id "tut") that is absent from
+       /getServers.json. It is fetched by id, the socket is pointed at it, and
+       the game starts as Play would. Bump the storage key's version to re-run
+       the tutorial for everyone. */
     var TUT_DONE_KEY = 'digRoyaleTutorialDone_v1';
 
     function tutorialCompleted() {
@@ -82,9 +72,8 @@
     }
 
     function gameHost(sv) {
-        // Always dial the page we are on. Config.host can disagree with the
-        // public URL, and a stale host:port would try a nest port Caddy does
-        // not expose (and has crashed Chrome on some machines).
+        // Dial the page's own host for proxied servers: Config.host can differ
+        // from the public URL and point at a port Caddy does not expose.
         if (sv && sv.proxyPath) return location.host;
         return (sv && sv.ip) || location.host;
     }
@@ -149,12 +138,10 @@
         });
     }
 
-    /* The tutorial's send-off card has a Play button. It can't start a real
-       game from inside the tutorial connection (that socket, server path and
-       hash all belong to the training server), so it leaves a note and
-       reloads the menu; we pick the note up here and press Play for them as
-       soon as the region list has picked a server. If an account overlay
-       (first-visit welcome, sign-in) is up, we leave them on the menu. */
+    /* The tutorial's send-off Play button can't start a real game on the
+       tutorial connection, so it sets PLAY_AFTER_KEY and reloads the menu.
+       Here Play is pressed once a server is picked, unless an account overlay
+       (welcome, sign-in) is up. */
     var PLAY_AFTER_KEY = 'dwPlayAfterTutorial';
     function playAfterTutorial() {
         var want = false;
@@ -179,8 +166,7 @@
         var badge = document.getElementById('tutorialBadge');
         if (!btn) return;
 
-        // Clear the retired in-game tutorial's flags so nothing from the old
-        // system lingers in a returning player's browser.
+        // Flags from the retired in-game tutorial.
         ['digwarsTutorialDone', 'digwarsStatsTaught', 'digwarsKind',
          'digwarsLessons', 'digwarsLessonsOff'].forEach(function (k) {
             localStorage.removeItem(k);
@@ -188,15 +174,13 @@
 
         if (badge && !tutorialCompleted()) badge.hidden = false;
         btn.onclick = function () { launchTutorial(btn); };
-        // Play always starts Dig Royale. Tutorial is its own button.
     }
 
     document.addEventListener('DOMContentLoaded', function () {
         initMobileGate();
         initTutorialEntry();
         playAfterTutorial();
-        // Dig Wars is parked: #dw no longer routes anywhere. Drop a stale
-        // hash so Play behaves normally.
+        // #dw no longer routes anywhere (Dig Wars is parked); drop a stale hash.
         if (location.hash === '#dw') { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; } }
 
         applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
@@ -262,13 +246,12 @@
         if (contribClose) contribClose.onclick = closeContrib;
         if (contribOverlay) contribOverlay.onclick = closeContrib;
 
-        // professional region dropdown (server selector)
+        // region dropdown (server selector)
         var dd = document.getElementById('serverDropdown');
         var ddTrigger = document.getElementById('serverDropdownTrigger');
         var ddLabel = document.getElementById('serverDropdownLabel');
         var regionSelector = document.getElementById('regionSelector');
 
-        // sleek notification toast
         function showToast(message) {
             var container = document.getElementById('toastContainer');
             if (!container) return;
@@ -284,9 +267,8 @@
         var ytSoon = document.getElementById('ytSoon');
         if (ytSoon) ytSoon.onclick = function () { showToast('No YouTube yet. Maybe soon'); };
 
-        // The region list follows the servers: whichever region(s) report in
-        // get a count and can be picked, the rest say so. The first region
-        // with servers is selected unless the player picked another live one.
+        // Regions with live servers get a count and are selectable. The first
+        // live region is selected unless the player picked another live one.
         var regionPicked = false;
         function normRegion(r) {
             r = String(r || '').toLowerCase().trim();
@@ -305,7 +287,6 @@
             ddLabel.textContent = count ? name + ' \u2022 ' + count : name;
         }
 
-        // refresh the region options with live server counts
         function renderRegionCounts(serverData) {
             var data = Array.isArray(serverData) ? serverData : [];
             var counts = {}, labels = {};
@@ -394,8 +375,7 @@
             if (window.global) renderRegionCounts(window.global.servers);
         }, 600);
 
-        // Keep the counts fresh while on the menu. This used to poll only every
-        // 15s and never on returning from a game, so the number looked frozen.
+        // Poll counts while on the menu, and immediately when it comes back.
         function refreshCounts() {
             var gaw = document.getElementById('gameAreaWrapper');
             if (gaw && gaw.style.display !== 'none') return;
@@ -410,7 +390,6 @@
         }
         refreshCounts();
         setInterval(refreshCounts, 5000);
-        // and the moment the menu comes back, rather than up to 5s later
         var gawEl = document.getElementById('gameAreaWrapper');
         if (gawEl && window.MutationObserver) {
             var wasHidden = gawEl.style.display === 'none';
@@ -446,10 +425,9 @@
         var reduceMotion = window.matchMedia &&
             window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-        // Same gun math the game uses (LENGTH/10, trapezoid barrels), then an
-        // opaque hull on top so barrels never show through the body. The
-        // whole sprite is faded afterward so the tank stays translucent
-        // against the page without becoming see-through.
+        // Same gun math as the game (LENGTH/10, trapezoid barrels), then an
+        // opaque hull on top. The whole sprite is faded afterward so it is
+        // translucent without barrels showing through the body.
         function G(length, width, aspect, x, y, angle) {
             var ox = x || 0, oy = y || 0;
             return {
@@ -704,8 +682,7 @@
         grid.onclick = function (e) {
             var b = e.target.closest('b[data-key]');
             if (!b) return;
-            // don't let the original click bubble to the document handler —
-            // it would instantly unselect the cell the proxy just selected
+            // the document handler would unselect the cell the proxy just selected
             e.stopPropagation();
             var hb = hidden.querySelector('b[data-key="' + b.getAttribute('data-key') + '"]');
             if (hb) hb.click();

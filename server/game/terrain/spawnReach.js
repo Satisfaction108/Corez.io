@@ -1,8 +1,7 @@
 // Spawn reachability: can a body dropped at (x, y) get out?
 //
-// The rock lattice is a graph: every Voronoi cell is a node and two cells are
-// neighbours when they share an edge wide enough to squeeze a tank through
-// (shared polygon vertices, precomputed once per terrain build). A cell is
+// Voronoi cells are graph nodes; two cells are neighbours when they share an
+// edge wide enough for a tank (precomputed once per terrain build). A cell is
 //   open      mined out / canyon (pits, pads, plaza) and not about to regrow
 //   closing   mined out but due to start regrowing within REGROW_SOON_MS
 //   rock      alive rock no tougher than HARD_ROCK_EQ fresh plain rocks
@@ -10,17 +9,12 @@
 //   wall      emerald, a rock that is regrowing right now, fresh ore (copper
 //             is 1.8x plain, shard 3x, emerald 6x), anything outside the zone
 //
-// A spot ESCAPES when, from its cell, without crossing a wall:
-//   (a) it reaches an open region (a connected patch of open cells inside the
-//       zone of at least OPEN_REGION_CELLS cells) for at most EXIT_BUDGET
-//       plain rocks' worth of HP, or
-//   (b) it can tunnel ESCAPE_HOPS cells out through diggable rock (the whole
-//       map is rock; digging plain rock is the game, a hard ring is a trap).
-// The start cell itself must be open. Everything is capped at MAX_NODES.
-//
-// The same search plans exits: exitPath() returns the cells to break to reach
-// an open region (or the zone), used by the landing-pocket exit tunnel and the
-// storm rescue in dig_royale.js.
+// A spot escapes when, from its (open) start cell, without crossing a wall:
+//   (a) it reaches an open region (>= OPEN_REGION_CELLS connected open cells
+//       in the zone) for at most EXIT_BUDGET plain rocks' worth of HP, or
+//   (b) it can tunnel ESCAPE_HOPS cells out through diggable rock.
+// Searches are capped at MAX_NODES. exitPath() returns the cells to break to
+// get out (landing-pocket exit tunnel and storm rescue in dig_royale.js).
 const { ORE } = require('./terrainGrid.js');
 
 const REACH = {

@@ -406,7 +406,7 @@ test('db: raid placement bonus, idempotent per raid; exempt dust with a ledger r
     assert.equal(res.bonusRP, 40);
     assert.equal(res.bonusDustMilli, 2000);
     assert.equal(res.after.rp, 740);
-    assert.equal(res.rankUp, true);                 // Bronze III -> Silver II? 700 is Silver I (480..720), 740 Silver II
+    assert.equal(res.rankUp, true);                 // 700 is Silver I (480..720), 740 Silver II
     assert.equal(res.after.division, 4);
     assert.equal(res.balanceMilli, 2000);
     assert.equal(rankStore.applyRaidPlacement({ raidKey: 'r:1', userId: u.id, place: 1, rows: 6, score: 900, raidMs: 6 * 60000 }), null);
@@ -1145,7 +1145,7 @@ test('e2e: account socket, dust, death RK, resume, fare, disconnect, raid end (l
         clients.push(A3);
         await A3.waitFor('AC');
         // past the spawn grace: a tank spawned a moment before the raid ends
-        // can outlive the mass death (a game quirk, also on HEAD before Phase 2)
+        // can outlive the mass death (an engine quirk)
         await sleep(5000);
         const open4 = q('SELECT life_id FROM rank_lives WHERE user_id = ? AND ended_at IS NULL', uid);
         assert.ok(open4);

@@ -18,10 +18,9 @@ import * as cosmetics from './account/cosmetics.js';
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
 
     // ---- Hit feedback ----------------------------------------------------
-    // The blink is triggered by the server (entity.js stamps hitAt on damage and
-    // reports a decaying hitFlash); everything below is just how it's drawn.
-    // White, not red: a red flash vanishes on the red team in a brawl. Warm
-    // white is the diep/valorant trick - it reads on every team colour.
+    // The server triggers the blink (entity.js stamps hitAt and reports a
+    // decaying hitFlash); this only draws it. Warm white reads on every team
+    // colour, where red would vanish on the red team.
     const HIT_BLINK_MS = 180;
     const HIT_BLINK_STRENGTH = 0.88;
     const HIT_BLINK_COLOR = "#FFF4E0";
@@ -30,8 +29,7 @@ import * as cosmetics from './account/cosmetics.js';
     const DMG_FADE_OUT_MS = 900;
     const DMG_COMBO_HOLD_MS = 1000;
     const DMG_RISE = 50;
-    // Low-health vignette. Starts faint around half health and creeps inward
-    // as you drop, so it reads as mounting pressure rather than a jump scare.
+    // Low-health vignette: starts faint around half health and creeps inward.
     const LOW_HP_START = 0.52;
     const LOW_HP_FULL = 0.06;
     const HIT_TICK_MS = 400;
@@ -59,9 +57,8 @@ import * as cosmetics from './account/cosmetics.js';
     window.dwGems = (n = 10000) => window.royaleTalk("DBG", "gems", n | 0);
     // The server sends the menu only when it changes, so anything cleared
     // here stays gone until the next evolve. The slide-out clear must never
-    // outlive its menu: it used to wait forever when started with nothing on
-    // screen (Home after dying fully evolved), then wiped the next life's
-    // menu the first time it slid away (tank tree, resync).
+    // outlive its menu, or it wipes the next life's menu when that one slides
+    // away (tank tree, resync).
     let upgradeClearLoop = null;
     global.clearUpgrades = (clearNow = false) => {
         if (upgradeClearLoop) { clearInterval(upgradeClearLoop); upgradeClearLoop = null; }
@@ -140,9 +137,6 @@ import * as cosmetics from './account/cosmetics.js';
         selectedElement.element.parentNode.parentNode.classList.remove("editing");
         resetButton.classList.add("active");
         if (keyCode !== selectedElement.keyCode) {
-            
-            
-            
             let otherElement = controlsArray.find(c => c.keyCode === keyCode);
             if (keyCode !== -1 && otherElement) {
                 otherElement.keyName = "";
@@ -214,9 +208,7 @@ import * as cosmetics from './account/cosmetics.js';
         util.retrieveFromLocalStorage("optOptimizeMode");
         util.retrieveFromLocalStorage("optCenterMinimap");
         util.retrieveFromLocalStorage("optBorders");
-        
-        
-        
+
         for (const id of ["optSatchelWarning", "optLeaderIndicators", "optWarBar", "optChatMessages", "optHitFeedback"]) {
             if (localStorage.getItem(id + "Checked") !== null) util.retrieveFromLocalStorage(id);
         }
@@ -226,8 +218,7 @@ import * as cosmetics from './account/cosmetics.js';
         localStorage.removeItem("optMobileValue"); 
 
         util.retrieveFromLocalStorage("optRenderGui");
-        // A hidden GUI is a screenshot-only state: never carry it across
-        // sessions. Starting with a blank HUD reads as a broken game.
+        // A hidden GUI is a screenshot-only state: never carry it across sessions.
         if (!document.getElementById("optRenderGui").checked) {
             document.getElementById("optRenderGui").checked = true;
             util.submitToLocalStorage("optRenderGui");
@@ -294,9 +285,8 @@ import * as cosmetics from './account/cosmetics.js';
             util.submitToLocalStorage("optUiScale");
             localStorage.setItem("uiScaleSettings", "true");
         }
-        // Desktop default is Normal again (it was Small for a while). Players
-        // moved to Small automatically back then go back to Normal once;
-        // anyone who picks Small afterwards keeps it.
+        // One-time migration: desktop players auto-set to Small go back to
+        // Normal once; anyone who picks Small afterwards keeps it.
         if (!localStorage.getItem("uiScaleNormalDefault")) {
             if (!global.mobile && document.getElementById("optUiScale").value === "small") {
                 document.getElementById("optUiScale").value = "normal";
@@ -308,17 +298,13 @@ import * as cosmetics from './account/cosmetics.js';
 
         document.getElementById("optColors").addEventListener("change", () => loadSettings());
 
-        
-        
-        
         if (localStorage.getItem("keybindsSanitized") !== "1") {
             localStorage.removeItem("keybinds");
             localStorage.setItem("keybindsSanitized", "1");
         }
         getKeybinds();
         getElements(keybinds, true);
-        
-        
+
         const settingsPanelOpen = () => {
             const p = document.getElementById("homeSettingsPanel");
             return !!(p && p.classList.contains("open"));
@@ -329,8 +315,7 @@ import * as cosmetics from './account/cosmetics.js';
                 if (selectedElement) {
                     const prev = selectedElement;
                     unselectElement();
-                    
-                    
+
                     if (element && element !== prev) selectElement(element);
                 } else if (element) selectElement(element);
             }
@@ -412,8 +397,7 @@ import * as cosmetics from './account/cosmetics.js';
                         }
                     } else {
                         setKeybind(e.key.toUpperCase(), e.keyCode);
-                        
-                        
+
                         unselectElement();
                     }
                 } else if (key === global.KEY_ENTER && !global.gameStart && !(window.dwAccount && window.dwAccount.blocksEnter())) {
@@ -594,7 +578,7 @@ import * as cosmetics from './account/cosmetics.js';
             Id =
             (11 === currentDate.getMonth() && 31 === currentDate.getDate()) ||
             (0 === currentDate.getMonth() && 3 >= currentDate.getDate());
-        
+
         if (!global.mobile) {
             let fireworkCanvas = document.createElement("canvas");
             fireworkCanvas.id = "homeFireworkCanvas";
@@ -757,16 +741,13 @@ import * as cosmetics from './account/cosmetics.js';
     snowAndFireworkEffects();
 
     // ── automatic resolution ───────────────────────────────────────────────
-    // The canvases are drawn at the screen's full pixel density, and there
-    // are three of them stacked. On a machine without working GPU canvas
-    // acceleration (school laptops, Chromebooks, blocklisted drivers) the cost
-    // is almost all per pixel: about 45 ms a frame at 1080p and 250-500 ms at
-    // 4K/retina, i.e. single-digit fps. So the pixel count adapts: when frames
-    // stay slow it steps down a budget, when they have been smooth for a while
-    // it tries a step back up, and the level that works is remembered.
-    // The floor is ~1100x820: lower than that, HUD text turns to mush on a
-    // 1080p screen (a player at 49 fps sat at 860x640 for good). A level found
-    // in an earlier session is only trusted one step down; each session
+    // Three stacked canvases at full pixel density. Without GPU canvas
+    // acceleration (Chromebooks, blocklisted drivers) the cost is almost all
+    // per pixel: ~45 ms a frame at 1080p, 250-500 ms at 4K. So the pixel
+    // budget steps down while frames stay slow, tries a step up after a
+    // smooth stretch, and remembers the level that works.
+    // The floor is ~1100x820; below that HUD text turns to mush on a 1080p
+    // screen. A remembered level is only trusted one step down; each session
     // re-learns the rest. "Full HD" in settings keeps it at 1080p or better.
     const AUTO_RES_BUDGET = [Infinity, 1920 * 1080, 1400 * 1000, 1100 * 820];
     const fullHDFloor = () => (global.GUIStatus && global.GUIStatus.fullHDMode) ? 1 : AUTO_RES_BUDGET.length - 1;
@@ -841,9 +822,8 @@ import * as cosmetics from './account/cosmetics.js';
     ];
     window.dwCtx = ctx;
     window.dwCtxCtor = (i) => ctx[i];
-    // The tutorial's ore-tier card shows the real gem entities rather than
-    // approximations of them, which means it needs the game's own renderer.
-    // Assigned once drawEntity exists - see the bottom of this module.
+    // The tutorial's ore-tier card draws real gem entities with the game's own
+    // renderer. Assigned once drawEntity exists (bottom of this module).
     var c2 = document.createElement("canvas");
     var ctx2 = c2.getContext("2d");
     ctx2.imageSmoothingEnabled = false;
@@ -1143,7 +1123,7 @@ import * as cosmetics from './account/cosmetics.js';
                     timeZone: "UTC"
                 }))
             }
-            // the title first, then a small "Update · 24 September 2026" tag
+            // the title first, then a small "Update · <date>" tag
             y.innerHTML = c[3] ? c[3] + " <small>" + f.join(" · ") + "</small>" : f.join(" · ");
             d.appendChild(y);
             let g = document.createElement("ul");
@@ -1212,7 +1192,6 @@ import * as cosmetics from './account/cosmetics.js';
 
         config.game.incognitoMode = document.getElementById("optIncognitoMode").checked;
 
-        
         const dwOpt = (id) => { const el = document.getElementById(id); return el ? el.checked : true; };
         config.game.satchelWarning = dwOpt("optSatchelWarning");
         config.game.leaderIndicators = dwOpt("optLeaderIndicators");
@@ -1237,16 +1216,14 @@ import * as cosmetics from './account/cosmetics.js';
                 config.graphical.darkBorders = config.graphical.neon = true;
                 break;
         }
-        
-        
+
         global.autoScale = false; 
         switch (document.getElementById("optUiScale").value) {
             case "small":
                 global.UIscale = 2560;
                 break;
             case "normal":
-                // Small's layout, a little bigger (1920 spread the HUD out:
-                // 6-wide upgrade rows, oversized stat bars)
+                // Small's layout, a little bigger (1920 spreads the HUD out)
                 global.UIscale = 2240;
                 break;
             case "large":
@@ -1285,7 +1262,7 @@ import * as cosmetics from './account/cosmetics.js';
 
         if (global.gameLoading) return;
         // Duos: the first Play press gets a party ticket from party.js (async)
-        // and comes back here armed. A reconnect keeps the duo session as is.
+        // and re-enters here armed. A reconnect keeps the duo session as is.
         if (!global.launchingTutorial && !global.launchingDigWars && !global.duoArmed && !global._reconnecting &&
             window.dwParty && window.dwParty.wantsDuo()) {
             window.dwParty.arm();
@@ -1952,9 +1929,9 @@ import * as cosmetics from './account/cosmetics.js';
             );
         },
         DEAIC = (assignedContext, Alpha, shape, glow, gunLength, turretsLength) => {
-            // Offscreen blit is for faded bodies so guns+hull share one alpha.
-            // Full-opacity tanks used to go through it too, which resized a
-            // canvas per gun-tank per frame. Keep the path for transparency.
+            // Offscreen blit only for faded bodies, so guns+hull share one
+            // alpha; routing opaque tanks through it resizes a canvas per
+            // gun-tank per frame.
             if (global.gameUpdate && config.graphical.fancyAnimations && assignedContext != ctx2) {
                 if (Alpha < 1) {
                     if (config.graphical.optimizeMode) {
@@ -2280,16 +2257,14 @@ import * as cosmetics from './account/cosmetics.js';
 
             if (drawSize < 0.1) return;
 
-            // Carrier glow: a fat satchel broadcasts. Soft gold halo plus a
-            // breathing rim, scaled by the synced glow rung (1-6, matching
-            // the satchel size rungs so halo and pack always agree).
+            // Carrier glow: halo plus a breathing rim, scaled by the synced
+            // glow rung (1-6, matching the satchel size rungs).
             const glowRung = (!turretInfo && !global.lowFx && (instance.gemGlow | 0)) || 0;
             if (glowRung > 0) {
                 const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 480);
                 const haloR = drawSize * (1.45 + 0.22 * glowRung);
                 const ha = (0.10 + 0.05 * glowRung) * alphaFade * (0.8 + 0.2 * pulse);
-                // The halo is the tank's own colour: a loaded carrier reads as
-                // "that tank, glowing", not as a generic gold blob.
+                // the halo is the tank's own colour, not a generic gold
                 let bodyCol = "#ffd75e";
                 try { bodyCol = gameDraw.modifyColor(instance.color) || bodyCol; } catch (e) { /* */ }
                 const bodyRgb = toRgb(bodyCol) || { r: 255, g: 215, b: 94 };
@@ -2378,9 +2353,8 @@ import * as cosmetics from './account/cosmetics.js';
             const statusColor = render.status.getColor();
             const blend = render.status.getBlend();
 
-            // Server-driven hit blink, eased on the client so it stays smooth
-            // between network ticks. A short fade-in then a squared falloff
-            // reads as an impact rather than the tank simply changing colour.
+            // Server-driven hit blink, eased on the client between network
+            // ticks: short fade-in, then a squared falloff.
             let hitBlend = 0;
             if (config.game.hitFlash && render.hitAt && instance.drawsHealth) {
                 const ht = (performance.now() - render.hitAt) / HIT_BLINK_MS;
@@ -2543,9 +2517,8 @@ import * as cosmetics from './account/cosmetics.js';
                 ctx[1].restore();
             }
 
-            // hit ring lives on the world canvas so it isn't clipped by the
-            // offscreen body blit. only health-drawing bodies, so a bullet
-            // storm doesn't grow a field of white circles.
+            // hit ring lives on the world canvas so the offscreen body blit
+            // doesn't clip it; only for health-drawing bodies, not bullets.
             if (turretInfo === false && !assignedContext && instance.drawsHealth && hitBlend > 0) {
                 const ht = Math.max(0, Math.min(1, (performance.now() - render.hitAt) / HIT_BLINK_MS));
                 const ringCtx = ctx[1];
@@ -2565,8 +2538,7 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
     })();
-    // See the note by window.dwCtx: the tutorial draws real game entities on
-    // its ore-tier card, so it needs the renderer that draws everything else.
+    // See window.dwCtx: the tutorial's ore-tier card needs the game renderer.
     window.dwDrawEntity = drawEntity;
 
     const iconColorOrder = [10, 11, 12, 15, 13, 2, 14, 4, 5, 1, 0, 3];
@@ -2575,13 +2547,12 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     // ─── upgrade tiles (menu + class tree), HUD look ────────────────────
-    // One plate per tank: flat palette face over a darker lip, a fine
-    // keyline, a dark name band with the tank name (hudTitle), and the
-    // choose key as a keycap. Everything but the tank preview is static, so
-    // it is rasterised once per (colour, size, state, name, key) at device
-    // resolution and blitted; drawEntity draws the live tank between the
-    // plate and the label. Sizes are quantised so a zooming class tree does
-    // not mint a fresh bitmap every frame.
+    // One plate per tank: flat face over a darker lip, keyline, name band
+    // and the choose key as a keycap. All but the tank preview is rasterised
+    // once per (colour, size, state, name, key) at device resolution and
+    // blitted; drawEntity draws the live tank between plate and label.
+    // Sizes are quantised so a zooming class tree does not mint a bitmap
+    // every frame.
     const upgTileCache = new Map();
     let upgFontOk = false;
     const UPG_BAND = 0.25;              // name band, fraction of the face
@@ -2706,12 +2677,9 @@ import * as cosmetics from './account/cosmetics.js';
         ctx[2].restore();
     }
 
-    // Dig Wars: the cavern floor - a seamless tile drawn in the GAME'S OWN
-    // vector language: flat fills only, hard edges, no gradients, no alpha
-    // haze. Exactly how a professional flat-2D floor asset is authored -
-    // big blobby two-tone earth patches (like the rocks' facets, laid flat)
-    // and a few outlined pebbles that share the wall's border color. Built
-    // once on an offscreen tile, world-locked, deterministic.
+    // Dig Wars: the cavern floor. A seamless flat-fill tile (no gradients):
+    // two-tone earth patches plus a few pebbles outlined like the walls.
+    // Built once offscreen, world-locked, deterministic.
     let floorPattern = null;
     function makeFloorPattern(context) {
         const S = 256;
@@ -2724,15 +2692,14 @@ import * as cosmetics from './account/cosmetics.js';
             seed = (Math.imul(seed, 1597334677) + 926135893) | 0;
             return ((seed >>> 8) & 0xffffff) / 0x1000000;
         };
-        // the floor's three flat tones: base, a step lighter, a step darker.
-        // Neutral near-black so the cool teal wall and team colors own all
-        // the contrast.
+        // three flat tones: base, lighter, darker. Neutral near-black so the
+        // wall and team colours own the contrast.
         const BASE = "#1e1d1b", LIGHT = "#232220", DARK = "#191817";
         t.fillStyle = BASE;
         t.fillRect(0, 0, S, S);
         // toroidal draw: paint each feature at all 9 wrap offsets so the
-        // tile is seamless when repeated. All randomness is rolled BEFORE
-        // the 9 copies so every copy is identical (no seams).
+        // tile is seamless. Randomness is rolled before the 9 copies so
+        // every copy is identical.
         const wrapped = (draw) => {
             for (let dx = -1; dx <= 1; dx++)
                 for (let dy = -1; dy <= 1; dy++) {
@@ -2742,9 +2709,8 @@ import * as cosmetics from './account/cosmetics.js';
                     t.restore();
                 }
         };
-        // an irregular rounded blob: N points around a centre with jittered
-        // radius, joined by quadratic curves - the universal flat-game-art
-        // "patch of ground" shape
+        // irregular rounded blob: N points with jittered radius, joined by
+        // quadratic curves
         const blob = (x, y, r) => {
             const n = 7 + (rng() * 3 | 0);
             const pts = [];
@@ -2766,8 +2732,7 @@ import * as cosmetics from './account/cosmetics.js';
                 t.closePath();
             };
         };
-        // ── layer 1: large flat earth patches, dark then light, so the
-        //    ground is visibly mottled but in only three quiet tones ──
+        // layer 1: large earth patches, dark then light
         for (let i = 0; i < 9; i++) {
             const path = blob(rng() * S, rng() * S, 26 + rng() * 34);
             wrapped(() => { path(); t.fillStyle = DARK; t.fill(); });
@@ -2776,15 +2741,13 @@ import * as cosmetics from './account/cosmetics.js';
             const path = blob(rng() * S, rng() * S, 20 + rng() * 28);
             wrapped(() => { path(); t.fillStyle = LIGHT; t.fill(); });
         }
-        // ── layer 2: small flat dirt clods - tiny light blobs sitting on
-        //    the patches, pure flat fill, like a tileset's detail pass ──
+        // layer 2: small light dirt clods on the patches
         for (let i = 0; i < 26; i++) {
             const path = blob(rng() * S, rng() * S, 2.5 + rng() * 4.5);
             const tone = rng() < 0.5 ? "#262521" : "#161514";
             wrapped(() => { path(); t.fillStyle = tone; t.fill(); });
         }
-        // ── layer 3: a few pebbles in the wall's own visual language -
-        //    flat stone fill + the SAME dark border every rock wears ──
+        // layer 3: pebbles with the same dark border the rocks wear
         for (let i = 0; i < 12; i++) {
             const x = rng() * S, y = rng() * S;
             const r = 2.2 + rng() * 2.8, rot = rng() * Math.PI;
@@ -2807,10 +2770,9 @@ import * as cosmetics from './account/cosmetics.js';
         return context.createPattern(tile, "repeat");
     }
 
-    // Dig Wars: the team Vault - THE bank, drawn in the game's own flat
-    // style: bold shapes, dark outlines, a team-colored gem heart. Gold is
-    // reserved for gem dust (deposit stream / progress), so a blue vault
-    // never sits in a yellow halo on a blue floor.
+    // Dig Wars: the team vault (bank). Flat shapes, dark outlines, a
+    // team-coloured gem heart. Gold is reserved for gem dust (deposit
+    // stream / progress).
     let vaultDust = [];   // deposit stream + completion burst particles
     const GOLD_PAL   = { main: "#efc74b", light: "#f7dd8a", high: "#fff6d8" };
     const BLUE_PAL   = { main: "#3d8fff", light: "#9ec5ff", high: "#e8f1ff" };
@@ -2870,8 +2832,7 @@ import * as cosmetics from './account/cosmetics.js';
         return !!(global.royale && global.royale.at > 0);
     }
     function royaleMode() {
-        // The island is circular from the moment you join (lobby included),
-        // not just once the raid goes live.
+        // circular from the moment you join, lobby included
         return !!(global.digRoyaleMode || royaleActive());
     }
     function royaleLobbyPhase() {
@@ -2901,9 +2862,8 @@ import * as cosmetics from './account/cosmetics.js';
         if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
         return m + ":" + String(s).padStart(2, "0");
     }
-    // The door art, baked once per colour: the HUD's flat look - rock-purple
-    // faces, one ink outline per shape, a hard ink drop under the plate, the
-    // colour kept to the rim, the bolts and the gem heart.
+    // Door art, baked once per colour: rock-purple faces, one ink outline per
+    // shape, a hard ink drop; the colour is kept to rim, bolts and gem heart.
     function makeVaultSprites(pal = GOLD_PAL) {
         const S = 256, C = S / 2;
         const INK = "#120e15", LW = 5;
@@ -2951,8 +2911,7 @@ import * as cosmetics from './account/cosmetics.js';
                 c.restore();
             }
         });
-        // the heart: a big gem-cut emblem in the door colour + three solid
-        // handles. Same silhouette as every gem in the game.
+        // the heart: a gem-cut emblem in the door colour + three handles
         const wheel = layer((c) => {
             const spoke = (w, col) => {
                 c.lineWidth = w; c.strokeStyle = col;
@@ -3015,10 +2974,8 @@ import * as cosmetics from './account/cosmetics.js';
             c.lineJoin = "round";
             const lw = Math.max(1.5, R * 0.035);
             const hue = rainbow ? hsvRgb((now / 12) % 360) : hexToRgb(teamCol);
-            // flat octagonal foundation: tanks are round, structures are
-            // not - the pad keeps the vault from reading as one more tank.
-            // HUD plate language: hard ink drop, a deep shade of the team
-            // colour, one ink outline, then a bright rim band for the claim.
+            // octagonal foundation so the vault doesn't read as a tank: ink
+            // drop, deep team shade, ink outline, bright rim band for the claim
             polyPath(c, 0, R * 0.07, R * 1.22, 8, Math.PI / 8);
             c.fillStyle = "rgba(18,14,21,0.6)";
             c.fill();
@@ -3086,8 +3043,7 @@ import * as cosmetics from './account/cosmetics.js';
             c.restore();
 
             // deposit dust: gold motes streaming from the player into the
-            // vault heart, each swallowed with a tiny flash - the money is
-            // visibly leaving your bag and entering the door
+            // vault heart, each ending in a tiny flash
             if (depositing) {
                 const px0 = global.screenWidth / 2, py0 = global.screenHeight / 2;
                 for (let n = 0; n < 2; n++) {
@@ -3124,7 +3080,6 @@ import * as cosmetics from './account/cosmetics.js';
             } else v0._burstDone = false;
         }
 
-        // animate the dust
         if (vaultDust.length) {
             c.save();
             for (let i = vaultDust.length - 1; i >= 0; i--) {
@@ -3156,11 +3111,9 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    // Dig Wars: forward outpost pads - flat octagonal foundations in the
-    // same visual language as the vault, carved into the wall's pockets.
-    // Grey while neutral, ringed in the owner's color once a banner stands
-    // (the banner itself is a real entity and draws like any tank). A gold
-    // arc shows capture progress on a contested neutral pad.
+    // Dig Wars: outpost pads, octagonal foundations styled like the vault.
+    // Grey while neutral, ringed in the owner's colour once a banner stands.
+    // A gold arc shows capture progress on a contested neutral pad.
     function drawOutposts(roomX, roomY, ratio) {
         if (royaleLobbyPhase()) return;
         if (!global.outposts.length) return;
@@ -3178,8 +3131,8 @@ import * as cosmetics from './account/cosmetics.js';
                         : st.t === -1 ? gameDraw.getColor("blue")
                         : st.t === -2 ? gameDraw.getColor("red")
                         : "#8a90a0";
-            // the capturable structure's body color: team blue/red, or the
-            // site's sketch color once owned in Royale. Neutral is grey.
+            // body colour: team blue/red, or the site's colour once owned in
+            // Royale; neutral is grey
             const bodyCol = (st.o && st.c) ? st.c
                          : st.t === -1 ? gameDraw.getColor("blue")
                          : st.t === -2 ? gameDraw.getColor("red")
@@ -3187,18 +3140,16 @@ import * as cosmetics from './account/cosmetics.js';
             c.save();
             c.translate(sx, sy);
             c.lineJoin = "round";
-            // The vault's plate language: hard ink drop, a deep shade of the
-            // claim colour for the face, one ink outline, a bright rim band.
+            // vault plate style: ink drop, deep claim shade, outline, rim band
             const lw = Math.max(1.5, R * 0.035);
             const band = Math.max(2, R * 0.065);
             const pulse = 0.5 + 0.5 * Math.sin(now / 650 + o.id);
             const claimed = !!(st.t || st.h);
             const hue = hexToRgb(claimed ? bodyCol : ownCol);
             if (claimed) {
-                // the capturable STRUCTURE: the big octagon standing on the
-                // pad (matches the banner entity's realSize). The real banner
-                // entity is suppressed in drawEntities so players always
-                // render ON TOP of the outpost (like the base vaults).
+                // the structure: the octagon on the pad (matches the banner
+                // entity's realSize). The banner entity itself is suppressed
+                // in drawEntities so players render on top of the outpost.
                 const bodyR = R * 1.33;
                 const tgtH = Math.max(0, Math.min(1, st.h || 0));
                 if (o._smoothH === undefined) o._smoothH = tgtH;
@@ -3247,8 +3198,8 @@ import * as cosmetics from './account/cosmetics.js';
                 c.globalAlpha = 1;
             }
             c.restore();
-            // CONQUEST BLAST: ownership just changed hands - a big double
-            // shockwave in the new owner's color rolls off the site
+            // conquest blast: on an ownership change, a double shockwave in
+            // the new owner's colour
             if (o._lastTeam === undefined) o._lastTeam = st.t;
             if (st.t !== o._lastTeam) {
                 o._lastTeam = st.t;
@@ -3258,9 +3209,8 @@ import * as cosmetics from './account/cosmetics.js';
                 const t = (now - o._blastAt) / 1200;
                 const eo = 1 - Math.pow(1 - t, 3);
                 const a = Math.pow(1 - t, 1.4);
-                // flat, like the rest of the HUD: two shockwave bands (a cream
-                // lead with an ink keyline, the owner's colour behind it) and
-                // a ring of flat sparks - no gradients, no beam
+                // two shockwave bands (cream lead with an ink keyline, owner
+                // colour behind) and a ring of flat sparks
                 c.save();
                 for (let ring = 1; ring >= 0; ring--) {
                     const rt = Math.max(0, eo - ring * 0.14);
@@ -3289,11 +3239,9 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    // The outposts' mini vault doors - the EXACT vault art from the bases,
-    // drawn large and ON TOP of the octagon foundation. Ring + door recolored
-    // for the owner (blue / red) or neutral yellow. Rendered on the
-    // BACKGROUND layer (below all players/entities) so the player always
-    // appears on top of the outpost.
+    // Outpost vault doors: the base vault art on top of the octagon,
+    // recoloured for the owner. Drawn on the background layer so players
+    // appear on top of the outpost.
     function drawOutpostDoors(px, py, ratio) {
         if (royaleLobbyPhase()) return;
         if (!global.outposts.length) return;
@@ -3306,8 +3254,7 @@ import * as cosmetics from './account/cosmetics.js';
             const st = global.outpostState.find(s => s.id === o.id) || {};
             const sx = roomX + (o.x + halfW) * ratio;
             const sy = roomY + (o.y + halfH) * ratio;
-            const R = o.r * 0.92 * ratio;  // the door: big, front and center,
-                                           // clearly ON TOP of the structure
+            const R = o.r * 0.92 * ratio;
             if (sx < -R * 3 || sx > global.screenWidth + R * 3 ||
                 sy < -R * 3 || sy > global.screenHeight + R * 3) continue;
             const ownCol = (st.o && st.c) ? st.c
@@ -3316,9 +3263,9 @@ import * as cosmetics from './account/cosmetics.js';
                         : (royaleActive() ? "#8a90a0" : gameDraw.getColor("yellow"));
             c.save();
             c.translate(sx, sy);
-            // (the claim colour lives on the pad's rim band, as on the vault)
-            // the same three door layers the base vaults use, recolored for
-            // the owner (blue / red) or the site color / grey in Royale
+            // the base vaults' three door layers, recoloured for the owner
+            // (or the site colour / grey in Royale); the claim colour lives
+            // on the pad's rim band
             const doorSprites = (st.o && st.c)
                 ? getVaultSpritesForColor(st.c)
                 : (royaleActive() && !st.o ? getVaultSpritesForColor(null) : getVaultSpritesForTeam(st.t));
@@ -3335,15 +3282,12 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     // ── Core chamber rock art ───────────────────────────────────────────────
-    // The chambers render as a clean black octagon - no team halo, no facet
-    // fill, no embedded crystal art and no damage cracks (the treasury gems
-    // are real entities that drift inside the ring and render on top of this
-    // floor-layer rock). The octagon's rotation is seeded deterministically
-    // per chamber (id + site) so the two chambers don't sit at identical
-    // angles, and the shape is built in UNIT space + scaled at draw time so
-    // zoom changes never invalidate the cache.
-    // art caches, keyed to the chamber list signature (ids recycle between
-    // maps, so the whole cache drops whenever the sites change)
+    // A plain octagon on the floor layer; the treasury gems are real entities
+    // drawn on top. Rotation is seeded per chamber (id + site), and the shape
+    // is built in unit space and scaled at draw time so zoom never
+    // invalidates the cache.
+    // Art caches are keyed to the chamber list signature (ids recycle between
+    // maps, so the whole cache drops whenever the sites change).
     const chamberArt = { sig: "", rock: new Map() };
     // the drawn ring's hollow inner edge (world units) - must match
     // CHAMBER_INNER in server/game/terrain/coreChambers.js
@@ -3361,12 +3305,9 @@ import * as cosmetics from './account/cosmetics.js';
         };
     }
 
-    // The chamber is built the way the outposts are: flat fills, chunky dark
-    // borders, bold team colour, and it breathes. Geometry is cached ONCE per
-    // site as unit-space Path2Ds and scaled at draw time, so it stays crisp at
-    // any zoom and never needs rebuilding - and unlike blitting a sprite, the
-    // only pixels touched are the ones the walls actually cover. (A 512px
-    // sprite blit measured 3.2ms/frame on a software canvas; this is ~0.1ms.)
+    // Geometry is cached once per site as unit-space Path2Ds and scaled at
+    // draw time: crisp at any zoom, and only the wall pixels are touched (a
+    // 512px sprite blit costs ~3.2ms/frame on a software canvas; this ~0.1ms).
     function makeChamberArt(h) {
         const inRu = CHAMBER_INNER / 160;         // hollow inner edge, unit space
         const wu = 1 - inRu;                      // wall thickness, unit space
@@ -3418,8 +3359,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (!global.chambers.length) return;
         const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
         const c = ctx[0];   // BACKGROUND layer - players and gems stay on top
-        // cache invalidation: chamber ids recycle between maps, so drop the
-        // whole art cache whenever the site list changes
+        // chamber ids recycle between maps: drop the cache when sites change
         const sig = global.chambers.map(ch => ch.id + "@" + ch.x + "," + ch.y + "," + ch.team).join("|");
         if (sig !== chamberArt.sig) {
             chamberArt.sig = sig;
@@ -3445,10 +3385,9 @@ import * as cosmetics from './account/cosmetics.js';
                 art = makeChamberArt(h);
                 chamberArt.rock.set(ch.id, art);
             }
-            // Unit-space paths scaled into place: line widths are given in unit
-            // space too, so the transform carries them. The empty pocket is the
-            // same art ghosted back and the regrowing ring is it scaled up from
-            // nothing, so no state needs its own geometry.
+            // Unit-space paths scaled into place (line widths too). The empty
+            // pocket is the same art ghosted, and the regrowing ring is it
+            // scaled up from nothing, so no state needs its own geometry.
             const wu = art.wu;
             const s = R * scale;
             c.save();
@@ -3488,10 +3427,8 @@ import * as cosmetics from './account/cosmetics.js';
             c.restore();
             if (mode === 1) continue;
 
-            // The living layer, drawn fresh each frame the way the outposts do
-            // theirs: a containment ring that breathes in the owner's colour
-            // and a set of arc segments orbiting the wall. A handful of strokes
-            // - everything static already came out of the sprite above.
+            // Per-frame layer: a breathing ring in the owner's colour and arc
+            // segments orbiting the wall.
             const now = performance.now();
             const inRpx = R * scale * (CHAMBER_INNER / 160);
             const pulse = 0.5 + 0.5 * Math.sin(now / 700 + ch.id);
@@ -3502,8 +3439,8 @@ import * as cosmetics from './account/cosmetics.js';
             c.lineWidth = Math.max(2.5, R * 0.05);
             c.strokeStyle = teamCol;
             c.beginPath(); c.arc(0, 0, inRpx * 0.94, 0, Math.PI * 2); c.stroke();
-            // integrity ring around the wall, exactly the outpost's capture
-            // ring: a dark track with a white arc sweeping the remaining health
+            // integrity ring, same as the outpost's capture ring: dark track,
+            // white arc for remaining health
             if (alive && st.h !== undefined) {
                 const ringR = R * scale * 1.07;
                 c.globalAlpha = 0.22;
@@ -3572,16 +3509,13 @@ import * as cosmetics from './account/cosmetics.js';
             if (sx < -R * 2 || sx > global.screenWidth + R * 2 ||
                 sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
             const st = global.outpostState.find(s => s.id === o.id) || {};
-            // names in the HUD's display face; the site keeps its colour.
-            // Parked just clear of the top of what is drawn: the HP ring
-            // round a standing structure, else the bare pad.
+            // name in the HUD display face, just above the HP ring of a
+            // standing structure, else above the bare pad
             const fs = Math.min(30, Math.max(13, R * 0.4));
             const top = (st.t || st.h) ? R * 1.33 * 1.1 + Math.max(4, R * 0.085) : R * 1.08;
             const ty = sy - top - fs * 0.5 - Math.max(6, R * 0.12);
             hudTitle(o.name, sx, ty, fs, o.color || st.c || HUD.head, "center", 1, c);
-            // Contested window, visible to both sides: callout + the
-            // banner's remaining HP as the break bar. Attackers see what
-            // they must finish, defenders see what they must save.
+            // contested: callout + the banner's remaining HP, shown to both sides
             if (st.cont) {
                 const blink = 0.65 + 0.35 * Math.sin(performance.now() / 240);
                 const as = Math.min(22, Math.max(11, R * 0.28));
@@ -3598,9 +3532,7 @@ import * as cosmetics from './account/cosmetics.js';
                          st.c || HUD.head, "center", 1, c);
             }
         }
-        // core chambers wear their name above the boulder too - and only once
-        // the ring is fully regrown (st.st === 0): no name while the pocket is
-        // empty, none while the sliver is still growing back
+        // core chamber names, only once the ring is fully regrown (st.st === 0)
         for (const ch of global.chambers) {
             const st = global.chamberState.find(s => s.id === ch.id) || {};
             if (st.st !== undefined && st.st !== 0) continue;
@@ -3609,8 +3541,7 @@ import * as cosmetics from './account/cosmetics.js';
             const R = ch.r * ratio;
             if (sx < -R * 2 || sx > global.screenWidth + R * 2 ||
                 sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
-            // Same plain label treatment the outposts use, in the owning
-            // team's colour, cleared above the integrity ring.
+            // outpost-style label in the owner's colour, above the integrity ring
             const labelSize = Math.min(32, ch.r * ratio * 0.3);
             drawText(ch.name, sx, sy - ch.r * ratio * 1.07 - labelSize * 1.5,
                      labelSize,
@@ -3623,9 +3554,9 @@ import * as cosmetics from './account/cosmetics.js';
         const s = global.royale && global.royale.storm;
         if (!s || !s.a) return null;
         if (s.n == null) return s;
-        // RY lands every 500ms but n predicts +250ms. Clamping at 1 used to
-        // glide, freeze, glide (the stutter). Extrapolate at the same rate
-        // instead so the edge moves continuously; the cap only guards stalls.
+        // RY lands every 500ms but n predicts +250ms. Extrapolate past t=1 at
+        // the same rate so the edge moves continuously (clamping at 1 makes it
+        // stutter); the cap only guards stalls.
         const t = Math.min(4, Math.max(0, (performance.now() - global.royale.at) / 250));
         return Object.assign({}, s, { r: (s.r || 0) + ((s.n || s.r) - s.r) * t });
     }
@@ -3705,18 +3636,17 @@ import * as cosmetics from './account/cosmetics.js';
         let gameHeight = global.gameHeight = global.player.roomAnim.y.get(tick);
 
         ctx[0].globalAlpha = 1;
-        // room base = the dirt tile's ground color, so even if the pattern
-        // ever fails to build the floor is dark, never white
+        // room base = the dirt tile's ground colour, so a failed pattern
+        // still leaves a dark floor
         ctx[0].fillStyle = "#1e1d1b";
 
         let roomX = -px + global.screenWidth / 2 - ratio * gameWidth / 2,
             roomY = -py + global.screenHeight / 2 - ratio * gameHeight / 2,
             roomWidth = ratio * gameWidth,
             roomHeight = ratio * gameHeight;
-        // Circular dirt island for round maps and dig royale alike (lobby
-        // included - the map is a circle from the moment you join). The dirt
-        // is clipped to a perfect circle, but the ROCKS draw unclipped after
-        // the restore below, so rim rocks overhang raw and are never sliced.
+        // Circular dirt island for round maps and dig royale (lobby
+        // included). The dirt is clipped to a circle, but the rocks draw
+        // unclipped after the restore below, so rim rocks are never sliced.
         const circleClip = global.advanced.roundMap || royaleMode();
         if (circleClip) {
             ctx[0].save();
@@ -3749,14 +3679,11 @@ import * as cosmetics from './account/cosmetics.js';
         // Square dirt base for normal modes. Royale paints its dirt under
         // the rocks only (below), leaving void at the raw rock edge.
         if (!island && (!royaleMode() || !getMapPaths())) ctx[0].fillRect(roomX, roomY, roomWidth, roomHeight);
-        // muddy cavern floor: repeat the dirt tile across the room,
-        // anchored to world coordinates and scaled with the camera so the
-        // ground never "swims". PERF: only the visible slice of the room is
-        // pattern-filled - filling the whole room rect each frame was a
-        // fullscreen-and-then-some rasterization for nothing.
-        // Royale island: dirt lives ONLY under the rocks (their combined
-        // path), so the void starts exactly at the rocks' raw edge. No
-        // square dirt corners, no rock ever cut or culled for it.
+        // Cavern floor: the dirt tile repeated, anchored to world coordinates
+        // and scaled with the camera. Only the visible slice of the room is
+        // pattern-filled.
+        // Royale island: dirt lives only under the rocks (their combined
+        // path), so the void starts exactly at the rocks' raw edge.
         if (royaleMode()) {
             const islPaths = getMapPaths();
             if (islPaths) {
@@ -3816,9 +3743,8 @@ import * as cosmetics from './account/cosmetics.js';
                     ctx[0].globalAlpha = 0.3;
                     if (tile.color == 'none') tile.color = 'border';
                     let tileColor = gameDraw.getColor(tile.color, true);
-                    // Team floors are deep, saturated islands. Structures on
-                    // top then wear a brighter team jewel so blue never sits
-                    // on yellow and red never reads as rust-on-dirt.
+                    // team floors are deep, saturated tints; structures on
+                    // top wear a brighter team colour
                     let tintAlpha = 0.3;
                     if (tile.color === "blue") {
                         try { tileColor = gameDraw.mixColors(tileColor, "#1a46c8", 0.62); } catch (e) { /* keep */ }
@@ -3829,10 +3755,8 @@ import * as cosmetics from './account/cosmetics.js';
                     }
 
                     if (tileColor !== color.white) {
-                        // bases/nests keep their ORIGINAL look: lay down the
-                        // stock light floor under the tint so the team color
-                        // reads exactly as it always did - bright, safe
-                        // islands punched out of the dark cavern dirt
+                        // bases/nests keep the stock light floor under the
+                        // tint: bright islands in the dark cavern dirt
                         ctx[0].globalAlpha = 1;
                         ctx[0].fillStyle = color.white;
                         ctx[0].fillRect(top, bottom, left - top, right - bottom);
@@ -3866,11 +3790,9 @@ import * as cosmetics from './account/cosmetics.js';
         // Unclip for the rocks: the dirt is a perfect circle, the rocks are
         // raw and overhang it. Round (non-royale) maps keep the clip.
         if (royaleMode() && circleClip) ctx[0].restore();
-        // the rock wall first - the vaults and outposts sit ON TOP of it, so
-        // nothing ever washes over the doors or their labels
+        // the rock wall first; vaults and outposts sit on top of it
         if (window.terrainRenderer && window.terrainRenderer.ready) {
-            // near-opaque on the dark cavern floor - the old 0.5 wash only
-            // read against a white arena; here it would melt into the dirt
+            // near-opaque: a lighter wash melts into the dark cavern floor
             ctx[0].globalAlpha = 0.9;
             window.terrainRenderer.draw(ctx[0], px, py, ratio, gameWidth, gameHeight, global.screenWidth, global.screenHeight);
         }
@@ -3885,50 +3807,34 @@ import * as cosmetics from './account/cosmetics.js';
         drawShops(roomX, roomY, ratio);
         // Dig Wars: forward outpost pads, carved into the wall
         drawOutposts(roomX, roomY, ratio);
-        // Dig Wars: core chamber boulders beside each vault (one big rock per
-        // team with the treasury drifting inside - gems are real entities, so
-        // they render on top of this floor-layer rock)
+        // Dig Wars: core chambers (treasury gems are entities drawn on top)
         drawChambers(roomX, roomY, ratio);
-        // the outposts' mini vault doors - drawn here in the FLOOR layer (below
-        // players) so the player always renders on top of the outpost
+        // outpost doors, on the floor layer so players render on top
         drawOutpostDoors(px, py, ratio);
     }
 
     // Dig Wars: the outpost structure is a real server entity (its HP drives
-    // capture combat) but every pixel of it - octagon, door, HP bar - is drawn
-    // by the dedicated floor-layer passes (drawOutposts + drawOutpostDoors).
-    // Flag its entity here so the generic entity pass never paints a second
-    // octagon or a second health bar over the pad.
+    // capture combat), but it is drawn entirely by drawOutposts +
+    // drawOutpostDoors. The generic entity pass skips it.
     function isOutpostBannerEntity(instance) {
         if (!instance || !instance.index) return false;
         const _obM = global.mockups[parseInt(instance.index.split("-")[0])];
         return !!(_obM && (_obM.name === "Outpost" || _obM.className === "outpostBanner"));
     }
 
-    // Dig Wars: core chamber boulders are drawn entirely by the floor-layer
-    // drawChambers pass - suppress the entity so it never paints a second
-    // rock or a second health bar over the boulder.
+    // Dig Wars: core chambers are drawn entirely by drawChambers; the
+    // generic entity pass skips them.
     function isCoreChamberEntity(instance) {
         if (!instance || !instance.index) return false;
         const _obM = global.mockups[parseInt(instance.index.split("-")[0])];
         return !!(_obM && (_obM.name === "Core Chamber" || _obM.className === "coreChamber"));
     }
 
-    // Dig Wars: treasury gems locked inside a chamber ring. They're real
-    // entities (the server drifts them), but rendering 80+ of them through the
-    // full entity pipeline (body + facet + sparkle Props + glow + spin
-    // transform) is what melted the frame rate around a chamber. Each class is
-    // instead pre-rendered ONCE onto a hidden canvas that replicates the real
-    // drawEntity output (halo + body + outline + facet + sparkle, the exact
-    // same layered cut the loose pickups wear), and per frame a contained gem
-    // costs ONE rotated drawImage - no shadowBlur, no path building, no
-    // allocation. Gem pickups near a ring's outline are included (they read
-    // the same, and the test is a cheap distance check). Returns the gem class
-    // when contained (also used as a truthy skip test), "" otherwise.
-    // Every gem pickup draws from its baked sprite (glow included). Sending
-    // loose gems through drawEntity meant one live shadowBlur pass per gem
-    // per frame, which is what made a Retina laptop crawl with 15 gems on
-    // screen. The class is cached on the instance once the mockup is known.
+    // Gem pickups (loose and treasury) skip the entity pipeline: each class
+    // is pre-rendered once to a sprite that replicates drawEntity's output
+    // (halo, body, outline, facet, sparkle), so a gem costs one rotated
+    // drawImage per frame with no shadowBlur. gemSpriteClass returns the gem
+    // class ("" for non-gems), cached on the instance once the mockup is known.
     function gemSpriteClass(instance) {
         if (!instance || !instance.index) return "";
         if (instance._gemCls !== undefined) return instance._gemCls;
@@ -3949,8 +3855,8 @@ import * as cosmetics from './account/cosmetics.js';
         return "";
     }
 
-    // The canonical gem cut (unit coords) - mirrors GEM_CUT in terrainRenderer
-    // and digwars.js, so the baked gems keep the exact same silhouette.
+    // The canonical gem cut (unit coords); mirrors GEM_CUT in terrainRenderer
+    // and digwars.js.
     const GEM_CUT = [
         [-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95],
     ];
@@ -3963,14 +3869,12 @@ import * as cosmetics from './account/cosmetics.js';
         return p;
     })();
 
-    // Per-class art. body / facet / glow(+radius+alpha) are the gemPickup* +
-    // gemFacet* + GLOW values from digwars.js, so the baked gems carry the
-    // exact same palette AND halo as the loose pickups the full entity
-    // pipeline draws elsewhere. The rim is gameDraw.getColorDark(body) - the
-    // same darkened tint the pipeline gives every real pickup, theme-aware.
-    // `size` is the treasury tier's SIZE for that class: the real pipeline's
-    // outline is a fixed world-space width (borderChunk * strokeWidth, not
-    // proportional to the gem), so the bake divides it by each class's size.
+    // Per-class art. body / facet / glow(+radius+alpha) mirror the gemPickup*,
+    // gemFacet* and GLOW values in digwars.js; the rim is
+    // gameDraw.getColorDark(body), as the pipeline does.
+    // `size` is the class's SIZE: the pipeline's outline is a fixed
+    // world-space width (borderChunk * strokeWidth), so the bake divides it
+    // by each class's size.
     const GEM_SPRITE_PAL = {
         gemPickupCopper:      { size: 16, body: "#c96f2e", facet: "#eda766", glow: "#e8a05c", glowR: 0.8,  glowA: 0.3 },
         gemPickupVein:        { size: 20, body: "#3b7ce0", facet: "#7fb1f2", glow: "#6fa3f2", glowR: 1,    glowA: 0.35 },
@@ -3981,15 +3885,11 @@ import * as cosmetics from './account/cosmetics.js';
         gemPickupLoot:        { size: 7,  body: "#e0a63b", facet: "#f2cf7f", glow: "#f5cf6e", glowR: 1.2,  glowA: 0.4 },
     };
 
-    // Baked, full-fidelity sprites. Every contained gem is pre-rendered once
-    // per class onto a hidden canvas that replicates the REAL drawEntity
-    // output for a gem pickup: soft glow halo (shadowBlur under a borderless
-    // body fill at the glow's alpha), the filled gem cut, its darkened rim
-    // (stroke first, so the fill hides the inner half - exactly like the real
-    // pipeline), then the facet + sparkle Props at their true size/offset/
-    // angle (0.525 / 0.2 of the body, 0.12 crown / 0.405 offset, 12deg spin).
-    // The bake runs colors through gameDraw.modifyColor too, so the sprite is
-    // byte-for-byte the same colors a loose gem draws one screen over.
+    // Baked sprites replicating drawEntity for a gem pickup: glow halo
+    // (shadowBlur under a borderless body fill at the glow alpha), the gem
+    // cut with its darkened rim (stroke first, fill hides the inner half),
+    // then the facet + sparkle Props at their real size/offset/angle.
+    // Colours go through gameDraw.modifyColor like the pipeline's.
     const GEM_SPRITES = {};
     const GEM_SPRITE_HALF = 6.0;    // unit span covered (biggest glow ~2.4)
     const GEM_SPRITE_SCALE = 64;    // px per world unit inside the sprite
@@ -4020,7 +3920,7 @@ import * as cosmetics from './account/cosmetics.js';
         c.globalAlpha = 1;
         c.shadowBlur = 0;
 
-        // body: stroke first, then fill hides the inner half (real pipeline)
+        // body: stroke first, then fill hides the inner half
         c.lineJoin = "round";
         c.lineCap = "round";
         c.lineWidth = GEM_RIM_UNITS / (pal.size || 7);
@@ -4037,8 +3937,8 @@ import * as cosmetics from './account/cosmetics.js';
         c.fill(GEM_CUT_PATH);
         c.restore();
 
-        // sparkle prop (0.2 scale, 0.405 offset at direction+angle = up-left,
-        // spun 12deg exactly like the real gemSparkle's t.angle)
+        // sparkle prop (0.2 scale, 0.405 offset up-left, spun 12deg like
+        // gemSparkle's t.angle)
         c.save();
         c.translate(-0.148, -0.377);
         c.rotate(0.20944);
@@ -4052,10 +3952,8 @@ import * as cosmetics from './account/cosmetics.js';
         return s;
     }
 
-    // Draw a contained gem from its cached sprite: one rotated drawImage, no
-    // per-frame shadowBlur or allocation. `isize` is the gem's render size
-    // (world units); the real pipeline maps the unit cut to `isize * ratio`
-    // pixels, so the sprite is blitted at exactly that scale.
+    // Draw a gem from its cached sprite. `isize` is the render size (world
+    // units); the unit cut maps to `isize * ratio` pixels, as in the pipeline.
     function drawContainedGem(c, x, y, ratio, alpha, isize, facing, cls) {
         const spr = gemSprite(cls);
         const k = isize * ratio;
@@ -4068,8 +3966,7 @@ import * as cosmetics from './account/cosmetics.js';
         c.drawImage(spr.canvas, -h, -h, h * 2, h * 2);
         c.restore();
     }
-    // Tutorial ore-tier card: same baked sprite the world gems use, sized in
-    // pixels so the legend cannot drift into a mockup/icon version.
+    // Tutorial ore-tier card: the same baked sprite, sized in pixels.
     window.dwDrawGem = function (c, x, y, bodyPx, alpha, facing, cls) {
         const pal = GEM_SPRITE_PAL[cls] || GEM_SPRITE_PAL.gemPickupVein;
         const isize = pal.size || 16;
@@ -4077,8 +3974,7 @@ import * as cosmetics from './account/cosmetics.js';
     };
 
     // ── Baked radial halos: one gradient per colour, drawn as an image ──
-    // A live createRadialGradient per entity per frame was the single most
-    // expensive thing in the render path.
+    // A live createRadialGradient per entity per frame is too expensive.
     const haloSprites = new Map();
     function haloSprite(key, rgb, stops) {
         let spr = haloSprites.get(key);
@@ -4140,9 +4036,8 @@ import * as cosmetics from './account/cosmetics.js';
         instance._chest = kind;
         return kind;
     }
-    // ── Raid bosses wear an aura: a floor halo in their colour, two
-    // counter-rotating dashed rings and five orbiting shards. Cheap (one
-    // baked sprite plus a few strokes) and unmistakable from across the map.
+    // ── Raid boss aura: a floor halo in their colour, two counter-rotating
+    // dashed rings and five orbiting shards (one baked sprite + a few strokes).
     const BOSS_NAME_RE = /Vault Warden|Magma Drillhead|Geode Colossus|Shard Wraith/;
     function isRoyaleBossEntity(instance) {
         if (!instance || !instance.index) return false;
@@ -4210,8 +4105,7 @@ import * as cosmetics from './account/cosmetics.js';
         const body = new Path2D();
         pts.forEach((p, i) => i ? body.lineTo(p[0], p[1]) : body.moveTo(p[0], p[1]));
         body.closePath();
-        // two lighter facets and a darker lower half give it the rock's
-        // flat-shaded look without a texture
+        // two lighter facets and a darker lower half: flat shading, no texture
         const facets = new Path2D();
         for (let f = 0; f < 2; f++) {
             const i = Math.floor(rnd() * n);
@@ -4355,13 +4249,9 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
         c.restore();
-        // the prize: one ore gem set into the rock, drawn from the same
-        // baked sprite the loose gems use (glow included)
-        // The prize is set INTO the rock: a pocket cut below the surface, the
-        // gem sitting low in it with only its crown showing (no glow, flat
-        // fills like everything else on the wall), an inner shadow from the
-        // pocket's upper edge, and the rock's own border running over the
-        // gem's edge with a lip of stone across its foot.
+        // The prize: one ore gem set into a pocket in the rock, only its
+        // crown showing (no glow), with an inner shadow under the pocket's
+        // top edge and a lip of stone across its foot.
         const gemK = 0.40 * sy;
         const gx = x + trX, gy = y + trY, gr = R * gemK;
         const gpal = kind.epic ? { body: "#b13ecf", facet: "#d98af0", deep: "#6d2287" } : { body: "#c96f2e", facet: "#eda766", deep: "#7a4018" };
@@ -4406,10 +4296,8 @@ import * as cosmetics from './account/cosmetics.js';
                 instance._onScreen = false;
                 continue;
             }
-            // Dig Wars: the outpost banner is drawn entirely by the floor-layer
-            // passes - skip the entity so it never paints a second octagon over
-            // the pad (its custom HP bar lives in drawOutposts too). Core
-            // chamber boulders are drawn by drawChambers the same way.
+            // Dig Wars: outpost banners and core chambers are drawn by the
+            // floor-layer passes (HP bars included)
             if (isOutpostBannerEntity(instance) || isCoreChamberEntity(instance)) {
                 const rst = instance.render.status.getFade();
                 if (rst < 1 && !instance.deathSounded) {
@@ -4494,9 +4382,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (instance.id === gui.playerid && !global.died) drawSpawnShield(ctx[1], x, y, (isize || instance.size) * ratio, instance.invuln);
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance, false);
-            // treasury gems inside a chamber ring: the real gem look (halo +
-            // body + outline + facet + sparkle) restacked from cached paths,
-            // skipping the whole body+prop+spin pipeline
+            // treasury gems inside a chamber ring: drawn from the baked sprite
             const _gcls = gemSpriteClass(instance);
             if (_gcls) {
                 let ga = instance.alpha * alpha * instance.render.status.getFade();
@@ -4533,8 +4419,7 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
         for (let instance of global.entities) {
-            // Dig Wars: same banner skip as the shape pass - the generic entity
-            // health bar must not stack over the pad's custom HP bar.
+            // Dig Wars: same banner skip as the shape pass (no generic HP bar)
             if (!instance._onScreen) continue;
             if (isOutpostBannerEntity(instance)) continue;
             if (isCoreChamberEntity(instance)) continue;
@@ -4989,9 +4874,7 @@ import * as cosmetics from './account/cosmetics.js';
                 y += 28 * (3 - 2 * K) * K * K;
             }
         }
-        // Remember where the stack ended so the milestone cards can sit under
-        // it instead of on top of it - both live at top-centre, and Dig Wars
-        // broadcasts (emerald finds, war events) land here constantly.
+        // remember where the stack ended so the milestone cards sit under it
         messageStackBottom = y;
         ctx[2].globalAlpha = 1;
     }
@@ -5122,10 +5005,9 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    // ── Enemy pings in the world: a bobbing red marker at the spot, and an
-    // edge marker (inside the HUD-safe frame) when it's off-screen. Sized to
-    // read at a glance; only the nearest few draw, far ones fade back.
-    // Pings live 20s. ──
+    // ── Enemy pings: a bobbing red marker at the spot, or an edge marker
+    // (inside the HUD-safe frame) when off-screen. Only the nearest few
+    // draw; far ones fade. Pings live 20s. ──
     const ENEMY_PING_MAX = 5;
     function drawEnemyPings() {
         const now = performance.now();
@@ -5356,12 +5238,9 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    // ── Leader crown: the classic simple 2D game crown - three equal
-    // triangular spikes on a flat band, balls on the tips, flat gold with a
-    // dark outline. Everyone sees it on the #1 player, themselves included.
-    // The crown wears the LEADER'S TEAM COLOR (blue leader = blue crown,
-    // red leader = red crown) everywhere it appears: overhead, the screen
-    // edge indicator, and both maps. Gold only as a fallback.
+    // ── Leader crown on the #1 player (themselves included): three spikes
+    // with ball tips on a flat band, in the leader's team colour everywhere
+    // it appears (overhead, edge indicator, both maps). Gold is the fallback.
     function crownColor() {
         const t = global.leader && global.leader.team;
         if (t === -1) return gameDraw.getColor("blue");
@@ -5369,8 +5248,6 @@ import * as cosmetics from './account/cosmetics.js';
         return color.gold;
     }
     function drawCrown(x, y, g, a, c = ctx[1]) {
-        // The crown: flat solid color, three ball tips melting into the
-        // spikes, softly rounded silhouette - matches the reference art.
         const w = 1.05 * g, h = 0.72 * g;
         const sideY = y - h * 0.92;  // outer tip centers
         const midY  = y - h * 1.12;  // center tip sits higher
@@ -5517,11 +5394,9 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     function drawSkillBars(spacing, alcoveSize) {
-        // Tutorial: the stat bars show only when the lesson either lets you
-        // spend (allow includes stats) or is literally pointing at them (the
-        // "find your points" step highlights the bar without unlocking it).
-        // Otherwise they stay hidden - a bar that takes clicks the server
-        // refuses would read as broken rather than locked.
+        // Tutorial: stat bars show only when the lesson allows stats or
+        // highlights them (the "find your points" step); otherwise they are
+        // hidden, since the server refuses the clicks.
         if (global.tutorialMode) {
             const allow = window.dwTutAllow || "";
             const ui = window.dwTutUi || "";
@@ -5600,10 +5475,9 @@ import * as cosmetics from './account/cosmetics.js';
 
             len = save * ska(max);
             let textcolor = level == maxLevel ? col : !gui.points || (cap !== maxLevel && level == cap) ? color.grey : color.guiwhite;
-            // stat name in the HUD display face with its ink outline
-            // a maxed stat's bar is already full in its colour; a name in that
-            // same colour on top of it can't be read, so it goes light. The
-            // name shrinks (cached widths) only if it would run into the key.
+            // stat name in the HUD display face; light on a maxed (full) bar
+            // so it stays readable. Shrinks (cached widths) only if it would
+            // run into the key.
             let nameSize = height - 4;
             while (nameSize > 9 && hudTitleW(name, nameSize) > save - 52) nameSize -= 0.5;
             hudTitle(name, Math.round(x + len / 2) - 5.5, y + height / 2, nameSize, level == maxLevel ? HUD.head : textcolor, "center");
@@ -5635,8 +5509,7 @@ import * as cosmetics from './account/cosmetics.js';
     function drawSelfInfo(max) {
 
         // Dig Wars bottom stack (bottom → top): team war bar, wallet row,
-        // player name. The old level bar is gone - everyone is 45, it said
-        // nothing.
+        // player name. No level bar: everyone is level 45.
         let width = 440,
             scorewidth = 70,
             scorelength = 0,
@@ -5657,13 +5530,10 @@ import * as cosmetics from './account/cosmetics.js';
             scorelength = 72.5;
             scorewidth = 120;
         }
-        // ── Dig Wars wallet row (replaces the old score bar) ─────────────
-        // Two separate pills so the facts don't mash together: a gold
-        // carried-meter that fills with satchel load (blinks red at cap),
-        // and a solid teal banked pill. Uses the exact footprint the score
-        // bar had, so the killbar / info-mode layouts are untouched.
-        // On non-gem gamemodes (no GEM data → cap 0) the stock score bar
-        // draws instead.
+        // ── Dig Wars wallet row, in the score bar's footprint ────────────
+        // Two pills: a gold carried-meter filling with satchel load (blinks
+        // red at cap) and a teal banked pill. Modes without GEM data (cap 0)
+        // draw the stock score bar.
         if (!global.gems || !(global.gems.cap > 0)) {
             drawBar(x + scorewidth - scorelength, x + width - scorewidth - scorelength, y + height / 2, height - 3 + config.graphical.barChunk, color.black);
             drawBar(x + scorewidth - scorelength, x + width - scorewidth - scorelength, y + height / 2, height - 3, color.grey);
@@ -5716,14 +5586,11 @@ import * as cosmetics from './account/cosmetics.js';
         return (r.division | 0) + 1;
     }
 
-    // Dig Wars: the Vault panel - fades and slides in while you stand on
-    // your team's pad, themed in your team color. Choose the exact dust
-    // amount three ways: drag/click the slider, tap a percent, or nudge
-    // with the − / + steppers.
+    // Dig Wars: the vault panel, shown while you stand on your team's pad.
     const vaultGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
     const VAULT_MIN_DEPOSIT = 15;
-    // A real typed input for the deposit amount - native caret, selection,
-    // clamping. Created once, positioned over the canvas panel each frame.
+    // A real DOM input for the deposit amount, created once and positioned
+    // over the canvas panel each frame.
     let vaultInput = null;
     function getVaultInput() {
         if (vaultInput) return vaultInput;
@@ -5760,9 +5627,8 @@ import * as cosmetics from './account/cosmetics.js';
                 document.getElementById("gameCanvas").focus();
             }
         };
-        // taking focus means the game canvas stops hearing keyUPs - release
-        // every held command or a held W drives the tank into the wall
-        // forever (the "stuck on W" bug)
+        // taking focus means the canvas misses keyups: release every held
+        // command or a held key keeps driving the tank
         vaultInput.onfocus = () => {
             if (global.socket && global.socket.cmd) {
                 for (let i = 0; i < 8; i++) global.socket.cmd.set(i, false);
@@ -5780,11 +5646,8 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    // Dig Wars: the Vault panel - dead simple: how much dust do you want to
-    // cash out? Type it (clamped to your satchel), hit DEPOSIT or Enter.
-    // Deposit channel: the HUD bar plus two quiet signs of life, both kept
-    // inside the filled part - a breathing sheen on the fill and a bright
-    // tick at its leading edge, with small notches drifting toward it.
+    // Deposit channel bar: the HUD bar plus a breathing sheen on the fill and
+    // a bright tick at its leading edge, with notches drifting toward it.
     function drawChannelBar(c, bx, by, bw, bh, frac, col, now) {
         hudBar(c, bx, by, bw, bh, frac, col);
         const fw = Math.max(bh, bw * frac);
@@ -5839,8 +5702,8 @@ import * as cosmetics from './account/cosmetics.js';
         const y = global.screenHeight - 318 + (1 - glide) * 26;
         const cr = global.canvas ? global.canvas.height / global.screenHeight / global.ratio : 1;
         const c = ctx[2];
-        // team color for the frame - getColor can return undefined for
-        // unmapped indices and mixColors requires hex strings, so guard
+        // guarded: getColor can return undefined for unmapped indices and
+        // mixColors requires hex strings
         let teamCol = gameDraw.getColor(gui.color);
         if (typeof teamCol !== "string" || teamCol[0] !== "#") teamCol = color.gold;
 
@@ -5863,8 +5726,7 @@ import * as cosmetics from './account/cosmetics.js';
             // ── channeling: gold progress + live count + cancel ──
             hideVaultInput();
             const target = Math.max(0, Math.min(1, 1 - v.remaining / v.total));
-            // The server reports the channel in steps; ease the shown fill
-            // toward it so the bar creeps instead of jumping.
+            // the server reports the channel in steps; ease the shown fill
             if (!(v.shownFrac >= 0) || target < v.shownFrac - 0.25 || !v.shownAt) v.shownFrac = target;
             const dt = Math.min(0.1, Math.max(0, (now - (v.shownAt || now)) / 1000));
             v.shownAt = now;
@@ -5879,7 +5741,6 @@ import * as cosmetics from './account/cosmetics.js';
                      x + W / 2, by + bh + 18, 12.5, color.guiwhite, "center");
             hudButton(c, x + W / 2, y + H - 33, 110, 26, "Cancel", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 14, type: "vault", index: 11, cr });
         } else {
-            
             drawText("How much dust to cash out?", x + W / 2, y + 71, 12, HUD.text, "center", true);
             const el = getVaultInput();
             const iw = 150, ih = 30;
@@ -5893,9 +5754,6 @@ import * as cosmetics from './account/cosmetics.js';
             if (el.style.display === "none") {
                 el.style.display = "block";
                 el.value = "" + (g.carried | 0);   // defaults to everything
-                
-                
-                
             }
             const dbx = x + W / 2 + 26, dby = y + 85, dbw = 108, dbh = 32;
             hudButton(c, dbx + dbw / 2, dby, dbw, dbh, "Deposit", { fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff", size: 16, type: "vault", index: 10, cr });
@@ -5904,16 +5762,14 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     // Dig Wars: pickup feedback in the WORLD, not the HUD - +N popups float
-    
-    
+
     function drawGemPopups() {
         const g = global.gems;
         if (!g || !config.game.gemPopups) return;
         const now = performance.now();
-        
+
         const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
 
-        
         const ft = (now - g.flashAt) / 380;
         if (ft >= 0 && ft < 1) {
             const fe = 1 - Math.pow(1 - ft, 3);
@@ -5945,13 +5801,8 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    
-    
-    
-    
     // Mining combo meter: server-counted chain (2.5s window, up to +50%
-    // dust), drawn under the tank with a depleting fuse bar. Starts at ×2 -
-    // a lone pickup is not a combo.
+    // dust), drawn under the tank with a depleting fuse bar. Starts at ×2.
     function drawMineCombo() {
         const g = global.gems;
         if (!g || !config.game.gemPopups) return;
@@ -5994,7 +5845,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (!onScreen) {
                 target = 1;
                 la.ang = Math.atan2(dy, dx);
-                
+
                 const inset = 28;
                 const t = Math.min((cx - inset) / (Math.abs(Math.cos(la.ang)) || 1e-9),
                                    (cy - inset) / (Math.abs(Math.sin(la.ang)) || 1e-9));
@@ -6024,16 +5875,12 @@ import * as cosmetics from './account/cosmetics.js';
         c.fillStyle = color.gold;
         c.fill();
         c.restore();
-        
-        
+
         drawCrown(la.x - Math.cos(la.ang) * 50,
                   la.y - Math.sin(la.ang) * 50 + 9,
                   28, la.a * 0.95, ctx[2]);
     }
 
-    
-    
-    
     let warBarFrac = 0.5;
     function drawTeamBankBar() {
         if (royaleActive()) return;
@@ -6073,14 +5920,11 @@ import * as cosmetics from './account/cosmetics.js';
     window.dwGuiColor = () => ({ color: gui.color, hex: playerHexCol() });
 
     // ═════════════════════════════════════════════════════════════════════
-    // HUD look: the menu's plates (home.css), drawn on the canvas.
-    // A fine dark keyline, one top highlight and a soft drop under each
-    // plate (no ink outline, no hard ink lip), one radius family, flat
-    // fills from the game palette. Lilita One only for titles; labels and
-    // anything small are Rubik, like the rest of the HUD text. Every
-    // in-game panel, chip, button and bar goes through these so they read
-    // as one family. Paths only: no shadows, no filters, nothing measured
-    // per frame that isn't cached.
+    // HUD look: the menu's plates (home.css), drawn on the canvas. Fine
+    // keyline, one top highlight, a soft drop, flat palette fills. Lilita
+    // One for titles, Rubik for labels. Every in-game panel, chip, button
+    // and bar goes through these helpers. Paths only: no shadows or
+    // filters, and per-frame text measurement is cached.
     // ═════════════════════════════════════════════════════════════════════
     const HUD = {
         ink: "#120e15",
@@ -6111,7 +5955,7 @@ import * as cosmetics from './account/cosmetics.js';
     // highlight along the top edge. o: { fill, r, lw, lip, bevel:false, stroke, alpha }
     function hudPanel(c, x, y, w, h, o = {}) {
         const r = o.r != null ? o.r : HUD.r;
-        // callers that asked for the old heavy outline get the fine one
+        // an explicit lw is scaled down to the fine keyline
         const lw = Math.min(2, o.lw != null ? o.lw * 0.55 : HUD.lw);
         const lip = o.lip != null ? o.lip : HUD.lip;
         c.save();
@@ -6169,8 +6013,7 @@ import * as cosmetics from './account/cosmetics.js';
         c.stroke();
     }
     // Title text, centred on y. Lilita One from HUD.titleMin up; smaller
-    // labels are Rubik bold. A thin dark rim keeps either readable over the
-    // world without the old thick sticker outline.
+    // labels are Rubik bold. A thin dark rim keeps either readable.
     function hudFont(size) {
         return size >= HUD.titleMin ? size + "px " + HUD.font : "700 " + (size * 0.94).toFixed(2) + "px " + HUD.ui;
     }
@@ -6267,7 +6110,7 @@ import * as cosmetics from './account/cosmetics.js';
             c.fillStyle = "rgba(255,255,255,0.12)";
             c.fill();
         }
-        // top highlight, then the fine keyline; the lip is the drop now
+        // top highlight, then the fine keyline (the lip is the drop)
         if (!down && w > 2 * r) {
             c.beginPath();
             c.moveTo(x + r, yy + 1.5);
@@ -6310,8 +6153,8 @@ import * as cosmetics from './account/cosmetics.js';
     // stat names stay readable on 1366x768 / 1280x720 at Normal scale.
     const STAT_BAR_H = 16, STAT_BAR_GAP = 5;
     // Highest point the bottom-left block (kit box, else the 11 stat bars and
-    // their points counter) can reach. The upgrade tiles and the quest and
-    // override cards all have to stop above it.
+    // their points counter) can reach; the upgrade tiles and the quest and
+    // override cards stop above it.
     function leftColumnFloor() {
         if (kitBoxTop > 0) return kitBoxTop;
         return global.screenHeight - 20 - 5.5 - STAT_BAR_H - 10 * (STAT_BAR_H + STAT_BAR_GAP) - 34;
@@ -6502,9 +6345,8 @@ import * as cosmetics from './account/cosmetics.js';
     // (a panel on the bottom edge must push the marker UP, not off-screen).
     function nudgeOut(p, r, b) {
         if (p.x < r.x || p.x > r.x + r.w || p.y < r.y || p.y > r.y + r.h) return;
-        // Wide panels (wallet row, top cluster, standings) are left by
-        // moving vertically, tall ones (skill bars, minimap) horizontally:
-        // sliding along a wide panel only parks the label beside it.
+        // leave wide panels (wallet row, top cluster, standings) vertically
+        // and tall ones (skill bars, minimap) horizontally
         const vert = [
             { x: p.x, y: r.y - 3, d: p.y - r.y },
             { x: p.x, y: r.y + r.h + 3, d: r.y + r.h - p.y },
@@ -6579,8 +6421,8 @@ import * as cosmetics from './account/cosmetics.js';
             c.translate(sx, sy);
             c.lineJoin = "round";
             const lw = Math.max(1.5, R * 0.04);
-            // the vault's plate language on a hexagon (the hitbox): hard ink
-            // drop, deep teal face, one ink outline, bright rim band
+            // vault plate style on a hexagon (the hitbox): ink drop, deep
+            // teal face, ink outline, rim band
             polyPath(c, 0, R * 0.07, R * 1.16, 6, Math.PI / 6);
             c.fillStyle = "rgba(18,14,21,0.6)"; c.fill();
             polyPath(c, 0, 0, R * 1.16, 6, Math.PI / 6);
@@ -6715,7 +6557,7 @@ import * as cosmetics from './account/cosmetics.js';
         const cx = global.screenWidth / 2;
         const now = performance.now();
         if (!royaleActive()) {
-            // Raid data has not arrived yet: say so rather than show nothing.
+            // raid data has not arrived yet
             if (global.digRoyaleMode && global.gameStart && !global.tutorialMode) {
                 if (!hudWaitSince) hudWaitSince = now;
                 else if (now - hudWaitSince > 4000) drawText("Waiting for raid data...", cx, 30, 13, color.grey, "center");
@@ -7286,8 +7128,7 @@ import * as cosmetics from './account/cosmetics.js';
         for (const l of lines) { drawText(l, x + 12, ly, 10.5, HUD.text, "left", true, ease); ly += 14; }
     }
     const ROMAN = ["", "I", "II", "III", "IV", "V"];
-    // A tiny card per kit item: rounded corners, the item's colour, a glyph
-    // you can tell apart at 22px. Used in the kit slots.
+    // A tiny card per kit item for the kit slots: the item's colour and glyph.
     const KIT_CARD = {
         medkit: "#3fbf7a", charge: "#e07c2f", strut: "#8a93a6", overdrive: "#f0a030",
         anchor: "#4d8be0", flash: "#38b8b0", bulwark: "#7a8494", decoy: "#d4a83a",
@@ -7593,7 +7434,7 @@ import * as cosmetics from './account/cosmetics.js';
         return e.v;
     }
     // One flat tile: opaque face, lighter on hover, bottom shade strip,
-    // black border. The same recipe the class-upgrade tiles use.
+    // black border (same recipe as the class-upgrade tiles).
     function drawFlatTile(c, x, y, w, h, fill, hoverT, alpha, sel, selCol) {
         // a card on a plate: flat face, fine keyline; the picked one gets
         // the menu's copper ring
@@ -7684,10 +7525,8 @@ import * as cosmetics from './account/cosmetics.js';
         const gridX = x + 20, gridY = tabY + tabH + 16, GAP = 10;
         const detailW = 240;
         const gridW = W - 40 - detailW - 14;
-        // Every item in the tab has to fit: rows used to be a fixed 58 tall,
-        // so a tab with more than 8 items (Kit: Rock Barrage is the 9th;
-        // Gear has 10) silently lost its last cards at the grid's bottom.
-        // Cards shrink to fit, and a third column opens if that's too tight.
+        // every item in the tab must fit: cards shrink, and a third column
+        // opens if that's too tight
         const gridH = y + H - 32 - gridY;
         const rowsFor = (n) => Math.max(1, Math.ceil(items.length / n));
         const fitH = (n) => Math.floor((gridH - (rowsFor(n) - 1) * GAP) / rowsFor(n));
@@ -8166,9 +8005,9 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
     }
-    // ── spawn shield: make "moving drops it" impossible to miss ────────────
-    // The server holds the shield for 4 s no matter what, then drops it on the
-    // first move or shot. The only old sign was a faint blink on the tank.
+    // ── spawn shield ──────────────────────────────────────────────────────
+    // The server holds the shield for 4 s, then drops it on the first move
+    // or shot.
     const SHIELD_GRACE_MS = 4000;
     let shieldOnPrev = false;
     function drawSpawnShield(c, x, y, R, invuln) {
@@ -8311,8 +8150,7 @@ import * as cosmetics from './account/cosmetics.js';
         c.restore();
     }
 
-    // Banked-gem rungs. A quiet gold beat - label, number, bonus - not a
-    // carnival. The pop is the reward; the rest of the HUD stays readable.
+    // Banked-gem rungs: a short gold pop (label, number, bonus).
     function drawMilestones() {
         const list = global.milestones;
         if (!list || !list.length) return;
@@ -8369,9 +8207,6 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    
-    
-    
     function drawHitTicks(c, ox, oy, ratio, age, tint, alpha) {
         if (age < 0 || age >= HIT_TICK_MS || !(alpha > 0)) return;
         const ht = age / HIT_TICK_MS;
@@ -8393,9 +8228,8 @@ import * as cosmetics from './account/cosmetics.js';
         c.restore();
     }
 
-    // Floating damage numbers. World-anchored. A combo holds at full strength
-    // until a second of silence, then fades. Words are picked for YOU vs THEM
-    // so "Nice" never sits on your own head.
+    // Floating damage numbers, world-anchored. A combo holds at full strength
+    // until a second of silence, then fades. Words differ for you vs others.
     function drawDamageNumbers(px, py, ratio) {
         const list = global.damageNumbers;
         if (!list || !list.length) return;
@@ -8598,11 +8432,9 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    // Red edge vignette as your own health drops. Smoothed toward the target
-    // rather than tracking health directly, so a burst of chip damage feathers
-    // in instead of strobing. Intensity and how far it creeps inward both
-    // climb as health falls. A separate short slam covers the moment you
-    // actually get hit, even at full hp.
+    // Red edge vignette as your health drops, smoothed toward the target so
+    // chip damage doesn't strobe. Intensity and reach both climb as health
+    // falls; a separate short slam marks each hit, even at full hp.
     let lowHpLevel = 0;
     function drawLowHealthVignette() {
         let target = 0;
@@ -8661,19 +8493,9 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    // The satchel is the best thing in this game and for a long time it was a
-    // number in a bar. This is the other half of it: the screen itself gets
-    // more frightened the richer you are.
-    //
-    // It used to be binary - nothing at all until the cap, then a red pulse -
-    // which meant the entire dangerous middle of a run (a half-full satchel is
-    // already worth killing for) looked exactly like carrying nothing. Now it
-    // rises continuously from gameSound.tensionStart, warm gold while you are
-    // merely rich, bleeding to red as you approach the cap.
-    //
-    // The throb is driven by gameSound.satchelPulse() rather than its own sine
-    // so the screen beats on the same clock as the heartbeat you can hear.
-    // One body, two senses - that sync is the whole effect.
+    // Satchel danger vignette: rises continuously from gameSound.tensionStart,
+    // gold while rich, shifting to red near the cap. The throb is driven by
+    // gameSound.satchelPulse() so it beats in sync with the audible heartbeat.
     function drawSatchelDanger() {
         const g = global.gems;
         if (!config.game.satchelWarning) return;
@@ -8684,8 +8506,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (t <= 0) return;
         const full = load >= 1;
 
-        // Beat shape: a sharp systolic spike that decays, not a smooth sine -
-        // a sine reads as "breathing", a spike reads as "pulse".
+        // beat shape: a sharp spike that decays (a sine reads as breathing)
         const ph = gameSound.satchelPulse
             ? gameSound.satchelPulse()
             : (performance.now() % 800) / 800;
@@ -8694,17 +8515,15 @@ import * as cosmetics from './account/cosmetics.js';
         const c = ctx[2];
         const w = global.screenWidth, h = global.screenHeight;
         const r = Math.hypot(w, h) / 2;
-        // Gold at the low end, red at the top: the colour itself tells you how
-        // close to the cap you are without reading the bar.
+        // gold at the low end, red near the cap
         const mix  = Math.min(1, Math.max(0, (load - 0.6) / 0.4));
         const cr = Math.round(212 + 23 * mix),
               cg = Math.round(163 - 99 * mix),
               cb = Math.round(58  - 6  * mix);
         const rgb = cr + "," + cg + "," + cb;
-        // Steady floor plus the beat on top, so it is present between beats
-        // instead of blinking on and off.
+        // steady floor plus the beat on top
         const a = (0.035 + 0.10 * t) + (0.03 + 0.13 * t) * beat;
-        // The vignette also closes in: tunnel vision as the load grows.
+        // the vignette closes in as the load grows
         const inner = 0.80 - 0.20 * t - 0.03 * beat;
         if (global.lowFx) return;
         c.save();
@@ -8731,10 +8550,7 @@ import * as cosmetics from './account/cosmetics.js';
     }
     const xc = { cc: 0, dc: 0 };
     // ═══ Dig Wars world map (Fortnite-style, pure vector) ═══════════════
-    
-    
-    
-    
+
     function myTeamColor() {
         try {
             const c = gameDraw.modifyColor
@@ -8749,9 +8565,6 @@ import * as cosmetics from './account/cosmetics.js';
         return "#00b2e1";
     }
 
-    
-    
-    
     let mapPaths = null;
     const MAP_PATHS_MIN_MS = 700;
     function getMapPaths() {
@@ -8764,17 +8577,13 @@ import * as cosmetics from './account/cosmetics.js';
             tr.mapDirty = false;
             const gw = global.gameWidth, gh = global.gameHeight;
             const cols = tr._cols, rows = tr._rows;
-            // PERF: built as small per-region paths and then joined with
-            // addPath. Appending contours to one huge Path2D gets slower the
-            // bigger it grows (every moveTo/closePath walks it): a 10k-cell
-            // map took ~390ms that way, a hitch on EVERY rock that broke
-            // (worst with the Drill Lance, one rock per shot). Chunked it is
-            // ~10ms.
+            // PERF: built as small per-region paths joined with addPath.
+            // Appending to one huge Path2D slows as it grows (every
+            // moveTo/closePath walks it): ~390ms for a 10k-cell map vs ~10ms
+            // chunked, and it reruns on every rock break.
             const MAP_CHUNKS = 12;
             const aliveC = new Map(), deadC = new Map();
             for (const [k, cell] of tr._cellPolys) {
-                
-                
                 const backAsRock = tr._growing && tr._growing.get(k)?.mapped;
                 const bucket = (tr._rockDead.has(k) && !backAsRock) ? deadC : aliveC;
                 const ck = Math.min(MAP_CHUNKS - 1, Math.max(0, Math.floor(cell.cx / cols * MAP_CHUNKS))) * MAP_CHUNKS +
@@ -8795,8 +8604,6 @@ import * as cosmetics from './account/cosmetics.js';
         return mapPaths;
     }
 
-    
-    
     function drawPingDiamond(c, x, y, r, alpha) {
         c.save();
         c.globalAlpha = alpha;
@@ -8819,9 +8626,6 @@ import * as cosmetics from './account/cosmetics.js';
         c.restore();
     }
 
-    
-    
-    
     function drawWorldWindow(c, rx, ry, rw, rh, wx0, wy0, wspan) {
         const tr = window.terrainRenderer;
         const gw = global.gameWidth, gh = global.gameHeight;
@@ -8829,7 +8633,6 @@ import * as cosmetics from './account/cosmetics.js';
         const X = (v) => rx + (v - wx0) * s;
         const Y = (v) => ry + (v - wy0) * s;
 
-        
         c.fillStyle = "#0e1418";
         c.fillRect(rx, ry, rw, rh);
         const isl = tutorialIsland();
@@ -8858,7 +8661,6 @@ import * as cosmetics from './account/cosmetics.js';
             c.fillRect(X(-gw / 2), Y(-gh / 2), gw * s, gh * s);
         }
 
-        
         if (global.roomSetup.length) {
             const Rw = global.roomSetup[0].length, Rh = global.roomSetup.length;
             c.globalAlpha = 0.34;
@@ -8875,8 +8677,7 @@ import * as cosmetics from './account/cosmetics.js';
                         c.globalAlpha = 0.34;
                     }
                     c.fillStyle = col;
-                    
-                    
+
                     const tx0 = X((tx / Rw - 0.5) * gw), tx1 = X(((tx + 1) / Rw - 0.5) * gw);
                     const ty0 = Y((ty / Rh - 0.5) * gh), ty1 = Y(((ty + 1) / Rh - 0.5) * gh);
                     c.fillRect(tx0, ty0, tx1 - tx0, ty1 - ty0);
@@ -8885,8 +8686,6 @@ import * as cosmetics from './account/cosmetics.js';
             c.globalAlpha = 1;
         }
 
-        
-        
         const paths = getMapPaths();
         if (paths && tr) {
             c.save();
@@ -8906,12 +8705,11 @@ import * as cosmetics from './account/cosmetics.js';
             c.restore();
         }
 
-        
         const GEMM = [[-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95]];
         for (const v of global.vaults) {
             const vx = X(v.x), vy = Y(v.y);
             const vr = Math.max(3, (v.r || 95) * s);
-            
+
             const vc = v.team === -2 ? color.red : color.blue;
             c.beginPath();
             c.arc(vx, vy, vr, 0, Math.PI * 2);
@@ -8939,13 +8737,11 @@ import * as cosmetics from './account/cosmetics.js';
         return { X, Y, s };
     }
 
-    
-    
     function drawMapMarkers(T, rx, ry, rw, rh, nameSize, dotR, skipNameId, hoverOutpostId) {
         const c = ctx[2];
         const inside = (x, y) => x > rx - 8 && x < rx + rw + 8 && y > ry - 8 && y < ry + rh + 8;
         const teamCol = myTeamColor();
-        
+
         if (!royaleLobbyPhase()) for (const o of global.outposts) {
             const st = global.outpostState.find(s => s.id === o.id) || {};
             const mx = T.X(o.x), my = T.Y(o.y);
@@ -8966,8 +8762,7 @@ import * as cosmetics from './account/cosmetics.js';
             c.fill();
             c.stroke();
             c.restore();
-            // structure HP bar (neutral included - chipping a grey outpost
-            
+            // structure HP bar, neutral outposts included
             if (st.h > 0 && o.id !== hoverOutpostId) {
                 const bw = dotR * 5, bh = 2.5, bx = mx - bw / 2, by = my + s2 + 3;
                 c.fillStyle = color.black;
@@ -8980,14 +8775,13 @@ import * as cosmetics from './account/cosmetics.js';
                 drawText(o.name, Math.round(mx), Math.round(my - s2 - 6), nameSize * 0.85, color.guiwhite, "center");
             }
         }
-        
+
         for (const ch of global.chambers) {
             const st = global.chamberState.find(s => s.id === ch.id) || {};
             const mx = T.X(ch.x), my = T.Y(ch.y);
             if (!inside(mx, my)) continue;
             const cc = ch.team === -1 ? gameDraw.getColor("blue") : gameDraw.getColor("red");
-            
-            
+
             const grow = st.st === 2 ? Math.max(0.12, st.s || 0.15) : 1;
             const s2 = dotR * 1.35 * grow;
             c.globalAlpha = st.st === 1 ? 0.25 : st.st === 2 ? 0.75 : 0.9;
@@ -9009,7 +8803,7 @@ import * as cosmetics from './account/cosmetics.js';
             c.stroke();
             c.restore();
             c.globalAlpha = 1;
-            
+
             if (st.h > 0) {
                 const bw = dotR * 5, bh = 2.5, bx = mx - bw / 2, by = my + s2 + 3;
                 c.fillStyle = color.black;
@@ -9022,8 +8816,7 @@ import * as cosmetics from './account/cosmetics.js';
                 drawText(ch.name, Math.round(mx), Math.round(my - s2 - 6), nameSize * 0.85, color.guiwhite, "center");
             }
         }
-        
-        
+
         const L = global.leader;
         const sm = global._mapSmooth;
         if (config.game.leaderIndicators && !royaleActive() && L && L.id !== -1 &&
@@ -9032,7 +8825,7 @@ import * as cosmetics from './account/cosmetics.js';
             const lx = T.X(sm.leader.x), ly = T.Y(sm.leader.y);
             if (inside(lx, ly)) drawCrown(lx, ly + dotR * 1.2, dotR * 3.8, 1, c);
         }
-        
+
         const nowPing = performance.now();
         for (const p of global.enemyPings) {
             const age = nowPing - p.at;
@@ -9044,12 +8837,10 @@ import * as cosmetics from './account/cosmetics.js';
         drawDuoPingsMap(c, T, inside, dotR);
         for (const t of global.teammates) {
             if (t.id === gui.playerid) continue;
-            // Tutorial: every learner is on blue, but they are strangers in
-            // separate plots - a dot revealing someone else's position breaks
-            // the private-world illusion the plots exist to create.
+            // Tutorial: learners share the blue team but live in separate
+            // plots, so never show another learner's position
             if (global.tutorialMode) continue;
-            // a friendly leader is marked by the crown ALONE - drawing the
-            
+            // a friendly leader is marked by the crown alone
             if (config.game.leaderIndicators && L && t.id === L.id &&
                 performance.now() - L.at < 1200) continue;
             const sp = (sm && sm.mates.get(t.id)) || t;
@@ -9066,8 +8857,7 @@ import * as cosmetics from './account/cosmetics.js';
             c.arc(mx, my, dotR * 0.38, 0, Math.PI * 2);
             c.fillStyle = "rgba(255,255,255,0.85)";
             c.fill();
-            
-            
+
             if (nameSize > 0 && t.id !== skipNameId) {
                 drawText(t.name || "Player", Math.round(mx), Math.round(my - dotR - 5), nameSize, color.guiwhite, "center");
             }
@@ -9132,7 +8922,7 @@ import * as cosmetics from './account/cosmetics.js';
             c.lineTo(-r * 0.3, 0);
             c.lineTo(-r * 0.75, r * 0.72);
             c.closePath();
-            
+
             c.strokeStyle = color.black;
             c.lineWidth = r * 0.55;
             c.stroke();
@@ -9145,11 +8935,6 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    
-    
-    
-    
-    
     const cornerCache = { canvas: null, sizePx: 0, epoch: -1, cx: 1e9, cy: 1e9, wx0: 0, wy0: 0 };
     const cornerVign = { canvas: null, size: 0 };
     function drawFortniteMinimap(x, y, size) {
@@ -9157,7 +8942,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (!gw || !gh) return;
         const span = 2800;          
         const cSpan = span * 1.35;  
-        
+
         let wx0 = global.player.renderx - span / 2;
         let wy0 = global.player.rendery - span / 2;
         wx0 = Math.max(-gw / 2 - span * 0.08, Math.min(gw / 2 - span * 0.92, wx0));
@@ -9251,18 +9036,13 @@ import * as cosmetics from './account/cosmetics.js';
         drawText("[" + keyName + "] map", x + size / 2, y + size + 16, 11, color.guiwhite, "center");
     }
 
-    
-    
-    
-    
     let bigMapFade = 0;
     function drawBigMap() {
         const mapTarget = global.showBigMap ? 1 : 0;
         bigMapFade = util.lerp(bigMapFade, mapTarget, mapTarget ? 0.1 : 0.28, true);
         const fade = bigMapFade;
         if (fade < 0.02) return;
-        
-        
+
         const vi = document.getElementById("vaultInput");
         if (vi && vi.style.display !== "none") vi.style.display = "none";
         const bm = global.bigMap;
@@ -9273,17 +9053,16 @@ import * as cosmetics from './account/cosmetics.js';
         ctx[2].globalAlpha = fade;
         ctx[2].fillStyle = "rgba(5,6,10,0.55)";
         ctx[2].fillRect(0, 0, sw, sh);
-        
+
         const pop = 0.97 + 0.03 * fade;
         // leaves the name + wallet row at the bottom uncovered
         const fitW = sw * 0.72, fitH = sh * 0.76;
         const fit = Math.min(fitW / gw, fitH / gh) * pop;
         const panelW = gw * fit, panelH = gh * fit;
         const px0 = (sw - panelW) / 2, py0 = (sh - panelH) / 2 - sh * 0.02;
-        
-        // Tutorial: the room holds several learners' plots, but a learner
-        // should only ever see their own training ground. Lock the frame to
-        // their plot instead of showing a map of places they cannot go.
+
+        // Tutorial: the room holds several learners' plots; frame the map on
+        // the learner's own plot.
         const tp = global.tutorialPlot;
         if (tp && tp.size) {
             bm.zoom = gw / tp.size;
@@ -9303,7 +9082,7 @@ import * as cosmetics from './account/cosmetics.js';
             bm.cy = Math.max(-gh / 2 + spanY / 2, Math.min(gh / 2 - spanY / 2, bm.cy || 0));
         }
         const wx0 = bm.cx - span / 2, wy0 = bm.cy - spanY / 2;
-        
+
         bm._panel = { x: px0, y: py0, w: panelW, h: panelH, s: panelW / span, wx0, wy0 };
         const tabH = royaleActive() ? 34 : 0;
         hudPanel(ctx[2], px0 - 8, py0 - 8, panelW + 16, panelH + 16, { fill: HUD.solid, r: HUD.rBig });
@@ -9323,8 +9102,7 @@ import * as cosmetics from './account/cosmetics.js';
         } else {
         const T = drawWorldWindow(ctx[2], px0, py0, panelW, panelH, wx0, wy0, span);
         strokeStormCircle(ctx[2], T.X, T.Y, T.s, px0, py0 + tabH, panelW, panelH - tabH);
-        
-        
+
         const mScale = global.canvas ? global.canvas.height / global.screenHeight : 1;
         const hx = global.mouse.x / mScale, hy = global.mouse.y / mScale;
         let hoverMate = null;
@@ -9349,8 +9127,7 @@ import * as cosmetics from './account/cosmetics.js';
             ctx[2].stroke();
             drawText(hoverMate.name || "Player", Math.round(mx), Math.round(my - 17), 14, color.gold, "center");
         }
-        
-        
+
         if (hoverOutpost) {
             const st = global.outpostState.find(s => s.id === hoverOutpost.id) || {};
             const mx = T.X(hoverOutpost.x), my = T.Y(hoverOutpost.y);
@@ -9475,7 +9252,7 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     // Glide map markers between the 250ms position updates - once per
-    
+
     function updateMapSmoothing() {
         if (!global._mapSmooth) global._mapSmooth = { leader: null, mates: new Map() };
         const sm = global._mapSmooth;
@@ -9504,7 +9281,6 @@ import * as cosmetics from './account/cosmetics.js';
         let x = global.mobile ? spacing : global.screenWidth - spacing - len - 5;
         let y = global.mobile ? spacing : global.screenHeight - height - spacing - 5;
         if (global.GUIStatus.renderMinimap) {
-            
             if (royaleActive() && !global.mobile) {
                 const mx = global.screenWidth - HUD.edge - len;
                 const my = global.screenHeight - len - HUD.edge - HUD.lip;
@@ -9528,11 +9304,9 @@ import * as cosmetics from './account/cosmetics.js';
             let centerX = x + len / 2;
             let centerY = y + height / 2;
 
-            // Tutorial: the room holds one arena per learner. Drawn to room
-            // scale the minimap shows everybody's training ground at once and
-            // shrinks the learner's own to a corner of it - so frame it on
-            // their arena instead, exactly as the full map already does.
-            // Everything outside the frame falls outside the clip below.
+            // Tutorial: the room holds one arena per learner; frame the
+            // minimap on the learner's own, as the full map does. The clip
+            // below drops everything outside it.
             let mmW = global.gameWidth, mmH = global.gameHeight;
             let mmCX = 0, mmCY = 0;
             const tutPlot = global.tutorialPlot;
@@ -9818,7 +9592,7 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     // Royale standings above the minimap (F to toggle, tabs sort by gems/kills).
-    // Replaces the top-right leaderboard in BR - no screen space wasted.
+    // Replaces the top-right leaderboard in BR.
     function drawRoyaleBoard() {
         if (!global.showBigMap) global.clickables.royaleTab.hide();
         if (!global.royaleSpectating) {
@@ -9843,13 +9617,12 @@ import * as cosmetics from './account/cosmetics.js';
 
             global.columnCount = Math.max(global.mobile ? 9 : 3, Math.floor(gui.upgrades.length ** 0.55));
             // Room for the DOM gear + chat buttons (10px + 42px + 3px drop,
-            // CSS px) above the first row: on a small window at Small scale
-            // 46 UI units is less than that and the tiles slid under them.
+            // CSS px) above the first row; on a small window at Small scale
+            // 46 UI units is not enough.
             const cssPerUi = global.canvas.height / global.screenHeight / global.ratio;
             const topPad = global.mobile ? 46 : Math.max(46, Math.ceil(63 / (cssPerUi || 1)) - spacing - 5);
-            // Desktop: add columns while the grid would run down into the kit
-            // box / stat bars (short windows, big trees). Six at most, past
-            // that it would reach the raid clock at top centre instead.
+            // Desktop: add columns while the grid would run into the kit box /
+            // stat bars. Six at most, or it reaches the raid clock.
             if (!global.mobile) {
                 const gridBottom = cols => {
                     let gy = spacing - height - internalSpacing + 5 + topPad, tick = cols, branch = -1;
@@ -9880,7 +9653,7 @@ import * as cosmetics from './account/cosmetics.js';
             upgradeSpin = upgradeSpin - (Math.floor(upgradeSpin / Math.PI / 2) * Math.PI * 2);
 
             let x = glide * 2 * spacing + spacing + 5;
-            
+
             let y = spacing - height - internalSpacing + 5 + topPad;
             let xStart = x;
             let initialX = x;
@@ -9942,9 +9715,8 @@ import * as cosmetics from './account/cosmetics.js';
                 global.upgradeBoxRight = gridRight;
             }
 
-            // Tutorial: declining is not a choice a lesson offers - and the
-            // decline only clears the menu locally, so the evolve step would
-            // stall on an empty box the server never repopulates.
+            // Tutorial: no decline. It only clears the menu locally, so the
+            // evolve step would stall on a box the server never repopulates.
             if (!global.tutorialMode) hudButton(ctx[2], buttonX, buttonY, m, h, msg, { size: 13, type: "skipUpgrades", index: 0, cr: clickableRatio, textCol: HUD.text });
 
             if (gui.dailyTank && gui.dailyTank.tank) {
@@ -10412,7 +10184,7 @@ import * as cosmetics from './account/cosmetics.js';
         : "Bank your gemdust at the vault, you drop most of it when you die";
 
     // Small flat vector icons for the death screen - same visual language
-    
+
     function drawDeathIcon(kind, x, y, s, a) {
         const c = ctx[2];
         c.save();
@@ -10500,12 +10272,9 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     // ── Death screen ───────────────────────────────────────────────────────
-    // A single framed panel in the same flat, dark-bordered language as the
-    // vault and the outposts: portrait on the left in its own recess, run
-    // summary on the right. The old layout drew the tank and its name at
-    // roughly the same x as the stat column, so a wide tank sat on top of the
-    // text - everything now lives in reserved columns that cannot collide.
-    // "1h 04m", "2m 06s", "48s" - the spelled-out form ran past the tile
+    // One framed panel: portrait in its own recess on the left, run summary
+    // on the right, in reserved columns so a wide tank never covers the text.
+    // compactTime: "1h 04m", "2m 06s", "48s" (fits the tile)
     const compactTime = (secs) => {
         secs = Math.max(0, Math.round(secs));
         const h = (secs / 3600) | 0, m = ((secs % 3600) / 60) | 0, sc = secs % 60;
@@ -10567,10 +10336,9 @@ import * as cosmetics from './account/cosmetics.js';
     };
 
     const gameDrawDead = () => {
-        // Killer cam: clean 3s on the killer, no panel yet. The handoff guard
-        // covers the gap between the cam expiring and its timer firing
-        // (timers can land late / throttled), so the classic screen never
-        // flashes a frame before the raid panel takes over.
+        // Killer cam: 3s on the killer, no panel yet. The handoff guard covers
+        // the gap between the cam expiring and its (possibly throttled) timer
+        // firing, so the classic screen never flashes before the raid panel.
         const killerCamLive = global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil;
         if (global.died && (killerCamLive || (!global.royaleDied && global.royaleSpectating))) {
             global.clickables.royaleSpectate.hide();
@@ -10629,8 +10397,7 @@ import * as cosmetics from './account/cosmetics.js';
 
         const name = global.player.name.substring(7, global.player.name.length + 1);
         drawText("MINER", lx + COLW / 2, ly + 180, 10, color.grey, "center");
-        // Names run to 24 characters, which overflows the column at full size,
-        // so shrink to fit rather than spilling out of the panel.
+        // names run to 24 characters: shrink to fit the column
         fitText(name === "" ? "You" : name, lx + COLW / 2, ly + 198, 16, COLW - 16, color.guiwhite);
 
         // ── right column: the run in numbers ──────────────────────────────
@@ -10648,8 +10415,7 @@ import * as cosmetics from './account/cosmetics.js';
                  rx + 14, ry + 41, 24, color.gold, "left");
         ry += 68;
 
-        // Score is carried plus banked, so both are shown in their own right -
-        // the old screen labelled the combined figure "banked", which was wrong.
+        // score is carried plus banked, so both are shown separately
         const half = (rw - 8) / 2;
         const rows = [
             ["CARRIED AT DEATH", String(global.finalCarried | 0), "gem"],
@@ -10703,12 +10469,12 @@ import * as cosmetics from './account/cosmetics.js';
         }
     };
     // ── Raid death screen ────────────────────────────────────────────────
-    // The raid's only death screen: gold-framed, full run stats, auto respawn
-    // (paused during the final-storm spawn lock). Death is a tax, not an end.
+    // The raid's death screen: gold-framed, full run stats, auto respawn
+    // (paused during the final-storm spawn lock).
     const gameDrawDeadRoyale = () => {
         let glide = global.deathAnimation.get();
-        // The whole card fades in first (panelA), then the staggered rows
-        // play on top. Backdrop ramps from nothing - no more 0.32 dim pop.
+        // the card fades in first (panelA), then the staggered rows; the
+        // backdrop ramps up from zero
         const panelA = global.lerp(0, 0.7, glide);
         const rise = (1 - panelA) * 18;
         clearScreen(color.black, 0.62 * global.lerp(0, 0.6, glide), ctx[2]);
@@ -10737,7 +10503,7 @@ import * as cosmetics from './account/cosmetics.js';
         hudTitle(util.formatLargeNumber(Math.round(score)), bx + 14, py + 102, 28, HUD.gold, "left", panelA);
         if (place > 0) hudTitle("#" + place, bx + bw - 14, py + 102, 28, HUD.head, "right", panelA);
 
-        // the run in numbers: kept vs lost is the whole raid economy
+        // the run in numbers: kept vs lost
         const half = (bw - 8) / 2;
         const rows = [
             ["BANKED (KEPT)", util.formatLargeNumber((you.banked != null ? you.banked : global.finalBanked) | 0), "gem"],
@@ -10830,8 +10596,8 @@ import * as cosmetics from './account/cosmetics.js';
             : ("Spectating" + (place > 0 ? ("  #" + place) : "") +
                (global.died ? (waitMs > 0 ? ("  ·  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  ·  Rejoining") : ""));
         fitText(label, x + barW / 2, y + 24, 14, Math.max(60, barW - 4 * bw - 60), color.guiwhite);
-        // DOM buttons (Prev/Next/Play/Home) sit just below this bar and take
-        // the clicks. Skip the canvas twins so there is one working set.
+        // DOM buttons (Prev/Next/Play/Home) sit below this bar and take the
+        // clicks, so no canvas buttons here.
         if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) {
             global.clickables.royalePrev.hide();
             global.clickables.royaleNext.hide();
@@ -10889,9 +10655,9 @@ import * as cosmetics from './account/cosmetics.js';
         let playerx = global.player.animX.get(tick);
         let playery = global.player.animY.get(tick);
         if (global._specGlide) {
-            // Spectate glide owns the camera: the chase below would drag it
-            // back toward the corpse every frame and end in a snap. The glide
-            // retargets live from server updates, then hands off smoothly.
+            // Spectate glide owns the camera (the chase below would drag it
+            // back toward the corpse); it retargets from server updates, then
+            // hands off smoothly.
         } else if (global.died && royaleActive()) {
             // Spectating: ease onto whoever the camera follows so a target
             // swap or a respawn never snaps. Frame-time compensated here, so
@@ -10907,7 +10673,7 @@ import * as cosmetics from './account/cosmetics.js';
                 global.player.rendery = util.lerp(global.player.rendery, playery, k);
             }
         } else if (config.graphical.lerpAnimations) {
-            // lerp toward the INTERPOLATED position - chasing raw 30Hz
+            // lerp toward the interpolated position, not raw 30Hz updates
             global.player.renderx = util.lerp(global.player.renderx, playerx, 0.15, true);
             global.player.rendery = util.lerp(global.player.rendery, playery, 0.15, true);
         } else if (config.graphical.smoothcamera && config.graphical.shakeProperties.CameraShake.shakeStartTime == -1) {
@@ -10936,14 +10702,12 @@ import * as cosmetics from './account/cosmetics.js';
         drawOutpostLabels(px, py, ratio);
         drawRoyaleWorldMarkers(px, py, ratio);
         drawFx(px, py, ratio);
-        // Same camera transform the entities just used, so the numbers sit
-        // exactly over the bodies that took the hit. Drawn before the HUD so
-        // the HUD always wins the overlap.
+        // same camera transform as the entities; drawn before the HUD so the
+        // HUD wins the overlap
         drawDamageNumbers(px, py, ratio);
         drawKillBanners(px, py, ratio);
-        // World-anchored tutorial markers: drawn here so they share the exact
-        // camera transform the entities just used, and sit above the world but
-        // below the GUI. (The screen-space tutorial HUD draws later, in hook().)
+        // World-anchored tutorial markers: same camera transform, above the
+        // world, below the GUI. (The screen-space tutorial HUD draws in hook().)
         tutorial.drawWorld(px, py, ratio);
     };
 
@@ -10953,10 +10717,8 @@ import * as cosmetics from './account/cosmetics.js';
 
         let spacing = 20;
         // Desktop: 200 UI units, so the upgrade tiles, stat bars, kit box and
-        // minimap follow the UI Scale setting like everything else. It used
-        // to be 200 device pixels, which made that column huge on small or
-        // Low Resolution screens and never shrank it on Small. The mobile
-        // layout is tuned around the old sizing, so it keeps it.
+        // minimap follow the UI Scale setting. Mobile is tuned around 200
+        // device pixels.
         let alcoveSize = global.mobile ? 200 / ratio : 200;
         gui.__s.update();
         let lb = leaderboard.get();
@@ -10998,13 +10760,11 @@ import * as cosmetics from './account/cosmetics.js';
                 drawTooltips();
             }
             drawMinimapAndDebug(spacing, alcoveSize, global.GRAPHDATA, tick);
-            // Tutorial: a leaderboard is competition furniture; the server
-            // sends an empty one there anyway (nobody is leaderboardable).
+            // Tutorial: no leaderboard (the server sends an empty one anyway)
             if (global.GUIStatus.renderLeaderboard && !global.tutorialMode && !royaleActive()) drawLeaderboard(spacing, alcoveSize, max);
             if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
-            // leader arrow + enemy pings moved to drawTopIndicators(), which
-            // runs at the very end of the frame - here they were being covered
-            // by the minimap, leaderboard, big map and upgrade tree
+            // leader arrow + enemy pings are drawn in drawTopIndicators(), at
+            // the end of the frame, so no panel covers them
         } else if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
         if (global.showTree) {
             drawUpgradeTree(spacing, alcoveSize);
@@ -11075,9 +10835,6 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    
-    
-    
     let ingameSettingsBtn = null;
     let royaleDomBuilt = false;
     function royaleDomAct(kind) {
@@ -11189,15 +10946,13 @@ import * as cosmetics from './account/cosmetics.js';
     }
     function getIngameSettingsBtn() {
         if (ingameSettingsBtn) return ingameSettingsBtn;
-        
-        
+
         const btn = document.createElement("button");
         btn.id = "ingameSettingsBtn";
         btn.title = "Settings";
         const home = document.getElementById("homeSettingsBtn");
         btn.innerHTML = home ? home.innerHTML : "⚙";
         btn.onclick = () => {
-            
             const panel = document.getElementById("homeSettingsPanel");
             const overlay = document.getElementById("homeSettingsOverlay");
             if (!panel) return;
@@ -11205,14 +10960,14 @@ import * as cosmetics from './account/cosmetics.js';
             panel.classList.toggle("open", open);
             if (overlay) overlay.classList.toggle("visible", open);
             btn.blur(); 
-            
+
             if (!open) {
                 const cv = document.getElementById("gameCanvas");
                 if (cv && global.gameStart) cv.focus();
             }
         };
         document.body.appendChild(btn);
-        
+
         const chatBtn = document.createElement("button");
         chatBtn.id = "ingameChatModeBtn";
         chatBtn.textContent = "Global Chat";
@@ -11232,17 +10987,14 @@ import * as cosmetics from './account/cosmetics.js';
         };
         document.body.appendChild(chatBtn);
 
-        // Raid spectate/death controls as DOM buttons, same as the gear and
-        // Global Chat toggle. Canvas clickables kept missing (map drag eats
-        // mousedown, auto-respawn cleared died before mouseup), so Prev goes
-        // to the previous spectate target, Next to the next, Play rejoins,
-        // Home exits. No canvas coordinate math to drift.
+        // Raid spectate/death controls are DOM buttons, like the gear and
+        // Global Chat toggle: canvas clickables miss (map drag eats mousedown,
+        // auto-respawn clears died before mouseup). Prev/Next cycle spectate
+        // targets, Play rejoins, Home exits.
         getRoyaleDomButtons();
 
-        // The in-game "?" replay button is gone on purpose: the tutorial now
-        // lives on its own server, so replaying it mid-match would mean
-        // yanking a player out of a live fight. It is reachable from the
-        // homepage Tutorial button instead.
+        // No in-game tutorial replay: the tutorial runs on its own server and
+        // is reached from the homepage.
 
         setInterval(() => {
             const show = (global.gameStart && !global.died && !global.disconnected) ? "flex" : "none";
@@ -11250,14 +11002,14 @@ import * as cosmetics from './account/cosmetics.js';
             chatBtn.style.display = show;
             try { updateRoyaleDomButtons(); } catch { /* */ }
         }, 250);
-        
+
         const panel = document.getElementById("homeSettingsPanel");
         if (panel && !panel.dwWired) {
             panel.dwWired = true;
             panel.addEventListener("change", (e) => {
                 if (e.target && e.target.id) util.submitToLocalStorage(e.target.id);
                 loadSettings();
-                
+
                 if (window.resizeEvent) window.resizeEvent();
             });
         }
@@ -11266,10 +11018,6 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     function drawOptionsMenu() {
-        
-        
-        
-        
         getIngameSettingsBtn();
         if (global.clickables && global.clickables.optionsMenu) {
             global.clickables.optionsMenu.switchButton.hide();
@@ -11527,11 +11275,10 @@ import * as cosmetics from './account/cosmetics.js';
         for (let context of ctx) {
             context.lineCap = "round";
             context.lineJoin = "round";
-            // The contexts stay scaled to the UI ratio between frames. When
-            // the canvas is smaller than the UI scale (small window, Low
-            // Resolution mode) a clearRect in scaled units only wipes part
-            // of the canvas and the GUI layer smears old text over new. Clear
-            // in device pixels, then put the scale back.
+            // The contexts stay scaled to the UI ratio between frames; when
+            // the canvas is smaller than the UI scale, a clearRect in scaled
+            // units only wipes part of it. Clear in device pixels, then put
+            // the scale back.
             context.save();
             context.setTransform(1, 0, 0, 1, 0, 0);
             context.clearRect(0, 0, context.canvas.width, context.canvas.height);
@@ -11606,8 +11353,7 @@ import * as cosmetics from './account/cosmetics.js';
                     }
                 }
                 gameSound.rammerMove(ram);
-                // The satchel heartbeat is a continuous state, not an event,
-                // so it has to be driven every frame like rammer movement is.
+                // the satchel heartbeat is continuous state, driven every frame
                 const sg = global.gems;
                 gameSound.satchelTension(sg && sg.cap > 0
                     ? Math.min(1, (sg.carried || 0) / sg.cap) : 0);

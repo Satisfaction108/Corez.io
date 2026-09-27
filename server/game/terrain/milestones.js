@@ -1,14 +1,7 @@
-// Personal achievement "dings" for Dig Wars.
-//
-// The base loop rewards once per mine→carry→bank cycle, so these fire small,
-// one-time congratulations as a miner's lifetime banked total climbs - the
-// same trick arras uses with levels, but tied to the gem economy instead of
-// XP. Every rung also pays a bonus straight into the player's bank, so the
-// popup is a real reward, not just a pat on the back.
-//
-// Progress is stored on the SOCKET (not the body) because banked gems survive
-// death; if it lived on the body, a respawned tank would re-collect every
-// rung it had already passed and farm the bonuses.
+// Personal banking milestones for Dig Wars: one-time popups as a player's
+// lifetime deposits climb, each paying a bonus into the bank.
+// Progress lives on the socket, not the body, so a respawn can't re-collect
+// rungs.
 
 const gems = require('./gems.js');
 
@@ -25,15 +18,12 @@ const BANK_MILESTONES = [
     { at: 100000, bonus: 100000 },
 ];
 
-// Called every time a player banks (vault.js, outposts.js, the flash vault),
-// with the amount that deposit put in the bank. Rungs are reached by REAL
-// deposits only (sock.gemDeposited): the bonuses land in the bank and on the
-// score but never count toward the next rung, or one rung's payout would
-// cascade into the next (45k of deposits used to snowball past 200k banked).
-// Spending in the shop does not push progress back either.
+// Called on every bank (vault.js, outposts.js, flash vault) with the amount
+// deposited. Rungs count real deposits only (sock.gemDeposited): bonuses
+// don't count toward the next rung, so payouts can't cascade, and shop
+// spending doesn't push progress back.
 function checkBanked(body, deposited) {
-    // Tutorial: the lesson HUD already guides the learner step by step, and a
-    // second set of reward toasts would talk over it. Real server only.
+    // not in the tutorial (the lesson HUD owns the screen)
     if (Config.tutorial || !body || !body.socket) return;
     const sock = body.socket;
     if (deposited > 0) sock.gemDeposited = (sock.gemDeposited || 0) + deposited;
@@ -55,8 +45,7 @@ function checkBanked(body, deposited) {
     sock._milestoneIdx = idx;
 
     if (bonusPaid) gems.talkGems(body, 0);
-    // Raid board tracks banked separately: forward the bonus or the board
-    // permanently undercounts the wallet.
+    // the raid board tracks banked separately, so forward the bonus
     if (bonusPaid && Config.dig_royale) {
         try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, bonusPaid); } catch { /* */ }
     }

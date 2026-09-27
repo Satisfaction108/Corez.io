@@ -3,13 +3,11 @@
 // (duoTeams.js), reads party tickets from the 'DQ' packet, hands every
 // spawning human their team id and colour, finds partners, and runs the one
 // bot duo. dig_royale.js and sockets.js call in here; everything is a no-op
-// when duos are off, so the solo server is untouched.
+// when duos are off.
 //
 // Colour: partners share one team id, and the palette colour belongs to the
 // team (global.royaleHeldTeamColors keeps it while the team exists, even when
-// both are dead), so hull, minimap dot and HUD match. A Locker skin still
-// paints its pattern over that shared colour: the colour says "team", the
-// pattern says "who".
+// both are dead). A Locker skin paints its pattern over that shared colour.
 //
 // Fill queue: a lone player with fill on and no team waits (holdSpawn, from
 // the spawn loop in sockets.js) until match() pairs them with another lone
@@ -35,8 +33,8 @@ const on = () => !!Config.royale_duos;
 const book = new DuoTeams({ newTeamId: () => freshTeamId(), fillWaitMs: FILL_WAIT_MS });
 
 // Every team id handed out this raid. Board rows outlive their bodies, so an
-// id is never reused within a raid (a reused id used to merge a new body into
-// a dead team's standings row). Cleared at a new raid (newRaid).
+// id is never reused within a raid (it would merge a new body into a dead
+// team's standings row). Cleared at a new raid (newRaid).
 const usedIds = new Set();
 
 // A team id nobody has had this raid, no living body uses, and the book

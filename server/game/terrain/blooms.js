@@ -1,6 +1,5 @@
-// Ore blooms: a patch of the wall sprouts rich veins under a golden glow for
-// a hundred seconds. One per storm cycle, announced, on the minimap. Everyone
-// heads to the same rocks; fights follow.
+// Ore blooms: a patch of wall sprouts rich veins for DURATION_MS, once per
+// storm cycle, announced and shown on the minimap.
 const { ORE, ORE_HP } = require('./terrainGrid.js');
 
 const RADIUS = 340;

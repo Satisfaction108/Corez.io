@@ -766,7 +766,7 @@ exports.setTurretProjectileRecoil = (type, recoilFactor) => {
     type = exports.dereference(type);
 
     if (!type.GUNS) return;
-    
+
     // Sets the recoil of each of the turret's guns to the desired value.
     for (let gun of type.GUNS) {
         if (!gun.PROPERTIES) continue;
@@ -1566,7 +1566,7 @@ exports.makeSnake = (type, count = 2, name = -1, options = {}) => {
                     const dy = child.y - previous.y;
                     const distance = Math.hypot(dx, dy) || 1; // /0 possible ig
                     const factor = (child.size + previous.size) * 1 / distance;
-        
+
                     child.x = previous.x + dx * factor;
                     child.y = previous.y + dy * factor;
                     child.velocity.x = 0; // No natural move!

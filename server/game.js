@@ -13,7 +13,7 @@ let { gameHandler } = require("./game/index.js");
 let { gamemodeManager } = require("./game/gamemodeManager.js");
 
 // /api/sendPlayer is server-to-server. It stays shut unless API_KEY is a real
-// secret: with API_KEY unset, a body without a "key" used to match undefined.
+// secret (24+ chars), so an unset key can never match a missing one.
 function apiKeyMatches(given) {
     const expected = process.env.API_KEY;
     if (typeof expected !== "string" || expected.length < 24 || typeof given !== "string") return false;
@@ -130,9 +130,8 @@ class gameServer {
         this.startServer();
     }
 
-    // What the server list shows as "players". Bots are real, visible
-    // inhabitants of the lobby, so they count - an empty-looking server
-    // number over a genuinely lively map just keeps humans away.
+    // What the server list shows as "players". Bots are visible inhabitants of
+    // the lobby, so they count.
     reportedPlayerCount() {
         const bots = this.gameHandler?.bots?.filter(bot => bot && !bot.isDead() && !bot.isGhost).length || 0;
         return this.socketManager.clients.length + bots;
@@ -290,10 +289,9 @@ class gameServer {
 
         this.parentPort.postMessage(["doneLoading"]);
 
-        // The server list's player number is pushed, not polled, and used to
-        // move only when a human connected or left. Bots spawn and die on
-        // their own schedule, so heartbeat the count or the list shows 0 on
-        // a lobby full of them.
+        // The server list's player number is pushed, not polled. Bots spawn and die
+        // without a socket, so heartbeat the count or the list shows 0 on a lobby
+        // full of them.
         setInterval(() => {
             try { this.parentPort.postMessage([true, this.reportedPlayerCount()]); } catch (e) { /* parent gone */ }
         }, 5000);
@@ -343,22 +341,19 @@ class gameServer {
                     tileWidth: Config.map_tile_width,
                     seed: cfg.seed ?? 7,
                     extrusionChance: cfg.extrusion_chance ?? 0.40,
-                    // Royale keeps the FULL rectangle lattice on purpose. The
-                    // old circle:true carved cells before buildVoronoi, which
-                    // collapsed the lattice bounds into a thin strip. 2TDM's
-                    // left/right EMPTY lanes would also leave the disk bald on
-                    // east/west, so fullLattice skips those. The disk is cut
-                    // later in royaleLayout by killing whole Voronoi rocks
-                    // outside the circle.
+                    // Royale keeps the FULL rectangle lattice: carving cells before
+                    // buildVoronoi collapses the lattice bounds into a thin strip, and 2TDM's
+                    // left/right EMPTY lanes would leave the disk bald east/west, so
+                    // fullLattice skips those. The disk is cut later in royaleLayout by
+                    // killing whole Voronoi rocks outside the circle.
                     circle: false,
                     fullLattice: !!Config.dig_royale,
                 });
                 // Tutorial: replace the lane map with isolated learner arenas.
-                // carveTerrain sets the cell grid buildContour derives its
-                // lattice bounds from, so it must land BEFORE buildContour and
-                // nothing may touch the cells after it - the client recomputes
-                // those same bounds from the transmitted cells. sculpt() then
-                // shapes the rock by killing cells, which IS transmitted.
+                // carveTerrain sets the cell grid buildContour derives its lattice
+                // bounds from, so it must land BEFORE buildContour and nothing may touch
+                // the cells after it: the client recomputes those bounds from the
+                // transmitted cells. sculpt() then kills cells, which IS transmitted.
                 const tutorialPlots = Config.tutorial
                     ? require('./game/terrain/tutorialPlots.js')
                     : null;

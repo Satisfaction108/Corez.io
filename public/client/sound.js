@@ -1,13 +1,7 @@
-// Dig Wars sound system — stylized, ear-friendly foley.
-//
-// Design: Fortnite-like punch (layered sub + body + air) without realistic
-// stone/metal and without sci-fi lasers. Every event is a rounded mid-low
-// "tok / foomp / bloom" built from sines and brown/pink noise. No white-noise
-// gravel, no 1ms clicks, no 3kHz ice-picks, no pebble grains.
-//
-// Master bus high-cuts the fatiguing band so a bullet-storm stays soft.
-// World sounds are distance-attenuated and stereo-panned, with throttles
-// and busy-ducking so mining never turns into a machine gun.
+// Dig Wars sound system: stylized, ear-friendly foley.
+// Every synth event is a rounded mid-low "tok / foomp / bloom" built from sines
+// and brown/pink noise; the master bus high-cuts the fatiguing band. World sounds
+// are distance-attenuated, stereo-panned, throttled and ducked when busy.
 // Sample hits live in public/sounds/ and skip the synth color filters.
 //
 // Console API: gameSound.setVolume(0..1), gameSound.mute()
@@ -36,7 +30,7 @@ function defaultPrefs() {
     let vol = parseFloat(localStorage.getItem(VOLUME_KEY));
     if (isNaN(vol)) vol = 0.7;
     return {
-        // off until the sound pass is redone; players who turned it on keep it
+        // default off; a saved setting overrides it
         enabled: false,
         headphones3d: true,
         volume: vol,
@@ -73,7 +67,7 @@ function loadPrefs() {
     return d;
 }
 
-// MASTER KILL SWITCH — flip to false to silence everything; call sites stay wired.
+// Master kill switch: flip to false to silence everything; call sites stay wired.
 const SOUND_ENABLED = true;
 
 const jit = (n, amt = 0.06) => n * (1 - amt + Math.random() * amt * 2);
@@ -494,7 +488,7 @@ class GameSound {
     }
 
     // Soft air: brown (whoosh/weight) or pink (a little presence). Always
-    // band-limited in the mids — never a slamming lowpass on white noise.
+    // band-limited in the mids, never a slamming lowpass on white noise.
     _puff({ kind = 'brown', cut = 600, cutTo, Q = 0.7, dur = 0.08, peak = 0.1,
             pan = 0, delay = 0, attack = 0.01, rate = 1 } = {}) {
         const t0 = this.ctx.currentTime + delay;
@@ -530,7 +524,7 @@ class GameSound {
     }
 
     // The Fortnite-style punch, stylized: felt sub + rounded body drop +
-    // a whisper of brown air. Used by breaks, hurts, kills — never by chips.
+    // a whisper of brown air. Used by breaks, hurts, kills; never by chips.
     _impact({ pan = 0, v = 1, sub = 72, body = 170, bodyTo = 88, air = 480,
               weight = 0.28, dur = 0.14 } = {}) {
         this._tone({ freq: sub, glideTo: sub * 0.7, type: 'sine', dur: dur * 1.15,
@@ -541,7 +535,7 @@ class GameSound {
                      dur: dur * 0.85, peak: 0.12 * weight * v, pan, attack: 0.012 });
     }
 
-    // Compatibility aliases so tutorial / console never hit the old gravel synth.
+    // Aliases kept for older call sites (tutorial, console).
     _hiss(opts = {}) {
         this._puff({
             kind: 'brown',
@@ -560,7 +554,6 @@ class GameSound {
             dur: opts.dur || 0.1,
         });
     }
-
 
     // ── game sounds ─────────────────────────────────────────────────────────
 
@@ -725,11 +718,9 @@ class GameSound {
 
     // ── The satchel heartbeat ───────────────────────────────────────────────
     //
-    // Every other sound in this engine is a one-shot fired by an event. This
-    // is the only one that is a continuous STATE: it says "you are carrying
-    // something you can lose" for exactly as long as that is true, and it gets
-    // more frightened the richer you are. Call it every frame with the current
-    // satchel load; it schedules its own beats.
+    // The only continuous-state sound: it plays while you carry something you
+    // can lose and speeds up the richer you are. Call it every frame with the
+    // current satchel load; it schedules its own beats.
     satchelTension(load = 0) {
         const t = Math.max(0, Math.min(1, (load - TENSION_START) / (1 - TENSION_START)));
         if (t <= 0) { this._heartAt = 0; this._heartGap = 0; return; }
@@ -823,7 +814,7 @@ class GameSound {
                                  peak: 0.035 * v, delay: 0.01, attack: 0.01 });
     }
 
-    // You took a hit. Gettinghit.wav — also kept quiet.
+    // You took a hit (Gettinghit.wav, kept quiet).
     combatHurt(frac = 0.3) {
         const m = this._mix('combat');
         if (!m || !this._throttle('combatHurt', 60)) return;

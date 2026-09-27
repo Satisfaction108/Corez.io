@@ -57,10 +57,9 @@ function getMe(ctx) {
     });
 }
 
-// Runs `work` (the slow hashing + insert) with one 'signup' already charged
-// to this IP, so parallel requests cannot all pass the cap while the first
-// ones are still hashing. The charge is handed back unless an account came
-// of it. work() -> users.create result.
+// Runs `work` (slow hashing + insert) with one 'signup' pre-charged to this
+// IP, so parallel requests cannot all pass the cap while still hashing. The
+// charge is refunded unless an account was created. work() -> users.create result.
 async function withSignupCharge(ctx, work) {
     const charge = ctx.charge(['signup', ctx.ipKey]);
     let r;
@@ -208,7 +207,7 @@ async function recover(ctx) {
     const [passwordHash, recovery] = await Promise.all([crypto.hashPassword(newPassword), newRecovery()]);
     const d = db.handle();
     const applied = d.tx(() => {
-        // Only if the code we checked is still the stored one: two racing
+        // Only if the checked code is still the stored one, so two racing
         // requests with the same code cannot both win.
         if (!users.setRecovery(user.id, recovery.hash, user.recovery_hash)) return false;
         users.setPassword(user.id, passwordHash);

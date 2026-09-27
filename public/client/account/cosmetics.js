@@ -1,19 +1,11 @@
-// Cosmetics drawing: tank skins (paintHull) and name styles (nameFill),
-// from the shared catalog (shared/cosmetics.js -> window.DWCosmetics).
-// No DOM: app.js calls this every frame, and the menu previews reuse it.
-//
-// Skins: a pattern tile per skin + team colour + power-of-two size bucket
-// (32..256 device px), cached in a small LRU. The tile covers the hull's
-// box in hull space, so it turns with the tank; paintHull clips it to the
-// hull path (the same maths as drawBody in app.js), lays the emissive layer
-// on top, then the blink overlays at the body's own mix strength, then
-// re-strokes the rim for non-circles. At most one tile is built per frame;
-// until then the hull reuses another size of the same tile, or stays plain.
-//
-// Name styles: nameFill returns a fill for drawText: a colour, or a linear
-// gradient across the text box (drawText's own maths), scrolled over time
-// for epic / legendary styles, with a glint sweep on legendaries. These
-// canvas gradients are the only gradients in the account UI.
+// Cosmetics drawing: tank skins (paintHull) and name styles (nameFill), from
+// the shared catalog (window.DWCosmetics). No DOM: app.js calls this every frame.
+// Skins: a pattern tile per skin + team colour + power-of-two size (32..256
+// device px) in a small LRU, in hull space, clipped to the hull path (same
+// maths as drawBody in app.js). At most one tile is built per frame; until
+// then the hull reuses another size of the same tile, or stays plain.
+// Name styles: a colour, or a gradient across the text box that scrolls for
+// epic / legendary styles (legendaries also get a glint).
 import { config } from '../config.js';
 
 const CAT = () => (typeof window !== 'undefined' && window.DWCosmetics) || null;

@@ -190,7 +190,6 @@ Class.stoneGen = makeGenerator("stone", "Stone", "Stone", "stone", 10, -7, "grey
 Class.rockGen = makeGenerator("rock", "Rock", "Rock", "rock", 15, -9, "grey", Class.rock.SIZE, 100, 0)
 // TODO: add gay baby jail creator/generator/whatever its called
 
-
 //HOSTILE POLYGONS GENERATORS
 //crasher
 Class.crasherGen = makeGenerator("crasher", "Crasher", "Crasher", "crasher", 4.75, 3, "pink", Class.crasher.SIZE)

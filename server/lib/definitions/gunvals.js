@@ -739,7 +739,6 @@ module.exports = {
         shudder: 1.25,
         speed: 0.8,
         range: 0.5
-   
     },
     trapperDominator: {
         reload: 1.46,

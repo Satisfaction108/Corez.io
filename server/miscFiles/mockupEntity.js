@@ -108,7 +108,7 @@ class MockupEntityProp {
         // Bind prop
         this.bond = bond;
         this.bond.props.push(this);
-        
+
         let position = def.POSITION;
         // Get my position.
         if (Array.isArray(position)) {

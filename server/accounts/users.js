@@ -236,7 +236,7 @@ function softDelete(userId, opts = {}) {
     });
 }
 
-// Single-use admin reset link token (Phase 5 hands these out from Discord).
+// Single-use admin reset link token (handed out by the Discord admin commands).
 function createResetToken(userId, createdBy = 'system', ttlMs = RESET_TTL_MS, now = Date.now()) {
     const token = crypto.randomToken(32);
     h().run('INSERT INTO password_resets (token_hash, user_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)',
@@ -273,8 +273,8 @@ function discordAvatarUrl(discordId, avatar) {
 }
 
 // The User object every account endpoint returns. rank is the RankSnap
-// (rankStore.snapshot), dust the balance in dust units; equipped is still
-// the Phase 1 placeholder read from its real columns.
+// (rankStore.snapshot), dust the balance in dust units; equipped is the raw
+// equip columns.
 function toPublic(row, now = Date.now()) {
     if (!row) return null;
     const next = nextRenameAt(row);

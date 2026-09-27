@@ -125,7 +125,7 @@ class Siege {
             [ 50, "ptah"],
 
             //eternals
-            [100, "legionaryCrasherFix"], // fucking mid
+            [100, "legionaryCrasherFix"],
             [100, "kronos"],
             [100, "odin"],
             [100, "amun"],
@@ -343,7 +343,7 @@ class Siege {
     reset() {
         this.defineProperties();
     }
-    
+
     redefine(theshit) {
         this.room = theshit.room;
         this.defineProperties();

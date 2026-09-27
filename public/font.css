@@ -1,6 +1,6 @@
 /* License is at fonts/UFL.txt (Ubuntu) and fonts/OFL-Rubik.txt (Rubik) */
 
-/* The game font: Rubik (variable weight) — used by all canvas HUD text
+/* The game font: Rubik (variable weight), used by all canvas HUD text
    and the settings panel. */
 @font-face {
     font-family: "Rubik";
@@ -28,17 +28,9 @@
     src: url('../../fonts/Ubuntu-Mono.ttf') format('truetype');
 }
 
-/* These font files straight up don't exist because they are not used,
-   so I have removed them to save almost 2 megabytes of space.
-
-   If you need "Italic", "BoldItalic", "Light", "LightItalic", "Medium"
-   or "MediumItalic" versions of the Ubuntu font, then you should
-   download them from Google Fonts (which we used to use) or you can
-   get them from https://design.ubuntu.com/font, which I have not used
-   but they are not google which is enough for me.
-
-   Keep in mind that the total download from Google Fonts used to
-   take up 2.4 megabytes.
+/* The other Ubuntu weights/styles are unused and not shipped (~2 MB).
+   To use them, add the .ttf files from Google Fonts or
+   https://design.ubuntu.com/font and uncomment these rules.
 
 @font-face {
     font-family: "Ubuntu";

@@ -59,7 +59,7 @@ function init() {
         if (description) text += ` - ${description}`
         return text;
     }
-    
+
     // This is your commands does things.
     let commands = [
         {
@@ -423,7 +423,7 @@ function init() {
                     if (o.bond) return;
                     let color = getTeamColor(o.team);
                     player.body.team = o.team;
-                    
+
                     if (color < 0) player.body.color.base = color;
                     changedTeamToEntity = {
                         team: o.team
@@ -549,7 +549,6 @@ function init() {
                 while (player.body.skill.maintain()) { }
                 player.body.syncTurrets();
                 player.body.refreshBodyAttributes();
-                
             },
         },
         {
@@ -681,7 +680,7 @@ function init() {
             level: 1,
             operatorAccess: true,
             run: ({ player }) => {
-                const range = 255; // 10 ** 2 was 100, but should be radius, not squared
+                const range = 255; // a radius, not squared
                 const force = 45;
                 let t = target(player);
                 for (let entity of entities.values()) {
@@ -956,7 +955,7 @@ function init() {
     ];
     global.runKeyCommand = (socket, keyCodes) => {
         if (!socket?.player?.body) return 1;
-      
+
         let permsLevel = socket.permissions?.level;
         if (!permsLevel) permsLevel = 0;
         if (!keyCodes.length) keyCodes = ["default"];
@@ -982,7 +981,6 @@ function init() {
         }
     };
 }
-
 
 // If you dont want to add the key commands, just uncomment the return line.
 // return;

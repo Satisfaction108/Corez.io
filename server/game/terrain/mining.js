@@ -1,9 +1,4 @@
-
-
 const MINE_HITS = {
-
-
-
     basic: 10, twin: 10, doubleTwin: 10, tripleTwin: 10, hewnDouble: 10,
     triplet: 9.5, tripleShot: 9.5, pentaShot: 9, spreadshot: 9,
     octoTank: 10, hexaTank: 10, flankGuard: 10, auto3: 10, auto5: 9.5,
@@ -17,7 +12,6 @@ const MINE_HITS = {
     launcher: 4.5, skimmer: 4, twister: 4.5, rocketeer: 4, sidewinder: 5,
     fieldGun: 5, artillery: 6, mortar: 5.5, ordnance: 5.5,
 
-
     trapper: 7, triTrapper: 7.5, hexaTrapper: 8, septaTrapper: 8,
     megaAutoTrapper: 4.5, gunnerTrapper: 7.5, overtrapper: 7.5, autoTrapper: 7.5,
     tripleAutoTrapper: 7.5, beekeeper: 7,
@@ -26,7 +20,6 @@ const MINE_HITS = {
     assembler: 4.5, architect: 4,
     construct: 2.4,
 
-
     director: 10, overseer: 9, overlord: 8, manager: 9, banshee: 9,
     autoOverseer: 9.5, autoDouble: 10.5, underseer: 10, necromancer: 10,
     maleficitor: 10, infestor: 9.5,
@@ -34,7 +27,6 @@ const MINE_HITS = {
     bigCheese: 2.2, fork: 9, hive: 10,
 
     cruiser: 13, battleship: 13, carrier: 12.5, swarmer: 12,
-
 
     single: 9, deadeye: 6, revolver: 8, musket: 7, prodigy: 7.5,
 };
@@ -57,8 +49,8 @@ function rockHitsFor(owner, projectile) {
     return MINE_HITS_DEFAULT[projectile.type] || 9;
 }
 
-// Shop and event multipliers stacked on top of the skill bar. Kept in one
-// place so drills, overdrive cores and raid modifiers all agree.
+// Shop and event multipliers stacked on top of the skill bar (drills,
+// overdrive, raid modifiers).
 function gearMult(owner) {
     let m = 1;
     if (!owner) return m;
@@ -74,8 +66,8 @@ function gearMult(owner) {
     return m;
 }
 
-// Mining Power (skill index 10) is THE dig stat. Zero points still digs at
-// 45% of a full bar so a pure fighter is slow, not stuck.
+// Mining Power (skill index 10) is the dig stat. Zero points still digs, so a
+// pure fighter is slow, not stuck.
 function skillFactor(owner) {
     const raw = owner && owner.skill && owner.skill.raw;
     let f = 1;

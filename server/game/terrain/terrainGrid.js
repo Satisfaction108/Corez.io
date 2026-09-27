@@ -21,16 +21,13 @@ const REGROW = {
     GROW_MS:             8_000, 
     START_SCALE:          0.15, 
     HP_FLOOR:             0.25, 
-    
-    
+
     HEAL_IDLE_MS:       30_000, 
     HEAL_RATE:           0.008, 
     CRUSH_DPS_FRAC:       0.25, 
-                                
-                                
+
     CRUSH_DEPTH:          0.30, 
-                                
-                                
+
     PACING_MS:             500, 
     EMERALD_RESPAWN_MS: 60_000, 
     ORE_GEN_STRIDE:       7919, 
@@ -45,37 +42,28 @@ class TerrainGrid {
         this.cells = new Uint8Array(cols * rows).fill(CELL.BASALT);
         this.cellSize = 1;
 
-        
         this._contourSegs   = null; 
         this._contourMap    = null; 
         this._contourBucket = 1;
         this._contourTick   = 0;   
         this._boundary      = null; 
-        
+
         this._voronoiMap    = null;
         this._voronoiBucket = 1;
         this._voronoiTick   = 0;
-        
+
         this.rocks      = new Map();
         this.rockEvents = [];
-        
-        
-        
+
         this._growing    = [];      
         this._spineMid   = 0;       
         this._pendingEmeralds  = [];
         this._emeraldRespawns  = 0; 
         this._lastRegrowTick   = 0;
         this._regrowDelay = [REGROW.BASE_DELAY_MS, REGROW.BASE_DELAY_MS]; 
-        
-        
-        
-        
+
         this.oreSalt = 1 + ((Math.random() * 0x7ffffffe) | 0);   
-        
-        
-        
-        
+
         this.baseRockHealth = ROCK_DAMAGE_BASE;
     }
 
@@ -162,18 +150,12 @@ class TerrainGrid {
         return hits;
     }
 
-    
-    
-    
     buildContour() {
         const { cols, rows, cellSize } = this;
         const halfW = cols * cellSize / 2, halfH = rows * cellSize / 2;
         const solid = (c, r) =>
             c >= 0 && c < cols && r >= 0 && r < rows && this.cells[r * cols + c] === 0;
 
-        
-        
-        
         const edges = [], startMap = new Map();
         const addE = (ax, ay, bx, by) => {
             const i = edges.length / 4;
@@ -210,7 +192,6 @@ class TerrainGrid {
             if (pts.length >= 3) rawLoops.push(pts);
         }
 
-        
         const simplified = rawLoops.map(loop => {
             const n = loop.length, out = [];
             for (let i = 0; i < n; i++) {
@@ -222,13 +203,6 @@ class TerrainGrid {
             return out.length >= 3 ? out : loop;
         });
 
-        
-        
-        
-        
-        
-        
-        
         const Hh = (x, y, s) => {
             let v = (Math.imul(x+1, 374761393) ^ Math.imul(y+1, 1284865837) ^
                      Math.imul((s|0)+1, 668265263)) | 0;
@@ -252,9 +226,9 @@ class TerrainGrid {
             }
             const m = pts.length;
             if (m < 4) return loop;
-            
+
             const pin = pts.map(p => p[0] <= 0 || p[0] >= cols || p[1] <= 0 || p[1] >= rows);
-            
+
             for (let pass = 0; pass < 6; pass++) {
                 const np = pts.slice();
                 for (let i = 0; i < m; i++) {
@@ -264,9 +238,7 @@ class TerrainGrid {
                 }
                 pts = np;
             }
-            
-            
-            
+
             const out = [];
             for (let i = 0; i < m; i += 3) {
                 let x = pts[i][0], y = pts[i][1];
@@ -279,9 +251,6 @@ class TerrainGrid {
             return out.length >= 3 ? out : loop;
         };
 
-        
-        
-        
         const segs = [];
         for (const loop of simplified.map(smoothClipLoop)) {
             const n = loop.length;
@@ -300,7 +269,6 @@ class TerrainGrid {
             }
         }
 
-        
         const BUCKET = cellSize * 4;
         const smap = new Map();
         for (const seg of segs) {
@@ -317,9 +285,6 @@ class TerrainGrid {
             }
         }
 
-        
-        
-        
         const boundary = new Uint8Array(cols * rows);
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
@@ -337,9 +302,6 @@ class TerrainGrid {
         this.buildVoronoiColliders();
     }
 
-    
-    
-    
     _hash2(i, j) {
         const f32 = Math.fround;
         let px = f32(f32(i) * f32(5.3983));
@@ -356,8 +318,6 @@ class TerrainGrid {
         return [Math.round(rx * 255) / 255, Math.round(ry * 255) / 255];
     }
 
-    
-    
     _oreRoll(vi, vj, s) {
         let h = (Math.imul(vi + 1, 374761393) ^ Math.imul(vj + 1, 1284865837) ^
                  Math.imul((s | 0) + 1, 668265263)) | 0;
@@ -366,40 +326,19 @@ class TerrainGrid {
         return (h >>> 0) / 0x100000000;
     }
 
-    // Ore tier for a lattice cell. depth is 0 at the carved wall faces and 1
-    
-    
-    
-    
-    
-    
-    
-    
+    // Ore tier for a lattice cell. depth is 0 at the wall's outer faces and 1
+    // at its spine.
     _oreTierFor(vi, vj, viLo, viHi, saltExtra = 0) {
         if (this._oreRoll(vi, vj, this.oreSalt + 11 + saltExtra) >= ORE_CHANCE) return ORE.NONE;
         const halfSpan = Math.max(1, (viHi - viLo) / 2);
         const depth = Math.min(vi - viLo, viHi - vi) / halfSpan; 
         const t = this._oreRoll(vi, vj, this.oreSalt + 12 + saltExtra);
-        
-        
-        
-        
+
         if (depth <= 0.40) return t < 0.75 ? ORE.COPPER : ORE.NONE;
         if (depth <= 0.75) return t < 0.35 ? ORE.VEIN : t < 0.8375 ? ORE.COPPER : ORE.NONE;
         return t < 0.08 ? ORE.SHARD : t < 0.45 ? ORE.VEIN : t < 0.8625 ? ORE.COPPER : ORE.NONE;
     }
 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     static depositLayout(tier, poly, cx, cy, rockSz, h) {
         const want  = tier === 4 ? 1
                     : tier === 3 ? 1
@@ -439,8 +378,7 @@ class TerrainGrid {
         };
 
         const out = [];
-        
-        
+
         if (tier === 3 || tier === 4) {
             out.push({ x: cx, y: cy, r: (tier === 4 ? 0.34 : 0.30) * rockSz,
                        rot: (h(1, 221) - 0.5) * 0.7, big: true });
@@ -463,8 +401,6 @@ class TerrainGrid {
         return out;
     }
 
-    
-    
     static _dh(x, y, s) {
         let h = (Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 1284865837) ^
                  Math.imul((s | 0) + 1, 668265263)) | 0;
@@ -474,20 +410,14 @@ class TerrainGrid {
     }
 
     // ─── Per-Voronoi-cell collision builder ───────────────────────────────────
-    
-    
-    
-    
-    
+
     buildVoronoiColliders() {
         const { cols, rows, cellSize } = this;
         const halfW  = cols * cellSize / 2, halfH = rows * cellSize / 2;
-        // Rock size is lattice-derived: cols/50 lattice cells per rock. That
-        // made rocks GROW with map width - the tutorial's wide multi-plot room
-        // magnified every rock ~2.4x. Clamp at the live map's width (15 tiles
-        // = 120 cols) so rocks are the same world size on every map. Mirrored
-        // in public/client/terrainRenderer.js - the four voronoi
-        // implementations must stay identical (see AGENTS notes).
+        // Rock size is cols/50 lattice cells, clamped at 120 cols (15 tiles) so
+        // rocks are the same world size on wider maps (the tutorial room).
+        // Mirrored in public/client/terrainRenderer.js: all four voronoi
+        // implementations must stay identical.
         const rockSz = Math.min(cols, 120) / 50.0;
         const hash2 = (i, j) => this._hash2(i, j);
 
@@ -516,19 +446,14 @@ class TerrainGrid {
         const vxMin = maxLeft / rockSz;
         const vxMax = (minRight + 1) / rockSz;
 
-        
-        
-        
-        
         const viLo = Math.round(vxMin), viHi = Math.round(vxMax) - 1;
         const vjLo = 0,                 vjHi = Math.round(rows / rockSz) - 1;
 
-        // Saved for point-in-rock queries (pointInRock / circleHitsRock)
+        // for point-in-rock queries (pointInRock / circleHitsRock)
         this._voroRockSz = rockSz;
         this._voroViLo = viLo; this._voroViHi = viHi;
         this._voroVjLo = vjLo; this._voroVjHi = vjHi;
-        // the wall's spine: everything left of it is one side's frontier,
-        
+        // lattice column of the wall's spine, between the two sides' frontiers
         this._spineMid = (viLo + viHi) / 2;
         this._cellWorld = rockSz * cellSize;   // world units across one lattice cell
         this._growing.length = 0;
@@ -539,13 +464,6 @@ class TerrainGrid {
         this.rocks      = new Map();
         this.rockEvents = [];
 
-        
-        
-        
-        
-        
-        
-        
         const canyonKeys = new Set();
         const outpostCells = [];   
         const chamberCells = [];   
@@ -567,7 +485,7 @@ class TerrainGrid {
                         const vj = Math.max(vjLo, Math.min(vjHi, Math.round(vjMid) + w));
                         canyonKeys.add(vi * 100003 + vj);
                     }
-                    
+
                     if (vi === viMid) {
                         const vj = Math.max(vjLo, Math.min(vjHi, Math.round(vjMid)));
                         outpostCells.push({ key: vi * 100003 + vj, name: laneNames[laneIdx] });
@@ -575,12 +493,10 @@ class TerrainGrid {
                 }
                 laneIdx++;
             }
-            
-            
+
             const cvj = Math.round((vjLo + vjHi) / 2);
             outpostCells.push({ key: viMid * 100003 + cvj, name: "Deep Core Outpost" });
-            // every site gets its own small carved pocket (a mini-canyon:
-            
+            // each outpost site gets a carved 3x3-cell pocket
             for (const s of outpostCells) {
                 const svi = Math.floor(s.key / 100003), svj = s.key % 100003;
                 for (let di = -1; di <= 1; di++)
@@ -590,14 +506,8 @@ class TerrainGrid {
                         canyonKeys.add(vi2 * 100003 + vj2);
                     }
             }
-            // CORE CHAMBER SITES: one per team, horizontally aligned with the
-            
-            
-            
-            
-            
-            
-            
+            // core chamber sites: one per team, 3 cells in from each face on
+            // the centre row
             for (const side of [0, 1]) {
                 const vi = side === 0 ? viLo + 3 : viHi - 3;
                 chamberCells.push({
@@ -606,13 +516,10 @@ class TerrainGrid {
                     name: side === 0 ? "Blue Core Chamber" : "Red Core Chamber",
                 });
             }
-            // NOTE: chamber cells are NOT pre-carved here - each ring's pocket is
-            // cut right before the canyon pass below, carving only the rocks that
-            // would actually touch the ring (see CORE CHAMBER POCKETS).
+            // chamber cells are not pre-carved here; see CORE CHAMBER POCKETS
         }
         this._canyonKeys = canyonKeys;
-        // buffer zone: canyon cells plus everything within 2 lattice cells -
-        
+        // canyon cells plus everything within 2 lattice cells
         const canyonNear = new Set();
         for (const k of canyonKeys) {
             const vi = Math.floor(k / 100003), vj = k % 100003;
@@ -622,11 +529,8 @@ class TerrainGrid {
         }
         this._canyonNearKeys = canyonNear;
 
-        // EMERALDS - exactly EMERALD_COUNT cells per arena, hand-placed in
-        
-        
-        
-        
+        // Emeralds: exactly EMERALD_COUNT cells, deep in the wall (depth >= 0.7),
+        // away from canyons and at least 6 cells apart.
         const emeraldKeys = new Set();
         {
             const halfSpan = Math.max(1, (viHi - viLo) / 2);
@@ -659,9 +563,6 @@ class TerrainGrid {
                 const [hx, hy] = hash2(vi, vj);
                 const sx = vi+hx, sy = vj+hy;
 
-                
-                
-                
                 const ore = emeraldKeys.has(vi * 100003 + vj)
                     ? ORE.EMERALD
                     : this._oreTierFor(vi, vj, viLo, viHi);
@@ -674,7 +575,7 @@ class TerrainGrid {
                     deposits: null,
                     wx: sx * rockSz * cellSize - halfW,
                     wy: sy * rockSz * cellSize - halfH,
-                    
+
                     gen: 0,          
                     growing: false,
                     growStart: 0,
@@ -682,7 +583,7 @@ class TerrainGrid {
                     diedAt: 0,       
                     worldPoly: null, 
                     worldCx: 0, worldCy: 0, maxPolyRadius: 0,
-                    
+
                     growAx: 0, growAy: 0,
                     _cp: null, _cpAt: 0,  
                     tilePoly: null, tileCx: 0, tileCy: 0, 
@@ -706,10 +607,7 @@ class TerrainGrid {
                 }
                 if (Math.abs(area) / 2 < 0.05) continue;
 
-                // Cell geometry, cached in both spaces: tile coords for the
-                
-                
-                
+                // cell geometry, cached in tile and world coords
                 {
                     let pcx = 0, pcy = 0;
                     for (const p of poly) { pcx += p[0]; pcy += p[1]; }
@@ -730,9 +628,6 @@ class TerrainGrid {
                     rock.maxPolyRadius = far;
                 }
 
-                
-                
-                
                 if (ore) rock.deposits = this._buildDeposits(rock);
 
                 const wsx = sx*rockSz*cellSize-halfW, wsy = sy*rockSz*cellSize-halfH;
@@ -765,10 +660,6 @@ class TerrainGrid {
             }
         }
 
-        
-        
-        
-        
         for (const k of canyonKeys) {
             const rock = this.rocks.get(k);
             if (!rock) continue;
@@ -780,20 +671,16 @@ class TerrainGrid {
             rock.deposits = null;
         }
 
-        // CORE CHAMBER POCKETS: the ring's vertices reach CHAMBER_RADIUS (160)
-        // and the walls are thin, so instead of the old pre-carved 5x5 square we
-        // carve exactly the rocks whose polygons would touch each ring plus a
-        // small margin. The pocket hugs the 15-gon, leaving a tight, even gap of
-        // fresh floor instead of a big empty slab - and the ring never spawns
-        // stuck inside a boulder.
+        // CORE CHAMBER POCKETS: the ring's vertices reach CHAMBER_RADIUS (160),
+        // so carve exactly the rocks whose polygons would touch each ring plus a
+        // small margin. The pocket hugs the 15-gon with an even gap of floor.
         {
             const pocketR = 160 + 26;
             const centers = [];
             for (const s of chamberCells) {
                 const rock = this.rocks.get(s.key);
                 if (!rock) continue;
-                // the site rock's polygon centroid is the tightest anchor; the
-                // lattice center (wx/wy) is always present as a fallback
+                // polygon centroid, falling back to the lattice centre
                 centers.push([rock.worldCx || rock.wx, rock.worldCy || rock.wy]);
             }
             if (centers.length) {
@@ -830,9 +717,6 @@ class TerrainGrid {
             }
         }
 
-
-        
-        
         if (Config.dig_royale) {
             require('./royaleLayout.js').apply(this, { canyonKeys, outpostCells, chamberCells });
             this._canyonKeys = canyonKeys;
@@ -851,7 +735,6 @@ class TerrainGrid {
             });
         }
 
-        
         this.coreChamberSites = [];
         for (let i = 0; i < chamberCells.length; i++) {
             const rock = this.rocks.get(chamberCells[i].key);
@@ -869,11 +752,6 @@ class TerrainGrid {
         this._voronoiBucket = BUCKET;
     }
 
-    
-    
-    
-    
-    
     _buildDeposits(rock) {
         const cellSize = this.cellSize;
         const halfW = this.cols * cellSize / 2, halfH = this.rows * cellSize / 2;
@@ -891,30 +769,21 @@ class TerrainGrid {
         }));
     }
 
-    
-    
-    
     _sideOf(rock) {
         return rock.vi < this._spineMid ? 0 : rock.vi > this._spineMid ? 1 : -1;
     }
 
-    
     growthProgress(rock, now) {
         if (!rock.growing) return 1;
         return Math.max(0, Math.min(1, (now - rock.growStart) / REGROW.GROW_MS));
     }
 
-    // How much of the cell the risen stone covers right now (START_SCALE→1).
-    
-    
+    // How much of the cell the risen stone covers right now (START_SCALE to 1).
     growthScale(rock, now) {
         return REGROW.START_SCALE +
                (1 - REGROW.START_SCALE) * easeGrowth(this.growthProgress(rock, now));
     }
 
-    
-    
-    
     _scaledPolyFor(rock, now) {
         if (!rock.growing || !rock.worldPoly) return null;
         if (rock._cp && Math.abs((rock._cpAt || 0) - now) < 8) return rock._cp;
@@ -927,7 +796,6 @@ class TerrainGrid {
 
     growingRocks() { return this._growing; }
 
-    
     static _polyFace(poly, x, y) {
         const inside = TerrainGrid._pointInPoly(poly, x, y);
         let best = Infinity, px = x, py = y;
@@ -945,8 +813,8 @@ class TerrainGrid {
     }
 
     // ── Convex-polygon helpers, all in the rock's UNSCALED frame ──────────
-    // Uniform scaling about the centroid means a query point can simply be
-    // divided back into full-size space - no per-tick polygon rebuilds.
+    // Scaling is uniform about the centroid, so a query point is divided back
+    // into full-size space instead of rebuilding polygons each tick.
     static _pointInPoly(poly, x, y) {
         let inside = false;
         for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -972,9 +840,8 @@ class TerrainGrid {
         return Math.sqrt(best);
     }
 
-    // Distance from the centroid to the outline along a direction. Voronoi
-    // cells are convex and the centroid is inside, so the ray exits exactly
-    // once - this is the rock's "radius" in that direction.
+    // Distance from the centroid to the outline along a direction (cells are
+    // convex, so the ray exits exactly once).
     static _rayExit(poly, cx, cy, dx, dy) {
         let best = Infinity;
         for (let i = 0; i < poly.length; i++) {
@@ -989,8 +856,6 @@ class TerrainGrid {
         return best === Infinity ? 0 : best;
     }
 
-    
-    
     _growingPenetration(rock, x, y, r, now) {
         const sp = this._scaledPolyFor(rock, now);
         if (!sp || sp.length < 3) return 0;
@@ -1001,13 +866,10 @@ class TerrainGrid {
         return f.inside ? f.dist + r : Math.max(0, r - f.dist);
     }
 
-    
     _circleHitsGrowing(rock, x, y, r, now) {
         return this._growingPenetration(rock, x, y, r, now) > 0;
     }
 
-    
-    
     growingRockHitByCircle(x, y, r, now = Date.now()) {
         for (const rock of this._growing) {
             if (this._circleHitsGrowing(rock, x, y, r, now)) return rock;
@@ -1015,38 +877,14 @@ class TerrainGrid {
         return null;
     }
 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     pushCircleFromGrowing(pos, r, now = Date.now()) {
         if (!this._growing.length) return { dx: 0, dy: 0, entombed: false, buried: false };
         const startX = pos.x, startY = pos.y;
 
         let touched = false, buried = false;
-        
-        
-        
-        
+
         let carry = Math.max(2, r * 0.15);
         for (let pass = 0; pass < 3; pass++) {
-            
-            
-            
-            
-            
-            
             let sx = 0, sy = 0, contact = false;
             for (const rock of this._growing) {
                 const sp = this._scaledPolyFor(rock, now);
@@ -1059,7 +897,7 @@ class TerrainGrid {
                 let ux, uy, need;
                 if (f.inside) {
                     buried = true;   
-                    
+
                     let dxA = pos.x - rock.growAx, dyA = pos.y - rock.growAy;
                     let t = Math.hypot(dxA, dyA);
                     if (t < 1e-6) {
@@ -1086,19 +924,14 @@ class TerrainGrid {
             touched = true;
             pos.x += sx;
             pos.y += sy;
-            
-            
-            
+
             this.pushCircleFromVoronoi(pos, r);
-            
+
             if (Math.abs(sx) < 1e-3 && Math.abs(sy) < 1e-3) break;
         }
 
         if (!touched) return { dx: 0, dy: 0, entombed: false, buried: false };
 
-        
-        
-        
         let entombed = false;
         for (const rock of this._growing) {
             if (this._growingPenetration(rock, pos.x, pos.y, r, now) > r * REGROW.CRUSH_DEPTH) {
@@ -1109,13 +942,12 @@ class TerrainGrid {
         return { dx: pos.x - startX, dy: pos.y - startY, entombed, buried };
     }
 
-    
     // elapsed: start this far into the rise (ms), e.g. bloom rocks at 45%
     startRegrow(rock, now, elapsed = 0) {
         if (rock.canyon) return false;
         if (!rock.worldPoly || rock.alive || rock.growing) return false;
-        // a loot chest holds its pocket and its way out (chests.js holdRock);
-        // nothing - regrowth, Bulwark, anything - may grow rock there
+        // a loot chest holds its pocket and exit path (chests.js holdRock);
+        // nothing may grow rock there
         if (rock.chestLock || rock._chestHolds > 0) return false;
         rock.gen++;
         rock.growing    = true;
@@ -1144,10 +976,6 @@ class TerrainGrid {
         rock.health     = rock.maxHealth * REGROW.HP_FLOOR;
         rock.deposits   = rock.ore ? this._buildDeposits(rock) : null;
 
-        
-        
-        
-        
         let nx = 0, ny = 0, found = 0, fx = 0, fy = 0;
         for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
             const nb = this.rocks.get((rock.vi + di) * 100003 + (rock.vj + dj));
@@ -1158,9 +986,7 @@ class TerrainGrid {
                 found++;
             }
         }
-        
-        
-        
+
         if (found && Math.hypot(nx, ny) < 1e-6) { nx = fx; ny = fy; }
         if (found && Math.hypot(nx, ny) > 1e-6) {
             const dl = Math.hypot(nx, ny);
@@ -1168,26 +994,18 @@ class TerrainGrid {
             rock.growAx = rock.worldCx + (nx / dl) * exit;
             rock.growAy = rock.worldCy + (ny / dl) * exit;
         } else {
-            
             rock.growAx = rock.worldPoly[0][0];
             rock.growAy = rock.worldPoly[0][1];
         }
         rock._cp = null; rock._cpAt = 0;
 
         this._growing.push(rock);
-        
-        
-        
-        
-        
-        
-        
+
         const halfW = this.cols * this.cellSize / 2;
         const halfH = this.rows * this.cellSize / 2;
-        // e: how far into the rise the collision shape already is when this
-        // goes out (a bloom starts at 45%; staggered starts are in the future).
-        // Without it the client drew the rise from zero while the server's
-        // shape was far bigger: an invisible wall pushing players away.
+        // e: ms into the rise the collision shape already is (a bloom starts at
+        // 45%; staggered starts are negative), so the client's drawn rise
+        // matches the server's shape.
         const riseE = Math.max(-REGROW.GROW_MS, Math.min(REGROW.GROW_MS, Math.round(Date.now() - rock.growStart)));
         this.rockEvents.push({
             k: rock.k, r: 1, o: rock.ore, gen: rock.gen, e: riseE,
@@ -1202,13 +1020,10 @@ class TerrainGrid {
         if (i !== -1) this._growing.splice(i, 1);
     }
 
-    
     completeRegrow(rock) {
         rock.growing    = false;
         rock.alive      = true;
-        // Keep the damage it took while rising. Resetting to full here meant
-        // a rock you were shooting as it finished growing jumped back to 100%
-        // and looked like an ordinary rock that refused to break.
+        // keep the damage it took while rising
         rock.health     = Math.max(1, rock.maxHealth - (rock.growDamage || 0));
         rock.growDamage = 0;
         rock._cp = null;
@@ -1236,30 +1051,21 @@ class TerrainGrid {
         return false;
     }
 
-    
-    
     regrowTick(now) {
         if (!this._voronoiMap) return;
         if (Config.dig_royale) { try { this._bloomNow = require('./blooms.js').current(); } catch { this._bloomNow = null; } }
         if (now - this._lastRegrowTick < REGROW.PACING_MS) return;
         this._lastRegrowTick = now;
 
-        
         for (let i = this._growing.length - 1; i >= 0; i--) {
             const rock = this._growing[i];
             if (now - rock.growStart >= REGROW.GROW_MS) { this.completeRegrow(rock); continue; }
-            
-            
-            
+
             const target = rock.maxHealth *
                 Math.max(REGROW.HP_FLOOR, easeGrowth(this.growthProgress(rock, now)));
             rock.health = Math.max(1, target - rock.growDamage);
         }
 
-        
-        
-        
-        
         let gap0 = 0, gap1 = 0;
         for (const rock of this.rocks.values()) {
             if (rock.alive) {
@@ -1267,9 +1073,7 @@ class TerrainGrid {
                     now - (rock.lastHitAt || 0) >= REGROW.HEAL_IDLE_MS) {
                     rock.health = Math.min(rock.maxHealth,
                         rock.health + rock.maxHealth * REGROW.HEAL_RATE * (REGROW.PACING_MS / 1000));
-                    // broadcast sparingly: only when the healed fraction has
-                    
-                    
+                    // broadcast only when the healed fraction crosses a 1/24 bucket
                     const h = rock.health / rock.maxHealth;
                     const bucket = h >= 1 ? 999 : (h * 24) | 0;
                     if (bucket !== rock._healBucket) {
@@ -1290,8 +1094,6 @@ class TerrainGrid {
         this._regrowDelay[0] = delayFor(gap0, gap1);
         this._regrowDelay[1] = delayFor(gap1, gap0);
 
-        
-        
         for (const rock of this.rocks.values()) {
             if (rock.alive || rock.growing || !rock.diedAt || !rock.worldPoly) continue;
             const side = this._sideOf(rock);
@@ -1313,7 +1115,6 @@ class TerrainGrid {
             this.startRegrow(rock, now, bloomRock ? REGROW.GROW_MS * 0.45 : 0);
         }
 
-        
         // the replant scans every rock twice; twice a second is more than enough
         if (this._pendingEmeralds.length && now - (this._emeraldTickAt || 0) > 2000) {
             this._emeraldTickAt = now;
@@ -1321,10 +1122,6 @@ class TerrainGrid {
         }
     }
 
-    
-    
-    
-    
     _hasLivingNeighbour(rock) {
         const { vi, vj } = rock;
         const n = (i, j) => {
@@ -1338,12 +1135,9 @@ class TerrainGrid {
         for (let i = this._pendingEmeralds.length - 1; i >= 0; i--) {
             if (this._pendingEmeralds[i].at > now) continue;
             if (this._plantEmerald()) this._pendingEmeralds.splice(i, 1);
-            
         }
     }
 
-    
-    
     _plantEmerald() {
         const viLo = this._voroViLo, viHi = this._voroViHi;
         const halfSpan = Math.max(1, (viHi - viLo) / 2);
@@ -1380,8 +1174,7 @@ class TerrainGrid {
 
     // ─── Point / circle vs rock queries ───────────────────────────────────────
     // A point is inside a rock iff its nearest Voronoi seed (same float32 hash
-    
-    
+    // as the client) belongs to a live rock. Returns the rock or false.
     pointInRock(wx, wy) {
         if (!this._voronoiMap) return false;
         const halfW = this.cols * this.cellSize / 2;
@@ -1404,11 +1197,6 @@ class TerrainGrid {
         return rock && rock.alive ? rock : false;
     }
 
-    
-    
-    
-    
-    
     rockHitByCircle(x, y, r) {
         const inside = this.pointInRock(x, y);
         if (inside) return inside;
@@ -1438,8 +1226,6 @@ class TerrainGrid {
 
     circleHitsRock(x, y, r) { return !!this.rockHitByCircle(x, y, r); }
 
-    
-    
     nearestRock(wx, wy, maxR = 450) {
         return this.nearestRockWhere(wx, wy, maxR, null);
     }
@@ -1471,13 +1257,10 @@ class TerrainGrid {
         return hit;
     }
 
-    // Apply damage; queues a network delta. Rocks never heal, die once.
-    
-    
+    // Apply damage and queue a network delta. Returns true if it destroyed the rock.
     damageRock(rock, dmg, wx, wy, grind, owner) {
         if (!rock || (!rock.alive && !rock.growing) || !(dmg > 0)) return false;
-        
-        
+
         const wasGrowing = rock.growing;
         if (wasGrowing) rock.growDamage += dmg;
         rock.lastHitAt = Date.now();   
@@ -1486,26 +1269,20 @@ class TerrainGrid {
         if (destroyed) {
             rock.health = 0;
             rock.alive = false;
-            
-            
+
             if (wasGrowing) { rock.growing = false; rock._cp = null; this._unlistGrowing(rock); }
             rock.growDamage = 0;
             rock.diedAt = Date.now();
-            
-            
+
             if (!wasGrowing && rock.ore === ORE.EMERALD)
                 this._pendingEmeralds.push({ at: rock.diedAt + ((global.royaleMods && global.royaleMods.emeraldRespawnMs) || REGROW.EMERALD_RESPAWN_MS) });
         }
         const ev = { k: rock.k, h: rock.health / rock.maxHealth, d: destroyed ? 1 : 0 };
-        // grind flag: hull scraping - clients draw soft grind sparks
-        
+        // g: hull scraping, clients draw soft grind sparks
         if (grind && !destroyed) ev.g = 1;
-        
-        
-        
+
         if (destroyed && rock.ore && !wasGrowing) ev.o = rock.ore;
-        
-        
+
         if (destroyed && wasGrowing) ev.p = 1;
         if (wx !== undefined) {
             const halfW = this.cols * this.cellSize / 2;
@@ -1513,8 +1290,7 @@ class TerrainGrid {
             ev.x = Math.round((wx + halfW) / this.cellSize * 100) / 100;
             ev.y = Math.round((wy + halfH) / this.cellSize * 100) / 100;
         }
-        // Chip numbers (0-100 of this cell) go only to the shooter. Grind
-        // scrapes skip them - they would spam.
+        // chip numbers (0-100 of this cell) go only to the shooter; not for grinds
         if (!grind && owner && rock.maxHealth > 0) {
             ev.n = Math.max(1, Math.round(100 * dmg / rock.maxHealth));
             ev.u = owner.id;
@@ -1523,9 +1299,6 @@ class TerrainGrid {
         return destroyed;
     }
 
-    
-    
-    
     rockStateSnapshot() {
         const out = [];
         const now = Date.now();
@@ -1541,16 +1314,15 @@ class TerrainGrid {
             } else if (!rock.alive) {
                 out.push({ k: rock.k, h: 0, d: 1 });
             } else if (rock.health < rock.maxHealth || rock.gen > 0) {
-                // gen rides along even at full health: the client needs it to
-                
+                // gen is sent even at full health: the client keys regrown
+                // rock visuals off it
                 out.push({ k: rock.k, h: rock.health / rock.maxHealth, d: 0, gen: rock.gen });
             }
         }
         return out;
     }
 
-    // Living ore cells as [key, tier] pairs - rides the TG snapshot so every
-    
+    // Living ore cells as [key, tier] pairs, sent with the TG snapshot.
     oreSnapshot() {
         const out = [];
         for (const rock of this.rocks.values()) {
@@ -1559,9 +1331,6 @@ class TerrainGrid {
         return out;
     }
 
-    
-    
-    
     pushCircleFromVoronoi(pos, r) {
         if (!this._voronoiMap) return { dx: 0, dy: 0 };
         const BUCKET = this._voronoiBucket;
@@ -1606,9 +1375,6 @@ class TerrainGrid {
         return { dx: pos.x-startX, dy: pos.y-startY };
     }
 
-    
-    
-    
     pushCircleFromContour(pos, r) {
         if (!this._contourMap) return { dx: 0, dy: 0 };
         const BUCKET = this._contourBucket;
@@ -1616,7 +1382,6 @@ class TerrainGrid {
         const startX = pos.x, startY = pos.y;
         const tick   = ++this._contourTick;
 
-        
         for (let pass = 0; pass < 3; pass++) {
             const cx = pos.x, cy = pos.y;
             const c0 = Math.floor((cx - r) / BUCKET), c1 = Math.floor((cx + r) / BUCKET);

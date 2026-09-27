@@ -20,9 +20,8 @@ function isProduction() {
 
 function livingSpectateList() {
     const out = [], stormed = [];
-    // Raid: tanks out in the storm are about to die, and every death hopped
-    // the camera again - the "drifting to a random corner" during the final
-    // hold. Watch the safe circle when anyone is in it.
+    // Raid: tanks in the storm are about to die and each death would hop the
+    // camera again during the final hold, so watch the safe circle.
     let storm = null;
     if (Config.dig_royale) { try { storm = require('../terrain/storm.js'); } catch { storm = null; } }
     for (const e of entities.values()) {
@@ -45,8 +44,7 @@ function spectateParkSpot() {
     return null;
 }
 
-// Nearest living combatant to a point: the calm auto-hop when a spectate
-// target dies. Never jumps across the map the way list[0] used to.
+// Nearest living combatant to a point: the auto-hop when a spectate target dies.
 function nearestSpectate(socket, x, y) {
     let best = null, bestD = Infinity;
     for (const e of livingSpectateList()) {
@@ -88,7 +86,6 @@ function livingSpectateTarget(killers) {
     return livingSpectateList()[0] || null;
 }
 
-
 // The colour a player sees their own tank (and HUD) in. Tutorial learners all
 // share TEAM_BLUE internally but each wears a Dig Royale palette colour.
 function ownTankColor(body) {
@@ -107,9 +104,8 @@ class socketManager {
         this.bans = [];
 
         for (let entry of require("../permissions.js")) {
-            // An unset env token used to land here under the key "undefined",
-            // so typing "undefined" granted that tier. Short keys and the
-            // .env.example placeholders are skipped for the same reason.
+            // Skip unset env tokens (they would register under the key "undefined"),
+            // short keys, and the .env.example placeholders.
             const key = typeof entry.key === "string" ? entry.key.trim() : "";
             if (key.length < 16 || /^change_me/i.test(key)) continue;
             this.permissionsDict[key] = entry;
@@ -215,7 +211,6 @@ class socketManager {
                     // blocked accounts (either way) never see each other's chat
                     if (entity.accountId && accountBridge.chatHidden(view.socket, entity)) continue;
                     for (let chat of chats[id].messages) {
-                        
                         if (chat.team != null && chat.team !== viewTeam) continue;
                         array[index].messages.push({ text: chat.team != null ? "[TEAM] " + chat.message : chat.message, id: chat.id });
                     }
@@ -257,14 +252,10 @@ class socketManager {
                     player.body.invuln = false;
                     player.body.destroy();
                 } else {
-                    // disconnecting = dying: kill the tank so nobody else can
-                    // inherit it. (the old 60s ip-keyed "recovery" let any new
-                    // connection from the same ip spawn as the previous player)
+                    // disconnecting = dying: kill the tank so no new connection can inherit it.
                     if (Config.clan_wars) Config.clan_wars_ft.remove(player.body);
-                    // destroy() below removes the body before its 'dead' event
-                    // can run, so the satchel drops here: a player who pulls
-                    // the plug mid-fight (saveResume leaves those gems on the
-                    // body) leaves the loot behind instead of deleting it
+                    // destroy() below removes the body before its 'dead' event can run, so the
+                    // satchel drops here (saveResume leaves those gems on the body).
                     if (Config.dig_royale && (player.body.carriedGems | 0) > 0 && !player.body.isDead()) {
                         try { require('../terrain/gems.js').dropGemsOnDeath(player.body, []); } catch (e) { console.error('[RAID] disconnect drop', e && e.message); }
                     }
@@ -339,9 +330,8 @@ class socketManager {
                 }
             } break;
             case 's': {
-                // A death packet and the client click can cross on the wire.
-                // Accept the request when the attached body is already dead or
-                // gone, instead of rejecting the first valid respawn attempt.
+                // A death packet and the client's click can cross on the wire: accept the
+                // request when the attached body is already dead or gone.
                 const liveBody = socket.player?.body && !socket.player.body.isDead();
                 if (!socket.status.deceased && liveBody) {
                     socket.kick('Trying to spawn while already alive.');
@@ -354,8 +344,8 @@ class socketManager {
                     dr.requestPlay();
                     if (dr.canSpawn()) socket.royaleNeedClick = false;
                     else {
-                        // Final storm: no spawns. Queue them watching instead -
-                        // the spawn loop below drops them in when it lifts.
+                        // Final storm: no spawns. Queue them watching instead; the spawn
+                        // loop below drops them in when it lifts.
                         socket.royaleWantsSpectate = true;
                         if (!socket.spectateEntity || socket.spectateEntity.isDead?.()) {
                             cycleSpectate(socket, 0);
@@ -446,22 +436,17 @@ class socketManager {
                             global.gameManager.terrainGrid.cols,
                             global.gameManager.terrainGrid.rows,
                             JSON.stringify(global.gameManager.terrainGrid.serialize()),
-                            
-                            
+
                             JSON.stringify(global.gameManager.terrainGrid.rockStateSnapshot()),
-                            
+
                             JSON.stringify(global.gameManager.terrainGrid.oreSnapshot()),
-                            
-                            
+
                             global.gameManager.terrainGrid.oreSalt,
-                            
-                            
+
                             JSON.stringify(require('../terrain/vault.js').snapshot()),
-                            
-                            
+
                             JSON.stringify(require('../terrain/outposts.js').snapshot()),
-                            
-                            
+
                             JSON.stringify(require('../terrain/coreChambers.js').snapshot()),
                             Config.dig_royale ? 1 : 0,
                             JSON.stringify(require('../terrain/shop.js').snapshot()),
@@ -528,8 +513,6 @@ class socketManager {
                 socket.status.lastHeartbeat = util.time();
             } break;
             case 'vd': {
-                
-                
                 if (m.length !== 1) { socket.kick("Ill-sized vault deposit."); return 1; }
                 if (typeof m[0] !== "number" || !isFinite(m[0])) { socket.kick("Weird vault deposit."); return 1; }
                 const vBody = socket.player && socket.player.body;
@@ -541,7 +524,6 @@ class socketManager {
                 else require('../terrain/vault.js').requestDeposit(socket, m[0]);
             } break;
             case 'vc': {
-                
                 require('../terrain/vault.js').requestCancel(socket);
                 require('../terrain/outposts.js').requestCancel(socket);
             } break;
@@ -566,11 +548,9 @@ class socketManager {
                 const flow = socket.flow;
                 while (flow.sent.length && flow.sent[0] <= time) flow.sent.shift();
                 const rtt = util.time() - time;
-                // Base RTT = the lowest sample of the last ~30 s (six 5 s
-                // buckets). It used to be *replaced* by the current sample
-                // every 15 s; on a clogged link that sample is the queue
-                // itself, so each reset let more backlog in (1500 ms pings on
-                // a slow link in India). Capped so a bad line can't widen it.
+                // Base RTT = the lowest sample of the last ~30 s (six 5 s buckets), not the
+                // current sample: on a clogged link that is the queue itself. Capped so a
+                // bad line can't widen it.
                 if (rtt >= 0) {
                     const nowR = util.time(), b = Math.floor(nowR / 5000);
                     const mins = flow.rttMins || (flow.rttMins = []);
@@ -703,12 +683,9 @@ class socketManager {
                         if (!tut.allows(player.body, 'upgrade')) return;
                         // A borrowed tank is on loan: never evolve it.
                         if (tut.borrowing(player.body)) return;
-                        // While a path lock is active the client's indexes are
-                        // meaningless: it clicks position N of the FILTERED
-                        // menu, but upgrade() indexes the raw list - the same
-                        // click could land on a hidden tank. There is exactly
-                        // one legal choice under a lock, so take that one,
-                        // found in the raw list, and ignore the indexes.
+                        // Under a path lock the client's indexes point into the FILTERED menu while
+                        // upgrade() indexes the raw list, so they could land on a hidden tank. There
+                        // is exactly one legal choice under a lock: take it from the raw list.
                         if (player.body._tutorialLock) {
                             const b = player.body;
                             const idx = b.upgrades.findIndex(u =>
@@ -752,10 +729,8 @@ class socketManager {
                     return 1;
                 }
 
-                // Tutorial: stat points are only spendable during the stat
-                // lessons, and each of those permits exactly one bar. Gated
-                // here rather than in the UI because 1-0 and M go straight to
-                // the socket without ever touching the bars.
+                // Tutorial: stat points are only spendable during the stat lessons, one bar
+                // each. Gated here, not in the UI, because 1-0 and M bypass the bars.
                 if (Config.tutorial && player.body) {
                     const tut = require('../tutorialSession.js');
                     if (!tut.allowsStat(player.body, number)) return;
@@ -788,8 +763,7 @@ class socketManager {
                 }
 
                 if (player.body == null || player.body.underControl) return;
-                
-                
+
                 if (!Config.manual_level_up && !(socket.permissions && socket.permissions.infiniteLevelUp)) return;
                 if (player.body.skill.level < Config.level_cap_cheat || (socket.permissions && socket.permissions.infiniteLevelUp)) {
                     player.body.skill.score += player.body.skill.levelScore;
@@ -834,9 +808,7 @@ class socketManager {
                 const body = player.body;
 
                 switch (m[0]) {
-                    // Hand the client the landmarks of its own plot. The
-                    // client cannot derive these: it knows the room, but not
-                    // how the room was divided into plots.
+                    // The client's plot landmarks: it knows the room, not how it was split into plots.
                     case "hello": tut.talkPlotInfo(socket); break;
 
                     // Spawn the stationary practice target.
@@ -845,9 +817,8 @@ class socketManager {
                     // Spawn the first opponent that shoots back (botSkill 0.1).
                     case "fighter": tut.spawnFighter(plot); break;
 
-                    // Restrict the class-upgrade menu to a single tank, so the
-                    // lesson can teach one specific build (penta shot, then a
-                    // drone tank) instead of whatever the learner clicks.
+                    // Restrict the upgrade menu to one tank so a lesson can teach a specific
+                    // build (penta shot, then a drone tank).
                     case "lock":
                         if (typeof m[1] !== "string") return;
                         tut.lockUpgrades(body, m[1]);
@@ -874,14 +845,8 @@ class socketManager {
                     // Base lesson fallback: the practice base is yours.
                     case "givebase": tut.giveBase(plot, body); break;
 
-                    // Chip the learner's health so the HP bar visibly moves and
-                    // regeneration can be demonstrated. Never lethal: it clamps
-                    // to a fraction of max rather than dealing damage.
-                    //
-                    // Takes the shield down with it. A tank at full shield and
-                    // a third health barely looks damaged, and the lesson is
-                    // that BOTH bars come back on their own - so both have to
-                    // visibly move.
+                    // Chip health and shield so both bars visibly regenerate. Never lethal:
+                    // clamps to a fraction of max rather than dealing damage.
                     case "hurt":
                         if (body.health && body.health.max) {
                             body.health.amount = Math.min(
@@ -890,18 +855,15 @@ class socketManager {
                         if (body.shield && body.shield.max) body.shield.amount = 0;
                         break;
 
-                    // Set the learner's stats outright, in the order the skill
-                    // bar shows them. Chapters that are about flying a tank
-                    // (drones, autos) hand out a working build rather than
-                    // making the learner guess one first.
+                    // Set stats outright, in skill-bar order. Chapters about flying a tank hand
+                    // out a working build instead of making the learner guess one.
                     case "stats": {
                         if (typeof m[1] !== "string") return;
                         const list = m[1].split(",").map(x => parseInt(x, 10) || 0);
                         tut.setStats(body, list);
                     } break;
 
-                    // Hand back points to spend - used when a morph unlocks a
-                    // stat the learner has never seen.
+                    // Grant points to spend, e.g. when a morph unlocks a stat the learner has never seen.
                     case "points":
                         tut.grantPoints(body, parseInt(m[1], 10) || 0);
                         break;
@@ -917,8 +879,7 @@ class socketManager {
                                       m[2] === undefined ? 1 : parseInt(m[2], 10) || 0);
                         break;
 
-                    // Back to full, both bars. Follows the lesson that took a
-                    // deliberate bite out of them.
+                    // Full health and shield, after the lesson that chipped them.
                     case "heal": tut.heal(body); break;
 
                     // Put the learner on the landmark the lesson is about.
@@ -979,8 +940,6 @@ class socketManager {
                 }
             } break;
             case "EP": {
-                
-                
                 if (m.length !== 2 || typeof m[0] !== "number" || typeof m[1] !== "number" ||
                     !isFinite(m[0]) || !isFinite(m[1])) {
                     return; 
@@ -1123,10 +1082,9 @@ class socketManager {
                     chats[id].messages = [];
                 }
 
-                
                 const chatTeam = m[1] ? player.body.team : null;
                 chats[id].messages.unshift({ message, team: chatTeam, expires: Date.now() + Config.chat_message_duration, id: global.chatID++ });
-                
+
                 if (chats[id].messages.length > 3) chats[id].messages.length = 3;
 
                 this.chatLoop();
@@ -1228,11 +1186,9 @@ class socketManager {
                 socket.resumeToken = m[0];
                 if (process.env.RESUME_DEBUG) console.log('[RESUME] token set on', String(socket.id).slice(0, 6));
                 if (Config.dig_royale) {
-                    // The same tab is back while its old socket still looks
-                    // open (a half-open drop: the heartbeat takes minutes to
-                    // notice). Retire the old one now, as the accounts'
-                    // newest-session rule does, so its raid is saved for this
-                    // claim instead of a fresh spawn next to an orphaned tank.
+                    // Same tab is back while its old socket still looks open (half-open drop;
+                    // the heartbeat takes minutes to notice). Retire the old one now, like the
+                    // accounts' newest-session rule, so its raid is saved for this claim.
                     const myAcct = (socket.account && socket.account.id) || null;
                     for (const o of this.clients.slice()) {
                         if (o === socket || o.resumeToken !== m[0]) continue;
@@ -1682,9 +1638,8 @@ class socketManager {
 
         let upgrades = [];
         let skippedUpgrades = [0];
-        // Tutorial: if the current step does not teach evolving, the menu is
-        // not merely inert - it is absent. Showing clickable tanks whose
-        // clicks are refused reads as a broken game, not a locked lesson.
+        // Tutorial: if the current step does not teach evolving, hide the menu;
+        // clickable tanks whose clicks are refused read as a broken game.
         const tutGate = Config.tutorial ? require('../tutorialSession.js') : null;
         const tutHideMenu = tutGate && (!tutGate.allows(b, 'upgrade') || tutGate.borrowing(b));
         for (let i = 0; i < b.upgrades.length; i++) {
@@ -1928,9 +1883,8 @@ class socketManager {
         if (socket.player.loc && !global.spawnPoint && !Config.clan_wars) loc = socket.player.loc;
 
         // Tutorial: every learner owns a plot and always spawns in it, so the
-        // outpost/vault/rock patch a lesson points at are always their own.
-        // This also skips the forward-respawn logic below - a tutorial death
-        // should always put you back at your own plot's start, never on a pad.
+        // outpost/vault/rock patch a lesson points at are always their own. This
+        // skips forward respawns: a tutorial death returns you to your plot's start.
         let tutorialHome = null;
         if (Config.tutorial) {
             const session = require('../tutorialSession.js');
@@ -1954,9 +1908,6 @@ class socketManager {
             }
         }
 
-
-
-
         if (!tutorialHome && !global.spawnPoint && !Config.clan_wars &&
             global.gameManager.terrainGrid && socket.lastDeathX !== undefined) {
             const pads = require('../terrain/outposts.js').ownedBy(player.team);
@@ -1974,15 +1925,14 @@ class socketManager {
                     const a = Math.random() * Math.PI * 2;
                     loc = { x: bestPad.x + Math.cos(a) * bestPad.r * 0.4,
                             y: bestPad.y + Math.sin(a) * bestPad.r * 0.4 };
-                    
+
                     global.gameManager.terrainGrid.pushCircleFromVoronoi(loc, 60);
                 }
             }
         }
 
-        // always spawn a fresh tank - a disconnected player's body is never
-        // handed to a new socket (previously keyed by ip, so anyone on the
-        // same network could inherit another player's tank)
+        // always spawn a fresh tank: a disconnected player's body is never handed
+        // to a new socket
         const body = new Entity(loc);
         body.protect();
         body.isPlayer = true;
@@ -2011,9 +1961,7 @@ class socketManager {
         player.body = body;
         body.socket = socket;
         body.hasOperator = socket.status.hasOperator;
-        
-        
-        
+
         if (Config.dig_wars || Config.dig_royale) require('../terrain/gems.js').initSatchel(body);
         socket.status.daily_tank_watched_ad = false;
         socket.status.daily_tank_watched_ad_client = false;
@@ -2113,9 +2061,6 @@ class socketManager {
         if (!doNotTakeAction.dontOverrideRecords) {
             let begin = util.time();
             player.records = () => [
-                
-                
-                
                 global.gameManager.terrainGrid
                     ? ((socket && socket.gemDeathScore) !== undefined && socket.gemDeathScore !== null
                         ? socket.gemDeathScore
@@ -2147,9 +2092,7 @@ class socketManager {
                 (socket && socket.raidDeathStreak) | 0,
                 (socket && socket.raidDeathDrillLost) | 0,
                 (socket && socket.gemDeathInsured) | 0,
-                // raid: ms until the server lets you back in (15 s, 7 s with
-                // Second Wind); the client counted a fixed 15 s, so a bought
-                // Second Wind never shortened anything
+                // raid: ms until the server lets you back in (15 s, 7 s with Second Wind)
                 (socket && socket.royaleRespawnAt ? Math.max(0, socket.royaleRespawnAt - Date.now()) : 0) | 0,
             ];
         }
@@ -2209,9 +2152,9 @@ class socketManager {
                  Math.ceil(65535 * data.health),
                  Math.round(65535 * data.shield),
                  Math.round(255 * data.alpha),
-                 // NOTE: hit feedback fields are appended AFTER alpha on purpose.
-                 // perspective() rewrites this array by hardcoded index (alpha at
-                 // 14 here, 18 below), so nothing may be inserted before it.
+                 // Hit feedback fields are appended AFTER alpha on purpose: perspective()
+                 // rewrites this array by hardcoded index (alpha at 14 here, 18 below), so
+                 // nothing may be inserted before it.
                  Math.round(255 * (data.hitFlash || 0)),
                  data.maxHealth || 0
             );
@@ -2406,14 +2349,11 @@ class socketManager {
             remove: e => { nearby.delete(e.id) },
             check: (e) => { return check(socket.camera, e); },
             gazeUpon: (updateCam = false) => {
-                // Flow control. Snapshots are full state, so one the player
-                // cannot take yet is better skipped than queued. With no limit,
-                // a slow PC or a thin link let seconds of stale snapshots pile
-                // up in the socket and the proxy in front of it, and every ping
-                // and input waited behind them (7000ms pings from South
-                // America). The client acks each snapshot with 'd'; allow about
-                // one base round trip in flight plus slack, and never go
-                // silent for more than a second.
+                // Flow control. Snapshots are full state, so one the player cannot take yet
+                // is better skipped than queued; otherwise stale snapshots pile up in the
+                // socket and proxy and every ping and input waits behind them. The client
+                // acks each snapshot with 'd'; allow about one base round trip in flight
+                // plus slack, and never go silent for more than a second.
                 const flow = socket.flow, nowFlow = util.time();
                 if (!updateCam && flow.sent.length &&
                     nowFlow - flow.sent[0] > (flow.rttMin ?? 300) + FLOW_SLACK_MS &&
@@ -2446,8 +2386,6 @@ class socketManager {
 
                             if (Config.clan_wars) Config.clan_wars_ft.remove(player.body);
 
-                            
-                            
                             socket.lastDeathX = player.body.x;
                             socket.lastDeathY = player.body.y;
 
@@ -2590,10 +2528,7 @@ class socketManager {
                         if (!Config.load_all_mockups && entity.index) {
                             mockupsToSend.add(entity.index);
                             // runtime-attached turrets/props (gem satchels,
-                            
-                            
-                            
-                            
+
                             if (entity.turrets) {
                                 for (const t of entity.turrets.values()) {
                                     if (t.index) mockupsToSend.add(t.index);
@@ -2729,8 +2664,7 @@ class socketManager {
                 return { update, reset };
             }
         };
-        
-        
+
         let isGemMode = () => !!global.gameManager.terrainGrid;
         let lbValue = (ent) => isGemMode()
             ? (ent.carriedGems | 0) + (((ent.socket ? ent.socket.gemBanked : ent.botBanked) || 0) | 0)
@@ -2747,8 +2681,7 @@ class socketManager {
                         top = j;
                     }
                 }
-                
-                
+
                 if (top === undefined || (is === 0 && !isGemMode())) break;
                 let entry = list[top];
                 let color = entry.leaderboardColor ? entry.leaderboardColor + " 0 1 0 false"
@@ -2832,9 +2765,8 @@ class socketManager {
         });
         let minimapTeams = new Delta(3, args => {
             let all = [];
-            // Tutorial: every learner is on TEAM_BLUE, so the team minimap is
-            // the one place they would still see each other - as friendly dots
-            // scattered across arenas they cannot reach. args[1] is the
+            // Tutorial: every learner is on TEAM_BLUE, so the team minimap would show
+            // them to each other across arenas they cannot reach. args[1] is the
             // viewer's arena; anything outside it is filtered out.
             const plot = args[1];
             const tutPlots = Config.tutorial ? require('../terrain/tutorialPlots.js') : null;
@@ -3008,8 +2940,7 @@ class socketManager {
                 }
             }
             // Leader arrow: the #1 player's live position, resolved once per
-            
-            
+
             let leaderID = -1, leaderX = 0, leaderY = 0, leaderTeam = 0;
             {
                 const topId = global.gameManager.room.topPlayerID;
@@ -3021,10 +2952,10 @@ class socketManager {
                     leaderTeam = leader.team | 0;   
                 }
             }
-            
+
             const opState = gemMode ? JSON.stringify(
                 require('../terrain/outposts.js').stateSnapshot()) : null;
-            
+
             const ccState = gemMode ? JSON.stringify(
                 require('../terrain/coreChambers.js').stateSnapshot()) : null;
             for (let socket of subscribers) {
@@ -3264,8 +3195,7 @@ class socketManager {
         socket.makeView = () => { socket.view = this.eyes(socket); };
         socket.makeView();
 
-        // X-Forwarded-For is only believed from TRUSTED_PROXIES (lib/clientIp.js);
-        // the old header sniffing let any client pick its own IP.
+        // X-Forwarded-For is only believed from TRUSTED_PROXIES (lib/clientIp.js).
         socket.ip = clientIp(req);
         if (!socket.ip) {
             return socket.kick("Missing IP.");

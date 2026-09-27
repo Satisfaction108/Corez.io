@@ -283,7 +283,6 @@ Class.menu_mysticals = makeMenu("Mysticals", {upgrades: [
     'witch',
 ], color: "gold", boxColor: "gold", shape: 4})
 
-
 if (Config.classic_food) {
     Class.menu_mysticals.UPGRADES_TIER_0.splice(5, 0, 'sangoma', 'preacher', 'herbalist')
     Class.shaman.COLOR = "magenta"

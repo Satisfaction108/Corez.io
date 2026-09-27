@@ -4,9 +4,8 @@ import { gui } from "./socketinit.js";
 import { gameSound } from "./sound.js";
 
 // ── Corez.io training ──────────────────────────────────────────────────
-// Nine short chapters, each a handful of do-it steps, with a chapter list so
-// it never feels endless. Players can jump to any chapter, skip one, or skip
-// the lot, and a return visit picks up where they left off (localStorage).
+// Nine chapters of do-it steps. Players can jump to, skip, or resume any
+// chapter (progress in localStorage).
 //
 //   1 Basics          drive, aim, shoot, auto-fire / auto-spin, the map, keys
 //   2 Your tank       stat groups by doing, pick an upgrade, try a Destroyer
@@ -18,25 +17,20 @@ import { gameSound } from "./sound.js";
 //   8 Ranked          ranks, placement, gemdust (guests: sign in one-liner)
 //   9 Final fight     beat the Rookie, then "You're ready" → Play
 //
-// The card is DOM (tutorial.css, injected from here so the menu stylesheet is
-// untouched). World markers are canvas, drawn from drawGameplay() so they share
-// the camera; HUD highlights are canvas too, drawn at the very end of the frame
-// from the game's own clickable regions.
+// The card is DOM (tutorial.css, injected from here). World markers are canvas
+// drawn from drawGameplay() so they share the camera; HUD highlights are drawn
+// at the end of the frame from the game's clickable regions.
 //
-// Nothing can soft-lock: every do-it step has an idle hint, a "Skip this step"
-// link once you look stuck and a hard give-up that stages the outcome on the
-// server. Info steps have a "Got it" button. Each chapter stages everything it
-// needs on entry, so starting from any chapter works. The server keeps its own
-// promises too (tutorialSession.tickSafety: health floor while a bot or boss
-// is up, fighters and bosses that wilt if the fight drags on).
+// No soft-locks: every do-it step has an idle hint, a "Skip this step" link and
+// a give-up timer that stages the outcome on the server. Each chapter stages
+// what it needs on entry. Server-side safety lives in tutorialSession.tickSafety.
 
-// home.js reads the same key to decide whether to show the "new? start here"
-// badge. Kept at _v1 so people who already finished are not sent back.
+// Shared with home.js (the "new? start here" badge). Bumping the version
+// re-runs the tutorial for everyone.
 const STORAGE_KEY = "digRoyaleTutorialDone_v1";
 // Chapter progress for resuming: { ch: index to resume at, done: [chapter ids] }
 const PROGRESS_KEY = "dwTutProgress_v2";
-// Set right before we leave for the menu when the learner pressed Play; home.js
-// sees it and starts a real game as soon as the menu is ready.
+// Set when leaving via Play; home.js then starts a real game once the menu is ready.
 const PLAY_AFTER_KEY = "dwPlayAfterTutorial";
 
 // socketinit.js pings this on every terrain rock event.
@@ -132,10 +126,10 @@ function rockAlive(t, k) {
     return !!t && t._cellPolys.has(k) && !t._rockDead.has(k);
 }
 
-// ── staying inside our own arena ───────────────────────────────────────
-// The room holds one arena per learner, but the terrain renderer and the
-// vault/outpost lists are room-wide. Every world lookup goes through inArena()
-// so no marker ever points into a neighbour's arena.
+// ── arena bounds ───────────────────────────────────────────────────────
+// The room holds one arena per learner, but terrain and the vault/outpost
+// lists are room-wide. World lookups go through inArena() so no marker points
+// into a neighbour's arena.
 function arena() {
     const p = global.tutorialPlot;
     return (p && p.arena) ? p.arena : null;
@@ -155,8 +149,8 @@ const px = () => global.player.renderx;
 const py = () => global.player.rendery;
 const distTo = (p) => p ? Math.hypot(p.x - px(), p.y - py()) : Infinity;
 
-// A good rock: ore-bearing if asked, at a comfortable screen-relative
-// stand-off so you have to aim at it rather than bump into it.
+// A rock (ore-bearing if asked) at a screen-relative stand-off, so it has to be
+// aimed at rather than bumped into.
 function acquireRock(wantOre) {
     const t = terr();
     if (!t) return null;
@@ -224,8 +218,8 @@ const signedIn = () => {
 };
 
 // ── server commands ────────────────────────────────────────────────────
-// Only honoured by the tutorial server (TUT case in sockets.js); inert on a
-// live server. Everything goes as strings so "0" never reads as truthy junk.
+// Only honoured by the tutorial server (TUT case in sockets.js). Args are sent
+// as strings so 0 is not dropped as falsy.
 function tut(cmd, ...args) {
     try {
         global.canvas.socket.talk("TUT", cmd,
@@ -303,8 +297,8 @@ function kitKeyFor(id) {
     return ["KEY_KIT_1", "KEY_KIT_2", "KEY_KIT_3"][Math.max(0, i)] || "KEY_KIT_1";
 }
 
-// ── our base (outpost) ─────────────────────────────────────────────────
-// global.outpostState is room-wide; match on the site at our arena's spot.
+// ── the learner's base (outpost) ───────────────────────────────────────
+// global.outpostState is room-wide; match on the site at this arena's spot.
 function baseState() {
     const mine = (global.tutorialPlot || {}).outpost;
     if (!mine) return null;
@@ -416,10 +410,9 @@ function snapshot() {
     if (s && s.stats) state.base.stat = groupAmount(s.stats);
 }
 
-// Points placed in the current stat step's bars. Measured against a baseline
-// that only ever moves DOWN: the chapter's stat reset reaches us a moment
-// after the step has started, and without this the learner would owe back
-// every point the reset took away.
+// Points placed in the current stat step's bars. The baseline only moves down:
+// the chapter's stat reset arrives after the step starts, and points it removes
+// must not count against the learner.
 function statGain() {
     const s = stepDef();
     if (!s || !s.stats) return 0;
@@ -427,9 +420,9 @@ function statGain() {
     if (now < state.base.stat) state.base.stat = now;
     return now - state.base.stat;
 }
-// app.js asks this per bar: dim and refuse clicks on every bar the current
-// step is not teaching, and on all of them once its points are placed. The
-// server enforces the same thing; this is so the locked bars LOOK locked.
+// app.js asks this per bar: bars the step is not teaching (or all of them once
+// its points are placed) are dimmed and refuse clicks. The server enforces the
+// same rule; this makes it visible.
 window.dwTutStatOpen = (i) => {
     if (!state.running) return true;
     const s = stepDef();
@@ -452,7 +445,7 @@ const kc = (id) => `{{${id}}}`;
 //   target()   world marker for this frame, or null
 //   progress() 0..1, drives the bar and the idle-hint timer
 //   done()     true = step complete
-//   giveUp     ms before we stage the outcome ourselves and move on
+//   giveUp     ms before the outcome is staged via fallback() and the step moves on
 //   fallback() what "staging the outcome" means for this step
 //   omit()     leave the step out on this device
 const CHAPTERS = [
@@ -555,8 +548,7 @@ const CHAPTERS = [
         // Fresh build: every point back in hand, the upgrade menu shut.
         prep: () => {
             tut("untry");
-            // Back to the starting tank too: a replay should not start as
-            // whatever you evolved into last time.
+            // A replay starts from the base tank, not last time's evolution.
             tut("basetank");
             tut("stats", "0,0,0,0,0,0,0,0,0,0,0");
             tut("lock", "none");
@@ -597,8 +589,7 @@ const CHAPTERS = [
                 praise: "there we go",
                 progress: () => clamp(statGain() / 2, 0, 1),
                 done: (p) => p >= 1 || groupRoom(MINE_STATS) === 0,
-                // The rest goes on a sensible build so the next chapters are
-                // not played half-built. They can respec in a real raid.
+                // Spend the rest on a sensible build for the later chapters.
                 onDone: () => tut("spendrest"),
                 fallback: () => tut("spendrest"),
                 giveUp: 45000,
@@ -772,9 +763,8 @@ const CHAPTERS = [
                 hint: "Sit next to it and keep shooting. This one breaks fast.",
                 praise: "yours now",
                 onEnter: () => {
-                    // The chapter prep already reset it. Resetting here too
-                    // raced the owner flag: the old "yours" could still be on
-                    // screen for a frame and pass the step.
+                    // No reset here (prep already did it): a second reset races
+                    // the owner flag, and a stale "yours" frame would pass the step.
                     tut("openbase");
                     tut("heal");
                     const b = basePad();
@@ -834,9 +824,8 @@ const CHAPTERS = [
         blurb: "Spending banked gems on stuff that helps.",
         prep: () => {
             global.shop.dismissed = false;
-            // Nothing bought yet, even on a replay: a Drill I from last time
-            // makes "buy Drill I" impossible, a running magnet can't be
-            // bought twice and a full kit refuses the Medkit.
+            // Clear purchases for replays: owned items can't be re-bought and
+            // a full kit refuses the Medkit.
             tut("shopreset");
             if ((global.gems.banked | 0) < 2500) tut("banked", 2500);
         },
@@ -1310,7 +1299,7 @@ function completeStep() {
     ui.celebrate(s, lastInChapter);
 }
 
-// Stage the step's outcome ourselves, then count it done.
+// Stage the step's outcome on the server, then count it done.
 function stepFallback() {
     const s = stepDef();
     if (!s || state.phase !== "active") return;
@@ -1335,8 +1324,7 @@ function enterFinal() {
     tut("clear");
     tut("heal");
     tut("untry");
-    // Count it as done the moment you see the send-off, even if the tab is
-    // closed from here: they have seen the whole loop (or chose to skip it).
+    // Reaching the send-off counts as completion, even if the tab closes now.
     try { localStorage.setItem(STORAGE_KEY, "1"); } catch (e) { }
     state.progress.ch = 0;
     saveProgress();
@@ -1448,9 +1436,9 @@ function tickStormDrill() {
 }
 
 // ── input ──────────────────────────────────────────────────────────────
-// Toggles (auto-fire, auto-spin, override) are server-side with nothing
-// mirrored on the client, so we watch the packets the game sends instead of
-// guessing at keys: that covers remapped keys and the phone buttons alike.
+// Toggles (auto-fire, auto-spin, override) are server-side and not mirrored on
+// the client, so outgoing packets are watched instead of keys. That covers
+// remapped keys and phone buttons.
 function watchSocket() {
     const sock = global.canvas && global.canvas.socket;
     if (!sock || sock._tutWatched || typeof sock.talk !== "function") return;
@@ -2063,9 +2051,8 @@ const ui = {
         menu.querySelector(".dwt-go").addEventListener("click", (e) => {
             e.stopPropagation();
             if (this.menuResume) {
-                // The step was paused while the list was up: push its clocks
-                // on by the pause, or the hint, the skip link and the
-                // give-up fallback would all fire the moment it resumes.
+                // Shift the step's clocks by the pause, or the hint, skip link
+                // and give-up would all fire on resume.
                 const paused = T() - (this.menuAt || T());
                 state.stepAt += paused; state.subAt += paused; state.lastProgAt += paused;
                 if (state.settleAt) state.settleAt += paused;
@@ -2116,9 +2103,8 @@ const ui = {
         const fit = Math.min(1, vw / 640, vh / (short ? 600 : 560));
         const s = clamp(scale * fit, 0.58, 1.25);
         const compact = !!(global.shop && global.shop.onPad && !global.shop.dismissed);
-        // Runs every frame: only touch the DOM when something changed. A
-        // custom property written on <html> every frame restyles the whole
-        // page every frame, even when the value is the same.
+        // Runs every frame: only touch the DOM on change. Writing a custom
+        // property on <html> restyles the whole page, even with the same value.
         const key = s.toFixed(3) + (short ? "s" : "") + (global.mobile ? "m" : "") + (compact ? "c" : "");
         if (key === this._layoutKey) return;
         this._layoutKey = key;
@@ -2259,8 +2245,8 @@ function handBackFocus() {
     } catch (e) { }
 }
 
-// Tell the server we are mid-tutorial so gems from rocks we break are held
-// for us. Re-sent because respawning gives the player a fresh body.
+// Tells the server the player is mid-tutorial so gems from broken rocks are
+// held for them. Re-sent because respawning gives a fresh body.
 let tutFlagAt = 0;
 function sendTutorialFlag(on) {
     try { global.canvas.socket.talk("TUT", on ? 1 : 0); } catch (e) { }
@@ -2320,9 +2306,8 @@ export function replayTutorial() { open(); }
 let startedOnce = false;
 // Called every frame from app.js right after drawGUI().
 export function hook() {
-    // Only ever run on the tutorial server: global.tutorialPlot arrives in a
-    // TUTI packet only that server sends. If the tutorial server was
-    // unreachable and the client fell back to a live game, nothing starts.
+    // Only runs on the tutorial server: global.tutorialPlot comes from a TUTI
+    // packet only that server sends, so a fallback to a live game starts nothing.
     if (!startedOnce && global.tutorialMode && global.tutorialPlot &&
         global.gameStart && !global.died && terr()) {
         startedOnce = true;

@@ -3,7 +3,7 @@
 //   node scripts/test/spawnReach.test.js
 //
 // Builds the live map's lattice (13x13 tiles, royale layout), then hand-makes
-// the pockets the old spawn picker dropped people into (a cell ringed by
+// the pockets a naive spawn picker can drop players into (a cell ringed by
 // shard / emerald / regrowing rock, a mined-out cell about to close, a way
 // out that leaves the zone) and checks the rule, the exit-tunnel planner and
 // the storm-rescue planner on each.

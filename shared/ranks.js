@@ -61,12 +61,11 @@
     const KILL_DUST_MILLI = { player: 250, bot: 125 };
     const DAILY_SOFT_CAP_MILLI = 50000;
 
-    // In-raid rewards, all in one place to tune. dustMilli goes to account
-    // holders through the same pending pot as gem and kill dust (daily soft
-    // cap applies, ledger kind 'other', a DU pop on the HUD); pts are raid
-    // points on the board score (s.extra), so they count toward the rank
-    // basis and turn into RP like everything else. Kills keep
-    // KILL_DUST_MILLI above; the boss's own score is bosses.js kind.score.
+    // In-raid rewards. dustMilli goes to account holders through the same
+    // pending pot as gem and kill dust (daily soft cap, ledger kind 'other',
+    // a DU pop on the HUD); pts go on the board score (s.extra) and count
+    // toward the rank basis. Kills use KILL_DUST_MILLI above; the boss's own
+    // score is bosses.js kind.score.
     const REWARDS = Object.freeze({
         chest: Object.freeze({
             common: Object.freeze({ dustMilli: 50, pts: 25 }),     // 0.05 gemdust

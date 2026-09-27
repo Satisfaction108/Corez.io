@@ -52,7 +52,7 @@ const MazeZone = class {
           return [null, [{ x: this.offset.x, y: this.offset.y, size: 2 }]]
         else
           return [null, this.blocks()]*/
-  
+
       let output = []
       let shaveable = true
       let shaved = false
@@ -140,7 +140,7 @@ const MazeZone = class {
       ].join('\n')
     }
   }
-  
+
 const MazeGenerator = class {
     constructor(type) { // TODO new config format
       this.type = type
@@ -165,7 +165,7 @@ const MazeGenerator = class {
           r.map((r, y) => [x, y, r])
            .filter(([x, y, r]) => !r))
       ).map(([x, y]) => [x, y, x === 0 || x === this.width - 1 || y === 0 || y === this.height - 1])
-  
+
       let work = true
       while (work) {
         work = false
@@ -1257,7 +1257,7 @@ const MazeGenerator = class {
     }
     placeMinimal() {
       let bestSquares = null
-  
+
       for (let i = 0; i < 10; i++) {
         let trial = this.runTrial()
         if (!trial) continue
@@ -1267,13 +1267,13 @@ const MazeGenerator = class {
           continue
         }
       }
-  
+
       for (let i = 0; !bestSquares && i < 500; i++) {
         let trial = this.runTrial()
         if (!trial) continue
         bestSquares = trial.intoSquares()
       }
-  
+
       return {
         squares: bestSquares,
         width: this.width,

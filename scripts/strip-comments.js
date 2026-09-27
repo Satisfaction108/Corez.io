@@ -5,16 +5,16 @@ function stripComments(code) {
     let out = '';
     let i = 0;
     const n = code.length;
-    
+
     let state = 'code'; // code, sq, dq, tpl, lc, bc
     let tplDepth = 0;
     let tplExpr = false;
     let regexAllowed = true;
-    
+
     while (i < n) {
         const c = code[i];
         const next = code[i + 1];
-        
+
         if (state === 'code') {
             // line comment
             if (c === '/' && next === '/') {
@@ -184,7 +184,7 @@ function stripComments(code) {
             i++;
         }
     }
-    
+
     // clean up: collapse multiple blank lines left by removed block comments
     out = out.replace(/\n{3,}/g, '\n\n');
     return out;

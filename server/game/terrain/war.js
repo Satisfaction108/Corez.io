@@ -1,9 +1,6 @@
-// The team war layer for Dig Wars.
-//
-// Every gem a miner banks also feeds their team's war effort (war.add is
-// called from vault.js and outposts.js on each credited chunk). Holding an
-// outpost adds a slow trickle. The HUD bar is a live blue/red score - there
-// is no win target and the round never ends from this layer.
+// Team war score for Dig Wars. Every banked gem feeds the team total (war.add
+// from vault.js and outposts.js); holding an outpost adds a slow trickle.
+// The HUD bar is a live blue/red score with no win target.
 
 let state = null;
 

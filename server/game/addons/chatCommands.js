@@ -284,11 +284,10 @@ let commands = [
                 // Tell the command sender
                 socket.talk('m', Config.popup_message_duration, "Successfully reloaded all definitions.");
 
-
                 // Erase mockups so it can rebuild.
                 mockupData = [];
                 mockupMap = {};
-                
+
                 // Load all mockups if enabled in configuration
                 if (Config.load_all_mockups) global.loadAllMockups(false);
 
@@ -352,12 +351,10 @@ global.addChatCommand = function (command) {
     commands.push(command);
 }
 
-
 /** CHAT MESSAGE EVENT **/
 module.exports = ({ Events }) => {
-    // Dig Wars: $ commands are disabled for now (this also removes the
-    // alternate leaderboards — everyone sees the one server leaderboard).
-    // Flip COMMANDS_ENABLED to bring them all back.
+    // Dig Wars: $ commands are disabled (which also removes the alternate
+    // leaderboards). Flip COMMANDS_ENABLED to bring them back.
     const COMMANDS_ENABLED = false;
     Events.on("chatMessage", ({ socket, message, preventDefault, gameManager }) => {
         if (COMMANDS_ENABLED && message.startsWith(prefix)) {

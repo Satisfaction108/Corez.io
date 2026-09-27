@@ -1,12 +1,11 @@
 // POST /discord/interactions: the Discord bot's HTTP interactions endpoint.
 //
-// Off (404) unless DISCORD_APP_ID and DISCORD_PUBLIC_KEY are set. Every
-// request must carry a valid Ed25519 signature (X-Signature-Ed25519 over
-// X-Signature-Timestamp + raw body) with a timestamp within 5 minutes;
-// anything else is 401, which is what Discord probes for when the endpoint
-// URL is saved. PING -> PONG (type 1); slash commands -> discord/commands.js.
-// Served while accounts are off too (alwaysOn), so the endpoint stays
-// verified; commands then answer that accounts are offline.
+// 404 unless DISCORD_APP_ID and DISCORD_PUBLIC_KEY are set. Requests need a
+// valid Ed25519 signature (X-Signature-Ed25519 over X-Signature-Timestamp +
+// raw body) within 5 minutes, else 401 (Discord probes this when the URL is
+// saved). PING -> PONG (type 1); slash commands -> discord/commands.js.
+// Served with accounts off too (alwaysOn) so the endpoint stays verified;
+// commands then answer that accounts are offline.
 'use strict';
 
 const config = require('../config');

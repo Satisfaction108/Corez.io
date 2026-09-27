@@ -53,12 +53,11 @@ module.exports = {
             }
         },
         {
-            // DUOS. The same Battle Royale with teams of two (parties, fill,
-            // shared bases, team standings: game/duo/). Always its own worker
-            // thread on a loopback port; the main server splices it through
-            // at <host>/duo (HTTP upgrade), like the tutorial, because the box
-            // exposes one public port. royale_duos is copied onto Config in
-            // that worker only, so the solo raid never sees it.
+            // DUOS: the Battle Royale with teams of two (parties, fill, shared bases,
+            // team standings: game/duo/). Always its own worker on a loopback port,
+            // spliced through at <host>/duo (HTTP upgrade) like the tutorial, since the
+            // box exposes one public port. royale_duos is copied onto Config in that
+            // worker only, so the solo raid never sees it.
             share_client_server: false,
             host: publicHost ? publicHost + ':' + (parseInt(process.env.DUO_PORT) || 3102) : ('localhost:' + (parseInt(process.env.DUO_PORT) || 3102)),
             port: parseInt(process.env.DUO_PORT) || 3102,
@@ -100,22 +99,15 @@ module.exports = {
         //     }
         // },
         {
-            // TUTORIAL. Deliberately `unlisted` so it never appears on the
-            // region/server picker - the only way in is the homepage Tutorial
-            // button, which connects to this id directly. One room split into
-            // isolated learner plots (see game/terrain/tutorialPlots.js), so
-            // the cap is the number of plots, not a balance choice.
-            // NEVER share the main process. Only one server may do that (see
-            // "Only one server can be loaded via through the main server" in
-            // server.js) and that slot belongs to the live game - claiming it
-            // here takes the whole site down. The tutorial always runs as its
-            // own worker on its own port.
+            // TUTORIAL: `unlisted`, so the only way in is the homepage Tutorial button,
+            // which connects to this id directly. One room split into isolated learner
+            // plots (game/terrain/tutorialPlots.js), so the cap is the number of plots.
+            // Never share the main process: that one slot belongs to the live game.
             share_client_server: false,
 
-            // PUBLIC_HOST carries no port, so it must be appended here or the
-            // client dials the main domain - i.e. the live game - instead.
-            // NOTE: this only works once port 3101 is reachable from outside;
-            // by default the host proxies only the main port.
+            // PUBLIC_HOST carries no port, so append it here or the client dials the
+            // live game instead. Only works if port 3101 is reachable from outside; by
+            // default the host proxies only the main port.
             host: publicHost ? publicHost + ':3101' : ('localhost:' + (parseInt(process.env.TUT_PORT) || 3101)),
             port: parseInt(process.env.TUT_PORT) || 3101,
             id: 'tut',
@@ -181,18 +173,16 @@ module.exports = {
     level_cap_cheat: 45,
 
     // DIG WARS: everyone spawns straight at level 45, full size, with all
-    // skill points — progression lives in the gem economy, not levels.
+    // skill points; progression lives in the gem economy, not levels.
     spawn_at_max_level: true,
-    // The old level-up paths (options-menu checkbox + 'L' key) — disabled,
-    // not removed. Flip to true to bring manual leveling back.
+    // Manual leveling (options-menu checkbox + 'L' key); off in Dig Wars.
     manual_level_up: false,
-    // Incognito is gone in Dig Wars — wealth is public by design. The
-    // client UI no longer offers it; this also ignores the spawn flag.
+    // No incognito in Dig Wars: wealth is public by design. Also ignores the
+    // spawn flag.
     allow_incognito: false,
 
     // DIG WARS: team war effort. Banking gems (and holding outposts) feeds a
-    // live blue/red score bar. There is no win target - the bar is just a
-    // running tally of who has contributed more this match.
+    // live blue/red score bar, a running tally with no win target.
     war_enabled: true,
     war_target: parseInt(process.env.WAR_TARGET, 10) || 25000,
     war_outpost_trickle: 6,    // war points per second per owned outpost
@@ -210,9 +200,8 @@ module.exports = {
     bot_start_level: 100,
     bot_skill_upgrade_chances: [1, 1, 3, 4, 4, 4, 4, 2, 1, 1, 3],
     bot_class_upgrade_chances: [1, 5, 20, 37, 37],
-    // Bots use procedurally generated names that are indistinguishable from
-    // real players. Leave the prefix empty so the leaderboard stays clean.
-    // The soak harness and debug overlay provide bot identification instead.
+    // Bots get generated names indistinguishable from players' and no prefix;
+    // the soak harness and debug overlay identify bots instead.
     bot_name_prefix: "",
     // Bots count on the live global/default leaderboard. The players-only
     // board remains explicitly human-only; no bot records are persisted.
@@ -221,9 +210,8 @@ module.exports = {
     bot_soak_mode: process.env.BOT_SOAK_MODE === "true",
     bot_soak_report_path: process.env.BOT_SOAK_REPORT || "",
     bot_soak_duration_ms: Math.max(0, (parseInt(process.env.BOT_SOAK_SECONDS, 10) || 0) * 1000),
-    // NVIDIA NIM's hosted OpenAI-compatible endpoint is the default provider.
-    // The 8B instruct model keeps chat inexpensive while still handling short
-    // casual conversations well; both values remain overridable for testing.
+    // Bot chat provider: NVIDIA NIM's hosted OpenAI-compatible endpoint, with
+    // the inexpensive 8B instruct model. Both are overridable.
     bot_chat_ai_enabled: process.env.BOT_CHAT_AI !== "false",
     bot_chat_api_url: process.env.BOT_CHAT_API_URL || "https://integrate.api.nvidia.com/v1/chat/completions",
     bot_chat_model: process.env.BOT_CHAT_MODEL || "meta/llama-3.1-8b-instruct",

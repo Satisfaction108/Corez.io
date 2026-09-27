@@ -1,5 +1,3 @@
-
-
 const { ORE } = require('./terrainGrid.js');
 
 const DEPOSIT_VALUE = {
@@ -32,9 +30,8 @@ const DEATH_DROP   = 0.85;
 
 const BANK_DEATH_LOSS = 0.4;
 const MAGNET_BONUS = 110;
-// A full gem radius of grab slack: at 0.6 a gem sliding past a moving tank
-// could stay just outside the touch ring for its whole flyby, which read as
-// "the gem passed straight through me".
+// A full gem radius of grab slack; less lets a gem sliding past a moving tank
+// stay just outside the touch ring for its whole flyby.
 const PICKUP_SLOP  = 1.0;
 
 const GEM_MAX_SPEED = 6;
@@ -55,21 +52,17 @@ function spawnGem(x, y, value, cls, size, vx = 0, vy = 0, ore = null) {
     o.coreSize = o.SIZE = size;
     o.velocity.x = vx;
     o.velocity.y = vy;
-    
-    
-    
+
     o.RANGE = o.range = 5400 + Math.random() * 900;
     o.gemBornAt = Date.now();
-    // every gem turns at its own pace and direction, from its own angle, so a
-    // pile of them never spins in lockstep
+    // random spin speed/direction so a pile never spins in lockstep
     o.facing = Math.random() * Math.PI * 2;
     o.gemSpin = (0.008 + Math.random() * 0.026) * (Math.random() < 0.5 ? -1 : 1);
     o.facingTypeArgs = { speed: o.gemSpin };
-    // which way it curls in when a magnet grabs it, so a haul spirals in
-    // from all sides instead of forming a single file
+    // curl direction under a magnet, so a haul spirals in instead of queuing
     o.gemSwirl = (0.35 + Math.random() * 0.55) * (Math.random() < 0.5 ? -1 : 1);
     o.refreshBodyAttributes();
-    
+
     const facetCls = FACET_CLASS[cls];
     if (facetCls) {
         const facet = new Prop([10.5, 0, -1.2, 0, 1], o);
@@ -80,10 +73,9 @@ function spawnGem(x, y, value, cls, size, vx = 0, vy = 0, ore = null) {
     return o;
 }
 
-// Pity: nobody whiffs the opening. A tank that broke 3+ rocks with no payout
-// and is still holding pocket change forces its next dry break to pay
-// copper. gemsMined++ on payout resets the drought automatically; fresh
-// bodies start fresh. Lobby excluded (bursts don't pay there anyway).
+// Pity: a tank that broke 3+ rocks with no payout and carries under 60 turns
+// its next dry break into copper. gemsMined++ on payout resets the drought.
+// Lobby excluded (bursts don't pay there anyway).
 function pityBurst(rock, breaker) {
     if (!rock || rock.ore || rock.growing) return false;
     if (!breaker || breaker.isDead?.() || breaker.royaleLobby) return false;
@@ -101,20 +93,17 @@ function pityBurst(rock, breaker) {
 
 function spawnOreBurst(rock, breaker) {
     if (!rock.ore) return;
-    // BR lobby is pure destruction for fun - no gems until the match starts.
+    // no gems in the BR lobby
     if (breaker && breaker.royaleLobby) return;
     const cls = ORE_CLASS[rock.ore];
     const deposits = rock.deposits && rock.deposits.length
         ? rock.deposits
         : [{ wx: rock.wx, wy: rock.wy, wr: 9, big: false }];
     for (const d of deposits) {
-        
-        
         let value = d.big && rock.ore === ORE.SHARD ? SHARD_BIG : DEPOSIT_VALUE[rock.ore];
         try { value = Math.round(value * require('./raidMods.js').gemValueMult(rock.ore)); } catch { /* */ }
         const bigCls = rock.ore === ORE.EMERALD ? 'gemPickupEmeraldCore' : 'gemPickupShardCore';
-        
-        
+
         const size  = Math.max(14, Math.min(34, d.wr));
         const ang   = breaker && breaker.x !== undefined
             ? Math.atan2(breaker.y - d.wy, breaker.x - d.wx)
@@ -122,18 +111,12 @@ function spawnOreBurst(rock, breaker) {
         const gem = spawnGem(d.wx, d.wy, value, d.big ? bigCls : cls, size,
                              Math.cos(ang) * 1.5, Math.sin(ang) * 1.5, rock.ore);
         if (gem && breaker && breaker.id !== undefined) gem.gemSourceId = breaker.id;
-        // (The old tutorial ran inside live matches and had to reserve its
-        // drops so a passing veteran could not vulture the one pickup a lesson
-        // asked for. The tutorial now runs on its own server in an isolated
-        // plot, where nobody else can reach the gems, so no reservation.)
     }
 }
 
-// `lost` marks the one case where the satchel was emptied by DEATH rather than
-// by banking, so the client can play the loss sting for it and nothing else.
-// Banking already reports delta 0 (the vault decrements carriedGems itself and
-// then re-syncs), so today a negative delta could only be a death - but that is
-// an accident of the deposit path, not a contract. The flag says it outright.
+// GEM packet: carried, cap, delta, banked, lost, combo.
+// `lost` is set only when death emptied the satchel (client plays the loss
+// sting). Don't infer death from a negative delta; that is not a contract.
 function talkGems(body, delta, lost = 0, combo = null) {
     if (body.socket) {
         body.socket.talk('GEM', body.carriedGems | 0, body.gemCap | 0, delta | 0,
@@ -158,21 +141,14 @@ function setBanked(body, amount) {
     return amount;
 }
 
-// How far back the pack rides, in hull radii. Just past 1 so it reads as worn
-// ON the tank rather than embedded in it - the hull covers its inner edge,
-// which is what sells "backpack" instead of "floating gem".
+// Pack offset in hull radii. Just past 1 so the hull covers its inner edge
+// and it reads as worn rather than floating.
 const SATCHEL_OFFSET = 1.02;
 
-// The pack wears the CURRENT team's colour, re-applied whenever the team
-// changes rather than baked in when the prop is built.
-//
-// It has to work this way: sockets.js spawns the body and calls initSatchel()
-// BEFORE the gamemode switch assigns body.team, so at construction time every
-// player's team is undefined and they all fell through to the blue class -
-// which is why a red player carried a blue satchel while bots (whose team IS
-// set first) were correct. Re-defining also picks up any later team change for
-// free. Prop.define() only touches shape/colour/stroke, never bound, so this is
-// safe to call on a live prop.
+// Re-applies the pack colour whenever the team changes. It can't be baked in
+// at build time: sockets.js calls initSatchel() before the gamemode assigns
+// body.team. Prop.define() only touches shape/colour/stroke, never bound, so
+// this is safe on a live prop.
 function applySatchelTeamColor(body) {
     if (body._satchelTeam === body.team) return;
     body._satchelTeam = body.team;
@@ -181,13 +157,12 @@ function applySatchelTeamColor(body) {
     if (body.gemHoardFacetProp) body.gemHoardFacetProp.define('gemHoardEmeraldFacet');
 }
 
-// Split a gem total into real ore pieces whose values add up EXACTLY to the
-// total. share: fraction of the value per ore tier (4 emerald, 3 shard,
-// 2 azurite, 1 copper); whatever the shares leave over becomes copper, and
-// the last rounding remainder folds into the final piece. Never yellow.
+// Split a gem total into ore pieces whose values sum exactly to the total.
+// share: fraction of value per tier (4 emerald, 3 shard, 2 azurite, 1 copper);
+// the leftover becomes copper and the rounding remainder folds into the last
+// piece. Never yellow loot.
 const PIECE_VALUE = { 4: 110, 3: 60, 2: 30, 1: 15 };
-// the same sizes the wall's own deposits use, so a burst never sprinkles
-// smaller "dust" copper next to regular copper
+// same sizes as the wall's own deposits
 const PIECE_SIZE = { 4: 30, 3: 26, 2: 20, 1: 16 };
 function splitValue(total, opts = {}) {
     total = Math.max(0, Math.round(total));
@@ -212,12 +187,9 @@ function splitValue(total, opts = {}) {
     return pieces;
 }
 
-// Entity.define() unconditionally clears body.props, but only re-fires the
-// 'define' event (which is what re-attached these) when its emitEvent argument
-// is true. armBot() defines with emitEvent=false, so every bot lost its satchel
-// the moment it was armed - bots carried gems that nobody could see, while
-// players were fine because their defines do emit. Re-attaching at the point of
-// use is immune to that: it does not care who cleared the map, or why.
+// Entity.define() always clears body.props but only emits 'define' (the
+// re-attach hook below) when emitEvent is true; armBot() passes false. So the
+// satchel props are re-attached at the point of use as well.
 function ensureSatchelProps(body) {
     const p = body.gemHoardProp, f = body.gemHoardFacetProp;
     if (!body.props) return;
@@ -225,10 +197,7 @@ function ensureSatchelProps(body) {
     if (f && body.props.get(f.id) !== f) body.props.set(f.id, f);
 }
 
-// Whole-gem buckets, not a continuous load curve. Banking used to scale the
-// pack by leftover dust: empty a satchel and a 0.6 residue still drew the
-// minimum bag, bank half a small haul and the curve shrank it until it
-// looked gone. These rungs are the only sizes the pack is allowed to be.
+// Discrete pack sizes by whole gems carried (not a continuous curve).
 const SATCHEL_SIZE_RUNGS = [
     { min: 1,    size: 0.26 },
     { min: 100,  size: 0.32 },
@@ -252,8 +221,7 @@ function updateSatchel(body) {
     applySatchelTeamColor(body);
     ensureSatchelProps(body);
     if (p) {
-        // Truncate, same as the HUD (`carried | 0`). Rounding a banking
-        // residue like 0.6 kept a ghost pack on an "empty" tank.
+        // truncate like the HUD, so a fractional residue draws no pack
         const carried = (body.carriedGems || 0) | 0;
         const decoy = !!(body.decoyUntil && Date.now() < body.decoyUntil);
         body._decoyShown = decoy;
@@ -268,9 +236,7 @@ function updateSatchel(body) {
     body.refreshBodyAttributes();
 }
 
-// A turret that finds its own target instead of pointing where the hull does.
-// This is the property that actually matters for placing the pack, so it is
-// tested directly rather than by trusting a definition flag.
+// A turret that picks its own target rather than following the hull.
 function isAutoTurret(t) {
     return !!(t && t.controllers && t.controllers.some(
         c => c && c.constructor && c.constructor.name === 'io_nearestDifferentMaster'));
@@ -278,30 +244,20 @@ function isAutoTurret(t) {
 
 function autofireOn(body) {
     const cmd = body.socket && body.socket.player && body.socket.player.command;
-    // Bots have no command object and never stop shooting, so they count as
-    // permanently auto-firing.
+    // bots have no command object and always fire
     return cmd ? !!cmd.autofire : true;
 }
 
-// Where the pack hangs. "Back" is not one thing in this game, because the
-// archetypes disagree about what "forward" means:
+// Where the pack hangs (see satchelBackAngle). "Forward" depends on archetype:
 //
-//   rammers        - the hull SPINS, so body.facing is meaningless. Forward is
-//                    where they are driving.
-//   auto smasher   - a spinning hull with one self-aiming turret. That turret
-//                    is the only thing on it that points anywhere, so it is
-//                    forward.
-//   radial autos   - Auto-3/4/5: spinning hull, several self-aiming weapons.
-//                    Auto-firing means the player is aiming with the mouse, so
-//                    forward is the aim; otherwise fall back to movement.
-//   everything else- including auto assassin / auto gunner, whose bolted-on
-//                    turret is a sidearm rather than the tank's nose: forward
-//                    is where the player is pointing.
+//   rammers         - spinning hull; forward is the movement direction
+//   auto smasher    - forward is its single self-aiming turret
+//   radial autos    - Auto-3/4/5: the aim when autofiring, else movement
+//   everything else - the aim (incl. auto assassin/gunner, whose turret is a sidearm)
+// Returns undefined when there is no answer this frame (a parked rammer), so
+// the caller holds the last angle.
 //
-// Returns undefined when there is no meaningful answer this frame (a parked
-// rammer), so the caller can hold the last good angle instead of snapping.
-// Entity.guns / .turrets are Maps, but Prop and Turret hold plain arrays for the
-// same fields. Take either rather than assuming one and crashing the tick loop.
+// Entity.guns/.turrets are Maps; Prop and Turret use plain arrays. Accept both.
 function listOf(v) {
     if (!v) return [];
     if (Array.isArray(v)) return v;
@@ -312,19 +268,15 @@ function listOf(v) {
 function satchelBackAngle(body) {
     const autos = listOf(body.turrets).filter(isAutoTurret);
     const hasOwnGuns = listOf(body.guns).length > 0;
-    // IS_SMASHER is the definition flag for a rammer hull; at runtime it only
-    // survives as settings.reloadToAcceleration (entity.js maps it there,
-    // because for a smasher the reload stat drives acceleration). Indirect, but
-    // it is the real marker - and it is what separates a smasher from an
-    // Auto-3, which ALSO has no hull guns and would otherwise be mistaken for
-    // a rammer.
+    // IS_SMASHER only survives at runtime as settings.reloadToAcceleration
+    // (entity.js maps it there). This is what separates a smasher from an
+    // Auto-3, which also has no hull guns.
     const isSmasherHull = !!(body.settings && body.settings.reloadToAcceleration);
 
     const moveAway = () => {
         const v = body.velocity;
         const sp = v ? Math.hypot(v.x, v.y) : 0;
-        // Below a crawl the heading is numerical noise and the pack would
-        // jitter around a parked tank.
+        // below a crawl the heading is noise
         if (sp < 0.05) return undefined;
         return Math.atan2(-v.y, -v.x);
     };
@@ -335,8 +287,7 @@ function satchelBackAngle(body) {
     };
 
     if (isSmasherHull) {
-        // Auto smasher: the bolted-on turret is the only part of it that points
-        // anywhere, so the pack hides behind that.
+        // auto smasher: hide behind the turret
         if (autos.length) return autos[0].facing + Math.PI;
         return moveAway();
     }
@@ -346,8 +297,7 @@ function satchelBackAngle(body) {
     return aimAway();
 }
 
-// Shortest-arc ease, so the pack swings around the hull instead of spinning the
-// long way when the angle wraps past PI.
+// Shortest-arc angle ease.
 function easeAngle(from, to, k) {
     if (from === undefined || !isFinite(from)) return to;
     let d = (to - from) % (Math.PI * 2);
@@ -356,14 +306,12 @@ function easeAngle(from, to, k) {
     return from + d * k;
 }
 
-// Called every tick for every tank that can carry. Cheap: bails immediately on
-// the (common) empty satchel, since an empty pack is not drawn anyway.
+// Runs every tick per carrier; bails early on an empty (undrawn) pack.
 function orientSatchel(body) {
     const p = body.gemHoardProp;
     if (!p) return;
-    // Nothing else re-sizes the pack when a Decoy lapses, so watch the window
-    // flip here; and orient whenever the pack is drawn (a decoy pack on an
-    // empty tank used to keep angle 0, i.e. it sat on the barrel).
+    // Nothing else re-sizes the pack when a Decoy lapses, so watch for the
+    // window flipping here. Orient whenever the pack is drawn, decoy included.
     const decoyOn = !!(body.decoyUntil && Date.now() < body.decoyUntil);
     if (!!body._decoyShown !== decoyOn) updateSatchel(body);
     if (!(p.bound.size > 0)) return;
@@ -375,11 +323,10 @@ function orientSatchel(body) {
     if (want === undefined) want = body.facing + Math.PI;
     body._satchelAngle = easeAngle(body._satchelAngle, want, 0.22);
 
-    // The client positions a prop at (direction + angle + hullFacing) and - with
-    // mirrorMasterAngle on, which is the Prop default - gives it a facing of
-    // (hullFacing + angle). Putting the whole rotation into `angle` and leaving
-    // `direction` at zero therefore lands BOTH the position and the pack's own
-    // tilt on the absolute angle we want, whatever the hull is doing.
+    // The client places a prop at (direction + angle + hullFacing) and, with
+    // mirrorMasterAngle (Prop default), faces it at (hullFacing + angle). All
+    // rotation in `angle` with direction 0 puts both position and tilt on the
+    // absolute target angle.
     const rel = body._satchelAngle - body.facing;
     p.bound.angle = rel;
     p.bound.direction = 0;
@@ -391,27 +338,21 @@ function initSatchel(body) {
     body.carriedGems ??= 0;
     body.gemCap = SATCHEL_CAP * ((global.royaleMods && global.royaleMods.satchelMult) || 1);
     if (body.socket) { try { body.gemCap = require('./shop.js').satchelCap(body); } catch { /* */ } }
-    
-    
+
     body.botBanked ??= 0;
     if (body.socket) body.bankedGems = body.socket.gemBanked = body.socket.gemBanked || 0;
     else body.bankedGems = body.botBanked;
     if (!body.gemHoardProp) {
-        
-        
         const kind = body.team === TEAM_RED ? 'gemHoardShard' : 'gemHoardEmerald';
-        // LAYER 0, not 1. The client draws layer-0 props BEFORE the hull and
-        // layer-1 props after it, so 0 is what tucks the pack behind the tank
-        // and makes it read as worn rather than stuck on the front.
+        // layer 0: drawn before the hull, so the pack sits behind the tank
         const p = new Prop([0, 0, 0, 0, 0], body);
         p.define(kind);
         body.gemHoardProp = p;
-        // Created after the pack so it draws after it within the same layer -
-        // the lit facet sits on the pack, still behind the hull.
+        // created after the pack so it draws on top of it, still behind the hull
         const f = new Prop([0, 0, -0.06, 0, 0], body);
         f.define(kind + 'Facet');
         body.gemHoardFacetProp = f;
-        
+
         body.on('define', () => {
             if (body.gemHoardProp) body.props.set(body.gemHoardProp.id, body.gemHoardProp);
             if (body.gemHoardFacetProp) body.props.set(body.gemHoardFacetProp.id, body.gemHoardFacetProp);
@@ -425,19 +366,16 @@ function initSatchel(body) {
 function dropGemsOnDeath(body, killers = []) {
     const carried = body.carriedGems | 0;
     body._comboN = 0;
-    // Death replays what you ate: tier history (newest first) dresses the
-    // drop, so a shard haul bursts purple, not generic yellow loot.
+    // tier history (newest first) decides what the drop looks like
     const deathHist = ((body.gemTierHist || []).filter(t => t && t.o && t.v > 0) || []).slice(-48).reverse();
     body.gemTierHist = [];
     const raidMode = !!Config.dig_royale;
-    // Keep the bot killers attached to the loot they created. A player can
-    // still reclaim the drop, but the bot that earned it should not have to
-    // wait through the normal anti-vulture grace period.
+    // Bot killers skip the anti-vulture grace period on the loot they made.
     const killerBotIds = killers
         .map(killer => killer && killer.master ? killer.master : killer)
         .filter(killer => killer && killer.isBot && killer.id !== undefined)
         .map(killer => killer.id);
-    
+
     const banked  = bankedFor(body);
     const bankLoss = raidMode ? 0 : Math.floor(banked * BANK_DEATH_LOSS);
     // insurance: a quarter of the satchel goes to the bank before the drop
@@ -447,15 +385,12 @@ function dropGemsOnDeath(body, killers = []) {
             if (require('./shop.js').hasGear(body, "insurance")) insured = Math.floor(carried * 0.25);
         } catch { /* */ }
     }
-    // The death screen shows the wealth you had at the moment you died -
-    // carried + banked BEFORE the drop. Snapshot it here because this runs
-    // (on 'dead') before the death packet's records() is built.
+    // Death screen shows carried + banked before the drop. Snapshot here: this
+    // runs on 'dead', before records() builds the death packet.
     if (body.socket) {
         body.socket.gemDeathScore = carried + banked;
-        // Snapshot the split too. records() reads body.carriedGems, which this
-        // function zeroes a few lines down, so the death screen was always
-        // reporting 0 carried. Banked is captured pre-loss so that the three
-        // figures still add up: score = carried + banked.
+        // Split too, since carriedGems is zeroed below. Banked is pre-loss so
+        // score = carried + banked.
         body.socket.gemDeathCarried = carried;
         body.socket.gemDeathBanked = banked;
     }
@@ -481,13 +416,10 @@ function dropGemsOnDeath(body, killers = []) {
         return;
     }
 
-    // 1:1 identity: newest pickups drop back as themselves at full size, so
-    // 9 coppers + a vein + a shard comes back out as exactly that. Banking
-    // shrinks the satchel without trimming history, so oldest entries merge
-    // away first until the individuals fit the drop. Whatever the history
-    // can't account for (starter dust, combo bonus, bank loss) rides as
-    // generic loot filler. Capped at 24 individuals + 3 filler so a copper
-    // mountain can't flood the world with entities.
+    // Newest pickups drop back 1:1 as themselves. Banking doesn't trim history,
+    // so the oldest entries are dropped until the individuals fit. Value the
+    // history can't account for (starter dust, combo bonus, bank loss) becomes
+    // filler. Capped at 24 individuals + 6 filler pieces to bound entity count.
     const indiv = deathHist.slice(0, 24);
     let indivTotal = indiv.reduce((a, e) => a + (e.v | 0), 0);
     while (indiv.length && indivTotal > drop) {
@@ -508,8 +440,7 @@ function dropGemsOnDeath(body, killers = []) {
     const dropNow = Date.now();
     drops.forEach((g, i) => {
         if (g.v <= 0) return;
-        // spread evenly round the wreck with a bit of wobble, and fast enough
-        // to actually leave the spot: a slow drop just sat there as one pile
+        // spread evenly with wobble, fast enough to actually leave the wreck
         const ang = (i / drops.length) * Math.PI * 2 + (Math.random() - 0.5) * 0.7;
         const sp  = 4.2 * (0.55 + Math.random() * 0.45);
         const cls = ORE_CLASS[g.tier] || ORE_CLASS[ORE.COPPER];
@@ -519,9 +450,8 @@ function dropGemsOnDeath(body, killers = []) {
                  Math.cos(ang) * sp, Math.sin(ang) * sp, g.tier);
         // fly free for a beat before any magnet can pull them back into a heap
         if (gem) gem.gemNoMagnetUntil = dropNow + 700 + i * 25;
-        // A player's death drop is reserved from unrelated bots for a grace
-        // window so the player can run back for it. The bot that made the
-        // kill gets an immediate claim and can collect its winnings.
+        // A player's drop is off-limits to unrelated bots for a grace window;
+        // the killer bot can claim it immediately.
         if (gem) {
             gem.gemLootFromPlayer = !!body.socket;
             if (killerBotIds.length) gem.gemLootKillerIds = killerBotIds;
@@ -530,8 +460,7 @@ function dropGemsOnDeath(body, killers = []) {
     });
 }
 
-// Loose gems do not litter the floor: fifteen seconds at rest and they fade out.
-// A dead player's drop gets longer so the run back is still worth it.
+// Loose gems fade after 15s at rest; a dead player's drop gets longer.
 const GEM_TTL_MS = 15_000;
 const GEM_TTL_PLAYER_MS = 40_000;
 const GEM_FADE_MS = 3_000;
@@ -560,19 +489,14 @@ function tickGem(gem, tg, players) {
             gem.velocity.y -= vDot * ny;
         }
     }
-    
-    
-    
-    
+
     if (tg.pointInRock(gem.x, gem.y)) {
         const safeStillOpen = gem.gemSafeX !== undefined && !tg.pointInRock(gem.gemSafeX, gem.gemSafeY);
         if (safeStillOpen) {
             gem.x = gem.gemSafeX;
             gem.y = gem.gemSafeY;
         } else {
-            // Rock regrew over the last known open spot, so the gem has no
-            // memory to fall back on and used to sit inside the boulder until
-            // somebody mined it out. Walk outward for the nearest free ground.
+            // rock regrew over the last open spot: search outward for free ground
             const now = Date.now();
             if (now - (gem.gemDigOutAt || 0) > 400) {
                 gem.gemDigOutAt = now;
@@ -601,19 +525,15 @@ function tickGem(gem, tg, players) {
 
     if (!(gem.gemValue > 0)) return;
 
-    // Two separate questions: who is the gem flying toward (one actor, the
-    // magnet), and who is actually touching it (anyone). They used to be the
-    // same answer, so a gem reserved by a distant miner could not be picked up
-    // by the player standing on top of it - it simply passed through them.
+    // Magnet target (best) and toucher are tracked separately: anyone touching
+    // a gem collects it, whoever it is flying toward.
     let best = null, bestD = Infinity, bestScore = Infinity;
     let toucher = null, toucherD = Infinity;
     const bias = gem.chamberBias;
     for (const actor of players) {
         const body = actorBody(actor);
         if (!body || body.isDead() || body.isGhost) continue;
-        // Unrelated bots keep their hands off a dead player's loot during
-        // the reclaim window. The bot that made the kill is explicitly
-        // allowed through so it can pick up the gems it earned.
+        // unrelated bots skip a dead player's loot during the reclaim window
         const isKillerBot = body.isBot &&
             gem.gemLootKillerIds?.includes(body.id);
         if (body.isBot && gem.gemLootFromPlayer && !isKillerBot &&
@@ -622,9 +542,7 @@ function tickGem(gem, tg, players) {
         const d2 = dx * dx + dy * dy;
         if (d2 > GEM_REACH2) continue;              // far actors: nothing to do
         const d = Math.sqrt(d2) || 1;
-        // A drop reserved for a tutorial player behaves toward everyone else
-        // exactly like loot does around a full satchel: shoved away, never
-        // collected. Trapping it or body-blocking it changes nothing.
+        // an owned gem is shoved away from everyone else, never collected
         if (gem.gemOwnerId !== undefined && body.id !== gem.gemOwnerId) {
             const repR = body.realSize * 1.8 + MAGNET_BONUS * 0.5;
             if (d < repR) {
@@ -635,10 +553,6 @@ function tickGem(gem, tg, players) {
             continue;
         }
         if (bias) {
-            
-            
-            
-            
             if (body.team === bias) {
                 const repR = body.realSize * 1.8 + MAGNET_BONUS * 0.7;
                 if (d < repR) {
@@ -662,10 +576,8 @@ function tickGem(gem, tg, players) {
         }
         const pickR = body.realSize + gem.realSize * PICKUP_SLOP;
         if (d <= pickR && d < toucherD) { toucherD = d; toucher = body; }
-        // No ownership: loose gems belong to whoever is closest, full stop.
-        // Every "breaker gets a head start" variant ended the same way - a
-        // gem fleeing from the player standing on it toward the bot that
-        // mined it, which felt like the gem had no collision at all.
+        // Loose gems go to whoever is closest (no breaker head start: that made
+        // gems flee from the player on top of them).
         const killerPriority = isKillerBot && now < (body._collectLootUntil || 0) ? 850 : 0;
         if (d - killerPriority < bestScore) {
             bestScore = d - killerPriority;
@@ -681,13 +593,10 @@ function tickGem(gem, tg, players) {
         if (tnow < (toucher._comboUntil || 0)) toucher._comboN = (toucher._comboN || 0) + 1;
         else toucher._comboN = 1;
         toucher._comboUntil = tnow + 2500;
-        // Fresh haul, fresh memory: tier history restarts from empty so a
-        // death drop replays THIS run's mix, not last life's leftovers.
+        // tier history restarts with each fresh haul
         if ((toucher.carriedGems | 0) <= 0) toucher.gemTierHist = [];
         if (gem.gemOre) {
-            // Identity memory: every gem is remembered (tier + full value)
-            // so the death drop replays the run 1:1. Combo bonus lands as
-            // filler later - only the gem's own worth is recorded.
+            // record tier + base value for the 1:1 death drop (combo bonus excluded)
             const hist = toucher.gemTierHist || (toucher.gemTierHist = []);
             hist.push({ o: gem.gemOre, v: gem.gemValue });
             if (hist.length > 48) hist.shift();
@@ -704,9 +613,8 @@ function tickGem(gem, tg, players) {
         return;
     }
 
-    // hard ceiling: loot never outruns a tank - the shove bubbles above
-    
-    
+    // hard speed ceiling: loot never outruns a tank
+
     const spNow = Math.hypot(gem.velocity.x, gem.velocity.y);
     if (spNow > GEM_MAX_SPEED) {
         gem.velocity.x *= GEM_MAX_SPEED / spNow;
@@ -720,8 +628,6 @@ function tickGem(gem, tg, players) {
     if (best.socket) { try { magBoost = shopMod().magnetMult(best); } catch { /* */ } }
     const magR = (best.realSize * 2.6 + MAGNET_BONUS) * (bias ? 1.45 : 1) * magBoost;
     if (bestD < magR) {
-        
-        
         const pull  = 1 - bestD / magR;
         const speed = 1.4 * pull + 4 * pull * pull;
         const ux = (best.x - gem.x) / bestD, uy = (best.y - gem.y) / bestD;
@@ -731,8 +637,7 @@ function tickGem(gem, tg, players) {
         const wx = ux - uy * swirl, wy = uy + ux * swirl;
         gem.velocity.x += (wx * speed - gem.velocity.x) * 0.4;   // 30 Hz tick
         gem.velocity.y += (wy * speed - gem.velocity.y) * 0.4;
-        // keep spinning at its own pace: lining every gem up with its path
-        // is what made a haul look like one stacked, sliding block
+        // keep its own spin; aligning to the path makes a haul look like one block
         if (gem.facingType !== 'spin') { gem.facingType = 'spin'; gem.facingTypeArgs = { speed: gem.gemSpin || 0.02 }; }
     } else if (gem.facingType !== 'spin') {
         gem.facingType = 'spin';

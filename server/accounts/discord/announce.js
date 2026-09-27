@@ -5,10 +5,9 @@
 //   raid top 3   the account holders who placed 1-3 in an eligible raid
 //                (bus {t:'raidTop', raidKey, top:[{userId, place, score}]})
 //
-// Messages wait in a small queue (oldest dropped past 50) and go out one at
-// a time through rest.js, which honours 429 retry_after. Usernames are
-// markdown-escaped and mentions are off. Off unless the bot token and the
-// channel are both set.
+// Messages queue (oldest dropped past 50) and go out one at a time through
+// rest.js. Usernames are markdown-escaped and mentions are off. Disabled
+// unless both the bot token and the channel are set.
 'use strict';
 
 const config = require('../config');

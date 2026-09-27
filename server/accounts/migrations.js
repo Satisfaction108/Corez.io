@@ -5,9 +5,8 @@
 // touching an existing, non-empty database a VACUUM INTO copy is written to
 // <backupDir>/pre-migrate-v{n}-{ts}.db.
 //
-// v1 is the whole plan's schema, including the tables later phases fill
-// (ranked, dust, store, friends, quests, achievements), so those phases add
-// code, not schema churn. Times are epoch milliseconds; dust is integer
+// v1 already includes the ranked, dust, store, friends, quests and
+// achievements tables. Times are epoch milliseconds; dust is integer
 // milli-dust; days are UTC day numbers (floor(ms / 86400000)).
 'use strict';
 

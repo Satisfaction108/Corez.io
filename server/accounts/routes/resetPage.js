@@ -1,10 +1,9 @@
-// GET /auth/reset#<token>: a standalone password reset page that needs none
-// of the game client. The admin /resetpassword link points at
-// PUBLIC_ORIGIN/#reset=<token> (the menu's own form); this page is the
-// fallback printed next to it. The token stays in the URL fragment, so it
-// never reaches the server logs or a Referer; the page posts it to
-// POST /api/auth/reset (same origin, JSON) and, on success, the browser is
-// logged in and sent to the game.
+// GET /auth/reset#<token>: standalone password reset page (no game client).
+// The admin /resetpassword link points at PUBLIC_ORIGIN/#reset=<token> (the
+// menu's form); this page is the fallback printed next to it. The token stays
+// in the fragment, so it never reaches server logs or a Referer. The page
+// POSTs it to /api/auth/reset (JSON); on success the browser is logged in
+// and sent to the game.
 'use strict';
 
 const nodeCrypto = require('crypto');

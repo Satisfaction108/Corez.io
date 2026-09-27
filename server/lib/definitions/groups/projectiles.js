@@ -130,13 +130,13 @@ Class.spiralBullet = {
                 body.store.snakeSegments = body.store.snakeSegments.filter((x)=>!x.isDead())
                 let previous = body;
                 const children = body.store.snakeSegments;
-            
+
                 for (const child of children) {
                     const dx = child.x - previous.x;
                     const dy = child.y - previous.y;
                     const distance = Math.hypot(dx, dy) || 1; // /0 possible ig
                     const factor = (child.size + previous.size) * 1 / distance;
-        
+
                     child.x = previous.x + dx * factor;
                     child.y = previous.y + dy * factor;
                     child.velocity.x = 0; // No natural move!
@@ -172,13 +172,13 @@ Class.pythonBullet = {
                 body.store.snakeSegments = body.store.snakeSegments.filter((x)=>!x.isDead())
                 let previous = body;
                 const children = body.store.snakeSegments;
-            
+
                 for (const child of children) {
                     const dx = child.x - previous.x;
                     const dy = child.y - previous.y;
                     const distance = Math.hypot(dx, dy) || 1; // /0 possible ig
                     const factor = (child.size + previous.size) * 1 / distance;
-        
+
                     child.x = previous.x + dx * factor;
                     child.y = previous.y + dy * factor;
                     child.velocity.x = 0; // No natural move!
@@ -829,13 +829,13 @@ Class.wranglerMinion = {
                 body.store.snakeSegments = body.store.snakeSegments.filter((x)=>!x.isDead())
                 let previous = body;
                 const children = body.store.snakeSegments;
-            
+
                 for (const child of children) {
                     const dx = child.x - previous.x;
                     const dy = child.y - previous.y;
                     const distance = Math.hypot(dx, dy) || 1; // /0 possible ig
                     const factor = (child.size + previous.size) * 1 / distance;
-        
+
                     child.x = previous.x + dx * factor;
                     child.y = previous.y + dy * factor;
                     child.velocity.x = 0; // No natural move!
@@ -1135,7 +1135,6 @@ Class.superSplitterBullet = {
         },
     ],
 }
-
 
 // ─── Synced from open-source-arras (missing here) ───
 Class.launcherMissile = {

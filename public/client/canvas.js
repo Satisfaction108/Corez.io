@@ -293,8 +293,8 @@ class Canvas {
             case global.KEY_LEFT_ARROW:
                 if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = -this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_LEFT:
-                // A is movement. Never start spectate from it — key-repeat after
-                // death was jumping the camera to a random player.
+                // A is movement, so never start spectate from it: key-repeat after
+                // death would jump the camera to a random player.
                 if (global.royaleSpectating && global.died && !event.repeat) {
                     this.socket.talk('RS', 0);
                     break;
@@ -357,7 +357,7 @@ class Canvas {
                 case global.KEY_AUTO_FIRE:
                     this.socket.talk("t", 1, true);
                     break;
-                // Dig Wars: Spin Lock is removed; AI override is back on R
+                // R is AI override (Dig Wars has no Spin Lock)
                 case global.KEY_OVER_RIDE:
                     this.socket.talk("t", 2, true);
                     break;
@@ -529,8 +529,8 @@ class Canvas {
                     y: mouse.clientY * global.ratio,
                 };
                 // "Don't upgrade" acts on release, so remember whether the
-                // press began on it: a shot fired elsewhere and let go over
-                // the button used to throw the whole upgrade menu away.
+                // press began on it: a shot fired elsewhere and released over
+                // the button must not throw the upgrade menu away.
                 this.skipUpgradePressed = global.clickables.skipUpgrades.check(mpos) !== -1;
                 // full-map overlay swallows clicks: start a drag, never fire
                 if (global.showBigMap) {
@@ -709,7 +709,7 @@ class Canvas {
                 let optionsMenu_Switch = global.clickables.optionsMenu.switchButton.check(mpos);
                 let optionsMenu_toggleBox = global.clickables.optionsMenu.toggleBoxes.check(mpos);
                 let optionsMenu_tabClick = global.optionsMenu_Anim.tabClickables ? global.optionsMenu_Anim.tabClickables.check(mpos) : -1;
-                // Direct hit-rects published by drawOptionsMenu — the same
+                // Direct hit-rects published by drawOptionsMenu: the same
                 // geometry that's actually drawn, so the arrow button can't
                 // go dead if the clickable-region state drifts
                 const omHitRect = (r) => !!r && mpos.x >= r.x && mpos.x <= r.x + r.w &&
@@ -784,7 +784,7 @@ class Canvas {
                     gameSound.uiClick();
                     break;
                 }
-                
+
                 // Check zoom buttons
                 if (global.clickables.classTreeZoomIn.check(mpos) === 0) {
                     global.targetTreeScale = Math.min(global.targetTreeScale * 1.2, 8);
@@ -796,13 +796,13 @@ class Canvas {
                     gameSound.uiClick();
                     break;
                 }
-                
+
                 // Check search bar click
                 const searchBarWidth = 300;
                 const searchBarHeight = 35;
                 const searchBarX = global.screenWidth / 2 / global.ratio - searchBarWidth / 2;
                 const searchBarY = 30;
-                
+
                 if (mpos.x / global.ratio >= searchBarX && 
                     mpos.x / global.ratio <= searchBarX + searchBarWidth &&
                     mpos.y / global.ratio >= searchBarY && 
@@ -870,7 +870,7 @@ class Canvas {
         if (global.showTree && global.classTreeDrag.isDragging) {
             const dx = (mouse.clientX - global.classTreeDrag.lastX) / global.treeScale;
             const dy = (mouse.clientY - global.classTreeDrag.lastY) / global.treeScale;
-            
+
             // Smooth momentum update
             global.classTreeDrag.momentum.x = -dx * 0.01;
             global.classTreeDrag.momentum.y = -dy * 0.01;
@@ -969,14 +969,13 @@ class Canvas {
                     ctx.canvas.height = this.cv.height;
                 },
                 capture: () => {
-                    ctx.canvas.width = this.cv.width; // Set Width
-                    ctx.canvas.height = this.cv.height; // Set Height
+                    ctx.canvas.width = this.cv.width;
+                    ctx.canvas.height = this.cv.height;
                     ctx.fillStyle = "#ffffff"
                     ctx.fillRect(0, 0, this.cv.width, this.cv.height);
                     toMerge.forEach(layer => {
                         if (layer) ctx.drawImage(layer, 0, 0);
                     });
-                    
                 },
                 getCanvas: () => canvas
             }
@@ -1225,7 +1224,7 @@ class Canvas {
         e.preventDefault();
         for (let touch of e.changedTouches) {
             let id = touch.identifier;
-      
+
             if (this.movementTouch === id) {
                 this.movementTouch = null;
                 this.movementTouchPos = { x: 0, y: 0 };
@@ -1322,16 +1321,16 @@ class Canvas {
                 if (gamepadControls.A === 1) {
                     this.socket.talk("t", 1, true);
                 }
-            
+
                 if (gamepadControls.B === 1) {
                     global.autoSpin = !global.autoSpin;
                     this.socket.talk("t", 0, true);
                 }
-            
+
                 if (gamepadControls.X === 1) {
                     this.socket.talk("t", 2, true);
                 }
-            
+
                 if (gamepadControls.Y === 1) {
                     this.socket.talk('H');
                 }
@@ -1370,7 +1369,7 @@ class Canvas {
                     this.socket.cmd.set(2, false);
                     this.socket.cmd.set(3, false);
                 }
-                
+
                 if (ey > cy) {
                     this.socket.cmd.set(0, false);
                     this.socket.cmd.set(1, true);

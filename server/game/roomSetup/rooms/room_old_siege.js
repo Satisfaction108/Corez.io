@@ -6,7 +6,6 @@ const {
     bossSpawn: boss,
     bossSpawnVoid: spwn
 } = tileClass;
- 
 
 let room_old_siege = [
     [ X__X, X__X, X__X, X__X, X__X, X__X, X__X, spwn, spwn, X__X, X__X, X__X, X__X, X__X, X__X, X__X, ],

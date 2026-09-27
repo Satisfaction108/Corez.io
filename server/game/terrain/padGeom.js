@@ -1,9 +1,7 @@
 // Pad geometry shared by vault, shop and outpost pads: the shape the client
 // draws is the shape that collides, and leaving a pad is a firm shove, not a
-// bounce. Vault/bank pads are flat-top octagons (1.15x the pad radius), shop
-// pads hexagons (1.16x), outposts plain circles.
-// 1.40 = the octagon the client draws (v.r * 1.15 * 1.22); the hitbox must be
-// the shape players see or tanks sink into the pad edge before the push.
+// bounce. Shop pads are hexagons; every other pad is a flat-top octagon.
+// OCT 1.40 = the octagon the client draws (v.r * 1.15 * 1.22).
 const OCT = { sides: 8, scale: 1.40 };
 const HEX = { sides: 6, scale: 1.16 };
 const CIRCLE = { sides: 0, scale: 1 };
@@ -14,8 +12,6 @@ const PAD_CLAMP_FRAC = 0.55;  // deeper than this fraction of the hull snaps out
 const PAD_EXPEL = 7;          // outward speed (units/tick) while being shoved off from inside
 
 function shapeOf(pad) {
-    // base banks are drawn as the same octagon as vaults, so their rules
-    // use it too; only shops are hexagons
     const s = pad.kind === 'shop' ? HEX : OCT;
     return { sides: s.sides, R: (pad.r || 95) * s.scale };
 }
@@ -65,9 +61,8 @@ function projectOut(pad, body, margin = 0) {
 //   1. one impulse when the hold starts (keyed so re-entry gets a fresh kick)
 //   2. a soft outward force every tick while overlapping
 //   3. a position clamp only when the hull is deep inside
-// `hard`: the rim is a wall (re-entry denials). The body is placed back on
-// the rim every tick and its inward velocity is removed, so it stops at the
-// border instead of sinking in and being lurched out.
+// `hard`: the rim is a wall (re-entry denials): the body is put back on the
+// rim each tick and its inward velocity removed.
 function keepOut(body, pad, margin, key, hard = false) {
     const rs = body.realSize || 60;
     const p = projectOut(pad, body, rs + margin);
@@ -77,9 +72,8 @@ function keepOut(body, pad, margin, key, hard = false) {
     }
     const { nx, ny, depth } = p;
     if (hard === 'expel') {
-        // shoved off from inside (time's up, pad taken): hold an outward
-        // speed and drop any inward push. No position writes at all, so the
-        // tank rolls off the pad instead of teleporting to the rim.
+        // shoved off from inside (time's up, pad taken): hold an outward speed,
+        // no position writes, so the tank rolls off instead of teleporting
         const vOut = body.velocity.x * nx + body.velocity.y * ny;
         if (vOut < PAD_EXPEL) {
             body.velocity.x += (PAD_EXPEL - vOut) * nx;
@@ -90,8 +84,7 @@ function keepOut(body, pad, margin, key, hard = false) {
         body._padHold = null;
         return false;
     }
-    // a fresh kick gets one soft impulse so the tank visibly slides off;
-    // after that the rim is a wall
+    // one soft impulse per fresh kick; after that the rim is a wall
     const nowK = Date.now();
     if (!body._padHold || body._padHold.key !== key) body._padHold = { key, at: nowK, kicked: false };
     if (hard || nowK - body._padHold.at > 600) {

@@ -489,7 +489,7 @@ Class.dogeiscutBoss = {
                 COLOR: "black"
             }
         }, 
-        
+
         {
             POSITION: [ 1, 2, 1, 4, -8, 68, 0, ],
             PROPERTIES: {
@@ -547,8 +547,7 @@ Class.dogeiscutBoss = {
                 COLOR: 'purple'
             }
         }, 
-        
-        
+
         {
         POSITION: [ 1, 2, 1, 4, 8, -68, 0, ],
             PROPERTIES: {

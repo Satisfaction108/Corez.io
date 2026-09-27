@@ -1,16 +1,10 @@
-// SOLO | DUOS on the menu, and the duo party panel under it.
-//
-// The toggle picks which raid server Play goes to (remembered in
-// localStorage). In Duos, the panel shows your party: you plus one slot.
-// Fill the slot by inviting an online friend (accounts, live through
-// /api/events) or by sharing the party code (anyone, guests included; a
-// guest's party identity is a token kept per tab in sessionStorage). Alone,
-// "Fill" lets the duo server team you up with another lone player.
-//
-// Play: app.js startGame() asks wantsDuo(); if so it calls arm(), which gets
-// a signed party ticket (POST /api/party/launch, so the mate's menu follows
-// you in), points the socket at <host>/duo and starts the game again. The
-// socket sends the ticket in the 'DQ' packet right after it says hello.
+// SOLO | DUOS on the menu (remembered in localStorage) and the duo party
+// panel: you plus one slot, filled by inviting a friend, sharing the party
+// code (guests too: their party identity is a per-tab sessionStorage token),
+// or "Fill" (the duo server pairs lone players).
+// Play: app.js startGame() asks wantsDuo(); arm() gets a signed ticket (POST
+// /api/party/launch, which also pulls the mate in), points the socket at
+// <host>/duo and restarts. The socket sends the ticket in 'DQ' after hello.
 import * as api from './api.js';
 import * as store from './state.js';
 import * as social from './social.js';

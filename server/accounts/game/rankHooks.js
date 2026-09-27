@@ -1,12 +1,12 @@
 // Ranked in the game thread: per-life accounting on the Dig Royale stat
 // objects (raidStats values).
 //
-// A life's rank points are basisOf(s) at its end minus the snapshot taken at
-// its start (s.lifeBase). basisOf is the board score without the carried
-// half and without s.rankDiscount (half of every bot kill, all of an
-// excluded kill); kill points are booked at kill time (s.killPts), so a
-// twist that changes the kill score mid-raid does not re-price old kills.
-// The carried half only counts when the raid ends under you.
+// A life's rank points = basisOf(s) at its end - s.lifeBase (taken at its
+// start). basisOf is the board score minus the carried half and minus
+// s.rankDiscount (half of every bot kill, all of an excluded kill). Kill
+// points are booked at kill time (s.killPts), so a twist that changes kill
+// scoring mid-raid does not re-price old kills. The carried half counts only
+// when the raid ends under you.
 //
 // Rank-only points (s.rankOnly, raid-cumulative, never on the board): active
 // survival (surviveCheck, every SURVIVE_STEP_MS) and damage dealt to real
@@ -17,17 +17,17 @@
 // lifeKills, lifeBotKills, lifeKillPts, lifeBanked0, lifeNoFare, lifeDust,
 // lifeSurviveMs, lifeSurvivePts, lifeDmgPts, lifeDmg (victim key -> share of
 // a bar dealt), survAt, survX/survY/survMovedAt, accountId, rankCode. A
-// resume re-keys the stat (claimResume) and keeps the open life. raidAcct (per account, cleared when a raid starts) holds the
-// raid-cumulative counted points for the diminishing-returns curve, who
-// this account killed, and when it joined.
+// resume re-keys the stat (claimResume) and keeps the open life.
+// raidAcct (per account, cleared at raid start): raid-cumulative counted
+// points for the diminishing-returns curve, victims, and join time.
 //
 // Settled at: death (onDeath), raid end (onRaidEnd, before the mass death),
 // a disconnect nobody resumed (RESUME_MS + 1 s later, with the fare), and a
 // clean shutdown (no fare). A crash leaves the row open; the main thread
 // closes it with delta 0 at the next boot.
 //
-// dig_royale.js calls attach() once with accessors for its state, and
-// guards every call: nothing here may take the raid down.
+// dig_royale.js calls attach() once with state accessors and guards every
+// call: nothing here may take the raid down.
 'use strict';
 
 const nodeCrypto = require('crypto');
@@ -155,9 +155,9 @@ function lifeEnd(s, reason, opts = {}) {
     const t = Date.now();
     const carriedHalf = opts.carried > 0 ? Math.floor(opts.carried / 2) : 0;
     const rawBasis = Math.max(0, Math.floor(basisOf(s) + carriedHalf - (s.lifeBase || 0)));
-    // Duo lives count toward the same rank, at a reduced rate: a partner
-    // carries part of the work (R.DUO_RP_MULT, shared/ranks.js). The point
-    // sources below keep their raw sizes; they only split the gain.
+    // Duo lives count toward the same rank at R.DUO_RP_MULT (a partner carries
+    // part of the work). The point sources below keep raw sizes; they only
+    // split the gain.
     const basis = Config.royale_duos ? Math.floor(rawBasis * R.DUO_RP_MULT) : rawBasis;
     const userId = s.accountId | 0;
     if (openByAcct.get(userId) === s) openByAcct.delete(userId);
@@ -197,8 +197,8 @@ function lifeEnd(s, reason, opts = {}) {
     return payload;
 }
 
-// A human died in the raid (onCombatantDead). Raid-end deaths were settled
-// at endRaid already; their RK is waiting on the socket.
+// A human died in the raid (onCombatantDead). Raid-end deaths are settled
+// in onRaidEnd; their RK is already waiting on the socket.
 function onDeath(body, s) {
     if (!body || !body.socket || !s || !s.lifeOpen) return;
     const payload = lifeEnd(s, 'death');
@@ -236,11 +236,10 @@ function onKillCredited(killer, ks, victim, vs, pts) {
 }
 
 // Damage a real player took this tick (entity.contemplationOfMortality via
-// dig_royale): `dealt` health+shield actually removed, `inflictors` the
-// colliding things' masters. Split evenly between the human tanks behind
-// it, like the boss assist share. Bots, self, teammates and the victim's
-// own account earn nothing; the victim's share of a bar is capped per
-// victim and per life (ranked.damageGain).
+// dig_royale): `dealt` = health+shield removed, `inflictors` = colliders.
+// Split evenly between the human tanks behind it, like the boss assist
+// share. Bots, self, teammates and the victim's own account earn nothing;
+// the share is capped per victim and per life (ranked.damageGain).
 function onPlayerDamaged(victim, dealt, inflictors) {
     if (!ctx || !victim || !victim.socket || !(dealt > 0) || !inflictors || !inflictors.length) return;
     const max = ((victim.health && victim.health.max) || 0) + ((victim.shield && victim.shield.max) || 0);
@@ -375,9 +374,9 @@ function onRaidEnd() {
                 if (!res) return;
                 dustHooks.noteExternalCredit(s.accountId, res.bonusDustMilli, res.balanceMilli);
                 s.rankCode = codeOfSnap(res.after);
-                // an account that came back without a resume has an older row
-                // too: the best one is paid, and the result goes to whichever
-                // socket the account plays on now
+                // an account that rejoined without a resume has an older row
+                // too: the best one is paid, and the result goes to its
+                // current socket
                 if (res.eligible && res.place <= 3) top.push({ userId: s.accountId, place: res.place, score: res.score });
                 const client = byAcct.get(s.accountId);
                 try { progress.afterPlacement(client || null, s.accountId, res); } catch (e2) { logErr('progress', e2); }

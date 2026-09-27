@@ -611,7 +611,7 @@ function spawnStructureHit(z) {
         return { x: cx + dx / d * rim, y: cy + dy / d * rim };
     };
 
-    // Prefer a live projectile sitting on the rim — that's the collision.
+    // Prefer a live projectile sitting on the rim: that's the collision.
     let best = 48, hx = null, hy = null;
     for (const e of global.entities) {
         if (!e || e.id === z.id || e.id === gui.playerid) continue;
@@ -744,9 +744,8 @@ const process = (z = {}) => {
             z.health = get.next() / 65535;
             z.shield = get.next() / 65535;
 
-            // Taking damage used to be inferred here and flashed white. The
-            // blink is now driven by the server's hitFlash field below, so this
-            // branch is only left to clear a stale death fade.
+            // The hit blink is driven by the server's hitFlash field below;
+            // this branch only clears a stale death fade.
             if (z.health >= hh && z.shield >= ss && z.render.status.getFade() !== 1) {
                 z.render.status.set('normal');
             }
@@ -764,7 +763,7 @@ const process = (z = {}) => {
             z.score = get.next();
             z.digWarsGoal = get.next();
             z.gemGlow = get.next() | 0;
-            // accounts (Phase 2 wire): name style nid, rank code, skin nid
+            // accounts: name style nid, rank code, skin nid
             z.nameStyle = get.next() | 0;
             z.rankCode = get.next() | 0;
             z.skin = get.next() | 0;
@@ -805,10 +804,9 @@ const process = (z = {}) => {
             z.render.status.set('normal');
         }
 
-        // Server-driven red blink. We only take the rising edge of hitFlash and
-        // let the renderer animate its own eased decay from that stamp, so the
-        // blink looks identical whatever the tick rate does and a dropped packet
-        // costs at most one blink instead of a stuck-on flash.
+        // Server-driven red blink. Only the rising edge of hitFlash is used; the
+        // renderer animates its own eased decay from that stamp, so the blink is
+        // tick-rate independent and a dropped packet costs one blink, never a stuck flash.
         if (!isNew && hitFlash > (z.hitFlash || 0)) {
             z.render.hitAt = performance.now();
             spawnStructureHit(z);
@@ -1199,14 +1197,10 @@ let incoming = async function(message, socket) {
                 global.chamberState = next;
             } break;
             case 'OU': {
-                
-                
                 global.vault.onPad = !!m[0];
                 global.vault.isOutpost = !!m[0];
             } break;
             case 'EP': {
-                
-                
                 const by = m[2];
                 for (let i = global.enemyPings.length - 1; i >= 0; i--) {
                     if (global.enemyPings[i].by === by) global.enemyPings.splice(i, 1);
@@ -1245,7 +1239,6 @@ let incoming = async function(message, socket) {
                 try { if (p.mine) gameSound.uiClick(); else gameSound.dustPop(); } catch (e) { /* */ }
             } break;
             case 'TM': {
-                
                 const n = m[0];
                 const list = [];
                 for (let i = 0; i < n; i++) {
@@ -1254,8 +1247,6 @@ let incoming = async function(message, socket) {
                 }
                 global.teammates = list;
             } break;            case 'TB': {
-                
-                
                 const tb = global.teamBanked;
                 tb.blue = m[0];
                 tb.red = m[1];
@@ -1500,8 +1491,6 @@ let incoming = async function(message, socket) {
                 }
             } break;
             case 'LA': {
-                
-                
                 const L = global.leader;
                 L.id = m[0];
                 L.x = m[1];
@@ -1510,17 +1499,13 @@ let incoming = async function(message, socket) {
                 L.at = performance.now();
             } break;
             case 'GEM': {
-                
-                
                 const carried = m[0], cap = m[1], delta = m[2];
                 const g = global.gems;
                 const now = performance.now();
                 if (delta > 0) {
                     g.mcombo = m[5] | 0;
                     g.mcomboAt = now;
-                    
-                    
-                    
+
                     g.combo = now - g.lastPickup < 900 ? g.combo + 1 : 0;
                     g.lastPickup = now;
                     if (config.game.gemSounds) gameSound.gemPickup(g.combo);
@@ -1558,7 +1543,6 @@ let incoming = async function(message, socket) {
                 }
             } break;
             case 'VU': {
-                
                 global.vault.onPad = !!m[0];
                 global.vault.isOutpost = false;   
                 if (!global.vault.onPad) {
@@ -1567,8 +1551,6 @@ let incoming = async function(message, socket) {
                 }
             } break;
             case 'VP': {
-                
-                
                 const v = global.vault;
                 const wasActive = v.total > 0;
                 v.remaining = m[0];
@@ -1597,7 +1579,6 @@ let incoming = async function(message, socket) {
                 }
             } break;
             case 'TR': {
-                
                 if (window.terrainRenderer) window.terrainRenderer.applyRockEvents(JSON.parse(m[0]));
                 if (window.dwTutorialRock) window.dwTutorialRock();
             } break;
@@ -2206,7 +2187,7 @@ let incoming = async function(message, socket) {
 const socketInit = () => {
     window.resizeEvent();
     // serverPath routes to a game server that is NOT the one on this port -
-    // today just the tutorial, which the main server proxies through. It is
+    // currently just the tutorial, which the main server proxies through. It is
     // kept separate from serverAdd because serverAdd is also used to build
     // plain http URLs (util.pullJSON), which a path/query would corrupt.
     let socket = new WebSocket(
@@ -2291,7 +2272,7 @@ const socketInit = () => {
             return;
         }
         if (global.autoReconnect && !global.noAutoReconnect) {
-            // every retry failed: the game server never heard from us
+            // every retry failed
             global.message = "Can't reach the server from your network. School and work networks sometimes block games. Check your connection, then press Reconnect.";
         }
         global.autoReconnect = null;

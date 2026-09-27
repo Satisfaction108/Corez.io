@@ -2577,7 +2577,7 @@ for (let def of firstTier) {
 	let originalDef = `${def}_dreadsV2`
 	Class[newDef] = dereference(originalDef)
 	Class[newDef].BATCH_UPGRADES = true
-	
+
 	// Save to upgrades
 	util.forcePush(Class.dreadnought_dreadsV2, 'UPGRADES_TIER_6', [newDef, "dreadBody_dreadsV2"])
 	util.forcePush(Class.dreadWeapon_dreadsV2, 'UPGRADES_TIER_6', originalDef)
@@ -3142,7 +3142,7 @@ function mergeHexnoughtWeaponV2(weapon1, weapon2) {
 	}
 	let LABEL = weaponName,
 		className = weapon1.LABEL.toLowerCase() + weapon2.LABEL + orientationId + "_dreadsV2";
-	
+
 	// Guns ----------------------
 	if (weapon1.GUNS) {
 		for (let i = 0; i < weapon1.GUNS.length; i += 5) {
@@ -3204,7 +3204,7 @@ function mergeHexnoughtWeaponV2(weapon1, weapon2) {
 			droneSpawnerIndex = setGladiatorMinion(gun, droneSpawnerIndex);
 		}
 	}
-	
+
 	// Body stat modification
 	// Arithmetic mean of body stats
 	let bodyStatFactors = {FOV: 2, SPEED: 2, HEALTH: 2, SHIELD: 2, REGEN: 2, RESIST: 2, DENSITY: 2};
@@ -3225,7 +3225,7 @@ function mergeHexnoughtWeaponV2(weapon1, weapon2) {
 }
 function makeHexnoughtBodyV2(body) {
 	if (!buildHexnoughts) return [];
-	
+
 	body = ensureIsClass(body);
 
 	let PARENT = "genericHexnought",
@@ -3236,7 +3236,7 @@ function makeHexnoughtBodyV2(body) {
 
 	// Label
 	let className = LABEL.toLowerCase() + "Hex_dreadsV2";
-	
+
 	// Turrets --------------------
 	if (body.TURRETS) {
 		let turretRingLoopLength = Math.floor(body.TURRETS.length / 5);
@@ -3283,7 +3283,7 @@ function makeHexnoughtBodyV2(body) {
 			);
 		}
 	}
-	
+
 	// Body stat modification
 	if (body.BODY) for (let m in body.BODY) BODY[m] = body.BODY[m];
 

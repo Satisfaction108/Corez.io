@@ -16,9 +16,9 @@ const { Worker } = require("worker_threads");
 // Increase the stack trace limit for better debugging
 Error.stackTraceLimit = Infinity;
 
-// Render safety net: one bad packet or a game bug must not take the whole
-// demo down. Log it and keep serving; if it's genuinely melting down (many
-// crashes in a row), exit so Render recycles the process cleanly.
+// Crash safety net: one bad packet or game bug must not take the site down.
+// Log and keep serving; after many crashes in a row, exit so the process
+// manager restarts it cleanly.
 let crashCount = 0;
 process.on("uncaughtException", (err) => {
     console.error("[UNCAUGHT EXCEPTION] " + ((err && err.stack) || err));
@@ -31,9 +31,8 @@ process.on("unhandledRejection", (reason) => {
     setTimeout(() => crashCount--, 30_000);
 });
 
-// Load environment variables from .env when present (local dev only).
-// Secrets are NOT committed to git - in production they come from the
-// platform's env vars (Render dashboard) instead, so a missing .env is fine.
+// Load .env when present (local dev). Secrets are not committed; in production
+// they come from the environment, so a missing .env is fine.
 const dotenv = require("./lib/dotenv.js");
 try {
     const envContent = fs.readFileSync(path.join(__dirname, "./.env")).toString();
@@ -99,11 +98,10 @@ mimeSet = {
 };
 
 // Map a request path onto a real file inside public/. Returns the absolute
-// path; null when it names nothing servable (the caller falls back to the
-// menu page); undefined when the path itself is malformed (400).
-// Traversal ("/../server/.env", "/%2e%2e/...", "/..%2f...") is clamped by
-// normalising against "/" first, then re-checked against the resolved root,
-// and dotfiles (.env, .DS_Store, .git) are never served.
+// path; null when it names nothing servable (caller falls back to the menu
+// page); undefined when the path is malformed (400). Traversal is clamped by
+// normalising against "/" and re-checking against the resolved root; dotfiles
+// (.env, .DS_Store, .git) are never served.
 const publicRootAbs = path.resolve(publicRoot);
 let publicRootReal = publicRootAbs;
 try { publicRootReal = fs.realpathSync(publicRootAbs); } catch (e) { /* keep the resolved path */ }
@@ -122,7 +120,7 @@ function publicFile(pathname) {
     const file = path.resolve(publicRootAbs, "." + normal);
     if (!insideDir(publicRootAbs, file)) return null;
     try {
-        // lstat: symlinks are not served (same as before this check existed).
+        // lstat: symlinks are not served.
         if (!fs.lstatSync(file).isFile()) return null;
         if (!insideDir(publicRootReal, fs.realpathSync(file))) return null;
     } catch (e) {
@@ -140,7 +138,7 @@ function sendStatic(res, file) {
 }
 
 // /api/sendPlayer is server-to-server. It stays shut unless API_KEY is a real
-// secret: with API_KEY unset, a body without a "key" used to match undefined.
+// secret (24+ chars), so an unset key can never match a missing one.
 function apiKeyMatches(given) {
     const expected = process.env.API_KEY;
     if (typeof expected !== "string" || expected.length < 24 || typeof given !== "string") return false;
@@ -152,12 +150,12 @@ let wsServer; // WebSocket server instance
 let server; // HTTP server instance
 
 // Tutorial / Dig Wars workers live on loopback ports. The public host only
-// exposes the main port, so the homepage talks to these paths and we splice
-// the websocket through.
+// exposes the main port, so the homepage talks to these paths and the
+// websocket is spliced through.
 const TUTORIAL_PROXY_PATH = "/tut";
 const DIG_WARS_PROXY_PATH = "/dw";
 // The duo raid server (a worker, like the tutorial): the menu's DUOS mode
-// dials <this host>/duo and we splice the websocket through to its port.
+// dials <this host>/duo and the websocket is spliced through to its port.
 const DUO_PROXY_PATH = "/duo";
 
 function serverCfg(id) {
@@ -267,9 +265,8 @@ server = http.createServer((req, res) => {
                 };
             }));
         } break;
-        // The tutorial server is deliberately absent from /getServers.json so it
-        // never shows up on the region picker. The homepage Tutorial button
-        // asks for it here instead, by id.
+        // The tutorial server is absent from /getServers.json so it never shows on
+        // the region picker; the homepage Tutorial button asks for it here by id.
         case "/getTutorialServer.json": {
             const tut = listedServer("tut");
             readString = JSON.stringify(tut ? {
@@ -307,7 +304,7 @@ server = http.createServer((req, res) => {
         case "/version": {
             readString = JSON.stringify({ver: 'v' + pjson.version, devBuild: Config.devBuild});
         } break;
-        
+
         case "/api/getAddonAuthors": {
             // no token: empty list instead of a 403 the client logs on every load
             readString = (!query.token || query.token !== process.env.DEVELOPER) ? "[]" : JSON.stringify(global.addonAuthorInfos);
@@ -424,8 +421,8 @@ accounts.bus.setWorkerPoster(msg => {
 
 function loadGameServer(loadViaMain = false, host, port, gamemode, region, webProperties, properties, isFeatured, isUnlisted = false) {
     const id = webProperties && webProperties.id;
-    // Two games cannot share one process. A second share_client_server used
-    // to process.exit(1) and take the whole site down (tutorial included).
+    // Two games cannot share one process: a second share_client_server game
+    // runs as a worker instead.
     if (loadViaMain && (global.launchedOnMainServer || global._mainLoadScheduled)) {
         console.warn("Already loading a main-process game; " + id + " will run as a worker.");
         loadViaMain = false;
@@ -508,10 +505,9 @@ global.onServerLoaded = () => {
     }
 };
 
-// Automatically resolve the server's region from the box's public ip so the
-// server-list always reflects where it actually lives. Prefers a
-// SERVER_REGION override, then a quick geo lookup (US boxes get East/Central/
-// West from longitude), then Europe.
+// Resolve the server's region from the box's public ip: SERVER_REGION
+// override, then a quick geo lookup (US boxes get East/Central/West from
+// longitude), then Europe.
 async function detectRegion() {
     if (process.env.SERVER_REGION) return process.env.SERVER_REGION;
     const byContinent = { EU: "Europe", NA: "USA", AS: "Asia", OC: "Oceania" };

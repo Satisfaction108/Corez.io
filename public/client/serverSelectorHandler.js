@@ -37,7 +37,7 @@ global.loadServerSelector = (serverData, text) => {
     };
 
     initializeFilter();
-    // the region selector replaces the old filter pills, so keep them hidden
+    // the region selector replaces the filter pills, so keep them hidden
     svFilterRegionDoc.style.display = "none";
     if (global.updateRegionSelector) global.updateRegionSelector(servers);
 
@@ -141,7 +141,7 @@ let initializeFilter = () => {
     for (let s of servers) {
 
         // entries can arrive incomplete while the game servers are still
-        // booting — never let a missing field kill the whole selector
+        // booting; never let a missing field kill the whole selector
         const region = (s.region || "").toLowerCase();
         if (typeof s.gameMode !== "string") s.gameMode = s.gameMode == null ? "" : String(s.gameMode);
 

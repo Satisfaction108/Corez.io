@@ -1,17 +1,9 @@
 // The RANKED UP moment: a full-screen overlay on its own canvas (#rankFx).
-//
-//   dim  ->  the old badge drops in and cracks three times  ->  it shatters
-//   (shards + chips + a flash)  ->  the new badge slams in (rings, sparkles,
-//   a small shake)  ->  "RANKED UP!" and the new rank's name  ->  glint, fade
-//
-// A whole new tier runs longer, with more shards, a third ring, a slow ray
-// burst and falling flakes, and says "NEW TIER!". Finishing placement is the
-// same beat from the "?" badge and says "RANK REVEALED". Flat colours only.
-//
-// The death panel starts it when its bar fills past the division; anything
-// that never got started stays pending and plays in the menu. Click, Space,
-// Enter or Esc skip to the fade after 350 ms. prefers-reduced-motion: no
-// shake and half the particles.
+//   dim -> old badge cracks three times -> shatters -> new badge slams in
+//   -> "RANKED UP!" + rank name -> glint, fade
+// A new tier ("NEW TIER!") and finishing placement ("RANK REVEALED") run
+// the same beat with extras. The death panel starts it; anything never
+// started plays in the menu. Click / Space / Enter / Esc skip after 350 ms.
 import { badgeCanvas, TIER_COLORS, tierOf, nameOf } from './rankBadges.js';
 import { gameSound } from '../sound.js';
 
@@ -151,7 +143,7 @@ function findCovering(to) {
     return queue.find((e) => !e._merged && e.to >= to) || null;
 }
 
-// Old API: queue an explicit event (kept for harnesses).
+// Queue an explicit event (harnesses).
 export function enqueue(ev) {
     if (ev && ev.to != null) {
         const e = owe(ev.kind === 'reveal' ? -1 : ev.from, ev.to, ev.legendNo);

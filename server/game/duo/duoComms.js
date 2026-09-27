@@ -1,10 +1,7 @@
 // Duo talk: team chat and quick pings, duo server only (Config.royale_duos).
 //
-// Normal chat is a bubble over the tank, seen by whoever has it on screen.
-// Partners need more than that: one of you is dead, or you are across the
-// map. Both packets here go to your partner's socket and nowhere else,
-// whatever the distance, and they work while you are dead or spectating
-// (no body needed).
+// Unlike chat bubbles, both packets go straight to the partner's socket
+// (and nowhere else) at any distance, and work while dead or spectating.
 //
 //   'TC' [text]                  -> partner and you get 'TC' [name, text, bodyId, mine 0/1]
 //   'PG' [x, y]                  -> partner and you get 'PG' [x, y, kind, name, bodyId, mine 0/1]

@@ -35,8 +35,7 @@ const SPAWN_GRACE_MS = 4000;   // spawn shield holds this long even if you move
 // ── First minutes ─────────────────────────────────────────────────────────
 // Every knob for the late-joiner / new-player experience: where a fresh
 // spawn lands, how long bots leave it alone, how crowded the closing circle
-// may get, and the "you joined late" note. (Tester churn, Sep 2026: joined in
-// the final circle, spawned into five bots, died over and over, quit.)
+// may get, and the "you joined late" note.
 const FIRST_MINUTES = {
     // Safe spawn: candidates are the drop pits plus random open ground inside
     // the safe zone; the one farthest from every threat wins.
@@ -53,7 +52,7 @@ const FIRST_MINUTES = {
     // Reachability (terrain/spawnReach.js has the rule and its own knobs):
     // a spawn must be able to get out, not land in a pocket ringed by ore,
     // emerald or regrowing rock, or in a mined-out cell about to close.
-    SPAWN_REACH: process.env.SPAWN_REACH !== '0',   // SPAWN_REACH=0: old behaviour (for A/B)
+    SPAWN_REACH: process.env.SPAWN_REACH !== '0',   // SPAWN_REACH=0 turns the rule off (A/B)
     SPAWN_STORM_AHEAD_DIG_S: 60,  // a spot that is only escapable by digging must be inside where the edge will be this far ahead
     SPAWN_POCKET_HOLD_MS: 30_000, // a dug landing pocket and its exit tunnel do not regrow for this long
     SPAWN_CELL_HOLD_MS: 12_000,   // a mined-out cell picked as the spawn does not regrow for this long
@@ -95,7 +94,7 @@ const FIRST_MINUTES = {
 };
 try { storm.setLockMs(FIRST_MINUTES.STORM_LOCK_MS); } catch { /* */ }
 const KILL_SCORE = 200;
-// Streaks: three kills marks you on every minimap. Each kill past that pays
+// Streaks: STREAK_MARK_AT kills marks you on every minimap. Each kill past that pays
 // more, and whoever ends you collects a shutdown bounty.
 const STREAK_MARK_AT = 4;
 const STREAK_BONUS_PER = 50;
@@ -147,7 +146,7 @@ function connectedClients() {
 
 let _combAt = 0, _comb = null;
 function combatants() {
-    // asked for several times per 16 ms tick; one list per tick is plenty
+    // called several times per 16 ms tick; one list per tick is enough
     const t = Date.now();
     if (_comb && t - _combAt < 16) return _comb;
     _combAt = t;
@@ -225,6 +224,7 @@ function ensureStat(body) {
     if (!s) {
         s = { key, name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, carried: 0, alive: true, id: body.id, isBot: !!body.isBot, lastSeen: now(), revengeOn: null, revengeBonus: 0, extra: 0, streak: 0, bestStreak: 0, bossKills: 0, chests: 0 };
         raidStats.set(key, s);
+        if (body.socket) dropStaleRowsOf(s, body.socket);
     }
     s.name = body.name || s.name;
     s.id = body.id;
@@ -238,6 +238,26 @@ function ensureStat(body) {
     s.lastSeen = now();
     try { s.carried = Math.max(0, (body.carriedGems || 0) | 0); } catch { /* */ }
     return s;
+}
+
+// One board row per person. Rows are keyed by socket, so rejoining after
+// going to the menu (or from a new tab) made a second row next to the old,
+// disconnected one. Drop the old one: that rejoin is a fresh start.
+function whoOf(socket) {
+    if (socket.account && socket.account.id) return "a:" + socket.account.id;
+    if (socket.guestId) return "g:" + socket.guestId;
+    return null;
+}
+function dropStaleRowsOf(s, socket) {
+    const who = whoOf(socket);
+    s.who = who;
+    if (!who) return;
+    let live = null;
+    try { live = new Set(connectedClients().map(c => "s:" + c.id)); } catch { return; }
+    for (const [k, row] of raidStats) {
+        if (row === s || row.who !== who || live.has(k)) continue;
+        raidStats.delete(k);
+    }
 }
 
 function killScore() { return Math.round(KILL_SCORE * raidMods.num('killScoreMult', 1)); }
@@ -322,9 +342,8 @@ function boardSnapshot() {
     rows.sort(boardCmp);
     rows.forEach((r, i) => { r.place = i + 1; });
     // Everyone in the game right now always makes the board, then the best of
-    // the fallen. The old top-32-by-score cut dropped fresh spawns (score 0)
-    // below a pile of dead high scorers, which is why the Alive tab showed
-    // one or two names.
+    // the fallen; a plain top-32-by-score cut would drop fresh spawns (score 0)
+    // below dead high scorers and empty the Alive tab.
     const present = rows.filter(r => r.here);
     const rest = rows.filter(r => !r.here).slice(0, Math.max(10, 32 - present.length));
     return present.concat(rest).sort((a, b) => a.place - b.place);
@@ -341,7 +360,7 @@ function objectivesSnapshot(t) {
     return out;
 }
 
-// Streakers at 3+ kills are broadcast to every minimap: power has a cost.
+// Streakers at STREAK_MARK_AT+ kills are broadcast to every minimap.
 function pingsSnapshot(bodyByKey) {
     const out = [];
     for (const [k, s] of raidStats) {
@@ -496,7 +515,7 @@ function broadcast(extra = {}) {
         const key = client.id ? "s:" + client.id : null;
         const mine = key ? raidStats.get(key) : null;
         const myRow = mine ? board.find(r => r.id === mine.id) : null;
-        const revenge = null;   // revenge marking retired (Sep 2026)
+        const revenge = null;   // revenge marking is retired; the field stays for the client
         const body = client.player && client.player.body;
         const bodyLive = body && !body.isDead?.();
         let scan = null;
@@ -632,11 +651,10 @@ function carveSpawnPocket(tg, x, y, R, zone) {
 
 // Where a fresh body drops in. `self` is the body being placed (left out of
 // the threat list); `forBot` keeps a dropping bot extra far from humans.
-// The drop pits sit on a ring outside the plaza, so once the storm closed
-// past them there used to be no candidate at all and EVERY spawn, bots
-// included, landed on the storm centre: the final circle's pile-up point.
-// Open ground inside the safe zone is sampled as well now, and the spot
-// farthest from every threat (fights and bosses count as closer) wins.
+// Candidates are the drop pits plus open ground sampled inside the safe zone
+// (the pits sit on a ring outside the plaza, so a closed storm excludes them
+// all); the spot farthest from every threat (fights and bosses count as
+// closer) wins.
 function safeSpawnSpot(self, forBot) {
     const FM = FIRST_MINUTES;
     const t = now();
@@ -707,8 +725,8 @@ function safeSpawnSpot(self, forBot) {
     // into a gap somebody landed in moments ago, even if they already left.
     const live = [];
     // A human ignores spots bots reserved: the bots themselves are already
-    // threats above, and in a small circle their reservations covered every
-    // gap, pushing the human onto whatever scrap was left.
+    // threats above, and in a small circle their reservations would cover
+    // every gap.
     for (const [k, r] of pitReservations) {
         if (r.until <= t) { pitReservations.delete(k); continue; }
         if (!forBot && r.bot) continue;
@@ -820,7 +838,7 @@ function tickSpawnRescue(t) {
 // ROYALE_DEBUG only: plant `k` gem-ringed pockets (a mined-out cell whose
 // every neighbour is fresh shard/emerald, held open so it stays a pocket)
 // and `k` mined-out cells in plain rock that are about to regrow, inside the
-// storm circle. These are the spots the old spawn picker landed people in.
+// storm circle: the spots the reachability rule must never pick.
 function debugPlantTraps(k) {
     const tg = global.gameManager.terrainGrid;
     if (!tg || !tg.rocks) return 0;
@@ -992,8 +1010,7 @@ function isNewPlayer(socket) {
 }
 
 // Humans taking part: alive, or dead and on their way back. Counting only
-// live bodies let a bot take a dead player's slot, so every death grew the
-// bot count by one for the rest of the cycle.
+// live bodies would let a bot take a dead player's slot.
 function humansInRaid() {
     let n = 0;
     for (const c of connectedClients()) {
@@ -1577,7 +1594,7 @@ function onHumanJoin(body) {
         moveTo(body, hole.x + (Math.random() - 0.5) * 30, hole.y + (Math.random() - 0.5) * 30);
     }
     // never leave a fresh body inside rock: the terrain loop would crush or
-    // relocate it a moment later, which read as a second teleport on spawn
+    // relocate it a moment later (a second teleport on spawn)
     try {
         const tgJ = global.gameManager.terrainGrid;
         if (tgJ && tgJ.pointInRock && tgJ.pointInRock(body.x, body.y)) {
@@ -1619,12 +1636,11 @@ function onHumanJoin(body) {
 }
 
 // ── reconnect / resume ────────────────────────────────────────────────────
-// A dropped connection (proxy reload, wifi blip, a refresh) used to cost the
-// whole raid: bank, shop, score and tank all lived on the old socket. The
-// client now reconnects on its own and sends the same per-tab token, and for
-// two minutes the new socket inherits everything the old one had. Carried
-// gems only come back if nothing had hit you for 8 s, so pulling the plug is
-// not a way out of a losing fight.
+// After a dropped connection (proxy reload, wifi blip, refresh) the client
+// reconnects with the same per-tab token, and for RESUME_MS the new socket
+// inherits the old one's bank, shop, score and tank. Carried gems only come
+// back if nothing hit you for RESUME_SAFE_MS, so pulling the plug is not a
+// way out of a losing fight.
 // ROYALE_RESUME_MS shortens the window for local tests (ROYALE_DEBUG only).
 const RESUME_MS = (process.env.ROYALE_DEBUG && parseInt(process.env.ROYALE_RESUME_MS, 10) > 0)
     ? parseInt(process.env.ROYALE_RESUME_MS, 10) : 120_000;
@@ -1732,17 +1748,15 @@ function applyResume(body, snap) {
     const socket = body.socket;
     try {
         if (snap.alive && snap.defs && snap.defs.length) {
-            // define() appends to the upgrade menu, and the fresh body was
-            // just defined as the spawn class: without this a resumed Twin
-            // was offered Basic's whole tree again (and on mobile the stale
-            // menu kept the stat bars hidden). entity.upgrade() does the same.
+            // define() appends to the upgrade menu and the fresh body is
+            // already the spawn class: clear it, or the resumed tank is offered
+            // the spawn class's tree again (entity.upgrade() does the same)
             body.upgrades = [];
             body.define(snap.defs.length === 1 ? snap.defs[0] : snap.defs);
             if (snap.skillRaw) { body.skill.set(snap.skillRaw); body.skill.points = snap.points | 0; }
             body._modSkillGiven = snap.modSkill || body._modSkillGiven;
             body.refreshBodyAttributes();
             if (body.syncSkillsToGuns) body.syncSkillsToGuns();
-            // back where you were, unless that spot is now rock or storm
             // back where you were: out of the rock if you were pressed into
             // it, but not back into the storm (you keep the fresh spawn then)
             let inStorm = false;
@@ -2273,8 +2287,8 @@ function grantTwist(body) {
     if (mod.freeArm && (!st.arm || st._twistArm)) { shop.grantArm(body.socket, mod.freeArm, true); st._twistArm = mod.freeArm; }
     if (mod.freeGear) { for (const gid of mod.freeGear) st.gear[gid] = true; st._twistGear = mod.freeGear.slice(); shop.applyPassives(body); }
     if (mod.kitStart) for (const [kid, n] of Object.entries(mod.kitStart)) shop.grantKit(body.socket, kid, n);
-    // Overclocked used to be applied only in freshRaidBody, i.e. on the next
-    // spawn: a twist that started mid-raid showed the popup and gave nothing.
+    // granted here as well as in freshRaidBody, so a twist that starts
+    // mid-raid takes effect at once
     if ((mod.extraSkill | 0) > 0 && !body._modSkillGiven) {
         body._modSkillGiven = true;
         try { body.skill.points += mod.extraSkill | 0; } catch { /* */ }

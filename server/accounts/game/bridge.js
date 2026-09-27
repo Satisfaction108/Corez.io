@@ -1,5 +1,5 @@
-// Accounts <-> game glue, running in whichever thread hosts the Dig Royale
-// game (the main thread in production, a worker in local dev).
+// Accounts <-> game glue, in whichever thread hosts the Dig Royale game
+// (main thread in production, a worker in local dev).
 //
 // sockets.js calls:
 //   bridge.onConnect(socket, req, manager)  as a socket is welcomed
@@ -14,8 +14,7 @@
 //   AC  {username, userId, rank: RankSnap, dust, dustCarried}   at spawn, accounts
 //   DU  carriedMilli, balanceMilli, deltaMilli, kind            numbers; kind 0 sync,
 //       1 pickup, 2 bank, 3 kill, 4 death loss, 5 placement, 6 quest. At most
-//       4 a second per socket (du() coalesces), except forced ones (bank
-//       completion, death).
+//       4/s per socket (du() coalesces), except forced ones (bank, death).
 //   RK  the life result (rankHooks), after 'F'
 //   RKP the raid placement result (rankHooks), at raid end
 //
@@ -31,10 +30,9 @@
 // Daily quests and achievements (progressHooks.js): DQ at spawn and on
 // progress, ACH on an unlock.
 //
-// Only the royale game has accounts: the tutorial worker never loads this
-// file's database side (bridge.active() is false there) and plays exactly
-// as before. Ranked and dust are also off when ROYALE_DEBUG is set, unless
-// ACCOUNTS_ALLOW_DEBUG=1 outside production (rankedOn / debugOn).
+// Only the royale game has accounts; active() is false in the tutorial.
+// Ranked and dust are off under ROYALE_DEBUG unless ACCOUNTS_ALLOW_DEBUG=1
+// outside production (rankedOn / debugOn).
 'use strict';
 
 const accounts = require('../index');
@@ -166,9 +164,9 @@ function onConnect(socket, req, socketManager) {
     socket.account = { id: user.id, publicId: user.public_id, username: user.username, blocked: new Set() };
     loadBlocks(socket);
 
-    // Newest session wins. No loop to guard against: KO turns off the kicked
-    // tab's auto-reconnect. (Limiting supersedes locked out players whose
-    // flaky wifi left half-open sockets behind on every reconnect.)
+    // Newest session wins. KO turns off the kicked tab's auto-reconnect, so
+    // there is no loop. Don't rate-limit this: flaky wifi leaves half-open
+    // sockets behind on every reconnect.
     for (const o of socketManager.clients.slice()) {
         if (o !== socket && o.account && o.account.id === user.id) { o.leftOnPurpose = true; kickOut(o, 'You logged in on another tab or device.'); }
     }
@@ -184,9 +182,8 @@ function onGuestId(socket) {
     else guests.seen(socket.guestId);
 }
 
-// "$broadcast <text>" typed in raid chat. Only accounts whose linked Discord
-// is in ADMIN_DISCORD_IDS (the same list as the admin bot commands) may;
-// -> true when handled (the line is not shown as chat).
+// "$broadcast <text>" in raid chat, for accounts whose linked Discord is in
+// ADMIN_DISCORD_IDS. -> true when handled (the line is not shown as chat).
 const BROADCAST_GAP_MS = 5000;
 function adminBroadcast(socket, raw) {
     if (!socket || !socket.account || !accounts.enabled()) return false;
@@ -247,11 +244,10 @@ function sendAccount(socket, row, body) {
     du(socket, 0, 0, true);
 }
 
-// Fresh user row at every spawn: cosmetics (only items still owned; the
-// Locker's choice lands here, so an equip applies on the next spawn), the
-// nameplate rank code, then AC and DU. Custom Color rides the existing
-// 7-char name colour prefix (body.nameColor); body.customNameColor feeds the
-// board row's `nc`.
+// Fresh user row at every spawn: cosmetics (owned items only; a Locker
+// equip applies on the next spawn), the nameplate rank code, then AC and DU.
+// Custom Color rides the 7-char name colour prefix (body.nameColor);
+// body.customNameColor feeds the board row's `nc`.
 function applyIdentity(socket, body) {
     if (!body) return;
     body.accountId = socket.account ? socket.account.id : 0;
@@ -299,8 +295,8 @@ function sendDU(socket, q, now) {
     } catch (e) { /* socket closing */ }
 }
 
-// delta (milli) of `kind` just happened on this socket's account. A
-// different kind waiting in the window goes out first, so kinds never mix.
+// Queue a delta (milli) of `kind`. A pending different kind is sent first,
+// so kinds never mix.
 function du(socket, delta, kind, force = false) {
     if (!socket || !socket.account) return;
     const now = Date.now();
@@ -322,8 +318,7 @@ function tickDU(now = Date.now()) {
     }
 }
 
-// Right after 'F': the life result settled a moment ago in onCombatantDead
-// (or at raid end, for the mass death).
+// Right after 'F': the life result settled in onCombatantDead (or at raid end).
 function afterDeathPacket(socket) {
     const p = socket && socket._rkPending;
     if (!p) return;
@@ -350,8 +345,7 @@ function onClose(socket) {
     }
 }
 
-// The live game socket of an account here (newest session wins, so at most
-// one normally). `except`: ignore this one.
+// The live game socket of an account (normally at most one). `except` is skipped.
 function socketOf(userId, except = null) {
     if (!manager || !userId) return null;
     for (const s of manager.clients) {

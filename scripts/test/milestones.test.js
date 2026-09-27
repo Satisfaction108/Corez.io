@@ -1,8 +1,8 @@
 // Bank milestone tests: node scripts/test/milestones.test.js
 //
 // Rungs are reached by real deposits only. A rung's bonus lands in the bank
-// (and on the raid board) but must not count toward the next rung: before the
-// fix, ~45k of deposits cascaded 25k -> 50k -> 100k and ended past 200k banked.
+// (and on the raid board) but must not count toward the next rung, or ~45k of
+// deposits would cascade 25k -> 50k -> 100k and end past 200k banked.
 'use strict';
 
 const assert = require('node:assert/strict');

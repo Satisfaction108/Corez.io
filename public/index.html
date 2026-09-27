@@ -204,9 +204,9 @@
                 <div class="sp-checks">
                     <label class="container"><input id="smoothCamera" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Smooth Camera</label>
                     <label class="container"><input id="optFancy" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Fading Animation</label>
-                    <!-- Dig Wars: everyone auto-levels to 45 on spawn, so the toggle is hidden (not removed) -->
+                    <!-- everyone auto-levels to 45 on spawn; toggle hidden but kept for JS refs -->
                     <label class="container" style="display: none;"><input id="autoLevelUp" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Auto-Level Up</label>
-                    <!-- Dig Wars: incognito removed — wealth is public by design (element kept hidden for JS refs) -->
+                    <!-- no incognito: wealth is public by design (element kept hidden for JS refs) -->
                     <label class="container" style="display: none;"><input id="optIncognitoMode" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Incognito Mode</label>
                     <label class="container"><input id="optCenterMinimap" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Centered Minimap</label>
                     <label class="container"><input id="optSlowerFOV" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Slow FOV Anim</label>
@@ -361,7 +361,6 @@
         <div id="startMenuWrapper">
             <div id="menuTabs" class="menuTabs" style="text-align: right;"></div>
             <div class="startMenu">
-
 
                 <!-- Daily Quests beside the card (client/account/dailyQuests.js) -->
                 <aside id="lobbySide" aria-label="Daily quests" hidden></aside>

@@ -7713,7 +7713,7 @@ Class.menu_unused2_AR = makeMenu("Unused (Tier 5)", {upgrades: ["custodian_AR"],
             //Class.cocci.UPGRADES_TIER_4 = ["megaCocci"].map(x => x + "_AR")
             //Class.banger_AR.UPGRADES_TIER_4 = ["megaBanger", "prick", "autoBanger", "tripwire", "thwacker", "sharper"].map(x => x + "_AR")
             //Class.drifter_AR.UPGRADES_TIER_4 = ["buncher", "megaDrifter", "autoDrifter", "vessel", "cauldron", "sharper", "bundler"].map(x => x + "_AR")
-        
+
             Class.healer.UPGRADES_TIER_4 = ["physician", "renovator"].map(x => x + "_AR")
             Class.medic.UPGRADES_TIER_4 = ["intern", "ointment", "injection", "actuary"].map(x => x + "_AR")
             Class.scientist_AR.UPGRADES_TIER_4 = ["surgeon", "professor_AR", "chemist_AR", "scribble_AR"/*, [MECH HEALER], [MACHTRAP HEALER]*/, "kraw_AR"]

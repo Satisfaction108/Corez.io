@@ -711,7 +711,7 @@ function mergeDreads(dread1, dread2, sourceDread, tier) {
 	// Save upgrade to previous dread
 	let upgradeLevel = `UPGRADES_TIER_${eval(`tier${tier}`)}`;
 	util.forcePush(Class[sourceDread], upgradeLevel, definitionName);
-	
+
 	// Generate new dreads recursively
 	if (!dread1.UPGRADES_TIER_M1 || !dread2.UPGRADES_TIER_M1) return;
 
