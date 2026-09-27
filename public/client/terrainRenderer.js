@@ -304,7 +304,9 @@ class TerrainRenderer {
                     this.mapDirty = true;
                     rebuilt = true;
                 }
-                this._beginGrowth(ev.k, ev.o | 0, ev.gen | 0, now, ev.ax, ev.ay);
+                // ev.e: the server's rise is already this far along (ms)
+                const riseE = Number.isFinite(ev.e) ? Math.max(-GROW_MS, Math.min(GROW_MS, ev.e)) : 0;
+                this._beginGrowth(ev.k, ev.o | 0, ev.gen | 0, now - riseE, ev.ax, ev.ay);
                 continue;
             }
             if (ev.r === 2) { this._finishGrowth(ev.k, now); continue; }

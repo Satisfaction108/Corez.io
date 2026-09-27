@@ -1089,6 +1089,10 @@ class socketManager {
                 }
             } break;
             case "M": {
+                // "$broadcast <text>" from an admin account: a popup on every
+                // raid server. Anyone else's "$broadcast" is ordinary chat.
+                if (typeof m[0] === "string" && /^\$broadcast(\s|$)/i.test(m[0]) &&
+                    accountBridge.adminBroadcast && accountBridge.adminBroadcast(socket, m[0])) break;
                 if (player.body == null) return 1;
                 let abort, message = m[0], original = m[0];
 

@@ -1110,7 +1110,8 @@ class TerrainGrid {
     }
 
     
-    startRegrow(rock, now) {
+    // elapsed: start this far into the rise (ms), e.g. bloom rocks at 45%
+    startRegrow(rock, now, elapsed = 0) {
         if (rock.canyon) return false;
         if (!rock.worldPoly || rock.alive || rock.growing) return false;
         // a loot chest holds its pocket and its way out (chests.js holdRock);
@@ -1118,7 +1119,7 @@ class TerrainGrid {
         if (rock.chestLock || rock._chestHolds > 0) return false;
         rock.gen++;
         rock.growing    = true;
-        rock.growStart  = now;
+        rock.growStart  = now - (elapsed > 0 ? elapsed : 0);
         rock.growDamage = 0;
         rock.diedAt     = 0;
         rock.alive      = false;
@@ -1183,8 +1184,13 @@ class TerrainGrid {
         
         const halfW = this.cols * this.cellSize / 2;
         const halfH = this.rows * this.cellSize / 2;
+        // e: how far into the rise the collision shape already is when this
+        // goes out (a bloom starts at 45%; staggered starts are in the future).
+        // Without it the client drew the rise from zero while the server's
+        // shape was far bigger: an invisible wall pushing players away.
+        const riseE = Math.max(-REGROW.GROW_MS, Math.min(REGROW.GROW_MS, Math.round(Date.now() - rock.growStart)));
         this.rockEvents.push({
-            k: rock.k, r: 1, o: rock.ore, gen: rock.gen,
+            k: rock.k, r: 1, o: rock.ore, gen: rock.gen, e: riseE,
             ax: Math.round((rock.growAx + halfW) / this.cellSize * 100) / 100,
             ay: Math.round((rock.growAy + halfH) / this.cellSize * 100) / 100,
         });
@@ -1303,8 +1309,8 @@ class TerrainGrid {
             if (rock.noRegrowUntil && now < rock.noRegrowUntil) continue;
             if (this._inNoRegrowZone(rock, now)) continue;
             if (!bloomRock && !this._hasLivingNeighbour(rock)) continue;
-            this.startRegrow(rock, now);
-            if (bloomRock) rock.growStart = now - REGROW.GROW_MS * 0.45;   // rises in about 4 seconds
+            // a bloom rock starts 45% of the way up, so it rises in about 4 s
+            this.startRegrow(rock, now, bloomRock ? REGROW.GROW_MS * 0.45 : 0);
         }
 
         

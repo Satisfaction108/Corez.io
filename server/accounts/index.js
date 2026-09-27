@@ -103,6 +103,12 @@ function after(ms, fn) {
 function initMain() {
     if (state.initialized) return enabled();
     state.initialized = true;
+    // an admin's $broadcast from any raid goes out to every game server
+    try {
+        bus.onMain((serverId, msg) => {
+            if (msg && msg.t === 'broadcast' && typeof msg.text === 'string') bus.toGame({ t: 'broadcast', text: msg.text.slice(0, 200) });
+        });
+    } catch (e) { console.error('[accounts] broadcast relay failed: ' + ((e && e.stack) || e)); }
     config.load();
     // Duo parties work for guests too, so they start whether or not accounts
     // do. The ticket secret is set before any game worker exists (workers

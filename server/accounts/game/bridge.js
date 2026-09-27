@@ -88,6 +88,8 @@ function init(socketManager) {
             for (const s of manager.clients) if (s.account && s.account.id === msg.userId) loadBlocks(s);
         } else if (msg.t === 'dustChanged') {
             if (rankedOn()) require('./dustHooks').reloadBalance(msg.userId);
+        } else if (msg.t === 'broadcast' && typeof msg.text === 'string') {
+            try { manager.broadcast(msg.text); } catch (e) { /* */ }
         }
     });
     statusTimer = setInterval(sendStatus, STATUS_MS);
@@ -180,6 +182,27 @@ function onGuestId(socket) {
     const guests = require('../guests');
     if (socket.account) guests.converted(socket.guestId, socket.account.id);
     else guests.seen(socket.guestId);
+}
+
+// "$broadcast <text>" typed in raid chat. Only accounts whose linked Discord
+// is in ADMIN_DISCORD_IDS (the same list as the admin bot commands) may;
+// -> true when handled (the line is not shown as chat).
+const BROADCAST_GAP_MS = 5000;
+function adminBroadcast(socket, raw) {
+    if (!socket || !socket.account || !accounts.enabled()) return false;
+    let row = null;
+    try { row = accounts.users.byId(socket.account.id); } catch (e) { row = null; }
+    const admins = accounts.config.discordBot && accounts.config.discordBot.adminIds;
+    if (!row || !row.discord_id || !admins || !admins.has(String(row.discord_id))) return false;
+    const text = String(raw).replace(/^\$broadcast\s*/i, '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    const say = (t) => { try { socket.talk('m', 5000, t); } catch (e) { /* */ } };
+    if (!text) { say('Usage: $broadcast <message>'); return true; }
+    const now = Date.now();
+    if (now - (socket._lastBroadcastAt || 0) < BROADCAST_GAP_MS) { say('Wait a few seconds between broadcasts.'); return true; }
+    socket._lastBroadcastAt = now;
+    try { accounts.users.audit(row.id, 'admin_broadcast', { text }, { actor: 'admin:' + row.discord_id }); } catch (e) { /* audit only */ }
+    try { accounts.bus.toMain({ t: 'broadcast', text }); } catch (e) { say('Broadcast failed.'); }
+    return true;
 }
 
 // Chat filter (sockets.js chatLoop): hide what `speaker` says from `viewer`.
@@ -338,6 +361,6 @@ function socketOf(userId, except = null) {
 }
 
 module.exports = {
-    init, active, rankedOn, debugOn, onConnect, onGuestId, resolveName, applyIdentity, sendAccount, afterDeathPacket,
+    init, active, rankedOn, debugOn, onConnect, onGuestId, resolveName, adminBroadcast, applyIdentity, sendAccount, afterDeathPacket,
     du, tickDU, onClose, kickOut, chatHidden, sendStatus, loadBlocks, socketOf,
 };
