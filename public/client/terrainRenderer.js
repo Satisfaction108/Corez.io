@@ -2076,6 +2076,7 @@ class TerrainRenderer {
         if (w * density > maxDim) density = maxDim / w;
         if (h * density * ratioY > maxDim) density = maxDim / (h * ratioY);
         const pw = Math.max(1, Math.ceil(w * density)), ph = Math.max(1, Math.ceil(h * density * ratioY));
+        if (!isFinite(pw) || !isFinite(ph) || pw > maxDim + 1 || ph > maxDim + 1) return c || null;
         let img = null;
 
         if (this._gl) {
@@ -2186,6 +2187,11 @@ class TerrainRenderer {
         const originY = screenH / 2 - py - ratio * gameHeight / 2;
         const cellW   = ratio * gameWidth  / this._cols;
         const cellH   = ratio * gameHeight / this._rows;
+        // A zoom/resize/spectate frame can hand us NaN or 0 for a moment.
+        // Skip it: sizing a texture from that throws, and throwing after
+        // ctx.save() below left the canvas transformed for every later frame.
+        if (!(cellW > 0 && cellH > 0 && isFinite(cellW) && isFinite(cellH) &&
+              isFinite(originX) && isFinite(originY) && screenW > 0 && screenH > 0)) return;
 
         ctx.save();
         ctx.translate(originX, originY);
@@ -2227,6 +2233,7 @@ class TerrainRenderer {
             this._view = { tlx, tly, tlw, tlh };
             const nowMs = performance.now();
             const tex = this._rockTexture(this._view, cellW, cellH);
+            if (!tex || !tex.img) { ctx.restore(); return; }   // bad frame size, see above
 
             
             

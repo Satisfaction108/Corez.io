@@ -5243,10 +5243,13 @@ import * as cosmetics from './account/cosmetics.js';
                 // the pin: a head with the glyph, a point on the spot
                 const R = 18 * pop, hy = sy - 36 * pop - Math.sin(now / 280) * 2;
                 c.globalAlpha = a;
+                // teardrop: the sides run tangent into the head, so it's symmetric
+                const tipY = sy - 2, d = Math.max(R * 1.25, tipY - hy);
+                const al = Math.acos(Math.min(0.999, R / d));
                 c.beginPath();
-                c.moveTo(sx, sy - 2);
-                c.lineTo(sx - R * 0.62, hy + R * 0.62);
-                c.arc(sx, hy, R, Math.PI * 0.75, Math.PI * 2.25);
+                c.moveTo(sx, tipY);
+                c.lineTo(sx + R * Math.cos(Math.PI / 2 + al), hy + R * Math.sin(Math.PI / 2 + al));
+                c.arc(sx, hy, R, Math.PI / 2 + al, Math.PI * 2.5 - al);
                 c.closePath();
                 c.fillStyle = col; c.strokeStyle = HUD.ink; c.lineWidth = 3; c.lineJoin = "round";
                 c.fill(); c.stroke();
@@ -10247,8 +10250,9 @@ import * as cosmetics from './account/cosmetics.js';
                 pill.style.left = ((x - boxLengthHalf - 0.75 * g / 2) * toPx + 0.3 * g) + "px";
                 // centred on the box as laid out (its CSS padding can make it taller than boxH)
                 const bh = global.canvas.chatBox.offsetHeight || boxH;
-                pill.style.top = (top * toPx + (bh - 0.64 * g) / 2) + "px";
-                global.canvas.chatInput.placeholder = global.died ? "Only your mate hears you" : team ? "To your mate. Tab for all" : "To everyone. Tab for team";
+                const mt = parseFloat(getComputedStyle(global.canvas.chatBox).marginTop) || 0;
+                pill.style.top = (top * toPx + mt + (bh - 0.64 * g) / 2) + "px";
+                global.canvas.chatInput.placeholder = global.died ? "Only your teammate can hear you" : team ? "Chat with your teammate, press Tab for all" : "Chat with everyone, press Tab for team";
             } else {
                 pill.style.display = "none";
                 global.canvas.chatInput.placeholder = "";
@@ -10272,6 +10276,9 @@ import * as cosmetics from './account/cosmetics.js';
             global.canvas.chatInput.style.backgroundColor = "transparent";
             global.canvas.chatInput.style.width = (boxLengthHalf * 2 + 0.35 * g - pillW) / global.screenWidth * 100 + `%`;
             global.canvas.chatInput.style.height = boxH + `px`;
+            // no vertical padding: the browser centres the line in the box
+            global.canvas.chatInput.style.padding = `0 ${0.3 * g}px`;
+            global.canvas.chatInput.style.lineHeight = "normal";
             global.canvas.chatInput.style.left = (x - boxLengthHalf - 0.35 * g / 2 + pillW) / global.screenWidth * 100 + `%`;
             global.canvas.chatInput.style.top = top * toPx + `px`;
             if (global.canvas.chatBox && global.showChatGlide < 0.005 && !global.showChat) {
