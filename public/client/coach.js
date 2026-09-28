@@ -92,6 +92,7 @@ function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch 
 // ── runtime state ──────────────────────────────────────────────────────
 const st = {
     step: null,          // current step id, "final", or null
+    begun: false,        // shown at least once this page load (lateInRaid holds the start)
     flash: null,         // { until } after a step completes
     finalAt: 0,
     tourAt: 0,
@@ -125,9 +126,21 @@ function inRaid() {
     return !!(global.gameStart && !global.tutorialMode && global.digRoyaleMode &&
         global.royale && global.royale.at > 0 && !global.disconnected);
 }
+// alive and actually spawned: not queued for a spawn, spectating, or behind
+// the join plate
 function playing() {
     const r = global.royale;
-    return inRaid() && !global.died && !global.royaleSpectating && !(r && r.ending);
+    const join = document.getElementById("dwJoin");
+    return inRaid() && !global.died && !global.royaleSpectating && !global.royaleDied && !global.raidQueued &&
+        !(r && r.ending) && !(join && join.classList.contains("open"));
+}
+// The storm is nearly shut or the raid nearly over: a first spawn now waits
+// for the next storm before the guide starts.
+function lateInRaid() {
+    const r = global.royale || {}, s = r.storm;
+    if (r.lock || r.ending) return true;
+    if (s && s.a && (s.hold || (s.left | 0) < 30)) return true;
+    return (r.left | 0) > 0 && (r.left | 0) < 90;
 }
 function skillSum() {
     let n = 0;
@@ -608,6 +621,10 @@ export function hook() {
     observe(t);
     // a fresh spawn is still receiving its tank, and the spawn messages go first
     if (t - st.aliveAt < SETTLE_MS) { st.tourAt = t; st.tutAt = t; ui.show(false); return; }
+    if (!st.begun) {
+        if (lateInRaid()) { st.tourAt = t; st.tutAt = t; ui.show(false); return; }
+        st.begun = true;
+    }
     st.carried = (global.gems && global.gems.carried) | 0;
     if (st.death) afterDeath(st.death);
     if (st.flash && t > st.flash.until) st.flash = null;

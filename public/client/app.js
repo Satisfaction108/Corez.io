@@ -11617,6 +11617,34 @@ import * as cosmetics from './account/cosmetics.js';
         joinMode = "";
         if (joinEl) joinEl.classList.remove("open");
     }
+    // Queued while the server holds spawns: the final storm lock, or the
+    // wait between raids. Null when a spawn can go through. Raid state is
+    // only trusted while its packets are fresh, so a previous game's raid
+    // can't leak in.
+    function raidWaitState(r, now) {
+        if (!(r.at > 0) || now - r.at > 3000) return null;
+        const age = (now - r.at) / 1000;
+        if (r.ending) {
+            const n = (r.nextIn | 0) - age;
+            return { mode: "ending", title: "Raid over", lbl: n > 0.5 ? "Next raid starts in" : "", n: n > 0.5 ? joinClock(n) : "",
+                line: n > 0.5 ? "This raid just ended. You'll drop in with everyone when the next one starts." : "The next raid is starting…",
+                back: true, dots: true };
+        }
+        if (r.lock) {
+            const lockN = (r.lockLeft | 0) - age;
+            const raidN = (r.raidLeft | 0) - age;
+            if ((r.raidLeft | 0) > 0 && (r.raidLeft | 0) <= (r.lockLeft | 0)) {
+                // the raid ends before the storm lock lifts
+                const n = raidN + 17;
+                return { mode: "late", title: "Final storm", lbl: "Next raid starts in", n: joinClock(n),
+                    line: "This raid is ending, so nobody can spawn. You'll start fresh in the next raid.", back: true, dots: true };
+            }
+            return { mode: "lock", title: "Final storm", lbl: lockN > 0.5 ? "You spawn in" : "", n: lockN > 0.5 ? joinClock(lockN) : "",
+                line: lockN > 0.5 ? "Nobody can spawn while the storm closes. You'll drop in as soon as it resets." : "Spawning you now…",
+                back: true, dots: true };
+        }
+        return null;
+    }
     // What the plate should say right now, or null when you're playing.
     function joinState() {
         const now = performance.now();
@@ -11656,6 +11684,10 @@ import * as cosmetics from './account/cosmetics.js';
                 return { mode: "fillsolo", title: "Going solo", line: df.mine ? "Dropping you in without a teammate…" : "No teammates around right now. Dropping you in solo…", dots: true };
         }
         if (global.gameConnecting && !global.gameStart) {
+            // joined during the final storm or between raids: the server
+            // holds the spawn, so say why and for how long
+            const wait = global.raidQueued && raidWaitState(r, now);
+            if (wait) return wait;
             const slow = joinMode === "connect" && now - joinModeAt > 7000;
             const msg = String(global.message || "");
             return { mode: "connect", title: "Connecting…",
@@ -11664,27 +11696,8 @@ import * as cosmetics from './account/cosmetics.js';
         }
         // in the game, not spawned yet
         if (global.gameStart && !global.died && global.raidQueued) {
-            const live = r.at > 0;
-            const age = live ? (now - r.at) / 1000 : 0;
-            if (live && r.ending) {
-                const n = (r.nextIn | 0) - age;
-                return { mode: "ending", title: "Raid over", lbl: n > 0.5 ? "Next one starts in" : "", n: n > 0.5 ? joinClock(n) : "",
-                    line: n > 0.5 ? "Everyone's down between raids. You'll drop in with the rest." : "The next raid is starting…",
-                    back: true, dots: true };
-            }
-            if (live && r.lock) {
-                const lockN = (r.lockLeft | 0) - age;
-                const raidN = (r.raidLeft | 0) - age;
-                if ((r.raidLeft | 0) > 0 && (r.raidLeft | 0) <= (r.lockLeft | 0)) {
-                    // the raid ends before the storm lock lifts
-                    const n = raidN + 17;
-                    return { mode: "late", title: "Raid's almost over", lbl: "Next raid starts in", n: joinClock(n),
-                        line: "The final storm is closing. You'll start fresh in the next raid.", back: true, dots: true };
-                }
-                return { mode: "lock", title: "Final storm", lbl: lockN > 0.5 ? "Spawning you in" : "", n: lockN > 0.5 ? joinClock(lockN) : "",
-                    line: lockN > 0.5 ? "Nobody spawns while the storm closes. You drop in the moment it resets." : "Spawning you now…",
-                    back: true, dots: true };
-            }
+            const wait = raidWaitState(r, now);
+            if (wait) return wait;
             // a normal spawn is near-instant: only speak up if it isn't
             if (joinMode !== "join" && !joinUp) {
                 if (!joinState._waitAt) joinState._waitAt = now;
