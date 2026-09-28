@@ -35,10 +35,10 @@ const ITEMS = [
     { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Instantly regrows the dead rock within 260 of you. Instant cover." },
     { id: "decoy",     cat: "kit", name: "Decoy Satchel",  price: 250, max: 3, desc: "Makes you look like you're hauling a full satchel for 20 seconds. Bait." },
     { id: "barrage",   cat: "kit", name: "Rock Barrage",   price: 3000, max: 1, desc: "Hurls 10 chunks of rock at your cursor. Each one that lands takes 9% of a tank's health straight through its shield, so a full volley kills anyone who isn't at full health. Every chunk smashes through two rocks on the way." },
-    // sidearms: one mounted at a time, fired with right click
-    { id: "flak",  cat: "arm", name: "Annihilator", price: 1500, desc: "Right click fires one huge annihilator shell at your cursor. 7 second reload." },
-    { id: "lance", cat: "arm", name: "Drill Lance", price: 1200, desc: "Right click fires a bolt that shatters any rock it hits. 5 second reload." },
-    { id: "pod",   cat: "arm", name: "Swarm Barrels", price: 1800, desc: "Two battleship barrels on each side that send seeker drones at your cursor on right click. Burns out after 2.5 minutes." },
+    // sidearms: one mounted at a time, fired with the sidearm key (command bit 128)
+    { id: "flak",  cat: "arm", name: "Annihilator", price: 1500, desc: "Fires one huge annihilator shell at your cursor. 7 second reload." },
+    { id: "lance", cat: "arm", name: "Drill Lance", price: 1200, desc: "Fires a bolt that shatters any rock it hits. 5 second reload." },
+    { id: "pod",   cat: "arm", name: "Swarm Barrels", price: 1800, desc: "Two battleship barrels on each side that send seeker drones at your cursor. Burns out after 2.5 minutes." },
 ];
 const BY_ID = new Map(ITEMS.map(i => [i.id, i]));
 
@@ -309,7 +309,7 @@ function buy(socket, itemId) {
         // not take it away
         s._twistArm = null;
         attachSidearm(body, item.id);
-        msg = item.name + " mounted. Fire it with right click.";
+        msg = item.name + " mounted. Fire it with the sidearm key.";
     }
     body._shopLastBuyAt = Date.now();
     body._shopBought = true;

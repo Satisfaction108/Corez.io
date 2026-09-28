@@ -1863,7 +1863,7 @@ class gameHandler {
                         }
 
                         const rp = instance.rockPower || 0;
-                        const raw = _tg.baseRockHealth / mining.rockHitsFor(owner, instance)
+                        const raw = _tg.baseRockHealth * mining.rockDamageFor(owner, instance)
                                   * mining.skillFactor(owner) * (rp || 1);
                         // lance bolts are rate-limited by their own reload, not the budget
                         const dmg = rp ? raw : Math.min(raw, mb.left);

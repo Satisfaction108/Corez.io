@@ -6220,7 +6220,7 @@ import * as cosmetics from './account/cosmetics.js';
     const KEY_LABEL_IDS = ["KEY_UPGRADE_MIN", "KEY_KIT_1", "KEY_KIT_2", "KEY_KIT_3", "KEY_TOGGLE_MAP",
         "KEY_CHOOSE_1", "KEY_CHOOSE_2", "KEY_CHOOSE_3", "KEY_CHOOSE_4", "KEY_CHOOSE_5", "KEY_CHOOSE_6",
         "KEY_UPGRADE_ATK", "KEY_UPGRADE_HTL", "KEY_UPGRADE_SPD", "KEY_UPGRADE_STR", "KEY_UPGRADE_PEN",
-        "KEY_UPGRADE_DAM", "KEY_UPGRADE_RLD", "KEY_UPGRADE_MOB", "KEY_UPGRADE_RGN", "KEY_UPGRADE_SHI"];
+        "KEY_UPGRADE_DAM", "KEY_UPGRADE_RLD", "KEY_UPGRADE_MOB", "KEY_UPGRADE_RGN", "KEY_UPGRADE_SHI", "KEY_SIDEARM"];
     function keyLabel(id, dflt) {
         const now = performance.now();
         if (now - keyLabelCache.at > 1500) {
@@ -6233,6 +6233,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
         return keyLabelCache.map[id] || dflt;
     }
+    function sidearmInput() { return global.mobile ? "alt button" : keyLabel("KEY_SIDEARM", "X"); }
     // Off-screen indicator inside a HUD-safe frame: clear of the top cluster,
     // the right-hand panels and the bottom row.
     // "#rrggbb" / "#rgb" / "rgb(...)" to channels, for tinted gradients.
@@ -7301,7 +7302,7 @@ import * as cosmetics from './account/cosmetics.js';
             { i: 3, x: x + pad, text: st.drill > 0 ? "DRILL " + ROMAN[st.drill] : "NO DRILL", col: st.drill > 0 ? "#eda766" : color.grey, on: st.drill > 0,
               flash: sh.drillFlashAt, tip: drillItem ? [drillItem.name, drillItem.desc] : ["Drill", "Sold at any shop. Each tier chews rock faster."] },
             { i: 4, x: x + pad + chipW + gap, text: armItem ? (shortName(armItem.name, st.armUntil > Date.now() ? 9 : 14).toUpperCase() + (st.armUntil > Date.now() ? "  " + fmtRaidClock(Math.ceil((st.armUntil - Date.now()) / 1000)) : "")) : "NO SIDEARM", col: armItem ? "#c9a8ff" : color.grey, on: !!armItem,
-              flash: sh.armFlashAt, tip: armItem ? [armItem.name + "  ·  right click", armItem.desc] : ["Sidearm", "A second gun on right click. Sold at any shop."] },
+              flash: sh.armFlashAt, tip: armItem ? [armItem.name + "  ·  " + sidearmInput(), armItem.desc] : ["Sidearm", "A second gun on " + sidearmInput() + ". Sold at any shop."] },
         ];
         for (const ch of chips) {
             const fl = ch.flash ? Math.max(0, 1 - (now - ch.flash) / 700) : 0;
@@ -7575,7 +7576,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (sel.cat === "kit") { drawKitIcon(c, sel.id, dx + 27, dy + 24, 26); tx = dx + 48; }
             let ns2 = 18; while (ns2 > 12 && hudTitleW(sel.name, ns2) > dx + detailW - 12 - tx) ns2 -= 0.5;
             hudTitle(sel.name, tx, dy + 19, ns2, HUD.head, "left", g);
-            drawText(catName + (sel.cat === "kit" ? "  ·  MAX " + sel.max + " PER SLOT" : sel.cat === "drill" ? "  ·  TIER " + sel.tier : sel.cat === "arm" ? "  ·  RIGHT CLICK" : "  ·  PASSIVE"), tx, dy + 37, 9.5, HUD.text2, "left", true, g);
+            drawText(catName + (sel.cat === "kit" ? "  ·  MAX " + sel.max + " PER SLOT" : sel.cat === "drill" ? "  ·  TIER " + sel.tier : sel.cat === "arm" ? "  ·  " + sidearmInput().toUpperCase() : "  ·  PASSIVE"), tx, dy + 37, 9.5, HUD.text2, "left", true, g);
             const lines = wrapLines(sel.desc, 11.5, detailW - 28);
             let ly = dy + 60;
             for (const ln of lines.slice(0, 5)) { drawText(ln, dx + 14, ly, 11.5, HUD.text, "left", true, g); ly += 16; }

@@ -3106,7 +3106,7 @@ Class.infestor = {
             ANGLE: 90
         },
         PROPERTIES: {
-            SHOOT_SETTINGS: combineStats([g.drone, g.sunchip, {reload: 0.5}]),
+            SHOOT_SETTINGS: combineStats([g.drone, g.sunchip, {reload: 0.4}]),
             TYPE: 'eggchip',
             AUTOFIRE: true,
             SYNCS_SKILLS: true,
@@ -3299,7 +3299,7 @@ Class.maleficitor = {
                 X: 7.4
             },
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.drone, g.sunchip, g.maleficitor]),
+                SHOOT_SETTINGS: combineStats([g.drone, g.sunchip, g.maleficitor, {reload: 0.8}]),
                 TYPE: ['sunchip', {INVISIBLE: [0.06, 0.03]}],
                 AUTOFIRE: true,
                 SYNCS_SKILLS: true,
@@ -3613,7 +3613,7 @@ Class.necromancer = {
             DELAY: 0.25
         },
         PROPERTIES: {
-            SHOOT_SETTINGS: combineStats([g.drone, g.sunchip]),
+            SHOOT_SETTINGS: combineStats([g.drone, g.sunchip, {reload: 0.8}]),
             TYPE: 'sunchip',
             AUTOFIRE: true,
             SYNCS_SKILLS: true,

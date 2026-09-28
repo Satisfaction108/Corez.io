@@ -240,9 +240,9 @@ function ensureStat(body) {
     return s;
 }
 
-// One board row per person. Rows are keyed by socket, so rejoining after
-// going to the menu (or from a new tab) made a second row next to the old,
-// disconnected one. Drop the old one: that rejoin is a fresh start.
+// One board row per person. Rows are keyed by socket, so a rejoin from the
+// menu or a new tab starts a new row; drop that person's disconnected rows
+// (the rejoin is a fresh start).
 function whoOf(socket) {
     if (socket.account && socket.account.id) return "a:" + socket.account.id;
     if (socket.guestId) return "g:" + socket.guestId;
@@ -823,7 +823,7 @@ function tickSpawnRescue(t) {
         const path = spawnReach.exitPath(tg, body.x, body.y, { rescue: true, toZone, maxCells: FM.RESCUE_MAX_CELLS, now: t });
         if (!path) continue;   // nothing within reach (retried every RESCUE_RETRY_MS)
         body._rescueLife = body.royaleBornAt;
-        const plain = (tg.baseRockHealth || 1) * 1.3 * ((global.royaleMods && global.royaleMods.rockHpMult) || 1);
+        const plain = (tg.plainRockHealth || 1) * ((global.royaleMods && global.royaleMods.rockHpMult) || 1);
         let cost = 0;
         for (const r of path) if (r.alive || r.growing) cost += (r.health || 0) / plain;
         if (cost < FM.RESCUE_MIN_COST) continue;   // not boxed in: a short dig or a walk
@@ -849,7 +849,7 @@ function debugPlantTraps(k) {
         Math.hypot((r.worldCx - st.cx), (r.worldCy - st.cy)) < (st.r || 0) * 0.85 &&
         (adj.get(r.k) || []).every(n => n.alive && !n.canyon));
     let planted = 0;
-    const t = now(), plain = tg.baseRockHealth * 1.3;
+    const t = now(), plain = tg.plainRockHealth;
     for (let i = 0; i < k * 2 && cands.length; i++) {
         const r = cands.splice((Math.random() * cands.length) | 0, 1)[0];
         if (!r.alive || !(adj.get(r.k) || []).every(n => n.alive)) continue;
@@ -924,7 +924,7 @@ function giveStarterKit(body, isRespawn) {
                 try {
                     if (i === 0 && !rock.ore) {
                         rock.ore = ORE.COPPER;
-                        rock.maxHealth = (tg.baseRockHealth * 1.3) * (ORE_HP[ORE.COPPER] || 1);
+                        rock.maxHealth = tg.plainRockHealth * (ORE_HP[ORE.COPPER] || 1);
                         try { rock.deposits = tg._buildDeposits(rock); } catch { rock.deposits = null; }
                     }
                     rock.maxHealth = Math.max(10, rock.maxHealth * 0.35);
@@ -2051,7 +2051,7 @@ function applyModsToWorld(prev, next) {
             if (ore === rock.ore) continue;
             const frac = rock.maxHealth > 0 ? Math.min(1, rock.health / rock.maxHealth) : 1;
             rock.ore = ore;
-            rock.maxHealth = (tg.baseRockHealth * 1.3) * (ORE_HP[ore] || 1) * nextHp;
+            rock.maxHealth = tg.plainRockHealth * (ORE_HP[ore] || 1) * nextHp;
             rock.health = Math.max(1, rock.maxHealth * frac);
             try { rock.deposits = ore ? tg._buildDeposits(rock) : null; } catch { rock.deposits = null; }
             tg.rockEvents.push({ k: rock.k, h: rock.health / rock.maxHealth, d: 0, ore, bl: 1 });

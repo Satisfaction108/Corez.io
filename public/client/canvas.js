@@ -321,6 +321,9 @@ class Canvas {
             case global.KEY_MOUSE_2:
                 this.socket.cmd.set(6, true);
                 break;
+            case global.KEY_SIDEARM:
+                this.socket.cmd.set(7, true);
+                break;
             case global.KEY_TOKEN:
                 this.socket.talk('0');
                 break;
@@ -501,6 +504,9 @@ class Canvas {
                 break;
             case global.KEY_MOUSE_2:
                 this.socket.cmd.set(6, false);
+                break;
+            case global.KEY_SIDEARM:
+                this.socket.cmd.set(7, false);
                 break;
             case global.KEY_MAX_STAT:
                 global.statMaxing = false;
@@ -1060,15 +1066,16 @@ class Canvas {
                         case 0:
                             global.clickables.mobileButtons.active = !global.clickables.mobileButtons.active;
                             break;
+                        // phones have no sidearm key: the alt button fires it too
                         case 1:
                             if (global.clickables.mobileButtons.active) {
                                 global.clickables.mobileButtons.altFire =
                                     !global.clickables.mobileButtons.altFire;
                                 if (!global.clickables.mobileButtons.altFire)
-                                    this.socket.cmd.set(6, false);
+                                    this.socket.cmd.set(6, false), this.socket.cmd.set(7, false);
                             } else if (global.isInverted)
-                                (global.isInverted = false), this.socket.cmd.set(6, false);
-                            else (global.isInverted = true), this.socket.cmd.set(6, true);
+                                (global.isInverted = false), this.socket.cmd.set(6, false), this.socket.cmd.set(7, false);
+                            else (global.isInverted = true), this.socket.cmd.set(6, true), this.socket.cmd.set(7, true);
                             break;
                         case 2:
                             if (!document.fullscreenElement) {
@@ -1354,6 +1361,8 @@ class Canvas {
                 } else {
                     this.socket.cmd.set(6, false);
                 }
+                // Sidearm (left bumper)
+                this.socket.cmd.set(7, !!(this.gamepad.buttons[4] && this.gamepad.buttons[4].pressed));
                 // Move body
                 let cx = 0;
                 let cy = 0;
@@ -1395,6 +1404,7 @@ class Canvas {
         this.socket.cmd.set(3, false);
         this.socket.cmd.set(4, false);
         this.socket.cmd.set(6, false);
+        this.socket.cmd.set(7, false);
     }
 }
 export { Canvas }

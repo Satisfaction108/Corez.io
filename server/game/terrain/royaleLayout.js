@@ -197,7 +197,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         const ore = radialOre(rock, circleR, salt);
         rock.ore = ore;
         if (ore) {
-            rock.maxHealth = (grid.baseRockHealth * 1.3) * (ORE_HP[ore] || 1);
+            rock.maxHealth = grid.plainRockHealth * (ORE_HP[ore] || 1);
             rock.health = rock.maxHealth;
             try { rock.deposits = grid._buildDeposits(rock); }
             catch { rock.deposits = null; }
@@ -227,7 +227,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
             }
             if (best) {
                 best.ore = ORE.EMERALD;
-                best.maxHealth = (grid.baseRockHealth * 1.3) * (ORE_HP[ORE.EMERALD] || 6);
+                best.maxHealth = grid.plainRockHealth * (ORE_HP[ORE.EMERALD] || 6);
                 best.health = best.maxHealth;
                 try { best.deposits = grid._buildDeposits(best); } catch { best.deposits = null; }
             }

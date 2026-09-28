@@ -50,7 +50,7 @@ const DEFAULTS = {
     KEY_AUTO_FIRE: "E", KEY_AUTO_SPIN: "C", KEY_OVER_RIDE: "R",
     KEY_TOGGLE_MAP: "M", KEY_CLASS_TREE: "T", KEY_MAX_STAT: "F", KEY_CHAT: "Enter",
     KEY_UPGRADE_ATK: "1", KEY_UPGRADE_SHI: "0", KEY_UPGRADE_MIN: "-",
-    KEY_KIT_1: "Z", KEY_KIT_2: "Q", KEY_KIT_3: "N",
+    KEY_KIT_1: "Z", KEY_KIT_2: "Q", KEY_KIT_3: "N", KEY_SIDEARM: "X",
 };
 let keyLabelCache = null;
 function lbl(id) {
@@ -369,8 +369,8 @@ const state = {
     // input, observed rather than polled
     fireMs: 0,
     fireDown: false,
-    altMs: 0,
-    altDown: false,
+    sidearmMs: 0,
+    sidearmDown: false,
     lastInputAt: 0,
     toggles: { fire: 0, spin: 0, override: 0 },
     evolveCount: 0,
@@ -399,7 +399,7 @@ function snapshot() {
     state.aimTotal = 0;
     state.aimLast = null;
     state.fireMs = 0;
-    state.altMs = 0;
+    state.sidearmMs = 0;
     state.mapOpened = false;
     state.spinOn = false;
     state.seen = false;
@@ -945,12 +945,12 @@ const CHAPTERS = [
                 title: "Sidearms",
                 text: () => mob()
                     ? "Shops also sell *sidearms*, a second gun on the alt-fire button. Here's a *Drill Lance*, one shot breaks any rock. Try it."
-                    : "Shops also sell *sidearms*, a second gun on [[Right click]]. Here's a *Drill Lance*, one shot breaks any rock. Try it.",
-                hint: () => mob() ? "Hold the alt-fire button at some rock." : "Hold right click at some rock.",
+                    : `Shops also sell *sidearms*, a second gun on ${kc("KEY_SIDEARM")}. Here's a *Drill Lance*, one shot breaks any rock. Try it.`,
+                hint: () => mob() ? "Hold the alt-fire button at some rock." : `Hold ${kc("KEY_SIDEARM")} at some rock.`,
                 praise: "boom",
                 onEnter: () => { tut("clear"); tut("arm", "lance"); },
                 target: () => ({ kind: "self" }),
-                progress: () => clamp(state.altMs / 1200, 0, 1),
+                progress: () => clamp(state.sidearmMs / 1200, 0, 1),
                 done: (p) => p >= 1,
                 giveUp: 45000,
             },
@@ -1361,7 +1361,7 @@ function update() {
     lastFrameAt = now;
     // input bookkeeping, every frame
     if (state.fireDown) state.fireMs += dt;
-    if (state.altDown || mobileAlt()) state.altMs += dt;
+    if (state.sidearmDown) state.sidearmMs += dt;
     if (gui.type !== state.lastType) {
         if (state.lastType !== null) state.evolveCount++;
         state.lastType = gui.type;
@@ -1445,6 +1445,7 @@ function watchSocket() {
     const orig = sock.talk;
     sock.talk = function (...a) {
         try {
+            if (a[0] === "C") state.sidearmDown = !!(a[4] & 128);
             if (state.running && a[0] === "t") {
                 if (a[1] === 1) state.toggles.fire++;
                 else if (a[1] === 0) state.toggles.spin++;
@@ -1459,11 +1460,9 @@ function onMouseDown(e) {
     if (!state.running) return;
     if (e.target && e.target.closest && e.target.closest("#dwTut, #dwTutMenu, #dwTutEnd")) return;
     if (e.button === 0) state.fireDown = true;
-    if (e.button === 2) state.altDown = true;
 }
 function onMouseUp(e) {
     if (e.button === 0) state.fireDown = false;
-    if (e.button === 2) state.altDown = false;
 }
 // Phones: a finger on the right half of the screen is the aim-and-fire stick.
 let rightTouches = 0;
@@ -1474,9 +1473,6 @@ function onTouch(e) {
     rightTouches = n;
     state.fireDown = n > 0;
 }
-function mobileAlt() {
-    return !!(global.mobile && global.clickables && global.clickables.mobileButtons && global.clickables.mobileButtons.altFire);
-}
 let listening = false;
 function listen() {
     if (listening) return;
@@ -1486,7 +1482,7 @@ function listen() {
     window.addEventListener("touchstart", onTouch, true);
     window.addEventListener("touchend", onTouch, true);
     window.addEventListener("touchcancel", onTouch, true);
-    window.addEventListener("blur", () => { state.fireDown = false; state.altDown = false; });
+    window.addEventListener("blur", () => { state.fireDown = false; });
 }
 
 // ── world pass ─────────────────────────────────────────────────────────
@@ -1930,7 +1926,7 @@ function extraHtml(kind) {
             [kc("KEY_CLASS_TREE"), "upgrade tree"],
             [kc("KEY_OVER_RIDE"), "drones go to your mouse"],
             [`${kc("KEY_KIT_1")} ${kc("KEY_KIT_2")} ${kc("KEY_KIT_3")}`, "kit items"],
-            ["[[Right click]]", "sidearm"],
+            [kc("KEY_SIDEARM"), "sidearm"],
             [`${kc("KEY_MAX_STAT")} + stat key`, "max a stat"],
             [kc("KEY_CHAT"), "chat"],
         ];

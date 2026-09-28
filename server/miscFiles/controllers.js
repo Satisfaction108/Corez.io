@@ -215,6 +215,8 @@ class io_listenToPlayer extends IO {
             if (!grace && (bits & ~this._heldAtShield)) this.body.invuln = false;
         }
         this.body.autoOverride = this.player.command.override;
+        // sidearm guns fire from their own key, not from alt (drone repel)
+        this.body.sidearmFire = !!this.player.command.sidearm;
         return {
             target,
             fire,
@@ -662,6 +664,8 @@ class io_nearestDifferentMaster extends IO {
     rockTarget(range) {
         const b = this.body;
         if (!b || b.master.autoOverride) return null;
+        // a drone dies on the rock it hits: an idle one stays by its tank
+        if (b.type === 'drone') return null;
         let root = b, guard = 0;
         while (root.master && root.master !== root && guard++ < 8) root = root.master;
         if (!root.isPlayer && !root.isBot) return null;
@@ -3240,6 +3244,20 @@ for (const [proto, names] of _botProfAll || [[BotNav.prototype, ["structureBlock
     }
 }
 
+// Drones stay within DRONE_LEASH of their tank: a goal past it (the cursor on
+// a zoomed-out screen, a repel, a far target) is pulled onto the leash circle.
+const DRONE_LEASH = 1600;
+class io_droneLeash extends IO {
+    think(input) {
+        const home = this.body.master && this.body.master.master;
+        const g = input.goal;
+        if (!home || home === this.body || !g) return;
+        const gx = g.x - home.x, gy = g.y - home.y, gl = Math.hypot(gx, gy);
+        if (gl <= DRONE_LEASH) return;
+        return { goal: { x: home.x + gx / gl * DRONE_LEASH, y: home.y + gy / gl * DRONE_LEASH }, power: 1 };
+    }
+}
+
 // Dig Wars: lets a player-controlled tank mine nearby rock when its pilot is
 // not aiming. Bots skip this; their goal controller owns mining.
 class io_minesRocks extends IO {
@@ -3455,6 +3473,7 @@ let ioTypes = {
     fleeAtLowHealth: io_fleeAtLowHealth,
     wanderAroundMap: io_wanderAroundMap,
     minesRocks: io_minesRocks,
+    droneLeash: io_droneLeash,
     royaleBoss: io_royaleBoss,
 };
 

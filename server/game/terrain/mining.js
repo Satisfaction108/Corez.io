@@ -1,52 +1,56 @@
-const MINE_HITS = {
-    basic: 10, twin: 10, doubleTwin: 10, tripleTwin: 10, hewnDouble: 10,
-    triplet: 9.5, tripleShot: 9.5, pentaShot: 9, spreadshot: 9,
-    octoTank: 10, hexaTank: 10, flankGuard: 10, auto3: 10, auto5: 9.5,
-    machineGun: 11, sprayer: 11, gunner: 12, autoGunner: 11.5,
-    minigun: 10.5, streamliner: 11, nailgun: 12, atomizer: 11,
-    triAngle: 10, fighter: 9.5, booster: 9.5, falcon: 9.5,
-    sniper: 7, assassin: 6, hunter: 6.5, rifle: 7, marksman: 5.5,
-    ranger: 5, stalker: 6, predator: 5.5, xHunter: 5.5, dual: 7,
-    pounder: 4.5, eagle: 4, destroyer: 2.5, conqueror: 3, shotgun: 7,
-    annihilator: 2, hybrid: 3, blower: 3.5,
-    launcher: 4.5, skimmer: 4, twister: 4.5, rocketeer: 4, sidewinder: 5,
-    fieldGun: 5, artillery: 6, mortar: 5.5, ordnance: 5.5,
+// Rock damage per hit is in grid.baseRockHealth units, before Mining Power.
+// A shot digs by its gun's power (damage x health, 1 for a basic bullet), and
+// a gun slower than a basic one gets its slower reload back as extra dig per
+// shot: heavy shells break a plain rock outright, rapid fire digs by volume.
+const BASIC_POWER = 0.75;       // basic gun damage x health
+const BASIC_RELOAD = 10.5;
+const BASIC_DIG = 0.1;
+// A destroyer's reload. Slower guns (necro spawners, which converted shapes
+// also feed) dig no harder per shot than that.
+const SLOW_CAP = 4;
+const TYPE_DIG = { trap: 0.8, drone: 0.8, swarm: 0.8 };
+// An Annihilator shell. Sidearm shells are combat guns, not drills (the Drill
+// Lance digs through ROCK_POWER instead).
+const SIDEARM_DIG_CAP = 12;
 
-    trapper: 7, triTrapper: 7.5, hexaTrapper: 8, septaTrapper: 8,
-    megaAutoTrapper: 4.5, gunnerTrapper: 7.5, overtrapper: 7.5, autoTrapper: 7.5,
-    tripleAutoTrapper: 7.5, beekeeper: 7,
-    barricade: 6.5, fortress: 7,
-    builder: 4, autoBuilder: 4.5, engineer: 4, boomer: 5.5,
-    assembler: 4.5, architect: 4,
-    construct: 2.4,
-
-    director: 10, overseer: 9, overlord: 8, manager: 9, banshee: 9,
-    autoOverseer: 9.5, autoDouble: 10.5, underseer: 10, necromancer: 10,
-    maleficitor: 10, infestor: 9.5,
-    factory: 8, autoSpawner: 9.5, spawner: 9,
-    bigCheese: 2.2, fork: 9, hive: 10,
-
-    cruiser: 13, battleship: 13, carrier: 12.5, swarmer: 12,
-
-    single: 9, deadeye: 6, revolver: 8, musket: 7, prodigy: 7.5,
+// Per-tank nudges for tanks the gun formula leaves far off the pack.
+const MINE_BIAS = {
+    annihilator: 1.2,
+    underseer: 5, necromancer: 2.8, maleficitor: 3, infestor: 1.5,
+    // minions orbit and only shoot the rock part of the time
+    spawner: 3, factory: 2.5, autoSpawner: 2,
+    manager: 1.4,
+    rifle: 1.6, revolver: 1.6, bushwhacker: 1.5, musket: 1.3,
+    minigun: 1.2, nailgun: 1.8, vulture: 1.5, focal: 1.2, phoenix: 1.2,
+    desmos: 1.2, swarmer: 1.6,
+    triAngle: 1.2, fighter: 1.2, booster: 1.2, bomber: 1.2, falcon: 1.2,
+    barricade: 1.8, boomer: 2, gunnerTrapper: 1.9, triTrapper: 1.3, trapGuard: 1.2,
+    hexaTank: 1.2,
+    // a rammer whose only gun is one small turret
+    autoSmasher: 4,
+    commander: 0.75, beekeeper: 0.7, battleship: 0.8,
 };
 
-const MINE_HITS_DEFAULT = {
-    bullet: 9,
-    trap: 6.5,
-    drone: 9,
-    satellite: 9,
-    swarm: 13,
-};
+function digPower(settings) {
+    if (!settings || !(settings.reload > 0)) return 1;
+    const power = (settings.damage * settings.health) / BASIC_POWER;
+    return power * Math.min(SLOW_CAP, Math.max(1, settings.reload / BASIC_RELOAD));
+}
 
-function rockHitsFor(owner, projectile) {
-    if (owner && Array.isArray(owner.defs)) {
-        for (let i = owner.defs.length - 1; i >= 0; i--) {
-            const d = owner.defs[i];
-            if (typeof d === 'string' && MINE_HITS[d]) return MINE_HITS[d];
-        }
+function tankBias(owner) {
+    if (!owner || !Array.isArray(owner.defs)) return 1;
+    for (let i = owner.defs.length - 1; i >= 0; i--) {
+        const d = owner.defs[i];
+        if (typeof d === 'string' && MINE_BIAS[d]) return MINE_BIAS[d];
     }
-    return MINE_HITS_DEFAULT[projectile.type] || 9;
+    return 1;
+}
+
+function rockDamageFor(owner, projectile) {
+    let dig = projectile.digPower || 1;
+    if (projectile.fromSidearm) dig = Math.min(dig, SIDEARM_DIG_CAP);
+    else dig *= tankBias(owner);
+    return BASIC_DIG * (TYPE_DIG[projectile.type] || 1) * dig;
 }
 
 // Shop and event multipliers stacked on top of the skill bar (drills,
@@ -82,6 +86,9 @@ function skillFactor(owner) {
 
 // ── Body grinding: how ram tanks (and ram builds) mine ───────────────────
 
+// Smasher-family hulls grind this much faster than a ram build on a gun tank.
+const RAM_DIG = 1.3;
+
 // raw[6] is body damage (see skcnv in entities/skills.js - the internal skill
 // order is NOT the order the skill bar displays).
 function grindSecondsFor(owner) {
@@ -98,9 +105,10 @@ function grindSecondsFor(owner) {
         const cap = Config.skill_cap || 9;
         sec /= 0.55 + 1.45 * Math.max(0, Math.min(1, (raw[10] || 0) / cap));
     }
-    if (owner && owner.weakDrillUntil && Date.now() < owner.weakDrillUntil) sec *= 1.8;
+    if (owner.settings && owner.settings.reloadToAcceleration) sec /= RAM_DIG;
+    if (owner.weakDrillUntil && Date.now() < owner.weakDrillUntil) sec *= 1.8;
     sec /= Math.max(0.25, gearMult(owner));
     return sec;
 }
 
-module.exports = { rockHitsFor, skillFactor, grindSecondsFor, gearMult, MINE_HITS, MINE_HITS_DEFAULT };
+module.exports = { digPower, rockDamageFor, skillFactor, grindSecondsFor, gearMult, MINE_BIAS };

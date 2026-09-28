@@ -21,7 +21,7 @@ const reach = require('../../server/game/terrain/spawnReach.js');
 const grid = mapGen.generate({ cols: 13, rows: 13, tileWidth: 420, fullLattice: true });
 grid.buildVoronoiColliders();
 const adj = reach.adjacency(grid);
-const PLAIN = grid.baseRockHealth * 1.3;
+const PLAIN = grid.plainRockHealth;
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }

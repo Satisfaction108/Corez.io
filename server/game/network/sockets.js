@@ -592,8 +592,8 @@ class socketManager {
 
             // fresh input (keys/buttons changed, or the aim moved): ranked
             // survival only counts players active within the last 20 s
-            if ((commands & 127) !== socket._inBits || Math.abs(target.x - (socket._inX || 0)) + Math.abs(target.y - (socket._inY || 0)) > 4) {
-                socket._inBits = commands & 127;
+            if (commands !== socket._inBits || Math.abs(target.x - (socket._inX || 0)) + Math.abs(target.y - (socket._inY || 0)) > 4) {
+                socket._inBits = commands;
                 socket._inX = target.x; socket._inY = target.y;
                 socket.lastInputAt = Date.now();
             }
@@ -610,8 +610,9 @@ class socketManager {
                 player.command.lmb = (commands & 16) >> 4;
                 player.command.mmb = (commands & 32) >> 5;
                 player.command.rmb = (commands & 64) >> 6;
+                player.command.sidearm = (commands & 128) >> 7;
                 if (player.body && player.body.royaleFrozen) {
-                    player.command.lmb = player.command.mmb = player.command.rmb = 0;
+                    player.command.lmb = player.command.mmb = player.command.rmb = player.command.sidearm = 0;
                     player.command.up = player.command.down = player.command.left = player.command.right = 0;
                 }
             }
@@ -2051,6 +2052,7 @@ class socketManager {
             lmb: false,
             mmb: false,
             rmb: false,
+            sidearm: false,
             autofire: false,
             autospin: false,
             override: false,

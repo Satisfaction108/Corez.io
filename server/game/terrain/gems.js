@@ -85,7 +85,7 @@ function pityBurst(rock, breaker) {
     const tg = global.gameManager && global.gameManager.terrainGrid;
     rock.ore = ORE.COPPER;
     if (tg) {
-        rock.maxHealth = (tg.baseRockHealth * 1.3) * (ORE_HP[ORE.COPPER] || 1);
+        rock.maxHealth = tg.plainRockHealth * (ORE_HP[ORE.COPPER] || 1);
         try { rock.deposits = tg._buildDeposits(rock); } catch { rock.deposits = null; }
     }
     return true;

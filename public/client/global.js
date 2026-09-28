@@ -134,7 +134,7 @@ const global = {
     KEY_OVER_RIDE: 82,
     KEY_REVERSE_TANK: 86,
     KEY_REVERSE_MOUSE: 66,
-    KEY_SPIN_LOCK: 88,
+    KEY_SIDEARM: 88,       // X
 
     KEY_LEVEL_UP: 221, 
     KEY_TOKEN: -1,         // unbound

@@ -249,6 +249,7 @@ global.bringToLife = (() => {
             my.control.fire = false;
             my.control.main = false;
             my.control.alt = false;
+            my.sidearmFire = false;
             if (my.royaleFrozen) {
                 my.control.goal = { x: my.x, y: my.y };
                 my.velocity.x = 0;

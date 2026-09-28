@@ -3,7 +3,7 @@ const CELL = { BASALT: 0, EMPTY: 1 };
 const { basePolygonHealth } = require('../../lib/definitions/constants.js');
 
 const ROCK_DAMAGE_BASE = 0.75 * 0.7 * 0.75 * 562.5 * basePolygonHealth;
-const ROCK_TOUGHNESS = 1.3;
+const ROCK_TOUGHNESS = 1.15;
 const ROCK_HEALTH = ROCK_TOUGHNESS * ROCK_DAMAGE_BASE;
 
 const ORE = { NONE: 0, COPPER: 1, VEIN: 2, SHARD: 3, EMERALD: 4 };
@@ -65,6 +65,7 @@ class TerrainGrid {
         this.oreSalt = 1 + ((Math.random() * 0x7ffffffe) | 0);   
 
         this.baseRockHealth = ROCK_DAMAGE_BASE;
+        this.plainRockHealth = ROCK_HEALTH;
     }
 
     get(col, row) {

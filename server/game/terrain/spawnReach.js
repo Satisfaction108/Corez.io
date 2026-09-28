@@ -86,7 +86,7 @@ const cx = (r) => r.worldCx || r.wx;
 const cy = (r) => r.worldCy || r.wy;
 
 function plainHp(grid) {
-    const base = (grid && grid.baseRockHealth) ? grid.baseRockHealth * 1.3 : 1;
+    const base = (grid && grid.plainRockHealth) || 1;
     return base * ((global.royaleMods && global.royaleMods.rockHpMult) || 1);
 }
 

@@ -1,5 +1,6 @@
 // Define how guns work
 let EventEmitter = require('events'),
+    mining = require('../terrain/mining.js'),
     events,
     init = g => events = g.events;
 class Gun extends EventEmitter {
@@ -71,6 +72,7 @@ class Gun extends EventEmitter {
             if (info.PROPERTIES.HIDDEN) { this.hidden = true; this.alpha = 0; }
             this.drawAbove = (info.PROPERTIES.DRAW_ABOVE == null) ? false : info.PROPERTIES.DRAW_ABOVE;
             this.rockPower = info.PROPERTIES.ROCK_POWER || 0;
+            this.digPower = mining.digPower(this.settings);
             this.stack = (info.PROPERTIES.STACK_GUN == null) ? true : info.PROPERTIES.STACK_GUN;
             this.identifier = info.PROPERTIES.IDENTIFIER ?? null;
             if (info.PROPERTIES.TYPE != null) {
@@ -236,7 +238,8 @@ class Gun extends EventEmitter {
             }
         }
         // Firing routines
-        if (this.autofire || (this.altFire ? this.body.control.alt : this.body.control.fire)) {
+        const firing = this.isSidearm ? this.body.sidearmFire : this.altFire ? this.body.control.alt : this.body.control.fire;
+        if (this.autofire || firing) {
             if (this.body.settings.hasNoReloadDelay && shootPermission) return (
                 this.shoot(),
                 this.cycleTimer = this.maxCycleTimer
@@ -452,6 +455,8 @@ class Gun extends EventEmitter {
         o.source = this.body;
         o.facing = o.velocity.direction;
         if (this.rockPower) o.rockPower = this.rockPower;
+        o.digPower = this.digPower;
+        if (this.isSidearm) o.fromSidearm = true;
         // Set all necroType gun references to parent gun
         for (let shape of o.settings.necroTypes) {
             o.settings.necroDefineGuns[shape] = this;

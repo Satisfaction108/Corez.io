@@ -4,7 +4,7 @@ const MODS = [
     { id: "copper_rush",   name: "Copper Rush",        desc: "All the ore is copper, and copper is worth triple.", weight: 1, ore: "copper", gemValueMult: { 1: 3 } },
     { id: "giants",        name: "Giants",             desc: "Everyone's tank is half again as big. Good luck hiding.", weight: 1.1, sizeMult: 1.5 },
     { id: "overclocked",   name: "Overclocked",        desc: "Ten extra skill points for everyone.", weight: 1.2, extraSkill: 10 },
-    { id: "arsenal",       name: "Annihilator Arsenal", desc: "Everyone gets an Annihilator on right click for the whole raid.", weight: 1.2, freeArm: "flak" },
+    { id: "arsenal",       name: "Annihilator Arsenal", desc: "Everyone gets an Annihilator sidearm for the whole raid.", weight: 1.2, freeArm: "flak" },
     { id: "glass_cannons", name: "Glass Cannons",      desc: "Double damage, half health, for everyone.", weight: 1.1, damageMult: 2, healthMult: 0.5 },
     { id: "demolition",    name: "Demolition Day",     desc: "Three Seismic Charges in every kit, and the rock breaks 40% easier.", weight: 1, kitStart: { charge: 3 }, rockHpMult: 0.6 },
     { id: "loot_flood",    name: "Loot Flood",         desc: "Twelve chests instead of six, and they come back in 15 seconds.", weight: 1, chestMult: 2, chestRespawnMult: 0.5 },

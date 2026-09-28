@@ -190,7 +190,8 @@ Class.genericSmasher = {
     BODY: {
         FOV: 1.05 * base.FOV,
         SPEED: 1.125 * base.SPEED,
-        DENSITY: 2 * base.DENSITY
+        DENSITY: 2 * base.DENSITY,
+        HEALTH: 1.2 * base.HEALTH
     }
 }
 
@@ -264,10 +265,9 @@ Class.drone = {
     CONTROLLERS: [
         "nearestDifferentMaster",
         "canRepel",
-        // Dig Wars: with no orders and no enemies, drones gnaw the rockline
-        "minesRocks",
         "mapTargetToGoal",
         "hangOutNearMaster",
+        "droneLeash",
     ],
     AI: {
         BLIND: true,
