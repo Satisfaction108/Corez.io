@@ -78,7 +78,7 @@ test('catalog: unique ids/nids, cats, prices from the plan, colour stops readabl
     assert.equal(price('sk_hazard_stripes'), 35000);
     assert.equal(price('sk_molten_core'), 500000);
     assert.deepEqual(C.byId('ns_sunset').style.stops, ['#ffb347', '#ff6a5c', '#c850c0']);
-    assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle').length, 13);
+    assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle' && !i.exclusive).length, 13);
     assert.equal(C.ITEMS.filter(i => i.cat === 'skin').length, 12);
     assert.equal(C.byNid(0), null);
 });

@@ -71,6 +71,9 @@ function createMessage(con, dur = 10_000, JSONMessage = false) {
             duration: dur,
         });
     } else {
+        // the same line again moves to the top instead of stacking twice
+        const dup = global.messages.findIndex(m => !m.textJSON && m.text === con);
+        if (dup >= 0) global.messages.splice(dup, 1);
         global.messages.push({
             text: con,
             faded: 0,

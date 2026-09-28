@@ -7,8 +7,9 @@
 // that guild. Every admin command, allowed or refused, goes to audit_log
 // (actor 'admin:<discord id>'); admin replies are ephemeral.
 //
-// Player commands (/profile, /rank, /achievements, /leaderboard, /shop, /online,
-// /play) are global and public, and work in DMs and user installs too.
+// Player commands (/profile, /rank, /achievements, /invites, /leaderboard,
+// /shop, /online, /play) are global and public, and work in DMs and user
+// installs too.
 //
 // All work is synchronous SQLite, so every command answers inline (type 4).
 'use strict';
@@ -20,6 +21,7 @@ const users = require('../users');
 const sessions = require('../sessions');
 const rankStore = require('../rankStore');
 const achievements = require('../achievements');
+const referrals = require('../referrals');
 const rest = require('./rest');
 const R = require('../../../shared/ranks.js');
 
@@ -77,7 +79,8 @@ const ADMIN_COMMANDS = [
                 type: T.STRING, name: 'what', description: 'Which records (default: gemdust)', required: false, choices: [
                     { name: 'Gemdust changes', value: 'dust' }, { name: 'Purchases and gifts', value: 'buys' },
                     { name: 'Games (ranked lives)', value: 'games' }, { name: 'Raid finishes', value: 'raids' },
-                    { name: 'Items owned', value: 'items' }, { name: 'Audit log', value: 'audit' },
+                    { name: 'Items owned', value: 'items' }, { name: 'Invites (referrals)', value: 'referrals' },
+                    { name: 'Audit log', value: 'audit' },
                 ],
             },
         ],
@@ -102,6 +105,7 @@ const PLAYER_COMMANDS = [
     { name: 'profile', description: "See a player's Corez.io profile", options: [nameOpt] },
     { name: 'rank', description: "See a player's Corez.io rank", options: [nameOpt] },
     { name: 'achievements', description: "See a player's Corez.io medals", options: [nameOpt] },
+    { name: 'invites', description: "See a player's Corez.io invites and rewards", options: [nameOpt] },
     { name: 'leaderboard', description: 'See the Corez.io top 10' },
     { name: 'shop', description: "What's in the Corez.io Item Shop today" },
     { name: 'online', description: 'How many people are playing Corez.io right now' },
@@ -184,7 +188,18 @@ function lookup(i, caller) {
         lines.push(`**Banned** ${row.banned_until >= 8e15 ? 'permanently' : 'until ' + ts(row.banned_until)}${row.ban_reason ? ': ' + md(row.ban_reason) : ''}`);
     }
     if (row.deleted_at) lines.push(`**Deleted** ${ts(row.deleted_at)} (purged 30 days later)`);
+    const inv = inviteLine(row);
+    if (inv) lines.push(inv);
     return reply(lines.join('\n'), { ephemeral: true });
+}
+
+// Admin one-liner: invites counted, and the custom skin when it is owed.
+function inviteLine(row) {
+    const d = db.handle();
+    const t = d.get("SELECT COALESCE(SUM(status = 'qualified'), 0) AS q, COALESCE(SUM(status = 'pending'), 0) AS p FROM referrals WHERE referrer_id = ?", row.id);
+    const skin = d.get("SELECT at FROM referral_rewards WHERE user_id = ? AND tier = 'custom_skin'", row.id);
+    if (!t.q && !t.p && !skin) return '';
+    return `Invites: ${t.q | 0} counted${t.p ? `, ${t.p} waiting` : ''}${skin ? ` · **custom skin earned** ${ts(skin.at, 'd')}` : ''}`;
 }
 
 function resetPassword(i, caller) {
@@ -366,6 +381,16 @@ function history(i, caller) {
         const rs = d.all('SELECT * FROM owned_items WHERE user_id = ? ORDER BY acquired_at DESC', row.id);
         lines = rs.map(o => `**${md(cosmeticName(o.item_id))}** · ${o.source} · ${ts(o.acquired_at, 'd')}`);
         extra = `Wearing: ${row.equip_name_style ? cosmeticName(row.equip_name_style) : 'no name style'}, ${row.equip_skin ? cosmeticName(row.equip_skin) : 'no skin'}${row.custom_color ? ' · colour ' + row.custom_color : ''}`;
+    } else if (what === 'referrals') {
+        title = 'Invites';
+        const rs = d.all(`SELECT r.*, u.username AS referee FROM referrals r LEFT JOIN users u ON u.id = r.referee_id
+            WHERE r.referrer_id = ? ORDER BY r.created_at DESC LIMIT 25`, row.id);
+        const why = { same_device: 'same browser', same_network: 'same network', ip_used: 'address already counted', expired: 'never played' };
+        lines = rs.map(r => `${ts(r.created_at, 'd')} **${md(r.referee || 'deleted')}** · ${r.method} · ${r.status}` +
+            `${r.reason ? ' (' + (why[r.reason] || r.reason) + ')' : ''}${r.reward_milli ? ' · +' + dustText(r.reward_milli) + ' dust' : ''}`);
+        const by = d.get('SELECT r.status, r.reason, u.username FROM referrals r JOIN users u ON u.id = r.referrer_id WHERE r.referee_id = ?', row.id);
+        extra = [inviteLine(row) || 'Invites: none',
+            by ? `Joined from **${md(by.username)}**'s invite (${by.status}${by.reason ? ', ' + (why[by.reason] || by.reason) : ''})` : ''].filter(Boolean).join('\n');
     } else if (what === 'audit') {
         title = 'Audit log';
         const rs = d.all('SELECT at, actor, action, detail FROM audit_log WHERE user_id = ? ORDER BY at DESC LIMIT 20', row.id);
@@ -417,6 +442,16 @@ function listGuests(i, caller) {
     });
 }
 
+// Counted invites, and who has a custom skin coming (newest first).
+function inviteStats() {
+    const d = db.handle();
+    const t = d.get("SELECT COALESCE(SUM(status = 'qualified'), 0) AS q, COALESCE(SUM(status = 'pending'), 0) AS p FROM referrals");
+    const skins = d.all(`SELECT u.username, w.at FROM referral_rewards w JOIN users u ON u.id = w.user_id
+        WHERE w.tier = 'custom_skin' AND u.deleted_at IS NULL ORDER BY w.at DESC LIMIT 10`);
+    const who = skins.length ? ' · custom skin earned: ' + skins.map(s => `**${md(s.username)}** ${ts(s.at, 'd')}`).join(', ') : '';
+    return `${(t.q | 0).toLocaleString('en-US')} counted · ${(t.p | 0).toLocaleString('en-US')} waiting${who}`.slice(0, 1000);
+}
+
 function stats(i, caller) {
     const d = db.handle(), now = Date.now();
     const one = (sql, ...a) => d.get(sql, ...a) || {};
@@ -450,6 +485,7 @@ function stats(i, caller) {
                 { name: 'Guests', value: `${n(g.n)} ever · ${n(g.new1)} new today · ${n(g.act1)} active today · ${n(g.act7)} this week · ${n(g.games)} games · ${n(g.conv)} made an account`, inline: false },
                 { name: 'Gemdust', value: `${dustText(acc.dust)} held · ${dustText(earned.m)} ever earned`, inline: false },
                 { name: 'Purchases', value: `${n(buys.n)} (${n(buys.gifts)} gifts, ${n(buys.refunds)} refunded) · ${dustText(buys.dust)} dust spent`, inline: false },
+                { name: 'Invites', value: inviteStats(), inline: false },
                 { name: 'Games', value: `${n(lives.n)} total · ${n(lives.day)} today`, inline: true },
                 { name: 'Banned', value: n(acc.banned), inline: true },
             ],
@@ -524,6 +560,31 @@ function achievementsCmd(i, caller) {
     return reply('', { embeds: [{ title: `${md(t.row.username)} · medals ${got}/${list.length}`, color: COLOR, description: lines.join('\n').slice(0, 4000) }] });
 }
 
+function invitesCmd(i, caller) {
+    const t = targetFor(i, caller);
+    if (t.error) return reply(t.error, { ephemeral: true });
+    const row = t.row;
+    const s = referrals.summary(row.id, Date.now(), { create: false });
+    const r = s.rewards;
+    const style = require('../../../shared/cosmetics.js').byId(r.nameStyle.itemId);
+    const mine = !!caller.id && row.discord_id === caller.id;
+    const left = n => `${n - s.count} more to go`;
+    const lines = [
+        `**${s.count}** friend${s.count === 1 ? '' : 's'} joined${s.pending ? ` · ${s.pending} still playing their first game` : ''}`,
+        '',
+        `${r.dustEarnedMilli ? '✅' : '▫️'} ${dustText(r.perFriendMilli)} gemdust per friend · ${dustText(r.dustEarnedMilli)} earned so far`,
+        `${r.nameStyle.unlocked ? '✅' : '▫️'} **${md(style ? style.name : 'Exclusive')}** name style at ${r.nameStyle.need} friends${r.nameStyle.unlocked ? '' : ' · ' + left(r.nameStyle.need)}`,
+        `${r.customSkin.unlocked ? '✅' : '▫️'} Your own custom skin at ${r.customSkin.need} friends${r.customSkin.unlocked ? ` · **earned** ${ts(r.customSkin.at, 'd')}, DM ZyroX to make it` : ' · ' + left(r.customSkin.need)}`,
+    ];
+    if (mine && s.link) lines.push('', `Your link: ${s.link}`);
+    return reply('', {
+        embeds: [{
+            title: `${md(row.username)} · invites`, color: COLOR, description: lines.join('\n'),
+            footer: { text: 'Friends count once they make a new account and finish a game · Invite button at ' + config.publicOrigin.replace(/^https?:\/\//, '') },
+        }],
+    });
+}
+
 function shopCmd() {
     const store = require('../store');
     const C = require('../../../shared/cosmetics.js');
@@ -566,7 +627,7 @@ function playCmd() {
     return reply(`**Corez.io**: mine, loot, fight, buy upgrades and climb the leaderboard in a free browser battle royale.\nPlay now: ${config.publicOrigin}`);
 }
 
-const PLAYER_HANDLERS = { profile, rank, leaderboard, achievements: achievementsCmd, shop: shopCmd, online: onlineCmd, play: playCmd };
+const PLAYER_HANDLERS = { profile, rank, leaderboard, achievements: achievementsCmd, invites: invitesCmd, shop: shopCmd, online: onlineCmd, play: playCmd };
 
 // ---- entry ----
 

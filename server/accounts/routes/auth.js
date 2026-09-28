@@ -10,6 +10,8 @@ const sessions = require('../sessions');
 const users = require('../users');
 const bus = require('../bus');
 const discordOAuth = require('./discordOAuth');
+const referrals = require('../referrals');
+const cookies = require('../cookies');
 const { checkPassword } = require('./account');
 const { HttpError, bannedError, str } = require('../http');
 
@@ -73,6 +75,19 @@ async function withSignupCharge(ctx, work) {
     return r;
 }
 
+// A new account made from an invite link: record the referral and drop the
+// browser's stored code. Never fails the sign-up.
+function takeReferral(ctx, user, method) {
+    const code = referrals.codeFromRequest(ctx);
+    if (ctx.cookies[referrals.REF_COOKIE] != null) ctx.setCookie(cookies.clear(referrals.REF_COOKIE, { path: '/' }));
+    if (!code) return;
+    referrals.recordSignup({
+        user, method, code, ip: ctx.ip,
+        deviceUserId: sessions.deviceUserId(ctx.cookies[config.cookies.dev], ctx.now),
+        now: Date.now(),
+    });
+}
+
 async function signup(ctx) {
     ctx.limit('signupTry', ctx.ipKey);
     ctx.checkLimit('signup', ctx.ipKey);
@@ -93,6 +108,7 @@ async function signup(ctx) {
     });
     if (!r.ok) throw usernameTaken(r.reason);
     users.audit(r.user.id, 'signup', { method: 'password' }, { ip: ctx.ip });
+    takeReferral(ctx, r.user, 'password');
     ctx.startSession(r.user, 'signup');
     ctx.json(201, { user: users.toPublic(r.user), recoveryCode: recovery.code });
 }
@@ -282,6 +298,7 @@ async function discordComplete(ctx) {
         throw usernameTaken(r.reason);
     }
     users.audit(r.user.id, 'signup', { method: 'discord', discordId: pending.id }, { ip: ctx.ip });
+    takeReferral(ctx, r.user, 'discord');
     ctx.setCookie(discordOAuth.clearPendingCookie());
     ctx.startSession(r.user, 'discord');
     ctx.json(201, { user: users.toPublic(r.user), recoveryCode: recovery.code });

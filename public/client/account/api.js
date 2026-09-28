@@ -51,7 +51,16 @@ const post = (path, body) => request('POST', path, body);
 export const config = () => get('/api/config');
 export const me = () => get('/api/me');
 
-export const signup = (username, password) => post('/api/auth/signup', { username, password });
+// An invite code this browser arrived with (invite.js), sent with a sign-up.
+let refSource = () => '';
+export function setRefSource(fn) { refSource = typeof fn === 'function' ? fn : () => ''; }
+function withRef(body) {
+    let ref = '';
+    try { ref = refSource() || ''; } catch (e) { ref = ''; }
+    return ref ? Object.assign(body, { ref }) : body;
+}
+
+export const signup = (username, password) => post('/api/auth/signup', withRef({ username, password }));
 export const login = (username, password) => post('/api/auth/login', { username, password });
 export const logout = () => post('/api/auth/logout', {});
 export const logoutAll = () => post('/api/auth/logout-all', {});
@@ -59,7 +68,7 @@ export const usernameAvailable = (name) => get('/api/auth/username-available?nam
 export const recover = (username, recoveryCode, newPassword) => post('/api/auth/recover', { username, recoveryCode, newPassword });
 export const reset = (token, newPassword) => post('/api/auth/reset', { token, newPassword });
 export const reauthPassword = (currentPassword) => post('/api/auth/reauth', { currentPassword });
-export const discordComplete = (username, password) => post('/api/auth/discord/complete', password ? { username, password } : { username });
+export const discordComplete = (username, password) => post('/api/auth/discord/complete', withRef(password ? { username, password } : { username }));
 
 export const changeUsername = (username, currentPassword) => post('/api/account/username', currentPassword ? { username, currentPassword } : { username });
 export const changePassword = (currentPassword, newPassword) => post('/api/account/password', currentPassword ? { currentPassword, newPassword } : { newPassword });
@@ -99,6 +108,7 @@ export const friendRead = (userId, upTo) => post('/api/friends/messages/read', {
 export const profile = (u) => get('/api/profile?u=' + encodeURIComponent(u));
 export const leaderboard = (limit) => get('/api/leaderboard?limit=' + (limit || 100));
 export const quests = () => get('/api/quests');
+export const invite = () => get('/api/invite');
 // Server-Sent Events: a URL, since EventSource does its own fetching.
 export const EVENTS_URL = '/api/events';
 // Duo parties (guests too: they carry the X-Party-Guest token set above).

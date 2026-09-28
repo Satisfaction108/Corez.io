@@ -39,6 +39,7 @@
             <li><b>Login details:</b> your username and a securely hashed password (we never store the password itself), a hashed recovery code, and, if you log in with Discord, your Discord user ID, display name and avatar. We only ask Discord for the <code>identify</code> permission, so we never see your email, servers or messages.</li>
             <li><b>Game progress:</b> rank and rank points, placement games, gemdust balance and every change to it, items you own, bought, gifted or refunded, what you're wearing, daily quests, achievements, raid results and per-game stats.</li>
             <li><b>Social:</b> your friends, friend requests, blocks, and direct messages with friends (the most recent 200 per conversation).</li>
+            <li><b>Invites:</b> your invite code, and for an account made from someone's invite link, who invited it and whether it counted. To stop people inviting themselves, the sign-up IP address is kept only as a one-way keyed hash, and the IP addresses of both accounts are compared as hashes.</li>
             <li><b>Sessions and security:</b> a session for each device you're logged in on (with its IP address and browser type, deleted when the session expires after 60 days), and a log of account events such as sign-up, purchases, password changes and moderator actions. IP addresses in that log are removed after 90 days.</li>
         </ul>
     </section>
@@ -48,6 +49,7 @@
         <ul>
             <li>A <b>session cookie</b> keeps you logged in. It's required for accounts to work and isn't used for tracking.</li>
             <li>A short-lived cookie is used during Discord login to protect it from forgery.</li>
+            <li>If you open someone's invite link, its code is kept in a cookie and local storage for 30 days so it can be credited when you sign up. It's removed once you sign up or log in.</li>
             <li><b>Local storage</b> holds your settings, the guest ID and a per-tab ID that lets you rejoin your raid after a disconnect.</li>
         </ul>
         <p>There are no advertising or analytics cookies.</p>

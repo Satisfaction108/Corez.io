@@ -74,8 +74,10 @@ function cycleSpectate(socket, dir) {
 }
 
 // Walk a killer (bullet/drone/tank) up to the living player or bot to follow.
-function livingSpectateTarget(killers) {
-    if (!Array.isArray(killers)) return livingSpectateList()[0] || null;
+// strict: no stand-in when the killer was not a tank (a boss, the storm), so
+// the death cam picks the tank nearest the corpse instead of a random one.
+function livingSpectateTarget(killers, strict = false) {
+    if (!Array.isArray(killers)) return strict ? null : (livingSpectateList()[0] || null);
     for (const e of killers) {
         if (!e) continue;
         let root = e;
@@ -83,7 +85,7 @@ function livingSpectateTarget(killers) {
         if (typeof root.isDead === "function" && root.isDead()) continue;
         if (root.isPlayer || root.isBot) return root;
     }
-    return livingSpectateList()[0] || null;
+    return strict ? null : (livingSpectateList()[0] || null);
 }
 
 // The colour a player sees their own tank (and HUD) in. Tutorial learners all
@@ -941,6 +943,9 @@ class socketManager {
                 }
             } break;
             case "EP": {
+                // raids have no enemy pings: solos is every tank for itself,
+                // and duos pings the partner through "PG"
+                if (Config.dig_royale) return;
                 if (m.length !== 2 || typeof m[0] !== "number" || typeof m[1] !== "number" ||
                     !isFinite(m[0]) || !isFinite(m[1])) {
                     return; 
@@ -1416,7 +1421,9 @@ class socketManager {
                         let best = null;
                         for (const e of entities.values()) {
                             if (!e || !e.isBot || e.isDead?.() || e.isGhost || e.padSafe || e.onVaultPad || e.outpostOnPad) continue;
-                            if (!best || (e.royaleBornAt || 0) < (best.royaleBornAt || 0)) best = e;
+                            // 'near': the bot closest to you (death effect checks), else the oldest
+                            if (m[2] === "near" ? (!best || (e.x - b.x) ** 2 + (e.y - b.y) ** 2 < (best.x - b.x) ** 2 + (best.y - b.y) ** 2)
+                                : (!best || (e.royaleBornAt || 0) < (best.royaleBornAt || 0))) best = e;
                         }
                         const ageMs = best ? Date.now() - (best.royaleBornAt || 0) : -1;
                         const hit = !!best && ageMs >= Math.max(0, m[1] | 0);
@@ -2401,7 +2408,7 @@ class socketManager {
                                 socket.status.readyToSpawn = true;
                             }
 
-                            socket.spectateKiller = livingSpectateTarget(player.body.finalKillers);
+                            socket.spectateKiller = livingSpectateTarget(player.body.finalKillers, !!Config.dig_royale);
                             socket.spectateEntity = socket.spectateKiller;
                             // Raid: freeze on the corpse until Spectate is pressed.
                             if (Config.dig_royale) {

@@ -13,6 +13,8 @@ module.exports = {
     arena_shape: "circle",
     bot_cap: 0,
     bot_team_cap: 0,
+    // the raid sends its own shield line, so the stock invuln/bug lines only repeat it
+    spawn_message: "Welcome to Corez.io. Good luck down there!",
     dig_royale_terrain: {
         seed: 11,
         extrusion_chance: 0.40,

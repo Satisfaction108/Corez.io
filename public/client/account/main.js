@@ -21,6 +21,7 @@ import * as dailyQuests from './dailyQuests.js';
 import * as ingameChat from './ingameChat.js';
 import * as gameToasts from './gameToasts.js';
 import * as party from './party.js';
+import * as invite from './invite.js';
 
 const html = document.documentElement;
 const HINT = 'dwAcctHint';
@@ -271,6 +272,7 @@ function openReset(token) {
 
 /* ── boot ───────────────────────────────────────────────────────────── */
 async function boot() {
+    invite.capture();
     welcome.init({ onAuthed, onGuest: goGuest });
     account.init({ refresh, onLoggedOut: loggedOut, onDeleted, setUser });
     hub.register('account', { title: 'Account', render: account.render, onClose: account.onClose });
@@ -297,6 +299,7 @@ async function boot() {
         refreshMe: () => refresh(true),
         openPane,
         onStoreReset() { menu.render(); dailyQuests.refresh(); },
+        onInvite: () => invite.onEvent(),
     });
     // SOLO | DUOS and the duo party panel (guests too)
     try { party.init(); } catch (e) { console.error('[party] init failed', e); }
@@ -320,6 +323,10 @@ async function boot() {
             if (pane === 'play') return hub.close();
             if (hub.has(pane)) openPane(pane);
         },
+    });
+    invite.init({
+        refreshMe: () => refresh(true),
+        onSignup() { if (!store.get('offline')) welcome.open('auth', { tab: 'signup', dismissable: true }); },
     });
     store.on((s, changed) => {
         if (changed.indexOf('user') >= 0 && hub.currentPane() === 'account') hub.refresh('account');

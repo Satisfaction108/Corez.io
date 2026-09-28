@@ -3477,18 +3477,18 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 
 /* ── Join / connection plate (app.js updateJoinState) ──
    Connecting, reconnecting, disconnected / kicked, and the wait before your
-   first spawn. Always the dark cave palette, like the in-game buttons. */
+   first spawn. Same theme as the menu you just left: the menu's card on
+   the menu's backdrop. */
 #dwJoin {
-    --surface: #2b2533; --surface2: #352e3f; --ink: #120e15; --bevel: rgba(255,255,255,.07);
-    --text: #e9e0cc; --text2: #a597b0; --heading: #fff3d9; --gold: #f2b83c; --copper: #e07b2e;
-    --play: #4fcf5c; --play-dk: #2c8f37; --face: #4a4156; --face-dk: #2e2837;
+    --warn: var(--gold); --good: var(--play); --bad: #ff8f7e;
     position: fixed; inset: 0; z-index: 60;
     display: none; align-items: center; justify-content: center;
     padding: 16px; box-sizing: border-box;
-    background: radial-gradient(ellipse at 50% 42%, #231d2b 0%, #16121b 70%);
+    background: radial-gradient(ellipse at 50% 45%, var(--surface2) 0%, var(--bg) 62%);
     color: var(--text);
     user-select: none;
 }
+[data-theme="light"] #dwJoin { --warn: #c27a0e; --good: var(--play-dk); --bad: #c8392d; }
 #dwJoin.open { display: flex; animation: dwFade 180ms ease both; }
 /* disconnected mid-game: the world stays faintly visible behind the plate */
 #dwJoin.see { background: rgba(14, 11, 18, .66); }
@@ -3497,9 +3497,7 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
     width: 380px; max-width: 100%;
     padding: 20px 24px 22px; box-sizing: border-box;
     background: var(--surface);
-    border: 1px solid var(--line);
     border-radius: 17px;
-    box-shadow: inset 0 1px 0 var(--bevel), 0 4px 11px var(--cast);
     text-align: center;
     animation: dwPop 300ms cubic-bezier(.3, 1.5, .6, 1) both;
 }
@@ -3509,29 +3507,28 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
     font: 400 34px/1.05 var(--display);
     letter-spacing: .01em;
     -webkit-text-stroke: 0;
-    text-shadow: 0 2px 5px var(--cast);
 }
-#dwJoin[data-mode="down"] .dwj-title { color: #ff8f7e; }
-#dwJoin[data-mode="lock"] .dwj-title, #dwJoin[data-mode="late"] .dwj-title { color: var(--gold); }
-#dwJoin[data-mode="fillbot"] .dwj-title { color: var(--gold); }
-#dwJoin[data-mode="paired"] .dwj-title { color: var(--play); }
+#dwJoin[data-mode="down"] .dwj-title { color: var(--bad); }
+#dwJoin[data-mode="lock"] .dwj-title, #dwJoin[data-mode="late"] .dwj-title, #dwJoin[data-mode="fillbot"] .dwj-title { color: var(--warn); }
+#dwJoin[data-mode="paired"] .dwj-title { color: var(--good); }
 .dwj-btns[hidden] { display: none; }
 .dwj-count {
     display: flex; flex-direction: column; align-items: center; gap: 2px;
     margin: 12px auto 0; padding: 8px 18px 10px; width: max-content; max-width: 100%;
-    background: #1e1924; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--input-bg); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: inset 0 2px 0 var(--well);
 }
 .dwj-count[hidden], .dwj-line[hidden], .dwj-dots[hidden], .dwj-btns [hidden] { display: none; }
 .dwj-count-lbl { color: var(--text2); font: 700 14px/1 var(--ui); letter-spacing: .04em; }
 .dwj-count-n {
-    color: #fff; font: 400 44px/1 var(--display); font-variant-numeric: tabular-nums;
-    -webkit-text-stroke: 0; text-shadow: 0 2px 5px var(--cast);
+    color: var(--heading); font: 400 44px/1 var(--display); font-variant-numeric: tabular-nums;
+    -webkit-text-stroke: 0;
 }
 .dwj-line { margin: 12px 4px 0; color: var(--text); font: 600 14px/1.4 var(--ui); }
 .dwj-dots { display: flex; justify-content: center; gap: 7px; height: 12px; margin-top: 14px; }
 .dwj-dots i {
     width: 10px; height: 10px; border-radius: 50%;
-    background: var(--copper); border: 1px solid var(--line); box-sizing: border-box;
+    background: var(--copper); box-shadow: 0 0 0 1px var(--copper-dk); box-sizing: border-box;
     animation: dwjDot 1.2s ease-in-out infinite;
 }
 .dwj-dots i:nth-child(2) { animation-delay: .15s; }
@@ -3540,15 +3537,14 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 @media (prefers-reduced-motion: reduce) { .dwj-dots i { animation-duration: 2.4s; } .dwj-card { animation: none; } }
 .dwj-btns { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
 .dwj-btns .dw-btn { min-width: 132px; }
-/* the connect / waiting card: secondary buttons get their own plate, since
-   the flat menu style is the card's own colour here and would vanish */
+/* secondary buttons: the menu's own secondary plate */
 #dwJoin .dwj-btns .dw-btn:not(.primary) {
-    background: #3a3346; color: #f3ecff;
-    border: 1px solid rgba(255, 255, 255, .18);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), inset 0 -3px 0 rgba(0, 0, 0, .28), 0 2px 6px rgba(0, 0, 0, .35);
+    background: var(--btn); color: var(--heading);
+    border: 1px solid var(--btn-edge);
+    box-shadow: inset 0 -3px 0 var(--btn-shade), 0 2px 5px var(--cast);
 }
-#dwJoin .dwj-btns .dw-btn:not(.primary):hover { background: #473f56; }
-#dwJoin .dwj-btns .dw-btn:not(.primary):active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .35); }
+#dwJoin .dwj-btns .dw-btn:not(.primary):hover { background: var(--btn-hover); }
+#dwJoin .dwj-btns .dw-btn:not(.primary):active { transform: translateY(2px); box-shadow: inset 0 -1px 0 var(--btn-shade); }
 @media (max-width: 420px) { .dwj-title { font-size: 28px; } .dwj-btns .dw-btn { min-width: 0; flex: 1; } }
 
 /* ── SOLO | DUOS and the duo party (client/account/party.js) ───────────
@@ -4118,3 +4114,141 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
 .lk-tile:hover { box-shadow: 0 1px 2px var(--cast), 0 10px 20px -10px var(--cast); }
 .lk-tile:active { transform: translateY(1px); }
 .lk-tile.sel { box-shadow: 0 0 0 2px var(--hub-bg), 0 0 0 4px var(--copper); }
+
+/* ── invites: the Invite tile left of the account chip (invite.js sets
+   its right edge from the chip's width) and the invite panel ── */
+#inviteBtn {
+    position: fixed;
+    top: var(--bar-top); right: calc(var(--bar-top) + var(--bar-h) + var(--bar-gap) + 200px);
+    z-index: 310;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 52px;
+    margin: 0;
+    padding: 0 14px 0 11px;
+    box-sizing: border-box;
+    border: 1px solid var(--line);
+    border-radius: 15px;
+    background: var(--surface);
+    box-shadow: inset 0 1px 0 var(--line-soft), 0 1px 1px var(--cast), 0 10px 22px -14px var(--cast);
+    color: var(--heading);
+    font: 600 14.5px/1 var(--ui);
+    letter-spacing: .01em;
+    cursor: pointer;
+    transition: background-color 80ms, transform 60ms ease-out;
+    animation: dwFade var(--dw-t2) var(--dw-ease) both;
+}
+#inviteBtn .dw-ic { width: 26px; height: 26px; }
+#inviteBtn:hover { background: var(--btn-hover); }
+#inviteBtn:active, #inviteBtn.active { transform: translateY(1px); box-shadow: inset 0 2px 4px var(--well); }
+#inviteBtn:focus-visible { outline: 2px solid var(--copper); outline-offset: 1px; }
+#inviteBtn:active::after { content: ''; position: absolute; left: -4px; right: -4px; top: -10px; bottom: -4px; z-index: -1; }
+/* no room beside the chip: an icon tile under the theme toggle */
+#inviteBtn.stacked { top: calc(var(--bar-top) + var(--bar-h) + var(--bar-gap)); right: var(--bar-top); width: 48px; height: 48px; padding: 0; justify-content: center; border-radius: 13px; }
+#inviteBtn.stacked .ib-label { display: none; }
+@media (max-width: 1000px) { #inviteBtn .ib-label { display: none; } #inviteBtn { padding: 0 12px; } }
+html[data-acct="new"] #inviteBtn, html.dw-wl-open #inviteBtn { visibility: hidden; }
+body.in-game #inviteBtn { display: none !important; }
+body:has(#homeSettingsPanel.open, #homeChangelogPanel.open, #contributorsPanel.open) #inviteBtn { z-index: 298; }
+
+.dw-modal.dw-invite { width: 440px; }
+.iv-body { display: flex; flex-direction: column; gap: 14px; }
+.iv-loading, .iv-err { padding: 26px 0; color: var(--text2); font: 600 14px var(--ui); text-align: center; }
+.iv-err { color: var(--danger-text); }
+
+.iv-link { display: flex; align-items: center; gap: 8px; }
+.iv-link-in {
+    flex: 1;
+    min-width: 0;
+    height: 42px;
+    margin: 0;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border: 1.5px dashed var(--line);
+    border-radius: 10px;
+    background: var(--input-bg);
+    color: var(--heading);
+    font: 700 14px 'Ubuntu Mono', monospace;
+    letter-spacing: .02em;
+    outline: none;
+}
+.iv-link-in:focus { border-color: var(--copper); border-style: solid; }
+.iv-copy { min-width: 88px; height: 42px; margin: 0; }
+.iv-copy.copied { --face-c: var(--play); --lip-c: var(--play-dk); }
+
+.iv-progress { padding: 12px 14px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: inset 0 1px 0 var(--line-soft); }
+.iv-count { display: flex; align-items: baseline; gap: 8px; }
+.iv-count-n { color: var(--heading); font: 400 34px/1 var(--display); }
+.iv-count-t { color: var(--heading); font: 700 16px var(--ui); }
+.iv-count-sub { margin-top: 3px; color: var(--text2); font: 500 12px var(--ui); }
+.iv-pips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-top: 11px; }
+.iv-pip { position: relative; height: 10px; border-radius: 5px; background: var(--track); box-shadow: inset 0 1px 2px var(--well); }
+.iv-pip.on { background: var(--copper); box-shadow: inset 0 -2px 0 var(--copper-dk); }
+.iv-pip.goal.on { background: var(--gold); box-shadow: inset 0 -2px 0 var(--gold-dk); }
+.iv-pip-n { position: absolute; right: -1px; top: 14px; color: var(--text2); font: 700 11px/1 var(--ui); }
+.iv-pip.goal.on .iv-pip-n { color: var(--heading); }
+.iv-progress:has(.iv-pip-n) { padding-bottom: 24px; }
+
+.iv-rewards { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.iv-reward { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.iv-reward + .iv-reward { border-top: 1px solid var(--line); }
+.iv-rw-art {
+    flex: none;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    width: 124px; height: 48px;
+    overflow: hidden;
+    border-radius: 9px;
+    background: var(--dw-floor);
+    line-height: 0;
+}
+.iv-rw-text { flex: 1; min-width: 0; }
+.iv-rw-tag { color: var(--copper); font: 700 10.5px/1.2 var(--ui); letter-spacing: .07em; text-transform: uppercase; }
+.iv-rw-name { margin-top: 2px; color: var(--heading); font: 700 14.5px/1.2 var(--ui); }
+.iv-rw-sub { margin-top: 2px; color: var(--text2); font: 500 12px/1.35 var(--ui); }
+.iv-rw-sub b { color: var(--text); }
+.iv-rw-sub a { color: var(--link); font-weight: 700; }
+.iv-reward:not(.on) .iv-rw-art > canvas, .iv-reward:not(.on) .iv-skin-art { opacity: .8; }
+.iv-state {
+    flex: none;
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 7px;
+    background: var(--track);
+    color: var(--text2);
+    font: 700 11.5px/1 var(--ui);
+    white-space: nowrap;
+}
+.iv-state .dw-ic { width: 14px; height: 14px; }
+.iv-state.on { background: color-mix(in srgb, var(--play) 18%, transparent); color: var(--online); }
+.iv-dust { display: inline-flex; align-items: center; gap: 6px; color: #dccfff; font: 400 22px/1 var(--display); }
+.iv-dust .dw-ic { width: 26px; height: 26px; }
+.iv-skin-art { display: block; line-height: 0; }
+.iv-skin-q {
+    position: absolute; right: 22px; top: 7px;
+    width: 18px; height: 18px;
+    border: 1.5px solid #0c0a0e;
+    border-radius: 50%;
+    background: var(--gold);
+    color: #2a1d06;
+    font: 700 12px/15px var(--ui);
+    text-align: center;
+}
+
+.iv-sec-h { margin: 0 0 6px 2px; color: var(--text2); font: 700 11.5px var(--ui); letter-spacing: .07em; text-transform: uppercase; }
+.iv-list { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.iv-friend { display: flex; align-items: center; gap: 9px; padding: 7px 10px; }
+.iv-friend + .iv-friend { border-top: 1px solid var(--line); }
+.iv-f-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--heading); font: 700 13.5px var(--ui); }
+.iv-f-st { flex: none; padding: 4px 7px; border-radius: 6px; font: 700 11px/1 var(--ui); white-space: nowrap; }
+.iv-f-st.ok { background: color-mix(in srgb, var(--play) 18%, transparent); color: var(--online); }
+.iv-f-st.wait { background: color-mix(in srgb, var(--gold) 20%, transparent); color: var(--heading); }
+.iv-f-st.no { background: var(--track); color: var(--text2); }
+.iv-fine { color: var(--text2); font: 500 11.5px/1.45 var(--ui); }
+
+.iv-guest { padding: 14px; border: 1.5px dashed var(--line); border-radius: 12px; background: var(--surface); text-align: center; }
+.iv-guest-t { color: var(--heading); font: 700 15.5px/1.3 var(--ui); }
+.iv-guest-p { margin-top: 3px; color: var(--text2); font: 500 12.5px var(--ui); }
+@media (max-width: 480px) { .iv-rw-art { width: 96px; } }

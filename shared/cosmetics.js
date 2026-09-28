@@ -10,6 +10,7 @@
 //        Name styles use 1..99, skins 101..199.
 //   id   the string stored in the database (owned_items, users.equip_*).
 //   price in milli-dust (1 gemdust = 1000).
+//   exclusive  never sold or gifted, only granted (invite rewards); price 0.
 //
 // Name style render params (item.style):
 //   kind   'solid'  one colour (Custom Color: the player's own hex)
@@ -52,6 +53,7 @@
 
     const CATS = Object.freeze(['nameStyle', 'skin']);
     const CUSTOM_COLOR_ID = 'ns_custom';
+    const INVITE_STYLE_ID = 'ns_ringleader';
 
     function ns(nid, id, name, rarity, priceDust, style, extra) {
         return Object.assign({ nid, id, cat: 'nameStyle', name, rarity, price: Math.round(priceDust * MILLI), style }, extra || {});
@@ -91,6 +93,12 @@
         ns(13, 'ns_prism_shard', 'Prism Shard', 'legendary', 250,
             { kind: 'prism', stops: ['#ff6b6b', '#ffd84d', '#6bff8f', '#6bd8ff', '#b88cff', '#ff6b6b'], speed: 0.4,
               saturation: 0.85, lightness: 0.68, glint: true, glintEvery: 2.2, glyph: '◆', glyphColor: '#ffffff' }),
+        // invite reward (3 friends): a fast copper-to-violet loop with a hot
+        // cream core and a quick glint, so it reads as live even when small
+        ns(14, 'ns_ringleader', 'Ringleader', 'legendary', 0,
+            { kind: 'scroll', stops: ['#ff8a3d', '#ffd166', '#fff1c9', '#ff5fa2', '#c77dff', '#ff5fa2', '#ff8a3d'], speed: 0.55,
+              glint: true, glintEvery: 1.6, glyph: '✦', glyphColor: '#ffd166' },
+            { exclusive: true }),
 
         // ---- skins ----
         sk(101, 'sk_hazard_stripes', 'Hazard Stripes', 'common', 35,
@@ -131,7 +139,7 @@
         return o;
     }
 
-    const ITEMS = deepFreeze(RAW.map(it => Object.assign({ permanent: false, retired: false }, it)));
+    const ITEMS = deepFreeze(RAW.map(it => Object.assign({ permanent: false, retired: false, exclusive: false }, it)));
     const BY_ID = new Map(ITEMS.map(it => [it.id, it]));
     const BY_NID = new Map(ITEMS.map(it => [it.nid, it]));
     if (BY_ID.size !== ITEMS.length || BY_NID.size !== ITEMS.length) throw new Error('cosmetics: duplicate id or nid');
@@ -191,7 +199,7 @@
     function priceDust(item) { return item ? item.price / MILLI : 0; }
 
     return Object.freeze({
-        CATALOG_VERSION, MILLI, RARITIES, RARITY_ORDER, CATS, CUSTOM_COLOR_ID, ITEMS,
+        CATALOG_VERSION, MILLI, RARITIES, RARITY_ORDER, CATS, CUSTOM_COLOR_ID, INVITE_STYLE_ID, ITEMS,
         MIN_LUMINANCE, FLOOR_COLOR,
         byId, byNid, isCat, parseHex, luminance, contrast, normalizeColor, isColorAllowed, accentFor, priceDust,
     });

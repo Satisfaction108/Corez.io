@@ -8,6 +8,7 @@ import * as socketStuff from "./socketinit.js";
 import './terrainRenderer.js';
 import { gameSound } from "./sound.js";
 import * as tutorial from './tutorial.js';
+import * as coach from './coach.js';
 import * as rankBadges from './account/rankBadges.js';
 import * as rankPanel from './account/rankPanel.js';
 import * as rankCeremony from './account/rankCeremony.js';
@@ -4832,6 +4833,9 @@ import * as cosmetics from './account/cosmetics.js';
         var yy = config.animationSettings.ScaleBar;
         // the right-hand stack stops above the minimap instead of running into it
         const yLimit = msgRight && !global.mobile ? global.screenHeight - alcoveSize - spacing - 22 - 30 : Infinity;
+        // and holds a few lines: anything older fades out early
+        const MSG_CAP = 4;
+        let shown = 0;
         for (let i = global.messages.length - 1; i >= 0; i--) {
             let msg = global.messages[i],
                 txt = msg.text,
@@ -4844,6 +4848,15 @@ import * as cosmetics from './account/cosmetics.js';
                  continue;
             }
             if (y > yLimit) continue;
+            // the toast pill up top already says it
+            if (msgRight && global.royale && global.royale.toast && msg.text === global.royale.toast) {
+                msg.duration = Math.min(msg.duration, time);
+                continue;
+            }
+            if (msgRight && ++shown > MSG_CAP && duration > 300) {
+                msg.duration = time + 300;
+                duration = 300;
+            }
 
             let K = Math.max(0, Math.min(1, time / 300, duration / 300));
             if (msg.textJSON) {
@@ -5551,6 +5564,7 @@ import * as cosmetics from './account/cosmetics.js';
                 load = g.cap > 0 ? Math.min(1, g.carried / g.cap) : 0,
                 blink = load >= 1 && Math.floor(Date.now() / 160) % 2 === 0;
             const pillH = height + 1;
+            hudDrawn.wallet = { x: rx1 - capR, y: ry - pillH / 2, w: rx2 - rx1 + capR * 2, h: pillH };
             hudBar(ctx[2], rx1 - capR, ry - pillH / 2, carX2 - rx1 + capR * 2, pillH, load, blink ? HUD.danger : HUD.gold);
             {
                 // text never leaves its pill: shrink to fit
@@ -5558,7 +5572,8 @@ import * as cosmetics from './account/cosmetics.js';
                 let cs2 = 13; while (cs2 > 9 && hudTextW(carTxt, cs2) > (carX2 - rx1) - 10) cs2 -= 0.5;
                 drawText(carTxt, (rx1 + carX2) / 2 + 0.5, ry + 6 - (13 - cs2) * 0.35, cs2, color.guiwhite, "center");
             }
-            hudBar(ctx[2], bankX1 - capR, ry - pillH / 2, rx2 - bankX1 + capR * 2, pillH, 1, color.teal);
+            // a deeper teal: white text on the bright one was hard to read
+            hudBar(ctx[2], bankX1 - capR, ry - pillH / 2, rx2 - bankX1 + capR * 2, pillH, 1, gameDraw.mixColors(color.teal, "#000000", 0.4));
             {
                 const bankTxt = "Banked: " + util.formatLargeNumber(g.banked | 0);
                 let bs2 = 13; while (bs2 > 9 && hudTextW(bankTxt, bs2) > (rx2 - bankX1) - 10) bs2 -= 0.5;
@@ -6340,8 +6355,43 @@ import * as cosmetics from './account/cosmetics.js';
         if (overrideRect) out.push(overrideRect);
         if (duoRect) out.push(duoRect);
         if (teamFeedRect) out.push(teamFeedRect);
+        if (global.coachRect) out.push(global.coachRect);
         return out;
     }
+    // Where the main HUD pieces were drawn this frame (GUI units), for
+    // coach.js. Pieces without a drawn record are derived from their anchors.
+    let hudDrawn = {};
+    function hudRectOf(kind) {
+        const sh = global.screenHeight;
+        switch (kind) {
+            case "standings": return standingsRect;
+            case "quest": return questRect;
+            case "feed": {
+                const f = hudDrawn.feed;
+                return f ? { x: f.x, y: f.y, w: f.w, h: Math.max(f.h, 63) } : null;
+            }
+            case "kit": return kitBoxTop > 0 ? { x: HUD.edge, y: kitBoxTop, w: 190, h: 118 } : null;
+            case "stats": {
+                if (!global.canSkill || global.mobile) return null;
+                const bottom = sh - 20 - 5.5;
+                const top = bottom - 11 * STAT_BAR_H - 10 * STAT_BAR_GAP - 30;
+                return { x: HUD.edge, y: top, w: 210, h: bottom - top };
+            }
+            case "upgrades": return (global.upgradeBoxBottom | 0) > 0
+                ? { x: HUD.edge, y: global.upgradeBoxTop, w: global.upgradeBoxRight - HUD.edge, h: global.upgradeBoxBottom - global.upgradeBoxTop }
+                : null;
+            default: return hudDrawn[kind] || null;
+        }
+    }
+    window.dwHud = {
+        rect: hudRectOf,
+        edgePoint: (dx, dy) => edgePoint(dx, dy),
+        edgeMarker: (c, e, col, glyph, name, dist, placed) => drawEdgeMarker(c, e, col, glyph, name, dist, placed),
+        panel: (c, x, y, w, h, o) => hudPanel(c, x, y, w, h, o),
+        title: (text, x, y, size, col, align, alpha, c) => hudTitle(text, x, y, size, col, align, alpha, c),
+        titleW: (text, size) => hudTitleW(text, size),
+        colors: HUD,
+    };
     // Step a point out of a panel by the shortest move that stays on screen
     // (a panel on the bottom edge must push the marker UP, not off-screen).
     function nudgeOut(p, r, b) {
@@ -6582,6 +6632,7 @@ import * as cosmetics from './account/cosmetics.js';
             const PW = 300, rowH = 38, footH = (placeTxt || stormTxt) ? 24 : 0, PH = rowH + footH;
             const px = Math.round(cx - PW / 2), py = y;
             hudPanel(c, px, py, PW, PH);
+            hudDrawn.clock = { x: px, y: py, w: PW, h: PH };
             const pair = (label, value, zx) => {
                 const lw2 = hudTitleW(label, 12), vw = hudTitleW(value, 21), gap = 7;
                 const x0 = zx - (lw2 + gap + vw) / 2;
@@ -6888,6 +6939,7 @@ import * as cosmetics from './account/cosmetics.js';
             y += 21;
         }
         royaleFeedBottom = y;
+        hudDrawn.feed = { x: right - 262, y: yTop, w: 262, h: y - yTop };
     }
 
     // ── quest tracker ──────────────────────────────────────────────────
@@ -7129,143 +7181,191 @@ import * as cosmetics from './account/cosmetics.js';
         for (const l of lines) { drawText(l, x + 12, ly, 10.5, HUD.text, "left", true, ease); ly += 14; }
     }
     const ROMAN = ["", "I", "II", "III", "IV", "V"];
-    // A tiny card per kit item for the kit slots: the item's colour and glyph.
+    // Kit item art. Each icon is a chunky tile like the upgrade tiles (a face
+    // over a darker lip) with a flat object on it, outlined in the tile's own
+    // dark shade the way tanks and gems are.
     const KIT_CARD = {
         medkit: "#3fbf7a", charge: "#e07c2f", strut: "#8a93a6", overdrive: "#f0a030",
         anchor: "#4d8be0", flash: "#38b8b0", bulwark: "#7a8494", decoy: "#d4a83a",
         barrage: "#b0413e",
     };
-    function drawKitGlyph(c, id, u, col) {
-        // every glyph is painted twice: a dark outline pass, then the white
-        // pass, so it reads on any card colour at 26px
-        const passes = [["rgba(0,0,0,0.7)", 2.4], ["#ffffff", 0]];
+    const KIT_LIGHT = "#fff8ec", KIT_SPARK = "#ffd640", KIT_ROCK = "#6f6480", KIT_WOOD = "#d99a5c";
+    const kitDark = col => gameDraw.mixColors(col, HUD.ink, 0.62);
+    const circlePath = (c, x, y, r) => { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); };
+    const pointsPath = (c, pts, u, dx = 0, dy = 0, k = 1) => {
+        c.beginPath();
+        pts.forEach((p, i) => i ? c.lineTo(dx + p[0] * u * k, dy + p[1] * u * k) : c.moveTo(dx + p[0] * u * k, dy + p[1] * u * k));
+        c.closePath();
+    };
+    function starPath(c, x, y, r, ri, n = 4, rot = -Math.PI / 2) {
+        c.beginPath();
+        for (let i = 0; i < n * 2; i++) {
+            const a = rot + i * Math.PI / n, rr = i & 1 ? ri : r;
+            i ? c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr) : c.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        }
+        c.closePath();
+    }
+    const BOLT = [[0.2, -1], [-0.55, 0.12], [-0.02, 0.12], [-0.22, 1], [0.55, -0.16], [0.04, -0.16]];
+    const ROCK_CHUNK = [[-1, -0.3], [-0.4, -1], [0.5, -0.8], [1, 0], [0.6, 0.8], [-0.3, 1], [-0.9, 0.5]];
+    // Each glyph is a list of parts: { p: path, fill } for a solid shape,
+    // { p, line, col } for a thick stroke, and { detail } for marks painted on
+    // top without an outline. u is half the glyph box.
+    const KIT_GLYPHS = {
+        medkit: u => [
+            { p: c => pointsPath(c, [[-0.25, -0.68], [0.25, -0.68], [0.25, -0.25], [0.68, -0.25], [0.68, 0.25], [0.25, 0.25],
+                [0.25, 0.68], [-0.25, 0.68], [-0.25, 0.25], [-0.68, 0.25], [-0.68, -0.25], [-0.25, -0.25]], u), fill: KIT_LIGHT },
+        ],
+        charge: u => [
+            { p: c => { c.beginPath(); c.moveTo(u * 0.24, -u * 0.34); c.quadraticCurveTo(u * 0.3, -u * 0.66, u * 0.56, -u * 0.58); }, line: u * 0.11, col: "#e9d8b4" },
+            { p: c => pointsPath(c, [[0.08, -0.46], [0.36, -0.2], [0.18, -0.02], [-0.1, -0.28]], u), fill: "#8a8096" },
+            { p: c => circlePath(c, -u * 0.12, u * 0.16, u * 0.5), fill: "#3d3547" },
+            { p: c => starPath(c, u * 0.58, -u * 0.58, u * 0.27, u * 0.1), fill: KIT_SPARK },
+            { detail: true, p: c => circlePath(c, -u * 0.32, -u * 0.04, u * 0.11), fill: "rgba(255,255,255,0.4)" },
+        ],
+        strut: u => [
+            // a timber mine prop holding a tunnel open
+            { p: c => pointsPath(c, [[-0.3, -0.4], [0.3, -0.4], [0.3, 0.66], [-0.3, 0.66]], u), fill: "#2a2330" },
+            { p: c => pointsPath(c, [[-0.5, -0.38], [-0.26, -0.38], [-0.26, 0.66], [-0.5, 0.66]], u), fill: KIT_WOOD },
+            { p: c => pointsPath(c, [[0.26, -0.38], [0.5, -0.38], [0.5, 0.66], [0.26, 0.66]], u), fill: KIT_WOOD },
+            { p: c => pointsPath(c, [[-0.7, -0.66], [0.7, -0.66], [0.7, -0.38], [-0.7, -0.38]], u), fill: KIT_WOOD },
+            { detail: u * 0.07, col: "#a8672f", p: c => {
+                c.beginPath();
+                c.moveTo(-u * 0.5, -u * 0.52); c.lineTo(u * 0.1, -u * 0.52);
+                c.moveTo(-u * 0.38, -u * 0.18); c.lineTo(-u * 0.38, u * 0.3);
+                c.moveTo(u * 0.38, u * 0.02); c.lineTo(u * 0.38, u * 0.48);
+            } },
+        ],
+        overdrive: u => [
+            { p: c => polyPath(c, 0, 0, u * 0.66, 6, Math.PI / 6), fill: "#3d3547" },
+            { p: c => pointsPath(c, BOLT, u, u * 0.02, 0, 0.5), fill: KIT_SPARK },
+        ],
+        anchor: u => [
+            { p: c => circlePath(c, 0, -u * 0.52, u * 0.14), line: u * 0.13, col: KIT_LIGHT },
+            { p: c => { c.beginPath(); c.moveTo(0, -u * 0.38); c.lineTo(0, u * 0.6); }, line: u * 0.17, col: KIT_LIGHT },
+            { p: c => { c.beginPath(); c.moveTo(-u * 0.32, -u * 0.18); c.lineTo(u * 0.32, -u * 0.18); }, line: u * 0.15, col: KIT_LIGHT },
+            { p: c => { c.beginPath(); c.arc(0, u * 0.08, u * 0.52, Math.PI * 0.12, Math.PI * 0.88); }, line: u * 0.15, col: KIT_LIGHT },
+            { p: c => pointsPath(c, [[-0.66, 0.1], [-0.36, 0.3], [-0.6, 0.44]], u), fill: KIT_LIGHT },
+            { p: c => pointsPath(c, [[0.66, 0.1], [0.36, 0.3], [0.6, 0.44]], u), fill: KIT_LIGHT },
+        ],
+        flash: u => [
+            { p: c => gemPath(c, -u * 0.08, -u * 0.06, u * 0.62), fill: "#c8f7f1" },
+            { detail: u * 0.06, col: "rgba(20,70,68,0.45)", p: c => {
+                const x = -u * 0.08, y = -u * 0.06, r = u * 0.62;
+                c.beginPath();
+                c.moveTo(x - r, y - r * 0.38); c.lineTo(x + r, y - r * 0.38);
+                c.moveTo(x - r * 0.3, y - r * 0.95); c.lineTo(x - r * 0.42, y - r * 0.38); c.lineTo(x, y + r * 0.95);
+                c.moveTo(x + r * 0.3, y - r * 0.95); c.lineTo(x + r * 0.42, y - r * 0.38); c.lineTo(x, y + r * 0.95);
+            } },
+            { p: c => pointsPath(c, BOLT, u, u * 0.42, u * 0.36, 0.36), fill: KIT_SPARK },
+        ],
+        bulwark: u => {
+            // three courses of brick with the joints staggered
+            const rows = [[[-0.68, -0.02], [0.08, 0.68]], [[-0.68, -0.38], [-0.26, 0.34], [0.46, 0.68]], [[-0.68, -0.02], [0.08, 0.68]]];
+            const parts = [];
+            rows.forEach((row, r) => {
+                const y0 = -0.62 + r * 0.43, y1 = y0 + 0.33;
+                for (const [x0, x1] of row) parts.push({ p: c => pointsPath(c, [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], u), fill: "#e4dcee" });
+            });
+            return parts;
+        },
+        decoy: u => [
+            { p: c => {
+                c.beginPath();
+                c.moveTo(-u * 0.14, -u * 0.34);
+                c.bezierCurveTo(-u * 0.72, -u * 0.1, -u * 0.7, u * 0.66, 0, u * 0.66);
+                c.bezierCurveTo(u * 0.7, u * 0.66, u * 0.72, -u * 0.1, u * 0.14, -u * 0.34);
+                c.closePath();
+            }, fill: KIT_LIGHT },
+            { p: c => pointsPath(c, [[-0.26, -0.66], [0, -0.44], [0.26, -0.66], [0.2, -0.36], [-0.2, -0.36]], u), fill: KIT_LIGHT },
+            { p: c => roundRectPath(c, -u * 0.24, -u * 0.44, u * 0.48, u * 0.14, u * 0.06), fill: "#a8672f" },
+            { detail: u * 0.13, col: "#8a6414", p: c => {
+                c.beginPath();
+                c.arc(0, u * 0.04, u * 0.15, Math.PI * 1.05, Math.PI * 2.3);
+                c.lineTo(0, u * 0.3);
+            } },
+            { detail: true, fill: "#8a6414", p: c => circlePath(c, 0, u * 0.48, u * 0.075) },
+        ],
+        barrage: u => [
+            { p: c => { c.beginPath(); c.moveTo(-u * 0.7, u * 0.06); c.lineTo(-u * 0.42, -u * 0.12); c.moveTo(-u * 0.66, u * 0.6); c.lineTo(-u * 0.36, u * 0.4); c.moveTo(-u * 0.2, -u * 0.56); c.lineTo(u * 0.02, -u * 0.66); }, line: u * 0.1, col: KIT_LIGHT },
+            { p: c => pointsPath(c, ROCK_CHUNK, u, u * 0.34, -u * 0.3, 0.32), fill: KIT_ROCK },
+            { p: c => pointsPath(c, ROCK_CHUNK, u, -u * 0.18, u * 0.1, 0.28), fill: KIT_ROCK },
+            { p: c => pointsPath(c, ROCK_CHUNK, u, u * 0.3, u * 0.44, 0.22), fill: KIT_ROCK },
+            { detail: true, fill: "#8d82a0", p: c => {
+                pointsPath(c, [[-0.4, -1], [0.5, -0.8], [0.1, -0.2]], u, u * 0.34, -u * 0.3, 0.32);
+            } },
+        ],
+    };
+    // Paints a glyph's parts as one sticker: a soft drop, every outline, then
+    // every fill, so parts that touch merge into a single silhouette.
+    function paintKitGlyph(c, id, u, dark) {
+        const make = KIT_GLYPHS[id];
+        const parts = make ? make(u) : [{ p: cc => gemPath(cc, 0, 0, u * 0.6), fill: KIT_LIGHT }];
+        const b = Math.max(1.2, u * 0.14);
         c.lineCap = "round"; c.lineJoin = "round";
-        for (const [paint, extra] of passes) {
-            c.fillStyle = paint; c.strokeStyle = paint;
-            const lw = Math.max(1.6, u * 0.2) + extra;
-            c.lineWidth = lw;
-            switch (id) {
-                case "medkit":
-                    c.lineWidth = u * 0.42 + extra;
-                    c.beginPath(); c.moveTo(0, -u * 0.6); c.lineTo(0, u * 0.6); c.moveTo(-u * 0.6, 0); c.lineTo(u * 0.6, 0); c.stroke();
-                    break;
-                case "charge":
-                    c.beginPath();
-                    c.moveTo(u * 0.18, -u * 0.78); c.lineTo(-u * 0.4, u * 0.08); c.lineTo(u * 0.02, u * 0.08);
-                    c.lineTo(-u * 0.18, u * 0.78); c.lineTo(u * 0.42, -u * 0.1); c.lineTo(u * 0.02, -u * 0.1);
-                    c.closePath(); c.fill(); if (extra) { c.lineWidth = extra; c.stroke(); }
-                    break;
-                case "strut":
-                    c.lineWidth = u * 0.22 + extra;
-                    c.beginPath(); c.moveTo(-u * 0.55, -u * 0.6); c.lineTo(u * 0.55, -u * 0.6); c.moveTo(-u * 0.55, u * 0.6); c.lineTo(u * 0.55, u * 0.6); c.moveTo(0, -u * 0.55); c.lineTo(0, u * 0.55); c.stroke();
-                    break;
-                case "overdrive":
-                    c.beginPath(); c.arc(0, u * 0.15, u * 0.62, Math.PI * 1.05, Math.PI * 1.95); c.stroke();
-                    c.beginPath(); c.moveTo(0, u * 0.15); c.lineTo(u * 0.42, -u * 0.28); c.stroke();
-                    c.beginPath(); c.arc(0, u * 0.15, u * 0.12 + extra * 0.4, 0, Math.PI * 2); c.fill();
-                    break;
-                case "anchor":
-                    c.beginPath(); c.arc(0, -u * 0.55, u * 0.14 + extra * 0.3, 0, Math.PI * 2); c.stroke();
-                    c.beginPath(); c.moveTo(0, -u * 0.4); c.lineTo(0, u * 0.62); c.stroke();
-                    c.beginPath(); c.moveTo(-u * 0.38, -u * 0.12); c.lineTo(u * 0.38, -u * 0.12); c.stroke();
-                    c.beginPath(); c.arc(0, u * 0.12, u * 0.5, Math.PI * 0.12, Math.PI * 0.88); c.stroke();
-                    c.beginPath(); c.moveTo(-u * 0.5, u * 0.3); c.lineTo(-u * 0.62, u * 0.5); c.moveTo(u * 0.5, u * 0.3); c.lineTo(u * 0.62, u * 0.5); c.stroke();
-                    break;
-                case "flash":
-                    gemPath(c, 0, u * 0.02, u * 0.66); c.fill(); if (extra) { c.lineWidth = extra; c.stroke(); }
-                    if (!extra) {
-                        c.fillStyle = col;
-                        c.beginPath();
-                        c.moveTo(u * 0.1, -u * 0.38); c.lineTo(-u * 0.2, u * 0.04); c.lineTo(u * 0.02, u * 0.04);
-                        c.lineTo(-u * 0.1, u * 0.42); c.lineTo(u * 0.22, -u * 0.02); c.lineTo(u * 0.02, -u * 0.02);
-                        c.closePath(); c.fill();
-                    }
-                    break;
-                case "bulwark":
-                    c.fillRect(-u * 0.64 - extra / 2, -u * 0.6 - extra / 2, u * 1.28 + extra, u * 1.2 + extra);
-                    if (!extra) {
-                        c.strokeStyle = col; c.lineWidth = Math.max(1, u * 0.1);
-                        c.beginPath();
-                        for (let r = 1; r < 3; r++) { const yy = -u * 0.6 + r * u * 0.4; c.moveTo(-u * 0.64, yy); c.lineTo(u * 0.64, yy); }
-                        c.moveTo(0, -u * 0.6); c.lineTo(0, -u * 0.2); c.moveTo(-u * 0.32, -u * 0.2); c.lineTo(-u * 0.32, u * 0.2); c.moveTo(u * 0.32, -u * 0.2); c.lineTo(u * 0.32, u * 0.2); c.moveTo(0, u * 0.2); c.lineTo(0, u * 0.6);
-                        c.stroke();
-                    }
-                    break;
-                case "barrage": {
-                    // three rock chunks flying up and right, with speed lines
-                    const chunk = (x, y, r) => {
-                        c.beginPath();
-                        const k = [[-1, -0.3], [-0.4, -1], [0.5, -0.8], [1, 0], [0.6, 0.8], [-0.3, 1], [-0.9, 0.5]];
-                        k.forEach((p, i) => i ? c.lineTo(x + p[0] * r, y + p[1] * r) : c.moveTo(x + p[0] * r, y + p[1] * r));
-                        c.closePath(); c.fill(); if (extra) { c.lineWidth = extra; c.stroke(); }
-                    };
-                    chunk(u * 0.3, -u * 0.32, u * 0.3);
-                    chunk(-u * 0.22, u * 0.05, u * 0.26);
-                    chunk(u * 0.2, u * 0.42, u * 0.22);
-                    c.lineWidth = Math.max(1.2, u * 0.12) + extra;
-                    c.beginPath();
-                    c.moveTo(-u * 0.75, -u * 0.25); c.lineTo(-u * 0.5, -u * 0.42);
-                    c.moveTo(-u * 0.8, u * 0.35); c.lineTo(-u * 0.55, u * 0.2);
-                    c.stroke();
-                    break;
-                }
-                case "decoy":
-                    c.setLineDash([u * 0.24, u * 0.16]);
-                    gemPath(c, 0, u * 0.02, u * 0.66); c.stroke();
-                    c.setLineDash([]);
-                    c.beginPath(); c.arc(0, 0, u * 0.14 + extra * 0.3, 0, Math.PI * 2); c.fill();
-                    break;
-                default:
-                    gemPath(c, 0, 0, u * 0.6); c.fill();
+        const body = parts.filter(q => !q.detail);
+        const outline = () => {
+            for (const q of body) {
+                q.p(c);
+                c.lineWidth = (q.line || 0) + b * 2;
+                c.stroke();
+                if (q.fill) c.fill();
             }
+        };
+        c.save();
+        c.translate(0, u * 0.1);
+        c.fillStyle = c.strokeStyle = "rgba(0,0,0,0.26)";
+        outline();
+        c.restore();
+        c.fillStyle = c.strokeStyle = dark;
+        outline();
+        for (const q of body) {
+            q.p(c);
+            if (q.line) { c.lineWidth = q.line; c.strokeStyle = q.col; c.stroke(); }
+            else { c.fillStyle = q.fill; c.fill(); }
+        }
+        for (const q of parts) {
+            if (!q.detail) continue;
+            q.p(c);
+            if (q.fill) { c.fillStyle = q.fill; c.fill(); }
+            else { c.lineWidth = q.detail; c.strokeStyle = q.col; c.stroke(); }
         }
     }
+    const KIT_SPRITE_SCALE = 3;
     const kitIconSprites = new Map();
     function kitIconSprite(id, s) {
         const key = id + "@" + s;
         let spr = kitIconSprites.get(key);
         if (spr) return spr;
         const col = KIT_CARD[id] || "#8a93a6";
-        const scale = 2, pad = 4;
-        const S = (s + pad * 2) * scale;
+        const pad = Math.ceil(s * 0.12), k = KIT_SPRITE_SCALE;
         spr = document.createElement("canvas");
-        spr.width = spr.height = S;
+        spr.width = spr.height = (s + pad * 2) * k;
+        spr.unit = s + pad * 2;
         const c = spr.getContext("2d");
-        c.scale(scale, scale);
-        c.translate(s / 2 + pad, s / 2 + pad);
-        const h = s / 2, rr = s * 0.24;
-        c.save();
-        c.translate(0.6, 1.4);
-        roundRectPath(c, -h, -h, s, s, rr);
-        c.fillStyle = "rgba(0,0,0,0.45)"; c.fill();
-        c.restore();
-        roundRectPath(c, -h, -h, s, s, rr);
-        const grad = c.createLinearGradient(0, -h, 0, h);
-        grad.addColorStop(0, gameDraw.mixColors(col, "#ffffff", 0.18));
-        grad.addColorStop(1, gameDraw.mixColors(col, "#000000", 0.22));
-        c.fillStyle = grad; c.fill();
-        c.save();
-        c.clip();
-        c.fillStyle = "rgba(255,255,255,0.14)";
-        c.fillRect(-h, -h, s, s * 0.42);
-        c.restore();
-        c.lineWidth = 1.5;
-        c.strokeStyle = "rgba(0,0,0,0.7)";
-        roundRectPath(c, -h + 0.75, -h + 0.75, s - 1.5, s - 1.5, rr - 0.5); c.stroke();
-        c.save();
-        c.translate(0.5, 0.5);
-        c.globalAlpha = 0.35;
-        c.fillStyle = "#000000"; c.strokeStyle = "#000000";
-        drawKitGlyph(c, id, h * 0.92, "#000000");
-        c.restore();
-        drawKitGlyph(c, id, h * 0.92, col);
+        c.scale(k, k);
+        c.translate(pad, pad);
+        // the tile: a darker lip under the face, a flat highlight strip and
+        // the fine keyline, same recipe as the upgrade tiles
+        const r = s * 0.22, lip = Math.max(2, s * 0.08);
+        roundRectPath(c, 0, lip * 0.6, s, s, r);
+        c.fillStyle = "rgba(0,0,0,0.3)"; c.fill();
+        roundRectPath(c, 0, 0, s, s, r);
+        c.fillStyle = gameDraw.mixColors(col, HUD.ink, 0.45); c.fill();
+        roundRectPath(c, 0, 0, s, s - lip, r);
+        c.fillStyle = col; c.fill();
+        roundRectPath(c, s * 0.1, s * 0.07, s * 0.8, Math.max(1.5, s * 0.07), s * 0.035);
+        c.fillStyle = "rgba(255,255,255,0.2)"; c.fill();
+        roundRectPath(c, 0, 0, s, s, r);
+        c.lineWidth = Math.max(1, s * 0.035); c.strokeStyle = HUD.line; c.stroke();
+        c.translate(s / 2, (s - lip) / 2 + s * 0.01);
+        paintKitGlyph(c, id, s * 0.5, kitDark(col));
         if (kitIconSprites.size > 40) kitIconSprites.clear();
         kitIconSprites.set(key, spr);
         return spr;
     }
     function drawKitIcon(c, id, cx, cy, s) {
         const spr = kitIconSprite(id, s);
-        const half = spr.width / 4;   // sprite is baked at 2x with padding
+        const half = spr.unit / 2;
         c.drawImage(spr, cx - half, cy - half, half * 2, half * 2);
     }
     function drawKitBox(spacing, alcoveSize) {
@@ -7299,9 +7399,9 @@ import * as cosmetics from './account/cosmetics.js';
         const drillItem = st.drill > 0 ? byId("drill" + st.drill) : null;
         const armItem = st.arm ? byId(st.arm) : null;
         const chips = [
-            { i: 3, x: x + pad, text: st.drill > 0 ? "DRILL " + ROMAN[st.drill] : "NO DRILL", col: st.drill > 0 ? "#eda766" : color.grey, on: st.drill > 0,
+            { i: 3, x: x + pad, text: st.drill > 0 ? "DRILL " + ROMAN[st.drill] : "NO DRILL", col: st.drill > 0 ? "#eda766" : HUD.text2, on: st.drill > 0,
               flash: sh.drillFlashAt, tip: drillItem ? [drillItem.name, drillItem.desc] : ["Drill", "Sold at any shop. Each tier chews rock faster."] },
-            { i: 4, x: x + pad + chipW + gap, text: armItem ? (shortName(armItem.name, st.armUntil > Date.now() ? 9 : 14).toUpperCase() + (st.armUntil > Date.now() ? "  " + fmtRaidClock(Math.ceil((st.armUntil - Date.now()) / 1000)) : "")) : "NO SIDEARM", col: armItem ? "#c9a8ff" : color.grey, on: !!armItem,
+            { i: 4, x: x + pad + chipW + gap, text: armItem ? (shortName(armItem.name, st.armUntil > Date.now() ? 9 : 14).toUpperCase() + (st.armUntil > Date.now() ? "  " + fmtRaidClock(Math.ceil((st.armUntil - Date.now()) / 1000)) : "")) : "NO SIDEARM", col: armItem ? "#c9a8ff" : HUD.text2, on: !!armItem,
               flash: sh.armFlashAt, tip: armItem ? [armItem.name + "  ·  " + sidearmInput(), armItem.desc] : ["Sidearm", "A second gun on " + sidearmInput() + ". Sold at any shop."] },
         ];
         for (const ch of chips) {
@@ -7316,7 +7416,7 @@ import * as cosmetics from './account/cosmetics.js';
         const gearIds = (st.gear || []).filter(id => byId(id));
         hudTitle("Gear", x + pad + 1, gearY + gearH / 2, 10, HUD.text2, "left", g);
         if (!gearIds.length) {
-            drawText("none yet", x + pad + 34, gearY + gearH / 2, 8, HUD.text2, "left", true, g);
+            drawText("none yet", x + pad + 34, gearY + gearH / 2, 9, HUD.text2, "left", true, g);
         } else {
             const gx0 = x + pad + 32, gwAll = W - pad * 2 - 32;
             const bw = Math.min(36, (gwAll - 3 * (gearIds.length - 1)) / gearIds.length);
@@ -7355,8 +7455,9 @@ import * as cosmetics from './account/cosmetics.js';
             hudKey(c, sx + 4, slotY + 4, keys[i], 14, item ? 1 : 0.55);
             if (item) {
                 drawText("x" + count, sx + slotW - 5, slotY + 11, 8.5, color.teal, "right", true, g);
+                kitSlotIcons[item.id] = { x: sx + slotW / 2, y: slotY + 30, w: slotW, h: slotH, sx, sy: slotY, at: now };
                 // the item's card: rounded corners, its own colour, its own glyph
-                drawKitIcon(c, item.id, sx + slotW / 2, slotY + 30, 26);
+                if (global.kitUnlockHeld !== item.id) drawKitIcon(c, item.id, sx + slotW / 2, slotY + 30, 26);
                 drawText(KIT_SHORT[item.id] || item.name.slice(0, 7).toUpperCase(), sx + slotW / 2, slotY + slotH - 8, 8, color.guiwhite, "center", true, g);
                 global.clickables.kit.place(i, sx * cr, slotY * cr, slotW * cr, slotH * cr);
                 if (hov === i) queueTip(item.name + "  ·  " + keys[i], item.desc + " Drag it out of the box to throw it away.", sx + slotW / 2, y);
@@ -7377,7 +7478,7 @@ import * as cosmetics from './account/cosmetics.js';
                 c.setLineDash([3, 3]);
                 c.lineWidth = 1; c.strokeStyle = "#ffffff"; c.stroke();
                 c.restore();
-                drawText("empty", sx + slotW / 2, slotY + slotH - 8, 8, color.grey, "center", true, g);
+                drawText("empty", sx + slotW / 2, slotY + slotH - 8, 8, HUD.text2, "center", true, g);
                 global.clickables.kit.place(i, sx * cr, slotY * cr, slotW * cr, slotH * cr);
                 if (hov === i) queueTip("Kit slot " + (i + 1) + "  ·  " + keys[i], "Holds one kit item type. Buy at a shop or break a chest.", sx + slotW / 2, y);
             }
@@ -7397,6 +7498,293 @@ import * as cosmetics from './account/cosmetics.js';
                 c.restore();
                 drawText(outside ? "DROP" : "", mx, my + 24, 9, "#ff9a8c", "center", true);
             }
+        }
+        c.restore();
+    }
+    // ── new ability reveal ─────────────────────────────────────────────
+    // socketinit queues { id } in global.kitUnlocks when a kit item arrives.
+    // One at a time: the screen dims, the icon slams in at the centre over
+    // spinning rays under a NEW ABILITY! ribbon, holds, then flies into its
+    // kit slot, which pulses when it lands.
+    const UNLOCK_IN = 750, UNLOCK_HOLD = 2000, UNLOCK_OUT = 220, UNLOCK_FLY = 620;
+    const kitSlotIcons = {};    // id -> slot geometry from the last drawKitBox
+    let kitSlotPulse = null;
+    function unlockBlurb(desc) {
+        let s = String(desc || "");
+        const dot = s.search(/[.!?](\s|$)/);
+        if (dot > 0) s = s.slice(0, dot + 1);
+        const colon = s.indexOf(":");
+        if (colon > 24) s = s.slice(0, colon) + ".";
+        return s;
+    }
+    const easeOutBack = (u) => { const k = 1.7; u -= 1; return 1 + (k + 1) * u * u * u + k * u * u; };
+    const easeOut = (u) => 1 - (1 - u) * (1 - u) * (1 - u);
+    const ramp = (t, a, b) => Math.max(0, Math.min(1, (t - a) / (b - a)));
+    // rays behind the icon, baked once per colour and turned per frame
+    const raySprites = new Map();
+    function raySprite(rgb) {
+        let spr = raySprites.get(rgb);
+        if (spr) return spr;
+        const S = 256, n = 12;
+        spr = document.createElement("canvas");
+        spr.width = spr.height = S;
+        const c = spr.getContext("2d");
+        c.translate(S / 2, S / 2);
+        c.beginPath();
+        for (let i = 0; i < n; i++) {
+            const a = i / n * Math.PI * 2, w = Math.PI / n * 0.5;
+            c.moveTo(0, 0);
+            c.arc(0, 0, S / 2, a - w, a + w);
+            c.closePath();
+        }
+        const g = c.createRadialGradient(0, 0, S * 0.05, 0, 0, S / 2);
+        g.addColorStop(0, "rgba(" + rgb + ",0.95)");
+        g.addColorStop(0.5, "rgba(" + rgb + ",0.4)");
+        g.addColorStop(1, "rgba(" + rgb + ",0)");
+        c.fillStyle = g;
+        c.fill();
+        raySprites.set(rgb, spr);
+        return spr;
+    }
+    // A banner ribbon: the band is a chunky plate with a lip like the
+    // buttons, with notched tails folded behind each end.
+    function drawRibbon(c, cx, cy, w, h, text) {
+        const face = HUD.gold, lipCol = HUD.goldDk, lip = Math.max(3, h * 0.13);
+        const tail = h * 1.05, drop = h * 0.3, tuck = h * 0.3, notch = h * 0.34;
+        c.lineJoin = "round";
+        for (const sg of [-1, 1]) {
+            const x0 = cx + sg * (w / 2 - tuck), x1 = cx + sg * (w / 2 + tail);
+            const y0 = cy - h / 2 + drop, y1 = cy + h / 2 + drop;
+            c.beginPath();
+            c.moveTo(x0, y0); c.lineTo(x1, y0); c.lineTo(x1 - sg * notch, (y0 + y1) / 2); c.lineTo(x1, y1); c.lineTo(x0, y1);
+            c.closePath();
+            c.fillStyle = lipCol; c.fill();
+            c.lineWidth = 1.25; c.strokeStyle = HUD.line; c.stroke();
+            // the fold where the tail tucks under the band
+            c.beginPath();
+            c.moveTo(cx + sg * (w / 2 - tuck), cy + h / 2); c.lineTo(cx + sg * w / 2, cy + h / 2); c.lineTo(cx + sg * (w / 2 - tuck), y1);
+            c.closePath();
+            c.fillStyle = gameDraw.mixColors(lipCol, HUD.ink, 0.5); c.fill();
+            c.stroke();
+        }
+        const x = cx - w / 2, y = cy - h / 2, r = h * 0.2;
+        roundRectPath(c, x, y, w, h, r);
+        c.fillStyle = lipCol; c.fill();
+        roundRectPath(c, x, y, w, h - lip, r);
+        c.fillStyle = face; c.fill();
+        roundRectPath(c, x + 4, y + 3, w - 8, Math.max(2, h * 0.14), h * 0.07);
+        c.fillStyle = "rgba(255,255,255,0.28)"; c.fill();
+        roundRectPath(c, x, y, w, h, r);
+        c.lineWidth = 1.25; c.strokeStyle = HUD.line; c.stroke();
+        hudTitle(text, cx, cy - lip / 2, h * 0.62, HUD.head, "center", 1, c);
+    }
+    function drawKitSlotPulse(now) {
+        const p = kitSlotPulse;
+        if (!p) return;
+        const age = now - p.at, slot = kitSlotIcons[p.id];
+        if (age > 650 || !slot || now - slot.at > 200) { kitSlotPulse = null; return; }
+        const u = age / 650;
+        const c = ctx[2];
+        c.save();
+        c.globalAlpha = (1 - u) * 0.95;
+        c.strokeStyle = color.gold;
+        c.lineWidth = 3 * (1 - u) + 1;
+        const grow = 10 * u;
+        roundRectPath(c, slot.sx - grow, slot.sy - grow, slot.w + grow * 2, slot.h + grow * 2, 7 + grow);
+        c.stroke();
+        // a few sparks thrown off the slot as the icon lands
+        for (let i = 0; i < 6; i++) {
+            const a = -Math.PI / 2 + (i - 2.5) * 0.5, d = 14 + 26 * easeOut(u);
+            c.fillStyle = i & 1 ? "#ffffff" : KIT_SPARK;
+            starPath(c, slot.x + Math.cos(a) * d, slot.y + Math.sin(a) * d, 5 * (1 - u), 1.8 * (1 - u));
+            c.fill();
+        }
+        c.restore();
+    }
+    function drawKitUnlock() {
+        const now = performance.now();
+        drawKitSlotPulse(now);
+        const q = global.kitUnlocks;
+        global.kitUnlockHeld = null;
+        if (!q || !q.length) return;
+        if (global.died || !shopUiMode()) { q.length = 0; return; }
+        const sh = global.shop;
+        const u = q[0];
+        const item = (sh.catalog || []).find(i => i.id === u.id);
+        if (!item) { q.shift(); return; }
+        if (!u.start) u.start = now;
+        const hold = q.length > 1 ? 1400 : UNLOCK_HOLD;
+        const age = now - u.start;
+        const flyAt = UNLOCK_IN + hold;
+        const slot = kitSlotIcons[u.id];
+        const slotLive = slot && now - slot.at < 200;
+        if (age > flyAt + UNLOCK_FLY) {
+            q.shift();
+            if (slotLive) {
+                kitSlotPulse = { id: u.id, at: now };
+                sh.slotFlash = sh.slotFlash || {};
+                sh.slotFlash[u.id] = { at: now, kind: "get" };
+            }
+            return;
+        }
+        global.kitUnlockHeld = slotLive ? u.id : null;
+        const c = ctx[2];
+        const calm = !!(global.reducedMotion && global.reducedMotion());
+        const sw = global.screenWidth, shh = global.screenHeight;
+        const S = 116, W = 420;
+        const cx = sw / 2, cy = shh / 2;
+        const col = KIT_CARD[u.id] || HUD.gold;
+        const rgb = toRgb(col) || { r: 242, g: 184, b: 60 };
+        const tint = rgb.r + "," + rgb.g + "," + rgb.b;
+        const iconX = cx, iconY = cy - 50;
+        const fly = age > flyAt ? Math.min(1, (age - flyAt) / UNLOCK_FLY) : 0;
+        const out = age > flyAt ? 1 - ramp(age, flyAt, flyAt + UNLOCK_OUT) : 1;
+        const t0 = 110;   // the icon lands once the screen has gone dark
+        const pop = calm ? ramp(age, t0, t0 + 200) : age < t0 ? 0 : age < t0 + 440 ? 0.1 + 0.9 * easeOutBack(ramp(age, t0, t0 + 440)) : 1;
+        const bob = calm || fly ? 0 : Math.sin((age - 700) / 420) * 3 * ramp(age, 600, 900);
+        c.save();
+        // the whole screen dims, darker at the edges
+        const dimA = ramp(age, 0, 160) * out;
+        if (dimA > 0.01) {
+            c.globalAlpha = dimA * 0.6;
+            c.fillStyle = "#08060c";
+            c.fillRect(0, 0, sw, shh);
+            c.globalAlpha = dimA;
+            c.drawImage(vignetteSprite(sw, shh, 0.5, "8,6,12"), 0, 0, sw, shh);
+        }
+        // rays turning behind the icon
+        const rayA = ramp(age, t0, t0 + 320) * out;
+        if (rayA > 0.01) {
+            const rr = 250 * (0.5 + 0.5 * easeOut(ramp(age, t0, t0 + 520))) * (1 + 0.04 * Math.sin(now / 300));
+            c.save();
+            c.globalAlpha = rayA * 0.6;
+            c.translate(iconX, iconY);
+            c.rotate(calm ? 0 : now * 0.00035);
+            c.drawImage(raySprite(tint), -rr, -rr, rr * 2, rr * 2);
+            c.rotate(calm ? 0.26 : -now * 0.0006);
+            c.globalAlpha = rayA * 0.45;
+            c.drawImage(raySprite("255,236,170"), -rr * 0.7, -rr * 0.7, rr * 1.4, rr * 1.4);
+            c.restore();
+            c.globalAlpha = rayA * 0.8;
+            const hr = S * 1.25;
+            c.drawImage(haloSprite("kitnew|" + tint, tint, [[0, 0.9], [0.5, 0.35], [1, 0]]), iconX - hr, iconY - hr, hr * 2, hr * 2);
+        }
+        // the burst: a white shockwave and sparks thrown out as the icon lands
+        if (!calm && age > t0 && age < t0 + 1000) {
+            const t = ramp(age, t0, t0 + 300);
+            if (t < 1) {
+                c.globalAlpha = 0.9 * (1 - t);
+                c.strokeStyle = "#ffffff";
+                c.lineWidth = 12 * (1 - t) + 1;
+                circlePath(c, iconX, iconY, S * (0.4 + 1.3 * easeOut(t)));
+                c.stroke();
+            }
+            const st = ramp(age, t0 + 30, t0 + 1000);
+            for (let i = 0; i < 16; i++) {
+                const a = i / 16 * Math.PI * 2 + (i & 1 ? 0.18 : -0.08);
+                const d = S * (0.5 + (0.9 + (i % 3) * 0.3) * easeOut(st));
+                const sz = (i % 3 === 0 ? 11 : 7) * (1 - st);
+                if (sz < 0.3) continue;
+                c.globalAlpha = 1;
+                c.fillStyle = i % 3 === 1 ? "#ffffff" : i % 3 ? col : KIT_SPARK;
+                starPath(c, iconX + Math.cos(a) * d, iconY + Math.sin(a) * d, sz, sz * 0.36);
+                c.fill();
+                c.lineWidth = 1.25; c.strokeStyle = HUD.line; c.stroke();
+            }
+        }
+        // the ribbon slams down from larger
+        const rbT = ramp(age, t0 + 200, t0 + 400);
+        if (rbT > 0 && out > 0.01) {
+            const rw = hudTitleW("NEW ABILITY!", 25) + 56, rh = 42;
+            const k = calm ? 1 : 1 + 0.5 * (1 - easeOut(rbT));
+            c.save();
+            c.globalAlpha = rbT * out;
+            c.translate(cx, iconY - S / 2 - 34);
+            c.scale(k, k);
+            drawRibbon(c, 0, 0, rw, rh, "NEW ABILITY!");
+            c.restore();
+        }
+        // name, blurb and key, rising into place one after another
+        const nT = easeOut(ramp(age, t0 + 300, t0 + 540)) * out, bT = easeOut(ramp(age, t0 + 400, t0 + 640)) * out;
+        if (nT > 0.01) {
+            let ns = 38; while (ns > 22 && hudTitleW(item.name, ns) > W) ns -= 1;
+            hudTitle(item.name, cx, iconY + S / 2 + 38 + 10 * (1 - nT), ns, HUD.head, "center", nT, c);
+        }
+        if (bT > 0.01) {
+            const lines = wrapLines(unlockBlurb(item.desc), 15, W).slice(0, 2);
+            let ly = iconY + S / 2 + 74 + 10 * (1 - bT);
+            for (const l of lines) { drawText(l, cx, ly, 15, HUD.text, "center", true, bT); ly += 20; }
+            const slotIdx = (sh.state.kitOrder || []).indexOf(u.id);
+            const keyName = slotIdx >= 0 ? keyLabel("KEY_KIT_" + (slotIdx + 1), ["Z", "Q", "N"][slotIdx]) : "";
+            if (keyName) {
+                const kh = 26, kw = Math.max(kh, hudTitleW(keyName, kh * 0.62) + kh * 0.55);
+                const pw = hudTitleW("Press", 16), lw = hudTitleW("to use", 16);
+                const rowW = pw + kw + lw + 20;
+                const rx = cx - rowW / 2, ry = ly + 4;
+                c.save();
+                c.globalAlpha = bT;
+                hudTitle("Press", rx, ry + kh / 2 - 1, 16, HUD.text2, "left", 1, c);
+                hudKey(c, rx + pw + 10, ry, keyName, kh);
+                hudTitle("to use", rx + rowW - lw, ry + kh / 2 - 1, 16, HUD.text2, "left", 1, c);
+                c.restore();
+            }
+        }
+        c.restore();
+        if (age < t0) return;
+        // the icon: slams in, bobs, then flies into its slot on an arc
+        let ix = iconX, iy = iconY + bob, is = S * pop, ia = 1;
+        if (fly > 0) {
+            const e = fly < 0.5 ? 4 * fly * fly * fly : 1 - Math.pow(-2 * fly + 2, 3) / 2;
+            if (slotLive) {
+                ix = iconX + (slot.x - iconX) * e;
+                iy = iconY + (slot.y - iconY) * e - Math.sin(Math.PI * e) * 90;
+                is = S + (26 - S) * e;
+            } else {
+                is = S * (1 - 0.3 * e);
+                ia = 1 - e;
+            }
+        }
+        // one baked size, scaled: a sprite per frame's size would thrash the cache
+        const spr = kitIconSprite(u.id, S);
+        c.save();
+        if (fly > 0 && slotLive && !calm) {
+            // a short trail of sparks behind it in flight
+            for (let k = 1; k <= 5; k++) {
+                const f = Math.max(0, fly - k * 0.05);
+                const ee = f < 0.5 ? 4 * f * f * f : 1 - Math.pow(-2 * f + 2, 3) / 2;
+                const tx = iconX + (slot.x - iconX) * ee, ty = iconY + (slot.y - iconY) * ee - Math.sin(Math.PI * ee) * 90;
+                c.globalAlpha = 0.85 * (1 - k / 6) * (1 - fly * 0.5);
+                c.fillStyle = k & 1 ? KIT_SPARK : "#ffffff";
+                starPath(c, tx, ty, 8 - k, (8 - k) * 0.36);
+                c.fill();
+            }
+        }
+        const half = spr.unit / 2 * (is / S);
+        c.globalAlpha = ia;
+        c.drawImage(spr, ix - half, iy - half, half * 2, half * 2);
+        if (!calm) {
+            c.save();
+            roundRectPath(c, ix - is / 2, iy - is / 2, is, is, is * 0.22);
+            c.clip();
+            // a white flash as it lands, then a shine sweeping across
+            const fl = 1 - ramp(age, t0, t0 + 260);
+            if (fl > 0.01) {
+                c.globalAlpha = fl * 0.85;
+                c.fillStyle = "#ffffff";
+                c.fillRect(ix - is / 2, iy - is / 2, is, is);
+            }
+            const sweep = ramp(age, t0 + 520, t0 + 900);
+            if (sweep > 0 && sweep < 1) {
+                const bx = ix - is + sweep * is * 2;
+                c.globalAlpha = 0.45;
+                c.fillStyle = "#ffffff";
+                c.beginPath();
+                c.moveTo(bx - is * 0.18, iy - is / 2); c.lineTo(bx + is * 0.02, iy - is / 2);
+                c.lineTo(bx - is * 0.38, iy + is / 2); c.lineTo(bx - is * 0.58, iy + is / 2);
+                c.closePath();
+                c.fill();
+            }
+            c.restore();
         }
         c.restore();
     }
@@ -7878,6 +8266,98 @@ import * as cosmetics from './account/cosmetics.js';
                 c.globalAlpha = (1 - t) * 0.25;
                 c.fillStyle = col;
                 c.beginPath(); c.arc(sx, sy, R * 0.55, 0, Math.PI * 2); c.fill();
+            }
+            c.restore();
+        }
+    }
+    // ── tank knockouts ─────────────────────────────────────────────────
+    // A wreck bursting in its own colour: a white core, two shock rings, hull
+    // shards flung out on an ease-out and, for your own tank, some smoke.
+    // Everything is a function of age, so there is no per-frame physics.
+    function buildTankBurst(b) {
+        let hex = null;
+        try { hex = gameDraw.modifyColor(b.col); } catch (e) { hex = null; }
+        if (!(typeof hex === "string" && hex[0] === "#")) hex = "#c8c8c8";
+        b.shades = [hex, gameDraw.mixColors(hex, "#ffffff", 0.45), gameDraw.mixColors(hex, "#000000", 0.3), "#8d8d98"];
+        const n = b.self ? 30 : 12;
+        b.parts = [];
+        for (let i = 0; i < n; i++) {
+            b.parts.push({
+                ang: (i / n) * Math.PI * 2 + (Math.random() - 0.5) * 0.7,
+                sp: 0.4 + Math.random() * 0.8,
+                size: (b.self ? 7 : 4.5) + Math.random() * (b.self ? 8 : 5),
+                spin: (Math.random() - 0.5) * 10,
+                sq: 0.55 + Math.random() * 0.45,
+                shade: Math.random() < 0.15 ? 3 : Math.random() < 0.3 ? 2 : Math.random() < 0.5 ? 1 : 0,
+                tri: Math.random() < 0.4,
+            });
+        }
+        b.smoke = [];
+        if (b.self) for (let i = 0; i < 7; i++) b.smoke.push({ ang: Math.random() * Math.PI * 2, d: 0.15 + Math.random() * 0.45, r: 0.6 + Math.random() * 0.6 });
+    }
+    function drawTankBursts(px, py, ratio) {
+        const list = global.tankBursts;
+        if (!list || !list.length) return;
+        const now = performance.now();
+        const c = ctx[2];
+        const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
+        for (let i = list.length - 1; i >= 0; i--) {
+            const b = list[i];
+            const DUR = b.self ? 1150 : 750;
+            const age = now - b.born;
+            if (age > DUR) { list.splice(i, 1); continue; }
+            if (age < 0) continue;
+            const sx = ratio * b.x - px + cx, sy = ratio * b.y - py + cy;
+            if (sx < -400 || sx > global.screenWidth + 400 || sy < -400 || sy > global.screenHeight + 400) continue;
+            if (!b.parts) buildTankBurst(b);
+            const t = age / DUR, eo = 1 - Math.pow(1 - t, 3);
+            const k = Math.max(0.75, Math.min(2.2, (b.size || 30) / 30)) * ratio;
+            const reach = (b.self ? 250 : 140) * k;
+            c.save();
+            if (b.self && t < 0.6) {
+                const rgb = toRgb(b.shades[0]) || { r: 200, g: 200, b: 200 };
+                const tint = rgb.r + "," + rgb.g + "," + rgb.b;
+                const hr = (70 + 220 * eo) * k;
+                c.globalAlpha = (1 - t / 0.6) * 0.75;
+                c.drawImage(haloSprite("ko|" + tint, tint, [[0, 1], [0.45, 0.5], [1, 0]]), sx - hr, sy - hr, hr * 2, hr * 2);
+            }
+            for (const sm of b.smoke) {
+                const d = sm.d * reach * eo;
+                c.globalAlpha = 0.3 * (1 - t);
+                c.fillStyle = "#1c1720";
+                c.beginPath(); c.arc(sx + Math.cos(sm.ang) * d, sy + Math.sin(sm.ang) * d, sm.r * (18 + 46 * eo) * k, 0, Math.PI * 2); c.fill();
+            }
+            if (age < 170) {
+                const u = age / 170;
+                c.globalAlpha = (1 - u) * 0.95;
+                c.fillStyle = "#ffffff";
+                c.beginPath(); c.arc(sx, sy, (b.self ? 36 : 22) * k * (0.7 + u), 0, Math.PI * 2); c.fill();
+            }
+            for (let r = 0; r < 2; r++) {
+                const tt = (t - r * 0.1) / (1 - r * 0.1);
+                if (tt <= 0) continue;
+                const e2 = 1 - Math.pow(1 - tt, 3);
+                c.globalAlpha = (1 - tt) * (r ? 0.5 : 0.85);
+                c.strokeStyle = r ? "#ffffff" : b.shades[1];
+                c.lineWidth = Math.max(1.5, (b.self ? 10 : 6) * (1 - tt) * k);
+                c.beginPath(); c.arc(sx, sy, (14 + (b.self ? 230 : 120) * e2) * k * (1 - r * 0.25), 0, Math.PI * 2); c.stroke();
+            }
+            c.globalAlpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+            c.strokeStyle = HUD.line;
+            c.lineWidth = Math.max(1, 1.6 * k);
+            c.lineJoin = "round";
+            for (const p of b.parts) {
+                const d = eo * p.sp * reach;
+                const s2 = p.size * k * (1 - t * 0.45);
+                c.save();
+                c.translate(sx + Math.cos(p.ang) * d, sy + Math.sin(p.ang) * d);
+                c.rotate(p.ang + p.spin * eo);
+                c.fillStyle = b.shades[p.shade];
+                c.beginPath();
+                if (p.tri) { c.moveTo(s2, 0); c.lineTo(-s2 * 0.8, s2 * p.sq); c.lineTo(-s2 * 0.8, -s2 * p.sq); c.closePath(); }
+                else c.rect(-s2, -s2 * p.sq, s2 * 2, s2 * 2 * p.sq);
+                c.fill(); c.stroke();
+                c.restore();
             }
             c.restore();
         }
@@ -8455,8 +8935,10 @@ import * as cosmetics from './account/cosmetics.js';
         const dead = deadAge < 320 ? 1 - deadAge / 320 : 0;
         const celeAge = now - (global.celebrateAt || -1e9);
         const cele = celeAge < 420 ? 1 - celeAge / 420 : 0;
+        const koAge = now - (global.selfDeathAt || -1e9);
+        const ko = koAge >= 0 && koAge < 1100 ? 1 - koAge / 1100 : 0;
 
-        if (lowHpLevel < 0.004 && hurt < 0.01 && dead < 0.01 && cele < 0.01) return;
+        if (lowHpLevel < 0.004 && hurt < 0.01 && dead < 0.01 && cele < 0.01 && ko < 0.01) return;
 
         const c = ctx[2];
         const w = global.screenWidth, h = global.screenHeight;
@@ -8490,6 +8972,18 @@ import * as cosmetics from './account/cosmetics.js';
             c.save();
             c.globalAlpha = 0.28 * dead;
             c.drawImage(vignetteSprite(w, h, 0.58, "255,255,255"), 0, 0, w, h);
+            c.restore();
+        }
+        if (ko > 0.01) {
+            // your own knockout: a blink of white (skipped under reduced motion), then red closing in
+            c.save();
+            if (koAge < 110 && !(global.reducedMotion && global.reducedMotion())) {
+                c.globalAlpha = 0.4 * (1 - koAge / 110);
+                c.fillStyle = "#ffffff";
+                c.fillRect(0, 0, w, h);
+            }
+            c.globalAlpha = 0.7 * ko;
+            c.drawImage(vignetteSprite(w, h, 0.4, "190,18,18"), 0, 0, w, h);
             c.restore();
         }
     }
@@ -9286,6 +9780,7 @@ import * as cosmetics from './account/cosmetics.js';
                 const mx = global.screenWidth - HUD.edge - len;
                 const my = global.screenHeight - len - HUD.edge - HUD.lip;
                 drawFortniteMinimap(mx, my, len);
+                hudDrawn.minimap = { x: mx, y: my, w: len, h: len };
                 // map key as a keycap in the corner the round map leaves free
                 const keyName = keyLabel("KEY_TOGGLE_MAP", "M");
                 const kh = 20, kw0 = Math.max(kh, hudTitleW(keyName, kh * 0.62) + kh * 0.55);
@@ -9487,6 +9982,12 @@ import * as cosmetics from './account/cosmetics.js';
             drawText("Prediction: " + Math.round(GRAPHDATA) + "ms", x + len, y - 50 - 2 * 14, 10, color.guiwhite, "right");
             drawText(`§${global.metrics.rendertime_color}§ ${global.metrics.rendertime} FPS §reset§/` + `§${global.serverStats.mspt_color}§ ${global.serverStats.mspt} mspt : ${global.metrics.mspt.toFixed(1)} gmspt`, x + len, y - 50 - 1 * 14, 10, color.guiwhite, "right");
             drawText(ping.toFixed(1) + " ms / " + global.serverStats.serverGamemodeName + " " + global.locationHash, x + len, y - 50, 10, color.guiwhite, "right");
+        } else if (royaleActive() && !global.mobile) {
+            // raid: one quiet line over the map, the rest lives behind debug
+            const mm = hudDrawn.minimap;
+            const ly = mm ? mm.y - 8 : y - 50;
+            const slow = global.metrics.rendertime < 30 ? "§" + color.orange + "§" : "";
+            drawText(`${slow}${global.metrics.rendertime} FPS${slow ? "§reset§" : ""}  ·  ${Math.round(ping)} ms`, mm ? mm.x + mm.w : x + len, ly, 9.5, HUD.text2, "right", true);
         } else if (!global.GUIStatus.minimapReducedInfo) {
             drawText(`§${global.serverStats.lag_color}§ ${(100 * gui.fps).toFixed(2)}% §reset§/ ` + global.serverStats.players + ` player${global.serverStats.players == 1 ? "" : "s"}`, x + len, y - 50 - 2 * 14, 10, color.guiwhite, "right");
             drawText(`§${global.metrics.rendertime_color}§ ${global.metrics.rendertime} FPS §reset§/` + `§${global.serverStats.mspt_color}§ ${global.serverStats.mspt} mspt`, x + len, y - 50 - 1 * 14, 10, color.guiwhite, "right");
@@ -10334,6 +10835,7 @@ import * as cosmetics from './account/cosmetics.js';
             drawEnemyPings();
         }
         try { tutorial.drawIndicators(); } catch (e) { }
+        try { coach.drawIndicators(); } catch (e) { }
     };
 
     const gameDrawDead = () => {
@@ -10703,6 +11205,7 @@ import * as cosmetics from './account/cosmetics.js';
         drawOutpostLabels(px, py, ratio);
         drawRoyaleWorldMarkers(px, py, ratio);
         drawFx(px, py, ratio);
+        drawTankBursts(px, py, ratio);
         // same camera transform as the entities; drawn before the HUD so the
         // HUD wins the overlap
         drawDamageNumbers(px, py, ratio);
@@ -10710,6 +11213,7 @@ import * as cosmetics from './account/cosmetics.js';
         // World-anchored tutorial markers: same camera transform, above the
         // world, below the GUI. (The screen-space tutorial HUD draws in hook().)
         tutorial.drawWorld(px, py, ratio);
+        try { coach.drawWorld(px, py, ratio); } catch (e) { }
     };
 
     const drawGUI = (tick, scaleRatio) => {
@@ -10722,6 +11226,7 @@ import * as cosmetics from './account/cosmetics.js';
         // device pixels.
         let alcoveSize = global.mobile ? 200 / ratio : 200;
         gui.__s.update();
+        hudDrawn = {};
         let lb = leaderboard.get();
         let max = lb.max;
         global.canSkill = !!gui.points && !global.showTree && !global.pullSkillBar;
@@ -10764,6 +11269,8 @@ import * as cosmetics from './account/cosmetics.js';
             // Tutorial: no leaderboard (the server sends an empty one anyway)
             if (global.GUIStatus.renderLeaderboard && !global.tutorialMode && !royaleActive()) drawLeaderboard(spacing, alcoveSize, max);
             if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
+            // the new ability reveal dims everything under it
+            if (global.GUIStatus.renderPlayerBars) drawKitUnlock();
             // leader arrow + enemy pings are drawn in drawTopIndicators(), at
             // the end of the frame, so no panel covers them
         } else if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
@@ -11342,6 +11849,7 @@ import * as cosmetics from './account/cosmetics.js';
             drawGameplay(tick, ratio);
             drawGUI(tick, util.getScreenRatio());
             tutorial.hook();
+            try { coach.hook(); } catch (e) { }
             drawTopIndicators();
             if (global.gameStart && !global.died && !global.disconnected) {
                 let ram = 0;

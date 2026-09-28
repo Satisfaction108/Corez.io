@@ -401,6 +401,18 @@ function fxAt(x, y, kind) {
     }
 }
 
+// A tank burst for everyone watching nearby; the victim draws its own.
+const TANK_FX_RANGE = 2200;
+function tankDeathFx(body) {
+    if (!body || body.deathCause === "despawn") return;
+    for (const client of connectedClients()) {
+        if (client === body.socket) continue;
+        const cam = client.camera;
+        if (!cam || Math.abs(cam.x - body.x) > TANK_FX_RANGE || Math.abs(cam.y - body.y) > TANK_FX_RANGE) continue;
+        try { client.talk('FX', Math.round(body.x), Math.round(body.y), "tankdead", body.id | 0); } catch { /* */ }
+    }
+}
+
 function compass(x, y) {
     const a = Math.atan2(y, x);
     const dirs = ["east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast"];
@@ -1340,6 +1352,7 @@ function onCombatantDead(body) {
     if (!Config.dig_royale || !body) return;
     if (body.royaleAlive === false) return;
     body.royaleAlive = false;
+    tankDeathFx(body);
     const key = statKeyFor(body);
     const s = key ? (raidStats.get(key) || ensureStat(body)) : null;
     const carriedAtDeath = body.socket && body.socket.gemDeathCarried !== undefined
@@ -1622,7 +1635,7 @@ function onHumanJoin(body) {
             const mod = raidMods.get();
             try {
                 body.sendMessage("You're shielded for 4 seconds, and after that until you move or shoot.");
-                body.sendMessage("This raid's override is " + (mod ? mod.name + ": " + mod.desc : "nothing, for once."));
+                if (!mod) body.sendMessage("No override this raid, for once.");
             } catch { /* */ }
         }
         try { shop.talkState(body.socket); } catch { /* */ }

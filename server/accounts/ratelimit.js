@@ -42,6 +42,7 @@ const WINDOWS = {
     partyAct:      { limit: 40,  windowMs: 10 * MIN },  // party create/join/leave per IP or account
     partyInvite:   { limit: 30,  windowMs: 10 * MIN },  // duo invites sent per account
     partyCode:     { limit: 20,  windowMs: 10 * MIN },  // wrong party codes per IP (guessing)
+    invite:        { limit: 30,  windowMs: 1 * MIN },   // invite panel loads per account
 };
 
 const BACKOFFS = {

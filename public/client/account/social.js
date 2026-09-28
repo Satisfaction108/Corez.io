@@ -16,7 +16,7 @@ const data = { loaded: false, friends: [], incoming: [], outgoing: [], blocked: 
 const subs = new Set();
 const dmSubs = new Set();
 let activeChat = null;   // userId of the chat on screen, or null
-let hooks = { onRevoked() {}, refreshMe() {}, openPane() {}, onStoreReset() {} };
+let hooks = { onRevoked() {}, refreshMe() {}, openPane() {}, onStoreReset() {}, onInvite() {} };
 
 export const get = () => data;
 export function on(fn) { subs.add(fn); return () => subs.delete(fn); }
@@ -307,6 +307,20 @@ function onEvent(type, d) {
             emitDm({ type: 'dmRead', peer: d.userId, upTo: d.upTo | 0, by: d.by });
             emit('dmRead');
             break;
+        case 'invite': {
+            if (!d) break;
+            const who = d.username || 'A friend';
+            const dust = d.rewardMilli > 0 ? ' +' + (d.rewardMilli / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' gemdust' : '';
+            menuToast(who + ' joined through your link!' + dust, { kind: 'ok', duration: 7000 });
+            const got = Array.isArray(d.granted) ? d.granted : [];
+            if (got.indexOf('name_style') >= 0) {
+                const C = window.DWCosmetics, it = C && C.byId(C.INVITE_STYLE_ID);
+                menuToast((it ? it.name : 'Exclusive') + ' name style unlocked', { kind: 'ok', duration: 8000, actions: [{ label: 'Locker', onClick: () => hooks.openPane('locker') }] });
+            }
+            if (got.indexOf('custom_skin') >= 0) menuToast('5 friends! DM ZyroX on Discord for your custom skin', { kind: 'ok', duration: 10000 });
+            hooks.onInvite(d);
+            break;
+        }
         case 'storeReset': hooks.onStoreReset(d); break;
         case 'party': case 'partyInvite': case 'partyInviteGone':
             partySubs.forEach((fn) => { try { fn(type, d || {}); } catch (e) { console.error(e); } });
@@ -321,7 +335,7 @@ function onEvent(type, d) {
     }
 }
 
-const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'sessionRevoked', 'party', 'partyInvite', 'partyInviteGone'];
+const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'sessionRevoked', 'party', 'partyInvite', 'partyInviteGone', 'invite'];
 // Duo party events (party.js): fn(type, data)
 const partySubs = new Set();
 export function onParty(fn) { partySubs.add(fn); return () => partySubs.delete(fn); }

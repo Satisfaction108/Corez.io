@@ -313,10 +313,70 @@ CREATE INDEX guests_last_seen ON guests(last_seen);
 CREATE INDEX guests_converted ON guests(converted_user_id) WHERE converted_user_id IS NOT NULL;
 `;
 
+// v4: invites. One stable code per account (made the first time it is
+// asked for), one referral row per account created from an invite link, and
+// one reward row per milestone so each reward is granted exactly once.
+// ip_hash is an HMAC of the referee's sign-up address (IPv6 by /64), never the
+// address itself; the partial unique index allows one counted invite per
+// address. referee_id is SET NULL on purge so the referrer's count holds.
+//
+// dust_ledger gains the 'referral' kind. SQLite cannot alter a CHECK, so the
+// table is rebuilt: nothing references it and it has no triggers, so a copy,
+// drop and rename inside this migration's transaction is safe (row ids kept).
+const V4 = `
+CREATE TABLE invite_codes (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    code       TEXT    NOT NULL UNIQUE CHECK (length(code) = 7),
+    created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE referrals (
+    id           INTEGER PRIMARY KEY,
+    referrer_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    referee_id   INTEGER UNIQUE REFERENCES users(id) ON DELETE SET NULL,
+    code         TEXT    NOT NULL,
+    method       TEXT    NOT NULL CHECK (method IN ('password', 'discord')),
+    status       TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'qualified', 'rejected')),
+    reason       TEXT,                      -- rejected: same_device | same_network | ip_used | expired
+    ip_hash      TEXT    NOT NULL,
+    created_at   INTEGER NOT NULL,
+    decided_at   INTEGER,
+    reward_milli INTEGER NOT NULL DEFAULT 0 CHECK (reward_milli >= 0),
+    CHECK (referee_id IS NULL OR referee_id <> referrer_id),
+    CHECK ((status = 'pending') = (decided_at IS NULL))
+) STRICT;
+CREATE INDEX referrals_referrer ON referrals(referrer_id, created_at);
+CREATE INDEX referrals_pending  ON referrals(created_at) WHERE status = 'pending';
+CREATE UNIQUE INDEX referrals_ip_once ON referrals(ip_hash) WHERE status = 'qualified';
+
+CREATE TABLE referral_rewards (
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tier     TEXT    NOT NULL CHECK (tier IN ('name_style', 'custom_skin')),
+    at       INTEGER NOT NULL,
+    PRIMARY KEY (user_id, tier)
+) STRICT;
+
+CREATE TABLE dust_ledger_v4 (
+    id            INTEGER PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    delta_milli   INTEGER NOT NULL,
+    balance_milli INTEGER NOT NULL CHECK (balance_milli >= 0),
+    kind          TEXT    NOT NULL CHECK (kind IN ('gems', 'kill', 'placement', 'quest', 'purchase', 'refund', 'gift', 'admin', 'referral', 'other')),
+    ref           TEXT,
+    created_at    INTEGER NOT NULL
+) STRICT;
+INSERT INTO dust_ledger_v4 (id, user_id, delta_milli, balance_milli, kind, ref, created_at)
+    SELECT id, user_id, delta_milli, balance_milli, kind, ref, created_at FROM dust_ledger;
+DROP TABLE dust_ledger;
+ALTER TABLE dust_ledger_v4 RENAME TO dust_ledger;
+CREATE INDEX dust_ledger_user ON dust_ledger(user_id, id);
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
     { version: 3, up(db) { db.exec(V3); } },
+    { version: 4, up(db) { db.exec(V4); } },
 ];
 
 function latestVersion() {

@@ -502,6 +502,37 @@ function punchUI(amount, duration) {
     set.shakeAmount = amount;
     set.keepShake = false;
 }
+let reducedMotionQ = null;
+function reducedMotion() {
+    try {
+        if (!reducedMotionQ) reducedMotionQ = window.matchMedia("(prefers-reduced-motion: reduce)");
+        return !!reducedMotionQ.matches;
+    } catch (e) { return false; }
+}
+global.reducedMotion = reducedMotion;
+// Tank knockout burst, drawn by app.js drawTankBursts. col is the raw
+// compiled colour; born can sit in the future to wait out a hit-stop.
+function pushTankBurst(x, y, col, size, self, born) {
+    const list = global.tankBursts || (global.tankBursts = []);
+    list.push({ x, y, col, size: size || 30, self: !!self, born: born || performance.now() });
+    if (list.length > 8) list.shift();
+}
+// Your own death: the wreck bursts in your colour, a short hard shake and a
+// beat of hit-stop, then a red flash. Everything scales down under reduced motion.
+function selfKnockout() {
+    const me = global.entities.find(e => e.id === gui.playerid);
+    const x = me ? (me.render && isFinite(me.render.x) ? me.render.x : me.x) : global.player.cx.x;
+    const y = me ? (me.render && isFinite(me.render.y) ? me.render.y : me.y) : global.player.cy.y;
+    if (!isFinite(x) || !isFinite(y)) return;
+    const calm = reducedMotion();
+    const hold = calm ? 0 : 120;
+    if (hold) global.hitStop = Math.max(global.hitStop || 0, Date.now() + hold);
+    pushTankBurst(x, y, (me && me.color) || gui.color, (me && me.size) || 30, true, performance.now() + hold);
+    global.selfDeathAt = performance.now() + hold;
+    punchCamera(calm ? 6 : 30, calm ? 200 : 480, true);
+    punchUI(calm ? 2 : 11, calm ? 160 : 340);
+    try { if (gameSound.oreBreak) gameSound.oreBreak(x, y, 3); } catch (e) { /* */ }
+}
 // Damage the server attributed to or against us. targetId locates the body to
 // float the number over; taken=true means we were the one hit. amount is
 // already scaled to 100 (percent of the target's max health). tier 0/1/2 =
@@ -1376,6 +1407,20 @@ let incoming = async function(message, socket) {
                         if (b > a) sh.slotFlash[id] = { at: nowF, kind: "get" };
                         else if (b < a) sh.slotFlash[id] = { at: nowF, kind: "use" };
                     }
+                    // a kit item arriving queues the NEW ABILITY card (app.js drawKitUnlock);
+                    // the same item again inside 5s is a restock, not news
+                    sh.gotAt = sh.gotAt || {};
+                    const unlocks = global.kitUnlocks || (global.kitUnlocks = []);
+                    for (const id of sh.state.kitOrder) {
+                        if ((sh.state.kit[id] | 0) <= (prevKit[id] | 0)) continue;
+                        const last = sh.gotAt[id] || -1e9;
+                        sh.gotAt[id] = nowF;
+                        if (nowF - last < 5000 || global.tutorialMode || global.died) continue;
+                        if (unlocks.some(u => u.id === id)) continue;
+                        unlocks.push({ id });
+                        if (unlocks.length > 4) unlocks.splice(1, 1);
+                        delete sh.slotFlash[id];   // it flashes when the card lands instead
+                    }
                     if ((sh.state.drill | 0) > (prevDrill | 0)) sh.drillFlashAt = nowF;
                     if (sh.state.arm && sh.state.arm !== prevArm) sh.armFlashAt = nowF;
                     if (d.msg) { sh.msg = d.msg; sh.msgAt = performance.now(); sh.msgOk = !!d.ok; }
@@ -1430,6 +1475,15 @@ let incoming = async function(message, socket) {
                     if (tr && tr.shatterAt) {
                         tr.shatterAt(fx.x, fx.y, size * 1.02, kindF === "chestrare" ? 3 : 1, hold, -(1000000 + eid));
                         if (eid && tr.dropCell) tr.dropCell(-(1000000 + eid));
+                    }
+                    pushFx = false;
+                }
+                if (kindF === "tankdead") {
+                    // someone else went down near you: a smaller burst in their colour
+                    const e = global.entities.find(e => e.id === (m[3] | 0));
+                    if (e && e.id !== gui.playerid) {
+                        pushTankBurst(fx.x, fx.y, e.color, e.size, false);
+                        if (nearF < 700 && !reducedMotion()) punchCamera(8, 180);
                     }
                     pushFx = false;
                 }
@@ -1970,6 +2024,7 @@ let incoming = async function(message, socket) {
                 global.player.renderx = dx;
                 global.player.rendery = dy;
             } catch { /* */ }
+            try { selfKnockout(); } catch { /* */ }
             if (global.royale && (global.royale.at > 0 || global.royale.raidId || global.royale.matchId)) {
                 // Killer cam: follow the killer 3s, then fade in the death
                 // panel. Respawn tax still runs from death, not the panel.
@@ -1977,8 +2032,13 @@ let incoming = async function(message, socket) {
                 global.royaleSpectating = true;
                 global.royaleKillerCamUntil = performance.now() + 3000;
                 global.raidRespawnAt = performance.now() + (respawnWaitMs > 0 ? respawnWaitMs : 15000);
-                try { global.canvas.socket.talk('RS', 2); } catch { /* */ }
                 const camToken = global.royaleKillerCamUntil;
+                // the server holds the camera on the corpse until RS, so the
+                // burst and the spilled gems get a beat before the killer cam
+                setTimeout(() => {
+                    if (!global.died || global.royaleKillerCamUntil !== camToken) return;
+                    try { global.canvas.socket.talk('RS', 2); } catch { /* */ }
+                }, 1300);
                 setTimeout(() => {
                     if (!global.died) return;
                     if (global.royaleKillerCamUntil !== camToken) return;

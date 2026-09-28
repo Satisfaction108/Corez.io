@@ -193,6 +193,8 @@ function lifeEnd(s, reason, opts = {}) {
             try { accounts.bus.toMain({ t: 'rankUp', userId, division: payload.after.division, tierUp: !!payload.tierUp }); } catch (e) { /* */ }
         }
         try { progress.afterLife(bridge().socketOf(userId), userId, reason, t - (s.lifeStartAt || t)); } catch (e) { logErr('progress', e); }
+        // invites wait for the new account's first finished life
+        try { accounts.bus.toMain({ t: 'lifeSettled', userId }); } catch (e) { /* */ }
     }
     return payload;
 }
@@ -311,9 +313,29 @@ function surviveCheck(t) {
 // A socket left mid-life. If nobody resumes it within the resume window,
 // the life settles as a disconnect (with the fare).
 // immediate: they left on purpose (menu, another tab), so no resume is coming
+const VOID_LEAVE_MS = 60 * 1000;
+function voidLife(s) {
+    s.lifeOpen = false;
+    const userId = s.accountId | 0;
+    if (openByAcct.get(userId) === s) openByAcct.delete(userId);
+    if (!userId || !s.lifeId) return;
+    const d = accounts.db.handle();
+    if (d) d.run('DELETE FROM rank_lives WHERE life_id = ? AND ended_at IS NULL', s.lifeId);
+}
+
 function onDisconnect(socket, s, immediate = false) {
     if (!s || !s.lifeOpen) return;
-    if (immediate) { try { lifeEnd(s, 'disconnect'); } catch (e) { logErr('disconnect', e); } return; }
+    if (immediate) {
+        // Leaving on purpose in the first minute with nothing scored (e.g. the
+        // coach's "Play the tutorial") voids the life instead of spending a
+        // placement game or a fare on it.
+        if (Date.now() - (s.lifeStartAt || 0) < VOID_LEAVE_MS && basisOf(s) - (s.lifeBase || 0) <= 0) {
+            try { voidLife(s); } catch (e) { logErr('void', e); }
+            return;
+        }
+        try { lifeEnd(s, 'disconnect'); } catch (e) { logErr('disconnect', e); }
+        return;
+    }
     const gen = s.lifeDiscGen = (s.lifeDiscGen | 0) + 1;
     const lifeId = s.lifeId;
     const wait = ((ctx && ctx.resumeMs) || 120000) + 1000;

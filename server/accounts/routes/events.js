@@ -22,6 +22,7 @@
 //   storeReset       {day, resetsAt}                    at 00:00 UTC (daily quests reset too)
 //   ach              {id, name, desc, at}               an achievement unlocked in a raid
 //   dust             {balanceMilli, deltaMilli, kind}    an admin changed the balance
+//   invite           {username, rewardMilli, balanceMilli, count, granted:[tier]}   a friend you invited counted
 //   sessionRevoked   {}                                 then the stream closes
 //
 // Other modules call push(userId, type, data) (internal user id).

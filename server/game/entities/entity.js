@@ -1338,11 +1338,13 @@ class Entity extends EventEmitter {
             if (killText === "You have been kille") {
                 killText = "You have died a stupid death";
             }
-            if (!this.dontSendDeathMessage) {
+            // the raid client writes its own death line and kill feed, so
+            // these would only repeat it
+            if (!this.dontSendDeathMessage && !Config.dig_royale) {
                 this.sendMessage(killText + ".");
             }
             // If I'm the leader, broadcast it:
-            if (this.id === global.gameManager.room.topPlayerID) {
+            if (this.id === global.gameManager.room.topPlayerID && !Config.dig_royale) {
                 let usurptText;
                 if (notJustFood && killers.length) {
                     // slain by a player (or players): name the usurper(s)

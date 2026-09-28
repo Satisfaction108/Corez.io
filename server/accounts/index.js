@@ -38,6 +38,7 @@ const quests = require('./quests');
 const achievements = require('./achievements');
 const backup = require('./backup');
 const announce = require('./discord/announce');
+const referrals = require('./referrals');
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -54,6 +55,7 @@ require('./routes/profile').register(router);
 require('./routes/progress').register(router);
 require('./routes/interactions').register(router);
 require('./routes/resetPage').register(router);
+require('./routes/invite').register(router);
 const partyRoutes = require('./routes/party');
 partyRoutes.register(router);
 events.register(router);
@@ -152,6 +154,7 @@ function initMain() {
     events.start();
     announce.start();
     backup.start();
+    referrals.start();
     every(HOUR, () => sweep());
     after(5000, () => sweep());
     const bot = config.discordBot;
@@ -213,6 +216,7 @@ function shutdown() {
         presence.stop();
         announce.stop();
         backup.stop();
+        referrals.stop();
     }
     const d = db.handle();
     db.setCurrent(null);
@@ -373,6 +377,7 @@ module.exports = {
     achievements,
     backup,
     announce,
+    referrals,
     party: require('./party'),
     partyTicket: require('./partyTicket'),
 };

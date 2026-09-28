@@ -5,7 +5,8 @@
 // rotation is fixed once anyone has seen it. 2 Featured (Epic/Legendary,
 // Epic weighted 2:1) + 4 Daily (Common/Uncommon/Rare, at most 2 skins);
 // items Featured on either of the previous 2 days are skipped. Permanent
-// items (Custom Color) are always for sale.
+// items (Custom Color) are always for sale; exclusive ones (invite rewards)
+// never are, and cannot be gifted.
 //
 // Every money move runs in one db.tx (BEGIN IMMEDIATE): idempotency replay,
 // offer check, ownership, the conditional balance UPDATE (402 if short),
@@ -66,7 +67,7 @@ function mulberry32(seed) {
     };
 }
 
-function sellable(it) { return !it.retired && !it.permanent; }
+function sellable(it) { return !it.retired && !it.permanent && !it.exclusive; }
 
 // Weighted draw without replacement. items in catalog order, so the result
 // only depends on the seed.
@@ -145,7 +146,7 @@ function inRotation(rot, id) {
 
 // Throws unless `item` can be bought from the shop the client saw (`day`).
 function checkOffered(item, day, now) {
-    if (item.retired) fail(404, 'not_in_shop', "That item isn't for sale.");
+    if (item.retired || item.exclusive) fail(404, 'not_in_shop', "That item isn't for sale.");
     if (item.permanent) return;
     const today = dayOf(now);
     const d = Number(day);
