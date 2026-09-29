@@ -97,6 +97,56 @@ function separateBotTanks(first, second) {
     }
 }
 
+// The trap push is a spring scaled by 1 / mass, and mass grows with size
+// squared, so big set traps (Builder, Constructor, ...) barely feel it. Their
+// motor drives them onto the aim point and damps any push, so they end up
+// stacked inside each other. Ease the leftover overlap out here, the heavier
+// trap moving less. Enemy pairs keep a sliver of overlap so they still grind.
+const TRAP_SEPARATE = 0.8;
+// A set trap that runs into a trap lying between it and its aim point stops
+// there, instead of shoving the pile along until it expires.
+function settleSetTrap(trap, other) {
+    for (const io of trap.controllers) {
+        if (!io.myGoal || !io.countdown) continue;
+        const mine = Math.hypot(trap.x - io.myGoal.x, trap.y - io.myGoal.y);
+        const theirs = Math.hypot(other.x - io.myGoal.x, other.y - io.myGoal.y);
+        if (theirs < mine) io.countdown = 0;
+    }
+}
+function separateTraps(first, second, slack = 0) {
+    if (first.bond != null || second.bond != null) return;
+    let dx = second.x - first.x, dy = second.y - first.y;
+    let distance = Math.hypot(dx, dy);
+    if (distance >= first.size + second.size) return;
+    settleSetTrap(first, second);
+    settleSetTrap(second, first);
+    const overlap = first.size + second.size - slack - distance;
+    if (overlap <= 0) return;
+    if (distance < 0.001) {
+        const angle = (((first.id || 0) * 0.754877666) + ((second.id || 1) * 1.324717957)) % (Math.PI * 2);
+        dx = Math.cos(angle); dy = Math.sin(angle); distance = 1;
+    }
+    const nx = dx / distance, ny = dy / distance;
+    const firstGive = (first.pushability || 0) / (first.mass || 1);
+    const secondGive = (second.pushability || 0) / (second.mass || 1);
+    if (firstGive + secondGive <= 0) return;
+    const firstShare = firstGive / (firstGive + secondGive);
+    const step = overlap * TRAP_SEPARATE;
+    first.x -= nx * step * firstShare;
+    first.y -= ny * step * firstShare;
+    second.x += nx * step * (1 - firstShare);
+    second.y += ny * step * (1 - firstShare);
+
+    const closing = (second.velocity.x - first.velocity.x) * nx +
+        (second.velocity.y - first.velocity.y) * ny;
+    if (closing < 0) {
+        first.velocity.x += nx * closing * firstShare;
+        first.velocity.y += ny * closing * firstShare;
+        second.velocity.x -= nx * closing * (1 - firstShare);
+        second.velocity.y -= ny * closing * (1 - firstShare);
+    }
+}
+
 class gameHandler {
     constructor(parent) {
         this.gameManager = parent;
@@ -353,6 +403,11 @@ class gameHandler {
                     if (!(this.auraCollideTypes.includes(instance.type))) return;
                 }
                 advancedcollide(instance, other, true, true);
+                if (instance.type === "trap" && other.type === "trap" && instance.team !== other.team &&
+                    instance.settings.hitsOwnType !== "never" && other.settings.hitsOwnType !== "never" &&
+                    !instance.isDead() && !other.isDead()) {
+                    separateTraps(instance, other, 1);
+                }
                 break;
             case instance.settings.hitsOwnType == "never" ||
                 other.settings.hitsOwnType == "never":
@@ -395,6 +450,9 @@ class gameHandler {
                     } // don't break
                     case "push":
                         advancedcollide(instance, other, false, false);
+                        if (instance.settings.hitsOwnType === "push" && instance.type === "trap" && other.type === "trap") {
+                            separateTraps(instance, other);
+                        }
                         break;
                     case "hard":
                         firmcollide(instance, other);
@@ -1156,9 +1214,9 @@ class gameHandler {
             if (attacker) {
                 o._lastDamageSource = attacker;
                 o._lastDamageAt = Date.now();
-                // a fresh spawn that shoots a bot has ended its own bot grace
-                // (dig_royale FIRST_MINUTES; read in controllers.js)
-                if (attacker.isPlayer && attacker.botGraceUntil) attacker.botGraceUntil = 0;
+                // a fresh spawn (player or bot) that shoots a bot has ended its
+                // own bot grace (dig_royale FIRST_MINUTES; read in controllers.js)
+                if (attacker.botGraceUntil) attacker.botGraceUntil = 0;
                 // Tell the team: nearby teammates rally to this marker, so a skirmish grows
                 // into a fight.
                 if (Date.now() - (o._lastMarkerAt || 0) > 8000) {

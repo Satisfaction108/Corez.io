@@ -3515,6 +3515,32 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
     user-select: none;
 }
 [data-theme="light"] #dwJoin { --warn: #c27a0e; --good: var(--play-dk); --bad: #c8392d; }
+/* Share on the raid-end result (raidShare.js). Placed by its bottom-right
+   corner over the canvas, so it follows the raid card at any UI scale. The
+   note under it keeps the in-game HUD's dark plate in either menu theme. */
+#dwShareBtn {
+    position: fixed; z-index: 40; left: 0; top: 0;
+    transform: translate(-100%, -100%) scale(.85);
+    opacity: 0; pointer-events: none;
+    height: 44px; padding: 0 18px 4px; font: 400 21px/1 var(--display); letter-spacing: .02em;
+    border: 2px solid #120e15;
+    transition: opacity 180ms ease-out, transform 220ms cubic-bezier(.3, 1.5, .6, 1), filter 80ms;
+}
+#dwShareBtn.open { opacity: 1; pointer-events: auto; transform: translate(-100%, -100%); }
+#dwShareBtn.open:active { transform: translate(-100%, calc(-100% + 3px)); }
+#dwShareNote {
+    position: fixed; z-index: 41; left: 0; top: 0;
+    transform: translate(-100%, -100%);
+    display: none; flex-direction: column; align-items: flex-end; gap: 8px;
+    padding: 10px 12px; box-sizing: border-box; max-width: calc(100vw - 16px);
+    background: rgba(43, 37, 51, .97); border: 2px solid #120e15; border-radius: 13px;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, .32);
+    color: #fff3d9; user-select: none;
+}
+#dwShareNote.open { display: flex; animation: dwFade 180ms ease-out both; }
+#dwShareNote .dws-msg { font: 400 20px/1.1 var(--display); color: #4fcf5c; text-align: right; max-width: 360px; overflow-wrap: anywhere; }
+#dwShareNote .dws-btns { display: flex; gap: 8px; }
+#dwShareNote .dw-btn[hidden] { display: none; }
 #dwJoin.open { display: flex; animation: dwFade 180ms ease both; }
 /* disconnected mid-game: the world stays faintly visible behind the plate */
 #dwJoin.see { background: rgba(14, 11, 18, .66); }

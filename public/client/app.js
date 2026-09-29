@@ -1643,7 +1643,7 @@ import * as cosmetics from './account/cosmetics.js';
     // the size. Run text like the kill feed repeats every frame.
     const runWidths = new Map();
     // a web font arriving changes every width
-    try { document.fonts.addEventListener("loadingdone", () => runWidths.clear()); } catch (e) { }
+    try { document.fonts.addEventListener("loadingdone", () => { runWidths.clear(); streakSprites.clear(); }); } catch (e) { }
     function runWidth(context, size, text) {
         const k = size + "|" + text;
         let w = runWidths.get(k);
@@ -4343,6 +4343,7 @@ import * as cosmetics from './account/cosmetics.js';
         const motion = compensation();
         let livingPred = false;
         const finaleIds = raidFinale.watchIds();
+        overheadFrame++;
         for (let instance of global.entities) {
             if (!instance.render.draws) {
                 instance._onScreen = false;
@@ -4487,6 +4488,7 @@ import * as cosmetics from './account/cosmetics.js';
                 y = instance.id === gui.playerid ? global.player.screeny : instance._sy - global.screenHeight / 2;
             drawHealth(x, y, instance, ratio, gui.visibleEntities ? 1 : alpha, instance.size);
             drawName(x, y, instance, ratio, gui.visibleEntities ? alpha * 0.75 + 0.25 : alpha, instance.size);
+            drawStreakBadge(x, y, instance, ratio, gui.visibleEntities ? alpha * 0.75 + 0.25 : alpha, instance.size);
         }
         for (let instance of global.entities) {
             if (!instance._onScreen) continue;
@@ -4947,13 +4949,14 @@ import * as cosmetics from './account/cosmetics.js';
         ctx[2].globalAlpha = 1;
     }
 
-    // ── overhead chat ───────────────────────────────────────────────────
-    // Bubbles sit just above whatever is already over the tank (the hull for
-    // you, the name + rank badge (+ partner diamond) for others), newest at
-    // the bottom, older ones stacked above. Text scales with the tank but is
-    // capped so a big tank doesn't get billboard-sized chat.
+    // ── overhead stack ──────────────────────────────────────────────────
+    // Everything over a tank, bottom up: the hull, the name + rank badge (and
+    // score), the partner diamond, the streak badge, then chat. Each piece
+    // asks for the top of what sits under it, so nothing overlaps at any
+    // tank size or zoom.
     const chatScale = (size) => Math.min(34, Math.max(20, size));
-    function overheadTop(instance, y, ratio, isize) {
+    // the top of the hull and the name block (no streak badge)
+    function nameStackTop(instance, y, ratio, isize) {
         const size = isize * ratio, g = Math.max(20, size);
         const m = global.mockups[parseInt(String(instance.index).split("-")[0])] || global.missingno[0];
         const realSize = m && m.size ? (size / m.size) * m.realSize : size;
@@ -4970,6 +4973,119 @@ import * as cosmetics from './account/cosmetics.js';
             }
         } else if (global.GUIStatus.renderPlayerScores) top = Math.min(top, y - 1.75 * g);
         return top;
+    }
+    // Marked streakers (RY pings, 4+ kills in a row): id -> streak, rebuilt
+    // only when a new packet brings a new list.
+    const streakById = new Map();
+    let streakSrc = null;
+    function streakOf(id) {
+        if (!royaleActive() || raidFinale.active()) return 0;
+        const pings = global.royale.pings;
+        if (pings !== streakSrc) {
+            streakSrc = pings;
+            streakById.clear();
+            if (pings) for (let i = 0; i < pings.length; i++) streakById.set(pings[i].id, pings[i].streak | 0);
+        }
+        return streakById.get(id) || 0;
+    }
+    // badge text size: grows with the tank and the zoom, capped both ways
+    const streakSize = (isize, ratio) => Math.min(26, Math.max(14, 0.46 * Math.max(20, isize * ratio)));
+    const streakGap = (fs) => Math.max(3, fs * 0.28);
+    // the pill plus the pointer under it, in units of the text size
+    const STREAK_H = 1.62, STREAK_TIP = 0.42;
+    function overheadTop(instance, y, ratio, isize) {
+        const top = nameStackTop(instance, y, ratio, isize);
+        if (!streakOf(instance.id)) return top;
+        const fs = streakSize(isize, ratio);
+        return top - streakGap(fs) - fs * (STREAK_H + STREAK_TIP);
+    }
+    // Baked once per streak count at a fixed size and scaled on draw: a dark
+    // HUD pill with an ink rim, "STREAK" in orange and the count in cream,
+    // and the old red marker as a pointer down at the tank.
+    const STREAK_BAKE = 40;
+    const streakSprites = new Map();
+    function streakSprite(n) {
+        let spr = streakSprites.get(n);
+        if (spr) return spr;
+        const fs = STREAK_BAKE, pad = Math.ceil(fs * 0.22);
+        const word = "STREAK ", num = "x" + n;
+        const cv = document.createElement("canvas");
+        let c = cv.getContext("2d");
+        c.font = fs + "px " + HUD.font;
+        const ww = c.measureText(word).width, nw = c.measureText(num).width;
+        const ph = fs * STREAK_H, pw = Math.ceil(ww + nw + fs * 1.1), tip = fs * STREAK_TIP;
+        cv.width = pw + pad * 2;
+        cv.height = Math.ceil(ph + tip + pad * 2);
+        c = cv.getContext("2d");
+        c.lineJoin = "round";
+        const x0 = pad, y0 = pad, cx = cv.width / 2, rim = fs * 0.14;
+        // the pointer first, so the pill's rim cuts across its base
+        c.beginPath();
+        c.moveTo(cx - fs * 0.42, y0 + ph - rim);
+        c.lineTo(cx + fs * 0.42, y0 + ph - rim);
+        c.lineTo(cx, y0 + ph + tip);
+        c.closePath();
+        c.lineWidth = rim * 1.6; c.strokeStyle = HUD.ink; c.stroke();
+        c.fillStyle = "#e03e41"; c.fill();
+        // the drop under the pill, then the pill
+        roundRectPath(c, x0, y0 + fs * 0.1, pw, ph, ph / 2);
+        c.fillStyle = HUD.ink; c.fill();
+        roundRectPath(c, x0, y0, pw, ph, ph / 2);
+        c.lineWidth = rim * 1.6; c.strokeStyle = HUD.ink; c.stroke();
+        c.fillStyle = HUD.raised; c.fill();
+        // a warm band along the top edge, like the podium blocks
+        c.save();
+        roundRectPath(c, x0, y0, pw, ph, ph / 2);
+        c.clip();
+        c.fillStyle = "rgba(255,179,71,0.22)";
+        c.fillRect(x0, y0, pw, ph * 0.34);
+        c.restore();
+        roundRectPath(c, x0, y0, pw, ph, ph / 2);
+        c.lineWidth = rim; c.strokeStyle = HUD.ink; c.stroke();
+        // the words: ink rim, then fill
+        c.font = fs + "px " + HUD.font;
+        c.textBaseline = "middle";
+        c.textAlign = "left";
+        const tx = cx - (ww + nw) / 2, ty = y0 + ph / 2 + fs * 0.06;
+        c.lineWidth = fs * 0.2; c.strokeStyle = HUD.ink;
+        c.strokeText(word, tx, ty); c.strokeText(num, tx + ww, ty);
+        c.fillStyle = "#ffb347"; c.fillText(word, tx, ty);
+        c.fillStyle = HUD.head; c.fillText(num, tx + ww, ty);
+        spr = { cv, ax: cx, tipY: y0 + ph + tip, fs };
+        if (streakSprites.size > 40) streakSprites.clear();
+        streakSprites.set(n, spr);
+        return spr;
+    }
+    // the ids whose badge drew this frame; the edge marker skips them
+    const streakShownAt = new Map();
+    let overheadFrame = 0;
+    function drawStreakBadge(x, y, instance, ratio, alpha, isize) {
+        const n = streakOf(instance.id);
+        if (!n || alpha < 0.02) return;
+        let fade = instance.render.status.getFade();
+        fade *= fade;
+        if (fade < 0.02) return;
+        x += global.screenWidth / 2;
+        y += global.screenHeight / 2;
+        const fs = streakSize(isize, ratio);
+        const spr = streakSprite(n);
+        const k = fs / spr.fs;
+        const w = spr.cv.width * k, h = spr.cv.height * k;
+        // the pointer tip sits a small gap over the name (or the hull)
+        let tipY = nameStackTop(instance, y, ratio, isize) - streakGap(fs);
+        // near the top of the screen it slides down to stay readable, never
+        // below the top of the hull
+        const minTip = spr.tipY * k + 2;
+        if (tipY < minTip) tipY = Math.min(minTip, y - isize * ratio);
+        let bx = x - spr.ax * k;
+        bx = Math.max(4, Math.min(global.screenWidth - w - 4, bx));
+        const c = ctx[1];
+        c.save();
+        c.globalAlpha = alpha * alpha * fade * (0.88 + 0.12 * Math.sin(performance.now() / 300));
+        c.drawImage(spr.cv, bx, tipY - spr.tipY * k, w, h);
+        c.restore();
+        if (streakShownAt.size > 64 && !streakShownAt.has(instance.id)) streakShownAt.clear();
+        streakShownAt.set(instance.id, overheadFrame);
     }
     function drawChatMessages(x, y, py, instance, ratio, alpha, isize) {
         if (global.GUIStatus.renderChat === false) return;
@@ -8149,7 +8265,6 @@ import * as cosmetics from './account/cosmetics.js';
         const c = ctx[2];
         const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
         const now = performance.now();
-        const pulse = 0.5 + 0.5 * Math.sin(now / 300);
         const toScreen = (wx, wy) => ({ x: ratio * wx - px + cx, y: ratio * wy - py + cy });
         const onScreen = (s, m) => s.x > -m && s.x < global.screenWidth + m && s.y > -m && s.y < global.screenHeight + m;
         const me = { x: global.player.renderx, y: global.player.rendery };
@@ -8164,24 +8279,16 @@ import * as cosmetics from './account/cosmetics.js';
             const d = Math.hypot(r.bloom.x - me.x, r.bloom.y - me.y);
             if (!onScreen(s, -(r.bloom.r || 300) * ratio) && d < 3400) marks.push({ pri: 2, s, col: "#ffd76e", glyph: "gem", name: "ORE BLOOM", d });
         }
-        // marked streakers: a red mark over the tank on screen, the nearest
-        // one off screen gets an edge marker
+        // marked streakers: the badge over the tank (drawStreakBadge, in the
+        // overhead stack); the nearest one out of sight gets an edge marker
         let nearest = null;
         for (const p of (r.pings || [])) {
-            if (p.id === gui.playerid) continue;
+            if (p.id === gui.playerid || streakShownAt.get(p.id) === overheadFrame) continue;
             const tp = trackPos("ping" + p.id, p.x, p.y, 0.6);
             const s = toScreen(tp.x, tp.y);
+            if (onScreen(s, -20)) continue;
             const d = Math.hypot(tp.x - me.x, tp.y - me.y);
-            if (onScreen(s, -20)) {
-                const yy = s.y - 62 * Math.min(1.4, ratio) - 14;
-                c.save();
-                c.translate(s.x, yy);
-                c.fillStyle = "#e03e41"; c.strokeStyle = color.black; c.lineWidth = 3; c.lineJoin = "round";
-                c.beginPath(); c.moveTo(0, 14); c.lineTo(-13, -6); c.lineTo(13, -6); c.closePath();
-                c.fill(); c.stroke();
-                c.restore();
-                drawText("STREAK x" + p.streak, s.x, yy - 18, 13, "#ffb347", "center", true, 0.7 + 0.3 * pulse, 5);
-            } else if (!nearest || d < nearest.d) {
+            if (!nearest || d < nearest.d) {
                 nearest = { pri: 3, s, col: "#ffb347", glyph: "streak", name: "STREAK x" + p.streak + " " + shortName(p.name, 10).toUpperCase(), d };
             }
         }
@@ -11614,7 +11721,8 @@ import * as cosmetics from './account/cosmetics.js';
     // reconnecting, disconnected / kicked, and the wait before your first
     // spawn (final-storm lock, the between-raids window, a slow spawn).
     // Timing comes from the RY packet: lockLeft / raidLeft while the storm
-    // lock is on, nextIn while the raid is over.
+    // lock is on, the next-raid deadline (global.raidNextLeft) while the raid
+    // is over.
     var joinEl = null, joinKey = "", joinUp = false, joinMode = "", joinModeAt = 0;   // var: read by updateRoyaleDomButtons above
     function joinClock(sec) {
         sec = Math.max(0, Math.ceil(sec));
@@ -11671,7 +11779,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (!(r.at > 0) || now - r.at > 3000) return null;
         const age = (now - r.at) / 1000;
         if (r.ending) {
-            const n = (r.nextIn | 0) - age;
+            const n = global.raidNextLeft(now);
             return { mode: "ending", title: "Raid over", lbl: n > 0.5 ? "Next raid starts in" : "", n: n > 0.5 ? joinClock(n) : "",
                 line: n > 0.5 ? "This raid just ended. You'll drop in with everyone when the next one starts." : "The next raid is starting…",
                 back: true, dots: true };
@@ -11829,6 +11937,8 @@ import * as cosmetics from './account/cosmetics.js';
     // step frames in a background tab where requestAnimationFrame is paused.
     window.dwRenderFrame = renderFrame;
     function renderFrame(tick) {
+        // the raid-end shake moves the whole layer, hit-stop or not
+        raidFinale.shakeFrame(performance.now());
         // Hit-stop: hold the last frame for a beat when a rock is destroyed
         if (global.hitStop && Date.now() < global.hitStop && !config.graphical.noShake) return;
         if (global.gameStart) {

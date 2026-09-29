@@ -5,16 +5,25 @@
 // (body.botDifficulty); controllers.js and subFunctions.shotMult read it.
 //
 // Who gets what:
-//   new player (under NEW_PLAYER_LIVES career lives)   0
+//   new player             0, fading into the numbers below (newness)
 //   signed in, ranked      Bronze I 0.20 ... Gold I 0.45 ... Diamond I 0.70
 //                          ... Legend 0.95 (+ up to 0.08 for a strong raid)
-//   signed in, in placement / guests   from this raid's score and kills:
-//       0.15 + 0.70 * (1 - e^-(score/10000 + kills/10))
-//       score 0 -> 0.15, 2k + 1 kill -> 0.33, 5k + 3 -> 0.54,
-//       10k + 5 -> 0.69, 20k + 10 -> 0.82; never past 0.85 (placement 0.5).
-//       The next raid starts from 60% of the best reached this session.
+//   signed in, in placement / guests   the higher of
+//       this raid:  0.15 + 0.70 * (1 - e^-(score/10000 + kills/10))
+//                   score 0 -> 0.15, 2k + 1 kill -> 0.33, 5k + 3 -> 0.54,
+//                   10k + 5 -> 0.69, 20k + 10 -> 0.82
+//       time played in all:  0.15 + 0.45 * (1 - e^-(minutes/15))
+//                   10 min -> 0.37, 15 -> 0.43, 30 -> 0.54, 60 -> 0.59
+//       never past 0.85 (placement 0.5). The next raid starts from 60% of
+//       the best reached this session.
 //   under bot mercy (dying to bots over and over)      at most 0.15
 //   bots, bosses, anything else                        0.5
+//
+// Newness (1 brand new .. 0 not new) is the lower of two fades: total play
+// time (account or guest play_ms plus this session), full for the first
+// 5 minutes and gone at 12; and lives started, full for the first 5 and gone
+// by the 9th. A strong player who rarely dies stops being new on the clock;
+// one who dies a lot stops on lives (mercy still covers them).
 //
 // 0.5 plays like the 07e28b1 tuning. 1 is still softer than the bots before
 // it, knob by knob (scripts/test/botDifficulty.test.js holds that).
@@ -27,6 +36,9 @@ const PERF_SCORE = 10000, PERF_KILLS = 10;
 const SESSION_KEEP = 0.6;
 const MERCY_MAX = 0.15;
 const LEGEND = 18;
+const TIME_HI = 0.6, TIME_TAU_MS = 15 * 60_000;
+const NEW_FULL_MS = 5 * 60_000, NEW_END_MS = 12 * 60_000;
+const NEW_FULL_LIVES = 5, NEW_END_LIVES = 9;
 
 const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
 function lerp(a, b, d) { return a + (b - a) * clamp01(d); }
@@ -39,6 +51,16 @@ function perfShare(score, kills) {
 function fromRaid(score, kills) {
     return GUEST_LO + (GUEST_HI - GUEST_LO) * perfShare(score, kills);
 }
+// a guest's floor from time played, whatever this raid looks like
+function fromTime(playMs) {
+    return GUEST_LO + (TIME_HI - GUEST_LO) * (1 - Math.exp(-Math.max(0, +playMs || 0) / TIME_TAU_MS));
+}
+// playMs: total time played; lives: lives started, this one included
+function newness(playMs, lives) {
+    const byTime = 1 - clamp01(((+playMs || 0) - NEW_FULL_MS) / (NEW_END_MS - NEW_FULL_MS));
+    const byLives = 1 - clamp01(((lives | 0) - NEW_FULL_LIVES) / (NEW_END_LIVES - NEW_FULL_LIVES));
+    return Math.min(byTime, byLives);
+}
 // rankCode: 0 none, 1..19 division + 1, 20 placement (shared/ranks.js)
 function fromRank(code) {
     code |= 0;
@@ -46,12 +68,17 @@ function fromRank(code) {
     return RANK_LO + (RANK_HI - RANK_LO) * (code - 1) / LEGEND;
 }
 
-// p: { newbie, rankCode, score, kills, sessionBest }
+// p: { newbie, newness, rankCode, score, kills, sessionBest, playMs }
 function forPlayer(p) {
-    if (p.newbie) return 0;
+    const fresh = p.newbie ? 1 : clamp01(+p.newness || 0);
+    if (fresh >= 1) return 0;
+    return settled(p) * (1 - fresh);
+}
+// what the player gets once they are not new at all
+function settled(p) {
     const rank = fromRank(p.rankCode);
     if (rank != null) return Math.min(RANK_HI, rank + RANK_PERF * perfShare(p.score, p.kills));
-    let d = fromRaid(p.score, p.kills);
+    let d = Math.max(fromRaid(p.score, p.kills), fromTime(p.playMs));
     const best = +p.sessionBest || 0;
     if (best > GUEST_LO) d = Math.max(d, GUEST_LO + (best - GUEST_LO) * SESSION_KEEP);
     if ((p.rankCode | 0) === 20) d = Math.min(d, PLACEMENT_HI);
@@ -102,7 +129,8 @@ function turretNoise(d) { return lerp(0.06, 0, d); }
 function turretTurn(d) { return lerp(0.7, 1, d); }
 
 module.exports = {
-    NEUTRAL, lerp, perfShare, fromRaid, fromRank, forPlayer, of,
+    NEUTRAL, NEW_FULL_MS, NEW_END_MS, NEW_FULL_LIVES, NEW_END_LIVES,
+    lerp, perfShare, fromRaid, fromTime, fromRank, newness, forPlayer, settled, of,
     aimError, aimStiff, leadShare, reactionMs, pauseMs, burstMs, shotMult, maxHunters, company,
     initThreat, initRange, targetPenalty, softShare, softCloseR, softAim, turretNoise, turretTurn,
 };

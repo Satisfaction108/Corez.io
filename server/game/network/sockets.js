@@ -1391,6 +1391,15 @@ class socketManager {
                         const bot = (global.gameManager.gameHandler?.bots || []).filter(x => x && !x.isDead()).sort((p, q) => d2(p) - d2(q))[0];
                         if (bot) socket.talk('KC', 'dbg', JSON.stringify({ botscore: require('../gamemodes/scripts/dig_royale.js').debugSetScore(bot, m[1] | 0), name: bot.name }), 0);
                     }
+                    // DBG streak <n> [bot]: a streak on you, or on the bot nearest you
+                    else if (what === "streak" && b) {
+                        let t = b;
+                        if (m[2]) {
+                            const d2 = x => (x.x - b.x) ** 2 + (x.y - b.y) ** 2;
+                            t = (global.gameManager.gameHandler?.bots || []).filter(x => x && !x.isDead()).sort((p, q) => d2(p) - d2(q))[0];
+                        }
+                        if (t) socket.talk('KC', 'dbg', JSON.stringify({ streak: require('../gamemodes/scripts/dig_royale.js').debugSetStreak(t, m[1] | 0), name: t.name, id: t.id }), 0);
+                    }
                     else if (what === "botdiff") socket.talk('KC', 'dbg', JSON.stringify({ botdiff: require('../gamemodes/scripts/dig_royale.js').debugBotDiff(socket, m[1]) }), 0);
                     else if (what === "growth") socket.talk('KC', 'dbg', JSON.stringify({ growth: require('../gamemodes/scripts/dig_royale.js').debugGrowth(b) }), 0);
                     else if (what === "rankpts") socket.talk('KC', 'dbg', JSON.stringify({ rankpts: require('../../accounts/game/rankHooks.js').debugPts(socket) }), 0);
@@ -2033,6 +2042,11 @@ class socketManager {
                 // Duos: partners share one team (no friendly fire, one colour)
                 if (Config.royale_duos) {
                     try { team = require('../duo/duoRaid.js').teamForSpawn(socket, name); } catch (e) { console.error('[DUO] team pick failed', e && e.stack || e); }
+                } else if (Config.dig_royale) {
+                    // Solo: a team id nobody else holds. A raw random id can land on
+                    // a live bot's or player's, and then the two are a team (no
+                    // damage between them, one colour, on each other's minimap).
+                    try { team = require('../duo/duoRaid.js').freshTeamId(); } catch (e) { console.error('[ROYALE] team pick failed', e && e.stack || e); }
                 }
                 body.team = team;
                 if (Config.dig_royale) {

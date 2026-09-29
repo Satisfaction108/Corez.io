@@ -11,6 +11,7 @@
 //              the view follows size^0.7 up to its cap
 //   damage     a grown tank's shots (and a grown bot's) hit harder, rock
 //              digging and its budget rise by the same factor
+//   bots       a bot grows from twice its score (growth only, not the board)
 //   off        royale_growth false: nothing grows
 //   rammer     smasher-family caps give Mining Power 12 and the points past 9
 //              still dig
@@ -50,19 +51,17 @@ test('curve', () => {
     for (let s = 100; s <= 200000; s *= 1.3) {
         const g = growth.multFor(s);
         assert.ok(g > prev, 'rises at ' + s);
-        assert.ok(g < growth.LIVE_CEIL, 'under the ceiling at ' + s);
         prev = g;
     }
     assert.equal(growth.RESPAWN_CAP, 2);
     assert.ok(Math.abs(growth.multFor(growth.CAP_SCORE) - growth.RESPAWN_CAP) < 1e-9);
     // 2x comes about a quarter sooner than the old 5656
     assert.ok(growth.CAP_SCORE > 3800 && growth.CAP_SCORE < 5656 * 0.76, 'cap score ' + growth.CAP_SCORE);
-    // the bend toward the ceiling still starts at 2.3x
-    const bendScore = growth.SCALE * (Math.exp(1.3 / growth.GAIN) - 1);
-    assert.ok(Math.abs(growth.multFor(bendScore) - 2.3) < 1e-9);
-    assert.ok(Math.abs(growth.multFor(bendScore * 0.999) - 2.3) < 1e-3, 'no kink at the bend');
+    // no ceiling: growth keeps going at the same log pace
+    const d1 = growth.multFor(40000) - growth.multFor(20000), d2 = growth.multFor(80000) - growth.multFor(40000);
+    assert.ok(d1 > 0.4 && Math.abs(d1 - d2) < 0.03, 'steady per doubling ' + d1 + ' ' + d2);
     assert.ok(growth.multFor(1000) > 1.25, 'the first kills show');
-    assert.ok(growth.multFor(1e7) > 3.2);
+    assert.ok(growth.multFor(1e6) > 5, 'no cap');
 });
 
 test('spawn', () => {
@@ -139,12 +138,12 @@ test('perks', () => {
     b.growthMult = 2.3;
     growth.applyPerks(b);
     assert.ok(b.topSpeed < 0.8 && b.topSpeed > 0.65);
-    // health and ram damage grow slowly: about 1.37x at 2.3x (health was 1.65x)
-    assert.ok(b.health.max > 130 && b.health.max < 145, 'health ' + b.health.max);
-    assert.ok(b.damage > 1.3 && b.damage < 1.45, 'ram ' + b.damage);
+    // health and ram damage grow slowly: about 1.27x at 2.3x, 1.6x at a 100k score
+    assert.ok(b.health.max > 120 && b.health.max < 135, 'health ' + b.health.max);
+    assert.ok(b.damage > 1.2 && b.damage < 1.35, 'ram ' + b.damage);
     assert.ok(Math.abs(growth.healthMult(growth.multFor(100000)) - 1.6) < 1e-9);
     assert.ok(Math.abs(growth.damageMult(growth.multFor(100000)) - 1.6) < 1e-9);
-    assert.ok(growth.healthMult(growth.multFor(1e7)) < 1.7, 'the ceiling keeps it near 1.6');
+    assert.ok(growth.healthMult(growth.multFor(1e6)) < 2.6, "slow past 100k too");
     let prev = 1;
     for (let s = 500; s <= 200000; s *= 2) {
         const h = growth.healthMult(growth.multFor(s));
@@ -183,10 +182,36 @@ test('damage', () => {
     const bot = { isBot: true, botShotMult: 0.8, growthMult: g };
     bot.master = bot;
     assert.ok(Math.abs(shotMult({ master: bot }) - 0.8 * growth.damageMult(g)) < 1e-9);
-    // rock: every hit and the per-second budget move together, and stay near 1.6x
+    // rock: every hit and the per-second budget move together; slow past 100k too
     assert.equal(growth.mineMult(g), growth.damageMult(g));
-    assert.ok(growth.mineMult(growth.multFor(1e7)) < 1.7);
+    assert.ok(growth.mineMult(growth.multFor(1e6)) < 2.6);
     delete global.royaleGrowth;
+});
+
+test('bots', () => {
+    assert.equal(growth.BOT_SCORE_MULT, 2);
+    // a bot grows from twice its score: spawn and life both
+    const bot = fakeBody(); bot.isBot = true;
+    const human = fakeBody(); human.isPlayer = true;
+    growth.onSpawn(bot, 8000);
+    growth.onSpawn(human, 16000);
+    assert.equal(bot.growthMult, human.growthMult);
+    assert.equal(bot._growEff, growth.spawnEff(16000));
+    settle(bot, 8000 + 3000);
+    settle(human, 16000 + 6000);
+    assert.ok(Math.abs(bot.growthMult - human.growthMult) < 1e-9, bot.growthMult + ' vs ' + human.growthMult);
+    // from the same score the bot is bigger, and gets to 2x on half the points
+    const p = fakeBody(), b = fakeBody(); b.isBot = true;
+    growth.onSpawn(p, 0); growth.onSpawn(b, 0);
+    settle(p, growth.CAP_SCORE / 2); settle(b, growth.CAP_SCORE / 2);
+    assert.ok(b.growthMult > p.growthMult);
+    assert.ok(Math.abs(b.growthMult - growth.RESPAWN_CAP) < 1e-9);
+    // the multiplier is growth only: scoreFor is read, never written
+    let reads = 0;
+    growth.tick(9e6, [b], () => { reads++; return 5000; });
+    assert.equal(reads, 1);
+    assert.equal(growth.scoreMult(human), 1);
+    assert.equal(growth.scoreMult(null), 1);
 });
 
 test('off', () => {

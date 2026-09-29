@@ -10,12 +10,13 @@
 
 const RESPAWN_SHARE = 0.25;
 const RESPAWN_CAP = 2;
-const BEND = 2.3;            // where the curve starts easing off
-const LIVE_CEIL = 3.3;       // soft ceiling: approached, never reached
 const GAIN = 0.64;
 const SCALE = 1100;          // 2x at ~4.1k score (was 1500: ~5.7k)
+// Bots grow from BOT_SCORE_MULT times their score, so a server has big
+// tanks around to chase. Growth only: the board keeps the real score.
+const BOT_SCORE_MULT = 2;
 // the "you grew" card fires when a life crosses one of these
-const STAGES = [1.25, 1.5, 1.75, 2, 2.3, 2.6, 2.9];
+const STAGES = [1.25, 1.5, 1.75, 2, 2.3, 2.6, 2.9, 3.25, 3.5, 4, 4.5, 5, 6, 7, 8, 10];
 const REFRESH_STEP = 0.03;   // stats are recomputed every time size moves this much
 const EASE_MS = 900;
 
@@ -23,18 +24,17 @@ function enabled() {
     return !!(Config.dig_royale && Config.royale_growth && !Config.tutorial);
 }
 
-// 1 + GAIN*ln(1 + s/SCALE): early points show, then each step costs more.
-// Past BEND it bends toward LIVE_CEIL.
+// 1 + GAIN*ln(1 + s/SCALE): early points show, then each step costs more,
+// but there's no ceiling: every doubling of score still adds ~0.44x.
 function multFor(score) {
     const s = Math.max(0, score || 0);
-    const raw = 1 + GAIN * Math.log(1 + s / SCALE);
-    if (raw <= BEND) return raw;
-    const room = LIVE_CEIL - BEND;
-    return BEND + room * (1 - Math.exp(-(raw - BEND) / room));
+    return 1 + GAIN * Math.log(1 + s / SCALE);
 }
 
 // the growth score that lands exactly on RESPAWN_CAP
 const CAP_SCORE = SCALE * (Math.exp((RESPAWN_CAP - 1) / GAIN) - 1);
+
+function scoreMult(body) { return body && body.isBot ? BOT_SCORE_MULT : 1; }
 
 // What a fresh life starts growing from: a quarter of the raid score, capped.
 function spawnEff(score) {
@@ -84,7 +84,7 @@ function stageOf(g) {
 function onSpawn(body, score, keep) {
     if (!body) return;
     if (!enabled()) { body.growthMult = 1; return; }
-    const s = Math.max(0, score || 0);
+    const s = Math.max(0, score || 0) * scoreMult(body);
     body._growScore0 = s;
     body._growEff = keep > 0 ? keep : spawnEff(s);
     body._growTarget = multFor(body._growEff);
@@ -95,10 +95,10 @@ function onSpawn(body, score, keep) {
     try { body.refreshBodyAttributes(); } catch { /* */ }
 }
 
-// Every raid tick. scoreFor(body) -> raid score. onStage(body, g, stageIdx)
-// fires when a life grows into a new stage; onRefit(body, fresh) after each
-// size step (fresh: a body seen for the first time), so the raid can make
-// room in the rock for the bigger hull.
+// Every raid tick. scoreFor(body) -> raid score (a bot's counts double).
+// onStage(body, g, stageIdx) fires when a life grows into a new stage;
+// onRefit(body, fresh) after each size step (fresh: a body seen for the
+// first time), so the raid can make room in the rock for the bigger hull.
 let lastAt = 0;
 function tick(t, bodies, scoreFor, onStage, onRefit) {
     if (!enabled()) return;
@@ -107,8 +107,9 @@ function tick(t, bodies, scoreFor, onStage, onRefit) {
     const k = Math.min(1, dt / EASE_MS);
     for (const body of bodies) {
         if (!body || body.isDead?.()) continue;
-        const score = scoreFor(body);
+        let score = scoreFor(body);
         if (score == null) continue;
+        score *= scoreMult(body);
         if (body._growEff == null) {
             onSpawn(body, score);
             if (onRefit && body.growthMult > 1.15) { try { onRefit(body, true); } catch { /* */ } }
@@ -143,8 +144,8 @@ function tick(t, bodies, scoreFor, onStage, onRefit) {
 }
 
 module.exports = {
-    RESPAWN_SHARE, RESPAWN_CAP, BEND, LIVE_CEIL, STAGES, CAP_SCORE,
-    enabled, multFor, spawnEff, onSpawn, tick, applyPerks, stageOf,
+    RESPAWN_SHARE, RESPAWN_CAP, STAGES, CAP_SCORE,
+    BOT_SCORE_MULT, enabled, multFor, spawnEff, scoreMult, onSpawn, tick, applyPerks, stageOf,
     speedMult, healthMult, damageMult, bodyDamageMult, statMult, fovMult, viewMult, mineMult,
     SCALE, GAIN, STAT_AT_100K, VIEW_MAX,
 };

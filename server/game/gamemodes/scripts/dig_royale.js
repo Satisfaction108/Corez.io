@@ -81,11 +81,16 @@ const FIRST_MINUTES = {
     // unless that player damages a bot first (on top of the spawn shield).
     BOT_GRACE_MS: 15_000,
     BOT_GRACE_NEW_MS: 30_000,     // new players
-    NEW_PLAYER_LIVES: 5,          // career lives (guest games / account lives) + this session's, under this = new
-    // Soft window (controllers.js botSoft): for the first BOT_SOFT_MS of every
-    // life, and every life of a new player, bots never start a fight with you,
-    // skip you unless you come within SOFT_CLOSE_R or shoot them, and aim worse.
+    BOT_GRACE_BOT_MS: 12_000,     // a fresh bot, from other bots
+    // Who is new: botDifficulty.newness, from total play time (account or
+    // guest play_ms + this session) and lives started. Fully new = botNewbie.
+    // Soft window (controllers.js botSoft): for the start of every life, and
+    // every life of a new player, bots never start a fight with you, skip you
+    // unless you come within SOFT_CLOSE_R or shoot them, and aim worse. The
+    // window runs BOT_SOFT_MS for a new player, BOT_SOFT_SHORT_MS for anyone
+    // else, in between while newness fades.
     BOT_SOFT_MS: 120_000,
+    BOT_SOFT_SHORT_MS: 25_000,
     SOFT_CLOSE_R: 320,
     SOFT_HIT_MS: 4000,            // a bot you hit fights back for this long
     NEW_TARGET_PENALTY: 600,      // bots rank a soft player as if this much farther away
@@ -526,7 +531,8 @@ function broadcast(extra = {}) {
     // between raids (RAID OVER -> next raid): seconds until the next one, so
     // a player joining in that window gets a real countdown
     const ending = raidEnding ? 1 : 0;
-    const nextIn = raidEnding ? Math.max(0, Math.ceil((raidResultsAt + RAID_END_BEAT_MS + RAID_END_WAIT_MS - t) / 1000)) : 0;
+    const nextMs = raidEnding ? Math.max(0, Math.round(raidResultsAt + RAID_END_BEAT_MS + RAID_END_WAIT_MS - t)) : 0;
+    const nextIn = Math.ceil(nextMs / 1000);
     const bossSnap = bosses.snapshot();
     const chestSnap = chests.snapshot();
     const bloomSnap = blooms.snapshot();
@@ -544,7 +550,7 @@ function broadcast(extra = {}) {
         phase: 'live', left: raidLeft, alive, fill: fillCap(), humans: humanCount, winner: null, storm: st, toast: liveToast,
         feed: killFeed.slice(-8), board, lock, lockLeft, matchId: raidId, raidId, raidLeft, raidMs: RAID_MS,
         occupyMs: OCCUPY_MS, lockoutMs: LOCKOUT_MS, objectives, bloom: bloomSnap, chest: null, chests: chestSnap,
-        boss: bossSnap, event: eventSnap, mod: modSnap, pings, results: raidResults, ending, nextIn, ...extra,
+        boss: bossSnap, event: eventSnap, mod: modSnap, pings, results: raidResults, ending, nextIn, nextMs, ...extra,
     });
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
@@ -1005,11 +1011,18 @@ function freshRaidBody(body) {
     // bots leave a fresh spawn alone until this, or until it damages a bot
     // (game/index.js clears it); new players get longer and softer focus
     if (body.socket) {
-        const fresh = isNewPlayer(body.socket);
+        const n = newnessOf(body.socket, body);
+        const fresh = n >= 1;
         body.botNewbie = fresh;
+        body.botNewness = n;
         body.botGraceUntil = now() + (fresh ? FIRST_MINUTES.BOT_GRACE_NEW_MS : FIRST_MINUTES.BOT_GRACE_MS);
-        body.botSoftUntil = now() + FIRST_MINUTES.BOT_SOFT_MS;
+        body.botSoftMs = botDiff.lerp(FIRST_MINUTES.BOT_SOFT_SHORT_MS, FIRST_MINUTES.BOT_SOFT_MS, n);
+        body.botSoftUntil = now() + body.botSoftMs;
         stampBotDifficulty(body);
+    } else if (body.isBot) {
+        // bots leave a fresh bot alone for a moment too, or a respawn walks
+        // into the fight that killed it and never gets to grow
+        body.botGraceUntil = now() + FIRST_MINUTES.BOT_GRACE_BOT_MS;
     }
     const extra = raidMods.num('extraSkill', 0);
     if (extra > 0 && !body._modSkillGiven) {
@@ -1021,52 +1034,74 @@ function freshRaidBody(body) {
 }
 
 // ── new players ───────────────────────────────────────────────────────────
-// Lives played before this session: guest games (guests table) or account
-// lives (user_stats), read once per socket. Unknown identity -> 0, asked again.
-function careerLives(socket) {
-    if (!socket) return 0;
-    if (socket._careerLives !== undefined) return socket._careerLives;
-    let n = null;
+// Before this session: lives (guest games or account lives) and play time
+// (play_ms in guests / user_stats), read once per socket. Unknown identity
+// -> 0, asked again next time.
+function careerRecord(socket) {
+    if (!socket) return { lives: 0, ms: 0 };
+    if (socket._careerLives !== undefined) return { lives: socket._careerLives, ms: socket._careerPlayMs || 0 };
+    let row = null, known = false;
     try {
         const d = require('../../../accounts/db').handle();
         if (d) {
             if (socket.account && socket.account.id) {
-                const row = d.get('SELECT lives FROM user_stats WHERE user_id = ?', socket.account.id);
-                n = row ? (row.lives | 0) : 0;
+                known = true;
+                row = d.get('SELECT lives, play_ms AS ms FROM user_stats WHERE user_id = ?', socket.account.id);
             } else if (socket.guestId) {
-                const row = d.get('SELECT games FROM guests WHERE guest_id = ?', socket.guestId);
-                n = row ? (row.games | 0) : 0;
+                known = true;
+                row = d.get('SELECT games AS lives, play_ms AS ms FROM guests WHERE guest_id = ?', socket.guestId);
             }
         }
-    } catch { n = null; }
-    if (n === null) return 0;
-    socket._careerLives = n;
-    return n;
+    } catch { known = false; }
+    if (!known) return { lives: 0, ms: 0 };
+    socket._careerLives = row ? (row.lives | 0) : 0;
+    socket._careerPlayMs = row ? Math.max(0, +row.ms || 0) : 0;
+    return { lives: socket._careerLives, ms: socket._careerPlayMs };
 }
-function isNewPlayer(socket) {
-    if (!socket) return false;
-    return careerLives(socket) + (socket._royaleLives | 0) < FIRST_MINUTES.NEW_PLAYER_LIVES;
+function careerLives(socket) { return careerRecord(socket).lives; }
+// Total time played: career, this session's finished lives, and the life
+// `body` is in right now.
+function playedMs(socket, body) {
+    let ms = careerRecord(socket).ms + (socket._royalePlayMs || 0);
+    if (body && body.royaleBornAt && body.royaleAlive !== false && !body.isDead?.()) ms += Math.max(0, now() - body.royaleBornAt);
+    return ms;
+}
+// 1 brand new .. 0 not new (botDifficulty.newness). Lives started counts
+// the one `body` is on, whether or not the spawn path has booked it yet.
+function newnessOf(socket, body) {
+    if (!socket) return 0;
+    const lives = careerLives(socket) + (socket._royaleLives | 0) + (body && body._lifeCounted ? 0 : 1);
+    return botDiff.newness(playedMs(socket, body), lives);
+}
+function isNewPlayer(socket, body) {
+    return !!socket && newnessOf(socket, body) >= 1;
 }
 // How hard bots play against this player (miscFiles/botDifficulty.js has
 // the whole mapping): new players 0, signed-in players by rank, guests and
-// placement by this raid's score and kills. Stamped on the body at spawn and
-// then about once a second; the rank comes from body.rankCode, which the
-// accounts bridge already set at spawn, so nothing here touches the DB.
+// placement by this raid's score and kills or their time played, fading in
+// from 0 as newness wears off. Stamped on the body at spawn and then about
+// once a second; the rank comes from body.rankCode, which the accounts
+// bridge already set at spawn, so nothing here touches the DB after the
+// first read.
 function stampBotDifficulty(body) {
     const socket = body && body.socket;
     if (!socket) return;
+    const n = newnessOf(socket, body);
+    body.botNewness = n;
+    body.botNewbie = n >= 1;
     if (socket._botDiffPin != null) { body.botDifficulty = socket._botDiffPin; return; }
     const key = statKeyFor(body);
     const s = key ? raidStats.get(key) : null;
     const d = botDiff.forPlayer({
-        newbie: !!body.botNewbie,
+        newness: n,
         rankCode: body.rankCode | 0,
         score: s ? scoreOf(s) : 0,
         kills: s ? s.kills | 0 : 0,
         sessionBest: socket._botDiffBest || 0,
+        playMs: playedMs(socket, body),
     });
     body.botDifficulty = d;
-    if (!body.botNewbie && !(body.rankCode | 0) && d > (socket._botDiffBest || 0)) socket._botDiffBest = d;
+    if (!n && !(body.rankCode | 0) && d > (socket._botDiffBest || 0)) socket._botDiffBest = d;
 }
 
 // New players, and anyone on one of this session's first few deaths
@@ -1256,8 +1291,9 @@ function spawnRaidBot() {
     // duos: two of the bots are a team (they spawn together and cover each other)
     const plan = Config.royale_duos ? duo.botSpawnPlan(enemyBots()) : null;
     const hole = (plan && plan.near && spotNearMate(null, plan.near)) || safeSpawnSpot(null, true);
-    // duos: a team id nobody had this raid (stale board rows keep theirs)
-    const team = plan ? plan.team : Config.royale_duos ? duo.freshTeamId() : getRandomTeam();
+    // a team id nobody had this raid (stale board rows keep theirs). Solo too:
+    // a plain random id can match a live body's and make the two a team
+    const team = plan ? plan.team : duo.freshTeamId();
     handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team);
     const bot = handler.bots[handler.bots.length - 1];
     if (!bot) return;
@@ -1266,6 +1302,7 @@ function spawnRaidBot() {
     bot.botRespawnsRemaining = 0;
     bot.royaleAlive = true;
     bot.royaleBornAt = now();
+    bot.botGraceUntil = now() + FIRST_MINUTES.BOT_GRACE_BOT_MS;
     bot.weakDrillUntil = 0;
     try { gems.initSatchel(bot); } catch { /* */ }
     try { bot.refreshBodyAttributes(); } catch { /* */ }
@@ -1428,6 +1465,7 @@ function onCombatantDead(body) {
     if (!Config.dig_royale || !body) return;
     if (body.royaleAlive === false) return;
     body.royaleAlive = false;
+    if (body.socket && body.royaleBornAt) body.socket._royalePlayMs = (body.socket._royalePlayMs || 0) + Math.max(0, now() - body.royaleBornAt);
     tankDeathFx(body);
     const key = statKeyFor(body);
     const s = key ? (raidStats.get(key) || ensureStat(body)) : null;
@@ -1736,6 +1774,7 @@ function onHumanJoin(body) {
         try { shop.talkState(body.socket); } catch { /* */ }
         // this life counts toward "new player" from the next spawn on
         if (!resuming) body.socket._royaleLives = (body.socket._royaleLives | 0) + 1;
+        body._lifeCounted = true;
         try { lateJoinNote(body); } catch { /* */ }
         // the resume itself waits for sockets.initalizePlayer to finish the
         // level-45 fill, or those level-up points would land on top of the
@@ -1792,6 +1831,8 @@ function saveResume(socket, body) {
             raidDeathStreak: socket.raidDeathStreak || 0, royaleRespawnAt: socket.royaleRespawnAt || 0,
             lastRaidDeathAt: socket.lastRaidDeathAt || 0,
             _royaleLives: socket._royaleLives || 0, _lateNoteKey: socket._lateNoteKey || "",
+            // time played so far, the life cut short by the drop included
+            _royalePlayMs: (socket._royalePlayMs || 0) + (alive && body.royaleBornAt ? Math.max(0, t - body.royaleBornAt) : 0),
         },
         carried: 0,
     };
@@ -2182,7 +2223,8 @@ function startRaid(first) {
     raidStartAt = now();
     raidEndsAt = raidStartAt + RAID_MS;
     raidStats = new Map();
-    if (Config.royale_duos) { try { duo.newRaid(); } catch (e) { guardLog('duo new raid', e); } }
+    // frees last raid's team ids (both servers hand them out, see freshTeamId)
+    try { duo.newRaid(); } catch (e) { guardLog('new raid team ids', e); }
     try { rankHooks.onRaidStart(); } catch (e) { guardLog('rank raid start', e); }
     shopRewardCount = new Map();
     killFeed = [];
@@ -2488,9 +2530,7 @@ function growRoom(body, hold) {
 }
 function onGrown(body, stage, idx) {
     if (!body.socket) return;
-    const top = idx >= growth.STAGES.length;
-    const sub = top ? "That's as big as anyone gets."
-        : stage >= growth.RESPAWN_CAP ? "A respawn brings you back at a quarter of your score's size, " + fmtGrow(growth.RESPAWN_CAP) + " at most."
+    const sub = stage >= growth.RESPAWN_CAP && stage < 2.3 ? "A respawn brings you back at a quarter of your score's size, " + fmtGrow(growth.RESPAWN_CAP) + " at most."
         : "Harder hits, more health, a wider view, a little slower.";
     try { body.socket.talk('KC', "grown", "You grew to " + fmtGrow(stage), 0, sub); } catch { /* */ }
 }
@@ -2638,6 +2678,15 @@ module.exports = {
         if (!st) return null;
         st.extra = (st.extra | 0) + Math.max(0, n | 0) - scoreOf(st);
         return scoreOf(st);
+    },
+    // DBG streak <n>: a kill streak without the kills (the overhead badge)
+    debugSetStreak: (body, n) => {
+        const st = body ? ensureStat(body) : null;
+        if (!st) return null;
+        st.alive = true;
+        st.streak = Math.max(0, Math.min(99, n | 0));
+        st.bestStreak = Math.max(st.bestStreak | 0, st.streak);
+        return st.streak;
     },
     debugGrowth: (body) => body ? { g: +(body.growthMult || 1).toFixed(3), target: +(body._growTarget || 1).toFixed(3), eff: body._growEff | 0,
         score: growthScore(body), size: +body.size.toFixed(2), realSize: +body.realSize.toFixed(2), fov: Math.round(body.fov),

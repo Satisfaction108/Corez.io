@@ -8,6 +8,7 @@
 import { global } from "./global.js";
 import { config } from "./config.js";
 import { gameSound } from "./sound.js";
+import * as raidShare from "./raidShare.js";
 
 let A = null;
 export function init(helpers) { A = helpers; }
@@ -32,7 +33,7 @@ const S = {
     top: [], rows: 0, duos: false, winner: "", mate: "", place: 0, isWin: false,
     me: { score: 0, kills: 0, banked: 0, next: 0 },
     respawnAsked: false, filtered: false, lastTick: 0, podSnd: 0, tallyEnd: false,
-    gemAcc: 0, paperAcc: 0, streak: null, fx: 0, fy: 0, fr: 0, fok: false,
+    gemAcc: 0, paperAcc: 0, nextSpan: 0, crownHit: false, crownAt: 0, holdArmed: false, snapped: false, streak: null, fx: 0, fy: 0, fr: 0, fok: false,
 };
 
 const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
@@ -73,6 +74,7 @@ export function start(sub) {
     S.podSnd = 0;
     S.tallyEnd = false;
     S.gemAcc = S.paperAcc = 0;
+    S.nextSpan = 0;
     S.fok = false;
     S.seen.clear();
     S.winIds.clear();
@@ -92,7 +94,14 @@ export function start(sub) {
     S.mate = S.duos && r.duo && r.duo.mate ? String(r.duo.mate.name || "your teammate") : "";
     if (!S.streak || now - S.streak.at > 20000) S.streak = null;
     P.n = 0;
-    if (shakeOn() && !calm()) global.hitStop = Math.max(global.hitStop || 0, Date.now() + 240);
+    S.crownHit = false;
+    S.crownAt = 0;
+    S.snapped = false;
+    // the hit-stop starts after the first finale frame, so the frame it
+    // holds is the flash and RAID OVER, not the last second of the raid
+    S.holdArmed = shakeOn() && !calm();
+    if (S.holdArmed) kick(now, 0.05, 1.6, 1200);
+    raidShare.clearView();
     try { gameSound.rankShatter(); } catch (e) { /* */ }
     setFreezeFilter(!lite());
     // already dead (respawning, spectating a killer): watch the winner too
@@ -117,7 +126,9 @@ export function stop() {
     if (!S.on) return;
     S.on = false;
     P.n = 0;
+    K.n = 0;
     setFreezeFilter(false);
+    raidShare.hide();
 }
 
 function watchWinner(follow) {
@@ -150,6 +161,61 @@ export function seen(id, fx, fy, fr) {
     if (!s) { s = { x: 0, y: 0, r: 0, at: 0 }; S.seen.set(id, s); }
     s.x = fx; s.y = fy; s.r = fr; s.at = performance.now();
 }
+
+// ── the shake ─────────────────────────────────────────────────────────────
+// A hard hit at the freeze and a smaller thud when the crown lands. It moves
+// the whole game layer with a CSS transform (the compositor does it, no canvas
+// work), so it keeps going through the hit-stop, when no frames are drawn.
+// No Screen Shake or reduced motion: no shake at all. Both are over well
+// before the podium comes up.
+const K = { n: 0, at: new Float64Array(2), amp: new Float32Array(2), rot: new Float32Array(2), ms: new Float32Array(2) };
+let wrapEl = null, shaking = false;
+// amp is a share of the smaller screen side, rot is degrees
+function kick(now, amp, rot, ms) {
+    if (!shakeOn() || calm()) return;
+    const i = K.n < 2 ? K.n++ : 0;
+    K.at[i] = now; K.amp[i] = amp; K.rot[i] = rot; K.ms[i] = ms;
+}
+// app.js renderFrame, every frame (hit-stop included)
+export function shakeFrame(now) {
+    if (!K.n && !shaking) return;
+    if (!wrapEl) wrapEl = document.getElementById("gameAreaWrapper");
+    if (!wrapEl) return;
+    let dx = 0, dy = 0, dr = 0, peak = 0;
+    const on = shakeOn() && !calm();
+    for (let i = 0; i < K.n; i++) {
+        const t = now - K.at[i];
+        if (!on || t > K.ms[i]) {
+            // done: the last one takes its slot
+            const j = --K.n;
+            K.at[i] = K.at[j]; K.amp[i] = K.amp[j]; K.rot[i] = K.rot[j]; K.ms[i] = K.ms[j];
+            i--;
+            continue;
+        }
+        if (t < 0) continue;
+        // a snap in over 35 ms, then a fast fall that eases to nothing
+        const u = t / K.ms[i];
+        const env = (t < 35 ? t / 35 : 1) * Math.exp(-3.6 * u) * (1 - u);
+        const a = K.amp[i] * env;
+        // the first beat slams down, then it rattles every way
+        const slam = t < 90 ? 1 - t / 90 : 0;
+        dx += a * (Math.sin(t * 0.071 + 1.3) * 0.62 + Math.sin(t * 0.163 + 0.2) * 0.38) * (1 - slam * 0.7);
+        dy += a * (Math.cos(t * 0.089 + 0.5) * 0.58 + Math.sin(t * 0.141 + 2.1) * 0.42) * (1 - slam) + a * slam;
+        dr += K.rot[i] * env * Math.sin(t * 0.053 + 0.9);
+        if (a > peak) peak = a;
+    }
+    if (!K.n) {
+        if (shaking) { shaking = false; wrapEl.style.transform = ""; }
+        return;
+    }
+    shaking = true;
+    // a little zoom with it, so the moved layer never shows its edges
+    const side = Math.max(1, Math.min(window.innerWidth, window.innerHeight));
+    const sc = 1 + 3.2 * peak + 0.004;
+    wrapEl.style.transform = "translate(" + (dx * side).toFixed(1) + "px," + (dy * side).toFixed(1) + "px) rotate(" + dr.toFixed(2) + "deg) scale(" + sc.toFixed(3) + ")";
+}
+// QA hook: live kicks and the transform they set
+window.dwFinaleShake = () => { const tr = wrapEl ? wrapEl.style.transform : ""; return { n: K.n, tr }; };
 
 // ── baked art ─────────────────────────────────────────────────────────────
 let crownSpr = null, spotSpr = null, raySpr = null;
@@ -394,6 +460,24 @@ function bigTitle(c, text, x, y, size, fill, dark, alpha, scale = 1) {
     c.fillText(text, 0, 0);
     c.restore();
 }
+// red and cyan ghosts of a title pulled apart sideways, added over it
+function splitTitle(c, text, x, y, size, scale, k) {
+    const d = size * 0.13 * Math.sqrt(k);
+    if (d < 0.5) return;
+    c.save();
+    c.translate(x, y);
+    if (scale !== 1) c.scale(scale, scale);
+    c.font = titleFont(size);
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.globalCompositeOperation = "lighter";
+    c.globalAlpha = 0.55 * k;
+    c.fillStyle = "#ff2e4a";
+    c.fillText(text, -d, d * 0.25);
+    c.fillStyle = "#2ee6ff";
+    c.fillText(text, d, -d * 0.25);
+    c.restore();
+}
 // "<name> won the raid" with the name in gold
 function nameLine(c, name, rest, x, y, size, alpha) {
     const HUD = A.HUD;
@@ -454,7 +538,7 @@ export function draw() {
         c.fillStyle = "#1a1526";
         c.fillRect(0, 0, W, H);
         if (t < 160) {
-            c.globalAlpha = (still ? 0.3 : 0.8) * (1 - t / 160);
+            c.globalAlpha = (still ? 0.3 : 0.6) * (1 - t / 160);
             c.fillStyle = "#fff6dc";
             c.fillRect(0, 0, W, H);
         }
@@ -474,7 +558,10 @@ export function draw() {
         const out = t > TITLE_OUT - 400 ? clamp((TITLE_OUT - t) / 400) : 1;
         const lift = t > TITLE_OUT - 400 ? (1 - out) * 60 : 0;
         const size = Math.min(150, W * 0.1);
-        bigTitle(c, "RAID OVER", W / 2, H * 0.42 - lift, size, HUD.gold, HUD.goldDk, Math.min(1, t / 120) * out, pop);
+        // it lands at full strength on the frame the hit-stop holds, and the
+        // hit splits its colour for a moment
+        bigTitle(c, "RAID OVER", W / 2, H * 0.42 - lift, size, HUD.gold, HUD.goldDk, (still ? Math.min(1, t / 120) : 1) * out, pop);
+        if (!still && shakeOn() && t < 600) splitTitle(c, "RAID OVER", W / 2, H * 0.42 - lift, size, pop, 1 - t / 600);
         if (S.sub) A.hudTitle(S.sub, W / 2, H * 0.42 + size * 0.72 - lift, 30, HUD.head, "center", Math.min(1, t / 300) * out, c);
     }
 
@@ -488,6 +575,12 @@ export function draw() {
     if (S.reveal) {
         const rt = now - S.reveal;
         drawWinnerFx(c, rt, now);
+        if (S.crownAt && !still && now - S.crownAt < 140) {
+            c.globalAlpha = 0.16 * (1 - (now - S.crownAt) / 140);
+            c.fillStyle = "#fff6dc";
+            c.fillRect(0, 0, W, H);
+            c.globalAlpha = 1;
+        }
         if (dt > 0) {
             // a gem shower for the first seconds, then a light paper trickle
             if (!lite() && rt < 2600) {
@@ -506,6 +599,15 @@ export function draw() {
         drawNext(c, rt, now, W, H);
     }
     c.restore();
+    if (S.holdArmed) {
+        S.holdArmed = false;
+        global.hitStop = Math.max(global.hitStop || 0, Date.now() + 240);
+    }
+    // the share card's backdrop: the world once the crown is on
+    if (S.reveal && !S.snapped && now - S.reveal > 700) {
+        S.snapped = true;
+        raidShare.snapView(S.fok, S.fx, S.fy, S.fr);
+    }
 }
 
 function reveal(now, W, H) {
@@ -577,6 +679,12 @@ function drawWinnerFx(c, rt, now) {
         // tank has none)
         const land = y - r - (s === S.seen.get(A.selfId()) ? 4 : Math.max(44, r * 0.5));
         const k = clamp(rt / 650);
+        // the first touch of the bounce: a thud
+        if (!S.crownHit && k >= 1 / 2.75) {
+            S.crownHit = true;
+            S.crownAt = now;
+            kick(now, 0.016, 0.5, 480);
+        }
         const dropY = still ? 0 : -(1 - easeBounce(k)) * (land + g);
         const bob = still ? 0 : Math.sin(now / 430) * g * 0.04;
         c.save();
@@ -664,6 +772,15 @@ function drawPanels(c, rt, now, W, H) {
         drawRewards(c, rt - REWARDS_AT, now);
         c.restore();
     }
+    // Share sits on the top right corner of the raid card, once it is in
+    if (rt > REWARDS_AT + 350) raidShare.place(lay.rx + PW * lay.s, lay.ry - 10, shareInfo);
+}
+function shareInfo() {
+    return {
+        place: S.place, rows: S.rows, duos: S.duos, name: global.playerName || "Unnamed",
+        score: S.me.score, kills: S.me.kills, banked: S.me.banked, top: S.top,
+        fok: S.fok, fx: S.fx, fy: S.fy, fr: S.fr, crown: crownSprite(),
+    };
 }
 
 const RANK_COL = [null, ["#f2b83c", "#a8750f"], ["#e6e1ee", "#8d8799"], ["#e07b2e", "#9e4a14"]];
@@ -787,9 +904,10 @@ function drawNext(c, rt, now, W, H) {
     const HUD = A.HUD;
     const k = clamp((rt - NEXT_AT) / 400);
     if (k <= 0) return;
-    const r = global.royale || {};
-    const age = r.at > 0 ? (now - r.at) / 1000 : 0;
-    const left = r.ending ? Math.max(0, (r.nextIn | 0) - age) : 0;
+    // one deadline (socketinit), and the bar drains from wherever it was
+    // when the plate came up, so it only ever empties
+    const left = global.raidNextLeft ? global.raidNextLeft(now) : 0;
+    if (!S.nextSpan && left > 0) S.nextSpan = Math.max(1, left);
     const w = Math.min(470, W - 40), h = 60;
     const x = W / 2 - w / 2, y = H - h - 22;
     c.save();
@@ -799,7 +917,7 @@ function drawNext(c, rt, now, W, H) {
     A.hudTitle(left > 0.5 ? Math.ceil(left) + "s" : "Now", x + 20, y + 39, 26, HUD.play, "left", 1, c);
     const line = left > 0.5 ? "You're in. Everyone drops in together." : "Dropping you in…";
     A.drawText(line, x + w - 20, y + 29, fitSize(line, 14, w - 130, 10), HUD.head, "right", true);
-    A.hudBar(c, x + 96, y + h - 13, w - 116, 6, clamp(left / 11), HUD.play);
+    A.hudBar(c, x + 96, y + h - 13, w - 116, 6, S.nextSpan ? clamp(left / S.nextSpan) : 0, HUD.play);
     c.restore();
 }
 

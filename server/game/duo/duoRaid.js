@@ -3,7 +3,8 @@
 // (duoTeams.js), reads party tickets from the 'DQ' packet, hands every
 // spawning human their team id and colour, finds partners, and runs the one
 // bot duo. dig_royale.js and sockets.js call in here; everything is a no-op
-// when duos are off.
+// when duos are off, except the team id pool (freshTeamId, newRaid), which the
+// solo server uses too.
 //
 // Colour: partners share one team id, and the palette colour belongs to the
 // team (global.royaleHeldTeamColors keeps it while the team exists, even when
@@ -38,7 +39,8 @@ const book = new DuoTeams({ newTeamId: () => freshTeamId(), fillWaitMs: FILL_WAI
 const usedIds = new Set();
 
 // A team id nobody has had this raid, no living body uses, and the book
-// doesn't hold. Every combatant on the duo server gets its team from here.
+// doesn't hold. Every combatant on either royale server gets its team from
+// here (on solo the book is always empty, so each body is a team of one).
 function freshTeamId() {
     for (let i = 0; i < 200; i++) {
         const id = global.getRandomTeam ? global.getRandomTeam() : -200 - Math.floor(Math.random() * 3000);

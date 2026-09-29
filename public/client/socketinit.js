@@ -520,6 +520,13 @@ function reducedMotion() {
     } catch (e) { return false; }
 }
 global.reducedMotion = reducedMotion;
+// Seconds until the next raid while one is over (0 otherwise), off the one
+// deadline the RY handler keeps. Stale raid state reads as 0.
+global.raidNextLeft = (now) => {
+    const r = global.royale;
+    if (!r || !r.ending || !(r.nextAt > 0) || now - r.at > 3000) return 0;
+    return Math.max(0, (r.nextAt - now) / 1000);
+};
 // Tank knockout burst, drawn by app.js drawTankBursts. col is the raw
 // compiled colour; born can sit in the future to wait out a hit-stop.
 function pushTankBurst(x, y, col, size, self, born) {
@@ -1332,6 +1339,14 @@ let incoming = async function(message, socket) {
                     r.lockLeft = d.lockLeft | 0;
                     r.ending = d.ending | 0;      // between raids
                     r.nextIn = d.nextIn | 0;      // ...seconds to the next one
+                    // One deadline for the next raid, so the countdown only
+                    // ever runs down. A late packet reads as a later deadline
+                    // and is ignored; a real change (a new wait) re-bases it.
+                    if (r.ending) {
+                        const due = r.at + (d.nextMs != null ? +d.nextMs || 0 : r.nextIn * 1000);
+                        if (!(r.nextAt > 0) || Math.abs(due - r.nextAt) > 1500) r.nextAt = due;
+                        else if (due < r.nextAt) r.nextAt = due;
+                    } else r.nextAt = 0;
                     r.you = d.you || null;
                     r.duos = d.duos | 0;
                     r.teams = d.teams || null;

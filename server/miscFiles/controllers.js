@@ -517,11 +517,15 @@ class io_nearestDifferentMaster extends IO {
             mostDangerous = Math.max(e.dangerValue, mostDangerous);
         }
         let keepTarget = false;
+        // A raid boss is everyone's problem: its guns take the nearest tank,
+        // not the highest tier in reach (a Basic next to it used to be
+        // ignored while any upgraded tank was in range).
+        const anyTier = this.body.aiSettings.farm || this.body.master.master.isRoyaleBoss;
         const finalTargets = validCandidates.filter((e) => {
             // Even more expensive
             return !this.wouldHitWall(e);
         }).filter(e => {
-            if (this.body.aiSettings.farm || e.dangerValue === mostDangerous) {
+            if (anyTier || e.dangerValue === mostDangerous) {
                 if (this.targetLock && e.id === this.targetLock.id) {
                     keepTarget = true;
                 }
@@ -1418,18 +1422,19 @@ function firstMinutes() {
     return firstMinutesCfg || { NEW_TARGET_PENALTY: 600, NEW_MAX_HUNTERS: 1, SOFT_CLOSE_R: 320, SOFT_HIT_MS: 4000, MAX_HUNTERS: 2, BOT_SOFT_MS: 120_000 };
 }
 function inBotGrace(root, now) {
-    return !!(root && root.isPlayer && (root.botGraceUntil || 0) > now);
+    return !!(root && (root.isPlayer || root.isBot) && (root.botGraceUntil || 0) > now);
 }
-// A player in the soft window (the first minutes of every life, or any life
-// of a new player) is only fought by a bot they walk right up to or shoot.
-// The window shrinks with the player's bot difficulty: a newcomer gets all
-// of BOT_SOFT_MS, the hardest a third of it (botDifficulty.js softShare).
+// A player in the soft window (the start of every life, or any life of a
+// new player) is only fought by a bot they walk right up to or shoot. The
+// window is long while a player is new and short after (body.botSoftMs,
+// dig_royale freshRaidBody), and shrinks with their bot difficulty on top:
+// all of it at 0, a third at the hardest (botDifficulty.js softShare).
 function botSoft(root, now) {
     if (!root || !root.isPlayer) return false;
     if (root.botNewbie) return true;
     const until = root.botSoftUntil || 0;
     if (until <= now) return false;
-    const full = firstMinutes().BOT_SOFT_MS || 120_000;
+    const full = root.botSoftMs || firstMinutes().BOT_SOFT_MS || 120_000;
     return now < until - full + full * botDiff.softShare(botDiff.of(root, now));
 }
 function softSpared(bot, target, now) {
@@ -1757,6 +1762,11 @@ const GOAL_PRIORITY = {
 // whatever it is doing and regroups; past TEAM_LEASH it does when nothing is
 // on it. Fights it picks itself stay within TEAM_FIGHT_R of the human.
 const TEAM_LEASH = 900, TEAM_LEASH_FAR = 1300, TEAM_FIGHT_R = 1000;
+// bots that may take on a raid boss at once
+const BOSS_HUNTERS = 3;
+// a bot starts a fight with another bot only when the trade looks at least
+// this good (threatRatio; players follow botDifficulty.initThreat)
+const BOT_FIGHT_THREAT = 0.9;
 const GOAL_HOLD = {
     survive: 2200, regroup: 3000, bank: 7000, fight: 2800, collect: 2600,
     defend: 4500, objective: 9000, rally: 6000, chest: 7000, mine: 5000, explore: 9000,
@@ -2442,10 +2452,14 @@ class io_digWarsGoals extends IO {
         const human = this.teamHuman();
         if (human && Math.hypot(target.x - human.x, target.y - human.y) > TEAM_FIGHT_R &&
             !(this.body._lastDamageSource === target && now - (this.body._lastDamageAt || 0) < 3000)) return false;
+        // a fresh bot gets going (mines, grows) before it looks for trouble
+        if (inBotGrace(this.body, now)) return false;
         // never start a fight the numbers say we lose (against a player, how
-        // bad a trade still looks worth it depends on their difficulty)
+        // bad a trade still looks worth it depends on their difficulty;
+        // another bot is only picked on when it is the weaker one, so the
+        // winners get big instead of every bot trading lives)
         const diff = botDiff.of(target, now);
-        if (this.threatRatio(target) > (target.isPlayer ? botDiff.initThreat(diff) : 1.2) ||
+        if (this.threatRatio(target) > (target.isPlayer ? botDiff.initThreat(diff) : BOT_FIGHT_THREAT) ||
             (this.fearUntil.get(target.id) || 0) > now) return false;
         // nor one already wounded
         const health = this.body.health.max ? this.body.health.amount / this.body.health.max : 1;
@@ -2573,6 +2587,12 @@ class io_digWarsGoals extends IO {
             !inEnemyBase(body.team, view.enemy.x, view.enemy.y) &&
             this.canInitiateFight(view.enemy, now))
             return { kind: 'fight', target: view.enemy };
+        // A raid boss is the richest thing on the map: a healthy bot goes
+        // for it (a grown one opens, the rest join once it is taken on)
+        if (Config.dig_royale && this.role !== 'guard' && !human) {
+            const boss = this.bossToHunt(now, health);
+            if (boss) return { kind: 'fight', target: boss };
+        }
         // an ore bloom is a magnet for miners: walk over, then mine as usual
         if (Config.dig_royale && this.role !== 'guard') {
             try {
@@ -2592,6 +2612,31 @@ class io_digWarsGoals extends IO {
         if (view.rock)
             return { kind: 'mine', rock: view.rock };
         return { kind: 'explore', point: this.explorePoint(now) };
+    }
+
+    // The boss, if this bot should be on it now. At most BOSS_HUNTERS bots
+    // at once; nobody who is hurt, heavy with gems, a rammer or still wary
+    // of it after a bad trade.
+    bossToHunt(now, health) {
+        if (now < (this.bossCheckAt || 0)) return this.bossPick && !this.bossPick.isDead?.() ? this.bossPick : null;
+        this.bossCheckAt = now + 700;
+        this.bossPick = null;
+        const body = this.body;
+        if (health < 0.7 || this.isRammer() || (body.carriedGems || 0) >= this.bankTarget() * 0.7) return null;
+        let boss = null;
+        try { boss = require('../game/terrain/bosses.js').current(); } catch { return null; }
+        if (!boss || (this.fearUntil.get(boss.id) || 0) > now || this.distanceTo(boss) > 1800) return null;
+        let hunters = 0;
+        for (const tank of botWorldScan().tanks) {
+            if (tank.isBot && tank !== body && (tank._botBossHuntUntil || 0) > now) hunters++;
+        }
+        if (hunters >= BOSS_HUNTERS) return null;
+        const hurt = boss.health.max ? boss.health.amount / boss.health.max < 0.8 : false;
+        const engaged = hunters > 0 || now - (boss.hitAt || 0) < 4000;
+        if (!engaged && !hurt && (body.growthMult || 1) < 1.3) return null;
+        body._botBossHuntUntil = now + 3000;
+        this.bossPick = boss;
+        return boss;
     }
 
     nearChest(now) {
@@ -2852,6 +2897,8 @@ class io_digWarsGoals extends IO {
         let range = this.desiredRange();
         if (this.threatRatio(target) > 1.15)
             range = Math.min(this.weaponRange() * 0.9, range * 1.45);
+        // a boss is wide: keep the standoff from its rim, not its centre
+        if (target.isRoyaleBoss) range = Math.min(this.weaponRange() * 0.9, range + (target.realSize || 0) * 0.6);
         // kite while hurt: the lower the health, the wider the standoff
         const health = this.body.health.max ? this.body.health.amount / this.body.health.max : 1;
         if (health < 0.65)

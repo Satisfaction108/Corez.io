@@ -1,14 +1,25 @@
 // Per-player bot difficulty: node scripts/test/botDifficulty.test.js
 //
 //   mapping    new player 0, ranks climb Bronze I 0.2 .. Legend 0.95,
-//              guests climb with raid score and kills up to 0.85, placement
-//              stops at 0.5, a strong guest's next raid starts part way up
+//              guests climb with raid score and kills, or with time played,
+//              up to 0.85, placement stops at 0.5, a strong guest's next
+//              raid starts part way up
+//   newness    full for the first 5 minutes played and 5 lives, gone by 12
+//              minutes or the 9th life, whichever comes first; difficulty
+//              fades in from 0 over it
 //   of         mercy caps it, bots and bosses as targets are neutral
 //   ceiling    at 1 every knob is still softer than the bots before 07e28b1
 //   middle     at 0.5 the knobs sit on the 07e28b1 tuning
-//   shots      a bot's shot into a player follows that player's difficulty
+//   shots      a bot's shot into a player follows that player's difficulty;
+//              a boss's shot is the same into everyone
 //   bots       one bot plays a newcomer and a veteran differently: soft
 //              window length, hunter cap, reaction time, fight range
+//   stamp      the raid stamps rank or raid score; newness comes from play
+//              time and lives, so a guest who never dies stops being new
+//              and a long session climbs even with a modest score; the soft
+//              window at the start of a life is long only while new
+//   bosses     boss guns and turrets still target a new player once their
+//              grace is over
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -50,6 +61,42 @@ test('mapping', () => {
     // a new raid: 60% of the session's best above the floor
     const next = D.forPlayer({ rankCode: 0, score: 0, kills: 0, sessionBest: 0.75 });
     assert.ok(near(next, 0.15 + 0.6 * 0.6));
+    // time played: a guest who has been on for half an hour faces mid
+    // difficulty even with a modest raid
+    const min = m => m * 60_000;
+    const t = (m, score = 0, kills = 0) => D.forPlayer({ rankCode: 0, score, kills, playMs: min(m) });
+    assert.ok(near(t(0), 0.15));
+    assert.ok(t(10) > 0.33 && t(10) < 0.4, '10 min ' + t(10));
+    assert.ok(t(30) > 0.5 && t(30) < 0.58, '30 min ' + t(30));
+    assert.ok(t(30, 2000, 1) >= t(30) && t(30, 2000, 1) < 0.6, '30 min, modest raid ' + t(30, 2000, 1));
+    assert.ok(t(600) <= 0.6 + 1e-9, 'time alone tops out at 0.6');
+    assert.ok(t(5, 20000, 10) > 0.8, 'a great raid still beats the clock');
+    assert.ok(D.forPlayer({ rankCode: 20, playMs: min(600) }) <= 0.5, 'placement cap');
+    // ranked players keep their tier: time played does not move it
+    assert.ok(near(D.forPlayer({ rankCode: 1, playMs: min(600) }), 0.2));
+});
+
+test('newness', () => {
+    const min = m => m * 60_000;
+    assert.equal(D.newness(0, 1), 1);
+    assert.equal(D.newness(min(4.9), 5), 1, 'five minutes and five lives: still fully new');
+    // the clock: fades from 5 to 12 minutes, whatever the lives say
+    assert.ok(D.newness(min(8.5), 1) > 0.4 && D.newness(min(8.5), 1) < 0.6);
+    assert.equal(D.newness(min(12), 1), 0, 'a player who never dies is not new past 12 minutes');
+    assert.equal(D.newness(min(30), 2), 0);
+    // lives: fades from the 6th to the 9th, whatever the clock says
+    assert.equal(D.newness(min(1), 6), 0.75);
+    assert.equal(D.newness(min(1), 9), 0);
+    assert.equal(D.newness(min(1), 50), 0);
+    // whichever comes first
+    assert.equal(D.newness(min(8.5), 7), Math.min(D.newness(min(8.5), 1), D.newness(0, 7)));
+    // difficulty fades in with it
+    const at = n => D.forPlayer({ rankCode: 0, newness: n, playMs: min(10), score: 5000, kills: 3 });
+    assert.equal(at(1), 0);
+    assert.ok(at(0.5) > 0 && at(0.5) < at(0));
+    assert.ok(near(at(0.5), at(0) / 2));
+    assert.ok(near(D.forPlayer({ rankCode: 13, newness: 0.25 }), 0.7 * 0.75), 'a fading ranked player');
+    assert.equal(D.forPlayer({ newbie: true, rankCode: 13 }), 0);
 });
 
 test('of', () => {
@@ -148,6 +195,18 @@ test('shots', () => {
     // a player's shot is untouched by any of it
     const pShot = { master: vet };
     assert.equal(shotMult(pShot, bot), 1);
+    // a boss is a shared threat: its shots hit a newcomer, a player under
+    // mercy and a veteran the same (its own tuning only)
+    const boss = { isRoyaleBoss: true, bossShotMult: 0.55 };
+    boss.master = boss;
+    const turret = { master: boss };
+    const mercy = { isPlayer: true, botDifficulty: 0.9, socket: { botMercyUntil: Date.now() + 60_000 } };
+    mercy.master = mercy;
+    for (const p of [newbie, vet, mid, mercy, other]) {
+        assert.equal(shotMult({ master: boss }, p), 0.55);
+        assert.equal(shotMult({ master: turret }, p), 0.55, 'turret bullet');
+    }
+    assert.equal(shotMult({ master: boss }), 0.55);
 });
 
 // ---- the bot brain against two players ---------------------------------
@@ -205,7 +264,9 @@ test('bots: soft window, hunter cap, reaction and fight range follow the target'
     p.botNewbie = false;
     loop(2);
     const now = Date.now();
-    // 60 s into a life: soft for a low-difficulty player, over for a high one
+    // 60 s into a long (new player) window: soft for a low-difficulty
+    // player, over for a high one
+    p.botSoftMs = FM.BOT_SOFT_MS;
     p.botSoftUntil = now + FM.BOT_SOFT_MS - 60_000;
     p.botDifficulty = 0.2;
     ctl.senseAt = 0; ctl.sense(now);
@@ -262,12 +323,84 @@ test('bots: the raid stamps each player from rank or raid score', () => {
     royale.freshRaidBody(p);
     assert.equal(p.botNewbie, true);
     assert.equal(p.botDifficulty, 0);
+    assert.equal(p.botSoftMs, FM.BOT_SOFT_MS, 'a new player gets the long soft window');
     // DBG botdiff pins it
     p.socket._careerLives = 100; p.botNewbie = false;
     p.socket.player = { body: p };
     assert.equal(royale.debugBotDiff(p.socket, 90), 0.9);
     assert.equal(royale.debugBotDiff(p.socket, 'off'), 0.7);
     p.kill();
+    loop(2);
+});
+
+test('stamp: newness runs on play time and lives, the soft window follows it', () => {
+    const min = m => m * 60_000;
+    const p = tank(0, (nextY += 1500), false);
+    const sock = p.socket;
+    p.socket.player = { body: p };
+    // a guest with two lives in their past and none of the clock: new
+    sock._careerLives = 2; sock._careerPlayMs = min(1); sock._royaleLives = 0; sock._royalePlayMs = 0;
+    royale.freshRaidBody(p);
+    assert.equal(p.botNewbie, true);
+    assert.equal(p.botSoftMs, FM.BOT_SOFT_MS);
+    // the same guest has now played 30 minutes this session without dying
+    // much (the complaint): not new, and at least mid difficulty
+    sock._royaleLives = 1; p._lifeCounted = true;
+    p.royaleBornAt = Date.now() - min(29);
+    royale.debugBotDiff(sock, 'off');
+    assert.equal(p.botNewbie, false, 'not new after 30 minutes');
+    assert.equal(p.botNewness, 0);
+    assert.ok(p.botDifficulty >= 0.5, 'difficulty ' + p.botDifficulty);
+    assert.ok(Math.abs(p.botDifficulty - D.fromTime(min(30))) < 0.02);
+    // their next life: the short soft window
+    p.deathCause = 'storm';
+    royale.onCombatantDead(p);
+    assert.ok(sock._royalePlayMs >= min(29) - 1000, 'the life was booked: ' + sock._royalePlayMs);
+    const q = tank(0, (nextY += 1500), false);
+    q.socket = sock; sock.player = { body: q };
+    royale.freshRaidBody(q);
+    assert.equal(q.botNewbie, false);
+    assert.equal(q.botSoftMs, FM.BOT_SOFT_SHORT_MS);
+    assert.ok(q.botSoftMs <= 30_000);
+    // halfway through the fade (about 8.5 minutes in all): between the two
+    sock._royalePlayMs = min(7.5);
+    royale.freshRaidBody(q);
+    assert.ok(q.botNewness > 0.4 && q.botNewness < 0.6, 'newness ' + q.botNewness);
+    assert.ok(q.botSoftMs > FM.BOT_SOFT_SHORT_MS && q.botSoftMs < FM.BOT_SOFT_MS);
+    assert.ok(q.botDifficulty > 0 && q.botDifficulty < D.fromTime(min(8.5)));
+    // account play time counts the same way
+    sock._careerPlayMs = min(40); sock._royalePlayMs = 0;
+    royale.freshRaidBody(q);
+    assert.equal(q.botNewbie, false);
+    // and lives alone end it for someone who dies a lot early
+    sock._careerPlayMs = 0; sock._careerLives = 0; sock._royaleLives = 9;
+    royale.freshRaidBody(q);
+    assert.equal(q.botNewbie, false);
+    assert.equal(q.botNewness, 0);
+    q.kill(); p.kill();
+    loop(2);
+});
+
+test('bosses: boss guns target a new player once the grace is over', () => {
+    const boss = new Entity({ x: 0, y: (nextY += 1500) });
+    boss.define('royaleVaultWarden');
+    boss.isRoyaleBoss = true; boss.team = TEAM_ENEMIES; boss.alwaysActive = true;
+    boss.controllers = boss.controllers.filter(c => c.constructor && c.constructor.name === 'io_nearestDifferentMaster');
+    const p = tank(-260, boss.y, false);
+    p.socket._careerLives = 0; p.socket._royaleLives = 0; p.socket._careerPlayMs = 0;
+    royale.freshRaidBody(p);
+    assert.equal(p.botNewbie, true);
+    p.invuln = false;
+    const ctl = boss.controllers[0];
+    const aimsAt = () => { ctl.targetLock = undefined; ctl.tick = 99; ctl.think({}); return ctl.targetLock === p; };
+    loop(1);
+    assert.equal(aimsAt(), false, 'grace holds');
+    p.botGraceUntil = 0;
+    loop(1);
+    assert.equal(aimsAt(), true, 'a new player is a boss target like anyone');
+    p.socket.botMercyUntil = Date.now() + 60_000;
+    assert.equal(aimsAt(), true, 'mercy is about bots, not bosses');
+    boss.kill(); p.kill();
     loop(2);
 });
 

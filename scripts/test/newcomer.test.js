@@ -1,8 +1,10 @@
 // Early-game softening: node scripts/test/newcomer.test.js
 //
-//   shield     a raid spawn is shielded for 5 s and opens a 2 min soft window
+//   shield     a raid spawn is shielded for 5 s; the soft window after it is
+//              2 min for a new player and 25 s for anyone else
 //   respawn    a session's first 3 deaths (and every death of a new player)
-//              wait 5 s, later ones the full 15 s; the F packet carries it
+//              wait 5 s, later ones the full 15 s; the F packet carries it;
+//              15 minutes played ends "new" however few the lives
 //   softBots   bots skip a soft player unless they come close or shoot,
 //              never start a fight with one, and cap hunters per player
 //   bosses     tuned health, one-in-two regen, and a boss hit takes about a
@@ -95,16 +97,25 @@ function bot(x, y) {
 
 // ===================================================================
 
-test('shield: a raid spawn gets 5 s of shield and a 2 minute soft window', () => {
+test('shield: a raid spawn gets 5 s of shield; the soft window is 2 minutes only while new', () => {
     assert.equal(royale.SPAWN_GRACE_MS, 5000);
     const p = player();
     const t0 = Date.now();
     royale.freshRaidBody(p);
     assert.equal(p.invuln, true);
     assert.ok(Math.abs(p.spawnGraceUntil - (t0 + 5000)) < 200, 'grace ' + (p.spawnGraceUntil - t0));
-    assert.ok(Math.abs(p.botSoftUntil - (t0 + FM.BOT_SOFT_MS)) < 200);
+    // a regular: a short window every life
+    assert.equal(p.botNewbie, false);
+    assert.ok(Math.abs(p.botSoftUntil - (t0 + FM.BOT_SOFT_SHORT_MS)) < 200);
+    assert.ok(FM.BOT_SOFT_SHORT_MS >= 20_000 && FM.BOT_SOFT_SHORT_MS <= 30_000);
+    // a new player: the full two minutes
+    const n = player(0, (nextY += 1200), fakeSocket({ _careerLives: 0, _careerPlayMs: 0 }));
+    royale.freshRaidBody(n);
+    assert.equal(n.botNewbie, true);
+    assert.ok(Math.abs(n.botSoftUntil - (t0 + FM.BOT_SOFT_MS)) < 200);
     assert.equal(FM.BOT_SOFT_MS, 120_000);
-    p.kill();
+    p.kill(); n.kill();
+    loop(2);
 });
 
 test('respawn: first 3 deaths of a session wait 5 s, the 4th waits 15 s; a new player always 5 s', () => {
@@ -123,8 +134,16 @@ test('respawn: first 3 deaths of a session wait 5 s, the 4th waits 15 s; a new p
         return out;
     };
     assert.deepEqual(waits(100, 5), [5, 5, 5, 15, 15]);
-    // career 0: lives 1..4 are "new" (under NEW_PLAYER_LIVES), so still quick at 4
+    // career 0: the first 5 lives are fully new (botDifficulty.newness), so
+    // still quick at 4 and 5; the 6th is past it
     assert.deepEqual(waits(0, 6), [5, 5, 5, 5, 5, 15]);
+    // ...unless the clock ran out first: 15 minutes played is not new
+    const long = fakeSocket({ _careerLives: 0, _careerPlayMs: 15 * 60_000 });
+    const q = player(0, (nextY += 1200), long);
+    royale.freshRaidBody(q);
+    assert.equal(q.botNewbie, false);
+    q.kill();
+    loop(2);
     assert.equal(FM.QUICK_RESPAWN_DEATHS, 3);
     assert.equal(FM.NEW_RESPAWN_MS, 5000);
 });
@@ -210,9 +229,13 @@ test('bots: builds, skill spread and shot damage are below a maxed player', () =
 });
 
 let bossWorst = 0;
+// Contact damage depends a little on where in the world the hit lands (the
+// thresholds below were set with the bosses at these spots), so the boss
+// test keeps its own rows instead of following the tests before it.
+let bossY = 400;
 test('bosses: health x0.85, regen one tick in two, a hit takes at most about a third of a fresh Basic', () => {
     for (const [id, kind] of Object.entries(bosses.KINDS)) {
-        const y = (nextY += 1500);
+        const y = (bossY += 1500);
         const raw = new Entity({ x: 0, y });
         raw.define(kind.cls);
         raw.refreshBodyAttributes();
