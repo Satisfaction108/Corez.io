@@ -7,7 +7,10 @@
 //   life       this life's earnings add onto the spawn's growth score, with
 //              no jump; size never shrinks inside a life; a stage crossing
 //              calls back once
-//   perks      slower, tougher, harder rams, camera opens up less than arras'
+//   perks      slower; health and damage creep up to 1.6x at a 100k score;
+//              the view follows size^0.7 up to its cap
+//   damage     a grown tank's shots (and a grown bot's) hit harder, rock
+//              digging and its budget rise by the same factor
 //   off        royale_growth false: nothing grows
 //   rammer     smasher-family caps give Mining Power 12 and the points past 9
 //              still dig
@@ -52,9 +55,10 @@ test('curve', () => {
     }
     assert.equal(growth.RESPAWN_CAP, 2);
     assert.ok(Math.abs(growth.multFor(growth.CAP_SCORE) - growth.RESPAWN_CAP) < 1e-9);
-    assert.ok(growth.CAP_SCORE > 5000 && growth.CAP_SCORE < 6500);
+    // 2x comes about a quarter sooner than the old 5656
+    assert.ok(growth.CAP_SCORE > 3800 && growth.CAP_SCORE < 5656 * 0.76, 'cap score ' + growth.CAP_SCORE);
     // the bend toward the ceiling still starts at 2.3x
-    const bendScore = 1500 * (Math.exp(1.3 / 0.64) - 1);
+    const bendScore = growth.SCALE * (Math.exp(1.3 / growth.GAIN) - 1);
     assert.ok(Math.abs(growth.multFor(bendScore) - 2.3) < 1e-9);
     assert.ok(Math.abs(growth.multFor(bendScore * 0.999) - 2.3) < 1e-3, 'no kink at the bend');
     assert.ok(growth.multFor(1000) > 1.25, 'the first kills show');
@@ -94,18 +98,18 @@ test('life', () => {
     // same score: stays at the cap
     settle(b, 60000);
     assert.equal(b.growthMult, growth.RESPAWN_CAP);
-    // 12000 earned this life: grows on from the cap, as if from CAP_SCORE
-    settle(b, 72000, (body, st) => stages.push(st));
-    assert.ok(Math.abs(b.growthMult - growth.multFor(growth.CAP_SCORE + 12000)) < 1e-9);
+    // 8000 earned this life: grows on from the cap, as if from CAP_SCORE
+    settle(b, 68000, (body, st) => stages.push(st));
+    assert.ok(Math.abs(b.growthMult - growth.multFor(growth.CAP_SCORE + 8000)) < 1e-9);
     assert.ok(b.growthMult > growth.RESPAWN_CAP);
     assert.deepEqual(stages, [2.3]);
     // the score drops (carried gems spent or lost): no shrinking
     const g = b.growthMult;
-    settle(b, 68000);
+    settle(b, 65000);
     assert.equal(b.growthMult, g);
     // and a later gain counts from the lower score
-    settle(b, 69000);
-    assert.ok(Math.abs(b.growthMult - growth.multFor(growth.CAP_SCORE + 13000)) < 1e-9);
+    settle(b, 66000);
+    assert.ok(Math.abs(b.growthMult - growth.multFor(growth.CAP_SCORE + 9000)) < 1e-9);
     // under the cap: a quarter at spawn, then every point counts in full
     const u = fakeBody();
     growth.onSpawn(u, 8000);
@@ -113,7 +117,7 @@ test('life', () => {
     settle(u, 8000);
     assert.equal(u.growthMult, g0, 'no jump on the first tick of a life');
     settle(u, 8100);
-    assert.ok(u.growthMult > g0 && u.growthMult - g0 < 0.02, 'a small gain is a small step');
+    assert.ok(u.growthMult > g0 && u.growthMult - g0 < 0.025, 'a small gain is a small step');
     settle(u, 9000);
     assert.ok(Math.abs(u.growthMult - growth.multFor(2000 + 1000)) < 1e-9);
 });
@@ -135,14 +139,54 @@ test('perks', () => {
     b.growthMult = 2.3;
     growth.applyPerks(b);
     assert.ok(b.topSpeed < 0.8 && b.topSpeed > 0.65);
-    assert.ok(Math.abs(b.health.max - 165) < 1e-9);
-    assert.ok(b.damage > 1.4 && b.damage < 1.5);
-    const view = Math.sqrt(2.3) * growth.fovMult(2.3);
-    assert.ok(view > 1.2 && view < Math.sqrt(2.3));
+    // health and ram damage grow slowly: about 1.37x at 2.3x (health was 1.65x)
+    assert.ok(b.health.max > 130 && b.health.max < 145, 'health ' + b.health.max);
+    assert.ok(b.damage > 1.3 && b.damage < 1.45, 'ram ' + b.damage);
+    assert.ok(Math.abs(growth.healthMult(growth.multFor(100000)) - 1.6) < 1e-9);
+    assert.ok(Math.abs(growth.damageMult(growth.multFor(100000)) - 1.6) < 1e-9);
+    assert.ok(growth.healthMult(growth.multFor(1e7)) < 1.7, 'the ceiling keeps it near 1.6');
+    let prev = 1;
+    for (let s = 500; s <= 200000; s *= 2) {
+        const h = growth.healthMult(growth.multFor(s));
+        assert.ok(h > prev, 'rises at ' + s);
+        prev = h;
+    }
+    // the view: arras' sqrt(size) times fovMult, size^0.7 up to VIEW_MAX
+    const view = g => Math.sqrt(g) * growth.fovMult(g);
+    assert.ok(Math.abs(view(2.3) - Math.pow(2.3, 0.7)) < 1e-9);
+    assert.ok(view(2.3) > 1.7, 'a 2.3x tank sees clearly more (was 1.28x)');
+    assert.ok(view(1.5) > 1.3 && view(1.5) < view(2));
+    assert.equal(view(3.3), growth.VIEW_MAX);
+    assert.ok(growth.VIEW_MAX <= 1.8);
     const n = fakeBody();
     growth.applyPerks(n);
     assert.equal(n.topSpeed, 1);
     assert.equal(n.health.max, 100);
+    assert.equal(n.damage, 1);
+    assert.equal(growth.fovMult(1), 1);
+});
+
+test('damage', () => {
+    global.royaleGrowth = growth;
+    const { shotMult } = require(path.join(SERVER, 'game', 'entities', 'subFunctions.js'));
+    const g = growth.multFor(20000);
+    const player = { isPlayer: true, growthMult: g };
+    player.master = player;
+    assert.ok(Math.abs(shotMult({ master: player }) - growth.damageMult(g)) < 1e-9);
+    // a drone's bullet: two hops to the tank
+    const drone = { master: player };
+    assert.ok(Math.abs(shotMult({ master: drone }) - growth.damageMult(g)) < 1e-9);
+    const small = { isPlayer: true, growthMult: 1 };
+    small.master = small;
+    assert.equal(shotMult({ master: small }), 1);
+    // a grown bot: its difficulty share times the growth
+    const bot = { isBot: true, botShotMult: 0.8, growthMult: g };
+    bot.master = bot;
+    assert.ok(Math.abs(shotMult({ master: bot }) - 0.8 * growth.damageMult(g)) < 1e-9);
+    // rock: every hit and the per-second budget move together, and stay near 1.6x
+    assert.equal(growth.mineMult(g), growth.damageMult(g));
+    assert.ok(growth.mineMult(growth.multFor(1e7)) < 1.7);
+    delete global.royaleGrowth;
 });
 
 test('off', () => {

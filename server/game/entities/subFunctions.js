@@ -71,12 +71,26 @@ lazyRealSizes = new Proxy(lazyRealSizes, {
 
 // Shots from a raid boss or a bot hit softer than their definitions: the
 // root tank carries the factor (terrain/bosses.js tune, game/index.js
-// BOT_SHOT_MULT). Read per collision by damageMultiplier().
-function shotMult(o) {
-    let root = o.master, hops = 0;
+// BOT_SHOT_MULT). A bot's shot into a player follows that player's bot
+// difficulty instead (miscFiles/botDifficulty.js), and a grown tank's shots
+// hit harder (terrain/growth.js damageMult). Read per collision by
+// damageMultiplier(other), `target` being what the shot hit.
+const botDiff = require('../../miscFiles/botDifficulty.js');
+function rootOf(e) {
+    let root = e, hops = 0;
     while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+    return root;
+}
+function shotMult(o, target) {
+    const root = rootOf(o.master);
     if (!root || root === o) return 1;
-    return root.bossShotMult || root.botShotMult || 1;
+    let m = root.bossShotMult || 1;
+    if (root.isBot) {
+        const hit = target ? rootOf(target) : null;
+        m = hit && hit.isPlayer ? botDiff.shotMult(botDiff.of(hit)) : root.botShotMult || 1;
+    }
+    if (root.growthMult > 1 && global.royaleGrowth) m *= global.royaleGrowth.damageMult(root.growthMult);
+    return m;
 }
 
 module.exports = { dirtyCheck, remapTarget, lazyRealSizes, Activation, shotMult }

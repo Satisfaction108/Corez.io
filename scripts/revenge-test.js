@@ -4,14 +4,16 @@ const Module = require('module');
 const path = require('path');
 
 const scriptDir = '/Users/raghavan/Documents/GitHub/Arras2/server/game/gamemodes/scripts';
-function stubDep(rel) {
+function stubDep(rel, exports = {}) {
     const abs = require.resolve(rel, { paths: [scriptDir] });
     const m = new Module(abs, module);
-    m.exports = {};
+    m.exports = exports;
     m.loaded = true;
     require.cache[abs] = m;
 }
-for (const d of ['../../terrain/storm.js', '../../terrain/vault.js', '../../terrain/outposts.js', '../../terrain/gems.js',
+// the raid clock is built from the storm's cycle at load time
+stubDep('../../terrain/storm.js', { CYCLE_MS: 7 * 60 * 1000, setCycles() {}, setLockMs() {} });
+for (const d of ['../../terrain/vault.js', '../../terrain/outposts.js', '../../terrain/gems.js',
     '../../terrain/chests.js', '../../terrain/bosses.js', '../../terrain/blooms.js', '../../terrain/raidEvents.js']) stubDep(d);
 // shop and raidMods are pure enough to stub with the queries the death path uses
 {

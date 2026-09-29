@@ -5,8 +5,8 @@
 //              wait 5 s, later ones the full 15 s; the F packet carries it
 //   softBots   bots skip a soft player unless they come close or shoot,
 //              never start a fight with one, and cap hunters per player
-//   bosses     tuned health, one-in-four regen, and a typical boss hit takes
-//              at most a fifth of a fresh level-45 Basic
+//   bosses     tuned health, one-in-two regen, and a boss hit takes about a
+//              third of a fresh level-45 Basic at worst
 //   deathLog   bot / player / boss / storm deaths land in the deaths table
 //              for accounts and guests; the Discord /stats line reads them
 //   migration  v5 -> v6 keeps every row, writes the backup, adds deaths
@@ -209,7 +209,8 @@ test('bots: builds, skill spread and shot damage are below a maxed player', () =
     loop(2);
 });
 
-test('bosses: health x0.7, regen one tick in four, a typical hit is at most a fifth of a fresh Basic', () => {
+let bossWorst = 0;
+test('bosses: health x0.85, regen one tick in two, a hit takes at most about a third of a fresh Basic', () => {
     for (const [id, kind] of Object.entries(bosses.KINDS)) {
         const y = (nextY += 1500);
         const raw = new Entity({ x: 0, y });
@@ -221,13 +222,13 @@ test('bosses: health x0.7, regen one tick in four, a typical hit is at most a fi
         o.team = -100;
         o.controllers = [];
         o.alwaysActive = true;
-        bosses.tune(o);
+        bosses.tune(o, id);
         o.refreshBodyAttributes();
         // turrets hold fire so each shot is measured on its own
         for (const t of o.turrets.values()) t.controllers = [];
         assert.ok(Math.abs(o.health.max / raw.health.max - bosses.TUNING.healthMult) < 0.01, id + ' health');
         raw.kill();
-        // regen: 8 regen ticks heal the boss twice
+        // regen: 8 regen ticks heal the boss 8 / regenEvery times
         o.health.amount = o.health.max * 0.5;
         o.shield.amount = o.shield.max;
         let heals = 0;
@@ -236,7 +237,8 @@ test('bosses: health x0.7, regen one tick in four, a typical hit is at most a fi
             handler.regenHealthAndShield();
             if (o.health.amount > before) heals++;
         }
-        assert.equal(heals, 2, id + ' regen ticks');
+        assert.equal(bosses.TUNING.regenEvery, 2);
+        assert.equal(heals, 4, id + ' regen ticks');
         o.health.amount = o.health.max;
         // every gun, hull and turrets, fired once point blank into a fresh Basic
         const guns = [...o.guns.values()];
@@ -272,13 +274,17 @@ test('bosses: health x0.7, regen one tick in four, a typical hit is at most a fi
             hits.sort((a, b) => a - b);
             const typical = hits[hits.length >> 1] || 0, worst = hits[hits.length - 1] || 0;
             const pct = v => (v * 100).toFixed(1) + '%';
-            assert.ok(typical <= 0.2, `${id} ${g.body.label}: a typical hit took ${pct(typical)}`);
-            assert.ok(hits.filter(h => h > 0.25).length <= 1, `${id} ${g.body.label}: hits ${hits.map(pct).join(' ')}`);
-            assert.ok(worst < 0.6, `${id} ${g.body.label}: the worst hit took ${pct(worst)}`);
+            assert.ok(typical <= 0.36, `${id} ${g.body.label}: a typical hit took ${pct(typical)}`);
+            assert.ok(hits.filter(h => h > 0.45).length <= 1, `${id} ${g.body.label}: hits ${hits.map(pct).join(' ')}`);
+            // the worst of seven can be a leftover shot landing too; never a one-shot
+            assert.ok(worst < 0.9, `${id} ${g.body.label}: the worst hit took ${pct(worst)}`);
+            bossWorst = Math.max(bossWorst, typical);
         }
         o.kill();
         loop(2);
     }
+    // the hardest-hitting gun still takes a real bite (the 0.3 nerf left it at a fifth)
+    assert.ok(bossWorst > 0.25, 'hardest typical hit ' + (bossWorst * 100).toFixed(1) + '%');
 });
 
 // ---- accounts DB ------------------------------------------------------

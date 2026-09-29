@@ -1391,6 +1391,7 @@ class socketManager {
                         const bot = (global.gameManager.gameHandler?.bots || []).filter(x => x && !x.isDead()).sort((p, q) => d2(p) - d2(q))[0];
                         if (bot) socket.talk('KC', 'dbg', JSON.stringify({ botscore: require('../gamemodes/scripts/dig_royale.js').debugSetScore(bot, m[1] | 0), name: bot.name }), 0);
                     }
+                    else if (what === "botdiff") socket.talk('KC', 'dbg', JSON.stringify({ botdiff: require('../gamemodes/scripts/dig_royale.js').debugBotDiff(socket, m[1]) }), 0);
                     else if (what === "growth") socket.talk('KC', 'dbg', JSON.stringify({ growth: require('../gamemodes/scripts/dig_royale.js').debugGrowth(b) }), 0);
                     else if (what === "rankpts") socket.talk('KC', 'dbg', JSON.stringify({ rankpts: require('../../accounts/game/rankHooks.js').debugPts(socket) }), 0);
                     else if (what === "bosskill") {

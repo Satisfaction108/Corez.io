@@ -630,15 +630,19 @@ class io_nearestDifferentMaster extends IO {
             };
             if (this.body.isBot) {
                 const skill = util.clamp(this.body.botSkill ?? 0.5, 0, 1);
+                // the target's bot difficulty (botDifficulty.js)
+                let tr = this.targetLock, hops = 0;
+                while (tr.master && tr.master !== tr && hops++ < 8) tr = tr.master;
+                const diff = botDiff.of(tr);
                 const desired = Math.atan2(target.y, target.x);
                 if (this.botAimAngle == null) this.botAimAngle = desired;
                 let turn = desired - this.botAimAngle;
                 while (turn > Math.PI) turn -= Math.PI * 2;
                 while (turn < -Math.PI) turn += Math.PI * 2;
-                this.botAimAngle += turn * (0.12 + skill * 0.28);
+                this.botAimAngle += turn * (0.12 + skill * 0.28) * botDiff.turretTurn(diff);
                 if (Date.now() >= this.botAimNoiseAt) {
                     this.botAimNoiseAt = Date.now() + 140;
-                    this.botAimNoise = ran.gauss(0, (1 - skill) * 0.16);
+                    this.botAimNoise = ran.gauss(0, (1 - skill) * 0.16 + botDiff.turretNoise(diff));
                 }
                 const c = Math.cos(this.botAimAngle + this.botAimNoise), s = Math.sin(this.botAimAngle + this.botAimNoise);
                 const length = Math.hypot(target.x, target.y);
@@ -1355,6 +1359,8 @@ const digWarsVault = require('../game/terrain/vault.js');
 const digWarsOutposts = require('../game/terrain/outposts.js');
 const digWarsChambers = require('../game/terrain/coreChambers.js');
 const padGeom = require('../game/terrain/padGeom.js');
+// per-target bot difficulty (0 new player .. 1 the hardest we allow)
+const botDiff = require('./botDifficulty.js');
 // Shop pads are a no-go zone for bots (they cannot buy, and a bot on the pad
 // shoves the shopper). Refreshed once a second.
 let shopPadCache = { at: 0, pads: [] };
@@ -1409,22 +1415,34 @@ let firstMinutesCfg = null;
 function firstMinutes() {
     if (firstMinutesCfg) return firstMinutesCfg;
     try { firstMinutesCfg = require('../game/gamemodes/scripts/dig_royale.js').FIRST_MINUTES || null; } catch { /* */ }
-    return firstMinutesCfg || { NEW_TARGET_PENALTY: 600, NEW_MAX_HUNTERS: 1, SOFT_CLOSE_R: 320, SOFT_HIT_MS: 4000, MAX_HUNTERS: 2 };
+    return firstMinutesCfg || { NEW_TARGET_PENALTY: 600, NEW_MAX_HUNTERS: 1, SOFT_CLOSE_R: 320, SOFT_HIT_MS: 4000, MAX_HUNTERS: 2, BOT_SOFT_MS: 120_000 };
 }
 function inBotGrace(root, now) {
     return !!(root && root.isPlayer && (root.botGraceUntil || 0) > now);
 }
 // A player in the soft window (the first minutes of every life, or any life
 // of a new player) is only fought by a bot they walk right up to or shoot.
+// The window shrinks with the player's bot difficulty: a newcomer gets all
+// of BOT_SOFT_MS, the hardest a third of it (botDifficulty.js softShare).
 function botSoft(root, now) {
-    return !!(root && root.isPlayer && (root.botNewbie || (root.botSoftUntil || 0) > now));
+    if (!root || !root.isPlayer) return false;
+    if (root.botNewbie) return true;
+    const until = root.botSoftUntil || 0;
+    if (until <= now) return false;
+    const full = firstMinutes().BOT_SOFT_MS || 120_000;
+    return now < until - full + full * botDiff.softShare(botDiff.of(root, now));
 }
 function softSpared(bot, target, now) {
     if (!botSoft(target, now)) return false;
     const fm = firstMinutes();
     if (bot._lastDamageSource === target && now - (bot._lastDamageAt || 0) < (fm.SOFT_HIT_MS || 4000)) return false;
-    const r = fm.SOFT_CLOSE_R || 320;
+    const r = (fm.SOFT_CLOSE_R || 320) / 320 * botDiff.softCloseR(botDiff.of(target, now));
     return (target.x - bot.x) ** 2 + (target.y - bot.y) ** 2 > r * r;
+}
+// how many bots may be on one player at once
+function hunterCap(root, now) {
+    if (botSoft(root, now)) return firstMinutes().NEW_MAX_HUNTERS;
+    return Math.min(firstMinutes().MAX_HUNTERS || 2, botDiff.maxHunters(botDiff.of(root, now)));
 }
 // bots other than `self` currently aiming at / chasing `target`
 function botsOn(target, self) {
@@ -2005,17 +2023,18 @@ class io_digWarsGoals extends IO {
     // All hull aim funnels through here so the cursor behaves like a wrist:
     // it turns toward the target instead of snapping, with a slowly
     // re-rolled error.
-    aimVector(x, y, now, skill = this.skill()) {
+    // `diff` is the target's bot difficulty (rocks and idle glances: neutral).
+    aimVector(x, y, now, skill = this.skill(), diff = botDiff.NEUTRAL) {
         const desired = Math.atan2(y, x);
         if (this.aimAngle == null) { this.aimAngle = desired; this.aimVel = 0; }
         const turn = wrapAngle(desired - this.aimAngle);
         // Damped spring: slight overshoot before settling, more at low skill.
-        const stiff = 0.12 + skill * 0.2, damp = 0.55 + skill * 0.25;
+        const stiff = botDiff.aimStiff(skill, diff), damp = 0.55 + skill * 0.25;
         this.aimVel = (this.aimVel || 0) * damp + turn * stiff;
         this.aimAngle = wrapAngle(this.aimAngle + this.aimVel);
         if (now - this.aimErrorAt > 110) {
             this.aimErrorAt = now;
-            this.aimError = ran.gauss(0, 0.03 + (1 - skill) * 0.1);
+            this.aimError = ran.gauss(0, botDiff.aimError(skill, diff));
         }
         const tremor = Math.sin(now / 47 + (this.body.id % 9)) * 0.006 * (1.2 - skill);
         const a = this.aimAngle + this.aimError + tremor;
@@ -2025,10 +2044,11 @@ class io_digWarsGoals extends IO {
 
     // Feathered trigger: bursts with brief releases. Combat only; holding
     // fire on a rock is normal.
-    triggerHeld(now) {
+    triggerHeld(now, target) {
         if (!this.burstUntil || now > this.burstUntil) {
-            this.pauseUntil = now + 300 + Math.random() * 600 * (1.4 - this.skill());
-            this.burstUntil = this.pauseUntil + 1000 + Math.random() * 2000;
+            const d = botDiff.of(target ? this.rootOf(target) : null, now);
+            this.pauseUntil = now + botDiff.pauseMs(this.skill(), d, Math.random());
+            this.burstUntil = this.pauseUntil + botDiff.burstMs(d, Math.random());
         }
         return now >= this.pauseUntil;
     }
@@ -2043,15 +2063,16 @@ class io_digWarsGoals extends IO {
             if (tracking && tracking.speed > speed) speed = tracking.speed;
         }
         // A player under mercy or in the soft window gets sloppier lead and
-        // wider spray.
+        // wider spray; how sloppy follows their bot difficulty.
+        const diff = botDiff.of(this.rootOf(entity), now);
         let skill = this.skill();
         if (entity.isPlayer && (entity.socket?.botMercyUntil || 0) > now) skill *= 0.45;
-        else if (botSoft(entity, now)) skill *= 0.7;
+        else if (botSoft(entity, now)) skill *= botDiff.softAim(diff);
         // Lead time is capped at 1.2s; a lower cap undershoots moving targets
         // past medium range.
-        const lead = speed > 0 ? util.clamp(distance / speed, 0, 1.2) * (0.35 + skill * 0.5) : 0.2;
+        const lead = speed > 0 ? util.clamp(distance / speed, 0, 1.2) * botDiff.leadShare(skill, diff) : 0.2;
         return this.aimVector(dx + (entity.velocity?.x || 0) * lead,
-                              dy + (entity.velocity?.y || 0) * lead, now, skill);
+                              dy + (entity.velocity?.y || 0) * lead, now, skill, diff);
     }
 
     // ── sensing ──────────────────────────────────────────────────────────
@@ -2059,7 +2080,8 @@ class io_digWarsGoals extends IO {
         if (now < this.senseAt) return;
         this.senseAt = now + 150 + (1 - this.skill()) * 120;
         const body = this.body, view = this.view;
-        const fov = body.fov || 1200;
+        // a grown bot's camera opens up (terrain/growth.js); its senses don't
+        const fov = Math.min(body.fov || 1200, 2000);
         const seeInvisible = !!body.aiSettings?.seeInvisible;
         let best = null, bestScore = Infinity, enemies = 0, allies = 0;
         let allyInTrouble = null, allyTroubleDistance = Infinity;
@@ -2092,13 +2114,15 @@ class io_digWarsGoals extends IO {
             if (softSpared(body, root, now)) continue;
             // enough bots on this player already: leave them to it
             // (self-defence still wins below through the attacker override)
-            if (root.isPlayer && botsOn(root, body) >= (botSoft(root, now) ? firstMinutes().NEW_MAX_HUNTERS : firstMinutes().MAX_HUNTERS || 2)) continue;
+            if (root.isPlayer && botsOn(root, body) >= hunterCap(root, now)) continue;
             // Counted a bit past visual range so a second attacker hanging
             // back still registers as being outnumbered.
             if (distance < 1100) enemies++;
-            // Humans and bots rank the same; a soft player ranks as if
-            // farther off, and a heavy satchel only draws a little.
+            // A player ranks as if farther off the lower their difficulty
+            // (the hardest rank like a bot), a soft one farther still, and a
+            // heavy satchel only draws a little.
             const score = distance
+                + (root.isPlayer ? botDiff.targetPenalty(botDiff.of(root, now)) : 0)
                 + (botSoft(root, now) ? firstMinutes().NEW_TARGET_PENALTY : 0)
                 - Math.min(200, (root.carriedGems || 0) * 0.06)
                 + (this.clearShot(root) ? 0 : 220);
@@ -2127,7 +2151,7 @@ class io_digWarsGoals extends IO {
             // a new face takes a moment to register before the bot commits
             this._lastEnemy = best;
             this._enemySeenAt = now;
-            this.reactionMs = 300 + (1 - this.skill()) * 450 + Math.random() * 250;
+            this.reactionMs = botDiff.reactionMs(this.skill(), botDiff.of(best, now), Math.random());
         }
         view.enemy = best;
         body._botEnemyId = best ? best.id : 0;   // read by botsOn() (new-player hunter cap)
@@ -2418,8 +2442,11 @@ class io_digWarsGoals extends IO {
         const human = this.teamHuman();
         if (human && Math.hypot(target.x - human.x, target.y - human.y) > TEAM_FIGHT_R &&
             !(this.body._lastDamageSource === target && now - (this.body._lastDamageAt || 0) < 3000)) return false;
-        // never start a fight the numbers say we lose
-        if (this.threatRatio(target) > 1.2 || (this.fearUntil.get(target.id) || 0) > now) return false;
+        // never start a fight the numbers say we lose (against a player, how
+        // bad a trade still looks worth it depends on their difficulty)
+        const diff = botDiff.of(target, now);
+        if (this.threatRatio(target) > (target.isPlayer ? botDiff.initThreat(diff) : 1.2) ||
+            (this.fearUntil.get(target.id) || 0) > now) return false;
         // nor one already wounded
         const health = this.body.health.max ? this.body.health.amount / this.body.health.max : 1;
         if (health < 0.55) return false;
@@ -2442,11 +2469,12 @@ class io_digWarsGoals extends IO {
         // Mercy: a player dying repeatedly to bots is left alone until they
         // kill a bot themselves.
         if ((target.socket?.botMercyUntil || 0) > now) return false;
-        // dogpile cap: at most two bots on one player
+        // dogpile cap: one or two bots on one player, by difficulty
+        const cap = hunterCap(target, now);
         let fighting = 0;
         for (const tank of botWorldScan().tanks) {
             if (tank.isBot && tank !== this.body && tank._fightingPlayerId === target.id &&
-                ++fighting >= 2) return false;
+                ++fighting >= cap) return false;
         }
         return true;
     }
@@ -2484,7 +2512,8 @@ class io_digWarsGoals extends IO {
                 return { kind: 'regroup', mate: human, expiresAt: now + 6000 };
         }
 
-        if (Config.dig_royale && view.enemy && view.enemyDistance < 1400 &&
+        if (Config.dig_royale && view.enemy &&
+            view.enemyDistance < (view.enemy.isPlayer ? botDiff.initRange(botDiff.of(view.enemy, now)) : 1400) &&
             now - (this._enemySeenAt || 0) >= (this.reactionMs || 250) &&
             this.canInitiateFight(view.enemy, now))
             return { kind: 'fight', target: view.enemy };
@@ -2964,21 +2993,21 @@ class io_digWarsGoals extends IO {
         const enemy = this.view.enemy;
         // Any enemy inside weapon range gets shot at; etiquette (mercy,
         // dogpile caps, chase break-offs) only governs pursuit. A new target
-        // first waits out a reaction time (160-700 ms by skill).
+        // first waits out a reaction time (by skill and the target's difficulty).
         const noticed = now - (this._enemySeenAt || 0) >= (this.reactionMs || 250);
         if (enemy && noticed && this.view.enemyDistance < this.weaponRange() && this.clearShot(enemy))
-            return { target: this.leadAim(enemy, now), fire: this.triggerHeld(now) };
+            return { target: this.leadAim(enemy, now), fire: this.triggerHeld(now, enemy) };
         if (goal.kind === 'fight' && goal.target && this.distanceTo(goal.target) < this.weaponRange()) {
             // Shoot the target only with a clear line; if a rock blocks it,
             // dig through the rock.
             if (this.clearShot(goal.target))
-                return { target: this.leadAim(goal.target, now), fire: this.triggerHeld(now) };
+                return { target: this.leadAim(goal.target, now), fire: this.triggerHeld(now, goal.target) };
             const rock = this.firstRockAlong(goal.target);
             if (rock && rock.alive)
                 return { target: this.aimVector(rock.wx - body.x, rock.wy - body.y, now), fire: true };
         }
         if (goal.kind === 'defend' && goal.target)
-            return { target: this.leadAim(goal.target, now), fire: this.triggerHeld(now) };
+            return { target: this.leadAim(goal.target, now), fire: this.triggerHeld(now, goal.target) };
         // regrouping: dig the straight way to the human
         if (goal.kind === 'regroup' && goal.mate) {
             const rock = this.regroupRock(goal);

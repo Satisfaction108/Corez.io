@@ -351,7 +351,7 @@ class bulletEntity { // Basically an (Entity) but with heavy limitations to impr
     move() { global.runMove(this) };
     face() { global.runFace(this) };
 
-    damageMultiplier() {
+    damageMultiplier(target) {
         let m = 1;
         switch (this.type) {
             case 'swarm': m = 0.25 + 1.5 * util.clamp(this.range / (this.RANGE + 1), 0, 1); break;
@@ -359,7 +359,7 @@ class bulletEntity { // Basically an (Entity) but with heavy limitations to impr
         }
         const owner = this.master && this.master !== this ? this.master : this;
         if (owner.tutorialChipDamage) m *= owner.tutorialChipDamage;
-        if (owner !== this) m *= shotMult(this);
+        if (owner !== this) m *= shotMult(this, target);
         return m;
     }
 

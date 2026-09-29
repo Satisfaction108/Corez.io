@@ -11,22 +11,26 @@ const KINDS = {
     wraith:    { cls: 'royaleShardWraith',    name: 'Shard Wraith',    gems: 2200, score: 550, color: '#d153cc', digs: true, digRate: 0.18, blurb: 'Summons shards. Snipes from range.' },
 };
 const ORDER = ['warden', 'drillhead', 'colossus', 'wraith'];
-// Softening on top of the definitions. A single hit from any gun should take
-// at most about a fifth of a fresh level-45 Basic (220 health + 65 shield),
-// and a boss should still need a group or one long, committed fight.
+// Softening on top of the definitions. The worst single hit from any gun
+// takes about a third of a fresh level-45 Basic (220 health + 65 shield);
+// a decent player can take one down alone with real effort, a group
+// comfortably.
 //   healthMult  scales max health (the shield is left alone)
 //   shotMult    scales every bullet, trap and drone the boss or its turrets fire
 //   bodyMult    scales hull contact damage
 //   regenEvery  the boss regenerates on one regen tick in this many
+//   shotKind    per boss on top of shotMult: the Colossus fires stock auto
+//               turrets that hit well under the others' guns
 const TUNING = {
-    healthMult: 0.7,
-    shotMult: 0.3,
-    bodyMult: 0.6,
-    regenEvery: 4,
+    healthMult: 0.85,
+    shotMult: 0.55,
+    bodyMult: 0.8,
+    regenEvery: 2,
+    shotKind: { colossus: 1.3 },
 };
-function tune(o) {
+function tune(o, kind = o.bossKind) {
     o.bonusHealthMult = TUNING.healthMult;
-    o.bossShotMult = TUNING.shotMult;
+    o.bossShotMult = TUNING.shotMult * (TUNING.shotKind[kind] || 1);
     o.bossBodyMult = TUNING.bodyMult;
     o.regenEvery = TUNING.regenEvery;
 }

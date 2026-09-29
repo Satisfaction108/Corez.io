@@ -13,7 +13,7 @@ const RESPAWN_CAP = 2;
 const BEND = 2.3;            // where the curve starts easing off
 const LIVE_CEIL = 3.3;       // soft ceiling: approached, never reached
 const GAIN = 0.64;
-const SCALE = 1500;
+const SCALE = 1100;          // 2x at ~4.1k score (was 1500: ~5.7k)
 // the "you grew" card fires when a life crosses one of these
 const STAGES = [1.25, 1.5, 1.75, 2, 2.3, 2.6, 2.9];
 const REFRESH_STEP = 0.03;   // stats are recomputed every time size moves this much
@@ -43,12 +43,24 @@ function spawnEff(score) {
 
 // Trade-offs, all 1 at normal size.
 function speedMult(g) { return 1 / (1 + 0.28 * (g - 1)); }
-function healthMult(g) { return 1 + 0.5 * (g - 1); }
-function bodyDamageMult(g) { return 1 + 0.35 * (g - 1); }
-// the camera opens up with g^0.3 instead of arras' g^0.5
-function fovMult(g) { return Math.pow(g, -0.2); }
-// more rock under a bigger hull and bigger shots: the per-second dig budget
-function mineMult(g) { return 1 + 0.3 * (g - 1); }
+// Health and damage creep up with size, slowly: STAT_AT_100K at a 100k
+// growth score, in a straight line from 1 at normal size. Damage covers
+// everything the tank deals: shots and rams into tanks, chests and rock.
+const STAT_AT_100K = 1.6;
+const STAT_K = (STAT_AT_100K - 1) / (multFor(100000) - 1);
+function statMult(g) { return 1 + STAT_K * Math.max(0, g - 1); }
+function healthMult(g) { return statMult(g); }
+function damageMult(g) { return statMult(g); }
+function bodyDamageMult(g) { return statMult(g); }
+// The camera: arras' own sqrt(size) times this, so the view follows
+// g^VIEW_POW, up to VIEW_MAX times a normal tank's.
+const VIEW_POW = 0.7;
+const VIEW_MAX = 1.8;
+function viewMult(g) { return Math.min(VIEW_MAX, Math.pow(Math.max(1, g), VIEW_POW)); }
+function fovMult(g) { return viewMult(g) / Math.sqrt(Math.max(1, g)); }
+// Rock: every hit digs damageMult harder, and the per-second dig budget
+// rises by the same factor, so a grown tank digs at most that much faster.
+function mineMult(g) { return damageMult(g); }
 
 // Called from refreshBodyAttributes, after the skill math.
 function applyPerks(body) {
@@ -58,7 +70,7 @@ function applyPerks(body) {
     body.topSpeed *= sp;
     body.acceleration *= sp;
     body.health.set(body.health.max * healthMult(g));
-    body.damage *= bodyDamageMult(g);
+    body.damage *= damageMult(g);
 }
 
 function stageOf(g) {
@@ -133,5 +145,6 @@ function tick(t, bodies, scoreFor, onStage, onRefit) {
 module.exports = {
     RESPAWN_SHARE, RESPAWN_CAP, BEND, LIVE_CEIL, STAGES, CAP_SCORE,
     enabled, multFor, spawnEff, onSpawn, tick, applyPerks, stageOf,
-    speedMult, healthMult, bodyDamageMult, fovMult, mineMult,
+    speedMult, healthMult, damageMult, bodyDamageMult, statMult, fovMult, viewMult, mineMult,
+    SCALE, GAIN, STAT_AT_100K, VIEW_MAX,
 };

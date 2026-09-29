@@ -16,7 +16,9 @@ const { chamberRingHit, chamberFaceRadius, chamberNormal } = coreChambers;
 // dead-on shots bounce back).
 const REBOUND_KEEP = 0.85;    // how much of the shot's speed survives the bounce
 // Bot bullets, drones and traps deal this share of their normal damage
+// (into another bot; into a player it follows that player's difficulty)
 const BOT_SHOT_MULT = 0.8;
+const botDiff = require('../miscFiles/botDifficulty.js');
 
 function deflectBullet(chamber, body) {
     const dx = body.x - chamber.x, dy = body.y - chamber.y;
@@ -1000,9 +1002,12 @@ class gameHandler {
         // NEAR must stay close to what the player can actually SEE (~618 units), or
         // bots two screens away count as company and the director idles while the
         // player sees nobody. 900 = on screen or one beat from walking onto it.
-        // Two is company; four was a pack closing on one player.
-        const NEAR = 900, WANT = 2;
+        // Two is company; four was a pack closing on one player. How many
+        // follows the player's bot difficulty: one for a newcomer, three for
+        // the best (miscFiles/botDifficulty.js company).
+        const NEAR = 900;
         for (const host of humans) {
+            const WANT = botDiff.company(botDiff.of(host, now));
             const near = live.filter(b => Math.hypot(b.x - host.x, b.y - host.y) <= NEAR);
             if (near.length >= WANT) continue;
 
@@ -1652,7 +1657,8 @@ class gameHandler {
             while (m.master && m.master !== m && hops++ < 4) m = m.master;
             return m;
         };
-        // a grown tank (terrain/growth.js) touches and shoots more rock at once
+        // a grown tank (terrain/growth.js) digs every hit harder, and its dig
+        // budget rises by the same factor
         const growMine = (e) => (e.growthMult > 1 && global.royaleGrowth) ? global.royaleGrowth.mineMult(e.growthMult) : 1;
 
         const crush = (instance, ms) => {
@@ -1809,7 +1815,7 @@ class gameHandler {
                             instance.grindAcc = Math.min(
                                 _tg.baseRockHealth * 0.6, 
                                 // 0.008 per 16 ms pass, scaled to the real pass length
-                                (instance.grindAcc || 0) + (_tg.baseRockHealth / gsec) * 0.008 * (tickMs / 16)
+                                (instance.grindAcc || 0) + (_tg.baseRockHealth / gsec) * 0.008 * (tickMs / 16) * growMine(instance)
                             );
                             if (!instance.grindLast || nowT - instance.grindLast >= 150) {
                                 instance.grindLast = nowT;
@@ -1883,7 +1889,7 @@ class gameHandler {
 
                         const rp = instance.rockPower || 0;
                         const raw = _tg.baseRockHealth * mining.rockDamageFor(owner, instance)
-                                  * mining.skillFactor(owner) * (rp || 1);
+                                  * mining.skillFactor(owner) * (rp || 1) * growMine(owner);
                         for (let hi = 0; hi < hitRocks.length; hi++) {
                             const rock = hitRocks[hi];
                             // lance bolts are rate-limited by their own reload, not the budget

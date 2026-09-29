@@ -185,7 +185,7 @@ Class.royaleShardWraith = {
         ...weaponArray({
             POSITION: [22, 5.5, 1, 0, 0, 0, 0],
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.basic, g.sniper, { reload: 2.2, damage: 1.0, speed: 1.3, maxSpeed: 1.3, health: 1.4 }]),
+                SHOOT_SETTINGS: combineStats([g.basic, g.sniper, { reload: 2.2, damage: 0.9, speed: 1.3, maxSpeed: 1.3, health: 1.4 }]),
                 TYPE: "bullet", COLOR: "#3a1a3a",
             },
         }, 4),

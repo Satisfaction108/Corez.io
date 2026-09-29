@@ -11,6 +11,7 @@ const raidEvents = require('../../terrain/raidEvents.js');
 const raidMods = require('../../terrain/raidMods.js');
 const spawnReach = require('../../terrain/spawnReach.js');
 const growth = require('../../terrain/growth.js');
+const botDiff = require('../../../miscFiles/botDifficulty.js');
 // entity.js reads the growth perks through this (refreshBodyAttributes, fov)
 global.royaleGrowth = growth;
 // ranked lives + gemdust (accounts); every call below is guarded
@@ -1008,6 +1009,7 @@ function freshRaidBody(body) {
         body.botNewbie = fresh;
         body.botGraceUntil = now() + (fresh ? FIRST_MINUTES.BOT_GRACE_NEW_MS : FIRST_MINUTES.BOT_GRACE_MS);
         body.botSoftUntil = now() + FIRST_MINUTES.BOT_SOFT_MS;
+        stampBotDifficulty(body);
     }
     const extra = raidMods.num('extraSkill', 0);
     if (extra > 0 && !body._modSkillGiven) {
@@ -1045,6 +1047,28 @@ function isNewPlayer(socket) {
     if (!socket) return false;
     return careerLives(socket) + (socket._royaleLives | 0) < FIRST_MINUTES.NEW_PLAYER_LIVES;
 }
+// How hard bots play against this player (miscFiles/botDifficulty.js has
+// the whole mapping): new players 0, signed-in players by rank, guests and
+// placement by this raid's score and kills. Stamped on the body at spawn and
+// then about once a second; the rank comes from body.rankCode, which the
+// accounts bridge already set at spawn, so nothing here touches the DB.
+function stampBotDifficulty(body) {
+    const socket = body && body.socket;
+    if (!socket) return;
+    if (socket._botDiffPin != null) { body.botDifficulty = socket._botDiffPin; return; }
+    const key = statKeyFor(body);
+    const s = key ? raidStats.get(key) : null;
+    const d = botDiff.forPlayer({
+        newbie: !!body.botNewbie,
+        rankCode: body.rankCode | 0,
+        score: s ? scoreOf(s) : 0,
+        kills: s ? s.kills | 0 : 0,
+        sessionBest: socket._botDiffBest || 0,
+    });
+    body.botDifficulty = d;
+    if (!body.botNewbie && !(body.rankCode | 0) && d > (socket._botDiffBest || 0)) socket._botDiffBest = d;
+}
+
 // New players, and anyone on one of this session's first few deaths
 // (_royaleLives counts the life that just ended), come back after
 // NEW_RESPAWN_MS instead of the full wait.
@@ -2467,7 +2491,7 @@ function onGrown(body, stage, idx) {
     const top = idx >= growth.STAGES.length;
     const sub = top ? "That's as big as anyone gets."
         : stage >= growth.RESPAWN_CAP ? "A respawn brings you back at a quarter of your score's size, " + fmtGrow(growth.RESPAWN_CAP) + " at most."
-        : "More health and ramming power, a little slower.";
+        : "Harder hits, more health, a wider view, a little slower.";
     try { body.socket.talk('KC', "grown", "You grew to " + fmtGrow(stage), 0, sub); } catch { /* */ }
 }
 
@@ -2509,6 +2533,10 @@ function tick() {
         const key = statKeyFor(body);
         const s = key ? raidStats.get(key) : null;
         if (s) { s.alive = true; s.lastSeen = t; }
+    }
+    if (t - (tick._botDiffAt || 0) >= 1000) {
+        tick._botDiffAt = t;
+        for (const body of fighters) if (body.socket) guard('bot difficulty', () => stampBotDifficulty(body));
     }
     for (const s of raidStats.values()) {
         if (t - s.lastSeen > 30000) s.alive = false;
@@ -2596,6 +2624,14 @@ module.exports = {
         for (let i = 0; i < Math.min(2000, n | 0); i++) safeSpawnSpot(null, i % 2 === 0);
         return { traps, ms: Date.now() - t0, reach: FIRST_MINUTES.SPAWN_REACH, n: spawnLog.n, enclosed: spawnLog.enclosed, byKind: spawnLog.byKind, byReason: spawnLog.byReason, rescues: spawnRescue, storm: Math.round(storm.snapshot(now()).r), recent: spawnLog.recent.slice(-5) };
     },
+    // DBG botdiff <0..100 | off>: pin this socket's bot difficulty (percent)
+    debugBotDiff: (socket, v) => {
+        if (!socket) return null;
+        socket._botDiffPin = v === 'off' || v == null || v === '' ? null : Math.max(0, Math.min(100, +v || 0)) / 100;
+        const b = socket.player && socket.player.body;
+        if (b) stampBotDifficulty(b);
+        return b ? b.botDifficulty : socket._botDiffPin;
+    },
     // DBG score <n>: set this body's raid score (growth testing)
     debugSetScore: (body, n) => {
         const st = body ? ensureStat(body) : null;
@@ -2605,7 +2641,7 @@ module.exports = {
     },
     debugGrowth: (body) => body ? { g: +(body.growthMult || 1).toFixed(3), target: +(body._growTarget || 1).toFixed(3), eff: body._growEff | 0,
         score: growthScore(body), size: +body.size.toFixed(2), realSize: +body.realSize.toFixed(2), fov: Math.round(body.fov),
-        speed: +body.topSpeed.toFixed(3), hp: Math.round(body.health.max), dmg: +body.damage.toFixed(3), x: Math.round(body.x), y: Math.round(body.y),
+        speed: +body.topSpeed.toFixed(3), hp: Math.round(body.health.max), dmg: +body.damage.toFixed(3), shotDmg: +growth.damageMult(body.growthMult || 1).toFixed(3), botDiff: body.botDifficulty, x: Math.round(body.x), y: Math.round(body.y),
         overlap: (() => { const tg = global.gameManager.terrainGrid, out = []; if (tg && tg.rocksHitByCircle) tg.rocksHitByCircle(body.x, body.y, body.realSize * 0.9, out); return out.length; })(),
         label: body.label, caps: body.skill.caps.slice(), raw: body.skill.raw.slice(), ups: (body.upgrades || []).map(u => [].concat(u.class || []).map(c => (c && c.LABEL) || String(c)).join('/')) } : null,
     // the storm jumps into the raid's last cycle too, so the final circle closes on cue

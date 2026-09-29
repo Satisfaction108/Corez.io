@@ -995,7 +995,7 @@ class Entity extends EventEmitter {
         this.sendMessage("You have traveled through a portal!");
     }
 
-    damageMultiplier() {
+    damageMultiplier(target) {
         let m = 1;
         switch (this.type) {
             case 'swarm': m = 0.25 + 1.5 * util.clamp(this.range / (this.RANGE + 1), 0, 1); break;
@@ -1003,7 +1003,7 @@ class Entity extends EventEmitter {
         }
         if (this.tutorialChipDamage) m *= this.tutorialChipDamage;
         if (this.bossBodyMult) m *= this.bossBodyMult;
-        else if (this.master && this.master !== this) m *= shotMult(this);
+        else if (this.master && this.master !== this) m *= shotMult(this, target);
         return m;
     }
 
