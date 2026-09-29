@@ -410,6 +410,7 @@ const global = {
         event: null,
         mod: null,
         pings: [],
+        bounty: null,
         lastPlace: 0,
         bossSeenId: 0,
     },

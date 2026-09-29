@@ -1378,6 +1378,20 @@ let incoming = async function(message, socket) {
                         global.callouts.push({ kind: "override", text: (firstMod ? "OVERRIDE: " : "NEW OVERRIDE: ") + String(r.mod.name).toUpperCase(), sub: String(r.mod.desc || ""), born: performance.now() + (firstMod ? 1800 : 0), dur: 4500 });
                     }
                     r.pings = d.pings || [];
+                    r.bounty = d.bounty || null;
+                    // contract: note when it arrived (the card counts down from
+                    // here) and play a soft tick when a new one lands
+                    const ob = r.you && r.you.obj;
+                    if (ob) {
+                        ob.at = r.at;
+                        if (ob.st === 0 && ob.id !== r._objSeenId) {
+                            const firstObj = !r._objSeenId;
+                            r._objSeenId = ob.id;
+                            r.objBornAt = r.at;
+                            if (!firstObj && gameSound.uiClick) gameSound.uiClick();
+                        }
+                        if (ob.st !== 0 && ob.id !== r._objEndId) { r._objEndId = ob.id; r.objEndAt = r.at; }
+                    }
                     // boss surfaced / gone: sound + camera punch once
                     const bossNow = d.boss || null;
                     if (bossNow && bossNow.id !== r.bossSeenId) {
@@ -1489,7 +1503,9 @@ let incoming = async function(message, socket) {
                 list.push({ kind: m[0] || "kill", text: m[1] || "", pts: m[2] | 0, sub: typeof m[3] === "string" ? m[3] : undefined,
                     dur: typeof m[4] === "number" && m[4] > 0 ? Math.min(15000, m[4]) : undefined, born: Math.max(performance.now(), prev + 700) });
                 if (list.length > 5) list.shift();
-                if (m[0] === "boss" || m[0] === "quest") { punchUI(8, 260); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
+                if (m[0] === "boss" || m[0] === "quest" || m[0] === "contract" || m[0] === "revenge") { punchUI(8, 260); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
+                else if (m[0] === "bounty") { punchUI(5, 220); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
+                else if (m[0] === "dropin") { if (gameSound.depositDone) gameSound.depositDone(); }
                 else if (m[0] === "grown") { punchUI(5, 220); if (gameSound.depositDone) gameSound.depositDone(); }
             } break;
             case 'FX': {
@@ -2106,6 +2122,7 @@ let incoming = async function(message, socket) {
                 global.royaleSpectating = true;
                 global.royaleKillerCamUntil = performance.now() + 3000;
                 global.raidRespawnAt = performance.now() + (respawnWaitMs > 0 ? respawnWaitMs : 15000);
+                global.raidRespawnWaitMs = respawnWaitMs > 0 ? respawnWaitMs : 15000;
                 const camToken = global.royaleKillerCamUntil;
                 // the server holds the camera on the corpse until RS, so the
                 // burst and the spilled gems get a beat before the killer cam

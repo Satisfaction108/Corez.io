@@ -78,8 +78,28 @@ test('catalog: unique ids/nids, cats, prices from the plan, colour stops readabl
     assert.equal(price('sk_hazard_stripes'), 35000);
     assert.equal(price('sk_molten_core'), 500000);
     assert.deepEqual(C.byId('ns_sunset').style.stops, ['#ffb347', '#ff6a5c', '#c850c0']);
-    assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle' && !i.exclusive).length, 13);
-    assert.equal(C.ITEMS.filter(i => i.cat === 'skin').length, 12);
+    assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle').length, 40);
+    assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle' && !i.exclusive).length, 39);
+    assert.equal(C.ITEMS.filter(i => i.cat === 'skin').length, 40);
+    // every rarity is stocked in both categories, and wire numbers stay in range
+    for (const cat of C.CATS) for (const r of C.RARITY_ORDER) assert.ok(C.ITEMS.some(i => i.cat === cat && i.rarity === r), cat + ' ' + r);
+    for (const it of C.ITEMS) assert.ok(it.cat === 'skin' ? it.nid >= 101 && it.nid <= 199 : it.nid >= 1 && it.nid <= 99, it.id);
+    // the items people already own keep their ids and wire numbers
+    const kept = { ns_sunset: 2, ns_copper_vein: 3, ns_glacier: 4, ns_candy: 5, ns_mint_rush: 6, ns_ember: 7, ns_amethyst: 8, ns_toxic: 9,
+        ns_magma_flow: 10, ns_aurora: 11, ns_emerald_crown: 12, ns_prism_shard: 13, ns_ringleader: 14,
+        sk_hazard_stripes: 101, sk_riveted_plate: 102, sk_cave_camo: 103, sk_strata: 104, sk_hex_armor: 105, sk_drill_circuit: 106,
+        sk_crystal_facets: 107, sk_gold_vein: 108, sk_lava_cracks: 109, sk_permafrost: 110, sk_emerald_heart: 111, sk_molten_core: 112 };
+    for (const [id, nid] of Object.entries(kept)) assert.equal(C.byId(id) && C.byId(id).nid, nid, id);
+    // prices sit on the ladder for their rarity; exclusives are free and unsold
+    const ladder = { nameStyle: { common: [8, 35], uncommon: [40, 45], rare: [50, 65], epic: [110, 125], legendary: [240, 250] },
+        skin: { common: [30, 35], uncommon: [60, 75], rare: [110, 140], epic: [240, 260], legendary: [450, 500] } };
+    for (const it of C.ITEMS) {
+        if (it.exclusive) { assert.equal(it.price, 0, it.id); continue; }
+        const [lo, hi] = ladder[it.cat][it.rarity], d = it.price / C.MILLI;
+        assert.ok(d >= lo && d <= hi, it.id + ' ' + d);
+    }
+    // name outlines stay dark enough to frame the fill on any background
+    for (const it of C.ITEMS) if (it.style && it.style.rim) assert.ok(C.luminance(it.style.rim) < 0.05, it.id + ' rim');
     assert.equal(C.byNid(0), null);
 });
 
@@ -97,23 +117,39 @@ test('catalog: isColorAllowed (format + WCAG luminance >= 0.137)', () => {
 
 // ---- rotation ----
 
-test('rotation: deterministic, 2 featured epic/legendary + 4 daily (<= 2 skins), no permanents', () => {
+test('rotation: deterministic, 2 featured epic/legendary + 8 daily (<= 4 skins), no permanents', () => {
     assert.deepEqual(store.generate(123, []), store.generate(123, []));
     assert.notDeepEqual(store.generate(123, [], 'a'), store.generate(123, [], 'b'));
     for (let day = 0; day < 400; day++) {
         const g = store.generate(day, []);
         assert.equal(g.featured.length, 2);
-        assert.equal(g.daily.length, 4);
-        assert.equal(new Set([...g.featured, ...g.daily]).size, 6);
+        assert.equal(g.daily.length, 8);
+        assert.equal(new Set([...g.featured, ...g.daily]).size, 10);
         for (const id of g.featured) assert.ok(['epic', 'legendary'].includes(C.byId(id).rarity));
         for (const id of g.daily) assert.ok(['common', 'uncommon', 'rare'].includes(C.byId(id).rarity));
-        assert.ok(g.daily.filter(id => C.byId(id).cat === 'skin').length <= 2);
+        assert.ok(g.daily.filter(id => C.byId(id).cat === 'skin').length <= 4);
         assert.ok(![...g.featured, ...g.daily].includes('ns_custom'));
     }
     // epic is drawn about twice as often as legendary per item
     const hits = { epic: 0, legendary: 0 };
     for (let day = 0; day < 3000; day++) for (const id of store.generate(day, []).featured) hits[C.byId(id).rarity]++;
     assert.ok(hits.epic > hits.legendary * 1.2, JSON.stringify(hits));
+});
+
+test('rotation: every item for sale turns up within a season', () => {
+    const seen = new Set();
+    for (let day = 0; day < 120; day++) { const g = store.generate(day, []); g.featured.forEach(id => seen.add(id)); g.daily.forEach(id => seen.add(id)); }
+    const missing = C.ITEMS.filter(it => !it.permanent && !it.exclusive && !it.retired && !seen.has(it.id)).map(it => it.id);
+    assert.deepEqual(missing, []);
+});
+
+test('catalog: skin accents swap off a team colour they would vanish into', () => {
+    const it = C.byId('sk_sapphire');
+    assert.equal(C.accentFor(it, '#3d7cf0'), it.skin.altAccent, 'blue on blue');
+    assert.equal(C.accentFor(it, '#ff6c6e'), it.skin.accent);
+    assert.equal(C.accentFor(C.byId('sk_sash'), '#3d7cf0'), '#ff5a5f', 'red reads fine on blue');
+    assert.equal(C.accent2For(C.byId('sk_lava_cracks'), '#ec7b0f'), C.byId('sk_lava_cracks').skin.alt2);
+    assert.equal(C.accent2For(C.byId('sk_racer'), '#3d7cf0'), null);
 });
 
 test('rotation: persisted per day, and skips items featured in the previous 2 days', () => {
@@ -305,7 +341,7 @@ test('storeView: shape, owned flags, balance', () => {
     assert.equal(v.day, TODAY);
     assert.equal(v.resetsAt, (TODAY + 1) * DAY);
     assert.equal(v.featured.length, 2);
-    assert.equal(v.daily.length, 4);
+    assert.equal(v.daily.length, 8);
     assert.deepEqual(v.permanent.map(i => i.id), ['ns_custom']);
     assert.equal(v.featured.find(i => i.id === id).owned, true);
     assert.equal(v.balanceMilli, 1000000 - C.byId(id).price);

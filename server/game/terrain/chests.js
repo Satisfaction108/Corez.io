@@ -381,7 +381,8 @@ function rootKiller(chest) {
 function onTaken(chest) {
     releaseCell(chest);
     // a chest cleared by a raid reset or a budget trim owes no replacement
-    if (chest.lockRock !== undefined && !chest.isTutorialBot && !chest._cleared) {
+    // supply drops are extras from the pacing director: nothing replaces them
+    if (chest.lockRock !== undefined && !chest.isTutorialBot && !chest._cleared && !chest.supplyDrop) {
         respawnQueue.push({ rare: !!chest.chestRare, at: Date.now() + respawnMs() });
     }
 }
@@ -447,7 +448,8 @@ function schedule() {
     const now = Date.now();
     if (now - lastScheduleAt < 1000) return;
     lastScheduleAt = now;
-    const live = alive().filter(c => !c._opened);
+    // supply drops sit outside the budget
+    const live = alive().filter(c => !c._opened && !c.supplyDrop);
     const liveEpic = live.filter(c => c.chestRare).length;
     const liveCommon = live.length - liveEpic;
     // Due entries leave the queue and become part of the deficit below; don't
@@ -484,7 +486,24 @@ function snapshot() {
     const now = Date.now();
     // e: entity id (the client links the row to the drawn boulder); a: age in
     // ms so a fresh chest plays its landing once, even for late joiners.
-    return alive().filter(c => !c._opened).map(c => ({ id: c.chestId, e: c.id, x: Math.round(c.x), y: Math.round(c.y), rare: c.chestRare ? 1 : 0, a: Math.min(60000, now - (c.chestBornAt || now)) }));
+    return alive().filter(c => !c._opened).map(c => ({ id: c.chestId, e: c.id, x: Math.round(c.x), y: Math.round(c.y), rare: c.chestRare ? 1 : 0, sd: c.supplyDrop ? 1 : undefined, a: Math.min(60000, now - (c.chestBornAt || now)) }));
+}
+
+// A supply drop (pacing.js): an epic chest outside the budget, always with a
+// kit item, in open ground inside the zone about `dist` from (x, y).
+const SUPPLY_GEMS = 400;
+function spawnSupplyDrop(x, y, dist = 700) {
+    let cell = null;
+    for (const r of [dist, dist * 0.6, dist * 1.4]) {
+        const a = Math.random() * Math.PI * 2;
+        cell = pickCell({ near: { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, r: 520 } });
+        if (cell) break;
+    }
+    if (!cell) cell = pickCell();
+    if (!cell) return null;
+    const o = spawnChest(cell.wx, cell.wy, true, { cell, gems: SUPPLY_GEMS, item: require('./shop.js').randomKitId() });
+    if (o) o.supplyDrop = true;
+    return o;
 }
 
 function clearAll() {
@@ -510,4 +529,4 @@ function debugInfo() {
     return { alive: alive().length, queue: respawnQueue.length, total, dead, canyon, noPoly, locked, candidates: cells, pick: pick ? [Math.round(pick.wx), Math.round(pick.wy)] : null, lastSpawnErr: lastSpawnErr.slice(0, 300) };
 }
 
-module.exports = { spawnChest, spawnInCell, openChest, tick, ensureNearSpawn, schedule, snapshot, clearAll, eruptGems, alive, WANT, RESPAWN_MS, debugInfo };
+module.exports = { spawnChest, spawnInCell, spawnSupplyDrop, SUPPLY_GEMS, openChest, tick, ensureNearSpawn, schedule, snapshot, clearAll, eruptGems, alive, WANT, RESPAWN_MS, debugInfo };

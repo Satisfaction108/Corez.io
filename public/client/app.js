@@ -1654,6 +1654,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
         return w;
     }
+    let nameRim = null, nameHalo = null, nameHaloA = 0;
     function drawText(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
         size += config.graphical.fontSizeBoost;
 
@@ -1690,7 +1691,10 @@ import * as cosmetics from './account/cosmetics.js';
         context.lineWidth = (size + 1) / strokeRatio;
         context.textAlign = "left";
         context.textBaseline = "middle";
-        context.strokeStyle = color.black;
+        // a name style's outline / halo (styledName sets them for this one call)
+        const rim = nameRim, halo = nameHalo, haloA = nameHaloA;
+        nameRim = nameHalo = null;
+        context.strokeStyle = rim || color.black;
         context.fillStyle = defaultFillStyle;
         context.save();
         if (nativeAlign) context.textAlign = align;
@@ -1704,6 +1708,18 @@ import * as cosmetics from './account/cosmetics.js';
         Xoffset += x * ratio - size / 4;
         Yoffset += y * ratio - Yoffset * (center ? 1.05 : 1.5);
         if (stroke) {
+            if (halo) {
+                const lw = context.lineWidth, ga = context.globalAlpha, hp = cosmetics.HALO_PASSES;
+                context.strokeStyle = halo;
+                for (let i = 0; i < hp.length; i++) {
+                    context.lineWidth = lw * hp[i][0];
+                    context.globalAlpha = ga * haloA * hp[i][1];
+                    context.strokeText(renderedFullText, Xoffset, Yoffset);
+                }
+                context.lineWidth = lw;
+                context.strokeStyle = rim || color.black;
+                context.globalAlpha = ga;
+            }
             context.strokeText(renderedFullText, Xoffset, Yoffset);
         }
         for (let i = 0; i < textArray.length; i++) {
@@ -2264,6 +2280,8 @@ import * as cosmetics from './account/cosmetics.js';
             if (fill) context.fill();
             context.globalAlpha = 1;
         };
+        // one options object for every skinned hull, refilled per draw
+        const skinOpts = { statusColor: null, blend: 0, flash: false, flashColor: null, hitBlend: 0, hitColor: null, borderless: false, fill: true, lowFx: false, force: false };
 
         return (baseColor, x, y, instance, ratio, alpha = 1, scale = 1, lineWidthMult = 1, rot = 0, turretsObeyRot = false, assignedContext = false, turretInfo = false, render = instance.render, smoothsize = false) => {
 
@@ -2497,10 +2515,11 @@ import * as cosmetics from './account/cosmetics.js';
                     // tank skin (accounts): the hull only, never turrets or guns
                     if (turretInfo === false && instance.skin) {
                         try {
-                            cosmetics.paintHull(context, xx, yy, sizeRatio, m.shape, rot, instance.skin, bodyBase, {
-                                statusColor, blend, flash: invulnBlink, flashColor: gameDraw.getColor(6), hitBlend, hitColor: HIT_BLINK_COLOR,
-                                borderless: m.borderless, fill: m.drawFill, lowFx: global.lowFx || config.graphical.optimizeMode, force: !!instance.skinForce,
-                            });
+                            const so = skinOpts;
+                            so.statusColor = statusColor; so.blend = blend; so.flash = invulnBlink; so.flashColor = gameDraw.getColor(6);
+                            so.hitBlend = hitBlend; so.hitColor = HIT_BLINK_COLOR; so.borderless = m.borderless; so.fill = m.drawFill;
+                            so.lowFx = !!(global.lowFx || config.graphical.optimizeMode); so.force = !!instance.skinForce;
+                            cosmetics.paintHull(context, xx, yy, sizeRatio, m.shape, rot, instance.skin, bodyBase, so);
                         } catch (e) { /* a skin never breaks the frame */ }
                     }
                 }
@@ -4988,6 +5007,27 @@ import * as cosmetics from './account/cosmetics.js';
         }
         return streakById.get(id) || 0;
     }
+    // The badge over a tank: your revenge target, the bounty, or a streak.
+    const streakBadges = new Map();
+    const REVENGE_BADGE = { key: "rv", word: "REVENGE", num: "", col: "#ff6b5e" };
+    let bountyBadge = null;
+    function badgeOf(id) {
+        if (!royaleActive() || raidFinale.active()) return null;
+        const r = global.royale;
+        const rv = r.you && r.you.revenge;
+        if (rv && rv.alive && rv.e === id) return REVENGE_BADGE;
+        const b = r.bounty;
+        if (b && b.e === id) {
+            const key = "bt" + (b.gems | 0);
+            if (!bountyBadge || bountyBadge.key !== key) bountyBadge = { key, word: "BOUNTY ", num: "+" + (b.gems | 0), col: HUD.gold };
+            return bountyBadge;
+        }
+        const n = streakOf(id);
+        if (!n) return null;
+        let bd = streakBadges.get(n);
+        if (!bd) { bd = { key: "s" + n, word: "STREAK ", num: "x" + n, col: "#ffb347", streak: n }; streakBadges.set(n, bd); }
+        return bd;
+    }
     // badge text size: grows with the tank and the zoom, capped both ways
     const streakSize = (isize, ratio) => Math.min(26, Math.max(14, 0.46 * Math.max(20, isize * ratio)));
     const streakGap = (fs) => Math.max(3, fs * 0.28);
@@ -4995,7 +5035,7 @@ import * as cosmetics from './account/cosmetics.js';
     const STREAK_H = 1.62, STREAK_TIP = 0.42;
     function overheadTop(instance, y, ratio, isize) {
         const top = nameStackTop(instance, y, ratio, isize);
-        if (!streakOf(instance.id)) return top;
+        if (!badgeOf(instance.id)) return top;
         const fs = streakSize(isize, ratio);
         return top - streakGap(fs) - fs * (STREAK_H + STREAK_TIP);
     }
@@ -5004,11 +5044,11 @@ import * as cosmetics from './account/cosmetics.js';
     // and the old red marker as a pointer down at the tank.
     const STREAK_BAKE = 40;
     const streakSprites = new Map();
-    function streakSprite(n) {
-        let spr = streakSprites.get(n);
+    function streakSprite(bd) {
+        let spr = streakSprites.get(bd.key);
         if (spr) return spr;
         const fs = STREAK_BAKE, pad = Math.ceil(fs * 0.22);
-        const word = "STREAK ", num = "x" + n;
+        const word = bd.word, num = bd.num;
         const cv = document.createElement("canvas");
         let c = cv.getContext("2d");
         c.font = fs + "px " + HUD.font;
@@ -5037,7 +5077,8 @@ import * as cosmetics from './account/cosmetics.js';
         c.save();
         roundRectPath(c, x0, y0, pw, ph, ph / 2);
         c.clip();
-        c.fillStyle = "rgba(255,179,71,0.22)";
+        c.fillStyle = bd.col;
+        c.globalAlpha = 0.22;
         c.fillRect(x0, y0, pw, ph * 0.34);
         c.restore();
         roundRectPath(c, x0, y0, pw, ph, ph / 2);
@@ -5049,26 +5090,26 @@ import * as cosmetics from './account/cosmetics.js';
         const tx = cx - (ww + nw) / 2, ty = y0 + ph / 2 + fs * 0.06;
         c.lineWidth = fs * 0.2; c.strokeStyle = HUD.ink;
         c.strokeText(word, tx, ty); c.strokeText(num, tx + ww, ty);
-        c.fillStyle = "#ffb347"; c.fillText(word, tx, ty);
-        c.fillStyle = HUD.head; c.fillText(num, tx + ww, ty);
+        c.fillStyle = bd.col; c.fillText(word, tx, ty);
+        c.fillStyle = HUD.head; if (num) c.fillText(num, tx + ww, ty);
         spr = { cv, ax: cx, tipY: y0 + ph + tip, fs };
         if (streakSprites.size > 40) streakSprites.clear();
-        streakSprites.set(n, spr);
+        streakSprites.set(bd.key, spr);
         return spr;
     }
     // the ids whose badge drew this frame; the edge marker skips them
     const streakShownAt = new Map();
     let overheadFrame = 0;
     function drawStreakBadge(x, y, instance, ratio, alpha, isize) {
-        const n = streakOf(instance.id);
-        if (!n || alpha < 0.02) return;
+        const bd = badgeOf(instance.id);
+        if (!bd || alpha < 0.02) return;
         let fade = instance.render.status.getFade();
         fade *= fade;
         if (fade < 0.02) return;
         x += global.screenWidth / 2;
         y += global.screenHeight / 2;
         const fs = streakSize(isize, ratio);
-        const spr = streakSprite(n);
+        const spr = streakSprite(bd);
         const k = fs / spr.fs;
         const w = spr.cv.width * k, h = spr.cv.height * k;
         // the pointer tip sits a small gap over the name (or the hull)
@@ -5499,16 +5540,30 @@ import * as cosmetics from './account/cosmetics.js';
     // legendary styles also get their suffix glyph as a colour code. Below
     // 8 px, or with no style, it is the plain colour. `solid` is the colour
     // the name would have had (a Custom Color's own hex rides in there).
-    function styledName(name, nid, solid, x, size, align = "left", context = ctx[2]) {
+    // y / centered are what drawText gets, so vertical fills line up with
+    // the letters. It also arms the style's outline and halo for the very
+    // next drawText call.
+    const nameFillOpts = { still: false, mid: 0, fs: 0 };
+    const styledOut = { text: "", fill: null };
+    function styledName(name, nid, solid, x, size, align = "left", context = ctx[2], y = 0, centered = false) {
         const st = nid ? cosmetics.nameStyleOf(nid) : null;
-        if (!st || !name) return { text: name, fill: solid };
+        const out = styledOut;
+        out.text = name; out.fill = solid;
+        if (!st || !name) return out;
         const text = cosmetics.withGlyph(name, st);
         const fs = size + config.graphical.fontSizeBoost;
-        if (fs < 8) return { text, fill: cosmetics.solidOf(st, solid) };
+        const still = !!(global.lowFx || config.graphical.fewerEffects);
+        const fx = cosmetics.nameFx(st, { still });
+        nameRim = fx.rim; nameHalo = fx.halo; nameHaloA = fx.haloA;
+        out.text = text;
+        if (fs < 8) { out.fill = cosmetics.solidOf(st, solid); return out; }
         const full = measureText(text, size);
         const w = text === name ? full : measureText(name, size);
         const a = align === "center" ? 0.5 : align === "right" ? 1 : 0;
-        return { text, fill: cosmetics.nameFill(context, st, solid, x - full * a - fs / 20, w, { still: !!global.lowFx }) };
+        const o = nameFillOpts;
+        o.still = still; o.mid = centered ? y - 0.035 * fs : y - 0.35 * fs; o.fs = fs;
+        out.fill = cosmetics.nameFill(context, st, solid, x - full * a - fs / 20, w, o);
+        return out;
     }
     const hexOr = (v, dflt) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v : dflt;
 
@@ -5549,7 +5604,7 @@ import * as cosmetics from './account/cosmetics.js';
                     const ny = y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45);
                     // badge and name are centred over the hull as one
                     const code = nameBadgeCode(instance.rankCode, false), nx = x + nameBadgeRoom(code, 0.55 * g) / 2;
-                    const sn = styledName(name, instance.nameStyle, namecolor == "#ffffff" ? color.guiwhite : namecolor, nx, 0.55 * g, "center", ctx[1]);
+                    const sn = styledName(name, instance.nameStyle, namecolor == "#ffffff" ? color.guiwhite : namecolor, nx, 0.55 * g, "center", ctx[1], ny);
                     drawText(sn.text, nx, ny, 0.55 * g, sn.fill, "center", false, 1, true, ctx[1]);
                     drawNameBadge(code, sn.text, nx, ny, 0.55 * g, "center", ctx[1]);
                     // duos: a little diamond in your team colour over your partner
@@ -5758,7 +5813,7 @@ import * as cosmetics from './account/cosmetics.js';
         // your rank badge (placement "?" included) and name, centred as one
         const myCode = name ? nameBadgeCode(myRankCode(), true) : 0;
         const nameX = Math.round(x + width / 2 + nameBadgeRoom(myCode, 31) / 2) + 1.5, nameY = Math.round(y - 10 - 4) - 1;
-        const mySn = styledName(name, global.myNameStyle, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, nameX, 31, "center");
+        const mySn = styledName(name, global.myNameStyle, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, nameX, 31, "center", ctx[2], nameY);
         drawText(mySn.text, nameX, nameY, 31, mySn.fill, "center");
         drawNameBadge(myCode, mySn.text, nameX, nameY, 31, "center", ctx[2]);
     }
@@ -6551,7 +6606,7 @@ import * as cosmetics from './account/cosmetics.js';
         const sh = global.screenHeight;
         switch (kind) {
             case "standings": return standingsRect;
-            case "quest": return questRect;
+            case "quest": case "contract": return questRect;
             case "feed": {
                 const f = hudDrawn.feed;
                 return f ? { x: f.x, y: f.y, w: f.w, h: Math.max(f.h, 63) } : null;
@@ -7053,7 +7108,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (rk) rankBadges.drawBadge(c, x + 47, rowMid - 0.5, 15, rk === 20 ? "placement" : rk - 1);
             // a name style replaces the plain colour (yours included)
             const rowName = shortName(row.name, 18);
-            const rowSn = styledName(rowName, row.ns, hexOr(row.nc, nameCol), x + 40 + rkCol, ns, "left", c);
+            const rowSn = styledName(rowName, row.ns, hexOr(row.nc, nameCol), x + 40 + rkCol, ns, "left", c, rowMid, true);
             drawText(rowSn.text + nameTxt.slice(rowName.length), x + 40 + rkCol, rowMid, ns, rowSn.fill, "left", true);
             drawText(scoreTxt, x + W - 12, rowMid, 12, nameCol, "right", true);
             ry += rowH;
@@ -7082,7 +7137,10 @@ import * as cosmetics from './account/cosmetics.js';
         }
         if (f.chest) return { text: who(f.name, "Someone") + " cracked an epic chest", badge: null };
         if (f.bloom) return { text: "Ore bloom in " + (f.name || "the wall"), badge: null };
-        if (f.event) return { text: f.kind === "meteor" ? "Meteor shower over " + (f.name || "the map") : "Gem rain over the safe zone", badge: null };
+        if (f.event) return { text: f.kind === "meteor" ? "Meteor shower over " + (f.name || "the map")
+            : f.kind === "supply" ? "Supply drop in " + (f.name || "the zone")
+            : f.kind === "bounty" ? "Bounty on " + who(f.name, "someone")
+            : "Gem rain over the safe zone", badge: null };
         if (f.storm) return { text: who(f.name, "Someone") + " got caught by the storm", badge: null };
         if (f.rock) return { text: who(f.name, "Someone") + " got crushed by the wall", badge: null };
         const vic = who(f.name, "someone");
@@ -7137,20 +7195,21 @@ import * as cosmetics from './account/cosmetics.js';
         hudDrawn.feed = { x: right - 262, y: yTop, w: 262, h: y - yTop };
     }
 
-    // ── quest tracker ──────────────────────────────────────────────────
+    // ── contract tracker ───────────────────────────────────────────────
     let questRect = null, overrideRect = null;
-    // ── left cards: the quest card with the override card right under it,
+    // ── left cards: the contract card with the override card right under it,
     // in the gap between the class-upgrade tiles and the kit box. When the
     // gap is too short the override drops its description; when even that
     // won't fit (a tall upgrade grid) both cards move beside the tiles.
     let leftCards = null;
     // same width and left edge as the kit box below, so the column is one
     // straight edge
-    const CARD_W = 190, QUEST_H = 58, CARD_GAP = 10;
+    const CARD_W = 190, QUEST_H = 68, CARD_GAP = 10;
     const overrideH = n => n ? 48 + n * 13 : 40;
     function layoutLeftCards() {
         const r = global.royale;
-        const q = !global.died && r.you && r.you.quest ? r.you.quest : null;
+        // the contract (server contracts.js): one short job at a time
+        const q = !global.died && r.you && r.you.obj ? r.you.obj : null;
         const mod = !global.died && r.mod && r.mod.name ? r.mod : null;
         // duos: the teammate card tops the stack (dead or alive)
         const duo = r.duos && r.duo ? r.duo : null;
@@ -7192,40 +7251,118 @@ import * as cosmetics from './account/cosmetics.js';
         let ly = y + 49;
         for (const ln of lines) { drawText(ln, x + 12, ly, 10, HUD.text, "left", true); ly += 13; }
     }
+    // One line of text fitted to the card: shrink, then ellipsize (cached).
     const questFit = new Map();
+    function fitLine(raw, size, min, maxW) {
+        const k = raw + "|" + size + "|" + maxW;
+        let fit = questFit.get(k);
+        if (fit) return fit;
+        let qs = size, txt = raw;
+        while (qs > min && measureText(txt, qs) > maxW) qs -= 0.5;
+        if (measureText(txt, qs) > maxW) {
+            while (txt.length > 2 && measureText(txt + "…", qs) > maxW) txt = txt.slice(0, -1);
+            txt += "…";
+        }
+        fit = { txt, qs };
+        if (questFit.size > 48) questFit.clear();
+        questFit.set(k, fit);
+        return fit;
+    }
+    // Where the contract points right now: the live entity when it's in view,
+    // else the raid packet's position eased between packets.
+    const ctgt = { x: 0, y: 0, size: 0 };
+    function contractTarget(o) {
+        if (!o || o.st !== 0 || o.x == null) return null;
+        if (o.e != null) {
+            const list = global.entities;
+            for (let i = 0; i < list.length; i++) {
+                const e = list[i];
+                if (e.id !== o.e) continue;
+                ctgt.x = e.render && e.render.x != null ? e.render.x : e.x;
+                ctgt.y = e.render && e.render.y != null ? e.render.y : e.y;
+                ctgt.size = e.size || 30;
+                return ctgt;
+            }
+        }
+        const p = trackPos("contract" + o.id, o.x, o.y, 0.6);
+        ctgt.x = p.x; ctgt.y = p.y; ctgt.size = 0;
+        return ctgt;
+    }
+    const CONTRACT_LABEL = { chest: "CHEST", bank: "VAULT", mine: "ORE", boss: "BOSS", bounty: "BOUNTY", streaker: "STREAKER", hunt: "TARGET", bloom: "ORE BLOOM", event: "EVENT", zone: "SAFE ZONE", shop: "SHOP" };
     function drawQuestCard() {
         const L = leftCards;
-        const q = L && L.q;
-        if (!q) { questRect = null; return; }
+        const o = L && L.q;
+        if (!o) { questRect = null; return; }
         const W = CARD_W, H = QUEST_H;
-        const x = L.x, y = L.y + (L.duoOff | 0);
-        questRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
+        const now = performance.now();
+        const calm = !!(global.reducedMotion && global.reducedMotion());
+        // a new contract slides in from the left
+        const bornAge = now - (global.royale.objBornAt || 0);
+        const slide = calm || o.st !== 0 ? 0 : Math.max(0, 1 - bornAge / 260);
+        const x = L.x - Math.round(slide * slide * 60), y = L.y + (L.duoOff | 0);
+        questRect = { x: L.x - 6, y: y - 6, w: W + 12, h: H + 12 };
         const c = ctx[2];
-        hudPanel(c, x, y, W, H);
-        hudTitle("Quest " + ((q.idx | 0) + 1) + "/" + (q.total | 0), x + 12, y + 14, 13, HUD.copper, "left");
-        hudTitle("+" + fmtNum(q.reward) + " gems", x + W - 12, y + 14, 13, HUD.emerald, "right");
-        // the quest text gets the full width; shrink, then ellipsize (cached)
-        const maxTW = W - 24;
-        const raw = String(q.text || "");
-        let fit = questFit.get(raw);
-        if (!fit) {
-            let qs = 12, txt = raw;
-            while (qs > 9.5 && measureText(txt, qs) > maxTW) qs -= 0.5;
-            if (measureText(txt, qs) > maxTW) {
-                while (txt.length > 2 && measureText(txt + "…", qs) > maxTW) txt = txt.slice(0, -1);
-                txt += "…";
+        const a = 1 - slide;
+        const done = o.st === 1, missed = o.st === 2;
+        hudPanel(c, x, y, W, H, { alpha: a });
+        // done: a green rim that fades out
+        if (done) {
+            const k = Math.max(0, 1 - (now - (global.royale.objEndAt || now)) / 1400);
+            if (k > 0) {
+                c.save();
+                c.globalAlpha = a * k;
+                roundRectPath(c, x - 2, y - 2, W + 4, H + 4, HUD.r + 2);
+                c.lineWidth = 3; c.strokeStyle = HUD.emerald; c.stroke();
+                c.restore();
             }
-            fit = { txt, qs };
-            if (questFit.size > 32) questFit.clear();
-            questFit.set(raw, fit);
         }
-        drawText(fit.txt, x + 12, y + 32, fit.qs, color.guiwhite, "left", true);
-        const progTxt = fmtNum(q.prog || 0) + " / " + fmtNum(q.goal);
-        const progW = hudTextW(progTxt, 10);
-        const bx = x + 12, bw = W - 24 - progW - 8, by = y + 42, bh = 8;
-        const frac = q.goal > 0 ? Math.min(1, (q.prog || 0) / q.goal) : 0;
-        hudBar(c, bx, by, bw, bh, frac, HUD.emerald);
-        drawText(progTxt, x + W - 12, by + bh / 2, 10, HUD.text2, "right", true);
+        const left = Math.max(0, (o.ms || 0) - (now - (o.at || now)));
+        const secs = Math.ceil(left / 1000);
+        hudTitle(done ? "Contract done" : missed ? "Missed" : "Contract", x + 12, y + 14, 13, done ? HUD.emerald : missed ? HUD.danger : HUD.gold, "left", a);
+        if (!done && !missed) {
+            const tt = fmtRaidClock(secs);
+            drawText(tt, x + W - 12, y + 14, 11, secs <= 10 ? HUD.danger : HUD.text2, "right", true, a);
+            // a small arrow toward the target, beside the clock
+            const tg = contractTarget(o);
+            if (tg) {
+                const dx = tg.x - global.player.renderx, dy = tg.y - global.player.rendery;
+                if (dx * dx + dy * dy > 160 * 160) {
+                    const ax = x + W - 12 - hudTextW(tt, 11) - 12, ay = y + 14;
+                    c.save();
+                    c.globalAlpha = a;
+                    c.translate(ax, ay);
+                    c.rotate(Math.atan2(dy, dx));
+                    c.beginPath(); c.moveTo(6, 0); c.lineTo(-4, -5); c.lineTo(-2, 0); c.lineTo(-4, 5); c.closePath();
+                    c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.5; c.lineJoin = "round";
+                    c.fill(); c.stroke();
+                    c.restore();
+                }
+            }
+        }
+        // the job itself, on up to two lines
+        const lines = wrapLines(String((missed && o.why) || o.t || ""), 11.5, W - 24);
+        const txtCol = missed ? HUD.text2 : color.guiwhite;
+        if (lines.length > 1) {
+            drawText(lines[0], x + 12, y + 30, 11.5, txtCol, "left", true, a);
+            const f2 = lines.length > 2 ? fitLine(lines.slice(1).join(" "), 11.5, 11.5, W - 24) : null;
+            drawText(f2 ? f2.txt : lines[1], x + 12, y + 43, 11.5, txtCol, "left", true, a);
+        } else drawText(lines[0] || "", x + 12, y + 36, 11.5, txtCol, "left", true, a);
+        const rewTxt = "+" + fmtNum(o.r | 0);
+        const rewW = hudTextW(rewTxt, 10.5);
+        const bx = x + 12, bw = W - 24 - rewW - 18, by = y + 53, bh = 8;
+        const frac = done ? 1 : o.g > 0 ? Math.min(1, (o.p || 0) / o.g) : 0;
+        c.save();
+        c.globalAlpha = a * (missed ? 0.45 : 1);
+        hudBar(c, bx, by, bw, bh, frac, done ? HUD.emerald : HUD.gold);
+        c.restore();
+        // the reward: gems, with a small gem in front
+        const gx = x + W - 12 - rewW - 7;
+        c.save();
+        c.globalAlpha = a * (missed ? 0.45 : 1);
+        c.fillStyle = HUD.emerald; c.strokeStyle = HUD.ink; c.lineWidth = 1.3;
+        gemPath(c, gx, by + bh / 2, 4.5); c.fill(); c.stroke();
+        c.restore();
+        drawText(rewTxt, x + W - 12, by + bh / 2, 10.5, missed ? HUD.text2 : HUD.emerald, "right", true, a);
     }
 
     // ── duos: the teammate card (top of the left stack) ─────────────────
@@ -7333,16 +7470,18 @@ import * as cosmetics from './account/cosmetics.js';
             const a = (inT * inT * (3 - 2 * inT)) * Math.max(0, outT);
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
             const col = t.kind === "override" || t.kind === "late" ? "#c9a8ff" : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
-                : t.kind === "chest" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
-                : t.kind === "grown" ? HUD.emerald : color.guiwhite;
+                : t.kind === "chest" || t.kind === "dropin" || t.kind === "bounty" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
+                : t.kind === "grown" || t.kind === "contract" ? HUD.emerald : t.kind === "revenge" ? "#ff6b5e" : color.guiwhite;
             const base = t.kind === "streak" ? 16 : 23, size = base * pop;
             const len = (Math.max(hudTitleW(t.text, base), t.sub ? hudTextW(t.sub, 12.5) : 0) + 44) * pop;
-            const extra = (t.pts || t.sub) ? 22 * pop : 0;
+            // points and a sub line stack: points first
+            const lines = (t.pts ? 1 : 0) + (t.sub ? 1 : 0);
+            const extra = lines ? (22 + (lines - 1) * 18) * pop : 0;
             const ph = size * 1.7 + extra;
             hudPanel(c, cx - len / 2, cy - size * 0.85, len, ph, { alpha: a, fill: "rgba(43,37,51,0.72)", r: HUD.r * pop });
             hudTitle(t.text, cx, cy, size, col, "center", a);
             if (t.pts) hudTitle("+" + fmtNum(t.pts) + " pts", cx, cy + size * 0.95 + 5, 15 * pop, HUD.gold, "center", a);
-            if (t.sub) drawText(t.sub, cx, cy + size * 0.95 + 5, 12.5, "#d8dce6", "center", true, a, 4.5);
+            if (t.sub) drawText(t.sub, cx, cy + size * 0.95 + 5 + (t.pts ? 18 * pop : 0), 12.5, t.kind === "contract" || t.kind === "bounty" ? HUD.emerald : "#d8dce6", "center", true, a, 4.5);
             break;
         }
     }
@@ -8244,6 +8383,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (glyph === "boss") { polyPath(c, gx, gy, 6.5, 8, Math.PI / 8); c.fill(); c.stroke(); }
         else if (glyph === "gem") { gemPath(c, gx, gy + 0.5, 6.5); c.fill(); c.stroke(); }
         else if (glyph === "skull") { c.restore(); drawSkull(c, gx, gy, 6, col); c.save(); }
+        else if (glyph === "contract") { c.beginPath(); c.arc(gx, gy, 6, 0, Math.PI * 2); c.fill(); c.stroke(); c.beginPath(); c.arc(gx, gy, 2.2, 0, Math.PI * 2); c.fillStyle = HUD.ink; c.fill(); }
         else if (glyph === "mate") { c.save(); c.translate(gx, gy); c.rotate(Math.PI / 4); c.fillRect(-4.5, -4.5, 9, 9); c.strokeRect(-4.5, -4.5, 9, 9); c.restore(); }
         else if (glyph.startsWith("ping:")) { c.beginPath(); c.arc(gx, gy, 7, 0, Math.PI * 2); c.fill(); c.stroke(); drawPingGlyph(c, gx, gy, 5, glyph.slice(5)); }
         else { c.beginPath(); c.moveTo(gx, gy - 6); c.lineTo(gx + 6, gy + 5); c.lineTo(gx - 6, gy + 5); c.closePath(); c.fill(); c.stroke(); }
@@ -8269,6 +8409,28 @@ import * as cosmetics from './account/cosmetics.js';
         const onScreen = (s, m) => s.x > -m && s.x < global.screenWidth + m && s.y > -m && s.y < global.screenHeight + m;
         const me = { x: global.player.renderx, y: global.player.rendery };
         const marks = [];
+        // the contract's target: a ring on it when it's in view, else the
+        // first edge marker
+        const ob = r.you && r.you.obj;
+        const tg = ob ? contractTarget(ob) : null;
+        let contractE = -1;
+        if (tg) {
+            contractE = ob.e != null ? ob.e : -1;
+            const s = toScreen(tg.x, tg.y);
+            const d = Math.hypot(tg.x - me.x, tg.y - me.y);
+            const rr = (ob.tr || (tg.size ? tg.size * 1.5 + 14 : 46)) * ratio;
+            if (onScreen(s, -Math.min(rr, 40))) {
+                if (d > 120) drawContractRing(c, s.x, s.y, rr, now);
+            } else marks.push({ pri: -1, s, col: HUD.gold, glyph: "contract", name: CONTRACT_LABEL[ob.k] || "CONTRACT", d });
+        }
+        // revenge: your last killer, when it's not already the contract target
+        const rv = r.you && r.you.revenge;
+        if (rv && rv.alive && rv.e !== contractE && isFinite(rv.x)) {
+            const p = trackPos("revenge", rv.x, rv.y, 0.8);
+            const s = toScreen(p.x, p.y);
+            const d = Math.hypot(p.x - me.x, p.y - me.y);
+            if (!onScreen(s, -20) && d < 3600) marks.push({ pri: 2, s, col: "#ff6b5e", glyph: "skull", name: "REVENGE " + shortName(rv.name, 10).toUpperCase(), d });
+        }
         if (r.boss) {
             const p = trackPos("boss", r.boss.x, r.boss.y, 0.6);
             const s = toScreen(p.x, p.y);
@@ -8302,7 +8464,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
         marks.sort((a, b) => a.pri - b.pri);
         const placed = [];
-        for (const mk of marks.slice(0, 3)) {
+        for (const mk of marks.slice(0, 4)) {
             const e = edgePoint(mk.s.x - cx, mk.s.y - cy);
             drawEdgeMarker(c, e, mk.col, mk.glyph, mk.name, fmtDist(mk.d), placed);
         }
@@ -8319,6 +8481,34 @@ import * as cosmetics from './account/cosmetics.js';
         for (const id of chestSeenAt.keys()) if (!seen.has(id)) chestSeenAt.delete(id);
         for (const [eid, t0] of chestSpawnByEnt) if (now - t0 > 5000) chestSpawnByEnt.delete(eid);
         for (const [eid, t0] of chestGoneAt) if (now - t0 > 2000) { chestGoneAt.delete(eid); if (window.terrainRenderer && window.terrainRenderer.dropCell) window.terrainRenderer.dropCell(chestCellKey(eid)); }
+    }
+    // A gold ring with four ticks on the contract target; it breathes unless
+    // reduced motion is on.
+    const ringDash = [0, 0], NO_DASH = [];
+    function drawContractRing(c, x, y, R, now) {
+        const calm = !!(global.reducedMotion && global.reducedMotion());
+        const k = calm ? 0 : 0.5 + 0.5 * Math.sin(now / 260);
+        const rr = R * (1 + 0.06 * k);
+        c.save();
+        c.lineCap = "round";
+        c.globalAlpha = 0.9;
+        c.strokeStyle = HUD.ink; c.lineWidth = 6;
+        c.beginPath(); c.arc(x, y, rr, 0, Math.PI * 2); c.stroke();
+        c.strokeStyle = HUD.gold; c.lineWidth = 3;
+        ringDash[0] = rr * 0.42; ringDash[1] = rr * 0.36;
+        c.setLineDash(ringDash);
+        c.lineDashOffset = calm ? 0 : -now / 40;
+        c.beginPath(); c.arc(x, y, rr, 0, Math.PI * 2); c.stroke();
+        c.setLineDash(NO_DASH);
+        for (let i = 0; i < 4; i++) {
+            const a = i * Math.PI / 2 + Math.PI / 4;
+            const ca = Math.cos(a), sa = Math.sin(a);
+            c.strokeStyle = HUD.ink; c.lineWidth = 6;
+            c.beginPath(); c.moveTo(x + ca * (rr + 6), y + sa * (rr + 6)); c.lineTo(x + ca * (rr + 16), y + sa * (rr + 16)); c.stroke();
+            c.strokeStyle = HUD.gold; c.lineWidth = 3;
+            c.beginPath(); c.moveTo(x + ca * (rr + 6), y + sa * (rr + 6)); c.lineTo(x + ca * (rr + 16), y + sa * (rr + 16)); c.stroke();
+        }
+        c.restore();
     }
     const ROCK_CHIPS = ["rgb(5,4,7)", "rgb(14,12,19)", "rgb(26,23,33)"];
     // Boss death: a white-out, a tinted vignette pulse, a core bloom, light
@@ -8340,7 +8530,7 @@ import * as cosmetics from './account/cosmetics.js';
         const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
         for (let i = list.length - 1; i >= 0; i--) {
             const f = list[i];
-            const big = f.kind === "boss" || f.kind === "bossdead" || f.kind === "bloom";
+            const big = f.kind === "boss" || f.kind === "bossdead" || f.kind === "bloom" || f.kind === "supply";
             const DUR = f.kind === "bossdead" ? 2200 : big ? 1400 : 800;
             const age = now - f.born;
             if (age > DUR) { list.splice(i, 1); continue; }
@@ -9542,6 +9732,27 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
 
+        // the bounty: a gold diamond wherever it is
+        if (royaleActive()) {
+            const bm = (global.royale || {}).bounty;
+            if (bm && isFinite(bm.x) && isFinite(bm.y)) {
+                const mx = T.X(bm.x), my = T.Y(bm.y);
+                if (inside(mx, my)) {
+                    const s2 = dotR * 2.2;
+                    c.save();
+                    c.translate(mx, my);
+                    c.rotate(Math.PI / 4);
+                    c.fillStyle = HUD.gold;
+                    c.strokeStyle = color.black;
+                    c.lineWidth = 2;
+                    c.beginPath();
+                    c.rect(-s2, -s2, s2 * 2, s2 * 2);
+                    c.fill();
+                    c.stroke();
+                    c.restore();
+                }
+            }
+        }
         if (royaleActive()) drawRoyaleMapExtras(T, rx, ry, rw, rh, dotR);
         const px = T.X(global.player.renderx), py = T.Y(global.player.rendery);
         if (inside(px, py)) {
@@ -9880,7 +10091,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (rows[i].num) {
                 drawText(rows[i].num, x + 18 + numW - 8, ry, 14, col, "right");
                 if (rows[i].rk) rankBadges.drawBadge(ctx[2], x + 18 + numW + 9, ry - 5.4, 18, rows[i].rk === 20 ? "placement" : rows[i].rk - 1);
-                const fSn = styledName(rows[i].name, rows[i].ns, hexOr(rows[i].nc, col), x + 18 + numW + rkCol, 14, "left");
+                const fSn = styledName(rows[i].name, rows[i].ns, hexOr(rows[i].nc, col), x + 18 + numW + rkCol, 14, "left", ctx[2], ry);
                 drawText(fSn.text, x + 18 + numW + rkCol, ry, 14, fSn.fill, "left");
             } else drawText(rows[i].name, x + 18, ry, 14, col, "left");
             if (rows[i].extra) drawText(rows[i].extra, x + w - 18, ry, 14, color.gold, "right");
@@ -11121,6 +11332,22 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
     };
+    // Over the killer the camera is following while you wait: who it is.
+    function drawWatchingTag(rv, a) {
+        const c = ctx[2];
+        const sx = global.screenWidth / 2, sy = global.screenHeight / 2 + 100;
+        const name = shortName(rv.name || "them", 16);
+        const label = "Watching " + name;
+        const tw = hudTextW(label, 12.5);
+        const hp = Math.max(0, Math.min(1, rv.hp != null ? +rv.hp : 1));
+        const w = Math.max(tw + 30, 150), h = 40;
+        hudPanel(c, sx - w / 2, sy - h / 2, w, h, { alpha: a, fill: HUD.solid, r: HUD.rSmall + 2 });
+        drawText(label, sx, sy - 6, 12.5, "#ff9a8c", "center", true, a);
+        c.save();
+        c.globalAlpha = a;
+        hudBar(c, sx - w / 2 + 12, sy + 6, w - 24, 6, hp, hp > 0.5 ? HUD.emerald : hp > 0.25 ? HUD.gold : HUD.danger);
+        c.restore();
+    }
     // ── Raid death screen ────────────────────────────────────────────────
     // The raid's death screen: gold-framed, full run stats, auto respawn
     // (paused during the final-storm spawn lock).
@@ -11130,16 +11357,23 @@ import * as cosmetics from './account/cosmetics.js';
         // backdrop ramps up from zero
         const panelA = global.lerp(0, 0.7, glide);
         const rise = (1 - panelA) * 18;
-        clearScreen(color.black, 0.62 * global.lerp(0, 0.6, glide), ctx[2]);
-        const c = ctx[2];
-        const cx = global.screenWidth / 2;
         const you = global.royale.you || {};
+        const rv = you.revenge || null;
+        // the camera follows your killer behind the card: on a wide screen
+        // the card steps left and the dim is lighter so you can watch them
+        const PW = Math.min(620, global.screenWidth - 40);
+        const wide = global.screenWidth >= PW * 2 + 260;
+        const watching = !!(rv && rv.alive);
+        clearScreen(color.black, (wide && watching ? 0.36 : 0.62) * global.lerp(0, 0.6, glide), ctx[2]);
+        const c = ctx[2];
+        const cx = wide ? Math.round(global.screenWidth / 2 - 110 - PW / 2) : global.screenWidth / 2;
+        global.deathPanelCx = cx;
         const place = (you.place || global.royale.place) | 0;
         const score = (you.score != null ? you.score : global.royale.youScore) | 0;
-        const PW = Math.min(620, global.screenWidth - 40);
-        const PH = 474;
+        const PH = 544;
         const px = cx - PW / 2;
         const py = Math.max(12, global.screenHeight / 2 - PH / 2 - 6) + rise;
+        if (wide && watching) drawWatchingTag(rv, panelA);
         // panel: dark card, black keyline, gold raid frame
         hudPanel(c, px, py, PW, PH, { alpha: panelA, fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
 
@@ -11190,6 +11424,32 @@ import * as cosmetics from './account/cosmetics.js';
         if ((global.finalStreak | 0) >= 3) extras.push("Your " + (global.finalStreak | 0) + " kill streak is over");
         if (global.finalDrillLost) extras.push("Your drill dropped a tier");
         drawText(extras.length ? extras.join(". ") + "." : "You dropped everything you were carrying, but your bank is safe.", cx, gy + 3 * 46 + 34, 12, extras.length ? color.gold : color.guiwhite, "center", true, panelA);
+        // what's waiting when you're back: revenge on your killer, and the
+        // first contract
+        const la = global.lerp(2.5, 2.8, glide) * panelA;
+        const sy = gy + 3 * 46 + 50;
+        c.save();
+        c.globalAlpha = la;
+        hudWell(c, bx, sy, bw, 50, 10, "rgba(14,11,18,0.45)", HUD.ink, 2);
+        c.restore();
+        if (rv) {
+            const who = shortName(rv.name || "them", 16);
+            drawSkull(c, bx + 18, sy + 15, 6, "#ff6b5e");
+            const line = rv.alive ? "Revenge: " + who + " is marked for you. +" + fmtNum(rv.bonus || 200) + " gems if you get them."
+                : "Revenge: " + who + " is marked for you once they're back.";
+            const f = fitLine(line, 12, 9.5, bw - 44);
+            drawText(f.txt, bx + 30, sy + 15, f.qs, "#ff9a8c", "left", true, la);
+        }
+        const ny = rv ? sy + 35 : sy + 25;
+        const nextTxt = you.next ? "Next: " + String(you.next).charAt(0).toLowerCase() + String(you.next).slice(1) : "Next: a new contract as soon as you land";
+        const fn = fitLine(nextTxt, 12, 9.5, bw - 44);
+        c.save();
+        c.globalAlpha = la;
+        c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
+        c.beginPath(); c.arc(bx + 18, ny, 5.5, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.beginPath(); c.arc(bx + 18, ny, 2, 0, Math.PI * 2); c.fillStyle = HUD.ink; c.fill();
+        c.restore();
+        drawText(fn.txt, bx + 30, ny, fn.qs, HUD.gold, "left", true, la);
 
         const locked = !!(global.royale.lock && global.royale.at > 0);
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
@@ -11198,13 +11458,22 @@ import * as cosmetics from './account/cosmetics.js';
         if (!locked && global.raidRespawnAt > 0 && waitMs <= 0 && !global.disconnected && !global.respawnPending && !rankCeremony.isPlaying() && !rankHold && !global.updateHoldsRespawn) {
             try { global.canvas.respawn(); } catch { /* */ }
         }
-        drawText(locked
-                ? ("Final storm - no spawns for " + Math.max(0, global.royale.lockLeft | 0) + "s")
-                : (waitMs > 0 ? ("Respawning in " + Math.ceil(waitMs / 1000) + "s") : "Respawning"),
-                 cx, gy + 3 * 46 + 56, 14, HUD.gold, "center", true, panelA);
+        // the way back: a countdown and a bar that fills to the drop
+        const ry2 = gy + 3 * 46 + 118;
+        const total = Math.max(1000, global.raidRespawnWaitMs || 15000);
+        hudTitle(locked
+                ? ("Final storm, no spawns for " + Math.max(0, global.royale.lockLeft | 0) + "s")
+                : (waitMs > 0 ? ("Back in " + Math.ceil(waitMs / 1000) + "s") : "Dropping in..."),
+                 cx, ry2, 20, locked ? HUD.lilac : waitMs > 0 ? HUD.gold : HUD.emerald, "center", panelA);
+        if (!locked) {
+            c.save();
+            c.globalAlpha = panelA;
+            hudBar(c, cx - 110, ry2 + 16, 220, 7, 1 - Math.min(1, waitMs / total), waitMs > 0 ? HUD.gold : HUD.emerald);
+            c.restore();
+        }
         // ranked: the life's rank result in the strip under the stats
         try {
-            rankPanel.draw(c, bx, py + 346, bw, 106,
+            rankPanel.draw(c, bx, py + 416, bw, 106,
                 { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk },
                 global.lerp(2.3, 2.8, glide) * panelA);
         } catch (e) { /* never break the death screen */ }
@@ -11586,6 +11855,11 @@ import * as cosmetics from './account/cosmetics.js';
         const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating);
         spec.style.display = spectating ? "flex" : "none";
         dead.style.display = deadShow ? "flex" : "none";
+        // the buttons sit under the death card, which steps left on wide screens
+        if (deadShow) {
+            const left = Math.round((global.deathPanelCx || global.screenWidth / 2) * window.innerWidth / Math.max(1, global.screenWidth)) + "px";
+            if (dead.style.left !== left) dead.style.left = left;
+        }
         const spBtn = document.getElementById("royaleDomSpectate");
         if (spBtn) {
             const want = duoMateAlive() ? "Watch " + shortName(global.royale.duo.mate.name || "teammate", 12) : "Spectate";

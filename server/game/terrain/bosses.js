@@ -219,6 +219,12 @@ function snapshot() {
 function current() { return boss && !boss.isDead?.() ? boss : null; }
 function nextIn() { return Math.max(0, nextAt - Date.now()); }
 
+// Damage this tank has done to the current boss (contracts).
+function damageBy(body) {
+    const h = body && hitters.get(body.id);
+    return h ? (h.dmg || 0) : 0;
+}
+
 // DBG only: book damage for a tank (reward tests)
 function debugHit(body, dmg) {
     if (!body) return;
@@ -226,4 +232,4 @@ function debugHit(body, dmg) {
     hitters.set(body.id, { body, at: Date.now(), dmg: (h ? h.dmg : 0) + (+dmg || 0) });
 }
 
-module.exports = { debugHit, KINDS, TUNING, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };
+module.exports = { debugHit, damageBy, KINDS, TUNING, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };

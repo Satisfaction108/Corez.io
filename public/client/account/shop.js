@@ -1,4 +1,4 @@
-// The Item Shop pane: today's Featured (2) and Daily (4) items plus the
+// The Item Shop pane: today's Featured (2) and Daily (8) items plus the
 // always-on Custom Color, a countdown to the 00:00 UTC reset, the item
 // modal (big live preview, team-colour swatches, tank picker, Buy / Equip /
 // Gift), purchase history with refunds, and the gift flow.

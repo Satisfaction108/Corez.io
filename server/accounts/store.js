@@ -3,7 +3,7 @@
 // Rotation: one row per UTC day in shop_rotations, generated on first use
 // from mulberry32(fnv1a(SHOP_SEED_SALT + day)) and never recomputed, so a
 // rotation is fixed once anyone has seen it. 2 Featured (Epic/Legendary,
-// Epic weighted 2:1) + 4 Daily (Common/Uncommon/Rare, at most 2 skins);
+// Epic weighted 2:1) + 8 Daily (Common/Uncommon/Rare, at most 4 skins);
 // items Featured on either of the previous 2 days are skipped. Permanent
 // items (Custom Color) are always for sale; exclusive ones (invite rewards)
 // never are, and cannot be gifted.
@@ -31,8 +31,8 @@ const GIFT_FRIEND_AGE_MS = 48 * HOUR;
 const GIFTS_PER_DAY = 5;
 const GIFT_PRESETS = 4;                  // preset message index 0..3 (the client owns the wording)
 const FEATURED_COUNT = 2;
-const DAILY_COUNT = 4;
-const DAILY_MAX_SKINS = 2;
+const DAILY_COUNT = 8;        // two rows of four; the catalog has ~55 daily-tier items
+const DAILY_MAX_SKINS = 4;
 const FEATURED_SKIP_DAYS = 2;
 const FEATURED_WEIGHT = { epic: 2, legendary: 1 };
 const DAILY_RARITIES = new Set(['common', 'uncommon', 'rare']);

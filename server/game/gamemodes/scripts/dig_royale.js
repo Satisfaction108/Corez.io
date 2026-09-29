@@ -11,6 +11,8 @@ const raidEvents = require('../../terrain/raidEvents.js');
 const raidMods = require('../../terrain/raidMods.js');
 const spawnReach = require('../../terrain/spawnReach.js');
 const growth = require('../../terrain/growth.js');
+const contracts = require('../../terrain/contracts.js');   // one short job per player at a time
+const pacing = require('../../terrain/pacing.js');         // a notable beat every 60-90 s
 const botDiff = require('../../../miscFiles/botDifficulty.js');
 // entity.js reads the growth perks through this (refreshBodyAttributes, fov)
 global.royaleGrowth = growth;
@@ -125,15 +127,6 @@ const SHUTDOWN_PER_STREAK = 100;
 // from GIANT_BOUNTY_AT up (a 2.3x tank is worth 325 on top of the kill)
 const GIANT_BOUNTY_AT = 1.5;
 const GIANT_BOUNTY_PER = 250;
-
-// First-minutes quest chain: one line, a number, a reward. Shown one at a time.
-const QUESTS = [
-    { id: "bank",  goal: 100,  text: "Bank 100 dust",             reward: 50 },
-    { id: "chest", goal: 1,    text: "Break open a chest",        reward: 100 },
-    { id: "kill",  goal: 1,    text: "Kill another miner",        reward: 200 },
-    { id: "shop",  goal: 1,    text: "Buy anything at a shop",    reward: 150 },
-    { id: "bank2", goal: 1000, text: "Bank 1,000 dust",           reward: 300 },
-];
 
 let raidId = 0;
 let raidStartAt = 0;
@@ -418,9 +411,11 @@ function pushFeed(entry) {
 }
 
 // Kill callout: the big centre-screen line for the person who earned it.
-function callout(body, kind, text, pts) {
+function callout(body, kind, text, pts, sub, dur) {
     try {
-        if (body && body.socket) body.socket.talk('KC', String(kind), String(text), (pts | 0));
+        if (!body || !body.socket) return;
+        if (sub || dur) body.socket.talk('KC', String(kind), String(text), (pts | 0), String(sub || ""), dur | 0);
+        else body.socket.talk('KC', String(kind), String(text), (pts | 0));
     } catch { /* */ }
 }
 
@@ -449,50 +444,47 @@ function compass(x, y) {
     return Math.hypot(x, y) < 500 ? "the centre" : "the " + dirs[i];
 }
 
-// ── quests ───────────────────────────────────────────────────────────────
-function questOf(client) {
-    if (!client) return null;
-    if (!client.raidQuest) client.raidQuest = { idx: 0, prog: 0, doneAt: 0 };
-    return client.raidQuest;
-}
-
-function questSnapshot(client, s) {
-    const q = questOf(client);
-    if (!q || q.idx >= QUESTS.length) return null;
-    const def = QUESTS[q.idx];
-    let prog = q.prog;
-    if (def.id === "bank" || def.id === "bank2") prog = s ? (s.banked | 0) : 0;
-    return { id: def.id, text: def.text, goal: def.goal, prog: Math.min(def.goal, prog | 0), reward: def.reward, idx: q.idx, total: QUESTS.length };
-}
-
-function questProgress(body, id, amount = 1) {
-    const client = body && body.socket;
-    if (!client) return;
-    const q = questOf(client);
-    if (q.idx >= QUESTS.length) return;
-    const def = QUESTS[q.idx];
-    const s = ensureStat(body);
-    let prog;
-    if (def.id === "bank" || def.id === "bank2") prog = s ? (s.banked | 0) : 0;
-    else { if (def.id !== id) return; q.prog += amount; prog = q.prog; }
-    if (prog < def.goal) return;
-    // reward straight into the bank; the board counts it too
+// ── contracts / pacing hooks ─────────────────────────────────────────────
+// A contract reward goes straight into the bank; the board counts it too
+// (and with it growth).
+function payGems(body, gemsN) {
+    if (!body || !body.socket || !(gemsN > 0)) return;
     try {
-        const cur = (client.gemBanked || 0) | 0;
-        gems.setBanked(body, cur + def.reward);
-        if (s) s.banked = (s.banked || 0) + def.reward;
+        const cur = (body.socket.gemBanked || 0) | 0;
+        gems.setBanked(body, cur + gemsN);
+        const s = ensureStat(body);
+        if (s) s.banked = (s.banked || 0) + gemsN;
         gems.talkGems(body, 0);
     } catch { /* */ }
-    callout(body, "quest", "Quest done: " + def.text, def.reward);
-    q.idx++;
-    q.prog = 0;
-    q.doneAt = now();
-    // bank quests can already be satisfied by the same deposit
-    if (q.idx < QUESTS.length) {
-        const nd = QUESTS[q.idx];
-        if ((nd.id === "bank" || nd.id === "bank2") && s && (s.banked | 0) >= nd.goal) questProgress(body, nd.id, 0);
-    }
 }
+function streakOfBody(body) {
+    const k = statKeyFor(body);
+    const s = k ? raidStats.get(k) : null;
+    return s ? (s.streak | 0) : 0;
+}
+function scoreOfBody(body) {
+    const k = statKeyFor(body);
+    const s = k ? raidStats.get(k) : null;
+    return s ? scoreOf(s) : 0;
+}
+contracts.attach({
+    pay: (body, n) => payGems(body, n),
+    callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
+    isNew: (body) => !!body.botNewbie,
+    streakOf: streakOfBody,
+    keyOf: statKeyFor,
+    bounty: () => pacing.current(),
+    inRaid: () => !raidEnding,
+});
+pacing.attach({
+    humans, fighters: () => combatants(), scoreOf: scoreOfBody, keyOf: statKeyFor,
+    pay: (body, n) => payGems(body, n),
+    callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
+    announce: (text, feed) => { if (feed) pushFeed(feed); setToastAndSay(text, 6000); },
+    fxAt: (x, y, kind) => fxAt(x, y, kind),
+    live: () => !raidEnding && !!raidId,
+    idle: (sock) => activity.inputIdleMs(sock) > contracts.IDLE_MS,
+});
 
 // ── broadcast ─────────────────────────────────────────────────────────────
 function oreRocksForScan() {
@@ -539,6 +531,7 @@ function broadcast(extra = {}) {
     const bloomSnap = blooms.snapshot();
     const eventSnap = raidEvents.snapshot();
     const modSnap = raidMods.snapshot();
+    const bountySnap = pacing.snapshot(t);
     const humanCount = humans().length;
     const liveToast = extra.toast || (t < toastUntil ? toastText : "");
     let scanRocks = null;
@@ -551,15 +544,16 @@ function broadcast(extra = {}) {
         phase: 'live', left: raidLeft, alive, fill: fillCap(), humans: humanCount, winner: null, storm: st, toast: liveToast,
         feed: killFeed.slice(-8), board, lock, lockLeft, matchId: raidId, raidId, raidLeft, raidMs: RAID_MS,
         occupyMs: OCCUPY_MS, lockoutMs: LOCKOUT_MS, objectives, bloom: bloomSnap, chest: null, chests: chestSnap,
-        boss: bossSnap, event: eventSnap, mod: modSnap, pings, results: raidResults, ending, nextIn, nextMs, ...extra,
+        boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, pings, results: raidResults, ending, nextIn, nextMs, ...extra,
     });
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
         const mine = key ? raidStats.get(key) : null;
         const myRow = mine ? board.find(r => r.id === mine.id) : null;
-        const revenge = null;   // revenge marking is retired; the field stays for the client
         const body = client.player && client.player.body;
         const bodyLive = body && !body.isDead?.();
+        // whoever killed you last, marked for you (minimap, overhead, death screen)
+        const revenge = contracts.revengeFor(client, bodyByKey, t);
         let scan = null;
         if (bodyLive && shop.hasGear(body, "scanner")) {
             if (!scanRocks) scanRocks = oreRocksForScan();
@@ -575,7 +569,9 @@ function broadcast(extra = {}) {
                 bossKills: mine.bossKills | 0,
                 revenge,
                 carried: bodyLive ? Math.max(0, (body.carriedGems || 0) | 0) : (mine.carried | 0),
-                quest: questSnapshot(client, mine),
+                obj: bodyLive ? contracts.snapshotFor(client, body, t) : null,
+                // dead: what you'll be doing when you drop back in
+                next: bodyLive ? undefined : (client.contractNext || undefined),
                 drill: shop.stateOf(client).drill | 0,
                 scan,
                 overdrive: bodyLive && body.overdriveUntil > t ? Math.ceil((body.overdriveUntil - t) / 1000) : 0,
@@ -1422,7 +1418,6 @@ function onBanked(body, amount) {
     if (!body || !(amount > 0)) return;
     const s = ensureStat(body);
     if (s) s.banked = (s.banked || 0) + amount;
-    if (body.socket) questProgress(body, "bank", 0);
 }
 
 function onCapture(body, site) {
@@ -1491,6 +1486,8 @@ function onCombatantDead(body) {
     let pts = 0;
     if (killerBody && killerKey && killerKey !== key) {
         const ks = ensureStat(killerBody);
+        // your revenge target: a bonus and the REVENGE banner
+        if (killerBody.socket && contracts.onKill(killerBody, body)) avenged = true;
         if (ks) {
             ks.kills = (ks.kills | 0) + 1;
             pts += killScore();
@@ -1518,15 +1515,21 @@ function onCombatantDead(body) {
             }
             const mark = shop.killBonus(killerBody);
             if (mark) { ks.extra = (ks.extra | 0) + mark; pts += mark; }
+            if (avenged) {
+                ks.revengeBonus = (ks.revengeBonus | 0) + contracts.REVENGE_PTS;
+                pts += contracts.REVENGE_PTS;
+                payGems(killerBody, contracts.REVENGE_GEMS);
+            }
             // ranked kill filters (bot half, same victim, spawn kill) + kill dust
             try { rankHooks.onKillCredited(killerBody, ks, body, s, pts); } catch (e) { guardLog('rank kill', e); }
         }
+        // the bounty (pacing.js) pays whoever takes the target down
+        guard('bounty kill', () => pacing.onKill(killerBody, body));
         if (killerBody.socket) {
-            questProgress(killerBody, "kill", 1);
             let line = avenged ? "REVENGE" : shutdown ? "SHUTDOWN" : giantPts ? "GIANT DOWN" : "ELIMINATED";
             line += ": " + (body.name || "Unnamed");
             if (carriedAtDeath >= 300) line += "  (" + carriedAtDeath + " gems dropped)";
-            callout(killerBody, avenged ? "revenge" : shutdown ? "shutdown" : "kill", line, pts);
+            callout(killerBody, avenged ? "revenge" : shutdown ? "shutdown" : "kill", line, pts, avenged ? "+" + contracts.REVENGE_GEMS + " gems" : "");
             if (streakNow === STREAK_MARK_AT) {
                 try { killerBody.socket.talk('KC', "streak", streakNow + " kill streak. You're marked on everyone's map", 0); } catch { /* */ }
             }
@@ -1553,6 +1556,9 @@ function onCombatantDead(body) {
             if (mb && mb.socket) mb.sendMessage((body.name || "Your teammate") + " is down. Keep them in the game!");
         } catch { /* */ }
     }
+    // contracts: the victim's job ends, and whoever took them down is marked
+    // for them (revenge) when they come back
+    if (body.socket && !raidEndDeath) guard('contracts death', () => contracts.onDeath(body, bossKill || envKill ? null : killerAny));
     if (body.socket) {
         // settle the ranked life now; its RK follows the death packet (a
         // raid-end death was settled at endRaid, so this skips it)
@@ -1574,6 +1580,7 @@ function onCombatantDead(body) {
 
 // ── bosses / chests / blooms / events callbacks ───────────────────────────
 function onBossSpawned(o, kind, id) {
+    pacing.note('boss');
     pushFeed({ boss: 1, spawn: 1, name: kind.name, c: kind.color, x: Math.round(o.x), y: Math.round(o.y) });
     setToastAndSay(kind.name + " has surfaced in " + compass(o.x, o.y) + ". " + kind.gems + " gems to whoever ends it.", 6000);
     fxAt(o.x, o.y, "boss");
@@ -1597,6 +1604,7 @@ function onBossDead(o, kind, killer, burrowed, shares = []) {
         setToastAndSay("The " + kind.name + " burrowed back into the wall.", 4000);
         return;
     }
+    pacing.note('bossdead');
     let by = "";
     if (killer) {
         const ks = ensureStat(killer);
@@ -1632,9 +1640,9 @@ function onChestOpened(body, chest, itemMsg) {
     const cr = chest.chestRare ? REWARDS.chest.epic : REWARDS.chest.common;
     grantReward(body, cr.pts, cr.dustMilli);
     if (body.socket) {
-        questProgress(body, "chest", 1);
+        guard('contracts chest', () => contracts.onChestOpened(body, chest));
         try { progressHooks.onChest(body); } catch (e) { guardLog('progress chest', e); }
-        const text = (chest.chestRare ? "Epic chest cracked open" : "Copper chest cracked open") + (itemMsg ? ". " + itemMsg : "");
+        const text = (chest.supplyDrop ? "Supply drop cracked open" : chest.chestRare ? "Epic chest cracked open" : "Copper chest cracked open") + (itemMsg ? ". " + itemMsg : "");
         callout(body, "chest", text, chest.chestGems | 0);
     }
     if (chest.chestRare) pushFeed({ chest: 1, name: body.name || "Unnamed", rare: 1 });
@@ -1642,12 +1650,14 @@ function onChestOpened(body, chest, itemMsg) {
 }
 
 function onBloom(b) {
+    pacing.note('bloom');
     pushFeed({ bloom: 1, name: compass(b.x, b.y) });
     setToastAndSay("Ore bloom in " + compass(b.x, b.y) + ". Rich veins for 100 seconds.", 6000);
     fxAt(b.x, b.y, "bloom");
 }
 
 function onEvent(ev) {
+    pacing.note(ev.kind);
     if (ev.kind === 'meteor') {
         pushFeed({ event: 1, kind: 'meteor', name: ev.where });
         setToastAndSay("Meteor shower incoming over " + ev.where + ". Ore falls with it.", 6000);
@@ -1659,7 +1669,7 @@ function onEvent(ev) {
 
 function onShopBuy(body, item) {
     if (!body || !body.socket) return;
-    questProgress(body, "shop", 1);
+    guard('contracts shop', () => contracts.onShopBuy(body, item));
     // a few purchases per raid pay a little; the cap keeps it unfarmable
     const key = (body.socket.account && body.socket.account.id) ? 'a:' + body.socket.account.id : statKeyFor(body);
     const n = shopRewardCount.get(key) | 0;
@@ -1760,7 +1770,9 @@ function onHumanJoin(body) {
         body.socket.royaleNeedClick = false;
         body.socket.lastRaidDeathAt = 0;
         body.socket.freeCam = false;
-        questOf(body.socket);
+        // the first contract rolls in a moment, with the "Drop in!" cue
+        guard('contracts spawn', () => contracts.onSpawn(body));
+        if (resuming) body.socket._dropCue = false;
         if (isRespawn && (body.growthMult || 1) >= 1.1) {
             const capped = growthScore(body) * growth.RESPAWN_SHARE > growth.CAP_SCORE + 1;
             try { body.sendMessage("You're back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size" + (capped ? ", the most a respawn gives." : ", from a quarter of your score.")); } catch { /* */ }
@@ -1825,7 +1837,7 @@ function saveResume(socket, body) {
         at: t, raidId, statKey: body ? statKeyFor(body) : "s:" + socket.id, alive,
         keys, accountId: (socket.account && socket.account.id) || null,
         sock: {
-            gemBanked: socket.gemBanked || 0, shop: socket.shop || null, raidQuest: socket.raidQuest || null,
+            gemBanked: socket.gemBanked || 0, shop: socket.shop || null, revenge: socket.revenge || null,
             raidBonus: socket.raidBonus || 0, raidPB: socket.raidPB || 0, _milestoneIdx: socket._milestoneIdx || 0,
             gemDeposited: socket.gemDeposited || 0,
             // duos: who you are to the team book (a reconnect keeps the team)
@@ -2301,8 +2313,9 @@ function startRaid(first) {
     try { blooms.reset(); } catch { /* */ }
     try { raidEvents.reset(); } catch { /* */ }
     try { chests.clearAll(); } catch { /* */ }
+    try { contracts.reset(); } catch { /* */ }
+    try { pacing.reset(); pacing.note('raid'); } catch { /* */ }
     for (const client of connectedClients()) {
-        client.raidQuest = { idx: 0, prog: 0, doneAt: 0 };
         // everyone went down at the raid end: the first spawn of the new raid
         // is a fresh start (starter gems, full drill), not a death respawn
         client.lastRaidDeathAt = 0;
@@ -2507,6 +2520,8 @@ function twistCycleWatch(t) {
     const first = twistCycleSeen === -1;
     twistCycleSeen = cyc;
     if (first) return;
+    // a new storm cycle: the storm moves and a new twist lands
+    pacing.note('storm');
     applyNewTwist();
 }
 function applyNewTwist(forceId) {
@@ -2624,6 +2639,8 @@ function tick() {
     try { blooms.tick(t); } catch (e) { /* */ }
     try { raidEvents.tick(t); } catch (e) { /* */ }
     try { chests.schedule(); } catch (e) { /* */ }
+    guard('contracts', () => contracts.tick(t));
+    guard('pacing', () => pacing.tick(t));
     for (const body of fighters) {
         const key = statKeyFor(body);
         const s = key ? raidStats.get(key) : null;
@@ -2704,7 +2721,7 @@ class DigRoyale {
 module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
     lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, baseReserved,
-    onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout, QUESTS,
+    onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout,
     FIRST_MINUTES, isNewPlayer, quickRespawn, freshRaidBody, SPAWN_GRACE_MS, RAID_CYCLES, RAID_MS, RESUME_MS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },

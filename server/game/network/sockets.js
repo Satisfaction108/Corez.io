@@ -1276,6 +1276,11 @@ class socketManager {
                 socket._lastBuyAt = nowB;
                 require('../terrain/shop.js').buy(socket, m[0]);
             } break;
+            case "CO": {
+                // the first-raid coach is on screen (1) or not (0): no contracts meanwhile
+                if (!Config.dig_royale) return 1;
+                socket.coachOn = m[0] === 1;
+            } break;
             case "kd": {
                 // kit drop: slot (dragged out of the box)
                 if (!Config.dig_royale && !Config.tutorial) return 1;
@@ -1315,6 +1320,8 @@ class socketManager {
                     else if (what === "shop" && b) { const sh = require('../terrain/shop.js').getShops()[m[1] | 0]; if (sh) { b.x = sh.x; b.y = sh.y; b.velocity.x = 0; b.velocity.y = 0; } }
                     else if (what === "vault" && b) { const v = require('../terrain/vault.js').getVaults()[m[1] | 0]; if (v) { b.x = v.x; b.y = v.y; b.velocity.x = 0; b.velocity.y = 0; } }
                     else if (what === "boss") require('../terrain/bosses.js').spawn(m[1] ? String(m[1]) : undefined);
+                    else if (what === "contract" && b) socket.talk('KC', 'chest', String(require('../terrain/contracts.js').debugForce(b, String(m[1] || 'mine'))), 0);
+                    else if (what === "supply" || what === "bounty") require('../terrain/pacing.js').debugFire(what);
                     else if (what === "chests") socket.talk('KC', 'chest', JSON.stringify(require('../terrain/chests.js').debugInfo()), 0);
                     else if (what === "toepic" && b) {
                         // beside the nearest epic chest, on its open side
@@ -1450,6 +1457,12 @@ class socketManager {
                     else if (what === "rain") { const ev = require('../terrain/raidEvents.js').startRain(Date.now()); if (ev) require('../gamemodes/scripts/dig_royale.js').onEvent(ev); }
                     else if (what === "chest" && b) require('../terrain/chests.js').spawnChest(b.x + 120, b.y, !!m[1]);
                     else if (what === "kill" && b) { b.health.amount = -1; }
+                    // die to the nearest bot, as if it shot you (revenge / death screen checks)
+                    else if (what === "killby" && b) {
+                        const bots = (global.gameManager.gameHandler.bots || []).filter(o => o && !o.isDead());
+                        bots.sort((p, q) => ((p.x - b.x) ** 2 + (p.y - b.y) ** 2) - ((q.x - b.x) ** 2 + (q.y - b.y) ** 2));
+                        if (bots[0]) { b.godmode = false; b.invuln = false; b.finalKillers = [bots[0]]; b.collisionArray.push(bots[0]); b.health.amount = -1; }
+                    }
                     else if (what === "god" && b) { b.godmode = !b.godmode; }
                     else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), x: Math.round(b.x), y: Math.round(b.y), hp: Math.round(b.health.amount), sh: Math.round(b.shield.amount), dead: !!(b.isDead && b.isDead()), carried: b.carriedGems | 0 } : { nobody: true }), 0);
                     // every human tank in the world (drop tests: a dropped player's tank is gone)

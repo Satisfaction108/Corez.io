@@ -1099,7 +1099,7 @@ const CHAPTERS = [
             {
                 id: "score", next: true,
                 title: "Score",
-                text: "Score is your banked gems, plus *200* per kill, plus half of what you're carrying. The *top 10* get bonus gems next raid. Get *4 kills* in a row and you show up on everyone's map, and whoever kills you gets a bounty. The quest card on the left pays gems for easy stuff.",
+                text: "Score is your banked gems, plus *200* per kill, plus half of what you're carrying. The *top 10* get bonus gems next raid. Get *4 kills* in a row and you show up on everyone's map, and whoever kills you gets a bounty. The contract card on the left always has a quick job for you, and each one pays gems.",
                 praise: "ok",
             },
         ],

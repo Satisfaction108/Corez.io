@@ -174,7 +174,7 @@ export function nameCanvas(name, style, opts) {
     const m = document.createElement('canvas').getContext('2d');
     m.font = 'bold ' + px + 'px ' + font;
     const glyph = st && st.style && st.style.glyph ? ' ' + st.style.glyph : '';
-    const pad = opts.stroke ? Math.ceil(px * 0.3) : 2;
+    const pad = opts.stroke ? Math.ceil(px * (st && st.style && st.style.halo ? 0.38 : 0.3)) : 2;
     const tw = Math.ceil(m.measureText(name + glyph).width) + pad * 2;
     const w = opts.maxW ? Math.min(opts.maxW, tw) : tw;
     const h = opts.h || Math.ceil(px * 1.45);

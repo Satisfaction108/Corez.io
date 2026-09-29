@@ -17,6 +17,10 @@ import { gameSound } from "./sound.js";
 // mining step) counts. Dying on the bank step with the gems gone sends you back
 // to mining. The tutorial server never runs this.
 //
+// Contracts (the server's one-job-at-a-time card) wait while the guide runs:
+// the CO packet tells the server whether it's on, and the first contract
+// rolls once the guide is done or skipped.
+//
 // app.js calls hook() every frame after the GUI, drawWorld() from the camera
 // pass and drawIndicators() at the very end of the frame. window.dwHud (app.js)
 // gives the HUD rects and the edge marker.
@@ -54,7 +58,6 @@ const TOUR = [
     { hud: "minimap", name: "Minimap", text: "Vaults, shops and the storm.", key: ["KEY_TOGGLE_MAP", "M", "for the big map"], side: "left" },
     { hud: "wallet", name: "Carried / Banked", text: "Carried gems drop when you die. Banked gems are safe.", side: "right" },
     { hud: "kit", name: "Kit", text: "Items you buy at shops land here.", side: "right" },
-    { hud: "quest", name: "Quest", text: "Finish it for bonus gems.", side: "right" },
 ];
 
 const now = () => performance.now();
@@ -119,6 +122,8 @@ const st = {
     size: { w: 0, h: 0 },
     sizeKey: "",
     sizeAt: 0,
+    coSock: null,        // the socket the server last heard CO on, and what it said
+    coOn: null,
 };
 
 // ── game reads ─────────────────────────────────────────────────────────
@@ -556,7 +561,7 @@ function content(t) {
         }
         case "final":
             return { ...base, title: "You're set",
-                text: "Bank before the storm closes in, and watch out for other players.", next: "Let's go", done: true };
+                text: "From here on you'll get contracts, top left. Each one pays gems.", next: "Let's go", done: true };
     }
     return null;
 }
@@ -605,8 +610,20 @@ const spot = {
 function clearMarks() {
     st.rocks = []; st.rocksAt = 0; st.oreFar = null; st.target = null;
 }
+// Tell the server whether the guide owns the screen (undecided counts as on,
+// so no contract flashes up while we wait for the account). Once per socket
+// and change.
+function syncServer() {
+    if (!inRaid()) return;
+    const sock = global.canvas && global.canvas.socket;
+    if (!sock || !sock.talk) return;
+    const on = rec.status === "on" || rec.status === "";
+    if (sock === st.coSock && on === st.coOn) return;
+    try { sock.talk("CO", on ? 1 : 0); st.coSock = sock; st.coOn = on; } catch (e) { }
+}
 export function hook() {
     const t = now();
+    syncServer();
     if (rec.status !== "on" && !(st.step === "final" && t - st.finalAt < FINAL_MS)) {
         if (!rec.status && playing()) decide(t);
         if (rec.status !== "on") { ui.show(false); return; }

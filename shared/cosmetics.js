@@ -12,26 +12,41 @@
 //   price in milli-dust (1 gemdust = 1000).
 //   exclusive  never sold or gifted, only granted (invite rewards); price 0.
 //
-// Name style render params (item.style):
-//   kind   'solid'  one colour (Custom Color: the player's own hex)
-//          'linear' a static gradient across the text box, stops left->right
-//          'scroll' the stops scroll along the text (last stop = first, so it
-//                   tiles), `speed` in text-widths per second
-//          'prism'  full hue cycle scrolling along the text, `speed` as above
+// Name style render params (item.style). The fill is a small baked tile
+// laid over the text box as a pattern, so a name costs no allocation a frame.
+//   kind   'solid'    one colour (Custom Color: the player's own hex)
+//          'linear'   a static gradient across the text box, stops left->right
+//          'vertical' a static gradient top->bottom (metals, soft two-tones)
+//          'split'    a hard two-tone, stops[0] on top, stops[1] below
+//          'scroll'   the stops scroll along the text (last stop = first, so
+//                     it tiles), `speed` in text-widths per second
+//          'prism'    full hue cycle scrolling along the text, `speed` as above
 //   stops  hex colours (every one passes isColorAllowed)
-//   glint  a highlight sweep every `glintEvery` seconds (legendary)
+//   shade  0..0.3, a subtle top-light / bottom-dark bevel over the fill
+//   rim    the outline colour instead of the usual near-black (keep it dark)
+//   halo   a soft outer ring in this colour (dropped with No Glow)
+//   pulse  the halo breathes, cycles per second (legendary)
+//   glint  a highlight rides along with the scroll (legendary)
 //   glyph  suffix glyph drawn after the name (legendary), `glyphColor`
 //
-// Skin render params (item.skin): a pattern painted over the team colour.
-//   pattern   stripes | rivets | camo | strata | hex | circuit | facets |
-//             vein | cracks | frost | heart | spiral
-//   seed      deterministic seed for the pattern's randomness
+// Skin render params (item.skin): a flat pattern painted over the hull in
+// the team colour (barrels and turrets stay as they are).
+//   pattern   stripes | racer | halves | quarters | checker | rings | rim |
+//             core | dots | chevrons | sash | sunburst | pinwheel | tiger |
+//             camo | strata | hex | circuit | facets | vein | gem | geode |
+//             bolt | crosshair | vault | cracks | frost | drill | shards |
+//             storm | gilded | heart | spiral | aurora | prism | nova | void
+//   seed      deterministic seed for the little randomness some patterns use
 //   scale     pattern cell size as a fraction of the hull radius
 //   accent    main pattern colour; altAccent when it clashes with the team
-//             colour (see accentFor)
-//   opacity   pattern alpha over the hull
-//   emissive  null, or {kind: pulse | twinkle | spinGlow | spiral, color,
-//             speed (cycles per second)} drawn additively on top
+//             colour (see accentFor). accent2 / alt2 the same for a second
+//             colour, when the pattern has one
+//   opacity   pattern alpha over the hull (1 = flat, the default)
+//   emissive  null, or {kind, color, speed (cycles per second)}:
+//             pulse | twinkle | spinGlow | flash | shift (color2) are glows
+//             (No Glow drops them); spin turns the pattern itself; spiral
+//             turns it backwards with a breathing glow; shimmer is a light
+//             sweep every `every` seconds. Fewer Effects freezes them all.
 (function (root, factory) {
     const api = factory();
     if (typeof module === 'object' && module.exports) module.exports = api;
@@ -63,73 +78,216 @@
     }
 
     const RAW = [
-        // ---- name styles ----
+        // ---- name styles (nid 1..99) ----
         ns(1, CUSTOM_COLOR_ID, 'Custom Color', 'common', 8,
             { kind: 'solid', stops: ['#ffffff'], custom: true },
             { permanent: true }),
         ns(2, 'ns_sunset', 'Sunset', 'common', 25,
-            { kind: 'linear', stops: ['#ffb347', '#ff6a5c', '#c850c0'] }),
+            { kind: 'linear', stops: ['#ffb347', '#ff6a5c', '#c850c0'], shade: 0.12 }),
         ns(3, 'ns_copper_vein', 'Copper Vein', 'common', 30,
-            { kind: 'linear', stops: ['#e08a4f', '#ffd0a1', '#c26a35'] }),
+            { kind: 'vertical', stops: ['#ffd0a1', '#e08a4f', '#c26a35'], rim: '#3a1a08' }),
         ns(4, 'ns_glacier', 'Glacier', 'common', 35,
-            { kind: 'linear', stops: ['#e8f8ff', '#8fd3ff', '#4aa8ff'] }),
+            { kind: 'linear', stops: ['#e8f8ff', '#8fd3ff', '#4aa8ff'], shade: 0.12 }),
+        ns(15, 'ns_frost', 'Frost', 'common', 25,
+            { kind: 'vertical', stops: ['#ffffff', '#bfe9ff'], rim: '#0f2a40' }),
+        ns(16, 'ns_lemon', 'Lemon', 'common', 25,
+            { kind: 'vertical', stops: ['#fff49a', '#ffd23f'], rim: '#3d2c00' }),
+        ns(17, 'ns_coral', 'Coral', 'common', 30,
+            { kind: 'vertical', stops: ['#ffc2b3', '#ff7361'], rim: '#40130c' }),
+        ns(18, 'ns_lilac', 'Lilac', 'common', 30,
+            { kind: 'vertical', stops: ['#efe3ff', '#b996ff'], rim: '#24154a' }),
+        ns(19, 'ns_seafoam', 'Seafoam', 'common', 30,
+            { kind: 'linear', stops: ['#c4fff0', '#5fe3c0'], shade: 0.12, rim: '#0b3329' }),
+        ns(20, 'ns_ash', 'Ash', 'common', 25,
+            { kind: 'vertical', stops: ['#ece6e0', '#b0a79e'], rim: '#28221d' }),
+
         ns(5, 'ns_candy', 'Candy', 'uncommon', 40,
-            { kind: 'linear', stops: ['#ff8fcf', '#ffd1ec', '#8fd8ff'] }),
+            { kind: 'linear', stops: ['#ff8fcf', '#ffd1ec', '#8fd8ff'], shade: 0.12 }),
         ns(6, 'ns_mint_rush', 'Mint Rush', 'uncommon', 45,
-            { kind: 'linear', stops: ['#b6ffe6', '#3ee6a0', '#7dffcb'] }),
+            { kind: 'linear', stops: ['#b6ffe6', '#3ee6a0', '#7dffcb'], shade: 0.12 }),
+        ns(21, 'ns_bubblegum', 'Bubblegum', 'uncommon', 40,
+            { kind: 'split', stops: ['#ffd6ee', '#ff7ac8'], rim: '#4a0f33' }),
+        ns(22, 'ns_tangerine', 'Tangerine', 'uncommon', 40,
+            { kind: 'split', stops: ['#ffd899', '#ff8a2a'], rim: '#3f1a00' }),
+        ns(23, 'ns_lagoon', 'Lagoon', 'uncommon', 45,
+            { kind: 'linear', stops: ['#8ff5ff', '#4a9dff', '#8ff5ff'], shade: 0.14, rim: '#07234a' }),
+        ns(24, 'ns_peach', 'Peach', 'uncommon', 40,
+            { kind: 'vertical', stops: ['#ffe6cc', '#ff9e7a'], rim: '#4a1f10' }),
+        ns(25, 'ns_lime_soda', 'Lime Soda', 'uncommon', 45,
+            { kind: 'split', stops: ['#f4ffb0', '#a0f542'], rim: '#1f3a00' }),
+        ns(26, 'ns_clear_sky', 'Clear Sky', 'uncommon', 45,
+            { kind: 'vertical', stops: ['#ffffff', '#7ad3ff'], rim: '#0d2e57' }),
+
         ns(7, 'ns_ember', 'Ember', 'rare', 50,
-            { kind: 'linear', stops: ['#ffd35c', '#ff8a3d', '#ff5040'] }),
+            { kind: 'linear', stops: ['#ffd35c', '#ff8a3d', '#ff5040'], shade: 0.14, rim: '#3a0d05' }),
         ns(8, 'ns_amethyst', 'Amethyst', 'rare', 60,
-            { kind: 'linear', stops: ['#e6c2ff', '#b07aff', '#8c5cff'] }),
+            { kind: 'vertical', stops: ['#f0dcff', '#b07aff', '#8c5cff'], rim: '#1e0f3d' }),
         ns(9, 'ns_toxic', 'Toxic', 'rare', 65,
-            { kind: 'linear', stops: ['#e2ff5c', '#7dff3d', '#3dffa0'] }),
+            { kind: 'linear', stops: ['#e2ff5c', '#7dff3d', '#3dffa0'], shade: 0.12, rim: '#0d2e0a', halo: '#6dff3d' }),
+        ns(27, 'ns_gold', 'Gold', 'rare', 60,
+            { kind: 'vertical', stops: ['#fff4b8', '#ffd23f', '#e09b16'], rim: '#422600' }),
+        ns(28, 'ns_silver', 'Silver', 'rare', 55,
+            { kind: 'vertical', stops: ['#ffffff', '#dfe4ea', '#9eaab7'], rim: '#1c232b' }),
+        ns(29, 'ns_sapphire', 'Sapphire', 'rare', 60,
+            { kind: 'vertical', stops: ['#d4ecff', '#6fa8ff', '#4a7dff'], rim: '#0a1a45' }),
+        ns(30, 'ns_ruby', 'Ruby', 'rare', 60,
+            { kind: 'vertical', stops: ['#ffd1d8', '#ff6b85', '#ff4060'], rim: '#420010' }),
+        ns(31, 'ns_neon', 'Neon', 'rare', 65,
+            { kind: 'vertical', stops: ['#f4ffe0', '#baff5c'], rim: '#173300', halo: '#9dff3d' }),
+        ns(32, 'ns_crimson', 'Crimson', 'rare', 55,
+            { kind: 'split', stops: ['#ffa3a3', '#f0404a'], rim: '#360006' }),
+
         ns(10, 'ns_magma_flow', 'Magma Flow', 'epic', 110,
-            { kind: 'scroll', stops: ['#ff4a24', '#ff9a1f', '#ffd84d', '#ff9a1f', '#ff4a24'], speed: 0.35 }),
+            { kind: 'scroll', stops: ['#ff4a24', '#ff9a1f', '#ffd84d', '#ff9a1f', '#ff4a24'], speed: 0.35, shade: 0.14, rim: '#380a00' }),
         ns(11, 'ns_aurora', 'Aurora', 'epic', 125,
-            { kind: 'scroll', stops: ['#4dffb8', '#4dc3ff', '#b88cff', '#4dc3ff', '#4dffb8'], speed: 0.25 }),
+            { kind: 'scroll', stops: ['#4dffb8', '#4dc3ff', '#b88cff', '#4dc3ff', '#4dffb8'], speed: 0.25, shade: 0.12, rim: '#0d1f33' }),
+        ns(33, 'ns_storm', 'Storm', 'epic', 115,
+            { kind: 'scroll', stops: ['#d6ecff', '#ffffff', '#7ab8ff', '#d6ecff'], speed: 0.3, shade: 0.12, rim: '#0b1d3a', halo: '#5aa4ff' }),
+        ns(34, 'ns_wildfire', 'Wildfire', 'epic', 110,
+            { kind: 'vertical', stops: ['#fff3a8', '#ff9a2a', '#ff4a24'], rim: '#3a0800', halo: '#ff6a2a' }),
+        ns(35, 'ns_vaporwave', 'Vaporwave', 'epic', 120,
+            { kind: 'scroll', stops: ['#ff7ad9', '#7ad3ff', '#b98cff', '#ff7ad9'], speed: 0.22, shade: 0.12, rim: '#2a0d3d' }),
+        ns(36, 'ns_wraith', 'Wraith', 'epic', 115,
+            { kind: 'vertical', stops: ['#ffe0f7', '#ff7ae0', '#e050c8'], rim: '#330a2e', halo: '#e050c8' }),
+        ns(37, 'ns_warden', 'Warden', 'epic', 110,
+            { kind: 'scroll', stops: ['#ffe29a', '#fff8e6', '#ffbf3d', '#ffe29a'], speed: 0.22, shade: 0.14, rim: '#3d2200', halo: '#ffb23d' }),
+        ns(38, 'ns_geode', 'Geode', 'epic', 125,
+            { kind: 'scroll', stops: ['#c9a4ff', '#7ae0ff', '#e8fbff', '#7ae0ff', '#c9a4ff'], speed: 0.28, shade: 0.12, rim: '#1d1240' }),
+
         ns(12, 'ns_emerald_crown', 'Emerald Crown', 'legendary', 240,
-            { kind: 'scroll', stops: ['#1fd67a', '#7dffb6', '#ffd84d', '#7dffb6', '#1fd67a'], speed: 0.3,
-              glint: true, glintEvery: 2.6, glyph: '♛', glyphColor: '#ffd84d' }),
+            { kind: 'scroll', stops: ['#1fd67a', '#7dffb6', '#ffd84d', '#7dffb6', '#1fd67a'], speed: 0.3, shade: 0.12,
+              rim: '#062e18', glint: true, glyph: '♛', glyphColor: '#ffd84d' }),
         ns(13, 'ns_prism_shard', 'Prism Shard', 'legendary', 250,
             { kind: 'prism', stops: ['#ff6b6b', '#ffd84d', '#6bff8f', '#6bd8ff', '#b88cff', '#ff6b6b'], speed: 0.4,
-              saturation: 0.85, lightness: 0.68, glint: true, glintEvery: 2.2, glyph: '◆', glyphColor: '#ffffff' }),
+              saturation: 0.85, lightness: 0.7, shade: 0.1, glint: true, glyph: '◆', glyphColor: '#ffffff' }),
+        ns(39, 'ns_supernova', 'Supernova', 'legendary', 250,
+            { kind: 'vertical', stops: ['#ffffff', '#fff0a8', '#ffc23d'], rim: '#4a2600', halo: '#ffb23d', pulse: 0.5,
+              glyph: '★', glyphColor: '#ffe07a' }),
+        ns(40, 'ns_void', 'Void', 'legendary', 240,
+            { kind: 'scroll', stops: ['#d9c7ff', '#8f66ff', '#f0e8ff', '#8f66ff', '#d9c7ff'], speed: 0.2, shade: 0.12,
+              rim: '#140833', halo: '#8a5cff', pulse: 0.35, glyph: '◈', glyphColor: '#c9b3ff' }),
         // invite reward (3 friends): a fast copper-to-violet loop with a hot
         // cream core and a quick glint, so it reads as live even when small
         ns(14, 'ns_ringleader', 'Ringleader', 'legendary', 0,
             { kind: 'scroll', stops: ['#ff8a3d', '#ffd166', '#fff1c9', '#ff5fa2', '#c77dff', '#ff5fa2', '#ff8a3d'], speed: 0.55,
-              glint: true, glintEvery: 1.6, glyph: '✦', glyphColor: '#ffd166' },
+              shade: 0.1, rim: '#2e0d1f', glint: true, glyph: '✦', glyphColor: '#ffd166' },
             { exclusive: true }),
 
-        // ---- skins ----
+        // ---- skins (nid 101..199) ----
         sk(101, 'sk_hazard_stripes', 'Hazard Stripes', 'common', 35,
-            { pattern: 'stripes', seed: 1101, scale: 0.35, accent: '#ffd23f', altAccent: '#2a2724', opacity: 0.7, angle: 45, emissive: null }),
+            { pattern: 'stripes', seed: 1101, scale: 0.3, angle: 45, accent: '#ffd23f', altAccent: '#2b2a28', emissive: null }),
         sk(102, 'sk_riveted_plate', 'Riveted Plate', 'common', 35,
-            { pattern: 'rivets', seed: 1102, scale: 0.3, accent: '#d4d8de', altAccent: '#50555c', opacity: 0.75, emissive: null }),
+            { pattern: 'rim', seed: 1102, rivets: 8, accent: '#c9ced6', altAccent: '#5a6270', accent2: '#eef1f5', emissive: null }),
+        sk(113, 'sk_racer', 'Racer', 'common', 30,
+            { pattern: 'racer', seed: 1113, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+        sk(114, 'sk_split', 'Split', 'common', 30,
+            { pattern: 'halves', seed: 1114, accent: '#2b2a28', altAccent: '#f2f2f2', emissive: null }),
+        sk(115, 'sk_bullseye', 'Bullseye', 'common', 35,
+            { pattern: 'rings', seed: 1115, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+        sk(116, 'sk_polka', 'Polka', 'common', 30,
+            { pattern: 'dots', seed: 1116, scale: 0.56, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+        sk(117, 'sk_checkers', 'Checkers', 'common', 35,
+            { pattern: 'checker', seed: 1117, scale: 0.5, accent: '#2b2a28', altAccent: '#f2f2f2', emissive: null }),
+        sk(118, 'sk_pip', 'Pip', 'common', 30,
+            { pattern: 'core', seed: 1118, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+        sk(119, 'sk_sash', 'Sash', 'common', 30,
+            { pattern: 'sash', seed: 1119, angle: -35, accent: '#ff5a5f', altAccent: '#ffffff', emissive: null }),
+
         sk(103, 'sk_cave_camo', 'Cave Camo', 'uncommon', 65,
-            { pattern: 'camo', seed: 1103, scale: 0.45, accent: '#5e4e3b', altAccent: '#b5a283', accent2: '#8a7456', opacity: 0.6, emissive: null }),
+            { pattern: 'camo', seed: 1103, accent: '#5e4e3b', altAccent: '#c9b690', accent2: '#8a7456', alt2: '#a8946e', emissive: null }),
         sk(104, 'sk_strata', 'Strata', 'uncommon', 65,
-            { pattern: 'strata', seed: 1104, scale: 0.22, accent: '#d9a066', altAccent: '#6e4a2c', accent2: '#8f6a45', opacity: 0.6, emissive: null }),
+            { pattern: 'strata', seed: 1104, accent: '#d9a066', altAccent: '#6e4a2c', accent2: '#8f6a45', alt2: '#b98752', emissive: null }),
         sk(105, 'sk_hex_armor', 'Hex Armor', 'uncommon', 65,
-            { pattern: 'hex', seed: 1105, scale: 0.28, accent: '#8fd8ff', altAccent: '#2f5d7a', opacity: 0.55, emissive: null }),
+            { pattern: 'hex', seed: 1105, scale: 0.36, accent: '#8fd8ff', altAccent: '#2f5d7a', emissive: null }),
+        sk(120, 'sk_chevron', 'Chevron', 'uncommon', 60,
+            { pattern: 'chevrons', seed: 1120, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+        sk(121, 'sk_copper_trim', 'Copper Trim', 'uncommon', 70,
+            { pattern: 'rim', seed: 1121, rivets: 6, core: true, accent: '#d9814a', altAccent: '#8a4a22', accent2: '#ffc49a', emissive: null }),
+        sk(122, 'sk_sunburst', 'Sunburst', 'uncommon', 70,
+            { pattern: 'sunburst', seed: 1122, accent: '#ffd23f', altAccent: '#ff8a3d', emissive: null }),
+        sk(123, 'sk_quarters', 'Quarters', 'uncommon', 60,
+            { pattern: 'quarters', seed: 1123, accent: '#2b2a28', altAccent: '#f2f2f2', emissive: null }),
+        sk(124, 'sk_pinwheel', 'Pinwheel', 'uncommon', 70,
+            { pattern: 'pinwheel', seed: 1124, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+        sk(125, 'sk_tiger', 'Tiger', 'uncommon', 75,
+            { pattern: 'tiger', seed: 1125, accent: '#26221f', altAccent: '#ff9a3d', emissive: null }),
+
         sk(106, 'sk_drill_circuit', 'Drill Circuit', 'rare', 125,
-            { pattern: 'circuit', seed: 1106, scale: 0.2, accent: '#4dffb8', altAccent: '#1f7a58', opacity: 0.75, emissive: null }),
+            { pattern: 'circuit', seed: 1106, accent: '#4dffb8', altAccent: '#1f7a58', emissive: null }),
         sk(107, 'sk_crystal_facets', 'Crystal Facets', 'rare', 125,
-            { pattern: 'facets', seed: 1107, scale: 0.4, accent: '#e0f4ff', altAccent: '#6f8cff', opacity: 0.5, emissive: null }),
+            { pattern: 'facets', seed: 1107, accent: '#e0f4ff', altAccent: '#6f8cff', emissive: null }),
         sk(108, 'sk_gold_vein', 'Gold Vein', 'rare', 125,
-            { pattern: 'vein', seed: 1108, scale: 0.35, accent: '#ffd84d', altAccent: '#a8780a', opacity: 0.85, emissive: null }),
+            { pattern: 'vein', seed: 1108, accent: '#ffd84d', altAccent: '#a8780a', emissive: null }),
+        sk(126, 'sk_sapphire', 'Sapphire', 'rare', 130,
+            { pattern: 'gem', seed: 1126, accent: '#4a8cff', altAccent: '#a8d4ff', accent2: '#dfe4ea', emissive: null }),
+        sk(127, 'sk_amethyst', 'Amethyst', 'rare', 130,
+            { pattern: 'geode', seed: 1127, accent: '#b07aff', altAccent: '#e6c2ff', accent2: '#3a2352', emissive: null }),
+        sk(128, 'sk_storm_front', 'Storm Front', 'rare', 120,
+            { pattern: 'bolt', seed: 1128, accent: '#ffe14d', altAccent: '#2b2a28', emissive: null }),
+        sk(129, 'sk_cyclone', 'Cyclone', 'rare', 120,
+            { pattern: 'spiral', seed: 1129, arms: 2, accent: '#eaf6ff', altAccent: '#2f5d7a', accent2: '#9fd4ff', alt2: '#5c8fb3', emissive: null }),
+        sk(130, 'sk_crosshair', 'Crosshair', 'rare', 110,
+            { pattern: 'crosshair', seed: 1130, accent: '#ff4d4d', altAccent: '#ffffff', emissive: null }),
+        sk(131, 'sk_warden', 'Warden', 'rare', 140,
+            { pattern: 'vault', seed: 1131, accent: '#c9ced6', altAccent: '#5a6270', accent2: '#ffd23f', emissive: null }),
+
         sk(109, 'sk_lava_cracks', 'Lava Cracks', 'epic', 250,
-            { pattern: 'cracks', seed: 1109, scale: 0.4, accent: '#ff5a1f', altAccent: '#ffd84d', opacity: 0.9,
-              emissive: { kind: 'pulse', color: '#ff7a2f', speed: 0.8 } }),
+            { pattern: 'cracks', seed: 1109, accent: '#ff6a1f', altAccent: '#ffd84d', accent2: '#ffd84d', alt2: '#fff4c2',
+              emissive: { kind: 'pulse', color: '#ff7a2f', speed: 0.6 } }),
         sk(110, 'sk_permafrost', 'Permafrost', 'epic', 250,
-            { pattern: 'frost', seed: 1110, scale: 0.3, accent: '#c4ecff', altAccent: '#4f9dff', opacity: 0.75,
-              emissive: { kind: 'twinkle', color: '#eefaff', speed: 1.2 } }),
+            { pattern: 'frost', seed: 1110, accent: '#e6f7ff', altAccent: '#4f9dff',
+              emissive: { kind: 'twinkle', color: '#ffffff', speed: 0.9 } }),
+        sk(132, 'sk_drillhead', 'Drillhead', 'epic', 240,
+            { pattern: 'drill', seed: 1132, accent: '#ff8a1f', altAccent: '#ffd84d', accent2: '#3a2a22', alt2: '#3a2a22',
+              emissive: { kind: 'spin', speed: 0.25 } }),
+        sk(133, 'sk_geode', 'Geode', 'epic', 250,
+            { pattern: 'geode', seed: 1133, gems: 2, accent: '#62e0d8', altAccent: '#c9fff9', accent2: '#2a2f3a',
+              emissive: { kind: 'twinkle', color: '#eaffff', speed: 0.8 } }),
+        sk(134, 'sk_wraith', 'Wraith', 'epic', 240,
+            { pattern: 'shards', seed: 1134, accent: '#ff6bd6', altAccent: '#ffd1f2',
+              emissive: { kind: 'pulse', color: '#ff6bd6', speed: 0.5 } }),
+        sk(135, 'sk_thunderhead', 'Thunderhead', 'epic', 260,
+            { pattern: 'storm', seed: 1135, accent: '#e8eef7', altAccent: '#5a6270', accent2: '#ffe14d', alt2: '#ffe14d',
+              emissive: { kind: 'flash', color: '#fff6b0', speed: 0.3 } }),
+        sk(136, 'sk_gilded', 'Gilded', 'epic', 260,
+            { pattern: 'gilded', seed: 1136, accent: '#ffcf4a', altAccent: '#b8860b',
+              emissive: { kind: 'shimmer', every: 3 } }),
+
         sk(111, 'sk_emerald_heart', 'Emerald Heart', 'legendary', 500,
-            { pattern: 'heart', seed: 1111, scale: 0.5, accent: '#1fd67a', altAccent: '#0f7a45', accent2: '#ffd84d', opacity: 0.85,
-              emissive: { kind: 'spinGlow', color: '#7dffb6', speed: 0.5 } }),
+            { pattern: 'heart', seed: 1111, accent: '#1fd67a', altAccent: '#7dffb6', accent2: '#ffd23f', alt2: '#ffd23f',
+              emissive: { kind: 'shimmer', every: 2.6 } }),
         sk(112, 'sk_molten_core', 'Molten Core', 'legendary', 500,
-            { pattern: 'spiral', seed: 1112, scale: 0.5, accent: '#ff8a1f', altAccent: '#ff3d1f', accent2: '#ffd84d', opacity: 0.85,
-              emissive: { kind: 'spiral', color: '#ffd84d', speed: 0.6 } }),
+            { pattern: 'spiral', seed: 1112, arms: 3, accent: '#ff8a1f', altAccent: '#ff3d1f', accent2: '#ffd84d', alt2: '#ffd84d',
+              emissive: { kind: 'spiral', color: '#ffd84d', speed: 0.4 } }),
+        sk(137, 'sk_aurora', 'Aurora', 'legendary', 480,
+            { pattern: 'aurora', seed: 1137, accent: '#4dffb8', altAccent: '#b88cff', accent2: '#b88cff', alt2: '#4dffb8',
+              emissive: { kind: 'shift', color: '#4dffb8', color2: '#b88cff', speed: 0.12 } }),
+        sk(138, 'sk_prism', 'Prism', 'legendary', 500,
+            { pattern: 'prism', seed: 1138, accent: '#ffffff', altAccent: '#2b2a28',
+              emissive: { kind: 'spin', speed: 0.06 } }),
+        sk(139, 'sk_supernova', 'Supernova', 'legendary', 480,
+            { pattern: 'nova', seed: 1139, accent: '#fff0a8', altAccent: '#ffb23d', accent2: '#ffffff', alt2: '#ffffff',
+              emissive: { kind: 'pulse', color: '#ffc94d', speed: 0.45 } }),
+        sk(140, 'sk_void', 'Void', 'legendary', 450,
+            { pattern: 'void', seed: 1140, accent: '#8a5cff', altAccent: '#c9b3ff', accent2: '#140c26', alt2: '#140c26',
+              emissive: { kind: 'pulse', color: '#9a70ff', speed: 0.35 } }),
     ];
+
+    // A catalog mistake should stop the server at boot, not show up as a
+    // broken shop row: every item is checked once here.
+    (function validate() {
+        for (const it of RAW) {
+            const where = 'cosmetics: ' + it.id;
+            if (!/^(ns|sk)_[a-z0-9_]+$/.test(it.id)) throw new Error(where + ' bad id');
+            if (!RARITIES[it.rarity]) throw new Error(where + ' bad rarity');
+            if (!(it.price >= 0) || (it.exclusive && it.price !== 0)) throw new Error(where + ' bad price');
+            if (it.cat === 'nameStyle') {
+                if (!(it.nid >= 1 && it.nid <= 99) || !it.style || !Array.isArray(it.style.stops) || !it.style.stops.length) throw new Error(where + ' bad name style');
+            } else if (it.cat === 'skin') {
+                if (!(it.nid >= 101 && it.nid <= 199) || !it.skin || !it.skin.pattern || !it.skin.accent || !it.skin.altAccent) throw new Error(where + ' bad skin');
+            } else throw new Error(where + ' bad cat');
+        }
+    })();
 
     function deepFreeze(o) {
         if (o && typeof o === 'object' && !Object.isFrozen(o)) {
@@ -187,13 +345,31 @@
         return luminance(hex) >= MIN_LUMINANCE;
     }
 
+    // How far apart two colours look ("redmean" weighted RGB distance,
+    // 0..~765). Hue counts here, unlike luminance contrast: red on blue is
+    // easy to read even though both are about as bright.
+    function colorDistance(a, b) {
+        const x = parseHex(a), y = parseHex(b);
+        if (!x || !y) return NaN;
+        const r = (x[0] + y[0]) / 2, dr = x[0] - y[0], dg = x[1] - y[1], db = x[2] - y[2];
+        return Math.sqrt((2 + r / 256) * dr * dr + 4 * dg * dg + (2 + (255 - r) / 256) * db * db);
+    }
+
     // Skin accent for a given team colour: altAccent when the accent is too
-    // close to the team colour to read (contrast under 1.6:1).
+    // close to the team colour to read (near in colour, or near-ish and
+    // about as bright).
     function accentFor(item, teamHex) {
         const s = item && item.skin;
         if (!s) return null;
         if (!teamHex || !parseHex(teamHex)) return s.accent;
-        return contrast(s.accent, teamHex) < 1.6 ? s.altAccent : s.accent;
+        const d = colorDistance(s.accent, teamHex);
+        return d < 130 || (d < 210 && contrast(s.accent, teamHex) < 1.25) ? s.altAccent : s.accent;
+    }
+    // The second colour follows the first: alt2 when the accent was swapped.
+    function accent2For(item, teamHex) {
+        const s = item && item.skin;
+        if (!s || !s.accent2) return null;
+        return s.alt2 && accentFor(item, teamHex) !== s.accent ? s.alt2 : s.accent2;
     }
 
     function priceDust(item) { return item ? item.price / MILLI : 0; }
@@ -201,6 +377,6 @@
     return Object.freeze({
         CATALOG_VERSION, MILLI, RARITIES, RARITY_ORDER, CATS, CUSTOM_COLOR_ID, INVITE_STYLE_ID, ITEMS,
         MIN_LUMINANCE, FLOOR_COLOR,
-        byId, byNid, isCat, parseHex, luminance, contrast, normalizeColor, isColorAllowed, accentFor, priceDust,
+        byId, byNid, isCat, parseHex, luminance, contrast, normalizeColor, isColorAllowed, colorDistance, accentFor, accent2For, priceDust,
     });
 });

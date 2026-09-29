@@ -723,7 +723,9 @@ function mainPart() {
             B2.keepActive();
             const me1 = await B2.dbg('me');
             assert.equal(me1.carried, me0.carried, 'satchel back');
-            assert.ok(Math.hypot(me1.x - mePre.x, me1.y - mePre.y) < 200, 'back where it was: ' + JSON.stringify([mePre, me1]));
+            // mePre is from before the freeze; the tank keeps its last input until the
+            // dead link is noticed (~12 s), so it can drift a few hundred units first
+            assert.ok(Math.hypot(me1.x - mePre.x, me1.y - mePre.y) < 700, 'back where it was: ' + JSON.stringify([mePre, me1]));
             assert.equal(openLife(names.b).life_id, bLife.life_id, 'the same ranked life');
 
             // ---- dropped again, and not back for 45 s: gone ----
