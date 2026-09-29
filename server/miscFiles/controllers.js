@@ -477,6 +477,7 @@ class io_nearestDifferentMaster extends IO {
         // a bot's auto turrets / drones, and raid bosses, honour a fresh
         // spawn's bot grace too
         if ((myMaster.isBot || myMaster.isRoyaleBoss) && inBotGrace(theirMaster, Date.now())) return false;
+        if (myMaster.isBot && softSpared(myMaster, theirMaster, Date.now())) return false;
         if (isNaN(e.dangerValue)) return false;
         if (!(aiSettings.seeInvisible || this.body.isArenaCloser || e.alpha > 0.5)) return false;
         if (!io_nearestDifferentMaster.validEntityTypes.has(e.type)) {
@@ -1408,10 +1409,22 @@ let firstMinutesCfg = null;
 function firstMinutes() {
     if (firstMinutesCfg) return firstMinutesCfg;
     try { firstMinutesCfg = require('../game/gamemodes/scripts/dig_royale.js').FIRST_MINUTES || null; } catch { /* */ }
-    return firstMinutesCfg || { NEW_TARGET_PENALTY: 350, NEW_MAX_HUNTERS: 1 };
+    return firstMinutesCfg || { NEW_TARGET_PENALTY: 600, NEW_MAX_HUNTERS: 1, SOFT_CLOSE_R: 320, SOFT_HIT_MS: 4000, MAX_HUNTERS: 2 };
 }
 function inBotGrace(root, now) {
     return !!(root && root.isPlayer && (root.botGraceUntil || 0) > now);
+}
+// A player in the soft window (the first minutes of every life, or any life
+// of a new player) is only fought by a bot they walk right up to or shoot.
+function botSoft(root, now) {
+    return !!(root && root.isPlayer && (root.botNewbie || (root.botSoftUntil || 0) > now));
+}
+function softSpared(bot, target, now) {
+    if (!botSoft(target, now)) return false;
+    const fm = firstMinutes();
+    if (bot._lastDamageSource === target && now - (bot._lastDamageAt || 0) < (fm.SOFT_HIT_MS || 4000)) return false;
+    const r = fm.SOFT_CLOSE_R || 320;
+    return (target.x - bot.x) ** 2 + (target.y - bot.y) ** 2 > r * r;
 }
 // bots other than `self` currently aiming at / chasing `target`
 function botsOn(target, self) {
@@ -1997,12 +2010,12 @@ class io_digWarsGoals extends IO {
         if (this.aimAngle == null) { this.aimAngle = desired; this.aimVel = 0; }
         const turn = wrapAngle(desired - this.aimAngle);
         // Damped spring: slight overshoot before settling, more at low skill.
-        const stiff = 0.16 + skill * 0.22, damp = 0.55 + skill * 0.25;
+        const stiff = 0.12 + skill * 0.2, damp = 0.55 + skill * 0.25;
         this.aimVel = (this.aimVel || 0) * damp + turn * stiff;
         this.aimAngle = wrapAngle(this.aimAngle + this.aimVel);
         if (now - this.aimErrorAt > 110) {
             this.aimErrorAt = now;
-            this.aimError = ran.gauss(0, (1 - skill) * 0.07);
+            this.aimError = ran.gauss(0, 0.03 + (1 - skill) * 0.1);
         }
         const tremor = Math.sin(now / 47 + (this.body.id % 9)) * 0.006 * (1.2 - skill);
         const a = this.aimAngle + this.aimError + tremor;
@@ -2014,8 +2027,8 @@ class io_digWarsGoals extends IO {
     // fire on a rock is normal.
     triggerHeld(now) {
         if (!this.burstUntil || now > this.burstUntil) {
-            this.pauseUntil = now + 200 + Math.random() * 450 * (1.4 - this.skill());
-            this.burstUntil = this.pauseUntil + 1300 + Math.random() * 2400;
+            this.pauseUntil = now + 300 + Math.random() * 600 * (1.4 - this.skill());
+            this.burstUntil = this.pauseUntil + 1000 + Math.random() * 2000;
         }
         return now >= this.pauseUntil;
     }
@@ -2029,12 +2042,14 @@ class io_digWarsGoals extends IO {
             const tracking = gun.getTracking();
             if (tracking && tracking.speed > speed) speed = tracking.speed;
         }
-        // A player under mercy gets sloppier lead and wider spray.
+        // A player under mercy or in the soft window gets sloppier lead and
+        // wider spray.
         let skill = this.skill();
         if (entity.isPlayer && (entity.socket?.botMercyUntil || 0) > now) skill *= 0.45;
+        else if (botSoft(entity, now)) skill *= 0.7;
         // Lead time is capped at 1.2s; a lower cap undershoots moving targets
         // past medium range.
-        const lead = speed > 0 ? util.clamp(distance / speed, 0, 1.2) * (0.5 + skill * 0.5) : 0.2;
+        const lead = speed > 0 ? util.clamp(distance / speed, 0, 1.2) * (0.35 + skill * 0.5) : 0.2;
         return this.aimVector(dx + (entity.velocity?.x || 0) * lead,
                               dy + (entity.velocity?.y || 0) * lead, now, skill);
     }
@@ -2072,16 +2087,20 @@ class io_digWarsGoals extends IO {
             if (distance > fov * 1.25) continue;
             // fresh spawn in bot grace: not a target, not even counted
             if (inBotGrace(root, now)) continue;
-            // a new player already has a bot on them: leave them to it
+            // soft window (first minutes of a life, or a new player): only
+            // if they come right up to us or shoot us
+            if (softSpared(body, root, now)) continue;
+            // enough bots on this player already: leave them to it
             // (self-defence still wins below through the attacker override)
-            if (root.isPlayer && root.botNewbie && botsOn(root, body) >= firstMinutes().NEW_MAX_HUNTERS) continue;
+            if (root.isPlayer && botsOn(root, body) >= (botSoft(root, now) ? firstMinutes().NEW_MAX_HUNTERS : firstMinutes().MAX_HUNTERS || 2)) continue;
             // Counted a bit past visual range so a second attacker hanging
             // back still registers as being outnumbered.
             if (distance < 1100) enemies++;
-            // Humans are slightly preferred over bots, but only slightly.
+            // Humans and bots rank the same; a soft player ranks as if
+            // farther off, and a heavy satchel only draws a little.
             const score = distance
-                - (root.isPlayer ? (root.botNewbie ? -firstMinutes().NEW_TARGET_PENALTY : 80) : 0)
-                - Math.min(400, (root.carriedGems || 0) * 0.12)
+                + (botSoft(root, now) ? firstMinutes().NEW_TARGET_PENALTY : 0)
+                - Math.min(200, (root.carriedGems || 0) * 0.06)
                 + (this.clearShot(root) ? 0 : 220);
             if (score < bestScore) { bestScore = score; best = root; }
         }
@@ -2108,7 +2127,7 @@ class io_digWarsGoals extends IO {
             // a new face takes a moment to register before the bot commits
             this._lastEnemy = best;
             this._enemySeenAt = now;
-            this.reactionMs = 160 + (1 - this.skill()) * 380 + Math.random() * 160;
+            this.reactionMs = 300 + (1 - this.skill()) * 450 + Math.random() * 250;
         }
         view.enemy = best;
         body._botEnemyId = best ? best.id : 0;   // read by botsOn() (new-player hunter cap)
@@ -2416,9 +2435,8 @@ class io_digWarsGoals extends IO {
         const attackedMe = this.body._lastDamageSource === target &&
             now - (this.body._lastDamageAt || 0) < 3000;
         if (attackedMe) return true;
-        // fresh spawn (bot grace) / a new player somebody is already on
-        if (inBotGrace(target, now)) return false;
-        if (target.botNewbie && botsOn(target, this.body) >= firstMinutes().NEW_MAX_HUNTERS) return false;
+        // fresh spawn (bot grace), or the soft window: bots don't start it
+        if (inBotGrace(target, now) || botSoft(target, now)) return false;
         // recently gave up chasing them
         if ((this.playerBreakUntil.get(target.id) || 0) > now) return false;
         // Mercy: a player dying repeatedly to bots is left alone until they

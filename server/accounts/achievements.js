@@ -21,7 +21,7 @@ const DEFS = [
     { id: 'podium',      name: 'Podium',      desc: 'Finish a raid in the top 3',     kind: 'stat',    stat: 'top3',        goal: 1 },
     { id: 'champion',    name: 'Champion',    desc: 'Win a raid',                     kind: 'stat',    stat: 'raid_wins',   goal: 1 },
     { id: 'boss_slayer', name: 'Boss Slayer', desc: 'Land the final hit on a boss',   kind: 'event',                        goal: 1 },
-    { id: 'survivor',    name: 'Survivor',    desc: 'Survive 30 minutes without dying', kind: 'event',                     goal: 1 },
+    { id: 'survivor',    name: 'Survivor',    desc: 'Survive 20 minutes without dying', kind: 'event',                     goal: 1 },
     { id: 'streaker',    name: 'Streaker',    desc: 'Get a 5-knockout streak',        kind: 'event',                        goal: 1 },
     { id: 'hoarder',     name: 'Hoarder',     desc: 'Carry 3,000 gems at once',       kind: 'event',                        goal: 1 },
     { id: 'emerald_eye', name: 'Emerald Eye', desc: 'Grab 25 emeralds',               kind: 'counter',                      goal: 25 },

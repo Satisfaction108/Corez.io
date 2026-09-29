@@ -53,6 +53,7 @@ const HOT = new Set([
     "client/tutorial.js",
     "client/util.js",
     "client/coach.js",
+    "client/raidFinale.js",
     "client/account/dustHud.js",
     "client/account/gameToasts.js",
     "client/account/ingameChat.js",

@@ -9,6 +9,7 @@ import './terrainRenderer.js';
 import { gameSound } from "./sound.js";
 import * as tutorial from './tutorial.js';
 import * as coach from './coach.js';
+import * as raidFinale from './raidFinale.js';
 import * as rankBadges from './account/rankBadges.js';
 import * as rankPanel from './account/rankPanel.js';
 import * as rankCeremony from './account/rankCeremony.js';
@@ -1264,7 +1265,7 @@ import * as cosmetics from './account/cosmetics.js';
     // Ranked: the death card's result, the dust HUD and the account snapshot
     // belong to one game. The rank-up ceremony waits for the RAID OVER title
     // to lift before it starts.
-    rankCeremony.setGate(() => !global.raidEndFx || performance.now() - global.raidEndFx.at > 2400);
+    rankCeremony.setGate(() => !raidFinale.holdsCeremony() && (!global.raidEndFx || performance.now() - global.raidEndFx.at > 2400));
     {
         const exit0 = global.exit;
         global.exit = function () {
@@ -4341,6 +4342,7 @@ import * as cosmetics from './account/cosmetics.js';
 
         const motion = compensation();
         let livingPred = false;
+        const finaleIds = raidFinale.watchIds();
         for (let instance of global.entities) {
             if (!instance.render.draws) {
                 instance._onScreen = false;
@@ -4428,8 +4430,12 @@ import * as cosmetics from './account/cosmetics.js';
             instance._onScreen = onScreen;
             instance._sx = x;
             instance._sy = y;
+            if (finaleIds !== null && finaleIds.has(instance.id)) {
+                raidFinale.seen(instance.id, x / global.screenWidth, y / global.screenHeight, (isize || instance.size) * ratio / global.screenWidth);
+            }
             if (!onScreen) continue;
-            if (instance.id === gui.playerid && !global.died) drawSpawnShield(ctx[1], x, y, (isize || instance.size) * ratio, instance.invuln);
+            // the raid-end freeze makes everyone invulnerable: that is not a spawn shield
+            if (instance.id === gui.playerid && !global.died && !raidFinale.active()) drawSpawnShield(ctx[1], x, y, (isize || instance.size) * ratio, instance.invuln);
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance, false);
             // treasury gems inside a chamber ring: drawn from the baked sprite
@@ -6241,6 +6247,14 @@ import * as cosmetics from './account/cosmetics.js';
             (!global.tutorialMode || /(^|,)shop:/.test(window.dwTutAllow || ""));
     }
     function fmtNum(n) { return util.formatLargeNumber(Math.round(n || 0)); }
+    // the raid-end finale draws with the HUD's own pieces
+    raidFinale.init({
+        ctx: () => ctx[2], HUD, hudPanel, hudWell, hudTitle, hudTitleW, hudBar, drawText, measureText,
+        gemSprite, vignetteSprite, fmtNum, selfId: () => gui.playerid,
+        rankHasContent: () => rankPanel.hasContent(),
+        rankDraw: (c, x, y, w, h, a) => rankPanel.draw(c, x, y, w, h,
+            { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk }, a),
+    });
     function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "k" : String(Math.round(d)); }
     function gemPath(c, x, y, r) {
         c.beginPath();
@@ -6678,6 +6692,7 @@ import * as cosmetics from './account/cosmetics.js';
         hudErrText = "";
         tickAdaptiveQuality();
         const r = global.royale;
+        if (raidFinale.hidesHud()) { hudTopBottom = HUD.edge; return; }
         if (!global.died) spectateBarBottom = 0;
         const top0 = global.died && spectateBarBottom > 0 ? spectateBarBottom : 0;
         let y = HUD.edge + top0;
@@ -6687,7 +6702,10 @@ import * as cosmetics from './account/cosmetics.js';
             const st = r.storm || {};
             const placeTxt = r.place > 0 ? "#" + r.place + "  ·  " + fmtNum(r.youScore | 0) + " pts"
                 : r.youScore > 0 ? fmtNum(r.youScore | 0) + " pts" : "";
-            const stormTxt = st.a ? (st.hold ? "Storm holds " + (st.left | 0) + "s" : "Storm in " + fmtRaidClock(st.left | 0)) : "";
+            // a raid is st.cn storms; the last one closes all the way
+            const stormNo = st.fin ? "Last storm" : st.cn > 0 ? "Storm " + ((st.c | 0) + 1) + "/" + st.cn : "Storm";
+            const stormTxt = !st.a ? "" : st.fin && st.hold ? "Last storm closing"
+                : st.hold ? stormNo + " holds " + fmtRaidClock(st.left | 0) : stormNo + " in " + fmtRaidClock(st.left | 0);
             const PW = 300, rowH = 38, footH = (placeTxt || stormTxt) ? 24 : 0, PH = rowH + footH;
             const px = Math.round(cx - PW / 2), py = y;
             hudPanel(c, px, py, PW, PH);
@@ -6718,7 +6736,8 @@ import * as cosmetics from './account/cosmetics.js';
                 drawText(txt, cx, y + ph / 2, 12.5, col, "center", true);
                 y += ph + 2.5 + 8;
             };
-            if (r.lock) pill("Final storm, " + Math.max(0, r.lockLeft | 0) + "s left. Nobody respawns now.", HUD.lilac);
+            if (r.lock) pill(st.fin ? "Last " + Math.max(0, r.lockLeft | 0) + "s of the raid. Nobody respawns now."
+                : "Final storm, " + Math.max(0, r.lockLeft | 0) + "s left. Nobody respawns now.", HUD.lilac);
             else if (r.toast) pill(r.toast, color.guiwhite);
         });
         hudSafe("boss", () => {
@@ -6753,6 +6772,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (r.occupy > 0) drawText("You can stay " + r.occupy + "s longer", cx, global.screenHeight - 56, 15, color.gold, "center");
             else if (r.lockout > 0) drawText("You can come back in " + r.lockout + "s", cx, global.screenHeight - 56, 15, color.guiwhite, "center");
         });
+        hudSafe("countdown", () => raidFinale.drawCountdown(y));
         hudTopBottom = y;
         // CSS px, for the DOM notification cards under the clock (gameToasts.js)
         global.hudTopPx = y * window.innerWidth / Math.max(1, global.screenWidth);
@@ -8550,7 +8570,7 @@ import * as cosmetics from './account/cosmetics.js';
     // ── spawn shield ──────────────────────────────────────────────────────
     // The server holds the shield for 4 s, then drops it on the first move
     // or shot.
-    const SHIELD_GRACE_MS = 4000;
+    const SHIELD_GRACE_MS = 5000;
     let shieldOnPrev = false;
     function drawSpawnShield(c, x, y, R, invuln) {
         const on = !!invuln;
@@ -8575,7 +8595,7 @@ import * as cosmetics from './account/cosmetics.js';
         c.restore();
     }
     function drawSpawnShieldHint() {
-        if (global.died || !global.shieldSeen || !shieldOnPrev) return;
+        if (global.died || !global.shieldSeen || !shieldOnPrev || raidFinale.active()) return;
         const since = performance.now() - (global.spawnedAt || 0);
         const left = Math.ceil((SHIELD_GRACE_MS - since) / 1000);
         const line = left > 0
@@ -8588,63 +8608,14 @@ import * as cosmetics from './account/cosmetics.js';
         drawText(line, global.screenWidth / 2, y, size, "#bff2ff", "center", true);
     }
 
-    // ── raid over: flash, shockwave, the title, then the wait ─────────────
+    // ── raid over: raidFinale.js owns the whole sequence ──────────────────
     function drawRaidEndFx() {
-        const fx = global.raidEndFx;
-        if (!fx) return;
-        const t = performance.now() - fx.at;
-        const TOTAL = 16600;
-        if (t > TOTAL) { global.raidEndFx = null; return; }
-        const c = ctx[2];
-        const W = c.canvas.width, H = c.canvas.height, u = Math.min(W, H);
-        c.save();
-        c.setTransform(1, 0, 0, 1, 0, 0);
-        // darkening that settles, and eases off before the respawn
-        const out = t > TOTAL - 900 ? (TOTAL - t) / 900 : 1;
-        c.globalAlpha = Math.min(0.5, t / 900 * 0.5) * out;
-        c.fillStyle = "#0a0604"; c.fillRect(0, 0, W, H);
-        // two shockwaves from the centre
-        for (const [delay, col] of [[0, "255,215,110"], [260, "255,255,255"]]) {
-            const k = (t - delay) / 1400;
-            if (k < 0 || k > 1) continue;
-            c.globalAlpha = (1 - k) * 0.8;
-            c.lineWidth = u * 0.03 * (1 - k) + 2;
-            c.strokeStyle = "rgba(" + col + ",1)";
-            c.beginPath(); c.arc(W / 2, H / 2, u * 0.08 + k * Math.max(W, H) * 0.8, 0, Math.PI * 2); c.stroke();
-        }
-        // the flash
-        if (t < 380) { c.globalAlpha = 0.85 * (1 - t / 380); c.fillStyle = "#fff6dc"; c.fillRect(0, 0, W, H); }
-        // the title: pops in, holds, and moves up once the death card appears
-        const pop = t < 260 ? 1.35 - 0.35 * (t / 260) : 1;
-        const lift = t < 1800 ? 0 : Math.min(1, (t - 1800) / 500);
-        const ty = H * (0.42 - 0.26 * lift);
-        const fs = Math.round(u * 0.12 * pop * (1 - 0.35 * lift));
-        c.globalAlpha = Math.min(1, t / 160) * out;
-        c.textAlign = "center"; c.textBaseline = "middle";
-        c.font = fs + "px " + HUD.font;
-        c.lineJoin = "round";
-        c.lineWidth = Math.max(4, fs * 0.16);
-        c.strokeStyle = HUD.ink;
-        const shake = t < 700 ? (1 - t / 700) * u * 0.012 : 0;
-        const sx = W / 2 + (Math.random() - 0.5) * shake, sy = ty + (Math.random() - 0.5) * shake;
-        c.strokeText("RAID OVER", sx, sy);
-        c.fillStyle = "#ffcf4d"; c.fillText("RAID OVER", sx, sy);
-        const small = Math.round(u * 0.034 * (1 - 0.25 * lift));
-        c.font = "700 " + small + "px Ubuntu, sans-serif";
-        c.lineWidth = Math.max(3, small * 0.18);
-        if (fx.sub) { c.strokeText(fx.sub, W / 2, sy + fs * 0.62); c.fillStyle = "#ffffff"; c.fillText(fx.sub, W / 2, sy + fs * 0.62); }
-        if (t > 1600) {
-            const secs = Math.max(0, Math.ceil((TOTAL - t) / 1000));
-            const line = "Everyone went down. New raid in " + secs + "s";
-            c.strokeText(line, W / 2, sy + fs * 0.62 + small * 1.5);
-            c.fillStyle = "#c9c1ad"; c.fillText(line, W / 2, sy + fs * 0.62 + small * 1.5);
-        }
-        c.restore();
+        raidFinale.draw();
     }
 
     function drawRaidResults() {
         const r = global.royale;
-        if (!royaleActive() || !r.results || !r.results.top) return;
+        if (!royaleActive() || !r.results || !r.results.top || raidFinale.active()) return;
         const c = ctx[2];
         const cx = global.screenWidth / 2, cy = global.screenHeight * 0.34;
         const rows = r.results.top.slice(0, 10);
@@ -10902,6 +10873,15 @@ import * as cosmetics from './account/cosmetics.js';
     };
 
     const gameDrawDead = () => {
+        // the raid-end finale is on screen instead
+        if (raidFinale.active()) {
+            global.clickables.royaleSpectate.hide();
+            global.clickables.deathRespawn.hide();
+            global.clickables.royalePrev.hide();
+            global.clickables.royaleNext.hide();
+            global.clickables.royalePlay.hide();
+            return;
+        }
         // Killer cam: 3s on the killer, no panel yet. The handoff guard covers
         // the gap between the cam expiring and its (possibly throttled) timer
         // firing, so the classic screen never flashes before the raid panel.
@@ -11319,8 +11299,10 @@ import * as cosmetics from './account/cosmetics.js';
             drawMilestones();
             drawWarBanner();
             drawSpawnShieldHint();
-            if (global.GUIStatus.renderUpgrades) drawSkillBars(spacing, alcoveSize);
-            if (global.GUIStatus.renderPlayerBars) {
+            // the raid-end finale takes the whole screen: the winner's own HUD steps aside
+            const finaleHud = raidFinale.hidesHud();
+            if (global.GUIStatus.renderUpgrades && !finaleHud) drawSkillBars(spacing, alcoveSize);
+            if (global.GUIStatus.renderPlayerBars && !finaleHud) {
                 drawSelfInfo(max);
                 drawGemPopups();   // +N numbers + pickup ring over the tank
                 drawMineCombo();    // mining chain meter under the tank
@@ -11329,12 +11311,12 @@ import * as cosmetics from './account/cosmetics.js';
                 drawShopUI();
                 drawTooltips();
             }
-            drawMinimapAndDebug(spacing, alcoveSize, global.GRAPHDATA, tick);
+            if (!finaleHud) drawMinimapAndDebug(spacing, alcoveSize, global.GRAPHDATA, tick);
             // Tutorial: no leaderboard (the server sends an empty one anyway)
             if (global.GUIStatus.renderLeaderboard && !global.tutorialMode && !royaleActive()) drawLeaderboard(spacing, alcoveSize, max);
-            if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
+            if (global.GUIStatus.renderUpgrades && !finaleHud) drawAvailableUpgrades(spacing, alcoveSize);
             // the new ability reveal dims everything under it
-            if (global.GUIStatus.renderPlayerBars) drawKitUnlock();
+            if (global.GUIStatus.renderPlayerBars && !finaleHud) drawKitUnlock();
             // leader arrow + enemy pings are drawn in drawTopIndicators(), at
             // the end of the frame, so no panel covers them
         } else if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
@@ -11488,7 +11470,7 @@ import * as cosmetics from './account/cosmetics.js';
         const dead = document.getElementById("royaleDeadDom");
         if (!spec || !dead) return;
         const inGame = !!(global.gameStart && !global.disconnected);
-        if (global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) {
+        if ((global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) || raidFinale.active()) {
             spec.style.display = "none";
             dead.style.display = "none";
             return;
@@ -11949,8 +11931,9 @@ import * as cosmetics from './account/cosmetics.js';
                 gameSound.rammerMove(ram);
                 // the satchel heartbeat is continuous state, driven every frame
                 const sg = global.gems;
-                gameSound.satchelTension(sg && sg.cap > 0
-                    ? Math.min(1, (sg.carried || 0) / sg.cap) : 0);
+                // the last seconds of a raid push the heartbeat too
+                gameSound.satchelTension(Math.max(raidFinale.tension(), sg && sg.cap > 0
+                    ? Math.min(1, (sg.carried || 0) / sg.cap) : 0));
             } else {
                 gameSound.rammerMove(0);
                 gameSound.satchelTension(0);

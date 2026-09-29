@@ -13,6 +13,9 @@ module.exports = {
     arena_shape: "circle",
     bot_cap: 0,
     bot_team_cap: 0,
+    // class upgrades a raid bot takes (index = count, 3+ = a full tier-4
+    // tank; was 74%): mostly tier 3 now, so a new Basic is not always outclassed
+    bot_class_upgrade_chances: [3, 17, 45, 30, 5],
     // tanks grow with their raid score (terrain/growth.js); false = fixed size
     royale_growth: true,
     // the raid sends its own shield line, so the stock invuln/bug lines only repeat it

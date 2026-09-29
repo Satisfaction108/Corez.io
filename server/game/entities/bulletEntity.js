@@ -359,6 +359,7 @@ class bulletEntity { // Basically an (Entity) but with heavy limitations to impr
         }
         const owner = this.master && this.master !== this ? this.master : this;
         if (owner.tutorialChipDamage) m *= owner.tutorialChipDamage;
+        if (owner !== this) m *= shotMult(this);
         return m;
     }
 

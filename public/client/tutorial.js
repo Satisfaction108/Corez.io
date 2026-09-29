@@ -1087,13 +1087,13 @@ const CHAPTERS = [
             {
                 id: "raidClock", next: true,
                 title: "How a raid works",
-                text: "A raid is *2 hours* long. The storm shrinks for 6 minutes, holds for a minute, then opens up somewhere else. The last 45 seconds of each cycle is the *final storm*, nobody respawns during it.",
+                text: "A raid is *4 storms*, 28 minutes. Each storm shrinks for 6 minutes, holds for a minute, then opens up somewhere else. The *4th storm* closes all the way and ends the raid. Nobody respawns in the last seconds of a storm.",
                 praise: "ok",
             },
             {
                 id: "dying", next: true,
                 title: "Dying",
-                text: "When you die you drop everything you're carrying. You come back in *15 seconds*, at your base if you have one, with a *4 second shield* that goes away when you move or shoot.",
+                text: "When you die you drop everything you're carrying. You come back in *15 seconds* (your first few times, just 5), at your base if you have one, with a *5 second shield* that goes away when you move or shoot.",
                 praise: "ok",
             },
             {
@@ -2073,7 +2073,7 @@ const ui = {
                 `<li>${ICONS.gem}<span><b>Mine</b> and <b>bank a lot</b>. You drop what you're carrying when you die.</span></li>` +
                 `<li>${ICONS.base}<span>Get a <b>base</b> so you respawn close and can bank on the way. Spend gems at <b>shops</b>.</span></li>` +
                 `<li>${ICONS.storm}<span>Stay inside the <b>storm</b>. Chests and bosses pay the most.</span></li>` +
-                `<li>${ICONS.crown}<span>Highest score after <b>2 hours</b> wins. Top 10 all get paid.</span></li>` +
+                `<li>${ICONS.crown}<span>Highest score when the <b>4th storm</b> shuts wins. Top 10 all get paid.</span></li>` +
               '</ul>' +
               '<button class="dwt-play" type="button"><b>Play</b></button>' +
               '<button class="dwt-menu dwt-back" type="button">Back to menu</button>' +

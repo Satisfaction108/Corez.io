@@ -408,12 +408,35 @@ ALTER TABLE dust_ledger_v5 RENAME TO dust_ledger;
 CREATE INDEX dust_ledger_user ON dust_ledger(user_id, id);
 `;
 
+// v6: death log (deaths.js). One row per human death in a raid, accounts
+// and guests alike, so we can see what kills new players and how fast.
+// cause is who did it; killer_name / killer_tank are the killer's name and
+// class (bots and players) or the boss name; life_ms is how long that life
+// lasted; life_no counts the lives of that connection (1 = first spawn).
+const V6 = `
+CREATE TABLE deaths (
+    id          INTEGER PRIMARY KEY,
+    at          INTEGER NOT NULL,
+    user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    guest_id    TEXT,
+    server_id   TEXT,
+    cause       TEXT    NOT NULL CHECK (cause IN ('bot', 'player', 'boss', 'storm', 'other')),
+    killer_name TEXT,
+    killer_tank TEXT,
+    life_ms     INTEGER NOT NULL DEFAULT 0 CHECK (life_ms >= 0),
+    life_no     INTEGER NOT NULL DEFAULT 0,
+    newbie      INTEGER NOT NULL DEFAULT 0 CHECK (newbie IN (0, 1))
+) STRICT;
+CREATE INDEX deaths_at ON deaths(at);
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
     { version: 3, up(db) { db.exec(V3); } },
     { version: 4, up(db) { db.exec(V4); } },
     { version: 5, up(db) { db.exec(V5); } },
+    { version: 6, up(db) { db.exec(V6); } },
 ];
 
 function latestVersion() {

@@ -11,6 +11,25 @@ const KINDS = {
     wraith:    { cls: 'royaleShardWraith',    name: 'Shard Wraith',    gems: 2200, score: 550, color: '#d153cc', digs: true, digRate: 0.18, blurb: 'Summons shards. Snipes from range.' },
 };
 const ORDER = ['warden', 'drillhead', 'colossus', 'wraith'];
+// Softening on top of the definitions. A single hit from any gun should take
+// at most about a fifth of a fresh level-45 Basic (220 health + 65 shield),
+// and a boss should still need a group or one long, committed fight.
+//   healthMult  scales max health (the shield is left alone)
+//   shotMult    scales every bullet, trap and drone the boss or its turrets fire
+//   bodyMult    scales hull contact damage
+//   regenEvery  the boss regenerates on one regen tick in this many
+const TUNING = {
+    healthMult: 0.7,
+    shotMult: 0.3,
+    bodyMult: 0.6,
+    regenEvery: 4,
+};
+function tune(o) {
+    o.bonusHealthMult = TUNING.healthMult;
+    o.bossShotMult = TUNING.shotMult;
+    o.bossBodyMult = TUNING.bodyMult;
+    o.regenEvery = TUNING.regenEvery;
+}
 const DEBUG = !!process.env.ROYALE_DEBUG;
 const BASE_INTERVAL_MS = DEBUG ? 45 * 1000 : 14 * 60 * 1000;
 const FIRST_DELAY_MS = DEBUG ? 12 * 1000 : 5 * 60 * 1000;
@@ -83,6 +102,7 @@ function spawn(forceKind) {
     o.bossContact = !!kind.contact;
     o.alwaysActive = true;
     o.settings.leaderboardable = false;
+    tune(o);
     o.refreshBodyAttributes();
     try { global.gameManager.terrainGrid.pushCircleFromVoronoi(o, o.realSize || 60); } catch { /* */ }
     boss = o; kindId = id; lastKind = id; hitters.clear();
@@ -202,4 +222,4 @@ function debugHit(body, dmg) {
     hitters.set(body.id, { body, at: Date.now(), dmg: (h ? h.dmg : 0) + (+dmg || 0) });
 }
 
-module.exports = { debugHit, KINDS, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };
+module.exports = { debugHit, KINDS, TUNING, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };

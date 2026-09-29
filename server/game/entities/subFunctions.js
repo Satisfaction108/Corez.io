@@ -69,4 +69,14 @@ lazyRealSizes = new Proxy(lazyRealSizes, {
     }
 });
 
-module.exports = { dirtyCheck, remapTarget, lazyRealSizes, Activation }
+// Shots from a raid boss or a bot hit softer than their definitions: the
+// root tank carries the factor (terrain/bosses.js tune, game/index.js
+// BOT_SHOT_MULT). Read per collision by damageMultiplier().
+function shotMult(o) {
+    let root = o.master, hops = 0;
+    while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+    if (!root || root === o) return 1;
+    return root.bossShotMult || root.botShotMult || 1;
+}
+
+module.exports = { dirtyCheck, remapTarget, lazyRealSizes, Activation, shotMult }

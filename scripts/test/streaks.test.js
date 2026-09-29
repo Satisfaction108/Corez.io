@@ -137,7 +137,7 @@ function seedLedger(db, n) {
 }
 
 function checkMigrated(db, before) {
-    assert.equal(db.userVersion(), 5);
+    assert.equal(db.userVersion(), migrations.latestVersion());
     assert.deepEqual(db.all('SELECT * FROM dust_ledger ORDER BY id'), before, 'every ledger row, same ids');
     const uid = before[0].user_id;
     db.run("INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, created_at) VALUES (?, 1, 1, 'streak_play', 1)", uid);
@@ -160,7 +160,7 @@ test('migration: v4 -> v5 on a synthetic v4 file keeps the ledger, adds streaks;
     assert.throws(() => db.run("INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, created_at) VALUES (?, 1, 1, 'streak_play', 1)", uid), /CHECK/);
     const before = db.all('SELECT * FROM dust_ledger ORDER BY id');
     const res = migrations.apply(db, { backupDir: path.join(ROOT, 'mig', 'backups') });
-    assert.deepEqual(res.applied, [5]);
+    assert.deepEqual(res.applied, migrations.MIGRATIONS.filter(x => x.version >= 5).map(x => x.version));
     assert.ok(res.backup && fs.existsSync(res.backup), 'pre-migration backup');
     // the backup is the v4 file, untouched
     const bk = dbmod.open({ path: res.backup, migrate: false });
@@ -196,7 +196,7 @@ test('migration: a copy of the local data/digwars.db (with ledger rows added) mi
         counts[t.name] = db.get(`SELECT count(*) AS n FROM "${t.name}"`).n;
     }
     const res = migrations.apply(db, { backupDir: path.join(dir, 'backups') });
-    assert.deepEqual(res.applied, [5]);
+    assert.deepEqual(res.applied, migrations.MIGRATIONS.filter(x => x.version >= 5).map(x => x.version));
     assert.ok(res.backup && fs.existsSync(res.backup));
     checkMigrated(db, before);
     for (const [name, n] of Object.entries(counts)) {

@@ -1384,6 +1384,13 @@ class socketManager {
                         const dr = require('../gamemodes/scripts/dig_royale.js');
                         socket.talk('KC', 'dbg', JSON.stringify({ score: dr.debugSetScore(b, m[1] | 0) }), 0);
                     }
+                    // DBG botscore <n>: a live bot's raid score (the raid-end finale seen as a loser)
+                    else if (what === "botscore") {
+                        const st = require('../terrain/storm.js').snapshot();
+                        const d2 = x => (x.x - st.cx) ** 2 + (x.y - st.cy) ** 2;
+                        const bot = (global.gameManager.gameHandler?.bots || []).filter(x => x && !x.isDead()).sort((p, q) => d2(p) - d2(q))[0];
+                        if (bot) socket.talk('KC', 'dbg', JSON.stringify({ botscore: require('../gamemodes/scripts/dig_royale.js').debugSetScore(bot, m[1] | 0), name: bot.name }), 0);
+                    }
                     else if (what === "growth") socket.talk('KC', 'dbg', JSON.stringify({ growth: require('../gamemodes/scripts/dig_royale.js').debugGrowth(b) }), 0);
                     else if (what === "rankpts") socket.talk('KC', 'dbg', JSON.stringify({ rankpts: require('../../accounts/game/rankHooks.js').debugPts(socket) }), 0);
                     else if (what === "bosskill") {

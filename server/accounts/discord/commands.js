@@ -452,6 +452,15 @@ function inviteStats() {
     return `${(t.q | 0).toLocaleString('en-US')} counted · ${(t.p | 0).toLocaleString('en-US')} waiting${who}`.slice(0, 1000);
 }
 
+// "bots 12, players 3, boss 1, storm 2, median life 1.4 min" (accounts and guests)
+function deathsText(d) {
+    if (!d) return 'unavailable';
+    if (!d.total) return 'none logged';
+    const n = v => (v | 0).toLocaleString('en-US');
+    return `bots ${n(d.bot)}, players ${n(d.player)}, boss ${n(d.boss)}, storm ${n(d.storm)}, other ${n(d.other)} · ` +
+        `median life ${(d.medianLifeMs / 60000).toFixed(1)} min`;
+}
+
 function stats(i, caller) {
     const d = db.handle(), now = Date.now();
     const one = (sql, ...a) => d.get(sql, ...a) || {};
@@ -466,6 +475,8 @@ function stats(i, caller) {
     const g = one(`SELECT count(*) AS n, COALESCE(SUM(first_seen > ?), 0) AS new1, COALESCE(SUM(last_seen > ?), 0) AS act1,
         COALESCE(SUM(last_seen > ?), 0) AS act7, COALESCE(SUM(games), 0) AS games, COALESCE(SUM(converted_user_id IS NOT NULL), 0) AS conv FROM guests`,
         now - DAY, now - DAY, now - 7 * DAY);
+    let deaths = null;
+    try { deaths = require('../deaths').summary(now - DAY); } catch (e) { /* */ }
     let online = { raid: 0, menu: 0 };
     try {
         const p = require('../presence');
@@ -487,6 +498,7 @@ function stats(i, caller) {
                 { name: 'Purchases', value: `${n(buys.n)} (${n(buys.gifts)} gifts, ${n(buys.refunds)} refunded) · ${dustText(buys.dust)} dust spent`, inline: false },
                 { name: 'Invites', value: inviteStats(), inline: false },
                 { name: 'Games', value: `${n(lives.n)} total · ${n(lives.day)} today`, inline: true },
+                { name: 'Deaths (24h)', value: deathsText(deaths), inline: false },
                 { name: 'Banned', value: n(acc.banned), inline: true },
             ],
             footer: { text: 'Guests are counted per browser' },
@@ -660,4 +672,4 @@ function handle(i) {
     return fn(i, caller);
 }
 
-module.exports = { ADMIN_COMMANDS, PLAYER_COMMANDS, ADMIN_NAMES, handle, isAdmin, resolveUser, reply, EPHEMERAL };
+module.exports = { ADMIN_COMMANDS, PLAYER_COMMANDS, ADMIN_NAMES, handle, isAdmin, resolveUser, reply, EPHEMERAL, deathsText };

@@ -11,7 +11,7 @@ const MODS = [
     { id: "loot_flood",    name: "Loot Flood",         desc: "Twelve chests instead of six, and they come back in 15 seconds.", weight: 1, chestMult: 2, chestRespawnMult: 0.5 },
     { id: "magnet_storm",  name: "Magnet Storm",       desc: "Everyone gets a Gem Magnet, and every gem is worth 25% more.", weight: 1, freeGear: ["magnet"], gemValueMult: 1.25 },
     { id: "rocket_fuel",   name: "Rocket Fuel",        desc: "Everyone moves 35% faster.", weight: 1, speedMult: 1.35 },
-    { id: "fast_storm",    name: "Fast Storm",         desc: "The storm closes in twice as fast.", weight: 1, stormShrinkMult: 0.55 },
+    { id: "fast_storm",    name: "Fast Storm",         desc: "The storm closes in twice as fast, then holds longer.", weight: 1, stormShrinkMult: 0.55 },
     { id: "bounty_week",   name: "Bounty Week",        desc: "Kills are worth double points.", weight: 1, killScoreMult: 2 },
     { id: "meteor_season", name: "Meteor Season",      desc: "Meteor showers and gem rain twice as often.", weight: 1, eventRateMult: 2.5 },
     { id: "wardens_watch", name: "Warden's Watch",     desc: "Bosses show up twice as often.", weight: 1, bossRateMult: 2.5 },

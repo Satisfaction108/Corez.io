@@ -132,7 +132,9 @@ function playing() {
     const r = global.royale;
     const join = document.getElementById("dwJoin");
     return inRaid() && !global.died && !global.royaleSpectating && !global.royaleDied && !global.raidQueued &&
-        !(r && r.ending) && !(join && join.classList.contains("open"));
+        !(r && r.ending) && !(join && join.classList.contains("open")) &&
+        // the raid's last seconds belong to the countdown
+        !(r && (r.raidLeft | 0) > 0 && (r.raidLeft | 0) <= 12);
 }
 // The storm is nearly shut or the raid nearly over: a first spawn now waits
 // for the next storm before the guide starts.

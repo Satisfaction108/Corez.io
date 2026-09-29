@@ -1,6 +1,7 @@
 // Dig Royale raid bosses and loot chests. Arras-styled: layered turrets,
 // real guns, props for silhouette. Tuned for one or two determined level-45
-// tanks over a couple of minutes.
+// tanks over a couple of minutes. terrain/bosses.js TUNING softens health,
+// regen and every shot on top of these numbers.
 const { combineStats, skillSet, weaponArray } = require('../facilitators.js');
 const { base } = require('../constants.js');
 const g = require('../gunvals.js');
@@ -59,7 +60,7 @@ Class.royaleVaultWarden = {
         ...weaponArray({
             POSITION: [16, 9, 1, 0, 0, 22.5, 0],
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.basic, g.pounder, { reload: 2.1, damage: 1.1, speed: 0.9, maxSpeed: 0.9, health: 1.2 }]),
+                SHOOT_SETTINGS: combineStats([g.basic, g.pounder, { reload: 2.1, damage: 0.9, speed: 0.9, maxSpeed: 0.9, health: 1.2 }]),
                 TYPE: "bullet", COLOR: "#4c4f5c",
             },
         }, 8),
@@ -68,7 +69,7 @@ Class.royaleVaultWarden = {
             {
                 POSITION: [2, 7, 1.3, 11, 0, 0, 0],
                 PROPERTIES: {
-                    SHOOT_SETTINGS: combineStats([g.trap, g.setTrap, { reload: 2.9, health: 1.3, damage: 0.75 }]),
+                    SHOOT_SETTINGS: combineStats([g.trap, g.setTrap, { reload: 2.9, health: 1.3, damage: 0.5 }]),
                     TYPE: "unsetTrap", STAT_CALCULATOR: "block", COLOR: "#4c4f5c",
                 },
             },
@@ -102,11 +103,11 @@ Class.royaleMagmaDrillhead = {
     GUNS: [
         {
             POSITION: [24, 12, 1, 0, -8, 0, 0],
-            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.pounder, g.destroyer, { reload: 2.1, damage: 0.85, speed: 0.9, maxSpeed: 0.9 }]), TYPE: "bullet", COLOR: "#3a2120" },
+            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.pounder, g.destroyer, { reload: 2.1, damage: 0.6, speed: 0.9, maxSpeed: 0.9 }]), TYPE: "bullet", COLOR: "#3a2120" },
         },
         {
             POSITION: [24, 12, 1, 0, 8, 0, 0.5],
-            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.pounder, g.destroyer, { reload: 2.1, damage: 0.85, speed: 0.9, maxSpeed: 0.9 }]), TYPE: "bullet", COLOR: "#3a2120" },
+            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.pounder, g.destroyer, { reload: 2.1, damage: 0.6, speed: 0.9, maxSpeed: 0.9 }]), TYPE: "bullet", COLOR: "#3a2120" },
         },
         {
             POSITION: [18, 6, 1, 4, -2.5, 0, 0.25],
@@ -184,7 +185,7 @@ Class.royaleShardWraith = {
         ...weaponArray({
             POSITION: [22, 5.5, 1, 0, 0, 0, 0],
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.basic, g.sniper, { reload: 2.2, damage: 1.3, speed: 1.3, maxSpeed: 1.3, health: 1.4 }]),
+                SHOOT_SETTINGS: combineStats([g.basic, g.sniper, { reload: 2.2, damage: 1.0, speed: 1.3, maxSpeed: 1.3, health: 1.4 }]),
                 TYPE: "bullet", COLOR: "#3a1a3a",
             },
         }, 4),

@@ -1002,6 +1002,8 @@ class Entity extends EventEmitter {
             default: m = 1;
         }
         if (this.tutorialChipDamage) m *= this.tutorialChipDamage;
+        if (this.bossBodyMult) m *= this.bossBodyMult;
+        else if (this.master && this.master !== this) m *= shotMult(this);
         return m;
     }
 

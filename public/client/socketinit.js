@@ -6,6 +6,7 @@ import { gameSound } from "./sound.js";
 import * as rankPanel from "./account/rankPanel.js";
 import * as rankCeremony from "./account/rankCeremony.js";
 import * as dustHud from "./account/dustHud.js";
+import * as raidFinale from "./raidFinale.js";
 window.fakeLagMS = 0;
 var sync = [];
 var clockDiff = 0;
@@ -1372,7 +1373,7 @@ let incoming = async function(message, socket) {
                     if (placeNow > 0) r.lastPlace = placeNow;
                     // Died before the first RY: promote to the raid screen now.
                     // Killer cam owns the first 3s after F, so hands off here.
-                    if (global.died && !global.royaleDied && !(global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) && (d.raidId || d.matchId)) {
+                    if (global.died && !global.royaleDied && !raidFinale.active() && !(global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) && (d.raidId || d.matchId)) {
                         global.royaleDied = true;
                         global.royaleSpectating = false;
                         if (!global.raidRespawnAt) global.raidRespawnAt = performance.now() + 15000;
@@ -1450,7 +1451,7 @@ let incoming = async function(message, socket) {
                 if (m[0] === "raidend") {
                     global.raidEndFx = { at: performance.now(), sub: typeof m[3] === "string" ? m[3] : "" };
                     global.callouts.length = 0;
-                    if (gameSound.bankCelebrate) gameSound.bankCelebrate();
+                    raidFinale.start(global.raidEndFx.sub);
                     break;
                 }
                 // kind, text, points: the big centre callout
@@ -1728,6 +1729,7 @@ let incoming = async function(message, socket) {
                 try {
                     const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
                     if (!d || (d.kind !== 'play' && d.kind !== 'win')) break;
+                    raidFinale.noteStreak(d);
                     const fmt = (milli) => { const v = (+milli || 0) / 1000; return Number.isInteger(v) ? String(v) : String(+v.toFixed(2)); };
                     const n = d.streak | 0;
                     const paid = (+d.rewardMilli || 0) > 0 ? ': +' + fmt(d.rewardMilli) + ' gemdust' : '';
@@ -1759,6 +1761,7 @@ let incoming = async function(message, socket) {
             case 'c': {
                 if (global.autoReconnect) { global.autoReconnect = null; global.createMessage && global.createMessage("Reconnected.", 3000); }
                 global.spawnedAt = performance.now();
+                raidFinale.stop();
                 global.shieldSeen = false;
                 global.respawnPending = false;
                 global.died = false;
@@ -1882,7 +1885,8 @@ let incoming = async function(message, socket) {
                 if (global.died && isFinite(global.player.renderx) && isFinite(global.player.rendery)) {
                     const jump = Math.hypot(camx - global.player.renderx, camy - global.player.rendery);
                     if (jump > 180 && !global._specGlide) {
-                        global._specGlide = { x0: global.player.renderx, y0: global.player.rendery, x1: camx, y1: camy, t0: performance.now(), dur: 900 };
+                        // the flight to the raid winner takes its time
+                        global._specGlide = { x0: global.player.renderx, y0: global.player.rendery, x1: camx, y1: camy, t0: performance.now(), dur: raidFinale.active() ? 1500 : 900 };
                     } else if (global._specGlide) {
                         global._specGlide.x1 = camx;
                         global._specGlide.y1 = camy;
@@ -2026,6 +2030,19 @@ let incoming = async function(message, socket) {
             global.shop.onPad = false;
             // RK follows this packet; the rank card waits for it
             rankPanel.onDeath();
+            // the raid ended: no knockout and no death card, the finale owns
+            // the screen and the camera goes to the winner
+            if (raidFinale.onDeath(global.finalCause, gui.playerid)) {
+                global.royale.occupy = 0;
+                global.royale.lockout = 0;
+                try {
+                    global.vault.onPad = false;
+                    global.vault.remaining = 0;
+                    global.vault.total = 0;
+                    global.vault.doneAt = 0;
+                } catch { /* */ }
+                break;
+            }
             // Death notice goes to the notification stack too, like autofire
             // toggles, so it reads even while spectating or queued.
             try {

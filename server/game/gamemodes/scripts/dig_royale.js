@@ -20,7 +20,11 @@ const progressHooks = require('../../../accounts/game/progressHooks.js');   // d
 // duos (only does anything on the duo server: Config.royale_duos)
 const duo = require('../../duo/duoRaid.js');
 
-const RAID_MS = 2 * 60 * 60 * 1000;
+// A raid is RAID_CYCLES storm cycles (7 min each, twists included), 28 min,
+// and ends as the last storm shuts (storm.js closes the final circle).
+const RAID_CYCLES = 4;
+const RAID_MS = RAID_CYCLES * storm.CYCLE_MS;
+storm.setCycles(RAID_CYCLES);
 // Raid size including humans: a solo player gets 5 bots, and each real
 // player who joins takes a bot's place. The duo server holds one more, so a
 // party of two still meets 5 bots (two of them a bot duo).
@@ -33,7 +37,7 @@ const KILL_VERBS = ["killed", "slaughtered", "demolished", "wrecked", "ended", "
 const RESPAWN_MIN_MS = 15000;
 const WEAK_DRILL_MS = 30_000;
 const STARTER_GEMS = 75;
-const SPAWN_GRACE_MS = 4000;   // spawn shield holds this long even if you move
+const SPAWN_GRACE_MS = 5000;   // spawn shield holds this long even if you move
 
 // ── First minutes ─────────────────────────────────────────────────────────
 // Every knob for the late-joiner / new-player experience: where a fresh
@@ -77,9 +81,17 @@ const FIRST_MINUTES = {
     BOT_GRACE_MS: 15_000,
     BOT_GRACE_NEW_MS: 30_000,     // new players
     NEW_PLAYER_LIVES: 5,          // career lives (guest games / account lives) + this session's, under this = new
-    NEW_TARGET_PENALTY: 350,      // bots rank a new player as if this much farther away
-    NEW_MAX_HUNTERS: 1,           // bots that may aim at / chase one new player at once
-    NEW_RESPAWN_MS: 8000,         // a new player's respawn wait (everyone else: shop.respawnMs, 15 s)
+    // Soft window (controllers.js botSoft): for the first BOT_SOFT_MS of every
+    // life, and every life of a new player, bots never start a fight with you,
+    // skip you unless you come within SOFT_CLOSE_R or shoot them, and aim worse.
+    BOT_SOFT_MS: 120_000,
+    SOFT_CLOSE_R: 320,
+    SOFT_HIT_MS: 4000,            // a bot you hit fights back for this long
+    NEW_TARGET_PENALTY: 600,      // bots rank a soft player as if this much farther away
+    NEW_MAX_HUNTERS: 1,           // bots that may aim at / chase one soft player at once
+    MAX_HUNTERS: 2,               // ...and anyone else
+    NEW_RESPAWN_MS: 5000,         // quick respawn wait for new players and a session's first deaths
+    QUICK_RESPAWN_DEATHS: 3,      // (everyone else: shop.respawnMs, 15 s)
     // Closing-circle density: fighters allowed = (storm radius / DENSITY_R)^2,
     // bots fill what the humans leave. No refills past it, extras trimmed.
     DENSITY_R: 380,
@@ -91,7 +103,7 @@ const FIRST_MINUTES = {
     // Storm spawn lock (storm.js): nobody (re)spawns in the last N ms of a cycle
     STORM_LOCK_MS: 20_000,
     // Late-join note: a callout on spawn when the raid or the storm cycle is nearly done
-    LATE_RAID_SEC: 600,
+    LATE_RAID_SEC: 180,
     LATE_STORM_SEC: 100,          // storm cycle seconds left (end of the squeeze + the hold)
     LATE_NOTE_MS: 7000,
 };
@@ -130,6 +142,9 @@ let raidResults = null;
 let raidEnding = false;
 const RAID_END_BEAT_MS = 1600;     // the "RAID OVER" moment before everyone goes down
 const RAID_END_WAIT_MS = 15_000;   // then everyone waits this long, together
+// The winner (both partners in duos) stays up, frozen and untouchable, for the
+// victory lap everyone else watches; they go down this long before the next raid.
+const WINNER_DOWN_LEAD_MS = 1500;
 let raidResultsAt = 0;
 let poisCarved = false;
 let lastFillAt = 0;
@@ -557,6 +572,8 @@ function broadcast(extra = {}) {
                 scan,
                 overdrive: bodyLive && body.overdriveUntil > t ? Math.ceil((body.overdriveUntil - t) / 1000) : 0,
                 anchor: bodyLive && body.stormAnchorUntil > t ? Math.ceil((body.stormAnchorUntil - t) / 1000) : 0,
+                // raid over: the head start your placement bought for the next one
+                nextGems: raidResults ? (client.raidBonus | 0) : undefined,
             } : null;
         // shared part stringified once per broadcast; only the per-client tail differs
         let duoTail = '';
@@ -990,6 +1007,7 @@ function freshRaidBody(body) {
         const fresh = isNewPlayer(body.socket);
         body.botNewbie = fresh;
         body.botGraceUntil = now() + (fresh ? FIRST_MINUTES.BOT_GRACE_NEW_MS : FIRST_MINUTES.BOT_GRACE_MS);
+        body.botSoftUntil = now() + FIRST_MINUTES.BOT_SOFT_MS;
     }
     const extra = raidMods.num('extraSkill', 0);
     if (extra > 0 && !body._modSkillGiven) {
@@ -1026,6 +1044,13 @@ function careerLives(socket) {
 function isNewPlayer(socket) {
     if (!socket) return false;
     return careerLives(socket) + (socket._royaleLives | 0) < FIRST_MINUTES.NEW_PLAYER_LIVES;
+}
+// New players, and anyone on one of this session's first few deaths
+// (_royaleLives counts the life that just ended), come back after
+// NEW_RESPAWN_MS instead of the full wait.
+function quickRespawn(body) {
+    if (!body || !body.socket) return false;
+    return !!body.botNewbie || (body.socket._royaleLives | 0) <= FIRST_MINUTES.QUICK_RESPAWN_DEATHS;
 }
 
 // Humans taking part: alive, or dead and on their way back. Counting only
@@ -1091,9 +1116,13 @@ function trimBots(t) {
     if (!overCapSince) overCapSince = t;
     if (t - lastTrimAt < FM.DENSITY_TRIM_MS) return;
     const hs = humans();
+    // the last storm never trims the raid leader: the winner gets the victory lap
+    let leaderKey = null;
+    try { if (storm.isFinal()) { const top = boardOrder()[0]; leaderKey = top ? top.s.key : null; } } catch { /* */ }
     let best = null, bestScore = -Infinity, far = null, farD = -1;
     for (const b of bots) {
         if (t - Math.max(b._lastDamageAt || 0, b.hitAt || 0) < 5000) continue;   // mid-fight
+        if (leaderKey && statKeyFor(b) === leaderKey) continue;
         if (b._fightingPlayerId) continue;
         let d = Infinity;
         for (const h of hs) { const dd = Math.hypot(h.x - b.x, h.y - b.y); if (dd < d) d = dd; }
@@ -1355,6 +1384,22 @@ function killerOf(body, any = false) {
     return null;
 }
 
+// accounts/deaths.js: what killed a human, and how long that life lasted
+function logDeath(body, cause, killer) {
+    const socket = body.socket;
+    require('../../../accounts/deaths.js').record({
+        userId: socket.account && socket.account.id,
+        guestId: socket.guestId,
+        serverId: Config.royale_duos ? 'duo' : 'royale',
+        cause,
+        killerName: killer ? killer.name || killer.label : null,
+        killerTank: killer ? killer.label : null,
+        lifeMs: body.royaleBornAt ? now() - body.royaleBornAt : 0,
+        lifeNo: socket._royaleLives | 0,
+        newbie: !!body.botNewbie,
+    });
+}
+
 function onCombatantDead(body) {
     if (!Config.dig_royale || !body) return;
     if (body.royaleAlive === false) return;
@@ -1449,11 +1494,15 @@ function onCombatantDead(body) {
         // settle the ranked life now; its RK follows the death packet (a
         // raid-end death was settled at endRaid, so this skips it)
         try { rankHooks.onDeath(body, s); } catch (e) { guardLog('rank death', e); }
+        if (!raidEndDeath) {
+            try { logDeath(body, stormKill ? 'storm' : bossKill ? 'boss' : killerAny ? (killerAny.isBot ? 'bot' : killerAny.isPlayer ? 'player' : 'other') : 'other', killerAny); } catch (e) { guardLog('death log', e); }
+        }
         const dl = shop.onDeath(body);
         body.socket.raidDeathStreak = victimStreak;
         body.socket.raidDeathDrillLost = dl && dl.drillLost ? 1 : 0;
-        let wait = raidEndDeath ? RAID_END_WAIT_MS : shop.respawnMs(body);
-        if (!raidEndDeath && body.botNewbie) wait = Math.min(wait, FIRST_MINUTES.NEW_RESPAWN_MS);
+        // a raid-end death respawns with everyone when the next raid starts
+        let wait = raidEndDeath ? Math.max(0, raidResultsAt + RAID_END_BEAT_MS + RAID_END_WAIT_MS - now()) : shop.respawnMs(body);
+        if (!raidEndDeath && quickRespawn(body)) wait = Math.min(wait, FIRST_MINUTES.NEW_RESPAWN_MS);
         body.socket.royaleRespawnAt = now() + wait;
         body.socket.royaleNeedClick = false;
         body.socket.status.readyToSpawn = true;
@@ -1656,7 +1705,7 @@ function onHumanJoin(body) {
             try { chests.ensureNearSpawn(body); } catch { /* */ }
             const mod = raidMods.get();
             try {
-                body.sendMessage("You're shielded for 4 seconds, and after that until you move or shoot.");
+                body.sendMessage("You're shielded for " + Math.round(SPAWN_GRACE_MS / 1000) + " seconds, and after that until you move or shoot.");
                 if (!mod) body.sendMessage("No override this raid, for once.");
             } catch { /* */ }
         }
@@ -1735,6 +1784,7 @@ function saveResume(socket, body) {
         snap.graceLeft = Math.max(0, (body.spawnGraceUntil || 0) - t);
         // ...and so is the bot grace: a reload never starts a fresh one
         snap.botGraceLeft = Math.max(0, (body.botGraceUntil || 0) - t);
+        snap.botSoftLeft = Math.max(0, (body.botSoftUntil || 0) - t);
         snap.botNewbie = !!body.botNewbie;
         snap.growEff = body._growEff || 0;
         if (hitAgo > RESUME_SAFE_MS) {
@@ -1814,6 +1864,7 @@ function applyResume(body, snap) {
             body.invuln = !!snap.shielded;
             body.spawnGraceUntil = snap.shielded ? now() + Math.min(SPAWN_GRACE_MS, snap.graceLeft | 0) : 0;
             body.botGraceUntil = (snap.botGraceLeft | 0) > 0 ? now() + (snap.botGraceLeft | 0) : 0;
+            body.botSoftUntil = now() + (snap.botSoftLeft | 0);
             body.botNewbie = !!snap.botNewbie;
             body.carriedGems = snap.carried | 0;
             try { dustHooks.restore(body, snap.dustCarried | 0); } catch { /* */ }
@@ -2122,6 +2173,8 @@ function startRaid(first) {
     const mod = raidMods.roll();
     lastMods = mod;
     storm.start();
+    raidEndsAt = storm.endAt();
+    if (!isFinite(raidEndsAt)) raidEndsAt = raidStartAt + RAID_MS;
     try { twistCycleSeen = storm.snapshot(now()).c | 0; } catch { /* */ }
     try { applyModsToWorld(prevMod, mod); } catch (e) { console.error('[RAID] mod apply failed', e && e.message); }
     try { bosses.resetRaid(); } catch { /* */ }
@@ -2191,13 +2244,52 @@ function startRaid(first) {
     toast((first ? "The raid is on." : "New raid.") + twist, 7000);
 }
 
+// Everyone goes down at once at the raid end; nothing drops, it is not a kill.
+function downForRaidEnd(body) {
+    try {
+        body.carriedGems = 0;
+        dustHooks.zero(body);          // unbanked dust ends with the raid
+        try { gems.updateSatchel(body); } catch { /* */ }
+        body.royaleFrozen = false;
+        body.invuln = false;
+        body.godmode = false;
+        body.padSafe = false;
+        body.passive = false;
+        body.spawnGraceUntil = 0;
+        body.deathCause = "raidend";
+        body.dontSendDeathMessage = true;
+        body.health.amount = -1;
+    } catch { /* */ }
+}
+
+// Shots in flight when the raid ends: frozen where they are for the beat,
+// then cleared so the victory lap has a clean stage.
+function eachShot(fn) {
+    try {
+        for (const e of entities.values()) {
+            if (!e || e.type === "tank" || e.isDead?.() || !e.master || e.master === e) continue;
+            if (e.isRoyaleBoss || e.isGemPickup || e.isChest) continue;
+            if (!(e.type === "bullet" || e.type === "swarm" || e.type === "drone" || e.type === "trap" || e.type === "minion" || e.type === "satellite")) continue;
+            fn(e);
+        }
+    } catch { /* */ }
+}
+function freezeShots() {
+    eachShot(e => {
+        e.velocity.x = 0; e.velocity.y = 0;
+        e.accel.x = 0; e.accel.y = 0;
+        e.damage = 0;
+    });
+}
+
+let raidWinners = [];
 function endRaid() {
     raidEndsAt = Infinity;
     const board = boardSnapshot();
     // duos: the results are team rows ("Alex & Sam", combined score) and
     // both partners get their team's placement bonus
     const top = Config.royale_duos
-        ? teamRows(board).slice(0, 10).map(t => ({ id: t.ids[0], ids: t.ids, name: t.names.join(" & "), score: t.score, kills: t.kills, gems: t.gems, place: t.place, bot: t.bot, alive: t.alive }))
+        ? teamRows(board).slice(0, 10).map(t => ({ id: t.ids[0], ids: t.ids, name: t.names.join(" & "), names: t.names, score: t.score, kills: t.kills, gems: t.gems, place: t.place, bot: t.bot, alive: t.alive }))
         : board.slice(0, 10);
     const bonuses = [500, 350, 250, 180, 140, 110, 90, 70, 50, 40];
     for (let i = 0; i < top.length; i++) {
@@ -2221,7 +2313,12 @@ function endRaid() {
             if (sc > (client.raidPB | 0)) client.raidPB = sc;
         }
     }
-    raidResults = { raidId, top, at: now() };
+    // the winners still standing get the victory lap; a winner who is down
+    // right now is still the winner, the camera just has nobody to fly to
+    const winIds = new Set(top[0] ? (top[0].ids || [top[0].id]) : []);
+    raidWinners = combatants().filter(b => winIds.has(b.id));
+    const rows = Config.royale_duos ? new Set(board.map(r => r.tm != null ? "t" + r.tm : "r" + r.id)).size : board.length;
+    raidResults = { raidId, top, at: now(), win: raidWinners.map(b => b.id), rows, duos: Config.royale_duos ? 1 : 0 };
     raidResultsAt = now();
     // ranked: every open life settles now (the carried half counts), then the
     // placement bonus; all before the mass death below
@@ -2230,30 +2327,31 @@ function endRaid() {
         const names = top.slice(0, 3).map((r, i) => "#" + (i + 1) + " " + r.name).join(", ");
         global.gameManager.socketManager.broadcast("Raid over. Top: " + (names || "no scores") + ". New raid starting.");
     } catch { /* */ }
-    broadcast({ toast: "Raid over. Everyone goes down. The next raid starts in 15 seconds." });
+    // time stops: every tank and every shot holds where it is. godmode, not
+    // invuln: invuln makes a tank blink on every screen
+    for (const body of combatants()) {
+        try { setFrozen(body, true); body.invuln = false; body.godmode = true; } catch { /* */ }
+    }
+    freezeShots();
+    broadcast({ toast: "Raid over. The next raid starts in " + Math.round((RAID_END_BEAT_MS + RAID_END_WAIT_MS) / 1000) + " seconds." });
     raidEnding = true;
     const winner = top[0] ? top[0].name || "Unnamed" : "";
     for (const client of connectedClients()) {
         try { client.talk('KC', 'raidend', 'RAID OVER', 0, winner ? ("#1 " + winner) : "Nobody scored"); } catch { /* */ }
     }
     setTimeout(() => {
-        // everyone goes down at once; nothing drops, it is not a kill
+        // everyone but the winners goes down; the dead spectate a winner
+        const keep = new Set(raidWinners);
         for (const body of combatants()) {
-            try {
-                body.carriedGems = 0;
-                dustHooks.zero(body);          // unbanked dust ends with the raid
-                try { gems.updateSatchel(body); } catch { /* */ }
-                body.invuln = false;
-                body.godmode = false;
-                body.padSafe = false;
-                body.passive = false;
-                body.spawnGraceUntil = 0;
-                body.deathCause = "raidend";
-                body.dontSendDeathMessage = true;
-                body.health.amount = -1;
-            } catch { /* */ }
+            if (keep.has(body) && !body.isDead?.()) continue;
+            downForRaidEnd(body);
         }
+        eachShot(e => { try { e.kill(); } catch { /* */ } });
     }, RAID_END_BEAT_MS);
+    setTimeout(() => {
+        for (const body of raidWinners) if (body && !body.isDead?.()) downForRaidEnd(body);
+        raidWinners = [];
+    }, RAID_END_BEAT_MS + RAID_END_WAIT_MS - WINNER_DOWN_LEAD_MS);
     setTimeout(() => {
         try {
             for (const client of connectedClients()) {
@@ -2389,6 +2487,8 @@ function tick() {
     // everyone is down between raids: no storm, bosses, chests or bots, just
     // keep the HUD fed (results panel, countdown)
     if (raidEnding) {
+        // drones and traps would drift on their own: keep the freeze on
+        if (t - raidResultsAt < RAID_END_BEAT_MS) freezeShots();
         if (t - (tick._broadcastAt || 0) >= 500) { tick._broadcastAt = t; guard('broadcast', () => broadcast()); }
         return;
     }
@@ -2482,7 +2582,7 @@ module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
     lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, baseReserved,
     onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout, QUESTS,
-    FIRST_MINUTES, isNewPlayer,
+    FIRST_MINUTES, isNewPlayer, quickRespawn, freshRaidBody, SPAWN_GRACE_MS, RAID_CYCLES, RAID_MS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
     // DBG spawnaudit [n] [trap|reset]: the spawn audit so far, after `n` extra
@@ -2508,5 +2608,11 @@ module.exports = {
         speed: +body.topSpeed.toFixed(3), hp: Math.round(body.health.max), dmg: +body.damage.toFixed(3), x: Math.round(body.x), y: Math.round(body.y),
         overlap: (() => { const tg = global.gameManager.terrainGrid, out = []; if (tg && tg.rocksHitByCircle) tg.rocksHitByCircle(body.x, body.y, body.realSize * 0.9, out); return out.length; })(),
         label: body.label, caps: body.skill.caps.slice(), raw: body.skill.raw.slice(), ups: (body.upgrades || []).map(u => [].concat(u.class || []).map(c => (c && c.LABEL) || String(c)).join('/')) } : null,
-    debugRaidLeft: (sec) => { if (!raidEnding && raidResults === null) raidEndsAt = now() + Math.max(1, sec | 0) * 1000; },
+    // the storm jumps into the raid's last cycle too, so the final circle closes on cue
+    debugRaidLeft: (sec) => {
+        if (raidEnding || raidResults !== null) return;
+        const end = storm.debugFinal(Math.max(1, sec | 0));
+        raidEndsAt = isFinite(end) ? end : now() + Math.max(1, sec | 0) * 1000;
+        try { twistCycleSeen = storm.snapshot(now()).c | 0; } catch { /* */ }
+    },
 };

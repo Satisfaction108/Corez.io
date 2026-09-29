@@ -15,6 +15,8 @@ const { chamberRingHit, chamberFaceRadius, chamberNormal } = coreChambers;
 // speed but redirecting it along the surface normal (grazing shots slide off,
 // dead-on shots bounce back).
 const REBOUND_KEEP = 0.85;    // how much of the shot's speed survives the bounce
+// Bot bullets, drones and traps deal this share of their normal damage
+const BOT_SHOT_MULT = 0.8;
 
 function deflectBullet(chamber, body) {
     const dx = body.x - chamber.x, dy = body.y - chamber.y;
@@ -612,6 +614,8 @@ class gameHandler {
         const storm = Config.dig_royale ? require('./terrain/storm.js') : null;
         for (let instance of entities.values()) {
             if (instance._inStorm) continue;
+            // raid bosses only heal on one tick in regenEvery (terrain/bosses.js)
+            if (instance.regenEvery > 1 && ((instance._regenTick = (instance._regenTick | 0) + 1) % instance.regenEvery)) continue;
             if (storm && storm.inStorm(instance.x, instance.y)) continue;
             if (instance.shield.max) {
                 instance.shield.regenerate();
@@ -713,22 +717,24 @@ class gameHandler {
     configureBotStats(bot) {
         const rammer = !bot.guns || bot.guns.size === 0;
         const defs = (bot.defs || []).join(' ').toLowerCase();
-        // A 42-point base (the budget of a level-45 player), shaped like the builds
-        // players win with, per class archetype. Bullet health must stay high enough
-        // that max-pen player builds don't delete bot bullets on contact.
+        // A 35-point base (a level-45 player has 50), shaped like the builds
+        // players win with, per class archetype, so a player who spends their
+        // points out-stats the bot. Bullet health must stay high enough that
+        // max-pen player builds don't delete bot bullets on contact.
         // Order: [rld, pen, str, dam, spd, shi, atk, hlt, rgn, mob].
-        // 11th slot is mining power: bots dig like a player who bought in
+        // 11th slot is mining power: bots dig like a player who bought in (a
+        // little deeper than before the combat cut, so they still dig as fast)
         let raw;
-        if (rammer) raw = [0, 0, 0, 0, 0, 9, 9, 9, 6, 9, 5];
+        if (rammer) raw = [0, 0, 0, 0, 0, 7, 7, 7, 5, 8, 7];
         else if (/sniper|assassin|ranger|marksman|stalker|rifle|predator|hunter|deadeye|sidewinder/.test(defs))
-            raw = [6, 9, 4, 9, 7, 0, 0, 3, 0, 4, 5];
+            raw = [5, 7, 3, 7, 6, 0, 0, 3, 0, 4, 7];
         else if (/destroyer|artillery|mortar|launcher|ordnance|annihilator|hybrid/.test(defs))
-            raw = [6, 9, 8, 9, 2, 0, 0, 4, 0, 4, 5];
+            raw = [5, 7, 6, 7, 2, 0, 0, 4, 0, 4, 7];
         else
-            raw = [9, 8, 6, 9, 3, 0, 0, 3, 0, 4, 5];
-        // High-skill bots invest deeper, up to ~14 extra points spread over the stats
-        // they already use, so a maxed player build still meets resistance.
-        let bonus = Math.round(util.clamp(bot.botSkill ?? 0.5, 0, 1) * 14);
+            raw = [7, 6, 5, 7, 3, 0, 0, 3, 0, 4, 7];
+        // High-skill bots invest a little deeper, up to ~5 extra points spread
+        // over the stats they already use.
+        let bonus = Math.round(util.clamp(bot.botSkill ?? 0.5, 0, 1) * 6);
         for (let pass = 0; pass < 3 && bonus > 0; pass++) {
             for (let i = 0; i < raw.length && bonus > 0; i++) {
                 if (raw[i] > 0 && raw[i] < 9) { raw[i]++; bonus--; }
@@ -994,7 +1000,8 @@ class gameHandler {
         // NEAR must stay close to what the player can actually SEE (~618 units), or
         // bots two screens away count as company and the director idles while the
         // player sees nobody. 900 = on screen or one beat from walking onto it.
-        const NEAR = 900, WANT = 4;
+        // Two is company; four was a pack closing on one player.
+        const NEAR = 900, WANT = 2;
         for (const host of humans) {
             const near = live.filter(b => Math.hypot(b.x - host.x, b.y - host.y) <= NEAR);
             if (near.length >= WANT) continue;
@@ -1098,7 +1105,9 @@ class gameHandler {
         o.botRespawnsRemaining = lifecycle?.respawnsRemaining ?? ran.irandomRange(2, 3);
         // This value changes decisions, not damage or movement stats. A broad
         // spread keeps a lobby from feeling like eight copies of one machine.
-        o.botSkill = util.clamp(ran.gauss(0.55, 0.25), 0.1, 0.95);
+        o.botSkill = util.clamp(ran.gauss(0.4, 0.2), 0.08, 0.8);
+        // every bot shot lands softer than a player's (subFunctions shotMult)
+        o.botShotMult = BOT_SHOT_MULT;
         // A few bots are playful instead of perfectly task-focused. Their
         // showoff moments are brief and never interrupt an actual player fight.
         o.botStyle = ran.choose(['normal', 'normal', 'normal', 'dancer', 'spinner']);
@@ -1168,7 +1177,7 @@ class gameHandler {
                 s.botDeathLastAt = now;
                 // Mercy is for someone genuinely spiraling, not a switch that makes the lobby
                 // passive; a low threshold leaves bots around an active fighter inert.
-                if (s.botDeathStreak >= 4)
+                if (s.botDeathStreak >= 3)
                     s.botMercyUntil = now + 30_000;
                 o._victoryEmoteUntil = now + 1300;
             }

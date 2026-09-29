@@ -17,7 +17,7 @@ export const ACHIEVEMENTS = [
         d: ['M8 20h8M12 15.5V20', 'M7 4h10v5a5 5 0 0 1-10 0z', 'M17 5.5h2.5V7a3 3 0 0 1-3 3M7 5.5H4.5V7a3 3 0 0 0 3 3'] },
     { id: 'boss_slayer', name: 'Boss Slayer', desc: 'Land the final hit on a boss', color: '#c3a6ff',
         d: ['M14.5 3.5H20.5V9.5L10 20 4 14z', 'M7.5 12.5l4 4', 'M4 20l2.5-2.5'] },
-    { id: 'survivor', name: 'Survivor', desc: 'Survive 30 minutes without dying', color: '#6ee0d6',
+    { id: 'survivor', name: 'Survivor', desc: 'Survive 20 minutes without dying', color: '#6ee0d6',
         d: ['M12 21s-7.5-3.2-7.5-9.5V5.5L12 3l7.5 2.5v6C19.5 17.8 12 21 12 21z', 'M8.5 12l2.4 2.4 4.6-4.8'] },
     { id: 'streaker', name: 'Streaker', desc: 'Get a 5-knockout streak', color: '#ff9f43',
         d: ['M12 21c-4 0-6.5-2.7-6.5-6.2 0-3.3 2.4-5 3.6-8.3.2-.6 1-.7 1.3-.1.9 1.6 1.2 3 1.1 4.6 1.2-.8 2-2.1 2.3-3.4.1-.5.8-.7 1.1-.2 1.5 2.2 2.6 4.6 2.6 7.4 0 3.5-2.5 6.2-5.5 6.2z'] },
