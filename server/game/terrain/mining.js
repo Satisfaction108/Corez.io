@@ -19,7 +19,7 @@ const MINE_BIAS = {
     underseer: 5, necromancer: 2.8, maleficitor: 3, infestor: 1.5,
     // minions orbit and only shoot the rock part of the time
     // (factory and autoSpawner offset their minion gun damage changes)
-    spawner: 3, factory: 2.85, autoSpawner: 1.8,
+    spawner: 3, factory: 3.125, autoSpawner: 1.8,
     manager: 1.4,
     rifle: 1.6, revolver: 1.6, bushwhacker: 1.5, musket: 1.3,
     minigun: 1.2, nailgun: 1.8, vulture: 1.5, focal: 1.2, phoenix: 1.2,

@@ -1,10 +1,12 @@
 // Growth mode tests: node scripts/test/growth.test.js
 //
-//   curve      size from raid score: smooth, rising, 2.3x at the respawn cap
-//              score, bending toward the live ceiling past it
-//   spawn      a respawn comes back at its score's size, never above 2.3x
-//   life       only this life's earnings grow past 2.3x; size never shrinks
-//              inside a life; a stage crossing calls back once
+//   curve      size from growth score: smooth, rising, 2x at the respawn cap
+//              score, bending toward the live ceiling past 2.3x
+//   spawn      a respawn comes back at the size a quarter of its score
+//              earns, never above 2x; a reconnect keeps its growth score
+//   life       this life's earnings add onto the spawn's growth score, with
+//              no jump; size never shrinks inside a life; a stage crossing
+//              calls back once
 //   perks      slower, tougher, harder rams, camera opens up less than arras'
 //   off        royale_growth false: nothing grows
 //   rammer     smasher-family caps give Mining Power 12 and the points past 9
@@ -48,24 +50,41 @@ test('curve', () => {
         assert.ok(g < growth.LIVE_CEIL, 'under the ceiling at ' + s);
         prev = g;
     }
+    assert.equal(growth.RESPAWN_CAP, 2);
     assert.ok(Math.abs(growth.multFor(growth.CAP_SCORE) - growth.RESPAWN_CAP) < 1e-9);
-    assert.ok(growth.CAP_SCORE > 9000 && growth.CAP_SCORE < 11000);
+    assert.ok(growth.CAP_SCORE > 5000 && growth.CAP_SCORE < 6500);
+    // the bend toward the ceiling still starts at 2.3x
+    const bendScore = 1500 * (Math.exp(1.3 / 0.64) - 1);
+    assert.ok(Math.abs(growth.multFor(bendScore) - 2.3) < 1e-9);
+    assert.ok(Math.abs(growth.multFor(bendScore * 0.999) - 2.3) < 1e-3, 'no kink at the bend');
     assert.ok(growth.multFor(1000) > 1.25, 'the first kills show');
     assert.ok(growth.multFor(1e7) > 3.2);
 });
 
 test('spawn', () => {
     const a = fakeBody();
-    growth.onSpawn(a, 3000);
+    growth.onSpawn(a, 12000);
+    assert.equal(a._growEff, 3000);
     assert.equal(a.growthMult, growth.multFor(3000));
+    assert.ok(a.growthMult < growth.multFor(12000));
     assert.equal(a.sizeMultiplier, a.growthMult);
     assert.ok(a.refreshed >= 1);
+    // a quarter of the cap score is not enough for the cap
+    const q = fakeBody();
+    growth.onSpawn(q, growth.CAP_SCORE);
+    assert.ok(q.growthMult > 1.3 && q.growthMult < 1.6);
     const b = fakeBody();
     growth.onSpawn(b, 60000);
     assert.equal(b.growthMult, growth.RESPAWN_CAP);
+    assert.equal(b._growEff, growth.CAP_SCORE);
     const c = fakeBody();
     growth.onSpawn(c, 0);
     assert.equal(c.growthMult, 1);
+    // a reconnect carries the growth score it had, cap or not
+    const r = fakeBody();
+    growth.onSpawn(r, 60000, 20000);
+    assert.equal(r.growthMult, growth.multFor(20000));
+    assert.ok(r.growthMult > growth.RESPAWN_CAP);
 });
 
 test('life', () => {
@@ -79,7 +98,7 @@ test('life', () => {
     settle(b, 72000, (body, st) => stages.push(st));
     assert.ok(Math.abs(b.growthMult - growth.multFor(growth.CAP_SCORE + 12000)) < 1e-9);
     assert.ok(b.growthMult > growth.RESPAWN_CAP);
-    assert.deepEqual(stages, [2.6]);
+    assert.deepEqual(stages, [2.3]);
     // the score drops (carried gems spent or lost): no shrinking
     const g = b.growthMult;
     settle(b, 68000);
@@ -87,6 +106,16 @@ test('life', () => {
     // and a later gain counts from the lower score
     settle(b, 69000);
     assert.ok(Math.abs(b.growthMult - growth.multFor(growth.CAP_SCORE + 13000)) < 1e-9);
+    // under the cap: a quarter at spawn, then every point counts in full
+    const u = fakeBody();
+    growth.onSpawn(u, 8000);
+    const g0 = u.growthMult;
+    settle(u, 8000);
+    assert.equal(u.growthMult, g0, 'no jump on the first tick of a life');
+    settle(u, 8100);
+    assert.ok(u.growthMult > g0 && u.growthMult - g0 < 0.02, 'a small gain is a small step');
+    settle(u, 9000);
+    assert.ok(Math.abs(u.growthMult - growth.multFor(2000 + 1000)) < 1e-9);
 });
 
 test('ease', () => {

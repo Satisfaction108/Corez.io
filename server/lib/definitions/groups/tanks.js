@@ -2709,7 +2709,7 @@ Class.factory = {
                 X: 15.5
             },
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.minion, {speed: 0.88, maxSpeed: 0.88, damage: 0.88}]),
+                SHOOT_SETTINGS: combineStats([g.minion, {speed: 0.85, maxSpeed: 0.85, damage: 0.8}]),
                 TYPE: 'factoryMinion',
                 MAX_CHILDREN: 6,
                 STAT_CALCULATOR: 'drone',

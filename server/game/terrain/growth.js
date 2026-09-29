@@ -4,10 +4,13 @@
 // and entity.js folds it into sizeMultiplier and the stats below.
 //
 // Score is the raid board score (scoreOf), so kills, banking, bosses, chests
-// and quests all feed it. A respawn comes back at the size the score earns,
-// but never above RESPAWN_CAP; only growth earned in this life goes past it.
+// and quests all feed it. A respawn comes back at the size a quarter of the
+// score earns, never above RESPAWN_CAP, and grows on from there with every
+// point earned in the new life.
 
-const RESPAWN_CAP = 2.3;
+const RESPAWN_SHARE = 0.25;
+const RESPAWN_CAP = 2;
+const BEND = 2.3;            // where the curve starts easing off
 const LIVE_CEIL = 3.3;       // soft ceiling: approached, never reached
 const GAIN = 0.64;
 const SCALE = 1500;
@@ -21,17 +24,22 @@ function enabled() {
 }
 
 // 1 + GAIN*ln(1 + s/SCALE): early points show, then each step costs more.
-// Past RESPAWN_CAP it bends toward LIVE_CEIL.
+// Past BEND it bends toward LIVE_CEIL.
 function multFor(score) {
     const s = Math.max(0, score || 0);
     const raw = 1 + GAIN * Math.log(1 + s / SCALE);
-    if (raw <= RESPAWN_CAP) return raw;
-    const room = LIVE_CEIL - RESPAWN_CAP;
-    return RESPAWN_CAP + room * (1 - Math.exp(-(raw - RESPAWN_CAP) / room));
+    if (raw <= BEND) return raw;
+    const room = LIVE_CEIL - BEND;
+    return BEND + room * (1 - Math.exp(-(raw - BEND) / room));
 }
 
-// the score that lands exactly on RESPAWN_CAP
+// the growth score that lands exactly on RESPAWN_CAP
 const CAP_SCORE = SCALE * (Math.exp((RESPAWN_CAP - 1) / GAIN) - 1);
+
+// What a fresh life starts growing from: a quarter of the raid score, capped.
+function spawnEff(score) {
+    return Math.min(Math.max(0, score || 0) * RESPAWN_SHARE, CAP_SCORE);
+}
 
 // Trade-offs, all 1 at normal size.
 function speedMult(g) { return 1 / (1 + 0.28 * (g - 1)); }
@@ -59,13 +67,14 @@ function stageOf(g) {
     return i;
 }
 
-// A fresh life: size from the score so far, capped for the respawn.
-function onSpawn(body, score) {
+// A fresh life: size from a quarter of the score so far, capped for the
+// respawn. `keep` (a reconnect) carries the old life's growth score as is.
+function onSpawn(body, score, keep) {
     if (!body) return;
     if (!enabled()) { body.growthMult = 1; return; }
     const s = Math.max(0, score || 0);
     body._growScore0 = s;
-    body._growEff = Math.min(s, CAP_SCORE);
+    body._growEff = keep > 0 ? keep : spawnEff(s);
     body._growTarget = multFor(body._growEff);
     body.growthMult = body._growTarget;
     body._growStage = stageOf(body.growthMult);
@@ -122,7 +131,7 @@ function tick(t, bodies, scoreFor, onStage, onRefit) {
 }
 
 module.exports = {
-    RESPAWN_CAP, LIVE_CEIL, STAGES, CAP_SCORE,
-    enabled, multFor, onSpawn, tick, applyPerks, stageOf,
+    RESPAWN_SHARE, RESPAWN_CAP, BEND, LIVE_CEIL, STAGES, CAP_SCORE,
+    enabled, multFor, spawnEff, onSpawn, tick, applyPerks, stageOf,
     speedMult, healthMult, bodyDamageMult, fovMult, mineMult,
 };

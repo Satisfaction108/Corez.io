@@ -699,7 +699,7 @@ Class.factoryMinion = {
                 WIDTH: 9,
             },
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.basic, g.minionGun, {damage: 0.88}]),
+                SHOOT_SETTINGS: combineStats([g.basic, g.minionGun, {damage: 0.8}]),
                 WAIT_TO_CYCLE: true,
                 TYPE: "bullet"
             }

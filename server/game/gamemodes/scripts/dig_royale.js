@@ -1649,8 +1649,8 @@ function onHumanJoin(body) {
         body.socket.freeCam = false;
         questOf(body.socket);
         if (isRespawn && (body.growthMult || 1) >= 1.1) {
-            const capped = body.growthMult >= growth.RESPAWN_CAP - 1e-6 && growth.multFor(growthScore(body)) > body.growthMult + 0.01;
-            try { body.sendMessage("You're back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size" + (capped ? ", the most a respawn gives." : ".")); } catch { /* */ }
+            const capped = growthScore(body) * growth.RESPAWN_SHARE > growth.CAP_SCORE + 1;
+            try { body.sendMessage("You're back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size" + (capped ? ", the most a respawn gives." : ", from a quarter of your score.")); } catch { /* */ }
         }
         if (!isRespawn && !resuming) {
             try { chests.ensureNearSpawn(body); } catch { /* */ }
@@ -1736,6 +1736,7 @@ function saveResume(socket, body) {
         // ...and so is the bot grace: a reload never starts a fresh one
         snap.botGraceLeft = Math.max(0, (body.botGraceUntil || 0) - t);
         snap.botNewbie = !!body.botNewbie;
+        snap.growEff = body._growEff || 0;
         if (hitAgo > RESUME_SAFE_MS) {
             snap.carried = (body.carriedGems | 0);
             body.carriedGems = 0;     // kept for the resume, so it must not also drop
@@ -1792,6 +1793,8 @@ function applyResume(body, snap) {
             body._modSkillGiven = snap.modSkill || body._modSkillGiven;
             body.refreshBodyAttributes();
             if (body.syncSkillsToGuns) body.syncSkillsToGuns();
+            // a reload is not a respawn: the size comes back as it was
+            if (snap.growEff > 0) guard('growth resume', () => growth.onSpawn(body, growthScore(body), snap.growEff));
             // back where you were: out of the rock if you were pressed into
             // it, but not back into the storm (you keep the fresh spawn then)
             let inStorm = false;
@@ -1804,6 +1807,7 @@ function applyResume(body, snap) {
                 } catch { /* */ }
                 moveTo(body, x, y);
             }
+            if (snap.growEff > 0) guard('growth room', () => growRoom(body, true));
             body.health.amount = body.health.max * Math.max(0.25, Math.min(1, snap.hp || 1));
             // freshRaidBody shielded this body like a new spawn; a resume
             // keeps the old life's shield state (and what was left of its grace)
@@ -2364,7 +2368,7 @@ function onGrown(body, stage, idx) {
     if (!body.socket) return;
     const top = idx >= growth.STAGES.length;
     const sub = top ? "That's as big as anyone gets."
-        : stage >= growth.RESPAWN_CAP ? "A respawn brings you back at " + fmtGrow(growth.RESPAWN_CAP) + " at most."
+        : stage >= growth.RESPAWN_CAP ? "A respawn brings you back at a quarter of your score's size, " + fmtGrow(growth.RESPAWN_CAP) + " at most."
         : "More health and ramming power, a little slower.";
     try { body.socket.talk('KC', "grown", "You grew to " + fmtGrow(stage), 0, sub); } catch { /* */ }
 }

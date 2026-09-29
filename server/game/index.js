@@ -160,7 +160,9 @@ class gameHandler {
 
         for (const obj of [instance, other]) {
             if (obj.isGhost || obj.isDead()) {
-                if (obj.isInGrid) {
+                // a chest pays out from its own death check, so it is never
+                // removed from under it here
+                if (obj.isInGrid && !(obj.isLootChest && !obj.isGhost)) {
                     obj.destroy();
                 }
                 return 0;
@@ -293,15 +295,18 @@ class gameHandler {
                         hit.x += nx * (min - d); hit.y += ny * (min - d);
                         const vIn = hit.velocity.x * nx + hit.velocity.y * ny;
                         if (vIn < 0) { hit.velocity.x -= vIn * nx; hit.velocity.y -= vIn * ny; }
+                        // grinding lands through damageReceived like a hit: a
+                        // chest killed mid-tick was destroyed by the next thing
+                        // touching it, before its death check paid out
                         let root = hit, hops = 0;
                         while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
                         if (root && (root.isPlayer || root.isBot) && chest.health) {
                             const grind = (hit.damage || 0) * 0.35;
-                            if (grind > 0) { chest.health.amount -= grind; try { chest.emit('damage', { damageInflictor: [hit] }); } catch (e) { /* */ } }
+                            if (grind > 0) { chest.damageReceived += grind; chest.collisionArray.push(hit); }
                         }
                         // a raid boss ploughs straight through: the chest bursts
                         // in a few ticks instead of pinning the boss in place
-                        if (root && root.isRoyaleBoss && chest.health) chest.health.amount -= chest.health.max * 0.34;
+                        if (root && root.isRoyaleBoss && chest.health) chest.damageReceived += chest.health.max * 0.34;
                     }
                 }
                 chest.velocity.x = 0; chest.velocity.y = 0;
