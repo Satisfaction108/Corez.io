@@ -30,6 +30,8 @@ npm start
 
 Then open http://localhost:3000. Server settings live in `server/config.js`, and secrets go in `server/.env`. See `server/.env.example` for every option, including Discord login and the Discord bot. Without a `.env` the game still runs; everyone just plays as a guest.
 
+Locally the browser gets the readable code in `public/client`. In production (`NODE_ENV=production`) it gets an obfuscated copy from `build/public`, which `npm run build` writes and `scripts/deploy.sh` runs for you. Set `CLIENT_BUILD=obfuscated` to try the build locally, or `CLIENT_BUILD=source` to skip it. Only ever edit `public/client`; `build/` is generated and not committed. Notes on the settings are at the top of `scripts/build-client.js`.
+
 ## Where things are
 
 - `index.js` - the server entry point

@@ -254,15 +254,16 @@ class TerrainRenderer {
         sh.shakeAmount    = amount;
     }
 
-    // Hit-stop and shake only for rocks breaking within 800 units of the player;
-    // shaking for anything on screen reads as the view randomly shifting.
-    _shakeNearCell(cell, amount, duration, delay = 0, stopMs = 0) {
+    // Shake only for rocks breaking within 800 units of the player; shaking
+    // for anything on screen reads as the view randomly shifting. No hit-stop
+    // here: mining breaks rocks several times a second and each freeze read
+    // as lag.
+    _shakeNearCell(cell, amount, duration, delay = 0) {
         const w = this._world;
         if (!cell || !w) return;
         const wx = cell.cx * w.s - w.hw, wy = cell.cy * w.s - w.hh;
         const dx = wx - global.player.renderx, dy = wy - global.player.rendery;
         if (dx * dx + dy * dy > 800 * 800) return;
-        if (stopMs) global.hitStop = Math.max(global.hitStop || 0, Date.now() + stopMs);
         this._shake(amount, duration, delay);
     }
 
@@ -322,7 +323,7 @@ class TerrainRenderer {
                     const onscreen = this._onScreen(cell.cx, cell.cy);
                     const delay = onscreen ? 55 : 0;
                     this._spawnShatter(cell, now + delay, tier);
-                    if (onscreen) this._shakeNearCell(cell, tier ? 5 : 4, 240, delay, delay);
+                    if (onscreen) this._shakeNearCell(cell, tier ? 5 : 4, 240, delay);
                     if (this._world) {
                         const w = this._world;
                         const wx = cell.cx * w.s - w.hw, wy = cell.cy * w.s - w.hh;
@@ -418,7 +419,7 @@ class TerrainRenderer {
         const cell = { k: k | 0, cx: t.x, cy: t.y, poly, path };
         const now = performance.now();
         this._spawnShatter(cell, now + delay, tier | 0);
-        this._shakeNearCell(cell, tier ? 5 : 4, 240, delay, delay);
+        this._shakeNearCell(cell, tier ? 5 : 4, 240, delay);
         return true;
     }
     addHitMarker(wx, wy) {
@@ -535,7 +536,7 @@ class TerrainRenderer {
         const onscreen = this._onScreen(cell.cx, cell.cy);
         const delay = onscreen ? 55 : 0;
         this._spawnShatter(cell, now + delay, 0);
-        if (onscreen) this._shakeNearCell(cell, 4, 220, delay, delay);
+        if (onscreen) this._shakeNearCell(cell, 4, 220, delay);
     }
 
     _revealOre(k, tier, now) {
@@ -1954,11 +1955,23 @@ class TerrainRenderer {
     // rect it covers.
     _rockTexture(view, cellW, cellH) {
         const c = this._rockCache;
-        const quality = this._rockQuality ?? (this._rockQuality = this._detectRockQuality());
+        const quality = (this._rockQuality ?? (this._rockQuality = this._detectRockQuality())) *
+                        (config.graphical.simpleTerrain ? 0.5 : 1);   // "Simple Terrain": half the shading
         const want = cellW * quality;
-        if (c && c.cols === this._cols && view.tlx >= c.x && view.tly >= c.y &&
-            view.tlx + view.tlw <= c.x + c.w && view.tly + view.tlh <= c.y + c.h &&
-            c.density > want * 0.8 && c.density < want * 1.25) return c;
+        const same = c && c.cols === this._cols && c.density > want * 0.8 && c.density < want * 1.25;
+        if (same && view.tlx >= c.x && view.tly >= c.y &&
+            view.tlx + view.tlw <= c.x + c.w && view.tly + view.tlh <= c.y + c.h) {
+            // Close to an edge: slide the image along now, while the strip to
+            // shade is still thin, instead of re-shading all of it later.
+            const e = c.m * 0.5;
+            if (!c.pw || (view.tlx - c.x > e && view.tly - c.y > e &&
+                c.x + c.w - view.tlx - view.tlw > e && c.y + c.h - view.tly - view.tlh > e)) return c;
+            return this._slideRockTexture(c, view) || c;
+        }
+        if (same && c.pw) {
+            const slid = this._slideRockTexture(c, view);
+            if (slid) return slid;
+        }
 
         // margin so ordinary panning stays inside the cache for a while
         const m = Math.max(view.tlw, view.tlh) * 0.2;
@@ -2032,7 +2045,66 @@ class TerrainRenderer {
         }
         if (c && c.img && c.img !== img && typeof c.img.close === 'function') c.img.close();
         this._rockCache = { img, canvas: img instanceof HTMLCanvasElement ? img : null,
-                            x, y, w: pw / density, h: ph / (density * ratioY), density, cols: this._cols };
+                            x, y, w: pw / density, h: ph / (density * ratioY), density, cols: this._cols,
+                            // pw is only set where sliding pays: software GL, where
+                            // shading is slow (a GPU re-shades the lot in no time)
+                            m, ratioY, pw: this._gl && this._rockQuality < 1 ? pw : 0, ph };
+        return this._rockCache;
+    }
+
+    // Software GL only. Re-centre the cached rock image on the view by whole
+    // pixels: the part still in range is copied across and the shader only
+    // runs over the uncovered edge strips. Same pixels as a full render at
+    // that origin.
+    _slideRockTexture(c, view) {
+        const gl = this._gl, glc = this._glCanvas;
+        if (!gl || !c.img) return null;
+        const d = c.density, dY = d * c.ratioY, pw = c.pw, ph = c.ph;
+        const dx = Math.round((view.tlx + view.tlw / 2 - c.w / 2 - c.x) * d);
+        const dy = Math.round((view.tly + view.tlh / 2 - c.h / 2 - c.y) * dY);
+        if (!dx && !dy) return null;
+        if (Math.abs(dx) >= pw || Math.abs(dy) >= ph) return null;
+        const x = c.x + dx / d, y = c.y + dy / dY;
+        if (view.tlx < x || view.tly < y || view.tlx + view.tlw > x + c.w || view.tly + view.tlh > y + c.h) return null;
+
+        const pair = this._rockSlide || (this._rockSlide = [document.createElement('canvas'), document.createElement('canvas')]);
+        const out = c.img === pair[0] ? pair[1] : pair[0];
+        if (out.width !== pw || out.height !== ph) { out.width = pw; out.height = ph; }
+        const g = out.getContext('2d');
+        g.clearRect(0, 0, pw, ph);
+        g.drawImage(c.img, -dx, -dy);
+
+        // the uncovered columns, then the uncovered rows between them
+        const strips = [];
+        if (dx > 0) strips.push([pw - dx, 0, dx, ph]);
+        else if (dx < 0) strips.push([0, 0, -dx, ph]);
+        const x0 = dx < 0 ? -dx : 0, x1 = dx > 0 ? pw - dx : pw;
+        if (x1 > x0) {
+            if (dy > 0) strips.push([x0, ph - dy, x1 - x0, dy]);
+            else if (dy < 0) strips.push([x0, 0, x1 - x0, -dy]);
+        }
+        if (glc.width !== pw || glc.height !== ph) { glc.width = pw; glc.height = ph; }
+        gl.uniform2f(this._glOriginU, -x * d, -y * dY);
+        gl.uniform2f(this._glCellSzU, d, dY);
+        gl.uniform1f(this._glShU, ph);
+        gl.uniform1f(this._glRockSzU, Math.min(this._cols, 120) / 50.0);
+        for (const [sx, sy, sw, sh] of strips) {
+            gl.viewport(sx, ph - sy - sh, sw, sh);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+        // read back just the strips (GL rows run bottom up); a transfer
+        // would copy out the whole buffer on the CPU
+        for (const [sx, sy, sw, sh] of strips) {
+            const px = new Uint8Array(sw * sh * 4);
+            gl.readPixels(sx, ph - sy - sh, sw, sh, gl.RGBA, gl.UNSIGNED_BYTE, px);
+            const img = g.createImageData(sw, sh), row = sw * 4;
+            for (let r = 0; r < sh; r++) img.data.set(px.subarray((sh - 1 - r) * row, (sh - r) * row), r * row);
+            g.putImageData(img, sx, sy);
+        }
+
+        if (c.img !== out && typeof c.img.close === 'function') c.img.close();
+        this._rockCache = { img: out, canvas: null, x, y, w: c.w, h: c.h, density: d, cols: c.cols,
+                            m: c.m, ratioY: c.ratioY, pw, ph };
         return this._rockCache;
     }
 
@@ -2118,17 +2190,27 @@ class TerrainRenderer {
                 // Damaged rocks stay opaque (they darken in the damage overlay
                 // below). Only the trembling last stage is cut out of the wall,
                 // since it is drawn nudged on its own.
-                const batch = { holes: null, shaking: [] };
-                for (const [k, frac] of this._rockHealth) {
+                // Most rock events only nudge health, so the cut-out set is
+                // usually unchanged: keep the old path rather than copying the
+                // whole silhouette again.
+                const shaking = [];
+                for (const k of this._rockHealth.keys()) {
                     if (this._rockDead.has(k)) continue;
-                    if (this._stageOf(frac) < 5) continue;
+                    if (this._stageOf(this._rockHealth.get(k)) < 5) continue;
                     const cell = this._cellPolys.get(k);
-                    if (!cell) continue;
-                    if (!batch.holes) batch.holes = new Path2D(this._silClip);
-                    batch.holes.addPath(cell.path);
-                    batch.shaking.push(cell);
+                    if (cell) shaking.push(cell);
                 }
-                this._damageBatch = batch;
+                const old = this._damageBatch;
+                const same = old && old.sil === this._silClip && old.shaking.length === shaking.length &&
+                    shaking.every((cell, i) => old.shaking[i] === cell);
+                if (!same) {
+                    const batch = { holes: null, shaking, sil: this._silClip };
+                    for (const cell of shaking) {
+                        if (!batch.holes) batch.holes = new Path2D(this._silClip);
+                        batch.holes.addPath(cell.path);
+                    }
+                    this._damageBatch = batch;
+                }
             }
             const dmgBatch = this._damageBatch;
 
@@ -2146,14 +2228,17 @@ class TerrainRenderer {
             ctx.stroke(this._silClip);
             ctx.restore();
 
+            // "Simple Terrain": last-stage rocks stay put, so nothing is cut out
+            const simple = config.graphical.simpleTerrain;
+            const lite = config.graphical.fewerEffects;
             ctx.save();
-            ctx.clip(dmgBatch.holes || this._silClip, 'evenodd');
+            ctx.clip(simple ? this._silClip : dmgBatch.holes || this._silClip, 'evenodd');
             ctx.globalAlpha = 1;
             const rockImg = tex.img;
             ctx.drawImage(rockImg, tex.x, tex.y, tex.w, tex.h);
             ctx.restore();
 
-            for (const cell of dmgBatch.shaking) {
+            for (const cell of simple ? [] : dmgBatch.shaking) {
                 if (cell.cx < tlx - 3 || cell.cx > tlx + tlw + 3 ||
                     cell.cy < tly - 3 || cell.cy > tly + tlh + 3) continue;
                 ctx.save();
@@ -2277,7 +2362,7 @@ class TerrainRenderer {
                         }
                     }
 
-                    if (p < 1 && this._pebbles.length < 80) {
+                    if (p < 1 && !lite && this._pebbles.length < 80) {
                         const lt = this._growDust.get(k) || 0;
                         if (nowMs - lt > (many ? 260 : 130)) {
                             this._growDust.set(k, nowMs);
@@ -2326,16 +2411,18 @@ class TerrainRenderer {
                 ctx.save();
                 ctx.lineJoin = 'round';
                 ctx.lineCap  = 'round';
-                for (const [k, frac] of this._rockHealth) {
-                    if (this._rockDead.has(k)) continue;
+                // forEach, not for..of: most of these are dead or off screen,
+                // and an iterator step per rock per frame adds up
+                this._rockHealth.forEach((frac, k) => {
+                    if (this._rockDead.has(k)) return;
                     const cell = this._cellPolys.get(k);
-                    if (!cell) continue;
+                    if (!cell) return;
                     if (cell.cx < tlx - 3 || cell.cx > tlx + tlw + 3 ||
-                        cell.cy < tly - 3 || cell.cy > tly + tlh + 3) continue;
+                        cell.cy < tly - 3 || cell.cy > tly + tlh + 3) return;
                     const stage = this._stageOf(frac);
                     const bites = this._getBitePath(k);
                     const path  = stage >= 1 ? this._getCrackPath(k, stage) : null;
-                    if (!bites && !path) continue;
+                    if (!bites && !path) return;
                     ctx.save();
                     ctx.clip(cell.path);
 
@@ -2344,7 +2431,7 @@ class TerrainRenderer {
                         ctx.fill(cell.path);
                     }
 
-                    if (stage >= 5) {
+                    if (stage >= 5 && !simple) {
                         const [ox, oy] = this._trembleOf(k, nowMs);
                         ctx.translate(cell.cx + ox, cell.cy + oy);
                         ctx.scale(1.05, 1.05);
@@ -2373,6 +2460,8 @@ class TerrainRenderer {
                         ctx.strokeStyle = 'rgba(16,13,22,0.8)';
                         ctx.lineWidth   = w * 2.1;
                         ctx.stroke(path);
+                        // simple: just the dark line, not the lit layers on it
+                        if (simple) { ctx.restore(); return; }
 
                         ctx.strokeStyle = `rgba(${cpal.deep},${a})`;
                         ctx.lineWidth   = w * 1.2;
@@ -2388,7 +2477,7 @@ class TerrainRenderer {
                     }
                     ctx.restore();
 
-                    if (stage >= 5 && this._pebbles.length < 80) {
+                    if (stage >= 5 && !simple && !lite && this._pebbles.length < 80) {
                         const lt = this._lastTrickle.get(k) || 0;
                         if (nowMs - lt > 120) {
                             this._lastTrickle.set(k, nowMs);
@@ -2409,7 +2498,7 @@ class TerrainRenderer {
                             }
                         }
                     }
-                }
+                });
                 ctx.restore();
             }
 
@@ -2418,14 +2507,14 @@ class TerrainRenderer {
                 ctx.save();
                 ctx.lineJoin = 'round';
                 ctx.lineCap  = 'round';
-                for (const [k, tier] of this._ore) {
-                    if (this._rockDead.has(k)) continue;
+                this._ore.forEach((tier, k) => {
+                    if (this._rockDead.has(k)) return;
                     const cell = this._cellPolys.get(k);
-                    if (!cell) continue;
+                    if (!cell) return;
                     if (cell.cx < tlx - 3 || cell.cx > tlx + tlw + 3 ||
-                        cell.cy < tly - 3 || cell.cy > tly + tlh + 3) continue;
+                        cell.cy < tly - 3 || cell.cy > tly + tlh + 3) return;
                     const art = this._getVeinArt(k, tier);
-                    if (!art) continue;
+                    if (!art) return;
                     const pal   = TerrainRenderer.ORE_PAL[tier];
                     const frac  = this._rockHealth.get(k);
                     const stage = frac === undefined ? 0 : this._stageOf(frac);
@@ -2440,7 +2529,7 @@ class TerrainRenderer {
 
                     // the core crystal's aura bleeds a little past its cell,
                     // kept faint and slow
-                    if ((tier === 3 || tier === 4) && art.big) {
+                    if ((tier === 3 || tier === 4) && art.big && !config.graphical.noGlow) {
                         // emeralds pulse faster, wider and brighter
                         const em = tier === 4;
                         const pulse = 0.5 + 0.5 * Math.sin(nowMs / (em ? 1100 : 1400) + (k % 31));
@@ -2449,19 +2538,30 @@ class TerrainRenderer {
                         // the aura swells in with the crystal, not before it
                         const a0 = (em ? 0.14 + 0.10 * pulse : 0.10 + 0.07 * pulse)
                                  * (sprout === null ? 1 : sprout * sprout);
-                        const g = ctx.createRadialGradient(art.big[0], art.big[1], 0,
-                                                           art.big[0], art.big[1], gr);
-                        g.addColorStop(0, `rgba(${rgb},${a0})`);
-                        g.addColorStop(1, `rgba(${rgb},0)`);
+                        // one unit gradient per colour, scaled into place, with
+                        // the pulse on globalAlpha: a new gradient per crystal
+                        // per frame is garbage the browser has to collect
+                        const auras = this._auraGrads || (this._auraGrads = {});
+                        let g = auras[rgb];
+                        if (!g) {
+                            g = auras[rgb] = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+                            g.addColorStop(0, `rgba(${rgb},1)`);
+                            g.addColorStop(1, `rgba(${rgb},0)`);
+                        }
+                        ctx.save();
+                        ctx.translate(art.big[0], art.big[1]);
+                        ctx.scale(gr, gr);
+                        ctx.globalAlpha *= a0;
                         ctx.fillStyle = g;
                         ctx.beginPath();
-                        ctx.arc(art.big[0], art.big[1], gr, 0, Math.PI * 2);
+                        ctx.arc(0, 0, 1, 0, Math.PI * 2);
                         ctx.fill();
+                        ctx.restore();
                     }
 
                     ctx.save();
                     ctx.clip(cell.path);
-                    if (stage >= 5) {
+                    if (stage >= 5 && !simple) {
                         const [ox, oy] = this._trembleOf(k, nowMs);
                         ctx.translate(cell.cx + ox, cell.cy + oy);
                         ctx.scale(1.05, 1.05);
@@ -2521,7 +2621,7 @@ class TerrainRenderer {
 
                     const kk = k & 0xffff;
                     const baseAlpha = ctx.globalAlpha;
-                    for (let gi = 0; gi < art.glintPts.length; gi++) {
+                    for (let gi = 0; gi < (simple ? 0 : art.glintPts.length); gi++) {
                         const period = (tier === 4 ? 4500 : 9000) + this._h(gi, kk, 240) * (tier === 4 ? 3000 : 6000);
                         const phase  = this._h(gi, kk, 241) * period;
                         const tt = ((nowMs + phase) % period) / 520;
@@ -2550,7 +2650,7 @@ class TerrainRenderer {
                     }
                     }   
                     ctx.restore();
-                }
+                });
                 ctx.restore();
             }
 
@@ -2605,7 +2705,7 @@ class TerrainRenderer {
                     const fe  = 1 - Math.pow(1 - fly, 3);
                     const al  = tc < 0.5 ? 0.9 : 0.9 * (1 - (tc - 0.5) / 0.5);
                     ctx.globalAlpha = al;
-                    for (let s = 0; s < (im.small ? 4 : 8); s++) {
+                    for (let s = 0; s < (lite ? (im.small ? 1 : 3) : im.small ? 4 : 8); s++) {
                         const ang = baseAng + (this._h(s, im.seed, 55) - 0.5) * 1.5;
                         const sp  = (0.2 + this._h(s, im.seed, 56) * 0.75) * rockSz * isc;
                         const sz  = (0.016 + this._h(s, im.seed, 57) * 0.028) * rockSz * (im.small ? 0.8 : 1);
@@ -2664,7 +2764,7 @@ class TerrainRenderer {
                         ctx.stroke();
                     }
                     // colored firework streaks flying out with the debris
-                    if (fx.sparks) {
+                    if (fx.sparks && !lite) {
                         ctx.lineCap = 'round';
                         const pal = fx.colors || FW_COLORS;
                         for (const s of fx.sparks) {
@@ -2680,7 +2780,8 @@ class TerrainRenderer {
                     }
                     // black rock chips
                     ctx.globalAlpha = fade;
-                    for (const p of fx.parts) {
+                    for (let pi = 0; pi < fx.parts.length; pi += lite ? 2 : 1) {
+                        const p = fx.parts[pi];
                         const dist = eo * p.sp * rockSz;
                         const px = fx.cx + p.ox + Math.cos(p.ang) * dist;
                         const py = fx.cy + p.oy + Math.sin(p.ang) * dist;

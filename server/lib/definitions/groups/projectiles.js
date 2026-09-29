@@ -689,6 +689,39 @@ Class.minion = {
         }
     ]
 }
+// Factory minions hit a little softer, Auto-Spawner ones a little harder
+Class.factoryMinion = {
+    PARENT: 'minion',
+    GUNS: [
+        {
+            POSITION: {
+                LENGTH: 17,
+                WIDTH: 9,
+            },
+            PROPERTIES: {
+                SHOOT_SETTINGS: combineStats([g.basic, g.minionGun, {damage: 0.88}]),
+                WAIT_TO_CYCLE: true,
+                TYPE: "bullet"
+            }
+        }
+    ]
+}
+Class.autoSpawnerMinion = {
+    PARENT: 'minion',
+    GUNS: [
+        {
+            POSITION: {
+                LENGTH: 17,
+                WIDTH: 9,
+            },
+            PROPERTIES: {
+                SHOOT_SETTINGS: combineStats([g.basic, g.minionGun, {damage: 1.1}]),
+                WAIT_TO_CYCLE: true,
+                TYPE: "bullet"
+            }
+        }
+    ]
+}
 Class.tinyMinion = {
     PARENT: "minion",
     LABEL: "Swarm Minion",

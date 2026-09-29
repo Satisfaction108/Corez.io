@@ -184,7 +184,8 @@ Class.genericSmasher = {
         BODY_DAMAGE: smshskl,
         MAX_HEALTH: smshskl,
         SHIELD_REGENERATION: smshskl,
-        MOVEMENT_SPEED: smshskl
+        MOVEMENT_SPEED: smshskl,
+        MINING_POWER: smshskl
     },
     STAT_NAMES: statnames.smasher,
     BODY: {

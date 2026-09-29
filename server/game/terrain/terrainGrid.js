@@ -878,6 +878,14 @@ class TerrainGrid {
         return null;
     }
 
+    // Appends every regrowing rock the circle touches to `out`.
+    growingRocksHitByCircle(x, y, r, now, out) {
+        for (const rock of this._growing) {
+            if (!out.includes(rock) && this._circleHitsGrowing(rock, x, y, r, now)) out.push(rock);
+        }
+        return out;
+    }
+
     pushCircleFromGrowing(pos, r, now = Date.now()) {
         if (!this._growing.length) return { dx: 0, dy: 0, entombed: false, buried: false };
         const startX = pos.x, startY = pos.y;
@@ -1223,6 +1231,35 @@ class TerrainGrid {
             }
         }
         return hit;
+    }
+
+    // Every live rock the circle touches, not just the nearest. Fills `out`
+    // (cleared first) so the per-bullet path allocates nothing.
+    rocksHitByCircle(x, y, r, out) {
+        out.length = 0;
+        const inside = this.pointInRock(x, y);
+        if (inside) out.push(inside);
+        if (!this._voronoiMap) return out;
+        const BUCKET = this._voronoiBucket, smap = this._voronoiMap;
+        const c0 = Math.floor((x - r) / BUCKET), c1 = Math.floor((x + r) / BUCKET);
+        const r0 = Math.floor((y - r) / BUCKET), r1 = Math.floor((y + r) / BUCKET);
+        const rr = r * r;
+        for (let bc = c0; bc <= c1; bc++) {
+            for (let br = r0; br <= r1; br++) {
+                const arr = smap.get(bc * 997 + br);
+                if (!arr) continue;
+                for (const seg of arr) {
+                    const rock = seg.rock;
+                    if (!rock || !rock.alive || out.includes(rock)) continue;
+                    const dax = x - seg.ax, day = y - seg.ay;
+                    const t   = Math.max(0, Math.min(seg.len, dax * seg.edx + day * seg.edy));
+                    const dx  = x - (seg.ax + t * seg.edx);
+                    const dy  = y - (seg.ay + t * seg.edy);
+                    if (dx * dx + dy * dy < rr) out.push(rock);
+                }
+            }
+        }
+        return out;
     }
 
     circleHitsRock(x, y, r) { return !!this.rockHitByCircle(x, y, r); }

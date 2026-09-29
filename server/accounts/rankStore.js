@@ -13,6 +13,7 @@
 const db = require('./db');
 const dust = require('./dust');
 const ranked = require('./ranked');
+const streaks = require('./streaks');
 const R = require('../../shared/ranks.js');
 
 const LEGEND_CACHE_MS = 60 * 1000;
@@ -156,6 +157,8 @@ function settleLife(life) {
             lives: 1, deaths: life.reason === 'death' ? 1 : 0, kills: life.kills, botKills: life.botKills,
             bestLife: r.basis, playMs: life.durationMs,
         });
+        // the day's first counted life moves the play streak (same rule as a placement life)
+        const streak = ranked.countsForPlacement(life.durationMs, r.basis) ? streaks.onLife(d, u.id, now) : null;
         const afterRow = d.get('SELECT * FROM users WHERE id = ?', u.id);
         const after = snapshot(afterRow, { fresh: true, now });
         const rankUp = wasRanked ? after.division > before.division : !!(r.placement && r.placement.finished);
@@ -166,16 +169,21 @@ function settleLife(life) {
             placement: r.placement,
             rankUp, tierUp: wasRanked && R.isTierUp(before.division, after.division), rankDown: false,
             legendNo: after.legendNo | 0,
-            dust: { lifeMilli: (life.dust && life.dust.lifeMilli) | 0, balanceMilli: (life.dust && life.dust.balanceMilli) | 0 },
+            dust: {
+                lifeMilli: (life.dust && life.dust.lifeMilli) | 0,
+                balanceMilli: streak && streak.balanceMilli != null ? streak.balanceMilli : (life.dust && life.dust.balanceMilli) | 0,
+            },
+            streak,
         };
     });
 }
 
-// Raid end, per account that played it: raid_results row, stats, and the
-// placement bonus (RP without a fare, plus exempt dust). Idempotent per
+// Raid end, per account that played it: raid_results row, stats, the
+// placement bonus (RP without a fare, plus exempt dust) and the win streak
+// (`played`: the raid counts for it, see streaks.js). Idempotent per
 // (raid_key, user). -> {raidKey, place, of, score, bonusRP, bonusDustMilli,
-// before, after, rankUp, tierUp, balanceMilli, eligible} | null
-function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now }) {
+// before, after, rankUp, tierUp, balanceMilli, eligible, streak} | null
+function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now, played }) {
     const d = h();
     if (!d) return null;
     now = now || Date.now();
@@ -201,6 +209,8 @@ function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now }
         // wins and top-3s count on the same terms as the bonus (score, 5 minutes in, board size)
         const counts = bonus.eligible;
         bumpStats(d, userId, now, { raids: 1, raidWins: counts && place === 1 ? 1 : 0, top3: counts && place <= 3 ? 1 : 0 });
+        const streak = streaks.onRaid(d, userId, { raidKey, win: counts && place === 1, played: !!played }, now);
+        if (streak && streak.balanceMilli != null) balanceMilli = streak.balanceMilli;
         const after = snapshot(d.get('SELECT * FROM users WHERE id = ?', userId), { fresh: true, now });
         return {
             raidKey, place: place | 0, of: rows | 0, score: score | 0, bonusRP: bonus.rp, bonusDustMilli: bonus.dustMilli,
@@ -209,6 +219,7 @@ function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now }
             tierUp: wasRanked && R.isTierUp(before.division, after.division),
             balanceMilli,
             eligible: !!counts,
+            streak,
         };
     });
 }

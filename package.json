@@ -4,6 +4,7 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node --no-lazy index",
+    "build": "node scripts/build-client.js",
     "bot:soak": "node scripts/bot-soak.js"
   },
   "dependencies": {
@@ -12,5 +13,8 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "license": "AGPL-3.0-or-later"
+  "license": "AGPL-3.0-or-later",
+  "devDependencies": {
+    "javascript-obfuscator": "5.8.0"
+  }
 }

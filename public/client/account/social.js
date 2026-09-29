@@ -16,7 +16,7 @@ const data = { loaded: false, friends: [], incoming: [], outgoing: [], blocked: 
 const subs = new Set();
 const dmSubs = new Set();
 let activeChat = null;   // userId of the chat on screen, or null
-let hooks = { onRevoked() {}, refreshMe() {}, openPane() {}, onStoreReset() {}, onInvite() {} };
+let hooks = { onRevoked() {}, refreshMe() {}, openPane() {}, onStoreReset() {}, onInvite() {}, onStreak() {} };
 
 export const get = () => data;
 export function on(fn) { subs.add(fn); return () => subs.delete(fn); }
@@ -321,6 +321,17 @@ function onEvent(type, d) {
             hooks.onInvite(d);
             break;
         }
+        case 'streak': {
+            // in a raid the game's own card (STK) says it; here only when a
+            // life settled after you left (a disconnect)
+            if (!d || (d.kind !== 'play' && d.kind !== 'win')) break;
+            if (!inGame() && !d.reset) {
+                const amt = d.rewardMilli > 0 ? ': +' + (d.rewardMilli / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' gemdust' : '';
+                toast((d.kind === 'play' ? 'Play streak day ' + (d.streak | 0) : 'Win streak x' + (d.streak | 0)) + amt, { kind: 'ok', duration: 6000 });
+            }
+            hooks.onStreak(d);
+            break;
+        }
         case 'storeReset': hooks.onStoreReset(d); break;
         case 'party': case 'partyInvite': case 'partyInviteGone':
             partySubs.forEach((fn) => { try { fn(type, d || {}); } catch (e) { console.error(e); } });
@@ -335,7 +346,7 @@ function onEvent(type, d) {
     }
 }
 
-const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'sessionRevoked', 'party', 'partyInvite', 'partyInviteGone', 'invite'];
+const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'sessionRevoked', 'party', 'partyInvite', 'partyInviteGone', 'invite', 'streak'];
 // Duo party events (party.js): fn(type, data)
 const partySubs = new Set();
 export function onParty(fn) { partySubs.add(fn); return () => partySubs.delete(fn); }

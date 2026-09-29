@@ -372,11 +372,48 @@ ALTER TABLE dust_ledger_v4 RENAME TO dust_ledger;
 CREATE INDEX dust_ledger_user ON dust_ledger(user_id, id);
 `;
 
+// v5: play and win streaks (streaks.js). play_day is the UTC day number of
+// the last counted life; win_raid the last raid key that moved the win
+// streak, so a raid can't move it twice. win_day / win_day_milli hold the
+// win dust paid today (daily cap).
+//
+// dust_ledger gains 'streak_play' and 'streak_win', rebuilt the same way as v4.
+const V5 = `
+CREATE TABLE user_streaks (
+    user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    play_cur      INTEGER NOT NULL DEFAULT 0 CHECK (play_cur >= 0),
+    play_best     INTEGER NOT NULL DEFAULT 0 CHECK (play_best >= 0),
+    play_day      INTEGER NOT NULL DEFAULT 0,
+    win_cur       INTEGER NOT NULL DEFAULT 0 CHECK (win_cur >= 0),
+    win_best      INTEGER NOT NULL DEFAULT 0 CHECK (win_best >= 0),
+    win_raid      TEXT,
+    win_day       INTEGER NOT NULL DEFAULT 0,
+    win_day_milli INTEGER NOT NULL DEFAULT 0 CHECK (win_day_milli >= 0),
+    updated_at    INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE dust_ledger_v5 (
+    id            INTEGER PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    delta_milli   INTEGER NOT NULL,
+    balance_milli INTEGER NOT NULL CHECK (balance_milli >= 0),
+    kind          TEXT    NOT NULL CHECK (kind IN ('gems', 'kill', 'placement', 'quest', 'purchase', 'refund', 'gift', 'admin', 'referral', 'streak_play', 'streak_win', 'other')),
+    ref           TEXT,
+    created_at    INTEGER NOT NULL
+) STRICT;
+INSERT INTO dust_ledger_v5 (id, user_id, delta_milli, balance_milli, kind, ref, created_at)
+    SELECT id, user_id, delta_milli, balance_milli, kind, ref, created_at FROM dust_ledger;
+DROP TABLE dust_ledger;
+ALTER TABLE dust_ledger_v5 RENAME TO dust_ledger;
+CREATE INDEX dust_ledger_user ON dust_ledger(user_id, id);
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
     { version: 3, up(db) { db.exec(V3); } },
     { version: 4, up(db) { db.exec(V4); } },
+    { version: 5, up(db) { db.exec(V5); } },
 ];
 
 function latestVersion() {

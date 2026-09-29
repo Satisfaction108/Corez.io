@@ -1403,10 +1403,20 @@ Class.autoSmasher = makeAuto({
         BODY_DAMAGE: smshskl,
         MAX_HEALTH: smshskl,
         SHIELD_REGENERATION: smshskl,
-        MOVEMENT_SPEED: smshskl
+        MOVEMENT_SPEED: smshskl,
+        MINING_POWER: smshskl
     },
 }, "Auto-Smasher", {type: "autoSmasherTurret", size: 11})
 Class.autoSpawner = makeAuto('spawner')
+// makeAuto shares the spawner's GUNS array, so give it its own minion gun
+Class.autoSpawner.GUNS = Class.spawner.GUNS.map(gun => gun.PROPERTIES ? {
+    ...gun,
+    PROPERTIES: {
+        ...gun.PROPERTIES,
+        SHOOT_SETTINGS: combineStats([g.minion, g.spawner, {damage: 1.1}]),
+        TYPE: 'autoSpawnerMinion'
+    }
+} : gun)
 Class.autoTriAngle = makeAuto('triAngle')
 Class.banshee = makeRadialAuto('bansheegun', {isTurret: true, danger: 7, size: 10, arc: 80, label: "Banshee", body: {FOV: base.FOV * 1.1}})
 Class.banshee.GUNS = weaponArray({
@@ -2699,8 +2709,8 @@ Class.factory = {
                 X: 15.5
             },
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.minion]),
-                TYPE: 'minion',
+                SHOOT_SETTINGS: combineStats([g.minion, {speed: 0.88, maxSpeed: 0.88, damage: 0.88}]),
+                TYPE: 'factoryMinion',
                 MAX_CHILDREN: 6,
                 STAT_CALCULATOR: 'drone',
                 AUTOFIRE: true,
@@ -4734,7 +4744,7 @@ Class.spike_old = {
         DENSITY: 1.5 * base.DENSITY
     },
     IS_SMASHER: true,
-    SKILL_CAP: [smshskl, 0, 0, 0, 0, smshskl, smshskl, smshskl, smshskl, smshskl],
+    SKILL_CAP: [smshskl, 0, 0, 0, 0, smshskl, smshskl, smshskl, smshskl, smshskl, smshskl],
     STAT_NAMES: statnames.smasher,
     TURRETS: [
         {
@@ -5826,7 +5836,7 @@ Class.tetraGunner = {
     ], 4)
 }
 Class.tracker3 = makeRadialAuto('tracker3gun', {isTurret: true, danger: 7, label: "Tracker-3"})
-Class.tracker3.SKILL_CAP = [0, 0, 0, 0, 0, smshskl, smshskl, smshskl, smshskl, smshskl]
+Class.tracker3.SKILL_CAP = [0, 0, 0, 0, 0, smshskl, smshskl, smshskl, smshskl, smshskl, smshskl]
 Class.undercoverCop = {
     PARENT: "booster",
     LABEL: "Undercover Cop",

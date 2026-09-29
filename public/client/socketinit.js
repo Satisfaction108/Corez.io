@@ -245,11 +245,20 @@ const Entry = class {
         let indexes = this.index.split("-"),
             ref = global.mockups[parseInt(indexes[0])];
             if (!ref) ref = global.missingno[0];
+        // the board is read twice a frame: rebuild the tank picture only when
+        // the tank or its colour changes, or while its mockups are still arriving
+        const imgKey = this.index + "|" + this.color;
+        if (this._imgKey !== imgKey || !this._img || global.mockups !== this._imgMockups) {
+            this._img = util.requestEntityImage(this.index, this.color);
+            const loaded = indexes.every(i => global.mockups[parseInt(i)]);
+            this._imgKey = loaded ? imgKey : null;
+            this._imgMockups = global.mockups;
+        }
 
         return {
             id: this.id,
             color: this.color,
-            image: util.requestEntityImage(this.index, this.color),
+            image: this._img,
             position: ref.position,
             barColor: this.bar,
             label: this.name ? this.name + " - " + this.label : this.label,
@@ -1452,6 +1461,7 @@ let incoming = async function(message, socket) {
                     dur: typeof m[4] === "number" && m[4] > 0 ? Math.min(15000, m[4]) : undefined, born: Math.max(performance.now(), prev + 700) });
                 if (list.length > 5) list.shift();
                 if (m[0] === "boss" || m[0] === "quest") { punchUI(8, 260); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
+                else if (m[0] === "grown") { punchUI(5, 220); if (gameSound.depositDone) gameSound.depositDone(); }
             } break;
             case 'FX': {
                 const kindF = m[2] || "ring";
@@ -1469,8 +1479,7 @@ let incoming = async function(message, socket) {
                     const eid = row && row.e != null ? row.e : 0;
                     const size = (row ? row.rare : kindF === "chestrare") ? 40 : 36;
                     if (eid && global.chestGoneAt) global.chestGoneAt.set(eid, nowF);
-                    const hold = nearF < 800 ? 55 : 0;
-                    if (hold) global.hitStop = Math.max(global.hitStop || 0, Date.now() + hold);
+                    const hold = nearF < 800 ? 55 : 0;   // the burst waits a beat, the frame doesn't freeze
                     const tr = window.terrainRenderer;
                     if (tr && tr.shatterAt) {
                         tr.shatterAt(fx.x, fx.y, size * 1.02, kindF === "chestrare" ? 3 : 1, hold, -(1000000 + eid));
@@ -1712,6 +1721,23 @@ let incoming = async function(message, socket) {
                 try {
                     const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
                     if (d && d.id) global.createMessage('Achievement unlocked: ' + (d.name || d.id) + '!', 5000);
+                } catch (e) { /* ignore */ }
+            } break;
+            case 'STK': {
+                // a play or win streak moved: a card under the raid clock
+                try {
+                    const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
+                    if (!d || (d.kind !== 'play' && d.kind !== 'win')) break;
+                    const fmt = (milli) => { const v = (+milli || 0) / 1000; return Number.isInteger(v) ? String(v) : String(+v.toFixed(2)); };
+                    const n = d.streak | 0;
+                    const paid = (+d.rewardMilli || 0) > 0 ? ': +' + fmt(d.rewardMilli) + ' gemdust' : '';
+                    const title = (d.kind === 'play' ? 'Play streak day ' + n : 'Win streak x' + n) + paid;
+                    const sub = d.kind === 'play'
+                        ? 'Play tomorrow for +' + fmt(d.nextMilli) + '. Days roll over at 00:00 UTC'
+                        : paid ? 'Win the next raid for +' + fmt(d.nextMilli) : 'Win dust is capped for today. The streak still counts';
+                    const t = window.dwGameToasts;
+                    if (t && t.note) t.note('streak:' + d.kind, title, { tag: 'Streak', kind: 'streak', sub, ms: 7000 });
+                    else global.createMessage(title, 5000);
                 } catch (e) { /* ignore */ }
             } break;
             case 'KO': {

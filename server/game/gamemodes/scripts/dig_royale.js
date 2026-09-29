@@ -10,6 +10,9 @@ const blooms = require('../../terrain/blooms.js');
 const raidEvents = require('../../terrain/raidEvents.js');
 const raidMods = require('../../terrain/raidMods.js');
 const spawnReach = require('../../terrain/spawnReach.js');
+const growth = require('../../terrain/growth.js');
+// entity.js reads the growth perks through this (refreshBodyAttributes, fov)
+global.royaleGrowth = growth;
 // ranked lives + gemdust (accounts); every call below is guarded
 const rankHooks = require('../../../accounts/game/rankHooks.js');
 const dustHooks = require('../../../accounts/game/dustHooks.js');
@@ -99,6 +102,10 @@ const KILL_SCORE = 200;
 const STREAK_MARK_AT = 4;
 const STREAK_BONUS_PER = 50;
 const SHUTDOWN_PER_STREAK = 100;
+// Growth: killing a grown tank pays this per 1x of size it had gained,
+// from GIANT_BOUNTY_AT up (a 2.3x tank is worth 325 on top of the kill)
+const GIANT_BOUNTY_AT = 1.5;
+const GIANT_BOUNTY_PER = 250;
 
 // First-minutes quest chain: one line, a number, a reward. Shown one at a time.
 const QUESTS = [
@@ -1358,6 +1365,8 @@ function onCombatantDead(body) {
     const carriedAtDeath = body.socket && body.socket.gemDeathCarried !== undefined
         ? (body.socket.gemDeathCarried | 0) : (s ? (s.carried | 0) : 0);
     const victimStreak = s ? (s.streak | 0) : 0;
+    const victimGrowth = growth.enabled() ? (body.growthMult || 1) : 1;
+    let giantPts = 0;
     if (s) { s.alive = false; s.carried = 0; s.streak = 0; }
     // a density trim (despawnBot) is as quiet as the raid-end mass death
     const raidEndDeath = body.deathCause === "raidend" || body.deathCause === "despawn";
@@ -1394,6 +1403,11 @@ function onCombatantDead(body) {
                 ks.extra = (ks.extra | 0) + shutdown;
                 pts += shutdown;
             }
+            if (victimGrowth >= GIANT_BOUNTY_AT) {
+                giantPts = Math.round(GIANT_BOUNTY_PER * (victimGrowth - 1) / 25) * 25;
+                ks.extra = (ks.extra | 0) + giantPts;
+                pts += giantPts;
+            }
             const mark = shop.killBonus(killerBody);
             if (mark) { ks.extra = (ks.extra | 0) + mark; pts += mark; }
             // ranked kill filters (bot half, same victim, spawn kill) + kill dust
@@ -1401,7 +1415,7 @@ function onCombatantDead(body) {
         }
         if (killerBody.socket) {
             questProgress(killerBody, "kill", 1);
-            let line = avenged ? "REVENGE" : shutdown ? "SHUTDOWN" : "ELIMINATED";
+            let line = avenged ? "REVENGE" : shutdown ? "SHUTDOWN" : giantPts ? "GIANT DOWN" : "ELIMINATED";
             line += ": " + (body.name || "Unnamed");
             if (carriedAtDeath >= 300) line += "  (" + carriedAtDeath + " gems dropped)";
             callout(killerBody, avenged ? "revenge" : shutdown ? "shutdown" : "kill", line, pts);
@@ -1574,6 +1588,8 @@ function onHumanJoin(body) {
         }
     } catch { /* */ }
     const isRespawn = !!(body.socket && body.socket.lastRaidDeathAt);
+    // size first: every placement below pushes the hull out of rock by it
+    guard('growth spawn', () => growth.onSpawn(body, growthScore(body)));
     // duos: next to your partner if they're alive and not in a fight; that
     // beats the base (which is shared anyway) and a random safe spot
     let mateSpawn = false;
@@ -1615,6 +1631,8 @@ function onHumanJoin(body) {
             moveTo(body, o.x, o.y);
         }
     } catch { /* */ }
+    // a grown respawn needs more room than a spawn pocket gives
+    guard('growth room', () => growRoom(body, true));
     freshRaidBody(body);
     // a resumed player already had their starter kit: no second one
     const resuming = !!(body.socket && body.socket._resume);
@@ -1630,6 +1648,10 @@ function onHumanJoin(body) {
         body.socket.lastRaidDeathAt = 0;
         body.socket.freeCam = false;
         questOf(body.socket);
+        if (isRespawn && (body.growthMult || 1) >= 1.1) {
+            const capped = body.growthMult >= growth.RESPAWN_CAP - 1e-6 && growth.multFor(growthScore(body)) > body.growthMult + 0.01;
+            try { body.sendMessage("You're back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size" + (capped ? ", the most a respawn gives." : ".")); } catch { /* */ }
+        }
         if (!isRespawn && !resuming) {
             try { chests.ensureNearSpawn(body); } catch { /* */ }
             const mod = raidMods.get();
@@ -2308,6 +2330,45 @@ function grantTwist(body) {
     }
 }
 
+// ── growth ───────────────────────────────────────────────────────────────
+function growthScore(body) {
+    const key = statKeyFor(body);
+    const s = key ? raidStats.get(key) : null;
+    return s ? scoreOf(s) : 0;
+}
+function fmtGrow(g) { return String(+g.toFixed(2)) + "x"; }
+// A hull that grows cracks the rock it grows into (never an emerald), and
+// ore it breaks pays out like a dig. `hold` (a spawn): the landing spot is
+// cleared of every rock the hull overlaps and held open like a spawn pocket.
+const roomHits = [];
+function growRoom(body, hold) {
+    const tg = global.gameManager.terrainGrid;
+    if (!tg || !tg.rocksHitByCircle || !body || body.isDead?.() || !(body.growthMult > 1)) return 0;
+    tg.rocksHitByCircle(body.x, body.y, (body.realSize || 0) * (hold ? 1.05 : 0.94), roomHits);
+    const list = roomHits.slice();
+    roomHits.length = 0;
+    let n = 0;
+    for (const rock of list) {
+        if (!rock.alive || rock.canyon || rock.ore === 4) continue;
+        const ore = rock.ore;
+        const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+        if (!tg.damageRock(rock, rock.health + 1, rx, ry, false, hold ? null : body)) continue;
+        n++;
+        if (hold) rock.noRegrowUntil = Math.max(rock.noRegrowUntil || 0, now() + FIRST_MINUTES.SPAWN_POCKET_HOLD_MS);
+        else if (ore) { try { gems.spawnOreBurst(rock, body); } catch { /* */ } }
+    }
+    if (n) { try { spawnReach.invalidate(); } catch { /* */ } }
+    return n;
+}
+function onGrown(body, stage, idx) {
+    if (!body.socket) return;
+    const top = idx >= growth.STAGES.length;
+    const sub = top ? "That's as big as anyone gets."
+        : stage >= growth.RESPAWN_CAP ? "A respawn brings you back at " + fmtGrow(growth.RESPAWN_CAP) + " at most."
+        : "More health and ramming power, a little slower.";
+    try { body.socket.talk('KC', "grown", "You grew to " + fmtGrow(stage), 0, sub); } catch { /* */ }
+}
+
 function tick() {
     if (!Config.dig_royale) return;
     const t = now();
@@ -2335,6 +2396,7 @@ function tick() {
     guard('vaults', () => tickVaultPinch(t));
     guard('bots', () => fillBots());
     const fighters = combatants();
+    guard('growth', () => growth.tick(t, fighters, growthScore, onGrown, growRoom));
     try { bosses.tick(t, fighters.length); } catch (e) { /* */ }
     try { blooms.tick(t); } catch (e) { /* */ }
     try { raidEvents.tick(t); } catch (e) { /* */ }
@@ -2430,5 +2492,17 @@ module.exports = {
         for (let i = 0; i < Math.min(2000, n | 0); i++) safeSpawnSpot(null, i % 2 === 0);
         return { traps, ms: Date.now() - t0, reach: FIRST_MINUTES.SPAWN_REACH, n: spawnLog.n, enclosed: spawnLog.enclosed, byKind: spawnLog.byKind, byReason: spawnLog.byReason, rescues: spawnRescue, storm: Math.round(storm.snapshot(now()).r), recent: spawnLog.recent.slice(-5) };
     },
+    // DBG score <n>: set this body's raid score (growth testing)
+    debugSetScore: (body, n) => {
+        const st = body ? ensureStat(body) : null;
+        if (!st) return null;
+        st.extra = (st.extra | 0) + Math.max(0, n | 0) - scoreOf(st);
+        return scoreOf(st);
+    },
+    debugGrowth: (body) => body ? { g: +(body.growthMult || 1).toFixed(3), target: +(body._growTarget || 1).toFixed(3), eff: body._growEff | 0,
+        score: growthScore(body), size: +body.size.toFixed(2), realSize: +body.realSize.toFixed(2), fov: Math.round(body.fov),
+        speed: +body.topSpeed.toFixed(3), hp: Math.round(body.health.max), dmg: +body.damage.toFixed(3), x: Math.round(body.x), y: Math.round(body.y),
+        overlap: (() => { const tg = global.gameManager.terrainGrid, out = []; if (tg && tg.rocksHitByCircle) tg.rocksHitByCircle(body.x, body.y, body.realSize * 0.9, out); return out.length; })(),
+        label: body.label, caps: body.skill.caps.slice(), raw: body.skill.raw.slice(), ups: (body.upgrades || []).map(u => [].concat(u.class || []).map(c => (c && c.LABEL) || String(c)).join('/')) } : null,
     debugRaidLeft: (sec) => { if (!raidEnding && raidResults === null) raidEndsAt = now() + Math.max(1, sec | 0) * 1000; },
 };

@@ -1,4 +1,6 @@
 node_modules/
+# obfuscated client, made by npm run build (scripts/build-client.js)
+build/
 .bot-soak-*.json
 package-lock.json
 *.lnk

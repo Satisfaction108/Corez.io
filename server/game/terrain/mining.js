@@ -18,7 +18,8 @@ const MINE_BIAS = {
     annihilator: 1.2,
     underseer: 5, necromancer: 2.8, maleficitor: 3, infestor: 1.5,
     // minions orbit and only shoot the rock part of the time
-    spawner: 3, factory: 2.5, autoSpawner: 2,
+    // (factory and autoSpawner offset their minion gun damage changes)
+    spawner: 3, factory: 2.85, autoSpawner: 1.8,
     manager: 1.4,
     rifle: 1.6, revolver: 1.6, bushwhacker: 1.5, musket: 1.3,
     minigun: 1.2, nailgun: 1.8, vulture: 1.5, focal: 1.2, phoenix: 1.2,
@@ -70,14 +71,21 @@ function gearMult(owner) {
     return m;
 }
 
+// Share of a normal 9-point Mining Power bar. Smasher hulls cap the stat at 12
+// like their other stats, so they can go past 1 the same way.
+function miningInvested(owner) {
+    const cap = Config.skill_cap || 9;
+    const top = Math.max(cap, (owner.skill.caps && owner.skill.caps[10]) || 0);
+    return Math.max(0, Math.min(top, owner.skill.raw[10] || 0)) / cap;
+}
+
 // Mining Power (skill index 10) is the dig stat. Zero points still digs, so a
 // pure fighter is slow, not stuck.
 function skillFactor(owner) {
     const raw = owner && owner.skill && owner.skill.raw;
     let f = 1;
     if (raw) {
-        const cap = Config.skill_cap || 9;
-        const invested = Math.max(0, Math.min(1, (raw[10] || 0) / cap));
+        const invested = miningInvested(owner);
         f = 0.4 + 1.6 * invested;      // 0.4x bare to 2.0x maxed
     }
     if (owner && owner.weakDrillUntil && Date.now() < owner.weakDrillUntil) f *= 0.55;
@@ -102,8 +110,7 @@ function grindSecondsFor(owner) {
         sec = 18.5 / b;
     }
     if (raw) {
-        const cap = Config.skill_cap || 9;
-        sec /= 0.55 + 1.45 * Math.max(0, Math.min(1, (raw[10] || 0) / cap));
+        sec /= 0.55 + 1.45 * miningInvested(owner);
     }
     if (owner.settings && owner.settings.reloadToAcceleration) sec /= RAM_DIG;
     if (owner.weakDrillUntil && Date.now() < owner.weakDrillUntil) sec *= 1.8;

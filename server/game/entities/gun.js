@@ -628,7 +628,8 @@ class Gun extends EventEmitter {
         // Skip if unable to shoot or if we shouldn't care about body stats
         if (!this.canShoot) return;
 
-        let sizeFactor = this.master.size / this.master.SIZE;
+        // raid growth makes the shots bigger, not stronger
+        let sizeFactor = this.master.size / this.master.SIZE / (this.master.growthMult > 1 ? this.master.growthMult : 1);
         let shoot = this.settings;
         let sk = (this.bulletStats == 'master') ? this.body.skill : this.bulletStats;
         // Defaults

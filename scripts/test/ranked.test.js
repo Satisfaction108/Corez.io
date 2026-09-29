@@ -336,7 +336,7 @@ test('db: a life opens once and settles exactly once', () => {
     assert.equal(rk.before.division, null);
     assert.equal(rk.after.placement.lives, 1);
     assert.equal(rk.parts.reduce((a, [, v]) => a + v, 0), rk.gain);
-    assert.deepEqual(Object.keys(rk).sort(), ['after', 'basis', 'before', 'capped', 'delta', 'dust', 'fare', 'gain', 'guest', 'legendNo', 'parts', 'placement', 'rankDown', 'rankUp', 'reason', 'tierUp', 'v'].sort());
+    assert.deepEqual(Object.keys(rk).sort(), ['after', 'basis', 'before', 'capped', 'delta', 'dust', 'fare', 'gain', 'guest', 'legendNo', 'parts', 'placement', 'rankDown', 'rankUp', 'reason', 'streak', 'tierUp', 'v'].sort());
     assert.equal(settle(lifeId, u.id, { basis: 5000 }), null, 'second settle is a no-op');
     const after = D().get('SELECT * FROM rank_lives WHERE life_id = ?', lifeId);
     assert.equal(after.end_reason, 'death');
@@ -575,8 +575,10 @@ test('hooks: kill filters, kill dust (DU kind 3), death RK with the right basis;
     assert.equal(rk.basis, 850);
     assert.equal(rk.gain, ranked.lifeGain(0, 850));
     assert.equal(rk.dust.lifeMilli, 625);
-    assert.equal(rk.dust.balanceMilli, 625);
-    assert.equal(userRow(killerU.id).dust_milli, 625, 'flushed on death');
+    // the day's first counted life also pays the play streak (streaks.test.js)
+    assert.equal(rk.streak.rewardMilli, 250);
+    assert.equal(rk.dust.balanceMilli, 625 + 250);
+    assert.equal(userRow(killerU.id).dust_milli, 625 + 250, 'flushed on death');
     assert.equal(D().get('SELECT bot_kills, kills FROM rank_lives WHERE life_id = ?', kst.lifeId).bot_kills, 2);
     bridge.afterDeathPacket(ks);
     assert.equal(json(packets(ks, 'RK')[0]).basis, 850);
@@ -1075,7 +1077,9 @@ test('e2e: account socket, dust, death RK, resume, fare, disconnect, raid end (l
         assert.equal(rk1.fare, 0);
         assert.equal(rk1.delta, rk1.gain);
         assert.deepEqual(rk1.placement, { inPlacement: true, lives: 1, of: 3, finished: false, startDivision: null });
-        assert.deepEqual(rk1.dust, { lifeMilli: 225, balanceMilli: 225 });
+        // + the play streak's day 1 (the first counted life today)
+        assert.deepEqual(rk1.dust, { lifeMilli: 225, balanceMilli: 225 + 250 });
+        assert.equal(rk1.streak && rk1.streak.rewardMilli, 250);
         const row1 = q("SELECT * FROM rank_lives WHERE user_id = ? AND end_reason = 'death'", uid);
         assert.equal(row1.delta, rk1.delta);
         assert.equal(row1.bot_kills, 1);
@@ -1174,7 +1178,7 @@ test('e2e: account socket, dust, death RK, resume, fare, disconnect, raid end (l
         assert.equal(q('SELECT count(*) AS n FROM raid_results WHERE user_id = ?', uid).n, 1);
         const final = await (await fetch(origin + '/api/me', { headers: { Cookie: cookie } })).json();
         assert.equal(final.user.rank.rp, q('SELECT rp FROM users WHERE id = ?', uid).rp);
-        assert.equal(final.user.dust, 0.225);
+        assert.equal(final.user.dust, 0.475, 'kill dust + play streak day 1');
         return `${((Date.now() - t0) / 1000).toFixed(0)} s of play, lives ${q('SELECT count(*) AS n FROM rank_lives WHERE user_id = ?', uid).n}`;
     } finally {
         for (const c of clients) c.close();

@@ -19,7 +19,8 @@
 // a bar dealt), survAt, survX/survY/survMovedAt, accountId, rankCode. A
 // resume re-keys the stat (claimResume) and keeps the open life.
 // raidAcct (per account, cleared at raid start): raid-cumulative counted
-// points for the diminishing-returns curve, victims, and join time.
+// points for the diminishing-returns curve, victims, join time, and for the
+// win streak the counted lives settled and the active survival time.
 //
 // Settled at: death (onDeath), raid end (onRaidEnd, before the mass death),
 // a disconnect nobody resumed (RESUME_MS + 1 s later, with the fare), and a
@@ -34,6 +35,7 @@ const nodeCrypto = require('crypto');
 const accounts = require('../index');
 const rankStore = require('../rankStore');
 const ranked = require('../ranked');
+const streaks = require('../streaks');
 const dustHooks = require('./dustHooks');
 const progress = require('./progressHooks');
 const R = require('../../../shared/ranks.js');
@@ -46,7 +48,7 @@ function on() { return bridge().rankedOn(); }
 
 // {stats() -> Map, clients() -> sockets, raidId() -> n, board() -> [{s, score}], resumeMs, serverId}
 let ctx = null;
-const raidAcct = new Map();        // accountId -> {counted, victims:Map, joinedAt}
+const raidAcct = new Map();        // accountId -> {counted, victims:Map, joinedAt, lives, activeMs}
 const openByAcct = new Map();      // accountId -> stat with the open life
 const ALIVE_CHECK_MS = 5000;
 let aliveCheckAt = 0;
@@ -80,7 +82,7 @@ function basisOf(s) {
 
 function acctFor(userId, t) {
     let a = raidAcct.get(userId);
-    if (!a) { a = { counted: 0, victims: new Map(), joinedAt: t }; raidAcct.set(userId, a); }
+    if (!a) { a = { counted: 0, victims: new Map(), joinedAt: t, lives: 0, activeMs: 0 }; raidAcct.set(userId, a); }
     return a;
 }
 
@@ -188,7 +190,10 @@ function lifeEnd(s, reason, opts = {}) {
     } catch (e) { logErr('settle', e); }
     if (payload) {
         a.counted += basis;
+        a.activeMs += Math.max(0, s.lifeSurviveMs || 0);
+        if (ranked.countsForPlacement(t - (s.lifeStartAt || t), payload.basis)) a.lives++;
         s.rankCode = codeOfSnap(payload.after);
+        if (payload.streak) noteStreak(userId, payload.streak, clientOf(s) || bridge().socketOf(userId));
         if (payload.rankUp) {
             try { accounts.bus.toMain({ t: 'rankUp', userId, division: payload.after.division, tierUp: !!payload.tierUp }); } catch (e) { /* */ }
         }
@@ -197,6 +202,30 @@ function lifeEnd(s, reason, opts = {}) {
         try { accounts.bus.toMain({ t: 'lifeSettled', userId }); } catch (e) { /* */ }
     }
     return payload;
+}
+
+// A streak moved (life settled, raid placement): the HUD balance, the
+// dust pop, the in-raid card (STK) and the menu (SSE 'streak'). A win
+// streak reset only goes to the menu.
+function noteStreak(userId, st, client) {
+    if (!st) return;
+    if (st.rewardMilli) dustHooks.noteExternalCredit(userId, st.rewardMilli, st.balanceMilli);
+    const data = {
+        kind: st.kind, streak: st.streak | 0, best: st.best | 0, rewardMilli: st.rewardMilli | 0, reset: !!st.reset,
+        nextMilli: st.kind === 'play' ? streaks.playReward(st.streak + 1) : streaks.winReward(st.streak + 1),
+    };
+    if (client) {
+        if (st.rewardMilli) bridge().du(client, st.rewardMilli, 8, true);
+        if (!st.reset) { try { client.talk('STK', JSON.stringify(data)); } catch (e) { /* closing */ } }
+    }
+    try { accounts.bus.toMain({ t: 'streak', userId, ...data }); } catch (e) { /* */ }
+}
+
+// The live socket of a stat, if it is still here.
+function clientOf(s) {
+    if (!ctx || !s || !s.key) return null;
+    for (const c of ctx.clients()) if (c && c.id && ('s:' + c.id) === s.key && !c.terminated) return c;
+    return null;
 }
 
 // A human died in the raid (onCombatantDead). Raid-end deaths are settled
@@ -389,9 +418,13 @@ function onRaidEnd() {
             if (!s || !s.accountId) return;
             try {
                 const a = raidAcct.get(s.accountId);
+                const raidMs = a ? t - a.joinedAt : 0;
+                // the win streak only moves for a raid really played: in it
+                // long enough for the bonus, a counted life, a minute active
+                const played = !!a && a.lives > 0 && a.activeMs >= streaks.WIN_ACTIVE_MS && raidMs >= ranked.BONUS_MIN_RAID_MS;
                 const res = rankStore.applyRaidPlacement({
                     raidKey: key, userId: s.accountId, place: e.place || i + 1, rows, score: e.teamScore != null ? e.teamScore : e.score,
-                    raidMs: a ? t - a.joinedAt : 0, now: t,
+                    raidMs, now: t, played,
                 });
                 if (!res) return;
                 dustHooks.noteExternalCredit(s.accountId, res.bonusDustMilli, res.balanceMilli);
@@ -402,10 +435,11 @@ function onRaidEnd() {
                 if (res.eligible && res.place <= 3) top.push({ userId: s.accountId, place: res.place, score: res.score });
                 const client = byAcct.get(s.accountId);
                 try { progress.afterPlacement(client || null, s.accountId, res); } catch (e2) { logErr('progress', e2); }
+                if (client && res.bonusDustMilli) bridge().du(client, res.bonusDustMilli, 5, true);
+                noteStreak(s.accountId, res.streak, client);
                 if (!client) return;
-                if (res.bonusDustMilli) bridge().du(client, res.bonusDustMilli, 5, true);
                 if (res.place <= 10) {
-                    const { balanceMilli, eligible, ...rkp } = res;
+                    const { balanceMilli, eligible, streak, ...rkp } = res;
                     client.talk('RKP', JSON.stringify(rkp));
                 }
                 if (res.rankUp) {

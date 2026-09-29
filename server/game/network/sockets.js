@@ -1379,6 +1379,12 @@ class socketManager {
                         if (mb) { b.x = mb.x + off; b.y = mb.y; b.velocity.x = 0; b.velocity.y = 0; }
                     }
                     // ranked rank-only counters of this socket's open life
+                    // growth: DBG score <n> sets the raid score, DBG growth reports size and stats
+                    else if (what === "score" && b) {
+                        const dr = require('../gamemodes/scripts/dig_royale.js');
+                        socket.talk('KC', 'dbg', JSON.stringify({ score: dr.debugSetScore(b, m[1] | 0) }), 0);
+                    }
+                    else if (what === "growth") socket.talk('KC', 'dbg', JSON.stringify({ growth: require('../gamemodes/scripts/dig_royale.js').debugGrowth(b) }), 0);
                     else if (what === "rankpts") socket.talk('KC', 'dbg', JSON.stringify({ rankpts: require('../../accounts/game/rankHooks.js').debugPts(socket) }), 0);
                     else if (what === "bosskill") {
                         // bosskill 1: you land the final blow (and the damage), for reward tests

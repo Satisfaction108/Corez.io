@@ -13,10 +13,13 @@
 // Packets (server -> client), JSON as one string unless noted:
 //   AC  {username, userId, rank: RankSnap, dust, dustCarried}   at spawn, accounts
 //   DU  carriedMilli, balanceMilli, deltaMilli, kind            numbers; kind 0 sync,
-//       1 pickup, 2 bank, 3 kill, 4 death loss, 5 placement, 6 quest. At most
+//       1 pickup, 2 bank, 3 kill, 4 death loss, 5 placement, 6 quest,
+//       7 chest / boss / shop reward, 8 streak. At most
 //       4/s per socket (du() coalesces), except forced ones (bank, death).
 //   RK  the life result (rankHooks), after 'F'
 //   RKP the raid placement result (rankHooks), at raid end
+//   STK {kind:'play'|'win', streak, best, rewardMilli, nextMilli, reset}
+//       a streak moved (rankHooks.noteStreak); not sent for a win reset
 //
 // Presence and blocks (bus, game <-> main):
 //   -> main {t:'join', userId, sid}     an account socket was welcomed

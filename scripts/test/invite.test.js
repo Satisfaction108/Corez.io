@@ -128,9 +128,9 @@ test('migration: v3 -> v4 keeps dust_ledger rows and ids, adds the referral kind
     assert.throws(() => db.run("INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, created_at) VALUES (1, 1, 1, 'referral', 1)"), /CHECK/);
     const before = db.all('SELECT * FROM dust_ledger ORDER BY id');
     const res = migrations.apply(db, { backupDir: path.join(ROOT, 'mig', 'backups') });
-    assert.deepEqual(res.applied, [4]);
+    assert.deepEqual(res.applied, migrations.MIGRATIONS.filter(x => x.version >= 4).map(x => x.version));
     assert.ok(res.backup && fs.existsSync(res.backup), 'pre-migration backup');
-    assert.equal(db.userVersion(), 4);
+    assert.equal(db.userVersion(), migrations.latestVersion());
     assert.deepEqual(db.all('SELECT * FROM dust_ledger ORDER BY id'), before);
     db.run("INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, created_at) VALUES (1, 1, 1, 'referral', 1)");
     assert.throws(() => db.run("INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, created_at) VALUES (1, 1, 1, 'bogus', 1)"), /CHECK/);

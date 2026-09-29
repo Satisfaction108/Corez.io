@@ -324,8 +324,9 @@ const util = (function() {
                 rerootUpgradeTree,
                 guns: {
                     length: guns.length,
-                    getPositions: () => Array(guns.length).fill(0),
-                    getConfig: () => guns.map(g => {
+                    // a still picture: the same arrays every frame, built once
+                    getPositions: function () { return this._pos || (this._pos = Array(guns.length).fill(0)); },
+                    getConfig: function () { return this._cfg || (this._cfg = guns.map(g => {
                         return {
                             color: g.color,
                             alpha: g.alpha,
@@ -340,7 +341,7 @@ const util = (function() {
                             direction: g.direction,
                             offset: g.offset,
                         };
-                    }),
+                    })); },
                     update: () => {},
                 },
                 turrets: turrets.map((t) => {

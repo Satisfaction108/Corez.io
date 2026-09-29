@@ -2,7 +2,8 @@
 // goes through num()/get() so a mod is just data.
 const MODS = [
     { id: "copper_rush",   name: "Copper Rush",        desc: "All the ore is copper, and copper is worth triple.", weight: 1, ore: "copper", gemValueMult: { 1: 3 } },
-    { id: "giants",        name: "Giants",             desc: "Everyone's tank is half again as big. Good luck hiding.", weight: 1.1, sizeMult: 1.5 },
+    // growth mode (royale_growth) replaces this one, see terrain/growth.js
+    { id: "giants",        name: "Giants",             desc: "Everyone's tank is half again as big. Good luck hiding.", weight: 1.1, sizeMult: 1.5, noGrowth: true },
     { id: "overclocked",   name: "Overclocked",        desc: "Ten extra skill points for everyone.", weight: 1.2, extraSkill: 10 },
     { id: "arsenal",       name: "Annihilator Arsenal", desc: "Everyone gets an Annihilator sidearm for the whole raid.", weight: 1.2, freeArm: "flak" },
     { id: "glass_cannons", name: "Glass Cannons",      desc: "Double damage, half health, for everyone.", weight: 1.1, damageMult: 2, healthMult: 0.5 },
@@ -22,7 +23,7 @@ let active = null;
 let lastId = null;
 
 function roll(force) {
-    let pool = MODS.filter(m => m.id !== lastId);
+    let pool = MODS.filter(m => m.id !== lastId && !(m.noGrowth && Config.royale_growth));
     if (force) pool = MODS.filter(m => m.id === force);
     if (!pool.length) pool = MODS;
     let total = 0;

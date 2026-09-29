@@ -1,9 +1,12 @@
 // The Daily Quests card beside the main menu card (#lobbySide): three
-// quests with a bar and a gemdust reward each, and when they change.
+// quests with a bar and a gemdust reward each, and when they change. Under
+// it the Streaks card: the play streak (days in a row, UTC) and the win
+// streak, both from the same /api/quests answer.
 // Guests get one quiet line instead. Hidden on narrow screens (CSS).
 import * as api from './api.js';
 import * as store from './state.js';
 import { h, icon, clear, animate, T_MID } from './ui.js';
+import { achIcon, BY_ID as ACH } from './achievements.js';
 
 const side = document.getElementById('lobbySide');
 let hooks = { onLogin() {} };
@@ -80,7 +83,7 @@ function paint() {
         if (next === 'loading') side.appendChild(h('div', { class: 'q-card q-skel' }, h('div', { class: 'q-head' }, h('span', { class: 'q-title', text: 'Quests' }))));
         return;
     }
-    const next = JSON.stringify(data.quests.map((q) => [q.id, q.progress, q.done])) + data.day;
+    const next = JSON.stringify(data.quests.map((q) => [q.id, q.progress, q.done])) + data.day + JSON.stringify(data.streaks || null);
     const resetEl = h('span', { class: 'q-reset' });
     const tick = () => {
         const left = (+data.resetsAt || 0) - (Date.now() + (data._skew || 0));
@@ -106,12 +109,17 @@ function paint() {
         h('div', { class: 'q-list' }, quests.map(row)),
         doneN === quests.length && quests.length ? h('div', { class: 'q-foot', text: 'All done. Come back tomorrow' }) : null);
     side.appendChild(card);
+    const sc = data.streaks ? streakCard(data.streaks) : null;
+    if (sc) side.appendChild(sc);
     tick();
     tickTimer = setInterval(tick, 30000);
-    if (first) animate(card, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
+    if (first) {
+        animate(card, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
+        if (sc) animate(sc, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID, delay: 60 });
+    }
     // bars grow to their value
     requestAnimationFrame(() => requestAnimationFrame(() => {
-        card.querySelectorAll('.q-fill').forEach((f) => { f.style.width = f.dataset.w; });
+        side.querySelectorAll('.q-fill').forEach((f) => { f.style.width = f.dataset.w; });
     }));
 }
 
@@ -130,3 +138,43 @@ function row(q) {
                 : h('span', { class: 'q-num', text: fmtNum(prog) + '/' + fmtNum(goal) })));
 }
 const fmtNum = (n) => (Math.round(+n || 0)).toLocaleString();
+
+// The streak medal: the Streaker flame or the Champion cup, lit while the
+// streak is alive, a dashed empty ring when it is 0.
+function medal(achId, n, label) {
+    const a = ACH.get(achId);
+    return h('span', { class: 'st-medal' + (n > 0 ? ' on' : ''), style: { '--ac': a ? a.color : 'var(--copper)' }, 'aria-hidden': 'true', title: label },
+        achIcon(achId), n > 0 ? h('span', { class: 'st-n', text: String(n) }) : null);
+}
+
+function streakCard(st) {
+    const p = st.play || {}, w = st.win || {};
+    const cur = p.current | 0, max = Math.max(1, p.maxDay | 0);
+    const toTop = Math.max(0, max - cur);
+    let playSub;
+    if (p.today) playSub = toTop > 0 ? 'Done today. Tomorrow +' + fmtReward(p.nextMilli) : 'Top reward reached. Keep it going';
+    else if (cur > 0) playSub = 'Play a raid today to keep it: +' + fmtReward(p.nextMilli);
+    else playSub = 'Play a raid to start one: +' + fmtReward(p.nextMilli);
+    const tier = toTop > 0 ? toTop + (toTop === 1 ? ' day' : ' days') + ' to +' + fmtReward(p.maxMilli) + ' a day' : '+' + fmtReward(p.maxMilli) + ' a day';
+    const wc = w.current | 0, wb = w.best | 0;
+    return h('div', { class: 'q-card st-card' },
+        h('div', { class: 'q-head' }, h('span', { class: 'q-title', text: 'Streaks' }), h('span', { class: 'st-utc', text: 'days end 00:00 UTC' })),
+        h('div', { class: 'st-row' + (cur > 0 ? '' : ' off') },
+            medal('streaker', cur, 'Play streak'),
+            h('div', { class: 'st-body' },
+                h('div', { class: 'q-line' },
+                    h('span', { class: 'q-text', text: cur > 0 ? 'Play streak: day ' + cur : 'No play streak' }),
+                    p.today && p.rewardMilli ? h('span', { class: 'q-reward', title: 'Gemdust today' }, icon('dust'), h('span', { text: '+' + fmtReward(p.rewardMilli) })) : null),
+                h('div', { class: 'st-sub', text: playSub }),
+                h('div', { class: 'q-barrow' },
+                    h('span', { class: 'q-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(max), 'aria-valuenow': String(Math.min(cur, max)), 'aria-label': 'Play streak, day ' + cur + ' of ' + max },
+                        h('span', { class: 'q-fill', dataset: { w: Math.round(Math.min(1, cur / max) * 100) + '%' } })),
+                    h('span', { class: 'st-tier', text: tier })))),
+        h('div', { class: 'st-row' + (wc > 0 ? '' : ' off') },
+            medal('champion', wc, 'Win streak'),
+            h('div', { class: 'st-body' },
+                h('div', { class: 'q-line' },
+                    h('span', { class: 'q-text', text: wc > 0 ? 'Win streak: x' + wc : 'No win streak' }),
+                    h('span', { class: 'st-best', text: 'best x' + wb })),
+                h('div', { class: 'st-sub', text: 'Next #1 finish: +' + fmtReward(w.nextMilli) }))));
+}

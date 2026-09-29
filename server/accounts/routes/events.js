@@ -23,6 +23,7 @@
 //   ach              {id, name, desc, at}               an achievement unlocked in a raid
 //   dust             {balanceMilli, deltaMilli, kind}    an admin changed the balance
 //   invite           {username, rewardMilli, balanceMilli, count, granted:[tier]}   a friend you invited counted
+//   streak           {kind:'play'|'win', streak, best, rewardMilli, nextMilli, reset}   a streak moved in a raid
 //   sessionRevoked   {}                                 then the stream closes
 //
 // Other modules call push(userId, type, data) (internal user id).
@@ -163,6 +164,16 @@ function onAch(msg) {
     push(msg.userId, 'ach', { id: def.id, name: def.name, desc: def.desc, at: Date.now() });
 }
 
+// ---- streaks moved in a raid: the owner's open menus ----
+
+function onStreak(msg) {
+    if (!msg.userId || (msg.kind !== 'play' && msg.kind !== 'win')) return;
+    push(msg.userId, 'streak', {
+        kind: msg.kind, streak: msg.streak | 0, best: msg.best | 0, rewardMilli: msg.rewardMilli | 0,
+        nextMilli: msg.nextMilli | 0, reset: !!msg.reset,
+    });
+}
+
 // ---- sessions: a revoked / expired session ends its stream ----
 
 function sessionAlive(stream, now) {
@@ -250,6 +261,7 @@ function start() {
             if (!msg) return;
             if (msg.t === 'rankUp') onRankUp(msg);
             else if (msg.t === 'ach') onAch(msg);
+            else if (msg.t === 'streak') onStreak(msg);
         }));
         // logouts / recovery / deletion kick the game sockets; the streams follow
         unsubs.push(bus.onGame(msg => { if (msg && msg.t === 'kick') checkSessions(msg.userId); }));

@@ -616,9 +616,16 @@ class Entity extends EventEmitter {
 
     refreshBodyAttributes() {
         const level = Math.min(Config.growth ? 120 : 45, this.level);
+        // raid growth (terrain/growth.js) sets its own speed cost below, so it
+        // stays out of the size-based slowdown
+        const grow = this.growthMult > 1 ? this.growthMult : 1;
+        this.sizeMultiplier = grow;
+        if ((this.isPlayer || this.isBot) && global.royaleMods && global.royaleMods.sizeMult && global.royaleMods.sizeMult !== 1) {
+            this.sizeMultiplier *= global.royaleMods.sizeMult;
+        }
         let speedReduce = Math.min(
             Config.growth ? 4 : 2,
-            this.size / (this.coreSize || this.SIZE)
+            this.size / (this.coreSize || this.SIZE) / grow
         );
         this.acceleration = (1 * global.gameManager.runSpeed * this.ACCELERATION) / speedReduce;
         if (this.settings.reloadToAcceleration) this.acceleration *= this.skill.acl;
@@ -654,7 +661,6 @@ class Entity extends EventEmitter {
         this.stealth = 1 * this.STEALTH;
         this.pushability = 1 * this.PUSHABILITY;
         this.knockback = this.KNOCKBACK ?? false;
-        this.sizeMultiplier = 1;
         this.recoilMultiplier = this.RECOIL_MULTIPLIER * 1;
         // shop passives and raid modifiers sit on top of the skill math
         if (this.bonusSpeedMult && this.bonusSpeedMult !== 1) {
@@ -667,9 +673,9 @@ class Entity extends EventEmitter {
         if ((this.isPlayer || this.isBot) && global.royaleMods) {
             const rm = global.royaleMods;
             if (rm.speedMult && rm.speedMult !== 1) { this.topSpeed *= rm.speedMult; this.acceleration *= rm.speedMult; }
-            if (rm.sizeMult && rm.sizeMult !== 1) this.sizeMultiplier = rm.sizeMult;
             if (rm.healthMult && rm.healthMult !== 1) this.health.set(this.health.max * rm.healthMult);
         }
+        if (grow > 1 && global.royaleGrowth) global.royaleGrowth.applyPerks(this);
         // damage twists reach the shots too: anything whose root is a tank
         if (global.royaleMods && global.royaleMods.damageMult && global.royaleMods.damageMult !== 1) {
             let root = this, hops = 0;
@@ -678,7 +684,10 @@ class Entity extends EventEmitter {
         }
     }
 
-    updateBodyInfo() { this.fov = 1 * this.FOV * 275 * Math.sqrt(this.size); }
+    updateBodyInfo() {
+        this.fov = 1 * this.FOV * 275 * Math.sqrt(this.size);
+        if (this.growthMult > 1 && global.royaleGrowth) this.fov *= global.royaleGrowth.fovMult(this.growthMult);
+    }
 
     bindToMaster(position, bond, isInvulnerable) {
         this.bond = bond;

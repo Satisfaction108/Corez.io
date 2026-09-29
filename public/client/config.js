@@ -12,6 +12,12 @@ const config = {
         interpolation: false,
         lerpAnimations: false,
         lowResolution: false,
+        // Performance toggles in the Graphics settings, all off by default
+        fewerEffects: false,
+        simpleTerrain: false,
+        noShake: false,
+        noGlow: false,
+        fpsCap30: false,
         coloredNest: false,
         colors: 'normal',
         pointy: true,

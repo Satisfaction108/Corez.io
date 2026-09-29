@@ -106,6 +106,10 @@ var gameDraw = {
 
     colorCache: {},
     modifyColor: (color, base = "16 0 1 0 false") => {
+        // An unmirrored colour is cached under its own string: skip the
+        // split and join, this runs many times a frame
+        const known = gameDraw.colorCache[color];
+        if (known !== undefined && color[0] !== "-" && color[0] !== "m") return known;
         // Split into array
         let colorDetails = color.split(" "),
             baseDetails = base.split(" ");

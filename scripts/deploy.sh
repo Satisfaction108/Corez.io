@@ -10,6 +10,10 @@ APP_NAME="${PM2_APP:-$(basename "$APP_DIR")}"
 
 cd "$APP_DIR"
 git pull --ff-only origin dig-wars
-npm install --no-audit --no-fund
+# --include=dev: the client build needs javascript-obfuscator even when the
+# shell has NODE_ENV=production. A failed build stops the script here and
+# leaves the previous build in place.
+npm install --no-audit --no-fund --include=dev
+npm run build
 pm2 restart "$APP_NAME" --update-env
 pm2 save

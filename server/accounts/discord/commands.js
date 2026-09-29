@@ -515,7 +515,9 @@ function profile(i, caller) {
     const s = require('../routes/profile').statsOf(row.id);
     const got = achievements.unlockedSet(row.id).size;
     const snap = rankStore.snapshot(row);
+    const st = require('../streaks').view(row.id);
     const n = v => (v | 0).toLocaleString('en-US');
+    const days = v => n(v) + ((v | 0) === 1 ? ' day' : ' days');
     const embed = {
         title: md(row.username),
         color: COLOR,
@@ -529,6 +531,8 @@ function profile(i, caller) {
             { name: 'Top 3s', value: n(s.top3), inline: true },
             { name: 'Gems banked', value: n(s.gemsBanked), inline: true },
             { name: 'Best game', value: n(s.bestLife) + ' pts', inline: true },
+            { name: 'Play streak', value: days(st.play.current) + ' (best ' + n(st.play.best) + ')', inline: true },
+            { name: 'Win streak', value: n(st.win.current) + ' (best ' + n(st.win.best) + ')', inline: true },
         ],
         footer: { text: row.public_id + ' · playing since ' + new Date(row.created_at).toISOString().slice(0, 10) },
     };

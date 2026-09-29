@@ -50,12 +50,17 @@ import * as cosmetics from './account/cosmetics.js';
         controlsArray = [],
         defaultKeybinds = {},
         keybinds = {};
+    // Graphics > Performance switches for slow machines. Off by default.
+    const PERF_TOGGLES = ["optFewerFx", "optSimpleTerrain", "optNoShake", "optNoGlow", "opt30Fps"];
 
-    // qa hook: forwards a packet to the live socket (server ignores debug packets unless enabled)
-    window.royaleTalk = (...m) => { try { return global.socket && global.socket.talk && global.socket.talk(...m); } catch (e) { return e; } };
-    window.royaleState = () => global;
-    // console helper for trying items on a local server: window.dwGems(10000)
-    window.dwGems = (n = 10000) => window.royaleTalk("DBG", "gems", n | 0);
+    // qa hooks, local servers only: forward a packet to the socket, read the
+    // state, and window.dwGems(10000) for trying items
+    const localHost = /^(localhost|127\.0\.0\.1|\[::1\]|.+\.localhost|.+\.test)$/.test(location.hostname);
+    if (localHost) {
+        window.royaleTalk = (...m) => { try { return global.socket && global.socket.talk && global.socket.talk(...m); } catch (e) { return e; } };
+        window.royaleState = () => global;
+        window.dwGems = (n = 10000) => window.royaleTalk("DBG", "gems", n | 0);
+    }
     // The server sends the menu only when it changes, so anything cleared
     // here stays gone until the next evolve. The slide-out clear must never
     // outlive its menu, or it wipes the next life's menu when that one slides
@@ -235,6 +240,7 @@ import * as cosmetics from './account/cosmetics.js';
         util.retrieveFromLocalStorage("showCrosshair");
         util.retrieveFromLocalStorage("showJoystick");
         util.retrieveFromLocalStorage("optFullHD");
+        for (const id of PERF_TOGGLES) util.retrieveFromLocalStorage(id);
         util.retrieveFromLocalStorage("optUiScale");
 
         util.retrieveFromLocalStorage("optIncognitoMode");
@@ -1175,6 +1181,14 @@ import * as cosmetics from './account/cosmetics.js';
         config.graphical.coloredNest = true;      
         config.graphical.slowerFOV = document.getElementById("optSlowerFOV").checked;
         config.graphical.optimizeMode = document.getElementById("optOptimizeMode").checked;
+        {
+            const on = (id) => { const el = document.getElementById(id); return !!(el && el.checked); };
+            config.graphical.fewerEffects = on("optFewerFx");
+            config.graphical.simpleTerrain = on("optSimpleTerrain");
+            config.graphical.noShake = on("optNoShake");
+            config.graphical.noGlow = on("optNoGlow");
+            config.graphical.fpsCap30 = on("opt30Fps");
+        }
 
         global.GUIStatus.renderGUI = document.getElementById("optRenderGui").checked;
         global.GUIStatus.renderLeaderboard = document.getElementById("optRenderLeaderboard").checked;
@@ -1364,6 +1378,7 @@ import * as cosmetics from './account/cosmetics.js';
         util.submitToLocalStorage("showCrosshair");
         util.submitToLocalStorage("showJoystick");
         util.submitToLocalStorage("optFullHD");
+        for (const id of PERF_TOGGLES) util.submitToLocalStorage(id);
         util.submitToLocalStorage("optUiScale");
 
         util.submitToLocalStorage("optIncognitoMode");
@@ -1592,7 +1607,7 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     // dev console handle (module-scoped state is otherwise unreachable)
-    window.dwDebug = global;
+    if (localHost) window.dwDebug = global;
 
     const fontWidth = "bold";
     function measureText(text, fontSize, withHeight = false) {
@@ -1623,6 +1638,21 @@ import * as cosmetics from './account/cosmetics.js';
         return textArray;
     }
 
+    // Widths of coloured runs in drawText's font, which is fixed apart from
+    // the size. Run text like the kill feed repeats every frame.
+    const runWidths = new Map();
+    // a web font arriving changes every width
+    try { document.fonts.addEventListener("loadingdone", () => runWidths.clear()); } catch (e) { }
+    function runWidth(context, size, text) {
+        const k = size + "|" + text;
+        let w = runWidths.get(k);
+        if (w === undefined) {
+            w = context.measureText(text).width;
+            if (runWidths.size > 600) runWidths.clear();
+            runWidths.set(k, w);
+        }
+        return w;
+    }
     function drawText(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
         size += config.graphical.fontSizeBoost;
 
@@ -1648,8 +1678,11 @@ import * as cosmetics from './account/cosmetics.js';
             case "right":
                 alignMultiplier = 1;
         }
-        if (alignMultiplier) {
-            Xoffset -= context.measureText(renderedFullText).width * alignMultiplier;
+        // one colour run: let the canvas align it rather than measure it
+        // (damage numbers change size every frame, so no cache would hit)
+        const nativeAlign = alignMultiplier && textArray.length === 1;
+        if (alignMultiplier && !nativeAlign) {
+            Xoffset -= runWidth(context, size, renderedFullText) * alignMultiplier;
         }
 
         let strokeRatio = typeof stroke === "number" ? stroke : config.graphical.fontStrokeRatio;
@@ -1659,6 +1692,7 @@ import * as cosmetics from './account/cosmetics.js';
         context.strokeStyle = color.black;
         context.fillStyle = defaultFillStyle;
         context.save();
+        if (nativeAlign) context.textAlign = align;
         context.lineCap = "round";
         context.lineJoin = "round";
         if (fade < 1) context.globalAlpha *= Math.max(0, fade);
@@ -1686,7 +1720,7 @@ import * as cosmetics from './account/cosmetics.js';
             } else {
 
                 if (i) {
-                    Xoffset += context.measureText(textArray[i - 2] + str).width - context.measureText(str).width;
+                    Xoffset += runWidth(context, size, textArray[i - 2] + str) - runWidth(context, size, str);
                 }
                 context.fillText(str, Xoffset, Yoffset);
             }
@@ -2260,7 +2294,7 @@ import * as cosmetics from './account/cosmetics.js';
 
             // Carrier glow: halo plus a breathing rim, scaled by the synced
             // glow rung (1-6, matching the satchel size rungs).
-            const glowRung = (!turretInfo && !global.lowFx && (instance.gemGlow | 0)) || 0;
+            const glowRung = (!turretInfo && !glowOff() && (instance.gemGlow | 0)) || 0;
             if (glowRung > 0) {
                 const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 480);
                 const haloR = drawSize * (1.45 + 0.22 * glowRung);
@@ -2424,7 +2458,7 @@ import * as cosmetics from './account/cosmetics.js';
                     gameDraw.setColor(context, bodyColor);
 
                     const glow = m.glow;
-                    const glowRadius = glow.radius;
+                    const glowRadius = config.graphical.noGlow ? 0 : glow.radius;
 
                     if (glowRadius > 0) {
 
@@ -2555,6 +2589,21 @@ import * as cosmetics from './account/cosmetics.js';
     // Sizes are quantised so a zooming class tree does not mint a bitmap
     // every frame.
     const upgTileCache = new Map();
+    // Tank pictures by class index. Building one walks every gun and turret
+    // of the class, so the tree, tiles and death card keep them between frames.
+    const mockupPics = new Map();
+    function mockupPicture(index, col) {
+        const k = index + "|" + col;
+        const hit = mockupPics.get(k);
+        if (hit && hit.mockups === global.mockups) return hit.pic;
+        const pic = util.getEntityImageFromMockup(index, col);
+        // one built before its mockup arrived is a placeholder: don't keep it
+        if (String(index).split("-").every(i => global.mockups[parseInt(i)])) {
+            if (mockupPics.size > 300) mockupPics.clear();
+            mockupPics.set(k, { pic, mockups: global.mockups });
+        }
+        return pic;
+    }
     let upgFontOk = false;
     const UPG_BAND = 0.25;              // name band, fraction of the face
     const UPG_LIP = 4;                  // lip depth at a 100-unit tile
@@ -2594,7 +2643,7 @@ import * as cosmetics from './account/cosmetics.js';
     }
     // state: 0 idle, 1 hover, 2 pressed. key: keycap label or false.
     function drawUpgradeTile(model, x, y, len, height, colorIndex, key, state = 0, angle = -Math.PI / 4, lineWidthMult = 1, alpha = 1) {
-        const picture = (typeof model == "object") ? model : util.getEntityImageFromMockup(model, gui.color);
+        const picture = (typeof model == "object") ? model : mockupPicture(model, gui.color);
         const position = picture.position;
         const t = ctx[2].getTransform();
         const dpr = Math.hypot(t.a, t.b) || 1;
@@ -4060,7 +4109,7 @@ import * as cosmetics from './account/cosmetics.js';
         c.save();
         c.globalAlpha = alpha * (0.5 + 0.25 * pulse);
         const hr = R * (2.1 + 0.15 * pulse);
-        c.drawImage(haloSprite("bossaura|" + tint, tint, [[0, 0.6], [0.45, 0.22], [1, 0]]), x - hr, y - hr, hr * 2, hr * 2);
+        if (!config.graphical.noGlow) c.drawImage(haloSprite("bossaura|" + tint, tint, [[0, 0.6], [0.45, 0.22], [1, 0]]), x - hr, y - hr, hr * 2, hr * 2);
         c.globalAlpha = alpha * 0.75;
         c.strokeStyle = col; c.lineCap = "round";
         c.lineWidth = Math.max(1.5, R * 0.05);
@@ -6029,8 +6078,15 @@ import * as cosmetics from './account/cosmetics.js';
     }
     // Title text, centred on y. Lilita One from HUD.titleMin up; smaller
     // labels are Rubik bold. A thin dark rim keeps either readable.
+    const hudFonts = new Map();
     function hudFont(size) {
-        return size >= HUD.titleMin ? size + "px " + HUD.font : "700 " + (size * 0.94).toFixed(2) + "px " + HUD.ui;
+        let f = hudFonts.get(size);
+        if (f === undefined) {
+            f = size >= HUD.titleMin ? size + "px " + HUD.font : "700 " + (size * 0.94).toFixed(2) + "px " + HUD.ui;
+            if (hudFonts.size > 400) hudFonts.clear();
+            hudFonts.set(size, f);
+        }
+        return f;
     }
     function hudTitle(text, x, y, size, col, align = "left", alpha = 1, c = ctx[2]) {
         size += config.graphical.fontSizeBoost;
@@ -6434,7 +6490,7 @@ import * as cosmetics from './account/cosmetics.js';
     }
     // Soft light under every chest so they read from far away.
     function drawChestGlow(roomX, roomY, ratio) {
-        if (!royaleActive() || global.lowFx) return;
+        if (!royaleActive() || glowOff()) return;
         const list = (global.royale && global.royale.chests) || [];
         if (!list.length) return;
         const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
@@ -6529,7 +6585,7 @@ import * as cosmetics from './account/cosmetics.js';
         const fade = Math.min(1, left / 8);
         const c = ctx[0];
         c.save();
-        if (!global.lowFx) {
+        if (!glowOff()) {
             const spr = haloSprite("bloom", "255,205,90", [[0, 1], [0.7, 0.46], [1, 0]]);
             c.globalAlpha = (0.28 + 0.10 * pulse) * fade;
             const rr = R * 1.15;
@@ -6590,6 +6646,9 @@ import * as cosmetics from './account/cosmetics.js';
     // halos, vignettes and half the debris go away; they come back once the
     // frame rate has been healthy for a while. Resolution never changes.
     const fxQ = { last: 0, ema: 16.7, slowSince: 0, fastSince: 0 };
+    // Glows and halos go when the automatic trim kicks in or the player
+    // turned on "No Glow".
+    const glowOff = () => global.lowFx || config.graphical.noGlow;
     function tickAdaptiveQuality() {
         const now = performance.now();
         if (fxQ.last) {
@@ -7138,7 +7197,8 @@ import * as cosmetics from './account/cosmetics.js';
             const a = (inT * inT * (3 - 2 * inT)) * Math.max(0, outT);
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
             const col = t.kind === "override" || t.kind === "late" ? "#c9a8ff" : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
-                : t.kind === "chest" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b" : color.guiwhite;
+                : t.kind === "chest" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
+                : t.kind === "grown" ? HUD.emerald : color.guiwhite;
             const base = t.kind === "streak" ? 16 : 23, size = base * pop;
             const len = (Math.max(hudTitleW(t.text, base), t.sub ? hudTextW(t.sub, 12.5) : 0) + 44) * pop;
             const extra = (t.pts || t.sub) ? 22 * pop : 0;
@@ -7650,11 +7710,11 @@ import * as cosmetics from './account/cosmetics.js';
             c.fillStyle = "#08060c";
             c.fillRect(0, 0, sw, shh);
             c.globalAlpha = dimA;
-            c.drawImage(vignetteSprite(sw, shh, 0.5, "8,6,12"), 0, 0, sw, shh);
+            if (!config.graphical.noGlow) c.drawImage(vignetteSprite(sw, shh, 0.5, "8,6,12"), 0, 0, sw, shh);
         }
         // rays turning behind the icon
         const rayA = ramp(age, t0, t0 + 320) * out;
-        if (rayA > 0.01) {
+        if (rayA > 0.01 && !config.graphical.fewerEffects) {
             const rr = 250 * (0.5 + 0.5 * easeOut(ramp(age, t0, t0 + 520))) * (1 + 0.04 * Math.sin(now / 300));
             c.save();
             c.globalAlpha = rayA * 0.6;
@@ -7667,7 +7727,7 @@ import * as cosmetics from './account/cosmetics.js';
             c.restore();
             c.globalAlpha = rayA * 0.8;
             const hr = S * 1.25;
-            c.drawImage(haloSprite("kitnew|" + tint, tint, [[0, 0.9], [0.5, 0.35], [1, 0]]), iconX - hr, iconY - hr, hr * 2, hr * 2);
+            if (!config.graphical.noGlow) c.drawImage(haloSprite("kitnew|" + tint, tint, [[0, 0.9], [0.5, 0.35], [1, 0]]), iconX - hr, iconY - hr, hr * 2, hr * 2);
         }
         // the burst: a white shockwave and sparks thrown out as the icon lands
         if (!calm && age > t0 && age < t0 + 1000) {
@@ -7680,7 +7740,7 @@ import * as cosmetics from './account/cosmetics.js';
                 c.stroke();
             }
             const st = ramp(age, t0 + 30, t0 + 1000);
-            for (let i = 0; i < 16; i++) {
+            for (let i = 0; i < (config.graphical.fewerEffects ? 0 : 16); i++) {
                 const a = i / 16 * Math.PI * 2 + (i & 1 ? 0.18 : -0.08);
                 const d = S * (0.5 + (0.9 + (i % 3) * 0.3) * easeOut(st));
                 const sz = (i % 3 === 0 ? 11 : 7) * (1 - st);
@@ -7747,7 +7807,7 @@ import * as cosmetics from './account/cosmetics.js';
         // one baked size, scaled: a sprite per frame's size would thrash the cache
         const spr = kitIconSprite(u.id, S);
         c.save();
-        if (fly > 0 && slotLive && !calm) {
+        if (fly > 0 && slotLive && !calm && !config.graphical.fewerEffects) {
             // a short trail of sparks behind it in flight
             for (let k = 1; k <= 5; k++) {
                 const f = Math.max(0, fly - k * 0.05);
@@ -8206,8 +8266,8 @@ import * as cosmetics from './account/cosmetics.js';
                 const eo = 1 - Math.pow(1 - t, 3);
                 c.save();
                 if (t < 0.18) { c.globalAlpha = (1 - t / 0.18) * 0.6; c.fillStyle = "#ffffff"; c.fillRect(0, 0, sw, shh); }
-                if (t < 0.7 && !global.lowFx) { c.globalAlpha = (1 - t / 0.7) * 0.5; c.drawImage(vignetteSprite(sw, shh, 0.35, tint), 0, 0, sw, shh); }
-                {
+                if (t < 0.7 && !glowOff()) { c.globalAlpha = (1 - t / 0.7) * 0.5; c.drawImage(vignetteSprite(sw, shh, 0.35, tint), 0, 0, sw, shh); }
+                if (!config.graphical.noGlow) {
                     const hr = (80 + 520 * eo) * ratio;
                     c.globalAlpha = Math.max(0, 1 - t * 1.4) * 0.9;
                     c.drawImage(haloSprite("bossdead|" + tint, tint, [[0, 1], [0.4, 0.55], [1, 0]]), sx - hr, sy - hr, hr * 2, hr * 2);
@@ -8231,7 +8291,7 @@ import * as cosmetics from './account/cosmetics.js';
                     c.beginPath(); c.arc(sx, sy, Rw, 0, Math.PI * 2); c.stroke();
                 }
                 const fadeA = t < 0.55 ? 1 : 1 - (t - 0.55) / 0.45;
-                for (const sp of f.sparks) {
+                for (const sp of config.graphical.fewerEffects ? [] : f.sparks) {
                     const r2 = eo * sp.sp * 420 * ratio, r1 = r2 * 0.55;
                     c.globalAlpha = fadeA * 0.95;
                     c.strokeStyle = sp.white ? "#ffffff" : bcol;
@@ -8239,7 +8299,7 @@ import * as cosmetics from './account/cosmetics.js';
                     c.beginPath(); c.moveTo(sx + Math.cos(sp.ang) * r1, sy + Math.sin(sp.ang) * r1); c.lineTo(sx + Math.cos(sp.ang) * r2, sy + Math.sin(sp.ang) * r2); c.stroke();
                 }
                 c.globalAlpha = fadeA;
-                for (let pi = 0; pi < f.parts.length; pi += global.lowFx ? 2 : 1) {
+                for (let pi = 0; pi < f.parts.length; pi += config.graphical.fewerEffects ? 3 : global.lowFx ? 2 : 1) {
                     const p = f.parts[pi];
                     const dist = eo * p.sp * 380 * ratio;
                     const gx = sx + Math.cos(p.ang) * dist, gy = sy + Math.sin(p.ang) * dist + 60 * ratio * t * t;
@@ -8314,14 +8374,14 @@ import * as cosmetics from './account/cosmetics.js';
             const k = Math.max(0.75, Math.min(2.2, (b.size || 30) / 30)) * ratio;
             const reach = (b.self ? 250 : 140) * k;
             c.save();
-            if (b.self && t < 0.6) {
+            if (b.self && t < 0.6 && !config.graphical.noGlow) {
                 const rgb = toRgb(b.shades[0]) || { r: 200, g: 200, b: 200 };
                 const tint = rgb.r + "," + rgb.g + "," + rgb.b;
                 const hr = (70 + 220 * eo) * k;
                 c.globalAlpha = (1 - t / 0.6) * 0.75;
                 c.drawImage(haloSprite("ko|" + tint, tint, [[0, 1], [0.45, 0.5], [1, 0]]), sx - hr, sy - hr, hr * 2, hr * 2);
             }
-            for (const sm of b.smoke) {
+            for (const sm of config.graphical.fewerEffects ? [] : b.smoke) {
                 const d = sm.d * reach * eo;
                 c.globalAlpha = 0.3 * (1 - t);
                 c.fillStyle = "#1c1720";
@@ -8346,7 +8406,8 @@ import * as cosmetics from './account/cosmetics.js';
             c.strokeStyle = HUD.line;
             c.lineWidth = Math.max(1, 1.6 * k);
             c.lineJoin = "round";
-            for (const p of b.parts) {
+            for (let pi = 0; pi < b.parts.length; pi += config.graphical.fewerEffects ? 2 : 1) {
+                const p = b.parts[pi];
                 const d = eo * p.sp * reach;
                 const s2 = p.size * k * (1 - t * 0.45);
                 c.save();
@@ -8939,12 +9000,14 @@ import * as cosmetics from './account/cosmetics.js';
         const ko = koAge >= 0 && koAge < 1100 ? 1 - koAge / 1100 : 0;
 
         if (lowHpLevel < 0.004 && hurt < 0.01 && dead < 0.01 && cele < 0.01 && ko < 0.01) return;
+        // "No Glow" keeps the knockout blink but drops the edge tints
+        const tints = !config.graphical.noGlow;
 
         const c = ctx[2];
         const w = global.screenWidth, h = global.screenHeight;
         const r = Math.hypot(w, h) / 2;
 
-        if (lowHpLevel >= 0.004) {
+        if (tints && lowHpLevel >= 0.004) {
             // heartbeat: ~1.1s at the threshold tightening to ~0.42s near death.
             const period = 1100 - 680 * lowHpLevel;
             const pulse = 0.5 + 0.5 * Math.sin(now / (period / (2 * Math.PI)));
@@ -8956,19 +9019,19 @@ import * as cosmetics from './account/cosmetics.js';
             c.restore();
         }
 
-        if (hurt > 0.01) {
+        if (tints && hurt > 0.01) {
             c.save();
             c.globalAlpha = 0.34 * hurt;
             c.drawImage(vignetteSprite(w, h, 0.52, "210,28,28"), 0, 0, w, h);
             c.restore();
         }
-        if (cele > 0.01) {
+        if (tints && cele > 0.01) {
             c.save();
             c.globalAlpha = 0.34 * cele;
             c.drawImage(vignetteSprite(w, h, 0.5, "239,199,75"), 0, 0, w, h);
             c.restore();
         }
-        if (dead > 0.01) {
+        if (tints && dead > 0.01) {
             c.save();
             c.globalAlpha = 0.28 * dead;
             c.drawImage(vignetteSprite(w, h, 0.58, "255,255,255"), 0, 0, w, h);
@@ -8983,7 +9046,7 @@ import * as cosmetics from './account/cosmetics.js';
                 c.fillRect(0, 0, w, h);
             }
             c.globalAlpha = 0.7 * ko;
-            c.drawImage(vignetteSprite(w, h, 0.4, "190,18,18"), 0, 0, w, h);
+            if (tints) c.drawImage(vignetteSprite(w, h, 0.4, "190,18,18"), 0, 0, w, h);
             c.restore();
         }
     }
@@ -9020,7 +9083,7 @@ import * as cosmetics from './account/cosmetics.js';
         const a = (0.035 + 0.10 * t) + (0.03 + 0.13 * t) * beat;
         // the vignette closes in as the load grows
         const inner = 0.80 - 0.20 * t - 0.03 * beat;
-        if (global.lowFx) return;
+        if (glowOff()) return;
         c.save();
         c.globalAlpha = a;
         c.drawImage(vignetteSprite(w, h, inner, rgb), 0, 0, w, h);
@@ -10886,7 +10949,7 @@ import * as cosmetics from './account/cosmetics.js';
         hudWell(c, lx, ly, COLW, 210, 12, HUD.well, HUD.ink, 2);
         c.restore();
         try {
-            const picture = util.getEntityImageFromMockup(gui.type, gui.color);
+            const picture = mockupPicture(gui.type, gui.color);
             const position = global.mockups[parseInt(gui.type.split("-")[0])].position;
             const len = 104;
             const scale = len / position.axis;
@@ -11122,6 +11185,7 @@ import * as cosmetics from './account/cosmetics.js';
     };
     const applyScreenShake = (type = "camera", returnOption = false) => {
         let properties = type == "gui" ? config.graphical.shakeProperties.UIShake : config.graphical.shakeProperties.CameraShake;
+        if (config.graphical.noShake) { properties.shakeStartTime = -1; return; }
         var cdx = 0;
         var cdy = 0;
         if (properties.shakeStartTime == -1) return;
@@ -11761,6 +11825,7 @@ import * as cosmetics from './account/cosmetics.js';
     (!/Chrome\/8[4-6]\.0\.41([4-7][0-9]|8[0-3])\./.test(navigator.userAgent) &&
       window.requestAnimationFrame) ||
     ((a) => setTimeout(() => a(Date.now()), 1e3 / 60));
+    let lastCappedFrame = -1e9;
     function animloop(tick) {
         if (document.getElementById("gameAreaWrapper").style.display === "none") {
             hideJoinState();
@@ -11769,6 +11834,13 @@ import * as cosmetics from './account/cosmetics.js';
         }
         animationFrame(animloop);
         try { autoResTick(performance.now()); } catch (e) { }
+        // 30 FPS cap: draw on a 30 Hz grid, taking the screen refresh that
+        // lands closest (every other one at 60 Hz, every fourth at 120 Hz)
+        if (config.graphical.fpsCap30) {
+            const due = lastCappedFrame + 1000 / 30;
+            if (tick < due - 6) return;
+            lastCappedFrame = tick - due > 30 ? tick : due;   // after a stall, start the grid again
+        }
         renderFrame(tick);
     }
     // One frame of the game, separate from the scheduler so QA tooling can
@@ -11776,7 +11848,7 @@ import * as cosmetics from './account/cosmetics.js';
     window.dwRenderFrame = renderFrame;
     function renderFrame(tick) {
         // Hit-stop: hold the last frame for a beat when a rock is destroyed
-        if (global.hitStop && Date.now() < global.hitStop) return;
+        if (global.hitStop && Date.now() < global.hitStop && !config.graphical.noShake) return;
         if (global.gameStart) {
 
             let fovtickMotion = fovlasttick ? tick - fovlasttick : null;

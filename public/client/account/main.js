@@ -300,6 +300,7 @@ async function boot() {
         openPane,
         onStoreReset() { menu.render(); dailyQuests.refresh(); },
         onInvite: () => invite.onEvent(),
+        onStreak: () => { dailyQuests.refresh(); refresh(true); },
     });
     // SOLO | DUOS and the duo party panel (guests too)
     try { party.init(); } catch (e) { console.error('[party] init failed', e); }

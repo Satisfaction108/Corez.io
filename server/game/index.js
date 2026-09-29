@@ -1627,6 +1627,7 @@ class gameHandler {
         }, Config.regenerate_tick);
 
         const mineBudget = new Map(); 
+        const bulletRockHits = [];
 
         const announceEmerald = (miner) => {
             const who = miner && miner.name ? miner.name : "An unnamed player";
@@ -1637,6 +1638,8 @@ class gameHandler {
             while (m.master && m.master !== m && hops++ < 4) m = m.master;
             return m;
         };
+        // a grown tank (terrain/growth.js) touches and shoots more rock at once
+        const growMine = (e) => (e.growthMult > 1 && global.royaleGrowth) ? global.royaleGrowth.mineMult(e.growthMult) : 1;
 
         const crush = (instance, ms) => {
             if (!instance.health || !(instance.health.max > 0)) return;
@@ -1801,7 +1804,7 @@ class gameHandler {
                                 if (rock) {
                                     let mb = mineBudget.get(instance.id);
                                     if (!mb || nowT - mb.t >= 1000) {
-                                        mb = { t: nowT, left: _tg.baseRockHealth * 1.5 };
+                                        mb = { t: nowT, left: _tg.baseRockHealth * 1.5 * growMine(instance) };
                                         mineBudget.set(instance.id, mb);
                                     }
                                     const dmg = Math.min(instance.grindAcc, mb.left);
@@ -1851,23 +1854,27 @@ class gameHandler {
                         if (instance.isDead?.()) continue;
                     }
 
-                    const rock = _tg.rockHitByCircle(instance.x, instance.y, instance.realSize)
-                        || (growingNow ? _tg.growingRockHitByCircle(instance.x, instance.y, instance.realSize, tickNow) : null);
-                    if (rock) {
+                    // A shot landing on a seam between cells chips every cell it
+                    // touches, then dies once like a single hit.
+                    const hitRocks = _tg.rocksHitByCircle(instance.x, instance.y, instance.realSize, bulletRockHits);
+                    if (growingNow) _tg.growingRocksHitByCircle(instance.x, instance.y, instance.realSize, tickNow, hitRocks);
+                    if (hitRocks.length) {
                         const owner = rootMaster(instance);
                         const nowT = Date.now();
                         let mb = mineBudget.get(owner.id);
                         if (!mb || nowT - mb.t >= 1000) {
-                            mb = { t: nowT, left: _tg.baseRockHealth * 3 };
+                            mb = { t: nowT, left: _tg.baseRockHealth * 3 * growMine(owner) };
                             mineBudget.set(owner.id, mb);
                         }
 
                         const rp = instance.rockPower || 0;
                         const raw = _tg.baseRockHealth * mining.rockDamageFor(owner, instance)
                                   * mining.skillFactor(owner) * (rp || 1);
-                        // lance bolts are rate-limited by their own reload, not the budget
-                        const dmg = rp ? raw : Math.min(raw, mb.left);
-                        if (dmg > 0) {
+                        for (let hi = 0; hi < hitRocks.length; hi++) {
+                            const rock = hitRocks[hi];
+                            // lance bolts are rate-limited by their own reload, not the budget
+                            const dmg = rp ? raw : Math.min(raw, mb.left);
+                            if (!(dmg > 0)) break;
                             mb.left -= dmg;
                             const wasGrowing = rock.growing;
                             const destroyed = _tg.damageRock(rock, dmg, instance.x, instance.y, false, owner);
@@ -1883,6 +1890,7 @@ class gameHandler {
                                 }
                             }
                         }
+                        hitRocks.length = 0;
 
                         instance.velocity.x = 0; instance.velocity.y = 0;
                         instance.accel.x = 0;    instance.accel.y = 0;

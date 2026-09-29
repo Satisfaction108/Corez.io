@@ -102,10 +102,52 @@ mimeSet = {
 // page); undefined when the path is malformed (400). Traversal is clamped by
 // normalising against "/" and re-checking against the resolved root; dotfiles
 // (.env, .DS_Store, .git) are never served.
-const publicRootAbs = path.resolve(publicRoot);
-let publicRootReal = publicRootAbs;
-try { publicRootReal = fs.realpathSync(publicRootAbs); } catch (e) { /* keep the resolved path */ }
 const insideDir = (dir, file) => file === dir || file.startsWith(dir + path.sep);
+function rootOf(dir) {
+    const abs = path.resolve(dir);
+    let real = abs;
+    try { real = fs.realpathSync(abs); } catch (e) { /* keep the resolved path */ }
+    return { abs, real };
+}
+const publicRootDir = rootOf(publicRoot);
+const publicRootAbs = publicRootDir.abs;
+
+// Production serves client JS from build/public (npm run build, see
+// scripts/build-client.js); html/css/images still come from public/.
+// CLIENT_BUILD=obfuscated|source forces a mode, otherwise NODE_ENV=production
+// picks the build. In build mode nothing script-like (.js, .jssave, .map...)
+// is ever read from public/, so stray readable copies stay private.
+const buildRoot = path.join(__dirname, "../build/public");
+const SCRIPT_LIKE = /\.(m?js\w*|map)$/i;
+const clientBuild = (() => {
+    const want = process.env.CLIENT_BUILD || (process.env.NODE_ENV === "production" ? "obfuscated" : "source");
+    if (want !== "obfuscated") return null;
+    let manifest;
+    try {
+        manifest = JSON.parse(fs.readFileSync(path.join(buildRoot, ".client-build.json"), "utf8"));
+    } catch (e) {
+        console.error("[client] no obfuscated build in build/public (run `npm run build`); serving readable source");
+        return null;
+    }
+    // Warn when the build is behind the source, e.g. a pull without a rebuild.
+    const stale = [];
+    const walk = (dir, rel) => {
+        for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (ent.name.startsWith(".")) continue;
+            const r = rel ? rel + "/" + ent.name : ent.name;
+            if (ent.isDirectory()) walk(path.join(dir, ent.name), r);
+            else if (/\.m?js$/.test(ent.name)) {
+                const sha = crypto.createHash("sha1").update(fs.readFileSync(path.join(dir, ent.name))).digest("hex");
+                if (manifest.files[r] !== sha) stale.push(r);
+            }
+        }
+    };
+    try { walk(publicRootAbs, ""); } catch (e) { /* only a warning */ }
+    if (stale.length) console.error(`[client] obfuscated build is out of date for ${stale.length} file(s) (${stale.slice(0, 5).join(", ")}); run \`npm run build\``);
+    console.log(`[client] serving obfuscated client built ${manifest.builtAt}`);
+    return rootOf(buildRoot);
+})();
+
 function publicFile(pathname) {
     let rel;
     try {
@@ -117,12 +159,13 @@ function publicFile(pathname) {
     // Backslash is a separator on Windows; treat it as one everywhere.
     const normal = path.posix.normalize("/" + rel.replace(/\\/g, "/"));
     if (normal.split("/").some((seg) => seg.startsWith("."))) return null;
-    const file = path.resolve(publicRootAbs, "." + normal);
-    if (!insideDir(publicRootAbs, file)) return null;
+    const root = clientBuild && SCRIPT_LIKE.test(normal) ? clientBuild : publicRootDir;
+    const file = path.resolve(root.abs, "." + normal);
+    if (!insideDir(root.abs, file)) return null;
     try {
         // lstat: symlinks are not served.
         if (!fs.lstatSync(file).isFile()) return null;
-        if (!insideDir(publicRootReal, fs.realpathSync(file))) return null;
+        if (!insideDir(root.real, fs.realpathSync(file))) return null;
     } catch (e) {
         return null;
     }
