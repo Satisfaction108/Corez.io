@@ -133,6 +133,7 @@ function sendStatus() {
 
 // KO first so the client stops its auto-reconnect, then the raid cleanup
 // (a resume snapshot only if the caller didn't mark leftOnPurpose), then the socket.
+const STALE_MS = 5000;
 function kickOut(socket, reason) {
     try { socket.talk('KO', String(reason)); } catch (e) { /* closing anyway */ }
     if (Config.dig_royale && !socket._drCleaned) {
@@ -169,9 +170,15 @@ function onConnect(socket, req, socketManager) {
 
     // Newest session wins. KO turns off the kicked tab's auto-reconnect, so
     // there is no loop. Don't rate-limit this: flaky wifi leaves half-open
-    // sockets behind on every reconnect.
+    // sockets behind on every reconnect. An old socket that has gone quiet
+    // (no packet or pong for STALE_MS; sockets.js pings every 3 s) is that
+    // half-open leftover, most likely this same tab coming back: its raid is
+    // saved for the resume instead of thrown away.
+    const t = Date.now();
     for (const o of socketManager.clients.slice()) {
-        if (o !== socket && o.account && o.account.id === user.id) { o.leftOnPurpose = true; kickOut(o, 'You logged in on another tab or device.'); }
+        if (o === socket || !o.account || o.account.id !== user.id) continue;
+        if (!(o._seenAt && t - o._seenAt > STALE_MS)) o.leftOnPurpose = true;
+        kickOut(o, 'You logged in on another tab or device.');
     }
     try { accounts.bus.toMain({ t: 'join', userId: user.id, sid: socket.id }); } catch (e) { /* */ }
 }

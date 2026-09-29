@@ -10,6 +10,7 @@ const url = require("url");
 const crypto = require("crypto");
 const pjson = require('../package.json')
 const { clientIp } = require("./lib/clientIp.js");
+const { clientVersion, stampHtml } = require("./lib/clientVersion.js");
 
 const { Worker } = require("worker_threads");
 
@@ -147,6 +148,8 @@ const clientBuild = (() => {
     console.log(`[client] serving obfuscated client built ${manifest.builtAt}`);
     return rootOf(buildRoot);
 })();
+const currentClient = clientVersion({ publicDir: publicRootAbs, buildDir: clientBuild ? buildRoot : null });
+const menuPage = path.resolve(publicRoot, Config.main_menu);
 
 function publicFile(pathname) {
     let rel;
@@ -176,6 +179,14 @@ function sendStatic(res, file) {
     const extension = file.split(".").pop();
     // No heuristic caching: a client must never run a stale app.js
     // against a freshly restarted server.
+    if (path.resolve(file) === menuPage) {
+        fs.readFile(file, "utf8", (err, html) => {
+            if (err) { res.writeHead(500); res.end(); return; }
+            res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-cache" });
+            res.end(stampHtml(html, currentClient()));
+        });
+        return;
+    }
     res.writeHead(200, { "Content-Type": mimeSet[extension] || "text/html", "Cache-Control": "no-cache" });
     fs.createReadStream(file).on("error", () => res.destroy()).pipe(res);
 }
@@ -254,6 +265,12 @@ server = http.createServer((req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    // open tabs poll this to notice a deploy (public/client/version.js)
+    if (req.url.split("?")[0] === "/api/version" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ v: currentClient() }));
+        return;
+    }
     // /api/*, /auth/*, /discord/* belong to accounts (before the CORS block,
     // so account responses never carry Access-Control-Allow-Origin)
     if (accounts.handleHttp(req, res)) return;

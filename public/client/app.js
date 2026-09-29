@@ -11195,7 +11195,7 @@ import * as cosmetics from './account/cosmetics.js';
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
         // a rank-up still to play on the card holds the respawn (8 s at most)
         const rankHold = rankPanel.holdsRespawn() && waitMs > -8000;
-        if (!locked && global.raidRespawnAt > 0 && waitMs <= 0 && !global.disconnected && !global.respawnPending && !rankCeremony.isPlaying() && !rankHold) {
+        if (!locked && global.raidRespawnAt > 0 && waitMs <= 0 && !global.disconnected && !global.respawnPending && !rankCeremony.isPlaying() && !rankHold && !global.updateHoldsRespawn) {
             try { global.canvas.respawn(); } catch { /* */ }
         }
         drawText(locked

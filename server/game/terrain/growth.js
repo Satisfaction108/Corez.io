@@ -24,11 +24,16 @@ function enabled() {
     return !!(Config.dig_royale && Config.royale_growth && !Config.tutorial);
 }
 
-// 1 + GAIN*ln(1 + s/SCALE): early points show, then each step costs more,
-// but there's no ceiling: every doubling of score still adds ~0.44x.
+// 1 + GAIN*ln(1 + s/SCALE) up to 2x, so early points show. Past 2x it
+// switches to a square root tail with the same slope at the join, which
+// keeps growing steadily instead of flattening out. No ceiling.
+const TAIL_AT = SCALE * (Math.exp(1 / GAIN) - 1);           // score where the log reaches 2x
+const TAIL_K = 0.009;
+const TAIL_C = Math.pow(TAIL_K * (SCALE + TAIL_AT) / (2 * GAIN), 2);
 function multFor(score) {
     const s = Math.max(0, score || 0);
-    return 1 + GAIN * Math.log(1 + s / SCALE);
+    if (s <= TAIL_AT) return 1 + GAIN * Math.log(1 + s / SCALE);
+    return 2 + TAIL_K * (Math.sqrt(s - TAIL_AT + TAIL_C) - Math.sqrt(TAIL_C));
 }
 
 // the growth score that lands exactly on RESPAWN_CAP
@@ -44,17 +49,20 @@ function spawnEff(score) {
 // Trade-offs, all 1 at normal size.
 function speedMult(g) { return 1 / (1 + 0.28 * (g - 1)); }
 // Health and damage creep up with size, slowly: STAT_AT_100K at a 100k
-// growth score, in a straight line from 1 at normal size. Damage covers
-// everything the tank deals: shots and rams into tanks, chests and rock.
+// growth score, following ln(size) so it keeps slowing down past that.
+// Damage covers everything the tank deals: shots and rams into tanks,
+// chests and rock.
 const STAT_AT_100K = 1.6;
-const STAT_K = (STAT_AT_100K - 1) / (multFor(100000) - 1);
-function statMult(g) { return 1 + STAT_K * Math.max(0, g - 1); }
+const STAT_K = (STAT_AT_100K - 1) / Math.log(multFor(100000));
+function statMult(g) { return 1 + STAT_K * Math.log(Math.max(1, g)); }
 function healthMult(g) { return statMult(g); }
 function damageMult(g) { return statMult(g); }
 function bodyDamageMult(g) { return statMult(g); }
 // The camera: arras' own sqrt(size) times this, so the view follows
 // g^VIEW_POW, up to VIEW_MAX times a normal tank's.
-const VIEW_POW = 0.7;
+// 0.45: the camera opens up, but slower than the tank grows, so growing
+// shows on screen (at 0.7 a 2.3x tank only looked ~1.3x bigger)
+const VIEW_POW = 0.45;
 const VIEW_MAX = 1.8;
 function viewMult(g) { return Math.min(VIEW_MAX, Math.pow(Math.max(1, g), VIEW_POW)); }
 function fovMult(g) { return viewMult(g) / Math.sqrt(Math.max(1, g)); }

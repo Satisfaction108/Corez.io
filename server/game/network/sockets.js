@@ -10,6 +10,7 @@ let permBans = global.permBans || (global.permBans = []);
 global.chatID = 0;
 const { clientIp } = require("../../lib/clientIp.js");
 const accountBridge = require("../../accounts/game/bridge.js");
+const activity = require("./activity.js");
 
 // Same rule as the accounts config: NODE_ENV, or a real public hostname.
 function isProduction() {
@@ -95,6 +96,17 @@ function ownTankColor(body) {
     return !Config.random_body_colors && (Config.groups || (Config.mode == 'ffa' || Config.mode == 'clan' && !Config.tag)) ? 10 : global.getTeamColor(body.team);
 }
 
+// Dead-link detection. A sleeping laptop or a dropped network leaves the TCP
+// connection half-open for minutes, so every socket gets a websocket ping
+// every PING_EVERY_MS; the browser answers it from its network stack, even
+// from a background tab. No pong and no packet for DEAD_AFTER_MS: the
+// socket is terminated (not closed: a close handshake to a dead peer waits
+// another 30 s), which runs the normal drop path at once (the tank leaves the
+// world, the raid is held for its resume window).
+const PING_EVERY_MS = 3000;
+const DEAD_AFTER_MS = (process.env.ROYALE_DEBUG && parseInt(process.env.DEAD_LINK_MS, 10) > 0)
+    ? parseInt(process.env.DEAD_LINK_MS, 10) : 12000;
+
 class socketManager {
     constructor(parent) {
         this.permissionsDict = Object.create(null);
@@ -104,6 +116,8 @@ class socketManager {
         this.disconnections = [];
         this.playersReceived = [];
         this.bans = [];
+        this.linkWatch = setInterval(() => this.checkLinks(), 1000);
+        if (this.linkWatch.unref) this.linkWatch.unref();
 
         for (let entry of require("../permissions.js")) {
             // Skip unset env tokens (they would register under the key "undefined"),
@@ -113,6 +127,23 @@ class socketManager {
             this.permissionsDict[key] = entry;
         }
     };
+
+    checkLinks() {
+        const t = Date.now();
+        for (const socket of this.clients.slice()) {
+            if (!socket || socket.readyState !== socket.OPEN || typeof socket.ping !== "function") continue;
+            if (t - (socket._seenAt || t) > DEAD_AFTER_MS) {
+                util.warn("No answer from a client for " + Math.round((t - socket._seenAt) / 1000) + " s. Dropping the link.");
+                socket._deadLink = true;
+                try { socket.terminate(); } catch (e) { /* already gone */ }
+                continue;
+            }
+            if (t - (socket._pingAt || 0) >= PING_EVERY_MS) {
+                socket._pingAt = t;
+                try { socket.ping(); } catch (e) { /* closing */ }
+            }
+        }
+    }
 
     broadcast(message) {
         // Tutorial: a room-wide announcement is by definition about somebody
@@ -592,13 +623,9 @@ class socketManager {
             }
             if (player.body == null) return;
 
-            // fresh input (keys/buttons changed, or the aim moved): ranked
-            // survival only counts players active within the last 20 s
-            if (commands !== socket._inBits || Math.abs(target.x - (socket._inX || 0)) + Math.abs(target.y - (socket._inY || 0)) > 4) {
-                socket._inBits = commands;
-                socket._inX = target.x; socket._inY = target.y;
-                socket.lastInputAt = Date.now();
-            }
+            // real input (keys or buttons changed, the aim clearly moved):
+            // the idle kick, ranked survival and bot protection read it
+            activity.noteCommand(socket, target.x, target.y, commands);
 
             if (!socket.player.body.eastereggs.braindamage) player.target = target;
 
@@ -1059,6 +1086,7 @@ class socketManager {
                 if (typeof m[0] === "string" && /^\$broadcast(\s|$)/i.test(m[0]) &&
                     accountBridge.adminBroadcast && accountBridge.adminBroadcast(socket, m[0])) break;
                 if (player.body == null) return 1;
+                activity.noteChat(socket);
                 let abort, message = m[0], original = m[0];
 
                 if ("string" !==  typeof message) {
@@ -1221,6 +1249,7 @@ class socketManager {
                 // duos: team chat, to your partner only (alive or dead, any distance)
                 if (!Config.royale_duos) return;
                 if (m.length !== 1 || typeof m[0] !== "string" || m[0].length > 200) return;
+                activity.noteChat(socket);
                 require('../duo/duoComms.js').teamChat(socket, m[0]);
             } break;
             case "PG": {
@@ -1422,7 +1451,9 @@ class socketManager {
                     else if (what === "chest" && b) require('../terrain/chests.js').spawnChest(b.x + 120, b.y, !!m[1]);
                     else if (what === "kill" && b) { b.health.amount = -1; }
                     else if (what === "god" && b) { b.godmode = !b.godmode; }
-                    else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), x: Math.round(b.x), y: Math.round(b.y), hp: Math.round(b.health.amount), sh: Math.round(b.shield.amount), dead: !!(b.isDead && b.isDead()) } : { nobody: true }), 0);
+                    else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), x: Math.round(b.x), y: Math.round(b.y), hp: Math.round(b.health.amount), sh: Math.round(b.shield.amount), dead: !!(b.isDead && b.isDead()), carried: b.carriedGems | 0 } : { nobody: true }), 0);
+                    // every human tank in the world (drop tests: a dropped player's tank is gone)
+                    else if (what === "humans") socket.talk('KC', 'dbg', JSON.stringify({ humans: [...entities.values()].filter(e => e && e.socket && e.isPlayer && !(e.isDead && e.isDead())).map(e => e.name) }), 0);
                     else if (what === "chesthp" && b) {
                         const list = require('../terrain/chests.js').alive();
                         let best = null, bd = 1e12;
@@ -3144,7 +3175,10 @@ class socketManager {
                 requestMockups: [],
             }
         }
+        socket._seenAt = Date.now();
+        socket.on("pong", () => { socket._seenAt = Date.now(); });
         socket.messageManager = socket.on("message", message => {
+            socket._seenAt = Date.now();
             try {
                 this.incoming(message, socket);
             } catch (e) {

@@ -17,6 +17,7 @@
 //       never past 0.85 (placement 0.5). The next raid starts from 60% of
 //       the best reached this session.
 //   under bot mercy (dying to bots over and over)      at most 0.15
+//   idle a minute (no real input, whatever the above)   at least 0.5
 //   bots, bosses, anything else                        0.5
 //
 // Newness (1 brand new .. 0 not new) is the lower of two fades: total play
@@ -28,6 +29,8 @@
 // 0.5 plays like the 07e28b1 tuning. 1 is still softer than the bots before
 // it, knob by knob (scripts/test/botDifficulty.test.js holds that).
 'use strict';
+
+const activity = require('../game/network/activity.js');
 
 const NEUTRAL = 0.5;
 const RANK_LO = 0.2, RANK_HI = 0.95, RANK_PERF = 0.08;
@@ -85,10 +88,13 @@ function settled(p) {
     return Math.min(GUEST_HI, d);
 }
 
-// The difficulty a bot plays at against `root` (a target's root body).
+// The difficulty a bot plays at against `root` (a target's root body). A
+// player idle past activity.IDLE_PROTECT_MS loses the newcomer softening and
+// mercy: at least NEUTRAL, whoever they are.
 function of(root, now = Date.now()) {
     if (!root || !root.isPlayer) return NEUTRAL;
     let d = root.botNewbie ? 0 : root.botDifficulty != null ? root.botDifficulty : NEUTRAL;
+    if (activity.unprotected(root, now)) return clamp01(Math.max(d, NEUTRAL));
     if ((root.socket?.botMercyUntil || 0) > now) d = Math.min(d, MERCY_MAX);
     return clamp01(d);
 }

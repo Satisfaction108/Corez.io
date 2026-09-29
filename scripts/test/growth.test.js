@@ -8,7 +8,7 @@
 //              no jump; size never shrinks inside a life; a stage crossing
 //              calls back once
 //   perks      slower; health and damage creep up to 1.6x at a 100k score;
-//              the view follows size^0.7 up to its cap
+//              the view follows size^0.45 up to its cap
 //   damage     a grown tank's shots (and a grown bot's) hit harder, rock
 //              digging and its budget rise by the same factor
 //   bots       a bot grows from twice its score (growth only, not the board)
@@ -57,9 +57,12 @@ test('curve', () => {
     assert.ok(Math.abs(growth.multFor(growth.CAP_SCORE) - growth.RESPAWN_CAP) < 1e-9);
     // 2x comes about a quarter sooner than the old 5656
     assert.ok(growth.CAP_SCORE > 3800 && growth.CAP_SCORE < 5656 * 0.76, 'cap score ' + growth.CAP_SCORE);
-    // no ceiling: growth keeps going at the same log pace
+    // no ceiling, and it keeps going: each doubling past 2x adds more than the last
     const d1 = growth.multFor(40000) - growth.multFor(20000), d2 = growth.multFor(80000) - growth.multFor(40000);
-    assert.ok(d1 > 0.4 && Math.abs(d1 - d2) < 0.03, 'steady per doubling ' + d1 + ' ' + d2);
+    assert.ok(d1 > 0.4 && d2 > d1, 'steady tail ' + d1 + ' ' + d2);
+    // no kink where the log hands over to the tail
+    const at = growth.CAP_SCORE;
+    assert.ok(Math.abs((growth.multFor(at + 10) - growth.multFor(at)) - (growth.multFor(at) - growth.multFor(at - 10))) < 1e-4, 'smooth join');
     assert.ok(growth.multFor(1000) > 1.25, 'the first kills show');
     assert.ok(growth.multFor(1e6) > 5, 'no cap');
 });
@@ -150,12 +153,14 @@ test('perks', () => {
         assert.ok(h > prev, 'rises at ' + s);
         prev = h;
     }
-    // the view: arras' sqrt(size) times fovMult, size^0.7 up to VIEW_MAX
+    // the view: arras' sqrt(size) times fovMult, size^0.45 up to VIEW_MAX, slower
+    // than the tank grows so growing shows on screen
     const view = g => Math.sqrt(g) * growth.fovMult(g);
-    assert.ok(Math.abs(view(2.3) - Math.pow(2.3, 0.7)) < 1e-9);
-    assert.ok(view(2.3) > 1.7, 'a 2.3x tank sees clearly more (was 1.28x)');
-    assert.ok(view(1.5) > 1.3 && view(1.5) < view(2));
-    assert.equal(view(3.3), growth.VIEW_MAX);
+    assert.ok(Math.abs(view(2.3) - Math.pow(2.3, 0.45)) < 1e-9);
+    assert.ok(view(2.3) > 1.4, 'a 2.3x tank sees clearly more');
+    assert.ok(2.3 / view(2.3) > 1.5, 'and looks clearly bigger on screen');
+    assert.ok(view(1.5) > 1.15 && view(1.5) < view(2));
+    assert.equal(view(4), growth.VIEW_MAX);
     assert.ok(growth.VIEW_MAX <= 1.8);
     const n = fakeBody();
     growth.applyPerks(n);

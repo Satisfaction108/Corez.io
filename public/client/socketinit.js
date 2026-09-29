@@ -7,6 +7,7 @@ import * as rankPanel from "./account/rankPanel.js";
 import * as rankCeremony from "./account/rankCeremony.js";
 import * as dustHud from "./account/dustHud.js";
 import * as raidFinale from "./raidFinale.js";
+import { toast as menuToast } from "./account/ui.js";
 window.fakeLagMS = 0;
 var sync = [];
 var clockDiff = 0;
@@ -1141,6 +1142,18 @@ const guestId = (() => {
     } catch (e) { return null; }
 })();
 const RECONNECT_TRIES = 8;
+// Removed for idling (IK, or the close code 4001 if IK got lost): straight
+// back to the menu with the reason, and no reconnect, since the server keeps
+// nothing to resume.
+const IDLE_CLOSE_CODE = 4001;
+const IDLE_TEXT = "Removed for being inactive for 5 minutes";
+function idleExit(text) {
+    global.noAutoReconnect = true;
+    global.autoReconnect = null;
+    try { global.exit(); } catch (e) { /* */ }
+    global.message = "";
+    try { menuToast(text || IDLE_TEXT, { kind: 'error', duration: 12000 }); } catch (e) { /* */ }
+}
 
 let incoming = async function(message, socket) {
     // only defer when fake lag is actually on: a 0 ms setTimeout still pushes
@@ -1757,6 +1770,9 @@ let incoming = async function(message, socket) {
                     else global.createMessage(title, 5000);
                 } catch (e) { /* ignore */ }
             } break;
+            case 'IK': {
+                idleExit(String(m[0] || IDLE_TEXT));
+            } break;
             case 'KO': {
                 // Account kicked this socket (logged in elsewhere, banned):
                 // the server closes it next, and it must not auto-reconnect.
@@ -2365,11 +2381,14 @@ const socketInit = () => {
         socket.open = true;
 
         socket.ping = payload => socket.talk('p', payload);
+        // a (re)connect is the likeliest moment for a deploy (version.js)
+        try { if (window.dwVersion) window.dwVersion.onSocketOpen(); } catch (e) { /* */ }
     };
 
     socket.onmessage = (msg) => incoming(msg, socket);
 
-    socket.onclose = () => {
+    socket.onclose = (ev) => {
+        if (ev && ev.code === IDLE_CLOSE_CODE && global.gameLoading) { idleExit(ev.reason && ev.reason !== 'idle' ? ev.reason : IDLE_TEXT); return; }
         if (!global.gameLoading) return;
         clearInterval(socket.commandCycle);
         clearInterval(global.socketMotionCycle);
@@ -2377,7 +2396,7 @@ const socketInit = () => {
         socket.open = false;
         global.showBigMap = false;
         // A drop mid-game (proxy reload, wifi blip) reconnects on its own; the
-        // server keeps your raid for two minutes under the tab's resume token.
+        // server keeps your raid for 45 seconds under the tab's resume token.
         const tries = global.autoReconnect ? global.autoReconnect.tries : 0;
         if ((global.gameStart || global.autoReconnect) && !global.noAutoReconnect && tries < RECONNECT_TRIES) {
             global.autoReconnect = { tries: tries + 1, at: Date.now() };

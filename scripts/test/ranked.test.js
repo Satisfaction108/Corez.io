@@ -674,10 +674,10 @@ test('hooks: survival and damage are rank-only points in the basis and the RK pa
     asock.lastInputAt = t + 60000;
     rankHooks.surviveCheck(t + 60000);
     assert.equal(ast.lifeSurviveMs, 130000);
-    // moving counts as active without key changes
+    // moving without any input (recoil from autofire, shoved) is not active
     vsock.lastInputAt = 0; vst.survAt = t0; vb.x = 500;
     rankHooks.surviveCheck(t0 + 5000);
-    assert.equal(vst.lifeSurviveMs, 5000);
+    assert.equal(vst.lifeSurviveMs, 0);
     // the board score is untouched; the basis carries them
     const surv = ast.lifeSurvivePts, dmg = ast.lifeDmgPts;
     assert.equal(ast.extra, 0);
@@ -741,6 +741,7 @@ test('hooks: raid end settles every open life (carried half counts), then RKP; t
     rankHooks.onRaidStart();
     rankHooks.lifeStart(ba, sta);
     rankHooks._raidAcct.get(a.id).joinedAt -= 6 * 60000;
+    sta.lifeInputMs = 6 * 60000;                        // really played it
     sta.banked += 50;
     H.stats.delete('b:77');
     sa.packets.length = 0;

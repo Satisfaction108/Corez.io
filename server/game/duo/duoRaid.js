@@ -186,7 +186,7 @@ function onClose(socket) {
     const mate = book.mateOf(socket.duoKey);
     const ms = mate && socketOfKey(mate.mk, socket);
     const who = (socket.player && socket.player.body && socket.player.body.name) || (book.teamOf(socket.duoKey) && book.teamOf(socket.duoKey).members.get(socket.duoKey) || {}).name || 'Your teammate';
-    if (ms) say(ms, who + " dropped out. Their spot stays open for 2 minutes.");
+    if (ms) say(ms, socket._idleKicked ? who + " was removed for idling." : who + " dropped out. Their spot stays open for 45 seconds.");
 }
 
 // Periodic (dig_royale tick): expired away slots free up; empty teams let

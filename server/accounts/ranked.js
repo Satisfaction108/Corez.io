@@ -16,8 +16,13 @@ const PLACEMENT_MIN_MS = 60 * 1000;     // a placement life counts from 60 s, or
 const SPAWN_KILL_MS = 15 * 1000;        // victim alive less than this: the kill pays nothing
 const SAME_VICTIM_PAID = 2;             // the 3rd+ kill of one account in a raid pays nothing
 const BONUS_MIN_RAID_MS = 5 * 60 * 1000;
-// Ends that never charge the fare. A disconnect does; a spawn-killed life
-// is exempted per life (noFare).
+// The raid placement bonus (and the win streak) also need real play: this
+// much time alive with fresh input in the raid, and at least this share of
+// the time alive. An AFK tank that outlasts everyone gets nothing.
+const ACTIVE_MIN_MS = 3 * 60 * 1000;
+const ACTIVE_SHARE = 0.6;
+// Ends that never charge the fare. A disconnect and an idle kick do; a
+// spawn-killed life is exempted per life (noFare).
 const NO_FARE_REASONS = new Set(['shutdown', 'crash', 'raidend']);
 
 const UNITS = 192;
@@ -93,7 +98,8 @@ function settle(user, life) {
         placementGain: user.placementGain | 0, placement: null, counted: true,
     };
     if (!user.ranked) {
-        out.counted = countsForPlacement(life.durationMs, basis);
+        // an idle kick is not a placement game, good or bad
+        out.counted = life.reason !== 'idle' && countsForPlacement(life.durationMs, basis);
         if (out.counted) {
             out.placementLives += 1;
             out.placementBasis.push(basis);
@@ -120,11 +126,20 @@ function settle(user, life) {
     return out;
 }
 
+// Did the account really play the raid? a: {inputMs, aliveMs, idleKicked}
+// (rankHooks raidAcct: time alive with fresh input, time alive, settled
+// lives only).
+function activeEnough(a) {
+    if (!a || a.idleKicked) return false;
+    const input = Math.max(0, +a.inputMs || 0);
+    return input >= ACTIVE_MIN_MS && input >= ACTIVE_SHARE * Math.max(0, +a.aliveMs || 0);
+}
+
 // Raid-end bonus for the board place (bots count for places, only accounts
-// are paid). -> {eligible, rp, dustMilli}
-function placementBonus({ place, rows, score, raidMs }) {
+// are paid). active: activeEnough for the raid. -> {eligible, rp, dustMilli}
+function placementBonus({ place, rows, score, raidMs, active = true }) {
     place |= 0;
-    const eligible = score > 0 && raidMs >= BONUS_MIN_RAID_MS && place >= 1 && place <= 10 &&
+    const eligible = !!active && score > 0 && raidMs >= BONUS_MIN_RAID_MS && place >= 1 && place <= 10 &&
         place <= Math.max(3, Math.ceil((rows | 0) / 2));
     if (!eligible) return { eligible: false, rp: 0, dustMilli: 0 };
     return { eligible: true, rp: R.PLACEMENT_BONUS_RP[place - 1] | 0, dustMilli: R.PLACEMENT_BONUS_DUST_MILLI[place - 1] | 0 };
@@ -134,8 +149,10 @@ function placementBonus({ place, rows, score, raidMs }) {
 // (kill score, streak, shutdown, bounty); priorKills: earlier kills of this
 // victim by this killer's account in this raid.
 // -> {discount (points taken off the rank basis), dustMilli, spawnKill, filtered}
-function killFilter({ victimIsBot, victimAliveMs, priorKills, pts }) {
+// killerIdle: no real input from the killer for a while (autofire, turrets).
+function killFilter({ victimIsBot, victimAliveMs, priorKills, pts, killerIdle = false }) {
     pts = Math.max(0, +pts || 0);
+    if (killerIdle) return { discount: pts, dustMilli: 0, spawnKill: false, filtered: true };
     if (victimAliveMs < SPAWN_KILL_MS) return { discount: pts, dustMilli: 0, spawnKill: true, filtered: true };
     if (!victimIsBot && (priorKills | 0) >= SAME_VICTIM_PAID) return { discount: pts, dustMilli: 0, spawnKill: false, filtered: true };
     if (victimIsBot) return { discount: Math.ceil(pts / 2), dustMilli: R.KILL_DUST_MILLI.bot, spawnKill: false, filtered: false };
@@ -143,8 +160,8 @@ function killFilter({ victimIsBot, victimAliveMs, priorKills, pts }) {
 }
 
 // Survival: does this check count as active play? Not dead, not shielded
-// (spawn shield or its grace), not on a safe pad or frozen, and the player
-// moved or pressed something fresh within REWARDS.survive.activeWindowMs.
+// (spawn shield or its grace), not on a safe pad or frozen, and real input
+// (game/network/activity.js) within REWARDS.survive.activeWindowMs.
 function survivalActive({ dead, invuln, safe, frozen, graceLeftMs, sinceActiveMs }) {
     if (dead || invuln || safe || frozen || graceLeftMs > 0) return false;
     return sinceActiveMs >= 0 && sinceActiveMs <= R.REWARDS.survive.activeWindowMs;
@@ -195,6 +212,7 @@ function splitParts(total, sources) {
 
 module.exports = {
     MIN_FARE_MS, PLACEMENT_MIN_MS, SPAWN_KILL_MS, SAME_VICTIM_PAID, BONUS_MIN_RAID_MS, NO_FARE_REASONS,
+    ACTIVE_MIN_MS, ACTIVE_SHARE, activeEnough,
     curveUnits, curveGain, lifeGain, fareFor, applyDelta, countsForPlacement, placementFinish, settle,
     placementBonus, killFilter, legendOrder, legendNo, splitParts,
     survivalActive, survivalPts, damageGain,

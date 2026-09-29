@@ -1365,6 +1365,7 @@ const digWarsChambers = require('../game/terrain/coreChambers.js');
 const padGeom = require('../game/terrain/padGeom.js');
 // per-target bot difficulty (0 new player .. 1 the hardest we allow)
 const botDiff = require('./botDifficulty.js');
+const activity = require('../game/network/activity.js');
 // Shop pads are a no-go zone for bots (they cannot buy, and a bot on the pad
 // shoves the shopper). Refreshed once a second.
 let shopPadCache = { at: 0, pads: [] };
@@ -1421,8 +1422,11 @@ function firstMinutes() {
     try { firstMinutesCfg = require('../game/gamemodes/scripts/dig_royale.js').FIRST_MINUTES || null; } catch { /* */ }
     return firstMinutesCfg || { NEW_TARGET_PENALTY: 600, NEW_MAX_HUNTERS: 1, SOFT_CLOSE_R: 320, SOFT_HIT_MS: 4000, MAX_HUNTERS: 2, BOT_SOFT_MS: 120_000 };
 }
+// A player with no real input for a minute (network/activity.js) gets none
+// of it: grace, the soft window and the newcomer difficulty are for someone
+// playing, not for a tank left standing on autofire.
 function inBotGrace(root, now) {
-    return !!(root && (root.isPlayer || root.isBot) && (root.botGraceUntil || 0) > now);
+    return !!(root && (root.isPlayer || root.isBot) && (root.botGraceUntil || 0) > now && !activity.unprotected(root, now));
 }
 // A player in the soft window (the start of every life, or any life of a
 // new player) is only fought by a bot they walk right up to or shoot. The
@@ -1431,6 +1435,7 @@ function inBotGrace(root, now) {
 // all of it at 0, a third at the hardest (botDifficulty.js softShare).
 function botSoft(root, now) {
     if (!root || !root.isPlayer) return false;
+    if (activity.unprotected(root, now)) return false;
     if (root.botNewbie) return true;
     const until = root.botSoftUntil || 0;
     if (until <= now) return false;

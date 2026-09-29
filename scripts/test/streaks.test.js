@@ -243,11 +243,13 @@ function player(user) {
     const s = mkStat('s:' + sock.id);
     return { user, sock, body, s };
 }
-// A life that ran `ms` (and `activeMs` of active survival), then died.
+// A life that ran `ms` (`inputMs` of it with fresh input, all of it unless
+// given, and `activeMs` of active survival), then died.
 function liveAndDie(p, ms, opts = {}) {
     rankHooks.lifeStart(p.body, p.s);
     p.s.lifeStartAt -= ms;
     p.s.lifeSurviveMs = opts.activeMs || 0;
+    p.s.lifeInputMs = opts.inputMs != null ? opts.inputMs : ms;
     if (opts.banked) p.s.banked += opts.banked;
     rankHooks.onDeath(p.body, p.s);
     return p.sock._rkPending;
@@ -339,7 +341,8 @@ test('hooks: a voided leave (first minute, nothing scored) never counts', () => 
     reset();
 });
 
-// One raid: every player's life settles at raid end. spec: [{p, banked, activeMs, lifeMs, joinedAgoMs}]
+// One raid: every player's life settles at raid end. spec: [{p, banked, activeMs, inputMs, lifeMs, joinedAgoMs}]
+// (an AFK spec, activeMs 0, has no input time either unless inputMs says so)
 function raid(spec, order) {
     H.raidId++;
     H.stats.clear();
@@ -348,8 +351,10 @@ function raid(spec, order) {
     for (const e of spec) {
         e.p.s.banked = 0; e.p.s.killPts = 0;
         rankHooks.lifeStart(e.p.body, e.p.s);
-        e.p.s.lifeStartAt -= e.lifeMs != null ? e.lifeMs : 6 * MIN;
+        const lifeMs = e.lifeMs != null ? e.lifeMs : 6 * MIN;
+        e.p.s.lifeStartAt -= lifeMs;
         e.p.s.lifeSurviveMs = e.activeMs != null ? e.activeMs : 3 * MIN;
+        e.p.s.lifeInputMs = e.inputMs != null ? e.inputMs : e.activeMs === 0 ? 0 : lifeMs;
         e.p.s.banked = e.banked | 0;
         const a = rankHooks._raidAcct.get(e.p.user.id);
         if (a) a.joinedAt -= e.joinedAgoMs != null ? e.joinedAgoMs : 6 * MIN;
@@ -408,7 +413,7 @@ test('hooks: raid wins grow the win streak and pay; a played loss resets; AFK, l
     D().run('UPDATE user_streaks SET win_cur = 3, win_best = 3 WHERE user_id = ?', a.user.id);
     rankHooks.lifeStart(a.body, a.s);
     rankHooks.lifeStart(b.body, b.s);
-    a.s.banked = 0; b.s.banked = 500; b.s.lifeStartAt -= 6 * MIN; b.s.lifeSurviveMs = 3 * MIN;
+    a.s.banked = 0; b.s.banked = 500; b.s.lifeStartAt -= 6 * MIN; b.s.lifeSurviveMs = 3 * MIN; b.s.lifeInputMs = 6 * MIN;
     rankHooks._raidAcct.get(a.user.id).joinedAt -= 6 * MIN;
     rankHooks._raidAcct.get(b.user.id).joinedAt -= 6 * MIN;
     rankHooks.onDisconnect(a.sock, a.s, true);

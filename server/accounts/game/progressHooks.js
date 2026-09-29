@@ -268,8 +268,9 @@ function onAlive(body, aliveMs) {
 }
 
 // A life settled (socket may be gone: a disconnect settles later).
+// durationMs: the life's time alive with fresh input.
 function afterLife(socket, userId, reason, durationMs) {
-    if (socket && reason !== 'disconnect') {
+    if (socket && reason !== 'disconnect' && reason !== 'idle') {
         const min = Math.floor(Math.max(0, durationMs) / 60000);
         if (min >= 1) bump(socket, 'survive', Math.min(SURVIVE_QUEST_MIN, min));
         if (durationMs >= SURVIVOR_MS) unlockEvent(socket, 'survivor');

@@ -20,6 +20,7 @@ const dustHooks = require('../../../accounts/game/dustHooks.js');
 const progressHooks = require('../../../accounts/game/progressHooks.js');   // daily quests + achievements
 // duos (only does anything on the duo server: Config.royale_duos)
 const duo = require('../../duo/duoRaid.js');
+const activity = require('../../network/activity.js');
 
 // A raid is RAID_CYCLES storm cycles (7 min each, twists included), 28 min,
 // and ends as the last storm shuts (storm.js closes the final circle).
@@ -1748,6 +1749,7 @@ function onHumanJoin(body) {
     // a resumed player already had their starter kit: no second one
     const resuming = !!(body.socket && body.socket._resume);
     if (!resuming) giveStarterKit(body, isRespawn);
+    if (!resuming && body.socket) activity.resetClock(body.socket, now());
     try { shop.applyPassives(body); } catch { /* */ }
     const joinStat = ensureStat(body);
     // a ranked life opens here; a resume keeps the one already open
@@ -1783,14 +1785,15 @@ function onHumanJoin(body) {
 }
 
 // ── reconnect / resume ────────────────────────────────────────────────────
-// After a dropped connection (proxy reload, wifi blip, refresh) the client
-// reconnects with the same per-tab token, and for RESUME_MS the new socket
-// inherits the old one's bank, shop, score and tank. Carried gems only come
-// back if nothing hit you for RESUME_SAFE_MS, so pulling the plug is not a
-// way out of a losing fight.
+// After a dropped connection (proxy reload, wifi blip, refresh, a laptop lid
+// the heartbeat in sockets.js caught) the tank leaves the world at once, and
+// if the client reconnects with the same per-tab token within RESUME_MS the
+// new socket inherits the old one's bank, shop, score and tank. Carried gems
+// only come back if nothing hit you for RESUME_SAFE_MS, so pulling the plug
+// is not a way out of a losing fight. An idle kick never saves one.
 // ROYALE_RESUME_MS shortens the window for local tests (ROYALE_DEBUG only).
 const RESUME_MS = (process.env.ROYALE_DEBUG && parseInt(process.env.ROYALE_RESUME_MS, 10) > 0)
-    ? parseInt(process.env.ROYALE_RESUME_MS, 10) : 120_000;
+    ? parseInt(process.env.ROYALE_RESUME_MS, 10) : 45_000;
 const RESUME_SAFE_MS = 8000;
 const resumeStore = new Map();
 // Keyed by the tab's token only. A resume is for a real drop: the same tab
@@ -1831,6 +1834,9 @@ function saveResume(socket, body) {
             raidDeathStreak: socket.raidDeathStreak || 0, royaleRespawnAt: socket.royaleRespawnAt || 0,
             lastRaidDeathAt: socket.lastRaidDeathAt || 0,
             _royaleLives: socket._royaleLives || 0, _lateNoteKey: socket._lateNoteKey || "",
+            // the idle clock: a reconnect is not input
+            lastInputAt: socket.lastInputAt || 0, _idleFrom: socket._idleFrom || 0, _chatAt: socket._chatAt || 0,
+            _aimX: socket._aimX, _aimY: socket._aimY, _inBits: socket._inBits,
             // time played so far, the life cut short by the drop included
             _royalePlayMs: (socket._royalePlayMs || 0) + (alive && body.royaleBornAt ? Math.max(0, t - body.royaleBornAt) : 0),
         },
@@ -2008,6 +2014,54 @@ function disconnectCleanup(socket, body) {
             }
         }
     } catch { /* */ }
+}
+
+// ── idle players ──────────────────────────────────────────────────────────
+// No real input (network/activity.js: keys, buttons, a real aim move; chat
+// counts here too) for activity.IDLE_KICK_MS and the tank is removed and the
+// player sent to the menu. The life ends with no rank gain, the raid pays
+// them no placement or streak, and nothing is kept for a resume. Before
+// that, after activity.IDLE_PROTECT_MS without input, the spawn shield drops
+// (and bots stop sparing them, controllers.js).
+const IDLE_KICK_TEXT = "Removed for being inactive for 5 minutes";
+function tickIdle(t) {
+    if (Config.tutorial) return;
+    for (const socket of connectedClients()) {
+        if (socket._idleKicked) continue;
+        const body = socket.player && socket.player.body;
+        if (!body || body.socket !== socket || !body.isPlayer || body.isDead?.() || body.royaleAlive === false) continue;
+        // held still by the raid (the end-of-raid freeze): not their idling
+        if (body.royaleFrozen || body.royaleLobby) { activity.resetClock(socket, t); continue; }
+        if (activity.idleMs(socket, t) >= activity.IDLE_KICK_MS) { idleKick(socket, body); continue; }
+        if (body.invuln && !body.godmode && t >= (body.spawnGraceUntil || 0) &&
+            activity.inputIdleMs(socket, t) > activity.IDLE_PROTECT_MS) {
+            body.invuln = false;
+            try { body.sendMessage("You've been idle for a minute, so your shield is off."); } catch { /* */ }
+        }
+    }
+}
+
+function idleKick(socket, body) {
+    socket._idleKicked = true;
+    // no resume for this one, whatever the client does next
+    socket.leftOnPurpose = true;
+    console.log('[RAID] ' + ((body && body.name) || 'A player') + ' was removed for being idle.');
+    const s = body ? raidStats.get(statKeyFor(body)) : null;
+    try { rankHooks.onIdleKick(socket, s); } catch (e) { guardLog('rank idle', e); }
+    try { socket.talk('IK', IDLE_KICK_TEXT); } catch { /* closing */ }
+    socket._drCleaned = true;
+    try { disconnectCleanup(socket, body); } catch (e) { guardLog('idle cleanup', e); }
+    // The tank goes now, the way sockets.close removes a dropped one (the
+    // satchel falls, no death event, so nobody is credited a kill).
+    if (body && !body.isDead?.()) {
+        try { if ((body.carriedGems | 0) > 0) gems.dropGemsOnDeath(body, []); } catch (e) { guardLog('idle drop', e); }
+        try { body.invuln = false; body.kill(); body.destroy(); } catch (e) { guardLog('idle remove', e); }
+    }
+    if (socket.player) socket.player.body = null;
+    // a close frame after IK (code 4001 tells the client even if IK is lost);
+    // a peer that never answers it is cut off
+    try { socket.close(4001, 'idle'); } catch { /* */ }
+    setTimeout(() => { try { socket.terminate(); } catch { /* */ } }, 2000).unref?.();
 }
 
 // Duos: a base whose owner is gone for good goes to their partner instead of
@@ -2558,6 +2612,7 @@ function tick() {
     }
     // Every stage is isolated: one bad stage must never take the raid
     // broadcast (and with it the whole HUD) down with it.
+    if (t - (tick._idleAt || 0) >= 1000) { tick._idleAt = t; guard('idle', () => tickIdle(t)); }
     guard('storm', () => { storm.ensureActive(); storm.tickDamage(t); });
     guard('spawn rescue', () => tickSpawnRescue(t));
     guard('outposts', () => tickOutpostRules(t));
@@ -2650,9 +2705,11 @@ module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
     lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, baseReserved,
     onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout, QUESTS,
-    FIRST_MINUTES, isNewPlayer, quickRespawn, freshRaidBody, SPAWN_GRACE_MS, RAID_CYCLES, RAID_MS,
+    FIRST_MINUTES, isNewPlayer, quickRespawn, freshRaidBody, SPAWN_GRACE_MS, RAID_CYCLES, RAID_MS, RESUME_MS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
+    // tests: one pass of the idle watch at time t
+    _tickIdle: (t) => tickIdle(t),
     // DBG spawnaudit [n] [trap|reset]: the spawn audit so far, after `n` extra
     // safeSpawnSpot picks (bot/human alternating); 'trap' first plants 40
     // gem-ringed pockets and 40 about-to-close mined cells in the zone

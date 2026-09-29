@@ -13,17 +13,27 @@
 // players (onPlayerDamaged). Rates and caps: REWARDS.survive / .damage in
 // shared/ranks.js; the rules: ranked.survivalActive/survivalPts/damageGain.
 //
+// Idle time earns nothing. "Active" is real input (game/network/activity.js)
+// within REWARDS.survive.activeWindowMs; a tank that only drifts (recoil,
+// being shoved) is not active. A kill or damage by a player with no input
+// for activity.IDLE_PROTECT_MS pays nothing, and the raid placement bonus
+// needs ranked.activeEnough over the raid (input time vs time alive).
+//
 // Life fields on the stat: lifeOpen, lifeId, lifeBase, lifeStartAt,
 // lifeKills, lifeBotKills, lifeKillPts, lifeBanked0, lifeNoFare, lifeDust,
-// lifeSurviveMs, lifeSurvivePts, lifeDmgPts, lifeDmg (victim key -> share of
-// a bar dealt), survAt, survX/survY/survMovedAt, accountId, rankCode. A
-// resume re-keys the stat (claimResume) and keeps the open life.
+// lifeSurviveMs, lifeSurvivePts, lifeInputMs (alive with fresh input, safe
+// pads and shields included), lifeDmgPts, lifeDmg (victim key -> share of
+// a bar dealt), survAt, accountId, rankCode. A resume re-keys the stat
+// (claimResume) and keeps the open life.
 // raidAcct (per account, cleared at raid start): raid-cumulative counted
-// points for the diminishing-returns curve, victims, join time, and for the
-// win streak the counted lives settled and the active survival time.
+// points for the diminishing-returns curve, victims, join time, for the win
+// streak the counted lives settled and the active survival time, and for
+// the placement rule the input and alive time of settled lives and whether
+// the account was kicked for idling this raid.
 //
 // Settled at: death (onDeath), raid end (onRaidEnd, before the mass death),
-// a disconnect nobody resumed (RESUME_MS + 1 s later, with the fare), and a
+// a disconnect nobody resumed (RESUME_MS + 1 s later, with the fare), an idle
+// kick (onIdleKick: no gain, the fare, no placement for the raid), and a
 // clean shutdown (no fare). A crash leaves the row open; the main thread
 // closes it with delta 0 at the next boot.
 //
@@ -38,6 +48,7 @@ const ranked = require('../ranked');
 const streaks = require('../streaks');
 const dustHooks = require('./dustHooks');
 const progress = require('./progressHooks');
+const activity = require('../../game/network/activity.js');
 const R = require('../../../shared/ranks.js');
 
 const BOOT_ID = Date.now().toString(36) + nodeCrypto.randomBytes(3).toString('hex');
@@ -48,12 +59,11 @@ function on() { return bridge().rankedOn(); }
 
 // {stats() -> Map, clients() -> sockets, raidId() -> n, board() -> [{s, score}], resumeMs, serverId}
 let ctx = null;
-const raidAcct = new Map();        // accountId -> {counted, victims:Map, joinedAt, lives, activeMs}
+const raidAcct = new Map();        // accountId -> {counted, victims:Map, joinedAt, lives, activeMs, inputMs, aliveMs, idleKicked}
 const openByAcct = new Map();      // accountId -> stat with the open life
 const ALIVE_CHECK_MS = 5000;
 let aliveCheckAt = 0;
 const SURVIVE_STEP_MS = 5000;
-const SURVIVE_MOVE_MIN = 80;       // world units between checks that count as moving
 let surviveCheckAt = 0;
 let errAt = 0;
 
@@ -82,7 +92,7 @@ function basisOf(s) {
 
 function acctFor(userId, t) {
     let a = raidAcct.get(userId);
-    if (!a) { a = { counted: 0, victims: new Map(), joinedAt: t, lives: 0, activeMs: 0 }; raidAcct.set(userId, a); }
+    if (!a) { a = { counted: 0, victims: new Map(), joinedAt: t, lives: 0, activeMs: 0, inputMs: 0, aliveMs: 0, idleKicked: false }; raidAcct.set(userId, a); }
     return a;
 }
 
@@ -116,11 +126,10 @@ function lifeStart(body, s) {
     s.lifeDust = 0;
     s.lifeSurviveMs = 0;
     s.lifeSurvivePts = 0;
+    s.lifeInputMs = 0;
     s.lifeDmgPts = 0;
     s.lifeDmg = null;
     s.survAt = t;
-    s.survMovedAt = 0;
-    s.survX = body.x; s.survY = body.y;
     s.lifeRowOk = false;
     s.accountId = account ? account.id : 0;
     s.guestId = !body.socket.account && body.socket.guestId ? body.socket.guestId : null;
@@ -150,13 +159,15 @@ function guestResult(basis) {
 }
 
 // Closes the stat's open life. opts.carried: gems still carried (raid end
-// only; half of it counts). -> the RK payload (account or guest), or null
+// only; half of it counts). An 'idle' end (the idle kick) counts nothing.
+// -> the RK payload (account or guest), or null
 function lifeEnd(s, reason, opts = {}) {
     if (!s || !s.lifeOpen) return null;
     s.lifeOpen = false;
     const t = Date.now();
-    const carriedHalf = opts.carried > 0 ? Math.floor(opts.carried / 2) : 0;
-    const rawBasis = Math.max(0, Math.floor(basisOf(s) + carriedHalf - (s.lifeBase || 0)));
+    const idle = reason === 'idle';
+    const carriedHalf = !idle && opts.carried > 0 ? Math.floor(opts.carried / 2) : 0;
+    const rawBasis = idle ? 0 : Math.max(0, Math.floor(basisOf(s) + carriedHalf - (s.lifeBase || 0)));
     // Duo lives count toward the same rank at R.DUO_RP_MULT (a partner carries
     // part of the work). The point sources below keep raw sizes; they only
     // split the gain.
@@ -177,27 +188,34 @@ function lifeEnd(s, reason, opts = {}) {
     const survived = Math.max(0, s.lifeSurvivePts | 0);
     const damage = Math.max(0, s.lifeDmgPts | 0);
     const bonus = Math.max(0, rawBasis - banked - kills - carriedHalf - survived - damage);
+    const durationMs = t - (s.lifeStartAt || t);
+    const inputMs = Math.max(0, s.lifeInputMs || 0);
+    // the time alive and the part of it with fresh input, for the raid's
+    // placement rule (settled lives only: a raid end settles every open one
+    // before the placement is paid)
+    a.aliveMs += Math.max(0, durationMs);
+    a.inputMs += inputMs;
     let payload = null;
     try {
         if (!s.lifeRowOk) openRow(s, a);
         payload = rankStore.settleLife({
             lifeId: s.lifeId, userId, reason, now: t, basis, countedBefore: a.counted,
-            durationMs: t - (s.lifeStartAt || t), noFare: !!s.lifeNoFare,
+            durationMs, activeMs: inputMs, noFare: !!s.lifeNoFare,
             kills: s.lifeKills | 0, botKills: s.lifeBotKills | 0,
-            sources: [['Banked', banked], ['KOs', kills], ['Survived', survived], ['Damage', damage], ['Carried', carriedHalf], ['Bonus', bonus]],
+            sources: idle ? [] : [['Banked', banked], ['KOs', kills], ['Survived', survived], ['Damage', damage], ['Carried', carriedHalf], ['Bonus', bonus]],
             dust: { lifeMilli: s.lifeDust | 0, balanceMilli: balance },
         });
     } catch (e) { logErr('settle', e); }
     if (payload) {
         a.counted += basis;
         a.activeMs += Math.max(0, s.lifeSurviveMs || 0);
-        if (ranked.countsForPlacement(t - (s.lifeStartAt || t), payload.basis)) a.lives++;
+        if (!idle && ranked.countsForPlacement(inputMs, payload.basis)) a.lives++;
         s.rankCode = codeOfSnap(payload.after);
         if (payload.streak) noteStreak(userId, payload.streak, clientOf(s) || bridge().socketOf(userId));
         if (payload.rankUp) {
             try { accounts.bus.toMain({ t: 'rankUp', userId, division: payload.after.division, tierUp: !!payload.tierUp }); } catch (e) { /* */ }
         }
-        try { progress.afterLife(bridge().socketOf(userId), userId, reason, t - (s.lifeStartAt || t)); } catch (e) { logErr('progress', e); }
+        try { progress.afterLife(bridge().socketOf(userId), userId, reason, inputMs); } catch (e) { logErr('progress', e); }
         // invites wait for the new account's first finished life
         try { accounts.bus.toMain({ t: 'lifeSettled', userId }); } catch (e) { /* */ }
     }
@@ -252,7 +270,9 @@ function onKillCredited(killer, ks, victim, vs, pts) {
         prior = a.victims.get(vkey) | 0;
         a.victims.set(vkey, prior + 1);
     }
-    const f = ranked.killFilter({ victimIsBot, victimAliveMs: aliveMs, priorKills: prior, pts });
+    // an AFK tank's autofire or turrets never earn: the kill pays nothing
+    const killerIdle = !!(killer && killer.socket && activity.inputIdleMs(killer.socket, t) > activity.IDLE_PROTECT_MS);
+    const f = ranked.killFilter({ victimIsBot, victimAliveMs: aliveMs, priorKills: prior, pts, killerIdle });
     ks.rankDiscount = (ks.rankDiscount || 0) + f.discount;
     if (ks.lifeOpen) {
         ks.lifeKillPts = (ks.lifeKillPts | 0) + Math.max(0, pts - f.discount);
@@ -281,6 +301,7 @@ function onPlayerDamaged(victim, dealt, inflictors) {
         let root = inflictors[i], hops = 0;
         while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
         if (!root || root === victim || !root.socket || root === r0 || root === r1 || root === r2) continue;
+        if (activity.inputIdleMs(root.socket) > activity.IDLE_PROTECT_MS) continue;
         if (n === 0) r0 = root; else if (n === 1) r1 = root; else if (n === 2) r2 = root; else break;
         n++;
     }
@@ -308,6 +329,8 @@ function onPlayerDamaged(victim, dealt, inflictors) {
 // Active survival, every SURVIVE_STEP_MS: each human with an open life
 // that counts as active at this check is credited the time since the last
 // one (at most two steps, so a stall or a resume gap pays nothing extra).
+// Only real input makes a check active; a body that moved without any
+// (recoil from autofire, shoved by a bot) is still idle.
 function surviveCheck(t) {
     if (!ctx || (ctx.live && !ctx.live())) return;
     const stats = ctx.stats();
@@ -319,14 +342,13 @@ function surviveCheck(t) {
         const dt = Math.min(2 * SURVIVE_STEP_MS, Math.max(0, t - (s.survAt || t)));
         s.survAt = t;
         if (!body || body.socket !== c) continue;
-        const dx = body.x - (s.survX || 0), dy = body.y - (s.survY || 0);
-        if (dx * dx + dy * dy >= SURVIVE_MOVE_MIN * SURVIVE_MOVE_MIN) s.survMovedAt = t;
-        s.survX = body.x; s.survY = body.y;
-        const lastActive = Math.max(c.lastInputAt || 0, s.survMovedAt || 0);
+        const dead = !!(body.isDead && body.isDead());
+        const sinceInput = c.lastInputAt ? t - c.lastInputAt : -1;
+        if (!dead && dt && sinceInput >= 0 && sinceInput <= R.REWARDS.survive.activeWindowMs) s.lifeInputMs = (s.lifeInputMs || 0) + dt;
         const active = ranked.survivalActive({
-            dead: !!(body.isDead && body.isDead()), invuln: !!body.invuln || !!body.godmode,
+            dead, invuln: !!body.invuln || !!body.godmode,
             safe: !!body.padSafe || !!body.passive || !!body.royaleLobby, frozen: !!body.royaleFrozen,
-            graceLeftMs: (body.spawnGraceUntil || 0) - t, sinceActiveMs: lastActive ? t - lastActive : -1,
+            graceLeftMs: (body.spawnGraceUntil || 0) - t, sinceActiveMs: sinceInput,
         });
         if (!active || !dt) continue;
         s.lifeSurviveMs = (s.lifeSurviveMs || 0) + dt;
@@ -379,6 +401,16 @@ function onDisconnect(socket, s, immediate = false) {
     if (timer.unref) timer.unref();
 }
 
+// The idle kick (dig_royale.idleKick, before the socket goes): the life
+// ends with no gain (the fare still applies, like any other end that is not
+// a raid end), and the raid pays this account no placement or win streak.
+function onIdleKick(socket, s) {
+    const userId = (s && s.accountId) || (socket && socket.account && socket.account.id) || 0;
+    if (userId && on()) acctFor(userId, Date.now()).idleKicked = true;
+    if (!s || !s.lifeOpen) return null;
+    return lifeEnd(s, 'idle');
+}
+
 // ---- raid ----
 
 function onRaidStart() {
@@ -419,12 +451,15 @@ function onRaidEnd() {
             try {
                 const a = raidAcct.get(s.accountId);
                 const raidMs = a ? t - a.joinedAt : 0;
+                // placement pays only for a raid really played: enough of the
+                // time alive with fresh input, and never after an idle kick
+                const active = !!a && ranked.activeEnough(a);
                 // the win streak only moves for a raid really played: in it
                 // long enough for the bonus, a counted life, a minute active
-                const played = !!a && a.lives > 0 && a.activeMs >= streaks.WIN_ACTIVE_MS && raidMs >= ranked.BONUS_MIN_RAID_MS;
+                const played = active && a.lives > 0 && a.activeMs >= streaks.WIN_ACTIVE_MS && raidMs >= ranked.BONUS_MIN_RAID_MS;
                 const res = rankStore.applyRaidPlacement({
                     raidKey: key, userId: s.accountId, place: e.place || i + 1, rows, score: e.teamScore != null ? e.teamScore : e.score,
-                    raidMs, now: t, played,
+                    raidMs, now: t, played, active,
                 });
                 if (!res) return;
                 dustHooks.noteExternalCredit(s.accountId, res.bonusDustMilli, res.balanceMilli);
@@ -467,7 +502,8 @@ function onShutdown() {
     try { progress.saveAll(); } catch (e) { logErr('progress', e); }
 }
 
-// Living account bodies: the survive quest, Survivor, Hoarder.
+// Living account bodies: the survive quest, Survivor (both on time alive
+// with fresh input, not the wall clock), Hoarder.
 function checkAlive(t) {
     if (!ctx || !openByAcct.size || !on()) return;
     const bySid = new Map();
@@ -477,7 +513,7 @@ function checkAlive(t) {
         const c = bySid.get(s.key);
         const body = c && c.player && c.player.body;
         if (!body || body.socket !== c || (body.isDead && body.isDead())) continue;
-        progress.onAlive(body, t - s.lifeStartAt);
+        progress.onAlive(body, s.lifeInputMs || 0);
     }
 }
 
@@ -513,15 +549,21 @@ function debugPts(socket) {
     const s = ctx && socket ? ctx.stats().get('s:' + socket.id) : null;
     if (!s) return null;
     return {
-        open: !!s.lifeOpen, surviveMs: s.lifeSurviveMs | 0, survivePts: s.lifeSurvivePts | 0,
+        open: !!s.lifeOpen, surviveMs: s.lifeSurviveMs | 0, survivePts: s.lifeSurvivePts | 0, inputMs: s.lifeInputMs | 0,
+        idleMs: socket ? activity.idleMs(socket) : 0, inputIdleMs: socket ? activity.inputIdleMs(socket) : 0,
+        invuln: !!(socket.player && socket.player.body && socket.player.body.invuln),
         dmgPts: s.lifeDmgPts | 0, rankOnly: s.rankOnly | 0, lifeBasis: basisOf(s) - (s.lifeBase || 0),
         sinceInputMs: socket.lastInputAt ? Date.now() - socket.lastInputAt : -1,
         safe: !!(socket.player && socket.player.body && (socket.player.body.padSafe || socket.player.body.passive)),
+        raid: (() => {
+            const a = s.accountId ? raidAcct.get(s.accountId) : null;
+            return a ? { inputMs: a.inputMs | 0, aliveMs: a.aliveMs | 0, idleKicked: !!a.idleKicked, active: ranked.activeEnough(a) } : null;
+        })(),
     };
 }
 
 module.exports = {
-    BOOT_ID, attach, basisOf, raidKey, lifeStart, lifeEnd, onDeath, onKillCredited, onDisconnect,
+    BOOT_ID, attach, basisOf, raidKey, lifeStart, lifeEnd, onDeath, onKillCredited, onDisconnect, onIdleKick,
     onPlayerDamaged, surviveCheck, onRaidStart, onRaidEnd, onShutdown, tick, debugRank, debugPts, on,
     _raidAcct: raidAcct,
 };

@@ -33,7 +33,7 @@
 'use strict';
 
 const RESERVE_MS = 90 * 1000;
-const AWAY_MS = 120 * 1000;
+const AWAY_MS = 45 * 1000;
 const FILL_WAIT_MS = 45 * 1000;
 
 class DuoTeams {

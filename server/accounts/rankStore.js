@@ -18,7 +18,9 @@ const R = require('../../shared/ranks.js');
 
 const LEGEND_CACHE_MS = 60 * 1000;
 // rank_lives.end_reason spells the raid end with an underscore
-const DB_REASON = { death: 'death', raidend: 'raid_end', disconnect: 'disconnect', shutdown: 'shutdown', crash: 'crash' };
+// (an idle kick is stored as a disconnect: the column's CHECK predates it;
+// its basis and gain are 0)
+const DB_REASON = { death: 'death', raidend: 'raid_end', disconnect: 'disconnect', idle: 'disconnect', shutdown: 'shutdown', crash: 'crash' };
 
 function h() { return db.handle(); }
 function isRanked(row) { return !!row && row.ranked_at != null; }
@@ -121,8 +123,9 @@ function stateOf(u) {
 }
 
 // Settles one open life. `life`: {lifeId, userId, reason:'death'|'raidend'|
-// 'disconnect'|'shutdown', now, basis, countedBefore, durationMs, noFare,
-// kills, botKills, sources:[[label, pts]], dust:{lifeMilli, balanceMilli}}.
+// 'disconnect'|'idle'|'shutdown', now, basis, countedBefore, durationMs,
+// activeMs (alive with fresh input), noFare, kills, botKills,
+// sources:[[label, pts]], dust:{lifeMilli, balanceMilli}}.
 // -> the RK payload, or null if the life was already settled (or is gone).
 function settleLife(life) {
     const d = h();
@@ -157,8 +160,10 @@ function settleLife(life) {
             lives: 1, deaths: life.reason === 'death' ? 1 : 0, kills: life.kills, botKills: life.botKills,
             bestLife: r.basis, playMs: life.durationMs,
         });
-        // the day's first counted life moves the play streak (same rule as a placement life)
-        const streak = ranked.countsForPlacement(life.durationMs, r.basis) ? streaks.onLife(d, u.id, now) : null;
+        // the day's first counted life moves the play streak: points, or a
+        // placement life's length of active play (idle time never counts)
+        const played = life.reason !== 'idle' && ranked.countsForPlacement(life.activeMs != null ? life.activeMs : life.durationMs, r.basis);
+        const streak = played ? streaks.onLife(d, u.id, now) : null;
         const afterRow = d.get('SELECT * FROM users WHERE id = ?', u.id);
         const after = snapshot(afterRow, { fresh: true, now });
         const rankUp = wasRanked ? after.division > before.division : !!(r.placement && r.placement.finished);
@@ -183,14 +188,14 @@ function settleLife(life) {
 // (`played`: the raid counts for it, see streaks.js). Idempotent per
 // (raid_key, user). -> {raidKey, place, of, score, bonusRP, bonusDustMilli,
 // before, after, rankUp, tierUp, balanceMilli, eligible, streak} | null
-function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now, played }) {
+function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now, played, active = true }) {
     const d = h();
     if (!d) return null;
     now = now || Date.now();
     return d.tx(() => {
         const u = d.get('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL', userId);
         if (!u) return null;
-        const bonus = ranked.placementBonus({ place, rows, score, raidMs });
+        const bonus = ranked.placementBonus({ place, rows, score, raidMs, active });
         const ins = d.run(`INSERT INTO raid_results (raid_key, user_id, place, board_rows, score, raid_ms, rp_bonus, dust_milli, created_at)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(raid_key, user_id) DO NOTHING`,
             raidKey, userId, Math.max(1, place | 0), Math.max(1, rows | 0), Math.max(0, score | 0), Math.max(0, raidMs | 0),
@@ -209,7 +214,7 @@ function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now, 
         // wins and top-3s count on the same terms as the bonus (score, 5 minutes in, board size)
         const counts = bonus.eligible;
         bumpStats(d, userId, now, { raids: 1, raidWins: counts && place === 1 ? 1 : 0, top3: counts && place <= 3 ? 1 : 0 });
-        const streak = streaks.onRaid(d, userId, { raidKey, win: counts && place === 1, played: !!played }, now);
+        const streak = streaks.onRaid(d, userId, { raidKey, win: counts && place === 1, played: !!played && !!active }, now);
         if (streak && streak.balanceMilli != null) balanceMilli = streak.balanceMilli;
         const after = snapshot(d.get('SELECT * FROM users WHERE id = ?', userId), { fresh: true, now });
         return {

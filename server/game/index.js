@@ -19,6 +19,7 @@ const REBOUND_KEEP = 0.85;    // how much of the shot's speed survives the bounc
 // (into another bot; into a player it follows that player's difficulty)
 const BOT_SHOT_MULT = 0.8;
 const botDiff = require('../miscFiles/botDifficulty.js');
+const activity = require('./network/activity.js');
 
 function deflectBullet(chamber, body) {
     const dx = body.x - chamber.x, dy = body.y - chamber.y;
@@ -1048,10 +1049,10 @@ class gameHandler {
     directorTick() {
         const now = Date.now();
         // Players under mercy are not hosts: don't funnel fresh bots toward someone
-        // who is already losing.
+        // who is already losing (unless they stopped playing: idle is no mercy).
         const humans = (this.socketManagerPlayers?.() || [])
             .filter(b => b && !b.isDead?.() && !b.isGhost &&
-                !((b.socket?.botMercyUntil || 0) > now));
+                (!((b.socket?.botMercyUntil || 0) > now) || activity.unprotected(b, now)));
         if (!humans.length) return;
 
         const live = this.bots.filter(b => b && !b.isDead() && !b.isGhost);
