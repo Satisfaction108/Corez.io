@@ -16,6 +16,10 @@
 //   sidearm    a shop sidearm's bullet
 //   ram        the tank's own hull, with its bullets landing the same tick
 //   copper     a copper chest to minions
+//   storm      a chest out in the storm, still being shot past the storm
+//              grace: it stays and pays out in full (it used to be retired
+//              under fire, so it vanished with nothing coming out)
+//   stormIdle  an untouched chest in the storm is still retired quietly
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -46,6 +50,7 @@ global.gameManager.gameHandler = handler;
 
 const chests = require(path.join(SERVER, 'game', 'terrain', 'chests.js'));
 const shop = require(path.join(SERVER, 'game', 'terrain', 'shop.js'));
+const storm = require(path.join(SERVER, 'game', 'terrain', 'storm.js'));
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
@@ -209,6 +214,58 @@ test('copper', () => {
     c.chest.health.amount = 0.5;
     finish(c, false);
 });
+
+// Seek the storm into its hold (the zone at a fifth of the map) and run the
+// chest ticks on a clock we can move forward.
+function withStorm(fn) {
+    const realNow = Date.now;
+    let skew = 0;
+    Date.now = () => realNow() + skew;
+    try {
+        storm.start();
+        storm.debugSeek(storm.shrinkMs() / 1000 + 1);
+        fn(ms => { skew += ms; });
+    } finally {
+        Date.now = realNow;
+        storm.stop();
+    }
+}
+function shoot(c) {
+    const s = fireGun(c.tank);
+    aimAt(s, c.chest);
+    for (let i = 0; i < 6; i++) loop();
+}
+
+test('storm', () => withStorm((advance) => {
+    const c = setup('basic');
+    assert.ok(storm.inStorm(c.chest.x, c.chest.y), 'the chest is out in the storm');
+    shoot(c);
+    assert.ok(c.chest.hitters.has(c.tank.id), 'the tank hurt the chest');
+    chests.tick();
+    // past the storm grace, still under fire
+    advance(7000);
+    shoot(c);
+    chests.tick();
+    assert.ok(!c.chest._opened && !c.chest.isDead(), 'a chest being broken in the storm stays put');
+    advance(4000);
+    chests.tick();
+    assert.ok(!c.chest._opened, 'a few seconds between shots is still breaking it');
+    c.chest.health.amount = 0.5;
+    shoot(c);
+    finish(c);
+}));
+
+test('stormIdle', () => withStorm((advance) => {
+    const c = setup('basic');
+    assert.ok(storm.inStorm(c.chest.x, c.chest.y));
+    chests.tick();
+    advance(7000);
+    chests.tick();
+    loop(2);
+    assert.ok(c.chest.isDead(), 'an untouched chest in the storm is retired');
+    assert.equal(c.payout(), 0, 'without a payout');
+    assert.equal(c.talk.filter(a => a[0] === 'FX').length, 0, 'or a burst');
+}));
 
 let failed = 0;
 for (const t of tests) {

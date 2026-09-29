@@ -44,7 +44,7 @@ async function interactions(ctx) {
     if (i.type === 1) return ctx.json(200, { type: 1 });
     if (i.type === 2) {
         let res;
-        try { res = commands.handle(i); } catch (e) {
+        try { res = await commands.handle(i); } catch (e) {
             console.error('[discord] command /' + ((i.data && i.data.name) || '?') + ' failed: ' + ((e && e.stack) || e));
             res = commands.reply('Oops, that command broke. Try again in a bit.', { ephemeral: true });
         }

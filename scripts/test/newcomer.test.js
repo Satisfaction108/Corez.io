@@ -2,8 +2,8 @@
 //
 //   shield     a raid spawn is shielded for 5 s; the soft window after it is
 //              2 min for a new player and 25 s for anyone else
-//   respawn    a session's first 3 deaths (and every death of a new player)
-//              wait 5 s, later ones the full 15 s; the F packet carries it;
+//   respawn    every death waits 3 s, new player or not, and the spawn loop
+//              refuses an early drop; the F packet carries the wait;
 //              15 minutes played ends "new" however few the lives
 //   softBots   bots skip a soft player unless they come close or shoot,
 //              never start a fight with one, and cap hunters per player
@@ -52,6 +52,7 @@ function loop(n = 1) { for (let i = 0; i < n; i++) handler.gameloop(); }
 
 const royale = require(path.join(SERVER, 'game', 'gamemodes', 'scripts', 'dig_royale.js'));
 const bosses = require(path.join(SERVER, 'game', 'terrain', 'bosses.js'));
+const shop = require(path.join(SERVER, 'game', 'terrain', 'shop.js'));
 const { ioTypes } = require(path.join(SERVER, 'miscFiles', 'controllers.js'));
 const dbmod = require(path.join(SERVER, 'accounts', 'db'));
 const migrations = require(path.join(SERVER, 'accounts', 'migrations'));
@@ -118,7 +119,7 @@ test('shield: a raid spawn gets 5 s of shield; the soft window is 2 minutes only
     loop(2);
 });
 
-test('respawn: first 3 deaths of a session wait 5 s, the 4th waits 15 s; a new player always 5 s', () => {
+test('respawn: every death waits 3 s, new player or not', () => {
     const waits = (careerLives, lives) => {
         const out = [];
         const socket = fakeSocket({ _careerLives: careerLives });
@@ -128,24 +129,59 @@ test('respawn: first 3 deaths of a session wait 5 s, the 4th waits 15 s; a new p
             socket._royaleLives = i;   // the spawn path counts the life
             p.deathCause = 'storm';
             royale.onCombatantDead(p);
-            out.push(Math.round((socket.royaleRespawnAt - Date.now()) / 1000));
+            out.push(Math.round((socket.royaleRespawnAt - Date.now()) / 100) / 10);
             p.kill();
         }
         return out;
     };
-    assert.deepEqual(waits(100, 5), [5, 5, 5, 15, 15]);
-    // career 0: the first 5 lives are fully new (botDifficulty.newness), so
-    // still quick at 4 and 5; the 6th is past it
-    assert.deepEqual(waits(0, 6), [5, 5, 5, 5, 5, 15]);
-    // ...unless the clock ran out first: 15 minutes played is not new
+    assert.equal(royale.RESPAWN_MS, 3000);
+    assert.deepEqual(waits(100, 5), [3, 3, 3, 3, 3]);
+    assert.deepEqual(waits(0, 6), [3, 3, 3, 3, 3, 3]);
+    // 15 minutes played is not new
     const long = fakeSocket({ _careerLives: 0, _careerPlayMs: 15 * 60_000 });
     const q = player(0, (nextY += 1200), long);
     royale.freshRaidBody(q);
     assert.equal(q.botNewbie, false);
     q.kill();
     loop(2);
-    assert.equal(FM.QUICK_RESPAWN_DEATHS, 3);
-    assert.equal(FM.NEW_RESPAWN_MS, 5000);
+    assert.equal(FM.NEW_RESPAWN_MS, undefined, 'no separate newcomer wait any more');
+});
+
+test('respawn: the spawn loop refuses a drop before the wait is up', () => {
+    const src = fs.readFileSync(path.join(SERVER, 'game', 'network', 'sockets.js'), 'utf8');
+    assert.ok(/if \(socket\.royaleRespawnAt && Date\.now\(\) < socket\.royaleRespawnAt\) return;/.test(src));
+    // and a client can't skip the card: respawn() waits out raidRespawnAt
+    const cv = fs.readFileSync(path.join(REPO, 'public', 'client', 'canvas.js'), 'utf8');
+    assert.ok(/performance\.now\(\) < global\.raidRespawnAt\) return;/.test(cv));
+});
+
+test('secondWind: the shield holds through movement for 10 s, never through shooting', () => {
+    const socket = fakeSocket({ _careerLives: 100 });
+    const st = shop.stateOf(socket);
+    st.gear.wind = Date.now() + 60_000;
+    const p = player(0, (nextY += 1200), socket);
+    royale.freshRaidBody(p);
+    assert.ok(Math.abs(p.spawnMoveShieldUntil - (Date.now() + shop.WIND_SHIELD_MS)) < 200);
+    const q = player(0, (nextY += 1200), fakeSocket({ _careerLives: 100 }));
+    royale.freshRaidBody(q);
+    assert.equal(q.spawnMoveShieldUntil, 0, 'no gear, no extra shield');
+    // the controller: past the 5 s grace, moving keeps it and shooting drops it
+    const cmd = { up: false, down: false, left: false, right: false, lmb: false, autofire: false };
+    const ctl = new ioTypes.listenToPlayer(p, { player: { command: cmd, target: { x: 0, y: 0 } } });
+    const ctlQ = new ioTypes.listenToPlayer(q, { player: { command: cmd, target: { x: 0, y: 0 } } });
+    ctl.think(); ctlQ.think();
+    p.spawnGraceUntil = q.spawnGraceUntil = Date.now() - 1;
+    cmd.up = true;
+    ctl.think(); ctlQ.think();
+    assert.equal(p.invuln, true, 'Second Wind: still shielded while moving');
+    assert.equal(q.invuln, false, 'without it, moving drops the shield');
+    cmd.lmb = true;
+    ctl.think();
+    assert.equal(p.invuln, false, 'shooting drops it');
+    const item = shop.BY_ID.get('wind');
+    assert.ok(/spawn shield/.test(item.desc) && !/respawn in/i.test(item.desc));
+    p.kill(); q.kill();
+    loop(2);
 });
 
 test('respawn: the death packet tells the client the same wait', () => {
@@ -153,7 +189,9 @@ test('respawn: the death packet tells the client the same wait', () => {
     const src = fs.readFileSync(path.join(SERVER, 'game', 'network', 'sockets.js'), 'utf8');
     assert.ok(/socket\.royaleRespawnAt \? Math\.max\(0, socket\.royaleRespawnAt - Date\.now\(\)\)/.test(src));
     const client = fs.readFileSync(path.join(REPO, 'public', 'client', 'socketinit.js'), 'utf8');
-    assert.ok(/raidRespawnAt = performance\.now\(\) \+ \(respawnWaitMs > 0 \? respawnWaitMs/.test(client));
+    assert.ok(/const waitMs = respawnWaitMs > 0 \? respawnWaitMs : 3000;\s+global\.raidRespawnAt = performance\.now\(\) \+ waitMs;/.test(client));
+    // the death card goes up with the death packet, no killer cam in front of it
+    assert.ok(/The death card shows at once[\s\S]{0,300}global\.royaleDied = true;/.test(client));
     const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
     assert.ok(/const SHIELD_GRACE_MS = 5000;/.test(app), 'client shield hint counts down from 5');
 });

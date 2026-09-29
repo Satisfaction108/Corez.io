@@ -3016,6 +3016,7 @@ import * as cosmetics from './account/cosmetics.js';
         return { plate, cog, wheel };
     }
 
+    let depositVault = null;   // the vault the cash-out effects play on
     function drawVaults(roomX, roomY, ratio) {
         if (royaleLobbyPhase()) return;
         if (!global.vaults.length) return;
@@ -3023,14 +3024,29 @@ import * as cosmetics from './account/cosmetics.js';
         const v0 = global.vault;
         const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
         const c = ctx[0];
+        // The cash-out ring, spin, dust and finish flash belong to the vault
+        // you're standing on. global.vault is one state for every pad (a base
+        // bank sends the same packets), so without this a deposit at your
+        // base, or at one vault, drew its ring inside any other vault on
+        // screen.
+        if (v0.onPad && !v0.isOutpost) {
+            let bd = Infinity, best = null;
+            const mx = global.player.renderx, my = global.player.rendery;
+            for (const v of global.vaults) {
+                const d = (v.x - mx) ** 2 + (v.y - my) ** 2;
+                if (d < bd) { bd = d; best = v; }
+            }
+            if (best && bd < (best.r * 2) ** 2) depositVault = best;
+        } else if (!(now - v0.doneAt < 700)) depositVault = null;
         for (const v of global.vaults) {
             const sx = roomX + (v.x + halfW) * ratio;
             const sy = roomY + (v.y + halfH) * ratio;
             const R = v.r * 1.15 * ratio;
             if (sx < -R * 2 || sx > global.screenWidth + R * 2 ||
                 sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
-            const depositing = v0.total > 0 && v0.onPad;
-            const doneFlash = Math.max(0, 1 - (now - v0.doneAt) / 700);
+            const mine = v === depositVault;
+            const depositing = mine && v0.total > 0 && v0.onPad && !v0.isOutpost;
+            const doneFlash = mine ? Math.max(0, 1 - (now - v0.doneAt) / 700) : 0;
             const rainbow = !!v.rainbow;
             const teamCol = rainbow ? hsvCss((now / 12) % 360)
                 : gameDraw.getColor(v.team === -1 ? "blue" : "red");
@@ -3147,7 +3163,7 @@ import * as cosmetics from './account/cosmetics.js';
                         });
                     }
                 }
-            } else v0._burstDone = false;
+            } else if (mine) v0._burstDone = false;
         }
 
         if (vaultDust.length) {
@@ -8868,6 +8884,7 @@ import * as cosmetics from './account/cosmetics.js';
     // The server holds the shield for 4 s, then drops it on the first move
     // or shot.
     const SHIELD_GRACE_MS = 5000;
+    const WIND_SHIELD_MS = 10000;   // shop.js WIND_SHIELD_MS
     let shieldOnPrev = false;
     function drawSpawnShield(c, x, y, R, invuln) {
         const on = !!invuln;
@@ -8895,7 +8912,12 @@ import * as cosmetics from './account/cosmetics.js';
         if (global.died || !global.shieldSeen || !shieldOnPrev || raidFinale.active()) return;
         const since = performance.now() - (global.spawnedAt || 0);
         const left = Math.ceil((SHIELD_GRACE_MS - since) / 1000);
-        const line = left > 0
+        // Second Wind (shop gear): moving keeps the shield up to 10 s
+        const wu = global.shop && global.shop.state && global.shop.state.gearUntil && global.shop.state.gearUntil.wind;
+        const windLeft = wu === true || +wu > Date.now() ? Math.ceil((WIND_SHIELD_MS - since) / 1000) : 0;
+        const line = windLeft > 0
+            ? (left > 0 ? "Spawn shield: safe for " + left + "s, then shooting drops it" : "Spawn shield: holds while you move for " + windLeft + "s, shooting drops it")
+            : left > 0
             ? "Spawn shield: safe for " + left + "s, then moving or shooting drops it"
             : "Spawn shield: moving or shooting drops it";
         const y = global.screenHeight / 2 + 120, size = 22;
@@ -11200,11 +11222,9 @@ import * as cosmetics from './account/cosmetics.js';
             global.clickables.royalePlay.hide();
             return;
         }
-        // Killer cam: 3s on the killer, no panel yet. The handoff guard covers
-        // the gap between the cam expiring and its (possibly throttled) timer
-        // firing, so the classic screen never flashes before the raid panel.
-        const killerCamLive = global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil;
-        if (global.died && (killerCamLive || (!global.royaleDied && global.royaleSpectating))) {
+        // Spectating before the raid card came up (a Spectate click while the
+        // death packet was still settling): no classic screen underneath.
+        if (global.died && !global.royaleDied && global.royaleSpectating) {
             global.clickables.royaleSpectate.hide();
             global.clickables.deathRespawn.hide();
             global.clickables.royalePrev.hide();
@@ -11332,163 +11352,182 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
     };
-    // Over the killer the camera is following while you wait: who it is.
-    function drawWatchingTag(rv, a) {
-        const c = ctx[2];
-        const sx = global.screenWidth / 2, sy = global.screenHeight / 2 + 100;
-        const name = shortName(rv.name || "them", 16);
-        const label = "Watching " + name;
-        const tw = hudTextW(label, 12.5);
-        const hp = Math.max(0, Math.min(1, rv.hp != null ? +rv.hp : 1));
-        const w = Math.max(tw + 30, 150), h = 40;
-        hudPanel(c, sx - w / 2, sy - h / 2, w, h, { alpha: a, fill: HUD.solid, r: HUD.rSmall + 2 });
-        drawText(label, sx, sy - 6, 12.5, "#ff9a8c", "center", true, a);
-        c.save();
-        c.globalAlpha = a;
-        hudBar(c, sx - w / 2 + 12, sy + 6, w - 24, 6, hp, hp > 0.5 ? HUD.emerald : hp > 0.25 ? HUD.gold : HUD.danger);
-        c.restore();
-    }
     // ── Raid death screen ────────────────────────────────────────────────
-    // The raid's death screen: gold-framed, full run stats, auto respawn
-    // (paused during the final-storm spawn lock).
+    // Up for the respawn wait only (3 s), so it has to read at a glance: the
+    // whole card is there from the first frame (one short fade, nothing
+    // staggered). One wide card, low and centred: the life in numbers on the
+    // left, who got you and what's next on the right. The camera follows your
+    // killer meanwhile and lifts (deathCamLift, see drawGameplay) so they
+    // stay in view above the card. Then you drop straight back in (held
+    // during the final-storm spawn lock).
     const gameDrawDeadRoyale = () => {
-        let glide = global.deathAnimation.get();
-        // the card fades in first (panelA), then the staggered rows; the
-        // backdrop ramps up from zero
-        const panelA = global.lerp(0, 0.7, glide);
-        const rise = (1 - panelA) * 18;
+        const now = performance.now();
+        const A = global.royaleDiedAt ? Math.min(1, (now - global.royaleDiedAt) / 140) : 1;
         const you = global.royale.you || {};
         const rv = you.revenge || null;
-        // the camera follows your killer behind the card: on a wide screen
-        // the card steps left and the dim is lighter so you can watch them
-        const PW = Math.min(620, global.screenWidth - 40);
-        const wide = global.screenWidth >= PW * 2 + 260;
-        const watching = !!(rv && rv.alive);
-        clearScreen(color.black, (wide && watching ? 0.36 : 0.62) * global.lerp(0, 0.6, glide), ctx[2]);
         const c = ctx[2];
-        const cx = wide ? Math.round(global.screenWidth / 2 - 110 - PW / 2) : global.screenWidth / 2;
-        global.deathPanelCx = cx;
-        const place = (you.place || global.royale.place) | 0;
-        const score = (you.score != null ? you.score : global.royale.youScore) | 0;
-        const PH = 544;
-        const px = cx - PW / 2;
-        const py = Math.max(12, global.screenHeight / 2 - PH / 2 - 6) + rise;
-        if (wide && watching) drawWatchingTag(rv, panelA);
-        // panel: dark card, black keyline, gold raid frame
-        hudPanel(c, px, py, PW, PH, { alpha: panelA, fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
+        const sw = global.screenWidth, sh = global.screenHeight;
+        clearScreen(color.black, 0.34 * A, c);
 
-        hudTitle("You died", cx, py + 32, 32 * (0.8 + 0.2 * panelA), HUD.gold, "center", panelA);
-        drawText("The raid keeps going without you for a bit", cx, py + 55, 11, HUD.text2, "center", true, panelA);
-
-        // headline score + place
-        const bx = px + 22, bw = PW - 44;
-        c.save();
-        c.globalAlpha = global.lerp(0, 1, glide) * (0.25 + 0.75 * panelA);
-        hudWell(c, bx, py + 66, bw, 58, 10, "rgba(242,184,60,0.12)", HUD.ink, 2.5);
-        c.restore();
-        drawText("RAID SCORE", bx + 14, py + 79, 11, HUD.text2, "left", true, panelA);
-        hudTitle(util.formatLargeNumber(Math.round(score)), bx + 14, py + 102, 28, HUD.gold, "left", panelA);
-        if (place > 0) hudTitle("#" + place, bx + bw - 14, py + 102, 28, HUD.head, "right", panelA);
-
-        // the run in numbers: kept vs lost
-        const half = (bw - 8) / 2;
-        const rows = [
-            ["BANKED (KEPT)", util.formatLargeNumber((you.banked != null ? you.banked : global.finalBanked) | 0), "gem"],
-            ["SATCHEL LOST", util.formatLargeNumber(global.finalCarried | 0), "gem"],
-            ["KILLS", String((you.kills != null ? you.kills : Math.round(global.finalKills[0].get())) | 0), "combat"],
-            ["CARRIED (50% PTS)", util.formatLargeNumber((you.carried != null ? you.carried : 0) | 0), "gem"],
-            ["ROCKS MINED", String(global.finalRocks | 0), "pickaxe"],
-            ["SURVIVED", compactTime(global.finalLifetime.get()), "clock"],
-        ];
-        const gy = py + 134;
-        for (let i = 0; i < rows.length; i++) {
-            const col = i % 2, row = (i / 2) | 0;
-            const a = global.lerp(1 + i * 0.2, 1.25 + i * 0.2, glide);
-            deathStat(rows[i][0], rows[i][1], rows[i][2],
-                      bx + col * (half + 8), gy + row * 46, half, a);
-        }
-
-        const cause = global.finalCause || "";
-        const killedBy = cause === "raidend" ? "The raid ended. Everyone went down together"
-            : cause === "rock" ? "Crushed by the living rock"
-            : cause === "storm" ? "Lost in the storm"
-            : global.finalKillers.length
-                ? "Taken down by " + global.finalKillers.join(" and ")
-                : "Nobody finished you off";
-        c.save();
-        c.globalAlpha = global.lerp(2.4, 2.7, glide);
-        drawText(killedBy, cx, gy + 3 * 46 + 14, 13, HUD.text2, "center");
-        c.restore();
-        const extras = [];
-        if ((global.finalInsured | 0) > 0) extras.push("Your insurance saved " + util.formatLargeNumber(global.finalInsured | 0) + " of it");
-        if ((global.finalStreak | 0) >= 3) extras.push("Your " + (global.finalStreak | 0) + " kill streak is over");
-        if (global.finalDrillLost) extras.push("Your drill dropped a tier");
-        drawText(extras.length ? extras.join(". ") + "." : "You dropped everything you were carrying, but your bank is safe.", cx, gy + 3 * 46 + 34, 12, extras.length ? color.gold : color.guiwhite, "center", true, panelA);
-        // what's waiting when you're back: revenge on your killer, and the
-        // first contract
-        const la = global.lerp(2.5, 2.8, glide) * panelA;
-        const sy = gy + 3 * 46 + 50;
-        c.save();
-        c.globalAlpha = la;
-        hudWell(c, bx, sy, bw, 50, 10, "rgba(14,11,18,0.45)", HUD.ink, 2);
-        c.restore();
-        if (rv) {
-            const who = shortName(rv.name || "them", 16);
-            drawSkull(c, bx + 18, sy + 15, 6, "#ff6b5e");
-            const line = rv.alive ? "Revenge: " + who + " is marked for you. +" + fmtNum(rv.bonus || 200) + " gems if you get them."
-                : "Revenge: " + who + " is marked for you once they're back.";
-            const f = fitLine(line, 12, 9.5, bw - 44);
-            drawText(f.txt, bx + 30, sy + 15, f.qs, "#ff9a8c", "left", true, la);
-        }
-        const ny = rv ? sy + 35 : sy + 25;
-        const nextTxt = you.next ? "Next: " + String(you.next).charAt(0).toLowerCase() + String(you.next).slice(1) : "Next: a new contract as soon as you land";
-        const fn = fitLine(nextTxt, 12, 9.5, bw - 44);
-        c.save();
-        c.globalAlpha = la;
-        c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
-        c.beginPath(); c.arc(bx + 18, ny, 5.5, 0, Math.PI * 2); c.fill(); c.stroke();
-        c.beginPath(); c.arc(bx + 18, ny, 2, 0, Math.PI * 2); c.fillStyle = HUD.ink; c.fill();
-        c.restore();
-        drawText(fn.txt, bx + 30, ny, fn.qs, HUD.gold, "left", true, la);
-
+        // the way back first: it runs whatever the card looks like
         const locked = !!(global.royale.lock && global.royale.at > 0);
-        const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
+        const waitMs = Math.max(0, (global.raidRespawnAt || 0) - now);
         // a rank-up still to play on the card holds the respawn (8 s at most)
         const rankHold = rankPanel.holdsRespawn() && waitMs > -8000;
         if (!locked && global.raidRespawnAt > 0 && waitMs <= 0 && !global.disconnected && !global.respawnPending && !rankCeremony.isPlaying() && !rankHold && !global.updateHoldsRespawn) {
             try { global.canvas.respawn(); } catch { /* */ }
         }
-        // the way back: a countdown and a bar that fills to the drop
-        const ry2 = gy + 3 * 46 + 118;
-        const total = Math.max(1000, global.raidRespawnWaitMs || 15000);
+
+        // ── layout ──
+        const W = Math.min(1040, sw - 32);
+        const pad = 20, gap = 14;
+        const two = W >= 820;
+        const colW = two ? Math.floor((W - pad * 2 - gap) / 2) : W - pad * 2;
+        const hasRank = rankPanel.hasContent();
+        const HEAD = 62, STEP = 46, TILE = 40, NEXT_H = 40, RANK_H = 106, FOOT = 46;
+        const leftH = 3 * STEP - (STEP - TILE) + 26;
+        const whoH = two ? leftH - 10 - NEXT_H : 74;
+        const bodyH = two ? leftH : leftH + gap + whoH + 10 + NEXT_H;
+        const H = pad + HEAD + gap + bodyH + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 12;
+        // the DOM buttons (Spectate, Home) sit under the card
+        const cssK = sh / Math.max(1, window.innerHeight);
+        const BTN = Math.round((40 + 22) * cssK);
+        const px = Math.round(sw / 2 - W / 2);
+        const py = Math.round(Math.max(12, sh - H - BTN - 12));
+        const cx = sw / 2;
+        // the killer sits in the middle of the room above the card
+        global.deathCamLift = Math.max(0, sh / 2 - Math.max(110, py / 2 + 10));
+        global.deathPanelCss = {
+            cx: Math.round(cx * window.innerWidth / Math.max(1, sw)),
+            top: Math.round((py + H) * window.innerHeight / Math.max(1, sh)) + 10,
+        };
+
+        hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
+
+        // ── header: what happened, and where you stand ──
+        const hx = px + pad, hy = py + pad, hw = W - pad * 2;
+        c.save();
+        c.globalAlpha = A;
+        hudWell(c, hx, hy, hw, HEAD, 10, "rgba(242,184,60,0.12)", HUD.ink, 2.5);
+        c.restore();
+        const cause = global.finalCause || "";
+        const killedBy = cause === "raidend" ? "The raid ended. Everyone went down together"
+            : cause === "rock" ? "Crushed by the living rock"
+            : cause === "storm" ? "Lost in the storm"
+            : cause === "base" ? "Shot down by the enemy base"
+            : global.finalKillers.length
+                ? "Taken down by " + global.finalKillers.join(" and ")
+                : "Nobody finished you off";
+        const place = (you.place || global.royale.place) | 0;
+        const score = (you.score != null ? you.score : global.royale.youScore) | 0;
+        const placeTxt = place > 0 ? "#" + place : "";
+        const placeW = placeTxt ? hudTitleW(placeTxt, 28) : 0;
+        const scoreTxt = util.formatLargeNumber(Math.round(score));
+        const scoreR = hx + hw - 16 - (placeW ? placeW + 22 : 0);
+        const scoreW = Math.max(hudTitleW(scoreTxt, 26), hudTextW("RAID SCORE", 11));
+        hudTitle("You died", hx + 16, hy + 26, 28, HUD.gold, "left", A);
+        const kb = fitLine(killedBy, 13, 10, Math.max(120, scoreR - scoreW - 30 - (hx + 16)));
+        drawText(kb.txt, hx + 16, hy + 47, kb.qs, HUD.text, "left", true, A);
+        drawText("RAID SCORE", scoreR, hy + 18, 11, HUD.text2, "right", true, A);
+        hudTitle(scoreTxt, scoreR, hy + 42, 26, HUD.gold, "right", A);
+        if (placeTxt) hudTitle(placeTxt, hx + hw - 16, hy + 34, 28, HUD.head, "right", A);
+
+        // ── left: the life in numbers ──
+        const by = hy + HEAD + gap;
+        const half = (colW - 8) / 2;
+        const rows = [
+            ["BANKED (KEPT)", util.formatLargeNumber((you.banked != null ? you.banked : global.finalBanked) | 0), "gem"],
+            ["SATCHEL LOST", util.formatLargeNumber(global.finalCarried | 0), "gem"],
+            ["KILLS", String((you.kills != null ? you.kills : global.finalKillCount) | 0), "combat"],
+            ["CARRIED (50% PTS)", util.formatLargeNumber((you.carried != null ? you.carried : 0) | 0), "gem"],
+            ["ROCKS MINED", String(global.finalRocks | 0), "pickaxe"],
+            ["SURVIVED", compactTime(global.finalLifeSecs || 0), "clock"],
+        ];
+        c.save();
+        c.globalAlpha = A;
+        for (let i = 0; i < rows.length; i++) {
+            deathStat(rows[i][0], rows[i][1], rows[i][2], hx + (i % 2) * (half + 8), by + ((i / 2) | 0) * STEP, half, A);
+        }
+        c.restore();
+        const extras = [];
+        if ((global.finalInsured | 0) > 0) extras.push("Your insurance saved " + util.formatLargeNumber(global.finalInsured | 0) + " of it");
+        if ((global.finalStreak | 0) >= 3) extras.push("Your " + (global.finalStreak | 0) + " kill streak is over");
+        if (global.finalDrillLost) extras.push("Your drill dropped a tier");
+        const ex = fitLine(extras.length ? extras.join(". ") + "." : "You dropped what you were carrying. Your bank is safe.", 12, 9, colW);
+        drawText(ex.txt, hx + colW / 2, by + 3 * STEP + 8, ex.qs, extras.length ? color.gold : HUD.text2, "center", true, A);
+
+        // ── right: who got you (revenge), then what's next ──
+        const rx = two ? hx + colW + gap : hx;
+        const ry = two ? by : by + leftH + gap;
+        c.save();
+        c.globalAlpha = A;
+        hudWell(c, rx, ry, colW, whoH, 10, rv ? "rgba(255,107,94,0.10)" : "rgba(14,11,18,0.45)", HUD.ink, 2);
+        c.restore();
+        const wy = ry + whoH / 2;
+        if (rv) {
+            drawSkull(c, rx + 34, wy, 13, "#ff6b5e");
+            drawText("REVENGE", rx + 64, wy - 24, 11, HUD.text2, "left", true, A);
+            const nm = shortName(rv.name || "them", 18);
+            let ns = 24; while (ns > 14 && hudTitleW(nm, ns) > colW - 84) ns -= 1;
+            hudTitle(nm, rx + 64, wy + 2, ns, "#ff9a8c", "left", A);
+            const sub = rv.alive ? "Marked for you. +" + fmtNum(rv.bonus || 200) + " gems if you get them." : "Marked for you once they're back.";
+            const f = fitLine(sub, 12, 9.5, colW - 84);
+            drawText(f.txt, rx + 64, wy + 25, f.qs, HUD.text, "left", true, A);
+        } else {
+            drawDeathIcon(cause === "storm" ? "clock" : "skull", rx + 34, wy, 22, A * 0.8);
+            const t1 = fitLine(killedBy, 15, 10, colW - 84);
+            drawText(t1.txt, rx + 64, wy - 9, t1.qs, HUD.head, "left", true, A);
+            drawText("Nobody to settle up with this time.", rx + 64, wy + 13, 12, HUD.text2, "left", true, A);
+        }
+        const nyTop = ry + whoH + 10;
+        c.save();
+        c.globalAlpha = A;
+        hudWell(c, rx, nyTop, colW, NEXT_H, 10, "rgba(14,11,18,0.45)", HUD.ink, 2);
+        c.restore();
+        const ny = nyTop + NEXT_H / 2;
+        const nextTxt = you.next ? "Next: " + String(you.next).charAt(0).toLowerCase() + String(you.next).slice(1) : "Next: a new contract as soon as you land";
+        const fn = fitLine(nextTxt, 12, 9.5, colW - 44);
+        c.save();
+        c.globalAlpha = A;
+        c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
+        c.beginPath(); c.arc(rx + 18, ny, 5.5, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.beginPath(); c.arc(rx + 18, ny, 2, 0, Math.PI * 2); c.fillStyle = HUD.ink; c.fill();
+        c.restore();
+        drawText(fn.txt, rx + 30, ny, fn.qs, HUD.gold, "left", true, A);
+
+        // ── ranked: the life's rank result, full width ──
+        let fy = by + bodyH + gap;
+        if (hasRank) {
+            try {
+                rankPanel.draw(c, hx, fy, hw, RANK_H,
+                    { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk }, A);
+            } catch (e) { /* never break the death screen */ }
+            fy += RANK_H + gap;
+        }
+
+        // ── footer: the countdown and a bar that fills to the drop ──
+        const total = Math.max(1000, global.raidRespawnWaitMs || 3000);
         hudTitle(locked
                 ? ("Final storm, no spawns for " + Math.max(0, global.royale.lockLeft | 0) + "s")
                 : (waitMs > 0 ? ("Back in " + Math.ceil(waitMs / 1000) + "s") : "Dropping in..."),
-                 cx, ry2, 20, locked ? HUD.lilac : waitMs > 0 ? HUD.gold : HUD.emerald, "center", panelA);
+                 cx, fy + 16, 20, locked ? HUD.lilac : waitMs > 0 ? HUD.gold : HUD.emerald, "center", A);
         if (!locked) {
             c.save();
-            c.globalAlpha = panelA;
-            hudBar(c, cx - 110, ry2 + 16, 220, 7, 1 - Math.min(1, waitMs / total), waitMs > 0 ? HUD.gold : HUD.emerald);
+            c.globalAlpha = A;
+            hudBar(c, cx - 160, fy + 32, 320, 7, 1 - Math.min(1, waitMs / total), waitMs > 0 ? HUD.gold : HUD.emerald);
             c.restore();
         }
-        // ranked: the life's rank result in the strip under the stats
-        try {
-            rankPanel.draw(c, bx, py + 416, bw, 106,
-                { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk },
-                global.lerp(2.3, 2.8, glide) * panelA);
-        } catch (e) { /* never break the death screen */ }
         global.clickables.royalePrev.hide();
         global.clickables.royaleNext.hide();
         global.clickables.royalePlay.hide();
         global.clickables.deathRespawn.hide();
-        const by = py + PH - 46;
-        const cr = global.canvas.height / global.screenHeight / global.ratio;
-        const ga = global.lerp(3, 3.25, glide);
         // DOM Spectate/Home live below the panel and take the clicks.
         if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) return;
         if (!global.disconnected) {
-            drawButton(cx - 90, by, 150, 32, ga, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
-            drawButton(cx + 90, by, 150, 32, ga, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
+            const cr = global.canvas.height / global.screenHeight / global.ratio;
+            const bty = py + H + 12;
+            drawButton(cx - 90, bty, 150, 32, A, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
+            drawButton(cx + 90, bty, 150, 32, A, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
         }
     };
     const drawRoyaleSpectateBar = () => {
@@ -11500,8 +11539,8 @@ import * as cosmetics from './account/cosmetics.js';
         const h = 36;
         const c = ctx[2];
         hudPanel(c, x, y, barW, h, { fill: HUD.solid });
-        // Spectating is manual: Prev/Next hop, Play rejoins (queues through
-        // the 15s tax), Home exits. No auto-rejoin while watching.
+        // Spectating is manual: Prev/Next hop, Play rejoins (after the 3 s
+        // death wait), Home exits. No auto-rejoin while watching.
         const locked = !!(global.royale.lock && global.royale.at > 0);
         const lockLeft = Math.max(0, global.royale.lockLeft | 0);
         const place = global.royale.place | 0;
@@ -11565,6 +11604,7 @@ import * as cosmetics from './account/cosmetics.js';
         global.player.renderx += cdx;
         global.player.rendery += cdy;
     }
+    let deathLift = 0;
     const drawGameplay = (tick, ratio) => {
 
         global.metrics.rendertimes++;
@@ -11615,6 +11655,14 @@ import * as cosmetics from './account/cosmetics.js';
         global.player.cy.animY = playery;
         let px = ratio * global.player.renderx,
             py = ratio * global.player.rendery;
+        // raid death card: lift the view so the killer shows above the card
+        {
+            const want = global.died && global.royaleDied && !global.royaleSpectating ? (global.deathCamLift || 0) * util.getScreenRatio() : 0;
+            const dt = Math.min(100, tickMotion || 16.7);
+            deathLift += (want - deathLift) * Math.min(1, 1 - Math.pow(0.8, dt / 16.7));
+            if (Math.abs(deathLift) < 0.5 && !want) deathLift = 0;
+            py += deathLift;
+        }
 
         if (!global.mobile && !global.gamepadMode) calculateTarget();
 
@@ -11846,7 +11894,7 @@ import * as cosmetics from './account/cosmetics.js';
         const dead = document.getElementById("royaleDeadDom");
         if (!spec || !dead) return;
         const inGame = !!(global.gameStart && !global.disconnected);
-        if ((global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) || raidFinale.active()) {
+        if (raidFinale.active()) {
             spec.style.display = "none";
             dead.style.display = "none";
             return;
@@ -11855,10 +11903,11 @@ import * as cosmetics from './account/cosmetics.js';
         const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating);
         spec.style.display = spectating ? "flex" : "none";
         dead.style.display = deadShow ? "flex" : "none";
-        // the buttons sit under the death card, which steps left on wide screens
-        if (deadShow) {
-            const left = Math.round((global.deathPanelCx || global.screenWidth / 2) * window.innerWidth / Math.max(1, global.screenWidth)) + "px";
+        // the buttons sit right under the death card (gameDrawDeadRoyale)
+        if (deadShow && global.deathPanelCss) {
+            const left = global.deathPanelCss.cx + "px", top = global.deathPanelCss.top + "px";
             if (dead.style.left !== left) dead.style.left = left;
+            if (dead.style.top !== top) { dead.style.top = top; dead.style.bottom = "auto"; }
         }
         const spBtn = document.getElementById("royaleDomSpectate");
         if (spBtn) {
@@ -11876,7 +11925,10 @@ import * as cosmetics from './account/cosmetics.js';
             else if (global.respawnPending) label = "Wait";
             else if (global.died && waitMs > 0) label = "Play (" + Math.ceil(waitMs / 1000) + "s)";
             play.textContent = label;
-            play.style.opacity = (!global.died || locked || global.respawnPending) ? "0.55" : "1";
+            // respawn() refuses until the death wait is up; look it too
+            const off = !global.died || locked || global.respawnPending || waitMs > 0;
+            play.style.opacity = off ? "0.55" : "1";
+            play.disabled = off && global.died;
         }
     }
     function getIngameSettingsBtn() {

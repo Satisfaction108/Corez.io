@@ -1093,7 +1093,7 @@ const CHAPTERS = [
             {
                 id: "dying", next: true,
                 title: "Dying",
-                text: "When you die you drop everything you're carrying. You come back in *15 seconds* (your first few times, just 5), at your base if you have one, with a *5 second shield* that goes away when you move or shoot.",
+                text: "When you die you drop everything you're carrying. You come back in *3 seconds*, at your base if you have one, with a *5 second shield* that goes away when you move or shoot.",
                 praise: "ok",
             },
             {

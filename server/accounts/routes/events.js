@@ -20,13 +20,15 @@
 //                    'me': you read theirs (in another tab)
 //   gift             {purchaseId, itemId, preset, from:{userId, username}}
 //   storeReset       {day, resetsAt}                    at 00:00 UTC (daily quests reset too)
+//   shopRotated      {day, resetsAt}                    an admin re-rolled today's shop (/shoprotate), to every stream
 //   ach              {id, name, desc, at}               an achievement unlocked in a raid
 //   dust             {balanceMilli, deltaMilli, kind}    an admin changed the balance
 //   invite           {username, rewardMilli, balanceMilli, count, granted:[tier]}   a friend you invited counted
 //   streak           {kind:'play'|'win', streak, best, rewardMilli, nextMilli, reset}   a streak moved in a raid
 //   sessionRevoked   {}                                 then the stream closes
 //
-// Other modules call push(userId, type, data) (internal user id).
+// Other modules call push(userId, type, data) (internal user id), or
+// pushAll(type, data) for every open stream.
 'use strict';
 
 const bus = require('../bus');
@@ -73,6 +75,13 @@ function push(userId, type, data) {
     const chunk = frame(type, data);
     let n = 0;
     for (const s of Array.from(set)) if (write(s, chunk)) n++;
+    return n;
+}
+
+function pushAll(type, data) {
+    const chunk = frame(type, data);
+    let n = 0;
+    for (const set of byUser.values()) for (const s of Array.from(set)) if (write(s, chunk)) n++;
     return n;
 }
 
@@ -280,6 +289,6 @@ function register(router) {
 }
 
 module.exports = {
-    register, start, stop, push, hasStream, checkSessions, flushPresence, listsView, friendView, personView, presenceOf, onRankUp,
+    register, start, stop, push, pushAll, hasStream, checkSessions, flushPresence, listsView, friendView, personView, presenceOf, onRankUp,
     streamCount: userId => (byUser.get(userId) || new Set()).size,
 };

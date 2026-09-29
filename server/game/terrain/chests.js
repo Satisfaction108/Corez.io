@@ -4,7 +4,11 @@
 // A broken chest respawns elsewhere after RESPAWN_MS.
 const gems = require('./gems.js');
 
+// A chest the storm has swallowed is retired (and replaced inside the zone)
+// after STORM_GRACE_MS, but never while someone is breaking it: that used to
+// make a chest vanish under fire with nothing coming out.
 const STORM_GRACE_MS = 6000;
+const STORM_HIT_HOLD_MS = 10000;
 const COPPER_ITEM_CHANCE = 0.15;
 const CHEST_GEMS = { common: 250, epic: 500 };   // exact payouts
 const PIT_CLEAR = 320;             // never share a spawn gap with a player
@@ -422,6 +426,13 @@ function openChest(chest, body) {
     try { chest.kill(); } catch { /* */ }
 }
 
+// When a player or bot last hurt the chest (0 if nobody has)
+function lastTankHitAt(chest) {
+    let at = 0;
+    for (const h of (chest.hitters ? chest.hitters.values() : [])) if (h.at > at) at = h.at;
+    return at;
+}
+
 function tick(actors) {
     const list = alive();
     if (!list.length) return;
@@ -431,7 +442,7 @@ function tick(actors) {
         if (chest._opened) continue;
         if (st.inStorm(chest.x, chest.y)) {
             if (!chest._stormAt) chest._stormAt = now;
-            else if (now - chest._stormAt > STORM_GRACE_MS) {
+            else if (now - chest._stormAt > STORM_GRACE_MS && now - lastTankHitAt(chest) > STORM_HIT_HOLD_MS) {
                 chest._opened = true;
                 onTaken(chest);
                 try { chest.kill(); } catch { /* */ }

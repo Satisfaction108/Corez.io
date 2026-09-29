@@ -508,7 +508,8 @@ class socketManager {
                             // The 20ms retry must not auto-spawn when a match rolls over.
                             if (!dr.canSpawn()) return;
                             if (socket.royaleNeedClick) return;
-                            // Server-side backstop for the 15s death tax.
+                            // Server-side backstop for the death wait (dig_royale RESPAWN_MS,
+                            // from the death itself): no early drop however the client asks.
                             if (socket.royaleRespawnAt && Date.now() < socket.royaleRespawnAt) return;
                         }
                         clearInterval(loop);
@@ -2173,7 +2174,7 @@ class socketManager {
                 (socket && socket.raidDeathStreak) | 0,
                 (socket && socket.raidDeathDrillLost) | 0,
                 (socket && socket.gemDeathInsured) | 0,
-                // raid: ms until the server lets you back in (15 s, 7 s with Second Wind)
+                // raid: ms until the server lets you back in (3 s from the death)
                 (socket && socket.royaleRespawnAt ? Math.max(0, socket.royaleRespawnAt - Date.now()) : 0) | 0,
             ];
         }

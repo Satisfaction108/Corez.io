@@ -7,7 +7,8 @@
 // A newer version reloads the page, but never in the middle of a life:
 //   menu            right away, unless an account pane or form is up or
 //                   the player is typing
-//   dead            once the death screen has sat for a moment
+//   dead            once the death card has had its full wait (it holds
+//                   the drop from the start, then reloads straight away)
 //   raid over       once the podium and the reward tally are done
 //   tutorial        never, it reloads the page itself when it ends
 // In a life it only shows a card: "Update ready, refreshing after this life".
@@ -24,6 +25,7 @@ import * as rankCeremony from "./account/rankCeremony.js";
 const CHECK_MS = 60000;
 const SOCKET_CHECK_GAP_MS = 5000;
 const SETTLE_MS = 2500;       // a safe moment has to hold this long in game
+const DEAD_SETTLE_MS = 400;   // dead: the card already had its time
 const TYPING_MS = 5000;       // menu: no reload this soon after a key press
 const LOOP_MS = 60000;
 const GUARD_KEY = "dwReloadFor";
@@ -91,15 +93,17 @@ function menuBusy() {
     return Date.now() - lastKeyAt < TYPING_MS;
 }
 
-// "menu", "later" (in game, safe once settled) or "" (keep playing)
+// "menu", "later" (in game, safe once settled), "hold" (dead, the card's
+// wait not up yet) or "" (keep playing)
 function moment() {
     if (onMenu()) return menuBusy() ? "" : "menu";
     if (global.tutorialMode || global.launchingTutorial) return "";
     if (global.disconnected && !global.autoReconnect) return "later";
     if (raidFinale.active()) return raidFinale.holdsCeremony() ? "" : "later";
     if (!global.died) return "";
-    if (global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) return "";
     if (global.respawnPending || global.raidQueued || rankCeremony.isPlaying()) return "";
+    // the death card is still inside its wait: hold the drop, don't reload yet
+    if (global.raidRespawnAt > 0 && performance.now() < global.raidRespawnAt) return "hold";
     return "later";
 }
 
@@ -122,13 +126,13 @@ function step() {
     if (!pending) return stopWatch();
     const m = moment();
     if (m === "menu") return reload();
-    // the death card respawns on its own after the tax, which can be only a
-    // couple of seconds; hold it while we wait to reload (app.js)
-    global.updateHoldsRespawn = m === "later" && global.died;
+    // the death card drops you back in on its own after 3 s; hold that from
+    // the moment you die, so the reload comes instead of the drop (app.js)
+    global.updateHoldsRespawn = (m === "later" || m === "hold") && global.died;
     if (m !== "later") { safeSince = 0; note(); return; }
     const now = Date.now();
     if (!safeSince) safeSince = now;
-    if (now - safeSince >= SETTLE_MS) reload();
+    if (now - safeSince >= (global.died ? DEAD_SETTLE_MS : SETTLE_MS)) reload();
 }
 
 function startWatch() {

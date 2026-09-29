@@ -212,7 +212,10 @@ class io_listenToPlayer extends IO {
             }
             this._heldAtShield &= bits;     // let go: pressing it again is fresh
             const grace = graceUntil && Date.now() < graceUntil;
-            if (!grace && (bits & ~this._heldAtShield)) this.body.invuln = false;
+            let fresh = bits & ~this._heldAtShield;
+            // Second Wind (shop gear): only shooting counts for a while longer
+            if ((this.body.spawnMoveShieldUntil || 0) > Date.now()) fresh &= 16 | 32;
+            if (!grace && fresh) this.body.invuln = false;
         }
         this.body.autoOverride = this.player.command.override;
         // sidearm guns fire from their own key, not from alt (drone repel)

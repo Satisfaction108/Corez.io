@@ -29,6 +29,7 @@
 //   <- main {t:'blocksChanged', userId} reload socket.account.blocked (the
 //      internal ids hidden from that account's chat, either direction)
 //   <- main {t:'dustChanged', userId}   an admin changed the balance: reload it
+//   <- main {t:'adminGemsFind'|'adminGemsGive', ...}   Discord /dust (adminGems.js)
 //
 // Daily quests and achievements (progressHooks.js): DQ at spawn and on
 // progress, ACH on an unlock.
@@ -80,6 +81,8 @@ function init(socketManager) {
     manager = socketManager;
     if (unsub) return;
     unsub = accounts.bus.onGame(msg => {
+        // Discord /dust
+        if (require('./adminGems').handle(manager, msg)) return;
         if (!msg || !manager) return;
         if (msg.t === 'kick') {
             for (const s of manager.clients.slice()) {

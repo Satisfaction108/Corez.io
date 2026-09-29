@@ -24,7 +24,7 @@ const ITEMS = [
     { id: "plating",   cat: "gear", name: "Armor Plating",      price: 1300, desc: "25% more max health for 5 minutes.", on: "You have 25% more max health." },
     { id: "express",   cat: "gear", name: "Vault Express",      price: 600,  desc: "Vault deposits go twice as fast for 5 minutes.", on: "Your deposits now go twice as fast." },
     { id: "mark",      cat: "gear", name: "Hunter's Mark",      price: 1800, desc: "Each kill is worth an extra 100 points for 5 minutes.", on: "Your kills now pay an extra 100 points." },
-    { id: "wind",      cat: "gear", name: "Second Wind",        price: 800,  desc: "Respawn in 7 seconds instead of 15 for the next 5 minutes.", on: "You now respawn in 7 seconds." },
+    { id: "wind",      cat: "gear", name: "Second Wind",        price: 800,  desc: "For 5 minutes, your spawn shield holds for 10 seconds while you move, so you can get clear after a respawn. Shooting still drops it after the first 5 seconds.", on: "Your spawn shield now holds while you move for 10 seconds." },
     // kit: consumables, 3 distinct types at a time, used with Z / Q / N
     { id: "charge",    cat: "kit", name: "Seismic Charge", price: 350, max: 3, desc: "Throws a charge at your cursor (up to 500 away) that shatters every rock within 150." },
     { id: "strut",     cat: "kit", name: "Support Strut",  price: 250, max: 3, desc: "Props open everything within 320 of you for 3 minutes: nothing grows back there, and rock that is already regrowing crumbles." },
@@ -136,7 +136,9 @@ function stormDamageMult(body) {
     if (body && body.stormAnchorUntil && Date.now() < body.stormAnchorUntil) return 0;
     return hasGear(body, "cloak") ? 0.5 : 1;
 }
-function respawnMs(body) { return hasGear(body, "wind") ? 7000 : 15000; }
+// Second Wind: how long a fresh spawn's shield survives movement
+const WIND_SHIELD_MS = 10000;
+function spawnMoveShieldMs(body) { return hasGear(body, "wind") ? WIND_SHIELD_MS : 0; }
 function killBonus(body) { return hasGear(body, "mark") ? 100 : 0; }
 function keepsDrillOnRespawn(body) { const s = shopOf(body); return !!(s && s.drill >= 5); }
 
@@ -747,7 +749,7 @@ function tick(actors) {
 
 module.exports = {
     ITEMS, BY_ID, getShops, snapshot, catalog, stateOf, freshState, resetAll, talkState, dropKit,
-    miningMult, hasGear, magnetMult, satchelCap, depositRateMult, stormDamageMult, respawnMs, killBonus,
+    miningMult, hasGear, magnetMult, satchelCap, depositRateMult, stormDamageMult, spawnMoveShieldMs, WIND_SHIELD_MS, killBonus,
     keepsDrillOnRespawn, applyPassives, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, onDeath, tick,
     PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE, launchBarrage, BARRAGE, STRUT_RADIUS,
 };

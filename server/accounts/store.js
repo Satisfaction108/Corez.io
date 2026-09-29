@@ -2,7 +2,8 @@
 //
 // Rotation: one row per UTC day in shop_rotations, generated on first use
 // from mulberry32(fnv1a(SHOP_SEED_SALT + day)) and never recomputed, so a
-// rotation is fixed once anyone has seen it. 2 Featured (Epic/Legendary,
+// rotation is fixed once anyone has seen it (only an admin /shoprotate,
+// reroll(), draws the day again). 2 Featured (Epic/Legendary,
 // Epic weighted 2:1) + 8 Daily (Common/Uncommon/Rare, at most 4 skins);
 // items Featured on either of the previous 2 days are skipped. Permanent
 // items (Custom Color) are always for sale; exclusive ones (invite rewards)
@@ -86,19 +87,25 @@ function drawWeighted(rand, pool, n, weightOf) {
 }
 
 // Pure: the rotation for `day`, given the ids Featured on the previous days.
+// `avoid` (an admin re-roll: what is up right now) is left out too, but only
+// while the pools stay big enough to fill every slot.
 // -> {featured:[ids], daily:[ids]}
-function generate(day, recentFeatured = [], salt = config.shopSeedSalt) {
+function generate(day, recentFeatured = [], salt = config.shopSeedSalt, avoid = []) {
     const rand = mulberry32(fnv1a(String(salt) + day));
     const skip = new Set(recentFeatured);
+    const away = new Set(avoid);
     const fPool = C.ITEMS.filter(it => sellable(it) && FEATURED_WEIGHT[it.rarity]);
-    let pool = fPool.filter(it => !skip.has(it.id));
+    let pool = fPool.filter(it => !skip.has(it.id) && !away.has(it.id));
+    if (pool.length < FEATURED_COUNT) pool = fPool.filter(it => !skip.has(it.id));
     if (pool.length < FEATURED_COUNT) pool = fPool;   // catalog too small to skip: never show an empty slot
     const featured = drawWeighted(rand, pool, FEATURED_COUNT, it => FEATURED_WEIGHT[it.rarity]);
 
     const dPool = C.ITEMS.filter(it => sellable(it) && DAILY_RARITIES.has(it.rarity));
+    const fills = list => list.filter(it => it.cat !== 'skin').length + Math.min(DAILY_MAX_SKINS, list.filter(it => it.cat === 'skin').length) >= DAILY_COUNT;
+    const fresh = away.size ? dPool.filter(it => !away.has(it.id)) : dPool;
     const daily = [];
     let skins = 0;
-    const left = dPool.slice();
+    const left = (fills(fresh) ? fresh : dPool).slice();
     while (daily.length < DAILY_COUNT && left.length) {
         const i = Math.floor(rand() * left.length);
         const it = left.splice(i, 1)[0];
@@ -138,6 +145,28 @@ function rotationFor(day, depth = FEATURED_SKIP_DAYS, now = Date.now()) {
     h().run('INSERT OR IGNORE INTO shop_rotations (day, featured, daily, created_at) VALUES (?, ?, ?, ?)',
         day, JSON.stringify(g.featured), JSON.stringify(g.daily), now);
     return readRotation(day) || { day, ...g };
+}
+
+// /shoprotate: draw `day` again under the same rules (skip rule, rarities,
+// skin cap, nothing exclusive or permanent) with a random salt, leaving out
+// what is up now where the pools allow, and overwrite the stored row.
+// which: 'featured' | 'daily' | 'both'. The next days' skip rule reads the
+// new row. -> {day, which, before:{featured, daily}, featured, daily}
+function reroll(day, which = 'both', now = Date.now(), salt = null) {
+    day |= 0;
+    if (which !== 'featured' && which !== 'daily') which = 'both';
+    return h().tx(() => {
+        const cur = rotationFor(day, FEATURED_SKIP_DAYS, now);
+        const recent = [];
+        for (let k = 1; k <= FEATURED_SKIP_DAYS; k++) recent.push(...rotationFor(day - k, FEATURED_SKIP_DAYS - 1, now).featured);
+        const s = salt == null ? require('crypto').randomBytes(8).toString('hex') : String(salt);
+        const g = generate(day, recent, config.shopSeedSalt + ':reroll:' + s, cur.featured.concat(cur.daily));
+        const featured = which === 'daily' ? cur.featured : g.featured;
+        const daily = which === 'featured' ? cur.daily : g.daily;
+        h().run('UPDATE shop_rotations SET featured = ?, daily = ?, created_at = ? WHERE day = ?',
+            JSON.stringify(featured), JSON.stringify(daily), now, day);
+        return { day, which, before: { featured: cur.featured, daily: cur.daily }, featured, daily };
+    });
 }
 
 function inRotation(rot, id) {
@@ -499,7 +528,7 @@ function equip(userId, slot, itemId, color, opts = {}) {
 module.exports = {
     DAY, RESET_GRACE_MS, REFUND_WINDOW_MS, GIFT_FRIEND_AGE_MS, GIFTS_PER_DAY, GIFT_PRESETS,
     FEATURED_COUNT, DAILY_COUNT, DAILY_MAX_SKINS,
-    fnv1a, mulberry32, generate, rotationFor, readRotation, dayOf, resetsAt,
+    fnv1a, mulberry32, generate, rotationFor, readRotation, reroll, dayOf, resetsAt,
     ownedSet, owns, equippedOf, cosmeticsFor,
     storeView, purchase, gift, refund, history, lockerView, equip,
 };

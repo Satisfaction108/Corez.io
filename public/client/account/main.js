@@ -299,6 +299,7 @@ async function boot() {
         refreshMe: () => refresh(true),
         openPane,
         onStoreReset() { menu.render(); dailyQuests.refresh(); },
+        onShopRotated() { shop.refresh(); },
         onInvite: () => invite.onEvent(),
         onStreak: () => { dailyQuests.refresh(); refresh(true); },
     });

@@ -16,7 +16,7 @@ const data = { loaded: false, friends: [], incoming: [], outgoing: [], blocked: 
 const subs = new Set();
 const dmSubs = new Set();
 let activeChat = null;   // userId of the chat on screen, or null
-let hooks = { onRevoked() {}, refreshMe() {}, openPane() {}, onStoreReset() {}, onInvite() {}, onStreak() {} };
+let hooks = { onRevoked() {}, refreshMe() {}, openPane() {}, onStoreReset() {}, onShopRotated() {}, onInvite() {}, onStreak() {} };
 
 export const get = () => data;
 export function on(fn) { subs.add(fn); return () => subs.delete(fn); }
@@ -333,6 +333,8 @@ function onEvent(type, d) {
             break;
         }
         case 'storeReset': hooks.onStoreReset(d); break;
+        // an admin re-rolled today's shop
+        case 'shopRotated': hooks.onShopRotated(d); break;
         case 'party': case 'partyInvite': case 'partyInviteGone':
             partySubs.forEach((fn) => { try { fn(type, d || {}); } catch (e) { console.error(e); } });
             break;
@@ -346,7 +348,7 @@ function onEvent(type, d) {
     }
 }
 
-const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'sessionRevoked', 'party', 'partyInvite', 'partyInviteGone', 'invite', 'streak'];
+const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'shopRotated', 'sessionRevoked', 'party', 'partyInvite', 'partyInviteGone', 'invite', 'streak'];
 // Duo party events (party.js): fn(type, data)
 const partySubs = new Set();
 export function onParty(fn) { partySubs.add(fn); return () => partySubs.delete(fn); }

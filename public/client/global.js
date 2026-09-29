@@ -424,6 +424,8 @@ const global = {
     royaleSpectating: false,
     royaleDied: false,
     royaleKillerCamUntil: 0,
+    royaleDiedAt: 0,         // when the raid death card went up (performance.now)
+    deathCamLift: 0,         // GUI units the camera lifts so the killer shows above the card
     digRoyaleMode: false,
     bandwidth: {
         currentHa: 0,

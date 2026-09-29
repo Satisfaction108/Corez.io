@@ -23,7 +23,7 @@ const { DuoTeams, teamStandings } = require('./duoTeams.js');
 // Tunables. DUO_FILL_WAIT_MS shortens the wait for local tests.
 const FILL_WAIT_MS = parseInt(process.env.DUO_FILL_WAIT_MS, 10) > 0 ? parseInt(process.env.DUO_FILL_WAIT_MS, 10) : 45000;
 const BOT_NOTICE_MS = 1500;      // "matching you with a bot" shows this long before the drop
-const TEAM_BOT_RESPAWN_MS = 15000;
+const TEAM_BOT_RESPAWN_MS = 3000;     // the same wait as a player (dig_royale RESPAWN_MS)
 const MAX_TEAM_BOTS = 4;         // bot teammates on the server at once (a 5th waiter goes solo)
 
 let _ticket = null;

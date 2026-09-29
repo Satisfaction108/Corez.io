@@ -173,6 +173,9 @@ class Canvas {
     respawn() {
         // Final storm: no spawns. Hold the death UI until the reset.
         if (global.royale && global.royale.lock && global.royale.at > 0) return;
+        // Raid: the death card always gets its full wait, whatever asks
+        // (Enter, Play, the gamepad); the server holds the drop anyway.
+        if (global.died && global.raidRespawnAt > 0 && performance.now() < global.raidRespawnAt) return;
         if (global.died && !global.cannotRespawn && !global.respawnPending) {
             global.respawnPending = true;
             global.royaleDied = false;

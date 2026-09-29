@@ -11,7 +11,9 @@
 // /shop, /online, /play) are global and public, and work in DMs and user
 // installs too.
 //
-// All work is synchronous SQLite, so every command answers inline (type 4).
+// Every command answers inline (type 4). Most are synchronous SQLite; /dust
+// asks the raid servers over the bus first, so handle() returns a Promise
+// for it (settled well inside Discord's 3 s window).
 'use strict';
 
 const config = require('../config');
@@ -31,6 +33,8 @@ const DAY = 24 * 60 * 60 * 1000;
 const PERMANENT = 9e15;          // bridge.js shows "until" only below 8e15
 const RESET_TTL_MS = 30 * 60 * 1000;
 const MAX_GRANT_MILLI = 100000 * 1000;
+const MAX_RAID_GEMS = 1000000;
+const RAID_ASK_MS = 1000;        // per step; two steps stay under Discord's 3 s
 const COLOR = 0x3fb6a8;
 
 const userOpt = (description = 'Username, DW- id, or @user') => ({ type: T.STRING, name: 'user', description, required: true, max_length: 64 });
@@ -98,6 +102,22 @@ const ADMIN_COMMANDS = [
         ],
     },
     { name: 'stats', description: 'Totals: accounts, guests, activity, gemdust, purchases' },
+    {
+        name: 'dust', description: 'Give banked gems to a player in a raid right now (not gemdust)', options: [
+            { type: T.STRING, name: 'player', description: 'Account username (or a guest name as shown in the raid)', required: true, max_length: 64 },
+            { type: T.INTEGER, name: 'amount', description: 'Gems, 1 to 1,000,000', required: true, min_value: 1, max_value: MAX_RAID_GEMS },
+            reasonOpt(false),
+        ],
+    },
+    {
+        name: 'shoprotate', description: "Re-roll today's Item Shop now", options: [
+            {
+                type: T.STRING, name: 'which', description: 'What to re-roll (default: both)', required: false, choices: [
+                    { name: 'Both', value: 'both' }, { name: 'Featured', value: 'featured' }, { name: 'Daily', value: 'daily' },
+                ],
+            },
+        ],
+    },
 ].map(c => ({ ...c, type: 1, default_member_permissions: '0', dm_permission: false }));
 
 const nameOpt = { type: T.STRING, name: 'username', description: 'Leave empty for your own (linked) account', required: false, max_length: 32 };
@@ -506,7 +526,104 @@ function stats(i, caller) {
     });
 }
 
-const ADMIN_HANDLERS = { lookup, resetpassword: resetPassword, relink, grantdust: grantDust, ban, unban, users: listUsers, guests: listGuests, history, stats };
+// ---- admin: live game ----
+
+let raidReq = 0;
+
+// Every raid server that should answer a bus question: the listed games
+// minus the tutorial (0 when unknown, then only the timeout ends a step).
+function raidServerCount() {
+    return (global.servers || []).filter(s => s && s.id && s.id !== 'tut' && !s.hidden).length;
+}
+
+// Send `msg` to the game(s) and collect `replyType` answers for this reqId.
+// done(list) says when to stop early. -> Promise<[{serverId, ...reply}]>
+function askGames(msg, replyType, done, ms = RAID_ASK_MS) {
+    return new Promise(resolve => {
+        const got = [];
+        let timer = null, over = false, unsub = null;
+        const finish = () => {
+            if (over) return;
+            over = true;
+            if (unsub) unsub();
+            if (timer) clearTimeout(timer);
+            resolve(got);
+        };
+        unsub = bus.onMain((serverId, m) => {
+            if (over || !m || m.t !== replyType || m.reqId !== msg.reqId) return;
+            got.push({ ...m, serverId });
+            if (done(got)) finish();
+        });
+        timer = setTimeout(finish, ms);
+        // the solo game on this thread answers synchronously, inside toGame
+        try { bus.toGame(msg); } catch (e) { /* game gone */ }
+        if (!over && done(got)) finish();
+    });
+}
+
+async function raidGems(i, caller) {
+    const query = String(opt(i, 'player') || '').trim().slice(0, 64);
+    const amount = Number(opt(i, 'amount'));
+    const reason = String(opt(i, 'reason') || '').trim().slice(0, 200) || null;
+    const row = query ? resolveUser(query) : null;
+    const who = row ? row.username : query.replace(/^@/, '');
+    const detail = { query, username: row ? row.username : null, guest: !row, amount, reason };
+    const refuse = (text, why) => {
+        audit(caller, row && row.id, 'admin_raid_gems', { ...detail, delivered: false, why });
+        return reply(text, { ephemeral: true });
+    };
+    if (!Number.isInteger(amount) || amount < 1 || amount > MAX_RAID_GEMS) return refuse('Amount must be a whole number from 1 to 1,000,000.', 'amount');
+    if (!who) return refuse('Who should get them?', 'no_player');
+    const notIn = `**${md(who)}** is not in a raid right now.`;
+    // an account that isn't in any game: no need to ask the servers
+    if (row && presenceOf(row.id) !== 'raid') return refuse(notIn, 'not_in_raid');
+
+    const target = row ? { userId: row.id, name: null } : { userId: 0, name: who };
+    const expect = raidServerCount();
+    const reqId = 'g' + Date.now().toString(36) + '.' + (++raidReq);
+    const found = await askGames({ t: 'adminGemsFind', reqId, ...target }, 'adminGemsFound', got => expect > 0 && got.length >= expect);
+    const live = found.filter(f => (f.alive | 0) > 0);
+    const aliveCount = live.reduce((n, f) => n + (f.alive | 0), 0);
+    if (!aliveCount) {
+        const dead = found.some(f => (f.dead | 0) > 0);
+        return refuse(dead ? `**${md(who)}** is on the death screen or in the menu, not in a raid right now.` : notIn, dead ? 'dead' : 'not_in_raid');
+    }
+    if (aliveCount > 1) return refuse(`${aliveCount} players in raids are called **${md(who)}**. Use an account username.`, 'ambiguous');
+
+    const at = live[0];
+    const given = await askGames({ t: 'adminGemsGive', reqId, server: at.server, ...target, amount }, 'adminGemsGiven', got => got.length > 0);
+    const g = given[0];
+    const mode = at.serverId === 'duo' ? 'Duos' : 'Solo';
+    if (!g || !g.ok) {
+        const why = g ? g.reason || 'failed' : 'no_answer';
+        return refuse(why === 'gone' ? notIn.replace('right now', 'any more') : "The raid server didn't answer. Try again.", why);
+    }
+    audit(caller, row && row.id, 'admin_raid_gems', { ...detail, delivered: true, mode, name: g.name, bankedBefore: g.before, bankedAfter: g.after });
+    const n = v => (v | 0).toLocaleString('en-US');
+    return reply(`Sent ${n(amount)} gems to **${md(g.name || who)}** (${mode} raid${row ? '' : ', guest'}). Banked ${n(g.before)} → ${n(g.after)}.`, { ephemeral: true });
+}
+
+function shopRotate(i, caller) {
+    const store = require('../store');
+    const C = require('../../../shared/cosmetics.js');
+    const which = ['featured', 'daily', 'both'].includes(opt(i, 'which')) ? opt(i, 'which') : 'both';
+    const now = Date.now();
+    const day = store.dayOf(now);
+    const r = store.reroll(day, which, now);
+    audit(caller, null, 'admin_shop_rotate', { day, which, before: r.before, featured: r.featured, daily: r.daily });
+    let streams = 0;
+    try { streams = require('../routes/events').pushAll('shopRotated', { day, resetsAt: store.resetsAt(day) }); } catch (e) { /* */ }
+    const names = ids => ids.map(id => { const it = C.byId(id); return it ? md(it.name) : '`' + id + '`'; }).join(', ') || '-';
+    const what = which === 'both' ? 'Featured and Daily' : which === 'featured' ? 'Featured' : 'Daily';
+    return reply([
+        `Re-rolled today's ${what}.`,
+        `**Featured:** ${names(r.featured)}`,
+        `**Daily:** ${names(r.daily)}`,
+        `Refreshed ${streams} open menu${streams === 1 ? '' : 's'}. It turns over as usual ${ts(store.resetsAt(day), 'R')}.`,
+    ].join('\n'), { ephemeral: true });
+}
+
+const ADMIN_HANDLERS = { lookup, resetpassword: resetPassword, relink, grantdust: grantDust, ban, unban, users: listUsers, guests: listGuests, history, stats, dust: raidGems, shoprotate: shopRotate };
 
 // ---- players ----
 
@@ -672,4 +789,4 @@ function handle(i) {
     return fn(i, caller);
 }
 
-module.exports = { ADMIN_COMMANDS, PLAYER_COMMANDS, ADMIN_NAMES, handle, isAdmin, resolveUser, reply, EPHEMERAL, deathsText };
+module.exports = { ADMIN_COMMANDS, PLAYER_COMMANDS, ADMIN_NAMES, handle, isAdmin, resolveUser, reply, EPHEMERAL, deathsText, MAX_RAID_GEMS };

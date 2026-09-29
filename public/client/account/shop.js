@@ -65,6 +65,11 @@ export function render(el) {
     load(el);
 }
 export function onClose() { stopTimer(); if (paneEl) pv.stopUnder(paneEl); }
+// The shop changed under us (an admin re-roll): refetch, and repaint if the pane is up.
+export function refresh() {
+    fetchedAt = 0;
+    if (paneEl && paneEl.isConnected) load(paneEl);
+}
 
 async function load(el) {
     const seq = ++loadSeq;

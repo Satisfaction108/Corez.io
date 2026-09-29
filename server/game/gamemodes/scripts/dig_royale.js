@@ -38,7 +38,9 @@ function fillCap() { return Config.royale_duos ? DUO_FILL_CAP : FILL_CAP; }
 const OCCUPY_MS = 10_000;
 const LOCKOUT_MS = 10_000;
 const KILL_VERBS = ["killed", "slaughtered", "demolished", "wrecked", "ended", "cooked"];
-const RESPAWN_MIN_MS = 15000;
+// Every death waits this long before the next drop, measured here from the
+// death itself; the death card needs it to show (sockets.js spawn loop).
+const RESPAWN_MS = 3000;
 const WEAK_DRILL_MS = 30_000;
 const STARTER_GEMS = 75;
 const SPAWN_GRACE_MS = 5000;   // spawn shield holds this long even if you move
@@ -99,8 +101,6 @@ const FIRST_MINUTES = {
     NEW_TARGET_PENALTY: 600,      // bots rank a soft player as if this much farther away
     NEW_MAX_HUNTERS: 1,           // bots that may aim at / chase one soft player at once
     MAX_HUNTERS: 2,               // ...and anyone else
-    NEW_RESPAWN_MS: 5000,         // quick respawn wait for new players and a session's first deaths
-    QUICK_RESPAWN_DEATHS: 3,      // (everyone else: shop.respawnMs, 15 s)
     // Closing-circle density: fighters allowed = (storm radius / DENSITY_R)^2,
     // bots fill what the humans leave. No refills past it, extras trimmed.
     DENSITY_R: 380,
@@ -1000,6 +1000,10 @@ function freshRaidBody(body) {
     setFrozen(body, false);
     body.invuln = true;
     body.spawnGraceUntil = now() + SPAWN_GRACE_MS;
+    // Second Wind: moving doesn't drop the shield for a while longer
+    let windMs = 0;
+    try { windMs = shop.spawnMoveShieldMs(body); } catch { /* */ }
+    body.spawnMoveShieldUntil = windMs ? now() + windMs : 0;
     body.passive = false;
     body.royaleAlive = true;
     body.royaleBornAt = now();     // a kill inside 15 s of this pays nothing (ranked)
@@ -1099,14 +1103,6 @@ function stampBotDifficulty(body) {
     });
     body.botDifficulty = d;
     if (!n && !(body.rankCode | 0) && d > (socket._botDiffBest || 0)) socket._botDiffBest = d;
-}
-
-// New players, and anyone on one of this session's first few deaths
-// (_royaleLives counts the life that just ended), come back after
-// NEW_RESPAWN_MS instead of the full wait.
-function quickRespawn(body) {
-    if (!body || !body.socket) return false;
-    return !!body.botNewbie || (body.socket._royaleLives | 0) <= FIRST_MINUTES.QUICK_RESPAWN_DEATHS;
 }
 
 // Humans taking part: alive, or dead and on their way back. Counting only
@@ -1570,11 +1566,14 @@ function onCombatantDead(body) {
         body.socket.raidDeathStreak = victimStreak;
         body.socket.raidDeathDrillLost = dl && dl.drillLost ? 1 : 0;
         // a raid-end death respawns with everyone when the next raid starts
-        let wait = raidEndDeath ? Math.max(0, raidResultsAt + RAID_END_BEAT_MS + RAID_END_WAIT_MS - now()) : shop.respawnMs(body);
-        if (!raidEndDeath && quickRespawn(body)) wait = Math.min(wait, FIRST_MINUTES.NEW_RESPAWN_MS);
-        body.socket.royaleRespawnAt = now() + wait;
+        const wait = raidEndDeath ? Math.max(0, raidResultsAt + RAID_END_BEAT_MS + RAID_END_WAIT_MS - now()) : RESPAWN_MS;
+        body.socket.royaleRespawnAt = now() + Math.max(RESPAWN_MS, wait);
         body.socket.royaleNeedClick = false;
         body.socket.status.readyToSpawn = true;
+        // the death card is only up for the wait: send its revenge mark and
+        // next contract on the next tick instead of up to 500 ms later (not
+        // during the raid-end mass death, which has its own broadcasts)
+        if (!raidEndDeath) tick._broadcastAt = 0;
     }
 }
 
@@ -1865,6 +1864,7 @@ function saveResume(socket, body) {
         // moved or shot must not get a fresh one by reloading
         snap.shielded = !!body.invuln;
         snap.graceLeft = Math.max(0, (body.spawnGraceUntil || 0) - t);
+        snap.moveShieldLeft = Math.max(0, (body.spawnMoveShieldUntil || 0) - t);
         // ...and so is the bot grace: a reload never starts a fresh one
         snap.botGraceLeft = Math.max(0, (body.botGraceUntil || 0) - t);
         snap.botSoftLeft = Math.max(0, (body.botSoftUntil || 0) - t);
@@ -1946,6 +1946,7 @@ function applyResume(body, snap) {
             // keeps the old life's shield state (and what was left of its grace)
             body.invuln = !!snap.shielded;
             body.spawnGraceUntil = snap.shielded ? now() + Math.min(SPAWN_GRACE_MS, snap.graceLeft | 0) : 0;
+            body.spawnMoveShieldUntil = snap.shielded && (snap.moveShieldLeft | 0) > 0 ? now() + (snap.moveShieldLeft | 0) : 0;
             body.botGraceUntil = (snap.botGraceLeft | 0) > 0 ? now() + (snap.botGraceLeft | 0) : 0;
             body.botSoftUntil = now() + (snap.botSoftLeft | 0);
             body.botNewbie = !!snap.botNewbie;
@@ -2389,6 +2390,7 @@ function downForRaidEnd(body) {
         body.padSafe = false;
         body.passive = false;
         body.spawnGraceUntil = 0;
+        body.spawnMoveShieldUntil = 0;
         body.deathCause = "raidend";
         body.dontSendDeathMessage = true;
         body.health.amount = -1;
@@ -2722,7 +2724,7 @@ module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
     lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, baseReserved,
     onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout,
-    FIRST_MINUTES, isNewPlayer, quickRespawn, freshRaidBody, SPAWN_GRACE_MS, RAID_CYCLES, RAID_MS, RESUME_MS,
+    FIRST_MINUTES, isNewPlayer, RESPAWN_MS, freshRaidBody, SPAWN_GRACE_MS, RAID_CYCLES, RAID_MS, RESUME_MS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
     // tests: one pass of the idle watch at time t
