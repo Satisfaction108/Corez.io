@@ -1448,6 +1448,8 @@ let incoming = async function(message, socket) {
             } break;
             case 'SHC': {
                 try { global.shop.catalog = JSON.parse(m[0]) || []; } catch (e) { global.shop.catalog = []; }
+                // touch screens aim with a stick, there is no cursor
+                if (global.mobile) for (const it of global.shop.catalog) if (it && typeof it.desc === "string") it.desc = it.desc.replace(/at your cursor/g, "where you aim").replace(/your cursor/g, "where you aim");
             } break;
             case 'SHP': {
                 try {
@@ -2124,8 +2126,8 @@ let incoming = async function(message, socket) {
             } catch { /* */ }
             try { selfKnockout(); } catch { /* */ }
             if (global.royale && (global.royale.at > 0 || global.royale.raidId || global.royale.matchId)) {
-                // The death card shows at once, whole, and holds for the
-                // server's wait (3 s from the death, respawn() refuses sooner).
+                // The death card shows at once, whole; Play again unlocks after
+                // the server's wait (3 s from the death, respawn() refuses sooner).
                 // The killer cam runs behind it: the server keeps the camera
                 // on the wreck until RS, so the burst gets a beat first.
                 global.royaleDied = true;
@@ -2372,7 +2374,10 @@ const socketInit = () => {
                 if (commands[i]) o += Math.pow(2, i);
             }
             let ratio = util.getRatio();
-            socket.talk('C', Math.round(global.target.x / ratio), Math.round(global.target.y / ratio), global.reverseTank, o);
+            // touch sticks add their analog move (touch.js packMove); keys
+            // and the gamepad send the plain four-field packet
+            if (global.touchMovePacked > 0) socket.talk('C', Math.round(global.target.x / ratio), Math.round(global.target.y / ratio), global.reverseTank, o, global.touchMovePacked);
+            else socket.talk('C', Math.round(global.target.x / ratio), Math.round(global.target.y / ratio), global.reverseTank, o);
         },
         check: () => flag,
         getMotion: () => ({

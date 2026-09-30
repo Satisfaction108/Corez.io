@@ -11,6 +11,7 @@ global.chatID = 0;
 const { clientIp } = require("../../lib/clientIp.js");
 const accountBridge = require("../../accounts/game/bridge.js");
 const activity = require("./activity.js");
+const { unpackMove } = require("../../lib/touchMove.js");
 
 // Same rule as the accounts config: NODE_ENV, or a real public hostname.
 function isProduction() {
@@ -598,7 +599,8 @@ class socketManager {
             } break;
             case "C": {
 
-            if (m.length !== 4) {
+            // a fifth field is the touch stick's analog move (see unpackMove)
+            if (m.length !== 4 && m.length !== 5) {
                 socket.kick("Ill-sized command packet.");
                 return 1;
             }
@@ -622,11 +624,12 @@ class socketManager {
                 socket.kick("Malformed command packet.");
                 return 1;
             }
-            if (player.body == null) return;
-
             // real input (keys or buttons changed, the aim clearly moved):
-            // the idle kick, ranked survival and bot protection read it
+            // the idle kick, ranked survival and bot protection read it.
+            // Before the body check: the death card's idle kick reads it too.
             activity.noteCommand(socket, target.x, target.y, commands);
+
+            if (player.body == null) return;
 
             if (!socket.player.body.eastereggs.braindamage) player.target = target;
 
@@ -641,6 +644,13 @@ class socketManager {
                 player.command.mmb = (commands & 32) >> 5;
                 player.command.rmb = (commands & 64) >> 6;
                 player.command.sidearm = (commands & 128) >> 7;
+                // touch sticks: full-circle direction and partial speed. Only
+                // counts while a movement bit is down, so a stale value can't
+                // keep a tank walking.
+                const analog = m.length === 5 && (commands & 15) ? unpackMove(m[4]) : null;
+                player.command.moveX = analog ? analog.x : 0;
+                player.command.moveY = analog ? analog.y : 0;
+                player.command.analog = !!analog;
                 if (player.body && player.body.royaleFrozen) {
                     player.command.lmb = player.command.mmb = player.command.rmb = player.command.sidearm = 0;
                     player.command.up = player.command.down = player.command.left = player.command.right = 0;
@@ -1182,6 +1192,7 @@ class socketManager {
             } break;
             case "RS": {
                 if (!socket.status.deceased) return 1;
+                activity.noteAction(socket);
                 socket.royaleWantsSpectate = true;
                 const code = m[0] | 0;
                 // 3: your duo partner (falls back to the killer / nearest)
@@ -1467,7 +1478,7 @@ class socketManager {
                         if (bots[0]) { b.godmode = false; b.invuln = false; b.finalKillers = [bots[0]]; b.collisionArray.push(bots[0]); b.health.amount = -1; }
                     }
                     else if (what === "god" && b) { b.godmode = !b.godmode; }
-                    else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), x: Math.round(b.x), y: Math.round(b.y), hp: Math.round(b.health.amount), sh: Math.round(b.shield.amount), dead: !!(b.isDead && b.isDead()), carried: b.carriedGems | 0 } : { nobody: true }), 0);
+                    else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), x: Math.round(b.x), y: Math.round(b.y), hp: Math.round(b.health.amount), sh: Math.round(b.shield.amount), dead: !!(b.isDead && b.isDead()), carried: b.carriedGems | 0, arm: b.sidearmId || null } : { nobody: true }), 0);
                     // every human tank in the world (drop tests: a dropped player's tank is gone)
                     else if (what === "humans") socket.talk('KC', 'dbg', JSON.stringify({ humans: [...entities.values()].filter(e => e && e.socket && e.isPlayer && !(e.isDead && e.isDead())).map(e => e.name) }), 0);
                     else if (what === "chesthp" && b) {
@@ -3108,7 +3119,10 @@ class socketManager {
             logs.minimap.mark();
             let time = performance.now();
             for (let socket of this.clients) {
-                if (socket.timeout.check(time)) socket.lastWords("K");
+                // five minutes dead: out. Not in a raid, where the idle kick
+                // (dig_royale tickDeadIdle) watches the death card instead and
+                // an active spectator may stay
+                if (socket.timeout.check(time) && !(Config.dig_royale && !Config.tutorial)) socket.lastWords("K");
                 if (time - socket.statuslastHeartbeat > Config.max_heartbeat_interval) socket.kick("Lost heartbeat.");
             }
         }, 250);

@@ -458,10 +458,10 @@ const CHAPTERS = [
                 id: "move",
                 title: "Move around",
                 text: () => mob()
-                    ? "Left stick moves, right stick aims. Drive around a bit."
+                    ? "Put your left thumb down and drag to drive. Your right thumb aims. Drive around a bit."
                     : `${kc("KEY_UP")} ${kc("KEY_LEFT")} ${kc("KEY_DOWN")} ${kc("KEY_RIGHT")} to drive. Your gun points at the mouse, so move that around too.`,
                 hint: () => mob()
-                    ? "Push the left stick any way."
+                    ? "Drag your left thumb any way, and swing the right one around."
                     : `Hold ${kc("KEY_UP")} and move the mouse in a circle.`,
                 praise: "nice",
                 target: () => ({ kind: "self" }),
@@ -476,7 +476,7 @@ const CHAPTERS = [
                 id: "shoot",
                 title: "Shoot",
                 text: () => mob()
-                    ? "Hold the right stick to shoot where it points."
+                    ? "Hold your right thumb down and drag it to shoot that way. A quick tap shoots at the spot. Try it on the rocks."
                     : "Hold [[Left click]] to shoot. Try it on the rocks.",
                 hint: "Keep holding it for a sec.",
                 praise: "ok",
@@ -490,14 +490,14 @@ const CHAPTERS = [
                 title: () => state.sub === 0 ? "Auto-fire" : "Auto-spin",
                 text: () => {
                     if (state.sub === 0) return mob()
-                        ? "Tap *Autofire* and you shoot without holding anything. Tap it again to turn it off. Lots of people just leave it on."
+                        ? "Tap *Auto* at the top and you shoot without holding anything, handy while you mine. Tap it again to turn it off."
                         : `${kc("KEY_AUTO_FIRE")} is auto-fire, you shoot without holding click. Press it again to turn it off. Lots of people just leave it on.`;
                     return mob()
                         ? "Now tap *Autospin*. You spin and shoot everywhere, good when you're surrounded. Turn it on, then off."
                         : `Now ${kc("KEY_AUTO_SPIN")}. You spin and shoot everywhere, good when you're surrounded. Turn it on, then off.`;
                 },
                 hint: () => state.sub === 0
-                    ? (mob() ? "Tap Autofire, then tap it again." : `Press ${kc("KEY_AUTO_FIRE")} twice.`)
+                    ? (mob() ? "Tap Auto, then tap it again." : `Press ${kc("KEY_AUTO_FIRE")} twice.`)
                     : (mob() ? "Tap Autospin, then tap it again." : `Press ${kc("KEY_AUTO_SPIN")} twice.`),
                 praise: "cool",
                 target: () => ({ kind: "self" }),
@@ -507,7 +507,8 @@ const CHAPTERS = [
                 },
                 done: () => {
                     if (state.sub === 0) {
-                        if (state.toggles.fire - state.base.fire >= 2) { setSub(1); sfxAdvance(); }
+                        // touch has no auto-spin button: auto-fire is the whole step
+                        if (state.toggles.fire - state.base.fire >= 2) { if (mob()) return true; setSub(1); sfxAdvance(); }
                         return false;
                     }
                     return state.spinOn && !global.autoSpin;
@@ -558,7 +559,7 @@ const CHAPTERS = [
                 id: "statGun", stats: GUN_STATS, need: 3, ui: "stats:" + GUN_STATS.join(","),
                 title: "Gun stats",
                 text: () => mob()
-                    ? "These bars are your stats. The lit up ones make your bullets better. Tap them *3 times*."
+                    ? "Tap *Stats* on the left. The lit up ones make your bullets better. Tap their + *3 times*."
                     : "Bottom left are your stats. The lit up ones make your bullets better. Put *3 points* in with [[3]] to [[7]] or just click them.",
                 hint: "Any of the lit up bars works.",
                 praise: "stronger",
@@ -571,7 +572,7 @@ const CHAPTERS = [
                 id: "statBody", stats: BODY_STATS, need: 2, ui: "stats:" + BODY_STATS.join(","),
                 title: "Body stats",
                 text: () => mob()
-                    ? "These ones keep you alive. Tap *2 points* in."
+                    ? "These ones keep you alive. Tap *2 points* in. Stats is on the left if it closed."
                     : "These ones keep you alive. Put *2 points* in ([[1]] [[2]] [[8]] [[9]] [[0]]).",
                 hint: "Shield takes hits before your health does, regen fills it back up.",
                 praise: "tankier",
@@ -597,8 +598,9 @@ const CHAPTERS = [
             {
                 id: "upgrade", allow: "upgrade", ui: "upgrades",
                 title: "Upgrade",
-                text: () => "Top left are tanks you can turn into. Pick whatever looks fun, there's no wrong one.",
-                hint: () => mob() ? "Tap one of the tanks at the top." : `${kc("KEY_CLASS_TREE")} shows the whole upgrade tree.`,
+                text: () => mob() ? "These are tanks you can turn into. Pick whatever looks fun, there's no wrong one."
+                    : "Top left are tanks you can turn into. Pick whatever looks fun, there's no wrong one.",
+                hint: () => mob() ? "Tap a tank. If the picker closed, tap New tank on the left." : `${kc("KEY_CLASS_TREE")} shows the whole upgrade tree.`,
                 praise: () => tankName() ? `${tankName()}, nice` : "looks good",
                 onEnter: () => { tut("unlock"); state.askAt = T(); },
                 progress: () => state.evolveCount > state.base.evolve ? 1 : 0,
@@ -886,14 +888,15 @@ const CHAPTERS = [
                 title: () => state.sub === 0 ? "Kit items" : "Rock Barrage",
                 text: () => {
                     if (state.sub === 0) return mob()
-                        ? "Kit items are one-use things in your kit box. I took some of your health and gave you a *Medkit*. Tap it."
+                        ? "Kit items are one-use things, they sit in the buttons on the right. I took some of your health and gave you a *Medkit*. Tap it."
                         : `Kit items are one-use things in the box above your stats. I took some of your health and gave you a *Medkit*. Press ${kc(kitKeyFor("medkit"))}.`;
                     return mob()
-                        ? "That's a *Rock Barrage*, 10 rocks that go through shields. Aim at the dummy and tap it."
+                        ? "That's a *Rock Barrage*, 10 rocks that go through shields. Aim at the dummy, then tap it. It flies where you last aimed."
                         : `That's a *Rock Barrage*, 10 rocks that go through shields. Aim at the dummy and press ${kc(kitKeyFor("barrage"))}.`;
                 },
                 hint: () => state.sub === 0
                     ? "It heals half your health and keeps the storm off you for 3 seconds."
+                    : mob() ? "You can hold 3 kinds of item. In a real raid you can drag one off its button to throw it away."
                     : "You can hold 3 kinds of item. In a real raid you can drag one out of the box to throw it away.",
                 praise: "nice",
                 onEnter: () => {
@@ -944,9 +947,9 @@ const CHAPTERS = [
                 id: "sidearm",
                 title: "Sidearms",
                 text: () => mob()
-                    ? "Shops also sell *sidearms*, a second gun on the alt-fire button. Here's a *Drill Lance*, one shot breaks any rock. Try it."
+                    ? "Shops also sell *sidearms*, a second gun. Here's a *Drill Lance*, one shot breaks any rock. It fires with your gun, so just shoot a rock."
                     : `Shops also sell *sidearms*, a second gun on ${kc("KEY_SIDEARM")}. Here's a *Drill Lance*, one shot breaks any rock. Try it.`,
-                hint: () => mob() ? "Hold the alt-fire button at some rock." : `Hold ${kc("KEY_SIDEARM")} at some rock.`,
+                hint: () => mob() ? "Aim at a rock and hold. The round button bottom right turns the sidearm on and off." : `Hold ${kc("KEY_SIDEARM")} at some rock.`,
                 praise: "boom",
                 onEnter: () => { tut("clear"); tut("arm", "lance"); },
                 target: () => ({ kind: "self" }),
@@ -1093,7 +1096,7 @@ const CHAPTERS = [
             {
                 id: "dying", next: true,
                 title: "Dying",
-                text: "When you die you drop everything you're carrying. You come back in *3 seconds*, at your base if you have one, with a *5 second shield* that goes away when you move or shoot.",
+                text: "When you die you drop everything you're carrying. After *3 seconds* you can press *Play again* to drop back in, at your base if you have one, with a *5 second shield* that goes away when you move or shoot.",
                 praise: "ok",
             },
             {
@@ -1445,7 +1448,11 @@ function watchSocket() {
     const orig = sock.talk;
     sock.talk = function (...a) {
         try {
-            if (a[0] === "C") state.sidearmDown = !!(a[4] & 128);
+            if (a[0] === "C") {
+                state.sidearmDown = !!(a[4] & 128);
+                // touch: the aim stick's own fire bit, not just a finger down
+                if (global.mobile) state.fireDown = !!(a[4] & 16);
+            }
             if (state.running && a[0] === "t") {
                 if (a[1] === 1) state.toggles.fire++;
                 else if (a[1] === 0) state.toggles.spin++;
@@ -1464,24 +1471,13 @@ function onMouseDown(e) {
 function onMouseUp(e) {
     if (e.button === 0) state.fireDown = false;
 }
-// Phones: a finger on the right half of the screen is the aim-and-fire stick.
-let rightTouches = 0;
-function onTouch(e) {
-    if (!state.running) return;
-    let n = 0;
-    for (const t of e.touches) if (t.clientX > window.innerWidth / 2) n++;
-    rightTouches = n;
-    state.fireDown = n > 0;
-}
+// Phones: the fire bit in the command packet says it (watchSocket).
 let listening = false;
 function listen() {
     if (listening) return;
     listening = true;
     window.addEventListener("mousedown", onMouseDown, true);
     window.addEventListener("mouseup", onMouseUp, true);
-    window.addEventListener("touchstart", onTouch, true);
-    window.addEventListener("touchend", onTouch, true);
-    window.addEventListener("touchcancel", onTouch, true);
     window.addEventListener("blur", () => { state.fireDown = false; });
 }
 
@@ -1806,6 +1802,12 @@ function uiRect(kind) {
         any = true;
         x0 = Math.min(x0, r.x / cr); y0 = Math.min(y0, r.y / cr);
         x1 = Math.max(x1, (r.x + r.w) / cr); y1 = Math.max(y1, (r.y + r.h) / cr);
+    }
+    if (!any && global.mobile && window.dwHud) {
+        // touch: the Stats / New tank chips and the kit buttons stand in
+        const base = kind.indexOf("stats") === 0 || kind === "skills" ? "stats" : kind;
+        const r = window.dwHud.rect(base);
+        if (r && r.w > 0) { any = true; x0 = r.x; y0 = r.y; x1 = r.x + r.w; y1 = r.y + r.h; }
     }
     if (!any) return null;
     const m = 2;

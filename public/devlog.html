@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Corez.io devlog: how the rock works</title>
+    <meta name="description" content="How Corez.io works under the hood: destructible Voronoi terrain kept in sync between server, canvas and GLSL, a 30 Hz Node loop, bots tuned per player, and rendering on weak machines.">
+    <link rel="canonical" href="https://corez.games/devlog">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Corez.io">
+    <meta property="og:title" content="Corez.io devlog: how the rock works">
+    <meta property="og:description" content="Destructible Voronoi terrain, a 30 Hz Node loop, bots tuned per player, and rendering on weak machines.">
+    <meta property="og:url" content="https://corez.games/devlog">
+    <meta property="og:image" content="https://corez.games/img/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://corez.games/img/og.png">
+    <link rel="icon" type="image/svg+xml" href="/img/logo.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap">
+    <link rel="stylesheet" href="/font.css">
+    <link rel="stylesheet" href="/legal.css">
+    <style>
+        .play { display: inline-block; margin: 6px 10px 4px 0; padding: 10px 22px; border-radius: 12px; background: var(--accent); color: #fff; font: 400 22px "Lilita One", Rubik, sans-serif; text-decoration: none; }
+        .ghost { display: inline-block; margin: 6px 0 4px; padding: 9px 20px; border-radius: 12px; border: 2px solid var(--accent); color: var(--accent); font: 400 20px "Lilita One", Rubik, sans-serif; text-decoration: none; }
+        figure { margin: 14px 0; }
+        figure img { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); background: #1d1a25; }
+        figcaption { color: var(--soft); font-size: 14px; margin-top: 6px; }
+        code { font: 500 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; overflow-wrap: anywhere; }
+        h3 { font: 600 17px/1.3 Rubik, system-ui, sans-serif; margin: 16px 0 4px; }
+        .tldr { border-left: 4px solid var(--accent); }
+        section { overflow-wrap: break-word; }
+    </style>
+</head>
+<body>
+<main>
+    <header><img src="/img/logo.svg" alt=""><a href="/">Corez.io</a></header>
+    <h1>How the rock works</h1>
+    <p class="updated">A devlog by ZyroX, the solo dev. September 2026.</p>
+
+    <section class="tldr">
+        <p>Corez.io is a top-down tank battle royale where the whole map is solid rock. You shoot through it to dig out gems, and everything you carry drops when you die, so you have to reach a vault and bank it before someone takes it off you.</p>
+        <p>It started as a fork of Open Source Arras, the community rewrite of arras.io: a Node server talking raw WebSockets (the <code>ws</code> package) to a plain canvas client. I kept its tanks, bullets and physics and added destructible terrain, mining and banking, 28 minute raids with a storm, bots, bosses, a shop, growth, contracts, ranked, duos and a tutorial. Huge thanks to the Open Source Arras folks for the base.</p>
+    </section>
+
+    <figure>
+        <img src="/devlog/raid.gif" width="560" height="315" alt="Gameplay: a tank mining Voronoi rock cells next to a vault while gems burst out">
+        <figcaption>Mining next to a vault. Every dark cell is a rock with its own health.</figcaption>
+    </figure>
+
+    <section>
+        <h2>Destructible Voronoi terrain</h2>
+        <p>The world is 13 by 9 tiles (5460 by 3780 units) under a lattice whose points each get a seed nudged off-centre by a hash (jitter 0.55). Each rock is a Voronoi cell around its seed. Rock size is <code>min(cols, 120) / 50</code>, so the map is always about 50 rocks wide.</p>
+
+        <h3>Four copies that must agree</h3>
+        <p>The same diagram exists in four places: server collision (<code>terrainGrid.js</code>), the client's rock silhouette (a <code>Path2D</code> used as a clip), a debug overlay, and a GLSL fragment shader that draws the rock facets. One seed off means a rock you can drive through, or an invisible wall.</p>
+        <p>That happened: one or two rocks per map were drawn in the wrong spot, because GPU floating point contraction (fused multiply-add) near a <code>fract()</code> wrap shifted the odd seed. So the GPU no longer computes the hash. The server computes it in float32 with <code>Math.fround</code> at every step and rounds the result to 8 bits. The client does the same on the CPU and uploads a 128 by 128 RGBA8 seed texture that the shader samples. Everything now matches bit for bit.</p>
+        <p>Ore uses a fifth mirrored hash. A per-boot salt rides in the join packet, so deposits move every run but match on every client, and each crystal drawn on a rock drops exactly one gem.</p>
+        <p>Geometry never goes over the wire. The client builds the cells itself from the grid parameters and a rock state snapshot on join; after that each tick carries a <code>TR</code> message listing only cells that changed (key, health fraction, flags).</p>
+
+        <h3>Bullets, budgets, regrowth</h3>
+        <p>A shot that lands on a seam chips every cell it touches, then dies once, like a single hit. Each player also has a mining budget of three rocks' worth of health per second, so a tank with eight barrels can't just hose a wall away.</p>
+        <p>Broken cells come back. About 23 seconds after breaking, a cell starts growing from 15% of its size over 8 seconds, and a tank caught inside gets pushed out or crushed.</p>
+    </section>
+
+    <figure>
+        <img src="/devlog/mining.jpg" width="960" height="540" loading="lazy" alt="Close-up of rock cells with glowing crack overlays and ore gems">
+        <figcaption>Cracks are staged by health, and each ore tier gets its own crack colour.</figcaption>
+    </figure>
+
+    <section>
+        <h2>The server loop</h2>
+        <p>The game runs at 30 Hz on one Node process. Early raids stuttered with the server mostly idle: terrain had its own 16 ms timer fighting the 33 ms loop, and packet timestamps (which clients interpolate on) came straight from the wall clock, jittering with a standard deviation of 11 ms and spikes to 350 ms.</p>
+        <p>Now terrain runs inside the game loop after the entity step, and stamps sit on an even grid that drifts 10% per tick toward the real clock. Jitter dropped to 0.6 ms. In production a tick takes about 2 to 4 ms on average.</p>
+
+        <h3>Deflate and flow control</h3>
+        <p>permessage-deflate runs at level 1 with no context takeover for messages over 512 bytes, cheap on CPU and memory per socket. Snapshots come out about half the size.</p>
+        <p>The bigger win for far-away players was flow control. Snapshots are full state, so an old one is worthless once a newer one exists. The client acks each one. If the oldest unacked one has been out longer than the player's base round trip plus 250 ms, the server skips the next snapshot instead of queueing it, but never goes silent for more than a second. Base RTT is the lowest sample over 30 seconds, capped at 600 ms, since on a clogged link the current sample is mostly queue.</p>
+    </section>
+
+    <section>
+        <h2>Bots that don't feel like bots</h2>
+        <p>A raid holds six tanks, and bots fill whatever humans don't. Smooth analog steering reads as a bot within seconds, so every bot's movement goes through a keyboard layer: eight directions only, full speed or stopped, keys held for 60 to 220 ms. Calm bots sometimes zone out for a second or two.</p>
+        <h3>Difficulty per target</h3>
+        <p>Each bot reads a difficulty from 0 to 1 off whoever it is fighting, so one bot plays a newcomer and a veteran differently. Brand-new players sit at 0 for their first 5 minutes or 5 lives, fading out by 12 minutes or the 9th life. Ranked players map from 0.20 (Bronze I) to 0.95 (Legend). Guests scale with score, kills and time played, capped at 0.85.</p>
+        <p>That one number turns more than a dozen knobs, including aim error, how far ahead they lead a shot, reaction time (a base of 450 ms at 0 and 210 ms at 1, plus more for a less skilled bot), bullet damage (64% to 92%), how many bots may hunt you at once, and how bad a trade they'll start. Even 1 is softer than the bots before this system, and a test checks that knob by knob.</p>
+        <h3>Mercy and AFK rules</h3>
+        <p>Die to bots three times with less than 90 seconds between deaths and you get 30 seconds where bots won't start fights with you and play at 0.15 at most. That softness needs real input: keys or buttons changing, or the aim moving clearly. Autofire and a held key don't count. After 60 seconds without real input the protection and spawn shield go away, and after 5 minutes you're sent back to the menu.</p>
+    </section>
+
+    <section>
+        <h2>Rendering on weak machines</h2>
+        <p>One player reported 6 fps. Their browser ran WebGL in software (SwiftShader), and my full-screen rock shader alone cost about 220 ms per frame at 1080p. The rock is static in world space, so now it renders into a cached bitmap about 1.4x the view that is reblitted as you pan. Software renderers get a cheaper pass, and with no WebGL the facets are drawn flat from the cell polygons. Full frames went from 236 ms to 16 ms on software GL, and from 11 ms to 7 ms on a real GPU.</p>
+        <p>The remaining hitches were garbage collection from per-frame browser objects. <code>measureText</code> ran over 2000 times a second; native canvas text alignment brought that to about 300. Hot <code>for...of</code> loops over Maps became <code>forEach</code>, because the draw function is too big for V8 to optimise the iterators away.</p>
+        <p>Automatic resolution steps the pixel budget down (native, 1080p, 1400x1000, 1100x820) while smoothed frame time stays over 38 ms. Not 33 ms, because Chrome's battery saver caps pages at 30 fps and that isn't a slow machine. Settings has manual toggles too (Simple Terrain, Fewer Effects, 30 FPS cap and more).</p>
+    </section>
+
+    <figure>
+        <img src="/devlog/storm.jpg" width="960" height="540" loading="lazy" alt="The storm edge closing in on a tank near purple ore">
+        <figcaption>The last storm of a raid, seconds before it shuts.</figcaption>
+    </figure>
+
+    <section>
+        <h2>The meta</h2>
+        <p>A raid is 28 minutes: four storm cycles of 7 minutes each (6 minutes shrinking, 1 minute holding). The last cycle closes to a small final circle and ends the raid. You can join any time.</p>
+        <p>Banking is the core risk: when you die, your whole satchel drops. Vaults bank 300 gems a second and damage interrupts, so the last seconds on a pad are tense. Your tank also grows with your raid score, reaching 2x at about 4,100 points and growing more slowly after that. Bigger is slower but tougher, and giants pay a bounty.</p>
+        <p>Contracts give you one short job at a time (30 seconds to 2 minutes) picked from what's around you: a nearby chest, a full satchel near a safe vault, a boss, a fight.</p>
+        <h3>What players taught me</h3>
+        <p>New players stood in the storm without realising they had to move. Storm damage now ramps with time outside: 12% of full damage at first, 20% at 5 seconds, full at 18 seconds and 160% by 30 seconds. In the final hold it ramps three times faster and hits 1.35x harder.</p>
+        <p>Per-target difficulty and mercy came the same way: brand-new players kept dying to bots over and over. Making bots worse on purpose felt like cheating, but a newcomer who never banks a gem never learns what the game is.</p>
+    </section>
+
+    <section>
+        <h2>Try it and tell me what's wrong</h2>
+        <p>It's free, runs in the browser and needs no account. Best with keyboard and mouse. I'd love to hear what's confusing in the first minute, what feels bad, and what you'd do differently in the netcode or rendering.</p>
+        <a class="play" href="https://corez.games/?utm_source=hackernews" target="_top">Play Corez.io</a>
+        <a class="ghost" href="https://discord.gg/bx5FK3CMwp" rel="noopener">Discord</a>
+    </section>
+
+    <p class="foot"><a href="/about">How to play</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></p>
+</main>
+</body>
+</html>

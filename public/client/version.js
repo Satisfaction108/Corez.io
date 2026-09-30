@@ -102,7 +102,7 @@ function moment() {
     if (raidFinale.active()) return raidFinale.holdsCeremony() ? "" : "later";
     if (!global.died) return "";
     if (global.respawnPending || global.raidQueued || rankCeremony.isPlaying()) return "";
-    // the death card is still inside its wait: hold the drop, don't reload yet
+    // the death card's 3 s wait: let it read first, the reload comes after
     if (global.raidRespawnAt > 0 && performance.now() < global.raidRespawnAt) return "hold";
     return "later";
 }
@@ -126,8 +126,8 @@ function step() {
     if (!pending) return stopWatch();
     const m = moment();
     if (m === "menu") return reload();
-    // the death card drops you back in on its own after 3 s; hold that from
-    // the moment you die, so the reload comes instead of the drop (app.js)
+    // dead with an update waiting: the reload comes once the card's 3 s are
+    // up, so Play again stays off from the moment you die (app.js, canvas.js)
     global.updateHoldsRespawn = (m === "later" || m === "hold") && global.died;
     if (m !== "later") { safeSince = 0; note(); return; }
     const now = Date.now();

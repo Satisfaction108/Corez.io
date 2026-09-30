@@ -238,7 +238,8 @@ class Gun extends EventEmitter {
             }
         }
         // Firing routines
-        const firing = this.isSidearm ? this.body.sidearmFire : this.altFire ? this.body.control.alt : this.body.control.fire;
+        // a player's sidearm has its own key; a bot's (a raid override) fires with its main guns
+        const firing = this.isSidearm ? (this.body.isBot ? this.body.control.fire : this.body.sidearmFire) : this.altFire ? this.body.control.alt : this.body.control.fire;
         if (this.autofire || firing) {
             if (this.body.settings.hasNoReloadDelay && shootPermission) return (
                 this.shoot(),

@@ -1236,6 +1236,11 @@ body.in-game .igc, body.in-game .igc-pip, .gt-stack {
 .dw-igbtn { position: static; display: inline-flex; padding: 0 16px 4px; min-width: 84px; }
 .dw-igbtn.accent { background: var(--copper); box-shadow: inset 0 -4px 0 var(--copper-dk), 0 2px 5px var(--cast); color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.28); }
 .dw-igbtn.accent:active { box-shadow: inset 0 -2px 0 var(--copper-dk), 0 0 0 transparent; }
+/* the death card's Play again (app.js updateRoyaleDomButtons): the menu's
+   big green key; greyed while the 3 s wait counts down */
+.dw-igbtn.play { gap: 12px; border-radius: 14px; font: 400 26px/1 var(--display); letter-spacing: .02em; }
+.dw-igbtn.play .pa-key { font: 700 12px/1 var(--ui); letter-spacing: .04em; padding: 5px 7px 4px; border-radius: 6px; background: rgba(0,0,0,.22); color: rgba(255,255,255,.9); text-shadow: none; }
+.dw-igbtn.play:disabled { cursor: default; font-size: 22px; color: var(--text2); text-shadow: none; filter: none; transform: none; }
 
 /* In-game the settings panel is simply the menu's dark panel (tokens
    above); only the keybind "press a key" state needs its own look. */
@@ -1577,64 +1582,21 @@ body.mobile .startMenuSlidingContent { height: auto; }
 body.mobile .sliderHolder { height: auto; }
 body.mobile .region-dropdown-menu { position: static; }
 
-/* ── Mobile / tablet gate ──────────────────────────────────────────────
-   Covers the home screen on touch-primary devices. `hidden` keeps it out
-   of the way until home.js decides the device can't play. */
-#mobileGate {
-    position: fixed;
-    inset: 0;
-    z-index: 9000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    background: var(--dim);
-    animation: mgFade .2s ease both;
-}
-#mobileGate[hidden] { display: none; }
-
-@keyframes mgFade { from { opacity: 0; } }
-
-.mg-card {
-    max-width: 340px;
-    padding: 30px 26px 24px;
+/* ── touch-screen hint above Play (home.js initMobileNote): one quiet
+   line, the upright or the sideways version by orientation ── */
+.mobile-note {
+    margin: 12px 0 -4px;
+    color: var(--text2);
+    font: 600 12.5px/1.35 var(--ui);
     text-align: center;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    box-shadow: inset 0 1px 0 var(--bevel), 0 3px 10px var(--cast);
+    text-wrap: balance;
 }
-.mg-icon {
-    width: 52px;
-    height: 52px;
-    margin-bottom: 8px;
+.mobile-note[hidden] { display: none; }
+.mobile-note .mn-wide { display: none; }
+@media (orientation: landscape) {
+    .mobile-note .mn-tall { display: none; }
+    .mobile-note .mn-wide { display: inline; }
 }
-.mg-card h2 {
-    margin: 0 0 8px;
-    font: 400 26px var(--display);
-    letter-spacing: .01em;
-    color: var(--heading);
-}
-.mg-card p {
-    margin: 0;
-    font: 400 13.5px/1.55 Rubik, var(--ui);
-    color: var(--text);
-    opacity: .82;
-}
-#mobileGateOverride {
-    margin-top: 20px;
-    padding: 8px 4px 0;
-    width: 100%;
-    background: 0 0;
-    border: 0;
-    border-top: 2px dashed var(--border);
-    font: 700 12px var(--ui);
-    color: var(--link);
-    cursor: pointer;
-    opacity: .75;
-    transition: opacity .18s;
-}
-#mobileGateOverride:hover, #mobileGateOverride:active { opacity: 1; }
 
 /* ── Tutorial button ───────────────────────────────────────────────────
    Secondary to Play: same shape and motion, accent-outlined instead of
@@ -3282,6 +3244,52 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
     .lb-rank { display: none; }
 }
 
+/* ── Raid Night card above Play (client/account/eventCard.js) ──
+   a quiet strip: name and countdown, when in your time and the blurb,
+   then the Discord and calendar links. Live: a green edge, a pulsing dot,
+   and Play pulses with it. */
+.ev-card {
+    margin: 0 0 12px;
+    padding: 9px 12px 10px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface2);
+    box-shadow: inset 0 1px 0 var(--line-soft), 0 2px 5px var(--cast);
+    text-align: left;
+    animation: dwFade var(--dw-t2) var(--dw-ease) both;
+}
+.ev-card[hidden] { display: none; }
+/* when the name and the countdown don't fit on one line, the countdown wraps under it */
+.ev-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.ev-title { white-space: nowrap; color: var(--copper); font: 400 19px/1.1 var(--display); letter-spacing: .04em; text-transform: uppercase; }
+.ev-cd { flex: none; margin-left: auto; padding: 3px 8px 4px; border-radius: 7px; background: var(--ink); color: #fff4dc; font: 700 13px/1 var(--ui); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ev-blurb { margin: 5px 0 0; color: var(--text2); font: 600 12.5px/1.35 var(--ui); }
+.ev-when { color: var(--heading); font-weight: 700; }
+.ev-links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 6px; }
+.ev-link { display: inline-flex; align-items: center; gap: 5px; color: var(--link); font: 700 12.5px/1.2 var(--ui); text-decoration: none; }
+.ev-link:hover { text-decoration: underline; }
+.ev-link .dw-ic { width: 17px; height: 17px; --ic-sw: 0; --ic-discord: #7c87ff; }
+.ev-card.live { border-color: var(--play-dk); box-shadow: inset 0 1px 0 var(--line-soft), 0 0 0 2px color-mix(in srgb, var(--play) 45%, transparent), 0 2px 5px var(--cast); }
+.ev-card.live .ev-title { color: var(--play-dk); }
+[data-theme="dark"] .ev-card.live .ev-title { color: var(--play); }
+.ev-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--play); box-shadow: 0 0 0 0 var(--play); animation: evDot 1.4s ease-out infinite; }
+@keyframes evDot { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--play) 70%, transparent); } 100% { box-shadow: 0 0 0 8px transparent; } }
+/* Play, while it is live: a ring breathing out from the button */
+#startButton.ev-live::after {
+    content: '';
+    position: absolute; inset: -3px;
+    border: 3px solid var(--play);
+    border-radius: 17px;
+    pointer-events: none;
+    animation: evRing 1.6s ease-out infinite;
+}
+@keyframes evRing { 0% { opacity: .85; transform: none; } 100% { opacity: 0; transform: scale(1.04, 1.22); } }
+@media (prefers-reduced-motion: reduce) {
+    .ev-card, .ev-dot, #startButton.ev-live::after { animation: none; }
+}
+body.mobile .ev-card { margin-bottom: 10px; }
+body.mobile .ev-link { padding: 6px 0; margin: -6px 0; }
+
 /* ── Daily Quests (beside the menu card): a note pinned next to it ── */
 .startMenu { position: relative; }
 #lobbySide {
@@ -3926,7 +3934,7 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
 
 /* ── keys: the coloured actions keep a lip, in their own darker tone ── */
 #startButton, .dw-btn.primary, .dw-btn.danger, .dw-btn.discord, .dw-btn.accent-fill,
-.wl-opt-guest, .wl-opt-discord, .gt-btn.primary, .dw-igbtn.accent, .dw-toast-act {
+.wl-opt-guest, .wl-opt-discord, .gt-btn.primary, .dw-igbtn.accent, .dw-igbtn.play:not(:disabled), .dw-toast-act {
     border: 1px solid var(--lip-c);
     background-color: var(--face-c);
     background-image: linear-gradient(rgba(255,255,255,.13), rgba(255,255,255,0) 55%);
@@ -3939,12 +3947,13 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
 .dw-btn.danger { --face-c: var(--danger); --lip-c: var(--danger-dk); }
 .dw-btn.discord, .wl-opt-discord { --face-c: var(--discord); --lip-c: var(--discord-dk); --ic-discord: #fff; }
 .dw-btn.accent-fill, .dw-igbtn.accent, .dw-toast-act { --face-c: var(--copper); --lip-c: var(--copper-dk); }
-.gt-btn.primary, .wl-opt-guest { --face-c: var(--play); --lip-c: var(--play-dk); }
+.gt-btn.primary, .wl-opt-guest, .dw-igbtn.play:not(:disabled) { --face-c: var(--play); --lip-c: var(--play-dk); }
+.dw-igbtn.play:not(:disabled) { border-radius: 14px; padding-bottom: 5px; text-shadow: 0 2px 0 color-mix(in srgb, var(--play-dk) 80%, #000); box-shadow: inset 0 -5px 0 var(--lip-c), inset 0 1px 0 rgba(255,255,255,.3), 0 6px 14px -6px color-mix(in srgb, var(--play-dk) 70%, transparent); }
 :is(#startButton, .dw-btn.primary, .dw-btn.danger, .dw-btn.discord, .dw-btn.accent-fill, .wl-opt-guest, .wl-opt-discord, .gt-btn.primary, .dw-igbtn.accent, .dw-toast-act):hover:not(:disabled) {
     background-color: var(--face-c);
     filter: brightness(1.06);
 }
-:is(#startButton, .dw-btn.primary, .dw-btn.danger, .dw-btn.discord, .dw-btn.accent-fill, .wl-opt-guest, .wl-opt-discord, .gt-btn.primary, .dw-igbtn.accent, .dw-toast-act):active:not(:disabled) {
+:is(#startButton, .dw-btn.primary, .dw-btn.danger, .dw-btn.discord, .dw-btn.accent-fill, .wl-opt-guest, .wl-opt-discord, .gt-btn.primary, .dw-igbtn.accent, .dw-igbtn.play, .dw-toast-act):active:not(:disabled) {
     transform: translateY(3px);
     box-shadow: inset 0 -1px 0 var(--lip-c), inset 0 2px 3px rgba(0,0,0,.12), 0 0 0 transparent;
 }
@@ -4355,3 +4364,181 @@ textarea.dw-input.fb-text:focus { border-color: var(--copper); box-shadow: inset
 .fb-thanks { text-align: center; }
 .fb-thanks .dw-modal-actions { justify-content: center; }
 .fb-thanks-ic .dw-ic { width: 44px; height: 44px; margin: 2px auto 6px; }
+
+
+/* ══ Phones and tablets ═════════════════════════════════════════════════
+   Everything below is scoped to body.mobile (app.js sets it from the user
+   agent), so desktop never sees it. The page is viewport-fit=cover, so the
+   fixed chrome steps in by the safe-area insets (notch, home bar), and the
+   menu card scrolls inside .mainWrapper because the body never does. */
+body.mobile {
+    --sa-t: env(safe-area-inset-top, 0px);
+    --sa-r: env(safe-area-inset-right, 0px);
+    --sa-b: env(safe-area-inset-bottom, 0px);
+    --sa-l: env(safe-area-inset-left, 0px);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+}
+/* no double-tap zoom on anything you tap */
+body.mobile :is(button, a, label, select, input, textarea, [role="button"], .sp-tab, .cl-tab) { touch-action: manipulation; }
+/* iOS zooms in on any field under 16px when it gets focus */
+body.mobile :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea),
+body.mobile #playerNameInput, body.mobile input.dw-input, body.mobile #homeSettingsPanel select { font-size: 16px; }
+
+body.mobile #themeToggleBtn { top: calc(var(--bar-top) + var(--sa-t)); right: calc(var(--bar-top) + var(--sa-r)); }
+body.mobile #homeSidebar { top: calc(var(--bar-top) + var(--sa-t)); left: calc(var(--bar-top) + var(--sa-l)); }
+body.mobile #menuNav { top: calc(var(--bar-top) + var(--sa-t)); }
+body.mobile #accountChip { top: calc(var(--bar-top) + var(--sa-t)); right: calc(var(--bar-top) + var(--bar-h) + var(--bar-gap) + var(--sa-r)); }
+body.mobile #inviteBtn { top: calc(var(--bar-top) + var(--sa-t)); }
+body.mobile #inviteBtn.stacked { top: calc(var(--bar-top) + var(--bar-h) + var(--bar-gap) + var(--sa-t)); right: calc(var(--bar-top) + var(--sa-r)); }
+
+/* nav icons: a full 44px square to hit with a thumb */
+body.mobile .dw-nav-btn { width: 46px; height: 44px; }
+/* on touch the hover tag would stick after a tap, so the icons speak for themselves */
+body.mobile .dw-nav-btn > span:not(.dw-nav-count) { display: none; }
+
+body.mobile .mainWrapper {
+    height: 100vh;
+    height: 100dvh;
+    padding: calc(var(--bar-top) + var(--bar-h) + 6px + var(--sa-t)) calc(10px + var(--sa-r)) calc(24px + var(--sa-b)) calc(10px + var(--sa-l));
+    box-sizing: border-box;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+/* the old fixed heights clipped Play and Tutorial off the bottom of the card */
+body.mobile .startMenu { max-height: none; max-width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+body.mobile .startMenuHolder, body.mobile .sliderHolder, body.mobile .startMenuSlidingContent { height: auto; }
+body.mobile .sliderHolder { width: auto; }
+body.mobile .startMenuHolder.mainHolder { max-width: 100%; min-width: 0; }
+/* the card sits in the middle of whatever room the bars leave (auto margins,
+   so a card taller than the screen still scrolls from its top) */
+body.mobile .mainWrapper { display: flex; flex-direction: column; }
+body.mobile #startMenuWrapper { margin: auto 0; }
+body.mobile #tutorialButton { height: 46px; }
+/* the credits link is tiny text; give it a taller hit area without moving it */
+body.mobile .menu-credits .contrib-link { padding: 12px 4px; margin: -12px -4px; }
+
+/* the menu's panels fit the screen and scroll inside; they keep clear of
+   the notch and the home bar */
+body.mobile :is(#homeSettingsPanel, #homeChangelogPanel, #contributorsPanel) {
+    max-width: calc(100vw - 24px - var(--sa-l) - var(--sa-r));
+    max-height: calc(100vh - 24px - var(--sa-t) - var(--sa-b));
+    max-height: calc(100dvh - 24px - var(--sa-t) - var(--sa-b));
+}
+body.mobile #homeSettingsPanel { width: 360px; }
+body.mobile #homeChangelogPanel { width: 540px; }
+body.mobile #contributorsPanel { display: flex; flex-direction: column; }
+body.mobile #contributorsPanel .contrib-list { max-height: none; min-height: 0; flex: 1; }
+/* four tabs are wider than a phone: they scroll sideways instead of spilling */
+body.mobile .cl-tabs { overflow-x: auto; scrollbar-width: none; padding-right: 14px; }
+body.mobile .cl-tabs::-webkit-scrollbar { display: none; }
+body.mobile .cl-tab { flex: none; white-space: nowrap; }
+body.mobile :is(.sp-tab, .cl-tab) { padding-top: 14px; padding-bottom: 14px; }
+/* settings rows: the whole line is the checkbox, so give each one a thumb's height */
+body.mobile .sp-checks { gap: 0 8px; }
+body.mobile .sp-checks .container { display: flex; align-items: center; min-height: 44px; line-height: 1.2; font-size: 14px; padding-left: 26px; }
+body.mobile .sp-checks .container .checkmark { top: 50%; margin-top: -8px; width: 16px; height: 16px; box-sizing: border-box; }
+body.mobile .sp-checks .container .checkmark::after { left: 5px; top: 2px; }
+body.mobile #homeSettingsPanel select { min-height: 44px; }
+body.mobile .mode-opt, body.mobile .region-option { min-height: 44px; }
+body.mobile .wl-opt { height: 48px; }
+body.mobile :is(#homeSettingsClose, #homeChangelogClose, #contributorsClose, .hub-close, .wl-x) { min-width: 44px; min-height: 44px; }
+/* the hub hangs under the nav; while it is open the chip and the invite
+   tile go under the dim instead of sitting on its header */
+body.mobile #dwHub {
+    top: calc(var(--bar-top) + var(--bar-h) + 14px + var(--sa-t));
+    width: min(780px, calc(100vw - 20px - var(--sa-l) - var(--sa-r)));
+    max-height: calc(100vh - var(--bar-top) - var(--bar-h) - 26px - var(--sa-t) - var(--sa-b));
+    max-height: calc(100dvh - var(--bar-top) - var(--bar-h) - 26px - var(--sa-t) - var(--sa-b));
+}
+body.mobile:has(#dwHub.open) :is(#accountChip, #inviteBtn) { z-index: 298; }
+body.mobile .dw-layer { padding: calc(12px + var(--sa-t)) calc(12px + var(--sa-r)) calc(12px + var(--sa-b)) calc(12px + var(--sa-l)); }
+body.mobile .dw-modal { max-height: calc(100vh - 24px - var(--sa-t) - var(--sa-b)); max-height: calc(100dvh - 24px - var(--sa-t) - var(--sa-b)); }
+
+/* the welcome gate keeps clear of the notch and home bar too */
+body.mobile .wl-legal a { display: inline-block; padding: 10px 2px; margin: -10px 0; }
+body.mobile #dwWelcome { padding: calc(16px + var(--sa-t)) calc(12px + var(--sa-r)) calc(16px + var(--sa-b)) calc(12px + var(--sa-l)); overscroll-behavior: contain; }
+
+/* ── phone held upright ── */
+@media (max-width: 560px) {
+    body.mobile .startMenu { width: auto; padding: 10px 12px 16px; }
+    body.mobile .startMenuHolder.mainHolder { width: auto; flex: 1 1 auto; margin: 6px 2px; }
+    /* nav top left, account chip under it, the rail along the bottom */
+    body.mobile #menuNav { left: calc(var(--bar-top) + var(--sa-l)); transform: none; padding: 0 3px; }
+    body.mobile .dw-nav-btn { width: 44px; }
+    body.mobile .dw-nav-btn[data-pane="play"] { margin-right: 8px; }
+    body.mobile .dw-nav-btn[data-pane="play"]::after { right: -5px; }
+    body.mobile #accountChip { top: calc(var(--bar-top) + var(--bar-h) + var(--bar-gap) + var(--sa-t)); right: auto; left: calc(var(--bar-top) + var(--sa-l)); }
+    body.mobile #homeSidebar {
+        top: auto; bottom: calc(var(--bar-top) + var(--sa-b));
+        left: 50%;
+        transform: translateX(-50%);
+        flex-direction: row;
+    }
+    body.mobile #homeSidebar .social-buttons { flex-direction: row; }
+    body.mobile #homeSidebar .social-buttons::before { width: 1px; height: 20px; }
+    body.mobile .mainWrapper {
+        padding-top: calc(var(--bar-top) + 2 * var(--bar-h) + var(--bar-gap) + 12px + var(--sa-t));
+        padding-bottom: calc(48px + 2 * var(--bar-top) + 8px + var(--sa-b));
+    }
+    body.mobile .game-title { font-size: 40px; margin: 4px 0 2px; }
+    body.mobile .menu-row { grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
+}
+
+/* ── phone on its side: the card goes wide and splits in two, fields on
+   the left and Play on the right, so it all fits under the nav ── */
+@media (orientation: landscape) and (max-height: 500px) {
+    body.mobile .mainWrapper { padding-top: calc(var(--bar-top) + var(--bar-h) + 8px + var(--sa-t)); padding-bottom: calc(12px + var(--sa-b)); }
+    body.mobile .startMenu { margin-top: 0; padding: 8px 14px 12px; }
+    body.mobile .startMenuHolder.mainHolder { width: min(560px, calc(100vw - 180px - var(--sa-l) - var(--sa-r))); margin: 4px 6px; }
+    body.mobile .startMenuSlidingContent {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+        column-gap: 16px;
+        align-items: start;
+    }
+    body.mobile .startMenuSlidingContent > * { grid-column: 1; }
+    body.mobile .startMenuSlidingContent > .game-title,
+    body.mobile .startMenuSlidingContent > .menu-credits { grid-column: 1 / -1; }
+    body.mobile .startMenuSlidingContent > .game-title { grid-row: 1; font-size: 34px; margin: 2px 0 0; }
+    /* Play lines up with the fields, so a tall duo party never pushes it down */
+    body.mobile .startMenuSlidingContent > .startButtonHolder { grid-column: 2; grid-row: 2 / span 5; margin-top: 26px; }
+    /* with the Raid Night card on top, the card lines up with the labels instead */
+    body.mobile .startMenuSlidingContent > .startButtonHolder:has(> .ev-card:not([hidden])) { margin-top: 8px; }
+    body.mobile .ev-card { padding: 7px 10px 8px; margin-bottom: 8px; }
+    body.mobile .ev-title { font-size: 17px; }
+    body.mobile .ev-blurb { margin-top: 3px; font-size: 11.5px; }
+    body.mobile .ev-links { margin-top: 4px; }
+    body.mobile .startButtonHolder:has(> .ev-card:not([hidden])) #startButton { height: 56px; }
+    body.mobile .region-dropdown-menu { position: absolute; }
+    body.mobile .duo-slots { grid-template-columns: 1fr; }
+    body.mobile .game-logo { width: 44px; height: 44px; }
+    body.mobile .menu-row { margin-top: 8px; gap: 8px; }
+    body.mobile .field-label { font-size: 12px; }
+    body.mobile .menu-field { gap: 3px; }
+    body.mobile .mobile-note { margin: 8px 0 0; font-size: 11.5px; }
+    body.mobile .menu-credits { margin-top: 10px; }
+    body.mobile #startButton { height: 64px; }
+
+    /* welcome card: emblem and wordmark share a line */
+    body.mobile #wlChoose { flex-flow: row wrap; justify-content: center; align-items: center; column-gap: 4px; }
+    body.mobile #wlChoose > :not(.wl-logo):not(.wl-title) { flex-basis: 100%; }
+    body.mobile .wl-card { width: 420px; padding: 14px 20px 14px; }
+    body.mobile .wl-logo { width: 52px; height: 52px; margin: -4px 0; }
+    body.mobile .wl-title { margin-bottom: 10px; }
+    body.mobile .wl-sub { margin-top: 4px; }
+    body.mobile .wl-title .wordmark.sm { font-size: 36px; }
+    body.mobile .wl-opts { gap: 8px; }
+    body.mobile .wl-opt-guest { height: 56px; }
+
+    /* feedback: a shorter box so Send is on screen without scrolling */
+    body.mobile textarea.dw-input.fb-text { height: 92px; min-height: 92px; }
+
+    /* hub: a slimmer header leaves more room for the pane */
+    body.mobile .hub-head { padding: 4px 8px 4px 18px; }
+    body.mobile .hub-title { font-size: 22px; }
+    body.mobile .hub-body { padding-top: 12px; }
+    body.mobile .wl-legal { margin-top: 10px; }
+}

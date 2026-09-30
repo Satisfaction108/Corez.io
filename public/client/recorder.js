@@ -4,6 +4,10 @@
 // arrives after stop(), so saving on a timer gives empty or truncated files.
 // The extension follows the real container (Chrome and Safari give H.264 MP4,
 // Firefox gives WebM); the bitrate scales with the canvas size.
+//
+// opts.maxBps caps the bitrate (phones: a lighter encode), and opts.onSaved
+// takes the finished file instead of the automatic download (touch.js shows
+// a Share / Save card, since a phone has nowhere obvious to put a download).
 const TYPES = [
     "video/mp4;codecs=avc1.64002A",   // H.264 High: opens everywhere
     "video/mp4;codecs=avc1",
@@ -26,11 +30,14 @@ function stamp() {
 }
 
 class AdvancedRecorder extends MediaRecorder {
-    constructor(canvas, framePerSecond = 60) {
+    constructor(canvas, framePerSecond = 60, opts = {}) {
         const mimeType = pickType();
         // ~0.12 bits per pixel per frame, 8-24 Mbps: sharp text and rock edges
-        const bps = Math.round(Math.min(24e6, Math.max(8e6, canvas.width * canvas.height * framePerSecond * 0.12)));
+        const hi = opts.maxBps || 24e6, lo = Math.min(8e6, hi);
+        const bps = Math.round(Math.min(hi, Math.max(lo, canvas.width * canvas.height * framePerSecond * 0.12)));
         super(canvas.captureStream(framePerSecond), mimeType ? { mimeType, videoBitsPerSecond: bps } : { videoBitsPerSecond: bps });
+        this.onSaved = opts.onSaved || null;
+        this.startedAt = 0;
         this.chunks = [];
         this.addEventListener("dataavailable", ({ data }) => {
             if (data && data.size) this.chunks.push(data);
@@ -38,16 +45,18 @@ class AdvancedRecorder extends MediaRecorder {
         this.addEventListener("stop", () => this.save());
     }
     // 1 s chunks keep memory flat on long recordings
-    start() { super.start(1000); }
+    start() { this.startedAt = performance.now(); super.start(1000); }
     save() {
         const type = (this.mimeType || "video/webm").split(";")[0];
         const blob = new Blob(this.chunks, { type });
         this.chunks = [];
         if (!blob.size) return;
+        const name = `corez_${stamp()}.${type === "video/mp4" ? "mp4" : "webm"}`;
+        if (this.onSaved) { this.onSaved(blob, name); return; }
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.style.display = "none";
-        a.download = `corez_${stamp()}.${type === "video/mp4" ? "mp4" : "webm"}`;
+        a.download = name;
         a.href = url;
         document.body.appendChild(a);
         a.click();

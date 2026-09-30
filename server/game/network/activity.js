@@ -57,6 +57,11 @@ function noteCommand(socket, x, y, bits, t = Date.now()) {
     return true;
 }
 
+// A deliberate click that is not a command packet (spectate Prev/Next/Watch).
+function noteAction(socket, t = Date.now()) {
+    if (socket) socket.lastInputAt = t;
+}
+
 function noteChat(socket, t = Date.now()) {
     if (socket) socket._chatAt = t;
 }
@@ -87,5 +92,5 @@ function unprotected(root, t = Date.now()) {
 
 module.exports = {
     IDLE_KICK_MS, IDLE_PROTECT_MS,
-    aimMoved, noteCommand, noteChat, resetClock, inputIdleMs, idleMs, unprotected,
+    aimMoved, noteCommand, noteAction, noteChat, resetClock, inputIdleMs, idleMs, unprotected,
 };

@@ -289,7 +289,7 @@ async function dispatch(req, res, pathname, query) {
 // A fixed list, read-only, from <repo>/shared; anything else under /shared/
 // is a 404. Guests need them too, so they are served with accounts off.
 const SHARED_DIR = path.join(__dirname, '..', '..', 'shared');
-const SHARED_FILES = new Set(['ranks.js', 'cosmetics.js']);
+const SHARED_FILES = new Set(['ranks.js', 'cosmetics.js', 'events.js']);
 const sharedCache = new Map();   // name -> {mtimeMs, size, body, etag}
 
 function serveShared(req, res, pathname) {

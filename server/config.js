@@ -337,3 +337,33 @@ module.exports = {
 
     room_setup: ['room_default'],
 }
+
+// Overflow solo raids for a crowd. The solo raid on the main thread holds
+// player_cap humans; past that a new player needs another raid, and the engine
+// runs one room per thread, so each extra raid is a worker on a loopback port.
+// server.js hands a new "/" websocket to the first raid with room, so the
+// client never knows. They are unlisted: the menu still shows one Solo row with
+// the counts added up. SOLO_RAIDS is the total number of solo raids (default 4
+// in production, 1 elsewhere so local test servers stay light).
+{
+    const solo = module.exports.servers.find(s => s.id === 'br');
+    const wanted = parseInt(process.env.SOLO_RAIDS);
+    const total = Math.max(1, Math.min(8, isFinite(wanted) ? wanted : (process.env.NODE_ENV === 'production' ? 4 : 1)));
+    const basePort = parseInt(process.env.SOLO_OVERFLOW_PORT) || ((parseInt(process.env.DUO_PORT) || 3102) + 1);
+    for (let i = 1; i < total && solo; i++) {
+        module.exports.servers.push({
+            share_client_server: false,
+            host: solo.host,
+            port: basePort + i - 1,
+            id: 'br' + (i + 1),
+            soloOverflow: true,
+            region: solo.region,
+            gamemode: solo.gamemode.slice(),
+            player_cap: solo.player_cap,
+            featured: false,
+            unlisted: true,
+            private: false,
+            properties: { ...solo.properties },
+        });
+    }
+}

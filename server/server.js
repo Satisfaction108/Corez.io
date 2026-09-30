@@ -8,6 +8,7 @@ const http = require("http");
 const net = require("net");
 const url = require("url");
 const crypto = require("crypto");
+const zlib = require("zlib");
 const pjson = require('../package.json')
 const { clientIp } = require("./lib/clientIp.js");
 const { clientVersion, stampHtml } = require("./lib/clientVersion.js");
@@ -186,21 +187,89 @@ function allowFraming(res) {
     res.setHeader("Content-Security-Policy", "frame-ancestors *");
 }
 
-function sendStatic(res, file) {
-    const extension = file.split(".").pop();
+// Text files are compressed once (gzip and brotli, on the zlib threadpool, so
+// the game loop on this thread never waits on it) and kept in memory until the
+// file changes. Every static response carries an ETag, so a reload costs a 304.
+// Caddy passes a response that is already encoded straight through.
+const COMPRESSIBLE = new Set(["js", "json", "css", "html", "md", "svg", "txt", "ico"]);
+const MEDIA = new Set(["png", "jpg", "jpeg", "webp", "gif", "ttf", "woff", "woff2", "wav", "mp3", "ogg", "mp4"]);
+const staticCache = new Map();   // file -> { key, ready: Promise of { etag, raw, gz, br } }
+const STATIC_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+let staticCacheBytes = 0;
+
+function compressedEntry(file, key, body) {
+    const hit = staticCache.get(file);
+    if (hit && hit.key === key) return hit.ready;
+    const ready = Promise.all([
+        new Promise((ok) => zlib.gzip(body, { level: 9 }, (e, out) => ok(e ? null : out))),
+        new Promise((ok) => zlib.brotliCompress(body, { params: {
+            [zlib.constants.BROTLI_PARAM_QUALITY]: 9,
+            [zlib.constants.BROTLI_PARAM_SIZE_HINT]: body.length,
+        } }, (e, out) => ok(e ? null : out))),
+    ]).then(([gz, br]) => {
+        const entry = { raw: body, gz, br, etag: '"' + crypto.createHash("sha1").update(body).digest("base64url").slice(0, 20) + '"' };
+        const bytes = body.length + (gz ? gz.length : 0) + (br ? br.length : 0);
+        if (staticCacheBytes + bytes > STATIC_CACHE_MAX_BYTES) { staticCache.clear(); staticCacheBytes = 0; }
+        staticCacheBytes += bytes;
+        staticCache.set(file, { key, ready: Promise.resolve(entry) });
+        return entry;
+    });
+    staticCache.set(file, { key, ready });
+    return ready;
+}
+
+function notModified(req, etag) {
+    const inm = req && req.headers["if-none-match"];
+    return !!inm && inm.split(",").some((t) => t.trim().replace(/^W\//, "") === etag);
+}
+
+function sendEntry(req, res, type, entry, cacheControl) {
+    const headers = { "Content-Type": type, "Cache-Control": cacheControl, "ETag": entry.etag, "Vary": "Accept-Encoding" };
+    if (notModified(req, entry.etag)) { res.writeHead(304, headers); res.end(); return; }
+    const accept = String((req && req.headers["accept-encoding"]) || "");
+    let body = entry.raw;
+    if (entry.br && /\bbr\b/.test(accept) && entry.br.length < body.length) { body = entry.br; headers["Content-Encoding"] = "br"; }
+    else if (entry.gz && /\bgzip\b/.test(accept) && entry.gz.length < body.length) { body = entry.gz; headers["Content-Encoding"] = "gzip"; }
+    headers["Content-Length"] = body.length;
+    res.writeHead(200, headers);
+    res.end(req && req.method === "HEAD" ? undefined : body);
+}
+
+function sendStatic(res, file, req) {
+    const extension = file.split(".").pop().toLowerCase();
     if (extension === "html") allowFraming(res);
-    // No heuristic caching: a client must never run a stale app.js
-    // against a freshly restarted server.
-    if (path.resolve(file) === menuPage) {
-        fs.readFile(file, "utf8", (err, html) => {
-            if (err) { res.writeHead(500); res.end(); return; }
-            res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-cache" });
-            res.end(stampHtml(html, currentClient()));
-        });
-        return;
-    }
-    res.writeHead(200, { "Content-Type": mimeSet[extension] || "text/html", "Cache-Control": "no-cache" });
-    fs.createReadStream(file).on("error", () => res.destroy()).pipe(res);
+    const type = mimeSet[extension] || "text/html";
+    const fail = () => { if (!res.headersSent) { res.writeHead(500); } res.end(); };
+    fs.stat(file, (err, st) => {
+        if (err || !st.isFile()) return fail();
+        const key = st.size + ":" + st.mtimeMs;
+        // No heuristic caching: a client must never run a stale app.js against a
+        // freshly restarted server, so scripts, styles and pages revalidate
+        // (a cheap 304). Pictures, sounds and fonts may sit for an hour.
+        if (path.resolve(file) === menuPage) {
+            const version = currentClient();
+            return fs.readFile(file, "utf8", (err, html) => {
+                if (err) return fail();
+                compressedEntry(file, key + ":" + version, Buffer.from(stampHtml(html, version)))
+                    .then((entry) => sendEntry(req, res, "text/html", entry, "no-cache"), fail);
+            });
+        }
+        if (COMPRESSIBLE.has(extension) && st.size <= 8 * 1024 * 1024) {
+            const hit = staticCache.get(file);
+            if (hit && hit.key === key) return hit.ready.then((entry) => sendEntry(req, res, type, entry, "no-cache"), fail);
+            return fs.readFile(file, (err, body) => {
+                if (err) return fail();
+                compressedEntry(file, key, body).then((entry) => sendEntry(req, res, type, entry, "no-cache"), fail);
+            });
+        }
+        const etag = '"' + st.size.toString(36) + "-" + Math.floor(st.mtimeMs).toString(36) + '"';
+        const headers = { "Content-Type": type, "Cache-Control": MEDIA.has(extension) ? "public, max-age=3600" : "no-cache", "ETag": etag };
+        if (notModified(req, etag)) { res.writeHead(304, headers); res.end(); return; }
+        headers["Content-Length"] = st.size;
+        res.writeHead(200, headers);
+        if (req && req.method === "HEAD") return res.end();
+        fs.createReadStream(file).on("error", () => res.destroy()).pipe(res);
+    });
 }
 
 // /api/sendPlayer is server-to-server. It stays shut unless API_KEY is a real
@@ -322,13 +391,16 @@ server = http.createServer((req, res) => {
     switch (pathname) {
         case "/getServers.json": {
             // Serve a list of active servers (excluding hidden ones)
+            // the overflow solo raids are unlisted; their counts go on the solo row
+            const overflow = (global.servers || []).filter((s) => s && s.clientsAt && (serverCfg(s.id) || {}).soloOverflow);
             readString = JSON.stringify((global.servers || []).filter((s) => s && s.id && !s.hidden).map((server) => {
                 const cfg = serverCfg(server.id);
                 const duo = server.mode === "duo" || !!(cfg && cfg.properties && cfg.properties.royale_duos);
+                const extra = !duo && server.gameManager ? overflow : [];
                 return {
                     ip: duo ? Config.host : server.ip,
-                    players: server.players,
-                    maxPlayers: server.maxPlayers,
+                    players: extra.reduce((n, s) => n + (s.players | 0), server.players | 0),
+                    maxPlayers: extra.reduce((n, s) => n + (s.maxPlayers | 0), server.maxPlayers | 0),
                     id: server.id,
                     featured: server.featured,
                     region: server.region || (cfg && cfg.region) || "",
@@ -438,7 +510,12 @@ server = http.createServer((req, res) => {
         case "/about":
         case "/how-to-play": {
             ok = false;
-            sendStatic(res, path.join(publicRoot, "about.html"));
+            sendStatic(res, path.join(publicRoot, "about.html"), req);
+        } break;
+        case "/devlog":
+        case "/devlog/": {
+            ok = false;
+            sendStatic(res, path.join(publicRoot, "devlog.html"), req);
         } break;
         case "/isOnline": {
             readString = "true";
@@ -456,7 +533,7 @@ server = http.createServer((req, res) => {
             // If the requested file doesn't exist or isn't a file, default to the INDEX_HTML file
             if (!fileToGet) fileToGet = path.join(publicRoot, `${selectedHeader}/index.html`);
 
-            sendStatic(res, fileToGet);
+            sendStatic(res, fileToGet, req);
         } break;
 
         default: {
@@ -473,7 +550,7 @@ server = http.createServer((req, res) => {
             // outside public/, default to the main_menu file
             if (!fileToGet) fileToGet = path.join(publicRoot, Config.main_menu);
 
-            sendStatic(res, fileToGet);
+            sendStatic(res, fileToGet, req);
         } break;
     }
 
@@ -546,6 +623,12 @@ function loadGameServer(loadViaMain = false, host, port, gamemode, region, webPr
                     break;
                 case true:
                     if (global.servers[index]) global.servers[index].players = message.shift();
+                    break;
+                case "clients":
+                    if (global.servers[index]) {
+                        global.servers[index].clients = message.shift() | 0;
+                        global.servers[index].clientsAt = Date.now();
+                    }
                     break;
                 case "doneLoading":
                     onServerLoaded();
@@ -679,6 +762,68 @@ function proxyUpgradeToTutorial(req, socket, head) {
     return proxyUpgradeToWorker(req, socket, head, TUTORIAL_PROXY_PATH, tutorialPort());
 }
 
+// Which solo raid a new websocket joins. The main-thread raid fills first, then
+// the overflow workers in order (config.js SOLO_RAIDS). A raid takes new players
+// up to SOLO_SOFT_CAP; past that, whichever has fewest, up to its player_cap
+// (the hard limit sockets.js enforces at spawn). Connections sent in the last
+// moments count too, so a burst doesn't all land on the same raid before its
+// next count. A reconnect from the same address goes back to its raid, which is
+// where its resume token lives. Returns the raid, null for "this thread", or
+// false when all are full.
+const SOLO_SOFT_CAP = parseInt(process.env.SOLO_SOFT_CAP) || 16;
+const SOLO_STICKY_MS = 3 * 60 * 1000;
+const soloSent = new Map();     // raid id -> times a socket was sent there
+const soloSticky = new Map();   // client ip -> { id, at }
+function soloRaids() {
+    const out = [];
+    const now = Date.now();
+    const main = (global.servers || []).find((s) => s && s.gameManager);
+    if (!main || main.mode !== "solo") return out;
+    // this thread's count is live; only a handshake still in flight is missing
+    out.push({ id: main.id, port: null, clients: main.gameManager.socketManager.clients.length,
+        cap: main.maxPlayers || 0, since: now - 150 });
+    for (const cfg of Config.servers || []) {
+        if (!cfg || !cfg.soloOverflow) continue;
+        const live = (global.servers || []).find((s) => s && s.id === cfg.id);
+        // a worker that stopped reporting is skipped (still booting, or gone)
+        if (!live || !live.clientsAt || now - live.clientsAt > 5000) continue;
+        out.push({ id: cfg.id, port: cfg.port, clients: live.clients | 0, cap: cfg.player_cap || 0, since: live.clientsAt - 150 });
+    }
+    return out;
+}
+function pickSoloRaid(req) {
+    const raids = soloRaids();
+    if (raids.length < 2 && !(raids[0] && raids[0].cap)) return null;
+    const now = Date.now();
+    const load = (r) => {
+        const sent = (soloSent.get(r.id) || []).filter((t) => t > r.since && t > now - 5000);
+        soloSent.set(r.id, sent);
+        return r.clients + sent.length;
+    };
+    const room = (r, cap) => !r.cap || load(r) < Math.min(cap, r.cap);
+    const ip = clientIp(req) || "";
+    const stuck = ip && soloSticky.get(ip);
+    let pick = null;
+    if (stuck && now - stuck.at < SOLO_STICKY_MS) pick = raids.find((r) => r.id === stuck.id && room(r, Infinity)) || null;
+    // during a live event (Raid Night) fill each raid to its hard cap first,
+    // so everyone who shows up plays together instead of spreading out at 16
+    let soft = SOLO_SOFT_CAP;
+    try { const ev = require("../shared/events.js").current(now); if (ev && ev.live) soft = Infinity; } catch { /* no events file */ }
+    if (!pick) pick = raids.find((r) => room(r, soft)) || null;
+    if (!pick) {
+        for (const r of raids) if (room(r, Infinity) && (!pick || load(r) < load(pick))) pick = r;
+    }
+    if (!pick) return false;
+    soloSent.get(pick.id).push(now);
+    if (ip) {
+        soloSticky.set(ip, { id: pick.id, at: now });
+        if (soloSticky.size > 5000) {
+            for (const [k, v] of soloSticky) if (now - v.at > SOLO_STICKY_MS) soloSticky.delete(k);
+        }
+    }
+    return pick;
+}
+
 server.on("upgrade", (req, socket, head) => {
     const url = req.url || "";
     if (url === TUTORIAL_PROXY_PATH || url.startsWith(TUTORIAL_PROXY_PATH + "/") ||
@@ -695,8 +840,17 @@ server.on("upgrade", (req, socket, head) => {
         if (!workerPort("dw")) { try { socket.destroy(); } catch (e) { /* */ } return; }
         return proxyUpgradeToWorker(req, socket, head, DIG_WARS_PROXY_PATH, workerPort("dw"));
     }
+    // Solo: the raid on this thread, or an overflow raid with more room
+    const raid = pickSoloRaid(req);
+    if (raid && raid.port) return proxyUpgradeToWorker(req, socket, head, "", raid.port);
     wsServer.handleUpgrade(req, socket, head, (ws) => {
         try {
+            if (raid === false) {
+                // every raid is full: 4001 sends the client back to the menu
+                // with this line instead of retrying
+                ws.close(4001, "All raids are full right now. Try again in a minute!");
+                return;
+            }
             if (global.launchedOnMainServer) {
                 for (let i = 0; i < global.servers.length; i++) {
                     let server = global.servers[i];

@@ -1,0 +1,176 @@
+/* Touch screens in a raid (touch.js injects this; body.mobile is set by app.js).
+   The canvas HUD draws the sticks and thumb buttons; these are the DOM bits:
+   the top-left row (settings, chat, record, fullscreen) and a few fixes so
+   the menu layers never sit on top of the game. */
+
+/* the menu wrapper stays in the page while you play: it must not eat touches */
+body.mobile.in-game .mainWrapper { pointer-events: none; }
+body.mobile #gameCanvas { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+body.mobile.in-game { overscroll-behavior: none; }
+
+/* top-left row: square keys clear of the notch */
+body.mobile #ingameSettingsBtn,
+body.mobile #touchChatBtn,
+body.mobile #touchRecBtn,
+body.mobile #touchAutoBtn,
+body.mobile #touchPingBtn,
+body.mobile #ingameFullscreenBtn {
+    top: max(8px, env(safe-area-inset-top));
+    width: 44px;
+    height: 44px;
+}
+body.mobile #ingameSettingsBtn { left: max(8px, env(safe-area-inset-left)); }
+body.mobile #touchChatBtn { left: calc(max(8px, env(safe-area-inset-left)) + 52px); }
+body.mobile #touchRecBtn { left: calc(max(8px, env(safe-area-inset-left)) + 104px); }
+body.mobile #touchAutoBtn { left: calc(max(8px, env(safe-area-inset-left)) + 156px); width: 56px; }
+body.mobile #ingameFullscreenBtn { left: calc(max(8px, env(safe-area-inset-left)) + 220px) !important; }
+/* duos: Ping takes the fullscreen key's place, which moves one along */
+body.mobile #touchPingBtn { left: calc(max(8px, env(safe-area-inset-left)) + 220px); width: 56px; }
+body.mobile.duo-raid #ingameFullscreenBtn { left: calc(max(8px, env(safe-area-inset-left)) + 284px) !important; }
+/* the chat mode toggle: on touch the pill beside the chat box flips it */
+body.mobile #ingameChatModeBtn { display: none !important; }
+/* duos on a phone: Ping takes the row's last spot, fullscreen steps aside
+   (Android goes fullscreen on Play anyway) */
+@media (max-width: 1000px) { body.mobile.duo-raid #ingameFullscreenBtn { display: none !important; } }
+
+#touchChatBtn, #touchRecBtn, #touchAutoBtn, #touchPingBtn {
+    position: fixed;
+    z-index: 30;
+    margin: 0;
+    padding: 0 0 4px;
+    box-sizing: border-box;
+    border-radius: 11px;
+    border: 1px solid #120e16;
+    background: #4a4156;
+    box-shadow: inset 0 -4px 0 #2e2837, 0 2px 5px rgba(0,0,0,.42);
+    color: #fff3d9;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    font: 700 12px/1 Rubik, Ubuntu, sans-serif;
+}
+#touchChatBtn .dw-ic { width: 22px; height: 22px; }
+#touchAutoBtn, #touchPingBtn { font: 400 16px/1 "Lilita One", Rubik, sans-serif; letter-spacing: .02em; color: #a597b0; }
+#touchPingBtn { color: #fff3d9; }
+#touchAutoBtn.on { background: #e07b2e; box-shadow: inset 0 -4px 0 #9e4a14, 0 2px 5px rgba(0,0,0,.42); color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.28); }
+#touchChatBtn:active, #touchRecBtn:active, #touchAutoBtn:active, #touchPingBtn:active { transform: translateY(3px); box-shadow: inset 0 -2px 0 #2e2837, 0 0 0 transparent; }
+
+/* record: a red dot; while recording it turns into a pill with the time */
+#touchRecBtn .rec-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #e0473b; box-shadow: 0 0 0 2px #120e16, inset 0 -2px 0 #9c2a21;
+}
+#touchRecBtn.on { background: #5a2a2a; overflow: visible; }
+#touchRecBtn.on .rec-dot { width: 12px; height: 12px; border-radius: 3px; animation: touchRecPulse 1s ease-in-out infinite; }
+/* the running time hangs under the button, so the row never shifts */
+#touchRecBtn .rec-time { display: none; font-variant-numeric: tabular-nums; }
+#touchRecBtn.on .rec-time {
+    display: block; position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%);
+    padding: 3px 6px 2px; border-radius: 6px; border: 1px solid #120e16;
+    background: #e0473b; color: #fff; font: 700 11px/1 Rubik, Ubuntu, sans-serif; white-space: nowrap;
+}
+@keyframes touchRecPulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { #touchRecBtn.on .rec-dot { animation: none; } }
+
+/* the saved clip: a card with Share and Save, over the game */
+#touchClip {
+    position: fixed;
+    z-index: 60;
+    left: 50%;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 13px;
+    border: 1px solid #120e16;
+    background: rgba(43,37,51,.97);
+    box-shadow: 0 3px 10px rgba(0,0,0,.42);
+    color: #e9e0cc;
+    font: 700 13px/1.2 Rubik, Ubuntu, sans-serif;
+    max-width: calc(100vw - 28px);
+    box-sizing: border-box;
+}
+#touchClip.show { display: flex; }
+#touchClip video { width: 96px; height: 54px; border-radius: 7px; background: #000; object-fit: cover; flex: none; }
+#touchClip .clip-txt { flex: 1; min-width: 0; }
+#touchClip .clip-txt b { display: block; font: 400 17px/1.1 "Lilita One", Rubik, sans-serif; color: #fff3d9; }
+#touchClip button, #touchClip a {
+    height: 44px; min-width: 64px; padding: 0 14px 4px;
+    border-radius: 11px; border: 1px solid #120e16;
+    background: #4a4156; box-shadow: inset 0 -4px 0 #2e2837;
+    color: #fff3d9; font: 700 14px/1 Rubik, Ubuntu, sans-serif;
+    display: inline-flex; align-items: center; justify-content: center;
+    text-decoration: none; touch-action: manipulation; box-sizing: border-box;
+}
+#touchClip .clip-share { background: #4fcf5c; box-shadow: inset 0 -4px 0 #2c8f37; color: #fff; }
+#touchClip .clip-x { min-width: 44px; background: transparent; box-shadow: none; border-color: transparent; color: #a597b0; font-size: 18px; }
+
+/* portrait: the raid wants the phone sideways (the server sends a 16:9 view) */
+#touchRotate {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(8,6,12,.78);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+}
+#touchRotate.show { display: flex; }
+#touchRotate .rot-card {
+    max-width: 300px;
+    padding: 26px 22px 18px;
+    text-align: center;
+    border-radius: 14px;
+    border: 1px solid #120e16;
+    background: #2b2533;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 3px 10px rgba(0,0,0,.42);
+    color: #e9e0cc;
+    font: 400 14px/1.5 Rubik, Ubuntu, sans-serif;
+}
+#touchRotate .rot-phone {
+    width: 44px; height: 72px; margin: 0 auto 16px;
+    border: 4px solid #fff3d9; border-radius: 10px; box-sizing: border-box;
+    position: relative;
+    animation: touchRotTurn 2.4s cubic-bezier(.6,0,.3,1) infinite;
+}
+#touchRotate .rot-phone::after {
+    content: ""; position: absolute; left: 50%; bottom: 4px; width: 12px; height: 3px;
+    margin-left: -6px; border-radius: 2px; background: #fff3d9;
+}
+@keyframes touchRotTurn { 0%, 25% { transform: rotate(0); } 55%, 90% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+@media (prefers-reduced-motion: reduce) { #touchRotate .rot-phone { animation: none; transform: rotate(-90deg); } }
+#touchRotate h2 { margin: 0 0 6px; font: 400 24px/1.1 "Lilita One", Rubik, sans-serif; color: #fff3d9; }
+#touchRotate p { margin: 0; opacity: .85; }
+#touchRotate button {
+    margin-top: 16px; width: 100%; height: 44px;
+    border: 0; border-top: 2px dashed #4b4158; background: transparent;
+    color: #a597b0; font: 700 13px/1 Rubik, Ubuntu, sans-serif;
+    touch-action: manipulation;
+}
+
+/* the duo queue card on a short (sideways) phone: tighter, and it scrolls
+   rather than running off the top */
+@media (max-height: 480px) {
+    body.mobile .dwj-card { max-height: calc(100dvh - 16px); overflow-y: auto; padding-top: 14px; padding-bottom: 14px; box-sizing: border-box; }
+    body.mobile .dwj-logo { width: 48px; height: 48px; margin-bottom: 0; }
+}
+
+/* friend chat (logged in): its pip goes in the top row beside the minimap,
+   off the kit buttons, and the panel fits a short screen */
+body.mobile .igc-pip {
+    top: max(8px, env(safe-area-inset-top)); margin: 0;
+    right: calc(max(8px, env(safe-area-inset-right)) + 136px);
+    height: 44px; min-width: 44px; justify-content: center; opacity: .8;
+}
+body.mobile .igc { height: min(420px, calc(100dvh - 24px)); margin-top: calc(min(420px, calc(100dvh - 24px)) / -2); }
+@media (orientation: portrait) {
+    body.mobile .igc-pip { top: calc(max(8px, env(safe-area-inset-top)) + 124px); right: max(8px, env(safe-area-inset-right)); }
+}
+body.mobile .igc-hint { display: none; }

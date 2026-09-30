@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import * as socketStuff from "./socketinit.js";
 import { AdvancedRecorder } from "./recorder.js";
 import { gameSound } from "./sound.js";
+import { touch } from "./touch.js";
 let { gui } = socketStuff;
 
 // duos: team chat and pings are on (the duo server says so in RY)
@@ -30,9 +31,13 @@ class Canvas {
                 return;
             }
             if (![global.KEY_ENTER, global.KEY_ESC].includes(event.keyCode)) return;
+            // closed before the blur: a phone treats blur as Done (spawnChatInput)
+            global.showChat = false;
+            // iOS can leave the page scrolled after its keyboard goes away
+            if (global.mobile) setTimeout(() => { if (window.scrollY || window.scrollX) window.scrollTo(0, 0); if (window.resizeEvent) window.resizeEvent(); }, 60);
+            if (this.chatAutoPaused) { this.chatAutoPaused = false; if (!global.died) this.socket.talk("t", 1, false); }
             this[id].blur();
             this.cv.focus();
-            global.showChat = false;
             setTimeout(() => {
                 if (this.chatBox && !this.chatBox.loadedProperly) this.chatBox.remove(), this.chatInput.remove(), this.chatBox = false;
             }, 50)
@@ -75,23 +80,16 @@ class Canvas {
         global.canvas = this;
     }
     init() {
-        global.mobile && optMobile.value == "mobile" || optMobile.value == "mobileWithBigJoysticks" ? ( // Mobile
-            this.mobilecv = this.cv,
-            this.controlTouch = null,
-            this.movementTouch = null,
-            this.movementTouchPos = { x: 0, y: 0 },
-            this.controlTouchPos = { x: 0, y: 0 },
-            this.mobilecv.addEventListener("touchstart", (event) => {if (global.gameStart || global.disconnected) this.touchStart(event)}),
-            this.mobilecv.addEventListener("touchmove", (event) => {if (global.gameStart) this.touchMove(event)}),
-            this.mobilecv.addEventListener("touchend", (event) => {if (global.gameStart) this.touchEnd(event)}),
-            this.mobilecv.addEventListener("touchcancel", (event) => {if (global.gameStart) this.touchEnd(event)})
-        ) : ( // PC
-            this.cv.addEventListener("mousemove", (event) => {if (global.gameStart || global.disconnected) this.mouseMove(event)}),
-            this.cv.addEventListener("mousedown", (event) => {if (global.gameStart || global.disconnected) this.mouseDown(event)}),
-            this.cv.addEventListener("mouseup", (event) => {if (global.gameStart || global.disconnected) this.mouseUp(event)}),
-            this.cv.addEventListener("keypress", (event) => {if (global.gameStart) this.keyPress(event)}),
-            this.cv.addEventListener("wheel", (event) => {if (global.gameStart) this.wheel(event)})
-        );
+        if (global.mobile) {
+            // phones and tablets: twin sticks and thumb buttons (touch.js)
+            touch.attach(this);
+        } else {
+            this.cv.addEventListener("mousemove", (event) => {if (global.gameStart || global.disconnected) this.mouseMove(event)});
+            this.cv.addEventListener("mousedown", (event) => {if (global.gameStart || global.disconnected) this.mouseDown(event)});
+            this.cv.addEventListener("mouseup", (event) => {if (global.gameStart || global.disconnected) this.mouseUp(event)});
+            this.cv.addEventListener("keypress", (event) => {if (global.gameStart) this.keyPress(event)});
+            this.cv.addEventListener("wheel", (event) => {if (global.gameStart) this.wheel(event)});
+        }
         this.cv.addEventListener("keydown", (event) => {if (global.gameStart) this.keyDown(event)});
         this.cv.addEventListener("keyup", (event) => {if (global.gameStart) this.keyUp(event)});
         window.addEventListener("gamepadconnected", (e) => {
@@ -163,11 +161,31 @@ class Canvas {
             this.chatInput.id = "chatInput";
             this.chatInput.style.zIndex = 11;
             this.chatInput.addEventListener('keydown', event => this.chatListener("chatInput", event));
+            if (global.mobile) {
+                // the phone keyboard's Done (or closing it) sends what's typed
+                this.chatInput.setAttribute("enterkeyhint", "send");
+                this.chatInput.addEventListener('blur', () => {
+                    if (global.showChat) this.chatListener("chatInput", { keyCode: global.KEY_ENTER, preventDefault() { } });
+                });
+            }
             document.getElementById("gameAreaWrapper").appendChild(this.chatInput);
         }
         this.releaseMovement();
+        // touch: typing never drives or shoots; the sticks let go and the tank stops
+        if (global.mobile) {
+            touch.releaseAll();
+            for (const i of [4, 5, 6, 7]) this.socket.cmd.set(i, false);
+            this.socket.cmd.reactNow();
+            // auto-fire holds too, and comes back when the box closes
+            if (touch.autoFire && !this.chatAutoPaused) { this.chatAutoPaused = true; this.socket.talk("t", 1, false); }
+        }
         this.chatInput.focus();
         global.showChat = true;
+    }
+    // touch: a tap outside the box closes it and sends what's typed, like Done
+    closeChat() {
+        if (!global.showChat || !this.chatInput) return;
+        this.chatListener("chatInput", { keyCode: global.KEY_ENTER, preventDefault() { } });
     }
 
     respawn() {
@@ -176,6 +194,9 @@ class Canvas {
         // Raid: the death card always gets its full wait, whatever asks
         // (Enter, Play, the gamepad); the server holds the drop anyway.
         if (global.died && global.raidRespawnAt > 0 && performance.now() < global.raidRespawnAt) return;
+        // a new version is about to reload the page (version.js): no drop
+        // that the reload would cut short
+        if (global.died && global.updateHoldsRespawn) return;
         if (global.died && !global.cannotRespawn && !global.respawnPending) {
             global.respawnPending = true;
             global.royaleDied = false;
@@ -195,6 +216,13 @@ class Canvas {
     royaleKeyDown(event) {
         if (!(global.royale && global.royale.at > 0) && !global.tutorialMode) return false;
         const kc = event.keyCode;
+        // the death card: Space is Play again (Enter is too, below, except on
+        // the duo server where it opens the team chat). A held fire key only
+        // repeats, so it never counts.
+        if (kc === 32 && global.died && !global.tutorialMode && !global.disconnected) {
+            if (!event.repeat && !global.showChat) this.respawn();
+            return true;
+        }
         if (!global.died && !event.repeat && (kc === global.KEY_KIT_1 || kc === global.KEY_KIT_2 || kc === global.KEY_KIT_3)) {
             const slot = kc === global.KEY_KIT_1 ? 0 : kc === global.KEY_KIT_2 ? 1 : 2;
             const ko = (global.shop.state && global.shop.state.kitOrder) || [];
@@ -266,7 +294,8 @@ class Canvas {
                 break;
 
             case global.KEY_ENTER:
-                // duos: dead, you can still talk to your partner (respawn is automatic)
+                // duos: dead, Enter still talks to your partner (Space or the
+                // Play again button drops you back in)
                 if (global.died && duoChat() && !global.disconnected) {
                     this.spawnChatInput();
                     break;
@@ -567,6 +596,7 @@ class Canvas {
                 let upgradeCheck = global.clickables.upgrade.check(mpos);
                 if (statIndex !== -1) {
                     this.socket.talk('x', statIndex, 0);
+                    global.statTapAt = performance.now();
                     gameSound.buildUpgrade();
                 } else if (
                     !global.dailyTankAd.renderUI &&
@@ -603,6 +633,19 @@ class Canvas {
             case 2:
                 this.socket.cmd.set(secondaryFire, true);
                 break;
+        }
+    }
+    // M, and a tap on the touch minimap
+    toggleBigMap() {
+        if (!global.gameStart || global.disconnected) return;
+        global.showBigMap = !global.showBigMap;
+        if (global.showBigMap) {
+            global.royaleBoard.tab = global.royaleBoard.tab || 'map';
+            global.bigMap.zoom = 1;
+            global.bigMap.cx = 0;
+            global.bigMap.cy = 0;
+            global.bigMap.dragging = false;
+            if (!global.died) this.releaseMovement();
         }
     }
     // duos: ping the spot under the cursor for your partner (the server
@@ -904,24 +947,28 @@ class Canvas {
     record() {
         // Merges the stacked game canvases into one each frame for the
         // recorder. The recorder saves the file itself when it stops.
+        // phones record a lighter file: at most 1280 wide, 30 fps, 6 Mbps
+        const scale = global.mobile ? Math.min(1, 1280 / Math.max(this.cv.width, this.cv.height)) : 1;
         let AdvancedCanvasCapturer = () => {
             let canvas = document.createElement("canvas");
             let ctx = canvas.getContext("2d", { alpha: false });
             let layers = [];
             let stop = false;
+            let srcW = 0, srcH = 0;
             return {
                 init: () => {
                     layers = [this.cvb, global.glCanvas || null, this.cvg, this.cvu].filter(Boolean);
-                    canvas.width = this.cv.width;
-                    canvas.height = this.cv.height;
+                    canvas.width = Math.round(this.cv.width * scale);
+                    canvas.height = Math.round(this.cv.height * scale);
                 },
                 start: () => {
                     stop = false;
-                    canvas.width = this.cv.width;
-                    canvas.height = this.cv.height;
+                    srcW = this.cv.width; srcH = this.cv.height;
+                    canvas.width = Math.round(srcW * scale);
+                    canvas.height = Math.round(srcH * scale);
                     const anim = () => {
                         if (stop) return;
-                        if (canvas.width !== this.cv.width || canvas.height !== this.cv.height) {
+                        if (srcW !== this.cv.width || srcH !== this.cv.height) {
                             global.createMessage("Recording stopped because the window resized. Saving...", 5_000);
                             this.videoRecorderCanvas.stop();
                             if (this.videoRecorder.state === "recording") this.videoRecorder.stop();
@@ -943,7 +990,7 @@ class Canvas {
             return;
         }
         if (this.videoRecorder && this.videoRecorder.state === "recording") {
-            global.createMessage("Recording saved!", 4_000);
+            if (!global.mobile) global.createMessage("Recording saved!", 4_000);
             this.videoRecorderCanvas.stop();
             this.videoRecorder.stop();
             return;
@@ -953,9 +1000,11 @@ class Canvas {
         this.videoRecorderCanvas.init();
         this.videoRecorderCanvas.start();
         try {
-            this.videoRecorder = new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 60);
+            this.videoRecorder = global.mobile
+                ? new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 30, { maxBps: 6e6, onSaved: (blob, name) => touch.showClip(blob, name) })
+                : new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 60);
             this.videoRecorder.start();
-            global.createMessage("Recording... press the record key again to stop.", 3_000);
+            global.createMessage(global.mobile ? "Recording. Tap the red button again to stop." : "Recording... press the record key again to stop.", 3_000);
         } catch (e) {
             this.videoRecorderCanvas.stop();
             this.videoRecorder = null;
@@ -1014,241 +1063,6 @@ class Canvas {
         }, 100);
         w.click();
         global.createMessage("Saving screenshot...", 3_000);
-    }
-    // MOBILE SUPPORT
-    touchStart(e) {
-        e.preventDefault();
-        // Raid bar buttons first: tap-anywhere-respawn must not eat them.
-        for (let touch of e.changedTouches) {
-            let mpos = {
-                x: touch.clientX * global.ratio,
-                y: touch.clientY * global.ratio,
-            };
-            if (global.clickables.royalePrev.check(mpos) !== -1 && global.died) {
-                global.royaleSpectating = true;
-                this.socket.talk('RS', 0);
-                gameSound.uiClick();
-                return;
-            }
-            if (global.clickables.royaleNext.check(mpos) !== -1 && global.died) {
-                global.royaleSpectating = true;
-                this.socket.talk('RS', 1);
-                gameSound.uiClick();
-                return;
-            }
-            if (global.clickables.royaleSpectate.check(mpos) !== -1 && global.died && !global.disconnected) {
-                global.royaleSpectating = true;
-                this.socket.talk('RS', window.dwDuoMateAlive && window.dwDuoMateAlive() ? 3 : 2);
-                gameSound.uiClick();
-                return;
-            }
-            if (global.clickables.royalePlay.check(mpos) !== -1 && global.died && !global.disconnected) {
-                this.respawn();
-                gameSound.uiClick();
-                return;
-            }
-            if (global.clickables.exitGame.check(mpos) !== -1 && (global.died || global.disconnected)) {
-                global.exit();
-                gameSound.uiClick();
-                return;
-            }
-        }
-        if (global.died) {
-            return;
-        } else {
-            for (let touch of e.changedTouches) {
-                let mpos = {
-                    x: touch.clientX * global.ratio,
-                    y: touch.clientY * global.ratio,
-                };
-                let id = touch.identifier;
-                let buttonIndex = global.clickables.mobileButtons.check(mpos);
-                if (buttonIndex !== -1) {
-                    gameSound.uiClick();
-                    switch (buttonIndex) {
-                        case 0:
-                            global.clickables.mobileButtons.active = !global.clickables.mobileButtons.active;
-                            break;
-                        // phones have no sidearm key: the alt button fires it too
-                        case 1:
-                            if (global.clickables.mobileButtons.active) {
-                                global.clickables.mobileButtons.altFire =
-                                    !global.clickables.mobileButtons.altFire;
-                                if (!global.clickables.mobileButtons.altFire)
-                                    this.socket.cmd.set(6, false), this.socket.cmd.set(7, false);
-                            } else if (global.isInverted)
-                                (global.isInverted = false), this.socket.cmd.set(6, false), this.socket.cmd.set(7, false);
-                            else (global.isInverted = true), this.socket.cmd.set(6, true), this.socket.cmd.set(7, true);
-                            break;
-                        case 2:
-                            if (!document.fullscreenElement) {
-                                var d = document.body;
-                                d.requestFullscreen
-                                    ? d.requestFullscreen()
-                                    : d.msRequestFullscreen
-                                        ? d.msRequestFullscreen()
-                                        : d.mozRequestFullScreen
-                                            ? d.mozRequestFullScreen()
-                                            : d.webkitRequestFullscreen && d.webkitRequestFullscreen();
-                            } else {
-                                document.exitFullscreen();
-                            }
-                            break;
-                        case 3:
-                            this.socket.talk("t", 1, true);
-                            break;
-                        case 4:
-                            this.reverseDirection = !this.reverseDirection;
-                            global.createMessage(this.reverseDirection ? "Reverse tank enabled." : "Reverse tank disabled.");
-                            break;
-                        case 5:
-                            this.socket.talk("1");
-                            break;
-                        case 6:
-                            global.autoSpin = !global.autoSpin;
-                            this.socket.talk("t", 0, true);
-                            break;
-                        case 7:
-                            this.socket.talk("t", 2, true);
-                            break;
-                        case 8:
-                            this.socket.talk("L");
-                            break;
-                        case 9:
-                            this.socket.talk("H");
-                            break;
-                        case 10:
-                            this.socket.talk("0");
-                            break;
-                        case 11:
-                            if (global.gameStart && !global.died && !global.disconnected) {
-                                this.spawnChatInput();
-                                break;
-                            }
-                            break;
-                        default:
-                            throw new Error("Unknown button index.");
-                    }
-                } else {
-                    let statIndex = global.clickables.stat.check(mpos);
-                    let exitGame = global.clickables.exitGame.check(mpos);
-                    let reconnectCheck = global.clickables.reconnect.check(mpos);
-                    if (reconnectCheck !== -1) {
-                        if (global.disconnected) global.reconnect();
-                        gameSound.uiClick();
-                    } else if (exitGame !== -1) {
-                        if (global.disconnected || global.died) global.exit();
-                        gameSound.uiClick();
-                    } else if (statIndex !== -1) {
-                        this.socket.talk("x", statIndex, 0);
-                        gameSound.buildUpgrade();
-                    } else if (global.clickables.skipUpgrades.check(mpos) !== -1) {
-                        global.clearUpgrades();
-                        gameSound.uiClick();
-                    } else {
-                        let upgradeIndex = global.clickables.upgrade.check(mpos);
-                        if (upgradeIndex !== -1) {
-                            this.socket.talk("U", upgradeIndex, parseInt(gui.upgrades[upgradeIndex][0]));
-                            gameSound.uiClick();
-                        } else {
-                            let onLeft = mpos.x < this.cv.width / 2;
-                            if (this.movementTouch === null && onLeft) {
-                                this.movementTouch = id;
-                            } else if (this.controlTouch === null && !onLeft) {
-                                this.controlTouch = id;
-                                this.socket.cmd.set(4, true);
-                            }
-                        }
-                    }
-                }
-            }
-            this.touchMove(e);
-        }
-    }
-    touchMove(e) {
-        e.preventDefault();
-        for (let touch of e.changedTouches) {
-            let mpos = {
-                x: touch.clientX * global.ratio,
-                y: touch.clientY * global.ratio,
-            };
-            let id = touch.identifier;
-
-            if (this.movementTouch === id) {
-                let radius = Math.min(global.screenWidth * 0.6, global.screenHeight * 0.12);
-                let cx = (mpos.x - (this.cv.width * 1) / 6)  / (radius / 64);
-                let cy = (mpos.y - (this.cv.height * 2) / 3)  / (radius / 64);
-                let touchX = cx / (radius / 64);
-                let touchY = cy / (radius / 64);
-                let r = Math.sqrt(cx ** 2 + cy ** 2);
-                let angle = Math.atan2(cy, cx);
-                if (r > radius) {
-                    touchX = Math.cos(angle) * radius / 1.05;
-                    touchY = Math.sin(angle) * radius / 1.05;
-                }
-                this.movementTouchPos = { x: touchX, y: touchY };
-                let x = mpos.x - (this.cv.width * 1) / 6;
-                let y = mpos.y - (this.cv.height * 2) / 3;
-                let norm = Math.sqrt(x * x + y * y);
-                x /= norm;
-                y /= norm;
-                let amount = 0.38268323650898;
-                if (y < -amount !== this.movementTop)
-                    this.socket.cmd.set(0, (this.movementTop = y < -amount));
-                if (y > amount !== this.movementBottom)
-                    this.socket.cmd.set(1, (this.movementBottom = y > amount));
-                if (x < -amount !== this.movementLeft)
-                    this.socket.cmd.set(2, (this.movementLeft = x < -amount));
-                if (x > amount !== this.movementRight)
-                    this.socket.cmd.set(3, (this.movementRight = x > amount));
-            } else if (this.controlTouch === id) {
-                global.mobileStatus.showCrosshair = true;
-                let radius = Math.min(
-                    global.screenWidth * 0.6,
-                    global.screenHeight * 0.12
-                );
-                let cx = (mpos.x - (this.cv.width * 5) / 6)  / (radius / 64);
-                let cy = (mpos.y - (this.cv.height * 2) / 3)  / (radius / 64);
-                let touchX = cx / (radius / 64);
-                let touchY = cy / (radius / 64);
-                let r = Math.sqrt(cx ** 2 + cy ** 2);
-                let angle = Math.atan2(cy, cx);
-                if (r > radius) {
-                    touchX = Math.cos(angle) * radius / 1.05;
-                    touchY = Math.sin(angle) * radius / 1.05;
-                }
-                this.controlTouchPos = { x: touchX, y: touchY };
-                if (!this.spinLock) {
-                    if (cx < -radius) cx = -radius;
-                    else if (cx > radius) cx = radius;
-                    if (cy < -radius) cy = -radius;
-                    else if (cy > radius) cy = radius;
-                    this.target.x = ((cx / radius) * global.screenWidth) / 2;
-                    this.target.y = ((cy / radius) * global.screenHeight) / 2;
-                }
-            }
-        }
-        global.mouse = this.target;
-    }
-    touchEnd(e) {
-        e.preventDefault();
-        for (let touch of e.changedTouches) {
-            let id = touch.identifier;
-
-            if (this.movementTouch === id) {
-                this.movementTouch = null;
-                this.movementTouchPos = { x: 0, y: 0 };
-                if (this.movementTop) this.socket.cmd.set(0, (this.movementTop = false));
-                if (this.movementBottom) this.socket.cmd.set(1, (this.movementBottom = false));
-                if (this.movementLeft) this.socket.cmd.set(2, (this.movementLeft = false));
-                if (this.movementRight) this.socket.cmd.set(3, (this.movementRight = false));
-            } else if (this.controlTouch === id) {
-                this.controlTouch = null;
-                this.controlTouchPos = { x: 0, y: 0 };
-                this.socket.cmd.set(4, false);
-                global.mobileStatus.showCrosshair = false;
-            }
-        }
     }
     // CONTROLLER/GAMEPAD SUPPORT
     runGamepad() {

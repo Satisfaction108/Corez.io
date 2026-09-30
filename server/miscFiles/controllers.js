@@ -224,10 +224,15 @@ class io_listenToPlayer extends IO {
             target,
             fire,
             alt,
-            goal: this.static ? null : {
+            goal: this.static ? null : this.player.command.analog ? {
+                x: this.body.x + this.player.command.moveX * 100,
+                y: this.body.y + this.player.command.moveY * 100,
+            } : {
                 x: this.body.x + this.player.command.right - this.player.command.left,
                 y: this.body.y + this.player.command.down - this.player.command.up,
             },
+            // touch sticks can ask for part speed (never more than full)
+            power: this.player.command.analog ? Math.min(1, Math.hypot(this.player.command.moveX, this.player.command.moveY)) : undefined,
             main: fire || this.player.command.autospin
         };
     }

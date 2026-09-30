@@ -9,6 +9,7 @@ import './terrainRenderer.js';
 import { gameSound } from "./sound.js";
 import * as tutorial from './tutorial.js';
 import * as coach from './coach.js';
+import { touch, STICK, touchPref, haptic } from './touch.js';
 import * as raidFinale from './raidFinale.js';
 import * as stormFx from './stormFx.js';
 import * as rankBadges from './account/rankBadges.js';
@@ -105,7 +106,9 @@ import * as cosmetics from './account/cosmetics.js';
     let tips = global.tips[Math.floor(Math.random() * global.tips.length)];
     global.tips = tips[Math.floor(Math.random() * tips.length)];
 
-    global.mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent);
+    // touch-first devices; iPadOS says it is a Mac, its touch points give it away
+    global.mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent) ||
+        (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
     global.mobile && document.body.classList.add("mobile");
     if (!global.mobile) {
         document.getElementById("tabAppearance").classList.remove("shadowScroll");
@@ -244,6 +247,12 @@ import * as cosmetics from './account/cosmetics.js';
         util.retrieveFromLocalStorage("optFullHD");
         for (const id of PERF_TOGGLES) util.retrieveFromLocalStorage(id);
         util.retrieveFromLocalStorage("optUiScale");
+        // phones and tablets start on the lighter preset once (they can turn it off)
+        if (global.mobile && !localStorage.getItem("dwTouchPerfDefaults")) {
+            const fx = document.getElementById("optFewerFx");
+            if (fx) { fx.checked = true; util.submitToLocalStorage("optFewerFx"); }
+            localStorage.setItem("dwTouchPerfDefaults", "1");
+        }
 
         util.retrieveFromLocalStorage("optIncognitoMode");
 
@@ -385,12 +394,7 @@ import * as cosmetics from './account/cosmetics.js';
             });
         } catch { };
 
-        if (global.mobile && window.innerHeight > 1.1 * window.innerWidth) {
-            let tabMenu = global.createTabMenu("Please turn your device to landscape mode.", "warning", true);
-            window.addEventListener("orientationchange", () => {
-                window.innerHeight > 1.1 * window.innerWidth || tabMenu.remove();
-            });
-        };
+        // phones: the menu's own note (#mobileNote) suggests holding it sideways
 
         document.getElementById("startButton").onclick = () => startGame();
         document.onkeydown = (e) => {
@@ -805,13 +809,20 @@ import * as cosmetics from './account/cosmetics.js';
     }
     window.dwAutoRes = () => ({ level: autoResLevel, fpsEma: +(1000 / autoRes.ema).toFixed(1), canvas: global.screenWidth + "x" + global.screenHeight });
 
+    let resizedW = 0, resizedH = 0;
     function resizeEvent() {
+        // touch: a keyboard opening for the chat box only shortens the
+        // window; the game keeps its size so the HUD doesn't jump
+        if (global.mobile && global.showChat && resizedW === window.innerWidth && window.innerHeight < resizedH) return;
+        resizedW = window.innerWidth; resizedH = window.innerHeight;
         // never more than 2x density (a 3x phone panel is 9x the pixels)
         let scale = Math.min(2, window.devicePixelRatio || 1);
         if (config.graphical.lowResolution) {
             scale *= 0.5;
         }
-        const budget = AUTO_RES_BUDGET[Math.min(autoResLevel, fullHDFloor())] || Infinity;
+        let budget = AUTO_RES_BUDGET[Math.min(autoResLevel, fullHDFloor())] || Infinity;
+        // touch: about a 2x phone screen; a tablet's panel is 3-4x that
+        if (global.mobile) budget = Math.min(budget, 1.6e6);
         const pixels = window.innerWidth * window.innerHeight * scale * scale;
         if (pixels > budget) scale *= Math.sqrt(budget / pixels);
         global.screenWidth = global.vscreenSize = window.innerWidth * scale;
@@ -897,7 +908,7 @@ import * as cosmetics from './account/cosmetics.js';
         return global.target;
     };
 
-    let CalcScreenSize = () => Math.max(global.vscreenSize, (16 / 9) * global.vscreenSizey) / global.player.renderv,
+    let CalcScreenSize = () => Math.max(global.vscreenSize, (16 / 9) * global.vscreenSizey / (global.mobile && global.vscreenSizey > global.vscreenSize ? 1.7 : 1)) / global.player.renderv,
         handleScreenDistance = (alpha, instance, fade = true) => {
             let indexes = instance.index,
             m = global.mockups[parseInt(indexes, 10)] ?? global.missingno[0];
@@ -1250,6 +1261,9 @@ import * as cosmetics from './account/cosmetics.js';
                 global.UIscale = 1280;
                 break;
         }
+        // Phones and tablets measure the HUD along the long side (util.js
+        // getScreenRatio), so the same numbers read a little bigger there.
+        if (global.mobile) global.UIscale = { 2560: 1500, 2240: 1300, 1536: 960, 1280: 1100 }[global.UIscale] || 1100;
         util.submitToLocalStorage("optColors");
         let a = document.getElementById("optColors").value;
         color = colors[a === "" ? "dark" : a];
@@ -1432,7 +1446,6 @@ import * as cosmetics from './account/cosmetics.js';
 
     const statMenu = Smoothbar(0, 2, 0.1, 0.08, 0.025, true);
     const upgradeMenu = Smoothbar(0, 2, 3, 0.08, 0.025, true);
-    const mobileUpgradeGlide = Smoothbar(0, 2, 3, 0.08, 0.025, true);
     const lbGlide = AdvancedSmoothBar(0, 0.3, 1.5);
     const chatInput = Smoothbar(0, 2, 0.1, 0.07, 0.025, true);
 
@@ -4865,12 +4878,17 @@ import * as cosmetics from './account/cosmetics.js';
     // Bottom of the top-centre message stack, refreshed every frame by
     // drawMessages and read by drawMilestones so the two can't overlap.
     let messageStackBottom = 0;
+    // ...and the left edge of the right-hand (Royale) stack, for the Raid
+    // Night callout; screenWidth when nothing is showing
+    let messageStackLeft = 1e9;
 
     function drawMessages(spacing, alcoveSize) {
 
         let height = 18;
         let x = global.screenWidth / 2;
         let y = spacing + 5;
+        // touch: under the button row
+        if (global.mobile) y = Math.max(y, 60 * touchUnits());
         // Royale: stack runs top-right under the kill feed so the raid
         // clock and storm timer keep top-center to themselves.
         const msgRight = typeof royaleActive === "function" && royaleActive();
@@ -4878,21 +4896,18 @@ import * as cosmetics from './account/cosmetics.js';
             const feedN = Math.min(6, ((global.royale && global.royale.feed) || []).length);
             y = Math.max(42 + feedN * 18 + 12, (royaleFeedBottom || 0) + 12);
         }
-        if (global.mobile) {
-            if (global.canUpgrade) {
-                mobileUpgradeGlide.set(0 + (global.canUpgrade || global.upgradeHover));
-                y += (alcoveSize / 1.4 ) * mobileUpgradeGlide.get();
-            }
-            y += global.canSkill || global.showSkill ? (alcoveSize / 2.2 ) * statMenu.get() : 0;
-        }
+        // touch: the minimap owns the top-right corner, the stack starts under it
+        if (global.mobile && msgRight && hudDrawn.minimap) y = Math.max(y, hudDrawn.minimap.y + hudDrawn.minimap.h + 16, global.screenHeight > global.screenWidth ? hudTopBottom + 10 : 0);
 
         var Bd = Date.now();
         var yy = config.animationSettings.ScaleBar;
         // the right-hand stack stops above the minimap instead of running into it
-        const yLimit = msgRight && !global.mobile ? global.screenHeight - alcoveSize - spacing - 22 - 30 : Infinity;
+        // (touch: above the kit buttons)
+        const yLimit = !msgRight ? Infinity : global.mobile ? touchRightTop() - 30 : global.screenHeight - alcoveSize - spacing - 22 - 30;
         // and holds a few lines: anything older fades out early
         const MSG_CAP = 4;
         let shown = 0;
+        let stackLeft = global.screenWidth;
         for (let i = global.messages.length - 1; i >= 0; i--) {
             let msg = global.messages[i],
                 txt = msg.text,
@@ -4910,6 +4925,12 @@ import * as cosmetics from './account/cosmetics.js';
                 msg.duration = Math.min(msg.duration, time);
                 continue;
             }
+            // touch: long lines wrap instead of running across the screen
+            if (global.mobile && !msg.textJSON && !msg.wrapped) {
+                msg.wrapped = true;
+                const maxW = global.screenWidth * (global.screenHeight > global.screenWidth ? 0.8 : 0.4);
+                if (measureText(text, height - 4.3) > maxW) msg.textJSON = wrapLines(text, height - 4.3, maxW).slice(0, 3);
+            }
             if (msgRight && ++shown > MSG_CAP && duration > 300) {
                 msg.duration = time + 300;
                 duration = 300;
@@ -4923,6 +4944,7 @@ import * as cosmetics from './account/cosmetics.js';
                     if (len < measureText(txt, height - 4.25, false)) len = measureText(txt, height - 4.25, false)
                 })
                 const jx = msgRight ? global.screenWidth - HUD.edge - 10 - len : x - len / 2;
+                if (msgRight && jx - 10 < stackLeft) stackLeft = jx - 10;
                 hudPanel(ctx[2], jx - 10, y + yy / 2 - height / 2 - 1, len + 20, height + 2 + 17.5 * (msg.textJSON.length - 1), { alpha: K, r: 8, lw: 2, lip: 2, bevel: false });
                 ctx[2].globalAlpha = K;
 
@@ -4937,6 +4959,7 @@ import * as cosmetics from './account/cosmetics.js';
                 if (msg.len == null) msg.len = measureText(text, height - 4.3);
 
                 const bx = msgRight ? global.screenWidth - HUD.edge - 10 - msg.len : x - msg.len / 2;
+                if (msgRight && bx - 10 < stackLeft) stackLeft = bx - 10;
                 hudPanel(ctx[2], bx - 10, y + yy / 2 - height / 2 - 2, msg.len + 20, height + 4, { alpha: K, r: 8, lw: 2, lip: 2, bevel: false });
 
                 ctx[2].globalAlpha = K;
@@ -4946,6 +4969,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
         // remember where the stack ended so the milestone cards sit under it
         messageStackBottom = y;
+        messageStackLeft = stackLeft;
         ctx[2].globalAlpha = 1;
     }
 
@@ -5623,8 +5647,9 @@ import * as cosmetics from './account/cosmetics.js';
             if (!allow.includes("stats") && !ui.startsWith("skill") &&
                 !ui.startsWith("stat") && ui !== "points") return;
         }
+        // touch: the stats chip and panel (drawTouchStats)
+        if (global.mobile) return;
 
-        if (global.mobile) return drawMobileSkillUpgrades(spacing, alcoveSize);
         statMenu.set(0 + (global.died || global.statHover || (global.canSkill && !gui.skills.every(skill => skill.cap === skill.amount))));
         global.clickables.stat.hide();
 
@@ -5929,6 +5954,7 @@ import * as cosmetics from './account/cosmetics.js';
         let teamCol = gameDraw.getColor(gui.color);
         if (typeof teamCol !== "string" || teamCol[0] !== "#") teamCol = color.gold;
 
+        if (global.mobile) touch.uiRects.vault = { x: x * cr, y: y * cr, w: W * cr, h: H * cr };
         c.save();
         c.globalAlpha = glide;
         hudPanel(c, x, y, W, H, { fill: HUD.solid, r: HUD.r + 2 });
@@ -6385,6 +6411,8 @@ import * as cosmetics from './account/cosmetics.js';
     // their points counter) can reach; the upgrade tiles and the quest and
     // override cards stop above it.
     function leftColumnFloor() {
+        // touch: the lower left belongs to the move stick
+        if (global.mobile) return touchLeftFloor() - 12;
         if (kitBoxTop > 0) return kitBoxTop;
         return global.screenHeight - 20 - 5.5 - STAT_BAR_H - 10 * (STAT_BAR_H + STAT_BAR_GAP) - 34;
     }
@@ -6471,7 +6499,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
         return keyLabelCache.map[id] || dflt;
     }
-    function sidearmInput() { return global.mobile ? "alt button" : keyLabel("KEY_SIDEARM", "X"); }
+    function sidearmInput() { return global.mobile ? "round button" : keyLabel("KEY_SIDEARM", "X"); }
     // Off-screen indicator inside a HUD-safe frame: clear of the top cluster,
     // the right-hand panels and the bottom row.
     // "#rrggbb" / "#rgb" / "rgb(...)" to channels, for tinted gradients.
@@ -6593,14 +6621,20 @@ import * as cosmetics from './account/cosmetics.js';
                 const f = hudDrawn.feed;
                 return f ? { x: f.x, y: f.y, w: f.w, h: Math.max(f.h, 63) } : null;
             }
-            case "kit": return kitBoxTop > 0 ? { x: HUD.edge, y: kitBoxTop, w: 190, h: 118 } : null;
+            case "kit":
+                if (global.mobile) return hudDrawn.kit || null;
+                return kitBoxTop > 0 ? { x: HUD.edge, y: kitBoxTop, w: 190, h: 118 } : null;
             case "stats": {
-                if (!global.canSkill || global.mobile) return null;
+                // touch: the Stats chip (the panel's cells are the stat clickables)
+                if (global.mobile) return hudDrawn.stats || null;
+                if (!global.canSkill) return null;
                 const bottom = sh - 20 - 5.5;
                 const top = bottom - 11 * STAT_BAR_H - 10 * STAT_BAR_GAP - 30;
                 return { x: HUD.edge, y: top, w: 210, h: bottom - top };
             }
-            case "upgrades": return (global.upgradeBoxBottom | 0) > 0
+            case "upgrades":
+                if (global.mobile) return hudDrawn.upgrades || null;
+                return (global.upgradeBoxBottom | 0) > 0
                 ? { x: HUD.edge, y: global.upgradeBoxTop, w: global.upgradeBoxRight - HUD.edge, h: global.upgradeBoxBottom - global.upgradeBoxTop }
                 : null;
             default: return hudDrawn[kind] || null;
@@ -6847,7 +6881,9 @@ import * as cosmetics from './account/cosmetics.js';
         const r = global.royale;
         if (raidFinale.hidesHud()) { hudTopBottom = HUD.edge; return; }
         if (!global.died) spectateBarBottom = 0;
-        const top0 = global.died && spectateBarBottom > 0 ? spectateBarBottom : 0;
+        let top0 = global.died && spectateBarBottom > 0 ? spectateBarBottom : 0;
+        // touch, held upright: under the button row and the minimap
+        if (global.mobile && global.screenHeight > global.screenWidth && !top0) { const mm = touchMinimapRect(); top0 = mm.y + mm.h + 4 - HUD.edge; }
         let y = HUD.edge + top0;
         hudSafe("top", () => {
             // one plate: raid clock | alive, then your place and the storm
@@ -6892,6 +6928,9 @@ import * as cosmetics from './account/cosmetics.js';
             if (r.lock) pill(st.fin ? "Last " + Math.max(0, r.lockLeft | 0) + "s of the raid. Nobody respawns now."
                 : "Final storm, " + Math.max(0, r.lockLeft | 0) + "s left. Nobody respawns now.", HUD.lilac);
             else if (r.toast) pill(r.toast, color.guiwhite);
+            // Raid Night coming up (shared/events.js): a small chip in the last 24 h
+            const evChip = global.tutorialMode ? "" : eventHudTick().chip;
+            if (evChip && !global.died) pill(evChip, HUD.gold);
         });
         hudSafe("boss", () => {
             bossGlide.set(r.boss ? 1 : 0);
@@ -6930,7 +6969,9 @@ import * as cosmetics from './account/cosmetics.js';
         // CSS px, for the DOM notification cards under the clock (gameToasts.js)
         global.hudTopPx = y * window.innerWidth / Math.max(1, global.screenWidth);
         let standBottom = 36;
-        hudSafe("standings", () => { standBottom = drawRoyaleStandings(); });
+        // touch: the minimap has that corner; standings are a tap away on the map
+        if (global.mobile) { const mm = touchMinimapRect(); standBottom = Math.max(mm.y + mm.h + 18, global.screenHeight > global.screenWidth ? y + 6 : 0); }
+        else hudSafe("standings", () => { standBottom = drawRoyaleStandings(); });
         hudSafe("feed", () => drawRoyaleFeed(standBottom + 14));
         hudSafe("cards", layoutLeftCards);
         hudSafe("duo", drawDuoCard);
@@ -7143,7 +7184,7 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     function drawRoyaleFeed(yTop) {
-        const feed = (global.royale.feed || []).slice(-6);
+        const feed = (global.royale.feed || []).slice(global.mobile ? -3 : -6);
         const now = Date.now();
         const right = global.screenWidth - HUD.edge;
         let y = yTop;
@@ -7208,11 +7249,22 @@ import * as cosmetics from './account/cosmetics.js';
         const stackH = n => duoOff + (q ? QUEST_H : 0) + (mod ? (q ? CARD_GAP : 0) + overrideH(n) : 0);
         const floor = leftColumnFloor() - 10;
         const tiles = (global.upgradeBoxBottom | 0) > 0;
-        const top = tiles ? global.upgradeBoxBottom + 12 : 16;
+        // touch: no room beside the tiles, the cards wait for the pick
+        if (tiles && global.mobile) { leftCards = null; return; }
+        // touch: under the button row, and a short screen drops the override
+        // card (it's on the map too) before anything overlaps
+        const touchTop = global.mobile ? (Math.max(8, touch.L ? touch.L.safe.t : 0) + 58) * touchUnits() : 0;
+        const top = tiles ? global.upgradeBoxBottom + 12 : Math.max(16, touchTop);
         const pref = Math.max(global.screenHeight * 0.42, 330, top);
         for (const n of [lines.length, 0]) {
             const y = Math.round(Math.min(pref, floor - stackH(n)));
             if (y >= top) { leftCards = { x: HUD.edge, y, q, mod, lines: lines.slice(0, n), duo, duoOff }; return; }
+        }
+        if (global.mobile) {
+            const noMod = duo ? DUO_H + (q ? CARD_GAP : 0) : 0;
+            const y = Math.round(Math.min(pref, floor - noMod - (q ? QUEST_H : 0)));
+            leftCards = y >= top ? { x: HUD.edge, y, q, mod: null, lines: [], duo, duoOff: noMod } : duo ? { x: HUD.edge, y: top, q: null, mod: null, lines: [], duo, duoOff: 0 } : null;
+            return;
         }
         const x = Math.round((global.upgradeBoxRight | 0) + 16);
         let y = Math.round(global.upgradeBoxTop || 70);
@@ -8040,7 +8092,9 @@ import * as cosmetics from './account/cosmetics.js';
             for (const l of lines) { drawText(l, cx, ly, 15, HUD.text, "center", true, bT); ly += 20; }
             const slotIdx = (sh.state.kitOrder || []).indexOf(u.id);
             const keyName = slotIdx >= 0 ? keyLabel("KEY_KIT_" + (slotIdx + 1), ["Z", "Q", "N"][slotIdx]) : "";
-            if (keyName) {
+            if (keyName && global.mobile) {
+                hudTitle("Tap its button on the right to use it", cx, ly + 16, 16, HUD.text2, "center", bT, c);
+            } else if (keyName) {
                 const kh = 26, kw = Math.max(kh, hudTitleW(keyName, kh * 0.62) + kh * 0.55);
                 const pw = hudTitleW("Press", 16), lw = hudTitleW("to use", 16);
                 const rowW = pw + kw + lw + 20;
@@ -8194,6 +8248,8 @@ import * as cosmetics from './account/cosmetics.js';
         const cr = global.canvas.height / shh / global.ratio;
         const c = ctx[2];
         global.clickables.shop.hide();
+        // touch: the whole plate takes taps, so a thumb on it never drives the tank
+        if (global.mobile) touch.uiRects.shop = { x: x * cr, y: y * cr, w: W * cr, h: H * cr };
         // frame: one solid plate, heading row, divider
         c.save();
         c.globalAlpha = g;
@@ -8953,6 +9009,75 @@ import * as cosmetics from './account/cosmetics.js';
         drawText("+" + util.formatLargeNumber(w.bonus || 0) + " gems for every " + name.toLowerCase() +
                  " miner - new war in " + secs + "s", cx, cy + 26, 15, color.guiwhite, "center");
         c.restore();
+    }
+
+    // Raid Night (shared/events.js, window.DWEvents): the chip text under
+    // the raid clock and two centred callouts, at T-10 min and at the start.
+    // Worked out once a second; the frame only reads the cached strings.
+    const evHud = { at: 0, chip: "", soonFor: "", liveFor: "", callAt: 0, title: "", sub: "", w: 0, toastFloor: 0 };
+    const EV_CALL_MS = 5200;
+    function eventHudTick() {
+        const E = window.DWEvents;
+        const t = Date.now();
+        if (!E || t - evHud.at < 1000) return evHud;
+        evHud.at = t;
+        // the DOM notification cards under the clock (gameToasts.js), in HUD units
+        evHud.toastFloor = 0;
+        if (evHud.callAt) {
+            const st = document.getElementById("dwGameToasts");
+            if (st && st.childElementCount) evHud.toastFloor = st.getBoundingClientRect().bottom * global.screenWidth / Math.max(1, window.innerWidth);
+        }
+        const now = E.now(), c = E.current(now);
+        evHud.chip = c && !c.live && c.ms <= E.HUD_LEAD_MS ? c.ev.name + " in " + E.countdown(c.ms) : "";
+        // callouts wait for a free screen: not dead, not the raid-end finale
+        if (!c || global.died || raidFinale.active()) return evHud;
+        const id = c.ev.id;
+        if (!c.live && c.ms <= E.SOON_MS && c.ms > 60000 && evHud.soonFor !== id) {
+            evHud.soonFor = id;
+            const m = Math.round(c.ms / 60000);
+            showEventCallout(c.ev.name + " in " + m + (m === 1 ? " minute" : " minutes"), c.ev.blurb || "");
+        } else if (c.live && now - c.ev.startMs < 120000 && evHud.liveFor !== id) {
+            evHud.liveFor = evHud.soonFor = id;
+            showEventCallout(c.ev.name + " starts now!", "Everyone's in.");
+        }
+        return evHud;
+    }
+    function showEventCallout(title, sub) {
+        evHud.title = title;
+        evHud.sub = sub;
+        evHud.w = 0;   // measured on the first frame it draws
+        evHud.callAt = performance.now();
+        try { gameSound.dustBank(); } catch (e) { /* */ }
+    }
+    const evPanelOpts = { alpha: 1, r: 13, fill: "rgba(43,37,51,0.94)" };
+    function drawEventCallout() {
+        if (!evHud.callAt) return;
+        const age = performance.now() - evHud.callAt;
+        if (age > EV_CALL_MS) { evHud.callAt = 0; return; }
+        if (global.died || global.tutorialMode || raidFinale.hidesHud() || !royaleActive()) return;
+        const c = ctx[2];
+        // touch: the HUD is scaled up, so a smaller plate keeps it clear of the
+        // message stack on the right
+        const TS = global.mobile ? 22 : 30, SS = global.mobile ? 12 : 14, PH = global.mobile ? 64 : 84;
+        if (!evHud.w) evHud.w = Math.max(hudTitleW(evHud.title, TS), evHud.sub ? hudTextW(evHud.sub, SS) : 0) + (global.mobile ? 44 : 64);
+        const inT = Math.min(1, age / 260), outT = Math.min(1, (EV_CALL_MS - age) / 600);
+        const a = inT * inT * (3 - 2 * inT) * outT;
+        const pop = 0.94 + 0.06 * (1 - Math.pow(1 - inT, 3));
+        const w = Math.min(global.screenWidth - 40, evHud.w) * pop, h = (evHud.sub ? PH : PH - 26) * pop;
+        // centred, unless that would run into the right-hand message stack
+        const cx = Math.max(global.screenWidth * 0.2 + w / 2, Math.min(global.screenWidth / 2, messageStackLeft - 10 - w / 2));
+        // under the clock stack, the first-raid guide and any notification cards
+        let top = hudTopBottom | 0;
+        const cr = global.coachRect;
+        if (cr && cr.y < global.screenHeight * 0.4) top = Math.max(top, cr.y + cr.h);   // touch puts it at the bottom
+        top = Math.max(top, evHud.toastFloor);
+        // never lower than just above the tank, which sits at mid screen
+        const cy = Math.round(Math.min(global.screenHeight * 0.48 - h / 2, Math.max(global.screenHeight * (global.mobile ? 0 : 0.28), top + 18 + h / 2)));
+        evPanelOpts.alpha = a;
+        hudPanel(c, cx - w / 2, cy - h / 2, w, h, evPanelOpts);
+        // the words stay put while the plate pops (one font size, cached widths)
+        hudTitle(evHud.title, cx, cy - (evHud.sub ? TS * 0.4 : 0), TS, HUD.gold, "center", a);
+        if (evHud.sub) drawText(evHud.sub, cx, cy + SS * 1.55, SS, color.guiwhite, "center", true, a);
     }
 
     // Banked-gem rungs: a short gold pop (label, number, bonus).
@@ -10002,13 +10127,23 @@ import * as cosmetics from './account/cosmetics.js';
         ctx[2].lineWidth = 2.5;
         ctx[2].strokeStyle = HUD.ink;
         ctx[2].stroke();
-        const keyName = keyLabel("KEY_TOGGLE_MAP", "M");
-        const kw = Math.max(20, hudTitleW(keyName, 12.4) + 11);
-        const rowW = kw + 6 + hudTitleW("Close", 14);
-        const rx0 = tabH ? px0 + panelW - closeW / 2 - rowW / 2 : sw / 2 - rowW / 2;
-        const ky = tabH ? py0 + tabH / 2 - 7 : py0 + panelH + 18;
-        hudKey(ctx[2], rx0, ky, keyName, 20);
-        hudTitle("Close", rx0 + kw + 6, ky + 8.75, 14, HUD.text2, "left");
+        if (global.mobile) {
+            // touch: a real button (and a tap outside the panel closes it too)
+            const bw = hudTitleW("Close", 14) + 26, bh = Math.max(28, tabH - 8);
+            const bx = tabH ? px0 + panelW - closeW / 2 : sw / 2, by = tabH ? py0 + (tabH - bh) / 2 : py0 + panelH + 10;
+            hudButton(ctx[2], bx, by, bw, bh, "Close", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 14 });
+            const k = touchUnits();
+            touch.zones.mapClose = { x: (bx - bw / 2) / k - 6, y: by / k - 6, w: bw / k + 12, h: bh / k + 12, tap: () => global.canvas.toggleBigMap() };
+            touch.uiRects.map = { x: px0 / k, y: py0 / k, w: panelW / k, h: (panelH + (tabH ? 0 : 50)) / k };
+        } else {
+            const keyName = keyLabel("KEY_TOGGLE_MAP", "M");
+            const kw = Math.max(20, hudTitleW(keyName, 12.4) + 11);
+            const rowW = kw + 6 + hudTitleW("Close", 14);
+            const rx0 = tabH ? px0 + panelW - closeW / 2 - rowW / 2 : sw / 2 - rowW / 2;
+            const ky = tabH ? py0 + tabH / 2 - 7 : py0 + panelH + 18;
+            hudKey(ctx[2], rx0, ky, keyName, 20);
+            hudTitle("Close", rx0 + kw + 6, ky + 8.75, 14, HUD.text2, "left");
+        }
         ctx[2].restore();
     }
 
@@ -10120,10 +10255,18 @@ import * as cosmetics from './account/cosmetics.js';
         let len = alcoveSize;
         let height = (len / global.gameWidth) * global.gameHeight;
         let upgradeColumns = Math.ceil(gui.upgrades.length / 9);
-        let x = global.mobile ? spacing : global.screenWidth - spacing - len - 5;
-        let y = global.mobile ? spacing : global.screenHeight - height - spacing - 5;
+        let x = global.screenWidth - spacing - len - 5;
+        let y = global.screenHeight - height - spacing - 5;
         if (global.GUIStatus.renderMinimap) {
-            if (royaleActive() && !global.mobile) {
+            if (global.mobile && (royaleActive() || (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0))) {
+                // touch: top right, where the standings sit on desktop (they
+                // are one tap away on the map), and a tap opens the full map
+                const k = touchUnits();
+                const { x: mx, y: my, w: ml } = touchMinimapRect();
+                drawFortniteMinimap(mx, my, ml);
+                hudDrawn.minimap = { x: mx, y: my, w: ml, h: ml };
+                touch.zones.map = { x: mx / k, y: my / k, w: ml / k, h: ml / k, tap: () => global.canvas.toggleBigMap() };
+            } else if (royaleActive()) {
                 const mx = global.screenWidth - HUD.edge - len;
                 const my = global.screenHeight - len - HUD.edge - HUD.lip;
                 drawFortniteMinimap(mx, my, len);
@@ -10134,15 +10277,11 @@ import * as cosmetics from './account/cosmetics.js';
                 const kx = Math.round(mx + len * 0.5 - len * 0.5 * Math.SQRT1_2 - kw0 * 0.5), ky = Math.round(my + len * 0.5 + len * 0.5 * Math.SQRT1_2 - kh * 0.5);
                 hudKey(ctx[2], kx, ky, keyName, kh);
                 hudTitle("Map", kx - 5, ky + (kh - 2.5) / 2, 13, HUD.head, "right");
-            } else if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0 && !global.mobile) {
+            } else if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0) {
                 const mx = global.screenWidth - spacing - len - 5;
                 const my = global.screenHeight - len - spacing - 5;
                 drawFortniteMinimap(mx, my, len);
             } else {
-            if (global.mobile) {
-                y += global.canUpgrade ? (alcoveSize / 1.5) * mobileUpgradeGlide.get() * upgradeColumns / 1.5 + spacing * (upgradeColumns + 1.55) + 9 : 0;
-                y += global.canSkill || global.showSkill ? statMenu.get() * alcoveSize / 2.6 + spacing / 0.75 : 0;
-            }
 
             let centerX = x + len / 2;
             let centerY = y + height / 2;
@@ -10284,7 +10423,7 @@ import * as cosmetics from './account/cosmetics.js';
             (global.advanced.roundMap && !royaleActive()) ? drawGuiCircle(x + len / 2, y + height / 2, len / 2, true) : drawGuiRect(x, y, len, height, true);
             }
         }
-        if (global.mobile || !global.GUIStatus.renderMinimap) {
+        if (!global.GUIStatus.renderMinimap) {
             x = global.screenWidth - spacing - len;
             y = global.screenHeight - spacing;
         }
@@ -10329,10 +10468,11 @@ import * as cosmetics from './account/cosmetics.js';
             drawText("Prediction: " + Math.round(GRAPHDATA) + "ms", x + len, y - 50 - 2 * 14, 10, color.guiwhite, "right");
             drawText(`§${global.metrics.rendertime_color}§ ${global.metrics.rendertime} FPS §reset§/` + `§${global.serverStats.mspt_color}§ ${global.serverStats.mspt} mspt : ${global.metrics.mspt.toFixed(1)} gmspt`, x + len, y - 50 - 1 * 14, 10, color.guiwhite, "right");
             drawText(ping.toFixed(1) + " ms / " + global.serverStats.serverGamemodeName + " " + global.locationHash, x + len, y - 50, 10, color.guiwhite, "right");
-        } else if (royaleActive() && !global.mobile) {
+        } else if (royaleActive() || global.mobile) {
             // raid: one quiet line over the map, the rest lives behind debug
+            // (touch: under it, the map is at the top)
             const mm = hudDrawn.minimap;
-            const ly = mm ? mm.y - 8 : y - 50;
+            const ly = mm ? (global.mobile ? mm.y + mm.h + 4 : mm.y - 8) : y - 50;
             const slow = global.metrics.rendertime < 30 ? "§" + color.orange + "§" : "";
             drawText(`${slow}${global.metrics.rendertime} FPS${slow ? "§reset§" : ""}  ·  ${Math.round(ping)} ms`, mm ? mm.x + mm.w : x + len, ly, 9.5, HUD.text2, "right", true);
         } else if (!global.GUIStatus.minimapReducedInfo) {
@@ -10354,13 +10494,6 @@ import * as cosmetics from './account/cosmetics.js';
         let glide = lbGlide.get();
         x -= lb.data.length ? len * glide : len * glide;
 
-        let mobileGlide = mobileUpgradeGlide.get();
-        if (global.mobile) {
-            if (global.canUpgrade && 2 * 20 + gui.upgrades.length * (6.5 * 23 + 17) > 1.4 * x) {
-                y += (alcoveSize / 1.4) * mobileGlide;
-            }
-            y += global.canSkill || global.showSkill ? (alcoveSize / 2.2 ) * statMenu.get() : 0;
-        }
         drawText("Leaderboard", Math.round(x + len / 2) + 0.5, Math.round(y - 6) + 0.5, height + 3.5, color.guiwhite, "center", false, 1, 5.5);
         y += 7;
 
@@ -10463,16 +10596,54 @@ import * as cosmetics from './account/cosmetics.js';
             let internalSpacing = 15;
             let len = alcoveSize / 2;
             let height = len;
+            // touch: a "New tank" chip; the tiles open in a panel over the middle
+            let tp = null;
+            if (global.mobile) {
+                if (!touchTilesOpen()) {
+                    global.canUpgrade = true;
+                    global.clickables.upgrade.hide();
+                    global.clickables.skipUpgrades.hide();
+                    return;
+                }
+                len = height = 74;
+                internalSpacing = 12;
+                tp = {};
+            }
 
-            global.columnCount = Math.max(global.mobile ? 9 : 3, Math.floor(gui.upgrades.length ** 0.55));
+            global.columnCount = Math.max(3, Math.floor(gui.upgrades.length ** 0.55));
             // Room for the DOM gear + chat buttons (10px + 42px + 3px drop,
             // CSS px) above the first row; on a small window at Small scale
             // 46 UI units is not enough.
             const cssPerUi = global.canvas.height / global.screenHeight / global.ratio;
-            const topPad = global.mobile ? 46 : Math.max(46, Math.ceil(63 / (cssPerUi || 1)) - spacing - 5);
+            let topPad = Math.max(46, Math.ceil(63 / (cssPerUi || 1)) - spacing - 5);
             // Desktop: add columns while the grid would run into the kit box /
             // stat bars. Six at most, or it reaches the raid clock.
-            if (!global.mobile) {
+            if (tp) {
+                // touch panel: up to five across, centred, sized to its rows
+                global.columnCount = Math.min(5, Math.max(3, Math.ceil(gui.upgrades.length / 2)));
+                let rows = 0, branch = -1, tick = global.columnCount, labels = 0;
+                for (const u of gui.upgrades) {
+                    if (tick === global.columnCount || u[0] != branch) {
+                        rows++;
+                        if (u[0] != branch && u[1] != "undefined" && String(u[1]).length > 0) labels++;
+                        branch = u[0]; tick = 0;
+                    }
+                    tick++;
+                }
+                const cols = Math.min(global.columnCount, gui.upgrades.length);
+                tp.w = cols * (len + internalSpacing) - internalSpacing + 32;
+                tp.h = 44 + rows * (height + internalSpacing) + labels * 3 * internalSpacing + (global.tutorialMode ? 4 : 34);
+                tp.x = Math.round((global.screenWidth - tp.w) / 2);
+                tp.y = Math.round(Math.max(40, (global.screenHeight - tp.h) / 2 - 10));
+                topPad = tp.y + 44 - spacing - 5;
+                hudPanel(ctx[2], tp.x, tp.y, tp.w, tp.h, { fill: HUD.solid, r: HUD.rBig });
+                hudTitle("Pick your next tank", tp.x + 16, tp.y + 22, 17, HUD.head, "left");
+                const cbs = 30;
+                hudButton(ctx[2], tp.x + tp.w - 10 - cbs / 2, tp.y + 7, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15 });
+                const k = touchUnits();
+                touch.zones.tilesClose = { x: (tp.x + tp.w - 10 - cbs) / k - 6, y: (tp.y + 7) / k - 6, w: cbs / k + 12, h: cbs / k + 12, tap: () => { touchTiles.open = false; } };
+                touch.uiRects.tiles = { x: tp.x / k, y: tp.y / k, w: tp.w / k, h: tp.h / k };
+            } else {
                 const gridBottom = cols => {
                     let gy = spacing - height - internalSpacing + 5 + topPad, tick = cols, branch = -1;
                     for (const u of gui.upgrades) {
@@ -10501,7 +10672,7 @@ import * as cosmetics from './account/cosmetics.js';
             upgradeSpin = Date.now() * 0.0005;
             upgradeSpin = upgradeSpin - (Math.floor(upgradeSpin / Math.PI / 2) * Math.PI * 2);
 
-            let x = glide * 2 * spacing + spacing + 5;
+            let x = tp ? tp.x + 16 : glide * 2 * spacing + spacing + 5;
 
             let y = spacing - height - internalSpacing + 5 + topPad;
             let xStart = x;
@@ -10555,10 +10726,10 @@ import * as cosmetics from './account/cosmetics.js';
             let h = 24,
                 msg = "Don't upgrade",
                 m = hudTitleW(msg, 13) + 24,
-                buttonX = initialX + (rowWidth + len - initialX) / 2,
+                buttonX = tp ? tp.x + tp.w / 2 : initialX + (rowWidth + len - initialX) / 2,
                 buttonY = initialY + height + internalSpacing - 5;
             // the quest card sits below this edge while the tiles are on screen
-            if (glide > -0.5) {
+            if (glide > -0.5 && !tp) {
                 global.upgradeBoxBottom = buttonY + h + 2.5 + 6;
                 global.upgradeBoxTop = gridTop;
                 global.upgradeBoxRight = gridRight;
@@ -10608,54 +10779,347 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    function drawMobileJoysticks() {
-
-        let radius = Math.min(
-            global.mobileStatus.useBigJoysticks ? global.screenWidth * 0.8 : global.screenWidth * 0.6,
-            global.mobileStatus.useBigJoysticks ? global.screenHeight * 0.16 : global.screenHeight * 0.12
-        );
-
-        ctx[2].globalAlpha = 0.3;
-        ctx[2].fillStyle = "#ffffff";
-        ctx[2].beginPath();
-        ctx[2].arc(
-            (global.screenWidth * 1) / 6,
-            (global.screenHeight * 2) / 3,
-            radius,
-            0,
-            2 * Math.PI
-        );
-        ctx[2].arc(
-            (global.screenWidth * 5) / 6,
-            (global.screenHeight * 2) / 3,
-            radius,
-            0,
-            2 * Math.PI
-        );
-        ctx[2].fill();
-        ctx[2].globalAlpha = 0.5;
-        ctx[2].fillStyle = "#ffffff";
-        ctx[2].beginPath();
-        if (global.mobileStatus.showJoysticks && global.canvas.movementTouchPos) {
-            ctx[2].arc(
-                global.canvas.movementTouchPos.x + (global.screenWidth * 1) / 6,
-                global.canvas.movementTouchPos.y + (global.screenHeight * 2) / 3,
-                radius / 2.5,
-                0,
-                2 * Math.PI
-            );
-            ctx[2].arc(
-                global.canvas.controlTouchPos.x + (global.screenWidth * 5) / 6,
-                global.canvas.controlTouchPos.y + (global.screenHeight * 2) / 3,
-                radius / 2.5,
-                0,
-                2 * Math.PI
-            );
+    // ── touch HUD (phones and tablets) ─────────────────────────────────
+    // touch.js owns the input and the button geometry (CSS px); this draws
+    // it in HUD units. touchUnits() is HUD units per CSS pixel.
+    // (window.innerWidth can force a layout, so it is read once a frame)
+    let touchK = 1;
+    function touchUnits() { return touchK; }
+    const touchStats = { open: false, at: 0, seenPoints: 0 };
+    const touchHint = { move: false, aim: false };
+    try { touchHint.move = touchHint.aim = localStorage.getItem("dwTouchSticks") === "1"; } catch (e) { }
+    function touchMinimapRect() {
+        // upright there is less width: the button row needs its share
+        const k = touchUnits(), len = global.screenHeight > global.screenWidth ? 136 : 160;
+        const sa = touch.L ? touch.L.safe : { r: 0, t: 0 };
+        return { x: global.screenWidth - Math.max(HUD.edge * 0.6, sa.r * k + 8) - len, y: Math.max(HUD.edge * 0.6, sa.t * k + 8), w: len, h: len };
+    }
+    // the chips on the left edge ("New tank", "Stats") start here; the cards stay above
+    function touchChipBase() {
+        return Math.round(global.screenHeight * (global.screenHeight > global.screenWidth ? 0.62 : 0.5));
+    }
+    function touchChipH() { return 44 * touchUnits() * 0.95; }
+    function touchLeftFloor() {
+        return touchChipBase() - (gui.upgrades.length > 0 ? touchChipH() + 10 : 0);
+    }
+    const touchTiles = { open: false, seen: "" };
+    // the tank picker: opens from its chip, and on its own in the tutorial
+    function touchTilesOpen() {
+        if (!gui.upgrades.length) { touchTiles.open = false; return false; }
+        const key = gui.upgrades.map(u => u[2] && u[2].name).join("|");
+        if (key !== touchTiles.seen) { touchTiles.seen = key; touchTiles.open = !!global.tutorialMode; }
+        return touchTiles.open;
+    }
+    // top of the kit buttons: the message stack stops above them
+    function touchRightTop() {
+        const L = touch.L;
+        if (!L) return global.screenHeight * 0.45;
+        const k = touchUnits();
+        const top = L.kit2 ? L.kit2.y - L.kit2.h / 2 : L.arm.y - L.arm.r;
+        return top * k;
+    }
+    function drawTouchStick(c, s, kind, k, now) {
+        const R = STICK.R * k;
+        const ox = s.ox * k, oy = s.oy * k;
+        let dx = (s.x - s.ox) * k, dy = (s.y - s.oy) * k;
+        const d = Math.hypot(dx, dy);
+        if (d > R) { dx *= R / d; dy *= R / d; }
+        const push = Math.min(1, d / R);
+        const hot = kind === "aim" ? (s.firing ? HUD.copper : HUD.gold) : HUD.sky;
+        const rgb = kind === "aim" ? (s.firing ? "224,123,46" : "242,184,60") : "78,196,232";
+        c.save();
+        // base: a dark see-through disc with a fine rim and the dead zone ring
+        c.globalAlpha = 0.55;
+        c.beginPath(); c.arc(ox, oy, R, 0, Math.PI * 2);
+        c.fillStyle = "rgba(14,11,18,0.5)"; c.fill();
+        c.lineWidth = 2; c.strokeStyle = "rgba(255,243,217,0.35)"; c.stroke();
+        c.globalAlpha = 0.35;
+        c.beginPath(); c.arc(ox, oy, R * STICK.DEAD, 0, Math.PI * 2);
+        c.lineWidth = 1.5; c.strokeStyle = "rgba(255,243,217,0.5)"; c.stroke();
+        // the rim lights up the way you push
+        if (push > STICK.DEAD) {
+            const a = Math.atan2(dy, dx);
+            c.globalAlpha = 0.35 + 0.55 * push;
+            c.beginPath(); c.arc(ox, oy, R - 2, a - 0.55, a + 0.55);
+            c.lineWidth = 5; c.lineCap = "round"; c.strokeStyle = hot; c.stroke();
         }
-        ctx[2].fill();
-
-        drawCrosshair();
-    };
+        // knob with a soft glow under it
+        const kx = ox + dx, ky = oy + dy, kr = R * 0.44;
+        if (!config.graphical.noGlow) {
+            c.globalAlpha = 0.25 + 0.45 * push;
+            const hr = kr * 2.4;
+            c.drawImage(haloSprite("stick|" + rgb, rgb, [[0, 0.7], [0.5, 0.25], [1, 0]]), kx - hr, ky - hr, hr * 2, hr * 2);
+        }
+        c.globalAlpha = 0.92;
+        c.beginPath(); c.arc(kx, ky + 2, kr, 0, Math.PI * 2);
+        c.fillStyle = HUD.faceDk; c.fill();
+        c.beginPath(); c.arc(kx, ky, kr, 0, Math.PI * 2);
+        c.fillStyle = push > STICK.DEAD ? hot : HUD.face; c.fill();
+        c.lineWidth = 1.5; c.strokeStyle = HUD.line; c.stroke();
+        c.beginPath(); c.arc(kx, ky - kr * 0.18, kr * 0.62, Math.PI * 1.1, Math.PI * 1.9);
+        c.lineWidth = 2; c.strokeStyle = "rgba(255,255,255,0.28)"; c.stroke();
+        c.restore();
+    }
+    // where the aim lands, a small ring (it snaps a little with aim assist)
+    function drawTouchReticle(c, now) {
+        const t = global.target;
+        const sw = global.screenWidth, sh = global.screenHeight;
+        const kk = sw / Math.max(1, global.canvas.width);
+        const x = sw / 2 + (global.player.screenx || 0) * 0 + t.x * kk, y = sh / 2 + t.y * kk;
+        c.save();
+        c.globalAlpha = 0.7;
+        c.lineWidth = 2; c.strokeStyle = HUD.head;
+        const r = 9 + Math.sin(now / 140) * 1.2;
+        c.beginPath();
+        for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r); c.lineTo(x + Math.cos(a) * (r + 6), y + Math.sin(a) * (r + 6)); }
+        c.stroke();
+        c.globalAlpha = 0.9;
+        c.beginPath(); c.arc(x, y, 2.5, 0, Math.PI * 2); c.fillStyle = HUD.head; c.fill();
+        c.restore();
+    }
+    function drawTouchKit(c, L, k, now) {
+        const sh = global.shop, st = sh.state || {};
+        const catalog = sh.catalog || [];
+        const ko = st.kitOrder || [];
+        if (!touch.buttonShown("kit0")) return;
+        {
+            const a = L.kit0, b = L.kit2;
+            const x0 = Math.min(a.x, b.x) - a.w / 2, y0 = Math.min(a.y, b.y) - a.h / 2;
+            hudDrawn.kit = { x: x0 * k, y: y0 * k, w: (Math.max(a.x, b.x) + a.w / 2 - x0) * k, h: (Math.max(a.y, b.y) + a.h / 2 - y0) * k };
+        }
+        for (let i = 0; i < 3; i++) {
+            const b = L["kit" + i];
+            const id = ko[i];
+            const item = id ? catalog.find(it => it.id === id) : null;
+            const w = b.w * k, h = b.h * k, x = b.x * k - w / 2, y = b.y * k - h / 2;
+            const held = [...touch.btn.values()].includes("kit" + i);
+            const drag = global.kitDrag && global.kitDrag.slot === i;
+            c.save();
+            c.globalAlpha = item ? 1 : 0.4;
+            hudPanel(c, x, y + (held ? 2 : 0), w, h, { r: 12, fill: held ? HUD.raised : HUD.panel });
+            if (item) {
+                const fl = sh.slotFlash && sh.slotFlash[id];
+                const flT = fl ? Math.max(0, 1 - (now - fl.at) / 650) : 0;
+                if (flT > 0) {
+                    c.globalAlpha = flT * 0.8;
+                    roundRectPath(c, x - 4 * (1 - flT), y - 4 * (1 - flT), w + 8 * (1 - flT), h + 8 * (1 - flT), 13);
+                    c.lineWidth = 2; c.strokeStyle = fl.kind === "use" ? "#fff" : HUD.gold; c.stroke();
+                    c.globalAlpha = 1;
+                }
+                if (!drag && global.kitUnlockHeld !== item.id) drawKitIcon(c, item.id, x + w / 2, y + h * 0.46 + (held ? 2 : 0), Math.min(w, h) * 0.5);
+                kitSlotIcons[item.id] = { x: x + w / 2, y: y + h * 0.46, w, h, sx: x, sy: y, at: now };
+                const n = st.kit[id] | 0;
+                if (n > 1) {
+                    const bw = Math.max(20, hudTitleW("x" + n, 11) + 10);
+                    hudWell(c, x + w - bw + 4, y - 6, bw, 17, 8, HUD.wellSolid, HUD.ink, 2);
+                    drawText("x" + n, x + w - bw / 2 + 4, y + 2.5, 10.5, color.teal, "center", true);
+                }
+                drawText(KIT_SHORT[item.id] || item.name.slice(0, 7).toUpperCase(), x + w / 2, y + h - 9, 8.5, color.guiwhite, "center", true);
+                // the server's short use cooldown as a sweep
+                const used = fl && fl.kind === "use" ? now - fl.at : 1e9;
+                if (used < 600) {
+                    c.globalAlpha = 0.5;
+                    c.beginPath(); c.moveTo(x + w / 2, y + h / 2);
+                    c.arc(x + w / 2, y + h / 2, Math.max(w, h), -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - used / 600));
+                    c.closePath();
+                    c.save(); roundRectPath(c, x, y, w, h, 12); c.clip();
+                    c.fillStyle = "rgba(14,11,18,0.6)"; c.fillRect(x, y, w, h);
+                    c.restore();
+                }
+            } else {
+                c.globalAlpha = 0.5;
+                roundRectPath(c, x + w / 2 - w * 0.2, y + h * 0.46 - w * 0.2, w * 0.4, w * 0.4, 6);
+                c.setLineDash([3, 3]); c.lineWidth = 1; c.strokeStyle = "#fff"; c.stroke(); c.setLineDash([]);
+            }
+            c.restore();
+        }
+        // dragging a kit card out: it follows the thumb, far enough out it reads DROP
+        const dk = global.kitDrag;
+        if (dk && dk.touch && touch.lastDrag) {
+            const id = ko[dk.slot], b = L["kit" + dk.slot];
+            if (id && b) {
+                const mx = touch.lastDrag.x, my = touch.lastDrag.y;
+                const far = Math.hypot(mx - b.x, my - b.y) > b.w * 1.8;
+                if (Math.hypot(mx - b.x, my - b.y) > 10) {
+                    c.save(); c.globalAlpha = 0.9;
+                    drawKitIcon(c, id, mx * k, my * k - 30, 30);
+                    c.restore();
+                    if (far) hudTitle("Drop", mx * k, my * k + 2, 13, "#ff9a8c", "center");
+                }
+            }
+        }
+    }
+    function drawTouchArm(c, L, k, now) {
+        if (!touch.buttonShown("arm")) return;
+        const st = global.shop.state || {};
+        const item = (global.shop.catalog || []).find(it => it.id === st.arm);
+        const b = L.arm;
+        const x = b.x * k, y = b.y * k, r = b.r * k;
+        const held = touch.armHeld;
+        const on = touch.armOn;
+        c.save();
+        if (on && !config.graphical.noGlow) {
+            c.globalAlpha = 0.5 + 0.2 * Math.sin(now / 300);
+            const hr = r * 1.9;
+            c.drawImage(haloSprite("arm|185,139,255", "185,139,255", [[0, 0.5], [0.55, 0.2], [1, 0]]), x - hr, y - hr, hr * 2, hr * 2);
+        }
+        c.globalAlpha = 1;
+        c.beginPath(); c.arc(x, y + 3, r, 0, Math.PI * 2); c.fillStyle = HUD.drop; c.fill();
+        c.beginPath(); c.arc(x, y + (held ? 2 : 0), r, 0, Math.PI * 2);
+        c.fillStyle = held ? "#6d4fa8" : on ? "#8a63d2" : HUD.panel; c.fill();
+        c.lineWidth = 1.5; c.strokeStyle = HUD.line; c.stroke();
+        // burn-out ring for timed sidearms, a full ring for permanent ones
+        const left = st.armUntil > 0 ? Math.max(0, st.armUntil - Date.now()) / 150000 : 1;
+        c.beginPath(); c.arc(x, y + (held ? 2 : 0), r - 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, left));
+        c.lineWidth = 3.5; c.lineCap = "round"; c.strokeStyle = left < 0.2 && (now % 600) < 300 ? "#ff9a8c" : "#c9a8ff"; c.stroke();
+        c.restore();
+        const nm = item ? shortName(item.name, 10) : "Sidearm";
+        let fs = 13; while (fs > 8 && hudTitleW(nm, fs) > r * 1.7) fs -= 0.5;
+        hudTitle(nm, x, y - 3 + (held ? 2 : 0), fs, HUD.head, "center");
+        hudTitle(on ? "Auto" : "Hold", x, y + 12 + (held ? 2 : 0), 9, on ? "#e6d8ff" : HUD.text2, "center");
+    }
+    // Stats on touch: a chip on the left edge; a tap opens two columns of big
+    // cells over the lower left. Tap a cell to put a point in it.
+    function drawTouchStats(k, now) {
+        const c = ctx[2];
+        global.touchPanelRight = 0;
+        global.touchTilesOpen = !!(touchTiles.open && gui.upgrades.length);
+        global.clickables.stat.hide();
+        let statsOk = true;
+        if (global.tutorialMode) {
+            const allow = window.dwTutAllow || "", ui = window.dwTutUi || "";
+            if (!allow.includes("stats") && !ui.startsWith("skill") && !ui.startsWith("stat") && ui !== "points") statsOk = false;
+        }
+        const pts = gui.points | 0;
+        const canAny = statsOk && pts > 0 && gui.skills.some(s => s.softcap > 0 && s.amount < s.cap);
+        if (!statsOk) touchStats.open = false;
+        if (!touch.playing() || raidFinale.hidesHud() || global.showBigMap) { touchStats.open = false; return; }
+        if (touchStats.open && !canAny && now - touchStats.at > 1200) touchStats.open = false;
+        if (touchStats.open && now - touchStats.at > 10000) touchStats.open = false;
+        const sa = touch.L ? touch.L.safe : { l: 0 };
+        const x0 = Math.max(HUD.edge * 0.6, sa.l * k + 8);
+        const chipH = touchChipH();
+        const chip = (id, y, label, badge, tap) => {
+            const bw = badge ? hudTitleW(badge, 15) + 16 : 0;
+            const cw = hudTitleW(label, 16) + bw + (badge ? 30 : 32);
+            const pulse = 0.5 + 0.5 * Math.sin(now / 260);
+            c.save();
+            if (!config.graphical.noGlow) {
+                c.globalAlpha = 0.35 + 0.3 * pulse;
+                const hr = cw;
+                c.drawImage(haloSprite("statchip|242,184,60", "242,184,60", [[0, 0.5], [0.5, 0.18], [1, 0]]), x0 + cw / 2 - hr, y + chipH / 2 - hr * 0.6, hr * 2, hr * 1.2);
+            }
+            c.restore();
+            hudPanel(c, x0, y, cw, chipH, { r: chipH / 2 });
+            hudTitle(label, x0 + 16, y + chipH / 2, 16, HUD.head, "left");
+            if (badge) {
+                const bx = x0 + cw - bw - 8;
+                hudWell(c, bx, y + chipH / 2 - 12, bw, 24, 12, HUD.gold, HUD.ink, 2);
+                hudTitle(badge, bx + bw / 2, y + chipH / 2, 15, HUD.ink, "center");
+            }
+            touch.zones[id] = { x: x0 / k, y: y / k, w: cw / k, h: chipH / k, tap };
+            return { x: x0, y, w: cw, h: chipH };
+        };
+        if (gui.upgrades.length > 0 && !touchTiles.open && !touchStats.open) {
+            hudDrawn.upgrades = chip("tiles", touchChipBase() - chipH - 10, "New tank", "", () => { touchTiles.open = true; touchStats.open = false; });
+        }
+        if (!touchStats.open) {
+            if (!canAny) return;
+            hudDrawn.stats = touchStats.chip = chip("stats", touchChipBase(), "Stats", String(pts), () => { touchStats.open = true; touchStats.at = performance.now(); touchTiles.open = false; });
+            return;
+        }
+        touch.zones.stats = null;
+        let names;
+        try { names = gui.getStatNames(global.mockups[parseInt(gui.type.split("-")[0])].statnames); }
+        catch (e) { names = gui.getStatNames(global.missingno[0].statnames); }
+        // desktop order: stats 1..9, 0, then Mining Power
+        const cells = [];
+        for (let i = 0; i < gui.skills.length; i++) {
+            const sk = gui.skills[i];
+            if (!(sk.softcap > 0)) continue;
+            const statIdx = i === 10 ? 10 : 9 - i;
+            cells.push({ sk, statIdx, name: names[statIdx] });
+        }
+        cells.sort((a, b) => a.statIdx - b.statIdx);
+        const portrait = global.screenHeight > global.screenWidth;
+        const cols = 2, rows = Math.ceil(cells.length / cols);
+        // upright: leave the kit and sidearm column on the right uncovered
+        const rightCol = portrait && touch.L ? (touch.L.unit + 30) * k : 0;
+        const cellW = Math.min(portrait ? (global.screenWidth - x0 * 2 - 30 - rightCol) / 2 : 190, 220), cellH = Math.max(34, 40 * k * 0.95), gap = 6;
+        const W = cols * cellW + (cols - 1) * gap + 20, H = rows * cellH + (rows - 1) * gap + 44;
+        const px = x0, py = Math.max(56, global.screenHeight - Math.max(HUD.edge * 0.6, (touch.L ? touch.L.safe.b : 0) * k + 8) - H);
+        hudPanel(c, px, py, W, H, { fill: HUD.solid, r: HUD.rBig });
+        hudTitle("Stats", px + 12, py + 18, 17, HUD.head, "left");
+        drawText(pts ? pts + (pts === 1 ? " point" : " points") + " to spend" : "All spent", px + 64, py + 19, 11, pts ? HUD.gold : HUD.text2, "left", true);
+        // close
+        const cbs = 30;
+        hudButton(c, px + W - 10 - cbs / 2, py + 5, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15 });
+        touch.zones.statsClose = { x: (px + W - 10 - cbs) / k - 6, y: (py + 5) / k - 6, w: cbs / k + 12, h: cbs / k + 12, tap: () => { touchStats.open = false; } };
+        const cr = global.canvas.height / global.screenHeight / global.ratio;
+        for (let n = 0; n < cells.length; n++) {
+            const { sk, statIdx, name } = cells[n];
+            const cx = px + 10 + (n % cols) * (cellW + gap), cy = py + 36 + ((n / cols) | 0) * (cellH + gap);
+            const tutLocked = global.tutorialMode && window.dwTutStatOpen && !window.dwTutStatOpen(statIdx);
+            const can = pts > 0 && sk.amount < sk.cap && !(sk.cap !== sk.softcap && sk.amount >= sk.softcap) && !tutLocked;
+            const col = color[sk.color];
+            c.save();
+            c.globalAlpha = tutLocked ? 0.35 : 1;
+            hudWell(c, cx, cy, cellW, cellH, 8, HUD.well, HUD.ink, 2);
+            // level bar along the bottom
+            const frac = sk.softcap ? Math.min(1, sk.amount / sk.softcap) : 0;
+            hudBar(c, cx + 8, cy + cellH - 11, cellW - cellH - 10, 6, frac, col);
+            c.restore();
+            let ns = 12.5; while (ns > 8.5 && hudTitleW(name, ns) > cellW - cellH - 18) ns -= 0.5;
+            hudTitle(name, cx + 9, cy + (cellH - 12) / 2 + 1, ns, sk.amount >= sk.cap ? col : can ? HUD.head : HUD.text2, "left", tutLocked ? 0.35 : 1);
+            // the + key on the right
+            const bs = cellH - 8;
+            hudButton(c, cx + cellW - 4 - bs / 2, cy + 4, bs, bs, sk.amount >= sk.cap ? "Max" : "+", can
+                ? { fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff", size: sk.amount >= sk.cap ? 10 : 20 }
+                : { enabled: false, size: sk.amount >= sk.cap ? 10 : 18, textCol: HUD.text });
+            if (can) global.clickables.stat.place(statIdx, cx * cr, cy * cr, cellW * cr, cellH * cr);
+        }
+        // the panel takes taps (not the stick) while it is up
+        touch.uiRects.stats = { x: px / k, y: py / k, w: W / k, h: H / k };
+        global.touchPanelRight = (px + W) / k;
+        touchStats.panel = { x: px, y: py, w: W, h: H };
+    }
+    let touchSeenTap = 0;
+    function drawTouchHud() {
+        if (!global.gameStart) return;
+        const c = ctx[2];
+        const now = performance.now();
+        const k = touchUnits();
+        const L = touch.layout();
+        touch.isFinale = () => raidFinale.active();
+        drawTouchStats(k, now);
+        if (!touch.playing() || raidFinale.hidesHud() || global.showBigMap) return;
+        if (global.statTapAt && global.statTapAt !== touchSeenTap) { touchSeenTap = global.statTapAt; touchStats.at = now; }
+        drawTouchKit(c, L, k, now);
+        drawTouchArm(c, L, k, now);
+        if (touch.move) { drawTouchStick(c, touch.move, "move", k, now); if (!touchHint.move) { touchHint.move = true; saveTouchHint(); } }
+        if (touch.aim) { drawTouchStick(c, touch.aim, "aim", k, now); if (!touchHint.aim && touch.aim.firing) { touchHint.aim = true; saveTouchHint(); } }
+        if (touch.aim && touch.aim.firing) drawTouchReticle(c, now);
+        // first raids: ghost sticks show where the thumbs go
+        if (!touchHint.move || !touchHint.aim) {
+            const sw = global.screenWidth, sh = global.screenHeight;
+            const bob = Math.sin(now / 500) * 4;
+            const ghost = (x, y, label) => {
+                c.save();
+                c.globalAlpha = 0.3;
+                c.beginPath(); c.arc(x, y, STICK.R * k, 0, Math.PI * 2);
+                c.lineWidth = 2; c.setLineDash([6, 6]); c.strokeStyle = HUD.head; c.stroke(); c.setLineDash([]);
+                c.beginPath(); c.arc(x, y + bob, STICK.R * k * 0.44, 0, Math.PI * 2);
+                c.fillStyle = "rgba(255,243,217,0.4)"; c.fill();
+                c.restore();
+                hudTitle(label, x, y + STICK.R * k + 16, 14, HUD.head, "center", 0.75);
+            };
+            if (!touchHint.move && !touch.move) ghost(sw * 0.2, sh * 0.72, "Drag to move");
+            if (!touchHint.aim && !touch.aim) ghost(sw * (sh > sw ? 0.62 : 0.7), sh * 0.72, "Drag to aim and shoot");
+        }
+    }
+    function saveTouchHint() {
+        try { if (touchHint.move && touchHint.aim) localStorage.setItem("dwTouchSticks", "1"); } catch (e) { }
+    }
 
     function drawCrosshair() {
         if (global.mobileStatus.showCrosshair && (global.mobileStatus.enableCrosshair || global.gamepadMode)) {
@@ -10676,159 +11140,6 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    function drawMobileButtons(spacing, alcoveSize) {
-        let makeButton = (index, x, y, width, height, text, clickableRatio) => {
-
-            global.clickables.mobileButtons.place(index, x * clickableRatio, y * clickableRatio, width * clickableRatio, height * clickableRatio);
-
-            ctx[2].globalAlpha = 0.5;
-            ctx[2].fillStyle = color.grey;
-            drawGuiRect(x, y, width, height);
-            ctx[2].globalAlpha = 0.1;
-            ctx[2].fillStyle = color.black;
-            drawGuiRect(x, y + height * 0.6, width, height * 0.4);
-            ctx[2].globalAlpha = 1;
-
-            drawText(text, x + width / 2, y + height * 0.5, height * 0.6, color.guiwhite, "center", true);
-
-            ctx[2].strokeStyle = color.black;
-            ctx[2].lineWidth = 3;
-            drawGuiRect(x, y, width, height, true);
-        }
-
-        let makeButtons = (buttons, startX, startY, baseSize, clickableRatio, spacing) => {
-            let x = startX, y = startY, index = 0;
-
-            for (let row = 0; row < buttons.length; row++) {
-                for (let col = 0; col < buttons[row].length; col++) {
-                    makeButton(buttons[row][col][3] ?? index, x, y, baseSize * (buttons[row][col][1] ?? 1), baseSize * (buttons[row][col][2] ?? 1), buttons[row][col][0], clickableRatio);
-                    x += baseSize * (buttons[row][col][1] ?? 1) + spacing;
-                    index++;
-                }
-
-                x = startX;
-                y += Math.max(...buttons[row].map(b => baseSize * (b[2] ?? 1))) + spacing;
-            }
-        }
-        if (global.clickables.mobileButtons.active == null) global.clickables.mobileButtons.active = false;
-        if (global.clickables.mobileButtons.altFire == null) global.clickables.mobileButtons.altFire = false;
-
-        global.clickables.mobileButtons.hide();
-
-        mobileUpgradeGlide.set(0 + (global.canUpgrade || global.upgradeHover));
-
-        let clickableRatio = global.canvas.height / global.screenHeight / global.ratio;
-        let upgradeColumns = Math.ceil(gui.upgrades.length / 9);
-        let yOffset = 0;
-        if (global.mobile) {
-            yOffset += global.canUpgrade ? (alcoveSize / 1.5 ) * mobileUpgradeGlide.get() * upgradeColumns / 1.5 + spacing * (upgradeColumns + 1.55) + -17.5 : 0;
-            yOffset += global.canSkill || global.showSkill ? statMenu.get() * alcoveSize / 2.6 + spacing / 0.75 : 0;
-        }
-        let buttons;
-        let baseSize = (alcoveSize - spacing * 2) / 3;
-
-        if (global.mobile) {
-            buttons = global.clickables.mobileButtons.active ? [
-                [[global.clickables.mobileButtons.active ? "-" : "+"], [`Alt ${global.clickables.mobileButtons.altFire ? "Manual" : "Disabled"}`, 6], [`${!document.fullscreenElement ? "Full" : "Exit Full"} Screen`, 5]],
-                [["Autofire", 3.5], ["Reverse", 3.5], ["Self-Destruct", 5]],
-                [["Autospin", 3.5], ["Override", 3.5], ["Level Up", 5]],
-                [["Action", 3.5], ["Special", 3.5], ["Chat", 5]],
-            ] : [
-                [[global.clickables.mobileButtons.active ? "-" : "+"]],
-            ];
-        }
-        if (global.clickables.mobileButtons.altFire) buttons.push([["\u2756", 2, 2]]);
-
-        let len = alcoveSize;
-        makeButtons(buttons, len + spacing * 2, yOffset + spacing, baseSize, clickableRatio, spacing);
-    }
-
-    function drawMobileSkillUpgrades(spacing, alcoveSize) {
-        global.canSkill = gui.points > 0 && gui.skills.some(s => s.amount < s.cap) && !global.canUpgrade;
-        global.showSkill = !global.canUpgrade && !global.canSkill && global.died;
-        statMenu.set(global.canSkill || global.showSkill || global.disconnected ? 1 : 0);
-        let n = statMenu.get();
-        global.clickables.stat.hide();
-        let t = alcoveSize / 2,
-            q = alcoveSize / 3,
-            x = 2 * n * spacing - spacing,
-            statNames,
-            clickableRatio = global.canvas.height / global.screenHeight / global.ratio;
-
-            try {
-                statNames = gui.getStatNames(global.mockups[parseInt(gui.type.split("-")[0])].statnames);
-            } catch (e) {
-                statNames = gui.getStatNames(global.missingno[0].statnames);
-            }
-
-        if (global.canSkill || global.showSkill) {
-            for (let i = 0; i < gui.skills.length; i++) {
-                let skill = gui.skills[i],
-                    softcap = skill.softcap;
-
-                if (softcap <= 0) continue;
-
-                const mStat = i === 10 ? 10 : 9 - i;
-                const tutLocked = global.tutorialMode && window.dwTutStatOpen && !window.dwTutStatOpen(mStat);
-                let amount = skill.amount,
-                    skillColor = color[skill.color],
-                    cap = skill.cap,
-                    name = statNames[mStat].split(/\s+/),
-                    halfNameLength = Math.floor(name.length / 2),
-                    [name1, name2] = name.length === 1 ? [name[0], null] : [name.slice(0, halfNameLength).join(" "), name.slice(halfNameLength).join(" ")];
-
-                const tA = tutLocked ? 0.35 : 1;
-                ctx[2].globalAlpha = 0.5 * tA;
-                ctx[2].fillStyle = skillColor;
-                drawGuiRect(x, spacing, t, 2 * q / 3);
-
-                ctx[2].globalAlpha = 0.1 * tA;
-                ctx[2].fillStyle = color.black;
-                drawGuiRect(x, spacing + q * 2 / 3 * 2 / 3, t, q * 2 / 3 / 3);
-
-                ctx[2].globalAlpha = tA;
-                ctx[2].fillStyle = color.guiwhite;
-                drawGuiRect(x, spacing + q * 2 / 3, t, q / 3);
-
-                ctx[2].fillStyle = skillColor;
-                drawGuiRect(x, spacing + q * 2 / 3, t * amount / softcap, q / 3);
-
-                ctx[2].strokeStyle = color.black;
-                ctx[2].lineWidth = 1;
-                for (let j = 1; j < cap; j++) {
-                    let width = x + j / softcap * t;
-                    drawGuiLine(width, spacing + q * 2 / 3, width, spacing + q);
-                }
-
-                tutLocked || cap === 0 || !gui.points || softcap !== cap && amount === softcap || global.clickables.stat.place(mStat, x * clickableRatio, spacing * clickableRatio, t * clickableRatio, q * clickableRatio);
-
-                if (name2) {
-                    drawText(name2, x + t / 2, spacing + q * 0.55, q / 5, color.guiwhite, "center");
-                    drawText(name1, x + t / 2, spacing + q * 0.3, q / 5, color.guiwhite, "center");
-                } else {
-                    drawText(name1, x + t / 2, spacing + q * 0.425, q / 5, color.guiwhite, "center");
-                }
-
-                if (amount > 0) {
-                    drawText(`+${amount}`, x + t / 2, spacing + q * 1.3, q / 4, skillColor, "center");
-                }
-
-                ctx[2].strokeStyle = color.black;
-                ctx[2].globalAlpha = tA;
-                ctx[2].lineWidth = 3;
-                drawGuiLine(x, spacing + q * 2 / 3, x + t, spacing + q * 2 / 3);
-                drawGuiRect(x, spacing, t, q, true);
-                ctx[2].globalAlpha = 1;
-
-                x += n * (t + 14);
-            }
-
-            if (gui.points > 1) {
-                drawText(`x${gui.points}`, x, spacing + 20, 20, color.guiwhite, "left");
-            }
-        }
-    };
-
     let ichatInput = 0;
     // The chat box over your own tank (a DOM input over a canvas-styled
     // box), just above the hull; bubbles move up out of its way. In duos a
@@ -10844,6 +11155,15 @@ import * as cosmetics from './account/cosmetics.js';
                 "border:1px solid #120e15;border-radius:999px;font-family:Rubik,Ubuntu,sans-serif;font-weight:700;letter-spacing:.01em;pointer-events:none;white-space:nowrap;";
             document.getElementById("gameAreaWrapper").appendChild(el);
             cv.chatPill = el;
+            // touch has no Tab key: tapping the pill flips Team / All (and
+            // keeps the keyboard up)
+            if (global.mobile) {
+                el.style.pointerEvents = "auto";
+                el.addEventListener("touchstart", (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    if (!global.died) { global.duoChatAll = !global.duoChatAll; gameSound.uiClick(); if (global.syncChatModeBtn) global.syncChatModeBtn(); }
+                }, { passive: false });
+            }
         }
         return cv.chatPill;
     }
@@ -10854,6 +11174,8 @@ import * as cosmetics from './account/cosmetics.js';
             const duo = !!(global.royale && global.royale.duos);
             let size = isize * ratio,
                 g = chatScale(size);
+            // touch: one steady size, a 16px line (iOS zooms into smaller inputs)
+            if (global.mobile) g = 32;
 
             if (!global.showChat) {
                 if (ichatInput === 0) chatInput.force(0);
@@ -10876,9 +11198,16 @@ import * as cosmetics from './account/cosmetics.js';
             y += global.screenHeight / 2;
             const boxH = 0.95 * g;
             // box top, in GUI units: over the hull, or under the death card
-            const top = dead
+            let top = dead
                 ? Math.min(global.screenHeight - boxH - 70, global.screenHeight / 2 + 250)
                 : overheadTop(instance, y, ratio, isize) - 0.2 * g - boxH;
+            // touch: the keyboard comes up from the bottom, so the box sits at
+            // the top, under the button row, where it can't be covered
+            if (global.mobile) {
+                const k = touchUnits(), sa = touch.L ? touch.L.safe : { t: 0 };
+                x = global.screenWidth / 2;
+                top = (Math.max(8, sa.t) + 60) * k;
+            }
             let boxLengthHalf = (10.49 * g) / 2;
             const toPx = window.innerWidth / global.screenWidth;
             global.canvas.chatBox.loadedProperly = true;
@@ -10907,7 +11236,7 @@ import * as cosmetics from './account/cosmetics.js';
                 const bh = global.canvas.chatBox.offsetHeight || boxH;
                 const mt = parseFloat(getComputedStyle(global.canvas.chatBox).marginTop) || 0;
                 pill.style.top = (top * toPx + mt + (bh - 0.64 * g) / 2) + "px";
-                global.canvas.chatInput.placeholder = global.died ? "Only your teammate can hear you" : team ? "Chat with your teammate, press Tab for all" : "Chat with everyone, press Tab for team";
+                global.canvas.chatInput.placeholder = global.died ? "Only your teammate can hear you" : global.mobile ? (team ? "To your teammate" : "To everyone") : team ? "Chat with your teammate, press Tab for all" : "Chat with everyone, press Tab for team";
             } else {
                 pill.style.display = "none";
                 global.canvas.chatInput.placeholder = "";
@@ -11326,13 +11655,14 @@ import * as cosmetics from './account/cosmetics.js';
         }
     };
     // ── Raid death screen ────────────────────────────────────────────────
-    // Up for the respawn wait only (3 s), so it has to read at a glance: the
-    // whole card is there from the first frame (one short fade, nothing
+    // The whole card is there from the first frame (one short fade, nothing
     // staggered). One wide card, low and centred: the life in numbers on the
     // left, who got you and what's next on the right. The camera follows your
     // killer meanwhile and lifts (deathCamLift, see drawGameplay) so they
-    // stay in view above the card. Then you drop straight back in (held
-    // during the final-storm spawn lock).
+    // stay in view above the card. The footer is the Play again button (DOM,
+    // updateRoyaleDomButtons): it counts down the server's 3 s wait, then
+    // waits for a click, Enter, Space or RT. Nothing drops you in on its own;
+    // the raid end queues everyone itself (raidFinale.js).
     const gameDrawDeadRoyale = () => {
         const now = performance.now();
         const A = global.royaleDiedAt ? Math.min(1, (now - global.royaleDiedAt) / 140) : 1;
@@ -11342,28 +11672,21 @@ import * as cosmetics from './account/cosmetics.js';
         const sw = global.screenWidth, sh = global.screenHeight;
         clearScreen(color.black, 0.34 * A, c);
 
-        // the way back first: it runs whatever the card looks like
-        const locked = !!(global.royale.lock && global.royale.at > 0);
-        const waitMs = Math.max(0, (global.raidRespawnAt || 0) - now);
-        // a rank-up still to play on the card holds the respawn (8 s at most)
-        const rankHold = rankPanel.holdsRespawn() && waitMs > -8000;
-        if (!locked && global.raidRespawnAt > 0 && waitMs <= 0 && !global.disconnected && !global.respawnPending && !rankCeremony.isPlaying() && !rankHold && !global.updateHoldsRespawn) {
-            try { global.canvas.respawn(); } catch { /* */ }
-        }
-
         // ── layout ──
         const W = Math.min(1040, sw - 32);
         const pad = 20, gap = 14;
         const two = W >= 820;
         const colW = two ? Math.floor((W - pad * 2 - gap) / 2) : W - pad * 2;
         const hasRank = rankPanel.hasContent();
-        const HEAD = 62, STEP = 46, TILE = 40, NEXT_H = 40, RANK_H = 106, FOOT = 46;
+        // canvas units per CSS px: the Play again button is DOM, sized in px
+        const cssK = sh / Math.max(1, window.innerHeight);
+        const PLAY_CSS_H = 58;
+        const HEAD = 62, STEP = 46, TILE = 40, NEXT_H = 40, RANK_H = 106, FOOT = Math.round(PLAY_CSS_H * cssK);
         const leftH = 3 * STEP - (STEP - TILE) + 26;
         const whoH = two ? leftH - 10 - NEXT_H : 74;
         const bodyH = two ? leftH : leftH + gap + whoH + 10 + NEXT_H;
         const H = pad + HEAD + gap + bodyH + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 12;
         // the DOM buttons (Spectate, Home) sit under the card
-        const cssK = sh / Math.max(1, window.innerHeight);
         const BTN = Math.round((40 + 22) * cssK);
         const px = Math.round(sw / 2 - W / 2);
         const py = Math.round(Math.max(12, sh - H - BTN - 12));
@@ -11478,31 +11801,42 @@ import * as cosmetics from './account/cosmetics.js';
             fy += RANK_H + gap;
         }
 
-        // ── footer: the countdown and a bar that fills to the drop ──
-        const total = Math.max(1000, global.raidRespawnWaitMs || 3000);
-        hudTitle(locked
-                ? ("Final storm, no spawns for " + Math.max(0, global.royale.lockLeft | 0) + "s")
-                : (waitMs > 0 ? ("Back in " + Math.ceil(waitMs / 1000) + "s") : "Dropping in..."),
-                 cx, fy + 16, 20, locked ? HUD.lilac : waitMs > 0 ? HUD.gold : HUD.emerald, "center", A);
-        if (!locked) {
-            c.save();
-            c.globalAlpha = A;
-            hudBar(c, cx - 160, fy + 32, 320, 7, 1 - Math.min(1, waitMs / total), waitMs > 0 ? HUD.gold : HUD.emerald);
-            c.restore();
-        }
+        // ── footer: the Play again button (DOM, placed here) ──
+        const playW = Math.min(W - pad * 2, Math.round(380 * cssK));
+        const toCssX = window.innerWidth / Math.max(1, sw), toCssY = window.innerHeight / Math.max(1, sh);
+        global.deathPlayCss = {
+            cx: Math.round(cx * toCssX),
+            top: Math.round(fy * toCssY),
+            w: Math.round(playW * toCssX),
+            h: PLAY_CSS_H,
+        };
         global.clickables.royalePrev.hide();
         global.clickables.royaleNext.hide();
-        global.clickables.royalePlay.hide();
         global.clickables.deathRespawn.hide();
-        // DOM Spectate/Home live below the panel and take the clicks.
-        if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) return;
+        // DOM Play again / Spectate / Home take the clicks.
+        if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) { global.clickables.royalePlay.hide(); return; }
         if (!global.disconnected) {
             const cr = global.canvas.height / global.screenHeight / global.ratio;
+            const st = playAgainState();
+            drawButton(cx, fy, playW, FOOT, st.ready ? A : A * 0.5, "rect", st.label, 22, false, false, false, st.ready, "royalePlay", cr, 0);
+            if (!st.ready) global.clickables.royalePlay.hide();
             const bty = py + H + 12;
             drawButton(cx - 90, bty, 150, 32, A, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
             drawButton(cx + 90, bty, 150, 32, A, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
         }
     };
+    // The death card's Play again button: its label, and whether it works yet.
+    // respawn() (canvas.js) enforces the same rules; the server enforces the
+    // 3 s wait on its own.
+    function playAgainState() {
+        const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);
+        const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
+        if (locked) return { ready: false, label: "No spawns in the final storm (" + Math.max(0, global.royale.lockLeft | 0) + "s)" };
+        if (global.respawnPending) return { ready: false, label: "Dropping in..." };
+        if (waitMs > 0) return { ready: false, label: "Play again in " + Math.ceil(waitMs / 1000) + "..." };
+        if (global.updateHoldsRespawn) return { ready: false, label: "Updating the game..." };
+        return { ready: true, label: "Play again" };
+    }
     const drawRoyaleSpectateBar = () => {
         const sw = global.screenWidth;
         const barW = Math.min(620, sw - 40);
@@ -11528,7 +11862,7 @@ import * as cosmetics from './account/cosmetics.js';
             ? ("Final storm " + lockLeft + "s" + (place > 0 ? ("  #" + place) : "") + "  ·  no respawns")
             : queued ? "Dropping in..."
             : ("Spectating" + (place > 0 ? ("  #" + place) : "") +
-               (global.died ? (waitMs > 0 ? ("  ·  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  ·  Rejoining") : ""));
+               (global.died ? (waitMs > 0 ? ("  ·  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  ·  Press Play to rejoin") : ""));
         fitText(label, x + barW / 2, y + 24, 14, Math.max(60, barW - 4 * bw - 60), color.guiwhite);
         // DOM buttons (Prev/Next/Play/Home) sit below this bar and take the
         // clicks, so no canvas buttons here.
@@ -11662,10 +11996,10 @@ import * as cosmetics from './account/cosmetics.js';
         let ratio = util.getScreenRatio();
 
         let spacing = 20;
-        // Desktop: 200 UI units, so the upgrade tiles, stat bars, kit box and
-        // minimap follow the UI Scale setting. Mobile is tuned around 200
-        // device pixels.
-        let alcoveSize = global.mobile ? 200 / ratio : 200;
+        // 200 UI units, so the upgrade tiles, stat bars, kit box and minimap
+        // follow the UI Scale setting. Touch screens use a smaller column:
+        // the sticks need the lower corners.
+        let alcoveSize = global.mobile ? 160 : 200;
         gui.__s.update();
         hudDrawn = {};
         let lb = leaderboard.get();
@@ -11675,8 +12009,9 @@ import * as cosmetics from './account/cosmetics.js';
         if (config.graphical.shakeProperties.UIShake.shakeStartTime !== -1) shake = applyScreenShake("gui", true);
         if (shake) ctx[2].translate(shake.dx, shake.dy);
         if (global.mobile) {
-            drawMobileJoysticks();
-            drawMobileButtons(spacing, alcoveSize);
+            touchK = global.screenWidth / Math.max(1, touch.viewW());
+            touch.zones = {}; touch.uiRects = {};
+            touch.frame(performance.now());
         }
         if (global.gamepadMode) drawCrosshair();
         if (!global.GUIStatus.renderGUI && global.gameStart) {
@@ -11694,6 +12029,7 @@ import * as cosmetics from './account/cosmetics.js';
             drawRoyaleBoard();
             drawMessages(spacing, alcoveSize);
             drawMilestones();
+            drawEventCallout();
             drawWarBanner();
             drawSpawnShieldHint();
             // the raid-end finale takes the whole screen: the winner's own HUD steps aside
@@ -11717,6 +12053,7 @@ import * as cosmetics from './account/cosmetics.js';
             // leader arrow + enemy pings are drawn in drawTopIndicators(), at
             // the end of the frame, so no panel covers them
         } else if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
+        if (global.mobile) drawTouchHud();
         if (global.showTree) {
             drawUpgradeTree(spacing, alcoveSize);
         }
@@ -11859,6 +12196,13 @@ import * as cosmetics from './account/cosmetics.js';
         signup.onclick = () => royaleDomAct("signup");
         dead.append(sp, homeD, signup);
         document.body.appendChild(dead);
+        // the death card's footer: big, green, counts the wait down first
+        const again = royaleDomBtn("royaleDomPlayAgain", "Play again");
+        again.classList.add("play");
+        again.style.cssText = "position:fixed;z-index:31;display:none;transform:translateX(-50%);";
+        again.innerHTML = '<span class="pa-label"></span><kbd class="pa-key"></kbd>';
+        again.onclick = () => { if (!again.disabled) { gameSound.uiClick(); royaleDomAct("play"); } };
+        document.body.appendChild(again);
         try { updateRoyaleDomButtons(); } catch { /* */ }
     }
     function updateRoyaleDomButtons() {
@@ -11867,15 +12211,34 @@ import * as cosmetics from './account/cosmetics.js';
         const dead = document.getElementById("royaleDeadDom");
         if (!spec || !dead) return;
         const inGame = !!(global.gameStart && !global.disconnected);
+        const again = document.getElementById("royaleDomPlayAgain");
         if (raidFinale.active()) {
             spec.style.display = "none";
             dead.style.display = "none";
+            if (again) again.style.display = "none";
             return;
         }
         const spectating = !!(inGame && global.royaleSpectating && !joinUp);
         const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating);
         spec.style.display = spectating ? "flex" : "none";
         dead.style.display = deadShow ? "flex" : "none";
+        if (again) {
+            const pc = global.deathPlayCss;
+            const show = deadShow && !!pc;
+            again.style.display = show ? "inline-flex" : "none";
+            if (show) {
+                const st = playAgainState();
+                const want = { left: pc.cx + "px", top: pc.top + "px", width: pc.w + "px", height: pc.h + "px" };
+                for (const k in want) if (again.style[k] !== want[k]) again.style[k] = want[k];
+                const lab = again.firstChild, key = again.lastChild;
+                if (lab.textContent !== st.label) lab.textContent = st.label;
+                // Enter opens the team chat on the duo server, so Space there
+                const keyTxt = !st.ready || global.mobile ? "" : global.gamepadMode ? "RT" : (global.royale && global.royale.duos) ? "Space" : "Enter";
+                if (key.textContent !== keyTxt) key.textContent = keyTxt;
+                key.style.display = keyTxt ? "" : "none";
+                if (again.disabled !== !st.ready) again.disabled = !st.ready;
+            }
+        }
         // the buttons sit right under the death card (gameDrawDeadRoyale)
         if (deadShow && global.deathPanelCss) {
             const left = global.deathPanelCss.cx + "px", top = global.deathPanelCss.top + "px";

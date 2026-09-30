@@ -128,7 +128,11 @@ function miningMult(body) {
 }
 // Gear is timed: s.gear[id] holds its expiry (true = permanent, tutorial).
 function gearActive(s, id) { const t = s && s.gear[id]; return !!t && (t === true || Date.now() < t); }
-function hasGear(body, id) { return gearActive(shopOf(body), id); }
+// bots have no shop state: a twist's free gear sits on the body instead
+function hasGear(body, id) {
+    if (gearActive(shopOf(body), id)) return true;
+    return !!(body && !body.socket && body._twistGear && body._twistGear.includes(id));
+}
 function magnetMult(body) { return hasGear(body, "magnet") ? 1.9 : 1; }
 function satchelCap(body) { return SATCHEL_BASE * (hasGear(body, "satchel") ? 1.5 : 1) * ((global.royaleMods && global.royaleMods.satchelMult) || 1); }
 function depositRateMult(body) { return hasGear(body, "express") ? 2 : 1; }
@@ -146,14 +150,22 @@ function keepsDrillOnRespawn(body) { const s = shopOf(body); return !!(s && s.dr
 function applyPassives(body) {
     if (!body) return;
     const s = shopOf(body);
-    body.bonusSpeedMult = gearActive(s, "boots") ? 1.25 : 1;
-    body.bonusHealthMult = gearActive(s, "plating") ? 1.25 : 1;
+    body.bonusSpeedMult = hasGear(body, "boots") ? 1.25 : 1;
+    body.bonusHealthMult = hasGear(body, "plating") ? 1.25 : 1;
     body.gemCap = satchelCap(body);
     try { body.refreshBodyAttributes(); } catch { /* */ }
-    if (s && s.arm) attachSidearm(body, s.arm);
+    const arm = armOf(body);
+    if (arm) attachSidearm(body, arm);
 }
 
 // ── sidearms ───────────────────────────────────────────────────────────
+// The sidearm this body should carry: the shop state's for a player, the
+// twist's for a bot (bots have no shop state).
+function armOf(body) {
+    const s = shopOf(body);
+    if (s) return s.arm || null;
+    return (body && body._twistArm) || null;
+}
 function sidearmDef(id) {
     const { combineStats } = require('../../lib/definitions/facilitators.js');
     const g = require('../../lib/definitions/gunvals.js');
@@ -238,25 +250,27 @@ function attachSidearm(body, id) {
     if (!body._sidearmHooked) {
         body._sidearmHooked = true;
         body.on('define', () => {
-            const s = shopOf(body);
-            if (!s || !s.arm) return;
+            if (!armOf(body)) return;
             if (body.sidearmGun && body.guns.get(body.sidearmGun.id) === body.sidearmGun) return;
             body.sidearmGun = null;
-            setImmediate(() => { try { if (!body.isDead?.()) attachSidearm(body, s.arm); } catch { /* */ } });
+            setImmediate(() => { try { const arm = armOf(body); if (arm && !body.isDead?.()) attachSidearm(body, arm); } catch { /* */ } });
         });
     }
     return true;
 }
 
-// Twist sidearm grant: no burn-out when permanent; the define hook re-mounts
-// it on respawn.
-function grantArm(socket, id, permanent = true) {
-    const body = socket && socket.player && socket.player.body;
+// Twist sidearm grant: no burn-out when permanent. Pass the body when you
+// have it: during a spawn socket.player is still the last life's player
+// (sockets.spawn assigns it after the join hooks run), so its body is the
+// dead one or nothing. The state is set either way, and applyPassives on
+// the next spawn mounts it.
+function grantArm(socket, id, permanent = true, body = null) {
     const s = stateOf(socket);
-    if (!body || !s || !sidearmDef(id)) return false;
+    if (!s || !sidearmDef(id)) return false;
     s.arm = id;
     s.armUntil = permanent ? 0 : Date.now() + ARM_BURN_MS;
-    attachSidearm(body, id);
+    const b = body || (socket.player && socket.player.body);
+    if (b && !b.isDead?.()) attachSidearm(b, id);
     return true;
 }
 
@@ -750,6 +764,6 @@ function tick(actors) {
 module.exports = {
     ITEMS, BY_ID, getShops, snapshot, catalog, stateOf, freshState, resetAll, talkState, dropKit,
     miningMult, hasGear, magnetMult, satchelCap, depositRateMult, stormDamageMult, spawnMoveShieldMs, WIND_SHIELD_MS, killBonus,
-    keepsDrillOnRespawn, applyPassives, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, onDeath, tick,
+    keepsDrillOnRespawn, applyPassives, armOf, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, onDeath, tick,
     PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE, launchBarrage, BARRAGE, STRUT_RADIUS,
 };

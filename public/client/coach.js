@@ -53,11 +53,11 @@ const CHECK = '<svg viewBox="0 0 20 20" aria-hidden="true">' +
 
 const TOUR = [
     { hud: "clock", name: "Raid clock", text: "Time left in the raid, and when the storm moves next.", side: "right" },
-    { hud: "standings", name: "Standings", text: "The top players this raid. Bank gems and win fights to climb.", side: "left" },
+    { hud: "standings", name: "Standings", text: "The top players this raid. Bank gems and win fights to climb.", side: "left", desk: true },
     { hud: "feed", name: "Kill feed", text: "Kills, bosses and ore blooms show up here.", side: "down" },
-    { hud: "minimap", name: "Minimap", text: "Vaults, shops and the storm.", key: ["KEY_TOGGLE_MAP", "M", "for the big map"], side: "left" },
+    { hud: "minimap", name: "Minimap", text: "Vaults, shops and the storm.", key: ["KEY_TOGGLE_MAP", "M", "for the big map"], touch: "Tap it for the big map, with the standings.", side: "left" },
     { hud: "wallet", name: "Carried / Banked", text: "Carried gems drop when you die. Banked gems are safe.", side: "right" },
-    { hud: "kit", name: "Kit", text: "Items you buy at shops land here.", side: "right" },
+    { hud: "kit", name: "Kit", text: "Items you buy at shops land here.", touch: "Items you buy at shops land here. Tap one to use it.", side: "left" },
 ];
 
 const now = () => performance.now();
@@ -317,7 +317,8 @@ function tutorialPlay() {
 function tourItem() {
     while (rec.tour < TOUR.length) {
         const it = TOUR[rec.tour];
-        if (hudRect(it.hud)) return it;
+        // touch screens have no standings panel (it lives on the map)
+        if (!(it.desk && global.mobile) && hudRect(it.hud)) return it;
         rec.tour++;
     }
     return null;
@@ -354,6 +355,7 @@ function sfxTick() {
 // ── the panel (DOM) ────────────────────────────────────────────────────
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 const kbd = (id, dflt) => "<kbd>" + esc(keyName(id, dflt)) + "</kbd>";
+const mapOpens = () => global.mobile ? "Tap the minimap to open it." : kbd("KEY_TOGGLE_MAP", "M") + " opens it.";
 
 const ui = {
     root: null, el: {}, key: "", barW: -1, barTxt: "",
@@ -472,8 +474,6 @@ function place(t) {
     const scale = clamp(k, 0.8, 2.2).toFixed(3);
     if (scale !== st.scale) { st.scale = scale; root.style.setProperty("--dwc-s", scale); st.sizeKey = ""; }
     if (global.hudTopPx !== st.wroteTop) st.baseTop = global.hudTopPx | 0;
-    const top = Math.max(48, st.baseTop + 6);
-    if (top !== st.top) { st.top = top; root.style.top = top + "px"; }
     // measuring forces a layout, so only when the content changed
     if (st.sizeKey !== ui.key || t - st.sizeAt > 1000) {
         st.sizeKey = ui.key;
@@ -481,6 +481,28 @@ function place(t) {
         st.size = { w: root.offsetWidth, h: root.offsetHeight };
     }
     const { w, h } = st.size;
+    // a short touch screen: under the clock it would sit on your tank, so it
+    // goes low, between the sticks, above the carried/banked bars
+    if (global.mobile && window.innerHeight < 560 && window.innerWidth > window.innerHeight) {
+        const top = Math.round(window.innerHeight - h - 52);
+        if (top !== st.top) { st.top = top; root.style.top = top + "px"; }
+        root.classList.add("low");
+        // the touch stats panel takes the left: centre on what is left of the screen
+        const pr = global.touchPanelRight || 0;
+        const left = pr > 0 ? Math.round(Math.max(pr + 8 + w / 2, (pr + window.innerWidth) / 2)) + "px" : "";
+        if (root.style.left !== left) root.style.left = left;
+        // and the tank picker covers the middle; the coach waits under it
+        const hide = global.touchTilesOpen ? "0" : "";
+        if (root.style.opacity !== hide) root.style.opacity = hide;
+        restoreTop();
+        global.coachRect = { x: SW() / 2 - w / 2 / k - 6, y: top / k - 6, w: w / k + 12, h: h / k + 12 };
+        return;
+    }
+    root.classList.remove("low");
+    if (root.style.left) root.style.left = "";
+    if (root.style.opacity) root.style.opacity = "";
+    const top = Math.max(48, st.baseTop + 6);
+    if (top !== st.top) { st.top = top; root.style.top = top + "px"; }
     st.wroteTop = st.baseTop + h + 12;
     global.hudTopPx = st.wroteTop;
     global.coachRect = { x: SW() / 2 - w / 2 / k - 6, y: top / k - 6, w: w / k + 12, h: h / k + 12 };
@@ -514,15 +536,15 @@ function content(t) {
                 next: "Play the tutorial", alt: "Maybe later" };
         case "points":
             return { ...base, title: "Spend a skill point",
-                text: global.mobile ? "Tap a stat to put a point in it." : "Click a stat bar, or press its number key." };
+                text: global.mobile ? "Tap Stats on the left, then a + to put a point in." : "Click a stat bar, or press its number key." };
         case "upgrade":
-            return { ...base, title: "Upgrade your tank", text: "Pick a new tank from the tiles, top left." };
+            return { ...base, title: "Upgrade your tank", text: global.mobile ? "Tap New tank on the left and pick one." : "Pick a new tank from the tiles, top left." };
         case "tour": {
             const it = tourItem();
             if (!it) return null;
             const frac = clamp((t - st.tourAt) / TOUR_MS, 0, 1);
-            let text = esc(it.text);
-            if (it.key) text += " " + kbd(it.key[0], it.key[1]) + " " + esc(it.key[2]) + ".";
+            let text = esc(global.mobile && it.touch ? it.touch : it.text);
+            if (it.key && !global.mobile) text += " " + kbd(it.key[0], it.key[1]) + " " + esc(it.key[2]) + ".";
             return { ...base, eyebrow: "HUD tour", title: it.name, text,
                 bar: { frac, label: "", timer: true }, next: "Next", skipTour: true };
         }
@@ -543,7 +565,7 @@ function content(t) {
             if (v.onPad && v.total > 0) text = "Depositing. Stay on the pad.";
             else if (v.onPad && (g.carried | 0) >= VAULT_MIN) text = "Hit <b>Deposit</b> to bank what you carry.";
             else if ((g.carried | 0) < VAULT_MIN) text = "Mine a few more gems first. You need " + VAULT_MIN + " to bank.";
-            else if (!tg) text = "Find a vault on the map. " + kbd("KEY_TOGGLE_MAP", "M") + " opens it.";
+            else if (!tg) text = "Find a vault on the map. " + mapOpens();
             else if (tg.on) text = "Drive onto the vault. Banked gems are safe, carried ones drop when you die.";
             return { ...base, title: "Bank your gems at a vault", text };
         }
@@ -555,7 +577,7 @@ function content(t) {
             let text = "Follow the <b>SHOP</b> arrow on the edge of your screen.";
             if (price && banked < price) text = "The cheapest item costs " + fmtNum(price) + " banked gems. Bank a bit more first.";
             else if (sh.onPad) text = "Pick an item, then hit <b>Buy</b>. You pay with banked gems.";
-            else if (!tg) text = "Find a shop on the map. " + kbd("KEY_TOGGLE_MAP", "M") + " opens it.";
+            else if (!tg) text = "Find a shop on the map. " + mapOpens();
             else if (tg.on) text = "Drive onto the shop pad.";
             return { ...base, title: "Buy something at a shop", text };
         }
@@ -891,10 +913,10 @@ export function drawIndicators() {
     const t = now();
     if (st.step === "points") {
         const b = pad(clickRect("stat", 11) || hudRect("stats"), 6);
-        if (b) { outline(c, b, t); tag(c, b, global.mobile ? "Tap a stat" : "Click a bar", "right", t); }
+        if (b) { outline(c, b, t); tag(c, b, global.mobile ? (clickRect("stat", 11) ? "Tap a +" : "Tap here") : "Click a bar", "right", t); }
     } else if (st.step === "upgrade") {
         const b = pad(clickRect("upgrade", (gui.upgrades || []).length) || hudRect("upgrades"), 8);
-        if (b) { outline(c, b, t); tag(c, b, "Pick a tank", "right", t); }
+        if (b) { outline(c, b, t); tag(c, b, global.mobile && !clickRect("upgrade", (gui.upgrades || []).length) ? "Tap here" : "Pick a tank", "right", t); }
     } else if (st.oreFar && !st.rocks.length && (st.step === "mine" || st.step === "bank") && window.dwHud) {
         const p = me(), f = st.oreFar;
         const e = window.dwHud.edgePoint((f.x - p.x) * st.ratio, (f.y - p.y) * st.ratio);

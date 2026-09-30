@@ -39,12 +39,18 @@ const util = (function() {
                 }).catch(error => reject("Failed to fetch! Error: " + error));
             });
         },
-        getRatio: () => Math.max(global.screenWidth, 16 * global.screenHeight / 9) / global.player.renderv,
+        // A phone held upright would see a thin slice of the 16:9 view; it zooms
+        // out until the height uses most of the view the server sends (1.125x
+        // the width in height, see sockets.js), a bit short of it so tanks
+        // don't pop in at the top and bottom edges.
+        getRatio: () => Math.max(global.screenWidth, 16 * global.screenHeight / 9 / (global.mobile && global.screenHeight > global.screenWidth ? 1.7 : 1)) / global.player.renderv,
         getScreenRatio: () => {
             try {
                 let scale;
                 if (global.autoScale) scale = global.screenSize;
                 else scale = global.UIscale;
+                // touch: the long side, so portrait and landscape share one size
+                if (global.mobile) return Math.max(global.screenWidth, global.screenHeight) / scale;
                 return Math.max(global.screenWidth, 16 * global.screenHeight / 9) / scale;
             } catch (e) {
                 document.getElementById("optUiScale").value = global.mobile ? "mobile" : "small",

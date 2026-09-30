@@ -1301,6 +1301,7 @@ function spawnRaidBot() {
     bot.weakDrillUntil = 0;
     try { gems.initSatchel(bot); } catch { /* */ }
     try { bot.refreshBodyAttributes(); } catch { /* */ }
+    try { grantTwist(bot); } catch { /* */ }
     ensureStat(bot);
 }
 
@@ -1380,6 +1381,7 @@ function spawnTeamBot(team, near) {
     bot.weakDrillUntil = 0;
     try { gems.initSatchel(bot); } catch { /* */ }
     try { bot.refreshBodyAttributes(); } catch { /* */ }
+    try { grantTwist(bot); } catch { /* */ }
     ensureStat(bot);
     try { near.sendMessage(bot.name + " dropped in beside you."); } catch { /* */ }
     return bot;
@@ -1979,7 +1981,11 @@ function baseReserved(key) {
 }
 
 function markHumanDeath(socket) {
-    if (socket) socket.lastRaidDeathAt = now();
+    if (!socket) return;
+    socket.lastRaidDeathAt = now();
+    // nothing drops you back in any more (the card waits for Play again), so
+    // the idle kick watches the death card too, with the full window from here
+    activity.resetClock(socket, now());
 }
 
 function disconnectCleanup(socket, body) {
@@ -2037,14 +2043,19 @@ function disconnectCleanup(socket, body) {
 // player sent to the menu. The life ends with no rank gain, the raid pays
 // them no placement or streak, and nothing is kept for a resume. Before
 // that, after activity.IDLE_PROTECT_MS without input, the spawn shield drops
-// (and bots stop sparing them, controllers.js).
+// (and bots stop sparing them, controllers.js). The dead count too: someone
+// left on the death card (or spectating) with no input for the same time
+// goes to the menu the same way (tickDeadIdle).
 const IDLE_KICK_TEXT = "Removed for being inactive for 5 minutes";
 function tickIdle(t) {
     if (Config.tutorial) return;
     for (const socket of connectedClients()) {
         if (socket._idleKicked) continue;
         const body = socket.player && socket.player.body;
-        if (!body || body.socket !== socket || !body.isPlayer || body.isDead?.() || body.royaleAlive === false) continue;
+        if (!body || body.socket !== socket || !body.isPlayer || body.isDead?.() || body.royaleAlive === false) {
+            tickDeadIdle(socket, t);
+            continue;
+        }
         // held still by the raid (the end-of-raid freeze): not their idling
         if (body.royaleFrozen || body.royaleLobby) { activity.resetClock(socket, t); continue; }
         if (activity.idleMs(socket, t) >= activity.IDLE_KICK_MS) { idleKick(socket, body); continue; }
@@ -2054,6 +2065,17 @@ function tickIdle(t) {
             try { body.sendMessage("You've been idle for a minute, so your shield is off."); } catch { /* */ }
         }
     }
+}
+
+// Dead and not yet asking to play again. The clock starts at the death
+// (markHumanDeath); a mouse move, a key, a spectate click or a chat line
+// resets it. Time the raid would not let them back in anyway (final storm,
+// raid end) or already queued for a spawn does not count.
+function tickDeadIdle(socket, t) {
+    const st = socket.status;
+    if (!st || !st.hasSpawned || !st.deceased) return;
+    if (socket._spawnLoop || !canSpawn()) { activity.resetClock(socket, t); return; }
+    if (activity.idleMs(socket, t) >= activity.IDLE_KICK_MS) idleKick(socket, socket.player && socket.player.body);
 }
 
 function idleKick(socket, body) {
@@ -2364,6 +2386,7 @@ function startRaid(first) {
             moveTo(body, hole.x, hole.y);
             respecForNewRaid(body);
             freshRaidBody(body);
+            if (!body.socket) { try { revokeBotTwist(body); } catch { /* */ } }
             giveStarterKit(body, false);
             try { shop.applyPassives(body); } catch { /* */ }
             const rs = ensureStat(body);
@@ -2538,14 +2561,17 @@ function applyNewTwist(forceId) {
             if (st._twistArm) { if (body) shop.detachSidearm(body); st.arm = null; st.armUntil = 0; st._twistArm = null; }
             if (st._twistGear) { for (const gid of st._twistGear) if (st.gear[gid] === true) delete st.gear[gid]; st._twistGear = null; }
             if (body && !body.isDead?.()) shop.applyPassives(body);
+            shop.talkState(client);
         } catch { /* */ }
     }
+    for (const b of liveBots()) { try { revokeBotTwist(b); } catch { /* */ } }
     const mod = raidMods.roll(forceId);
     for (const b of combatants()) { try { b.refreshBodyAttributes(); } catch { /* */ } }
     for (const client of connectedClients()) {
         const body = client.player && client.player.body;
         if (body && !body.isDead?.()) { try { grantTwist(body); } catch { /* */ } }
     }
+    for (const b of liveBots()) { try { grantTwist(b); } catch { /* */ } }
     if ((mod.extraSkill | 0) > 0) {
         for (const b of combatants()) {
             if (b.socket || b._modSkillGiven) continue;
@@ -2555,20 +2581,59 @@ function applyNewTwist(forceId) {
     }
     setToastAndSay("New override: " + mod.name + ". " + (mod.desc || ""), 7000);
 }
+// What the override hands out, on every spawn (giveStarterKit) and to
+// everyone alive when an override starts mid-raid. Always to this body, not
+// socket.player.body: during a spawn that is still the last life's.
 function grantTwist(body) {
     const mod = raidMods.get() || {};
-    if (!body || !body.socket) return;
+    if (!body || body.isDead?.()) return;
+    if (!body.socket) { if (body.isBot) grantBotTwist(body, mod); return; }
     const st = shop.stateOf(body.socket);
+    let changed = false;
     // never over a sidearm the player paid for (buy() clears _twistArm)
-    if (mod.freeArm && (!st.arm || st._twistArm)) { shop.grantArm(body.socket, mod.freeArm, true); st._twistArm = mod.freeArm; }
-    if (mod.freeGear) { for (const gid of mod.freeGear) st.gear[gid] = true; st._twistGear = mod.freeGear.slice(); shop.applyPassives(body); }
-    if (mod.kitStart) for (const [kid, n] of Object.entries(mod.kitStart)) shop.grantKit(body.socket, kid, n);
+    if (mod.freeArm && (!st.arm || st._twistArm)) {
+        shop.grantArm(body.socket, mod.freeArm, true, body);
+        st._twistArm = mod.freeArm;
+        changed = true;
+    }
+    if (mod.freeGear) {
+        for (const gid of mod.freeGear) st.gear[gid] = true;
+        st._twistGear = mod.freeGear.slice();
+        shop.applyPassives(body);
+        changed = true;
+    }
+    // topped up to the count each life, quietly when it is already there
+    if (mod.kitStart) {
+        for (const [kid, n] of Object.entries(mod.kitStart)) {
+            const have = (st.kit && st.kit[kid]) | 0;
+            if (have < n) shop.grantKit(body.socket, kid, n - have);
+        }
+    }
+    if (changed) shop.talkState(body.socket);
     // granted here as well as in freshRaidBody, so a twist that starts
     // mid-raid takes effect at once
     if ((mod.extraSkill | 0) > 0 && !body._modSkillGiven) {
         body._modSkillGiven = true;
         try { body.skill.points += mod.extraSkill | 0; } catch { /* */ }
     }
+}
+
+// Bots have no shop state: the twist's sidearm and gear ride on the body
+// (shop.armOf / shop.hasGear read them) and the sidearm fires with the
+// bot's main trigger (gun.js).
+function grantBotTwist(bot, mod) {
+    if (mod.freeArm && !bot._twistArm) {
+        bot._twistArm = mod.freeArm;
+        shop.attachSidearm(bot, mod.freeArm);
+    }
+    if (mod.freeGear) {
+        bot._twistGear = mod.freeGear.slice();
+        shop.applyPassives(bot);
+    }
+}
+function revokeBotTwist(bot) {
+    if (bot._twistArm) { bot._twistArm = null; shop.detachSidearm(bot); }
+    if (bot._twistGear) { bot._twistGear = null; shop.applyPassives(bot); }
 }
 
 // ── growth ───────────────────────────────────────────────────────────────
@@ -2729,8 +2794,8 @@ module.exports = {
     FIRST_MINUTES, isNewPlayer, RESPAWN_MS, freshRaidBody, SPAWN_GRACE_MS, RAID_CYCLES, RAID_MS, RESUME_MS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
-    // tests: one pass of the idle watch at time t
-    _tickIdle: (t) => tickIdle(t),
+    // tests: one pass of the idle watch at time t; a twist's hand-outs
+    _tickIdle: (t) => tickIdle(t), _grantTwist: (b) => grantTwist(b),
     // DBG spawnaudit [n] [trap|reset]: the spawn audit so far, after `n` extra
     // safeSpawnSpot picks (bot/human alternating); 'trap' first plants 40
     // gem-ringed pockets and 40 about-to-close mined cells in the zone

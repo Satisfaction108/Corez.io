@@ -6,8 +6,9 @@
 //   loop     the real game loop in a child process (the chestKill pattern):
 //            an autofire tank left alone keeps shooting and drifting, loses
 //            its shield after a minute and is removed at exactly 5 minutes
-//            (no death, no kill credit, no resume); a plain drop is resumable
-//            for 45 s and gone after
+//            (no death, no kill credit, no resume); the death card is watched
+//            the same way (nothing drops you back in without Play again);
+//            a plain drop is resumable for 45 s and gone after
 //   hooks    rankHooks on a throwaway database: idle time earns no survival,
 //            an idle kick settles with zero gain and no streak, the raid pays
 //            no placement without real activity (or after an idle kick)
@@ -223,6 +224,45 @@ function loopPart() {
         assert.equal(sock._idleKicked, undefined, 'the clock restarted when the freeze ended');
         tank.kill();
         loop(2);
+        skew = 0;
+    });
+
+    ltest('death card: nobody drops you back in, so 5 min there without input is the same kick', () => {
+        const sock = mkSocket();
+        const tank = spawnTank(sock);
+        sock.status.hasSpawned = true;
+        activity.noteCommand(sock, 120, 0, 0);
+        // idle for 4 minutes alive, then killed: the card gets the full window
+        const base = sock.lastInputAt;
+        const at = (ms) => { skew = base + ms - realNow(); return Date.now(); };
+        at(4 * MIN);
+        tank.deathCause = 'storm';
+        royale.onCombatantDead(tank);
+        royale.markHumanDeath(sock);
+        tank.kill();
+        loop(2);
+        sock.status.deceased = true;
+        sock.player.body = null;
+        royale._tickIdle(at(5 * MIN + 10));
+        assert.equal(sock._idleKicked, undefined, 'a minute on the card is fine');
+        // a mouse move on the card is input
+        activity.noteCommand(sock, 0, 150, 0, at(6 * MIN));
+        royale._tickIdle(at(10 * MIN));
+        assert.equal(sock._idleKicked, undefined, 'moved the mouse 4 minutes ago');
+        // queued for a spawn (Play again pressed, the raid holding it): not idle
+        sock._spawnLoop = 1;
+        royale._tickIdle(at(20 * MIN));
+        assert.equal(sock._idleKicked, undefined, 'asked to play: waiting is not idling');
+        sock._spawnLoop = null;
+        royale._tickIdle(Date.now());
+        royale._tickIdle(at(20 * MIN + 5 * MIN - 1000));
+        assert.equal(sock._idleKicked, undefined);
+        royale._tickIdle(at(25 * MIN));
+        assert.equal(sock._idleKicked, true, 'five idle minutes on the card: out');
+        const ik = sock.packets.find(p => p[0] === 'IK');
+        assert.equal(ik && ik[1], 'Removed for being inactive for 5 minutes');
+        assert.deepEqual(sock.closedWith, [4001, 'idle']);
+        assert.equal(royale.claimResume(mkSocket({ resumeToken: sock.resumeToken }), sock.resumeToken), false, 'nothing held for a resume');
         skew = 0;
     });
 

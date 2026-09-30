@@ -773,7 +773,12 @@ function drawPanels(c, rt, now, W, H) {
         c.restore();
     }
     // Share sits on the top right corner of the raid card, once it is in
-    if (rt > REWARDS_AT + 350) raidShare.place(lay.rx + PW * lay.s, lay.ry - 10, shareInfo);
+    // (a short screen has no room above the card: the bottom right corner,
+    // beside the next-raid bar)
+    if (rt > REWARDS_AT + 350) {
+        if (lay.side) raidShare.place(lay.rx + PW * lay.s, lay.ry - 10, shareInfo);
+        else raidShare.place(W - A.HUD.edge * 0.8, H - A.HUD.edge * 0.6, shareInfo);
+    }
 }
 function shareInfo() {
     return {

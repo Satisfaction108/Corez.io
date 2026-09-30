@@ -55,35 +55,26 @@
     fsDoc.addEventListener('fullscreenchange', syncFullscreenButtons);
     fsDoc.addEventListener('webkitfullscreenchange', syncFullscreenButtons);
 
-    /* ── Mobile / tablet gate ──────────────────────────────────────────
-       The game needs keyboard + mouse, so touch-primary devices are blocked.
-       "(hover: hover) and (pointer: fine)" is true on laptops (even touchscreen
-       ones) and false on phones and bare iPads. iPadOS claims to be a Mac in
-       its UA, so maxTouchPoints is used instead. The override is remembered. */
-    var GATE_KEY = 'digwarsDesktopOverride';
-
+    /* ── Phones and tablets ─────────────────────────────────────────────
+       Touch play has twin sticks, so touch-primary devices get a one-line
+       hint above Play (held upright it also says to turn sideways).
+       "(hover: hover) and (pointer: fine)" is true on laptops (even
+       touchscreen ones); iPadOS claims to be a Mac, so maxTouchPoints
+       catches it. */
     function isTouchOnlyDevice() {
-        if (localStorage.getItem(GATE_KEY) === '1') return false;
         var precisePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
         var touchCapable = navigator.maxTouchPoints > 1 ||
             /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent);
         return touchCapable && !precisePointer;
     }
 
-    function initMobileGate() {
-        var gate = document.getElementById('mobileGate');
-        if (!gate || !isTouchOnlyDevice()) return;
-
-        gate.hidden = false;
-        var override = document.getElementById('mobileGateOverride');
-        if (override) override.onclick = function () {
-            localStorage.setItem(GATE_KEY, '1');
-            gate.hidden = true;
-        };
-
-        // Attaching a mouse or trackpad later flips the media query.
+    function initMobileNote() {
+        var note = document.getElementById('mobileNote');
+        if (!note || !isTouchOnlyDevice()) return;
+        note.hidden = false;
+        // plugging in a mouse or trackpad flips the media query
         var mq = window.matchMedia('(hover: hover) and (pointer: fine)');
-        var onChange = function (e) { if (e.matches) gate.hidden = true; };
+        var onChange = function (e) { note.hidden = e.matches; };
         if (mq.addEventListener) mq.addEventListener('change', onChange);
         else if (mq.addListener) mq.addListener(onChange); // older Safari
     }
@@ -214,7 +205,7 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-        initMobileGate();
+        initMobileNote();
         initTutorialEntry();
         playAfterTutorial();
         // #dw no longer routes anywhere (Dig Wars is parked); drop a stale hash.

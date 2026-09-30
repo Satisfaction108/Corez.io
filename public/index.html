@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
     <meta name="description" content="Corez.io: Mine, loot, fight, purchase upgrades, and climb the leaderboard in a free browser-based battle royale!">
     <meta name="robots" content="index, follow">
     <script>
@@ -428,16 +428,6 @@
     </div>
     <div id="homeChangelogOverlay"></div>
 
-    <!-- shown only on touch-primary devices (phones / tablets without a mouse) -->
-    <div id="mobileGate" hidden>
-        <div class="mg-card">
-            <svg class="mg-icon" aria-hidden="true"><use href="#i-friends"/></svg>
-            <h2>Grab a computer</h2>
-            <p>You need a keyboard and mouse for this one. Phone version is on the list.</p>
-            <button type="button" id="mobileGateOverride">I have a mouse, let me in</button>
-        </div>
-    </div>
-
     <div class="mainWrapper">
         <div id="startMenuWrapper">
             <div id="menuTabs" class="menuTabs" style="text-align: right;"></div>
@@ -491,8 +481,13 @@
 
                             <input type="text" class="conceal" tabindex="4" placeholder="Token (optional)" id="playerKeyInput" maxlength="64" />
 
+                            <!-- touch screens only (home.js initMobileNote); CSS picks the line for the orientation -->
+                            <p id="mobileNote" class="mobile-note" hidden><span class="mn-tall">Twin-stick touch controls. Turn sideways to play.</span><span class="mn-wide">Twin-stick controls: one thumb moves, one aims.</span></p>
+
                             <!-- play button, full width below both fields -->
                             <div class="startButtonHolder">
+                                <!-- the next Raid Night (client/account/eventCard.js, schedule in shared/events.js) -->
+                                <div id="eventCard" class="ev-card" hidden></div>
                                 <button id="startButton" tabindex="3"><b>Play</b></button>
                                 <button id="tutorialButton" tabindex="5" title="Learn the basics on your own map">
                                     <b>Tutorial</b>
@@ -594,6 +589,7 @@
     <!-- ranked rules shared with the server (window.DWRanks) -->
     <script src="/shared/ranks.js"></script>
     <script src="/shared/cosmetics.js"></script>
+    <script src="/shared/events.js"></script>
     <script src="//code.jquery.com/jquery-2.2.0.min.js"></script>
     <script type="module" src="./client/app.js"></script>
     <script type="module" src="./client/config.js"></script>

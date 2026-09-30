@@ -56,6 +56,8 @@ const HOT = new Set([
     "client/raidFinale.js",
     "client/stormFx.js",
     "client/raidShare.js",
+    "client/touch.js",
+    "client/touchInput.js",
     "client/account/cosmetics.js",
     "client/account/dustHud.js",
     "client/account/gameToasts.js",

@@ -226,3 +226,8 @@
 @keyframes dwcBobL { from { margin-right: 0; } to { margin-right: 4px; } }
 @keyframes dwcBobD { from { margin-top: 0; } to { margin-top: 4px; } }
 body:not(.in-game) #dwCoach, body:not(.in-game) #dwcSpot { display: none; }
+
+/* touch landscape: parked low between the sticks (coach.js place). Only its
+   buttons take touches, so a thumb landing on it still starts a stick. */
+#dwCoach.low { pointer-events: none; }
+#dwCoach.low button, #dwCoach.low a { pointer-events: auto; }

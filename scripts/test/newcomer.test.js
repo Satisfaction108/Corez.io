@@ -3,7 +3,9 @@
 //   shield     a raid spawn is shielded for 5 s; the soft window after it is
 //              2 min for a new player and 25 s for anyone else
 //   respawn    every death waits 3 s, new player or not, and the spawn loop
-//              refuses an early drop; the F packet carries the wait;
+//              refuses an early drop; the F packet carries the wait; then
+//              the card waits for Play again (only the raid end queues the
+//              dead itself; playAgain.test.js runs it against a server);
 //              15 minutes played ends "new" however few the lives
 //   softBots   bots skip a soft player unless they come close or shoot,
 //              never start a fight with one, and cap hunters per player
@@ -153,6 +155,28 @@ test('respawn: the spawn loop refuses a drop before the wait is up', () => {
     // and a client can't skip the card: respawn() waits out raidRespawnAt
     const cv = fs.readFileSync(path.join(REPO, 'public', 'client', 'canvas.js'), 'utf8');
     assert.ok(/performance\.now\(\) < global\.raidRespawnAt\) return;/.test(cv));
+});
+
+test('respawn: the death card waits for Play again; only the raid end queues you itself', () => {
+    const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
+    const card = app.slice(app.indexOf('const gameDrawDeadRoyale = () => {'), app.indexOf('function playAgainState()'));
+    assert.ok(card.length > 1000, 'found the death card');
+    assert.ok(!/\.respawn\(\)/.test(card), 'the death card never calls respawn() itself');
+    assert.ok(/label: "Play again in " \+ Math\.ceil\(waitMs \/ 1000\) \+ "\.\.\."/.test(app), 'counts the wait down on the button');
+    assert.ok(/return \{ ready: true, label: "Play again" \}/.test(app));
+    assert.ok(/royaleDomBtn\("royaleDomPlayAgain", "Play again"\)/.test(app));
+    // Space and Enter press it; the server's spawn loop only starts on 's'
+    const cv = fs.readFileSync(path.join(REPO, 'public', 'client', 'canvas.js'), 'utf8');
+    assert.ok(/kc === 32 && global\.died[\s\S]{0,120}this\.respawn\(\)/.test(cv));
+    const src = fs.readFileSync(path.join(SERVER, 'game', 'network', 'sockets.js'), 'utf8');
+    assert.equal((src.match(/socket\._spawnLoop = setInterval/g) || []).length, 1);
+    // the raid end is not a normal death: the finale still queues the dead
+    const fin = fs.readFileSync(path.join(REPO, 'public', 'client', 'raidFinale.js'), 'utf8');
+    assert.ok(/S\.respawnAsked = true;\s+try \{ global\.canvas\.respawn\(\); \}/.test(fin));
+    // a pending update reloads on the card after the wait instead of holding a drop
+    const ver = fs.readFileSync(path.join(REPO, 'public', 'client', 'version.js'), 'utf8');
+    assert.ok(/performance\.now\(\) < global\.raidRespawnAt\) return "hold";\s+return "later";/.test(ver));
+    assert.ok(/if \(global\.died && global\.updateHoldsRespawn\) return;/.test(cv), 'no drop the reload would cut short');
 });
 
 test('secondWind: the shield holds through movement for 10 s, never through shooting', () => {

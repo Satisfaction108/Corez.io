@@ -95,12 +95,6 @@ function addStep(kind, before, after, delta, flags) {
     S.steps.push(step);
 }
 
-// The death screen's auto-respawn waits while a rank-up on this card is
-// still to play (the app caps the wait).
-export function holdsRespawn() {
-    return S.steps.some((st) => st.cer && !st.cerDone);
-}
-
 export function setResult(rk) {
     if (!rk || typeof rk !== 'object') return;
     if (rk.guest) { S.guest = rk; return; }

@@ -295,6 +295,11 @@ class gameServer {
         setInterval(() => {
             try { this.parentPort.postMessage([true, this.reportedPlayerCount()]); } catch (e) { /* parent gone */ }
         }, 5000);
+        // Sockets only, every second: the main thread picks which solo raid a
+        // new player joins from this (server.js pickSoloRaid).
+        setInterval(() => {
+            try { this.parentPort.postMessage(["clients", this.socketManager.clients.length]); } catch (e) { /* parent gone */ }
+        }, 1000);
     }
 
     start(softStart = false) {
