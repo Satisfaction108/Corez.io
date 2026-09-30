@@ -49,6 +49,8 @@ class Canvas {
                 if (pre && duoChat()) { team = pre[1].toLowerCase() === 't'; text = text.slice(pre[0].length); }
                 // dead: only your partner can hear you
                 if (duoChat() && global.died) team = true;
+                // a save code goes to the server, never to a partner's chat
+                if (/^\s*\$restore(\s|$)/i.test(text)) team = false;
                 if (text.trim()) {
                     if (team) this.socket.talk('TC', text);
                     else this.socket.talk('M', text, global.chatMode === 'team' ? 1 : 0);
@@ -427,6 +429,10 @@ class Canvas {
                     break;
                 case global.KEY_DEBUG:
                     global.showDebug = !global.showDebug;
+                    break;
+                case global.KEY_SAVE:
+                    // Save & leave: stay still 20 s for a code (saveCode.js)
+                    if (window.dwSave) window.dwSave.toggle();
                     break;
                 case global.KEY_CLASS_TREE:
                     this.tankTreeProps.enabled = !this.tankTreeProps.enabled;

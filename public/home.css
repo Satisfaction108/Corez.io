@@ -333,6 +333,12 @@ body {
 }
 #homeSettingsClose:active, #homeChangelogClose:active, #contributorsPanel .cl-header button:active { transform: translateY(3px); box-shadow: inset 0 -2px 0 var(--danger-dk, #9c2a21), 0 0 0 transparent; }
 
+/* Save & leave, in a raid only (saveCode.js) */
+.sp-save { display: flex; align-items: center; gap: 12px; padding: 2px 16px 12px 18px; flex-shrink: 0; }
+.sp-save .dw-btn { flex-shrink: 0; gap: 8px; }
+.sp-save kbd { font: 700 11px/1 var(--ui); padding: 4px 6px 3px; border-radius: 5px; background: rgba(0,0,0,.22); color: inherit; }
+.sp-save-note { font: 500 12px/1.35 var(--ui); color: var(--text2); }
+.sp-save-note b { color: var(--heading); }
 .sp-tabs { display: flex; padding: 0 12px; gap: 4px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .sp-tab {
     position: relative;
@@ -4585,3 +4591,54 @@ body.mobile #dwWelcome { padding: calc(16px + var(--sa-t)) calc(12px + var(--sa-
     body.mobile .hub-body { padding-top: 12px; }
     body.mobile .wl-legal { margin-top: 10px; }
 }
+
+/* ── Save & leave (saveCode.js) ─────────────────────────────────────────
+   The countdown sits top centre over the canvas, in the in-game palette;
+   the code modal is the menu's own modal. */
+#dwSaveBar {
+    position: fixed;
+    top: 64px;
+    left: 50%;
+    z-index: 32;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 18px 8px 10px;
+    border: 1px solid #120e16;
+    border-radius: 14px;
+    background: #2b2533;
+    box-shadow: inset 0 -4px 0 #1e1924, 0 3px 8px rgba(0,0,0,.45);
+    color: #fff3d9;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -8px);
+    transition: opacity .15s ease-out, transform .15s ease-out;
+}
+#dwSaveBar.show { opacity: 1; transform: translate(-50%, 0); }
+#dwSaveBar .sv-ring { width: 44px; height: 44px; flex-shrink: 0; transform: rotate(-90deg); }
+#dwSaveBar .sv-ring circle { fill: none; stroke-width: 4.5; }
+#dwSaveBar .sv-ring-bg { stroke: #1e1924; }
+#dwSaveBar .sv-ring-fg { stroke: #4fcf5c; stroke-linecap: round; transition: stroke-dashoffset .1s linear; }
+#dwSaveBar .sv-ring-n { transform: rotate(90deg); transform-origin: 20px 20px; fill: #fff3d9; font: 400 15px 'Lilita One', Rubik, sans-serif; }
+#dwSaveBar .sv-txt { display: flex; flex-direction: column; gap: 3px; }
+#dwSaveBar .sv-txt b { font: 400 19px/1 'Lilita One', Rubik, sans-serif; letter-spacing: .02em; }
+#dwSaveBar .sv-sub { font: 500 12px/1.2 Rubik, Ubuntu, sans-serif; color: #a597b0; }
+body.mobile #dwSaveBar { top: calc(max(8px, env(safe-area-inset-top)) + 56px); }
+.sv-modal { text-align: center; }
+.sv-code {
+    margin: 4px 0 12px;
+    padding: 14px 8px;
+    background: var(--input-bg);
+    border: 3px dashed var(--ink);
+    border-radius: 12px;
+    color: var(--heading);
+    font: 700 17px/1.35 'Ubuntu Mono', monospace;
+    letter-spacing: .02em;
+    overflow-wrap: anywhere;
+    -webkit-user-select: all;
+    user-select: all;
+}
+.sv-how { margin: 0 0 6px; font: 500 14px/1.4 var(--ui); color: var(--text); }
+.sv-how b { font-family: 'Ubuntu Mono', monospace; color: var(--heading); word-break: break-all; }
+.sv-note { margin: 0 0 14px; font: 500 12px/1.4 var(--ui); color: var(--text2); text-wrap: balance; }
+.sv-modal .dw-modal-actions { justify-content: center; }

@@ -765,5 +765,5 @@ module.exports = {
     ITEMS, BY_ID, getShops, snapshot, catalog, stateOf, freshState, resetAll, talkState, dropKit,
     miningMult, hasGear, magnetMult, satchelCap, depositRateMult, stormDamageMult, spawnMoveShieldMs, WIND_SHIELD_MS, killBonus,
     keepsDrillOnRespawn, applyPassives, armOf, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, onDeath, tick,
-    PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE, launchBarrage, BARRAGE, STRUT_RADIUS,
+    PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE, launchBarrage, BARRAGE, STRUT_RADIUS, gearActive, GEAR_MAX,
 };

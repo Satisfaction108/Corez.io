@@ -453,6 +453,57 @@ CREATE TABLE feedback (
 CREATE INDEX feedback_at ON feedback(at);
 `;
 
+// v9: save codes and the persistent bank.
+//
+// saves: one row per "Save & leave" (saves.js). Only a hash of the code is
+// kept. data is the saved tank as JSON (class, skills, growth, satchel, kit,
+// gear, sidearm, raid points). A code works once (used_at) and runs out at
+// expires_at. used_ip holds a salted hash of the restorer's IP for the
+// one-restore-per-10-minutes rule and is cleared after a day.
+//
+// bank_gems: banked gems that outlast a raid (banks.js), on the account for
+// players with one and on the guest row (keyed by the browser's guest id)
+// for everyone else. While someone plays, their bank sits in a lease row
+// (taken out of bank_gems in one transaction), so two tabs can never both
+// spend it; held is the last checkpoint, written back if a crash leaves the
+// lease behind.
+const V9 = `
+CREATE TABLE saves (
+    id            INTEGER PRIMARY KEY,
+    code_hash     TEXT    NOT NULL UNIQUE,
+    mode          TEXT    NOT NULL CHECK (mode IN ('solo', 'duo')),
+    user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    guest_id      TEXT    CHECK (guest_id IS NULL OR length(guest_id) = 32),
+    data          TEXT    NOT NULL,
+    score         INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL,
+    expires_at    INTEGER NOT NULL,
+    used_at       INTEGER,
+    used_user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    used_guest_id TEXT,
+    used_ip       TEXT
+) STRICT;
+CREATE INDEX saves_expires   ON saves(expires_at);
+CREATE INDEX saves_used_user ON saves(used_user_id, used_at) WHERE used_user_id IS NOT NULL;
+CREATE INDEX saves_used_gst  ON saves(used_guest_id, used_at) WHERE used_guest_id IS NOT NULL;
+CREATE INDEX saves_used_ip   ON saves(used_ip, used_at) WHERE used_ip IS NOT NULL;
+
+ALTER TABLE users ADD COLUMN bank_gems INTEGER NOT NULL DEFAULT 0 CHECK (bank_gems >= 0);
+ALTER TABLE guests ADD COLUMN bank_gems INTEGER NOT NULL DEFAULT 0 CHECK (bank_gems >= 0);
+
+CREATE TABLE bank_leases (
+    lease_id      TEXT    NOT NULL PRIMARY KEY,
+    owner         TEXT    NOT NULL CHECK (substr(owner, 1, 2) IN ('a:', 'g:')),
+    taken         INTEGER NOT NULL DEFAULT 0 CHECK (taken >= 0),
+    held          INTEGER NOT NULL DEFAULT 0 CHECK (held >= 0),
+    at            INTEGER NOT NULL,
+    recovered     INTEGER,
+    recovered_at  INTEGER
+) STRICT;
+CREATE INDEX bank_leases_owner ON bank_leases(owner);
+CREATE INDEX bank_leases_at    ON bank_leases(at);
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
@@ -462,6 +513,7 @@ const MIGRATIONS = [
     { version: 6, up(db) { db.exec(V6); } },
     { version: 7, up(db) { db.exec(V7); } },
     { version: 8, up(db) { db.exec(V8); } },
+    { version: 9, up(db) { db.exec(V9); } },
 ];
 
 function latestVersion() {

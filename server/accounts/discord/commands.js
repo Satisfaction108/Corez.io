@@ -104,7 +104,7 @@ const ADMIN_COMMANDS = [
     },
     { name: 'stats', description: 'Totals: accounts, guests, activity, gemdust, purchases' },
     {
-        name: 'dust', description: 'Give banked gems to a player in a raid right now (not gemdust)', options: [
+        name: 'dust', description: 'Give banked gems (and as much growth) to a player in a raid right now (not gemdust)', options: [
             { type: T.STRING, name: 'player', description: 'Account username (or a guest name as shown in the raid)', required: true, max_length: 64 },
             { type: T.INTEGER, name: 'amount', description: 'Gems, 1 to 1,000,000', required: true, min_value: 1, max_value: MAX_RAID_GEMS },
             reasonOpt(false),
@@ -620,9 +620,10 @@ async function raidGems(i, caller) {
         const why = g ? g.reason || 'failed' : 'no_answer';
         return refuse(why === 'gone' ? notIn.replace('right now', 'any more') : "The raid server didn't answer. Try again.", why);
     }
-    audit(caller, row && row.id, 'admin_raid_gems', { ...detail, delivered: true, mode, name: g.name, bankedBefore: g.before, bankedAfter: g.after });
+    audit(caller, row && row.id, 'admin_raid_gems', { ...detail, delivered: true, mode, name: g.name, bankedBefore: g.before, bankedAfter: g.after, grew: !!g.grew });
     const n = v => (v | 0).toLocaleString('en-US');
-    return reply(`Sent ${n(amount)} gems to **${md(g.name || who)}** (${mode} raid${row ? '' : ', guest'}). Banked ${n(g.before)} → ${n(g.after)}.`, { ephemeral: true });
+    const grew = g.grew ? ` They grow as if they'd scored ${n(amount)} more points (growth score now ${n(g.growth && g.growth.score)}); board score unchanged.` : '';
+    return reply(`Sent ${n(amount)} gems to **${md(g.name || who)}** (${mode} raid${row ? '' : ', guest'}). Banked ${n(g.before)} → ${n(g.after)}.${grew}`, { ephemeral: true });
 }
 
 function shopRotate(i, caller) {

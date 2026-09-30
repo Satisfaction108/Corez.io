@@ -372,16 +372,19 @@ test('migration: v7 -> v8 keeps every row, writes a backup, adds feedback', () =
     for (const t of tables) before[t] = db.all(`SELECT * FROM "${t}"`);
     assert.equal(db.get("SELECT 1 AS x FROM sqlite_master WHERE name = 'feedback'"), null);
     const res = migrations.apply(db, { backupDir: path.join(ROOT, 'mig', 'backups') });
-    assert.deepEqual(res.applied, [8]);
-    assert.equal(migrations.latestVersion(), 8);
+    // v8 here, and whatever came after it
+    assert.deepEqual(res.applied.slice(0, 1), [8]);
+    assert.equal(res.applied[res.applied.length - 1], migrations.latestVersion());
     assert.ok(res.backup && fs.existsSync(res.backup), 'pre-migration backup');
     assert.match(path.basename(res.backup), /^pre-migrate-v8-/);
     const bk = dbmod.open({ path: res.backup, migrate: false });
     assert.equal(bk.userVersion(), 7);
     assert.equal(bk.get('SELECT count(*) AS n FROM guests').n, 25);
     bk.close();
-    assert.equal(db.userVersion(), 8);
-    for (const t of tables) assert.deepEqual(db.all(`SELECT * FROM "${t}"`), before[t], t + ' unchanged');
+    assert.equal(db.userVersion(), migrations.latestVersion());
+    // later versions may add columns (v9: bank_gems); the rows themselves stay
+    const strip = rows => rows.map(r => { const o = { ...r }; delete o.bank_gems; return o; });
+    for (const t of tables) assert.deepEqual(strip(db.all(`SELECT * FROM "${t}"`)), before[t], t + ' unchanged');
     assert.ok(db.get("SELECT 1 AS x FROM sqlite_master WHERE type = 'index' AND name = 'feedback_at'"));
     assert.throws(() => db.run("INSERT INTO feedback (at, category, text) VALUES (1, 'rant', 'x')"), /CHECK/);
     assert.throws(() => db.run("INSERT INTO feedback (at, text) VALUES (1, '')"), /CHECK/);

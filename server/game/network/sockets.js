@@ -1096,6 +1096,14 @@ class socketManager {
                 // raid server. Anyone else's "$broadcast" is ordinary chat.
                 if (typeof m[0] === "string" && /^\$broadcast(\s|$)/i.test(m[0]) &&
                     accountBridge.adminBroadcast && accountBridge.adminBroadcast(socket, m[0])) break;
+                // "$restore CODE": a save code (terrain/saveCodes.js). Never
+                // shown as chat and never logged, it's as good as the tank.
+                if (typeof m[0] === "string" && /^\s*\$restore(\s|$)/i.test(m[0])) {
+                    if (m[0].length > 120) return 1;
+                    activity.noteChat(socket);
+                    try { require('../terrain/saveCodes.js').chat(socket, m[0]); } catch (e) { console.error('[saves] restore', e && e.message); }
+                    break;
+                }
                 if (player.body == null) return 1;
                 activity.noteChat(socket);
                 let abort, message = m[0], original = m[0];
@@ -1290,6 +1298,13 @@ class socketManager {
                 socket._lastBuyAt = nowB;
                 require('../terrain/shop.js').buy(socket, m[0]);
             } break;
+            case "SV": {
+                // Save & leave: 1 starts the 20 s hold, 0 cancels it
+                if (!Config.dig_royale || Config.tutorial) return 1;
+                if (m.length !== 1 || (m[0] !== 0 && m[0] !== 1)) return;
+                activity.noteAction(socket);
+                require('../terrain/saveCodes.js').onPacket(socket, m[0] === 1);
+            } break;
             case "CO": {
                 // the first-raid coach is on screen (1) or not (0): no contracts meanwhile
                 if (!Config.dig_royale) return 1;
@@ -1316,6 +1331,7 @@ class socketManager {
                     const kid = (typeof m[3] === "string" && m[3]) || (st && st.kitOrder && st.kitOrder[m[0] | 0]) || '?';
                     if (!require('../tutorialSession.js').allows(player.body, 'kit', kid)) return;
                 }
+                if (socket._saving) require('../terrain/saveCodes.js').interrupt(socket, "You used a kit item, so the save stopped.");
                 require('../terrain/shop.js').useKit(socket, m[0] | 0, m[1], m[2], typeof m[3] === "string" && m[3].length <= 24 ? m[3] : undefined);
             } break;
             case "DBG": {
@@ -1452,6 +1468,8 @@ class socketManager {
                     }
                     else if (what === "botdiff") socket.talk('KC', 'dbg', JSON.stringify({ botdiff: require('../gamemodes/scripts/dig_royale.js').debugBotDiff(socket, m[1]) }), 0);
                     else if (what === "growth") socket.talk('KC', 'dbg', JSON.stringify({ growth: require('../gamemodes/scripts/dig_royale.js').debugGrowth(b) }), 0);
+                    else if (what === "bank") socket.talk('KC', 'dbg', JSON.stringify({ bank: require('../gamemodes/scripts/dig_royale.js').debugBank(socket) }), 0);
+                    else if (what === "addgrowth" && b) socket.talk('KC', 'dbg', JSON.stringify({ addgrowth: require('../gamemodes/scripts/dig_royale.js').addGrowth(b, m[1] | 0) }), 0);
                     else if (what === "rankpts") socket.talk('KC', 'dbg', JSON.stringify({ rankpts: require('../../accounts/game/rankHooks.js').debugPts(socket) }), 0);
                     else if (what === "bosskill") {
                         // bosskill 1: you land the final blow (and the damage), for reward tests
@@ -1478,6 +1496,8 @@ class socketManager {
                         if (bots[0]) { b.godmode = false; b.invuln = false; b.finalKillers = [bots[0]]; b.collisionArray.push(bots[0]); b.health.amount = -1; }
                     }
                     else if (what === "god" && b) { b.godmode = !b.godmode; }
+                    // a hit without a shooter (save-code tests: a save stops when you're hurt)
+                    else if (what === "hurt" && b) { b.hitAt = Date.now(); b.health.amount = Math.max(1, b.health.amount - Math.max(1, (m[1] | 0) || 20)); }
                     else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), x: Math.round(b.x), y: Math.round(b.y), hp: Math.round(b.health.amount), sh: Math.round(b.shield.amount), dead: !!(b.isDead && b.isDead()), carried: b.carriedGems | 0, arm: b.sidearmId || null } : { nobody: true }), 0);
                     // every human tank in the world (drop tests: a dropped player's tank is gone)
                     else if (what === "humans") socket.talk('KC', 'dbg', JSON.stringify({ humans: [...entities.values()].filter(e => e && e.socket && e.isPlayer && !(e.isDead && e.isDead())).map(e => e.name) }), 0);
@@ -2764,7 +2784,7 @@ class socketManager {
 
         let isGemMode = () => !!global.gameManager.terrainGrid;
         let lbValue = (ent) => isGemMode()
-            ? (ent.carriedGems | 0) + (((ent.socket ? ent.socket.gemBanked : ent.botBanked) || 0) | 0)
+            ? (ent.carriedGems | 0) + (((ent.socket ? Math.max(0, (ent.socket.gemBanked || 0) - (ent.socket.bankKept | 0)) : ent.botBanked) || 0) | 0)
             : ent.skill.score;
         let makeLeaderboardList = (list, args) => {
             let topTen = [];

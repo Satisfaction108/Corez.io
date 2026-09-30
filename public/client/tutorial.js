@@ -50,7 +50,7 @@ const DEFAULTS = {
     KEY_AUTO_FIRE: "E", KEY_AUTO_SPIN: "C", KEY_OVER_RIDE: "R",
     KEY_TOGGLE_MAP: "M", KEY_CLASS_TREE: "T", KEY_MAX_STAT: "F", KEY_CHAT: "Enter",
     KEY_UPGRADE_ATK: "1", KEY_UPGRADE_SHI: "0", KEY_UPGRADE_MIN: "-",
-    KEY_KIT_1: "Z", KEY_KIT_2: "Q", KEY_KIT_3: "N", KEY_SIDEARM: "X",
+    KEY_KIT_1: "Z", KEY_KIT_2: "Q", KEY_KIT_3: "N", KEY_SIDEARM: "X", KEY_SAVE: "L",
 };
 let keyLabelCache = null;
 function lbl(id) {
@@ -1096,13 +1096,13 @@ const CHAPTERS = [
             {
                 id: "dying", next: true,
                 title: "Dying",
-                text: "When you die you drop everything you're carrying. After *3 seconds* you can press *Play again* to drop back in, at your base if you have one, with a *5 second shield* that goes away when you move or shoot.",
+                text: "When you die you drop everything you're carrying and lose *10%* of your bank (*2,500* at most). After *3 seconds* you can press *Play again* to drop back in, at your base if you have one, with a *5 second shield* that goes away when you move or shoot.",
                 praise: "ok",
             },
             {
                 id: "score", next: true,
                 title: "Score",
-                text: "Score is your banked gems, plus *200* per kill, plus half of what you're carrying. The *top 10* get bonus gems next raid. Get *4 kills* in a row and you show up on everyone's map, and whoever kills you gets a bounty. The contract card on the left always has a quick job for you, and each one pays gems.",
+                text: "Score is the gems you bank this raid, plus *200* per kill, plus half of what you're carrying. Your bank carries over to the next raid (up to *50,000*) for shopping, but only gems banked this raid count for score. The *top 10* get bonus gems next raid. Get *4 kills* in a row and you show up on everyone's map, and whoever kills you gets a bounty. The contract card on the left always has a quick job for you, and each one pays gems.",
                 praise: "ok",
             },
         ],
@@ -1931,6 +1931,7 @@ function extraHtml(kind) {
             [kc("KEY_SIDEARM"), "sidearm"],
             [`${kc("KEY_MAX_STAT")} + stat key`, "max a stat"],
             [kc("KEY_CHAT"), "chat"],
+            [kc("KEY_SAVE"), "save & leave (hold still 20 s for a code)"],
         ];
         return '<div class="dwt-keys">' + rows.map(r =>
             `<div class="dwt-key"><span class="dwt-key-caps">${markup(r[0])}</span><span>${esc(r[1])}</span></div>`).join("") + "</div>";

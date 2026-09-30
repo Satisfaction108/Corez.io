@@ -114,8 +114,10 @@ function actorBody(actor) {
 
 function setBanked(body, amount) {
     amount = Math.max(0, amount);
-    if (body.socket) body.socket.gemBanked = amount;
-    else body.botBanked = amount;
+    if (body.socket) {
+        body.socket.gemBanked = amount;
+        try { require('./bank.js').fixKept(body.socket); } catch { /* */ }
+    } else body.botBanked = amount;
     body.bankedGems = amount;
     return amount;
 }

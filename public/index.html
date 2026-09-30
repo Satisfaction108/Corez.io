@@ -216,6 +216,11 @@
             <span>Settings</span>
             <button id="homeSettingsClose">&#10005;</button>
         </div>
+        <!-- in a raid only (saveCode.js): stay still 20 s, get a code, leave -->
+        <div id="spSaveRow" class="sp-save" style="display:none">
+            <button type="button" id="spSaveBtn" class="dw-btn"><span id="spSaveBtnTxt">Save &amp; leave</span><kbd id="spSaveKey" class="sp-desktop-only">L</kbd></button>
+            <span class="sp-save-note">Stay still for 20 seconds and get a code. Type <b>$restore</b> and the code in chat next time to pick up where you left off.</span>
+        </div>
         <div class="sp-tabs">
             <span class="sp-tab active" data-tab="sp-options">Options</span>
             <span class="sp-tab" data-tab="sp-sound">Sound</span>
@@ -404,6 +409,7 @@
                     <div class="kb-row"><b data-key="KEY_TOKEN">-</b><span>Token Tank*</span></div>
                     <div class="kb-row"><b data-key="KEY_RECORD">P</b><span>Record</span></div>
                     <div class="kb-row"><b data-key="KEY_TOGGLE_MAP">M</b><span>Full Map</span></div>
+                    <div class="kb-row"><b data-key="KEY_SAVE">L</b><span>Save &amp; Leave</span></div>
                     <div class="kb-row"><b data-key="KEY_SCREENSHOT">F9</b><span>Screenshot</span></div>
                     <div class="kb-row"><b data-key="KEY_PARTY_ACCEPT">F2</b><span>Join Duo Invite</span></div>
                 </div>
@@ -526,7 +532,7 @@
                                 <div style="height:0;overflow:hidden;">
                                     <table class="controlTable" id="controlSettings"><tbody>
                                         <tr><td><div><b data-key="KEY_UP">W</b><span> - </span>move up</div></td><td><div><b data-key="KEY_DOWN">S</b><span> - </span>move down</div></td><td><div><b data-key="KEY_PARTY_ACCEPT">F2</b><span> - </span>join duo invite</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_LEFT">A</b><span> - </span>move left</div></td><td><div><b data-key="KEY_RIGHT">D</b><span> - </span>move right</div></td><td><div></div></td></tr>
+                                        <tr><td><div><b data-key="KEY_LEFT">A</b><span> - </span>move left</div></td><td><div><b data-key="KEY_RIGHT">D</b><span> - </span>move right</div></td><td><div><b data-key="KEY_SAVE">L</b><span> - </span>save &amp; leave</div></td></tr>
                                         <tr><td><div><b data-key="KEY_AUTO_FIRE">E</b><span> - </span>auto-fire</div></td><td><div><b data-key="KEY_AUTO_SPIN">C</b><span> - </span>auto-spin</div></td><td><div><b data-key="KEY_SIDEARM">X</b><span> - </span>fire sidearm</div></td></tr>
                                         <tr><td><div></div></td><td><div><b data-key="KEY_REVERSE_TANK">V</b><span> - </span>reverse tank</div></td><td><div><b data-key="KEY_REVERSE_MOUSE">B</b><span> - </span>reverse mouse</div></td></tr>
                                         <tr><td><div><b data-key="KEY_AUTO_ALT">G</b><span> - </span>ping</div></td><td><div><b data-key="KEY_SUICIDE">O</b><span> - </span>self-destruct</div></td><td><div><b data-key="KEY_CLASS_TREE">T</b><span> - </span>show class tree</div></td></tr>

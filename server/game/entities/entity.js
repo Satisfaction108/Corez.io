@@ -812,7 +812,8 @@ class Entity extends EventEmitter {
             if (this.skill.level > 56) score = score / 2;
         }
         if ((this.isPlayer || (this.isBot && Config.bots_count_on_scoreboard)) && global.gameManager && global.gameManager.terrainGrid) {
-            const banked = this.socket ? this.socket.gemBanked : this.botBanked;
+            // the kept bank (terrain/bank.js) came from earlier raids: not score
+            const banked = this.socket ? Math.max(0, (this.socket.gemBanked || 0) - (this.socket.bankKept | 0)) : this.botBanked;
             score = (this.carriedGems | 0) + ((banked || 0) | 0);
         }
 

@@ -13,7 +13,9 @@
 //
 // The gems go straight into the bank (socket.gemBanked) with a GEM resync
 // for the HUD and a toast. They don't count on the raid board, so an admin
-// gift never moves score or rank.
+// gift never moves score or rank. The same amount is added to the player's
+// growth score (dig_royale addGrowth): they grow as if they had earned those
+// points, while board score and placement stay as they were.
 'use strict';
 
 const crypto = require('crypto');
@@ -89,8 +91,18 @@ function give(manager, msg) {
     const before = (s.gemBanked || 0) | 0;
     const after = gems.setBanked(body, Math.min(MAX_BANK, before + amount));
     gems.talkGems(body, 0);
-    try { s.talk('m', 6000, `An admin sent you ${amount.toLocaleString('en-US')} gems`); } catch (e) { /* closing */ }
-    done({ ok: true, name: String(body.name || (s.account && s.account.username) || ''), before, after });
+    let grew = false, growth = null;
+    try {
+        // dig_royale sets it (growth rides on its raid stats)
+        const addGrowth = global.royaleAddGrowth;
+        const g0 = body.growthMult || 1;
+        growth = typeof addGrowth === 'function' ? addGrowth(body, amount) : null;
+        grew = growth != null;
+        // the growth tick eases the size up from here; report where it's headed
+        if (grew) growth = { from: +g0.toFixed(2), score: growth | 0 };
+    } catch (e) { grew = false; }
+    try { s.talk('m', 6000, `An admin sent you ${amount.toLocaleString('en-US')} gems.` + (grew ? ' You grew!' : '')); } catch (e) { /* closing */ }
+    done({ ok: true, name: String(body.name || (s.account && s.account.username) || ''), before, after, grew, growth });
 }
 
 // -> true when the message was one of ours

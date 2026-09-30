@@ -23,6 +23,9 @@ const progressHooks = require('../../../accounts/game/progressHooks.js');   // d
 // duos (only does anything on the duo server: Config.royale_duos)
 const duo = require('../../duo/duoRaid.js');
 const activity = require('../../network/activity.js');
+// the persistent bank (checkout, checkpoints, release) and save codes
+const bank = require('../../terrain/bank.js');
+const saveCodes = require('../../terrain/saveCodes.js');
 
 // A raid is RAID_CYCLES storm cycles (7 min each, twists included), 28 min,
 // and ends as the last storm shuts (storm.js closes the final circle).
@@ -259,6 +262,8 @@ function ensureStat(body) {
     s.alive = true;
     s.lastSeen = now();
     try { s.carried = Math.max(0, (body.carriedGems || 0) | 0); } catch { /* */ }
+    // a restored satchel only ever shrinks (banked, spent, dropped)
+    if ((s.restoredCarry | 0) > s.carried) s.restoredCarry = s.carried;
     return s;
 }
 
@@ -289,6 +294,17 @@ function scoreOf(s) {
     return (s.banked | 0) + (s.kills | 0) * killScore() + Math.floor((s.carried | 0) / 2) + (s.revengeBonus | 0) + (s.extra | 0);
 }
 
+// What a restored save put on the board (saveCodes.js): its raid points,
+// the part of its satchel banked since, and half of what is still carried.
+// Shown on the board, never paid: placement (boardOrder, the next-raid head
+// start) and rank leave it out.
+function restoredOf(s) {
+    return (s.restoredPts | 0) + (s.restoredBanked | 0) + Math.floor(Math.min(s.carried | 0, s.restoredCarry | 0) / 2);
+}
+function earnedOf(s) {
+    return Math.max(0, scoreOf(s) - restoredOf(s));
+}
+
 function gemsOf(body) {
     const carried = (body.carriedGems || 0) | 0;
     const banked = body.socket ? ((body.socket.gemBanked || 0) | 0) : ((body.botBanked || 0) | 0);
@@ -299,10 +315,11 @@ function gemsOf(body) {
 const boardCmp = (a, b) => (b.score - a.score) || (b.gems - a.gems) || (b.kills - a.kills);
 
 // Every stat in board order, bots included: the raid placement bonus reads
-// places from this. -> [{s, score, gems, kills}]
+// places from this. Points a restored save brought are not in it (earnedOf).
+// -> [{s, score, gems, kills}]
 function boardOrder() {
     const list = [...raidStats.values()]
-        .map(s => ({ s, score: scoreOf(s), gems: s.banked | 0, kills: s.kills | 0 }))
+        .map(s => ({ s, score: earnedOf(s), gems: Math.max(0, (s.banked | 0) - (s.restoredBanked | 0)), kills: s.kills | 0 }))
         .sort(boardCmp);
     if (!Config.royale_duos) return list;
     // Duos: a team places on its combined score and both partners take that
@@ -1417,7 +1434,17 @@ function tickTeamBots(t) {
 function onBanked(body, amount) {
     if (!body || !(amount > 0)) return;
     const s = ensureStat(body);
-    if (s) s.banked = (s.banked || 0) + amount;
+    if (!s) return;
+    s.banked = (s.banked || 0) + amount;
+    // gems from a restored satchel bank like any others, but for the board
+    // only: rank and placement leave them out (saveCodes.js)
+    const r = Math.min(amount, s.restoredCarry || 0);
+    if (r > 0) {
+        s.restoredCarry -= r;
+        s.restoredBanked = (s.restoredBanked || 0) + r;
+        s.rankDiscount = (s.rankDiscount || 0) + r;
+        if (s.lifeOpen) s.lifeBanked0 = (s.lifeBanked0 || 0) + r;
+    }
 }
 
 function onCapture(body, site) {
@@ -1470,7 +1497,7 @@ function onCombatantDead(body) {
     const victimStreak = s ? (s.streak | 0) : 0;
     const victimGrowth = growth.enabled() ? (body.growthMult || 1) : 1;
     let giantPts = 0;
-    if (s) { s.alive = false; s.carried = 0; s.streak = 0; }
+    if (s) { s.alive = false; s.carried = 0; s.streak = 0; s.restoredCarry = 0; }
     // a density trim (despawnBot) is as quiet as the raid-end mass death
     const raidEndDeath = body.deathCause === "raidend" || body.deathCause === "despawn";
     const envKill = raidEndDeath || body.deathCause === "storm" || body.deathCause === "rock" || body.deathCause === "base";
@@ -1713,6 +1740,10 @@ function onHumanJoin(body) {
         }
     } catch { /* */ }
     const isRespawn = !!(body.socket && body.socket.lastRaidDeathAt);
+    // the first spawn on this socket brings the persistent bank in (a resume
+    // brought its own in the snapshot)
+    let bankIn = 0;
+    if (body.socket && !body.socket._bankOut) guard('bank checkout', () => { bankIn = bank.checkOut(body.socket); });
     // size first: every placement below pushes the hull out of rock by it
     guard('growth spawn', () => growth.onSpawn(body, growthScore(body)));
     // duos: next to your partner if they're alive and not in a fight; that
@@ -1780,6 +1811,9 @@ function onHumanJoin(body) {
             const capped = growthScore(body) * growth.RESPAWN_SHARE > growth.CAP_SCORE + 1;
             try { body.sendMessage("You're back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size" + (capped ? ", the most a respawn gives." : ", from a quarter of your score.")); } catch { /* */ }
         }
+        if (bankIn > 0) {
+            try { body.sendMessage("You brought " + bankIn.toLocaleString('en-US') + " banked gems with you. Spend them at a shop. Only gems you bank this raid count for score."); } catch { /* */ }
+        }
         if (!isRespawn && !resuming) {
             try { chests.ensureNearSpawn(body); } catch { /* */ }
             const mod = raidMods.get();
@@ -1820,6 +1854,28 @@ function resumeKeysFor(socket) {
     if (socket && socket.resumeToken) keys.push(socket.resumeToken);
     return keys;
 }
+// A snapshot leaving the store unclaimed takes its bank back to the
+// persistent store (the lease is in snap.sock).
+function releaseSnapBank(snap) {
+    if (snap && snap.sock && snap.sock._bankLease) guard('bank release', () => bank.release(snap.sock));
+}
+function dropResume(k, v) {
+    resumeStore.delete(k);
+    for (const x of resumeStore.values()) if (x === v) return;
+    releaseSnapBank(v);
+}
+function tickResumeExpiry(t) {
+    for (const [k, v] of resumeStore) {
+        // (a base it held goes the usual way: outposts.tick sees baseReserved
+        // turn false and frees it, or hands it to a duo partner)
+        if (t - v.at > RESUME_MS || v.raidId !== raidId) dropResume(k, v);
+    }
+}
+function heldBanks() {
+    const out = [];
+    for (const v of resumeStore.values()) if (v && v.sock && v.sock._bankLease && !out.includes(v.sock)) out.push(v.sock);
+    return out;
+}
 function saveResume(socket, body) {
     const keys = resumeKeysFor(socket);
     if (!keys.length) return;
@@ -1830,9 +1886,11 @@ function saveResume(socket, body) {
     if (!body && socket._resume && socket._resume.raidId === raidId) {
         const again = Object.assign({}, socket._resume, { at: t, keys, accountId: (socket.account && socket.account.id) || null });
         for (const k of keys) resumeStore.set(k, again);
+        // the claimed snapshot's lease stays with it (see below)
+        if (again.sock && again.sock._bankLease === socket._bankLease) socket._bankLease = null;
         return again;
     }
-    for (const [k, v] of resumeStore) if (t - v.at > RESUME_MS) resumeStore.delete(k);
+    for (const [k, v] of resumeStore) if (t - v.at > RESUME_MS) dropResume(k, v);
     // a dead player has no body but still has a bank, a shop and a score
     const alive = !!body && !body.isDead?.() && body.royaleAlive !== false && !body.royaleLobby;
     const hitAgo = body ? Math.min(t - (body._lastDamageAt || 0), Date.now() - (body.hitAt || 0)) : 0;
@@ -1841,6 +1899,10 @@ function saveResume(socket, body) {
         keys, accountId: (socket.account && socket.account.id) || null,
         sock: {
             gemBanked: socket.gemBanked || 0, shop: socket.shop || null, revenge: socket.revenge || null,
+            // the bank's lease rides along: a reconnect keeps the same gems
+            // and never checks out a second time (bank.js)
+            _bankOut: !!socket._bankOut, _bankLease: socket._bankLease || null, _bankOwner: socket._bankOwner || null,
+            bankKept: socket.bankKept | 0, _bankSavedAt: socket._bankSavedAt || 0,
             raidBonus: socket.raidBonus || 0, raidPB: socket.raidPB || 0, _milestoneIdx: socket._milestoneIdx || 0,
             gemDeposited: socket.gemDeposited || 0,
             // duos: who you are to the team book (a reconnect keeps the team)
@@ -1882,6 +1944,8 @@ function saveResume(socket, body) {
         }
     }
     for (const k of keys) resumeStore.set(k, snap);
+    // the snapshot holds the lease now; the old socket must never release it
+    socket._bankLease = null;
     if (process.env.RESUME_DEBUG) console.log('[RESUME] saved', token.slice(0, 6), 'alive', snap.alive, 'banked', snap.sock.gemBanked, 'carried', snap.carried, 'drill', snap.sock.shop && snap.sock.shop.drill, 'raw', (snap.skillRaw || []).join(','), 'pts', snap.points, 'raid', raidId);
     return snap;
 }
@@ -1898,8 +1962,12 @@ function claimResume(socket, token) {
     for (const k of snap.keys || [token]) resumeStore.delete(k);
     if (now() - snap.at > RESUME_MS || snap.raidId !== raidId) {
         if (snap.baseKey) { try { outposts.releaseOwner(snap.baseKey); } catch { /* */ } }
+        releaseSnapBank(snap);
         return false;
     }
+    // this socket may have checked a bank out already (a tab that opened
+    // and then claimed): the snapshot's lease wins, this one goes back
+    if (socket._bankLease && socket._bankLease !== (snap.sock && snap.sock._bankLease)) bank.release(socket);
     Object.assign(socket, snap.sock);
     // the base kept for this raid follows the player onto the new socket;
     // onHumanJoin rebinds it to the new body (ownerId, banner team, colour)
@@ -1994,10 +2062,12 @@ function disconnectCleanup(socket, body) {
     const leaving = !!(socket && socket.leftOnPurpose);
     if (leaving) {
         // menu / Home / another tab took over: nothing to come back to
-        try { for (const k of resumeKeysFor(socket)) resumeStore.delete(k); } catch { /* */ }
+        try { for (const k of resumeKeysFor(socket)) { const v = resumeStore.get(k); if (v) dropResume(k, v); } } catch { /* */ }
     } else {
         try { snap = saveResume(socket, body); } catch (e) { console.error('[RAID] resume save failed', e && e.message); }
     }
+    // no snapshot holding the bank: it goes back to the persistent store now
+    if (socket && socket._bankLease) guard('bank release', () => bank.release(socket));
     // an open ranked life settles as a disconnect if nobody resumes it
     // (at once when they left on purpose)
     try {
@@ -2098,6 +2168,21 @@ function idleKick(socket, body) {
     // a close frame after IK (code 4001 tells the client even if IK is lost);
     // a peer that never answers it is cut off
     try { socket.close(4001, 'idle'); } catch { /* */ }
+    setTimeout(() => { try { socket.terminate(); } catch { /* */ } }, 2000).unref?.();
+}
+
+// After a save (saveCodes.finish): the tank leaves like a normal leave. The
+// life settles as a disconnect, the bank goes home, no resume is kept and
+// nothing drops (carried was zeroed: it's in the code).
+function saveLeave(socket, body) {
+    socket.leftOnPurpose = true;
+    socket._drCleaned = true;
+    try { disconnectCleanup(socket, body); } catch (e) { guardLog('save cleanup', e); }
+    if (body && !body.isDead?.()) {
+        try { body.invuln = false; body.kill(); body.destroy(); } catch (e) { guardLog('save remove', e); }
+    }
+    if (socket.player) socket.player.body = null;
+    try { socket.close(4003, 'saved'); } catch { /* */ }
     setTimeout(() => { try { socket.terminate(); } catch { /* */ } }, 2000).unref?.();
 }
 
@@ -2451,20 +2536,24 @@ function endRaid() {
     const top = Config.royale_duos
         ? teamRows(board).slice(0, 10).map(t => ({ id: t.ids[0], ids: t.ids, name: t.names.join(" & "), names: t.names, score: t.score, kills: t.kills, gems: t.gems, place: t.place, bot: t.bot, alive: t.alive }))
         : board.slice(0, 10);
+    // the next raid's head start goes by earned points (boardOrder), so a
+    // restored save's points never buy one
     const bonuses = [500, 350, 250, 180, 140, 110, 90, 70, 50, 40];
-    for (let i = 0; i < top.length; i++) {
-        const row = top[i];
-        const ids = row.ids || [row.id];
-        for (const client of connectedClients()) {
-            const key = client.id ? "s:" + client.id : null;
-            const s = key ? raidStats.get(key) : null;
-            if (s && ids.includes(s.id)) {
-                client.raidBonus = (client.raidBonus | 0) + bonuses[i];
-                const sc = scoreOf(s);
-                if (sc > (client.raidPB | 0)) client.raidPB = sc;
-            }
-        }
+    const byStat = new Map();
+    for (const client of connectedClients()) {
+        const s = client.id ? raidStats.get("s:" + client.id) : null;
+        if (s) byStat.set(s, client);
     }
+    const earnedOrder = boardOrder();
+    const paidPlace = new Set();
+    earnedOrder.forEach((e, i) => {
+        const place = e.place || i + 1;
+        if (place > bonuses.length) return;
+        const client = byStat.get(e.s);
+        if (!client || paidPlace.has(client)) return;
+        paidPlace.add(client);
+        client.raidBonus = (client.raidBonus | 0) + bonuses[place - 1];
+    });
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
         const s = key ? raidStats.get(key) : null;
@@ -2514,8 +2603,12 @@ function endRaid() {
     }, RAID_END_BEAT_MS + RAID_END_WAIT_MS - WINNER_DOWN_LEAD_MS);
     setTimeout(() => {
         try {
+            // the bank carries into the next raid (bank.js), trimmed to the
+            // cap; players without one start the raid at 0 like before
             for (const client of connectedClients()) {
-                if (client.gemBanked) client.gemBanked = 0;
+                let cut = 0;
+                try { cut = bank.newRaid(client); } catch (e) { guardLog('bank new raid', e); client.gemBanked = 0; }
+                if (cut > 0) { try { client.talk('m', 8000, "Your bank carries up to " + bank.cap().toLocaleString('en-US') + " gems into a new raid. The other " + cut.toLocaleString('en-US') + " are gone."); } catch { /* */ } }
                 client._milestoneIdx = 0;
                 client.gemDeposited = 0;
             }
@@ -2523,8 +2616,7 @@ function endRaid() {
                 body.carriedGems = 0;
                 dustHooks.zero(body);
                 body.botBanked = 0;
-                body.bankedGems = 0;
-                if (body.socket) body.socket.gemBanked = 0;
+                body.bankedGems = body.socket ? (body.socket.gemBanked || 0) : 0;
                 try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
             }
             // the shop is a per-raid ladder: everyone climbs again
@@ -2637,10 +2729,21 @@ function revokeBotTwist(bot) {
 }
 
 // ── growth ───────────────────────────────────────────────────────────────
+// The board score, plus growth-only boosts (an admin's /dust, addGrowth).
+// The kept bank never feeds it: the board counts banking, not the balance.
 function growthScore(body) {
     const key = statKeyFor(body);
     const s = key ? raidStats.get(key) : null;
-    return s ? scoreOf(s) : 0;
+    return s ? scoreOf(s) + (s.growBonus | 0) : 0;
+}
+// Grow a body as if it had earned n more points, without touching its board
+// score or placement (Discord /dust). -> the new growth score, or null
+function addGrowth(body, n) {
+    if (!body || !(n > 0)) return null;
+    const s = ensureStat(body);
+    if (!s) return null;
+    s.growBonus = (s.growBonus | 0) + Math.floor(n);
+    return growthScore(body);
 }
 function fmtGrow(g) { return String(+g.toFixed(2)) + "x"; }
 // A hull that grows cracks the rock it grows into (never an emerald), and
@@ -2685,6 +2788,8 @@ function tick() {
     if (raidResults && t - raidResultsAt > RAID_END_BEAT_MS + RAID_END_WAIT_MS) raidResults = null;
     // coalesced DU packets and the 5 s dust flush (accounts)
     guard('accounts', () => rankHooks.tick(t));
+    guard('bank', () => bank.tick(t, connectedClients(), heldBanks()));
+    if (t - (tick._resumeAt || 0) >= 2000) { tick._resumeAt = t; guard('resume expiry', () => tickResumeExpiry(t)); }
     if (Config.royale_duos) guard('duos', () => { duo.tick(t); tickTeamBots(t); });
     // everyone is down between raids: no storm, bosses, chests or bots, just
     // keep the HUD fed (results panel, countdown)
@@ -2702,6 +2807,7 @@ function tick() {
     guard('outposts', () => tickOutpostRules(t));
     guard('vaults', () => tickVaultPinch(t));
     guard('bots', () => fillBots());
+    guard('saves', () => saveCodes.tick(t, connectedClients()));
     const fighters = combatants();
     guard('growth', () => growth.tick(t, fighters, growthScore, onGrown, growRoom));
     try { bosses.tick(t, fighters.length); } catch (e) { /* */ }
@@ -2763,6 +2869,32 @@ rankHooks.attach({
     get serverId() { return Config.royale_duos ? 'duo' : 'royale'; },
     live: () => !raidEnding,
 });
+// Discord /dust (accounts/game/adminGems.js): growth to go with the gems
+global.royaleAddGrowth = addGrowth;
+
+// Save & leave: what the save codes may read and do in the raid.
+saveCodes.attach({
+    stat: ensureStat,
+    statKey: statKeyFor,
+    scoreOf,
+    raidId: () => raidId,
+    ending: () => raidEnding || !!raidResults,
+    growthScore,
+    growRoom: (body) => growRoom(body, true),
+    leave: saveLeave,
+    dropRow: (key) => {
+        const s = raidStats.get(key);
+        if (!s || s.lifeOpen) return false;
+        try { if (connectedClients().some(c => c && "s:" + c.id === key)) return false; } catch { return false; }
+        raidStats.delete(key);
+        return true;
+    },
+});
+// a clean shutdown puts every bank back at once
+try {
+    require('../../../accounts/index.js').onShutdown(() => bank.releaseAll(connectedClients(), heldBanks()));
+} catch (e) { /* accounts not loaded */ }
+
 // entity.contemplationOfMortality calls this when a real player takes damage
 // (ranked damage points; rank-only, not on the board)
 global.royaleOnPlayerDamage = (victim, dealt, inflictors) => {
@@ -2790,6 +2922,7 @@ class DigRoyale {
 module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
     lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, baseReserved,
+    addGrowth, growthScore, earnedOf, boardOrder,
     onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout,
     FIRST_MINUTES, isNewPlayer, RESPAWN_MS, freshRaidBody, SPAWN_GRACE_MS, RAID_CYCLES, RAID_MS, RESUME_MS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
@@ -2821,6 +2954,19 @@ module.exports = {
         if (!st) return null;
         st.extra = (st.extra | 0) + Math.max(0, n | 0) - scoreOf(st);
         return scoreOf(st);
+    },
+    // DBG bank: the persistent bank and the restore bookkeeping on the stat
+    debugBank: (socket) => {
+        const b = socket && socket.player && socket.player.body;
+        const st = raidStats.get("s:" + (socket && socket.id));
+        return {
+            banked: (socket.gemBanked || 0) | 0, kept: bank.kept(socket), lease: !!socket._bankLease, owner: socket._bankOwner || null,
+            saving: socket._saving ? Math.max(0, socket._saving.at + saveCodes.HOLD_MS - now()) : 0,
+            stat: st ? { banked: st.banked | 0, score: scoreOf(st), earned: earnedOf(st), restoredPts: st.restoredPts | 0, restoredCarry: st.restoredCarry | 0,
+                restoredBanked: st.restoredBanked | 0, rankDiscount: Math.round(st.rankDiscount || 0), growBonus: st.growBonus | 0, extra: st.extra | 0 } : null,
+            growth: b ? { score: growthScore(b), eff: Math.round(b._growEff || 0), g: +(b.growthMult || 1).toFixed(3), target: +(b._growTarget || 1).toFixed(3) } : null,
+            raidId,
+        };
     },
     // DBG streak <n>: a kill streak without the kills (the overhead badge)
     debugSetStreak: (body, n) => {

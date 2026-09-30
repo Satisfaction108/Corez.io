@@ -1301,6 +1301,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
         global.gameLoading = true;
         try { rankPanel.clear(); dustHud.reset(); global.acct = null; } catch (e) { /* */ }
+        try { if (window.dwSave) window.dwSave.reset(); } catch (e) { /* */ }
         // Fresh start: no raid state leaks in from a previous game.
         // (A kick or ban sets noAutoReconnect for that socket only; the
         // server repeats it if the new connection is refused too.)
@@ -5802,7 +5803,9 @@ import * as cosmetics from './account/cosmetics.js';
             // a deeper teal: white text on the bright one was hard to read
             hudBar(ctx[2], bankX1 - capR, ry - pillH / 2, rx2 - bankX1 + capR * 2, pillH, 1, gameDraw.mixColors(color.teal, "#000000", 0.4));
             {
-                const bankTxt = "Banked: " + util.formatLargeNumber(g.banked | 0);
+                // the kept part came from earlier raids: spendable, but not score
+                const bankTxt = "Banked: " + util.formatLargeNumber(g.banked | 0) +
+                    ((g.kept | 0) > 0 ? "  (" + util.formatLargeNumber(g.kept | 0) + " kept)" : "");
                 let bs2 = 13; while (bs2 > 9 && hudTextW(bankTxt, bs2) > (rx2 - bankX1) - 10) bs2 -= 0.5;
                 drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, color.guiwhite, "center");
             }
@@ -7514,7 +7517,7 @@ import * as cosmetics from './account/cosmetics.js';
             const a = (inT * inT * (3 - 2 * inT)) * Math.max(0, outT);
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
             const col = t.kind === "override" || t.kind === "late" ? "#c9a8ff" : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
-                : t.kind === "chest" || t.kind === "dropin" || t.kind === "bounty" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
+                : t.kind === "chest" || t.kind === "dropin" || t.kind === "bounty" || t.kind === "restored" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
                 : t.kind === "grown" || t.kind === "contract" ? HUD.emerald : t.kind === "revenge" ? "#ff6b5e" : color.guiwhite;
             const base = t.kind === "streak" ? 16 : 23, size = base * pop;
             const len = (Math.max(hudTitleW(t.text, base), t.sub ? hudTextW(t.sub, 12.5) : 0) + 44) * pop;

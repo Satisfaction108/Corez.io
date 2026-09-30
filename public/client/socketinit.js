@@ -8,6 +8,7 @@ import * as rankCeremony from "./account/rankCeremony.js";
 import * as dustHud from "./account/dustHud.js";
 import * as raidFinale from "./raidFinale.js";
 import { toast as menuToast } from "./account/ui.js";
+import saveCode from "./saveCode.js";
 window.fakeLagMS = 0;
 var sync = [];
 var clockDiff = 0;
@@ -1151,6 +1152,7 @@ const RECONNECT_TRIES = 8;
 // back to the menu with the reason, and no reconnect, since the server keeps
 // nothing to resume.
 const IDLE_CLOSE_CODE = 4001;
+const SAVED_CLOSE_CODE = 4003;
 const IDLE_TEXT = "Removed for being inactive for 5 minutes";
 function idleExit(text) {
     global.noAutoReconnect = true;
@@ -1513,7 +1515,7 @@ let incoming = async function(message, socket) {
                 if (m[0] === "boss" || m[0] === "quest" || m[0] === "contract" || m[0] === "revenge") { punchUI(8, 260); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
                 else if (m[0] === "bounty") { punchUI(5, 220); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
                 else if (m[0] === "dropin") { if (gameSound.depositDone) gameSound.depositDone(); }
-                else if (m[0] === "grown") { punchUI(5, 220); if (gameSound.depositDone) gameSound.depositDone(); }
+                else if (m[0] === "grown" || m[0] === "restored") { punchUI(5, 220); if (gameSound.depositDone) gameSound.depositDone(); }
             } break;
             case 'FX': {
                 const kindF = m[2] || "ring";
@@ -1652,6 +1654,8 @@ let incoming = async function(message, socket) {
                 g.carried = carried;
                 g.cap = cap;
                 g.banked = m[3] | 0;
+                // brought in from before this raid (the persistent bank)
+                g.kept = Math.min(g.banked, m[6] | 0);
                 if (!wasFull && cap > 0 && carried >= cap) {
                     g.fullAt = now;
                     if (config.game.gemSounds) gameSound.satchelFull();
@@ -1795,6 +1799,10 @@ let incoming = async function(message, socket) {
             } break;
             case 'IK': {
                 idleExit(String(m[0] || IDLE_TEXT));
+            } break;
+            case 'SVS': {
+                // Save & leave: the countdown, a stop, or the code (saveCode.js)
+                try { saveCode.onPacket(JSON.parse(m[0])); } catch (e) { /* */ }
             } break;
             case 'KO': {
                 // Account kicked this socket (logged in elsewhere, banned):
@@ -2412,6 +2420,8 @@ const socketInit = () => {
 
     socket.onclose = (ev) => {
         if (ev && ev.code === IDLE_CLOSE_CODE && global.gameLoading) { idleExit(ev.reason && ev.reason !== 'idle' ? ev.reason : IDLE_TEXT); return; }
+        // saved and left (saveCode.js shows the code)
+        if (ev && ev.code === SAVED_CLOSE_CODE && global.gameLoading) { saveCode.onSavedClose(); return; }
         if (!global.gameLoading) return;
         clearInterval(socket.commandCycle);
         clearInterval(global.socketMotionCycle);

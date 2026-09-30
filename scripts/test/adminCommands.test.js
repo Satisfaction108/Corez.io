@@ -139,7 +139,7 @@ test('dust: an account in a raid gets banked gems, a GEM resync and a toast; aud
     assert.equal(gem.length, 1);
     assert.equal(gem[0][4], 6200, 'GEM carries the new bank');
     assert.equal(gem[0][1], 40, 'carried untouched');
-    assert.deepEqual(packets(s, 'm'), [['m', 6000, 'An admin sent you 5,000 gems']]);
+    assert.deepEqual(packets(s, 'm'), [['m', 6000, 'An admin sent you 5,000 gems.']]);
     const a = audits('admin_raid_gems', 'AND user_id = ?', u.id);
     assert.equal(a.length, 1);
     assert.equal(a[0].actor, 'admin:' + ADMIN);
@@ -150,6 +150,29 @@ test('dust: an account in a raid gets banked gems, a GEM resync and a toast; aud
     // gemdust is a different thing and stays put
     assert.equal(D().get('SELECT dust_milli FROM users WHERE id = ?', u.id).dust_milli, 0);
     drop(s);
+});
+
+test('dust: the gems come with as much growth (not board score), and the toast says so', async () => {
+    global.servers = [{ id: 'br' }];
+    const u = mkUser();
+    const s = mkSocket({ user: u, banked: 0 });
+    inRaid(s);
+    // what dig_royale's addGrowth does: a growth-only bonus on the raid stat
+    const stat = { score: 900, growBonus: 0 };
+    global.royaleAddGrowth = (body, n) => { assert.equal(body, s.player.body); stat.growBonus += n; return stat.score + stat.growBonus; };
+    try {
+        const r = await interact(cmd('dust', [o('player', u.username), o('amount', 5000, 4)]));
+        assert.match(content(r), /Sent 5,000 gems to/);
+        assert.match(content(r), /grow as if they'd scored 5,000 more points \(growth score now 5,900\); board score unchanged/);
+        assert.equal(stat.growBonus, 5000);
+        assert.equal(stat.score, 900, 'the board score stays');
+        assert.deepEqual(packets(s, 'm'), [['m', 6000, 'An admin sent you 5,000 gems. You grew!']]);
+        const a = audits('admin_raid_gems', 'AND user_id = ?', u.id);
+        assert.equal(a[0].detail.grew, true);
+    } finally {
+        delete global.royaleAddGrowth;
+        drop(s);
+    }
 });
 
 test('dust: offline, on the death screen, unknown names and bad amounts are refused', async () => {
@@ -185,7 +208,7 @@ test('dust: guests by raid name; two guests with that name are refused', async (
     let r = await interact(cmd('dust', [o('player', 'diggyguest'), o('amount', 750, 4)]));
     assert.match(content(r), /Sent 750 gems to \*\*DiggyGuest\*\* \(Solo raid, guest\)/);
     assert.equal(g.gemBanked, 750);
-    assert.deepEqual(packets(g, 'm')[0], ['m', 6000, 'An admin sent you 750 gems']);
+    assert.deepEqual(packets(g, 'm')[0], ['m', 6000, 'An admin sent you 750 gems.']);
     // a guest shown as ~name (it looks like an account's) matches the plain name
     const t = mkSocket({ name: '~Tilda', banked: 3 });
     r = await interact(cmd('dust', [o('player', 'Tilda'), o('amount', 7, 4)]));

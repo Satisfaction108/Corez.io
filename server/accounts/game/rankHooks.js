@@ -19,6 +19,11 @@
 // for activity.IDLE_PROTECT_MS pays nothing, and the raid placement bonus
 // needs ranked.activeEnough over the raid (input time vs time alive).
 //
+// A restored save (saveCodes.js) adds its points to s.rankDiscount, and so
+// does every gem of its satchel banked later (dig_royale onBanked); the
+// satchel still carried at a raid end is left out of the carried half. So a
+// restored life only ranks on what it earned after the restore.
+//
 // Life fields on the stat: lifeOpen, lifeId, lifeBase, lifeStartAt,
 // lifeKills, lifeBotKills, lifeKillPts, lifeBanked0, lifeNoFare, lifeDust,
 // lifeSurviveMs, lifeSurvivePts, lifeInputMs (alive with fresh input, safe
@@ -434,7 +439,9 @@ function onRaidEnd() {
     for (const s of stats.values()) {
         if (!s.lifeOpen) continue;
         try {
-            const payload = lifeEnd(s, 'raidend', { carried: s.alive ? s.carried | 0 : 0 });
+            // a restored save's satchel never counts (game/terrain/saveCodes.js)
+            const carried = s.alive ? Math.max(0, (s.carried | 0) - (s.restoredCarry | 0)) : 0;
+            const payload = lifeEnd(s, 'raidend', { carried });
             const client = byKey.get(s.key);
             if (payload && client) client._rkPending = payload;
         } catch (e) { logErr('raid end', e); }

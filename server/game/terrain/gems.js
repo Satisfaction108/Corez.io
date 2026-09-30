@@ -114,14 +114,19 @@ function spawnOreBurst(rock, breaker) {
     }
 }
 
-// GEM packet: carried, cap, delta, banked, lost, combo.
+// GEM packet: carried, cap, delta, banked, lost, combo, kept.
 // `lost` is set only when death emptied the satchel (client plays the loss
 // sting). Don't infer death from a negative delta; that is not a contract.
+// `kept` is the part of banked brought in from before this raid (bank.js).
+let _bankMod = null;
+function bankMod() { return _bankMod || (_bankMod = require('./bank.js')); }
 function talkGems(body, delta, lost = 0, combo = null) {
     if (body.socket) {
+        let kept = 0;
+        try { kept = bankMod().kept(body.socket); } catch { /* */ }
         body.socket.talk('GEM', body.carriedGems | 0, body.gemCap | 0, delta | 0,
                          (body.socket.gemBanked || 0) | 0, lost | 0,
-                         (combo ?? body._comboN) | 0);
+                         (combo ?? body._comboN) | 0, kept | 0);
     }
 }
 
@@ -135,8 +140,10 @@ function bankedFor(body) {
 
 function setBanked(body, amount) {
     amount = Math.max(0, Math.round(amount));
-    if (body.socket) body.socket.gemBanked = amount;
-    else body.botBanked = amount;
+    if (body.socket) {
+        body.socket.gemBanked = amount;
+        try { bankMod().fixKept(body.socket); } catch { /* */ }
+    } else body.botBanked = amount;
     body.bankedGems = amount;
     return amount;
 }
@@ -378,6 +385,10 @@ function dropGemsOnDeath(body, killers = []) {
 
     const banked  = bankedFor(body);
     const bankLoss = raidMode ? 0 : Math.floor(banked * BANK_DEATH_LOSS);
+    // the raid's price of dying: a slice of the bank (bank.js), gone rather
+    // than dropped, so a kill never pays out someone's savings
+    let raidBankLoss = 0;
+    if (raidMode && body.socket) { try { raidBankLoss = bankMod().deathLossFor(body); } catch { /* */ } }
     // insurance: a quarter of the satchel goes to the bank before the drop
     let insured = 0;
     if (raidMode && body.socket && carried > 0) {
@@ -388,13 +399,22 @@ function dropGemsOnDeath(body, killers = []) {
     // Death screen shows carried + banked before the drop. Snapshot here: this
     // runs on 'dead', before records() builds the death packet.
     if (body.socket) {
-        body.socket.gemDeathScore = carried + banked;
+        // the raid only counts gems banked this raid, never the kept bank
+        let raidBanked = banked;
+        if (raidMode) { try { raidBanked = bankMod().raidPart(body.socket); } catch { /* */ } }
+        body.socket.gemDeathScore = carried + raidBanked;
         // Split too, since carriedGems is zeroed below. Banked is pre-loss so
         // score = carried + banked.
         body.socket.gemDeathCarried = carried;
         body.socket.gemDeathBanked = banked;
+        body.socket.gemDeathBankLoss = raidBankLoss;
+    }
+    if (raidBankLoss > 0) {
+        setBanked(body, banked - raidBankLoss);
+        try { body.socket.talk('m', 6000, "Dying cost you " + raidBankLoss.toLocaleString('en-US') + " banked gems."); } catch { /* */ }
     }
     if (carried <= 0 && bankLoss <= 0) {
+        if (raidBankLoss > 0) talkGems(body, 0);
         if (raidMode) { try { dustMod().onDeathDrop(body, []); } catch { /* */ } }
         return;
     }

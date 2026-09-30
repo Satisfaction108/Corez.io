@@ -143,7 +143,8 @@ const global = {
     KEY_SUICIDE: 79,
     KEY_ZOOM_OUT: 45,
     KEY_ZOOM_IN: 61,
-    KEY_DEBUG: 76,
+    KEY_DEBUG: 119,        // F8 (L is Save & leave now)
+    KEY_SAVE: 76,          // L: Save & leave (saveCode.js)
 
     KEY_SCREENSHOT: 120,
     KEY_RECORD: 80,        // P
@@ -299,6 +300,7 @@ const global = {
         carried: 0,
         cap: 0,
         banked: 0,
+        kept: 0,       // the part of banked brought in from earlier raids
         combo: 0,
         lastPickup: -1e9,
         flashAt: -1e9,

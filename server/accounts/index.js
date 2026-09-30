@@ -39,6 +39,8 @@ const achievements = require('./achievements');
 const backup = require('./backup');
 const announce = require('./discord/announce');
 const referrals = require('./referrals');
+const banks = require('./banks');
+const saves = require('./saves');
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -81,6 +83,8 @@ function sweep(now = Date.now()) {
             users: d.run('DELETE FROM users WHERE deleted_at IS NOT NULL AND deleted_at <= ?', now - HARD_DELETE_AFTER_MS).changes,
             // the privacy policy promises IPs in security records go after 90 days
             auditIps: d.run('UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND at <= ?', now - IP_KEEP_MS).changes,
+            // save codes a month past their end, restore IP hashes after a day
+            saves: saves.sweep(now),
         }));
         d.exec('PRAGMA optimize');
         return r;
@@ -150,6 +154,16 @@ function initMain() {
     } catch (e) {
         console.error('[accounts] closing orphaned lives failed: ' + ((e && e.stack) || e));
     }
+    // ...and so is a bank lease: every one of them goes back to its owner
+    try {
+        const n = banks.recoverStale(Date.now(), 0, true);
+        if (n) console.log(`[accounts] returned ${n} bank lease${n === 1 ? '' : 's'} left open by a crash`);
+    } catch (e) {
+        console.error('[accounts] returning bank leases failed: ' + ((e && e.stack) || e));
+    }
+    every(60 * 1000, () => {
+        try { banks.recoverStale(); } catch (e) { console.error('[accounts] bank lease sweep failed: ' + ((e && e.stack) || e)); }
+    });
     ratelimit.start();
     presence.start();
     events.start();
@@ -359,6 +373,8 @@ module.exports = {
     enabled,
     sweep,
     owns,
+    banks,
+    saves,
     config,
     db,
     users,

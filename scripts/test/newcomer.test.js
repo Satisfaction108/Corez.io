@@ -465,8 +465,14 @@ test('migration: v5 -> v6 keeps every row, writes a backup, adds deaths', () => 
     assert.equal(bk.get('SELECT count(*) AS n FROM guests').n, 30);
     bk.close();
     assert.equal(db.userVersion(), migrations.latestVersion());
-    // v7 adds guests.source (null for rows from before it)
-    const strip = (t, rows) => t === 'guests' ? rows.map(r => { assert.equal(r.source, null); const o = { ...r }; delete o.source; return o; }) : rows;
+    // v7 adds guests.source (null for rows from before it), v9 users.bank_gems
+    // and guests.bank_gems (0)
+    const strip = (t, rows) => rows.map(r => {
+        const o = { ...r };
+        if (t === 'guests') { assert.equal(r.source, null); delete o.source; }
+        if (t === 'guests' || t === 'users') { assert.equal(r.bank_gems, 0); delete o.bank_gems; }
+        return o;
+    });
     for (const t of tables) assert.deepEqual(strip(t, db.all(`SELECT * FROM "${t}"`)), before[t], t + ' unchanged');
     assert.ok(db.get("SELECT 1 AS x FROM sqlite_master WHERE type = 'index' AND name = 'deaths_at'"));
     assert.throws(() => db.run("INSERT INTO deaths (at, cause) VALUES (1, 'lava')"), /CHECK/);
