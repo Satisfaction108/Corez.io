@@ -24,6 +24,7 @@ const sessions = require('../sessions');
 const rankStore = require('../rankStore');
 const achievements = require('../achievements');
 const referrals = require('../referrals');
+const feedback = require('../feedback');
 const rest = require('./rest');
 const R = require('../../../shared/ranks.js');
 
@@ -107,6 +108,11 @@ const ADMIN_COMMANDS = [
             { type: T.STRING, name: 'player', description: 'Account username (or a guest name as shown in the raid)', required: true, max_length: 64 },
             { type: T.INTEGER, name: 'amount', description: 'Gems, 1 to 1,000,000', required: true, min_value: 1, max_value: MAX_RAID_GEMS },
             reasonOpt(false),
+        ],
+    },
+    {
+        name: 'feedback', description: 'The latest player feedback from the menu', options: [
+            { type: T.INTEGER, name: 'count', description: 'How many (default 10)', required: false, min_value: 1, max_value: 25 },
         ],
     },
     {
@@ -639,7 +645,34 @@ function shopRotate(i, caller) {
     ].join('\n'), { ephemeral: true });
 }
 
-const ADMIN_HANDLERS = { lookup, resetpassword: resetPassword, relink, grantdust: grantDust, ban, unban, users: listUsers, guests: listGuests, history, stats, dust: raidGems, shoprotate: shopRotate };
+// Newest first: "#12 · Bug · ZyroX · 5 minutes ago" then the text, trimmed.
+function listFeedback(i, caller) {
+    const want = Math.max(1, Math.min(25, (opt(i, 'count') | 0) || 10));
+    const rows = feedback.latest(want);
+    const total = feedback.count();
+    audit(caller, null, 'admin_list_feedback', { count: want });
+    if (!rows.length) return reply('No feedback yet.', { ephemeral: true });
+    const each = Math.max(120, Math.min(400, Math.floor(3600 / rows.length) - 80));
+    const blocks = [];
+    let used = 0, cut = 0;
+    for (const r of rows) {
+        const text = r.text.replace(/\s+/g, ' ');
+        const head = `**#${r.id}** · ${r.category ? feedback.LABEL[r.category] : 'No category'} · **${md(feedback.whoText(r, r.username))}** · ${ts(r.at, 'R')}`;
+        const block = head + '\n> ' + md(text.length > each ? text.slice(0, each - 1) + '…' : text);
+        if (used + block.length + 2 > 3900) { cut++; continue; }
+        blocks.push(block);
+        used += block.length + 2;
+    }
+    return reply('', {
+        ephemeral: true, embeds: [{
+            title: `Feedback (${total.toLocaleString('en-US')})`, color: COLOR,
+            description: blocks.join('\n\n'),
+            footer: { text: `Latest ${blocks.length}${cut ? ` (${cut} more did not fit)` : ''} · full text and context in the feedback channel` },
+        }],
+    });
+}
+
+const ADMIN_HANDLERS = { feedback: listFeedback, lookup, resetpassword: resetPassword, relink, grantdust: grantDust, ban, unban, users: listUsers, guests: listGuests, history, stats, dust: raidGems, shoprotate: shopRotate };
 
 // ---- players ----
 

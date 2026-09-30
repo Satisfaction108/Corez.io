@@ -4,7 +4,7 @@
 //   global           /profile /rank /achievements /invites /leaderboard /shop
 //                    /online /play                     (can take up to an hour to show)
 //   admin guild      /lookup /resetpassword /relink /grantdust /ban /unban
-//                    /users /history /guests /stats /dust /shoprotate
+//                    /users /history /guests /stats /dust /shoprotate /feedback
 //                    (default_member_permissions "0": hidden from non-admins)
 //
 //   node scripts/discord-register.js            register both

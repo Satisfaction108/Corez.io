@@ -576,6 +576,8 @@ function broadcast(extra = {}) {
                 scan,
                 overdrive: bodyLive && body.overdriveUntil > t ? Math.ceil((body.overdriveUntil - t) / 1000) : 0,
                 anchor: bodyLive && body.stormAnchorUntil > t ? Math.ceil((body.stormAnchorUntil - t) / 1000) : 0,
+                // storm ramp while you're out in it: damage multiplier, 0 when safe
+                sm: bodyLive && body._inStorm ? Math.round(storm.exposureOf(body, t).mult * 100) / 100 : 0,
                 // raid over: the head start your placement bought for the next one
                 nextGems: raidResults ? (client.raidBonus | 0) : undefined,
             } : null;

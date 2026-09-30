@@ -1516,6 +1516,8 @@ class socketManager {
                     else if (what === "raidend") require('../gamemodes/scripts/dig_royale.js').debugEndRaid();
                     // jump the storm to N seconds into its cycle (300 = a minute before the hold)
                     else if (what === "stormat") require('../terrain/storm.js').debugSeek(m[1] | 0);
+                    // put the storm's edge N units from you (negative: you're inside), you on its east side
+                    else if (what === "stormedge" && b) { const st = require('../terrain/storm.js'); st.debugCenter(b.x - (st.radius() + (+m[1] || 0)), b.y); }
                     // end the raid N seconds from now (late-join note, raid-over wait)
                     else if (what === "raidleft") require('../gamemodes/scripts/dig_royale.js').debugRaidLeft(m[1] | 0);
                     // N extra safe-spawn picks, each checked for a way out; 'trap' plants enclosed pockets first,

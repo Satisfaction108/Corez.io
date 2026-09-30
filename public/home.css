@@ -4317,3 +4317,41 @@ html.dw-fs .dw-fs-toggle .fs-off { display: inline; }
 /* ── Framed on a portal (index.html sets html.dw-embed) ── */
 .wl-embed-note { display: none; margin-top: 12px; color: var(--text2); font: 600 12px/1.4 var(--ui); text-align: center; }
 html.dw-embed #dwWelcome:not(.wl-offline) .wl-embed-note { display: block; }
+
+/* ── Feedback (client/account/feedback.js): a rail button and a small modal ── */
+/* social-btn look, but keep the ink outline like the settings / news icons */
+#homeSidebar #homeFeedbackBtn .dw-ic { --ic-sw: 2; }
+.fb-modal { width: 400px; }
+.fb-form { display: flex; flex-direction: column; gap: 10px; }
+.fb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dw-btn.fb-chip { height: 32px; padding: 0 12px 3px; border-radius: 9px; font-size: 14px; }
+.dw-btn.fb-chip.on { --face-c: var(--copper); --lip-c: var(--copper-dk); color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.28); }
+.fb-field { position: relative; display: block; }
+textarea.dw-input.fb-text {
+    display: block;
+    width: 100%;
+    min-height: 118px;
+    max-height: 40vh;
+    margin: 0;
+    padding: 10px 13px 22px;
+    box-sizing: border-box;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--input-bg);
+    box-shadow: inset 0 2px 3px var(--well);
+    color: var(--input-fg);
+    font: 600 14px/1.45 var(--ui);
+    resize: vertical;
+    outline: 0;
+    -webkit-user-select: text;
+    user-select: text;
+}
+textarea.dw-input.fb-text::placeholder { color: var(--text2); opacity: .7; font-weight: 500; }
+textarea.dw-input.fb-text:focus { border-color: var(--copper); box-shadow: inset 0 2px 3px var(--well), 0 0 0 3px var(--focus); }
+.fb-count { position: absolute; right: 10px; bottom: 6px; color: var(--text2); font: 600 11px var(--ui); opacity: .75; pointer-events: none; }
+.fb-count.near { color: var(--danger-text, var(--danger)); opacity: 1; }
+.fb-attach { display: flex; align-items: flex-start; gap: 8px; color: var(--text2); font: 500 12px/1.45 var(--ui); cursor: pointer; }
+.fb-attach-box { flex: none; width: 15px; height: 15px; margin: 1px 0 0; accent-color: var(--copper); cursor: pointer; }
+.fb-thanks { text-align: center; }
+.fb-thanks .dw-modal-actions { justify-content: center; }
+.fb-thanks-ic .dw-ic { width: 44px; height: 44px; margin: 2px auto 6px; }

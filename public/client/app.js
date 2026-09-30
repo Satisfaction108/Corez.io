@@ -10,6 +10,7 @@ import { gameSound } from "./sound.js";
 import * as tutorial from './tutorial.js';
 import * as coach from './coach.js';
 import * as raidFinale from './raidFinale.js';
+import * as stormFx from './stormFx.js';
 import * as rankBadges from './account/rankBadges.js';
 import * as rankPanel from './account/rankPanel.js';
 import * as rankCeremony from './account/rankCeremony.js';
@@ -3636,39 +3637,26 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
+    // one reused object: this runs several times a frame
+    const stormView = { a: 0, cx: 0, cy: 0, r: 0, max: 0, to: 0, fin: 0, hold: 0 };
     function stormSnap() {
         const s = global.royale && global.royale.storm;
         if (!s || !s.a) return null;
-        if (s.n == null) return s;
         // RY lands every 500ms but n predicts +250ms. Extrapolate past t=1 at
         // the same rate so the edge moves continuously (clamping at 1 makes it
         // stutter); the cap only guards stalls.
-        const t = Math.min(4, Math.max(0, (performance.now() - global.royale.at) / 250));
-        return Object.assign({}, s, { r: (s.r || 0) + ((s.n || s.r) - s.r) * t });
-    }
-    function circleRadiusWorld() {
-        const s = global.royale && global.royale.storm;
-        if (s && s.max > 0) return s.max;
-        return Math.min(global.gameWidth, global.gameHeight) / 2;
+        const t = s.n == null ? 0 : Math.min(4, Math.max(0, (performance.now() - global.royale.at) / 250));
+        const v = stormView;
+        v.a = s.a; v.cx = s.cx || 0; v.cy = s.cy || 0; v.max = s.max || 0; v.to = s.to || 0; v.fin = s.fin || 0; v.hold = s.hold || 0;
+        v.r = (s.r || 0) + (s.n == null ? 0 : ((s.n || s.r) - s.r) * t);
+        return v;
     }
     function fillStormOnMap(c, mapX, mapY, scale, x, y, w, h) {
         const s = stormSnap();
         if (!s) return;
         const cx = mapX(s.cx || 0), cy = mapY(s.cy || 0);
-        const maxR = (s.max || circleRadiusWorld()) * scale;
         const rr = Math.max(2, (s.r || 0) * scale);
-        c.save();
-        c.beginPath();
-        c.rect(x, y, w, h);
-        c.arc(cx, cy, rr, 0, Math.PI * 2, true);
-        c.fillStyle = "rgba(88, 48, 120, 0.38)";
-        c.fill("evenodd");
-        c.strokeStyle = "#5a2a78";
-        c.lineWidth = 2;
-        c.beginPath();
-        c.arc(cx, cy, rr, 0, Math.PI * 2);
-        c.stroke();
-        c.restore();
+        stormFx.drawMap(c, cx, cy, rr, x, y, w, h, (s.to || 0) * scale);
     }
     function playerInStorm() {
         const s = stormSnap();
@@ -3685,32 +3673,9 @@ import * as cosmetics from './account/cosmetics.js';
         const s = stormSnap();
         if (!s) return;
         const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
-        const cx = roomX + ((s.cx || 0) + halfW) * ratio;
-        const cy = roomY + ((s.cy || 0) + halfH) * ratio;
-        const rr = Math.max(0, (s.r || 0) * ratio);
-        const c = ctx[0];
-        c.save();
-        c.beginPath();
-        c.rect(-40, -40, global.screenWidth + 80, global.screenHeight + 80);
-        c.arc(cx, cy, rr, 0, Math.PI * 2, true);
-        c.clip("evenodd");
-        c.fillStyle = "rgba(72, 38, 96, 0.46)";
-        c.globalAlpha = 1;
-        c.fillRect(-40, -40, global.screenWidth + 80, global.screenHeight + 80);
-        c.restore();
-        c.save();
-        const wall = Math.max(8, 12 * ratio);
-        c.beginPath();
-        c.arc(cx, cy, rr + wall, 0, Math.PI * 2);
-        c.arc(cx, cy, Math.max(0, rr - 2), 0, Math.PI * 2, true);
-        c.fillStyle = "#6a3a78";
-        c.fill("evenodd");
-        c.strokeStyle = "#2a1028";
-        c.lineWidth = Math.max(2, 2.5 * ratio);
-        c.beginPath();
-        c.arc(cx, cy, rr, 0, Math.PI * 2);
-        c.stroke();
-        c.restore();
+        const ox = roomX + halfW * ratio, oy = roomY + halfH * ratio;
+        const rr = Math.max(0, s.r * ratio);
+        stormFx.drawWorld(ctx[0], ox + s.cx * ratio, oy + s.cy * ratio, rr, ox, oy, ratio, global.screenWidth, global.screenHeight);
     }
 
     function drawFloor(px, py, ratio, tick) {
@@ -6443,6 +6408,7 @@ import * as cosmetics from './account/cosmetics.js';
             { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk }, a),
     });
     function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "k" : String(Math.round(d)); }
+    stormFx.init({ hudTitle, drawText, fmtDist });
     function gemPath(c, x, y, r) {
         c.beginPath();
         for (let i = 0; i < GEM_ICON.length; i++) {
@@ -6972,18 +6938,25 @@ import * as cosmetics from './account/cosmetics.js';
         hudSafe("quest", drawQuestCard);
         hudSafe("override", drawOverrideCard);
         hudSafe("storm", () => {
-            if (!playerInStorm()) return;
-            const c = ctx[2];
-            c.save();
-            c.fillStyle = "rgba(160, 35, 35, 0.28)";
-            c.fillRect(0, 0, global.screenWidth, 10);
-            c.fillRect(0, global.screenHeight - 10, global.screenWidth, 10);
-            c.fillRect(0, 0, 10, global.screenHeight);
-            c.fillRect(global.screenWidth - 10, 0, 10, global.screenHeight);
-            c.restore();
+            const hs = stormHud;
+            const s = stormSnap();
+            hs.inside = !!s && !global.died && playerInStorm();
+            if (hs.inside) {
+                const px = global.player.renderx, py = global.player.rendery;
+                const you = r.you || {};
+                hs.sm = +you.sm || 0;
+                hs.immune = you.anchor | 0;
+                hs.final = !!(s.fin && s.hold);
+                hs.dist = Math.hypot(px - s.cx, py - s.cy) - s.r;
+                hs.dirAng = Math.atan2(s.cy - py, s.cx - px);
+            }
+            ctx[2].save();
+            stormFx.drawHud(ctx[2], global.screenWidth, global.screenHeight, hudTopBottom, hs);
+            ctx[2].restore();
         });
         if (hudErrText) drawText("HUD error: " + hudErrText, cx, global.screenHeight - 78, 11, "#ff7a6b", "center");
     }
+    const stormHud = { inside: false, sm: 0, immune: 0, final: false, dist: 0, dirAng: 0 };
     const BOSS_H = 50, BOSS_GAP = 12;
     let spectateBarBottom = 0;   // the top cluster starts under the spectate bar while dead
     function drawBossBar(cx, y, a) {

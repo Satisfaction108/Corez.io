@@ -437,6 +437,22 @@ const V7 = `
 ALTER TABLE guests ADD COLUMN source TEXT;
 `;
 
+// v8: player feedback from the menu's Feedback button (feedback.js). One row
+// per message, accounts and guests alike. No IP is kept (rate limits live in
+// memory only); context is the small JSON the client attached, if any.
+const V8 = `
+CREATE TABLE feedback (
+    id       INTEGER PRIMARY KEY,
+    at       INTEGER NOT NULL,
+    user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    guest_id TEXT    CHECK (guest_id IS NULL OR length(guest_id) = 32),
+    category TEXT    CHECK (category IS NULL OR category IN ('bug', 'idea', 'balance', 'other')),
+    text     TEXT    NOT NULL CHECK (length(text) BETWEEN 1 AND 1000),
+    context  TEXT    NOT NULL DEFAULT '{}'
+) STRICT;
+CREATE INDEX feedback_at ON feedback(at);
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
@@ -445,6 +461,7 @@ const MIGRATIONS = [
     { version: 5, up(db) { db.exec(V5); } },
     { version: 6, up(db) { db.exec(V6); } },
     { version: 7, up(db) { db.exec(V7); } },
+    { version: 8, up(db) { db.exec(V8); } },
 ];
 
 function latestVersion() {

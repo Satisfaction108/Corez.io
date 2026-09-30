@@ -888,6 +888,16 @@ class GameSound {
         if (big) this._playSample('bankCelebrate', { peak: 0.7 * m, delay: 0.12, duck: false });
     }
 
+    // You just walked into the storm: the satchel-full warning, once and a
+    // little lower, so it reads as "danger" without a new sound.
+    stormWarn() {
+        const m = this._mix('combat');
+        if (!m || !this._throttle('stormWarn', 3000)) return;
+        if (this._playSample('satchelFull', { peak: 0.9 * m, rate: 0.82, duck: false })) return;
+        this._tone({ freq: 150, glideTo: 100, type: 'sine', dur: 0.11, peak: 0.15 * m, attack: 0.008 });
+        this._tone({ freq: 140, glideTo: 92, type: 'sine', dur: 0.14, peak: 0.13 * m, delay: 0.15, attack: 0.008 });
+    }
+
     // Rank points going down (a fare). Soft on purpose: it is a small loss.
     rankDown() {
         const m = this._mix('celebration');

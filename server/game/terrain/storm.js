@@ -5,6 +5,30 @@
 // shuts.
 const DAMAGE_FRAC = 0.07;
 const DAMAGE_EVERY_MS = 1100;
+// Storm damage ramps with how long you've been out in it. The first seconds
+// are a warning (new players often don't know they have to move), then it
+// climbs to the full DAMAGE_FRAC and past it, so sitting in the storm never
+// pays. Points are [seconds outside, damage multiplier], eased in between.
+const RAMP = [[0, 0.12], [5, 0.2], [18, 1], [30, 1.6]];
+const RAMP_MAX = RAMP[RAMP.length - 1][1];
+// back inside this long and the ramp starts over; a shorter dip holds it
+const RAMP_RESET_MS = 3000;
+// The raid's last hold (and after it shuts) is the showdown: the ramp runs
+// this much faster, skips the warning (FINAL_RAMP_FLOOR_S) and hits harder,
+// so hiding out in the storm there still kills faster than it used to.
+const FINAL_RAMP_SPEED = 3;
+const FINAL_RAMP_FLOOR_S = 5;
+const FINAL_DAMAGE_MULT = 1.35;
+function rampMult(sec) {
+    if (!(sec > 0)) return RAMP[0][1];
+    for (let i = 1; i < RAMP.length; i++) {
+        const a = RAMP[i - 1], b = RAMP[i];
+        if (sec >= b[0]) continue;
+        const k = (sec - a[0]) / (b[0] - a[0]);
+        return a[1] + (b[1] - a[1]) * k * k * (3 - 2 * k);
+    }
+    return RAMP_MAX;
+}
 const SHRINK_MS = 6 * 60 * 1000;
 const HOLD_MS = 60 * 1000;
 // Every cycle is this long whatever the twist, so the raid clock never
@@ -78,6 +102,12 @@ function debugSeek(sec) {
     if (!state.active) start();
     state.cycleStartAt = Date.now() - Math.max(0, +sec || 0) * 1000;
 }
+// ROYALE_DEBUG (DBG stormedge): move the zone's centre, for visual checks
+function debugCenter(x, y) {
+    if (!state.active) start();
+    state.cx = +x || 0;
+    state.cy = +y || 0;
+}
 // ROYALE_DEBUG (DBG raidleft): jump into the raid's last cycle with `sec`
 // seconds to go. Returns the new end time.
 function debugFinal(sec) {
@@ -141,6 +171,13 @@ function radius(now = Date.now(), peek = false) {
     return state.maxR * (1 - t * (1 - MIN_FRAC));
 }
 
+function targetRadius(now = Date.now()) {
+    const ph = cyclePhase(now);
+    if (ph === "shrink") return state.maxR * MIN_FRAC;
+    if (ph === "hold" && isFinal()) return state.maxR * FINAL_FRAC;
+    return 0;
+}
+
 function phaseLeftSec(now = Date.now()) {
     if (!state.active) return 0;
     const ph = cyclePhase(now);
@@ -181,6 +218,8 @@ function snapshot(now = Date.now()) {
         r: state.active ? radius(now) : maxRadius(),
         max: state.maxR,
         n: state.active ? radius(now + 250, true) : maxRadius(),
+        // where this phase is closing to (0 while it holds still), for the map
+        to: state.active ? targetRadius(now) : 0,
         c: state.cycle | 0,
         cn: cycles === Infinity ? 0 : cycles,
         fin: state.active && isFinal() ? 1 : 0,
@@ -191,29 +230,60 @@ function snapshot(now = Date.now()) {
     };
 }
 
+function finalSqueeze(now) {
+    if (!state.active || !isFinal()) return false;
+    const ph = cyclePhase(now);
+    return ph === "hold" || ph === "done";
+}
+
+// How far into the ramp a body is: seconds outside (scaled in the final
+// squeeze) and the damage multiplier that gives. The HUD reads this.
+function exposureOf(body, now = Date.now()) {
+    const sec = ((body && body._stormExpMs) || 0) / 1000;
+    return { sec, mult: rampMult(sec) * (finalSqueeze(now) ? FINAL_DAMAGE_MULT : 1) };
+}
+
 function tickDamage(now = Date.now()) {
     if (!state.active) return;
     maybeRoll(now);
+    const fin = finalSqueeze(now);
+    const speed = fin ? FINAL_RAMP_SPEED : 1;
     for (const body of entities.values()) {
         if (!body || body.isDead?.() || body.isGhost) continue;
         if (!(body.isPlayer || body.isBot)) continue;
         if (body.royaleFrozen) continue;
+        // real time since this body was last looked at, capped so a stall
+        // never jumps the ramp
+        const dt = body._stormSeenAt ? Math.max(0, Math.min(250, now - body._stormSeenAt)) : 0;
+        body._stormSeenAt = now;
         if (!inStorm(body.x, body.y, now)) {
-            body._stormHurtAt = 0;
             body._inStorm = false;
+            if (body._stormExpMs > 0) {
+                body._stormOutMs = (body._stormOutMs || 0) + dt;
+                if (body._stormOutMs >= RAMP_RESET_MS) {
+                    body._stormExpMs = 0;
+                    body._stormOutMs = 0;
+                    body._stormHurtAt = 0;
+                }
+            }
             continue;
         }
         body._inStorm = true;
+        body._stormOutMs = 0;
         // a fresh spawn keeps its shield even if the storm reached it
         if ((body.spawnGraceUntil || 0) > now) continue;
         body.invuln = false;
+        let dmgMult = 1;
+        if (body.socket) { try { dmgMult = require('./shop.js').stormDamageMult(body); } catch { /* */ } }
+        // immune (Storm Anchor, medkit): no damage, and the ramp waits
+        if (dmgMult <= 0) continue;
+        body._stormExpMs = (body._stormExpMs || 0) + dt * speed;
+        if (fin && body._stormExpMs < FINAL_RAMP_FLOOR_S * 1000) body._stormExpMs = FINAL_RAMP_FLOOR_S * 1000;
         if (now - (body._stormHurtAt || 0) < DAMAGE_EVERY_MS) continue;
         body._stormHurtAt = now;
         if (!body.health || !(body.health.max > 0)) continue;
-        let dmgMult = 1;
-        if (body.socket) { try { dmgMult = require('./shop.js').stormDamageMult(body); } catch { /* */ } }
-        if (dmgMult <= 0) continue;
-        const dmg = body.health.max * DAMAGE_FRAC * dmgMult * (global.royaleMods && global.royaleMods.stormDamageMult || 1);
+        const ramp = rampMult(body._stormExpMs / 1000) * (fin ? FINAL_DAMAGE_MULT : 1);
+        const dmg = body.health.max * DAMAGE_FRAC * ramp * dmgMult * (global.royaleMods && global.royaleMods.stormDamageMult || 1);
         if (body.shield && body.shield.amount > 0) {
             const soak = Math.min(body.shield.amount, dmg);
             body.shield.amount -= soak;
@@ -229,4 +299,4 @@ function tickDamage(now = Date.now()) {
     }
 }
 
-module.exports = { start, stop, setLockMs, setCycles, endAt, isFinal, debugSeek, debugFinal, ensureActive, radius, inStorm, snapshot, tickDamage, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC };
+module.exports = { start, stop, setLockMs, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT };

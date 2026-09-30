@@ -56,6 +56,7 @@ require('./routes/progress').register(router);
 require('./routes/interactions').register(router);
 require('./routes/resetPage').register(router);
 require('./routes/invite').register(router);
+require('./routes/feedback').register(router);
 const partyRoutes = require('./routes/party');
 partyRoutes.register(router);
 events.register(router);
@@ -378,6 +379,7 @@ module.exports = {
     backup,
     announce,
     referrals,
+    feedback: require('./feedback'),
     party: require('./party'),
     partyTicket: require('./partyTicket'),
 };

@@ -22,6 +22,7 @@ import * as ingameChat from './ingameChat.js';
 import * as gameToasts from './gameToasts.js';
 import * as party from './party.js';
 import * as invite from './invite.js';
+import * as feedback from './feedback.js';
 
 const html = document.documentElement;
 const HINT = 'dwAcctHint';
@@ -344,6 +345,7 @@ async function boot() {
         refreshMe: () => refresh(true),
         onSignup() { if (!store.get('offline')) welcome.open('auth', { tab: 'signup', dismissable: true }); },
     });
+    try { feedback.init(); } catch (e) { console.error('[feedback] init failed', e); }
     store.on((s, changed) => {
         if (changed.indexOf('user') >= 0 && hub.currentPane() === 'account') hub.refresh('account');
     });

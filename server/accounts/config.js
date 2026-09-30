@@ -116,6 +116,8 @@ function load(env = process.env) {
         announceChannelId: snow(env.DISCORD_ANNOUNCE_CHANNEL_ID),
         backupChannelId: snow(env.DISCORD_BACKUP_CHANNEL_ID),
     };
+    // player feedback goes to its own channel if set, else the private backup one
+    bot.feedbackChannelId = snow(env.DISCORD_FEEDBACK_CHANNEL_ID) || bot.backupChannelId;
     if (!/^[0-9a-f]{64}$/.test(bot.publicKey)) bot.publicKey = '';
     bot.interactions = !!(bot.appId && bot.publicKey);
     bot.rest = !!bot.botToken;

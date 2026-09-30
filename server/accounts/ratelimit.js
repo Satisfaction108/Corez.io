@@ -43,6 +43,7 @@ const WINDOWS = {
     partyInvite:   { limit: 30,  windowMs: 10 * MIN },  // duo invites sent per account
     partyCode:     { limit: 20,  windowMs: 10 * MIN },  // wrong party codes per IP (guessing)
     invite:        { limit: 30,  windowMs: 1 * MIN },   // invite panel loads per account
+    feedback:      { limit: 3,   windowMs: 10 * MIN },  // feedback messages per IP, and per account or guest
 };
 
 const BACKOFFS = {

@@ -49,6 +49,7 @@ const get = (path) => request('GET', path);
 const post = (path, body) => request('POST', path, body);
 
 export const config = () => get('/api/config');
+export const sendFeedback = (body) => post('/api/feedback', body);
 export const me = () => get('/api/me');
 
 // An invite code this browser arrived with (invite.js), sent with a sign-up.
