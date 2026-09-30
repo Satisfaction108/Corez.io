@@ -706,7 +706,7 @@ const CHAPTERS = [
             {
                 id: "ores", next: true, extra: "ores",
                 title: "Ore types",
-                text: "Better ore takes more hits and is further from the middle. There's only *3 emeralds* per map. Broken rock grows back after about 30 seconds.",
+                text: "Better ore takes more hits and is further from the middle. There's only *3 emeralds* per map. Broken rock grows back after about a minute.",
                 praise: "ok",
             },
             {

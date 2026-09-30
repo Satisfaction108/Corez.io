@@ -420,9 +420,59 @@ function drawRim(c, cx, cy, rr, ratio, sw, sh, dt) {
     c.restore();
 }
 
+// ── the safe-zone job ─────────────────────────────────────────────────
+// While "Get inside the safe zone" runs, the whole safe circle is the
+// target: a warm glow just inside the edge and gold dashes marching round
+// it on top of the storm's own line. Only the visible arc is stroked, and
+// nothing at all when the edge is off screen.
+const SAFE_DASH = [0, 0];
+export function drawSafeZone(c, cx, cy, rr, ratio, sw, sh) {
+    if (rr < 4) return;
+    const glowW = Math.max(18, 70 * ratio);
+    // off screen: every screen corner well inside, or the circle nowhere near
+    const fx = Math.max(Math.abs(cx), Math.abs(sw - cx)), fy = Math.max(Math.abs(cy), Math.abs(sh - cy));
+    const ir = rr - glowW - 20;
+    if (ir > 0 && fx * fx + fy * fy < ir * ir) return;
+    const nx = Math.max(0, Math.min(sw, cx)) - cx, ny = Math.max(0, Math.min(sh, cy)) - cy;
+    if (nx * nx + ny * ny > (rr + 20) * (rr + 20)) return;
+    const now = performance.now();
+    const still = calm();
+    const pulse = still ? 1 : 0.8 + 0.2 * Math.sin(now / 300);
+    visibleArc(cx, cy, rr, sw, sh);
+    c.save();
+    c.lineCap = "butt";
+    // a warm band on the safe side (the wide soft part only with glow on)
+    c.strokeStyle = "#ffd76e";
+    if (glowOn()) {
+        c.globalAlpha = 0.15 * pulse;
+        c.lineWidth = glowW;
+        c.beginPath(); c.arc(cx, cy, Math.max(1, rr - glowW / 2), visA0, visA1); c.stroke();
+    }
+    c.globalAlpha = 0.34 * pulse;
+    c.lineWidth = glowW * 0.35;
+    c.beginPath(); c.arc(cx, cy, Math.max(1, rr - glowW * 0.175), visA0, visA1); c.stroke();
+    // ink under, then the marching gold dashes
+    c.globalAlpha = 0.9;
+    c.strokeStyle = "#120e15";
+    c.lineWidth = Math.max(5, 9 * ratio);
+    c.beginPath(); c.arc(cx, cy, rr, visA0, visA1); c.stroke();
+    const dashPx = Math.max(12, 46 * ratio);
+    SAFE_DASH[0] = dashPx; SAFE_DASH[1] = dashPx * 0.7;
+    c.setLineDash(SAFE_DASH);
+    c.lineDashOffset = still ? 0 : -(now / 1000) * 60 * Math.max(0.5, ratio);
+    c.lineCap = "round";
+    c.globalAlpha = 1;
+    c.strokeStyle = "#ffd76e";
+    c.lineWidth = Math.max(2.5, 4.5 * ratio);
+    c.beginPath(); c.arc(cx, cy, rr, visA0, visA1); c.stroke();
+    c.setLineDash(NO_DASH);
+    c.restore();
+}
+
 // ── maps ──────────────────────────────────────────────────────────────
 const DASH = [5, 4], NO_DASH = [];
-export function drawMap(c, cx, cy, rr, x, y, w, h, toR) {
+// hl: the safe-zone job is running, so the circle is picked out in gold
+export function drawMap(c, cx, cy, rr, x, y, w, h, toR, hl) {
     c.save();
     c.beginPath();
     c.rect(x, y, w, h);
@@ -449,6 +499,15 @@ export function drawMap(c, cx, cy, rr, x, y, w, h, toR) {
         c.lineWidth = 1.2;
         c.stroke();
         c.setLineDash(NO_DASH);
+    }
+    if (hl) {
+        c.beginPath();
+        c.arc(cx, cy, rr, 0, TAU);
+        c.strokeStyle = "#ffd76e";
+        c.lineWidth = 2.2;
+        c.globalAlpha = calm() ? 1 : 0.7 + 0.3 * Math.sin(performance.now() / 300);
+        c.stroke();
+        c.globalAlpha = 1;
     }
     c.restore();
 }

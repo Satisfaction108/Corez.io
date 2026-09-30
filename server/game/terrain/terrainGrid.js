@@ -14,11 +14,12 @@ const EMERALD_COUNT = 3;
 const ORE_HP = { [ORE.NONE]: 1, [ORE.COPPER]: 1.8, [ORE.VEIN]: 2.2,
                  [ORE.SHARD]: 3, [ORE.EMERALD]: 6 };
 
+// Mirrored on the client: terrainRenderer.js GROW_MS / GROW_SCALE0.
 const REGROW = {
-    BASE_DELAY_MS:      23_000, 
-    MIN_DELAY_MS:       10_000, 
-    DEFICIT_MS_PER_GAP:    300, 
-    GROW_MS:             8_000, 
+    BASE_DELAY_MS:      46_000, // dead this long before it starts to rise (was 23 s)
+    MIN_DELAY_MS:       20_000, // the side that's losing more wall waits down to this (was 10 s)
+    DEFICIT_MS_PER_GAP:    600, 
+    GROW_MS:            16_000, // the rise at full pace (was 8 s)
     START_SCALE:          0.15, 
     HP_FLOOR:             0.25, 
 
@@ -29,6 +30,20 @@ const REGROW = {
     CRUSH_DEPTH:          0.30, 
 
     PACING_MS:             500, 
+    // ore bloom rocks: a short wait, then they rise from BLOOM_START of the way up
+    BLOOM_DELAY_MS:      5_000, // (was 2.5 s)
+    BLOOM_START:          0.45,
+    // a tank this close to a rising rock (from the cell's centre, plus the
+    // tank's own size) slows the rise to NEAR_RATE, so the wall gives you
+    // time to get out instead of closing over you. NEAR_OFF_R: the
+    // hysteresis before it speeds back up.
+    NEAR_R:                260,
+    NEAR_OFF_R:            300,
+    NEAR_RATE:          1 / 1.2, // 20% longer rise
+    NEAR_BUCKET:           512,
+    // rock raised by a Bulwark or the between-raids wipe keeps the old pace
+    // and ignores nearby tanks (it's meant to go up around you)
+    FAST_RATE:               2,
     EMERALD_RESPAWN_MS: 60_000, 
     ORE_GEN_STRIDE:       7919, 
 };
@@ -579,7 +594,7 @@ class TerrainGrid {
 
                     gen: 0,          
                     growing: false,
-                    growStart: 0,
+                    growE0: 0, growAt: 0, growRate: 1, growFast: false,
                     growDamage: 0,   
                     diedAt: 0,       
                     worldPoly: null, 
@@ -774,9 +789,81 @@ class TerrainGrid {
         return rock.vi < this._spineMid ? 0 : rock.vi > this._spineMid ? 1 : -1;
     }
 
+    // How far into the rise (ms at full pace) a growing rock is. The rise
+    // runs at rock.growRate from rock.growAt, where it was rock.growE0 in;
+    // a rate change re-anchors all three so the shape never jumps.
+    riseElapsed(rock, now) {
+        return (rock.growE0 || 0) + (now - (rock.growAt || 0)) * (rock.growRate || 1);
+    }
+
     growthProgress(rock, now) {
         if (!rock.growing) return 1;
-        return Math.max(0, Math.min(1, (now - rock.growStart) / REGROW.GROW_MS));
+        return Math.max(0, Math.min(1, this.riseElapsed(rock, now) / REGROW.GROW_MS));
+    }
+
+    _setRiseRate(rock, now, rate) {
+        if (rock.growRate === rate) return false;
+        rock.growE0 = this.riseElapsed(rock, now);
+        rock.growAt = now;
+        rock.growRate = rate;
+        rock._cp = null;
+        // clients re-anchor their drawn rise the same way
+        this.rockEvents.push({ k: rock.k, r: 3, e: Math.round(Math.max(-REGROW.GROW_MS, Math.min(REGROW.GROW_MS, rock.growE0))), s: Math.round(rate * 1e4) / 1e4 });
+        return true;
+    }
+
+    // Every tank near a rising rock slows it (REGROW.NEAR_*). Tanks go into
+    // a coarse bucket grid once, then each rising rock looks at the few
+    // buckets around it: O(tanks + rising rocks), twice a second.
+    _slowNearTanks(now) {
+        const list = this._growing;
+        let any = false;
+        for (const rock of list) if (!rock.growFast) { any = true; break; }
+        if (!any) return;
+        const B = REGROW.NEAR_BUCKET;
+        const grid = new Map();
+        let maxSize = 0;
+        const add = (e) => {
+            if (!e || e.isGhost || (e.isDead && e.isDead())) return;
+            if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) return;
+            const key = Math.floor(e.x / B) * 65536 + Math.floor(e.y / B);
+            const cell = grid.get(key);
+            if (cell) cell.push(e); else grid.set(key, [e]);
+            if ((e.size || 0) > maxSize) maxSize = e.size || 0;
+        };
+        const tanks = this.tankSource ? this.tankSource() : TerrainGrid._defaultTanks();
+        for (const e of tanks) add(e);
+        for (const rock of list) {
+            if (rock.growFast) continue;
+            const slow = rock.growRate !== 1;
+            const R = (slow ? REGROW.NEAR_OFF_R : REGROW.NEAR_R);
+            const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
+            const reach = R + maxSize;
+            const bx0 = Math.floor((x - reach) / B), bx1 = Math.floor((x + reach) / B);
+            const by0 = Math.floor((y - reach) / B), by1 = Math.floor((y + reach) / B);
+            let near = false;
+            for (let bx = bx0; bx <= bx1 && !near; bx++) {
+                for (let by = by0; by <= by1 && !near; by++) {
+                    const cell = grid.get(bx * 65536 + by);
+                    if (!cell) continue;
+                    for (const e of cell) {
+                        const rr = R + (e.size || 0);
+                        if ((e.x - x) ** 2 + (e.y - y) ** 2 <= rr * rr) { near = true; break; }
+                    }
+                }
+            }
+            this._setRiseRate(rock, now, near ? REGROW.NEAR_RATE : 1);
+        }
+    }
+
+    // Players and bots (never shots, gems or props).
+    static _defaultTanks() {
+        const out = [];
+        const gm = global.gameManager;
+        if (!gm) return out;
+        for (const p of (gm.socketManager && gm.socketManager.players) || []) if (p && p.body) out.push(p.body);
+        for (const b of (gm.gameHandler && gm.gameHandler.bots) || []) if (b) out.push(b);
+        return out;
     }
 
     // How much of the cell the risen stone covers right now (START_SCALE to 1).
@@ -951,8 +1038,9 @@ class TerrainGrid {
         return { dx: pos.x - startX, dy: pos.y - startY, entombed, buried };
     }
 
-    // elapsed: start this far into the rise (ms), e.g. bloom rocks at 45%
-    startRegrow(rock, now, elapsed = 0) {
+    // elapsed: start this far into the rise (ms), e.g. bloom rocks at 45%.
+    // opts.fast: Bulwark / raid wipe, the old quick rise and no slowdown.
+    startRegrow(rock, now, elapsed = 0, opts = null) {
         if (rock.canyon) return false;
         if (!rock.worldPoly || rock.alive || rock.growing) return false;
         // a loot chest holds its pocket and exit path (chests.js holdRock);
@@ -960,7 +1048,10 @@ class TerrainGrid {
         if (rock.chestLock || rock._chestHolds > 0) return false;
         rock.gen++;
         rock.growing    = true;
-        rock.growStart  = now - (elapsed > 0 ? elapsed : 0);
+        rock.growFast   = !!(opts && opts.fast);
+        rock.growRate   = rock.growFast ? REGROW.FAST_RATE : 1;
+        rock.growAt     = now;
+        rock.growE0     = elapsed > 0 ? elapsed : 0;
         rock.growDamage = 0;
         rock.diedAt     = 0;
         rock.alive      = false;
@@ -1015,9 +1106,10 @@ class TerrainGrid {
         // e: ms into the rise the collision shape already is (a bloom starts at
         // 45%; staggered starts are negative), so the client's drawn rise
         // matches the server's shape.
-        const riseE = Math.max(-REGROW.GROW_MS, Math.min(REGROW.GROW_MS, Math.round(Date.now() - rock.growStart)));
+        // s: the rise pace (1 = full, less near a tank, 2 for a Bulwark)
+        const riseE = Math.max(-REGROW.GROW_MS, Math.min(REGROW.GROW_MS, Math.round(this.riseElapsed(rock, Date.now()))));
         this.rockEvents.push({
-            k: rock.k, r: 1, o: rock.ore, gen: rock.gen, e: riseE,
+            k: rock.k, r: 1, o: rock.ore, gen: rock.gen, e: riseE, s: rock.growRate,
             ax: Math.round((rock.growAx + halfW) / this.cellSize * 100) / 100,
             ay: Math.round((rock.growAy + halfH) / this.cellSize * 100) / 100,
         });
@@ -1066,9 +1158,10 @@ class TerrainGrid {
         if (now - this._lastRegrowTick < REGROW.PACING_MS) return;
         this._lastRegrowTick = now;
 
+        this._slowNearTanks(now);
         for (let i = this._growing.length - 1; i >= 0; i--) {
             const rock = this._growing[i];
-            if (now - rock.growStart >= REGROW.GROW_MS) { this.completeRegrow(rock); continue; }
+            if (this.riseElapsed(rock, now) >= REGROW.GROW_MS) { this.completeRegrow(rock); continue; }
 
             const target = rock.maxHealth *
                 Math.max(REGROW.HP_FLOOR, easeGrowth(this.growthProgress(rock, now)));
@@ -1116,12 +1209,12 @@ class TerrainGrid {
                 const bl = this._bloomNow || null;
                 if (bl && ((rock.wx - bl.x) ** 2 + (rock.wy - bl.y) ** 2) <= bl.r * bl.r) bloomRock = true;
             }
-            if (now - rock.diedAt < (bloomRock ? 2500 : delay)) continue;
+            if (now - rock.diedAt < (bloomRock ? REGROW.BLOOM_DELAY_MS : delay)) continue;
             if (rock.noRegrowUntil && now < rock.noRegrowUntil) continue;
             if (this._inNoRegrowZone(rock, now)) continue;
             if (!bloomRock && !this._hasLivingNeighbour(rock)) continue;
-            // a bloom rock starts 45% of the way up, so it rises in about 4 s
-            this.startRegrow(rock, now, bloomRock ? REGROW.GROW_MS * 0.45 : 0);
+            // a bloom rock starts 45% of the way up, so it rises in about 9 s
+            this.startRegrow(rock, now, bloomRock ? REGROW.GROW_MS * REGROW.BLOOM_START : 0);
         }
 
         // the replant scans every rock twice; twice a second is more than enough
@@ -1345,7 +1438,7 @@ class TerrainGrid {
                 const halfW = this.cols * this.cellSize / 2;
                 const halfH = this.rows * this.cellSize / 2;
                 out.push({ k: rock.k, h: rock.health / rock.maxHealth, d: 1,
-                           r: Math.max(0, now - rock.growStart),
+                           r: Math.max(0, Math.round(this.riseElapsed(rock, now))), s: rock.growRate || 1,
                            o: rock.ore, gen: rock.gen,
                            ax: Math.round((rock.growAx + halfW) / this.cellSize * 100) / 100,
                            ay: Math.round((rock.growAy + halfH) / this.cellSize * 100) / 100 });

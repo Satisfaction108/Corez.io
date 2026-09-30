@@ -118,6 +118,12 @@ import * as cosmetics from './account/cosmetics.js';
     function getKeybinds() {
         let kb = localStorage.getItem("keybinds");
         keybinds = typeof kb === "string" && kb.startsWith("{") ? JSON.parse(kb) : {};
+        // L used to be the debug overlay; a bind saved back then would now
+        // clash with Save & leave, so it goes back to the new default (F8)
+        if (keybinds.KEY_DEBUG && keybinds.KEY_DEBUG[1] === 76 && !keybinds.KEY_SAVE) {
+            delete keybinds.KEY_DEBUG;
+            setKeybinds();
+        }
     }
 
     function setKeybinds() {
@@ -3665,7 +3671,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (!s) return;
         const cx = mapX(s.cx || 0), cy = mapY(s.cy || 0);
         const rr = Math.max(2, (s.r || 0) * scale);
-        stormFx.drawMap(c, cx, cy, rr, x, y, w, h, (s.to || 0) * scale);
+        stormFx.drawMap(c, cx, cy, rr, x, y, w, h, (s.to || 0) * scale, safeZoneJob());
     }
     function playerInStorm() {
         const s = stormSnap();
@@ -3685,6 +3691,13 @@ import * as cosmetics from './account/cosmetics.js';
         const ox = roomX + halfW * ratio, oy = roomY + halfH * ratio;
         const rr = Math.max(0, s.r * ratio);
         stormFx.drawWorld(ctx[0], ox + s.cx * ratio, oy + s.cy * ratio, rr, ox, oy, ratio, global.screenWidth, global.screenHeight);
+        // the safe-zone job: the whole edge lights up
+        if (safeZoneJob()) stormFx.drawSafeZone(ctx[0], ox + s.cx * ratio, oy + s.cy * ratio, rr, ratio, global.screenWidth, global.screenHeight);
+    }
+    function safeZoneJob() {
+        const r = global.royale;
+        const ob = !global.died && r && r.you && r.you.obj;
+        return !!(ob && ob.k === "zone" && ob.st === 0);
     }
 
     function drawFloor(px, py, ratio, tick) {
@@ -7238,6 +7251,9 @@ import * as cosmetics from './account/cosmetics.js';
     // same width and left edge as the kit box below, so the column is one
     // straight edge
     const CARD_W = 190, QUEST_H = 68, CARD_GAP = 10;
+    // the breather between contracts (st 3) is one short row
+    const WAIT_H = 32;
+    const questH = q => q ? (q.st === 3 ? WAIT_H : QUEST_H) : 0;
     const overrideH = n => n ? 48 + n * 13 : 40;
     function layoutLeftCards() {
         const r = global.royale;
@@ -7249,7 +7265,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (!q && !mod && !duo) { leftCards = null; return; }
         const lines = mod ? wrapLines(String(mod.desc || ""), 10, CARD_W - 24).slice(0, 3) : [];
         const duoOff = duo ? DUO_H + ((q || mod) ? CARD_GAP : 0) : 0;
-        const stackH = n => duoOff + (q ? QUEST_H : 0) + (mod ? (q ? CARD_GAP : 0) + overrideH(n) : 0);
+        const stackH = n => duoOff + questH(q) + (mod ? (q ? CARD_GAP : 0) + overrideH(n) : 0);
         const floor = leftColumnFloor() - 10;
         const tiles = (global.upgradeBoxBottom | 0) > 0;
         // touch: no room beside the tiles, the cards wait for the pick
@@ -7265,7 +7281,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
         if (global.mobile) {
             const noMod = duo ? DUO_H + (q ? CARD_GAP : 0) : 0;
-            const y = Math.round(Math.min(pref, floor - noMod - (q ? QUEST_H : 0)));
+            const y = Math.round(Math.min(pref, floor - noMod - questH(q)));
             leftCards = y >= top ? { x: HUD.edge, y, q, mod: null, lines: [], duo, duoOff: noMod } : duo ? { x: HUD.edge, y: top, q: null, mod: null, lines: [], duo, duoOff: 0 } : null;
             return;
         }
@@ -7287,7 +7303,7 @@ import * as cosmetics from './account/cosmetics.js';
         const W = CARD_W;
         const lines = L.lines;
         const H = overrideH(lines.length);
-        const x = L.x, y = (L.q ? L.y + QUEST_H + CARD_GAP : L.y) + (L.duoOff | 0);
+        const x = L.x, y = (L.q ? L.y + questH(L.q) + CARD_GAP : L.y) + (L.duoOff | 0);
         overrideRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
         const c = ctx[2];
         hudPanel(c, x, y, W, H);
@@ -7319,7 +7335,21 @@ import * as cosmetics from './account/cosmetics.js';
     // else the raid packet's position eased between packets.
     const ctgt = { x: 0, y: 0, size: 0 };
     function contractTarget(o) {
-        if (!o || o.st !== 0 || o.x == null) return null;
+        if (!o || o.st !== 0) return null;
+        // the safe zone: the nearest point a little inside the live edge
+        if (o.k === "zone") {
+            const s = stormSnap();
+            if (s && s.a && s.r > 0) {
+                const px = global.player.renderx, py = global.player.rendery;
+                const dx = px - s.cx, dy = py - s.cy, d = Math.hypot(dx, dy) || 1;
+                const r = Math.max(0, s.r - 150);
+                if (d <= r) { ctgt.x = s.cx; ctgt.y = s.cy; }
+                else { ctgt.x = s.cx + dx / d * r; ctgt.y = s.cy + dy / d * r; }
+                ctgt.size = 0;
+                return ctgt;
+            }
+        }
+        if (o.x == null) return null;
         if (o.e != null) {
             const list = global.entities;
             for (let i = 0; i < list.length; i++) {
@@ -7340,9 +7370,20 @@ import * as cosmetics from './account/cosmetics.js';
         const L = leftCards;
         const o = L && L.q;
         if (!o) { questRect = null; return; }
-        const W = CARD_W, H = QUEST_H;
+        const W = CARD_W, H = questH(o);
         const now = performance.now();
         const calm = !!(global.reducedMotion && global.reducedMotion());
+        // between contracts: a short row counting down to the next one
+        if (o.st === 3) {
+            const x = L.x, y = L.y + (L.duoOff | 0);
+            questRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
+            const c = ctx[2];
+            hudPanel(c, x, y, W, H, { alpha: 0.85 });
+            const left = Math.max(0, (o.ms || 0) - (now - (o.at || now)));
+            hudTitle("Next contract in", x + 12, y + H / 2, 12, HUD.text2, "left", 0.9);
+            drawText(fmtRaidClock(Math.ceil(left / 1000)), x + W - 12, y + H / 2, 12, HUD.gold, "right", true, 0.95);
+            return;
+        }
         // a new contract slides in from the left
         const bornAge = now - (global.royale.objBornAt || 0);
         const slide = calm || o.st !== 0 ? 0 : Math.max(0, 1 - bornAge / 260);
@@ -7394,8 +7435,10 @@ import * as cosmetics from './account/cosmetics.js';
             const f2 = lines.length > 2 ? fitLine(lines.slice(1).join(" "), 11.5, 11.5, W - 24) : null;
             drawText(f2 ? f2.txt : lines[1], x + 12, y + 43, 11.5, txtCol, "left", true, a);
         } else drawText(lines[0] || "", x + 12, y + 36, 11.5, txtCol, "left", true, a);
-        const rewTxt = "+" + fmtNum(o.r | 0);
-        const rewW = hudTextW(rewTxt, 10.5);
+        // (a quick repeat of the safe-zone job pays nothing: no reward shown)
+        const noRew = !((o.r | 0) > 0);
+        const rewTxt = noRew ? "" : "+" + fmtNum(o.r | 0);
+        const rewW = noRew ? -18 : hudTextW(rewTxt, 10.5);
         const bx = x + 12, bw = W - 24 - rewW - 18, by = y + 53, bh = 8;
         const frac = done ? 1 : o.g > 0 ? Math.min(1, (o.p || 0) / o.g) : 0;
         c.save();
@@ -7403,6 +7446,7 @@ import * as cosmetics from './account/cosmetics.js';
         hudBar(c, bx, by, bw, bh, frac, done ? HUD.emerald : HUD.gold);
         c.restore();
         // the reward: gems, with a small gem in front
+        if (noRew) return;
         const gx = x + W - 12 - rewW - 7;
         c.save();
         c.globalAlpha = a * (missed ? 0.45 : 1);
@@ -8472,7 +8516,16 @@ import * as cosmetics from './account/cosmetics.js';
         const ob = r.you && r.you.obj;
         const tg = ob ? contractTarget(ob) : null;
         let contractE = -1;
-        if (tg) {
+        if (tg && ob.k === "zone") {
+            // the safe zone: the whole edge is lit (drawStorm), so no ring;
+            // an arrow at your tank points in, unless the storm's own
+            // "get out" arrow is already up, and an edge marker when the
+            // way in is off screen
+            const s = toScreen(tg.x, tg.y);
+            const d = Math.hypot(tg.x - me.x, tg.y - me.y);
+            if (!onScreen(s, -30)) marks.push({ pri: -1, s, col: HUD.gold, glyph: "contract", name: CONTRACT_LABEL.zone, d });
+            if (d > 40 && !playerInStorm()) drawSafeArrow(c, cx, cy, Math.atan2(tg.y - me.y, tg.x - me.x), now);
+        } else if (tg) {
             contractE = ob.e != null ? ob.e : -1;
             const s = toScreen(tg.x, tg.y);
             const d = Math.hypot(tg.x - me.x, tg.y - me.y);
@@ -8539,6 +8592,21 @@ import * as cosmetics from './account/cosmetics.js';
         for (const id of chestSeenAt.keys()) if (!seen.has(id)) chestSeenAt.delete(id);
         for (const [eid, t0] of chestSpawnByEnt) if (now - t0 > 5000) chestSpawnByEnt.delete(eid);
         for (const [eid, t0] of chestGoneAt) if (now - t0 > 2000) { chestGoneAt.delete(eid); if (window.terrainRenderer && window.terrainRenderer.dropCell) window.terrainRenderer.dropCell(chestCellKey(eid)); }
+    }
+    // The safe-zone job's arrow: gold, circling your tank, pointing the way
+    // in (the same shape as the storm's "get out" arrow).
+    function drawSafeArrow(c, x, y, ang, now) {
+        const calm = !!(global.reducedMotion && global.reducedMotion());
+        const ar = 86 + (calm ? 0 : Math.sin(now / 160) * 5);
+        c.save();
+        c.translate(x + Math.cos(ang) * ar, y + Math.sin(ang) * ar);
+        c.rotate(ang);
+        c.scale(2.2, 2.2);
+        c.globalAlpha = 0.95;
+        c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.4; c.lineJoin = "round";
+        c.beginPath(); c.moveTo(10, 0); c.lineTo(-6, -8); c.lineTo(-3, 0); c.lineTo(-6, 8); c.closePath();
+        c.fill(); c.stroke();
+        c.restore();
     }
     // A gold ring with four ticks on the contract target; it breathes unless
     // reduced motion is on.

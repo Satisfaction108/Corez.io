@@ -15,7 +15,7 @@ global.Config = { dig_royale: true };
 global.gameManager = { room: { width: 5460, height: 5460 } };
 
 const mapGen = require('../../server/game/terrain/mapGen.js');
-const { ORE, ORE_HP } = require('../../server/game/terrain/terrainGrid.js');
+const { ORE, ORE_HP, REGROW } = require('../../server/game/terrain/terrainGrid.js');
 const reach = require('../../server/game/terrain/spawnReach.js');
 
 const grid = mapGen.generate({ cols: 13, rows: 13, tileWidth: 420, fullLattice: true });
@@ -129,7 +129,8 @@ test('a ring of regrowing rock is a wall (rescue may break it)', () => {
 
 test('a mined-out cell about to regrow is not a spawn', () => {
     const c = solidCell();
-    c.alive = false; c.health = 0; c.diedAt = Date.now() - 20_000; c.noRegrowUntil = 0;
+    // 3 s before its regrow wait (REGROW.BASE_DELAY_MS) runs out
+    c.alive = false; c.health = 0; c.diedAt = Date.now() - (REGROW.BASE_DELAY_MS - 3000); c.noRegrowUntil = 0;
     fresh();
     const res = reach.check(grid, ...at(c), { zone: bigZone });
     assert.equal(res.ok, false); assert.equal(res.reason, 'start-closing');

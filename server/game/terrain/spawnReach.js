@@ -15,7 +15,7 @@
 //   (b) it can tunnel ESCAPE_HOPS cells out through diggable rock.
 // Searches are capped at MAX_NODES. exitPath() returns the cells to break to
 // get out (landing-pocket exit tunnel and storm rescue in dig_royale.js).
-const { ORE } = require('./terrainGrid.js');
+const { ORE, REGROW } = require('./terrainGrid.js');
 
 const REACH = {
     MIN_EDGE_FRAC: 0.3,       // shared edge >= this share of a cell's width counts as a doorway
@@ -97,13 +97,13 @@ function regrowDueAt(grid, rock, now) {
     if (rock.chestLock || rock._chestHolds > 0) return Infinity;
     try { if (grid._inNoRegrowZone && grid._inNoRegrowZone(rock, now)) return Infinity; } catch { /* */ }
     try { if (grid._hasLivingNeighbour && !grid._hasLivingNeighbour(rock)) return Infinity; } catch { /* */ }
-    let delay = 23_000;
+    let delay = REGROW.BASE_DELAY_MS;
     try {
         const side = grid._sideOf ? grid._sideOf(rock) : -1;
         const d = grid._regrowDelay || [delay, delay];
         delay = side === -1 ? Math.min(d[0], d[1]) : d[side];
         const bl = grid._bloomNow;
-        if (bl && ((rock.wx - bl.x) ** 2 + (rock.wy - bl.y) ** 2) <= bl.r * bl.r) delay = 2500;
+        if (bl && ((rock.wx - bl.x) ** 2 + (rock.wy - bl.y) ** 2) <= bl.r * bl.r) delay = REGROW.BLOOM_DELAY_MS;
     } catch { /* */ }
     return Math.max(rock.diedAt + delay, rock.noRegrowUntil || 0);
 }

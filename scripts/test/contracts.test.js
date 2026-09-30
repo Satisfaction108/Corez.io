@@ -10,9 +10,17 @@
 //              boss gets a boss job, the storm closing in a zone job, a
 //              fight a hunt job
 //   complete   a bank job pays its reward once, into the bank and the board,
-//              with one callout; the next one rolls after the gap
+//              with one callout; the card counts down the 30 s breather and
+//              the next one rolls after it
 //   chest      cracking the contract's chest in the game loop completes it
-//   expiry     a job that runs out is marked missed and a new one rolls
+//   expiry     a job that runs out is marked missed and a new one rolls after
+//              the breather
+//   zone       the safe-zone job is never offered to someone already safe (the
+//              old loop), finishes the moment they're inside, pays once, then
+//              waits out the breather; a miss never re-offers itself; stepping
+//              back out brings it back early but unpaid; the storm cuts other
+//              breathers short; a fresh spawn still gets a job in 1.5 s; the
+//              last storm skips it when there's no time to get in
 //   idle       an idle player gets nothing rolled, loses the running job and
 //              is never paid; the coach being on holds contracts back
 //   revenge    a bot that kills you is marked for you; killing it pays the
@@ -266,10 +274,20 @@ test('complete: a bank job pays once into the bank and the board, then the next 
     // the done card shows for the gap
     const snap = contracts.snapshotFor(tank.socket, tank, c.endAt + 500);
     assert.equal(snap && snap.st, 1);
-    // more ticks, more deposits: never paid again, and a new one rolls
+    // more ticks, more deposits: never paid again, and nothing new during
+    // the breather, which the card counts down
     for (let i = 0; i < 10; i++) at(t += 300);
     deposit(50); at(t += 300);
     assert.equal(kc(tank.socket, 'contract').length, 1, 'one callout');
+    assert.equal(tank.socket.contract, c, 'still the breather');
+    const wait = contracts.snapshotFor(tank.socket, tank, t);
+    assert.equal(wait.st, 3);
+    assert.ok(Math.abs(wait.ms - (c.endAt + contracts.COOLDOWN_MS - t)) < 5, 'counts down to the next: ' + wait.ms);
+    assert.equal(contracts.COOLDOWN_MS, 30_000);
+    activity.noteCommand(tank.socket, -310, 60, 0, c.endAt + contracts.COOLDOWN_MS - 200);
+    at(c.endAt + contracts.COOLDOWN_MS - 300);
+    assert.equal(tank.socket.contract, c, 'not a moment early');
+    t = settle(tank, c.endAt + contracts.COOLDOWN_MS);
     assert.ok(tank.socket.contract && tank.socket.contract.id !== c.id && tank.socket.contract.state === 0, 'next one rolled');
     remove(tank);
 });
@@ -324,6 +342,9 @@ test('expiry: a job that runs out is missed and a new one rolls', () => {
     at(c.until + 2000);
     activity.noteCommand(tank.socket, 300, 50, 0, c.until + 2000);
     at(c.until + 2400);
+    assert.equal(tank.socket.contract, c, 'a miss waits out the breather too');
+    activity.noteCommand(tank.socket, 301, 50, 0, c.until + contracts.COOLDOWN_MS);
+    at(c.until + contracts.COOLDOWN_MS + 400);
     const n = tank.socket.contract;
     assert.ok(n && n.id !== c.id && n.state === 0, 'rolled again');
     remove(tank);
@@ -484,6 +505,185 @@ test('pacing: a quiet raid gets a filler after 60-90 s; beats and the lock hold 
         chests.spawnSupplyDrop = realDrop;
         clearWorld();
     }
+});
+
+// Safe-zone job. Positions are relative to the zone's own "safe" line (the
+// edge ZONE_LEAD_MS ahead, ZONE_MARGIN in), measured at the time t used.
+function zoneR(t) { return storm.radius(t + contracts.ZONE_LEAD_MS, true) - contracts.ZONE_MARGIN; }
+function placeAt(tank, d, t) {
+    const st = storm.snapshot(t);
+    tank.x = st.cx + d; tank.y = st.cy;
+}
+function keepActive(tank, t) { activity.noteAction(tank.socket, t); }
+
+test('zone: never offered while safe, done the moment you are inside, paid once, then the breather', () => {
+    clearWorld();
+    contracts.attach(royaleHooks());
+    const tank = spawnTank(0, 0);
+    tank.royaleBornAt = Date.now() - 60_000;
+    const sock = tank.socket;
+    shop.stateOf(sock).spent = 1;
+    let t = Date.now() + 1000;
+    // inside the current circle but the edge gets there within 20 s: the old
+    // director offered the job here, it finished on the next tick, paid and
+    // rolled again 2 s later, forever
+    placeAt(tank, zoneR(t) - 40, t);
+    assert.equal(contracts.MAKERS.zone(tank, t), null, 'already safe: not offered');
+    sock.contract = null; sock.contractNextAt = 0;
+    const bank0 = sock.gemBanked | 0;
+    let zones = 0;
+    for (let i = 0; i < 400; i++) {
+        t += 300;
+        keepActive(tank, t);
+        placeAt(tank, Math.min(zoneR(t) - 40, storm.radius(t) - 60), t);
+        at(t);
+        const c = sock.contract;
+        if (c && c.kind === 'zone') zones++;
+        // clear any other job out of the way so the director keeps choosing
+        if (c && c.state === 0 && c.kind !== 'zone') { c.until = t; }
+    }
+    assert.equal(zones, 0, 'no safe-zone job for someone who is safe');
+    assert.equal(kc(sock, 'contract').filter(p => /\+60 /.test(p[4] || '')).length, 0);
+
+    // out in the storm: offered at once
+    sock.contract = null; sock.contractNextAt = 0;
+    t += 300; keepActive(tank, t);
+    placeAt(tank, storm.radius(t) + 300, t);
+    at(t);
+    let c = sock.contract;
+    assert.equal(c.kind, 'zone');
+    assert.equal(c.reward, contracts.REWARDS.zone);
+    const snap = contracts.snapshotFor(sock, tank, t);
+    assert.equal(snap.z, 1, 'the client lights the whole circle for this one');
+    // still outside a few ticks: still running
+    for (let i = 0; i < 4; i++) { t += 300; keepActive(tank, t); placeAt(tank, storm.radius(t) + 250, t); at(t); }
+    assert.equal(c.state, 0);
+    // just inside the edge but not past the margin: not yet
+    t += 300; keepActive(tank, t); placeAt(tank, zoneR(t) + 30, t); at(t);
+    assert.equal(c.state, 0, 'the margin counts');
+    // inside: done, paid once
+    const paid0 = sock.gemBanked | 0;
+    t += 300; keepActive(tank, t); placeAt(tank, zoneR(t) - 5, t); at(t);
+    assert.equal(c.state, 1, 'done as soon as inside');
+    assert.equal((sock.gemBanked | 0) - paid0, contracts.REWARDS.zone, 'paid');
+    // sit right at the line for the whole breather: nothing re-rolls, no second pay
+    const endAt = c.endAt;
+    for (; t < endAt + contracts.COOLDOWN_MS - 400;) {
+        t += 300; keepActive(tank, t);
+        placeAt(tank, zoneR(t) - 10, t);
+        at(t);
+    }
+    assert.equal(sock.contract, c, 'the breather held');
+    assert.equal((sock.gemBanked | 0) - paid0, contracts.REWARDS.zone, 'paid once');
+    assert.equal(contracts.snapshotFor(sock, tank, t).st, 3);
+    // after it, something else (well inside now, so not the zone)
+    placeAt(tank, zoneR(t) - 600, t);
+    keepActive(tank, endAt + contracts.COOLDOWN_MS);
+    t = settle(tank, endAt + contracts.COOLDOWN_MS);
+    assert.ok(sock.contract !== c && sock.contract.kind !== 'zone', 'got ' + sock.contract.kind);
+    assert.ok((sock.gemBanked | 0) >= bank0);
+    remove(tank);
+});
+
+test('zone: a miss waits the breather; stepping back out brings it back early, unpaid; the storm cuts other breathers short', () => {
+    clearWorld();
+    contracts.attach(royaleHooks());
+    const tank = spawnTank(0, 0);
+    tank.royaleBornAt = Date.now() - 60_000;
+    const sock = tank.socket;
+    shop.stateOf(sock).spent = 1;
+    let t = Date.now() + 1000;
+    const out = (k = 300) => placeAt(tank, storm.radius(t) + k, t);
+    const safe = () => placeAt(tank, zoneR(t) - 50, t);
+    const step = (where) => { t += 300; keepActive(tank, t); where(); at(t); };
+
+    // miss: stuck outside until time's up
+    sock.contract = null; sock.contractNextAt = 0;
+    step(out);
+    let c = sock.contract;
+    assert.equal(c.kind, 'zone');
+    t = c.until - 300;
+    step(out);
+    assert.equal(c.state, 2);
+    assert.equal(c.why, "Time's up");
+    const missAt = c.endAt;
+    while (t < missAt + contracts.COOLDOWN_MS - 400) step(out);
+    assert.equal(sock.contract, c, 'a missed safe-zone job never re-offers itself in the breather');
+    t = missAt + contracts.COOLDOWN_MS - 300;
+    step(out); step(out);
+    assert.ok(sock.contract !== c && sock.contract.kind === 'zone' && sock.contract.state === 0, 'back after the breather');
+    assert.equal(sock.contract.reward, contracts.REWARDS.zone, 'nothing paid yet, so it pays');
+
+    // done, then straight back out: not for the first ZONE_OUT_MS, then yes, unpaid
+    c = sock.contract;
+    step(safe);
+    assert.equal(c.state, 1);
+    const paid = sock.gemBanked | 0;
+    step(safe); step(safe); step(safe); step(safe); step(safe); step(safe); step(safe); step(safe);
+    const outFrom = t + 300;
+    while (t < outFrom + contracts.ZONE_OUT_MS - 400) step(out);
+    assert.equal(sock.contract, c, 'a short step out is not enough');
+    for (let i = 0; i < 4; i++) step(out);
+    const again = sock.contract;
+    assert.ok(again !== c && again.kind === 'zone' && again.state === 0, 'properly outside: back early');
+    assert.equal(again.reward, 0, 'but a quick repeat pays nothing');
+    step(safe);
+    assert.equal(again.state, 1);
+    assert.equal(sock.gemBanked | 0, paid, 'and nothing was paid');
+
+    // another job's breather: the storm reaching you cuts it short
+    t = again.endAt + contracts.COOLDOWN_MS + 100;
+    sock.contract = null; sock.contractNextAt = 0;
+    tank.carriedGems = 0;
+    step(safe);
+    const m = sock.contract;
+    assert.equal(m.kind, 'mine', 'got ' + m.kind);
+    m.until = t + 300;
+    step(safe);
+    assert.equal(m.state, 2);
+    // the result shows first
+    step(out);
+    assert.equal(sock.contract, m, 'the result shows before anything cuts in');
+    for (let i = 0; i < 8; i++) step(out);
+    assert.equal(sock.contract.kind, 'zone', 'the storm cut the breather short');
+    assert.ok(t < m.endAt + 5000);
+    remove(tank);
+});
+
+test('zone: a fresh spawn still gets a job within 1.5 s; the last storm skips it when there is no time', () => {
+    clearWorld();
+    contracts.attach(royaleHooks());
+    const tank = spawnTank(0, 0);
+    const sock = tank.socket;
+    // a breather running from before the death
+    sock.contractNextAt = Date.now() + 25_000;
+    const t0 = Date.now();
+    contracts.onSpawn(tank, t0);
+    keepActive(tank, t0 + 100);
+    placeAt(tank, zoneR(t0) - 200, t0);
+    at(t0 + 500);
+    assert.equal(sock.contract, null);
+    let t = t0 + contracts.FIRST_ROLL_MS;
+    at(t);
+    assert.ok(sock.contract && sock.contract.state === 0, 'first job on time');
+
+    // last storm, 12 s to go: far outside is hopeless, a step outside is not
+    const realFinal = storm.isFinal, realPhase = storm.cyclePhase, realEnd = storm.endAt;
+    try {
+        storm.isFinal = () => true;
+        storm.cyclePhase = () => 'hold';
+        storm.endAt = () => t + 12_000;
+        tank.royaleBornAt = t - 60_000;
+        placeAt(tank, storm.radius(t) + 3000, t);
+        assert.equal(contracts.MAKERS.zone(tank, t), null, 'no way in before the end');
+        placeAt(tank, storm.radius(t) + 150, t);
+        const c = contracts.MAKERS.zone(tank, t);
+        assert.ok(c && c.kind === 'zone', 'close enough to make it');
+        assert.ok(c.ms <= 12_000);
+    } finally {
+        storm.isFinal = realFinal; storm.cyclePhase = realPhase; storm.endAt = realEnd;
+    }
+    remove(tank);
 });
 
 // the hooks dig_royale.js attached, rebuilt for the pacing case

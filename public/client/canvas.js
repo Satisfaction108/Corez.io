@@ -427,12 +427,14 @@ class Canvas {
                     this.reverseDirection = !this.reverseDirection;
                     global.createMessage(this.reverseDirection ? "Reverse tank enabled." : "Reverse tank disabled.");
                     break;
+                case global.KEY_SAVE:
+                    // Save & leave: stay still 20 s for a code (saveCode.js).
+                    // Checked before the debug overlay so an old saved bind
+                    // that also sits on this key can't steal it.
+                    if (window.dwSave) window.dwSave.toggle();
+                    break;
                 case global.KEY_DEBUG:
                     global.showDebug = !global.showDebug;
-                    break;
-                case global.KEY_SAVE:
-                    // Save & leave: stay still 20 s for a code (saveCode.js)
-                    if (window.dwSave) window.dwSave.toggle();
                     break;
                 case global.KEY_CLASS_TREE:
                     this.tankTreeProps.enabled = !this.tankTreeProps.enabled;

@@ -6,10 +6,13 @@
 // arrow to the target.
 //
 // One at a time. A finished one pays (banked gems, which the board and growth
-// count too, sometimes a kit item), shows its result for a moment and the
-// next rolls; a missed one rolls a new one the same way. Players who go idle
-// get none rolled and are never paid, and while the first-raid coach is
-// running (the client says so with CO) the coach owns the screen instead.
+// count too, sometimes a kit item) and shows its result for a moment; then
+// there's a 30 s breather (the card counts it down) before the next rolls,
+// done or missed. Two things skip the wait: a fresh spawn's first job comes
+// within FIRST_ROLL_MS, and the safe-zone job turns up whenever the storm
+// really has you. Players who go idle get none rolled and are never paid,
+// and while the first-raid coach is running (the client says so with CO)
+// the coach owns the screen instead.
 //
 // Revenge lives here too: whoever kills a human is marked for them until the
 // raid clock runs a few minutes on, and taking them down pays a bonus.
@@ -20,8 +23,9 @@
 
 const activity = require('../network/activity.js');
 
-const GAP_DONE_MS = 2200;      // a finished contract stays up this long before the next rolls
+const GAP_DONE_MS = 2200;      // a finished contract shows its result this long
 const GAP_FAIL_MS = 1600;      // ...and a missed one this long
+const COOLDOWN_MS = 30_000;    // from the finish to the next roll (done or missed)
 const FIRST_ROLL_MS = 1500;    // after a spawn: long enough for the tank to arrive, well inside 10 s
 const IDLE_MS = 40_000;        // no real input for this long: nothing rolls, nothing pays
 const FRESH_MS = 12_000;       // a life this young gets an easy contract near it
@@ -29,6 +33,15 @@ const REVENGE_MS = 4 * 60 * 1000;
 const REVENGE_GEMS = 200;
 const REVENGE_PTS = 200;
 const TICK_MS = 250;
+// The safe-zone job. "Safe" is the current circle less a small margin: where
+// the edge will be ZONE_LEAD_MS from now, ZONE_MARGIN further in. It is only
+// offered to someone who isn't safe by that same test (so it can never finish
+// the moment it's offered), and it finishes as soon as they are.
+const ZONE_LEAD_MS = 5000;
+const ZONE_MARGIN = 100;
+const ZONE_OUT_MS = 2000;      // right after a safe-zone job, only this long outside brings it back early
+const ZONE_PAY_GAP_MS = 60_000; // the zone reward pays at most once in this long
+const ZONE_SPEED = 110;        // a rough walking pace through rock (units/s), for "can they make it"
 
 // Rewards (banked gems) and how long each kind runs.
 const R = {
@@ -96,16 +109,39 @@ function inZoneAhead(x, y, aheadMs, margin, t) {
     } catch { return true; }
 }
 
-// The nearest point well inside where the edge will be shortly.
+// The safe-zone job's line: { cx, cy, r, d } with d the body's distance
+// from the centre, or null with no storm. Safe is d <= r.
+function zoneLine(body, t) {
+    const { storm } = mods();
+    let st;
+    try { st = storm.snapshot(t); } catch { return null; }
+    if (!st.a) return null;
+    const r = Math.max(0, storm.radius(t + ZONE_LEAD_MS, true) - ZONE_MARGIN);
+    return { cx: st.cx, cy: st.cy, r, d: Math.hypot(body.x - st.cx, body.y - st.cy) };
+}
+function zoneSafe(body, t) {
+    const z = zoneLine(body, t);
+    return !z || z.d <= z.r;
+}
+// The nearest point a little inside the safe line.
 function zonePoint(body, t) {
+    const z = zoneLine(body, t);
+    if (!z) return null;
+    const r = Math.max(0, z.r - 150);
+    const d = z.d || 1;
+    if (d <= r) return { x: z.cx, y: z.cy };
+    return { x: z.cx + (body.x - z.cx) / d * r, y: z.cy + (body.y - z.cy) / d * r };
+}
+// The raid's last storm (its closing hold and after): there's only so long
+// left, so the job is only worth offering if they can get in before the end.
+function zoneTimeLeft(t) {
     const { storm } = mods();
     try {
-        const st = storm.snapshot(t);
-        const r = Math.max(60, storm.radius(t + 15_000, true) - 250);
-        const dx = body.x - st.cx, dy = body.y - st.cy, d = Math.hypot(dx, dy) || 1;
-        if (d <= r) return { x: st.cx, y: st.cy };
-        return { x: st.cx + dx / d * r, y: st.cy + dy / d * r };
-    } catch { return null; }
+        if (!storm.isFinal()) return Infinity;
+        const ph = storm.cyclePhase(t);
+        if (ph !== 'hold' && ph !== 'done') return Infinity;
+        return storm.endAt() - t;
+    } catch { return Infinity; }
 }
 
 function nearestSafeVault(body, t) {
@@ -134,14 +170,19 @@ function nearestShop(body, t) {
 // a few seconds old and wants something easy and close.
 const MAKERS = {
     zone(body, t) {
-        const { storm } = mods();
-        let st;
-        try { st = storm.snapshot(t); } catch { return null; }
-        if (!st.a) return null;
-        const inNow = storm.inStorm(body.x, body.y, t);
-        // outside now, or the edge gets here within ~20 s
-        if (!inNow && inZoneAhead(body.x, body.y, 20_000, 120, t)) return null;
-        return { kind: 'zone', pri: 100, text: "Get inside the safe zone", goal: 1, reward: R.zone, ms: 45_000, target: zonePoint(body, t) };
+        const z = zoneLine(body, t);
+        // already safe (this is also what finishes it, so it can't loop)
+        if (!z || z.d <= z.r) return null;
+        // the last storm: skip it when there's no getting in before the end
+        const left = zoneTimeLeft(t);
+        if (left !== Infinity && (z.d - z.r) / ZONE_SPEED * 1000 + 2000 > left) return null;
+        // stepping in and out never farms it: one payout a minute
+        const paidAt = (body.socket && body.socket._zonePaidAt) || 0;
+        const reward = paidAt && t - paidAt < ZONE_PAY_GAP_MS ? 0 : R.zone;
+        return {
+            kind: 'zone', pri: 100, text: "Get inside the safe zone", goal: 1, reward,
+            ms: left === Infinity ? 45_000 : Math.max(5000, Math.min(45_000, left)), target: zonePoint(body, t), zone: 1,
+        };
     },
     bountySurvive(body, t) {
         const b = hooks && hooks.bounty ? hooks.bounty() : null;
@@ -337,7 +378,7 @@ function update(c, body, t) {
     const sock = body.socket;
     switch (c.kind) {
         case 'zone': {
-            if (inZoneAhead(body.x, body.y, 8000, 150, t)) return 'done';
+            if (zoneSafe(body, t)) return 'done';
             c.target = zonePoint(body, t);
             break;
         }
@@ -425,12 +466,17 @@ function finish(body, c, t, ok, why) {
     c.state = ok ? 1 : 2;
     c.why = ok ? "" : String(why || "Missed");
     c.endAt = t;
-    sock.contractNextAt = t + (ok ? GAP_DONE_MS : GAP_FAIL_MS);
+    // the breather before the next one, whichever way this went
+    sock.contractNextAt = t + COOLDOWN_MS;
     if (!ok) return;
     // never paid to someone who stopped playing (checked by the caller too)
     if (idle(sock, t)) { c.state = 2; c.why = "Missed"; return; }
     if (c.paid) return;
     c.paid = true;
+    if (c.kind === 'zone') {
+        if (!(c.reward > 0)) return;
+        sock._zonePaidAt = t;
+    }
     // the bounty pays through pacing.js (its own callout); the card just shows it done
     if (c.kind === 'bounty' || c.kind === 'bountySurvive') return;
     sock.contractsDone = (sock.contractsDone | 0) + 1;
@@ -459,6 +505,8 @@ function tick(t = Date.now()) {
         // the coach owns the screen; nothing is running for them meanwhile
         if (sock.coachOn) {
             sock.contract = null;
+            // the coach handing over is a fresh start: no breather after it
+            if ((sock.contractNextAt || 0) > t + FIRST_ROLL_MS) sock.contractNextAt = t + FIRST_ROLL_MS;
             if (sock._dropCue && t >= (sock.contractNextAt || 0)) {
                 sock._dropCue = false;
                 try { hooks.callout(body, "dropin", "Drop in!", 0, "", 2000); } catch { /* */ }
@@ -475,9 +523,14 @@ function tick(t = Date.now()) {
             else if (res) finish(body, c, t, false, res);
             continue;
         }
-        if (t < (sock.contractNextAt || 0) || isIdle) continue;
-        const next = roll(body, t, sock.contractPlan);
-        sock.contractPlan = null;
+        if (isIdle) continue;
+        let next = null;
+        if (t < (sock.contractNextAt || 0)) {
+            // the breather; only the storm actually having you cuts it short
+            next = zoneInterrupt(body, c, t);
+            if (!next) continue;
+        } else next = roll(body, t, sock.contractPlan);
+        if (!next || !next.early) sock.contractPlan = null;
         sock.contract = next;
         if (!next) { sock.contractNextAt = t + 3000; continue; }
         if (sock._dropCue) {
@@ -485,6 +538,33 @@ function tick(t = Date.now()) {
             try { hooks.callout(body, "dropin", "Drop in!", 0, next.text, 2800); } catch { /* */ }
         }
     }
+}
+
+// During the breather: the safe-zone job, if the storm really has them.
+// Right after a safe-zone job (done or missed) the edge closing in again
+// waits for the breather like anything else; only being properly outside
+// (ZONE_OUT_MS in the storm) after a done one brings it back sooner, so a
+// miss never re-offers itself in a loop.
+function zoneInterrupt(body, last, t) {
+    const sock = body.socket;
+    const { storm } = mods();
+    let out = false;
+    try { out = storm.inStorm(body.x, body.y, t); } catch { out = false; }
+    if (out) { if (!sock._zoneOutSince) sock._zoneOutSince = t; }
+    else sock._zoneOutSince = 0;
+    // let the last result show first
+    if (last && t - (last.endAt || 0) < (last.state === 1 ? GAP_DONE_MS : GAP_FAIL_MS)) return null;
+    if (last && last.kind === 'zone') {
+        if (last.state !== 1) return null;
+        if (!out || t - sock._zoneOutSince < ZONE_OUT_MS) return null;
+    }
+    let c = null;
+    try { c = MAKERS.zone(body, t); } catch { c = null; }
+    if (!c) return null;
+    c.id = ++seq; c.at = t; c.until = t + Math.max(20_000, c.ms | 0); c.prog = 0; c.state = 0;
+    c.early = true;
+    sock._contractLastKind = c.kind;
+    return c;
 }
 
 // ── events from the raid ────────────────────────────────────────────────
@@ -550,9 +630,15 @@ function onShopBuy(body, item) {
 function snapshotFor(sock, body, t = Date.now()) {
     const c = sock && sock.contract;
     if (!c) return null;
-    // the result shows for the gap, then the card waits for the next one
-    if (c.state !== 0 && t - (c.endAt || 0) > Math.max(GAP_DONE_MS, GAP_FAIL_MS) + 400) return null;
+    // the result shows for a moment, then the card counts down the breather
+    // (st 3, ms to go); nothing at all for someone idle
+    if (c.state !== 0 && t - (c.endAt || 0) > (c.state === 1 ? GAP_DONE_MS : GAP_FAIL_MS) + 400) {
+        const wait = (sock.contractNextAt || 0) - t;
+        if (wait <= 0 || idle(sock, t)) return null;
+        return { id: c.id, k: c.kind, st: 3, ms: Math.round(wait) };
+    }
     const out = { id: c.id, k: c.kind, t: c.text, p: c.prog, g: c.goal, r: c.reward, ms: Math.max(0, c.until - t), st: c.state };
+    if (c.zone) out.z = 1;
     if (c.why) out.why = c.why;
     if (c.state === 0 && !c.noArrow) {
         const e = c.ent;
@@ -586,12 +672,15 @@ function reset() {
         c.contractNext = null;
         c.revenge = null;
         c._contractLastKind = null;
+        c._zonePaidAt = 0;
+        c._zoneOutSince = 0;
     }
 }
 
 module.exports = {
     attach, tick, onSpawn, onDeath, onKill, onChestOpened, onShopBuy, snapshotFor, revengeFor, reset,
-    MAKERS, REWARDS: R, REVENGE_GEMS, REVENGE_PTS, IDLE_MS, FRESH_MS, FIRST_ROLL_MS,
+    MAKERS, REWARDS: R, REVENGE_GEMS, REVENGE_PTS, IDLE_MS, FRESH_MS, FIRST_ROLL_MS, COOLDOWN_MS,
+    ZONE_LEAD_MS, ZONE_MARGIN, ZONE_OUT_MS, ZONE_PAY_GAP_MS,
     // tests
     _roll: roll, _update: update,
     // DBG contract <kind>: force that kind now (null if it can't happen here)

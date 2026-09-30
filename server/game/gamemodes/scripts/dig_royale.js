@@ -2349,7 +2349,7 @@ function wipeWall() {
         if (!rock.diedAt) continue;
         if (rock.canyon) continue;
         rock.noRegrowUntil = 0;
-        try { tg.startRegrow(rock, t + (queued % 20) * 50); } catch { /* */ }
+        try { tg.startRegrow(rock, t + (queued % 20) * 50, 0, { fast: true }); } catch { /* */ }
         queued++;
         if (queued > 900) break;
     }

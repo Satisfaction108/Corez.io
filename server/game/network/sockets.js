@@ -1549,6 +1549,21 @@ class socketManager {
                     else if (what === "stormat") require('../terrain/storm.js').debugSeek(m[1] | 0);
                     // put the storm's edge N units from you (negative: you're inside), you on its east side
                     else if (what === "stormedge" && b) { const st = require('../terrain/storm.js'); st.debugCenter(b.x - (st.radius() + (+m[1] || 0)), b.y); }
+                    // break the rock between 180 and N (default 420) units of you and start it regrowing
+                    // at once, so the near-tank slowdown can be watched. Answers KC 'dbg' with the count
+                    else if (what === "regrowhere" && b) {
+                        const tg = global.gameManager.terrainGrid, t = Date.now(), R = Math.max(200, +m[1] || 420);
+                        let n = 0;
+                        if (tg && tg.rocks) for (const rock of tg.rocks.values()) {
+                            if (!rock.worldPoly || rock.canyon || rock.growing || rock.ore === 4) continue;
+                            const d = Math.hypot((rock.worldCx || rock.wx) - b.x, (rock.worldCy || rock.wy) - b.y);
+                            if (d < 180 || d > R) continue;
+                            if (rock.alive) tg.damageRock(rock, rock.health + 1);
+                            rock.noRegrowUntil = 0;
+                            if (tg.startRegrow(rock, t) !== false) n++;
+                        }
+                        socket.talk('KC', 'dbg', JSON.stringify({ regrowhere: n }), 0);
+                    }
                     // end the raid N seconds from now (late-join note, raid-over wait)
                     else if (what === "raidleft") require('../gamemodes/scripts/dig_royale.js').debugRaidLeft(m[1] | 0);
                     // N extra safe-spawn picks, each checked for a way out; 'trap' plants enclosed pockets first,

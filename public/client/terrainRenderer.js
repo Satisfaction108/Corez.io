@@ -9,11 +9,17 @@ import { gameSound } from "./sound.js";
 const CELL_BASALT = 0;
 const CELL_EMPTY  = 1;
 
-const GROW_MS      = 8000;   
+// mirrors server terrainGrid.js REGROW.GROW_MS / START_SCALE
+const GROW_MS      = 16000;  
 const GROW_SCALE0  = 0.15;   
 const GROW_ORE_MS  = 1200;   
 const GROW_GEN_STRIDE = 7919;
 const growEase = (p) => p * p * (3 - 2 * p);
+// A rise runs at g.rate from g.at, where it was g.e0 ms in (server
+// terrainGrid.riseElapsed); the server re-anchors it (r:3) when a tank near
+// the rock slows it down.
+const riseElapsed = (g, nowMs) => g.e0 + (nowMs - g.at) * g.rate;
+const riseRate = (s) => (Number.isFinite(s) && s > 0 ? Math.min(4, s) : 1);
 
 const FW_COLORS = ['164,14,14', '230,80,0', '230,119,0', '47,127,51', '23,78,166', '123,31,163'];
 const BASE_TILE_SUBCELLS = 8;
@@ -201,7 +207,8 @@ class TerrainRenderer {
             // joined mid-rise: resume the growth animation where the server is
             if (ev.r !== undefined) {
                 if (ev.r < GROW_MS) {
-                    this._growing.set(ev.k, { start: nowInit - ev.r, tier: ev.o | 0,
+                    this._growing.set(ev.k, { at: nowInit, e0: ev.r, rate: riseRate(ev.s),
+                                              tier: ev.o | 0,
                                               gen: ev.gen | 0, ax: ev.ax, ay: ev.ay,
                                               mapped: false });
                 } else {
@@ -288,7 +295,18 @@ class TerrainRenderer {
                 }
                 // ev.e: the server's rise is already this far along (ms)
                 const riseE = Number.isFinite(ev.e) ? Math.max(-GROW_MS, Math.min(GROW_MS, ev.e)) : 0;
-                this._beginGrowth(ev.k, ev.o | 0, ev.gen | 0, now - riseE, ev.ax, ev.ay);
+                this._beginGrowth(ev.k, ev.o | 0, ev.gen | 0, now, ev.ax, ev.ay, riseE, riseRate(ev.s));
+                continue;
+            }
+            // the rise changed pace (a tank came near it or left): pick it up
+            // from where the server says it is
+            if (ev.r === 3) {
+                const g = this._growing.get(ev.k);
+                if (g) {
+                    g.e0 = Number.isFinite(ev.e) ? Math.max(-GROW_MS, Math.min(GROW_MS, ev.e)) : riseElapsed(g, now);
+                    g.at = now;
+                    g.rate = riseRate(ev.s);
+                }
                 continue;
             }
             if (ev.r === 2) { this._finishGrowth(ev.k, now); continue; }
@@ -437,12 +455,14 @@ class TerrainRenderer {
         if (this._impacts.length > 16) this._impacts.shift();
     }
 
-    _beginGrowth(k, tier, gen, now, ax, ay) {
+    // e0: ms into the rise it already is (negative: starts later); rate: its pace
+    _beginGrowth(k, tier, gen, now, ax, ay, e0 = 0, rate = 1) {
         const cell = this._cellPolys.get(k);
         if (!(Number.isFinite(ax) && Number.isFinite(ay))) {
             ax = cell ? cell.cx : 0; ay = cell ? cell.cy : 0;
         }
-        this._growing.set(k, { start: now, tier, gen, ax, ay, mapped: false });
+        this._growing.set(k, { at: now, e0, rate, tier, gen, ax, ay, mapped: false });
+        now -= e0;
         this._landed.delete(k);
         this._gen.set(k, gen);
         this._rockHealth.set(k, 0.25);   
@@ -2295,9 +2315,10 @@ class TerrainRenderer {
                 for (const [k, g] of this._growing) {
                     const cell = this._cellPolys.get(k);
                     if (!cell) continue;
-                    const p = Math.min(1, Math.max(0, (nowMs - g.start) / GROW_MS));
+                    const riseE = riseElapsed(g, nowMs);
+                    const p = Math.min(1, Math.max(0, riseE / GROW_MS));
                     // self-heal: drop a growing record whose completion never arrived
-                    if (nowMs - g.start > GROW_MS + 4000) {
+                    if (riseE > GROW_MS + 4000 * g.rate) {
                         this._growing.delete(k);
                         this._growDust.delete(k);
                         this._damageDirty = true;
