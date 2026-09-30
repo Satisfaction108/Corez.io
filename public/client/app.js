@@ -7523,6 +7523,8 @@ import * as cosmetics from './account/cosmetics.js';
             const extra = lines ? (22 + (lines - 1) * 18) * pop : 0;
             const ph = size * 1.7 + extra;
             hudPanel(c, cx - len / 2, cy - size * 0.85, len, ph, { alpha: a, fill: "rgba(43,37,51,0.72)", r: HUD.r * pop });
+            // coach.js: this plate sits where its card goes on desktop
+            global.hudCalloutUp = true;
             hudTitle(t.text, cx, cy, size, col, "center", a);
             if (t.pts) hudTitle("+" + fmtNum(t.pts) + " pts", cx, cy + size * 0.95 + 5, 15 * pop, HUD.gold, "center", a);
             if (t.sub) drawText(t.sub, cx, cy + size * 0.95 + 5 + (t.pts ? 18 * pop : 0), 12.5, t.kind === "contract" || t.kind === "bounty" ? HUD.emerald : "#d8dce6", "center", true, a, 4.5);
@@ -11159,6 +11161,7 @@ import * as cosmetics from './account/cosmetics.js';
             chipHintBoth = 0;
             pointAt = tw ? "tiles" : sw2 ? "stats" : null;
         }
+        global.chipPointAt = pointAt;   // QA: which chip has the pointer
         // A chip is a real button: a raised key with a glyph cap (gold arrow
         // for a new tank, the stat panel's green + for points), a pulsing
         // ring while there is something to do, and a count badge.
@@ -12195,6 +12198,7 @@ import * as cosmetics from './account/cosmetics.js';
         hudDrawn = {};
         // big center-screen cards this frame; coach.js waits while one is up
         global.hudCardUp = "";
+        global.hudCalloutUp = false;
         let lb = leaderboard.get();
         let max = lb.max;
         global.canSkill = !!gui.points && !global.showTree && !global.pullSkillBar;

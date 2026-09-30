@@ -586,6 +586,9 @@ function syncServer() {
 function stepAside() {
     const sh = global.shop || {};
     if (global.showBigMap || global.hudCardUp) return true;
+    // the kill / growth callouts (a couple of seconds, just above the tank)
+    // meet the card only where it sits under the clock
+    if (global.hudCalloutUp && !lowTouch()) return true;
     // the storm banner (stormFx.js) takes the top middle
     if (now() - (global.stormBannerAt || -1e9) < 250) return true;
     // the shop panel fills the middle; only the ability step talks over it
