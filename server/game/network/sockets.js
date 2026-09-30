@@ -1208,6 +1208,8 @@ class socketManager {
                 // guest id: this browser's lasting random id (admin guest stats)
                 if (socket.guestId || typeof m[0] !== "string" || !/^[a-f0-9]{32}$/.test(m[0])) return;
                 socket.guestId = m[0];
+                // where this browser first came from (a site name, see accounts/guests.js)
+                if (typeof m[1] === "string" && m[1].length <= 56) socket.guestSource = m[1];
                 try { accountBridge.onGuestId(socket); } catch (e) { /* tracking only */ }
             } break;
             case "LV": {

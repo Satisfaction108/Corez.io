@@ -434,14 +434,16 @@ test('migration: v5 -> v6 keeps every row, writes a backup, adds deaths', () => 
     for (const t of tables) before[t] = db.all(`SELECT * FROM "${t}"`);
     assert.equal(db.get("SELECT 1 AS x FROM sqlite_master WHERE name = 'deaths'"), null);
     const res = migrations.apply(db, { backupDir: path.join(ROOT, 'mig', 'backups') });
-    assert.deepEqual(res.applied, [6]);
+    assert.deepEqual(res.applied, migrations.MIGRATIONS.filter(x => x.version >= 6).map(x => x.version));
     assert.ok(res.backup && fs.existsSync(res.backup), 'pre-migration backup');
     const bk = dbmod.open({ path: res.backup, migrate: false });
     assert.equal(bk.userVersion(), 5);
     assert.equal(bk.get('SELECT count(*) AS n FROM guests').n, 30);
     bk.close();
-    assert.equal(db.userVersion(), 6);
-    for (const t of tables) assert.deepEqual(db.all(`SELECT * FROM "${t}"`), before[t], t + ' unchanged');
+    assert.equal(db.userVersion(), migrations.latestVersion());
+    // v7 adds guests.source (null for rows from before it)
+    const strip = (t, rows) => t === 'guests' ? rows.map(r => { assert.equal(r.source, null); const o = { ...r }; delete o.source; return o; }) : rows;
+    for (const t of tables) assert.deepEqual(strip(t, db.all(`SELECT * FROM "${t}"`)), before[t], t + ' unchanged');
     assert.ok(db.get("SELECT 1 AS x FROM sqlite_master WHERE type = 'index' AND name = 'deaths_at'"));
     assert.throws(() => db.run("INSERT INTO deaths (at, cause) VALUES (1, 'lava')"), /CHECK/);
     db.run("INSERT INTO deaths (at, user_id, cause, life_ms) VALUES (1, 1, 'bot', 5)");
@@ -450,6 +452,25 @@ test('migration: v5 -> v6 keeps every row, writes a backup, adds deaths', () => 
     // a second run is a no-op
     assert.deepEqual(migrations.apply(db).applied, []);
     db.close();
+});
+
+test('guests: the first known source sticks, junk is dropped', () => {
+    const guests = require(path.join(SERVER, 'accounts', 'guests'));
+    const a = 'a'.repeat(32), b = 'b'.repeat(32), c = 'c'.repeat(32);
+    guests.seen(a, 1000);
+    guests.seen(a, 2000, 'embed:iogames.space');
+    guests.seen(a, 3000, 'itch.io');
+    guests.seen(b, 1000, 'https://evil.example/?x=1');
+    guests.seen(c, 1000, 'direct');
+    const row = id => d.get('SELECT source, visits FROM guests WHERE guest_id = ?', id);
+    assert.deepEqual({ ...row(a) }, { source: 'embed:iogames.space', visits: 3 });
+    assert.equal(row(b).source, null);
+    assert.equal(row(c).source, 'direct');
+    assert.equal(guests.cleanSource('Embed:X'), null);
+    assert.equal(guests.cleanSource('x'.repeat(49)), null);
+    const commands = require(path.join(SERVER, 'accounts', 'discord', 'commands'));
+    assert.ok(typeof commands.sourcesText === 'function');
+    assert.match(commands.sourcesText(d, 0), /iogames\.space 1 \(1 embed\)/);
 });
 
 let failed = 0;

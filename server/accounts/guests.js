@@ -14,11 +14,19 @@ function run(fn) {
     try { fn(d); } catch (e) { console.error('[accounts] guest tracking: ' + ((e && e.message) || e)); }
 }
 
-// A guest socket connected (one visit per connection).
-function seen(guestId, now = Date.now()) {
+// Where the browser first came from: a bare site name, optionally marked as
+// shown inside that site's iframe. Anything else is dropped.
+const SOURCE_RE = /^(embed:)?[a-z0-9][a-z0-9._-]{0,47}$/;
+const cleanSource = s => (typeof s === 'string' && SOURCE_RE.test(s) ? s : null);
+
+// A guest socket connected (one visit per connection). The source is only
+// kept from the first time it is known (first touch).
+function seen(guestId, now = Date.now(), source = null) {
     if (!valid(guestId)) return;
-    run(d => d.run(`INSERT INTO guests (guest_id, first_seen, last_seen, visits) VALUES (?, ?, ?, 1)
-        ON CONFLICT(guest_id) DO UPDATE SET last_seen = excluded.last_seen, visits = visits + 1`, guestId, now, now));
+    const src = cleanSource(source);
+    run(d => d.run(`INSERT INTO guests (guest_id, first_seen, last_seen, visits, source) VALUES (?, ?, ?, 1, ?)
+        ON CONFLICT(guest_id) DO UPDATE SET last_seen = excluded.last_seen, visits = visits + 1,
+        source = COALESCE(guests.source, excluded.source)`, guestId, now, now, src));
 }
 
 function named(guestId, name, now = Date.now()) {
@@ -44,4 +52,4 @@ function converted(guestId, userId, now = Date.now()) {
         userId, now, guestId));
 }
 
-module.exports = { valid, seen, named, life, converted };
+module.exports = { valid, cleanSource, seen, named, life, converted };

@@ -452,7 +452,8 @@ function listGuests(i, caller) {
     if (!rows.length) return reply(sort === 'converted' ? 'No guest has made an account yet.' : 'No guests recorded yet.', { ephemeral: true });
     const lines = rows.map((g, k) => `${(page - 1) * PAGE + k + 1}. **${md(g.name || 'unnamed')}** \`${g.guest_id.slice(0, 6)}\`` +
         ` · ${g.visits} visit${g.visits === 1 ? '' : 's'} · ${g.games} game${g.games === 1 ? '' : 's'} · best ${(g.best_score | 0).toLocaleString('en-US')}` +
-        ` · ${g.kills} KOs · ${hm(g.play_ms)} · seen ${ts(g.last_seen, 'R')}${g.account ? ' · → **' + md(g.account) + '**' : ''}`);
+        ` · ${g.kills} KOs · ${hm(g.play_ms)} · seen ${ts(g.last_seen, 'R')}${g.source && g.source !== 'direct' ? ' · from ' + md(g.source) : ''}` +
+        `${g.account ? ' · → **' + md(g.account) + '**' : ''}`);
     return reply('', {
         ephemeral: true, embeds: [{
             title: `Guests (${total.toLocaleString('en-US')})`, color: COLOR,
@@ -470,6 +471,20 @@ function inviteStats() {
         WHERE w.tier = 'custom_skin' AND u.deleted_at IS NULL ORDER BY w.at DESC LIMIT 10`);
     const who = skins.length ? ' · custom skin earned: ' + skins.map(s => `**${md(s.username)}** ${ts(s.at, 'd')}`).join(', ') : '';
     return `${(t.q | 0).toLocaleString('en-US')} counted · ${(t.p | 0).toLocaleString('en-US')} waiting${who}`.slice(0, 1000);
+}
+
+// "iogames.space 40 (31 embed) · direct 22 · itch.io 5": new guests of the
+// last 7 days by the site they first came from (guests.source).
+function sourcesText(d, since) {
+    let rows = [];
+    try {
+        rows = d.all(`SELECT CASE WHEN source LIKE 'embed:%' THEN substr(source, 7) ELSE COALESCE(source, 'unknown') END AS site,
+            count(*) AS n, COALESCE(SUM(source LIKE 'embed:%'), 0) AS embed, COALESCE(SUM(games > 0), 0) AS played
+            FROM guests WHERE first_seen > ? GROUP BY site ORDER BY n DESC LIMIT 8`, since);
+    } catch (e) { return 'unavailable'; }
+    if (!rows.length) return 'no new guests';
+    return rows.map(r => `${md(r.site)} ${(r.n | 0).toLocaleString('en-US')}` + (r.embed ? ` (${r.embed | 0} embed)` : '') +
+        ` · ${r.played | 0} played`).join('\n').slice(0, 1000);
 }
 
 // "bots 12, players 3, boss 1, storm 2, median life 1.4 min" (accounts and guests)
@@ -514,6 +529,7 @@ function stats(i, caller) {
                 { name: 'Active', value: `${n(acc.act1)} today · ${n(acc.act7)} this week`, inline: true },
                 { name: 'Online now', value: `${n(online.raid)} in a raid · ${n(online.menu)} in the menu (accounts)`, inline: false },
                 { name: 'Guests', value: `${n(g.n)} ever · ${n(g.new1)} new today · ${n(g.act1)} active today · ${n(g.act7)} this week · ${n(g.games)} games · ${n(g.conv)} made an account`, inline: false },
+                { name: 'New guests by source (7 days)', value: sourcesText(d, now - 7 * DAY), inline: false },
                 { name: 'Gemdust', value: `${dustText(acc.dust)} held · ${dustText(earned.m)} ever earned`, inline: false },
                 { name: 'Purchases', value: `${n(buys.n)} (${n(buys.gifts)} gifts, ${n(buys.refunds)} refunded) · ${dustText(buys.dust)} dust spent`, inline: false },
                 { name: 'Invites', value: inviteStats(), inline: false },
@@ -789,4 +805,4 @@ function handle(i) {
     return fn(i, caller);
 }
 
-module.exports = { ADMIN_COMMANDS, PLAYER_COMMANDS, ADMIN_NAMES, handle, isAdmin, resolveUser, reply, EPHEMERAL, deathsText, MAX_RAID_GEMS };
+module.exports = { ADMIN_COMMANDS, PLAYER_COMMANDS, ADMIN_NAMES, handle, isAdmin, resolveUser, reply, EPHEMERAL, deathsText, sourcesText, MAX_RAID_GEMS };

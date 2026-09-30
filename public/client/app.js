@@ -11974,6 +11974,26 @@ import * as cosmetics from './account/cosmetics.js';
         };
         document.body.appendChild(chatBtn);
 
+        // Fullscreen, right of the chat toggle (portals love it). Hidden when
+        // the page may not go fullscreen, e.g. a portal iframe without allow.
+        const fs = window.dwFullscreen;
+        let fsBtn = null;
+        if (fs && fs.supported()) {
+            fsBtn = document.createElement("button");
+            fsBtn.id = "ingameFullscreenBtn";
+            fsBtn.className = "dw-fs-toggle";
+            fsBtn.title = fs.isOn() ? "Exit fullscreen" : "Fullscreen";
+            fsBtn.setAttribute("aria-label", fsBtn.title);
+            fsBtn.innerHTML = '<svg class="dw-ic fs-on"><use href="#i-fs"/></svg><svg class="dw-ic fs-off"><use href="#i-fs-exit"/></svg>';
+            fsBtn.onclick = () => {
+                fs.toggle();
+                fsBtn.blur();
+                const cv = document.getElementById("gameCanvas");
+                if (cv && global.gameStart) cv.focus();
+            };
+            document.body.appendChild(fsBtn);
+        }
+
         // Raid spectate/death controls are DOM buttons, like the gear and
         // Global Chat toggle: canvas clickables miss (map drag eats mousedown,
         // auto-respawn clears died before mouseup). Prev/Next cycle spectate
@@ -11987,6 +12007,10 @@ import * as cosmetics from './account/cosmetics.js';
             const show = (global.gameStart && !global.died && !global.disconnected) ? "flex" : "none";
             btn.style.display = show;
             chatBtn.style.display = show;
+            if (fsBtn) {
+                fsBtn.style.display = show;
+                if (show !== "none") fsBtn.style.left = (chatBtn.offsetLeft + chatBtn.offsetWidth + 8) + "px";
+            }
             try { updateRoyaleDomButtons(); } catch { /* */ }
         }, 250);
 

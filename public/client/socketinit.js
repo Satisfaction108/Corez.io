@@ -1141,6 +1141,11 @@ const guestId = (() => {
         return g;
     } catch (e) { return null; }
 })();
+// The site this browser first came from, worked out once by the snippet in
+// index.html's <head> (a site name like "iogames.space", never a full URL).
+function firstSource() {
+    try { return localStorage.getItem("dwSrc") || ""; } catch (e) { return ""; }
+}
 const RECONNECT_TRIES = 8;
 // Removed for idling (IK, or the close code 4001 if IK got lost): straight
 // back to the menu with the reason, and no reconnect, since the server keeps
@@ -1183,7 +1188,7 @@ let incoming = async function(message, socket) {
 
             case 'w': {
                 if (m[0]) {
-                    if (guestId) socket.talk('GI', guestId);
+                    if (guestId) socket.talk('GI', guestId, firstSource());
                     socket.talk('RZ', resumeToken);
                     // duos: the party ticket (or "" for a lone queue) and fill
                     if (global.duoSession) socket.talk('DQ', String(global.duoSession.ticket || ""), global.duoSession.fill === false ? 0 : 1);

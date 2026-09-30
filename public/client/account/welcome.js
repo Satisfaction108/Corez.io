@@ -20,11 +20,29 @@ let hooks = { onAuthed() {}, onGuest() {} };
 
 const cachedName = () => { try { return localStorage.getItem('dwAcctName') || ''; } catch (e) { return ''; } };
 
+// Inside a portal's iframe the browser keeps our session cookie away from
+// the frame (it is SameSite=Lax), so logging in there would look fine and
+// then not stick. Those buttons open corez.games in a real tab instead, and
+// the frame stays a guest. index.html sets window.dwEmbed.
+export const embedded = () => !!window.dwEmbed;
+export function openInTab(path) {
+    // not 'noopener': that makes window.open return null even when it worked
+    const w = window.open(location.origin + path, '_blank');
+    if (w) { try { w.opener = null; } catch (e) { /* */ } }
+    else toast('Open corez.games in a new tab to log in', { duration: 6000 });
+}
+
 export function init(h0) {
     Object.assign(hooks, h0);
     document.getElementById('wlGuest').onclick = () => hooks.onGuest();
-    document.getElementById('wlDiscord').onclick = () => { location.href = api.discordStartUrl('login'); };
-    document.getElementById('wlPassword').onclick = () => show('auth', { tab: cachedName() ? 'login' : 'signup' });
+    document.getElementById('wlDiscord').onclick = () => {
+        if (embedded()) return openInTab(api.discordStartUrl('login'));
+        location.href = api.discordStartUrl('login');
+    };
+    document.getElementById('wlPassword').onclick = () => {
+        if (embedded()) return openInTab('/#login');
+        show('auth', { tab: cachedName() ? 'login' : 'signup' });
+    };
     closeBtn.onclick = () => { if (dismissable) close(); };
 }
 
@@ -39,6 +57,8 @@ export const currentView = () => view;
 // view: 'choose' | 'auth' | 'pick' | 'code' | 'recover' | 'reset'
 export function open(name, opts) {
     opts = opts || {};
+    // framed: only the choose view, whose log in buttons open a new tab
+    if (embedded() && name !== 'choose' && name !== 'code') { name = 'choose'; opts = { dismissable: true }; }
     dismissable = !!opts.dismissable;
     root.classList.toggle('wl-dismissable', dismissable);
     if (!opened) {

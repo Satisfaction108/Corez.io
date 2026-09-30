@@ -131,6 +131,9 @@ function onDeleted() {
 function openAccount(opts) {
     if (!store.get('user')) return;
     if (welcome.isOpen()) return;
+    // password, Discord linking and account deletion never run inside
+    // someone else's frame
+    if (welcome.embedded()) return welcome.openInTab('/#account');
     hub.open('account', opts);
 }
 
@@ -270,6 +273,17 @@ function openReset(token) {
     welcome.open('reset', { token, dismissable: store.get('mode') !== 'new' });
 }
 
+/* ── #login / #account ──────────────────────────────────────────────── */
+// A framed copy of the game (on a portal) opens these in a new tab.
+function openFromHash() {
+    const want = (location.hash || '').replace(/^#/, '');
+    if (want !== 'login' && want !== 'account') return;
+    try { history.replaceState(history.state, '', location.pathname + location.search); } catch (e) { /* */ }
+    if (welcome.embedded() || store.get('offline')) return;
+    if (store.get('user')) { if (want === 'account') openAccount(); return; }
+    welcome.open('auth', { tab: 'login', dismissable: store.get('mode') !== 'new' });
+}
+
 /* ── boot ───────────────────────────────────────────────────────────── */
 async function boot() {
     invite.capture();
@@ -335,7 +349,8 @@ async function boot() {
     });
 
     const hint = ls.get(HINT);
-    setMode(hint === 'user' ? 'user' : hint === 'guest' ? 'guest' : 'new');
+    // on a portal the game starts as a guest, no welcome gate in the way
+    setMode(hint === 'user' ? 'user' : hint === 'guest' || welcome.embedded() ? 'guest' : 'new');
     menu.render();
     if (store.get('mode') === 'new') welcome.open('choose');
 
@@ -351,6 +366,7 @@ async function boot() {
     applyMe(me, true);
     handleParams(params);
     if (resetToken) openReset(resetToken);
+    openFromHash();
     schedule();
     social.sync();
     window.addEventListener('hashchange', () => { const t = readResetToken(); if (t) openReset(t); });

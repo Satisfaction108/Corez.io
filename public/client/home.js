@@ -16,7 +16,44 @@
         if (!localStorage.getItem('dwThemeV2')) { localStorage.setItem(THEME_KEY, 'light'); localStorage.setItem('dwThemeV2', '1'); }
     } catch (e) { /* private mode: default below */ }
     applyTheme(localStorage.getItem(THEME_KEY) || 'light'); // immediate, no flash
-    document.documentElement.setAttribute('data-acct', localStorage.getItem('dwAcctHint') || 'new'); // account gate, see client/account/main.js
+    // account gate, see client/account/main.js. Framed on a portal: straight to guest play.
+    var acctHint = localStorage.getItem('dwAcctHint') || 'new';
+    document.documentElement.setAttribute('data-acct', window.dwEmbed && acctHint === 'new' ? 'guest' : acctHint);
+
+    /* ── Fullscreen ────────────────────────────────────────────────────
+       A button on the menu (left rail) and one in game (app.js, next to the
+       chat toggle). Portals frame us; their iframe has to allow fullscreen,
+       otherwise fullscreenEnabled is false and both buttons stay hidden. */
+    var fsDoc = document;
+    function fsElement() { return fsDoc.fullscreenElement || fsDoc.webkitFullscreenElement || null; }
+    window.dwFullscreen = {
+        supported: function () {
+            return !!(fsDoc.fullscreenEnabled || fsDoc.webkitFullscreenEnabled);
+        },
+        isOn: function () { return !!fsElement(); },
+        toggle: function () {
+            try {
+                if (fsElement()) {
+                    (fsDoc.exitFullscreen || fsDoc.webkitExitFullscreen).call(fsDoc);
+                    return;
+                }
+                var el = fsDoc.documentElement;
+                var go = el.requestFullscreen || el.webkitRequestFullscreen;
+                var p = go && go.call(el);
+                if (p && p.catch) p.catch(function () { /* refused, e.g. no user gesture */ });
+            } catch (e) { /* not allowed here */ }
+        }
+    };
+    function syncFullscreenButtons() {
+        var on = window.dwFullscreen.isOn();
+        document.documentElement.classList.toggle('dw-fs', on);
+        document.querySelectorAll('.dw-fs-toggle').forEach(function (b) {
+            b.title = on ? 'Exit fullscreen' : 'Fullscreen';
+            b.setAttribute('aria-label', b.title);
+        });
+    }
+    fsDoc.addEventListener('fullscreenchange', syncFullscreenButtons);
+    fsDoc.addEventListener('webkitfullscreenchange', syncFullscreenButtons);
 
     /* ── Mobile / tablet gate ──────────────────────────────────────────
        The game needs keyboard + mouse, so touch-primary devices are blocked.
@@ -184,6 +221,15 @@
         if (location.hash === '#dw') { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; } }
 
         applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+
+        var fsBtn = document.getElementById('homeFullscreenBtn');
+        if (fsBtn) {
+            if (window.dwFullscreen.supported()) {
+                fsBtn.hidden = false;
+                fsBtn.onclick = function () { window.dwFullscreen.toggle(); fsBtn.blur(); };
+            }
+            syncFullscreenButtons();
+        }
 
         var tb = document.getElementById('themeToggleBtn');
         if (tb) tb.onclick = function () {

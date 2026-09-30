@@ -175,8 +175,20 @@ function publicFile(pathname) {
     return file;
 }
 
+// Game portals (iogames.space, itch.io, Newgrounds...) show the game in an
+// iframe on their own site, so the game's pages may be framed by anyone.
+// That is safe because the session cookie is SameSite=Lax: a cross-site frame
+// never gets it, so the framed game is always a guest and the account screens
+// send people to a real tab (client/account/main.js). The account API and
+// the reset page stay unframeable (the defaults set in the request handler).
+function allowFraming(res) {
+    res.removeHeader("X-Frame-Options");
+    res.setHeader("Content-Security-Policy", "frame-ancestors *");
+}
+
 function sendStatic(res, file) {
     const extension = file.split(".").pop();
+    if (extension === "html") allowFraming(res);
     // No heuristic caching: a client must never run a stale app.js
     // against a freshly restarted server.
     if (path.resolve(file) === menuPage) {
@@ -263,7 +275,10 @@ if (Config.allow_ACAO && Config.startup_logs) {
 server = http.createServer((req, res) => {
     try {
     res.setHeader("X-Content-Type-Options", "nosniff");
+    // Nothing may be framed by default. Only the game's own pages (sendStatic)
+    // lift this, so portals can embed them; /api, /auth and /discord keep it.
     res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     // open tabs poll this to notice a deploy (public/client/version.js)
     if (req.url.split("?")[0] === "/api/version" && req.method === "GET") {
@@ -418,6 +433,12 @@ server = http.createServer((req, res) => {
                 res.writeHead(404);
                 res.end("Denied.");
             }
+        } break;
+        // the how-to-play page portals link to (public/about.html)
+        case "/about":
+        case "/how-to-play": {
+            ok = false;
+            sendStatic(res, path.join(publicRoot, "about.html"));
         } break;
         case "/isOnline": {
             readString = "true";

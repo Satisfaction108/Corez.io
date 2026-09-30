@@ -192,7 +192,7 @@ function onGuestId(socket) {
     if (!active() || !socket.guestId) return;
     const guests = require('../guests');
     if (socket.account) guests.converted(socket.guestId, socket.account.id);
-    else guests.seen(socket.guestId);
+    else guests.seen(socket.guestId, Date.now(), socket.guestSource || null);
 }
 
 // "$broadcast <text>" in raid chat, for accounts whose linked Discord is in

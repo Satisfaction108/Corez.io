@@ -430,6 +430,13 @@ CREATE TABLE deaths (
 CREATE INDEX deaths_at ON deaths(at);
 `;
 
+// v7: where a guest first came from, so we can see which game portals send
+// players. Only a site name ("iogames.space", "embed:itch.io" when the game
+// was shown in that site's iframe, "direct"), never a full URL.
+const V7 = `
+ALTER TABLE guests ADD COLUMN source TEXT;
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
@@ -437,6 +444,7 @@ const MIGRATIONS = [
     { version: 4, up(db) { db.exec(V4); } },
     { version: 5, up(db) { db.exec(V5); } },
     { version: 6, up(db) { db.exec(V6); } },
+    { version: 7, up(db) { db.exec(V7); } },
 ];
 
 function latestVersion() {

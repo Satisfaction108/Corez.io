@@ -1182,7 +1182,7 @@ h3 { font-size: 14px; line-height: 16px; color: var(--text2); text-align: center
    outline, lip, hard ink drop, Lilita labels), always in the dark cave
    palette so they match the canvas HUD (app.js HUD tokens) whatever the
    site theme is. Dark tokens are scoped to these elements only. */
-#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, .dw-igbtn,
+#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn,
 body.in-game #homeSettingsPanel, body.in-game #homeSettingsOverlay,
 body.in-game .igc, body.in-game .igc-pip, .gt-stack {
     --surface: #2b2533; --surface2: #352e3f; --panel-bg: #2b2533; --hub-bg: #2b2533;
@@ -1200,7 +1200,7 @@ body.in-game .igc, body.in-game .igc-pip, .gt-stack {
     --line: #120e16; --line-soft: rgba(255,255,255,.06); --cast: rgba(0,0,0,.42); --well: rgba(0,0,0,.22);
 }
 /* one button recipe for all of them: .dw-btn / #homeSettingsBtn */
-#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, .dw-igbtn {
+#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn {
     position: fixed;
     top: 10px;
     z-index: 30;
@@ -1227,8 +1227,8 @@ body.in-game .igc, body.in-game .igc-pip, .gt-stack {
 #ingameSettingsBtn:hover .dw-ic { transform: rotate(45deg); }
 #ingameChatModeBtn { left: 62px; padding: 0 14px 4px; }
 #ingameTutorialBtn { left: 170px; width: 42px; color: var(--gold); font-size: 20px; }
-#ingameSettingsBtn:hover, #ingameChatModeBtn:hover, #ingameTutorialBtn:hover, .dw-igbtn:hover { filter: brightness(1.08); }
-#ingameSettingsBtn:active, #ingameChatModeBtn:active, #ingameTutorialBtn:active, .dw-igbtn:active {
+#ingameSettingsBtn:hover, #ingameChatModeBtn:hover, #ingameTutorialBtn:hover, #ingameFullscreenBtn:hover, .dw-igbtn:hover { filter: brightness(1.08); }
+#ingameSettingsBtn:active, #ingameChatModeBtn:active, #ingameTutorialBtn:active, #ingameFullscreenBtn:active, .dw-igbtn:active {
     transform: translateY(3px);
     box-shadow: inset 0 -2px 0 var(--face-dk), 0 0 0 transparent;
 }
@@ -3494,7 +3494,7 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 :is(#startButton, #tutorialButton, #themeToggleBtn, #accountChip, #homeSettingsBtn, #homeChangelogBtn,
     #homeSidebar .social-btn, #homeSettingsClose, #homeChangelogClose, .dw-btn, .wl-opt, .dwt-play,
     .dwt-menu, .fr-ic, .fr-back, .hub-close, .wl-x, .dw-toast-act,
-    #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, .dw-igbtn):active::after {
+    #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn):active::after {
     content: ''; position: absolute; left: -4px; right: -4px; top: -10px; bottom: -4px; z-index: -1;
 }
 .shop-grid .shop-card:hover::after, .lk-tile:hover::after {
@@ -3824,7 +3824,7 @@ body:not(.in-game) .gt-stack { display: none; }
     --tip-bg: #2a2016;
     --panel-cast: 0 1px 2px rgba(96,66,22,.12), 0 18px 40px -18px rgba(96,66,22,.4);
 }
-#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, .dw-igbtn,
+#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn,
 body.in-game #homeSettingsPanel, body.in-game #homeSettingsOverlay,
 body.in-game .igc, body.in-game .igc-pip, .gt-stack {
     --btn: #3a3344; --btn-hover: #443c50; --btn-edge: #17131c; --btn-shade: rgba(0,0,0,.34);
@@ -3887,7 +3887,7 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
 .duo-check { border-width: 1px; box-shadow: inset 0 1px 2px var(--well); border-radius: 5px; }
 
 /* ── buttons: flat and tonal. Pressed = sunk in, not pushed off a lip ── */
-.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn {
+.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn {
     --face-c: var(--btn);
     --lip-c: var(--btn-edge);
     border: 1px solid var(--btn-edge);
@@ -3902,11 +3902,11 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
 .dw-btn { font: 600 14px/1 var(--ui); height: 38px; border-radius: 10px; }
 .dw-btn .dw-ic { width: 18px; height: 18px; }
 .dw-btn.block { height: 48px; font: 700 16px/1 var(--ui); border-width: 1px; border-radius: 12px; }
-:is(.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn):hover:not(:disabled) {
+:is(.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn):hover:not(:disabled) {
     background-color: var(--btn-hover);
     filter: none;
 }
-:is(.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn):active:not(:disabled) {
+:is(.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn):active:not(:disabled) {
     transform: translateY(1px);
     box-shadow: inset 0 2px 4px var(--well), 0 0 0 transparent;
 }
@@ -3918,7 +3918,7 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
 .fr-ic { width: 34px; height: 32px; border-radius: 9px; }
 .fr-ic .dw-ic { width: 19px; height: 19px; }
 .gt-btn { height: 28px; border-radius: 8px; font: 600 13px/1 var(--ui); }
-.dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn { padding-bottom: 0; border-radius: 11px; font: 700 14px/1 var(--ui); }
+.dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn { padding-bottom: 0; border-radius: 11px; font: 700 14px/1 var(--ui); }
 .dw-igbtn { padding: 0 16px; }
 #ingameChatModeBtn { padding: 0 14px; }
 .wl-opt { height: 46px; border-radius: 12px; font: 700 15px/1 var(--ui); }
@@ -4304,3 +4304,16 @@ body:has(#homeSettingsPanel.open, #homeChangelogPanel.open, #contributorsPanel.o
 .iv-guest-t { color: var(--heading); font: 700 15.5px/1.3 var(--ui); }
 .iv-guest-p { margin-top: 3px; color: var(--text2); font: 500 12.5px var(--ui); }
 @media (max-width: 480px) { .iv-rw-art { width: 96px; } }
+
+/* ── Fullscreen buttons (home.js dwFullscreen, app.js in game) ── */
+#homeFullscreenBtn[hidden] { display: none; }
+/* social-btn look, but keep the ink outline: the glyph is thin lines */
+#homeSidebar #homeFullscreenBtn .dw-ic { --ic-sw: 2; }
+.dw-fs-toggle .fs-off, html.dw-fs .dw-fs-toggle .fs-on { display: none; }
+html.dw-fs .dw-fs-toggle .fs-off { display: inline; }
+#ingameFullscreenBtn { width: 42px; }
+#ingameFullscreenBtn .dw-ic { width: 24px; height: 24px; }
+
+/* ── Framed on a portal (index.html sets html.dw-embed) ── */
+.wl-embed-note { display: none; margin-top: 12px; color: var(--text2); font: 600 12px/1.4 var(--ui); text-align: center; }
+html.dw-embed #dwWelcome:not(.wl-offline) .wl-embed-note { display: block; }
