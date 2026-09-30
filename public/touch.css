@@ -148,6 +148,7 @@ body.mobile #ingameChatModeBtn { display: none !important; }
 @media (prefers-reduced-motion: reduce) { #touchRotate .rot-phone { animation: none; transform: rotate(-90deg); } }
 #touchRotate h2 { margin: 0 0 6px; font: 400 24px/1.1 "Lilita One", Rubik, sans-serif; color: #fff3d9; }
 #touchRotate p { margin: 0; opacity: .85; }
+#touchRotate p.rot-lock { margin-top: 10px; font-size: 12.5px; color: #a597b0; opacity: 1; }
 #touchRotate button {
     margin-top: 16px; width: 100%; height: 44px;
     border: 0; border-top: 2px dashed #4b4158; background: transparent;

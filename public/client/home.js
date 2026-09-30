@@ -79,6 +79,26 @@
         else if (mq.addListener) mq.addListener(onChange); // older Safari
     }
 
+    /* iPhone (and iPod) Safari: pages can't go full screen, an icon on the
+       home screen can (manifest.webmanifest). Shown until dismissed, at most
+       on three visits, never inside the installed app or an embed. */
+    function initA2hsTip() {
+        var tip = document.getElementById('a2hsTip');
+        if (!tip || window.dwEmbed) return;
+        var ios = /iPhone|iPod/.test(navigator.userAgent);
+        var installed = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+        if (!ios || installed) return;
+        var KEY = 'dwA2hsTip_v1', n = 0;
+        try { n = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (e) { }
+        if (n < 0 || n >= 3) return;
+        try { localStorage.setItem(KEY, String(n + 1)); } catch (e) { }
+        tip.hidden = false;
+        tip.querySelector('.a2hs-x').onclick = function () {
+            tip.hidden = true;
+            try { localStorage.setItem(KEY, '-1'); } catch (e) { }
+        };
+    }
+
     /* ── Tutorial entry ────────────────────────────────────────────────
        The tutorial runs on an unlisted server (id "tut") that is absent from
        /getServers.json. It is fetched by id, the socket is pointed at it, and
@@ -206,6 +226,7 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         initMobileNote();
+        initA2hsTip();
         initTutorialEntry();
         playAfterTutorial();
         // #dw no longer routes anywhere (Dig Wars is parked); drop a stale hash.

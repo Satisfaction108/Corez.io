@@ -78,6 +78,13 @@
     <meta name="twitter:description" content="Mine, loot, fight, purchase upgrades, and climb the leaderboard in a free browser-based battle royale!">
     <meta name="twitter:image" content="https://corez.games/img/og.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+    <!-- installable: from the home screen it runs full screen, sideways (Safari on iPhone has no fullscreen API for pages) -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Corez.io">
+    <meta name="application-name" content="Corez.io">
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
     <link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png">
     <link rel="help" href="/about">
@@ -482,7 +489,9 @@
                             <input type="text" class="conceal" tabindex="4" placeholder="Token (optional)" id="playerKeyInput" maxlength="64" />
 
                             <!-- touch screens only (home.js initMobileNote); CSS picks the line for the orientation -->
-                            <p id="mobileNote" class="mobile-note" hidden><span class="mn-tall">Twin-stick touch controls. Turn sideways to play.</span><span class="mn-wide">Twin-stick controls: one thumb moves, one aims.</span></p>
+                            <p id="mobileNote" class="mobile-note" hidden><span class="mn-tall"><i class="mn-phone" aria-hidden="true"></i>Turn your phone sideways to play</span><span class="mn-wide">Twin-stick controls: one thumb moves, one aims.</span></p>
+                            <!-- Safari on iPhone can't go full screen from a page: an installed icon can (home.js initA2hsTip) -->
+                            <p id="a2hsTip" class="a2hs-tip" hidden><span>For full screen, tap <b>Share</b>, then <b>Add to Home Screen</b>.</span><button type="button" class="a2hs-x" aria-label="Got it"><svg class="dw-ic"><use href="#i-close"/></svg></button></p>
 
                             <!-- play button, full width below both fields -->
                             <div class="startButtonHolder">

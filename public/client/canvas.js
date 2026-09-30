@@ -249,6 +249,7 @@ class Canvas {
         let wy = global.player.rendery + global.target.y / wr;
         if (!isFinite(wx) || !isFinite(wy)) { wx = global.player.renderx; wy = global.player.rendery; }
         this.socket.talk('sk', slot, Math.round(wx), Math.round(wy));
+        global.kitUsedAt = performance.now();   // coach.js: the ability step
         gameSound.uiClick();
     }
     keyDown(event) {
@@ -876,6 +877,8 @@ class Canvas {
                 } else
                 if (upgradeIndex !== -1 && upgradeIndex < gui.upgrades.length && !global.dailyTankAd.renderUI) {
                     this.socket.talk('U', upgradeIndex, parseInt(gui.upgrades[upgradeIndex][0]));
+                    // touch: the tank picker stays up for the next tier (app.js touchTilesOpen)
+                    global.upgradePickedAt = performance.now();
                     gameSound.uiClick();
                 } else if (dailyTankUpgrade == true && !global.dailyTankAd.renderUI) {
                     this.socket.talk('U', JSON.stringify([{isDailyUpgrade: true, tank: gui.dailyTank.tank}]), "null");

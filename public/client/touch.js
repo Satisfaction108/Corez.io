@@ -7,6 +7,8 @@
 // tap on the right half fires at the spot you tapped.
 //
 // Thumb buttons along the right edge: the three kit slots and the sidearm.
+// Kit items that land on a spot (Seismic Charge, Rock Barrage) arm on a tap
+// and the next touch places them: drag to aim, lift to throw.
 // Anything else on screen that takes a click (stat bars, upgrade tiles, the
 // shop and vault panels, the map, the death card) gets the touch as a mouse
 // click, through the same handlers the desktop uses, so every panel works
@@ -54,6 +56,57 @@ export function haptic(kind) {
 for (const [m, kind] of [["combatHit", "hit"], ["combatHurt", "hurt"], ["combatKill", "kill"], ["depositDone", "bank"]]) {
     const f = gameSound[m];
     if (typeof f === "function") gameSound[m] = function (...a) { haptic(kind); return f.apply(this, a); };
+}
+
+// Kit items thrown at a spot, and how far (world units, server/game/terrain/shop.js)
+export const AIMED_KIT = {
+    charge: { max: 500, blast: 150 },
+    barrage: { max: 950, line: true },
+};
+
+// ── fullscreen and landscape ────────────────────────────────────────────
+// Browsers only allow these from a tap, so Play asks (app.js startGame) and
+// a tap in game asks again if something took it away (the app switcher, a
+// call). Not when the player turned it off with the in-game button, and never
+// in an installed app, which is full screen already. iPhone Safari has no
+// fullscreen API for pages: home.js tells those players about Add to Home Screen.
+export function isStandalone() {
+    try {
+        return !!(navigator.standalone || (window.matchMedia && (matchMedia("(display-mode: fullscreen)").matches || matchMedia("(display-mode: standalone)").matches)));
+    } catch (e) { return false; }
+}
+function isPhone() { return Math.min(screen.width || 9999, screen.height || 9999) < 600; }
+function lockLandscape() {
+    // Android Chrome: only while fullscreen (or installed). Phones only; a
+    // tablet is fine either way.
+    try {
+        const o = screen.orientation;
+        if (!o || !o.lock || !isPhone()) return;
+        const p = o.lock("landscape");
+        if (p && p.catch) p.catch(() => { });
+    } catch (e) { }
+}
+let fsAskedAt = 0;
+export function mobileFullscreen() {
+    if (!global.mobile) return;
+    if (isStandalone()) { lockLandscape(); return; }
+    const fs = window.dwFullscreen;
+    if (!fs || !fs.supported()) return;
+    if (fs.isOn()) { lockLandscape(); return; }
+    fsAskedAt = performance.now();
+    try {
+        const el = document.documentElement;
+        const go = el.requestFullscreen || el.webkitRequestFullscreen;
+        const p = go && go.call(el, { navigationUI: "hide" });
+        if (p && p.then) p.then(lockLandscape, () => { });
+        else setTimeout(lockLandscape, 300);
+    } catch (e) { }
+}
+function refullscreen() {
+    const fs = window.dwFullscreen;
+    if (!global.mobile || window.dwFsUserOff || isStandalone() || !fs || !fs.supported() || fs.isOn()) return;
+    if (performance.now() - fsAskedAt < 4000) return;
+    mobileFullscreen();
 }
 
 // ── safe area (notch, home bar) in CSS px ───────────────────────────────
@@ -108,6 +161,7 @@ class TouchControls {
         this.cands = [];
         this.candsAt = 0;
         this.enabled = false;
+        this.place = null;      // an armed aimed kit item: { slot, id, max, tid, x, y }
     }
 
     attach(canvas) {
@@ -260,7 +314,21 @@ class TouchControls {
                 if (this.mouse === null) { this.mouse = id; this.asMouse("down", t); }
                 continue;
             }
+            // a tap off the tank picker closes it (and still moves or aims)
+            if (global.touchTilesOpen && this.closeTiles) this.closeTiles();
             const leftSide = x < this.viewW() * 0.5;
+            // placing a kit item: the move stick keeps the lower left, any
+            // other touch is the placement
+            if (this.place) {
+                const stickZone = x < this.viewW() * 0.4 && y > this.viewH() * 0.3;
+                if (stickZone && !this.move) {
+                    this.move = { id, ox: x, oy: y, x, y, t0: now };
+                    this.updateMove();
+                } else if (this.place.tid == null) {
+                    this.place.tid = id; this.place.x = x; this.place.y = y;
+                }
+                continue;
+            }
             if (leftSide && !this.move) {
                 this.move = { id, ox: x, oy: y, x, y, t0: now };
                 this.updateMove();
@@ -280,6 +348,7 @@ class TouchControls {
             const id = t.identifier;
             if (this.pinch && (id === this.pinch.a || id === this.pinch.b)) { this.movePinch(e.touches); continue; }
             if (this.mouse === id) { this.asMouse("move", t); continue; }
+            if (this.place && this.place.tid === id) { this.place.x = t.clientX; this.place.y = t.clientY; continue; }
             if (this.move && this.move.id === id) {
                 const m = this.move;
                 m.x = t.clientX; m.y = t.clientY;
@@ -310,6 +379,7 @@ class TouchControls {
             const id = t.identifier;
             if (this.pinch && (id === this.pinch.a || id === this.pinch.b)) this.pinch = null;
             if (this.mouse === id) { this.mouse = null; this.asMouse("up", t); continue; }
+            if (this.place && this.place.tid === id) { this.place.x = t.clientX; this.place.y = t.clientY; this.deploy(); continue; }
             if (this.move && this.move.id === id) { this.move = null; this.updateMove(); continue; }
             if (this.aim && this.aim.id === id) {
                 const a = this.aim;
@@ -324,10 +394,13 @@ class TouchControls {
             // nothing on the glass: make sure nothing is stuck down
             if (this.move || this.aim || this.mouse !== null || this.btn.size) this.releaseAll();
         }
+        // a tap is a user gesture: get fullscreen back if it went away
+        if (this.playing()) refullscreen();
     }
 
     releaseAll() {
         this.move = null; this.aim = null; this.pinch = null;
+        if (this.place) this.place.tid = null;
         if (this.mouse !== null) { this.mouse = null; if (this.cv) { global.clickables.clicked = false; global.bigMap && (global.bigMap.dragging = false); } }
         for (const [, b] of this.btn) if (b === "arm") this.armHeld = false;
         this.btn.clear();
@@ -374,6 +447,8 @@ class TouchControls {
                 global.kitDropped = (global.kitDropped | 0) + 1;
                 gameSound.uiClick();
             } else if (!far) {
+                const id = ((global.shop.state && global.shop.state.kitOrder) || [])[slot];
+                if (AIMED_KIT[id]) { this.togglePlace(slot, id); return; }
                 this.aimKitTarget();
                 this.cv.useKitSlot(slot);
                 haptic("tap");
@@ -391,6 +466,47 @@ class TouchControls {
                 gameSound.uiClick();
             }
         }
+    }
+
+    // ── aimed kit items: tap the button, then touch where it should land ──
+    togglePlace(slot, id) {
+        if (this.place && this.place.slot === slot) { this.cancelPlace(); return; }
+        this.place = { slot, id, max: AIMED_KIT[id].max, tid: null, x: 0, y: 0, at: performance.now() };
+        // the aim stick hands over to the placement
+        this.aim = null;
+        gameSound.uiClick();
+        haptic("tap");
+    }
+    cancelPlace() {
+        if (!this.place) return;
+        this.place = null;
+        gameSound.uiClick();
+    }
+    // World units per CSS px (the tank sits at the middle of the view)
+    worldPerCss() { return global.ratio / (util.getRatio() || 1); }
+    // Where the placement lands, CSS px from the view centre, clamped to range.
+    // { dx, dy, fx, fy, out } (fx/fy is the finger, out is past the range)
+    placeSpot() {
+        const p = this.place;
+        if (!p || p.tid == null) return null;
+        const fx = p.x - this.viewW() / 2, fy = p.y - this.viewH() / 2;
+        const d = Math.hypot(fx, fy), maxCss = p.max / this.worldPerCss();
+        const out = d > maxCss;
+        const k = out ? maxCss / d : 1;
+        return { dx: fx * k, dy: fy * k, fx, fy, out, maxCss };
+    }
+    deploy() {
+        const p = this.place, s = this.placeSpot();
+        if (!p || !s) return;
+        this.place = null;
+        // too close to the tank to have a direction: treat it as a slip
+        if (Math.hypot(s.dx, s.dy) < 6) { this.place = p; p.tid = null; return; }
+        global.target.x = s.dx * global.ratio;
+        global.target.y = s.dy * global.ratio;
+        const d = Math.hypot(s.dx, s.dy);
+        this.lastAim = { x: s.dx / d, y: s.dy / d };
+        this.cv.useKitSlot(p.slot);
+        haptic("tap");
     }
 
     // kit items land where you aim; with no aim yet, a little ahead of the tank
@@ -492,9 +608,14 @@ class TouchControls {
         if (!sock || !this.enabled) return;
         if (!this.playing() || global.showBigMap || global.showChat || friendChatOpen()) {
             if (this.move || this.aim) { this.move = null; this.aim = null; this.updateMove(); }
+            if (!this.playing()) this.place = null;
             sock.cmd.set(4, false);
             if (!this.armHeld || global.showChat) sock.cmd.set(7, false);
             return;
+        }
+        if (this.place) {
+            const ko = (global.shop.state && global.shop.state.kitOrder) || [];
+            if (ko[this.place.slot] !== this.place.id || !this.buttonShown("kit0")) this.place = null;
         }
         let firing = false;
         const a = this.aim;
@@ -602,7 +723,9 @@ TouchControls.prototype.buildDom = function () {
     const rot = document.createElement("div");
     rot.id = "touchRotate";
     rot.innerHTML = '<div class="rot-card"><div class="rot-phone"></div><h2>Turn your phone sideways</h2>' +
-        '<p>Raids play in landscape, so you can see what is coming.</p><button type="button">Keep playing upright</button></div>';
+        '<p>You see way more of the raid, and each thumb gets its own side of the screen.</p>' +
+        '<p class="rot-lock">Not turning? Switch off rotation lock.</p>' +
+        '<button type="button">Play upright anyway</button></div>';
     rot.querySelector("button").onclick = () => { this.portraitOk = true; rot.classList.remove("show"); };
     // the overlay swallows touches, but never leaves a stick held
     rot.addEventListener("touchstart", () => this.releaseAll(), { passive: true });

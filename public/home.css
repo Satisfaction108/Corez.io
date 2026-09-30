@@ -1597,6 +1597,48 @@ body.mobile .region-dropdown-menu { position: static; }
     .mobile-note .mn-tall { display: none; }
     .mobile-note .mn-wide { display: inline; }
 }
+/* upright on a phone: the sideways ask is a gold key you can't miss, with a
+   little phone that turns */
+.mobile-note .mn-tall {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 7px 14px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--gold);
+    box-shadow: inset 0 -3px 0 var(--gold-dk), 0 2px 5px var(--cast);
+    color: var(--ink);
+    font: 700 14px/1.1 var(--ui);
+}
+.mn-phone {
+    flex: none; position: relative;
+    width: 11px; height: 18px; box-sizing: border-box;
+    border: 2px solid var(--ink); border-radius: 3px;
+    animation: mnTurn 2.4s cubic-bezier(.6,0,.3,1) infinite;
+}
+.mn-phone::after { content: ""; position: absolute; left: 50%; bottom: 1px; width: 3px; height: 1.5px; margin-left: -1.5px; background: var(--ink); border-radius: 1px; }
+@keyframes mnTurn { 0%, 25% { transform: rotate(0); } 55%, 90% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+@media (orientation: landscape) { .mobile-note .mn-tall { display: none; } }
+@media (prefers-reduced-motion: reduce) { .mn-phone { animation: none; transform: rotate(-90deg); } }
+
+/* iPhone Safari: how to get full screen (Add to Home Screen) */
+.a2hs-tip {
+    display: flex; align-items: center; gap: 8px;
+    margin: 10px 0 -2px; padding: 6px 6px 6px 12px;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface2);
+    color: var(--text); font: 600 12.5px/1.35 var(--ui);
+    text-align: left;
+}
+.a2hs-tip[hidden] { display: none; }
+.a2hs-tip span { flex: 1; min-width: 0; }
+.a2hs-tip b { color: var(--heading); }
+.a2hs-x {
+    flex: none; width: 32px; height: 32px; margin: 0; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 8px; background: transparent; cursor: pointer;
+    touch-action: manipulation;
+}
+.a2hs-x .dw-ic { width: 16px; height: 16px; }
 
 /* ── Tutorial button ───────────────────────────────────────────────────
    Secondary to Play: same shape and motion, accent-outlined instead of
@@ -4519,6 +4561,7 @@ body.mobile #dwWelcome { padding: calc(16px + var(--sa-t)) calc(12px + var(--sa-
     body.mobile .field-label { font-size: 12px; }
     body.mobile .menu-field { gap: 3px; }
     body.mobile .mobile-note { margin: 8px 0 0; font-size: 11.5px; }
+    body.mobile .a2hs-tip { margin-top: 6px; font-size: 11.5px; }
     body.mobile .menu-credits { margin-top: 10px; }
     body.mobile #startButton { height: 64px; }
 

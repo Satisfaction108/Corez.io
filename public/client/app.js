@@ -9,7 +9,7 @@ import './terrainRenderer.js';
 import { gameSound } from "./sound.js";
 import * as tutorial from './tutorial.js';
 import * as coach from './coach.js';
-import { touch, STICK, touchPref, haptic } from './touch.js';
+import { touch, STICK, touchPref, haptic, AIMED_KIT, mobileFullscreen } from './touch.js';
 import * as raidFinale from './raidFinale.js';
 import * as stormFx from './stormFx.js';
 import * as rankBadges from './account/rankBadges.js';
@@ -1356,13 +1356,8 @@ import * as cosmetics from './account/cosmetics.js';
         global._reconnecting = false;
         global.launchingTutorial = false;
         global.launchingDigWars = false;
-        if (global.mobile) {
-            var d = document.body;
-            d.requestFullscreen ? d.requestFullscreen()
-                : d.msRequestFullscreen ? d.msRequestFullscreen()
-                    : d.mozRequestFullScreen ? d.mozRequestFullScreen()
-                        : d.webkitRequestFullscreen && d.webkitRequestFullscreen();
-        }
+        // phones: full screen (and landscape on Android) from the Play tap
+        if (global.mobile) mobileFullscreen();
 
         util.submitToLocalStorage("optFancy");
         util.submitToLocalStorage("optLowResolution");
@@ -5956,7 +5951,9 @@ import * as cosmetics from './account/cosmetics.js';
 
         if (global.mobile) touch.uiRects.vault = { x: x * cr, y: y * cr, w: W * cr, h: H * cr };
         c.save();
-        c.globalAlpha = glide;
+        // under a NEW ABILITY reveal (drawn later, on top) the panel fades
+        // right back, so the reveal reads cleanly over it
+        c.globalAlpha = glide * (now - (global.kitRevealAt || -1e9) < 150 ? 0.3 : 1);
         hudPanel(c, x, y, W, H, { fill: HUD.solid, r: HUD.r + 2 });
         hudTitle(v.isOutpost ? "Base bank · 80% credit" : (royaleActive() ? "Vault · 100% credit" : "Team vault"),
                  x + W / 2, y + 19, 17, teamCol, "center");
@@ -5999,6 +5996,9 @@ import * as cosmetics from './account/cosmetics.js';
             el.style.height = (ih * cr - 4) + "px";
             el.style.fontSize = (15 * cr) + "px";
             el.style.opacity = glide;
+            // the input is DOM, over the canvas: the NEW ABILITY reveal must cover it
+            const under = now - (global.kitRevealAt || -1e9) < 150 ? "hidden" : "";
+            if (el.style.visibility !== under) el.style.visibility = under;
             if (el.style.display === "none") {
                 el.style.display = "block";
                 el.value = "" + (g.carried | 0);   // defaults to everything
@@ -7270,6 +7270,9 @@ import * as cosmetics from './account/cosmetics.js';
         let y = Math.round(global.upgradeBoxTop || 70);
         // keep clear of the raid clock cluster at top centre
         if (x + CARD_W > global.screenWidth / 2 - 250) y = Math.max(y, hudTopBottom + 8);
+        // and of the first-raid card under it (coach.js), so they never stack
+        const cr = global.coachRect;
+        if (cr && x < cr.x + cr.w && x + CARD_W > cr.x && y < cr.y + cr.h) y = Math.max(y, Math.round(cr.y + cr.h + 8));
         leftCards = { x, y, q, mod, lines, duo, duoOff };
     }
     // ── raid override card: this raid's twist and what it does, in the same
@@ -8004,6 +8007,11 @@ import * as cosmetics from './account/cosmetics.js';
             return;
         }
         global.kitUnlockHeld = slotLive ? u.id : null;
+        global.hudCardUp = "unlock";
+        global.kitRevealAt = now;
+        // nothing under the dim takes a tap (the vault's Deposit, its input)
+        global.clickables.vault.hide();
+        if (vaultInput && vaultInput.style.visibility !== "hidden") vaultInput.style.visibility = "hidden";
         const c = ctx[2];
         const calm = !!(global.reducedMotion && global.reducedMotion());
         const sw = global.screenWidth, shh = global.screenHeight;
@@ -8093,7 +8101,7 @@ import * as cosmetics from './account/cosmetics.js';
             const slotIdx = (sh.state.kitOrder || []).indexOf(u.id);
             const keyName = slotIdx >= 0 ? keyLabel("KEY_KIT_" + (slotIdx + 1), ["Z", "Q", "N"][slotIdx]) : "";
             if (keyName && global.mobile) {
-                hudTitle("Tap its button on the right to use it", cx, ly + 16, 16, HUD.text2, "center", bT, c);
+                hudTitle(AIMED_KIT[u.id] ? "Tap its button, then tap where it should land" : "Tap its button on the right to use it", cx, ly + 16, 16, HUD.text2, "center", bT, c);
             } else if (keyName) {
                 const kh = 26, kw = Math.max(kh, hudTitleW(keyName, kh * 0.62) + kh * 0.55);
                 const pw = hudTitleW("Press", 16), lw = hudTitleW("to use", 16);
@@ -8940,6 +8948,9 @@ import * as cosmetics from './account/cosmetics.js';
     function drawSpawnShieldHint() {
         if (global.died || !global.shieldSeen || !shieldOnPrev || raidFinale.active()) return;
         const since = performance.now() - (global.spawnedAt || 0);
+        // a few seconds to read it, then the first-raid card (which says to
+        // move) gets the spot instead; the shield ring on the tank stays
+        if (global.coachRect && since > 4000) return;
         const left = Math.ceil((SHIELD_GRACE_MS - since) / 1000);
         // Second Wind (shop gear): moving keeps the shield up to 10 s
         const wu = global.shop && global.shop.state && global.shop.state.gearUntil && global.shop.state.gearUntil.wind;
@@ -8951,6 +8962,7 @@ import * as cosmetics from './account/cosmetics.js';
             : "Spawn shield: moving or shooting drops it";
         const y = global.screenHeight / 2 + 120, size = 22;
         const w = measureText(line, size) + 36, h = size + 18;
+        if (since < 4000) global.hudCardUp = "shield";
         const c = ctx[2];
         hudPanel(c, global.screenWidth / 2 - w / 2, y - h / 2, w, h, { alpha: 0.9, r: h / 2, bevel: false });
         drawText(line, global.screenWidth / 2, y, size, "#bff2ff", "center", true);
@@ -8982,6 +8994,7 @@ import * as cosmetics from './account/cosmetics.js';
     // Full-screen victory/defeat banner while the war round is being decided.
     function drawWarBanner() {
         if (royaleActive() && global.royale.results) {
+            global.hudCardUp = "results";
             drawRaidResults();
             return;
         }
@@ -9074,6 +9087,7 @@ import * as cosmetics from './account/cosmetics.js';
         // never lower than just above the tank, which sits at mid screen
         const cy = Math.round(Math.min(global.screenHeight * 0.48 - h / 2, Math.max(global.screenHeight * (global.mobile ? 0 : 0.28), top + 18 + h / 2)));
         evPanelOpts.alpha = a;
+        global.hudCardUp = "event";
         hudPanel(c, cx - w / 2, cy - h / 2, w, h, evPanelOpts);
         // the words stay put while the plate pops (one font size, cached widths)
         hudTitle(evHud.title, cx, cy - (evHud.sub ? TS * 0.4 : 0), TS, HUD.gold, "center", a);
@@ -10631,13 +10645,19 @@ import * as cosmetics from './account/cosmetics.js';
                     tick++;
                 }
                 const cols = Math.min(global.columnCount, gui.upgrades.length);
-                tp.w = cols * (len + internalSpacing) - internalSpacing + 32;
-                tp.h = 44 + rows * (height + internalSpacing) + labels * 3 * internalSpacing + (global.tutorialMode ? 4 : 34);
+                tp.gw = cols * (len + internalSpacing) - internalSpacing;
+                tp.w = tp.gw + 32;
+                const head = 60;
+                tp.w = Math.max(tp.w, 330);
+                tp.h = head + rows * (height + internalSpacing) + labels * 3 * internalSpacing + (global.tutorialMode ? 4 : 34);
                 tp.x = Math.round((global.screenWidth - tp.w) / 2);
                 tp.y = Math.round(Math.max(40, (global.screenHeight - tp.h) / 2 - 10));
-                topPad = tp.y + 44 - spacing - 5;
+                topPad = tp.y + head - spacing - 5;
                 hudPanel(ctx[2], tp.x, tp.y, tp.w, tp.h, { fill: HUD.solid, r: HUD.rBig });
                 hudTitle("Pick your next tank", tp.x + 16, tp.y + 22, 17, HUD.head, "left");
+                // just picked: this is the next tier, straight away
+                const fresh = performance.now() - (touchTiles.nextAt || -1e9) < 3000;
+                drawText(fresh ? "Nice! Here is the next tier." : "Each one fights differently. Tap one.", tp.x + 16, tp.y + 44, 11.5, fresh ? HUD.gold : HUD.text2, "left", true);
                 const cbs = 30;
                 hudButton(ctx[2], tp.x + tp.w - 10 - cbs / 2, tp.y + 7, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15 });
                 const k = touchUnits();
@@ -10672,7 +10692,7 @@ import * as cosmetics from './account/cosmetics.js';
             upgradeSpin = Date.now() * 0.0005;
             upgradeSpin = upgradeSpin - (Math.floor(upgradeSpin / Math.PI / 2) * Math.PI * 2);
 
-            let x = tp ? tp.x + 16 : glide * 2 * spacing + spacing + 5;
+            let x = tp ? tp.x + Math.round((tp.w - tp.gw) / 2) : glide * 2 * spacing + spacing + 5;
 
             let y = spacing - height - internalSpacing + 5 + topPad;
             let xStart = x;
@@ -10803,11 +10823,19 @@ import * as cosmetics from './account/cosmetics.js';
         return touchChipBase() - (gui.upgrades.length > 0 ? touchChipH() + 10 : 0);
     }
     const touchTiles = { open: false, seen: "" };
+    touch.closeTiles = () => { touchTiles.open = false; };
     // the tank picker: opens from its chip, and on its own in the tutorial
+    // After a pick it stays up while the server sends the next tier's
+    // choices, and closes once there are none (or on X, or a tap outside).
     function touchTilesOpen() {
-        if (!gui.upgrades.length) { touchTiles.open = false; return false; }
+        const justPicked = performance.now() - (global.upgradePickedAt || -1e9) < 1500;
+        if (!gui.upgrades.length) { if (!justPicked) touchTiles.open = false; return false; }
         const key = gui.upgrades.map(u => u[2] && u[2].name).join("|");
-        if (key !== touchTiles.seen) { touchTiles.seen = key; touchTiles.open = !!global.tutorialMode; }
+        if (key !== touchTiles.seen) {
+            touchTiles.seen = key;
+            touchTiles.open = !!global.tutorialMode || (touchTiles.open && justPicked);
+            if (touchTiles.open && justPicked) touchTiles.nextAt = performance.now();
+        }
         return touchTiles.open;
     }
     // top of the kit buttons: the message stack stops above them
@@ -10896,7 +10924,15 @@ import * as cosmetics from './account/cosmetics.js';
             const drag = global.kitDrag && global.kitDrag.slot === i;
             c.save();
             c.globalAlpha = item ? 1 : 0.4;
-            hudPanel(c, x, y + (held ? 2 : 0), w, h, { r: 12, fill: held ? HUD.raised : HUD.panel });
+            const armed = touch.place && touch.place.slot === i;
+            hudPanel(c, x, y + (held ? 2 : 0), w, h, { r: 12, fill: held || armed ? HUD.raised : HUD.panel });
+            if (armed) {
+                c.save();
+                c.globalAlpha = 0.75 + 0.25 * Math.sin(now / 160);
+                roundRectPath(c, x - 3, y - 3, w + 6, h + 6, 14);
+                c.lineWidth = 3; c.strokeStyle = HUD.gold; c.stroke();
+                c.restore();
+            }
             if (item) {
                 const fl = sh.slotFlash && sh.slotFlash[id];
                 const flT = fl ? Math.max(0, 1 - (now - fl.at) / 650) : 0;
@@ -10949,6 +10985,84 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
     }
+    // Placing an aimed kit item (touch.js place): the range ring round the
+    // tank, the landing spot under the finger (red past the ring, where it is
+    // held to the edge), and a prompt with a cancel key above the wallet row.
+    function drawTouchPlace(c, k, now) {
+        const p = touch.place;
+        if (!p) return;
+        global.hudCardUp = "place";
+        const sw = global.screenWidth, sh = global.screenHeight, cx = sw / 2, cy = sh / 2;
+        const spec = AIMED_KIT[p.id] || {};
+        const wpc = touch.worldPerCss();
+        const R = p.max / wpc * k;
+        const pulse = 0.5 + 0.5 * Math.sin(now / 300);
+        c.save();
+        c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2);
+        c.globalAlpha = 0.07; c.fillStyle = HUD.gold; c.fill();
+        c.globalAlpha = 0.55 + 0.25 * pulse;
+        c.setLineDash([14, 10]); c.lineDashOffset = -now / 40;
+        c.lineWidth = 5; c.strokeStyle = HUD.ink; c.stroke();
+        c.lineWidth = 2.5; c.strokeStyle = HUD.gold; c.stroke();
+        c.setLineDash([]);
+        c.restore();
+        const s = touch.placeSpot();
+        if (s) {
+            const x = cx + s.dx * k, y = cy + s.dy * k;
+            const col = s.out ? "#ff9a8c" : HUD.gold;
+            c.save();
+            // the throw, from the tank
+            c.beginPath(); c.moveTo(cx, cy); c.lineTo(x, y);
+            c.setLineDash(spec.line ? [] : [8, 8]);
+            c.lineCap = "round";
+            c.globalAlpha = 0.8;
+            c.lineWidth = spec.line ? 7 : 4.5; c.strokeStyle = HUD.ink; c.stroke();
+            c.lineWidth = spec.line ? 3.5 : 2; c.strokeStyle = col; c.stroke();
+            c.setLineDash([]);
+            // what it hits: the charge's blast, or the barrage's crosshair
+            const br = spec.blast ? spec.blast / wpc * k : 18;
+            c.beginPath(); c.arc(x, y, br, 0, Math.PI * 2);
+            c.globalAlpha = 0.2 + 0.08 * pulse; c.fillStyle = col; c.fill();
+            c.globalAlpha = 1;
+            c.lineWidth = 5; c.strokeStyle = HUD.ink; c.stroke();
+            c.lineWidth = 2.5; c.strokeStyle = col; c.stroke();
+            c.beginPath();
+            for (let i = 0; i < 4; i++) {
+                const a = i * Math.PI / 2;
+                c.moveTo(x + Math.cos(a) * 5, y + Math.sin(a) * 5);
+                c.lineTo(x + Math.cos(a) * 13, y + Math.sin(a) * 13);
+            }
+            c.lineWidth = 5; c.strokeStyle = HUD.ink; c.stroke();
+            c.lineWidth = 2.5; c.strokeStyle = "#fff"; c.stroke();
+            if (s.out) {
+                // the finger is past the range: a faint line out to it and a red x
+                const fx = cx + s.fx * k, fy = cy + s.fy * k;
+                c.beginPath(); c.moveTo(x, y); c.lineTo(fx, fy);
+                c.globalAlpha = 0.5; c.setLineDash([4, 6]);
+                c.lineWidth = 2; c.strokeStyle = "#ff9a8c"; c.stroke();
+                c.setLineDash([]);
+                c.globalAlpha = 0.9;
+                c.beginPath();
+                c.moveTo(fx - 7, fy - 7); c.lineTo(fx + 7, fy + 7); c.moveTo(fx + 7, fy - 7); c.lineTo(fx - 7, fy + 7);
+                c.lineWidth = 5; c.strokeStyle = HUD.ink; c.stroke();
+                c.lineWidth = 2.5; c.strokeStyle = "#ff9a8c"; c.stroke();
+            }
+            c.restore();
+        }
+        // the prompt
+        const item = (global.shop.catalog || []).find(it => it.id === p.id);
+        const line = !s ? "Tap where to deploy" : s.out ? "Out of range. It lands on the ring" : "Lift your finger to deploy";
+        const sub = (item ? item.name : "Ability") + "  \u00b7  range " + p.max;
+        const cbs = 30, pw = Math.max(hudTitleW(line, 19), hudTextW(sub, 11.5)) + 34 + cbs + 10, ph = 54;
+        // low in the middle, above the carried / banked row (where the
+        // first-raid card sits; it steps aside meanwhile), off the tank
+        const px = Math.round(cx - pw / 2), py = Math.round((touch.viewH() - 58) * k - ph);
+        hudPanel(c, px, py, pw, ph, { fill: HUD.solid, r: HUD.rBig });
+        hudTitle(line, px + 16, py + 20, 19, s && s.out ? "#ff9a8c" : HUD.gold, "left");
+        drawText(sub, px + 16, py + 41, 11.5, HUD.text2, "left", true);
+        hudButton(c, px + pw - 10 - cbs / 2, py + (ph - cbs) / 2, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15 });
+        touch.zones.placeCancel = { x: (px + pw - 10 - cbs) / k - 8, y: (py + (ph - cbs) / 2) / k - 8, w: cbs / k + 16, h: cbs / k + 16, tap: () => { touch.place = null; } };
+    }
     function drawTouchArm(c, L, k, now) {
         if (!touch.buttonShown("arm")) return;
         const st = global.shop.state || {};
@@ -10978,6 +11092,34 @@ import * as cosmetics from './account/cosmetics.js';
         hudTitle(nm, x, y - 3 + (held ? 2 : 0), fs, HUD.head, "center");
         hudTitle(on ? "Auto" : "Hold", x, y + 12 + (held ? 2 : 0), 9, on ? "#e6d8ff" : HUD.text2, "center");
     }
+    // First time each chip shows up, a pointer says what it does; tapping the
+    // chip once retires it for good.
+    const chipHint = { tiles: false, stats: false };
+    const CHIP_HINT_TURN = 5000;   // ms each pointer holds while both are new
+    let chipHintBoth = 0;
+    try { Object.assign(chipHint, JSON.parse(localStorage.getItem("dwChipHints_v1") || "{}")); } catch (e) { }
+    function chipHintDone(id) {
+        if (chipHint[id]) return;
+        chipHint[id] = true;
+        try { localStorage.setItem("dwChipHints_v1", JSON.stringify(chipHint)); } catch (e) { }
+    }
+    // A plate to the right of the chip, its notch pointing back at it (the
+    // coach's tag style).
+    function drawChipPointer(c, b, text, now) {
+        const size = 15, ph = 28, pw = hudTitleW(text, size) + 26;
+        const bob = Math.sin(now / 240) * 3;
+        const x = b.x + b.w + 18 + bob, y = b.y + b.h / 2 - ph / 2;
+        c.save();
+        c.beginPath();
+        const ny = y + ph / 2;
+        c.moveTo(x - 10, ny); c.lineTo(x + 3, ny - 8); c.lineTo(x + 3, ny + 8);
+        c.closePath();
+        c.fillStyle = HUD.gold; c.fill();
+        c.lineWidth = 2; c.strokeStyle = HUD.ink; c.stroke();
+        c.restore();
+        hudPanel(c, x, y, pw, ph, { r: ph / 2, fill: HUD.solid, lip: 2.5, bevel: false });
+        hudTitle(text, x + pw / 2, y + ph / 2, size, HUD.gold, "center");
+    }
     // Stats on touch: a chip on the left edge; a tap opens two columns of big
     // cells over the lower left. Tap a cell to put a point in it.
     function drawTouchStats(k, now) {
@@ -10999,33 +11141,79 @@ import * as cosmetics from './account/cosmetics.js';
         const sa = touch.L ? touch.L.safe : { l: 0 };
         const x0 = Math.max(HUD.edge * 0.6, sa.l * k + 8);
         const chipH = touchChipH();
-        const chip = (id, y, label, badge, tap) => {
-            const bw = badge ? hudTitleW(badge, 15) + 16 : 0;
-            const cw = hudTitleW(label, 16) + bw + (badge ? 30 : 32);
+        // One first-time pointer at a time: New tank first, then Stats (they
+        // take turns every few seconds while both are new). None while the
+        // first-raid card points somewhere else; on its "Upgrade your tank"
+        // step this pointer is its pointer, even once retired.
+        const coachStep = global.coachPointing || "";
+        const forced = coachStep === "upgrade", blocked = !!coachStep && !forced;
+        const tilesUp = gui.upgrades.length > 0 && !touchTiles.open && !touchStats.open;
+        const statsUp = !touchStats.open && canAny;
+        const wants = id => !blocked && (forced || !chipHint[id]);
+        const tw = tilesUp && wants("tiles"), sw2 = statsUp && wants("stats");
+        let pointAt = null;
+        if (tw && sw2) {
+            if (!chipHintBoth) chipHintBoth = now;
+            pointAt = ((now - chipHintBoth) / CHIP_HINT_TURN | 0) % 2 ? "stats" : "tiles";
+        } else {
+            chipHintBoth = 0;
+            pointAt = tw ? "tiles" : sw2 ? "stats" : null;
+        }
+        // A chip is a real button: a raised key with a glyph cap (gold arrow
+        // for a new tank, the stat panel's green + for points), a pulsing
+        // ring while there is something to do, and a count badge.
+        const chip = (id, y, label, badge, glyph, tap) => {
+            const cap = chipH - 12;
+            const bw = badge ? hudTitleW(badge, 15) + 14 : 0;
+            const cw = 8 + cap + 10 + hudTitleW(label, 17) + (badge ? 10 + bw + 8 : 16);
             const pulse = 0.5 + 0.5 * Math.sin(now / 260);
+            const held = [...touch.btn.values()].includes(id);
             c.save();
             if (!config.graphical.noGlow) {
-                c.globalAlpha = 0.35 + 0.3 * pulse;
+                c.globalAlpha = 0.3 + 0.3 * pulse;
                 const hr = cw;
                 c.drawImage(haloSprite("statchip|242,184,60", "242,184,60", [[0, 0.5], [0.5, 0.18], [1, 0]]), x0 + cw / 2 - hr, y + chipH / 2 - hr * 0.6, hr * 2, hr * 1.2);
             }
             c.restore();
-            hudPanel(c, x0, y, cw, chipH, { r: chipH / 2 });
-            hudTitle(label, x0 + 16, y + chipH / 2, 16, HUD.head, "left");
+            hudButton(c, x0 + cw / 2, y + (held ? 2 : 0), cw, chipH, "", { fill: HUD.raised, lipCol: HUD.faceDk, r: chipH / 2 });
+            // the ring breathes out from the chip
+            c.save();
+            c.globalAlpha = 0.85 * (1 - ((now / 1100) % 1));
+            const g = 3 + 7 * ((now / 1100) % 1);
+            roundRectPath(c, x0 - g, y - g, cw + 2 * g, chipH + 2 * g, chipH / 2 + g);
+            c.lineWidth = 2; c.strokeStyle = HUD.gold; c.stroke();
+            c.restore();
+            const cx0 = x0 + 8, cy0 = y + 5 + (held ? 2 : 0);
+            const green = glyph === "plus";
+            hudButton(c, cx0 + cap / 2, cy0, cap, cap, "", { fill: green ? HUD.play : HUD.gold, lipCol: green ? HUD.playDk : HUD.goldDk, r: cap * 0.3 });
+            // the glyph, ink-rimmed like the rest of the HUD
+            const gx = cx0 + cap / 2, gy = cy0 + (cap - 4) / 2, gs = cap * 0.26;
+            c.save();
+            c.beginPath();
+            if (green) { c.moveTo(gx - gs, gy); c.lineTo(gx + gs, gy); c.moveTo(gx, gy - gs); c.lineTo(gx, gy + gs); }
+            else { c.moveTo(gx - gs, gy + gs * 0.45); c.lineTo(gx, gy - gs * 0.65); c.lineTo(gx + gs, gy + gs * 0.45); }
+            c.lineCap = "round"; c.lineJoin = "round";
+            c.lineWidth = 6; c.strokeStyle = HUD.ink; c.stroke();
+            c.lineWidth = 3.2; c.strokeStyle = "#fff"; c.stroke();
+            c.restore();
+            const lx = cx0 + cap + 10;
+            hudTitle(label, lx, y + chipH / 2 - 1 + (held ? 2 : 0), 17, HUD.head, "left");
             if (badge) {
                 const bx = x0 + cw - bw - 8;
-                hudWell(c, bx, y + chipH / 2 - 12, bw, 24, 12, HUD.gold, HUD.ink, 2);
-                hudTitle(badge, bx + bw / 2, y + chipH / 2, 15, HUD.ink, "center");
+                hudWell(c, bx, y + chipH / 2 - 12 + (held ? 2 : 0), bw, 22, 11, HUD.gold, HUD.ink, 2);
+                drawText(badge, bx + bw / 2, y + chipH / 2 - 1 + (held ? 2 : 0), 14, HUD.ink, "center", true, 1, false);
             }
-            touch.zones[id] = { x: x0 / k, y: y / k, w: cw / k, h: chipH / k, tap };
-            return { x: x0, y, w: cw, h: chipH };
+            touch.zones[id] = { x: x0 / k, y: y / k, w: cw / k, h: chipH / k, tap: () => { chipHintDone(id); tap(); } };
+            const r = { x: x0, y, w: cw, h: chipH };
+            if (id === pointAt) drawChipPointer(c, r, id === "tiles" ? "Tap to upgrade your tank" : "Tap to spend your points", now);
+            return r;
         };
         if (gui.upgrades.length > 0 && !touchTiles.open && !touchStats.open) {
-            hudDrawn.upgrades = chip("tiles", touchChipBase() - chipH - 10, "New tank", "", () => { touchTiles.open = true; touchStats.open = false; });
+            hudDrawn.upgrades = chip("tiles", touchChipBase() - chipH - 12, "New tank!", "", "arrow", () => { touchTiles.open = true; touchStats.open = false; });
         }
         if (!touchStats.open) {
             if (!canAny) return;
-            hudDrawn.stats = touchStats.chip = chip("stats", touchChipBase(), "Stats", String(pts), () => { touchStats.open = true; touchStats.at = performance.now(); touchTiles.open = false; });
+            hudDrawn.stats = touchStats.chip = chip("stats", touchChipBase(), "Stats", "+" + pts, "plus", () => { touchStats.open = true; touchStats.at = performance.now(); touchTiles.open = false; });
             return;
         }
         touch.zones.stats = null;
@@ -11046,11 +11234,12 @@ import * as cosmetics from './account/cosmetics.js';
         // upright: leave the kit and sidearm column on the right uncovered
         const rightCol = portrait && touch.L ? (touch.L.unit + 30) * k : 0;
         const cellW = Math.min(portrait ? (global.screenWidth - x0 * 2 - 30 - rightCol) / 2 : 190, 220), cellH = Math.max(34, 40 * k * 0.95), gap = 6;
-        const W = cols * cellW + (cols - 1) * gap + 20, H = rows * cellH + (rows - 1) * gap + 44;
+        const W = cols * cellW + (cols - 1) * gap + 20, H = rows * cellH + (rows - 1) * gap + 58;
         const px = x0, py = Math.max(56, global.screenHeight - Math.max(HUD.edge * 0.6, (touch.L ? touch.L.safe.b : 0) * k + 8) - H);
         hudPanel(c, px, py, W, H, { fill: HUD.solid, r: HUD.rBig });
         hudTitle("Stats", px + 12, py + 18, 17, HUD.head, "left");
         drawText(pts ? pts + (pts === 1 ? " point" : " points") + " to spend" : "All spent", px + 64, py + 19, 11, pts ? HUD.gold : HUD.text2, "left", true);
+        drawText("Spend points to get stronger. Tap a + to add one.", px + 12, py + 39, 11, HUD.text2, "left", true);
         // close
         const cbs = 30;
         hudButton(c, px + W - 10 - cbs / 2, py + 5, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15 });
@@ -11058,7 +11247,7 @@ import * as cosmetics from './account/cosmetics.js';
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         for (let n = 0; n < cells.length; n++) {
             const { sk, statIdx, name } = cells[n];
-            const cx = px + 10 + (n % cols) * (cellW + gap), cy = py + 36 + ((n / cols) | 0) * (cellH + gap);
+            const cx = px + 10 + (n % cols) * (cellW + gap), cy = py + 50 + ((n / cols) | 0) * (cellH + gap);
             const tutLocked = global.tutorialMode && window.dwTutStatOpen && !window.dwTutStatOpen(statIdx);
             const can = pts > 0 && sk.amount < sk.cap && !(sk.cap !== sk.softcap && sk.amount >= sk.softcap) && !tutLocked;
             const col = color[sk.color];
@@ -11096,6 +11285,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (global.statTapAt && global.statTapAt !== touchSeenTap) { touchSeenTap = global.statTapAt; touchStats.at = now; }
         drawTouchKit(c, L, k, now);
         drawTouchArm(c, L, k, now);
+        drawTouchPlace(c, k, now);
         if (touch.move) { drawTouchStick(c, touch.move, "move", k, now); if (!touchHint.move) { touchHint.move = true; saveTouchHint(); } }
         if (touch.aim) { drawTouchStick(c, touch.aim, "aim", k, now); if (!touchHint.aim && touch.aim.firing) { touchHint.aim = true; saveTouchHint(); } }
         if (touch.aim && touch.aim.firing) drawTouchReticle(c, now);
@@ -11114,7 +11304,8 @@ import * as cosmetics from './account/cosmetics.js';
                 hudTitle(label, x, y + STICK.R * k + 16, 14, HUD.head, "center", 0.75);
             };
             if (!touchHint.move && !touch.move) ghost(sw * 0.2, sh * 0.72, "Drag to move");
-            if (!touchHint.aim && !touch.aim) ghost(sw * (sh > sw ? 0.62 : 0.7), sh * 0.72, "Drag to aim and shoot");
+            // right of the middle, clear of the first-raid card, left of the kit buttons
+            if (!touchHint.aim && !touch.aim) ghost(sw * (sh > sw ? 0.62 : 0.76), sh * 0.72, "Drag to aim and shoot");
         }
     }
     function saveTouchHint() {
@@ -12002,6 +12193,8 @@ import * as cosmetics from './account/cosmetics.js';
         let alcoveSize = global.mobile ? 160 : 200;
         gui.__s.update();
         hudDrawn = {};
+        // big center-screen cards this frame; coach.js waits while one is up
+        global.hudCardUp = "";
         let lb = leaderboard.get();
         let max = lb.max;
         global.canSkill = !!gui.points && !global.showTree && !global.pullSkillBar;
@@ -12048,12 +12241,17 @@ import * as cosmetics from './account/cosmetics.js';
             // Tutorial: no leaderboard (the server sends an empty one anyway)
             if (global.GUIStatus.renderLeaderboard && !global.tutorialMode && !royaleActive()) drawLeaderboard(spacing, alcoveSize, max);
             if (global.GUIStatus.renderUpgrades && !finaleHud) drawAvailableUpgrades(spacing, alcoveSize);
-            // the new ability reveal dims everything under it
+            // touch: the thumb buttons, chips and stat panel go under the reveal too
+            if (global.mobile) drawTouchHud();
+            // the new ability reveal dims everything under it (the vault and
+            // shop panels included), so it goes last
             if (global.GUIStatus.renderPlayerBars && !finaleHud) drawKitUnlock();
             // leader arrow + enemy pings are drawn in drawTopIndicators(), at
             // the end of the frame, so no panel covers them
-        } else if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
-        if (global.mobile) drawTouchHud();
+        } else {
+            if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
+            if (global.mobile) drawTouchHud();
+        }
         if (global.showTree) {
             drawUpgradeTree(spacing, alcoveSize);
         }
@@ -12322,6 +12520,8 @@ import * as cosmetics from './account/cosmetics.js';
             fsBtn.setAttribute("aria-label", fsBtn.title);
             fsBtn.innerHTML = '<svg class="dw-ic fs-on"><use href="#i-fs"/></svg><svg class="dw-ic fs-off"><use href="#i-fs-exit"/></svg>';
             fsBtn.onclick = () => {
+                // turned off by hand: touch.js stops asking for it back
+                window.dwFsUserOff = fs.isOn();
                 fs.toggle();
                 fsBtn.blur();
                 const cv = document.getElementById("gameCanvas");

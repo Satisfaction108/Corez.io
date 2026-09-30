@@ -493,7 +493,8 @@ export function drawHud(c, sw, sh, topY, st) {
         c.fillRect(0, b, b, sh - 2 * b); c.fillRect(sw - b, b, b, sh - 2 * b);
         c.globalAlpha = 1;
     }
-    // banner, popping in on entry
+    // banner, popping in on entry (coach.js steps aside while it is up)
+    global.stormBannerAt = now;
     const pop = still ? 1 : Math.min(1, age / 220);
     const scale = still ? 1 : 1 + 0.25 * (1 - pop) * (1 - pop);
     const by = Math.max(topY + 40, sh * 0.24);

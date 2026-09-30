@@ -79,6 +79,7 @@ const publicRoot = path.join(__dirname, "../public/"),
 mimeSet = {
     js: "application/javascript",
     json: "application/json",
+    webmanifest: "application/manifest+json",
     css: "text/css",
     html: "text/html",
     md: "text/markdown",
@@ -191,7 +192,7 @@ function allowFraming(res) {
 // the game loop on this thread never waits on it) and kept in memory until the
 // file changes. Every static response carries an ETag, so a reload costs a 304.
 // Caddy passes a response that is already encoded straight through.
-const COMPRESSIBLE = new Set(["js", "json", "css", "html", "md", "svg", "txt", "ico"]);
+const COMPRESSIBLE = new Set(["js", "json", "webmanifest", "css", "html", "md", "svg", "txt", "ico"]);
 const MEDIA = new Set(["png", "jpg", "jpeg", "webp", "gif", "ttf", "woff", "woff2", "wav", "mp3", "ogg", "mp4"]);
 const staticCache = new Map();   // file -> { key, ready: Promise of { etag, raw, gz, br } }
 const STATIC_CACHE_MAX_BYTES = 64 * 1024 * 1024;

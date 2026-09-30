@@ -128,9 +128,6 @@
     font: 700 .82em/1.5 var(--ui);
     text-shadow: 0 1px 0 var(--ink), 0 0 .25em rgba(0,0,0,.6);
 }
-.dwc-bar.timer { height: .4em; margin-top: .45em; }
-.dwc-bar.timer span { display: none; }
-.dwc-bar.timer i { transition: none; background: #a597b0; box-shadow: none; }
 .dwc-row, .dwc-confirm { display: flex; align-items: center; gap: .7em; margin-top: .55em; }
 .dwc-confirm span { flex: 1; font-size: .9em; color: var(--heading); }
 .dwc-btn {
@@ -165,67 +162,17 @@
     font-style: normal;
 }
 
-/* tour spotlight: the box is the hole, its huge shadow dims everything else
-   (canvas and DOM buttons alike); the coach panel sits above it */
-#dwcSpot {
-    --dwc-s: 1;
-    position: fixed;
-    z-index: 43;
-    box-sizing: border-box;
-    border-radius: 12px;
-    box-shadow: 0 0 0 200vmax rgba(8, 6, 12, .72);
-    pointer-events: none;
-    opacity: 0;
-    visibility: hidden;
-    transition: left .28s ease, top .28s ease, width .28s ease, height .28s ease, opacity .2s ease, visibility 0s linear .2s;
-}
-#dwcSpot.on { opacity: 1; visibility: visible; transition: left .28s ease, top .28s ease, width .28s ease, height .28s ease, opacity .2s ease; }
-#dwcSpot::before {
-    content: "";
-    position: absolute;
-    inset: -4px;
-    border: 3px solid #f2b83c;
-    border-radius: 15px;
-    box-shadow: 0 0 0 2px #120e15, inset 0 0 0 1px #120e15, 0 0 18px 3px rgba(242, 184, 60, .55);
-    animation: dwcRing 1.1s ease-in-out infinite alternate;
-}
-@keyframes dwcRing {
-    0%   { transform: scale(1); }
-    100% { transform: scale(1.018); box-shadow: 0 0 0 2px #120e15, inset 0 0 0 1px #120e15, 0 0 26px 6px rgba(242, 184, 60, .7); }
-}
-.dwc-spot-tag {
-    position: absolute;
-    box-sizing: border-box;
-    padding: .2em .8em .28em;
-    border: 1px solid #120e15;
-    border-radius: 999px;
-    background: #2b2533;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 .2em 0 rgba(0,0,0,.32);
-    color: #f2b83c;
-    font: 400 calc(17px * var(--dwc-s))/1.2 'Lilita One', 'Rubik', Ubuntu, sans-serif;
-    text-shadow: 0 .07em 0 #120e15;
-    white-space: nowrap;
-    transform: translateY(-50%);
-}
-.dwc-spot-tag.r { left: calc(100% + 18px); animation: dwcBobR .5s ease-in-out infinite alternate; }
-.dwc-spot-tag.l { right: calc(100% + 18px); animation: dwcBobL .5s ease-in-out infinite alternate; }
-.dwc-spot-tag.d { top: calc(100% + 16px); left: 50%; transform: translateX(-50%); animation: dwcBobD .5s ease-in-out infinite alternate; }
-/* the notch, pointing back at the box */
-.dwc-spot-tag::before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    width: 0; height: 0;
-    border: .42em solid transparent;
-    transform: translateY(-50%);
-}
-.dwc-spot-tag.r::before { right: 100%; border-right: .55em solid #f2b83c; border-left-width: 0; }
-.dwc-spot-tag.l::before { left: 100%; border-left: .55em solid #f2b83c; border-right-width: 0; }
-.dwc-spot-tag.d::before { top: auto; bottom: 100%; left: 50%; transform: translateX(-50%); border-bottom: .55em solid #f2b83c; border-top-width: 0; }
-@keyframes dwcBobR { from { margin-left: 0; } to { margin-left: 4px; } }
-@keyframes dwcBobL { from { margin-right: 0; } to { margin-right: 4px; } }
-@keyframes dwcBobD { from { margin-top: 0; } to { margin-top: 4px; } }
-body:not(.in-game) #dwCoach, body:not(.in-game) #dwcSpot { display: none; }
+body:not(.in-game) #dwCoach { display: none; }
+
+/* touch: one compact card, a steady readable size (coach.js sets --dwc-s
+   from the screen, not the UI Scale), big enough buttons for a thumb */
+#dwCoach.touch { width: min(calc(300em / 16), calc(100vw - 24px)); padding: .5em .8em .6em; }
+#dwCoach.touch .dwc-title { font-size: 1.22em; }
+#dwCoach.touch .dwc-text { font-size: .92em; line-height: 1.3; }
+#dwCoach.touch .dwc-link { padding: .35em .3em; margin: -.35em -.3em; }
+#dwCoach.touch .dwc-btn { padding: .45em 1em .55em; }
+#dwCoach.touch .dwc-bar { height: 1.1em; margin-top: .4em; }
+#dwCoach.touch .dwc-bar span { font-size: .78em; line-height: 1.45; }
 
 /* touch landscape: parked low between the sticks (coach.js place). Only its
    buttons take touches, so a thumb landing on it still starts a stick. */

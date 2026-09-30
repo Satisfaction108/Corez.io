@@ -2380,6 +2380,7 @@ const socketInit = () => {
             else socket.talk('C', Math.round(global.target.x / ratio), Math.round(global.target.y / ratio), global.reverseTank, o);
         },
         check: () => flag,
+        firing: () => !!commands[4],   // coach.js: has this player shot yet
         getMotion: () => ({
             x: commands[3] - commands[2],
             y: commands[1] - commands[0],
