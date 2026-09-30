@@ -79,6 +79,37 @@
         else if (mq.addListener) mq.addListener(onChange); // older Safari
     }
 
+    /* Phones: go full screen on the first tap anywhere, like arras.io does.
+       Browsers only allow it inside a tap, so it can't happen on load. Once per
+       page load, never in the installed app or an embed, and not if the player
+       already turned it off with the button. Play (touch.js) still asks too. */
+    function initTapFullscreen() {
+        if (!isTouchOnlyDevice() || window.dwEmbed || !window.dwFullscreen.supported()) return;
+        if (window.matchMedia && (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches)) return;
+        var go = function (e) {
+            document.removeEventListener('touchend', go, true);
+            if (window.dwFsUserOff || window.dwFullscreen.isOn()) return;
+            // the fullscreen button does its own thing
+            if (e && e.target && e.target.closest && e.target.closest('#homeFullscreenBtn')) return;
+            try {
+                var el = document.documentElement;
+                var req = el.requestFullscreen || el.webkitRequestFullscreen;
+                var p = req && req.call(el, { navigationUI: 'hide' });
+                var lock = function () {
+                    try {
+                        var o = screen.orientation;
+                        if (o && o.lock && Math.min(screen.width, screen.height) < 600) {
+                            var q = o.lock('landscape');
+                            if (q && q.catch) q.catch(function () { });
+                        }
+                    } catch (err) { }
+                };
+                if (p && p.then) p.then(lock, function () { });
+            } catch (err) { }
+        };
+        document.addEventListener('touchend', go, true);
+    }
+
     /* iPhone (and iPod) Safari: pages can't go full screen, an icon on the
        home screen can (manifest.webmanifest). Shown until dismissed, at most
        on three visits, never inside the installed app or an embed. */
@@ -226,6 +257,7 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         initMobileNote();
+        initTapFullscreen();
         initA2hsTip();
         initTutorialEntry();
         playAfterTutorial();
@@ -443,6 +475,9 @@
                     if (window.global) window.global.servers = data;
                     renderRegionCounts(data);
                     if (window.global && window.global.refreshServerCounts) window.global.refreshServerCounts(data);
+                    // the first list never made it (see app.js onload): use this one
+                    var sb = document.getElementById('startButton');
+                    if (sb && sb.disabled && window.global && window.global.loadServerSelector) window.global.loadServerSelector(data);
                 })
                 .catch(function () {});
         }

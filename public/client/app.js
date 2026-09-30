@@ -201,12 +201,17 @@ import * as cosmetics from './account/cosmetics.js';
 
         global.loadServerSelector(false, "Connecting...");
 
-        fetch("/getServers.json").then(response => response.json()).then(json => {
+        // Play stays grey until this list arrives, so keep trying: one failed
+        // request on a phone connection used to leave it grey for good.
+        let listTries = 0;
+        const loadList = () => fetch("/getServers.json", { cache: "no-store" }).then(response => response.json()).then(json => {
             global.servers = json;
             global.loadServerSelector(json);
         }).catch(error => {
             console.error(error);
-        })
+            setTimeout(loadList, Math.min(8000, 1000 * ++listTries));
+        });
+        loadList();
 
         util.retrieveFromLocalStorage("playerNameInput");
         util.retrieveFromLocalStorage("playerKeyInput");
