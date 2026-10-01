@@ -97,12 +97,12 @@ function formPost(url, form) {
     });
 }
 
-// code -> {id, name, avatar} | null
-async function fetchDiscordUser(code) {
+// code -> {id, name, avatar} | null. redirectUri is the one the flow started with.
+async function fetchDiscordUser(code, redirectUri = config.discord.redirectUri) {
     const tokenRes = await formPost(`${DISCORD_API}/oauth2/token`, {
         grant_type: 'authorization_code',
         code,
-        redirect_uri: config.discord.redirectUri,
+        redirect_uri: redirectUri,
     });
     if (!tokenRes.ok) {
         console.warn('[accounts] Discord token exchange failed: HTTP ' + tokenRes.status);
@@ -157,7 +157,7 @@ function start(ctx) {
         client_id: config.discord.clientId,
         scope: 'identify',
         state,
-        redirect_uri: config.discord.redirectUri,
+        redirect_uri: config.discordRedirectFor(ctx.header('host')),
         // Re-auth must show Discord's screen; plain login can skip it.
         prompt: mode === 'reauth' ? 'consent' : 'none',
     });
@@ -191,7 +191,7 @@ async function callback(ctx) {
             token = a.token;
         }
 
-        const profile = await fetchDiscordUser(code);
+        const profile = await fetchDiscordUser(code, config.discordRedirectFor(ctx.header('host')));
         if (!profile) return fail(ctx, 'exchange');
         const now = Date.now();
 

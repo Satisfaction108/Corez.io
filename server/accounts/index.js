@@ -59,6 +59,8 @@ require('./routes/interactions').register(router);
 require('./routes/resetPage').register(router);
 require('./routes/invite').register(router);
 require('./routes/feedback').register(router);
+const moveRoutes = require('./routes/move');
+moveRoutes.register(router);
 const partyRoutes = require('./routes/party');
 partyRoutes.register(router);
 events.register(router);
@@ -280,7 +282,7 @@ async function dispatch(req, res, pathname, query) {
             const a = ctx.auth();
             ctx.charge(['api', 'ip:' + ctx.ipKey], a ? ['api', 's:' + a.session.id] : null);
         }
-        if (isApi && ctx.method !== 'GET') ctx.body = await http.readJson(req);
+        if (isApi && ctx.method !== 'GET') ctx.body = await http.readJson(req, route.opts.bodyLimit || http.BODY_LIMIT);
         await route.handler(ctx);
         if (!ctx.responded) throw new Error('route did not respond');
     } catch (err) {
@@ -396,6 +398,7 @@ module.exports = {
     announce,
     referrals,
     feedback: require('./feedback'),
+    move: moveRoutes,
     party: require('./party'),
     partyTicket: require('./partyTicket'),
 };

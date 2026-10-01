@@ -8,7 +8,7 @@
 //              no jump; size never shrinks inside a life; a stage crossing
 //              calls back once
 //   perks      slower; health and damage creep up to 1.6x at a 100k score;
-//              the view follows size^0.45 up to its cap
+//              the view follows size^0.45, no cap
 //   damage     a grown tank's shots (and a grown bot's) hit harder, rock
 //              digging and its budget rise by the same factor
 //   bots       a bot grows from twice its score (growth only, not the board)
@@ -153,15 +153,25 @@ test('perks', () => {
         assert.ok(h > prev, 'rises at ' + s);
         prev = h;
     }
-    // the view: arras' sqrt(size) times fovMult, size^0.45 up to VIEW_MAX, slower
-    // than the tank grows so growing shows on screen
+    // the view: arras' sqrt(size) times fovMult, size^0.45 with no ceiling,
+    // slower than the tank grows so growing shows on screen
     const view = g => Math.sqrt(g) * growth.fovMult(g);
     assert.ok(Math.abs(view(2.3) - Math.pow(2.3, 0.45)) < 1e-9);
     assert.ok(view(2.3) > 1.4, 'a 2.3x tank sees clearly more');
     assert.ok(2.3 / view(2.3) > 1.5, 'and looks clearly bigger on screen');
     assert.ok(view(1.5) > 1.15 && view(1.5) < view(2));
-    assert.equal(view(4), growth.VIEW_MAX);
-    assert.ok(growth.VIEW_MAX <= 1.8);
+    assert.equal(growth.VIEW_POW, 0.45);
+    let lastView = 1;
+    for (const g of [2, 3, 4, 6, 8, 12, 20]) {
+        assert.ok(Math.abs(view(g) - Math.pow(g, 0.45)) < 1e-9, 'no cap at ' + g);
+        assert.ok(view(g) > lastView, 'keeps opening up at ' + g);
+        assert.ok(g / view(g) > 1.4, 'and the tank still looks bigger at ' + g);
+        lastView = view(g);
+    }
+    assert.ok(view(4) > 1.8 && view(8) > 2.5, 'well past the old 1.8 cap');
+    // what entity.js does with it: 275 * sqrt(size) * fovMult
+    const fov = (base, g) => 275 * Math.sqrt(base * g) * growth.fovMult(g);
+    assert.ok(Math.abs(fov(12, 8) / fov(12, 1) - Math.pow(8, 0.45)) < 1e-9);
     const n = fakeBody();
     growth.applyPerks(n);
     assert.equal(n.topSpeed, 1);

@@ -29,7 +29,7 @@
     ];
 
     const DISCORD = 'https://discord.gg/bx5FK3CMwp';
-    const SITE = 'https://corez.games';
+    const SITE = 'https://corez.io';
     const MENU_LEAD_MS = 14 * 86400000;   // the menu card shows up this far ahead
     const HUD_LEAD_MS = 24 * 3600000;     // the in-raid chip
     const SOON_MS = 10 * 60000;           // the "starts soon" callout
@@ -113,6 +113,8 @@
         return [
             'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Corez.io//Events//EN', 'CALSCALE:GREGORIAN',
             'BEGIN:VEVENT',
+            // the old domain on purpose: calendars that already have an event
+            // would get a second copy if its UID changed
             'UID:' + e.id + '@corez.games',
             'DTSTAMP:' + stamp(e.startMs - 7 * 864e5),
             'DTSTART:' + stamp(e.startMs),

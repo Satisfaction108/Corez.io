@@ -294,6 +294,14 @@ const DIG_WARS_PROXY_PATH = "/dw";
 // dials <this host>/duo and the websocket is spliced through to its port.
 const DUO_PROXY_PATH = "/duo";
 
+// The host a page reached us on, when it is the old domain (MOVE_FROM_HOST):
+// its raid sockets dial the same host so its cookie goes along. Anything
+// else gets Config.host as before.
+function gameHostFor(req) {
+    const host = String(req.headers.host || "").toLowerCase();
+    return accounts.config.isMoveHost(host) ? host : Config.host;
+}
+
 function serverCfg(id) {
     return (Config.servers || []).find((s) => s && s.id === id) || null;
 }
@@ -356,6 +364,8 @@ server = http.createServer((req, res) => {
         res.end(JSON.stringify({ v: currentClient() }));
         return;
     }
+    // a page load on the old domain gets the moving page (accounts/routes/move.js)
+    if (accounts.move.servePage(req, res)) return;
     // /api/*, /auth/*, /discord/* belong to accounts (before the CORS block,
     // so account responses never carry Access-Control-Allow-Origin)
     if (accounts.handleHttp(req, res)) return;
@@ -394,12 +404,13 @@ server = http.createServer((req, res) => {
             // Serve a list of active servers (excluding hidden ones)
             // the overflow solo raids are unlisted; their counts go on the solo row
             const overflow = (global.servers || []).filter((s) => s && s.clientsAt && (serverCfg(s.id) || {}).soloOverflow);
+            const ownHost = gameHostFor(req);
             readString = JSON.stringify((global.servers || []).filter((s) => s && s.id && !s.hidden).map((server) => {
                 const cfg = serverCfg(server.id);
                 const duo = server.mode === "duo" || !!(cfg && cfg.properties && cfg.properties.royale_duos);
                 const extra = !duo && server.gameManager ? overflow : [];
                 return {
-                    ip: duo ? Config.host : server.ip,
+                    ip: duo || server.ip === Config.host ? ownHost : server.ip,
                     players: extra.reduce((n, s) => n + (s.players | 0), server.players | 0),
                     maxPlayers: extra.reduce((n, s) => n + (s.maxPlayers | 0), server.maxPlayers | 0),
                     id: server.id,
@@ -426,7 +437,7 @@ server = http.createServer((req, res) => {
                 // Reach the tutorial through THIS host on THIS port: the
                 // container routes only one port to the domain, so the
                 // tutorial worker's own port is not reachable from outside.
-                mainHost: Config.host,
+                mainHost: gameHostFor(req),
                 proxyPath: TUTORIAL_PROXY_PATH,
             } : null);
         } break;
@@ -438,7 +449,7 @@ server = http.createServer((req, res) => {
                 players: dw.players,
                 maxPlayers: dw.maxPlayers,
                 id: dw.id,
-                mainHost: Config.host,
+                mainHost: gameHostFor(req),
                 proxyPath: DIG_WARS_PROXY_PATH,
             } : null);
         } break;
@@ -681,7 +692,7 @@ async function detectRegion() {
         const timer = setTimeout(() => controller.abort(), 4000);
         const res = await fetch("https://ipapi.co/json/", {
             signal: controller.signal,
-            headers: { "User-Agent": "corez/1.0 (+https://corez.games)" },
+            headers: { "User-Agent": "corez/1.0 (+https://corez.io)" },
         });
         clearTimeout(timer);
         const data = await res.json();

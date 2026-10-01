@@ -21,11 +21,15 @@ const config = {
     load,
     parseBackupKey,
     isAllowedOrigin,
+    isMoveHost,
+    discordRedirectFor,
     // Filled by load():
     isProd: false,
     publicOrigin: 'http://localhost:3000',
     secure: false,
     allowedOrigins: new Set(),
+    moveHosts: new Set(),
+    moveOrigins: new Set(),
     trustedProxies: [],
     sessionSecret: '',
     secretOk: false,
@@ -40,6 +44,10 @@ const config = {
 
 function normalizeOrigin(origin) {
     return String(origin || '').trim().toLowerCase().replace(/\/+$/, '');
+}
+
+function normalizeHost(host) {
+    return String(host || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\.$/, '');
 }
 
 function load(env = process.env) {
@@ -63,6 +71,20 @@ function load(env = process.env) {
         const n = normalizeOrigin(o);
         if (n) config.allowedOrigins.add(n);
     }
+    // MOVE_FROM_HOST: the domain(s) the site used to live on. Page loads there
+    // get the moving page (routes/move.js); everything else keeps working, so
+    // its origin stays allowed for the open tabs still on it.
+    config.moveHosts = new Set();
+    config.moveOrigins = new Set();
+    for (const raw of String(env.MOVE_FROM_HOST || '').split(',')) {
+        const host = normalizeHost(raw);
+        if (!host || host === originHost) continue;
+        for (const h of host.startsWith('www.') ? [host] : [host, 'www.' + host]) {
+            config.moveHosts.add(h);
+            config.moveOrigins.add((config.secure ? 'https://' : 'http://') + h);
+        }
+    }
+    for (const o of config.moveOrigins) config.allowedOrigins.add(o);
     config.trustedProxies = String(env.TRUSTED_PROXIES || '127.0.0.1,::1').split(',').map(s => s.trim()).filter(Boolean);
 
     // SESSION_SECRET signs the short-lived cookies (Discord state, pending
@@ -161,6 +183,19 @@ function isAllowedOrigin(origin) {
     const n = normalizeOrigin(origin);
     if (config.allowedOrigins.has(n)) return true;
     return !config.isProd && DEV_ORIGIN_RE.test(n);
+}
+
+// True when a request's Host header names one of the MOVE_FROM_HOST domains.
+function isMoveHost(host) {
+    return config.moveHosts.size > 0 && config.moveHosts.has(normalizeHost(Array.isArray(host) ? host[0] : host));
+}
+
+// Discord sends the browser back to the host the login started on, so a flow
+// begun on the old domain finishes there (with its own state cookie). That
+// callback URL has to stay registered with Discord until the old domain goes.
+function discordRedirectFor(host) {
+    if (!isMoveHost(host)) return config.discord.redirectUri;
+    return (config.secure ? 'https://' : 'http://') + normalizeHost(host) + '/auth/discord/callback';
 }
 
 load();

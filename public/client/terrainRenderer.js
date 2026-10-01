@@ -1978,7 +1978,10 @@ class TerrainRenderer {
         const quality = (this._rockQuality ?? (this._rockQuality = this._detectRockQuality())) *
                         (config.graphical.simpleTerrain ? 0.5 : 1);   // "Simple Terrain": half the shading
         const want = cellW * quality;
-        const same = c && c.cols === this._cols && c.density > want * 0.8 && c.density < want * 1.25;
+        // compared on the density asked for, not the one built: a big screen
+        // or a wide view caps the texture below `want`, and comparing that
+        // would re-shade it every frame
+        const same = c && c.cols === this._cols && c.want > want * 0.8 && c.want < want * 1.25;
         if (same && view.tlx >= c.x && view.tly >= c.y &&
             view.tlx + view.tlw <= c.x + c.w && view.tly + view.tlh <= c.y + c.h) {
             // Close to an edge: slide the image along now, while the strip to
@@ -2065,7 +2068,7 @@ class TerrainRenderer {
         }
         if (c && c.img && c.img !== img && typeof c.img.close === 'function') c.img.close();
         this._rockCache = { img, canvas: img instanceof HTMLCanvasElement ? img : null,
-                            x, y, w: pw / density, h: ph / (density * ratioY), density, cols: this._cols,
+                            x, y, w: pw / density, h: ph / (density * ratioY), density, want, cols: this._cols,
                             // pw is only set where sliding pays: software GL, where
                             // shading is slow (a GPU re-shades the lot in no time)
                             m, ratioY, pw: this._gl && this._rockQuality < 1 ? pw : 0, ph };
@@ -2123,7 +2126,7 @@ class TerrainRenderer {
         }
 
         if (c.img !== out && typeof c.img.close === 'function') c.img.close();
-        this._rockCache = { img: out, canvas: null, x, y, w: c.w, h: c.h, density: d, cols: c.cols,
+        this._rockCache = { img: out, canvas: null, x, y, w: c.w, h: c.h, density: d, want: c.want, cols: c.cols,
                             m: c.m, ratioY: c.ratioY, pw, ph };
         return this._rockCache;
     }

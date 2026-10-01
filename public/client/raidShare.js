@@ -1,5 +1,5 @@
 // "Share" on the raid-end result: a 1200x630 card of the raid (place, your
-// numbers, the top 3, the mode, corez.games) over a frame of the game view,
+// numbers, the top 3, the mode, corez.io) over a frame of the game view,
 // then the system share sheet on phones, the clipboard everywhere else, with
 // a download as the fallback and a "Copy text" for the one-liner.
 //
@@ -145,9 +145,9 @@ async function copyText(text) {
     try { await navigator.clipboard.writeText(text); return true; } catch (e) { return false; }
 }
 export function shareLine(info) {
-    if (info.place === 1) return (info.duos ? "We won a Duos raid on Corez.io!" : "I won a raid on Corez.io!") + " corez.games";
-    if (info.place > 0) return "I placed #" + info.place + (info.rows > 1 ? " of " + info.rows : "") + " in a " + (info.duos ? "Duos " : "") + "raid on Corez.io! corez.games";
-    return "I just played a raid on Corez.io! corez.games";
+    if (info.place === 1) return (info.duos ? "We won a Duos raid on Corez.io!" : "I won a raid on Corez.io!") + " https://corez.io";
+    if (info.place > 0) return "I placed #" + info.place + (info.rows > 1 ? " of " + info.rows : "") + " in a " + (info.duos ? "Duos " : "") + "raid on Corez.io! https://corez.io";
+    return "I just played a raid on Corez.io! https://corez.io";
 }
 const touchFirst = () => !!(global.mobile || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches));
 async function run(info) {
@@ -352,8 +352,8 @@ export function makeCard(info) {
         word(c, fmt(row.score), tx + tw - 18, y, 24, C.head, "right");
     }
 
-    // corez.games, bottom right, where the eye ends up
-    const url = "corez.games";
+    // corez.io, bottom right, where the eye ends up
+    const url = "corez.io";
     c.font = "40px " + TITLE;
     const uw = c.measureText(url).width;
     const hasLogo = !!(logo && logo.complete && logo.naturalWidth);

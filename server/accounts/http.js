@@ -272,6 +272,7 @@ function csrfGuard(ctx) {
 // path -> {METHOD: {handler, opts}}
 // opts.alwaysOn: still served while accounts are disabled.
 // opts.navigation: a browser navigation; errors become redirects, not JSON.
+// opts.bodyLimit: a bigger JSON body than BODY_LIMIT (bytes).
 function createRouter() {
     const table = new Map();
     return {

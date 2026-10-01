@@ -1,10 +1,11 @@
 // Cosmetics drawing: tank skins (paintHull) and name styles (nameFill,
 // nameFx), from the shared catalog (window.DWCosmetics). No DOM: app.js
 // calls this every frame, so the hot paths allocate nothing.
-// Skins: a flat pattern tile per skin + team colour + size bucket (32..256
-// device px), in hull space, clipped to the hull path (same maths as
-// drawBody in app.js). At most one tile is built per ~frame; until then the
-// hull reuses another size of the same tile, or stays plain.
+// Skins: a flat pattern tile per skin + team colour + size bucket (32..4096
+// device px, following the hull on screen), in hull space, clipped to the
+// hull path (same maths as drawBody in app.js). At most one tile is built
+// per ~frame; until then the hull reuses another size of the same tile, or
+// stays plain.
 // Name styles: a small baked colour tile per style, laid over the text box
 // as a CanvasPattern whose transform is moved (a reused DOMMatrix), so
 // static and scrolling names alike cost no gradient a frame. The outline
@@ -873,9 +874,20 @@ const GLOW = {
 };
 
 /* ── skins: tiles ───────────────────────────────────────────────────── */
+// Tile sizes follow the hull's device pixels: octaves up to 256, half
+// octaves past that, up to a hull filling a 4K screen. Tiles past 256 px
+// are big (a 4096 one is 64 MB), so they share a pixel budget and the least
+// recently drawn go first; one still on screen is never dropped for another.
+const SIZES = [32, 64, 128, 256, 362, 512, 724, 1024, 1448, 2048, 2896, 4096];
+const SMALL = 3;            // SIZES[SMALL] is the last small tile
+const STILL_MAX = 2048;     // Fewer Effects / low fx: no 4K tiles
+const GLOW_MAX = 2048;      // the glow layer is soft light, half res at 4K is fine
+const BIG_BUDGET = 32e6;    // px across all big tiles, ~128 MB
+const BIG_GAP = 200;        // ms between big builds, so growing never stacks hitches
 const MAX_TILES = 96;
 const tiles = new Map();    // team hex -> Map(nid -> [tile per size bucket])
-let tileCount = 0, lastGen = -1e9;
+let tileCount = 0, lastGen = -1e9, lastBig = -1e9, bigPx = 0;
+const big = [];             // [sizes, bucket] of each big tile
 
 function mkCanvas(n) {
     let cv;
@@ -900,7 +912,7 @@ function buildTile(it, teamHex, px) {
         if (painter) { c.save(); painter(c, P, s, mulberry32(s.seed | 0)); c.restore(); }
         const gp = GLOW[s.pattern];
         if (em && GLOW_KINDS[em.kind] && gp) {
-            const gpx = Math.min(px, 128);
+            const gpx = Math.min(px, GLOW_MAX);
             const g1 = mkCanvas(gpx);
             gp(g1[1], P, s, em.color || '#ffffff');
             glow = g1[0];
@@ -911,29 +923,70 @@ function buildTile(it, teamHex, px) {
             }
         }
     } catch (e) { console.error('[cosmetics] skin paint failed', s.pattern, e); }
-    return { cv, glow, glow2 };
+    return { cv, glow, glow2, area: areaOf(it, px), used: 0 };
 }
 
-const bucketOf = (px) => (px <= 32 ? 0 : px <= 64 ? 1 : px <= 128 ? 2 : 3);
+// The tile size for a hull `dev` device px in radius.
+export function tilePx(dev, still) {
+    const need = dev * 2 * E, top = still ? STILL_MAX : SIZES[SIZES.length - 1];
+    for (let i = 0; i < SIZES.length; i++) if (SIZES[i] >= need || SIZES[i] >= top) return SIZES[i];
+    return top;
+}
+const bucketOf = (px) => { const i = SIZES.indexOf(px); return i < 0 ? SIZES.length - 1 : i; };
+
+// The px a tile of this size will take, glow layers included.
+function areaOf(it, px) {
+    const em = it.skin.emissive, gpx = Math.min(px, GLOW_MAX);
+    if (!em || !GLOW_KINDS[em.kind] || !GLOW[it.skin.pattern]) return px * px;
+    return px * px + gpx * gpx * (em.kind === 'shift' && em.color2 ? 2 : 1);
+}
+
+// Room for `area` more big px, dropping tiles not drawn for a second.
+// False when everything left is still in use.
+function makeRoom(area, now) {
+    while (bigPx + area > BIG_BUDGET && big.length) {
+        let k = 0;
+        for (let i = 1; i < big.length; i++) if (big[i][0][big[i][1]].used < big[k][0][big[k][1]].used) k = i;
+        const [sizes, b] = big[k];
+        if (now - sizes[b].used < 1000) return false;
+        bigPx -= sizes[b].area;
+        sizes[b] = null;
+        big.splice(k, 1);
+        tileCount--;
+    }
+    return bigPx + area <= BIG_BUDGET;
+}
+
 // A tile ready for this skin / colour / size, or null. `force` builds it
 // now (menu previews); otherwise at most one build per ~frame.
 function tileFor(it, teamHex, px, force) {
-    if (tileCount > MAX_TILES) { tiles.clear(); tileCount = 0; }
+    if (tileCount > MAX_TILES) { tiles.clear(); tileCount = 0; big.length = 0; bigPx = 0; }
     let byTeam = tiles.get(teamHex);
     if (!byTeam) { byTeam = new Map(); tiles.set(teamHex, byTeam); }
     let sizes = byTeam.get(it.nid);
-    if (!sizes) { sizes = [null, null, null, null]; byTeam.set(it.nid, sizes); }
+    if (!sizes) { sizes = new Array(SIZES.length).fill(null); byTeam.set(it.nid, sizes); }
     const b = bucketOf(px);
-    if (sizes[b]) return sizes[b];
     const now = performance.now();
-    if (force || now - lastGen > 10) {
-        lastGen = now;
-        sizes[b] = buildTile(it, teamHex, px);
-        tileCount++;
-        return sizes[b];
+    if (sizes[b]) { sizes[b].used = now; return sizes[b]; }
+    if (force || (now - lastGen > 10 && (b <= SMALL || now - lastBig > BIG_GAP))) {
+        // no room for this size while the others are on screen: the
+        // biggest that fits instead, unless a smaller one is already there
+        for (let k = b; k >= 0; k--) {
+            if (k < b && sizes[k]) break;
+            const p = SIZES[k], isBig = k > SMALL;
+            if (isBig && !makeRoom(areaOf(it, p), now)) continue;
+            lastGen = now;
+            const tile = buildTile(it, teamHex, p);
+            tile.used = now;
+            sizes[k] = tile;
+            tileCount++;
+            if (isBig) { lastBig = now; bigPx += tile.area; big.push([sizes, k]); }
+            return tile;
+        }
     }
-    // another size of the same tile, scaled, until this one gets its turn
-    for (let i = 0; i < 4; i++) if (sizes[i]) return sizes[i];
+    // the nearest size of the same tile, scaled, until this one gets its turn
+    for (let i = b - 1; i >= 0; i--) if (sizes[i]) { sizes[i].used = now; return sizes[i]; }
+    for (let i = b + 1; i < SIZES.length; i++) if (sizes[i]) { sizes[i].used = now; return sizes[i]; }
     return null;
 }
 
@@ -993,10 +1046,7 @@ export function paintHull(c, x, y, r, shape, rot, nid, baseHex, o) {
     if (dev < 5) return;
     const team = typeof baseHex === 'string' && /^#[0-9a-f]{6}$/i.test(baseHex) ? baseHex : '#808080';
     const still = !!o.lowFx || fewerFx();
-    let px = 32;
-    while (px < dev * 2 * E && px < 256) px *= 2;
-    if (still && px > 128) px = 128;
-    const tile = tileFor(it, team, px, o.force);
+    const tile = tileFor(it, team, tilePx(dev, still), o.force);
     if (!tile) return;
     const s = it.skin, em = s.emissive;
     const t = still ? 0 : (o.time != null ? o.time : performance.now() / 1000);

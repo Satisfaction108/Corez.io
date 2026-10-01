@@ -44,6 +44,8 @@ const WINDOWS = {
     partyCode:     { limit: 20,  windowMs: 10 * MIN },  // wrong party codes per IP (guessing)
     invite:        { limit: 30,  windowMs: 1 * MIN },   // invite panel loads per account
     feedback:      { limit: 3,   windowMs: 10 * MIN },  // feedback messages per IP, and per account or guest
+    moveStart:     { limit: 60,  windowMs: 10 * MIN },  // domain move handoffs per IP (old host)
+    moveClaim:     { limit: 60,  windowMs: 10 * MIN },  // ...and claims per IP (new host)
 };
 
 const BACKOFFS = {

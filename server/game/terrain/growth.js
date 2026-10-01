@@ -59,12 +59,11 @@ function healthMult(g) { return statMult(g); }
 function damageMult(g) { return statMult(g); }
 function bodyDamageMult(g) { return statMult(g); }
 // The camera: arras' own sqrt(size) times this, so the view follows
-// g^VIEW_POW, up to VIEW_MAX times a normal tank's.
+// g^VIEW_POW with no ceiling (the map edge is the limit).
 // 0.45: the camera opens up, but slower than the tank grows, so growing
 // shows on screen (at 0.7 a 2.3x tank only looked ~1.3x bigger)
 const VIEW_POW = 0.45;
-const VIEW_MAX = 1.8;
-function viewMult(g) { return Math.min(VIEW_MAX, Math.pow(Math.max(1, g), VIEW_POW)); }
+function viewMult(g) { return Math.pow(Math.max(1, g), VIEW_POW); }
 function fovMult(g) { return viewMult(g) / Math.sqrt(Math.max(1, g)); }
 // Rock: every hit digs damageMult harder, and the per-second dig budget
 // rises by the same factor, so a grown tank digs at most that much faster.
@@ -155,5 +154,5 @@ module.exports = {
     RESPAWN_SHARE, RESPAWN_CAP, STAGES, CAP_SCORE,
     BOT_SCORE_MULT, enabled, multFor, spawnEff, scoreMult, onSpawn, tick, applyPerks, stageOf,
     speedMult, healthMult, damageMult, bodyDamageMult, statMult, fovMult, viewMult, mineMult,
-    SCALE, GAIN, STAT_AT_100K, VIEW_MAX,
+    SCALE, GAIN, STAT_AT_100K, VIEW_POW,
 };
