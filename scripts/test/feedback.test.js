@@ -141,7 +141,7 @@ test('storage: a guest message, cleaned text and context, no IP column', async (
         category: 'bug', guestId: g,
         context: {
             version: '1.4.2', browser: 'Chrome 131 on macOS', screen: '1440x900@2x', region: 'US East',
-            server: 'corez.io', embed: 'iogames.space', inGame: true,
+            server: 'corez.games', embed: 'iogames.space', inGame: true,
             evil: 'x'.repeat(5000), cookie: 'dw_sid=abc',
         },
     });
@@ -154,7 +154,7 @@ test('storage: a guest message, cleaned text and context, no IP column', async (
     assert.equal(f.text, 'Storm\nkilled me through a wall\n\n\nhelp');
     assert.deepEqual(JSON.parse(f.context), {
         version: '1.4.2', browser: 'Chrome 131 on macOS', screen: '1440x900@2x', region: 'US East',
-        server: 'corez.io', embed: 'iogames.space', inGame: true,
+        server: 'corez.games', embed: 'iogames.space', inGame: true,
     });
     const cols = D().all('PRAGMA table_info(feedback)').map(c => c.name);
     assert.deepEqual(cols, ['id', 'at', 'user_id', 'guest_id', 'category', 'text', 'context']);

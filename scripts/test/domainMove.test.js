@@ -434,15 +434,19 @@ test('client: a failed or slow handoff still redirects, and tries again next vis
     assert.equal(p.reloaded, 1);
 });
 
-test('text: the site points at corez.io, no em dashes in the new code', () => {
+test('text: every page points at one domain, no em dashes in the new code', () => {
     const EM_DASH = String.fromCharCode(0x2014);
     const PUB = path.join(__dirname, '..', '..', 'public');
+    // corez.games until the switch, then corez.io: whichever shared/events.js
+    // uses, the pages have to agree with it
+    const site = fs.readFileSync(path.join(__dirname, '..', '..', 'shared', 'events.js'), 'utf8').match(/const SITE = '(https:\/\/[^']+)'/)[1];
+    const other = site.includes('corez.io') ? 'corez.games' : 'corez.io/';
     for (const f of ['index.html', 'about.html', 'devlog.html']) {
         const html = fs.readFileSync(path.join(PUB, f), 'utf8');
-        assert.ok(!html.includes('corez.games'), f);
-        assert.match(html, /<link rel="canonical" href="https:\/\/corez\.io\//, f);
+        assert.ok(!html.includes(other), f);
+        assert.ok(html.includes('<link rel="canonical" href="' + site + '/'), f);
     }
-    for (const f of ['client/raidShare.js', 'client/account/welcome.js']) assert.ok(!fs.readFileSync(path.join(PUB, f), 'utf8').includes('corez.games'), f);
+    for (const f of ['client/raidShare.js', 'client/account/welcome.js']) assert.ok(!fs.readFileSync(path.join(PUB, f), 'utf8').includes(other), f);
     for (const f of [path.join(__dirname, '..', '..', 'server', 'accounts', 'routes', 'move.js'), __filename]) {
         assert.ok(!fs.readFileSync(f, 'utf8').includes(EM_DASH), path.basename(f) + ' has no em dash');
     }

@@ -22,14 +22,14 @@ const cachedName = () => { try { return localStorage.getItem('dwAcctName') || ''
 
 // Inside a portal's iframe the browser keeps our session cookie away from
 // the frame (it is SameSite=Lax), so logging in there would look fine and
-// then not stick. Those buttons open corez.io in a real tab instead, and
+// then not stick. Those buttons open corez.games in a real tab instead, and
 // the frame stays a guest. index.html sets window.dwEmbed.
 export const embedded = () => !!window.dwEmbed;
 export function openInTab(path) {
     // not 'noopener': that makes window.open return null even when it worked
     const w = window.open(location.origin + path, '_blank');
     if (w) { try { w.opener = null; } catch (e) { /* */ } }
-    else toast('Open corez.io in a new tab to log in', { duration: 6000 });
+    else toast('Open corez.games in a new tab to log in', { duration: 6000 });
 }
 
 export function init(h0) {

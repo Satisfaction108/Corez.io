@@ -5821,10 +5821,18 @@ import * as cosmetics from './account/cosmetics.js';
             // a deeper teal: white text on the bright one was hard to read
             hudBar(ctx[2], bankX1 - capR, ry - pillH / 2, rx2 - bankX1 + capR * 2, pillH, 1, gameDraw.mixColors(color.teal, "#000000", 0.4));
             {
-                // the kept part came from earlier raids: spendable, but not score
-                const bankTxt = "Banked: " + util.formatLargeNumber(g.banked | 0) +
-                    ((g.kept | 0) > 0 ? "  (" + util.formatLargeNumber(g.kept | 0) + " kept)" : "");
-                let bs2 = 13; while (bs2 > 9 && hudTextW(bankTxt, bs2) > (rx2 - bankX1) - 10) bs2 -= 0.5;
+                // the kept part came from earlier raids: spendable, but not score.
+                // Big numbers go short (47.5k), then the kept part drops, so
+                // the text never spills out of the pill.
+                const room = (rx2 - bankX1) - 10, banked = g.banked | 0, kept = g.kept | 0;
+                const tries = kept > 0
+                    ? ["Banked: " + util.formatLargeNumber(banked) + "  (" + util.formatLargeNumber(kept) + " kept)",
+                        "Banked: " + shortGems(banked) + " (" + shortGems(kept) + " kept)",
+                        "Banked: " + util.formatLargeNumber(banked), "Banked: " + shortGems(banked)]
+                    : ["Banked: " + util.formatLargeNumber(banked), "Banked: " + shortGems(banked)];
+                let bankTxt = tries[tries.length - 1];
+                for (const t of tries) if (hudTextW(t, 11) <= room) { bankTxt = t; break; }
+                let bs2 = 13; while (bs2 > 9 && hudTextW(bankTxt, bs2) > room) bs2 -= 0.5;
                 drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, color.guiwhite, "center");
             }
             // gemdust (accounts): satchel dust under Carried, balance under Banked
@@ -5838,6 +5846,13 @@ import * as cosmetics from './account/cosmetics.js';
         const mySn = styledName(name, global.myNameStyle, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, nameX, 31, "center", ctx[2], nameY);
         drawText(mySn.text, nameX, nameY, 31, mySn.fill, "center");
         drawNameBadge(myCode, mySn.text, nameX, nameY, 31, "center", ctx[2]);
+    }
+
+    // 47500 -> "47.5k", 1250000 -> "1.25m"
+    function shortGems(n) {
+        if (n < 10000) return util.formatLargeNumber(n);
+        if (n < 1e6) return (Math.floor(n / 100) / 10) + "k";
+        return (Math.floor(n / 1e4) / 100) + "m";
     }
 
     // Your own rank as a wire code (0 guest, 1..19 ranked, 20 placement),

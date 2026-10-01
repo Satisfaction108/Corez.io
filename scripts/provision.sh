@@ -5,7 +5,7 @@ set -euo pipefail
 APP_DIR="${1:-$HOME/digwars}"
 BRANCH="dig-wars"
 PORT="${PORT:-3000}"
-PUBLIC_HOST="${PUBLIC_HOST:-corez.io}"
+PUBLIC_HOST="${PUBLIC_HOST:-corez.games}"
 REPO="https://github.com/Satisfaction108/Arras2.git"
 
 # root (like a fresh nest container) doesn't need sudo; regular users do.
