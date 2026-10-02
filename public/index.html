@@ -41,6 +41,15 @@
         try { framed = w.top !== w.self; } catch (e) { framed = true; }
         w.dwEmbed = framed;
         if (framed) html.className += ' dw-embed';
+        // CrazyGames: the listing loads https://corez.io/?crazygames (client/portal.js
+        // talks to their SDK; html.dw-cg hides links that leave their site)
+        var cg = false;
+        try {
+            var anc = location.ancestorOrigins ? [].join.call(location.ancestorOrigins, ' ') : '';
+            cg = framed && (/[?&]crazygames\b/.test(location.search) || /crazygames\./.test(document.referrer) || /crazygames\./.test(anc));
+        } catch (e) { /* */ }
+        w.dwPortal = cg ? 'crazygames' : '';
+        if (cg) html.className += ' dw-cg';
         // Arriving from the old domain with #move=<code> (the moving page,
         // server/accounts/routes/move.js): stop the page before anything reads
         // storage, claim what this browser had there, keep every key it already
@@ -689,6 +698,7 @@
     <script type="module" src="./client/color.js"></script>
     <script type="module" src="./client/serverSelectorHandler.js"></script>
     <script src="./client/halloween.js"></script>
+    <script src="./client/portal.js"></script>
     <script src="./client/home.js"></script>
     <script type="module" src="./client/account/main.js"></script>
     <script type="module" src="./client/version.js"></script>

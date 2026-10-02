@@ -4377,6 +4377,12 @@ html.dw-fs .dw-fs-toggle .fs-off { display: inline; }
 #ingameFullscreenBtn { width: 42px; }
 #ingameFullscreenBtn .dw-ic { width: 24px; height: 24px; }
 
+/* ── On CrazyGames (index.html sets html.dw-cg): nothing that leaves their
+   site. Players are guests there; accounts and invites live on corez.io. ── */
+html.dw-cg .social-buttons, html.dw-cg .contrib-foot, html.dw-cg .ev-discord,
+html.dw-cg #inviteBtn, html.dw-cg #accountChip, html.dw-cg .wl-login-row,
+html.dw-cg .wl-sub, html.dw-cg .wl-or, html.dw-cg .wl-embed-note { display: none !important; }
+
 /* ── Framed on a portal (index.html sets html.dw-embed) ── */
 .wl-embed-note { display: none; margin-top: 12px; color: var(--text2); font: 600 12px/1.4 var(--ui); text-align: center; }
 html.dw-embed #dwWelcome:not(.wl-offline) .wl-embed-note { display: block; }
