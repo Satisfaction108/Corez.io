@@ -187,7 +187,52 @@ async function createParty(btn) {
     setBusy(btn, false);
     if (!r.ok) { toast(errText(r), { kind: 'error' }); return; }
     takeGuestToken(r.data);
+    loadSeq++;   // a load still in flight predates this party
     applyParty(r.data.party);
+}
+
+// The same two for the portal (portal.js): an instant multiplayer start
+// makes a party at once, an invite link joins the one in it. No buttons,
+// so they answer true / false and toast their own errors.
+async function quickCreate() {
+    if (st.party) return true;
+    const r = await api.partyCreate(guestName());
+    if (!r.ok) { toast(errText(r), { kind: 'error' }); return false; }
+    takeGuestToken(r.data);
+    loadSeq++;   // a load still in flight predates this party
+    setMode('duo');
+    st.adding = true;
+    applyParty(r.data.party);
+    toast('Invite a friend to duo, or flip to Solo to go alone', { kind: 'ok', duration: 6000 });
+    return true;
+}
+
+async function quickJoin(raw) {
+    const code = String(raw || '').replace(/[\s-]/g, '').toUpperCase();
+    if (code.length !== 5) return false;
+    setMode('duo');
+    if (st.party && st.party.code === code) return true;
+    if (st.party) {
+        const out = await api.partyLeave();
+        if (!out.ok) { toast(errText(out), { kind: 'error' }); return false; }
+        applyParty(null);
+    }
+    const r = await api.partyJoin(code, guestName());
+    if (!r.ok) { toast(errText(r), { kind: 'error' }); return false; }
+    takeGuestToken(r.data);
+    loadSeq++;   // a load still in flight predates this party
+    st.adding = false;
+    applyParty(r.data.party);
+    const mate = r.data.party && r.data.party.members.find((m) => !m.you);
+    const name = mate ? mate.name : 'your friend';
+    if (inGame()) {
+        const g = window.global;
+        gameToasts.note('joined' + code, 'Teamed up with ' + name, {
+            sub: 'You’ll join ' + name + ' after this raid', ms: 9000,
+            buttons: [{ label: 'Leave raid to join', primary: true, onClick: () => { if (g && g.exit) g.exit(); } }],
+        });
+    } else toast(mate ? 'You’re in ' + mate.name + '’s party' : 'Joined', { kind: 'ok' });
+    return true;
 }
 
 async function joinCode(input, btn) {
@@ -198,6 +243,7 @@ async function joinCode(input, btn) {
     setBusy(btn, false);
     if (!r.ok) { input.classList.add('bad'); toast(errText(r), { kind: 'error' }); return; }
     takeGuestToken(r.data);
+    loadSeq++;   // a load still in flight predates this party
     st.adding = false;
     applyParty(r.data.party);
     const mate = r.data.party && r.data.party.members.find((m) => !m.you);
@@ -213,12 +259,21 @@ async function leaveParty(btn) {
     applyParty(null);
 }
 
+// On a portal with its own invite links (CrazyGames) the link is what gets
+// shared; anywhere else it's '' and the code is
+function portalLink(code) {
+    try { return (window.dwPortalInvite && window.dwPortalInvite(code)) || ''; } catch (e) { return ''; }
+}
+
 function copyCode(code) {
-    const done = () => toast('Code copied. Send it to your friend', { kind: 'ok' });
+    const link = portalLink(code);
+    const what = link || code;
+    const done = () => toast((link ? 'Invite link' : 'Code') + ' copied. Send it to your friend', { kind: 'ok' });
+    const fail = () => toast(link ? 'Your party code is ' + code : 'Your code is ' + code);
     try {
-        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(code).then(done, () => toast('Your code is ' + code)); return; }
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(what).then(done, fail); return; }
     } catch (e) { /* */ }
-    toast('Your code is ' + code);
+    fail();
 }
 
 /* ── mode ───────────────────────────────────────────────────────────── */
@@ -348,7 +403,7 @@ function render() {
             drawer.appendChild(h('div', { class: 'duo-code' },
                 h('span', { class: 'duo-lbl', text: 'Your code' }),
                 h('span', { class: 'duo-code-val', text: p.code, title: 'Your party code' }),
-                h('button', { type: 'button', class: 'dw-btn sm', onclick: () => copyCode(p.code) }, icon('copy'), 'Copy')));
+                h('button', { type: 'button', class: 'dw-btn sm', onclick: () => copyCode(p.code) }, icon('copy'), portalLink(p.code) ? 'Copy link' : 'Copy')));
         } else {
             drawer.appendChild(h('div', { class: 'duo-code' },
                 h('span', { class: 'duo-lbl', text: 'Make a code your friend can type in' }),
@@ -458,5 +513,6 @@ export function init() {
         for (const [id, t] of inviteToasts) if (t && t.game) inviteToasts.delete(id);
         load(); render();
     }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-    window.dwParty = { wantsDuo, arm, mode, setMode, inviteFriend, partyHas, invitePending, showInvite, state: () => st };
+    window.dwParty = { wantsDuo, arm, mode, setMode, inviteFriend, partyHas, invitePending, showInvite, state: () => st,
+        create: quickCreate, join: quickJoin, openInvite: () => { st.adding = true; setMode('duo'); } };
 }
