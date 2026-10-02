@@ -196,6 +196,10 @@ function main() {
             const module = isModule(code);
             const profile = HOT.has(rel) ? "light" : "strong";
             const opts = { ...(profile === "light" ? light : strong), renameGlobals: module, inputFileName: rel };
+            // Classic scripts share one global scope: each needs its own prefix
+            // or the obfuscator's top-level helpers (string array decoders)
+            // collide and the later file's overwrite the earlier one's.
+            if (!module) opts.identifiersPrefix = "s" + crypto.createHash("md5").update(rel).digest("hex").slice(0, 5);
             const out = JavaScriptObfuscator.obfuscate(code, opts).getObfuscatedCode();
 
             const sourceType = module ? "module" : "script";
