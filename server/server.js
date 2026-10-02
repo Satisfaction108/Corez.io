@@ -121,7 +121,8 @@ const publicRootAbs = publicRootDir.abs;
 // picks the build. In build mode nothing script-like (.js, .jssave, .map...)
 // is ever read from public/, so stray readable copies stay private.
 const buildRoot = path.join(__dirname, "../build/public");
-const SCRIPT_LIKE = /\.(m?js\w*|map)$/i;
+// (.json is data, not script: preview-mockups.json and friends stay in public/)
+const SCRIPT_LIKE = /\.(m?js(?!on$)\w*|map)$/i;
 const clientBuild = (() => {
     const want = process.env.CLIENT_BUILD || (process.env.NODE_ENV === "production" ? "obfuscated" : "source");
     if (want !== "obfuscated") return null;
