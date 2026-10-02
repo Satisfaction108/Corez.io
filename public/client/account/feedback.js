@@ -118,7 +118,7 @@ function openModal() {
     let sent = false;
     const text = h('textarea', {
         class: 'dw-input fb-text', maxlength: MAX, rows: 5, spellcheck: 'true', 'data-autofocus': '',
-        placeholder: 'Found a bug? Got an idea? Something feel off? Tell us.', 'aria-label': 'Your feedback',
+        placeholder: 'Found a bug or got an idea? Tell us.', 'aria-label': 'Your feedback',
     });
     text.value = (ls.get(DRAFT_KEY) || '').slice(0, MAX);
     const counter = h('span', { class: 'fb-count', 'aria-live': 'polite' });
@@ -167,7 +167,7 @@ function openModal() {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const body = text.value.trim();
-        if (body.length < MIN) { ui.showAlert(alert, 'Write a few words first!'); text.focus(); return; }
+        if (body.length < MIN) { ui.showAlert(alert, 'Write a few words first.'); text.focus(); return; }
         ui.setBusy(send, true, 'Sending...');
         ui.showAlert(alert, '');
         const payload = { text: body };
@@ -180,7 +180,7 @@ function openModal() {
         if (!r.ok) {
             const code = r.data && r.data.error && r.data.error.code;
             ui.showAlert(alert, code === 'accounts_unavailable' || r.status === 404
-                ? 'Feedback is down right now. Our Discord works too!'
+                ? 'Feedback is down rn. Hit us up on Discord instead.'
                 : ui.humanError(r));
             return;
         }

@@ -129,11 +129,11 @@ class Canvas {
         });
         this.cv.addEventListener("keyup", (event) => {if (global.gameStart) this.keyUp(event)});
         window.addEventListener("gamepadconnected", (e) => {
-            global.createMessage("Controller detected! Initalizing Gamepad mode...");
+            global.createMessage("Controller connected. Gamepad mode on.");
             this.runGamepad();
         });
         window.addEventListener("gamepaddisconnected", (e) => {
-            global.createMessage("Controller disconnected! Gamepad mode terminated.");
+            global.createMessage("Controller disconnected. Gamepad mode off.");
             this.stopGamepad();
         });
         this.initalized = true;
@@ -1338,7 +1338,7 @@ class Canvas {
                 }
             }
         }, 10)
-        global.createMessage("Gamepad mode initalized and ready to use.");
+        global.createMessage("Gamepad mode is ready.");
         sendHelp();
     }
     stopGamepad() {

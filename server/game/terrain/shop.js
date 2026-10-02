@@ -28,7 +28,7 @@ const ITEMS = [
     { id: "plating",   cat: "gear", name: "Armor Plating",      price: 1300, retired: true, desc: "25% more max health for 5 minutes.", on: "You have 25% more max health." },
     { id: "express",   cat: "gear", name: "Vault Express",      price: 600,  retired: true, desc: "Vault deposits go twice as fast for 5 minutes.", on: "Your deposits now go twice as fast." },
     { id: "mark",      cat: "gear", name: "Hunter's Mark",      price: 1800, retired: true, desc: "Each kill is worth an extra 100 points for 5 minutes.", on: "Your kills now pay an extra 100 points." },
-    { id: "wind",      cat: "gear", name: "Second Wind",        price: 800,  retired: true, desc: "For 5 minutes, your spawn shield holds for 10 seconds while you move, so you can get clear after a respawn. Shooting still drops it after the first 5 seconds.", on: "Your spawn shield now holds while you move for 10 seconds." },
+    { id: "wind",      cat: "gear", name: "Second Wind",        price: 800,  retired: true, desc: "For 5 minutes your spawn shield holds 10 seconds while you move, so you can get clear after a respawn. Shooting still drops it after 5 seconds.", on: "Your spawn shield now holds while you move for 10 seconds." },
     // kit: consumables, 3 distinct types at a time, used with Z / R / N
     { id: "charge",    cat: "kit", name: "Seismic Charge", price: 350, max: 3, desc: "Throws a charge at your cursor (up to 500 away) that shatters every rock within 150." },
     { id: "strut",     cat: "kit", name: "Support Strut",  price: 250, max: 3, retired: true, desc: "Props open everything within 320 of you for 3 minutes: nothing grows back there, and rock that is already regrowing crumbles." },
@@ -38,13 +38,13 @@ const ITEMS = [
     { id: "overdrive", cat: "kit", name: "Overdrive Core", price: 450, max: 2, retired: true, desc: "Double mining power and 30% faster reload for 20 seconds." },
     { id: "anchor",    cat: "kit", name: "Storm Anchor",   price: 400, max: 2, desc: "The storm can't hurt you for 15 seconds." },
     { id: "flash",     cat: "kit", name: "Flash Vault",    price: 500, max: 2, desc: "Banks up to 300 of the gems you're carrying from wherever you are, minus a 30% fee." },
-    { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Instantly regrows the dead rock within 260 of you. Instant cover." },
+    { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Regrows the dug-out rock within 260 of you. Instant cover." },
     { id: "decoy",     cat: "kit", name: "Decoy Satchel",  price: 250, max: 3, desc: "Makes you look like you're hauling a full satchel for 20 seconds. Bait." },
-    { id: "barrage",   cat: "kit", name: "Rock Barrage",   price: 3000, max: 1, desc: "Hurls 10 chunks of rock at your cursor. Each one that lands takes 9% of a tank's health straight through its shield, so a full volley kills anyone who isn't at full health. Every chunk smashes through two rocks on the way." },
+    { id: "barrage",   cat: "kit", name: "Rock Barrage",   price: 3000, max: 1, desc: "Hurls 10 rock chunks at your cursor. Each hit takes 9% of a tank's health right through its shield, so a full volley finishes anyone who isn't topped up. Each chunk smashes through two rocks on the way." },
     // sidearms: one mounted at a time, fired with the sidearm key (command bit 128)
     { id: "flak",  cat: "arm", name: "Annihilator", price: 1500, desc: "Fires one huge annihilator shell at your cursor. 7 second reload." },
     { id: "lance", cat: "arm", name: "Drill Lance", price: 1200, desc: "Fires a bolt that shatters any rock it hits. 5 second reload." },
-    { id: "pod",   cat: "arm", name: "Swarm Barrels", price: 1800, desc: "Two battleship barrels on each side that send seeker drones at your cursor. Burns out after 2.5 minutes." },
+    { id: "pod",   cat: "arm", name: "Swarm Barrels", price: 1800, desc: "Two battleship barrels on each side that send seeker drones at your cursor. They burn out after 2.5 minutes." },
     // abilities (abilities.js): owned for the raid, one in the slot at a time
     ...require('./abilities.js').catalog().map(a => Object.assign(a, { fresh: true })),
 ];
@@ -765,7 +765,7 @@ function tick(actors) {
         s._occupant = keep;
         for (const body of on) {
             if (body === keep) continue;
-            shopEject(body, s, "Shop is occupied.", 3000);
+            shopEject(body, s, "Someone's using this shop. Wait your turn.", 3000);
         }
     }
     // pass 3: the shopper's clock and the client panel

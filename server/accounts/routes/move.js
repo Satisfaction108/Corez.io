@@ -113,7 +113,7 @@ function start(ctx) {
         dev: cookieValue(ctx, config.cookies.dev),
         pending: cookieValue(ctx, config.cookies.pending),
     }, ctx.now);
-    if (!code) throw new HttpError(503, 'busy', "The server's busy. Try again in a moment!", { retryAfter: 5 }, { 'Retry-After': '5' });
+    if (!code) throw new HttpError(503, 'busy', "Server's busy. Try again in a sec.", { retryAfter: 5 }, { 'Retry-After': '5' });
     ctx.json(200, { code });
 }
 

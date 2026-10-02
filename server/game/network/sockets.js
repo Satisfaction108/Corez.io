@@ -108,6 +108,12 @@ function ownTankColor(body) {
 const linkWatch = require("../../lib/linkWatch.js");
 const PING_EVERY_MS = linkWatch.PING_EVERY_MS;
 
+const qPos = (v) => Number.isFinite(v) ? Math.round(v) : v;
+const qVel = (v) => Number.isFinite(v) ? Math.round(v * 100) / 100 : v;
+// a compiled colour with the default shifts goes out as just its base (the
+// client fills the rest in, gameDraw.modifyColor): 12 bytes off every
+// entity and turret in every snapshot
+const qColor = (c) => typeof c === "string" && c.endsWith(" 0 1 0 false") ? c.slice(0, -12) : c;
 class socketManager {
     constructor(parent) {
         this.permissionsDict = Object.create(null);
@@ -389,7 +395,7 @@ class socketManager {
                     if (stillLive) return 1;
                 }
                 if (!global.gameManager.webProperties.maxPlayers < 1 && this.clients.length > global.gameManager.webProperties.maxPlayers) return (
-                    socket.talk("message", "This server is full, please rejoin later."),
+                    socket.talk("message", "Server's full. Try again in a bit."),
                     socket.kick("Server full.")
                 )
                 let b = bans.find((ban) => ban.ip === socket.ip);
@@ -421,7 +427,7 @@ class socketManager {
                     if (needsRoom) {
                       socket.talk("message", "Arena closed. Try again in a few seconds.");
                       socket.terminate("Bad spawn while arena closed.");
-                    } else socket.talk("m", 5_000, "Arena Closed.");
+                    } else socket.talk("m", 5_000, "Arena's closed.");
                     return;
                 };
 
@@ -1021,7 +1027,7 @@ class socketManager {
                             instance.kill();
                         }
                     }
-                    player.body.sendMessage("You have self-destructed.");
+                    player.body.sendMessage("You blew yourself up.");
                     player.body.destroy();
                 }
             } break;
@@ -2065,7 +2071,7 @@ class socketManager {
                 // Every plot is occupied. Spawning anyway would place them by
                 // the normal rules - inside another learner's plot.
                 socket.talk("m", Config.popup_message_duration ?? 10000,
-                    "The training ground is full right now - please try again in a minute.");
+                    "The tutorial's full rn. Try again in a minute.");
                 socket.kick("Tutorial full.");
                 return;
             }
@@ -2306,13 +2312,17 @@ class socketManager {
     }
 
     flatten(data) {
+        // Snapshots go out 30 times a second per client, so the floats are
+        // trimmed where nobody can see the difference: positions to whole
+        // units (a float is 4 bytes, a small int 2), speeds to 1/100 so a
+        // standing entity's near-zero drift sends as a bare 0.
         let output = [data.type];
         if (data.type & 0x01) {
             output.push(
                  data.facing,
                  data.layer,
                  data.index,
-                 data.color,
+                 qColor(data.color),
                  data.size,
                  data.realSize,
                  data.sizeFactor,
@@ -2325,15 +2335,15 @@ class socketManager {
             output.push(
                  data.id,
                  data.index,
-                 data.x,
-                 data.y,
-                 data.vx,
-                 data.vy,
+                 qPos(data.x),
+                 qPos(data.y),
+                 qVel(data.vx),
+                 qVel(data.vy),
                  data.size,
                  data.facing,
-                 data.vfacing,
+                 qVel(data.vfacing),
                  data.layer,
-                 data.color,
+                 qColor(data.color),
                  Math.ceil(65535 * data.health),
                  Math.round(65535 * data.shield),
                  Math.round(255 * data.alpha),
@@ -2347,16 +2357,16 @@ class socketManager {
             output.push(
                  data.id,
                  data.index,
-                 data.x,
-                 data.y,
-                 data.vx,
-                 data.vy,
+                 qPos(data.x),
+                 qPos(data.y),
+                 qVel(data.vx),
+                 qVel(data.vy),
                  data.size,
                  data.facing,
-                 data.vfacing,
+                 qVel(data.vfacing),
                  data.twiggle,
                  data.layer,
-                 data.color,
+                 qColor(data.color),
                  data.borderless,
                  data.drawFill,
                  data.invuln,

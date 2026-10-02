@@ -247,7 +247,7 @@ function onStructureDeath(site) {
             if (Config.dig_royale) try { require('../gamemodes/scripts/dig_royale.js').onCapture(killer, site); } catch { /* */ }
         } else {
             spawnStructure(site, 0, null);
-            if (site.ownerId) announce(`The ${siteName(site)} has fallen!`);
+            if (site.ownerId) announce(`The ${siteName(site)} fell.`);
         }
         return;
     }
@@ -258,7 +258,7 @@ function onStructureDeath(site) {
         }
         if (team) {
             spawnStructure(site, team);
-            announce(`${teamName(team)} has captured the ${site.name}!`);
+            announce(`${teamName(team)} took the ${site.name}.`);
         } else {
             spawnStructure(site, 0);   
         }
@@ -273,10 +273,10 @@ function onStructureDeath(site) {
         }
         if (capturingTeam) {
             spawnStructure(site, capturingTeam);
-            announce(`${teamName(capturingTeam)} captured the ${site.name} from ${teamName(owner)}!`);
+            announce(`${teamName(capturingTeam)} took the ${site.name} from ${teamName(owner)}.`);
         } else {
             spawnStructure(site, 0);
-            announce(`The ${site.name} has fallen - ${teamName(owner)} lost it!`);
+            announce(`${teamName(owner)} lost the ${site.name}.`);
         }
     }
 }

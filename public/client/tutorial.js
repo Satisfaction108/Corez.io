@@ -1130,7 +1130,7 @@ const CHAPTERS = [
             {
                 id: "score", next: true,
                 title: "Score",
-                text: "Score is the gems you bank this raid, plus *200* per kill, plus half of what you're carrying. Your bank carries over to the next raid (up to *50,000*) for shopping, but only gems banked this raid count for score. The *top 10* get bonus gems next raid. Get *4 kills* in a row and you show up on everyone's map, and whoever kills you gets a bounty. The contract card on the left always has a quick job for you, and each one pays gems.",
+                text: "Score is gems you bank this raid, plus *200* per kill, plus half of what you're carrying. Your bank carries into the next raid (up to *50,000*) for shopping, but only this raid's banking counts for score. *Top 10* get bonus gems next raid. Get *4 kills* in a row and you're on everyone's map with a bounty on you. The contract card on the left always has a quick job that pays gems.",
                 praise: "ok",
             },
         ],
@@ -2104,8 +2104,8 @@ const ui = {
               '<ul class="dwt-end-list">' +
                 `<li>${ICONS.gem}<span><b>Mine</b> and <b>bank a lot</b>. You drop what you're carrying when you die.</span></li>` +
                 `<li>${ICONS.base}<span>Get a <b>base</b> so you respawn close and can bank on the way. Spend gems at <b>shops</b>.</span></li>` +
-                `<li>${ICONS.storm}<span>Stay inside the <b>storm</b>. Chests and bosses pay the most.</span></li>` +
-                `<li>${ICONS.crown}<span>Highest score when the <b>4th storm</b> shuts wins. Top 10 all get paid.</span></li>` +
+                `<li>${ICONS.storm}<span>Stay out of the <b>storm</b>. Chests and bosses pay the most.</span></li>` +
+                `<li>${ICONS.crown}<span>Highest score when the <b>3rd storm</b> shuts wins. Top 10 all get paid.</span></li>` +
               '</ul>' +
               '<button class="dwt-play" type="button"><b>Play</b></button>' +
               '<button class="dwt-menu dwt-back" type="button">Back to menu</button>' +

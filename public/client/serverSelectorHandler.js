@@ -129,7 +129,7 @@ let initializeFilter = () => {
         }
     }
     let nvmText = document.createElement("td");
-    nvmText.textContent = "No Server Matches";
+    nvmText.textContent = "No servers match";
     nvmText.classList.add("tdCenter");
     let noServerMatches = document.createElement("tr");
     noServerMatches.classList.add("message");

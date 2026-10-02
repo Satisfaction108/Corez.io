@@ -27,7 +27,7 @@ function rateLimited(retryAfter, code = 'rate_limited', message = 'Whoa, slow do
 }
 
 function busyError() {
-    return new HttpError(503, 'busy', "The server's busy. Try again in a moment!", { retryAfter: 2 }, { 'Retry-After': '2' });
+    return new HttpError(503, 'busy', "Server's busy. Try again in a sec.", { retryAfter: 2 }, { 'Retry-After': '2' });
 }
 
 // server/lib/clientIp.js trusts X-Forwarded-For only from TRUSTED_PROXIES.
@@ -202,7 +202,7 @@ class Ctx {
 
     requireAuth() {
         const a = this.auth();
-        if (!a) throw new HttpError(401, 'unauthorized', 'Log in first!');
+        if (!a) throw new HttpError(401, 'unauthorized', 'Log in first.');
         if (users.isBanned(a.user, this.now)) throw bannedError(a.user);
         return a;
     }

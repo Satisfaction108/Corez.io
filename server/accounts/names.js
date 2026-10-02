@@ -103,8 +103,8 @@ const USERNAME_MESSAGES = {
     too_long: 'Names can be 16 characters max.',
     invalid_chars: 'Use only letters, numbers and underscores.',
     underscores: 'Too many underscores in a row.',
-    reserved: "That name's off-limits. Try another!",
-    profanity: "That name isn't allowed. Try another!",
+    reserved: "That name's off-limits. Pick another.",
+    profanity: "Can't use that name. Pick another.",
 };
 
 // -> {ok:true} | {ok:false, reason, message}. Does not check availability
@@ -205,7 +205,7 @@ const PASSWORD_MESSAGES = {
     too_short: 'Passwords need at least 8 characters.',
     too_long: 'Passwords can be 128 characters max.',
     same_as_username: "Your password can't be your username.",
-    common: "That password's too easy to guess. Try another!",
+    common: "That password's way too easy to guess.",
 };
 
 // -> {ok:true} | {ok:false, reason, message}

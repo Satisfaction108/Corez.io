@@ -737,13 +737,15 @@ const process = (z = {}) => {
         z.interval = global.metrics.rendergap;
         z.id = get.next();
 
-        let i = global.entities.findIndex(x => x.id === z.id);
-        if (i !== -1) {
-
-            z = global.entities.splice(i, 1)[0];
+        // last snapshot's entities by id (convert.data fills it): one lookup
+        // instead of a findIndex + splice per entity per snapshot
+        const old = prevById.get(z.id);
+        if (old) {
+            z = old;
+            prevById.delete(z.id);
         }
 
-        isNew = i === -1;
+        isNew = !old;
 
         if (!isNew) {
             z.render.lastx = z.x;
@@ -929,18 +931,22 @@ const process = (z = {}) => {
     return z;
 };
 
+const prevById = new Map();
 const convert = {
     begin: data => get.set(data),
 
     data: () => {
 
         let output = [];
+        prevById.clear();
+        for (const e of global.entities) prevById.set(e.id, e);
 
         for (let i = 0, len = get.next(); i < len; i++) {
             output.push(process());
         }
 
-        for (let e of global.entities) {
+        // what's left in prevById wasn't in this snapshot
+        for (let e of prevById.values()) {
 
             e.render.status.set(e.health === 1 ? 'dying' : 'killed');
 
@@ -1439,7 +1445,7 @@ let incoming = async function(message, socket) {
                             if (gameSound.gemPickup) gameSound.gemPickup(3);
                         } else {
                             const above = r.board.find(row => row.place === placeNow - 1);
-                            global.createMessage((above ? above.name : "Someone") + " passed you - now #" + placeNow, 3200);
+                            global.createMessage((above ? above.name : "Someone") + " passed you. You're #" + placeNow, 3200);
                         }
                     }
                     if (placeNow > 0) r.lastPlace = placeNow;
@@ -1754,11 +1760,11 @@ let incoming = async function(message, socket) {
             } break;
             case "temporaryban": {
                 global.noAutoReconnect = true;
-                global.message = "You have been temporarily banned from the game. You will be able to rejoin after a server restart.";
+                global.message = "You're temp banned. You can come back after the server restarts.";
             } break;
             case "permanentban": {
                 global.noAutoReconnect = true;
-                global.message = "You have been banned from the game.";
+                global.message = "You're banned from the game.";
             } break;
             case 'AC': {
                 // account snapshot at spawn: rank for the HUD badge, dust for the HUD
@@ -2243,7 +2249,7 @@ let incoming = async function(message, socket) {
                 };
                 renderDoc.onerror = () => {
                     global.dailyTankAd.renderUI = false;
-                    global.createMessage("Failed to load the ad!");
+                    global.createMessage("Couldn't load the ad.");
                 }
                 renderDoc.src = `./img/ads/${data.src}`;
             } else {
@@ -2263,7 +2269,7 @@ let incoming = async function(message, socket) {
                 }
                 renderDoc.onerror = () => {
                     global.dailyTankAd.renderUI = false;
-                    global.createMessage("Failed to load the ad!");
+                    global.createMessage("Couldn't load the ad.");
                 }
                 renderDoc.src = `./img/ads/${data.src}`;
             }

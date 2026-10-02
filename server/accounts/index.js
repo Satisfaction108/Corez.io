@@ -273,7 +273,7 @@ async function dispatch(req, res, pathname, query) {
         if (isApi && ctx.method !== 'GET') http.csrfGuard(ctx);
         if (!ctx.accountsOn && !route.opts.alwaysOn) {
             if (route.opts.navigation) return ctx.redirect('/?auth=error&reason=accounts_unavailable');
-            throw new http.HttpError(503, 'accounts_unavailable', 'Accounts are down right now. You can still play as a guest!');
+            throw new http.HttpError(503, 'accounts_unavailable', 'Accounts are down rn. You can still play as a guest.');
         }
         // /api/config and /api/me always answer 200 (the menu boots from them).
         // Always per IP, so rotating sessions (or made-up cookies) cannot
@@ -295,7 +295,7 @@ async function dispatch(req, res, pathname, query) {
         console.error(`[accounts] ${req.method} ${pathname} failed: ` + ((e && e.stack) || e));
         if (!ctx.responded) {
             if (route && route.opts.navigation) return ctx.redirect('/?auth=error&reason=server');
-            return ctx.fail(500, 'server_error', 'Oops, something went wrong. Try again!');
+            return ctx.fail(500, 'server_error', 'Something broke on our end. Try again.');
         }
         try { res.end(); } catch (_) { /* already gone */ }
     }

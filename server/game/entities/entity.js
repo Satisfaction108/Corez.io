@@ -964,7 +964,7 @@ class Entity extends EventEmitter {
                 this.socket.talk("SH", JSON.stringify(info));
             }
         })
-        this.sendMessage("You have upgraded to " + this.label + ".");
+        this.sendMessage("Upgraded to " + this.label + ".");
         for (let def of this.defs) {
             def = ensureIsClass(def);
             if (def.TOOLTIP != null && def.TOOLTIP.length > 0) this.sendMessage(def.TOOLTIP);
@@ -993,7 +993,7 @@ class Entity extends EventEmitter {
         this.skill.set(info.skill);
         this.color.base = this.socket.player.teamColor;
         this.refreshBodyAttributes();
-        this.sendMessage("You have traveled through a portal!");
+        this.sendMessage("You went through a portal.");
     }
 
     damageMultiplier(target) {

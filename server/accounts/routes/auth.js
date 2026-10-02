@@ -27,8 +27,8 @@ function weakPassword(v) {
 
 function usernameTaken(reason) {
     return new HttpError(409, 'username_taken', reason === 'held'
-        ? 'Someone used that name recently. Try another!'
-        : "That name's taken. Try another!", { reason: reason || 'taken' });
+        ? 'Someone just had that name. Try another one.'
+        : "That name's taken. Try another one.", { reason: reason || 'taken' });
 }
 
 async function newRecovery() {
@@ -140,7 +140,7 @@ async function login(ctx) {
     if (!ok) {
         // One audit row when a lockout starts, not one per failed attempt.
         if (user && locks) users.audit(user.id, 'login_locked', { window: '15m' }, { ip: ctx.ip, actor: 'system' });
-        throw new HttpError(401, 'bad_credentials', 'Wrong username or password. Try again!');
+        throw new HttpError(401, 'bad_credentials', 'Wrong username or password.');
     }
     charge.refund();
     ratelimit.clear('loginFail', pairKey);
@@ -174,10 +174,10 @@ function logoutAll(ctx) {
 // /auth/discord/start?mode=reauth instead.
 async function reauth(ctx) {
     const a = ctx.requireAuth();
-    if (!a.user.password_hash) throw new HttpError(403, 'reauth_required', 'Quick Discord check first, please!');
+    if (!a.user.password_hash) throw new HttpError(403, 'reauth_required', 'Quick Discord check first.');
     const pw = str(ctx.body.currentPassword, PW_MAX);
     if (!pw) throw new HttpError(401, 'bad_password', 'Enter your current password.');
-    if (!(await checkPassword(ctx, a.user, pw))) throw new HttpError(401, 'bad_password', 'Wrong password. Try again!');
+    if (!(await checkPassword(ctx, a.user, pw))) throw new HttpError(401, 'bad_password', 'Wrong password.');
     sessions.markReauth(a.session.id);
     ctx.noContent();
 }
@@ -233,7 +233,7 @@ async function recover(ctx) {
     });
     if (!applied) throw new HttpError(401, 'bad_recovery', "That username and recovery code don't match.");
     ratelimit.clear('recoverUser', lc);
-    kick(user.id, 'Your account was recovered on another device. Log in again!');
+    kick(user.id, 'Your account got recovered on another device. Log in again.');
     ctx.startSession(user, 'recovery');
     ctx.json(200, { user: users.toPublic(users.byId(user.id)), recoveryCode: recovery.code });
 }
@@ -243,7 +243,7 @@ async function reset(ctx) {
     const token = str(ctx.body.token, 200).trim();
     const newPassword = str(ctx.body.newPassword, PW_MAX);
     const user = users.peekResetToken(token, ctx.now);
-    if (!user) throw new HttpError(400, 'invalid_token', "This reset link expired or doesn't work. Ask for a new one!");
+    if (!user) throw new HttpError(400, 'invalid_token', "This reset link is dead. Ask for a new one.");
     const pv = names.validatePassword(newPassword, user.username);
     if (!pv.ok) throw weakPassword(pv);
     if (users.isBanned(user, ctx.now)) throw bannedError(user);
@@ -255,8 +255,8 @@ async function reset(ctx) {
         users.audit(user.id, 'password_reset', null, { ip: ctx.ip });
         return true;
     });
-    if (!applied) throw new HttpError(400, 'invalid_token', "This reset link expired or doesn't work. Ask for a new one!");
-    kick(user.id, 'Your password was changed. Log in again!');
+    if (!applied) throw new HttpError(400, 'invalid_token', "This reset link is dead. Ask for a new one.");
+    kick(user.id, 'Your password changed. Log in again.');
     ctx.startSession(user, 'reset');
     ctx.json(200, { user: users.toPublic(users.byId(user.id)) });
 }
@@ -281,7 +281,7 @@ async function discordComplete(ctx) {
     if (!av.available) throw usernameTaken(av.reason);
     if (users.byDiscordId(pending.id)) {
         ctx.setCookie(discordOAuth.clearPendingCookie());
-        throw new HttpError(409, 'discord_taken', 'That Discord already has a Corez.io account. Just log in with Discord!');
+        throw new HttpError(409, 'discord_taken', 'That Discord already has a Corez.io account. Log in with Discord instead.');
     }
 
     let recovery = null;

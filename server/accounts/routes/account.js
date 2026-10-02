@@ -34,11 +34,11 @@ async function requireCredential(ctx, a, currentPassword) {
     const pw = str(currentPassword, PW_MAX);
     if (pw && a.user.password_hash) {
         if (await checkPassword(ctx, a.user, pw)) return;
-        throw new HttpError(401, 'bad_password', 'Wrong password. Try again!');
+        throw new HttpError(401, 'bad_password', 'Wrong password.');
     }
     if (sessions.isFresh(a.session, ctx.now)) return;
     if (a.user.password_hash) throw new HttpError(401, 'bad_password', 'Enter your current password.');
-    throw new HttpError(403, 'reauth_required', 'Quick Discord check first, please!');
+    throw new HttpError(403, 'reauth_required', 'Quick Discord check first.');
 }
 
 function cooldown(availableAt, now) {
@@ -66,8 +66,8 @@ async function changeUsername(ctx) {
         if (r.code === 'cooldown') throw cooldown(r.availableAt, Date.now());
         if (r.code === 'username_taken') {
             throw new HttpError(409, 'username_taken', r.reason === 'held'
-                ? 'Someone used that name recently. Try another!'
-                : "That name's taken. Try another!", { reason: r.reason });
+                ? 'Someone just had that name. Try another one.'
+                : "That name's taken. Try another one.", { reason: r.reason });
         }
         throw new HttpError(404, 'not_found', "Couldn't find that account.");
     }
@@ -83,7 +83,7 @@ async function changePassword(ctx) {
     if (hadPassword) {
         const current = str(ctx.body.currentPassword, PW_MAX);
         if (current) {
-            if (!(await checkPassword(ctx, a.user, current))) throw new HttpError(401, 'bad_password', 'Wrong password. Try again!');
+            if (!(await checkPassword(ctx, a.user, current))) throw new HttpError(401, 'bad_password', 'Wrong password.');
         } else if (!sessions.isFresh(a.session, ctx.now)) {
             throw new HttpError(401, 'bad_password', 'Enter your current password.');
         }
@@ -91,7 +91,7 @@ async function changePassword(ctx) {
         // A first password on a Discord-only account also needs a fresh
         // Discord login: otherwise anything riding the session (a stolen
         // cookie, XSS) could set one, unlink Discord and own the account.
-        throw new HttpError(403, 'reauth_required', 'Quick Discord check first, please!');
+        throw new HttpError(403, 'reauth_required', 'Quick Discord check first.');
     }
     const hash = await crypto.hashPassword(newPassword);
     db.handle().tx(() => {
@@ -119,7 +119,7 @@ async function unlinkDiscord(ctx) {
     if (!a.user.discord_id) return ctx.noContent();
     if (!a.user.password_hash) throw new HttpError(409, 'no_password', "Add a password before unlinking Discord, or you won't be able to log in.");
     const current = str(ctx.body.currentPassword, PW_MAX);
-    if (!current || !(await checkPassword(ctx, a.user, current))) throw new HttpError(401, 'bad_password', 'Wrong password. Try again!');
+    if (!current || !(await checkPassword(ctx, a.user, current))) throw new HttpError(401, 'bad_password', 'Wrong password.');
     users.unlinkDiscord(a.user.id, { ip: ctx.ip });
     ctx.noContent();
 }

@@ -51,7 +51,7 @@ async function interactions(ctx) {
         return ctx.json(200, res);
     }
     // components / autocomplete / modals: none registered
-    return ctx.json(200, commands.reply('Nothing to do here!', { ephemeral: true }));
+    return ctx.json(200, commands.reply('Nothing to do here.', { ephemeral: true }));
 }
 
 function register(router) {

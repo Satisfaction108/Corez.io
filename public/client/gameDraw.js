@@ -113,6 +113,8 @@ var gameDraw = {
         // Split into array
         let colorDetails = color.split(" "),
             baseDetails = base.split(" ");
+        // snapshots send a colour with the default shifts as its base alone
+        if (colorDetails.length < 5) colorDetails = [colorDetails[0], colorDetails[1] ?? "0", colorDetails[2] ?? "1", colorDetails[3] ?? "0", colorDetails[4] ?? "false"];
 
         // Color mirroring
         if (colorDetails[0] === "-1" || colorDetails[0] === "mirror") {
@@ -125,7 +127,11 @@ var gameDraw = {
         // Exit if calculated already
         let colorId = colorDetails.join(' ');
         let cachedColor = gameDraw.colorCache[colorId];
-        if (cachedColor != undefined) return cachedColor;
+        if (cachedColor != undefined) {
+            // a short form ("#c97a3e") finds it straight away next time
+            if (color !== colorId && !gameDraw.animatedColors[colorDetails[0]]) gameDraw.colorCache[color] = cachedColor;
+            return cachedColor;
+        }
 
         // Get HSL values
         let baseColor = gameDraw.rgbToHsl(gameDraw.getColor(colorDetails[0]) ?? colorDetails[0]);
@@ -148,7 +154,7 @@ var gameDraw = {
 
         // Gaming.
         let finalColor = gameDraw.hslToRgb(finalHue, finalSaturation, finalBrightness);
-        if (!gameDraw.animatedColors[colorDetails[0]]) gameDraw.colorCache[colorId] = finalColor;
+        if (!gameDraw.animatedColors[colorDetails[0]]) { gameDraw.colorCache[colorId] = finalColor; if (color !== colorId) gameDraw.colorCache[color] = finalColor; }
         return finalColor;
     },
 

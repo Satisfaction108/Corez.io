@@ -185,7 +185,7 @@ function checkOffered(item, day, now) {
         return;
     }
     if (d === today - 1 && now - today * DAY <= RESET_GRACE_MS && inRotation(rotationFor(d, FEATURED_SKIP_DAYS, now), item.id)) return;
-    fail(409, 'shop_rotated', 'The shop just refreshed. Check out the new stuff!', { day: today });
+    fail(409, 'shop_rotated', 'The shop just flipped over. Go look at the new stuff.', { day: today });
 }
 
 // ---- ownership ----
@@ -317,7 +317,7 @@ function ledger(userId, delta, balance, kind, ref, now) {
 function colorOrFail(raw) {
     const c = C.normalizeColor(raw);
     if (!/^#[0-9a-f]{6}$/.test(c)) fail(400, 'bad_color', 'Try a hex colour like #7ad3ff.', { reason: 'format' });
-    if (!C.isColorAllowed(c)) fail(400, 'bad_color', 'Too dark to see in the caves. Try a lighter one!', { reason: 'too_dark' });
+    if (!C.isColorAllowed(c)) fail(400, 'bad_color', 'Too dark to see in the caves. Go lighter.', { reason: 'too_dark' });
     return c;
 }
 
@@ -333,7 +333,7 @@ function purchase(userId, input, opts = {}) {
         const again = replay(userId, key, item.id, false);
         if (again) return again;
         checkOffered(item, input.day, now);
-        if (owns(userId, item.id)) fail(409, 'already_owned', 'You already have that!');
+        if (owns(userId, item.id)) fail(409, 'already_owned', 'You already own that.');
         const balance = charge(userId, item.price);
         const pid = d.run('INSERT INTO purchases (user_id, idem_key, item_id, price_milli, day, created_at) VALUES (?, ?, ?, ?, ?, ?)',
             userId, key, item.id, item.price, dayOf(now), now).lastInsertRowid;
@@ -377,9 +377,9 @@ function gift(userId, input, opts = {}) {
         if (to.id === userId) fail(400, 'self_gift', "You can't gift yourself. Nice try!");
         checkGiftable(userId, to.id, now);
         checkOffered(item, input.day, now);
-        if (owns(to.id, item.id)) fail(409, 'recipient_owns', 'They already have that one!');
+        if (owns(to.id, item.id)) fail(409, 'recipient_owns', 'They already have that one.');
         const sent = giftsSentToday(userId, now);
-        if (sent >= GIFTS_PER_DAY) fail(429, 'gift_limit', `That's ${GIFTS_PER_DAY} gifts today! Send more tomorrow.`, { resetsAt: resetsAt(dayOf(now)) });
+        if (sent >= GIFTS_PER_DAY) fail(429, 'gift_limit', `That's ${GIFTS_PER_DAY} gifts for today. More tomorrow.`, { resetsAt: resetsAt(dayOf(now)) });
         const balance = charge(userId, item.price);
         const pid = d.run(`INSERT INTO purchases (user_id, idem_key, item_id, price_milli, day, is_gift, recipient_id, gift_message, created_at)
                            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
@@ -409,7 +409,7 @@ function refund(userId, purchaseId, opts = {}) {
         if (!p) fail(404, 'not_found', "Couldn't find that purchase.");
         if (p.is_gift) fail(409, 'gift_not_refundable', "Gifts can't be refunded.");
         if (p.refunded_at != null) fail(409, 'already_refunded', 'You already refunded that.');
-        if (now - p.created_at >= REFUND_WINDOW_MS) fail(409, 'refund_expired', 'Too late! Refunds only work for 24 hours.');
+        if (now - p.created_at >= REFUND_WINDOW_MS) fail(409, 'refund_expired', 'Too late, refunds only last 24 hours.');
         const u = d.get('SELECT refund_tokens FROM users WHERE id = ? AND deleted_at IS NULL', userId);
         if (!u || (u.refund_tokens | 0) <= 0) fail(409, 'no_refund_tokens', "You're out of refund tokens.");
         const gone = d.run('DELETE FROM owned_items WHERE user_id = ? AND item_id = ? AND purchase_id = ?', userId, p.item_id, p.id).changes;

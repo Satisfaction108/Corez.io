@@ -170,7 +170,7 @@
                     if (!sv || !(sv.ip || sv.proxyPath)) throw new Error('tutorial server unavailable');
                     if (sv.maxPlayers && sv.players >= sv.maxPlayers) {
                         if (btn) { btn.disabled = false; }
-                        alert('All training grounds are in use right now - please try again in a minute.');
+                        alert('The tutorial is full rn. Try again in a minute.');
                         return;
                     }
                     g.serverAdd = gameHost(sv);
@@ -183,11 +183,11 @@
                 })
                 .catch(function () {
                     if (btn) { btn.disabled = false; }
-                    alert('The tutorial server is not reachable right now. Please try again in a moment.');
+                    alert("Can't reach the tutorial server. Try again in a sec.");
                 });
         }, function () {
             if (btn) { btn.disabled = false; }
-            alert('The game is still loading. Please wait a second and try again.');
+            alert('Still loading. Give it a sec and try again.');
         });
     }
 
@@ -210,11 +210,11 @@
                 })
                 .catch(function () {
                     if (btn) { btn.disabled = false; }
-                    alert('Corez.io 2TDM is not reachable right now. Please try again in a moment.');
+                    alert("Can't reach Corez.io 2TDM rn. Try again in a sec.");
                 });
         }, function () {
             if (btn) { btn.disabled = false; }
-            alert('The game is still loading. Please wait a second and try again.');
+            alert('Still loading. Give it a sec and try again.');
         });
     }
 

@@ -86,7 +86,7 @@ function init(socketManager) {
         if (!msg || !manager) return;
         if (msg.t === 'kick') {
             for (const s of manager.clients.slice()) {
-                if (s.account && s.account.id === msg.userId) kickOut(s, msg.reason || 'You got signed out. Log in again!');
+                if (s.account && s.account.id === msg.userId) kickOut(s, msg.reason || 'You got signed out. Log in again.');
             }
         } else if (msg.t === 'blocksChanged') {
             for (const s of manager.clients) if (s.account && s.account.id === msg.userId) loadBlocks(s);

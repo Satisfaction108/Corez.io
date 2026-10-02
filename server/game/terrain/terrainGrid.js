@@ -945,11 +945,13 @@ class TerrainGrid {
     }
 
     _growingPenetration(rock, x, y, r, now) {
-        const sp = this._scaledPolyFor(rock, now);
-        if (!sp || sp.length < 3) return 0;
+        // far away is the common case (every shot against every rising
+        // rock): reject on the full-size reach before scaling anything
         const dx = x - rock.worldCx, dy = y - rock.worldCy;
         const reach = rock.maxPolyRadius + r;
         if (dx * dx + dy * dy > reach * reach) return 0;
+        const sp = this._scaledPolyFor(rock, now);
+        if (!sp || sp.length < 3) return 0;
         const f = TerrainGrid._polyFace(sp, x, y);
         return f.inside ? f.dist + r : Math.max(0, r - f.dist);
     }
@@ -983,11 +985,11 @@ class TerrainGrid {
         for (let pass = 0; pass < 3; pass++) {
             let sx = 0, sy = 0, contact = false;
             for (const rock of this._growing) {
-                const sp = this._scaledPolyFor(rock, now);
-                if (!sp || sp.length < 3) continue;
                 const ddx = pos.x - rock.worldCx, ddy = pos.y - rock.worldCy;
                 const reach = rock.maxPolyRadius + r;
                 if (ddx * ddx + ddy * ddy > reach * reach) continue;
+                const sp = this._scaledPolyFor(rock, now);
+                if (!sp || sp.length < 3) continue;
                 const f = TerrainGrid._polyFace(sp, pos.x, pos.y);
                 if (!f.inside && f.dist >= r) continue;
                 let ux, uy, need;

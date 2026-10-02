@@ -87,7 +87,7 @@ function lists(id) {
 
 function targetOrFail(me, row) {
     if (!row) fail(404, 'user_not_found', "Couldn't find anyone with that name.");
-    if (row.id === me) fail(400, 'self', "That's you!");
+    if (row.id === me) fail(400, 'self', "That's you lol");
     return row;
 }
 
@@ -100,7 +100,7 @@ function makeFriends(a, b, now) {
 
 function checkFriendRoom(me, other) {
     if (friendCount(me) >= MAX_FRIENDS) fail(409, 'friend_limit', `You can have up to ${MAX_FRIENDS} friends.`);
-    if (friendCount(other) >= MAX_FRIENDS) fail(409, 'their_friend_limit', 'Their friends list is full!');
+    if (friendCount(other) >= MAX_FRIENDS) fail(409, 'their_friend_limit', 'Their friends list is full.');
 }
 
 // request(me, username) -> {status:'pending'|'accepted', user:row, notify:{type, to}|null}
@@ -109,7 +109,7 @@ function request(me, username, now = Date.now()) {
     return d.tx(() => {
         const to = targetOrFail(me, users.byUsername(username));
         if (areFriends(me, to.id)) fail(409, 'already_friends', "You're already friends.");
-        if (hasBlocked(me, to.id)) fail(409, 'you_blocked', 'You blocked them. Unblock them first!');
+        if (hasBlocked(me, to.id)) fail(409, 'you_blocked', 'You blocked them. Unblock them first.');
         const theyBlocked = hasBlocked(to.id, me);
         const theirs = !theyBlocked && d.get('SELECT silent FROM friend_requests WHERE from_id = ? AND to_id = ?', to.id, me);
         if (theirs && !theirs.silent) {

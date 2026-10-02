@@ -21,7 +21,7 @@ Events.on('chatMessage', ({ message, socket, preventDefault, setMessage }) => {
 	// Fortunately, this returns false if 'recent[id] is 'undefined'.
 	if (recent[id] >= ratelimit) {
 		preventDefault(); // 'preventDefault()' prevents the message from being sent.
-		socket.talk('m', Config.popup_message_duration, 'Please slow down!');
+		socket.talk('m', Config.popup_message_duration, 'Slow down a sec.');
 		return;
 	}
 

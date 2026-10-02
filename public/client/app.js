@@ -565,10 +565,10 @@ import * as cosmetics from './account/cosmetics.js';
             if (e.value === "custom") customPlate = e;
         }
         let {name, author} = getThemeDisplayName(themeValue);
-        if (name !== null && author !== null) customPlate.textContent = `Custom - ${name} ${author}`;
+        if (name !== null && author !== null) customPlate.textContent = `Custom: ${name} ${author}`;
         themeValue.addEventListener("input", () => {
             let {name, author} = getThemeDisplayName(themeValue);
-            if (name !== null && author !== null) customPlate.textContent = `Custom - ${name} ${author}`; else customPlate.textContent = "Custom - Unable to pull name or author.";
+            if (name !== null && author !== null) customPlate.textContent = `Custom: ${name} ${author}`; else customPlate.textContent = "Custom (no name or author)";
         });
     }
 
@@ -821,7 +821,7 @@ import * as cosmetics from './account/cosmetics.js';
         resizeEvent();
         if (down && !autoRes.told) {
             autoRes.told = true;
-            try { global.createMessage("Lowered the resolution to keep the game smooth on this device.", 4000); } catch (e) { }
+            try { global.createMessage("Dropped the resolution so the game runs smoother.", 4000); } catch (e) { }
         }
     }
     function autoResTick(now) {
@@ -1143,10 +1143,10 @@ import * as cosmetics from './account/cosmetics.js';
             ]) {
                 if (!/^#[0-9a-fA-F]{6}$/.test(colorHex)) {
                     if (!content.aqua) {
-                        alert("Your theme does not an entry for \"aqua\" (the color used by Hexagons). A fallback has been provided.");
+                        alert("Your theme is missing \"aqua\" (the hexagon colour), so it got a default.");
                         content.aqua = content.teal;
                     } else if (!content.lavender) {
-                        alert("Your theme does not an entry for \"lavender\" (the color used by the nest). A fallback has been provided.");
+                        alert("Your theme is missing \"lavender\" (the nest colour), so it got a default.");
                         content.lavender = "#b58efd";
                     } else {
                         if (logError) {
@@ -1164,7 +1164,7 @@ import * as cosmetics from './account/cosmetics.js';
                 author: (typeof author === 'string' && author) || '',
                 content,
             }
-        } catch (e) { logError && alert("An error has accoured while reading your theme, it may be corrupted or outdated."); }
+        } catch (e) { logError && alert("Couldn't read your theme. It might be broken or out of date."); }
 
         return {
             name: 'Unknown Theme',
@@ -1827,6 +1827,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (textFrame % 60) return;
         for (const [k, e] of textSprites) if (textFrame - e.used > 150) { textSprites.delete(k); freeSprite(e); }
         for (const [k, e] of titleSprites) if (textFrame - (e.used || 0) > 150) { titleSprites.delete(k); freeSprite(e); }
+        for (const [k, e] of scaledSprites) if (textFrame - e.used > 150) { scaledSprites.delete(k); freeSprite(e); }
     }
     function drawText(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
         if (nameRim || nameHalo || typeof defaultFillStyle !== "string" || typeof rawText !== "string" || !rawText) {
@@ -1869,6 +1870,39 @@ import * as cosmetics from './account/cosmetics.js';
         if (fade < 1) context.globalAlpha = a0 * Math.max(0, fade);
         context.drawImage(e.cv, 0, 0, e.pw, e.ph, dx, dy, e.W * k, e.H * k);
         context.globalAlpha = a0;
+    }
+    // Text that pops (damage numbers): one sprite per string and base size,
+    // drawn at size = base * scale. drawText's own cache can't hold it, since
+    // the size (and so its key) changes every frame of the pop, which left
+    // every number on the slow strokeText path in a fight.
+    const scaledSprites = new Map();
+    try { document.fonts.addEventListener("loadingdone", () => scaledSprites.clear()); } catch (e) { }
+    function drawTextScaled(rawText, x, y, base, scale, fill, center = true, stroke = true, context = ctx[2]) {
+        const t = tfOf(context);
+        if (t.b || t.c || !(scale > 0)) return drawTextDirect(rawText, x, y, base * scale, fill, "center", center, 1, stroke, context);
+        // drawn at the largest it pops to, so it never blurs
+        const sc = Math.round(t.a * 1.5 * 10) / 10;
+        const q = Math.max(4, Math.round(base));
+        const key = rawText + "|" + q + "|" + fill + "|" + stroke + "|" + sc;
+        let e = scaledSprites.get(key);
+        if (!e) {
+            const fs = q + config.graphical.fontSizeBoost;
+            const w = measureText(rawText, q);
+            const pad = fs * 0.6 + 4, W = w + pad * 2, H = fs * 2.6 + 8;
+            const pw = Math.max(1, Math.ceil(W * sc)), ph = Math.max(1, Math.ceil(H * sc));
+            const cv = spriteCanvas(pw, ph);
+            const g = cv.getContext("2d");
+            g.setTransform(1, 0, 0, 1, 0, 0);
+            g.clearRect(0, 0, cv.width, cv.height);
+            g.scale(sc, sc);
+            drawTextDirect(rawText, pad, H / 2, q, fill, "left", center, 1, stroke, g);
+            e = { cv, w, W, H, X0: pad, Y0: H / 2, pw, ph, used: textFrame };
+            if (scaledSprites.size > 300) { let n = 0; for (const [kk, old] of scaledSprites) { scaledSprites.delete(kk); freeSprite(old); if (++n >= 80) break; } }
+            scaledSprites.set(key, e);
+        }
+        e.used = textFrame;
+        const k = base * scale / q;
+        context.drawImage(e.cv, 0, 0, e.pw, e.ph, x - e.w * k * 0.5 - e.X0 * k, y - e.Y0 * k, e.W * k, e.H * k);
     }
     function drawTextDirect(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
         size += config.graphical.fontSizeBoost;
@@ -5082,7 +5116,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (global.searchQuery) {
             const resultsText = searchResults.length > 0
                 ? `Found ${searchResults.length} tank${searchResults.length !== 1 ? 's' : ''} (showing upgrade paths)`
-                : "No tanks found - showing Basic";
+                : "No tanks found, showing Basic";
             drawText(
                 resultsText,
                 global.screenWidth / 2,
@@ -9710,7 +9744,7 @@ import * as cosmetics from './account/cosmetics.js';
         hudTitle(name.charAt(0) + name.slice(1).toLowerCase() + " team wins the war", cx, cy - 14, 32, col, "center");
         const secs = Math.max(0, Math.ceil((w.resetIn || 0) / 1000));
         drawText("+" + util.formatLargeNumber(w.bonus || 0) + " gems for every " + name.toLowerCase() +
-                 " miner - new war in " + secs + "s", cx, cy + 26, 15, color.guiwhite, "center");
+                 " miner. New war in " + secs + "s", cx, cy + 26, 15, color.guiwhite, "center");
         c.restore();
     }
 
@@ -9868,6 +9902,7 @@ import * as cosmetics from './account/cosmetics.js';
 
     // Floating damage numbers, world-anchored. A combo holds at full strength
     // until a second of silence, then fades. Words differ for you vs others.
+    const dmgById = new Map();
     function drawDamageNumbers(px, py, ratio) {
         const list = global.damageNumbers;
         if (!list || !list.length) return;
@@ -9877,10 +9912,13 @@ import * as cosmetics from './account/cosmetics.js';
         const halfW = global.screenWidth / 2,
               halfH = global.screenHeight / 2;
         const ROCK_ORE_TINT = ["#F2F0EA", "#E9A766", "#7FB1F2", "#D98AF0", "#6FF5A8"];
+        // one pass over the entities, not one search per number
+        const byId = dmgById; byId.clear();
+        for (const e of global.entities) byId.set(e.id, e);
         c.save();
         for (let i = list.length - 1; i >= 0; i--) {
             const d = list[i];
-            const live = d.kind === "rock" ? null : global.entities.find(e => e.id === d.id);
+            const live = d.kind === "rock" ? null : byId.get(d.id);
             if (live) { d.x = live.x; d.y = live.y; }
             const age = now - d.born;
             const idle = now - (d.comboAt || d.born);
@@ -9932,9 +9970,10 @@ import * as cosmetics from './account/cosmetics.js';
             const tier = d.tier || 0;
             const combo = d.combo || 1;
             const finish = d.word === "Finish";
-            const size = rock
-                ? (12.5 + Math.min(6, d.amount * 0.08)) * pop * ratio
-                : (15.5 + Math.min(8, d.amount * 0.1) + (tier >= 2 ? 3.5 : tier >= 1 ? 1.5 : 0) + (finish ? 3 : 0) + Math.min(3, combo * 0.25)) * pop * ratio;
+            const base = rock
+                ? (12.5 + Math.min(6, d.amount * 0.08)) * ratio
+                : (15.5 + Math.min(8, d.amount * 0.1) + (tier >= 2 ? 3.5 : tier >= 1 ? 1.5 : 0) + (finish ? 3 : 0) + Math.min(3, combo * 0.25)) * ratio;
+            const size = base * pop;
             const tint = rock
                 ? (ROCK_ORE_TINT[d.ore | 0] || ROCK_ORE_TINT[0])
                 : d.self
@@ -9947,12 +9986,12 @@ import * as cosmetics from './account/cosmetics.js';
 
             c.globalAlpha = fade;
             if (d.word) {
-                drawText(d.word, x, y - size * 0.92, size * 0.44, tint, "center", true, 1, 6);
+                drawTextScaled(d.word, x, y - size * 0.92, base * 0.44, pop, tint, true, 6);
             }
-            const num = "-" + util.formatLargeNumber(Math.round(d.amount));
-            drawText(num, x, y, size, tint, "center", true, 1, 5.5);
+            const num = d._numFor === d.amount ? d._num : (d._numFor = d.amount, d._num = "-" + util.formatLargeNumber(Math.round(d.amount)));
+            drawTextScaled(num, x, y, base, pop, tint, true, 5.5);
             if (!rock && combo >= 2) {
-                drawText("×" + combo, x, y + size * 0.78, size * 0.36, tint, "center", true, 1, 6);
+                drawTextScaled("×" + combo, x, y + size * 0.78, base * 0.36, pop, tint, true, 6);
             }
             c.globalAlpha = 1;
         }
@@ -11376,7 +11415,7 @@ import * as cosmetics from './account/cosmetics.js';
                 hudTitle("Pick your next tank", tp.x + 16, tp.y + 22, 17, HUD.head, "left");
                 // just picked: this is the next tier, straight away
                 const fresh = performance.now() - (touchTiles.nextAt || -1e9) < 3000;
-                drawText(fresh ? "Nice! Here is the next tier." : "Each one fights differently. Tap one.", tp.x + 16, tp.y + 44, 11.5, fresh ? HUD.gold : HUD.text2, "left", true);
+                drawText(fresh ? "Nice. Here's the next tier." : "Each one fights differently. Tap one.", tp.x + 16, tp.y + 44, 11.5, fresh ? HUD.gold : HUD.text2, "left", true);
                 const cbs = 30;
                 hudButton(ctx[2], tp.x + tp.w - 10 - cbs / 2, tp.y + 7, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15 });
                 const k = touchUnits();
@@ -12231,7 +12270,7 @@ import * as cosmetics from './account/cosmetics.js';
         ctx[2].globalAlpha = 0.5;
         drawGuiRect(x - 1.5, y + height + 10, wwidth, hheight);
         ctx[2].globalAlpha = 1;
-        drawText("Watch this ad to get your reward!", x + wwidth / 2, y + height + 34, 20, "#fff", "center", false, 1, false);
+        drawText("Watch the ad to get your reward", x + wwidth / 2, y + height + 34, 20, "#fff", "center", false, 1, false);
     }
 
     let getKills = () => {
@@ -12257,7 +12296,7 @@ import * as cosmetics from './account/cosmetics.js';
     let getDeath = () => {
         let txt = "";
         if (global.finalKillers.length) {
-            txt = "Succumbed to";
+            txt = "Killed by";
             for (let e of global.finalKillers) {
                 const killerName = /^\d+(?:-\d+)*$/.test(String(e))
                     ? util.getEntityImageFromMockup(String(e)).name
@@ -12273,7 +12312,7 @@ import * as cosmetics from './account/cosmetics.js';
 
     let getTips = () => global.finalKillers.length
         ? "lol you died"
-        : "Bank your gemdust at the vault, you drop most of it when you die";
+        : "Bank your gems at a vault. You drop what you're carrying when you die";
 
     // Small flat vector icons for the death screen - same visual language
 
@@ -13533,17 +13572,17 @@ import * as cosmetics from './account/cosmetics.js';
         let ratio = util.getScreenRatio();
         scaleScreenRatio(ratio, true);
         clearScreen(gameDraw.mixColors(color.black, color.guiblack, 0.3), 0.25, ctx[2]);
-        drawText("Out of sync!", global.screenWidth / 2, global.screenHeight / 2 - 10, 30, color.red, "center");
-        drawText("The client is out of sync, please wait until this screen has disappeared.", global.screenWidth / 2, global.screenHeight / 2 + 40, 15, color.guiwhite, "center");
-        drawText("The rendering has paused to prevent interuptions.", global.screenWidth / 2, global.screenHeight / 2 + 90, 15, color.guiwhite, "center");
+        drawText("Out of sync", global.screenWidth / 2, global.screenHeight / 2 - 10, 30, color.red, "center");
+        drawText("Your game fell out of sync. Hang on, this goes away by itself.", global.screenWidth / 2, global.screenHeight / 2 + 40, 15, color.guiwhite, "center");
+        drawText("Drawing is paused till it catches up.", global.screenWidth / 2, global.screenHeight / 2 + 90, 15, color.guiwhite, "center");
     };
 
     const drawErrorScreen = () => {
         let ratio = util.getScreenRatio();
         scaleScreenRatio(ratio, true);
         clearScreen(gameDraw.mixColors(color.black, color.guiblack, 0.3), 0.25, ctx[2]);
-        drawText("Client error detected!", global.screenWidth / 2, global.screenHeight / 2, 30, color.red, "center");
-        drawText("If this is because of an entity, try to move away from it.", global.screenWidth / 2, global.screenHeight / 2 + 30, 15, color.guiwhite, "center");
+        drawText("Something broke on your end", global.screenWidth / 2, global.screenHeight / 2, 30, color.red, "center");
+        drawText("If something on screen caused it, try moving away from it.", global.screenWidth / 2, global.screenHeight / 2 + 30, 15, color.guiwhite, "center");
         drawText("Check your browser's console logs and report whatever you see to the developers.", global.screenWidth / 2, global.screenHeight / 2 + 60, 15, color.guiwhite, "center");
     }
     let animationFrame =

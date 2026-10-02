@@ -97,17 +97,17 @@ function resetTarget() {
 }
 import { global } from "./global.js";
 global.tips = [[
-        "Tip: You can view and edit your keybinds in the options menu."
+        "Tip: You can rebind any key in Settings > Keybinds."
     ], [
-        "Tip: You can have the shield and health bar be separated by going to the options menu.",
-        "Tip: If the game is having a low frame rate, you can try enabling low graphics in the options menu.",
-        "Tip: You can make traps rounded with the classic trap setting in the options menu.",
-        "Tip: You can create your own private server with the template in the link on the options menu.",
-        "Tip: You can create your own theme with the custom theme maker in the link on the options menu."
+        "Tip: Banked gems are safe. What you're carrying drops when you die.",
+        "Tip: Laggy? Turn on Fewer Effects or Simple Terrain in Settings.",
+        "Tip: Mining Power makes you break rock way faster. Fill it early.",
+        "Tip: Your base works as a bank too. You just keep 80%.",
+        "Tip: Chests and bosses pay the most. Grab them before someone else does."
     ], [
-        "Teaming in FFA or FFA Maze is frowned upon, but when taken to the extremes, you can be punished.",
-        "Witch hunting is when you continuously target someone and follow them. This is frowned upon, but when taken to the extremes, you can be punished.",
-        "Multiboxing is when you use a script to control multiple tanks at the same time. This is considered CHEATING and will result in a ban."
+        "Teaming up in solos is lame. Take it too far and you can get punished.",
+        "Chasing one person all raid just to grief them isn't cool. Take it too far and you can get punished.",
+        "Multiboxing (running a bunch of tanks with a script) is cheating. That's a ban."
     ]
 ];
 global.createMessage = (content, duration, JSONMessageMode) => createMessage(content, duration, JSONMessageMode);

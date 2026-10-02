@@ -1698,7 +1698,7 @@ function onCombatantDead(body) {
     if (Config.royale_duos && body.socket && !raidEndDeath) {
         try {
             const mb = duo.mateBody(body);
-            if (mb && mb.socket) mb.sendMessage((body.name || "Your teammate") + " is down. Keep them in the game!");
+            if (mb && mb.socket) mb.sendMessage((body.name || "Your teammate") + " is down. Hold on till they're back.");
         } catch { /* */ }
     }
     // contracts: the victim's job ends, and whoever took them down is marked
@@ -1952,7 +1952,7 @@ function onHumanJoin(body) {
             try { body.sendMessage("You're back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size" + (capped ? ", the most a respawn gives." : ", from a quarter of your score.")); } catch { /* */ }
         }
         if (bankIn > 0) {
-            try { body.sendMessage("You brought " + bankIn.toLocaleString('en-US') + " banked gems with you. Spend them at a shop. Only gems you bank this raid count for score."); } catch { /* */ }
+            try { body.sendMessage("You brought " + bankIn.toLocaleString('en-US') + " banked gems. Spend them at a shop. Only gems you bank this raid count for score."); } catch { /* */ }
         }
         if (!isRespawn && !resumeSnap) {
             try { chests.ensureNearSpawn(body); } catch { /* */ }
@@ -2582,7 +2582,7 @@ function tickVaultPinch(t) {
         const margin = st.r - d;
         if (margin > 0 && margin < st.max * 0.18) {
             lastVaultPinchAt = t;
-            toast("A vault is about to get stuck in the storm! Make sure to bank your gems.", 5000);
+            toast("A vault's about to go under the storm. Bank while you still can.", 5000);
             return;
         }
     }
@@ -2744,7 +2744,7 @@ function startRaid(first) {
         }
     }
     const twist = mod ? (" Twist: " + mod.name + ".") : "";
-    broadcast({ toast: (first ? "The raid is on. Mine, bank, fight. The storm is your clock." : "New raid. The wall is growing back.") + twist });
+    broadcast({ toast: (first ? "Raid's live. Grab gems and bank them before the storm gets you." : "New raid. The wall is growing back.") + twist });
     toast((first ? "The raid is on." : "New raid.") + twist, 7000);
 }
 

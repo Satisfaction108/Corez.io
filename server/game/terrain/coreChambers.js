@@ -193,7 +193,7 @@ function onChamberDeath(c) {
     c._exposed = false;
     c._armed = false;
     releaseGems(c);
-    announce(`The ${c.name} has shattered - its gems are released!`);
+    announce(`The ${c.name} shattered. Its gems are up for grabs.`);
 }
 
 function armTreasury(c) {
@@ -338,7 +338,7 @@ function tick(dtMs) {
                 // 50% health = exposed: one global warning per life
                 if (!c._exposed && b.health.amount < b.health.max * 0.5) {
                     c._exposed = true;
-                    announce(`The ${c.name} is exposed!`);
+                    announce(`The ${c.name} is exposed. Go hit it.`);
                 }
             }
         } else if (c.state === 'destroyed') {
@@ -370,7 +370,7 @@ function tick(dtMs) {
                 c._armed = true;
                 spawnPendingGems(c, 1);
                 refillTreasuryIfEmpty(c);
-                announce(`The ${c.name} has reformed.`);
+                announce(`The ${c.name} grew back.`);
             }
         }
 
