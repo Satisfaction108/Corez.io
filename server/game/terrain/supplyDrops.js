@@ -73,6 +73,22 @@ const STAGES = [
     { ring: null, clear: 140, pit: 0, edge: 120 },
 ];
 const TRIES = 36;
+// never on top of each other: this far from any other supply crate (down or
+// on its way), and clear of every chest's footprint
+const CRATE_GAP = 900;
+const CHEST_GAP = FOOT_R + 150;
+function others() {
+    const out = [];
+    if (crate && alive(crate) && !crate._opened) out.push({ x: crate.x, y: crate.y, gap: CRATE_GAP });
+    if (plan) out.push({ x: plan.x, y: plan.y, gap: CRATE_GAP });
+    try {
+        for (const c of require('./chests.js').alive()) {
+            if (!c || c._opened || c === crate) continue;
+            out.push({ x: c.x, y: c.y, gap: c.supplyDrop ? CRATE_GAP : CHEST_GAP });
+        }
+    } catch { /* */ }
+    return out;
+}
 function pickSpot(t) {
     const people = (hooks.humans ? hooks.humans() : []).filter(b => alive(b) && !(hooks.idle && b.socket && hooks.idle(b.socket)));
     if (!people.length) return null;
@@ -84,7 +100,9 @@ function pickSpot(t) {
     const mapR = ((grid && grid.circleRadius) || 2700) - 260;
     const pads = allPads();
     const zoneR = st && st.a ? (st.r || 0) : Infinity;
+    const taken = others();
     const ok = (x, y, g) => {
+        for (const o of taken) if ((o.x - x) ** 2 + (o.y - y) ** 2 < o.gap * o.gap) return false;
         if (Math.hypot(x, y) > mapR) return false;
         if (st && st.a && Math.hypot(x - st.cx, y - st.cy) > zoneR - g.edge) return false;
         if (pads.some(p => padGeom.insidePad(p, x, y, 260))) return false;
@@ -301,4 +319,4 @@ function reset() { plan = null; crate = null; nextAt = 0; count = 0; }
 // ROYALE_DEBUG (DBG supplydrop): the next one now
 function debugNow(t = Date.now()) { if (!plan) { nextAt = 0; warn(t); } return plan; }
 
-module.exports = { CLEAR_MARGIN, CRATE_SIZE, FOOT_R, ON, FIRST_MS, GAP_MS, WARN_MS, FALL_MS, CRATE_GEMS, attach, enabled, tick, snapshot, current, reset, debugNow, pickSpot, _count: () => count };
+module.exports = { CRATE_GAP, CHEST_GAP, CLEAR_MARGIN, CRATE_SIZE, FOOT_R, ON, FIRST_MS, GAP_MS, WARN_MS, FALL_MS, CRATE_GEMS, attach, enabled, tick, snapshot, current, reset, debugNow, pickSpot, _count: () => count };

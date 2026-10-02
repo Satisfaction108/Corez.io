@@ -1,0 +1,90 @@
+/* Halloween on the menu. html.dw-halloween is set in index.html (Oct 1 to
+   Nov 2, or ?halloween=1); the moving background is client/halloween.js.
+   Pumpkin and storm purple go on top of the usual palette as accents.
+   Nothing here moves a control or changes its size. Delete this file and
+   its <link> to retire it. */
+
+html.dw-halloween {
+    --hw-pumpkin: #ee7418;
+    --hw-pumpkin-dk: #a3430b;
+    --hw-storm: #7448d6;
+    --hw-storm-dk: #4a2a9c;
+    --hw-web: rgba(233, 224, 204, .26);
+    --hw-web-shape: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0L87 30M0 0L71.9 69.5M0 0L33.7 83.4M24 0Q19.5 3.3 24.1 8.3Q16.5 10.1 16.5 16Q10.8 16.1 9.6 23.6Q3.8 19.4 0 24M48 0Q36.5 6.1 42.1 14.5Q31.5 19.3 34.5 33.3Q20.8 30.8 16.9 41.7Q7.1 36.5 0 48M69 0Q55.8 9.3 68.6 23.6Q47.9 29.4 48.9 47.2Q31.3 46.4 27 66.8Q10.8 55.4 0 69M94 0Q72.6 12.1 85.1 29.3Q62.6 38.4 67.3 65Q41.5 61.5 34.5 85.3Q14.2 73 0 94' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+html.dw-halloween[data-theme="light"] {
+    --hw-storm: #6c40d0;
+    --hw-web: rgba(27, 21, 16, .3);
+}
+
+/* the sky: night with the storm's purple coming up from below, or dusk */
+html.dw-halloween[data-theme="dark"] body:not(.in-game) {
+    background-image: linear-gradient(180deg, #120d19 0%, #17111f 50%, #241a3b 100%);
+}
+html.dw-halloween[data-theme="light"] body:not(.in-game) {
+    background-image: linear-gradient(180deg, #f3d5a0 0%, #eecba3 45%, #dcc3d6 100%);
+}
+
+/* a web in the card's top-left corner, the same weight as the ink lines */
+html.dw-halloween .startMenu::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 78px;
+    height: 78px;
+    border-top-left-radius: 16px;
+    background: var(--hw-web);
+    -webkit-mask: var(--hw-web-shape) no-repeat 0 0 / 100% 100%;
+    mask: var(--hw-web-shape) no-repeat 0 0 / 100% 100%;
+    pointer-events: none;
+}
+html.dw-halloween body.mobile .startMenu::before { width: 54px; height: 54px; }
+
+/* PLAY: a pumpkin. Same box and lip, ribs on the face, a warm light
+   inside, and the letters inked like the wordmark so they stay readable */
+html.dw-halloween #startButton,
+html.dw-halloween #startButton:hover,
+html.dw-halloween #startButton:active {
+    --face-c: var(--hw-pumpkin);
+    --lip-c: var(--hw-pumpkin-dk);
+    border-color: var(--hw-pumpkin-dk);
+    background-color: var(--hw-pumpkin);
+}
+html.dw-halloween #startButton {
+    background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 100' preserveAspectRatio='none'%3E%3Cpath d='M102 2Q90 44 102 90M202 2Q195 44 202 90M398 2Q405 44 398 90M498 2Q510 44 498 90' fill='none' stroke='%237a2600' stroke-opacity='.2' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M109 4Q97 44 109 88M209 4Q202 44 209 88M391 4Q398 44 391 88M491 4Q503 44 491 88' fill='none' stroke='%23ffe2a8' stroke-opacity='.14' stroke-width='2' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"),
+        linear-gradient(rgba(255, 255, 255, .14), rgba(255, 255, 255, 0) 55%),
+        radial-gradient(120% 150% at 50% 25%, rgba(110, 32, 0, 0) 55%, rgba(110, 32, 0, .22) 100%);
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    box-shadow: inset 0 -6px 0 var(--hw-pumpkin-dk), inset 0 1px 0 rgba(255, 232, 186, .45),
+        inset 0 0 22px rgba(255, 210, 110, .3), 0 6px 16px -6px color-mix(in srgb, var(--hw-pumpkin-dk) 75%, transparent);
+}
+html.dw-halloween #startButton:active:not(:disabled) {
+    box-shadow: inset 0 -2px 0 var(--hw-pumpkin-dk), inset 0 2px 4px rgba(0, 0, 0, .14), 0 0 0 transparent;
+}
+html.dw-halloween #startButton b {
+    -webkit-text-stroke: 6px var(--ink);
+    paint-order: stroke fill;
+    text-shadow: 0 3px 0 var(--ink);
+}
+html.dw-halloween #startButton.ev-live::after { border-color: var(--hw-pumpkin); }
+
+/* the picked mode glows storm purple, so Play is the only orange key */
+html.dw-halloween .mode-opt.on {
+    background: var(--hw-storm);
+    box-shadow: inset 0 -3px 0 var(--hw-storm-dk), 0 2px 6px -2px var(--cast);
+}
+
+/* Raid Night gets one piece of candy corn after its name */
+html.dw-halloween .ev-title::after {
+    content: '';
+    display: inline-block;
+    width: 14px;
+    height: 16px;
+    margin: 0 0 0 7px;
+    vertical-align: -1px;
+    transform: rotate(14deg);
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 28'%3E%3CclipPath id='c'%3E%3Cpath d='M12 2.5Q14 2.5 15 5L21.6 21.4Q23 25.5 18.6 25.5H5.4Q1 25.5 2.4 21.4L9 5Q10 2.5 12 2.5Z'/%3E%3C/clipPath%3E%3Cg clip-path='url(%23c)'%3E%3Crect width='24' height='28' fill='%23ffc53a'/%3E%3Crect width='24' height='18' fill='%23f27a1a'/%3E%3Crect width='24' height='10.5' fill='%23fff4dc'/%3E%3C/g%3E%3Cpath d='M12 2.5Q14 2.5 15 5L21.6 21.4Q23 25.5 18.6 25.5H5.4Q1 25.5 2.4 21.4L9 5Q10 2.5 12 2.5Z' fill='none' stroke='%231b1510' stroke-width='2.4' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat 0 0 / 100% 100%;
+}

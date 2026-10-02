@@ -107,7 +107,7 @@ export const friendMessages = (userId, before) => get('/api/friends/messages?use
 export const friendSend = (userId, body) => post('/api/friends/messages', { userId, body });
 export const friendRead = (userId, upTo) => post('/api/friends/messages/read', { userId, upTo });
 export const profile = (u) => get('/api/profile?u=' + encodeURIComponent(u));
-export const leaderboard = (limit) => get('/api/leaderboard?limit=' + (limit || 100));
+export const leaderboard = (limit, type) => get('/api/leaderboard?limit=' + (limit || 100) + (type && type !== 'ranked' ? '&type=' + type : ''));
 export const quests = () => get('/api/quests');
 export const invite = () => get('/api/invite');
 // Server-Sent Events: a URL, since EventSource does its own fetching.

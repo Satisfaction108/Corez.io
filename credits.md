@@ -1,3 +1,11 @@
+# Corez.io
+- `ZyroX` (fire_warriorx): Main Developer\
+- `Rome` (jerry_38288): Idea Contributor\
+- `MattWithX1` (emxiz.): Idea Contributor\
+- `Rando Dude` (js_a_dude): Idea Contributor\
+
+Corez.io is built on Open Source Arras. Everyone below made the base it runs on.
+
 # Active Developers
 Developers who are actively contributing to this project at the time of writing.
 - `TGS`: Project Co-Owner and creator of `aps-template` (original OSA)\

@@ -1252,6 +1252,8 @@ class gameHandler {
             if (attacker) {
                 o._lastDamageSource = attacker;
                 o._lastDamageAt = Date.now();
+                // and the shooter is in a fight too (dig_royale's reload rule)
+                attacker._dealtAt = o._lastDamageAt;
                 // a fresh spawn (player or bot) that shoots a bot has ended its
                 // own bot grace (dig_royale FIRST_MINUTES; read in controllers.js)
                 if (attacker.botGraceUntil) attacker.botGraceUntil = 0;

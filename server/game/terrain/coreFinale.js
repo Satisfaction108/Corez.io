@@ -1,9 +1,12 @@
 // The Core: the raid's last fight. When the final storm cycle starts, a huge
 // crystal heart surfaces beside the Center Vault and the last circle closes
-// on the pair of them. It has a lot of health (more with more players), it
-// throws a shockwave every few seconds that shoves tanks back and cracks the
-// rock around it, and once it is down to SHARD_BELOW it fires crystal shards
-// at whoever is close. Breaking it erupts a pile of gems; the tank that lands
+// on the pair of them. It takes a whole raid's focused fire (about 1.5-2
+// minutes, see healthFor), throws a shockwave every few seconds that shoves
+// tanks back and cracks the rock around it, and fights back as it breaks:
+// from SHARD_BELOW crystal shards at whoever is close, from RAGE_BELOW faster
+// and more of them, and the shockwave hurts. Every attack is telegraphed
+// (FX corecharge: the heart glows up, a ring closes on it) and the shards
+// mark where they land. Breaking it erupts a pile of gems; the tank that lands
 // the last hit gets a bonus straight into their bank. The vault is right
 // there, so whoever survives the scramble can cash out on the spot.
 //
@@ -32,20 +35,33 @@ const PULSE_FAST_MS = 5500;        // below half health
 const PULSE_FIRST_MS = 6000;
 const PULSE_R = 620;
 const PULSE_PUSH = 24;             // outward kick at the rim of the Core, u/tick
-const PULSE_DMG = 0.04;            // of max health, players and bots
+const PULSE_DMG = 0.14;            // of max health at the rim, only below RAGE_BELOW
+const CHARGE_MS = 900;             // the telegraph before a shockwave
+const SHARD_CHARGE_MS = 600;       // ...and before a volley of shards
 const PULSE_ROCK = 0.55;           // of a rock's max health
-const SHARD_BELOW = 0.3;
-const SHARD_MS = 1300;
+const SHARD_BELOW = 0.5;
+const RAGE_BELOW = 0.25;
+const SHARD_MS = 2200;
+const SHARD_RAGE_MS = 1300;
+const PULSE_RAGE_MS = 4200;
 const SHARD_R = 950;
 const SHARD_N = 3;
-const SHARD_FLIGHT_MS = 450;
+const SHARD_RAGE_N = 4;
+const SHARD_FLIGHT_MS = 650;       // where it lands is marked this long first
 const SHARD_HIT_R = 70;
-const SHARD_DMG = 0.12;
+const SHARD_DMG = 0.12;            // of max health
+const SHARD_RAGE_DMG = 0.16;
 const LAST_HIT_GEMS = 1000;
 const LAST_HIT_PTS = 800;
 
+// Ten times what it used to be at the base. A maxed tank puts ~700-1500 a
+// second into it (a bot less), so ~1000 per human and ~400 per bot of
+// focused fire: one player with five bots ~2 minutes, a full raid of 6-20
+// humans 95-120 s. The Core is not a raid boss, so bossGuard's caps don't
+// apply to it.
+const HP_BASE = 150_000, HP_HUMAN = 90_000, HP_BOT = 25_000, HP_MIN = 300_000, HP_MAX = 2_200_000;
 function healthFor(humans, bots) {
-    return Math.round(Math.max(30_000, Math.min(180_000, 20_000 + 16_000 * humans + 3000 * bots)));
+    return Math.round(Math.max(HP_MIN, Math.min(HP_MAX, HP_BASE + HP_HUMAN * humans + HP_BOT * bots)));
 }
 function gemsFor(humans, bots) {
     return Math.round(Math.max(5000, Math.min(8000, 5000 + 600 * Math.max(0, humans - 1) + 150 * bots)) / 50) * 50;
@@ -58,6 +74,7 @@ let state = 'idle';     // idle | planned | up | down
 let warned = false;
 let nextPulseAt = 0;
 let nextShardAt = 0;
+let charge = null;      // { kind: 'pulse' | 'shard', at } the attack being telegraphed
 let shards = [];
 let zone = null;
 let hitters = new Map();
@@ -117,6 +134,7 @@ function clear() {
     if (zone) { zone.until = Date.now(); zone = null; }
     state = 'idle';
     shards = [];
+    charge = null;
     hitters.clear();
     coreGems = 0;
     brokeBy = "";
@@ -159,6 +177,8 @@ function spawnCore() {
     const humans = hooks.humans ? hooks.humans().length : 0;
     const bots = Math.max(0, f.length - humans);
     carveArena(site);
+    // nothing stays buried under it: chests in the arena go (and come back elsewhere)
+    try { require('./chests.js').retireNear(site.x, site.y, ARENA_R + 120); } catch { /* */ }
     const grid = tg();
     try { if (grid && grid.addNoRegrowZone) zone = grid.addNoRegrowZone(site.x, site.y, ZONE_R, Number.MAX_SAFE_INTEGER); } catch { /* */ }
     let o;
@@ -187,6 +207,8 @@ function spawnCore() {
             let root = src, hops = 0;
             while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
             if (root && (root.isPlayer || root.isBot)) {
+                // picking this fight drops a newcomer's last-blow mercy (bossGuard)
+                if (root.isPlayer) root._hitBossAt = t;
                 const h = hitters.get(root.id);
                 hitters.set(root.id, { body: root, at: t, n: (h ? h.n : 0) + 1 });
             }
@@ -254,8 +276,20 @@ function onBroken(o) {
 
 function hurt(body, frac, t) {
     if (!body.health || !(body.health.max > 0)) return;
-    if ((body.spawnGraceUntil || 0) > t || body.godmode || body.royaleFrozen) return;
-    const dmg = body.health.max * frac;
+    if ((body.spawnGraceUntil || 0) > t || body.godmode || body.royaleFrozen || body.invuln || body.padSafe) return;
+    let dmg = body.health.max * frac;
+    // newcomers get the boss mercy: less damage, and while mostly new no
+    // killing blow unless they've been hitting the Core
+    try {
+        const guard = require('./bossGuard.js');
+        const n = guard.newnessOf(body, t);
+        if (n > 0) {
+            dmg *= 1 - (1 - guard.NEWBIE_DMG_MIN) * n;
+            if (n >= 0.25 && !(t - (body._hitBossAt || 0) < guard.ATTACK_MS)) dmg = Math.min(dmg, Math.max(0, body.health.amount + (body.shield ? body.shield.amount : 0) - 1));
+        }
+    } catch { /* */ }
+    if (!(dmg > 0)) return;
+    body.hitAt = t;
     if (body.shield && body.shield.amount > 0) {
         const soak = Math.min(body.shield.amount, dmg);
         body.shield.amount -= soak;
@@ -270,6 +304,7 @@ function hurt(body, frac, t) {
 
 function pulse(t, fighters) {
     if (hooks.fxAt) hooks.fxAt(core.x, core.y, 'corepulse');
+    const rage = frac() < RAGE_BELOW;
     const cr = core.realSize || core.size || 100;
     for (const b of fighters) {
         if (!alive(b) || b.royaleFrozen) continue;
@@ -280,7 +315,7 @@ function pulse(t, fighters) {
         const kick = PULSE_PUSH * (0.35 + 0.65 * k);
         b.velocity.x += dx / d * kick;
         b.velocity.y += dy / d * kick;
-        hurt(b, PULSE_DMG * (0.5 + 0.5 * k), t);
+        if (rage) hurt(b, PULSE_DMG * (0.5 + 0.5 * k), t);
     }
     const grid = tg();
     if (!grid || !grid.rocks) return;
@@ -304,11 +339,12 @@ function fireShards(t, fighters) {
     }
     near.sort((a, c) => a.d - c.d);
     const ticks = SHARD_FLIGHT_MS / 33;
-    for (const { b } of near.slice(0, SHARD_N)) {
+    const rage = frac() < RAGE_BELOW;
+    for (const { b } of near.slice(0, rage ? SHARD_RAGE_N : SHARD_N)) {
         // aimed where they will be, more or less: you can still juke it
         const x = b.x + (b.velocity.x || 0) * ticks * 0.7, y = b.y + (b.velocity.y || 0) * ticks * 0.7;
-        shards.push({ x, y, at: t + SHARD_FLIGHT_MS });
-        if (hooks.fxAt) hooks.fxAt(x, y, 'coreshard');
+        shards.push({ x, y, at: t + SHARD_FLIGHT_MS, dmg: rage ? SHARD_RAGE_DMG : SHARD_DMG });
+        if (hooks.fxAt) hooks.fxAt(x, y, 'coreshard', SHARD_FLIGHT_MS);
     }
 }
 
@@ -320,7 +356,7 @@ function landShards(t, fighters) {
         for (const b of fighters) {
             if (!alive(b)) continue;
             const r = SHARD_HIT_R + (b.realSize || 30);
-            if ((b.x - s.x) ** 2 + (b.y - s.y) ** 2 <= r * r) hurt(b, SHARD_DMG, t);
+            if ((b.x - s.x) ** 2 + (b.y - s.y) ** 2 <= r * r) hurt(b, s.dmg || SHARD_DMG, t);
         }
     }
     shards = keep;
@@ -346,14 +382,20 @@ function tick(t, fighters) {
     if (core.pinX !== undefined) { core.x = core.pinX; core.y = core.pinY; core.velocity.x = 0; core.velocity.y = 0; }
     const list = fighters || [];
     landShards(t, list);
-    if (t >= nextPulseAt) {
-        nextPulseAt = t + (frac() < 0.5 ? PULSE_FAST_MS : PULSE_MS);
-        pulse(t, list);
+    const f = frac();
+    // the telegraph: CHARGE_MS (shards SHARD_CHARGE_MS) of glow and a closing ring first
+    if (charge && t >= charge.at) {
+        const kind = charge.kind;
+        charge = null;
+        if (kind === 'pulse') { nextPulseAt = t + (f < RAGE_BELOW ? PULSE_RAGE_MS : f < 0.5 ? PULSE_FAST_MS : PULSE_MS); pulse(t, list); }
+        else { nextShardAt = t + (f < RAGE_BELOW ? SHARD_RAGE_MS : SHARD_MS); fireShards(t, list); }
     }
-    if (frac() < SHARD_BELOW && t >= nextShardAt) {
-        nextShardAt = t + SHARD_MS;
-        fireShards(t, list);
-    }
+    if (!charge && t >= nextPulseAt - CHARGE_MS) startCharge('pulse', Math.max(t, nextPulseAt - CHARGE_MS) + CHARGE_MS);
+    else if (!charge && f < SHARD_BELOW && t >= nextShardAt) startCharge('shard', t + SHARD_CHARGE_MS);
+}
+function startCharge(kind, at) {
+    charge = { kind, at };
+    if (hooks.fxAt) hooks.fxAt(core.x, core.y, 'corecharge', Math.max(0, at - Date.now()), kind === 'pulse' ? 1 : 0);
 }
 
 function frac() {
@@ -367,7 +409,7 @@ function snapshot(t = Date.now()) {
     if (state === 'planned') return warned ? { s: 'soon', x: Math.round(site.x), y: Math.round(site.y) } : undefined;
     if (state === 'up' && core) {
         return { s: 'up', e: core.id, x: Math.round(core.x), y: Math.round(core.y), r: Math.round(core.realSize || core.size || 100),
-            hp: Math.round(frac() * 1000) / 1000, g: coreGems, sh: frac() < SHARD_BELOW ? 1 : 0,
+            hp: Math.round(frac() * 1000) / 1000, g: coreGems, sh: frac() < RAGE_BELOW ? 2 : frac() < SHARD_BELOW ? 1 : 0,
             p: Math.max(0, nextPulseAt - t), vx: Math.round(site.vault.x), vy: Math.round(site.vault.y) };
     }
     if (state === 'down' && t - brokeAt < 60_000) return { s: 'down', x: Math.round(site.x), y: Math.round(site.y), by: brokeBy, vx: Math.round(site.vault.x), vy: Math.round(site.vault.y) };
@@ -397,7 +439,8 @@ function debugHp(f, by) {
 }
 
 module.exports = {
-    ON, CORE_OFFSET, ARENA_R, LANE_R, COVER_R, ZONE_R, PULSE_R, SHARD_BELOW, LAST_HIT_GEMS, LAST_HIT_PTS,
+    ON, CORE_OFFSET, ARENA_R, LANE_R, COVER_R, ZONE_R, PULSE_R, SHARD_BELOW, RAGE_BELOW, LAST_HIT_GEMS, LAST_HIT_PTS,
+    HP_MAX, SHARD_DMG, SHARD_RAGE_DMG, PULSE_DMG, CHARGE_MS, SHARD_CHARGE_MS, SHARD_FLIGHT_MS,
     attach, enabled, newRaid, clear, tick, snapshot, current, siteOf, planSite, carveArena, healthFor, gemsFor, erupt,
-    debugSpawn, debugHp, _state: () => ({ state, warned, lastErr, shards: shards.length, frac: frac() }),
+    debugSpawn, debugHp, _state: () => ({ state, warned, lastErr, shards: shards.length, frac: frac(), charge: charge && charge.kind }),
 };

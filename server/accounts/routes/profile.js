@@ -119,15 +119,58 @@ function myRow(row, now) {
     return boardRow(row, ahead + 1, R.divisionOf(row.rp | 0) === R.LEGEND ? ahead + 1 : 0);
 }
 
+// Banked and Wins boards: anyone with an account (ranked or not), by a
+// lifetime stat from user_stats. Ties go to whoever signed up first.
+const STAT_BOARDS = { banked: 'gems_banked', wins: 'raid_wins' };
+const statCache = {};   // type -> {at, rows}
+const LIVE_WHERE = 'u.deleted_at IS NULL AND (u.banned_until IS NULL OR u.banned_until <= ?)';
+
+function statBoardRow(row, place, col) {
+    const r = boardRow(row, place, 0);
+    r.value = row[col] | 0;
+    // an unranked player has no division to show
+    if (row.ranked_at == null) { r.division = null; r.name = ''; r.tier = ''; }
+    return r;
+}
+
+function statRows(type, now) {
+    const col = STAT_BOARDS[type];
+    const c = statCache[type];
+    if (c && now - c.at < BOARD_CACHE_MS) return c;
+    const list = h().all(`SELECT u.*, s.${col} AS ${col} FROM users u JOIN user_stats s ON s.user_id = u.id
+                          WHERE ${LIVE_WHERE} AND s.${col} > 0
+                          ORDER BY s.${col} DESC, u.id ASC LIMIT ${BOARD_MAX}`, now);
+    statCache[type] = { at: now, rows: list.map((r, i) => statBoardRow(r, i + 1, col)) };
+    return statCache[type];
+}
+
+function myStatRow(type, user, now) {
+    const col = STAT_BOARDS[type];
+    if (!user) return null;
+    const mine = h().get(`SELECT s.${col} AS v FROM user_stats s WHERE s.user_id = ?`, user.id);
+    const v = mine ? mine.v | 0 : 0;
+    if (v <= 0) return null;
+    const ahead = h().get(`SELECT count(*) AS n FROM users u JOIN user_stats s ON s.user_id = u.id
+                            WHERE ${LIVE_WHERE} AND u.id <> ? AND (s.${col} > ? OR (s.${col} = ? AND u.id < ?))`,
+        now, user.id, v, v, user.id).n | 0;
+    return statBoardRow(Object.assign({}, user, { [col]: v }), ahead + 1, col);
+}
+
 function getLeaderboard(ctx) {
     const now = Date.now();
     const lim = Math.max(1, Math.min(BOARD_MAX, parseInt(ctx.query.get('limit'), 10) || BOARD_MAX));
+    const type = String(ctx.query.get('type') || 'ranked');
     const a = ctx.auth();
+    if (STAT_BOARDS[type]) {
+        const c = statRows(type, now);
+        const user = a ? (users.byId(a.user.id) || a.user) : null;
+        return ctx.json(200, { type, updatedAt: c.at, rows: c.rows.slice(0, lim), me: myStatRow(type, user, now) });
+    }
     const rows = topRows(now);
-    ctx.json(200, { updatedAt: boardCache.at, rows: rows.slice(0, lim), me: a ? myRow(users.byId(a.user.id) || a.user, now) : null });
+    ctx.json(200, { type: 'ranked', updatedAt: boardCache.at, rows: rows.slice(0, lim), me: a ? myRow(users.byId(a.user.id) || a.user, now) : null });
 }
 
-function clearCache() { boardCache = null; }
+function clearCache() { boardCache = null; for (const k of Object.keys(statCache)) delete statCache[k]; }
 
 function register(router) {
     router.add('GET', '/api/profile', getProfile);

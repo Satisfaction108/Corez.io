@@ -272,13 +272,9 @@ class Canvas {
         }
         return false;
     }
-    // a placed ability (pad, wall) goes down where you aim when the key comes up
+    // the ability key coming up does nothing: aim mode waits for the click
     royaleKeyUp(event) {
-        if (event && event.keyCode === global.KEY_ABILITY && global.abilAim) {
-            abilityFx.cancelAim();
-            if (!global.died) this.useAbility();
-            return true;
-        }
+        if (event && event.keyCode === global.KEY_ABILITY && global.abilAim) return true;
         return false;
     }
     useKitSlot(slot) {
@@ -299,14 +295,26 @@ class Canvas {
         if (abilityFx.predictDash()) this.socket.talk('ab', 0);
         else if (global.abil && global.abil.d <= 0) gameSound.uiClick();
     }
-    // Key down: a placed ability starts its preview (it goes down on key up,
-    // royaleKeyUp, so a tap still casts at the cursor); anything else fires.
+    // The ability key: a placed or thrown one (pad, wall, shockwave, smoke)
+    // goes into aim mode, where a left click puts it down and right click,
+    // Esc or the key again cancel it for free; anything else fires at once.
     abilityDown() {
         const ab = global.abil || {};
+        if (global.abilAim && global.abilAim.mode === "click") { abilityFx.cancelAim(); gameSound.uiClick(); return; }
         const onPad = (global.shop && global.shop.onPad) || (global.vault && global.vault.onPad);
         const down = ab.act === "burrow" && ab.actAt > performance.now();
-        if (!onPad && !down && ab.eq && abilityFx.cdLeft() <= 0 && abilityFx.startAim(ab.eq)) return;
+        if (!onPad && !down && ab.eq && abilityFx.cdLeft() <= 0 && abilityFx.startAim(ab.eq)) {
+            global.abilAim.mode = "click";
+            gameSound.uiClick();
+            return;
+        }
         this.useAbility();
+    }
+    // aim mode's left click: down it goes at the previewed spot
+    placeAim() {
+        const spot = abilityFx.aimSpot(util.getRatio());
+        abilityFx.cancelAim();
+        if (spot && !global.died) this.useAbilityAt(spot.x, spot.y);
     }
     // The ability key never swaps abilities: that's the shop panel's Equip
     // button. On any pad it does nothing but say so.
@@ -651,6 +659,12 @@ class Canvas {
                 // press began on it: a shot fired elsewhere and released over
                 // the button must not throw the upgrade menu away.
                 this.skipUpgradePressed = global.clickables.skipUpgrades.check(mpos) !== -1;
+                // aim mode: the click puts the ability down and never fires the gun
+                if (global.abilAim && global.abilAim.mode === "click" && !global.died) {
+                    this.placeAim();
+                    this.aimClickHeld = true;
+                    break;
+                }
                 // the shop panel acts on release too, and only for a press that
                 // began on the same spot: a shot released over it as the panel
                 // opens under you must never buy or equip
@@ -716,6 +730,13 @@ class Canvas {
                 this.socket.cmd.set(5, true);
                 break;
             case 2:
+                // aim mode: right click backs out of it (nothing spent)
+                if (global.abilAim && global.abilAim.mode === "click") {
+                    abilityFx.cancelAim();
+                    gameSound.uiClick();
+                    this.aimClickHeld = true;
+                    break;
+                }
                 this.socket.cmd.set(secondaryFire, true);
                 break;
         }
@@ -750,6 +771,8 @@ class Canvas {
             secondaryFire = 6;
         if (this.inverseMouse) [primaryFire, secondaryFire] = [secondaryFire, primaryFire];
         global.clickables.clicked = false;
+        // the release of the click that placed or cancelled an aim
+        if (this.aimClickHeld && (mouse.button === 0 || mouse.button === 2)) { this.aimClickHeld = false; return; }
         switch (mouse.button) {
             case 0:
                 let mpos = {

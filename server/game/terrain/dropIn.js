@@ -78,11 +78,14 @@ function reachR(x, y, R) {
 
 // Queue the landing for a body that has just been placed. gems: the spill
 // (0 for a respawn).
-function land(body, spill = 0, t = Date.now()) {
+// opts.big: the first drop's long fall and crater without seeding ore (a
+// fresh drop after a reload)
+function land(body, spill = 0, t = Date.now(), opts = null) {
     if (!enabled() || !body) return null;
-    const ms = spill > 0 ? FALL_MS.first : FALL_MS.respawn;
+    const big = spill > 0 || !!(opts && opts.big);
+    const ms = big ? FALL_MS.first : FALL_MS.respawn;
     const drop = { body, x: body.x, y: body.y, at: t + ms, ms, seed: Math.max(0, spill | 0), r: 0 };
-    drop.r = reachR(body.x, body.y, smashR(body, spill > 0 ? CRATER_R : IMPACT_R));
+    drop.r = reachR(body.x, body.y, smashR(body, big ? CRATER_R : IMPACT_R));
     queue.push(drop);
     hold(drop);
     // your own client always hears it (its camera may still be where you
@@ -205,11 +208,12 @@ function release(d) {
 }
 
 // A resume after a reload drops back in too, only on screen: no hold, no
-// smash, nothing reset. The client draws the short fall and leaves the keys
+// smash, nothing reset. The client draws the full fall and leaves the keys
 // alone (the last field, 1, marks it as just a picture).
 function visual(body) {
     if (!enabled() || !body || !body.socket) return false;
-    try { body.socket.talk('FX', Math.round(body.x), Math.round(body.y), 'dropin', body.id | 0, IMPACT_R, FALL_MS.respawn, 1); } catch { return false; }
+    // the full first-drop fall (zoom, haze, trail, impact), drawn only
+    try { body.socket.talk('FX', Math.round(body.x), Math.round(body.y), 'dropin', body.id | 0, CRATER_R, FALL_MS.first, 1); } catch { return false; }
     return true;
 }
 // the body's landing is still to come (the client is drawing it in the air)

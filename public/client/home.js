@@ -11,11 +11,12 @@
         if (icon) icon.textContent = t === 'light' ? '\u2600' : '\u263E';
     }
 
-    // Light is the default; dwThemeV2 forces it once, then the toggle sticks.
+    // Dark is the default; dwThemeV3 switches everyone to it once, then the
+    // toggle sticks.
     try {
-        if (!localStorage.getItem('dwThemeV2')) { localStorage.setItem(THEME_KEY, 'light'); localStorage.setItem('dwThemeV2', '1'); }
+        if (!localStorage.getItem('dwThemeV3')) { localStorage.setItem(THEME_KEY, 'dark'); localStorage.setItem('dwThemeV3', '1'); }
     } catch (e) { /* private mode: default below */ }
-    applyTheme(localStorage.getItem(THEME_KEY) || 'light'); // immediate, no flash
+    applyTheme(localStorage.getItem(THEME_KEY) || 'dark'); // immediate, no flash
     // account gate, see client/account/main.js. Framed on a portal: straight to guest play.
     var acctHint = localStorage.getItem('dwAcctHint') || 'new';
     document.documentElement.setAttribute('data-acct', window.dwEmbed && acctHint === 'new' ? 'guest' : acctHint);
@@ -517,6 +518,8 @@
         var homeFxRaf = 0;
         var reduceMotion = window.matchMedia &&
             window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        // October: the tanks get carved rock hulls, with bats and the storm (client/halloween.js)
+        var hfx = root.classList.contains('dw-halloween') && window.dwHalloweenFx;
 
         // Same gun math as the game (LENGTH/10, trapezoid barrels), then an
         // opaque hull on top. The whole sprite is faded afterward so it is
@@ -617,6 +620,7 @@
                     key: i
                 });
             }
+            if (hfx) hfx.build(W, H, dpr, root.getAttribute('data-theme') === 'light', 28);
         }
 
         function resize() {
@@ -636,7 +640,8 @@
             attributes: true, attributeFilter: ['data-theme']
         });
 
-        function drawArrasGun(c, size, g) {
+        // tip: Halloween only, the last part of the barrel in another colour
+        function drawArrasGun(c, size, g, tip) {
             var length = size * g.length / 2;
             var height = size * g.width / 2;
             var h0 = g.aspect > 0 ? height * g.aspect : height;
@@ -652,6 +657,51 @@
                          pts[i][0] * sinT + pts[i][1] * cosT + gy);
             }
             c.closePath();
+            if (!tip) {
+                c.fill();
+                c.stroke();
+                return;
+            }
+            var iron = c.fillStyle;
+            c.fillStyle = tip;
+            c.fill();
+            // the iron part, up to where the band starts
+            var k = 0.7, hk = h1 + (h0 - h1) * k, lk = length * 2 * k;
+            var ip = [[0, h1], [lk, hk], [lk, -hk], [0, -h1]];
+            c.beginPath();
+            for (var j = 0; j < 4; j++) {
+                c.lineTo(ip[j][0] * cosT - ip[j][1] * sinT + gx,
+                         ip[j][0] * sinT + ip[j][1] * cosT + gy);
+            }
+            c.closePath();
+            c.fillStyle = iron;
+            c.fill();
+            var lw = c.lineWidth;
+            c.lineWidth = lw * 0.45;
+            c.beginPath();
+            c.moveTo(lk * cosT - hk * sinT + gx, lk * sinT + hk * cosT + gy);
+            c.lineTo(lk * cosT + hk * sinT + gx, lk * sinT - hk * cosT + gy);
+            c.stroke();
+            c.lineWidth = lw;
+            c.beginPath();
+            for (var m = 0; m < 4; m++) {
+                c.lineTo(pts[m][0] * cosT - pts[m][1] * sinT + gx,
+                         pts[m][0] * sinT + pts[m][1] * cosT + gy);
+            }
+            c.closePath();
+            c.stroke();
+        }
+
+        function drawSmasherRim(c, size, pal) {
+            var hr = size * 1.14;
+            c.beginPath();
+            for (var s = 0; s < 6; s++) {
+                var a = Math.PI / 6 + (Math.PI * 2 * s) / 6;
+                var x = Math.cos(a) * hr, y = Math.sin(a) * hr;
+                if (s) c.lineTo(x, y); else c.moveTo(x, y);
+            }
+            c.closePath();
+            c.fillStyle = pal.stroke;
             c.fill();
             c.stroke();
         }
@@ -664,6 +714,17 @@
             c.strokeStyle = pal.stroke;
             c.fillStyle = pal.gun;
             var guns = t.kind.guns || [];
+            if (hfx) {
+                // Halloween: iron barrels with a pumpkin or storm band at the
+                // muzzle; the hull is drawn upright on top (hfx.body)
+                var hg = hfx.guns();
+                c.strokeStyle = hg.ink;
+                c.fillStyle = hg.iron;
+                var tip = hg.tips[t.key % hg.tips.length];
+                for (var hi = 0; hi < guns.length; hi++) drawArrasGun(c, size, guns[hi], tip);
+                if (t.kind.smasher) drawSmasherRim(c, size, { stroke: hg.iron });
+                return;
+            }
             for (var i = 0; i < guns.length; i++) drawArrasGun(c, size, guns[i]);
             // Same fill-then-stroke as the barrels so the hull outline is
             // not a thinner inner ring.
@@ -673,17 +734,7 @@
             c.fill();
             c.stroke();
             if (t.kind.smasher) {
-                var hr = size * 1.14;
-                c.beginPath();
-                for (var s = 0; s < 6; s++) {
-                    var a = Math.PI / 6 + (Math.PI * 2 * s) / 6;
-                    var x = Math.cos(a) * hr, y = Math.sin(a) * hr;
-                    if (s) c.lineTo(x, y); else c.moveTo(x, y);
-                }
-                c.closePath();
-                c.fillStyle = pal.stroke;
-                c.fill();
-                c.stroke();
+                drawSmasherRim(c, size, pal);
                 c.fillStyle = pal.fill;
                 c.beginPath();
                 c.arc(0, 0, size, 0, Math.PI * 2);
@@ -726,18 +777,22 @@
             homeFxRaf = 0;
             if (!homeFxOn) return;
             ctx.clearRect(0, 0, W, H);
+            if (hfx) hfx.back(ctx, reduceMotion);
             tickTanks();
             for (var i = 0; i < tanks.length; i++) {
                 var t = tanks[i];
                 var spr = tankSprite(t);
+                var ty = t.y + Math.sin(t.bobT) * t.bob;
                 ctx.save();
-                ctx.globalAlpha = t.a;
-                ctx.translate(t.x, t.y + Math.sin(t.bobT) * t.bob);
+                ctx.globalAlpha = hfx ? t.a + 0.4 : t.a;
+                ctx.translate(t.x, ty);
                 ctx.rotate(t.ang);
                 ctx.drawImage(spr.canvas, -spr.pad, -spr.pad, spr.pad * 2, spr.pad * 2);
                 ctx.restore();
+                if (hfx) hfx.body(ctx, t.key, t.x, ty, reduceMotion);
             }
             ctx.globalAlpha = 1;
+            if (hfx) hfx.front(ctx, reduceMotion);
             if (!reduceMotion) homeFxRaf = requestAnimationFrame(drawHomeFx);
         }
         drawHomeFx();

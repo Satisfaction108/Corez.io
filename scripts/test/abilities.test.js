@@ -314,19 +314,32 @@ test('grapple: catches rock and yanks you to it', () => {
     cleanup(t);
 });
 
-test('grapple: a miss costs only a short cooldown; a tank hit pulls you to the tank', () => {
+test('grapple: a miss reels back and spends no cooldown (bots too); a tank hit pulls you to the tank once it bites', () => {
+    clearDisc(AX, AY, 1000);
     const { s, t } = owner(AX, AY, 'grapple');
-    assert.ok(ab.use(t, AX, AY + 900 * 0 - 900));      // straight up into the open arena
-    assert.ok(lastAB(s).cd <= ab.GRAPPLE.missCdMs, 'miss cd');
-    clock += ab.GRAPPLE.missCdMs + 50;
+    assert.ok(ab.use(t, AX, AY - 900));      // straight up into the open arena
+    assert.ok(s.packets.some(p => p[0] === 'AF' && p[1] === 'hookmiss'), 'the reel-back is drawn');
+    assert.equal(lastAB(s).cd, 0, 'no cooldown on a miss');
+    assert.equal(ab.use(t, AX, AY - 900), false, 'but not while it is still out');
+    clock += 500;
+    assert.ok(ab.canUse(t), 'ready again once it is back');
+    const bot = tank(AX - 400, AY + 300, null);
+    ab.giveBot(bot, 'grapple');
+    assert.ok(ab.use(bot, bot.x, bot.y - 900));
+    clock += 500;
+    assert.equal(ab.cooldownLeft(bot), 0, 'a bot missing gets the same deal');
     const foe = tank(AX + 480, AY, null);
     step(1);
     const d0 = Math.hypot(foe.x - t.x, foe.y - t.y);
+    const x0 = t.x;
     assert.ok(ab.use(t, foe.x, foe.y));
-    step(12);
+    assert.ok(lastAB(s).cd > 7000, 'a hit spends the full cooldown');
+    step(2);
+    assert.ok(Math.abs(t.x - x0) < 12, 'no yank while the hook is still flying');
+    step(20);
     const d1 = Math.hypot(foe.x - t.x, foe.y - t.y);
     assert.ok(d1 < d0 * 0.4, 'closed in: ' + d0.toFixed(0) + ' -> ' + d1.toFixed(0));
-    cleanup(t, foe);
+    cleanup(t, foe, bot);
 });
 
 test('burrow: a channel up to 10 s through rock, slower, no shooting, up again on the key', () => {
@@ -485,7 +498,7 @@ test('barricade preview: exactly the cells the cast raises, red where a tank sta
     ab.stateOf(s).eq = 'wall';
     ab.preview(s, AX + 450, AY);
     const aw = JSON.parse(s.packets.filter(p => p[0] === 'AW').pop()[1]);
-    assert.ok(aw.g.length >= 4 && aw.r.length >= 1, 'rising ' + aw.g.length + ', blocked ' + aw.r.length);
+    assert.ok(aw.g.length >= 3 && aw.r.length >= 1 && aw.g.length + aw.r.length <= 5, 'rising ' + aw.g.length + ', blocked ' + aw.r.length);
     const before = new Set([...grid.rocks.values()].filter(r => r.growing).map(r => r.k));
     assert.ok(ab.use(t, AX + 450, AY));
     const rose = [...grid.rocks.values()].filter(r => r.growing && !before.has(r.k)).map(r => r.k).sort();
@@ -525,6 +538,29 @@ test('equip: crossing a shop pad with the ability key held never changes the slo
     cleanup(t);
 });
 
+test('aim mode: Q aims a placed ability, a left click puts it down without firing, right click / Esc / Q again cancel for free', () => {
+    const cv = fs.readFileSync(path.join(REPO, 'public', 'client', 'canvas.js'), 'utf8');
+    assert.match(cv, /global\.abilAim\.mode = "click";/, 'Q enters aim mode');
+    assert.match(cv, /if \(global\.abilAim && global\.abilAim\.mode === "click"\) \{ abilityFx\.cancelAim\(\); gameSound\.uiClick\(\); return; \}/, 'Q again cancels');
+    const down = cv.slice(cv.indexOf('    mouseDown(mouse) {'), cv.indexOf('    toggleBigMap() {'));
+    const place = down.indexOf('this.placeAim();'), fire = down.indexOf('this.socket.cmd.set(primaryFire, true)');
+    assert.ok(place > 0 && fire > place && /this\.placeAim\(\);\s+this\.aimClickHeld = true;\s+break;/.test(down), 'the placing click breaks out before the gun fires');
+    assert.match(down, /aim mode: right click backs out of it/);
+    assert.match(cv, /kc === global\.KEY_ESC && global\.abilAim\) \{ abilityFx\.cancelAim\(\)/, 'Esc cancels');
+    assert.match(cv, /royaleKeyUp\(event\) \{\s+if \(event && event\.keyCode === global\.KEY_ABILITY && global\.abilAim\) return true;/, 'the key coming up never casts');
+    // cancelling spends nothing: aim mode is client only, the server only hears the placement
+    const { s, t } = owner(AX, AY, 'pad');
+    assert.equal(ab.cooldownLeft(t), 0);
+    assert.ok(ab.canUse(t), 'nothing was spent by aiming and backing out');
+    for (const id of ['pad', 'wall', 'shock', 'smoke']) assert.ok(ab.placeRange(id) > 0, id + ' is aimed');
+    cleanup(t);
+});
+
+test('free starter: only the showy ones (grapple, launch pad, shockwave, smoke)', () => {
+    assert.deepEqual(ab.FREE_POOL.slice().sort(), ['grapple', 'pad', 'shock', 'smoke']);
+    for (const id of ['radar', 'burrow', 'rush', 'wall']) assert.ok(!ab.FREE_POOL.includes(id), id + ' is shop-only');
+});
+
 test('radar: lists every tank within 2,500, carriers flagged, for 10 s', () => {
     const { s, t } = owner(AX, AY, 'radar');
     const a = tank(AX + 1200, AY, null); a.carriedGems = 900;
@@ -545,19 +581,26 @@ test('radar: lists every tank within 2,500, carriers flagged, for 10 s', () => {
     cleanup(t, a, b, c);
 });
 
-test('barricade: a wall where you aim (up to 600), across the aim line, gone after 20 s', () => {
+test('barricade: 5 rocks in a row where you aim (up to 600), across the aim line, gone after 20 s', () => {
     const { s, t } = owner(AX, AY, 'wall');
     const before = new Set([...grid.rocks.values()].filter(r => r.growing));
     assert.ok(ab.use(t, AX + 450, AY));
     const rising = [...grid.rocks.values()].filter(r => r.growing && !before.has(r));
-    assert.ok(rising.length >= 4, 'rocks rising: ' + rising.length);
+    assert.equal(rising.length, 5, 'five rocks: ' + rising.length);
+    // in a straight row: each one about a cell from the next, all across the line
+    const sorted = rising.slice().sort((a, b) => a.worldCy - b.worldCy);
+    const size = (grid._voroRockSz || 1) * grid.cellSize;
+    for (let i = 1; i < sorted.length; i++) {
+        const gap = Math.hypot(sorted[i].worldCx - sorted[i - 1].worldCx, sorted[i].worldCy - sorted[i - 1].worldCy);
+        assert.ok(gap > size * 0.4 && gap < size * 1.8, 'neighbours in the row: ' + gap.toFixed(0) + ' (cell ' + size.toFixed(0) + ')');
+    }
     const riseMs = Math.max(...rising.map(r => (16000 - (r.growE0 || 0)) / r.growRate + (r.growAt - clock)));
     assert.ok(riseMs <= 450, 'up almost at once: ' + riseMs.toFixed(0) + ' ms');
     const client = fs.readFileSync(path.join(REPO, 'public', 'client', 'terrainRenderer.js'), 'utf8');
     assert.match(client, /Math\.min\(64, s\)/, 'the client draws that pace');
-    for (const r of rising) assert.ok(Math.abs(r.worldCx - (AX + 450)) < 110, 'on the aim spot, across the line: ' + (r.worldCx - AX).toFixed(0));
+    for (const r of rising) assert.ok(Math.abs(r.worldCx - (AX + 450)) < size * 0.9, 'on the aim spot, across the line: ' + (r.worldCx - AX).toFixed(0));
     const ys = rising.map(r => r.worldCy);
-    assert.ok(Math.max(...ys) - Math.min(...ys) > 200, 'a wall, not a lump');
+    assert.ok(Math.max(...ys) - Math.min(...ys) > size * 2.5, 'a wall, not a lump');
     // aimed past the range: held to 600
     clearDisc(AX, AY, 1000);
     clock += 19000;
@@ -1136,14 +1179,16 @@ test('kit effects: every kit item sends its look, the decoy only to its owner', 
 });
 
 // ── wiring ──────────────────────────────────────────────────────────────
-test('wiring: ab packet, keybinds (Shift dash, Q ability, R kit 2), touch buttons, HUD', () => {
+test('wiring: ab packet, keybinds (Shift dash, Q ability, comma kit 2, R override, period screenshot), touch buttons, HUD', () => {
     const sockets = fs.readFileSync(path.join(SERVER, 'game', 'network', 'sockets.js'), 'utf8');
     assert.match(sockets, /case "ab": \{/);
     assert.match(sockets, /abil\.dash\(player\.body, 0, 0\)/);
     const g = fs.readFileSync(path.join(REPO, 'public', 'client', 'global.js'), 'utf8');
     assert.match(g, /KEY_DASH: 16/);
     assert.match(g, /KEY_ABILITY: 81/);
-    assert.match(g, /KEY_KIT_2: 82/);
+    assert.match(g, /KEY_KIT_2: 188/);
+    assert.match(g, /KEY_OVER_RIDE: 82/);
+    assert.match(g, /KEY_SCREENSHOT: 190/);
     const html = fs.readFileSync(path.join(REPO, 'public', 'index.html'), 'utf8');
     assert.match(html, /data-key="KEY_DASH"/);
     assert.match(html, /data-key="KEY_ABILITY"/);

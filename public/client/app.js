@@ -130,10 +130,11 @@ import * as cosmetics from './account/cosmetics.js';
             delete keybinds.KEY_DEBUG;
             setKeybinds();
         }
-        // Shift (dash), Q (ability) and R (kit slot 2) are new defaults: a
-        // bind someone saved on one of those keys keeps it, and the new
-        // action starts unbound until they pick a key for it
-        for (const id of ["KEY_DASH", "KEY_ABILITY", "KEY_KIT_2"]) {
+        // Shift (dash), Q (ability), comma (kit slot 2), period (screenshot)
+        // and R (AI override) are new defaults: a bind someone saved on one of
+        // those keys keeps it, and the new action starts unbound until they
+        // pick a key for it
+        for (const id of ["KEY_DASH", "KEY_ABILITY", "KEY_KIT_2", "KEY_SCREENSHOT", "KEY_OVER_RIDE"]) {
             if (keybinds[id]) continue;
             const code = global[id];
             if (Object.keys(keybinds).some(k => k !== id && keybinds[k] && keybinds[k][1] === code)) {
@@ -684,7 +685,12 @@ import * as cosmetics from './account/cosmetics.js';
                 b.restore();
             }
 
+            // October: the bursts throw candy corn (client/halloween.js)
+            const halloween = () => document.documentElement.classList.contains("dw-halloween") && window.dwHalloweenFx;
+
             function spawnBurst(x, y) {
+                const hw = halloween();
+                if (hw) return hw.burst(x, y);
                 const n = 10 + ((Math.random() * 8) | 0);
                 const pal = pickFx();
                 const pal2 = pickFx();
@@ -753,6 +759,8 @@ import * as cosmetics from './account/cosmetics.js';
                         firework.vanished = true;
                     }
                 }
+                const hw = halloween();
+                if (hw) hw.corn(b, fwDpr);
                 if (3e-5 * fwW > Math.random()) {
                     const col = pickFx();
                     fireworks.push({
@@ -1329,8 +1337,8 @@ import * as cosmetics from './account/cosmetics.js';
                 global.UIscale = 2560;
                 break;
             case "normal":
-                // Small's layout, a little bigger (1920 spreads the HUD out)
-                global.UIscale = 2240;
+                // Small's layout, about 12% bigger (1920 spreads the HUD out)
+                global.UIscale = 2000;
                 break;
             case "large":
                 global.UIscale = 1536;
@@ -1341,7 +1349,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
         // Phones and tablets measure the HUD along the long side (util.js
         // getScreenRatio), so the same numbers read a little bigger there.
-        if (global.mobile) global.UIscale = { 2560: 1500, 2240: 1300, 1536: 960, 1280: 1100 }[global.UIscale] || 1100;
+        if (global.mobile) global.UIscale = { 2560: 1500, 2000: 1300, 1536: 960, 1280: 1100 }[global.UIscale] || 1100;
         util.submitToLocalStorage("optColors");
         let a = document.getElementById("optColors").value;
         color = colors[a === "" ? "dark" : a];
@@ -8274,7 +8282,7 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
         // slots: key badge top-left, count top-right, name below
-        const keys = [keyLabel("KEY_KIT_1", "Z"), keyLabel("KEY_KIT_2", "R"), keyLabel("KEY_KIT_3", "N")];
+        const keys = [keyLabel("KEY_KIT_1", "Z"), keyLabel("KEY_KIT_2", ","), keyLabel("KEY_KIT_3", "N")];
         const slotY = gearY + gearH + 7, slotH = H - (slotY - y) - 7;
         const slotW = (W - pad * 2 - gap * 2) / 3;
         for (let i = 0; i < 3; i++) {
@@ -8642,7 +8650,7 @@ import * as cosmetics from './account/cosmetics.js';
             let ly = iconY + S / 2 + 74 + 10 * (1 - bT);
             for (const l of lines) { drawText(l, cx, ly, 15, HUD.text, "center", true, bT); ly += 20; }
             const slotIdx = (sh.state.kitOrder || []).indexOf(u.id);
-            const keyName = u.spare ? "" : u.ab ? keyLabel("KEY_ABILITY", "Q") : slotIdx >= 0 ? keyLabel("KEY_KIT_" + (slotIdx + 1), ["Z", "R", "N"][slotIdx]) : "";
+            const keyName = u.spare ? "" : u.ab ? keyLabel("KEY_ABILITY", "Q") : slotIdx >= 0 ? keyLabel("KEY_KIT_" + (slotIdx + 1), ["Z", ",", "N"][slotIdx]) : "";
             if (keyName && global.mobile && u.ab) {
                 hudTitle("Tap the ability button to use it", cx, ly + 16, 16, HUD.text2, "center", bT, c);
             } else if (keyName && global.mobile) {

@@ -141,6 +141,11 @@ export function onFx(m, punch) {
         for (const g of fx) if (g.k === "burrow" && g.id === f.id) g.b = Math.min(g.b, performance.now() - g.born + 250);
         addFx(f);
     }
+    else if (kind === "hookend") {
+        // the hook let go: it reels back from wherever it is
+        for (const g of fx) if ((g.k === "hook" || g.k === "hookmiss") && g.id === f.id && g.backAt == null) g.backAt = f.born;
+        return;
+    }
     else if (kind === "shock") {
         // the orb in the air is done: the blast takes over where it went off
         for (const g of fx) if (g.k === "shockthrow" && g.id === f.id && !g.done) g.done = f.born;
@@ -169,8 +174,12 @@ export const KIT_FX_IDS = new Set(["charge", "medkit", "anchor", "flash", "bulwa
 const addFx = (f) => { fx.push(f); if (fx.length > 48) fx.shift(); };
 // How long each effect lives (ms), where it isn't a fixed DUR
 const SHOCK_SPEED = 1.0;          // the orb, units per ms (abilities.js SHOCK.throwSpeed)
+const HOOK_SPEED = 4, HOOK_BACK = 250;   // abilities.js GRAPPLE.flyPerMs / backMs
+const HOOK_HOLD_MAX = 1550;              // no hookend by then: it comes back anyway
 const LIFE = {
     shockthrow: f => Math.max(90, f.b / SHOCK_SPEED) + 200,
+    hook: f => Math.max(60, f.b / HOOK_SPEED) + HOOK_HOLD_MAX + HOOK_BACK + 400,
+    hookmiss: f => Math.max(60, f.b / HOOK_SPEED) + HOOK_BACK + 400,
     smokethrow: f => Math.max(120, f.b / SMOKE_SPEED) + 80,
     shock: () => 1100, fling: () => 750, flinghit: () => 750,
     rocket: f => f.b + 700,
@@ -235,16 +244,10 @@ function juiceFor(f, mine, near) {
                 J.ring(f.x, f.y, AB_COLOR.burrow, 20, 170, 420, 8);
                 if (close) J.shake(mine ? 10 : 6, 240);
                 break;
-            case "hook": {
-                const ax = f.x + Math.cos(f.a) * f.b, ay = f.y + Math.sin(f.a) * f.b;
-                J.burst(ax, ay, 12, AB_COLOR.grapple, 80, 380, 3, 4);
-                J.burst(ax, ay, 6, "#8a7f96", 60, 420, 1, 4);
-                J.ring(ax, ay, AB_COLOR.grapple, 6, 46, 260, 4);
-                if (mine) J.shake(5, 160);
-                break;
-            }
+            case "hook":
             case "hookmiss":
-                J.burst(f.x + Math.cos(f.a) * 40, f.y + Math.sin(f.a) * 40, 5, AB_COLOR.grapple, 60, 260, 0, 3);
+                // the throw; the bite has its own burst (drawWorld)
+                J.burst(f.x + Math.cos(f.a) * 40, f.y + Math.sin(f.a) * 40, 5, "#c3cad6", 60, 260, 0, 3);
                 break;
             case "smoke":
                 J.burst(f.x, f.y, 6, "#8a80a0", 60, 300, 3, 3);
@@ -367,9 +370,19 @@ function sound(kind, x, y, self = false) {
                 break;
             case "hook":
             case "hookmiss":
-                g._tone({ freq: 520, glideTo: 880, dur: 0.09, peak: 0.07 * v, pan, attack: 0.006 });
-                g._puff({ kind: "pink", cut: 1800, cutTo: 1100, Q: 1, dur: 0.08, peak: 0.04 * v, pan });
-                if (kind === "hook") g._tone({ freq: 330, glideTo: 180, dur: 0.12, peak: 0.08 * v, pan, delay: 0.08, attack: 0.008 });
+                // the throw: a zip of chain paying out
+                g._tone({ freq: 520, glideTo: 880, dur: 0.09, peak: 0.06 * v, pan, attack: 0.006 });
+                g._puff({ kind: "pink", cut: 2400, cutTo: 1400, Q: 1.2, dur: 0.16, peak: 0.04 * v, pan });
+                break;
+            case "hookbite":
+                // the latch: a metal clank
+                g._tone({ freq: 1760, glideTo: 1500, type: "triangle", dur: 0.06, peak: 0.05 * v, pan, attack: 0.002 });
+                g._tone({ freq: 2490, dur: 0.05, peak: 0.03 * v, pan, attack: 0.002, delay: 0.012 });
+                g._tone({ freq: 330, glideTo: 180, dur: 0.12, peak: 0.07 * v, pan, attack: 0.004 });
+                break;
+            case "hookback":
+                g._puff({ kind: "pink", cut: 1400, cutTo: 2600, Q: 1.2, dur: 0.18, peak: 0.035 * v, pan });
+                g._tone({ freq: 1320, dur: 0.04, peak: 0.03 * v, pan, attack: 0.002, delay: 0.22 });
                 break;
             case "shock":
                 g._impact({ pan, v, sub: 58, body: 140, bodyTo: 60, air: 520, weight: 0.5, dur: 0.24 });
@@ -471,7 +484,7 @@ function entScreen(e, px, py, ratio, out) {
 const tmpA = { x: 0, y: 0, r: 0 };
 const ease = (u) => 1 - (1 - u) * (1 - u) * (1 - u);
 
-const DUR = { dash: 380, launch: 520, hook: 1300, hookmiss: 520, shock: 900, radar: 1300, wall: 700, unsmoke: 500, blink: 600, surface: 700 };
+const DUR = { dash: 380, launch: 520, shock: 900, radar: 1300, wall: 700, unsmoke: 500, blink: 600, surface: 700 };
 
 // Gem Magnet (shop gear): gems inside its pull streak in toward you, and a
 // faint field turns round the tank. The radius mirrors gems.js tickGem
@@ -610,30 +623,77 @@ export function drawWorld(c, px, py, ratio) {
             }
             case "hook":
             case "hookmiss": {
-                // the line shoots out, holds while you're reeled in, then snaps back
-                const ox = es ? es.x : sx, oy = es ? es.y : sy;
-                const out = Math.min(1, age / 110);
-                const reel = f.k === "hookmiss" ? Math.max(0, (age - 140) / 260) : 0;
-                const len = f.b * ratio * out * (1 - reel);
-                // the anchor stays where it bit; a miss comes back to the tank
-                const ax = f.k === "hook" ? sx + Math.cos(f.a) * f.b * ratio * out : ox + Math.cos(f.a) * len;
-                const ay = f.k === "hook" ? sy + Math.sin(f.a) * f.b * ratio * out : oy + Math.sin(f.a) * len;
-                const reached = f.k === "hook" && es && Math.hypot(ax - ox, ay - oy) < es.r * 1.6 && age > 200;
-                if (reached && !f.done) f.done = age;
-                const fade = f.done ? Math.max(0, 1 - (age - f.done) / 160) : t > 0.85 ? (1 - t) / 0.15 : 1;
-                if (fade <= 0) { fx.splice(i, 1); break; }
-                c.globalAlpha = fade;
-                c.lineCap = "round";
-                c.strokeStyle = "#120e15"; c.lineWidth = Math.max(2, 5 * ratio);
-                c.beginPath(); c.moveTo(ox, oy); c.lineTo(ax, ay); c.stroke();
-                c.strokeStyle = AB_COLOR.grapple; c.lineWidth = Math.max(1, 2.4 * ratio);
-                c.beginPath(); c.moveTo(ox, oy); c.lineTo(ax, ay); c.stroke();
-                // the claw
-                c.translate(ax, ay); c.rotate(f.a);
-                c.fillStyle = "#e9f7ff"; c.strokeStyle = "#120e15"; c.lineWidth = Math.max(1, 1.6 * ratio);
-                const k = 9 * ratio;
-                c.beginPath(); c.moveTo(k, 0); c.lineTo(-k * 0.6, -k * 0.75); c.lineTo(-k * 0.2, 0); c.lineTo(-k * 0.6, k * 0.75); c.closePath();
-                c.fill(); c.stroke();
+                // a grappling hook on a chain, one clear state at a time:
+                // flying out, latched (you're pulled in), then back into the
+                // tank. It never just fades: a miss, the pull ending, the
+                // target going (hookend) or a late packet all reel it back.
+                const miss = f.k === "hookmiss";
+                const outMs = Math.max(60, f.b / HOOK_SPEED);
+                const ca = Math.cos(f.a), sa = Math.sin(f.a);
+                if (es) { f.tx = e.render.x; f.ty = e.render.y; f.tr = e.size || 24; }
+                const tx = f.tx != null ? f.tx : f.x, ty = f.ty != null ? f.ty : f.y, tr = f.tr || 24;
+                const ax = f.x + ca * f.b, ay = f.y + sa * f.b;       // the far end (world)
+                // when it starts back: a miss at full reach, a hit on hookend,
+                // or once the pull can't be running any more
+                if (f.backAt == null) {
+                    if (miss && age >= outMs) f.backAt = f.born + outMs;
+                    else if (!miss && age >= outMs + HOOK_HOLD_MAX) f.backAt = now;
+                    else if (!e && age > outMs) f.backAt = now;
+                }
+                let hx, hy, state;
+                if (f.backAt == null) {
+                    if (age < outMs) {
+                        const u = age / outMs, k2 = 1 - (1 - u) * (1 - u);
+                        hx = f.x + ca * f.b * k2; hy = f.y + sa * f.b * k2; state = 0;
+                    } else { hx = ax; hy = ay; state = 1; }
+                } else {
+                    if (f.bx == null) {
+                        // from wherever the head was when it let go
+                        const u = Math.min(1, (f.backAt - f.born) / outMs), k2 = 1 - (1 - u) * (1 - u);
+                        f.bx = f.x + ca * f.b * k2; f.by = f.y + sa * f.b * k2;
+                        sound("hookback", f.bx, f.by);
+                    }
+                    const u = Math.min(1, (now - f.backAt) / HOOK_BACK);
+                    if (u >= 1) { fx.splice(i, 1); break; }
+                    const k2 = u * u;
+                    hx = f.bx + (tx - f.bx) * k2; hy = f.by + (ty - f.by) * k2; state = 2;
+                }
+                if (!miss && state === 1 && !f.bit) {
+                    f.bit = 1;
+                    const J = window.dwJuice;
+                    sound("hookbite", ax, ay);
+                    if (J) {
+                        try {
+                            J.burst(ax, ay, 14, "#ffd37a", 90, 320, 0, 3);
+                            J.burst(ax, ay, 9, "#8a7f96", 80, 480, 1, 5);
+                            J.ring(ax, ay, AB_COLOR.grapple, 6, 52, 260, 5);
+                            if (f.id === myId()) J.shake(6, 160);
+                        } catch (er) { /* */ }
+                    }
+                }
+                // screen space from here on
+                const shx = ratio * hx - px + cx, shy = ratio * hy - py + cy;
+                const stx = ratio * tx - px + cx, sty = ratio * ty - py + cy, str = tr * ratio;
+                const dl = Math.hypot(shx - stx, shy - sty) || 1;
+                const rx = (shx - stx) / dl, ry = (shy - sty) / dl;
+                const fx0 = stx + rx * str * 0.9, fy0 = sty + ry * str * 0.9;
+                const headAng = state === 2 ? Math.atan2(sty - shy, stx - shx) + Math.PI : f.a;
+                drawChain(c, fx0, fy0, shx, shy, ratio, now, state === 1 ? 0 : state === 0 ? 1 : 0.5);
+                // a little blur and whoosh behind it in flight
+                if (state === 0 && !fewer()) {
+                    for (let q = 3; q >= 1; q--) {
+                        c.globalAlpha = 0.18 * (4 - q) / 3;
+                        drawHookHead(c, shx - ca * q * 9 * ratio, shy - sa * q * 9 * ratio, f.a, ratio);
+                    }
+                    c.globalAlpha = 0.6;
+                    c.strokeStyle = "#e9f7ff"; c.lineWidth = Math.max(1, 1.5 * ratio); c.lineCap = "round";
+                    for (let q = -1; q <= 1; q += 2) {
+                        const ox = -sa * q * 9 * ratio, oy = ca * q * 9 * ratio;
+                        c.beginPath(); c.moveTo(shx - ca * 18 * ratio + ox, shy - sa * 18 * ratio + oy); c.lineTo(shx - ca * 46 * ratio + ox, shy - sa * 46 * ratio + oy); c.stroke();
+                    }
+                }
+                c.globalAlpha = 1;
+                drawHookHead(c, shx, shy, headAng, ratio);
                 break;
             }
             case "burrow": {
@@ -931,17 +991,14 @@ export function drawWorld(c, px, py, ratio) {
                 break;
             }
             case "smoke": {
-                // soft puffs spread evenly over a round footprint, each one
-                // drifting and billowing on its own, the whole cloud turning
-                // slowly; the side's tint is only a faint rim
+                // a thick cloud the size of the hiding area: it billows out,
+                // churns while it lasts, then thins away (the first look, with
+                // a solid middle so nothing shows through and a faint rim)
                 const R = (f.a > 0 ? f.a : 300) * ratio;
-                const total = f.b + 900;
+                const hold = f.b, total = f.b + 700;
                 if (age > total) { fx.splice(i, 1); break; }
-                if (!f.puffs) f.puffs = smokePuffs(f.x, f.y, fewer() ? 14 : 26);
-                const P = f.puffs, n = P.length / PUFF_W;
-                const grow = ease(Math.min(1, age / 550));
-                const out = age < f.b ? 0 : Math.min(1, (age - f.b) / 900);
-                const fade = 1 - out;
+                const fade = age < hold ? 1 : Math.max(0, 1 - (age - hold) / 700);
+                const grow = ease(Math.min(1, age / 500));
                 const still = calm();
                 // the pop
                 if (age < 420) {
@@ -950,34 +1007,28 @@ export function drawWorld(c, px, py, ratio) {
                     c.strokeStyle = "#e9e0f4"; c.lineWidth = Math.max(2, 6 * (1 - u) * ratio);
                     c.beginPath(); c.arc(sx, sy, R * (0.15 + 0.7 * ease(u)), 0, Math.PI * 2); c.stroke();
                 }
-                const spin = still ? 0 : age / 16000;
-                const dark = smokeSprite("n"), light = smokeSprite("l");
-                // thick enough that nothing shows through from outside; from
-                // inside it thins so you can still see your own tank
+                // from inside it thins so you can still see your own tank
                 const me = global.player;
                 const wr = (f.a > 0 ? f.a : 300);
                 const inside = me && !global.died && Math.hypot(me.renderx - f.x, me.rendery - f.y) < wr;
                 const thick = inside ? 0.55 : 1;
-                c.globalAlpha = 0.92 * fade * grow * thick;
-                c.fillStyle = "#3f394b";
-                c.beginPath(); c.arc(sx, sy, R * 0.82 * grow, 0, Math.PI * 2); c.fill();
+                c.globalAlpha = 0.9 * fade * grow * thick;
+                c.fillStyle = "#37304a";
+                c.beginPath(); c.arc(sx, sy, R * 0.78 * grow, 0, Math.PI * 2); c.fill();
+                const n = fewer() ? 9 : 20;
                 for (let k = 0; k < n; k++) {
-                    const q = k * PUFF_W;
-                    const d0 = P[q], a0 = P[q + 1], sz = P[q + 2], ph = P[q + 3], lit = P[q + 4], delay = P[q + 5];
-                    const app = Math.min(1, Math.max(0, (age - delay) / 380));
-                    if (app <= 0) continue;
-                    const a = a0 + spin;
-                    const amp = still ? 0 : R * 0.045;
-                    const dx = Math.cos(age / 1700 + ph) * amp, dy = Math.sin(age / 2100 + ph * 1.3) * amp;
-                    const d = d0 * R * (0.35 + 0.65 * grow) * (1 + out * 0.12);
-                    const r = sz * R * (0.45 + 0.55 * ease(app)) * (1 + (still ? 0 : 0.07 * Math.sin(age / 900 + ph * 2))) * (1 + out * 0.2);
-                    c.globalAlpha = (lit ? 0.85 : 0.97) * fade * app * thick;
-                    c.drawImage(lit ? light : dark, sx + Math.cos(a) * d + dx - r, sy + Math.sin(a) * d + dy - r, r * 2, r * 2);
+                    const ring = k < 6 ? 0.25 : k < 13 ? 0.6 : 0.88;
+                    const a = k * 2.399 + (still ? 0 : age / (k & 1 ? 5200 : -6100));
+                    const d = R * ring * grow;
+                    const r = R * (k < 6 ? 0.42 : 0.34) * (0.5 + 0.5 * grow) * (1 + (still ? 0 : 0.06 * Math.sin(age / 700 + k)));
+                    c.globalAlpha = (k < 6 ? 0.85 : 0.75) * fade * thick;
+                    c.fillStyle = k % 3 === 0 ? "#2e2837" : k % 3 === 1 ? "#433b50" : "#37304a";
+                    c.beginPath(); c.arc(sx + Math.cos(a) * d, sy + Math.sin(a) * d, r, 0, Math.PI * 2); c.fill();
                 }
-                c.globalAlpha = 0.22 * fade * grow;
+                c.globalAlpha = 0.18 * fade * grow;
                 c.strokeStyle = smokeFriend(f) ? SMOKE_TINT.friend : SMOKE_TINT.foe;
-                c.lineWidth = Math.max(2, 5 * ratio);
-                c.beginPath(); c.arc(sx, sy, R * grow * 0.98, 0, Math.PI * 2); c.stroke();
+                c.lineWidth = Math.max(2, 4 * ratio);
+                c.beginPath(); c.arc(sx, sy, R * 1.02 * grow, 0, Math.PI * 2); c.stroke();
                 break;
             }
             case "unsmoke": {
@@ -1326,7 +1377,8 @@ function aimValid(id, spot) {
 let aimCache = { x: NaN, y: NaN, ok: true };
 function drawPlacement(c, px, py, ratio, now) {
     const a = global.abilAim;
-    if (!a || global.died) return;
+    if (!a) return;
+    if (global.died) { cancelAim(); return; }
     const spot = aimSpot(ratio);
     if (!spot) return;
     const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
@@ -1382,8 +1434,10 @@ function drawPlacement(c, px, py, ratio, now) {
         c.lineWidth = Math.max(1.5, 3 * ratio); c.strokeStyle = col;
         c.beginPath(); c.arc(0, 0, (11 + 3 * pulse) * ratio, 0, Math.PI * 2); c.stroke();
     } else if (a.id === "wall" && !(plan && plan.g.length)) {
-        // waiting on the server's plan, or nothing to raise there (red): the band
-        const L = 240 * ratio, T = 95 * ratio;
+        // waiting on the server's plan, or nothing to raise there (red): the
+        // row of five cells it would fill
+        const tr = window.terrainRenderer, cs = (tr && tr._world && tr._world.s) || 110;
+        const L = cs * 2.5 * ratio, T = cs * 0.5 * ratio;
         c.globalAlpha = 0.5;
         c.setLineDash(BLAST_DASH);
         H.roundRectPath(c, -T, -L, T * 2, L * 2, T * 0.5);
@@ -1405,9 +1459,73 @@ function drawPlacement(c, px, py, ratio, now) {
         c.lineWidth = Math.max(1, 2 * ratio); c.strokeStyle = "#120e15"; c.stroke();
     }
     c.restore();
+    // aim mode (desktop): how to put it down or back out
+    if (a.mode === "click" && H) pill(c, sx, sy + 44, "Left click to place, right click or " + H.keyLabel("KEY_ABILITY", "Q") + " to cancel", 12, "#fff3d9");
 }
 const NO_DASH = [];
 const BLAST_DASH = [12, 10];
+
+// ── grapple art ─────────────────────────────────────────────────────────
+// A chain of oval links, alternating face-on and edge-on, with some slack
+// (0 = taut) that sags and wobbles.
+function drawChain(c, x0, y0, x1, y1, ratio, now, slack) {
+    const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy);
+    if (L < 4) return;
+    const ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+    const link = 11 * Math.max(0.6, ratio);
+    const n = Math.max(2, Math.min(60, Math.round(L / link)));
+    const sag = slack * Math.min(28, L * 0.07) * ratio;
+    const wob = calm() ? 0 : slack * 2.5 * ratio;
+    const ang = Math.atan2(dy, dx);
+    c.lineCap = "round";
+    for (let pass = 0; pass < 2; pass++) {
+        for (let q = 0; q < n; q++) {
+            const u = (q + 0.5) / n, s = Math.sin(Math.PI * u);
+            const off = s * sag + Math.sin(now / 45 + q * 1.3) * wob * s;
+            const lx = x0 + dx * u + nx * off, ly = y0 + dy * u + ny * off;
+            const face = (q & 1) === 0;
+            c.beginPath();
+            c.ellipse(lx, ly, link * 0.62, face ? link * 0.36 : link * 0.12, ang, 0, Math.PI * 2);
+            if (pass === 0) { c.lineWidth = Math.max(2.5, 4.6 * ratio); c.strokeStyle = "#120e15"; }
+            else { c.lineWidth = Math.max(1.2, 2.2 * ratio); c.strokeStyle = face ? "#c3cad6" : "#8a93a3"; }
+            c.stroke();
+        }
+    }
+}
+// The hook head: a bold three-pronged claw, iron with a highlight and an ink
+// rim, pointing along `ang`.
+function drawHookHead(c, x, y, ang, ratio) {
+    const k = Math.max(15, 24 * ratio);
+    c.save();
+    c.translate(x, y); c.rotate(ang);
+    c.lineJoin = "round"; c.lineCap = "round";
+    c.beginPath();
+    // shank
+    c.moveTo(-k * 0.95, -k * 0.2); c.lineTo(k * 0.55, -k * 0.22); c.lineTo(k * 0.55, k * 0.22); c.lineTo(-k * 0.95, k * 0.2); c.closePath();
+    // the middle prong, a spear point
+    c.moveTo(k * 0.45, -k * 0.3); c.lineTo(k * 1.7, 0); c.lineTo(k * 0.45, k * 0.3); c.closePath();
+    // the two thick curved side prongs, swept back to sharp tips
+    for (const sd of [-1, 1]) {
+        c.moveTo(k * 0.15, sd * k * 0.16);
+        c.quadraticCurveTo(k * 0.4, sd * k * 1.2, k * 1.4, sd * k * 1.08);
+        c.lineTo(k * 1.0, sd * k * 0.64);
+        c.quadraticCurveTo(k * 0.78, sd * k * 0.44, k * 0.58, sd * k * 0.22);
+        c.closePath();
+    }
+    c.lineWidth = Math.max(3.5, 5 * ratio); c.strokeStyle = "#120e15"; c.stroke();
+    c.fillStyle = "#8f98a8"; c.fill();
+    // highlight along the top edges
+    c.beginPath();
+    c.moveTo(-k * 0.8, -k * 0.09); c.lineTo(k * 0.45, -k * 0.11);
+    c.moveTo(k * 0.3, -k * 0.3); c.quadraticCurveTo(k * 0.5, -k * 1.02, k * 1.2, -k * 0.98);
+    c.moveTo(k * 0.7, -k * 0.12); c.lineTo(k * 1.45, -k * 0.03);
+    c.lineWidth = Math.max(1.2, 2 * ratio); c.strokeStyle = "#e3e8f0"; c.stroke();
+    // the eye
+    c.beginPath(); c.arc(-k * 1.25, 0, k * 0.34, 0, Math.PI * 2);
+    c.lineWidth = Math.max(3, 4.4 * ratio); c.strokeStyle = "#120e15"; c.stroke();
+    c.lineWidth = Math.max(1.5, 2.2 * ratio); c.strokeStyle = "#a7b0be"; c.stroke();
+    c.restore();
+}
 
 // ── Barricade preview ───────────────────────────────────────────────────
 // While it's aimed, the client asks the server ('ab', 3, x, y) which cells
@@ -1524,28 +1642,8 @@ function speedLines(c, ux, uy, k, now, col) {
     c.restore();
 }
 
-// smoke: each puff is (distance out of the radius, angle, size of the
-// radius, drift phase, lighter shade, delay before it shows), spread on a
-// sunflower pattern so the cloud is evenly filled and round
+// smoke: the canister's flight speed and the side tints
 const SMOKE_SPEED = 1.1;          // the canister, units per ms (abilities.js SMOKE.throwSpeed)
-const PUFF_W = 6;
-function smokePuffs(x, y, n) {
-    const P = new Float32Array(n * PUFF_W);
-    let h = ((x * 2654435761) ^ (y * 40503)) >>> 0 || 3;
-    const rnd = () => { h = (h * 1664525 + 1013904223) >>> 0; return h / 4294967296; };
-    const turn = rnd() * Math.PI * 2;
-    for (let k = 0; k < n; k++) {
-        const u = Math.sqrt((k + 0.5) / n);
-        const q = k * PUFF_W;
-        P[q] = u * 0.8 + (rnd() - 0.5) * 0.06;
-        P[q + 1] = turn + k * 2.39996 + (rnd() - 0.5) * 0.3;
-        P[q + 2] = (0.34 - 0.13 * u) * (0.85 + rnd() * 0.3);
-        P[q + 3] = rnd() * Math.PI * 2;
-        P[q + 4] = rnd() < 0.35 ? 1 : 0;
-        P[q + 5] = u * 260 + rnd() * 60;
-    }
-    return P;
-}
 // whose smoke: yours or a teammate's reads blue, anyone else's red
 function smokeFriend(f) {
     if (f.friend != null) return f.friend;
@@ -1797,7 +1895,7 @@ export function drawHud(c, anchor, mouse) {
         }
         if (mouse && mouse.x >= x && mouse.x <= x + sz && mouse.y >= y && mouse.y <= y + sz) {
             const item = id ? (global.shop.catalog || []).find(i => i.id === id) : null;
-            if (item) H.queueTip(item.name + "  ·  " + abKey, item.desc + (ownedCount() > 1 ? " Swap abilities with Equip in a shop." : ""), mx, y);
+            if (item) H.queueTip(item.name + "  ·  " + abKey, item.desc + (item.place ? " " + abKey + " to aim, then left click to place it." : "") + (ownedCount() > 1 ? " Swap abilities with Equip in a shop." : ""), mx, y);
             else H.queueTip("Ability  ·  " + abKey, "Shops sell abilities: grapple hooks, shockwaves, smoke and more. Yours for the whole raid.", mx, y);
         }
     }

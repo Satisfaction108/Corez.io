@@ -503,7 +503,7 @@ function pips() {
     return s;
 }
 function kitKeys() {
-    return kbd("KEY_KIT_1", "Z") + " " + kbd("KEY_KIT_2", "R") + " " + kbd("KEY_KIT_3", "N");
+    return kbd("KEY_KIT_1", "Z") + " " + kbd("KEY_KIT_2", ",") + " " + kbd("KEY_KIT_3", "N");
 }
 function content(t) {
     const base = { eyebrow: "First raid", pips: pips() };
@@ -553,8 +553,11 @@ function content(t) {
             if (ownsAbility()) {
                 const it = (sh.catalog || []).find(i => i.id === global.abil.eq);
                 const name = it ? "<b>" + it.name + "</b>" : "ability";
+                const aimed = !!(it && it.place);
                 return { ...base, title: "Use your ability",
-                    text: touch ? "Tap the ability button by your right thumb to fire your " + name + "." : "Press " + kbd("KEY_ABILITY", "Q") + " to fire your " + name + ". It aims at your mouse." };
+                    text: touch
+                        ? (aimed ? "Drag off the ability button by your right thumb to aim your " + name + ", lift to place it." : "Tap the ability button by your right thumb to fire your " + name + ".")
+                        : aimed ? "Press " + kbd("KEY_ABILITY", "Q") + " to aim your " + name + ", then left click to place it." : "Press " + kbd("KEY_ABILITY", "Q") + " to fire your " + name + ". It aims at your mouse." };
             }
             if (ownsKit()) {
                 return { ...base, title: "Use an ability",

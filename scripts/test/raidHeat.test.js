@@ -302,6 +302,54 @@ test('core: surfaces with the last storm in a cleared arena, off the pad, reacha
     assert.ok(Math.hypot(v.x - st.cx, v.y - st.cy) < st.r, 'vault inside the last circle');
 });
 
+test('core: it fights back as it breaks, every attack telegraphed; newcomers keep the boss mercy', () => {
+    const c = coreFinale.current();
+    assert.ok(c, 'the Core is up');
+    const p = global.gameManager.socketManager.players[0].body;
+    const fx = [];
+    coreFinale.attach({ humans: () => [p], fighters: () => [p], announce() {}, feed() {}, fxAt: (x, y, k, ...e) => fx.push([k, ...e]), toast() {}, payGems() {}, addPts() {}, callout() {} });
+    const place = () => { p.x = c.x + 300; p.y = c.y; p.velocity.x = 0; p.velocity.y = 0; p.invuln = false; p.spawnGraceUntil = 0; p.padSafe = false; p.botNewness = 0; p.botNewbie = false; p.health.amount = p.health.max; if (p.shield) p.shield.amount = 0; };
+    let t = Date.now() + 10_000;
+    // run the Core for `ms`; what it did (FX kinds) and the health p lost (share of max)
+    const run = (ms) => {
+        const t0 = fx.length, hp0 = p.health.amount;
+        for (let k = 0; k < ms; k += 33) { t += 33; place0(); coreFinale.tick(t, [p]); }
+        return { kinds: fx.slice(t0).map(f => f[0]), lost: (hp0 - p.health.amount) / p.health.max, fx: fx.slice(t0) };
+    };
+    // stand still next to it, full health each tick unless we are measuring
+    let keepFull = true;
+    const place0 = () => { const hp = p.health.amount; place(); if (!keepFull) p.health.amount = hp; };
+    keepFull = false;
+    coreFinale.debugHp(0.8);
+    place();
+    let r = run(9000);
+    assert.ok(r.kinds.includes('corecharge') && r.kinds.includes('corepulse'), 'a telegraphed shockwave: ' + r.kinds.join(','));
+    assert.ok(r.kinds.indexOf('corecharge') < r.kinds.indexOf('corepulse'), 'the warning comes first');
+    assert.ok(!r.kinds.includes('coreshard'), 'no shards above half');
+    assert.equal(r.lost, 0, 'healthy, the shockwave only shoves');
+    coreFinale.debugHp(0.4);
+    place();
+    r = run(3200);
+    assert.ok(r.kinds.includes('coreshard'), 'shards from half health: ' + r.kinds.join(','));
+    const charge = r.fx.findIndex(f => f[0] === 'corecharge' && f[2] === 0), shot = r.kinds.indexOf('coreshard');
+    assert.ok(charge >= 0 && charge < shot, 'shards are telegraphed too');
+    assert.ok(r.lost >= coreFinale.SHARD_DMG * 0.99, 'and they hurt: ' + r.lost.toFixed(3));
+    coreFinale.debugHp(0.2);
+    place();
+    r = run(9000);
+    const nShard = r.kinds.filter(k => k === 'coreshard').length;
+    assert.ok(nShard >= 4, 'faster below a quarter: ' + nShard);
+    assert.ok(r.lost > coreFinale.SHARD_RAGE_DMG * 2, 'it is dangerous now: ' + r.lost.toFixed(2));
+    // a brand new player: a share of it, and never the killing blow
+    place(); p.botNewness = 1; p.health.amount = p.health.max * 0.05;
+    const n0 = p.health.amount;
+    for (let k = 0; k < 9000; k += 33) { t += 33; p.x = c.x + 300; p.y = c.y; p.velocity.x = 0; p.velocity.y = 0; coreFinale.tick(t, [p]); }
+    assert.ok(p.health.amount >= 1 && !p.isDead(), 'a newcomer is never finished off by it: ' + p.health.amount);
+    assert.ok(p.health.amount < n0, 'but still takes some of it');
+    p.botNewness = 0; p.health.amount = p.health.max;
+    coreFinale.debugHp(1);
+});
+
 test('core: breaking it erupts exactly its gems and pays the last hit', () => {
     const c = coreFinale.current();
     const p = global.gameManager.socketManager.players[0].body;
@@ -329,7 +377,13 @@ test('core: breaking it erupts exactly its gems and pays the last hit', () => {
     // more players, more health and more gems, inside the caps
     assert.ok(coreFinale.healthFor(5, 1) > coreFinale.healthFor(1, 5));
     assert.equal(coreFinale.gemsFor(20, 0), 8000);
-    assert.equal(coreFinale.healthFor(30, 0), 180_000);
+    assert.equal(coreFinale.healthFor(30, 0), coreFinale.HP_MAX);
+    // ten times the old base; at ~1000 a second per human and ~400 per bot of
+    // focused fire, a full raid needs a minute and a half to two
+    const ttk = (h, b) => coreFinale.healthFor(h, b) / (1000 * h + 400 * b);
+    for (const h of [6, 10, 15, 20]) assert.ok(ttk(h, 0) >= 60 && ttk(h, 0) <= 125, h + ' humans: ' + ttk(h, 0).toFixed(0) + ' s');
+    assert.ok(ttk(1, 5) >= 60 && ttk(1, 5) <= 130, 'one player and five bots: ' + ttk(1, 5).toFixed(0) + ' s');
+    assert.ok(coreFinale.healthFor(1, 5) >= 10 * 51_000 * 0.7, 'about ten times harder');
     for (const e of entities.values()) if (e.isGemPickup) e.kill();
 });
 
@@ -557,7 +611,7 @@ test('resume: a reload keeps its team and colour, and drops back in on screen on
     tank.team = -4321;
     global.royaleTeamColors.set(-4321, 13);
     tank.color.base = 13;
-    tank.invuln = false; tank.carriedGems = 0;
+    tank.invuln = false; tank.carriedGems = 200;   // something to protect: it resumes in place
     royale.disconnectCleanup(sock, tank);
     tank.kill(); for (let i = 0; i < 2; i++) handler.gameloop();
     // while it waits nobody else is handed that colour
@@ -577,7 +631,8 @@ test('resume: a reload keeps its team and colour, and drops back in on screen on
     const fx = back.packets.filter(p => p[0] === 'FX' && p[3] === 'dropin');
     assert.equal(fx.length, 1, 'a drop is drawn');
     assert.equal(fx[0][7], 1, 'marked as just a picture');
-    assert.equal(fx[0][6], dropIn.FALL_MS.respawn);
+    assert.equal(fx[0][6], dropIn.FALL_MS.first, 'the full first fall, drawn');
+    assert.equal(fx[0][5], dropIn.CRATER_R);
     assert.equal(!!body.royaleFrozen, false, 'nothing held');
     assert.equal(dropIn.inAir(body), false);
     // the resume itself opens up rock that grew into the hull's spot; past
@@ -747,6 +802,29 @@ test('supply: a crowd round every player still gets a drop (the search widens), 
     assert.equal((supply.snapshot(t0 + 3500) || {}).s, 'soon', 'it came anyway');
     supply.reset();
     p.kill();
+});
+
+test('supply: a new drop never lands near another crate (900 away) or on a chest', () => {
+    const supply = require(path.join(SERVER, 'game', 'terrain', 'supplyDrops.js'));
+    const chests = require(path.join(SERVER, 'game', 'terrain', 'chests.js'));
+    storm.setCycles(3); storm.start();
+    supply.reset();
+    const p = player(-900, 600);
+    supply.attach({ humans: () => [p], fighters: () => [p], clients: () => [], idle: () => false, live: () => true,
+        raidAge: () => 60_000, announce() {}, compass: () => 'the west' });
+    // a crate already down right next to the player, and a chest the other side
+    const old = chests.spawnChest(p.x + 600, p.y, true, { exact: true, size: supply.CRATE_SIZE });
+    old.supplyDrop = true;
+    const chest = chests.spawnChest(p.x - 500, p.y, false, { exact: true });
+    for (let k = 0; k < 40; k++) {
+        const s = supply.pickSpot(Date.now());
+        assert.ok(s, 'still a spot');
+        assert.ok(Math.hypot(s.x - old.x, s.y - old.y) >= supply.CRATE_GAP, 'too near the other crate: ' + Math.hypot(s.x - old.x, s.y - old.y).toFixed(0));
+        assert.ok(Math.hypot(s.x - chest.x, s.y - chest.y) >= supply.CHEST_GAP, 'on a chest');
+    }
+    old.kill(); chest.kill(); p.kill();
+    for (let i = 0; i < 2; i++) handler.gameloop();
+    supply.reset();
 });
 
 test('supply: anyone on the landing spot is rolled off and warned, and nobody ends up inside the crate', () => {

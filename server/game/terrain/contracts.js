@@ -81,6 +81,13 @@ function dirWord(dx, dy) {
 }
 const d2 = (a, x, y) => (a.x - x) ** 2 + (a.y - y) ** 2;
 const alive = e => !!e && !(e.isDead && e.isDead()) && !e.isGhost;
+// a chest job's chest is still there: alive, in the world, on the chest list, unopened
+function chestValid(ch) {
+    if (!alive(ch) || ch._opened || ch._cleared) return false;
+    try { if (entities.get(ch.id) !== ch) return false; } catch { /* */ }
+    try { if (!mods().chests.alive().includes(ch)) return false; } catch { /* */ }
+    return true;
+}
 const round10 = n => Math.max(10, Math.round(n / 10) * 10);
 const round50 = n => Math.max(50, Math.round(n / 50) * 50);
 
@@ -280,7 +287,7 @@ const MAKERS = {
         const reach = fresh ? (plan === 'chest' ? 1900 : 1300) : 1700;
         let best = null, bs = Infinity;
         for (const c of chests.alive()) {
-            if (!c || c._opened) continue;
+            if (!chestValid(c)) continue;
             const d = Math.hypot(c.x - body.x, c.y - body.y);
             if (d > reach) continue;
             try { if (storm.inStorm(c.x, c.y, t)) continue; } catch { /* */ }
@@ -417,7 +424,7 @@ function update(c, body, t) {
         case 'chest': {
             const ch = c.ent;
             if (c.hit === 1) return 'done';
-            if (!ch || ch._opened || !alive(ch)) return 'Someone else got it';
+            if (!chestValid(ch)) return ch && ch._opened && !ch._retired && !ch._cleared ? 'Someone else got it' : 'The chest is gone';
             const max = (ch.health && ch.health.max) || 1;
             c.prog = Math.max(0, Math.min(0.99, 1 - ch.health.amount / max));
             break;
@@ -642,7 +649,7 @@ function snapshotFor(sock, body, t = Date.now()) {
     if (c.why) out.why = c.why;
     if (c.state === 0 && !c.noArrow) {
         const e = c.ent;
-        if (e && alive(e)) { out.x = Math.round(e.x); out.y = Math.round(e.y); out.e = e.id; }
+        if (e && (c.kind === 'chest' ? chestValid(e) : alive(e))) { out.x = Math.round(e.x); out.y = Math.round(e.y); out.e = e.id; }
         else if (c.target) { out.x = Math.round(c.target.x); out.y = Math.round(c.target.y); if (c.target.r) out.tr = Math.round(c.target.r); }
     }
     return out;

@@ -33,7 +33,8 @@
 const ON = process.env.ROYALE_ABILITIES !== '0';
 // one random ability for free on your first spawn of every raid
 const FREE_ON = process.env.ROYALE_FREE_ABILITY !== '0';
-const FREE_POOL = ['grapple', 'shock', 'pad', 'smoke', 'rush', 'burrow'];
+// only the showy ones; Radar, Burrow, Adrenaline and Barricade are shop-only
+const FREE_POOL = ['grapple', 'pad', 'shock', 'smoke'];
 
 const DASH = {
     charges: 2,
@@ -66,7 +67,9 @@ const ABILITIES = [
 ];
 const AB_BY_ID = new Map(ABILITIES.map(a => [a.id, a]));
 
-const GRAPPLE = { range: 910, step: 18, speed: 28, maxMs: 1400, missCdMs: 2500 };
+// The hook flies at flyPerMs (units per ms) and the yank starts when it
+// bites. A miss reels back in backMs and spends no cooldown, only missLockMs.
+const GRAPPLE = { range: 910, step: 18, speed: 28, maxMs: 1400, flyPerMs: 4, backMs: 250, missLockMs: 400 };
 // a channel: cooldown = cdBase + cdPerSec for every second spent down
 const BURROW = { maxMs: 10000, minMs: 600, speedMult: 0.75, cdBase: 45000, cdPerSec: 0, alpha: 0.6, surfaceR: 1.7 };
 // A thrown orb (throwSpeed units per ms) that blows where it lands, or on
@@ -82,7 +85,8 @@ const SHOCK = {
 };
 const RADAR = { radius: 2500, ms: 10000, everyMs: 500, carrier: 400 };
 // riseMs: how long the rock takes to come up
-const WALL = { halfLen: 240, thick: 95, max: 14, ms: 20000, riseMs: 320, gapMs: 12 };
+// count cells in a straight row across the aim line, centred on the spot
+const WALL = { count: 5, ms: 20000, riseMs: 300, gapMs: 20 };
 // thrown (throwSpeed units per ms); the cloud hides anyone standing in it
 // for cloudMs, except while they shoot (the thrower gets graceMs first)
 const SMOKE = { ms: 8000, cloudMs: 8000, radius: 300, graceMs: 1000, throwSpeed: 1.1 };
@@ -251,6 +255,8 @@ function startMotion(body, m) {
 }
 function applyMotion(body, m, t) {
     if (m.kind === 'fling') return applyFling(body, m);
+    // the hook is still in the air: nothing pulls yet
+    if (m.startAt && t < m.startAt) return true;
     let vx = m.vx, vy = m.vy;
     if (m.tx != null || m.follow) {
         const tx = m.follow ? m.follow.x : m.tx, ty = m.follow ? m.follow.y : m.ty;
@@ -272,6 +278,8 @@ function applyMotion(body, m, t) {
 function endMotion(body, keep = 0.45) {
     const m = body._abMove;
     body._abMove = null;
+    // the hook lets go (pulled in, its target gone, cut short): it reels back
+    if (m && m.kind === 'grapple') fx('hookend', body.x, body.y, 0, 0, body.id);
     if (!m || !body.velocity) return;
     if (BURSTS[m.kind] && body.PUSHABILITY != null) body.pushability = 1 * body.PUSHABILITY;
     // a little glide out of it, not a dead stop
@@ -284,7 +292,7 @@ function tickMotion(body, t) {
     if (!live(body) || t > m.until) { endMotion(body); return; }
     // started this very tick (a pad): nothing has moved yet. Bursts skip the
     // stall check: a hit from the front must not end a dash, rock still does
-    if (m.born !== tickNo && !BURSTS[m.kind]) {
+    if (m.born !== tickNo && !BURSTS[m.kind] && !(m.startAt && t < m.startAt + 70)) {
         const moved = Math.hypot(body.x - m.lastX, body.y - m.lastY);
         if (moved < Math.max(3, m.speed * 0.3)) { endMotion(body, 0.2); return; }
     }
@@ -412,20 +420,25 @@ function wallPlan(body, tx, ty) {
     if (!g || !g.rocks) return null;
     const P = placeAt(body, tx, ty, AB_BY_ID.get('wall').place);
     const ux = -P.dir.y, uy = P.dir.x;              // along the wall
-    const rockR = (g._voroRockSz || 1) * (g.cellSize || 100) * 0.62;
-    const near = tanks().filter(o => Math.hypot(o.x - P.x, o.y - P.y) < WALL.halfLen + 400);
-    const picks = [], blocked = [];
-    for (const rock of g.rocks.values()) {
-        if (!rock || rock.alive || rock.growing || rock.canyon || !rock.worldPoly) continue;
-        const rx = (rock.worldCx || rock.wx) - P.x, ry = (rock.worldCy || rock.wy) - P.y;
-        const along = rx * ux + ry * uy, across = rx * P.dir.x + ry * P.dir.y;
-        if (Math.abs(along) > WALL.halfLen || Math.abs(across) > WALL.thick) continue;
-        const wx = rx + P.x, wy = ry + P.y;
+    const size = (g._voroRockSz || 1) * (g.cellSize || 100);
+    const rockR = size * 0.62;
+    const near = tanks().filter(o => Math.hypot(o.x - P.x, o.y - P.y) < size * WALL.count + 400);
+    const cellAt = require('./spawnReach.js').cellAt;
+    const rise = [], blocked = [], seen = new Set();
+    // the cells under count points spaced a cell apart across the aim line
+    const half = (WALL.count - 1) / 2;
+    for (let k = 0; k < WALL.count; k++) {
+        const off = (k - half) * size;
+        let rock = cellAt(g, P.x + ux * off, P.y + uy * off);
+        if (rock && seen.has(rock.k)) rock = cellAt(g, P.x + ux * off * 1.15, P.y + uy * off * 1.15);
+        if (!rock || seen.has(rock.k)) continue;
+        seen.add(rock.k);
+        if (rock.alive || rock.growing || rock.canyon || !rock.worldPoly) continue;     // rock already, or never rock
+        const wx = rock.worldCx || rock.wx, wy = rock.worldCy || rock.wy;
         if (rock.chestLock || rock._chestHolds > 0 || near.some(o => Math.hypot(o.x - wx, o.y - wy) < rockR + radiusOf(o))) { blocked.push(rock); continue; }
-        picks.push({ rock, score: Math.abs(across) * 2 + Math.abs(along) * 0.2 });
+        rise.push(rock);
     }
-    picks.sort((p, q) => p.score - q.score);
-    return { x: P.x, y: P.y, ang: Math.atan2(P.dir.y, P.dir.x), rise: picks.slice(0, WALL.max).map(p => p.rock), blocked };
+    return { x: P.x, y: P.y, ang: Math.atan2(P.dir.y, P.dir.x), rise, blocked };
 }
 // ['ab', 3, x, y] while the Barricade is aimed: the plan, a few times a second
 function preview(socket, tx, ty) {
@@ -457,15 +470,17 @@ const USES = {
         }
         if (!hit) {
             fx('hookmiss', body.x, body.y, Math.atan2(dir.y, dir.x), GRAPPLE.range, body.id);
-            return { ok: true, cd: GRAPPLE.missCdMs, msg: "Missed. The hook comes back fast." };
+            // out and back, then it's ready again
+            return { ok: true, cd: 0, lock: Math.max(GRAPPLE.missLockMs, GRAPPLE.range / GRAPPLE.flyPerMs + GRAPPLE.backMs), msg: "" };
         }
         const t = now();
-        const m = { kind: 'grapple', speed: GRAPPLE.speed, until: t + GRAPPLE.maxMs, stop: r + 4 };
+        const dist0 = Math.hypot(hx - body.x, hy - body.y);
+        const bite = t + dist0 / GRAPPLE.flyPerMs;
+        const m = { kind: 'grapple', speed: GRAPPLE.speed, until: bite + GRAPPLE.maxMs, stop: r + 4, startAt: bite };
         if (hit === 'rock') { m.tx = hx; m.ty = hy; }
         else { m.follow = hit; m.stop = r + radiusOf(hit) + 8; }
         startMotion(body, m);
-        const dist = Math.hypot(hx - body.x, hy - body.y);
-        fx('hook', body.x, body.y, Math.atan2(dir.y, dir.x), dist, body.id);
+        fx('hook', body.x, body.y, Math.atan2(dir.y, dir.x), dist0, body.id);
         return { ok: true };
     },
 
@@ -703,7 +718,7 @@ function use(body, tx, ty, id) {
         const cd = res.cd != null ? res.cd : def.cd;
         st.cdLen = st.cdLen || {};
         if (cd > 0) { st.cd[id] = t + cd; st.cdLen[id] = cd; }
-        body._abCdUntil = t + 300;
+        body._abCdUntil = t + (res.lock || 300);
         dropShield(body);
         body.abilityUses = (body.abilityUses | 0) + 1;
         if (body.socket && body.socket._saving) { try { require('./saveCodes.js').interrupt(body.socket, "You used an ability, so the save stopped."); } catch { /* */ } }
@@ -1086,6 +1101,7 @@ function tickBody(body, t) {
     let more = false;
     if (!live(body)) {
         if (hidden.has(body)) unhideBody(body);
+        if (body._abMove) endMotion(body, 0);
         if (body.burrowUntil) endBurrow(body, t, true);
         return false;
     }

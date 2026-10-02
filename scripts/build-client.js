@@ -63,6 +63,7 @@ const HOT = new Set([
     "client/touch.js",
     "client/touchInput.js",
     "client/abilityFx.js",
+    "client/halloween.js",
     "client/account/cosmetics.js",
     "client/account/dustHud.js",
     "client/account/gameToasts.js",

@@ -27,7 +27,16 @@ let lastScheduleAt = 0;
 function storm() { return require('./storm.js'); }
 
 function alive() {
-    chests = chests.filter(c => c && !c.isDead?.() && !c.isGhost);
+    let gone = null;
+    for (const c of chests) {
+        // dead, or taken out of the world without dying (nothing should, but a
+        // chest nobody can see must not hold its cell or a contract forever)
+        if (!c || c.isDead?.() || c.isGhost || entities.get(c.id) !== c) (gone || (gone = [])).push(c);
+    }
+    if (gone) {
+        chests = chests.filter(c => !gone.includes(c));
+        for (const c of gone) if (c && !c._opened && !(c.isDead?.())) { c._opened = true; c._retired = true; try { onTaken(c); } catch { /* */ } }
+    }
     return chests;
 }
 
@@ -226,6 +235,9 @@ function pickCell(opts = {}) {
     if (!cells.length) return null;
     const near = opts.near || null;
     const pads = allPads();
+    // the Core's arena: it surfaces on top of whatever is there
+    let coreSite = null;
+    try { coreSite = require('./coreFinale.js').siteOf(); } catch { coreSite = null; }
     const tankList = tanks();
     const tight = [];
     for (let i = 0; i < 90; i++) {
@@ -235,6 +247,7 @@ function pickCell(opts = {}) {
         if (st && st.active !== false && !global.royaleFinal90 && Math.hypot(x - (st.cx || 0), y - (st.cy || 0)) > (st.r || 1000) * 0.85) continue;
         if (tg.circleRadius && Math.hypot(x, y) > tg.circleRadius - 180) continue;
         if (padsBlocked(x, y, 300, pads)) continue;
+        if (coreSite && (x - coreSite.x) ** 2 + (y - coreSite.y) ** 2 < CORE_KEEP * CORE_KEEP) continue;
         if (chestNear(x, y)) continue;
         if (tanksNear(x, y, near ? 120 : 380, tankList)) continue;
         if (!hasOpenSide(tg, rock)) continue;
@@ -250,6 +263,23 @@ function pickCell(opts = {}) {
     // keeps it
     for (const t of tight) if (carvePocket(tg, t.rock.wx, t.rock.wy)) { t.rock._exitPath = t.path; return t.rock; }
     return null;
+}
+
+const CORE_KEEP = 420;          // coreFinale ARENA_R plus the Core's hull and a margin
+
+// Something big came down on these chests (the Core surfacing): they go
+// without paying out, each one replaced elsewhere like a broken chest.
+function retireNear(x, y, r) {
+    let n = 0;
+    for (const c of alive()) {
+        if (c._opened || (c.x - x) ** 2 + (c.y - y) ** 2 > r * r) continue;
+        c._opened = true;
+        c._retired = true;
+        onTaken(c);
+        try { c.kill(); } catch { /* */ }
+        n++;
+    }
+    return n;
 }
 
 // Holds are counted so two chests sharing a corridor cell don't release it
@@ -533,13 +563,17 @@ function snapshot() {
 // kit item, in open ground inside the zone about `dist` from (x, y).
 const SUPPLY_GEMS = 400;
 function spawnSupplyDrop(x, y, dist = 700) {
+    // never near another supply crate (supplyDrops.js keeps the same gap)
+    const crates = alive().filter(c => c.supplyDrop && !c._opened);
+    const clear = (c) => c && !crates.some(o => (o.x - c.wx) ** 2 + (o.y - c.wy) ** 2 < 900 * 900);
     let cell = null;
-    for (const r of [dist, dist * 0.6, dist * 1.4]) {
+    for (const r of [dist, dist * 0.6, dist * 1.4, dist * 2]) {
         const a = Math.random() * Math.PI * 2;
         cell = pickCell({ near: { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, r: 520 } });
-        if (cell) break;
+        if (clear(cell)) break;
+        cell = null;
     }
-    if (!cell) cell = pickCell();
+    for (let i = 0; i < 4 && !cell; i++) { const c = pickCell(); if (clear(c)) cell = c; }
     if (!cell) return null;
     const o = spawnChest(cell.wx, cell.wy, true, { cell, gems: SUPPLY_GEMS, item: require('./shop.js').randomKitId() });
     if (o) o.supplyDrop = true;
@@ -569,4 +603,4 @@ function debugInfo() {
     return { alive: alive().length, queue: respawnQueue.length, total, dead, canyon, noPoly, locked, candidates: cells, pick: pick ? [Math.round(pick.wx), Math.round(pick.wy)] : null, lastSpawnErr: lastSpawnErr.slice(0, 300) };
 }
 
-module.exports = { ramDamage, spawnChest, spawnInCell, spawnSupplyDrop, SUPPLY_GEMS, openChest, tick, ensureNearSpawn, schedule, snapshot, clearAll, eruptGems, alive, WANT, RESPAWN_MS, debugInfo };
+module.exports = { CORE_KEEP, retireNear, ramDamage, spawnChest, spawnInCell, spawnSupplyDrop, SUPPLY_GEMS, openChest, tick, ensureNearSpawn, schedule, snapshot, clearAll, eruptGems, alive, WANT, RESPAWN_MS, debugInfo };

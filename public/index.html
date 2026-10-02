@@ -145,6 +145,22 @@
     <link rel="stylesheet" href="./font.css"/>
     <link rel="stylesheet" href="./main.css"/>
     <link rel="stylesheet" href="./home.css"/>
+    <!-- Halloween skin for the menu, Oct 1 to Nov 2 (local date). Test with
+         ?halloween=1 or 0 (remembered), ?halloween=auto goes back to the dates.
+         To retire it: this block, halloween.css, client/halloween.js and its tag. -->
+    <link rel="stylesheet" href="./halloween.css"/>
+    <script>
+    (function () {
+        var d = new Date(), on = d.getMonth() === 9 || (d.getMonth() === 10 && d.getDate() <= 2);
+        try {
+            var q = /[?&]halloween=(1|0|auto)\b/.exec(location.search);
+            if (q) { if (q[1] === 'auto') localStorage.removeItem('dwHalloween'); else localStorage.setItem('dwHalloween', q[1]); }
+            var v = localStorage.getItem('dwHalloween');
+            if (v === '1' || v === '0') on = v === '1';
+        } catch (e) { /* no storage: dates only */ }
+        if (on) document.documentElement.className += ' dw-halloween';
+    })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/img/logo.svg">
     <meta name="msapplication-TileColor" content="#0d0d14">
     <meta name="theme-color" content="#0d0d14">
@@ -435,7 +451,7 @@
                     <div class="kb-row"><b data-key="KEY_REVERSE_TANK">V</b><span>Reverse Tank</span></div>
                     <div class="kb-row"><b data-key="KEY_REVERSE_MOUSE">B</b><span>Reverse Mouse</span></div>
                     <div class="kb-row"><b data-key="KEY_AUTO_ALT">G</b><span>Ping for your teammate (duos)</span></div>
-                    <div class="kb-row"><b data-key="KEY_OVER_RIDE">-</b><span>AI Override</span></div>
+                    <div class="kb-row"><b data-key="KEY_OVER_RIDE">R</b><span>AI Override</span></div>
                     <div class="kb-row"><b data-key="KEY_SUICIDE">O</b><span>Self-Destruct</span></div>
                     <div class="kb-row"><b data-key="KEY_MAX_STAT">F</b><span>Maximize Stat</span></div>
                     <div class="kb-row"><b data-key="KEY_CLASS_TREE">T</b><span>Class Tree</span></div>
@@ -460,14 +476,14 @@
                     <div class="kb-row"><b data-key="KEY_UPGRADE_MIN">-</b><span>Mining Power</span></div>
                     <div class="kb-section" style="grid-column:span 2">Kit</div>
                     <div class="kb-row"><b data-key="KEY_KIT_1">Z</b><span>Kit Slot 1</span></div>
-                    <div class="kb-row"><b data-key="KEY_KIT_2">R</b><span>Kit Slot 2</span></div>
+                    <div class="kb-row"><b data-key="KEY_KIT_2">,</b><span>Kit Slot 2</span></div>
                     <div class="kb-row"><b data-key="KEY_KIT_3">N</b><span>Kit Slot 3</span></div>
                     <div class="kb-section" style="grid-column:span 2">Other</div>
                     <div class="kb-row"><b data-key="KEY_TOKEN">-</b><span>Token Tank*</span></div>
                     <div class="kb-row"><b data-key="KEY_RECORD">P</b><span>Record</span></div>
                     <div class="kb-row"><b data-key="KEY_TOGGLE_MAP">M</b><span>Full Map</span></div>
                     <div class="kb-row"><b data-key="KEY_SAVE">L</b><span>Save &amp; Leave</span></div>
-                    <div class="kb-row"><b data-key="KEY_SCREENSHOT">F9</b><span>Screenshot</span></div>
+                    <div class="kb-row"><b data-key="KEY_SCREENSHOT">.</b><span>Screenshot</span></div>
                     <div class="kb-row"><b data-key="KEY_PARTY_ACCEPT">F2</b><span>Join Duo Invite</span></div>
                 </div>
                 <p class="kb-note">* Requires token &middot; Click a key to rebind</p>
@@ -593,15 +609,15 @@
                                         <tr><td><div><b data-key="KEY_AUTO_FIRE">E</b><span> - </span>auto-fire</div></td><td><div><b data-key="KEY_AUTO_SPIN">C</b><span> - </span>auto-spin</div></td><td><div><b data-key="KEY_SIDEARM">X</b><span> - </span>fire sidearm</div></td></tr>
                                         <tr><td><div><b data-key="KEY_DASH">Shift</b><span> - </span>dash</div></td><td><div><b data-key="KEY_REVERSE_TANK">V</b><span> - </span>reverse tank</div></td><td><div><b data-key="KEY_REVERSE_MOUSE">B</b><span> - </span>reverse mouse</div></td></tr>
                                         <tr><td><div><b data-key="KEY_AUTO_ALT">G</b><span> - </span>ping</div></td><td><div><b data-key="KEY_SUICIDE">O</b><span> - </span>self-destruct</div></td><td><div><b data-key="KEY_CLASS_TREE">T</b><span> - </span>show class tree</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_OVER_RIDE">-</b><span> - </span>AI override</div></td><td><div><b data-key="KEY_MAX_STAT">F</b><span> - </span>maximize stat</div></td><td><div><b data-key="KEY_TOGGLE_MAP">M</b><span> - </span>full map</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_TOKEN">-</b><span> - </span>token tank*</div></td><td><div><b data-key="KEY_RECORD">P</b><span> - </span>record video</div></td><td><div><b data-key="KEY_SCREENSHOT">F9</b><span> - </span>screenshot</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_OVER_RIDE">R</b><span> - </span>AI override</div></td><td><div><b data-key="KEY_MAX_STAT">F</b><span> - </span>maximize stat</div></td><td><div><b data-key="KEY_TOGGLE_MAP">M</b><span> - </span>full map</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_TOKEN">-</b><span> - </span>token tank*</div></td><td><div><b data-key="KEY_RECORD">P</b><span> - </span>record video</div></td><td><div><b data-key="KEY_SCREENSHOT">.</b><span> - </span>screenshot</div></td></tr>
                                         <tr><td><div><b data-key="KEY_CHOOSE_1">Y</b><span> - </span>upgrade 1</div></td><td><div><b data-key="KEY_CHOOSE_2">U</b><span> - </span>upgrade 2</div></td><td><div><b data-key="KEY_CHOOSE_3">I</b><span> - </span>upgrade 3</div></td></tr>
                                         <tr><td><div><b data-key="KEY_CHOOSE_4">H</b><span> - </span>upgrade 4</div></td><td><div><b data-key="KEY_CHOOSE_5">J</b><span> - </span>upgrade 5</div></td><td><div><b data-key="KEY_CHOOSE_6">K</b><span> - </span>upgrade 6</div></td></tr>
                                         <tr><td><div><b data-key="KEY_UPGRADE_ATK">1</b><span> - </span>skill 1</div></td><td><div><b data-key="KEY_UPGRADE_HTL">2</b><span> - </span>skill 2</div></td><td><div><b data-key="KEY_UPGRADE_SPD">3</b><span> - </span>skill 3</div></td></tr>
                                         <tr><td><div><b data-key="KEY_UPGRADE_STR">4</b><span> - </span>skill 4</div></td><td><div><b data-key="KEY_UPGRADE_PEN">5</b><span> - </span>skill 5</div></td><td><div><b data-key="KEY_UPGRADE_DAM">6</b><span> - </span>skill 6</div></td></tr>
                                         <tr><td><div><b data-key="KEY_UPGRADE_RLD">7</b><span> - </span>skill 7</div></td><td><div><b data-key="KEY_UPGRADE_MOB">8</b><span> - </span>skill 8</div></td><td><div><b data-key="KEY_UPGRADE_RGN">9</b><span> - </span>skill 9</div></td></tr>
                                         <tr><td><div><b data-key="KEY_UPGRADE_MIN">-</b><span> - </span>mining power</div></td><td><div><b data-key="KEY_UPGRADE_SHI">0</b><span> - </span>skill 0</div></td><td><div><b data-key="KEY_FRIEND_CHAT">Esc</b><span> - </span>friend chat</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_KIT_1">Z</b><span> - </span>kit slot 1</div></td><td><div><b data-key="KEY_KIT_2">R</b><span> - </span>kit slot 2</div></td><td><div><b data-key="KEY_KIT_3">N</b><span> - </span>kit slot 3</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_KIT_1">Z</b><span> - </span>kit slot 1</div></td><td><div><b data-key="KEY_KIT_2">,</b><span> - </span>kit slot 2</div></td><td><div><b data-key="KEY_KIT_3">N</b><span> - </span>kit slot 3</div></td></tr>
                                         <tr><td><div><b data-key="KEY_ABILITY">Q</b><span> - </span>ability</div></td><td><div></div></td><td><div></div></td></tr>
                                     </tbody></table>
                                 </div>
@@ -672,6 +688,7 @@
     <script type="module" src="./client/socketinit.js"></script>
     <script type="module" src="./client/color.js"></script>
     <script type="module" src="./client/serverSelectorHandler.js"></script>
+    <script src="./client/halloween.js"></script>
     <script src="./client/home.js"></script>
     <script type="module" src="./client/account/main.js"></script>
     <script type="module" src="./client/version.js"></script>

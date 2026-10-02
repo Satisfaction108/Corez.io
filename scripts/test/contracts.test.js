@@ -13,6 +13,8 @@
 //              with one callout; the card counts down the 30 s breather and
 //              the next one rolls after it
 //   chest      cracking the contract's chest in the game loop completes it
+//   chest gone a chest that leaves any other way (under the Core, destroyed,
+//              unlisted) ends the job and drops the marker
 //   expiry     a job that runs out is marked missed and a new one rolls after
 //              the breather
 //   zone       the safe-zone job is never offered to someone already safe (the
@@ -325,6 +327,43 @@ test('chest: cracking the contract chest in the game loop completes it and pays 
     assert.equal(c2.why, 'Someone else got it');
     assert.equal(kc(tank.socket, 'contract').length, 1, 'no second payout');
     remove(tank, thief);
+    clearWorld();
+});
+
+test('chest gone: a chest that leaves the world any other way ends the job and its marker', () => {
+    clearWorld();
+    const tank = spawnTank(0, nextY += 2000);
+    const coreFinale = T('coreFinale.js');
+    // three ways a chest can go without being cracked: retired under the Core,
+    // taken off the world without dying, dropped from the chest list
+    const ways = [
+        ['core', (ch) => chests.retireNear(ch.x, ch.y, 50)],
+        ['destroyed', (ch) => { entities.delete(ch.id); }],
+        ['unlisted', (ch) => { ch._cleared = true; }],
+    ];
+    let t = Date.now();
+    for (const [why, gone] of ways) {
+        tank.socket.contractNextAt = 0;
+        tank.socket.contract = null;
+        const chest = chests.spawnChest(tank.x + 450, tank.y, false, { item: null });
+        chest.alwaysActive = true;
+        t = settle(tank, t + 3000);
+        const c = tank.socket.contract;
+        assert.equal(c.kind, 'chest', why);
+        assert.equal(contracts.snapshotFor(tank.socket, tank, t).e, chest.id, why + ': points at it');
+        gone(chest);
+        // no marker the moment it's gone, the job ends on the next pass
+        const snap = contracts.snapshotFor(tank.socket, tank, t);
+        assert.equal(snap.e, undefined, why + ': no marker on a missing chest');
+        at(t += 300);
+        assert.equal(c.state, 2, why + ': the job ends');
+        assert.equal(c.why, 'The chest is gone', why);
+        try { if (entities.has(chest.id)) chest.kill(); } catch { /* */ }
+        loop(2);
+    }
+    // the Core never surfaces on a chest: its arena is kept clear of them
+    assert.ok(chests.CORE_KEEP >= coreFinale.ARENA_R + 100);
+    remove(tank);
     clearWorld();
 });
 

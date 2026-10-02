@@ -444,9 +444,10 @@ function callout(body, kind, text, pts, sub, dur) {
     } catch { /* */ }
 }
 
-function fxAt(x, y, kind) {
+// extra fields ride along (the Core's telegraph: how long, which attack)
+function fxAt(x, y, kind, ...extra) {
     for (const client of connectedClients()) {
-        try { client.talk('FX', Math.round(x), Math.round(y), String(kind)); } catch { /* */ }
+        try { client.talk('FX', Math.round(x), Math.round(y), String(kind), ...extra); } catch { /* */ }
     }
 }
 
@@ -528,7 +529,7 @@ coreFinale.attach({
     humans, fighters: () => combatants(),
     announce: announceAll,
     feed: (entry) => pushFeed(entry),
-    fxAt: (x, y, kind) => fxAt(x, y, kind),
+    fxAt: (x, y, kind, ...extra) => fxAt(x, y, kind, ...extra),
     toast: (text, ms) => setToastAndSay(text, ms),
     payGems: (body, n) => payGems(body, n),
     addPts,
@@ -1025,13 +1026,13 @@ function spawnAudit(spot, forBot, kind, res) {
     } catch (e) { guardLog('spawn audit', e); }
 }
 
-function giveStarterKit(body, isRespawn) {
+function giveStarterKit(body, isRespawn, noStarter = false) {
     if (!body) return;
     try { gems.initSatchel(body); } catch { /* */ }
     const bonus = body.socket ? ((body.socket.raidBonus || 0) | 0) : 0;
     if (body.socket) body.socket.raidBonus = 0;
     const starter = raidMods.num('starterGems', STARTER_GEMS);
-    const grant = (isRespawn ? 0 : starter) + bonus;
+    const grant = (isRespawn || noStarter ? 0 : starter) + bonus;
     body.carriedGems = Math.max(body.carriedGems | 0, grant);
     try { gems.updateSatchel(body); gems.talkGems(body, grant); } catch { /* */ }
     // twist grants: what everyone starts this cycle with
@@ -1854,6 +1855,12 @@ function onHumanJoin(body) {
         }
     } catch { /* */ }
     const isRespawn = !!(body.socket && body.socket.lastRaidDeathAt);
+    // a reload: `keepSpot` puts the tank back where it was (something to
+    // protect, see saveResume); a `fresh` one drops in somewhere new like a
+    // spawn, without a new life, starter gems or a reset idle clock
+    const resumeSnap = (body.socket && body.socket._resume) || null;
+    const keepSpot = !!(resumeSnap && resumeSnap.alive);
+    const freshDrop = !!(resumeSnap && resumeSnap.fresh);
     // the first spawn on this socket brings the persistent bank in (a resume
     // brought its own in the snapshot)
     let bankIn = 0;
@@ -1864,7 +1871,7 @@ function onHumanJoin(body) {
     // beats the base (which is shared anyway) and a random safe spot
     let mateSpawn = false;
     if (Config.royale_duos) duo.watchHits(body);
-    if (Config.royale_duos && !(body.socket && body.socket._resume)) {
+    if (Config.royale_duos && !keepSpot) {
         const mate = duo.mateBody(body);
         // just teamed up from the fill queue: right beside them, fight or not
         const loose = !!(body.socket && body.socket._duoNearMate);
@@ -1891,11 +1898,11 @@ function onHumanJoin(body) {
     if (!homeSpawn && !mateSpawn) {
         // a new player who has not banked yet lands near a vault (dropIn.js)
         let near = null;
-        if (body.socket && !body.socket._resume && isNewPlayer(body.socket, body) && !hunted.bankedThisRaid(body)) {
+        if (body.socket && !keepSpot && isNewPlayer(body.socket, body) && !hunted.bankedThisRaid(body)) {
             try { near = dropIn.vaultSpot(body, combatants()); } catch (e) { guardLog('first vault spot', e); }
         }
         // everyone else: near the action if there's a good spot (dropIn.js)
-        if (!near && body.socket && !body.socket._resume && !isNewPlayer(body.socket, body)) {
+        if (!near && body.socket && !keepSpot && !isNewPlayer(body.socket, body)) {
             try { near = dropIn.actionSpot(body, combatants()); } catch (e) { guardLog('action spot', e); }
         }
         const hole = near || safeSpawnSpot(body);
@@ -1915,11 +1922,13 @@ function onHumanJoin(body) {
     keepOnMap(body);
     freshRaidBody(body);
     // a resumed player already had their starter kit: no second one
-    const resuming = !!(body.socket && body.socket._resume);
-    if (!resuming) giveStarterKit(body, isRespawn);
+    const resuming = keepSpot;
+    if (!resuming) giveStarterKit(body, isRespawn, freshDrop);
     // the meteor landing: rock smashed around you, gems on your first drop
-    if (!resuming) guard('drop in', () => dropIn.land(body, dropIn.spillFor(!isRespawn, !!body.socket && isNewPlayer(body.socket, body))));
-    if (!resuming && body.socket) activity.resetClock(body.socket, now());
+    // (a fresh reload drop gets the big fall and crater, but no ore seeded)
+    if (!resuming) guard('drop in', () => freshDrop ? dropIn.land(body, 0, now(), { big: true })
+        : dropIn.land(body, dropIn.spillFor(!isRespawn, !!body.socket && isNewPlayer(body.socket, body))));
+    if (!resumeSnap && body.socket) activity.resetClock(body.socket, now());
     try { shop.applyPassives(body); } catch { /* */ }
     // full dash charges every life, and the HUD hears about the ability slot
     guard('abilities spawn', () => require('../../terrain/abilities.js').onSpawn(body));
@@ -1942,7 +1951,7 @@ function onHumanJoin(body) {
         if (bankIn > 0) {
             try { body.sendMessage("You brought " + bankIn.toLocaleString('en-US') + " banked gems with you. Spend them at a shop. Only gems you bank this raid count for score."); } catch { /* */ }
         }
-        if (!isRespawn && !resuming) {
+        if (!isRespawn && !resumeSnap) {
             try { chests.ensureNearSpawn(body); } catch { /* */ }
             const mod = raidMods.get();
             try {
@@ -1952,7 +1961,7 @@ function onHumanJoin(body) {
         }
         try { shop.talkState(body.socket); } catch { /* */ }
         // this life counts toward "new player" from the next spawn on
-        if (!resuming) body.socket._royaleLives = (body.socket._royaleLives | 0) + 1;
+        if (!resumeSnap) body.socket._royaleLives = (body.socket._royaleLives | 0) + 1;
         body._lifeCounted = true;
         try { lateJoinNote(body); } catch { /* */ }
         // the resume itself waits for sockets.initalizePlayer to finish the
@@ -1972,6 +1981,14 @@ function onHumanJoin(body) {
 const RESUME_MS = (process.env.ROYALE_DEBUG && parseInt(process.env.ROYALE_RESUME_MS, 10) > 0)
     ? parseInt(process.env.ROYALE_RESUME_MS, 10) : 45_000;
 const RESUME_SAFE_MS = 8000;
+// A reload only keeps the tank where it was when there's something to
+// protect: this many gems carried on top of the starter gems everyone drops
+// in with, a fight in the last RESUME_COMBAT_MS (hurt
+// or hurting), or a hunted mark. Otherwise it's a fresh drop somewhere new
+// (same build, bank, shop and raid), which also stops the "always the same
+// spot" reload.
+const RESUME_KEEP_GEMS = 50;
+const RESUME_COMBAT_MS = 10_000;
 const resumeStore = new Map();
 // Keyed by the tab's token only. A resume is for a real drop: the same tab
 // reconnecting (or reloading) within the window. Another tab, going to the
@@ -2063,6 +2080,10 @@ function saveResume(socket, body) {
         carried: 0,
     };
     if (alive) {
+        const lastFight = Math.max(body._lastDamageAt || 0, body.hitAt || 0, body._dealtAt || 0);
+        const keepGems = raidMods.num('starterGems', STARTER_GEMS) + RESUME_KEEP_GEMS;
+        const keep = (body.carriedGems | 0) >= keepGems || t - lastFight < RESUME_COMBAT_MS || (body.huntedLevel | 0) > 0;
+        if (!keep) { snap.alive = false; snap.fresh = true; }
         snap.x = body.x; snap.y = body.y;
         snap.defs = (body.defs || []).slice();
         snap.skillRaw = body.skill ? body.skill.raw.slice() : null;
@@ -2079,7 +2100,7 @@ function saveResume(socket, body) {
         snap.botSoftLeft = Math.max(0, (body.botSoftUntil || 0) - t);
         snap.botNewbie = !!body.botNewbie;
         snap.growEff = body._growEff || 0;
-        if (hitAgo > RESUME_SAFE_MS) {
+        if (hitAgo > RESUME_SAFE_MS || snap.fresh) {
             snap.carried = (body.carriedGems | 0);
             body.carriedGems = 0;     // kept for the resume, so it must not also drop
             // its gemdust goes with it
@@ -2157,7 +2178,7 @@ function applyPendingResume(socket) {
 function applyResume(body, snap) {
     const socket = body.socket;
     try {
-        if (snap.alive && snap.defs && snap.defs.length) {
+        if ((snap.alive || snap.fresh) && snap.defs && snap.defs.length) {
             // define() appends to the upgrade menu and the fresh body is
             // already the spawn class: clear it, or the resumed tank is offered
             // the spawn class's tree again (entity.upgrade() does the same)
@@ -2169,6 +2190,8 @@ function applyResume(body, snap) {
             if (body.syncSkillsToGuns) body.syncSkillsToGuns();
             // a reload is not a respawn: the size comes back as it was
             if (snap.growEff > 0) guard('growth resume', () => growth.onSpawn(body, growthScore(body), snap.growEff));
+        }
+        if (snap.alive && snap.defs && snap.defs.length) {
             // back where you were, but not back into the storm (you keep the
             // fresh spawn then)
             let inStorm = false;
@@ -2187,13 +2210,21 @@ function applyResume(body, snap) {
             body.carriedGems = snap.carried | 0;
             try { dustHooks.restore(body, snap.dustCarried | 0); } catch { /* */ }
             try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
+        }
+        if (snap.fresh) {
+            // dropped somewhere new: the few gems it carried come along
+            body.carriedGems = Math.max(body.carriedGems | 0, snap.carried | 0);
+            try { dustHooks.restore(body, snap.dustCarried | 0); } catch { /* */ }
+            try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
+        }
+        if (snap.alive || snap.fresh) {
             const st = shop.stateOf(socket);
             if (st && st.arm) { try { shop.attachSidearm(body, st.arm); } catch { /* */ } }
         }
         body.bankedGems = socket.gemBanked || 0;
         try { shop.applyPassives(body); shop.talkState(socket); gems.talkGems(body, 0); } catch { /* */ }
         ensureStat(body);
-        try { body.sendMessage("Reconnected. Your raid picked up where you left off."); } catch { /* */ }
+        try { body.sendMessage(snap.fresh ? "Reconnected. You dropped back in somewhere new." : "Reconnected. Your raid picked up where you left off."); } catch { /* */ }
         // drop back in from the sky: drawn only, nothing held, smashed or reset
         if (snap.alive) guard('resume drop', () => dropIn.visual(body));
         if (process.env.RESUME_DEBUG) console.log('[RESUME] applied: banked', socket.gemBanked | 0, 'carried', body.carriedGems | 0, 'drill', (shop.stateOf(socket) || {}).drill, 'class', (body.defs || []).join('/'), 'raw', body.skill.raw.join(','), 'pts', body.skill.points, 'pos', Math.round(body.x) + ',' + Math.round(body.y), 'was', Math.round(snap.x) + ',' + Math.round(snap.y));
@@ -3157,6 +3188,13 @@ try {
 // (ranked damage points; rank-only, not on the board)
 global.royaleOnPlayerDamage = (victim, dealt, inflictors) => {
     if (!Config.dig_royale || raidEnding) return;
+    // hurting someone counts as a fight for the reload rule (saveResume)
+    const tNow = Date.now();
+    for (const src of inflictors || []) {
+        let root = src, hops = 0;
+        while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+        if (root && root !== victim && (root.isPlayer || root.isBot)) root._dealtAt = tNow;
+    }
     try { rankHooks.onPlayerDamaged(victim, dealt, inflictors); } catch (e) { guardLog('rank damage', e); }
 };
 

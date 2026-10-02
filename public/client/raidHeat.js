@@ -52,7 +52,7 @@ const GOLD = "#f2b83c";
 const EMERALD = "#3fcf7a";
 const ORANGE = "#ff8a3a";
 const PULSE_R = 620;               // coreFinale.js PULSE_R
-const SHARD_MS = 450;              // coreFinale.js SHARD_FLIGHT_MS
+const SHARD_MS = 650;              // coreFinale.js SHARD_FLIGHT_MS (the FX carries it)
 const calm = () => !!(global.reducedMotion && global.reducedMotion());
 const lite = () => !!config.graphical.fewerEffects;
 const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
@@ -62,6 +62,7 @@ const S = {
     huntSrc: null, huntById: new Map(), mine: 0, hunters: 0,
     threat: 0, threatAt: 0, lowHp: 0, me: null,
     core: null, coreSeen: 0, coreCracks: null, coreCrackId: -1, coreLastHp: 1, coreHitAt: 0,
+    chargeAt: -1e9, chargeMs: 900, chargePulse: false,
     downAt: 0, downX: 0, downY: 0,
     safeAt: 0, huntedAt: 0, coreUpAt: 0,
     raidId: 0, banked: 0, depStart: -1, doneAt: 0, firstBank: false,
@@ -75,7 +76,7 @@ const hitCracks = [JM.crackPaths(913, 4, 3, 1), JM.crackPaths(331, 5, 3, 1), JM.
 // fixed pools for the short-lived world bits
 const mk = (n, f) => { const a = []; for (let i = 0; i < n; i++) a.push(f()); return a; };
 const pulses = mk(4, () => ({ born: -1e9, x: 0, y: 0 }));
-const shards = mk(10, () => ({ born: -1e9, x: 0, y: 0, fx: 0, fy: 0, hit: false }));
+const shards = mk(10, () => ({ born: -1e9, x: 0, y: 0, fx: 0, fy: 0, hit: false, ms: SHARD_MS }));
 let pulseI = 0, shardI = 0;
 const ring = (x, y, col, r0, r1, dur, w) => juice.ring(x, y, col, r0, r1, dur, w);
 
@@ -230,10 +231,15 @@ export function onFX(kind, x, y, extra, extra2, extra3, extra4) {
         case "coreshard": {
             const c = S.core;
             const s = shards[shardI]; shardI = (shardI + 1) % shards.length;
-            s.born = now; s.x = x; s.y = y; s.hit = false;
+            s.born = now; s.x = x; s.y = y; s.hit = false; s.ms = (extra | 0) > 0 ? extra | 0 : SHARD_MS;
             s.fx = c ? c.x : x; s.fy = c ? c.y : y;
             return true;
         }
+        case "corecharge":
+            // the Core winding up an attack: extra = ms until it goes, extra2 1 = shockwave
+            S.chargeAt = now; S.chargeMs = Math.max(200, extra | 0); S.chargePulse = (extra2 | 0) === 1;
+            if (near(x, y, 1200)) { try { if (gameSound.uiClick) gameSound.uiClick(); } catch (e) { /* */ } }
+            return true;
         case "coredead":
             S.downAt = now; S.downX = x; S.downY = y;
             ring(x, y, "#ffffff", 30, 1300, 1200, 18);
@@ -424,7 +430,7 @@ function frame(now) {
         if (S.mine) juice.ambient(0.18 + 0.12 * S.mine + 0.35 * S.threat);
         if (S.lowHp) juice.ambient(0.3 + 0.6 * S.lowHp);
         const c = S.core;
-        if (c && c.s === "up" && near(c.x, c.y, 1100)) juice.ambient(c.hp < 0.3 ? 0.4 : 0.15);
+        if (c && c.s === "up" && near(c.x, c.y, 1100)) juice.ambient(c.hp < 0.5 ? 0.4 : 0.15);
         const st = r && r.storm;
         if (st && st.a && st.r > 0) {
             const d = Math.hypot(global.player.renderx - (st.cx || 0), global.player.rendery - (st.cy || 0));
@@ -505,14 +511,14 @@ export function drawFloor(c, px, py, ratio) {
     const charge = left < 900 ? 1 - left / 900 : 0;
     c.save();
     if (juice.glowOn() && A && A.haloSprite) {
-        const hot = core.hp < 0.3;
+        const hot = core.hp < 0.5;
         const hr = (core.r * 3.2 + 60 * charge) * ratio;
         c.globalAlpha = 0.35 + 0.35 * charge + (calm() ? 0 : 0.06 * Math.sin(now / 300));
         c.drawImage(A.haloSprite(hot ? "coreHot" : "core", hot ? "255,90,216" : CORE_RGB, [[0, 0.9], [0.45, 0.35], [1, 0]]), sx - hr, sy - hr, hr * 2, hr * 2);
     }
     // where the shockwave reaches
     c.globalAlpha = 0.18 + 0.4 * charge;
-    c.strokeStyle = core.hp < 0.3 ? CORE_HOT : CORE;
+    c.strokeStyle = core.hp < 0.5 ? CORE_HOT : CORE;
     c.lineWidth = Math.max(1.5, 3 * ratio);
     DASH[0] = 18 * ratio; DASH[1] = 14 * ratio;
     c.setLineDash(DASH);
@@ -582,22 +588,35 @@ export function isCoreEntity(e) {
     e._isCore = yes;
     return yes;
 }
+// A geode fracture, in units of the Core's radius, fixed per Core: six main
+// cracks from the heart out to the shell between the spikes, each forking
+// once, and a ring crack joining them. Stage 1 (25% down) the inner halves,
+// 2 (50%) to the shell with the forks, 3 (75%) the ring.
 function crackSet(id) {
     if (S.coreCrackId === id && S.coreCracks) return S.coreCracks;
     S.coreCrackId = id;
-    const out = [];
-    for (let i = 0; i < 12; i++) {
-        let a = JM.hash01(id, i) * TAU, rr = 0.12;
-        const pts = [Math.cos(a) * rr, Math.sin(a) * rr];
-        for (let k = 0; k < 4; k++) {
-            a += (JM.hash01(id + k, i * 5) - 0.5) * 0.9;
-            rr += 0.18 + 0.12 * JM.hash01(id, i * 7 + k);
-            pts.push(Math.cos(a) * rr, Math.sin(a) * rr);
+    const rays = [], forks = [], ring = [];
+    for (let i = 0; i < 6; i++) {
+        const a0 = i * TAU / 6 + (JM.hash01(id, i) - 0.5) * 0.25;
+        const pts = [];
+        for (let k = 0; k <= 4; k++) {
+            const r = 0.18 + 0.21 * k, a = a0 + (JM.hash01(id + k, i * 3) - 0.5) * 0.18;
+            pts.push(Math.cos(a) * r, Math.sin(a) * r);
         }
-        out.push(pts);
+        rays.push(pts);
+        // a fork from about halfway out, leaning to one side
+        const side = JM.hash01(id, i * 11) < 0.5 ? -1 : 1, af = a0 + side * (0.32 + 0.12 * JM.hash01(id, i * 13));
+        forks.push([pts[4], pts[5], Math.cos(af) * 0.78, Math.sin(af) * 0.78, Math.cos(af + side * 0.1) * 0.98, Math.sin(af + side * 0.1) * 0.98]);
+        ring.push(Math.cos(a0) * 0.6, Math.sin(a0) * 0.6);
     }
-    S.coreCracks = out;
-    return out;
+    S.coreCracks = { rays, forks, ring };
+    return S.coreCracks;
+}
+function crackPath(c, x, y, R, pts, upto, ca, sa) {
+    for (let k = 0; k + 1 < pts.length && k / 2 <= upto; k += 2) {
+        const ux = pts[k] * ca - pts[k + 1] * sa, uy = pts[k] * sa + pts[k + 1] * ca;
+        if (k) c.lineTo(x + ux * R, y + uy * R); else c.moveTo(x + ux * R, y + uy * R);
+    }
 }
 function hexPath(c, x, y, r, rot) {
     c.beginPath();
@@ -614,7 +633,7 @@ export function drawCore(c, x, y, e, ratio, alpha, isize) {
     const hp = clamp(e.health != null ? e.health : 1);
     if (hp < S.coreLastHp - 0.0005) S.coreHitAt = now;
     S.coreLastHp = hp;
-    const hot = hp < 0.3;
+    const hot = hp < 0.5;
     const f = (e.render && e.render.f) || 0;
     const beat = calm() ? 0 : Math.sin(now / (hot ? 140 : 320));
     c.save();
@@ -654,22 +673,50 @@ export function drawCore(c, x, y, e, ratio, alpha, isize) {
     c.strokeStyle = "#0c0a0e"; c.lineWidth = Math.max(2, 3 * ratio); c.stroke();
     hexPath(c, x, y, hr * 0.5, f * 2);
     c.fillStyle = "#ffffff"; c.fill();
-    // cracks spread as it loses health
-    const n = Math.min(12, Math.ceil((1 - hp) * 12));
-    if (n > 0) {
+    // the fracture grows in steps (25 / 50 / 75% down), kept inside the
+    // shell and lit from inside: a wide glow, a dark edge, a bright core line
+    const stage = hp > 0.75 ? 0 : hp > 0.5 ? 1 : hp > 0.25 ? 2 : 3;
+    if (stage > 0) {
         const cr = crackSet(e.id | 0);
-        c.lineCap = "round";
-        for (let pass = 0; pass < 2; pass++) {
-            c.strokeStyle = pass ? (hot ? "#ffd6f6" : "#e8fdff") : "#0c0a0e";
-            c.lineWidth = Math.max(1, (pass ? 1.6 : 3.4) * ratio);
-            for (let i = 0; i < n; i++) {
-                const p = cr[i];
-                c.beginPath();
-                c.moveTo(x + p[0] * R, y + p[1] * R);
-                for (let k = 2; k < p.length; k += 2) c.lineTo(x + p[k] * R, y + p[k + 1] * R);
-                c.stroke();
+        const ca = Math.cos(f), sa = Math.sin(f);
+        const upto = stage === 1 ? 2 : 4;
+        c.save();
+        hexPath(c, x, y, R * 0.98, f);
+        c.clip();
+        c.lineCap = "round"; c.lineJoin = "round";
+        const glow = hot ? "rgba(255,90,216," : "rgba(92,232,255,";
+        const passes = [[glow + (0.35 + 0.15 * Math.max(0, beat)) + ")", 9], ["#0c0a0e", 3.6], [hot ? "#ffd6f6" : "#e8fdff", 1.5]];
+        for (const [col, w] of passes) {
+            c.strokeStyle = col;
+            c.lineWidth = Math.max(1, w * ratio * (stage === 3 && w > 5 ? 1.3 : 1));
+            c.beginPath();
+            for (const p of cr.rays) crackPath(c, x, y, R, p, upto, ca, sa);
+            if (stage >= 2) for (const p of cr.forks) crackPath(c, x, y, R, p, 2, ca, sa);
+            if (stage >= 3) {
+                const q = cr.ring;
+                for (let i = 0; i <= 6; i++) {
+                    const j = (i % 6) * 2, ux = q[j] * ca - q[j + 1] * sa, uy = q[j] * sa + q[j + 1] * ca;
+                    if (i) c.lineTo(x + ux * R, y + uy * R); else c.moveTo(x + ux * R, y + uy * R);
+                }
             }
+            c.stroke();
         }
+        c.restore();
+    }
+    // winding up an attack: the heart flares and a ring closes on the Core
+    const ca2 = now - S.chargeAt;
+    if (ca2 >= 0 && ca2 < S.chargeMs) {
+        const k = ca2 / S.chargeMs;
+        const col = S.chargePulse ? "#ffffff" : (hot ? "#ff8ae3" : "#9ff6ff");
+        if (juice.glowOn() && A && A.haloSprite) {
+            const gr = R * (1.2 + 1.3 * k);
+            c.globalAlpha = alpha * (0.35 + 0.55 * k);
+            c.drawImage(A.haloSprite(hot ? "coreHeartHot" : "coreHeart", hot ? "255,120,220" : "255,244,194", [[0, 1], [0.35, 0.6], [1, 0]]), x - gr, y - gr, gr * 2, gr * 2);
+        }
+        c.globalAlpha = alpha * (0.4 + 0.6 * k);
+        c.strokeStyle = col; c.lineWidth = Math.max(2, (S.chargePulse ? 7 : 4) * ratio);
+        c.beginPath(); c.arc(x, y, R * (1.15 + (S.chargePulse ? 2.6 : 1.4) * (1 - k)), 0, TAU); c.stroke();
+        c.globalAlpha = alpha;
     }
     // a hit flash
     const ha = now - S.coreHitAt;
@@ -706,10 +753,11 @@ export function drawWorld(c, px, py, ratio) {
     // crystal shards in flight, with a warning where they land
     for (const s of shards) {
         const age = now - s.born;
-        if (age < 0 || age > SHARD_MS + 260) continue;
+        const SMS = s.ms || SHARD_MS;
+        if (age < 0 || age > SMS + 260) continue;
         const tx = toX(s.x), ty = toY(s.y);
-        if (age < SHARD_MS) {
-            const k = age / SHARD_MS;
+        if (age < SMS) {
+            const k = age / SMS;
             c.globalAlpha = 0.5 + 0.4 * k;
             c.strokeStyle = RED; c.lineWidth = Math.max(1.5, 3 * ratio);
             c.beginPath(); c.arc(tx, ty, (70 - 30 * k) * ratio, 0, TAU); c.stroke();
@@ -720,10 +768,10 @@ export function drawWorld(c, px, py, ratio) {
             c.beginPath();
             c.moveTo(sx + ca * L, sy + sa * L); c.lineTo(sx - sa * W, sy + ca * W);
             c.lineTo(sx - ca * L * 0.6, sy - sa * L * 0.6); c.lineTo(sx + sa * W, sy - ca * W); c.closePath();
-            c.fillStyle = S.core && S.core.hp < 0.3 ? "#ff8ae3" : "#9ff6ff"; c.fill();
+            c.fillStyle = S.core && S.core.hp < 0.5 ? "#ff8ae3" : "#9ff6ff"; c.fill();
             c.strokeStyle = "#0c0a0e"; c.lineWidth = Math.max(1.5, 2.5 * ratio); c.stroke();
         } else {
-            const k = (age - SHARD_MS) / 260;
+            const k = (age - SMS) / 260;
             if (!s.hit) {
                 s.hit = true;
                 juice.sparks(s.x, s.y, 10, 140, 420, 2, "#9ff6ff", TAU, 0, 5);
@@ -856,7 +904,7 @@ export function drawMap(c, T, inside, dotR, pulse, mapLabel, trackPos) {
     if (core) {
         const mx = T.X(core.x), my = T.Y(core.y);
         if (inside(mx, my)) {
-            const col = core.s === "down" ? GOLD : core.hp < 0.3 ? CORE_HOT : CORE;
+            const col = core.s === "down" ? GOLD : core.hp < 0.5 ? CORE_HOT : CORE;
             c.save();
             if (core.s === "soon") {
                 c.globalAlpha = 0.5 + 0.4 * Math.sin(now / 200);
@@ -954,7 +1002,7 @@ export function drawHud(c, cx, y) {
     const core = r.core;
     if (core && core.s === "up" && !global.died) {
         const W = Math.min(320, global.screenWidth - 60), H = CORE_BAR_H, x = cx - W / 2;
-        const hot = core.hp < 0.3;
+        const hot = core.hp < 0.5;
         const col = hot ? CORE_HOT : CORE;
         A.hudPanel(c, x, y, W, H, {});
         c.save();

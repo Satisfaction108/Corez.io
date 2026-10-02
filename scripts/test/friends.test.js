@@ -233,6 +233,32 @@ test('leaderboard: ranked only, rp order, Legend #N, deleted/banned out, own row
     })();
 });
 
+test('leaderboard: banked and wins boards, any account, stat order, own row', () => {
+    const u = Array.from({ length: 4 }, () => mkUser('lbs'));
+    const set = (x, banked, wins) => d().run(`INSERT INTO user_stats (user_id, gems_banked, raid_wins) VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET gems_banked = excluded.gems_banked, raid_wins = excluded.raid_wins`, x.id, banked, wins);
+    d().run('UPDATE user_stats SET gems_banked = 0, raid_wins = 0');
+    set(u[0], 9000, 1); set(u[1], 50000, 0); set(u[2], 300, 7); set(u[3], 120000, 3);
+    d().run('UPDATE users SET deleted_at = ? WHERE id = ?', NOW, u[3].id);           // deleted: out
+    profile.clearCache();
+    return (async () => {
+        const srv = await server();
+        try {
+            const b = await srv.get('/api/leaderboard?type=banked');
+            assert.equal(b.status, 200);
+            assert.equal(b.json.type, 'banked');
+            assert.deepEqual(b.json.rows.map(x => x.username), [u[1], u[0], u[2]].map(x => x.username));
+            assert.deepEqual(b.json.rows.map(x => x.value), [50000, 9000, 300]);
+            const w = await srv.get('/api/leaderboard?type=wins', srv.cookieFor(u[0]));
+            assert.deepEqual(w.json.rows.map(x => x.username), [u[2], u[0]].map(x => x.username), 'zero wins left out');
+            assert.deepEqual([w.json.me.place, w.json.me.value], [2, 1]);
+            const none = await srv.get('/api/leaderboard?type=wins', srv.cookieFor(u[1]));
+            assert.equal(none.json.me, null, 'no wins, no own row');
+            assert.equal((await srv.get('/api/leaderboard?type=nope')).json.type, 'ranked');
+        } finally { srv.close(); }
+    })();
+});
+
 // ---- HTTP + SSE ----
 
 function server() {

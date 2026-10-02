@@ -52,6 +52,13 @@ const drops = [];
 for (let i = 0; i < 12; i++) drops.push({ on: false, born: 0, x: 0, y: 0, id: -1, r: 135, ms: 900, hit: false, H: 520, sparkAt: 0, vis: false, crate: false, rock: false, size: 40, far: false, boom: false });
 // recent big impacts by someone else: past BIG_CAP in BIG_MS, the light version
 const BIG_CAP = 3, BIG_MS = 700, FAR = 1700;
+const CAM_WAIT_MS = 4000;
+function camWait(d, now) {
+    if (!d.waitCam || !d.on) return;
+    const far = !global.gameStart || Math.hypot(global.player.renderx - d.x, global.player.rendery - d.y) > 400;
+    if (far && now - d.born0 < CAM_WAIT_MS) d.born = now;
+    else d.waitCam = false;
+}
 const bigAt = [];
 function bigSlot(now) {
     while (bigAt.length && now - bigAt[0] > BIG_MS) bigAt.shift();
@@ -78,13 +85,18 @@ export function start(x, y, id, r, ms, vis, kind, size) {
     d.hit = false; d.sparkAt = 0; d.vis = !!vis; d.crate = kind === 'crate' || kind === true; d.rock = kind === 'meteor';
     d.size = size > 0 ? size : 40;
     d.boom = false;
+    // a resume's picture comes with the spawn, before the view has got to
+    // the tank: it waits for the camera (at most CAM_WAIT_MS) so the whole
+    // fall is seen, not a black screen and a landing
+    d.waitCam = !!vis && !d.crate && !d.rock;
+    d.born0 = d.born;
     d.far = Math.hypot(x - global.player.renderx, y - global.player.rendery) > FAR;
     if (d.crate) d.H = 700;
     if (d.rock) d.H = 520;
 }
 function active(d, now) { return d.on && now - d.born < d.ms + 1400; }
 function find(id) {
-    for (const d of drops) if (d.on && d.id === id) return d;
+    for (const d of drops) if (d.on && d.id === id) { camWait(d, performance.now()); return d; }
     return null;
 }
 
@@ -127,7 +139,7 @@ export function camZoom(ratio) {
 // how high up your own drop still is (0 on the ground), for the haze
 function altitude(now) {
     const d = find(gui.playerid);
-    if (!d || global.died || d.vis) return 0;
+    if (!d || global.died) return 0;
     const age = now - d.born;
     return age < d.ms ? JM.fallHeight(age / d.ms) : 0;
 }
@@ -172,14 +184,9 @@ function impact(d) {
         if (dist < 1100) juice.shake(24 * (1 - dist / 1100) + 6, 300);
         return;
     }
-    if (d.vis && !d.crate) {
-        // a resume after a reload: only a picture, nothing broke, so no
-        // crater and no flying rock
-        juice.ring(x, y, "#ffffff", 30, 220, 480, 14);
-        juice.ring(x, y, "#6b5844", 30, 260, 1000, 20);
-        if (self) juice.shake(30, 320);
-        return;
-    }
+    // a resume after a reload (vis): the whole landing plays, but nothing
+    // broke on the server, so no rock chunks and no crater mark
+    const pic = d.vis && !d.crate;
     const now = performance.now();
     const dist = Math.hypot(x - global.player.renderx, y - global.player.rendery);
     if (!self && !d.crate && (d.far || dist > FAR || !bigSlot(now))) {
@@ -195,7 +202,7 @@ function impact(d) {
     // the dust wave rolling out
     juice.ring(x, y, "#6b5844", 40, big ? 560 : 360, 1500, 34);
     juice.ring(x, y, "#5a4a3a", 30, big ? 420 : 260, 1100, 24);
-    juice.sparks(x, y, big ? 56 : 36, big ? 480 : 300, 950, 1, "#2b2433", TAU, 0, big ? 11 : 9);
+    if (!pic) juice.sparks(x, y, big ? 56 : 36, big ? 480 : 300, 950, 1, "#2b2433", TAU, 0, big ? 11 : 9);
     juice.sparks(x, y, big ? 30 : 18, big ? 360 : 240, 700, 0, "#ffb347");
     juice.sparks(x, y, big ? 20 : 12, big ? 300 : 200, 1300, 1, "#6b5844", TAU, 0, 14);
     juice.sparks(x, y, 22, big ? 480 : 300, 600, 0, "#ffe9b0");
@@ -203,9 +210,11 @@ function impact(d) {
         juice.sparks(x, y, 10, 260, 900, 2, "#7fb1f2", TAU, 0, 6);
         juice.sparks(x, y, 10, 260, 900, 3, GOLD, TAU, 0, 6);
     }
-    const c = craters[craterI]; craterI = (craterI + 1) % craters.length;
-    // the mark is as wide as the smash the server did (d.r)
-    c.born = performance.now(); c.x = x; c.y = y; c.r = Math.max(110, d.r * 0.85); c.rot = (d.id % 7) * 0.9;
+    if (!pic) {
+        const c = craters[craterI]; craterI = (craterI + 1) % craters.length;
+        // the mark is as wide as the smash the server did (d.r)
+        c.born = performance.now(); c.x = x; c.y = y; c.r = Math.max(110, d.r * 0.85); c.rot = (d.id % 7) * 0.9;
+    }
     if (self) {
         // the keys you held through the fall count again from here
         if (!d.vis) { try { const cmd = global.socket && global.socket.cmd; if (cmd && cmd.reactNow) cmd.reactNow(); } catch (e) { /* */ } }
@@ -254,6 +263,7 @@ export function drawGround(c, px, py, ratio) {
         c.beginPath(); c.arc(sx, sy, R * 0.58, 0, TAU); c.stroke();
     }
     for (const d of drops) {
+        camWait(d, now);
         if (!active(d, now)) { if (d.on && now - d.born > d.ms + 1400) d.on = false; continue; }
         const age = now - d.born;
         if (age >= d.ms) {

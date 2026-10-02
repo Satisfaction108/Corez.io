@@ -131,7 +131,7 @@ const global = {
     KEY_AUTO_SPIN: 67,
     KEY_AUTO_FIRE: 69,
     KEY_AUTO_ALT: 71,
-    KEY_OVER_RIDE: -1,     // AI override: unbound (R is kit slot 2 now)
+    KEY_OVER_RIDE: 82,     // R: AI override
     KEY_REVERSE_TANK: 86,
     KEY_REVERSE_MOUSE: 66,
     KEY_SIDEARM: 88,       // X
@@ -146,7 +146,7 @@ const global = {
     KEY_DEBUG: 119,        // F8 (L is Save & leave now)
     KEY_SAVE: 76,          // L: Save & leave (saveCode.js)
 
-    KEY_SCREENSHOT: 120,
+    KEY_SCREENSHOT: 190,   // . (period)
     KEY_RECORD: 80,        // P
     KEY_TOGGLE_MAP: 77,
 
@@ -162,7 +162,7 @@ const global = {
     KEY_UPGRADE_SHI: 48,
     KEY_UPGRADE_MIN: 189,
     KEY_KIT_1: 90,
-    KEY_KIT_2: 82,         // R (Q is the ability key)
+    KEY_KIT_2: 188,        // , (comma): Q is the ability key, R is AI override
     KEY_KIT_3: 78,
     KEY_DASH: 16,          // Shift: dash (raids only; elsewhere Shift is still right click)
     KEY_ABILITY: 81,       // Q: the equipped ability
