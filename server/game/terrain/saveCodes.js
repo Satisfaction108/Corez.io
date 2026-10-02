@@ -173,13 +173,18 @@ function shopRecord(socket, t) {
         if (until !== true && until > t) gear[id] = Math.round(until - t);
     }
     const twistArm = st._twistArm && st._twistArm === st.arm;
+    // under a twist the paid sidearm is set aside, not gone: save that one
+    const arm = twistArm ? (st._paidArm && st._paidArm.id) || null : st.arm || null;
+    const armUntil = twistArm ? (st._paidArm && st._paidArm.until) || 0 : st.armUntil || 0;
     return {
         drill: st.drill | 0,
         gear,
         kit: Object.assign({}, st.kit || {}),
         kitOrder: (st.kitOrder || []).slice(),
-        arm: twistArm ? null : (st.arm || null),
-        armLeft: !twistArm && st.arm && st.armUntil ? Math.max(0, Math.round(st.armUntil - t)) : 0,
+        arm,
+        armLeft: arm && armUntil ? Math.max(0, Math.round(armUntil - t)) : 0,
+        // owned abilities (a trial or a twist's stays with that raid)
+        ab: st.ab ? { own: (st.ab.own || []).slice(), eq: st.ab.own && st.ab.own.includes(st.ab.eq) ? st.ab.eq : null } : undefined,
     };
 }
 
@@ -334,9 +339,14 @@ function applyShop(socket, body, rec, t) {
     if (!st) return;
     st.drill = Math.max(st.drill | 0, Math.max(0, Math.min(5, rec.drill | 0)));
     const running = () => Object.keys(st.gear).filter(id => sh.gearActive(st, id)).length;
+    // Items the shop no longer sells come back as banked gems: gear for the
+    // time it had left, kit items at full price.
+    let refund = 0;
+    const offered = (item) => !sh.offered || sh.offered(item);
     for (const [id, left] of Object.entries(rec.gear || {})) {
         const item = sh.BY_ID.get(id);
         if (!item || item.cat !== 'gear' || !(left > 0)) continue;
+        if (!offered(item)) { refund += Math.round(item.price * Math.min(1, left / (5 * 60 * 1000))); continue; }
         const until = t + Math.min(left, 5 * 60 * 1000);
         if (sh.gearActive(st, id)) { if (st.gear[id] !== true && st.gear[id] < until) st.gear[id] = until; continue; }
         if (running() >= (sh.GEAR_MAX || 4)) continue;
@@ -346,6 +356,7 @@ function applyShop(socket, body, rec, t) {
         const n = rec.kit && rec.kit[id] | 0;
         const item = sh.BY_ID.get(id);
         if (!item || item.cat !== 'kit' || n <= 0) continue;
+        if (!offered(item)) { refund += item.price * Math.min(item.max || 1, n); continue; }
         const have = st.kit[id] | 0;
         if (!have && (st.kitOrder || []).length >= 3) continue;
         st.kit[id] = Math.min(item.max || 1, have + n);
@@ -354,6 +365,30 @@ function applyShop(socket, body, rec, t) {
     if (rec.arm && !st.arm) {
         const ok = sh.grantArm(socket, rec.arm, true, body);
         if (ok && rec.arm === 'pod') st.armUntil = t + Math.max(1000, rec.armLeft | 0);
+    }
+    if (rec.ab && Array.isArray(rec.ab.own)) {
+        try {
+            const ab = require('./abilities.js');
+            if (ab.ON) {
+                const ast = ab.stateOf(socket);
+                for (const id of rec.ab.own) if (ab.AB_BY_ID.has(id) && !ast.own.includes(id)) ast.own.push(id);
+                // the saved slot only fills an empty one: what you hold now stays
+                const held = ast.eq && (ast.own.includes(ast.eq) || ast.eq === ast.twist);
+                if (rec.ab.eq && ast.own.includes(rec.ab.eq) && !held) ast.eq = rec.ab.eq;
+                // the save brought its own ability: no first-bank trial on top
+                if (ast.own.length) { ast.trialUsed = true; ast.trial = null; }
+                ab.talkState(socket);
+            } else {
+                // switched off: what they paid comes back
+                for (const id of rec.ab.own) { const it = sh.BY_ID.get(id); if (it) refund += it.price; }
+            }
+        } catch (e) { logErr('abilities', e); }
+    }
+    if (refund > 0) {
+        try {
+            gems().setBanked(body, ((socket.gemBanked || 0) | 0) + refund);
+            say(socket, "Items the shop doesn't sell any more came back as " + fmt(refund) + " banked gems.", 7000);
+        } catch (e) { /* */ }
     }
     try { sh.applyPassives(body); } catch (e) { /* */ }
 }
@@ -414,4 +449,4 @@ function apply(socket, body, data, t, savedBy) {
     return { pts, carried, classOk, growEff };
 }
 
-module.exports = { HOLD_MS, THREAD_TAG, attach, onPacket, start, cancel, interrupt, tick, chat, restore, buildRecord };
+module.exports = { HOLD_MS, THREAD_TAG, attach, onPacket, start, cancel, interrupt, tick, chat, restore, buildRecord, applyShop, shopRecord };

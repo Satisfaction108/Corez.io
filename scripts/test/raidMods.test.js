@@ -3,7 +3,7 @@
 //   arm       Annihilator Arsenal (freeArm "flak") mounts the sidearm on the
 //             first spawn, on every respawn and on everyone alive when it
 //             starts mid-raid; SHP tells the kit box; the next override takes
-//             it back; a sidearm the player bought is never replaced
+//             it back; a bought sidearm is set aside and given back after
 //   gear      Magnet Storm (freeGear magnet) on spawn and respawn, revoked
 //   kit       Demolition Day (kitStart charge 3) tops the kit up each life
 //   bots      bots get the free sidearm and gear too, and it fires with their
@@ -135,6 +135,7 @@ test('arm: Annihilator Arsenal mounts the sidearm on the first spawn and every r
     // the sidearm key (X, command bit 128 -> command.sidearm) fires it
     a.invuln = false;                  // the spawn shield holds fire
     a.spawnGraceUntil = 0;
+    a._dropHoldUntil = 0;              // landed: the sky drop holds input for its fall
     assert.equal(sidearmShots(a, () => {}), 0, 'quiet until the key');
     assert.ok(sidearmShots(a, () => { sock.player.command.sidearm = 1; }) >= 1, 'X fires the Annihilator');
     sock.player.command.sidearm = 0;
@@ -170,20 +171,49 @@ test('arm: an override that starts mid-raid arms everyone alive, the next one ta
     die(sock, b);
 });
 
-test('arm: a sidearm the player bought stays through the override and after it', () => {
+test('arm: a bought sidearm is set aside for the override and given back after it', () => {
     raidMods.roll('copper_rush');
     const sock = mkSocket();
     const a = spawn(sock);
     shop.stateOf(sock).arm = 'lance';
     shop.applyPassives(a);
     royale.debugTwist('arsenal');
-    assert.equal(a.sidearmId, 'lance', 'the free one never replaces a bought one');
+    assert.equal(a.sidearmId, 'flak', 'everyone gets the Annihilator');
+    assert.equal(lastShp(sock).arm, 'flak');
     die(sock, a);
     const b = spawn(sock);
-    assert.equal(b.sidearmId, 'lance');
+    assert.equal(b.sidearmId, 'flak', 'and keeps it on respawn');
     royale.debugTwist('giants');
-    assert.equal(b.sidearmId, 'lance', 'the override ending leaves it alone');
+    assert.equal(b.sidearmId, 'lance', 'the bought one comes back when the override ends');
+    assert.equal(shop.stateOf(sock).arm, 'lance');
     die(sock, b);
+});
+
+test('arm: someone who bought the Annihilator keeps it after the override', () => {
+    raidMods.roll('copper_rush');
+    const sock = mkSocket();
+    const a = spawn(sock);
+    shop.stateOf(sock).arm = 'flak';
+    shop.applyPassives(a);
+    royale.debugTwist('arsenal');
+    assert.equal(a.sidearmId, 'flak');
+    royale.debugTwist('giants');
+    assert.equal(a.sidearmId, 'flak', 'theirs, not the twist\'s');
+    die(sock, a);
+});
+
+test('pockets: Deep Pockets starting mid-raid raises the satchel to 6,000 at once', () => {
+    raidMods.roll('copper_rush');
+    const sock = mkSocket();
+    const a = spawn(sock);
+    assert.equal(a.gemCap, 4000);
+    royale.debugTwist('deep_pockets');
+    assert.equal(a.gemCap, 6000, 'live body');
+    const gem = sock.packets.filter(m => m[0] === 'GEM').pop();
+    assert.ok(gem && gem[2] === 6000, 'client told the new cap');
+    royale.debugTwist('giants');
+    assert.equal(a.gemCap, 4000, 'back to normal after');
+    die(sock, a);
 });
 
 test('gear: Magnet Storm hands out the magnet on spawn and respawn, and takes it back', () => {

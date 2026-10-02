@@ -1,3 +1,4 @@
+let smokeAbil = null;   // terrain/abilities.js, loaded on the first smoked tank in a view
 let crypto = require("crypto"),
     net = require('net'),
     fs = require("fs");
@@ -99,14 +100,13 @@ function ownTankColor(body) {
 
 // Dead-link detection. A sleeping laptop or a dropped network leaves the TCP
 // connection half-open for minutes, so every socket gets a websocket ping
-// every PING_EVERY_MS; the browser answers it from its network stack, even
-// from a background tab. No pong and no packet for DEAD_AFTER_MS: the
-// socket is terminated (not closed: a close handshake to a dead peer waits
-// another 30 s), which runs the normal drop path at once (the tank leaves the
-// world, the raid is held for its resume window).
-const PING_EVERY_MS = 3000;
-const DEAD_AFTER_MS = (process.env.ROYALE_DEBUG && parseInt(process.env.DEAD_LINK_MS, 10) > 0)
-    ? parseInt(process.env.DEAD_LINK_MS, 10) : 12000;
+// every PING_EVERY_MS. No pong and no packet for linkWatch.deadAfter (longer
+// for a tab that said it went hidden): the socket is terminated (not closed:
+// a close handshake to a dead peer waits another 30 s), which runs the normal
+// drop path at once (the tank leaves the world, the raid is held for its
+// resume window).
+const linkWatch = require("../../lib/linkWatch.js");
+const PING_EVERY_MS = linkWatch.PING_EVERY_MS;
 
 class socketManager {
     constructor(parent) {
@@ -133,8 +133,8 @@ class socketManager {
         const t = Date.now();
         for (const socket of this.clients.slice()) {
             if (!socket || socket.readyState !== socket.OPEN || typeof socket.ping !== "function") continue;
-            if (t - (socket._seenAt || t) > DEAD_AFTER_MS) {
-                util.warn("No answer from a client for " + Math.round((t - socket._seenAt) / 1000) + " s. Dropping the link.");
+            if (linkWatch.isDead(socket, t)) {
+                util.warn("No answer from a client for " + Math.round((t - socket._seenAt) / 1000) + " s" + (socket._tabHiddenAt ? " (tab hidden)" : "") + ". Dropping the link.");
                 socket._deadLink = true;
                 try { socket.terminate(); } catch (e) { /* already gone */ }
                 continue;
@@ -651,7 +651,7 @@ class socketManager {
                 player.command.moveX = analog ? analog.x : 0;
                 player.command.moveY = analog ? analog.y : 0;
                 player.command.analog = !!analog;
-                if (player.body && player.body.royaleFrozen) {
+                if (player.body && (player.body.royaleFrozen || (global.royaleInFall && global.royaleInFall(player.body)))) {
                     player.command.lmb = player.command.mmb = player.command.rmb = player.command.sidearm = 0;
                     player.command.up = player.command.down = player.command.left = player.command.right = 0;
                 }
@@ -699,6 +699,7 @@ class socketManager {
                 }
             } break;
             case "U": {
+                if (Config.dig_royale && player.body && (player.body.royaleFrozen || (global.royaleInFall && global.royaleInFall(player.body)))) break;   // falling, or the raid-end freeze
 
                 m[0] = util.isStringified(m[0]);
                 if (Array.isArray(m[0])) m[0] = m[0][0];
@@ -743,6 +744,7 @@ class socketManager {
                 }
             } break;
             case "x": {
+                if (Config.dig_royale && player.body && (player.body.royaleFrozen || (global.royaleInFall && global.royaleInFall(player.body)))) break;
 
                 if (m.length !== 2) {
                     socket.kick("Ill-sized skill request.");
@@ -969,6 +971,11 @@ class socketManager {
                     case "kit": tut.grantKit(socket, typeof m[1] === "string" ? m[1] : "medkit"); break;
                     case "arm": tut.grantArm(socket, typeof m[1] === "string" ? m[1] : "flak"); break;
                     case "gear": tut.grantGear(socket, typeof m[1] === "string" ? m[1] : "boots"); break;
+                    // the ability lesson's fallback: hand the learner the one it sells
+                    case "ability": {
+                        const abil = require('../terrain/abilities.js');
+                        if (abil.grant(socket, typeof m[1] === "string" ? m[1] : "grapple")) abil.talkState(socket);
+                    } break;
                     // A loot chest beside the learner.
                     case "chest": tut.spawnChest(plot); break;
                     // A weakened training copy of a raid boss.
@@ -1231,6 +1238,11 @@ class socketManager {
                 if (typeof m[1] === "string" && m[1].length <= 56) socket.guestSource = m[1];
                 try { accountBridge.onGuestId(socket); } catch (e) { /* tracking only */ }
             } break;
+            case "VZ": {
+                // the tab went hidden or frozen (1, 2) or came back (0)
+                if (m.length !== 1 || (m[0] !== 0 && m[0] !== 1 && m[0] !== 2)) return;
+                linkWatch.noteVisibility(socket, m[0], Date.now());
+            } break;
             case "LV": {
                 // leaving on purpose (menu, Home, exit): no resume for this one
                 socket.leftOnPurpose = true;
@@ -1324,6 +1336,7 @@ class socketManager {
                 if (!Config.dig_royale && !Config.tutorial) return 1;
                 if ((m.length !== 3 && m.length !== 4) || typeof m[0] !== "number" || typeof m[1] !== "number" || typeof m[2] !== "number") { socket.kick("Bad kit request."); return 1; }
                 if (m[0] < 0 || m[0] > 2) return;
+                if (player.body && (player.body.royaleFrozen || (global.royaleInFall && global.royaleInFall(player.body)))) return;
                 if (Config.tutorial) {
                     // "kit:medkit": only the item the step is about fires.
                     const shopMod = require('../terrain/shop.js');
@@ -1333,6 +1346,18 @@ class socketManager {
                 }
                 if (socket._saving) require('../terrain/saveCodes.js').interrupt(socket, "You used a kit item, so the save stopped.");
                 require('../terrain/shop.js').useKit(socket, m[0] | 0, m[1], m[2], typeof m[3] === "string" && m[3].length <= 24 ? m[3] : undefined);
+            } break;
+            case "ab": {
+                // dash (0), ability at a world spot (1, x, y), Barricade preview (3, x, y)
+                if (!Config.dig_royale && !Config.tutorial) return 1;
+                if (m.length < 1 || m.length > 3 || typeof m[0] !== "number" || (m.length > 1 && (typeof m[1] !== "number" || typeof m[2] !== "number"))) { socket.kick("Bad ability request."); return 1; }
+                const abil = require('../terrain/abilities.js');
+                if (!abil.ON || !player.body) return;
+                if (global.royaleInFall && global.royaleInFall(player.body)) return;   // still falling in
+                activity.noteAction(socket);
+                if (m[0] === 0) abil.dash(player.body, 0, 0);
+                else if (m[0] === 1) abil.use(player.body, m[1], m[2]);
+                else if (m[0] === 3) { if (abil.preview) abil.preview(socket, m[1], m[2]); return; }
             } break;
             case "DBG": {
                 // local verification only: never active without ROYALE_DEBUG,
@@ -1467,6 +1492,16 @@ class socketManager {
                         if (t) socket.talk('KC', 'dbg', JSON.stringify({ streak: require('../gamemodes/scripts/dig_royale.js').debugSetStreak(t, m[1] | 0), name: t.name, id: t.id }), 0);
                     }
                     else if (what === "botdiff") socket.talk('KC', 'dbg', JSON.stringify({ botdiff: require('../gamemodes/scripts/dig_royale.js').debugBotDiff(socket, m[1]) }), 0);
+                    else if (what === "core") socket.talk('KC', 'dbg', JSON.stringify({ core: require('../gamemodes/scripts/dig_royale.js').debugCore(m[1], b) }), 0);
+                    else if (what === "rattler" && b) {
+                        const rt = require('../terrain/rattler.js'), st = require('../terrain/storm.js').snapshot();
+                        const why = rt.whyNot(b, Date.now());
+                        socket.talk('KC', 'dbg', JSON.stringify({ rattler: why || 'ok', spot: why ? null : rt.spotFor(b, st), alive: rt.alive().length }), 0);
+                    }
+                    else if (what === "supplydrop") require('../terrain/supplyDrops.js').debugNow();
+                    else if (what === "rush") socket.talk('KC', 'dbg', JSON.stringify({ rush: !!require('../terrain/raidOpening.js').rush(Date.now()) }), 0);
+                    else if (what === "huntme" && b) require('../terrain/hunted.js').onBanked(b);   // lift the newbie window
+                    else if (what === "tocore" && b) { const cs = require('../terrain/coreFinale.js').siteOf(); if (cs) { b.x = cs.x + 260; b.y = cs.y; b.velocity.x = 0; b.velocity.y = 0; } }
                     else if (what === "growth") socket.talk('KC', 'dbg', JSON.stringify({ growth: require('../gamemodes/scripts/dig_royale.js').debugGrowth(b) }), 0);
                     else if (what === "bank") socket.talk('KC', 'dbg', JSON.stringify({ bank: require('../gamemodes/scripts/dig_royale.js').debugBank(socket) }), 0);
                     else if (what === "addgrowth" && b) socket.talk('KC', 'dbg', JSON.stringify({ addgrowth: require('../gamemodes/scripts/dig_royale.js').addGrowth(b, m[1] | 0) }), 0);
@@ -1546,6 +1581,16 @@ class socketManager {
                     else if (what === "twist") require('../gamemodes/scripts/dig_royale.js').debugTwist(m[1] ? String(m[1]) : undefined);
                     else if (what === "raidend") require('../gamemodes/scripts/dig_royale.js').debugEndRaid();
                     // jump the storm to N seconds into its cycle (300 = a minute before the hold)
+                    // the rock round you as the server sees it: [key, alive, rising, ore, carved, gap to its outline]
+                    else if (what === "rocksnear" && b) {
+                        const tg = global.gameManager.terrainGrid, R = +m[1] || 200, out = [];
+                        for (const r of tg.rocks.values()) {
+                            if (!r || !r.worldPoly || Math.hypot(r.worldCx - b.x, r.worldCy - b.y) > R + 120) continue;
+                            const f = tg.constructor._polyFace(r.worldPoly, b.x, b.y), gap = f.inside ? 0 : f.dist;
+                            if (gap <= R) out.push([r.k, r.alive ? 1 : 0, r.growing ? 1 : 0, r.ore | 0, r.canyon ? 1 : 0, Math.round(gap)]);
+                        }
+                        socket.talk('KC', 'dbg', JSON.stringify({ at: [Math.round(b.x), Math.round(b.y)], rocks: out }), 0);
+                    }
                     else if (what === "stormat") require('../terrain/storm.js').debugSeek(m[1] | 0);
                     // put the storm's edge N units from you (negative: you're inside), you on its east side
                     else if (what === "stormedge" && b) { const st = require('../terrain/storm.js'); st.debugCenter(b.x - (st.radius() + (+m[1] || 0)), b.y); }
@@ -2066,6 +2111,8 @@ class socketManager {
         // Tutorial: learners are invisible to each other, and a leaderboard
         // listing strangers' names punches a hole in that. Nobody scores here.
         if (Config.tutorial) body.settings.leaderboardable = false;
+        // tutorial: full dash charges and the ability HUD (raids do this in onHumanJoin)
+        if (Config.tutorial) setImmediate(() => { try { require('../terrain/abilities.js').onSpawn(body); } catch (e) { /* */ } });
         if (Class.menu_tanks) {
             let string = Class.menu_tanks.UPGRADES_TIER_0[0];
             if (string !== "basic") {
@@ -2134,6 +2181,11 @@ class socketManager {
             } break;
             default: {
                 let team = getRandomTeam();
+                // a reload coming back to its raid keeps its team and colour
+                let kept = null;
+                if (Config.dig_royale && !Config.royale_duos && socket._resume) {
+                    try { kept = require('../gamemodes/scripts/dig_royale.js').resumeTeam(socket); } catch (e) { kept = null; }
+                }
                 // Duos: partners share one team (no friendly fire, one colour)
                 if (Config.royale_duos) {
                     try { team = require('../duo/duoRaid.js').teamForSpawn(socket, name); } catch (e) { console.error('[DUO] team pick failed', e && e.stack || e); }
@@ -2141,12 +2193,13 @@ class socketManager {
                     // Solo: a team id nobody else holds. A raw random id can land on
                     // a live bot's or player's, and then the two are a team (no
                     // damage between them, one colour, on each other's minimap).
-                    try { team = require('../duo/duoRaid.js').freshTeamId(); } catch (e) { console.error('[ROYALE] team pick failed', e && e.stack || e); }
+                    if (kept) team = kept.team;
+                    else try { team = require('../duo/duoRaid.js').freshTeamId(); } catch (e) { console.error('[ROYALE] team pick failed', e && e.stack || e); }
                 }
                 body.team = team;
                 if (Config.dig_royale) {
                     // one palette colour per player, shared by hull, HUD, leaderboard and minimap
-                    const c = global.assignTeamColor(team);
+                    const c = kept ? kept.color : global.assignTeamColor(team);
                     body.color.base = c;
                     body.leaderboardColor = c;
                     body.minimapColor = c;
@@ -2351,14 +2404,16 @@ class socketManager {
             if (canSeeInvisible) {
                 alpha = other.alpha ? other.alpha * 0.55 + 0.45 : 0.45;
             } else if (!other.settings.fullyInvisible) {
-                let range = 300;
+                // a Smoke Bomb (abilities.js) only shows up close, and barely
+                let range = other.smokeHidden ? 150 : 300;
+                const peek = other.smokeHidden ? 0.18 : 0.45;
                 if (!other.alpha) alpha = 1;
                 let dist = Math.sqrt((player.body.x - other.x) ** 2 + (player.body.y - other.y) ** 2);
                 if (dist >= range) {
                     alpha = other.alpha;
                 } else {
                     const rangeAlpha = 1 - (dist / range);
-                    alpha = other.alpha ? other.alpha + rangeAlpha * 0.45 : rangeAlpha * 0.45;
+                    alpha = other.alpha ? other.alpha + rangeAlpha * peek : rangeAlpha * peek;
                 }
             } else alpha = other.alpha;
         }
@@ -2603,6 +2658,9 @@ class socketManager {
                         if (socket.spectateEntity && !socket.spectateEntity.isDead()) {
                             camera.x = socket.spectateEntity.x;
                             camera.y = socket.spectateEntity.y;
+                            // see what they see: a giant's wide view, not the default
+                            const sf = socket.spectateEntity.fov;
+                            if (sf > 0 && isFinite(sf)) fovNow = Math.max(1000, sf);
                         } else {
                             // nobody left to watch: sit on the safe circle, don't drift
                             const park = spectateParkSpot();
@@ -2677,6 +2735,17 @@ class socketManager {
                             entity.flattenedPhoto = this.flatten(entity.photo);
                         }
 
+                        // a Smoke Bomb hides the tank (and its drones) from anyone
+                        // outside the cloud: not even sent (abilities.js smokeView)
+                        const smoked = entity.smokeHidden ? entity : entity.master && entity.master !== entity && entity.master.smokeHidden && entity.type !== "bullet" ? entity.master : null;
+                        if (smoked) {
+                            const sa = (smokeAbil || (smokeAbil = require('../terrain/abilities.js'))).smokeView(player.body, smoked);
+                            if (sa < 0) continue;
+                            const sd = this.perspective(entity, player, entity.flattenedPhoto).slice();
+                            sd[entity.limited ? 14 : 18] = Math.round(255 * sa);
+                            visible.push(sd);
+                            continue;
+                        }
                         visible.push(this.perspective(entity, player, entity.flattenedPhoto));
                     }
                 }

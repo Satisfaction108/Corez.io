@@ -19,7 +19,7 @@ const growEase = (p) => p * p * (3 - 2 * p);
 // terrainGrid.riseElapsed); the server re-anchors it (r:3) when a tank near
 // the rock slows it down.
 const riseElapsed = (g, nowMs) => g.e0 + (nowMs - g.at) * g.rate;
-const riseRate = (s) => (Number.isFinite(s) && s > 0 ? Math.min(4, s) : 1);
+const riseRate = (s) => (Number.isFinite(s) && s > 0 ? Math.min(64, s) : 1);
 
 const FW_COLORS = ['164,14,14', '230,80,0', '230,119,0', '47,127,51', '23,78,166', '123,31,163'];
 const BASE_TILE_SUBCELLS = 8;
@@ -128,6 +128,7 @@ class TerrainRenderer {
         this._growFx     = [];          
         this._growDust   = new Map();
         this._silRebuildAt = 0;
+        this._blankFrames = 0;
         // Lattice polygons, keyed by rock key. Depends only on the map, so it
         // survives every silhouette rebuild - see _buildVoronoiBoundary.
         this._voroLattice = null;
@@ -1259,9 +1260,29 @@ class TerrainRenderer {
         return path;
     }
 
+    // The rock shader's context. Any failure here (no WebGL, a context lost
+    // on the way in, a shader that won't link) leaves this._gl null and the
+    // rocks draw as flat facets; it must never stop init() from finishing,
+    // or the whole rock layer stays empty for the session.
     _buildNoiseTile() {
         this._noiseTileBuilding = true;
+        try { this._buildNoiseTileGl(); }
+        catch (e) { this._dropGl('shader setup failed: ' + (e && e.message)); }
+        this._noiseTile = true;
+        this._noiseTileBuilding = false;
+    }
 
+    // Back to the flat facets (and a fresh texture) when the GPU side fails.
+    _dropGl(why) {
+        if (this._gl && !this._glWarned) { this._glWarned = true; console.warn('Rock shader off:', why); }
+        this._gl = null;
+        this._glCanvas = null;
+        this._rockQuality = null;
+        this._rockCache = null;
+        this._glChecks = 0;
+    }
+
+    _buildNoiseTileGl() {
         let canvas, gl;
         if (typeof OffscreenCanvas !== 'undefined') {
             try {
@@ -1275,7 +1296,7 @@ class TerrainRenderer {
             gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, alpha: true, premultipliedAlpha: false })
               || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true, alpha: true, premultipliedAlpha: false });
         }
-        if (!gl) { this._noiseTileBuilding = false; return; }
+        if (!gl || gl.isContextLost()) { this._gl = null; return; }
 
         const VS = `attribute vec2 a_pos;
 	                void main(){gl_Position=vec4(a_pos,0.,1.);}`;
@@ -1348,6 +1369,7 @@ class TerrainRenderer {
         gl.attachShader(prog, mkSh(gl.VERTEX_SHADER,   VS));
         gl.attachShader(prog, mkSh(gl.FRAGMENT_SHADER, FS));
         gl.linkProgram(prog);
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { this._gl = null; return; }
         gl.useProgram(prog);
 
         const buf = gl.createBuffer();
@@ -1381,13 +1403,22 @@ class TerrainRenderer {
 
         this._glCanvas  = canvas;
         this._gl        = gl;
+        this._glChecks  = 0;
         this._glOriginU = gl.getUniformLocation(prog, 'u_origin');
         this._glCellSzU = gl.getUniformLocation(prog, 'u_cellSz');
         this._glShU     = gl.getUniformLocation(prog, 'u_sh');
         this._glRockSzU = gl.getUniformLocation(prog, 'u_rockSz');
-
-        this._noiseTile = true;
-        this._noiseTileBuilding = false;
+        // A GPU reset, or the browser's cap on live contexts, can take it
+        // away mid-raid: flat facets until it is back, then the shader again.
+        if (canvas.addEventListener) {
+            canvas.addEventListener('webglcontextlost', (e) => {
+                e.preventDefault();
+                if (this._gl === gl) this._dropGl('context lost');
+            });
+            canvas.addEventListener('webglcontextrestored', () => {
+                if (!this._gl) this._buildNoiseTile();
+            });
+        }
     }
 
     updateCell(col, row, newType) {
@@ -2008,23 +2039,38 @@ class TerrainRenderer {
         if (!isFinite(pw) || !isFinite(ph) || pw > maxDim + 1 || ph > maxDim + 1) return c || null;
         let img = null;
 
+        if (this._gl && this._gl.isContextLost()) this._dropGl('context lost');
         if (this._gl) {
-            const gl = this._gl, glc = this._glCanvas;
-            if (glc.width !== pw || glc.height !== ph) { glc.width = pw; glc.height = ph; }
-            gl.viewport(0, 0, pw, ph);
-            gl.uniform2f(this._glOriginU, -x * density, -y * density * ratioY);
-            gl.uniform2f(this._glCellSzU, density, density * ratioY);
-            gl.uniform1f(this._glShU, ph);
-            gl.uniform1f(this._glRockSzU, Math.min(this._cols, 120) / 50.0);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-            if (typeof glc.transferToImageBitmap === 'function') img = glc.transferToImageBitmap();
-            else {
-                const out = (c && c.canvas) || document.createElement('canvas');
-                out.width = pw; out.height = ph;
-                out.getContext('2d').drawImage(glc, 0, 0);
-                img = out;
+            try {
+                const gl = this._gl, glc = this._glCanvas;
+                if (glc.width !== pw || glc.height !== ph) { glc.width = pw; glc.height = ph; }
+                gl.viewport(0, 0, pw, ph);
+                gl.uniform2f(this._glOriginU, -x * density, -y * density * ratioY);
+                gl.uniform2f(this._glCellSzU, density, density * ratioY);
+                gl.uniform1f(this._glShU, ph);
+                gl.uniform1f(this._glRockSzU, Math.min(this._cols, 120) / 50.0);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                // the shader writes opaque rock everywhere: a see-through
+                // pixel in the first few builds means it drew nothing
+                if ((this._glChecks | 0) < 3) {
+                    this._glChecks = (this._glChecks | 0) + 1;
+                    const px = this._glProbe || (this._glProbe = new Uint8Array(4));
+                    gl.readPixels(pw >> 1, ph >> 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+                    if (px[3] === 0) throw new Error('blank shader output');
+                }
+                if (typeof glc.transferToImageBitmap === 'function') img = glc.transferToImageBitmap();
+                else {
+                    const out = (c && c.canvas) || document.createElement('canvas');
+                    out.width = pw; out.height = ph;
+                    out.getContext('2d').drawImage(glc, 0, 0);
+                    img = out;
+                }
+            } catch (e) {
+                this._dropGl(e && e.message);
+                img = null;
             }
-        } else {
+        }
+        if (!img) {
             // No WebGL: flat facets from the same lattice polygons, so rocks
             // still match the collision geometry.
             const out = (c && c.canvas) || document.createElement('canvas');
@@ -2066,7 +2112,8 @@ class TerrainRenderer {
             }
             img = out;
         }
-        if (c && c.img && c.img !== img && typeof c.img.close === 'function') c.img.close();
+        const prev = this._rockCache;
+        if (prev && prev.img && prev.img !== img && typeof prev.img.close === 'function') prev.img.close();
         this._rockCache = { img, canvas: img instanceof HTMLCanvasElement ? img : null,
                             x, y, w: pw / density, h: ph / (density * ratioY), density, want, cols: this._cols,
                             // pw is only set where sliding pays: software GL, where
@@ -2145,7 +2192,40 @@ class TerrainRenderer {
         return 1;
     }
 
+    // A throw half way through the rock pass (a lost WebGL context, a
+    // detached image) used to skip its ctx.restore() calls, so the background
+    // layer stayed translated and scaled for every later frame: floor and
+    // rock drew somewhere off screen while vaults and the storm, on the other
+    // layers, looked fine ("spawned in the abyss"). Unwind and rebuild.
     draw(ctx, px, py, ratio, gameWidth, gameHeight, screenW, screenH) {
+        try {
+            this._drawScene(ctx, px, py, ratio, gameWidth, gameHeight, screenW, screenH);
+        } catch (e) {
+            // restore() past the bottom of the stack does nothing
+            for (let i = 0; i < 8; i++) ctx.restore();
+            this.recover('draw failed: ' + (e && e.message));
+        }
+    }
+
+    // Safety net: grid data but no rock to show. Drop every cache the rock
+    // pass builds from (texture, silhouette, the shader if it is the
+    // problem) so the next frames make them again.
+    recover(why) {
+        const t = performance.now();
+        if (t - (this._recoverAt || 0) < 1000) return;
+        this._recoverAt = t;
+        this.recovered = (this.recovered | 0) + 1;
+        if (!this._recoverWarned) { this._recoverWarned = true; console.warn('Rock layer rebuilt:', why); }
+        if (this._gl && (this._gl.isContextLost() || this.recovered > 2)) this._dropGl(why);
+        if (this._rockCache && this._rockCache.img && typeof this._rockCache.img.close === 'function') this._rockCache.img.close();
+        this._rockCache = null;
+        this._damageDirty = true;
+        this._damageBatch = null;
+        this._silRebuildAt = 1;
+        this._blankFrames = 0;
+    }
+
+    _drawScene(ctx, px, py, ratio, gameWidth, gameHeight, screenW, screenH) {
         if (!this.ready) return;
 
         if (this._silRebuildAt && performance.now() >= this._silRebuildAt) {
@@ -2206,7 +2286,13 @@ class TerrainRenderer {
             this._view = { tlx, tly, tlw, tlh };
             const nowMs = performance.now();
             const tex = this._rockTexture(this._view, cellW, cellH);
-            if (!tex || !tex.img) { ctx.restore(); return; }   // bad frame size, see above
+            if (!tex || !tex.img) {
+                // a frame or two can't be sized; a run of them is a broken cache
+                if (++this._blankFrames > 20) this.recover('no rock texture');
+                ctx.restore();
+                return;
+            }
+            this._blankFrames = 0;
 
             if (this._damageDirty || !this._damageBatch) {
                 this._damageDirty = false;
@@ -2822,6 +2908,8 @@ class TerrainRenderer {
                 ctx.restore();
             }
         } else {
+            // the voronoi wall with no silhouette built: build it again
+            if (this.useVoronoi && ++this._blankFrames > 20) this.recover('no silhouette');
             const order = [1, 2, 3, 0, 4, 5];
             const drawList = order.map(i => {
                 const rock = this._lineRocks[pick[i]];

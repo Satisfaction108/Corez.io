@@ -1,3 +1,5 @@
+const bossGuard = require('../game/terrain/bossGuard.js');
+
 function simplecollide(my, n) {
     // Cache values to avoid redundant calculations
     const dx = my.x - n.x, dy = my.y - n.y;
@@ -314,6 +316,12 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
             // loot chests only take damage from tanks and their bullets
             if (my.isLootChest && !rootIsTank(n)) { __my = 0; my._gatedN = (my._gatedN | 0) + 1; }
             if (n.isLootChest && !rootIsTank(my)) { __n = 0; n._gatedN = (n._gatedN | 0) + 1; }
+            // raid bosses take damage in measured doses (terrain/bossGuard.js)
+            if (my.isRoyaleBoss && __my > 0 && my.team != n.team) __my = bossGuard.capHit(my, n, __my);
+            if (n.isRoyaleBoss && __n > 0 && my.team != n.team) __n = bossGuard.capHit(n, my, __n);
+            // ...and go easy on new players (only bodies with newness set pay for the check)
+            if (my.isPlayer && __my > 0 && my.team != n.team) __my = bossGuard.intoPlayer(my, n, __my);
+            if (n.isPlayer && __n > 0 && my.team != n.team) __n = bossGuard.intoPlayer(n, my, __n);
             my.damageReceived += __my * Number(__my > 0
                 ? my.team != n.team
                 : !!n.healer && n.team == my.team && my.type == "tank" && n.master.id != my.id);

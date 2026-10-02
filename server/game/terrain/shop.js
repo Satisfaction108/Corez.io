@@ -7,6 +7,10 @@ const PAD_RADIUS = 95;
 const DRILL_MULT = [1, 1.25, 1.5, 1.8, 2.15, 2.6];
 const SATCHEL_BASE = 4000;
 
+// `retired`: off the shelf while the ability system is on (abilities.js),
+// back when ROYALE_ABILITIES=0. Their effects still work for anything that
+// already has them (old saves, twists, the tutorial). `fresh`: only sold
+// with the ability system on.
 const ITEMS = [
     // drills: one tier at a time, lose a tier on death
     { id: "drill1", cat: "drill", tier: 1, name: "Drill I",   price: 400,  desc: "Mines through rock 25% faster." },
@@ -15,21 +19,23 @@ const ITEMS = [
     { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 2600, desc: "Mines through rock 115% faster." },
     { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 4000, desc: "Mines through rock 160% faster, and you keep it when you die." },
     // gear: timed (GEAR_MS); `on` is the message shown when it starts
-    { id: "scanner",   cat: "gear", name: "Ore Scanner",        price: 1200, desc: "Shows shard and emerald veins within 1500 units on your minimap for 5 minutes.", on: "Veins near you now show on your minimap." },
+    { id: "scanner",   cat: "gear", name: "Ore Scanner",        price: 1000, desc: "Shows shard and emerald veins within 1500 units on your minimap for 5 minutes.", on: "Veins near you now show on your minimap." },
     { id: "magnet",    cat: "gear", name: "Gem Magnet",         price: 900,  desc: "Pulls in gems from almost twice as far away for 5 minutes.", on: "Gems now come to you from much farther away." },
     { id: "satchel",   cat: "gear", name: "Reinforced Satchel", price: 700,  desc: "Lets you carry 6,000 gems instead of 4,000 for 5 minutes.", on: "Your satchel now holds 6,000." },
-    { id: "insurance", cat: "gear", name: "Insurance",          price: 1500, desc: "If you die in the next 5 minutes, a quarter of your satchel gets banked instead of dropped.", on: "If you die, a quarter of your satchel gets banked." },
-    { id: "cloak",     cat: "gear", name: "Storm Cloak",        price: 1100, desc: "The storm only does half damage to you for 5 minutes.", on: "The storm now does half damage to you." },
-    { id: "boots",     cat: "gear", name: "Quick Treads",       price: 1300, desc: "Move 25% faster for 5 minutes.", on: "You move 25% faster." },
-    { id: "plating",   cat: "gear", name: "Armor Plating",      price: 1300, desc: "25% more max health for 5 minutes.", on: "You have 25% more max health." },
-    { id: "express",   cat: "gear", name: "Vault Express",      price: 600,  desc: "Vault deposits go twice as fast for 5 minutes.", on: "Your deposits now go twice as fast." },
-    { id: "mark",      cat: "gear", name: "Hunter's Mark",      price: 1800, desc: "Each kill is worth an extra 100 points for 5 minutes.", on: "Your kills now pay an extra 100 points." },
-    { id: "wind",      cat: "gear", name: "Second Wind",        price: 800,  desc: "For 5 minutes, your spawn shield holds for 10 seconds while you move, so you can get clear after a respawn. Shooting still drops it after the first 5 seconds.", on: "Your spawn shield now holds while you move for 10 seconds." },
-    // kit: consumables, 3 distinct types at a time, used with Z / Q / N
+    { id: "insurance", cat: "gear", name: "Insurance",          price: 1200, desc: "If you die in the next 5 minutes, a quarter of your satchel gets banked instead of dropped.", on: "If you die, a quarter of your satchel gets banked." },
+    { id: "cloak",     cat: "gear", name: "Storm Cloak",        price: 1100, retired: true, desc: "The storm only does half damage to you for 5 minutes.", on: "The storm now does half damage to you." },
+    { id: "boots",     cat: "gear", name: "Quick Treads",       price: 1300, retired: true, desc: "Move 25% faster for 5 minutes.", on: "You move 25% faster." },
+    { id: "plating",   cat: "gear", name: "Armor Plating",      price: 1300, retired: true, desc: "25% more max health for 5 minutes.", on: "You have 25% more max health." },
+    { id: "express",   cat: "gear", name: "Vault Express",      price: 600,  retired: true, desc: "Vault deposits go twice as fast for 5 minutes.", on: "Your deposits now go twice as fast." },
+    { id: "mark",      cat: "gear", name: "Hunter's Mark",      price: 1800, retired: true, desc: "Each kill is worth an extra 100 points for 5 minutes.", on: "Your kills now pay an extra 100 points." },
+    { id: "wind",      cat: "gear", name: "Second Wind",        price: 800,  retired: true, desc: "For 5 minutes, your spawn shield holds for 10 seconds while you move, so you can get clear after a respawn. Shooting still drops it after the first 5 seconds.", on: "Your spawn shield now holds while you move for 10 seconds." },
+    // kit: consumables, 3 distinct types at a time, used with Z / R / N
     { id: "charge",    cat: "kit", name: "Seismic Charge", price: 350, max: 3, desc: "Throws a charge at your cursor (up to 500 away) that shatters every rock within 150." },
-    { id: "strut",     cat: "kit", name: "Support Strut",  price: 250, max: 3, desc: "Props open everything within 320 of you for 3 minutes: nothing grows back there, and rock that is already regrowing crumbles." },
+    { id: "strut",     cat: "kit", name: "Support Strut",  price: 250, max: 3, retired: true, desc: "Props open everything within 320 of you for 3 minutes: nothing grows back there, and rock that is already regrowing crumbles." },
     { id: "medkit",    cat: "kit", name: "Medkit",         price: 300, max: 3, desc: "Heals half your health on the spot and keeps the storm off you for 3 seconds." },
-    { id: "overdrive", cat: "kit", name: "Overdrive Core", price: 450, max: 2, desc: "Double mining power and 30% faster reload for 20 seconds." },
+    { id: "rocket",    cat: "kit", name: "Rocket Boots",   price: 300, max: 3, fresh: true, desc: "7 seconds of more than double speed. Outrun anything." },
+    { id: "flare",     cat: "kit", name: "Escape Flare",   price: 450, max: 2, fresh: true, desc: "Blinks you up to 420 toward the nearest vault, straight through rock." },
+    { id: "overdrive", cat: "kit", name: "Overdrive Core", price: 450, max: 2, retired: true, desc: "Double mining power and 30% faster reload for 20 seconds." },
     { id: "anchor",    cat: "kit", name: "Storm Anchor",   price: 400, max: 2, desc: "The storm can't hurt you for 15 seconds." },
     { id: "flash",     cat: "kit", name: "Flash Vault",    price: 500, max: 2, desc: "Banks up to 300 of the gems you're carrying from wherever you are, minus a 30% fee." },
     { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Instantly regrows the dead rock within 260 of you. Instant cover." },
@@ -39,6 +45,8 @@ const ITEMS = [
     { id: "flak",  cat: "arm", name: "Annihilator", price: 1500, desc: "Fires one huge annihilator shell at your cursor. 7 second reload." },
     { id: "lance", cat: "arm", name: "Drill Lance", price: 1200, desc: "Fires a bolt that shatters any rock it hits. 5 second reload." },
     { id: "pod",   cat: "arm", name: "Swarm Barrels", price: 1800, desc: "Two battleship barrels on each side that send seeker drones at your cursor. Burns out after 2.5 minutes." },
+    // abilities (abilities.js): owned for the raid, one in the slot at a time
+    ...require('./abilities.js').catalog().map(a => Object.assign(a, { fresh: true })),
 ];
 const BY_ID = new Map(ITEMS.map(i => [i.id, i]));
 
@@ -57,8 +65,15 @@ function snapshot() {
     return getShops().map(s => ({ id: s.id, name: s.name, x: s.x, y: s.y, r: s.r, c: s.color }));
 }
 
+const abilities = require('./abilities.js');
+// What the shelves carry: the ability-era list, or the old one with the
+// kill switch (ROYALE_ABILITIES=0).
+function offered(item) {
+    if (!item) return false;
+    return abilities.ON ? !item.retired : !item.fresh;
+}
 function catalog() {
-    return ITEMS.map(i => ({ id: i.id, cat: i.cat, tier: i.tier || 0, name: i.name, price: i.price, max: i.max || 0, desc: i.desc }));
+    return ITEMS.filter(offered).map(i => ({ id: i.id, cat: i.cat, tier: i.tier || 0, name: i.name, price: i.price, max: i.max || 0, desc: i.desc, cd: i.cd || 0, place: i.place || 0 }));
 }
 
 function freshState() {
@@ -91,6 +106,8 @@ function stateOf(socket) {
 }
 
 function resetAll() {
+    // abilities first: the raid ledger empties before anyone's state is rebuilt
+    abilities.resetRaid();
     const clients = (global.gameManager.socketManager && global.gameManager.socketManager.clients) || [];
     for (const c of clients) {
         if (!c) continue;
@@ -101,6 +118,7 @@ function resetAll() {
             applyPassives(b);
         }
         talkState(c);
+        abilities.talkState(c);
     }
 }
 
@@ -150,7 +168,7 @@ function keepsDrillOnRespawn(body) { const s = shopOf(body); return !!(s && s.dr
 function applyPassives(body) {
     if (!body) return;
     const s = shopOf(body);
-    body.bonusSpeedMult = hasGear(body, "boots") ? 1.25 : 1;
+    body.bonusSpeedMult = (hasGear(body, "boots") ? 1.25 : 1) * abilities.speedMult(body);
     body.bonusHealthMult = hasGear(body, "plating") ? 1.25 : 1;
     body.gemCap = satchelCap(body);
     try { body.refreshBodyAttributes(); } catch { /* */ }
@@ -278,7 +296,12 @@ function grantArm(socket, id, permanent = true, body = null) {
 function canBuy(socket, item) {
     const s = normalizeKit(stateOf(socket));
     if (!s || !item) return { ok: false, why: "Unknown item." };
-    if (item.cat === "drill") {
+    if (!offered(item)) return { ok: false, why: "That isn't sold any more." };
+    if (item.cat === "ability") {
+        const a = abilities.canBuy(socket, item);
+        if (!a.ok) return a;
+        if (a.equip) return { ok: true, equip: true };
+    } else if (item.cat === "drill") {
         if (s.drill >= item.tier) return { ok: false, why: "Already owned." };
         if (item.tier !== s.drill + 1) return { ok: false, why: "Buy Drill " + ["I", "II", "III", "IV", "V"][s.drill] + " first." };
     } else if (item.cat === "gear") {
@@ -303,6 +326,13 @@ function buy(socket, itemId) {
     const chk = canBuy(socket, item);
     if (!chk.ok) { talkState(socket, chk.why); return false; }
     const s = stateOf(socket);
+    // an ability you already own: swapping it in is free
+    if (chk.equip) {
+        abilities.equip(socket, item.id);
+        talkState(socket, item.name + " equipped.", true);
+        abilities.talkState(socket);
+        return true;
+    }
     const gems = require('./gems.js');
     gems.setBanked(body, bankedOf(socket) - item.price);
     s.spent += item.price;
@@ -324,14 +354,19 @@ function buy(socket, itemId) {
         // a bought arm replaces a twist's free one, so the twist ending must
         // not take it away
         s._twistArm = null;
+        s._paidArm = null;
         attachSidearm(body, item.id);
         msg = item.name + " mounted. Fire it with the sidearm key.";
+    } else if (item.cat === "ability") {
+        abilities.grant(socket, item.id);
+        msg = item.name + " is yours for the raid. It's in your ability slot.";
     }
     body._shopLastBuyAt = Date.now();
     body._shopBought = true;
     try { gems.talkGems(body, 0); } catch { /* */ }
     if (Config.dig_royale) try { require('../gamemodes/scripts/dig_royale.js').onShopBuy(body, item); } catch { /* */ }
     talkState(socket, msg, true);
+    if (item.cat === "ability") abilities.talkState(socket);
     return true;
 }
 
@@ -351,7 +386,7 @@ function grantKit(socket, itemId, count = 1) {
 }
 
 function randomKitId() {
-    const pool = ITEMS.filter(i => i.cat === "kit" && i.id !== "barrage").map(i => i.id);
+    const pool = ITEMS.filter(i => i.cat === "kit" && i.id !== "barrage" && offered(i)).map(i => i.id);
     return pool[(Math.random() * pool.length) | 0];
 }
 
@@ -618,6 +653,17 @@ function useKit(socket, slot, tx, ty, itemId) {
             msg = used ? "Bulwark: the wall rises around you." : "No fallen rock nearby to raise.";
             break;
         }
+        case "rocket": {
+            abilities.rocketBoots(body);
+            used = true;
+            msg = "Rocket Boots lit. " + Math.round(abilities.ROCKET.ms / 1000) + " seconds, go.";
+            break;
+        }
+        case "flare": {
+            used = abilities.escapeFlare(body);
+            msg = used ? "Flare! You blinked toward the nearest vault." : "No open ground to land on that way.";
+            break;
+        }
         case "decoy": {
             body.decoyUntil = now + 20_000;
             try { require('./gems.js').updateSatchel(body); } catch { /* */ }
@@ -628,6 +674,7 @@ function useKit(socket, slot, tx, ty, itemId) {
     }
     if (used) {
         body._kitCdUntil = now + 600;
+        try { abilities.kitFx(id, body, tx, ty); } catch { /* */ }
         // every use has a look: the client keys the effect off the item id
         if (Config.dig_royale) try { require('../gamemodes/scripts/dig_royale.js').fxAt(body.x, body.y, "kit_" + id); } catch { /* */ }
         else if (socket) { try { socket.talk('FX', Math.round(body.x), Math.round(body.y), "kit_" + id); } catch { /* */ } }
@@ -735,13 +782,17 @@ function tick(actors) {
             const rp = body._shopReentryPad;
             if (body._shopExpel === rp) { if (padGeom.keepOut(body, rp, 4, shopKey(rp), 'expel')) body._shopExpel = null; }
             else padGeom.keepOut(body, rp, 4, shopKey(rp), true);
-            if (was) { body.shopOnPad = false; body.socket.talk('SHU', 0, -1, ""); }
-            continue;
+            // the wait is for that one shop: any other pad still opens
+            if (!list.some(s => s !== rp && s._occupant === body)) {
+                if (was && body._shopPad === rp) { body.shopOnPad = false; body.socket.talk('SHU', 0, -1, ""); }
+                continue;
+            }
         }
         let pad = null;
         for (const s of list) if (s._occupant === body) { pad = s; break; }
         let on = !!pad;
-        if (on && !was) { body._shopSince = now; body._shopBought = false; }
+        // a new visit (or straight on to another shop): fresh browse clock
+        if (on && (!was || body._shopPad !== pad)) { body._shopSince = now; body._shopBought = false; }
         if (on) {
             // the browse clock only counts idle time
             const busyAt = Math.max(body._shopSince || now, body._shopLastBuyAt || 0);
@@ -757,7 +808,8 @@ function tick(actors) {
         }
         if (on) body._shopPad = pad;
         body.shopOnPad = on;
-        if (was !== on) body.socket.talk('SHU', on ? 1 : 0, on ? pad.id : -1, on ? pad.name : "");
+        if (was !== on || (on && body._shopPadSent !== pad)) body.socket.talk('SHU', on ? 1 : 0, on ? pad.id : -1, on ? pad.name : "");
+        body._shopPadSent = on ? pad : null;
     }
 }
 
@@ -766,4 +818,5 @@ module.exports = {
     miningMult, hasGear, magnetMult, satchelCap, depositRateMult, stormDamageMult, spawnMoveShieldMs, WIND_SHIELD_MS, killBonus,
     keepsDrillOnRespawn, applyPassives, armOf, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, onDeath, tick,
     PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE, launchBarrage, BARRAGE, STRUT_RADIUS, gearActive, GEAR_MAX,
+    offered,
 };

@@ -513,7 +513,7 @@ export function drawMap(c, cx, cy, rr, x, y, w, h, toR, hl) {
 }
 
 // ── the warning ───────────────────────────────────────────────────────
-const warn = { inside: false, since: 0, level: 0, warnAt: 0, distTxt: "", distN: -1 };
+const warn = { inside: false, since: 0, level: 0, warnAt: 0, distTxt: "", distN: -1, textA: 1 };
 // sm: the server's damage multiplier for you (0 when you're safe);
 // dist: how far you are from the safe zone; dirAng: the way to it.
 export function drawHud(c, sw, sh, topY, st) {
@@ -556,18 +556,24 @@ export function drawHud(c, sw, sh, topY, st) {
     global.stormBannerAt = now;
     const pop = still ? 1 : Math.min(1, age / 220);
     const scale = still ? 1 : 1 + 0.25 * (1 - pop) * (1 - pop);
-    const by = Math.max(topY + 40, sh * 0.24);
+    // it sits in the slam lane (app.js hudLanes) and steps aside while a big
+    // word is up there; the vignette and the arrow stay
+    const by = st.laneY || Math.max(topY + 40, sh * 0.24);
+    warn.textA += ((st.yieldText ? 0 : 1) - warn.textA) * 0.25;
+    const ta = pop * warn.textA;
     const col = st.immune ? "#9fd0ff" : L > 0.7 ? "#ffb0c8" : "#efe6ff";
-    A.hudTitle(st.immune ? "You're in the storm" : "You're in the storm. Get out!", sw / 2, by, 30 * scale, col, "center", pop);
     const d = Math.max(0, Math.round(st.dist / 10) * 10);
     if (d !== warn.distN) { warn.distN = d; warn.distTxt = "Safe zone " + A.fmtDist(d) + " away"; }
-    const sub = st.immune ? "Storm Anchor is holding for " + st.immune + "s. Keep moving."
-        : st.final ? "Final storm. It kills fast now."
-        : L < 0.25 ? "It only stings for now, but it gets worse the longer you stay."
-        : L < 0.65 ? "It's getting worse. Follow the arrow."
-        : "The storm is tearing you apart!";
-    A.drawText(sub, sw / 2, by + 30, 15, col, "center", true, pop);
-    A.drawText(warn.distTxt, sw / 2, by + 50, 13, "#c9b8ff", "center", true, pop * 0.9);
+    if (ta > 0.02) {
+        A.hudTitle(st.immune ? "You're in the storm" : "You're in the storm. Get out!", sw / 2, by, 30 * scale, col, "center", ta);
+        const sub = st.immune ? "Storm Anchor is holding for " + st.immune + "s. Keep moving."
+            : st.final ? "Final storm. It kills fast now."
+            : L < 0.25 ? "It only stings for now, but it gets worse the longer you stay."
+            : L < 0.65 ? "It's getting worse. Follow the arrow."
+            : "The storm is tearing you apart!";
+        A.drawText(sub, sw / 2, by + 30, 15, col, "center", true, ta);
+        A.drawText(warn.distTxt, sw / 2, by + 50, 13, "#c9b8ff", "center", true, ta * 0.9);
+    }
     // the arrow toward safety, circling your tank
     const bob = still ? 0 : Math.sin(now / 160) * 5;
     const ar = 86 + bob;

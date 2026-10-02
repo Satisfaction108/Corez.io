@@ -597,11 +597,15 @@ class io_nearestDifferentMaster extends IO {
             if (this.targetLock && this.validTargets.indexOf(this.targetLock) === -1) {
                 this.targetLock = undefined;
             }
+            // a boss gun takes anyone else before a new player (terrain/bossGuard.js)
+            const bossGun = this.body.master.master.isRoyaleBoss;
+            if (bossGun && this.targetLock && bossGuard.dropNewbieLock(this.targetLock, this.validTargets)) this.targetLock = undefined;
             if (this.targetLock == null && this.validTargets.length) {
                 const preferred = this.body._digWarsCombatTarget && this.validTargets.find(target =>
                     target.id === this.body._digWarsCombatTarget.id
                 );
-                const candidate = preferred || ((this.validTargets.length === 1) ? this.validTargets[0] : nearest(this.validTargets, {
+                const candidate = preferred || (bossGun && bossGuard.pickTarget(this.validTargets, this.body)) ||
+                    ((this.validTargets.length === 1) ? this.validTargets[0] : nearest(this.validTargets, {
                     x: this.body.x,
                     y: this.body.y
                 }));
@@ -1373,6 +1377,8 @@ const digWarsChambers = require('../game/terrain/coreChambers.js');
 const padGeom = require('../game/terrain/padGeom.js');
 // per-target bot difficulty (0 new player .. 1 the hardest we allow)
 const botDiff = require('./botDifficulty.js');
+const tactics = require('./botTactics.js');
+const bossGuard = require('../game/terrain/bossGuard.js');
 const activity = require('../game/network/activity.js');
 // Shop pads are a no-go zone for bots (they cannot buy, and a bot on the pad
 // shoves the shopper). Refreshed once a second.
@@ -1457,10 +1463,11 @@ function softSpared(bot, target, now) {
     const r = (fm.SOFT_CLOSE_R || 320) / 320 * botDiff.softCloseR(botDiff.of(target, now));
     return (target.x - bot.x) ** 2 + (target.y - bot.y) ** 2 > r * r;
 }
-// how many bots may be on one player at once
+// how many bots may be on one player at once (a third on a rich veteran)
 function hunterCap(root, now) {
     if (botSoft(root, now)) return firstMinutes().NEW_MAX_HUNTERS;
-    return Math.min(firstMinutes().MAX_HUNTERS || 2, botDiff.maxHunters(botDiff.of(root, now)));
+    const cap = botDiff.maxHunters(botDiff.of(root, now), root.carriedGems, root.huntedLevel);
+    return cap > 2 ? cap : Math.min(firstMinutes().MAX_HUNTERS || 2, cap);
 }
 // bots other than `self` currently aiming at / chasing `target`
 function botsOn(target, self) {
@@ -1476,7 +1483,8 @@ function botWorldScan() {
     const now = Date.now();
     if (now - botScan.at < 110) return botScan;
     botScan.at = now;
-    const tanks = [], gems = [];
+    const tanks = [], gems = [], shots = [];
+    const dodge = tactics.isEnabled() && botDiff.isLockOn();
     const targetable = global.targetableEntities;
     if (targetable) {
         for (const entity of targetable.values()) {
@@ -1489,10 +1497,13 @@ function botWorldScan() {
             // gems locked inside a standing core chamber are unreachable
             if (entity.isGemPickup && entity.gemValue > 0 && entity.chamberHome === undefined &&
                 !entity.isDead?.()) gems.push(entity);
+            else if (dodge && tactics.isShot(entity)) shots.push(entity);
         }
     }
     botScan.tanks = tanks;
     botScan.gems = gems;
+    // live bullets by cell, for lock-on bots sidestepping fire (botTactics.threat)
+    botScan.shots = dodge ? tactics.bucketShots(shots) : null;
     // Per-scan precomputation shared by every bot (too expensive per bot):
     // gems not on a shop pad, and structures to path around as circles.
     const pads = royaleShopPads();
@@ -2052,7 +2063,7 @@ class io_digWarsGoals extends IO {
         if (this.aimAngle == null) { this.aimAngle = desired; this.aimVel = 0; }
         const turn = wrapAngle(desired - this.aimAngle);
         // Damped spring: slight overshoot before settling, more at low skill.
-        const stiff = botDiff.aimStiff(skill, diff), damp = 0.55 + skill * 0.25;
+        const stiff = botDiff.aimStiff(skill, diff), damp = botDiff.aimDamp(skill, diff);
         this.aimVel = (this.aimVel || 0) * damp + turn * stiff;
         this.aimAngle = wrapAngle(this.aimAngle + this.aimVel);
         if (now - this.aimErrorAt > 110) {
@@ -2079,11 +2090,15 @@ class io_digWarsGoals extends IO {
     leadAim(entity, now) {
         const dx = entity.x - this.body.x, dy = entity.y - this.body.y;
         const distance = Math.hypot(dx, dy);
-        let speed = 0;
+        let speed = 0, muzzleSpeed = 0;
         for (const gun of this.body.guns?.values?.() || []) {
             if (!gun.canShoot || !gun.getTracking) continue;
             const tracking = gun.getTracking();
-            if (tracking && tracking.speed > speed) speed = tracking.speed;
+            if (tracking && tracking.speed > speed) {
+                speed = tracking.speed;
+                const sk = gun.bulletStats === 'master' ? this.body.skill : gun.bulletStats;
+                muzzleSpeed = (gun.settings?.speed || 0) * (sk?.spd || 1) * (global.gameManager?.runSpeed || 1);
+            }
         }
         // A player under mercy or in the soft window gets sloppier lead and
         // wider spray; how sloppy follows their bot difficulty.
@@ -2094,14 +2109,44 @@ class io_digWarsGoals extends IO {
         // Lead time is capped at 1.2s; a lower cap undershoots moving targets
         // past medium range.
         const lead = speed > 0 ? util.clamp(distance / speed, 0, 1.2) * botDiff.leadShare(skill, diff) : 0.2;
-        return this.aimVector(dx + (entity.velocity?.x || 0) * lead,
-                              dy + (entity.velocity?.y || 0) * lead, now, skill, diff);
+        let ax = dx + (entity.velocity?.x || 0) * lead, ay = dy + (entity.velocity?.y || 0) * lead;
+        // Lock-on: aim where the shot actually meets them (their tracked
+        // motion, the bullet's speed, the barrel tip), blended in with the
+        // difficulty. Mercy and the soft window never get it.
+        const lock = skill === this.skill() ? botDiff.lockShare(diff) : 0;
+        if (lock > 0) {
+            const p = tactics.leadPoint(this, this.body, entity, speed, muzzleSpeed, now, this._leadOut || (this._leadOut = { x: 0, y: 0 }));
+            if (p) { ax += (p.x - ax) * lock; ay += (p.y - ay) * lock; }
+        }
+        return this.aimVector(ax, ay, now, skill, diff);
+    }
+
+    // Shooting into smoke: at a guess of where they are (refreshed every
+    // half second or so, off by ~120), sprayed wide, with a slow wrist.
+    blindAim(e, now) {
+        const body = this.body;
+        let g = this.blind;
+        if (!g || g.id !== e.id) g = this.blind = { id: e.id, x: e.x, y: e.y, at: 0, spreadAt: 0, ox: 0, oy: 0 };
+        if (now >= g.at) {
+            g.at = now + 450 + Math.random() * 500;
+            g.x += (e.x + ran.gauss(0, 120) - g.x) * 0.6;
+            g.y += (e.y + ran.gauss(0, 120) - g.y) * 0.6;
+        }
+        if (now >= g.spreadAt) {
+            g.spreadAt = now + 200 + Math.random() * 150;
+            const d = Math.hypot(g.x - body.x, g.y - body.y);
+            g.ox = ran.gauss(0, 50 + d * 0.15); g.oy = ran.gauss(0, 50 + d * 0.15);
+        }
+        return this.aimVector(g.x + g.ox - body.x, g.y + g.oy - body.y, now, 0.15, 0);
     }
 
     // ── sensing ──────────────────────────────────────────────────────────
     sense(now) {
         if (now < this.senseAt) return;
-        this.senseAt = now + 150 + (1 - this.skill()) * 120;
+        // locked on to a strong player in a fight: eyes open wider
+        const sharp = this.goal && this.goal.kind === 'fight' && this.view.enemy &&
+            botDiff.lockShare(botDiff.of(this.view.enemy, now)) > 0.5;
+        this.senseAt = now + (sharp ? 100 + (1 - this.skill()) * 50 : 150 + (1 - this.skill()) * 120);
         const body = this.body, view = this.view;
         // a grown bot's camera opens up (terrain/growth.js); its senses don't
         const fov = Math.min(body.fov || 1200, 2000);
@@ -2128,8 +2173,15 @@ class io_digWarsGoals extends IO {
                 continue;
             }
             if (!this.isEnemy(root)) continue;
-            if (root.alpha != null && root.alpha <= 0.5 && !seeInvisible) continue;
-            if (distance > fov * 1.25) continue;
+            // smoke: a bot already on them keeps at it (blindAim); a new one
+            // only spots them point blank. Other invisibility hides fully.
+            if (root.alpha != null && root.alpha <= 0.5 && !seeInvisible &&
+                !(tactics.smoked(root) && (root === this._lastEnemy || distance < tactics.SMOKE_SPOT_R))) continue;
+            // the raid's hunted mark shows a carrier from further off
+            const marked = root.isPlayer && tactics.huntOn() ? Math.min(2, root.huntedLevel | 0) : 0;
+            // a radar ping (its own ability) shows everyone out to 2500
+            const radar = (body.radarUntil || 0) > now ? 2500 : 0;
+            if (distance > Math.max(radar, fov * (1.25 + marked * 0.3))) continue;
             // fresh spawn in bot grace: not a target, not even counted
             if (inBotGrace(root, now)) continue;
             // soft window (first minutes of a life, or a new player): only
@@ -2142,12 +2194,18 @@ class io_digWarsGoals extends IO {
             // back still registers as being outnumbered.
             if (distance < 1100) enemies++;
             // A player ranks as if farther off the lower their difficulty
-            // (the hardest rank like a bot), a soft one farther still, and a
-            // heavy satchel only draws a little.
+            // (the hardest rank like a bot), a soft one farther still. A heavy
+            // satchel draws a little, and a lot once bots lock on to that
+            // player (botTactics.carrierPull); so does someone already
+            // losing a fight with somebody else.
+            const rd = root.isPlayer ? botDiff.of(root, now) : botDiff.NEUTRAL;
+            const soft = botSoft(root, now);
+            const lock = root.isPlayer && !soft ? botDiff.lockShare(rd) : 0;
             const score = distance
-                + (root.isPlayer ? botDiff.targetPenalty(botDiff.of(root, now)) : 0)
-                + (botSoft(root, now) ? firstMinutes().NEW_TARGET_PENALTY : 0)
-                - Math.min(200, (root.carriedGems || 0) * 0.06)
+                + (root.isPlayer ? botDiff.targetPenalty(rd) : 0)
+                + (soft ? firstMinutes().NEW_TARGET_PENALTY : 0)
+                - tactics.carrierPull(root, lock)
+                - (lock > 0 && tactics.isEnabled() ? tactics.thirdParty(root, now) * 320 * lock : 0)
                 + (this.clearShot(root) ? 0 : 220);
             if (score < bestScore) { bestScore = score; best = root; }
         }
@@ -2555,6 +2613,8 @@ class io_digWarsGoals extends IO {
         if (health < 0.25 || (threatened && (health < this.retreatAt() || (outnumbered && health < 0.6) ||
             (this.feared(view.enemy, now) && health < 0.75))))
             return { kind: 'survive', point: this.retreatPoint() };
+        const back = this.comebackTarget(now, health);
+        if (back) return { kind: 'fight', target: back };
         // bank on threshold, and also periodically
         const bankOverdue = (body.carriedGems || 0) >= 25 &&
             now - (body._lastBankAt || this.bornAt) > 75000;
@@ -2625,6 +2685,28 @@ class io_digWarsGoals extends IO {
         if (view.rock)
             return { kind: 'mine', rock: view.rock };
         return { kind: 'explore', point: this.explorePoint(now) };
+    }
+
+    // A locked-on bot does not let a player with a real satchel (or the
+    // raid's hunted mark) walk away.
+    chasesCarrier(target, now) {
+        if (!target || !target.isPlayer || !tactics.huntOn() || botSoft(target, now)) return false;
+        if (botDiff.lockShare(botDiff.of(target, now)) < 0.5) return false;
+        return (target.carriedGems || 0) >= 400 || (target.huntedLevel | 0) >= 1;
+    }
+
+    // Healed up after running from a fight: go back for whoever chased us
+    // off, if they are still around.
+    comebackTarget(now, health) {
+        const cb = this.comeback;
+        if (!cb || now > cb.until || health < 0.8 || !tactics.isEnabled()) return null;
+        const t = cb.target;
+        if (!t || t.isDead?.() || !this.isEnemy(t) || inBotGrace(t, now) || softSpared(this.body, t, now) ||
+            this.distanceTo(t) > 1500 || inEnemyBase(this.body.team, t.x, t.y)) { this.comeback = null; return null; }
+        if (t.isPlayer && botDiff.lockShare(botDiff.of(t, now)) <= 0) { this.comeback = null; return null; }
+        if (!this.canInitiateFight(t, now)) return null;
+        this.comeback = null;
+        return t;
     }
 
     // The boss, if this bot should be on it now. At most BOSS_HUNTERS bots
@@ -2743,7 +2825,8 @@ class io_digWarsGoals extends IO {
                     return false;
                 }
                 // 12s chasing a human who is not shooting back: let them go
-                if (goal.target.isPlayer && now - this.goalStartedAt > 12000 &&
+                // (a locked-on bot runs a fleeing carrier down for 25s)
+                if (goal.target.isPlayer && now - this.goalStartedAt > (this.chasesCarrier(goal.target, now) ? 25000 : 12000) &&
                     !(body._lastDamageSource === goal.target && now - (body._lastDamageAt || 0) < 3000)) {
                     if (this.playerBreakUntil.size > 8) {
                         for (const [id, until] of this.playerBreakUntil) if (until < now) this.playerBreakUntil.delete(id);
@@ -2839,6 +2922,9 @@ class io_digWarsGoals extends IO {
             this.holdUntil = now + GOAL_HOLD[candidate.kind];
             return;
         }
+        // ran off to heal: remember who from, to come back for them
+        if (candidate.kind === 'survive' && this.view.enemy && (!current || current.kind !== 'survive'))
+            this.comeback = { target: this.view.enemy, until: now + 25000 };
         // a change of plan costs a short hesitation
         if (!current || current.kind !== candidate.kind) this.hesitateUntil = candidate.kind === 'survive' ? 0 : now + 90 + Math.random() * 240;
         this.goal = candidate;
@@ -2916,11 +3002,29 @@ class io_digWarsGoals extends IO {
         const health = this.body.health.max ? this.body.health.amount / this.body.health.max : 1;
         if (health < 0.65)
             range = Math.min(this.weaponRange() * 0.95, range * (1 + (0.65 - health) * 1.6));
+        // Lock-on (a strong player): duck behind rock to peek-shoot when
+        // hurt, run a fleeing carrier down, juke more often.
+        const lock = target.isPlayer && tactics.isEnabled() && !botSoft(target, now)
+            ? botDiff.lockShare(botDiff.of(target, now)) : 0;
+        if (lock > 0) {
+            const cover = this.coverPoint(target, now, health, false);
+            if (cover) return cover;
+            if (lock > 0.5 && this.chasesCarrier(target, now)) {
+                const tv = target.velocity || { x: 0, y: 0 };
+                const away = (target.x - this.body.x) * tv.x + (target.y - this.body.y) * tv.y;
+                // heading away and out of our sweet spot: cut them off
+                // (and burn a dash to close a long gap)
+                if (away > 0 && this.distanceTo(target) > range * 1.15) {
+                    if (this.distanceTo(target) > range * 2) this.botDash(now, target.x - this.body.x, target.y - this.body.y, 0.04 * lock);
+                    return { x: target.x + tv.x * 14, y: target.y + tv.y * 14 };
+                }
+            }
+        } else this.cover = null;
         // Strafe hard and flip direction at random intervals to break the
         // opponent's aim lead.
         if (now > (this.strafeFlipAt || 0)) {
-            this.strafeFlipAt = now + 650 + Math.random() * 1200;
-            if (this.orbit && ran.chance(0.55)) this.orbit.rate = -this.orbit.rate;
+            this.strafeFlipAt = now + (650 + Math.random() * 1200) * (1 - 0.55 * lock);
+            if (this.orbit && ran.chance(0.55 + 0.2 * lock)) this.orbit.rate = -this.orbit.rate;
         }
         // Combat rhythm: strafe, press in, back off in irregular beats, each
         // bot at its own preferred radius.
@@ -2933,6 +3037,223 @@ class io_digWarsGoals extends IO {
         const point = this.orbitPoint(`f${target.id}`, target, range, now, 0, 3);
         // long approaches are weaved
         return this.distanceTo(target) > range * 1.6 ? this.weavePoint(point, now, 0.9) : point;
+    }
+
+    // Behind the nearest rock that blocks `target`'s line, in a hide / peek
+    // beat (survive: hide only, for a few seconds). Null when there is no
+    // such rock or no reason to hide.
+    coverPoint(target, now, health, surviving) {
+        const body = this.body;
+        const tg = global.gameManager && global.gameManager.terrainGrid;
+        let c = this.cover;
+        if (this.isRammer() || !tg || this.distanceTo(target) > 950 ||
+            (surviving ? health > 0.6 : health > 0.72) ||
+            (c && (!c.rock.alive || c.target !== target || (c.stopAt && now > c.stopAt)))) {
+            if (c && c.stopAt && now > c.stopAt) this.coverSkipUntil = now + 6000;
+            this.cover = c = null;
+        }
+        if (!c) {
+            if ((!surviving && health > 0.5) || now < (this.coverCheckAt || 0) || now < (this.coverSkipUntil || 0)) return null;
+            this.coverCheckAt = now + 600;
+            const spot = tactics.coverSpot(body, target, tg, 340, this._coverBuf || (this._coverBuf = []));
+            if (!spot) return null;
+            c = this.cover = {
+                target, rock: spot.rock, rr: spot.rr, peek: false, side: ran.chance(0.5) ? 1 : -1,
+                until: now + 900 + Math.random() * 700, stopAt: surviving ? now + 4000 : 0,
+            };
+        }
+        if (!surviving && now > c.until) {
+            c.peek = !c.peek;
+            c.until = now + (c.peek ? 600 + Math.random() * 600 : 800 + Math.random() * 800);
+            if (c.peek && ran.chance(0.4)) c.side = -c.side;
+        }
+        if (surviving) c.peek = false;
+        // keep the rock between us as they move; a peek steps out to one side
+        const r = this.nav.radius();
+        let a = Math.atan2(c.rock.wy - target.y, c.rock.wx - target.x);
+        if (c.peek) a += c.side * 0.8;
+        const d = c.rr + r + 14;
+        return { x: c.rock.wx + Math.cos(a) * d, y: c.rock.wy + Math.sin(a) * d };
+    }
+
+    // An enemy shot about to land: a short sidestep, if this bot reads it in
+    // time. Only while fighting a player bots are locked on to.
+    dodgeVector(now) {
+        if (now < (this.dodgeUntil || 0)) return this.dodgeDir;
+        if (now < (this.dodgeCheckAt || 0) || !tactics.isEnabled()) return null;
+        this.dodgeCheckAt = now + 90 + Math.random() * 60;
+        const enemy = this.view.enemy;
+        if (!enemy || this.view.enemyDistance > 1100 || this.isRammer()) return null;
+        const lock = enemy.isPlayer ? (botSoft(enemy, now) ? 0 : botDiff.lockShare(botDiff.of(enemy, now))) : 0;
+        if (lock <= 0) return null;
+        const th = tactics.threat(this.body, botWorldScan().shots);
+        if (!th) return null;
+        // not every shot gets read
+        if (Math.random() > 0.3 + 0.5 * lock) { this.dodgeCheckAt = now + 260; return null; }
+        const tg = global.gameManager && global.gameManager.terrainGrid;
+        const r = this.nav.radius();
+        if (tg && tg.rockHitByCircle && tg.rockHitByCircle(this.body.x + th.ax * r * 2.2, this.body.y + th.ay * r * 2.2, r * 0.9)) return null;
+        this.dodgeDir = th;
+        this.dodgeUntil = now + 180 + Math.random() * 140;
+        // a heavy shot or a close call: sometimes a dash instead of a step
+        if (th.t < 12) this.botDash(now, th.ax, th.ay, 0.55 * lock);
+        return th;
+    }
+
+    // Dash (terrain/abilities.js), when this raid has it: now and then, with
+    // a few seconds between, the way a player spends charges.
+    botDash(now, dx, dy, chance) {
+        if (now < (this.dashAt || 0) || Math.random() > chance) return false;
+        this.dashAt = now + 1500 + Math.random() * 2500;
+        return tactics.abDash(this.body, dx, dy);
+    }
+
+    // How hard to play abilities against `enemy`: 0 for a newcomer (or the
+    // soft window, or anyone below 0.25), rising to 1 at full lock-on. Other
+    // bots 0.4, a boss 0.6.
+    abilityHeat(enemy, now) {
+        if (!enemy) return 0;
+        if (enemy.isRoyaleBoss) return 0.6;
+        if (!enemy.isPlayer) return 0.4;
+        if (enemy.botNewbie || botSoft(enemy, now)) return 0;
+        return util.clamp((botDiff.of(enemy, now) - 0.25) / 0.75, 0, 1);
+    }
+
+    // A soft player (newcomer, soft window) within `r`: no area abilities.
+    softPlayerNear(r, now) {
+        for (const t of botWorldScan().tanks) {
+            const root = this.rootOf(t);
+            if (!root.isPlayer || root.team === this.body.team) continue;
+            if (!(root.botNewbie || botSoft(root, now))) continue;
+            if ((root.x - this.body.x) ** 2 + (root.y - this.body.y) ** 2 < r * r) return true;
+        }
+        return false;
+    }
+
+    // The secondary ability (botTactics.equipBot), fired the way a player
+    // who knows it would: against a locked-on player nearly every time it is
+    // off cooldown and the moment fits. Decided every ~half second; the API
+    // owns cooldowns. Dash jukes ride on the same beat.
+    useAbilities(now) {
+        if (now < (this.abAt || 0) || !tactics.abilitiesEnabled()) return;
+        this.abAt = now + 400 + Math.random() * 300;
+        const body = this.body, id = body.botAbility;
+        const view = this.view, goal = this.goal, kind = goal && goal.kind;
+        const enemy = view.enemy, dist = view.enemyDistance;
+        const heat = this.abilityHeat(enemy, now);
+        const fight = kind === 'fight' && !!enemy && goal.target === enemy;
+        // dash: a sidestep or a lunge every few seconds of a real fight
+        if (fight && heat > 0 && dist < 900) {
+            const dx = enemy.x - body.x, dy = enemy.y - body.y, d = Math.hypot(dx, dy) || 1;
+            const side = this.orbit && this.orbit.rate < 0 ? -1 : 1;
+            const lunge = d > this.weaponRange() * 0.85;
+            this.botDash(now, lunge ? dx / d : -dy / d * side, lunge ? dy / d : dx / d * side, 0.35 * heat);
+        }
+        if (!id || !tactics.abReady(body, id)) return;
+        const health = body.health.max ? body.health.amount / body.health.max : 1;
+        const carried = body.carriedGems || 0;
+        const fleeing = !!enemy && dist < 800 && (kind === 'survive' || (kind === 'bank' && carried >= 600));
+        const away = fleeing && goal.point ? goal.point : fleeing && enemy
+            ? { x: body.x * 2 - enemy.x, y: body.y * 2 - enemy.y } : null;
+        const chasing = fight && enemy.isPlayer && this.chasesCarrier(enemy, now);
+        // under fire right now
+        const hit = now - (body._lastDamageAt || 0) < 2000;
+        // offensive uses scale with heat (0 against a newcomer); escapes do not
+        const hot = 0.95 * heat, safe = 0.9;
+        let at = null, chance = 0;
+        switch (id) {
+            case 'smoke':
+                // vanish when hurt, running, or hauling a fat satchel
+                if (enemy && dist < 800 && (fleeing || health < 0.45 || (fight && hit && health < 0.7))) { at = body; chance = safe; }
+                break;
+            case 'shock': {
+                if (heat <= 0 || this.softPlayerNear(360, now)) break;
+                let close = 0, gx = 0, gy = 0;
+                for (const t of botWorldScan().tanks) {
+                    const r = this.rootOf(t);
+                    if (r === body || r.team === body.team || !this.isEnemy(r)) continue;
+                    if ((r.x - body.x) ** 2 + (r.y - body.y) ** 2 < 300 * 300) { close++; gx += r.x; gy += r.y; }
+                }
+                // a thrown blast: on them (led a little) mid-fight, into the
+                // middle of a crowd, between us when running so both sides
+                // fly apart
+                const pinned = fight && dist < 320 + (enemy.realSize || 0);
+                if (fleeing && dist < 300) { at = { x: (body.x + enemy.x) / 2, y: (body.y + enemy.y) / 2 }; chance = safe; }
+                else if (close >= 2) { at = { x: gx / close, y: gy / close }; chance = hot; }
+                else if (fight && dist < 540 && (pinned || dist > 200)) {
+                    const v = enemy.velocity || { x: 0, y: 0 };
+                    const lead = Math.min(18, dist / 30);
+                    at = { x: enemy.x + v.x * lead, y: enemy.y + v.y * lead };
+                    chance = hot;
+                }
+                break;
+            }
+            case 'grapple':
+                // hook onto them to close in (a fleeing carrier above all), or
+                // onto rock on the way out
+                if (fight && heat > 0 && dist > 260 && dist < 640) { at = enemy; chance = chasing ? hot : 0.8 * hot; }
+                else if (fleeing && away && dist < 600) { at = away; chance = safe; }
+                break;
+            case 'pad': {
+                // placed just ahead along where we want to go, aimed that way;
+                // the bot drives over it and gets flung
+                let to = null;
+                if (fight && heat > 0) {
+                    if (dist > this.weaponRange() * 0.75) to = enemy;
+                    else {
+                        // close in already: fling past them sideways to flank
+                        const dx = enemy.x - body.x, dy = enemy.y - body.y, d = Math.hypot(dx, dy) || 1;
+                        const side = Math.random() < 0.5 ? 1 : -1;
+                        to = { x: body.x - dy / d * 300 * side + dx / d * 120, y: body.y + dx / d * 300 * side + dy / d * 120 };
+                    }
+                    chance = hot;
+                } else if (fleeing && away && dist < 600) { to = away; chance = safe; }
+                if (to) {
+                    const dx = to.x - body.x, dy = to.y - body.y, d = Math.hypot(dx, dy) || 1;
+                    const ahead = Math.min(110, d * 0.5);
+                    at = { x: body.x + dx / d * ahead, y: body.y + dy / d * ahead, aimX: dx / d, aimY: dy / d };
+                }
+                break;
+            }
+            case 'wall':
+                // a wall halfway to whoever is shooting at us
+                if (enemy && dist > 180 && dist < 750 && (fleeing || (fight && (hit || health < 0.6)))) {
+                    const dx = enemy.x - body.x, dy = enemy.y - body.y, d = Math.hypot(dx, dy) || 1;
+                    const mid = Math.max(140, Math.min(d * 0.45, 600));
+                    at = { x: body.x + dx / d * mid, y: body.y + dy / d * mid };
+                    chance = fleeing ? safe : hot;
+                }
+                break;
+            case 'rush':
+                if (fight && heat > 0 && health > 0.45 && dist < this.weaponRange() * 1.1) { at = body; chance = hot; }
+                break;
+            case 'radar':
+                if ((!enemy || dist > 1600) && (kind === 'explore' || kind === 'mine' || kind === 'collect')) { at = body; chance = 0.3; }
+                // mid-fight: see who else is coming
+                else if (fight && heat > 0) { at = body; chance = 0.6 * hot; }
+                break;
+            case 'burrow': {
+                // through rock to safety, or through rock at them
+                if (fleeing && away && dist < 650) { at = away; chance = safe; break; }
+                if (!(fight && heat > 0 && dist < 700)) break;
+                const rock = this.firstRockAlong(enemy);
+                if (rock && this.distanceTo({ x: rock.wx, y: rock.wy }) < dist - 60) { at = { x: enemy.x, y: enemy.y }; chance = hot; }
+                else if (health < 0.6) {
+                    // hurt: dive into the nearest wall, away from them
+                    at = { x: body.x * 2 - enemy.x, y: body.y * 2 - enemy.y }; chance = hot;
+                }
+                break;
+            }
+        }
+        if (!at || Math.random() > chance) return;
+        if (!tactics.abUse(body, at.x, at.y, id)) return;
+        body.botAbilityAt = now;
+        body.botAbilityN = (body.botAbilityN | 0) + 1;
+        // smoke breaks on the first shot: hold the trigger while it covers us
+        if (id === 'smoke') this.holdFireUntil = now + tactics.smokeHoldMs();
+        if (id === 'burrow') { this.burrowGoUntil = now + 1500; this.burrowTo = { x: at.x, y: at.y }; }
+        // run over our own pad (and a little past it)
+        if (id === 'pad') { this.burrowGoUntil = now + 900; this.burrowTo = { x: at.x + at.aimX * 80, y: at.y + at.aimY * 80 }; }
     }
 
     structurePoint(target, now) {
@@ -3055,8 +3376,12 @@ class io_digWarsGoals extends IO {
         // dogpile caps, chase break-offs) only governs pursuit. A new target
         // first waits out a reaction time (by skill and the target's difficulty).
         const noticed = now - (this._enemySeenAt || 0) >= (this.reactionMs || 250);
+        // ducked behind cover: keep the aim on them, finger off the trigger
+        const hiding = this.cover && !this.cover.peek && this.cover.target === enemy;
+        if (enemy && noticed && this.view.enemyDistance < this.weaponRange() && tactics.smoked(enemy))
+            return { target: this.blindAim(enemy, now), fire: !hiding && this.triggerHeld(now, enemy) };
         if (enemy && noticed && this.view.enemyDistance < this.weaponRange() && this.clearShot(enemy))
-            return { target: this.leadAim(enemy, now), fire: this.triggerHeld(now, enemy) };
+            return { target: this.leadAim(enemy, now), fire: !hiding && this.triggerHeld(now, enemy) };
         if (goal.kind === 'fight' && goal.target && this.distanceTo(goal.target) < this.weaponRange()) {
             // Shoot the target only with a clear line; if a rock blocks it,
             // dig through the rock.
@@ -3117,6 +3442,18 @@ class io_digWarsGoals extends IO {
         let destination = null, arrive = 60, contact = false;
         switch (goal.kind) {
             case 'survive':
+                // Lock-on: a shooter right behind us, a rock right here: duck
+                // behind it for a few seconds before running.
+                if (this.view.enemy && this.view.enemyDistance < 650 && this.view.enemy.isPlayer &&
+                    tactics.isEnabled() && !botSoft(this.view.enemy, now) &&
+                    botDiff.lockShare(botDiff.of(this.view.enemy, now)) > 0) {
+                    const health = body.health.max ? body.health.amount / body.health.max : 1;
+                    const cover = this.coverPoint(this.view.enemy, now, health, true);
+                    if (cover) { destination = cover; arrive = 20; break; }
+                    // no rock to hide behind and they are right on us: dash out
+                    if (this.view.enemyDistance < 450)
+                        this.botDash(now, goal.point.x - body.x, goal.point.y - body.y, 0.05);
+                }
                 // Circle the safe spot while healing rather than parking on
                 // it; weave on the way out while the shooter is close.
                 destination = this.distanceTo(goal.point) < 280
@@ -3260,7 +3597,14 @@ class io_digWarsGoals extends IO {
             if (!calm) this.distractUntil = 0;
             else out.goal = { x: body.x, y: body.y }, out.power = 0;
         }
-        return this.keys.apply(out, now, now < this.nav.escapeUntil || kind === 'survive');
+        // a shot about to land: sidestep it (keys, like anyone would)
+        const dodge = !calm && kind !== 'bank' ? this.dodgeVector(now) : null;
+        if (dodge) { out.goal = { x: body.x + dodge.ax * 200, y: body.y + dodge.ay * 200 }; out.power = 1; }
+        // the secondary ability; smoke holds the trigger, burrow drives straight
+        this.useAbilities(now);
+        if (now < (this.holdFireUntil || 0)) out.fire = false;
+        if (now < (this.burrowGoUntil || 0) && this.burrowTo) { out.goal = { x: this.burrowTo.x, y: this.burrowTo.y }; out.power = 1; }
+        return this.keys.apply(out, now, now < this.nav.escapeUntil || kind === 'survive' || !!dodge);
     }
 
     thinkInner(input) {

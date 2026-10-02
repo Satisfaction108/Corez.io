@@ -245,12 +245,14 @@ global.bringToLife = (() => {
         my.control.power = b.power == null ? 1 : b.power;
 
         my.padSafe = !!(Config.dig_royale && (my.vaultOnPad || my.onVaultPad || my.shopOnPad));
-        if (my.royaleFrozen || (Config.dig_royale && (my.vaultOnPad || my.onVaultPad || my.onBasePad || my.shopOnPad))) {
+        // (still falling in from a sky drop counts as held: no guns, no moving)
+        const falling = Config.dig_royale && global.royaleInFall && global.royaleInFall(my);
+        if (my.royaleFrozen || falling || (Config.dig_royale && (my.vaultOnPad || my.onVaultPad || my.onBasePad || my.shopOnPad))) {
             my.control.fire = false;
             my.control.main = false;
             my.control.alt = false;
             my.sidearmFire = false;
-            if (my.royaleFrozen) {
+            if (my.royaleFrozen || falling) {
                 my.control.goal = { x: my.x, y: my.y };
                 my.velocity.x = 0;
                 my.velocity.y = 0;

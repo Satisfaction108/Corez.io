@@ -29,7 +29,7 @@
     ];
 
     const DISCORD = 'https://discord.gg/bx5FK3CMwp';
-    const SITE = 'https://corez.games';
+    const SITE = 'https://corez.io';
     const MENU_LEAD_MS = 14 * 86400000;   // the menu card shows up this far ahead
     const HUD_LEAD_MS = 24 * 3600000;     // the in-raid chip
     const SOON_MS = 10 * 60000;           // the "starts soon" callout

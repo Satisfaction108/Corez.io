@@ -973,7 +973,7 @@ class TerrainGrid {
         return out;
     }
 
-    pushCircleFromGrowing(pos, r, now = Date.now()) {
+    pushCircleFromGrowing(pos, r, now = Date.now(), maxMove = Infinity) {
         if (!this._growing.length) return { dx: 0, dy: 0, entombed: false, buried: false };
         const startX = pos.x, startY = pos.y;
 
@@ -1021,7 +1021,13 @@ class TerrainGrid {
             pos.x += sx;
             pos.y += sy;
 
-            this.pushCircleFromVoronoi(pos, r);
+            this.pushCircleFromVoronoi(pos, r, maxMove);
+            const md = Math.hypot(pos.x - startX, pos.y - startY);
+            if (md > maxMove) {
+                pos.x = startX + (pos.x - startX) / md * maxMove;
+                pos.y = startY + (pos.y - startY) / md * maxMove;
+                break;
+            }
 
             if (Math.abs(sx) < 1e-3 && Math.abs(sy) < 1e-3) break;
         }
@@ -1049,7 +1055,7 @@ class TerrainGrid {
         rock.gen++;
         rock.growing    = true;
         rock.growFast   = !!(opts && opts.fast);
-        rock.growRate   = rock.growFast ? REGROW.FAST_RATE : 1;
+        rock.growRate   = rock.growFast ? ((opts && opts.rate) || REGROW.FAST_RATE) : 1;
         rock.growAt     = now;
         rock.growE0     = elapsed > 0 ? elapsed : 0;
         rock.growDamage = 0;
@@ -1462,7 +1468,11 @@ class TerrainGrid {
         return out;
     }
 
-    pushCircleFromVoronoi(pos, r) {
+    // maxMove caps how far one call may shift the circle. Every edge inside the
+    // circle pushes on its own, so a big hull sunk into solid rock (dozens of
+    // cell edges, both sides of each) adds up to a throw across the map; the
+    // per-tick tank pass caps it so the hull slides out over a few ticks.
+    pushCircleFromVoronoi(pos, r, maxMove = Infinity) {
         if (!this._voronoiMap) return { dx: 0, dy: 0 };
         const BUCKET = this._voronoiBucket;
         const smap   = this._voronoiMap;
@@ -1502,8 +1512,113 @@ class TerrainGrid {
                 }
             }
             if (!moved) break;
+            const mx = pos.x - startX, my = pos.y - startY, md = Math.hypot(mx, my);
+            if (md > maxMove) {
+                pos.x = startX + mx / md * maxMove;
+                pos.y = startY + my / md * maxMove;
+                break;
+            }
         }
         return { dx: pos.x-startX, dy: pos.y-startY };
+    }
+
+    // One tick of rock contact for a tank (game loop terrain pass): push it
+    // out of live and rising rock, and spit it out to open ground if its
+    // centre ended up inside a rock. -> { dx, dy, entombed } (dx/dy: the
+    // edge push, for the slide and grind). breakOut(body), if given, may
+    // clear the rock around a buried hull (a grown tank cracks it); true when
+    // it did, and the hull stays where it is.
+    settleTank(body, r, now, growingNow, breakOut = null) {
+        // a normal tank never needs more than this in a tick; a grown hull
+        // sunk deep in rock slides out instead of being thrown
+        const maxPush = Math.max(48, r * 0.35);
+        const p = this.pushCircleFromVoronoi(body, r, maxPush);
+        let dx = p.dx, dy = p.dy, entombed = false;
+        if (growingNow) {
+            const g = this.pushCircleFromGrowing(body, r, now, maxPush);
+            entombed = g.entombed;
+            if (g.dx !== 0 || g.dy !== 0) { dx += g.dx; dy += g.dy; }
+            if (g.buried) {
+                body.velocity.x = 0; body.velocity.y = 0;
+                body.accel.x = 0;    body.accel.y = 0;
+            }
+        }
+        // (a push that hit its cap means the hull is sunk deep, centre in or not)
+        const deep = Math.hypot(p.dx, p.dy) >= maxPush - 1e-6;
+        if ((entombed || deep || this.pointInRock(body.x, body.y)) && breakOut && breakOut(body)) {
+            entombed = false;
+            for (const rock of this._growing) {
+                if (this._growingPenetration(rock, body.x, body.y, r, now) > r * REGROW.CRUSH_DEPTH) { entombed = true; break; }
+            }
+        }
+        if (this.pointInRock(body.x, body.y)) {
+            entombed = true;
+            // Center is inside a live rock, past the reach of the edge push above (a
+            // regrow landing on a tank, a spawn overlap, a missed edge). The pass
+            // crushes it, and it goes out to the nearest open ground.
+            const o = this.openSpotNear(body.x, body.y, r);
+            if (o) {
+                body.x = o.x;
+                body.y = o.y;
+                this.pushCircleFromVoronoi(body, r, maxPush);
+            }
+            body.velocity.x = 0; body.velocity.y = 0;
+            body.accel.x = 0;    body.accel.y = 0;
+        }
+        return { dx, dy, entombed };
+    }
+
+    // Nearest spot to (x, y) whose centre is out of live rock, searched in
+    // rings `step` apart out to `reach`. Small steps: the old 2r step put a
+    // big hull's first ring a whole diameter away. Past the map edge there is
+    // no rock at all, so spots out there never count. -> { x, y } or null
+    openSpotNear(x, y, r, reach = Math.max(384, r * 16)) {
+        if (!this.pointInRock(x, y)) return { x, y };
+        const step = Math.max(40, Math.min(r, 90));
+        const rings = Math.min(60, Math.ceil(reach / step));
+        const edge = this.edgeMargin(r);
+        for (let ring = 1; ring <= rings; ring++) {
+            const n = Math.min(48, 12 + ring * 2);
+            for (let i = 0; i < n; i++) {
+                const a = (i / n) * Math.PI * 2 + ring * 0.35;
+                const nx = x + Math.cos(a) * step * ring, ny = y + Math.sin(a) * step * ring;
+                if (!this.pointInRock(nx, ny) && this.inPlayArea(nx, ny, edge)) return { x: nx, y: ny };
+            }
+        }
+        return null;
+    }
+
+    // The playable map: the raid's disk when there is one (royaleLayout cuts
+    // the rock off outside it, leaving open nothing), else the whole grid.
+    // margin: how far inside its edge.
+    inPlayArea(x, y, margin = 0) {
+        if (!(isFinite(x) && isFinite(y))) return false;
+        if (this.circleRadius > 0) return x * x + y * y <= Math.max(0, this.circleRadius - margin) ** 2;
+        const hw = this.cols * this.cellSize / 2 - margin, hh = this.rows * this.cellSize / 2 - margin;
+        return Math.abs(x) <= Math.max(0, hw) && Math.abs(y) <= Math.max(0, hh);
+    }
+    // How far in from the edge a hull of radius r sits (never more than
+    // half the map, however big it is).
+    edgeMargin(r) {
+        const half = this.circleRadius > 0 ? this.circleRadius : Math.min(this.cols, this.rows) * this.cellSize / 2;
+        return Math.min(Math.max(0, r || 0) + 40, half * 0.5);
+    }
+    // Pulls pos back inside the play area, `margin` in from the edge (a bad
+    // number goes to the middle). slack: how far past that it may already be
+    // and stay put, never past the edge itself (a resume on the rim).
+    // -> true if it had to move
+    clampToPlay(pos, margin = 0, slack = 0) {
+        if (!(isFinite(pos.x) && isFinite(pos.y))) { pos.x = 0; pos.y = 0; return true; }
+        if (this.inPlayArea(pos.x, pos.y, Math.max(0, margin - slack))) return false;
+        if (this.circleRadius > 0) {
+            const R = Math.max(0, this.circleRadius - margin), d = Math.hypot(pos.x, pos.y);
+            pos.x *= R / d; pos.y *= R / d;
+            return true;
+        }
+        const hw = Math.max(0, this.cols * this.cellSize / 2 - margin), hh = Math.max(0, this.rows * this.cellSize / 2 - margin);
+        pos.x = Math.max(-hw, Math.min(hw, pos.x));
+        pos.y = Math.max(-hh, Math.min(hh, pos.y));
+        return true;
     }
 
     pushCircleFromContour(pos, r) {

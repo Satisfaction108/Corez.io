@@ -9,9 +9,11 @@ import './terrainRenderer.js';
 import { gameSound } from "./sound.js";
 import * as tutorial from './tutorial.js';
 import * as coach from './coach.js';
-import { touch, STICK, touchPref, haptic, AIMED_KIT, mobileFullscreen } from './touch.js';
+import { touch, STICK, touchPref, haptic, AIMED_KIT, mobileFullscreen, touchPrimary } from './touch.js';
 import * as raidFinale from './raidFinale.js';
 import * as stormFx from './stormFx.js';
+import * as abilityFx from './abilityFx.js';
+import * as raidHeat from './raidHeat.js';
 import * as rankBadges from './account/rankBadges.js';
 import * as rankPanel from './account/rankPanel.js';
 import * as rankCeremony from './account/rankCeremony.js';
@@ -54,7 +56,7 @@ import * as cosmetics from './account/cosmetics.js';
         defaultKeybinds = {},
         keybinds = {};
     // Graphics > Performance switches for slow machines. Off by default.
-    const PERF_TOGGLES = ["optFewerFx", "optSimpleTerrain", "optNoShake", "optNoGlow", "opt30Fps"];
+    const PERF_TOGGLES = ["optFewerFx", "optSimpleTerrain", "optNoShake", "optNoGlow", "optNoGlitch", "optLightSafe", "opt30Fps"];
 
     // qa hooks, local servers only: forward a packet to the socket, read the
     // state, and window.dwGems(10000) for trying items
@@ -106,9 +108,13 @@ import * as cosmetics from './account/cosmetics.js';
     let tips = global.tips[Math.floor(Math.random() * global.tips.length)];
     global.tips = tips[Math.floor(Math.random() * tips.length)];
 
-    // touch-first devices; iPadOS says it is a Mac, its touch points give it away
-    global.mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent) ||
-        (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+    // Touch play for touch-first devices (touchInput.js touchPrimary): the
+    // primary pointer decides, not the user agent alone. It still flips while
+    // you play: a mouse that moves or game keys with a pointer to aim with go
+    // to mouse and keys, a touch on the game goes to touch (setTouchMode).
+    const mq = (q) => { try { return window.matchMedia ? window.matchMedia(q).matches : null; } catch (e) { return null; } };
+    global.inputEnv = () => ({ ua: navigator.userAgent, maxTouchPoints: navigator.maxTouchPoints, coarse: mq("(pointer: coarse)"), fine: mq("(any-pointer: fine)") });
+    global.mobile = touchPrimary(global.inputEnv());
     global.mobile && document.body.classList.add("mobile");
     if (!global.mobile) {
         document.getElementById("tabAppearance").classList.remove("shadowScroll");
@@ -123,6 +129,17 @@ import * as cosmetics from './account/cosmetics.js';
         if (keybinds.KEY_DEBUG && keybinds.KEY_DEBUG[1] === 76 && !keybinds.KEY_SAVE) {
             delete keybinds.KEY_DEBUG;
             setKeybinds();
+        }
+        // Shift (dash), Q (ability) and R (kit slot 2) are new defaults: a
+        // bind someone saved on one of those keys keeps it, and the new
+        // action starts unbound until they pick a key for it
+        for (const id of ["KEY_DASH", "KEY_ABILITY", "KEY_KIT_2"]) {
+            if (keybinds[id]) continue;
+            const code = global[id];
+            if (Object.keys(keybinds).some(k => k !== id && keybinds[k] && keybinds[k][1] === code)) {
+                keybinds[id] = ["", -1];
+                setKeybinds();
+            }
         }
     }
 
@@ -257,6 +274,11 @@ import * as cosmetics from './account/cosmetics.js';
         util.retrieveFromLocalStorage("showJoystick");
         util.retrieveFromLocalStorage("optFullHD");
         for (const id of PERF_TOGGLES) util.retrieveFromLocalStorage(id);
+        {
+            // Effects intensity: Normal until somebody picks another
+            const fl = document.getElementById("optFxLevel");
+            if (fl) { util.retrieveFromLocalStorage("optFxLevel"); if (!fl.value) fl.value = "normal"; }
+        }
         util.retrieveFromLocalStorage("optUiScale");
         // phones and tablets start on the lighter preset once (they can turn it off)
         if (global.mobile && !localStorage.getItem("dwTouchPerfDefaults")) {
@@ -818,9 +840,16 @@ import * as cosmetics from './account/cosmetics.js';
             }
         } else { autoRes.slowSince = 0; autoRes.smoothSince = 0; }
     }
-    window.dwAutoRes = () => ({ level: autoResLevel, fpsEma: +(1000 / autoRes.ema).toFixed(1), canvas: global.screenWidth + "x" + global.screenHeight });
+    // QA: dwAutoRes() reports, dwAutoRes(n) jumps to a level
+    window.dwAutoRes = (level) => {
+        if (level != null) setAutoResLevel(level | 0);
+        return { level: autoResLevel, fpsEma: +(1000 / autoRes.ema).toFixed(1), canvas: global.screenWidth + "x" + global.screenHeight, hud: ctx[2].canvas.width + "x" + ctx[2].canvas.height };
+    };
 
     let resizedW = 0, resizedH = 0;
+    const HUD_PIXEL_FLOOR = 1920 * 1200;
+    let guiDensity = 1;
+    window.dwHudDensity = () => guiDensity;
     function resizeEvent() {
         // touch: a keyboard opening for the chat box only shortens the
         // window; the game keeps its size so the HUD doesn't jump
@@ -835,10 +864,22 @@ import * as cosmetics from './account/cosmetics.js';
         // touch: about a 2x phone screen; a tablet's panel is 3-4x that
         if (global.mobile) budget = Math.min(budget, 1.6e6);
         const pixels = window.innerWidth * window.innerHeight * scale * scale;
+        // The HUD keeps its own, higher budget: a big tank's wide view slows
+        // the world down and steps the resolution down, and the HUD drawn at
+        // that resolution (pixelated, see main.css) went soft as you grew.
+        // HUD pixels are cheap (it is mostly empty), so it stays at 1080p+.
+        const guiBudget = Math.max(budget, global.mobile ? 1.6e6 : HUD_PIXEL_FLOOR);
+        const guiScale = pixels > guiBudget ? scale * Math.sqrt(guiBudget / pixels) : scale;
         if (pixels > budget) scale *= Math.sqrt(budget / pixels);
         global.screenWidth = global.vscreenSize = window.innerWidth * scale;
         global.screenHeight = global.vscreenSizey = window.innerHeight * scale;
-        c.resize(global.screenWidth, global.screenHeight);
+        const k = Math.max(1, guiScale / scale);
+        c.resize(global.screenWidth, global.screenHeight, Math.round(global.screenWidth * k), Math.round(global.screenHeight * k));
+        // the HUD context draws in the same units as the world ones, k times denser
+        if (ctx && ctx[2]) {
+            guiDensity = ctx[2].canvas.width / global.screenWidth;
+            ctx[2].setTransform(guiDensity, 0, 0, guiDensity, 0, 0);
+        }
         global.ratio = scale;
         global.screenSize = Math.min(1920, Math.max(window.innerWidth, 1280));
     }
@@ -1182,6 +1223,28 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
+    // Touch play on or off mid-session (canvas.js watches the input). The HUD
+    // reads global.mobile every frame; the UI scale and canvas size follow.
+    function setTouchMode(on) {
+        on = !!on;
+        if (on === !!global.mobile) return;
+        global.mobile = on;
+        document.body.classList.toggle("mobile", on);
+        touch.setActive(on);
+        const sock = global.socket;
+        if (sock && sock.cmd) {
+            // nothing either way may stay held down (sticks, aim fire, sidearm)
+            for (const i of [0, 1, 2, 3, 4, 7]) sock.cmd.set(i, false);
+            sock.cmd.reactNow();
+        }
+        global.touchMovePacked = 0;
+        if (global.mobileStatus) global.mobileStatus.showCrosshair = false;
+        if (on) { global.mouse.x = -9999; global.mouse.y = -9999; }
+        else if (global.canvas) global.canvas.mouseMoved = false;
+        try { loadSettings(); } catch (e) { resizeEvent(); }
+    }
+    global.setTouchMode = setTouchMode;
+
     function loadSettings() {
         config.graphical.fancyAnimations = document.getElementById("optFancy").checked;
         config.graphical.interpolation = document.getElementById("optInterpolation").checked;
@@ -1211,6 +1274,10 @@ import * as cosmetics from './account/cosmetics.js';
             config.graphical.simpleTerrain = on("optSimpleTerrain");
             config.graphical.noShake = on("optNoShake");
             config.graphical.noGlow = on("optNoGlow");
+            config.graphical.noGlitch = on("optNoGlitch");
+            config.graphical.lightSafe = on("optLightSafe");
+            const fl = document.getElementById("optFxLevel");
+            config.graphical.fxLevel = fl && fl.value === "low" ? 0 : fl && fl.value === "max" ? 2 : 1;
             config.graphical.fpsCap30 = on("opt30Fps");
         }
 
@@ -1676,7 +1743,53 @@ import * as cosmetics from './account/cosmetics.js';
         return w;
     }
     let nameRim = null, nameHalo = null, nameHaloA = 0;
+    // drawText is the busiest text path (names, labels, feed): a string that
+    // has been asked for a few frames in a row gets drawn once into a sprite
+    // by drawTextDirect itself and reused, so it looks exactly the same.
+    // Name styles (rim, halo), gradients and rotated layers go direct.
+    const textSprites = new Map(), textSeen = new Map();
+    try { document.fonts.addEventListener("loadingdone", () => textSprites.clear()); } catch (e) { }
     function drawText(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
+        if (nameRim || nameHalo || typeof defaultFillStyle !== "string" || typeof rawText !== "string" || !rawText) {
+            return drawTextDirect(rawText, x, y, size, defaultFillStyle, align, center, fade, stroke, context);
+        }
+        const t = context.getTransform();
+        if (t.b || t.c) return drawTextDirect(rawText, x, y, size, defaultFillStyle, align, center, fade, stroke, context);
+        const sc = Math.round(t.a * 20) / 20;
+        const q = Math.max(1, Math.round(size * 2) / 2);
+        const key = rawText + "|" + q + "|" + defaultFillStyle + "|" + (center ? 1 : 0) + "|" + stroke + "|" + sc;
+        let e = textSprites.get(key);
+        if (!e) {
+            const n = (textSeen.get(key) || 0) + 1;
+            if (n < 4 || sc <= 0) {
+                if (textSeen.size > 3000) textSeen.clear();
+                textSeen.set(key, n);
+                return drawTextDirect(rawText, x, y, size, defaultFillStyle, align, center, fade, stroke, context);
+            }
+            textSeen.delete(key);
+            const fs = q + config.graphical.fontSizeBoost;
+            const w = measureText(rawText, q);
+            const pad = fs * 0.6 + 4, W = w + pad * 2, H = fs * 2.6 + 8;
+            const cv = document.createElement("canvas");
+            cv.width = Math.max(1, Math.ceil(W * sc));
+            cv.height = Math.max(1, Math.ceil(H * sc));
+            const g = cv.getContext("2d");
+            g.scale(sc, sc);
+            drawTextDirect(rawText, pad, H / 2, q, defaultFillStyle, "left", center, 1, stroke, g);
+            e = { cv, w, W, H, X0: pad, Y0: H / 2 };
+            if (textSprites.size > 700) { let k = 0; for (const kk of textSprites.keys()) { textSprites.delete(kk); if (++k >= 150) break; } }
+            textSprites.set(key, e);
+        }
+        const k = size / q;
+        const mult = align === "center" ? 0.5 : align === "right" ? 1 : 0;
+        const dx = Math.round((x - e.w * k * mult - e.X0 * k) * sc) / sc;
+        const dy = Math.round((y - e.Y0 * k) * sc) / sc;
+        const a0 = context.globalAlpha;
+        if (fade < 1) context.globalAlpha = a0 * Math.max(0, fade);
+        context.drawImage(e.cv, dx, dy, e.W * k, e.H * k);
+        context.globalAlpha = a0;
+    }
+    function drawTextDirect(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
         size += config.graphical.fontSizeBoost;
 
         let offset = size / 5,
@@ -4207,6 +4320,7 @@ import * as cosmetics from './account/cosmetics.js';
     const CHEST_FALLBACK = {
         1: { pal: { mid: "rgba(201,111,46,0.95)", light: "rgba(237,167,102,0.95)", core: "rgba(255,233,209,0.9)" }, crack: { deep: "140,62,15", hot: "235,140,60", hair: "255,218,175" } },
         3: { pal: { mid: "rgba(177,62,207,0.95)", light: "rgba(217,138,240,0.95)", core: "rgba(251,230,255,0.9)" }, crack: { deep: "110,25,140", hot: "200,95,240", hair: "242,205,255" } },
+        4: { pal: { mid: "rgba(46,170,104,0.95)", light: "rgba(111,245,168,0.95)", core: "rgba(225,255,236,0.9)" }, crack: { deep: "14,90,52", hot: "70,220,140", hair: "205,255,225" } },
     };
     const chestCellKey = (id) => -(1000000 + (id | 0));
     function drawChestBoulder(c, x, y, instance, ratio, alpha, isize, kind) {
@@ -4218,7 +4332,8 @@ import * as cosmetics from './account/cosmetics.js';
         if (R < 0.5) return;
         const tr = window.terrainRenderer;
         const g = chestGeom(instance.id, kind.epic);
-        const tier = kind.epic ? 3 : 1;
+        // a supply crate is emerald (raidHeat.crateKind)
+        const tier = kind.emerald ? 4 : kind.epic ? 3 : 1;
         const TR = tr && tr.constructor;
         const cpal = (TR && TR.CRACK_PAL && TR.CRACK_PAL[tier]) || CHEST_FALLBACK[tier].crack;
         // the chest is a cell of the terrain renderer too: same crack
@@ -4332,7 +4447,7 @@ import * as cosmetics from './account/cosmetics.js';
         // top edge and a lip of stone across its foot.
         const gemK = 0.40 * sy;
         const gx = x + trX, gy = y + trY, gr = R * gemK;
-        const gpal = kind.epic ? { body: "#b13ecf", facet: "#d98af0", deep: "#6d2287" } : { body: "#c96f2e", facet: "#eda766", deep: "#7a4018" };
+        const gpal = kind.emerald ? { body: "#2eaa68", facet: "#6ff5a8", deep: "#145c36" } : kind.epic ? { body: "#b13ecf", facet: "#d98af0", deep: "#6d2287" } : { body: "#c96f2e", facet: "#eda766", deep: "#7a4018" };
         const pocket = () => gemPath(c, gx, gy + gr * 0.1, gr * 1.28);
         c.save();
         c.globalAlpha = alpha;
@@ -4452,6 +4567,10 @@ import * as cosmetics from './account/cosmetics.js';
             }
             x += global.screenWidth / 2;
             y += global.screenHeight / 2;
+            // falling out of the sky: drawn up its trail by its height (skyDrop.js);
+            // your own tank pinned to the middle is already there (the camera rides it)
+            const fall = raidHeat.fallOf(instance.id);
+            if (fall && !(instance.id === gui.playerid && x === global.screenWidth / 2 && y === global.screenHeight / 2)) { x += fall.dx * ratio; y += fall.dy * ratio; }
             const rad = (isize || instance.size) * ratio + 80;
             const onScreen = instance.id === gui.playerid ||
                 (x >= -rad && y >= -rad && x <= global.screenWidth + rad && y <= global.screenHeight + rad);
@@ -4475,13 +4594,17 @@ import * as cosmetics from './account/cosmetics.js';
                 if (ga > 0.01) drawContainedGem(ctx[1], x, y, ratio, ga, isize, instance.render.f, _gcls);
                 continue;
             }
+            if (raidHeat.isCoreEntity(instance)) {
+                raidHeat.drawCore(ctx[1], x, y, instance, ratio, instance.alpha * alpha, isize);
+                continue;
+            }
             const _chest = isLootChestEntity(instance);
             if (_chest) {
-                drawChestBoulder(ctx[1], x, y, instance, ratio, instance.alpha * alpha, isize, _chest);
+                drawChestBoulder(ctx[1], x, y, instance, ratio, instance.alpha * alpha, isize, raidHeat.crateKind(instance.id) || _chest);
                 continue;
             }
             if (isRoyaleBossEntity(instance)) drawBossAura(ctx[1], x, y, instance, ratio, instance.alpha * alpha);
-            drawEntity(baseColor, x, y, instance, ratio, instance.alpha * alpha, 1, 1, instance.render.f, false, false, false, instance.render, isize);
+            drawEntity(baseColor, x, y, instance, fall ? ratio * fall.s : ratio, instance.alpha * alpha, 1, 1, instance.render.f, false, false, false, instance.render, isize);
             if (global.royale && global.outpostState && !royaleLobbyPhase() && global.royale.phase === "live") {
                 const ownedAll = global.outpostState.filter(s => s.o === instance.id && s.c);
                 if (ownedAll.length) {
@@ -4509,6 +4632,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (isCoreChamberEntity(instance)) continue;
             if (gemSpriteClass(instance)) continue;
             if (isLootChestEntity(instance)) continue;
+            if (raidHeat.isCoreEntity(instance)) continue;
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance);
             let x = instance.id === gui.playerid ? global.player.screenx : instance._sx - global.screenWidth / 2,
@@ -5035,6 +5159,8 @@ import * as cosmetics from './account/cosmetics.js';
         const r = global.royale;
         const rv = r.you && r.you.revenge;
         if (rv && rv.alive && rv.e === id) return REVENGE_BADGE;
+        const hb = raidHeat.badge(id);
+        if (hb) return hb;
         const b = r.bounty;
         if (b && b.e === id) {
             const key = "bt" + (b.gems | 0);
@@ -5765,6 +5891,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
+    const BANK_PILL = "#b8c6ff", BANK_PILL_TEXT = "#1d1830";
     function drawSelfInfo(max) {
 
         // Dig Wars bottom stack (bottom → top): team war bar, wallet row,
@@ -5818,8 +5945,9 @@ import * as cosmetics from './account/cosmetics.js';
                 let cs2 = 13; while (cs2 > 9 && hudTextW(carTxt, cs2) > (carX2 - rx1) - 10) cs2 -= 0.5;
                 drawText(carTxt, (rx1 + carX2) / 2 + 0.5, ry + 6 - (13 - cs2) * 0.35, cs2, color.guiwhite, "center");
             }
-            // a deeper teal: white text on the bright one was hard to read
-            hudBar(ctx[2], bankX1 - capR, ry - pillH / 2, rx2 - bankX1 + capR * 2, pillH, 1, gameDraw.mixColors(color.teal, "#000000", 0.4));
+            // a light periwinkle, clear of the gold Carried pill and the teal
+            // HUD accents; it takes dark text
+            hudBar(ctx[2], bankX1 - capR, ry - pillH / 2, rx2 - bankX1 + capR * 2, pillH, 1, BANK_PILL);
             {
                 // the kept part came from earlier raids: spendable, but not score.
                 // Big numbers go short (47.5k), then the kept part drops, so
@@ -5833,7 +5961,7 @@ import * as cosmetics from './account/cosmetics.js';
                 let bankTxt = tries[tries.length - 1];
                 for (const t of tries) if (hudTextW(t, 11) <= room) { bankTxt = t; break; }
                 let bs2 = 13; while (bs2 > 9 && hudTextW(bankTxt, bs2) > room) bs2 -= 0.5;
-                drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, color.guiwhite, "center");
+                drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, BANK_PILL_TEXT, "center", false, 1, false);
             }
             // gemdust (accounts): satchel dust under Carried, balance under Banked
             try { dustHud.draw(ctx[2], { carX: (rx1 + carX2) / 2, bankX: (bankX1 + rx2) / 2, y: ry + 19 }, { drawText, measureText }); } catch (e) { /* never break the HUD */ }
@@ -6308,8 +6436,82 @@ import * as cosmetics from './account/cosmetics.js';
         }
         return f;
     }
+    // Stroked HUD text is costly to draw (font set + strokeText + fillText,
+    // every frame, ~80 call sites), so each label is drawn once into a small
+    // sprite at the layer's pixel scale and reused. Sizes snap to 0.5 and the
+    // sprite is stretched the last bit, so zooming labels don't make a new
+    // sprite every frame. Non-string colours (gradients) skip the cache.
+    const titleSprites = new Map();
+    let titleSpritesFontsOk = false;
+    // a label has to be asked for a few frames running before it gets a
+    // sprite, so counters that change every frame are drawn directly
+    const titleSeen = new Map();
+    function titleSprite(text, q, col, scale) {
+        const key = text + "|" + q + "|" + col + "|" + scale;
+        let e = titleSprites.get(key);
+        if (e) return e;
+        const n = (titleSeen.get(key) || 0) + 1;
+        if (n < 4) {
+            if (titleSeen.size > 3000) titleSeen.clear();
+            titleSeen.set(key, n);
+            return null;
+        }
+        titleSeen.delete(key);
+        if (!titleSpritesFontsOk && document.fonts && document.fonts.status === "loaded") titleSpritesFontsOk = true;
+        const m = ctx[2];
+        m.save(); m.font = hudFont(q); const w = m.measureText(text).width; m.restore();
+        const lw = Math.max(1.5, q * (q >= HUD.titleMin ? 0.15 : 0.17));
+        const pad = lw + 2, W = w + pad * 2, H = q * 1.5 + pad * 2;
+        const cv = document.createElement("canvas");
+        cv.width = Math.max(1, Math.ceil(W * scale));
+        cv.height = Math.max(1, Math.ceil(H * scale));
+        const g = cv.getContext("2d");
+        g.scale(scale, scale);
+        g.font = hudFont(q);
+        g.textAlign = "left";
+        g.textBaseline = "middle";
+        g.lineJoin = "round";
+        g.lineWidth = lw;
+        g.strokeStyle = HUD.line;
+        const dy = q >= HUD.titleMin ? q * 0.06 : q * 0.03;
+        g.strokeText(text, pad, H / 2 + dy);
+        g.fillStyle = col;
+        g.fillText(text, pad, H / 2 + dy);
+        e = { cv, w, W, H, pad };
+        // only keep sprites made with the real fonts in (first frames can be fallback)
+        if (titleSpritesFontsOk) {
+            if (titleSprites.size > 600) { let n = 0; for (const k of titleSprites.keys()) { titleSprites.delete(k); if (++n >= 150) break; } }
+            titleSprites.set(key, e);
+        }
+        return e;
+    }
+    if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", () => titleSprites.clear());
     function hudTitle(text, x, y, size, col, align = "left", alpha = 1, c = ctx[2]) {
         size += config.graphical.fontSizeBoost;
+        const t = typeof col === "string" && text !== "" ? c.getTransform() : null;
+        const sc = t ? Math.round(Math.hypot(t.a, t.b) * 20) / 20 : 0;
+        if (sc > 0 && !t.b && !t.c) {
+            const q = Math.max(1, Math.round(size * 2) / 2), k = size / q;
+            const e = titleSprite(String(text), q, col, sc);
+            if (e) return drawTitleSprite(e, c, x, y, k, sc, align, alpha);
+        }
+        hudTitleDirect(text, x, y, size, col, align, alpha, c);
+    }
+    function drawTitleSprite(e, c, x, y, k, sc, align, alpha) {
+        {
+            const w = e.W * k, h = e.H * k, tw = e.w * k;
+            let dx = align === "center" ? x - tw / 2 : align === "right" ? x - tw : x;
+            dx -= e.pad * k;
+            // snap to device pixels so the sprite stays sharp
+            dx = Math.round(dx * sc) / sc;
+            const dy = Math.round((y - h / 2) * sc) / sc;
+            const a0 = c.globalAlpha;
+            if (alpha < 1) c.globalAlpha = a0 * Math.max(0, alpha);
+            c.drawImage(e.cv, dx, dy, w, h);
+            c.globalAlpha = a0;
+        }
+    }
+    function hudTitleDirect(text, x, y, size, col, align, alpha, c) {
         c.save();
         if (alpha < 1) c.globalAlpha *= Math.max(0, alpha);
         c.font = hudFont(size);
@@ -6431,10 +6633,13 @@ import * as cosmetics from './account/cosmetics.js';
     //   bottom left  kit box above the skill bars
     //   centre       kill callouts (one at a time)
     // ═════════════════════════════════════════════════════════════════════
-    const SHOP_TABS = [["drill", "Drills"], ["gear", "Gear"], ["kit", "Kit"], ["arm", "Sidearms"]];
+    const SHOP_TABS_OLD = [["drill", "Drills"], ["gear", "Gear"], ["kit", "Kit"], ["arm", "Sidearms"]];
+    // with the ability system on (the catalog sells abilities) they lead
+    const SHOP_TABS_AB = [["ability", "Abilities"], ["drill", "Drills"], ["gear", "Gear"], ["kit", "Kit"], ["arm", "Sidearms"]];
+    let SHOP_TABS = SHOP_TABS_OLD;
     const SHOP_ACCENT = "#5ce0d8";
     const SHOP_FACE = inkShade(hexToRgb(SHOP_ACCENT), 0.66);
-    const KIT_SHORT = { charge: "CHARGE", strut: "STRUT", medkit: "MEDKIT", overdrive: "OVERDRV", anchor: "ANCHOR", flash: "FLASH", bulwark: "BULWARK", decoy: "DECOY", barrage: "BARRAGE" };
+    const KIT_SHORT = { charge: "CHARGE", strut: "STRUT", medkit: "MEDKIT", overdrive: "OVERDRV", anchor: "ANCHOR", flash: "FLASH", bulwark: "BULWARK", decoy: "DECOY", barrage: "BARRAGE", rocket: "ROCKET", flare: "FLARE" };
     const GEAR_TAG = { scanner: "SCN", magnet: "MAG", satchel: "SAT", insurance: "INS", cloak: "CLK", boots: "TRD", plating: "PLT", express: "EXP", mark: "MRK", wind: "WND" };
     const shopGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
     const kitGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
@@ -6473,6 +6678,8 @@ import * as cosmetics from './account/cosmetics.js';
     });
     function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "k" : String(Math.round(d)); }
     stormFx.init({ hudTitle, drawText, fmtDist });
+    // hunted marks, the Core, drop-ins and the screen juice (raidHeat.js, juice.js)
+    raidHeat.init({ HUD, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c) });
     function gemPath(c, x, y, r) {
         c.beginPath();
         for (let i = 0; i < GEM_ICON.length; i++) {
@@ -6522,7 +6729,8 @@ import * as cosmetics from './account/cosmetics.js';
     const KEY_LABEL_IDS = ["KEY_UPGRADE_MIN", "KEY_KIT_1", "KEY_KIT_2", "KEY_KIT_3", "KEY_TOGGLE_MAP",
         "KEY_CHOOSE_1", "KEY_CHOOSE_2", "KEY_CHOOSE_3", "KEY_CHOOSE_4", "KEY_CHOOSE_5", "KEY_CHOOSE_6",
         "KEY_UPGRADE_ATK", "KEY_UPGRADE_HTL", "KEY_UPGRADE_SPD", "KEY_UPGRADE_STR", "KEY_UPGRADE_PEN",
-        "KEY_UPGRADE_DAM", "KEY_UPGRADE_RLD", "KEY_UPGRADE_MOB", "KEY_UPGRADE_RGN", "KEY_UPGRADE_SHI", "KEY_SIDEARM"];
+        "KEY_UPGRADE_DAM", "KEY_UPGRADE_RLD", "KEY_UPGRADE_MOB", "KEY_UPGRADE_RGN", "KEY_UPGRADE_SHI", "KEY_SIDEARM",
+        "KEY_DASH", "KEY_ABILITY"];
     function keyLabel(id, dflt) {
         const now = performance.now();
         if (now - keyLabelCache.at > 1500) {
@@ -6643,6 +6851,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (duoRect) out.push(duoRect);
         if (teamFeedRect) out.push(teamFeedRect);
         if (global.coachRect) out.push(global.coachRect);
+        if (abilityBarRect) out.push(abilityBarRect);
         return out;
     }
     // Where the main HUD pieces were drawn this frame (GUI units), for
@@ -6735,13 +6944,13 @@ import * as cosmetics from './account/cosmetics.js';
         const now = performance.now();
         for (const ch of list) {
             const sx = roomX + (ch.x + halfW) * ratio, sy = roomY + (ch.y + halfH) * ratio;
-            const R = (ch.rare ? 100 : 78) * ratio;
+            const R = (ch.z ? ch.z * 2.5 : ch.rare ? 100 : 78) * ratio;
             if (sx < -R || sx > global.screenWidth + R || sy < -R || sy > global.screenHeight + R) continue;
             const pulse = 0.5 + 0.5 * Math.sin(now / 700 + (ch.id | 0));
             let a = 0.7 + 0.3 * pulse;
             const gone = ch.e != null ? chestGoneAt.get(ch.e) : undefined;
             if (gone !== undefined) { a *= Math.max(0, 1 - (now - gone) / 150); if (a <= 0) continue; }
-            const spr = haloSprite(ch.rare ? "chest-e" : "chest-c", ch.rare ? "220,140,248" : "240,160,96", [[0, 0.40], [0.55, 0.11], [1, 0]]);
+            const spr = haloSprite(ch.sd ? "chest-sd" : ch.rare ? "chest-e" : "chest-c", ch.sd ? "111,245,168" : ch.rare ? "220,140,248" : "240,160,96", [[0, 0.40], [0.55, 0.11], [1, 0]]);
             c.save();
             c.globalAlpha = a;
             c.drawImage(spr, sx - R, sy - R, R * 2, R * 2);
@@ -6900,6 +7109,104 @@ import * as cosmetics from './account/cosmetics.js';
         if (!global.lowFx && fxQ.slowSince && now - fxQ.slowSince > 3000) { global.lowFx = true; fxQ.slowSince = 0; }
         if (global.lowFx && fxQ.fastSince && now - fxQ.fastSince > 6000) { global.lowFx = false; fxQ.fastSince = 0; }
     }
+    // ── the notification stack under the clock ─────────────────────────
+    // Every line that wants a spot up there goes through here, by priority:
+    // 0 critical (the lock, the storm's last seconds, storm and vault
+    // warnings), 1 your hunted status (a compact badge), 2 raid news and
+    // timers, 3 the rest. NOTE_ROWS show at once, the same width rules for
+    // all; the others wait for a free row (they're states, still there when
+    // one frees up). The same line twice shows once.
+    const NOTE_ROWS = 2, NOTE_H = 24, NOTE_GAP = 8;
+    const NOTE_CRIT = /storm|vault|clos|respawn/i;
+    const hudNoteList = [], notePool = [];
+    let notePoolN = 0;
+    function hudNote(pri, key, text, col) {
+        const n = notePool[notePoolN] || (notePool[notePoolN] = {});
+        notePoolN++;
+        n.pri = pri; n.key = key; n.text = text; n.col = col; n.pulse = 0; n.badge = false; n.sub = "";
+        return n;
+    }
+    // as wide as the gap between the standings (touch: the minimap) allows
+    function noteMaxW() {
+        const cx = global.screenWidth / 2;
+        let right = global.screenWidth - HUD.edge;
+        if (global.mobile) right = Math.min(right, touchMinimapRect().x - 10);
+        else if (standingsRect) right = Math.min(right, standingsRect.x - 4);
+        return Math.max(220, Math.min(560, 2 * (right - cx)));
+    }
+    const noteFit = new Map();
+    function drawNotePill(c, n, cx, y, maxW) {
+        const fk = n.text + "|" + (maxW | 0);
+        let fs = noteFit.get(fk);
+        if (fs === undefined) {
+            // shrink to fit, never cut
+            fs = 12.5; while (fs > 9.5 && hudTextW(n.text, fs) + 28 > maxW) fs -= 0.5;
+            if (noteFit.size > 64) noteFit.clear();
+            noteFit.set(fk, fs);
+        }
+        const tw = hudTextW(n.text, fs), a = n.pulse ? 0.7 + 0.3 * n.pulse : 1;
+        hudPanel(c, Math.round(cx - tw / 2 - 14), y, tw + 28, NOTE_H, { r: NOTE_H / 2, lw: 2.5, lip: 2.5, bevel: false, alpha: a });
+        drawText(n.text, cx, y + NOTE_H / 2, fs, n.col, "center", true, a);
+        return y + NOTE_H + NOTE_GAP;
+    }
+    // hunted: a small red tag and a count, not a whole line
+    function drawNoteBadge(c, n, cx, y) {
+        const tw = hudTitleW(n.text, 12), sw = n.sub ? hudTextW(n.sub, 11) + 10 : 0;
+        const w = tw + sw + 22, h = 22, x = Math.round(cx - w / 2);
+        const a = 0.82 + 0.18 * (n.pulse || 1);
+        c.save();
+        c.globalAlpha = a;
+        roundRectPath(c, x, y, w, h, h / 2);
+        c.fillStyle = "#3a0d14"; c.fill();
+        c.lineWidth = 2.5; c.strokeStyle = n.col; c.stroke();
+        c.restore();
+        hudTitle(n.text, x + 11, y + h / 2, 12, n.col, "left", a);
+        if (n.sub) drawText(n.sub, x + 11 + tw + 10, y + h / 2, 11, "#ffd0d6", "left", true, a);
+        return y + h + NOTE_GAP;
+    }
+    function drawHudNotes(y) {
+        const r = global.royale;
+        const list = hudNoteList;
+        list.length = 0; notePoolN = 0;
+        const push = (n) => {
+            if (!n || !n.text) return;
+            for (const o of list) if (o.key === n.key || o.text === n.text) return;
+            list.push(n);
+        };
+        const st = r.storm || {};
+        if (r.lock) push(hudNote(0, "lock", st.fin ? "Last " + Math.max(0, r.lockLeft | 0) + "s of the raid. Nobody respawns now."
+            : "Final storm, " + Math.max(0, r.lockLeft | 0) + "s left. Nobody respawns now.", HUD.lilac));
+        else if (r.toast) push(hudNote(NOTE_CRIT.test(r.toast) ? 0 : 2, "toast", r.toast, color.guiwhite));
+        try { raidHeat.hudNotes(push); } catch (e) { /* */ }
+        const objs = r.objectives || [];
+        for (let i = 0; i < Math.min(2, objs.length); i++) {
+            const o = objs[i];
+            if (o.kind === "contest") push(hudNote(2, "contest" + i, (o.name || "Outpost") + " contested", o.c || color.gold));
+        }
+        if (!global.died) {
+            const you = r.you || {};
+            if (you.overdrive > 0 || you.anchor > 0) {
+                const parts = [];
+                if (you.overdrive > 0) parts.push("OVERDRIVE " + you.overdrive + "s");
+                if (you.anchor > 0) parts.push("STORM ANCHOR " + you.anchor + "s");
+                push(hudNote(2, "buff", parts.join("   "), color.teal));
+            }
+            const myStreak = you.streak | 0;
+            if (myStreak >= 4) push(hudNote(3, "streak", myStreak + " kill streak. You're on everyone's map", "#ffb347"));
+            // Raid Night coming up (shared/events.js): a small chip in the last 24 h
+            const evChip = global.tutorialMode ? "" : eventHudTick().chip;
+            if (evChip) push(hudNote(3, "event", evChip, HUD.gold));
+        }
+        list.sort((a, b) => a.pri - b.pri);
+        const c = ctx[2], cx = global.screenWidth / 2, maxW = noteMaxW();
+        for (let i = 0; i < list.length && i < NOTE_ROWS; i++) {
+            y = list[i].badge ? drawNoteBadge(c, list[i], cx, y) : drawNotePill(c, list[i], cx, y, maxW);
+        }
+        return y;
+    }
+    // QA: what the stack shows this frame
+    window.dwHudNotes = () => hudNoteList.slice(0, NOTE_ROWS).map(n => n.text + (n.sub ? " " + n.sub : ""));
+
     function drawRoyaleHUD() {
         const cx = global.screenWidth / 2;
         const now = performance.now();
@@ -6955,19 +7262,8 @@ import * as cosmetics from './account/cosmetics.js';
                 } else drawText(placeTxt || stormTxt, cx, fy, 12, placeTxt ? HUD.gold : stormCol, "center", true);
             }
             y = py + PH + HUD.lip + 10;
-            const pill = (txt, col) => {
-                const tw = hudTextW(txt, 12.5), ph = 24;
-                hudPanel(c, Math.round(cx - tw / 2 - 14), y, tw + 28, ph, { r: ph / 2, lw: 2.5, lip: 2.5, bevel: false });
-                drawText(txt, cx, y + ph / 2, 12.5, col, "center", true);
-                y += ph + 2.5 + 8;
-            };
-            if (r.lock) pill(st.fin ? "Last " + Math.max(0, r.lockLeft | 0) + "s of the raid. Nobody respawns now."
-                : "Final storm, " + Math.max(0, r.lockLeft | 0) + "s left. Nobody respawns now.", HUD.lilac);
-            else if (r.toast) pill(r.toast, color.guiwhite);
-            // Raid Night coming up (shared/events.js): a small chip in the last 24 h
-            const evChip = global.tutorialMode ? "" : eventHudTick().chip;
-            if (evChip && !global.died) pill(evChip, HUD.gold);
         });
+        hudSafe("notes", () => { y = drawHudNotes(y); });
         hudSafe("boss", () => {
             bossGlide.set(r.boss ? 1 : 0);
             const bg = bossGlide.get();
@@ -6975,28 +7271,8 @@ import * as cosmetics from './account/cosmetics.js';
             // fades, nothing below it slides
             if (bg > 0.02) { drawBossBar(cx, y, bg); y += BOSS_H + BOSS_GAP; }
         });
+        hudSafe("heat", () => { y = raidHeat.drawHud(ctx[2], cx, y); });
         hudSafe("status", () => {
-            const objs = r.objectives || [];
-            for (let i = 0; i < Math.min(2, objs.length); i++) {
-                const o = objs[i];
-                if (o.kind !== "contest") continue;
-                drawText((o.name || "Outpost") + " contested", cx, y, 12, o.c || color.gold, "center", true);
-                y += 18;
-            }
-            const myStreak = (r.you && r.you.streak) | 0;
-            if (myStreak >= 4 && !global.died) {
-                const blink = 0.7 + 0.3 * Math.sin(now / 240);
-                drawText(myStreak + " kill streak. You're marked on everyone's map", cx, y, 12, "#ffb347", "center", true, blink, 5);
-                y += 18;
-            }
-            const you = r.you || {};
-            if (you.overdrive > 0 || you.anchor > 0) {
-                const parts = [];
-                if (you.overdrive > 0) parts.push("OVERDRIVE " + you.overdrive + "s");
-                if (you.anchor > 0) parts.push("STORM ANCHOR " + you.anchor + "s");
-                drawText(parts.join("   "), cx, y, 12, color.teal, "center", true);
-                y += 18;
-            }
             if (r.occupy > 0) drawText("You can stay " + r.occupy + "s longer", cx, global.screenHeight - 56, 15, color.gold, "center");
             else if (r.lockout > 0) drawText("You can come back in " + r.lockout + "s", cx, global.screenHeight - 56, 15, color.guiwhite, "center");
         });
@@ -7027,13 +7303,15 @@ import * as cosmetics from './account/cosmetics.js';
                 hs.dist = Math.hypot(px - s.cx, py - s.cy) - s.r;
                 hs.dirAng = Math.atan2(s.cy - py, s.cx - px);
             }
+            hs.laneY = hudLanes().slamY;
+            hs.yieldText = raidHeat.slamUp();
             ctx[2].save();
             stormFx.drawHud(ctx[2], global.screenWidth, global.screenHeight, hudTopBottom, hs);
             ctx[2].restore();
         });
         if (hudErrText) drawText("HUD error: " + hudErrText, cx, global.screenHeight - 78, 11, "#ff7a6b", "center");
     }
-    const stormHud = { inside: false, sm: 0, immune: 0, final: false, dist: 0, dirAng: 0 };
+    const stormHud = { inside: false, sm: 0, immune: 0, final: false, dist: 0, dirAng: 0, laneY: 0, yieldText: false };
     const BOSS_H = 50, BOSS_GAP = 12;
     let spectateBarBottom = 0;   // the top cluster starts under the spectate bar while dead
     function drawBossBar(cx, y, a) {
@@ -7195,6 +7473,8 @@ import * as cosmetics from './account/cosmetics.js';
             return (myHex && (n || "") === myName) ? tag(nm, myHex) : nm;
         };
         let badge = null;
+        const heat = raidHeat.feedLine(f, who, tag);
+        if (heat) return heat;
         if (f.boss) {
             const nm = tag(f.name || "Boss", f.c || "#c9a8ff");
             if (f.spawn) return { text: nm + " has surfaced", badge: null };
@@ -7319,7 +7599,7 @@ import * as cosmetics from './account/cosmetics.js';
     function drawOverrideCard() {
         const L = leftCards;
         const mod = L && L.mod;
-        if (!mod) { overrideRect = null; return; }
+        if (!mod || global.hudCalm) { overrideRect = null; return; }
         const W = CARD_W;
         const lines = L.lines;
         const H = overrideH(lines.length);
@@ -7562,14 +7842,50 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     // ── centre callouts ────────────────────────────────────────────────
+    // ── the centre lanes ───────────────────────────────────────────────
+    // The big words (raidHeat slams: ELIMINATED, BANKED, YOU'RE HUNTED, the
+    // Core) have their own lane under everything at the top (the clock stack,
+    // the DOM notification cards, the first-raid guide); the plates (kill
+    // callouts, event callouts) go right under that lane, clear of the tags
+    // over your own tank. On a short screen the
+    // two can't both fit, so a plate waits while a slam is up.
+    const lanes = { slamY: 0, plateY: 0, tight: false, slamK: 1 };
+    function hudLanes() {
+        const H = global.screenHeight;
+        if (!global.tutorialMode) eventHudTick();
+        let top = Math.max(hudTopBottom || HUD.edge, evHud.toastFloor || 0);
+        const cr = global.coachRect;
+        if (cr && cr.y < H * 0.4) top = Math.max(top, cr.y + cr.h);
+        // a slam needs about 40 above its line and SLAM_DROP below; on a short
+        // screen (a phone with the boss bar up) it shrinks to fit above the tank
+        const room = H * 0.47 - top;
+        lanes.slamK = Math.max(0.55, Math.min(1, room / (40 + raidHeat.SLAM_DROP)));
+        lanes.slamY = Math.round(Math.max(H * 0.22, top + 6 + 40 * lanes.slamK));
+        const below = lanes.slamY + raidHeat.SLAM_DROP * lanes.slamK + 26;
+        lanes.plateY = Math.round(Math.max(H * 0.3, Math.min(H * 0.42, below)));
+        lanes.tight = lanes.plateY < below;
+        // tight: a plate never shares the screen with a slam, so it goes right under the stack
+        if (lanes.tight) lanes.plateY = Math.round(Math.max(H * 0.3, top + 28));
+        return lanes;
+    }
+    // a plate holds its place in the queue while the lanes overlap
+    let plateWaitAt = 0;
+    function platesWait(now) {
+        const wait = lanes.tight && raidHeat.slamUp();
+        const dt = wait && plateWaitAt ? now - plateWaitAt : 0;
+        plateWaitAt = wait ? now : 0;
+        return dt;
+    }
     function drawKillCallouts() {
         const list = global.callouts;
         if (!list || !list.length) return;
         if (!shopUiMode()) { list.length = 0; return; }
         const now = performance.now();
+        const held = platesWait(now);
+        if (held > 0 || plateWaitAt) { for (const t of list) t.born += held; return; }
         const DUR0 = 2300;
         const c = ctx[2];
-        const cx = global.screenWidth / 2, cy = Math.round(global.screenHeight * 0.37);
+        const cx = global.screenWidth / 2, cy = lanes.plateY || Math.round(global.screenHeight * 0.37);
         for (let k = list.length - 1; k >= 0; k--) {
             const t = list[k];
             const DUR = t.dur || DUR0;
@@ -7580,9 +7896,9 @@ import * as cosmetics from './account/cosmetics.js';
             const outT = age > DUR - 500 ? 1 - (age - (DUR - 500)) / 500 : 1;
             const a = (inT * inT * (3 - 2 * inT)) * Math.max(0, outT);
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
-            const col = t.kind === "override" || t.kind === "late" ? "#c9a8ff" : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
+            const col = raidHeat.calloutCol(t.kind) || (t.kind === "override" || t.kind === "late" ? "#c9a8ff" : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
                 : t.kind === "chest" || t.kind === "dropin" || t.kind === "bounty" || t.kind === "restored" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
-                : t.kind === "grown" || t.kind === "contract" ? HUD.emerald : t.kind === "revenge" ? "#ff6b5e" : color.guiwhite;
+                : t.kind === "grown" || t.kind === "contract" ? HUD.emerald : t.kind === "revenge" ? "#ff6b5e" : color.guiwhite);
             const base = t.kind === "streak" ? 16 : 23, size = base * pop;
             const len = (Math.max(hudTitleW(t.text, base), t.sub ? hudTextW(t.sub, 12.5) : 0) + 44) * pop;
             // points and a sub line stack: points first
@@ -7635,7 +7951,10 @@ import * as cosmetics from './account/cosmetics.js';
     const KIT_CARD = {
         medkit: "#3fbf7a", charge: "#e07c2f", strut: "#8a93a6", overdrive: "#f0a030",
         anchor: "#4d8be0", flash: "#38b8b0", bulwark: "#7a8494", decoy: "#d4a83a",
-        barrage: "#b0413e",
+        barrage: "#b0413e", rocket: "#e8642c", flare: "#d84a7a",
+        // abilities (abilityFx.js AB_COLOR, a shade deeper for the tile)
+        grapple: "#3a9fc4", burrow: "#b8722c", shock: "#7a66e0", radar: "#2fae64",
+        wall: "#7a8494", smoke: "#6c6680", rush: "#d8433a", pad: "#d49a26",
     };
     const KIT_LIGHT = "#fff8ec", KIT_SPARK = "#ffd640", KIT_ROCK = "#6f6480", KIT_WOOD = "#d99a5c";
     const kitDark = col => gameDraw.mixColors(col, HUD.ink, 0.62);
@@ -7743,6 +8062,75 @@ import * as cosmetics from './account/cosmetics.js';
             } },
         ],
     };
+    // abilities and the mobility kit
+    Object.assign(KIT_GLYPHS, {
+        grapple: u => [
+            // a rope running to a three-pronged hook
+            { p: c => { c.beginPath(); c.moveTo(-u * 0.62, u * 0.62); c.quadraticCurveTo(-u * 0.5, -u * 0.05, u * 0.12, -u * 0.12); }, line: u * 0.12, col: "#e9d8b4" },
+            { p: c => { c.beginPath(); c.moveTo(u * 0.1, -u * 0.12); c.lineTo(u * 0.5, -u * 0.52); }, line: u * 0.17, col: KIT_LIGHT },
+            { p: c => { c.beginPath(); c.arc(u * 0.32, -u * 0.34, u * 0.36, Math.PI * 0.05, Math.PI * 0.6); }, line: u * 0.13, col: KIT_LIGHT },
+            { p: c => { c.beginPath(); c.arc(u * 0.32, -u * 0.34, u * 0.36, Math.PI * 1.4, Math.PI * 1.95); }, line: u * 0.13, col: KIT_LIGHT },
+            { p: c => pointsPath(c, [[0.5, -0.7], [0.72, -0.72], [0.7, -0.5]], u), fill: KIT_LIGHT },
+        ],
+        burrow: u => [
+            // a drill bit, point first, with its spiral flutes
+            { p: c => pointsPath(c, [[-0.62, -0.42], [0.72, 0], [-0.62, 0.42]], u), fill: "#e4dcee" },
+            { p: c => roundRectPath(c, -u * 0.78, -u * 0.3, u * 0.24, u * 0.6, u * 0.06), fill: "#3d3547" },
+            { detail: u * 0.08, col: "#8a7f96", p: c => {
+                c.beginPath();
+                c.moveTo(-u * 0.36, -u * 0.32); c.lineTo(-u * 0.14, u * 0.25);
+                c.moveTo(-u * 0.04, -u * 0.2); c.lineTo(u * 0.14, u * 0.15);
+                c.moveTo(u * 0.26, -u * 0.09); c.lineTo(u * 0.4, u * 0.06);
+            } },
+            { p: c => starPath(c, u * 0.72, -u * 0.36, u * 0.2, u * 0.08), fill: KIT_SPARK },
+        ],
+        shock: u => [
+            { p: c => circlePath(c, 0, 0, u * 0.2), fill: KIT_LIGHT },
+            { p: c => { c.beginPath(); c.arc(0, 0, u * 0.44, -0.9, 0.9); }, line: u * 0.12, col: KIT_LIGHT },
+            { p: c => { c.beginPath(); c.arc(0, 0, u * 0.44, Math.PI - 0.9, Math.PI + 0.9); }, line: u * 0.12, col: KIT_LIGHT },
+            { p: c => { c.beginPath(); c.arc(0, 0, u * 0.68, -0.7, 0.7); }, line: u * 0.11, col: KIT_LIGHT },
+            { p: c => { c.beginPath(); c.arc(0, 0, u * 0.68, Math.PI - 0.7, Math.PI + 0.7); }, line: u * 0.11, col: KIT_LIGHT },
+        ],
+        radar: u => [
+            { p: c => circlePath(c, 0, 0, u * 0.66), fill: "#1e3a2a" },
+            { p: c => { c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, u * 0.66, -Math.PI / 2, -Math.PI / 2 + 1.1); c.closePath(); }, fill: "#7df0a8" },
+            { detail: u * 0.06, col: "rgba(125,240,168,0.6)", p: c => { c.beginPath(); c.arc(0, 0, u * 0.36, 0, Math.PI * 2); } },
+            { detail: true, fill: KIT_SPARK, p: c => circlePath(c, -u * 0.28, u * 0.22, u * 0.09) },
+            { detail: true, fill: "#ffffff", p: c => circlePath(c, u * 0.3, u * 0.3, u * 0.07) },
+        ],
+        wall: u => [
+            // three rocks rising in a row
+            { p: c => pointsPath(c, ROCK_CHUNK, u, -u * 0.44, u * 0.12, 0.3), fill: KIT_ROCK },
+            { p: c => pointsPath(c, ROCK_CHUNK, u, 0, -u * 0.1, 0.36), fill: "#8d82a0" },
+            { p: c => pointsPath(c, ROCK_CHUNK, u, u * 0.44, u * 0.12, 0.3), fill: KIT_ROCK },
+            { p: c => { c.beginPath(); c.moveTo(-u * 0.7, u * 0.6); c.lineTo(u * 0.7, u * 0.6); }, line: u * 0.12, col: KIT_LIGHT },
+        ],
+        smoke: u => [
+            { p: c => circlePath(c, -u * 0.3, u * 0.12, u * 0.32), fill: "#d8d2e4" },
+            { p: c => circlePath(c, u * 0.08, -u * 0.14, u * 0.38), fill: "#ece8f4" },
+            { p: c => circlePath(c, u * 0.38, u * 0.18, u * 0.28), fill: "#d8d2e4" },
+            { p: c => roundRectPath(c, -u * 0.6, u * 0.12, u * 1.24, u * 0.34, u * 0.17), fill: "#d8d2e4" },
+        ],
+        rush: u => [
+            { p: c => pointsPath(c, BOLT, u, -u * 0.08, 0, 0.62), fill: KIT_SPARK },
+            { p: c => { c.beginPath(); c.moveTo(u * 0.34, -u * 0.5); c.lineTo(u * 0.62, -u * 0.22); c.lineTo(u * 0.34, u * 0.06); }, line: u * 0.12, col: KIT_LIGHT },
+        ],
+        pad: u => [
+            { p: c => roundRectPath(c, -u * 0.66, u * 0.3, u * 1.32, u * 0.3, u * 0.12), fill: "#3d3547" },
+            { p: c => pointsPath(c, [[0, -0.7], [0.5, -0.12], [0.2, -0.12], [0.2, 0.22], [-0.2, 0.22], [-0.2, -0.12], [-0.5, -0.12]], u), fill: KIT_LIGHT },
+        ],
+        rocket: u => [
+            // a boot with a flame out of the heel
+            { p: c => pointsPath(c, [[-0.5, 0.5], [-0.5, 0.06], [-0.3, 0.06], [-0.3, -0.6], [0.08, -0.6], [0.08, 0.06], [0.5, 0.2], [0.6, 0.5]], u), fill: KIT_LIGHT },
+            { p: c => pointsPath(c, [[-0.5, 0.28], [-0.82, 0.38], [-0.62, 0.48], [-0.86, 0.62], [-0.5, 0.58]], u), fill: KIT_SPARK },
+            { detail: u * 0.08, col: "#a8672f", p: c => { c.beginPath(); c.moveTo(-u * 0.3, -u * 0.3); c.lineTo(u * 0.08, -u * 0.3); } },
+        ],
+        flare: u => [
+            { p: c => starPath(c, -u * 0.12, u * 0.08, u * 0.5, u * 0.18, 5), fill: "#ffe6f0" },
+            { p: c => pointsPath(c, [[0.18, -0.42], [0.66, -0.66], [0.42, -0.18]], u), fill: KIT_SPARK },
+            { p: c => { c.beginPath(); c.moveTo(u * 0.16, -u * 0.16); c.lineTo(u * 0.52, -u * 0.52); }, line: u * 0.12, col: KIT_SPARK },
+        ],
+    });
     // Paints a glyph's parts as one sticker: a soft drop, every outline, then
     // every fill, so parts that touch merge into a single silhouette.
     function paintKitGlyph(c, id, u, dark) {
@@ -7886,7 +8274,7 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
         // slots: key badge top-left, count top-right, name below
-        const keys = [keyLabel("KEY_KIT_1", "Z"), keyLabel("KEY_KIT_2", "Q"), keyLabel("KEY_KIT_3", "N")];
+        const keys = [keyLabel("KEY_KIT_1", "Z"), keyLabel("KEY_KIT_2", "R"), keyLabel("KEY_KIT_3", "N")];
         const slotY = gearY + gearH + 7, slotH = H - (slotY - y) - 7;
         const slotW = (W - pad * 2 - gap * 2) / 3;
         for (let i = 0; i < 3; i++) {
@@ -7949,8 +8337,29 @@ import * as cosmetics from './account/cosmetics.js';
         }
         c.restore();
     }
+    // dash + ability chips and effects (abilityFx.js) draw with these pieces
+    abilityFx.init({
+        // roundRectPath is a const further down: reach it at call time
+        HUD, hudPanel, hudWell, hudKey, hudTitle, hudTitleW, drawText, roundRectPath: (...a) => roundRectPath(...a), keyLabel,
+        drawKitIcon: (c, id, x, y, sz) => drawKitIcon(c, id, x, y, sz),
+        queueTip: (t, b, x, y) => queueTip(t, b, x, y),
+        markSlot: (id, r) => { kitSlotIcons[id] = r; },
+        gemClass: (e) => gemSpriteClass(e),
+        landAt: () => raidHeat.landAt ? raidHeat.landAt() : 0,
+    });
+    abilityFx.setSelf(() => gui.playerid);
+    let abilityBarRect = null;
+    function drawAbilityBar() {
+        abilityBarRect = null;
+        const want = shopUiMode() && !global.died && !global.mobile && global.gems && global.gems.cap > 0 && hudDrawn.wallet;
+        if (!want) return;
+        const cr = global.canvas.height / global.screenHeight / global.ratio;
+        abilityBarRect = abilityFx.drawHud(ctx[2], hudDrawn.wallet, { x: global.mouse.x / cr, y: global.mouse.y / cr });
+        if (abilityBarRect) hudDrawn.ability = abilityBarRect;
+    }
     // ── new ability reveal ─────────────────────────────────────────────
-    // socketinit queues { id } in global.kitUnlocks when a kit item arrives.
+    // socketinit queues { id } in global.kitUnlocks when a kit item arrives
+    // (abilityFx.js queues { id, ab: true } for an ability).
     // One at a time: the screen dims, the icon slams in at the centre over
     // spinning rays under a NEW ABILITY! ribbon, holds, then flies into its
     // kit slot, which pulses when it lands.
@@ -8049,13 +8458,77 @@ import * as cosmetics from './account/cosmetics.js';
         }
         c.restore();
     }
+    let unlockHoldUntil = 0;
+    // Something you have had before: no card, a flash at your tank and the
+    // icon glides into its slot on an arc, with a short line under it.
+    const GLIDE_MS = 720;
+    function drawKitGlides(now) {
+        const q = global.kitGlides;
+        if (!q || !q.length) return;
+        if (global.died || !shopUiMode()) { q.length = 0; return; }
+        const land = raidHeat.landAt ? raidHeat.landAt() : 0;
+        if (land > 0) unlockHoldUntil = land + 600;
+        if (now < unlockHoldUntil) return;
+        const c = ctx[2];
+        const sx = global.screenWidth / 2, sy = global.screenHeight / 2;
+        const calm = !!(global.reducedMotion && global.reducedMotion());
+        for (let i = q.length - 1; i >= 0; i--) {
+            const g = q[i];
+            if (!g.start) g.start = now + i * 160;
+            const age = now - g.start;
+            if (age < 0) continue;
+            const slot = kitSlotIcons[g.id];
+            const live = slot && now - slot.at < 250;
+            const u = Math.min(1, age / GLIDE_MS);
+            const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+            const tx = live ? slot.x : sx, ty = live ? slot.y : sy - 60;
+            const ix = sx + (tx - sx) * e, iy = sy - 40 + (ty - sy + 40) * e - Math.sin(Math.PI * e) * (calm ? 0 : 70);
+            c.save();
+            // the flash where you are
+            if (age < 260) {
+                const f = age / 260;
+                c.globalAlpha = (1 - f) * 0.8;
+                c.strokeStyle = KIT_CARD[g.id] || HUD.gold;
+                c.lineWidth = 6 * (1 - f) + 1;
+                circlePath(c, sx, sy - 40, 18 + 46 * f); c.stroke();
+            }
+            // a short trail
+            if (!calm && !config.graphical.fewerEffects) {
+                for (let k = 1; k <= 4; k++) {
+                    const f = Math.max(0, u - k * 0.05);
+                    const ee = f < 0.5 ? 4 * f * f * f : 1 - Math.pow(-2 * f + 2, 3) / 2;
+                    c.globalAlpha = 0.7 * (1 - k / 5) * (1 - u * 0.6);
+                    c.fillStyle = k & 1 ? KIT_SPARK : "#ffffff";
+                    starPath(c, sx + (tx - sx) * ee, sy - 40 + (ty - sy + 40) * ee - Math.sin(Math.PI * ee) * 70, 6 - k, (6 - k) * 0.36);
+                    c.fill();
+                }
+            }
+            c.globalAlpha = live ? 1 : 1 - Math.max(0, u - 0.7) / 0.3;
+            if (u < 1) drawKitIcon(c, g.id, ix, iy, 40 + (26 - 40) * e);
+            c.restore();
+            if (g.text && age < GLIDE_MS + 1600) {
+                const a = age < GLIDE_MS + 1200 ? 1 : 1 - (age - GLIDE_MS - 1200) / 400;
+                hudTitle(g.text, sx, sy + 70, 15, HUD.head, "center", Math.min(1, age / 200) * a);
+            }
+            if (u >= 1 && !g.landed) {
+                g.landed = true;
+                if (live) kitSlotPulse = { id: g.id, at: now };
+            }
+            if (age > GLIDE_MS + (g.text ? 1600 : 0)) q.splice(i, 1);
+        }
+    }
     function drawKitUnlock() {
         const now = performance.now();
         drawKitSlotPulse(now);
+        drawKitGlides(now);
         const q = global.kitUnlocks;
         global.kitUnlockHeld = null;
         if (!q || !q.length) return;
         if (global.died || !shopUiMode()) { q.length = 0; return; }
+        // never over the sky drop: the cards wait until just after the landing
+        const land = raidHeat.landAt ? raidHeat.landAt() : 0;
+        if (land > 0) unlockHoldUntil = land + 600;
+        if (now < unlockHoldUntil) return;
         const sh = global.shop;
         const u = q[0];
         const item = (sh.catalog || []).find(i => i.id === u.id);
@@ -8147,14 +8620,15 @@ import * as cosmetics from './account/cosmetics.js';
         }
         // the ribbon slams down from larger
         const rbT = ramp(age, t0 + 200, t0 + 400);
+        const ribbon = u.ab ? (u.trial ? "FREE TRIAL!" : "NEW ABILITY!") : "NEW ITEM!";
         if (rbT > 0 && out > 0.01) {
-            const rw = hudTitleW("NEW ABILITY!", 25) + 56, rh = 42;
+            const rw = hudTitleW(ribbon, 25) + 56, rh = 42;
             const k = calm ? 1 : 1 + 0.5 * (1 - easeOut(rbT));
             c.save();
             c.globalAlpha = rbT * out;
             c.translate(cx, iconY - S / 2 - 34);
             c.scale(k, k);
-            drawRibbon(c, 0, 0, rw, rh, "NEW ABILITY!");
+            drawRibbon(c, 0, 0, rw, rh, ribbon);
             c.restore();
         }
         // name, blurb and key, rising into place one after another
@@ -8164,12 +8638,14 @@ import * as cosmetics from './account/cosmetics.js';
             hudTitle(item.name, cx, iconY + S / 2 + 38 + 10 * (1 - nT), ns, HUD.head, "center", nT, c);
         }
         if (bT > 0.01) {
-            const lines = wrapLines(unlockBlurb(item.desc), 15, W).slice(0, 2);
+            const lines = wrapLines(u.spare ? "Added to your abilities. Equip it at a shop." : u.trial ? "Free for 2 minutes. Buy it at a shop to keep it." : unlockBlurb(item.desc), 15, W).slice(0, 2);
             let ly = iconY + S / 2 + 74 + 10 * (1 - bT);
             for (const l of lines) { drawText(l, cx, ly, 15, HUD.text, "center", true, bT); ly += 20; }
             const slotIdx = (sh.state.kitOrder || []).indexOf(u.id);
-            const keyName = slotIdx >= 0 ? keyLabel("KEY_KIT_" + (slotIdx + 1), ["Z", "Q", "N"][slotIdx]) : "";
-            if (keyName && global.mobile) {
+            const keyName = u.spare ? "" : u.ab ? keyLabel("KEY_ABILITY", "Q") : slotIdx >= 0 ? keyLabel("KEY_KIT_" + (slotIdx + 1), ["Z", "R", "N"][slotIdx]) : "";
+            if (keyName && global.mobile && u.ab) {
+                hudTitle("Tap the ability button to use it", cx, ly + 16, 16, HUD.text2, "center", bT, c);
+            } else if (keyName && global.mobile) {
                 hudTitle(AIMED_KIT[u.id] ? "Tap its button, then tap where it should land" : "Tap its button on the right to use it", cx, ly + 16, 16, HUD.text2, "center", bT, c);
             } else if (keyName) {
                 const kh = 26, kw = Math.max(kh, hudTitleW(keyName, kh * 0.62) + kh * 0.55);
@@ -8246,6 +8722,13 @@ import * as cosmetics from './account/cosmetics.js';
     // ── shop panel ─────────────────────────────────────────────────────
     function shopStatus(item) {
         const st = global.shop.state || {};
+        if (item.cat === "ability") {
+            const ab = global.abil || {};
+            if (ab.eq === item.id && ab.trialId !== item.id) return { text: "EQUIPPED", col: SHOP_ACCENT, buy: false };
+            if ((ab.own || []).includes(item.id)) return { text: "OWNED", col: SHOP_ACCENT, buy: true, equip: true };
+            if (ab.trialId === item.id) return { text: "ON TRIAL", col: color.gold, buy: true };
+            return { text: "", col: color.grey, buy: true };
+        }
         if (item.cat === "drill") {
             if ((st.drill | 0) >= item.tier) return { text: "OWNED", col: SHOP_ACCENT, buy: false };
             if (item.tier !== (st.drill | 0) + 1) return { text: "LOCKED", col: color.grey, buy: false };
@@ -8355,14 +8838,17 @@ import * as cosmetics from './account/cosmetics.js';
         const cbs = 30;
         hudButton(c, x + W - 14 - cbs / 2, y + 11, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15, type: "shop", index: 41, cr, alpha: g });
         // tabs: chunky toggles, the picked one copper
+        SHOP_TABS = catalog.some(it => it.cat === "ability") ? SHOP_TABS_AB : SHOP_TABS_OLD;
+        sh.tabIds = SHOP_TABS.map(t => t[0]);
+        if (!sh.tabPicked && SHOP_TABS === SHOP_TABS_AB && !global.tutorialMode) sh.tab = "ability";
         const tabY = y + 62, tabH = 30, tabW = (W - 40) / SHOP_TABS.length;
         for (let i = 0; i < SHOP_TABS.length; i++) {
             const [id, label] = SHOP_TABS[i];
             const tx = x + 20 + i * tabW;
             const on = sh.tab === id;
             hudButton(c, tx + tabW / 2, tabY, tabW - 8, tabH, label, on
-                ? { fill: HUD.copper, lipCol: HUD.copperDk, textCol: "#fff", size: 14, type: "shop", index: i, cr, alpha: g }
-                : { size: 14, type: "shop", index: i, cr, alpha: g, textCol: HUD.text });
+                ? { fill: HUD.copper, lipCol: HUD.copperDk, textCol: "#fff", size: 14, type: "shop", index: 42 + i, cr, alpha: g }
+                : { size: 14, type: "shop", index: 42 + i, cr, alpha: g, textCol: HUD.text });
         }
         // item grid + detail
         const items = catalog.filter(it => it.cat === sh.tab);
@@ -8392,10 +8878,10 @@ import * as cosmetics from './account/cosmetics.js';
             const hov = hover === 4 + i;
             const hT = hoverEase("card:" + it.id, hov, now);
             const status = shopStatus(it);
-            const afford = (global.gems.banked | 0) >= it.price;
+            const afford = status.equip || (global.gems.banked | 0) >= it.price;
             drawFlatTile(c, ix, iy, cardW, cardH, sel ? SHOP_CARD_SEL : status.buy ? SHOP_CARD : SHOP_CARD_OFF, hT, g, sel, HUD.copper);
             let nameX = ix + 10;
-            if (it.cat === "kit") { drawKitIcon(c, it.id, ix + 18, iy + Math.min(17, cardH * 0.3), Math.min(18, cardH * 0.34)); nameX = ix + 32; }
+            if (it.cat === "kit" || it.cat === "ability") { drawKitIcon(c, it.id, ix + 18, iy + Math.min(17, cardH * 0.3), Math.min(18, cardH * 0.34)); nameX = ix + 32; }
             const nameW = cardW - (nameX - ix) - 10;
             let ns = 12; while (ns > 9 && shopMeasureText(it.name, ns) > nameW) ns -= 0.5;
             drawText(it.name, nameX, iy + Math.min(17, cardH * 0.3), ns, status.buy ? color.guiwhite : HUD.text2, "left", true, g);
@@ -8418,29 +8904,36 @@ import * as cosmetics from './account/cosmetics.js';
             const status = shopStatus(sel);
             const catName = (SHOP_TABS.find(t => t[0] === sel.cat) || ["", ""])[1].toUpperCase();
             let tx = dx + 14;
-            if (sel.cat === "kit") { drawKitIcon(c, sel.id, dx + 27, dy + 24, 26); tx = dx + 48; }
+            if (sel.cat === "kit" || sel.cat === "ability") { drawKitIcon(c, sel.id, dx + 27, dy + 24, 26); tx = dx + 48; }
             let ns2 = 18; while (ns2 > 12 && hudTitleW(sel.name, ns2) > dx + detailW - 12 - tx) ns2 -= 0.5;
             hudTitle(sel.name, tx, dy + 19, ns2, HUD.head, "left", g);
-            drawText(catName + (sel.cat === "kit" ? "  ·  MAX " + sel.max + " PER SLOT" : sel.cat === "drill" ? "  ·  TIER " + sel.tier : sel.cat === "arm" ? "  ·  " + sidearmInput().toUpperCase() : "  ·  PASSIVE"), tx, dy + 37, 9.5, HUD.text2, "left", true, g);
+            const abInput = global.mobile ? "BUTTON" : "KEY " + keyLabel("KEY_ABILITY", "Q").toUpperCase();
+            drawText(catName + (sel.cat === "kit" ? "  ·  MAX " + sel.max + " PER SLOT" : sel.cat === "drill" ? "  ·  TIER " + sel.tier : sel.cat === "arm" ? "  ·  " + sidearmInput().toUpperCase()
+                : sel.cat === "ability" ? "  ·  " + Math.round((sel.cd || 0) / 1000) + "S COOLDOWN  ·  " + abInput : "  ·  5 MINUTES"), tx, dy + 37, 9.5, HUD.text2, "left", true, g);
             const lines = wrapLines(sel.desc, 11.5, detailW - 28);
             let ly = dy + 60;
             for (const ln of lines.slice(0, 5)) { drawText(ln, dx + 14, ly, 11.5, HUD.text, "left", true, g); ly += 16; }
+            if (sel.cat === "ability") {
+                for (const ln of wrapLines("Yours for the whole raid, deaths too. Own a few and swap them here with Equip.", 10.5, detailW - 28)) {
+                    drawText(ln, dx + 14, ly + 2, 10.5, HUD.text2, "left", true, g); ly += 14;
+                }
+            }
             if (sel.cat === "kit" && !status.buy && status.text === "KIT FULL") {
                 for (const ln of wrapLines("Your kit holds 3 kinds of item. Use one up to make room.", 10.5, detailW - 28)) {
                     drawText(ln, dx + 14, ly + 2, 10.5, "#ff9a8c", "left", true, g); ly += 14;
                 }
             }
-            const afford = (global.gems.banked | 0) >= sel.price;
+            const afford = status.equip || (global.gems.banked | 0) >= sel.price;
             c.save(); c.globalAlpha = g;
             gemPath(c, dx + 20, dy + dh - 60, 6.5);
             c.fillStyle = afford ? HUD.gold : "#ff9a8c"; c.fill();
             c.lineWidth = 1.5; c.strokeStyle = HUD.ink; c.stroke();
             c.restore();
-            hudTitle(fmtNum(sel.price) + " banked", dx + 32, dy + dh - 60, 15, afford ? HUD.gold : "#ff9a8c", "left", g);
+            hudTitle(status.equip ? "Owned" : fmtNum(sel.price) + " banked", dx + 32, dy + dh - 60, 15, afford ? HUD.gold : "#ff9a8c", "left", g);
             const can = status.buy && afford;
             const bbx = dx + 14, bby = dy + dh - 48, bbw = detailW - 28, bbh = 36;
             const cap = t => t.charAt(0) + t.slice(1).toLowerCase();
-            const btnText = !status.buy ? (status.text === "KIT FULL" ? "Kit full (3 slots)" : cap(status.text || "UNAVAILABLE")) : !afford ? "Not enough banked" : "Buy";
+            const btnText = !status.buy ? (status.text === "KIT FULL" ? "Kit full (3 slots)" : cap(status.text || "UNAVAILABLE")) : status.equip ? "Equip" : !afford ? "Not enough banked" : "Buy";
             hudButton(c, bbx + bbw / 2, bby, bbw, bbh, btnText, can
                 ? { fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff", size: 17, type: "shop", index: 40, cr, alpha: g }
                 : { enabled: false, size: 14, alpha: g, textCol: HUD.text });
@@ -8517,7 +9010,7 @@ import * as cosmetics from './account/cosmetics.js';
     const KIT_FX = {
         medkit: "#6ff5a8", overdrive: "#ffb347", anchor: "#7fb1f2", flash: "#5ce0d8",
         bulwark: "#b9c3d1", decoy: "#ffd75e", strut: "#c9c9d6", charge: "#ffe0a8",
-        barrage: "#ff8a6b",
+        barrage: "#ff8a6b", rocket: "#ffb347", flare: "#ff8ab0",
     };
     const chestSeenAt = new Map();
     function drawRoyaleWorldMarkers(px, py, ratio) {
@@ -8593,6 +9086,7 @@ import * as cosmetics from './account/cosmetics.js';
             const s = toScreen(tp.x, tp.y);
             if (!onScreen(s, -30)) marks.push({ pri: 0, s, col: playerHexCol() || HUD.sky, glyph: "mate", name: shortName(dmate.name || "Teammate", 12).toUpperCase(), d: Math.hypot(tp.x - me.x, tp.y - me.y) });
         }
+        raidHeat.worldMarks(marks, toScreen, onScreen, me, trackPos, ratio);
         marks.sort((a, b) => a.pri - b.pri);
         const placed = [];
         for (const mk of marks.slice(0, 4)) {
@@ -8687,6 +9181,8 @@ import * as cosmetics from './account/cosmetics.js';
             if (f.kind.startsWith("kit_")) {
                 // kit use: a coloured pulse around the tank plus a few shards
                 const id = f.kind.slice(4);
+                // most kit items draw their own look (abilityFx.js, the AF packet)
+                if (abilityFx.KIT_FX_IDS.has(id)) { list.splice(i, 1); continue; }
                 const col = KIT_FX[id] || "#ffd76e";
                 const DUR2 = 700;
                 if (age > DUR2) { list.splice(i, 1); continue; }
@@ -9009,6 +9505,7 @@ import * as cosmetics from './account/cosmetics.js';
                 mapLabel(String(r.boss.name || "BOSS").toUpperCase(), mx, my + dotR * 3.4, false, col);
             }
         }
+        raidHeat.drawMap(c, T, inside, dotR, pulse, mapLabel, trackPos);
     }
     // ── spawn shield ──────────────────────────────────────────────────────
     // The server holds the shield for 4 s, then drops it on the first move
@@ -9053,7 +9550,8 @@ import * as cosmetics from './account/cosmetics.js';
             : left > 0
             ? "Spawn shield: safe for " + left + "s, then moving or shooting drops it"
             : "Spawn shield: moving or shooting drops it";
-        const y = global.screenHeight / 2 + 120, size = 22;
+        // under the mining combo that sits below the tank
+        const y = global.screenHeight / 2 + 175, size = 22;
         const w = measureText(line, size) + 36, h = size + 18;
         if (since < 4000) global.hudCardUp = "shield";
         const c = ctx[2];
@@ -9125,14 +9623,14 @@ import * as cosmetics from './account/cosmetics.js';
     function eventHudTick() {
         const E = window.DWEvents;
         const t = Date.now();
-        if (!E || t - evHud.at < 1000) return evHud;
+        if (t - evHud.at < 1000) return evHud;
         evHud.at = t;
-        // the DOM notification cards under the clock (gameToasts.js), in HUD units
+        // the DOM notification cards under the clock (gameToasts.js), in HUD
+        // units: the centre lanes start below them
         evHud.toastFloor = 0;
-        if (evHud.callAt) {
-            const st = document.getElementById("dwGameToasts");
-            if (st && st.childElementCount) evHud.toastFloor = st.getBoundingClientRect().bottom * global.screenWidth / Math.max(1, window.innerWidth);
-        }
+        const st = document.getElementById("dwGameToasts");
+        if (st && st.childElementCount) evHud.toastFloor = st.getBoundingClientRect().bottom * global.screenWidth / Math.max(1, window.innerWidth);
+        if (!E) return evHud;
         const now = E.now(), c = E.current(now);
         evHud.chip = c && !c.live && c.ms <= E.HUD_LEAD_MS ? c.ev.name + " in " + E.countdown(c.ms) : "";
         // callouts wait for a free screen: not dead, not the raid-end finale
@@ -9160,7 +9658,11 @@ import * as cosmetics from './account/cosmetics.js';
         if (!evHud.callAt) return;
         const age = performance.now() - evHud.callAt;
         if (age > EV_CALL_MS) { evHud.callAt = 0; return; }
-        if (global.died || global.tutorialMode || raidFinale.hidesHud() || !royaleActive()) return;
+        if (global.died || global.tutorialMode || raidFinale.hidesHud() || !royaleActive() || global.hudCalm) return;
+        // one plate at a time: a kill callout up (or a slam over the lane) holds it
+        const nowE = performance.now();
+        if (global.hudCalloutUp || plateWaitAt) { evHud.callAt += nowE - (evHud.waitAt || nowE); evHud.waitAt = nowE; return; }
+        evHud.waitAt = 0;
         const c = ctx[2];
         // touch: the HUD is scaled up, so a smaller plate keeps it clear of the
         // message stack on the right
@@ -9178,7 +9680,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (cr && cr.y < global.screenHeight * 0.4) top = Math.max(top, cr.y + cr.h);   // touch puts it at the bottom
         top = Math.max(top, evHud.toastFloor);
         // never lower than just above the tank, which sits at mid screen
-        const cy = Math.round(Math.min(global.screenHeight * 0.48 - h / 2, Math.max(global.screenHeight * (global.mobile ? 0 : 0.28), top + 18 + h / 2)));
+        const cy = Math.round(Math.min(global.screenHeight * 0.48 - h / 2, Math.max(lanes.plateY - h * 0.3, top + 18 + h / 2)));
         evPanelOpts.alpha = a;
         global.hudCardUp = "event";
         hudPanel(c, cx - w / 2, cy - h / 2, w, h, evPanelOpts);
@@ -9792,6 +10294,7 @@ import * as cosmetics from './account/cosmetics.js';
 
     function drawMapMarkers(T, rx, ry, rw, rh, nameSize, dotR, skipNameId, hoverOutpostId) {
         const c = ctx[2];
+        abilityFx.drawMapRadar(c, T);
         const inside = (x, y) => x > rx - 8 && x < rx + rw + 8 && y > ry - 8 && y < ry + rh + 8;
         const teamCol = myTeamColor();
 
@@ -11299,7 +11802,7 @@ import * as cosmetics from './account/cosmetics.js';
             }
             touch.zones[id] = { x: x0 / k, y: y / k, w: cw / k, h: chipH / k, tap: () => { chipHintDone(id); tap(); } };
             const r = { x: x0, y, w: cw, h: chipH };
-            if (id === pointAt) drawChipPointer(c, r, id === "tiles" ? "Tap to upgrade your tank" : "Tap to spend your points", now);
+            if (id === pointAt && !(global.shop && global.shop.onPad && !global.shop.dismissed)) drawChipPointer(c, r, id === "tiles" ? "Tap to upgrade your tank" : "Tap to spend your points", now);
             return r;
         };
         if (gui.upgrades.length > 0 && !touchTiles.open && !touchStats.open) {
@@ -11379,12 +11882,15 @@ import * as cosmetics from './account/cosmetics.js';
         if (global.statTapAt && global.statTapAt !== touchSeenTap) { touchSeenTap = global.statTapAt; touchStats.at = now; }
         drawTouchKit(c, L, k, now);
         drawTouchArm(c, L, k, now);
+        if (touch.buttonShown("dash")) abilityFx.drawTouch(c, L, k, (name) => [...touch.btn.values()].includes(name));
         drawTouchPlace(c, k, now);
+        abilityFx.drawTouchTip(L, k);
         if (touch.move) { drawTouchStick(c, touch.move, "move", k, now); if (!touchHint.move) { touchHint.move = true; saveTouchHint(); } }
         if (touch.aim) { drawTouchStick(c, touch.aim, "aim", k, now); if (!touchHint.aim && touch.aim.firing) { touchHint.aim = true; saveTouchHint(); } }
         if (touch.aim && touch.aim.firing) drawTouchReticle(c, now);
-        // first raids: ghost sticks show where the thumbs go
-        if (!touchHint.move || !touchHint.aim) {
+        // first raids: ghost sticks show where the thumbs go (not over an open shop)
+        const shopUp = !!(global.shop && global.shop.onPad && !global.shop.dismissed);
+        if ((!touchHint.move || !touchHint.aim) && !shopUp) {
             const sw = global.screenWidth, sh = global.screenHeight;
             const bob = Math.sin(now / 500) * 4;
             const ghost = (x, y, label) => {
@@ -11909,6 +12415,7 @@ import * as cosmetics from './account/cosmetics.js';
         const killedBy = cause === "raidend" ? "The raid ended. Everyone went down together"
             : cause === "rock" ? "Crushed by the living rock"
             : cause === "base" ? "Shot down by the enemy base"
+            : cause === "core" ? "Shattered by the Core"
             : global.finalKillers.length
                 ? "Taken down by " + global.finalKillers.join(" and ")
                 : "Nobody finished you off";
@@ -11996,6 +12503,7 @@ import * as cosmetics from './account/cosmetics.js';
             : cause === "rock" ? "Crushed by the living rock"
             : cause === "storm" ? "Lost in the storm"
             : cause === "base" ? "Shot down by the enemy base"
+            : cause === "core" ? "Shattered by the Core"
             : global.finalKillers.length
                 ? "Taken down by " + global.finalKillers.join(" and ")
                 : "Nobody finished you off";
@@ -12247,6 +12755,13 @@ import * as cosmetics from './account/cosmetics.js';
         global.player.cy.animY = playery;
         let px = ratio * global.player.renderx,
             py = ratio * global.player.rendery;
+        // the sky drop: the camera rides your falling tank down to its spot
+        // (the minimap and markers keep reading renderx, so they don't jump)
+        {
+            let camFall = null;
+            try { camFall = raidHeat.camOffset(); } catch (e) { camFall = null; }
+            if (camFall) { px += camFall.dx * ratio; py += camFall.dy * ratio; }
+        }
         // raid death card: lift the view so the killer shows above the card
         {
             const want = global.died && global.royaleDied && !global.royaleSpectating ? (global.deathCamLift || 0) * util.getScreenRatio() : 0;
@@ -12261,11 +12776,15 @@ import * as cosmetics from './account/cosmetics.js';
         let spacing = 20;
 
         drawFloor(px, py, ratio, tick);
+        try { raidHeat.drawFloor(ctx[0], px, py, ratio); } catch (e) { /* never break the frame */ }
+        try { abilityFx.drawFloor(ctx[0], px, py, ratio); } catch (e) { /* never break the frame */ }
         drawEntities(px, py, ratio, tick, spacing);
         drawOutpostLabels(px, py, ratio);
         drawRoyaleWorldMarkers(px, py, ratio);
         drawFx(px, py, ratio);
+        try { abilityFx.drawWorld(ctx[2], px, py, ratio); } catch (e) { /* never break the frame */ }
         drawTankBursts(px, py, ratio);
+        try { raidHeat.drawWorld(ctx[2], px, py, ratio); } catch (e) { /* never break the frame */ }
         // same camera transform as the entities; drawn before the HUD so the
         // HUD wins the overlap
         drawDamageNumbers(px, py, ratio);
@@ -12308,10 +12827,13 @@ import * as cosmetics from './account/cosmetics.js';
         if (global.GUIStatus.renderGUI) {
             updateMapSmoothing();
             drawLowHealthVignette();
+            try { raidHeat.drawScreen(ctx[2]); } catch (e) { /* */ }
             drawSatchelDanger();
             drawTeamBankBar();
             drawRoyaleHUD();
+            hudLanes();
             drawKillCallouts();
+            try { raidHeat.drawSlams(ctx[2], lanes.slamY, lanes.slamK); } catch (e) { /* */ }
             if (global.royaleSpectating) drawRoyaleSpectateBar();
             try { updateRoyaleDomButtons(); } catch { /* */ }
             drawRoyaleBoard();
@@ -12328,9 +12850,9 @@ import * as cosmetics from './account/cosmetics.js';
                 drawGemPopups();   // +N numbers + pickup ring over the tank
                 drawMineCombo();    // mining chain meter under the tank
                 drawKitBox(spacing, alcoveSize);
+                drawAbilityBar();
                 drawVaultUI();
                 drawShopUI();
-                drawTooltips();
             }
             if (!finaleHud) drawMinimapAndDebug(spacing, alcoveSize, global.GRAPHDATA, tick);
             // Tutorial: no leaderboard (the server sends an empty one anyway)
@@ -12338,6 +12860,8 @@ import * as cosmetics from './account/cosmetics.js';
             if (global.GUIStatus.renderUpgrades && !finaleHud) drawAvailableUpgrades(spacing, alcoveSize);
             // touch: the thumb buttons, chips and stat panel go under the reveal too
             if (global.mobile) drawTouchHud();
+            // hover hints above everything, the upgrade tiles included
+            if (global.GUIStatus.renderPlayerBars && !finaleHud) drawTooltips();
             // the new ability reveal dims everything under it (the vault and
             // shop panels included), so it goes last
             if (global.GUIStatus.renderPlayerBars && !finaleHud) drawKitUnlock();
@@ -12936,6 +13460,8 @@ import * as cosmetics from './account/cosmetics.js';
         }
 
         var ratio = config.graphical.screenshotMode ? 2 : util.getRatio();
+        // the sky drop pulls the camera up and dives it back down (skyDrop.js)
+        if (!config.graphical.screenshotMode) { try { ratio *= raidHeat.camZoom(ratio); } catch (e) { /* */ } }
 
         gameDraw.reanimateColors();
         for (let context of ctx) {
@@ -13005,6 +13531,8 @@ import * as cosmetics from './account/cosmetics.js';
         let p = performance.now();
         try {
             drawGameplay(tick, ratio);
+            // glitch strips and the low-health colour drain, under the HUD
+            try { raidHeat.postWorld(ctx); } catch (e) { /* */ }
             drawGUI(tick, util.getScreenRatio());
             tutorial.hook();
             try { coach.hook(); } catch (e) { }
@@ -13023,7 +13551,7 @@ import * as cosmetics from './account/cosmetics.js';
                 // the satchel heartbeat is continuous state, driven every frame
                 const sg = global.gems;
                 // the last seconds of a raid push the heartbeat too
-                gameSound.satchelTension(Math.max(raidFinale.tension(), sg && sg.cap > 0
+                gameSound.satchelTension(Math.max(raidFinale.tension(), raidHeat.tension(), sg && sg.cap > 0
                     ? Math.min(1, (sg.carried || 0) / sg.cap) : 0));
             } else {
                 gameSound.rammerMove(0);

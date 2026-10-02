@@ -1,4 +1,5 @@
 const CHEST_HITTERS = new Set(["bullet", "drone", "trap", "satellite", "swarm"]);
+let chestRam = null;      // terrain/chests.js, loaded on the first ram
 const fs = require('fs');
 const path = require('path');
 const gems = require('./terrain/gems.js');
@@ -19,6 +20,8 @@ const REBOUND_KEEP = 0.85;    // how much of the shot's speed survives the bounc
 // (into another bot; into a player it follows that player's difficulty)
 const BOT_SHOT_MULT = 0.8;
 const botDiff = require('../miscFiles/botDifficulty.js');
+const botTanks = require('../miscFiles/botTanks.js');
+const botTactics = require('../miscFiles/botTactics.js');
 const activity = require('./network/activity.js');
 
 function deflectBullet(chamber, body) {
@@ -356,12 +359,14 @@ class gameHandler {
                         let root = hit, hops = 0;
                         while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
                         if (root && (root.isPlayer || root.isBot) && chest.health) {
-                            const grind = (hit.damage || 0) * 0.35;
+                            let grind = (hit.damage || 0) * 0.35;
+                            // the tank's own hull: a ram (chests.ramDamage)
+                            if (hit === root && hit.type === 'tank') grind = Math.max(grind, (chestRam ||= require('./terrain/chests.js')).ramDamage(chest, hit));
                             if (grind > 0) { chest.damageReceived += grind; chest.collisionArray.push(hit); }
                         }
                         // a raid boss ploughs straight through: the chest bursts
                         // in a few ticks instead of pinning the boss in place
-                        if (root && root.isRoyaleBoss && chest.health) chest.damageReceived += chest.health.max * 0.34;
+                        if (root && root.isRoyaleBoss && chest.health && !chest.isRoyaleCore) chest.damageReceived += chest.health.max * 0.34;
                     }
                 }
                 chest.velocity.x = 0; chest.velocity.y = 0;
@@ -495,6 +500,8 @@ class gameHandler {
 
     gameloop() {
         this._tickStart = performance.now();
+        // tick count (terrain/bossGuard.js meters boss damage per 30 ticks)
+        global.gameTick = (global.gameTick || 0) + 1;
         logs.loops.tally();
         logs.master.set();
 
@@ -787,7 +794,7 @@ class gameHandler {
         // little deeper than before the combat cut, so they still dig as fast)
         let raw;
         if (rammer) raw = [0, 0, 0, 0, 0, 7, 7, 7, 5, 8, 7];
-        else if (/sniper|assassin|ranger|marksman|stalker|rifle|predator|hunter|deadeye|sidewinder/.test(defs))
+        else if (/sniper|assassin|ranger|marksman|stalker|rifle|predator|hunter|deadeye|sidewinder|musket|crossbow/.test(defs))
             raw = [5, 7, 3, 7, 6, 0, 0, 3, 0, 4, 7];
         else if (/destroyer|artillery|mortar|launcher|ordnance|annihilator|hybrid/.test(defs))
             raw = [5, 7, 6, 7, 2, 0, 0, 4, 0, 4, 7];
@@ -914,6 +921,32 @@ class gameHandler {
         hybrid: 4, autogunner: 4, cyclone: 4, tripletwin: 4, gunnertrapper: 4,
         redistributor: 4, conqueror: 3, skimmer: 3, sidewinder: 3,
     };
+
+    // Walks a fresh bot up to a tier 3 tank on the spot (no upgrade
+    // timers, nobody sees a Basic or a Twin). Same two-of-a-kind rule as
+    // botUpgradeIndex.
+    botStartTank(o, same = null) {
+        // a bot respawning as itself climbs back into its own tank
+        const own = same ? botTanks.pool(this.botTankExclusions()).find(c => c.name === same) : null;
+        if (own && botTanks.climb(o, own.path)) {
+            o.botRammerAllowed = false; o.leftoverUpgrades = 0;
+            this.configureBotStats(o);
+            return true;
+        }
+        const counts = new Map();
+        for (const other of this.bots) {
+            if (!other || other === o || other.isDead?.()) continue;
+            const key = String(other.defs?.[0] || '').toLowerCase();
+            if (key) counts.set(key, (counts.get(key) || 0) + 1);
+        }
+        const choice = botTanks.pick(this.botTankExclusions(), counts);
+        if (!choice) return false;
+        o.botRammerAllowed = false;
+        if (!botTanks.climb(o, choice.path)) return false;
+        o.leftoverUpgrades = 0;
+        this.configureBotStats(o);
+        return true;
+    }
 
     botUpgradeIndex(bot) {
         if (!bot.upgrades?.length) return null;
@@ -1199,6 +1232,10 @@ class gameHandler {
         }
         this.configureBotStats(o);
         o.botStatsFixed = true;
+        // Dig Royale: straight into a final tank from the bot pool
+        if (Config.dig_royale && botTanks.isEnabled()) this.botStartTank(o, lifecycle?.tank);
+        // ...with dash and one secondary ability (miscFiles/botTactics.js)
+        if (Config.dig_royale) botTactics.equipBot(o, this.bots, Math.random, lifecycle?.ability);
         if (Config.dig_royale) o.botRespawnsRemaining = 0;
         if (team) o.team = team;
         if (Config.dig_wars || Config.dig_royale) gems.initSatchel(o);
@@ -1284,7 +1321,8 @@ class gameHandler {
             const respawnsRemaining = Config.dig_royale ? 0 : (o.botRespawnsRemaining || 0);
             if (Config.dig_royale) {
                 try { require('./gamemodes/scripts/dig_royale.js').onCombatantDead(o); } catch (e) { /* */ }
-                ran.releaseBotName(o.botNameKey);
+                // a bot waiting to respawn as itself keeps its name (terrain/botRoster.js)
+                if (!o._botKeepName) ran.releaseBotName(o.botNameKey);
                 return;
             }
             if (respawnsRemaining > 0 && !global.gameManager.arenaClosed && !global.cannotRespawn) {
@@ -1731,9 +1769,16 @@ class gameHandler {
                 if (instance.sendMessage) instance.sendMessage("You were crushed by the living wall.");
             }
         };
+        // a grown hull buried by the rock (it closed over a parked tank, or a
+        // placement went wrong) cracks it open instead of being crushed or
+        // thrown out across the map
+        const breakOutGrown = (body) => {
+            if (!Config.dig_royale || Config.tutorial) return false;
+            try { return (digRoyaleMod ||= require('./gamemodes/scripts/dig_royale.js')).breakOutGrown(body) > 0; } catch (e) { return false; }
+        };
         let lastTerrainTick = Date.now();
         // required once, lazily (both pull in half the game at load time)
-        let chestsMod = null, digRoyaleMod = null;
+        let chestsMod = null, digRoyaleMod = null, abilitiesMod = null;
         // Called from the game loop above once per tick (that callback only runs
         // after run() returns, so this const exists by then).
         const terrainPass = () => {
@@ -1812,46 +1857,10 @@ class gameHandler {
                     // line through rock and lands on open ground; resolving rock contacts mid-glide
                     // would pin it against the first wall. Collide after it lands.
                     const gliding = !!instance._tutorialGlide;
-                    const p = gliding ? { dx: 0, dy: 0 } : _tg.pushCircleFromVoronoi(instance, r);
+                    const p = gliding ? { dx: 0, dy: 0, entombed: false } : _tg.settleTank(instance, r, tickNow, growingNow, instance.growthMult > 1 ? breakOutGrown : null);
                     let dx = p.dx, dy = p.dy;
                     const nowT = tickNow;
-
-                    let entombed = false;
-                    if (growingNow && !gliding) {
-                        const g = _tg.pushCircleFromGrowing(instance, r, tickNow);
-                        entombed = g.entombed;
-                        if (g.dx !== 0 || g.dy !== 0) { dx += g.dx; dy += g.dy; }
-
-                        if (g.buried) {
-                            instance.velocity.x = 0; instance.velocity.y = 0;
-                            instance.accel.x = 0;    instance.accel.y = 0;
-                        }
-                    }
-
-                    if (!gliding && _tg.pointInRock(instance.x, instance.y)) {
-                        entombed = true;
-                        // Center is inside a live rock, past the reach of the edge push above (a
-                        // regrow landing on a tank, a spawn overlap, a missed edge). Crush ticks
-                        // below, and spit the tank out to the nearest open ground.
-                        const step = Math.max(48, r * 2);
-                        for (let ring = 1; ring <= 8; ring++) {
-                            let freed = false;
-                            for (let i = 0; i < 12; i++) {
-                                const a = (i / 12) * Math.PI * 2 + ring * 0.35;
-                                const nx = instance.x + Math.cos(a) * step * ring;
-                                const ny = instance.y + Math.sin(a) * step * ring;
-                                if (_tg.pointInRock(nx, ny)) continue;
-                                instance.x = nx;
-                                instance.y = ny;
-                                _tg.pushCircleFromVoronoi(instance, r);
-                                freed = true;
-                                break;
-                            }
-                            if (freed) break;
-                        }
-                        instance.velocity.x = 0; instance.velocity.y = 0;
-                        instance.accel.x = 0;    instance.accel.y = 0;
-                    }
+                    const entombed = p.entombed;
                     if (entombed && !instance.invuln && !instance.royaleLobby) crush(instance, tickMs);
                     else instance._crushedNoted = false;
                     if (dx !== 0 || dy !== 0) {
@@ -1989,6 +1998,7 @@ class gameHandler {
             try { outposts.tick(gemActors, padDt); } catch (e) { this._padTickErr('outposts.tick', e); }
             if (Config.dig_royale || Config.tutorial) {
                 try { shop.tick(gemActors); } catch (e) { /* */ }
+                try { (abilitiesMod ||= require('./terrain/abilities.js')).tick(gemActors); } catch (e) { this._padTickErr('abilities.tick', e); }
                 try { (chestsMod ||= require('./terrain/chests.js')).tick(gemActors, _tg); } catch (e) { /* */ }
             }
             if (!Config.dig_royale) {

@@ -6,6 +6,7 @@ const shop = require('../../terrain/shop.js');
 const chests = require('../../terrain/chests.js');
 const padGeom = require('../../terrain/padGeom.js');
 const bosses = require('../../terrain/bosses.js');
+const botRoster = require('../../terrain/botRoster.js');
 const blooms = require('../../terrain/blooms.js');
 const raidEvents = require('../../terrain/raidEvents.js');
 const raidMods = require('../../terrain/raidMods.js');
@@ -26,10 +27,16 @@ const activity = require('../../network/activity.js');
 // the persistent bank (checkout, checkpoints, release) and save codes
 const bank = require('../../terrain/bank.js');
 const saveCodes = require('../../terrain/saveCodes.js');
+const hunted = require('../../terrain/hunted.js');         // big carriers are marked on every map
+const coreFinale = require('../../terrain/coreFinale.js'); // the last storm's objective
+const rattler = require('../../terrain/rattler.js');       // a new player's first chase
+const dropIn = require('../../terrain/dropIn.js');         // meteor landings, first spawn near a vault
+const supplyDrops = require('../../terrain/supplyDrops.js'); // crates out of the sky every minute or so
+const raidOpening = require('../../terrain/raidOpening.js'); // early ore and the 1:30 meteor rush
 
-// A raid is RAID_CYCLES storm cycles (7 min each, twists included), 28 min,
+// A raid is RAID_CYCLES storm cycles (7 min each, twists included), 21 min,
 // and ends as the last storm shuts (storm.js closes the final circle).
-const RAID_CYCLES = 4;
+const RAID_CYCLES = 3;
 const RAID_MS = RAID_CYCLES * storm.CYCLE_MS;
 storm.setCycles(RAID_CYCLES);
 // Raid size including humans: a solo player gets 5 bots, and each real
@@ -406,7 +413,8 @@ function pingsSnapshot(bodyByKey) {
         if (!s.alive || (s.streak | 0) < STREAK_MARK_AT) continue;
         const b = bodyByKey.get(k);
         if (!b || b.isDead?.()) continue;
-        out.push({ id: b.id, x: Math.round(b.x), y: Math.round(b.y), name: s.name || "Someone", streak: s.streak | 0 });
+        const at = require('../../terrain/abilities.js').shownAt(b);     // smoke: where it went in
+        out.push({ id: b.id, x: Math.round(at.x), y: Math.round(at.y), name: s.name || "Someone", streak: s.streak | 0 });
     }
     return out;
 }
@@ -502,6 +510,55 @@ pacing.attach({
     live: () => !raidEnding && !!raidId,
     idle: (sock) => activity.inputIdleMs(sock) > contracts.IDLE_MS,
 });
+hunted.attach({
+    callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
+    feed: (entry) => pushFeed(entry),
+});
+function addPts(body, n) {
+    const s = body ? ensureStat(body) : null;
+    if (s && n > 0) s.extra = (s.extra | 0) + n;
+}
+function announceAll(kind, text, sub, dur, except) {
+    for (const client of connectedClients()) {
+        if (except && client.player && client.player.body === except) continue;
+        try { client.talk('KC', String(kind), String(text), 0, String(sub || ""), dur | 0); } catch { /* */ }
+    }
+}
+coreFinale.attach({
+    humans, fighters: () => combatants(),
+    announce: announceAll,
+    feed: (entry) => pushFeed(entry),
+    fxAt: (x, y, kind) => fxAt(x, y, kind),
+    toast: (text, ms) => setToastAndSay(text, ms),
+    payGems: (body, n) => payGems(body, n),
+    addPts,
+    callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
+});
+rattler.attach({
+    callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
+    fxAt: (x, y, kind) => fxAt(x, y, kind),
+    newness: (body) => body && body.socket ? newnessOf(body.socket, body) : 0,
+    idleMs: (sock) => activity.inputIdleMs(sock),
+});
+supplyDrops.attach({
+    humans, fighters: () => combatants(), clients: connectedClients,
+    idle: (sock) => activity.inputIdleMs(sock) > contracts.IDLE_MS,
+    live: () => !raidEnding && !!raidId,
+    raidAge: (t) => t - raidStartAt,
+    announce: (text, feed) => { if (feed) pushFeed(feed); setToastAndSay(text, 6000); },
+    compass,
+});
+raidOpening.attach({
+    humans, fighters: () => combatants(), compass,
+    onEvent: (ev) => onEvent(ev),
+    raidAge: (t) => t - raidStartAt,
+    live: () => !raidEnding && !!raidId,
+});
+dropIn.attach({
+    clients: connectedClients,
+    live: () => !raidEnding,
+    carve: (tg, x, y, r, zone) => carveSpawnPocket(tg, x, y, r, zone),
+});
 
 // ── broadcast ─────────────────────────────────────────────────────────────
 function oreRocksForScan() {
@@ -561,7 +618,7 @@ function broadcast(extra = {}) {
         phase: 'live', left: raidLeft, alive, fill: fillCap(), humans: humanCount, winner: null, storm: st, toast: liveToast,
         feed: killFeed.slice(-8), board, lock, lockLeft, matchId: raidId, raidId, raidLeft, raidMs: RAID_MS,
         occupyMs: OCCUPY_MS, lockoutMs: LOCKOUT_MS, objectives, bloom: bloomSnap, chest: null, chests: chestSnap,
-        boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, pings, results: raidResults, ending, nextIn, nextMs, ...extra,
+        boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, pings, hunt: hunted.snapshot(), core: coreFinale.snapshot(t), supply: supplyDrops.snapshot(t), results: raidResults, ending, nextIn, nextMs, ...extra,
     });
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
@@ -597,6 +654,8 @@ function broadcast(extra = {}) {
                 sm: bodyLive && body._inStorm ? Math.round(storm.exposureOf(body, t).mult * 100) / 100 : 0,
                 // raid over: the head start your placement bought for the next one
                 nextGems: raidResults ? (client.raidBonus | 0) : undefined,
+                // hunted: your mark and how many enemies are close
+                hunt: bodyLive ? hunted.forClient(body) : undefined,
             } : null;
         // shared part stringified once per broadcast; only the per-client tail differs
         let duoTail = '';
@@ -616,23 +675,36 @@ function broadcast(extra = {}) {
     }
 }
 
+// Every placement lands inside the map, hull and all: past the edge there
+// is no rock, only the storm (a big tank once landed out there).
 function moveTo(body, x, y) {
     if (!body) return;
     body.x = x; body.y = y;
     body.velocity.x = 0; body.velocity.y = 0;
     body.accel.x = 0; body.accel.y = 0;
     const tg = global.gameManager.terrainGrid;
-    if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, body.realSize || 60);
+    const r = body.realSize || 60;
+    keepOnMap(body);
+    if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, r, Math.max(48, r * 0.35));
+    keepOnMap(body);
 }
+// slack: a resume may stay on the rim's open ground, just past the disk
+function keepOnMap(body, slack = 0) {
+    const tg = global.gameManager.terrainGrid;
+    if (body && tg && tg.clampToPlay) tg.clampToPlay(body, tg.edgeMargin(body.realSize || 60), slack);
+}
+const RIM_SLACK = 140;
 
 function openGroundNear(tg, x, y) {
     if (!tg || !tg.pointInRock) return { x, y };
     if (!tg.pointInRock(x, y)) return { x, y };
+    // (off the map is "open" too: never there)
+    const inside = (px, py) => !tg.inPlayArea || tg.inPlayArea(px, py, 60);
     for (let ring = 1; ring <= 8; ring++) {
         for (let i = 0; i < 12; i++) {
             const a = (i / 12) * Math.PI * 2 + ring * 0.3;
             const nx = x + Math.cos(a) * 60 * ring, ny = y + Math.sin(a) * 60 * ring;
-            if (!tg.pointInRock(nx, ny)) return { x: nx, y: ny };
+            if (!tg.pointInRock(nx, ny) && inside(nx, ny)) return { x: nx, y: ny };
         }
     }
     return { x, y };
@@ -988,6 +1060,9 @@ function giveStarterKit(body, isRespawn) {
                     }
                     rock.maxHealth = Math.max(10, rock.maxHealth * 0.35);
                     rock.health = Math.min(rock.health, rock.maxHealth);
+                    // the clients hear about it: a copper rock they drew as plain
+                    // rock looked like the landing had missed it
+                    tg.rockEvents.push({ k: rock.k, h: rock.health / rock.maxHealth, d: 0, ore: rock.ore | 0, bl: 1 });
                 } catch { /* that rock stays hard */ }
             });
         }
@@ -1297,19 +1372,28 @@ function mateReachTest(tg) {
     };
 }
 
-function spawnRaidBot() {
+// `back`: a botRoster entry, the same bot coming back (same name, team and
+// colour, tank, ability, board row); none for a brand new one.
+function spawnRaidBot(back = null) {
     const handler = global.gameManager.gameHandler;
     if (!handler) return;
     // duos: two of the bots are a team (they spawn together and cover each other)
-    const plan = Config.royale_duos ? duo.botSpawnPlan(enemyBots()) : null;
+    const plan = Config.royale_duos && !back ? duo.botSpawnPlan(enemyBots()) : null;
     const hole = (plan && plan.near && spotNearMate(null, plan.near)) || safeSpawnSpot(null, true);
     // a team id nobody had this raid (stale board rows keep theirs). Solo too:
     // a plain random id can match a live body's and make the two a team
-    const team = plan ? plan.team : duo.freshTeamId();
-    handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team);
+    const team = back && back.team != null ? back.team : plan ? plan.team : duo.freshTeamId();
+    const life = back ? { familyId: back.familyId, nameKey: back.nameKey, respawnsRemaining: 0, tank: back.tank, ability: back.ability } : null;
+    handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team, back ? back.name : null, life);
     const bot = handler.bots[handler.bots.length - 1];
     if (!bot) return;
     bot.team = team;
+    if (back) {
+        if (back.color != null) { bot.color.base = back.color; bot.leaderboardColor = back.color; bot.minimapColor = back.color; }
+        if (back.skill != null) bot.botSkill = back.skill;
+        if (back.temperament) bot.botTemperament = back.temperament;
+        if (back.style) bot.botStyle = back.style;
+    }
     if (plan) duo.linkBotDuo(bot, enemyBots());
     bot.botRespawnsRemaining = 0;
     bot.royaleAlive = true;
@@ -1320,6 +1404,8 @@ function spawnRaidBot() {
     try { bot.refreshBodyAttributes(); } catch { /* */ }
     try { grantTwist(bot); } catch { /* */ }
     ensureStat(bot);
+    // bots fall out of the sky too
+    guard('bot drop', () => dropIn.landBot(bot));
 }
 
 let idleSince = 0;
@@ -1339,10 +1425,19 @@ function fillBots() {
     if (raidEnding) return;
     trimBots(t);
     if (t - lastFillAt < 400) return;
-    if (stormLocked()) return;
-    if (enemyBots().length >= botCapNow()) return;
+    // bots follow the players' rule: nobody (re)spawns in the storm's lock
+    if (!canSpawn()) return;
+    const cap = botCapNow(), alive = enemyBots().length;
+    botRoster.trimTo(cap - alive);
+    if (alive >= cap) return;
+    // a death never refills on the spot
+    if (!botRoster.mayFill(t)) return;
     lastFillAt = t;
-    spawnRaidBot();
+    // the same bot back after its respawn delay; a new one only for a slot
+    // nobody is waiting on
+    const pick = botRoster.next(t);
+    if (pick.entry) spawnRaidBot(pick.entry);
+    else if (pick.fresh) spawnRaidBot();
 }
 
 const TEAM_BOT_CATCHUP_D = 1350;     // this far from its human (past the 1300 regroup leash)...
@@ -1433,6 +1528,9 @@ function tickTeamBots(t) {
 
 function onBanked(body, amount) {
     if (!body || !(amount > 0)) return;
+    hunted.onBanked(body);
+    // a first bank with no ability yet hands one out on trial
+    guard('ability trial', () => require('../../terrain/abilities.js').onBanked(body, amount));
     const s = ensureStat(body);
     if (!s) return;
     s.banked = (s.banked || 0) + amount;
@@ -1488,6 +1586,8 @@ function onCombatantDead(body) {
     if (!Config.dig_royale || !body) return;
     if (body.royaleAlive === false) return;
     body.royaleAlive = false;
+    // a raid bot keeps its identity for a respawn (terrain/botRoster.js)
+    if (body.isBot) body._botKeepName = botRoster.onBotGone(body, now(), body.deathCause);
     if (body.socket && body.royaleBornAt) body.socket._royalePlayMs = (body.socket._royalePlayMs || 0) + Math.max(0, now() - body.royaleBornAt);
     tankDeathFx(body);
     const key = statKeyFor(body);
@@ -1500,7 +1600,12 @@ function onCombatantDead(body) {
     if (s) { s.alive = false; s.carried = 0; s.streak = 0; s.restoredCarry = 0; }
     // a density trim (despawnBot) is as quiet as the raid-end mass death
     const raidEndDeath = body.deathCause === "raidend" || body.deathCause === "despawn";
-    const envKill = raidEndDeath || body.deathCause === "storm" || body.deathCause === "rock" || body.deathCause === "base";
+    const envKill = raidEndDeath || body.deathCause === "storm" || body.deathCause === "rock" || body.deathCause === "base" || body.deathCause === "core";
+    const coreKill = body.deathCause === "core";
+    // hunted: the mark comes off now; a killer below still cashes it
+    const huntLevel = body.huntedLevel | 0;
+    hunted.onDeath(body);
+    let huntBounty = null;
     const stormKill = body.deathCause === "storm";
     const rockKill = body.deathCause === "rock";
     const killerBody = envKill ? null : killerOf(body);
@@ -1542,6 +1647,12 @@ function onCombatantDead(body) {
             }
             const mark = shop.killBonus(killerBody);
             if (mark) { ks.extra = (ks.extra | 0) + mark; pts += mark; }
+            huntBounty = hunted.onKill(killerBody, body, carriedAtDeath, huntLevel);
+            if (huntBounty) {
+                ks.extra = (ks.extra | 0) + huntBounty.pts;
+                pts += huntBounty.pts;
+                payGems(killerBody, huntBounty.gems);
+            }
             if (avenged) {
                 ks.revengeBonus = (ks.revengeBonus | 0) + contracts.REVENGE_PTS;
                 pts += contracts.REVENGE_PTS;
@@ -1553,10 +1664,11 @@ function onCombatantDead(body) {
         // the bounty (pacing.js) pays whoever takes the target down
         guard('bounty kill', () => pacing.onKill(killerBody, body));
         if (killerBody.socket) {
-            let line = avenged ? "REVENGE" : shutdown ? "SHUTDOWN" : giantPts ? "GIANT DOWN" : "ELIMINATED";
+            let line = avenged ? "REVENGE" : huntBounty ? "BOUNTY CASHED" : shutdown ? "SHUTDOWN" : giantPts ? "GIANT DOWN" : "ELIMINATED";
             line += ": " + (body.name || "Unnamed");
             if (carriedAtDeath >= 300) line += "  (" + carriedAtDeath + " gems dropped)";
-            callout(killerBody, avenged ? "revenge" : shutdown ? "shutdown" : "kill", line, pts, avenged ? "+" + contracts.REVENGE_GEMS + " gems" : "");
+            callout(killerBody, avenged ? "revenge" : huntBounty ? "huntkill" : shutdown ? "shutdown" : "kill", line, pts,
+                avenged ? "+" + contracts.REVENGE_GEMS + " gems" : huntBounty && huntBounty.gems ? "+" + huntBounty.gems + " bounty gems banked" : "");
             if (streakNow === STREAK_MARK_AT) {
                 try { killerBody.socket.talk('KC', "streak", streakNow + " kill streak. You're marked on everyone's map", 0); } catch { /* */ }
             }
@@ -1568,6 +1680,7 @@ function onCombatantDead(body) {
         verb: avenged ? "avenged" : stormKill ? "lost" : rockKill ? "crushed" : bossKill ? "was devoured by" : KILL_VERBS[(Math.random() * KILL_VERBS.length) | 0],
         storm: stormKill ? 1 : 0,
         rock: rockKill ? 1 : 0,
+        core: coreKill ? 1 : 0,
         revenge: avenged ? 1 : 0,
         boss: bossKill ? 1 : 0,
         loot: carriedAtDeath >= 300 ? carriedAtDeath : 0,
@@ -1576,6 +1689,7 @@ function onCombatantDead(body) {
         pts,
         place: 0,
     });
+    if (huntBounty && !raidEndDeath) pushFeed({ bounty: 1, by: killerBody ? (killerBody.name || "Unnamed") : "", name: body.name || "Unnamed", g: huntBounty.gems, l: huntBounty.level });
     // duos: your partner hears about it
     if (Config.royale_duos && body.socket && !raidEndDeath) {
         try {
@@ -1775,7 +1889,16 @@ function onHumanJoin(body) {
         }
     }
     if (!homeSpawn && !mateSpawn) {
-        const hole = safeSpawnSpot(body);
+        // a new player who has not banked yet lands near a vault (dropIn.js)
+        let near = null;
+        if (body.socket && !body.socket._resume && isNewPlayer(body.socket, body) && !hunted.bankedThisRaid(body)) {
+            try { near = dropIn.vaultSpot(body, combatants()); } catch (e) { guardLog('first vault spot', e); }
+        }
+        // everyone else: near the action if there's a good spot (dropIn.js)
+        if (!near && body.socket && !body.socket._resume && !isNewPlayer(body.socket, body)) {
+            try { near = dropIn.actionSpot(body, combatants()); } catch (e) { guardLog('action spot', e); }
+        }
+        const hole = near || safeSpawnSpot(body);
         moveTo(body, hole.x + (Math.random() - 0.5) * 30, hole.y + (Math.random() - 0.5) * 30);
     }
     // never leave a fresh body inside rock: the terrain loop would crush or
@@ -1789,12 +1912,17 @@ function onHumanJoin(body) {
     } catch { /* */ }
     // a grown respawn needs more room than a spawn pocket gives
     guard('growth room', () => growRoom(body, true));
+    keepOnMap(body);
     freshRaidBody(body);
     // a resumed player already had their starter kit: no second one
     const resuming = !!(body.socket && body.socket._resume);
     if (!resuming) giveStarterKit(body, isRespawn);
+    // the meteor landing: rock smashed around you, gems on your first drop
+    if (!resuming) guard('drop in', () => dropIn.land(body, dropIn.spillFor(!isRespawn, !!body.socket && isNewPlayer(body.socket, body))));
     if (!resuming && body.socket) activity.resetClock(body.socket, now());
     try { shop.applyPassives(body); } catch { /* */ }
+    // full dash charges every life, and the HUD hears about the ability slot
+    guard('abilities spawn', () => require('../../terrain/abilities.js').onSpawn(body));
     const joinStat = ensureStat(body);
     // a ranked life opens here; a resume keeps the one already open
     try { rankHooks.lifeStart(body, joinStat); } catch (e) { guardLog('rank life', e); }
@@ -1863,6 +1991,19 @@ function dropResume(k, v) {
     resumeStore.delete(k);
     for (const x of resumeStore.values()) if (x === v) return;
     releaseSnapBank(v);
+    releaseSnapColor(v);
+}
+// While a resume waits, nobody else is handed its colour (solo; the duo
+// book holds team colours on its own).
+function holdSnapColor(snap) {
+    if (Config.royale_duos || !snap || snap.team == null || snap.color == null || !global.royaleHeldTeamColors) return;
+    global.royaleHeldTeamColors.set(snap.team, snap.color);
+    snap._colorHeld = true;
+}
+function releaseSnapColor(snap) {
+    if (!snap || !snap._colorHeld || !global.royaleHeldTeamColors) return;
+    snap._colorHeld = false;
+    if (global.royaleHeldTeamColors.get(snap.team) === snap.color) global.royaleHeldTeamColors.delete(snap.team);
 }
 function tickResumeExpiry(t) {
     for (const [k, v] of resumeStore) {
@@ -1897,6 +2038,8 @@ function saveResume(socket, body) {
     const snap = {
         at: t, raidId, statKey: body ? statKeyFor(body) : "s:" + socket.id, alive,
         keys, accountId: (socket.account && socket.account.id) || null,
+        // the same team id and colour come back with the tank (resumeTeam)
+        team: body ? body.team : null, color: body && body.color ? body.color.base : null,
         sock: {
             gemBanked: socket.gemBanked || 0, shop: socket.shop || null, revenge: socket.revenge || null,
             // the bank's lease rides along: a reconnect keeps the same gems
@@ -1944,6 +2087,7 @@ function saveResume(socket, body) {
         }
     }
     for (const k of keys) resumeStore.set(k, snap);
+    holdSnapColor(snap);
     // the snapshot holds the lease now; the old socket must never release it
     socket._bankLease = null;
     if (process.env.RESUME_DEBUG) console.log('[RESUME] saved', token.slice(0, 6), 'alive', snap.alive, 'banked', snap.sock.gemBanked, 'carried', snap.carried, 'drill', snap.sock.shop && snap.sock.shop.drill, 'raw', (snap.skillRaw || []).join(','), 'pts', snap.points, 'raid', raidId);
@@ -1963,6 +2107,7 @@ function claimResume(socket, token) {
     if (now() - snap.at > RESUME_MS || snap.raidId !== raidId) {
         if (snap.baseKey) { try { outposts.releaseOwner(snap.baseKey); } catch { /* */ } }
         releaseSnapBank(snap);
+        releaseSnapColor(snap);
         return false;
     }
     // this socket may have checked a bank out already (a tab that opened
@@ -1977,6 +2122,30 @@ function claimResume(socket, token) {
     if (old && snap.statKey !== newKey) { raidStats.delete(snap.statKey); old.key = newKey; raidStats.set(newKey, old); }
     socket._resume = snap;
     return true;
+}
+// The spawn path (sockets.js) asks this before handing out a fresh team id:
+// a claimed resume gets its old team and colour back, unless somebody alive
+// holds that team now (then it's a fresh one like any spawn). Solo only; the
+// duo team book keeps a team's id and colour on its own.
+function resumeTeam(socket) {
+    const snap = socket && socket._resume;
+    if (!snap || snap.raidId !== raidId || snap.team == null || Config.royale_duos) return null;
+    // the hold has done its job: from here the colour is this team's again
+    releaseSnapColor(snap);
+    for (const e of entities.values()) {
+        if (e && (e.isPlayer || e.isBot) && !e.isDead?.() && e.team === snap.team) return null;
+    }
+    let color = snap.color;
+    if (color != null) {
+        // nobody else picked the colour up in the meantime
+        for (const e of entities.values()) {
+            if (!e || !(e.isPlayer || e.isBot) || e.isDead?.() || e.team === snap.team) continue;
+            if (global.royaleTeamColors && global.royaleTeamColors.get(e.team) === color) { color = null; break; }
+        }
+    }
+    if (color != null && global.royaleTeamColors) global.royaleTeamColors.set(snap.team, color);
+    if (process.env.RESUME_DEBUG) console.log('[RESUME] team', snap.team, 'colour', snap.color, '->', color);
+    return { team: snap.team, color: color != null ? color : global.assignTeamColor(snap.team) };
 }
 function applyPendingResume(socket) {
     const body = socket && socket.player && socket.player.body;
@@ -2000,19 +2169,12 @@ function applyResume(body, snap) {
             if (body.syncSkillsToGuns) body.syncSkillsToGuns();
             // a reload is not a respawn: the size comes back as it was
             if (snap.growEff > 0) guard('growth resume', () => growth.onSpawn(body, growthScore(body), snap.growEff));
-            // back where you were: out of the rock if you were pressed into
-            // it, but not back into the storm (you keep the fresh spawn then)
+            // back where you were, but not back into the storm (you keep the
+            // fresh spawn then)
             let inStorm = false;
             try { inStorm = storm.inStorm(snap.x, snap.y); } catch { /* */ }
-            if (!inStorm) {
-                let x = snap.x, y = snap.y;
-                try {
-                    const tg = global.gameManager.terrainGrid;
-                    if (tg && tg.pointInRock && tg.pointInRock(x, y)) { const o = openGroundNear(tg, x, y); x = o.x; y = o.y; }
-                } catch { /* */ }
-                moveTo(body, x, y);
-            }
-            if (snap.growEff > 0) guard('growth room', () => growRoom(body, true));
+            if (!inStorm) guard('resume spot', () => placeResumed(body, snap.x, snap.y));
+            else if (snap.growEff > 0) guard('growth room', () => growRoom(body, true));
             body.health.amount = body.health.max * Math.max(0.25, Math.min(1, snap.hp || 1));
             // freshRaidBody shielded this body like a new spawn; a resume
             // keeps the old life's shield state (and what was left of its grace)
@@ -2032,8 +2194,62 @@ function applyResume(body, snap) {
         try { shop.applyPassives(body); shop.talkState(socket); gems.talkGems(body, 0); } catch { /* */ }
         ensureStat(body);
         try { body.sendMessage("Reconnected. Your raid picked up where you left off."); } catch { /* */ }
+        // drop back in from the sky: drawn only, nothing held, smashed or reset
+        if (snap.alive) guard('resume drop', () => dropIn.visual(body));
         if (process.env.RESUME_DEBUG) console.log('[RESUME] applied: banked', socket.gemBanked | 0, 'carried', body.carriedGems | 0, 'drill', (shop.stateOf(socket) || {}).drill, 'class', (body.defs || []).join('/'), 'raw', body.skill.raw.join(','), 'pts', body.skill.points, 'pos', Math.round(body.x) + ',' + Math.round(body.y), 'was', Math.round(snap.x) + ',' + Math.round(snap.y));
     } catch (e) { console.error('[RAID] resume failed', e && e.message); }
+}
+
+// Put a resumed tank back on its old spot. The rock may have grown back
+// into the gap while it was away; pushing a big hull out of that throws it
+// across the map, so the spot is opened up like a spawn pocket instead
+// (held, nothing paid out). Only an emerald in the way moves it, to the
+// nearest spot the whole hull fits.
+function placeResumed(body, x, y) {
+    const tg = global.gameManager.terrainGrid;
+    const r = body.realSize || 30;
+    if (tg && tg.clampToPlay) { const p = { x, y }; tg.clampToPlay(p, tg.edgeMargin(r), RIM_SLACK); x = p.x; y = p.y; }
+    // 0.9: a hull resting against a wall keeps that wall
+    let hits = tg ? hullRocks(tg, x, y, r * 0.9) : null;
+    if (hits && hits.some(rk => rk.ore === 4)) {
+        const spot = hullSpotNear(tg, x, y, r);
+        if (spot) { x = spot.x; y = spot.y; hits = hullRocks(tg, x, y, r * 0.9); }
+        else hits = hits.filter(rk => rk.ore !== 4);
+    }
+    body.x = x; body.y = y;
+    body.velocity.x = 0; body.velocity.y = 0;
+    body.accel.x = 0; body.accel.y = 0;
+    if (!tg) return;
+    if (hits && hits.length) {
+        breakAndHold(tg, hits, FIRST_MINUTES.SPAWN_POCKET_HOLD_MS);
+        try { spawnReach.invalidate(); } catch { /* */ }
+    }
+    // canyon walls never break: those, and whatever is left, nudge it out
+    if (tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(body, r, Math.max(48, r * 0.35));
+    keepOnMap(body, RIM_SLACK);
+}
+// Every rock (live or rising) a hull of radius r at (x, y) overlaps.
+function hullRocks(tg, x, y, r) {
+    const out = [];
+    if (tg.rocksHitByCircle) tg.rocksHitByCircle(x, y, r, out);
+    if (tg.growingRocksHitByCircle) tg.growingRocksHitByCircle(x, y, r, now(), out);
+    return out;
+}
+// The nearest spot where a hull of radius r touches no emerald or canyon
+// rock (anything else there gets broken). -> { x, y } or null
+function hullSpotNear(tg, x, y, r) {
+    const step = Math.max(40, Math.min(r * 0.5, 90));
+    for (let ring = 1; ring <= 24; ring++) {
+        const n = Math.min(48, 8 + ring * 3);
+        for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + ring * 0.35;
+            const nx = x + Math.cos(a) * step * ring, ny = y + Math.sin(a) * step * ring;
+            if (tg.inPlayArea && !tg.inPlayArea(nx, ny, tg.edgeMargin(r))) continue;
+            const hits = hullRocks(tg, nx, ny, r * 0.9);
+            if (!hits.some(rk => rk.ore === 4 || rk.canyon)) return { x: nx, y: ny };
+        }
+    }
+    return null;
 }
 
 // A dropped owner's base is held under snap.baseKey for as long as the
@@ -2415,11 +2631,19 @@ function startRaid(first) {
     const mod = raidMods.roll();
     lastMods = mod;
     storm.start();
+    // the final circle closes on the Core's site (coreFinale.js)
+    guard('core plan', () => coreFinale.newRaid());
     raidEndsAt = storm.endAt();
     if (!isFinite(raidEndsAt)) raidEndsAt = raidStartAt + RAID_MS;
     try { twistCycleSeen = storm.snapshot(now()).c | 0; } catch { /* */ }
     try { applyModsToWorld(prevMod, mod); } catch (e) { console.error('[RAID] mod apply failed', e && e.message); }
     try { bosses.resetRaid(); } catch { /* */ }
+    try { botRoster.resetRaid(); } catch { /* */ }
+    guard('hunted reset', () => hunted.reset());
+    guard('rattler reset', () => rattler.reset());
+    guard('drop in reset', () => dropIn.reset());
+    guard('supply reset', () => supplyDrops.reset());
+    guard('opening', () => raidOpening.newRaid());
     try { blooms.reset(); } catch { /* */ }
     try { raidEvents.reset(); } catch { /* */ }
     try { chests.clearAll(); } catch { /* */ }
@@ -2473,6 +2697,8 @@ function startRaid(first) {
             freshRaidBody(body);
             if (!body.socket) { try { revokeBotTwist(body); } catch { /* */ } }
             giveStarterKit(body, false);
+            if (body.socket) guard('drop in', () => dropIn.land(body, dropIn.spillFor(true, isNewPlayer(body.socket, body))));
+            else guard('bot drop', () => dropIn.landBot(body));
             try { shop.applyPassives(body); } catch { /* */ }
             const rs = ensureStat(body);
             if (body.socket) { try { rankHooks.lifeStart(body, rs); } catch (e) { guardLog('rank life', e); } }
@@ -2650,8 +2876,19 @@ function applyNewTwist(forceId) {
             const st = shop.stateOf(client);
             const body = client.player && client.player.body;
             if (!st) continue;
-            if (st._twistArm) { if (body) shop.detachSidearm(body); st.arm = null; st.armUntil = 0; st._twistArm = null; }
+            if (st._twistArm) {
+                if (body) shop.detachSidearm(body);
+                st.arm = null; st.armUntil = 0; st._twistArm = null;
+                // hand back the sidearm the twist borrowed the slot from
+                const paid = st._paidArm;
+                st._paidArm = null;
+                if (paid && (!paid.until || paid.until > Date.now())) {
+                    st.arm = paid.id; st.armUntil = paid.until || 0;
+                    if (body && !body.isDead?.()) shop.attachSidearm(body, paid.id);
+                }
+            }
             if (st._twistGear) { for (const gid of st._twistGear) if (st.gear[gid] === true) delete st.gear[gid]; st._twistGear = null; }
+            require('../../terrain/abilities.js').revokeTwist(client);
             if (body && !body.isDead?.()) shop.applyPassives(body);
             shop.talkState(client);
         } catch { /* */ }
@@ -2661,7 +2898,11 @@ function applyNewTwist(forceId) {
     for (const b of combatants()) { try { b.refreshBodyAttributes(); } catch { /* */ } }
     for (const client of connectedClients()) {
         const body = client.player && client.player.body;
-        if (body && !body.isDead?.()) { try { grantTwist(body); } catch { /* */ } }
+        if (!body || body.isDead?.()) continue;
+        // satchel size (Deep Pockets) was worked out above under the old
+        // twist: redo it now and tell the client the new cap
+        try { shop.applyPassives(body); gems.talkGems(body, 0); } catch { /* */ }
+        try { grantTwist(body); } catch { /* */ }
     }
     for (const b of liveBots()) { try { grantTwist(b); } catch { /* */ } }
     if ((mod.extraSkill | 0) > 0) {
@@ -2682,8 +2923,13 @@ function grantTwist(body) {
     if (!body.socket) { if (body.isBot) grantBotTwist(body, mod); return; }
     const st = shop.stateOf(body.socket);
     let changed = false;
-    // never over a sidearm the player paid for (buy() clears _twistArm)
-    if (mod.freeArm && (!st.arm || st._twistArm)) {
+    // a sidearm the player paid for is put aside for the raid and given
+    // back when the twist ends (buy() clears _twistArm and _paidArm)
+    if (mod.freeArm && st.arm === mod.freeArm) {
+        // already has it (bought it, or this twist gave it): just mount it on this life
+        shop.attachSidearm(body, mod.freeArm);
+    } else if (mod.freeArm) {
+        if (st.arm && !st._twistArm) st._paidArm = { id: st.arm, until: st.armUntil || 0 };
         shop.grantArm(body.socket, mod.freeArm, true, body);
         st._twistArm = mod.freeArm;
         changed = true;
@@ -2694,6 +2940,7 @@ function grantTwist(body) {
         shop.applyPassives(body);
         changed = true;
     }
+    if (mod.freeAbility) require('../../terrain/abilities.js').grantTwist(body, mod.freeAbility);
     // topped up to the count each life, quietly when it is already there
     if (mod.kitStart) {
         for (const [kid, n] of Object.entries(mod.kitStart)) {
@@ -2722,8 +2969,10 @@ function grantBotTwist(bot, mod) {
         bot._twistGear = mod.freeGear.slice();
         shop.applyPassives(bot);
     }
+    if (mod.freeAbility) require('../../terrain/abilities.js').grantTwist(bot, mod.freeAbility);
 }
 function revokeBotTwist(bot) {
+    require('../../terrain/abilities.js').revokeTwist(bot);
     if (bot._twistArm) { bot._twistArm = null; shop.detachSidearm(bot); }
     if (bot._twistGear) { bot._twistGear = null; shop.applyPassives(bot); }
 }
@@ -2753,12 +3002,15 @@ const roomHits = [];
 function growRoom(body, hold) {
     const tg = global.gameManager.terrainGrid;
     if (!tg || !tg.rocksHitByCircle || !body || body.isDead?.() || !(body.growthMult > 1)) return 0;
-    tg.rocksHitByCircle(body.x, body.y, (body.realSize || 0) * (hold ? 1.05 : 0.94), roomHits);
+    const R = (body.realSize || 0) * (hold ? 1.05 : 0.94);
+    tg.rocksHitByCircle(body.x, body.y, R, roomHits);
+    // a landing spot also clears rock that is still rising, or it closes over the hull
+    if (hold && tg.growingRocksHitByCircle) tg.growingRocksHitByCircle(body.x, body.y, R, now(), roomHits);
     const list = roomHits.slice();
     roomHits.length = 0;
     let n = 0;
     for (const rock of list) {
-        if (!rock.alive || rock.canyon || rock.ore === 4) continue;
+        if (!(rock.alive || (hold && rock.growing)) || rock.canyon || rock.ore === 4) continue;
         const ore = rock.ore;
         const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
         if (!tg.damageRock(rock, rock.health + 1, rx, ry, false, hold ? null : body)) continue;
@@ -2816,6 +3068,12 @@ function tick() {
     try { chests.schedule(); } catch (e) { /* */ }
     guard('contracts', () => contracts.tick(t));
     guard('pacing', () => pacing.tick(t));
+    guard('hunted', () => hunted.tick(t, fighters));
+    guard('core', () => coreFinale.tick(t, fighters));
+    guard('rattler', () => rattler.tick(t, fighters));
+    guard('drop in', () => dropIn.tick(t));
+    guard('supply', () => supplyDrops.tick(t));
+    guard('opening', () => raidOpening.tick(t));
     for (const body of fighters) {
         const key = statKeyFor(body);
         const s = key ? raidStats.get(key) : null;
@@ -2921,12 +3179,18 @@ class DigRoyale {
 
 module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
-    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, baseReserved,
+    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, resumeTeam, baseReserved,
     addGrowth, growthScore, earnedOf, boardOrder,
+    // bot roster (scripts/test/botRoster.test.js)
+    _fillBots: () => fillBots(), _spawnRaidBot: back => spawnRaidBot(back), _statKeyFor: b => statKeyFor(b),
+    // terrain pass: a buried grown hull clears its own room (held, no payout)
+    breakOutGrown: (body) => growRoom(body, true),
     onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout,
     FIRST_MINUTES, isNewPlayer, RESPAWN_MS, freshRaidBody, SPAWN_GRACE_MS, RAID_CYCLES, RAID_MS, RESUME_MS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
     debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
+    // DBG core [hp 0..1]: surface the Core now, or set its health
+    debugCore: (hp, by) => hp != null && hp !== '' ? coreFinale.debugHp(hp, by) : (coreFinale.debugSpawn() ? coreFinale._state() : null),
     // tests: one pass of the idle watch at time t; a twist's hand-outs
     _tickIdle: (t) => tickIdle(t), _grantTwist: (b) => grantTwist(b),
     // DBG spawnaudit [n] [trap|reset]: the spawn audit so far, after `n` extra

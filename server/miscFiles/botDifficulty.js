@@ -26,8 +26,18 @@
 // by the 9th. A strong player who rarely dies stops being new on the clock;
 // one who dies a lot stops on lives (mercy still covers them).
 //
-// 0.5 plays like the 07e28b1 tuning. 1 is still softer than the bots before
-// it, knob by knob (scripts/test/botDifficulty.test.js holds that).
+// 0.5 plays like the 07e28b1 tuning.
+//
+// Lock-on (ROYALE_BOTS_LOCKON, on unless set to 0): once a player is past
+// the newcomer fade, bots stop holding back. Signed-in ranked players get 1
+// straight away; guests climb on play time (0.55 when newness ends at 5
+// minutes, 1 by 15 minutes in all) or on a strong raid, whichever is higher.
+// Above 0.5 every knob runs from the 07e28b1 value to a lock-on value: near
+// zero aim error, full lead, ~0.1-0.2 s reactions, full damage, longer and
+// further fights, up to three hunters on a rich veteran. Below 0.5 nothing
+// changes, so newcomers and players under mercy get exactly the old bots.
+// With lock-on off the old mapping and the old ceiling (1 softer than the
+// bots before 07e28b1) come back.
 'use strict';
 
 const activity = require('../game/network/activity.js');
@@ -42,9 +52,23 @@ const LEGEND = 18;
 const TIME_HI = 0.6, TIME_TAU_MS = 15 * 60_000;
 const NEW_FULL_MS = 5 * 60_000, NEW_END_MS = 12 * 60_000;
 const NEW_FULL_LIVES = 5, NEW_END_LIVES = 9;
+const LOCK_FULL_MS = 15 * 60_000, LOCK_FROM = 0.55, LOCK_PERF = 1.5, LOCK_KEEP = 0.9;
+// rich veterans: this much carried (or hunted level 2) lets a third bot on
+const RICH_CARRY = 1500;
+
+let lockOn = process.env.ROYALE_BOTS_LOCKON !== '0';
+function setLockOn(v) { lockOn = !!v; }
+function isLockOn() { return lockOn; }
 
 const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
 function lerp(a, b, d) { return a + (b - a) * clamp01(d); }
+// 0 at or below NEUTRAL, 1 at the top: how far into lock-on a difficulty is
+function lockShare(d) { return lockOn && d > NEUTRAL ? clamp01((d - NEUTRAL) / (1 - NEUTRAL)) : 0; }
+// a knob: the old curve up to NEUTRAL, then on toward its lock-on value
+function knob(d, old, lock) {
+    const h = lockShare(d);
+    return h > 0 ? lerp(old(NEUTRAL), lock, h) : old(d);
+}
 
 // 0..1: how well this raid is going
 function perfShare(score, kills) {
@@ -77,8 +101,13 @@ function forPlayer(p) {
     if (fresh >= 1) return 0;
     return settled(p) * (1 - fresh);
 }
+// lock-on: a guest's floor from time played
+function lockFromTime(playMs) {
+    return LOCK_FROM + (1 - LOCK_FROM) * clamp01(((+playMs || 0) - NEW_FULL_MS) / (LOCK_FULL_MS - NEW_FULL_MS));
+}
 // what the player gets once they are not new at all
 function settled(p) {
+    if (lockOn) return settledLockOn(p);
     const rank = fromRank(p.rankCode);
     if (rank != null) return Math.min(RANK_HI, rank + RANK_PERF * perfShare(p.score, p.kills));
     let d = Math.max(fromRaid(p.score, p.kills), fromTime(p.playMs));
@@ -86,6 +115,14 @@ function settled(p) {
     if (best > GUEST_LO) d = Math.max(d, GUEST_LO + (best - GUEST_LO) * SESSION_KEEP);
     if ((p.rankCode | 0) === 20) d = Math.min(d, PLACEMENT_HI);
     return Math.min(GUEST_HI, d);
+}
+function settledLockOn(p) {
+    const code = p.rankCode | 0;
+    if (code >= 1 && code <= LEGEND + 1) return 1;
+    let d = Math.max(lockFromTime(p.playMs), GUEST_LO + (1 - GUEST_LO) * clamp01(perfShare(p.score, p.kills) * LOCK_PERF));
+    const best = +p.sessionBest || 0;
+    if (best > GUEST_LO) d = Math.max(d, best * LOCK_KEEP);
+    return clamp01(d);
 }
 
 // The difficulty a bot plays at against `root` (a target's root body). A
@@ -100,43 +137,58 @@ function of(root, now = Date.now()) {
 }
 
 // ── the knobs, each as (bot skill, difficulty) ───────────────────────────
-// (pre-07e28b1 formula in brackets: d = 1 must stay under it)
+// (pre-07e28b1 formula in brackets; with lock-on off d = 1 stays under it)
+const oldAimError = (s, d) => lerp(0.05, 0.02, d) + (1 - s) * lerp(0.12, 0.075, d);
+const oldAimStiff = (s, d) => lerp(0.09, 0.145, d) + s * lerp(0.17, 0.21, d);
+const oldReaction = (s, d, r) => lerp(450, 210, d) + (1 - s) * lerp(550, 400, d) + r * lerp(300, 180, d);
+const oldPause = (s, d, r) => lerp(420, 230, d) + r * lerp(800, 480, d) * (1.4 - s);
 
 // cursor error, std dev in radians, re-rolled every 110 ms [(1-s)*0.07]
-function aimError(s, d) { return lerp(0.05, 0.02, d) + (1 - s) * lerp(0.12, 0.075, d); }
+function aimError(s, d) { return knob(d, x => oldAimError(s, x), 0.004 + (1 - s) * 0.008); }
 // aim spring stiffness [0.16 + 0.22s]
-function aimStiff(s, d) { return lerp(0.09, 0.145, d) + s * lerp(0.17, 0.21, d); }
+function aimStiff(s, d) { return knob(d, x => oldAimStiff(s, x), 0.5 + s * 0.08); }
+// aim spring damping (share of last tick's turn kept) [0.55 + 0.25s]
+function aimDamp(s, d) { return knob(d, () => 0.55 + s * 0.25, 0.38); }
 // share of the full lead the bot aims ahead by [0.5 + 0.5s]
-function leadShare(s, d) { return lerp(0.2, 0.45, d) + s * 0.5; }
+function leadShare(s, d) { return knob(d, x => lerp(0.2, 0.45, x) + s * 0.5, 1); }
 // ms before a new target is engaged, r in 0..1 [160 + 380(1-s) + 160r]
-function reactionMs(s, d, r) { return lerp(450, 210, d) + (1 - s) * lerp(550, 400, d) + r * lerp(300, 180, d); }
+function reactionMs(s, d, r) { return knob(d, x => oldReaction(s, x, r), 70 + (1 - s) * 50 + r * 60); }
 // trigger released before a burst [200 + 450r(1.4-s)]; burst length [1300 + 2400r]
-function pauseMs(s, d, r) { return lerp(420, 230, d) + r * lerp(800, 480, d) * (1.4 - s); }
-function burstMs(d, r) { return lerp(700, 1250, d) + r * lerp(1500, 2300, d); }
+function pauseMs(s, d, r) { return knob(d, x => oldPause(s, x, r), 40 + r * 90); }
+function burstMs(d, r) { return knob(d, x => lerp(700, 1250, x) + r * lerp(1500, 2300, x), 2600 + r * 2400); }
 // bullet / drone / trap damage share [1]
-function shotMult(d) { return lerp(0.64, 0.92, d); }
-// bots that may hunt one player at once [2]
-function maxHunters(d) { return d < 0.35 ? 1 : 2; }
+function shotMult(d) { return knob(d, x => lerp(0.64, 0.92, x), 1); }
+// bots that may hunt one player at once [2]; lock-on lets a third onto a
+// veteran with a fat satchel (or one the raid marks as the top target)
+function maxHunters(d, carried = 0, hunted = 0) {
+    if (d < 0.35) return 1;
+    if (lockOn && d >= 0.8 && ((+carried || 0) >= RICH_CARRY || (hunted | 0) >= 2)) return 3;
+    return 2;
+}
 // bots the director keeps within sight of a player [4]
 function company(d) { return d < 0.3 ? 1 : d < 0.75 ? 2 : 3; }
 // a bot starts a fight only when the trade looks at most this bad [1.2]
-function initThreat(d) { return lerp(0.85, 1.2, d); }
+function initThreat(d) { return knob(d, x => lerp(0.85, 1.2, x), 1.7); }
 // ...and only from this close [1400]
-function initRange(d) { return lerp(800, 1400, d); }
+function initRange(d) { return knob(d, x => lerp(800, 1400, x), 1900); }
 // target choice: a player counts as this much farther away [0]
-function targetPenalty(d) { return lerp(400, 0, d); }
+function targetPenalty(d) { return knob(d, x => lerp(400, 0, x), 0); }
 // the soft window at the start of a life: its length share, the range at
 // which a soft player gets fought anyway, and the aim it still costs
-function softShare(d) { return lerp(1, 0.35, d); }
-function softCloseR(d) { return lerp(320, 520, d); }
-function softAim(d) { return lerp(0.7, 0.85, d); }
+function softShare(d) { return knob(d, x => lerp(1, 0.35, x), 0.2); }
+function softCloseR(d) { return knob(d, x => lerp(320, 520, x), 650); }
+function softAim(d) { return knob(d, x => lerp(0.7, 0.85, x), 0.95); }
 // auto turrets: extra aim noise and turn-rate share [0, 1]
-function turretNoise(d) { return lerp(0.06, 0, d); }
-function turretTurn(d) { return lerp(0.7, 1, d); }
+function turretNoise(d) { return knob(d, x => lerp(0.06, 0, x), 0); }
+function turretTurn(d) { return knob(d, x => lerp(0.7, 1, x), 1.15); }
+// how hard the bot plays the fight itself (dodging, cover, jukes): 0 below
+// NEUTRAL, 1 at full lock-on
+function tactics(d) { return lockShare(d); }
 
 module.exports = {
-    NEUTRAL, NEW_FULL_MS, NEW_END_MS, NEW_FULL_LIVES, NEW_END_LIVES,
+    NEUTRAL, NEW_FULL_MS, NEW_END_MS, NEW_FULL_LIVES, NEW_END_LIVES, LOCK_FULL_MS, RICH_CARRY,
+    setLockOn, isLockOn, lockShare, lockFromTime,
     lerp, perfShare, fromRaid, fromTime, fromRank, newness, forPlayer, settled, of,
-    aimError, aimStiff, leadShare, reactionMs, pauseMs, burstMs, shotMult, maxHunters, company,
-    initThreat, initRange, targetPenalty, softShare, softCloseR, softAim, turretNoise, turretTurn,
+    aimError, aimStiff, aimDamp, leadShare, reactionMs, pauseMs, burstMs, shotMult, maxHunters, company,
+    initThreat, initRange, targetPenalty, softShare, softCloseR, softAim, turretNoise, turretTurn, tactics,
 };

@@ -11,7 +11,7 @@ import { gameSound } from "./sound.js";
 //   2 Your tank       stat groups by doing, pick an upgrade, try a Destroyer
 //   3 Mining          break rock, grab gems, ore tiers, satchel
 //   4 Banking & bases vault deposit, capture a base, bank there, base rules
-//   5 Shops & gear    shop pad, drill, gear, kit items (Medkit, Rock Barrage), sidearm
+//   5 Shops & gear    shop pad, drill, an ability (Grapple Hook), kit items (Medkit, Rock Barrage), sidearm
 //   6 Loot & bosses   chest, practice boss, boss loot, blooms / events / twists
 //   7 The raid        storm drill, raid clock, dying, score and streaks
 //   8 Ranked          ranks, placement, gemdust (guests: sign in one-liner)
@@ -47,10 +47,11 @@ const DISPLAY = "'Lilita One', Rubik, Ubuntu, sans-serif";
 // ── keybind labels ─────────────────────────────────────────────────────
 const DEFAULTS = {
     KEY_UP: "W", KEY_DOWN: "S", KEY_LEFT: "A", KEY_RIGHT: "D",
-    KEY_AUTO_FIRE: "E", KEY_AUTO_SPIN: "C", KEY_OVER_RIDE: "R",
+    KEY_AUTO_FIRE: "E", KEY_AUTO_SPIN: "C", KEY_OVER_RIDE: "-",
+    KEY_DASH: "Shift", KEY_ABILITY: "Q",
     KEY_TOGGLE_MAP: "M", KEY_CLASS_TREE: "T", KEY_MAX_STAT: "F", KEY_CHAT: "Enter",
     KEY_UPGRADE_ATK: "1", KEY_UPGRADE_SHI: "0", KEY_UPGRADE_MIN: "-",
-    KEY_KIT_1: "Z", KEY_KIT_2: "Q", KEY_KIT_3: "N", KEY_SIDEARM: "X", KEY_SAVE: "L",
+    KEY_KIT_1: "Z", KEY_KIT_2: "R", KEY_KIT_3: "N", KEY_SIDEARM: "X", KEY_SAVE: "L",
 };
 let keyLabelCache = null;
 function lbl(id) {
@@ -432,6 +433,8 @@ window.dwTutStatOpen = (i) => {
 };
 
 const mob = () => !!global.mobile;
+const abil = () => global.abil || {};
+const abilitiesSold = () => (global.shop.catalog || []).some(i => i.cat === "ability");
 const kc = (id) => `{{${id}}}`;
 
 // ── the chapters ───────────────────────────────────────────────────────
@@ -471,6 +474,21 @@ const CHAPTERS = [
                 },
                 done: (p) => p >= 1,
                 giveUp: 45000,
+            },
+            {
+                id: "dash",
+                title: "Dash",
+                text: () => mob()
+                    ? "The arrows button by your right thumb is a *dash*, a quick burst of speed. You get 2, and they come back in a few seconds. Dash twice."
+                    : `${kc("KEY_DASH")} is a *dash*, a quick burst the way you're driving. You get 2, and they come back in a few seconds. Dash twice.`,
+                hint: () => mob() ? "Tap the arrows button twice." : `Drive and tap ${kc("KEY_DASH")}, twice.`,
+                praise: "zoom",
+                onEnter: () => { state.dash0 = abil().dashes | 0; },
+                target: () => ({ kind: "self" }),
+                progress: () => clamp(((abil().dashes | 0) - (state.dash0 | 0)) / 2, 0, 1),
+                // a server with dash switched off: nothing to teach
+                done: (p) => p >= 1 || (!abil().on && T() - state.stepAt > 3000),
+                giveUp: 40000,
             },
             {
                 id: "shoot",
@@ -852,7 +870,7 @@ const CHAPTERS = [
                 title: "Buy Drill I",
                 text: "Drills make you break rock faster. Go to *Drills*, pick *Drill I* and hit *Buy*.",
                 hint: () => global.shop.onPad
-                    ? (global.shop.dismissed ? "Closed it? Step off the pad and back on." : "First tab. Drill V even stays when you die.")
+                    ? (global.shop.dismissed ? "Closed it? Step off the pad and back on." : "Drills tab. Drill V even stays when you die.")
                     : "Get back on the teal pad.",
                 praise: "drill on",
                 onEnter: () => { global.shop.dismissed = false; if (!global.shop.onPad) tut("goto", "shop"); },
@@ -866,21 +884,31 @@ const CHAPTERS = [
                 giveUp: 70000,
             },
             {
-                id: "gear", allow: "shop:gear",
-                title: "Gear",
-                text: "Gear gives you a bonus for *5 minutes*, you can have 4 at once. Grab the *Gem Magnet* from the *Gear* tab, it pulls gems in from twice as far.",
-                hint: () => global.shop.onPad ? "Gear tab, then Gem Magnet." : "Get back on the teal pad.",
+                id: "ability", allow: "shop:ability",
+                title: "Abilities",
+                text: "Abilities are yours for the *whole raid*, even after you die. Open *Abilities* and buy the *Grapple Hook*.",
+                hint: () => global.shop.onPad ? "Abilities tab, then Grapple Hook." : "Get back on the teal pad.",
                 praise: "nice",
-                onEnter: () => { global.shop.dismissed = false; if (!global.shop.onPad) tut("goto", "shop"); },
+                onEnter: () => { global.shop.dismissed = false; state.ab0 = (abil().own || []).length; if (!global.shop.onPad) tut("goto", "shop"); },
                 target: () => global.shop.onPad ? null : shopPad(),
                 progress: () => global.shop.onPad ? 0.5 : 0.2,
-                done: () => {
-                    const g = gearCount();
-                    if (g < state.base.gear) state.base.gear = g;
-                    return g > state.base.gear;
-                },
-                fallback: () => tut("gear", "magnet"),
+                done: () => (abil().own || []).length > (state.ab0 | 0) || !abilitiesSold(),
+                fallback: () => tut("ability", "grapple"),
                 giveUp: 70000,
+            },
+            {
+                id: "grapple",
+                title: "Grapple",
+                text: () => mob()
+                    ? "Step off the pad, aim at a rock and tap the *ability* button above the dash. The hook yanks you right to it."
+                    : `Step off the pad, put your mouse on a rock and press ${kc("KEY_ABILITY")}. The hook yanks you right to it.`,
+                hint: "Up to 900 away. It catches tanks too.",
+                praise: "yoink",
+                onEnter: () => { global.shop.dismissed = true; state.abUse0 = abil().cdAt || 0; },
+                target: () => ({ kind: "self" }),
+                progress: () => global.shop.onPad ? 0.2 : 0.5,
+                done: () => (abil().cdAt || 0) > (state.abUse0 || 0) || !abilitiesSold(),
+                giveUp: 45000,
             },
             {
                 id: "kit", allow: (sub) => sub === 0 ? "kit:medkit" : "kit:barrage", ui: "kit",
@@ -1090,7 +1118,7 @@ const CHAPTERS = [
             {
                 id: "raidClock", next: true,
                 title: "How a raid works",
-                text: "A raid is *4 storms*, 28 minutes. Each storm shrinks for 6 minutes, holds for a minute, then opens up somewhere else. The *4th storm* closes all the way and ends the raid. Nobody respawns in the last seconds of a storm.",
+                text: "A raid is *3 storms*, 21 minutes. Each storm shrinks for 6 minutes, holds for a minute, then opens up somewhere else. The *3rd storm* closes all the way and ends the raid. Nobody respawns in the last seconds of a storm.",
                 praise: "ok",
             },
             {
@@ -1926,7 +1954,8 @@ function extraHtml(kind) {
         const rows = [
             [kc("KEY_TOGGLE_MAP"), "big map"],
             [kc("KEY_CLASS_TREE"), "upgrade tree"],
-            [kc("KEY_OVER_RIDE"), "drones go to your mouse"],
+            [kc("KEY_DASH"), "dash"],
+            [kc("KEY_ABILITY"), "your ability (swap it at a shop)"],
             [`${kc("KEY_KIT_1")} ${kc("KEY_KIT_2")} ${kc("KEY_KIT_3")}`, "kit items"],
             [kc("KEY_SIDEARM"), "sidearm"],
             [`${kc("KEY_MAX_STAT")} + stat key`, "max a stat"],
@@ -2155,15 +2184,19 @@ const ui = {
         if (s.next) return;
         const w = Math.round(p * 100) + "%";
         if (this.last.w !== w) { this.fill.style.width = w; this.last.w = w; }
-        if (state.hint) {
+        // on the shop pad the card is cut to one line, so the hint (what to
+        // buy) shows straight away instead of after the usual wait
+        const onShop = !!(global.shop && global.shop.onPad && !global.shop.dismissed && s.hint);
+        const showHint = !!state.hint || onShop;
+        if (showHint) {
             const h = val(s.hint) || "";
             if (h !== this.last.h) { this.hintText.innerHTML = markup(h); this.last.h = h; }
         }
-        const hs = (state.hint ? "h" : "") + (stuck ? "s" : "");
+        const hs = (showHint ? "h" : "") + (stuck ? "s" : "");
         if (hs !== this.last.hs) {
             this.last.hs = hs;
-            this.hint.classList.toggle("show", !!state.hint);
-            this.card.classList.toggle("hinting", !!state.hint);
+            this.hint.classList.toggle("show", showHint);
+            this.card.classList.toggle("hinting", showHint);
             this.hint.classList.toggle("stuck", !!stuck);
         }
     },

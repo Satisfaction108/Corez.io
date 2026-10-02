@@ -1,6 +1,7 @@
 // Raid bosses: rare, loud, solo-killable. One surfaces every couple of storm
 // cycles, roams the safe zone, and erupts gems plus a rare cache when it dies.
 const gems = require('./gems.js');
+const guard = require('./bossGuard.js');
 
 const KINDS = {
     // every boss digs (digRate = share of a rock's health per bite) so none
@@ -37,7 +38,20 @@ function tune(o, kind = o.bossKind) {
 const DEBUG = !!process.env.ROYALE_DEBUG;
 const BASE_INTERVAL_MS = DEBUG ? 45 * 1000 : 14 * 60 * 1000;
 const FIRST_DELAY_MS = DEBUG ? 12 * 1000 : 5 * 60 * 1000;
-const LIFETIME_MS = 8 * 60 * 1000;
+// ROYALE_BOSS_RATE scales how often bosses come (1 = the old pace of about
+// one a raid). At 2.5 the first one surfaces 3 min in and the next ~5.6
+// min after the last one dies or burrows: three in a typical 21 min raid.
+// Warden's Watch (raidMods bossRateMult) multiplies on top.
+const RATE = (() => {
+    const v = parseFloat(process.env.ROYALE_BOSS_RATE);
+    return Number.isFinite(v) && v > 0 ? v : 2.5;
+})();
+// the first boss comes sooner too, but never before the 3 minute mark (a
+// new player gets a couple of minutes to find their feet)
+const FIRST_MIN_MS = DEBUG ? 0 : 3 * 60 * 1000;
+// a boss nobody kills burrows after this (shorter at a quick pace so an
+// ignored one does not hold up the next)
+const LIFETIME_MS = (RATE > 1 ? 6 : 8) * 60 * 1000;
 
 let boss = null;
 let kindId = null;
@@ -55,13 +69,17 @@ function jitter(ms) { return ms * (0.8 + Math.random() * 0.4); }
 
 function scheduleNext(fromNow) {
     const rate = Math.max(0.25, mods().num('bossRateMult', 1));
-    nextAt = Date.now() + jitter((fromNow != null ? fromNow : BASE_INTERVAL_MS) / rate);
+    nextAt = Date.now() + jitter((fromNow != null ? fromNow : BASE_INTERVAL_MS / RATE) / rate);
+}
+// the first boss of a raid: sooner with the rate, never earlier than the floor
+function firstDelay() {
+    return Math.max(FIRST_MIN_MS, FIRST_DELAY_MS / Math.min(2, RATE));
 }
 
 function resetRaid() {
     if (boss && !boss.isDead?.()) { boss.bossBurrowed = true; try { boss.kill(); } catch { /* */ } }
     boss = null; kindId = null; hitters.clear();
-    scheduleNext(FIRST_DELAY_MS);
+    scheduleNext(firstDelay());
 }
 
 function pickKind() {
@@ -186,7 +204,7 @@ function onDead(o) {
 }
 
 function tick(t, combatantCount) {
-    if (!nextAt) scheduleNext(FIRST_DELAY_MS);
+    if (!nextAt) scheduleNext(firstDelay());
     if (boss) {
         // Health hit zero before the 'dead' event fired: settle it here, or
         // the handler sees a stale boss and skips the eruption, chest and fx.
@@ -199,6 +217,7 @@ function tick(t, combatantCount) {
         // stormed bosses stay dangerous: no storm chip on them
         boss._inStorm = false;
         boss.invuln = false;
+        guard.regenGate(boss, TUNING.regenEvery);
         return;
     }
     if (t >= nextAt && (combatantCount || 0) >= 2 && !storm().locked(t)) spawn();
@@ -232,4 +251,4 @@ function debugHit(body, dmg) {
     hitters.set(body.id, { body, at: Date.now(), dmg: (h ? h.dmg : 0) + (+dmg || 0) });
 }
 
-module.exports = { debugHit, damageBy, KINDS, TUNING, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };
+module.exports = { debugHit, damageBy, KINDS, TUNING, RATE, BASE_INTERVAL_MS, LIFETIME_MS, firstDelay, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };

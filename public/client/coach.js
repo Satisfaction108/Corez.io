@@ -6,10 +6,11 @@ import { gameSound } from "./sound.js";
 //
 //   tutorial offer the tutorial              (skipped once it's been played)
 //   move     drive and shoot                 (a short warm-up)
-//   mine     carry 500 gems                  (nearby ore rocks outlined)
+//   mine     carry 250 gems                  (nearby ore rocks outlined)
 //   bank     finish a deposit                (arrow to the nearest vault, the minimap)
 //   upgrade  a new tank or a stat point      (waits while neither is on offer)
-//   ability  use a kit item                  (buy one at a shop first)
+//   ability  use your ability or a kit item  (buy one at a shop first; a
+//            first bank often hands out a free ability trial)
 //
 // Progress lives in localStorage, so a death, reload, resume or new raid
 // carries on from the current step. Anything done early (a deposit during the
@@ -35,8 +36,8 @@ const STEPS = ORDER.filter(id => id !== "tutorial");
 const TUT_DONE_KEY = "digRoyaleTutorialDone_v1";   // tutorial.js / home.js
 const TUT_AFTER_KEY = "dwCoachTutorial";            // sessionStorage: open the tutorial once the menu loads
 const TUT_PROMPT_MS = 25000;  // an ignored offer turns into "Maybe later"
-const MINE_GOAL = 500;
-const MOVE_GOAL = 350;         // world units driven on the warm-up step
+const MINE_GOAL = 250;
+const MOVE_GOAL = 250;         // world units driven on the warm-up step
 const FLASH_MS = 1300;
 const FINAL_MS = 9000;
 const SETTLE_MS = 1200;       // after a spawn the tank's type and stats are still arriving
@@ -225,7 +226,7 @@ function snap() {
     const v = global.vault || {}, sh = global.shop || {}, g = global.gems || {};
     return {
         type: gui.type, ups: (gui.upgrades || []).length, sum: skillSum(), points: gui.points | 0,
-        doneAt: v.doneAt, msgAt: sh.msgAt, banked: g.banked | 0, kitAt: global.kitUsedAt || 0,
+        doneAt: v.doneAt, msgAt: sh.msgAt, banked: g.banked | 0, kitAt: global.kitUsedAt || 0, abAt: global.abilityUsedAt || 0,
     };
 }
 function markDone(id) {
@@ -250,6 +251,7 @@ function observe(t) {
     else if (cur.type === p.type && p.ups > 0 && cur.ups === 0) markDone("upgrade");
     if (cur.doneAt !== p.doneAt && cur.doneAt > 0) markDone("bank");
     if (cur.kitAt !== p.kitAt && cur.kitAt > 0) markDone("ability");
+    if (cur.abAt !== p.abAt && cur.abAt > 0) markDone("ability");
     if (((global.gems && global.gems.carried) | 0) >= mineGoal()) markDone("mine");
     // the warm-up: some driving and a shot
     const q = me(), lp = st.lastPos;
@@ -273,7 +275,8 @@ function waiting(id) {
 function canStat() {
     return (gui.points | 0) > 0 && (gui.skills || []).some(s => s && s.softcap > 0 && s.amount < s.cap);
 }
-function ownsKit() { return !!((global.shop && global.shop.state && global.shop.state.kitOrder) || []).filter(Boolean).length; }
+function ownsAbility() { return !!(global.abil && global.abil.on && global.abil.eq); }
+function ownsKit() { return ownsAbility() || !!((global.shop && global.shop.state && global.shop.state.kitOrder) || []).filter(Boolean).length; }
 function pickStep() {
     for (const id of ORDER) {
         if (rec.done[id]) continue;
@@ -500,7 +503,7 @@ function pips() {
     return s;
 }
 function kitKeys() {
-    return kbd("KEY_KIT_1", "Z") + " " + kbd("KEY_KIT_2", "Q") + " " + kbd("KEY_KIT_3", "N");
+    return kbd("KEY_KIT_1", "Z") + " " + kbd("KEY_KIT_2", "R") + " " + kbd("KEY_KIT_3", "N");
 }
 function content(t) {
     const base = { eyebrow: "First raid", pips: pips() };
@@ -523,19 +526,19 @@ function content(t) {
                 : "Look for colored rocks. They're full of gems.";
             if (st.dropped) text = "You dropped your gems. Mine some more, then bank them." +
                 (!st.rocks.length && st.oreFar ? " Follow the <b>ORE</b> arrow." : "");
-            return { ...base, title: "Shoot rocks to mine gems", text,
+            return { ...base, title: "Shoot rocks. Grab the gems.", text,
                 bar: { frac: c / goal, label: "Gems  " + fmtNum(Math.min(c, goal)) + " / " + fmtNum(goal) } };
         }
         case "bank": {
             const v = global.vault || {};
             const tg = st.target;
-            let text = "Follow the <b>VAULT</b> arrow on the edge of your screen.";
+            let text = "Follow the <b>VAULT</b> arrow. Die carrying and you drop it all.";
             if (v.onPad && v.total > 0) text = "Depositing. Stay on the pad.";
             else if (v.onPad && (g.carried | 0) >= VAULT_MIN) text = (touch ? "Tap" : "Hit") + " <b>Deposit</b> to bank what you carry.";
             else if ((g.carried | 0) < VAULT_MIN) text = "Mine a few more gems first. You need " + VAULT_MIN + " to bank.";
             else if (!tg) text = "Vaults are the gold rings on your minimap. " + mapOpens();
             else if (tg.on) text = "Drive onto the vault. Banked gems are safe when you die.";
-            return { ...base, title: "Bank your gems at a vault", text };
+            return { ...base, title: "Bank it before you lose it", text };
         }
         case "upgrade": {
             const tiles = (gui.upgrades || []).length > 0, stat = canStat();
@@ -547,6 +550,12 @@ function content(t) {
         case "ability": {
             const sh = global.shop || {};
             const tg = st.target;
+            if (ownsAbility()) {
+                const it = (sh.catalog || []).find(i => i.id === global.abil.eq);
+                const name = it ? "<b>" + it.name + "</b>" : "ability";
+                return { ...base, title: "Use your ability",
+                    text: touch ? "Tap the ability button by your right thumb to fire your " + name + "." : "Press " + kbd("KEY_ABILITY", "Q") + " to fire your " + name + ". It aims at your mouse." };
+            }
             if (ownsKit()) {
                 return { ...base, title: "Use an ability",
                     text: touch ? "Tap a kit button on the right. Some then ask where to land." : "Press " + kitKeys() + " to use your kit items." };
@@ -597,6 +606,9 @@ function stepAside() {
     if (global.mobile && (global.touchTilesOpen || global.touchPanelRight > 0) && lowTouch()) return true;
     return false;
 }
+// a first raid is in progress (raidHeat.js keeps the HUD calm until the first bank)
+export function active() { return rec.status === "on"; }
+
 export function hook() {
     const t = now();
     syncServer();

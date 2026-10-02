@@ -15,6 +15,8 @@
 //   turret     an auto turret's bullet
 //   sidearm    a shop sidearm's bullet
 //   ram        the tank's own hull, with its bullets landing the same tick
+//   ramOnly    the hull alone from full health (a bare one takes ~16 s)
+//   ramSmasher a maxed smasher rams an epic chest open in about 3 s
 //   copper     a copper chest to minions
 //   storm      a chest out in the storm, still being shot past the storm
 //              grace: it stays and pays out in full (it used to be retired
@@ -57,9 +59,9 @@ function test(name, fn) { tests.push({ name, fn }); }
 
 function loop(n = 1) { for (let i = 0; i < n; i++) handler.gameloop(); }
 
-let caseY = -2400;
+let caseY = -2800;
 function setup(tankClass, rare = true) {
-    const y = caseY += 600;
+    const y = caseY += 430;
     const talk = [];
     const tank = new Entity({ x: -300, y });
     tank.define(tankClass);
@@ -199,6 +201,36 @@ test('ram', () => {
     const shots = [fireGun(c.tank), fireGun(c.tank)];
     shots.forEach((s, i) => aimAt(s, c.chest, Math.PI / 2 + i));
     c.chest.health.amount = 0.5;
+    finish(c);
+});
+
+// a pure ram from full health: the hull alone breaks it, the kill pays the
+// rammer through the death check; a maxed smasher in about 3 s
+function ramFor(c, ticks) {
+    c.tank.alwaysActive = true;
+    let n = 0;
+    for (; n < ticks && !c.chest.isDead(); n++) {
+        c.tank.x = c.chest.x - (c.chest.realSize + c.tank.realSize - 3);
+        c.tank.y = c.chest.y;
+        c.tank.velocity.x = 6; c.tank.velocity.y = 0;
+        loop();
+    }
+    return n;
+}
+test('ramOnly', () => {
+    const c = setup('basic');
+    const n = ramFor(c, 600);
+    assert.ok(c.chest.isDead(), 'a bare hull rams it open (' + n + ' ticks)');
+    assert.ok(n > 300, 'but not in a blink: ' + n);
+    finish(c);
+});
+test('ramSmasher', () => {
+    const c = setup('smasher');
+    c.tank.skill.raw[6] = 9;
+    c.tank.skill.update();
+    c.tank.refreshBodyAttributes();
+    const n = ramFor(c, 600);
+    assert.ok(c.chest.isDead() && n <= 120, 'a maxed smasher breaks an epic chest in about 3 s: ' + n);
     finish(c);
 });
 

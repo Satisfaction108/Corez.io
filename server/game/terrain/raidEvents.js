@@ -57,10 +57,23 @@ function startRain(t) {
     return ev;
 }
 
+// where the next meteor lands, picked a beat early so the client can draw it
+// falling (FX meteorfall with its flight time)
+const METEOR_FALL_MS = 700;
+function pickMeteor() {
+    const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * ev.r * 0.85;
+    return { x: ev.x + Math.cos(a) * d, y: ev.y + Math.sin(a) * d };
+}
+function announceFall(p, ms) {
+    for (const c of (global.gameManager.socketManager?.clients || [])) {
+        try { c.talk('FX', Math.round(p.x), Math.round(p.y), 'meteorfall', Math.max(200, ms | 0)); } catch { /* */ }
+    }
+}
 function meteorHit(t) {
     const tg = global.gameManager.terrainGrid;
-    const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * ev.r * 0.85;
-    const hx = ev.x + Math.cos(a) * d, hy = ev.y + Math.sin(a) * d;
+    const p = ev.nextPos || pickMeteor();
+    ev.nextPos = null;
+    const hx = p.x, hy = p.y;
     if (tg && tg.rocks) {
         for (const rock of tg.rocks.values()) {
             if (!rock || (!rock.alive && !rock.growing) || rock.canyon) continue;
@@ -71,7 +84,7 @@ function meteorHit(t) {
             if (destroyed && !wasGrowing && rock.ore) gems.spawnOreBurst(rock, null);
         }
     }
-    const n = 2 + ((Math.random() * 3) | 0);
+    const n = 2 + (Math.random() < 0.5 ? 1 : 0);
     for (let i = 0; i < n; i++) oreGem(hx + (Math.random() - 0.5) * 40, hy + (Math.random() - 0.5) * 40, 0.12);
     try { require('../gamemodes/scripts/dig_royale.js').fxAt(hx, hy, 'meteor'); } catch { /* */ }
 }
@@ -84,6 +97,10 @@ function tick(t) {
         plannedAt = process.env.ROYALE_DEBUG ? t + 30_000 : (Math.random() < chance ? t + 40_000 + Math.random() * 200_000 : 0);
     }
     if (ev) {
+        if (ev.kind === 'meteor' && !ev.nextPos && ev.hits < 11 && t >= ev.nextHit - METEOR_FALL_MS) {
+            ev.nextPos = pickMeteor();
+            announceFall(ev.nextPos, ev.nextHit - t);
+        }
         if (t >= ev.liveAt && ev.kind === 'meteor' && t >= ev.nextHit && ev.hits < 11) {
             ev.nextHit = t + 550 + Math.random() * 250;
             ev.hits++;

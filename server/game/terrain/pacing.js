@@ -57,6 +57,8 @@ function activeHumans() {
 }
 
 function supplyDrop(t) {
+    // the scheduled sky drops (supplyDrops.js) cover this when they're on
+    try { if (require('./supplyDrops.js').enabled()) return false; } catch { /* */ }
     const people = activeHumans();
     if (!people.length) return false;
     // one of the players at random, so everyone gets one near them over a raid
@@ -136,7 +138,9 @@ function current() { return bounty && alive(bounty.body) ? bounty : null; }
 function snapshot(t = Date.now()) {
     const b = current();
     if (!b) return null;
-    return { e: b.body.id, x: Math.round(b.body.x), y: Math.round(b.body.y), name: b.name, gems: b.gems, ms: Math.max(0, b.until - t) };
+    let at = b.body;
+    try { at = require('./abilities.js').shownAt(b.body); } catch { at = b.body; }     // smoke: where it went in
+    return { e: b.body.id, x: Math.round(at.x), y: Math.round(at.y), name: b.name, gems: b.gems, ms: Math.max(0, b.until - t) };
 }
 
 function reset(t = Date.now()) {

@@ -7,8 +7,10 @@ import * as rankPanel from "./account/rankPanel.js";
 import * as rankCeremony from "./account/rankCeremony.js";
 import * as dustHud from "./account/dustHud.js";
 import * as raidFinale from "./raidFinale.js";
+import * as raidHeat from "./raidHeat.js";
 import { toast as menuToast } from "./account/ui.js";
 import saveCode from "./saveCode.js";
+import * as abilityFx from "./abilityFx.js";
 window.fakeLagMS = 0;
 var sync = [];
 var clockDiff = 0;
@@ -1130,6 +1132,19 @@ const resumeToken = (() => {
         return t;
     } catch (e) { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 })();
+// Hidden or frozen tab (sockets.js 'VZ', server/lib/linkWatch.js): a frozen
+// tab can't answer the server's pings, so it is told, and waits longer before
+// calling the link dead. 0 visible, 1 hidden, 2 frozen.
+let tabStateSent = 0;
+function tellTabState(state) {
+    const s = global.socket;
+    if (!s || !s.open || typeof s.talk !== "function" || state === tabStateSent) return;
+    tabStateSent = state;
+    s.talk('VZ', state);
+}
+document.addEventListener("visibilitychange", () => tellTabState(document.hidden ? 1 : 0));
+document.addEventListener("freeze", () => tellTabState(2));
+document.addEventListener("resume", () => tellTabState(document.hidden ? 1 : 0));
 // One id per browser (localStorage), so admin stats can count returning
 // guests. Random, never tied to a name, IP or account on the client side.
 const guestId = (() => {
@@ -1192,6 +1207,9 @@ let incoming = async function(message, socket) {
                 if (m[0]) {
                     if (guestId) socket.talk('GI', guestId, firstSource());
                     socket.talk('RZ', resumeToken);
+                    // a fresh socket starts out visible on the server
+                    tabStateSent = 0;
+                    if (document.hidden) tellTabState(1);
                     // duos: the party ticket (or "" for a lone queue) and fill
                     if (global.duoSession) socket.talk('DQ', String(global.duoSession.ticket || ""), global.duoSession.fill === false ? 0 : 1);
                     socket.talk('s', "", 1, 0, false, 0);
@@ -1386,6 +1404,11 @@ let incoming = async function(message, socket) {
                     }
                     r.pings = d.pings || [];
                     r.bounty = d.bounty || null;
+                    // hunted carriers and the Core (raidHeat.js)
+                    r.hunt = d.hunt || null;
+                    r.core = d.core || null;
+                    r.supply = d.supply || null;
+                    try { raidHeat.onRY(r); } catch (e) { /* */ }
                     // contract: note when it arrived (the card counts down from
                     // here) and play a soft tick when a new one lands
                     const ob = r.you && r.you.obj;
@@ -1477,6 +1500,8 @@ let incoming = async function(message, socket) {
                         const last = sh.gotAt[id] || -1e9;
                         sh.gotAt[id] = nowF;
                         if (nowF - last < 5000 || global.tutorialMode || global.died) continue;
+                        // the big card once per item ever; after that it glides into its slot
+                        if (abilityFx.unlockSeen("kit:" + id)) { abilityFx.glide(id, ""); continue; }
                         if (unlocks.some(u => u.id === id)) continue;
                         unlocks.push({ id });
                         if (unlocks.length > 4) unlocks.splice(1, 1);
@@ -1489,10 +1514,23 @@ let incoming = async function(message, socket) {
                     else if (d.msg && gameSound.uiClick) gameSound.uiClick();
                 } catch (e) { /* */ }
             } break;
+            case 'AB': {
+                // dash charges and the ability slot (abilityFx.js)
+                try { abilityFx.onState(JSON.parse(m[0])); } catch (e) { /* */ }
+            } break;
+            case 'AF': {
+                try { abilityFx.onFx(m, punchCamera); } catch (e) { /* */ }
+            } break;
+            case 'AR': {
+                try { abilityFx.onRadar(JSON.parse(m[0])); } catch (e) { /* */ }
+            } break;
+            case 'AW': {
+                try { abilityFx.onWallPlan(JSON.parse(m[0])); } catch (e) { /* */ }
+            } break;
             case 'SHU': {
                 const sh = global.shop;
                 const on = !!m[0];
-                if (on && !sh.onPad) { sh.dismissed = false; sh.sel = null; sh.hover = -1; }
+                if (on && !sh.onPad) { sh.dismissed = false; sh.sel = null; sh.hover = -1; sh.openAt = performance.now(); }
                 sh.onPad = on;
                 sh.padId = m[1] | 0;
                 sh.padName = m[2] || "";
@@ -1505,6 +1543,8 @@ let incoming = async function(message, socket) {
                     raidFinale.start(global.raidEndFx.sub);
                     break;
                 }
+                // hunted / SAFE / the Core: raidHeat slams those itself
+                try { if (raidHeat.onKC(m)) break; } catch (e) { /* */ }
                 // kind, text, points: the big centre callout
                 const list = global.callouts;
                 const prev = list.length ? list[list.length - 1].born : -1e9;
@@ -1512,6 +1552,8 @@ let incoming = async function(message, socket) {
                 list.push({ kind: m[0] || "kill", text: m[1] || "", pts: m[2] | 0, sub: typeof m[3] === "string" ? m[3] : undefined,
                     dur: typeof m[4] === "number" && m[4] > 0 ? Math.min(15000, m[4]) : undefined, born: Math.max(performance.now(), prev + 700) });
                 if (list.length > 5) list.shift();
+                // falling in: the plate waits for the landing
+                try { const la = raidHeat.landAt(); if (la && list.length) list[list.length - 1].born = Math.max(list[list.length - 1].born, la); } catch (e) { /* */ }
                 if (m[0] === "boss" || m[0] === "quest" || m[0] === "contract" || m[0] === "revenge") { punchUI(8, 260); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
                 else if (m[0] === "bounty") { punchUI(5, 220); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
                 else if (m[0] === "dropin") { if (gameSound.depositDone) gameSound.depositDone(); }
@@ -1524,6 +1566,7 @@ let incoming = async function(message, socket) {
                 const dxf = fx.x - global.player.renderx, dyf = fx.y - global.player.rendery;
                 const nearF = Math.hypot(dxf, dyf);
                 let pushFx = true;
+                try { if (raidHeat.onFX(kindF, fx.x, fx.y, m[3], m[4], m[5], m[6])) break; } catch (e) { /* */ }
                 if (kindF === "chest" || kindF === "chestrare") {
                     // the terrain renderer breaks the chest exactly like a rock
                     // cell (chips, sparks, flash, dust, shake); the floor halo
@@ -1531,12 +1574,12 @@ let incoming = async function(message, socket) {
                     const rows = (global.royale && global.royale.chests) || [];
                     const row = rows.find(r => Math.abs(r.x - fx.x) < 60 && Math.abs(r.y - fx.y) < 60);
                     const eid = row && row.e != null ? row.e : 0;
-                    const size = (row ? row.rare : kindF === "chestrare") ? 40 : 36;
+                    const size = row && row.z ? row.z : (row ? row.rare : kindF === "chestrare") ? 40 : 36;
                     if (eid && global.chestGoneAt) global.chestGoneAt.set(eid, nowF);
                     const hold = nearF < 800 ? 55 : 0;   // the burst waits a beat, the frame doesn't freeze
                     const tr = window.terrainRenderer;
                     if (tr && tr.shatterAt) {
-                        tr.shatterAt(fx.x, fx.y, size * 1.02, kindF === "chestrare" ? 3 : 1, hold, -(1000000 + eid));
+                        tr.shatterAt(fx.x, fx.y, size * 1.02, row && row.sd ? 4 : kindF === "chestrare" ? 3 : 1, hold, -(1000000 + eid));
                         if (eid && tr.dropCell) tr.dropCell(-(1000000 + eid));
                     }
                     pushFx = false;
@@ -1575,6 +1618,7 @@ let incoming = async function(message, socket) {
                 // Combat text: targetId, amount (0-100 of max hp), tier
                 // (0/1/2), taken (0 = we dealt it, 1 = we took it).
                 pushDamageNumber(m[0], m[1] | 0, m[2] | 0, !!(m[3] | 0));
+                try { raidHeat.onHit(m[0], m[1] | 0, m[2] | 0, !!(m[3] | 0)); } catch (e) { /* */ }
             } break;
             case 'DEAD': {
                 // You just killed someone. Skull + DEAD! at their last spot.
@@ -1586,11 +1630,17 @@ let incoming = async function(message, socket) {
                 punchCamera(36, 340, true);
                 punchUI(10, 280);
                 if (gameSound.combatKill) gameSound.combatKill();
+                try { raidHeat.onKill(m[0] | 0, m[1] | 0); } catch (e) { /* */ }
             } break;
             case 'MS': {
                 // Personal achievement: kind, threshold, bonus paid
                 const kind = m[0] | 0, at = m[1] | 0, bonus = m[2] | 0;
-                if (kind === 0) {
+                if (kind === 0 && global.royale && global.royale.at > 0) {
+                    // in a raid it takes its turn in the slam lane, never on top of BANKED
+                    try { raidHeat.slamBanked(util.formatLargeNumber(at), bonus > 0 ? "+" + util.formatLargeNumber(bonus) : ""); } catch (e) { /* */ }
+                    global.celebrateAt = performance.now();
+                    if (gameSound.bankCelebrate) gameSound.bankCelebrate();
+                } else if (kind === 0) {
                     const prev = global.milestones.length
                         ? global.milestones[global.milestones.length - 1].born
                         : -1e9;
@@ -1637,6 +1687,7 @@ let incoming = async function(message, socket) {
                         if (g.popups.length > 6) g.popups.shift();
                     }
                     g.flashAt = now;
+                    try { raidHeat.onGem(delta); } catch (e) { /* */ }
                 } else if (delta < 0) {
                     g.combo = 0;
                     g.mcombo = 0;
@@ -1868,7 +1919,10 @@ let incoming = async function(message, socket) {
 
                     if (startSettings.neededtoresync) global.entities = [];
 
-                    setTimeout(() => socket.talk('S', getNow()), 10);
+                    // straight from the reply, no timer: a background tab runs
+                    // timers once a second, and a reconnect there took ten
+                    // seconds of clock sync before the raid came back
+                    socket.talk('S', getNow());
                 } else {
 
                     sync.sort((e, f) => e.latency - f.latency);
@@ -2382,6 +2436,11 @@ const socketInit = () => {
                 if (commands[i]) o += Math.pow(2, i);
             }
             let ratio = util.getRatio();
+            // falling in from the sky: nothing held reaches the server until the
+            // landing (skyDrop.js resends the real keys then)
+            let held = false;
+            try { held = raidHeat.inputHeld(); } catch (e) { held = false; }
+            if (held) { socket.talk('C', Math.round(global.target.x / ratio), Math.round(global.target.y / ratio), global.reverseTank, 0); return; }
             // touch sticks add their analog move (touch.js packMove); keys
             // and the gamepad send the plain four-field packet
             if (global.touchMovePacked > 0) socket.talk('C', Math.round(global.target.x / ratio), Math.round(global.target.y / ratio), global.reverseTank, o, global.touchMovePacked);

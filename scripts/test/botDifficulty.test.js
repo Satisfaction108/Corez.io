@@ -8,7 +8,12 @@
 //              minutes or the 9th life, whichever comes first; difficulty
 //              fades in from 0 over it
 //   of         mercy caps it, bots and bosses as targets are neutral
-//   ceiling    at 1 every knob is still softer than the bots before 07e28b1
+//   ceiling    lock-on off: at 1 every knob is still softer than the bots
+//              before 07e28b1
+//   lockon     lock-on on (the default): ranked players and anyone past 15
+//              minutes face 1, newcomers still 0; at 1 every knob is at
+//              least as sharp as the bots before 07e28b1, and below 0.5
+//              nothing changed
 //   middle     at 0.5 the knobs sit on the 07e28b1 tuning
 //   shots      a bot's shot into a player follows that player's difficulty;
 //              a boss's shot is the same into everyone
@@ -31,10 +36,17 @@ const D = require(path.join(SERVER, 'miscFiles', 'botDifficulty.js'));
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
+// the pre lock-on mapping and ceiling (ROYALE_BOTS_LOCKON=0)
+function legacy(name, fn) {
+    tests.push({ name: name + ' (lock-on off)', fn: () => {
+        D.setLockOn(false);
+        try { fn(); } finally { D.setLockOn(true); }
+    } });
+}
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 const SKILLS = [0.08, 0.2, 0.4, 0.6, 0.8, 0.95];
 
-test('mapping', () => {
+legacy('mapping', () => {
     assert.equal(D.forPlayer({ newbie: true, rankCode: 19, score: 50000, kills: 20 }), 0);
     assert.ok(near(D.forPlayer({ rankCode: 1 }), 0.2));
     assert.ok(near(D.forPlayer({ rankCode: 7 }), 0.45), 'Gold I');
@@ -76,7 +88,7 @@ test('mapping', () => {
     assert.ok(near(D.forPlayer({ rankCode: 1, playMs: min(600) }), 0.2));
 });
 
-test('newness', () => {
+legacy('newness', () => {
     const min = m => m * 60_000;
     assert.equal(D.newness(0, 1), 1);
     assert.equal(D.newness(min(4.9), 5), 1, 'five minutes and five lives: still fully new');
@@ -129,7 +141,7 @@ const CUR = {
     burstMs: r => 1000 + r * 2000,
 };
 
-test('ceiling', () => {
+legacy('ceiling', () => {
     for (const s of SKILLS) {
         for (const r of [0, 0.5, 1]) {
             assert.ok(D.aimError(s, 1) > PRE.aimError(s), 'aim error at ' + s);
@@ -156,6 +168,87 @@ test('ceiling', () => {
     }
 });
 
+test('lockon: mapping', () => {
+    assert.equal(D.isLockOn(), true, 'on by default');
+    const min = m => m * 60_000;
+    // newcomers keep the easy bots
+    assert.equal(D.forPlayer({ newbie: true, rankCode: 19 }), 0);
+    assert.equal(D.forPlayer({ rankCode: 0, newness: 1, playMs: min(3), score: 50000, kills: 20 }), 0);
+    // ranked: full lock-on straight away (fading in only while still new)
+    for (const code of [1, 7, 13, 19]) assert.equal(D.forPlayer({ rankCode: code }), 1, 'rank ' + code);
+    assert.ok(near(D.forPlayer({ rankCode: 1, newness: 0.5 }), 0.5));
+    // guests: on the clock, 0.55 at 5 minutes to 1 at 15
+    const g = m => D.forPlayer({ rankCode: 0, playMs: min(m), newness: D.newness(min(m), 1) });
+    assert.equal(g(4), 0);
+    assert.ok(g(8.5) > 0.25 && g(8.5) < 0.45, '8.5 min ' + g(8.5));
+    assert.ok(g(12) > 0.8, '12 min ' + g(12));
+    assert.equal(g(15), 1);
+    assert.equal(g(120), 1);
+    // an experienced guest (career time) is locked on from the first second
+    assert.equal(D.forPlayer({ rankCode: 0, playMs: min(40) }), 1);
+    // a strong raid gets there early
+    assert.ok(D.forPlayer({ rankCode: 0, playMs: min(5), score: 10000, kills: 5 }) >= 0.99);
+    // placement: the guest clock, no cap
+    assert.equal(D.forPlayer({ rankCode: 20, playMs: min(30) }), 1);
+    // a good session carries over to the next raid
+    assert.ok(D.forPlayer({ rankCode: 0, playMs: min(5), sessionBest: 1 }) >= 0.9);
+    // mercy and idling still win over all of it
+    const now = Date.now();
+    assert.equal(D.of({ isPlayer: true, botDifficulty: 1, socket: { botMercyUntil: now + 5000 } }, now), 0.15);
+});
+
+test('lockon: knobs', () => {
+    for (const s of SKILLS) {
+        for (const r of [0, 0.5, 1]) {
+            assert.ok(D.aimError(s, 1) < PRE.aimError(s) + 0.012, 'aim error at ' + s);
+            assert.ok(D.aimError(s, 1) < 0.015, 'near zero error at ' + s);
+            assert.ok(D.aimStiff(s, 1) > PRE.aimStiff(s), 'turn at ' + s);
+            assert.ok(D.leadShare(s, 1) >= 1, 'full lead at ' + s);
+            assert.ok(D.reactionMs(s, 1, r) <= 190 && D.reactionMs(s, 1, r) >= 60, 'reaction at ' + s + ' ' + D.reactionMs(s, 1, r));
+            assert.ok(D.pauseMs(s, 1, r) < PRE.pauseMs(s, r), 'pause at ' + s);
+            assert.ok(D.burstMs(1, r) > PRE.burstMs(r), 'burst');
+        }
+    }
+    assert.equal(D.shotMult(1), 1);
+    assert.ok(D.initRange(1) > 1400 && D.initThreat(1) > 1.2);
+    // still one way from 0 to 1, and below 0.5 the lock-on changes nothing
+    for (let d = 0.1; d <= 1.001; d += 0.1) {
+        assert.ok(D.aimError(0.4, d) < D.aimError(0.4, d - 0.1));
+        assert.ok(D.aimStiff(0.4, d) > D.aimStiff(0.4, d - 0.1));
+        assert.ok(D.reactionMs(0.4, d, 0.5) < D.reactionMs(0.4, d - 0.1, 0.5));
+        assert.ok(D.shotMult(d) > D.shotMult(d - 0.1));
+        assert.ok(D.softShare(d) < D.softShare(d - 0.1));
+    }
+    const knobs = d => [D.aimError(0.4, d), D.aimStiff(0.4, d), D.leadShare(0.4, d), D.reactionMs(0.4, d, 0.3),
+        D.pauseMs(0.4, d, 0.3), D.burstMs(d, 0.3), D.shotMult(d), D.initRange(d), D.softShare(d), D.turretNoise(d)];
+    for (const d of [0, 0.15, 0.3, 0.5]) {
+        const on = knobs(d);
+        D.setLockOn(false);
+        const off = knobs(d);
+        D.setLockOn(true);
+        on.forEach((v, i) => assert.ok(near(v, off[i]), 'knob ' + i + ' at ' + d));
+    }
+    // hunters: a third bot only on a rich (or marked) veteran
+    assert.equal(D.maxHunters(0.1, 5000, 2), 1, 'never a pack on a newcomer');
+    assert.equal(D.maxHunters(0.6, 5000, 2), 2);
+    assert.equal(D.maxHunters(1, 0, 0), 2);
+    assert.equal(D.maxHunters(1, 2000, 0), 3);
+    assert.equal(D.maxHunters(0.9, 0, 2), 3);
+    assert.equal(D.tactics(0.3), 0);
+    assert.equal(D.tactics(1), 1);
+});
+
+test('lockon: shots', () => {
+    const { shotMult } = require(path.join(SERVER, 'game', 'entities', 'subFunctions.js'));
+    const bot = { isBot: true, botShotMult: 0.8 };
+    bot.master = bot;
+    const newbie = { isPlayer: true, botNewbie: true };
+    const vet = { isPlayer: true, botDifficulty: 1 };
+    for (const p of [newbie, vet]) p.master = p;
+    assert.ok(near(shotMult({ master: bot }, newbie), D.shotMult(0)), 'a newcomer still takes the soft shots');
+    assert.equal(shotMult({ master: bot }, vet), 1, 'a veteran takes full damage');
+});
+
 test('middle', () => {
     const close = (a, b, what) => assert.ok(Math.abs(a - b) / b < 0.15, what + ' ' + a.toFixed(3) + ' vs ' + b.toFixed(3));
     for (const s of [0.2, 0.4, 0.6, 0.8]) {
@@ -172,7 +265,7 @@ test('middle', () => {
     assert.equal(D.maxHunters(0.1), 1);
 });
 
-test('shots', () => {
+legacy('shots', () => {
     const { shotMult } = require(path.join(SERVER, 'game', 'entities', 'subFunctions.js'));
     const bot = { isBot: true, botShotMult: 0.8 };
     bot.master = bot;
@@ -312,10 +405,10 @@ test('bots: soft window, hunter cap, reaction and fight range follow the target'
     loop(2);
 });
 
-test('bots: the raid stamps each player from rank or raid score', () => {
+legacy('bots: the raid stamps each player from rank or raid score', () => {
     const p = tank(0, (nextY += 1500), false);
     royale.freshRaidBody(p);
-    assert.equal(p.botDifficulty, D.forPlayer({ rankCode: 0 }), 'a guest starts at the floor');
+    assert.ok(near(p.botDifficulty, D.forPlayer({ rankCode: 0 }), 1e-4), 'a guest starts at the floor');
     p.rankCode = 13;
     royale.freshRaidBody(p);
     assert.ok(near(p.botDifficulty, 0.7), 'Diamond I');
@@ -333,7 +426,7 @@ test('bots: the raid stamps each player from rank or raid score', () => {
     loop(2);
 });
 
-test('stamp: newness runs on play time and lives, the soft window follows it', () => {
+legacy('stamp: newness runs on play time and lives, the soft window follows it', () => {
     const min = m => m * 60_000;
     const p = tank(0, (nextY += 1500), false);
     const sock = p.socket;

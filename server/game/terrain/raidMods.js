@@ -9,7 +9,9 @@ const MODS = [
     { id: "glass_cannons", name: "Glass Cannons",      desc: "Double damage, half health, for everyone.", weight: 1.1, damageMult: 2, healthMult: 0.5 },
     { id: "demolition",    name: "Demolition Day",     desc: "Three Seismic Charges in every kit, and the rock breaks 40% easier.", weight: 1, kitStart: { charge: 3 }, rockHpMult: 0.6 },
     { id: "loot_flood",    name: "Loot Flood",         desc: "Twelve chests instead of six, and they come back in 15 seconds.", weight: 1, chestMult: 2, chestRespawnMult: 0.5 },
-    { id: "magnet_storm",  name: "Magnet Storm",       desc: "Everyone gets a Gem Magnet, and every gem is worth 25% more.", weight: 1, freeGear: ["magnet"], gemValueMult: 1.25 },
+    // Magnet Storm with the ability system off; Hook Storm with it on
+    { id: "magnet_storm",  name: "Magnet Storm",       desc: "Everyone gets a Gem Magnet, and every gem is worth 25% more.", weight: 1, freeGear: ["magnet"], gemValueMult: 1.25, legacy: true },
+    { id: "hook_storm",    name: "Hook Storm",         desc: "Everyone gets a Grapple Hook, and every gem is worth 25% more.", weight: 1, freeAbility: "grapple", gemValueMult: 1.25, abilities: true },
     { id: "rocket_fuel",   name: "Rocket Fuel",        desc: "Everyone moves 35% faster.", weight: 1, speedMult: 1.35 },
     { id: "fast_storm",    name: "Fast Storm",         desc: "The storm closes in twice as fast, then holds longer.", weight: 1, stormShrinkMult: 0.55 },
     { id: "bounty_week",   name: "Bounty Week",        desc: "Kills are worth double points.", weight: 1, killScoreMult: 2 },
@@ -22,10 +24,15 @@ const MODS = [
 let active = null;
 let lastId = null;
 
+// the twists that fit the shop's era (ROYALE_ABILITIES, abilities.js)
+function inEra(m) {
+    const on = process.env.ROYALE_ABILITIES !== '0';
+    return on ? !m.legacy : !m.abilities;
+}
 function roll(force) {
-    let pool = MODS.filter(m => m.id !== lastId && !(m.noGrowth && Config.royale_growth));
+    let pool = MODS.filter(m => m.id !== lastId && !(m.noGrowth && Config.royale_growth) && inEra(m));
     if (force) pool = MODS.filter(m => m.id === force);
-    if (!pool.length) pool = MODS;
+    if (!pool.length) pool = MODS.filter(inEra);
     let total = 0;
     for (const m of pool) total += m.weight || 1;
     let r = Math.random() * total;

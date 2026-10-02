@@ -6,7 +6,8 @@
 // is held, with a light pull toward the nearest target in a small cone. A quick
 // tap on the right half fires at the spot you tapped.
 //
-// Thumb buttons along the right edge: the three kit slots and the sidearm.
+// Thumb buttons along the right edge: the three kit slots and the sidearm,
+// with Dash and the ability slot next to the corner (abilityFx.js draws them).
 // Kit items that land on a spot (Seismic Charge, Rock Barrage) arm on a tap
 // and the next touch places them: drag to aim, lift to throw.
 // Anything else on screen that takes a click (stat bars, upgrade tiles, the
@@ -21,9 +22,13 @@ import { global } from "./global.js";
 import { util } from "./util.js";
 import { gameSound } from "./sound.js";
 import { gui } from "./socketinit.js";
+import * as abilityFx from "./abilityFx.js";
 
-import { STICK, stickVector, moveBits, packMove, unpackMove, assistAim } from "./touchInput.js";
-export { STICK, stickVector, moveBits, packMove, unpackMove, assistAim };
+import { STICK, stickVector, moveBits, packMove, unpackMove, assistAim, touchPrimary, inputModeWatch } from "./touchInput.js";
+export { STICK, stickVector, moveBits, packMove, unpackMove, assistAim, touchPrimary, inputModeWatch };
+
+const ABDRAG_PX = 120;       // a drag this long off the ability button = full range
+const LONG_MS = 400;         // a press held this long on a thumb button shows its tooltip
 
 // ── settings ────────────────────────────────────────────────────────────
 const PREF_KEY = "dwTouch_v1";
@@ -164,10 +169,11 @@ class TouchControls {
         this.place = null;      // an armed aimed kit item: { slot, id, max, tid, x, y }
     }
 
+    // Listens on every device: a touch screen laptop playing with the mouse
+    // switches over the moment a finger lands on the game (canvas.js).
     attach(canvas) {
         this.cv = canvas;
-        this.enabled = true;
-        this.buildDom();
+        this.setActive(!!global.mobile);
         const el = canvas.cv;
         const opt = { passive: false };
         el.addEventListener("touchstart", (e) => this.onStart(e), opt);
@@ -180,6 +186,17 @@ class TouchControls {
         window.addEventListener("orientationchange", () => this.releaseAll());
         if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener("change", () => this.releaseAll());
         document.addEventListener("visibilitychange", () => { if (document.hidden) this.releaseAll(); });
+    }
+
+    // Touch play on or off (app.js setTouchMode). Off: the sticks let go and
+    // the DOM row hides (domTick); aim assist only ever runs while on.
+    setActive(on) {
+        this.enabled = !!on;
+        this.releaseAll();
+        this.place = null;
+        this.movePacked = 0;
+        if (on) this.buildDom();
+        else if (this.dom) this.domTick();
     }
 
     viewW() { if (!viewW) readView(); return viewW; }
@@ -204,6 +221,10 @@ class TouchControls {
             const sz = u * 0.98;
             out["kit" + i] = { x: right - armR, y: bottom - armGap - sz / 2 - i * (sz + 10), w: sz, h: sz };
         }
+        // dash in the corner left of the sidearm, the ability above it
+        const abR = u * 0.6;
+        out.dash = { x: right - armR * 2 - 18 - abR, y: bottom - abR, r: abR, round: true };
+        out.ability = { x: out.dash.x - abR * 0.35, y: out.dash.y - abR * 2 - 20, r: abR, round: true };
         out.unit = u;
         out.safe = s;
         this.L = out;
@@ -212,7 +233,7 @@ class TouchControls {
 
     hitButton(x, y) {
         const L = this.L || this.layout();
-        const ids = ["arm", "kit0", "kit1", "kit2"];
+        const ids = ["arm", "kit0", "kit1", "kit2", "dash", "ability"];
         for (const id of ids) {
             const b = L[id];
             if (!b || !this.buttonShown(id)) continue;
@@ -231,6 +252,10 @@ class TouchControls {
         if (!this.playing()) return false;
         const st = (global.shop && global.shop.state) || {};
         if (id === "arm") return !!st.arm;
+        if (id === "dash" || id === "ability") {
+            if (!(global.abil && global.abil.on) || !global.gems || !(global.gems.cap > 0)) return false;
+            return !!((global.royale && global.royale.at > 0) || global.tutorialMode);
+        }
         if (id.startsWith("kit")) {
             if (!global.gems || !(global.gems.cap > 0)) return false;
             // the tutorial brings the kit in with its own lesson
@@ -285,6 +310,8 @@ class TouchControls {
 
     onStart(e) {
         e.preventDefault();
+        if (this.onTouchSeen) this.onTouchSeen();
+        if (!this.enabled) return;
         if (!global.gameStart && !global.disconnected) return;
         // chatting: a tap outside the box closes it (and sends), it never
         // starts a stick or presses a button
@@ -343,7 +370,7 @@ class TouchControls {
 
     onMove(e) {
         e.preventDefault();
-        if (this.swallow) return;
+        if (this.swallow || !this.enabled) return;
         for (const t of e.changedTouches) {
             const id = t.identifier;
             if (this.pinch && (id === this.pinch.a || id === this.pinch.b)) { this.movePinch(e.touches); continue; }
@@ -367,12 +394,15 @@ class TouchControls {
                 continue;
             }
             const b = this.btn.get(id);
+            if (b) this.noteMove(id, t.clientX, t.clientY);
             if (b && b.startsWith("kit") && global.kitDrag) this.lastDrag = { x: t.clientX, y: t.clientY };
+            if (b === "ability" && this.abDrag && global.abilAim) this.dragAim(t.clientX, t.clientY);
         }
     }
 
     onEnd(e) {
         e.preventDefault();
+        if (!this.enabled) return;
         // the finger that closed the chat is done once it lifts
         if (this.swallow) { if (!e.touches || !e.touches.length) this.swallow = false; return; }
         for (const t of e.changedTouches) {
@@ -400,17 +430,26 @@ class TouchControls {
 
     releaseAll() {
         this.move = null; this.aim = null; this.pinch = null;
+        if (this.abDrag) { this.abDrag = null; abilityFx.cancelAim(); }
         if (this.place) this.place.tid = null;
         if (this.mouse !== null) { this.mouse = null; if (this.cv) { global.clickables.clicked = false; global.bigMap && (global.bigMap.dragging = false); } }
         for (const [, b] of this.btn) if (b === "arm") this.armHeld = false;
         this.btn.clear();
+        if (this.held) this.held.clear();
+        global.touchTip = null;
         global.kitDrag = null;
         this.updateMove();
     }
 
     // ── buttons ──
+    // A long press (LONG_MS without moving) on a thumb button shows what it
+    // does instead of using it: dash and the ability go off on release, so a
+    // held finger can still change its mind.
     pressButton(id, name, t) {
         this.btn.set(id, name);
+        if (name === "dash" || name === "ability" || name === "arm" || name.startsWith("kit")) {
+            (this.held || (this.held = new Map())).set(id, { name, x: t.clientX, y: t.clientY, at: performance.now(), tip: false, moved: false });
+        }
         if (name.startsWith("kit")) {
             const slot = +name.slice(3);
             const ko = (global.shop.state && global.shop.state.kitOrder) || [];
@@ -421,9 +460,23 @@ class TouchControls {
             this.lastDrag = { x: t.clientX, y: t.clientY };
             return;
         }
+        if (name === "dash") return;
+        if (name === "ability") {
+            // a placed one (pad, wall): drag off the button to aim, lift to put
+            // it down; a quick tap puts it where you last aimed
+            const ab = global.abil || {};
+            const onPad = (global.shop && global.shop.onPad) || (global.vault && global.vault.onPad);
+            const down = ab.act === "burrow" && ab.actAt > performance.now();
+            if (!onPad && !down && ab.eq && abilityFx.cdLeft() <= 0 && abilityFx.startAim(ab.eq)) {
+                this.abDrag = { x0: t.clientX, y0: t.clientY, len: 0 };
+                haptic("tap");
+                return;
+            }
+            // the rest go off on release (releaseButton)
+            return;
+        }
         if (name === "arm") {
-            // tap toggles "fire the sidearm with the main gun"; holding fires it now
-            this.armHeld = true;
+            // tap toggles "fire the sidearm with the main gun"; a long press explains it
             this.armDownAt = performance.now();
             return;
         }
@@ -431,9 +484,64 @@ class TouchControls {
         if (z && z.tap) { gameSound.uiClick(); z.tap(); }
     }
 
+    // The drag off the ability button maps onto the world: ABDRAG_PX of drag
+    // is the full placement range, in the drag's direction.
+    dragAim(cx, cy) {
+        const d = this.abDrag, a = global.abilAim;
+        const dx = cx - d.x0, dy = cy - d.y0, len = Math.hypot(dx, dy);
+        d.len = Math.max(d.len, len);
+        if (len < 6) { a.wx = null; a.wy = null; return; }
+        const reach = Math.min(1, len / ABDRAG_PX) * a.range;
+        a.wx = global.player.renderx + dx / len * reach;
+        a.wy = global.player.rendery + dy / len * reach;
+    }
+    // per frame: a finger held still on a button long enough turns into its tooltip
+    checkLongPress(now) {
+        if (!this.held || !this.held.size) return;
+        for (const [id, h] of this.held) {
+            if (h.tip || h.moved || now - h.at < LONG_MS) continue;
+            h.tip = true;
+            global.touchTip = { name: h.name, at: now };
+            if (h.name === "ability" && this.abDrag) { this.abDrag = null; abilityFx.cancelAim(); }
+            if (h.name.startsWith("kit")) global.kitDrag = null;
+            haptic("tap");
+        }
+    }
+    noteMove(id, x, y) {
+        const h = this.held && this.held.get(id);
+        if (h && !h.moved && Math.hypot(x - h.x, y - h.y) > 14) h.moved = true;
+    }
     releaseButton(id, t) {
         const name = this.btn.get(id);
         this.btn.delete(id);
+        const h = this.held && this.held.get(id);
+        if (h) this.held.delete(id);
+        if (h && h.tip) {
+            // it was a look, not a use
+            if (global.touchTip && global.touchTip.name === h.name) global.touchTip = null;
+            return;
+        }
+        if (name === "dash") { if (this.cv) this.cv.useDash(); haptic("tap"); return; }
+        if (name === "ability" && !this.abDrag) {
+            // it goes where you aim; with no aim yet, a little ahead of the tank
+            this.aimKitTarget();
+            if (this.cv) this.cv.useAbility();
+            haptic("tap");
+            return;
+        }
+        if (name === "ability" && this.abDrag) {
+            const d = this.abDrag;
+            if (global.abilAim && t) this.dragAim(t.clientX, t.clientY);
+            this.abDrag = null;
+            if (!global.abilAim) return;
+            const a = global.abilAim;
+            if (d.len < 14 || a.wx == null) { abilityFx.cancelAim(); this.aimKitTarget(); if (this.cv) this.cv.useAbility(); return; }
+            const spot = abilityFx.aimSpot(util.getRatio());
+            abilityFx.cancelAim();
+            if (spot && this.cv) this.cv.useAbilityAt(spot.x, spot.y);
+            haptic("tap");
+            return;
+        }
         if (name && name.startsWith("kit")) {
             const d = global.kitDrag;
             global.kitDrag = null;
@@ -457,12 +565,12 @@ class TouchControls {
         }
         if (name === "arm") {
             this.armHeld = false;
-            if (performance.now() - (this.armDownAt || 0) < 300) {
+            if (performance.now() - (this.armDownAt || 0) < LONG_MS) {
                 this.armOn = !this.armOn;
                 touchPref("armAuto", this.armOn);
                 const cb = document.getElementById("touchArm");
                 if (cb) cb.checked = this.armOn;
-                global.createMessage(this.armOn ? "Sidearm fires with your gun." : "Sidearm off. Hold the button to fire it.", 2200);
+                global.createMessage(this.armOn ? "Sidearm fires with your gun." : "Sidearm off. Tap it to fire it with your gun again.", 2200);
                 gameSound.uiClick();
             }
         }
@@ -547,6 +655,7 @@ class TouchControls {
     }
 
     updateMove() {
+        if (!this.enabled) { this.moveVec = { x: 0, y: 0, mag: 0, ang: 0 }; if (this.movePacked) { this.movePacked = 0; global.touchMovePacked = 0; } return; }
         const m = this.move;
         const v = m ? stickVector(m.x - m.ox, m.y - m.oy) : { x: 0, y: 0, mag: 0, ang: 0 };
         this.moveVec = v;
@@ -606,6 +715,7 @@ class TouchControls {
     frame(now) {
         const sock = this.cv && this.cv.socket;
         if (!sock || !this.enabled) return;
+        this.checkLongPress(now);
         if (!this.playing() || global.showBigMap || global.showChat || friendChatOpen()) {
             if (this.move || this.aim) { this.move = null; this.aim = null; this.updateMove(); }
             if (!this.playing()) this.place = null;
@@ -779,7 +889,7 @@ function canRecord() {
 function setShow(el, on, disp = "flex") { const v = on ? disp : "none"; if (el._shown !== v) { el._shown = v; el.style.display = v; } }
 function setClass(el, cls, on) { const k = "_c_" + cls; if (el[k] !== on) { el[k] = on; el.classList.toggle(cls, on); } }
 TouchControls.prototype.domTick = function () {
-    const playing = this.playing();
+    const playing = this.playing() && this.enabled;
     setShow(this.chatBtn, playing);
     setShow(this.autoBtn, playing);
     // duos only, while you play (the death card and spectate bar need the space)
@@ -802,7 +912,7 @@ TouchControls.prototype.domTick = function () {
     // phones only (tablets are fine upright), and only in a raid
     const W = this.viewW(), H = this.viewH();
     const portrait = H > W * 1.15 && Math.min(W, H) < 600;
-    const want = !!(global.gameStart && portrait && !this.portraitOk);
+    const want = !!(this.enabled && global.gameStart && portrait && !this.portraitOk);
     setClass(this.rotEl, "show", want);
     if (want) this.releaseAll();
 };

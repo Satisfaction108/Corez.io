@@ -30,6 +30,9 @@
 //              whoever takes the target down; supply drops sit outside the
 //              chest budget
 'use strict';
+// pacing's own supply drop is the fallback for when the sky drops
+// (supplyDrops.js, tested in raidHeat.test.js) are off; this file tests that path
+if (process.env.ROYALE_SUPPLY == null) process.env.ROYALE_SUPPLY = '0';
 
 const assert = require('node:assert/strict');
 const fs = require('fs');

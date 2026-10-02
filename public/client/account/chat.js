@@ -7,6 +7,7 @@ import * as api from './api.js';
 import * as social from './social.js';
 import { h, icon, clear, animate, T_MID } from './ui.js';
 import { rankOf, badge, nameEl, presenceText, presenceState } from './people.js';
+import { attachEmoji } from '../emoji.js';
 
 const MAX = 300;
 const GAP_MS = 15 * 60 * 1000;     // a quiet stretch this long gets a time line
@@ -84,6 +85,7 @@ export function mount(host, friend, opts) {
         class: 'dw-input fr-chat-in', type: 'text', maxlength: MAX, autocomplete: 'off', spellcheck: 'true', enterkeyhint: 'send',
         placeholder: 'say something', 'aria-label': 'Message ' + friend.username,
     });
+    attachEmoji(input);
     const left = h('span', { class: 'fr-chat-left', 'aria-live': 'polite' });
     const send = h('button', { type: 'submit', class: 'dw-btn primary fr-chat-send', text: 'Send', disabled: true });
     const form = h('form', { class: 'fr-chat-form', novalidate: true }, h('div', { class: 'fr-chat-inwrap' }, input, left), send);

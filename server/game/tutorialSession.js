@@ -695,6 +695,7 @@ function resetShop(socket) {
             shop.applyPassives(body);
         }
         shop.talkState(socket);
+        require('./terrain/abilities.js').talkState(socket);
     } catch (e) { util.warn("tutorial: shop reset failed - " + (e && e.message)); }
 }
 

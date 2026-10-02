@@ -225,6 +225,8 @@ class Gun extends EventEmitter {
             (Config.dig_royale && (this.body.master.vaultOnPad || this.body.master.onVaultPad || this.body.master.onBasePad))) {
             shootPermission = false;
         }
+        // underground (Burrow Drill, abilities.js): no shooting
+        if (this.body.master.burrowUntil && Date.now() < this.body.master.burrowUntil) shootPermission = false;
         if (this.body.master.maxBullets !== undefined && this.body.master.maxBullets < (this.body.master.bulletchildren.length + 1)) {
             shootPermission = false;
         }
@@ -233,7 +235,9 @@ class Gun extends EventEmitter {
             let speed = this.fixedReload ? global.gameManager.roomSpeed : global.gameManager.runSpeed;
             if (this.cycleTimer < 1) {
                 // overdrive core: +30% reload for its 20s window
-                const odBoost = (this.body.overdriveUntil && Date.now() < this.body.overdriveUntil) ? 1.3 : 1;
+                // and Adrenaline (abilities.js rushUntil) on top
+                const odBoost = ((this.body.overdriveUntil && Date.now() < this.body.overdriveUntil) ? 1.3 : 1) *
+                    ((this.body.rushUntil && Date.now() < this.body.rushUntil) ? 1.6 : 1);
                 this.cycleTimer += odBoost / (this.settings.reload * speed * (this.calculator == "necro" || this.calculator == "fixed reload" ? 1 : sk.rld));
             }
         }

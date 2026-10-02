@@ -4,7 +4,9 @@ import { config } from "./config.js";
 import * as socketStuff from "./socketinit.js";
 import { AdvancedRecorder } from "./recorder.js";
 import { gameSound } from "./sound.js";
-import { touch } from "./touch.js";
+import { touch, inputModeWatch } from "./touch.js";
+import * as abilityFx from "./abilityFx.js";
+import { attachEmoji } from "./emoji.js";
 let { gui } = socketStuff;
 
 // duos: team chat and pings are on (the duo server says so in RY)
@@ -63,9 +65,13 @@ class Canvas {
         this.cvb = document.getElementById('gameCanvas-background');
         this.cvg = document.getElementById('gameCanvas-gameplay');
         this.cvu = document.getElementById('gameCanvas-gui');
-        this.cv.resize = (width, height) => {
-            this.cv.width = this.cvb.width = this.cvg.width = this.cvu.width = this.width = width;
-            this.cv.height = this.cvb.height = this.cvg.height = this.cvu.height = this.height = height;
+        // The HUD layer may be sharper than the world (app.js resizeEvent):
+        // automatic resolution only lowers the world layers.
+        this.cv.resize = (width, height, guiW = width, guiH = height) => {
+            this.cv.width = this.cvb.width = this.cvg.width = this.width = width;
+            this.cv.height = this.cvb.height = this.cvg.height = this.height = height;
+            this.cvu.width = guiW;
+            this.cvu.height = guiH;
         };
         this.cv.resize(innerWidth, innerHeight);
         this.reverseDirection = false;
@@ -82,17 +88,34 @@ class Canvas {
         global.canvas = this;
     }
     init() {
-        if (global.mobile) {
-            // phones and tablets: twin sticks and thumb buttons (touch.js)
-            touch.attach(this);
-        } else {
-            this.cv.addEventListener("mousemove", (event) => {if (global.gameStart || global.disconnected) this.mouseMove(event)});
-            this.cv.addEventListener("mousedown", (event) => {if (global.gameStart || global.disconnected) this.mouseDown(event)});
-            this.cv.addEventListener("mouseup", (event) => {if (global.gameStart || global.disconnected) this.mouseUp(event)});
-            this.cv.addEventListener("keypress", (event) => {if (global.gameStart) this.keyPress(event)});
-            this.cv.addEventListener("wheel", (event) => {if (global.gameStart) this.wheel(event)});
-        }
-        this.cv.addEventListener("keydown", (event) => {if (global.gameStart) this.keyDown(event)});
+        // Both sets of input are wired up; global.mobile says which one plays.
+        // Phones and tablets: twin sticks and thumb buttons (touch.js). A real
+        // touch on the game switches to them, a mouse that moves (or clicks)
+        // or game keys with a pointer to aim with switch back (touchInput.js
+        // inputModeWatch), so a touch screen laptop or a PC whose browser
+        // claims to be a phone still plays with mouse and keys.
+        touch.attach(this);
+        const watch = inputModeWatch(() => global.inputEnv ? global.inputEnv() : {});
+        const flip = (want) => { if (want !== null && want !== !!global.mobile && global.setTouchMode) global.setTouchMode(want); };
+        touch.onTouchSeen = () => flip(watch.touch(performance.now()));
+        // pointer events carry the device; touch and pen never count as a mouse
+        window.addEventListener("pointermove", (e) => {
+            if (e.pointerType === "mouse") flip(watch.mouseMove(e.clientX, e.clientY, performance.now(), !!global.mobile));
+        }, true);
+        window.addEventListener("pointerdown", (e) => {
+            if (e.pointerType === "mouse") flip(watch.mouseDown(performance.now(), !!global.mobile));
+        }, true);
+        this.cv.addEventListener("mousemove", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseMove(event)});
+        this.cv.addEventListener("mousedown", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseDown(event)});
+        this.cv.addEventListener("mouseup", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseUp(event)});
+        this.cv.addEventListener("keypress", (event) => {if (!global.mobile && global.gameStart) this.keyPress(event)});
+        this.cv.addEventListener("wheel", (event) => {if (!global.mobile && global.gameStart) this.wheel(event)});
+        this.cv.addEventListener("keydown", (event) => {
+            // playing on the keyboard (not a shortcut) with a mouse or trackpad around
+            if (global.mobile && global.gameStart && !global.showChat && !event.metaKey && !event.ctrlKey && !event.altKey && !/^(Shift|Meta|Control|Alt|CapsLock|Tab|Escape)$/.test(event.key || ""))
+                flip(watch.key(performance.now(), true));
+            if (global.gameStart) this.keyDown(event);
+        });
         this.cv.addEventListener("keyup", (event) => {if (global.gameStart) this.keyUp(event)});
         window.addEventListener("gamepadconnected", (e) => {
             global.createMessage("Controller detected! Initalizing Gamepad mode...");
@@ -171,6 +194,7 @@ class Canvas {
                 });
             }
             document.getElementById("gameAreaWrapper").appendChild(this.chatInput);
+            attachEmoji(this.chatInput);
         }
         this.releaseMovement();
         // touch: typing never drives or shoots; the sticks let go and the tank stops
@@ -225,13 +249,22 @@ class Canvas {
             if (!event.repeat && !global.showChat) this.respawn();
             return true;
         }
-        if (!global.died && !event.repeat && (kc === global.KEY_KIT_1 || kc === global.KEY_KIT_2 || kc === global.KEY_KIT_3)) {
-            const slot = kc === global.KEY_KIT_1 ? 0 : kc === global.KEY_KIT_2 ? 1 : 2;
+        // dash and the ability slot (abilityFx.js); before the server has said
+        // the system is on, the keys keep their old jobs
+        if (!global.died && global.abil && global.abil.on && !global.showTree && !global.showChat) {
+            if (kc === global.KEY_DASH) { if (!event.repeat) this.useDash(); return true; }
+            if (kc === global.KEY_ABILITY) { if (!event.repeat) this.abilityDown(); return true; }
+        }
+        // abilities switched off on this server: Q goes back to being kit slot 2
+        const kit2 = kc === global.KEY_KIT_2 || (kc === global.KEY_ABILITY && !(global.abil && global.abil.on));
+        if (!global.died && !event.repeat && (kc === global.KEY_KIT_1 || kit2 || kc === global.KEY_KIT_3)) {
+            const slot = kc === global.KEY_KIT_1 ? 0 : kit2 ? 1 : 2;
             const ko = (global.shop.state && global.shop.state.kitOrder) || [];
             if (!ko[slot]) return false;     // empty slot: the key keeps its other job
             this.useKitSlot(slot);
             return true;
         }
+        if (kc === global.KEY_ESC && global.abilAim) { abilityFx.cancelAim(); gameSound.uiClick(); return true; }
         if (kc === global.KEY_ESC && global.shop.onPad && !global.shop.dismissed) {
             global.shop.dismissed = true;
             gameSound.uiClick();
@@ -239,7 +272,15 @@ class Canvas {
         }
         return false;
     }
-    royaleKeyUp() { return false; }
+    // a placed ability (pad, wall) goes down where you aim when the key comes up
+    royaleKeyUp(event) {
+        if (event && event.keyCode === global.KEY_ABILITY && global.abilAim) {
+            abilityFx.cancelAim();
+            if (!global.died) this.useAbility();
+            return true;
+        }
+        return false;
+    }
     useKitSlot(slot) {
         const ko = (global.shop.state && global.shop.state.kitOrder) || [];
         if (!ko[slot]) {
@@ -253,6 +294,37 @@ class Canvas {
         this.socket.talk('sk', slot, Math.round(wx), Math.round(wy));
         global.kitUsedAt = performance.now();   // coach.js: the ability step
         gameSound.uiClick();
+    }
+    useDash() {
+        if (abilityFx.predictDash()) this.socket.talk('ab', 0);
+        else if (global.abil && global.abil.d <= 0) gameSound.uiClick();
+    }
+    // Key down: a placed ability starts its preview (it goes down on key up,
+    // royaleKeyUp, so a tap still casts at the cursor); anything else fires.
+    abilityDown() {
+        const ab = global.abil || {};
+        const onPad = (global.shop && global.shop.onPad) || (global.vault && global.vault.onPad);
+        const down = ab.act === "burrow" && ab.actAt > performance.now();
+        if (!onPad && !down && ab.eq && abilityFx.cdLeft() <= 0 && abilityFx.startAim(ab.eq)) return;
+        this.useAbility();
+    }
+    // The ability key never swaps abilities: that's the shop panel's Equip
+    // button. On any pad it does nothing but say so.
+    useAbility() {
+        const ab = global.abil || {};
+        if (global.shop && global.shop.onPad) { global.createMessage("Equip abilities with the Equip button.", 2000); return; }
+        if (global.vault && global.vault.onPad) { global.createMessage("Equip abilities at a shop.", 2000); return; }
+        if (!ab.eq) { global.createMessage("No ability yet. Shops sell them.", 2200); return; }
+        if (abilityFx.cdLeft() > 0) return;
+        const wr = util.getRatio();
+        let wx = global.player.renderx + global.target.x / wr;
+        let wy = global.player.rendery + global.target.y / wr;
+        this.useAbilityAt(wx, wy);
+    }
+    useAbilityAt(wx, wy) {
+        if (!isFinite(wx) || !isFinite(wy)) { wx = global.player.renderx; wy = global.player.rendery; }
+        this.socket.talk('ab', 1, Math.round(wx), Math.round(wy));
+        global.abilityUsedAt = performance.now();   // coach.js: the ability step
     }
     keyDown(event) {
         if (global.dailyTankAd.renderUI) return;
@@ -579,6 +651,10 @@ class Canvas {
                 // press began on it: a shot fired elsewhere and released over
                 // the button must not throw the upgrade menu away.
                 this.skipUpgradePressed = global.clickables.skipUpgrades.check(mpos) !== -1;
+                // the shop panel acts on release too, and only for a press that
+                // began on the same spot: a shot released over it as the panel
+                // opens under you must never buy or equip
+                this.shopPressed = global.shop && global.shop.onPad ? global.clickables.shop.check(mpos) : -1;
                 // full-map overlay swallows clicks: start a drag, never fire
                 if (global.showBigMap) {
                     const mScale = this.height / global.screenHeight;
@@ -737,11 +813,14 @@ class Canvas {
                     gameSound.uiClick();
                     break;
                 }
-                // outfitter panel: tabs 0-3, items 4-39, buy 40, close 41
+                // outfitter panel: items 4-39, buy 40, close 41, tabs 42 and up
                 const shopClick = global.clickables.shop.check(mpos);
                 if (shopClick !== -1 && global.shop.onPad && !global.died) {
                     const sh = global.shop;
-                    if (shopClick < 4) sh.tab = ['drill', 'gear', 'kit', 'arm'][shopClick];
+                    const pressed = this.shopPressed === shopClick && performance.now() - (sh.openAt || 0) > 300;
+                    this.shopPressed = -1;
+                    if (!pressed) break;
+                    if (shopClick >= 42) { const id = (sh.tabIds || [])[shopClick - 42]; if (id) { sh.tab = id; sh.tabPicked = true; } }
                     else if (shopClick === 40) { if (sh.sel) this.socket.talk('sb', String(sh.sel)); }
                     else if (shopClick === 41) sh.dismissed = true;
                     else {
@@ -1043,7 +1122,7 @@ class Canvas {
                     ctx.fillStyle = "#ffffff"
                     ctx.fillRect(0, 0, this.cv.width, this.cv.height);
                     toMerge.forEach(layer => {
-                        if (layer) ctx.drawImage(layer, 0, 0);
+                        if (layer) ctx.drawImage(layer, 0, 0, this.cv.width, this.cv.height);
                     });
                 },
                 getCanvas: () => canvas

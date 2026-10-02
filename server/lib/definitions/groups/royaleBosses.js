@@ -239,3 +239,48 @@ Class.lootChestRare = {
     BODY: { DAMAGE: 0, HEALTH: 1900, RESIST: 1, SPEED: 0, PUSHABILITY: 0, DENSITY: 4 },
     PROPS: [],
 };
+
+// ── the Core: the final storm's objective (terrain/coreFinale.js). The
+// client draws it itself (a big crystal heart, cracks by health), this hull
+// is only the hitbox. Health is set at spawn from the raid size.
+Class.royaleCore = {
+    PARENT: "lootChestBase",
+    LABEL: "The Core",
+    SHAPE: 6,
+    COLOR: "#5ce8ff",
+    SIZE: 100,
+    FACING_TYPE: ["spin", { speed: 0.004 }],
+    BODY: { DAMAGE: 0, HEALTH: 15000, RESIST: 1, SPEED: 0, PUSHABILITY: 0, DENSITY: 50, SHIELD: 0, REGEN: 0 },
+    PROPS: [],
+};
+
+// ── Rattler: the first-minute chaser (terrain/rattler.js). Slower than any
+// tank, soft, and its shots sting more than they hurt, so a new player can
+// outrun it to a vault or turn round and pop it.
+Class.royaleRattler = {
+    PARENT: "genericTank",
+    LABEL: "Rattler",
+    DANGER: 3,
+    COLOR: "#ff8a3a",
+    SIZE: 13,
+    LEVEL: 0,
+    CONTROLLERS: ["royaleRattler"],
+    GIVE_KILL_MESSAGE: false,
+    RENDER_ON_LEADERBOARD: false,
+    CAN_BE_ON_LEADERBOARD: false,
+    DISPLAY_NAME: true,
+    BODY: {
+        SPEED: base.SPEED * 0.74,
+        ACCELERATION: base.ACCEL * 0.8,
+        HEALTH: 300,
+        SHIELD: base.SHIELD * 0.4,
+        REGEN: base.REGEN * 0.2,
+        DAMAGE: base.DAMAGE * 0.4,
+        FOV: 1.3,
+    },
+    GUNS: [
+        { POSITION: [17, 9, 1, 0, 0, 0, 0], PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, { reload: 1.5, damage: 0.4, speed: 0.85, maxSpeed: 0.85 }]), TYPE: "bullet" } },
+        { POSITION: [11, 13, -1.3, 0, 0, 0, 0] },
+    ],
+    VALUE: 0,
+};

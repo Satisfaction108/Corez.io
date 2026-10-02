@@ -66,3 +66,63 @@ export function assistAim(ang, cands, cone = 0.21, pull = 0.6) {
     return { ang: ang + best.diff * k, dist: best.dist };
 }
 
+
+// ── touch play or mouse and keys ────────────────────────────────────────
+// A user agent string can say "Android" on a PC (a UA switcher, devtools,
+// some embeds) and a laptop can have a touch screen, so neither decides on
+// its own. env: { ua, maxTouchPoints, coarse, fine } where coarse is
+// "(pointer: coarse)" (the primary pointer is a finger) and fine is
+// "(any-pointer: fine)" (some mouse, trackpad or pen); either may be null
+// when matchMedia is missing.
+const TOUCH_UA = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i;
+export function touchPrimary(env) {
+    const ua = env.ua || "";
+    const points = env.maxTouchPoints | 0;
+    // iPadOS says it is a Mac; its touch points give it away
+    const touchUa = TOUCH_UA.test(ua) || (/Macintosh/.test(ua) && points > 1);
+    if (!(points > 0) && !touchUa) return false;
+    // the primary pointer is the real answer: a finger on phones and tablets,
+    // the mouse or trackpad on a touch screen laptop
+    if (env.coarse != null) return !!env.coarse;
+    return touchUa;
+}
+
+// Flips between the two while playing: a real touch on the game turns touch
+// play on, a mouse that actually moves (or clicks) turns it off, and so do
+// game keys when there is a pointer to aim with (an iPad with only a
+// keyboard keeps its aim stick). Returns true (touch), false (mouse and
+// keys) or null (stay as you are).
+export const MODE = {
+    TRAVEL: 24,         // CSS px a mouse has to move in one go
+    GAP_MS: 400,        // a pause this long starts the count again
+    AFTER_TOUCH_MS: 800 // mouse events this soon after a touch are the browser's copies
+};
+// env: the touchPrimary object, or a function returning it (a trackpad can
+// be plugged in or out while you play)
+export function inputModeWatch(env) {
+    let touchAt = -1e9, travel = 0, lx = null, ly = null, lt = 0;
+    return {
+        touch(t) {
+            touchAt = t; travel = 0; lx = null;
+            return true;
+        },
+        mouseMove(x, y, t, mobile) {
+            if (!mobile || t - touchAt < MODE.AFTER_TOUCH_MS) { lx = x; ly = y; lt = t; travel = 0; return null; }
+            if (lx === null || t - lt > MODE.GAP_MS) travel = 0;
+            else travel += Math.hypot(x - lx, y - ly);
+            lx = x; ly = y; lt = t;
+            if (travel < MODE.TRAVEL) return null;
+            travel = 0;
+            return false;
+        },
+        mouseDown(t, mobile) {
+            if (!mobile || t - touchAt < MODE.AFTER_TOUCH_MS) return null;
+            return false;
+        },
+        key(t, mobile) {
+            const e = typeof env === "function" ? env() : env;
+            if (!mobile || !(e && e.fine)) return null;
+            return false;
+        },
+    };
+}

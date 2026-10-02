@@ -659,7 +659,9 @@ function revengeFor(sock, bodyByKey, t = Date.now()) {
     if (!alive(b)) return { alive: 0, name: rv.name };
     rv.id = b.id;
     const hp = b.health && b.health.max ? Math.max(0, Math.min(1, b.health.amount / b.health.max)) : 1;
-    return { alive: 1, x: Math.round(b.x), y: Math.round(b.y), e: b.id, name: b.name || rv.name, hp: Math.round(hp * 100) / 100, bonus: REVENGE_GEMS };
+    let at = b;
+    try { at = require('./abilities.js').shownAt(b); } catch { at = b; }     // smoke: where it went in
+    return { alive: 1, x: Math.round(at.x), y: Math.round(at.y), e: b.id, name: b.name || rv.name, hp: Math.round(hp * 100) / 100, bonus: REVENGE_GEMS };
 }
 
 function reset() {

@@ -1,0 +1,403 @@
+// The Core: the raid's last fight. When the final storm cycle starts, a huge
+// crystal heart surfaces beside the Center Vault and the last circle closes
+// on the pair of them. It has a lot of health (more with more players), it
+// throws a shockwave every few seconds that shoves tanks back and cracks the
+// rock around it, and once it is down to SHARD_BELOW it fires crystal shards
+// at whoever is close. Breaking it erupts a pile of gems; the tank that lands
+// the last hit gets a bonus straight into their bank. The vault is right
+// there, so whoever survives the scramble can cash out on the spot.
+//
+// The site is picked at raid start (so storm.js can aim the final circle at
+// it): CORE_OFFSET from the Center Vault in a random direction, and the final
+// circle centres halfway between the two. The rock around the site is
+// cleared to an arena when it surfaces: everything inside ARENA_R, a lane to
+// the vault, and about half of the rock out to COVER_R (cover).
+//
+// ROYALE_CORE=0 turns it off (the final circle goes back to a random centre).
+'use strict';
+
+const gems = require('./gems.js');
+
+const ON = process.env.ROYALE_CORE !== '0';
+const CORE_OFFSET = 330;
+const ARENA_R = 250;
+const LANE_R = 150;
+const COVER_R = 560;
+const COVER_KEEP = 0.45;           // share of the rock in the cover ring that stays
+const ZONE_R = 640;                // no regrow around the site while the Core stands
+const AFTER_MS = 25_000;           // ...and this long after it breaks
+const WARN_S = 30;                 // "something is waking" this long before it surfaces
+const PULSE_MS = 8000;
+const PULSE_FAST_MS = 5500;        // below half health
+const PULSE_FIRST_MS = 6000;
+const PULSE_R = 620;
+const PULSE_PUSH = 24;             // outward kick at the rim of the Core, u/tick
+const PULSE_DMG = 0.04;            // of max health, players and bots
+const PULSE_ROCK = 0.55;           // of a rock's max health
+const SHARD_BELOW = 0.3;
+const SHARD_MS = 1300;
+const SHARD_R = 950;
+const SHARD_N = 3;
+const SHARD_FLIGHT_MS = 450;
+const SHARD_HIT_R = 70;
+const SHARD_DMG = 0.12;
+const LAST_HIT_GEMS = 1000;
+const LAST_HIT_PTS = 800;
+
+function healthFor(humans, bots) {
+    return Math.round(Math.max(30_000, Math.min(180_000, 20_000 + 16_000 * humans + 3000 * bots)));
+}
+function gemsFor(humans, bots) {
+    return Math.round(Math.max(5000, Math.min(8000, 5000 + 600 * Math.max(0, humans - 1) + 150 * bots)) / 50) * 50;
+}
+
+let hooks = {};
+let site = null;        // { x, y, mid: {x, y}, vault: {x, y} } for this raid
+let core = null;
+let state = 'idle';     // idle | planned | up | down
+let warned = false;
+let nextPulseAt = 0;
+let nextShardAt = 0;
+let shards = [];
+let zone = null;
+let hitters = new Map();
+let coreGems = 0;
+let brokeBy = "";
+let brokeAt = 0;
+let lastErr = "";
+
+// dig_royale.js: humans(), fighters(), announce(kind, text, sub, dur) (every
+// client), feed(entry), fxAt(x, y, kind), toast(text, ms), payGems(body, n),
+// addPts(body, n), callout(body, kind, text, pts, sub, dur)
+function attach(h) { hooks = h || {}; }
+function enabled() { return ON && !!Config.dig_royale && !Config.tutorial; }
+
+function storm() { return require('./storm.js'); }
+function tg() { return global.gameManager && global.gameManager.terrainGrid; }
+const alive = (b) => !!b && !b.isGhost && !(b.isDead && b.isDead());
+
+function hash01(k, s) {
+    let h = (Math.imul((k | 0) + 1, 374761393) ^ Math.imul((s | 0) + 7, 668265263)) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1540483477);
+    h ^= h >>> 15;
+    return (h >>> 0) / 0x100000000;
+}
+
+// the vault the finale is built around: the one nearest the map centre
+function centerVault() {
+    let best = null;
+    try {
+        for (const v of require('./vault.js').getVaults()) {
+            if (!best || Math.hypot(v.x, v.y) < Math.hypot(best.x, best.y)) best = v;
+        }
+    } catch { /* */ }
+    return best || { x: 0, y: 0, r: 95 };
+}
+
+function planSite(ang = Math.random() * Math.PI * 2) {
+    const v = centerVault();
+    const x = v.x + Math.cos(ang) * CORE_OFFSET, y = v.y + Math.sin(ang) * CORE_OFFSET;
+    return { x, y, mid: { x: (x + v.x) / 2, y: (y + v.y) / 2 }, vault: { x: v.x, y: v.y } };
+}
+
+// New raid: the old Core (if any) goes without paying, a new site is picked
+// and the storm is told where to close the final circle.
+function newRaid() {
+    clear();
+    if (!enabled()) { try { storm().setFinalCenter(null); } catch { /* */ } return; }
+    site = planSite();
+    state = 'planned';
+    warned = false;
+    try { storm().setFinalCenter(site.mid.x, site.mid.y); } catch { /* */ }
+}
+
+function clear() {
+    if (core && alive(core)) { core._cleared = true; try { core.kill(); } catch { /* */ } }
+    core = null;
+    if (zone) { zone.until = Date.now(); zone = null; }
+    state = 'idle';
+    shards = [];
+    hitters.clear();
+    coreGems = 0;
+    brokeBy = "";
+    brokeAt = 0;
+}
+
+// Clears the arena: returns how many rocks went.
+function carveArena(s) {
+    const grid = tg();
+    if (!grid || !grid.rocks) return 0;
+    let n = 0;
+    const segD = (px, py) => {
+        const ax = s.x, ay = s.y, bx = s.vault.x, by = s.vault.y;
+        const ex = bx - ax, ey = by - ay, l2 = ex * ex + ey * ey || 1;
+        const t = Math.max(0, Math.min(1, ((px - ax) * ex + (py - ay) * ey) / l2));
+        return Math.hypot(px - (ax + t * ex), py - (ay + t * ey));
+    };
+    for (const rock of grid.rocks.values()) {
+        if (!rock || !(rock.alive || rock.growing)) continue;
+        const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+        const d = Math.hypot(rx - s.x, ry - s.y);
+        if (d > COVER_R + 160) continue;
+        let go = d <= ARENA_R || segD(rx, ry) <= LANE_R;
+        if (!go && rock.worldPoly && d <= ARENA_R + 160) {
+            for (const p of rock.worldPoly) { if (Math.hypot(p[0] - s.x, p[1] - s.y) <= ARENA_R) { go = true; break; } }
+        }
+        if (!go && d <= COVER_R && hash01(rock.k, 31) > COVER_KEEP) go = true;
+        if (!go) continue;
+        // an emerald stays put unless it sits right on the Core
+        if (rock.ore === 4 && d > ARENA_R * 0.6) continue;
+        try { grid.damageRock(rock, rock.health + rock.maxHealth + 1, rx, ry, false, null); n++; } catch { /* */ }
+    }
+    try { require('./spawnReach.js').invalidate(); } catch { /* */ }
+    return n;
+}
+
+function spawnCore() {
+    if (!site || core) return null;
+    const f = hooks.fighters ? hooks.fighters() : [];
+    const humans = hooks.humans ? hooks.humans().length : 0;
+    const bots = Math.max(0, f.length - humans);
+    carveArena(site);
+    const grid = tg();
+    try { if (grid && grid.addNoRegrowZone) zone = grid.addNoRegrowZone(site.x, site.y, ZONE_R, Number.MAX_SAFE_INTEGER); } catch { /* */ }
+    let o;
+    try {
+        o = new Entity({ x: site.x, y: site.y });
+        o.define('royaleCore');
+    } catch (e) { lastErr = String(e && e.stack || e); state = 'idle'; return null; }
+    o.team = TEAM_ROOM;
+    // the chest rules: hard cover, only tanks and their shots hurt it
+    o.isLootChest = true;
+    o.isRoyaleCore = true;
+    o.name = "The Core";
+    o.alwaysActive = true;
+    o.regenEvery = 1e9;
+    o.settings.leaderboardable = false;
+    o.refreshBodyAttributes();
+    const hp = healthFor(humans, bots);
+    o.health.set(hp);
+    o.health.amount = hp;
+    if (o.shield) { o.shield.max = 0; o.shield.amount = 0; }
+    o.pinX = o.x; o.pinY = o.y;
+    o.coreBornAt = Date.now();
+    o.on('damage', ({ damageInflictor = [] } = {}) => {
+        const t = Date.now();
+        for (const src of damageInflictor) {
+            let root = src, hops = 0;
+            while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+            if (root && (root.isPlayer || root.isBot)) {
+                const h = hitters.get(root.id);
+                hitters.set(root.id, { body: root, at: t, n: (h ? h.n : 0) + 1 });
+            }
+        }
+    });
+    o.on('dead', () => { try { onBroken(o); } catch (e) { lastErr = String(e && e.stack || e); } });
+    core = o;
+    coreGems = gemsFor(humans, bots);
+    state = 'up';
+    nextPulseAt = Date.now() + PULSE_FIRST_MS;
+    nextShardAt = 0;
+    const fmt = (n) => n.toLocaleString('en-US');
+    if (hooks.announce) hooks.announce('core', "THE CORE HAS SURFACED", "Break it for " + fmt(coreGems) + " gems. The Center Vault is right beside it.", 4800);
+    if (hooks.feed) hooks.feed({ core: 1, spawn: 1, g: coreGems });
+    if (hooks.toast) hooks.toast("The Core has surfaced at the centre. Break it, then bank next door.", 9000);
+    if (hooks.fxAt) hooks.fxAt(site.x, site.y, 'coreup');
+    return o;
+}
+
+function rootKiller(o) {
+    for (const k of (o.finalKillers || [])) {
+        let root = k, hops = 0;
+        while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+        if (root && (root.isPlayer || root.isBot) && alive(root)) return root;
+    }
+    let best = null, bestAt = 0;
+    for (const h of hitters.values()) if (alive(h.body) && h.at > bestAt) { best = h.body; bestAt = h.at; }
+    return best;
+}
+
+function erupt(x, y, total) {
+    let mult = (ore) => 1;
+    try { const rm = require('./raidMods.js'); mult = (ore) => rm.gemValueMult(ore); } catch { /* */ }
+    const pieces = gems.splitValue(total, { share: { 4: 0.2, 3: 0.4, 2: 0.25, 1: 0.15 }, shardValue: 120, maxPieces: 90 });
+    const t = Date.now();
+    pieces.forEach((p, i) => {
+        const ang = (i / pieces.length) * Math.PI * 2 * 3 + Math.random() * 0.6;
+        const sp = 3 + Math.random() * 8;
+        const g = gems.spawnGem(x + Math.cos(ang) * 40, y + Math.sin(ang) * 40, Math.round(p.v * mult(p.ore)), p.cls, p.size,
+            Math.cos(ang) * sp, Math.sin(ang) * sp, p.ore);
+        if (g) g.gemNoMagnetUntil = t + 1100 + (i % 30) * 25;
+    });
+    return pieces.length;
+}
+
+function onBroken(o) {
+    if (o !== core || state !== 'up') return;
+    state = 'down';
+    core = null;
+    brokeAt = Date.now();
+    if (zone) zone.until = brokeAt + AFTER_MS;
+    if (o._cleared) return;
+    const killer = rootKiller(o);
+    erupt(o.x, o.y, coreGems);
+    brokeBy = killer ? String(killer.name || "Someone") : "";
+    if (killer && killer.socket) {
+        if (hooks.payGems) hooks.payGems(killer, LAST_HIT_GEMS);
+        if (hooks.addPts) hooks.addPts(killer, LAST_HIT_PTS);
+        if (hooks.callout) hooks.callout(killer, 'corebreak', "YOU BROKE THE CORE", LAST_HIT_PTS, "+" + LAST_HIT_GEMS.toLocaleString('en-US') + " gems banked. Grab the pile and cash out.", 4200);
+    }
+    if (hooks.announce) hooks.announce('coredown', "THE CORE IS DOWN", (brokeBy ? brokeBy + " broke it. " : "") + "Grab the gems!", 3600, killer);
+    if (hooks.feed) hooks.feed({ core: 1, broke: 1, by: brokeBy, g: coreGems });
+    if (hooks.fxAt) hooks.fxAt(o.x, o.y, 'coredead');
+}
+
+function hurt(body, frac, t) {
+    if (!body.health || !(body.health.max > 0)) return;
+    if ((body.spawnGraceUntil || 0) > t || body.godmode || body.royaleFrozen) return;
+    const dmg = body.health.max * frac;
+    if (body.shield && body.shield.amount > 0) {
+        const soak = Math.min(body.shield.amount, dmg);
+        body.shield.amount -= soak;
+        body.health.amount -= (dmg - soak);
+    } else body.health.amount -= dmg;
+    body._lastDamageAt = t;
+    if (body.health.amount <= 0) {
+        body.deathCause = "core";
+        body.dontSendDeathMessage = true;
+    }
+}
+
+function pulse(t, fighters) {
+    if (hooks.fxAt) hooks.fxAt(core.x, core.y, 'corepulse');
+    const cr = core.realSize || core.size || 100;
+    for (const b of fighters) {
+        if (!alive(b) || b.royaleFrozen) continue;
+        const dx = b.x - core.x, dy = b.y - core.y;
+        const d = Math.hypot(dx, dy) || 1;
+        if (d > PULSE_R) continue;
+        const k = 1 - Math.max(0, d - cr) / (PULSE_R - cr);
+        const kick = PULSE_PUSH * (0.35 + 0.65 * k);
+        b.velocity.x += dx / d * kick;
+        b.velocity.y += dy / d * kick;
+        hurt(b, PULSE_DMG * (0.5 + 0.5 * k), t);
+    }
+    const grid = tg();
+    if (!grid || !grid.rocks) return;
+    for (const rock of grid.rocks.values()) {
+        if (!rock || !(rock.alive || rock.growing)) continue;
+        const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+        if ((rx - core.x) ** 2 + (ry - core.y) ** 2 > PULSE_R * PULSE_R) continue;
+        const wasGrowing = rock.growing;
+        let gone = false;
+        try { gone = grid.damageRock(rock, rock.maxHealth * PULSE_ROCK, rx, ry, false, null); } catch { /* */ }
+        if (gone && !wasGrowing && rock.ore) { try { gems.spawnOreBurst(rock, null); } catch { /* */ } }
+    }
+}
+
+function fireShards(t, fighters) {
+    const near = [];
+    for (const b of fighters) {
+        if (!alive(b) || b.royaleFrozen || (b.spawnGraceUntil || 0) > t) continue;
+        const d = Math.hypot(b.x - core.x, b.y - core.y);
+        if (d <= SHARD_R) near.push({ b, d });
+    }
+    near.sort((a, c) => a.d - c.d);
+    const ticks = SHARD_FLIGHT_MS / 33;
+    for (const { b } of near.slice(0, SHARD_N)) {
+        // aimed where they will be, more or less: you can still juke it
+        const x = b.x + (b.velocity.x || 0) * ticks * 0.7, y = b.y + (b.velocity.y || 0) * ticks * 0.7;
+        shards.push({ x, y, at: t + SHARD_FLIGHT_MS });
+        if (hooks.fxAt) hooks.fxAt(x, y, 'coreshard');
+    }
+}
+
+function landShards(t, fighters) {
+    if (!shards.length) return;
+    const keep = [];
+    for (const s of shards) {
+        if (s.at > t) { keep.push(s); continue; }
+        for (const b of fighters) {
+            if (!alive(b)) continue;
+            const r = SHARD_HIT_R + (b.realSize || 30);
+            if ((b.x - s.x) ** 2 + (b.y - s.y) ** 2 <= r * r) hurt(b, SHARD_DMG, t);
+        }
+    }
+    shards = keep;
+}
+
+function tick(t, fighters) {
+    if (!enabled() || state === 'idle') return;
+    let st;
+    try { st = storm().snapshot(t); } catch { return; }
+    if (state === 'planned') {
+        if (!warned && st.cn > 1 && st.c === st.cn - 2 && st.hold && (st.left | 0) <= WARN_S) {
+            warned = true;
+            if (hooks.toast) hooks.toast("Something is waking up under the centre...", 8000);
+            if (hooks.fxAt) hooks.fxAt(site.x, site.y, 'corewarn');
+        }
+        if (st.fin) spawnCore();
+        return;
+    }
+    if (state !== 'up' || !core) return;
+    if (!alive(core)) { onBroken(core); return; }
+    core.invuln = false;
+    core._inStorm = false;
+    if (core.pinX !== undefined) { core.x = core.pinX; core.y = core.pinY; core.velocity.x = 0; core.velocity.y = 0; }
+    const list = fighters || [];
+    landShards(t, list);
+    if (t >= nextPulseAt) {
+        nextPulseAt = t + (frac() < 0.5 ? PULSE_FAST_MS : PULSE_MS);
+        pulse(t, list);
+    }
+    if (frac() < SHARD_BELOW && t >= nextShardAt) {
+        nextShardAt = t + SHARD_MS;
+        fireShards(t, list);
+    }
+}
+
+function frac() {
+    if (!core || !core.health || !(core.health.max > 0)) return 0;
+    return Math.max(0, Math.min(1, core.health.amount / core.health.max));
+}
+
+// RY: s = soon (the warning), up, down. Positions only once it is announced.
+function snapshot(t = Date.now()) {
+    if (!enabled() || !site) return undefined;
+    if (state === 'planned') return warned ? { s: 'soon', x: Math.round(site.x), y: Math.round(site.y) } : undefined;
+    if (state === 'up' && core) {
+        return { s: 'up', e: core.id, x: Math.round(core.x), y: Math.round(core.y), r: Math.round(core.realSize || core.size || 100),
+            hp: Math.round(frac() * 1000) / 1000, g: coreGems, sh: frac() < SHARD_BELOW ? 1 : 0,
+            p: Math.max(0, nextPulseAt - t), vx: Math.round(site.vault.x), vy: Math.round(site.vault.y) };
+    }
+    if (state === 'down' && t - brokeAt < 60_000) return { s: 'down', x: Math.round(site.x), y: Math.round(site.y), by: brokeBy, vx: Math.round(site.vault.x), vy: Math.round(site.vault.y) };
+    return undefined;
+}
+
+function current() { return core && alive(core) ? core : null; }
+function siteOf() { return site; }
+
+// ROYALE_DEBUG (DBG core): surface it now, or knock it down to `hpFrac`
+function debugSpawn() {
+    if (!site) { site = planSite(); state = 'planned'; }
+    if (state !== 'up') { state = 'planned'; core = null; return spawnCore(); }
+    return core;
+}
+function debugHp(f, by) {
+    if (!core) return null;
+    // 0: break it now, credited to `by`
+    if (!(+f > 0)) {
+        if (by) { core.finalKillers = [by]; hitters.set(by.id, { body: by, at: Date.now(), n: 1 }); }
+        try { core.kill(); } catch { /* */ }
+        onBroken(core);
+        return 0;
+    }
+    core.health.amount = Math.max(1, core.health.max * Math.min(1, +f));
+    return frac();
+}
+
+module.exports = {
+    ON, CORE_OFFSET, ARENA_R, LANE_R, COVER_R, ZONE_R, PULSE_R, SHARD_BELOW, LAST_HIT_GEMS, LAST_HIT_PTS,
+    attach, enabled, newRaid, clear, tick, snapshot, current, siteOf, planSite, carveArena, healthFor, gemsFor, erupt,
+    debugSpawn, debugHp, _state: () => ({ state, warned, lastErr, shards: shards.length, frac: frac() }),
+};

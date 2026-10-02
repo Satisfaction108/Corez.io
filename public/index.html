@@ -105,20 +105,20 @@
         } catch (e) { /* stats only */ }
     })();
     </script>
-    <link rel="canonical" href="https://corez.games/">
+    <link rel="canonical" href="https://corez.io/">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Corez.io">
     <meta property="og:title" content="Corez.io: free browser battle royale">
     <meta property="og:description" content="Mine, loot, fight, purchase upgrades, and climb the leaderboard in a free browser-based battle royale!">
-    <meta property="og:url" content="https://corez.games/">
-    <meta property="og:image" content="https://corez.games/img/og.png">
+    <meta property="og:url" content="https://corez.io/">
+    <meta property="og:image" content="https://corez.io/img/og.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="Corez.io gameplay: tanks fighting between rock full of gems">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Corez.io: free browser battle royale">
     <meta name="twitter:description" content="Mine, loot, fight, purchase upgrades, and climb the leaderboard in a free browser-based battle royale!">
-    <meta name="twitter:image" content="https://corez.games/img/og.png">
+    <meta name="twitter:image" content="https://corez.io/img/og.png">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <!-- installable: from the home screen it runs full screen, sideways (Safari on iPhone has no fullscreen API for pages) -->
     <link rel="manifest" href="/manifest.webmanifest">
@@ -131,9 +131,9 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png">
     <link rel="help" href="/about">
     <script type="application/ld+json">
-    {"@context": "https://schema.org", "@type": "VideoGame", "name": "Corez.io", "url": "https://corez.games/",
+    {"@context": "https://schema.org", "@type": "VideoGame", "name": "Corez.io", "url": "https://corez.io/",
      "description": "A free top-down tank battle royale in your browser. Dig gems out of the rock, bank them at a vault, and fight other tanks while the storm closes in.",
-     "image": "https://corez.games/img/og.png", "genre": ["Battle royale", "Action", "Multiplayer", ".io"],
+     "image": "https://corez.io/img/og.png", "genre": ["Battle royale", "Action", "Multiplayer", ".io"],
      "gamePlatform": "Web browser", "applicationCategory": "Game", "operatingSystem": "Any",
      "playMode": "MultiPlayer", "author": {"@type": "Person", "name": "ZyroX"},
      "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
@@ -247,6 +247,11 @@
                 <div class="credit-role">Idea Contributor</div>
                 <div class="credit-info">emxiz.</div>
             </div>
+            <div class="credit-card">
+                <div class="credit-name">Rando Dude</div>
+                <div class="credit-role">Idea Contributor</div>
+                <div class="credit-info">js_a_dude</div>
+            </div>
         </div>
         <div class="contrib-foot"><a href="https://iogames.fun" target="_blank" rel="noopener" title="More IO Games">Play IO Games</a></div>
     </div>
@@ -351,8 +356,16 @@
                     <label class="container" title="Plainer rocks: softer shading, plain cracks, no wobble"><input id="optSimpleTerrain" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Simple Terrain</label>
                     <label class="container" title="No shaking, camera kicks or freeze frames"><input id="optNoShake" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No Screen Shake</label>
                     <label class="container" title="No glows, halos or screen-edge tints"><input id="optNoGlow" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No Glow</label>
+                    <label class="container" title="No glitch frames, static or colour split"><input id="optNoGlitch" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No Glitch Effects</label>
+                    <label class="container" title="Reduces flashing and glitch effects: no glitches, colour split, white-outs or strobing pulses, softer screen shake"><input id="optLightSafe" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Light Sensitive (reduces flashing and glitch effects)</label>
                     <label class="container" title="Draws half as many frames to save power"><input id="opt30Fps" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>30 FPS Cap</label>
                 </div>
+                <div class="sp-label">Effects</div>
+                <select id="optFxLevel" tabindex="-1" title="How many sparks, glitches and flashes. Low is easiest on slow machines">
+                    <option value="low">Low</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="max">Max</option>
+                </select>
                 <div class="sp-label">UI Scale</div>
                 <select id="optUiScale" tabindex="-1">
                     <option value="small">Small</option>
@@ -416,11 +429,13 @@
                     <div class="kb-section" style="grid-column:span 2">Combat</div>
                     <div class="kb-row"><b data-key="KEY_AUTO_FIRE">E</b><span>Auto-Fire</span></div>
                     <div class="kb-row"><b data-key="KEY_AUTO_SPIN">C</b><span>Auto-Spin</span></div>
+                    <div class="kb-row"><b data-key="KEY_DASH">Shift</b><span>Dash</span></div>
+                    <div class="kb-row"><b data-key="KEY_ABILITY">Q</b><span>Ability</span></div>
                     <div class="kb-row"><b data-key="KEY_SIDEARM">X</b><span>Fire Sidearm</span></div>
                     <div class="kb-row"><b data-key="KEY_REVERSE_TANK">V</b><span>Reverse Tank</span></div>
                     <div class="kb-row"><b data-key="KEY_REVERSE_MOUSE">B</b><span>Reverse Mouse</span></div>
                     <div class="kb-row"><b data-key="KEY_AUTO_ALT">G</b><span>Ping for your teammate (duos)</span></div>
-                    <div class="kb-row"><b data-key="KEY_OVER_RIDE">R</b><span>AI Override</span></div>
+                    <div class="kb-row"><b data-key="KEY_OVER_RIDE">-</b><span>AI Override</span></div>
                     <div class="kb-row"><b data-key="KEY_SUICIDE">O</b><span>Self-Destruct</span></div>
                     <div class="kb-row"><b data-key="KEY_MAX_STAT">F</b><span>Maximize Stat</span></div>
                     <div class="kb-row"><b data-key="KEY_CLASS_TREE">T</b><span>Class Tree</span></div>
@@ -445,7 +460,7 @@
                     <div class="kb-row"><b data-key="KEY_UPGRADE_MIN">-</b><span>Mining Power</span></div>
                     <div class="kb-section" style="grid-column:span 2">Kit</div>
                     <div class="kb-row"><b data-key="KEY_KIT_1">Z</b><span>Kit Slot 1</span></div>
-                    <div class="kb-row"><b data-key="KEY_KIT_2">Q</b><span>Kit Slot 2</span></div>
+                    <div class="kb-row"><b data-key="KEY_KIT_2">R</b><span>Kit Slot 2</span></div>
                     <div class="kb-row"><b data-key="KEY_KIT_3">N</b><span>Kit Slot 3</span></div>
                     <div class="kb-section" style="grid-column:span 2">Other</div>
                     <div class="kb-row"><b data-key="KEY_TOKEN">-</b><span>Token Tank*</span></div>
@@ -576,9 +591,9 @@
                                         <tr><td><div><b data-key="KEY_UP">W</b><span> - </span>move up</div></td><td><div><b data-key="KEY_DOWN">S</b><span> - </span>move down</div></td><td><div><b data-key="KEY_PARTY_ACCEPT">F2</b><span> - </span>join duo invite</div></td></tr>
                                         <tr><td><div><b data-key="KEY_LEFT">A</b><span> - </span>move left</div></td><td><div><b data-key="KEY_RIGHT">D</b><span> - </span>move right</div></td><td><div><b data-key="KEY_SAVE">L</b><span> - </span>save &amp; leave</div></td></tr>
                                         <tr><td><div><b data-key="KEY_AUTO_FIRE">E</b><span> - </span>auto-fire</div></td><td><div><b data-key="KEY_AUTO_SPIN">C</b><span> - </span>auto-spin</div></td><td><div><b data-key="KEY_SIDEARM">X</b><span> - </span>fire sidearm</div></td></tr>
-                                        <tr><td><div></div></td><td><div><b data-key="KEY_REVERSE_TANK">V</b><span> - </span>reverse tank</div></td><td><div><b data-key="KEY_REVERSE_MOUSE">B</b><span> - </span>reverse mouse</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_DASH">Shift</b><span> - </span>dash</div></td><td><div><b data-key="KEY_REVERSE_TANK">V</b><span> - </span>reverse tank</div></td><td><div><b data-key="KEY_REVERSE_MOUSE">B</b><span> - </span>reverse mouse</div></td></tr>
                                         <tr><td><div><b data-key="KEY_AUTO_ALT">G</b><span> - </span>ping</div></td><td><div><b data-key="KEY_SUICIDE">O</b><span> - </span>self-destruct</div></td><td><div><b data-key="KEY_CLASS_TREE">T</b><span> - </span>show class tree</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_OVER_RIDE">R</b><span> - </span>AI override</div></td><td><div><b data-key="KEY_MAX_STAT">F</b><span> - </span>maximize stat</div></td><td><div><b data-key="KEY_TOGGLE_MAP">M</b><span> - </span>full map</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_OVER_RIDE">-</b><span> - </span>AI override</div></td><td><div><b data-key="KEY_MAX_STAT">F</b><span> - </span>maximize stat</div></td><td><div><b data-key="KEY_TOGGLE_MAP">M</b><span> - </span>full map</div></td></tr>
                                         <tr><td><div><b data-key="KEY_TOKEN">-</b><span> - </span>token tank*</div></td><td><div><b data-key="KEY_RECORD">P</b><span> - </span>record video</div></td><td><div><b data-key="KEY_SCREENSHOT">F9</b><span> - </span>screenshot</div></td></tr>
                                         <tr><td><div><b data-key="KEY_CHOOSE_1">Y</b><span> - </span>upgrade 1</div></td><td><div><b data-key="KEY_CHOOSE_2">U</b><span> - </span>upgrade 2</div></td><td><div><b data-key="KEY_CHOOSE_3">I</b><span> - </span>upgrade 3</div></td></tr>
                                         <tr><td><div><b data-key="KEY_CHOOSE_4">H</b><span> - </span>upgrade 4</div></td><td><div><b data-key="KEY_CHOOSE_5">J</b><span> - </span>upgrade 5</div></td><td><div><b data-key="KEY_CHOOSE_6">K</b><span> - </span>upgrade 6</div></td></tr>
@@ -586,7 +601,8 @@
                                         <tr><td><div><b data-key="KEY_UPGRADE_STR">4</b><span> - </span>skill 4</div></td><td><div><b data-key="KEY_UPGRADE_PEN">5</b><span> - </span>skill 5</div></td><td><div><b data-key="KEY_UPGRADE_DAM">6</b><span> - </span>skill 6</div></td></tr>
                                         <tr><td><div><b data-key="KEY_UPGRADE_RLD">7</b><span> - </span>skill 7</div></td><td><div><b data-key="KEY_UPGRADE_MOB">8</b><span> - </span>skill 8</div></td><td><div><b data-key="KEY_UPGRADE_RGN">9</b><span> - </span>skill 9</div></td></tr>
                                         <tr><td><div><b data-key="KEY_UPGRADE_MIN">-</b><span> - </span>mining power</div></td><td><div><b data-key="KEY_UPGRADE_SHI">0</b><span> - </span>skill 0</div></td><td><div><b data-key="KEY_FRIEND_CHAT">Esc</b><span> - </span>friend chat</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_KIT_1">Z</b><span> - </span>kit slot 1</div></td><td><div><b data-key="KEY_KIT_2">Q</b><span> - </span>kit slot 2</div></td><td><div><b data-key="KEY_KIT_3">N</b><span> - </span>kit slot 3</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_KIT_1">Z</b><span> - </span>kit slot 1</div></td><td><div><b data-key="KEY_KIT_2">R</b><span> - </span>kit slot 2</div></td><td><div><b data-key="KEY_KIT_3">N</b><span> - </span>kit slot 3</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_ABILITY">Q</b><span> - </span>ability</div></td><td><div></div></td><td><div></div></td></tr>
                                     </tbody></table>
                                 </div>
                             </div>
@@ -635,7 +651,7 @@
                     </button>
                 </div>
                 <div class="wl-offline-note">Accounts are down rn. You can still play.</div>
-                <div class="wl-embed-note">Logging in opens corez.games in a new tab. Here you play as a guest.</div>
+                <div class="wl-embed-note">Logging in opens corez.io in a new tab. Here you play as a guest.</div>
                 <div class="wl-legal"><a href="/about" target="_blank" rel="noopener">How to play</a> &middot; <a href="/terms.html" target="_blank" rel="noopener">Terms</a> &middot; <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></div>
             </div>
             <div class="wl-view" id="wlDyn" hidden></div>

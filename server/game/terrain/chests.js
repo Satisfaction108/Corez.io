@@ -124,6 +124,7 @@ function hasOpenSide(tg, rock) {
 // Chest hulls are SIZE 36/40; this is the clear radius around the centre.
 const CHEST_CLEAR_R = 58;
 const CHEST_ZONE_R = 130;      // neighbours inside this may not regrow into it
+const clearROf = (chest) => Math.max(CHEST_CLEAR_R, ((chest && chest.size) || 40) * 1.45);
 function roomForChest(tg, x, y) {
     if (tg.rockHitByCircle && tg.rockHitByCircle(x, y, CHEST_CLEAR_R)) return false;
     if (tg.growingRockHitByCircle && tg.growingRockHitByCircle(x, y, CHEST_CLEAR_R, Date.now())) return false;
@@ -269,9 +270,18 @@ function lockArea(chest, x, y, rock, path) {
         chest.lockRock = rock;
     }
     if (!tg || !tg.rocks) return;
-    for (const r of rocksTouching(tg, x, y, CHEST_CLEAR_R + 30)) if (!r.alive) holdRock(chest, r);
+    // sized to the hull: a supply crate is far bigger than a chest
+    const clearR = clearROf(chest);
+    for (const r of rocksTouching(tg, x, y, clearR + 30)) {
+        if (r.alive) continue;
+        // rock already rising here would close over the chest at full size
+        if (r.growing && r.ore !== 4 && polyDist(r.worldPoly, x, y) <= clearR) {
+            try { tg.damageRock(r, r.health + 1, r.worldCx || r.wx, r.worldCy || r.wy, false, null); } catch { /* */ }
+        }
+        holdRock(chest, r);
+    }
     for (const r of (path || [])) holdRock(chest, r);
-    try { if (tg.addNoRegrowZone) chest._zone = tg.addNoRegrowZone(x, y, CHEST_ZONE_R, Number.MAX_SAFE_INTEGER); } catch { /* */ }
+    try { if (tg.addNoRegrowZone) chest._zone = tg.addNoRegrowZone(x, y, Math.max(CHEST_ZONE_R, clearR + 72), Number.MAX_SAFE_INTEGER); } catch { /* */ }
 }
 function lockCell(chest, rock) {
     if (!rock) return;
@@ -307,7 +317,9 @@ function releaseCell(chest) {
 
 function spawnChest(x, y, rare, opts = {}) {
     const tg = global.gameManager.terrainGrid;
-    const spot = opts.cell ? { x: opts.cell.wx, y: opts.cell.wy } : clearSpot(tg, x, y);
+    // exact: exactly here, the caller cleared the ground (supply crates land
+    // on the marker everyone watched)
+    const spot = opts.exact ? { x, y } : opts.cell ? { x: opts.cell.wx, y: opts.cell.wy } : clearSpot(tg, x, y);
     if (!spot) return null;
     let o;
     try {
@@ -323,6 +335,7 @@ function spawnChest(x, y, rare, opts = {}) {
     o.chestItem = opts.item !== undefined ? opts.item : (rare || Math.random() < COPPER_ITEM_CHANCE ? require('./shop.js').randomKitId() : null);
     o.chestBornAt = Date.now();
     o.facing = 0;
+    if (opts.size > 0) { o.SIZE = opts.size; o.coreSize = opts.size; }
     o.refreshBodyAttributes();
     if (o.health) o.health.amount = o.health.max;
     o.hitters = new Map();
@@ -336,6 +349,7 @@ function spawnChest(x, y, rare, opts = {}) {
     });
     o.on('dead', () => { try { onDestroyed(o); } catch (e) { console.error('[CHEST] onDestroyed', e && e.stack); } });
     if (opts.cell) lockCell(o, opts.cell);
+    else if (opts.exact) lockArea(o, o.x, o.y, null, null);
     else {
         try { if (tg && tg.pushCircleFromVoronoi) tg.pushCircleFromVoronoi(o, o.realSize || 24); } catch { /* */ }
         // tutorial / debug drops: nothing may grow back over these either
@@ -407,6 +421,8 @@ function onDestroyed(chest) {
         else if (socket) { bonus = 150; itemMsg = "kit full, +150 gems"; }
     }
     eruptGems(chest.x, chest.y, chest.chestGems + bonus, body, chest.chestRare);
+    // a supply crate (supplyDrops.js) adds its own prize to the message
+    if (chest.onOpened && body) { try { const extra = chest.onOpened(body); if (extra) itemMsg = itemMsg ? itemMsg + ", " + extra : extra; } catch (e) { /* */ } }
     if (Config.dig_royale) try {
         const dr = require('../gamemodes/scripts/dig_royale.js');
         if (body) dr.onChestOpened(body, chest, itemMsg);
@@ -417,6 +433,19 @@ function onDestroyed(chest) {
         try { socket.talk('FX', Math.round(chest.x), Math.round(chest.y), chest.chestRare ? "chestrare" : "chest"); } catch { /* */ }
     }
     onTaken(chest);
+}
+
+// Ramming (index.js collide): a tank's own hull grinds a chest down, a share
+// of its health per touching tick. A bare hull takes RAM_S on any chest; body
+// damage points cut that to under 5 s, a smasher hull to about 3.
+const RAM_S = 16;
+function ramDamage(chest, body) {
+    if (!chest || !chest.health || !body || chest.isRoyaleCore) return 0;
+    const raw = body.skill && body.skill.raw;
+    const b = raw ? Math.min(1, (raw[6] || 0) / ((global.Config && Config.skill_cap) || 9)) : 0;
+    let k = 1 + 2.5 * b;
+    if (body.settings && body.settings.reloadToAcceleration) k *= 1.5;
+    return chest.health.max * k / (RAM_S * 30);
 }
 
 // Tutorial/debug: force a chest open without shooting.
@@ -497,7 +526,7 @@ function snapshot() {
     const now = Date.now();
     // e: entity id (the client links the row to the drawn boulder); a: age in
     // ms so a fresh chest plays its landing once, even for late joiners.
-    return alive().filter(c => !c._opened).map(c => ({ id: c.chestId, e: c.id, x: Math.round(c.x), y: Math.round(c.y), rare: c.chestRare ? 1 : 0, sd: c.supplyDrop ? 1 : undefined, a: Math.min(60000, now - (c.chestBornAt || now)) }));
+    return alive().filter(c => !c._opened).map(c => ({ id: c.chestId, e: c.id, x: Math.round(c.x), y: Math.round(c.y), rare: c.chestRare ? 1 : 0, sd: c.supplyDrop ? 1 : undefined, z: c.supplyDrop ? Math.round(c.size) : undefined, a: Math.min(60000, now - (c.chestBornAt || now)) }));
 }
 
 // A supply drop (pacing.js): an epic chest outside the budget, always with a
@@ -540,4 +569,4 @@ function debugInfo() {
     return { alive: alive().length, queue: respawnQueue.length, total, dead, canyon, noPoly, locked, candidates: cells, pick: pick ? [Math.round(pick.wx), Math.round(pick.wy)] : null, lastSpawnErr: lastSpawnErr.slice(0, 300) };
 }
 
-module.exports = { spawnChest, spawnInCell, spawnSupplyDrop, SUPPLY_GEMS, openChest, tick, ensureNearSpawn, schedule, snapshot, clearAll, eruptGems, alive, WANT, RESPAWN_MS, debugInfo };
+module.exports = { ramDamage, spawnChest, spawnInCell, spawnSupplyDrop, SUPPLY_GEMS, openChest, tick, ensureNearSpawn, schedule, snapshot, clearAll, eruptGems, alive, WANT, RESPAWN_MS, debugInfo };

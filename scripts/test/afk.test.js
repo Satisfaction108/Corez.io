@@ -162,6 +162,7 @@ function loopPart() {
         const sock = mkSocket();
         const tank = spawnTank(sock);
         tank.spawnGraceUntil = 0;
+        tank._dropHoldUntil = 0;   // landed: the sky drop holds input for its fall (dropIn.js)
         let deaths = 0;
         tank.on('dead', () => deaths++);
         // the only things this player ever does: one aim, autofire on, then a

@@ -81,7 +81,15 @@ function maxRadius() {
     return Math.min(room.width, room.height) / 2;
 }
 
+// The raid's last circle can be aimed (coreFinale.js puts it between the
+// Core and the Center Vault); null = a random centre like every other cycle.
+let finalCenter = null;
+function setFinalCenter(x, y) {
+    finalCenter = x == null || !isFinite(x) || !isFinite(y) ? null : { x: +x, y: +y };
+}
+
 function pickCenter(maxR) {
+    if (finalCenter && isFinal()) return { x: finalCenter.x, y: finalCenter.y };
     const r = maxR * 0.18 * Math.random();
     const a = Math.random() * Math.PI * 2;
     return { x: Math.cos(a) * r, y: Math.sin(a) * r };
@@ -117,6 +125,7 @@ function debugFinal(sec) {
     if (cycles !== Infinity) state.cycle = cycles - 1;
     state.cycleStartAt = t + left - CYCLE_MS;
     state.startAt = state.cycleStartAt - state.cycle * CYCLE_MS;
+    if (finalCenter && isFinal()) { state.cx = finalCenter.x; state.cy = finalCenter.y; }
     return endAt();
 }
 // When the raid's last cycle shuts (Infinity while the storm cycles forever)
@@ -299,4 +308,4 @@ function tickDamage(now = Date.now()) {
     }
 }
 
-module.exports = { start, stop, setLockMs, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT };
+module.exports = { start, stop, setLockMs, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT };

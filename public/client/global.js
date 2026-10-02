@@ -131,7 +131,7 @@ const global = {
     KEY_AUTO_SPIN: 67,
     KEY_AUTO_FIRE: 69,
     KEY_AUTO_ALT: 71,
-    KEY_OVER_RIDE: 82,
+    KEY_OVER_RIDE: -1,     // AI override: unbound (R is kit slot 2 now)
     KEY_REVERSE_TANK: 86,
     KEY_REVERSE_MOUSE: 66,
     KEY_SIDEARM: 88,       // X
@@ -162,8 +162,10 @@ const global = {
     KEY_UPGRADE_SHI: 48,
     KEY_UPGRADE_MIN: 189,
     KEY_KIT_1: 90,
-    KEY_KIT_2: 81,
+    KEY_KIT_2: 82,         // R (Q is the ability key)
     KEY_KIT_3: 78,
+    KEY_DASH: 16,          // Shift: dash (raids only; elsewhere Shift is still right click)
+    KEY_ABILITY: 81,       // Q: the equipped ability
     KEY_MOUSE_0: 32,
     KEY_MOUSE_1: 86,
     KEY_MOUSE_2: 16,

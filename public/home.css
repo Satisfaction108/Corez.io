@@ -1457,12 +1457,14 @@ body.in-game #homeSettingsPanel .kb-row b.kb-editing {
     100% { box-shadow: inset 0 -.25em 0 var(--face-dk), 0 0.15em 0.48em var(--cast), 0 0 0 0 var(--play); }
 }
 
-/* over the shop panel: one line only, so it never sits on the shop's tabs */
+/* over the shop panel: the title and the one line that says what to buy,
+   kept small so it doesn't sit on the shop's tabs (clicks pass through) */
 #dwTut.compact .dwt-text, #dwTut.compact .dwt-bar,
-#dwTut.compact .dwt-hint, #dwTut.compact .dwt-eyebrow, #dwTut.compact .dwt-dots { display: none; }
-#dwTut.compact .dwt-card { display: flex; align-items: center; flex-direction: row-reverse; gap: .7em; padding: .45em .7em; }
+#dwTut.compact .dwt-eyebrow, #dwTut.compact .dwt-dots { display: none; }
+#dwTut.compact .dwt-card { display: flex; flex-wrap: wrap; align-items: center; flex-direction: row-reverse; gap: .2em .7em; padding: .45em .7em; }
 #dwTut.compact .dwt-top { margin: 0; }
 #dwTut.compact .dwt-title { font-size: 1.15em; flex: 1; }
+#dwTut.compact .dwt-hint.show { flex-basis: 100%; order: 3; margin-top: .15em; padding-top: .3em; font-size: .9em; }
 
 /* ── the send-off ─────────────────────────────────────────────────── */
 #dwTutEnd {

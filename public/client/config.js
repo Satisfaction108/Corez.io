@@ -17,6 +17,9 @@ const config = {
         simpleTerrain: false,
         noShake: false,
         noGlow: false,
+        noGlitch: false,
+        lightSafe: false,    // Light Sensitive: no glitches, flashes or strobing, gentle shake
+        fxLevel: 1,          // Effects: 0 Low, 1 Normal, 2 Max
         fpsCap30: false,
         coloredNest: false,
         colors: 'normal',
