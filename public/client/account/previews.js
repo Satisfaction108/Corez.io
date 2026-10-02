@@ -25,7 +25,9 @@ export const TANKS = [
 let PM = null, pmLoad = null;
 export function ready() {
     if (!pmLoad) {
-        pmLoad = fetch(new URL('./preview-mockups.json', import.meta.url), { cache: 'force-cache' })
+        // versioned and revalidated: a bad copy cached once (the server used
+        // to answer this with the home page) can't stick around
+        pmLoad = fetch(new URL('./preview-mockups.json?v=2', import.meta.url), { cache: 'no-cache' })
             .then((r) => r.json())
             .then((j) => { PM = j; return true; })
             .catch((e) => { console.warn('[previews] no mockups', e); return false; });
