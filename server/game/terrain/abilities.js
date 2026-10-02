@@ -896,7 +896,47 @@ function escapeFlare(body) {
         fx('blink', ox, oy, Math.atan2(dy, dx), s, body.id);
         return true;
     }
+    // Boxed in: no open ground that way. Blink as far as it goes anyway and
+    // blow a pocket where you land (plain rock and ore, never emeralds, never
+    // onto a pad), so the flare always gets you out.
+    if (!g) return false;
+    for (let s = reach; s >= 90; s -= 30) {
+        const x = body.x + dx * s, y = body.y + dy * s;
+        if (!flareSpotFree(x, y, r)) continue;
+        const R = r * 1.35 + 10;
+        g.rocksHitByCircle(x, y, R, flareHits);
+        if (g.growingRocksHitByCircle) g.growingRocksHitByCircle(x, y, R, now(), flareHits);
+        const blocked = flareHits.some(rock => rock && (rock.canyon || rock.ore === 4) && rock.alive);
+        if (blocked) { flareHits.length = 0; continue; }
+        const gems = require('./gems.js');
+        for (const rock of flareHits) {
+            if (!rock) continue;
+            const wasGrowing = rock.growing;
+            if (g.damageRock(rock, rock.health + 1, x, y, false, body) && !wasGrowing && rock.ore) {
+                try { gems.spawnOreBurst(rock, body); } catch { /* */ }
+            }
+        }
+        flareHits.length = 0;
+        const ox = body.x, oy = body.y;
+        body.x = x; body.y = y;
+        body.velocity.x = 0; body.velocity.y = 0;
+        if (body._abMove) endMotion(body, 0);
+        fx('blink', ox, oy, Math.atan2(dy, dx), s, body.id);
+        return true;
+    }
     return false;
+}
+const flareHits = [];
+// not on a vault or shop pad (rock is fine, the flare clears it)
+function flareSpotFree(x, y, r) {
+    try {
+        const padGeom = require('./padGeom.js');
+        const list = [];
+        if (Config.dig_royale) { for (const v of require('./vault.js').getVaults() || []) list.push(v); }
+        for (const sp of require('./shop.js').getShops() || []) list.push(sp);
+        for (const p of list) if (padGeom.insidePad(p, x, y, r)) return false;
+    } catch { /* */ }
+    return true;
 }
 
 // Kit items get effects like the abilities ('AF' k_<id>), pinned to the tank

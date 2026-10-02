@@ -933,6 +933,37 @@ test('shop: retired items cannot be bought; Rocket Boots and Escape Flare work',
     cleanup(t);
 });
 
+test('flare: boxed in by rock with no open ground that way, it still blinks and blasts a pocket', () => {
+    // a spot whose whole flare line east is solid rock
+    let sx = null, sy = null;
+    for (let y = -2600; y <= 2600 && sx == null; y += 130) {
+        for (let x = -3200; x <= 2200 && sx == null; x += 130) {
+            let solid = true;
+            for (let d = 90; d <= ab.FLARE.range; d += 20) if (!grid.rockHitByCircle(x + d, y, 34)) { solid = false; break; }
+            if (solid) { sx = x; sy = y; }
+        }
+    }
+    assert.ok(sx != null, 'found a boxed-in spot');
+    clearDisc(sx, sy, 60);
+    const s = mkSocket();
+    const t = tank(sx, sy, s);
+    s.gemBanked = 5000;
+    t.shopOnPad = true;
+    assert.ok(shop.buy(s, 'flare'));
+    t.shopOnPad = false;
+    const vault = require(path.join(SERVER, 'game', 'terrain', 'vault.js'));
+    const real = vault.getVaults;
+    vault.getVaults = () => [{ x: sx + 3000, y: sy, r: 100 }];
+    clock += 1000;
+    const x0 = t.x;
+    const used = shop.useKit(s, shop.stateOf(s).kitOrder.indexOf('flare'), 0, 0);
+    vault.getVaults = real;
+    assert.ok(used, 'the flare goes off');
+    assert.ok(t.x > x0 + 80, 'blinked east ' + (t.x - x0).toFixed(0));
+    assert.ok(!grid.rockHitByCircle(t.x, t.y, t.realSize * 0.9), 'and the landing spot got blasted open');
+    cleanup(t);
+});
+
 test('trial: a first bank with no ability hands one out for 2 minutes, once a raid', () => {
     const s = mkSocket();
     const t = tank(AX, AY, s);

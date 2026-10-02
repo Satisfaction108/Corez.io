@@ -136,7 +136,21 @@ import * as cosmetics from './account/cosmetics.js';
         // and R (AI override) are new defaults: a bind someone saved on one of
         // those keys keeps it, and the new action starts unbound until they
         // pick a key for it
-        for (const id of ["KEY_DASH", "KEY_ABILITY", "KEY_KIT_2", "KEY_SCREENSHOT", "KEY_OVER_RIDE"]) {
+        const NEW_DEFAULTS = ["KEY_DASH", "KEY_ABILITY", "KEY_KIT_2", "KEY_SCREENSHOT", "KEY_OVER_RIDE"];
+        // Once: kit slot 2 sat on R for a day and got saved as unbound for
+        // anyone with R taken. An unbound new action whose default key is
+        // free now gets its default back.
+        if (!localStorage.getItem("dwKeybindFix_v1")) {
+            for (const id of NEW_DEFAULTS) {
+                const b = keybinds[id];
+                if (!b || b[1] !== -1) continue;
+                const code = global[id];
+                if (!Object.keys(keybinds).some(k => k !== id && keybinds[k] && keybinds[k][1] === code)) delete keybinds[id];
+            }
+            setKeybinds();
+            try { localStorage.setItem("dwKeybindFix_v1", "1"); } catch (e) { }
+        }
+        for (const id of NEW_DEFAULTS) {
             if (keybinds[id]) continue;
             const code = global[id];
             if (Object.keys(keybinds).some(k => k !== id && keybinds[k] && keybinds[k][1] === code)) {
