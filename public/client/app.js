@@ -60,6 +60,10 @@ import * as cosmetics from './account/cosmetics.js';
     // Graphics > Performance switches for slow machines. Off by default.
     const PERF_TOGGLES = ["optFewerFx", "optSimpleTerrain", "optNoShake", "optNoGlow", "optNoGlitch", "optLightSafe", "opt30Fps"];
 
+    // in a raid and alive, for portal SDKs (client/portal.js); read-only and
+    // available everywhere, unlike the qa hooks below
+    window.dwPlaying = () => !!(global.gameStart && !global.died && !global.disconnected);
+
     // qa hooks, local servers only: forward a packet to the socket, read the
     // state, and window.dwGems(10000) for trying items
     const localHost = /^(localhost|127\.0\.0\.1|\[::1\]|.+\.localhost|.+\.test)$/.test(location.hostname);

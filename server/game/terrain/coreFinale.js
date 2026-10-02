@@ -305,17 +305,9 @@ function onBroken(o) {
 function hurt(body, frac, t) {
     if (!body.health || !(body.health.max > 0)) return;
     if ((body.spawnGraceUntil || 0) > t || body.godmode || body.royaleFrozen || body.invuln || body.padSafe) return;
-    let dmg = body.health.max * frac;
-    // newcomers get the boss mercy: less damage, and while mostly new no
-    // killing blow unless they've been hitting the Core
-    try {
-        const guard = require('./bossGuard.js');
-        const n = guard.newnessOf(body, t);
-        if (n > 0) {
-            dmg *= 1 - (1 - guard.NEWBIE_DMG_MIN) * n;
-            if (n >= 0.25 && !(t - (body._hitBossAt || 0) < guard.ATTACK_MS)) dmg = Math.min(dmg, Math.max(0, body.health.amount + (body.shield ? body.shield.amount : 0) - 1));
-        }
-    } catch { /* */ }
+    // the Core is the raid's last fight: it hits everyone the same, new
+    // players included (no boss mercy here, a hit is 16% at most anyway)
+    const dmg = body.health.max * frac;
     if (!(dmg > 0)) return;
     body.hitAt = t;
     if (body.shield && body.shield.amount > 0) {

@@ -11,6 +11,7 @@ import { global } from "./global.js";
 import * as abilityFx from "./abilityFx.js";
 import { slamUp } from "./juice.js";
 import * as L from "./abilityIntroLogic.js";
+import { holding as coachHolding } from "./coach.js";
 
 let store = null;
 try { store = window.localStorage; } catch (e) { store = null; }
@@ -95,7 +96,7 @@ function eligible(now) {
     try { slam = slamUp(); } catch (e) { slam = false; }
     return L.canStart({
         done, tutorial: !!global.tutorialMode, playing: !!(global.gameStart && !global.died && !global.disconnected && global.royale && global.royale.at > 0),
-        abilOn: !!ab.on, eq: ab.eq, falling: !!sky, landedAgo, slam,
+        abilOn: !!ab.on, eq: ab.eq, falling: !!sky, landedAgo, slam, coach: coachHolding(),
         card: !!global.hudCardUp || !!(global.kitUnlocks && global.kitUnlocks.length) || !!(global.kitGlides && global.kitGlides.length), busy,
     });
 }
@@ -132,6 +133,8 @@ export function draw(c, k) {
     if (id === "ability" && ((global.abilityUsedAt || 0) > T.abAt || global.abilAim)) { go(L.advance(T.step, "ability")); return; }
     if (id === "shop" && global.shop && global.shop.onPad) { go(L.advance(T.step, "shop")); return; }
     if (!spotFor(id, k)) { if (id === "shop") finish(); return; }
+    // nobody's acting on it: move along rather than hold the screen
+    if (now - T.stepAt > L.STEP_MAX_MS) { const nx = T.step + 1; if (nx >= L.STEPS.length) finish(); else go(nx); return; }
     global.hudCardUp = "intro";
     const H = abilityFx.hud();
     if (!H) return;

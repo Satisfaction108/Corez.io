@@ -302,7 +302,7 @@ test('core: surfaces with the last storm in a cleared arena, off the pad, reacha
     assert.ok(Math.hypot(v.x - st.cx, v.y - st.cy) < st.r, 'vault inside the last circle');
 });
 
-test('core: it fights back as it breaks, every attack telegraphed; newcomers keep the boss mercy', () => {
+test('core: it fights back as it breaks, every attack telegraphed; no mercy for newcomers', () => {
     const c = coreFinale.current();
     assert.ok(c, 'the Core is up');
     const p = global.gameManager.socketManager.players[0].body;
@@ -340,12 +340,11 @@ test('core: it fights back as it breaks, every attack telegraphed; newcomers kee
     const nShard = r.kinds.filter(k => k === 'coreshard').length;
     assert.ok(nShard >= 4, 'faster below a quarter: ' + nShard);
     assert.ok(r.lost > coreFinale.SHARD_RAGE_DMG * 2, 'it is dangerous now: ' + r.lost.toFixed(2));
-    // a brand new player: a share of it, and never the killing blow
-    place(); p.botNewness = 1; p.health.amount = p.health.max * 0.05;
+    // a brand new player gets no boss mercy from the Core: the full hit
+    place(); p.botNewness = 1; p.health.amount = p.health.max;
     const n0 = p.health.amount;
-    for (let k = 0; k < 9000; k += 33) { t += 33; p.x = c.x + 300; p.y = c.y; p.velocity.x = 0; p.velocity.y = 0; coreFinale.tick(t, [p]); }
-    assert.ok(p.health.amount >= 1 && !p.isDead(), 'a newcomer is never finished off by it: ' + p.health.amount);
-    assert.ok(p.health.amount < n0, 'but still takes some of it');
+    for (let k = 0; k < 3000; k += 33) { t += 33; p.x = c.x + 300; p.y = c.y; p.velocity.x = 0; p.velocity.y = 0; coreFinale.tick(t, [p]); }
+    assert.ok(n0 - p.health.amount >= p.health.max * coreFinale.SHARD_RAGE_DMG * 0.99, 'newcomers take the full hit: ' + ((n0 - p.health.amount) / p.health.max).toFixed(3));
     p.botNewness = 0; p.health.amount = p.health.max;
     coreFinale.debugHp(1);
 });

@@ -123,8 +123,7 @@
     function watch() {
         boot();
         syncRoom();
-        var g = window.royaleState ? window.royaleState() : null;
-        var now = !!(g && g.gameStart && !g.died && !g.disconnected);
+        var now = !!(window.dwPlaying && window.dwPlaying());
         if (now === playing) return;
         playing = now;
         safe(function () { now ? game().gameplayStart() : game().gameplayStop(); });

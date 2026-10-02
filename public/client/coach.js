@@ -611,6 +611,8 @@ function stepAside() {
 }
 // a first raid is in progress (raidHeat.js keeps the HUD calm until the first bank)
 export function active() { return rec.status === "on"; }
+// still teaching, or hasn't decided yet whether it will (the ability tour waits)
+export function holding() { return !rec.status || rec.status === "on"; }
 
 export function hook() {
     const t = now();

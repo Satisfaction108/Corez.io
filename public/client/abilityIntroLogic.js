@@ -5,6 +5,9 @@ export const TAB_KEY = "dwAbilityTabSeen_v1";
 export const STEPS = ["dash", "ability", "shop"];
 // after the landing: the starter-ability slam runs first
 export const START_DELAY = 3000;
+// a step nobody acts on moves on by itself after this, so the tour never
+// holds the screen (and the first-raid coach behind it) for long
+export const STEP_MAX_MS = 9000;
 // the shop tab's NEW badge goes once the tab has been up this long
 export const TAB_SEEN_MS = 2500;
 
@@ -21,10 +24,11 @@ export function markTabSeen(store) {
     try { store.setItem(TAB_KEY, "1"); } catch (e) { /* */ }
 }
 
-// s: { done, tutorial, playing, abilOn, eq, falling, landedAgo, slam, card, busy }
+// s: { done, tutorial, playing, abilOn, eq, falling, landedAgo, slam, card, busy, coach }
 // busy: a panel, the big map, chat or a pad is in the way
+// coach: the first-raid coach is still teaching (it has its own ability step)
 export function canStart(s) {
-    return !s.done && !s.tutorial && !!s.playing && !!s.abilOn && !!s.eq && !s.falling &&
+    return !s.done && !s.tutorial && !s.coach && !!s.playing && !!s.abilOn && !!s.eq && !s.falling &&
         s.landedAgo >= START_DELAY && !s.slam && !s.card && !s.busy;
 }
 // The step after `step` when the player just did `used` (dash / ability /
