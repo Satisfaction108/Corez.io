@@ -42,7 +42,8 @@ storm.setCycles(RAID_CYCLES);
 // Raid size including humans: a solo player gets 5 bots, and each real
 // player who joins takes a bot's place. The duo server holds one more, so a
 // party of two still meets 5 bots (two of them a bot duo).
-const FILL_CAP = 6;
+// ROYALE_FILL_CAP (ROYALE_DEBUG only): a bigger raid for load tests
+const FILL_CAP = process.env.ROYALE_DEBUG && +process.env.ROYALE_FILL_CAP > 0 ? +process.env.ROYALE_FILL_CAP : 6;
 const DUO_FILL_CAP = 7;
 function fillCap() { return Config.royale_duos ? DUO_FILL_CAP : FILL_CAP; }
 const OCCUPY_MS = 10_000;
@@ -532,6 +533,8 @@ coreFinale.attach({
     fxAt: (x, y, kind, ...extra) => fxAt(x, y, kind, ...extra),
     toast: (text, ms) => setToastAndSay(text, ms),
     payGems: (body, n) => payGems(body, n),
+    // banked like a vault deposit (score, stats, quests, dust)
+    bank: (body, n) => vault.creditBank(body, n),
     addPts,
     callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
 });
@@ -3136,8 +3139,22 @@ function tick() {
 
 // Run one raid stage; log a failure at most once every 10s per stage.
 const guardLogAt = new Map();
+// TICK_TRACE=1: the slowest raid stages, logged every 10 s (local profiling)
+const STAGE_TRACE = !!process.env.TICK_TRACE;
+const stageMax = new Map();
+let stageLogAt = 0;
 function guard(label, fn) {
+    if (!STAGE_TRACE) { try { fn(); } catch (e) { guardLog(label, e); } return; }
+    const t0 = performance.now();
     try { fn(); } catch (e) { guardLog(label, e); }
+    const d = performance.now() - t0;
+    if (d > (stageMax.get(label) || 0)) stageMax.set(label, d);
+    if (Date.now() - stageLogAt > 10000) {
+        stageLogAt = Date.now();
+        const top = [...stageMax.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => k + ' ' + v.toFixed(0)).join(', ');
+        console.log('[STAGE-TRACE] max ms: ' + top);
+        stageMax.clear();
+    }
 }
 function guardLog(label, e) {
     const t = Date.now();

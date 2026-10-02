@@ -108,6 +108,11 @@ export function inputModeWatch(env) {
         },
         mouseMove(x, y, t, mobile) {
             if (!mobile || t - touchAt < MODE.AFTER_TOUCH_MS) { lx = x; ly = y; lt = t; travel = 0; return null; }
+            // a device with a fine pointer: any real move is the mouse, at
+            // once (slow frames coalesce moves and space them past GAP_MS,
+            // so a travel count could never add up and the aim stayed stuck)
+            const e = typeof env === "function" ? env() : env;
+            if (e && e.fine && lx !== null && (x !== lx || y !== ly)) { lx = x; ly = y; lt = t; travel = 0; return false; }
             if (lx === null || t - lt > MODE.GAP_MS) travel = 0;
             else travel += Math.hypot(x - lx, y - ly);
             lx = x; ly = y; lt = t;

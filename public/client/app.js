@@ -13,6 +13,8 @@ import { touch, STICK, touchPref, haptic, AIMED_KIT, mobileFullscreen, touchPrim
 import * as raidFinale from './raidFinale.js';
 import * as stormFx from './stormFx.js';
 import * as abilityFx from './abilityFx.js';
+import * as abilityIntro from './abilityIntro.js';
+import { tabSeen, markTabSeen, TAB_SEEN_MS } from './abilityIntroLogic.js';
 import * as raidHeat from './raidHeat.js';
 import * as rankBadges from './account/rankBadges.js';
 import * as rankPanel from './account/rankPanel.js';
@@ -901,6 +903,45 @@ import * as cosmetics from './account/cosmetics.js';
         document.getElementById("gameCanvas-gui").getContext("2d"),
     ];
     window.dwCtx = ctx;
+    // drawText, hudTitle and the upgrade tiles ask for the context's scale a
+    // few hundred times a frame, and getTransform() makes a new DOMMatrix each
+    // time (garbage, and GC hitches). The game contexts keep their own copy
+    // of a, b, c, d in step with save / restore / scale / setTransform; a
+    // rotate or a matrix argument just marks it stale. renderFrame resyncs.
+    function trackTransform(c) {
+        if (!c || c._tf) return;
+        const P = Object.getPrototypeOf(c), tf = c._tf = { a: 1, b: 0, c: 0, d: 1, ok: false }, st = c._tfStack = [];
+        const sync = () => { const m = P.getTransform.call(c); tf.a = m.a; tf.b = m.b; tf.c = m.c; tf.d = m.d; tf.ok = true; };
+        c._tfSync = sync;
+        c.save = function () { st.push(tf.ok ? tf.a : NaN, tf.b, tf.c, tf.d); return P.save.call(this); };
+        c.restore = function () {
+            if (st.length >= 4) { const d = st.pop(), cc = st.pop(), b = st.pop(), a = st.pop(); if (a === a) { tf.a = a; tf.b = b; tf.c = cc; tf.d = d; tf.ok = true; } else tf.ok = false; }
+            else tf.ok = false;
+            return P.restore.call(this);
+        };
+        c.scale = function (x, y) {
+            if (tf.ok) { tf.a *= x; tf.b *= x; tf.c *= y; tf.d *= y; }
+            return P.scale.call(this, x, y);
+        };
+        c.rotate = function (r) { tf.ok = false; return P.rotate.call(this, r); };
+        c.transform = function (...a) { tf.ok = false; return P.transform.apply(this, a); };
+        c.setTransform = function (...a) {
+            if (typeof a[0] === "number") { tf.a = a[0]; tf.b = a[1]; tf.c = a[2]; tf.d = a[3]; tf.ok = true; } else tf.ok = false;
+            return P.setTransform.apply(this, a);
+        };
+        c.resetTransform = function () { tf.a = 1; tf.b = 0; tf.c = 0; tf.d = 1; tf.ok = true; return P.resetTransform.call(this); };
+    }
+    for (const c of ctx) trackTransform(c);
+    // a frame starts clean: anything outside the wrappers (a canvas resize
+    // resets the state) is picked up here
+    function resyncTransforms() { for (const c of ctx) { if (c._tf) { c._tfStack.length = 0; c._tf.ok = false; } } }
+    // { a, b, c, d } of a context's transform; never keep the object
+    function tfOf(c) {
+        const tf = c._tf;
+        if (!tf) return c.getTransform();
+        if (!tf.ok) c._tfSync();
+        return tf;
+    }
     window.dwCtxCtor = (i) => ctx[i];
     // The tutorial's ore-tier card draws real gem entities with the game's own
     // renderer. Assigned once drawEntity exists (bottom of this module).
@@ -1757,11 +1798,41 @@ import * as cosmetics from './account/cosmetics.js';
     // Name styles (rim, halo), gradients and rotated layers go direct.
     const textSprites = new Map(), textSeen = new Map();
     try { document.fonts.addEventListener("loadingdone", () => textSprites.clear()); } catch (e) { }
+    // Changing strings (clocks, distances, counts) make a new sprite every
+    // second or so. Sprites not drawn for a couple of seconds go back to a
+    // pool of canvases by size bucket, and new ones take from it: no canvas
+    // (and backing store) is made and dropped every frame.
+    let textFrame = 0;
+    const spritePool = new Map();
+    const SPRITE_POOL_MAX = 64;
+    let spritePooled = 0;
+    const bucketOf = (pw, ph) => (Math.ceil(pw / 32) * 32) + "x" + (Math.ceil(ph / 8) * 8);
+    function spriteCanvas(pw, ph) {
+        const key = bucketOf(pw, ph), list = spritePool.get(key);
+        if (list && list.length) { spritePooled--; return list.pop(); }
+        const cv = document.createElement("canvas");
+        cv.width = Math.ceil(pw / 32) * 32; cv.height = Math.ceil(ph / 8) * 8;
+        cv._bucket = key;
+        return cv;
+    }
+    function freeSprite(e) {
+        const cv = e.cv;
+        if (!cv || spritePooled >= SPRITE_POOL_MAX) return;
+        let list = spritePool.get(cv._bucket);
+        if (!list) spritePool.set(cv._bucket, list = []);
+        list.push(cv); spritePooled++;
+    }
+    function sweepTextSprites() {
+        textFrame++;
+        if (textFrame % 60) return;
+        for (const [k, e] of textSprites) if (textFrame - e.used > 150) { textSprites.delete(k); freeSprite(e); }
+        for (const [k, e] of titleSprites) if (textFrame - (e.used || 0) > 150) { titleSprites.delete(k); freeSprite(e); }
+    }
     function drawText(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
         if (nameRim || nameHalo || typeof defaultFillStyle !== "string" || typeof rawText !== "string" || !rawText) {
             return drawTextDirect(rawText, x, y, size, defaultFillStyle, align, center, fade, stroke, context);
         }
-        const t = context.getTransform();
+        const t = tfOf(context);
         if (t.b || t.c) return drawTextDirect(rawText, x, y, size, defaultFillStyle, align, center, fade, stroke, context);
         const sc = Math.round(t.a * 20) / 20;
         const q = Math.max(1, Math.round(size * 2) / 2);
@@ -1778,23 +1849,25 @@ import * as cosmetics from './account/cosmetics.js';
             const fs = q + config.graphical.fontSizeBoost;
             const w = measureText(rawText, q);
             const pad = fs * 0.6 + 4, W = w + pad * 2, H = fs * 2.6 + 8;
-            const cv = document.createElement("canvas");
-            cv.width = Math.max(1, Math.ceil(W * sc));
-            cv.height = Math.max(1, Math.ceil(H * sc));
+            const pw = Math.max(1, Math.ceil(W * sc)), ph = Math.max(1, Math.ceil(H * sc));
+            const cv = spriteCanvas(pw, ph);
             const g = cv.getContext("2d");
+            g.setTransform(1, 0, 0, 1, 0, 0);
+            g.clearRect(0, 0, cv.width, cv.height);
             g.scale(sc, sc);
             drawTextDirect(rawText, pad, H / 2, q, defaultFillStyle, "left", center, 1, stroke, g);
-            e = { cv, w, W, H, X0: pad, Y0: H / 2 };
-            if (textSprites.size > 700) { let k = 0; for (const kk of textSprites.keys()) { textSprites.delete(kk); if (++k >= 150) break; } }
+            e = { cv, w, W, H, X0: pad, Y0: H / 2, pw, ph, used: textFrame };
+            if (textSprites.size > 700) { let k = 0; for (const [kk, old] of textSprites) { textSprites.delete(kk); freeSprite(old); if (++k >= 150) break; } }
             textSprites.set(key, e);
         }
+        e.used = textFrame;
         const k = size / q;
         const mult = align === "center" ? 0.5 : align === "right" ? 1 : 0;
         const dx = Math.round((x - e.w * k * mult - e.X0 * k) * sc) / sc;
         const dy = Math.round((y - e.Y0 * k) * sc) / sc;
         const a0 = context.globalAlpha;
         if (fade < 1) context.globalAlpha = a0 * Math.max(0, fade);
-        context.drawImage(e.cv, dx, dy, e.W * k, e.H * k);
+        context.drawImage(e.cv, 0, 0, e.pw, e.ph, dx, dy, e.W * k, e.H * k);
         context.globalAlpha = a0;
     }
     function drawTextDirect(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
@@ -2807,7 +2880,7 @@ import * as cosmetics from './account/cosmetics.js';
     function drawUpgradeTile(model, x, y, len, height, colorIndex, key, state = 0, angle = -Math.PI / 4, lineWidthMult = 1, alpha = 1) {
         const picture = (typeof model == "object") ? model : mockupPicture(model, gui.color);
         const position = picture.position;
-        const t = ctx[2].getTransform();
+        const t = tfOf(ctx[2]);
         const dpr = Math.hypot(t.a, t.b) || 1;
         const k = len / 100;                             // tile scale vs the 100-unit design
         const lip = UPG_LIP * k;
@@ -6457,7 +6530,7 @@ import * as cosmetics from './account/cosmetics.js';
     function titleSprite(text, q, col, scale) {
         const key = text + "|" + q + "|" + col + "|" + scale;
         let e = titleSprites.get(key);
-        if (e) return e;
+        if (e) { e.used = textFrame; return e; }
         const n = (titleSeen.get(key) || 0) + 1;
         if (n < 4) {
             if (titleSeen.size > 3000) titleSeen.clear();
@@ -6470,10 +6543,11 @@ import * as cosmetics from './account/cosmetics.js';
         m.save(); m.font = hudFont(q); const w = m.measureText(text).width; m.restore();
         const lw = Math.max(1.5, q * (q >= HUD.titleMin ? 0.15 : 0.17));
         const pad = lw + 2, W = w + pad * 2, H = q * 1.5 + pad * 2;
-        const cv = document.createElement("canvas");
-        cv.width = Math.max(1, Math.ceil(W * scale));
-        cv.height = Math.max(1, Math.ceil(H * scale));
+        const pw = Math.max(1, Math.ceil(W * scale)), ph = Math.max(1, Math.ceil(H * scale));
+        const cv = spriteCanvas(pw, ph);
         const g = cv.getContext("2d");
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, cv.width, cv.height);
         g.scale(scale, scale);
         g.font = hudFont(q);
         g.textAlign = "left";
@@ -6485,18 +6559,18 @@ import * as cosmetics from './account/cosmetics.js';
         g.strokeText(text, pad, H / 2 + dy);
         g.fillStyle = col;
         g.fillText(text, pad, H / 2 + dy);
-        e = { cv, w, W, H, pad };
+        e = { cv, w, W, H, pad, pw, ph, used: textFrame };
         // only keep sprites made with the real fonts in (first frames can be fallback)
         if (titleSpritesFontsOk) {
-            if (titleSprites.size > 600) { let n = 0; for (const k of titleSprites.keys()) { titleSprites.delete(k); if (++n >= 150) break; } }
+            if (titleSprites.size > 600) { let n = 0; for (const [k, old] of titleSprites) { titleSprites.delete(k); freeSprite(old); if (++n >= 150) break; } }
             titleSprites.set(key, e);
-        }
+        } else e.loose = true;
         return e;
     }
     if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", () => titleSprites.clear());
     function hudTitle(text, x, y, size, col, align = "left", alpha = 1, c = ctx[2]) {
         size += config.graphical.fontSizeBoost;
-        const t = typeof col === "string" && text !== "" ? c.getTransform() : null;
+        const t = typeof col === "string" && text !== "" ? tfOf(c) : null;
         const sc = t ? Math.round(Math.hypot(t.a, t.b) * 20) / 20 : 0;
         if (sc > 0 && !t.b && !t.c) {
             const q = Math.max(1, Math.round(size * 2) / 2), k = size / q;
@@ -6515,8 +6589,10 @@ import * as cosmetics from './account/cosmetics.js';
             const dy = Math.round((y - h / 2) * sc) / sc;
             const a0 = c.globalAlpha;
             if (alpha < 1) c.globalAlpha = a0 * Math.max(0, alpha);
-            c.drawImage(e.cv, dx, dy, w, h);
+            c.drawImage(e.cv, 0, 0, e.pw || e.cv.width, e.ph || e.cv.height, dx, dy, w, h);
             c.globalAlpha = a0;
+            // a fallback-font sprite is used once and handed back
+            if (e.loose) { e.loose = false; freeSprite(e); }
         }
     }
     function hudTitleDirect(text, x, y, size, col, align, alpha, c) {
@@ -8354,6 +8430,7 @@ import * as cosmetics from './account/cosmetics.js';
         markSlot: (id, r) => { kitSlotIcons[id] = r; },
         gemClass: (e) => gemSpriteClass(e),
         landAt: () => raidHeat.landAt ? raidHeat.landAt() : 0,
+        hudButton: (...a) => hudButton(...a),
     });
     abilityFx.setSelf(() => gui.playerid);
     let abilityBarRect = null;
@@ -8802,6 +8879,8 @@ import * as cosmetics from './account/cosmetics.js';
         if (w === undefined) { w = measureText(txt, size); if (shopMeasure.size > 400) shopMeasure.clear(); shopMeasure.set(k, w); }
         return w;
     }
+    let abTabSeen = true, abTabFor = 0, abTabLast = 0;
+    try { abTabSeen = tabSeen(localStorage); } catch (e) { abTabSeen = true; }
     function drawShopUI() {
         const want = shopOpenWanted();
         shopGlide.set(want ? 1 : 0);
@@ -8845,7 +8924,7 @@ import * as cosmetics from './account/cosmetics.js';
         // close: the menu's little red button
         const cbs = 30;
         hudButton(c, x + W - 14 - cbs / 2, y + 11, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15, type: "shop", index: 41, cr, alpha: g });
-        // tabs: chunky toggles, the picked one copper
+        // tabs: chunky toggles, the picked one copper (abTabSeen: the NEW badge)
         SHOP_TABS = catalog.some(it => it.cat === "ability") ? SHOP_TABS_AB : SHOP_TABS_OLD;
         sh.tabIds = SHOP_TABS.map(t => t[0]);
         if (!sh.tabPicked && SHOP_TABS === SHOP_TABS_AB && !global.tutorialMode) sh.tab = "ability";
@@ -8857,6 +8936,18 @@ import * as cosmetics from './account/cosmetics.js';
             hudButton(c, tx + tabW / 2, tabY, tabW - 8, tabH, label, on
                 ? { fill: HUD.copper, lipCol: HUD.copperDk, textCol: "#fff", size: 14, type: "shop", index: 42 + i, cr, alpha: g }
                 : { size: 14, type: "shop", index: 42 + i, cr, alpha: g, textCol: HUD.text });
+            // NEW on the Abilities tab until it has been looked at once
+            if (id === "ability" && !abTabSeen) {
+                const nowT = performance.now();
+                if (on) {
+                    if (nowT - abTabLast < 250) abTabFor += nowT - abTabLast;
+                    abTabLast = nowT;
+                    if (abTabFor > TAB_SEEN_MS) { abTabSeen = true; try { markTabSeen(localStorage); } catch (e) { /* */ } }
+                }
+                const bw = hudTitleW("NEW", 9) + 12, bx = tx + tabW - 8 - bw / 2, byy = tabY - 4;
+                hudPanel(c, bx - bw / 2, byy - 7, bw, 14, { r: 7, lip: 1.5, fill: HUD.danger, alpha: g });
+                hudTitle("NEW", bx, byy, 9, "#fff", "center", g, c);
+            }
         }
         // item grid + detail
         const items = catalog.filter(it => it.cat === sh.tab);
@@ -10128,7 +10219,7 @@ import * as cosmetics from './account/cosmetics.js';
         return "#00b2e1";
     }
 
-    let mapPaths = null;
+    let mapPaths = null, mapChunks = null;
     const MAP_PATHS_MIN_MS = 700;
     function getMapPaths() {
         const tr = window.terrainRenderer;
@@ -10144,24 +10235,48 @@ import * as cosmetics from './account/cosmetics.js';
             // Appending to one huge Path2D slows as it grows (every
             // moveTo/closePath walks it): ~390ms for a 10k-cell map vs ~10ms
             // chunked, and it reruns on every rock break.
+            // Only the chunks whose cells changed since the last build are
+            // rebuilt (a rebuild of all of them every 0.7 s while anyone mined
+            // made ~300 Path2D objects a time: Blink garbage, GC hitches).
             const MAP_CHUNKS = 12;
-            const aliveC = new Map(), deadC = new Map();
-            for (const [k, cell] of tr._cellPolys) {
-                const backAsRock = tr._growing && tr._growing.get(k)?.mapped;
-                const bucket = (tr._rockDead.has(k) && !backAsRock) ? deadC : aliveC;
-                const ck = Math.min(MAP_CHUNKS - 1, Math.max(0, Math.floor(cell.cx / cols * MAP_CHUNKS))) * MAP_CHUNKS +
-                           Math.min(MAP_CHUNKS - 1, Math.max(0, Math.floor(cell.cy / rows * MAP_CHUNKS)));
-                let p = bucket.get(ck);
-                if (!p) { p = new Path2D(); bucket.set(ck, p); }
-                const poly = cell.poly;
-                p.moveTo((poly[0][0] / cols - 0.5) * gw, (poly[0][1] / rows - 0.5) * gh);
-                for (let i = 1; i < poly.length; i++)
-                    p.lineTo((poly[i][0] / cols - 0.5) * gw, (poly[i][1] / rows - 0.5) * gh);
-                p.closePath();
+            const mc = mapChunks || (mapChunks = { state: new Map(), cells: new Map(), alive: new Map(), dead: new Map(), cols: -1 });
+            if (mc.cols !== cols || mc.n !== tr._cellPolys.size) {
+                mc.state.clear(); mc.cells.clear(); mc.alive.clear(); mc.dead.clear(); mc.cols = cols; mc.n = tr._cellPolys.size;
+                for (const [k, cell] of tr._cellPolys) {
+                    const ck = Math.min(MAP_CHUNKS - 1, Math.max(0, Math.floor(cell.cx / cols * MAP_CHUNKS))) * MAP_CHUNKS +
+                               Math.min(MAP_CHUNKS - 1, Math.max(0, Math.floor(cell.cy / rows * MAP_CHUNKS)));
+                    let list = mc.cells.get(ck);
+                    if (!list) mc.cells.set(ck, list = []);
+                    list.push(k);
+                }
             }
+            const isDead = (k) => tr._rockDead.has(k) && !(tr._growing && tr._growing.get(k)?.mapped);
+            const changed = new Set();
+            for (const [ck, list] of mc.cells) {
+                for (const k of list) {
+                    const d = isDead(k);
+                    if (mc.state.get(k) !== d) { mc.state.set(k, d); changed.add(ck); }
+                }
+            }
+            for (const ck of changed) {
+                let pa = null, pd = null;
+                for (const k of mc.cells.get(ck)) {
+                    const cell = tr._cellPolys.get(k);
+                    if (!cell) continue;
+                    const p = mc.state.get(k) ? (pd || (pd = new Path2D())) : (pa || (pa = new Path2D()));
+                    const poly = cell.poly;
+                    p.moveTo((poly[0][0] / cols - 0.5) * gw, (poly[0][1] / rows - 0.5) * gh);
+                    for (let i = 1; i < poly.length; i++)
+                        p.lineTo((poly[i][0] / cols - 0.5) * gw, (poly[i][1] / rows - 0.5) * gh);
+                    p.closePath();
+                }
+                if (pa) mc.alive.set(ck, pa); else mc.alive.delete(ck);
+                if (pd) mc.dead.set(ck, pd); else mc.dead.delete(ck);
+            }
+            if (mapPaths && !changed.size) { mapPaths.builtAt = nowMP; return mapPaths; }
             const alive = new Path2D(), dead = new Path2D();
-            for (const p of aliveC.values()) alive.addPath(p);
-            for (const p of deadC.values()) dead.addPath(p);
+            for (const p of mc.alive.values()) alive.addPath(p);
+            for (const p of mc.dead.values()) dead.addPath(p);
             mapPaths = { alive, dead, epoch: (mapPaths ? mapPaths.epoch : 0) + 1, builtAt: nowMP };
         }
         return mapPaths;
@@ -12873,6 +12988,8 @@ import * as cosmetics from './account/cosmetics.js';
             // the new ability reveal dims everything under it (the vault and
             // shop panels included), so it goes last
             if (global.GUIStatus.renderPlayerBars && !finaleHud) drawKitUnlock();
+            // the one-time ability tour, over everything
+            if (global.GUIStatus.renderPlayerBars && !finaleHud) { try { abilityIntro.draw(ctx[2], global.mobile ? touchUnits() : null); } catch (e) { /* never break the frame */ } }
             // leader arrow + enemy pings are drawn in drawTopIndicators(), at
             // the end of the frame, so no panel covers them
         } else {
@@ -13030,27 +13147,32 @@ import * as cosmetics from './account/cosmetics.js';
         document.body.appendChild(again);
         try { updateRoyaleDomButtons(); } catch { /* */ }
     }
+    // Runs every frame: the DOM is only written when a value changes (a style
+    // or text write each frame was a style recalc each frame)
+    const domEls = {};
+    const domEl = (id) => { let e = domEls[id]; if (!e || !e.isConnected) e = domEls[id] = document.getElementById(id); return e; };
+    const setStyle = (el, k, v) => { if (el && el.style[k] !== v) el.style[k] = v; };
     function updateRoyaleDomButtons() {
         getRoyaleDomButtons();
-        const spec = document.getElementById("royaleSpecDom");
-        const dead = document.getElementById("royaleDeadDom");
+        const spec = domEl("royaleSpecDom");
+        const dead = domEl("royaleDeadDom");
         if (!spec || !dead) return;
         const inGame = !!(global.gameStart && !global.disconnected);
-        const again = document.getElementById("royaleDomPlayAgain");
+        const again = domEl("royaleDomPlayAgain");
         if (raidFinale.active()) {
-            spec.style.display = "none";
-            dead.style.display = "none";
-            if (again) again.style.display = "none";
+            setStyle(spec, "display", "none");
+            setStyle(dead, "display", "none");
+            setStyle(again, "display", "none");
             return;
         }
         const spectating = !!(inGame && global.royaleSpectating && !joinUp);
         const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating);
-        spec.style.display = spectating ? "flex" : "none";
-        dead.style.display = deadShow ? "flex" : "none";
+        setStyle(spec, "display", spectating ? "flex" : "none");
+        setStyle(dead, "display", deadShow ? "flex" : "none");
         if (again) {
             const pc = global.deathPlayCss;
             const show = deadShow && !!pc;
-            again.style.display = show ? "inline-flex" : "none";
+            setStyle(again, "display", show ? "inline-flex" : "none");
             if (show) {
                 const st = playAgainState();
                 const want = { left: pc.cx + "px", top: pc.top + "px", width: pc.w + "px", height: pc.h + "px" };
@@ -13060,7 +13182,7 @@ import * as cosmetics from './account/cosmetics.js';
                 // Enter opens the team chat on the duo server, so Space there
                 const keyTxt = !st.ready || global.mobile ? "" : global.gamepadMode ? "RT" : (global.royale && global.royale.duos) ? "Space" : "Enter";
                 if (key.textContent !== keyTxt) key.textContent = keyTxt;
-                key.style.display = keyTxt ? "" : "none";
+                setStyle(key, "display", keyTxt ? "" : "none");
                 if (again.disabled !== !st.ready) again.disabled = !st.ready;
             }
         }
@@ -13070,14 +13192,14 @@ import * as cosmetics from './account/cosmetics.js';
             if (dead.style.left !== left) dead.style.left = left;
             if (dead.style.top !== top) { dead.style.top = top; dead.style.bottom = "auto"; }
         }
-        const spBtn = document.getElementById("royaleDomSpectate");
+        const spBtn = domEl("royaleDomSpectate");
         if (spBtn) {
             const want = duoMateAlive() ? "Watch " + shortName(global.royale.duo.mate.name || "teammate", 12) : "Spectate";
             if (spBtn.textContent !== want) spBtn.textContent = want;
         }
-        const signup = document.getElementById("royaleDomSignup");
-        if (signup) signup.style.display = deadShow && rankPanel.isGuestNudge() ? "" : "none";
-        const play = document.getElementById("royaleDomPlay");
+        const signup = domEl("royaleDomSignup");
+        if (signup) setStyle(signup, "display", deadShow && rankPanel.isGuestNudge() ? "" : "none");
+        const play = domEl("royaleDomPlay");
         if (play) {
             const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);
             const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
@@ -13085,11 +13207,11 @@ import * as cosmetics from './account/cosmetics.js';
             if (locked) label = Math.max(0, global.royale.lockLeft | 0) + "s";
             else if (global.respawnPending) label = "Wait";
             else if (global.died && waitMs > 0) label = "Play (" + Math.ceil(waitMs / 1000) + "s)";
-            play.textContent = label;
+            if (play.textContent !== label) play.textContent = label;
             // respawn() refuses until the death wait is up; look it too
             const off = !global.died || locked || global.respawnPending || waitMs > 0;
-            play.style.opacity = off ? "0.55" : "1";
-            play.disabled = off && global.died;
+            setStyle(play, "opacity", off ? "0.55" : "1");
+            if (play.disabled !== (off && global.died)) play.disabled = off && global.died;
         }
     }
     function getIngameSettingsBtn() {
@@ -13450,6 +13572,8 @@ import * as cosmetics from './account/cosmetics.js';
     // step frames in a background tab where requestAnimationFrame is paused.
     window.dwRenderFrame = renderFrame;
     function renderFrame(tick) {
+        resyncTransforms();
+        sweepTextSprites();
         // the raid-end shake moves the whole layer, hit-stop or not
         raidFinale.shakeFrame(performance.now());
         // Hit-stop: hold the last frame for a beat when a rock is destroyed

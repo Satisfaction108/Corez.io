@@ -18,6 +18,14 @@ function hitClientRect(mouse, r) {
     return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
 
+// standing on a vault, base bank or shop pad (abilities don't work there)
+function onAnyPad() { return !!((global.shop && global.shop.onPad) || (global.vault && global.vault.onPad)); }
+// a press on one of the HUD's own buttons
+function overHudButton(mpos) {
+    const c = global.clickables;
+    return c.vault.check(mpos) !== -1 || c.shop.check(mpos) !== -1 || c.kit.check(mpos) !== -1 ||
+        c.skipUpgrades.check(mpos) !== -1 || (c.royalePlay && c.royalePlay.check(mpos) !== -1);
+}
 class Canvas {
     constructor() {
         this.directionLock = false;
@@ -105,7 +113,10 @@ class Canvas {
         window.addEventListener("pointerdown", (e) => {
             if (e.pointerType === "mouse") flip(watch.mouseDown(performance.now(), !!global.mobile));
         }, true);
-        this.cv.addEventListener("mousemove", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseMove(event)});
+        // aim follows the cursor from the window, not just the canvas: a DOM
+        // card or overlay sitting over the game must never freeze the aim
+        // (the canvas only hears moves under a held button then)
+        window.addEventListener("mousemove", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseMove(event)});
         this.cv.addEventListener("mousedown", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseDown(event)});
         this.cv.addEventListener("mouseup", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseUp(event)});
         this.cv.addEventListener("keypress", (event) => {if (!global.mobile && global.gameStart) this.keyPress(event)});
@@ -649,6 +660,9 @@ class Canvas {
             secondaryFire = 6;
         if (this.inverseMouse) [primaryFire, secondaryFire] = [secondaryFire, primaryFire];
         global.clickables.clicked = true;
+        // a lost mouseup (a lag spike, a release off the window) must not
+        // leave the aim-mode swallow armed for the next click
+        this.aimClickHeld = false;
         switch (mouse.button) {
             case 0:
                 let mpos = {
@@ -659,7 +673,10 @@ class Canvas {
                 // press began on it: a shot fired elsewhere and released over
                 // the button must not throw the upgrade menu away.
                 this.skipUpgradePressed = global.clickables.skipUpgrades.check(mpos) !== -1;
-                // aim mode: the click puts the ability down and never fires the gun
+                // aim mode: the click puts the ability down and never fires the
+                // gun. On a pad, or on a HUD button (the vault's Deposit, the
+                // shop, the kit), the aim lets go and the click does its job.
+                if (global.abilAim && global.abilAim.mode === "click" && (onAnyPad() || overHudButton(mpos))) abilityFx.cancelAim();
                 if (global.abilAim && global.abilAim.mode === "click" && !global.died) {
                     this.placeAim();
                     this.aimClickHeld = true;

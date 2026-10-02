@@ -208,6 +208,16 @@ function onSatchelOut(body, removed, before, eff) {
 }
 
 // A deposit finished: write it now and always tell the client.
+// Gems banked without leaving the satchel (the Core's payout): the account's
+// banked count and the bank quests, no dust moved
+function onBankedDirect(body, n) {
+    if (!body || !on() || !(n > 0)) return;
+    const a = accountOf(body);
+    if (!a) return;
+    a.gemsBanked += Math.floor(n);
+    try { progress().onBank(body.socket, Math.floor(n)); } catch (e) { /* quests only */ }
+}
+
 function onBankDone(body) {
     if (!body || !body.socket || !body.socket.account || !on()) return;
     flushAccount(body.socket.account.id);
@@ -309,7 +319,7 @@ function debugSetCarried(body, milli) {
 module.exports = {
     FLUSH_MS, bankShare, effCredit, insuranceShare, splitDeath,
     setCreditListener, setRef, balanceOf, carriedOf, valuesFor, flushAccount, flushAll, tick,
-    onPickup, onSatchelOut, onBankDone, onInsured, onDeathDrop, creditKill, creditReward, noteExternalCredit, reloadBalance,
+    onPickup, onSatchelOut, onBankedDirect, onBankDone, onInsured, onDeathDrop, creditKill, creditReward, noteExternalCredit, reloadBalance,
     stash, restore, zero, onClose, debugSetCarried,
     _accts: accts,
 };

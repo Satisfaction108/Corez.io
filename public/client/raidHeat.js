@@ -164,6 +164,14 @@ export function onKC(m) {
             juice.slam(text, sub, GOLD, 3200, 52);
             juice.glitch(0.8, 500);
             return true;
+        case "corepay": {
+            // your share of the Core, banked: the number rolls up
+            const n = +String(text).replace(/[^0-9]/g, "") || 0;
+            juice.slamRoll("BANKED +", 0, n, sub, GOLD, 3200, 62, fmt);
+            juice.lightLeak("242,184,60", 1400);
+            sfx("win");
+            return true;
+        }
         case "corebreak":
             juice.slam(text, (m[2] | 0) ? "+" + fmt(m[2] | 0) + " pts. " + sub : sub, GOLD, 3800, 56);
             juice.hitStop(50);

@@ -1184,78 +1184,109 @@ class TerrainRenderer {
         if (this._cellPolys.size !== lattice.size)
             for (const [key, L] of lattice) this._cellPolys.set(key, L.cell);
 
+        // The silhouette: every edge between a live cell and a dead (or
+        // missing) one, chained into loops. This runs on every rock change
+        // (throttled), so it works on numbers only: the vertex keys come
+        // precomputed with the lattice, the chains go into reused typed
+        // arrays, and nothing but the Path2D is allocated (the string keys
+        // and per-edge arrays it used to make were a GC hitch on busy maps).
         const dead = this._rockDead;
-        const boundaryEdges = [];
+        const SNAP = 1000, KX = 1e6;
+        const B = this._silBuf || (this._silBuf = { n: 0, cap: 0, xy: null, ka: null, kb: null, used: null, head: new Map(), link: null, end: null });
+        const ensure = (need) => {
+            if (B.cap >= need) return;
+            let cap = Math.max(1024, B.cap * 2); while (cap < need) cap *= 2;
+            const xy = new Float64Array(cap * 4), ka = new Float64Array(cap), kb = new Float64Array(cap);
+            if (B.xy) { xy.set(B.xy); ka.set(B.ka); kb.set(B.kb); }
+            B.xy = xy; B.ka = ka; B.kb = kb; B.used = new Uint8Array(cap);
+            B.link = new Int32Array(cap * 2); B.end = new Int32Array(cap * 2);
+            B.cap = cap;
+        };
+        let n = 0;
         for (const [key, L] of lattice) {
             if (dead.has(key)) continue;
             const poly = L.poly, nb = L.nb;
+            if (!L.vk) {
+                // per vertex: tile coords and the snapped key (once per map)
+                L.vk = new Float64Array(poly.length);
+                L.vt = new Float64Array(poly.length * 2);
+                for (let e = 0; e < poly.length; e++) {
+                    const x = poly[e][0] * rockSz, y = poly[e][1] * rockSz;
+                    L.vt[e * 2] = x; L.vt[e * 2 + 1] = y;
+                    L.vk[e] = Math.round(x * SNAP) * KX + Math.round(y * SNAP);
+                }
+            }
             for (let e = 0; e < poly.length; e++) {
                 const nk = nb[e];
                 if (nk === key) continue;
-                const other = lattice.get(nk);
-                if (other && !dead.has(nk)) continue;      // solid on both sides
-                const [vax, vay] = poly[e], [vbx, vby] = poly[(e+1)%poly.length];
-                boundaryEdges.push([vax*rockSz, vay*rockSz, vbx*rockSz, vby*rockSz]);
+                if (!dead.has(nk) && lattice.has(nk)) continue;      // solid on both sides
+                const f = (e + 1) % poly.length;
+                ensure(n + 1);
+                B.xy[n * 4] = L.vt[e * 2]; B.xy[n * 4 + 1] = L.vt[e * 2 + 1];
+                B.xy[n * 4 + 2] = L.vt[f * 2]; B.xy[n * 4 + 3] = L.vt[f * 2 + 1];
+                B.ka[n] = L.vk[e]; B.kb[n] = L.vk[f];
+                n++;
             }
         }
-
-        const SNAP = 1000;
-        const snapKey = (x, y) => Math.round(x*SNAP) + ',' + Math.round(y*SNAP);
-
-        const adj = new Map();
-        for (let i = 0; i < boundaryEdges.length; i++) {
-            const [ax, ay, bx, by] = boundaryEdges[i];
-            const ka = snapKey(ax, ay), kb = snapKey(bx, by);
-            if (!adj.has(ka)) adj.set(ka, []);
-            if (!adj.has(kb)) adj.set(kb, []);
-            adj.get(ka).push({ idx: i, x: bx, y: by });
-            adj.get(kb).push({ idx: i, x: ax, y: ay });
-        }
-
-        const used = new Uint8Array(boundaryEdges.length);
-        const loops = [];
-
-        for (let i = 0; i < boundaryEdges.length; i++) {
-            if (used[i]) continue;
-            used[i] = 1;
-            const [ax, ay, bx, by] = boundaryEdges[i];
-            const chain = [[ax, ay], [bx, by]];
-
-            let curKey = snapKey(bx, by);
-            while (true) {
-                const cands = adj.get(curKey);
-                if (!cands) break;
-                let next = null;
-                for (const c of cands) { if (!used[c.idx]) { next = c; break; } }
-                if (!next) break;
-                used[next.idx] = 1;
-                if (snapKey(next.x, next.y) === snapKey(chain[0][0], chain[0][1])) break;
-                chain.push([next.x, next.y]);
-                curKey = snapKey(next.x, next.y);
+        // vertex -> its edge ends, as linked lists in typed arrays (end k:
+        // edge k >> 1, the far vertex is a when k is odd, else b)
+        const head = B.head; head.clear();
+        for (let i = 0; i < n; i++) {
+            B.used[i] = 0;
+            for (let side = 0; side < 2; side++) {
+                const k = side ? B.kb[i] : B.ka[i], slot = i * 2 + side;
+                const h = head.get(k);
+                B.link[slot] = h === undefined ? -1 : h;
+                head.set(k, slot);
             }
-
-            curKey = snapKey(ax, ay);
-            while (true) {
-                const cands = adj.get(curKey);
-                if (!cands) break;
-                let next = null;
-                for (const c of cands) { if (!used[c.idx]) { next = c; break; } }
-                if (!next) break;
-                used[next.idx] = 1;
-                chain.unshift([next.x, next.y]);
-                curKey = snapKey(next.x, next.y);
-            }
-
-            if (chain.length >= 3) loops.push(chain);
         }
-
+        // the far end of an edge end, and the next unused edge at a vertex
+        const nextAt = (k) => {
+            for (let s = head.get(k); s !== undefined && s >= 0; s = B.link[s]) if (!B.used[s >> 1]) return s;
+            return -1;
+        };
         const path = new Path2D();
-        for (const loop of loops) {
-            if (loop.length < 3) continue;
-            path.moveTo(loop[0][0], loop[0][1]);
-            for (let i = 1; i < loop.length; i++)
-                path.lineTo(loop[i][0], loop[i][1]);
-            path.closePath();
+        const back = this._silBack || (this._silBack = []);
+        for (let i = 0; i < n; i++) {
+            if (B.used[i]) continue;
+            B.used[i] = 1;
+            const k0 = B.ka[i];
+            // walk forward from b, collecting points straight into the path
+            // after the backward part (walked first, kept in `back`)
+            back.length = 0;
+            let cur = k0;
+            for (;;) {
+                const s = nextAt(cur);
+                if (s < 0) break;
+                const ei = s >> 1, fromA = !(s & 1);
+                B.used[ei] = 1;
+                // from vertex `cur` along the edge to its other end
+                const ox = fromA ? B.xy[ei * 4 + 2] : B.xy[ei * 4], oy = fromA ? B.xy[ei * 4 + 3] : B.xy[ei * 4 + 1];
+                back.push(ox, oy);
+                cur = fromA ? B.kb[ei] : B.ka[ei];
+            }
+            const pts = back.length / 2 + 2;
+            let forward = 0;
+            // the backward chain, farthest first, then a, b and onwards
+            const startIdx = back.length;
+            if (startIdx) path.moveTo(back[startIdx - 2], back[startIdx - 1]);
+            for (let q = startIdx - 4; q >= 0; q -= 2) path.lineTo(back[q], back[q + 1]);
+            if (startIdx) path.lineTo(B.xy[i * 4], B.xy[i * 4 + 1]); else path.moveTo(B.xy[i * 4], B.xy[i * 4 + 1]);
+            path.lineTo(B.xy[i * 4 + 2], B.xy[i * 4 + 3]);
+            cur = B.kb[i];
+            for (;;) {
+                if (cur === k0) break;
+                const s = nextAt(cur);
+                if (s < 0) break;
+                const ei = s >> 1, fromA = !(s & 1);
+                B.used[ei] = 1;
+                const ox = fromA ? B.xy[ei * 4 + 2] : B.xy[ei * 4], oy = fromA ? B.xy[ei * 4 + 3] : B.xy[ei * 4 + 1];
+                cur = fromA ? B.kb[ei] : B.ka[ei];
+                if (cur === k0) break;
+                path.lineTo(ox, oy);
+                forward++;
+            }
+            if (pts + forward >= 3) path.closePath();
         }
         return path;
     }

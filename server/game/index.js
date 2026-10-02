@@ -1,5 +1,8 @@
 const CHEST_HITTERS = new Set(["bullet", "drone", "trap", "satellite", "swarm"]);
 let chestRam = null;      // terrain/chests.js, loaded on the first ram
+const bossGuard = require('./terrain/bossGuard.js');
+const MINION_BOSS_DMG = 6;     // a minion's hull into a boss, per touching tick (x its body damage)
+const MINION_BOSS_TICKS = 45;  // ticks of contact a minion lasts against a boss
 const fs = require('fs');
 const path = require('path');
 const gems = require('./terrain/gems.js');
@@ -372,6 +375,30 @@ class gameHandler {
                 chest.velocity.x = 0; chest.velocity.y = 0;
                 chest.accel.x = 0;    chest.accel.y = 0;
                 if (chest.pinX !== undefined) { chest.x = chest.pinX; chest.y = chest.pinY; }
+            } break;
+            case (instance.isRoyaleBoss && other.type === "minion") || (other.isRoyaleBoss && instance.type === "minion"): {
+                // A minion's hull against a raid boss: the plain hull trade
+                // killed a 20 health minion in one tick for no damage (the
+                // death factor scales what it deals by what it survives), so it
+                // vanished into the boss as if it passed through. It's a body:
+                // put back on the rim, it grinds the boss (bossGuard measures
+                // it like any hit) and the boss grinds it down over a second or so.
+                const boss = instance.isRoyaleBoss ? instance : other;
+                const min = boss === instance ? other : instance;
+                if (boss.isDead?.() || min.isDead?.()) break;
+                const dx = min.x - boss.x, dy = min.y - boss.y;
+                const d = Math.hypot(dx, dy) || 1;
+                const reach = (boss.realSize || boss.size) + (min.realSize || min.size);
+                if (d >= reach) break;
+                const nx = dx / d, ny = dy / d;
+                min.x += nx * (reach - d); min.y += ny * (reach - d);
+                const vIn = min.velocity.x * nx + min.velocity.y * ny;
+                if (vIn < 0) { min.velocity.x -= vIn * nx; min.velocity.y -= vIn * ny; }
+                if (boss.team === min.team) break;
+                const raw = (min.damage || 0) * MINION_BOSS_DMG;
+                const dealt = bossGuard.capHit(boss, min, raw);
+                if (dealt > 0) { boss.damageReceived += dealt; boss.collisionArray.push(min); }
+                if (min.health && min.health.max > 0) { min.damageReceived += min.health.max / MINION_BOSS_TICKS; min.collisionArray.push(boss); }
             } break;
             case instance.team === other.team &&
                 (instance.settings.hitsOwnType === "pushOnlyTeam" ||
@@ -1692,6 +1719,19 @@ class gameHandler {
                     global.gameManager.roomLoop();
                     global.gameManager.gamemodeManager.request("quickloop");
                     const total = performance.now() - cycleStarted;
+                    // TICK_TRACE=1: avg / p95 / max tick every 10 s (local profiling only)
+                    if (process.env.TICK_TRACE) {
+                        const tr = this._tickTrace || (this._tickTrace = { at: performance.now(), ms: [] });
+                        tr.ms.push(total);
+                        if (performance.now() - tr.at > 10000) {
+                            const v = tr.ms.slice().sort((a, b) => a - b), avg = v.reduce((a, b) => a + b, 0) / v.length;
+                            let bots = 0; for (const e of entities.values()) if (e.isBot && !e.isDead()) bots++;
+                            const bp = global.botProf || {}, bpTop = Object.entries(bp).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, ms]) => k + ' ' + ms.toFixed(0)).join(', ');
+                            console.log(`[TICK-TRACE] n ${v.length} avg ${avg.toFixed(2)} p95 ${v[Math.floor(v.length * 0.95)].toFixed(2)} max ${v[v.length - 1].toFixed(1)} entities ${entities.size} bots ${bots} | bot ms/10s: ${bpTop}`);
+                            for (const k in bp) bp[k] = 0;
+                            tr.at = performance.now(); tr.ms.length = 0;
+                        }
+                    }
                     tickStats.n++;
                     tickStats.ema = tickStats.ema ? tickStats.ema * 0.95 + total * 0.05 : total;
                     if (total > tickStats.max) tickStats.max = total;
@@ -1989,6 +2029,7 @@ class gameHandler {
                 }
             }
 
+            const _tEnt = performance.now();
             const vNow = Date.now();
             const padDt = Math.min(66, vNow - (this._lastVaultTick || vNow)) || 33;
             // One bad pad must not take the whole server down with it.
@@ -2007,6 +2048,7 @@ class gameHandler {
                 try { coreChambers.tick(padDt); } catch (e) { this._padTickErr('coreChambers.tick', e); }
             }
             this._lastVaultTick = vNow;
+            const _tPads = performance.now();
             if (Config.dig_royale) {
                 try { (digRoyaleMod ||= require('./gamemodes/scripts/dig_royale.js')).tick(); } catch (e) {
                     const tNow = Date.now();
@@ -2017,6 +2059,8 @@ class gameHandler {
                 }
             }
 
+            const _tMode = performance.now();
+            this._terrainStages = [(_tEnt - _terrainT0) | 0, (_tPads - _tEnt) | 0, (_tMode - _tPads) | 0];
             if (_tg.rockEvents.length) {
                 const payload = JSON.stringify(_tg.rockEvents);
                 _tg.rockEvents.length = 0;
@@ -2030,7 +2074,8 @@ class gameHandler {
                 if (_tMs > global.tickStats.terrainMax) global.tickStats.terrainMax = _tMs;
                 if (_tMs > 60 && performance.now() - (this._terrainLogAt || 0) > 1000) {
                     this._terrainLogAt = performance.now();
-                    console.log(`[SLOW TERRAIN] ${_tMs.toFixed(0)}ms regrow=${(this._terrainRegrowMs || 0).toFixed(0)} gems=${gemActors ? gemActors.length : 0} growing=${growingNow ? 1 : 0} entities=${entities.size}`);
+                    const _st = this._terrainStages || [];
+                    console.log(`[SLOW TERRAIN] ${_tMs.toFixed(0)}ms entities-pass=${_st[0]} pads=${_st[1]} raid=${_st[2]} regrow=${(this._terrainRegrowMs || 0).toFixed(0)} gems=${gemActors ? gemActors.length : 0} growing=${growingNow ? 1 : 0} entities=${entities.size}`);
                 }
             }
         };

@@ -474,8 +474,18 @@ class io_nearestDifferentMaster extends IO {
         this.targetLockStarted = 0;
     }
     validate(e, m, mm, sqrRange, sqrRangeMaster) {
-        const myMaster = this.body.master.master;
         const aiSettings = this.body.aiSettings;
+        // range first: it turns away most of the list for the price of a
+        // few multiplications (every gun and turret runs this every 3 ticks)
+        if (!aiSettings.BLIND) {
+            if ((e.x - m.x) * (e.x - m.x) >= sqrRange) return false;
+            if ((e.y - m.y) * (e.y - m.y) >= sqrRange) return false;
+        }
+        if (!aiSettings.SKYNET) {
+            if ((e.x - mm.x) * (e.x - mm.x) >= sqrRangeMaster) return false;
+            if ((e.y - mm.y) * (e.y - mm.y) >= sqrRangeMaster) return false;
+        }
+        const myMaster = this.body.master.master;
         const theirMaster = e.master.master;
         if (e.health.amount <= 0) return false;
         if (theirMaster.team === myMaster.team || theirMaster.team === TEAM_ROOM) return false;
@@ -490,14 +500,6 @@ class io_nearestDifferentMaster extends IO {
         if (!(aiSettings.seeInvisible || this.body.isArenaCloser || e.alpha > 0.5)) return false;
         if (!io_nearestDifferentMaster.validEntityTypes.has(e.type)) {
             if ((aiSettings.IGNORE_SHAPES || myMaster.aiSettings.IGNORE_SHAPES) && e.type === "food") return false;
-        }
-        if (!aiSettings.BLIND) {
-            if ((e.x - m.x) * (e.x - m.x) >= sqrRange) return false;
-            if ((e.y - m.y) * (e.y - m.y) >= sqrRange) return false;
-        }
-        if (!aiSettings.SKYNET) {
-            if ((e.x - mm.x) * (e.x - mm.x) >= sqrRangeMaster) return false;
-            if ((e.y - mm.y) * (e.y - mm.y) >= sqrRangeMaster) return false;
         }
         return true;
     }
@@ -1377,6 +1379,7 @@ const digWarsChambers = require('../game/terrain/coreChambers.js');
 const padGeom = require('../game/terrain/padGeom.js');
 // per-target bot difficulty (0 new player .. 1 the hardest we allow)
 const botDiff = require('./botDifficulty.js');
+const SENSE_MAX_R = 2500;       // the radar ping's reach, the widest a bot ever sees
 const tactics = require('./botTactics.js');
 const bossGuard = require('../game/terrain/bossGuard.js');
 const activity = require('../game/network/activity.js');
@@ -2172,6 +2175,9 @@ class io_digWarsGoals extends IO {
                 }
                 continue;
             }
+            // nobody past the widest sense range (hunted mark, radar) counts:
+            // skip the rest of the checks for them
+            if (distance > SENSE_MAX_R && distance > fov * 1.85) continue;
             if (!this.isEnemy(root)) continue;
             // smoke: a bot already on them keeps at it (blindAim); a new one
             // only spots them point blank. Other invisibility hides fully.
@@ -2201,12 +2207,15 @@ class io_digWarsGoals extends IO {
             const rd = root.isPlayer ? botDiff.of(root, now) : botDiff.NEUTRAL;
             const soft = botSoft(root, now);
             const lock = root.isPlayer && !soft ? botDiff.lockShare(rd) : 0;
-            const score = distance
+            const base = distance
                 + (root.isPlayer ? botDiff.targetPenalty(rd) : 0)
                 + (soft ? firstMinutes().NEW_TARGET_PENALTY : 0)
                 - tactics.carrierPull(root, lock)
-                - (lock > 0 && tactics.isEnabled() ? tactics.thirdParty(root, now) * 320 * lock : 0)
-                + (this.clearShot(root) ? 0 : 220);
+                - (lock > 0 && tactics.isEnabled() ? tactics.thirdParty(root, now) * 320 * lock : 0);
+            // the line of sight (a terrain raycast) can only add to the
+            // score, so it's only worth casting for someone who could win
+            if (base >= bestScore) continue;
+            const score = base + (this.clearShot(root) ? 0 : 220);
             if (score < bestScore) { bestScore = score; best = root; }
         }
 
@@ -2914,6 +2923,13 @@ class io_digWarsGoals extends IO {
     decide(now) {
         const current = this.goal;
         const valid = current ? this.stillValid(current, now) : false;
+        // The candidate only changes with what the bot sees (sense, every
+        // 100-270 ms) or a hit; between those a running, valid goal inside its
+        // hold just carries on (candidate() used to run every tick per bot).
+        const hp = this.body.health.max ? this.body.health.amount / this.body.health.max : 1;
+        if (current && valid && now < this.holdUntil && this._planSense === this.senseAt && hp > (this._planHp ?? 1) - 0.05) return;
+        this._planSense = this.senseAt;
+        this._planHp = hp;
         const candidate = this.candidate(now);
         const mustSwitch = !current || !valid || now >= this.holdUntil ||
             GOAL_PRIORITY[candidate.kind] > GOAL_PRIORITY[current.kind];
@@ -3681,7 +3697,9 @@ const _botProfAll = process.env.BOT_PROF_ALL ? [
     [BotNav.prototype, Object.getOwnPropertyNames(BotNav.prototype).filter(k => k !== "constructor")],
     [io_digWarsGoals.prototype, Object.getOwnPropertyNames(io_digWarsGoals.prototype).filter(k => k !== "constructor")],
 ] : null;
-for (const [proto, names] of _botProfAll || [[BotNav.prototype, ["structureBlocks", "clearance", "steer"]], [io_digWarsGoals.prototype, ["findGem", "bankTarget", "think"]]]) {
+// (by default only the whole think: wrapping the hot little probes cost a
+// pair of performance.now() calls each, thousands of times a tick)
+for (const [proto, names] of _botProfAll || [[io_digWarsGoals.prototype, ["think"]]]) {
     for (const n of names) {
         const orig = proto[n];
         if (typeof orig !== "function") continue;

@@ -55,7 +55,7 @@ Class.royaleVaultWarden = {
     COLOR: "#8d6adf",
     SHAPE: 8,
     SIZE: 36,
-    BODY: { HEALTH: base.HEALTH * 6.5, SHIELD: base.SHIELD * 2.0, DAMAGE: base.DAMAGE * 1.4, RESIST: 1.14, SPEED: base.SPEED * 0.3 },
+    BODY: { HEALTH: base.HEALTH * 4.2, SHIELD: base.SHIELD * 1.3, DAMAGE: base.DAMAGE * 1.4, RESIST: 1.14, SPEED: base.SPEED * 0.3 },
     GUNS: [
         ...weaponArray({
             POSITION: [16, 9, 1, 0, 0, 22.5, 0],
@@ -145,7 +145,7 @@ Class.royaleGeodeColossus = {
     COLOR: "#62caa7",
     SHAPE: 6,
     SIZE: 40,
-    BODY: { HEALTH: base.HEALTH * 8.5, SHIELD: base.SHIELD * 2.5, DAMAGE: base.DAMAGE * 1.05, RESIST: 1.25, SPEED: base.SPEED * 0.22, ACCELERATION: 0.3, REGEN: base.REGEN * 0.09, DENSITY: 9 },
+    BODY: { HEALTH: base.HEALTH * 7.3, SHIELD: base.SHIELD * 2.1, DAMAGE: base.DAMAGE * 1.05, RESIST: 1.25, SPEED: base.SPEED * 0.22, ACCELERATION: 0.3, REGEN: base.REGEN * 0.09, DENSITY: 9 },
     TURRETS: [
         ...weaponArray({ POSITION: [7.5, 9.8, 0, 30, 140, 0], TYPE: ["swarmTurret", { INDEPENDENT: true, COLOR: "#3f9a7a" }] }, 6),
         ...weaponArray({ POSITION: [6.5, 8.6, 0, 0, 150, 0], TYPE: ["autoTurret", { INDEPENDENT: true, COLOR: "#3f9a7a" }] }, 6),
@@ -171,7 +171,7 @@ Class.royaleShardWraith = {
     SIZE: 33,
     FACING_TYPE: "smoothToTarget",
     MAX_CHILDREN: 8,
-    BODY: { HEALTH: base.HEALTH * 5.4, SHIELD: base.SHIELD * 1.6, DAMAGE: base.DAMAGE * 1.3, RESIST: 1.12, SPEED: base.SPEED * 0.52, ACCELERATION: 0.7, FOV: 1.45 },
+    BODY: { HEALTH: base.HEALTH * 3.4, SHIELD: base.SHIELD * 1.0, DAMAGE: base.DAMAGE * 1.3, RESIST: 1.12, SPEED: base.SPEED * 0.52, ACCELERATION: 0.7, FOV: 1.45 },
     GUNS: [
         ...weaponArray({
             POSITION: [4, 8, 1.3, 9, 0, 45, 0],

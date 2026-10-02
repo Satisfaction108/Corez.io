@@ -93,10 +93,16 @@ function bossRoot(e) {
     const r = rootOf(e);
     return r && r.isRoyaleBoss && !r.isTutorialBot ? r : null;
 }
+// Everything a boss hits a player with (guns, turrets, traps, its hull) is
+// scaled per boss: the Warden and the Wraith hit too hard for their size.
+const BOSS_OUT = { warden: 0.6, wraith: 0.55, colossus: 0.85 };
 // Raw damage from `src` into player `p` (collision hook): what lands.
 function intoPlayer(p, src, amount, now = Date.now()) {
-    if (!spare || !(amount > 0) || !(p.botNewbie || p.botNewness > 0)) return amount;
-    if (!bossRoot(src)) return amount;
+    if (!(amount > 0)) return amount;
+    const root = bossRoot(src);
+    if (!root) return amount;
+    amount *= BOSS_OUT[root.bossKind] || 1;
+    if (!spare || !(p.botNewbie || p.botNewness > 0)) return amount;
     const n = newnessOf(p, now);
     if (!(n > 0)) return amount;
     let dmg = amount * (1 - (1 - NEWBIE_DMG_MIN) * n);

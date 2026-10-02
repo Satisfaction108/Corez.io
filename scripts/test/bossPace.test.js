@@ -210,6 +210,8 @@ test('payout: a boss killed through the cap still erupts its gems', () => {
 
 test('newcomers: boss damage softened, no last blow, guns look elsewhere first', () => {
     const boss = makeBoss();
+    // the Drillhead hits at full strength, so only the newcomer rules show here
+    boss.bossKind = 'drillhead';
     const turret = { master: boss, type: 'bullet' };
     const shot = { master: turret, type: 'bullet' };
     const p = { isPlayer: true, botNewbie: true, health: { amount: 200 }, damageReceived: 0 };
@@ -220,6 +222,12 @@ test('newcomers: boss damage softened, no last blow, guns look elsewhere first',
     assert.ok(Math.abs(guard.intoPlayer(p, shot, 40, now) - 40 * 0.625) < 1e-9, 'fading back');
     p.botNewness = 0;
     assert.equal(guard.intoPlayer(p, shot, 40, now), 40, 'not new: full damage');
+    // the Warden, Wraith and Colossus hit softer for everyone
+    boss.bossKind = 'warden';
+    assert.ok(Math.abs(guard.intoPlayer(p, shot, 40, now) - 24) < 1e-9, 'warden: 60%');
+    boss.bossKind = 'wraith';
+    assert.ok(Math.abs(guard.intoPlayer(p, shot, 40, now) - 22) < 1e-9, 'wraith: 55%');
+    boss.bossKind = 'drillhead';
     // a bot's shot is none of this
     const bot = { isBot: true }; bot.master = bot;
     p.botNewbie = true;

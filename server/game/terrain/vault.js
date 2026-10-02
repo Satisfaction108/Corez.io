@@ -155,6 +155,25 @@ function depositFor(body, amount) {
     return true;
 }
 
+// Gems straight into a bank without a deposit (the Core's payout): counted
+// exactly like vault banking (score, stats, milestones, quests, the war bar)
+function creditBank(body, amount) {
+    amount = Math.floor(amount);
+    if (!body || !(amount > 0)) return 0;
+    const banked = body.socket ? (body.socket.gemBanked || 0) : (body.botBanked || 0);
+    if (body.isBot) body.botGemsBanked = (body.botGemsBanked || 0) + amount;
+    setBanked(body, banked + amount);
+    war.add(body.team, amount);
+    milestones.checkBanked(body, amount);
+    if (Config.dig_royale) {
+        try { dustHooks().onBankedDirect(body, amount); } catch { /* */ }
+        try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, amount); } catch { /* */ }
+        try { dustHooks().onBankDone(body); } catch { /* */ }
+    }
+    try { gems.talkGems(body, 0); } catch { /* */ }
+    return amount;
+}
+
 function requestDeposit(socket, amount) {
     return depositFor(socket && socket.player && socket.player.body, amount);
 }
@@ -356,4 +375,4 @@ function tick(actors, dtMs) {
     }
 }
 
-module.exports = { tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, cancelDeposit, insideOctagon, onPadShape, OCT_SCALE };
+module.exports = { creditBank, tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, cancelDeposit, insideOctagon, onPadShape, OCT_SCALE };

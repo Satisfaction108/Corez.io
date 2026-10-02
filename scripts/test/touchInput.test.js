@@ -137,12 +137,18 @@ const { unpackMove: serverUnpack } = require('../../server/lib/touchMove.js');
         const w = inputModeWatch({ fine: true });
         let t = 10000;
         assert.equal(w.mouseMove(100, 100, t, true), null, 'the first event only marks the spot');
-        assert.equal(w.mouseMove(105, 100, t += 16, true), null, 'a nudge is not enough');
-        assert.equal(w.mouseMove(130, 100, t += 16, true), false, 'a real move: mouse and keys');
+        assert.equal(w.mouseMove(101, 100, t += 16, true), false, 'with a fine pointer any real move is the mouse, at once');
         assert.equal(w.mouseMove(200, 100, t += 16, false), null, 'already on mouse and keys');
-        // a slow creep with long pauses (a resting mouse on a wobbly desk) never adds up
+        // heavy lag: moves arrive far apart, each one still switches back
+        assert.equal(w.mouseMove(220, 100, t += 900, true), false, 'a lagged, coalesced move still switches back');
+        // no fine pointer reported: the old travel rule, and a slow creep with
+        // long pauses never adds up
+        const coarse = inputModeWatch({ fine: false });
+        assert.equal(coarse.mouseMove(100, 100, t += 16, true), null);
+        assert.equal(coarse.mouseMove(105, 100, t += 16, true), null, 'a nudge is not enough');
+        assert.equal(coarse.mouseMove(130, 100, t += 16, true), false, 'a real move: mouse and keys');
         let flips = 0;
-        for (let i = 0; i < 40; i++) if (w.mouseMove(300 + i * 6, 300, t += MODE.GAP_MS + 50, true) === false) flips++;
+        for (let i = 0; i < 40; i++) if (coarse.mouseMove(300 + i * 6, 300, t += MODE.GAP_MS + 50, true) === false) flips++;
         assert.equal(flips, 0, 'creeping mouse');
         assert.equal(w.touch(t += 100), true, 'a touch on the game: touch play');
         // the browser's mouse copies right after a tap
@@ -174,6 +180,8 @@ const { unpackMove: serverUnpack } = require('../../server/lib/touchMove.js');
         assert.match(canvas, /touch\.attach\(this\);/);
         assert.match(canvas, /e\.pointerType === "mouse"\) flip\(watch\.mouseMove/);
         assert.match(canvas, /addEventListener\("mousemove", \(event\) => \{if \(!global\.mobile/, 'mouse handlers wait while touch plays');
+        assert.match(canvas, /window\.addEventListener\("mousemove", \(event\) => \{if \(!global\.mobile/, 'aim hears the cursor anywhere on the window, not only over the canvas');
+        assert.match(canvas, /this\.aimClickHeld = false;\s+switch \(mouse\.button\)/, 'a lost mouseup never leaves a click swallow armed');
         // aim assist sits behind the enabled check in frame()
         const fr = touch.slice(touch.indexOf('    frame(now) {'));
         assert.ok(fr.indexOf('if (!sock || !this.enabled) return;') < fr.indexOf('assistAim('), 'assist only in touch play');

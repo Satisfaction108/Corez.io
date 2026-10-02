@@ -546,6 +546,13 @@ test('aim mode: Q aims a placed ability, a left click puts it down without firin
     const place = down.indexOf('this.placeAim();'), fire = down.indexOf('this.socket.cmd.set(primaryFire, true)');
     assert.ok(place > 0 && fire > place && /this\.placeAim\(\);\s+this\.aimClickHeld = true;\s+break;/.test(down), 'the placing click breaks out before the gun fires');
     assert.match(down, /aim mode: right click backs out of it/);
+    // the Deposit bug: an aim left on while walking onto a vault stole the click
+    assert.match(down, /if \(global\.abilAim && global\.abilAim\.mode === "click" && \(onAnyPad\(\) \|\| overHudButton\(mpos\)\)\) abilityFx\.cancelAim\(\);/, 'a HUD button or a pad click is never swallowed by aim mode');
+    assert.ok(down.indexOf('overHudButton(mpos)') < down.indexOf('this.placeAim();'), 'checked before placing');
+    assert.match(cv, /function overHudButton\(mpos\) \{[\s\S]{0,120}c\.vault\.check\(mpos\) !== -1/, 'the vault panel counts as a HUD button');
+    assert.match(down, /this\.aimClickHeld = false;\s+switch \(mouse\.button\)/, 'a stale swallow never eats the next click (Deposit)');
+    const fxSrc2 = fs.readFileSync(path.join(REPO, 'public', 'client', 'abilityFx.js'), 'utf8');
+    assert.match(fxSrc2, /global\.vault && global\.vault\.onPad\)\) \{ cancelAim\(\); return; \}/, 'stepping onto a pad ends aim mode');
     assert.match(cv, /kc === global\.KEY_ESC && global\.abilAim\) \{ abilityFx\.cancelAim\(\)/, 'Esc cancels');
     assert.match(cv, /royaleKeyUp\(event\) \{\s+if \(event && event\.keyCode === global\.KEY_ABILITY && global\.abilAim\) return true;/, 'the key coming up never casts');
     // cancelling spends nothing: aim mode is client only, the server only hears the placement
@@ -1176,6 +1183,37 @@ test('kit effects: every kit item sends its look, the decoy only to its owner', 
     const shopSrc = fs.readFileSync(path.join(SERVER, 'game', 'terrain', 'shop.js'), 'utf8');
     assert.match(shopSrc, /abilities\.kitFx\(id, body, tx, ty\)/);
     cleanup(t);
+});
+
+test('ability tour: once per browser, only after the landing and the slam, never in the tutorial or over a card', async () => {
+    const L = await import(path.join(REPO, 'public', 'client', 'abilityIntroLogic.js'));
+    const mem = new Map();
+    const store = { getItem: k => mem.has(k) ? mem.get(k) : null, setItem: (k, v) => mem.set(k, String(v)), removeItem: k => mem.delete(k) };
+    assert.equal(L.INTRO_KEY, 'dwAbilityIntro_v1');
+    assert.equal(L.introDone(store), false, 'a new browser has not seen it');
+    const ok = { done: false, tutorial: false, playing: true, abilOn: true, eq: 'grapple', falling: false, landedAgo: L.START_DELAY + 1, slam: false, card: false, busy: false };
+    assert.equal(L.canStart(ok), true);
+    for (const [k, v, why] of [['falling', true, 'not during the fall'], ['landedAgo', 500, 'not right on landing'], ['slam', true, 'not over the ability slam'],
+        ['card', true, 'not over another card'], ['busy', true, 'not over a panel or the map'], ['tutorial', true, 'not in the tutorial'], ['eq', null, 'needs an ability'], ['playing', false, 'only while playing']]) {
+        assert.equal(L.canStart({ ...ok, [k]: v }), false, why);
+    }
+    L.markDone(store);
+    assert.equal(L.introDone(store), true);
+    assert.equal(L.canStart({ ...ok, done: L.introDone(store) }), false, 'once: never again in this browser');
+    const blocked = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+    assert.equal(L.introDone(blocked), true, 'storage blocked: never nag');
+    // using the thing moves it on; the last step ends it
+    assert.equal(L.advance(0, 'dash'), 1);
+    assert.equal(L.advance(0, 'ability'), 0, 'only its own thing moves a step');
+    assert.equal(L.advance(1, 'ability'), 2);
+    assert.equal(L.advance(2, 'shop'), -1);
+    // the shop tab badge
+    assert.equal(L.tabSeen(store), false);
+    L.markTabSeen(store);
+    assert.equal(L.tabSeen(store), true);
+    const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
+    assert.match(app, /abilityIntro\.draw\(ctx\[2\]/);
+    assert.match(app, /if \(id === "ability" && !abTabSeen\)/, 'NEW on the Abilities tab until seen');
 });
 
 // ── wiring ──────────────────────────────────────────────────────────────

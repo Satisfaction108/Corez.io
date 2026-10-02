@@ -39,6 +39,10 @@ const SEEN_KEY = "dwDashSeen_v1";
 let dashSeen = true;
 try { dashSeen = localStorage.getItem(SEEN_KEY) === "1"; } catch (e) { /* storage blocked: no nag */ }
 export function state() { return S; }
+// the HUD helpers app.js handed over, for abilityIntro.js
+export function hud() { return H; }
+// where the dash and ability chips were drawn last frame (GUI units)
+export const chips = { dash: { x: 0, y: 0, w: 0, h: 0, at: 0 }, ability: { x: 0, y: 0, w: 0, h: 0, at: 0 } };
 
 const fewer = () => !!(config.graphical && config.graphical.fewerEffects);
 const calm = () => !!(global.reducedMotion && global.reducedMotion());
@@ -1378,7 +1382,8 @@ let aimCache = { x: NaN, y: NaN, ok: true };
 function drawPlacement(c, px, py, ratio, now) {
     const a = global.abilAim;
     if (!a) return;
-    if (global.died) { cancelAim(); return; }
+    // dead, or onto a pad (vault, bank, shop): the aim lets go
+    if (global.died || (global.shop && global.shop.onPad) || (global.vault && global.vault.onPad)) { cancelAim(); return; }
     const spot = aimSpot(ratio);
     if (!spot) return;
     const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
@@ -1813,6 +1818,8 @@ export function drawHud(c, anchor, mouse) {
     const x0 = anchor.x + anchor.w + 22;
     const y0 = anchor.y + anchor.h - sz + 2;
     const dashKey = H.keyLabel("KEY_DASH", "Shift"), abKey = H.keyLabel("KEY_ABILITY", "Q");
+    chips.dash.x = x0; chips.dash.y = y0; chips.dash.w = sz; chips.dash.h = sz; chips.dash.at = now;
+    chips.ability.x = x0 + sz + gap; chips.ability.y = y0; chips.ability.w = sz; chips.ability.h = sz; chips.ability.at = now;
     // ── dash ──
     {
         const x = x0, y = y0, mx = x + sz / 2, my = y + sz / 2;
@@ -1927,6 +1934,8 @@ function touchTipText(name) {
 export function drawTouchTip(L, k) {
     const tt = global.touchTip;
     if (!tt || !H || !L) return;
+    // the ability tour is explaining the same buttons: the first-time tip waits
+    if (tt.auto && global.abilityIntroOn) { tt.from = performance.now() + 1500; tt.until = tt.from + 5000; return; }
     const now = performance.now();
     if (tt.until && now > tt.until) { global.touchTip = null; return; }
     // the first-time one waits out the sky drop and any unlock card

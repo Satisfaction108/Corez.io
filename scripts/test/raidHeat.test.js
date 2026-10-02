@@ -350,33 +350,43 @@ test('core: it fights back as it breaks, every attack telegraphed; newcomers kee
     coreFinale.debugHp(1);
 });
 
-test('core: breaking it erupts exactly its gems and pays the last hit', () => {
+test('core: breaking it banks 20,000 by damage share (bots unpaid), the last hit on top, only a little on the ground', () => {
     const c = coreFinale.current();
     const p = global.gameManager.socketManager.players[0].body;
-    let paid = 0, pts = 0, said = null;
-    const want = coreFinale.gemsFor(1, 0);
-    coreFinale.attach({ humans: () => [p], fighters: () => [p], announce() {}, feed() {}, fxAt() {}, toast() {},
-        payGems: (b, n) => { if (b === p) paid += n; }, addPts: (b, n) => { pts += n; }, callout: (b, k, t) => { said = k; } });
+    const sock2 = fakeSocket({ packets: [] }); sock2.talk = (...a) => sock2.packets.push(a);
+    const p2 = player(c.x + 400, c.y, sock2);
+    const bot = player(c.x - 400, c.y); bot.socket = null; bot.isBot = true; bot.isPlayer = false;
+    const tiny = fakeSocket({ packets: [] }); tiny.talk = (...a) => tiny.packets.push(a);
+    const p3 = player(c.x, c.y + 400, tiny);
+    const banked = new Map(), calls = [];
+    coreFinale.attach({ humans: () => [p, p2, p3], fighters: () => [p, p2, p3, bot], announce() {}, feed: (f) => calls.push(f), fxAt() {}, toast() {},
+        bank: (b, n) => { banked.set(b, (banked.get(b) || 0) + n); return n; }, payGems() { throw new Error('the Core banks, it does not pay out loose'); },
+        addPts() {}, callout: (b, k, t) => calls.push({ b, k, t }) });
+    // damage as the death check reports it: what lands, and who did it
+    const hit = (who, n) => { c.damageReceived = n; c.emit('damage', { damageInflictor: [who] }); c.damageReceived = 0; };
+    hit(p, 50_000); hit(p2, 30_000); hit(bot, 19_000); hit(p3, 1_000);
     const before = new Set([...entities.values()].filter(e => e.isGemPickup).map(e => e.id));
     c.finalKillers = [p];
     c.kill();
-    // the raid tick settles a dead Core even before its 'dead' event
-    coreFinale.tick(Date.now(), [p]);
-    let sum = 0, n = 0;
-    for (const e of entities.values()) if (e.isGemPickup && !before.has(e.id)) { sum += e.gemValue; n++; }
-    // exact, unless this raid's twist pays more per gem
-    const twist = require(path.join(SERVER, 'game', 'terrain', 'raidMods.js')).get();
-    if (twist && twist.gemValueMult != null) assert.ok(sum >= want, 'gems ' + sum + ' in ' + n);
-    else assert.equal(sum, want, 'gems ' + sum + ' in ' + n);
-    assert.ok(want >= 5000 && want <= 8000);
-    assert.equal(paid, coreFinale.LAST_HIT_GEMS);
-    assert.equal(pts, coreFinale.LAST_HIT_PTS);
-    assert.equal(said, 'corebreak');
+    coreFinale.tick(Date.now(), [p, p2, p3, bot]);
+    const B = coreFinale.CORE_BANK;
+    assert.equal(banked.get(p), Math.round(B * 0.5 / 10) * 10 + coreFinale.LAST_HIT_GEMS, 'half, and the last hit');
+    assert.equal(banked.get(p2), Math.round(B * 0.3 / 10) * 10);
+    assert.equal(banked.get(bot), undefined, 'a bot share is not paid');
+    assert.equal(banked.get(p3), Math.round(B * 0.01 / 10) * 10, 'a 1% helper (under the minimum-share line) gets their 1%');
+    assert.ok(calls.some(x => x.k === 'corepay' && x.b === p2 && /BANKED \+6,000/.test(x.t)), 'the slam');
+    assert.ok(calls.some(x => x.k === 'corebreak' && x.b === p));
+    assert.ok(calls.some(x => x.core && x.broke && x.g === B), 'the feed line');
+    let sum = 0;
+    for (const e of entities.values()) if (e.isGemPickup && !before.has(e.id)) sum += e.gemValue;
+    assert.ok(sum <= coreFinale.SPRAY_GEMS * 2, 'only a little on the ground: ' + sum);
     assert.equal(coreFinale.current(), null);
     assert.equal(coreFinale.snapshot().s, 'down');
-    // more players, more health and more gems, inside the caps
+    // the minimum share for a real helper
+    const m = coreFinale.splitPayout(new Map([[1, { body: p, dmg: 97.8 }], [2, { body: p2, dmg: 2.2 }]]));
+    assert.equal(m.get(p2), coreFinale.MIN_SHARE);
     assert.ok(coreFinale.healthFor(5, 1) > coreFinale.healthFor(1, 5));
-    assert.equal(coreFinale.gemsFor(20, 0), 8000);
+    assert.equal(coreFinale.gemsFor(20, 0), B);
     assert.equal(coreFinale.healthFor(30, 0), coreFinale.HP_MAX);
     // ten times the old base; at ~1000 a second per human and ~400 per bot of
     // focused fire, a full raid needs a minute and a half to two
@@ -385,6 +395,19 @@ test('core: breaking it erupts exactly its gems and pays the last hit', () => {
     assert.ok(ttk(1, 5) >= 60 && ttk(1, 5) <= 130, 'one player and five bots: ' + ttk(1, 5).toFixed(0) + ' s');
     assert.ok(coreFinale.healthFor(1, 5) >= 10 * 51_000 * 0.7, 'about ten times harder');
     for (const e of entities.values()) if (e.isGemPickup) e.kill();
+    p2.kill(); p3.kill(); bot.kill();
+});
+
+test('core: the bank path counts a Core payout like vault banking', () => {
+    const vault = require(path.join(SERVER, 'game', 'terrain', 'vault.js'));
+    const sock = fakeSocket({ packets: [] }); sock.talk = (...a) => sock.packets.push(a);
+    const q = player(0, 0, sock);
+    sock.gemBanked = 100;
+    assert.equal(vault.creditBank(q, 6000), 6000);
+    // (a bank milestone it crossed adds its own bonus on top, like at a vault)
+    assert.ok(sock.gemBanked >= 6100, 'in the bank: ' + sock.gemBanked);
+    assert.equal(q.carriedGems | 0, 0, 'not in the satchel');
+    q.kill();
 });
 
 test('core: a new raid clears it and plans a new site; the raid clock is unchanged', () => {
