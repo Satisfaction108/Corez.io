@@ -125,7 +125,7 @@ export function nextQuality(q, frameMs) {
     return Math.max(0.25, Math.min(1, q));
 }
 // level: 0 Low, 1 Normal, 2 Max (the Effects setting)
-export const LEVEL_MULT = [0.4, 1, 1.6];
+export const LEVEL_MULT = [0.4, 0.6, 1.6];   // Low / Normal / Max
 export function fxScale(level, q) {
     return (LEVEL_MULT[level] != null ? LEVEL_MULT[level] : 1) * Math.max(0.25, Math.min(1, q));
 }

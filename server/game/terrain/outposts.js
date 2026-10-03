@@ -205,7 +205,8 @@ function spawnStructure(site, team, owner = null) {
             .find(root => root && (root.isPlayer || root.isBot));
         if (attacker) {
             site._lastHitter = attacker;
-            if (Config.dig_royale && site.ownerId && attacker.id !== site.ownerId) {
+            // only under attack once the banner is below half health
+            if (Config.dig_royale && site.ownerId && attacker.id !== site.ownerId && o.health.amount < o.health.max * 0.5) {
                 const t = Date.now();
                 site._contestedUntil = t + 10000;
                 if (t - (site._contestAnnAt || 0) > 25000) {
@@ -472,10 +473,18 @@ function talkOutpostProgress(body) {
 
 function requestDeposit(socket, amount) {
     const body = socket.player && socket.player.body;
-    if (!body || body.isDead() || !body.outpostOnPad) return;
+    if (!body || body.isDead()) return;
+    const no = (msg) => {
+        const t = Date.now();
+        if (t - (body._depositNoAt || 0) < 1500) return;
+        body._depositNoAt = t;
+        try { body.sendMessage(msg); } catch { /* */ }
+    };
+    if (!body.outpostOnPad) return no("Get onto the base to bank.");
     amount = Math.floor(amount);
     const carried = body.carriedGems | 0;
-    if (!(amount > 0) || carried < MIN_DEPOSIT) return;
+    if (carried < MIN_DEPOSIT) return no("You need at least " + MIN_DEPOSIT + " gems to bank.");
+    if (!(amount > 0)) amount = carried;
     const total = Math.min(amount, carried);
 
     const credited = Math.round(total * EFFICIENCY);

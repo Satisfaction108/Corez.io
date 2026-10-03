@@ -1,4 +1,5 @@
 let smokeAbil = null;   // terrain/abilities.js, loaded on the first smoked tank in a view
+const profanity = require('../../../shared/profanity.js');
 let crypto = require("crypto"),
     net = require('net'),
     fs = require("fs");
@@ -175,6 +176,44 @@ class socketManager {
             );
         }
     };
+    // The whole rock world in one packet: grid, live/dead/growing rocks, ore.
+    // Built once and shared when it goes to everybody.
+    terrainPacket() {
+        const tg = global.gameManager.terrainGrid;
+        if (!tg) return null;
+        return [
+            'TG',
+            tg.cols,
+            tg.rows,
+            JSON.stringify(tg.serialize()),
+            JSON.stringify(tg.rockStateSnapshot()),
+            JSON.stringify(tg.oreSnapshot()),
+            tg.oreSalt,
+            JSON.stringify(require('../terrain/vault.js').snapshot()),
+            JSON.stringify(require('../terrain/outposts.js').snapshot()),
+            JSON.stringify(require('../terrain/coreChambers.js').snapshot()),
+            Config.dig_royale ? 1 : 0,
+            JSON.stringify(require('../terrain/shop.js').snapshot()),
+        ];
+    }
+    sendTerrain(socket, packet = this.terrainPacket()) {
+        if (!packet) return;
+        socket.talk(...packet);
+        socket.hasTerrain = true;
+    }
+    // A new raid: everyone who already has a map gets it again, so a client
+    // that missed or mangled an update (asleep in a background tab, joined
+    // during the countdown) starts the raid from the server's rock.
+    resyncTerrain() {
+        let packet = null, sent = 0;
+        for (const socket of this.clients) {
+            if (!socket || socket.terminated || !socket.hasTerrain) continue;
+            packet = packet || this.terrainPacket();
+            if (!packet) return 0;
+            try { socket.talk(...packet); sent++; } catch { /* closing */ }
+        }
+        return sent;
+    }
     ban(socket, reason) {
         let time = Date.now();
         util.warn((reason || "No reason given.") + " Banning.");
@@ -447,6 +486,7 @@ class socketManager {
                 name = name.replace(Config.banned_characters, '').replace(/\s+/g, ' ').trim();
                 // accounts play under their username; guests get a cleaned name
                 if (Config.dig_royale) name = accountBridge.resolveName(socket, name);
+                else name = profanity.guestName(name, socket);
 
                 if (needsRoom) {
                     if (Config.hidden) return socket.close();
@@ -471,26 +511,7 @@ class socketManager {
                         Config.arena_shape,
                     );
                     if (global.gameManager.terrainGrid) {
-                        socket.talk(
-                            'TG',
-                            global.gameManager.terrainGrid.cols,
-                            global.gameManager.terrainGrid.rows,
-                            JSON.stringify(global.gameManager.terrainGrid.serialize()),
-
-                            JSON.stringify(global.gameManager.terrainGrid.rockStateSnapshot()),
-
-                            JSON.stringify(global.gameManager.terrainGrid.oreSnapshot()),
-
-                            global.gameManager.terrainGrid.oreSalt,
-
-                            JSON.stringify(require('../terrain/vault.js').snapshot()),
-
-                            JSON.stringify(require('../terrain/outposts.js').snapshot()),
-
-                            JSON.stringify(require('../terrain/coreChambers.js').snapshot()),
-                            Config.dig_royale ? 1 : 0,
-                            JSON.stringify(require('../terrain/shop.js').snapshot()),
-                        );
+                        this.sendTerrain(socket);
                         if (Config.dig_royale || Config.tutorial) {
                             const shopMod = require('../terrain/shop.js');
                             socket.talk('SHC', JSON.stringify(shopMod.catalog()));
@@ -1137,6 +1158,8 @@ class socketManager {
                 Events.emit('chatMessage', { gameManager: global.gameManager, message: original, socket, preventDefault: () => abort = true, setMessage: str => message = str });
 
                 if (abort) break;
+                // swears and slurs turn into asterisks for everyone (shared/profanity.js)
+                message = profanity.mask(message);
 
                 if (message !== original) {
                     util.log('changed to: ' + message);
@@ -1336,6 +1359,12 @@ class socketManager {
                 // drops only work where every kit item is fair game.
                 if (Config.tutorial && !require('../tutorialSession.js').allowsAll(player.body, 'kit')) return;
                 require('../terrain/shop.js').dropKit(socket, m[0] | 0);
+            } break;
+            case "ko": {
+                // kit slots rearranged by drag and drop: from slot, to slot
+                if (!Config.dig_royale && !Config.tutorial) return 1;
+                if (m.length !== 2 || typeof m[0] !== "number" || typeof m[1] !== "number") return;
+                require('../terrain/shop.js').swapKit(socket, m[0], m[1]);
             } break;
             case "sk": {
                 // kit use: slot, world x, world y

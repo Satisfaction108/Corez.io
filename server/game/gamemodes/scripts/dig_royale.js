@@ -43,8 +43,9 @@ storm.setCycles(RAID_CYCLES);
 // player who joins takes a bot's place. The duo server holds one more, so a
 // party of two still meets 5 bots (two of them a bot duo).
 // ROYALE_FILL_CAP (ROYALE_DEBUG only): a bigger raid for load tests
-const FILL_CAP = process.env.ROYALE_DEBUG && +process.env.ROYALE_FILL_CAP > 0 ? +process.env.ROYALE_FILL_CAP : 6;
-const DUO_FILL_CAP = 7;
+// a solo raid tops up to 5 fighters (you and 4 bots); duos to 6 (a pair and 4)
+const FILL_CAP = process.env.ROYALE_DEBUG && +process.env.ROYALE_FILL_CAP > 0 ? +process.env.ROYALE_FILL_CAP : 5;
+const DUO_FILL_CAP = 6;
 function fillCap() { return Config.royale_duos ? DUO_FILL_CAP : FILL_CAP; }
 const OCCUPY_MS = 10_000;
 const LOCKOUT_MS = 10_000;
@@ -255,7 +256,7 @@ function ensureStat(body) {
     if (!key) return null;
     let s = raidStats.get(key);
     if (!s) {
-        s = { key, name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, carried: 0, alive: true, id: body.id, isBot: !!body.isBot, lastSeen: now(), revengeOn: null, revengeBonus: 0, extra: 0, streak: 0, bestStreak: 0, bossKills: 0, chests: 0 };
+        s = { key, since: now(), name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, carried: 0, alive: true, id: body.id, isBot: !!body.isBot, lastSeen: now(), revengeOn: null, revengeBonus: 0, extra: 0, streak: 0, bestStreak: 0, bossKills: 0, chests: 0 };
         raidStats.set(key, s);
         if (body.socket) dropStaleRowsOf(s, body.socket);
     }
@@ -2504,7 +2505,8 @@ function tickOutpostRules(t) {
                 }
                 const n = (dx === 0 && dy === 0) ? 0 : Math.atan2(dy, dx);
                 parkOutside(site, body, n);
-                site._contestedUntil = t + 8000;
+                const b = site.banner;
+                if (b && !b.isDead() && b.health.amount < b.health.max * 0.5) site._contestedUntil = t + 8000;
                 continue;
             }
             if (body._padPush && body._padPush.tag === "bounce:" + site.id && !touching) {
@@ -2689,6 +2691,9 @@ function startRaid(first) {
         client.lastRaidDeathAt = 0;
     }
     if (!first) {
+        // the map again for everyone before the regrow streams out, so no
+        // client starts a raid on stale rock (see sockets.resyncTerrain)
+        guard('terrain resync', () => global.gameManager.socketManager?.resyncTerrain?.());
         wipeWall();
         try {
             for (const e of [...entities.values()]) {
@@ -2887,6 +2892,37 @@ function endRaid() {
     }, RAID_END_BEAT_MS + RAID_END_WAIT_MS);
 }
 
+// a human was in the raid for at least its last 30 s
+function humansPlayed(endAt) {
+    for (const st of raidStats.values()) {
+        if (!st.isBot && (st.since || 0) <= endAt - 30000) return true;
+    }
+    return false;
+}
+
+// The raid ran out with no one to watch it end: the same reset endRaid does
+// after its results, without the results.
+function restartQuietly() {
+    raidEndsAt = Infinity;
+    try {
+        for (const client of connectedClients()) {
+            try { bank.newRaid(client); } catch (e) { guardLog('bank new raid', e); client.gemBanked = 0; }
+            client._milestoneIdx = 0;
+            client.gemDeposited = 0;
+        }
+        for (const body of combatants()) {
+            body.carriedGems = 0;
+            dustHooks.zero(body);
+            body.botBanked = 0;
+            body.bankedGems = body.socket ? (body.socket.gemBanked || 0) : 0;
+            try { gems.updateSatchel(body); gems.talkGems(body, 0); } catch { /* */ }
+        }
+        try { shop.resetAll(); } catch { /* */ }
+    } catch { /* */ }
+    console.log('[RAID] Raid ' + raidId + ' ran out with no players, starting a new one.');
+    startRaid(false);
+}
+
 // One storm cycle (shrink, hold, reset) is a "raid" to the players, so each
 // cycle rolls a fresh override. Old twist grants are taken back, bodies are
 // re-derived for the new multipliers, new grants go out, and everyone gets
@@ -3068,7 +3104,11 @@ function tick() {
     if (!raidId) startRaid(true);
     twistCycleWatch(t);
     if (t >= raidEndsAt && !raidResults) {
-        endRaid();
+        // Nobody human played this one (an empty server, or someone who
+        // joined in the last few seconds): no RAID OVER for "Nobody", just
+        // a fresh raid. Same if the end is long overdue (the loop slept).
+        if (!humansPlayed(raidEndsAt) || t - raidEndsAt > 5000) restartQuietly();
+        else endRaid();
         return;
     }
     if (raidResults && t - raidResultsAt > RAID_END_BEAT_MS + RAID_END_WAIT_MS) raidResults = null;

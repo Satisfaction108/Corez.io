@@ -1551,6 +1551,15 @@ let incoming = async function(message, socket) {
                 }
                 // hunted / SAFE / the Core: raidHeat slams those itself
                 try { if (raidHeat.onKC(m)) break; } catch (e) { /* */ }
+                // growing a size: a side card, not a plate in the middle. What
+                // it means (the sub line) shows the first time only
+                if (m[0] === "grown" && global.sideNote) {
+                    let sub = "";
+                    try { if (!localStorage.getItem("dwGrowHint")) { localStorage.setItem("dwGrowHint", "1"); sub = typeof m[3] === "string" ? m[3] : ""; } } catch (e) { /* */ }
+                    global.sideNote({ kind: "grow", title: m[1] || "You grew", sub });
+                    punchUI(5, 220); if (gameSound.depositDone) gameSound.depositDone();
+                    break;
+                }
                 // kind, text, points: the big centre callout
                 const list = global.callouts;
                 const prev = list.length ? list[list.length - 1].born : -1e9;
@@ -1833,7 +1842,8 @@ let incoming = async function(message, socket) {
                 // an achievement unlocked
                 try {
                     const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
-                    if (d && d.id) global.createMessage('Achievement unlocked: ' + (d.name || d.id) + '!', 5000);
+                    // a small card on the right, queued (app.js sideNote)
+                    if (d && d.id) { if (global.sideNote) window.dwAch(d); else global.createMessage('Achievement unlocked: ' + (d.name || d.id), 5000); }
                 } catch (e) { /* ignore */ }
             } break;
             case 'STK': {

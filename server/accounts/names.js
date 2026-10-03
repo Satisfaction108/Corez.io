@@ -79,6 +79,8 @@ function tokensOf(name) {
 }
 
 function isProfane(name) {
+    // the shared chat and name filter as well (shared/profanity.js)
+    try { if (require('../../shared/profanity.js').hasProfanity(name)) return true; } catch (e) { /* fall back to the lists below */ }
     const whole = variants(name.replace(/_/g, ''));
     for (const v of whole) {
         for (const bad of SEVERE) if (v.includes(bad)) return true;

@@ -232,7 +232,7 @@ const MAKERS = {
         if (!b || !alive(b.body) || b.body === body || b.body.team === body.team) return null;
         if (b.until - t < 20_000 || d2(b.body, body.x, body.y) > 3000 * 3000) return null;
         if (fresh && hooks.isNew && hooks.isNew(body)) return null;
-        return { kind: 'bounty', pri: 66, text: "Claim the bounty on " + (b.body.name || "them"), goal: 1, reward: R.bounty, ms: b.until - t, ent: b.body };
+        return { kind: 'bounty', pri: 66, text: "Claim the bounty on " + (b.body.name || "Unnamed"), goal: 1, reward: R.bounty, ms: b.until - t, ent: b.body };
     },
     streaker(body, t, fresh) {
         if (fresh) return null;
@@ -262,7 +262,7 @@ const MAKERS = {
             bd = d; best = f;
         }
         if (!best) return null;
-        return { kind: 'hunt', pri: 58, text: "Take down " + (best.name || "them"), goal: 1, reward: R.hunt, ms: 60_000, ent: best };
+        return { kind: 'hunt', pri: 58, text: "Take down " + (best.name || "Unnamed"), goal: 1, reward: R.hunt, ms: 60_000, ent: best };
     },
     bloom(body, t) {
         const { blooms } = mods();
@@ -601,7 +601,7 @@ function onDeath(body, killer, t = Date.now()) {
         sock.contractNext = planFor(sock);
         // revenge: a player or bot that took you down is yours to find
         if (killer && killer !== body && (killer.isPlayer || killer.isBot) && !killer.isRoyaleBoss && killer.team !== body.team) {
-            sock.revenge = { key: hooks && hooks.keyOf ? hooks.keyOf(killer) : null, id: killer.id, name: killer.name || "them", until: t + REVENGE_MS };
+            sock.revenge = { key: hooks && hooks.keyOf ? hooks.keyOf(killer) : null, id: killer.id, name: killer.name || "Unnamed", until: t + REVENGE_MS };
         }
     }
     // whoever held a contract on this body and did not land the kill misses it

@@ -1,5 +1,6 @@
 // The 12 achievements: friendly names, what they ask for, a flat colour and
-// a small line icon each (24-unit grid, drawn with currentColor).
+// a small line icon each (24-unit grid, drawn with currentColor over a
+// wider ink stroke, so they carry the same outline as the rest of the art).
 const NS = 'http://www.w3.org/2000/svg';
 
 export const ACHIEVEMENTS = [
@@ -30,7 +31,7 @@ export const ACHIEVEMENTS = [
 ];
 export const BY_ID = new Map(ACHIEVEMENTS.map((a) => [a.id, a]));
 
-// <svg> for an achievement, stroked in currentColor.
+// <svg> for an achievement: the glyph in ink, then again in currentColor.
 export function achIcon(id, cls) {
     const a = BY_ID.get(id);
     const s = document.createElementNS(NS, 'svg');
@@ -39,10 +40,14 @@ export function achIcon(id, cls) {
     s.setAttribute('aria-hidden', 'true');
     s.setAttribute('focusable', 'false');
     s.setAttribute('fill', 'none');
-    s.setAttribute('stroke', 'currentColor');
-    s.setAttribute('stroke-width', '2.4');
     s.setAttribute('stroke-linecap', 'round');
     s.setAttribute('stroke-linejoin', 'round');
+    const ink = document.createElementNS(NS, 'g');
+    ink.setAttribute('stroke', 'var(--ink, #120e15)');
+    ink.setAttribute('stroke-width', '5');
+    const top = document.createElementNS(NS, 'g');
+    top.setAttribute('stroke', 'currentColor');
+    top.setAttribute('stroke-width', '2.4');
     for (const part of (a ? a.d : [])) {
         let el;
         if (part.startsWith('circle:')) {
@@ -57,7 +62,10 @@ export function achIcon(id, cls) {
             el = document.createElementNS(NS, 'path');
             el.setAttribute('d', part);
         }
-        s.appendChild(el);
+        ink.appendChild(el);
+        top.appendChild(el.cloneNode());
     }
+    s.appendChild(ink);
+    s.appendChild(top);
     return s;
 }

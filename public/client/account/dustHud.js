@@ -6,7 +6,7 @@
 // dust ('AC' at spawn, then 'DU').
 import { gameSound } from '../sound.js';
 
-const DUST = '#a98bff';
+const DUST = '#d98af0';
 const LOSS_RED = '#eb4034';
 const GEM = [[-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95]];
 const FLY_MS = 560;
@@ -98,7 +98,7 @@ function gemIcon(c, x, y, r, alpha) {
     c.fillStyle = DUST;
     c.fill();
     gemPath(c, x, y - r * 0.12, r * 0.5);
-    c.fillStyle = '#d8c9ff';
+    c.fillStyle = '#f2d4fa';
     c.fill();
     c.restore();
 }

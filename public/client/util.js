@@ -51,7 +51,11 @@ const util = (function() {
                 else scale = global.UIscale;
                 // touch: the long side, so portrait and landscape share one size
                 if (global.mobile) return Math.max(global.screenWidth, global.screenHeight) / scale;
-                return Math.max(global.screenWidth, 16 * global.screenHeight / 9) / scale;
+                // by the height: a 21:9 or 32:9 screen gets the same HUD as a
+                // 16:9 one of the same height, with the extra width at the sides
+                // (sizing by the width shrank everything vertically there and
+                // the upgrade tiles spread into extra columns)
+                return 16 * global.screenHeight / 9 / scale;
             } catch (e) {
                 document.getElementById("optUiScale").value = global.mobile ? "mobile" : "small",
                 util.submitToLocalStorage("optUiScale");

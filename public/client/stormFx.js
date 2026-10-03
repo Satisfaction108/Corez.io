@@ -161,6 +161,36 @@ for (let i = 0; i < RAIN_N; i++) {
     rainX[i] = hash(i, 91); rainY[i] = hash(i, 92);
     rainL[i] = 10 + 14 * hash(i, 93); rainV[i] = 0.8 + 0.4 * hash(i, 94);
 }
+// the downpour you're standing in (drawn over the whole screen while you're
+// in the storm): more, longer and brighter drops than the world rain
+const POUR_N = 150;
+const pourX = new Float32Array(POUR_N), pourY = new Float32Array(POUR_N), pourL = new Float32Array(POUR_N), pourV = new Float32Array(POUR_N);
+for (let i = 0; i < POUR_N; i++) {
+    pourX[i] = hash(i, 191); pourY[i] = hash(i, 192);
+    pourL[i] = 22 + 26 * hash(i, 193); pourV[i] = 0.75 + 0.5 * hash(i, 194);
+}
+function drawPour(c, sw, sh, a, now) {
+    const n = lite() || global.lowFx ? POUR_N >> 1 : POUR_N;
+    const t = now / 1000;
+    const W = sw + 80, H = sh + 80;
+    const vx = WIND_X * 0.55 + 0.25, vy = 1;
+    c.beginPath();
+    for (let i = 0; i < n; i++) {
+        const sp = 1150 * pourV[i];
+        const x = (pourX[i] * W + t * sp * vx) % W - 40;
+        const y = (pourY[i] * H + t * sp * vy) % H - 40;
+        const l = pourL[i];
+        c.moveTo(x, y);
+        c.lineTo(x - vx * l, y - vy * l);
+    }
+    c.globalAlpha = a;
+    c.strokeStyle = "#cfd4ff";
+    c.lineWidth = 1.6;
+    c.lineCap = "round";
+    c.stroke();
+    c.globalAlpha = 1;
+}
+
 // one bolt at a time, points in world units
 const BOLT_MAX = 26;
 const bolt = { on: false, at: 0, life: 260, pts: new Float32Array(BOLT_MAX * 2), n: 0, br: 0, brN: 0, mx: 0, my: 0, size: 0 };
@@ -538,8 +568,19 @@ export function drawHud(c, sw, sh, topY, st) {
     const age = now - warn.since;
     // pulse speeds up as the ramp climbs
     const pulse = still ? 1 : 0.72 + 0.28 * Math.sin(now / 1000 * (3 + 6 * L));
-    // screen-edge storm vignette
-    const va = Math.min(1, (0.5 + 0.5 * L) * pulse);
+    // Being in the storm should look like it, Fortnite style: the whole
+    // screen goes purple and it pours. This comes first; the pulsing edge
+    // is only a hint on top. Fades in on entry.
+    const inA = still ? 1 : Math.min(1, age / 400);
+    if (!softGpu()) {
+        c.globalAlpha = (0.16 + 0.1 * L) * inA;
+        c.fillStyle = "#4a2a9c";
+        c.fillRect(0, 0, sw, sh);
+        c.globalAlpha = 1;
+    }
+    if (!still) drawPour(c, sw, sh, 0.42 * inA, now);
+    // screen-edge storm vignette, kept soft under the rain
+    const va = Math.min(1, (0.35 + 0.4 * L) * pulse) * (config.graphical.fxLevel === 2 ? 0.8 : 0.55);
     if (glowOn()) {
         c.globalAlpha = va;
         c.drawImage(vignette(sw, sh), 0, 0, sw, sh);
@@ -555,25 +596,22 @@ export function drawHud(c, sw, sh, topY, st) {
     // banner, popping in on entry (coach.js steps aside while it is up)
     global.stormBannerAt = now;
     const pop = still ? 1 : Math.min(1, age / 220);
-    const scale = still ? 1 : 1 + 0.25 * (1 - pop) * (1 - pop);
-    // it sits in the slam lane (app.js hudLanes) and steps aside while a big
-    // word is up there; the vignette and the arrow stay
-    const by = st.laneY || Math.max(topY + 40, sh * 0.24);
-    warn.textA += ((st.yieldText ? 0 : 1) - warn.textA) * 0.25;
-    const ta = pop * warn.textA;
+    // one compact line in the row app.js keeps for it under the raid clock
+    // (away from your tank, its chat and the slams): what's happening and
+    // how far the safe zone is
     const col = st.immune ? "#9fd0ff" : L > 0.7 ? "#ffb0c8" : "#efe6ff";
     const d = Math.max(0, Math.round(st.dist / 10) * 10);
-    if (d !== warn.distN) { warn.distN = d; warn.distTxt = "Safe zone " + A.fmtDist(d) + " away"; }
-    if (ta > 0.02) {
-        A.hudTitle(st.immune ? "You're in the storm" : "You're in the storm. Get out!", sw / 2, by, 30 * scale, col, "center", ta);
-        const sub = st.immune ? "Storm Anchor is holding for " + st.immune + "s. Keep moving."
-            : st.final ? "Final storm. It kills fast now."
-            : L < 0.25 ? "It only stings for now, but it gets worse the longer you stay."
-            : L < 0.65 ? "It's getting worse. Follow the arrow."
-            : "The storm is tearing you apart!";
-        A.drawText(sub, sw / 2, by + 30, 15, col, "center", true, ta);
-        A.drawText(warn.distTxt, sw / 2, by + 50, 13, "#c9b8ff", "center", true, ta * 0.9);
-    }
+    if (d !== warn.distN) { warn.distN = d; warn.distTxt = "safe zone " + A.fmtDist(d) + " away"; }
+    const head = st.immune ? "Storm Anchor " + st.immune + "s" : st.final ? "Final storm. Get out!" : "In the storm. Get out!";
+    const by = st.rowY || Math.max(topY + 6, 60);
+    const hw = A.hudTitleW(head, 15), dw = A.hudTextW ? A.hudTextW("  ·  " + warn.distTxt, 12) : warn.distTxt.length * 6.5;
+    const W = hw + dw + 30, H = 26, x = sw / 2 - W / 2;
+    c.save();
+    c.globalAlpha = pop;
+    A.hudPanel(c, x, by, W, H, { r: H / 2, bevel: false, stroke: col === "#efe6ff" ? undefined : col });
+    A.hudTitle(head, x + 15, by + H / 2, 15, col, "left", pop);
+    A.drawText("  ·  " + warn.distTxt, x + 15 + hw, by + H / 2, 12, "#d9cff0", "left", true, pop);
+    c.restore();
     // the arrow toward safety, circling your tank
     const bob = still ? 0 : Math.sin(now / 160) * 5;
     const ar = 86 + bob;

@@ -23,9 +23,9 @@ const ORDER = ['warden', 'drillhead', 'colossus', 'wraith'];
 //   shotKind    per boss on top of shotMult: the Colossus fires stock auto
 //               turrets that hit well under the others' guns
 const TUNING = {
-    healthMult: 0.85,
-    shotMult: 0.55,
-    bodyMult: 0.8,
+    healthMult: 0.6,   // was 0.85: fights dragged on
+    shotMult: 0.58,    // was 0.55: a bit more bite (a hit still stays under a third of a fresh Basic)
+    bodyMult: 0.88,    // was 0.8
     regenEvery: 2,
     shotKind: { colossus: 1.3 },
 };
@@ -59,6 +59,12 @@ let spawnedAt = 0;
 let expiresAt = 0;
 let nextAt = 0;
 let lastKind = null;
+// One boss per storm cycle, surfacing early in it and burrowing when the
+// cycle ends. The last storm belongs to the Core: no bosses there.
+// (Warden's Watch lets a second one come in a cycle if the first dies early.)
+const CYCLE_SPAWN_DELAY_MS = 25 * 1000;   // after the cycle starts (spawns settle first)
+const CYCLE_MIN_LEFT_MS = 90 * 1000;      // not worth surfacing with less than this left
+let bossCycle = -1, cycleBosses = 0;
 let hitters = new Map();
 
 function storm() { return require('./storm.js'); }
@@ -79,6 +85,7 @@ function firstDelay() {
 function resetRaid() {
     if (boss && !boss.isDead?.()) { boss.bossBurrowed = true; try { boss.kill(); } catch { /* */ } }
     boss = null; kindId = null; hitters.clear();
+    bossCycle = -1; cycleBosses = 0;
     scheduleNext(firstDelay());
 }
 
@@ -220,7 +227,24 @@ function tick(t, combatantCount) {
         guard.regenGate(boss, TUNING.regenEvery);
         return;
     }
-    if (t >= nextAt && (combatantCount || 0) >= 2 && !storm().locked(t)) spawn();
+    const S = storm();
+    const st = S.snapshot(t);
+    if (!st.a || st.fin) { nextAt = Infinity; return; }
+    const cyc = st.c | 0;
+    if (cyc !== bossCycle) { bossCycle = cyc; cycleBosses = 0; }
+    const cycleEnd = S.resetAt();
+    const cycleStart = cycleEnd - S.shrinkMs() - S.holdMs();
+    const allowed = mods().num('bossRateMult', 1) > 1 ? 2 : 1;
+    if (cycleBosses >= allowed) { nextAt = Infinity; return; }
+    nextAt = cycleBosses === 0 ? cycleStart + CYCLE_SPAWN_DELAY_MS : t;
+    if (t < nextAt || cycleEnd - t < CYCLE_MIN_LEFT_MS) return;
+    if ((combatantCount || 0) < 2 || S.locked(t)) return;
+    const b = spawn();
+    if (b) {
+        cycleBosses++;
+        // it goes back underground when this storm cycle ends
+        expiresAt = cycleEnd;
+    }
 }
 
 function snapshot() {

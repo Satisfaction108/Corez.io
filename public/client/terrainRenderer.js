@@ -169,12 +169,27 @@ class TerrainRenderer {
     }
 
     init(cells, cols, rows, rockState, oreState, oreSalt) {
+        // The lattice polygons come only from the cell grid (and cost ~250 ms
+        // to make), so a resync of the same grid keeps them. Everything built
+        // from rock state (silhouette, texture, caches) is made again.
+        const old = this._cells;
+        let sameGrid = !!old && this._voroLattice && this._cols === cols && this._rows === rows && old.length === cells.length;
+        for (let i = 0; sameGrid && i < cells.length; i++) if (old[i] !== cells[i]) sameGrid = false;
         this._cols  = cols;
         this._rows  = rows;
         this._cells = new Uint8Array(cells);
         this._lineRocks = null;
-        this._voroLattice = null;       // new map: rebuild the polygons once
+        if (!sameGrid) {
+            this._voroLattice = null;
+            this._cellPolys.clear();
+        }
+        this._silClip = null;
         this._debugVoronoiSegs = null;
+        this._blankFrames = 0;
+        this._rockMiss = 0;
+        this._silStale = 0;
+        this.inits = (this.inits | 0) + 1;
+        this._glChecks = 0;            // check the shader's output again
         // Reset rock state, then apply the server snapshot (late join / rejoin)
         this._rockHealth.clear();
         this._rockDead.clear();
@@ -199,6 +214,7 @@ class TerrainRenderer {
         this._growDust.clear();
         this._growFx.length = 0;
         this._silRebuildAt = 0;
+        if (this._rockCache && this._rockCache.img && typeof this._rockCache.img.close === 'function') this._rockCache.img.close();
         this._rockCache = null;
         const nowInit = performance.now();
         if (rockState) for (const ev of rockState) {
@@ -1288,6 +1304,8 @@ class TerrainRenderer {
             }
             if (pts + forward >= 3) path.closePath();
         }
+        this._silEdges = n;
+        this._silDeadN = dead.size;
         return path;
     }
 
@@ -2040,10 +2058,16 @@ class TerrainRenderer {
         const quality = (this._rockQuality ?? (this._rockQuality = this._detectRockQuality())) *
                         (config.graphical.simpleTerrain ? 0.5 : 1);   // "Simple Terrain": half the shading
         const want = cellW * quality;
+        // The sky drop dives from ~0.4x to 1x in a second or so, and every
+        // zoom step re-shaded the whole (7x bigger) view. While it dives the
+        // image may be up to 2.5x coarser than asked, so one build carries
+        // the dive; landing at 1x is back inside the normal range.
+        const diving = global.dropZoom !== undefined && global.dropZoom !== 1 && window.dwDropOpt !== false;
         // compared on the density asked for, not the one built: a big screen
         // or a wide view caps the texture below `want`, and comparing that
         // would re-shade it every frame
-        const same = c && c.cols === this._cols && c.want > want * 0.8 && c.want < want * 1.25;
+        const same = c && c.cols === this._cols &&
+            (diving ? c.want > want * 0.4 && c.want < want * 3 : c.want > want * 0.8 && c.want < want * 1.25);
         if (same && view.tlx >= c.x && view.tly >= c.y &&
             view.tlx + view.tlw <= c.x + c.w && view.tly + view.tlh <= c.y + c.h) {
             // Close to an edge: slide the image along now, while the strip to
@@ -2062,7 +2086,10 @@ class TerrainRenderer {
         const m = Math.max(view.tlw, view.tlh) * 0.2;
         const x = view.tlx - m, y = view.tly - m, w = view.tlw + m * 2, h = view.tlh + m * 2;
         const ratioY = cellH / cellW;
-        let density = want;
+        // the dive's wide view is ~7x the area, under haze and moving fast:
+        // half the density there is a quarter of the shading (a full-size
+        // build was 0.5-1.5 s on a busy GPU); landing makes the sharp one
+        let density = diving ? want * 0.5 : want;
         const maxDim = 4096;
         if (w * density > maxDim) density = maxDim / w;
         if (h * density * ratioY > maxDim) density = maxDim / (h * ratioY);
@@ -2082,7 +2109,9 @@ class TerrainRenderer {
                 gl.uniform1f(this._glRockSzU, Math.min(this._cols, 120) / 50.0);
                 gl.drawArrays(gl.TRIANGLES, 0, 6);
                 // the shader writes opaque rock everywhere: a see-through
-                // pixel in the first few builds means it drew nothing
+                // pixel in the first few builds (of a context, or since the
+                // last map sync) means it drew nothing. Not every build:
+                // readPixels waits on the GPU.
                 if ((this._glChecks | 0) < 3) {
                     this._glChecks = (this._glChecks | 0) + 1;
                     const px = this._glProbe || (this._glProbe = new Uint8Array(4));
@@ -2256,6 +2285,63 @@ class TerrainRenderer {
         this._blankFrames = 0;
     }
 
+    // Safety net for the rock layer as a whole: the live rocks near the
+    // camera (the grid the minimap draws) must sit inside the wall the main
+    // view draws. Twice wrong in a row means the wall is stale or empty, so
+    // everything is built again from the grid. Cheap: a dozen hit tests every
+    // 1.5 s. Returns true when it threw the frame's caches away.
+    _checkRock(view) {
+        const t = performance.now();
+        if (t - (this._rockCheckAt || 0) < 1500) return false;
+        this._rockCheckAt = t;
+        // the dead set moved on and no rebuild is queued: queue one
+        if (!this._silRebuildAt && this._silDeadN !== this._rockDead.size) {
+            if (++this._silStale >= 2) { this._silStale = 0; this._silRebuildAt = 1; }
+        } else this._silStale = 0;
+        const counts = this.rockCounts(view, 12);
+        this.lastCheck = counts;
+        if (counts.alive >= 3 && counts.drawn < counts.alive / 2) {
+            if (++this._rockMiss >= 2) {
+                this._rockMiss = 0;
+                this.rebuild('rock count mismatch ' + counts.drawn + '/' + counts.alive);
+                return true;
+            }
+        } else this._rockMiss = 0;
+        return false;
+    }
+
+    // Live rocks in view by the grid, and how many of them the drawn wall
+    // covers. Exposed for the safety net above and for tests.
+    rockCounts(view, cap = 12) {
+        const out = { alive: 0, drawn: 0 };
+        if (!view || !this._cellPolys.size) return out;
+        const probe = this._probeCtx ||
+            (this._probeCtx = document.createElement('canvas').getContext('2d'));
+        const sil = this._silClip;
+        for (const cell of this._cellPolys.values()) {
+            if (cell.cx < view.tlx || cell.cx > view.tlx + view.tlw ||
+                cell.cy < view.tly || cell.cy > view.tly + view.tlh) continue;
+            if (this._rockDead.has(cell.k)) continue;
+            out.alive++;
+            if (sil && probe.isPointInPath(sil, cell.cx, cell.cy, 'evenodd')) out.drawn++;
+            if (out.alive >= cap) break;
+        }
+        return out;
+    }
+
+    // Harder than recover(): the polygons go too, rebuilt from the grid
+    // data already here (no packet needed).
+    rebuild(why) {
+        this._voroLattice = null;
+        this._cellPolys.clear();
+        this._silClip = null;
+        this._recoverAt = 0;
+        this.recover(why);
+        try { this._silClip = this._buildVoronoiBoundary(); } catch (e) { /* next frame tries again */ }
+        this._silRebuildAt = 0;
+        this.mapDirty = true;
+    }
+
     _drawScene(ctx, px, py, ratio, gameWidth, gameHeight, screenW, screenH) {
         if (!this.ready) return;
 
@@ -2324,6 +2410,7 @@ class TerrainRenderer {
                 return;
             }
             this._blankFrames = 0;
+            if (this._checkRock(this._view)) { ctx.restore(); return; }
 
             if (this._damageDirty || !this._damageBatch) {
                 this._damageDirty = false;

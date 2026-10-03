@@ -100,7 +100,7 @@ global.tips = [[
         "Tip: You can rebind any key in Settings > Keybinds."
     ], [
         "Tip: Banked gems are safe. What you're carrying drops when you die.",
-        "Tip: Laggy? Turn on Fewer Effects or Simple Terrain in Settings.",
+        "Tip: Laggy? Turn on Fewer effects or Simple terrain in Settings.",
         "Tip: Mining Power makes you break rock way faster. Fill it early.",
         "Tip: Your base works as a bank too. You just keep 80%.",
         "Tip: Chests and bosses pay the most. Grab them before someone else does."

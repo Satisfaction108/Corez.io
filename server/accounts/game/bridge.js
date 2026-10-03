@@ -222,17 +222,22 @@ function chatHidden(viewer, speaker) {
 }
 
 // Accounts always play under their username. Guests keep a cleaned version
-// of what they typed, marked when it would pass for someone's account.
+// of what they typed, marked when it would pass for someone's account. A rude
+// name (or a guest name under 5 characters) plays as "Guest#1234"
+// (shared/profanity.js), so nobody else ever sees it.
+const profanity = require('../../../shared/profanity.js');
 function resolveName(socket, name) {
     if (socket.account) {
         try {
             const row = accounts.users.byId(socket.account.id);
             if (row && !row.deleted_at) socket.account.username = row.username;
         } catch (e) { /* keep the cached name */ }
-        return socket.account.username;
+        // an older account name the filter would refuse today
+        return profanity.hasProfanity(socket.account.username) ? profanity.fallbackName(socket) : socket.account.username;
     }
     let clean = String(name == null ? '' : name);
     try { clean = accounts.names.sanitizeGuestName(clean); } catch (e) { /* fall back to what sockets.js cleaned */ }
+    clean = profanity.guestName(clean, socket);
     if (clean && active()) {
         try { if (accounts.users.isRegisteredName(clean)) clean = '~' + clean.slice(0, 23); } catch (e) { /* */ }
     }

@@ -80,9 +80,10 @@ function freshState() {
     return { drill: 0, gear: {}, kit: {}, kitOrder: [], arm: null, spent: 0 };
 }
 
-// Kit invariants, re-asserted on every read: no zero counts, kitOrder lists
-// exactly the held ids in acquisition order, counts within max, at most
-// KIT_SLOTS ids.
+// Kit invariants, re-asserted on every read: no zero counts, counts within
+// max, kitOrder is the slots (index 0 = key 1) holding each held id once,
+// with null for an empty slot in between (the player can drag an item to
+// any slot), no trailing nulls, at most KIT_SLOTS slots.
 const KIT_SLOTS = 3;
 function normalizeKit(s) {
     if (!s) return s;
@@ -93,10 +94,36 @@ function normalizeKit(s) {
         if (!item || item.cat !== "kit" || !(s.kit[id] > 0)) { delete s.kit[id]; continue; }
         s.kit[id] = Math.min(item.max || 1, s.kit[id] | 0);
     }
-    s.kitOrder = s.kitOrder.filter((id, i) => s.kit[id] > 0 && s.kitOrder.indexOf(id) === i);
-    for (const id of Object.keys(s.kit)) if (!s.kitOrder.includes(id)) s.kitOrder.push(id);
-    while (s.kitOrder.length > KIT_SLOTS) { const drop = s.kitOrder.pop(); delete s.kit[drop]; }
+    const order = s.kitOrder.slice(0, KIT_SLOTS).map((id, i, a) => (id && s.kit[id] > 0 && a.indexOf(id) === i) ? id : null);
+    for (const id of Object.keys(s.kit)) {
+        if (order.includes(id)) continue;
+        const free = kitFreeSlot(order);
+        if (free < 0) { delete s.kit[id]; continue; }
+        order[free] = id;
+    }
+    while (order.length && !order[order.length - 1]) order.pop();
+    s.kitOrder = order;
     return s;
+}
+// the first empty slot (a hole, or past the end), or -1 when all are full
+function kitFreeSlot(order) {
+    for (let i = 0; i < KIT_SLOTS; i++) if (!order[i]) return i;
+    return -1;
+}
+function kitCount(order) { let n = 0; for (const id of order || []) if (id) n++; return n; }
+// put id in the first empty slot (no-op if it has one already)
+function kitPlace(s, id) {
+    if (s.kitOrder.includes(id)) return s.kitOrder.indexOf(id);
+    const free = kitFreeSlot(s.kitOrder);
+    if (free < 0) return -1;
+    s.kitOrder[free] = id;
+    return free;
+}
+// a slot emptied: a hole stays where it was (trailing ones go)
+function kitEmpty(s, id) {
+    const i = s.kitOrder.indexOf(id);
+    if (i >= 0) s.kitOrder[i] = null;
+    while (s.kitOrder.length && !s.kitOrder[s.kitOrder.length - 1]) s.kitOrder.pop();
 }
 
 function stateOf(socket) {
@@ -310,7 +337,7 @@ function canBuy(socket, item) {
     } else if (item.cat === "kit") {
         const have = s.kit[item.id] | 0;
         if (have >= (item.max || 1)) return { ok: false, why: "You already have the most of those you can carry." };
-        if (!have && s.kitOrder.length >= KIT_SLOTS) return { ok: false, why: "Your kit is full. It holds 3 kinds of item." };
+        if (!have && kitCount(s.kitOrder) >= KIT_SLOTS) return { ok: false, why: "Your kit is full. It holds 3 kinds of item." };
     } else if (item.cat === "arm") {
         if (s.arm === item.id) return { ok: false, why: "Already mounted." };
     }
@@ -345,8 +372,7 @@ function buy(socket, itemId) {
     }
     else if (item.cat === "kit") {
         s.kit[item.id] = (s.kit[item.id] | 0) + 1;
-        if (!s.kitOrder.includes(item.id)) s.kitOrder.push(item.id);
-        const slot = s.kitOrder.indexOf(item.id);
+        const slot = kitPlace(s, item.id);
         msg = item.name + " is in kit slot " + (slot + 1) + ".";
     } else if (item.cat === "arm") {
         s.arm = item.id;
@@ -377,10 +403,10 @@ function grantKit(socket, itemId, count = 1) {
     const item = BY_ID.get(itemId);
     if (!s || !item || item.cat !== "kit") return false;
     const have = s.kit[item.id] | 0;
-    if (!have && s.kitOrder.length >= KIT_SLOTS) { talkState(socket, "Your kit is full. It holds 3 kinds of item."); return false; }
+    if (!have && kitCount(s.kitOrder) >= KIT_SLOTS) { talkState(socket, "Your kit is full. It holds 3 kinds of item."); return false; }
     if (have >= (item.max || 1)) { talkState(socket, item.name + " stack full."); return false; }
     s.kit[item.id] = Math.min(item.max || 1, have + count);
-    if (!s.kitOrder.includes(item.id)) s.kitOrder.push(item.id);
+    kitPlace(s, item.id);
     talkState(socket, "Found " + item.name + ".", true);
     return true;
 }
@@ -521,8 +547,25 @@ function dropKit(socket, slot) {
     if (!id) return false;
     const item = BY_ID.get(id);
     delete s.kit[id];
-    s.kitOrder = s.kitOrder.filter(k => k !== id);
+    kitEmpty(s, id);
     talkState(socket, "Dropped the " + (item ? item.name : "item") + ".");
+    return true;
+}
+
+// Kit slots rearranged by drag and drop: the item in `from` trades places
+// with whatever is in `to`, an empty slot included (it stays there). The
+// keys follow the slot.
+function swapKit(socket, from, to) {
+    const s = normalizeKit(stateOf(socket));
+    if (!s || !Number.isInteger(from) || !Number.isInteger(to)) return false;
+    if (from < 0 || to < 0 || from >= KIT_SLOTS || to >= KIT_SLOTS || from === to) return false;
+    const id = s.kitOrder[from];
+    if (!id) return false;
+    while (s.kitOrder.length < KIT_SLOTS) s.kitOrder.push(null);
+    s.kitOrder[from] = s.kitOrder[to] || null;
+    s.kitOrder[to] = id;
+    normalizeKit(s);
+    talkState(socket);
     return true;
 }
 
@@ -681,7 +724,7 @@ function useKit(socket, slot, tx, ty, itemId) {
         s.kit[id] = (s.kit[id] | 0) - 1;
         if (s.kit[id] <= 0) {
             delete s.kit[id];
-            s.kitOrder = s.kitOrder.filter(k => k !== id);
+            kitEmpty(s, id);
         }
     }
     talkState(socket, msg, used);
@@ -816,7 +859,8 @@ function tick(actors) {
 module.exports = {
     ITEMS, BY_ID, getShops, snapshot, catalog, stateOf, freshState, resetAll, talkState, dropKit,
     miningMult, hasGear, magnetMult, satchelCap, depositRateMult, stormDamageMult, spawnMoveShieldMs, WIND_SHIELD_MS, killBonus,
-    keepsDrillOnRespawn, applyPassives, armOf, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, onDeath, tick,
+    keepsDrillOnRespawn, applyPassives, armOf, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, swapKit, onDeath, tick,
+    KIT_SLOTS, kitCount, kitFreeSlot,
     PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE, launchBarrage, BARRAGE, STRUT_RADIUS, gearActive, GEAR_MAX,
     offered,
 };

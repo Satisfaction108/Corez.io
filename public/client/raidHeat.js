@@ -106,7 +106,7 @@ export function onRY(r) {
         S.bossSeen = b.id; S.bossUpAt = fresh ? -1e9 : now; S.bossX = b.x; S.bossY = b.y;
         if (!global.died && !fresh) {
             juice.slam(String(b.name || "BOSS").toUpperCase(), "has surfaced. " + fmt(b.gems | 0) + " gems to whoever ends it.", b.c || "#c9a8ff", 2800, 50);
-            juice.glitch(0.8, 420);
+            juice.glitch(0.8, 420, true);
             juice.rumble(900, 8);
             juice.lightLeak("201,168,255", 1300);
         }
@@ -155,7 +155,7 @@ export function onKC(m) {
             juice.slam(text, sub, CORE, 4200, 50);
             juice.shake(44, 700);
             juice.rumble(1800, 9);
-            juice.glitch(1, 700);
+            juice.glitch(1, 700, true);
             juice.flash("#bff8ff", 300, 0.35);
             juice.lightLeak(CORE_RGB, 2200);
             sfx("core");
@@ -175,7 +175,7 @@ export function onKC(m) {
         case "corebreak":
             juice.slam(text, (m[2] | 0) ? "+" + fmt(m[2] | 0) + " pts. " + sub : sub, GOLD, 3800, 56);
             juice.hitStop(50);
-            juice.glitch(1, 600);
+            juice.glitch(1, 600, true);
             sfx("win");
             return true;
         case "kill": {
@@ -337,7 +337,8 @@ export function onHit(targetId, amount, tier, taken) {
         }
         if (me) juice.sparks(me.x, me.y, 4 + Math.min(10, amount >> 2), 160, 380, 0, "#ff6b5e");
         if (amount >= 18 || (S.mine && amount >= 6)) {
-            juice.glitch(S.mine ? 0.75 : 0.45, 200);
+            // Effects: Normal glitches only on a hard hit at low health
+            juice.glitch(S.mine ? 0.75 : 0.45, 200, S.lowHp > 0.5 && amount >= 18);
             juice.flash("#ff2030", 90, S.mine ? 0.18 : 0.1);
         }
         return;
@@ -496,7 +497,7 @@ function bankWatch(now) {
             juice.sparks(x, y, 26, 260, 900, 3, GOLD, TAU, 0, 6);
             ring(x, y, GOLD, 30, 320, 700, 10);
         } else if (got >= 100) {
-            juice.slamRoll("+", 0, got, "banked", GOLD, 1500, got >= 500 ? 54 : 44, fmt);
+            juice.slamRoll("+", 0, got, "banked", GOLD, 1300, got >= 500 ? 40 : 32, fmt);
             ring(x, y, GOLD, 30, 260, 600, 8);
         }
     }
@@ -1002,31 +1003,44 @@ export function drawMap(c, T, inside, dotR, pulse, mapLabel, trackPos) {
     }
 }
 
-// ── HUD rows under the clock (app.js drawRoyaleHUD) ─────────────────────
-const CORE_BAR_H = 52;
-export function drawHud(c, cx, y) {
-    if (!A) return y;
-    const r = global.royale;
-    const core = r.core;
-    if (core && core.s === "up" && !global.died) {
-        const W = Math.min(320, global.screenWidth - 60), H = CORE_BAR_H, x = cx - W / 2;
-        const hot = core.hp < 0.5;
-        const col = hot ? CORE_HOT : CORE;
-        A.hudPanel(c, x, y, W, H, {});
-        c.save();
-        hexPath(c, x + 18, y + 14, 8, performance.now() / 700);
-        c.fillStyle = col; c.fill();
-        c.strokeStyle = A.HUD.ink; c.lineWidth = 2; c.stroke();
-        c.restore();
-        A.hudTitle("THE CORE", x + 32, y + 14, 15, col, "left");
-        A.hudTitle(fmt(core.g || 0) + " gems", x + W - 12, y + 14, 13, GOLD, "right");
-        A.hudBar(c, x + 12, y + 24, W - 24, 10, core.hp, hot ? CORE_HOT : core.hp > 0.6 ? CORE : "#9ff6ff");
-        const dist = Math.hypot(core.x - global.player.renderx, core.y - global.player.rendery);
-        A.drawText(Math.round(core.hp * 100) + "%" + (hot ? "  ·  shards!" : ""), x + 14, y + 43, 10, hot ? CORE_HOT : A.HUD.text2, "left", true);
-        A.drawText(A.fmtDist(dist) + " away", x + W - 14, y + 43, 10, A.HUD.text2, "right", true);
-        y += H + 10;
-    }
-    return y;
+// ── the Core's card under the clock (app.js lays out the row: beside the
+// boss card when both are up) ──────────────────────────────────────────
+export function coreUp() {
+    const core = global.royale && global.royale.core;
+    return !!(core && core.s === "up" && !global.died);
+}
+// the card at x, y, w x h (h ~44): name and prize, the bar, % and range
+export function drawCoreCard(c, x, y, W, H) {
+    if (!A || !coreUp()) return;
+    const core = global.royale.core;
+    const hot = core.hp < 0.5;
+    const col = hot ? CORE_HOT : CORE;
+    A.hudPanel(c, x, y, W, H, {});
+    c.save();
+    hexPath(c, x + 16, y + 13, 7, performance.now() / 700);
+    c.fillStyle = col; c.fill();
+    c.strokeStyle = A.HUD.ink; c.lineWidth = 2; c.stroke();
+    c.restore();
+    const gems = fmt(core.g || 0) + " gems";
+    const gw = A.hudTitleW(gems, 12);
+    let ns = 14; while (ns > 10 && A.hudTitleW("The Core", ns) > W - 40 - gw) ns -= 0.5;
+    A.hudTitle("The Core", x + 28, y + 13, ns, col, "left");
+    A.hudTitle(gems, x + W - 10, y + 13, 12, GOLD, "right");
+    A.hudBar(c, x + 10, y + 22, W - 20, 8, core.hp, hot ? CORE_HOT : core.hp > 0.6 ? CORE : "#9ff6ff");
+    const dist = Math.hypot(core.x - global.player.renderx, core.y - global.player.rendery);
+    A.drawText(Math.round(core.hp * 100) + "%" + (hot ? "  ·  shards!" : ""), x + 12, y + H - 8, 9.5, hot ? CORE_HOT : A.HUD.text2, "left", true);
+    A.drawText(A.fmtDist(dist) + " away", x + W - 12, y + H - 8, 9.5, A.HUD.text2, "right", true);
+}
+// the slim strip's version: a hex and a hp sliver, w wide
+export function drawCoreMini(c, x, y, w) {
+    if (!A || !coreUp()) return;
+    const core = global.royale.core, col = core.hp < 0.5 ? CORE_HOT : CORE;
+    c.save();
+    hexPath(c, x + 6, y, 5, 0);
+    c.fillStyle = col; c.fill();
+    c.strokeStyle = A.HUD.ink; c.lineWidth = 1.5; c.stroke();
+    c.restore();
+    A.hudBar(c, x + 15, y - 3, w - 15, 6, core.hp, col);
 }
 // Lines for the notification stack under the clock (app.js hudNotes): the
 // storm's last seconds (critical) and your hunted status, a compact badge.
@@ -1061,7 +1075,7 @@ export function drawScreen(c) {
     if (skyDrop.falling()) global.hudCardUp = global.hudCardUp || "skydrop";
     const now = performance.now();
     const w = global.screenWidth, h = global.screenHeight;
-    if (S.lowHp > 0.05 && A.vignetteSprite && juice.heavyOn() && juice.glowOn() && !juice.lightSafe()) {
+    if (S.lowHp > 0.05 && A.vignetteSprite && juice.heavyOn() && juice.glowOn() && !juice.lightSafe() && juice.full()) {
         // chromatic edges: the frame splits red and cyan
         const k = S.lowHp, off = 5 + 6 * k;
         c.save();
@@ -1077,7 +1091,7 @@ export function drawScreen(c) {
         const thump = juice.lightSafe() ? 0 : beat < 0.22 ? 1 - beat / 0.22 : 0;
         if (thump > 0.02) {
             c.save();
-            c.globalAlpha = 0.3 * S.lowHp * thump;
+            c.globalAlpha = (juice.full() ? 0.3 : 0.18) * S.lowHp * thump;
             c.drawImage(A.vignetteSprite(w, h, 0.72, "200,10,30"), 0, 0, w, h);
             c.restore();
         }
@@ -1090,7 +1104,7 @@ export function drawScreen(c) {
         const thump = juice.lightSafe() ? 0 : beat < 0.18 ? 1 - beat / 0.18 : 0;
         const k = 0.12 + 0.06 * S.mine + 0.22 * S.threat + 0.12 * thump;
         c.save();
-        c.globalAlpha = Math.min(0.62, k);
+        c.globalAlpha = Math.min(0.62, k) * (juice.full() ? 1 : 0.6);
         c.drawImage(A.vignetteSprite(w, h, 0.62 - 0.12 * S.threat, RED_RGB), 0, 0, w, h);
         c.restore();
     }

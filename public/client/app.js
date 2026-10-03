@@ -14,12 +14,16 @@ import * as raidFinale from './raidFinale.js';
 import * as stormFx from './stormFx.js';
 import * as abilityFx from './abilityFx.js';
 import * as abilityIntro from './abilityIntro.js';
+import * as nameCheck from './nameHint.js';
 import { tabSeen, markTabSeen, TAB_SEEN_MS } from './abilityIntroLogic.js';
 import * as raidHeat from './raidHeat.js';
+import { full as fxFull } from './juice.js';
+import * as autoQ from './autoQuality.js';
 import * as rankBadges from './account/rankBadges.js';
 import * as rankPanel from './account/rankPanel.js';
 import * as rankCeremony from './account/rankCeremony.js';
 import * as dustHud from './account/dustHud.js';
+import { BY_ID as ACH_BY_ID } from './account/achievements.js';
 import * as cosmetics from './account/cosmetics.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
@@ -781,6 +785,7 @@ import * as cosmetics from './account/cosmetics.js';
                 }
                 const hw = halloween();
                 if (hw) hw.corn(b, fwDpr);
+                if (window.dwCalmZone) window.dwCalmZone.apply(b);
                 if (3e-5 * fwW > Math.random()) {
                     const col = pickFx();
                     fireworks.push({
@@ -828,6 +833,7 @@ import * as cosmetics from './account/cosmetics.js';
     let autoResLevel = 0;
     try { autoResLevel = Math.max(0, Math.min(1, parseInt(localStorage.getItem("dwAutoResLevel"), 10) || 0)); } catch (e) { }
     const autoRes = { ema: 16.7, last: 0, slowSince: 0, smoothSince: 0, changedAt: 0, noUpUntil: 0, upAt: 0, told: false };
+    autoQ.init({ toast: (text) => global.createMessage(text, 5000) });
     function setAutoResLevel(level, why) {
         level = Math.max(0, Math.min(fullHDFloor(), level));
         if (level === autoResLevel) return;
@@ -846,12 +852,15 @@ import * as cosmetics from './account/cosmetics.js';
         const dt = autoRes.last ? now - autoRes.last : 16.7;
         autoRes.last = now;
         // tab switches, hidden panes and the menu are not slow frames
-        if (document.hidden || dt > 400 || !global.gameStart) { autoRes.slowSince = autoRes.smoothSince = 0; return; }
+        // the sky drop's dive (skyDrop.js) is a second of wide view, not a slow machine
+        const diving = global.dropZoom !== undefined && global.dropZoom !== 1;
+        if (document.hidden || dt > 400 || !global.gameStart || diving) { autoRes.slowSince = autoRes.smoothSince = 0; return; }
         autoRes.ema = autoRes.ema * 0.92 + dt * 0.08;
         if (now - autoRes.changedAt < 1500) return;          // let a change settle
         // under ~26 fps. Not 30: Chrome's battery saver pins rAF to 30 fps,
         // and that is a steady cap, not a slow machine.
-        if (autoRes.ema > 38) {
+        // the effects ladder (autoQuality.js) goes first, resolution last
+        if (autoRes.ema > 38 && autoQ.resolutionTurn(autoRes.ema)) {
             autoRes.smoothSince = 0;
             if (!autoRes.slowSince) autoRes.slowSince = now;
             if (now - autoRes.slowSince > 2000 && autoResLevel < fullHDFloor()) {
@@ -1346,6 +1355,8 @@ import * as cosmetics from './account/cosmetics.js';
             const fl = document.getElementById("optFxLevel");
             config.graphical.fxLevel = fl && fl.value === "low" ? 0 : fl && fl.value === "max" ? 2 : 1;
             config.graphical.fpsCap30 = on("opt30Fps");
+            // slow machines: automatic rungs on top of the player's choices
+            autoQ.applyTo(config.graphical);
         }
 
         global.GUIStatus.renderGUI = document.getElementById("optRenderGui").checked;
@@ -1437,6 +1448,13 @@ import * as cosmetics from './account/cosmetics.js';
     function startGame() {
 
         if (global.gameLoading) return;
+        // Guests: a typed name that's too short or rude has to be fixed first;
+        // an empty box gets a random name (no hoops for someone who just
+        // wants to play). Accounts play under their username.
+        if (!global._reconnecting && !(window.dwAccount && window.dwAccount.playName && window.dwAccount.playName())) {
+            const nameInput = document.getElementById("playerNameInput");
+            if (nameInput && !nameCheck.okToPlay(nameInput)) return;
+        }
         // Duos: the first Play press gets a party ticket from party.js (async)
         // and re-enters here armed. A reconnect keeps the duo session as is.
         if (!global.launchingTutorial && !global.launchingDigWars && !global.duoArmed && !global._reconnecting &&
@@ -3412,7 +3430,7 @@ import * as cosmetics from './account/cosmetics.js';
                 }
             }
             // the name floats above the door in the HUD's display face
-            hudTitle("Vault", sx, sy - R * 1.42, Math.max(13, R * 0.28), HUD.head, "center", 1, c);
+            hudTitle("Vault", sx, sy - R * 1.42, Math.max(13, R * 0.28), HUD.head, "center", labelAlpha(sx, sy - R * 1.42, 60, 24), c);
 
             if (doneFlash > 0) {
                 // completion burst: one-off ring of gold sparks
@@ -3867,9 +3885,9 @@ import * as cosmetics from './account/cosmetics.js';
             const fs = Math.min(30, Math.max(13, R * 0.4));
             const top = (st.t || st.h) ? R * 1.33 * 1.1 + Math.max(4, R * 0.085) : R * 1.08;
             const ty = sy - top - fs * 0.5 - Math.max(6, R * 0.12);
-            hudTitle(o.name, sx, ty, fs, o.color || st.c || HUD.head, "center", 1, c);
+            hudTitle(o.name, sx, ty, fs, o.color || st.c || HUD.head, "center", labelAlpha(sx, ty, fs * o.name.length * 0.55, fs * 1.4), c);
             // contested: callout + the banner's remaining HP, shown to both sides
-            if (st.cont) {
+            if (st.cont && (st.h || 0) < 0.5) {
                 const blink = 0.65 + 0.35 * Math.sin(performance.now() / 240);
                 const as = Math.min(22, Math.max(11, R * 0.28));
                 const bw2 = Math.min(110, R), bh2 = 8, by2 = ty - fs * 0.5 - 8 - bh2;
@@ -4766,6 +4784,9 @@ import * as cosmetics from './account/cosmetics.js';
             if (gemSpriteClass(instance)) continue;
             if (isLootChestEntity(instance)) continue;
             if (raidHeat.isCoreEntity(instance)) continue;
+            // the sky drop's wide view (skyDrop.js): other tanks are specks,
+            // their names and bars are clutter and text cost
+            if (global.dropZoom < 0.75 && instance.id !== gui.playerid && window.dwDropOpt !== false) continue;
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance);
             let x = instance.id === gui.playerid ? global.player.screenx : instance._sx - global.screenWidth / 2,
@@ -5149,6 +5170,83 @@ import * as cosmetics from './account/cosmetics.js';
     // Bottom of the top-centre message stack, refreshed every frame by
     // drawMessages and read by drawMilestones so the two can't overlap.
     let messageStackBottom = 0;
+    // the last few raid toasts: a broadcast of the same words stays out of the stack
+    const recentToasts = new Map();
+    let lastToastSeen = "";
+    function toastSaid(text) {
+        const t = global.royale && global.royale.toast;
+        const now = Date.now();
+        if (t && t !== lastToastSeen) { lastToastSeen = t; recentToasts.set(t, now); if (recentToasts.size > 8) recentToasts.delete(recentToasts.keys().next().value); }
+        if (t && t === text) return true;
+        const at = recentToasts.get(text);
+        if (at != null && now - at < 20000) return true;
+        // the plate in the middle has it ("Final minutes of this raid")
+        for (const c of (global.callouts || [])) if (c.text && c.text.length > 8 && text.startsWith(c.text)) return true;
+        return false;
+    }
+    // ── side cards: an achievement, growing a size. One at a time on the
+    // right, a few seconds each, queued.
+    const sideNotes = [];
+    const SIDE_MS = 4200;
+    global.sideNote = (n) => { if (!n || !n.title) return; sideNotes.push({ kind: n.kind || "", id: n.id || "", title: String(n.title), sub: n.sub ? String(n.sub) : "", at: 0 }); if (sideNotes.length > 5) sideNotes.shift(); };
+    // QA and socketinit's 'ACH'
+    window.dwAch = (d) => global.sideNote({ kind: "ach", id: d && d.id, title: (d && (d.name || d.id)) || "Achievement", sub: "Achievement unlocked" });
+    const achPaths = new Map();
+    function achPath(id) {
+        let p = achPaths.get(id);
+        if (p !== undefined) return p;
+        p = null;
+        const a = ACH_BY_ID.get(id);
+        if (a && typeof Path2D === "function") {
+            p = new Path2D();
+            for (const part of a.d) {
+                if (part.startsWith("circle:")) { const [x, y, rr] = part.slice(7).split(",").map(Number); p.moveTo(x + rr, y); p.arc(x, y, rr, 0, Math.PI * 2); }
+                else if (part.startsWith("rect:")) { const [x, y, w, h] = part.slice(5).split(",").map(Number); p.rect(x, y, w, h); }
+                else p.addPath(new Path2D(part));
+            }
+        }
+        achPaths.set(id, p);
+        return p;
+    }
+    function drawSideNote(y) {
+        const now = performance.now();
+        let n = sideNotes[0];
+        while (n && n.at && now - n.at > SIDE_MS) { sideNotes.shift(); n = sideNotes[0]; }
+        if (!n || global.died) return y;
+        if (!n.at) n.at = now;
+        const age = now - n.at;
+        const a = Math.min(1, age / 200, (SIDE_MS - age) / 300);
+        const c = ctx[2];
+        // phones: the title only, the thumbs need that side
+        if (global.mobile && n.sub && n.kind !== "ach") n.sub = "";
+        const tw = hudTitleW(n.title, 15), sw = n.sub ? hudTextW(n.sub, 10.5) : 0;
+        const W = Math.round(Math.max(tw, sw) + 58), H = n.sub ? 42 : 30;
+        const slide = Math.max(0, 1 - age / 200);
+        const x = global.screenWidth - HUD.edge - W + Math.round(slide * slide * 40);
+        hudPanel(c, x, y, W, H, { alpha: a });
+        // the medal: the achievement's colour with its glyph in ink, or an up chevron
+        const ix = x + 21, iy = y + H / 2, ir = 12;
+        const ach = n.kind === "ach" ? ACH_BY_ID.get(n.id) : null;
+        c.save();
+        c.globalAlpha *= a;
+        c.beginPath(); c.arc(ix, iy, ir, 0, Math.PI * 2);
+        c.fillStyle = ach ? ach.color : n.kind === "grow" ? HUD.emerald : HUD.gold; c.fill();
+        c.lineWidth = 2; c.strokeStyle = HUD.ink; c.stroke();
+        c.strokeStyle = HUD.ink; c.lineCap = "round"; c.lineJoin = "round";
+        const gp = ach ? achPath(ach.id) : null;
+        if (gp) { c.translate(ix - 8.5, iy - 8.5); c.scale(17 / 24, 17 / 24); c.lineWidth = 2.6; c.stroke(gp); }
+        else { c.lineWidth = 3; c.beginPath(); c.moveTo(ix - 5, iy + 3); c.lineTo(ix, iy - 3); c.lineTo(ix + 5, iy + 3); c.stroke(); }
+        c.restore();
+        if (n.sub && n.kind === "ach") {
+            // "Achievement unlocked" as the label, the medal's name under it
+            drawText(n.sub, x + 40, y + 13, 10.5, HUD.text2, "left", true, a);
+            hudTitle(n.title, x + 40, y + 29, 15, HUD.head, "left", a);
+        } else if (n.sub) {
+            hudTitle(n.title, x + 40, y + 14, 15, HUD.head, "left", a);
+            drawText(n.sub, x + 40, y + 30, 10.5, HUD.text2, "left", true, a);
+        } else hudTitle(n.title, x + 40, y + H / 2, 15, HUD.head, "left", a);
+        return y + H + 10;
+    }
     // ...and the left edge of the right-hand (Royale) stack, for the Raid
     // Night callout; screenWidth when nothing is showing
     let messageStackLeft = 1e9;
@@ -5172,6 +5270,8 @@ import * as cosmetics from './account/cosmetics.js';
 
         var Bd = Date.now();
         var yy = config.animationSettings.ScaleBar;
+        // side cards (an achievement, growing) head the stack, one at a time
+        if (msgRight) y = drawSideNote(y);
         // the right-hand stack stops above the minimap instead of running into it
         // (touch: above the kit buttons)
         const yLimit = !msgRight ? Infinity : global.mobile ? touchRightTop() - 30 : global.screenHeight - alcoveSize - spacing - 22 - 30;
@@ -5191,8 +5291,8 @@ import * as cosmetics from './account/cosmetics.js';
                  continue;
             }
             if (y > yLimit) continue;
-            // the toast pill up top already says it
-            if (msgRight && global.royale && global.royale.toast && msg.text === global.royale.toast) {
+            // the toast pill up top says it (or said it a moment ago)
+            if (msgRight && toastSaid(msg.text)) {
                 msg.duration = Math.min(msg.duration, time);
                 continue;
             }
@@ -5453,6 +5553,11 @@ import * as cosmetics from './account/cosmetics.js';
             const cy = base - chat.currentY;
 
             if (valpha <= 0) continue;
+            // your own tank: the newest line only, cut short, and it backs off
+            // while a big word is up
+            if (self && i > 0) continue;
+            if (self && text.length > 34) { text = text.slice(0, 33) + "…"; msgLengthHalf = measureText(text, fs) / 2; }
+            if (self && raidHeat.slamUp()) valpha *= 0.3;
 
             const col = chat.team ? teamCol : gameDraw.getColorDark(gameDraw.getColor(instance.color.split(" ")[0]));
             ctx[1].globalAlpha = (chat.team ? 0.85 : 0.5) * valpha * alpha * alpha * fade;
@@ -6024,7 +6129,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
     }
 
-    const BANK_PILL = "#b8c6ff", BANK_PILL_TEXT = "#1d1830";
+    const BANK_PILL = "#7fb1f2", BANK_PILL_TEXT = "#120e15";
     function drawSelfInfo(max) {
 
         // Dig Wars bottom stack (bottom → top): team war bar, wallet row,
@@ -6078,8 +6183,8 @@ import * as cosmetics from './account/cosmetics.js';
                 let cs2 = 13; while (cs2 > 9 && hudTextW(carTxt, cs2) > (carX2 - rx1) - 10) cs2 -= 0.5;
                 drawText(carTxt, (rx1 + carX2) / 2 + 0.5, ry + 6 - (13 - cs2) * 0.35, cs2, color.guiwhite, "center");
             }
-            // a light periwinkle, clear of the gold Carried pill and the teal
-            // HUD accents; it takes dark text
+            // azurite, the blue gem's light face: clear of the gold Carried
+            // pill and the teal HUD accents; it takes ink text
             hudBar(ctx[2], bankX1 - capR, ry - pillH / 2, rx2 - bankX1 + capR * 2, pillH, 1, BANK_PILL);
             {
                 // the kept part came from earlier raids: spendable, but not score.
@@ -6248,9 +6353,7 @@ import * as cosmetics from './account/cosmetics.js';
 
         if (global.mobile) touch.uiRects.vault = { x: x * cr, y: y * cr, w: W * cr, h: H * cr };
         c.save();
-        // under a NEW ABILITY reveal (drawn later, on top) the panel fades
-        // right back, so the reveal reads cleanly over it
-        c.globalAlpha = glide * (now - (global.kitRevealAt || -1e9) < 150 ? 0.3 : 1);
+        c.globalAlpha = glide;
         hudPanel(c, x, y, W, H, { fill: HUD.solid, r: HUD.r + 2 });
         hudTitle(v.isOutpost ? "Base bank · 80% credit" : (royaleActive() ? "Vault · 100% credit" : "Team vault"),
                  x + W / 2, y + 19, 17, teamCol, "center");
@@ -6293,9 +6396,7 @@ import * as cosmetics from './account/cosmetics.js';
             el.style.height = (ih * cr - 4) + "px";
             el.style.fontSize = (15 * cr) + "px";
             el.style.opacity = glide;
-            // the input is DOM, over the canvas: the NEW ABILITY reveal must cover it
-            const under = now - (global.kitRevealAt || -1e9) < 150 ? "hidden" : "";
-            if (el.style.visibility !== under) el.style.visibility = under;
+            if (el.style.visibility) el.style.visibility = "";
             if (el.style.display === "none") {
                 el.style.display = "block";
                 el.value = "" + (g.carried | 0);   // defaults to everything
@@ -6357,13 +6458,12 @@ import * as cosmetics from './account/cosmetics.js';
         const left = 1 - (now - (g.mcomboAt || 0)) / 2500;
         if (left <= 0) return;
         const bonus = Math.min(50, 5 * (n - 1));
-        const cx = global.screenWidth / 2, cy = global.screenHeight / 2 + 88;
-        const a = Math.min(1, left * 3);
+        const cx = global.screenWidth / 2, cy = global.screenHeight / 2 + 96;
+        const a = Math.min(1, left * 3) * (raidHeat.slamUp() ? 0.45 : 0.85);
         const c = ctx[2];
         c.save();
-        drawText("MINING ×" + n, cx, cy, 17, "#ffd75e", "center", true, a, 5);
-        drawText("+" + bonus + "% DUST", cx, cy + 20, 11, color.guiwhite, "center", true, a, 4);
-        const bw = 120, bx = cx - bw / 2, by = cy + 30;
+        drawText("Mining x" + n + "  ·  +" + bonus + "% dust", cx, cy, 11.5, "#f2d69a", "center", true, a, 4);
+        const bw = 80, bx = cx - bw / 2, by = cy + 9;
         c.globalAlpha = a;
         c.fillStyle = "rgba(0,0,0,0.55)";
         c.fillRect(bx - 1, by - 1, bw + 2, 6);
@@ -6485,7 +6585,7 @@ import * as cosmetics from './account/cosmetics.js';
         gold: "#f2b83c", goldDk: "#a8750f",
         emerald: "#3fcf7a", play: "#4fcf5c", playDk: "#2c8f37",
         danger: "#e0473b", dangerDk: "#9c2a21",
-        lilac: "#b98bff", sky: "#4ec4e8",
+        lilac: "#b98bff", sky: "#4ec4e8",   // lilac is the storm, nothing else
         r: 9, rSmall: 6, rBig: 13,         // radius family
         lw: 1.5, lip: 3,                   // keyline + the soft drop under a plate
         line: "rgba(10,8,13,0.92)",        // the keyline
@@ -6813,7 +6913,7 @@ import * as cosmetics from './account/cosmetics.js';
             { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk }, a),
     });
     function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "k" : String(Math.round(d)); }
-    stormFx.init({ hudTitle, drawText, fmtDist });
+    stormFx.init({ hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), hudPanel, drawText, fmtDist });
     // hunted marks, the Core, drop-ins and the screen juice (raidHeat.js, juice.js)
     raidHeat.init({ HUD, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c) });
     function gemPath(c, x, y, r) {
@@ -6971,6 +7071,23 @@ import * as cosmetics from './account/cosmetics.js';
     // cluster are recorded by the functions that draw them.
     let standingsRect = null;
     let hudTopBottom = 60;
+    // A name in the world (a pad, an outpost, a compass word) that lands under
+    // HUD text steps back to a faint ghost instead of printing over it. The
+    // rects are last frame's, rebuilt a few times a second.
+    let labelRects = [], labelRectsAt = 0;
+    function labelAlpha(cx0, cy0, w, h) {
+        if (!royaleActive()) return 1;
+        const now = performance.now();
+        if (now - labelRectsAt > 120) {
+            labelRectsAt = now;
+            labelRects = hudAvoidRects();
+            if (hudDrawn.feed) labelRects.push(hudDrawn.feed);
+            if (messageStackBottom > royaleFeedBottom && messageStackLeft < global.screenWidth) labelRects.push({ x: messageStackLeft, y: royaleFeedBottom, w: global.screenWidth - messageStackLeft, h: messageStackBottom - royaleFeedBottom });
+        }
+        const x = cx0 - w / 2, y = cy0 - h / 2;
+        for (const R of labelRects) if (x < R.x + R.w && x + w > R.x && y < R.y + R.h && y + h > R.y) return 0.18;
+        return 1;
+    }
     function hudAvoidRects() {
         const sw = global.screenWidth, sh = global.screenHeight;
         const out = [];
@@ -7148,8 +7265,8 @@ import * as cosmetics from './account/cosmetics.js';
             c.restore();
             c.lineWidth = Math.max(1.2, R * 0.028); c.strokeStyle = HUD.ink; c.stroke();
             c.restore();
-            hudTitle("Shop", sx, sy - R * 1.4, Math.max(13, R * 0.25), SHOP_ACCENT, "center", 1, c);
-            hudTitle(String(s.name || "").replace(" Shop", ""), sx, sy + R * 1.42, Math.max(11, R * 0.17), HUD.text2, "center", 1, c);
+            hudTitle("Shop", sx, sy - R * 1.4, Math.max(13, R * 0.25), SHOP_ACCENT, "center", labelAlpha(sx, sy - R * 1.4, 60, 24), c);
+            hudTitle(String(s.name || "").replace(" Shop", ""), sx, sy + R * 1.42, Math.max(11, R * 0.17), HUD.text2, "center", labelAlpha(sx, sy + R * 1.42, 70, 18), c);
         }
     }
 
@@ -7365,7 +7482,8 @@ import * as cosmetics from './account/cosmetics.js';
         if (global.mobile && global.screenHeight > global.screenWidth && !top0) { const mm = touchMinimapRect(); top0 = mm.y + mm.h + 4 - HUD.edge; }
         let y = HUD.edge + top0;
         hudSafe("top", () => {
-            // one plate: raid clock | alive, then your place and the storm
+            // one plate: raid clock | alive, then your place and the storm.
+            // Minimized (the corner toggle, remembered): one slim strip.
             const c = ctx[2];
             const st = r.storm || {};
             const placeTxt = r.place > 0 ? "#" + r.place + "  ·  " + fmtNum(r.youScore | 0) + " pts"
@@ -7374,6 +7492,8 @@ import * as cosmetics from './account/cosmetics.js';
             const stormNo = st.fin ? "Last storm" : st.cn > 0 ? "Storm " + ((st.c | 0) + 1) + "/" + st.cn : "Storm";
             const stormTxt = !st.a ? "" : st.fin && st.hold ? "Last storm closing"
                 : st.hold ? stormNo + " holds " + fmtRaidClock(st.left | 0) : stormNo + " in " + fmtRaidClock(st.left | 0);
+            const stormCol = st.hold ? HUD.gold : HUD.lilac;
+            if (topMin.on) { y = drawTopStrip(c, cx, y, stormTxt, stormCol); return; }
             const PW = 300, rowH = 38, footH = (placeTxt || stormTxt) ? 24 : 0, PH = rowH + footH;
             const px = Math.round(cx - PW / 2), py = y;
             hudPanel(c, px, py, PW, PH);
@@ -7385,34 +7505,45 @@ import * as cosmetics from './account/cosmetics.js';
                 hudTitle(value, x0 + lw2 + gap, py + rowH / 2, 21, HUD.head, "left");
             };
             pair("RAID", fmtRaidClock(r.raidLeft | 0), px + PW * 0.25);
-            pair("ALIVE", String(r.alive | 0), px + PW * 0.75);
+            pair("ALIVE", String(r.alive | 0), px + PW * 0.72);
             c.fillStyle = "rgba(18,14,21,0.55)";
             c.fillRect(cx - 1, py + 9, 2, rowH - 18);
             if (footH) {
                 c.fillRect(px + 10, py + rowH - 1, PW - 20, 2);
                 const fy = py + rowH + footH / 2;
-                const stormCol = st.hold ? HUD.gold : HUD.lilac;
                 if (placeTxt && stormTxt) {
                     drawText(placeTxt, px + 14, fy, 12, HUD.gold, "left", true);
                     drawText(stormTxt, px + PW - 14, fy, 12, stormCol, "right", true);
                 } else drawText(placeTxt || stormTxt, cx, fy, 12, placeTxt ? HUD.gold : stormCol, "center", true);
             }
-            y = py + PH + HUD.lip + 10;
+            drawTopToggle(c, px + PW - 17, py + 6, false);
+            y = py + PH + HUD.lip + 8;
         });
         hudSafe("notes", () => { y = drawHudNotes(y); });
         hudSafe("boss", () => {
+            // the boss and the Core share one row of compact cards; the row is
+            // reserved in full while a card is visible (alpha fades, nothing
+            // below slides). Minimized, the strip carries them instead.
             bossGlide.set(r.boss ? 1 : 0);
             const bg = bossGlide.get();
-            // the row is reserved in full while the bar is visible: alpha
-            // fades, nothing below it slides
-            if (bg > 0.02) { drawBossBar(cx, y, bg); y += BOSS_H + BOSS_GAP; }
+            const boss = bg > 0.02, core = raidHeat.coreUp();
+            if (topMin.on || (!boss && !core)) return;
+            const c = ctx[2], gap = 10;
+            const W = boss && core ? Math.min(236, (global.screenWidth - 60 - gap) / 2) : Math.min(300, global.screenWidth - 60);
+            let x = Math.round(cx - (boss && core ? W * 2 + gap : W) / 2);
+            if (boss) { drawBossBar(x, y, W, bg); x += W + gap; }
+            if (core) raidHeat.drawCoreCard(c, x, y, W, BOSS_H);
+            y += BOSS_H + BOSS_GAP;
         });
-        hudSafe("heat", () => { y = raidHeat.drawHud(ctx[2], cx, y); });
         hudSafe("status", () => {
             if (r.occupy > 0) drawText("You can stay " + r.occupy + "s longer", cx, global.screenHeight - 56, 15, color.gold, "center");
             else if (r.lockout > 0) drawText("You can come back in " + r.lockout + "s", cx, global.screenHeight - 56, 15, color.guiwhite, "center");
         });
         hudSafe("countdown", () => raidFinale.drawCountdown(y));
+        // the storm warning gets its own row right here, away from the tank,
+        // its chat and the slams (stormFx.drawHud fills it)
+        stormHud.rowY = 0;
+        if (stormHud.inside) { stormHud.rowY = y; y += 34; }
         hudTopBottom = y;
         // CSS px, for the DOM notification cards under the clock (gameToasts.js)
         global.hudTopPx = y * window.innerWidth / Math.max(1, global.screenWidth);
@@ -7447,33 +7578,32 @@ import * as cosmetics from './account/cosmetics.js';
         });
         if (hudErrText) drawText("HUD error: " + hudErrText, cx, global.screenHeight - 78, 11, "#ff7a6b", "center");
     }
-    const stormHud = { inside: false, sm: 0, immune: 0, final: false, dist: 0, dirAng: 0, laneY: 0, yieldText: false };
-    const BOSS_H = 50, BOSS_GAP = 12;
+    const stormHud = { inside: false, sm: 0, immune: 0, final: false, dist: 0, dirAng: 0, laneY: 0, yieldText: false, rowY: 0 };
+    const BOSS_H = 44, BOSS_GAP = 10;
     let spectateBarBottom = 0;   // the top cluster starts under the spectate bar while dead
-    function drawBossBar(cx, y, a) {
+    function drawBossBar(x, y, W, a) {
         const b = global.royale.boss || global._lastBoss;
         if (!b) return;
         global._lastBoss = b;
         const c = ctx[2];
-        const W = Math.min(300, global.screenWidth - 60), H = BOSS_H;
-        const x = cx - W / 2;
+        const H = BOSS_H;
         const col = b.c || "#c9a8ff";
         const dist = Math.hypot((b.x || 0) - global.player.renderx, (b.y || 0) - global.player.rendery);
         hudPanel(c, x, y, W, H, { alpha: a });
         c.save();
         c.globalAlpha = a;
-        polyPath(c, x + 18, y + 14, 8, 8, Math.PI / 8);
+        polyPath(c, x + 16, y + 13, 7, 8, Math.PI / 8);
         c.fillStyle = col; c.fill();
         c.strokeStyle = HUD.ink; c.lineWidth = 2; c.stroke();
         c.restore();
         // three fixed rows: name and bounty, health bar, percent and range
         const gemsTxt = fmtNum(b.gems) + " gems";
-        const gemsW = hudTitleW(gemsTxt, 13);
+        const gemsW = hudTitleW(gemsTxt, 12);
         const nameTxt = String(b.name || "Boss");
-        let ns = 15; while (ns > 10 && hudTitleW(nameTxt, ns) > W - 34 - gemsW - 24) ns -= 0.5;
-        hudTitle(nameTxt, x + 32, y + 14, ns, col, "left", a);
-        hudTitle(gemsTxt, x + W - 12, y + 14, 13, HUD.gold, "right", a);
-        const bx = x + 12, bw = W - 24, bh = 10, byTop = y + 24;
+        let ns = 14; while (ns > 10 && hudTitleW(nameTxt, ns) > W - 28 - gemsW - 18) ns -= 0.5;
+        hudTitle(nameTxt, x + 28, y + 13, ns, col, "left", a);
+        hudTitle(gemsTxt, x + W - 10, y + 13, 12, HUD.gold, "right", a);
+        const bx = x + 10, bw = W - 20, bh = 8, byTop = y + 22;
         const hp = Math.max(0, Math.min(1, b.hp || 0));
         c.save();
         c.globalAlpha = a;
@@ -7484,8 +7614,89 @@ import * as cosmetics from './account/cosmetics.js';
             c.fillStyle = color.teal; c.fill();
         }
         c.restore();
-        drawText(Math.round(hp * 100) + "%", bx + 2, y + 43, 10, HUD.text2, "left", true, a);
-        if (isFinite(dist) && dist < 1e6) drawText(fmtDist(dist) + " away", bx + bw - 2, y + 43, 10, HUD.text2, "right", true, a);
+        drawText(Math.round(hp * 100) + "%", bx + 2, y + H - 8, 9.5, HUD.text2, "left", true, a);
+        if (isFinite(dist) && dist < 1e6) drawText(fmtDist(dist) + " away", bx + bw - 2, y + H - 8, 9.5, HUD.text2, "right", true, a);
+    }
+    // ── the top group, minimized: "16:07 · Storm 1/3 in 1:07" on one strip,
+    // with a boss or Core hp sliver. The toggle sits in the corner of either.
+    const TOP_MIN_KEY = "dwHudTopMin";
+    const topMin = { on: (() => { try { return localStorage.getItem(TOP_MIN_KEY) === "1"; } catch (e) { return false; } })(), rect: null };
+    function setTopMin(on) {
+        topMin.on = !!on;
+        try { localStorage.setItem(TOP_MIN_KEY, topMin.on ? "1" : "0"); } catch (e) { /* */ }
+        try { gameSound.uiClick(); } catch (e) { /* */ }
+    }
+    // a small keycap with a chevron: up = shrink, down = open again
+    function drawTopToggle(c, x, y, open) {
+        const s = 14;
+        hudWell(c, x - 2, y - 2, s + 4, s + 4, 5);
+        c.save();
+        c.strokeStyle = HUD.text2; c.lineWidth = 2; c.lineCap = "round"; c.lineJoin = "round";
+        c.beginPath();
+        const mx = x + s / 2, my = y + s / 2, d = open ? 2 : -2;
+        c.moveTo(mx - 4, my - d); c.lineTo(mx, my + d); c.lineTo(mx + 4, my - d);
+        c.stroke();
+        c.restore();
+        // generous to tap: the whole corner
+        topMin.rect = { x: x - 10, y: y - 8, w: s + 20, h: s + 16 };
+    }
+    function drawTopStrip(c, cx, y, stormTxt, stormCol) {
+        const r = global.royale;
+        const clock = fmtRaidClock(r.raidLeft | 0);
+        const sep = stormTxt ? "  ·  " : "";
+        const cw = hudTitleW(clock, 15), sw = stormTxt ? hudTextW(sep + stormTxt, 11.5) : 0;
+        const boss = !!r.boss, core = raidHeat.coreUp();
+        const SL = 52, minis = (boss ? SL + 10 : 0) + (core ? SL + 10 : 0);
+        const H = 26, W = Math.round(cw + sw + minis + 50);
+        const x = Math.round(cx - W / 2);
+        hudPanel(c, x, y, W, H, { r: 9 });
+        hudDrawn.clock = { x, y, w: W, h: H };
+        let tx = x + 12;
+        hudTitle(clock, tx, y + H / 2, 15, HUD.head, "left");
+        tx += cw;
+        if (stormTxt) { drawText(sep + stormTxt, tx, y + H / 2, 11.5, stormCol, "left", true); tx += sw; }
+        tx += 10;
+        if (boss) {
+            const b = r.boss, col = b.c || "#c9a8ff";
+            c.save();
+            polyPath(c, tx + 6, y + H / 2, 5, 8, Math.PI / 8);
+            c.fillStyle = col; c.fill(); c.strokeStyle = HUD.ink; c.lineWidth = 1.5; c.stroke();
+            c.restore();
+            hudBar(c, tx + 15, y + H / 2 - 3, SL - 15, 6, Math.max(0, Math.min(1, b.hp || 0)), col);
+            tx += SL + 10;
+        }
+        if (core) { raidHeat.drawCoreMini(c, tx, y + H / 2, SL); tx += SL + 10; }
+        drawTopToggle(c, x + W - 22, y + 6, true);
+        return y + H + HUD.lip + 8;
+    }
+    // the toggle takes the press before the game sees it (no shot fired)
+    {
+        const inRect = (R, cx0, cy0) => {
+            if (!R) return false;
+            const gx = cx0 * global.screenWidth / Math.max(1, window.innerWidth), gy = cy0 * global.screenHeight / Math.max(1, window.innerHeight);
+            return gx >= R.x && gx <= R.x + R.w && gy >= R.y && gy <= R.y + R.h;
+        };
+        const hitTop = (cx0, cy0) => !!global.gameStart && royaleActive() && !raidFinale.hidesHud() && inRect(topMin.rect, cx0, cy0);
+        let swallowUp = false;
+        window.addEventListener("mousedown", (e) => {
+            if (e.button !== 0 || !hitTop(e.clientX, e.clientY)) return;
+            setTopMin(!topMin.on); swallowUp = true;
+            e.preventDefault(); e.stopImmediatePropagation();
+        }, true);
+        window.addEventListener("mouseup", (e) => { if (swallowUp) { swallowUp = false; e.stopImmediatePropagation(); } }, true);
+        window.addEventListener("touchstart", (e) => {
+            const t = e.changedTouches && e.changedTouches[0];
+            if (!t) return;
+            if (leftCards && leftCards.modMin && global.gameStart && inRect(overrideRect, t.clientX, t.clientY)) {
+                modView.openUntil = performance.now() + 6000;
+                e.preventDefault(); e.stopImmediatePropagation();
+                return;
+            }
+            if (!hitTop(t.clientX, t.clientY)) return;
+            setTopMin(!topMin.on);
+            e.preventDefault(); e.stopImmediatePropagation();
+        }, { capture: true, passive: false });
+        window.dwHudTopMin = (v) => { if (v != null) setTopMin(v); return topMin.on; };
     }
 
     // ── race panel: top three plus you, with your gap to first ──────────
@@ -7636,7 +7847,7 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     function drawRoyaleFeed(yTop) {
-        const feed = (global.royale.feed || []).slice(global.mobile ? -3 : -6);
+        const feed = (global.royale.feed || []).slice(-3);
         const now = Date.now();
         const right = global.screenWidth - HUD.edge;
         let y = yTop;
@@ -7644,28 +7855,28 @@ import * as cosmetics from './account/cosmetics.js';
         for (let i = feed.length - 1; i >= 0; i--) {
             const f = feed[i];
             if (!f) continue;
+            // arrivals (a boss, the Core, a supply drop, a bloom) are the
+            // toast's news under the clock: the feed keeps who did what
+            if (f.event || f.bloom || (f.spawn && (f.boss || f.core))) continue;
             const age = now - (f.at || now);
             if (age > 11000) continue;
             const a = age > 8500 ? Math.max(0.12, 1 - (age - 8500) / 2500) : 1;
             const line = feedLine(f);
             let bx = right;
             if (line.badge) {
-                // a flat colour chip with an ink keyline, like the menu's tags
+                // a dark tag with the colour in its text, so the feed stays quiet
                 const bw = hudTitleW(line.badge.t, 11) + 12;
                 c.save();
                 c.globalAlpha = a;
                 roundRectPath(c, right - bw, y + 1, bw, 16, 5);
-                c.fillStyle = line.badge.col;
+                c.fillStyle = HUD.raised;
                 c.fill();
-                c.lineWidth = 2;
+                c.lineWidth = 1.5;
                 c.strokeStyle = HUD.ink;
                 c.stroke();
-                c.restore();
-                c.save();
-                c.globalAlpha = a;
                 c.font = (11 + config.graphical.fontSizeBoost) + "px " + HUD.font;
                 c.textAlign = "center"; c.textBaseline = "middle";
-                c.fillStyle = HUD.ink;
+                c.fillStyle = line.badge.col;
                 c.fillText(line.badge.t, right - bw / 2, y + 9.5);
                 c.restore();
                 bx = right - bw - 8;
@@ -7687,10 +7898,26 @@ import * as cosmetics from './account/cosmetics.js';
     // same width and left edge as the kit box below, so the column is one
     // straight edge
     const CARD_W = 190, QUEST_H = 68, CARD_GAP = 10;
-    // the breather between contracts (st 3) is one short row
-    const WAIT_H = 32;
+    // the breather between contracts (st 3) is a small chip
+    const WAIT_H = 24, WAIT_W = 138;
     const questH = q => q ? (q.st === 3 ? WAIT_H : QUEST_H) : 0;
     const overrideH = n => n ? 48 + n * 13 : 40;
+    // the override reads in full for its first 10 s, then folds to a one-line
+    // chip; hover (or a tap) opens it again for a while
+    const MOD_MIN_H = 26, MOD_OPEN_MS = 10000;
+    const modView = { name: "", at: 0, openUntil: 0 };
+    function modFolded(mod) {
+        const now = performance.now();
+        if (modView.name !== mod.name) { modView.name = mod.name; modView.at = now; }
+        if (now - modView.at < MOD_OPEN_MS || now < modView.openUntil) return false;
+        const R = overrideRect;
+        if (R && !global.mobile && global.canvas) {
+            const cr = global.canvas.height / global.screenHeight / global.ratio;
+            const mx = global.mouse.x / cr, my = global.mouse.y / cr;
+            if (mx >= R.x && mx <= R.x + R.w && my >= R.y && my <= R.y + R.h) return false;
+        }
+        return true;
+    }
     function layoutLeftCards() {
         const r = global.royale;
         // the contract (server contracts.js): one short job at a time
@@ -7699,9 +7926,10 @@ import * as cosmetics from './account/cosmetics.js';
         // duos: the teammate card tops the stack (dead or alive)
         const duo = r.duos && r.duo ? r.duo : null;
         if (!q && !mod && !duo) { leftCards = null; return; }
-        const lines = mod ? wrapLines(String(mod.desc || ""), 10, CARD_W - 24).slice(0, 3) : [];
+        const modMin = !!mod && modFolded(mod);
+        const lines = mod && !modMin ? wrapLines(String(mod.desc || ""), 10, CARD_W - 24).slice(0, 3) : [];
         const duoOff = duo ? DUO_H + ((q || mod) ? CARD_GAP : 0) : 0;
-        const stackH = n => duoOff + questH(q) + (mod ? (q ? CARD_GAP : 0) + overrideH(n) : 0);
+        const stackH = n => duoOff + questH(q) + (mod ? (q ? CARD_GAP : 0) + (modMin ? MOD_MIN_H : overrideH(n)) : 0);
         const floor = leftColumnFloor() - 10;
         const tiles = (global.upgradeBoxBottom | 0) > 0;
         // touch: no room beside the tiles, the cards wait for the pick
@@ -7713,12 +7941,12 @@ import * as cosmetics from './account/cosmetics.js';
         const pref = Math.max(global.screenHeight * 0.42, 330, top);
         for (const n of [lines.length, 0]) {
             const y = Math.round(Math.min(pref, floor - stackH(n)));
-            if (y >= top) { leftCards = { x: HUD.edge, y, q, mod, lines: lines.slice(0, n), duo, duoOff }; return; }
+            if (y >= top) { leftCards = { x: HUD.edge, y, q, mod, modMin, lines: lines.slice(0, n), duo, duoOff }; return; }
         }
         if (global.mobile) {
             const noMod = duo ? DUO_H + (q ? CARD_GAP : 0) : 0;
             const y = Math.round(Math.min(pref, floor - noMod - questH(q)));
-            leftCards = y >= top ? { x: HUD.edge, y, q, mod: null, lines: [], duo, duoOff: noMod } : duo ? { x: HUD.edge, y: top, q: null, mod: null, lines: [], duo, duoOff: 0 } : null;
+            leftCards = y >= top ? { x: HUD.edge, y, q, mod: null, modMin: false, lines: [], duo, duoOff: noMod } : duo ? { x: HUD.edge, y: top, q: null, mod: null, modMin: false, lines: [], duo, duoOff: 0 } : null;
             return;
         }
         const x = Math.round((global.upgradeBoxRight | 0) + 16);
@@ -7728,7 +7956,9 @@ import * as cosmetics from './account/cosmetics.js';
         // and of the first-raid card under it (coach.js), so they never stack
         const cr = global.coachRect;
         if (cr && x < cr.x + cr.w && x + CARD_W > cr.x && y < cr.y + cr.h) y = Math.max(y, Math.round(cr.y + cr.h + 8));
-        leftCards = { x, y, q, mod, lines, duo, duoOff };
+        // beside the tiles the cards are over the playfield: a folded
+        // override stays off (it's on the big map)
+        leftCards = { x, y, q, mod: modMin ? null : mod, modMin, lines, duo, duoOff };
     }
     // ── raid override card: this raid's twist and what it does, in the same
     // tile language as the quest card, right under it
@@ -7738,15 +7968,25 @@ import * as cosmetics from './account/cosmetics.js';
         if (!mod || global.hudCalm) { overrideRect = null; return; }
         const W = CARD_W;
         const lines = L.lines;
-        const H = overrideH(lines.length);
+        const H = L.modMin ? MOD_MIN_H : overrideH(lines.length);
         const x = L.x, y = (L.q ? L.y + questH(L.q) + CARD_GAP : L.y) + (L.duoOff | 0);
         overrideRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
         const c = ctx[2];
+        if (L.modMin) {
+            // folded: "Override" and the name on one line
+            hudPanel(c, x, y, W, H, { alpha: 0.9 });
+            const lw = hudTextW("Override", 10.5);
+            drawText("Override", x + 10, y + H / 2, 10.5, HUD.text2, "left", true, 0.95);
+            const name = String(mod.name);
+            let ns = 13; while (ns > 9.5 && hudTitleW(name, ns) > W - 28 - lw) ns -= 0.5;
+            hudTitle(name, x + 18 + lw, y + H / 2, ns, HUD.copper, "left", 0.95);
+            return;
+        }
         hudPanel(c, x, y, W, H);
         hudTitle("Raid override", x + 12, y + 14, 12, HUD.text2, "left");
         const name = String(mod.name);
         let ns = 16; while (ns > 11 && hudTitleW(name, ns) > W - 24) ns -= 0.5;
-        hudTitle(name, x + 12, y + 31, ns, HUD.lilac, "left");
+        hudTitle(name, x + 12, y + 31, ns, HUD.copper, "left");
         let ly = y + 49;
         for (const ln of lines) { drawText(ln, x + 12, ly, 10, HUD.text, "left", true); ly += 13; }
     }
@@ -7811,13 +8051,13 @@ import * as cosmetics from './account/cosmetics.js';
         const calm = !!(global.reducedMotion && global.reducedMotion());
         // between contracts: a short row counting down to the next one
         if (o.st === 3) {
-            const x = L.x, y = L.y + (L.duoOff | 0);
-            questRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
+            const x = L.x, y = L.y + (L.duoOff | 0), w = WAIT_W;
+            questRect = { x: x - 6, y: y - 6, w: w + 12, h: H + 12 };
             const c = ctx[2];
-            hudPanel(c, x, y, W, H, { alpha: 0.85 });
+            hudPanel(c, x, y, w, H, { alpha: 0.8 });
             const left = Math.max(0, (o.ms || 0) - (now - (o.at || now)));
-            hudTitle("Next contract in", x + 12, y + H / 2, 12, HUD.text2, "left", 0.9);
-            drawText(fmtRaidClock(Math.ceil(left / 1000)), x + W - 12, y + H / 2, 12, HUD.gold, "right", true, 0.95);
+            drawText("Next contract", x + 10, y + H / 2, 10.5, HUD.text2, "left", true, 0.95);
+            drawText(fmtRaidClock(Math.ceil(left / 1000)), x + w - 10, y + H / 2, 11, HUD.gold, "right", true, 0.95);
             return;
         }
         // a new contract slides in from the left
@@ -8007,7 +8247,7 @@ import * as cosmetics from './account/cosmetics.js';
     // a plate holds its place in the queue while the lanes overlap
     let plateWaitAt = 0;
     function platesWait(now) {
-        const wait = lanes.tight && raidHeat.slamUp();
+        const wait = lanes.tight && raidHeat.slamUp() || (global.mobile && now - (global.kitCardAt || 0) < 150);
         const dt = wait && plateWaitAt ? now - plateWaitAt : 0;
         plateWaitAt = wait ? now : 0;
         return dt;
@@ -8032,7 +8272,7 @@ import * as cosmetics from './account/cosmetics.js';
             const outT = age > DUR - 500 ? 1 - (age - (DUR - 500)) / 500 : 1;
             const a = (inT * inT * (3 - 2 * inT)) * Math.max(0, outT);
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
-            const col = raidHeat.calloutCol(t.kind) || (t.kind === "override" || t.kind === "late" ? "#c9a8ff" : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
+            const col = raidHeat.calloutCol(t.kind) || (t.kind === "override" || t.kind === "late" ? HUD.copper : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
                 : t.kind === "chest" || t.kind === "dropin" || t.kind === "bounty" || t.kind === "restored" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
                 : t.kind === "grown" || t.kind === "contract" ? HUD.emerald : t.kind === "revenge" ? "#ff6b5e" : color.guiwhite);
             const base = t.kind === "streak" ? 16 : 23, size = base * pop;
@@ -8415,6 +8655,7 @@ import * as cosmetics from './account/cosmetics.js';
         const slotW = (W - pad * 2 - gap * 2) / 3;
         for (let i = 0; i < 3; i++) {
             const sx = x + pad + i * (slotW + gap);
+            kitSlotRects[i].x = sx; kitSlotRects[i].y = slotY; kitSlotRects[i].w = slotW; kitSlotRects[i].h = slotH;
             const id = (st.kitOrder || [])[i];
             const item = id ? byId(id) : null;
             const count = id ? (st.kit[id] | 0) : 0;
@@ -8432,7 +8673,7 @@ import * as cosmetics from './account/cosmetics.js';
                 if (global.kitUnlockHeld !== item.id) drawKitIcon(c, item.id, sx + slotW / 2, slotY + 30, 26);
                 drawText(KIT_SHORT[item.id] || item.name.slice(0, 7).toUpperCase(), sx + slotW / 2, slotY + slotH - 8, 8, color.guiwhite, "center", true, g);
                 global.clickables.kit.place(i, sx * cr, slotY * cr, slotW * cr, slotH * cr);
-                if (hov === i) queueTip(item.name + "  ·  " + keys[i], item.desc + " Drag it out of the box to throw it away.", sx + slotW / 2, y);
+                if (hov === i) queueTip(item.name + "  ·  " + keys[i], item.desc + " Drag it to another slot to move it there, or out of the box to throw it away.", sx + slotW / 2, y);
                 if (fl && fl.kind === "use" && flT > 0) {
                     c.save();
                     c.globalAlpha = g * flT * 0.8;
@@ -8456,19 +8697,27 @@ import * as cosmetics from './account/cosmetics.js';
             }
         }
         global.kitBoxRectCanvas = { x: x * cr, y: y * cr, w: W * cr, h: H * cr };
-        // drag ghost: the item's card follows the cursor; outside the box it
-        // reads DROP
+        // drag ghost: the item's card follows the cursor; over another slot
+        // that slot lights up (they swap), outside the box it reads DROP
         const dragK = global.kitDrag;
         if (dragK) {
             const id = (st.kitOrder || [])[dragK.slot];
             const mx = global.mouse.x / cr, my = global.mouse.y / cr;
             if (id && Math.hypot(global.mouse.x - dragK.x, global.mouse.y - dragK.y) > 14) {
                 const outside = mx < x || mx > x + W || my < y || my > y + H;
+                const over = global.clickables.kit.check({ x: global.mouse.x, y: global.mouse.y });
+                if (over >= 0 && over < 3 && over !== dragK.slot) {
+                    const r = kitSlotRects[over];
+                    c.save();
+                    roundRectPath(c, r.x - 2, r.y - 2, r.w + 4, r.h + 4, 8);
+                    c.lineWidth = 2.5; c.strokeStyle = HUD.gold; c.stroke();
+                    c.restore();
+                }
                 c.save();
                 c.globalAlpha = 0.9;
                 drawKitIcon(c, id, mx, my, 26);
                 c.restore();
-                drawText(outside ? "DROP" : "", mx, my + 24, 9, "#ff9a8c", "center", true);
+                drawText(outside ? "DROP" : over >= 0 && over < 3 && over !== dragK.slot ? ((st.kitOrder || [])[over] ? "SWAP" : "MOVE") : "", mx, my + 24, 9, outside ? "#ff9a8c" : HUD.gold, "center", true);
             }
         }
         c.restore();
@@ -8476,7 +8725,7 @@ import * as cosmetics from './account/cosmetics.js';
     // dash + ability chips and effects (abilityFx.js) draw with these pieces
     abilityFx.init({
         // roundRectPath is a const further down: reach it at call time
-        HUD, hudPanel, hudWell, hudKey, hudTitle, hudTitleW, drawText, roundRectPath: (...a) => roundRectPath(...a), keyLabel,
+        HUD, hudPanel, hudWell, hudKey, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, roundRectPath: (...a) => roundRectPath(...a), keyLabel,
         drawKitIcon: (c, id, x, y, sz) => drawKitIcon(c, id, x, y, sz),
         queueTip: (t, b, x, y) => queueTip(t, b, x, y),
         markSlot: (id, r) => { kitSlotIcons[id] = r; },
@@ -8500,8 +8749,9 @@ import * as cosmetics from './account/cosmetics.js';
     // One at a time: the screen dims, the icon slams in at the centre over
     // spinning rays under a NEW ABILITY! ribbon, holds, then flies into its
     // kit slot, which pulses when it lands.
-    const UNLOCK_IN = 750, UNLOCK_HOLD = 2000, UNLOCK_OUT = 220, UNLOCK_FLY = 620;
+    const UNLOCK_CARD_MS = 3200;     // how long the small unlock card sits
     const kitSlotIcons = {};    // id -> slot geometry from the last drawKitBox
+    const kitSlotRects = [{ x: 0, y: 0, w: 0, h: 0 }, { x: 0, y: 0, w: 0, h: 0 }, { x: 0, y: 0, w: 0, h: 0 }];   // GUI units, for the swap highlight
     let kitSlotPulse = null;
     function unlockBlurb(desc) {
         let s = String(desc || "");
@@ -8511,67 +8761,8 @@ import * as cosmetics from './account/cosmetics.js';
         if (colon > 24) s = s.slice(0, colon) + ".";
         return s;
     }
-    const easeOutBack = (u) => { const k = 1.7; u -= 1; return 1 + (k + 1) * u * u * u + k * u * u; };
     const easeOut = (u) => 1 - (1 - u) * (1 - u) * (1 - u);
     const ramp = (t, a, b) => Math.max(0, Math.min(1, (t - a) / (b - a)));
-    // rays behind the icon, baked once per colour and turned per frame
-    const raySprites = new Map();
-    function raySprite(rgb) {
-        let spr = raySprites.get(rgb);
-        if (spr) return spr;
-        const S = 256, n = 12;
-        spr = document.createElement("canvas");
-        spr.width = spr.height = S;
-        const c = spr.getContext("2d");
-        c.translate(S / 2, S / 2);
-        c.beginPath();
-        for (let i = 0; i < n; i++) {
-            const a = i / n * Math.PI * 2, w = Math.PI / n * 0.5;
-            c.moveTo(0, 0);
-            c.arc(0, 0, S / 2, a - w, a + w);
-            c.closePath();
-        }
-        const g = c.createRadialGradient(0, 0, S * 0.05, 0, 0, S / 2);
-        g.addColorStop(0, "rgba(" + rgb + ",0.95)");
-        g.addColorStop(0.5, "rgba(" + rgb + ",0.4)");
-        g.addColorStop(1, "rgba(" + rgb + ",0)");
-        c.fillStyle = g;
-        c.fill();
-        raySprites.set(rgb, spr);
-        return spr;
-    }
-    // A banner ribbon: the band is a chunky plate with a lip like the
-    // buttons, with notched tails folded behind each end.
-    function drawRibbon(c, cx, cy, w, h, text) {
-        const face = HUD.gold, lipCol = HUD.goldDk, lip = Math.max(3, h * 0.13);
-        const tail = h * 1.05, drop = h * 0.3, tuck = h * 0.3, notch = h * 0.34;
-        c.lineJoin = "round";
-        for (const sg of [-1, 1]) {
-            const x0 = cx + sg * (w / 2 - tuck), x1 = cx + sg * (w / 2 + tail);
-            const y0 = cy - h / 2 + drop, y1 = cy + h / 2 + drop;
-            c.beginPath();
-            c.moveTo(x0, y0); c.lineTo(x1, y0); c.lineTo(x1 - sg * notch, (y0 + y1) / 2); c.lineTo(x1, y1); c.lineTo(x0, y1);
-            c.closePath();
-            c.fillStyle = lipCol; c.fill();
-            c.lineWidth = 1.25; c.strokeStyle = HUD.line; c.stroke();
-            // the fold where the tail tucks under the band
-            c.beginPath();
-            c.moveTo(cx + sg * (w / 2 - tuck), cy + h / 2); c.lineTo(cx + sg * w / 2, cy + h / 2); c.lineTo(cx + sg * (w / 2 - tuck), y1);
-            c.closePath();
-            c.fillStyle = gameDraw.mixColors(lipCol, HUD.ink, 0.5); c.fill();
-            c.stroke();
-        }
-        const x = cx - w / 2, y = cy - h / 2, r = h * 0.2;
-        roundRectPath(c, x, y, w, h, r);
-        c.fillStyle = lipCol; c.fill();
-        roundRectPath(c, x, y, w, h - lip, r);
-        c.fillStyle = face; c.fill();
-        roundRectPath(c, x + 4, y + 3, w - 8, Math.max(2, h * 0.14), h * 0.07);
-        c.fillStyle = "rgba(255,255,255,0.28)"; c.fill();
-        roundRectPath(c, x, y, w, h, r);
-        c.lineWidth = 1.25; c.strokeStyle = HUD.line; c.stroke();
-        hudTitle(text, cx, cy - lip / 2, h * 0.62, HUD.head, "center", 1, c);
-    }
     function drawKitSlotPulse(now) {
         const p = kitSlotPulse;
         if (!p) return;
@@ -8671,12 +8862,15 @@ import * as cosmetics from './account/cosmetics.js';
         const item = (sh.catalog || []).find(i => i.id === u.id);
         if (!item) { q.shift(); return; }
         if (!u.start) u.start = now;
-        const hold = q.length > 1 ? 1400 : UNLOCK_HOLD;
+        // a small, quiet card at the edge of the HUD: it slides in, sits a
+        // few seconds, then its icon glides into the slot. No dim, no burst,
+        // nothing over the playfield and nothing that takes a click.
+        const IN = 220, hold = q.length > 1 ? 1600 : UNLOCK_CARD_MS, FLY = 480;
         const age = now - u.start;
-        const flyAt = UNLOCK_IN + hold;
+        const flyAt = IN + hold;
         const slot = kitSlotIcons[u.id];
         const slotLive = slot && now - slot.at < 200;
-        if (age > flyAt + UNLOCK_FLY) {
+        if (age > flyAt + FLY) {
             q.shift();
             if (slotLive) {
                 kitSlotPulse = { id: u.id, at: now };
@@ -8686,174 +8880,75 @@ import * as cosmetics from './account/cosmetics.js';
             return;
         }
         global.kitUnlockHeld = slotLive ? u.id : null;
-        global.hudCardUp = "unlock";
-        global.kitRevealAt = now;
-        // nothing under the dim takes a tap (the vault's Deposit, its input)
-        global.clickables.vault.hide();
-        if (vaultInput && vaultInput.style.visibility !== "hidden") vaultInput.style.visibility = "hidden";
         const c = ctx[2];
         const calm = !!(global.reducedMotion && global.reducedMotion());
         const sw = global.screenWidth, shh = global.screenHeight;
-        const S = 116, W = 420;
-        const cx = sw / 2, cy = shh / 2;
-        const col = KIT_CARD[u.id] || HUD.gold;
-        const rgb = toRgb(col) || { r: 242, g: 184, b: 60 };
-        const tint = rgb.r + "," + rgb.g + "," + rgb.b;
-        const iconX = cx, iconY = cy - 50;
-        const fly = age > flyAt ? Math.min(1, (age - flyAt) / UNLOCK_FLY) : 0;
-        const out = age > flyAt ? 1 - ramp(age, flyAt, flyAt + UNLOCK_OUT) : 1;
-        const t0 = 110;   // the icon lands once the screen has gone dark
-        const pop = calm ? ramp(age, t0, t0 + 200) : age < t0 ? 0 : age < t0 + 440 ? 0.1 + 0.9 * easeOutBack(ramp(age, t0, t0 + 440)) : 1;
-        const bob = calm || fly ? 0 : Math.sin((age - 700) / 420) * 3 * ramp(age, 600, 900);
-        c.save();
-        // the whole screen dims, darker at the edges
-        const dimA = ramp(age, 0, 160) * out;
-        if (dimA > 0.01) {
-            c.globalAlpha = dimA * 0.6;
-            c.fillStyle = "#08060c";
-            c.fillRect(0, 0, sw, shh);
-            c.globalAlpha = dimA;
-            if (!config.graphical.noGlow) c.drawImage(vignetteSprite(sw, shh, 0.5, "8,6,12"), 0, 0, sw, shh);
+        const W = 290, H = 62, IS = 42;
+        // desktop: just above the ability / kit row at the bottom; touch: at
+        // the top under the clock, clear of both thumbs
+        let x, y;
+        if (global.mobile) {
+            x = (sw - W) / 2;
+            y = (hudTopBottom | 0) + 10;
+            // the plates (drawKillCallouts) wait while this card has the spot
+            global.kitCardAt = now;
+        } else {
+            const a = hudDrawn.ability;
+            const bottom = a ? a.y - 12 : shh - 170;
+            x = a ? Math.max(12, Math.min(sw - W - 12, a.x + a.w / 2 - W / 2)) : (sw - W) / 2;
+            y = bottom - H;
         }
-        // rays turning behind the icon
-        const rayA = ramp(age, t0, t0 + 320) * out;
-        if (rayA > 0.01 && !config.graphical.fewerEffects) {
-            const rr = 250 * (0.5 + 0.5 * easeOut(ramp(age, t0, t0 + 520))) * (1 + 0.04 * Math.sin(now / 300));
+        const inT = calm ? 1 : easeOut(ramp(age, 0, IN));
+        const out = age > flyAt ? 1 - ramp(age, flyAt, flyAt + FLY * 0.6) : 1;
+        const a = inT * out;
+        if (a > 0.01) {
+            const dy = (1 - inT) * (global.mobile ? -10 : 10);
+            const col = KIT_CARD[u.id] || HUD.gold;
             c.save();
-            c.globalAlpha = rayA * 0.6;
-            c.translate(iconX, iconY);
-            c.rotate(calm ? 0 : now * 0.00035);
-            c.drawImage(raySprite(tint), -rr, -rr, rr * 2, rr * 2);
-            c.rotate(calm ? 0.26 : -now * 0.0006);
-            c.globalAlpha = rayA * 0.45;
-            c.drawImage(raySprite("255,236,170"), -rr * 0.7, -rr * 0.7, rr * 1.4, rr * 1.4);
-            c.restore();
-            c.globalAlpha = rayA * 0.8;
-            const hr = S * 1.25;
-            if (!config.graphical.noGlow) c.drawImage(haloSprite("kitnew|" + tint, tint, [[0, 0.9], [0.5, 0.35], [1, 0]]), iconX - hr, iconY - hr, hr * 2, hr * 2);
-        }
-        // the burst: a white shockwave and sparks thrown out as the icon lands
-        if (!calm && age > t0 && age < t0 + 1000) {
-            const t = ramp(age, t0, t0 + 300);
-            if (t < 1) {
-                c.globalAlpha = 0.9 * (1 - t);
-                c.strokeStyle = "#ffffff";
-                c.lineWidth = 12 * (1 - t) + 1;
-                circlePath(c, iconX, iconY, S * (0.4 + 1.3 * easeOut(t)));
-                c.stroke();
-            }
-            const st = ramp(age, t0 + 30, t0 + 1000);
-            for (let i = 0; i < (config.graphical.fewerEffects ? 0 : 16); i++) {
-                const a = i / 16 * Math.PI * 2 + (i & 1 ? 0.18 : -0.08);
-                const d = S * (0.5 + (0.9 + (i % 3) * 0.3) * easeOut(st));
-                const sz = (i % 3 === 0 ? 11 : 7) * (1 - st);
-                if (sz < 0.3) continue;
-                c.globalAlpha = 1;
-                c.fillStyle = i % 3 === 1 ? "#ffffff" : i % 3 ? col : KIT_SPARK;
-                starPath(c, iconX + Math.cos(a) * d, iconY + Math.sin(a) * d, sz, sz * 0.36);
-                c.fill();
-                c.lineWidth = 1.25; c.strokeStyle = HUD.line; c.stroke();
-            }
-        }
-        // the ribbon slams down from larger
-        const rbT = ramp(age, t0 + 200, t0 + 400);
-        const ribbon = u.ab ? (u.trial ? "FREE TRIAL!" : "NEW ABILITY!") : "NEW ITEM!";
-        if (rbT > 0 && out > 0.01) {
-            const rw = hudTitleW(ribbon, 25) + 56, rh = 42;
-            const k = calm ? 1 : 1 + 0.5 * (1 - easeOut(rbT));
-            c.save();
-            c.globalAlpha = rbT * out;
-            c.translate(cx, iconY - S / 2 - 34);
-            c.scale(k, k);
-            drawRibbon(c, 0, 0, rw, rh, ribbon);
-            c.restore();
-        }
-        // name, blurb and key, rising into place one after another
-        const nT = easeOut(ramp(age, t0 + 300, t0 + 540)) * out, bT = easeOut(ramp(age, t0 + 400, t0 + 640)) * out;
-        if (nT > 0.01) {
-            let ns = 38; while (ns > 22 && hudTitleW(item.name, ns) > W) ns -= 1;
-            hudTitle(item.name, cx, iconY + S / 2 + 38 + 10 * (1 - nT), ns, HUD.head, "center", nT, c);
-        }
-        if (bT > 0.01) {
-            const lines = wrapLines(u.spare ? "Added to your abilities. Equip it at a shop." : u.trial ? "Free for 2 minutes. Buy it at a shop to keep it." : unlockBlurb(item.desc), 15, W).slice(0, 2);
-            let ly = iconY + S / 2 + 74 + 10 * (1 - bT);
-            for (const l of lines) { drawText(l, cx, ly, 15, HUD.text, "center", true, bT); ly += 20; }
+            hudPanel(c, x, y + dy, W, H, { r: 12, alpha: a, fill: HUD.solid });
+            // a thin bar in the item's colour down the left edge
+            c.globalAlpha = a;
+            c.fillStyle = col;
+            roundRectPath(c, x + 4, y + dy + 8, 4, H - 16, 2);
+            c.fill();
+            const label = u.ab ? (u.trial ? "FREE TRIAL" : "NEW ABILITY") : "NEW ITEM";
+            const tx = x + 16 + IS + 12;
+            hudTitle(label, tx, y + dy + 15, 10.5, HUD.gold, "left", a, c);
+            let ns = 17; while (ns > 12 && hudTitleW(item.name, ns) > W - (tx - x) - 12) ns -= 1;
+            hudTitle(item.name, tx, y + dy + 32, ns, HUD.head, "left", a, c);
+            // one short line: how to use it (or where it went)
             const slotIdx = (sh.state.kitOrder || []).indexOf(u.id);
             const keyName = u.spare ? "" : u.ab ? keyLabel("KEY_ABILITY", "Q") : slotIdx >= 0 ? keyLabel("KEY_KIT_" + (slotIdx + 1), ["Z", ",", "N"][slotIdx]) : "";
-            if (keyName && global.mobile && u.ab) {
-                hudTitle("Tap the ability button to use it", cx, ly + 16, 16, HUD.text2, "center", bT, c);
-            } else if (keyName && global.mobile) {
-                hudTitle(AIMED_KIT[u.id] ? "Tap its button, then tap where it should land" : "Tap its button on the right to use it", cx, ly + 16, 16, HUD.text2, "center", bT, c);
-            } else if (keyName) {
-                const kh = 26, kw = Math.max(kh, hudTitleW(keyName, kh * 0.62) + kh * 0.55);
-                const pw = hudTitleW("Press", 16), lw = hudTitleW("to use", 16);
-                const rowW = pw + kw + lw + 20;
-                const rx = cx - rowW / 2, ry = ly + 4;
-                c.save();
-                c.globalAlpha = bT;
-                hudTitle("Press", rx, ry + kh / 2 - 1, 16, HUD.text2, "left", 1, c);
-                hudKey(c, rx + pw + 10, ry, keyName, kh);
-                hudTitle("to use", rx + rowW - lw, ry + kh / 2 - 1, 16, HUD.text2, "left", 1, c);
-                c.restore();
+            const line = u.spare ? "Added. Equip it at a shop." : u.trial ? "Free for 2 minutes. Buy it to keep it."
+                : global.mobile ? (u.ab ? "Tap the ability button to use it." : "Tap its button on the right to use it.")
+                : keyName ? null : (wrapLines(unlockBlurb(item.desc), 11.5, W - (tx - x) - 12)[0] || "");
+            if (line != null) drawText(line, tx, y + dy + 49, 11.5, HUD.text2, "left", true, a);
+            else {
+                const kh = 18;
+                hudTitle("Press", tx, y + dy + 49, 11.5, HUD.text2, "left", a, c);
+                c.globalAlpha = a;
+                hudKey(c, tx + hudTitleW("Press", 11.5) + 6, y + dy + 49 - kh / 2, keyName, kh);
+                hudTitle("to use", tx + hudTitleW("Press", 11.5) + 12 + Math.max(kh, hudTitleW(keyName, kh * 0.62) + kh * 0.55), y + dy + 49, 11.5, HUD.text2, "left", a, c);
             }
+            c.restore();
         }
-        c.restore();
-        if (age < t0) return;
-        // the icon: slams in, bobs, then flies into its slot on an arc
-        let ix = iconX, iy = iconY + bob, is = S * pop, ia = 1;
+        // the icon: on the card, then a short glide into its slot
+        const ix0 = x + 16 + IS / 2, iy0 = y + H / 2;
+        const fly = age > flyAt ? Math.min(1, (age - flyAt) / FLY) : 0;
+        let ix = ix0, iy = iy0 + (1 - inT) * (global.mobile ? -10 : 10), is = IS, ia = inT;
         if (fly > 0) {
             const e = fly < 0.5 ? 4 * fly * fly * fly : 1 - Math.pow(-2 * fly + 2, 3) / 2;
             if (slotLive) {
-                ix = iconX + (slot.x - iconX) * e;
-                iy = iconY + (slot.y - iconY) * e - Math.sin(Math.PI * e) * 90;
-                is = S + (26 - S) * e;
-            } else {
-                is = S * (1 - 0.3 * e);
-                ia = 1 - e;
-            }
+                ix = ix0 + (slot.x - ix0) * e;
+                iy = iy0 + (slot.y - iy0) * e - (calm ? 0 : Math.sin(Math.PI * e) * 30);
+                is = IS + (26 - IS) * e;
+            } else ia = 1 - e;
         }
-        // one baked size, scaled: a sprite per frame's size would thrash the cache
-        const spr = kitIconSprite(u.id, S);
+        const spr = kitIconSprite(u.id, IS);
+        const half = spr.unit / 2 * (is / IS);
         c.save();
-        if (fly > 0 && slotLive && !calm && !config.graphical.fewerEffects) {
-            // a short trail of sparks behind it in flight
-            for (let k = 1; k <= 5; k++) {
-                const f = Math.max(0, fly - k * 0.05);
-                const ee = f < 0.5 ? 4 * f * f * f : 1 - Math.pow(-2 * f + 2, 3) / 2;
-                const tx = iconX + (slot.x - iconX) * ee, ty = iconY + (slot.y - iconY) * ee - Math.sin(Math.PI * ee) * 90;
-                c.globalAlpha = 0.85 * (1 - k / 6) * (1 - fly * 0.5);
-                c.fillStyle = k & 1 ? KIT_SPARK : "#ffffff";
-                starPath(c, tx, ty, 8 - k, (8 - k) * 0.36);
-                c.fill();
-            }
-        }
-        const half = spr.unit / 2 * (is / S);
         c.globalAlpha = ia;
         c.drawImage(spr, ix - half, iy - half, half * 2, half * 2);
-        if (!calm) {
-            c.save();
-            roundRectPath(c, ix - is / 2, iy - is / 2, is, is, is * 0.22);
-            c.clip();
-            // a white flash as it lands, then a shine sweeping across
-            const fl = 1 - ramp(age, t0, t0 + 260);
-            if (fl > 0.01) {
-                c.globalAlpha = fl * 0.85;
-                c.fillStyle = "#ffffff";
-                c.fillRect(ix - is / 2, iy - is / 2, is, is);
-            }
-            const sweep = ramp(age, t0 + 520, t0 + 900);
-            if (sweep > 0 && sweep < 1) {
-                const bx = ix - is + sweep * is * 2;
-                c.globalAlpha = 0.45;
-                c.fillStyle = "#ffffff";
-                c.beginPath();
-                c.moveTo(bx - is * 0.18, iy - is / 2); c.lineTo(bx + is * 0.02, iy - is / 2);
-                c.lineTo(bx - is * 0.38, iy + is / 2); c.lineTo(bx - is * 0.58, iy + is / 2);
-                c.closePath();
-                c.fill();
-            }
-            c.restore();
-        }
         c.restore();
     }
     // ── shop panel ─────────────────────────────────────────────────────
@@ -8879,7 +8974,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (item.cat === "kit") {
             const have = (st.kit || {})[item.id] | 0;
             if (have >= item.max) return { text: "x" + have + " FULL", col: SHOP_ACCENT, buy: false };
-            if (!have && (st.kitOrder || []).length >= 3) return { text: "KIT FULL", col: color.grey, buy: false };
+            if (!have && (st.kitOrder || []).filter(Boolean).length >= 3) return { text: "KIT FULL", col: color.grey, buy: false };
             return { text: have ? "x" + have : "", col: SHOP_ACCENT, buy: true };
         }
         if (item.cat === "arm") return st.arm === item.id ? { text: "MOUNTED", col: SHOP_ACCENT, buy: false } : { text: "", col: color.grey, buy: true };
@@ -9019,7 +9114,7 @@ import * as cosmetics from './account/cosmetics.js';
         cardH = Math.max(36, cardH);
         const cardW = (gridW - (cols - 1) * GAP) / cols;
         const hover = global.clickables.shop.check({ x: global.mouse.x, y: global.mouse.y });
-        const kitFull = ((sh.state && sh.state.kitOrder) || []).length >= 3;
+        const kitFull = ((sh.state && sh.state.kitOrder) || []).filter(Boolean).length >= 3;
         for (let i = 0; i < items.length && i < 36; i++) {
             const it = items[i];
             const col = i % cols, row = (i / cols) | 0;
@@ -9239,8 +9334,15 @@ import * as cosmetics from './account/cosmetics.js';
         }
         raidHeat.worldMarks(marks, toScreen, onScreen, me, trackPos, ratio);
         marks.sort((a, b) => a.pri - b.pri);
-        const placed = [];
-        for (const mk of marks.slice(0, 4)) {
+        const placed = [], kept = [];
+        // one chip per thing (the contract on the boss, a supply drop said
+        // twice) and three at most
+        for (const mk of marks) {
+            if (kept.length >= 3) break;
+            if (kept.some(o => o.name === mk.name || Math.hypot(o.s.x - mk.s.x, o.s.y - mk.s.y) < 90)) continue;
+            kept.push(mk);
+        }
+        for (const mk of kept) {
             const e = edgePoint(mk.s.x - cx, mk.s.y - cy);
             drawEdgeMarker(c, e, mk.col, mk.glyph, mk.name, fmtDist(mk.d), placed);
         }
@@ -9449,7 +9551,7 @@ import * as cosmetics from './account/cosmetics.js';
         try { hex = gameDraw.modifyColor(b.col); } catch (e) { hex = null; }
         if (!(typeof hex === "string" && hex[0] === "#")) hex = "#c8c8c8";
         b.shades = [hex, gameDraw.mixColors(hex, "#ffffff", 0.45), gameDraw.mixColors(hex, "#000000", 0.3), "#8d8d98"];
-        const n = b.self ? 30 : 12;
+        const n = fxFull() ? (b.self ? 30 : 12) : (b.self ? 18 : 8);
         b.parts = [];
         for (let i = 0; i < n; i++) {
             b.parts.push({
@@ -9702,8 +9804,9 @@ import * as cosmetics from './account/cosmetics.js';
             ? "Spawn shield: safe for " + left + "s, then moving or shooting drops it"
             : "Spawn shield: moving or shooting drops it";
         // under the mining combo that sits below the tank
-        const y = global.screenHeight / 2 + 175, size = 22;
-        const w = measureText(line, size) + 36, h = size + 18;
+        // phones: between the mining line and your name; the top is full there
+        const y = global.mobile ? Math.round(global.screenHeight * 0.75) : global.screenHeight / 2 + 150, size = 13;
+        const w = measureText(line, size) + 26, h = size + 13;
         if (since < 4000) global.hudCardUp = "shield";
         const c = ctx[2];
         hudPanel(c, global.screenWidth / 2 - w / 2, y - h / 2, w, h, { alpha: 0.9, r: h / 2, bevel: false });
@@ -9783,7 +9886,8 @@ import * as cosmetics from './account/cosmetics.js';
         if (st && st.childElementCount) evHud.toastFloor = st.getBoundingClientRect().bottom * global.screenWidth / Math.max(1, window.innerWidth);
         if (!E) return evHud;
         const now = E.now(), c = E.current(now);
-        evHud.chip = c && !c.live && c.ms <= E.HUD_LEAD_MS ? c.ev.name + " in " + E.countdown(c.ms) : "";
+        // in a raid the countdown only shows in the last hour (the menu card has the rest)
+        evHud.chip = c && !c.live && c.ms <= Math.min(E.HUD_LEAD_MS, 3600000) ? c.ev.name + " in " + E.countdown(c.ms) : "";
         // callouts wait for a free screen: not dead, not the raid-end finale
         if (!c || global.died || raidFinale.active()) return evHud;
         const id = c.ev.id;
@@ -9940,7 +10044,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (live) { d.x = live.x; d.y = live.y; }
             const age = now - d.born;
             const idle = now - (d.comboAt || d.born);
-            const hold = d.holdMs ?? DMG_COMBO_HOLD_MS;
+            const hold = (d.holdMs ?? DMG_COMBO_HOLD_MS) * (fxFull() ? 1 : 0.75);
             const fadeOut = d.fadeMs ?? DMG_FADE_OUT_MS;
             if (idle >= hold + fadeOut) { list.splice(i, 1); continue; }
 
@@ -9988,9 +10092,9 @@ import * as cosmetics from './account/cosmetics.js';
             const tier = d.tier || 0;
             const combo = d.combo || 1;
             const finish = d.word === "Finish";
-            const base = rock
+            const base = (rock
                 ? (12.5 + Math.min(6, d.amount * 0.08)) * ratio
-                : (15.5 + Math.min(8, d.amount * 0.1) + (tier >= 2 ? 3.5 : tier >= 1 ? 1.5 : 0) + (finish ? 3 : 0) + Math.min(3, combo * 0.25)) * ratio;
+                : (15.5 + Math.min(8, d.amount * 0.1) + (tier >= 2 ? 3.5 : tier >= 1 ? 1.5 : 0) + (finish ? 3 : 0) + Math.min(3, combo * 0.25)) * ratio) * (fxFull() ? 1 : 0.86);
             const size = base * pop;
             const tint = rock
                 ? (ROCK_ORE_TINT[d.ore | 0] || ROCK_ORE_TINT[0])
@@ -10245,7 +10349,8 @@ import * as cosmetics from './account/cosmetics.js';
         if (full) {
             c.save();
             c.globalAlpha = 0.68 + 0.32 * beat;
-            drawText("Your satchel is full. Go bank it.", w / 2, 112, 16, "#eb4034", "center");
+            // under the clock group and its notes, never on top of them
+            drawText("Your satchel is full. Go bank it.", w / 2, Math.max(112, (hudTopBottom || 0) + 16), 16, "#eb4034", "center");
             c.restore();
         }
     }
@@ -11697,7 +11802,9 @@ import * as cosmetics from './account/cosmetics.js';
             const item = id ? catalog.find(it => it.id === id) : null;
             const w = b.w * k, h = b.h * k, x = b.x * k - w / 2, y = b.y * k - h / 2;
             const held = [...touch.btn.values()].includes("kit" + i);
-            const drag = global.kitDrag && global.kitDrag.slot === i;
+            // only while a finger is still on it: a drag left over from a
+            // missed release must never hide the icon of whatever lands here
+            const drag = held && global.kitDrag && global.kitDrag.slot === i;
             c.save();
             c.globalAlpha = item ? 1 : 0.4;
             const armed = touch.place && touch.place.slot === i;
@@ -11848,25 +11955,20 @@ import * as cosmetics from './account/cosmetics.js';
         const held = touch.armHeld;
         const on = touch.armOn;
         c.save();
-        if (on && !config.graphical.noGlow) {
-            c.globalAlpha = 0.5 + 0.2 * Math.sin(now / 300);
-            const hr = r * 1.9;
-            c.drawImage(haloSprite("arm|185,139,255", "185,139,255", [[0, 0.5], [0.55, 0.2], [1, 0]]), x - hr, y - hr, hr * 2, hr * 2);
-        }
         c.globalAlpha = 1;
         c.beginPath(); c.arc(x, y + 3, r, 0, Math.PI * 2); c.fillStyle = HUD.drop; c.fill();
         c.beginPath(); c.arc(x, y + (held ? 2 : 0), r, 0, Math.PI * 2);
-        c.fillStyle = held ? "#6d4fa8" : on ? "#8a63d2" : HUD.panel; c.fill();
+        c.fillStyle = held ? HUD.copperDk : on ? HUD.copper : HUD.panel; c.fill();
         c.lineWidth = 1.5; c.strokeStyle = HUD.line; c.stroke();
         // burn-out ring for timed sidearms, a full ring for permanent ones
         const left = st.armUntil > 0 ? Math.max(0, st.armUntil - Date.now()) / 150000 : 1;
         c.beginPath(); c.arc(x, y + (held ? 2 : 0), r - 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, left));
-        c.lineWidth = 3.5; c.lineCap = "round"; c.strokeStyle = left < 0.2 && (now % 600) < 300 ? "#ff9a8c" : "#c9a8ff"; c.stroke();
+        c.lineWidth = 3.5; c.lineCap = "round"; c.strokeStyle = left < 0.2 && (now % 600) < 300 ? "#ff9a8c" : HUD.gold; c.stroke();
         c.restore();
         const nm = item ? shortName(item.name, 10) : "Sidearm";
         let fs = 13; while (fs > 8 && hudTitleW(nm, fs) > r * 1.7) fs -= 0.5;
         hudTitle(nm, x, y - 3 + (held ? 2 : 0), fs, HUD.head, "center");
-        hudTitle(on ? "Auto" : "Hold", x, y + 12 + (held ? 2 : 0), 9, on ? "#e6d8ff" : HUD.text2, "center");
+        hudTitle(on ? "Auto" : "Hold", x, y + 12 + (held ? 2 : 0), 9, on ? HUD.head : HUD.text2, "center");
     }
     // First time each chip shows up, a pointer says what it does; tapping the
     // chip once retires it for good.
@@ -12064,7 +12166,7 @@ import * as cosmetics from './account/cosmetics.js';
         drawTouchArm(c, L, k, now);
         if (touch.buttonShown("dash")) abilityFx.drawTouch(c, L, k, (name) => [...touch.btn.values()].includes(name));
         drawTouchPlace(c, k, now);
-        abilityFx.drawTouchTip(L, k);
+        abilityFx.drawTouchTip(L, k, c);
         if (touch.move) { drawTouchStick(c, touch.move, "move", k, now); if (!touchHint.move) { touchHint.move = true; saveTouchHint(); } }
         if (touch.aim) { drawTouchStick(c, touch.aim, "aim", k, now); if (!touchHint.aim && touch.aim.firing) { touchHint.aim = true; saveTouchHint(); } }
         if (touch.aim && touch.aim.firing) drawTouchReticle(c, now);
@@ -12511,6 +12613,16 @@ import * as cosmetics from './account/cosmetics.js';
             global.clickables.deathRespawn.hide();
             return;
         }
+        // dead in the last storm when the raid's last ten seconds start: no
+        // card, just the fight and the countdown, then the results
+        if (global.royaleDied && lastStormCount()) {
+            global.clickables.royaleSpectate.hide();
+            global.clickables.deathRespawn.hide();
+            global.clickables.royalePrev.hide();
+            global.clickables.royaleNext.hide();
+            global.clickables.royalePlay.hide();
+            return;
+        }
         if (global.royaleDied) {
             gameDrawDeadRoyale();
             return;
@@ -12635,6 +12747,7 @@ import * as cosmetics from './account/cosmetics.js';
     // updateRoyaleDomButtons): it counts down the server's 3 s wait, then
     // waits for a click, Enter, Space or RT. Nothing drops you in on its own;
     // the raid end queues everyone itself (raidFinale.js).
+    const lastStormCount = () => !!(global.died && global.royale && global.royale.lock && raidFinale.countdownUp());
     const gameDrawDeadRoyale = () => {
         const now = performance.now();
         const A = global.royaleDiedAt ? Math.min(1, (now - global.royaleDiedAt) / 140) : 1;
@@ -12736,7 +12849,7 @@ import * as cosmetics from './account/cosmetics.js';
         if (rv) {
             drawSkull(c, rx + 34, wy, 13, "#ff6b5e");
             drawText("REVENGE", rx + 64, wy - 24, 11, HUD.text2, "left", true, A);
-            const nm = shortName(rv.name || "them", 18);
+            const nm = shortName(rv.name || "Unnamed", 18);
             let ns = 24; while (ns > 14 && hudTitleW(nm, ns) > colW - 84) ns -= 1;
             hudTitle(nm, rx + 64, wy + 2, ns, "#ff9a8c", "left", A);
             const sub = rv.alive ? "Marked for you. +" + fmtNum(rv.bonus || 200) + " gems if you get them." : "Marked for you once they're back.";
@@ -12944,7 +13057,7 @@ import * as cosmetics from './account/cosmetics.js';
         }
         // raid death card: lift the view so the killer shows above the card
         {
-            const want = global.died && global.royaleDied && !global.royaleSpectating ? (global.deathCamLift || 0) * util.getScreenRatio() : 0;
+            const want = global.died && global.royaleDied && !global.royaleSpectating && !lastStormCount() ? (global.deathCamLift || 0) * util.getScreenRatio() : 0;
             const dt = Math.min(100, tickMotion || 16.7);
             deathLift += (want - deathLift) * Math.min(1, 1 - Math.pow(0.8, dt / 16.7));
             if (Math.abs(deathLift) < 0.5 && !want) deathLift = 0;
@@ -13014,7 +13127,7 @@ import * as cosmetics from './account/cosmetics.js';
             hudLanes();
             drawKillCallouts();
             try { raidHeat.drawSlams(ctx[2], lanes.slamY, lanes.slamK); } catch (e) { /* */ }
-            if (global.royaleSpectating) drawRoyaleSpectateBar();
+            if (global.royaleSpectating && !lastStormCount()) drawRoyaleSpectateBar();
             try { updateRoyaleDomButtons(); } catch { /* */ }
             drawRoyaleBoard();
             drawMessages(spacing, alcoveSize);
@@ -13222,8 +13335,9 @@ import * as cosmetics from './account/cosmetics.js';
             setStyle(again, "display", "none");
             return;
         }
-        const spectating = !!(inGame && global.royaleSpectating && !joinUp);
-        const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating);
+        const countdown = lastStormCount();
+        const spectating = !!(inGame && global.royaleSpectating && !joinUp && !countdown);
+        const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating && !countdown);
         setStyle(spec, "display", spectating ? "flex" : "none");
         setStyle(dead, "display", deadShow ? "flex" : "none");
         if (again) {
@@ -13623,7 +13737,9 @@ import * as cosmetics from './account/cosmetics.js';
             if (tick < due - 6) return;
             lastCappedFrame = tick - due > 30 ? tick : due;   // after a stall, start the grid again
         }
+        const drawAt = performance.now();
         renderFrame(tick);
+        try { autoQ.frame(drawAt, performance.now() - drawAt); } catch (e) { }
     }
     // One frame of the game, separate from the scheduler so QA tooling can
     // step frames in a background tab where requestAnimationFrame is paused.

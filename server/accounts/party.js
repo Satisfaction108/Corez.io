@@ -85,6 +85,7 @@ function cleanName(name) {
     s = s.replace(/\s+/g, ' ').trim();
     const chars = Array.from(s);
     if (chars.length > 16) s = chars.slice(0, 16).join('').trim();
+    try { if (require('../../shared/profanity.js').hasProfanity(s)) s = ''; } catch (e) { /* */ }
     return s || 'Guest';
 }
 

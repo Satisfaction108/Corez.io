@@ -1,19 +1,16 @@
 /* Halloween on the menu. html.dw-halloween is set in index.html (Oct 1 to
    Nov 2, or ?halloween=1); the moving background is client/halloween.js.
-   Pumpkin and storm purple go on top of the usual palette as accents.
+   Pumpkin orange goes on top of the usual palette as the one accent.
    Nothing here moves a control or changes its size. Delete this file and
    its <link> to retire it. */
 
 html.dw-halloween {
     --hw-pumpkin: #ee7418;
     --hw-pumpkin-dk: #a3430b;
-    --hw-storm: #7448d6;
-    --hw-storm-dk: #4a2a9c;
     --hw-web: rgba(233, 224, 204, .26);
     --hw-web-shape: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0L87 30M0 0L71.9 69.5M0 0L33.7 83.4M24 0Q19.5 3.3 24.1 8.3Q16.5 10.1 16.5 16Q10.8 16.1 9.6 23.6Q3.8 19.4 0 24M48 0Q36.5 6.1 42.1 14.5Q31.5 19.3 34.5 33.3Q20.8 30.8 16.9 41.7Q7.1 36.5 0 48M69 0Q55.8 9.3 68.6 23.6Q47.9 29.4 48.9 47.2Q31.3 46.4 27 66.8Q10.8 55.4 0 69M94 0Q72.6 12.1 85.1 29.3Q62.6 38.4 67.3 65Q41.5 61.5 34.5 85.3Q14.2 73 0 94' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 html.dw-halloween[data-theme="light"] {
-    --hw-storm: #6c40d0;
     --hw-web: rgba(27, 21, 16, .3);
 }
 
@@ -58,8 +55,7 @@ html.dw-halloween #startButton {
         radial-gradient(120% 150% at 50% 25%, rgba(110, 32, 0, 0) 55%, rgba(110, 32, 0, .22) 100%);
     background-size: 100% 100%;
     background-repeat: no-repeat;
-    box-shadow: inset 0 -6px 0 var(--hw-pumpkin-dk), inset 0 1px 0 rgba(255, 232, 186, .45),
-        inset 0 0 22px rgba(255, 210, 110, .3), 0 6px 16px -6px color-mix(in srgb, var(--hw-pumpkin-dk) 75%, transparent);
+    box-shadow: inset 0 -6px 0 var(--hw-pumpkin-dk), inset 0 1px 0 rgba(255, 232, 186, .45), inset 0 0 22px rgba(255, 210, 110, .3), 0 4px 0 var(--drop);
 }
 html.dw-halloween #startButton:active:not(:disabled) {
     box-shadow: inset 0 -2px 0 var(--hw-pumpkin-dk), inset 0 2px 4px rgba(0, 0, 0, .14), 0 0 0 transparent;
@@ -71,11 +67,15 @@ html.dw-halloween #startButton b {
 }
 html.dw-halloween #startButton.ev-live::after { border-color: var(--hw-pumpkin); }
 
-/* the picked mode glows storm purple, so Play is the only orange key */
+/* the picked mode is a raised plain key with a pumpkin underline, so Play
+   stays the only orange face */
 html.dw-halloween .mode-opt.on {
-    background: var(--hw-storm);
-    box-shadow: inset 0 -3px 0 var(--hw-storm-dk), 0 2px 6px -2px var(--cast);
+    background: var(--btn);
+    color: var(--heading);
+    text-shadow: none;
+    box-shadow: inset 0 -3px 0 var(--hw-pumpkin), 0 2px 0 var(--drop);
 }
+html.dw-halloween .mode-opt.on .mode-count { background: color-mix(in srgb, var(--hw-pumpkin) 24%, transparent); color: var(--heading); }
 
 /* Raid Night gets one piece of candy corn after its name */
 html.dw-halloween .ev-title::after {

@@ -75,13 +75,19 @@ export function place(x, y, info) {
     getInfo = info;
     loadLogo();
     const k = window.innerWidth / Math.max(1, global.screenWidth);
+    // whole pixels, and a move under 3 px is ignored, so the button never
+    // creeps while the panel under it settles
     const px = Math.round(x * k), py = Math.round(y * k);
-    if (px !== lastX || py !== lastY) {
+    if (!shown || Math.abs(px - lastX) > 2 || Math.abs(py - lastY) > 2) {
         lastX = px; lastY = py;
-        btn.style.left = px + "px";
-        btn.style.top = py + "px";
+        // anchored by its bottom-right corner through left/top, so the
+        // transform is free for the press (a transform anchor jumped the
+        // button a whole width when :active replaced it)
+        const w = btn.offsetWidth, h = btn.offsetHeight;
+        btn.style.left = (px - w) + "px";
+        btn.style.top = (py - h) + "px";
         note.style.left = px + "px";
-        note.style.top = (py - btn.offsetHeight - 8) + "px";
+        note.style.top = (py - h - 8) + "px";
     }
     if (!shown) { shown = true; btn.classList.add("open"); }
 }
@@ -339,7 +345,7 @@ export function makeCard(info) {
     const rows = info.top || [];
     const n = Math.max(1, Math.min(3, rows.length));
     plate(c, tx, ty, tw, 34 + n * rowH, 14, C.solid);
-    word(c, info.duos ? "TOP TEAMS" : "TOP 3", tx + 18, ty + 22, 22, C.gold);
+    word(c, info.duos ? "Top teams" : "Top 3", tx + 18, ty + 22, 22, C.gold);
     label(c, info.duos ? "Duos" : "Solo", tx + tw - 18, ty + 22, 15, C.text2, "right");
     for (let i = 0; i < n; i++) {
         const row = rows[i], y = ty + 34 + i * rowH + rowH / 2 - 2;

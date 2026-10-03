@@ -42,7 +42,7 @@ body.mobile #ingameChatModeBtn { display: none !important; }
     border-radius: 11px;
     border: 1px solid #120e16;
     background: #4a4156;
-    box-shadow: inset 0 -4px 0 #2e2837, 0 2px 5px rgba(0,0,0,.42);
+    box-shadow: inset 0 -4px 0 #2e2837, 0 3px 0 rgba(0,0,0,.3);
     color: #fff3d9;
     display: none;
     align-items: center;
@@ -54,7 +54,7 @@ body.mobile #ingameChatModeBtn { display: none !important; }
 #touchChatBtn .dw-ic { width: 22px; height: 22px; }
 #touchAutoBtn, #touchPingBtn { font: 400 16px/1 "Lilita One", Rubik, sans-serif; letter-spacing: .02em; color: #a597b0; }
 #touchPingBtn { color: #fff3d9; }
-#touchAutoBtn.on { background: #e07b2e; box-shadow: inset 0 -4px 0 #9e4a14, 0 2px 5px rgba(0,0,0,.42); color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.28); }
+#touchAutoBtn.on { background: #e07b2e; box-shadow: inset 0 -4px 0 #9e4a14, 0 3px 0 rgba(0,0,0,.3); color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.28); }
 #touchChatBtn:active, #touchRecBtn:active, #touchAutoBtn:active, #touchPingBtn:active { transform: translateY(3px); box-shadow: inset 0 -2px 0 #2e2837, 0 0 0 transparent; }
 
 /* record: a red dot; while recording it turns into a pill with the time */
@@ -88,7 +88,7 @@ body.mobile #ingameChatModeBtn { display: none !important; }
     border-radius: 13px;
     border: 1px solid #120e16;
     background: rgba(43,37,51,.97);
-    box-shadow: 0 3px 10px rgba(0,0,0,.42);
+    box-shadow: 0 3px 0 rgba(0,0,0,.3);
     color: #e9e0cc;
     font: 700 13px/1.2 Rubik, Ubuntu, sans-serif;
     max-width: calc(100vw - 28px);
@@ -118,9 +118,7 @@ body.mobile #ingameChatModeBtn { display: none !important; }
     align-items: center;
     justify-content: center;
     padding: 24px;
-    background: rgba(8,6,12,.78);
-    -webkit-backdrop-filter: blur(3px);
-    backdrop-filter: blur(3px);
+    background: rgba(8,6,12,.82);
 }
 #touchRotate.show { display: flex; }
 #touchRotate .rot-card {
@@ -130,7 +128,7 @@ body.mobile #ingameChatModeBtn { display: none !important; }
     border-radius: 14px;
     border: 1px solid #120e16;
     background: #2b2533;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 3px 10px rgba(0,0,0,.42);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 3px 0 rgba(0,0,0,.3);
     color: #e9e0cc;
     font: 400 14px/1.5 Rubik, Ubuntu, sans-serif;
 }

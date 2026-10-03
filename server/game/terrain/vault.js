@@ -122,18 +122,28 @@ function setBanked(body, amount) {
     return amount;
 }
 
+// a refused deposit always says why (a silent no reads as a broken button)
+function refuse(body, msg) {
+    const t = Date.now();
+    if (t - (body._depositNoAt || 0) < 1500) return false;
+    body._depositNoAt = t;
+    try { body.sendMessage(msg); } catch { /* */ }
+    return false;
+}
 function depositFor(body, amount) {
-    if (!body || body.isDead() || !body.vaultOnPad) return false;
+    if (!body || body.isDead()) return false;
+    if (!body.vaultOnPad) return refuse(body, "Get onto the vault to bank.");
     amount = Math.floor(amount);
     const carried = body.carriedGems | 0;
-    if (!(amount > 0) || carried < MIN_DEPOSIT) return false;
+    if (carried < MIN_DEPOSIT) return refuse(body, "You need at least " + MIN_DEPOSIT + " gems to bank.");
+    if (!(amount > 0)) amount = carried;
     if (Config.dig_royale) {
         let pad = null;
         // same shape tick() uses to open the panel (the octagon reaches past v.r)
         for (const v of getVaults()) {
             if (onPadShape(v, body.x - v.x, body.y - v.y)) { pad = v; break; }
         }
-        if (!pad) return false;
+        if (!pad) return refuse(body, "Drive onto the middle of the vault to bank.");
         if (!claimPad(pad, body)) {
             const t = Date.now();
             if (t - (body._vaultBusyAt || 0) > 3000) {

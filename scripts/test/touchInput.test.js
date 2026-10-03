@@ -181,7 +181,7 @@ const { unpackMove: serverUnpack } = require('../../server/lib/touchMove.js');
         assert.match(canvas, /e\.pointerType === "mouse"\) flip\(watch\.mouseMove/);
         assert.match(canvas, /addEventListener\("mousemove", \(event\) => \{if \(!global\.mobile/, 'mouse handlers wait while touch plays');
         assert.match(canvas, /window\.addEventListener\("mousemove", \(event\) => \{if \(!global\.mobile/, 'aim hears the cursor anywhere on the window, not only over the canvas');
-        assert.match(canvas, /this\.aimClickHeld = false;\s+switch \(mouse\.button\)/, 'a lost mouseup never leaves a click swallow armed');
+        assert.match(canvas, /this\.aimClickHeld = false;\s+if \(mouse\.button === 0\) \{ global\.kitDrag = null; global\.chipDrag = null; \}\s+switch \(mouse\.button\)/, 'a lost mouseup never leaves a click swallow or a drag armed');
         // aim assist sits behind the enabled check in frame()
         const fr = touch.slice(touch.indexOf('    frame(now) {'));
         assert.ok(fr.indexOf('if (!sock || !this.enabled) return;') < fr.indexOf('assistAim('), 'assist only in touch play');

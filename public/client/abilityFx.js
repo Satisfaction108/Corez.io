@@ -16,6 +16,7 @@ import { global } from "./global.js";
 import { config } from "./config.js";
 import { gameSound } from "./sound.js";
 import { sparks as jSparks } from "./juice.js";
+import * as chipOrder from "./chipOrder.js";
 
 // one colour per ability (the HUD icon tiles use the same, app.js KIT_CARD)
 export const AB_COLOR = {
@@ -139,10 +140,10 @@ export function onFx(m, punch) {
     if (life) f.life = life(f);
     if (kind === "fling" || kind === "flinghit" || kind === "rocket" || kind === "rush") { f.trail = new Float32Array(TRAIL_N * 3); f.tn = 0; f.tAt = 0; }
     if (kind === "pad") { pads.push(f); if (pads.length > 12) pads.shift(); }
-    else if (kind === "padgone") { for (let i = pads.length - 1; i >= 0; i--) if (pads[i].id === f.id) pads.splice(i, 1); return; }
+    else if (kind === "padgone") { for (const p of pads) if (p.id === f.id && !p.goneAt) p.goneAt = f.born; return; }
     else if (kind === "surface") {
         // the channel is over: its dust stops, a burst marks where it came up
-        for (const g of fx) if (g.k === "burrow" && g.id === f.id) g.b = Math.min(g.b, performance.now() - g.born + 250);
+        for (const g of fx) if (g.k === "burrow" && g.id === f.id) g.b = Math.min(g.b, performance.now() - g.born + 450);
         addFx(f);
     }
     else if (kind === "hookend") {
@@ -188,7 +189,7 @@ const LIFE = {
     shock: () => 1100, fling: () => 750, flinghit: () => 750,
     rocket: f => f.b + 700,
     k_charge: () => 950, k_medkit: () => 1100, k_flash: () => 1000, k_bulwark: () => 950, k_barrage: () => 650,
-    k_anchor: f => f.b + 400, k_decoy: f => f.b + 300,
+    k_anchor: f => f.b + 500, k_decoy: f => f.b + 500,
 };
 const TRAIL_N = 14;               // positions kept for a trail (x, y, time)
 const CHARGE_FLY = 160;           // the seismic charge in the air (ms)
@@ -548,8 +549,11 @@ export function drawFloor(c, px, py, ratio) {
         const sx = ratio * p.x - px + cx, sy = ratio * p.y - py + cy;
         const R = 62 * ratio;
         if (sx < -R * 2 || sy < -R * 2 || sx > global.screenWidth + R * 2 || sy > global.screenHeight + R * 2) continue;
-        const pop = Math.min(1, age / 180);
-        const fade = Math.min(1, (p.b - age) / 600);
+        const pop = Math.min(1, age / 180) * (0.85 + 0.15 * gone);
+        // replaced by a newer pad: it shrinks and fades instead of vanishing
+        const gone = p.goneAt ? 1 - Math.min(1, (now - p.goneAt) / 400) : 1;
+        if (gone <= 0) { pads.splice(i, 1); continue; }
+        const fade = Math.min(1, (p.b - age) / 600) * gone;
         const blink = p.b - age < 2000 && (now % 400) < 200 ? 0.55 : 1;
         c.save();
         c.globalAlpha = fade * blink;
@@ -644,7 +648,7 @@ export function drawWorld(c, px, py, ratio) {
                     else if (!miss && age >= outMs + HOOK_HOLD_MAX) f.backAt = now;
                     else if (!e && age > outMs) f.backAt = now;
                 }
-                let hx, hy, state;
+                let hx, hy, state, hookA = 1;
                 if (f.backAt == null) {
                     if (age < outMs) {
                         const u = age / outMs, k2 = 1 - (1 - u) * (1 - u);
@@ -661,6 +665,8 @@ export function drawWorld(c, px, py, ratio) {
                     if (u >= 1) { fx.splice(i, 1); break; }
                     const k2 = u * u;
                     hx = f.bx + (tx - f.bx) * k2; hy = f.by + (ty - f.by) * k2; state = 2;
+                    // it eases out as it reaches the hull, never just blinks off
+                    hookA = 1 - Math.max(0, (u - 0.55) / 0.45);
                 }
                 if (!miss && state === 1 && !f.bit) {
                     f.bit = 1;
@@ -682,6 +688,7 @@ export function drawWorld(c, px, py, ratio) {
                 const rx = (shx - stx) / dl, ry = (shy - sty) / dl;
                 const fx0 = stx + rx * str * 0.9, fy0 = sty + ry * str * 0.9;
                 const headAng = state === 2 ? Math.atan2(sty - shy, stx - shx) + Math.PI : f.a;
+                c.globalAlpha = hookA;
                 drawChain(c, fx0, fy0, shx, shy, ratio, now, state === 1 ? 0 : state === 0 ? 1 : 0.5);
                 // a little blur and whoosh behind it in flight
                 if (state === 0 && !fewer()) {
@@ -696,7 +703,7 @@ export function drawWorld(c, px, py, ratio) {
                         c.beginPath(); c.moveTo(shx - ca * 18 * ratio + ox, shy - sa * 18 * ratio + oy); c.lineTo(shx - ca * 46 * ratio + ox, shy - sa * 46 * ratio + oy); c.stroke();
                     }
                 }
-                c.globalAlpha = 1;
+                c.globalAlpha = hookA;
                 drawHookHead(c, shx, shy, headAng, ratio);
                 break;
             }
@@ -705,7 +712,7 @@ export function drawWorld(c, px, py, ratio) {
                 // trail of dust behind it, so everyone can follow the tunnel
                 const left = f.b - age;
                 if (left < 0) { fx.splice(i, 1); break; }
-                const fade = Math.min(1, left / 250);
+                const fade = Math.min(1, left / 450);
                 if (es) {
                     const tr = f.trail || (f.trail = []);
                     if (!f.lastAt || now - f.lastAt > 90) {
@@ -995,44 +1002,25 @@ export function drawWorld(c, px, py, ratio) {
                 break;
             }
             case "smoke": {
-                // a thick cloud the size of the hiding area: it billows out,
-                // churns while it lasts, then thins away (the first look, with
-                // a solid middle so nothing shows through and a faint rim)
+                // a cartoon cloud: puffs merged into one flat shape (darker
+                // outline, a mid shadow, a lighter body up and to the right),
+                // drawn on its own canvas and laid down see-through in one
+                // go so overlaps never get darker. It swells in, billows,
+                // then thins out and spreads as it goes.
                 const R = (f.a > 0 ? f.a : 300) * ratio;
-                const hold = f.b, total = f.b + 700;
+                const total = f.b + 900;
                 if (age > total) { fx.splice(i, 1); break; }
-                const fade = age < hold ? 1 : Math.max(0, 1 - (age - hold) / 700);
-                const grow = ease(Math.min(1, age / 500));
-                const still = calm();
-                // the pop
-                if (age < 420) {
-                    const u = age / 420;
-                    c.globalAlpha = (1 - u) * 0.7;
-                    c.strokeStyle = "#e9e0f4"; c.lineWidth = Math.max(2, 6 * (1 - u) * ratio);
-                    c.beginPath(); c.arc(sx, sy, R * (0.15 + 0.7 * ease(u)), 0, Math.PI * 2); c.stroke();
-                }
-                // from inside it thins so you can still see your own tank
+                if (!f.puffs) f.puffs = smokePuffs(f.x, f.y, fewer() ? 16 : 26);
+                const grow = ease(Math.min(1, age / 550));
+                const out = age < f.b ? 0 : Math.min(1, (age - f.b) / 900);
+                const fade = 1 - out * out * (3 - 2 * out);
                 const me = global.player;
                 const wr = (f.a > 0 ? f.a : 300);
                 const inside = me && !global.died && Math.hypot(me.renderx - f.x, me.rendery - f.y) < wr;
-                const thick = inside ? 0.55 : 1;
-                c.globalAlpha = 0.9 * fade * grow * thick;
-                c.fillStyle = "#37304a";
-                c.beginPath(); c.arc(sx, sy, R * 0.78 * grow, 0, Math.PI * 2); c.fill();
-                const n = fewer() ? 9 : 20;
-                for (let k = 0; k < n; k++) {
-                    const ring = k < 6 ? 0.25 : k < 13 ? 0.6 : 0.88;
-                    const a = k * 2.399 + (still ? 0 : age / (k & 1 ? 5200 : -6100));
-                    const d = R * ring * grow;
-                    const r = R * (k < 6 ? 0.42 : 0.34) * (0.5 + 0.5 * grow) * (1 + (still ? 0 : 0.06 * Math.sin(age / 700 + k)));
-                    c.globalAlpha = (k < 6 ? 0.85 : 0.75) * fade * thick;
-                    c.fillStyle = k % 3 === 0 ? "#2e2837" : k % 3 === 1 ? "#433b50" : "#37304a";
-                    c.beginPath(); c.arc(sx + Math.cos(a) * d, sy + Math.sin(a) * d, r, 0, Math.PI * 2); c.fill();
-                }
-                c.globalAlpha = 0.18 * fade * grow;
-                c.strokeStyle = smokeFriend(f) ? SMOKE_TINT.friend : SMOKE_TINT.foe;
-                c.lineWidth = Math.max(2, 4 * ratio);
-                c.beginPath(); c.arc(sx, sy, R * 1.02 * grow, 0, Math.PI * 2); c.stroke();
+                const cv = drawCloud(f, R, age, grow, out);
+                if (!cv) break;
+                c.globalAlpha = (inside ? 0.38 : 0.66) * fade;
+                c.drawImage(cv, sx - cv._half, sy - cv._half, cv._half * 2, cv._half * 2);
                 break;
             }
             case "unsmoke": {
@@ -1047,7 +1035,7 @@ export function drawWorld(c, px, py, ratio) {
                 const left = f.b - age;
                 if (left < 0) { fx.splice(i, 1); break; }
                 const fl = calm() ? 0.8 : 0.6 + 0.4 * Math.sin(now / 45);
-                c.globalAlpha = Math.min(1, left / 250) * fl;
+                c.globalAlpha = Math.min(1, left / 450) * fl;
                 c.strokeStyle = AB_COLOR.rush; c.lineWidth = Math.max(3, 6 * ratio);
                 c.beginPath(); c.arc(es.x, es.y, es.r * 1.3, 0, Math.PI * 2); c.stroke();
                 c.globalAlpha *= 0.5;
@@ -1081,7 +1069,7 @@ export function drawWorld(c, px, py, ratio) {
                     break;
                 }
                 if (!es) break;
-                const fade = Math.min(1, left / 300, age / 120);
+                const fade = Math.min(1, left / 450, age / 120);
                 // heading from the last trail point, smoothed so the jet doesn't flicker
                 if (now - f.tAt > 35) { f.tAt = now; trailPush(f, e.render.x, e.render.y, now); }
                 const q0 = f.tn > 2 ? ((f.tn - 3) % TRAIL_N) * 3 : -1;
@@ -1216,8 +1204,8 @@ export function drawWorld(c, px, py, ratio) {
                 // a hex shield round the hull for as long as the storm can't touch you
                 if (!es) break;
                 const left = f.b - age;
-                if (left < -300) { fx.splice(i, 1); break; }
-                const fade = left < 0 ? 1 + left / 300 : Math.min(1, age / 150);
+                if (left < -450) { fx.splice(i, 1); break; }
+                const fade = left < 0 ? 1 + left / 450 : Math.min(1, age / 150);
                 const blink = left > 0 && left < 2500 && (now % 360) < 180 ? 0.45 : 1;
                 const slam = age < 350 ? 1 + 1.4 * (1 - ease(age / 350)) : 1;
                 const R = es.r * 1.8 * slam, rot = calm() ? 0 : now / 2400;
@@ -1274,7 +1262,7 @@ export function drawWorld(c, px, py, ratio) {
                 if (!es) break;
                 const left = f.b - age;
                 if (left < 0) { fx.splice(i, 1); break; }
-                const fade = Math.min(1, left / 300, age / 200);
+                const fade = Math.min(1, left / 450, age / 200);
                 for (let k = 0; k < 4; k++) {
                     const a = now / 700 + k * Math.PI / 2;
                     const tw = calm() ? 0.7 : 0.5 + 0.5 * Math.sin(now / 160 + k * 1.7);
@@ -1649,6 +1637,27 @@ function speedLines(c, ux, uy, k, now, col) {
 
 // smoke: the canister's flight speed and the side tints
 const SMOKE_SPEED = 1.1;          // the canister, units per ms (abilities.js SMOKE.throwSpeed)
+// smoke: each puff is (distance out of the radius, angle, size of the
+// radius, drift phase, lighter shade, delay before it shows), spread on a
+// sunflower pattern so the cloud is evenly filled and round
+const PUFF_W = 6;
+function smokePuffs(x, y, n) {
+    const P = new Float32Array(n * PUFF_W);
+    let h = ((x * 2654435761) ^ (y * 40503)) >>> 0 || 3;
+    const rnd = () => { h = (h * 1664525 + 1013904223) >>> 0; return h / 4294967296; };
+    const turn = rnd() * Math.PI * 2;
+    for (let k = 0; k < n; k++) {
+        const u = Math.sqrt((k + 0.5) / n);
+        const q = k * PUFF_W;
+        P[q] = u * 0.8 + (rnd() - 0.5) * 0.06;
+        P[q + 1] = turn + k * 2.39996 + (rnd() - 0.5) * 0.3;
+        P[q + 2] = (0.34 - 0.13 * u) * (0.85 + rnd() * 0.3);
+        P[q + 3] = rnd() * Math.PI * 2;
+        P[q + 4] = rnd() < 0.35 ? 1 : 0;
+        P[q + 5] = u * 260 + rnd() * 60;
+    }
+    return P;
+}
 // whose smoke: yours or a teammate's reads blue, anyone else's red
 function smokeFriend(f) {
     if (f.friend != null) return f.friend;
@@ -1666,7 +1675,7 @@ function smokeSprite(kind) {
     cv.width = cv.height = S;
     const g = cv.getContext("2d");
     const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-    const rgb = kind === "f" ? "92,108,140" : kind === "e" ? "138,86,92" : kind === "l" ? "104,96,120" : "70,63,84";
+    const rgb = kind === "f" ? "92,108,140" : kind === "e" ? "138,86,92" : kind === "l" ? "132,130,142" : "86,84,96";
     grad.addColorStop(0, "rgba(" + rgb + ",0.95)");
     grad.addColorStop(0.45, "rgba(" + rgb + ",0.8)");
     grad.addColorStop(0.75, "rgba(" + rgb + ",0.35)");
@@ -1676,6 +1685,54 @@ function smokeSprite(kind) {
     smokeSprites[kind] = cv;
     return cv;
 }
+// The cloud's canvas: one per smoke, redrawn each frame at up to CLOUD_PX
+// across (scaled up on screen past that). Three flat tones, each a union of
+// circles filled in one path, so the shape has no seams inside.
+const CLOUD_PX = 520;
+const CLOUD_TONES = [
+    { col: "#5d5d66", grow: 1.1, dx: 0, dy: 0 },          // outline
+    { col: "#80808a", grow: 1, dx: 0, dy: 0 },            // shadow
+    { col: "#a4a4ad", grow: 0.84, dx: 0.1, dy: -0.12 },   // body, lit from the top right
+];
+function drawCloud(f, R, age, grow, out) {
+    if (!(R > 1)) return null;
+    const P = f.puffs, n = P.length / PUFF_W;
+    const half = R * 1.45 * (1 + out * 0.3);
+    const k = Math.min(1, CLOUD_PX / (half * 2));
+    const size = Math.ceil(half * 2 * k);
+    let cv = f.cv;
+    if (!cv) { cv = f.cv = document.createElement("canvas"); cv.width = cv.height = size; }
+    else if (cv.width < size || cv.width > size * 1.5) { cv.width = cv.height = size; }
+    const g = cv.getContext("2d");
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, cv.width, cv.height);
+    const sc = (cv.width / 2) / half;
+    g.setTransform(sc, 0, 0, sc, cv.width / 2, cv.height / 2);
+    cv._half = half;
+    const still = calm();
+    const spin = still ? 0 : age / 16000;
+    for (const tone of CLOUD_TONES) {
+        g.fillStyle = tone.col;
+        g.beginPath();
+        for (let q = 0; q < n * PUFF_W; q += PUFF_W) {
+            const d0 = P[q], a0 = P[q + 1], sz = P[q + 2], ph = P[q + 3], delay = P[q + 5];
+            const app = Math.min(1, Math.max(0, (age - delay) / 380));
+            if (app <= 0) continue;
+            const a = a0 + spin;
+            const amp = still ? 0 : R * 0.04;
+            const x = Math.cos(a) * d0 * R * (0.35 + 0.65 * grow) * (1 + out * 0.2) + Math.cos(age / 1700 + ph) * amp;
+            const y = Math.sin(a) * d0 * R * (0.35 + 0.65 * grow) * (1 + out * 0.2) + Math.sin(age / 2100 + ph * 1.3) * amp;
+            const r = sz * R * 1.2 * (0.45 + 0.55 * ease(app)) * (1 + (still ? 0 : 0.06 * Math.sin(age / 900 + ph * 2))) * (1 + out * 0.3);
+            const rr = r * tone.grow;
+            const cx = x + tone.dx * r, cy = y + tone.dy * r;
+            g.moveTo(cx + rr, cy);
+            g.arc(cx, cy, rr, 0, Math.PI * 2);
+        }
+        g.fill();
+    }
+    return cv;
+}
+
 // Inside a smoke cloud you see a light fog: you're hidden.
 function drawFog(c, ratio, now) {
     const me = global.player;
@@ -1818,11 +1875,13 @@ export function drawHud(c, anchor, mouse) {
     const x0 = anchor.x + anchor.w + 22;
     const y0 = anchor.y + anchor.h - sz + 2;
     const dashKey = H.keyLabel("KEY_DASH", "Shift"), abKey = H.keyLabel("KEY_ABILITY", "Q");
-    chips.dash.x = x0; chips.dash.y = y0; chips.dash.w = sz; chips.dash.h = sz; chips.dash.at = now;
-    chips.ability.x = x0 + sz + gap; chips.ability.y = y0; chips.ability.w = sz; chips.ability.h = sz; chips.ability.at = now;
+    // the order is the player's (drag one chip onto the other to swap)
+    const dashX = x0 + chipSlot("dash") * (sz + gap), abX = x0 + chipSlot("ability") * (sz + gap);
+    chips.dash.x = dashX; chips.dash.y = y0; chips.dash.w = sz; chips.dash.h = sz; chips.dash.at = now;
+    chips.ability.x = abX; chips.ability.y = y0; chips.ability.w = sz; chips.ability.h = sz; chips.ability.at = now;
     // ── dash ──
     {
-        const x = x0, y = y0, mx = x + sz / 2, my = y + sz / 2;
+        const x = dashX, y = y0, mx = x + sz / 2, my = y + sz / 2;
         const used = now - S.dashAt, got = now - S.gotAt;
         const press = used < 120 ? 2 : 0;
         H.hudPanel(c, x, y + press, sz, sz, { r: 12, fill: S.d > 0 ? "rgba(43,37,51,0.9)" : "rgba(30,25,36,0.9)" });
@@ -1859,7 +1918,7 @@ export function drawHud(c, anchor, mouse) {
     }
     // ── ability ──
     {
-        const x = x0 + sz + gap, y = y0, mx = x + sz / 2, my = y + sz / 2;
+        const x = abX, y = y0, mx = x + sz / 2, my = y + sz / 2;
         const id = S.eq;
         const cd = Math.max(0, S.cdAt - now), cdFrac = S.cdm ? cd / S.cdm : 0;
         const col = id ? (AB_COLOR[id] || "#f2b83c") : null;
@@ -1906,7 +1965,49 @@ export function drawHud(c, anchor, mouse) {
             else H.queueTip("Ability  ·  " + abKey, "Shops sell abilities: grapple hooks, shockwaves, smoke and more. Yours for the whole raid.", mx, y);
         }
     }
+    drawChipDrag(c, mouse);
     return { x: x0 - 8, y: y0 - 28, w: sz * 2 + gap + 14, h: sz + 30 };
+}
+
+// ── rearranging the chips (desktop drag, touch long-press drag) ──
+let order = null;
+function chipSlot(id) {
+    if (!order) { try { order = chipOrder.loadOrder(localStorage); } catch (e) { order = chipOrder.CHIPS.slice(); } }
+    const i = order.indexOf(id);
+    return i < 0 ? 0 : i;
+}
+export function chipOrderNow() { chipSlot("dash"); return order.slice(); }
+export function swapChips(a, b) {
+    chipSlot(a);
+    order = chipOrder.swapOrder(order, a, b);
+    try { chipOrder.saveOrder(localStorage, order); } catch (e) { /* */ }
+}
+// which chip is at a GUI point (desktop), or null
+export function chipAt(x, y) {
+    const now = performance.now();
+    for (const id of chipOrder.CHIPS) {
+        const r = chips[id];
+        if (now - r.at < 500 && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return id;
+    }
+    return null;
+}
+// the chip being dragged follows the cursor; the one it would swap with lights up
+function drawChipDrag(c, mouse) {
+    const d = global.chipDrag;
+    if (!d || !mouse || Math.hypot(mouse.x - d.x, mouse.y - d.y) < 8) return;
+    const over = chipAt(mouse.x, mouse.y);
+    if (over && over !== d.id) {
+        const r = chips[over];
+        c.save();
+        H.roundRectPath(c, r.x - 4, r.y - 4, r.w + 8, r.h + 8, 14);
+        c.lineWidth = 3; c.strokeStyle = "#f2c35a"; c.stroke();
+        c.restore();
+    }
+    c.save();
+    c.globalAlpha = 0.85;
+    if (d.id === "dash") dashGlyph(c, mouse.x, mouse.y, 22, 1);
+    else if (S.eq) H.drawKitIcon(c, S.eq, mouse.x, mouse.y, 30);
+    c.restore();
 }
 
 // Touch: what a thumb button does, over it, while it is long-pressed
@@ -1931,7 +2032,8 @@ function touchTipText(name) {
     }
     return null;
 }
-export function drawTouchTip(L, k) {
+export function drawTouchTip(L, k, c) {
+    drawTouchDrag(c, L, k);
     const tt = global.touchTip;
     if (!tt || !H || !L) return;
     // the ability tour is explaining the same buttons: the first-time tip waits
@@ -1948,6 +2050,29 @@ export function drawTouchTip(L, k) {
     if (!txt) return;
     const top = b.y - (b.r || (b.h || 60) / 2) - 8;
     H.queueTip(txt[0], txt[1], b.x * k, top * k, true);
+}
+
+// Touch: a thumb button being dragged to a new spot (long-press, then move):
+// its icon under the finger, a ring on the one it would swap with.
+function drawTouchDrag(c, L, k) {
+    const d = global.touchDrag;
+    if (!d || !L || !H || !c) return;
+    const t = window.dwTouch;
+    const over = t && t.hitButton ? t.hitButton(d.x, d.y) : null;
+    const pair = (a, b) => (a.startsWith("kit") && b.startsWith("kit")) || ((a === "dash" || a === "ability") && (b === "dash" || b === "ability"));
+    c.save();
+    if (over && over !== d.name && pair(d.name, over) && L[over]) {
+        const b = L[over], r = (b.r || Math.max(b.w || 0, b.h || 0) / 2 || 30) + 8;
+        c.lineWidth = 4; c.strokeStyle = "#f2c35a";
+        c.beginPath(); c.arc(b.x * k, b.y * k, r * k, 0, Math.PI * 2); c.stroke();
+    }
+    c.globalAlpha = 0.85;
+    const x = d.x * k, y = d.y * k - 40 * k;     // just above the finger
+    const st = (global.shop && global.shop.state) || {};
+    const id = d.name === "ability" ? S.eq : d.name.startsWith("kit") ? (st.kitOrder || [])[+d.name.slice(3)] : null;
+    if (d.name === "dash") dashGlyph(c, x, y, 26 * k, 1);
+    else if (id) H.drawKitIcon(c, id, x, y, 34 * k);
+    c.restore();
 }
 
 // Touch: the dash and ability buttons (touch.js lays them out, L in CSS

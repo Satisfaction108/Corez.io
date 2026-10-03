@@ -19,6 +19,14 @@ const RAMP_RESET_MS = 3000;
 const FINAL_RAMP_SPEED = 3;
 const FINAL_RAMP_FLOOR_S = 5;
 const FINAL_DAMAGE_MULT = 1.35;
+// Stages: the first storm only stings, the second hurts, the last one is the
+// showdown above. Indexed by cycle; later non-final cycles take full damage.
+const STAGE_MULT = [0.5, 0.8];
+function stageMult() {
+    if (isFinal()) return 1;
+    const m = STAGE_MULT[state.cycle];
+    return m == null ? 1 : m;
+}
 function rampMult(sec) {
     if (!(sec > 0)) return RAMP[0][1];
     for (let i = 1; i < RAMP.length; i++) {
@@ -249,7 +257,7 @@ function finalSqueeze(now) {
 // squeeze) and the damage multiplier that gives. The HUD reads this.
 function exposureOf(body, now = Date.now()) {
     const sec = ((body && body._stormExpMs) || 0) / 1000;
-    return { sec, mult: rampMult(sec) * (finalSqueeze(now) ? FINAL_DAMAGE_MULT : 1) };
+    return { sec, mult: rampMult(sec) * stageMult() * (finalSqueeze(now) ? FINAL_DAMAGE_MULT : 1) };
 }
 
 function tickDamage(now = Date.now()) {
@@ -291,7 +299,7 @@ function tickDamage(now = Date.now()) {
         if (now - (body._stormHurtAt || 0) < DAMAGE_EVERY_MS) continue;
         body._stormHurtAt = now;
         if (!body.health || !(body.health.max > 0)) continue;
-        const ramp = rampMult(body._stormExpMs / 1000) * (fin ? FINAL_DAMAGE_MULT : 1);
+        const ramp = rampMult(body._stormExpMs / 1000) * stageMult() * (fin ? FINAL_DAMAGE_MULT : 1);
         const dmg = body.health.max * DAMAGE_FRAC * ramp * dmgMult * (global.royaleMods && global.royaleMods.stormDamageMult || 1);
         if (body.shield && body.shield.amount > 0) {
             const soak = Math.min(body.shield.amount, dmg);
@@ -308,4 +316,4 @@ function tickDamage(now = Date.now()) {
     }
 }
 
-module.exports = { start, stop, setLockMs, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT };
+module.exports = { resetAt, start, stop, setLockMs, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT, STAGE_MULT, stageMult };

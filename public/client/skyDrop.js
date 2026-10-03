@@ -93,8 +93,20 @@ export function start(x, y, id, r, ms, vis, kind, size) {
     d.far = Math.hypot(x - global.player.renderx, y - global.player.rendery) > FAR;
     if (d.crate) d.H = 700;
     if (d.rock) d.H = 520;
+    // seen from outside it comes in from off screen, already moving
+    d.self = (id | 0) === gui.playerid;
+    if (!d.self) d.H *= OUT_H;
 }
 function active(d, now) { return d.on && now - d.born < d.ms + 1400; }
+// how high a drop is at k (0..1 of its fall). Yours hangs a beat and then
+// dives (the camera rides it); anyone else's enters the view already
+// falling fast and speeds up
+const OUT_H = 1.8;
+function heightOf(d, k) {
+    if (d.self) return JM.fallHeight(k);
+    const u = Math.max(0, Math.min(1, k));
+    return 1 - (0.4 * u + 0.6 * u * u);
+}
 function find(id) {
     for (const d of drops) if (d.on && d.id === id) { camWait(d, performance.now()); return d; }
     return null;
@@ -107,7 +119,7 @@ export function fallOf(id) {
     if (!d) return null;
     const age = performance.now() - d.born;
     if (age >= d.ms) return null;
-    const h = JM.fallHeight(age / d.ms);
+    const h = heightOf(d, age / d.ms);
     fallOut.h = h;
     fallOut.dx = -DIR_X * h * d.H;
     fallOut.dy = -DIR_Y * h * d.H;
@@ -116,7 +128,12 @@ export function fallOf(id) {
 }
 // app.js renderFrame: the world ratio is multiplied by this. ratio: the
 // normal world ratio, to keep the far-out view inside the room
+// global.dropZoom: the same number, for the terrain cache and the frame
+// rate watchers (autoQuality, autoRes, juice quality) to sit the dive out
 export function camZoom(ratio) {
+    return (global.dropZoom = zoomNow(ratio));
+}
+function zoomNow(ratio) {
     if (!zoomOn() || global.died) return 1;
     const d = find(gui.playerid);
     if (!d) return 1;
@@ -141,7 +158,7 @@ function altitude(now) {
     const d = find(gui.playerid);
     if (!d || global.died) return 0;
     const age = now - d.born;
-    return age < d.ms ? JM.fallHeight(age / d.ms) : 0;
+    return age < d.ms ? heightOf(d, age / d.ms) : 0;
 }
 export function falling() {
     const d = find(gui.playerid);
@@ -266,14 +283,19 @@ export function drawGround(c, px, py, ratio) {
         camWait(d, now);
         if (!active(d, now)) { if (d.on && now - d.born > d.ms + 1400) d.on = false; continue; }
         const age = now - d.born;
+        const self = d.id === gui.playerid;
+        const gx = ratio * d.x - px + cx, gy = ratio * d.y - py + cy;
         if (age >= d.ms) {
             if (!d.hit) { d.hit = true; impact(d); }
+            // the trail runs on into the crater and burns off
+            if (age < d.ms + trailMs(d)) {
+                if (!opened) { c.save(); c.lineCap = "round"; opened = true; }
+                drawTrail(c, d, age, gx, gy, ratio, now);
+            }
             continue;
         }
         if (!opened) { c.save(); c.lineCap = "round"; opened = true; }
-        const k = age / d.ms, h = JM.fallHeight(k);
-        const self = d.id === gui.playerid;
-        const gx = ratio * d.x - px + cx, gy = ratio * d.y - py + cy;
+        const k = age / d.ms, h = heightOf(d, k);
         const col = self || d.crate ? GOLD : "#ffd9a0";
         // the sound barrier, two thirds of the way down: a ring where it is in the air
         if (!d.boom && k > 0.62 && !d.rock) {
@@ -311,30 +333,8 @@ export function drawGround(c, px, py, ratio) {
         c.beginPath(); c.arc(gx, gy, sr * 1.35, 0, TAU); c.fill();
         c.globalAlpha = 0.1 + 0.42 * (1 - h);
         c.beginPath(); c.arc(gx, gy, sr, 0, TAU); c.fill();
-        // the re-entry trail behind the tank, longer as it speeds up
-        const tx = gx - DIR_X * h * d.H * ratio, ty = gy - DIR_Y * h * d.H * ratio;
-        // someone else's is a long streak across the sky, seen from far
-        const L = (self ? 180 + 320 * k : 320 + 720 * k) * ratio / DIR_L;
-        const ex = tx - DIR_X * L, ey = ty - DIR_Y * L;
-        const w = TANK_R * ratio * (1.3 + 0.3 * h);
-        c.globalAlpha = 0.22;
-        c.strokeStyle = "#ff3c1e"; c.lineWidth = w * 2.2;
-        c.beginPath(); c.moveTo(ex, ey); c.lineTo(tx, ty); c.stroke();
-        c.globalAlpha = 0.45;
-        c.strokeStyle = "#ff8a3a"; c.lineWidth = w * 1.4;
-        c.beginPath(); c.moveTo(tx - DIR_X * L * 0.75, ty - DIR_Y * L * 0.75); c.lineTo(tx, ty); c.stroke();
-        c.globalAlpha = 0.75;
-        c.strokeStyle = "#ffd76e"; c.lineWidth = w * 0.8;
-        c.beginPath(); c.moveTo(tx - DIR_X * L * 0.45, ty - DIR_Y * L * 0.45); c.lineTo(tx, ty); c.stroke();
-        c.globalAlpha = 0.95;
-        c.strokeStyle = "#ffffff"; c.lineWidth = w * 0.35;
-        c.beginPath(); c.moveTo(tx - DIR_X * L * 0.2, ty - DIR_Y * L * 0.2); c.lineTo(tx, ty); c.stroke();
-        if (A && A.haloSprite && juice.glowOn()) {
-            const hr = w * (2.4 + 0.4 * Math.sin(now / 60));
-            c.globalAlpha = 0.8;
-            c.drawImage(A.haloSprite("dropFire", "255,150,60", [[0, 0.95], [0.4, 0.45], [1, 0]]), tx - hr, ty - hr, hr * 2, hr * 2);
-        }
-        // sparks shed off the trail (world units)
+        drawTrail(c, d, age, gx, gy, ratio, now);
+        // sparks shed off the head (world units)
         if (!lite() && !d.far && now - d.sparkAt > 25) {
             d.sparkAt = now;
             const wx = d.x - DIR_X * h * d.H, wy = d.y - DIR_Y * h * d.H;
@@ -343,6 +343,59 @@ export function drawGround(c, px, py, ratio) {
         }
     }
     if (opened) c.restore();
+}
+
+// The re-entry trail is where the head has been: from the head back to
+// where it was trailMs ago (never before it appeared), so it starts as just
+// the head, grows behind it as it picks up speed, and after the hit shrinks
+// into the crater as it burns off. Four tapered layers, each reaching less
+// far back than the one under it: a long dim red tail, orange, yellow and a
+// short white-hot core, so the oldest part fades first. One fill a layer,
+// nothing allocated.
+const TRAIL = [
+    // reach (of trailMs), width, colour, alpha
+    [1, 2.2, "#ff3c1e", 0.24],
+    [0.62, 1.45, "#ff8a3a", 0.45],
+    [0.34, 0.85, "#ffd76e", 0.75],
+    [0.14, 0.38, "#ffffff", 0.95],
+];
+const trailMs = (d) => d.self ? 280 : 480;
+function drawTrail(c, d, age, gx, gy, ratio, now) {
+    const T = trailMs(d), after = age - d.ms;
+    const fade = after > 0 ? Math.max(0, 1 - after / T) : 1;
+    if (fade <= 0) return;
+    const hHead = after > 0 ? 0 : heightOf(d, age / d.ms);
+    const sc = d.H * ratio;
+    const hx = gx - DIR_X * hHead * sc, hy = gy - DIR_Y * hHead * sc;
+    const ux = DIR_X / DIR_L, uy = DIR_Y / DIR_L, nx = -uy, ny = ux;
+    const w = TANK_R * ratio * (1.3 + 0.3 * hHead) * (after > 0 ? 0.6 + 0.4 * fade : 1);
+    const safe = !!config.graphical.lightSafe;
+    const light = lite() || juice.level() === 0;
+    for (let i = light ? 1 : 0; i < TRAIL.length; i++) {
+        const L = TRAIL[i];
+        if (safe && i === 3) continue;          // no white-hot core
+        // the tail: where the head was L[0] * T ago, clamped to the start and the hit
+        const tt = Math.max(0, Math.min(d.ms, age - L[0] * T));
+        const hTail = heightOf(d, tt / d.ms);
+        const tx = gx - DIR_X * hTail * sc, ty = gy - DIR_Y * hTail * sc;
+        const r = w * L[1] * 0.5;
+        const len = (hTail - hHead) * sc;
+        if (len < 0.5 && r < 0.5) continue;
+        c.globalAlpha = L[3] * fade * (safe ? 0.7 : 1);
+        c.fillStyle = L[2];
+        // a teardrop: round at the head, tapering to a point at the tail
+        c.beginPath();
+        c.moveTo(tx, ty);
+        c.lineTo(hx + nx * r, hy + ny * r);
+        c.arc(hx, hy, r, Math.atan2(ny, nx), Math.atan2(-ny, -nx), true);
+        c.closePath();
+        c.fill();
+    }
+    if (after <= 0 && A && A.haloSprite && juice.glowOn()) {
+        const hr = w * (2.4 + (calm() ? 0 : 0.4 * Math.sin(now / 60)));
+        c.globalAlpha = safe ? 0.45 : 0.8;
+        c.drawImage(A.haloSprite("dropFire", "255,150,60", [[0, 0.95], [0.4, 0.45], [1, 0]]), hx - hr, hy - hr, hr * 2, hr * 2);
+    }
 }
 
 // top layer: the heat bow in front of the tank, and the speed lines on
@@ -356,7 +409,7 @@ export function drawAir(c, px, py, ratio) {
         const age = now - d.born;
         if (age >= d.ms || age < 0) continue;
         if (!opened) { c.save(); c.lineCap = "round"; opened = true; }
-        const k = age / d.ms, h = JM.fallHeight(k);
+        const k = age / d.ms, h = heightOf(d, k);
         const tx = ratio * (d.x - DIR_X * h * d.H) - px + cx, ty = ratio * (d.y - DIR_Y * h * d.H) - py + cy;
         const R = TANK_R * ratio * 1.35;
         const front = Math.atan2(DIR_Y, DIR_X);
@@ -468,3 +521,10 @@ function thud(big) {
 
 // QA (headless runs)
 window.dwDrop = () => drops.filter(d => d.on).map(d => ({ id: d.id, age: Math.round(performance.now() - d.born), ms: d.ms, r: d.r, self: d.id === gui.playerid }));
+// QA: replay your own drop where you stand (picture only, keys stay live);
+// ms 1500 is a first drop, 900 a respawn
+window.dwDropReplay = (ms = 1500) => {
+    const p = global.player;
+    start(p.renderx, p.rendery, gui.playerid, ms > 1200 ? 300 : 135, ms, true);
+    return ms;
+};

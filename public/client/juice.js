@@ -7,7 +7,8 @@
 //   rumble(ms, power)            a low shake that keeps going for ms
 //   hitStop(ms)                  hold the frame a beat (never while you're dead)
 //   slowMo(ms, speed)            effects run slow for ms (the world doesn't)
-//   glitch(power, ms)            a burst of shifted, tinted strips of the world
+//   glitch(power, ms, big)       a burst of shifted, tinted strips of the world
+//                                (Normal: only big moments, short and soft)
 //   flash(color, ms, alpha)      a full-screen colour flash
 //   lightLeak(rgb, ms)           warm light blooming in from two corners
 //   ring(x, y, col, r0, r1, ms, width)            world-space shock ring
@@ -37,7 +38,21 @@ const softGpu = () => { const tr = window.terrainRenderer; return !!(tr && tr._r
 // strobing, flashes capped dim, shake kept gentle
 export const lightSafe = () => !!config.graphical.lightSafe;
 export const level = () => { const v = config.graphical.fxLevel; return v === 0 || v === 2 ? v : 1; };
-export const glitchOn = () => !config.graphical.noGlitch && !lite() && !global.lowFx && !lowRes() && !softGpu() && !calm() && !lightSafe() && level() > 0 && Q > 0.4;
+// The automatic low-end trim (autoQuality.js) keeps the glitches, just
+// rarer (see glitch() and postWorld); only the player's own Low or Fewer
+// Effects turns them off.
+const autoTrim = () => !!(global.autoQ && global.autoQ.active);
+const userOff = () => (lite() && !global.autoQ?.fewerFx) || (level() === 0 && !global.autoQ?.fxLow);
+export const glitchOn = () => !config.graphical.noGlitch && !calm() && !lightSafe() && !userOff() &&
+    (autoTrim() ? Q > 0.25 : !lite() && !global.lowFx && !lowRes() && !softGpu() && level() > 0 && Q > 0.4);
+const LOW_GLITCH_GAP = 1500;   // trimmed: one burst per this many ms at most
+let lastBurstAt = -1e9;
+// Effects: Max is the full look. Normal keeps fights readable: softer shake,
+// fewer and smaller sparks, a glitch only on a big moment (a boss, the Core,
+// a hard hit at low health), no ambient flicker, static or light leaks.
+export const full = () => level() === 2;
+const BIG_GAP = 4000;
+let lastBigAt = -1e9;
 export const shakeOn = () => !config.graphical.noShake;
 export const glowOn = () => !config.graphical.noGlow && !global.lowFx;
 // the expensive extras: light leaks, chromatic edges, dust motes
@@ -52,7 +67,8 @@ let Q = 1, lastFrameAt = 0, clockNow = 0, clockReal = 0;
 let slowUntil = 0, slowSpeed = 1;
 let rumbleUntil = 0, rumblePow = 0;
 export function frameStart(now) {
-    if (lastFrameAt) Q = JM.nextQuality(Q, now - lastFrameAt);
+    // not on the sky drop's dive: its wide frames would thin the landing's effects
+    if (lastFrameAt && (global.dropZoom === undefined || global.dropZoom === 1)) Q = JM.nextQuality(Q, now - lastFrameAt);
     lastFrameAt = now;
     const dt = clockReal ? Math.min(100, now - clockReal) : 0;
     clockReal = now;
@@ -71,7 +87,7 @@ export function slowMo(ms, speed = 0.35) {
 // max: a few big moments (the sky drop landing) may go past the usual cap
 export function shake(power, ms = 300, max = JM.SHAKE_MAX) {
     if (!shakeOn()) return;
-    let amt = JM.shakeFor(power) * (max / JM.SHAKE_MAX) * (calm() ? 0.25 : 1);
+    let amt = JM.shakeFor(power) * (max / JM.SHAKE_MAX) * (calm() ? 0.25 : 1) * (full() ? 1 : 0.6);
     if (lightSafe()) amt = Math.min(6, amt * 0.3);
     if (!(amt > 0.5)) return;
     const set = config.graphical.shakeProperties.CameraShake;
@@ -101,10 +117,18 @@ const slices = JM.makeSlices(9);
 let burstPow = 0, burstFrom = 0, burstUntil = 0;
 let ambientK = 0, ambientNext = 0, ambientUntil = 0;
 let seed = 1;
-export function glitch(power, ms = 220) {
+export function glitch(power, ms = 220, big = false) {
     if (!glitchOn()) return;
     const now = performance.now();
+    if (!full()) {
+        if (!big || now - lastBigAt < BIG_GAP) return;
+        lastBigAt = now;
+        power *= 0.6;
+        ms *= 0.5;
+    }
     if (now < burstUntil && burstPow > power) { burstUntil = Math.max(burstUntil, now + ms * 0.5); return; }
+    if (autoTrim() && now - lastBurstAt < LOW_GLITCH_GAP) return;
+    lastBurstAt = now;
     burstPow = Math.min(1, power);
     burstFrom = now;
     burstUntil = now + ms;
@@ -129,17 +153,17 @@ export function postWorld(ctxs) {
         const k = 1 - (now - burstFrom) / Math.max(1, burstUntil - burstFrom);
         pow = burstPow * (0.35 + 0.65 * k);
     }
-    if (amb > 0.02 && Q >= 0.5) {
+    if (amb > 0.02 && Q >= 0.5 && full()) {
         if (now > ambientNext) {
             ambientUntil = now + 60 + Math.random() * 90;
-            ambientNext = now + (420 + Math.random() * (2600 * (1 - amb) + 500)) / (level() === 2 ? 1.6 : 1);
+            ambientNext = now + (420 + Math.random() * (2600 * (1 - amb) + 500)) / (level() === 2 ? 1.6 : 1) * (autoTrim() ? 3 : 1);
         }
         if (now < ambientUntil) pow = Math.max(pow, 0.25 + 0.5 * amb);
     }
     const top = ctxs[2];
     const cv = top.canvas, W = cv.width, H = cv.height;
     if (!(W > 0 && H > 0)) return;
-    if (stat > 0.02) drawStatic(top, W, H, stat, now);
+    if (stat > 0.02 && full()) drawStatic(top, W, H, stat, now);
     if (pow < 0.03) return;
     seed = (seed + 1) | 0;
     const n = JM.planGlitch(seed * 7919 + ((now / 50) | 0), pow, W, H, slices);
@@ -274,7 +298,7 @@ export function drawSlams(c, cx, cy, k = 1) {
     const pop = calm() ? 1 : inT < 1 ? 1.6 - 0.6 * (inT * inT * (3 - 2 * inT)) : 1 + 0.03 * Math.sin(age / 90) * (age < 600 ? 1 : 0);
     const a = inT * outT;
     const size = s.size * pop * k;
-    const jitter = !calm() && glitchOn() && age < 260 ? (JM.hash01(age | 0, 5) - 0.5) * 14 : 0;
+    const jitter = !calm() && full() && glitchOn() && age < 260 ? (JM.hash01(age | 0, 5) - 0.5) * 14 : 0;
     if (jitter) {
         // the RGB-split ghosts behind the word for the first beat
         A.hudTitle(s.text, cx - 4 + jitter, cy, size, "#ff2d6f", "center", a * 0.55, c);
@@ -295,6 +319,7 @@ const SPARK_COL = ["#ffe9b0", "#2b2433", "#8ff2ff", "#ffd76e", "#ffffff"];
 const CONFETTI = ["#f2b83c", "#3fcf7a", "#5ce8ff", "#ff5ad8", "#ff8a3a", "#fff3d9"];
 export function sparks(x, y, n, speed, life, kind, col, spread = Math.PI * 2, ang0 = 0, size = 4) {
     n = JM.countFor(n, scale());
+    if (!full()) { size *= 0.85; life *= 0.8; speed *= 0.85; }
     const now = clockNow;
     for (let i = 0; i < n; i++) {
         const a = ang0 + (spread >= Math.PI * 2 ? (i / n) * spread : (i / Math.max(1, n - 1) - 0.5) * spread) + (Math.random() - 0.5) * 0.5;
@@ -367,6 +392,7 @@ for (let i = 0; i < 3; i++) flashes.push({ born: -1e9, dur: 0, col: "#fff", a: 0
 let flashI = 0;
 export function flash(col = "#ffffff", ms = 160, alpha = 0.5) {
     if (calm()) alpha *= 0.4;
+    if (!full()) alpha *= 0.6;
     // light sensitive: a dim, slow wash instead of a flash
     if (lightSafe()) { alpha = Math.min(0.08, alpha * 0.2); ms = Math.max(ms, 400); }
     const f = flashes[flashI]; flashI = (flashI + 1) % flashes.length;
@@ -387,11 +413,11 @@ export function drawScreenFx(c) {
         // a soft dark edge so the middle of the screen pops
         if (glowOn() && A.vignetteSprite) {
             c.save();
-            c.globalAlpha = 0.16;
+            c.globalAlpha = full() ? 0.16 : 0.09;
             c.drawImage(A.vignetteSprite(w, h, 0.7, "6,4,10"), 0, 0, w, h);
             c.restore();
         }
-        if (!calm()) {
+        if (!calm() && full()) {
             const camX = global.player ? global.player.renderx || 0 : 0, camY = global.player ? global.player.rendery || 0 : 0;
             c.save();
             c.fillStyle = "#fff3d9";
@@ -408,7 +434,7 @@ export function drawScreenFx(c) {
         }
     }
     const la = now - leakAt;
-    if (la < leakMs && A && A.haloSprite && heavyOn() && glowOn() && !lightSafe()) {
+    if (la < leakMs && A && A.haloSprite && heavyOn() && glowOn() && !lightSafe() && full()) {
         const k = la / leakMs, a = (k < 0.2 ? k / 0.2 : 1 - (k - 0.2) / 0.8) * 0.55;
         const R = Math.max(w, h) * 0.75;
         const spr = A.haloSprite("leak|" + leakRgb, leakRgb, [[0, 0.9], [0.4, 0.35], [1, 0]]);

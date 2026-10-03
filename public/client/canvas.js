@@ -20,10 +20,12 @@ function hitClientRect(mouse, r) {
 
 // standing on a vault, base bank or shop pad (abilities don't work there)
 function onAnyPad() { return !!((global.shop && global.shop.onPad) || (global.vault && global.vault.onPad)); }
+// GUI units per canvas pixel (the HUD draws in GUI units)
+function guiScale() { return (global.canvas && global.canvas.height / global.screenHeight / global.ratio) || 1; }
 // a press on one of the HUD's own buttons
 function overHudButton(mpos) {
     const c = global.clickables;
-    return c.vault.check(mpos) !== -1 || c.shop.check(mpos) !== -1 || c.kit.check(mpos) !== -1 ||
+    return !!abilityFx.chipAt(mpos.x / guiScale(), mpos.y / guiScale()) || c.vault.check(mpos) !== -1 || c.shop.check(mpos) !== -1 || c.kit.check(mpos) !== -1 ||
         c.skipUpgrades.check(mpos) !== -1 || (c.royalePlay && c.royalePlay.check(mpos) !== -1);
 }
 class Canvas {
@@ -118,7 +120,10 @@ class Canvas {
         // (the canvas only hears moves under a held button then)
         window.addEventListener("mousemove", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseMove(event)});
         this.cv.addEventListener("mousedown", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseDown(event)});
-        this.cv.addEventListener("mouseup", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseUp(event)});
+        // the release is heard anywhere on the window: a press on the game let
+        // go over a DOM box (the vault input, chat, an overlay) used to be
+        // lost, leaving a kit or chip drag armed to eat the next click
+        window.addEventListener("mouseup", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseUp(event)});
         this.cv.addEventListener("keypress", (event) => {if (!global.mobile && global.gameStart) this.keyPress(event)});
         this.cv.addEventListener("wheel", (event) => {if (!global.mobile && global.gameStart) this.wheel(event)});
         this.cv.addEventListener("keydown", (event) => {
@@ -288,6 +293,18 @@ class Canvas {
         if (event && event.keyCode === global.KEY_ABILITY && global.abilAim) return true;
         return false;
     }
+    // kit slots trade places, an empty slot included (the server's order
+    // decides; this just moves them at once so the drop doesn't flicker)
+    swapKitSlots(from, to) {
+        const st = global.shop && global.shop.state;
+        const ko = (st && st.kitOrder) || [];
+        if (!ko[from] || from === to || to < 0 || to > 2) return;
+        while (ko.length < 3) ko.push(null);
+        const id = ko[from]; ko[from] = ko[to] || null; ko[to] = id;
+        while (ko.length && !ko[ko.length - 1]) ko.pop();
+        this.socket.talk('ko', from, to);
+        gameSound.uiClick();
+    }
     useKitSlot(slot) {
         const ko = (global.shop.state && global.shop.state.kitOrder) || [];
         if (!ko[slot]) {
@@ -298,7 +315,9 @@ class Canvas {
         let wx = global.player.renderx + global.target.x / wr;
         let wy = global.player.rendery + global.target.y / wr;
         if (!isFinite(wx) || !isFinite(wy)) { wx = global.player.renderx; wy = global.player.rendery; }
-        this.socket.talk('sk', slot, Math.round(wx), Math.round(wy));
+        // the item rides along: the server uses what this slot SHOWS, even
+        // if its own order moved on (a drag swap still in flight)
+        this.socket.talk('sk', slot, Math.round(wx), Math.round(wy), String(ko[slot]));
         global.kitUsedAt = performance.now();   // coach.js: the ability step
         gameSound.uiClick();
     }
@@ -661,8 +680,9 @@ class Canvas {
         if (this.inverseMouse) [primaryFire, secondaryFire] = [secondaryFire, primaryFire];
         global.clickables.clicked = true;
         // a lost mouseup (a lag spike, a release off the window) must not
-        // leave the aim-mode swallow armed for the next click
+        // leave the aim-mode swallow or a kit / chip drag armed for this click
         this.aimClickHeld = false;
+        if (mouse.button === 0) { global.kitDrag = null; global.chipDrag = null; }
         switch (mouse.button) {
             case 0:
                 let mpos = {
@@ -700,6 +720,13 @@ class Canvas {
                     global.classTreeDrag.startX = global.classTreeDrag.lastX = mouse.clientX;
                     global.classTreeDrag.startY = global.classTreeDrag.lastY = mouse.clientY;
                     global.classTreeDrag.momentum = { x: 0, y: 0 };
+                    break;
+                }
+                // a press on the dash or ability chip starts a drag to reorder
+                // them (mouseUp swaps); it never fires the gun
+                const chipHit = !global.died ? abilityFx.chipAt(mpos.x / guiScale(), mpos.y / guiScale()) : null;
+                if (chipHit) {
+                    global.chipDrag = { id: chipHit, x: mpos.x / guiScale(), y: mpos.y / guiScale() };
                     break;
                 }
                 // a press on a kit slot starts a drag; release decides (mouseUp)
@@ -796,14 +823,24 @@ class Canvas {
                     x: mouse.clientX * global.ratio,
                     y: mouse.clientY * global.ratio,
                 };
+                if (global.chipDrag) {
+                    // dropped on the other chip: they trade places (layout only)
+                    const d = global.chipDrag;
+                    global.chipDrag = null;
+                    const over = abilityFx.chipAt(mpos.x / guiScale(), mpos.y / guiScale());
+                    if (over && over !== d.id) { abilityFx.swapChips(d.id, over); gameSound.uiClick(); }
+                    break;
+                }
                 if (global.kitDrag) {
-                    // a tap uses the item; a drag out of the box throws it away;
-                    // a drag that ends inside the box does nothing
+                    // a tap uses the item; a drag onto another slot swaps them;
+                    // a drag out of the box throws it away
                     const d = global.kitDrag;
                     global.kitDrag = null;
                     const moved = Math.hypot(mpos.x - d.x, mpos.y - d.y) > 14;
-                    const overSlot = global.clickables.kit.check(mpos) === d.slot;
-                    if (!moved || overSlot) { if (!moved) this.useKitSlot(d.slot); }
+                    const target = global.clickables.kit.check(mpos);
+                    const overSlot = target === d.slot;
+                    if (moved && target >= 0 && target < 3 && target !== d.slot) { this.swapKitSlots(d.slot, target); }
+                    else if (!moved || overSlot) { if (!moved) this.useKitSlot(d.slot); }
                     else if (!global.died) { this.socket.talk('kd', d.slot); global.kitDropped = (global.kitDropped | 0) + 1; gameSound.uiClick(); }
                     break;
                 }
@@ -926,8 +963,10 @@ class Canvas {
                     if (vaultClick === 10) {
                         const el = document.getElementById('vaultInput');
                         const carried = global.gems.carried | 0;
-                        const n = Math.min(carried, parseInt(el && el.value) || 0);
-                        if (n >= 1) this.socket.talk('vd', n);
+                        // an empty or cleared box means everything you carry
+                        const typed = parseInt(el && el.value);
+                        const n = typed > 0 ? Math.min(carried, typed) : carried;
+                        this.socket.talk('vd', Math.max(0, n));
                     } else if (vaultClick === 11) {
                         this.socket.talk('vc');
                     }

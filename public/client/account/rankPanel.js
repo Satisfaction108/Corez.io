@@ -9,7 +9,7 @@ import * as ceremony from './rankCeremony.js';
 import { gameSound } from '../sound.js';
 
 const R = () => window.DWRanks || null;
-const DUST = '#a98bff';
+const DUST = '#d98af0';
 const GAIN = { fill: 'rgba(95,210,76,0.16)', line: 'rgba(95,210,76,0.6)', text: '#8fe07f' };
 const LOSS = { fill: 'rgba(235,64,52,0.16)', line: 'rgba(235,64,52,0.6)', text: '#ff8b7e' };
 const SOFT = '#9a96a8';   // secondary lines: readable, but quieter than the stats

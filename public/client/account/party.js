@@ -35,7 +35,9 @@ const st = {
     party: null,          // the server's view of your party, or null
     invites: [],          // incoming invites (accounts)
     seenSeq: null,        // last launch.seq we saw (the mate pressing Play moves it)
-    adding: false,        // the "add a teammate" drawer is open
+    adding: false,        // the "add a teammate" popover is open
+    showOffline: false,   // ...with the offline friends listed too
+    codeDraft: '',        // a code being typed survives a re-render
     arming: false,
     loaded: false,
 };
@@ -325,18 +327,22 @@ function meName() {
     return (u && u.username) || guestName() || 'You';
 }
 
+// Online friends first (lobby, then in a raid), offline ones folded away
+// behind a button so the list stays short.
 function friendsDrawer() {
     const d = social.get();
-    const list = d.friends.slice().sort((a, b) => {
-        const o = { menu: 0, raid: 1, offline: 2 };
-        const sa = (a.presence && a.presence.state) || 'offline', sb = (b.presence && b.presence.state) || 'offline';
-        return (o[sa] - o[sb]) || String(a.username).localeCompare(String(b.username));
-    }).slice(0, 12);
+    const state = (f) => (f.presence && f.presence.state) || 'offline';
+    const order = { menu: 0, raid: 1, offline: 2 };
+    const all = d.friends.slice().sort((a, b) => (order[state(a)] - order[state(b)]) || String(a.username).localeCompare(String(b.username)));
+    const online = all.filter((f) => state(f) !== 'offline').slice(0, 12);
+    const offline = all.filter((f) => state(f) === 'offline').slice(0, 12);
     const box = h('div', { class: 'duo-friends' });
     if (!d.loaded) { box.appendChild(h('div', { class: 'duo-note', text: 'Finding your friends...' })); social.load(); return box; }
-    if (!list.length) { box.appendChild(h('div', { class: 'duo-note', text: 'No friends yet. Add some in Friends, or use a code.' })); return box; }
-    for (const f of list) {
-        const s = (f.presence && f.presence.state) || 'offline';
+    if (!all.length) { box.appendChild(h('div', { class: 'duo-note', text: 'No friends yet. Add some in Friends, or use a code.' })); return box; }
+    if (!online.length) box.appendChild(h('div', { class: 'duo-note', text: 'Nobody’s online right now.' }));
+    const shown = st.showOffline ? online.concat(offline) : online;
+    for (const f of shown) {
+        const s = state(f);
         const inParty = partyHas(f.userId), pending = invitePending(f.username);
         const can = (s === 'menu' || s === 'raid') && !inParty;
         const why = inParty ? 'Teamed up' : pending ? 'Invited' : s === 'raid' ? (f.presence && f.presence.mode === 'duo' ? 'In a duo raid' : 'In a raid') : s === 'offline' ? 'Offline' : 'In the lobby';
@@ -348,13 +354,18 @@ function friendsDrawer() {
             h('span', { class: 'duo-fsub', text: why }),
             btn));
     }
+    if (offline.length) {
+        box.appendChild(h('button', { type: 'button', class: 'duo-more', 'aria-expanded': st.showOffline ? 'true' : 'false',
+            text: st.showOffline ? 'Hide offline' : 'Offline (' + offline.length + ')',
+            onclick: () => { st.showOffline = !st.showOffline; render(); } }));
+    }
     return box;
 }
 
 function codeJoinRow() {
-    const input = h('input', { class: 'dw-input mono duo-code-in', type: 'text', maxlength: 7, spellcheck: 'false', autocapitalize: 'characters', autocomplete: 'off', placeholder: 'CODE', 'aria-label': 'Party code' });
+    const input = h('input', { class: 'dw-input mono duo-code-in', type: 'text', maxlength: 7, spellcheck: 'false', autocapitalize: 'characters', autocomplete: 'off', placeholder: 'CODE', 'aria-label': 'Party code', value: st.codeDraft });
     const go = h('button', { type: 'button', class: 'dw-btn sm', text: 'Join', onclick: () => joinCode(input, go) });
-    input.addEventListener('input', () => input.classList.remove('bad'));
+    input.addEventListener('input', () => { input.classList.remove('bad'); st.codeDraft = input.value; });
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); joinCode(input, go); } });
     return h('div', { class: 'duo-join' }, h('span', { class: 'duo-lbl', text: 'Got a code?' }), input, go);
 }
@@ -377,41 +388,26 @@ function render() {
     const panel = els.panel;
     panel.hidden = !duo;
     if (!duo) return;
+    // keep what the poll would otherwise throw away: the list's scroll and a
+    // focused code box
+    const oldList = panel.querySelector('.duo-friends');
+    const scroll = oldList ? oldList.scrollTop : 0;
+    const typing = document.activeElement && document.activeElement.classList.contains('duo-code-in');
     clear(panel);
     const p = st.party;
     const me = p ? p.members.find((m) => m.you) : { name: meName(), you: true, state: 'menu' };
     const mate = p ? p.members.find((m) => !m.you) : null;
+    const open = !mate && st.adding;
     const slots = h('div', { class: 'duo-slots' }, slot(me, { showLeader: !!mate }));
     if (mate) slots.appendChild(slot(mate, { showLeader: true }));
     else {
-        slots.appendChild(h('button', { type: 'button', class: 'duo-slot empty' + (st.adding ? ' open' : ''), 'aria-expanded': st.adding ? 'true' : 'false',
+        slots.appendChild(h('button', { type: 'button', class: 'duo-slot empty' + (open ? ' open' : ''), 'aria-expanded': open ? 'true' : 'false', 'aria-haspopup': 'dialog',
             onclick: () => { st.adding = !st.adding; render(); } },
             h('span', { class: 'duo-plus', 'aria-hidden': 'true', text: '+' }),
             h('span', { class: 'duo-who' }, h('span', { class: 'duo-name', text: 'Add a mate' }),
-                h('span', { class: 'duo-sub' + (p && (p.pending || []).length ? ' st-menu' : ''), text: p && (p.pending || []).length ? 'Invite sent' : st.fill ? 'or go random' : 'invite or use a code' }))));
+                h('span', { class: 'duo-sub' + (p && (p.pending || []).length ? ' st-menu' : ''), text: p && (p.pending || []).length ? 'Invite sent' : 'invite or use a code' }))));
     }
     panel.appendChild(slots);
-
-    if (!mate && st.adding) {
-        const drawer = h('div', { class: 'duo-drawer' });
-        if (loggedIn() && !store.get('offline')) {
-            drawer.appendChild(h('div', { class: 'duo-h', text: 'Invite a friend' }));
-            drawer.appendChild(friendsDrawer());
-        }
-        drawer.appendChild(h('div', { class: 'duo-h', text: loggedIn() ? 'Or use a party code' : 'Party code' }));
-        if (p) {
-            drawer.appendChild(h('div', { class: 'duo-code' },
-                h('span', { class: 'duo-lbl', text: 'Your code' }),
-                h('span', { class: 'duo-code-val', text: p.code, title: 'Your party code' }),
-                h('button', { type: 'button', class: 'dw-btn sm', onclick: () => copyCode(p.code) }, icon('copy'), portalLink(p.code) ? 'Copy link' : 'Copy')));
-        } else {
-            drawer.appendChild(h('div', { class: 'duo-code' },
-                h('span', { class: 'duo-lbl', text: 'Make a code your friend can type in' }),
-                h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'Get code', onclick: (e) => createParty(e.currentTarget) })));
-        }
-        drawer.appendChild(codeJoinRow());
-        panel.appendChild(drawer);
-    }
 
     const foot = h('div', { class: 'duo-foot' });
     if (!mate) {
@@ -423,6 +419,40 @@ function render() {
     }
     if (p) foot.appendChild(h('button', { type: 'button', class: 'dw-btn sm duo-leave', text: 'Leave', onclick: (e) => leaveParty(e.currentTarget) }));
     panel.appendChild(foot);
+
+    // the invite popover hangs under the slots, over the card, so the card
+    // keeps its height and Play stays where it was
+    if (open) {
+        const pop = h('div', { class: 'duo-pop', role: 'dialog', 'aria-label': 'Add a mate' });
+        if (loggedIn() && !store.get('offline') && !document.documentElement.classList.contains('dw-cg')) {
+            pop.appendChild(h('div', { class: 'duo-h', text: 'Invite a friend' }));
+            pop.appendChild(friendsDrawer());
+        }
+        pop.appendChild(h('div', { class: 'duo-h', text: 'Party code' }));
+        if (p) {
+            pop.appendChild(h('div', { class: 'duo-code' },
+                h('span', { class: 'duo-lbl', text: 'Your code' }),
+                h('span', { class: 'duo-code-val', text: p.code, title: 'Your party code' }),
+                h('button', { type: 'button', class: 'dw-btn sm', onclick: () => copyCode(p.code) }, icon('copy'), portalLink(p.code) ? 'Copy link' : 'Copy')));
+        } else {
+            pop.appendChild(h('div', { class: 'duo-code' },
+                h('span', { class: 'duo-lbl', text: 'Make a code your friend can type in' }),
+                h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'Get code', onclick: (e) => createParty(e.currentTarget) })));
+        }
+        pop.appendChild(codeJoinRow());
+        slots.appendChild(pop);
+        const list = pop.querySelector('.duo-friends');
+        if (list && scroll) list.scrollTop = scroll;
+        if (typing) { const inp = pop.querySelector('.duo-code-in'); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } }
+    }
+}
+
+// a click outside the popover, or Esc, closes it
+function closePop() {
+    if (!st.adding) return;
+    st.adding = false;
+    st.showOffline = false;
+    render();
 }
 
 /* ── launching ──────────────────────────────────────────────────────── */
@@ -495,6 +525,8 @@ export function init() {
         countDuo: toggle.querySelector('[data-count="duo"]'),
     };
     opts.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+    document.addEventListener('pointerdown', (e) => { if (st.adding && !panel.contains(e.target) && !e.target.closest('.toast-container')) closePop(); }, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && st.adding && !panel.hidden) { e.stopPropagation(); closePop(); } }, true);
     const tok = ss.get(GUEST_KEY);
     if (tok) api.setPartyGuest(tok);
     social.onParty(onPartyEvent);

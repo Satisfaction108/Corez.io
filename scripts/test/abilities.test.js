@@ -550,7 +550,7 @@ test('aim mode: Q aims a placed ability, a left click puts it down without firin
     assert.match(down, /if \(global\.abilAim && global\.abilAim\.mode === "click" && \(onAnyPad\(\) \|\| overHudButton\(mpos\)\)\) abilityFx\.cancelAim\(\);/, 'a HUD button or a pad click is never swallowed by aim mode');
     assert.ok(down.indexOf('overHudButton(mpos)') < down.indexOf('this.placeAim();'), 'checked before placing');
     assert.match(cv, /function overHudButton\(mpos\) \{[\s\S]{0,120}c\.vault\.check\(mpos\) !== -1/, 'the vault panel counts as a HUD button');
-    assert.match(down, /this\.aimClickHeld = false;\s+switch \(mouse\.button\)/, 'a stale swallow never eats the next click (Deposit)');
+    assert.match(down, /this\.aimClickHeld = false;[^\n]*\n[^\n]*global\.kitDrag = null; global\.chipDrag = null;[^\n]*\n\s+switch \(mouse\.button\)/, 'a stale swallow or drag never eats the next click (Deposit)');
     const fxSrc2 = fs.readFileSync(path.join(REPO, 'public', 'client', 'abilityFx.js'), 'utf8');
     assert.match(fxSrc2, /global\.vault && global\.vault\.onPad\)\) \{ cancelAim\(\); return; \}/, 'stepping onto a pad ends aim mode');
     assert.match(cv, /kc === global\.KEY_ESC && global\.abilAim\) \{ abilityFx\.cancelAim\(\)/, 'Esc cancels');
@@ -1177,7 +1177,13 @@ test('the slot rule: only the free starter (empty slot), a purchase or Equip cha
 
 test('client: a pickup that is not equipped says equip it at a shop, never press Q', () => {
     const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
-    assert.match(app, /u\.spare \? "Added to your abilities\. Equip it at a shop\."/);
+    assert.match(app, /u\.spare \? "Added\. Equip it at a shop\."/);
+    // the unlock card is a small edge card now: no screen dim, no rays, no
+    // burst, no hiding the vault's Deposit or its input
+    const card = app.slice(app.indexOf('    function drawKitUnlock() {'), app.indexOf('    // ── shop panel'));
+    assert.doesNotMatch(card, /vignetteSprite|raySprite|fillRect\(0, 0, sw, shh\)|starPath|clickables\.vault\.hide|vaultInput/, 'quiet and out of the way');
+    assert.doesNotMatch(card, /hudCardUp/, 'it is not a big card');
+    assert.match(card, /const W = 290, H = 62/);
     const fxSrc = fs.readFileSync(path.join(REPO, 'public', 'client', 'abilityFx.js'), 'utf8');
     assert.match(fxSrc, /spare: fresh !== S\.eq/);
 });
@@ -1245,6 +1251,85 @@ test('ability tour: once per browser, only after the landing and the slam, never
     const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
     assert.match(app, /abilityIntro\.draw\(ctx\[2\]/);
     assert.match(app, /if \(id === "ability" && !abTabSeen\)/, 'NEW on the Abilities tab until seen');
+});
+
+test('rearranging: kit slots swap on the server (validated), the keys follow; the chip order is a saved layout choice', async () => {
+    const s = mkSocket();
+    const t = tank(AX, AY, s);
+    const st = shop.stateOf(s);
+    shop.grantKit(s, 'medkit'); shop.grantKit(s, 'charge');
+    assert.deepEqual(st.kitOrder, ['medkit', 'charge']);
+    assert.ok(shop.swapKit(s, 0, 1));
+    assert.deepEqual(st.kitOrder, ['charge', 'medkit'], 'swapped');
+    assert.deepEqual(JSON.parse(s.packets.filter(p => p[0] === 'SHP').pop()[1]).kitOrder, ['charge', 'medkit'], 'the client hears it');
+    // onto the empty third slot: it stays there, leaving a hole
+    assert.ok(shop.swapKit(s, 0, 2));
+    assert.deepEqual(st.kitOrder, [null, 'medkit', 'charge'], 'moved into slot 3');
+    // bad requests change nothing (an empty slot can't be dragged)
+    for (const [a, b] of [[0, 1], [1, 1], [-1, 1], [1, 3], [0.5, 1], ['1', 2], [1, 9]]) {
+        assert.equal(shop.swapKit(s, a, b), false, 'refused ' + a + ' -> ' + b);
+        assert.deepEqual(st.kitOrder, [null, 'medkit', 'charge']);
+    }
+    // keys follow the slot: key 1 is empty, key 2 the medkit
+    st.kit.medkit = 1;
+    t.health.amount = t.health.max * 0.3;
+    assert.equal(shop.useKit(s, 0, AX, AY), false, 'slot 1 is empty');
+    assert.ok(shop.useKit(s, 1, AX, AY), 'slot 2 is the medkit');
+    assert.ok(t.health.amount > t.health.max * 0.6);
+    assert.deepEqual(st.kitOrder, [null, null, 'charge'], 'used up: its slot empties, the charge stays put');
+    // something new fills the first empty slot
+    shop.grantKit(s, 'anchor');
+    assert.deepEqual(st.kitOrder, ['anchor', null, 'charge']);
+    shop.grantKit(s, 'flash');
+    assert.deepEqual(st.kitOrder, ['anchor', 'flash', 'charge']);
+    assert.equal(shop.grantKit(s, 'decoy'), false, 'three kinds: full');
+    // a hole at the end is trimmed, a hole in the middle stays through normalising
+    assert.ok(shop.dropKit(s, 1));
+    assert.deepEqual(shop.stateOf(s).kitOrder, ['anchor', null, 'charge']);
+    // a save keeps the slots, holes included
+    const rec = saveCodes.shopRecord(s, clock);
+    assert.deepEqual(rec.kitOrder, ['anchor', null, 'charge'], 'saved as arranged');
+    const s2 = mkSocket();
+    const t2 = tank(AX + 300, AY, s2);
+    saveCodes.applyShop(s2, t2, rec, clock);
+    assert.deepEqual(shop.stateOf(s2).kitOrder.slice(0, 3), ['anchor', null, 'charge'], 'restored into the same slots');
+    // a use names the item it SHOWED: a slot index from before a swap
+    // landed still fires that item, never its neighbour
+    const sk = shop.stateOf(s);
+    sk.kit.charge = 2;
+    assert.deepEqual(sk.kitOrder, ['anchor', null, 'charge']);
+    s.packets.length = 0;
+    clock += 1000;       // past the kit's half-second lockout
+    assert.ok(shop.useKit(s, 0, AX + 200, AY, 'charge'), 'stale slot 1, but the charge was pressed');
+    assert.equal(sk.kit.charge, 1, 'the charge fired');
+    assert.ok(sk.kit.anchor > 0, 'not the anchor in slot 1');
+    assert.equal(shop.useKit(s, 1, AX, AY, 'medkit'), false, 'an item you no longer have does nothing');
+    const cvSrc = fs.readFileSync(path.join(REPO, 'public', 'client', 'canvas.js'), 'utf8');
+    assert.match(cvSrc, /this\.socket\.talk\('sk', slot, Math\.round\(wx\), Math\.round\(wy\), String\(ko\[slot\]\)\)/, 'the client always names the item');
+    assert.match(cvSrc, /window\.addEventListener\("mouseup"/, 'a release is never lost (no stuck drag eating the next click)');
+    assert.match(cvSrc, /if \(mouse\.button === 0\) \{ global\.kitDrag = null; global\.chipDrag = null; \}/);
+    // the shop's KIT FULL counts items, not slots
+    const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
+    assert.match(app, /\(st\.kitOrder \|\| \[\]\)\.filter\(Boolean\)\.length >= 3\) return \{ text: "KIT FULL"/);
+    cleanup(t2);
+    const so = fs.readFileSync(path.join(SERVER, 'game', 'network', 'sockets.js'), 'utf8');
+    assert.match(so, /case "ko": \{[\s\S]{0,300}swapKit\(socket, m\[0\], m\[1\]\)/);
+    // chips: client-only layout
+    const O = await import(path.join(REPO, 'public', 'client', 'chipOrder.js'));
+    assert.deepEqual(O.parseOrder(null), ['dash', 'ability'], 'default');
+    assert.deepEqual(O.parseOrder('ability,dash'), ['ability', 'dash']);
+    assert.deepEqual(O.parseOrder('ability,ability'), ['dash', 'ability'], 'junk -> default');
+    assert.deepEqual(O.swapOrder(['dash', 'ability'], 'dash', 'ability'), ['ability', 'dash']);
+    assert.deepEqual(O.swapOrder(['dash', 'ability'], 'dash', 'sidearm'), ['dash', 'ability'], 'unknown ids change nothing');
+    const mem = new Map(), store = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
+    O.saveOrder(store, ['ability', 'dash']);
+    assert.deepEqual(O.loadOrder(store), ['ability', 'dash'], 'remembered');
+    const cv = fs.readFileSync(path.join(REPO, 'public', 'client', 'canvas.js'), 'utf8');
+    const down = cv.slice(cv.indexOf('    mouseDown(mouse) {'), cv.indexOf('    toggleBigMap() {'));
+    assert.ok(/global\.chipDrag = \{[^}]*\};\s+break;/.test(down) && down.indexOf('global.chipDrag =') < down.indexOf('cmd.set(primaryFire, true)'), 'a chip drag never fires the gun');
+    const tc = fs.readFileSync(path.join(REPO, 'public', 'client', 'touch.js'), 'utf8');
+    assert.match(tc, /if \(h\.tip && !h\.drag && Math\.hypot\(x - h\.tx, y - h\.ty\) > 12\)/, 'touch: long press, then a 12 px move drags');
+    cleanup(t);
 });
 
 // ── wiring ──────────────────────────────────────────────────────────────

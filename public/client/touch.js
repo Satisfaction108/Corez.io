@@ -225,6 +225,8 @@ class TouchControls {
         const abR = u * 0.6;
         out.dash = { x: right - armR * 2 - 18 - abR, y: bottom - abR, r: abR, round: true };
         out.ability = { x: out.dash.x - abR * 0.35, y: out.dash.y - abR * 2 - 20, r: abR, round: true };
+        // the player can swap the two (long-press one, drag it onto the other)
+        if (abilityFx.chipOrderNow()[0] === "ability") { const d = out.dash; out.dash = out.ability; out.ability = d; }
         out.unit = u;
         out.safe = s;
         this.L = out;
@@ -437,6 +439,7 @@ class TouchControls {
         this.btn.clear();
         if (this.held) this.held.clear();
         global.touchTip = null;
+        global.touchDrag = null;
         global.kitDrag = null;
         this.updateMove();
     }
@@ -495,12 +498,25 @@ class TouchControls {
         a.wx = global.player.renderx + dx / len * reach;
         a.wy = global.player.rendery + dy / len * reach;
     }
+    // a dragged thumb button dropped on another: kit slots trade places on
+    // the server, dash and ability just trade places on screen
+    swapButtons(from, to) {
+        if (from.startsWith("kit") && to.startsWith("kit")) {
+            if (this.cv) this.cv.swapKitSlots(+from.slice(3), +to.slice(3));
+        } else if ((from === "dash" && to === "ability") || (from === "ability" && to === "dash")) {
+            abilityFx.swapChips(from, to);
+            this.L = null;
+            gameSound.uiClick();
+        } else return;
+        haptic("tap");
+    }
     // per frame: a finger held still on a button long enough turns into its tooltip
     checkLongPress(now) {
         if (!this.held || !this.held.size) return;
         for (const [id, h] of this.held) {
             if (h.tip || h.moved || now - h.at < LONG_MS) continue;
             h.tip = true;
+            h.tx = h.cx != null ? h.cx : h.x; h.ty = h.cy != null ? h.cy : h.y;
             global.touchTip = { name: h.name, at: now };
             if (h.name === "ability" && this.abDrag) { this.abDrag = null; abilityFx.cancelAim(); }
             if (h.name.startsWith("kit")) global.kitDrag = null;
@@ -509,7 +525,15 @@ class TouchControls {
     }
     noteMove(id, x, y) {
         const h = this.held && this.held.get(id);
-        if (h && !h.moved && Math.hypot(x - h.x, y - h.y) > 14) h.moved = true;
+        if (!h) return;
+        h.cx = x; h.cy = y;
+        if (!h.moved && !h.tip && Math.hypot(x - h.x, y - h.y) > 14) h.moved = true;
+        // after the long press: moving on drags the button to rearrange it
+        if (h.tip && !h.drag && Math.hypot(x - h.tx, y - h.ty) > 12) {
+            h.drag = true;
+            global.touchTip = null;
+        }
+        if (h.drag) global.touchDrag = { name: h.name, x, y };
     }
     releaseButton(id, t) {
         const name = this.btn.get(id);
@@ -517,8 +541,13 @@ class TouchControls {
         const h = this.held && this.held.get(id);
         if (h) this.held.delete(id);
         if (h && h.tip) {
-            // it was a look, not a use
+            // it was a look, not a use; or a drag onto another button: swap
             if (global.touchTip && global.touchTip.name === h.name) global.touchTip = null;
+            if (h.drag) {
+                global.touchDrag = null;
+                const to = t ? this.hitButton(t.clientX, t.clientY) : null;
+                if (to && to !== h.name) this.swapButtons(h.name, to);
+            }
             return;
         }
         if (name === "dash") { if (this.cv) this.cv.useDash(); haptic("tap"); return; }

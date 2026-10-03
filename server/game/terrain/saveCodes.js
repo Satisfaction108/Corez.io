@@ -352,15 +352,23 @@ function applyShop(socket, body, rec, t) {
         if (running() >= (sh.GEAR_MAX || 4)) continue;
         st.gear[id] = until;
     }
-    for (const id of (rec.kitOrder || [])) {
+    const recOrder = rec.kitOrder || [];
+    for (let slot = 0; slot < recOrder.length; slot++) {
+        const id = recOrder[slot];
+        if (!id) continue;      // an empty slot the player left between items
         const n = rec.kit && rec.kit[id] | 0;
         const item = sh.BY_ID.get(id);
         if (!item || item.cat !== 'kit' || n <= 0) continue;
         if (!offered(item)) { refund += item.price * Math.min(item.max || 1, n); continue; }
         const have = st.kit[id] | 0;
-        if (!have && (st.kitOrder || []).length >= 3) continue;
+        if (!have && sh.kitCount(st.kitOrder) >= sh.KIT_SLOTS) continue;
         st.kit[id] = Math.min(item.max || 1, have + n);
-        if (!st.kitOrder.includes(id)) st.kitOrder.push(id);
+        // back in the slot it was saved in when that one is free
+        if (!st.kitOrder.includes(id)) {
+            while (st.kitOrder.length <= slot) st.kitOrder.push(null);
+            if (!st.kitOrder[slot]) st.kitOrder[slot] = id;
+            else st.kitOrder[sh.kitFreeSlot(st.kitOrder)] = id;
+        }
     }
     if (rec.arm && !st.arm) {
         const ok = sh.grantArm(socket, rec.arm, true, body);

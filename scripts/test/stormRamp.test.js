@@ -11,6 +11,7 @@
 //   final      the last storm's closing hold skips the warning, ramps 3x
 //              faster and hits 1.35x harder, so it kills faster than the old
 //              flat damage did
+//   stages     storm 1 hits at half strength, storm 2 at 0.8, later ones full
 //   spawn      a fresh spawn's shield still keeps the storm off
 //   entity     a real tank in the game loop dies of it, logged as "storm"
 'use strict';
@@ -119,11 +120,14 @@ test('ramp: full damage by 18 s, more than that from 30 s', () => {
     let last = b.health.amount;
     run(40_000, () => { if (b.health.amount < last) { hits.push({ t: storm.exposureOf(b).sec, d: last - b.health.amount }); last = b.health.amount; } });
     const at = s => hits.find(h => h.t >= s);
-    assert.ok(Math.abs(hits[0].d - 7 * 0.12) < 0.01, 'first hit is 12% of a full one: ' + hits[0].d);
-    assert.ok(Math.abs(at(18).d - 7) < 0.3, 'about 7 at 18 s: ' + at(18).d);
-    assert.ok(Math.abs(at(31).d - 7 * storm.RAMP_MAX) < 0.01, '1.6x from 30 s: ' + at(31).d);
+    // the first storm is the gentle stage
+    const S = storm.stageMult();
+    assert.equal(S, storm.STAGE_MULT[0]);
+    assert.ok(Math.abs(hits[0].d - 7 * 0.12 * S) < 0.01, 'first hit is 12% of a full one: ' + hits[0].d);
+    assert.ok(Math.abs(at(18).d - 7 * S) < 0.3, 'about 7 at 18 s: ' + at(18).d);
+    assert.ok(Math.abs(at(31).d - 7 * storm.RAMP_MAX * S) < 0.01, '1.6x from 30 s: ' + at(31).d);
     const ttd = timeToDeath(() => body(OUT, 800));
-    assert.ok(ttd > 20 && ttd < 30, 'a full-health tank lasts 20-30 s out there, got ' + ttd);
+    assert.ok(ttd > 30 && ttd < 45, 'a full-health tank lasts 30-45 s out in the first storm, got ' + ttd);
     ramp.ttd = ttd;
 });
 const ramp = {};
@@ -149,7 +153,7 @@ test('reset: a short dip holds the ramp, 3 s inside resets it', () => {
     b.x = OUT;
     const before = b.health.amount;
     run(TICK);
-    assert.ok(Math.abs((before - b.health.amount) - 7 * 0.12) < 0.01, 'the next hit is a warning one again');
+    assert.ok(Math.abs((before - b.health.amount) - 7 * 0.12 * storm.stageMult()) < 0.01, 'the next hit is a warning one again');
 });
 
 test('cloak: every hit halved', () => {
@@ -195,6 +199,24 @@ test('final: the last squeeze ramps faster and still kills', () => {
     assert.equal(storm.cyclePhase(clock), 'done');
     const ttd2 = timeToDeath(() => body(OUT, 1600));
     assert.ok(ttd2 < 13, 'after the end too: ' + ttd2);
+});
+
+test('stages: storm 1 stings, storm 2 hurts more, storm 3 is full', () => {
+    fresh();
+    const per = [];
+    for (let cyc = 0; cyc < 3; cyc++) {
+        // walk the clock into this cycle's shrink
+        while (storm.snapshot(clock).c < cyc) run(5000);
+        run(2000);
+        assert.equal(storm.snapshot(clock).c, cyc, 'in storm ' + (cyc + 1));
+        const b = body(OUT, 0, { health: { amount: 1e9, max: 100 } });
+        const hp = b.health.amount;
+        run(20_000);
+        per.push(hp - b.health.amount);
+        entities.delete(b.id);
+    }
+    assert.ok(per[0] < per[1] && per[1] < per[2], 'each storm hurts more: ' + per.map(d => d.toFixed(1)).join(' < '));
+    assert.ok(Math.abs(per[0] / per[2] - storm.STAGE_MULT[0]) < 0.02, 'storm 1 at half: ' + (per[0] / per[2]).toFixed(3));
 });
 
 test('spawn: the spawn shield keeps it off', () => {

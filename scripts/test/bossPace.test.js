@@ -184,6 +184,34 @@ test('ttk: big hitters need real time; off, they shred it', () => {
         ', grown destroyer ' + grown.secs.toFixed(1) + ', basic ' + basic.secs.toFixed(1) + ', three basics ' + group.secs.toFixed(1));
 });
 
+test('schedule: one boss per storm cycle, early in it, gone when it ends; none in the last storm', () => {
+    const storm = require(path.join(SERVER, 'game', 'terrain', 'storm.js'));
+    raidMods.roll('copper_rush');   // no Warden's Watch (that one allows a second boss)
+    storm.setCycles(3);
+    storm.start();
+    bosses.resetRaid();
+    bosses.tick(Date.now(), 2);
+    assert.equal(bosses.current(), null, 'not in the first seconds of a cycle');
+    storm.debugSeek(30);
+    bosses.tick(Date.now(), 2);
+    const b = bosses.current();
+    assert.ok(b, 'surfaces early in the cycle');
+    assert.ok(Math.abs(bosses.snapshot().until - storm.resetAt()) < 50, 'burrows when the cycle ends');
+    b.controllers = [];
+    b.kill();
+    bosses.tick(Date.now(), 2);
+    bosses.tick(Date.now(), 2);
+    const after = bosses.current();
+    assert.ok(!after || after === b, 'one per cycle: no second boss after a kill');
+    // the last storm is the Core's
+    storm.debugFinal(6 * 60);
+    bosses.tick(Date.now(), 2);
+    assert.equal(bosses.current(), null, 'no boss in the last storm');
+    assert.equal(bosses.nextIn(), Infinity);
+    storm.stop && storm.stop();
+    clearAll();
+});
+
 test('payout: a boss killed through the cap still erupts its gems', () => {
     const spots = () => [...entities.values()].filter(e => e.isGemPickup && !e.isDead()).length;
     const before = spots();

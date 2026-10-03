@@ -105,7 +105,7 @@ function addStyle() {
     const st = document.createElement("style");
     st.textContent =
         ".dw-emo{position:fixed;z-index:60;min-width:190px;max-width:280px;padding:4px;border-radius:10px;" +
-        "background:#1e1924;border:1px solid #120e15;box-shadow:0 6px 18px rgba(0,0,0,.45);" +
+        "background:#1e1924;border:1px solid #120e15;box-shadow:0 4px 0 rgba(0,0,0,.34);" +
         "font:600 13px/1.2 Rubik,Ubuntu,sans-serif;color:#efe6ff;display:none}" +
         ".dw-emo-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;cursor:pointer;white-space:nowrap}" +
         ".dw-emo-row b{font-size:18px;font-weight:400;width:22px;text-align:center}" +

@@ -276,10 +276,7 @@
             syncFullscreenButtons();
         }
 
-        var tb = document.getElementById('themeToggleBtn');
-        if (tb) tb.onclick = function () {
-            applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
-        };
+        // the toggle is wired in index.html, right under the button
 
         var panel = document.getElementById('homeSettingsPanel');
         var overlay = document.getElementById('homeSettingsOverlay');
@@ -773,6 +770,77 @@
             }
         }
 
+        // Light theme: a calm patch behind the card and the side notes. The
+        // background canvases cut a soft hole there (the sky behind shows
+        // through), so tanks, candy corn and bursts fade out before they
+        // reach the panels. The mask is baked when the panels move or
+        // resize; a frame is one drawImage per canvas.
+        var calm = { dirty: true, x: 0, y: 0, w: 0, h: 0, spr: null };
+        var CALM_PAD = 64, CALM_MARGIN = 22;
+        function calmPanels() {
+            var a = document.querySelector('.startMenu');
+            var b = document.getElementById('lobbySide');
+            return [a, b && !b.hidden && b.offsetParent ? b : null];
+        }
+        function bakeCalm() {
+            calm.dirty = false;
+            calm.w = 0;
+            var els = calmPanels();
+            var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+            for (var i = 0; i < els.length; i++) {
+                if (!els[i]) continue;
+                var r = els[i].getBoundingClientRect();
+                if (!(r.width > 0 && r.height > 0)) continue;
+                x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top); x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom);
+            }
+            if (!(x1 > x0)) return;
+            calm.x = x0 - CALM_MARGIN; calm.y = y0 - CALM_MARGIN;
+            calm.w = x1 - x0 + CALM_MARGIN * 2; calm.h = y1 - y0 + CALM_MARGIN * 2;
+            var k = Math.min(dpr, 1);
+            var c = calm.spr || document.createElement('canvas');
+            c.width = Math.ceil((calm.w + CALM_PAD * 2) * k);
+            c.height = Math.ceil((calm.h + CALM_PAD * 2) * k);
+            var g = c.getContext('2d');
+            g.clearRect(0, 0, c.width, c.height);
+            // the blur comes from a shadow cast by a shape drawn off the canvas
+            var off = c.width + 50;
+            g.shadowColor = '#000';
+            g.shadowBlur = CALM_PAD * 0.75 * k;
+            g.shadowOffsetX = off;
+            g.fillStyle = '#000';
+            g.beginPath();
+            if (g.roundRect) g.roundRect(CALM_PAD * k - off, CALM_PAD * k, calm.w * k, calm.h * k, 36 * k);
+            else g.rect(CALM_PAD * k - off, CALM_PAD * k, calm.w * k, calm.h * k);
+            g.fill();
+            calm.spr = c;
+        }
+        function calmOn() { return homeFxOn && root.getAttribute('data-theme') === 'light' && !document.body.classList.contains('in-game'); }
+        window.dwCalmZone = {
+            apply: function (c) {
+                if (!calmOn()) return;
+                if (calm.dirty) bakeCalm();
+                if (!calm.w || !calm.spr) return;
+                c.save();
+                c.globalCompositeOperation = 'destination-out';
+                c.globalAlpha = 0.94;
+                c.drawImage(calm.spr, calm.x - CALM_PAD, calm.y - CALM_PAD, calm.w + CALM_PAD * 2, calm.h + CALM_PAD * 2);
+                c.restore();
+            }
+        };
+        var markCalm = function () { calm.dirty = true; };
+        window.addEventListener('resize', markCalm);
+        window.addEventListener('scroll', markCalm, true);
+        if (window.ResizeObserver) {
+            var ro = new ResizeObserver(markCalm);
+            var els0 = calmPanels();
+            if (els0[0]) ro.observe(els0[0]);
+            var side = document.getElementById('lobbySide');
+            if (side) {
+                ro.observe(side);
+                new MutationObserver(markCalm).observe(side, { attributes: true, attributeFilter: ['hidden'] });
+            }
+        } else setInterval(markCalm, 1000);
+
         function drawHomeFx() {
             homeFxRaf = 0;
             if (!homeFxOn) return;
@@ -792,6 +860,7 @@
                 if (hfx) hfx.body(ctx, t.key, t.x, ty, reduceMotion);
             }
             ctx.globalAlpha = 1;
+            window.dwCalmZone.apply(ctx);
             if (hfx) hfx.front(ctx, reduceMotion);
             if (!reduceMotion) homeFxRaf = requestAnimationFrame(drawHomeFx);
         }

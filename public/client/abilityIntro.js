@@ -8,6 +8,7 @@
 // touch, null on desktop).
 
 import { global } from "./global.js";
+import { config } from "./config.js";
 import * as abilityFx from "./abilityFx.js";
 import { slamUp } from "./juice.js";
 import * as L from "./abilityIntroLogic.js";
@@ -101,13 +102,16 @@ function eligible(now) {
     });
 }
 
+// Lines that fit maxW as drawText will draw them (same font, the font size
+// boost and its rim included), so nothing reaches the card's edge.
 function wrap(c, text, size, maxW) {
-    c.font = "600 " + size + "px Rubik, Ubuntu, sans-serif";
+    const H = abilityFx.hud();
+    const width = H && H.hudTextW ? (t) => H.hudTextW(t, size) : (t) => { c.font = "700 " + (size + (config.graphical.fontSizeBoost || 0)) + "px Rubik, Ubuntu, sans-serif"; return c.measureText(t).width; };
     const out = [];
     let line = "";
     for (const w of text.split(" ")) {
         const t = line ? line + " " + w : w;
-        if (line && c.measureText(t).width > maxW) { out.push(line); line = w; } else line = t;
+        if (line && width(t) > maxW) { out.push(line); line = w; } else line = t;
     }
     if (line) out.push(line);
     return out;
@@ -165,23 +169,25 @@ export function draw(c, k) {
     }
     // the card: above the spot if it fits, else below; never off screen
     const [title, body] = stepText(id);
-    const cw = 300;
-    const key = id + "|" + body;
-    if (key !== wrapKey) { wrapKey = key; wrapLines = wrap(c, body, 12, cw - 28); }
-    const ch = 44 + wrapLines.length * 17 + 46;
+    const cw = Math.min(W - 20, 330), pad = 18;
+    const boost = config.graphical.fontSizeBoost || 0;
+    const key = id + "|" + body + "|" + cw + "|" + boost;
+    if (key !== wrapKey) { wrapKey = key; wrapLines = wrap(c, body, 12, cw - pad * 2 - 6); }
+    const lh = 17 + boost;
+    const ch = 44 + boost + wrapLines.length * lh + 46;
     let cx = Math.max(10, Math.min(W - cw - 10, sp.x - cw / 2));
     let cy = sp.y - sp.r - 22 - ch;
     if (cy < 10) cy = Math.min(Hh - ch - 10, sp.y + sp.r + 22);
     cy += (1 - fadeIn) * 8;
     H.hudPanel(c, cx, cy, cw, ch, { r: 12, alpha: fadeIn });
-    H.hudTitle((T.step + 1) + "/" + L.STEPS.length, cx + cw - 14, cy + 20, 11, H.HUD.text2, "right", fadeIn, c);
-    H.hudTitle(title, cx + 14, cy + 20, 16, H.HUD.head, "left", fadeIn, c);
-    let ly = cy + 44;
-    for (const l of wrapLines) { H.drawText(l, cx + 14, ly, 12, H.HUD.text, "left", true, fadeIn); ly += 17; }
+    H.hudTitle((T.step + 1) + "/" + L.STEPS.length, cx + cw - pad, cy + 20, 11, H.HUD.text2, "right", fadeIn, c);
+    H.hudTitle(title, cx + pad, cy + 20, 16, H.HUD.head, "left", fadeIn, c);
+    let ly = cy + 44 + boost;
+    for (const l of wrapLines) { H.drawText(l, cx + pad, ly, 12, H.HUD.text, "left", true, fadeIn); ly += lh; }
     // Next / Got it, and Skip
     const last = T.step === L.STEPS.length - 1;
     const bw = 96, bh = 28, by = cy + ch - bh / 2 - 12;
-    const nx = cx + cw - 14 - bw / 2, skx = cx + 14 + 36;
+    const nx = cx + cw - pad - bw / 2, skx = cx + pad + 36;
     if (H.hudButton) {
         H.hudButton(c, nx, by - bh / 2, bw, bh, last ? "Got it" : "Next", { fill: H.HUD.play, lipCol: H.HUD.playDk, textCol: "#fff", size: 14, alpha: fadeIn });
         if (!last) H.hudButton(c, skx, by - bh / 2, 72, bh, "Skip", { size: 13, alpha: fadeIn, textCol: H.HUD.text });

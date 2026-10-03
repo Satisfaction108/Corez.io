@@ -689,9 +689,12 @@ Class.minion = {
         }
     ]
 }
-// Factory minions hit a little softer, Auto-Spawner ones a little harder
+// Factory minions hit a little softer, Auto-Spawner ones a little harder.
+// A minion is tanky, so it stays pressed against you and its body damage
+// lands tick after tick: keep it low or a ram is a one-shot.
 Class.factoryMinion = {
     PARENT: 'minion',
+    BODY: { DAMAGE: 0.3 },
     GUNS: [
         {
             POSITION: {
@@ -699,7 +702,7 @@ Class.factoryMinion = {
                 WIDTH: 9,
             },
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.basic, g.minionGun, {damage: 0.8}]),
+                SHOOT_SETTINGS: combineStats([g.basic, g.minionGun, {damage: 0.6}]),
                 WAIT_TO_CYCLE: true,
                 TYPE: "bullet"
             }
@@ -708,6 +711,7 @@ Class.factoryMinion = {
 }
 Class.autoSpawnerMinion = {
     PARENT: 'minion',
+    BODY: { DAMAGE: 0.35 },
     GUNS: [
         {
             POSITION: {

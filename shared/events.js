@@ -23,7 +23,39 @@
             name: 'Raid Night',
             start: '2026-10-04T03:00:00Z',   // Sat Oct 3, 8:00 PM Pacific
             durationMin: 60,
-            blurb: 'Everyone in one raid. Bring friends.',
+            blurb: 'A raid every Saturday together with friends to win prizes!',
+            liveBlurb: 'Everyone is in one raid. Hit Play to jump in.',
+        },
+        {
+            id: 'raid-night-2',
+            name: 'Raid Night',
+            start: '2026-10-11T03:00:00Z',   // Sat Oct 10, 8:00 PM Pacific
+            durationMin: 60,
+            blurb: 'A raid every Saturday together with friends to win prizes!',
+            liveBlurb: 'Everyone is in one raid. Hit Play to jump in.',
+        },
+        {
+            id: 'raid-night-3',
+            name: 'Raid Night',
+            start: '2026-10-18T03:00:00Z',   // Sat Oct 17, 8:00 PM Pacific
+            durationMin: 60,
+            blurb: 'A raid every Saturday together with friends to win prizes!',
+            liveBlurb: 'Everyone is in one raid. Hit Play to jump in.',
+        },
+        {
+            id: 'raid-night-4',
+            name: 'Raid Night',
+            start: '2026-10-25T03:00:00Z',   // Sat Oct 24, 8:00 PM Pacific
+            durationMin: 60,
+            blurb: 'A raid every Saturday together with friends to win prizes!',
+            liveBlurb: 'Everyone is in one raid. Hit Play to jump in.',
+        },
+        {
+            id: 'raid-night-5',
+            name: 'Raid Night',
+            start: '2026-11-01T03:00:00Z',   // Sat Oct 31, 8:00 PM Pacific
+            durationMin: 60,
+            blurb: 'A raid every Saturday together with friends to win prizes!',
             liveBlurb: 'Everyone is in one raid. Hit Play to jump in.',
         },
     ];

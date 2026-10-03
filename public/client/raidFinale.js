@@ -794,7 +794,7 @@ const BLOCK_H = [0, 172, 138, 110];
 function drawPodium(c, pt) {
     const HUD = A.HUD;
     A.hudPanel(c, 0, 0, PW, PH, { fill: HUD.solid, r: HUD.rBig, lip: 5 });
-    A.hudTitle(S.duos ? "TOP TEAMS" : "TOP 3", 20, 30, 22, HUD.gold, "left", 1, c);
+    A.hudTitle(S.duos ? "Top teams" : "Top 3", 20, 30, 22, HUD.gold, "left", 1, c);
     A.drawText("Top 10 all get paid", PW - 20, 30, 12, HUD.text2, "right", true);
     const colW = 124, gap = 12, x0 = (PW - colW * 3 - gap * 2) / 2, baseY = PH - 20;
     const still = calm();
@@ -872,7 +872,7 @@ function drawRewards(c, pt, now) {
     const hasRank = A.rankHasContent();
     const ph = hasRank ? PH : PH - rankH - 14;
     A.hudPanel(c, 0, 0, PW, ph, { fill: HUD.solid, r: HUD.rBig, lip: 5 });
-    A.hudTitle("YOUR RAID", 20, 30, 22, HUD.gold, "left", 1, c);
+    A.hudTitle("Your raid", 20, 30, 22, HUD.gold, "left", 1, c);
     if (S.place > 0) A.hudTitle("#" + S.place + (S.rows > 1 ? " of " + S.rows : ""), PW - 20, 30, 22, S.place <= 3 ? RANK_COL[S.place][0] : HUD.head, "right", 1, c);
     // the counters tally up together
     const tk = clamp((pt - (TALLY_AT - REWARDS_AT)) / TALLY_MS);
@@ -933,6 +933,11 @@ function raidLeftNow(now) {
     if (!r || !(r.at > 0) || r.ending || S.on) return -1;
     if (now - r.at > 3000) return -1;
     return (r.raidLeft | 0) - (now - r.at) / 1000;
+}
+// the 10, 9, 8... is on screen (app.js clears the death card for it)
+export function countdownUp() {
+    const left = raidLeftNow(performance.now());
+    return left > 0 && left <= 10.2 && (global.royale.raidLeft | 0) > 0;
 }
 // how hard the heartbeat should go (the satchel beat reuses it)
 export function tension() {
