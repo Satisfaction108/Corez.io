@@ -1700,9 +1700,13 @@ function drawCloud(f, R, age, grow, out) {
     const half = R * 1.45 * (1 + out * 0.3);
     const k = Math.min(1, CLOUD_PX / (half * 2));
     const size = Math.ceil(half * 2 * k);
-    let cv = f.cv;
-    if (!cv) { cv = f.cv = document.createElement("canvas"); cv.width = cv.height = size; }
-    else if (cv.width < size || cv.width > size * 1.5) { cv.width = cv.height = size; }
+    let cv = f.cv, fresh = false;
+    if (!cv) { cv = f.cv = document.createElement("canvas"); cv.width = cv.height = size; fresh = true; }
+    else if (cv.width < size || cv.width > size * 1.5) { cv.width = cv.height = size; fresh = true; }
+    // The cloud only drifts: ~30 redraws a second is plenty while its size
+    // holds (each one re-uploads up to 520 px square to the GPU)
+    if (!fresh && age - cv._at < 33 && Math.abs(cv._half - half) < half * 0.01) return cv;
+    cv._at = age;
     const g = cv.getContext("2d");
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, cv.width, cv.height);
@@ -1874,7 +1878,7 @@ export function drawHud(c, anchor, mouse) {
     const sz = 52, gap = 10;
     const x0 = anchor.x + anchor.w + 22;
     const y0 = anchor.y + anchor.h - sz + 2;
-    const dashKey = H.keyLabel("KEY_DASH", "F"), abKey = H.keyLabel("KEY_ABILITY", "Q");
+    const dashKey = H.keyLabel("KEY_DASH", "`"), abKey = H.keyLabel("KEY_ABILITY", "Q");
     // the order is the player's (drag one chip onto the other to swap)
     const dashX = x0 + chipSlot("dash") * (sz + gap), abX = x0 + chipSlot("ability") * (sz + gap);
     chips.dash.x = dashX; chips.dash.y = y0; chips.dash.w = sz; chips.dash.h = sz; chips.dash.at = now;

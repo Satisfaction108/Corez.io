@@ -1338,7 +1338,7 @@ test('wiring: ab packet, keybinds (Shift dash, Q ability, comma kit 2, R overrid
     assert.match(sockets, /case "ab": \{/);
     assert.match(sockets, /abil\.dash\(player\.body, 0, 0\)/);
     const g = fs.readFileSync(path.join(REPO, 'public', 'client', 'global.js'), 'utf8');
-    assert.match(g, /KEY_DASH: 70/);
+    assert.match(g, /KEY_DASH: 192/);
     assert.match(g, /KEY_ABILITY: 81/);
     assert.match(g, /KEY_KIT_2: 188/);
     assert.match(g, /KEY_OVER_RIDE: 82/);

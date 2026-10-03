@@ -23,7 +23,8 @@ export const TUNE = {
     LONG_WINDOW: 3000,
     COOLDOWN: 4000,     // between two steps
     UP_AFTER: 20000,    // smooth this long before stepping back up
-    UP_WORK: 9,         // the 30 fps cap comes off only when a frame's work fits 60 fps easily
+    UP_WORK: 12,        // the 30 fps cap comes off when a frame's work fits 60 fps with room to spare
+    PIN_WORK: 12,       // a steady 30 with less work than this is a capped screen, not lag
     CAP_WORK: 28,       // and goes on only when a frame fits 30 fps (else it can't help: resolution)
     BOUNCE: 15000,      // a step down this soon after a step up...
     HOLD: 300000,       // ...keeps it down this long
@@ -49,6 +50,7 @@ export class Ladder {
         this.skip = new Set();
         this.ema = 16.7;
         this.work = 5;
+        this.jit = 0;
         this.longs = [];
         this.slowSince = 0;
         this.smoothSince = 0;
@@ -80,13 +82,19 @@ export class Ladder {
         if (!(dt > 0) || dt > 250) { this.reset(); return 0; }   // a stall or a hidden tab
         this.ema = this.ema * 0.9 + dt * 0.1;
         this.work = this.work * 0.9 + (work > 0 ? work : 0) * 0.1;
+        this.jit = this.jit * 0.9 + Math.abs(dt - this.ema) * 0.1;
         if (dt > T.LONG_MS) this.longs.push(now);
         while (this.longs.length && now - this.longs[0] > T.LONG_WINDOW) this.longs.shift();
         // a change settles first: its slow (or smooth) stretch starts after
         if (now - this.changedAt < this.T.COOLDOWN) return 0;
         const target = capped ? 1000 / 30 : 1000 / 60;
-        const slow = this.ema > (capped ? T.SLOW_MS_30 : T.SLOW_MS);
-        if (slow) { this.smoothSince = 0; if (!this.slowSince) this.slowSince = now; }
+        // Chrome's battery saver (or a 30 Hz screen) holds frames to a dead
+        // steady 30 however cheap they are: that is not lag, and cheaper
+        // settings would only make it look worse
+        const pinned = !capped && Math.abs(this.ema - 1000 / 30) < 3 && this.jit < 2.5 && this.work < T.PIN_WORK && !this.longs.length;
+        const slow = !pinned && this.ema > (capped ? T.SLOW_MS_30 : T.SLOW_MS);
+        if (pinned) { this.slowSince = 0; if (!this.smoothSince) this.smoothSince = now; }
+        else if (slow) { this.smoothSince = 0; if (!this.slowSince) this.slowSince = now; }
         else if (this.ema < target * 1.12 && !this.longs.length) { this.slowSince = 0; if (!this.smoothSince) this.smoothSince = now; }
         else { this.slowSince = 0; this.smoothSince = 0; }
 

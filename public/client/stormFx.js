@@ -134,24 +134,38 @@ function ensureFlash() {
     g.fillRect(0, 0, S, S);
     return flashSpr;
 }
-// screen-edge vignette, rebaked only when the screen size changes
-const vig = { w: 0, h: 0, cv: null };
-function vignette(w, h) {
-    w |= 0; h |= 0;
-    if (vig.cv && vig.w === w && vig.h === h) return vig.cv;
-    const cw = Math.max(2, Math.ceil(w / 2)), ch = Math.max(2, Math.ceil(h / 2));
-    const cv = vig.cv || document.createElement("canvas");
-    cv.width = cw; cv.height = ch;
-    const g = cv.getContext("2d");
-    const r = Math.hypot(cw, ch) / 2;
-    const gd = g.createRadialGradient(cw / 2, ch / 2, r * 0.42, cw / 2, ch / 2, r);
-    gd.addColorStop(0, "rgba(96, 60, 210, 0)");
-    gd.addColorStop(0.55, "rgba(96, 60, 210, 0.35)");
-    gd.addColorStop(1, "rgba(70, 30, 170, 1)");
-    g.fillStyle = gd;
-    g.fillRect(0, 0, cw, ch);
-    vig.cv = cv; vig.w = w; vig.h = h;
-    return cv;
+// In the storm the screen gets a purple wash and the pulsing edge. Drawn as
+// two full-screen layers that was two passes over every pixel of the HUD
+// canvas, every frame. Both are smooth, so they're composed into one tiny
+// canvas (only when their strengths move) and stretched over the screen in
+// a single pass. Same blend, same look.
+const OV_W = 192;
+const ov = { cv: null, edge: null, w: 0, h: 0, t: -1, e: -1 };
+function overlay(sw, sh, tintA, edgeA) {
+    const h = Math.max(2, Math.round(OV_W * sh / Math.max(1, sw)));
+    if (!ov.cv) { ov.cv = document.createElement("canvas"); ov.edge = document.createElement("canvas"); }
+    if (ov.w !== OV_W || ov.h !== h) {
+        ov.cv.width = ov.edge.width = OV_W; ov.cv.height = ov.edge.height = h;
+        ov.w = OV_W; ov.h = h; ov.t = ov.e = -1;
+        const g = ov.edge.getContext("2d");
+        const r = Math.hypot(OV_W, h) / 2;
+        const gd = g.createRadialGradient(OV_W / 2, h / 2, r * 0.42, OV_W / 2, h / 2, r);
+        gd.addColorStop(0, "rgba(96, 60, 210, 0)");
+        gd.addColorStop(0.55, "rgba(96, 60, 210, 0.35)");
+        gd.addColorStop(1, "rgba(70, 30, 170, 1)");
+        g.fillStyle = gd;
+        g.fillRect(0, 0, OV_W, h);
+    }
+    const t = Math.round(tintA * 96), e = Math.round(edgeA * 96);
+    if (t !== ov.t || e !== ov.e) {
+        ov.t = t; ov.e = e;
+        const g = ov.cv.getContext("2d");
+        g.clearRect(0, 0, OV_W, h);
+        if (t > 0) { g.globalAlpha = t / 96; g.fillStyle = "#4a2a9c"; g.fillRect(0, 0, OV_W, h); }
+        if (e > 0) { g.globalAlpha = e / 96; g.drawImage(ov.edge, 0, 0); }
+        g.globalAlpha = 1;
+    }
+    return ov.cv;
 }
 
 // ── moving parts (preallocated) ────────────────────────────────────────
@@ -186,7 +200,7 @@ function drawPour(c, sw, sh, a, now) {
     c.globalAlpha = a;
     c.strokeStyle = "#cfd4ff";
     c.lineWidth = 1.6;
-    c.lineCap = "round";
+    c.lineCap = "butt";        // round caps on 150 drops only added geometry
     c.stroke();
     c.globalAlpha = 1;
 }
@@ -572,20 +586,18 @@ export function drawHud(c, sw, sh, topY, st) {
     // screen goes purple and it pours. This comes first; the pulsing edge
     // is only a hint on top. Fades in on entry.
     const inA = still ? 1 : Math.min(1, age / 400);
-    if (!softGpu()) {
-        c.globalAlpha = (0.16 + 0.1 * L) * inA;
-        c.fillStyle = "#4a2a9c";
-        c.fillRect(0, 0, sw, sh);
-        c.globalAlpha = 1;
-    }
-    if (!still) drawPour(c, sw, sh, 0.42 * inA, now);
+    const tintA = softGpu() ? 0 : (0.16 + 0.1 * L) * inA;
     // screen-edge storm vignette, kept soft under the rain
     const va = Math.min(1, (0.35 + 0.4 * L) * pulse) * (config.graphical.fxLevel === 2 ? 0.8 : 0.55);
     if (glowOn()) {
-        c.globalAlpha = va;
-        c.drawImage(vignette(sw, sh), 0, 0, sw, sh);
-        c.globalAlpha = 1;
+        // the wash and the edge in one pass (see overlay)
+        c.drawImage(overlay(sw, sh, tintA, va), 0, 0, sw, sh);
     } else {
+        if (tintA > 0) {
+            c.globalAlpha = tintA;
+            c.fillStyle = "#4a2a9c";
+            c.fillRect(0, 0, sw, sh);
+        }
         const b = 8 + 14 * L;
         c.globalAlpha = va * 0.6;
         c.fillStyle = "#5a34c8";
@@ -593,6 +605,7 @@ export function drawHud(c, sw, sh, topY, st) {
         c.fillRect(0, b, b, sh - 2 * b); c.fillRect(sw - b, b, b, sh - 2 * b);
         c.globalAlpha = 1;
     }
+    if (!still) drawPour(c, sw, sh, 0.42 * inA, now);
     // banner, popping in on entry (coach.js steps aside while it is up)
     global.stormBannerAt = now;
     const pop = still ? 1 : Math.min(1, age / 220);

@@ -11,6 +11,7 @@
 //             holds the ladder down
 //   skip      rungs the player set themselves are never switched, either way
 //   capped    a steady 30 fps under the cap is not lag
+//   pinned    nor is a steady 30 with cheap frames and no cap (battery saver)
 //   wiring    loadSettings puts the rungs on top of the player's choices,
 //             frames feed the ladder, resolution waits its turn, glitches
 //             stay on (rarer) under the trim
@@ -121,6 +122,25 @@ function run(L, t, until, dt, opts = {}) {
         const r0 = L.rung;
         run(L, 0, 30000, 1000 / 30, { capped: true, work: 20 });
         assert.equal(L.rung, r0, 'steady under the cap');
+    }
+    // pinned: battery saver or a 30 Hz screen holds a dead steady 30 with
+    // cheap frames; that never walks the ladder down, and lets it back up
+    {
+        const L = new Ladder(0);
+        let [t, steps] = run(L, 0, 60000, 1000 / 30, { work: 6 });
+        assert.equal(steps.length, 0, 'a pinned 30 is not lag');
+        const M = new Ladder(3);
+        run(M, 0, TUNE.UP_AFTER + 2000, 1000 / 30, { work: 6 });
+        assert.equal(M.rung, 2, 'and a pinned 30 steps back up');
+        // the same 30 fps with heavy frames is a slow machine
+        const N = new Ladder(0);
+        [t, steps] = run(N, 0, 4500, 1000 / 30, { work: 25 });
+        assert.equal(N.rung, 1, 'heavy 30 fps steps down');
+        // a jittery 30 (frames anywhere from 20 to 47 ms) is lag too
+        const J = new Ladder(0);
+        let tj = 0, sj = 0;
+        for (let i = 0; i < 300 && !sj; i++) { const dt = i % 2 ? 20 : 47; tj += dt; sj = J.frame(tj, dt, 6); }
+        assert.equal(sj, 1, 'jittery 30 steps down');
     }
     // bounce: slow again right after stepping up holds it down
     {

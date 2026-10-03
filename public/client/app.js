@@ -140,9 +140,9 @@ import * as cosmetics from './account/cosmetics.js';
             delete keybinds.KEY_DEBUG;
             setKeybinds();
         }
-        // Dash moved off Shift to F (Shift is repel again): a dash bind still
-        // saved on Shift goes back to the new default
-        if (keybinds.KEY_DASH && keybinds.KEY_DASH[1] === 16) {
+        // Dash moved off Shift (Shift is repel again) and briefly sat on F
+        // (max stat): a dash bind saved on either goes back to the default
+        if (keybinds.KEY_DASH && (keybinds.KEY_DASH[1] === 16 || keybinds.KEY_DASH[1] === 70)) {
             delete keybinds.KEY_DASH;
             setKeybinds();
         }
@@ -167,8 +167,8 @@ import * as cosmetics from './account/cosmetics.js';
         for (const id of NEW_DEFAULTS) {
             if (keybinds[id]) continue;
             const code = global[id];
-            // F is hold-to-max-stat too; in a raid dash takes it first
-            const shared = id === "KEY_DASH" ? ["KEY_MAX_STAT", "KEY_BECOME"] : [];
+            // backtick is the special key too; in a raid dash takes it first
+            const shared = id === "KEY_DASH" ? ["KEY_SPECIAL"] : [];
             if (Object.keys(keybinds).some(k => k !== id && !shared.includes(k) && keybinds[k] && keybinds[k][1] === code)) {
                 keybinds[id] = ["", -1];
                 setKeybinds();

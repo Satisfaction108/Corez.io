@@ -164,7 +164,7 @@ const global = {
     KEY_KIT_1: 90,
     KEY_KIT_2: 188,        // , (comma): Q is the ability key, R is AI override
     KEY_KIT_3: 78,
-    KEY_DASH: 70,          // F: dash (raids only; Shift stays repel, like right click)
+    KEY_DASH: 192,         // ` (backtick): dash in raids; Shift stays repel, F stays max stat
     KEY_ABILITY: 81,       // Q: the equipped ability
     KEY_MOUSE_0: 32,
     KEY_MOUSE_1: 86,
