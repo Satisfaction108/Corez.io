@@ -496,6 +496,10 @@ class io_nearestDifferentMaster extends IO {
         // spawn's bot grace too
         if ((myMaster.isBot || myMaster.isRoyaleBoss) && inBotGrace(theirMaster, Date.now())) return false;
         if (myMaster.isBot && softSpared(myMaster, theirMaster, Date.now())) return false;
+        // Core truce (coreFinale.js): a bot's guns and drones leave players
+        // alone unless that player hit the bot in the last few seconds
+        if (myMaster.isBot && theirMaster.isPlayer && global.royaleCoreTruce &&
+            !(myMaster._lastDamageSource === theirMaster && Date.now() - (myMaster._lastDamageAt || 0) < 3000)) return false;
         if (isNaN(e.dangerValue)) return false;
         if (!(aiSettings.seeInvisible || this.body.isArenaCloser || e.alpha > 0.5)) return false;
         if (!io_nearestDifferentMaster.validEntityTypes.has(e.type)) {
@@ -2190,6 +2194,9 @@ class io_digWarsGoals extends IO {
             if (distance > Math.max(radar, fov * (1.25 + marked * 0.3))) continue;
             // fresh spawn in bot grace: not a target, not even counted
             if (inBotGrace(root, now)) continue;
+            // the Core is up: bots leave players to it (one who shoots us
+            // still gets fought, through the attacker override below)
+            if (root.isPlayer && global.royaleCoreTruce) continue;
             // soft window (first minutes of a life, or a new player): only
             // if they come right up to us or shoot us
             if (softSpared(body, root, now)) continue;

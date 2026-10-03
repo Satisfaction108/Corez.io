@@ -512,7 +512,7 @@ test('signup: creates the account, returns the User shape, recovery code and ses
     });
     assert.equal(u.dust, 0);
     assert.equal(u.refundTokens, 3);
-    assert.deepEqual(u.equipped, { nameStyle: null, skin: null, customColor: null });
+    assert.deepEqual(u.equipped, { nameStyle: null, skin: null, customColor: null, sidekick: null, sdSkin: null, sdName: null, sidekickName: null, sidekickColor: null });
     assert.deepEqual(Object.keys(u).sort(), ['createdAt', 'discord', 'dust', 'equipped', 'hasPassword', 'rank', 'refundTokens', 'userId', 'username', 'usernameChangeAt']);
     assert.match(r.json.recoveryCode, /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/);
     A.recovery = r.json.recoveryCode;

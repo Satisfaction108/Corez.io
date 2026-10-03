@@ -296,6 +296,11 @@ function toPublic(row, now = Date.now()) {
             nameStyle: row.equip_name_style || null,
             skin: row.equip_skin || null,
             customColor: row.custom_color || null,
+            sidekick: row.equip_sidekick || null,
+            sdSkin: row.equip_sd_skin || null,
+            sdName: row.equip_sd_name || null,
+            sidekickName: row.sidekick_name || null,
+            sidekickColor: row.sidekick_color || null,
         },
     };
 }

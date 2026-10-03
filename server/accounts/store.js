@@ -6,8 +6,19 @@
 // reroll(), draws the day again). 2 Featured (Epic/Legendary,
 // Epic weighted 2:1) + 8 Daily (Common/Uncommon/Rare, at most 4 skins);
 // items Featured on either of the previous 2 days are skipped. Permanent
-// items (Custom Color) are always for sale; exclusive ones (invite rewards)
-// never are, and cannot be gifted.
+// items (Custom Color, the Basic sidekick) are always for sale; exclusive
+// ones (invite rewards) never are, and cannot be gifted.
+//
+// Sidekicks have their own shelf (the shop's Sidekicks tab): SIDEKICK_COUNT
+// sidekicks, SIDEKICK_SKINS sidekick skins and SIDEKICK_NAMES sidekick name
+// styles a day, drawn from a separate seed (salt + ':sd:' + day) so the
+// Featured and Daily draws are exactly what they were before sidekicks
+// existed. Days stored before the shelf existed (or before migration v11
+// cleared the shelves for the round 2 catalog) get it filled in (and
+// stored) the first time they're read.
+//
+// Buying something puts it on straight away (equip column for its slot);
+// a gift does not touch the friend's Locker.
 //
 // Every money move runs in one db.tx (BEGIN IMMEDIATE): idempotency replay,
 // offer check, ownership, the conditional balance UPDATE (402 if short),
@@ -23,6 +34,7 @@ const config = require('./config');
 const users = require('./users');
 const { HttpError } = require('./http');
 const C = require('../../shared/cosmetics.js');
+const profanity = require('../../shared/profanity.js');
 
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
@@ -37,6 +49,16 @@ const DAILY_MAX_SKINS = 4;
 const FEATURED_SKIP_DAYS = 2;
 const FEATURED_WEIGHT = { epic: 2, legendary: 1 };
 const DAILY_RARITIES = new Set(['common', 'uncommon', 'rare']);
+const SIDEKICK_COUNT = 4;
+const SIDEKICK_SKINS = 3;
+const SIDEKICK_NAMES = 2;
+const SIDEKICK_EXTRAS = SIDEKICK_SKINS + SIDEKICK_NAMES;
+const TANK_CATS = new Set(C.TANK_CATS);
+// Locker slot -> users column
+const SLOT_COL = {
+    nameStyle: 'equip_name_style', skin: 'equip_skin',
+    sidekick: 'equip_sidekick', sdSkin: 'equip_sd_skin', sdName: 'equip_sd_name',
+};
 const HISTORY_LIMIT = 50;
 const IDEM_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
@@ -69,6 +91,11 @@ function mulberry32(seed) {
 }
 
 function sellable(it) { return !it.retired && !it.permanent && !it.exclusive; }
+// Off the shelf until this day starts (UTC): Jack is the Raid Night prize
+// (Oct 3 2026) and only goes on sale from Oct 6.
+const HELD_UNTIL = { sd_jack: Date.UTC(2026, 9, 6) };
+const held = (id, day) => (HELD_UNTIL[id] || 0) > day * DAY;
+function tankItem(it) { return TANK_CATS.has(it.cat); }
 
 // Weighted draw without replacement. items in catalog order, so the result
 // only depends on the seed.
@@ -94,13 +121,13 @@ function generate(day, recentFeatured = [], salt = config.shopSeedSalt, avoid = 
     const rand = mulberry32(fnv1a(String(salt) + day));
     const skip = new Set(recentFeatured);
     const away = new Set(avoid);
-    const fPool = C.ITEMS.filter(it => sellable(it) && FEATURED_WEIGHT[it.rarity]);
+    const fPool = C.ITEMS.filter(it => sellable(it) && tankItem(it) && FEATURED_WEIGHT[it.rarity]);
     let pool = fPool.filter(it => !skip.has(it.id) && !away.has(it.id));
     if (pool.length < FEATURED_COUNT) pool = fPool.filter(it => !skip.has(it.id));
     if (pool.length < FEATURED_COUNT) pool = fPool;   // catalog too small to skip: never show an empty slot
     const featured = drawWeighted(rand, pool, FEATURED_COUNT, it => FEATURED_WEIGHT[it.rarity]);
 
-    const dPool = C.ITEMS.filter(it => sellable(it) && DAILY_RARITIES.has(it.rarity));
+    const dPool = C.ITEMS.filter(it => sellable(it) && tankItem(it) && DAILY_RARITIES.has(it.rarity));
     const fills = list => list.filter(it => it.cat !== 'skin').length + Math.min(DAILY_MAX_SKINS, list.filter(it => it.cat === 'skin').length) >= DAILY_COUNT;
     const fresh = away.size ? dPool.filter(it => !away.has(it.id)) : dPool;
     const daily = [];
@@ -118,6 +145,22 @@ function generate(day, recentFeatured = [], salt = config.shopSeedSalt, avoid = 
     return { featured: featured.map(it => it.id), daily: daily.map(it => it.id) };
 }
 
+// Pure: the Sidekicks shelf for `day`: SIDEKICK_COUNT sidekicks, then
+// SIDEKICK_SKINS skins and SIDEKICK_NAMES name styles. `avoid` as in
+// generate(). -> [ids]
+function generateSidekicks(day, salt = config.shopSeedSalt, avoid = []) {
+    const rand = mulberry32(fnv1a(String(salt) + ':sd:' + day));
+    const away = new Set(avoid);
+    const draw = (cat, n) => {
+        const all = C.ITEMS.filter(it => sellable(it) && it.cat === cat && !held(it.id, day));
+        const fresh = all.filter(it => !away.has(it.id));
+        const left = (fresh.length >= n ? fresh : all).slice(), out = [];
+        while (out.length < n && left.length) out.push(left.splice(Math.floor(rand() * left.length), 1)[0].id);
+        return out;
+    };
+    return [...draw('sidekick', SIDEKICK_COUNT), ...draw('sdSkin', SIDEKICK_SKINS), ...draw('sdName', SIDEKICK_NAMES)];
+}
+
 function parseIds(json) {
     try {
         const a = JSON.parse(json);
@@ -126,8 +169,15 @@ function parseIds(json) {
 }
 
 function readRotation(day) {
-    const r = h().get('SELECT featured, daily FROM shop_rotations WHERE day = ?', day | 0);
-    return r ? { day: day | 0, featured: parseIds(r.featured), daily: parseIds(r.daily) } : null;
+    const r = h().get('SELECT featured, daily, sidekicks FROM shop_rotations WHERE day = ?', day | 0);
+    if (!r) return null;
+    let sidekicks = r.sidekicks == null ? null : parseIds(r.sidekicks);
+    if (sidekicks == null) {
+        // a day stored before the Sidekicks shelf: draw it now, keep it
+        sidekicks = generateSidekicks(day | 0);
+        h().run('UPDATE shop_rotations SET sidekicks = ? WHERE day = ? AND sidekicks IS NULL', JSON.stringify(sidekicks), day | 0);
+    }
+    return { day: day | 0, featured: parseIds(r.featured), daily: parseIds(r.daily), sidekicks: sidekicks.filter(id => !held(id, day | 0)) };
 }
 
 // The persisted rotation for `day`, generating (and storing) it and, if
@@ -142,35 +192,39 @@ function rotationFor(day, depth = FEATURED_SKIP_DAYS, now = Date.now()) {
         for (let k = 1; k <= FEATURED_SKIP_DAYS; k++) recent.push(...rotationFor(day - k, depth - 1, now).featured);
     }
     const g = generate(day, recent);
-    h().run('INSERT OR IGNORE INTO shop_rotations (day, featured, daily, created_at) VALUES (?, ?, ?, ?)',
-        day, JSON.stringify(g.featured), JSON.stringify(g.daily), now);
-    return readRotation(day) || { day, ...g };
+    const sidekicks = generateSidekicks(day);
+    h().run('INSERT OR IGNORE INTO shop_rotations (day, featured, daily, sidekicks, created_at) VALUES (?, ?, ?, ?, ?)',
+        day, JSON.stringify(g.featured), JSON.stringify(g.daily), JSON.stringify(sidekicks), now);
+    return readRotation(day) || { day, ...g, sidekicks };
 }
 
 // /shoprotate: draw `day` again under the same rules (skip rule, rarities,
 // skin cap, nothing exclusive or permanent) with a random salt, leaving out
 // what is up now where the pools allow, and overwrite the stored row.
-// which: 'featured' | 'daily' | 'both'. The next days' skip rule reads the
-// new row. -> {day, which, before:{featured, daily}, featured, daily}
+// which: 'featured' | 'daily' | 'sidekicks' | 'both' (everything). The next
+// days' skip rule reads the new row.
+// -> {day, which, before:{featured, daily, sidekicks}, featured, daily, sidekicks}
 function reroll(day, which = 'both', now = Date.now(), salt = null) {
     day |= 0;
-    if (which !== 'featured' && which !== 'daily') which = 'both';
+    if (which !== 'featured' && which !== 'daily' && which !== 'sidekicks') which = 'both';
     return h().tx(() => {
         const cur = rotationFor(day, FEATURED_SKIP_DAYS, now);
         const recent = [];
         for (let k = 1; k <= FEATURED_SKIP_DAYS; k++) recent.push(...rotationFor(day - k, FEATURED_SKIP_DAYS - 1, now).featured);
         const s = salt == null ? require('crypto').randomBytes(8).toString('hex') : String(salt);
         const g = generate(day, recent, config.shopSeedSalt + ':reroll:' + s, cur.featured.concat(cur.daily));
-        const featured = which === 'daily' ? cur.featured : g.featured;
-        const daily = which === 'featured' ? cur.daily : g.daily;
-        h().run('UPDATE shop_rotations SET featured = ?, daily = ?, created_at = ? WHERE day = ?',
-            JSON.stringify(featured), JSON.stringify(daily), now, day);
-        return { day, which, before: { featured: cur.featured, daily: cur.daily }, featured, daily };
+        const featured = which === 'featured' || which === 'both' ? g.featured : cur.featured;
+        const daily = which === 'daily' || which === 'both' ? g.daily : cur.daily;
+        const sidekicks = which === 'sidekicks' || which === 'both'
+            ? generateSidekicks(day, config.shopSeedSalt + ':reroll:' + s, cur.sidekicks) : cur.sidekicks;
+        h().run('UPDATE shop_rotations SET featured = ?, daily = ?, sidekicks = ?, created_at = ? WHERE day = ?',
+            JSON.stringify(featured), JSON.stringify(daily), JSON.stringify(sidekicks), now, day);
+        return { day, which, before: { featured: cur.featured, daily: cur.daily, sidekicks: cur.sidekicks }, featured, daily, sidekicks };
     });
 }
 
 function inRotation(rot, id) {
-    return rot.featured.includes(id) || rot.daily.includes(id);
+    return rot.featured.includes(id) || rot.daily.includes(id) || (rot.sidekicks || []).includes(id);
 }
 
 // Throws unless `item` can be bought from the shop the client saw (`day`).
@@ -215,6 +269,30 @@ function equippedOf(row, owned) {
         nameStyle,
         skin: ok(row.equip_skin, 'skin'),
         customColor: row.custom_color && C.isColorAllowed(row.custom_color) ? row.custom_color : null,
+        sidekick: ok(row.equip_sidekick, 'sidekick'),
+        sdSkin: ok(row.equip_sd_skin, 'sdSkin'),
+        sdName: ok(row.equip_sd_name, 'sdName'),
+        sidekickName: row.sidekick_name || null,
+        sidekickColor: row.sidekick_color && C.isSidekickColor(row.sidekick_color) ? row.sidekick_color : null,
+    };
+}
+
+// For the game at spawn: the equipped sidekick, or null.
+// -> {nid, skin, ns, name, color: '#rrggbb'|''}
+function sidekickFor(row) {
+    if (!row || !h()) return null;
+    const eq = equippedOf(row);
+    const kick = eq.sidekick ? C.byId(eq.sidekick) : null;
+    if (!kick) return null;
+    // a name the filter would refuse today goes back to the sidekick's own
+    let name = eq.sidekickName ? C.cleanSidekickName(eq.sidekickName) : '';
+    if (name && profanity.hasProfanity(name)) name = '';
+    return {
+        nid: kick.nid,
+        skin: eq.sdSkin ? C.byId(eq.sdSkin).nid : 0,
+        ns: eq.sdName ? C.byId(eq.sdName).nid : 0,
+        name: name || kick.name,
+        color: eq.sidekickColor || '',
     };
 }
 
@@ -270,6 +348,7 @@ function storeView(row, now = Date.now()) {
         giftsLeft: Math.max(0, GIFTS_PER_DAY - giftsSentToday(row.id, now)),
         featured: pick(rot.featured),
         daily: pick(rot.daily),
+        sidekicks: pick(rot.sidekicks || []),
         permanent: C.ITEMS.filter(it => it.permanent && !it.retired).map(it => itemView(it, owned)),
     };
 }
@@ -340,8 +419,17 @@ function purchase(userId, input, opts = {}) {
         d.run('INSERT INTO owned_items (user_id, item_id, source, purchase_id, acquired_at) VALUES (?, ?, ?, ?, ?)', userId, item.id, 'purchase', pid, now);
         ledger(userId, -item.price, balance, 'purchase', 'purchase:' + pid, now);
         if (color) d.run('UPDATE users SET custom_color = ? WHERE id = ?', color, userId);
+        // on straight away (Custom Color only once there is a colour to show)
+        const col = SLOT_COL[item.cat];
+        const row = users.byId(userId);
+        if (col && (item.id !== C.CUSTOM_COLOR_ID || (row && row.custom_color && C.isColorAllowed(row.custom_color)))) {
+            d.run(`UPDATE users SET ${col} = ? WHERE id = ?`, item.id, userId);
+        }
         users.audit(userId, 'store_purchase', { purchaseId: pid, itemId: item.id, priceMilli: item.price }, { now, ip: opts.ip });
-        const result = { purchaseId: pid, itemId: item.id, priceMilli: item.price, price: item.price / C.MILLI, balance: balance / C.MILLI, balanceMilli: balance };
+        const result = {
+            purchaseId: pid, itemId: item.id, priceMilli: item.price, price: item.price / C.MILLI, balance: balance / C.MILLI, balanceMilli: balance,
+            equipped: equippedOf(users.byId(userId)),
+        };
         d.run('UPDATE purchases SET result = ? WHERE id = ?', JSON.stringify(result), pid);
         return result;
     });
@@ -417,9 +505,12 @@ function refund(userId, purchaseId, opts = {}) {
         d.run('UPDATE purchases SET refunded_at = ? WHERE id = ? AND refunded_at IS NULL', now, p.id);
         const r = d.run(`UPDATE users SET dust_milli = dust_milli + ?, refund_tokens = refund_tokens - 1,
                              equip_name_style = CASE WHEN equip_name_style = ? THEN NULL ELSE equip_name_style END,
-                             equip_skin = CASE WHEN equip_skin = ? THEN NULL ELSE equip_skin END
+                             equip_skin = CASE WHEN equip_skin = ? THEN NULL ELSE equip_skin END,
+                             equip_sidekick = CASE WHEN equip_sidekick = ? THEN NULL ELSE equip_sidekick END,
+                             equip_sd_skin = CASE WHEN equip_sd_skin = ? THEN NULL ELSE equip_sd_skin END,
+                             equip_sd_name = CASE WHEN equip_sd_name = ? THEN NULL ELSE equip_sd_name END
                          WHERE id = ? AND refund_tokens > 0 AND deleted_at IS NULL`,
-            p.price_milli, p.item_id, p.item_id, userId);
+            p.price_milli, p.item_id, p.item_id, p.item_id, p.item_id, p.item_id, userId);
         if (!r.changes) fail(409, 'no_refund_tokens', "You're out of refund tokens.");
         const bal = balanceOf(userId);
         ledger(userId, p.price_milli, bal.milli, 'refund', 'refund:' + p.id, now);
@@ -464,7 +555,7 @@ function history(userId, now = Date.now()) {
             return {
                 purchaseId: p.id,
                 itemId: p.item_id,
-                name: item ? item.name : p.item_id,
+                name: item ? item.name : (C.RETIRED[p.item_id] || p.item_id),
                 cat: item ? item.cat : null,
                 rarity: item ? item.rarity : null,
                 direction,
@@ -501,8 +592,8 @@ function lockerView(row) {
 // equip(userId, slot, itemId|null, color?, opts) -> {equipped}
 // Takes effect on the next spawn.
 function equip(userId, slot, itemId, color, opts = {}) {
-    if (!C.isCat(slot)) fail(400, 'bad_slot', 'Something went wrong. Refresh and try again.');
-    const col = slot === 'nameStyle' ? 'equip_name_style' : 'equip_skin';
+    if (!C.isCat(slot) || !SLOT_COL[slot]) fail(400, 'bad_slot', 'Something went wrong. Refresh and try again.');
+    const col = SLOT_COL[slot];
     const d = h();
     return d.tx(() => {
         const row = users.byId(userId);
@@ -525,10 +616,40 @@ function equip(userId, slot, itemId, color, opts = {}) {
     });
 }
 
+// saveSidekick(userId, {sidekick, sdSkin, sdName, name, color}) -> {equipped}
+// The Locker's Sidekick panel in one go: which sidekick (null = none), its
+// skin and name style (owned ones, or null), its name ('' = its own) and
+// colour (a swatch, or null). Takes effect on the next spawn.
+function saveSidekick(userId, input = {}) {
+    const d = h();
+    const name = C.cleanSidekickName(input.name);
+    if (input.name != null && String(input.name).trim() && !name) fail(400, 'bad_name', 'Letters and numbers only, please.');
+    if (name && profanity.hasProfanity(name)) fail(400, 'bad_name', 'Pick a nicer name for it.');
+    const color = input.color == null || input.color === '' ? null : C.normalizeColor(input.color);
+    if (color && !C.isSidekickColor(color)) fail(400, 'bad_color', 'Pick one of the colours.');
+    return d.tx(() => {
+        const row = users.byId(userId);
+        if (!row) fail(404, 'not_found', "Couldn't find that account.");
+        const pick = (id, cat) => {
+            if (id == null || id === '') return null;
+            const item = itemOrFail(id);
+            if (item.cat !== cat) fail(400, 'bad_item', "That item doesn't go there.");
+            if (!owns(userId, item.id)) fail(403, 'not_owned', "You don't have that one.");
+            return item.id;
+        };
+        const kick = pick(input.sidekick, 'sidekick');
+        const skin = pick(input.sdSkin, 'sdSkin');
+        const style = pick(input.sdName, 'sdName');
+        d.run('UPDATE users SET equip_sidekick = ?, equip_sd_skin = ?, equip_sd_name = ?, sidekick_name = ?, sidekick_color = ? WHERE id = ?',
+            kick, skin, style, name || null, color, userId);
+        return { equipped: equippedOf(users.byId(userId)) };
+    });
+}
+
 module.exports = {
     DAY, RESET_GRACE_MS, REFUND_WINDOW_MS, GIFT_FRIEND_AGE_MS, GIFTS_PER_DAY, GIFT_PRESETS,
-    FEATURED_COUNT, DAILY_COUNT, DAILY_MAX_SKINS,
-    fnv1a, mulberry32, generate, rotationFor, readRotation, reroll, dayOf, resetsAt,
-    ownedSet, owns, equippedOf, cosmeticsFor,
-    storeView, purchase, gift, refund, history, lockerView, equip,
+    FEATURED_COUNT, DAILY_COUNT, DAILY_MAX_SKINS, SIDEKICK_COUNT, SIDEKICK_SKINS, SIDEKICK_NAMES, SIDEKICK_EXTRAS, SLOT_COL,
+    fnv1a, mulberry32, generate, generateSidekicks, rotationFor, readRotation, reroll, dayOf, resetsAt,
+    ownedSet, owns, equippedOf, cosmeticsFor, sidekickFor,
+    storeView, purchase, gift, refund, history, lockerView, equip, saveSidekick,
 };

@@ -1528,11 +1528,7 @@ class socketManager {
                     }
                     else if (what === "botdiff") socket.talk('KC', 'dbg', JSON.stringify({ botdiff: require('../gamemodes/scripts/dig_royale.js').debugBotDiff(socket, m[1]) }), 0);
                     else if (what === "core") socket.talk('KC', 'dbg', JSON.stringify({ core: require('../gamemodes/scripts/dig_royale.js').debugCore(m[1], b) }), 0);
-                    else if (what === "rattler" && b) {
-                        const rt = require('../terrain/rattler.js'), st = require('../terrain/storm.js').snapshot();
-                        const why = rt.whyNot(b, Date.now());
-                        socket.talk('KC', 'dbg', JSON.stringify({ rattler: why || 'ok', spot: why ? null : rt.spotFor(b, st), alive: rt.alive().length }), 0);
-                    }
+                    else if (what === "sidekicks") socket.talk('KC', 'dbg', JSON.stringify({ sidekicks: require('../terrain/sidekicks.js').snapshot() }), 0);
                     else if (what === "supplydrop") require('../terrain/supplyDrops.js').debugNow();
                     else if (what === "rush") socket.talk('KC', 'dbg', JSON.stringify({ rush: !!require('../terrain/raidOpening.js').rush(Date.now()) }), 0);
                     else if (what === "huntme" && b) require('../terrain/hunted.js').onBanked(b);   // lift the newbie window

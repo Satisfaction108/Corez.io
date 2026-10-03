@@ -29,7 +29,7 @@ const bank = require('../../terrain/bank.js');
 const saveCodes = require('../../terrain/saveCodes.js');
 const hunted = require('../../terrain/hunted.js');         // big carriers are marked on every map
 const coreFinale = require('../../terrain/coreFinale.js'); // the last storm's objective
-const rattler = require('../../terrain/rattler.js');       // a new player's first chase
+const sidekicks = require('../../terrain/sidekicks.js');   // Locker sidekicks: a table, drawn by the clients
 const dropIn = require('../../terrain/dropIn.js');         // meteor landings, first spawn near a vault
 const supplyDrops = require('../../terrain/supplyDrops.js'); // crates out of the sky every minute or so
 const raidOpening = require('../../terrain/raidOpening.js'); // early ore and the 1:30 meteor rush
@@ -539,12 +539,7 @@ coreFinale.attach({
     addPts,
     callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
 });
-rattler.attach({
-    callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
-    fxAt: (x, y, kind) => fxAt(x, y, kind),
-    newness: (body) => body && body.socket ? newnessOf(body.socket, body) : 0,
-    idleMs: (sock) => activity.inputIdleMs(sock),
-});
+sidekicks.attach({ clients: connectedClients });
 supplyDrops.attach({
     humans, fighters: () => combatants(), clients: connectedClients,
     idle: (sock) => activity.inputIdleMs(sock) > contracts.IDLE_MS,
@@ -1591,6 +1586,7 @@ function onCombatantDead(body) {
     if (!Config.dig_royale || !body) return;
     if (body.royaleAlive === false) return;
     body.royaleAlive = false;
+    if (body.sidekick) guard('sidekick drop', () => sidekicks.drop(body));
     // a raid bot keeps its identity for a respawn (terrain/botRoster.js)
     if (body.isBot) body._botKeepName = botRoster.onBotGone(body, now(), body.deathCause);
     if (body.socket && body.royaleBornAt) body.socket._royalePlayMs = (body.socket._royalePlayMs || 0) + Math.max(0, now() - body.royaleBornAt);
@@ -2676,7 +2672,7 @@ function startRaid(first) {
     try { bosses.resetRaid(); } catch { /* */ }
     try { botRoster.resetRaid(); } catch { /* */ }
     guard('hunted reset', () => hunted.reset());
-    guard('rattler reset', () => rattler.reset());
+    guard('sidekicks reset', () => sidekicks.reset());
     guard('drop in reset', () => dropIn.reset());
     guard('supply reset', () => supplyDrops.reset());
     guard('opening', () => raidOpening.newRaid());
@@ -3117,6 +3113,8 @@ function tick() {
     guard('bank', () => bank.tick(t, connectedClients(), heldBanks()));
     if (t - (tick._resumeAt || 0) >= 2000) { tick._resumeAt = t; guard('resume expiry', () => tickResumeExpiry(t)); }
     if (Config.royale_duos) guard('duos', () => { duo.tick(t); tickTeamBots(t); });
+    // before the raid-end return: the freeze has to hide them too
+    guard('sidekicks', () => sidekicks.tick(t, humans(), connectedClients()));
     // everyone is down between raids: no storm, bosses, chests or bots, just
     // keep the HUD fed (results panel, countdown)
     if (raidEnding) {
@@ -3144,7 +3142,6 @@ function tick() {
     guard('pacing', () => pacing.tick(t));
     guard('hunted', () => hunted.tick(t, fighters));
     guard('core', () => coreFinale.tick(t, fighters));
-    guard('rattler', () => rattler.tick(t, fighters));
     guard('drop in', () => dropIn.tick(t));
     guard('supply', () => supplyDrops.tick(t));
     guard('opening', () => raidOpening.tick(t));

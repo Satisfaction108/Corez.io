@@ -1,6 +1,8 @@
 // The Locker pane: a stage with your tank and nameplate, Skin / Name Style
-// tabs of what you own (plus Default), Equip / Unequip / Revert, and the
-// Custom Color editor. Equipping takes effect on the next spawn.
+// / Sidekick tabs of what you own (plus Default), Equip / Unequip / Revert,
+// and the Custom Color editor. The Sidekick tab picks the sidekick (or
+// none), then its name, colour, skin and name style, saved together.
+// Everything takes effect on the next spawn.
 import * as api from './api.js';
 import * as state from './state.js';
 import { h, clear, toast, setBusy, humanError, animate, T_MID } from './ui.js';
@@ -12,11 +14,18 @@ let handlers = { refreshMe() {}, openShop() {} };
 export function init(hs) { Object.assign(handlers, hs); }
 
 const ORDER = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
+const SK_KEYS = ['sidekick', 'sdSkin', 'sdName', 'sidekickName', 'sidekickColor'];
 let paneEl = null, loadSeq = 0;
 let owned = [], equipped = { nameStyle: null, skin: null, customColor: null };
 let tab = 'skin', sel = { skin: null, nameStyle: null }, colorIdx = 0, draftColor = null;
+// the Sidekick tab's unsaved choices
+let sk = { sidekick: null, sdSkin: null, sdName: null, name: '', color: null };
 
 const myName = () => (state.get('user') && state.get('user').username) || 'Player';
+const CAT = () => window.DWCosmetics;
+
+// open on a given tab next time (the shop's "Name it" after buying a sidekick)
+export function setTab(t) { if (t === 'skin' || t === 'nameStyle' || t === 'sidekick') tab = t; }
 
 export function render(el) {
     paneEl = el;
@@ -45,10 +54,28 @@ async function load(el) {
     equipped = Object.assign({ nameStyle: null, skin: null, customColor: null }, r.data.equipped || {});
     sel = { skin: equipped.skin, nameStyle: equipped.nameStyle };
     draftColor = equipped.customColor;
+    skReset();
     paint(el);
 }
 
 function itemById(id) { return id ? owned.find((x) => x.id === id) || full({ id }) : null; }
+function skReset() {
+    sk = { sidekick: equipped.sidekick || null, sdSkin: equipped.sdSkin || null, sdName: equipped.sdName || null, name: equipped.sidekickName || '', color: equipped.sidekickColor || null };
+}
+function skSaved() {
+    return (sk.sidekick || null) === (equipped.sidekick || null) && (sk.sdSkin || null) === (equipped.sdSkin || null) &&
+        (sk.sdName || null) === (equipped.sdName || null) && (sk.color || null) === (equipped.sidekickColor || null) &&
+        cleanName(sk.name) === (equipped.sidekickName || '');
+}
+function cleanName(raw) { const C = CAT(); return C ? C.cleanSidekickName(raw) : String(raw || '').trim().slice(0, 16); }
+// '' when the typed name is fine, else what's wrong with it
+function nameProblem(raw) {
+    const n = cleanName(raw);
+    if (String(raw || '').trim() && !n) return 'Letters and numbers only, please.';
+    const P = window.DWProfanity;
+    if (n && P && P.hasProfanity(n)) return 'Pick a nicer name for it.';
+    return '';
+}
 
 function paint(el) {
     const stage = h('div', { class: 'lk-stage' });
@@ -69,17 +96,26 @@ function paint(el) {
     function drawStage() {
         pv.stopUnder(stage);
         clear(stage);
-        const sk = itemById(sel.skin), ns = itemById(sel.nameStyle);
+        const sk0 = itemById(sel.skin), ns = itemById(sel.nameStyle);
+        if (tab === 'sidekick') {
+            const kick = sk.sidekick ? itemById(sk.sidekick) : null;
+            stage.appendChild(pv.sidekickStage({
+                w: 700, h: 200, color: pv.TEAM_COLORS[colorIdx].col, r: 40, cls: 'dw-prev lk-canvas',
+                kick: kick ? kick.id : null, look: sk.sdSkin, style: sk.sdName, col: sk.color,
+                name: cleanName(sk.name) || (kick ? kick.name : ''),
+            }));
+            return;
+        }
         const custom = ns && ns.id === cos.CUSTOM_ID ? (draftColor || '#7ad3ff') : null;
-        stage.appendChild(pv.namePreview({ w: 700, h: 200, name: myName(), style: ns, custom, skin: sk, color: pv.TEAM_COLORS[colorIdx].col, px: 26, r: 40, cls: 'dw-prev lk-canvas' }));
+        stage.appendChild(pv.namePreview({ w: 700, h: 200, name: myName(), style: ns, custom, skin: sk0, color: pv.TEAM_COLORS[colorIdx].col, px: 26, r: 40, cls: 'dw-prev lk-canvas' }));
     }
     function paintTabs() {
         clear(tabs);
-        for (const [k, label] of [['skin', 'Skins'], ['nameStyle', 'Names']]) {
+        for (const [k, label] of [['skin', 'Skins'], ['nameStyle', 'Names'], ['sidekick', 'Sidekick']]) {
             const n = owned.filter((x) => x.cat === k).length;
             tabs.appendChild(h('button', {
                 type: 'button', class: 'lk-tab' + (tab === k ? ' on' : ''), role: 'tab', 'aria-selected': tab === k ? 'true' : 'false',
-                onclick: () => { if (tab === k) return; tab = k; paintTabs(); paintGrid(true); paintBar(); },
+                onclick: () => { if (tab === k) return; tab = k; paintTabs(); paintGrid(true); paintBar(); drawStage(); },
             }, h('span', { text: label }), h('span', { class: 'lk-count', text: String(n) })));
         }
     }
@@ -90,15 +126,17 @@ function paint(el) {
         grid.appendChild(tile(null));
         for (const it of mine) grid.appendChild(tile(it));
         if (!mine.length) {
+            const what = tab === 'skin' ? 'No skins yet' : tab === 'sidekick' ? 'No sidekicks yet' : 'No name styles yet';
             grid.appendChild(h('div', { class: 'lk-empty' },
-                h('div', { class: 'lk-empty-h', text: tab === 'skin' ? 'No skins yet' : 'No name styles yet' }),
-                h('div', { class: 'lk-empty-p', text: 'The shop changes every day.' }),
+                h('div', { class: 'lk-empty-h', text: what }),
+                h('div', { class: 'lk-empty-p', text: tab === 'sidekick' ? 'Buddy is always in the shop. The rest change every day.' : 'The shop changes every day.' }),
                 h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'To the shop', onclick: () => handlers.openShop() })));
         }
         if (fade) animate(grid, [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
     }
     function tile(it) {
         const id = it ? it.id : null;
+        if (tab === 'sidekick') return skTile(it);
         const isEq = (equipped[tab] || null) === id;
         const isSel = (sel[tab] || null) === id;
         let prev;
@@ -123,6 +161,7 @@ function paint(el) {
     }
     function paintBar() {
         clear(bar);
+        if (tab === 'sidekick') { skBar(); return; }
         const id = sel[tab] || null;
         const it = itemById(id);
         const isEq = (equipped[tab] || null) === id;
@@ -186,6 +225,125 @@ function paint(el) {
         drawStage();
         const eq = grid.querySelector('.lk-tile.eq .lk-ribbon');
         if (eq) animate(eq, [{ transform: 'scale(.6)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: T_MID });
+    }
+
+    /* ── the Sidekick tab ───────────────────────────────────────────── */
+    function skTile(it) {
+        const id = it ? it.id : null;
+        const isEq = (equipped.sidekick || null) === id;
+        const isSel = (sk.sidekick || null) === id;
+        const prev = it
+            ? pv.sidekickPreview({ w: 132, h: 92, kick: it, r: 20, col: isSel ? sk.color : null, look: isSel ? sk.sdSkin : null, still: true })
+            : h('span', { class: 'lk-sk-none', text: 'None' });
+        return h('button', {
+            type: 'button', class: 'lk-tile r-' + (it ? it.rarity : 'none') + (isSel ? ' sel' : '') + (isEq ? ' eq' : ''), 'aria-pressed': isSel ? 'true' : 'false',
+            title: it ? it.name : 'No sidekick',
+            onclick: () => { if (sk.sidekick === id) return; sk.sidekick = id; paintGrid(); paintBar(); drawStage(); },
+        },
+            isEq ? h('span', { class: 'lk-ribbon', text: 'On' }) : null,
+            h('span', { class: 'lk-tprev' }, prev),
+            h('span', { class: 'lk-tname', text: it ? it.name : 'None' }),
+            h('span', { class: 'lk-tsub', text: it ? rarityName(it.rarity) : 'on your own' }));
+    }
+    // a row of small choices; items: [{id, label, el}]
+    function chips(label, items, current, onPick) {
+        return h('div', { class: 'lk-sk-row' },
+            h('div', { class: 'lk-sk-label', text: label }),
+            h('div', { class: 'lk-sk-chips', role: 'radiogroup', 'aria-label': label }, items.map((c) => h('button', {
+                type: 'button', class: 'lk-sk-chip' + ((current || null) === c.id ? ' on' : ''), role: 'radio', 'aria-checked': (current || null) === c.id ? 'true' : 'false',
+                title: c.label, onclick: () => onPick(c.id),
+            }, c.el, h('span', { class: 'lk-sk-cname', text: c.label })))));
+    }
+    function skBar() {
+        const C = CAT();
+        const kick = sk.sidekick ? itemById(sk.sidekick) : null;
+        const saved = skSaved();
+        const problem = nameProblem(sk.name);
+        const left = h('div', { class: 'lk-bar-l' },
+            h('div', { class: 'lk-bar-name', text: kick ? (cleanName(sk.name) || kick.name) : 'No sidekick' }),
+            h('div', { class: 'lk-bar-sub', text: kick ? rarityName(kick.rarity) + ' sidekick · ' + (kick.blurb || '') : 'Nobody tags along.' }));
+        const right = h('div', { class: 'lk-bar-r' });
+        const go = h('button', { type: 'button', class: 'dw-btn primary', text: 'Save', onclick: () => skSave(go) });
+        go.disabled = saved || !!problem;
+        // .dw-btn sets its own display, so [hidden] alone doesn't hide it
+        go.hidden = saved; go.style.display = saved ? 'none' : '';
+        right.appendChild(go);
+        if (!saved) right.appendChild(h('button', { type: 'button', class: 'dw-btn', text: 'Undo', title: 'Back to what you have', onclick: () => { skReset(); paintGrid(); paintBar(); drawStage(); } }));
+        else right.appendChild(h('span', { class: 'lk-eqlabel', text: kick ? 'With you' : 'Saved' }));
+        bar.append(h('div', { class: 'lk-bar-row' }, left, right));
+        if (!kick) return;
+
+        // name
+        const input = h('input', {
+            type: 'text', class: 'dw-input lk-sk-input', value: sk.name || '', maxlength: C ? C.SIDEKICK_NAME_MAX : 16, spellcheck: 'false', autocomplete: 'off',
+            placeholder: kick.name, 'aria-label': 'Sidekick name',
+        });
+        const msg = h('div', { class: 'lk-cmsg' + (problem ? ' show' : ''), role: 'status', text: problem });
+        input.addEventListener('input', () => {
+            sk.name = input.value;
+            const p = nameProblem(sk.name);
+            msg.textContent = p;
+            msg.classList.toggle('show', !!p);
+            input.classList.toggle('bad', !!p);
+            const s2 = skSaved();
+            go.hidden = s2; go.style.display = s2 ? 'none' : ''; go.disabled = s2 || !!p;
+            const nm = bar.querySelector('.lk-bar-name');
+            if (nm) nm.textContent = cleanName(sk.name) || kick.name;
+            clearTimeout(skBar._t);
+            skBar._t = setTimeout(drawStage, 250);
+        });
+        if (problem) input.classList.add('bad');
+        bar.appendChild(h('div', { class: 'lk-sk-row' },
+            h('div', { class: 'lk-sk-label', text: 'Name' }),
+            h('div', { class: 'lk-sk-namebox' }, input, h('div', { class: 'lk-sk-hint', text: 'Up to 16 letters. Empty keeps its own name.' }), msg)));
+
+        // colour
+        const cols = [null].concat(C ? C.SIDEKICK_COLORS : []);
+        bar.appendChild(h('div', { class: 'lk-sk-row' },
+            h('div', { class: 'lk-sk-label', text: 'Colour' }),
+            h('div', { class: 'lk-sk-swatches', role: 'radiogroup', 'aria-label': 'Sidekick colour' }, cols.map((c) => h('button', {
+                type: 'button', class: 'lk-sk-sw' + ((sk.color || null) === c ? ' on' : '') + (c ? '' : ' own'), role: 'radio',
+                'aria-checked': (sk.color || null) === c ? 'true' : 'false', title: c ? c : 'Its own colour', 'aria-label': c ? c : 'Its own colour',
+                style: { background: c || kick.kick.col },
+                onclick: () => { sk.color = c; paintBar(); drawStage(); },
+            })))));
+
+        // skin and name style: what you own, plus the default
+        const skins = owned.filter((x) => x.cat === 'sdSkin');
+        bar.appendChild(chips('Skin', [{ id: null, label: 'Plain', el: pv.sidekickPreview({ w: 60, h: 54, kick, col: sk.color, r: 12, still: true }) }]
+            .concat(skins.map((f) => ({ id: f.id, label: f.name, el: pv.sidekickPreview({ w: 60, h: 54, kick, look: f, col: sk.color, r: 12, still: true }) }))),
+        sk.sdSkin, (id) => { sk.sdSkin = id; paintBar(); drawStage(); }));
+        const styles = owned.filter((x) => x.cat === 'sdName');
+        const shown = cleanName(sk.name) || kick.name;
+        const tag = (s) => pv.sidekickName(shown, s, { px: 14, h: 30, maxW: 120, kick, col: sk.color, look: sk.sdSkin });
+        bar.appendChild(chips('Name style', [{ id: null, label: 'Plain', el: tag(null) }]
+            .concat(styles.map((s) => ({ id: s.id, label: s.name, el: tag(s) }))),
+        sk.sdName, (id) => { sk.sdName = id; paintBar(); drawStage(); }));
+        if (!skins.length || !styles.length) {
+            bar.appendChild(h('div', { class: 'lk-sk-more' },
+                h('span', { text: 'More skins and name styles turn up in the shop’s Sidekicks tab.' }),
+                h('button', { type: 'button', class: 'dw-link', text: 'To the shop', onclick: () => handlers.openShop() })));
+        }
+    }
+    async function skSave(btn) {
+        if (nameProblem(sk.name)) return;
+        setBusy(btn, true, 'Saving...');
+        const r = await api.saveSidekick({ sidekick: sk.sidekick, sdSkin: sk.sdSkin, sdName: sk.sdName, name: cleanName(sk.name), color: sk.color });
+        setBusy(btn, false);
+        if (!r.ok) {
+            const code = r.data && r.data.error && r.data.error.code;
+            toast(code === 'bad_name' ? 'Pick a nicer name for it.' : storeError(r), { kind: 'error' });
+            return;
+        }
+        const eq = (r.data && r.data.equipped) || {};
+        for (const k of SK_KEYS) equipped[k] = eq[k] == null ? null : eq[k];
+        skReset();
+        const kick = sk.sidekick ? itemById(sk.sidekick) : null;
+        toast(kick ? (equipped.sidekickName || kick.name) + ' is coming along. Shows up next spawn' : 'No sidekick next spawn', { kind: 'ok' });
+        handlers.refreshMe();
+        paintGrid();
+        paintBar();
+        drawStage();
     }
 
     drawStage();

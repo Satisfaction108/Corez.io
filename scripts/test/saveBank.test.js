@@ -82,16 +82,17 @@ test('migration: v8 -> v9 writes a backup first, keeps every row, adds saves, ba
     for (let i = 1; i <= 10; i++) db.run('INSERT INTO guests (guest_id, first_seen, last_seen, games) VALUES (?, 1, 2, ?)', gid(i), i);
     const before = { users: db.all('SELECT * FROM users'), guests: db.all('SELECT * FROM guests') };
     const res = migrations.apply(db, { backupDir: path.join(ROOT, 'mig', 'backups') });
-    assert.deepEqual(res.applied, [9]);
-    assert.equal(migrations.latestVersion(), 9);
+    // v9 here, and whatever came after it (v10: sidekick columns)
+    assert.deepEqual(res.applied.slice(0, 1), [9]);
+    assert.equal(res.applied[res.applied.length - 1], migrations.latestVersion());
     assert.ok(res.backup && fs.existsSync(res.backup), 'pre-migration backup');
     assert.match(path.basename(res.backup), /^pre-migrate-v9-/);
     const bk = dbmod.open({ path: res.backup, migrate: false });
     assert.equal(bk.userVersion(), 8);
     assert.equal(bk.get('SELECT count(*) AS n FROM guests').n, 10);
     bk.close();
-    assert.equal(db.userVersion(), 9);
-    const strip = rows => rows.map(r => { const o = { ...r }; assert.equal(o.bank_gems, 0); delete o.bank_gems; return o; });
+    assert.equal(db.userVersion(), migrations.latestVersion());
+    const strip = rows => rows.map(r => { const o = { ...r }; assert.equal(o.bank_gems, 0); delete o.bank_gems; for (const k of ['equip_sidekick', 'equip_sd_skin', 'equip_sd_name', 'sidekick_name', 'sidekick_color']) { if (k in o) assert.equal(o[k], null); delete o[k]; } return o; });
     assert.deepEqual(strip(db.all('SELECT * FROM users')), before.users);
     assert.deepEqual(strip(db.all('SELECT * FROM guests')), before.guests);
     assert.throws(() => db.run('UPDATE users SET bank_gems = -1 WHERE id = 1'), /CHECK/);

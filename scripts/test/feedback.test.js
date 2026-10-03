@@ -382,8 +382,8 @@ test('migration: v7 -> v8 keeps every row, writes a backup, adds feedback', () =
     assert.equal(bk.get('SELECT count(*) AS n FROM guests').n, 25);
     bk.close();
     assert.equal(db.userVersion(), migrations.latestVersion());
-    // later versions may add columns (v9: bank_gems); the rows themselves stay
-    const strip = rows => rows.map(r => { const o = { ...r }; delete o.bank_gems; return o; });
+    // later versions may add columns (v9: bank_gems, v10: sidekicks); the rows themselves stay
+    const strip = rows => rows.map(r => { const o = { ...r }; delete o.bank_gems; for (const k of ['equip_sidekick', 'equip_sd_skin', 'equip_sd_name', 'sidekick_name', 'sidekick_color']) { if (k in o) assert.equal(o[k], null); delete o[k]; } return o; });
     for (const t of tables) assert.deepEqual(strip(db.all(`SELECT * FROM "${t}"`)), before[t], t + ' unchanged');
     assert.ok(db.get("SELECT 1 AS x FROM sqlite_master WHERE type = 'index' AND name = 'feedback_at'"));
     assert.throws(() => db.run("INSERT INTO feedback (at, category, text) VALUES (1, 'rant', 'x')"), /CHECK/);

@@ -1878,7 +1878,7 @@ export function drawHud(c, anchor, mouse) {
     const sz = 52, gap = 10;
     const x0 = anchor.x + anchor.w + 22;
     const y0 = anchor.y + anchor.h - sz + 2;
-    const dashKey = H.keyLabel("KEY_DASH", "`"), abKey = H.keyLabel("KEY_ABILITY", "Q");
+    const dashKey = H.keyLabel("KEY_DASH", "Alt"), abKey = H.keyLabel("KEY_ABILITY", "Q");
     // the order is the player's (drag one chip onto the other to swap)
     const dashX = x0 + chipSlot("dash") * (sz + gap), abX = x0 + chipSlot("ability") * (sz + gap);
     chips.dash.x = dashX; chips.dash.y = y0; chips.dash.w = sz; chips.dash.h = sz; chips.dash.at = now;

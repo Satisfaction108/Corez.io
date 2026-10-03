@@ -59,6 +59,13 @@ const ADMIN_COMMANDS = [
         ],
     },
     {
+        name: 'grantitem', description: 'Give a shop item for free (a prize), equipped straight away', options: [
+            userOpt(),
+            { type: T.STRING, name: 'item', description: 'Item id or name, e.g. sd_jack or Jack', required: true, max_length: 64 },
+            reasonOpt(),
+        ],
+    },
+    {
         name: 'ban', description: 'Ban a player (signs them out everywhere)', options: [
             userOpt(),
             { type: T.STRING, name: 'duration', description: 'How long', required: true, choices: [{ name: '7 days', value: '7d' }, { name: '30 days', value: '30d' }, { name: 'Permanent', value: 'perm' }] },
@@ -119,7 +126,7 @@ const ADMIN_COMMANDS = [
         name: 'shoprotate', description: "Re-roll today's Item Shop now", options: [
             {
                 type: T.STRING, name: 'which', description: 'What to re-roll (default: both)', required: false, choices: [
-                    { name: 'Both', value: 'both' }, { name: 'Featured', value: 'featured' }, { name: 'Daily', value: 'daily' },
+                    { name: 'Everything', value: 'both' }, { name: 'Featured', value: 'featured' }, { name: 'Daily', value: 'daily' }, { name: 'Sidekicks', value: 'sidekicks' },
                 ],
             },
         ],
@@ -271,6 +278,30 @@ function relink(i, caller) {
         return reply(`That Discord account is linked to **${md(res.taken.username)}** (\`${res.taken.public_id}\`). Run it again with force:true to move it.`, { ephemeral: true });
     }
     return reply(`Linked <@${discordId}> to **${md(row.username)}**${res.other ? ` (removed from **${md(res.other.username)}**)` : ''}${row.discord_id && row.discord_id !== discordId ? `; replaced \`${row.discord_id}\`` : ''}.`, { ephemeral: true });
+}
+
+// A prize: the item lands in their Locker (source 'admin') and goes on.
+function grantItem(i, caller) {
+    const C = require('../../../shared/cosmetics.js');
+    const row = resolveUser(opt(i, 'user'));
+    const q = String(opt(i, 'item') || '').trim();
+    const reason = String(opt(i, 'reason') || '').trim().slice(0, 200);
+    if (!row) return reply('No account matches that.', { ephemeral: true });
+    const item = C.byId(q) || C.ITEMS.find(it => it.name.toLowerCase() === q.toLowerCase());
+    if (!item) return reply('No item called `' + md(q) + '`.', { ephemeral: true });
+    if (!reason) return reply('Please add a reason.', { ephemeral: true });
+    const SLOT_COL = { nameStyle: 'equip_name_style', skin: 'equip_skin', sidekick: 'equip_sidekick', sdSkin: 'equip_sd_skin', sdName: 'equip_sd_name' };
+    const d = db.handle();
+    const now = Date.now();
+    const added = d.tx(() => {
+        const n = d.run("INSERT INTO owned_items (user_id, item_id, source, acquired_at) VALUES (?, ?, 'admin', ?) ON CONFLICT DO NOTHING", row.id, item.id, now).changes;
+        const col = SLOT_COL[item.cat];
+        if (col) d.run(`UPDATE users SET ${col} = ? WHERE id = ?`, item.id, row.id);
+        audit(caller, row.id, 'admin_grant_item', { username: row.username, itemId: item.id, already: !n, reason });
+        return n > 0;
+    });
+    return reply(added ? `Gave **${md(item.name)}** to **${md(row.username)}** and put it on. It shows from their next spawn.`
+        : `**${md(row.username)}** already had **${md(item.name)}**; it's equipped now.`, { ephemeral: true });
 }
 
 function grantDust(i, caller) {
@@ -629,19 +660,20 @@ async function raidGems(i, caller) {
 function shopRotate(i, caller) {
     const store = require('../store');
     const C = require('../../../shared/cosmetics.js');
-    const which = ['featured', 'daily', 'both'].includes(opt(i, 'which')) ? opt(i, 'which') : 'both';
+    const which = ['featured', 'daily', 'sidekicks', 'both'].includes(opt(i, 'which')) ? opt(i, 'which') : 'both';
     const now = Date.now();
     const day = store.dayOf(now);
     const r = store.reroll(day, which, now);
-    audit(caller, null, 'admin_shop_rotate', { day, which, before: r.before, featured: r.featured, daily: r.daily });
+    audit(caller, null, 'admin_shop_rotate', { day, which, before: r.before, featured: r.featured, daily: r.daily, sidekicks: r.sidekicks });
     let streams = 0;
     try { streams = require('../routes/events').pushAll('shopRotated', { day, resetsAt: store.resetsAt(day) }); } catch (e) { /* */ }
     const names = ids => ids.map(id => { const it = C.byId(id); return it ? md(it.name) : '`' + id + '`'; }).join(', ') || '-';
-    const what = which === 'both' ? 'Featured and Daily' : which === 'featured' ? 'Featured' : 'Daily';
+    const what = which === 'both' ? 'Featured, Daily and Sidekicks' : which === 'featured' ? 'Featured' : which === 'sidekicks' ? 'Sidekicks' : 'Daily';
     return reply([
         `Re-rolled today's ${what}.`,
         `**Featured:** ${names(r.featured)}`,
         `**Daily:** ${names(r.daily)}`,
+        `**Sidekicks:** ${names(r.sidekicks || [])}`,
         `Refreshed ${streams} open menu${streams === 1 ? '' : 's'}. It turns over as usual ${ts(store.resetsAt(day), 'R')}.`,
     ].join('\n'), { ephemeral: true });
 }
@@ -673,7 +705,7 @@ function listFeedback(i, caller) {
     });
 }
 
-const ADMIN_HANDLERS = { feedback: listFeedback, lookup, resetpassword: resetPassword, relink, grantdust: grantDust, ban, unban, users: listUsers, guests: listGuests, history, stats, dust: raidGems, shoprotate: shopRotate };
+const ADMIN_HANDLERS = { feedback: listFeedback, lookup, resetpassword: resetPassword, relink, grantdust: grantDust, grantitem: grantItem, ban, unban, users: listUsers, guests: listGuests, history, stats, dust: raidGems, shoprotate: shopRotate };
 
 // ---- players ----
 
@@ -776,17 +808,19 @@ function shopCmd() {
     const line = id => {
         const it = C.byId(id);
         if (!it) return null;
-        const kind = it.cat === 'skin' ? 'skin' : 'name style';
+        const kind = { skin: 'skin', nameStyle: 'name style', sidekick: 'sidekick', sdSkin: 'sidekick skin', sdName: 'sidekick name style' }[it.cat] || 'item';
         return `**${md(it.name)}** · ${it.rarity || kind} ${kind} · ${dustText(it.price)} gemdust`;
     };
     const featured = rot.featured.map(line).filter(Boolean);
     const daily = rot.daily.map(line).filter(Boolean);
+    const side = [C.byId(C.BASIC_SIDEKICK_ID).id].concat(rot.sidekicks || []).map(line).filter(Boolean);
     return reply('', {
         embeds: [{
             title: "Today's Item Shop", color: COLOR,
             fields: [
                 { name: 'Featured', value: featured.join('\n') || '-', inline: false },
                 { name: 'Daily', value: daily.join('\n') || '-', inline: false },
+                { name: 'Sidekicks', value: side.join('\n') || '-', inline: false },
             ],
             footer: { text: 'New shop ' + 'in ' + Math.max(1, Math.round((store.resetsAt(store.dayOf(now)) - now) / 3600000)) + 'h · earn gemdust by banking gems at ' + config.publicOrigin.replace(/^https?:\/\//, '') },
         }],

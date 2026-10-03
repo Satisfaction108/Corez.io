@@ -504,6 +504,67 @@ CREATE INDEX bank_leases_owner ON bank_leases(owner);
 CREATE INDEX bank_leases_at    ON bank_leases(at);
 `;
 
+// v10: sidekicks (store.js). The equipped sidekick, its skin and name style
+// sit next to the other equip_* columns; sidekick_name is the Locker name
+// (cleaned and checked, NULL = the sidekick's own name) and sidekick_color
+// one of the Locker swatches (NULL = its own colour). shop_rotations gets the
+// day's Sidekicks shelf as a JSON array of ids; NULL on days stored before
+// this, filled in the first time that day is read.
+const V10 = `
+ALTER TABLE users ADD COLUMN equip_sidekick TEXT;
+ALTER TABLE users ADD COLUMN equip_sd_skin TEXT;
+ALTER TABLE users ADD COLUMN equip_sd_name TEXT;
+ALTER TABLE users ADD COLUMN sidekick_name TEXT CHECK (sidekick_name IS NULL OR length(sidekick_name) BETWEEN 1 AND 16);
+ALTER TABLE users ADD COLUMN sidekick_color TEXT CHECK (sidekick_color IS NULL OR (length(sidekick_color) = 7 AND sidekick_color GLOB '#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'));
+ALTER TABLE shop_rotations ADD COLUMN sidekicks TEXT;
+`;
+
+// v11: sidekicks, round 2. The novelty sidekicks, the face skins and the
+// first sidekick name styles left the catalog (shared/cosmetics.js RETIRED
+// keeps their names for old receipts). Whoever has one gets back what was
+// paid for it, as dust, once:
+//   bought   the purchase price, and the purchase is marked refunded so the
+//            refund button can't pay it a second time
+//   a gift   the price the friend paid, to whoever has it now (a gift can't
+//            be marked refunded; the owned row going is what stops a repeat)
+//   granted  nothing, it was free
+// Each payout is a 'refund' ledger row (ref 'retired:<purchase id>') with the
+// balance after it, plus an audit row. Equip slots holding one go back to
+// empty, and every stored Sidekicks shelf is cleared so it's drawn again from
+// the new catalog (store.js readRotation). The list is fixed here on purpose:
+// this is what v11 retired, whatever the catalog says later.
+const V11_RETIRED = [
+    'sd_squint', 'sd_boxer', 'sd_pebble', 'sd_sprout', 'sd_bubbles', 'sd_chip', 'sd_prickles', 'sd_robo',
+    'sd_frosty', 'sd_candy', 'sd_drillbit', 'sd_spooky', 'sd_shardy', 'sd_hothead', 'sd_clank', 'sd_buzz',
+    'sd_majesty', 'sd_disco', 'sd_drako', 'sd_astro', 'sd_twinkle', 'sd_ember',
+    'sds_shades', 'sds_sleepy', 'sds_blush', 'sds_hearts', 'sds_wink', 'sds_grumpy', 'sds_starry', 'sds_party',
+    'sdn_bubble', 'sdn_lemonade', 'sdn_mint', 'sdn_berry', 'sdn_sunbeam', 'sdn_starlight',
+];
+function v11(db, now = Date.now()) {
+    const ids = V11_RETIRED, marks = ids.map(() => '?').join(', ');
+    const rows = db.all(`SELECT o.user_id, o.item_id, o.source, p.id AS pid, p.price_milli, p.is_gift, p.refunded_at
+                         FROM owned_items o LEFT JOIN purchases p ON p.id = o.purchase_id
+                         WHERE o.item_id IN (${marks}) ORDER BY o.user_id, o.item_id`, ...ids);
+    for (const r of rows) {
+        const paid = r.pid != null && r.refunded_at == null && (r.source === 'purchase' || r.source === 'gift');
+        const pay = paid ? Math.max(0, r.price_milli | 0) : 0;
+        if (pay > 0) {
+            db.run('UPDATE users SET dust_milli = dust_milli + ? WHERE id = ?', pay, r.user_id);
+            const bal = db.get('SELECT dust_milli FROM users WHERE id = ?', r.user_id);
+            db.run("INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, ref, created_at) VALUES (?, ?, ?, 'refund', ?, ?)",
+                r.user_id, pay, bal.dust_milli, 'retired:' + r.pid, now);
+            db.run("INSERT INTO audit_log (at, user_id, actor, action, detail) VALUES (?, ?, 'system', 'store_retired_refund', ?)",
+                now, r.user_id, JSON.stringify({ itemId: r.item_id, purchaseId: r.pid, priceMilli: pay, source: r.source }));
+        }
+        if (r.pid != null && !r.is_gift && r.refunded_at == null) db.run('UPDATE purchases SET refunded_at = ? WHERE id = ?', now, r.pid);
+    }
+    db.run(`DELETE FROM owned_items WHERE item_id IN (${marks})`, ...ids);
+    for (const col of ['equip_sidekick', 'equip_sd_skin', 'equip_sd_name']) {
+        db.run(`UPDATE users SET ${col} = NULL WHERE ${col} IN (${marks})`, ...ids);
+    }
+    db.run('UPDATE shop_rotations SET sidekicks = NULL');
+}
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
@@ -514,6 +575,8 @@ const MIGRATIONS = [
     { version: 7, up(db) { db.exec(V7); } },
     { version: 8, up(db) { db.exec(V8); } },
     { version: 9, up(db) { db.exec(V9); } },
+    { version: 10, up(db) { db.exec(V10); } },
+    { version: 11, up(db) { v11(db); } },
 ];
 
 function latestVersion() {
@@ -555,4 +618,4 @@ function apply(db, opts = {}) {
     return result;
 }
 
-module.exports = { apply, latestVersion, MIGRATIONS };
+module.exports = { apply, latestVersion, MIGRATIONS, V11_RETIRED };

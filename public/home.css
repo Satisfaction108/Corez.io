@@ -2678,8 +2678,12 @@ body.in-game #dwModalRoot { display: none !important; }
 .shop-grid.feat { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .shop-grid.daily { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .shop-grid.perm { grid-template-columns: repeat(auto-fill, minmax(200px, 250px)); }
+.shop-grid.side { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+/* Shop | Sidekicks: the Locker's tab track, under the countdown */
+.lk-tabs.shop-tabs { margin: 14px 0 0; }
+.shop-tabbody > .shop-sec:first-child { margin-top: 14px; }
 @media (max-width: 680px) {
-    .shop-grid.daily { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .shop-grid.daily, .shop-grid.side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .shop-grid.feat { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -2906,6 +2910,35 @@ input.dw-input.lk-hex.bad { border-color: var(--danger); }
 .lk-preset.on { transform: scale(1.15); box-shadow: 0 0 0 2px var(--hub-bg), 0 0 0 4.5px var(--ink); }
 .lk-cmsg { max-height: 0; overflow: hidden; color: var(--danger-text); font: 700 12px/1.4 var(--ui); opacity: 0; transition: max-height var(--dw-t2) var(--dw-ease), opacity var(--dw-t2) var(--dw-ease), margin var(--dw-t2) var(--dw-ease); }
 .lk-cmsg.show { max-height: 40px; margin-top: 8px; opacity: 1; }
+
+/* the Locker's Sidekick panel */
+.lk-sk-none { color: var(--text2); font: 700 15px var(--ui); }
+.lk-sk-row { display: flex; align-items: flex-start; gap: 12px; margin-top: 12px; }
+.lk-sk-label { flex: none; width: 92px; padding-top: 9px; color: var(--text2); font: 700 13px var(--ui); letter-spacing: .02em; }
+.lk-sk-namebox { flex: 1; min-width: 0; }
+input.dw-input.lk-sk-input { width: 220px; max-width: 100%; height: 40px; }
+input.dw-input.lk-sk-input.bad { border-color: var(--danger); }
+.lk-sk-hint { margin-top: 5px; color: var(--text2); font: 600 12px var(--ui); }
+.lk-sk-swatches { display: flex; flex-wrap: wrap; gap: 7px; padding-top: 4px; }
+.lk-sk-sw { width: 28px; height: 28px; margin: 0; padding: 0; border: 2px solid rgba(0,0,0,.35); border-radius: 50%; cursor: pointer; transition: transform 90ms; }
+.lk-sk-sw.own { box-shadow: inset 0 0 0 2px rgba(255,255,255,.55); }
+.lk-sk-sw:hover { transform: scale(1.12); }
+.lk-sk-sw.on { transform: scale(1.12); box-shadow: 0 0 0 2px var(--hub-bg), 0 0 0 4.5px var(--copper); }
+.lk-sk-chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.lk-sk-chip {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    min-width: 64px; margin: 0; padding: 4px 6px 6px;
+    background: var(--dw-floor); border: 1px solid var(--line); border-radius: 10px;
+    cursor: pointer; line-height: 0;
+}
+.lk-sk-chip:hover { border-color: var(--text2); }
+.lk-sk-chip.on { box-shadow: 0 0 0 2px var(--hub-bg), 0 0 0 4px var(--copper); }
+.lk-sk-cname { color: #f2f2f2; font: 700 11px/1.2 var(--ui); white-space: nowrap; }
+.lk-sk-more { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; color: var(--text2); font: 600 12px var(--ui); }
+@media (max-width: 680px) {
+    .lk-sk-row { flex-direction: column; gap: 4px; }
+    .lk-sk-label { width: auto; padding-top: 0; }
+}
 
 /* ── Friends, Profile, Leaderboard, Daily Quests (Phases 4 and 5) ──────
    Same plates and inks; tier colours arrive as --tc (people.js

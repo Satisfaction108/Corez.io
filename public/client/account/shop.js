@@ -1,7 +1,10 @@
-// The Item Shop pane: today's Featured (2) and Daily (8) items plus the
-// always-on Custom Color, a countdown to the 00:00 UTC reset, the item
-// modal (big live preview, team-colour swatches, tank picker, Buy / Equip /
-// Gift), purchase history with refunds, and the gift flow.
+// The Item Shop pane, two tabs. Shop: today's Featured (2), then the day's
+// skins and name styles (Daily, 8 between them), then the always-on Custom
+// Color. Sidekicks: the Basic sidekick plus the day's sidekicks, sidekick
+// skins and sidekick name styles (store.js generateSidekicks). Also the
+// countdown to the 00:00 UTC reset, the item modal (big live preview,
+// team-colour swatches, tank picker, Buy / Equip / Gift), purchase history
+// with refunds, and the gift flow. Whatever you buy goes on straight away.
 import * as api from './api.js';
 import * as state from './state.js';
 import { h, icon, clear, modal, confirm, toast, humanError, setBusy, animate, T_MID, fmtDateTime, fmtDust } from './ui.js';
@@ -13,6 +16,7 @@ export const GIFT_MESSAGES = ['Enjoy!', 'GG, well played!', 'For you!', 'Happy b
 
 let handlers = { refreshMe() {}, openLocker() {}, onBalance() {} };
 let paneEl = null, data = null, timer = 0, loadSeq = 0, fetchedAt = 0;
+let tab = 'shop';   // 'shop' | 'sidekicks'
 
 export function init(hs) { Object.assign(handlers, hs); }
 
@@ -22,8 +26,13 @@ export function fmtPrice(milli) {
     return Number.isInteger(v) ? String(v) : fmtDust(v);
 }
 export function rarityName(r) { return (RAR()[r] && RAR()[r].name) || 'Common'; }
-export function catName(cat) { return cat === 'skin' ? 'skin' : 'name'; }
+const CAT_NAMES = { skin: 'skin', nameStyle: 'name', sidekick: 'sidekick', sdSkin: 'sidekick skin', sdName: 'sidekick name' };
+export function catName(cat) { return CAT_NAMES[cat] || 'name'; }
+// on the Sidekicks tab, where "sidekick" goes without saying
+const SIDE_CAT = { sidekick: 'tank', sdSkin: 'skin', sdName: 'name' };
+export const isSidekickCat = (cat) => cat === 'sidekick' || cat === 'sdSkin' || cat === 'sdName';
 export function isAnimated(it) {
+    if (isSidekickCat(it.cat)) return false;
     return it.cat === 'skin' ? !!(it.skin && it.skin.emissive) : cos.isAnimatedStyle(it);
 }
 export function priceTag(milli, cls) {
@@ -45,9 +54,29 @@ function fmtLeft(ms) {
 const clockSkew = () => (data && data.now ? data.now - fetchedAt : 0);
 const serverNow = () => Date.now() + clockSkew();
 
-// A preview for an item at w x h: a skin on a tank, or a name style on a nameplate.
+// Your sidekick as the shop shows it (Buddy until you have one).
+function myKick() {
+    const u = me(), eq = u && u.equipped;
+    const id = eq && eq.sidekick && cos.byId(eq.sidekick) ? eq.sidekick : 'sd_buddy';
+    return { kick: id, name: (eq && eq.sidekickName) || null, col: (eq && eq.sidekickColor) || null };
+}
+// A preview for an item at w x h: a skin on a tank, a name style on a
+// nameplate, a sidekick, or a sidekick face / name style on your sidekick.
 export function itemPreview(it, w, h, opts) {
     opts = opts || {};
+    if (opts.stage && isSidekickCat(it.cat)) {
+        const k = myKick();
+        const kick = it.cat === 'sidekick' ? it.id : k.kick;
+        return pv.sidekickStage({ w, h, tank: opts.tank, color: opts.color, kick, col: it.cat === 'sidekick' ? null : k.col,
+            look: it.cat === 'sdSkin' ? it : null, style: it.cat === 'sdName' ? it : null, name: it.cat === 'sidekick' ? it.name : (k.name || cos.byId(kick).name) });
+    }
+    // the cards: a little stage each, bobbing and popping shots while on screen
+    if (it.cat === 'sidekick') return pv.sidekickPreview({ w, h, kick: it, r: Math.min(w, h) * 0.2 });
+    if (it.cat === 'sdSkin') { const k = myKick(); return pv.sidekickPreview({ w, h, kick: k.kick, look: it, col: k.col, r: Math.min(w, h) * 0.21 }); }
+    if (it.cat === 'sdName') {
+        const k = myKick();
+        return pv.sidekickPreview({ w, h, kick: k.kick, col: k.col, style: it, name: k.name || cos.byId(k.kick).name, r: Math.min(w, h) * 0.13, px: opts.px ? Math.round(opts.px * 0.85) : 16 });
+    }
     if (it.cat === 'skin') return pv.tankPreview({ w, h, skin: it, color: opts.color, tank: opts.tank, cls: opts.cls, size: opts.size });
     return pv.namePreview({ w, h, name: myName(), style: it, custom: opts.custom || (it.id === cos.CUSTOM_ID ? (opts.custom || '#7ad3ff') : null), color: opts.color, tank: opts.tank, cls: opts.cls, px: opts.px });
 }
@@ -84,7 +113,7 @@ async function load(el) {
             h('button', { type: 'button', class: 'dw-btn sm', text: 'Retry', onclick: () => render(el) })));
         return;
     }
-    const sig = JSON.stringify([r.data.day, r.data.balanceMilli, r.data.featured.map((x) => x.id + x.owned), r.data.daily.map((x) => x.id + x.owned), (r.data.permanent || []).map((x) => x.owned)]);
+    const sig = JSON.stringify([r.data.day, r.data.balanceMilli, r.data.featured.map((x) => x.id + x.owned), r.data.daily.map((x) => x.id + x.owned), (r.data.sidekicks || []).map((x) => x.id + x.owned), (r.data.permanent || []).map((x) => x.owned)]);
     const had = data && data._sig === sig;
     data = r.data;
     data._sig = sig;
@@ -103,9 +132,40 @@ function paint(el) {
         h('div', { class: 'shop-top-r' },
             h('button', { type: 'button', class: 'dw-link', text: 'my purchases', onclick: openHistory }), bal));
     el.appendChild(top);
-    el.appendChild(section('Today’s big ones', data.featured.map((it) => card(it, 'feat')), 'feat'));
-    el.appendChild(section('Daily', data.daily.map((it) => card(it, 'daily')), 'daily'));
-    if (data.permanent && data.permanent.length) el.appendChild(section('Always here', data.permanent.map((it) => card(it, 'perm')), 'perm'));
+    const perm = data.permanent || [];
+    const shelf = data.sidekicks || [];
+    const tabs = h('div', { class: 'lk-tabs shop-tabs', role: 'tablist' });
+    const body = h('div', { class: 'shop-tabbody', role: 'tabpanel' });
+    const paintTabs = () => {
+        clear(tabs);
+        for (const [k, label] of [['shop', 'Shop'], ['sidekicks', 'Sidekicks']]) {
+            tabs.appendChild(h('button', {
+                type: 'button', class: 'lk-tab' + (tab === k ? ' on' : ''), role: 'tab', 'aria-selected': tab === k ? 'true' : 'false',
+                onclick: () => { if (tab === k) return; tab = k; paintTabs(); paintBody(); },
+            }, h('span', { text: label })));
+        }
+    };
+    const paintBody = () => {
+        pv.stopUnder(body);
+        clear(body);
+        const of = (list, cat) => list.filter((it) => it.cat === cat);
+        if (tab === 'sidekicks') {
+            // Buddy (the Basic one) is always first on the shelf
+            body.appendChild(section('Sidekicks', perm.filter((it) => it.cat === 'sidekick').concat(of(shelf, 'sidekick')).map((it) => card(it, 'side')), 'side'));
+            body.appendChild(section('Sidekick skins', of(shelf, 'sdSkin').map((it) => card(it, 'side')), 'side'));
+            body.appendChild(section('Sidekick name styles', of(shelf, 'sdName').map((it) => card(it, 'side')), 'side'));
+            return;
+        }
+        body.appendChild(section('Today’s big ones', data.featured.map((it) => card(it, 'feat')), 'feat'));
+        const daily = data.daily.filter((it) => !isSidekickCat(it.cat));
+        if (of(daily, 'skin').length) body.appendChild(section('Skins', of(daily, 'skin').map((it) => card(it, 'daily')), 'daily'));
+        if (of(daily, 'nameStyle').length) body.appendChild(section('Name styles', of(daily, 'nameStyle').map((it) => card(it, 'daily')), 'daily'));
+        const always = perm.filter((it) => !isSidekickCat(it.cat));
+        if (always.length) body.appendChild(section('Always here', always.map((it) => card(it, 'perm')), 'perm'));
+    };
+    paintTabs();
+    paintBody();
+    el.append(tabs, body);
     const tick = () => {
         const left = (+data.resetsAt || 0) - serverNow();
         count.textContent = fmtLeft(left);
@@ -125,17 +185,19 @@ function section(title, cards, kind) {
 
 function card(raw, kind) {
     const it = full(raw);
-    const big = kind === 'feat';
-    const [w, hh] = big ? [340, 172] : kind === 'perm' ? [220, 100] : [164, 112];
-    const prev = itemPreview(it, w, hh, { custom: it.id === cos.CUSTOM_ID ? customNow() : null, px: big ? 26 : 18 });
     const tags = [];
+    const big = kind === 'feat';
+    // side cards sit five to a row, so their stage is a bit smaller
+    const [w, hh] = big ? [340, 172] : kind === 'perm' ? [220, 100] : kind === 'side' ? [136, 104] : [164, 112];
+    if (it.permanent && isSidekickCat(it.cat)) tags.push(h('span', { class: 'shop-tag', text: 'always' }));
+    const prev = itemPreview(it, w, hh, { custom: it.id === cos.CUSTOM_ID ? customNow() : null, px: big ? 26 : 18 });
     if (isAnimated(it)) tags.push(h('span', { class: 'shop-tag', text: 'moves' }));
     return h('button', { type: 'button', class: 'shop-card r-' + (it.rarity || 'common') + (it.owned ? ' owned' : ''), 'data-id': it.id, onclick: () => openItem(it) },
         h('span', { class: 'shop-band' }),
         h('span', { class: 'shop-prev' }, prev),
         h('span', { class: 'shop-meta' },
             h('span', { class: 'shop-name', text: it.name }),
-            h('span', { class: 'shop-sub' }, h('span', { class: 'shop-rar', text: rarityName(it.rarity) }), h('span', { text: '\u00a0· ' + catName(it.cat) }), tags),
+            h('span', { class: 'shop-sub' }, h('span', { class: 'shop-rar', text: rarityName(it.rarity) }), h('span', { text: '\u00a0· ' + (kind === 'side' ? SIDE_CAT[it.cat] : catName(it.cat)) }), tags),
             h('span', { class: 'shop-foot' }, it.owned ? h('span', { class: 'shop-owned', text: 'Got it' }) : priceTag(it.price))));
 }
 function customNow() {
@@ -224,7 +286,7 @@ export function openItem(raw) {
     const drawStage = () => {
         pv.stopUnder(stage);
         clear(stage);
-        stage.appendChild(itemPreview(it, 300, 300, { color: pv.TEAM_COLORS[colorIdx].col, tank, custom, px: 28, size: 70 }));
+        stage.appendChild(itemPreview(it, 300, 300, { color: pv.TEAM_COLORS[colorIdx].col, tank, custom, px: 28, size: 70, stage: true }));
     };
     const sw = h('div', { class: 'shop-swatches', role: 'radiogroup', 'aria-label': 'Team colour' },
         pv.TEAM_COLORS.map((tc, i) => h('button', {
@@ -268,6 +330,14 @@ export function openItem(raw) {
         note.textContent = '';
         const bal = data ? +data.balanceMilli || Math.round((+data.balance || 0) * 1000) : 0;
         if (it.owned) {
+            const u = me();
+            if (it.wornNow || (u && u.equipped && u.equipped[it.cat] === it.id)) {
+                actions.append(
+                    h('span', { class: 'lk-eqlabel', text: 'Wearing it' }),
+                    h('button', { type: 'button', class: 'dw-link', text: 'or gift one', onclick: () => openGift(it) }));
+                note.textContent = it.cat === 'sidekick' ? 'It’s on. Give it a name in your Locker.' : 'It’s on. Shows up next spawn.';
+                return;
+            }
             actions.append(
                 h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Wear it', onclick: (e) => doEquip(e.currentTarget) }),
                 h('button', { type: 'button', class: 'dw-link', text: 'or gift one', onclick: () => openGift(it) }));
@@ -300,10 +370,14 @@ export function openItem(raw) {
             return;
         }
         it.owned = true;
+        // bought means worn (the server put it on)
+        it.wornNow = !!(r.data && r.data.equipped && r.data.equipped[it.cat] === it.id);
         markOwned(it.id, r.data);
         paintActions();
         swapPrice();
-        const t = toast('Got ' + it.name, { kind: 'ok', actions: [{ label: 'Wear it', onClick: () => equipItem(it, editor ? editor.value() : null) }] });
+        const t = it.wornNow
+            ? toast('Got ' + it.name + '. It’s on', { kind: 'ok', actions: it.cat === 'sidekick' ? [{ label: 'Name it', onClick: () => handlers.openLocker('sidekick') }] : [] })
+            : toast('Got ' + it.name, { kind: 'ok', actions: [{ label: 'Wear it', onClick: () => equipItem(it, editor ? editor.value() : null) }] });
         pop(m.card.querySelector('.shop-mprice'));
         return t;
     }
@@ -325,6 +399,7 @@ function pop(el) {
 }
 
 function describe(it) {
+    if (it.blurb) return it.blurb;
     if (it.id === cos.CUSTOM_ID) return 'Any colour you want for your name. Buy once, change it whenever.';
     if (it.cat === 'skin') return isAnimated(it) ? 'Glows and moves. Goes on your tank.' : 'A pattern for your tank, in your team colour.';
     const s = it.style || {};
@@ -336,7 +411,7 @@ function describe(it) {
 // After a buy: mark it owned in the cached store, update the balance.
 function markOwned(id, res) {
     if (!data) return;
-    for (const list of [data.featured, data.daily, data.permanent || []]) for (const x of list) if (x.id === id) x.owned = true;
+    for (const list of [data.featured, data.daily, data.sidekicks || [], data.permanent || []]) for (const x of list) if (x.id === id) x.owned = true;
     if (res && res.balance != null) { data.balance = res.balance; data.balanceMilli = res.balanceMilli; }
     data._sig = null;
     handlers.onBalance(data.balance);

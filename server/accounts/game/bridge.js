@@ -191,8 +191,15 @@ function onConnect(socket, req, socketManager) {
 function onGuestId(socket) {
     if (!active() || !socket.guestId) return;
     const guests = require('../guests');
-    if (socket.account) guests.converted(socket.guestId, socket.account.id);
-    else guests.seen(socket.guestId, Date.now(), socket.guestSource || null);
+    if (socket.account) {
+        // a guest who just signed up: their bank comes with them
+        if (!guests.converted(socket.guestId, socket.account.id)) return;
+        let moved = 0;
+        try { moved = require('../banks').claimGuest(socket.guestId, socket.account.id); } catch (e) { /* */ }
+        if (moved > 0) {
+            try { socket.talk('m', 8000, 'Your guest progress came with you: ' + moved.toLocaleString('en-US') + ' banked gems are in your account now.'); } catch (e) { /* */ }
+        }
+    } else guests.seen(socket.guestId, Date.now(), socket.guestSource || null);
 }
 
 // "$broadcast <text>" in raid chat, for accounts whose linked Discord is in
@@ -263,7 +270,8 @@ function sendAccount(socket, row, body) {
 }
 
 // Fresh user row at every spawn: cosmetics (owned items only; a Locker
-// equip applies on the next spawn), the nameplate rank code, then AC and DU.
+// equip applies on the next spawn), the sidekick (body.sidekick), the
+// nameplate rank code, then AC and DU.
 // Custom Color rides the 7-char name colour prefix (body.nameColor);
 // body.customNameColor feeds the board row's `nc`.
 function applyIdentity(socket, body) {
@@ -273,11 +281,14 @@ function applyIdentity(socket, body) {
     body.rankCode = 0;
     body.skinNid = 0;
     body.customNameColor = null;
+    body.sidekick = null;
     socket._rkPending = null;
     if (!socket.account || !active()) return;
     try {
         const row = accounts.users.byId(socket.account.id);
         if (!row) return;
+        // the equipped sidekick tags along (game/terrain/sidekicks.js picks it up)
+        try { body.sidekick = accounts.store.sidekickFor(row); } catch (e) { body.sidekick = null; }
         const cos = accounts.store.cosmeticsFor(row);
         body.nameStyleNid = cos.nameStyleNid;
         body.skinNid = cos.skinNid;

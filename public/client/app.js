@@ -25,6 +25,7 @@ import * as rankCeremony from './account/rankCeremony.js';
 import * as dustHud from './account/dustHud.js';
 import { BY_ID as ACH_BY_ID } from './account/achievements.js';
 import * as cosmetics from './account/cosmetics.js';
+import * as sidekicks from './sidekicks.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -140,11 +141,15 @@ import * as cosmetics from './account/cosmetics.js';
             delete keybinds.KEY_DEBUG;
             setKeybinds();
         }
-        // Dash moved off Shift (Shift is repel again) and briefly sat on F
-        // (max stat): a dash bind saved on either goes back to the default
-        if (keybinds.KEY_DASH && (keybinds.KEY_DASH[1] === 16 || keybinds.KEY_DASH[1] === 70)) {
+        // Dash moved off Shift (Shift is repel again), then briefly sat on F
+        // and backtick: a dash bind saved on any of them goes to Alt
+        if (keybinds.KEY_DASH && [16, 70, 192].includes(keybinds.KEY_DASH[1])) {
             delete keybinds.KEY_DASH;
             setKeybinds();
+        }
+        // a Mac calls that key Option
+        if (!keybinds.KEY_DASH && /Mac|iPhone|iPad/.test(navigator.platform)) {
+            for (const b of document.querySelectorAll('b[data-key="KEY_DASH"]')) b.textContent = "Option";
         }
         // Dash, Q (ability), comma (kit slot 2), period (screenshot)
         // and R (AI override) are new defaults: a bind someone saved on one of
@@ -168,7 +173,7 @@ import * as cosmetics from './account/cosmetics.js';
             if (keybinds[id]) continue;
             const code = global[id];
             // backtick is the special key too; in a raid dash takes it first
-            const shared = id === "KEY_DASH" ? ["KEY_SPECIAL"] : [];
+            const shared = [];
             if (Object.keys(keybinds).some(k => k !== id && !shared.includes(k) && keybinds[k] && keybinds[k][1] === code)) {
                 keybinds[id] = ["", -1];
                 setKeybinds();
@@ -862,7 +867,7 @@ import * as cosmetics from './account/cosmetics.js';
         // tab switches, hidden panes and the menu are not slow frames
         // the sky drop's dive (skyDrop.js) is a second of wide view, not a slow machine
         const diving = global.dropZoom !== undefined && global.dropZoom !== 1;
-        if (document.hidden || dt > 400 || !global.gameStart || diving) { autoRes.slowSince = autoRes.smoothSince = 0; return; }
+        if (document.hidden || dt > 400 || !global.gameStart || diving || autoRes.hold) { autoRes.slowSince = autoRes.smoothSince = 0; return; }
         autoRes.ema = autoRes.ema * 0.92 + dt * 0.08;
         if (now - autoRes.changedAt < 1500) return;          // let a change settle
         // under ~26 fps. Not 30: Chrome's battery saver pins rAF to 30 fps,
@@ -885,8 +890,10 @@ import * as cosmetics from './account/cosmetics.js';
             }
         } else { autoRes.slowSince = 0; autoRes.smoothSince = 0; }
     }
-    // QA: dwAutoRes() reports, dwAutoRes(n) jumps to a level
-    window.dwAutoRes = (level) => {
+    // QA: dwAutoRes() reports, dwAutoRes(n) jumps to a level, dwAutoRes(n, true)
+    // holds it there (A/B runs on a busy machine), dwAutoRes(null, false) lets go
+    window.dwAutoRes = (level, hold) => {
+        if (hold != null) autoRes.hold = !!hold;
         if (level != null) setAutoResLevel(level | 0);
         return { level: autoResLevel, fpsEma: +(1000 / autoRes.ema).toFixed(1), canvas: global.screenWidth + "x" + global.screenHeight, hud: ctx[2].canvas.width + "x" + ctx[2].canvas.height };
     };
@@ -912,8 +919,13 @@ import * as cosmetics from './account/cosmetics.js';
         // The HUD keeps its own, higher budget: a big tank's wide view slows
         // the world down and steps the resolution down, and the HUD drawn at
         // that resolution (pixelated, see main.css) went soft as you grew.
-        // HUD pixels are cheap (it is mostly empty), so it stays at 1080p+.
-        const guiBudget = Math.max(budget, global.mobile ? 1.6e6 : HUD_PIXEL_FLOOR);
+        // HUD pixels are cheap (it is mostly empty). The first step, the one
+        // a session remembers, leaves it at full density: a 1080p floor on a
+        // retina screen drew it at 70% and stretched it, which is what made
+        // the bars, tiles and text look low-res. Deeper steps are a slow
+        // machine (often no GPU canvas), and those keep the 1080p+ floor.
+        const guiBudget = global.mobile ? Math.max(budget, 1.6e6)
+            : autoResLevel <= 1 ? Infinity : Math.max(budget, HUD_PIXEL_FLOOR);
         const guiScale = pixels > guiBudget ? scale * Math.sqrt(guiBudget / pixels) : scale;
         if (pixels > budget) scale *= Math.sqrt(budget / pixels);
         global.screenWidth = global.vscreenSize = window.innerWidth * scale;
@@ -1873,14 +1885,33 @@ import * as cosmetics from './account/cosmetics.js';
         for (const [k, e] of titleSprites) if (textFrame - (e.used || 0) > 150) { titleSprites.delete(k); freeSprite(e); }
         for (const [k, e] of scaledSprites) if (textFrame - e.used > 150) { scaledSprites.delete(k); freeSprite(e); }
     }
+    // A sprite baked at the layer's own scale goes on 1:1 at whole device
+    // pixels when it is within a couple of percent of the size asked for.
+    // Stretching it that last bit, or drawing it at a fractional spot,
+    // resamples every pixel, and that is what made HUD text and tiles look
+    // soft. Far off (a zoom, a pop), it stretches as before.
+    function blitSprite(c, t, cv, pw, ph, x, y, w, h) {
+        const a = t.a, d = t.d, dw = w * a, dh = h * d;
+        if (!crispOff && a > 0 && d > 0 && Math.abs(dw - pw) <= pw * 0.02 + 1 && Math.abs(dh - ph) <= ph * 0.02 + 1) {
+            c.drawImage(cv, 0, 0, pw, ph, Math.round(x * a) / a, Math.round(y * d) / d, pw / a, ph / d);
+        } else c.drawImage(cv, 0, 0, pw, ph, x, y, w, h);
+    }
+    // QA: window.dwCrispOff = true puts back the old stretched blits (A/B)
+    let crispOff = false;
+    Object.defineProperty(window, "dwCrispOff", { get: () => crispOff, set: (v) => { crispOff = !!v; textSprites.clear(); titleSprites.clear(); upgTileCache.clear(); kitIconSprites.clear(); }, configurable: true });
+    // sprite keys: the layer scale to 1%, sizes to a quarter unit, so a
+    // still label comes out the size it was asked for
+    const spriteScale = (a) => crispOff ? Math.round(a * 20) / 20 : Math.round(a * 100) / 100;
+    const spriteSize = (size) => crispOff ? Math.max(1, Math.round(size * 2) / 2) : Math.max(1, Math.round(size * 4) / 4);
     function drawText(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
-        if (nameRim || nameHalo || typeof defaultFillStyle !== "string" || typeof rawText !== "string" || !rawText) {
+        // offscreen bakes (tiles, icons) are a cache already: text goes in as vector
+        if (nameRim || nameHalo || typeof defaultFillStyle !== "string" || typeof rawText !== "string" || !rawText || (!context._tf && !crispOff)) {
             return drawTextDirect(rawText, x, y, size, defaultFillStyle, align, center, fade, stroke, context);
         }
         const t = tfOf(context);
         if (t.b || t.c) return drawTextDirect(rawText, x, y, size, defaultFillStyle, align, center, fade, stroke, context);
-        const sc = Math.round(t.a * 20) / 20;
-        const q = Math.max(1, Math.round(size * 2) / 2);
+        const sc = spriteScale(t.a);
+        const q = spriteSize(size);
         const key = rawText + "|" + q + "|" + defaultFillStyle + "|" + (center ? 1 : 0) + "|" + stroke + "|" + sc;
         let e = textSprites.get(key);
         if (!e) {
@@ -1908,11 +1939,13 @@ import * as cosmetics from './account/cosmetics.js';
         e.used = textFrame;
         const k = size / q;
         const mult = align === "center" ? 0.5 : align === "right" ? 1 : 0;
-        const dx = Math.round((x - e.w * k * mult - e.X0 * k) * sc) / sc;
-        const dy = Math.round((y - e.Y0 * k) * sc) / sc;
         const a0 = context.globalAlpha;
         if (fade < 1) context.globalAlpha = a0 * Math.max(0, fade);
-        context.drawImage(e.cv, 0, 0, e.pw, e.ph, dx, dy, e.W * k, e.H * k);
+        if (crispOff) {
+            const dx = Math.round((x - e.w * k * mult - e.X0 * k) * sc) / sc;
+            const dy = Math.round((y - e.Y0 * k) * sc) / sc;
+            context.drawImage(e.cv, 0, 0, e.pw, e.ph, dx, dy, e.W * k, e.H * k);
+        } else blitSprite(context, t, e.cv, e.pw, e.ph, x - e.w * k * mult - e.X0 * k, y - e.Y0 * k, e.pw / sc * k, e.ph / sc * k);
         context.globalAlpha = a0;
     }
     // Text that pops (damage numbers): one sprite per string and base size,
@@ -2065,14 +2098,41 @@ import * as cosmetics from './account/cosmetics.js';
     }
 
     function drawGuiLine(x1, y1, x2, y2) {
-        ctx[2].beginPath();
-        ctx[2].lineTo(Math.round(x1) + 0.5, Math.round(y1) + 0.5);
-        ctx[2].lineTo(Math.round(x2) + 0.5, Math.round(y2) + 0.5);
-        ctx[2].closePath();
-        ctx[2].stroke();
+        const c = ctx[2], t = tfOf(c), a = t.a, d = t.d;
+        if (crispOff || t.b || t.c || !(a > 0) || !(d > 0)) {
+            c.beginPath();
+            c.lineTo(Math.round(x1) + 0.5, Math.round(y1) + 0.5);
+            c.lineTo(Math.round(x2) + 0.5, Math.round(y2) + 0.5);
+            c.closePath();
+            c.stroke();
+            return;
+        }
+        // On whole device pixels (rounding in UI units, then +0.5, only lines
+        // up at 1x): a width in whole pixels, an odd one centred on a pixel
+        // centre and an even one on a pixel edge, so both sides are hard.
+        const lw0 = c.lineWidth, px = Math.max(1, Math.round(lw0 * Math.min(a, d))), off = (px & 1) * 0.5;
+        const sx = (v) => x1 === x2 ? (Math.floor(v * a) + off) / a : Math.round(v * a) / a;
+        const sy = (v) => y1 === y2 ? (Math.floor(v * d) + off) / d : Math.round(v * d) / d;
+        c.lineWidth = px / Math.min(a, d);
+        c.beginPath();
+        c.moveTo(sx(x1), sy(y1));
+        c.lineTo(sx(x2), sy(y2));
+        c.stroke();
+        c.lineWidth = lw0;
     }
 
     function drawBar(x1, x2, y, width, color, context = ctx[2]) {
+        // On whole device pixels: the centre on a pixel edge and an even
+        // width, so a stack of bars (outline, track, fill) shares hard top and
+        // bottom edges. At a fractional spot each edge was a half-blended row.
+        // (The ends are round caps and stay put: a stat bar at level 0 is a
+        // near-zero line drawn as a dot, and an exactly zero one draws nothing.)
+        const t = !crispOff && context._tf ? tfOf(context) : null;
+        if (t && !t.b && !t.c && t.d > 0) {
+            const d = t.d;
+            width = Math.max(2, 2 * Math.round(width * d / 2)) / d;
+            y = Math.round(y * d) / d;
+        }
         context.beginPath();
         context.lineTo(x1, y);
         context.lineTo(x2, y);
@@ -2928,13 +2988,43 @@ import * as cosmetics from './account/cosmetics.js';
         // calm the raw palette a touch so the tiles sit with the dark plates
         return [gameDraw.mixColors(face, HUD.wellSolid, 0.18), gameDraw.mixColors(face, HUD.ink, 0.5)];
     }
+    // A tile asked for at the same size a few frames running (the choice
+    // tiles, a class tree at rest) is baked at its exact device size, whole
+    // pixels wide, and blitted 1:1 on whole pixels. One that is zooming
+    // takes the ~4% steps below and is stretched the rest of the way.
+    const upgExactSeen = new Map();
     function upgTileBitmap(kind, w, h, dpr, parts, paint) {
-        // quantise the device size to ~4% steps; blit scales the rest
-        const q = Math.max(8, Math.round(Math.pow(1.04, Math.round(Math.log(w * dpr) / Math.log(1.04)))));
         // until Lilita One has loaded, labels rasterise in the fallback font;
         // key on it so they are redrawn once the real face arrives
         if (!upgFontOk) { try { upgFontOk = !document.fonts || document.fonts.check('12px "Lilita One"'); } catch (e) { upgFontOk = true; } }
-        const k = kind + "|" + q + "|" + (h / w).toFixed(3) + "|" + parts + "|" + config.graphical.fontSizeBoost + "|" + upgFontOk;
+        const tail = "|" + (h / w).toFixed(3) + "|" + parts + "|" + config.graphical.fontSizeBoost + "|" + upgFontOk;
+        if (!crispOff) {
+            const W = Math.max(8, Math.round(w * dpr));
+            const ek = kind + "|=" + W + "|" + dpr.toFixed(3) + tail;
+            let bm = upgTileCache.get(ek);
+            if (bm) return bm;
+            const n = (upgExactSeen.get(ek) || 0) + 1;
+            if (n >= 3) {
+                upgExactSeen.delete(ek);
+                const u = W / w, P = Math.ceil(4 * u);           // device px per unit, pad in px
+                const cv = document.createElement("canvas");
+                cv.width = W + P * 2;
+                cv.height = Math.ceil(h * u) + P * 2;
+                const c = cv.getContext("2d");
+                c.translate(P, P);
+                c.scale(u, u);
+                paint(c);
+                bm = { cv, P, exact: true };
+                if (upgTileCache.size > 500) upgTileCache.clear();
+                upgTileCache.set(ek, bm);
+                return bm;
+            }
+            if (upgExactSeen.size > 2000) upgExactSeen.clear();
+            upgExactSeen.set(ek, n);
+        }
+        // quantise the device size to ~4% steps; blit scales the rest
+        const q = Math.max(8, Math.round(Math.pow(1.04, Math.round(Math.log(w * dpr) / Math.log(1.04)))));
+        const k = kind + "|" + q + tail;
         let bm = upgTileCache.get(k);
         if (bm) return bm;
         const u = q / w;                                 // device px per UI unit
@@ -2952,7 +3042,10 @@ import * as cosmetics from './account/cosmetics.js';
         return bm;
     }
     function upgBlit(bm, x, y, w, h) {
-        ctx[2].drawImage(bm.cv, x - bm.pad, y - bm.pad, w + bm.pad * 2, h + bm.pad * 2);
+        if (bm.exact) {
+            const t = tfOf(ctx[2]), a = t.a, d = t.d;
+            ctx[2].drawImage(bm.cv, (Math.round(x * a) - bm.P) / a, (Math.round(y * d) - bm.P) / d, bm.cv.width / a, bm.cv.height / d);
+        } else ctx[2].drawImage(bm.cv, x - bm.pad, y - bm.pad, w + bm.pad * 2, h + bm.pad * 2);
     }
     // state: 0 idle, 1 hover, 2 pressed. key: keycap label or false.
     function drawUpgradeTile(model, x, y, len, height, colorIndex, key, state = 0, angle = -Math.PI / 4, lineWidthMult = 1, alpha = 1) {
@@ -3023,6 +3116,8 @@ import * as cosmetics from './account/cosmetics.js';
             c.stroke();
         });
 
+        // the plate lands on whole pixels; the tank keeps its place on it
+        if (plate.exact) { const t2 = tfOf(ctx[2]); x = Math.round(x * t2.a) / t2.a; y = Math.round(y * t2.d) / t2.d; }
         ctx[2].save();
         ctx[2].globalAlpha *= alpha;
         upgBlit(plate, x, y, len, height);
@@ -4644,6 +4739,7 @@ import * as cosmetics from './account/cosmetics.js';
         const motion = compensation();
         let livingPred = false;
         const finaleIds = raidFinale.watchIds();
+        const skCount = sidekicks.count();
         overheadFrame++;
         for (let instance of global.entities) {
             if (!instance.render.draws) {
@@ -4764,6 +4860,8 @@ import * as cosmetics from './account/cosmetics.js';
             }
             if (isRoyaleBossEntity(instance)) drawBossAura(ctx[1], x, y, instance, ratio, instance.alpha * alpha);
             drawEntity(baseColor, x, y, instance, fall ? ratio * fall.s : ratio, instance.alpha * alpha, 1, 1, instance.render.f, false, false, false, instance.render, isize);
+            // a Locker sidekick only shows where its owner was just drawn (sidekicks.js)
+            if (skCount && sidekicks.has(instance.id)) sidekicks.note(instance, x, y, instance.alpha * alpha, rst, isize || instance.size, !!fall);
             if (global.royale && global.outpostState && !royaleLobbyPhase() && global.royale.phase === "live") {
                 const ownedAll = global.outpostState.filter(s => s.o === instance.id && s.c);
                 if (ownedAll.length) {
@@ -4784,6 +4882,7 @@ import * as cosmetics from './account/cosmetics.js';
                 }
             }
         }
+        if (skCount) { try { sidekicks.draw(ctx[1], ratio, px, py); } catch (e) { /* never break the frame */ } }
         for (let instance of global.entities) {
             // Dig Wars: same banner skip as the shape pass (no generic HP bar)
             if (!instance._onScreen) continue;
@@ -6111,12 +6210,15 @@ import * as cosmetics from './account/cosmetics.js';
             // run into the key.
             let nameSize = height - 4;
             while (nameSize > 9 && hudTitleW(name, nameSize) > save - 52) nameSize -= 0.5;
-            hudTitle(name, Math.round(x + len / 2) - 5.5, y + height / 2, nameSize, level == maxLevel ? HUD.head : textcolor, "center");
+            // always light text: grey on a coloured fill can't be read, so a
+            // stat you can't upgrade right now just fades a little instead
+            const dim = textcolor === color.grey && level != maxLevel;
+            hudTitle(name, Math.round(x + len / 2) - 5.5, y + height / 2, nameSize, HUD.head, "center", dim ? 0.72 : 1);
 
             const keyTxt = statIdx === 10 ? minKeyName : String((statIdx + 1) % 10);
             // fixed column: every key label centred on the same x, so "-"
             // lines up with the digits above it
-            drawText("[" + keyTxt + "]", Math.round(x + save * ska(maxLevel) - height * 0.25) - 22, y + height / 2, height - 7, textcolor, "center", true);
+            drawText("[" + keyTxt + "]", Math.round(x + save * ska(maxLevel) - height * 0.25) - 22, y + height / 2, height - 7, textcolor === color.grey ? HUD.text2 : textcolor, "center", true);
             if (textcolor === color.guiwhite && !tutLocked) {
 
                 global.clickables.stat.place(statIdx, x * clickableRatio, y * clickableRatio, len * clickableRatio, height * clickableRatio);
@@ -6730,26 +6832,28 @@ import * as cosmetics from './account/cosmetics.js';
     if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", () => titleSprites.clear());
     function hudTitle(text, x, y, size, col, align = "left", alpha = 1, c = ctx[2]) {
         size += config.graphical.fontSizeBoost;
-        const t = typeof col === "string" && text !== "" ? tfOf(c) : null;
-        const sc = t ? Math.round(Math.hypot(t.a, t.b) * 20) / 20 : 0;
+        // offscreen bakes (tiles, icons) are a cache already: drawn as vector
+        const t = typeof col === "string" && text !== "" && (c._tf || crispOff) ? tfOf(c) : null;
+        const sc = t ? spriteScale(Math.hypot(t.a, t.b)) : 0;
         if (sc > 0 && !t.b && !t.c) {
-            const q = Math.max(1, Math.round(size * 2) / 2), k = size / q;
+            const q = spriteSize(size), k = size / q;
             const e = titleSprite(String(text), q, col, sc);
-            if (e) return drawTitleSprite(e, c, x, y, k, sc, align, alpha);
+            if (e) return drawTitleSprite(e, c, x, y, k, sc, align, alpha, t);
         }
         hudTitleDirect(text, x, y, size, col, align, alpha, c);
     }
-    function drawTitleSprite(e, c, x, y, k, sc, align, alpha) {
+    function drawTitleSprite(e, c, x, y, k, sc, align, alpha, t) {
         {
             const w = e.W * k, h = e.H * k, tw = e.w * k;
             let dx = align === "center" ? x - tw / 2 : align === "right" ? x - tw : x;
             dx -= e.pad * k;
-            // snap to device pixels so the sprite stays sharp
-            dx = Math.round(dx * sc) / sc;
-            const dy = Math.round((y - h / 2) * sc) / sc;
             const a0 = c.globalAlpha;
             if (alpha < 1) c.globalAlpha = a0 * Math.max(0, alpha);
-            c.drawImage(e.cv, 0, 0, e.pw || e.cv.width, e.ph || e.cv.height, dx, dy, w, h);
+            if (crispOff) {
+                dx = Math.round(dx * sc) / sc;
+                const dy = Math.round((y - h / 2) * sc) / sc;
+                c.drawImage(e.cv, 0, 0, e.pw || e.cv.width, e.ph || e.cv.height, dx, dy, w, h);
+            } else blitSprite(c, t, e.cv, e.pw, e.ph, dx, y - h / 2, e.pw / sc * k, e.ph / sc * k);
             c.globalAlpha = a0;
             // a fallback-font sprite is used once and handed back
             if (e.loose) { e.loose = false; freeSprite(e); }
@@ -8550,16 +8654,20 @@ import * as cosmetics from './account/cosmetics.js';
             else { c.lineWidth = q.detail; c.strokeStyle = q.col; c.stroke(); }
         }
     }
+    // Baked at the layer's own pixel scale (dpr), so the usual sizes go on
+    // 1:1. A fixed 3x bake was shrunk on every draw, which aliased the
+    // glyphs on a 1x screen and softened them on a retina one.
     const KIT_SPRITE_SCALE = 3;
     const kitIconSprites = new Map();
-    function kitIconSprite(id, s) {
-        const key = id + "@" + s;
+    function kitIconSprite(id, s, dpr = KIT_SPRITE_SCALE) {
+        const k = crispOff ? KIT_SPRITE_SCALE : Math.max(0.5, Math.round(dpr * 100) / 100);
+        const key = id + "@" + s + "@" + k;
         let spr = kitIconSprites.get(key);
         if (spr) return spr;
         const col = KIT_CARD[id] || "#8a93a6";
-        const pad = Math.ceil(s * 0.12), k = KIT_SPRITE_SCALE;
+        const pad = Math.ceil(s * 0.12);
         spr = document.createElement("canvas");
-        spr.width = spr.height = (s + pad * 2) * k;
+        spr.width = spr.height = Math.ceil((s + pad * 2) * k);
         spr.unit = s + pad * 2;
         const c = spr.getContext("2d");
         c.scale(k, k);
@@ -8584,9 +8692,16 @@ import * as cosmetics from './account/cosmetics.js';
         return spr;
     }
     function drawKitIcon(c, id, cx, cy, s) {
-        const spr = kitIconSprite(id, s);
+        const t = tfOf(c);
+        if (t.b || t.c || crispOff) {
+            const spr = kitIconSprite(id, s);
+            const half = spr.unit / 2;
+            c.drawImage(spr, cx - half, cy - half, half * 2, half * 2);
+            return;
+        }
+        const spr = kitIconSprite(id, s, t.a);
         const half = spr.unit / 2;
-        c.drawImage(spr, cx - half, cy - half, half * 2, half * 2);
+        blitSprite(c, t, spr, spr.width, spr.height, cx - half, cy - half, half * 2, half * 2);
     }
     function drawKitBox(spacing, alcoveSize) {
         const want = shopUiMode() && !global.died && !global.mobile && global.gems && global.gems.cap > 0 &&
@@ -10823,7 +10938,13 @@ import * as cosmetics from './account/cosmetics.js';
         const cxNow = wx0 + span / 2, cyNow = wy0 + span / 2;
         const paths = getMapPaths(); 
         const epoch = paths ? paths.epoch : -1;
-        const dpr = Math.max(1, Math.min(2, global.ratio || 1));
+        // At least the screen's density, and never under the HUD layer's own
+        // pixels per unit: global.ratio is the world's, which the automatic
+        // resolution lowers, and a big screen's UI scale passes 2. (A bake a
+        // bit denser than the layer stays sharp while the map pans.)
+        const hudT = tfOf(ctx[2]);
+        const dpr = crispOff ? Math.max(1, Math.min(2, global.ratio || 1))
+            : Math.max(1, Math.min(4, Math.max(Math.min(2, window.devicePixelRatio || 1), Math.round(Math.hypot(hudT.a, hudT.b) * 20) / 20)));
         const S = Math.ceil(size * dpr * (cSpan / span));
         const margin = (cSpan - span) / 2;
         const nowMM = performance.now();
@@ -12572,6 +12693,16 @@ import * as cosmetics from './account/cosmetics.js';
         hudTitle(value, bx + 40, by + 27, vs, HUD.head, "left", alpha);
     };
     const roundRectPath = (c, x, y, w, h, r) => {
+        // on a game layer, the sides land on whole device pixels: plates,
+        // pills and bars get hard edges instead of half-blended ones
+        if (c._tf && !crispOff && w > 0 && h > 0) {
+            const t = tfOf(c);
+            if (!t.b && !t.c && t.a > 0 && t.d > 0) {
+                const a = t.a, d = t.d, x1 = Math.round((x + w) * a) / a, y1 = Math.round((y + h) * d) / d;
+                x = Math.round(x * a) / a; y = Math.round(y * d) / d;
+                w = Math.max(1 / a, x1 - x); h = Math.max(1 / d, y1 - y);
+            }
+        }
         r = Math.min(r, w / 2, h / 2);
         c.beginPath();
         c.moveTo(x + r, y);
@@ -13843,7 +13974,9 @@ import * as cosmetics from './account/cosmetics.js';
             }
             global.metrics.lag = global.time - global.player.time;
         }
-        if (global.GUIStatus.fullHDMode) ctx[2].translate(0.5, 0.5);
+        // (Full HD used to shift the HUD half a pixel here, an old trick for
+        // 1px lines at 1x. With the HUD scaled to the UI size it only put
+        // every edge and text sprite between two pixels: a blur.)
         let p = performance.now();
         try {
             drawGameplay(tick, ratio);
@@ -13892,12 +14025,10 @@ import * as cosmetics from './account/cosmetics.js';
             try { updateJoinState(); } catch (e) { /* never break the frame */ }
             if (global.dailyTankAd.renderUI) drawAdScreen();
             drawOptionsMenu(tick, 20, util.getScreenRatio());
-            if (global.GUIStatus.fullHDMode) ctx[2].translate(-0.5, -0.5);
 
         } catch (e) {
 
             drawErrorScreen();
-            if (global.GUIStatus.fullHDMode) ctx[2].translate(-0.5, -0.5);
 
             throw e;
         }

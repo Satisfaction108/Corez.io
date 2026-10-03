@@ -466,11 +466,13 @@ test('migration: v5 -> v6 keeps every row, writes a backup, adds deaths', () => 
     bk.close();
     assert.equal(db.userVersion(), migrations.latestVersion());
     // v7 adds guests.source (null for rows from before it), v9 users.bank_gems
-    // and guests.bank_gems (0)
+    // and guests.bank_gems (0), v10 the sidekick columns (null)
     const strip = (t, rows) => rows.map(r => {
         const o = { ...r };
         if (t === 'guests') { assert.equal(r.source, null); delete o.source; }
         if (t === 'guests' || t === 'users') { assert.equal(r.bank_gems, 0); delete o.bank_gems; }
+        if (t === 'users') for (const k of ['equip_sidekick', 'equip_sd_skin', 'equip_sd_name', 'sidekick_name', 'sidekick_color']) { assert.equal(r[k], null); delete o[k]; }
+        if (t === 'shop_rotations') { delete o.sidekicks; }
         return o;
     });
     for (const t of tables) assert.deepEqual(strip(t, db.all(`SELECT * FROM "${t}"`)), before[t], t + ' unchanged');

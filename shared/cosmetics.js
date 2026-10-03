@@ -47,6 +47,34 @@
 //             (No Glow drops them); spin turns the pattern itself; spiral
 //             turns it backwards with a breathing glow; shimmer is a light
 //             sweep every `every` seconds. Fewer Effects freezes them all.
+//
+// Sidekicks (cat 'sidekick', nid 201..299): a tiny arras tank with a smiley
+// face that follows its owner around a raid (server/game/terrain/sidekicks.js,
+// drawn by public/client/sidekicks.js). item.kick is the look, read by
+// public/client/sidekickArt.js:
+//   body   circle | pumpkin | smasher (a spiky hexagon behind the circle)
+//   col    body colour (the Locker colour replaces it)
+//   guns   [degrees off the facing, length, width, aspect, side offset, kind],
+//          in body radii like the game's mockups (a Basic barrel is
+//          [0, 1.8, 0.8]); aspect > 1 widens toward the muzzle, < 1 narrows;
+//          kind: '' | 'trap' (a trap lip on the end, shoots traps) |
+//          'drone' (a spawner, shoots drones) | 'launch' (a launcher tube)
+//   turret one small auto turret riding the back of the rim:
+//          {at: degrees off the facing, r: its radius in body radii}
+//   move   how it gets about (public/client/sidekickMath.js MOVES)
+//   size   radius multiplier
+// Every sidekick wears the same smiley; nothing in the catalog changes it.
+// blurb is the shop line.
+// Sidekick skins (cat 'sdSkin', nid 301..399): item.look = {fill, ...}, a
+// paint job for the body only (never the face or the barrels):
+//   stripes | dots | twoTone | checker | camo | frost | gold | galaxy
+// col (where there is one) replaces the body colour.
+// Sidekick name styles (cat 'sdName', nid 401..499): item.style = {kind,
+// ...}, their own look, baked by sidekickArt.js bakeName:
+//   sticker | bubbly | candy | pixel | sparkle
+// rim is always the dark outermost line (like the player name styles).
+// RETIRED lists sidekick items taken out of the catalog (their owners were
+// refunded by migration v11); only kept for the purchase history's names.
 (function (root, factory) {
     const api = factory();
     if (typeof module === 'object' && module.exports) module.exports = api;
@@ -54,7 +82,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
     'use strict';
 
-    const CATALOG_VERSION = 1;
+    const CATALOG_VERSION = 2;
     const MILLI = 1000;
 
     const RARITIES = Object.freeze({
@@ -66,9 +94,13 @@
     });
     const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 
-    const CATS = Object.freeze(['nameStyle', 'skin']);
+    const CATS = Object.freeze(['nameStyle', 'skin', 'sidekick', 'sdSkin', 'sdName']);
+    // the categories that go on your own tank (the original shop rotation)
+    const TANK_CATS = Object.freeze(['nameStyle', 'skin']);
+    const SIDEKICK_CATS = Object.freeze(['sidekick', 'sdSkin', 'sdName']);
     const CUSTOM_COLOR_ID = 'ns_custom';
     const INVITE_STYLE_ID = 'ns_ringleader';
+    const BASIC_SIDEKICK_ID = 'sd_buddy';
 
     function ns(nid, id, name, rarity, priceDust, style, extra) {
         return Object.assign({ nid, id, cat: 'nameStyle', name, rarity, price: Math.round(priceDust * MILLI), style }, extra || {});
@@ -76,6 +108,39 @@
     function sk(nid, id, name, rarity, priceDust, skin) {
         return { nid, id, cat: 'skin', name, rarity, price: Math.round(priceDust * MILLI), skin };
     }
+    function sd(nid, id, name, rarity, priceDust, kick, blurb, extra) {
+        return Object.assign({ nid, id, cat: 'sidekick', name, rarity, price: Math.round(priceDust * MILLI), kick, blurb }, extra || {});
+    }
+    function sds(nid, id, name, rarity, priceDust, look, blurb) {
+        return { nid, id, cat: 'sdSkin', name, rarity, price: Math.round(priceDust * MILLI), look, blurb };
+    }
+    function sdn(nid, id, name, rarity, priceDust, style, blurb) {
+        return { nid, id, cat: 'sdName', name, rarity, price: Math.round(priceDust * MILLI), style, blurb };
+    }
+    // n equal barrels spaced round the body
+    function ring(n, len, wid, start) {
+        const out = [];
+        for (let i = 0; i < n; i++) out.push([(start || 0) + i * 360 / n, len, wid, 1, 0]);
+        return out;
+    }
+
+    // what the sidekick art knows how to draw (sidekickArt.js)
+    const BODIES = Object.freeze({ circle: 1, pumpkin: 1, smasher: 1 });
+    const GUN_KINDS = Object.freeze({ trap: 1, drone: 1, launch: 1 });
+    const SKIN_FILLS = Object.freeze({ stripes: 1, dots: 1, twoTone: 1, checker: 1, camo: 1, frost: 1, gold: 1, galaxy: 1 });
+    const NAME_KINDS = Object.freeze({ sticker: 1, bubbly: 1, candy: 1, pixel: 1, sparkle: 1 });
+    const INK_RIM = '#120e15';   // the HUD ink
+    // Sidekick items that were in an earlier catalog (refunded by migration
+    // v11, accounts/migrations.js), by id: their names for old receipts.
+    const RETIRED = Object.freeze({
+        sd_squint: 'Squint', sd_boxer: 'Boxer', sd_pebble: 'Pebble', sd_sprout: 'Sprout', sd_bubbles: 'Bubbles', sd_chip: 'Chip',
+        sd_prickles: 'Prickles', sd_robo: 'Robo', sd_frosty: 'Frosty', sd_candy: 'Candy Twin', sd_drillbit: 'Drillbit',
+        sd_spooky: 'Spooky', sd_shardy: 'Shardy', sd_hothead: 'Hothead', sd_clank: 'Sir Clank', sd_buzz: 'Buzz',
+        sd_majesty: 'Your Majesty', sd_disco: 'Disco', sd_drako: 'Drako', sd_astro: 'Astro', sd_twinkle: 'Twinkle', sd_ember: 'Ember',
+        sds_shades: 'Cool Shades', sds_sleepy: 'Sleepy', sds_blush: 'Blushing', sds_hearts: 'Heart Eyes', sds_wink: 'Cheeky',
+        sds_grumpy: 'Grumpy', sds_starry: 'Starstruck', sds_party: 'Party Hat',
+        sdn_bubble: 'Bubble', sdn_lemonade: 'Lemonade', sdn_mint: 'Minty', sdn_berry: 'Berry', sdn_sunbeam: 'Sunbeam', sdn_starlight: 'Starlight',
+    });
 
     const RAW = [
         // ---- name styles (nid 1..99) ----
@@ -271,6 +336,94 @@
         sk(140, 'sk_void', 'Void', 'legendary', 450,
             { pattern: 'void', seed: 1140, accent: '#8a5cff', altAccent: '#c9b3ff', accent2: '#140c26', alt2: '#140c26',
               emissive: { kind: 'pulse', color: '#9a70ff', speed: 0.35 } }),
+
+        // ---- sidekicks (nid 201..299): plain arras tanks, one smiley each ----
+        sd(201, BASIC_SIDEKICK_ID, 'Buddy', 'common', 20,
+            { body: 'circle', col: '#7ed957', guns: [[0, 1.8, 0.8]], move: 'orbit' },
+            'A pocket Basic. One barrel, one big grin. Always in the shop.', { permanent: true }),
+        sd(202, 'sd_twinny', 'Twinny', 'common', 35,
+            { body: 'circle', col: '#4fc3f7', guns: [[0, 1.9, 0.75, 1, 0.5], [0, 1.9, 0.75, 1, -0.5]], move: 'sway' },
+            'A tiny Twin. Two barrels, twice the waving.'),
+        sd(204, 'sd_flanky', 'Flanky', 'common', 35,
+            { body: 'circle', col: '#ff9f43', guns: [[0, 1.8, 0.8], [180, 1.6, 0.8]], move: 'orbitBack' },
+            'A little Flank Guard. Watches your back. And your front.'),
+        sd(231, 'sd_bonk', 'Bonk', 'common', 40,
+            { body: 'circle', col: '#b48cff', guns: [[0, 1.8, 1.1]], move: 'hover' },
+            'A pocket Pounder. One fat barrel, all bark.'),
+        sd(232, 'sd_sprinkles', 'Sprinkles', 'common', 40,
+            { body: 'circle', col: '#ff8fab', guns: [[0, 1.55, 0.85, 1.45]], move: 'sway' },
+            'A mini Machine Gun. Sprays happiness everywhere.'),
+        sd(233, 'sd_trappy', 'Trappy', 'common', 45,
+            { body: 'circle', col: '#d9a066', guns: [[0, 1.8, 0.75, 1, 0, 'trap']], move: 'orbit' },
+            'A tiny Trapper. Lays traps that catch nothing at all.'),
+
+        sd(234, 'sd_zippy', 'Zippy', 'uncommon', 75,
+            { body: 'circle', col: '#ff6b6b', guns: [[0, 1.8, 0.8], [150, 1.55, 0.8], [210, 1.55, 0.8]], move: 'zip' },
+            'A little Tri-Angle. Laps you just because it can.'),
+        sd(235, 'sd_trio', 'Trio', 'uncommon', 80,
+            { body: 'circle', col: '#ffc857', guns: [[0, 1.75, 0.7, 1, 0.48], [0, 1.75, 0.7, 1, -0.48], [0, 2.05, 0.7]], move: 'hover' },
+            'A pocket Triplet. Three barrels, all pointing the same way.'),
+        sd(236, 'sd_quaddy', 'Quaddy', 'uncommon', 80,
+            { body: 'circle', col: '#6f9bff', guns: ring(4, 1.75, 0.75), move: 'spin' },
+            'A mini Quad Tank. Covers every side at once.'),
+        sd(210, 'sd_octo', 'Mini Octo', 'uncommon', 90,
+            { body: 'circle', col: '#ff7a8a', guns: ring(8, 1.6, 0.62), move: 'spin' },
+            'Eight barrels, zero aim.'),
+        sd(211, 'sd_rocket', 'Rocket', 'uncommon', 95,
+            { body: 'circle', col: '#eef3f8', guns: [[0, 1.95, 0.95, 1, 0, 'launch']], move: 'zip' },
+            'A little Rocketeer with a launcher on top. The rockets are confetti.'),
+
+        sd(224, 'sd_bossy', 'Bossy', 'rare', 140,
+            { body: 'circle', col: '#2dd4bf', guns: [[90, 1.45, 0.9, 1.35, 0, 'drone'], [-90, 1.45, 0.9, 1.35, 0, 'drone']], move: 'orbit' },
+            'A tiny Overseer that bosses the air around.'),
+        sd(237, 'sd_boomer', 'Boomer', 'rare', 130,
+            { body: 'circle', col: '#9b7bff', guns: [[0, 1.85, 1.4]], move: 'hover' },
+            'A mini Destroyer. Huge barrel, gentle soul.'),
+        sd(238, 'sd_hexie', 'Hexie', 'rare', 150,
+            { body: 'circle', col: '#7adbba', guns: ring(6, 1.7, 0.7), move: 'spin' },
+            'A little Hexa Tank. Six barrels and a spin move.'),
+        sd(217, 'sd_jack', 'Jack', 'legendary', 650,
+            { body: 'pumpkin', col: '#ff8a1f', guns: [[0, 1.75, 0.8]], move: 'bounce' },
+            'A pumpkin tank with a stem on top. Grins all year round.'),
+
+        sd(239, 'sd_smashy', 'Smashy', 'epic', 280,
+            { body: 'smasher', col: '#a3e635', guns: [], move: 'orbit' },
+            'A pocket Smasher. No barrels, all spikes, all hugs.'),
+        sd(240, 'sd_otto', 'Otto', 'epic', 270,
+            { body: 'circle', col: '#ff7ac8', guns: [[0, 1.8, 0.8]], turret: { at: 180, r: 0.42 }, move: 'sway' },
+            'A mini Auto tank. Its little turret looks out behind you.'),
+        sd(241, 'sd_zoomer', 'Zoomer', 'epic', 290,
+            { body: 'circle', col: '#38bdf8', guns: [[0, 1.8, 0.8], [135, 1.35, 0.8], [225, 1.35, 0.8], [155, 1.6, 0.8], [205, 1.6, 0.8]], move: 'zip' },
+            'A little Booster. Four thrusters and somewhere to be.'),
+        sd(242, 'sd_pepper', 'Pepper', 'epic', 260,
+            { body: 'circle', col: '#ff8a65', guns: [[0, 1.25, 0.36, 1, 0.68], [0, 1.25, 0.36, 1, -0.68], [0, 1.6, 0.36, 1, 0.34], [0, 1.6, 0.36, 1, -0.34]], move: 'hover' },
+            'A pocket Gunner. Four skinny barrels, lots of tiny pops.'),
+
+        sd(228, 'sd_closer', 'Mini Closer', 'legendary', 550,
+            { body: 'circle', col: '#ffe14d', guns: [[0, 1.45, 1.0]], move: 'guard', size: 1.08 },
+            'A pocket Arena Closer. Looks scary, is not.'),
+
+        // ---- sidekick skins (nid 301..399): paint for the body, never the face ----
+        sds(311, 'sds_stripes', 'Stripes', 'common', 20, { fill: 'stripes' }, 'Bold diagonal stripes in a lighter shade.'),
+        sds(312, 'sds_dots', 'Polka Dots', 'common', 20, { fill: 'dots' }, 'White polka dots all over.'),
+        sds(313, 'sds_twotone', 'Two-Tone', 'common', 25, { fill: 'twoTone' }, 'A darker bottom half, like a little jacket.'),
+        sds(314, 'sds_checker', 'Checker', 'uncommon', 40, { fill: 'checker' }, 'A racing checkerboard.'),
+        sds(315, 'sds_camo', 'Camo', 'uncommon', 45, { fill: 'camo', col: '#8a9a5b' }, 'Army green camo. Hides nowhere, smiles anyway.'),
+        sds(316, 'sds_frost', 'Frosted', 'rare', 70, { fill: 'frost' }, 'An icy white rim with a little frost on top.'),
+        sds(309, 'sds_gold', 'Solid Gold', 'epic', 140, { fill: 'gold', col: '#ffcf4a' }, 'Solid gold, with a shine.'),
+        sds(310, 'sds_galaxy', 'Galaxy', 'legendary', 260, { fill: 'galaxy', col: '#6a5cff' }, 'A pocket of night sky, stars and all.'),
+
+        // ---- sidekick name styles (nid 401..499): their own looks ----
+        sdn(407, 'sdn_sticker', 'Sticker', 'common', 15,
+            { kind: 'sticker', fill: '#ff6fa5', edge: '#ffffff', rim: INK_RIM }, 'Your name as a die-cut sticker.'),
+        sdn(408, 'sdn_bubbly', 'Bubbly', 'uncommon', 25,
+            { kind: 'bubbly', fill: '#ffffff', puff: '#7cc8ff', rim: '#123660' }, 'Round puffy letters, like a balloon.'),
+        sdn(409, 'sdn_candy', 'Candy', 'rare', 40,
+            { kind: 'candy', stops: ['#ff8fc8', '#ffd36e', '#8ff0c8'], rim: '#3a1030' }, 'Sweet candy colours, left to right.'),
+        sdn(410, 'sdn_pixel', 'Pixel', 'epic', 80,
+            { kind: 'pixel', fill: '#9dff6a', rim: '#0f2a12' }, 'Chunky pixels, straight out of an old game.'),
+        sdn(411, 'sdn_sparkle', 'Sparkle', 'legendary', 160,
+            { kind: 'sparkle', stops: ['#ffffff', '#e5d4ff'], rim: '#3b2370', star: '#ffe27a' }, 'A soft glow with little stars around it.'),
     ];
 
     // A catalog mistake should stop the server at boot, not show up as a
@@ -278,13 +431,24 @@
     (function validate() {
         for (const it of RAW) {
             const where = 'cosmetics: ' + it.id;
-            if (!/^(ns|sk)_[a-z0-9_]+$/.test(it.id)) throw new Error(where + ' bad id');
+            if (!/^(ns|sk|sd|sds|sdn)_[a-z0-9_]+$/.test(it.id)) throw new Error(where + ' bad id');
             if (!RARITIES[it.rarity]) throw new Error(where + ' bad rarity');
             if (!(it.price >= 0) || (it.exclusive && it.price !== 0)) throw new Error(where + ' bad price');
             if (it.cat === 'nameStyle') {
                 if (!(it.nid >= 1 && it.nid <= 99) || !it.style || !Array.isArray(it.style.stops) || !it.style.stops.length) throw new Error(where + ' bad name style');
             } else if (it.cat === 'skin') {
                 if (!(it.nid >= 101 && it.nid <= 199) || !it.skin || !it.skin.pattern || !it.skin.accent || !it.skin.altAccent) throw new Error(where + ' bad skin');
+            } else if (it.cat === 'sidekick') {
+                const k = it.kick;
+                if (!(it.nid >= 201 && it.nid <= 299) || !k || !BODIES[k.body] || !/^#[0-9a-f]{6}$/.test(k.col) || !Array.isArray(k.guns) || !k.move || !it.blurb) throw new Error(where + ' bad sidekick');
+                if (!k.guns.length && k.body !== 'smasher') throw new Error(where + ' a sidekick needs a barrel');
+                for (const g of k.guns) {
+                    if (!Array.isArray(g) || g.length < 3 || !(g[1] > 0 && g[1] <= 2.2) || !(g[2] > 0 && g[2] <= 1.5) || (g[5] && !GUN_KINDS[g[5]])) throw new Error(where + ' bad barrel');
+                }
+            } else if (it.cat === 'sdSkin') {
+                if (!(it.nid >= 301 && it.nid <= 399) || !it.look || !SKIN_FILLS[it.look.fill] || !it.blurb) throw new Error(where + ' bad sidekick skin');
+            } else if (it.cat === 'sdName') {
+                if (!(it.nid >= 401 && it.nid <= 499) || !it.style || !NAME_KINDS[it.style.kind] || !it.blurb) throw new Error(where + ' bad sidekick name style');
             } else throw new Error(where + ' bad cat');
         }
     })();
@@ -374,9 +538,27 @@
 
     function priceDust(item) { return item ? item.price / MILLI : 0; }
 
+    // ---- sidekicks ----
+
+    // The Locker's colour choices for a sidekick (null = its own colour).
+    const SIDEKICK_COLORS = Object.freeze(['#ff6b6b', '#ff9f43', '#ffd84d', '#a3e635', '#4ade80', '#2dd4bf',
+        '#38bdf8', '#818cf8', '#c084fc', '#f472b6', '#f2f2f2', '#a8a29e']);
+    const SIDEKICK_NAME_MAX = 16;
+    function isSidekickColor(hex) { return SIDEKICK_COLORS.indexOf(hex) >= 0; }
+    // Letters, digits, spaces and a little punctuation, one space at a time,
+    // at most SIDEKICK_NAME_MAX characters. '' when nothing is left (the
+    // sidekick then goes by its own name). Swear words are the caller's job
+    // (shared/profanity.js).
+    function cleanSidekickName(raw) {
+        let s = String(raw == null ? '' : raw).normalize('NFC');
+        s = s.replace(/[^\p{L}\p{N} '._!-]/gu, '').replace(/\s+/g, ' ').trim();
+        return Array.from(s).slice(0, SIDEKICK_NAME_MAX).join('').trim();
+    }
+
     return Object.freeze({
-        CATALOG_VERSION, MILLI, RARITIES, RARITY_ORDER, CATS, CUSTOM_COLOR_ID, INVITE_STYLE_ID, ITEMS,
-        MIN_LUMINANCE, FLOOR_COLOR,
+        CATALOG_VERSION, MILLI, RARITIES, RARITY_ORDER, CATS, TANK_CATS, SIDEKICK_CATS, CUSTOM_COLOR_ID, INVITE_STYLE_ID, BASIC_SIDEKICK_ID, ITEMS,
+        MIN_LUMINANCE, FLOOR_COLOR, SIDEKICK_COLORS, SIDEKICK_NAME_MAX, RETIRED,
         byId, byNid, isCat, parseHex, luminance, contrast, normalizeColor, isColorAllowed, colorDistance, accentFor, accent2For, priceDust,
+        isSidekickColor, cleanSidekickName,
     });
 });

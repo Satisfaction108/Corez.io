@@ -68,7 +68,7 @@ test('catalog: unique ids/nids, cats, prices from the plan, colour stops readabl
         assert.ok(it.nid > 0 && C.isCat(it.cat) && C.RARITIES[it.rarity], it.id);
         assert.equal(C.byId(it.id), it);
         assert.equal(C.byNid(it.nid), it);
-        if (it.style) for (const s of it.style.stops) assert.ok(C.isColorAllowed(s), it.id + ' ' + s);
+        if (it.style && it.style.stops) for (const s of it.style.stops) assert.ok(C.isColorAllowed(s), it.id + ' ' + s);
         if (it.skin) assert.ok(it.skin.pattern && it.skin.accent && it.skin.altAccent, it.id);
     }
     const price = id => C.byId(id).price;
@@ -83,7 +83,8 @@ test('catalog: unique ids/nids, cats, prices from the plan, colour stops readabl
     assert.equal(C.ITEMS.filter(i => i.cat === 'skin').length, 40);
     // every rarity is stocked in both categories, and wire numbers stay in range
     for (const cat of C.CATS) for (const r of C.RARITY_ORDER) assert.ok(C.ITEMS.some(i => i.cat === cat && i.rarity === r), cat + ' ' + r);
-    for (const it of C.ITEMS) assert.ok(it.cat === 'skin' ? it.nid >= 101 && it.nid <= 199 : it.nid >= 1 && it.nid <= 99, it.id);
+    const NIDS = { nameStyle: [1, 99], skin: [101, 199], sidekick: [201, 299], sdSkin: [301, 399], sdName: [401, 499] };
+    for (const it of C.ITEMS) assert.ok(it.nid >= NIDS[it.cat][0] && it.nid <= NIDS[it.cat][1], it.id);
     // the items people already own keep their ids and wire numbers
     const kept = { ns_sunset: 2, ns_copper_vein: 3, ns_glacier: 4, ns_candy: 5, ns_mint_rush: 6, ns_ember: 7, ns_amethyst: 8, ns_toxic: 9,
         ns_magma_flow: 10, ns_aurora: 11, ns_emerald_crown: 12, ns_prism_shard: 13, ns_ringleader: 14,
@@ -92,7 +93,10 @@ test('catalog: unique ids/nids, cats, prices from the plan, colour stops readabl
     for (const [id, nid] of Object.entries(kept)) assert.equal(C.byId(id) && C.byId(id).nid, nid, id);
     // prices sit on the ladder for their rarity; exclusives are free and unsold
     const ladder = { nameStyle: { common: [8, 35], uncommon: [40, 45], rare: [50, 65], epic: [110, 125], legendary: [240, 250] },
-        skin: { common: [30, 35], uncommon: [60, 75], rare: [110, 140], epic: [240, 260], legendary: [450, 500] } };
+        skin: { common: [30, 35], uncommon: [60, 75], rare: [110, 140], epic: [240, 260], legendary: [450, 500] },
+        sidekick: { common: [20, 50], uncommon: [75, 95], rare: [130, 160], epic: [260, 300], legendary: [500, 650] },
+        sdSkin: { common: [20, 25], uncommon: [40, 45], rare: [70, 75], epic: [140, 140], legendary: [260, 260] },
+        sdName: { common: [15, 15], uncommon: [25, 25], rare: [40, 40], epic: [80, 80], legendary: [160, 160] } };
     for (const it of C.ITEMS) {
         if (it.exclusive) { assert.equal(it.price, 0, it.id); continue; }
         const [lo, hi] = ladder[it.cat][it.rarity], d = it.price / C.MILLI;
@@ -138,7 +142,13 @@ test('rotation: deterministic, 2 featured epic/legendary + 8 daily (<= 4 skins),
 
 test('rotation: every item for sale turns up within a season', () => {
     const seen = new Set();
-    for (let day = 0; day < 120; day++) { const g = store.generate(day, []); g.featured.forEach(id => seen.add(id)); g.daily.forEach(id => seen.add(id)); }
+    // from Oct 6 2026, after Jack's Raid Night hold
+    const from = Math.ceil(Date.UTC(2026, 9, 6) / 864e5);
+    for (let day = from; day < from + 120; day++) {
+        const g = store.generate(day, []);
+        g.featured.forEach(id => seen.add(id)); g.daily.forEach(id => seen.add(id));
+        store.generateSidekicks(day).forEach(id => seen.add(id));
+    }
     const missing = C.ITEMS.filter(it => !it.permanent && !it.exclusive && !it.retired && !seen.has(it.id)).map(it => it.id);
     assert.deepEqual(missing, []);
 });
@@ -317,7 +327,7 @@ test('equip: owned only, right slot, custom colour rule; cosmeticsFor feeds the 
     assert.equal(code(() => store.equip(u.id, 'nameStyle', 'ns_custom', null)), '400:color_required');
     assert.equal(code(() => store.equip(u.id, 'nameStyle', 'ns_custom', '#202020')), '400:bad_color');
     const eq = store.equip(u.id, 'nameStyle', 'ns_custom', '#7FDBFF').equipped;
-    assert.deepEqual(eq, { nameStyle: 'ns_custom', skin: null, customColor: '#7fdbff' });
+    assert.deepEqual({ nameStyle: eq.nameStyle, skin: eq.skin, customColor: eq.customColor }, { nameStyle: 'ns_custom', skin: null, customColor: '#7fdbff' });
     cos = store.cosmeticsFor(users.byId(u.id));
     assert.deepEqual(cos, { nameStyleNid: C.byId('ns_custom').nid, skinNid: 0, nameColor: '#7fdbff' });
     assert.equal(users.toPublic(users.byId(u.id)).equipped.nameStyle, 'ns_custom', '/api/me reads the columns');
@@ -342,7 +352,7 @@ test('storeView: shape, owned flags, balance', () => {
     assert.equal(v.resetsAt, (TODAY + 1) * DAY);
     assert.equal(v.featured.length, 2);
     assert.equal(v.daily.length, 8);
-    assert.deepEqual(v.permanent.map(i => i.id), ['ns_custom']);
+    assert.deepEqual(v.permanent.map(i => i.id), ['ns_custom', 'sd_buddy']);
     assert.equal(v.featured.find(i => i.id === id).owned, true);
     assert.equal(v.balanceMilli, 1000000 - C.byId(id).price);
     assert.equal(v.balance, v.balanceMilli / 1000);

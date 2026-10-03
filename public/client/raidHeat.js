@@ -1,5 +1,5 @@
 // Raid heat, the client half: the hunted marks, the Core, the drop-in
-// landings, the Rattler and the first-bank moment. The server sends the
+// landings and the first-bank moment. The server sends the
 // state in RY (hunt, core, you.hunt), the moments as KC callouts and FX
 // bursts; juice.js does the shaking and glitching.
 //
@@ -50,7 +50,6 @@ const CORE = "#5ce8ff", CORE_RGB = "92,232,255";
 const CORE_HOT = "#ff5ad8";
 const GOLD = "#f2b83c";
 const EMERALD = "#3fcf7a";
-const ORANGE = "#ff8a3a";
 const PULSE_R = 620;               // coreFinale.js PULSE_R
 const SHARD_MS = 650;              // coreFinale.js SHARD_FLIGHT_MS (the FX carries it)
 const calm = () => !!(global.reducedMotion && global.reducedMotion());
@@ -198,14 +197,6 @@ export function onKC(m) {
         case "shutdown": case "revenge":
             juice.hitStop(40);
             return false;
-        case "rattler":
-            juice.glitch(0.5, 300);
-            juice.shake(20, 300);
-            sfx("alarm");
-            return false;
-        case "escaped":
-            sfx("relief");
-            return false;
     }
     return false;
 }
@@ -314,15 +305,6 @@ export function onFX(kind, x, y, extra, extra2, extra3, extra4) {
             ring(x, y, col, 20, 280, 700, 12);
             return false;
         }
-        case "rattler":
-            ring(x, y, ORANGE, 20, 260, 600, 8);
-            juice.sparks(x, y, 18, 220, 700, 1, "#2b2433", TAU, 0, 7);
-            juice.sparks(x, y, 12, 260, 600, 0, ORANGE);
-            try { if (gameSound.rockBreak) gameSound.rockBreak(x, y); } catch (e) { /* */ }
-            return true;
-        case "rattlergone":
-            juice.sparks(x, y, 12, 140, 600, 1, "#2b2433", TAU, 0, 6);
-            return true;
     }
     return false;
 }
@@ -1220,8 +1202,6 @@ export function feedLine(f, who, tag) {
 export function calloutCol(kind) {
     switch (kind) {
         case "huntkill": return RED;
-        case "rattler": case "rattlerdown": return ORANGE;
-        case "escaped": return EMERALD;
         case "corebreak": return GOLD;
     }
     return null;

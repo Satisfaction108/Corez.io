@@ -11,6 +11,7 @@ import * as raidHeat from "./raidHeat.js";
 import { toast as menuToast } from "./account/ui.js";
 import saveCode from "./saveCode.js";
 import * as abilityFx from "./abilityFx.js";
+import * as sidekicks from "./sidekicks.js";
 window.fakeLagMS = 0;
 var sync = [];
 var clockDiff = 0;
@@ -1210,6 +1211,8 @@ let incoming = async function(message, socket) {
         }; break;
 
             case 'w': {
+                // a new server: its own sidekick table follows
+                sidekicks.reset();
                 if (m[0]) {
                     if (guestId) socket.talk('GI', guestId, firstSource());
                     socket.talk('RZ', resumeToken);
@@ -1526,6 +1529,10 @@ let incoming = async function(message, socket) {
             } break;
             case 'AF': {
                 try { abilityFx.onFx(m, punchCamera); } catch (e) { /* */ }
+            } break;
+            case 'SK': {
+                // who has a Locker sidekick (server/game/terrain/sidekicks.js)
+                try { sidekicks.onPacket(JSON.parse(m[0])); } catch (e) { /* */ }
             } break;
             case 'AR': {
                 try { abilityFx.onRadar(JSON.parse(m[0])); } catch (e) { /* */ }

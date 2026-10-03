@@ -59,7 +59,7 @@ const MIN_SHARE = 500;
 const SPRAY_GEMS = 300;            // the little that still hits the ground
 const LAST_HIT_PTS = 800;
 const COLLAPSE_MS = 1600;          // caving in before it blows
-const SPEW_PIECES = 160;
+const SPEW_PIECES = 100;          // each one is an entity with two props: more costs every client a lot in the final circle
 const SPEW_EDGE = 0.92;            // gems land out to this share of the circle
 const SPEW_MAX_R = 2400;
 const GEM_TRAVEL = 21;             // a gem launched at v slides about 21 * v (measured)
@@ -69,7 +69,8 @@ const GEM_TRAVEL = 21;             // a gem launched at v slides about 21 * v (m
 // focused fire: one player with five bots ~2 minutes, a full raid of 6-20
 // humans 95-120 s. The Core is not a raid boss, so bossGuard's caps don't
 // apply to it.
-const HP_BASE = 150_000, HP_HUMAN = 90_000, HP_BOT = 25_000, HP_MIN = 300_000, HP_MAX = 2_200_000;
+// Halved on Oct 3: the fight dragged, so a full raid breaks it in about a minute.
+const HP_BASE = 75_000, HP_HUMAN = 45_000, HP_BOT = 12_500, HP_MIN = 150_000, HP_MAX = 1_100_000;
 function healthFor(humans, bots) {
     return Math.round(Math.max(HP_MIN, Math.min(HP_MAX, HP_BASE + HP_HUMAN * humans + HP_BOT * bots)));
 }
@@ -164,6 +165,7 @@ function clear() {
     brokeBy = "";
     brokeAt = 0;
     blast = null;
+    global.royaleCoreTruce = false;
 }
 
 // Clears the arena: returns how many rocks went.
@@ -276,7 +278,7 @@ function erupt(x, y, total) {
         const sp = 3 + Math.random() * 8;
         const g = gems.spawnGem(x + Math.cos(ang) * 40, y + Math.sin(ang) * 40, Math.round(p.v * mult(p.ore)), p.cls, p.size,
             Math.cos(ang) * sp, Math.sin(ang) * sp, p.ore);
-        if (g) g.gemNoMagnetUntil = t + 1100 + (i % 30) * 25;
+        if (g) { g.gemNoMagnetUntil = t + 1100 + (i % 30) * 25; g.gemLong = true; }
     });
     return pieces.length;
 }
@@ -302,7 +304,7 @@ function spew(x, y, total, t) {
         const v = Math.min(120, d / GEM_TRAVEL);
         const gem = gems.spawnGem(x + dx / d * 30, y + dy / d * 30, Math.round(p.v * mult(p.ore)), p.cls, p.size, dx / d * v, dy / d * v, p.ore);
         // no magnet until it has landed
-        if (gem) gem.gemNoMagnetUntil = t + 1400 + (i % 20) * 30;
+        if (gem) { gem.gemNoMagnetUntil = t + 1400 + (i % 20) * 30; gem.gemLong = true; }
     });
     return pieces.length;
 }
@@ -428,6 +430,8 @@ function tick(t, fighters) {
         return;
     }
     if (blast && t >= blast.at) { try { blow(t); } catch (e) { lastErr = String(e && e.stack || e); } }
+    // bots leave players alone while it stands (controllers.js reads this)
+    global.royaleCoreTruce = state === 'up' && !!core && alive(core);
     if (state !== 'up' || !core) return;
     if (!alive(core)) { onBroken(core); return; }
     core.invuln = false;

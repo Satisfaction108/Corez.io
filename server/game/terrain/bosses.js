@@ -185,7 +185,7 @@ function erupt(x, y, total) {
         const sp = 3.2 + Math.random() * 3;
         const gem = gems.spawnGem(x, y, Math.round(p.v * raidMods.gemValueMult(p.ore)), p.cls,
             p.ore === 3 ? 26 : p.size, Math.cos(ang) * sp, Math.sin(ang) * sp, p.ore);
-        if (gem) gem.gemNoMagnetUntil = now + 1400 + i * 45;
+        if (gem) { gem.gemNoMagnetUntil = now + 1400 + i * 45; gem.gemLong = true; }
     });
 }
 

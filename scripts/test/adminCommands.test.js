@@ -322,7 +322,7 @@ test('shoprotate: re-rolls today (both, featured, daily) under the rotation rule
 
     let r = await interact(cmd('shoprotate', []));
     assert.equal(r.json.data.flags, 64);
-    assert.match(content(r), /Re-rolled today's Featured and Daily/);
+    assert.match(content(r), /Re-rolled today's Featured, Daily and Sidekicks/);
     assert.match(content(r), /Refreshed 1 open menu\./);
     const both = store.readRotation(day);
     assertValid(both, day);
@@ -355,7 +355,8 @@ test('shoprotate: re-rolls today (both, featured, daily) under the rotation rule
     assert.equal(a.length, 3);
     assert.ok(a.every(x => x.actor === 'admin:' + ADMIN && x.detail.day === day));
     assert.deepEqual(a.map(x => x.detail.which), ['both', 'featured', 'daily']);
-    assert.deepEqual(a[0].detail.before, { featured: first.featured, daily: first.daily });
+    assert.deepEqual({ featured: a[0].detail.before.featured, daily: a[0].detail.before.daily }, { featured: first.featured, daily: first.daily });
+    assert.deepEqual(a[0].detail.before.sidekicks, first.sidekicks, 'the Sidekicks shelf is in the audit too');
     assert.deepEqual(a[2].detail.daily, daily.daily);
 
     // tomorrow's skip rule sees today's new Featured

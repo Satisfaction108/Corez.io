@@ -323,7 +323,7 @@ async function boot() {
     try { party.init(); } catch (e) { console.error('[party] init failed', e); }
     shop.init({
         refreshMe: () => refresh(true),
-        openLocker: () => openPane('locker'),
+        openLocker: (tab) => { if (tab) locker.setTab(tab); openPane('locker'); },
         // the chip shows the new balance at once, before /api/me answers
         onBalance(dust) { const u = store.get('user'); if (u && typeof dust === 'number' && u.dust !== dust) setUser(Object.assign({}, u, { dust })); },
     });

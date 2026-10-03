@@ -130,6 +130,9 @@ class Canvas {
             // playing on the keyboard (not a shortcut) with a mouse or trackpad around
             if (global.mobile && global.gameStart && !global.showChat && !event.metaKey && !event.ctrlKey && !event.altKey && !/^(Shift|Meta|Control|Alt|CapsLock|Tab|Escape)$/.test(event.key || ""))
                 flip(watch.key(performance.now(), true));
+            // dash is Alt: Alt+D / Alt+F / Alt+E would jump to the browser's
+            // address bar or menus while you move
+            if (global.gameStart && event.altKey && !global.showChat) event.preventDefault();
             if (global.gameStart) this.keyDown(event);
         });
         this.cv.addEventListener("keyup", (event) => {if (global.gameStart) this.keyUp(event)});
@@ -268,7 +271,7 @@ class Canvas {
         // dash and the ability slot (abilityFx.js); before the server has said
         // the system is on, the keys keep their old jobs
         if (!global.died && global.abil && global.abil.on && !global.showTree && !global.showChat) {
-            if (kc === global.KEY_DASH) { if (!event.repeat) this.useDash(); return true; }
+            if (kc === global.KEY_DASH) { event.preventDefault(); if (!event.repeat) this.useDash(); return true; }
             if (kc === global.KEY_ABILITY) { if (!event.repeat) this.abilityDown(); return true; }
         }
         // abilities switched off on this server: Q goes back to being kit slot 2
@@ -291,6 +294,8 @@ class Canvas {
     // the ability key coming up does nothing: aim mode waits for the click
     royaleKeyUp(event) {
         if (event && event.keyCode === global.KEY_ABILITY && global.abilAim) return true;
+        // Alt let go on its own would put Windows' focus on the browser menu
+        if (event && event.keyCode === 18 && global.KEY_DASH === 18) { event.preventDefault(); return true; }
         return false;
     }
     // kit slots trade places, an empty slot included (the server's order

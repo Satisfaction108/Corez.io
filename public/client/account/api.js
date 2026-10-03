@@ -94,6 +94,8 @@ export const refund = (purchaseId) => post('/api/store/refund', { purchaseId });
 export const storeHistory = () => get('/api/store/history');
 export const locker = () => get('/api/locker');
 export const equip = (slot, itemId, color) => post('/api/locker/equip', color ? { slot, itemId, color } : { slot, itemId });
+// {sidekick, sdSkin, sdName, name, color}: the Locker's Sidekick panel in one go
+export const saveSidekick = (body) => post('/api/locker/sidekick', body);
 // Friends, profiles, the leaderboard and daily quests.
 export const friends = () => get('/api/friends');
 export const friendRequest = (username) => post('/api/friends/request', { username });

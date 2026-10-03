@@ -487,14 +487,19 @@ const GEM_FADE_MS = 3_000;
 const GEM_STILL_SPEED = 0.35;
 const GEM_REACH2 = 1400 * 1400;   // beyond this an actor cannot touch or pull a gem
 const GEM_MAX_LIFE_MS = 60_000;
+// Gems worth a fight stay twice as long: a boss's or the Core's (gemLong),
+// and every Core Shard. A tank's drop already has its own longer clock.
+const LONG_MULT = 2;
+const isLong = (gem) => !!gem.gemLong || gem.gemOre === ORE.SHARD;
 function tickGem(gem, tg, players) {
     const now = Date.now();
     if (gem.gemOwnerId === undefined && !gem.chamberBias) {
         const sp2 = gem.velocity.x * gem.velocity.x + gem.velocity.y * gem.velocity.y;
         if (sp2 > GEM_STILL_SPEED * GEM_STILL_SPEED || !gem.gemRestAt) gem.gemRestAt = now;
-        const ttl = gem.gemLootFromPlayer ? GEM_TTL_PLAYER_MS : GEM_TTL_MS;
+        const long = isLong(gem);
+        const ttl = gem.gemLootFromPlayer ? GEM_TTL_PLAYER_MS * (long ? LONG_MULT : 1) : GEM_TTL_MS * (long ? LONG_MULT : 1);
         const idle = now - gem.gemRestAt;
-        if (idle > ttl || now - (gem.gemBornAt || now) > GEM_MAX_LIFE_MS) { gem.kill(); return; }
+        if (idle > ttl || now - (gem.gemBornAt || now) > GEM_MAX_LIFE_MS * (long ? LONG_MULT : 1)) { gem.kill(); return; }
         // the client blinks invuln entities: that is the fade-out warning
         const fading = idle > ttl - GEM_FADE_MS;
         if (fading !== !!gem.invuln) gem.invuln = fading;

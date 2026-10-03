@@ -46,10 +46,24 @@ function life(guestId, r, now = Date.now()) {
 }
 
 // This browser is now playing logged in: the first account it shows up with.
+// If that account is new (signed up from this guest), the guest's lives,
+// kills and play time count on it too. -> true the first time only
+const NEW_ACCOUNT_MS = 24 * 60 * 60 * 1000;
 function converted(guestId, userId, now = Date.now()) {
-    if (!valid(guestId) || !userId) return;
-    run(d => d.run('UPDATE guests SET converted_user_id = ?, converted_at = ? WHERE guest_id = ? AND converted_user_id IS NULL',
-        userId, now, guestId));
+    if (!valid(guestId) || !userId) return false;
+    let fresh = false;
+    run(d => d.tx(() => {
+        fresh = d.run('UPDATE guests SET converted_user_id = ?, converted_at = ? WHERE guest_id = ? AND converted_user_id IS NULL',
+            userId, now, guestId).changes > 0;
+        if (!fresh) return;
+        const u = d.get('SELECT created_at FROM users WHERE id = ? AND deleted_at IS NULL', userId);
+        const g = d.get('SELECT games, kills, bot_kills, play_ms FROM guests WHERE guest_id = ?', guestId);
+        if (!u || !g || u.created_at < now - NEW_ACCOUNT_MS) return;
+        d.run('INSERT OR IGNORE INTO user_stats (user_id, updated_at) VALUES (?, ?)', userId, now);
+        d.run(`UPDATE user_stats SET lives = lives + ?, kills = kills + ?, bot_kills = bot_kills + ?, play_ms = play_ms + ?,
+            updated_at = ? WHERE user_id = ?`, g.games | 0, g.kills | 0, g.bot_kills | 0, g.play_ms | 0, now, userId);
+    }));
+    return fresh;
 }
 
 module.exports = { valid, cleanSource, seen, named, life, converted };

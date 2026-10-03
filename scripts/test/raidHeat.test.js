@@ -26,9 +26,6 @@
 //   respawns   life after life through the real spawn path, every landing
 //              breaks the plain rock in range (or reaches the nearest wall)
 //   opening    a soft vein by every drop pit, the 1:30 meteor rush
-//   rattler    only for new players carrying gems away from a vault, spawns
-//              on the far side from the vault, one per raid, gives up when
-//              they reach the pad
 //   juice      the client's pure FX math (public/client/juiceMath.js)
 //   switches   every feature has its env kill switch in server/.env.example
 'use strict';
@@ -73,7 +70,6 @@ try { require(path.join(SERVER, 'game', 'terrain', 'royaleLayout.js')).carveMatc
 const hunted = require(path.join(SERVER, 'game', 'terrain', 'hunted.js'));
 const coreFinale = require(path.join(SERVER, 'game', 'terrain', 'coreFinale.js'));
 const dropIn = require(path.join(SERVER, 'game', 'terrain', 'dropIn.js'));
-const rattler = require(path.join(SERVER, 'game', 'terrain', 'rattler.js'));
 const storm = require(path.join(SERVER, 'game', 'terrain', 'storm.js'));
 const vault = require(path.join(SERVER, 'game', 'terrain', 'vault.js'));
 const spawnReach = require(path.join(SERVER, 'game', 'terrain', 'spawnReach.js'));
@@ -366,6 +362,8 @@ test('core: breaking it caves in, then blows all 20,000 gems across the circle, 
     hit(p, 50_000); hit(p2, 30_000); hit(bot, 19_000); hit(p3, 1_000);
     const before = new Set([...entities.values()].filter(e => e.isGemPickup).map(e => e.id));
     const cx = c.x, cy = c.y;
+    coreFinale.tick(Date.now(), [p, p2, p3, bot]);
+    assert.equal(global.royaleCoreTruce, true, 'bots leave players alone while the Core stands');
     c.finalKillers = [p];
     c.kill();
     const t0 = Date.now();
@@ -373,6 +371,7 @@ test('core: breaking it caves in, then blows all 20,000 gems across the circle, 
     const B = coreFinale.CORE_BANK;
     assert.equal(banked.size, 0, 'nobody is banked anything');
     assert.ok(fxs.some(f => f.k === 'corecollapse' && f.e === coreFinale.COLLAPSE_MS), 'it caves in first');
+    assert.equal(global.royaleCoreTruce, false, 'and the truce ends when it breaks');
     assert.ok(!fxs.some(f => f.k === 'coredead'), 'and has not blown yet');
     assert.ok(calls.some(x => x.k === 'corebreak' && x.b === p), 'the last hit is told');
     const loose = () => [...entities.values()].filter(e => e.isGemPickup && !before.has(e.id));
@@ -398,12 +397,12 @@ test('core: breaking it caves in, then blows all 20,000 gems across the circle, 
     assert.ok(coreFinale.healthFor(5, 1) > coreFinale.healthFor(1, 5));
     assert.equal(coreFinale.gemsFor(20, 0), B);
     assert.equal(coreFinale.healthFor(30, 0), coreFinale.HP_MAX);
-    // ten times the old base; at ~1000 a second per human and ~400 per bot of
-    // focused fire, a full raid needs a minute and a half to two
+    // halved on Oct 3: at ~1000 a second per human and ~400 per bot of
+    // focused fire, a full raid needs about a minute
     const ttk = (h, b) => coreFinale.healthFor(h, b) / (1000 * h + 400 * b);
-    for (const h of [6, 10, 15, 20]) assert.ok(ttk(h, 0) >= 60 && ttk(h, 0) <= 125, h + ' humans: ' + ttk(h, 0).toFixed(0) + ' s');
-    assert.ok(ttk(1, 5) >= 60 && ttk(1, 5) <= 130, 'one player and five bots: ' + ttk(1, 5).toFixed(0) + ' s');
-    assert.ok(coreFinale.healthFor(1, 5) >= 10 * 51_000 * 0.7, 'about ten times harder');
+    for (const h of [6, 10, 15, 20]) assert.ok(ttk(h, 0) >= 30 && ttk(h, 0) <= 65, h + ' humans: ' + ttk(h, 0).toFixed(0) + ' s');
+    assert.ok(ttk(1, 5) >= 30 && ttk(1, 5) <= 65, 'one player and five bots: ' + ttk(1, 5).toFixed(0) + ' s');
+    assert.ok(coreFinale.healthFor(1, 5) >= 5 * 51_000 * 0.7, 'about five times the old base');
     for (const e of entities.values()) if (e.isGemPickup) e.kill();
     p2.kill(); p3.kill(); bot.kill();
 });
@@ -934,44 +933,6 @@ test('opening: every drop pit gets a soft vein nearby; the 1:30 meteor rush land
     busy.kill(); mate1.kill(); lone.kill();
 });
 
-// ── rattler ─────────────────────────────────────────────────────────────
-test('rattler: new players only, behind them from the vault, once a raid, gives up at the pad', () => {
-    storm.setCycles(3);
-    storm.start();
-    rattler.reset();
-    const said = [];
-    rattler.attach({ callout: (b, k) => said.push(k), fxAt() {}, newness: (b) => b._testNew });
-    const v = centre();
-    const p = player(v.x + 900, v.y);
-    p.royaleBornAt = Date.now() - 20_000;
-    p.spawnGraceUntil = 0;
-    p.carriedGems = 300;
-    p._testNew = 0;
-    assert.equal(rattler.wants(p, Date.now()), false, 'a regular gets real bots, not this');
-    p._testNew = 1;
-    assert.equal(rattler.wants(p, Date.now()), true);
-    p.carriedGems = 40;
-    assert.equal(rattler.wants(p, Date.now()), false, 'nothing to lose yet');
-    p.carriedGems = 300;
-    rattler.tick(Date.now() + 1000, [p]);
-    const r = rattler.alive()[0];
-    assert.ok(r, 'spawned');
-    assert.ok(said.includes('rattler'));
-    // on the far side of the player from the vault
-    assert.ok(Math.hypot(r.x - v.x, r.y - v.y) > Math.hypot(p.x - v.x, p.y - v.y) + 300);
-    assert.equal(r.rattlerPrey, p);
-    assert.equal(rattler.wants(p, Date.now()), false, 'once a raid');
-    // reaching the vault pad ends it
-    p.vaultOnPad = true;
-    rattler.tick(Date.now() + 2000, [p]);
-    assert.equal(rattler.alive().length, 0);
-    assert.ok(said.includes('escaped'));
-    rattler.reset();
-    p._testNew = 1; p.vaultOnPad = false;
-    assert.equal(rattler.wants(p, Date.now()), true, 'a new raid, a new chase');
-    p.kill();
-});
-
 // ── client FX math ──────────────────────────────────────────────────────
 test('juice: shake is capped, glitch slices stay on screen, the particle pool never grows', async () => {
     const J = await import(pathToFileURL(path.join(REPO, 'public', 'client', 'juiceMath.js')).href);
@@ -1066,7 +1027,7 @@ test('juice: cracks are fixed per seed and stay in reach; counters roll up; kill
 
 test('switches: every kill switch is documented', () => {
     const env = fs.readFileSync(path.join(SERVER, '.env.example'), 'utf8');
-    for (const k of ['ROYALE_HUNTED', 'ROYALE_CORE', 'ROYALE_DROPIN', 'ROYALE_FIRST_VAULT', 'ROYALE_RATTLER', 'ROYALE_SUPPLY', 'ROYALE_EARLY_ORE', 'ROYALE_RUSH']) assert.ok(new RegExp('^#?\\s*' + k + '=', 'm').test(env), k);
+    for (const k of ['ROYALE_HUNTED', 'ROYALE_CORE', 'ROYALE_DROPIN', 'ROYALE_FIRST_VAULT', 'ROYALE_SIDEKICKS', 'ROYALE_SUPPLY', 'ROYALE_EARLY_ORE', 'ROYALE_RUSH']) assert.ok(new RegExp('^#?\\s*' + k + '=', 'm').test(env), k);
     assert.equal(hunted.ON, process.env.ROYALE_HUNTED !== '0');
     assert.equal(coreFinale.ON, process.env.ROYALE_CORE !== '0');
 });

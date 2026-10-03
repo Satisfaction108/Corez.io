@@ -18,6 +18,11 @@
 // At boot nothing is playing yet, so every lease left over is written back.
 //
 // Every balance at rest is capped at CAP.
+//
+// A guest who signs up keeps their bank: once the browser's guest id shows up
+// on an account made around the same time (guests.converted), claimGuest moves
+// what the guest has at rest onto the account, and a guest lease still out
+// (a raid they were in when they signed up) releases onto the account too.
 'use strict';
 
 const db = require('./db');
@@ -27,6 +32,8 @@ const STALE_MS = 5 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
 
 const GUEST_RE = /^[a-f0-9]{32}$/;
+// only an account made within this long of the guest turning into it
+const NEW_ACCOUNT_MS = DAY;
 
 // 'a:12' -> {kind:'a', id:12}, 'g:<hex>' -> {kind:'g', id:'<hex>'}, else null
 function parseOwner(owner) {
@@ -59,6 +66,31 @@ function setAtRest(d, o, value, now) {
             ON CONFLICT(guest_id) DO UPDATE SET bank_gems = excluded.bank_gems`, o.id, now, now, v);
     }
     return v;
+}
+
+// A guest that became a new account banks into that account from then on.
+function mergeTarget(d, o) {
+    if (!o || o.kind !== 'g') return o;
+    const r = d.get(`SELECT g.converted_user_id AS u FROM guests g JOIN users u ON u.id = g.converted_user_id
+        WHERE g.guest_id = ? AND u.deleted_at IS NULL AND u.created_at >= g.converted_at - ?`, o.id, NEW_ACCOUNT_MS);
+    return r && r.u ? { kind: 'a', id: r.u } : o;
+}
+
+// The guest's bank onto the new account. -> gems moved (0 if none or the
+// account isn't the one this guest just became)
+function claimGuest(guestId, userId, now = Date.now()) {
+    const d = db.handle();
+    if (!d || !GUEST_RE.test(String(guestId || '')) || !userId) return 0;
+    return d.tx(() => {
+        const g = { kind: 'g', id: guestId };
+        const to = mergeTarget(d, g);
+        if (!to || to.kind !== 'a' || to.id !== userId) return 0;
+        const n = atRest(d, g);
+        if (!(n > 0)) return 0;
+        setAtRest(d, g, 0, now);
+        setAtRest(d, to, atRest(d, to) + n, now);
+        return n;
+    });
 }
 
 // What is at rest for this owner right now (0 while a session holds it).
@@ -101,7 +133,7 @@ function release(leaseId, final, now = Date.now()) {
         const row = d.get('SELECT owner, recovered FROM bank_leases WHERE lease_id = ?', String(leaseId));
         if (!row) return null;
         d.run('DELETE FROM bank_leases WHERE lease_id = ?', String(leaseId));
-        const o = parseOwner(row.owner);
+        const o = mergeTarget(d, parseOwner(row.owner));
         if (!o) return null;
         const hold = clamp(final);
         const add = row.recovered != null ? hold - (row.recovered | 0) : hold;
@@ -121,7 +153,7 @@ function recoverStale(now = Date.now(), maxAgeMs = STALE_MS, all = false) {
             : d.all('SELECT lease_id, owner, held, recovered FROM bank_leases WHERE recovered IS NULL AND at <= ?', now - maxAgeMs);
         let n = 0;
         for (const r of rows) {
-            const o = parseOwner(r.owner);
+            const o = mergeTarget(d, parseOwner(r.owner));
             if (o) {
                 const add = r.recovered != null ? (r.held | 0) - (r.recovered | 0) : (r.held | 0);
                 if (add) setAtRest(d, o, atRest(d, o) + add, now);
@@ -136,4 +168,4 @@ function recoverStale(now = Date.now(), maxAgeMs = STALE_MS, all = false) {
     });
 }
 
-module.exports = { CAP, STALE_MS, parseOwner, peek, checkout, checkpoint, release, recoverStale };
+module.exports = { CAP, STALE_MS, NEW_ACCOUNT_MS, parseOwner, peek, checkout, checkpoint, release, recoverStale, claimGuest };

@@ -70,6 +70,19 @@ function postEquip(ctx) {
     ctx.json(200, store.equip(a.user.id, str(b.slot, 16), itemId, b.color == null ? null : str(b.color, 16), { now: Date.now(), ip: ctx.ip }));
 }
 
+// The Locker's Sidekick panel: sidekick, skin, name style, name and colour at once.
+function postSidekick(ctx) {
+    const a = ctx.requireAuth();
+    ctx.limit('equip', a.user.id);
+    const b = ctx.body;
+    const id = (v) => (v == null || v === '' ? null : str(v, 64));
+    ctx.json(200, store.saveSidekick(a.user.id, {
+        sidekick: id(b.sidekick), sdSkin: id(b.sdSkin), sdName: id(b.sdName),
+        name: b.name == null ? '' : str(b.name, 64),
+        color: b.color == null ? null : str(b.color, 16),
+    }));
+}
+
 function register(router) {
     router.add('GET', '/api/store', getStore);
     router.add('POST', '/api/store/purchase', postPurchase);
@@ -78,6 +91,7 @@ function register(router) {
     router.add('GET', '/api/store/history', getHistory);
     router.add('GET', '/api/locker', getLocker);
     router.add('POST', '/api/locker/equip', postEquip);
+    router.add('POST', '/api/locker/sidekick', postSidekick);
 }
 
 module.exports = { register };

@@ -285,7 +285,11 @@ export function drawWorld(c, cx, cy, rr, ox, oy, ratio, sw, sh) {
     // the sky and its clouds: two layers, the near one a little faster and
     // with a little parallax, both blowing with the wind. Anchored to the
     // world so they don't swim when the camera moves.
-    const layers = lite() || global.lowFx || config.graphical.simpleTerrain || softGpu() ? 1 : 2;
+    // When the storm fills most of the screen (you're out in it, or the
+    // final circle is small) every layer is a full-screen fill, so the near
+    // layer goes; it was the difference between smooth and choppy there.
+    const heavy = warn.inside || rr < Math.hypot(sw, sh) * 0.35;
+    const layers = heavy || lite() || global.lowFx || config.graphical.simpleTerrain || softGpu() ? 1 : 2;
     for (let L = 0; L < layers; L++) {
         const worldTile = L ? 900 : 1500;      // world units per tile
         const par = L ? 1.12 : 1;
@@ -303,8 +307,9 @@ export function drawWorld(c, cx, cy, rr, ox, oy, ratio, sw, sh) {
         c.fillRect(-40 - px, -40 - py, sw + 80, sh + 80);
         c.translate(-px, -py);
     }
-    // rain streaks, leaning with the wind
-    if (!still) {
+    // rain streaks, leaning with the wind (out in the storm drawHud's
+    // downpour covers the whole screen, so this one sits out)
+    if (!still && !warn.inside) {
         const n = lite() ? RAIN_N >> 1 : RAIN_N;
         const W = sw + 60, H = sh + 60;
         const vx = WIND_X * 0.55 + 0.25, vy = 1;
