@@ -170,7 +170,7 @@ Class.royaleShardWraith = {
     SHAPE: 4,
     SIZE: 33,
     FACING_TYPE: "smoothToTarget",
-    MAX_CHILDREN: 8,
+    MAX_CHILDREN: 5,
     BODY: { HEALTH: base.HEALTH * 3.4, SHIELD: base.SHIELD * 1.0, DAMAGE: base.DAMAGE * 1.3, RESIST: 1.12, SPEED: base.SPEED * 0.52, ACCELERATION: 0.7, FOV: 1.45 },
     GUNS: [
         ...weaponArray({
@@ -185,7 +185,7 @@ Class.royaleShardWraith = {
         ...weaponArray({
             POSITION: [22, 5.5, 1, 0, 0, 0, 0],
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.basic, g.sniper, { reload: 2.2, damage: 0.9, speed: 1.3, maxSpeed: 1.3, health: 1.4 }]),
+                SHOOT_SETTINGS: combineStats([g.basic, g.sniper, { reload: 2.8, damage: 0.9, speed: 1.3, maxSpeed: 1.3, health: 1.4 }]),
                 TYPE: "bullet", COLOR: "#3a1a3a",
             },
         }, 4),

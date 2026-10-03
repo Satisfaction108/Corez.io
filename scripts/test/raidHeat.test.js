@@ -349,7 +349,7 @@ test('core: it fights back as it breaks, every attack telegraphed; no mercy for 
     coreFinale.debugHp(1);
 });
 
-test('core: breaking it banks 20,000 by damage share (bots unpaid), the last hit on top, only a little on the ground', () => {
+test('core: breaking it caves in, then blows all 20,000 gems across the circle, nothing banked', () => {
     const c = coreFinale.current();
     const p = global.gameManager.socketManager.players[0].body;
     const sock2 = fakeSocket({ packets: [] }); sock2.talk = (...a) => sock2.packets.push(a);
@@ -357,30 +357,41 @@ test('core: breaking it banks 20,000 by damage share (bots unpaid), the last hit
     const bot = player(c.x - 400, c.y); bot.socket = null; bot.isBot = true; bot.isPlayer = false;
     const tiny = fakeSocket({ packets: [] }); tiny.talk = (...a) => tiny.packets.push(a);
     const p3 = player(c.x, c.y + 400, tiny);
-    const banked = new Map(), calls = [];
-    coreFinale.attach({ humans: () => [p, p2, p3], fighters: () => [p, p2, p3, bot], announce() {}, feed: (f) => calls.push(f), fxAt() {}, toast() {},
-        bank: (b, n) => { banked.set(b, (banked.get(b) || 0) + n); return n; }, payGems() { throw new Error('the Core banks, it does not pay out loose'); },
+    const banked = new Map(), calls = [], fxs = [];
+    coreFinale.attach({ humans: () => [p, p2, p3], fighters: () => [p, p2, p3, bot], announce: (k) => calls.push({ ann: k }), feed: (f) => calls.push(f),
+        fxAt: (x, y, k, e) => fxs.push({ k, e }), toast() {},
+        bank: (b, n) => { banked.set(b, (banked.get(b) || 0) + n); return n; }, payGems() { throw new Error('nothing is paid out directly'); },
         addPts() {}, callout: (b, k, t) => calls.push({ b, k, t }) });
-    // damage as the death check reports it: what lands, and who did it
     const hit = (who, n) => { c.damageReceived = n; c.emit('damage', { damageInflictor: [who] }); c.damageReceived = 0; };
     hit(p, 50_000); hit(p2, 30_000); hit(bot, 19_000); hit(p3, 1_000);
     const before = new Set([...entities.values()].filter(e => e.isGemPickup).map(e => e.id));
+    const cx = c.x, cy = c.y;
     c.finalKillers = [p];
     c.kill();
-    coreFinale.tick(Date.now(), [p, p2, p3, bot]);
+    const t0 = Date.now();
+    coreFinale.tick(t0, [p, p2, p3, bot]);
     const B = coreFinale.CORE_BANK;
-    assert.equal(banked.get(p), Math.round(B * 0.5 / 10) * 10 + coreFinale.LAST_HIT_GEMS, 'half, and the last hit');
-    assert.equal(banked.get(p2), Math.round(B * 0.3 / 10) * 10);
-    assert.equal(banked.get(bot), undefined, 'a bot share is not paid');
-    assert.equal(banked.get(p3), Math.round(B * 0.01 / 10) * 10, 'a 1% helper (under the minimum-share line) gets their 1%');
-    assert.ok(calls.some(x => x.k === 'corepay' && x.b === p2 && /BANKED \+6,000/.test(x.t)), 'the slam');
-    assert.ok(calls.some(x => x.k === 'corebreak' && x.b === p));
+    assert.equal(banked.size, 0, 'nobody is banked anything');
+    assert.ok(fxs.some(f => f.k === 'corecollapse' && f.e === coreFinale.COLLAPSE_MS), 'it caves in first');
+    assert.ok(!fxs.some(f => f.k === 'coredead'), 'and has not blown yet');
+    assert.ok(calls.some(x => x.k === 'corebreak' && x.b === p), 'the last hit is told');
+    const loose = () => [...entities.values()].filter(e => e.isGemPickup && !before.has(e.id));
+    assert.equal(loose().length, 0, 'no gems while it caves in');
+    coreFinale.tick(t0 + coreFinale.COLLAPSE_MS + 10, [p, p2, p3, bot]);
+    assert.ok(fxs.some(f => f.k === 'coredead'), 'then it blows');
+    assert.ok(calls.some(x => x.ann === 'coredown'));
     assert.ok(calls.some(x => x.core && x.broke && x.g === B), 'the feed line');
-    let sum = 0;
-    for (const e of entities.values()) if (e.isGemPickup && !before.has(e.id)) sum += e.gemValue;
-    assert.ok(sum <= coreFinale.SPRAY_GEMS * 2, 'only a little on the ground: ' + sum);
+    const out = loose();
+    let sum = 0, far = 0;
+    for (const e of out) { sum += e.gemValue; far = Math.max(far, Math.hypot(e.velocity.x, e.velocity.y) * 21); }
+    assert.ok(sum >= B * 0.95 && sum <= B * 1.6, 'all of it on the ground: ' + sum);
+    assert.ok(out.length >= 60, 'in plenty of pieces: ' + out.length);
+    assert.ok(far > 600, 'thrown well out across the circle: ' + far.toFixed(0));
+    assert.ok(out.every(e => (e.gemNoMagnetUntil || 0) > t0), 'no magnet until they land');
+    assert.equal(banked.size, 0, 'still nothing banked');
     assert.equal(coreFinale.current(), null);
     assert.equal(coreFinale.snapshot().s, 'down');
+    void cx; void cy;
     // the minimum share for a real helper
     const m = coreFinale.splitPayout(new Map([[1, { body: p, dmg: 97.8 }], [2, { body: p2, dmg: 2.2 }]]));
     assert.equal(m.get(p2), coreFinale.MIN_SHARE);

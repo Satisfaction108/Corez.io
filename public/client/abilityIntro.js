@@ -47,7 +47,7 @@ function abilityName() {
 function stepText(id) {
     if (id === "dash") return touch()
         ? ["Dash", "Tap to dash, hold to see what it does. 2 charges, each back in 5 seconds."]
-        : ["Dash", keyName("KEY_DASH", "Shift") + " to dash. 2 charges, each back in 5 seconds."];
+        : ["Dash", keyName("KEY_DASH", "F") + " to dash. 2 charges, each back in 5 seconds."];
     if (id === "ability") {
         const a = abilityName();
         const how = touch() ? (a.aimed ? "Drag off the button to aim, lift to use. Hold to see what it does." : "Tap to use, hold to see what it does.")

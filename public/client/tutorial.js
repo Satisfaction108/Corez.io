@@ -48,7 +48,7 @@ const DISPLAY = "'Lilita One', Rubik, Ubuntu, sans-serif";
 const DEFAULTS = {
     KEY_UP: "W", KEY_DOWN: "S", KEY_LEFT: "A", KEY_RIGHT: "D",
     KEY_AUTO_FIRE: "E", KEY_AUTO_SPIN: "C", KEY_OVER_RIDE: "R",
-    KEY_DASH: "Shift", KEY_ABILITY: "Q",
+    KEY_DASH: "F", KEY_ABILITY: "Q",
     KEY_TOGGLE_MAP: "M", KEY_CLASS_TREE: "T", KEY_MAX_STAT: "F", KEY_CHAT: "Enter",
     KEY_UPGRADE_ATK: "1", KEY_UPGRADE_SHI: "0", KEY_UPGRADE_MIN: "-",
     KEY_KIT_1: "Z", KEY_KIT_2: ",", KEY_KIT_3: "N", KEY_SIDEARM: "X", KEY_SAVE: "L",

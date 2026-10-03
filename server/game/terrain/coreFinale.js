@@ -6,10 +6,10 @@
 // from SHARD_BELOW crystal shards at whoever is close, from RAGE_BELOW faster
 // and more of them, and the shockwave hurts. Every attack is telegraphed
 // (FX corecharge: the heart glows up, a ring closes on it) and the shards
-// mark where they land. Breaking it banks CORE_BANK gems straight into the
-// bank of every player who hurt it, split by damage (a bot's share just
-// isn't paid), plus a bonus for the last hit; only a small cosmetic spray
-// hits the ground.
+// mark where they land. Breaking it: it caves in to a bright point for
+// COLLAPSE_MS (FX corecollapse), then blows (FX coredead) and throws all
+// CORE_BANK gems across the final circle. Nothing is banked for anyone:
+// grab what you can and get it to the vault before the storm shuts.
 //
 // The site is picked at raid start (so storm.js can aim the final circle at
 // it): CORE_OFFSET from the Center Vault in a random direction, and the final
@@ -50,14 +50,19 @@ const SHARD_N = 3;
 const SHARD_RAGE_N = 4;
 const SHARD_FLIGHT_MS = 650;       // where it lands is marked this long first
 const SHARD_HIT_R = 70;
-const SHARD_DMG = 0.12;            // of max health
-const SHARD_RAGE_DMG = 0.16;
+const SHARD_DMG = 0.09;            // of max health (was 0.12)
+const SHARD_RAGE_DMG = 0.12;       // (was 0.16)
 const LAST_HIT_GEMS = 1000;
 const CORE_BANK = 20_000;          // split among the players who broke it
 const MIN_SHARE_AT = 0.02;         // dealt at least this share: never less than MIN_SHARE
 const MIN_SHARE = 500;
 const SPRAY_GEMS = 300;            // the little that still hits the ground
 const LAST_HIT_PTS = 800;
+const COLLAPSE_MS = 1600;          // caving in before it blows
+const SPEW_PIECES = 160;
+const SPEW_EDGE = 0.92;            // gems land out to this share of the circle
+const SPEW_MAX_R = 2400;
+const GEM_TRAVEL = 21;             // a gem launched at v slides about 21 * v (measured)
 
 // Ten times what it used to be at the base. A maxed tank puts ~700-1500 a
 // second into it (a bot less), so ~1000 per human and ~400 per bot of
@@ -99,6 +104,7 @@ let hitters = new Map();
 let coreGems = 0;
 let brokeBy = "";
 let brokeAt = 0;
+let blast = null;       // { x, y, at } the caved-in Core, waiting to blow
 let lastErr = "";
 
 // dig_royale.js: humans(), fighters(), announce(kind, text, sub, dur) (every
@@ -157,6 +163,7 @@ function clear() {
     coreGems = 0;
     brokeBy = "";
     brokeAt = 0;
+    blast = null;
 }
 
 // Clears the arena: returns how many rocks went.
@@ -241,9 +248,9 @@ function spawnCore() {
     nextPulseAt = Date.now() + PULSE_FIRST_MS;
     nextShardAt = 0;
     const fmt = (n) => n.toLocaleString('en-US');
-    if (hooks.announce) hooks.announce('core', "THE CORE HAS SURFACED", "Break it: " + fmt(coreGems) + " gems straight into the banks of everyone who hits it.", 4800);
+    if (hooks.announce) hooks.announce('core', "THE CORE HAS SURFACED", "Break it and " + fmt(coreGems) + " gems blow out across the circle. Bank what you grab.", 4800);
     if (hooks.feed) hooks.feed({ core: 1, spawn: 1, g: coreGems });
-    if (hooks.toast) hooks.toast("The Core has surfaced at the centre. Break it, then bank next door.", 9000);
+    if (hooks.toast) hooks.toast("The Core has surfaced at the centre. Break it, grab the gems, bank them next door.", 9000);
     if (hooks.fxAt) hooks.fxAt(site.x, site.y, 'coreup');
     return o;
 }
@@ -274,32 +281,57 @@ function erupt(x, y, total) {
     return pieces.length;
 }
 
+// Throws `total` gems out of (x, y) across the storm's circle, each aimed at
+// a spot on open ground and launched hard enough to slide there.
+function spew(x, y, total, t) {
+    let mult = (ore) => 1;
+    try { const rm = require('./raidMods.js'); mult = (ore) => rm.gemValueMult(ore); } catch { /* */ }
+    let cx = x, cy = y, R = 1400;
+    try { const st = storm().snapshot(t); if (st && st.r > 0) { cx = st.cx; cy = st.cy; R = st.r; } } catch { /* */ }
+    R = Math.min(SPEW_MAX_R, Math.max(500, R * SPEW_EDGE));
+    const g = tg();
+    const pieces = gems.splitValue(total, { share: { 4: 0.2, 3: 0.4, 2: 0.25, 1: 0.15 }, shardValue: 150, maxPieces: SPEW_PIECES });
+    pieces.forEach((p, i) => {
+        let tx = cx, ty = cy;
+        for (let k = 0; k < 8; k++) {
+            const a = Math.random() * Math.PI * 2, r = R * Math.sqrt(Math.random());
+            tx = cx + Math.cos(a) * r; ty = cy + Math.sin(a) * r;
+            if (!g || !g.pointInRock || !g.pointInRock(tx, ty)) break;
+        }
+        const dx = tx - x, dy = ty - y, d = Math.hypot(dx, dy) || 1;
+        const v = Math.min(120, d / GEM_TRAVEL);
+        const gem = gems.spawnGem(x + dx / d * 30, y + dy / d * 30, Math.round(p.v * mult(p.ore)), p.cls, p.size, dx / d * v, dy / d * v, p.ore);
+        // no magnet until it has landed
+        if (gem) gem.gemNoMagnetUntil = t + 1400 + (i % 20) * 30;
+    });
+    return pieces.length;
+}
+
 function onBroken(o) {
     if (o !== core || state !== 'up') return;
     state = 'down';
     core = null;
     brokeAt = Date.now();
-    if (zone) zone.until = brokeAt + AFTER_MS;
+    if (zone) zone.until = brokeAt + AFTER_MS + COLLAPSE_MS;
     if (o._cleared) return;
     const killer = rootKiller(o);
-    erupt(o.x, o.y, SPRAY_GEMS);
     brokeBy = killer ? String(killer.name || "Someone") : "";
-    const fmt = (n) => n.toLocaleString('en-US');
-    // everyone who hurt it: their share, banked on the spot
-    const paid = splitPayout(hitters);
-    for (const [body, n] of paid) {
-        if (!body.socket) continue;
-        const got = hooks.bank ? hooks.bank(body, n) : (hooks.payGems ? (hooks.payGems(body, n), n) : 0);
-        if (got > 0 && hooks.callout) hooks.callout(body, 'corepay', "BANKED +" + fmt(got), 0, "Your share of the Core. It's safe in your bank.", 3200);
-    }
+    // it caves in first; tick() blows it COLLAPSE_MS later
+    blast = { x: o.x, y: o.y, at: brokeAt + COLLAPSE_MS, killer };
+    if (hooks.fxAt) hooks.fxAt(o.x, o.y, 'corecollapse', COLLAPSE_MS);
     if (killer && killer.socket) {
-        if (hooks.bank) hooks.bank(killer, LAST_HIT_GEMS); else if (hooks.payGems) hooks.payGems(killer, LAST_HIT_GEMS);
         if (hooks.addPts) hooks.addPts(killer, LAST_HIT_PTS);
-        if (hooks.callout) hooks.callout(killer, 'corebreak', "YOU BROKE THE CORE", LAST_HIT_PTS, "+" + fmt(LAST_HIT_GEMS) + " gems banked for the last hit.", 4200);
+        if (hooks.callout) hooks.callout(killer, 'corebreak', "YOU BROKE THE CORE", LAST_HIT_PTS, "Get clear, it's about to blow.", 2600);
     }
-    if (hooks.announce) hooks.announce('coredown', "THE CORE IS DOWN", (brokeBy ? brokeBy + " broke it. " : "") + "Grab the gems!", 3600, killer);
+}
+
+function blow(t) {
+    const b = blast;
+    blast = null;
+    spew(b.x, b.y, coreGems || CORE_BANK, t);
+    if (hooks.fxAt) hooks.fxAt(b.x, b.y, 'coredead');
+    if (hooks.announce) hooks.announce('coredown', "THE CORE IS DOWN", "Gems everywhere. Grab them and bank them before the storm shuts!", 4200, b.killer);
     if (hooks.feed) hooks.feed({ core: 1, broke: 1, by: brokeBy, g: coreGems });
-    if (hooks.fxAt) hooks.fxAt(o.x, o.y, 'coredead');
 }
 
 function hurt(body, frac, t) {
@@ -395,6 +427,7 @@ function tick(t, fighters) {
         if (st.fin) spawnCore();
         return;
     }
+    if (blast && t >= blast.at) { try { blow(t); } catch (e) { lastErr = String(e && e.stack || e); } }
     if (state !== 'up' || !core) return;
     if (!alive(core)) { onBroken(core); return; }
     core.invuln = false;
@@ -450,8 +483,9 @@ function debugHp(f, by) {
     // 0: break it now, credited to `by`
     if (!(+f > 0)) {
         if (by) { core.finalKillers = [by]; hitters.set(by.id, { body: by, at: Date.now(), n: 1 }); }
-        try { core.kill(); } catch { /* */ }
-        onBroken(core);
+        const c = core;
+        try { c.kill(); } catch { /* */ }
+        onBroken(c);
         return 0;
     }
     core.health.amount = Math.max(1, core.health.max * Math.min(1, +f));
@@ -461,6 +495,7 @@ function debugHp(f, by) {
 module.exports = {
     ON, CORE_OFFSET, ARENA_R, LANE_R, COVER_R, ZONE_R, PULSE_R, SHARD_BELOW, RAGE_BELOW, LAST_HIT_GEMS, LAST_HIT_PTS,
     HP_MAX, CORE_BANK, MIN_SHARE, SPRAY_GEMS, splitPayout, SHARD_DMG, SHARD_RAGE_DMG, PULSE_DMG, CHARGE_MS, SHARD_CHARGE_MS, SHARD_FLIGHT_MS,
+    COLLAPSE_MS, SPEW_PIECES, spew,
     attach, enabled, newRaid, clear, tick, snapshot, current, siteOf, planSite, carveArena, healthFor, gemsFor, erupt,
     debugSpawn, debugHp, _state: () => ({ state, warned, lastErr, shards: shards.length, frac: frac(), charge: charge && charge.kind }),
 };

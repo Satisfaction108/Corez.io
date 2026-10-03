@@ -63,7 +63,7 @@ const S = {
     threat: 0, threatAt: 0, lowHp: 0, me: null,
     core: null, coreSeen: 0, coreCracks: null, coreCrackId: -1, coreLastHp: 1, coreHitAt: 0,
     chargeAt: -1e9, chargeMs: 900, chargePulse: false,
-    downAt: 0, downX: 0, downY: 0,
+    downAt: 0, downX: 0, downY: 0, collAt: -1e9, collMs: 1600, collX: 0, collY: 0, collR: 110,
     safeAt: 0, huntedAt: 0, coreUpAt: 0,
     raidId: 0, banked: 0, depStart: -1, doneAt: 0, firstBank: false,
     combo: 0, comboAt: -1e9, ryCount: 0, meteorN: 0, crateSrc: null, crateIds: new Set(), supplyPingAt: -1e9, supplyX: 0, supplyY: 0, supplyZ: 72, bossSeen: 0, bossUpAt: -1e9, bossX: 0, bossY: 0,
@@ -248,7 +248,18 @@ export function onFX(kind, x, y, extra, extra2, extra3, extra4) {
             S.chargeAt = now; S.chargeMs = Math.max(200, extra | 0); S.chargePulse = (extra2 | 0) === 1;
             if (near(x, y, 1200)) { try { if (gameSound.uiClick) gameSound.uiClick(); } catch (e) { /* */ } }
             return true;
+        case "corecollapse":
+            // broken: it caves in to a bright point (drawn in drawWorld),
+            // then blows (coredead) when the server says so
+            S.collAt = now; S.collX = x; S.collY = y;
+            S.collMs = Math.max(300, extra | 0) || 1600;
+            S.collR = S.core && S.core.r > 0 ? S.core.r : 110;
+            if (near(x, y, 2600)) { juice.rumble(S.collMs, 5); juice.shake(18, 300); }
+            juice.glitch(0.4, 300);
+            sfx("alarm");
+            return true;
         case "coredead":
+            S.collAt = -1e9;
             S.downAt = now; S.downX = x; S.downY = y;
             ring(x, y, "#ffffff", 30, 1300, 1200, 18);
             ring(x, y, CORE, 30, 1000, 1500, 12);
@@ -258,11 +269,13 @@ export function onFX(kind, x, y, extra, extra2, extra3, extra4) {
             juice.sparks(x, y, 40, 520, 1200, 1, "#2b2433", TAU, 0, 10);
             ring(x, y, "#ffffff", 60, 1800, 1900, 26);
             juice.sparks(x, y, 40, 1100, 1800, 4, null, TAU, 0, 7);
-            if (near(x, y, 1600)) {
-                // the big one: time slows, a white-out, light everywhere
+            if (near(x, y, 2600)) {
+                // the big one: time slows, a white-out, light everywhere,
+                // and the hardest shake in the game
                 juice.slowMo(900, 0.3);
                 juice.hitStop(110, 120);
-                juice.shake(46, 900);
+                juice.shake(90, 1400, 52);
+                juice.rumble(1800, 9);
                 juice.glitch(1, 700);
                 juice.flash("#ffffff", 750, 0.85);
                 juice.lightLeak("255,240,200", 2200);
@@ -790,6 +803,39 @@ export function drawWorld(c, px, py, ratio) {
             c.strokeStyle = "#ffffff"; c.lineWidth = Math.max(1.5, 6 * (1 - k) * ratio);
             c.beginPath(); c.arc(tx, ty, (30 + 60 * k) * ratio, 0, TAU); c.stroke();
         }
+    }
+    // the Core caving in: shrinking to a point, brighter and faster as it
+    // goes, with rings rushing in
+    const ca = now - S.collAt;
+    if (ca >= 0 && ca < S.collMs) {
+        const k = ca / S.collMs, e = k * k;
+        const cx = toX(S.collX), cy = toY(S.collY);
+        const R0 = S.collR * ratio;
+        const r = Math.max(2, R0 * (1 - 0.95 * e));
+        const jit = calm() ? 0 : (2 + 6 * k) * ratio;
+        const jx = cx + (Math.random() - 0.5) * jit, jy = cy + (Math.random() - 0.5) * jit;
+        for (let i = 0; i < 3; i++) {
+            const f = ((k * 3 + i / 3) % 1);
+            c.globalAlpha = (0.25 + 0.55 * k) * f;
+            c.strokeStyle = i === 1 ? "#ffffff" : CORE;
+            c.lineWidth = Math.max(1.5, (3 + 5 * k) * ratio);
+            c.beginPath(); c.arc(jx, jy, r + R0 * 2.4 * (1 - f), 0, TAU); c.stroke();
+        }
+        if (juice.glowOn()) {
+            c.save();
+            c.globalCompositeOperation = "lighter";
+            c.globalAlpha = 0.25 + 0.5 * k;
+            c.fillStyle = CORE;
+            c.beginPath(); c.arc(jx, jy, r * (1.8 + 1.4 * k), 0, TAU); c.fill();
+            c.restore();
+        }
+        c.globalAlpha = 1;
+        c.fillStyle = CORE;
+        c.beginPath(); c.arc(jx, jy, r, 0, TAU); c.fill();
+        c.strokeStyle = "#0c0a0e"; c.lineWidth = Math.max(2, 4 * ratio * (1 - 0.6 * e));
+        c.stroke();
+        c.fillStyle = "#ffffff";
+        c.beginPath(); c.arc(jx, jy, r * (0.35 + 0.5 * k), 0, TAU); c.fill();
     }
     // the Core going down: a white-out close by
     if (S.downAt) {

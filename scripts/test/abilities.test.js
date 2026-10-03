@@ -685,8 +685,8 @@ test('smoke hides everyone in it from the outside: not sent, no radar, HUD marks
     assert.equal(ab.smokeView(t, inA), -1, 'the thrower outside the cloud: not sent either');
     assert.ok(ab.smokeView(mate, inA) >= 0.4, 'a teammate sees a ghost');
     assert.ok(ab.smokeView(inA, inA) > 0, 'you see yourself');
-    const inside = ab.smokeView(inB, inA);
-    assert.ok(inside > 0 && inside < 0.4, 'inside the cloud: faint ' + inside);
+    assert.equal(ab.smokeView(inB, inA), -1, 'an enemy in the same cloud: not sent');
+    assert.equal(ab.smokeView(near, inA), -1, 'an enemy right on top of it: not sent');
     assert.ok(ab.smokeView(far, far) === 1, 'not hidden: as normal');
     // walk out a little: still hidden, and the HUD keeps the spot it went in
     inA.x += 60;
@@ -1338,7 +1338,7 @@ test('wiring: ab packet, keybinds (Shift dash, Q ability, comma kit 2, R overrid
     assert.match(sockets, /case "ab": \{/);
     assert.match(sockets, /abil\.dash\(player\.body, 0, 0\)/);
     const g = fs.readFileSync(path.join(REPO, 'public', 'client', 'global.js'), 'utf8');
-    assert.match(g, /KEY_DASH: 16/);
+    assert.match(g, /KEY_DASH: 70/);
     assert.match(g, /KEY_ABILITY: 81/);
     assert.match(g, /KEY_KIT_2: 188/);
     assert.match(g, /KEY_OVER_RIDE: 82/);

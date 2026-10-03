@@ -140,7 +140,13 @@ import * as cosmetics from './account/cosmetics.js';
             delete keybinds.KEY_DEBUG;
             setKeybinds();
         }
-        // Shift (dash), Q (ability), comma (kit slot 2), period (screenshot)
+        // Dash moved off Shift to F (Shift is repel again): a dash bind still
+        // saved on Shift goes back to the new default
+        if (keybinds.KEY_DASH && keybinds.KEY_DASH[1] === 16) {
+            delete keybinds.KEY_DASH;
+            setKeybinds();
+        }
+        // Dash, Q (ability), comma (kit slot 2), period (screenshot)
         // and R (AI override) are new defaults: a bind someone saved on one of
         // those keys keeps it, and the new action starts unbound until they
         // pick a key for it
@@ -161,7 +167,9 @@ import * as cosmetics from './account/cosmetics.js';
         for (const id of NEW_DEFAULTS) {
             if (keybinds[id]) continue;
             const code = global[id];
-            if (Object.keys(keybinds).some(k => k !== id && keybinds[k] && keybinds[k][1] === code)) {
+            // F is hold-to-max-stat too; in a raid dash takes it first
+            const shared = id === "KEY_DASH" ? ["KEY_MAX_STAT", "KEY_BECOME"] : [];
+            if (Object.keys(keybinds).some(k => k !== id && !shared.includes(k) && keybinds[k] && keybinds[k][1] === code)) {
                 keybinds[id] = ["", -1];
                 setKeybinds();
             }
@@ -8879,7 +8887,10 @@ import * as cosmetics from './account/cosmetics.js';
             }
             return;
         }
-        global.kitUnlockHeld = slotLive ? u.id : null;
+        // the slot shows its icon straight away (a queue of cards used to
+        // leave the third slot blank for several seconds); the card's icon
+        // just flies onto it at the end
+        global.kitUnlockHeld = null;
         const c = ctx[2];
         const calm = !!(global.reducedMotion && global.reducedMotion());
         const sw = global.screenWidth, shh = global.screenHeight;

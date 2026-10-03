@@ -1058,17 +1058,13 @@ function unhideBody(body) {
 }
 // Who sees a tank the smoke hides (sockets.js view): -1 = not sent at all,
 // else the alpha to draw it at. Its own player and teammates see it as a
-// ghost, anyone inside a cloud sees others in the smoke faintly, and an enemy
-// right on top of it (SMOKE_PEEK) barely makes it out.
-const SMOKE_PEEK = 150;
-function smokeView(viewer, other, t = now()) {
+// ghost; to an enemy it's gone, however close, even from inside the cloud.
+const SMOKE_PEEK = 0;
+function smokeView(viewer, other) {
     if (!other || !other.smokeHidden) return 1;
     if (!viewer || !live(viewer)) return -1;
     if (viewer === other) return 0.35;
     if (viewer.team === other.team) return 0.5;
-    const d = Math.hypot(viewer.x - other.x, viewer.y - other.y);
-    if ((viewer.smokeHidden || inCloud(viewer, t)) && d < SMOKE.radius * 2) return 0.25;
-    if (d < SMOKE_PEEK) return 0.05 + 0.18 * (1 - d / SMOKE_PEEK);
     return -1;
 }
 // Where the HUD may show a tank: where it went into the smoke while hidden.
