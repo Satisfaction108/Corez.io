@@ -127,12 +127,35 @@ royale.tick();
 
 // ===================================================================
 
-test('stage: 8 / 25 / 60 minutes played, fixed for the raid', () => {
-    assert.deepEqual(T.STAGE_MIN, [8, 25, 60]);
+test('stage: 3 / 7 / 12 minutes played, moving up mid-raid; bosses leave you 8 minutes', () => {
+    assert.deepEqual(T.STAGE_MIN, [3, 7, 12]);
+    assert.equal(T.BOSS_SAFE_MIN, 8);
     const at = (m) => director.stageFor(m * MIN);
-    assert.deepEqual([at(0), at(7.99), at(8), at(24.9), at(25), at(59.9), at(60), at(600)], [0, 0, 1, 1, 2, 2, 3, 3]);
+    assert.deepEqual([at(0), at(2.99), at(3), at(6.9), at(7), at(11.9), at(12), at(600)], [0, 0, 1, 1, 2, 2, 3, 3]);
     // through the real spawn path
-    for (const [m, want] of [[0, 0], [5, 0], [12, 1], [30, 2], [90, 3]]) {
+    for (const [m, want, safe] of [[0, 0, true], [2, 0, true], [5, 1, true], [9, 2, false], [30, 3, false]]) {
+        const p = spawn(m);
+        assert.equal(p.nxStage, want, m + ' minutes');
+        assert.equal(p.nxBossSafe, safe, m + ' minutes: boss grace');
+        assert.equal(director.youFields(p.socket).nx, want);
+        p.kill();
+    }
+    // a raid that started at stage 0 moves up as the minutes go by
+    const q = spawn(2);
+    assert.equal(q.nxStage, 0);
+    const cl = global.gameManager.socketManager.clients;
+    if (!cl.includes(q.socket)) cl.push(q.socket);
+    const realNow = Date.now, t0 = realNow();
+    try {
+        q.royaleBornAt = t0 - 2 * MIN;           // two more minutes alive: 4 in all
+        Date.now = () => t0 + 20_000;
+        director.tick(t0 + 20_000);
+    } finally { Date.now = realNow; }
+    assert.equal(q.nxStage, 1, 'stage 1 mid-raid');
+    assert.equal(director.youFields(q.socket).nx, 1);
+    assert.equal(q.nxBossSafe, true, 'still under 8 minutes: bosses still leave them be');
+    q.kill();
+    for (const [m, want] of [[0, 0], [2, 0], [5, 1], [9, 2], [30, 3]]) {
         const p = spawn(m);
         assert.equal(p.nxStage, want, m + ' minutes');
         assert.equal(director.youFields(p.socket).nx, want);
@@ -143,8 +166,8 @@ test('stage: 8 / 25 / 60 minutes played, fixed for the raid', () => {
     const g = spawn(0, 0, (nextY += 600), guest);
     assert.equal(g.nxStage, 0, 'unknown guest: a first raid');
     g.kill();
-    // fixed: more play this raid doesn't move it, and a reload keeps it
-    const sock = fakeSocket(5, { guestId: 'a'.repeat(32) });
+    // a respawn or reload doesn't reset it (only the mid-raid check moves it up)
+    const sock = fakeSocket(1, { guestId: 'a'.repeat(32) });
     const a = spawn(0, 0, (nextY += 600), sock);
     assert.equal(a.nxStage, 0);
     sock._royalePlayMs = 10 * MIN;
@@ -154,10 +177,10 @@ test('stage: 8 / 25 / 60 minutes played, fixed for the raid', () => {
     const reload = fakeSocket(60, { guestId: 'a'.repeat(32) });
     const a3 = spawn(0, 0, (nextY += 600), reload);
     assert.equal(a3.nxStage, 0, 'a reload in the same raid keeps it');
-    // the next raid looks again: 5 + 10 minutes is a second raid
+    // the next raid looks again: 1 + 10 minutes is stage 2
     director.newRaid();
     const a4 = spawn(0, 0, (nextY += 600), sock);
-    assert.equal(a4.nxStage, 1);
+    assert.equal(a4.nxStage, 2);
     for (const o of [a2, a3, a4]) o.kill();
     loop(2);
 });
@@ -251,7 +274,7 @@ test('storm: 0.4x in a first raid, 0.7x in the second, full after, and a loud wa
     storm.start();
     const st = storm.snapshot();
     const out = (i) => ({ x: st.cx + st.r + 500 + i * 300, y: st.cy });
-    const bodies = [0, 12, 120].map((m, i) => { const o = out(i); return spawn(m, o.x, o.y); });
+    const bodies = [0, 5, 120].map((m, i) => { const o = out(i); return spawn(m, o.x, o.y); });
     for (const b of bodies) { b.spawnGraceUntil = 0; b.invuln = false; b.health.amount = b.health.max; b.shield.amount = b.shield.max; b._stormExpMs = 0; b._stormSeenAt = 0; }
     const pool = (b) => b.health.amount + b.shield.amount;
     const start = bodies.map(pool);

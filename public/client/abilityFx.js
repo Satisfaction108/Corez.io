@@ -142,7 +142,14 @@ export function onFx(m, punch) {
     const life = LIFE[kind];
     if (life) f.life = life(f);
     if (kind === "fling" || kind === "flinghit" || kind === "rocket" || kind === "rush") { f.trail = new Float32Array(TRAIL_N * 3); f.tn = 0; f.tAt = 0; }
-    if (kind === "pad") { pads.push(f); if (pads.length > 12) pads.shift(); }
+    // a pad can be announced late (you came into view after it was placed):
+    // one copy per pad, and no placing burst for an old one
+    if (kind === "pad") {
+        for (let i = pads.length - 1; i >= 0; i--) if (pads[i].id === f.id) { pads.splice(i, 1); }
+        for (let i = fx.length - 1; i >= 0; i--) if (fx[i].k === "pad" && fx[i].id === f.id) fx.splice(i, 1);
+        f.late = f.b < 29000;
+        pads.push(f); if (pads.length > 12) pads.shift();
+    }
     else if (kind === "padgone") { for (const p of pads) if (p.id === f.id && !p.goneAt) p.goneAt = f.born; return; }
     else if (kind === "surface") {
         // the channel is over: its dust stops, a burst marks where it came up
@@ -238,6 +245,7 @@ function juiceFor(f, mine, near) {
                 if (mine) J.shake(7, 200);
                 break;
             case "pad":
+                if (f.late) break;
                 J.ring(f.x, f.y, AB_COLOR.pad, 10, 80, 360, 5);
                 J.burst(f.x, f.y, 10, "#fff3d9", 90, 420, 3, 4);
                 break;

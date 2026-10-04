@@ -8,6 +8,8 @@ import * as rankCeremony from "./account/rankCeremony.js";
 import * as dustHud from "./account/dustHud.js";
 import * as raidFinale from "./raidFinale.js";
 import * as raidHeat from "./raidHeat.js";
+import * as juice from "./juice.js";
+import * as hitFx from "./hitFx.js";
 import { toast as menuToast } from "./account/ui.js";
 import saveCode from "./saveCode.js";
 import * as abilityFx from "./abilityFx.js";
@@ -527,6 +529,7 @@ function reducedMotion() {
     } catch (e) { return false; }
 }
 global.reducedMotion = reducedMotion;
+hitFx.init({ config, global, juice });
 // Seconds until the next raid while one is over (0 otherwise), off the one
 // deadline the RY handler keeps. Stale raid state reads as 0.
 global.raidNextLeft = (now) => {
@@ -567,6 +570,8 @@ function pushDamageNumber(targetId, amount, tier, taken) {
     // Out of view (or already gone) - nothing to anchor a number to.
     if (!target) return;
     const now = performance.now();
+    // how hard it was and who did it, for the flash, punch and sparks (hitFx.js)
+    try { hitFx.onDamage(target, amount, taken, taken ? null : global.entities.find(e => e.id === gui.playerid), now); } catch (e) { /* */ }
     const hp = target.health || 0;
     const list = global.damageNumbers;
     for (let i = list.length - 1; i >= 0; i--) {

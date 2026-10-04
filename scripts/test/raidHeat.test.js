@@ -1025,6 +1025,62 @@ test('juice: cracks are fixed per seed and stay in reach; counters roll up; kill
     assert.equal(J.comboAfter(n, at, 9000 + J.COMBO_MS + 1), 1, 'the window closes');
 });
 
+test('juice: a hit flashes white hot then red, punches by size, and settings turn it down', async () => {
+    const H = await import(pathToFileURL(path.join(REPO, 'public', 'client', 'hitFx.js')).href);
+    const f = { blend: 0, hot: 0 };
+    // crisp: full hot on the first frames, gone by the end
+    H.flashAt(0, 0.95, f); assert.equal(f.hot, 1); assert.ok(f.blend >= 0.95);
+    H.flashAt(16, 0.95, f); assert.equal(f.hot, 1);
+    H.flashAt(H.HOT_MS + H.HOT_FADE_MS, 0.95, f); assert.equal(f.hot, 0); assert.ok(f.blend > 0.2, 'still red ' + f.blend);
+    H.flashAt(H.FLASH_MS, 0.95, f); assert.equal(f.blend, 0);
+    for (let t = 0; t < H.FLASH_MS; t += 8) { const a = H.flashAt(t, 0.95, f).blend; const b = H.flashAt(t + 8, 0.95, f).blend; assert.ok(b <= a + 1e-9, 'fades ' + t); }
+    // punch: chip hits stay subtle, a fat one is about 1.1x, back to rest by PUNCH_MS
+    const chip = H.punchAmp(H.powFor(2), true), big = H.punchAmp(H.powFor(40), true);
+    assert.ok(chip < 0.03, 'chip ' + chip);
+    assert.ok(big >= 0.09 && big <= 0.11, 'big ' + big);
+    assert.ok(H.punchAmp(H.powFor(40), true) > H.punchAmp(H.powFor(40), false), 'yours pop a bit more');
+    assert.equal(H.punchShape(0), 1);
+    assert.equal(H.punchShape(H.PUNCH_MS), 0);
+    for (let t = 0; t < H.PUNCH_MS; t += 5) assert.ok(H.punchShape(t) > -0.1, 'small undershoot');
+    assert.equal(H.nudgeShape(H.NUDGE_MS), 0);
+    // through the settings
+    const cfg = { game: { hitFlash: true }, graphical: { fewerEffects: false, fxLevel: 1, lightSafe: false, noShake: false } };
+    let calm = false;
+    const sparks = [];
+    const glob = { reducedMotion: () => calm, lowFx: false };
+    H.init({ config: cfg, global: glob, juice: { sparks: (...a) => sparks.push(a) } });
+    const target = { x: 100, y: 0, size: 30, render: { hitAt: 1000 } };
+    const me = { x: 0, y: 0 };
+    H.onDamage(target, 40, false, me, 995);
+    assert.ok(sparks.length >= 2 && sparks.length <= 4, 'a few sparks');
+    assert.ok(sparks[0][0] < 100, 'off the side facing you');
+    const n = H.camNudge(995);
+    assert.ok(n.x > 0 && n.x <= 2 && Math.abs(n.y) < 1e-9, 'leans toward the target ' + n.x);
+    let look = H.bodyLook(target.render, false, 1000);
+    assert.ok(look.scale > 1.09 && look.tintHot && look.hot === 1);
+    look = H.bodyLook(target.render, true, 1000);
+    assert.ok(!look.tintHot && look.scale < 1.06, 'your own tank: red, smaller punch');
+    calm = true;
+    assert.equal(H.bodyLook(target.render, false, 1000).scale, 1, 'reduced motion: no punch');
+    sparks.length = 0;
+    H.onDamage(target, 40, false, me, 3000);
+    assert.equal(H.camNudge(3000).x, 0, 'reduced motion: no nudge');
+    calm = false;
+    cfg.graphical.fewerEffects = true;
+    sparks.length = 0;
+    H.onDamage(target, 40, false, me, 5000);
+    assert.equal(sparks.length, 0, 'fewer effects: no sparks');
+    assert.ok(H.bodyLook({ hitAt: 5000, hitPow: 1, hitPowAt: 5000, hitMine: true }, false, 5000).scale < 1.06, 'fewer effects: half punch');
+    cfg.graphical.fewerEffects = false;
+    cfg.game.hitFlash = false;
+    assert.equal(H.bodyLook(target.render, false, 1000).blend, 0, 'Hit feedback off');
+    assert.equal(H.bodyLook(target.render, false, 1000).scale, 1);
+    cfg.game.hitFlash = true;
+    cfg.graphical.lightSafe = true;
+    look = H.bodyLook(target.render, false, 1000);
+    assert.ok(!look.tintHot && look.blend <= 0.73, 'light sensitive: no white-out');
+});
+
 test('switches: every kill switch is documented', () => {
     const env = fs.readFileSync(path.join(SERVER, '.env.example'), 'utf8');
     for (const k of ['ROYALE_HUNTED', 'ROYALE_CORE', 'ROYALE_DROPIN', 'ROYALE_FIRST_VAULT', 'ROYALE_SIDEKICKS', 'ROYALE_SUPPLY', 'ROYALE_EARLY_ORE', 'ROYALE_RUSH']) assert.ok(new RegExp('^#?\\s*' + k + '=', 'm').test(env), k);

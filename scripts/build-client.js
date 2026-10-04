@@ -60,6 +60,7 @@ const HOT = new Set([
     "client/raidHeat.js",
     "client/juice.js",
     "client/juiceMath.js",
+    "client/hitFx.js",
     "client/skyDrop.js",
     "client/raidShare.js",
     "client/touch.js",

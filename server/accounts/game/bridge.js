@@ -83,6 +83,18 @@ function init(socketManager) {
     unsub = accounts.bus.onGame(msg => {
         // Discord /dust
         if (require('./adminGems').handle(manager, msg)) return;
+        // Discord /raidreset: this server's raid resets into a staging wait
+        if (msg && msg.t === 'raidReset') {
+            if (typeof Config === 'undefined' || !Config.dig_royale || Config.tutorial) return;
+            let until = 0, players = 0;
+            try {
+                const dr = require('../../game/gamemodes/scripts/dig_royale.js');
+                until = dr.beginStaging(msg.ms);
+                players = (manager && manager.clients ? manager.clients.filter(c => c && !c.terminated).length : 0);
+            } catch (e) { console.error('[accounts] raid reset failed: ' + ((e && e.stack) || e)); }
+            try { accounts.bus.toMain({ t: 'raidResetDone', reqId: msg.reqId, until, players, duos: !!Config.royale_duos }); } catch (e) { /* */ }
+            return;
+        }
         if (!msg || !manager) return;
         if (msg.t === 'kick') {
             for (const s of manager.clients.slice()) {

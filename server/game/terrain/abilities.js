@@ -570,12 +570,28 @@ const USES = {
         while (mine.length >= PAD.perOwner) { const old = mine.shift(); pads.splice(pads.indexOf(old), 1); fx('padgone', old.x, old.y, 0, 0, old.id); }
         const id = (++padSeq) & 0x7fffffff;
         const ang = Math.atan2(P.dir.y, P.dir.x);
-        pads.push({ id, x: P.x, y: P.y, ang, until: t + PAD.ms, armAt: t + PAD.armMs, owner: body });
-        fx('pad', P.x, P.y, ang, PAD.ms, id);
+        const pad = { id, x: P.x, y: P.y, ang, until: t + PAD.ms, armAt: t + PAD.armMs, owner: body, told: new Set(), toldAt: 0 };
+        pads.push(pad);
+        announcePad(pad, t);
         return { ok: true };
     },
 };
 let padSeq = 0;
+
+// A pad is drawn by whoever was told about it, and it lasts PAD.ms: anyone
+// who comes into view later hears about it then (with the time it has
+// left), or it would launch them from thin air.
+function announcePad(p, t) {
+    p.toldAt = t;
+    const clients = (global.gameManager && global.gameManager.socketManager && global.gameManager.socketManager.clients) || [];
+    for (const c of clients) {
+        if (!c || p.told.has(c)) continue;
+        const cam = c.camera;
+        if (!cam || Math.abs(cam.x - p.x) > FX_RANGE || Math.abs(cam.y - p.y) > FX_RANGE) continue;
+        p.told.add(c);
+        try { c.talk('AF', 'pad', Math.round(p.x), Math.round(p.y), Math.round(p.ang * 1000) / 1000, Math.max(0, Math.round(p.until - t)), p.id | 0); } catch { /* */ }
+    }
+}
 
 // Damages every rock within R (outside `skip`) by frac of its max health;
 // frac >= 1 shatters it. Emeralds only crack. -> how many broke.
@@ -1169,6 +1185,7 @@ function tickPads(t, actors) {
     for (let i = pads.length - 1; i >= 0; i--) {
         const p = pads[i];
         if (t > p.until) { pads.splice(i, 1); continue; }
+        if (p.told && t - (p.toldAt || 0) >= 400) announcePad(p, t);
         if (t < p.armAt) continue;
         for (const a of actors) {
             const b = a && a.body ? a.body : a;

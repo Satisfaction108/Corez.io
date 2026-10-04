@@ -27,6 +27,7 @@ import * as dustHud from './account/dustHud.js';
 import { BY_ID as ACH_BY_ID } from './account/achievements.js';
 import * as cosmetics from './account/cosmetics.js';
 import * as sidekicks from './sidekicks.js';
+import * as hitFx from './hitFx.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -35,9 +36,9 @@ import * as sidekicks from './sidekicks.js';
     // The server triggers the blink (entity.js stamps hitAt and reports a
     // decaying hitFlash); this only draws it. A hit flashes the body red,
     // diep style; a body that's red already flashes warm white instead, or
-    // the hit would vanish into it.
-    const HIT_BLINK_MS = 220;
-    const HIT_BLINK_STRENGTH = 0.72;
+    // the hit would vanish into it. The first frame or two go white hot and
+    // the body punches up a touch; the curves live in hitFx.js.
+    const HIT_BLINK_MS = hitFx.FLASH_MS;
     const HIT_BLINK_COLOR = "#FFF4E0";
     const HIT_BLINK_RED = "#FF3B3B";
     const hitTints = new Map();
@@ -2679,6 +2680,15 @@ import * as sidekicks from './sidekicks.js';
 
             if (drawSize < 0.1) return;
 
+            // Hit flash and punch for this body (hitFx.js). Copied out of the
+            // shared look object before any turret recursion can touch it.
+            let hitBlend = 0, hitHot = 0, hitTintHot = false;
+            if (turretInfo === false && render.hitAt && instance.drawsHealth) {
+                const hl = hitFx.bodyLook(render, instance.id === gui.playerid, performance.now());
+                hitBlend = hl.blend; hitHot = hl.hot; hitTintHot = hl.tintHot;
+                if (hl.scale !== 1) drawSize *= hl.scale;
+            }
+
             // Carrier glow: halo plus a breathing rim, scaled by the synced
             // glow rung (1-6, matching the satchel size rungs).
             const glowRung = (!turretInfo && !glowOff() && (instance.gemGlow | 0)) || 0;
@@ -2776,16 +2786,10 @@ import * as sidekicks from './sidekicks.js';
             const blend = render.status.getBlend();
 
             // Server-driven hit blink, eased on the client between network
-            // ticks: short fade-in, then a squared falloff.
-            let hitBlend = 0;
-            if (config.game.hitFlash && render.hitAt && instance.drawsHealth) {
-                const ht = (performance.now() - render.hitAt) / HIT_BLINK_MS;
-                if (ht < 1) {
-                    const fadeIn = ht < 0.12 ? ht / 0.12 : 1;
-                    hitBlend = fadeIn * (1 - ht) * (1 - ht) * HIT_BLINK_STRENGTH;
-                }
-            }
-            const hitTint = hitBlend > 0 ? hitTintFor(gameDraw.modifyColor(instance.color, baseColor)) : HIT_BLINK_COLOR;
+            // ticks: white hot for a frame or two, melting into the red, then a
+            // squared falloff. mixColors is cached, so this is a map lookup.
+            let hitTint = hitBlend > 0 ? hitTintFor(gameDraw.modifyColor(instance.color, baseColor)) : HIT_BLINK_COLOR;
+            if (hitHot > 0 && hitTintHot) hitTint = gameDraw.mixColors(hitTint, hitFx.HOT_COLOR, hitHot * 0.85);
 
             const sourceGuns = source.guns;
             const gunLength = sourceGuns.length;
@@ -13319,6 +13323,11 @@ import * as sidekicks from './sidekicks.js';
             let camFall = null;
             try { camFall = raidHeat.camOffset(); } catch (e) { camFall = null; }
             if (camFall) { px += camFall.dx * ratio; py += camFall.dy * ratio; }
+        }
+        // a big hit you land leans the view a pixel or two toward it (hitFx.js)
+        {
+            const nd = hitFx.camNudge(performance.now());
+            if (nd.x !== 0 || nd.y !== 0) { px += nd.x; py += nd.y; }
         }
         // raid death card: lift the view so the killer shows above the card
         {

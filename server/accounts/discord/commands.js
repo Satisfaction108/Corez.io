@@ -59,6 +59,11 @@ const ADMIN_COMMANDS = [
         ],
     },
     {
+        name: 'raidreset', description: 'Reset the raid now and start it after a safe wait (Raid Night)', options: [
+            { type: T.INTEGER, name: 'minutes', description: 'Wait before the raid starts (0 = start right away)', required: false, min_value: 0, max_value: 30 },
+        ],
+    },
+    {
         name: 'grantitem', description: 'Give a shop item for free (a prize), equipped straight away', options: [
             userOpt(),
             { type: T.STRING, name: 'item', description: 'Item id or name, e.g. sd_jack or Jack', required: true, max_length: 64 },
@@ -278,6 +283,22 @@ function relink(i, caller) {
         return reply(`That Discord account is linked to **${md(res.taken.username)}** (\`${res.taken.public_id}\`). Run it again with force:true to move it.`, { ephemeral: true });
     }
     return reply(`Linked <@${discordId}> to **${md(row.username)}**${res.other ? ` (removed from **${md(res.other.username)}**)` : ''}${row.discord_id && row.discord_id !== discordId ? `; replaced \`${row.discord_id}\`` : ''}.`, { ephemeral: true });
+}
+
+// Raid Night: every raid server resets now; players wait safely, then the
+// raid starts for everyone together.
+async function raidReset(i, caller) {
+    const raw = opt(i, 'minutes');
+    const minutes = raw == null ? 10 : Math.max(0, Math.min(30, Math.round(Number(raw))));
+    const reqId = 'r' + Date.now().toString(36) + '.' + (++raidReq);
+    const expect = raidServerCount();
+    const got = await askGames({ t: 'raidReset', reqId, ms: minutes * 60_000 }, 'raidResetDone', list => expect > 0 && list.length >= expect);
+    audit(caller, null, 'admin_raid_reset', { minutes, servers: got.length });
+    if (!got.length) return reply("No raid server answered. Is the game running?", { ephemeral: true });
+    const players = got.reduce((n, g) => n + (g.players | 0), 0);
+    const until = Math.max(...got.map(g => +g.until || 0));
+    const when = minutes ? `It starts <t:${Math.round(until / 1000)}:R> (<t:${Math.round(until / 1000)}:t>).` : 'It started right away.';
+    return reply(`Reset ${got.length} raid server${got.length === 1 ? '' : 's'} (${players} connected). ${when} Until then nobody can get hurt, and there are no bots, bosses, storm or abilities.`, { ephemeral: true });
 }
 
 // A prize: the item lands in their Locker (source 'admin') and goes on.
@@ -719,7 +740,7 @@ function listFeedback(i, caller) {
     });
 }
 
-const ADMIN_HANDLERS = { feedback: listFeedback, lookup, resetpassword: resetPassword, relink, grantdust: grantDust, grantitem: grantItem, ban, unban, users: listUsers, guests: listGuests, history, stats, dust: raidGems, shoprotate: shopRotate };
+const ADMIN_HANDLERS = { feedback: listFeedback, lookup, resetpassword: resetPassword, relink, grantdust: grantDust, grantitem: grantItem, raidreset: raidReset, ban, unban, users: listUsers, guests: listGuests, history, stats, dust: raidGems, shoprotate: shopRotate };
 
 // ---- players ----
 

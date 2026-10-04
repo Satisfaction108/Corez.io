@@ -2920,9 +2920,77 @@ function humansPlayed(endAt) {
     return false;
 }
 
+// ── Raid Night staging (Discord /raidreset) ─────────────────────────────
+// The raid resets on the spot and everyone waits for the start, safe: no
+// storm, bosses, bots, events or abilities, nobody can be hurt, and whatever
+// gets banked while waiting is handed back. Then the raid starts for
+// everyone at once (a normal new raid, sky drop included).
+let stagingUntil = 0, stagingSaid = -1;
+function staging() { return stagingUntil > 0; }
+function holdForStaging(body) {
+    if (!body.socket) {
+        // bots sit it out; fillBots brings them back when the raid starts
+        body.carriedGems = 0;
+        body.dontSendDeathMessage = true;
+        body.deathCause = "despawn";
+        try { body.kill(); } catch { /* */ }
+        return;
+    }
+    body.godmode = true;
+    body.royaleLobby = true;
+    if (body.socket._stageBank == null) body.socket._stageBank = body.socket.gemBanked | 0;
+}
+function beginStaging(ms) {
+    ms = Math.max(0, Math.min(30 * 60_000, +ms || 0));
+    raidEnding = false;
+    raidResults = null;
+    raidEndsAt = Infinity;
+    try { storm.stop(); } catch { /* */ }
+    guard('staging core', () => coreFinale.clear());
+    guard('staging bosses', () => bosses.resetRaid());
+    guard('staging chests', () => chests.clearAll());
+    guard('staging supply', () => supplyDrops.reset());
+    guard('staging events', () => raidEvents.reset());
+    guard('staging blooms', () => blooms.reset());
+    guard('staging contracts', () => contracts.reset());
+    for (const c of connectedClients()) c._stageBank = c.gemBanked | 0;
+    for (const b of combatants()) holdForStaging(b);
+    if (!ms) { endStaging(); return now(); }
+    stagingUntil = now() + ms;
+    stagingSaid = -1;
+    console.log('[RAID] Staging: the raid starts in ' + Math.round(ms / 1000) + ' s.');
+    return stagingUntil;
+}
+function tickStaging(t) {
+    for (const b of combatants()) holdForStaging(b);
+    const left = Math.max(0, Math.ceil((stagingUntil - t) / 1000));
+    // a line every minute, then every second of the last ten
+    const say = left <= 10 ? left : Math.ceil(left / 60) * 60;
+    if (say !== stagingSaid && (left <= 10 || left % 60 === 0 || stagingSaid < 0)) {
+        stagingSaid = say;
+        const txt = left <= 0 ? "" : left <= 10 ? "The raid starts in " + left + "..."
+            : "The raid starts in " + Math.ceil(left / 60) + " minute" + (Math.ceil(left / 60) === 1 ? "" : "s") + ". Nobody can get hurt until then.";
+        if (txt) setToastAndSay(txt, 6000);
+    }
+    if (t >= stagingUntil) endStaging();
+}
+function endStaging() {
+    stagingUntil = 0;
+    for (const c of connectedClients()) {
+        if (c._stageBank != null) { c.gemBanked = c._stageBank; c._stageBank = null; }
+    }
+    for (const b of combatants()) {
+        b.godmode = false;
+        b.royaleLobby = false;
+        b.carriedGems = 0;
+    }
+    setToastAndSay("The raid is on! Good luck.", 5000);
+    restartQuietly(true);
+}
+
 // The raid ran out with no one to watch it end: the same reset endRaid does
 // after its results, without the results.
-function restartQuietly() {
+function restartQuietly(fromStaging) {
     raidEndsAt = Infinity;
     try {
         for (const client of connectedClients()) {
@@ -2939,7 +3007,7 @@ function restartQuietly() {
         }
         try { shop.resetAll(); } catch { /* */ }
     } catch { /* */ }
-    console.log('[RAID] Raid ' + raidId + ' ran out with no players, starting a new one.');
+    console.log('[RAID] Raid ' + raidId + (fromStaging ? ' staged, starting now.' : ' ran out with no players, starting a new one.'));
     startRaid(false);
 }
 
@@ -3122,6 +3190,11 @@ function tick() {
     if (!Config.dig_royale) return;
     const t = now();
     if (!raidId) startRaid(true);
+    if (stagingUntil) {
+        guard('staging', () => tickStaging(t));
+        if (stagingUntil && t - (tick._broadcastAt || 0) >= 500) { tick._broadcastAt = t; guard('broadcast', () => broadcast({ staging: Math.max(0, stagingUntil - t) })); }
+        return;
+    }
     twistCycleWatch(t);
     if (t >= raidEndsAt && !raidResults) {
         // Nobody human played this one (an empty server, or someone who
@@ -3296,7 +3369,7 @@ class DigRoyale {
 
 module.exports = {
     DigRoyale, canSpawn, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
-    lobbyPos, tick, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, resumeTeam, baseReserved,
+    lobbyPos, tick, beginStaging, staging, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, baseWall, claimResume, applyPendingResume, resumeTeam, baseReserved,
     addGrowth, growthScore, earnedOf, boardOrder,
     // bot roster (scripts/test/botRoster.test.js)
     _fillBots: () => fillBots(), _spawnRaidBot: back => spawnRaidBot(back), _statKeyFor: b => statKeyFor(b),

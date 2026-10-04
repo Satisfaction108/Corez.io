@@ -82,7 +82,9 @@ function isEnabled() { return ON; }
 
 const MIN = 60_000;
 const TUNE = {
-    STAGE_MIN: [8, 25, 60],              // minutes played: under each, stage 0, 1, 2
+    STAGE_MIN: [3, 7, 12],               // minutes played: under each, stage 0, 1, 2 (checked again mid-raid)
+    BOSS_SAFE_MIN: 8,                    // bosses leave you alone this long (until you pick the fight)
+    RECHECK_MS: 15_000,                  // how often the stage is looked at again during a raid
     SOFT_MS: [180_000, 150_000],         // bot soft window per life
     STORM_MULT: [0.4, 0.7],
     SCARY_MS: [5 * MIN, 2 * MIN],        // from the first spawn in the raid
@@ -159,13 +161,33 @@ function stateOf(socket, t = now()) {
         try { ms = hooks.careerMs ? hooks.careerMs(socket) : 0; } catch { ms = 0; }
         const stage = socket._nxPin != null ? socket._nxPin : stageFor(ms);
         st = {
-            raid: rid, epoch, stage, since: t, next: 0, dueAt: t + TUNE.MOMENTS[0][1], tries: 0, lastAt: 0,
+            raid: rid, epoch, stage, director: stage === 0, careerMs: ms, checkedAt: t, since: t, next: 0, dueAt: t + TUNE.MOMENTS[0][1], tries: 0, lastAt: 0,
             event: null, deathUsed: false, kept: 0, respawned: false, stormWarnAt: 0,
         };
         if (key) ledger.set(key, st);
     }
     socket._nx = st;
     return st;
+}
+function socketPin(socket) { return socket && socket._nxPin != null ? socket._nxPin : null; }
+// Time played so far, this life included: the stage moves up mid-raid
+// instead of waiting for the next raid (never down).
+function recheck(body, st, t) {
+    if (t - (st.checkedAt || 0) < TUNE.RECHECK_MS) return;
+    st.checkedAt = t;
+    let ms = 0;
+    try { ms = hooks.careerMs ? hooks.careerMs(body.socket) : 0; } catch { ms = 0; }
+    if (alive(body) && body.royaleBornAt) ms += Math.max(0, t - body.royaleBornAt);
+    st.careerMs = Math.max(st.careerMs || 0, ms);
+    const pin = socketPin(body.socket);
+    const s = pin != null ? pin : stageFor(st.careerMs);
+    if (s > st.stage) {
+        st.stage = s;
+        body.nxStage = s;
+        body.nxStormMult = TUNE.STORM_MULT[s] || 0;
+        body.nxScaryUntil = TUNE.SCARY_MS[s] ? st.since + TUNE.SCARY_MS[s] : 0;
+    }
+    if (body.nxBossSafe && (st.careerMs >= TUNE.BOSS_SAFE_MIN * MIN || pin === 3)) body.nxBossSafe = false;
 }
 function stageOf(body) {
     return body && body.nxStage != null ? body.nxStage : 3;
@@ -188,7 +210,7 @@ function applyBody(body, t = now()) {
         body.botSoftUntil = Math.max(body.botSoftUntil || 0, t + soft);
     }
     body.nxStormMult = TUNE.STORM_MULT[s] || 0;
-    body.nxBossSafe = s === 0;
+    body.nxBossSafe = (st.careerMs || 0) < TUNE.BOSS_SAFE_MIN * MIN && socketPin(body.socket) !== 3;
     body.nxScaryUntil = TUNE.SCARY_MS[s] ? st.since + TUNE.SCARY_MS[s] : 0;
 }
 
@@ -516,7 +538,11 @@ function fire(body, st, kind, t) {
 
 function tickPlayer(body, t) {
     const st = body.socket._nx;
-    if (!st || st.stage !== 0 || st.raid !== raidNow() || st.epoch !== epoch) return;
+    if (!st || st.raid !== raidNow() || st.epoch !== epoch) return;
+    recheck(body, st, t);
+    // the first-raid moments keep going for whoever started the raid new,
+    // even after their stage moves up
+    if (!st.director) return;
     upkeep(body, st, t);
     if (!alive(body)) return;
     // the storm: loud, every time they wander out
