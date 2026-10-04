@@ -1383,6 +1383,9 @@ let incoming = async function(message, socket) {
                     r.at = performance.now();
                     r.raidId = d.raidId | 0 || d.matchId | 0 || r.raidId;
                     r.raidLeft = d.raidLeft | 0 || d.left | 0;
+                    // Raid Night staging (/raidreset): ms until the raid starts
+                    r.staging = d.staging > 0 ? +d.staging : 0;
+                    r.stagingAt = performance.now();
                     r.youScore = d.youScore | 0;
                     r.youPB = d.youPB | 0;
                     r.objectives = d.objectives || [];

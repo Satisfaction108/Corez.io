@@ -110,39 +110,51 @@ function bot(x, y) {
     return b;
 }
 
-test('reset: the raid holds, nobody can be hurt, bots sit it out, no storm', () => {
+test('reset: everyone goes down to start fresh, bots sit it out, no storm, the board empties', () => {
     const p = spawnTank(0, 0);
     const b = bot(400, 0);
     p.socket.gemBanked = 2000;
+    p.carriedGems = 500;
     royale.beginStaging(60_000);
     assert.equal(royale.staging(), true);
+    assert.ok(p.health.amount <= 0, 'down for the reset');
+    assert.equal(p.deathCause, 'raidend', 'the raid-end way: no drop, no kill');
+    assert.equal(p.carriedGems, 0);
+    loop(2);
     royale.tick();
-    assert.equal(p.godmode, true, 'safe');
-    assert.equal(p.royaleLobby, true, 'abilities off');
     assert.ok(b.isDead(), 'bots gone');
-    assert.equal(storm.snapshot(Date.now()).on ?? storm.snapshot(Date.now()).active ?? 0, 0, 'no storm');
-    // banking while waiting is handed back
-    p.socket.gemBanked = 9000;
-    royale.beginStaging(0);
+    const snap = storm.snapshot(Date.now());
+    assert.ok(!snap.a, 'no storm');
+    // a fresh body in the lobby (what the respawn gives) is safe
+    const q = spawnTank(0, 0);
+    { const rn = Date.now, t1 = rn() + 50; try { Date.now = () => t1; royale.tick(); } finally { Date.now = rn; } }
+    assert.equal(q.godmode, true, 'safe in the lobby');
+    assert.equal(q.royaleLobby, true, 'abilities off');
+    // the raid board empties once the reset deaths are through
+    const realNow = Date.now, t0 = realNow();
+    try { Date.now = () => t0 + 1500; royale.tick(); } finally { Date.now = realNow; }
+    { const rows = royale.boardSnapshot(); assert.ok(rows.every(r => !r.kills && !r.gems && r.score < 100), 'everyone back to a fresh start (just starter gems): ' + JSON.stringify(rows.map(r => [r.name, r.score]))); }
+    q.socket.gemBanked = 9000;     // banked while waiting
+    // the start: down again, then the raid begins
+    try {
+        Date.now = () => t0 + 61_000; royale.tick();
+        assert.ok(q.health.amount <= 0, 'down again for the start');
+        Date.now = () => t0 + 62_500; royale.tick();
+    } finally { Date.now = realNow; }
     assert.equal(royale.staging(), false, 'started');
-    // what was banked while waiting doesn't count (the new raid then applies
-    // its usual carry-over rule to what was there before)
-    assert.ok(p.socket.gemBanked <= 2000, 'no head start from the wait: ' + p.socket.gemBanked);
-    assert.equal(p.godmode, false, 'back to normal');
-    assert.equal(p.royaleLobby, false);
+    assert.ok(q.socket.gemBanked <= 2000, 'no head start from the wait: ' + q.socket.gemBanked);
 });
 
-test('countdown: ends on its own and starts the raid', () => {
-    const p = spawnTank(0, 0);
+test('countdown: zero minutes starts right away (after the reset deaths)', () => {
+    spawnTank(0, 0);
     const t0 = Date.now();
-    royale.beginStaging(2000);
+    royale.beginStaging(0);
     const realNow = Date.now;
     try {
-        Date.now = () => t0 + 2500;
-        royale.tick();
+        Date.now = () => t0 + 100; royale.tick();
+        Date.now = () => t0 + 1500; royale.tick();
     } finally { Date.now = realNow; }
     assert.equal(royale.staging(), false);
-    assert.equal(p.godmode, false);
 });
 
 (async () => {

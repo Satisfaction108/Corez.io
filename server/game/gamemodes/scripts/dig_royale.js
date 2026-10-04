@@ -2926,8 +2926,61 @@ function humansPlayed(endAt) {
 // gets banked while waiting is handed back. Then the raid starts for
 // everyone at once (a normal new raid, sky drop included).
 let stagingUntil = 0, stagingSaid = -1;
+let stageWipeAt = 0;            // the raid board empties once the reset deaths have gone through
+let stageGoAt = 0;              // the start: everyone went down again, the raid begins at this
+const STAGE_DOWN_MS = 1200;
+let stageLobby = null;          // { x, y, r } the little circle everyone waits in
+const STAGE_LOBBY_R = 430;
+const STAGE_LOBBY_KEEP = 0.12;  // share of the rock inside that stays, a few bits of cover
 function staging() { return stagingUntil > 0; }
+// a small clearing in the middle of the map: nearly all rock inside goes
+function carveStageLobby() {
+    const lp = lobbyPos();
+    const L = { x: +lp.x || 0, y: +lp.y || 0, r: STAGE_LOBBY_R };
+    const g = global.gameManager.terrainGrid;
+    if (g && g.rocks) {
+        for (const rock of g.rocks.values()) {
+            if (!rock || !rock.alive || rock.canyon) continue;
+            const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+            if ((rx - L.x) ** 2 + (ry - L.y) ** 2 > L.r * L.r) continue;
+            // a few stay, picked by position so every server picks the same
+            const h = Math.abs(Math.sin(rx * 12.9898 + ry * 78.233) * 43758.5453) % 1;
+            if (h < STAGE_LOBBY_KEEP) continue;
+            try { g.damageRock(rock, rock.health + 1, rx, ry, false, null); } catch { /* */ }
+            rock.noRegrowUntil = Math.max(rock.noRegrowUntil || 0, stagingUntil + 5000);
+        }
+    }
+    stageLobby = L;
+}
+function intoStageLobby(body) {
+    const L = stageLobby;
+    if (!L) return;
+    const dx = body.x - L.x, dy = body.y - L.y, d = Math.hypot(dx, dy);
+    if (d <= L.r - 40) return;
+    let x, y;
+    if (d > L.r + 250) {
+        // just spawned somewhere else: drop in somewhere inside
+        const a = Math.random() * Math.PI * 2, rr = L.r * 0.7 * Math.sqrt(Math.random());
+        x = L.x + Math.cos(a) * rr; y = L.y + Math.sin(a) * rr;
+    } else {
+        // walked to the edge: the fence holds
+        x = L.x + dx / d * (L.r - 45); y = L.y + dy / d * (L.r - 45);
+    }
+    const g = global.gameManager.terrainGrid;
+    if (g && g.pointInRock && g.pointInRock(x, y)) { try { const o = openGroundNear(g, x, y); x = o.x; y = o.y; } catch { /* */ } }
+    moveTo(body, x, y);
+    body.velocity.x = 0; body.velocity.y = 0;
+}
+// Everyone goes down at once, the raid-end way: nothing drops, no kill, the
+// ranked life settles as usual, and they come back fresh (score 0, base size).
+function downEveryone(msg) {
+    for (const b of humans()) {
+        downForRaidEnd(b);
+        try { if (b.socket) b.socket.talk('m', 6000, msg); } catch { /* */ }
+    }
+}
 function holdForStaging(body) {
+    if (body.health && body.health.amount <= 0) return;
     if (!body.socket) {
         // bots sit it out; fillBots brings them back when the raid starts
         body.carriedGems = 0;
@@ -2939,9 +2992,12 @@ function holdForStaging(body) {
     body.godmode = true;
     body.royaleLobby = true;
     if (body.socket._stageBank == null) body.socket._stageBank = body.socket.gemBanked | 0;
+    try { intoStageLobby(body); } catch (e) { guardLog('stage lobby move', e); }
 }
 function beginStaging(ms) {
     ms = Math.max(0, Math.min(30 * 60_000, +ms || 0));
+    // a server that never started a raid would start one mid-wait otherwise
+    if (!raidId) startRaid(true);
     raidEnding = false;
     raidResults = null;
     raidEndsAt = Infinity;
@@ -2954,15 +3010,28 @@ function beginStaging(ms) {
     guard('staging blooms', () => blooms.reset());
     guard('staging contracts', () => contracts.reset());
     for (const c of connectedClients()) c._stageBank = c.gemBanked | 0;
-    for (const b of combatants()) holdForStaging(b);
-    if (!ms) { endStaging(); return now(); }
     stagingUntil = now() + ms;
+    stageGoAt = 0;
+    guard('stage lobby', () => carveStageLobby());
+    downEveryone(ms > 0 ? "Raid reset! Everyone starts fresh. Wait in the lobby for the start."
+        : "Raid reset! Everyone starts fresh.");
+    stageWipeAt = now() + STAGE_DOWN_MS;
+    for (const b of combatants()) holdForStaging(b);
     stagingSaid = -1;
     console.log('[RAID] Staging: the raid starts in ' + Math.round(ms / 1000) + ' s.');
     return stagingUntil;
 }
 function tickStaging(t) {
-    for (const b of combatants()) holdForStaging(b);
+    if (stageWipeAt && t >= stageWipeAt) { stageWipeAt = 0; raidStats = new Map(); }
+    // the start never waits on anything else going wrong: everyone down once
+    // more (whatever they did in the lobby is gone), then the raid begins
+    if (stageGoAt) { if (t >= stageGoAt) endStaging(); return; }
+    if (t >= stagingUntil) {
+        downEveryone("The raid is starting! Everyone drops in fresh.");
+        stageGoAt = t + STAGE_DOWN_MS;
+        return;
+    }
+    for (const b of combatants()) { try { holdForStaging(b); } catch (e) { guardLog('staging hold', e); } }
     const left = Math.max(0, Math.ceil((stagingUntil - t) / 1000));
     // a line every minute, then every second of the last ten
     const say = left <= 10 ? left : Math.ceil(left / 60) * 60;
@@ -2976,6 +3045,9 @@ function tickStaging(t) {
 }
 function endStaging() {
     stagingUntil = 0;
+    stageGoAt = 0;
+    stageWipeAt = 0;
+    stageLobby = null;
     for (const c of connectedClients()) {
         if (c._stageBank != null) { c.gemBanked = c._stageBank; c._stageBank = null; }
     }

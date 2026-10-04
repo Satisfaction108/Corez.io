@@ -7634,6 +7634,21 @@ import * as hitFx from './hitFx.js';
             const stormTxt = !st.a ? "" : st.fin && st.hold ? "Last storm closing"
                 : st.hold ? stormNo + " holds " + fmtRaidClock(st.left | 0) : stormNo + " in " + fmtRaidClock(st.left | 0);
             const stormCol = st.hold ? HUD.gold : HUD.lilac;
+            // Raid Night staging: the raid hasn't started; a countdown instead of the clock
+            const stLeft = r.staging > 0 ? Math.max(0, r.staging - (performance.now() - (r.stagingAt || 0))) : 0;
+            if (stLeft > 0) {
+                const SW = 340, SH = 66, sx0 = Math.round(cx - SW / 2), sy0 = y;
+                hudPanel(c, sx0, sy0, SW, SH);
+                hudDrawn.clock = { x: sx0, y: sy0, w: SW, h: SH };
+                const secs = Math.ceil(stLeft / 1000);
+                const lw2 = hudTitleW("RAID STARTS IN", 12), vw = hudTitleW(fmtRaidClock(secs), 24);
+                const x0 = cx - (lw2 + 8 + vw) / 2;
+                hudTitle("RAID STARTS IN", x0, sy0 + 22, 12, HUD.text2, "left");
+                hudTitle(fmtRaidClock(secs), x0 + lw2 + 8, sy0 + 22, 24, secs <= 10 ? HUD.gold : HUD.head, "left");
+                drawText("The raid hasn't started yet. Hang out in the lobby.", cx, sy0 + 48, 12, HUD.lilac, "center", true);
+                y = sy0 + SH + HUD.lip + 8;
+                return;
+            }
             if (topMin.on) { y = drawTopStrip(c, cx, y, stormTxt, stormCol); return; }
             const PW = 300, rowH = 38, footH = (placeTxt || stormTxt) ? 24 : 0, PH = rowH + footH;
             const px = Math.round(cx - PW / 2), py = y;
