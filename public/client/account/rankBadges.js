@@ -4,11 +4,13 @@
 // back to front in two passes: a silhouette (every layer stroked at the
 // outer rim width), then fills (inner line, mid tone, shading).
 // Divisions I / II / III are diamond pips in a ribbon along the bottom.
-// Sprites are cached per rank and device-pixel size.
+// From Legend up a Legend #N plate (>= 40 px) takes the ribbon's place and
+// carries the pips itself. Sprites are cached per rank and device-pixel size.
 
 const R = () => (typeof window !== 'undefined' && window.DWRanks) || null;
 
-// Wire codes (shared/ranks.js): 1..19 = division + 1, 20 = in placement.
+// Wire codes (shared/ranks.js rankCode): 20 = in placement, 1..19 =
+// division + 1 (Bronze I .. Legend I), 21..38 = division + 2 (Legend II up).
 export const CODE_PLACEMENT = 20;
 
 /* ── materials ───────────────────────────────────────────────────────── */
@@ -25,6 +27,17 @@ const M = {
     emerald: { h: '#6ff5a8', m: '#1fbf6b', l: '#16984f', d: '#0f6d3a', dd: '#0b5029', ink: '#06341a' },
     purple:  { h: '#cdb9ff', m: '#9673e8', l: '#7152cf', d: '#4a2c9e', dd: '#351f78', ink: '#1d0f47' },
     grey:    { h: '#c8ccd5', m: '#8f95a1', l: '#6a707c', d: '#3c4049', dd: '#2d3037', ink: '#17191e' },
+    // above Legend
+    crimson: { h: '#ffb3b8', m: '#e8424f', l: '#b8263a', d: '#7d1426', dd: '#5a0d1b', ink: '#33050d' },
+    flame:   { h: '#ffe6a3', m: '#ffa03b', l: '#e8661f', d: '#a8400e', dd: '#7a2c08', ink: '#3d1503' },
+    iron:    { h: '#aab3c2', m: '#6e7889', l: '#525a6a', d: '#343a46', dd: '#252a33', ink: '#101318' },
+    magenta: { h: '#ffbdee', m: '#e352bc', l: '#b62f91', d: '#7d1a64', dd: '#561045', ink: '#2e0525' },
+    onyx:    { h: '#5d5a69', m: '#3a3844', l: '#2a2832', d: '#1c1b22', dd: '#131217', ink: '#060509' },
+    pearl:   { h: '#ffffff', m: '#e6ecf4', l: '#bfcad9', d: '#8995ab', dd: '#6a768c', ink: '#262d3b' },
+    ice:     { h: '#e3fdff', m: '#7fe6f4', l: '#3fbfd6', d: '#1f88a1', dd: '#156477', ink: '#06303a' },
+    night:   { h: '#9aa6ff', m: '#4d52c8', l: '#36389c', d: '#20216a', dd: '#15154a', ink: '#070724' },
+    star:    { h: '#ffffff', m: '#fff3c4', l: '#ffd774', d: '#d9a43a', dd: '#a5741c', ink: '#3a2706' },
+    core:    { h: '#ffffff', m: '#fff4c2', l: '#ffd35a', d: '#ff9a1f', dd: '#e0560f', ink: '#3b1404' },
 };
 
 // Palette per tier for everything else that colours by rank: base / light /
@@ -38,11 +51,24 @@ export const TIER_COLORS = {
     diamond:   { base: M.blue.m,    light: M.blue.h,    dark: M.blue.l,    ink: M.blue.ink,    glyph: '#eef7ff', text: '#8cc4ff' },
     emerald:   { base: M.emerald.m, light: M.emerald.h, dark: M.emerald.l, ink: M.emerald.ink, glyph: '#e2ffee', text: '#4fe08f' },
     legend:    { base: M.purple.m,  light: M.purple.h,  dark: M.purple.l,  ink: M.purple.ink,  glyph: '#fff2c9', text: '#c3a6ff' },
+    mythic:    { base: M.crimson.m, light: M.crimson.h, dark: M.crimson.l, ink: M.crimson.ink, glyph: '#ffe6a3', text: '#ff6f7c' },
+    titan:     { base: M.flame.m,   light: M.flame.h,   dark: M.iron.l,    ink: M.iron.ink,    glyph: '#ffe6a3', text: '#ff9a52' },
+    overlord:  { base: M.magenta.m, light: M.magenta.h, dark: M.magenta.l, ink: M.magenta.ink, glyph: '#ffe8f8', text: '#ff86da' },
+    immortal:  { base: M.ice.m,     light: M.pearl.h,   dark: M.pearl.l,   ink: M.pearl.ink,   glyph: '#e3fdff', text: '#c4f6ff' },
+    eternal:   { base: M.night.m,   light: M.night.h,   dark: M.night.l,   ink: M.night.ink,   glyph: '#fff3c4', text: '#a9b2ff' },
+    corez:     { base: M.core.l,    light: M.core.m,    dark: M.core.d,    ink: M.core.ink,    glyph: '#ffffff', text: '#fff0a8' },
     placement: { base: M.grey.m,    light: M.grey.h,    dark: M.grey.l,    ink: M.grey.ink,    glyph: '#e3e6ec', text: '#b9bec9' },
 };
 
-const TIERS = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'emerald', 'legend'];
+// Same order as shared/ranks.js TIERS: three divisions each, the last one
+// (Corez) a single open-ended division.
+export const TIERS = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'emerald', 'legend',
+    'mythic', 'titan', 'overlord', 'immortal', 'eternal', 'corez'];
 const ROMAN = ['', 'I', 'II', 'III'];
+export const LEGEND_DIV = 18;                       // Legend I
+export const TOP_DIV = (TIERS.length - 1) * 3;      // Corez
+// tiers that carry the Legend #N plate
+const PLATE_TIERS = new Set(TIERS.slice(TIERS.indexOf('legend')));
 
 // Normalise anything the callers hold (division index, 'placement', null)
 // into { key, tier, div, division }.
@@ -50,18 +76,26 @@ function resolve(division) {
     if (division === 'placement' || division == null) {
         return { key: 'p', tier: 'placement', div: 0, division: null };
     }
-    const i = Math.max(0, Math.min(18, division | 0));
-    const tier = TIERS[Math.min(6, Math.floor(i / 3))];
-    return { key: String(i), tier, div: i === 18 ? 0 : (i % 3) + 1, division: i };
+    const i = Math.max(0, Math.min(TOP_DIV, division | 0));
+    const tier = TIERS[Math.floor(i / 3)];
+    return { key: String(i), tier, div: i === TOP_DIV ? 0 : (i % 3) + 1, division: i };
 }
 
 // Wire code -> division index | 'placement' | null (guest, bot, unknown).
 export function codeToDivision(code) {
     code = code | 0;
     if (code === CODE_PLACEMENT) return 'placement';
-    if (code >= 1 && code <= 19) return code - 1;
+    if (code >= 1 && code < CODE_PLACEMENT) return code - 1;
+    if (code > CODE_PLACEMENT && code <= TOP_DIV + 2) return code - 2;
     return null;
 }
+// Division index -> wire code (shared/ranks.js rankCode).
+export function divisionToCode(division) {
+    const i = Math.max(0, Math.min(TOP_DIV, division | 0));
+    return i + 1 < CODE_PLACEMENT ? i + 1 : i + 2;
+}
+// Legend I or above (has a Legend #N)
+export function isLegendDiv(division) { return typeof division === 'number' && division >= LEGEND_DIV; }
 
 export function tierOf(division) { return resolve(division).tier; }
 export function colorsOf(division) { return TIER_COLORS[resolve(division).tier]; }
@@ -100,6 +134,23 @@ const P = (d) => new Path2D(d);
 const sym = (half) => P(toD(symSegs(half)));
 const poly = (pts) => P('M' + pts.map((p) => f1(p[0]) + ' ' + f1(p[1])).join(' L') + ' Z');
 function circle(x, y, r) { const p = new Path2D(); p.arc(x, y, r, 0, Math.PI * 2); return p; }
+function ellipse(x, y, rx, ry, rot = 0, a0 = 0, a1 = Math.PI * 2) { const p = new Path2D(); p.ellipse(x, y, rx, ry, rot, a0, a1); return p; }
+// a four-point star (the sparkle), radius r, waist w
+function star4(x, y, r, w, rot = 0) {
+    const pts = [];
+    for (let k = 0; k < 8; k++) {
+        const a = rot - Math.PI / 2 + (k * Math.PI) / 4, rr = k % 2 ? w : r;
+        pts.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr]);
+    }
+    return poly(pts);
+}
+// a feather / flame tongue from root (rx, ry) to tip (tx, ty), w wide,
+// bulging to the +perpendicular side
+function tongue(rx, ry, tx, ty, w, back = 0.55) {
+    const mx = (rx + tx) / 2, my = (ry + ty) / 2, l = Math.hypot(tx - rx, ty - ry) || 1;
+    const px = -(ty - ry) / l, py = (tx - rx) / l;
+    return P(toD([['M', rx, ry], ['Q', mx + px * w, my + py * w, tx, ty], ['Q', mx - px * w * back, my - py * w * back, rx, ry]]));
+}
 function rrect(x, y, w, h, r) { const p = new Path2D(); p.roundRect(x, y, w, h, r); return p; }
 // Path transformed by translate / rotate (deg) / scale (sx, sy), in that order.
 function T(p, x = 0, y = 0, rot = 0, sx = 1, sy = sx) {
@@ -317,7 +368,128 @@ function geo() {
             rays: union(...rays),
             ring: circle(0, cy, 20.5),
             field: circle(0, cy, 15),
+            cy, bottom: cy + 47,
+        };
+    }
+
+    // ── Mythic: a ruby kite with wings of flame ──
+    {
+        const fl = [];   // right side, back to front: low tongue, high tongue
+        fl.push(tongue(26, 2, 48, -12, 9));
+        fl.push(tongue(17, -16, 42, -45, 11));
+        G.myth = {
+            body: sym([['M', 0, -42], ['Q', 22, -27, 36, -5], ['Q', 26, 22, 0, 44]]),
+            field: sym([['M', 0, -30.5], ['Q', 15.5, -20, 26, -4.5], ['Q', 18.5, 15.5, 0, 33]]),
+            flLo: fl[0], flHi: fl[1],
+            // the inner, lighter tongue of each flame
+            flLoIn: tongue(28, 0, 44, -10, 4.5), flHiIn: tongue(20, -18, 39, -40, 5.5),
+            crestFl: tongue(0, -30, 0, -50, 7.5, 1),
+            gem: ellipse(0, -3, 12, 16.5),
+            gemLo: ellipse(0, -3, 12, 16.5),
+            gemHi: ellipse(-3.6, -8.5, 4.2, 6.2, -0.35),
+            prongs: union(circle(-9, -15, 2.4), circle(9, -15, 2.4), circle(-9, 9, 2.4), circle(9, 9, 2.4)),
+            bottom: 44,
+        };
+    }
+
+    // ── Titan: an iron keep on a gold gear, a molten amber heart ──
+    {
+        const cy = -4, n = 12, rIn = 38, rOut = 45.5;
+        const pts = [];
+        for (let i = 0; i < n; i++) {
+            const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+            for (const [da, r] of [[-0.2, rIn], [-0.12, rOut], [0.12, rOut], [0.2, rIn]]) pts.push([Math.cos(a + da) * r, cy + Math.sin(a + da) * r]);
+        }
+        G.titan = {
+            gear: poly(pts),
+            hub: circle(0, cy, rIn - 4),
+            keep: sym([['M', 0, -39], ['L', 6.5, -39], ['L', 6.5, -31], ['L', 15.5, -31], ['L', 15.5, -39], ['L', 31, -39],
+                ['L', 28.5, 9], ['Q', 23, 30, 0, 43]]),
+            field: sym([['M', 0, -24.5], ['L', 21, -24.5], ['L', 19.5, 7], ['Q', 15.5, 22, 0, 31]]),
+            gem: T(rrect(-11, -11, 22, 22, 5.5), 0, -3, 45),
+            gemHi: T(rrect(-5.5, -5.5, 11, 11, 3), 0, -3, 45),
+            rivets: union(circle(-24.5, -33.5, 2.2), circle(24.5, -33.5, 2.2), circle(0, -33.5, 2.2)),
+            bottom: 43,
+        };
+    }
+
+    // ── Overlord: a spiked onyx crown-shield, rhodolite enamel, a pear gem ──
+    {
+        const tips = [[0, -47], [19.5, -41], [36.5, -31]];
+        G.over = {
+            body: sym([['M', 0, -47], ['L', 7.5, -29.5], ['L', 19.5, -41], ['L', 23, -24.5], ['L', 36.5, -31], ['L', 33.5, -6],
+                ['C', 32.5, 16, 20, 32, 0, 44]]),
+            field: sym([['M', 0, -19], ['Q', 14, -21, 25.5, -17], ['L', 24.5, -4], ['C', 23.5, 12, 14.5, 23.5, 0, 32.5]]),
+            balls: union(...tips.flatMap(([x, y]) => (x ? [circle(x, y, 3.3), circle(-x, y, 3.3)] : [circle(x, y + 1, 3.6)]))),
+            gem: sym([['M', 0, -15], ['C', 5.5, -6.5, 12.5, -1, 12.5, 7], ['C', 12.5, 14, 6.5, 18, 0, 18]]),
+            gemFacet: sym([['M', 0, -6], ['C', 3, -1.5, 6.5, 2, 6.5, 6.5], ['C', 6.5, 10, 3.5, 12, 0, 12]]),
+            bottom: 44,
+        };
+    }
+
+    // ── Immortal: pearl wings, a halo, an ice opal in a pearl medallion ──
+    {
+        const cy = -1;
+        // right wing, back to front (lowest feather first)
+        const feathers = [
+            tongue(19, 8, 47, 3, -7.5), tongue(20, 0, 49.5, -16, -8.5), tongue(19, -9, 48.5, -33, -9), tongue(14, -17, 37, -48, -9),
+        ];
+        G.imm = {
+            feathers, cy,
+            disc: circle(0, cy, 29),
+            field: circle(0, cy, 21),
+            gem: circle(0, cy, 12.5),
+            gemRing: circle(0, cy, 8),
+            gemHi: ellipse(-4, cy - 4.5, 3.4, 2.2, -0.7),
+            halo: ellipse(0, -39.5, 15.5, 4.6),
+            bottom: 28,
+        };
+    }
+
+    // ── Eternal: a night disc in a ringed orbit, a starlight star ──
+    {
+        const cy = -3, rot = (-18 * Math.PI) / 180;
+        const rays = [45, 135, 225, 315].map((deg) => {
+            const a = (deg * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a), px = -sa, py = ca, w = 5.2;
+            return poly([[ca * 24 + px * w, cy + sa * 24 + py * w], [ca * 47, cy + sa * 47], [ca * 24 - px * w, cy + sa * 24 - py * w]]);
+        });
+        G.eter = {
             cy,
+            rays: union(...rays),
+            disc: circle(0, cy, 32),
+            field: circle(0, cy, 25),
+            ringBack: ellipse(0, cy, 46, 12.5, rot, Math.PI, Math.PI * 2),
+            ringFront: ellipse(0, cy, 46, 12.5, rot, 0, Math.PI),
+            star: star4(0, cy, 17.5, 5),
+            starHi: star4(0, cy, 9, 2.6),
+            dust: union(star4(-13, cy - 14, 4.4, 1.3), star4(14, cy + 10, 3.6, 1.1), star4(12, cy - 15, 2.8, 0.9), star4(-12, cy + 12, 2.6, 0.8)),
+            bottom: cy + 32,
+        };
+    }
+
+    // ── Corez: the core itself, white-hot, ringed with every gem, crowned ──
+    {
+        const cy = 1;
+        const rays = [];
+        for (let k = 0; k < 12; k++) {
+            const a = -Math.PI / 2 + Math.PI / 12 + (k * Math.PI) / 6, r = k % 2 ? 40.5 : 47;
+            const ca = Math.cos(a), sa = Math.sin(a), px = -sa, py = ca, w = 5.4;
+            rays.push(poly([[ca * 22 + px * w, cy + sa * 22 + py * w], [ca * r, cy + sa * r], [ca * 22 - px * w, cy + sa * 22 - py * w]]));
+        }
+        // the six set gems on the ring, clockwise from the top right
+        const sets = [-60, 0, 60, 120, 180, 240].map((deg) => {
+            const a = (deg * Math.PI) / 180;
+            return [Math.cos(a) * 27.5, cy + Math.sin(a) * 27.5];
+        });
+        G.core = {
+            cy, sets,
+            rays: union(...rays),
+            ring: circle(0, cy, 31.5),
+            field: circle(0, cy, 23.5),
+            glow: [circle(0, cy, 19.5), circle(0, cy, 14.5), circle(0, cy, 9.5), circle(0, cy, 4.8)],
+            set: (i) => circle(sets[i][0], sets[i][1], 5),
+            setHi: (i) => circle(sets[i][0] - 1.4, sets[i][1] - 1.5, 1.7),
+            bottom: cy + 31.5,
         };
     }
 
@@ -562,7 +734,101 @@ const BUILD = {
         layers.push(L(G.ring, au, { lo: au.l, rim: au.h, rimD: 2.6 }));
         layers.push(L(G.field, pu, { f: pu.d, lo: pu.dd, dark: pu.dd }));
         if (K.full || K.px >= 30) layers.push(...crownLayers(K, 0, G.cy + 6.8, 0.66, null));
-        return { layers, main: G.star, glint: [-10, -15.5, 3.2] };
+        return { layers, main: G.star, glint: [-10, -15.5, 3.2], bottom: G.bottom };
+    },
+    mythic(K) {
+        const G = geo().myth, cr = M.crimson, fl = M.flame, au = M.gold;
+        const layers = [];
+        if (!K.tiny) {
+            layers.push(L(both(G.flLo), fl, { f: fl.m, lo: fl.l, hi: fl.h, hiR: both(G.flLoIn) }));
+            layers.push(L(both(G.flHi), fl, { f: fl.m, lo: fl.l, hi: fl.h, hiR: both(G.flHiIn) }));
+        }
+        layers.push(L(G.crestFl, fl, { f: fl.h, lo: fl.m }));
+        layers.push(L(G.body, cr, { lo: cr.l, rim: cr.h, rimD: 3.4 }));
+        layers.push(L(G.field, cr, { f: cr.d, lo: cr.dd, dark: cr.dd }));
+        if (K.full) layers.push(L(G.prongs, au, { f: au.m, lo: au.l, iw: 0.6 }));
+        layers.push(L(G.gem, cr, { f: cr.m, lo: cr.l, cx: 0, iw: 0.8, after(c) {
+            c.fillStyle = cr.h; c.fill(G.gemHi);
+        } }));
+        return { layers, main: G.body, glint: [-11, -24, 3.6], bottom: G.bottom };
+    },
+    titan(K) {
+        const G = geo().titan, ir = M.iron, au = M.gold, fl = M.flame;
+        const layers = [
+            L(G.gear, au, { f: au.m, lo: au.l, rim: au.h, rimD: 2.6 }),
+            L(G.hub, au, { f: au.d, lo: au.dd, edge: false, sil: false }),
+            L(G.keep, ir, { lo: ir.l, rim: ir.h, rimD: 3.2 }),
+            L(G.field, ir, { f: ir.d, lo: ir.dd, dark: ir.dd }),
+        ];
+        if (K.full) layers.push(L(G.rivets, ir, { f: ir.h, lo: ir.m, iw: 0.6, sil: false }));
+        layers.push(L(G.gem, fl, { f: fl.m, lo: fl.l, cx: 0, iw: 0.85, after(c) {
+            c.fillStyle = fl.h; c.fill(G.gemHi);
+        } }));
+        return { layers, main: G.keep, glint: [-18.5, -25, 3.6], bottom: G.bottom };
+    },
+    overlord(K) {
+        const G = geo().over, mg = M.magenta, ox = M.onyx, au = M.gold;
+        const layers = [
+            L(G.body, mg, { lo: mg.l, rim: mg.h, rimD: 3.4 }),
+            L(G.balls, au, { f: au.h, lo: au.m, edge: false }),
+            L(G.field, ox, { f: ox.m, lo: ox.l, dark: ox.dd }),
+            L(G.gem, mg, { f: mg.m, lo: mg.l, cx: 0, iw: 0.85, after(c) {
+                c.fillStyle = mg.h; c.fill(G.gemFacet);
+            } }),
+        ];
+        return { layers, main: G.body, glint: [-15, -15, 3.6], bottom: G.bottom };
+    },
+    immortal(K) {
+        const G = geo().imm, pl = M.pearl, ic = M.ice, au = M.gold;
+        const layers = [];
+        if (!K.tiny) {
+            G.feathers.forEach((f, i) => layers.push(L(both(f), pl, { f: i % 2 ? pl.h : pl.m, shd: pl.l, shdD: 2.2, iw: 0.8 })));
+            layers.push(L(G.halo, au, { f: au.h, line: 3.6 }));
+        }
+        layers.push(L(G.disc, pl, { lo: pl.l, rim: pl.h, rimD: 3.2 }));
+        layers.push(L(G.field, pl, { f: pl.d, lo: pl.dd, dark: pl.dd }));
+        layers.push(L(G.gem, ic, { f: ic.m, lo: ic.l, cx: 0, iw: 0.8, after(c) {
+            c.fillStyle = ic.h; c.fill(G.gemRing);
+            c.fillStyle = ic.m; c.save(); c.clip(G.gemRing); c.fill(RIGHT_OF(1.5)); c.restore();
+            c.fillStyle = '#ffffff'; c.fill(G.gemHi);
+        } }));
+        return { layers, main: G.disc, glint: [-15, -18, 3.4], bottom: G.bottom };
+    },
+    eternal(K) {
+        const G = geo().eter, nt = M.night, st = M.star;
+        const layers = [];
+        if (!K.tiny) {
+            layers.push(L(G.rays, st, { f: st.l, lo: st.d }));
+            layers.push(L(G.ringBack, st, { f: st.l, line: 4 }));
+        }
+        layers.push(L(G.disc, nt, { lo: nt.l, rim: nt.h, rimD: 3.2 }));
+        layers.push(L(G.field, nt, { f: nt.d, lo: nt.dd, dark: nt.dd, after(c) {
+            if (K.full) { c.fillStyle = st.m; c.fill(G.dust); }
+        } }));
+        if (!K.tiny) layers.push(L(G.ringFront, st, { f: st.m, line: 4 }));
+        layers.push(L(G.star, st, { f: st.m, lo: st.l, cx: 0, iw: 0.75, after(c) {
+            c.fillStyle = '#ffffff'; c.fill(G.starHi);
+        } }));
+        return { layers, main: G.disc, glint: K.tiny ? null : [-17, -18, 3.2], bottom: G.bottom };
+    },
+    corez(K) {
+        const G = geo().core, au = M.gold, co = M.core;
+        const gems = [M.crimson, M.flame, M.emerald, M.blue, M.purple, M.steel];
+        const layers = [];
+        if (!K.tiny) layers.push(L(G.rays, au, { f: au.m, lo: au.l }));
+        layers.push(L(G.ring, au, { f: au.m, lo: au.l, rim: au.h, rimD: 2.8 }));
+        layers.push(L(G.field, co, { f: co.dd, after(c) {
+            const tones = [co.d, co.l, co.m, '#ffffff'];
+            G.glow.forEach((g, i) => { c.fillStyle = tones[i]; c.fill(g); });
+        } }));
+        G.sets.forEach((_, i) => {
+            const g = gems[i];
+            layers.push(L(G.set(i), g, { f: g.m, lo: g.l, cx: G.sets[i][0], iw: 0.7, after(c) {
+                if (K.full) { c.fillStyle = g.h; c.fill(G.setHi(i)); }
+            } }));
+        });
+        if (K.full || K.px >= 30) layers.push(...crownLayers(K, 0, G.cy - 30, 0.82, M.crimson));
+        return { layers, main: G.ring, glint: [-14.5, -15, 3], bottom: G.bottom };
     },
     placement(K) {
         const G = geo().pl, gr = M.grey;
@@ -587,6 +853,12 @@ const RIBBON = {
     platinum: [M.teal, { h: '#dbfffb', m: M.teal.h }],
     diamond: [M.blue, { h: '#eaf5ff', m: M.blue.h }],
     emerald: [M.emerald, { h: '#c9ffe0', m: M.emerald.h }],
+    legend: [M.purple, { h: '#fff2c9', m: M.gold.h }],
+    mythic: [M.crimson, { h: '#ffe6a3', m: M.flame.h }],
+    titan: [M.iron, { h: '#ffe0a0', m: M.flame.m }],
+    overlord: [M.magenta, { h: '#ffe8f8', m: M.magenta.h }],
+    immortal: [M.pearl, { h: '#e3fdff', m: M.ice.m }],
+    eternal: [M.night, { h: '#fff3c4', m: M.star.l }],
 };
 
 /* ── cracks (the ceremony's breaking badge) ──────────────────────────── */
@@ -620,11 +892,15 @@ function cracks(c, main, stage, ink) {
     c.restore();
 }
 
-function legendPlate(c, n, K) {
+// The Legend #N plate along the bottom. From Legend up it stands in for the
+// division ribbon, so it carries the division's pips left of the number.
+function legendPlate(c, n, K, pips) {
     const txt = '#' + n;
     c.font = 'bold 15px Rubik, Ubuntu, sans-serif';
     const tw = c.measureText(txt).width;
-    const w = Math.max(30, tw + 14), h = 18, y = 31;
+    const pw = 3.4, ph = 4.6, gap = 8.4;
+    const pipW = pips > 0 ? (pips - 1) * gap + pw * 2 + 5 : 0;
+    const w = Math.max(30, tw + 14 + pipW), h = 18, y = 31;
     const plate = rrect(-w / 2, y, w, h, 7);
     const inner = rrect(-w / 2 + 3, y + 3, w - 6, h - 6, 4.5);
     c.lineJoin = 'round';
@@ -639,12 +915,19 @@ function legendPlate(c, n, K) {
     c.fillStyle = M.gold.h;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText(txt, 0, y + h / 2 + 0.9);
+    c.fillText(txt, pipW / 2, y + h / 2 + 0.9);
+    for (let i = 0; i < pips; i++) {
+        const x = -w / 2 + 7 + pw + i * gap, yc = y + h / 2;
+        c.fillStyle = M.gold.h;
+        c.fill(poly([[x, yc - ph], [x + pw, yc], [x, yc + ph], [x - pw, yc]]));
+        c.fillStyle = M.gold.m;
+        c.fill(poly([[x, yc], [x + pw, yc], [x, yc + ph]]));
+    }
 }
 
 /* ── the painter ─────────────────────────────────────────────────────── */
 // Paint a badge centred on the current origin, px device pixels tall. opts:
-//   legendNo  - Legend's #N plate (>= 40 px only)
+//   legendNo  - the Legend #N plate, Legend I and up (>= 40 px only)
 //   crack     - 0..3 crack stages (ceremony)
 //   lod       - force 'tiny' | 'small' | 'full'
 export function paintBadge(c, division, px, opts) {
@@ -661,12 +944,13 @@ export function paintBadge(c, division, px, opts) {
     };
     const art = BUILD[d.tier](K);
     let layers = art.layers;
+    const plate = PLATE_TIERS.has(d.tier) && opts.legendNo > 0 && px >= 40 ? opts.legendNo | 0 : 0;
     c.save();
     c.scale(px / 100, px / 100);
     // tiny: the emblem steps up and the pips get whole pixels under it
     const lift = tiny && d.div > 0;
     if (lift) { c.save(); c.translate(0, TINY_DY); c.scale(TINY_K, TINY_K); }
-    if (!tiny && d.div > 0) layers = layers.concat(ribbonLayers(K, d.div, ...RIBBON[d.tier]));
+    if (!tiny && d.div > 0 && !plate) layers = layers.concat(ribbonLayers(K, d.div, ...RIBBON[d.tier]));
     paintLayers(c, layers, K);
     if (art.ring && full) {
         // placement: a dashed track inside the rim
@@ -685,7 +969,7 @@ export function paintBadge(c, division, px, opts) {
         c.restore();
         pipsTiny(c, d.div, d.tier, px, (art.bottom + K.O * 0.5) * TINY_K + TINY_DY);
     }
-    if (d.tier === 'legend' && opts.legendNo > 0 && px >= 40) legendPlate(c, opts.legendNo | 0, K);
+    if (plate) legendPlate(c, plate, K, d.div);
     c.restore();
 }
 const TINY_K = 0.84, TINY_DY = -8;
@@ -737,7 +1021,7 @@ const cache = new Map();
 const CACHE_MAX = 160;
 function sprite(division, devPx, opts) {
     const d = resolve(division);
-    const plate = d.tier === 'legend' && opts && opts.legendNo > 0 && devPx >= 40 ? (opts.legendNo | 0) : 0;
+    const plate = PLATE_TIERS.has(d.tier) && opts && opts.legendNo > 0 && devPx >= 40 ? (opts.legendNo | 0) : 0;
     const key = d.key + '|' + devPx + '|' + plate;
     let s = cache.get(key);
     if (s) { cache.delete(key); cache.set(key, s); return s; }
@@ -756,7 +1040,7 @@ function sprite(division, devPx, opts) {
 }
 
 // Draw a badge px tall centred on (x, y) in the context's current space.
-// division: 0..18, 'placement', or null (draws nothing).
+// division: 0..TOP_DIV, 'placement', or null (draws nothing).
 // opts: { legendNo, alpha }
 export function drawBadge(c, x, y, px, division, opts) {
     if (division == null || !(px > 1)) return;

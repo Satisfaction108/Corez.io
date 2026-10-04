@@ -2,20 +2,33 @@
 // server/game/terrain/sidekicks.js); everything else happens here. Each
 // sidekick is moved by sidekickMath.js beside its owner's tank and drawn
 // from baked sprites: the barrels (turned smoothly with one rotated
-// drawImage a frame, no angle steps), the body with its face (a plain
-// blit), an Auto turret if it has one (rotated like the barrels), then its
-// name tag. On a software canvas a rotated bitmap is the slow path, so
-// there the barrels are drawn as paths under the same rotation instead
-// (20 sidekicks: ~4 ms as paths vs ~10 ms blitted, the old 24 baked angles
-// were ~4 ms; on a GPU canvas the blit is the cheaper one). Sprites and tags are baked at the size they show on screen (2 px
-// steps), at most one bake a frame, and nothing is allocated per frame.
-// Its shots are a small fixed pool of pops that touch nothing.
+// drawImage a frame, no angle steps), the body with its face, an Auto
+// turret if it has one (rotated like the barrels), then its name tag. On a
+// software canvas a rotated bitmap is the slow path, so there the barrels
+// are drawn as paths under the same rotation instead (20 sidekicks: ~4 ms
+// as paths vs ~10 ms blitted, the old 24 baked angles were ~4 ms; on a GPU
+// canvas the blit is the cheaper one). Sprites are baked on a ladder of
+// radii about 7% apart and drawn scaled down from the rung above (so they
+// never stretch up and go soft), tags in 2 px steps, at most one bake a
+// frame, and nothing is allocated per frame. Everything is drawn at its
+// exact sub-pixel spot: rounding to whole pixels made it shuffle against
+// its owner while the camera moved. Its shots are a small fixed pool of
+// pops that touch nothing.
+//
+// It runs on the frame's own clock (the rAF time app.js draws the tanks
+// with), not performance.now() read halfway through the frame: that wobbled
+// dt by the frame's own work and shook the sidekick against its owner.
+// What it can see (enemies, gems, chests on screen) is looked up a few times
+// a second, but whatever it looks at is followed where it is drawn, every
+// frame.
 //
 // app.js calls:
 //   note(instance, x, y, alpha, fade, size, falling)   for every tank it draws
-//   draw(c, ratio, px, py)                              once, after the tanks
+//   draw(c, ratio, px, py, tick, me)                    once, after the tanks
 // (px, py: the camera, so the owner's drawn spot can be turned back into
-// world units.) A sidekick is only drawn when note() saw its owner drawn
+// world units; tick: the frame time; me: your own tank's id.) socketinit.js
+// calls cheer(id) / cheerNear(x, y) when something good happens. A sidekick
+// is only drawn when note() saw its owner drawn
 // this very frame (sidekickMath.shown), so it can never show where its owner
 // doesn't: smoke, burrow, invisibility, the sky drop and death all hide it
 // with the owner, and the server's hidden flag covers what the client can't
@@ -27,9 +40,15 @@ import * as M from './sidekickMath.js';
 import * as raidFinale from './raidFinale.js';
 
 const CAT = () => (typeof window !== 'undefined' && window.DWCosmetics) || null;
-const STEP = 2;               // sprite and tag sizes are baked in 2 px steps
-const LABEL_WORLD = 10;       // tag font size in world units
+const STEP = 2;               // tags are baked in 2 px steps
+const LABEL_WORLD = 10;       // tag font size in world units (a fresh owner's)
 const MAX_SPRITES = 32;
+const SENSE_EVERY = 0.2;      // seconds between looks round for enemies and gems
+const ENEMY_NEAR = 750;       // world units from the owner
+const THING_NEAR = 420;
+// sprite radii, about 7% apart
+const RUNGS = [];
+for (let r = 6; r <= 96; r = Math.max(r + 1, Math.round(r * 1.07))) RUNGS.push(r);
 const SPRITE_PX_BUDGET = 3e6; // baked pixels across every sidekick sprite (~12 MB)
 const MAX_SHOTS = 64;
 const SHOT_GAP_MS = 40;       // across every sidekick on screen
@@ -42,6 +61,7 @@ export function count() { return table.size; }
 export function has(id) { return table.has(id); }
 export function reset() {
     table.clear();
+    tanks.length = 0; things.length = 0;
     for (let i = 0; i < MAX_SHOTS; i++) shots.born[i] = -1e9;
 }
 
@@ -60,8 +80,9 @@ function add(row) {
         style: style && style.cat === 'sdName' ? style : null, col, body: art.bodyColor(kick.kick, look, col),
         name: String(row[5] || kick.name).slice(0, 24), hidden: !!row[6],
         size: kick.kick.size || 1,
-        st: M.makeState(id, kick.kick.move), label: null, spr: null, lastT: 0,
-        frame: -1, ok: false, ox: 0, oy: 0, wx: 0, wy: 0, oR: 20, of: 0, sx: 0, sy: 0,
+        st: M.makeState(id, kick.kick.move), label: null, spr: null, lastT: 0, lastReal: 0,
+        frame: -1, ok: false, ox: 0, oy: 0, wx: 0, wy: 0, oR: 20, sx: 0, sy: 0,
+        enemy: null, thing: null, sense: { ex: NaN, ey: NaN, gx: NaN, gy: NaN, gr: 0 },
     });
 }
 export function onPacket(d) {
@@ -85,12 +106,92 @@ export function note(inst, x, y, alpha, fade, size, falling) {
     e.ox = x; e.oy = y;
     e.wx = inst.render.x; e.wy = inst.render.y;
     e.oR = size || inst.size || 20;
-    e.of = inst.render.f || 0;
     e.ok = M.shown(e.hidden, alpha, fade, falling, raidFinale.active());
 }
 
-export function draw(c, ratio, px, py) {
-    const now = performance.now(), t = now / 1000;
+// The frame clock: steady seconds from app.js's frame time. A stall or a
+// clock switch (a hidden tab steps frames off Date.now) counts as 0.1 s.
+let clockT = 0, lastTick = NaN, senseAt = -1e9;
+function advance(tick) {
+    const ms = tick - lastTick;
+    lastTick = tick;
+    if (ms > 0) clockT += Math.min(ms, 100) / 1000;
+    return clockT;
+}
+
+/* ── what they can see ──────────────────────────────────────────────── */
+const tanks = [], things = [];
+let meId = -1;
+function mateOf() { const r = global.royale; return r && r.duos && r.duo && r.duo.mate ? r.duo.mate.id : -1; }
+// Tanks, gems and chests the entity pass just drew on screen (it tags gems
+// _gemCls and chests _chest as it draws them). A few times a second.
+function scan() {
+    tanks.length = 0; things.length = 0;
+    const list = global.entities;
+    if (!list) return;
+    for (let i = 0; i < list.length; i++) {
+        const q = list[i];
+        if (!q || !q._onScreen || !q.render) continue;
+        if (q._gemCls || q._chest) { if (things.length < 48) things.push(q); }
+        else if (q.nameplate && !(q.alpha < 0.5) && tanks.length < 32) tanks.push(q);
+    }
+}
+const ally = (e, q, mate) => q.id === e.id || (e.id === meId && q.id === mate) || (e.id === mate && q.id === meId);
+function pick(e, mate) {
+    let best = ENEMY_NEAR * ENEMY_NEAR * e.st.sc * e.st.sc, en = null;
+    for (let i = 0; i < tanks.length; i++) {
+        const q = tanks[i];
+        if (ally(e, q, mate)) continue;
+        const d = (q.render.x - e.wx) ** 2 + (q.render.y - e.wy) ** 2;
+        if (d < best) { best = d; en = q; }
+    }
+    e.enemy = en;
+    best = THING_NEAR * THING_NEAR * e.st.sc * e.st.sc; en = null;
+    for (let i = 0; i < things.length; i++) {
+        const q = things[i];
+        const d = (q.render.x - e.wx) ** 2 + (q.render.y - e.wy) ** 2;
+        if (d < best) { best = d; en = q; }
+    }
+    e.thing = en;
+}
+// Where those are drawn this frame, in world units (the same sum the owner
+// goes through, so it looks right at them, not where the network had them).
+function senseOf(e, ratio, px, py, hw, hh, cam) {
+    const S = e.sense, en = e.enemy, th = e.thing;
+    if (en && en._onScreen) {
+        S.ex = cam ? (en._sx - hw + px) / ratio : en.render.x;
+        S.ey = cam ? (en._sy - hh + py) / ratio : en.render.y;
+    } else { S.ex = NaN; S.ey = NaN; }
+    if (th && th._onScreen) {
+        S.gx = cam ? (th._sx - hw + px) / ratio : th.render.x;
+        S.gy = cam ? (th._sy - hh + py) / ratio : th.render.y;
+        S.gr = th.size || 10;
+    } else { S.gx = NaN; S.gy = NaN; }
+    return S;
+}
+
+// Something good happened to this owner (banked, a kill, a pickup): its
+// sidekick has a little bounce about. k 0..1.
+export function cheer(id, k) {
+    const e = table.get(id | 0);
+    if (e && e.st.init) M.cheer(e.st, clockT, k);
+}
+// ...or right next to it (a chest broke, a tank went down): every sidekick
+// whose owner is within `range` world units.
+export function cheerNear(x, y, k, range) {
+    const r2 = (range || 420) ** 2;
+    for (const e of table.values()) if (e.st.init && (e.wx - x) ** 2 + (e.wy - y) ** 2 < r2) M.cheer(e.st, clockT, k);
+}
+
+function rung(rpx) {
+    for (let i = 0; i < RUNGS.length; i++) if (RUNGS[i] >= rpx) return RUNGS[i];
+    return RUNGS[RUNGS.length - 1];
+}
+
+export function draw(c, ratio, px, py, tick, me) {
+    const now = performance.now();
+    const t = advance(tick === tick && tick != null ? tick : now);
+    if (me != null) meId = me;
     const low = lowFx();
     baked = false;
     // the sky drop's wide view: tanks are specks, so are these
@@ -98,19 +199,24 @@ export function draw(c, ratio, px, py) {
     const cam = px === px && py === py && px != null && py != null;
     const hw = global.screenWidth / 2, hh = global.screenHeight / 2;
     const soft = softCanvas();
+    const look = t - senseAt >= SENSE_EVERY;
+    if (look) { senseAt = t; scan(); }
+    const mate = look ? mateOf() : -1;
     for (const e of table.values()) {
         if (e.frame !== frame || !e.ok || wide) continue;
         // the owner where it was drawn, in world units: its interpolated
         // spot (renderx / rendery for your own tank), whatever the camera did
         if (cam) { e.wx = (e.ox - hw + px) / ratio; e.wy = (e.oy - hh + py) / ratio; }
         // back from hiding (or first sight): on its spot, fading in
-        if (t - e.lastT > 0.4) e.st.init = false;
-        const dt = e.lastT ? t - e.lastT : 0;
+        if (now - e.lastReal > 400) e.st.init = false;
+        e.lastReal = now;
+        const dt = e.st.init ? t - e.lastT : 0;
         e.lastT = t;
-        const s = M.step(e.st, e.wx, e.wy, e.oR, e.of, e.size, t, dt);
+        if (look) pick(e, mate);
+        const s = M.step(e.st, e.wx, e.wy, e.oR, e.size, t, dt, senseOf(e, ratio, px, py, hw, hh, cam));
         const sx = e.ox + (s.x - e.wx) * ratio, sy = e.oy + (s.y - e.wy) * ratio;
         const lift = s.hop * ratio, y = sy - lift;
-        const rpx = M.R * e.size * ratio;
+        const rpx = M.R * e.size * s.sc * ratio;
         const spr = sprite(e, rpx);
         if (!spr) continue;
         const k = rpx / spr.r;
@@ -126,8 +232,8 @@ export function draw(c, ratio, px, py) {
         else turned(c, spr.under, spr.un, sx, y, s.face, k);
         const pop = M.popScale(s, t);
         const w = spr.bn * k;
-        if (!s.tilt && s.sq === 1 && pop === 1 && Math.abs(k - 1) < 0.02) {
-            c.drawImage(spr.body, Math.round(sx - spr.bn / 2), Math.round(y - spr.bn / 2));
+        if (!s.tilt && s.sq === 1 && pop === 1) {
+            c.drawImage(spr.body, sx - w / 2, y - w / 2, w, w);
         } else {
             c.save();
             c.translate(sx, y);
@@ -142,7 +248,7 @@ export function draw(c, ratio, px, py) {
         }
         c.globalAlpha = 1;
         e.sx = sx; e.sy = y;
-        drawLabel(c, e, ratio, fade);
+        drawLabel(c, e, ratio, fade, s.sc);
         if (!low && now - lastShotAt >= SHOT_GAP_MS) {
             const a = M.shotDue(s, t, Math.random);
             if (a === a) { lastShotAt = now; fire(e, a, t); }
@@ -187,10 +293,11 @@ function forget(key) {
     sprites.delete(key);
     if (s) spritePx -= s.px;
 }
-// The sprites at this on-screen radius. One bake a frame at most; until its
-// turn comes the sidekick borrows the size it had before (scaled).
+// The sprites for this on-screen radius: baked at the rung just above it
+// and drawn a little smaller. One bake a frame at most; until its turn
+// comes the sidekick borrows the size it had before (scaled).
 function sprite(e, rpx) {
-    const r = Math.max(6, Math.min(64, Math.round(rpx / STEP) * STEP));
+    const r = rung(rpx);
     const key = e.kick.nid + ':' + e.skinNid + ':' + (e.col || '') + ':' + r;
     let s = sprites.get(key);
     if (s === undefined) {
@@ -225,16 +332,16 @@ function label(e, px) {
     try { e.label = art.bakeName(e.name, px, e.style, art.mix(e.body, '#ffffff', 0.45), 1); } catch (err) { /* keep the old one */ }
     return e.label;
 }
-function drawLabel(c, e, ratio, fade) {
-    const px = LABEL_WORLD * ratio;
+// The tag grows a little with its sidekick (the square root of it).
+function drawLabel(c, e, ratio, fade, sc) {
+    const px = LABEL_WORLD * Math.sqrt(sc || 1) * ratio;
     if (px < 5) return;
     const L = label(e, Math.max(6, Math.min(40, Math.round(px / STEP) * STEP)));
     if (!L) return;
     const k = px / L.px;
-    const top = e.sy - (M.R * e.size * 1.25 + 3) * ratio - L.h * k;
+    const top = e.sy - (M.R * e.size * (sc || 1) * 1.25 + 3) * ratio - L.h * k;
     if (fade < 1) c.globalAlpha = fade;
-    if (Math.abs(k - 1) < 0.08) c.drawImage(L.cv, Math.round(e.sx - L.w / 2), Math.round(top));
-    else c.drawImage(L.cv, e.sx - L.w * k / 2, top, L.w * k, L.h * k);
+    c.drawImage(L.cv, e.sx - L.w * k / 2, top, L.w * k, L.h * k);
     c.globalAlpha = 1;
 }
 
@@ -256,7 +363,7 @@ function shot(e, x, y, a, kind, size, t) {
 }
 // a pop from every barrel (a Smasher just pops where it is)
 function fire(e, face, t) {
-    const r = M.R * e.size, guns = e.kick.kick.guns, st = e.st;
+    const st = e.st, r = M.R * e.size * st.sc, guns = e.kick.kick.guns;
     if (!guns.length) { shot(e, st.x, st.y, face, 'ring', r * 0.9, t); return; }
     const ca = Math.cos(face), sa = Math.sin(face);
     for (let g = 0; g < guns.length && g < 8; g++) {
@@ -284,5 +391,5 @@ function drawShots(c, ratio, t, low) {
 
 // QA: what the client thinks is out there
 export function debug() {
-    return [...table.values()].map((e) => ({ id: e.id, kick: e.kick.id, name: e.name, hidden: e.hidden, ok: e.ok, x: Math.round(e.st.x), y: Math.round(e.st.y), shots: e.st.shots, snaps: e.st.snaps }));
+    return [...table.values()].map((e) => ({ id: e.id, kick: e.kick.id, name: e.name, hidden: e.hidden, ok: e.ok, x: Math.round(e.st.x), y: Math.round(e.st.y), shots: e.st.shots, snaps: e.st.snaps, sc: +e.st.sc.toFixed(2), face: +e.st.face.toFixed(3), look: e.st.look, enemy: e.enemy ? e.enemy.id : null }));
 }

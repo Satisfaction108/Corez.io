@@ -219,7 +219,8 @@ test('leaderboard: ranked only, rp order, Legend #N, deleted/banned out, own row
             assert.deepEqual(names, [u[3], u[2], u[1], u[0]].map(x => x.username));
             assert.deepEqual(r.json.rows.map(x => x.legendNo), [1, 2, 3, 0]);
             assert.deepEqual(r.json.rows.map(x => x.place), [1, 2, 3, 4]);
-            assert.equal(r.json.rows[0].tier, 'legend');
+            assert.equal(r.json.rows[0].tier, 'mythic');                       // Legend floor + 9000: Legend #N spans the tiers above too
+            assert.equal(r.json.rows[1].name, 'Legend I');
             assert.equal(r.json.me, null, 'guest');
             const me = await srv.get('/api/leaderboard?limit=2', srv.cookieFor(u[1]));
             assert.equal(me.json.rows.length, 2);

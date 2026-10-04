@@ -93,6 +93,24 @@ function claimGuest(guestId, userId, now = Date.now()) {
     });
 }
 
+// Gems paid in from outside a raid (the daily rewards track). Added to what
+// is at rest, in one transaction (a savepoint inside the caller's), for the
+// account a converted guest became. Safe while a lease is out: at rest is
+// 0 then, and release / recoverStale only ever add to it, so the reward is
+// kept and nobody can spend it twice. -> gems actually added (the cap can
+// eat some), or null when the database is not there.
+function credit(owner, gems, now = Date.now()) {
+    const d = db.handle();
+    const n = Math.max(0, Math.floor(+gems || 0));
+    if (!d || !parseOwner(owner)) return null;
+    if (!n) return 0;
+    return d.tx(() => {
+        const o = mergeTarget(d, parseOwner(owner));
+        const before = atRest(d, o);
+        return setAtRest(d, o, before + n, now) - before;
+    });
+}
+
 // What is at rest for this owner right now (0 while a session holds it).
 function peek(owner) {
     const d = db.handle();
@@ -168,4 +186,4 @@ function recoverStale(now = Date.now(), maxAgeMs = STALE_MS, all = false) {
     });
 }
 
-module.exports = { CAP, STALE_MS, NEW_ACCOUNT_MS, parseOwner, peek, checkout, checkpoint, release, recoverStale, claimGuest };
+module.exports = { CAP, STALE_MS, NEW_ACCOUNT_MS, parseOwner, peek, credit, checkout, checkpoint, release, recoverStale, claimGuest };

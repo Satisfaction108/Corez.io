@@ -4,8 +4,9 @@
 //              min in, the next ~5.6 min after; Warden's Watch multiplies
 //              on top
 //   per hit    no single collision tick takes more than 1.75% of a boss
-//   per tank   one tank gets at most 2.8% a second through, everyone
-//              together 7.5%
+//   per tank   (off by default since Oct 3; ROYALE_BOSS_RATE_CAP=1) one tank
+//              gets at most 2.8% a second through, everyone together 7.5%
+//   default    with the rate cap off, only the per-hit cap applies
 //   ttk        a maxed Annihilator, a Constructor's traps and a grown tank
 //              all need over 30 s alone, a maxed Basic 25-60 s, three
 //              together less than half; switched off they shred it (a
@@ -134,7 +135,11 @@ function ttk(cls, opts = {}) {
     return out;
 }
 
-test('per hit and per tank: the cap itself', () => {
+test('per hit and per tank: the cap itself (rate cap switched on)', () => {
+    guard.setRateCap(true);
+    try { capChecks(); } finally { guard.setRateCap(false); }
+});
+function capChecks() {
     const boss = makeBoss();
     const pool = guard.poolOf(boss);
     const a = { id: 1 }, b = { id: 2 }, c = { id: 3 }, d = { id: 4 };
@@ -158,9 +163,28 @@ test('per hit and per tank: the cap itself', () => {
     boss.isTutorialBot = true;
     assert.equal(guard.capHit(boss, a, pool, now + 2000), pool);
     clearAll();
+}
+
+test('default: no per-second cap, only the per-hit one', () => {
+    const boss = makeBoss();
+    const pool = guard.poolOf(boss);
+    const a = { id: 1 };
+    let got = 0;
+    for (let i = 0; i < 60; i++) got += guard.capHit(boss, a, pool * 0.01, 1e12 + i);
+    assert.ok(got > pool * 0.5, 'one tank lands what it deals: ' + (got / pool * 100).toFixed(1) + '% in a second');
+    assert.ok(Math.abs(guard.capHit(boss, a, pool, 1e12 + 99) - pool * guard.HIT_SHARE) < 1e-9, 'one huge hit is still capped');
+    const anni = ttk('annihilator', { limit: 60 });
+    const basic = ttk('basic', { limit: 150 });
+    log('     uncapped ttk s: annihilator ' + anni.secs.toFixed(1) + ', basic ' + basic.secs.toFixed(1));
+    assert.ok(anni.dead && basic.dead, 'both get it done');
+    clearAll();
 });
 
-test('ttk: big hitters need real time; off, they shred it', () => {
+test('ttk (rate cap on): big hitters need real time; off, they shred it', () => {
+    guard.setRateCap(true);
+    try { ttkChecks(); } finally { guard.setRateCap(false); }
+});
+function ttkChecks() {
     const anni = ttk('annihilator');
     const construct = ttk('construct', { dist: -60 });
     const grown = ttk('destroyer', { growth: 2.6 });
@@ -182,7 +206,7 @@ test('ttk: big hitters need real time; off, they shred it', () => {
     } finally { guard.setEnabled(true); }
     log('     ttk s: annihilator ' + anni.secs.toFixed(1) + ', construct ' + construct.secs.toFixed(1) +
         ', grown destroyer ' + grown.secs.toFixed(1) + ', basic ' + basic.secs.toFixed(1) + ', three basics ' + group.secs.toFixed(1));
-});
+}
 
 test('schedule: one boss per storm cycle, early in it, gone when it ends; none in the last storm', () => {
     const storm = require(path.join(SERVER, 'game', 'terrain', 'storm.js'));
@@ -233,6 +257,36 @@ test('payout: a boss killed through the cap still erupts its gems', () => {
     assert.equal(bosses.current(), null);
     assert.ok(spots() > before + 5, 'gems erupted: ' + (spots() - before));
     assert.ok(bosses.damageBy(t) >= 0);
+    clearAll();
+});
+
+test('first minutes: a boss ignores you until you deal 25%, then gets angrier', () => {
+    const boss = makeBoss();
+    boss.bossKind = 'drillhead';
+    const pool = guard.poolOf(boss);
+    const p = { id: 4242, isPlayer: true, nxBossSafe: true, health: { amount: 200 }, damageReceived: 0, sendMessage(m) { this.told = m; } };
+    const shot = { master: boss, type: 'bullet', kill() { this.killed = true; } };
+    const now = Date.now();
+    assert.equal(guard.intoPlayer(p, shot, 40, now), 0, 'left alone');
+    assert.ok(shot.killed, 'the shot fades');
+    // hit it for just under a quarter: still left alone
+    for (let i = 0; i < 1000 && (boss._dealtBy?.get(p.id) || 0) < pool * 0.24; i++) guard.capHit(boss, p, pool * 0.01, now);
+    assert.equal(guard.angerOf(boss, p, now), 0, 'under a quarter: not yet');
+    for (let i = 0; i < 1000 && (boss._dealtBy?.get(p.id) || 0) < pool * guard.ANGER_AT; i++) guard.capHit(boss, p, pool * 0.01, now);
+    const a0 = guard.angerOf(boss, p, now);
+    assert.ok(Math.abs(a0 - guard.ANGER_MIN) < 0.05, 'gently at first: ' + a0.toFixed(2));
+    assert.match(p.told || '', /noticed you/);
+    const s2 = { master: boss, type: 'bullet', kill() { this.killed = true; } };
+    assert.ok(Math.abs(guard.intoPlayer(p, s2, 40, now) - 40 * a0) < 1e-6, 'hits at that share');
+    assert.ok(!s2.killed, 'and the shot is real');
+    // keep hitting it: angrier
+    for (let i = 0; i < 1000 && (boss._dealtBy.get(p.id) || 0) < pool * 0.45; i++) guard.capHit(boss, p, pool * 0.01, now);
+    const a1 = guard.angerOf(boss, p, now);
+    assert.ok(a1 > a0 + 0.2 && a1 < 1, 'angrier: ' + a1.toFixed(2));
+    // or just wait: full after the ramp
+    assert.equal(guard.angerOf(boss, p, now + 30000), 1, 'full fury in the end');
+    // someone else who never hit it is still left alone
+    assert.equal(guard.angerOf(boss, { id: 7 }, now), 0);
     clearAll();
 });
 

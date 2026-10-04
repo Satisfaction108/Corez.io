@@ -112,6 +112,12 @@ export const profile = (u) => get('/api/profile?u=' + encodeURIComponent(u));
 export const leaderboard = (limit, type) => get('/api/leaderboard?limit=' + (limit || 100) + (type && type !== 'ranked' ? '&type=' + type : ''));
 export const quests = () => get('/api/quests');
 export const invite = () => get('/api/invite');
+// The daily rewards track and push pings (guests send their browser's guest
+// id in the body, never in the URL).
+export const daily = (guestId) => post('/api/daily', guestId ? { guestId } : {});
+export const dailyClaim = (guestId) => post('/api/daily/claim', guestId ? { guestId } : {});
+export const pushSubscribe = (body) => post('/api/push/subscribe', body);
+export const pushUnsubscribe = (endpoint) => post('/api/push/unsubscribe', { endpoint });
 // Server-Sent Events: a URL, since EventSource does its own fetching.
 export const EVENTS_URL = '/api/events';
 // Duo parties (guests too: they carry the X-Party-Guest token set above).

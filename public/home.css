@@ -3380,6 +3380,145 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 body.mobile .ev-card { margin-bottom: 10px; }
 body.mobile .ev-link { padding: 6px 0; margin: -6px 0; }
 
+/* ── Daily rewards under Play (client/account/retention.js) ──
+   The same quiet strip as the event card: the seven days, tomorrow's
+   reward with its countdown (or today's, with Claim), and one line of
+   reasons to come back. */
+.dy-strip {
+    margin: 12px 0 0;
+    padding: 9px 12px 10px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface2);
+    box-shadow: inset 0 1px 0 var(--line-soft), 0 3px 0 var(--drop);
+    text-align: left;
+    animation: dwFade var(--dw-t2) var(--dw-ease) both;
+}
+.dy-strip[hidden] { display: none; }
+.dy-strip.ready { border-color: var(--gold-dk); box-shadow: inset 0 1px 0 var(--line-soft), 0 0 0 2px color-mix(in srgb, var(--gold) 40%, transparent), 0 3px 0 var(--drop); }
+.dy-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dy-title { color: var(--copper); font: 400 18px/1.1 var(--display); letter-spacing: .02em; white-space: nowrap; }
+.dy-flame { display: inline-flex; align-items: center; gap: 2px; color: #ff9f43; font: 700 13px/1 var(--ui); }
+.dy-flame .dw-ic { width: 19px; height: 19px; }
+.dy-flame.inline { vertical-align: -4px; margin-right: 1px; }
+.dy-bell {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -2px 0 0 auto; padding: 0;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--face); box-shadow: inset 0 -3px 0 var(--face-dk);
+    color: var(--text2); cursor: pointer;
+}
+.dy-bell .dw-ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.dy-bell.on { color: var(--gold); }
+.dy-bell .dy-bell-x { stroke: var(--danger); }
+.dy-bell:active { transform: translateY(2px); box-shadow: inset 0 -1px 0 var(--face-dk); }
+.dy-head .dy-flame + .dy-bell, .dy-head .dy-title + .dy-bell { margin-left: auto; }
+.dy-head .dy-flame { margin-left: auto; }
+.dy-head .dy-flame + .dy-bell { margin-left: 2px; }
+
+.dy-pips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 7px 0 7px; }
+.dy-pip {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    height: 26px; box-sizing: border-box;
+    border: 1px solid var(--line); border-radius: 7px;
+    background: var(--input-bg);
+}
+.dy-pip .dy-gem { width: 14px; height: 14px; opacity: .55; }
+.dy-pip .dy-art { opacity: .7; }
+.dy-pip.done { background: color-mix(in srgb, var(--copper) 26%, var(--surface2)); }
+.dy-pip.done .dy-gem, .dy-pip.done .dy-art { opacity: .35; }
+.dy-pip.next { border: 2px dashed var(--gold-dk); }
+.dy-pip.now { border: 2px solid var(--gold); background: color-mix(in srgb, var(--gold) 22%, var(--surface2)); animation: dyNow 1.6s ease-in-out infinite; }
+.dy-pip.now .dy-gem, .dy-pip.now .dy-art, .dy-pip.next .dy-gem, .dy-pip.next .dy-art { opacity: 1; }
+.dy-pip-ok {
+    position: absolute; right: -4px; top: -5px;
+    display: inline-flex; width: 14px; height: 14px; border-radius: 50%;
+    align-items: center; justify-content: center;
+    background: var(--play); border: 1px solid var(--line); color: #fff;
+}
+.dy-pip-ok .dw-ic { width: 10px; height: 10px; }
+@keyframes dyNow { 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 35%, transparent); } }
+.dy-gem path { fill: var(--emerald); stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+.dy-gem .dy-gem-f { fill: none; stroke: rgba(0,0,0,.28); stroke-width: 1.3; }
+
+.dy-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
+.dy-what { min-width: 0; color: var(--text); font: 600 13px/1.3 var(--ui); }
+.dy-lead { color: var(--text2); }
+.dy-what b { color: var(--heading); font-weight: 700; }
+.dy-cd { flex: none; padding: 3px 8px 4px; border-radius: 7px; background: var(--ink); color: #fff4dc; font: 700 13px/1 var(--ui); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dw-btn.dy-claim { flex: none; height: 30px; margin: 0 0 3px; padding: 0 14px 3px; font: 400 17px/1 var(--display); letter-spacing: .03em; }
+.dy-reasons { margin-top: 5px; color: var(--text2); font: 600 12px/1.35 var(--ui); }
+.dy-reasons[hidden] { display: none; }
+.dy-reasons b { color: var(--text); font-weight: 700; }
+.dy-signup { margin-top: 3px; color: var(--text2); font: 600 12px/1.35 var(--ui); }
+.dy-link { padding: 0; border: 0; background: none; color: var(--link); font: inherit; font-weight: 700; cursor: pointer; }
+.dy-link:hover { text-decoration: underline; }
+.dy-ask {
+    margin-top: 9px; padding: 9px 10px 8px;
+    border: 2px dashed var(--border); border-radius: 10px;
+    animation: dwFade var(--dw-t2) var(--dw-ease) both;
+}
+.dy-ask p { margin: 0 0 7px; color: var(--heading); font: 700 13px/1.35 var(--ui); }
+.dy-ask-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.dy-ask .dw-btn.sm { height: 30px; font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { .dy-strip, .dy-pip.now, .dy-ask { animation: none; } }
+/* phones: just the line that matters */
+body.mobile .dy-strip { margin-top: 8px; padding: 6px 10px 7px; }
+body.mobile .dy-pips, body.mobile .dy-reasons { display: none; }
+
+/* the welcome-back card: one short card, then straight into Play */
+.dw-modal.dy-modal { position: relative; width: 410px; padding: 20px 22px 18px; text-align: center; }
+.dy-x { position: absolute; top: 12px; right: 12px; }
+.dy-back-h { margin: 2px 40px 6px; color: var(--heading); font: 400 31px/1.05 var(--display); letter-spacing: .01em; }
+.dy-back-bank { display: inline-flex; align-items: center; gap: 6px; color: var(--text2); font: 600 14px/1.2 var(--ui); }
+.dy-back-bank b { color: var(--heading); }
+.dy-back-bank .dy-gem { width: 18px; height: 18px; }
+.dy-pips.dy-sz-big { gap: 5px; margin: 14px 0 12px; }
+.dy-pips.dy-sz-big .dy-pip { flex-direction: column; gap: 2px; height: 70px; border-radius: 9px; }
+.dy-pips.dy-sz-big .dy-gem { width: 22px; height: 22px; }
+.dy-pip-d { color: var(--text2); font: 700 10px/1 var(--ui); letter-spacing: .02em; }
+.dy-pip-g { color: var(--text); font: 700 11px/1 var(--ui); }
+.dy-pip.now .dy-pip-d, .dy-pip.now .dy-pip-g { color: var(--heading); }
+.dy-pip.item:not(.done) .dy-pip-g { color: var(--gold); }
+.dy-big {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; text-align: left;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--well);
+}
+.dy-big > .dy-gem { flex: none; width: 40px; height: 40px; }
+.dy-big > .dy-art { flex: none; }
+.dy-big-k { color: var(--text2); font: 700 12px/1.2 var(--ui); letter-spacing: .03em; text-transform: uppercase; }
+.dy-big-v { margin-top: 3px; color: var(--gold); font: 400 24px/1.05 var(--display); letter-spacing: .01em; }
+.dy-big.got .dy-big-v { color: var(--play); }
+.dy-note { margin: 10px 0 0; color: var(--text2); font: 600 13px/1.4 var(--ui); }
+.dy-after { margin: 10px 0 0; color: var(--text); font: 700 13px/1.4 var(--ui); }
+.dy-after[hidden] { display: none; }
+.wl-opt.dy-go { margin-top: 14px; }
+.wl-opt.dy-go .dw-ic { width: 26px; height: 26px; --ic-play: #fff; }
+@media (max-width: 440px) {
+    .dw-modal.dy-modal { padding: 16px 14px 14px; }
+    .dy-pips.dy-sz-big { gap: 3px; }
+    .dy-pips.dy-sz-big .dy-pip { height: 62px; }
+    .dy-pip-d { font-size: 9px; }
+}
+
+/* the raid result's Discord nudge (raidFinale.js), placed over the canvas */
+#dwFinaleDiscord {
+    position: fixed; z-index: 40; left: 0; top: 0;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px 9px; box-sizing: border-box;
+    border: 2px solid #120e15; border-radius: 12px;
+    background: rgba(43, 37, 51, .97); box-shadow: 0 4px 0 rgba(0, 0, 0, .32);
+    color: #fff3d9; font: 700 14px/1.1 Rubik, Ubuntu, sans-serif; text-decoration: none; white-space: nowrap;
+    opacity: 0; pointer-events: none; transition: opacity 180ms ease-out;
+}
+#dwFinaleDiscord.open { opacity: 1; pointer-events: auto; }
+#dwFinaleDiscord:hover { filter: brightness(1.08); }
+#dwFinaleDiscord .dw-ic { width: 22px; height: 22px; --ic-sw: 0; --ic-discord: #7c87ff; }
+#dwFinaleDiscord small { display: block; color: #a597b0; font: 600 11.5px/1.2 Rubik, Ubuntu, sans-serif; }
+
 /* ── Daily Quests (beside the menu card): a note pinned next to it ── */
 .startMenu { position: relative; }
 #lobbySide {

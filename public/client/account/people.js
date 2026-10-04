@@ -17,7 +17,8 @@ export function rankOf(rank) {
     const legendNo = rank.legendNo | 0;
     const R = window.DWRanks;
     const name = rank.name || (R ? R.nameOf(div) : 'Ranked');
-    return { div, text: div === 18 && legendNo > 0 ? 'Legend #' + legendNo : name, legendNo };
+    // Legend and up: the name with its Legend #N
+    return { div, text: div >= 18 && legendNo > 0 ? name + ' #' + legendNo : name, legendNo };
 }
 
 export function badge(div, px, cls, opts) {

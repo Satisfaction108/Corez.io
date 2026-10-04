@@ -394,7 +394,7 @@ function mainPart() {
         assert.equal(ranked.activeEnough({ inputMs: 20 * MIN, aliveMs: 20 * MIN, idleKicked: true }), false, 'kicked for idling');
         assert.equal(ranked.activeEnough(null), false);
         const ok = { place: 1, rows: 6, score: 500, raidMs: 10 * MIN };
-        assert.equal(ranked.placementBonus(ok).rp, 40);
+        assert.equal(ranked.placementBonus(ok).rp, 30);
         assert.deepEqual(ranked.placementBonus({ ...ok, active: false }), { eligible: false, rp: 0, dustMilli: 0 });
         const f = ranked.killFilter({ victimIsBot: false, victimAliveMs: MIN, priorKills: 0, pts: 200, killerIdle: true });
         assert.deepEqual(f, { discount: 200, dustMilli: 0, spawnKill: false, filtered: true });
@@ -547,8 +547,8 @@ function mainPart() {
             reset();
             return rkp.bonusRP;
         };
-        assert.equal(raid(20 * MIN, 20 * MIN), 40, 'played the whole raid');
-        assert.equal(raid(20 * MIN, 12.5 * MIN), 40, '62%');
+        assert.equal(raid(20 * MIN, 20 * MIN), 30, 'played the whole raid');
+        assert.equal(raid(20 * MIN, 12.5 * MIN), 30, '62%');
         assert.equal(raid(20 * MIN, 11 * MIN), 0, '55%: mostly AFK');
         assert.equal(raid(20 * MIN, 0), 0, 'outlasted everyone without touching a key');
         assert.equal(raid(2.5 * MIN, 2.5 * MIN), 0, 'under 3 active minutes');

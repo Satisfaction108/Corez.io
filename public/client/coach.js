@@ -19,7 +19,13 @@ import { gameSound } from "./sound.js";
 //
 // One card at a time: the guide steps aside while a big card holds the middle
 // of the screen (app.js global.hudCardUp: NEW ABILITY, event callouts, the
-// spawn shield line, kit placement, raid results), the shop panel or the map.
+// spawn shield line, kit placement, raid results), a director moment's banner
+// (newcomer.js global.nxBannerUp), the shop panel or the map.
+//
+// First raids (newcomer.js, the server's stage): the goal line under the clock
+// follows this guide's step, stage 0 skips the shop/ability step until a
+// later raid (or a director moment hands out an ability), and once the server
+// sends a stage it decides who gets the guide (stages 0-1).
 //
 // Contracts (the server's one-job-at-a-time card) wait while the guide runs:
 // the CO packet tells the server whether it's on, and the first contract
@@ -211,7 +217,12 @@ function decide(t) {
     }
     let veteran = false;
     const pl = acct && acct.rank && acct.rank.placement;
-    if (pl) veteran = !!pl.done || (pl.lives | 0) >= 3;
+    // the server's first-raids stage (newcomer.js), once it sends one: the
+    // first two raids get the guide, the third doesn't; a veteran (3) is
+    // decided the old way, so nothing changes for them
+    const nxEarly = global.nxKnown && (global.nxStage | 0) < 3;
+    if (nxEarly) veteran = (global.nxStage | 0) >= 2;
+    else if (pl) veteran = !!pl.done || (pl.lives | 0) >= 3;
     else {
         let pb = 0;
         try { pb = parseInt(localStorage.getItem("digwarsRaidPB") || "0", 10) || 0; } catch (e) { }
@@ -265,6 +276,9 @@ function observe(t) {
 // A step that can't be done right now is skipped over and comes back later.
 function waiting(id) {
     if (id === "tutorial" && tutorialPlayed()) { markDone("tutorial"); return false; }
+    // a first raid (stage 0) has no shops yet: the ability step waits for the
+    // next raid, unless a director moment already handed one out
+    if (id === "ability" && global.nxKnown && (global.nxStage | 0) === 0 && !ownsKit()) return true;
     if (id === "upgrade" && !(gui.upgrades || []).length && !canStat()) {
         const n = tankName();
         if ((n && n !== "Basic") || skillSum() > 0) { markDone("upgrade"); return false; }
@@ -574,7 +588,9 @@ function content(t) {
         }
         case "final":
             return { ...base, title: "You're set",
-                text: "Contracts show up top left now. Each one pays gems.", next: "Let's go", done: true };
+                // contracts only show from the third raid (newcomer.js)
+                text: global.nxKnown && (global.nxStage | 0) < 2 ? "You've got the basics. Keep digging and banking." : "Contracts show up top left now. Each one pays gems.",
+                next: "Let's go", done: true };
     }
     return null;
 }
@@ -598,6 +614,8 @@ function syncServer() {
 function stepAside() {
     const sh = global.shop || {};
     if (global.showBigMap || global.hudCardUp) return true;
+    // a director moment's banner (newcomer.js) has the middle
+    if (global.nxBannerUp) return true;
     // the kill / growth callouts (a couple of seconds, just above the tank)
     // meet the card only where it sits under the clock
     if (global.hudCalloutUp && !lowTouch()) return true;
@@ -611,6 +629,9 @@ function stepAside() {
 }
 // a first raid is in progress (raidHeat.js keeps the HUD calm until the first bank)
 export function active() { return rec.status === "on"; }
+// the step on now ("move", "mine", "bank", "upgrade", "ability", "final" or
+// ""), for newcomer.js's goal line
+export function stepId() { return rec.status === "on" || st.step === "final" ? (st.step || "") : ""; }
 // still teaching, or hasn't decided yet whether it will (the ability tour waits)
 export function holding() { return !rec.status || rec.status === "on"; }
 

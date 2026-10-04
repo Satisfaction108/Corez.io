@@ -1,6 +1,7 @@
 // Public announcements in DISCORD_ANNOUNCE_CHANNEL_ID (main thread).
 //
-//   rank-ups     every division-up at Diamond I or higher, Legend with its #N
+//   rank-ups     every division-up at Diamond I or higher; a new tier from
+//                Legend up with its Legend #N
 //                (bus {t:'rankUp', userId, division, tierUp} from the game)
 //   raid top 3   the account holders who placed 1-3 in an eligible raid
 //                (bus {t:'raidTop', raidKey, top:[{userId, place, score}]})
@@ -63,9 +64,10 @@ function rankUpText(msg) {
     const div = msg.division == null ? R.divisionOf(row.rp | 0) : msg.division | 0;
     if (div < DIAMOND_I) return null;
     const name = rest.escapeMd(row.username);
-    if (div === R.LEGEND) {
+    if (R.isLegend(div) && msg.tierUp) {
+        // a new tier from Legend up, with the Legend #N
         const n = rankStore.legendRank(row, { fresh: true });
-        return `**${name}** reached **Legend**${n ? ` (#${n})` : ''}! 👑`;
+        return `**${name}** reached **${R.nameOf(div)}**${n ? ` (#${n})` : ''}! 👑`;
     }
     return `**${name}** ranked up to **${R.nameOf(div)}**${msg.tierUp ? '!' : '.'}`;
 }

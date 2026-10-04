@@ -36,7 +36,8 @@ const PULSE_FAST_MS = 5500;        // below half health
 const PULSE_FIRST_MS = 6000;
 const PULSE_R = 620;
 const PULSE_PUSH = 24;             // outward kick at the rim of the Core, u/tick
-const PULSE_DMG = 0.14;            // of max health at the rim, only below RAGE_BELOW
+const PULSE_DMG = 0.12;            // of max health at the rim, from SHARD_BELOW (and PULSE_RAGE_DMG below RAGE_BELOW)
+const PULSE_RAGE_DMG = 0.18;
 const CHARGE_MS = 900;             // the telegraph before a shockwave
 const SHARD_CHARGE_MS = 600;       // ...and before a volley of shards
 const PULSE_ROCK = 0.55;           // of a rock's max health
@@ -50,8 +51,8 @@ const SHARD_N = 3;
 const SHARD_RAGE_N = 4;
 const SHARD_FLIGHT_MS = 650;       // where it lands is marked this long first
 const SHARD_HIT_R = 70;
-const SHARD_DMG = 0.09;            // of max health (was 0.12)
-const SHARD_RAGE_DMG = 0.12;       // (was 0.16)
+const SHARD_DMG = 0.13;            // of max health: it was barely felt at 0.09
+const SHARD_RAGE_DMG = 0.17;
 const LAST_HIT_GEMS = 1000;
 const CORE_BANK = 20_000;          // split among the players who broke it
 const MIN_SHARE_AT = 0.02;         // dealt at least this share: never less than MIN_SHARE
@@ -69,8 +70,9 @@ const GEM_TRAVEL = 21;             // a gem launched at v slides about 21 * v (m
 // focused fire: one player with five bots ~2 minutes, a full raid of 6-20
 // humans 95-120 s. The Core is not a raid boss, so bossGuard's caps don't
 // apply to it.
-// Halved on Oct 3: the fight dragged, so a full raid breaks it in about a minute.
-const HP_BASE = 75_000, HP_HUMAN = 45_000, HP_BOT = 12_500, HP_MIN = 150_000, HP_MAX = 1_100_000;
+// Oct 3: three quarters of what it was (halved felt too quick), so a full
+// raid breaks it in about a minute and a half.
+const HP_BASE = 112_500, HP_HUMAN = 67_500, HP_BOT = 18_750, HP_MIN = 225_000, HP_MAX = 1_650_000;
 function healthFor(humans, bots) {
     return Math.round(Math.max(HP_MIN, Math.min(HP_MAX, HP_BASE + HP_HUMAN * humans + HP_BOT * bots)));
 }
@@ -369,7 +371,7 @@ function pulse(t, fighters) {
         const kick = PULSE_PUSH * (0.35 + 0.65 * k);
         b.velocity.x += dx / d * kick;
         b.velocity.y += dy / d * kick;
-        if (rage) hurt(b, PULSE_DMG * (0.5 + 0.5 * k), t);
+        if (frac() < SHARD_BELOW) hurt(b, (rage ? PULSE_RAGE_DMG : PULSE_DMG) * (0.5 + 0.5 * k), t);
     }
     const grid = tg();
     if (!grid || !grid.rocks) return;

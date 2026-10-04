@@ -46,6 +46,10 @@ const WINDOWS = {
     feedback:      { limit: 3,   windowMs: 10 * MIN },  // feedback messages per IP, and per account or guest
     moveStart:     { limit: 60,  windowMs: 10 * MIN },  // domain move handoffs per IP (old host)
     moveClaim:     { limit: 60,  windowMs: 10 * MIN },  // ...and claims per IP (new host)
+    daily:         { limit: 30,  windowMs: 1 * MIN },   // daily track status + claims per IP
+    dailyClaim:    { limit: 6,   windowMs: 10 * MIN },  // claim attempts per account or guest
+    dailyNew:      { limit: 12,  windowMs: 60 * MIN },  // brand new guest tracks per IP (made-up guest ids)
+    push:          { limit: 20,  windowMs: 10 * MIN },  // push subscribe / unsubscribe per IP
 };
 
 const BACKOFFS = {

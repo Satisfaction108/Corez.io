@@ -34,6 +34,7 @@ const S = {
     me: { score: 0, kills: 0, banked: 0, next: 0 },
     respawnAsked: false, filtered: false, lastTick: 0, podSnd: 0, tallyEnd: false,
     gemAcc: 0, paperAcc: 0, nextSpan: 0, crownHit: false, crownAt: 0, holdArmed: false, snapped: false, streak: null, fx: 0, fy: 0, fr: 0, fok: false,
+    cb: null, dc: null,
 };
 
 const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
@@ -102,6 +103,9 @@ export function start(sub) {
     S.holdArmed = shakeOn() && !calm();
     if (S.holdArmed) kick(now, 0.05, 1.6, 1200);
     raidShare.clearView();
+    countRaid();
+    fetchComeBack();
+    S.dc = discordWanted();
     try { gameSound.rankShatter(); } catch (e) { /* */ }
     setFreezeFilter(!lite());
     // already dead (respawning, spectating a killer): watch the winner too
@@ -129,6 +133,7 @@ export function stop() {
     K.n = 0;
     setFreezeFilter(false);
     raidShare.hide();
+    hideDiscord();
 }
 
 function watchWinner(follow) {
@@ -744,11 +749,12 @@ function layout(W, H) {
         lay.rx = Math.min(W - A.HUD.edge - PW, W / 2 + 300);
         lay.ly = lay.ry = Math.max(H * 0.15 + 110, H * 0.5 - PH / 2 + 30);
     } else {
-        const s = Math.min(1, (W - 2 * A.HUD.edge) / (PW * 2 + GAP), (H * 0.5) / PH);
+        const ph = Math.max(PH, rewardsH());
+        const s = Math.min(1, (W - 2 * A.HUD.edge) / (PW * 2 + GAP), (H * 0.5) / ph);
         lay.s = s;
         const x0 = W / 2 - (PW * 2 + GAP) * s / 2;
         lay.lx = x0; lay.rx = x0 + (PW + GAP) * s;
-        lay.ly = lay.ry = H - 92 - PH * s;
+        lay.ly = lay.ry = H - 92 - ph * s;
     }
 }
 
@@ -779,6 +785,7 @@ function drawPanels(c, rt, now, W, H) {
         if (lay.side) raidShare.place(lay.rx + PW * lay.s, lay.ry - 10, shareInfo);
         else raidShare.place(W - A.HUD.edge * 0.8, H - A.HUD.edge * 0.6, shareInfo);
     }
+    if (S.dc && rt > PODIUM_AT + 900) placeDiscord(W, H);
 }
 function shareInfo() {
     return {
@@ -866,11 +873,20 @@ function rewardChips() {
     if (!chipCache.n) add(S.place > 10 || !S.place ? "Finish top 10 to start the next raid with bonus gems" : "Good raid", A.HUD.text2);
     return chipCache;
 }
+const RANK_H = 106, CB_H = 58;
+// the rewards plate's height: the rank panel when there is one, and the
+// come-back row once /api/daily has answered
+function rewardsH() {
+    const hasRank = !!(A && A.rankHasContent());
+    if (!S.cb) return hasRank ? PH : PH - RANK_H - 14;
+    // the score cells, the chips, the rank panel, then the row and a margin
+    return 52 + 66 + 12 + 34 + (hasRank ? 14 + RANK_H : 0) + 14 + CB_H + 16;
+}
 function drawRewards(c, pt, now) {
     const HUD = A.HUD;
-    const rankH = 106;
+    const rankH = RANK_H;
     const hasRank = A.rankHasContent();
-    const ph = hasRank ? PH : PH - rankH - 14;
+    const ph = rewardsH();
     A.hudPanel(c, 0, 0, PW, ph, { fill: HUD.solid, r: HUD.rBig, lip: 5 });
     A.hudTitle("Your raid", 20, 30, 22, HUD.gold, "left", 1, c);
     if (S.place > 0) A.hudTitle("#" + S.place + (S.rows > 1 ? " of " + S.rows : ""), PW - 20, 30, 22, S.place <= 3 ? RANK_COL[S.place][0] : HUD.head, "right", 1, c);
@@ -903,6 +919,13 @@ function drawRewards(c, pt, now) {
         A.drawText(txt, x + chipW / 2, cy + ch / 2, fitSize(txt, 13, chipW - 20, 9), chips.col[i], "center", true, chipK);
     }
     if (hasRank) A.rankDraw(c, 20, cy + ch + 14, PW - 40, rankH, clamp((pt - 600) / 400));
+    if (S.cb) {
+        const y = (hasRank ? cy + ch + 14 + rankH : cy + ch) + 14;
+        c.save();
+        c.globalAlpha *= clamp((performance.now() - S.cb.at) / 350) * clamp((pt - 1200) / 400);
+        drawComeBack(c, 20, y, PW - 40, CB_H, now);
+        c.restore();
+    }
 }
 
 function drawNext(c, rt, now, W, H) {
@@ -924,6 +947,154 @@ function drawNext(c, rt, now, W, H) {
     A.drawText(line, x + w - 20, y + 29, fitSize(line, 14, w - 130, 10), HUD.head, "right", true);
     A.hudBar(c, x + 96, y + h - 13, w - 116, 6, S.nextSpan ? clamp(left / S.nextSpan) : 0, HUD.play);
     c.restore();
+}
+
+// ── come back tomorrow ───────────────────────────────────────────────────
+// A row at the bottom of "Your raid": tomorrow's daily reward and how long
+// until it unlocks, the daily streak flame, or "ready" when it unlocked
+// mid-raid. The numbers come from /api/daily (asked once as the raid ends,
+// for guests too) and count down on the server's clock (shared/daily.js).
+let cbSeq = 0;
+function fetchComeBack() {
+    S.cb = null;
+    if (!window.DWDaily || global.tutorialMode) return;
+    const seq = ++cbSeq;
+    let gid = "";
+    try { gid = localStorage.getItem("dwGuestId") || ""; } catch (e) { /* */ }
+    fetch("/api/daily", {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "Content-Type": "application/json", "X-DW": "1", "Accept": "application/json" },
+        body: JSON.stringify(/^[a-f0-9]{32}$/.test(gid) ? { guestId: gid } : {}),
+    }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+        if (seq !== cbSeq || !S.on || !d || !d.on || !d.today) return;
+        S.cb = { d, skew: (+d.now || Date.now()) - Date.now(), at: performance.now() };
+    }).catch(() => { /* no row, that's all */ });
+}
+// raidFinale's own count of finished raids: the menu asks about pings only
+// after the first one (client/account/retention.js)
+function countRaid() {
+    try { localStorage.setItem("dwRaidsEnded", String((+localStorage.getItem("dwRaidsEnded") || 0) + 1)); } catch (e) { /* */ }
+}
+function rewardLine(r) {
+    if (!r) return "";
+    const gems = (r.gems | 0).toLocaleString("en-US") + " gems";
+    if (r.item && r.signup) return gems + " + " + r.item.name + " (sign up)";
+    if (r.item) return gems + " + " + r.item.name + (r.item.cat === "sidekick" ? " sidekick" : r.item.cat === "sdSkin" ? " skin" : "");
+    if (r.dustMilli > 0) return gems + " + " + +(r.dustMilli / 1000).toFixed(2) + " dust";
+    return gems;
+}
+const FLAME = "M12 21c-4 0-6.5-2.7-6.5-6.2 0-3.3 2.4-5 3.6-8.3.2-.6 1-.7 1.3-.1.9 1.6 1.2 3 1.1 4.6 1.2-.8 2-2.1 2.3-3.4.1-.5.8-.7 1.1-.2 1.5 2.2 2.6 4.6 2.6 7.4 0 3.5-2.5 6.2-5.5 6.2z";
+let flamePath = null;
+function drawFlame(c, x, y, s) {
+    if (!flamePath) { try { flamePath = new Path2D(FLAME); } catch (e) { return; } }
+    c.save();
+    c.translate(x - s / 2, y - s / 2);
+    c.scale(s / 24, s / 24);
+    c.lineJoin = "round";
+    c.lineWidth = 3.4;
+    c.strokeStyle = A.HUD.ink;
+    c.stroke(flamePath);
+    c.fillStyle = "#ff9f43";
+    c.fill(flamePath);
+    c.restore();
+}
+const cbText = { key: "", label: "", main: "" };
+function drawComeBack(c, x, y, w, h, now) {
+    const HUD = A.HUD, cb = S.cb, d = cb.d, DY = window.DWDaily;
+    const left = d.ready ? 0 : DY.leftMs(d.readyAt, Date.now(), cb.skew);
+    const ready = left <= 0;
+    const key = (ready ? 1 : 0) + "|" + d.day;
+    if (key !== cbText.key) {
+        cbText.key = key;
+        const r = ready ? d.today : (d.tomorrow || d.today);
+        cbText.label = ready ? "DAY " + d.day + " REWARD IS READY" : "COME BACK TOMORROW";
+        cbText.main = ready ? rewardLine(r) + ". Grab it on the menu" : rewardLine(r);
+    }
+    A.hudWell(c, x, y, w, h, 12, "rgba(242,184,60,0.1)", HUD.ink, 2);
+    const flameW = d.streak >= 2 ? 44 : 0;
+    const pill = ready ? "" : "in " + DY.countdown(left);
+    const pillW = pill ? Math.max(84, A.hudTitleW(pill, 17) + 22) : 0;
+    const textW = w - 28 - pillW - flameW - (pill ? 10 : 0);
+    A.drawText(cbText.label, x + 14, y + 17, 10.5, ready ? HUD.gold : HUD.text2, "left", true);
+    A.hudTitle(cbText.main, x + 14, y + 39, fitSize(cbText.main, 19, textW, 11), ready ? HUD.play : HUD.gold, "left", 1, c);
+    let rx = x + w - 12;
+    if (pill) {
+        A.hudWell(c, rx - pillW, y + h / 2 - 15, pillW, 30, 15, HUD.ink, HUD.ink, 0);
+        A.hudTitle(pill, rx - pillW / 2, y + h / 2, 17, HUD.head, "center", 1, c);
+        rx -= pillW + 8;
+    }
+    if (flameW) {
+        drawFlame(c, rx - 30, y + h / 2 - 1, 24);
+        A.hudTitle(String(d.streak), rx - 16, y + h / 2 + 1, 18, "#ffb347", "left", 1, c);
+    }
+}
+
+// "Join the Discord for Raid Night", under the podium: only with a Raid
+// Night coming up, at most one raid a day, and never again once clicked.
+let dcEl = null, dcShown = false, dcX = -1, dcY = -1;
+const today = () => String(Math.floor(Date.now() / 864e5));
+function discordWanted() {
+    const E = window.DWEvents;
+    if (!E || global.tutorialMode) return null;
+    const c = E.current(E.now());
+    if (!c || c.live || c.ms > E.MENU_LEAD_MS) return null;
+    try {
+        if (localStorage.getItem("dwDiscordCta") === "clicked" || localStorage.getItem("dwDiscordCta") === today()) return null;
+        localStorage.setItem("dwDiscordCta", today());
+    } catch (e) { return null; }
+    return c;
+}
+function buildDiscord() {
+    if (dcEl) return;
+    const E = window.DWEvents;
+    dcEl = document.createElement("a");
+    dcEl.id = "dwFinaleDiscord";
+    dcEl.href = E ? E.DISCORD : "https://discord.gg/bx5FK3CMwp";
+    dcEl.target = "_blank";
+    dcEl.rel = "noopener";
+    dcEl.tabIndex = -1;
+    dcEl.innerHTML = '<svg class="dw-ic" aria-hidden="true"><use href="#i-discord"/></svg><span><span class="dc-t"></span><small></small></span>';
+    for (const t of ["pointerdown", "mousedown", "mouseup", "touchstart", "touchend", "contextmenu", "wheel"]) {
+        dcEl.addEventListener(t, (e) => e.stopPropagation(), { passive: true });
+    }
+    dcEl.addEventListener("click", () => {
+        try { localStorage.setItem("dwDiscordCta", "clicked"); } catch (e) { /* */ }
+        setTimeout(hideDiscord, 300);
+    });
+    document.body.appendChild(dcEl);
+}
+function placeDiscord(W, H) {
+    buildDiscord();
+    const E = window.DWEvents, c = S.dc;
+    if (!dcShown) {
+        dcEl.querySelector(".dc-t").textContent = "Join the Discord for " + c.ev.name;
+        dcEl.querySelector("small").textContent = E.localWhen(c.ev, E.now()) + ", prizes for the top spots";
+    }
+    const k = window.innerWidth / Math.max(1, global.screenWidth);
+    const ew = dcEl.offsetWidth / k, eh = dcEl.offsetHeight / k;
+    let x, y;
+    if (lay.side) {
+        x = lay.lx; y = lay.ly + PH * lay.s + 18;
+        if (y + eh > H - 12) return hideDiscord();
+    } else {
+        // bottom left, if the next-raid bar leaves room for it
+        const barW = Math.min(470, W - 40);
+        x = A.HUD.edge; y = H - 22 - eh;
+        if (x + ew > W / 2 - barW / 2 - 10) return hideDiscord();
+    }
+    const px = Math.round(x * k), py = Math.round(y * k);
+    if (Math.abs(px - dcX) > 2 || Math.abs(py - dcY) > 2) {
+        dcX = px; dcY = py;
+        dcEl.style.left = px + "px";
+        dcEl.style.top = py + "px";
+    }
+    if (!dcShown) { dcShown = true; dcEl.classList.add("open"); }
+}
+function hideDiscord() {
+    if (!dcEl || !dcShown) return;
+    dcShown = false;
+    dcX = dcY = -1;
+    dcEl.classList.remove("open");
 }
 
 // ── the last ten seconds ─────────────────────────────────────────────────

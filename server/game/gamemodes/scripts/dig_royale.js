@@ -33,6 +33,7 @@ const sidekicks = require('../../terrain/sidekicks.js');   // Locker sidekicks: 
 const dropIn = require('../../terrain/dropIn.js');         // meteor landings, first spawn near a vault
 const supplyDrops = require('../../terrain/supplyDrops.js'); // crates out of the sky every minute or so
 const raidOpening = require('../../terrain/raidOpening.js'); // early ore and the 1:30 meteor rush
+const newcomer = require('../../terrain/newcomerDirector.js'); // first raids: fair, and something new every minute
 
 // A raid is RAID_CYCLES storm cycles (7 min each, twists included), 21 min,
 // and ends as the last storm shuts (storm.js closes the final circle).
@@ -554,6 +555,15 @@ raidOpening.attach({
     raidAge: (t) => t - raidStartAt,
     live: () => !raidEnding && !!raidId,
 });
+newcomer.attach({
+    // time played before this raid's first spawn: the career and this session
+    careerMs: (socket) => careerRecord(socket).ms + (socket._royalePlayMs || 0),
+    raidId: () => raidId,
+    live: () => !raidEnding && !!raidId,
+    clients: connectedClients,
+    pay: (body, n) => payGems(body, n),
+    callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
+});
 dropIn.attach({
     clients: connectedClients,
     live: () => !raidEnding,
@@ -657,6 +667,8 @@ function broadcast(extra = {}) {
                 // hunted: your mark and how many enemies are close
                 hunt: bodyLive ? hunted.forClient(body) : undefined,
             } : null;
+        // first raids (newcomerDirector.js): nx, nxEvent, nxKept
+        if (you) { try { const nx = newcomer.youFields(client, t); if (nx) Object.assign(you, nx); } catch (e) { guardLog('newcomer you', e); } }
         // shared part stringified once per broadcast; only the per-client tail differs
         let duoTail = '';
         if (duos) {
@@ -1079,6 +1091,8 @@ function respecForNewRaid(body) {
         body.skill.set(Array(11).fill(0));
         body.skill.points = total;
         body._modSkillGiven = false;
+        // bought Stat Points were for the raid that just ended
+        body._shopStatPts = 0;
         if (body.isBot && global.gameManager.gameHandler) {
             try { global.gameManager.gameHandler.configureBotStats(body); } catch { /* */ }
         }
@@ -1114,6 +1128,8 @@ function freshRaidBody(body) {
         body.botSoftMs = botDiff.lerp(FIRST_MINUTES.BOT_SOFT_SHORT_MS, FIRST_MINUTES.BOT_SOFT_MS, n);
         body.botSoftUntil = now() + body.botSoftMs;
         stampBotDifficulty(body);
+        // first raids (stage fixed per raid): softer bots, storm and bosses
+        guard('newcomer stage', () => newcomer.applyBody(body));
     } else if (body.isBot) {
         // bots leave a fresh bot alone for a moment too, or a respawn walks
         // into the fight that killed it and never gets to grow
@@ -1529,6 +1545,7 @@ function tickTeamBots(t) {
 function onBanked(body, amount) {
     if (!body || !(amount > 0)) return;
     hunted.onBanked(body);
+    guard('newcomer bank', () => newcomer.onBanked(body, amount));
     // a first bank with no ability yet hands one out on trial
     guard('ability trial', () => require('../../terrain/abilities.js').onBanked(body, amount));
     const s = ensureStat(body);
@@ -1924,6 +1941,8 @@ function onHumanJoin(body) {
     // a resumed player already had their starter kit: no second one
     const resuming = keepSpot;
     if (!resuming) giveStarterKit(body, isRespawn, freshDrop);
+    // a first raid's kept half comes back, and the first respawn gets a word
+    guard('newcomer spawn', () => newcomer.onSpawn(body, isRespawn && !resuming));
     // the meteor landing: rock smashed around you, gems on your first drop
     // (a fresh reload drop gets the big fall and crater, but no ore seeded)
     if (!resuming) guard('drop in', () => freshDrop ? dropIn.land(body, 0, now(), { big: true })
@@ -2184,7 +2203,11 @@ function applyResume(body, snap) {
             // the spawn class's tree again (entity.upgrade() does the same)
             body.upgrades = [];
             body.define(snap.defs.length === 1 ? snap.defs[0] : snap.defs);
-            if (snap.skillRaw) { body.skill.set(snap.skillRaw); body.skill.points = snap.points | 0; }
+            if (snap.skillRaw) {
+                body.skill.set(snap.skillRaw); body.skill.points = snap.points | 0;
+                // the snapshot already holds any bought Stat Points
+                try { body._shopStatPts = (body.socket && body.socket.shop && body.socket.shop.statPts) | 0; } catch { /* */ }
+            }
             body._modSkillGiven = snap.modSkill || body._modSkillGiven;
             body.refreshBodyAttributes();
             if (body.syncSkillsToGuns) body.syncSkillsToGuns();
@@ -2680,6 +2703,7 @@ function startRaid(first) {
     try { raidEvents.reset(); } catch { /* */ }
     try { chests.clearAll(); } catch { /* */ }
     try { contracts.reset(); } catch { /* */ }
+    guard('newcomer reset', () => newcomer.newRaid());
     try { pacing.reset(); pacing.note('raid'); } catch { /* */ }
     for (const client of connectedClients()) {
         // everyone went down at the raid end: the first spawn of the new raid
@@ -3145,6 +3169,7 @@ function tick() {
     guard('drop in', () => dropIn.tick(t));
     guard('supply', () => supplyDrops.tick(t));
     guard('opening', () => raidOpening.tick(t));
+    guard('newcomer', () => newcomer.tick(t));
     for (const body of fighters) {
         const key = statKeyFor(body);
         const s = key ? raidStats.get(key) : null;

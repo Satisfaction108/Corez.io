@@ -19,6 +19,7 @@ const ITEMS = [
     { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 2600, desc: "Mines through rock 115% faster." },
     { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 4000, desc: "Mines through rock 160% faster, and you keep it when you die." },
     // gear: timed (GEAR_MS); `on` is the message shown when it starts
+    { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, desc: "One extra upgrade point to spend on any stat. It stays for the whole raid, even after you die. Buy as many as you have room for." },
     { id: "scanner",   cat: "gear", name: "Ore Scanner",        price: 1000, desc: "Shows shard and emerald veins within 1500 units on your minimap for 5 minutes.", on: "Veins near you now show on your minimap." },
     { id: "magnet",    cat: "gear", name: "Gem Magnet",         price: 900,  desc: "Pulls in gems from almost twice as far away for 5 minutes.", on: "Gems now come to you from much farther away." },
     { id: "satchel",   cat: "gear", name: "Reinforced Satchel", price: 700,  desc: "Lets you carry 6,000 gems instead of 4,000 for 5 minutes.", on: "Your satchel now holds 6,000." },
@@ -37,7 +38,7 @@ const ITEMS = [
     { id: "flare",     cat: "kit", name: "Escape Flare",   price: 450, max: 2, fresh: true, desc: "Blinks you up to 420 toward the nearest vault, straight through rock." },
     { id: "overdrive", cat: "kit", name: "Overdrive Core", price: 450, max: 2, retired: true, desc: "Double mining power and 30% faster reload for 20 seconds." },
     { id: "anchor",    cat: "kit", name: "Storm Anchor",   price: 400, max: 2, desc: "The storm can't hurt you for 15 seconds." },
-    { id: "flash",     cat: "kit", name: "Flash Vault",    price: 500, max: 2, desc: "Banks up to 300 of the gems you're carrying from wherever you are, minus a 30% fee." },
+    { id: "flash",     cat: "kit", name: "Flash Vault",    price: 500, max: 2, desc: "Banks up to 1,000 of the gems you're carrying from wherever you are, minus a 30% fee." },
     { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Regrows the dug-out rock within 260 of you. Instant cover." },
     { id: "decoy",     cat: "kit", name: "Decoy Satchel",  price: 250, max: 3, desc: "Makes you look like you're hauling a full satchel for 20 seconds. Bait." },
     { id: "barrage",   cat: "kit", name: "Rock Barrage",   price: 3000, max: 1, desc: "Hurls 10 rock chunks at your cursor. Each hit takes 9% of a tank's health right through its shield, so a full volley finishes anyone who isn't topped up. Each chunk smashes through two rocks on the way." },
@@ -77,7 +78,23 @@ function catalog() {
 }
 
 function freshState() {
-    return { drill: 0, gear: {}, kit: {}, kitOrder: [], arm: null, spent: 0 };
+    return { drill: 0, gear: {}, kit: {}, kitOrder: [], arm: null, spent: 0, statPts: 0 };
+}
+
+// Bought stat points (the Stat Point item) last the raid: every new body
+// (a respawn) gets them again, once. -> how many upgrade points are left to
+// place on this body (caps minus what's spent minus what's unspent)
+function statRoom(body) {
+    const sk = body && body.skill;
+    if (!sk || !sk.caps) return 0;
+    let room = 0;
+    for (let i = 0; i < sk.caps.length; i++) room += Math.max(0, (sk.caps[i] | 0) - (sk.raw[i] | 0));
+    return room - (sk.points | 0);
+}
+function applyStatPoints(body, s) {
+    if (!body || !body.skill || !s) return;
+    const want = s.statPts | 0, have = body._shopStatPts | 0;
+    if (want > have) { body.skill.points += want - have; body._shopStatPts = want; }
 }
 
 // Kit invariants, re-asserted on every read: no zero counts, counts within
@@ -155,7 +172,7 @@ function talkState(socket, msg, ok = false) {
     const s = normalizeKit(stateOf(socket));
     try {
         socket.talk('SHP', JSON.stringify({
-            drill: s.drill, gear: Object.keys(s.gear), gearUntil: s.gear, kit: s.kit, kitOrder: s.kitOrder, arm: s.arm, armUntil: s.armUntil || 0,
+            drill: s.drill, gear: Object.keys(s.gear), gearUntil: s.gear, statPts: s.statPts | 0, kit: s.kit, kitOrder: s.kitOrder, arm: s.arm, armUntil: s.armUntil || 0,
             msg: msg || "", ok: !!(ok && msg),
         }));
     } catch { /* */ }
@@ -198,6 +215,7 @@ function applyPassives(body) {
     body.bonusSpeedMult = (hasGear(body, "boots") ? 1.25 : 1) * abilities.speedMult(body);
     body.bonusHealthMult = hasGear(body, "plating") ? 1.25 : 1;
     body.gemCap = satchelCap(body);
+    applyStatPoints(body, s);
     try { body.refreshBodyAttributes(); } catch { /* */ }
     const arm = armOf(body);
     if (arm) attachSidearm(body, arm);
@@ -331,6 +349,9 @@ function canBuy(socket, item) {
     } else if (item.cat === "drill") {
         if (s.drill >= item.tier) return { ok: false, why: "Already owned." };
         if (item.tier !== s.drill + 1) return { ok: false, why: "Buy Drill " + ["I", "II", "III", "IV", "V"][s.drill] + " first." };
+    } else if (item.id === "statpt") {
+        const body = socket.player && socket.player.body;
+        if (!body || statRoom(body) <= 0) return { ok: false, why: "Every stat is maxed out. Nothing to put another point into." };
     } else if (item.cat === "gear") {
         if (gearActive(s, item.id)) return { ok: false, why: "That one is already running." };
         if (Object.keys(s.gear).filter(id => gearActive(s, id)).length >= GEAR_MAX) return { ok: false, why: "You can only have " + GEAR_MAX + " gear items running at once." };
@@ -365,6 +386,11 @@ function buy(socket, itemId) {
     s.spent += item.price;
     let msg = "Bought " + item.name + ".";
     if (item.cat === "drill") s.drill = item.tier;
+    else if (item.id === "statpt") {
+        s.statPts = (s.statPts | 0) + 1;
+        applyStatPoints(body, s);
+        msg = "+1 stat point. Spend it on any stat. It's yours for the rest of the raid.";
+    }
     else if (item.cat === "gear") {
         s.gear[item.id] = Date.now() + GEAR_MS;
         applyPassives(body);
@@ -660,7 +686,7 @@ function useKit(socket, slot, tx, ty, itemId) {
         case "flash": {
             const carried = body.carriedGems | 0;
             if (carried < 15) { msg = "Not enough in the satchel to bother banking."; break; }
-            const take = Math.min(300, carried);
+            const take = Math.min(1000, carried);
             const credit = Math.floor(take * 0.7);
             const gems = require('./gems.js');
             body.carriedGems = carried - take;

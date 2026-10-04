@@ -788,7 +788,9 @@ function onSpawn(body) {
     if (!body.socket) return;
     const st = stateOf(body.socket);
     if (FREE_ON && !st.free && !Config.tutorial) {
-        const pool = FREE_POOL.filter(id => AB_BY_ID.has(id) && !st.own.includes(id));
+        // a first raid (newcomerDirector.js) doesn't open on the Shockwave:
+        // flinging yourself around is a lot before you know the basics
+        const pool = FREE_POOL.filter(id => AB_BY_ID.has(id) && !st.own.includes(id) && !(id === 'shock' && body.nxStage === 0));
         if (pool.length) {
             const id = pool[(Math.random() * pool.length) | 0];
             st.free = id;

@@ -1530,6 +1530,8 @@ class socketManager {
                     else if (what === "core") socket.talk('KC', 'dbg', JSON.stringify({ core: require('../gamemodes/scripts/dig_royale.js').debugCore(m[1], b) }), 0);
                     else if (what === "sidekicks") socket.talk('KC', 'dbg', JSON.stringify({ sidekicks: require('../terrain/sidekicks.js').snapshot() }), 0);
                     else if (what === "supplydrop") require('../terrain/supplyDrops.js').debugNow();
+                    // first raids: DBG nx <ore|crate|trial|chest|objective>, or DBG nx stage <0-3|"">
+                    else if (what === "nx" && b) socket.talk('KC', 'nx', "nx " + String(require('../terrain/newcomerDirector.js').debugFire(b, String(m[1] || ''), m[2])), 0);
                     else if (what === "rush") socket.talk('KC', 'dbg', JSON.stringify({ rush: !!require('../terrain/raidOpening.js').rush(Date.now()) }), 0);
                     else if (what === "huntme" && b) require('../terrain/hunted.js').onBanked(b);   // lift the newbie window
                     else if (what === "tocore" && b) { const cs = require('../terrain/coreFinale.js').siteOf(); if (cs) { b.x = cs.x + 260; b.y = cs.y; b.velocity.x = 0; b.velocity.y = 0; } }
@@ -2310,6 +2312,8 @@ class socketManager {
                 (socket && socket.gemDeathInsured) | 0,
                 // raid: ms until the server lets you back in (3 s from the death)
                 (socket && socket.royaleRespawnAt ? Math.max(0, socket.royaleRespawnAt - Date.now()) : 0) | 0,
+                // raid: gems a first death kept back (newcomerDirector.js), m[18 + killers]
+                (socket && socket.gemDeathKept) | 0,
             ];
         }
 

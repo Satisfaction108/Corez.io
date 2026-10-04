@@ -77,7 +77,7 @@ class Entity extends EventEmitter {
         this.define("genericEntity");
         this.nameColor = "#ffffff";
         // nameplate extras (accounts): name style / skin nids (Phase 3), rank code
-        // (0 none, 1..19 division + 1, 20 placement; shared/ranks.js rankCode)
+        // (0 none, 20 placement, else a division; shared/ranks.js rankCode)
         this.nameStyleNid = 0;
         this.rankCode = 0;
         this.skinNid = 0;

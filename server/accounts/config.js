@@ -39,7 +39,10 @@ const config = {
     discord: { clientId: '', clientSecret: '', redirectUri: '' },
     discordLogin: false,
     shopSeedSalt: 'dw-shop-v1',
-    cookies: { session: 'dw_sid', oauth: 'dw_oauth', pending: 'dw_pending', dev: 'dw_dev' },
+    retentionDaily: true,
+    webPush: { flag: true, publicKey: '', privateKey: '', subject: '' },
+    cookies:{ session: 'dw_sid', oauth: 'dw_oauth', pending: 'dw_pending', dev: 'dw_dev' },
+    leaderboardHide: new Set(['zyrox']),
 };
 
 function normalizeOrigin(origin) {
@@ -152,6 +155,27 @@ function load(env = process.env) {
         ? 'BACKUP_ENCRYPTION_KEY must decode to exactly 32 bytes (openssl rand -base64 32); backups are off' : '';
     const hour = parseInt(env.BACKUP_HOUR_UTC, 10);
     config.backupHourUtc = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 3;
+
+    // Retention: the daily rewards track (retention.js) and web push
+    // (push.js, webpush.js). Both on unless set to 0; push also needs the
+    // VAPID keys (scripts/gen-vapid-keys.js) and stays off without them.
+    // The subject is who the push services can contact: mailto: or https:.
+    const off = v => /^(0|false|no|off)$/i.test(String(v == null ? '' : v).trim());
+    config.retentionDaily = !off(env.RETENTION_DAILY);
+    const subject = String(env.WEB_PUSH_SUBJECT || '').trim();
+    config.webPush = {
+        flag: !off(env.WEB_PUSH),
+        publicKey: String(env.WEB_PUSH_PUBLIC_KEY || '').trim(),
+        privateKey: String(env.WEB_PUSH_PRIVATE_KEY || '').trim(),
+        subject: /^(mailto:\S+@\S+|https:\/\/\S+)$/i.test(subject) ? subject
+            : config.publicOrigin.startsWith('https://') ? config.publicOrigin : 'mailto:admin@corez.io',
+    };
+
+    // LEADERBOARD_HIDE: usernames (comma list, any case) kept off every
+    // account leaderboard (boardHide.js). Unset = the owner's account; set it
+    // empty to hide nobody.
+    config.leaderboardHide = new Set(String(env.LEADERBOARD_HIDE == null ? 'ZyroX' : env.LEADERBOARD_HIDE)
+        .split(',').map(v => v.trim().toLowerCase()).filter(Boolean));
 
     // __Host- cookies must be Secure, Path=/ and host-only, so the prefix is
     // only used over https. The others are path-scoped and cannot use it.

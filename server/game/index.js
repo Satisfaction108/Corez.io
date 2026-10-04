@@ -361,7 +361,9 @@ class gameHandler {
                         // touching it, before its death check paid out
                         let root = hit, hops = 0;
                         while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
-                        if (root && (root.isPlayer || root.isBot) && chest.health) {
+                        // (a chest held for one player only grinds for them)
+                        const held = chest.nxOwnerId && chest.nxOwnerUntil > Date.now() && root && root.id !== chest.nxOwnerId;
+                        if (root && (root.isPlayer || root.isBot) && chest.health && !held) {
                             let grind = (hit.damage || 0) * 0.35;
                             // the tank's own hull: a ram (chests.ramDamage)
                             if (hit === root && hit.type === 'tank') grind = Math.max(grind, (chestRam ||= require('./terrain/chests.js')).ramDamage(chest, hit));

@@ -4,7 +4,7 @@
 // ceremony, then refills in the new division.
 // State comes from socketinit ('AC', 'F', 'RK', 'RKP', 'c'). 'F' never
 // clears a result (RK lands right after it); respawn / startGame / exit do.
-import { drawBadge, TIER_COLORS, tierOf } from './rankBadges.js';
+import { drawBadge, TIER_COLORS, tierOf, isLegendDiv, TOP_DIV } from './rankBadges.js';
 import * as ceremony from './rankCeremony.js';
 import { gameSound } from '../sound.js';
 
@@ -63,7 +63,7 @@ function snap(s) {
     const pl = s.placement || {};
     return {
         division: div, rp: +s.rp || 0, into: +s.into || 0, size: +s.size || 0,
-        pct: div === 18 ? 1 : clamp(+s.pct || 0), legendNo: s.legendNo | 0,
+        pct: div != null && div >= TOP_DIV ? 1 : clamp(+s.pct || 0), legendNo: s.legendNo | 0,
         lives: pl.lives | 0, of: pl.of || 3, done: !!pl.done,
     };
 }
@@ -166,12 +166,13 @@ function advance(now) {
 function view(st, now) {
     const b = st.b, a = st.a;
     const v = { division: a.division, legendNo: a.legendNo, pips: null, bar: null, ghost: null, loss: st.delta < 0,
-        into: a.into, size: a.size, prog: 1, swapK: 1, rp: a.rp, legend: a.division === 18 };
+        into: a.into, size: a.size, prog: 1, swapK: 1, rp: a.rp, legend: isLegendDiv(a.division), top: a.division === TOP_DIV };
     if (st.phase === 'wait') {
         v.division = st.reveal ? null : b.division;
         v.prog = 0;
         v.into = b.into; v.size = b.size; v.rp = b.rp;
-        v.legend = b.division === 18;
+        v.legend = isLegendDiv(b.division);
+        v.top = b.division === TOP_DIV;
         if (st.inPlacement || st.reveal) v.pips = { have: b.lives, pop: -1, k: 0 };
         else if (st.up) { v.bar = b.pct; v.ghost = [b.pct, 1]; }
         else { v.bar = b.pct; v.ghost = [Math.min(b.pct, a.pct), Math.max(b.pct, a.pct)]; }
@@ -195,7 +196,8 @@ function view(st, now) {
         }
         if (st.up) {
             v.division = b.division;
-            v.legend = b.division === 18;
+            v.legend = isLegendDiv(b.division);
+            v.top = b.division === TOP_DIV;
             v.bar = b.pct + (1 - b.pct) * e;
             v.ghost = [b.pct, 1];
             v.into = b.into + (b.size - b.into) * e; v.size = b.size;
@@ -415,10 +417,10 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
         line = '';
     } else {
         bar(c, A, x0 + 6, x1 - 6, y + 58, v, col, alpha);
-        if (v.legend) line = fmtInt(v.rp) + ' RP';
+        if (v.top) line = fmtInt(v.rp) + ' RP';
         else {
             line = fmtInt(v.into) + ' / ' + fmtInt(v.size) + ' RP';
-            if (v.division != null && v.division < 18) line += '  ·  next ' + nameOf(v.division + 1);
+            if (v.division != null && v.division < TOP_DIV) line += '  ·  next ' + nameOf(v.division + 1);
         }
     }
     const dustTxt = S.dustMilli > 0 ? '+' + fmtDust(S.dustMilli) + ' gemdust' : '';

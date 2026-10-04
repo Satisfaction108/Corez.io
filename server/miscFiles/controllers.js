@@ -496,6 +496,11 @@ class io_nearestDifferentMaster extends IO {
         // spawn's bot grace too
         if ((myMaster.isBot || myMaster.isRoyaleBoss) && inBotGrace(theirMaster, Date.now())) return false;
         if (myMaster.isBot && softSpared(myMaster, theirMaster, Date.now())) return false;
+        // first raid (terrain/newcomerDirector.js): bosses never pick them,
+        // and the scariest bot classes leave them be for a while
+        // a first-minutes player is left alone until they've picked the fight
+        if (myMaster.isRoyaleBoss && theirMaster.nxBossSafe && !(bossGuard.angerOf(myMaster, theirMaster) > 0)) return false;
+        if (myMaster.isBot && theirMaster.nxScaryUntil && newcomer.scarySpared(myMaster, theirMaster, Date.now())) return false;
         // Core truce (coreFinale.js): a bot's guns and drones leave players
         // alone unless that player hit the bot in the last few seconds
         if (myMaster.isBot && theirMaster.isPlayer && global.royaleCoreTruce &&
@@ -1387,6 +1392,7 @@ const SENSE_MAX_R = 2500;       // the radar ping's reach, the widest a bot ever
 const tactics = require('./botTactics.js');
 const bossGuard = require('../game/terrain/bossGuard.js');
 const activity = require('../game/network/activity.js');
+const newcomer = require('../game/terrain/newcomerDirector.js');
 // Shop pads are a no-go zone for bots (they cannot buy, and a bot on the pad
 // shoves the shopper). Refreshed once a second.
 let shopPadCache = { at: 0, pads: [] };
@@ -2200,6 +2206,8 @@ class io_digWarsGoals extends IO {
             // soft window (first minutes of a life, or a new player): only
             // if they come right up to us or shoot us
             if (softSpared(body, root, now)) continue;
+            // first raid: no X-Hunter / Penta / Octo class bot on them yet
+            if (root.nxScaryUntil && newcomer.scarySpared(body, root, now)) continue;
             // enough bots on this player already: leave them to it
             // (self-defence still wins below through the attacker override)
             if (root.isPlayer && botsOn(root, body) >= hunterCap(root, now)) continue;
@@ -2565,6 +2573,7 @@ class io_digWarsGoals extends IO {
         if (attackedMe) return true;
         // fresh spawn (bot grace), or the soft window: bots don't start it
         if (inBotGrace(target, now) || botSoft(target, now)) return false;
+        if (target.nxScaryUntil && newcomer.scarySpared(this.body, target, now)) return false;
         // recently gave up chasing them
         if ((this.playerBreakUntil.get(target.id) || 0) > now) return false;
         // Mercy: a player dying repeatedly to bots is left alone until they

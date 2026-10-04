@@ -185,8 +185,8 @@ const dustText = milli => ((milli | 0) / 1000).toLocaleString('en-US', { maximum
 function rankLine(row) {
     const s = rankStore.snapshot(row);
     if (s.division == null) return `Placement (${s.placement.lives} of ${s.placement.of} games played)`;
-    const legend = s.division === R.LEGEND && s.legendNo ? ` #${s.legendNo}` : '';
-    const into = s.division === R.LEGEND ? '' : ` · ${Math.floor(s.pct * 100)}% to next`;
+    const legend = R.isLegend(s.division) && s.legendNo ? ` #${s.legendNo}` : '';
+    const into = R.isTop(s.division) ? '' : ` · ${Math.floor(s.pct * 100)}% to ${R.nameOf(s.division + 1)}`;
     return `${s.name}${legend} (${(s.rp | 0).toLocaleString('en-US')} RP${into})`;
 }
 
@@ -533,6 +533,19 @@ function deathsText(d) {
         `median life ${(d.medianLifeMs / 60000).toFixed(1)} min`;
 }
 
+// New guests from day 1 to day 8 back (so each had a full day to come back):
+// how many stayed 5+ minutes, and how many came back on a later day. Play
+// time is the guest's total, so "stayed" is a little generous for anyone who
+// came back.
+function retentionText(d, now) {
+    const r = d.get(`SELECT count(*) AS n, COALESCE(SUM(play_ms >= 300000), 0) AS five, COALESCE(SUM(play_ms >= 600000), 0) AS ten,
+        COALESCE(SUM(last_seen - first_seen >= 72000000), 0) AS back
+        FROM guests WHERE first_seen > ? AND first_seen <= ?`, now - 8 * DAY, now - DAY) || {};
+    if (!(r.n > 0)) return 'Not enough new guests yet.';
+    const pct = v => Math.round(100 * (v | 0) / r.n) + '%';
+    return `${(r.n | 0).toLocaleString('en-US')} new guests · ${pct(r.five)} played 5+ min · ${pct(r.ten)} 10+ min · ${pct(r.back)} came back another day (goal 30%)`;
+}
+
 function stats(i, caller) {
     const d = db.handle(), now = Date.now();
     const one = (sql, ...a) => d.get(sql, ...a) || {};
@@ -567,6 +580,7 @@ function stats(i, caller) {
                 { name: 'Online now', value: `${n(online.raid)} in a raid · ${n(online.menu)} in the menu (accounts)`, inline: false },
                 { name: 'Guests', value: `${n(g.n)} ever · ${n(g.new1)} new today · ${n(g.act1)} active today · ${n(g.act7)} this week · ${n(g.games)} games · ${n(g.conv)} made an account`, inline: false },
                 { name: 'New guests by source (7 days)', value: sourcesText(d, now - 7 * DAY), inline: false },
+                { name: 'Retention (guests new 1-8 days ago)', value: retentionText(d, now), inline: false },
                 { name: 'Gemdust', value: `${dustText(acc.dust)} held · ${dustText(earned.m)} ever earned`, inline: false },
                 { name: 'Purchases', value: `${n(buys.n)} (${n(buys.gifts)} gifts, ${n(buys.refunds)} refunded) · ${dustText(buys.dust)} dust spent`, inline: false },
                 { name: 'Invites', value: inviteStats(), inline: false },

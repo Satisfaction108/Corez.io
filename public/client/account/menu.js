@@ -82,8 +82,8 @@ export function rankView(rank) {
         const lives = (rank.placement && rank.placement.lives) | 0;
         div = 'placement';
         text = lives > 0 ? 'Placement ' + Math.min(3, lives) + '/' + ((rank.placement && rank.placement.of) || 3) : 'Unranked';
-    } else if ((div | 0) === 18 && rank.legendNo > 0) {
-        text = 'Legend #' + rank.legendNo;
+    } else if ((div | 0) >= 18 && rank.legendNo > 0) {
+        text = text + ' #' + rank.legendNo;
     }
     return { div, text };
 }

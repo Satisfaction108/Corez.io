@@ -257,7 +257,12 @@ function finalSqueeze(now) {
 // squeeze) and the damage multiplier that gives. The HUD reads this.
 function exposureOf(body, now = Date.now()) {
     const sec = ((body && body._stormExpMs) || 0) / 1000;
-    return { sec, mult: rampMult(sec) * stageMult() * (finalSqueeze(now) ? FINAL_DAMAGE_MULT : 1) };
+    return { sec, mult: rampMult(sec) * stageMult() * (finalSqueeze(now) ? FINAL_DAMAGE_MULT : 1) * newcomerMult(body) };
+}
+// A player's first raids sting less (body.nxStormMult, newcomerDirector.js)
+function newcomerMult(body) {
+    const m = body && body.nxStormMult;
+    return m > 0 && m < 1 ? m : 1;
 }
 
 function tickDamage(now = Date.now()) {
@@ -300,7 +305,7 @@ function tickDamage(now = Date.now()) {
         body._stormHurtAt = now;
         if (!body.health || !(body.health.max > 0)) continue;
         const ramp = rampMult(body._stormExpMs / 1000) * stageMult() * (fin ? FINAL_DAMAGE_MULT : 1);
-        const dmg = body.health.max * DAMAGE_FRAC * ramp * dmgMult * (global.royaleMods && global.royaleMods.stormDamageMult || 1);
+        const dmg = body.health.max * DAMAGE_FRAC * ramp * dmgMult * newcomerMult(body) * (global.royaleMods && global.royaleMods.stormDamageMult || 1);
         if (body.shield && body.shield.amount > 0) {
             const soak = Math.min(body.shield.amount, dmg);
             body.shield.amount -= soak;

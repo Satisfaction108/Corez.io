@@ -61,7 +61,8 @@ function tank(x, y, isBot, cls = 'basic') {
     if (isBot) { t.isBot = true; t.botSkill = 0.5; t.controllers = []; t.team = -500 - (nextY & 0xff); t.reverseTank = 1; }
     else {
         t.isPlayer = true; t.team = -1 - (Math.random() * 1e6 | 0); t.reverseTank = 1;
-        t.socket = { talk() {}, status: {}, camera: { x: 0, y: 0 }, _careerLives: 100 };
+        // hours played: not in a first raid (newcomerDirector.js)
+        t.socket = { talk() {}, status: {}, camera: { x: 0, y: 0 }, _careerLives: 100, _careerPlayMs: 120 * 60_000 };
         t.sendMessage = () => {};
     }
     t.alwaysActive = true;

@@ -6,10 +6,20 @@
 //   hidden      smoke, burrow, the sky drop, the raid-end freeze and a faded
 //               tank all flag the owner hidden; the client draws nothing for
 //               a hidden owner or one it isn't drawing
-//   follows     it never sits on its owner, stays within the leash while its
-//               owner runs about, moves smoothly (frame-rate independent
-//               easing, no pops), and only teleports (then fades in) after a
-//               huge jump; the barrels turn smoothly, no angle steps
+//   follows     it never sits on its owner (at any size), stays within the
+//               leash while its owner runs about, trails behind and to one
+//               side on the move, potters about and wanders off to sniff at
+//               things when its owner stops, and only teleports (then fades
+//               in) after a huge jump
+//   aim         its barrels never copy its owner's aim: they watch an enemy,
+//               a gem, glance up at the owner, or look about with pauses;
+//               a small spring, smooth, no angle steps; shots go at the enemy
+//   scale       it grows a little with its owner (sqrt, 1x to 1.8x), and
+//               so do the gaps, the leash and the name tag
+//   smooth      the same at 30, 60 and 144 fps, no stepping, runs on the
+//               frame clock and follows where the owner is drawn
+//   personality two owners' sidekicks are never in step; it bounces about
+//               when its owner banks, kills or picks something up
 //   looks       twenty plain tanks with one smiley each (no props, no faces
 //               to buy), body-only skins, sidekick-only name styles, 25%
 //               bigger than the first cut
@@ -85,6 +95,8 @@ const NOW = TODAY * DAY + 5 * HOUR;
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
+const angDiff = (a, b) => Math.abs(((a - b) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+const mathMod = () => import(pathToFileURL(path.join(REPO, 'public', 'client', 'sidekickMath.js')).href);
 const d = () => accounts.db.handle();
 let seq = 0, keyN = 0;
 function mkUser(dustMilli = 10000000) {
@@ -141,7 +153,7 @@ test('harmless: its shots live only on the client and carry no damage', async ()
         const st = M.makeState(5, move);
         let shots = 0, last = -1, gaps = [];
         for (let t = 0; t < 60; t += 1 / 60) {
-            M.step(st, 0, 0, 30, 0, 1, t, 1 / 60);
+            M.step(st, 0, 0, 30, 1, t, 1 / 60);
             const a = M.shotDue(st, t, Math.random);
             if (a === a) { shots++; if (last >= 0) gaps.push(t - last); last = t; }
         }
@@ -149,17 +161,24 @@ test('harmless: its shots live only on the client and carry no damage', async ()
         assert.ok(gaps.length > 10 && gaps.every(g => g >= 1.5 - 0.02 && g <= 3 + 0.02), move + ' gaps ' + gaps.map(g => g.toFixed(2)));
         assert.ok(shots >= 60 / 3 - 1 && shots <= 60 / 1.5 + 1, 'shots in a minute: ' + shots);
     }
-    // the barrels have swung to a shot's direction by the time it goes
-    {
-        const st = M.makeState(9, 'orbit');
-        let worst = 0, n = 0;
+    // the barrels have swung to a shot's direction by the time it goes; with
+    // an enemy about (circling it), that direction is the enemy
+    for (const enemy of [false, true]) for (const move of ['orbit', 'spin']) {
+        const st = M.makeState(9, move);
+        const sense = { ex: NaN, ey: NaN, gx: NaN, gy: NaN };
+        let worst = 0, n = 0, off = 0;
         for (let t = 0; t < 40; t += 1 / 60) {
-            M.step(st, 0, 0, 30, 2.5, 1, t, 1 / 60);
+            if (enemy) { sense.ex = Math.cos(t * 0.3) * 300; sense.ey = Math.sin(t * 0.3) * 300; }
+            M.step(st, 0, 0, 30, 1, t, 1 / 60, sense);
             const aim = st.aim, firing = st.firing;
             const a = M.shotDue(st, t, Math.random);
-            if (a === a && firing) { n++; worst = Math.max(worst, Math.abs(((a - aim) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI)); }
+            if (a === a && (firing || enemy)) {
+                n++; worst = Math.max(worst, angDiff(a, aim));
+                if (enemy) off = Math.max(off, angDiff(a, Math.atan2(sense.ey - st.y, sense.ex - st.x)));
+            }
         }
-        assert.ok(n > 8 && worst < 0.2, 'aimed within ' + worst.toFixed(3) + ' rad over ' + n + ' shots');
+        if (move === 'orbit' || enemy) assert.ok(n > 8 && worst < 0.2, move + ' aimed within ' + worst.toFixed(3) + ' rad over ' + n + ' shots');
+        if (enemy) assert.ok(off < 0.2, move + ' shot ' + off.toFixed(3) + ' rad off the enemy');
     }
     const client = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekicks.js'), 'utf8');
     assert.ok(!/talk\(|socket\.|cmd\./.test(client), 'the client never tells the server about a shot');
@@ -214,26 +233,47 @@ test('hidden: the client only draws one where its owner is drawn, at full streng
 });
 
 // ── follows ───────────────────────────────────────────────────────────
-test('follows: never on its owner, on the leash, smooth, teleports (and fades in) only on a huge jump', async () => {
-    const M = await import(pathToFileURL(path.join(REPO, 'public', 'client', 'sidekickMath.js')).href);
-    const oR = 30;
+// An owner that drives like a tank: its velocity eases toward `want(t)`.
+// Worked out on a fine 1440 Hz grid and read at the frame times, so 30,
+// 60 and 144 fps all see the very same owner.
+function drive(want, fps, rate = 8) {
+    let x = 0, y = 0, vx = 0, vy = 0, n = 0;
+    const H = 1440, k = 1 - Math.exp(-rate / H);
+    return (t) => {
+        for (const end = Math.round(t * H); n < end; n++) {
+            const w = want(n / H);
+            vx += (w[0] - vx) * k; vy += (w[1] - vy) * k; x += vx / H; y += vy / H;
+        }
+        return [x, y, vx, vy];
+    };
+}
+
+test('follows: never on its owner at any size, on the leash, no pops, teleports (and fades in) only on a huge jump', async () => {
+    const M = await mathMod();
     for (const move of Object.keys(M.MOVES)) {
-        for (const size of [1, 1.08]) {
+        for (const [oR, size] of [[24, 1], [30, 1.08], [60, 1], [110, 1.08], [180, 1]]) {
             const st = M.makeState(11, move);
-            const r = M.R * size;
+            // (the menu stage's `show` path keeps a fresh tank's scale)
+            const sc = move === 'show' ? 1 : M.ownerScale(oR), r = M.R * size * sc;
+            const lo = oR + r + M.CLEAR * sc, hi = oR + M.LEASH * sc;
+            const sense = { ex: NaN, ey: NaN, gx: NaN, gy: NaN, gr: 10 };
             let ox = 0, oy = 0, vx = 0, vy = 0, t = 0, near = Infinity, worst = 0, jerk = 0;
             const sp = [], op = [];
             // run in circles and zigzags, then drive straight at it, at 240
             // units a second (a tank speeds up, it doesn't teleport its
-            // velocity), for 20 s at 60 fps
-            for (let i = 0; i < 1200; i++) {
+            // velocity), stopping now and then so it wanders off, with a gem
+            // about, for 30 s at 60 fps
+            for (let i = 0; i < 1800; i++) {
                 t += 1 / 60;
                 let wx, wy;
-                if (i % 300 < 200) { wx = Math.cos(t * 0.7) * 4; wy = Math.sin(t * 1.3) * 4; }
+                const ph = i % 600;
+                if (ph >= 400) { wx = 0; wy = 0; }
+                else if (ph < 250) { wx = Math.cos(t * 0.7) * 4; wy = Math.sin(t * 1.3) * 4; }
                 else { const dx = st.x - ox, dy = st.y - oy, dd = Math.hypot(dx, dy) || 1; wx = dx / dd * 4; wy = dy / dd * 4; }
                 vx += (wx - vx) * 0.12; vy += (wy - vy) * 0.12;
                 ox += vx; oy += vy;
-                M.step(st, ox, oy, oR, 0, size, t, 1 / 60);
+                sense.gx = ox + 90 * sc; sense.gy = oy - 60 * sc;
+                M.step(st, ox, oy, oR, size, t, 1 / 60, sense);
                 const d = Math.hypot(st.x - ox, st.y - oy);
                 near = Math.min(near, d); worst = Math.max(worst, d);
                 // a pop is a sudden change of velocity: compare its frame to
@@ -244,72 +284,389 @@ test('follows: never on its owner, on the leash, smooth, teleports (and fades in
                     const acc = (q) => Math.hypot(q[2][0] - 2 * q[1][0] + q[0][0], q[2][1] - 2 * q[1][1] + q[0][1]);
                     jerk = Math.max(jerk, acc(sp) - acc(op));
                 }
-                assert.ok(Number.isFinite(st.x) && Number.isFinite(st.face), move + ' stays finite');
+                assert.ok(Number.isFinite(st.x) && Number.isFinite(st.face) && Number.isFinite(st.hop), move + ' stays finite');
             }
-            assert.ok(near >= oR + r + M.CLEAR - 1e-6, move + ' got within ' + near.toFixed(1) + ' of its owner');
-            assert.ok(worst <= oR + M.LEASH + 1e-6, move + ' strayed ' + Math.round(worst));
+            const tag = move + ' (owner ' + oR + ')';
+            assert.ok(near >= lo - 1e-6, tag + ' got within ' + near.toFixed(1) + ' of its owner (floor ' + lo.toFixed(1) + ')');
+            assert.ok(near - oR - r >= M.CLEAR * sc - 1e-6, tag + ' overlaps the hull');
+            assert.ok(worst <= hi + 1e-6, tag + ' strayed ' + Math.round(worst));
             // no pops: its velocity never changes much faster than its owner's
-            assert.ok(jerk < 1.2, move + ' popped (' + jerk.toFixed(2) + ' units/frame²)');
+            assert.ok(jerk < 1.2, tag + ' popped (' + jerk.toFixed(2) + ' units/frame²)');
             // a dash straight through it at 600 a second: shoved aside, never under the tank
             for (let i = 0; i < 40; i++) {
                 const dx = st.x - ox, dy = st.y - oy, dd = Math.hypot(dx, dy) || 1;
                 ox += dx / dd * 10; oy += dy / dd * 10; t += 1 / 60;
-                M.step(st, ox, oy, oR, 0, size, t, 1 / 60);
-                assert.ok(Math.hypot(st.x - ox, st.y - oy) >= oR + r + M.CLEAR - 1e-6, move + ' got run over');
+                M.step(st, ox, oy, oR, size, t, 1 / 60);
+                assert.ok(Math.hypot(st.x - ox, st.y - oy) >= lo - 1e-6, tag + ' got run over');
             }
-            assert.equal(st.snaps, 0, move + ' never teleported while running about');
+            assert.equal(st.snaps, 0, tag + ' never teleported while running about');
             // a shockwave fling / launch pad / grapple / respawn: 900 units in one step
             ox += 900; t += 1 / 60;
-            M.step(st, ox, oy, oR, 0, size, t, 1 / 60);
-            assert.equal(st.snaps, 1, move + ' teleported');
-            assert.ok(Math.hypot(st.x - ox, st.y - oy) <= oR + M.GAP + r * 1.5 + 12, move + ' is right back beside it');
-            assert.ok(st.alpha < 0.1, move + ' fades back in');
-            for (let i = 0; i < 30; i++) { t += 1 / 60; M.step(st, ox, oy, oR, 0, size, t, 1 / 60); }
-            assert.equal(st.alpha, 1, move + ' faded in within half a second');
+            M.step(st, ox, oy, oR, size, t, 1 / 60);
+            assert.equal(st.snaps, 1, tag + ' teleported');
+            const back = Math.hypot(st.x - ox, st.y - oy);
+            assert.ok(back >= lo && back <= (oR + M.GAP * sc + r) * 1.25, tag + ' is right back beside it (' + back.toFixed(1) + ')');
+            assert.ok(st.alpha < 0.1, tag + ' fades back in');
+            for (let i = 0; i < 30; i++) { t += 1 / 60; M.step(st, ox, oy, oR, size, t, 1 / 60); }
+            assert.equal(st.alpha, 1, tag + ' faded in within half a second');
         }
     }
-    // frame-rate independent: 30, 60 and 144 fps end up in the same place
-    const at = (fps) => {
-        const st = M.makeState(4, 'orbit');
-        for (let i = 1; i <= 6 * fps; i++) { const t = i / fps; M.step(st, 140 * t, 0, oR, 0.5, 1, t, 1 / fps); }
-        return st;
-    };
-    const a30 = at(30), a60 = at(60), a144 = at(144);
-    assert.ok(Math.hypot(a30.x - a144.x, a30.y - a144.y) < 3 && Math.hypot(a60.x - a144.x, a60.y - a144.y) < 1.5, 'same path at any frame rate');
-    assert.ok(Math.abs(a30.face - a144.face) < 0.05, 'same aim at any frame rate');
     // a long frame (tab in the background) never throws it off
     const st = M.makeState(3, 'zip');
-    M.step(st, 0, 0, oR, 0, 1, 0, 1 / 30);
-    M.step(st, 50, 0, oR, 0, 1, 5, 5);
-    assert.ok(Math.hypot(st.x - 50, st.y) <= oR + M.LEASH && Math.hypot(st.x - 50, st.y) >= oR + M.R + M.CLEAR - 1e-6);
+    M.step(st, 0, 0, 30, 1, 0, 1 / 30);
+    M.step(st, 50, 0, 30, 1, 5, 5);
+    const d = Math.hypot(st.x - 50, st.y);
+    assert.ok(d <= 30 + M.LEASH * M.ownerScale(30) && d >= 30 + M.R * M.ownerScale(30) + M.CLEAR - 1e-6);
     // every design's move exists
     for (const it of C.ITEMS.filter(i => i.cat === 'sidekick')) assert.ok(M.MOVES[it.kick.move], it.id + ' move ' + it.kick.move);
-    // the game follows the owner where it is drawn (renderx / rendery for
-    // your own tank): the camera goes in so the spot can be turned back
-    // into world units
-    const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
-    assert.match(app, /sidekicks\.draw\(ctx\[1\], ratio, px, py\)/);
-    const rt = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekicks.js'), 'utf8');
-    assert.match(rt, /e\.wx = \(e\.ox - hw \+ px\) \/ ratio/);
 });
 
-test('turning: barrels turn smoothly, one rotated drawImage a frame, no baked angle steps', async () => {
-    const M = await import(pathToFileURL(path.join(REPO, 'public', 'client', 'sidekickMath.js')).href);
+test('follows: trails behind and to one side on the move, keeps up at a run, never in front', async () => {
+    const M = await mathMod();
+    for (const move of ['orbit', 'zip', 'bounce', 'guard', 'hover']) {
+        const st = M.makeState(21, move), oR = 24, fps = 60;
+        // a long straight run to the right at 220 a second, then a U-turn
+        const owner = drive((t) => (t < 8 ? [220, 0] : [-220, 0]), fps);
+        let behind = 0, side = 0, n = 0, front = 0, worst = 0;
+        for (let i = 1; i <= 14 * fps; i++) {
+            const t = i / fps, [ox, oy, vx] = owner(t);
+            M.step(st, ox, oy, oR, 1, t, 1 / fps);
+            const along = (st.x - ox) * Math.sign(vx), across = st.y - oy, d = Math.hypot(st.x - ox, across);
+            if ((t > 2.5 && t < 8) || t > 11) {
+                n++; if (along < 0) behind++; if (Math.abs(across) > 10) side++;
+                if (along > oR) front++;
+                worst = Math.max(worst, d);
+            }
+        }
+        assert.ok(behind / n > 0.97, move + ' behind its owner ' + (100 * behind / n).toFixed(0) + '% of the run');
+        assert.ok(side / n > 0.85, move + ' off to one side ' + (100 * side / n).toFixed(0) + '% of the run');
+        assert.equal(front, 0, move + ' got out in front');
+        // keeps up: no further back than its spot plus a bit, even at a run
+        const D = oR + M.GAP + M.R;
+        assert.ok(worst < D * 1.45, move + ' fell back to ' + worst.toFixed(0) + ' (spot ' + D.toFixed(0) + ')');
+    }
+});
+
+test('follows: when its owner stops it potters about, wanders off to things and hurries back', async () => {
+    const M = await mathMod();
+    for (const move of ['orbit', 'sway', 'zip', 'guard']) {
+        const oR = 24, fps = 60, D = oR + M.GAP + M.R, hi = oR + M.LEASH;
+        // nothing about: a lazy loop round its owner, with noses about further out
+        {
+            const st = M.makeState(31, move);
+            let far = 0, minD = Infinity, phases = new Set(), moved = 0, last = null;
+            const angles = new Set();
+            for (let i = 1; i <= 40 * fps; i++) {
+                const t = i / fps;
+                M.step(st, 0, 0, oR, 1, t, 1 / fps);
+                const d = Math.hypot(st.x, st.y);
+                if (t > 1) { far = Math.max(far, d); minD = Math.min(minD, d); phases.add(st.ex); }
+                angles.add(Math.floor((Math.atan2(st.y, st.x) + Math.PI) / (Math.PI / 4)));
+                if (last) moved += Math.hypot(st.x - last[0], st.y - last[1]);
+                last = [st.x, st.y];
+            }
+            assert.ok([1, 2, 3].every(p => phases.has(p)), move + ' went off for a look and came back (' + [...phases] + ')');
+            assert.ok(far > D * 1.35 && far <= hi, move + ' wandered out to ' + far.toFixed(0));
+            assert.ok(angles.size >= 4, move + ' only covered ' + angles.size + '/8 of the way round');
+            assert.ok(moved > 600, move + ' sat still (' + moved.toFixed(0) + ' units in 40 s)');
+        }
+        // a gem nearby: it goes right up to it, looks at it, and comes back
+        {
+            const st = M.makeState(32, move);
+            const sense = { ex: NaN, ey: NaN, gx: 100, gy: -40, gr: 9 };
+            let closest = Infinity, looked = 0, back = false, wasOut = false;
+            for (let i = 1; i <= 30 * fps; i++) {
+                const t = i / fps;
+                M.step(st, 0, 0, oR, 1, t, 1 / fps, sense);
+                const dg = Math.hypot(st.x - 100, st.y + 40);
+                closest = Math.min(closest, dg);
+                if (st.ex === 2 && st.exThing && angDiff(st.face, Math.atan2(-40 - st.y, 100 - st.x)) < 0.25) looked++;
+                if (st.ex === 1 || st.ex === 2) wasOut = true;
+                if (wasOut && st.ex === 0 && Math.hypot(st.x, st.y) < D * 1.3) back = true;
+            }
+            assert.ok(closest < 9 + M.R + 10, move + ' never got to the gem (' + closest.toFixed(0) + ')');
+            assert.ok(looked > 10, move + ' never looked at the gem');
+            assert.ok(back, move + ' never came back');
+        }
+    }
+});
+
+// ── aim ───────────────────────────────────────────────────────────────
+test('aim: its own, never its owner\'s: enemies, gems, the owner, a look about with pauses', async () => {
+    const M = await mathMod();
+    // the maths has no owner aim to copy, and the game never hands it one
+    assert.equal(M.step.length, 8, 'step(st, ox, oy, oR, size, t, dt, sense)');
+    const rt = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekicks.js'), 'utf8');
+    assert.ok(!/render\.f\b|e\.of\b/.test(rt), 'sidekicks.js never reads the owner\'s facing');
+    assert.match(rt, /M\.step\(e\.st, e\.wx, e\.wy, e\.oR, e\.size, t, dt, senseOf\(/);
+    const fps = 60, oR = 24;
+    // an owner aiming all over the place while it runs a loop: the sidekick's
+    // barrels don't follow (owner aim and sidekick face don't move together)
+    {
+        const st = M.makeState(41, 'orbit');
+        const owner = drive((t) => [160 * Math.cos(t * 0.4), 160 * Math.sin(t * 0.4)], fps);
+        let same = 0, n = 0, prevF = null, prevA = null, together = 0, moves = 0;
+        for (let i = 1; i <= 30 * fps; i++) {
+            const t = i / fps, [ox, oy] = owner(t);
+            const ownerAim = Math.sin(t * 2.3) * 2.5 + t * 0.9;
+            M.step(st, ox, oy, oR, 1, t, 1 / fps);
+            if (t > 1) {
+                n++; if (angDiff(st.face, ownerAim) < 0.2) same++;
+                if (prevF !== null) {
+                    const df = st.face - prevF, da = ownerAim - prevA;
+                    if (Math.abs(da) > 0.01) { moves++; if (Math.abs(df - da) < 0.01) together++; }
+                }
+            }
+            prevF = st.face; prevA = ownerAim;
+        }
+        assert.ok(same / n < 0.2, 'pointed where its owner aims ' + (100 * same / n).toFixed(0) + '% of the time');
+        assert.ok(together / moves < 0.05, 'turned with its owner ' + (100 * together / moves).toFixed(0) + '% of the time');
+    }
+    // an enemy: it watches it, smoothly, wherever it goes
+    {
+        const st = M.makeState(42, 'guard');
+        const sense = { ex: NaN, ey: NaN, gx: NaN, gy: NaN };
+        let off = 0, n = 0;
+        for (let i = 1; i <= 12 * fps; i++) {
+            const t = i / fps;
+            sense.ex = 350 * Math.cos(t * 0.5); sense.ey = 350 * Math.sin(t * 0.5);
+            M.step(st, 0, 0, oR, 1, t, 1 / fps, sense);
+            if (t > 1.5) { n++; off = Math.max(off, angDiff(st.face, Math.atan2(sense.ey - st.y, sense.ex - st.x))); }
+        }
+        assert.ok(off < 0.12, 'kept its eye on the enemy to within ' + off.toFixed(3) + ' rad');
+        assert.equal(st.look, 2);
+        // far off: not its business
+        sense.ex = 5000; sense.ey = 0;
+        for (let i = 0; i < 30; i++) M.step(st, 0, 0, oR, 1, 12 + i / fps, 1 / fps, sense);
+        assert.ok(!st.hasEnemy && st.look !== 2, 'an enemy across the map is ignored');
+    }
+    // nothing about, owner idle: looks round (a spread of directions), holds
+    // still between looks, and glances up at its owner now and then
+    for (const move of ['orbit', 'sway', 'hover']) {
+        const st = M.makeState(43, move);
+        let still = 0, n = 0, glances = 0;
+        const dirs = new Set();
+        let prev = null;
+        for (let i = 1; i <= 40 * fps; i++) {
+            const t = i / fps;
+            M.step(st, 0, 0, oR, 1, t, 1 / fps);
+            if (t < 1) continue;
+            n++;
+            dirs.add(Math.floor(((st.face % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / (Math.PI / 4)));
+            if (prev !== null && Math.abs(st.face - prev) * fps < 0.05) still++;
+            if (st.look === 3 && angDiff(st.face, Math.atan2(-st.y, -st.x)) < 0.3) glances++;
+            prev = st.face;
+        }
+        assert.ok(dirs.size >= 5, move + ' only looked ' + dirs.size + '/8 ways');
+        assert.ok(still / n > 0.3, move + ' never paused (' + (100 * still / n).toFixed(0) + '% still)');
+        assert.ok(glances > 30, move + ' never glanced at its owner');
+    }
+    // a spinner spins with nothing to watch, and stops to watch an enemy
+    {
+        const st = M.makeState(44, 'spin');
+        let spun = 0;
+        for (let i = 1; i <= 6 * fps; i++) { const f0 = st.face; M.step(st, 0, 0, oR, 1, i / fps, 1 / fps); if (st.look === 6) spun += st.face - f0; }
+        assert.ok(spun > 3, 'the spinner spun ' + spun.toFixed(2));
+        const sense = { ex: 300, ey: 0, gx: NaN, gy: NaN };
+        for (let i = 1; i <= 2 * fps; i++) M.step(st, 0, 0, oR, 1, 6 + i / fps, 1 / fps, sense);
+        assert.ok(angDiff(st.face, Math.atan2(-st.y, 300 - st.x)) < 0.1, 'and watched the enemy');
+    }
+});
+
+test('aim: barrels turn like a little spring (a touch of overshoot, then settle), no angle steps', async () => {
+    const M = await mathMod();
+    for (const fps of [30, 60, 144]) {
+        const st = M.makeState(2, 'orbit');
+        st.face = 0; st.w = 0;
+        let peak = 0, settled = null, biggest = 0, prev = 0;
+        for (let i = 1; i <= fps * 1.5; i++) {
+            M.aimStep(st, 1.2, 1 / fps);
+            peak = Math.max(peak, st.face);
+            if (settled === null && i / fps > 0.3 && Math.abs(st.face - 1.2) < 0.02) settled = i / fps;
+            biggest = Math.max(biggest, Math.abs(st.face - prev) * fps); prev = st.face;
+        }
+        const over = (peak - 1.2) / 1.2;
+        assert.ok(over > 0.01 && over < 0.15, fps + ' fps overshoot ' + (100 * over).toFixed(1) + '%');
+        assert.ok(settled !== null && settled < 0.8, fps + ' fps settled at ' + settled);
+        assert.ok(biggest <= M.TURN_MAX + 1e-6, fps + ' fps turned ' + biggest.toFixed(2) + ' rad/s');
+    }
+    // in play, at 60 fps: at most ~a seventh of a radian a frame even mid-swing (the old sprites stepped 15 degrees)
     for (const move of ['orbit', 'spin']) {
         const st = M.makeState(2, move);
+        const sense = { ex: NaN, ey: NaN, gx: NaN, gy: NaN };
         let biggest = 0, prev = null;
         for (let t = 0; t < 30; t += 1 / 60) {
-            M.step(st, 0, 0, 30, Math.sin(t) * 3, 1, t, 1 / 60);
+            sense.ex = t % 6 < 3 ? 400 : NaN; sense.ey = -200;
+            M.step(st, 0, 0, 30, 1, t, 1 / 60, sense);
             M.shotDue(st, t, Math.random);
             if (prev !== null) biggest = Math.max(biggest, Math.abs(st.face - prev));
             prev = st.face;
         }
-        // at most ~a fifth of a radian a frame even mid-swing (the old sprites stepped 15 degrees)
-        assert.ok(biggest < 0.2, move + ' turned ' + biggest.toFixed(3) + ' rad in one frame');
+        assert.ok(biggest < 0.15, move + ' turned ' + biggest.toFixed(3) + ' rad in one frame');
     }
     const rt = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekicks.js'), 'utf8');
     assert.ok(!/ANGLES|STEP_A/.test(rt), 'no angle table');
     assert.match(rt, /c\.rotate\(a\);\s*c\.drawImage\(cv, -w \/ 2, -w \/ 2, w, w\)/, 'one rotated blit');
+});
+
+// ── scale ─────────────────────────────────────────────────────────────
+test('scale: grows a little with its owner (sqrt, 1x to 1.8x), gaps, leash and tag with it', async () => {
+    const M = await mathMod();
+    assert.equal(M.ownerScale(M.BASE_TANK), 1, 'a fresh tank: as it was');
+    assert.equal(M.ownerScale(10), 1, 'never smaller');
+    assert.ok(Math.abs(M.ownerScale(M.BASE_TANK * 2) - Math.SQRT2) < 1e-9, 'twice the size: sqrt 2');
+    assert.equal(M.ownerScale(M.BASE_TANK * 10), M.GROW_MAX, 'capped at 1.8x');
+    for (let s = 1; s < 12; s *= 1.1) assert.ok(M.ownerScale(M.BASE_TANK * s * 1.1) >= M.ownerScale(M.BASE_TANK * s), 'never shrinks as its owner grows');
+    // at every owner size: clear of the hull by the scaled margin, inside the
+    // scaled leash, and its spot sits further out the bigger the owner
+    let lastSpot = 0;
+    for (const oR of [24, 36, 48, 72, 100, 150, 220]) {
+        const st = M.makeState(51, 'orbit'), sc = M.ownerScale(oR), r = M.R * sc;
+        let near = Infinity, far = 0, sum = 0, n = 0;
+        const owner = drive((t) => (t % 10 < 6 ? [150 * Math.cos(t), 150 * Math.sin(t * 0.7)] : [0, 0]), 60);
+        for (let i = 1; i <= 20 * 60; i++) {
+            const t = i / 60, [ox, oy] = owner(t);
+            M.step(st, ox, oy, oR, 1, t, 1 / 60);
+            const d = Math.hypot(st.x - ox, st.y - oy);
+            near = Math.min(near, d); far = Math.max(far, d); sum += d - oR; n++;
+        }
+        assert.equal(st.sc, sc);
+        assert.ok(near - oR - r >= M.CLEAR * sc - 1e-6, 'owner ' + oR + ': gap ' + (near - oR - r).toFixed(1));
+        assert.ok(far - oR <= M.LEASH * sc + 1e-6, 'owner ' + oR + ': leash ' + (far - oR).toFixed(1));
+        assert.ok(sum / n > lastSpot, 'owner ' + oR + ': further out from the edge than a smaller one');
+        lastSpot = sum / n;
+    }
+    // the game draws it, its shots and its tag at that scale; sprites come
+    // from rungs at most ~7% apart and are only ever drawn smaller
+    const rt = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekicks.js'), 'utf8');
+    assert.match(rt, /const rpx = M\.R \* e\.size \* s\.sc \* ratio/);
+    assert.match(rt, /r = M\.R \* e\.size \* st\.sc/, 'shots from the scaled muzzle');
+    assert.match(rt, /LABEL_WORLD \* Math\.sqrt\(sc \|\| 1\)/, 'the tag grows a little (sqrt)');
+    assert.match(rt, /RUNGS\[i\] >= rpx/, 'baked at the rung above, drawn smaller');
+    assert.match(rt, /r = Math\.max\(r \+ 1, Math\.round\(r \* 1\.07\)\)/);
+});
+
+// ── smooth ────────────────────────────────────────────────────────────
+test('smooth: the same at 30, 60 and 144 fps, no stepping, on the frame clock', async () => {
+    const M = await mathMod();
+    // tank-like owner: a curving run, a stop (it potters), a run off the other way
+    const want = (t) => (t < 8 ? [200 * Math.cos(t * 0.5), 200 * Math.sin(t * 0.5)] : t < 20 ? [0, 0] : [-180, 90]);
+    const run = (fps, move) => {
+        const st = M.makeState(4, move), owner = drive(want, fps);
+        const sense = { ex: NaN, ey: NaN, gx: NaN, gy: NaN, gr: 10 };
+        const at = new Map();
+        let prev = null, pv = null, acc = 0, hop = 0, turn = 0, ph = 0, pf = 0;
+        for (let i = 1; i <= 30 * fps; i++) {
+            const t = i / fps, [ox, oy] = owner(t);
+            sense.gx = t > 9 ? ox + 65 : NaN; sense.gy = oy + 120;
+            M.step(st, ox, oy, 30, 1, t, 1 / fps, sense);
+            // every sixth of a second, to compare frame rates
+            const k = Math.round(t * 6);
+            if (Math.abs(t * 6 - k) < 1e-6) at.set(k, [st.x - ox, st.y - oy, st.face]);
+            if (prev) {
+                const v = [(st.x - prev[0]) * fps, (st.y - prev[1]) * fps];
+                if (pv && t > 0.5) acc = Math.max(acc, Math.hypot(v[0] - pv[0], v[1] - pv[1]) * fps);
+                pv = v;
+                if (t > 0.5) { hop = Math.max(hop, Math.abs(st.hop - ph) * fps); turn = Math.max(turn, Math.abs(st.face - pf) * fps); }
+            }
+            prev = [st.x, st.y]; ph = st.hop; pf = st.face;
+        }
+        return { at, acc, hop, turn };
+    };
+    for (const move of ['orbit', 'zip', 'bounce', 'sway']) {
+        const [a30, a60, a144] = [30, 60, 144].map(f => run(f, move));
+        // the same path on the run (decisions later on can fall a frame apart)
+        for (const [o, f, most] of [[a30, 30, 2.5], [a60, 60, 1.2]]) {
+            let worst = 0, faceWorst = 0;
+            for (const [k, p] of a144.at) {
+                if (k > 7 * 6) break;
+                const q = o.at.get(k);
+                worst = Math.max(worst, Math.hypot(p[0] - q[0], p[1] - q[1]));
+                faceWorst = Math.max(faceWorst, angDiff(p[2], q[2]));
+            }
+            // (a couple of units is under a pixel at 30 fps zoomed out)
+            assert.ok(worst < most, move + ': ' + f + ' vs 144 fps paths ' + worst.toFixed(2) + ' apart');
+            // its mind is made up on frames, so a look can start a frame later:
+            // never more than one frame's turn apart
+            assert.ok(faceWorst < M.TURN_MAX / f + 0.05, move + ': ' + f + ' vs 144 fps aim ' + faceWorst.toFixed(3) + ' apart');
+        }
+        // no stepping: its acceleration, bob and turn rate are bounded and
+        // don't grow with the frame rate (a step shows up as a spike that
+        // gets taller the shorter the frame)
+        for (const [f, r] of [[30, a30], [60, a60], [144, a144]]) {
+            assert.ok(r.acc < 2600, move + ' at ' + f + ' fps: ' + r.acc.toFixed(0) + ' u/s²');
+            assert.ok(r.turn <= M.TURN_MAX + 1e-6, move + ' at ' + f + ' fps turned ' + r.turn.toFixed(2) + ' rad/s');
+        }
+        assert.ok(a144.acc < a30.acc * 1.3, move + ': acceleration ' + a30.acc.toFixed(0) + ' -> ' + a144.acc.toFixed(0) + ' u/s² from 30 to 144 fps');
+        assert.ok(a144.hop < a30.hop * 1.3 + 1, move + ': bob ' + a30.hop.toFixed(0) + ' -> ' + a144.hop.toFixed(0) + ' u/s');
+    }
+    // the game follows the owner where it is drawn (renderx / rendery for
+    // your own tank, the camera turned back into world units), on the frame
+    // time app.js drew the tanks with, at sub-pixel spots
+    const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
+    assert.match(app, /sidekicks\.draw\(ctx\[1\], ratio, px, py, tick, gui\.playerid\)/);
+    const rt = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekicks.js'), 'utf8');
+    assert.match(rt, /e\.wx = \(e\.ox - hw \+ px\) \/ ratio/);
+    assert.match(rt, /const t = advance\(tick === tick && tick != null \? tick : now\)/);
+    assert.ok(!/Math\.round\(sx|Math\.round\(e\.sx|Math\.round\(top/.test(rt), 'no whole-pixel snapping against the owner');
+    // what it watches is followed where it is drawn this frame, not at network ticks
+    assert.match(rt, /S\.ex = cam \? \(en\._sx - hw \+ px\) \/ ratio/);
+});
+
+// ── personality ───────────────────────────────────────────────────────
+test('personality: two owners\' sidekicks are never in step; the same owner is the same everywhere', async () => {
+    const M = await mathMod();
+    const run = (seed, move) => {
+        const st = M.makeState(seed, move), fps = 60, out = [];
+        const owner = drive((t) => (t % 12 < 7 ? [170 * Math.cos(t * 0.3), 170 * Math.sin(t * 0.3)] : [0, 0]), fps);
+        for (let i = 1; i <= 36 * fps; i++) {
+            const t = i / fps, [ox, oy] = owner(t);
+            M.step(st, ox, oy, 24, 1, t, 1 / fps);
+            if (i % 6 === 0) out.push([st.x - ox, st.y - oy, st.face, st.hop]);
+        }
+        return out;
+    };
+    for (const move of ['orbit', 'zip', 'bounce', 'guard']) {
+        const a = run(1001, move), b = run(2002, move), a2 = run(1001, move);
+        assert.deepEqual(a2, a, move + ': the same owner id plays out the same on every client');
+        let apart = 0, face = 0, close = 0;
+        for (let i = 0; i < a.length; i++) {
+            const d = Math.hypot(a[i][0] - b[i][0], a[i][1] - b[i][1]);
+            apart += d; face += angDiff(a[i][2], b[i][2]);
+            if (d < 6 && angDiff(a[i][2], b[i][2]) < 0.15) close++;
+        }
+        assert.ok(apart / a.length > 25, move + ': two owners\' sidekicks only ' + (apart / a.length).toFixed(1) + ' apart on average');
+        assert.ok(face / a.length > 0.6, move + ': looking the same way (' + (face / a.length).toFixed(2) + ' rad apart on average)');
+        assert.ok(close / a.length < 0.05, move + ': in step ' + (100 * close / a.length).toFixed(0) + '% of the time');
+    }
+});
+
+test('personality: a happy bounce when its owner banks, kills or picks something up', async () => {
+    const M = await mathMod();
+    const st = M.makeState(61, 'guard');
+    let t = 0;
+    const tick = (n) => { let hi = 0; for (let i = 0; i < n; i++) { t += 1 / 60; M.step(st, 0, 0, 24, 1, t, 1 / 60); hi = Math.max(hi, st.hop); } return hi; };
+    const calm = tick(240);
+    M.cheer(st, t, 1);
+    let looked = 0, hop = 0, prev = st.hop, jump = 0;
+    for (let i = 0; i < 40; i++) {
+        t += 1 / 60; M.step(st, 0, 0, 24, 1, t, 1 / 60);
+        hop = Math.max(hop, st.hop); jump = Math.max(jump, Math.abs(st.hop - prev)); prev = st.hop;
+        if (angDiff(st.face, Math.atan2(-st.y, -st.x)) < 0.3) looked++;
+    }
+    assert.ok(hop > calm + 5, 'bounced up to ' + hop.toFixed(1) + ' (calm ' + calm.toFixed(1) + ')');
+    assert.ok(jump < 2, 'smoothly (' + jump.toFixed(2) + ' a frame)');
+    assert.ok(looked > 5, 'and looked up at its owner');
+    tick(30);
+    assert.ok(tick(120) <= calm + 0.5, 'then calms down');
+    // the game cheers on banking, kills and pickups (your own), and for any
+    // owner next to a chest cracking or a tank going down
+    const so = fs.readFileSync(path.join(REPO, 'public', 'client', 'socketinit.js'), 'utf8');
+    assert.match(so, /if \(!m\[4\]\) try \{ sidekicks\.cheer\(gui\.playerid, 1\)/, 'banked');
+    assert.match(so, /sidekicks\.cheer\(gui\.playerid, 0\.45\)/, 'picked up');
+    assert.match(so, /SIDEKICK_CHEERS\[m\[0\]\]/, 'kills and the like');
+    assert.match(so, /sidekicks\.cheerNear\(fx\.x, fx\.y/, 'next to it');
+    assert.match(so, /const SIDEKICK_CHEERS = \{ kill: 1,/);
 });
 
 // ── looks ─────────────────────────────────────────────────────────────

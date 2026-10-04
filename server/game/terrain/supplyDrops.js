@@ -89,8 +89,11 @@ function others() {
     } catch { /* */ }
     return out;
 }
-function pickSpot(t) {
-    const people = (hooks.humans ? hooks.humans() : []).filter(b => alive(b) && !(hooks.idle && b.socket && hooks.idle(b.socket)));
+// `only`: that one player and nobody else (the first-raid director), and
+// never the anywhere-in-the-zone fallback, which would defeat the point.
+function pickSpot(t, only = null) {
+    const people = only ? [only].filter(alive)
+        : (hooks.humans ? hooks.humans() : []).filter(b => alive(b) && !(hooks.idle && b.socket && hooks.idle(b.socket)));
     if (!people.length) return null;
     const fighters = (hooks.fighters ? hooks.fighters() : []).filter(alive);
     const crowd = (b) => fighters.filter(o => o !== b && Math.hypot(o.x - b.x, o.y - b.y) < 1400).length;
@@ -114,6 +117,7 @@ function pickSpot(t) {
     };
     for (const g of STAGES) {
         if (!g.ring) {
+            if (only) continue;
             // anywhere in the zone (or on the map when there's no storm)
             const cx = st && st.a ? st.cx || 0 : 0, cy = st && st.a ? st.cy || 0 : 0;
             const R = Math.max(0, Math.min(mapR, zoneR - g.edge));
@@ -155,12 +159,11 @@ function talkAll(fn) {
     for (const c of (hooks.clients ? hooks.clients() : [])) { try { fn(c); } catch { /* */ } }
 }
 
-function warn(t) {
-    const spot = pickSpot(t);
+function warn(t, spot = pickSpot(t), reserve = null) {
     // nothing anywhere (everyone idle, or a tiny last circle): try again soon, never skip it
     if (!spot) { nextAt = t + RETRY_MS; return; }
     const where = hooks.compass ? hooks.compass(spot.x, spot.y) : "the zone";
-    plan = { x: Math.round(spot.x), y: Math.round(spot.y), at: t + WARN_MS, falling: false, where };
+    plan = { x: Math.round(spot.x), y: Math.round(spot.y), at: t + WARN_MS, falling: false, where, reserve };
     if (hooks.announce) hooks.announce("Supply drop incoming in " + where + ". A new ability inside.", { event: 1, kind: 'supply', name: where });
     talkAll(c => c.talk('FX', plan.x, plan.y, 'supplysoon', WARN_MS, CRATE_SIZE));
 }
@@ -273,6 +276,8 @@ function land(t) {
         o.supplyDrop = true;
         o.isSupplyCrate = true;
         o.onOpened = (body) => reward(body);
+        // called for one player (requestNear): bots leave it to them for a while
+        if (p.reserve) o._botClaim = { id: p.reserve.id, until: t + p.reserve.ms };
         crate = o;
         count++;
     }
@@ -316,7 +321,21 @@ function current(t = Date.now()) {
 
 function reset() { plan = null; crate = null; nextAt = 0; count = 0; }
 
+// The first-raid director (newcomerDirector.js): the next drop, now, close to
+// one player. It takes the place of the next timed one (the schedule runs on
+// from its landing), so a raid gets no extra crates out of it. reserveMs:
+// bots leave the crate to that player this long after it lands. Null when a
+// drop is already on its way, the storm is locked or no spot near them fits.
+function requestNear(body, t = Date.now(), reserveMs = 0) {
+    if (!enabled() || plan || !alive(body) || (hooks.live && !hooks.live())) return null;
+    if (storm().locked(t)) return null;
+    const spot = pickSpot(t, body);
+    if (!spot) return null;
+    warn(t, spot, reserveMs > 0 ? { id: body.id, ms: reserveMs } : null);
+    return plan;
+}
+
 // ROYALE_DEBUG (DBG supplydrop): the next one now
 function debugNow(t = Date.now()) { if (!plan) { nextAt = 0; warn(t); } return plan; }
 
-module.exports = { CRATE_GAP, CHEST_GAP, CLEAR_MARGIN, CRATE_SIZE, FOOT_R, ON, FIRST_MS, GAP_MS, WARN_MS, FALL_MS, CRATE_GEMS, attach, enabled, tick, snapshot, current, reset, debugNow, pickSpot, _count: () => count };
+module.exports = { requestNear, CRATE_GAP, CHEST_GAP, CLEAR_MARGIN, CRATE_SIZE, FOOT_R, ON, FIRST_MS, GAP_MS, WARN_MS, FALL_MS, CRATE_GEMS, attach, enabled, tick, snapshot, current, reset, debugNow, pickSpot, _count: () => count };

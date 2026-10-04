@@ -80,6 +80,9 @@ export function onState(d) {
         unlockSeen("ab:" + d.fr);
         freeSlam(d.fr);
     }
+    // a first raid (newcomer.js stage 0): a trial comes from a director
+    // moment, whose banner says it; the icon only glides into its slot
+    if (fresh && fresh === S.trialId && S.ready && global.nxKnown && global.nxStage === 0) { glide(fresh, ""); fresh = null; }
     if (fresh && S.ready && !global.tutorialMode) {
         // the big card the first time ever, a glide into the slot after that
         if (unlockSeen("ab:" + fresh)) { glide(fresh, d.msg || ""); d.msg = ""; }

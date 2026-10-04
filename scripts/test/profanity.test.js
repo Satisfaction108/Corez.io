@@ -84,7 +84,7 @@ test('wiring: raid names, in-game chat, friend chat, party guests, the shared fi
     assert.match(br, /profanity\.hasProfanity\(socket\.account\.username\) \? profanity\.fallbackName\(socket\)/, 'old account names too');
     assert.match(read('server', 'accounts', 'messages.js'), /profanity\.js'\)\.mask\(sanitizeMessage/, 'friend chat');
     assert.match(read('server', 'accounts', 'party.js'), /hasProfanity\(s\)\) s = ''/, 'party guest names');
-    assert.match(read('server', 'accounts', 'index.js'), /'profanity\.js'\]\)/, 'served to the client');
+    assert.match(read('server', 'accounts', 'index.js'), /SHARED_FILES = new Set\(\[[^\]]*'profanity\.js'/, 'served to the client');
     assert.match(read('public', 'index.html'), /<script src="\/shared\/profanity\.js"><\/script>/);
     assert.match(read('public', 'client', 'nameHint.js'), /at least " \+ p\.MIN_NAME \+ " characters/);
     assert.ok(!read('shared', 'profanity.js').includes(String.fromCharCode(0x2014)), 'no em dashes');

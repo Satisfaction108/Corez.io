@@ -9,6 +9,7 @@ import { h, clear, toast, setBusy, humanError, animate, fmtDate, T_MID } from '.
 import { rankOf, badge, nameEl, tierColor, presenceText, presenceState, fmtNum } from './people.js';
 import { ACHIEVEMENTS, achIcon } from './achievements.js';
 import * as pv from './previews.js';
+import { TIERS, TOP_DIV } from './rankBadges.js';
 import * as cos from './cosmetics.js';
 import { removeFriend, blockUser } from './friendsPane.js';
 
@@ -16,8 +17,8 @@ let hooks = { openPane() {}, setTitle() {} };
 export function init(hs) { Object.assign(hooks, hs); }
 
 let paneEl = null, loadSeq = 0, lastOpts = {};
-const TIERS = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'emerald', 'legend'];
-const TIER_NAME = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold', platinum: 'Platinum', diamond: 'Diamond', emerald: 'Emerald', legend: 'Legend' };
+const TIER_NAME = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold', platinum: 'Platinum', diamond: 'Diamond', emerald: 'Emerald', legend: 'Legend',
+    mythic: 'Mythic', titan: 'Titan', overlord: 'Overlord', immortal: 'Immortal', eternal: 'Eternal', corez: 'Corez' };
 const BACK = { friends: 'Friends', leaderboard: 'Top 100' };
 
 const myName = () => { const u = store.get('user'); return u ? u.username : ''; };
@@ -72,7 +73,7 @@ function paint(el, p, opts) {
         const left = Math.max(0, (pl.of || 3) - (pl.lives | 0));
         barPct = (pl.lives | 0) / (pl.of || 3);
         barText = left > 0 ? left + ' placement ' + (left === 1 ? 'game' : 'games') + ' to go' : 'Rank coming up next game';
-    } else if ((rk.division | 0) >= 18) {
+    } else if ((rk.division | 0) >= TOP_DIV) {
         barPct = 1;
         barText = fmtNum(rk.rp) + ' RP';
     } else {
@@ -179,12 +180,12 @@ function tiers(p) {
     const row = h('div', { class: 'pf-tiers' });
     TIERS.forEach((t, i) => {
         const on = have.has(t);
-        const div = i === 6 ? 18 : i * 3;
+        const div = i * 3;
         row.appendChild(h('div', { class: 'pf-tier' + (on ? ' on' : ''), title: on ? TIER_NAME[t] + ': got it' : TIER_NAME[t] + ': not yet' },
             badge(div, 54, 'pf-tier-img'),
             h('span', { class: 'pf-tier-l', text: TIER_NAME[t] })));
     });
-    return section('Tiers', have.size + ' / 7', row);
+    return section('Tiers', have.size + ' / ' + TIERS.length, row);
 }
 
 function achievements(p) {

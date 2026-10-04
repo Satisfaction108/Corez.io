@@ -4,9 +4,9 @@
 //
 //   per hit     no single collision tick lands more than HIT_SHARE of the
 //               boss's pool (health + shield max)
-//   per tank    one tank (its bullets, drones, traps and hull together) gets
-//               at most TANK_SHARE_S of the pool through per second
-//   all         everyone together at most ALL_SHARE_S per second
+//   per second  off since Oct 3 (the owner wanted damage to land as dealt);
+//               ROYALE_BOSS_RATE_CAP=1 brings back the per tank
+//               (TANK_SHARE_S) and everyone (ALL_SHARE_S) limits
 //   regen       a boss hit in the last FIGHT_MS does not regenerate (its
 //               full-shield health regen alone would out-heal the per tank
 //               share)
@@ -26,6 +26,14 @@
 //   targeting   boss guns take anyone else in reach first
 // A player idle for a minute gets none of it. ROYALE_BOSS_NEWBIE=0 turns it
 // off.
+//
+// A player in their first minutes (body.nxBossSafe, newcomerDirector.js) is
+// left alone: boss guns never pick them, a boss shot that reaches them fades
+// without hurting, and the boss's hull only pushes. Until they pick the
+// fight: once one of them has dealt ANGER_AT of a boss's pool, that boss
+// turns on them, gently at first (ANGER_MIN of its damage), getting angrier
+// as they keep hitting it (full at ANGER_FULL) or as time goes by since it
+// noticed them (full after ANGER_RAMP_MS).
 'use strict';
 
 const HIT_SHARE = 0.0175;
@@ -35,9 +43,12 @@ const ALL_SHARE_S = 0.075;
 const WINDOW_TICKS = 30, WINDOW_MS = 1000;
 const FIGHT_MS = 3000;
 
+const ANGER_AT = 0.25, ANGER_FULL = 0.6, ANGER_MIN = 0.3, ANGER_RAMP_MS = 25000;
 const NEWBIE_DMG_MIN = 0.25, NEWBIE_FLOOR_AT = 0.25, ATTACK_MS = 8000, NEWBIE_AIM_PENALTY = 900;
 
 let enabled = process.env.ROYALE_BOSS_CAP !== '0';
+let rateCap = process.env.ROYALE_BOSS_RATE_CAP === '1';
+function setRateCap(v) { rateCap = !!v; }
 let spare = process.env.ROYALE_BOSS_NEWBIE !== '0';
 function setEnabled(v) { enabled = !!v; }
 function isEnabled() { return enabled; }
@@ -64,9 +75,10 @@ function capHit(boss, src, amount, now) {
     // who is picking a fight with a boss (the newcomer last-blow rule)
     if (root0 && root0.isPlayer) root0._hitBossAt = Date.now();
     // the tutorial's practice boss is meant to drop in a few seconds
-    if (!enabled || boss.isTutorialBot) return amount;
+    if (!enabled || boss.isTutorialBot) return note(boss, root0, amount);
     const pool = poolOf(boss);
     let dmg = Math.min(amount, pool * HIT_SHARE);
+    if (!rateCap) return note(boss, root0, dmg);
     const ticks = now == null && global.gameTick != null;
     if (now == null) now = ticks ? global.gameTick : Date.now();
     const span = ticks ? WINDOW_TICKS : WINDOW_MS;
@@ -79,7 +91,31 @@ function capHit(boss, src, amount, now) {
     if (!(dmg > 0)) return 0;
     win.by.set(key, used + dmg);
     win.all += dmg;
+    return note(boss, root, dmg);
+}
+// what each tank has landed on this boss, for the anger rule
+function note(boss, root, dmg) {
+    if (dmg > 0 && root && root.isPlayer && root.nxBossSafe) {
+        const m = boss._dealtBy || (boss._dealtBy = new Map());
+        const was = m.get(root.id) || 0;
+        m.set(root.id, was + dmg);
+        const pool = poolOf(boss);
+        if (was < pool * ANGER_AT && was + dmg >= pool * ANGER_AT) {
+            (boss._angryAt || (boss._angryAt = new Map())).set(root.id, Date.now());
+            try { if (root.sendMessage) root.sendMessage("The boss noticed you. It's fighting back now."); } catch { /* */ }
+        }
+    }
     return dmg;
+}
+// 0: the boss leaves this first-minutes player alone; else the share of its
+// damage it hits them with (ANGER_MIN up to 1)
+function angerOf(boss, p, now = Date.now()) {
+    if (!boss || !p || !boss._dealtBy) return 0;
+    const share = (boss._dealtBy.get(p.id) || 0) / poolOf(boss);
+    if (share < ANGER_AT) return 0;
+    const at = (boss._angryAt && boss._angryAt.get(p.id)) || now;
+    const k = Math.max((share - ANGER_AT) / (ANGER_FULL - ANGER_AT), (now - at) / ANGER_RAMP_MS);
+    return Math.min(1, ANGER_MIN + (1 - ANGER_MIN) * Math.max(0, k));
 }
 
 // 0 not new .. 1 brand new, as far as boss mercy goes
@@ -101,6 +137,15 @@ function intoPlayer(p, src, amount, now = Date.now()) {
     if (!(amount > 0)) return amount;
     const root = bossRoot(src);
     if (!root) return amount;
+    if (p.nxBossSafe) {
+        const anger = angerOf(root, p, now);
+        if (anger > 0) return amount * (BOSS_OUT[root.bossKind] || 1) * anger;
+        // a shot (not the hull, a drone or a minion) fades on contact
+        if (src !== root && src.type !== 'drone' && src.type !== 'minion' && src.type !== 'tank') {
+            try { src.kill(); } catch { /* */ }
+        }
+        return 0;
+    }
     amount *= BOSS_OUT[root.bossKind] || 1;
     if (!spare || !(p.botNewbie || p.botNewness > 0)) return amount;
     const n = newnessOf(p, now);
@@ -148,6 +193,6 @@ function regenGate(boss, normal, now = Date.now()) {
 
 module.exports = {
     HIT_SHARE, TANK_SHARE_S, ALL_SHARE_S, FIGHT_MS, NEWBIE_DMG_MIN, ATTACK_MS,
-    capHit, regenGate, setEnabled, isEnabled, poolOf,
+    capHit, regenGate, setEnabled, isEnabled, setRateCap, poolOf, angerOf, ANGER_AT, ANGER_FULL, ANGER_MIN,
     setSpare, newnessOf, intoPlayer, aimPenalty, pickTarget, dropNewbieLock,
 };

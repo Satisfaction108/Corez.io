@@ -12,6 +12,8 @@ import { toast as menuToast } from "./account/ui.js";
 import saveCode from "./saveCode.js";
 import * as abilityFx from "./abilityFx.js";
 import * as sidekicks from "./sidekicks.js";
+// callouts (KC) that make your sidekick bounce about
+const SIDEKICK_CHEERS = { kill: 1, revenge: 1, huntkill: 1, shutdown: 1, bounty: 1, boss: 1, streak: 1, quest: 1, contract: 1 };
 window.fakeLagMS = 0;
 var sync = [];
 var clockDiff = 0;
@@ -1441,7 +1443,8 @@ let incoming = async function(message, socket) {
                     r.boss = bossNow;
                     // leaderboard hits: passing someone, or getting passed
                     const placeNow = d.youPlace | 0;
-                    if (placeNow > 0 && r.lastPlace > 0 && placeNow !== r.lastPlace && !global.died && r.board && r.board.length) {
+                    // (a first raid, newcomer.js stage 0, skips the place race)
+                    if (placeNow > 0 && r.lastPlace > 0 && placeNow !== r.lastPlace && !global.died && r.board && r.board.length && !((global.nxStage | 0) === 0 && global.nxKnown)) {
                         if (placeNow < r.lastPlace) {
                             const below = r.board.find(row => row.place === placeNow + 1);
                             global.createMessage("You passed " + (below ? below.name : "someone") + " - now #" + placeNow, 3200);
@@ -1556,6 +1559,8 @@ let incoming = async function(message, socket) {
                     raidFinale.start(global.raidEndFx.sub);
                     break;
                 }
+                // a kill, a bounty, a boss: your sidekick is thrilled
+                if (SIDEKICK_CHEERS[m[0]]) try { sidekicks.cheer(gui.playerid, 1); } catch (e) { /* */ }
                 // hunted / SAFE / the Core: raidHeat slams those itself
                 try { if (raidHeat.onKC(m)) break; } catch (e) { /* */ }
                 // growing a size: a side card, not a plate in the middle. What
@@ -1605,6 +1610,10 @@ let incoming = async function(message, socket) {
                         if (eid && tr.dropCell) tr.dropCell(-(1000000 + eid));
                     }
                     pushFx = false;
+                }
+                // a chest cracked or a tank went down right by someone: their sidekick perks up
+                if (kindF === "chest" || kindF === "chestrare" || kindF === "tankdead") {
+                    try { sidekicks.cheerNear(fx.x, fx.y, kindF === "tankdead" ? 0.7 : 0.8, kindF === "tankdead" ? 520 : 300); } catch (e) { /* */ }
                 }
                 if (kindF === "tankdead") {
                     // someone else went down near you: a smaller burst in their colour
@@ -1710,10 +1719,13 @@ let incoming = async function(message, socket) {
                     }
                     g.flashAt = now;
                     try { raidHeat.onGem(delta); } catch (e) { /* */ }
+                    try { sidekicks.cheer(gui.playerid, 0.45); } catch (e) { /* */ }
                 } else if (delta < 0) {
                     g.combo = 0;
                     g.mcombo = 0;
                     g.popups.length = 0;
+                    // banked (not dropped by dying): a happy bounce
+                    if (!m[4]) try { sidekicks.cheer(gui.playerid, 1); } catch (e) { /* */ }
                     // Emptied by death, not by banking (m[4]). The run you were
                     // in the middle of just ended - say so, loudly. Scaled by
                     // how full the satchel was, so losing a scrap is a blip and
@@ -2167,6 +2179,8 @@ let incoming = async function(message, socket) {
             global.finalStreak = m[14 + m[8]] | 0;
             global.finalDrillLost = m[15 + m[8]] | 0;
             global.finalInsured = m[16 + m[8]] | 0;
+            // first raids: the part of the satchel kept back for the respawn (newcomer.js)
+            global.finalNxKept = m[18 + m[8]] | 0;
             // the server's own respawn wait (3 s from the death)
             const respawnWaitMs = m[17 + m[8]] | 0;
             global.shop.onPad = false;

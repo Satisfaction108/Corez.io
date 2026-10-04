@@ -29,6 +29,15 @@ function rootIsTank(e) {
     return !!(root && (root.isPlayer || root.isBot));
 }
 
+// A chest held for one player (terrain/newcomerDirector.js): until it is
+// released, nobody else's hits count.
+function heldFrom(chest, e) {
+    if (!chest.nxOwnerId || !(chest.nxOwnerUntil > Date.now())) return false;
+    let root = e, hops = 0;
+    while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+    return !root || root.id !== chest.nxOwnerId;
+}
+
 function firmcollide(my, n, buffer = 0) {
     // Cache positions and motions
     const mx = my.x + my.xMotion, myy = my.y + my.yMotion;
@@ -144,6 +153,10 @@ function reflectcollide(wall, bounce) {
         return 1;
     }
     return 0;
+}
+
+function onSafePad(b) {
+    return !!(b.padSafe || b.shopOnPad || b.onVaultPad || b.vaultOnPad || b.outpostOnPad || b.vaultDeposit);
 }
 
 function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
@@ -315,8 +328,8 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
             let __my = damage._n * deathFactor._n;
             let __n = damage._me * deathFactor._me;
             // loot chests only take damage from tanks and their bullets
-            if (my.isLootChest && !rootIsTank(n)) { __my = 0; my._gatedN = (my._gatedN | 0) + 1; }
-            if (n.isLootChest && !rootIsTank(my)) { __n = 0; n._gatedN = (n._gatedN | 0) + 1; }
+            if (my.isLootChest && (!rootIsTank(n) || heldFrom(my, n))) { __my = 0; my._gatedN = (my._gatedN | 0) + 1; }
+            if (n.isLootChest && (!rootIsTank(my) || heldFrom(n, my))) { __n = 0; n._gatedN = (n._gatedN | 0) + 1; }
             // raid bosses take damage in measured doses (terrain/bossGuard.js)
             if (my.isRoyaleBoss && __my > 0 && my.team != n.team) __my = bossGuard.capHit(my, n, __my);
             if (n.isRoyaleBoss && __n > 0 && my.team != n.team) __n = bossGuard.capHit(n, my, __n);
@@ -379,6 +392,9 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
                 _me: knockback * my.pushability / my.mass * deathFactor._n,
                 _n: knockback * n.pushability / n.mass * deathFactor._me,
             };
+        // a raid boss can't shove anyone off a vault, base or shop pad
+        if (n.isRoyaleBoss && onSafePad(my)) modifiers._me = 0;
+        if (my.isRoyaleBoss && onSafePad(n)) modifiers._n = 0;
         // Apply impulse as force
         my.accel.x += modifiers._me * force.x;
         my.accel.y += modifiers._me * force.y;

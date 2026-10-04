@@ -52,6 +52,10 @@ legacy('mapping', () => {
     assert.ok(near(D.forPlayer({ rankCode: 7 }), 0.45), 'Gold I');
     assert.ok(near(D.forPlayer({ rankCode: 13 }), 0.7), 'Diamond I');
     assert.ok(near(D.forPlayer({ rankCode: 19 }), 0.95), 'Legend');
+    // above Legend I (codes skip 20, placement): the top, never past it
+    const R = require('../../shared/ranks.js');
+    for (let div = 19; div <= R.TOP; div++) assert.ok(near(D.forPlayer({ rankCode: R.rankCode(div, false) }), 0.95), R.nameOf(div));
+    assert.ok(near(D.forPlayer({ rankCode: R.CODE_MAX, score: 1e6, kills: 100 }), 0.95));
     let prev = 0;
     for (let code = 1; code <= 19; code++) {
         const d = D.forPlayer({ rankCode: code });
@@ -323,6 +327,10 @@ const handler = new gameHandler(global.gameManager);
 global.gameManager.gameHandler = handler;
 function loop(n = 1) { for (let i = 0; i < n; i++) handler.gameloop(); }
 const royale = require(path.join(SERVER, 'game', 'gamemodes', 'scripts', 'dig_royale.js'));
+// These cover the newness machinery underneath. The first raids director on
+// top of it (a 3 minute soft window, bosses that never pick a first-raid
+// player) has its own test: newcomerDirector.test.js.
+require(path.join(SERVER, 'game', 'terrain', 'newcomerDirector.js')).setEnabled(false);
 const { ioTypes } = require(path.join(SERVER, 'miscFiles', 'controllers.js'));
 const FM = royale.FIRST_MINUTES;
 

@@ -41,6 +41,7 @@
 'use strict';
 
 const activity = require('../game/network/activity.js');
+const Ranks = require('../../shared/ranks.js');
 
 const NEUTRAL = 0.5;
 const RANK_LO = 0.2, RANK_HI = 0.95, RANK_PERF = 0.08;
@@ -48,7 +49,8 @@ const GUEST_LO = 0.15, GUEST_HI = 0.85, PLACEMENT_HI = 0.5;
 const PERF_SCORE = 10000, PERF_KILLS = 10;
 const SESSION_KEEP = 0.6;
 const MERCY_MAX = 0.15;
-const LEGEND = 18;
+// the difficulty climbs Bronze I .. Legend I and stays at the top past it
+const LEGEND = Ranks.LEGEND;
 const TIME_HI = 0.6, TIME_TAU_MS = 15 * 60_000;
 const NEW_FULL_MS = 5 * 60_000, NEW_END_MS = 12 * 60_000;
 const NEW_FULL_LIVES = 5, NEW_END_LIVES = 9;
@@ -88,11 +90,16 @@ function newness(playMs, lives) {
     const byLives = 1 - clamp01(((lives | 0) - NEW_FULL_LIVES) / (NEW_END_LIVES - NEW_FULL_LIVES));
     return Math.min(byTime, byLives);
 }
-// rankCode: 0 none, 1..19 division + 1, 20 placement (shared/ranks.js)
+// rankCode (shared/ranks.js rankCode/fromCode): 0 none, 20 placement, the
+// rest a division
+function rankedDivision(code) {
+    const r = Ranks.fromCode(code);
+    return r && !r.placement ? r.division : null;
+}
 function fromRank(code) {
-    code |= 0;
-    if (code < 1 || code > LEGEND + 1) return null;
-    return RANK_LO + (RANK_HI - RANK_LO) * (code - 1) / LEGEND;
+    const div = rankedDivision(code);
+    if (div == null) return null;
+    return RANK_LO + (RANK_HI - RANK_LO) * Math.min(div, LEGEND) / LEGEND;
 }
 
 // p: { newbie, newness, rankCode, score, kills, sessionBest, playMs }
@@ -113,12 +120,11 @@ function settled(p) {
     let d = Math.max(fromRaid(p.score, p.kills), fromTime(p.playMs));
     const best = +p.sessionBest || 0;
     if (best > GUEST_LO) d = Math.max(d, GUEST_LO + (best - GUEST_LO) * SESSION_KEEP);
-    if ((p.rankCode | 0) === 20) d = Math.min(d, PLACEMENT_HI);
+    if ((p.rankCode | 0) === Ranks.CODE_PLACEMENT) d = Math.min(d, PLACEMENT_HI);
     return Math.min(GUEST_HI, d);
 }
 function settledLockOn(p) {
-    const code = p.rankCode | 0;
-    if (code >= 1 && code <= LEGEND + 1) return 1;
+    if (rankedDivision(p.rankCode) != null) return 1;
     let d = Math.max(lockFromTime(p.playMs), GUEST_LO + (1 - GUEST_LO) * clamp01(perfShare(p.score, p.kills) * LOCK_PERF));
     const best = +p.sessionBest || 0;
     if (best > GUEST_LO) d = Math.max(d, best * LOCK_KEEP);

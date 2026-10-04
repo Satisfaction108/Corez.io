@@ -21,7 +21,12 @@
 //              low health (glitches, colour split, a cracked screen), a lock
 //              reticle when an enemy aims at a hunted you
 //   calm HUD   global.hudCalm: a new player (coach on) who hasn't banked yet
-//              sees fewer cards
+//              sees fewer cards; so does a first raid (stage 0)
+//   stages     the first raids (newcomer.js, global.nxStage): no hunted marks,
+//              slams or badge before stage 2, a boss slam only when it's
+//              close, and a short plain line when the Core rises. Stage 3
+//              (veterans, and anyone the server sends no stage for) is
+//              untouched.
 //
 // app.js passes its HUD helpers through init and calls the draw hooks; the
 // socket handlers call onRY / onKC / onFX.
@@ -32,6 +37,9 @@ import { gameSound } from "./sound.js";
 import * as juice from "./juice.js";
 import * as JM from "./juiceMath.js";
 import * as skyDrop from "./skyDrop.js";
+import { shows as nxShows } from "./newcomerLogic.js";
+// the first-raids stage (newcomer.js keeps it fresh); 3 = veteran
+const nx = () => global.nxStage == null ? 3 : global.nxStage;
 
 let A = null;
 export function init(helpers) { A = helpers; juice.init(helpers); skyDrop.init(helpers); }
@@ -86,7 +94,8 @@ export function onRY(r) {
         S.huntById.clear();
         if (r.hunt) for (const h of r.hunt) S.huntById.set(h.e, h);
     }
-    const yh = r.you && r.you.hunt;
+    // before stage 2 being hunted isn't explained yet: no marks, no vignette
+    const yh = nxShows("hunted", nx()) ? r.you && r.you.hunt : null;
     S.mine = yh ? yh.l | 0 : 0;
     S.hunters = yh ? yh.n | 0 : 0;
     S.core = r.core || null;
@@ -103,7 +112,7 @@ export function onRY(r) {
     const b = r.boss;
     if (b && b.id !== S.bossSeen) {
         S.bossSeen = b.id; S.bossUpAt = fresh ? -1e9 : now; S.bossX = b.x; S.bossY = b.y;
-        if (!global.died && !fresh) {
+        if (!global.died && !fresh && nxShows("boss", nx(), { near: near(b.x, b.y, 1800) })) {
             juice.slam(String(b.name || "BOSS").toUpperCase(), "has surfaced. " + fmt(b.gems | 0) + " gems to whoever ends it.", b.c || "#c9a8ff", 2800, 50);
             juice.glitch(0.8, 420, true);
             juice.rumble(900, 8);
@@ -129,6 +138,8 @@ export function onRY(r) {
 export function onKC(m) {
     const kind = m[0], text = String(m[1] || ""), sub = typeof m[3] === "string" ? m[3] : "";
     const now = performance.now();
+    // the first raids: hunted news waits for stage 2 (no plate either)
+    if ((kind === "hunted" || kind === "toptarget" || kind === "safe") && !nxShows("hunted", nx())) return true;
     switch (kind) {
         case "hunted":
             S.huntedAt = now;
@@ -151,6 +162,15 @@ export function onKC(m) {
             return true;
         case "core":
             S.coreUpAt = now;
+            if (!nxShows("core", nx())) {
+                // before stage 2: one plain line, a lighter shake
+                juice.slam("A giant Core rose in the middle.", "Break it with everyone.", CORE, 3800, 40);
+                juice.shake(20, 500);
+                juice.rumble(1200, 5);
+                juice.lightLeak(CORE_RGB, 1800);
+                sfx("core");
+                return true;
+            }
             juice.slam(text, sub, CORE, 4200, 50);
             juice.shake(44, 700);
             juice.rumble(1800, 9);
@@ -453,6 +473,7 @@ function frame(now) {
     // the calm HUD for a first raid: until the first bank
     let calmHud = false;
     try { calmHud = !!(A && A.coachOn && A.coachOn()) && !((r && r.you && r.you.banked) > 0); } catch (e) { calmHud = false; }
+    if (global.nxKnown && nx() === 0) calmHud = true;
     global.hudCalm = calmHud;
     bankWatch(now);
 }
@@ -893,7 +914,7 @@ export function worldMarks(marks, toScreen, onScreen, me, trackPos, ratio) {
     const scr = global.screenWidth / Math.max(0.05, ratio);
     const myId = gui.playerid, mid = mateId();
     let best = null;
-    if (r.hunt) for (const h of r.hunt) {
+    if (r.hunt && nxShows("hunted", nx())) for (const h of r.hunt) {
         if (h.e === myId || h.e === mid) continue;
         const p = trackPos("hunt" + h.e, h.x, h.y, 0.7);
         const s = toScreen(p.x, p.y);
@@ -919,7 +940,7 @@ export function worldMarks(marks, toScreen, onScreen, me, trackPos, ratio) {
 const badges = new Map();
 export function badge(id) {
     const h = S.huntById.get(id);
-    if (!h || id === mateId()) return null;
+    if (!h || id === mateId() || !nxShows("hunted", nx())) return null;
     const word = h.l >= 2 ? "TOP TARGET " : "HUNTED ";
     const num = numOf(h);
     const key = "hu" + h.l + num;
@@ -1011,7 +1032,7 @@ export function drawMap(c, T, inside, dotR, pulse, mapLabel, trackPos) {
             c.restore();
         }
     }
-    if (!r.hunt) return;
+    if (!r.hunt || !nxShows("hunted", nx())) return;
     for (const h of r.hunt) {
         if (h.e === myId || h.e === mid) continue;
         const tp = trackPos("hunt" + h.e, h.x, h.y, 0.7);
@@ -1203,6 +1224,9 @@ export function calloutCol(kind) {
     switch (kind) {
         case "huntkill": return RED;
         case "corebreak": return GOLD;
+        // the first raids (newcomerDirector.js): out in the storm, back in the raid
+        case "nxstorm": return "#b98bff";
+        case "nx": return EMERALD;
     }
     return null;
 }

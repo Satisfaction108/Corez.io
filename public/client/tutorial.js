@@ -1145,7 +1145,7 @@ const CHAPTERS = [
                 id: "rankedCard", next: true,
                 title: () => signedIn() ? "Ranked" : "Play ranked",
                 text: () => signedIn()
-                    ? "You're signed in, so every raid is ranked, *Bronze* up to *Legend*. Your first *3 lives* are placement. You get *gemdust* from banking and kills (and chests, bosses, daily quests). Spend it in the *Item Shop*, then equip stuff in the *Locker*."
+                    ? "You're signed in, so every raid is ranked, *Bronze* all the way up to *Corez*. Your first *3 lives* are placement. You get *gemdust* from banking and kills (and chests, bosses, daily quests). Spend it in the *Item Shop*, then equip stuff in the *Locker*."
                     : "Sign in from the menu to play ranked and earn *gemdust* for cosmetics.",
                 praise: "ok",
             },

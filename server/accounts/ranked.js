@@ -4,7 +4,7 @@
 // shared/ranks.js, which the client loads too.
 //
 // Units: raid points are whole numbers; RP is stored whole. The curve is
-// evaluated exactly in 1/192 RP (every rate is a whole number of those), so
+// evaluated exactly in 1/240 RP (every rate is a whole number of those), so
 // the RP of a raid does not depend on how it was split into lives:
 // curveGain(a, b) + curveGain(a + b, c) === curveGain(a, b + c).
 'use strict';
@@ -25,10 +25,11 @@ const ACTIVE_SHARE = 0.6;
 // spawn-killed life is exempted per life (noFare).
 const NO_FARE_REASONS = new Set(['shutdown', 'crash', 'raidend']);
 
-const UNITS = 192;
+const UNITS = 240;
 const CURVE_UNITS = R.CURVE.map(([to, rate]) => [to, Math.round(rate * UNITS)]);
+if (CURVE_UNITS.some(([, k], i) => Math.abs(k - R.CURVE[i][1] * UNITS) > 1e-9)) throw new Error('ranked: a CURVE rate is not a whole number of 1/' + UNITS + ' RP');
 
-// Raid points -> RP in 1/192 units, exact for whole points.
+// Raid points -> RP in 1/240 units, exact for whole points.
 function curveUnits(points) {
     const p = Math.max(0, Math.floor(+points || 0));
     let units = 0, from = 0;
@@ -57,7 +58,7 @@ function lifeGain(countedBefore, delta) {
 function fareFor({ division, durationMs, reason, noFare, placement }) {
     if (placement || noFare || NO_FARE_REASONS.has(reason)) return 0;
     if (!(durationMs >= MIN_FARE_MS)) return 0;
-    return R.DIVISIONS[Math.max(0, Math.min(R.LEGEND, division | 0))].fare;
+    return R.DIVISIONS[Math.max(0, Math.min(R.TOP, division | 0))].fare;
 }
 
 // gain - fare, never below the floor of the division the player is in now.
@@ -186,8 +187,9 @@ function damageGain(prevShare, addShare, lifePts) {
     return { share, gain: Math.max(0, Math.min(room, after - before)) };
 }
 
-// Legend #N: 1 + Legends with more RP; equal RP goes to whoever reached
-// Legend first (then the older account). rows: [{id, rp, legendAt}].
+// Legend #N (everyone at Legend I or above): 1 + those with more RP; equal
+// RP goes to whoever reached Legend first (then the older account).
+// rows: [{id, rp, legendAt}].
 function legendOrder(rows) {
     return rows.slice().sort((a, b) => (b.rp - a.rp) || ((a.legendAt ?? Infinity) - (b.legendAt ?? Infinity)) || (a.id - b.id));
 }
@@ -213,7 +215,7 @@ function splitParts(total, sources) {
 module.exports = {
     MIN_FARE_MS, PLACEMENT_MIN_MS, SPAWN_KILL_MS, SAME_VICTIM_PAID, BONUS_MIN_RAID_MS, NO_FARE_REASONS,
     ACTIVE_MIN_MS, ACTIVE_SHARE, activeEnough,
-    curveUnits, curveGain, lifeGain, fareFor, applyDelta, countsForPlacement, placementFinish, settle,
+    UNITS, curveUnits, curveGain, lifeGain, fareFor, applyDelta, countsForPlacement, placementFinish, settle,
     placementBonus, killFilter, legendOrder, legendNo, splitParts,
     survivalActive, survivalPts, damageGain,
 };

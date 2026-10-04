@@ -66,17 +66,123 @@ function rng(seed) {
 // ===================================================================
 
 test('curve: rates, boundaries and whole RP', () => {
-    assert.equal(ranked.curveGain(0, 11), 0);
-    assert.equal(ranked.curveGain(0, 12), 1);
-    assert.equal(ranked.curveGain(0, 1500), 125);
-    assert.equal(ranked.curveGain(1500, 24), 1);
-    assert.equal(ranked.curveGain(0, 4000), 229);              // 125 + 2500/24
-    assert.equal(ranked.curveGain(4000, 4000), 83);            // 4000/48
-    assert.equal(ranked.curveGain(8000, 8000), 83);            // 8000/96
-    assert.equal(ranked.curveGain(16000, 1920), 10);           // 1920/192
+    assert.equal(ranked.UNITS, 240);
+    assert.equal(ranked.curveGain(0, 14), 0);
+    assert.equal(ranked.curveGain(0, 15), 1);
+    assert.equal(ranked.curveGain(0, 1500), 100);
+    assert.equal(ranked.curveGain(1500, 30), 1);
+    assert.equal(ranked.curveGain(0, 4000), 183);              // 100 + 2500/30
+    assert.equal(ranked.curveGain(4000, 4000), 67);            // 4000/60, whole RP of the running total
+    assert.equal(ranked.curveGain(8000, 8000), 66);            // 8000/120
+    assert.equal(ranked.curveGain(16000, 2400), 10);           // 2400/240
     assert.equal(ranked.curveGain(0, -50), 0);
     // agrees with the shared float curve
-    for (const p of [0, 7, 1499, 1500, 3999, 4001, 12345, 40000]) assert.equal(Math.floor(ranked.curveUnits(p) / 192), Math.floor(R.curve(p) + 1e-9));
+    for (const p of [0, 7, 1499, 1500, 3999, 4001, 12345, 40000]) assert.equal(Math.floor(ranked.curveUnits(p) / 240), Math.floor(R.curve(p) + 1e-9));
+});
+
+test('slowdown (rules v2): about a fifth less RP per raid than v1, fares unchanged up to Legend', () => {
+    assert.equal(R.RULES_VERSION, 2);
+    // the v1 rules, for comparison
+    const V1_CURVE = [[1500, 1 / 12], [4000, 1 / 24], [8000, 1 / 48], [16000, 1 / 96], [Infinity, 1 / 192]];
+    const v1curve = (p) => { let rp = 0, from = 0; for (const [to, r] of V1_CURVE) { const span = Math.min(p, to) - from; if (span <= 0) break; rp += span * r; from = to; } return Math.floor(rp); };
+    const V1_BONUS = [40, 30, 22, 15, 12, 10, 8, 8, 8, 8];
+    for (let i = 0; i < 10; i++) {
+        const k = R.PLACEMENT_BONUS_RP[i] / V1_BONUS[i];
+        assert.ok(k >= 0.72 && k <= 0.8, 'placement bonus #' + (i + 1) + ' ' + k);
+    }
+    assert.equal(R.LIFE_CAP, 160);
+    // curve alone: exactly 20% less, everywhere
+    for (const p of [1500, 4000, 8000, 16000, 30000]) assert.ok(Math.abs(R.curve(p) - 0.8 * V1_CURVE.reduce((a, [to, r], i) => a + Math.max(0, Math.min(p, to) - (i ? V1_CURVE[i - 1][0] : 0)) * r, 0)) < 1e-9);
+    // typical raids: [raid points over the raid, lives, board place, division]
+    const raids = [
+        ['casual Gold', 1500, 2, 5, 7],
+        ['solid Diamond', 4000, 2, 2, 13],
+        ['strong Legend', 8000, 3, 1, 18],
+        ['huge Legend', 12000, 3, 1, 18],
+    ];
+    for (const [label, pts, lives, place, div] of raids) {
+        const fare = lives * R.DIVISIONS[div].fare;
+        const before = v1curve(pts) + V1_BONUS[place - 1] - fare;
+        const after = ranked.curveGain(0, pts) + R.PLACEMENT_BONUS_RP[place - 1] - fare;
+        const cut = 1 - after / before;
+        assert.ok(cut >= 0.19 && cut <= 0.26, label + ': ' + before + ' -> ' + after + ' RP (' + Math.round(cut * 100) + '% less)');
+    }
+});
+
+test('table: contiguous floors, Legend I-III, six tiers above Legend, open-ended Corez', () => {
+    const D = R.DIVISIONS;
+    assert.equal(D.length, 37);
+    assert.equal(R.TOP, 36);
+    assert.equal(R.LEGEND, 18);
+    assert.deepEqual(R.TIERS, ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'emerald', 'legend',
+        'mythic', 'titan', 'overlord', 'immortal', 'eternal', 'corez']);
+    assert.equal(D[0].floor, 0);
+    for (let i = 1; i < D.length; i++) {
+        assert.equal(D[i].floor, D[i - 1].floor + D[i - 1].size, 'contiguous at ' + D[i].name);
+        assert.ok(D[i].fare >= D[i - 1].fare, 'fares never drop at ' + D[i].name);
+        if (i < R.TOP) assert.ok(D[i].size >= D[i - 1].size, 'sizes never shrink at ' + D[i].name);
+    }
+    // nothing below Legend moved
+    const V1 = [[0, 120, 0], [120, 160, 0], [280, 200, 0], [480, 240, 0], [720, 280, 0], [1000, 320, 0], [1320, 380, 0], [1700, 440, 0], [2140, 500, 0],
+        [2640, 560, 3], [3200, 640, 4], [3840, 720, 5], [4560, 820, 6], [5380, 960, 7], [6340, 1100, 8], [7440, 1650, 9], [9090, 1800, 10], [10890, 1950, 11]];
+    V1.forEach(([floor, size, fare], i) => assert.deepEqual([D[i].floor, D[i].size, D[i].fare], [floor, size, fare], D[i].name));
+    assert.deepEqual(D.slice(18, 21).map(d => d.name), ['Legend I', 'Legend II', 'Legend III']);
+    assert.equal(D[18].floor, 12840);
+    const above = ['Mythic', 'Titan', 'Overlord', 'Immortal', 'Eternal'];
+    above.forEach((t, k) => {
+        assert.deepEqual(D.slice(21 + k * 3, 24 + k * 3).map(d => d.name), [t + ' I', t + ' II', t + ' III']);
+        assert.equal(D[21 + k * 3].tier, t.toLowerCase());
+    });
+    // the apex: one division, no top, no numeral
+    const top = D[R.TOP];
+    assert.equal(top.name, 'Corez');
+    assert.equal(top.tier, 'corez');
+    assert.equal(top.div, 0);
+    assert.equal(top.size, Infinity);
+    assert.equal(R.divisionOf(1e9), R.TOP);
+    assert.deepEqual(R.progressOf(top.floor + 5000), { division: R.TOP, name: 'Corez', tier: 'corez', into: 5000, size: 0, pct: 1 });
+    assert.ok(R.isTop(R.TOP) && !R.isTop(R.TOP - 1));
+    assert.ok(R.isLegend(18) && R.isLegend(R.TOP) && !R.isLegend(17) && !R.isLegend(null));
+    assert.equal(R.nameOf(999), 'Corez');
+    // the top takes real time: Legend I to Corez is five times Bronze..Legend
+    assert.ok(top.floor - D[18].floor > 5 * D[18].floor);
+});
+
+test('table: existing RP keeps its division (nobody drops a tier); current top players', () => {
+    // every RP below the old Legend floor maps to the same division as before
+    for (let rp = 0; rp < 12840; rp += 7) assert.ok(R.divisionOf(rp) < 18 && R.DIVISIONS[R.divisionOf(rp)].floor <= rp);
+    const prod = [['ZyroX', 14505, 'Legend I'], ['megaman81', 8468, 'Emerald I'], ['rome', 5296, 'Diamond I'],
+        ['TheRoyalKoala', 5126, 'Diamond I'], ['Kongming', 3693, 'Platinum II'], ['p', 2400, 'Gold III']];
+    for (const [who, rp, name] of prod) assert.equal(R.nameOf(R.divisionOf(rp)), name, who);
+    // the old single Legend (index 18) is Legend I: stored division / peak_division stay valid
+    assert.equal(R.divisionOf(12840), 18);
+    assert.equal(R.tierOf(18), 'legend');
+});
+
+test('table: tier-ups fire for every new tier; rank codes skip placement and round-trip', () => {
+    for (let i = 1; i <= R.TOP; i++) {
+        const newTier = R.DIVISIONS[i].tier !== R.DIVISIONS[i - 1].tier;
+        assert.equal(R.isTierUp(i - 1, i), newTier, R.nameOf(i - 1) + ' -> ' + R.nameOf(i));
+    }
+    assert.equal(R.isTierUp(20, 21), true, 'Legend III -> Mythic I');
+    assert.equal(R.isTierUp(35, 36), true, 'Eternal III -> Corez');
+    assert.equal(R.isTierUp(17, 36), true);
+    // codes 1..19 are what they always were; 20 stays placement
+    for (let i = 0; i <= 18; i++) assert.equal(R.rankCode(i, false), i + 1);
+    assert.equal(R.rankCode(19, false), 21);
+    assert.equal(R.rankCode(R.TOP, false), R.CODE_MAX);
+    assert.equal(R.rankCode(null, true), R.CODE_PLACEMENT);
+    const seen = new Set();
+    for (let i = 0; i <= R.TOP; i++) {
+        const code = R.rankCode(i, false);
+        assert.notEqual(code, R.CODE_PLACEMENT);
+        assert.ok(!seen.has(code));
+        seen.add(code);
+        assert.deepEqual(R.fromCode(code), { placement: false, division: i });
+    }
+    assert.deepEqual(R.fromCode(20), { placement: true, division: null });
+    assert.equal(R.fromCode(0), null);
+    assert.equal(R.fromCode(R.CODE_MAX + 1), null);
 });
 
 test('curve: splitting a raid into lives changes nothing (path independence)', () => {
@@ -94,19 +200,22 @@ test('curve: splitting a raid into lives changes nothing (path independence)', (
     }
 });
 
-test('life cap: 200 RP per life, capped flag', () => {
+test('life cap: 160 RP per life, capped flag', () => {
     assert.equal(ranked.lifeGain(0, 100000), R.LIFE_CAP);
-    assert.equal(ranked.lifeGain(0, 1500), 125);
+    assert.equal(ranked.lifeGain(0, 1500), 100);
     const r = ranked.settle({ rp: 1000, ranked: true }, { basis: 9000, countedBefore: 0, durationMs: 600000, reason: 'death' });
-    assert.equal(r.gain, 200);
-    assert.ok(r.capped && r.rawGain > 200);
-    assert.equal(r.delta, 200);
+    assert.equal(r.gain, 160);
+    assert.ok(r.capped && r.rawGain > 160);
+    assert.equal(r.delta, 160);
 });
 
 test('fares: from Platinum only; short lives, shutdown, crash, raid end and spawn kills pay none; disconnects do', () => {
     const f = (division, extra = {}) => ranked.fareFor({ division, durationMs: 60000, reason: 'death', ...extra });
     for (let i = 0; i < 9; i++) assert.equal(f(i), 0, R.nameOf(i));
     assert.deepEqual([9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map(i => f(i)), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    // one more per division above Legend I, up to Corez
+    for (let i = 18; i <= R.TOP; i++) assert.equal(f(i), 12 + (i - 18), R.nameOf(i));
+    assert.equal(f(R.TOP + 5), 30, 'clamped to the top');
     assert.equal(f(12, { durationMs: 29999 }), 0);
     assert.equal(f(12, { durationMs: 30000 }), 6);
     for (const reason of ['shutdown', 'crash', 'raidend']) assert.equal(f(12, { reason }), 0, reason);
@@ -167,11 +276,11 @@ test('placement: counted lives, start division from the best two, RP kept inside
 
 test('raid placement bonus: eligibility and amounts', () => {
     const ok = { rows: 6, score: 100, raidMs: 5 * 60 * 1000 };
-    assert.deepEqual(ranked.placementBonus({ ...ok, place: 1 }), { eligible: true, rp: 40, dustMilli: 2000 });
-    assert.deepEqual(ranked.placementBonus({ ...ok, place: 3 }), { eligible: true, rp: 22, dustMilli: 500 });
+    assert.deepEqual(ranked.placementBonus({ ...ok, place: 1 }), { eligible: true, rp: 30, dustMilli: 2000 });
+    assert.deepEqual(ranked.placementBonus({ ...ok, place: 3 }), { eligible: true, rp: 16, dustMilli: 500 });
     assert.equal(ranked.placementBonus({ ...ok, place: 4 }).eligible, false);           // max(3, ceil(6/2)) = 3
-    assert.deepEqual(ranked.placementBonus({ ...ok, rows: 8, place: 4 }), { eligible: true, rp: 15, dustMilli: 0 });
-    assert.deepEqual(ranked.placementBonus({ ...ok, rows: 40, place: 10 }), { eligible: true, rp: 8, dustMilli: 0 });
+    assert.deepEqual(ranked.placementBonus({ ...ok, rows: 8, place: 4 }), { eligible: true, rp: 11, dustMilli: 0 });
+    assert.deepEqual(ranked.placementBonus({ ...ok, rows: 40, place: 10 }), { eligible: true, rp: 6, dustMilli: 0 });
     assert.equal(ranked.placementBonus({ ...ok, rows: 40, place: 11 }).eligible, false);
     assert.equal(ranked.placementBonus({ ...ok, place: 1, score: 0 }).eligible, false);
     assert.equal(ranked.placementBonus({ ...ok, place: 1, raidMs: 299999 }).eligible, false);
@@ -403,10 +512,10 @@ test('db: raid placement bonus, idempotent per raid; exempt dust with a ledger r
     const u = mkUser();
     rankStore.debugSetRp(u.id, 700);
     const res = rankStore.applyRaidPlacement({ raidKey: 'r:1', userId: u.id, place: 1, rows: 6, score: 900, raidMs: 6 * 60000 });
-    assert.equal(res.bonusRP, 40);
+    assert.equal(res.bonusRP, 30);
     assert.equal(res.bonusDustMilli, 2000);
-    assert.equal(res.after.rp, 740);
-    assert.equal(res.rankUp, true);                 // 700 is Silver I (480..720), 740 Silver II
+    assert.equal(res.after.rp, 730);
+    assert.equal(res.rankUp, true);                 // 700 is Silver I (480..720), 730 Silver II
     assert.equal(res.after.division, 4);
     assert.equal(res.balanceMilli, 2000);
     assert.equal(rankStore.applyRaidPlacement({ raidKey: 'r:1', userId: u.id, place: 1, rows: 6, score: 900, raidMs: 6 * 60000 }), null);
@@ -422,7 +531,7 @@ test('db: raid placement bonus, idempotent per raid; exempt dust with a ledger r
     // in placement the bonus RP waits in placement_gain
     const p = mkUser();
     rankStore.applyRaidPlacement({ raidKey: 'r:1', userId: p.id, place: 2, rows: 6, score: 500, raidMs: 6 * 60000 });
-    assert.equal(userRow(p.id).placement_gain, 30);
+    assert.equal(userRow(p.id).placement_gain, 22);
     assert.equal(userRow(p.id).rp, 0);
 });
 
@@ -454,13 +563,127 @@ test('db: Legend #N from the database matches the pure ordering; cached 60 s', (
     assert.deepEqual(pure, [3, 1, 2, 4]);
     const snap = rankStore.snapshot(userRow(made[1].id));
     assert.equal(snap.division, 18);
-    assert.equal(snap.name, 'Legend');
-    assert.equal(snap.pct, 1);
+    assert.equal(snap.name, 'Legend I');
+    assert.equal(snap.size, 2100);
+    assert.equal(snap.into, 14000 - 12840);
+    assert.ok(snap.legendNo > 0);
     // cached: a new, better Legend does not move a cached #N until it expires
     const top = mkUser('lg');
     rankStore.debugSetRp(top.id, 20000);
     assert.equal(rankStore.legendRank(userRow(made[3].id)), fromDb[3] + others);
     assert.equal(rankStore.legendRank(userRow(made[3].id), { fresh: true }), fromDb[3] + others + 1);
+});
+
+test('db: Legend III -> Mythic I is a rank-up and a tier-up; Legend I up keeps legend_at and #N', () => {
+    const u = mkUser();
+    rankStore.debugSetRp(u.id, R.floorOf(21) - 5);              // Legend III, 5 RP short of Mythic
+    let rk = settle(open(u.id), u.id, { basis: 3000, durationMs: 120000 });
+    assert.equal(rk.before.name, 'Legend III');
+    assert.equal(rk.after.name, 'Mythic I');
+    assert.equal(rk.fare, R.DIVISIONS[20].fare);
+    assert.equal(rk.rankUp, true);
+    assert.equal(rk.tierUp, true);
+    assert.ok(rk.after.legendNo > 0 && rk.legendNo === rk.after.legendNo);
+    assert.ok(userRow(u.id).legend_at != null);
+    // a raid bonus that crosses into a new tier sets the flags too
+    rankStore.debugSetRp(u.id, R.floorOf(R.TOP) - 10);         // Eternal III
+    const res = rankStore.applyRaidPlacement({ raidKey: 'tier:1', userId: u.id, place: 1, rows: 6, score: 900, raidMs: 6 * 60000 });
+    assert.equal(res.after.name, 'Corez');
+    assert.equal(res.after.size, 0);
+    assert.equal(res.after.pct, 1);
+    assert.equal(res.rankUp, true);
+    assert.equal(res.tierUp, true);
+    assert.equal(rankStore.codeOf(userRow(u.id)), R.CODE_MAX);
+    // the floor holds inside the new tiers too
+    rankStore.debugSetRp(u.id, R.floorOf(24) + 3);              // Titan I
+    rk = settle(open(u.id), u.id, { basis: 0, durationMs: 60000 });
+    assert.equal(rk.fare, R.DIVISIONS[24].fare);
+    assert.equal(rk.after.rp, R.floorOf(24));
+});
+
+test('db: LEADERBOARD_HIDE keeps an account off every board; no place, no Legend #N; profile and rank work', () => {
+    const config = require('../../server/accounts/config');
+    const boards = require('../../server/accounts/routes/profile');
+    const boardHide = require('../../server/accounts/boardHide');
+    const saved = config.leaderboardHide;
+    // default: the owner's account
+    assert.deepEqual([...config.load({ ...process.env, LEADERBOARD_HIDE: undefined }).leaderboardHide], ['zyrox']);
+    assert.deepEqual([...config.load({ ...process.env, LEADERBOARD_HIDE: ' Alpha, beta ,,' }).leaderboardHide], ['alpha', 'beta']);
+    assert.deepEqual([...config.load({ ...process.env, LEADERBOARD_HIDE: '' }).leaderboardHide], []);
+    config.load();
+    try {
+        const boss = mkUser('hid'), second = mkUser('hid'), third = mkUser('hid');
+        rankStore.debugSetRp(boss.id, 99999);                    // far above everyone (Corez)
+        rankStore.debugSetRp(second.id, 99000);
+        rankStore.debugSetRp(third.id, 98000);
+        for (const [id, v] of [[boss.id, 9999999], [second.id, 9999998]]) {
+            D().run('INSERT OR IGNORE INTO user_stats (user_id, updated_at) VALUES (?, ?)', id, Date.now());
+            D().run('UPDATE user_stats SET gems_banked = ?, raid_wins = ? WHERE user_id = ?', v, v, id);
+        }
+        const name = userRow(boss.id).username;
+        config.leaderboardHide = new Set();
+        boards.clearCache();
+        let top = boards.topRows(Date.now());
+        assert.equal(top[0].username, name, 'visible while the list is empty');
+        assert.equal(rankStore.legendRank(userRow(second.id), { fresh: true }), 2);
+
+        config.leaderboardHide = new Set([name.toUpperCase().toLowerCase()]);   // matched case-insensitively
+        assert.ok(boardHide.isHidden({ username: name.toUpperCase() }));
+        boards.clearCache();
+        top = boards.topRows(Date.now());
+        assert.ok(!top.some(r => r.username === name), 'off the ranked board');
+        assert.equal(top[0].username, userRow(second.id).username);
+        assert.equal(top[0].place, 1);
+        assert.equal(top[0].legendNo, 1, 'does not push anyone down');
+        // own Legend #N: none; the next one up is #1
+        assert.equal(rankStore.legendRank(userRow(boss.id), { fresh: true }), 0);
+        assert.equal(rankStore.legendRank(userRow(second.id), { fresh: true }), 1);
+        assert.equal(rankStore.legendRank(userRow(third.id), { fresh: true }), 2);
+        // the leaderboard route: no `me`, hidden:true; others see no trace of it
+        const call = (type, userId) => {
+            let out = null;
+            const ctx = {
+                query: new URLSearchParams(type ? { type } : {}),
+                auth: () => (userId ? { user: accounts.users.byId(userId) } : null),
+                json: (code, body) => { out = { code, body }; },
+            };
+            const routes = [];
+            boards.register({ add: (m, p, fn) => routes.push([p, fn]) });
+            routes.find(([p]) => p === '/api/leaderboard')[1](ctx);
+            return out.body;
+        };
+        for (const type of ['ranked', 'banked', 'wins']) {
+            const mine = call(type, boss.id);
+            assert.equal(mine.me, null, type);
+            assert.equal(mine.hidden, true, type);
+            assert.ok(!mine.rows.some(r => r.username === name), type + ' rows');
+            const theirs = call(type, second.id);
+            assert.equal(theirs.hidden, false);
+            assert.ok(!theirs.rows.some(r => r.username === name));
+            if (type !== 'ranked') assert.equal(theirs.rows[0].username, userRow(second.id).username, type);
+        }
+        assert.equal(call('ranked', second.id).me.place, 1);
+        // Discord: /leaderboard leaves it out, /rank still shows it (with no #N)
+        const cmds = require('../../server/accounts/discord/commands');
+        const lb = cmds.handle({ data: { name: 'leaderboard' }, user: { id: '1' } }).data.embeds[0].description;
+        assert.ok(!lb.includes(name), lb);
+        assert.ok(lb.startsWith('1. **' + userRow(second.id).username.replace(/_/g, '\\_') + '** · Corez #1 · '), lb);
+        const rk = cmds.handle({ data: { name: 'rank', options: [{ name: 'username', value: name }] }, user: { id: '1' } }).data.content;
+        assert.ok(rk.includes('Corez (99,999 RP)'), rk);
+        const rk3 = cmds.handle({ data: { name: 'rank', options: [{ name: 'username', value: userRow(third.id).username }] }, user: { id: '1' } }).data.content;
+        assert.ok(rk3.includes('Corez #2'), rk3);
+        // the account itself: profile and rank as usual
+        const snap = rankStore.snapshot(userRow(boss.id));
+        assert.equal(snap.name, 'Corez');
+        assert.equal(snap.rp, 99999);
+        assert.equal(boards.profileOf(userRow(boss.id), boss.id).rank.name, 'Corez');
+        assert.equal(rankStore.codeOf(userRow(boss.id)), R.CODE_MAX);
+    } finally {
+        config.leaderboardHide = saved;
+        boards.clearCache();
+        D().run(`UPDATE users SET rp = 0, legend_at = NULL, ranked_at = NULL WHERE username LIKE 'hid%'`);
+        D().run(`UPDATE user_stats SET gems_banked = 0, raid_wins = 0 WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'hid%')`);
+    }
 });
 
 test('db: dust flush writes balances, ledger rows and stats in one transaction', () => {
@@ -748,9 +971,9 @@ test('hooks: raid end settles every open life (carried half counts), then RKP; t
     rankHooks.onRaidEnd();
     const rkp2 = json(packets(sa, 'RKP')[0]);
     assert.equal(rkp2.place, 1);
-    assert.equal(rkp2.bonusRP, 40);
+    assert.equal(rkp2.bonusRP, 30);
     assert.equal(rkp2.bonusDustMilli, 2000);
-    assert.equal(rkp2.after.rp, rkp2.before.rp + 40);
+    assert.equal(rkp2.after.rp, rkp2.before.rp + 30);
     assert.ok(packets(sa, 'DU').some(p => p[4] === 5 && p[3] === 2000), 'DU kind 5 for the placement dust');
     H.clients.length = 0; H.stats.clear(); H.raidId = 3;
     rankHooks.onRaidStart();

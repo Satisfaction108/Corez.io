@@ -364,6 +364,9 @@ function spawnChest(x, y, rare, opts = {}) {
     // epic chests always carry a kit item; copper ones rarely
     o.chestItem = opts.item !== undefined ? opts.item : (rare || Math.random() < COPPER_ITEM_CHANCE ? require('./shop.js').randomKitId() : null);
     o.chestBornAt = Date.now();
+    // extra: outside the WANT budget (the first-raid director's chest), never
+    // trimmed for it and never replaced
+    if (opts.extra) o.chestExtra = true;
     o.facing = 0;
     if (opts.size > 0) { o.SIZE = opts.size; o.coreSize = opts.size; }
     o.refreshBodyAttributes();
@@ -430,7 +433,7 @@ function onTaken(chest) {
     releaseCell(chest);
     // a chest cleared by a raid reset or a budget trim owes no replacement
     // supply drops are extras from the pacing director: nothing replaces them
-    if (chest.lockRock !== undefined && !chest.isTutorialBot && !chest._cleared && !chest.supplyDrop) {
+    if (chest.lockRock !== undefined && !chest.isTutorialBot && !chest._cleared && !chest.supplyDrop && !chest.chestExtra) {
         respawnQueue.push({ rare: !!chest.chestRare, at: Date.now() + respawnMs() });
     }
 }
@@ -519,7 +522,7 @@ function schedule() {
     if (now - lastScheduleAt < 1000) return;
     lastScheduleAt = now;
     // supply drops sit outside the budget
-    const live = alive().filter(c => !c._opened && !c.supplyDrop);
+    const live = alive().filter(c => !c._opened && !c.supplyDrop && !c.chestExtra);
     const liveEpic = live.filter(c => c.chestRare).length;
     const liveCommon = live.length - liveEpic;
     // Due entries leave the queue and become part of the deficit below; don't
@@ -603,4 +606,7 @@ function debugInfo() {
     return { alive: alive().length, queue: respawnQueue.length, total, dead, canyon, noPoly, locked, candidates: cells, pick: pick ? [Math.round(pick.wx), Math.round(pick.wy)] : null, lastSpawnErr: lastSpawnErr.slice(0, 300) };
 }
 
-module.exports = { CORE_KEEP, retireNear, ramDamage, spawnChest, spawnInCell, spawnSupplyDrop, SUPPLY_GEMS, openChest, tick, ensureNearSpawn, schedule, snapshot, clearAll, eruptGems, alive, WANT, RESPAWN_MS, debugInfo };
+// open ground for a chest near (x, y), or null (the first-raid director)
+function spotNear(x, y) { return clearSpot(global.gameManager.terrainGrid, x, y); }
+
+module.exports = { spotNear, CORE_KEEP, retireNear, ramDamage, spawnChest, spawnInCell, spawnSupplyDrop, SUPPLY_GEMS, openChest, tick, ensureNearSpawn, schedule, snapshot, clearAll, eruptGems, alive, WANT, RESPAWN_MS, debugInfo };

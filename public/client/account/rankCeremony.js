@@ -4,7 +4,7 @@
 // A new tier ("NEW TIER!") and finishing placement ("RANK REVEALED") run
 // the same beat with extras. The death panel starts it; anything never
 // started plays in the menu. Click / Space / Enter / Esc skip after 350 ms.
-import { badgeCanvas, TIER_COLORS, tierOf, nameOf } from './rankBadges.js';
+import { badgeCanvas, TIER_COLORS, TIERS, tierOf, nameOf, isLegendDiv } from './rankBadges.js';
 import { gameSound } from '../sound.js';
 
 const TIMES = {
@@ -80,7 +80,7 @@ function kindFor(from, to) {
     if (from === -1 || from === 'placement') return 'reveal';
     return TIER_ORDER.indexOf(tierOf(to)) > TIER_ORDER.indexOf(tierOf(from)) ? 'tier' : 'up';
 }
-const TIER_ORDER = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'emerald', 'legend'];
+const TIER_ORDER = TIERS;
 function highestOwed() {
     let hi = -Infinity;
     for (const e of queue) if (!e._merged) hi = Math.max(hi, e.to);
@@ -187,6 +187,8 @@ export function playPending() {
 }
 
 export function clearPending() { queue.length = 0; }
+// true while one is on screen (the welcome-back card waits for it)
+export const playing = () => !!cur;
 
 // Drop the one on screen without its callback (tests / teardown).
 export function stop() {
@@ -285,13 +287,15 @@ function outlinedText(c, txt, x, y, size, fill) {
 }
 
 function rankLabel(ev, t, T) {
-    if (tierOf(ev.to) === 'legend') {
+    const name = nameOf(ev.to).toUpperCase();
+    if (isLegendDiv(ev.to)) {
+        // Legend and up: the Legend #N counts in under the name
         const n = ev.legendNo | 0;
-        if (!n) return 'LEGEND';
+        if (!n) return name;
         const k = easeOut(clamp((t - T.title - 150) / 900));
-        return 'LEGEND #' + Math.max(n, Math.round(n + 40 * (1 - k)));
+        return name + ' #' + Math.max(n, Math.round(n + 40 * (1 - k)));
     }
-    return nameOf(ev.to).toUpperCase();
+    return name;
 }
 
 // One frame at t ms. Pure: no sounds, no state beyond `prep`.

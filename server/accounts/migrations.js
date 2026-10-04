@@ -565,6 +565,95 @@ function v11(db, now = Date.now()) {
     db.run('UPDATE shop_rotations SET sidekicks = NULL');
 }
 
+// v12: the daily rewards track and web push (retention.js, push.js).
+//
+// daily_track: one row per account or guest browser (exactly one of user_id /
+// guest_id). step is the last day claimed (1..7, 0 before the first claim),
+// claims counts every claim ever (the double-claim guard: a claim only goes
+// through as UPDATE ... WHERE claims = <what it read>), streak the claims in a
+// row without a miss. owed holds the item ids a guest earned a "sign up to
+// claim" for (JSON array). adopted_by is the account a guest track moved to
+// when that browser signed up; the guest row is closed from then on.
+// play_min is the UTC minute of the day this player usually shows up
+// (smoothed), so a reminder lands around then.
+//
+// daily_claims: one row per claim, keyed (track, claim number), what it paid.
+//
+// push_subs: one row per browser push subscription (endpoint unique), owned
+// by an account or a guest browser. daily_for is the track's claim count the
+// last "reward ready" ping was about (one per claim cycle), daily_at when it
+// went; last_event the last event id reminded about. fails / retry_at back
+// off a push service that errors; a dead endpoint (404 / 410) is deleted.
+//
+// dust_ledger gains the 'daily' kind, rebuilt the same way as v4 and v5.
+const V12 = `
+CREATE TABLE daily_track (
+    id            INTEGER PRIMARY KEY,
+    user_id       INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    guest_id      TEXT    UNIQUE CHECK (guest_id IS NULL OR length(guest_id) = 32),
+    step          INTEGER NOT NULL DEFAULT 0 CHECK (step BETWEEN 0 AND 7),
+    streak        INTEGER NOT NULL DEFAULT 0 CHECK (streak >= 0),
+    best          INTEGER NOT NULL DEFAULT 0 CHECK (best >= 0),
+    claims        INTEGER NOT NULL DEFAULT 0 CHECK (claims >= 0),
+    last_claim_at INTEGER,
+    owed          TEXT    NOT NULL DEFAULT '[]',
+    adopted_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    play_min      INTEGER CHECK (play_min IS NULL OR play_min BETWEEN 0 AND 1439),
+    seen_at       INTEGER,
+    created_at    INTEGER NOT NULL,
+    CHECK ((user_id IS NULL) <> (guest_id IS NULL)),
+    CHECK ((claims = 0) = (last_claim_at IS NULL))
+) STRICT;
+
+CREATE TABLE daily_claims (
+    track_id   INTEGER NOT NULL REFERENCES daily_track(id) ON DELETE CASCADE,
+    claim_no   INTEGER NOT NULL CHECK (claim_no >= 1),
+    day        INTEGER NOT NULL CHECK (day BETWEEN 1 AND 7),
+    at         INTEGER NOT NULL,
+    gems       INTEGER NOT NULL DEFAULT 0 CHECK (gems >= 0),
+    dust_milli INTEGER NOT NULL DEFAULT 0 CHECK (dust_milli >= 0),
+    item_id    TEXT,
+    PRIMARY KEY (track_id, claim_no)
+) STRICT;
+
+CREATE TABLE push_subs (
+    id         INTEGER PRIMARY KEY,
+    endpoint   TEXT    NOT NULL UNIQUE CHECK (length(endpoint) BETWEEN 20 AND 1024),
+    p256dh     TEXT    NOT NULL CHECK (length(p256dh) BETWEEN 80 AND 100),
+    auth       TEXT    NOT NULL CHECK (length(auth) BETWEEN 16 AND 32),
+    user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    guest_id   TEXT    CHECK (guest_id IS NULL OR length(guest_id) = 32),
+    daily      INTEGER NOT NULL DEFAULT 1 CHECK (daily IN (0, 1)),
+    events     INTEGER NOT NULL DEFAULT 1 CHECK (events IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    seen_at    INTEGER NOT NULL,
+    sent_at    INTEGER,
+    daily_for  INTEGER NOT NULL DEFAULT 0,
+    daily_at   INTEGER NOT NULL DEFAULT 0,
+    last_event TEXT,
+    fails      INTEGER NOT NULL DEFAULT 0 CHECK (fails >= 0),
+    retry_at   INTEGER NOT NULL DEFAULT 0,
+    CHECK ((user_id IS NULL) <> (guest_id IS NULL))
+) STRICT;
+CREATE INDEX push_subs_user  ON push_subs(user_id) WHERE user_id IS NOT NULL;
+CREATE INDEX push_subs_guest ON push_subs(guest_id) WHERE guest_id IS NOT NULL;
+
+CREATE TABLE dust_ledger_v12 (
+    id            INTEGER PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    delta_milli   INTEGER NOT NULL,
+    balance_milli INTEGER NOT NULL CHECK (balance_milli >= 0),
+    kind          TEXT    NOT NULL CHECK (kind IN ('gems', 'kill', 'placement', 'quest', 'purchase', 'refund', 'gift', 'admin', 'referral', 'streak_play', 'streak_win', 'daily', 'other')),
+    ref           TEXT,
+    created_at    INTEGER NOT NULL
+) STRICT;
+INSERT INTO dust_ledger_v12 (id, user_id, delta_milli, balance_milli, kind, ref, created_at)
+    SELECT id, user_id, delta_milli, balance_milli, kind, ref, created_at FROM dust_ledger;
+DROP TABLE dust_ledger;
+ALTER TABLE dust_ledger_v12 RENAME TO dust_ledger;
+CREATE INDEX dust_ledger_user ON dust_ledger(user_id, id);
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
@@ -577,6 +666,7 @@ const MIGRATIONS = [
     { version: 9, up(db) { db.exec(V9); } },
     { version: 10, up(db) { db.exec(V10); } },
     { version: 11, up(db) { v11(db); } },
+    { version: 12, up(db) { db.exec(V12); } },
 ];
 
 function latestVersion() {

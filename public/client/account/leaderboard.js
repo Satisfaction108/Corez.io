@@ -1,6 +1,6 @@
 // The Leaderboard pane: three boards, Ranked (Top 100 by RP), Banked (most
 // gems banked, all time) and Wins (raid wins). Places 1-3 wear gold, silver
-// and bronze; Legends show their Legend #N; your own row is marked, and
+// and bronze; Legend and up show their Legend #N; your own row is marked, and
 // pinned to the bottom when you're outside the list. Guests can look too.
 import * as api from './api.js';
 import * as store from './state.js';
@@ -99,6 +99,8 @@ function paint(el, d) {
         el.appendChild(h('div', { class: 'lb-guest' },
             h('span', { text: board === 'ranked' ? 'Want your name here? Get an account and play ranked.' : 'Want your name here? Get an account and it counts.' }),
             h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'Log in', onclick: () => hooks.onLogin() })));
+    } else if (!me && d.hidden) {
+        el.appendChild(h('div', { class: 'lb-guest', text: 'Your account is kept off the leaderboards.' }));
     } else if (!me) {
         el.appendChild(h('div', { class: 'lb-guest', text: board === 'ranked' ? 'Play your 3 placement games to show up here.' : board === 'banked' ? 'Bank some gems to show up here.' : 'Win a raid to show up here.' }));
     }

@@ -343,7 +343,7 @@ export function sidekickStage(opts) {
         if (!opts.kick) return;
         const dt = S.last ? t - S.last : 0;
         S.last = t;
-        skMath.step(S.st, 0, 0, OR, aim, size, live ? t : 0, live ? dt : 0);
+        skMath.step(S.st, 0, 0, OR, size, live ? t : 0, live ? dt : 0, null);
         if (!live) S.st.alpha = 1;
         showShoot(S, kick, skMath.R * size, t, live);
         const s = S.st;

@@ -2,8 +2,10 @@
 // settles rank_lives rows, moves users.rp / division / peak / placement, pays
 // the raid placement bonus, and builds the RankSnap every client packet and
 // /api/me carry:
-//   {division (0..18) | null in placement, name, tier, rp, into, size, pct,
+//   {division (0..R.TOP) | null in placement, name, tier, rp, into, size, pct,
 //    placement:{done, lives, of}, legendNo, peak:{division, name}}
+// legendNo: the place among everyone at Legend I or above, 0 below Legend
+// and for accounts hidden from the boards (boardHide.js).
 //
 // A life is settled exactly once: UPDATE rank_lives ... WHERE ended_at IS
 // NULL decides, and a second settle of the same life returns null. Lives a
@@ -15,6 +17,7 @@ const dust = require('./dust');
 const ranked = require('./ranked');
 const streaks = require('./streaks');
 const R = require('../../shared/ranks.js');
+const boardHide = require('./boardHide');
 
 const LEGEND_CACHE_MS = 60 * 1000;
 // rank_lives.end_reason spells the raid end with an underscore
@@ -32,21 +35,23 @@ function parseBases(text) {
     } catch (e) { return []; }
 }
 
-// Legend #N, cached per user for a minute (fresh:true skips the cache, for
-// a result the player is about to see).
+// Legend #N among everyone at Legend I or above, cached per user for a
+// minute (fresh:true skips the cache, for a result the player is about to
+// see). Hidden accounts (boardHide) neither have one nor count in others'.
 const legendCache = new Map();
 function legendRank(row, opts = {}) {
-    if (!row || !isRanked(row) || R.divisionOf(row.rp) !== R.LEGEND) return 0;
+    if (!row || !isRanked(row) || !R.isLegend(R.divisionOf(row.rp)) || boardHide.isHidden(row)) return 0;
     const now = opts.now || Date.now();
     const hit = legendCache.get(row.id);
     if (!opts.fresh && hit && hit.rp === row.rp && now - hit.at < LEGEND_CACHE_MS) return hit.n;
     const d = h();
     if (!d) return hit ? hit.n : 0;
     const at = row.legend_at == null ? now : row.legend_at;
+    const hide = boardHide.excludeSql();
     const r = d.get(
         `SELECT count(*) AS n FROM users WHERE legend_at IS NOT NULL AND deleted_at IS NULL AND id <> ?
-           AND (rp > ? OR (rp = ? AND (legend_at < ? OR (legend_at = ? AND id < ?))))`,
-        row.id, row.rp, row.rp, at, at, row.id);
+           AND (rp > ? OR (rp = ? AND (legend_at < ? OR (legend_at = ? AND id < ?))))${hide.sql}`,
+        row.id, row.rp, row.rp, at, at, row.id, ...hide.params);
     const n = 1 + (r ? r.n | 0 : 0);
     legendCache.set(row.id, { n, rp: row.rp, at: now });
     if (legendCache.size > 5000) legendCache.clear();
@@ -112,7 +117,7 @@ function writeRank(d, u, next, now) {
                placement_gain = ?, ranked_at = ?, legend_at = ? WHERE id = ?`,
         next.rp | 0, division, peakDiv, peakRp, next.placementLives | 0, JSON.stringify(next.placementBasis || []),
         next.placementGain | 0, next.ranked ? (u.ranked_at != null ? u.ranked_at : now) : null,
-        division === R.LEGEND ? (u.legend_at != null ? u.legend_at : now) : u.legend_at, u.id);
+        R.isLegend(division) ? (u.legend_at != null ? u.legend_at : now) : u.legend_at, u.id);
 }
 
 function stateOf(u) {
@@ -249,7 +254,7 @@ function debugSetRp(userId, rp, now = Date.now()) {
                placement_lives = ?, placement_gain = 0, ranked_at = COALESCE(ranked_at, ?),
                legend_at = CASE WHEN ? THEN COALESCE(legend_at, ?) ELSE NULL END
            WHERE id = ? AND deleted_at IS NULL`,
-        rp, division, division, rp, R.PLACEMENT_LIVES, now, division === R.LEGEND, now, userId);
+        rp, division, division, rp, R.PLACEMENT_LIVES, now, R.isLegend(division) ? 1 : 0, now, userId);
     legendCache.delete(userId);
     return d.get('SELECT * FROM users WHERE id = ?', userId);
 }

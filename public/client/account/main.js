@@ -24,6 +24,7 @@ import * as party from './party.js';
 import * as invite from './invite.js';
 import * as feedback from './feedback.js';
 import * as eventCard from './eventCard.js';
+import * as retention from './retention.js';
 
 const html = document.documentElement;
 const HINT = 'dwAcctHint';
@@ -348,6 +349,13 @@ async function boot() {
     });
     try { feedback.init(); } catch (e) { console.error('[feedback] init failed', e); }
     try { eventCard.init(); } catch (e) { console.error('[events] init failed', e); }
+    try {
+        retention.init({
+            onSignup() { if (!store.get('offline')) welcome.open('auth', { tab: 'signup', dismissable: true }); },
+            playing: () => rankCeremony.playing(),
+            onDust(dust) { const u = store.get('user'); if (u && typeof dust === 'number' && u.dust !== dust) setUser(Object.assign({}, u, { dust })); },
+        });
+    } catch (e) { console.error('[daily] init failed', e); }
     store.on((s, changed) => {
         if (changed.indexOf('user') >= 0 && hub.currentPane() === 'account') hub.refresh('account');
     });
@@ -373,6 +381,7 @@ async function boot() {
     openFromHash();
     schedule();
     social.sync();
+    try { retention.start(); } catch (e) { console.error('[daily] start failed', e); }
     window.addEventListener('hashchange', () => { const t = readResetToken(); if (t) openReset(t); });
 
     document.addEventListener('visibilitychange', () => {

@@ -4,13 +4,16 @@
 //
 // The Top 100 is ranked accounts only (placement finished, not deleted, not
 // banned), by rp, cached 60 s. Legend #N follows rankStore.legendRank's order
-// (rp, then who reached Legend first, then id).
+// (rp, then who reached Legend first, then id). Accounts on LEADERBOARD_HIDE
+// (boardHide.js) are on no board and take no place: their `me` is null and
+// the reply says hidden:true.
 'use strict';
 
 const db = require('../db');
 const users = require('../users');
 const friends = require('../friends');
 const rankStore = require('../rankStore');
+const boardHide = require('../boardHide');
 const store = require('../store');
 const events = require('./events');
 const { HttpError, str } = require('../http');
@@ -101,22 +104,24 @@ const RANKED_WHERE = 'ranked_at IS NOT NULL AND deleted_at IS NULL AND (banned_u
 
 function topRows(now) {
     if (boardCache && now - boardCache.at < BOARD_CACHE_MS) return boardCache.rows;
-    const list = h().all(`SELECT * FROM users WHERE ${RANKED_WHERE}
-                          ORDER BY rp DESC, COALESCE(legend_at, ${FAR}) ASC, id ASC LIMIT ${BOARD_MAX}`, now);
+    const hide = boardHide.excludeSql();
+    const list = h().all(`SELECT * FROM users WHERE ${RANKED_WHERE}${hide.sql}
+                          ORDER BY rp DESC, COALESCE(legend_at, ${FAR}) ASC, id ASC LIMIT ${BOARD_MAX}`, now, ...hide.params);
     let legends = 0;
-    const rows = list.map((r, i) => boardRow(r, i + 1, R.divisionOf(r.rp | 0) === R.LEGEND ? ++legends : 0));
+    const rows = list.map((r, i) => boardRow(r, i + 1, R.isLegend(R.divisionOf(r.rp | 0)) ? ++legends : 0));
     boardCache = { at: now, rows };
     return rows;
 }
 
 function myRow(row, now) {
-    if (!row || row.ranked_at == null) return null;
+    if (!row || row.ranked_at == null || boardHide.isHidden(row)) return null;
     const lat = row.legend_at == null ? FAR : row.legend_at;
+    const hide = boardHide.excludeSql();
     const ahead = h().get(`SELECT count(*) AS n FROM users WHERE ${RANKED_WHERE} AND id <> ?
-                             AND (rp > ? OR (rp = ? AND (COALESCE(legend_at, ${FAR}) < ? OR (COALESCE(legend_at, ${FAR}) = ? AND id < ?))))`,
-        now, row.id, row.rp, row.rp, lat, lat, row.id).n | 0;
+                             AND (rp > ? OR (rp = ? AND (COALESCE(legend_at, ${FAR}) < ? OR (COALESCE(legend_at, ${FAR}) = ? AND id < ?))))${hide.sql}`,
+        now, row.id, row.rp, row.rp, lat, lat, row.id, ...hide.params).n | 0;
     // everyone ahead of a Legend is a Legend too, so Legend #N is the place
-    return boardRow(row, ahead + 1, R.divisionOf(row.rp | 0) === R.LEGEND ? ahead + 1 : 0);
+    return boardRow(row, ahead + 1, R.isLegend(R.divisionOf(row.rp | 0)) ? ahead + 1 : 0);
 }
 
 // Banked and Wins boards: anyone with an account (ranked or not), by a
@@ -137,22 +142,24 @@ function statRows(type, now) {
     const col = STAT_BOARDS[type];
     const c = statCache[type];
     if (c && now - c.at < BOARD_CACHE_MS) return c;
+    const hide = boardHide.excludeSql('u.username_lc');
     const list = h().all(`SELECT u.*, s.${col} AS ${col} FROM users u JOIN user_stats s ON s.user_id = u.id
-                          WHERE ${LIVE_WHERE} AND s.${col} > 0
-                          ORDER BY s.${col} DESC, u.id ASC LIMIT ${BOARD_MAX}`, now);
+                          WHERE ${LIVE_WHERE} AND s.${col} > 0${hide.sql}
+                          ORDER BY s.${col} DESC, u.id ASC LIMIT ${BOARD_MAX}`, now, ...hide.params);
     statCache[type] = { at: now, rows: list.map((r, i) => statBoardRow(r, i + 1, col)) };
     return statCache[type];
 }
 
 function myStatRow(type, user, now) {
     const col = STAT_BOARDS[type];
-    if (!user) return null;
+    if (!user || boardHide.isHidden(user)) return null;
     const mine = h().get(`SELECT s.${col} AS v FROM user_stats s WHERE s.user_id = ?`, user.id);
     const v = mine ? mine.v | 0 : 0;
     if (v <= 0) return null;
+    const hide = boardHide.excludeSql('u.username_lc');
     const ahead = h().get(`SELECT count(*) AS n FROM users u JOIN user_stats s ON s.user_id = u.id
-                            WHERE ${LIVE_WHERE} AND u.id <> ? AND (s.${col} > ? OR (s.${col} = ? AND u.id < ?))`,
-        now, user.id, v, v, user.id).n | 0;
+                            WHERE ${LIVE_WHERE} AND u.id <> ? AND (s.${col} > ? OR (s.${col} = ? AND u.id < ?))${hide.sql}`,
+        now, user.id, v, v, user.id, ...hide.params).n | 0;
     return statBoardRow(Object.assign({}, user, { [col]: v }), ahead + 1, col);
 }
 
@@ -161,13 +168,14 @@ function getLeaderboard(ctx) {
     const lim = Math.max(1, Math.min(BOARD_MAX, parseInt(ctx.query.get('limit'), 10) || BOARD_MAX));
     const type = String(ctx.query.get('type') || 'ranked');
     const a = ctx.auth();
+    const user = a ? (users.byId(a.user.id) || a.user) : null;
+    const hidden = boardHide.isHidden(user);
     if (STAT_BOARDS[type]) {
         const c = statRows(type, now);
-        const user = a ? (users.byId(a.user.id) || a.user) : null;
-        return ctx.json(200, { type, updatedAt: c.at, rows: c.rows.slice(0, lim), me: myStatRow(type, user, now) });
+        return ctx.json(200, { type, updatedAt: c.at, rows: c.rows.slice(0, lim), me: myStatRow(type, user, now), hidden });
     }
     const rows = topRows(now);
-    ctx.json(200, { type: 'ranked', updatedAt: boardCache.at, rows: rows.slice(0, lim), me: a ? myRow(users.byId(a.user.id) || a.user, now) : null });
+    ctx.json(200, { type: 'ranked', updatedAt: boardCache.at, rows: rows.slice(0, lim), me: user ? myRow(user, now) : null, hidden });
 }
 
 function clearCache() { boardCache = null; for (const k of Object.keys(statCache)) delete statCache[k]; }

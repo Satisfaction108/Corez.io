@@ -397,11 +397,11 @@ test('core: breaking it caves in, then blows all 20,000 gems across the circle, 
     assert.ok(coreFinale.healthFor(5, 1) > coreFinale.healthFor(1, 5));
     assert.equal(coreFinale.gemsFor(20, 0), B);
     assert.equal(coreFinale.healthFor(30, 0), coreFinale.HP_MAX);
-    // halved on Oct 3: at ~1000 a second per human and ~400 per bot of
-    // focused fire, a full raid needs about a minute
+    // three quarters of the old health (Oct 3): at ~1000 a second per human
+    // and ~400 per bot of focused fire, a full raid needs about 75-90 s
     const ttk = (h, b) => coreFinale.healthFor(h, b) / (1000 * h + 400 * b);
-    for (const h of [6, 10, 15, 20]) assert.ok(ttk(h, 0) >= 30 && ttk(h, 0) <= 65, h + ' humans: ' + ttk(h, 0).toFixed(0) + ' s');
-    assert.ok(ttk(1, 5) >= 30 && ttk(1, 5) <= 65, 'one player and five bots: ' + ttk(1, 5).toFixed(0) + ' s');
+    for (const h of [6, 10, 15, 20]) assert.ok(ttk(h, 0) >= 45 && ttk(h, 0) <= 95, h + ' humans: ' + ttk(h, 0).toFixed(0) + ' s');
+    assert.ok(ttk(1, 5) >= 45 && ttk(1, 5) <= 95, 'one player and five bots: ' + ttk(1, 5).toFixed(0) + ' s');
     assert.ok(coreFinale.healthFor(1, 5) >= 5 * 51_000 * 0.7, 'about five times the old base');
     for (const e of entities.values()) if (e.isGemPickup) e.kill();
     p2.kill(); p3.kill(); bot.kill();

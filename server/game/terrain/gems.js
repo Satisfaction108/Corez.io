@@ -396,6 +396,12 @@ function dropGemsOnDeath(body, killers = []) {
             if (require('./shop.js').hasGear(body, "insurance")) insured = Math.floor(carried * 0.25);
         } catch { /* */ }
     }
+    // a player's first death in their first raid drops half; the other half
+    // comes back with them on the respawn (newcomerDirector.js)
+    let kept = 0;
+    if (raidMode && body.socket && carried - insured > 0) {
+        try { kept = Math.max(0, Math.min(carried - insured, require('./newcomerDirector.js').keepOnDeath(body, carried - insured) | 0)); } catch { kept = 0; }
+    }
     // Death screen shows carried + banked before the drop. Snapshot here: this
     // runs on 'dead', before records() builds the death packet.
     if (body.socket) {
@@ -404,8 +410,9 @@ function dropGemsOnDeath(body, killers = []) {
         if (raidMode) { try { raidBanked = bankMod().raidPart(body.socket); } catch { /* */ } }
         body.socket.gemDeathScore = carried + raidBanked;
         // Split too, since carriedGems is zeroed below. Banked is pre-loss so
-        // score = carried + banked.
-        body.socket.gemDeathCarried = carried;
+        // score = carried + banked. Carried is what was lost: a kept half isn't.
+        body.socket.gemDeathCarried = carried - kept;
+        body.socket.gemDeathKept = kept;
         body.socket.gemDeathBanked = banked;
         body.socket.gemDeathBankLoss = raidBankLoss;
     }
@@ -429,8 +436,8 @@ function dropGemsOnDeath(body, killers = []) {
     } else if (body.socket) body.socket.gemDeathInsured = 0;
     updateSatchel(body);
     talkGems(body, -carried, 1);
-    // Raid drops the FULL satchel minus insurance. (2TDM keeps its 85% tax.)
-    const drop = Math.floor((carried - insured) * (raidMode ? 1 : DEATH_DROP)) + bankLoss;
+    // Raid drops the FULL satchel minus insurance and a kept half. (2TDM keeps its 85% tax.)
+    const drop = Math.floor((carried - insured - kept) * (raidMode ? 1 : DEATH_DROP)) + bankLoss;
     if (drop <= 0) {
         if (raidMode) { try { dustMod().onDeathDrop(body, []); } catch { /* */ } }
         return;

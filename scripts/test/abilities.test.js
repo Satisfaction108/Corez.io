@@ -849,12 +849,12 @@ test('bots: giveBot, canUse, use with a placement target, same cooldowns', () =>
 });
 
 // ── shop ────────────────────────────────────────────────────────────────
-test('shop: the new shelves (4 gear with the magnet back, mobility kit, 8 abilities, nothing retired)', () => {
+test('shop: the new shelves (4 gear with the magnet back plus the Stat Point, mobility kit, 8 abilities, nothing retired)', () => {
     const cat = shop.catalog();
     const ids = cat.map(i => i.id);
     for (const gone of ['cloak', 'boots', 'plating', 'express', 'mark', 'wind', 'strut', 'overdrive']) assert.ok(!ids.includes(gone), gone + ' retired');
-    assert.equal(cat.filter(i => i.cat === 'gear').length, 4);
-    for (const keep of ['scanner', 'magnet', 'insurance', 'satchel', 'charge', 'medkit', 'flash', 'barrage', 'decoy', 'bulwark', 'rocket', 'flare', 'flak', 'lance', 'pod']) assert.ok(ids.includes(keep), keep);
+    assert.equal(cat.filter(i => i.cat === 'gear').length, 5);
+    for (const keep of ['statpt', 'scanner', 'magnet', 'insurance', 'satchel', 'charge', 'medkit', 'flash', 'barrage', 'decoy', 'bulwark', 'rocket', 'flare', 'flak', 'lance', 'pod']) assert.ok(ids.includes(keep), keep);
     const abil = cat.filter(i => i.cat === 'ability');
     assert.equal(abil.length, 8);
     for (const a of abil) {

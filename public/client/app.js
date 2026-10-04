@@ -17,6 +17,7 @@ import * as abilityIntro from './abilityIntro.js';
 import * as nameCheck from './nameHint.js';
 import { tabSeen, markTabSeen, TAB_SEEN_MS } from './abilityIntroLogic.js';
 import * as raidHeat from './raidHeat.js';
+import * as newcomer from './newcomer.js';
 import { full as fxFull } from './juice.js';
 import * as autoQ from './autoQuality.js';
 import * as rankBadges from './account/rankBadges.js';
@@ -32,11 +33,25 @@ import * as sidekicks from './sidekicks.js';
 
     // ---- Hit feedback ----------------------------------------------------
     // The server triggers the blink (entity.js stamps hitAt and reports a
-    // decaying hitFlash); this only draws it. Warm white reads on every team
-    // colour, where red would vanish on the red team.
-    const HIT_BLINK_MS = 180;
-    const HIT_BLINK_STRENGTH = 0.88;
+    // decaying hitFlash); this only draws it. A hit flashes the body red,
+    // diep style; a body that's red already flashes warm white instead, or
+    // the hit would vanish into it.
+    const HIT_BLINK_MS = 220;
+    const HIT_BLINK_STRENGTH = 0.72;
     const HIT_BLINK_COLOR = "#FFF4E0";
+    const HIT_BLINK_RED = "#FF3B3B";
+    const hitTints = new Map();
+    function hitTintFor(hex) {
+        let t = hitTints.get(hex);
+        if (t === undefined) {
+            const c = parseInt(String(hex).slice(1), 16) || 0;
+            const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+            t = r > 170 && g < 130 && b < 130 ? HIT_BLINK_COLOR : HIT_BLINK_RED;
+            if (hitTints.size > 256) hitTints.clear();
+            hitTints.set(hex, t);
+        }
+        return t;
+    }
     const DMG_FADE_IN_MS = 160;
     const DMG_POP_MS = 300;
     const DMG_FADE_OUT_MS = 900;
@@ -2770,6 +2785,7 @@ import * as sidekicks from './sidekicks.js';
                     hitBlend = fadeIn * (1 - ht) * (1 - ht) * HIT_BLINK_STRENGTH;
                 }
             }
+            const hitTint = hitBlend > 0 ? hitTintFor(gameDraw.modifyColor(instance.color, baseColor)) : HIT_BLINK_COLOR;
 
             const sourceGuns = source.guns;
             const gunLength = sourceGuns.length;
@@ -2798,7 +2814,7 @@ import * as sidekicks from './sidekicks.js';
                     const gunAlpha = g.alpha === undefined ? 1 : g.alpha;
                     let mixedColor = gameDraw.mixColors(gunColor, statusColor, blend);
                     global.gameUpdate && instance.invuln !== 0 && 100 > (Date.now() - instance.invuln) % 200 && ((mixedColor = gameDraw.mixColors(gunColor, gameDraw.getColor(6), 0.3)));
-                    if (hitBlend > 0) mixedColor = gameDraw.mixColors(mixedColor, HIT_BLINK_COLOR, hitBlend);
+                    if (hitBlend > 0) mixedColor = gameDraw.mixColors(mixedColor, hitTint, hitBlend * 0.6);
                     gameDraw.setColor(context, mixedColor);
 
                     drawGun(
@@ -2826,7 +2842,7 @@ import * as sidekicks from './sidekicks.js';
                     const invulnBlink = !!(global.gameUpdate && instance.invuln !== 0 && 100 > (Date.now() - instance.invuln) % 200);
                     let bodyColor = gameDraw.mixColors(bodyBase, statusColor, blend);
                     if (invulnBlink) bodyColor = gameDraw.mixColors(bodyBase, gameDraw.getColor(6), 0.3);
-                    if (hitBlend > 0) bodyColor = gameDraw.mixColors(bodyColor, HIT_BLINK_COLOR, hitBlend);
+                    if (hitBlend > 0) bodyColor = gameDraw.mixColors(bodyColor, hitTint, hitBlend);
                     gameDraw.setColor(context, bodyColor);
 
                     const glow = m.glow;
@@ -2870,7 +2886,7 @@ import * as sidekicks from './sidekicks.js';
                         try {
                             const so = skinOpts;
                             so.statusColor = statusColor; so.blend = blend; so.flash = invulnBlink; so.flashColor = gameDraw.getColor(6);
-                            so.hitBlend = hitBlend; so.hitColor = HIT_BLINK_COLOR; so.borderless = m.borderless; so.fill = m.drawFill;
+                            so.hitBlend = hitBlend; so.hitColor = hitTint; so.borderless = m.borderless; so.fill = m.drawFill;
                             so.lowFx = !!(global.lowFx || config.graphical.optimizeMode); so.force = !!instance.skinForce;
                             cosmetics.paintHull(context, xx, yy, sizeRatio, m.shape, rot, instance.skin, bodyBase, so);
                         } catch (e) { /* a skin never breaks the frame */ }
@@ -2932,7 +2948,7 @@ import * as sidekicks from './sidekicks.js';
                 const ringCtx = ctx[1];
                 ringCtx.save();
                 ringCtx.globalAlpha = alphaFade * (1 - ht) * (1 - ht) * 0.9;
-                ringCtx.strokeStyle = HIT_BLINK_COLOR;
+                ringCtx.strokeStyle = hitTint;
                 ringCtx.lineWidth = Math.max(1.6, initStrokeWidth * (1.7 - ht * 0.8));
                 ringCtx.beginPath();
                 ringCtx.arc(x, y, sizeRatio * (1.06 + ht * 0.72), 0, Math.PI * 2);
@@ -4882,7 +4898,7 @@ import * as sidekicks from './sidekicks.js';
                 }
             }
         }
-        if (skCount) { try { sidekicks.draw(ctx[1], ratio, px, py); } catch (e) { /* never break the frame */ } }
+        if (skCount) { try { sidekicks.draw(ctx[1], ratio, px, py, tick, gui.playerid); } catch (e) { /* never break the frame */ } }
         for (let instance of global.entities) {
             // Dig Wars: same banner skip as the shape pass (no generic HP bar)
             if (!instance._onScreen) continue;
@@ -5998,11 +6014,12 @@ import * as sidekicks from './sidekicks.js';
     }
 
     // Which badge a name gets, as a wire code (0 = none). Ranked divisions
-    // (1..19) show for everyone; the placement "?" (20) only on your own
+    // (codeToDivision) show for everyone; the placement "?" (20) only on your own
     // name, so a new account sees its rank is on its way.
     function nameBadgeCode(code, self) {
         code = code | 0;
-        return (code >= 1 && code <= 19) || (self && code === 20) ? code : 0;
+        const d = rankBadges.codeToDivision(code);
+        return typeof d === "number" || (self && d === "placement") ? code : 0;
     }
     // Room a badge takes left of a name (badge + gap), so callers can centre
     // badge and name together.
@@ -6020,7 +6037,7 @@ import * as sidekicks from './sidekicks.js';
         // drawText's glyphs start size/20 left of the measured box
         const left = (align === "center" ? x - tw / 2 : align === "right" ? x - tw : x) - 0.05 * fs;
         const cy = centered ? y - 0.035 * fs : y - 0.35 * fs;
-        rankBadges.drawBadge(c, left - bh * 0.5 - size * 0.4, cy, bh, code === 20 ? "placement" : code - 1);
+        rankBadges.drawBadge(c, left - bh * 0.5 - size * 0.4, cy, bh, rankBadges.codeToDivision(code));
         return nameBadgeRoom(code, size);
     }
 
@@ -6312,7 +6329,7 @@ import * as sidekicks from './sidekicks.js';
                 drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, BANK_PILL_TEXT, "center", false, 1, false);
             }
             // gemdust (accounts): satchel dust under Carried, balance under Banked
-            try { dustHud.draw(ctx[2], { carX: (rx1 + carX2) / 2, bankX: (bankX1 + rx2) / 2, y: ry + 19 }, { drawText, measureText }); } catch (e) { /* never break the HUD */ }
+            if (nxShows("cosmetics")) try { dustHud.draw(ctx[2], { carX: (rx1 + carX2) / 2, bankX: (bankX1 + rx2) / 2, y: ry + 19 }, { drawText, measureText }); } catch (e) { /* never break the HUD */ }
         }
         ctx[2].lineWidth = 4;
         var name = global.player.name.substring(7, global.player.name.length + 1);
@@ -6336,8 +6353,8 @@ import * as sidekicks from './sidekicks.js';
     function myRankCode() {
         const r = global.acct && global.acct.rank;
         if (!r) return 0;
-        if (r.division == null) return 20;
-        return (r.division | 0) + 1;
+        if (r.division == null) return rankBadges.CODE_PLACEMENT;
+        return rankBadges.divisionToCode(r.division);
     }
 
     // Dig Wars: the vault panel, shown while you stand on your team's pad.
@@ -6988,7 +7005,7 @@ import * as sidekicks from './sidekicks.js';
     const SHOP_ACCENT = "#5ce0d8";
     const SHOP_FACE = inkShade(hexToRgb(SHOP_ACCENT), 0.66);
     const KIT_SHORT = { charge: "CHARGE", strut: "STRUT", medkit: "MEDKIT", overdrive: "OVERDRV", anchor: "ANCHOR", flash: "FLASH", bulwark: "BULWARK", decoy: "DECOY", barrage: "BARRAGE", rocket: "ROCKET", flare: "FLARE" };
-    const GEAR_TAG = { scanner: "SCN", magnet: "MAG", satchel: "SAT", insurance: "INS", cloak: "CLK", boots: "TRD", plating: "PLT", express: "EXP", mark: "MRK", wind: "WND" };
+    const GEAR_TAG = { statpt: "+1", scanner: "SCN", magnet: "MAG", satchel: "SAT", insurance: "INS", cloak: "CLK", boots: "TRD", plating: "PLT", express: "EXP", mark: "MRK", wind: "WND" };
     const shopGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
     const kitGlide = Smoothbar(0, 2, 3, 0.1, 0.025, true);
     let kitBoxTop = 0;   // 0 while the kit box is hidden
@@ -7013,7 +7030,9 @@ import * as sidekicks from './sidekicks.js';
     function shopOpenWanted() {
         return shopUiMode() && global.shop.onPad && !global.shop.dismissed && !global.died && !global.showBigMap &&
             // Tutorial: the panel only opens in the steps that sell something.
-            (!global.tutorialMode || /(^|,)shop:/.test(window.dwTutAllow || ""));
+            (!global.tutorialMode || /(^|,)shop:/.test(window.dwTutAllow || "")) &&
+            // a first raid: the panel waits for the coach's ability step
+            (global.tutorialMode || newcomer.shopOpen());
     }
     function fmtNum(n) { return util.formatLargeNumber(Math.round(n || 0)); }
     // the raid-end finale draws with the HUD's own pieces
@@ -7028,6 +7047,10 @@ import * as sidekicks from './sidekicks.js';
     stormFx.init({ hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), hudPanel, drawText, fmtDist });
     // hunted marks, the Core, drop-ins and the screen juice (raidHeat.js, juice.js)
     raidHeat.init({ HUD, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c) });
+    // the first raids: what the HUD shows per stage, the goal line, director moments
+    newcomer.init({ hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, keyLabel: (id, d) => keyLabel(id, d), NOTE_H: 24, NOTE_GAP: 8 });
+    // stage 3 (veterans) shows everything: every check below is true there
+    function nxShows(piece, opts) { return newcomer.shows(piece, opts); }
     function gemPath(c, x, y, r) {
         c.beginPath();
         for (let i = 0; i < GEM_ICON.length; i++) {
@@ -7488,7 +7511,7 @@ import * as sidekicks from './sidekicks.js';
     function hudNote(pri, key, text, col) {
         const n = notePool[notePoolN] || (notePool[notePoolN] = {});
         notePoolN++;
-        n.pri = pri; n.key = key; n.text = text; n.col = col; n.pulse = 0; n.badge = false; n.sub = "";
+        n.pri = pri; n.key = key; n.text = text; n.col = col; n.pulse = 0; n.badge = false; n.sub = ""; n.draw = null;
         return n;
     }
     // as wide as the gap between the standings (touch: the minimap) allows
@@ -7541,9 +7564,11 @@ import * as sidekicks from './sidekicks.js';
         const st = r.storm || {};
         if (r.lock) push(hudNote(0, "lock", st.fin ? "Last " + Math.max(0, r.lockLeft | 0) + "s of the raid. Nobody respawns now."
             : "Final storm, " + Math.max(0, r.lockLeft | 0) + "s left. Nobody respawns now.", HUD.lilac));
-        else if (r.toast) push(hudNote(NOTE_CRIT.test(r.toast) ? 0 : 2, "toast", r.toast, color.guiwhite));
+        else if (r.toast && newcomer.toastAllowed(r.toast)) push(hudNote(NOTE_CRIT.test(r.toast) ? 0 : 2, "toast", r.toast, color.guiwhite));
         try { raidHeat.hudNotes(push); } catch (e) { /* */ }
-        const objs = r.objectives || [];
+        // the first raids: the goal line, a challenge's clock, NEW intros
+        try { newcomer.hudNotes(push, hudNote); } catch (e) { /* */ }
+        const objs = nxShows("outposts") ? r.objectives || [] : [];
         for (let i = 0; i < Math.min(2, objs.length); i++) {
             const o = objs[i];
             if (o.kind === "contest") push(hudNote(2, "contest" + i, (o.name || "Outpost") + " contested", o.c || color.gold));
@@ -7557,15 +7582,15 @@ import * as sidekicks from './sidekicks.js';
                 push(hudNote(2, "buff", parts.join("   "), color.teal));
             }
             const myStreak = you.streak | 0;
-            if (myStreak >= 4) push(hudNote(3, "streak", myStreak + " kill streak. You're on everyone's map", "#ffb347"));
+            if (myStreak >= 4 && nxShows("streaks")) push(hudNote(3, "streak", myStreak + " kill streak. You're on everyone's map", "#ffb347"));
             // Raid Night coming up (shared/events.js): a small chip in the last 24 h
-            const evChip = global.tutorialMode ? "" : eventHudTick().chip;
+            const evChip = global.tutorialMode || !nxShows("raidNight") ? "" : eventHudTick().chip;
             if (evChip) push(hudNote(3, "event", evChip, HUD.gold));
         }
         list.sort((a, b) => a.pri - b.pri);
         const c = ctx[2], cx = global.screenWidth / 2, maxW = noteMaxW();
         for (let i = 0; i < list.length && i < NOTE_ROWS; i++) {
-            y = list[i].badge ? drawNoteBadge(c, list[i], cx, y) : drawNotePill(c, list[i], cx, y, maxW);
+            y = list[i].draw ? list[i].draw(c, list[i], cx, y, maxW) : list[i].badge ? drawNoteBadge(c, list[i], cx, y) : drawNotePill(c, list[i], cx, y, maxW);
         }
         return y;
     }
@@ -7636,9 +7661,10 @@ import * as sidekicks from './sidekicks.js';
             // the boss and the Core share one row of compact cards; the row is
             // reserved in full while a card is visible (alpha fades, nothing
             // below slides). Minimized, the strip carries them instead.
-            bossGlide.set(r.boss ? 1 : 0);
+            // the first raids: the cards only when it's right there
+            bossGlide.set(r.boss && nxShows("boss", { near: newcomer.bossNear() }) ? 1 : 0);
             const bg = bossGlide.get();
-            const boss = bg > 0.02, core = raidHeat.coreUp();
+            const boss = bg > 0.02, core = raidHeat.coreUp() && nxShows("core", { near: newcomer.coreNear() });
             if (topMin.on || (!boss && !core)) return;
             const c = ctx[2], gap = 10;
             const W = boss && core ? Math.min(236, (global.screenWidth - 60 - gap) / 2) : Math.min(300, global.screenWidth - 60);
@@ -7662,7 +7688,8 @@ import * as sidekicks from './sidekicks.js';
         let standBottom = 36;
         // touch: the minimap has that corner; standings are a tap away on the map
         if (global.mobile) { const mm = touchMinimapRect(); standBottom = Math.max(mm.y + mm.h + 18, global.screenHeight > global.screenWidth ? y + 6 : 0); }
-        else hudSafe("standings", () => { standBottom = drawRoyaleStandings(); });
+        else if (nxShows("standings")) hudSafe("standings", () => { standBottom = drawRoyaleStandings(); });
+        else standingsRect = null;
         hudSafe("feed", () => drawRoyaleFeed(standBottom + 14));
         hudSafe("cards", layoutLeftCards);
         hudSafe("duo", drawDuoCard);
@@ -7908,7 +7935,7 @@ import * as sidekicks from './sidekicks.js';
                 standingsFit.set(fitKey, ns);
             }
             const rk = codeOf(row);
-            if (rk) rankBadges.drawBadge(c, x + 47, rowMid - 0.5, 15, rk === 20 ? "placement" : rk - 1);
+            if (rk) rankBadges.drawBadge(c, x + 47, rowMid - 0.5, 15, rankBadges.codeToDivision(rk));
             // a name style replaces the plain colour (yours included)
             const rowName = shortName(row.name, 18);
             const rowSn = styledName(rowName, row.ns, hexOr(row.nc, nameCol), x + 40 + rkCol, ns, "left", c, rowMid, true);
@@ -7970,6 +7997,8 @@ import * as sidekicks from './sidekicks.js';
             // arrivals (a boss, the Core, a supply drop, a bloom) are the
             // toast's news under the clock: the feed keeps who did what
             if (f.event || f.bloom || (f.spawn && (f.boss || f.core))) continue;
+            // the first raid: only lines with your name in them
+            if (!newcomer.feedAllowed(f, global.playerName || "")) continue;
             const age = now - (f.at || now);
             if (age > 11000) continue;
             const a = age > 8500 ? Math.max(0.12, 1 - (age - 8500) / 2500) : 1;
@@ -8033,8 +8062,8 @@ import * as sidekicks from './sidekicks.js';
     function layoutLeftCards() {
         const r = global.royale;
         // the contract (server contracts.js): one short job at a time
-        const q = !global.died && r.you && r.you.obj ? r.you.obj : null;
-        const mod = !global.died && r.mod && r.mod.name ? r.mod : null;
+        const q = !global.died && r.you && r.you.obj && nxShows("contracts") ? r.you.obj : null;
+        const mod = !global.died && r.mod && r.mod.name && nxShows("twist") ? r.mod : null;
         // duos: the teammate card tops the stack (dead or alive)
         const duo = r.duos && r.duo ? r.duo : null;
         if (!q && !mod && !duo) { leftCards = null; return; }
@@ -8378,7 +8407,7 @@ import * as sidekicks from './sidekicks.js';
             const t = list[k];
             const DUR = t.dur || DUR0;
             const age = now - t.born;
-            if (age > DUR) { list.splice(k, 1); continue; }
+            if (age > DUR || !newcomer.calloutAllowed(t.kind)) { list.splice(k, 1); continue; }
             if (age < 0) continue;
             const inT = Math.min(1, age / 160);
             const outT = age > DUR - 500 ? 1 - (age - (DUR - 500)) / 500 : 1;
@@ -8705,7 +8734,9 @@ import * as sidekicks from './sidekicks.js';
     }
     function drawKitBox(spacing, alcoveSize) {
         const want = shopUiMode() && !global.died && !global.mobile && global.gems && global.gems.cap > 0 &&
-            (!global.tutorialMode || (window.dwTutUi === "kit" || (window.dwTutAllow || "").includes("kit") || (global.shop.state && (global.shop.state.kitOrder || []).length)));
+            (!global.tutorialMode || (window.dwTutUi === "kit" || (window.dwTutAllow || "").includes("kit") || (global.shop.state && (global.shop.state.kitOrder || []).length))) &&
+            // a first raid: the box comes in with its first item
+            (global.tutorialMode || nxShows("kit", { owned: newcomer.ownsKit() }));
         kitGlide.set(want ? 1 : 0);
         const g = kitGlide.get();
         kitBoxTop = 0;
@@ -8860,7 +8891,9 @@ import * as sidekicks from './sidekicks.js';
     let abilityBarRect = null;
     function drawAbilityBar() {
         abilityBarRect = null;
-        const want = shopUiMode() && !global.died && !global.mobile && global.gems && global.gems.cap > 0 && hudDrawn.wallet;
+        const want = shopUiMode() && !global.died && !global.mobile && global.gems && global.gems.cap > 0 && hudDrawn.wallet &&
+            // a first raid: the dash and ability chips come in with an ability
+            (global.tutorialMode || nxShows("ability", { owned: newcomer.ownsAbility() }));
         if (!want) return;
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         abilityBarRect = abilityFx.drawHud(ctx[2], hudDrawn.wallet, { x: global.mouse.x / cr, y: global.mouse.y / cr });
@@ -9092,6 +9125,8 @@ import * as sidekicks from './sidekicks.js';
             if (item.tier !== (st.drill | 0) + 1) return { text: "LOCKED", col: color.grey, buy: false };
             return { text: "NEXT", col: color.gold, buy: true };
         }
+        // Stat Point: not a timed gear item, buy as many as fit
+        if (item.id === "statpt") return { text: st.statPts ? "x" + st.statPts : "", col: SHOP_ACCENT, buy: true };
         if (item.cat === "gear") {
             if ((st.gear || []).includes(item.id)) return { text: "RUNNING", col: SHOP_ACCENT, buy: false };
             if ((st.gear || []).length >= 4) return { text: "GEAR FULL", col: color.grey, buy: false };
@@ -9398,7 +9433,7 @@ import * as sidekicks from './sidekicks.js';
         const marks = [];
         // the contract's target: a ring on it when it's in view, else the
         // first edge marker
-        const ob = r.you && r.you.obj;
+        const ob = r.you && nxShows("contracts") ? r.you.obj : null;
         const tg = ob ? contractTarget(ob) : null;
         let contractE = -1;
         if (tg && ob.k === "zone") {
@@ -9421,13 +9456,13 @@ import * as sidekicks from './sidekicks.js';
         }
         // revenge: your last killer, when it's not already the contract target
         const rv = r.you && r.you.revenge;
-        if (rv && rv.alive && rv.e !== contractE && isFinite(rv.x)) {
+        if (rv && rv.alive && rv.e !== contractE && isFinite(rv.x) && nxShows("revenge")) {
             const p = trackPos("revenge", rv.x, rv.y, 0.8);
             const s = toScreen(p.x, p.y);
             const d = Math.hypot(p.x - me.x, p.y - me.y);
             if (!onScreen(s, -20) && d < 3600) marks.push({ pri: 2, s, col: "#ff6b5e", glyph: "skull", name: "REVENGE " + shortName(rv.name, 10).toUpperCase(), d });
         }
-        if (r.boss) {
+        if (r.boss && nxShows("boss", { near: newcomer.bossNear() })) {
             const p = trackPos("boss", r.boss.x, r.boss.y, 0.6);
             const s = toScreen(p.x, p.y);
             if (!onScreen(s, -60)) marks.push({ pri: 1, s, col: r.boss.c || "#c9a8ff", glyph: "boss", name: String(r.boss.name || "BOSS").toUpperCase(), d: Math.hypot(p.x - me.x, p.y - me.y) });
@@ -9440,7 +9475,7 @@ import * as sidekicks from './sidekicks.js';
         // marked streakers: the badge over the tank (drawStreakBadge, in the
         // overhead stack); the nearest one out of sight gets an edge marker
         let nearest = null;
-        for (const p of (r.pings || [])) {
+        for (const p of (nxShows("streaks") ? r.pings || [] : [])) {
             if (p.id === gui.playerid || streakShownAt.get(p.id) === overheadFrame) continue;
             const tp = trackPos("ping" + p.id, p.x, p.y, 0.6);
             const s = toScreen(tp.x, tp.y);
@@ -9459,6 +9494,8 @@ import * as sidekicks from './sidekicks.js';
             if (!onScreen(s, -30)) marks.push({ pri: 0, s, col: playerHexCol() || HUD.sky, glyph: "mate", name: shortName(dmate.name || "Teammate", 12).toUpperCase(), d: Math.hypot(tp.x - me.x, tp.y - me.y) });
         }
         raidHeat.worldMarks(marks, toScreen, onScreen, me, trackPos, ratio);
+        // a director moment (first raids): its arrow, or its ring when in view
+        try { newcomer.worldMarks(marks, toScreen, onScreen, me, c, ratio); } catch (e) { /* */ }
         marks.sort((a, b) => a.pri - b.pri);
         const placed = [], kept = [];
         // one chip per thing (the contract on the boss, a supply drop said
@@ -10039,7 +10076,7 @@ import * as sidekicks from './sidekicks.js';
         if (!evHud.callAt) return;
         const age = performance.now() - evHud.callAt;
         if (age > EV_CALL_MS) { evHud.callAt = 0; return; }
-        if (global.died || global.tutorialMode || raidFinale.hidesHud() || !royaleActive() || global.hudCalm) return;
+        if (global.died || global.tutorialMode || raidFinale.hidesHud() || !royaleActive() || global.hudCalm || !nxShows("raidNight")) return;
         // one plate at a time: a kill callout up (or a slam over the lane) holds it
         const nowE = performance.now();
         if (global.hudCalloutUp || plateWaitAt) { evHud.callAt += nowE - (evHud.waitAt || nowE); evHud.waitAt = nowE; return; }
@@ -11247,7 +11284,7 @@ import * as sidekicks from './sidekicks.js';
             // your row: your colour on the name only, nothing behind it
             if (rows[i].num) {
                 drawText(rows[i].num, x + 18 + numW - 8, ry, 14, col, "right");
-                if (rows[i].rk) rankBadges.drawBadge(ctx[2], x + 18 + numW + 9, ry - 5.4, 18, rows[i].rk === 20 ? "placement" : rows[i].rk - 1);
+                if (rows[i].rk) rankBadges.drawBadge(ctx[2], x + 18 + numW + 9, ry - 5.4, 18, rankBadges.codeToDivision(rows[i].rk));
                 const fSn = styledName(rows[i].name, rows[i].ns, hexOr(rows[i].nc, col), x + 18 + numW + rkCol, 14, "left", ctx[2], ry);
                 drawText(fSn.text, x + 18 + numW + rkCol, ry, 14, fSn.fill, "left");
             } else drawText(rows[i].name, x + 18, ry, 14, col, "left");
@@ -12890,7 +12927,89 @@ import * as sidekicks from './sidekicks.js';
     // waits for a click, Enter, Space or RT. Nothing drops you in on its own;
     // the raid end queues everyone itself (raidFinale.js).
     const lastStormCount = () => !!(global.died && global.royale && global.royale.lock && raidFinale.countdownUp());
+    // The first raids' death card (newcomer.js stages 0-1): what got you and
+    // how to dodge it next time, what you kept, and one big Respawn.
+    const gameDrawDeadNewcomer = () => {
+        const now = performance.now();
+        const A = global.royaleDiedAt ? Math.min(1, (now - global.royaleDiedAt) / 140) : 1;
+        const c = ctx[2];
+        const sw = global.screenWidth, sh = global.screenHeight;
+        clearScreen(color.black, 0.34 * A, c);
+        const info = newcomer.deathInfo();
+        const W = Math.min(620, sw - 32), pad = 22, gap = 14;
+        const iw = W - pad * 2;
+        const tipLines = wrapLines(info.tip, 17, iw - 70).slice(0, 3);
+        const TIP_H = Math.max(64, 26 + tipLines.length * 23);
+        const KEPT_H = 44;
+        // the rank card stays for the second raid (placement lives), not the first
+        const hasRank = newcomer.stage() >= 1 && rankPanel.hasContent();
+        const RANK_H = 106;
+        const cssK = sh / Math.max(1, window.innerHeight);
+        const PLAY_CSS_H = 74;
+        const FOOT = Math.round(PLAY_CSS_H * cssK);
+        const HEAD = 44;
+        const H = pad + HEAD + TIP_H + gap + KEPT_H + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 14;
+        const BTN = Math.round((40 + 22) * cssK);
+        const px = Math.round(sw / 2 - W / 2);
+        const py = Math.round(Math.max(12, sh - H - BTN - 12));
+        const cx = sw / 2;
+        global.deathCamLift = Math.max(0, sh / 2 - Math.max(110, py / 2 + 10));
+        global.deathPanelCss = {
+            cx: Math.round(cx * window.innerWidth / Math.max(1, sw)),
+            top: Math.round((py + H) * window.innerHeight / Math.max(1, sh)) + 10,
+        };
+        hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
+        const hx = px + pad;
+        let y = py + pad;
+        hudTitle("You died", cx, y + 16, 30, HUD.gold, "center", A);
+        y += HEAD;
+        // the tip: an icon for what got you, then how to dodge it
+        c.save();
+        c.globalAlpha = A;
+        hudWell(c, hx, y, iw, TIP_H, 12, "rgba(242,184,60,0.10)", HUD.ink, 2.5);
+        c.restore();
+        const icon = info.kind === "storm" ? "clock" : info.kind === "rock" ? "pickaxe" : info.kind === "raidend" ? "clock" : "skull";
+        drawDeathIcon(icon, hx + 34, y + TIP_H / 2, 30, A * 0.9);
+        let ty = y + TIP_H / 2 - (tipLines.length - 1) * 11.5;
+        for (const ln of tipLines) { drawText(ln, hx + 64, ty, 17, HUD.head, "left", true, A); ty += 23; }
+        y += TIP_H + gap;
+        // what you kept
+        c.save();
+        c.globalAlpha = A;
+        hudWell(c, hx, y, iw, KEPT_H, 10, "rgba(14,11,18,0.45)", HUD.ink, 2);
+        c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
+        gemPath(c, hx + 22, y + KEPT_H / 2, 7); c.fill(); c.stroke();
+        c.restore();
+        const kf = fitLine(info.kept, 15, 10, iw - 54);
+        drawText(kf.txt, hx + 40, y + KEPT_H / 2, kf.qs, HUD.gold, "left", true, A);
+        y += KEPT_H + gap;
+        if (hasRank) {
+            try {
+                rankPanel.draw(c, hx, y, iw, RANK_H,
+                    { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk }, A);
+            } catch (e) { /* never break the death screen */ }
+            y += RANK_H + gap;
+        }
+        // the big Respawn (DOM, placed here)
+        const playW = iw;
+        const toCssX = window.innerWidth / Math.max(1, sw), toCssY = window.innerHeight / Math.max(1, sh);
+        global.deathPlayCss = { cx: Math.round(cx * toCssX), top: Math.round(y * toCssY), w: Math.round(playW * toCssX), h: PLAY_CSS_H, big: true };
+        global.clickables.royalePrev.hide();
+        global.clickables.royaleNext.hide();
+        global.clickables.deathRespawn.hide();
+        if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) { global.clickables.royalePlay.hide(); return; }
+        if (!global.disconnected) {
+            const cr = global.canvas.height / global.screenHeight / global.ratio;
+            const st = playAgainState();
+            drawButton(cx, y, playW, FOOT, st.ready ? A : A * 0.5, "rect", st.label, 26, false, false, false, st.ready, "royalePlay", cr, 0);
+            if (!st.ready) global.clickables.royalePlay.hide();
+            const bty = py + H + 12;
+            drawButton(cx - 90, bty, 150, 32, A, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
+            drawButton(cx + 90, bty, 150, 32, A, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
+        }
+    };
     const gameDrawDeadRoyale = () => {
+        if (newcomer.deathCardWanted()) return gameDrawDeadNewcomer();
         const now = performance.now();
         const A = global.royaleDiedAt ? Math.min(1, (now - global.royaleDiedAt) / 140) : 1;
         const you = global.royale.you || {};
@@ -13061,8 +13180,12 @@ import * as sidekicks from './sidekicks.js';
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
         if (locked) return { ready: false, label: "No spawns in the final storm (" + Math.max(0, global.royale.lockLeft | 0) + "s)" };
         if (global.respawnPending) return { ready: false, label: "Dropping in..." };
+        // the first raids' card says Respawn (newcomer.js)
+        const word = newcomer.deathCardWanted() ? "Respawn" : "Play again";
+        if (waitMs > 0 && word === "Respawn") return { ready: false, label: "Respawn in " + Math.ceil(waitMs / 1000) + "..." };
         if (waitMs > 0) return { ready: false, label: "Play again in " + Math.ceil(waitMs / 1000) + "..." };
         if (global.updateHoldsRespawn) return { ready: false, label: "Updating the game..." };
+        if (word === "Respawn") return { ready: true, label: "Respawn" };
         return { ready: true, label: "Play again" };
     }
     const drawRoyaleSpectateBar = () => {
@@ -13241,6 +13364,9 @@ import * as sidekicks from './sidekicks.js';
         let alcoveSize = global.mobile ? 160 : 200;
         gui.__s.update();
         hudDrawn = {};
+        // the first raids (newcomer.js): reads last frame's big card first
+        global._nxCardWas = global.hudCardUp;
+        try { newcomer.tick(); } catch (e) { /* never break the frame */ }
         // big center-screen cards this frame; coach.js waits while one is up
         global.hudCardUp = "";
         global.hudCalloutUp = false;
@@ -13301,7 +13427,7 @@ import * as sidekicks from './sidekicks.js';
             // shop panels included), so it goes last
             if (global.GUIStatus.renderPlayerBars && !finaleHud) drawKitUnlock();
             // the one-time ability tour, over everything
-            if (global.GUIStatus.renderPlayerBars && !finaleHud) { try { abilityIntro.draw(ctx[2], global.mobile ? touchUnits() : null); } catch (e) { /* never break the frame */ } }
+            if (global.GUIStatus.renderPlayerBars && !finaleHud && nxShows("abilityTour")) { try { abilityIntro.draw(ctx[2], global.mobile ? touchUnits() : null); } catch (e) { /* never break the frame */ } }
             // leader arrow + enemy pings are drawn in drawTopIndicators(), at
             // the end of the frame, so no panel covers them
         } else {
@@ -13488,7 +13614,8 @@ import * as sidekicks from './sidekicks.js';
             setStyle(again, "display", show ? "inline-flex" : "none");
             if (show) {
                 const st = playAgainState();
-                const want = { left: pc.cx + "px", top: pc.top + "px", width: pc.w + "px", height: pc.h + "px" };
+                // the first raids' card: a bigger word on a bigger button
+                const want = { left: pc.cx + "px", top: pc.top + "px", width: pc.w + "px", height: pc.h + "px", fontSize: pc.big && st.ready ? "34px" : "" };
                 for (const k in want) if (again.style[k] !== want[k]) again.style[k] = want[k];
                 const lab = again.firstChild, key = again.lastChild;
                 if (lab.textContent !== st.label) lab.textContent = st.label;

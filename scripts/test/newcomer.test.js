@@ -100,9 +100,10 @@ function bot(x, y) {
 
 // ===================================================================
 
-test('shield: a raid spawn gets 5 s of shield; the soft window is 2 minutes only while new', () => {
+test('shield: a raid spawn gets 5 s of shield; the soft window is 2 minutes only while new (3 in a first raid)', () => {
     assert.equal(royale.SPAWN_GRACE_MS, 5000);
-    const p = player();
+    // a regular has the hours in too (the first raids director goes by time played)
+    const p = player(0, (nextY += 1200), fakeSocket({ _careerPlayMs: 90 * 60_000 }));
     const t0 = Date.now();
     royale.freshRaidBody(p);
     assert.equal(p.invuln, true);
@@ -111,11 +112,14 @@ test('shield: a raid spawn gets 5 s of shield; the soft window is 2 minutes only
     assert.equal(p.botNewbie, false);
     assert.ok(Math.abs(p.botSoftUntil - (t0 + FM.BOT_SOFT_SHORT_MS)) < 200);
     assert.ok(FM.BOT_SOFT_SHORT_MS >= 20_000 && FM.BOT_SOFT_SHORT_MS <= 30_000);
-    // a new player: the full two minutes
+    // a new player: the full two minutes, three in their first raid
+    // (terrain/newcomerDirector.js, newcomerDirector.test.js)
     const n = player(0, (nextY += 1200), fakeSocket({ _careerLives: 0, _careerPlayMs: 0 }));
     royale.freshRaidBody(n);
     assert.equal(n.botNewbie, true);
-    assert.ok(Math.abs(n.botSoftUntil - (t0 + FM.BOT_SOFT_MS)) < 200);
+    const director = require(path.join(SERVER, 'game', 'terrain', 'newcomerDirector.js'));
+    const soft = director.isEnabled() ? director.TUNE.SOFT_MS[0] : FM.BOT_SOFT_MS;
+    assert.ok(Math.abs(n.botSoftUntil - (t0 + soft)) < 200);
     assert.equal(FM.BOT_SOFT_MS, 120_000);
     p.kill(); n.kill();
     loop(2);

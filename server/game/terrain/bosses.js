@@ -22,13 +22,14 @@ const ORDER = ['warden', 'drillhead', 'colossus', 'wraith'];
 //   regenEvery  the boss regenerates on one regen tick in this many
 //   shotKind    per boss on top of shotMult: the Colossus fires stock auto
 //               turrets that hit well under the others' guns; the Wraith's
-//               snipers and shards were taking players out from off screen
+//               snipers and shards were taking players out from off screen;
+//               the Drillhead's destroyer barrels hit far too hard
 const TUNING = {
     healthMult: 0.6,   // was 0.85: fights dragged on
     shotMult: 0.58,    // was 0.55: a bit more bite (a hit still stays under a third of a fresh Basic)
     bodyMult: 0.88,    // was 0.8
     regenEvery: 2,
-    shotKind: { colossus: 1.3, wraith: 0.6 },
+    shotKind: { colossus: 1.3, wraith: 0.6, drillhead: 0.45 },
 };
 function tune(o, kind = o.bossKind) {
     o.bonusHealthMult = TUNING.healthMult;
