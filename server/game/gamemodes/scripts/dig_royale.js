@@ -172,7 +172,7 @@ function now() { return Date.now(); }
 function humans() {
     return (global.gameManager.socketManager?.players || [])
         .map(p => p && p.body)
-        .filter(b => b && b.isPlayer && !b.isDead?.() && !b.isGhost);
+        .filter(b => b && b.isPlayer && !b.isDead?.() && !b.isGhost && !b.adminSpec);
 }
 
 function connectedClients() {
@@ -369,7 +369,10 @@ function boardSnapshot() {
     }
     const hereKeys = new Set(liveKeys);
     try { for (const c of connectedClients()) if (c && c.id) hereKeys.add("s:" + c.id); } catch { /* */ }
-    const rows = [...raidStats.values()].map(s => ({
+    // the owner spectating doesn't show on the board
+    const specKeys = new Set();
+    try { for (const c of connectedClients()) if (c && c.id && c.player && c.player.body && c.player.body.adminSpec) specKeys.add("s:" + c.id); } catch { /* */ }
+    const rows = [...raidStats.values()].filter(s => !specKeys.has(s.key)).map(s => ({
         id: s.id,
         name: s.name || "Unnamed",
         kills: s.kills | 0,

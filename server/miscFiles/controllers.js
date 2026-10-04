@@ -489,7 +489,7 @@ class io_nearestDifferentMaster extends IO {
         const theirMaster = e.master.master;
         if (e.health.amount <= 0) return false;
         if (theirMaster.team === myMaster.team || theirMaster.team === TEAM_ROOM) return false;
-        if (theirMaster.ignoredByAi) return false;
+        if (theirMaster.ignoredByAi || theirMaster.adminSpec) return false;
         if (e.bond) return false;
         if (e.invuln || e.godmode || theirMaster.godmode || theirMaster.passive || myMaster.passive) return false;
         // a bot's auto turrets / drones, and raid bosses, honour a fresh
@@ -735,7 +735,7 @@ class io_healTeamMasters extends IO {
         let fear = e.fear ?? 0.7;
         if (e.health.amount <= 0) return false;
         if (theirMaster.team !== myMaster.team) return false;
-        if (theirMaster.ignoredByAi) return false;
+        if (theirMaster.ignoredByAi || theirMaster.adminSpec) return false;
         if (e.bond) return false;
         if (e.type !== "tank") return false;
         if (e.isDominator) return false;
@@ -2200,6 +2200,7 @@ class io_digWarsGoals extends IO {
             if (distance > Math.max(radar, fov * (1.25 + marked * 0.3))) continue;
             // fresh spawn in bot grace: not a target, not even counted
             if (inBotGrace(root, now)) continue;
+            if (root.adminSpec) continue;
             // the Core is up: bots leave players to it (one who shoots us
             // still gets fought, through the attacker override below)
             if (root.isPlayer && global.royaleCoreTruce) continue;

@@ -171,6 +171,14 @@ class Canvas {
             event.preventDefault && event.preventDefault();
             return;
         }
+        // the owner's spectator (server ignores this for everyone else): zoom
+        if (!global.died && !global.showTree && global.gameStart && !global.showChat) {
+            const t = performance.now();
+            if (t - (this._specZoomAt || 0) > 90 && Math.abs(event.deltaY) > 0) {
+                this._specZoomAt = t;
+                this.socket.talk('SPZ', event.deltaY > 0 ? 1 : -1);
+            }
+        }
         if (!global.died && global.showTree) {
             if (event.deltaY > 1) {
                 global.targetTreeScale = Math.max(global.targetTreeScale / 1.2, 0.5);
@@ -371,6 +379,11 @@ class Canvas {
     }
     keyDown(event) {
         if (global.dailyTankAd.renderUI) return;
+        // Command on its own: the owner's spectator shows or hides (the server
+        // ignores it for everyone else)
+        if ((event.keyCode === 91 || event.keyCode === 93) && !event.repeat && !global.showChat && !global.died) {
+            try { this.socket.talk('SPI'); } catch (e) { /* */ }
+        }
         if (global.specialPressed) {
             event.preventDefault();
             if (!event.repeat) global.specialKeysPressed.push(event.keyCode);

@@ -273,7 +273,7 @@ function tickDamage(now = Date.now()) {
     for (const body of entities.values()) {
         if (!body || body.isDead?.() || body.isGhost) continue;
         if (!(body.isPlayer || body.isBot)) continue;
-        if (body.royaleFrozen) continue;
+        if (body.royaleFrozen || body.adminSpec) continue;
         // real time since this body was last looked at, capped so a stall
         // never jumps the ramp
         const dt = body._stormSeenAt ? Math.max(0, Math.min(250, now - body._stormSeenAt)) : 0;

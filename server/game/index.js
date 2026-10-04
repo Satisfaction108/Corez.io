@@ -193,7 +193,7 @@ class gameHandler {
         actors.length = 0;
         for (const player of global.gameManager.socketManager.players) {
             const body = player && player.body;
-            if (body && !body.isDead() && !body.isGhost) actors.push(player);
+            if (body && !body.isDead() && !body.isGhost && !body.adminSpec) actors.push(player);
         }
         for (const bot of this.bots) {
             if (bot && !bot.isDead() && !bot.isGhost) actors.push(bot);

@@ -209,3 +209,18 @@ Class.rockBarrageShard = {
         RANGE: 1000,
     },
 };
+
+// The owner's spectator (bridge.js $spec): a plain ball that floats through
+// everything. No guns, no collisions, no damage either way (noclip and
+// godmode on the body); the wheel changes how far it sees.
+Class.adminSpectator = {
+    PARENT: "genericTank",
+    LABEL: "Spectator",
+    SHAPE: 0,
+    COLOR: "#9aa3b5",
+    SIZE: 14,
+    DRAW_HEALTH: false,
+    GUNS: [],
+    TURRETS: [],
+    BODY: { SPEED: 22, ACCELERATION: 1.6, FOV: 1.6, HEALTH: 1e6, DAMAGE: 0, RESIST: 1, PENETRATION: 0, DENSITY: 0.1, PUSHABILITY: 0, REGEN: 1 },
+};

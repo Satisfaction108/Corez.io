@@ -585,6 +585,13 @@ class socketManager {
                 if (vBody && vBody.outpostOnPad) require('../terrain/outposts.js').requestDeposit(socket, m[0]);
                 else require('../terrain/vault.js').requestDeposit(socket, m[0]);
             } break;
+            case 'SPI': {
+                try { accountBridge.adminSpecInvis && accountBridge.adminSpecInvis(socket); } catch { /* */ }
+            } break;
+            case 'SPZ': {
+                if (m.length !== 1 || typeof m[0] !== 'number') return 1;
+                try { accountBridge.adminSpecZoom && accountBridge.adminSpecZoom(socket, m[0]); } catch { /* */ }
+            } break;
             case 'vc': {
                 require('../terrain/vault.js').requestCancel(socket);
                 require('../terrain/outposts.js').requestCancel(socket);
@@ -1130,6 +1137,9 @@ class socketManager {
                 // raid server. Anyone else's "$broadcast" is ordinary chat.
                 if (typeof m[0] === "string" && /^\$broadcast(\s|$)/i.test(m[0]) &&
                     accountBridge.adminBroadcast && accountBridge.adminBroadcast(socket, m[0])) break;
+                // "$spec": the owner's spectator ball (bridge.js)
+                if (typeof m[0] === "string" && /^\s*\$spec\s*$/i.test(m[0]) &&
+                    accountBridge.adminSpec && accountBridge.adminSpec(socket)) break;
                 // "$restore CODE": a save code (terrain/saveCodes.js). Never
                 // shown as chat and never logged, it's as good as the tank.
                 if (typeof m[0] === "string" && /^\s*\$restore(\s|$)/i.test(m[0])) {
@@ -2776,6 +2786,8 @@ class socketManager {
 
                         // a Smoke Bomb hides the tank (and its drones) from anyone
                         // outside the cloud: not even sent (abilities.js smokeView)
+                        // the owner spectating, hidden: nobody else gets it at all
+                        if (entity.adminSpecHidden && entity !== player.body) continue;
                         const smoked = entity.smokeHidden ? entity : entity.master && entity.master !== entity && entity.master.smokeHidden && entity.type !== "bullet" ? entity.master : null;
                         if (smoked) {
                             const sa = (smokeAbil || (smokeAbil = require('../terrain/abilities.js'))).smokeView(player.body, smoked);

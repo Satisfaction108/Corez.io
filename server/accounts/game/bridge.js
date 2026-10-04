@@ -234,6 +234,72 @@ function adminBroadcast(socket, raw) {
     return true;
 }
 
+// The owner's spectator: "$spec" in raid chat (admins only, the same check
+// as $broadcast). You become a ball that floats through everything, hidden
+// from everyone else; the Command key shows or hides you again and the
+// wheel zooms (sockets.js SPI / SPZ). "$spec" again leaves: the ball goes
+// and you respawn as normal.
+function isAdmin(socket) {
+    if (!socket || !socket.account || !accounts.enabled()) return false;
+    let row = null;
+    try { row = accounts.users.byId(socket.account.id); } catch (e) { row = null; }
+    const admins = accounts.config.discordBot && accounts.config.discordBot.adminIds;
+    return !!(row && row.discord_id && admins && admins.has(String(row.discord_id)));
+}
+const SPEC_FOV = [1, 1.5, 2.2, 3.2, 4.5];
+function adminSpec(socket) {
+    if (!isAdmin(socket)) return false;
+    const body = socket.player && socket.player.body;
+    const say = (t) => { try { socket.talk('m', 5000, t); } catch (e) { /* */ } };
+    if (!body || (body.isDead && body.isDead())) { say('Spawn first, then type $spec.'); return true; }
+    if (body.adminSpec) {
+        // leave: the ball goes quietly, the next spawn is a normal tank
+        body.adminSpec = false;
+        body.adminSpecHidden = false;
+        body.carriedGems = 0;
+        body.dontSendDeathMessage = true;
+        body.deathCause = 'despawn';
+        body.godmode = false;
+        try { body.kill(); } catch (e) { /* */ }
+        say('Spectator off. Respawn to play.');
+        return true;
+    }
+    try { if ((body.carriedGems | 0) > 0) require('../../game/terrain/gems.js').dropGemsOnDeath(body, []); } catch (e) { /* */ }
+    body.carriedGems = 0;
+    body.define('adminSpectator');
+    body.adminSpec = true;
+    body.adminSpecHidden = true;
+    body.adminSpecZoom = 1;
+    body.noclip = true;
+    body.godmode = true;
+    body.invuln = false;
+    body.passive = true;
+    body.FOV = 1.6 * SPEC_FOV[1];
+    try { body.refreshBodyAttributes(); } catch (e) { /* */ }
+    say('Spectator on. You are hidden. Command shows or hides you, the wheel zooms, $spec again to stop.');
+    return true;
+}
+// SPI: show or hide the spectator; SPZ: zoom one step (dir -1 in, +1 out)
+function adminSpecInvis(socket) {
+    const body = socket && socket.player && socket.player.body;
+    if (!body || !body.adminSpec) return;
+    const t = Date.now();
+    if (t - (socket._specToggleAt || 0) < 250) return;
+    socket._specToggleAt = t;
+    body.adminSpecHidden = !body.adminSpecHidden;
+    try { socket.talk('m', 2500, body.adminSpecHidden ? 'Hidden. Nobody can see you.' : 'Visible. Everyone can see you.'); } catch (e) { /* */ }
+}
+function adminSpecZoom(socket, dir) {
+    const body = socket && socket.player && socket.player.body;
+    if (!body || !body.adminSpec) return;
+    const t = Date.now();
+    if (t - (socket._specZoomAt || 0) < 90) return;
+    socket._specZoomAt = t;
+    body.adminSpecZoom = Math.max(0, Math.min(SPEC_FOV.length - 1, (body.adminSpecZoom | 0) + (dir > 0 ? 1 : -1)));
+    body.FOV = 1.6 * SPEC_FOV[body.adminSpecZoom];
+    try { body.refreshBodyAttributes(); } catch (e) { /* */ }
+}
+
 // Chat filter (sockets.js chatLoop): hide what `speaker` says from `viewer`.
 function chatHidden(viewer, speaker) {
     const b = viewer && viewer.account && viewer.account.blocked;
@@ -396,6 +462,6 @@ function socketOf(userId, except = null) {
 }
 
 module.exports = {
-    init, active, rankedOn, debugOn, onConnect, onGuestId, resolveName, adminBroadcast, applyIdentity, sendAccount, afterDeathPacket,
+    init, active, rankedOn, debugOn, onConnect, onGuestId, resolveName, adminBroadcast, adminSpec, adminSpecInvis, adminSpecZoom, applyIdentity, sendAccount, afterDeathPacket,
     du, tickDU, onClose, kickOut, chatHidden, sendStatus, loadBlocks, socketOf,
 };
