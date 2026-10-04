@@ -165,6 +165,21 @@ function capChecks() {
     clearAll();
 }
 
+test('per hit: a drone or a big shell takes a bigger bite than a small bullet', () => {
+    const boss = makeBoss();
+    const pool = guard.poolOf(boss);
+    const now = 1e12;
+    assert.ok(Math.abs(guard.capHit(boss, { id: 1, type: 'bullet', size: 6 }, pool, now) - pool * guard.HIT_SHARE) < 1e-6, 'small bullet');
+    assert.ok(Math.abs(guard.capHit(boss, { id: 2, type: 'drone', size: 30 }, pool, now + 1) - pool * guard.DRONE_HIT_SHARE) < 1e-6, 'drone');
+    assert.ok(Math.abs(guard.capHit(boss, { id: 3, type: 'bullet', size: 24 }, pool, now + 2) - pool * guard.BIG_SHOT_HIT_SHARE) < 1e-6, 'big shell');
+    assert.ok(Math.abs(guard.capHit(boss, { id: 4, type: 'minion', size: 20 }, pool, now + 3) - pool * guard.HIT_SHARE) < 1e-6, 'minions keep the bullet share');
+    // a maxed Big Cheese gets a boss down in real time now
+    const cheese = ttk('bigCheese', { limit: 60 });
+    log('     big cheese ttk s: ' + cheese.secs.toFixed(1));
+    assert.ok(cheese.dead && cheese.secs < 25, 'big cheese took ' + cheese.secs + ' s');
+    clearAll();
+});
+
 test('default: no per-second cap, only the per-hit one', () => {
     const boss = makeBoss();
     const pool = guard.poolOf(boss);

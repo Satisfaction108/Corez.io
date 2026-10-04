@@ -157,6 +157,21 @@ test('countdown: zero minutes starts right away (after the reset deaths)', () =>
     assert.equal(royale.staging(), false);
 });
 
+test('bots off: the staged raid runs humans only, the next one fills again', () => {
+    spawnTank(0, 0);
+    const t0 = Date.now();
+    royale.beginStaging(0, { bots: false });
+    const realNow = Date.now;
+    try {
+        Date.now = () => t0 + 100; royale.tick();
+        Date.now = () => t0 + 1500; royale.tick();
+    } finally { Date.now = realNow; }
+    assert.equal(royale.staging(), false, 'started');
+    const b = bot(300, 0);
+    { const rn = Date.now, t1 = rn() + 50; try { Date.now = () => t1; royale.tick(); } finally { Date.now = rn; } }
+    assert.ok(b.isDead(), 'a bot in this raid is sent away');
+});
+
 (async () => {
     let failed = 0;
     for (const t of tests) {

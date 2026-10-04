@@ -37,6 +37,14 @@
 'use strict';
 
 const HIT_SHARE = 0.0175;
+// A drone lands far fewer hits than a stream of bullets (the boss's hull
+// keeps killing it), and a huge shell lands one hit where a gun lands ten,
+// so each may take a bigger bite: Big Cheese's one drone and an
+// Annihilator's shells were capped to a small bullet's share and did next to
+// nothing. Minions keep the bullet share (they press and shoot all along).
+const DRONE_HIT_SHARE = 0.06;
+const BIG_SHOT_HIT_SHARE = 0.045;
+const BIG_SHOT_SIZE = 16;
 const TANK_SHARE_S = 0.028;
 const ALL_SHARE_S = 0.075;
 // a second of game time: 30 ticks (wall clock only outside the game loop)
@@ -77,7 +85,11 @@ function capHit(boss, src, amount, now) {
     // the tutorial's practice boss is meant to drop in a few seconds
     if (!enabled || boss.isTutorialBot) return note(boss, root0, amount);
     const pool = poolOf(boss);
-    let dmg = Math.min(amount, pool * HIT_SHARE);
+    const share = !src ? HIT_SHARE
+        : src.type === 'drone' ? DRONE_HIT_SHARE
+        : src.type === 'bullet' && (src.size || 0) >= BIG_SHOT_SIZE ? BIG_SHOT_HIT_SHARE
+        : HIT_SHARE;
+    let dmg = Math.min(amount, pool * share);
     if (!rateCap) return note(boss, root0, dmg);
     const ticks = now == null && global.gameTick != null;
     if (now == null) now = ticks ? global.gameTick : Date.now();
@@ -192,7 +204,7 @@ function regenGate(boss, normal, now = Date.now()) {
 }
 
 module.exports = {
-    HIT_SHARE, TANK_SHARE_S, ALL_SHARE_S, FIGHT_MS, NEWBIE_DMG_MIN, ATTACK_MS,
+    HIT_SHARE, DRONE_HIT_SHARE, BIG_SHOT_HIT_SHARE, BIG_SHOT_SIZE, TANK_SHARE_S, ALL_SHARE_S, FIGHT_MS, NEWBIE_DMG_MIN, ATTACK_MS,
     capHit, regenGate, setEnabled, isEnabled, setRateCap, poolOf, angerOf, ANGER_AT, ANGER_FULL, ANGER_MIN,
     setSpare, newnessOf, intoPlayer, aimPenalty, pickTarget, dropNewbieLock,
 };

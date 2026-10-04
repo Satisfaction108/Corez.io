@@ -1427,6 +1427,15 @@ function spawnRaidBot(back = null) {
 let idleSince = 0;
 function fillBots() {
     const t = now();
+    // a Raid Night started with bots off: none in this raid
+    if (botsOffRaid && botsOffRaid === raidId) {
+        for (const b of (global.gameManager.gameHandler?.bots || []).slice()) {
+            if (!b || b.isDead?.()) continue;
+            b.carriedGems = 0; b.dontSendDeathMessage = true; b.deathCause = "despawn";
+            try { b.invuln = false; b.kill(); } catch { /* */ }
+        }
+        return;
+    }
     // an empty server does not need a populated raid
     if (!connectedClients().length) {
         if (!idleSince) idleSince = t;
@@ -2928,6 +2937,8 @@ function humansPlayed(endAt) {
 let stagingUntil = 0, stagingSaid = -1;
 let stageWipeAt = 0;            // the raid board empties once the reset deaths have gone through
 let stageGoAt = 0;              // the start: everyone went down again, the raid begins at this
+let stageBots = true;           // /raidreset bots:off: the staged raid runs humans only
+let botsOffRaid = 0;            // the raidId that runs without bots
 const STAGE_DOWN_MS = 1200;
 let stageLobby = null;          // { x, y, r } the little circle everyone waits in
 const STAGE_LOBBY_R = 430;
@@ -2956,20 +2967,28 @@ function intoStageLobby(body) {
     const L = stageLobby;
     if (!L) return;
     const dx = body.x - L.x, dy = body.y - L.y, d = Math.hypot(dx, dy);
-    if (d <= L.r - 40) return;
-    let x, y;
     if (d > L.r + 250) {
         // just spawned somewhere else: drop in somewhere inside
         const a = Math.random() * Math.PI * 2, rr = L.r * 0.7 * Math.sqrt(Math.random());
-        x = L.x + Math.cos(a) * rr; y = L.y + Math.sin(a) * rr;
-    } else {
-        // walked to the edge: the fence holds
-        x = L.x + dx / d * (L.r - 45); y = L.y + dy / d * (L.r - 45);
+        let x = L.x + Math.cos(a) * rr, y = L.y + Math.sin(a) * rr;
+        const g = global.gameManager.terrainGrid;
+        if (g && g.pointInRock && g.pointInRock(x, y)) { try { const o = openGroundNear(g, x, y); x = o.x; y = o.y; } catch { /* */ } }
+        moveTo(body, x, y);
+        body.velocity.x = 0; body.velocity.y = 0;
+        return;
     }
-    const g = global.gameManager.terrainGrid;
-    if (g && g.pointInRock && g.pointInRock(x, y)) { try { const o = openGroundNear(g, x, y); x = o.x; y = o.y; } catch { /* */ } }
-    moveTo(body, x, y);
-    body.velocity.x = 0; body.velocity.y = 0;
+    // the fence: a smooth wall. Only the outward part of the motion stops,
+    // so a tank pressing on it just slides along, no bounce, no snap back.
+    const R = L.r - 20;
+    if (d <= R - 30 || !(d > 0)) return;
+    const ux = dx / d, uy = dy / d;
+    const vOut = body.velocity.x * ux + body.velocity.y * uy;
+    if (vOut > 0) { body.velocity.x -= vOut * ux; body.velocity.y -= vOut * uy; }
+    if (body.accel) {
+        const aOut = body.accel.x * ux + body.accel.y * uy;
+        if (aOut > 0) { body.accel.x -= aOut * ux; body.accel.y -= aOut * uy; }
+    }
+    if (d > R) { body.x = L.x + ux * R; body.y = L.y + uy * R; }
 }
 // Everyone goes down at once, the raid-end way: nothing drops, no kill, the
 // ranked life settles as usual, and they come back fresh (score 0, base size).
@@ -2994,8 +3013,9 @@ function holdForStaging(body) {
     if (body.socket._stageBank == null) body.socket._stageBank = body.socket.gemBanked | 0;
     try { intoStageLobby(body); } catch (e) { guardLog('stage lobby move', e); }
 }
-function beginStaging(ms) {
+function beginStaging(ms, opts = {}) {
     ms = Math.max(0, Math.min(30 * 60_000, +ms || 0));
+    stageBots = opts.bots !== false;
     // a server that never started a raid would start one mid-wait otherwise
     if (!raidId) startRaid(true);
     raidEnding = false;
@@ -3058,6 +3078,8 @@ function endStaging() {
     }
     setToastAndSay("The raid is on! Good luck.", 5000);
     restartQuietly(true);
+    // humans only, for this raid (the next one fills with bots as usual)
+    botsOffRaid = stageBots ? 0 : raidId;
 }
 
 // The raid ran out with no one to watch it end: the same reset endRaid does

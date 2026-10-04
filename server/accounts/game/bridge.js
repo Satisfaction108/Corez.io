@@ -89,7 +89,7 @@ function init(socketManager) {
             let until = 0, players = 0;
             try {
                 const dr = require('../../game/gamemodes/scripts/dig_royale.js');
-                until = dr.beginStaging(msg.ms);
+                until = dr.beginStaging(msg.ms, { bots: msg.bots !== false });
                 players = (manager && manager.clients ? manager.clients.filter(c => c && !c.terminated).length : 0);
             } catch (e) { console.error('[accounts] raid reset failed: ' + ((e && e.stack) || e)); }
             try { accounts.bus.toMain({ t: 'raidResetDone', reqId: msg.reqId, until, players, duos: !!Config.royale_duos }); } catch (e) { /* */ }
