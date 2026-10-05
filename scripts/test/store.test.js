@@ -78,7 +78,9 @@ test('catalog: unique ids/nids, cats, prices from the plan, colour stops readabl
     assert.equal(price('sk_hazard_stripes'), 35000);
     assert.equal(price('sk_molten_core'), 500000);
     assert.deepEqual(C.byId('ns_sunset').style.stops, ['#ffb347', '#ff6a5c', '#c850c0']);
-    assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle').length, 40);
+    // 39 for sale, the invite reward, and 4 achievement rewards (shared/achievements.js `item`)
+    assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle').length, 44);
+    assert.deepEqual(C.ITEMS.filter(i => i.earn).map(i => i.id), ['ns_corebreaker', 'ns_crownkeeper', 'ns_bedrock', 'ns_olive']);
     assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle' && !i.exclusive).length, 39);
     assert.equal(C.ITEMS.filter(i => i.cat === 'skin').length, 40);
     // every rarity is stocked in both categories, and wire numbers stay in range

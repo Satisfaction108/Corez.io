@@ -70,6 +70,9 @@ function profileOf(row, viewerId, now = Date.now()) {
         achievements: h().all('SELECT achievement_id AS id, unlocked_at AS unlockedAt FROM user_achievements WHERE user_id = ? AND unlocked_at IS NOT NULL ORDER BY unlocked_at',
             row.id),
         stats: statsOf(row.id),
+        // a raid won in the last 24 h (the Crown Contest), and wins in a row
+        champUntil: (() => { try { return rankStore.championUntil(row.id, now); } catch (e) { return 0; } })(),
+        winStreak: (() => { try { return require('../streaks').view(row.id, now).win.current | 0; } catch (e) { return 0; } })(),
         nameStyleNid: cos.nameStyleNid, skinNid: cos.skinNid, nameColor: cos.nameColor,
         relation: rel,
         friendsSince: f ? f.created_at : null,

@@ -237,6 +237,21 @@
             { kind: 'scroll', stops: ['#ff8a3d', '#ffd166', '#fff1c9', '#ff5fa2', '#c77dff', '#ff5fa2', '#ff8a3d'], speed: 0.55,
               shade: 0.1, rim: '#2e0d1f', glint: true, glyph: '✦', glyphColor: '#ffd166' },
             { exclusive: true }),
+        // achievement rewards (shared/achievements.js `item`): never sold,
+        // granted with the achievement (`earn` names it for the Locker)
+        ns(41, 'ns_corebreaker', 'Corebreaker', 'legendary', 0,
+            { kind: 'scroll', stops: ['#ff6a3d', '#ffd166', '#fff3d6', '#ffd166', '#ff6a3d'], speed: 0.45, shade: 0.12,
+              rim: '#3a0d00', halo: '#ff6a3d', glyph: '⬢', glyphColor: '#ffd166' },
+            { exclusive: true, earn: 'core_break' }),
+        ns(42, 'ns_crownkeeper', 'Crown Keeper', 'epic', 0,
+            { kind: 'vertical', stops: ['#fff6c2', '#ffd84d', '#e0a516'], rim: '#3d2600', halo: '#ffd84d', glyph: '♛', glyphColor: '#ffe680' },
+            { exclusive: true, earn: 'crown_win' }),
+        ns(43, 'ns_bedrock', 'Bedrock', 'rare', 0,
+            { kind: 'split', stops: ['#d6d0c8', '#8f877e'], shade: 0.18, rim: '#1f1b17' },
+            { exclusive: true, earn: 'rock_bottom' }),
+        ns(44, 'ns_olive', 'Olive Branch', 'epic', 0,
+            { kind: 'vertical', stops: ['#f2ffe0', '#b9e07a', '#7fae45'], rim: '#1c2e08', halo: '#b9e07a' },
+            { exclusive: true, earn: 'pacifist' }),
 
         // ---- skins (nid 101..199) ----
         sk(101, 'sk_hazard_stripes', 'Hazard Stripes', 'common', 35,

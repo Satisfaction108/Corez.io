@@ -43,6 +43,7 @@ const banks = require('./banks');
 const saves = require('./saves');
 const retention = require('./retention');
 const push = require('./push');
+const funnel = require('./funnel');
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -62,6 +63,7 @@ require('./routes/resetPage').register(router);
 require('./routes/invite').register(router);
 require('./routes/feedback').register(router);
 require('./routes/retention').register(router);
+require('./routes/funnel').register(router);
 const moveRoutes = require('./routes/move');
 moveRoutes.register(router);
 const partyRoutes = require('./routes/party');
@@ -92,6 +94,8 @@ function sweep(now = Date.now()) {
             saves: saves.sweep(now),
             // a browser that hasn't been back in 4 months doesn't want pings
             push: d.run('DELETE FROM push_subs WHERE seen_at <= ?', now - 120 * DAY).changes,
+            // the visit funnel only needs recent weeks
+            funnel: funnel.sweep(now),
         }));
         d.exec('PRAGMA optimize');
         return r;
@@ -312,7 +316,7 @@ async function dispatch(req, res, pathname, query) {
 // A fixed list, read-only, from <repo>/shared; anything else under /shared/
 // is a 404. Guests need them too, so they are served with accounts off.
 const SHARED_DIR = path.join(__dirname, '..', '..', 'shared');
-const SHARED_FILES = new Set(['ranks.js', 'cosmetics.js', 'events.js', 'profanity.js', 'daily.js']);
+const SHARED_FILES = new Set(['ranks.js', 'cosmetics.js', 'events.js', 'profanity.js', 'daily.js', 'rockBiomes.js', 'achievements.js']);
 const sharedCache = new Map();   // name -> {mtimeMs, size, body, etag}
 
 function serveShared(req, res, pathname) {

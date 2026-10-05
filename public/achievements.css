@@ -1,0 +1,122 @@
+/* The Achievements panel (client/account/achievementsPanel.js): a modal
+   with the count, category chips and a grid of medal cards. Loaded by the
+   panel itself the first time it opens. Uses the home.css tokens. */
+
+.dw-modal.ach-modal { width: min(820px, calc(100vw - 24px)); padding: 16px 18px 18px; display: flex; flex-direction: column; overflow: hidden; }
+.ach-modal .dw-modal-h { display: none; }
+
+.ach-top { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.ach-top-medal {
+    flex: none; width: 52px; height: 52px; border-radius: 50%; box-sizing: border-box;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--gold); color: var(--ink); border: 1px solid var(--line);
+    box-shadow: inset 0 -4px 0 rgba(0,0,0,.2), 0 3px 0 var(--drop); transform: rotate(-6deg);
+}
+.ach-top-medal .dw-ic { width: 28px; height: 28px; }
+.ach-top-txt { flex: 1 1 auto; min-width: 0; }
+.ach-title { color: var(--heading); font: 400 26px/1.05 var(--display); letter-spacing: .01em; }
+.ach-sub { color: var(--text2); font: 700 12px var(--ui); margin-top: 3px; }
+.ach-bar { height: 8px; border-radius: 6px; background: var(--well); border: 1px solid var(--line); overflow: hidden; margin-top: 7px; }
+.ach-bar > i { display: block; height: 100%; width: 0; background: var(--gold); border-radius: 6px; transition: width .5s cubic-bezier(.2,.8,.2,1); }
+.ach-close {
+    flex: none; align-self: flex-start; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--face); box-shadow: inset 0 -3px 0 var(--face-dk); color: var(--text); font: 700 15px var(--ui); cursor: pointer;
+}
+.ach-close:active { transform: translateY(2px); box-shadow: inset 0 -1px 0 var(--face-dk); }
+
+.ach-guest {
+    display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 9px 12px;
+    border-radius: 11px; border: 1px solid var(--line); background: rgba(242,184,60,.12); color: var(--text);
+    font: 600 13px/1.35 var(--ui);
+}
+.ach-guest b { color: var(--gold); }
+.ach-guest span { flex: 1 1 auto; }
+.ach-guest button {
+    flex: none; padding: 7px 13px 9px; border-radius: 10px; border: 1px solid var(--line); cursor: pointer;
+    background: var(--play); box-shadow: inset 0 -3px 0 var(--play-dk); color: #fff; font: 400 15px var(--display); letter-spacing: .02em;
+}
+
+.ach-chips { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 10px; margin: 0 -2px; scrollbar-width: none; flex: none; }
+.ach-chips::-webkit-scrollbar { display: none; }
+.ach-chip {
+    flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px 7px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text2); font: 700 12.5px var(--ui); cursor: pointer; white-space: nowrap;
+}
+.ach-chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--cc); }
+.ach-chip em { font-style: normal; opacity: .75; font-weight: 600; }
+.ach-chip:hover { color: var(--heading); }
+.ach-chip.on { background: var(--surface2); color: var(--heading); border-color: var(--cc, var(--accent)); box-shadow: inset 0 -2px 0 var(--cc, var(--accent)); }
+
+.ach-scroll { overflow-y: auto; min-height: 0; flex: 1 1 auto; margin: 0 -6px; padding: 2px 6px 4px; }
+.ach-scroll::-webkit-scrollbar { width: 4px; }
+.ach-scroll::-webkit-scrollbar-thumb { background: var(--scroll-t); border-radius: 2px; }
+.ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 9px; }
+.ach-cat-h { grid-column: 1 / -1; display: flex; align-items: baseline; justify-content: space-between; margin: 8px 2px 0; color: var(--heading); font: 400 18px var(--display); letter-spacing: .02em; }
+.ach-cat-h:first-child { margin-top: 0; }
+.ach-cat-h small { color: var(--text2); font: 700 11.5px var(--ui); letter-spacing: 0; }
+
+.ach-card {
+    position: relative; display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 4px 11px; align-items: start;
+    padding: 10px 11px 10px 10px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--line);
+    box-shadow: inset 0 1px 0 var(--bevel);
+}
+.ach-card:not(.on) { background: transparent; border-style: dashed; border-color: var(--border); box-shadow: none; }
+.ach-card.new::after {
+    content: 'NEW'; position: absolute; top: -7px; right: 9px; padding: 1px 6px 2px; border-radius: 6px;
+    background: var(--accent); color: #fff; font: 700 10px var(--ui); letter-spacing: .06em; border: 1px solid var(--line);
+}
+.ach-medal {
+    position: relative; width: 46px; height: 46px; border-radius: 50%; box-sizing: border-box;
+    display: inline-flex; align-items: center; justify-content: center; grid-row: span 3;
+    border: 3px dashed var(--border); color: var(--text2);
+}
+.ach-card.on .ach-medal { border: 1px solid var(--line); background: var(--ac); color: var(--ink); box-shadow: inset 0 -4px 0 rgba(0,0,0,.2), 0 3px 0 var(--drop); }
+.ach-card.on:nth-child(3n) .ach-medal { transform: rotate(-6deg); }
+.ach-card.on:nth-child(4n+1) .ach-medal { transform: rotate(4deg); }
+.ach-medal .dw-ic { width: 24px; height: 24px; }
+.ach-card:not(.on) .ach-medal .dw-ic { opacity: .5; }
+.ach-tier {
+    position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); padding: 0 5px 1px; border-radius: 5px;
+    background: var(--ink); color: var(--gold); font: 700 10px/14px var(--ui); letter-spacing: .04em; white-space: nowrap;
+}
+.ach-card:not(.on) .ach-tier { color: var(--text2); }
+.ach-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; color: var(--heading); font: 700 14.5px/1.2 var(--ui); }
+.ach-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ach-card:not(.on) .ach-name { color: var(--text); }
+.ach-card.secret:not(.on) .ach-name { color: var(--text2); letter-spacing: .12em; }
+.ach-desc { color: var(--text2); font: 500 12px/1.35 var(--ui); }
+.ach-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 2px; color: var(--text2); font: 600 11px var(--ui); }
+.ach-reward { padding: 1px 6px 2px; border-radius: 5px; background: rgba(63,207,122,.14); color: var(--emerald); font-weight: 700; }
+.ach-reward.item { background: rgba(176,107,255,.16); color: #c9a4ff; }
+.ach-rare { white-space: nowrap; }
+.ach-rare.rare { color: var(--gold); }
+.ach-prog { grid-column: 2; display: flex; align-items: center; gap: 7px; margin-top: 2px; }
+.ach-prog .ach-bar { flex: 1 1 auto; height: 6px; margin: 0; }
+.ach-prog .ach-bar > i { background: var(--ac, var(--gold)); }
+.ach-prog b { flex: none; color: var(--text); font: 700 11px var(--ui); font-variant-numeric: tabular-nums; }
+
+.ach-empty { padding: 26px 8px; text-align: center; color: var(--text2); font: 600 13px var(--ui); }
+
+/* the home rail button: a little dot while there are new ones */
+#homeAchBtn { position: relative; }
+#homeAchBtn.has-new::after {
+    content: ''; position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent); border: 2px solid var(--ink);
+}
+
+/* the profile's Medals section */
+.pf-ach-more {
+    display: inline-flex; align-items: center; justify-content: center; height: 46px; padding: 0 14px 3px; border-radius: 23px;
+    border: 1px solid var(--line); background: var(--face); box-shadow: inset 0 -3px 0 var(--face-dk); color: var(--text); font: 700 13px var(--ui); cursor: pointer;
+}
+
+@media (max-width: 560px) {
+    .dw-modal.ach-modal { padding: 12px 12px 14px; }
+    .ach-title { font-size: 22px; }
+    .ach-top-medal { width: 42px; height: 42px; }
+    .ach-grid { grid-template-columns: 1fr; gap: 8px; }
+    .ach-guest { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ach-bar > i { transition: none; }
+}

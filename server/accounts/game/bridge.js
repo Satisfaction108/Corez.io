@@ -211,6 +211,13 @@ function onGuestId(socket) {
         if (moved > 0) {
             try { socket.talk('m', 8000, 'Your guest progress came with you: ' + moved.toLocaleString('en-US') + ' banked gems are in your account now.'); } catch (e) { /* */ }
         }
+        // and the achievements it earned, rewards paid now
+        const ach = require('./achHooks').adoptGuest(socket, socket.guestId, socket.account.id);
+        if (ach && ach.moved.length) {
+            const n = ach.moved.length;
+            const dust = ach.rewardMilli / 1000;
+            try { socket.talk('m', 8000, n + (n === 1 ? ' achievement' : ' achievements') + ' came with you' + (dust > 0 ? ': +' + (+dust.toFixed(2)) + ' gemdust.' : '.')); } catch (e) { /* */ }
+        }
     } else guests.seen(socket.guestId, Date.now(), socket.guestSource || null);
 }
 
@@ -360,8 +367,12 @@ function applyIdentity(socket, body) {
     body.skinNid = 0;
     body.customNameColor = null;
     body.sidekick = null;
+    // the Core Champion crown by the name: this connection's own win (guests
+    // too), or an account's win in the last 24 h
+    body.champUntil = socket._champUntil || 0;
     socket._rkPending = null;
     if (!socket.account || !active()) return;
+    try { body.champUntil = Math.max(body.champUntil, rankStore.championUntil(socket.account.id)); } catch (e) { /* */ }
     try {
         const row = accounts.users.byId(socket.account.id);
         if (!row) return;
@@ -435,6 +446,8 @@ function afterDeathPacket(socket) {
 
 function onClose(socket) {
     duQueue.delete(socket);
+    // achievements (accounts and guests): counters written now
+    try { require('./achHooks').onClose(socket); } catch (e) { /* */ }
     socket._rkPending = null;
     if (socket.account && !socket._presenceLeft) {
         socket._presenceLeft = true;

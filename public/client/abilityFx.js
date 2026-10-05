@@ -560,10 +560,12 @@ export function drawFloor(c, px, py, ratio) {
         const sx = ratio * p.x - px + cx, sy = ratio * p.y - py + cy;
         const R = 62 * ratio;
         if (sx < -R * 2 || sy < -R * 2 || sx > global.screenWidth + R * 2 || sy > global.screenHeight + R * 2) continue;
-        const pop = Math.min(1, age / 180) * (0.85 + 0.15 * gone);
         // replaced by a newer pad: it shrinks and fades instead of vanishing
+        // (worked out before pop, which uses it: the other order threw every
+        // frame and no pad was ever drawn)
         const gone = p.goneAt ? 1 - Math.min(1, (now - p.goneAt) / 400) : 1;
         if (gone <= 0) { pads.splice(i, 1); continue; }
+        const pop = Math.min(1, age / 180) * (0.85 + 0.15 * gone);
         const fade = Math.min(1, (p.b - age) / 600) * gone;
         const blink = p.b - age < 2000 && (now % 400) < 200 ? 0.55 : 1;
         c.save();

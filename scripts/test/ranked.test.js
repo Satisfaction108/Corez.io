@@ -1190,7 +1190,8 @@ test('e2e: account socket, dust, death RK, resume, fare, disconnect, raid end (l
     const port = await freePort();
     const origin = 'http://localhost:' + port;
     fs.mkdirSync(E2E_DATA_DIR, { recursive: true });
-    const env = { ...process.env, ROYALE_DEBUG: '1', ACCOUNTS_ALLOW_DEBUG: '1', ROYALE_RESUME_MS: '5000',
+    // achievements off: their dust would land between the exact balances below
+    const env = { ...process.env, ROYALE_DEBUG: '1', ACCOUNTS_ALLOW_DEBUG: '1', ROYALE_RESUME_MS: '5000', ACHIEVEMENTS: 'off',
         SESSION_SECRET: SECRET, DATA_DIR: E2E_DATA_DIR, PUBLIC_ORIGIN: origin, PUBLIC_HOST: 'localhost:' + port,
         TRUSTED_PROXIES: '127.0.0.1', SINGLE_PROCESS: 'true', PORT: String(port), BR_PORT: String(port), TUT_PORT: String(port + 2), DUO_PORT: String(port + 4) };
     delete env.NODE_ENV;

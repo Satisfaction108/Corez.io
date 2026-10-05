@@ -592,7 +592,7 @@ test('migration v12: from v11 the dust ledger is kept, the backup is written, da
     raw.run("INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, ref, created_at) VALUES (1, 2500, 2500, 'quest', 'q', 1)");
     assert.throws(() => raw.run("INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, created_at) VALUES (1, 1, 2501, 'daily', 2)"), /CHECK/);
     const r = migrations.apply(raw, { backupDir: path.join(dir, 'backups') });
-    assert.deepEqual(r.applied, [12]);
+    assert.deepEqual(r.applied, migrations.MIGRATIONS.filter(m => m.version >= 12).map(m => m.version));
     assert.equal(raw.userVersion(), migrations.latestVersion());
     assert.match(path.basename(r.backup), /^pre-migrate-v12-.+\.db$/);
     assert.ok(fs.existsSync(r.backup));

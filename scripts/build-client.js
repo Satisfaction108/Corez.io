@@ -58,6 +58,11 @@ const HOT = new Set([
     "client/raidFinale.js",
     "client/stormFx.js",
     "client/raidHeat.js",
+    "client/crowns.js",
+    "client/crownArt.js",
+    "client/crownsLogic.js",
+    "client/raidPerks.js",
+    "client/raidPerksLogic.js",
     "client/juice.js",
     "client/juiceMath.js",
     "client/hitFx.js",
@@ -70,10 +75,16 @@ const HOT = new Set([
     "client/sidekicks.js",
     "client/sidekickArt.js",
     "client/sidekickMath.js",
+    "client/achievementCard.js",
+    "client/achievementsLogic.js",
+    "client/account/achievements.js",
     "client/account/cosmetics.js",
     "client/account/dustHud.js",
     "client/account/gameToasts.js",
     "client/account/ingameChat.js",
+    // not per frame, but the first script the menu runs (Play before the
+    // client loads): keep it small, the strong profile makes files ~4x bigger
+    "client/funnel.js",
 ]);
 
 const base = {

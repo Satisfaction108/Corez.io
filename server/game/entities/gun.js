@@ -236,8 +236,11 @@ class Gun extends EventEmitter {
             if (this.cycleTimer < 1) {
                 // overdrive core: +30% reload for its 20s window
                 // and Adrenaline (abilities.js rushUntil) on top
+                // and Overclock (raidPerks.js), read off the tank at the root
+                const pkfx = this.body.master && this.body.master._pkfx;
                 const odBoost = ((this.body.overdriveUntil && Date.now() < this.body.overdriveUntil) ? 1.3 : 1) *
-                    ((this.body.rushUntil && Date.now() < this.body.rushUntil) ? 1.6 : 1);
+                    ((this.body.rushUntil && Date.now() < this.body.rushUntil) ? 1.6 : 1) *
+                    (pkfx ? pkfx.reload || 1 : 1);
                 this.cycleTimer += odBoost / (this.settings.reload * speed * (this.calculator == "necro" || this.calculator == "fixed reload" ? 1 : sk.rld));
             }
         }

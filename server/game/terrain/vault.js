@@ -133,6 +133,10 @@ function refuse(body, msg) {
 function depositFor(body, amount) {
     if (!body || body.isDead()) return false;
     if (!body.vaultOnPad) return refuse(body, "Get onto the vault to bank.");
+    // the Crown Contest's sudden death: a crown can't bank
+    let crownNo = null;
+    try { crownNo = require('./crowns.js').bankBlocked(body); } catch { /* */ }
+    if (crownNo) return refuse(body, crownNo);
     amount = Math.floor(amount);
     const carried = body.carriedGems | 0;
     if (carried < MIN_DEPOSIT) return refuse(body, "You need at least " + MIN_DEPOSIT + " gems to bank.");
@@ -330,10 +334,13 @@ function tick(actors, dtMs) {
 
         const d = body.vaultDeposit;
         if (!d) continue;
+        // sudden death caught a crown mid-deposit (crowns.js stops it too)
+        if (body.crownLocked) { cancelDeposit(body, !!body.socket); continue; }
 
         // storm damage doesn't interrupt a deposit; other damage does
         if (body.health.amount < d.lastHealth - 1e-3 && !body._inStorm) {
             cancelDeposit(body);
+            if (body.socket && global.royaleAch) global.royaleAch.onDepositCut(body);
             continue;
         }
         d.lastHealth = body.health.amount;
@@ -374,6 +381,7 @@ function tick(actors, dtMs) {
         if (done) {
             const padDone = pad;
             body.vaultDeposit = null;
+            if (body.socket && global.royaleAch) global.royaleAch.onDeposit(body, d.total);
             releasePad(body);
             body.carriedGems = body.carriedGems | 0;
             const banked = body.socket ? (body.socket.gemBanked || 0) : (body.botBanked || 0);

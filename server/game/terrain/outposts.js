@@ -481,6 +481,9 @@ function requestDeposit(socket, amount) {
         try { body.sendMessage(msg); } catch { /* */ }
     };
     if (!body.outpostOnPad) return no("Get onto the base to bank.");
+    let crownNo = null;
+    try { crownNo = require('./crowns.js').bankBlocked(body); } catch { /* */ }
+    if (crownNo) return no(crownNo);
     amount = Math.floor(amount);
     const carried = body.carriedGems | 0;
     if (carried < MIN_DEPOSIT) return no("You need at least " + MIN_DEPOSIT + " gems to bank.");

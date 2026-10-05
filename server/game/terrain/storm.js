@@ -62,7 +62,12 @@ const FINAL_LOCK_MS = 30 * 1000;
 // dig_royale sets the live value from its FIRST_MINUTES block (setLockMs)
 let lockOverride = 0;
 function setLockMs(ms) { lockOverride = Math.max(0, +ms || 0); }
+// The Crown Contest (crowns.js) keeps everyone in the last storm: no lock
+// there at all. dig_royale passes a check, so a flag flip needs no restart.
+let noFinalLock = null;
+function setNoFinalLock(fn) { noFinalLock = typeof fn === 'function' ? fn : null; }
 function lockMs() {
+    if (noFinalLock && isFinal()) { try { if (noFinalLock()) return 0; } catch { /* */ } }
     const base = isFinal() ? Math.max(FINAL_LOCK_MS, lockOverride || LOCK_MS) : (lockOverride || LOCK_MS);
     return Math.min(base, holdMs() * 0.75);
 }
@@ -321,4 +326,4 @@ function tickDamage(now = Date.now()) {
     }
 }
 
-module.exports = { resetAt, start, stop, setLockMs, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT, STAGE_MULT, stageMult };
+module.exports = { resetAt, start, stop, setLockMs, setNoFinalLock, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT, STAGE_MULT, stageMult };

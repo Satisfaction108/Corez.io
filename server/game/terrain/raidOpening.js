@@ -46,6 +46,7 @@ function seedPits() {
             rock.ore = ore;
             try { rock.deposits = grid._buildDeposits(rock); } catch { rock.deposits = null; }
             rock.maxHealth = Math.max(10, grid.plainRockHealth * (ORE_HP[ore] || 1) * SOFT);
+            rock.soft = true;   // the old flat gem pay, whatever the biome
             rock.health = rock.maxHealth;
             grid.rockEvents.push({ k: rock.k, h: 1, d: 0, ore, bl: 1 });
             n++;

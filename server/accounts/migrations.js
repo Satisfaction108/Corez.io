@@ -654,6 +654,82 @@ ALTER TABLE dust_ledger_v12 RENAME TO dust_ledger;
 CREATE INDEX dust_ledger_user ON dust_ledger(user_id, id);
 `;
 
+// v13: achievements for everyone (achievements.js, game/achHooks.js).
+//
+// user_achievements gains `data`: a small JSON value for the few that need
+// more than a number (the tanks tried so far). guest_achievements is the
+// same thing per guest browser, so a guest earns them too; when that browser
+// signs up, its rows move onto the new account (achievements.adoptGuest) and
+// the guest rows are deleted. Counter progress lives in rows whose id starts
+// with 'c:' (unlocked_at stays NULL); every other row is one achievement.
+// The partial indexes keep the rarity count (unlocks per achievement) cheap.
+//
+// dust_ledger gains the 'achievement' kind, rebuilt the same way as v12.
+const V13 = `
+ALTER TABLE user_achievements ADD COLUMN data TEXT;
+
+CREATE TABLE guest_achievements (
+    guest_id       TEXT    NOT NULL CHECK (length(guest_id) = 32),
+    achievement_id TEXT    NOT NULL,
+    progress       INTEGER NOT NULL DEFAULT 0,
+    unlocked_at    INTEGER,
+    data           TEXT,
+    PRIMARY KEY (guest_id, achievement_id)
+) STRICT;
+CREATE INDEX user_achievements_unlocked  ON user_achievements(achievement_id) WHERE unlocked_at IS NOT NULL;
+CREATE INDEX guest_achievements_unlocked ON guest_achievements(achievement_id) WHERE unlocked_at IS NOT NULL;
+
+CREATE TABLE dust_ledger_v13 (
+    id            INTEGER PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    delta_milli   INTEGER NOT NULL,
+    balance_milli INTEGER NOT NULL CHECK (balance_milli >= 0),
+    kind          TEXT    NOT NULL CHECK (kind IN ('gems', 'kill', 'placement', 'quest', 'purchase', 'refund', 'gift', 'admin', 'referral', 'streak_play', 'streak_win', 'daily', 'achievement', 'other')),
+    ref           TEXT,
+    created_at    INTEGER NOT NULL
+) STRICT;
+INSERT INTO dust_ledger_v13 (id, user_id, delta_milli, balance_milli, kind, ref, created_at)
+    SELECT id, user_id, delta_milli, balance_milli, kind, ref, created_at FROM dust_ledger;
+DROP TABLE dust_ledger;
+ALTER TABLE dust_ledger_v13 RENAME TO dust_ledger;
+CREATE INDEX dust_ledger_user ON dust_ledger(user_id, id);
+`;
+
+// v14: the visit funnel (funnel.js, client/funnel.js). One row per page
+// visit: the random visit id the page made, the guest browser and/or the
+// account, desktop or mobile, the site the browser first came from, whether
+// it was this browser's first visit, and how far the visit got:
+//   load_ms     the load event, ms from navigation start
+//   home_ms     the menu on screen, ms from navigation start
+//   ready_ms    Play able to start a game, ms from navigation start
+//   play_ms     ms on the menu before Play (NULL: never pressed)
+//   control_ms  the first spawn, ms from navigation start
+//   min1        1 once the visit had a minute in control
+//   left_ms     ms on the page when it closed without Play
+//   auto_start  1 when the game started itself (a first-timer on a portal)
+// No IP, no user agent. Rows go after 90 days (index.js sweep).
+const V14 = `
+CREATE TABLE funnel_visits (
+    visit_id    TEXT    PRIMARY KEY CHECK (length(visit_id) = 32),
+    guest_id    TEXT    CHECK (guest_id IS NULL OR length(guest_id) = 32),
+    user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    device      TEXT    NOT NULL CHECK (device IN ('desktop', 'mobile')),
+    source      TEXT,
+    first_visit INTEGER NOT NULL DEFAULT 0 CHECK (first_visit IN (0, 1)),
+    auto_start  INTEGER NOT NULL DEFAULT 0 CHECK (auto_start IN (0, 1)),
+    load_ms     INTEGER CHECK (load_ms IS NULL OR load_ms >= 0),
+    home_ms     INTEGER CHECK (home_ms IS NULL OR home_ms >= 0),
+    ready_ms    INTEGER CHECK (ready_ms IS NULL OR ready_ms >= 0),
+    play_ms     INTEGER CHECK (play_ms IS NULL OR play_ms >= 0),
+    control_ms  INTEGER CHECK (control_ms IS NULL OR control_ms >= 0),
+    min1        INTEGER NOT NULL DEFAULT 0 CHECK (min1 IN (0, 1)),
+    left_ms     INTEGER CHECK (left_ms IS NULL OR left_ms >= 0),
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+) STRICT;
+CREATE INDEX funnel_visits_created ON funnel_visits(created_at);
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
@@ -667,6 +743,8 @@ const MIGRATIONS = [
     { version: 10, up(db) { db.exec(V10); } },
     { version: 11, up(db) { v11(db); } },
     { version: 12, up(db) { db.exec(V12); } },
+    { version: 13, up(db) { db.exec(V13); } },
+    { version: 14, up(db) { db.exec(V14); } },
 ];
 
 function latestVersion() {

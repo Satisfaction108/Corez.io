@@ -452,6 +452,10 @@ function onRaidEnd() {
         // duos: entries carry their team's place and the number of teams
         const rows = order.length && order[0].rows ? order[0].rows : order.length;
         const top = [];
+        // the Crown Contest decided the raid: its champion (s.champWin) is
+        // the win, whatever the placement rule says
+        const contest = order.some(e => e.s && e.s.champWin);
+        let champ = null;
         order.forEach((e, i) => {
             const s = e.s;
             if (!s || !s.accountId) return;
@@ -466,9 +470,10 @@ function onRaidEnd() {
                 const played = active && a.lives > 0 && a.activeMs >= streaks.WIN_ACTIVE_MS && raidMs >= ranked.BONUS_MIN_RAID_MS;
                 const res = rankStore.applyRaidPlacement({
                     raidKey: key, userId: s.accountId, place: e.place || i + 1, rows, score: e.teamScore != null ? e.teamScore : e.score,
-                    raidMs, now: t, played, active,
+                    raidMs, now: t, played, active, contest, champ: !!s.champWin,
                 });
                 if (!res) return;
+                if (s.champWin) champ = { userId: s.accountId, score: res.score };
                 dustHooks.noteExternalCredit(s.accountId, res.bonusDustMilli, res.balanceMilli);
                 s.rankCode = codeOfSnap(res.after);
                 // an account that rejoined without a resume has an older row
@@ -481,7 +486,7 @@ function onRaidEnd() {
                 noteStreak(s.accountId, res.streak, client);
                 if (!client) return;
                 if (res.place <= 10) {
-                    const { balanceMilli, eligible, streak, ...rkp } = res;
+                    const { balanceMilli, eligible, streak, champ: _champ, ...rkp } = res;
                     client.talk('RKP', JSON.stringify(rkp));
                 }
                 if (res.rankUp) {
@@ -490,8 +495,8 @@ function onRaidEnd() {
             } catch (err) { logErr('placement', err); }
         });
         // Discord announcement of the raid's top-3 account holders (main thread)
-        if (top.length) {
-            try { accounts.bus.toMain({ t: 'raidTop', raidKey: key, top }); } catch (e) { /* */ }
+        if (top.length || champ) {
+            try { accounts.bus.toMain({ t: 'raidTop', raidKey: key, raidNo: ctx.raidId() | 0, top, champ }); } catch (e) { /* */ }
         }
     }
     try { dustHooks.flushAll(t); } catch (e) { logErr('dust flush', e); }

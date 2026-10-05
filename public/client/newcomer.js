@@ -11,6 +11,7 @@
 //              with the coach (dig and bank, upgrade, the storm).
 //   intros     stages 1-2: a one-line NEW note the first time a shop, an
 //              ability, the kit, a boss, a contract, a bounty or the Core shows.
+//              The raid perks line shows from stage 0, with the first offer.
 //   director   royale.you.nxEvent {kind, x, y, until | left, t, sub, done, r,
 //              id}: an arrival banner in the slam lane (one at a time), an
 //              arrow to the spot, a countdown note for a timed one, and a
@@ -26,6 +27,7 @@ import { gameSound } from "./sound.js";
 import * as juice from "./juice.js";
 import * as coach from "./coach.js";
 import * as L from "./newcomerLogic.js";
+import * as raidPerks from "./raidPerks.js";
 
 let A = null;
 export function init(helpers) { A = helpers; }
@@ -231,6 +233,7 @@ function introTriggers() {
     if (r.core && r.core.s === "up") out.push("core");
     if (r.you && r.you.hunt && (r.you.hunt.l | 0) > 0) out.push("hunted");
     if (r.mod && r.mod.name) out.push("twist");
+    if (raidPerks.offerUp()) out.push("perks");
     return out;
 }
 function nearestShopNear() {
@@ -239,7 +242,8 @@ function nearestShopNear() {
 }
 function intros(t) {
     if (S.intro && t > S.intro.until) S.intro = null;
-    if (S.stage < 1 || global.died) return;
+    // the first raid only gets the perks line (INTROS says which stage each starts at)
+    if (global.died) return;
     if (t - S.introAt < 250) return;
     S.introAt = t;
     // the one-time ability tour already covers the dash, ability and shop
@@ -247,7 +251,7 @@ function intros(t) {
     const keys = { ability: keyLabel("KEY_ABILITY", "Q"), kit: [keyLabel("KEY_KIT_1", "Z"), keyLabel("KEY_KIT_2", ","), keyLabel("KEY_KIT_3", "N")].join("  "), touch: !!global.mobile };
     // the start of raid 2 and raid 3: one quiet line about what just opened up
     const unlock = "unlock" + S.stage;
-    if (S.known && S.stage < L.VETERAN && !seen()[unlock] && !S.introQ.some(q => q.id === unlock) && !(S.intro && S.intro.id === unlock)) {
+    if (S.known && S.stage >= 1 && S.stage < L.VETERAN && !seen()[unlock] && !S.introQ.some(q => q.id === unlock) && !(S.intro && S.intro.id === unlock)) {
         const text = S.stage === 1 ? "Shops, abilities and kits are open to you now."
             : "Bosses, contracts, bounties and the Core are in play now.";
         S.introQ.unshift({ id: unlock, text });

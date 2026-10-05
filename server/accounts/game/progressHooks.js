@@ -1,4 +1,4 @@
-// Daily quests + achievements in the game thread.
+// Daily quests in the game thread (achievements: achHooks.js).
 //
 // Game events arrive from dustHooks (bank, pickup), rankHooks (kills, life
 // end, raid placement, the open-life clock) and dig_royale.js (chests, base
@@ -10,23 +10,17 @@
 //   DQ   {slot, id, text, progress, goal, done, rewardMilli}   one quest; all 3
 //        at spawn, then on change (at most every 500 ms per quest, a
 //        completion at once). A completion also sends DU kind 6 (quest dust).
-//   ACH  {id, name, desc}                                      an unlock
-// Unlocks also go to the main thread as {t:'ach', userId, id}, which pushes
-// the 'ach' SSE event to an open menu.
+// (ACH, the achievement unlock, is sent by achHooks.js.)
 //
 // Progress is kept here and written every 5 s (and on close); completions and
 // unlocks are written immediately.
 'use strict';
 
 const quests = require('../quests');
-const achievements = require('../achievements');
 
 const SAVE_MS = 5000;
 const DQ_MIN_MS = 500;
-const HOARD_AT = 3000;
 const SURVIVE_QUEST_MIN = 15;
-const SURVIVOR_MS = 15 * 60 * 1000;   // a raid is 21 min
-const STREAK_AT = 5;
 const ORE_PURPLE = 3;
 const ORE_EMERALD = 4;
 
@@ -185,33 +179,18 @@ function onClose(socket) {
 }
 
 // ---- achievements ----
-
-function notifyAch(socket, userId, id) {
-    const def = achievements.BY_ID.get(id);
-    if (!def) return;
-    sendJson(socket, 'ACH', { id, name: def.name, desc: def.desc });
-    try { require('../index').bus.toMain({ t: 'ach', userId, id }); } catch (e) { /* main gone */ }
-}
+// They live in achHooks.js now (accounts and guests). These two stay for
+// older callers.
 
 function unlockEvent(socket, id) {
-    const userId = userOf(socket);
-    if (!userId || !on()) return;
-    const c = socket._achHave || (socket._achHave = new Set());
-    if (c.has(id)) return;
-    try {
-        if (achievements.unlock(userId, id)) notifyAch(socket, userId, id);
-        c.add(id);
-    } catch (e) { logErr('unlock', e); }
+    const ach = require('./achHooks');
+    const st = ach.stateOf(socket);
+    if (!st || st.have.has(id)) return;
+    ach._unlock(socket, st, id);
 }
 
-// After user_stats moved (life settled, placement, dust flush).
-function checkStats(socket, userId) {
-    userId = userId || userOf(socket);
-    if (!userId || !on()) return;
-    try {
-        for (const id of achievements.checkStats(userId)) notifyAch(socket, userId, id);
-    } catch (e) { logErr('stats', e); }
-}
+// After user_stats moved: the counters keep themselves now.
+function checkStats() { /* achHooks counts as it goes */ }
 
 // ---- game events ----
 
@@ -223,38 +202,24 @@ function onPickup(body, gem) {
     const socket = body && body.socket;
     if (!userOf(socket) || !gem) return;
     if (gem.gemOre === ORE_PURPLE) bump(socket, 'purple', 1);
-    else if (gem.gemOre === ORE_EMERALD) {
-        bump(socket, 'emerald', 1);
-        if (on() && !(socket._achHave && socket._achHave.has('emerald_eye'))) {
-            try {
-                const r = achievements.addProgress(socket.account.id, 'emerald_eye', 1);
-                if (r.unlocked) notifyAch(socket, socket.account.id, 'emerald_eye');
-            } catch (e) { logErr('emerald', e); }
-        }
-    }
-    if ((body.carriedGems | 0) >= HOARD_AT) unlockEvent(socket, 'hoarder');
+    else if (gem.gemOre === ORE_EMERALD) bump(socket, 'emerald', 1);
 }
 
 // A kill that passed the ranked filters (not a spawn kill, not a farmed victim).
 function onKill(socket, victimIsBot) {
     if (!userOf(socket)) return;
     bump(socket, 'kill', 1);
-    if (!victimIsBot) {
-        bump(socket, 'killPlayer', 1);
-        unlockEvent(socket, 'first_blood');
-    }
+    if (!victimIsBot) bump(socket, 'killPlayer', 1);
 }
 
-function onStreak(body, streak) {
-    if (body && body.socket && (streak | 0) >= STREAK_AT) unlockEvent(body.socket, 'streaker');
-}
+// (Streaker is achHooks.onDeath now)
+function onStreak() { /* */ }
 
 function onChest(body) { if (body && body.socket) bump(body.socket, 'chest', 1); }
 function onCapture(body) { if (body && body.socket) bump(body.socket, 'capture', 1); }
 function onBoss(body) {
     if (!body || !body.socket) return;
     bump(body.socket, 'boss', 1);
-    unlockEvent(body.socket, 'boss_slayer');
 }
 
 // The open-life clock (rankHooks, every few seconds, living bodies only).
@@ -263,8 +228,6 @@ function onAlive(body, aliveMs) {
     if (!userOf(socket)) return;
     const min = Math.floor(aliveMs / 60000);
     if (min >= 1) bump(socket, 'survive', Math.min(SURVIVE_QUEST_MIN, min));
-    if (aliveMs >= SURVIVOR_MS) unlockEvent(socket, 'survivor');
-    if ((body.carriedGems | 0) >= HOARD_AT) unlockEvent(socket, 'hoarder');
 }
 
 // A life settled (socket may be gone: a disconnect settles later).
@@ -273,15 +236,12 @@ function afterLife(socket, userId, reason, durationMs) {
     if (socket && reason !== 'disconnect' && reason !== 'idle') {
         const min = Math.floor(Math.max(0, durationMs) / 60000);
         if (min >= 1) bump(socket, 'survive', Math.min(SURVIVE_QUEST_MIN, min));
-        if (durationMs >= SURVIVOR_MS) unlockEvent(socket, 'survivor');
     }
-    checkStats(socket, userId);
 }
 
 // A raid placement was paid (res from rankStore.applyRaidPlacement).
 function afterPlacement(socket, userId, res) {
     if (socket && res && res.eligible && res.place <= 10) bump(socket, 'top10', 1);
-    checkStats(socket, userId);
 }
 
 module.exports = {

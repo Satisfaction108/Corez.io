@@ -195,6 +195,9 @@ function allowFraming(res) {
 // Caddy passes a response that is already encoded straight through.
 const COMPRESSIBLE = new Set(["js", "json", "webmanifest", "css", "html", "md", "svg", "txt", "ico"]);
 const MEDIA = new Set(["png", "jpg", "jpeg", "webp", "gif", "ttf", "woff", "woff2", "wav", "mp3", "ogg", "mp4"]);
+// TrueType shrinks to about 40% with brotli (Rubik 360 KB -> 122 KB), and the
+// menu waits on it, so fonts are compressed too but keep their hour of cache
+const FONTS = new Set(["ttf", "otf"]);
 const staticCache = new Map();   // file -> { key, ready: Promise of { etag, raw, gz, br } }
 const STATIC_CACHE_MAX_BYTES = 64 * 1024 * 1024;
 let staticCacheBytes = 0;
@@ -256,12 +259,13 @@ function sendStatic(res, file, req) {
                     .then((entry) => sendEntry(req, res, "text/html", entry, "no-cache"), fail);
             });
         }
-        if (COMPRESSIBLE.has(extension) && st.size <= 8 * 1024 * 1024) {
+        if ((COMPRESSIBLE.has(extension) || FONTS.has(extension)) && st.size <= 8 * 1024 * 1024) {
+            const cc = FONTS.has(extension) ? "public, max-age=3600" : "no-cache";
             const hit = staticCache.get(file);
-            if (hit && hit.key === key) return hit.ready.then((entry) => sendEntry(req, res, type, entry, "no-cache"), fail);
+            if (hit && hit.key === key) return hit.ready.then((entry) => sendEntry(req, res, type, entry, cc), fail);
             return fs.readFile(file, (err, body) => {
                 if (err) return fail();
-                compressedEntry(file, key, body).then((entry) => sendEntry(req, res, type, entry, "no-cache"), fail);
+                compressedEntry(file, key, body).then((entry) => sendEntry(req, res, type, entry, cc), fail);
             });
         }
         const etag = '"' + st.size.toString(36) + "-" + Math.floor(st.mtimeMs).toString(36) + '"';

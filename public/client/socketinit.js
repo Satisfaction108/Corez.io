@@ -8,12 +8,14 @@ import * as rankCeremony from "./account/rankCeremony.js";
 import * as dustHud from "./account/dustHud.js";
 import * as raidFinale from "./raidFinale.js";
 import * as raidHeat from "./raidHeat.js";
+import * as crowns from "./crowns.js";
 import * as juice from "./juice.js";
 import * as hitFx from "./hitFx.js";
 import { toast as menuToast } from "./account/ui.js";
 import saveCode from "./saveCode.js";
 import * as abilityFx from "./abilityFx.js";
 import * as sidekicks from "./sidekicks.js";
+import * as raidPerks from "./raidPerks.js";
 // callouts (KC) that make your sidekick bounce about
 const SIDEKICK_CHEERS = { kill: 1, revenge: 1, huntkill: 1, shutdown: 1, bounty: 1, boss: 1, streak: 1, quest: 1, contract: 1 };
 window.fakeLagMS = 0;
@@ -1266,7 +1268,8 @@ let incoming = async function(message, socket) {
                 global.chambers = m[8] ? JSON.parse(m[8]) : [];
                 global.digRoyaleMode = m[9] === 1;
                 try { global.shops = m[10] ? JSON.parse(m[10]) : []; } catch (e) { global.shops = []; }
-                if (window.terrainRenderer) window.terrainRenderer.init(cells, cols, rows, rockState, oreState, oreSalt);
+                // m[11]: the map's rock biome seed (0 or missing = plain rock)
+                if (window.terrainRenderer) window.terrainRenderer.init(cells, cols, rows, rockState, oreState, oreSalt, m[11] | 0);
             } break;
             case 'TUTI': {
                 // Tutorial only: the landmarks of this learner's private plot.
@@ -1428,6 +1431,9 @@ let incoming = async function(message, socket) {
                     r.core = d.core || null;
                     r.supply = d.supply || null;
                     try { raidHeat.onRY(r); } catch (e) { /* */ }
+                    // the Crown Contest (crowns.js)
+                    r.crowns = d.crowns || null;
+                    try { crowns.onRY(r); } catch (e) { /* */ }
                     // contract: note when it arrived (the card counts down from
                     // here) and play a soft tick when a new one lands
                     const ob = r.you && r.you.obj;
@@ -1452,7 +1458,8 @@ let incoming = async function(message, socket) {
                     // leaderboard hits: passing someone, or getting passed
                     const placeNow = d.youPlace | 0;
                     // (a first raid, newcomer.js stage 0, skips the place race)
-                    if (placeNow > 0 && r.lastPlace > 0 && placeNow !== r.lastPlace && !global.died && r.board && r.board.length && !((global.nxStage | 0) === 0 && global.nxKnown)) {
+                    // (not in the Crown Contest: crowns move places around, the slams say it)
+                    if (placeNow > 0 && r.lastPlace > 0 && placeNow !== r.lastPlace && !global.died && r.board && r.board.length && !((global.nxStage | 0) === 0 && global.nxKnown) && !r.crowns) {
                         if (placeNow < r.lastPlace) {
                             const below = r.board.find(row => row.place === placeNow + 1);
                             global.createMessage("You passed " + (below ? below.name : "someone") + " - now #" + placeNow, 3200);
@@ -1541,6 +1548,10 @@ let incoming = async function(message, socket) {
             case 'AF': {
                 try { abilityFx.onFx(m, punchCamera); } catch (e) { /* */ }
             } break;
+            case 'PK': {
+                // raid perks: the offer, the queue and your build (raidPerks.js)
+                try { raidPerks.onState(m[0]); } catch (e) { /* */ }
+            } break;
             case 'SK': {
                 // who has a Locker sidekick (server/game/terrain/sidekicks.js)
                 try { sidekicks.onPacket(JSON.parse(m[0])); } catch (e) { /* */ }
@@ -1569,6 +1580,8 @@ let incoming = async function(message, socket) {
                 }
                 // a kill, a bounty, a boss: your sidekick is thrilled
                 if (SIDEKICK_CHEERS[m[0]]) try { sidekicks.cheer(gui.playerid, 1); } catch (e) { /* */ }
+                // the Crown Contest's moments: crowns.js slams them
+                try { if (crowns.onKC(m)) break; } catch (e) { /* */ }
                 // hunted / SAFE / the Core: raidHeat slams those itself
                 try { if (raidHeat.onKC(m)) break; } catch (e) { /* */ }
                 // growing a size: a side card, not a plate in the middle. What
@@ -1601,7 +1614,10 @@ let incoming = async function(message, socket) {
                 const dxf = fx.x - global.player.renderx, dyf = fx.y - global.player.rendery;
                 const nearF = Math.hypot(dxf, dyf);
                 let pushFx = true;
+                // raid perks: blast, chain spark, seismic pulse, lucky strike
+                if (typeof kindF === "string" && kindF.startsWith("pk")) { try { if (raidPerks.onFX(m)) break; } catch (e) { /* */ } }
                 try { if (raidHeat.onFX(kindF, fx.x, fx.y, m[3], m[4], m[5], m[6])) break; } catch (e) { /* */ }
+                try { if (crowns.onFX(kindF, fx.x, fx.y)) break; } catch (e) { /* */ }
                 if (kindF === "chest" || kindF === "chestrare") {
                     // the terrain renderer breaks the chest exactly like a rock
                     // cell (chips, sparks, flash, dust, shake); the floor halo
@@ -1870,7 +1886,7 @@ let incoming = async function(message, socket) {
                 try {
                     const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
                     // a small card on the right, queued (app.js sideNote)
-                    if (d && d.id) { if (global.sideNote) window.dwAch(d); else global.createMessage('Achievement unlocked: ' + (d.name || d.id), 5000); }
+                    if (d && d.id) { if (window.dwAch) window.dwAch(d); else global.createMessage('Achievement unlocked: ' + (d.name || d.id), 5000); }
                 } catch (e) { /* ignore */ }
             } break;
             case 'STK': {

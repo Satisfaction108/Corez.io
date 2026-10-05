@@ -1,4 +1,5 @@
-const { ORE, ORE_HP } = require('./terrainGrid.js');
+const { ORE, ORE_HP, rockTough } = require('./terrainGrid.js');
+const Biomes = require('../../../shared/rockBiomes.js');
 
 // Six bases on one ring: the four cardinals plus the NE/SW diagonals. The two
 // side vaults sit on the NW/SE diagonals, so every 45 degrees holds a landmark.
@@ -116,17 +117,39 @@ function hash01(x, y, s) {
 
 // Radial ore for the BR disk. depth = dist/circleR (0 centre, 1 rim). The rim
 // is riskiest (storm) so it pays best. Rolls are deterministic per rock +
-// oreSalt, so client and server agree.
+// oreSalt. Only the server rolls; clients get the result in TG / TR.
+// The rock's biome (bOre, bUp from setBiomes) leans on it a little: fewer
+// rolls hit out in the sandstone, more in the magma and obsidian, and some
+// copper near the centre comes up as vein.
 function radialOre(rock, circleR, salt) {
     const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
     const d = Math.min(1, Math.hypot(x, y) / Math.max(1, circleR));
     const r1 = hash01(rock.vi, rock.vj, salt + 101);
-    if (r1 >= 0.24) return ORE.NONE; // ~24% of rocks hold ore, spread evenly
+    if (r1 >= 0.24 * (rock.bOre || 1)) return ORE.NONE; // ~24% of rocks hold ore, spread evenly
     if (global.royaleMods && global.royaleMods.ore === 'copper') return ORE.COPPER;
     const t = hash01(rock.vi, rock.vj, salt + 102);
-    if (d <= 0.35) return t < 0.70 ? ORE.COPPER : ORE.NONE;                    // plaza ring: copper only
-    if (d <= 0.65) return t < 0.35 ? ORE.VEIN : t < 0.85 ? ORE.COPPER : ORE.NONE; // mid: vein + copper
-    return t < 0.10 ? ORE.SHARD : t < 0.50 ? ORE.VEIN : t < 0.90 ? ORE.COPPER : ORE.NONE; // rim: shards live here
+    let ore;
+    if (d <= 0.35) ore = t < 0.70 ? ORE.COPPER : ORE.NONE;                    // plaza ring: copper only
+    else if (d <= 0.65) ore = t < 0.35 ? ORE.VEIN : t < 0.85 ? ORE.COPPER : ORE.NONE; // mid: vein + copper
+    else ore = t < 0.10 ? ORE.SHARD : t < 0.50 ? ORE.VEIN : t < 0.90 ? ORE.COPPER : ORE.NONE; // rim: shards live here
+    if (ore === ORE.COPPER && rock.bUp > 0 && hash01(rock.vi, rock.vj, salt + 103) < rock.bUp) ore = ORE.VEIN;
+    return ore;
+}
+
+// Every rock's biome numbers, from shared/rockBiomes.js (the client colours
+// the same rocks from the same function and seed, so nothing per rock is
+// sent). Static per lattice cell: set once here, a regrown rock keeps them.
+// bHard is the biome's toughness (times the ore's, see rockTough in
+// terrainGrid.js), bOre the ore chance, bUp the copper -> vein share. seed 0
+// (the tutorial) leaves every rock at 1 with no biome.
+function setBiomes(grid, seed) {
+    grid.biomeSeed = seed | 0;
+    const st = {};
+    for (const rock of grid.rocks.values()) {
+        if (!grid.biomeSeed) { rock.bHard = 1; rock.bOre = 1; rock.bUp = 0; rock.biome = -1; continue; }
+        Biomes.rockStats(rock.vi, rock.vj, grid.cols, grid.rows, grid.biomeSeed, st);
+        rock.bHard = st.hard; rock.bOre = st.ore; rock.bUp = st.up; rock.biome = st.biome;
+    }
 }
 
 function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
@@ -134,6 +157,10 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     const half = Math.min(room?.width || 5460, room?.height || 5460) / 2;
     const circleR = half * 0.998;
     grid.circleRadius = circleR;
+    // the map seed picks the biome layout (same seed, same map every boot);
+    // the tutorial's plots are not a raid map, so no biomes there
+    const tutorial = typeof Config !== 'undefined' && Config.tutorial;
+    setBiomes(grid, tutorial ? 0 : ((grid.mapSeed | 0) || 7));
     grid.lobbyPos = { x: 0, y: 0, r: CENTER_CLEAR_R };
 
     // Circle map with a raw border: rocks are never cropped to the circle.
@@ -196,9 +223,10 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         if (!rock.alive || canyonKeys.has(rock.k)) continue;
         const ore = radialOre(rock, circleR, salt);
         rock.ore = ore;
+        // plain rock too: biome x ore toughness
+        rock.maxHealth = grid.plainRockHealth * (ORE_HP[ore] || 1) * rockTough(rock, ore);
+        rock.health = rock.maxHealth;
         if (ore) {
-            rock.maxHealth = grid.plainRockHealth * (ORE_HP[ore] || 1);
-            rock.health = rock.maxHealth;
             try { rock.deposits = grid._buildDeposits(rock); }
             catch { rock.deposits = null; }
         } else {
@@ -227,7 +255,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
             }
             if (best) {
                 best.ore = ORE.EMERALD;
-                best.maxHealth = grid.plainRockHealth * (ORE_HP[ORE.EMERALD] || 6);
+                best.maxHealth = grid.plainRockHealth * (ORE_HP[ORE.EMERALD] || 6) * rockTough(best, ORE.EMERALD);
                 best.health = best.maxHealth;
                 try { best.deposits = grid._buildDeposits(best); } catch { best.deposits = null; }
             }
@@ -305,7 +333,9 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     }
 
     // Rocks around every spawn pit and the lobby plaza are softened: same ore,
-    // quarter health, never emeralds. h stays 1 so no crack visuals.
+    // 30% of a flat rock's health whatever the biome (obsidian round the
+    // plaza is as soft as anywhere), the old flat gem pay, never emeralds.
+    // h stays 1 so no crack visuals.
     try {
         const step = grid.cellSize || 200;
         const zones = [{ x: 0, y: 0, r: CENTER_CLEAR_R + step * 1.4 }];
@@ -319,10 +349,11 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
                 if (dx * dx + dy * dy <= z.r * z.r) { soft = true; break; }
             }
             if (!soft) continue;
-            rock.maxHealth = Math.max(10, rock.maxHealth * 0.3);
+            rock.maxHealth = Math.max(10, grid.plainRockHealth * (ORE_HP[rock.ore] || 1) * 0.3);
             rock.health = rock.maxHealth;
+            rock.soft = true;
         }
     } catch { /* spawns stay normal strength */ }
 }
 
-module.exports = { apply, carveMatchPois, OUTPOSTS, SHOPS, ORE, radialOre, hash01, carveDisk, killRock };
+module.exports = { apply, carveMatchPois, OUTPOSTS, SHOPS, ORE, radialOre, setBiomes, hash01, carveDisk, killRock };

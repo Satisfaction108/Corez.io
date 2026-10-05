@@ -7,7 +7,8 @@ import * as store from './state.js';
 import * as social from './social.js';
 import { h, clear, toast, setBusy, humanError, animate, fmtDate, T_MID } from './ui.js';
 import { rankOf, badge, nameEl, tierColor, presenceText, presenceState, fmtNum } from './people.js';
-import { ACHIEVEMENTS, achIcon } from './achievements.js';
+import { BY_ID as ACH, achIcon, loadCatalog } from './achievements.js';
+import * as achPanel from './achievementsPanel.js';
 import * as pv from './previews.js';
 import { TIERS, TOP_DIV } from './rankBadges.js';
 import * as cos from './cosmetics.js';
@@ -96,6 +97,7 @@ function paint(el, p, opts) {
         h('div', { class: 'pf-badge' }, badge(v.div, 112, 'pf-badge-img', { legendNo: v.legendNo })),
         h('div', { class: 'pf-id' },
             h('div', { class: 'pf-name' }, nameEl(p.username, p.nameStyleNid, p.nameColor, 24)),
+            champTag(p),
             h('div', { class: 'pf-rank', style: color ? { '--tc': color } : null, text: v.text }),
             h('div', { class: 'pf-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round(barPct * 100)), 'aria-label': barText }, fill),
             h('div', { class: 'pf-bartext', text: barText }),
@@ -188,10 +190,20 @@ function tiers(p) {
     return section('Tiers', have.size + ' / ' + TIERS.length, row);
 }
 
+// The medals they have (newest first, up to 23) and, on your own profile,
+// a way into the full Achievements panel. The catalog loads on demand.
+const MEDALS_MAX = 23;
 function achievements(p) {
-    const got = new Map((Array.isArray(p.achievements) ? p.achievements : []).map((a) => [a.id, a.unlockedAt]));
+    const mine = Array.isArray(p.achievements) ? p.achievements.filter((a) => ACH.has(a.id) || window.DWAchievements) : [];
+    const got = new Map(mine.map((a) => [a.id, a.unlockedAt]));
     const grid = h('div', { class: 'pf-achs' });
-    for (const a of ACHIEVEMENTS) {
+    const total = window.DWAchievements ? window.DWAchievements.DEFS.length : 0;
+    if (!window.DWAchievements) loadCatalog().then((c) => { if (c && paneEl && document.contains(grid)) render(paneEl, { keep: true }); });
+    const own = !lastOpts.u || lastOpts.u === myName();
+    const list = Array.from(got.keys()).map((id) => ACH.get(id)).filter(Boolean)
+        .sort((x, y) => (got.get(y.id) || 0) - (got.get(x.id) || 0)).slice(0, MEDALS_MAX);
+    if (!list.length) grid.appendChild(h('span', { class: 'pf-h-r', text: own ? 'None yet. Play a raid and they start popping.' : 'None yet.' }));
+    for (const a of list) {
         const at = got.get(a.id);
         const on = at != null;
         // a row of little medals; name + how to get it pops up on hover/focus
@@ -202,9 +214,19 @@ function achievements(p) {
             h('span', { class: 'pf-ach-ic' }, achIcon(a.id)),
             h('span', { class: 'pf-ach-txt' },
                 h('span', { class: 'pf-ach-n', text: a.name }),
-                h('span', { class: 'pf-ach-d', text: on ? 'got it ' + fmtDate(at) : a.desc }))));
+                h('span', { class: 'pf-ach-d', text: on ? a.desc + ' · got it ' + fmtDate(at) : a.desc }))));
     }
-    return section('Medals', got.size + ' / ' + ACHIEVEMENTS.length, grid);
+    if (own) grid.appendChild(h('button', { type: 'button', class: 'pf-ach-more', text: 'See all', onclick: () => achPanel.open() }));
+    return section('Achievements', got.size + (total ? ' / ' + total : ''), grid);
+}
+
+// won a raid in the last 24 h: the Core Champion tag under the name
+function champTag(p) {
+    if (!(p.champUntil > Date.now())) return null;
+    const streak = (p.winStreak | 0) > 1 ? ' · ' + (p.winStreak | 0) + ' wins in a row' : '';
+    return h('div', { class: 'pf-champ', title: 'Won a raid in the last 24 hours' },
+        h('span', { class: 'pf-champ-ic', 'aria-hidden': 'true' }),
+        h('span', { text: 'Core Champion' + streak }));
 }
 
 function stats(p) {
@@ -213,6 +235,7 @@ function stats(p) {
         ['games', fmtNum(s.lives)],
         ['knockouts', fmtNum(s.kills)],
         ['raid wins', fmtNum(s.raidWins)],
+        ['win streak', fmtNum(p.winStreak | 0)],
         ['top 3s', fmtNum(s.top3)],
         ['gems banked', fmtNum(s.gemsBanked)],
         ['best game', fmtNum(s.bestLife)],

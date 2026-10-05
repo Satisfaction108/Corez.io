@@ -111,6 +111,8 @@ export const friendRead = (userId, upTo) => post('/api/friends/messages/read', {
 export const profile = (u) => get('/api/profile?u=' + encodeURIComponent(u));
 export const leaderboard = (limit, type) => get('/api/leaderboard?limit=' + (limit || 100) + (type && type !== 'ranked' ? '&type=' + type : ''));
 export const quests = () => get('/api/quests');
+// achievements for an account, or this browser's guest id (POST: never in a URL)
+export const achievements = (guestId) => post('/api/achievements', guestId ? { guestId } : {});
 export const invite = () => get('/api/invite');
 // The daily rewards track and push pings (guests send their browser's guest
 // id in the body, never in the URL).

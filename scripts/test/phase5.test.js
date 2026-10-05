@@ -268,27 +268,37 @@ test('quests: progress -> completion pays exempt quest dust once (DQ, DU kind 6)
     assert.deepEqual(j.quests.map(q => q.done), [true, false, true]);
     assert.deepEqual(Object.keys(j.quests[1]).sort(), ['done', 'goal', 'id', 'progress', 'rewardMilli', 'slot', 'text']);
     const ra = await fetch(base + '/api/achievements', { headers: { Cookie: `${accounts.config.cookies.session}=${s.token}` } });
-    assert.equal((await ra.json()).achievements.length, 12);
+    assert.equal((await ra.json()).achievements.length, require('../../shared/achievements.js').DEFS.length);
 });
 
 test('achievements: event, counter and stat unlocks send ACH once and tell the main thread', () => {
+    // (the full suite is scripts/test/achievements.test.js; this is the account path end to end)
+    const ach = require('../../server/accounts/game/achHooks');
     const u = mkUser();
     const sock = mkSocket(u);
+    const body = { socket: sock, id: 1, carriedGems: 0, health: { amount: 1, max: 1 } };
+    sock.player.body = body;
     const bus = [];
     const unsub = accounts.bus.onMain((sid, m) => { if (m.t === 'ach') bus.push(m.id); });
-    progress.onBoss({ socket: sock });
-    progress.onBoss({ socket: sock });
-    progress.onStreak({ socket: sock }, 4);
-    progress.onStreak({ socket: sock }, 5);
-    for (let i = 0; i < 25; i++) progress.onPickup({ socket: sock, carriedGems: 3100 }, { gemOre: 4 });
-    progress.onPickup({ socket: sock, carriedGems: 10 }, { gemOre: 4 });
-    D().run('UPDATE user_stats SET kills = 1, gems_banked = 12000, lives = 3 WHERE user_id = ?', u.id);
-    progress.checkStats(sock, u.id);
-    progress.checkStats(sock, u.id);
+    ach.onBoss(body);
+    ach.onBoss(body);
+    ach.onDeath({ id: 2 }, { killer: body, victimBot: true, streak: 4 });
+    ach.onDeath({ id: 3 }, { killer: body, victimBot: true, streak: 5 });
+    body.carriedGems = 3100;
+    for (let i = 0; i < 25; i++) ach.onGem(body, 4);
+    body.carriedGems = 10;
+    ach.onGem(body, 4);
     const ids = packets(sock, 'ACH').map(p => JSON.parse(p[1]).id).sort();
-    assert.deepEqual(ids, ['banker', 'boss_slayer', 'emerald_eye', 'first_blood', 'hoarder', 'streaker']);
+    assert.deepEqual(ids, ['boss_slayer', 'emerald_eye', 'fs_gem', 'fs_ko', 'hoarder', 'streaker']);
     assert.deepEqual(bus.slice().sort(), ids);
     assert.deepEqual([...achievements.unlockedSet(u.id)].sort(), ids);
+    // lifetime stats: a new socket picks them up quietly (no card)
+    D().run('INSERT OR IGNORE INTO user_stats (user_id, updated_at) VALUES (?, 1)', u.id);
+    D().run('UPDATE user_stats SET kills = 1, gems_banked = 12000, lives = 3 WHERE user_id = ?', u.id);
+    const sock2 = mkSocket(u);
+    ach.stateOf(sock2);
+    assert.deepEqual(packets(sock2, 'ACH'), []);
+    assert.ok(achievements.unlockedSet(u.id).has('banker') && achievements.unlockedSet(u.id).has('first_blood'));
     const list = achievements.list(u.id);
     assert.equal(list.find(a => a.id === 'veteran').progress, 3);
     assert.equal(list.find(a => a.id === 'emerald_eye').unlockedAt != null, true);

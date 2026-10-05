@@ -888,6 +888,22 @@ class GameSound {
         if (big) this._playSample('bankCelebrate', { peak: 0.7 * m, delay: 0.12, duck: false });
     }
 
+    // The Core Champion: the rank-up's lift twice, the second a fourth
+    // higher, then the celebrate sample and a long bell on top. Made from
+    // the same rounded pieces as everything else (no new samples).
+    champion() {
+        const m = this._mix('celebration');
+        if (!m || !this._throttle('champion', 2000)) return;
+        this._impact({ sub: 50, body: 120, bodyTo: 58, air: 340, weight: 0.7 * m, dur: 0.32 });
+        const a = [392, 494, 587, 784], b = [523, 659, 784, 1047];
+        for (let i = 0; i < a.length; i++) {
+            this._tone({ freq: a[i], type: 'sine', dur: 0.3 + i * 0.03, peak: (0.1 - i * 0.012) * m, delay: 0.05 + i * 0.07, attack: 0.018 });
+            this._tone({ freq: b[i], type: 'sine', dur: 0.42 + i * 0.05, peak: (0.11 - i * 0.012) * m, delay: 0.42 + i * 0.08, attack: 0.02 });
+        }
+        this._ring({ freqs: [1047, 1568, 2093], dur: 1.4, peak: 0.07 * m, delay: 0.8 });
+        this._playSample('bankCelebrate', { peak: 0.8 * m, delay: 0.4, duck: false });
+    }
+
     // You just walked into the storm: the satchel-full warning, once and a
     // little lower, so it reads as "danger" without a new sound.
     stormWarn() {
@@ -904,6 +920,21 @@ class GameSound {
         if (!m || !this._throttle('rankDown', 800)) return;
         this._tone({ freq: 392, glideTo: 370, type: 'sine', dur: 0.16, peak: 0.06 * m, attack: 0.016 });
         this._tone({ freq: 330, glideTo: 294, type: 'sine', dur: 0.24, peak: 0.05 * m, delay: 0.12, attack: 0.02 });
+    }
+
+    // An achievement card landing: a quick bright three-note pickup and a
+    // little bell over the celebrate sample played light and high. No thump
+    // (no _impact), so it sits on top of a fight without muddying it.
+    // special: a secret or a summary card rings a fourth note.
+    achievement(special = false) {
+        const m = this._mix('celebration');
+        if (!m || !this._throttle('achievement', 250)) return;
+        this._playSample('bankCelebrate', { peak: 0.45 * m, rate: 1.22, duck: false });
+        const notes = special ? [784, 988, 1175, 1568] : [880, 1109, 1319];
+        for (let i = 0; i < notes.length; i++) {
+            this._tone({ freq: notes[i], type: 'sine', dur: 0.16 + i * 0.03, peak: (0.07 - i * 0.008) * m, delay: i * 0.065, attack: 0.008 });
+        }
+        this._ring({ freqs: [special ? 2093 : 1760, special ? 2637 : 2217], dur: 0.45, peak: 0.03 * m, delay: notes.length * 0.065 });
     }
 
     // Gemdust: a tiny high bell for a pop, a two-note rise when it banks.

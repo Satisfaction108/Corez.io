@@ -17,6 +17,7 @@ import * as abilityIntro from './abilityIntro.js';
 import * as nameCheck from './nameHint.js';
 import { tabSeen, markTabSeen, TAB_SEEN_MS } from './abilityIntroLogic.js';
 import * as raidHeat from './raidHeat.js';
+import * as crowns from './crowns.js';
 import * as newcomer from './newcomer.js';
 import { full as fxFull } from './juice.js';
 import * as autoQ from './autoQuality.js';
@@ -25,9 +26,12 @@ import * as rankPanel from './account/rankPanel.js';
 import * as rankCeremony from './account/rankCeremony.js';
 import * as dustHud from './account/dustHud.js';
 import { BY_ID as ACH_BY_ID } from './account/achievements.js';
+import * as achCard from './achievementCard.js';
 import * as cosmetics from './account/cosmetics.js';
 import * as sidekicks from './sidekicks.js';
 import * as hitFx from './hitFx.js';
+import * as raidPerks from './raidPerks.js';
+import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerksLogic.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -265,7 +269,10 @@ import * as hitFx from './hitFx.js';
         }
     }
 
-    window.onload = async () => {
+    // The menu is wired as soon as the page is parsed, not at window.onload:
+    // that waits for every font and picture too, and Play stayed dead until
+    // then (client/funnel.js holds an early press until this has run).
+    const onMenuReady = async () => {
 
         global.serverMap = {};
         global.servers = [];
@@ -500,7 +507,9 @@ import * as hitFx from './hitFx.js';
 
                         unselectElement();
                     }
-                } else if (key === global.KEY_ENTER && !global.gameStart && !(window.dwAccount && window.dwAccount.blocksEnter())) {
+                } else if (key === global.KEY_ENTER && !global.gameStart && !(window.dwAccount && window.dwAccount.blocksEnter())
+                    // Enter on a focused button presses that button (Tutorial, a region...)
+                    && !(e.target && e.target.closest && e.target.closest("button, a, select, textarea"))) {
                     startGame();
                 }
             }
@@ -509,6 +518,10 @@ import * as hitFx from './hitFx.js';
 
         resizeEvent();
     };
+    // DOMContentLoaded comes after every module script in the page has run
+    // (serverSelectorHandler.js, which this uses, is one of the later ones)
+    if (document.readyState === "complete") setTimeout(onMenuReady, 0);
+    else document.addEventListener("DOMContentLoaded", onMenuReady, { once: true });
 
     function toggleOptionsMenu() {
         let clicked = false,
@@ -4858,6 +4871,9 @@ import * as hitFx from './hitFx.js';
             if (!onScreen) continue;
             // the raid-end freeze makes everyone invulnerable: that is not a spawn shield
             if (instance.id === gui.playerid && !global.died && !raidFinale.active()) drawSpawnShield(ctx[1], x, y, (isize || instance.size) * ratio, instance.invuln);
+            // your hull's size on screen, as a share of its width: the perk
+            // cards keep clear of it (raidPerks.js, GUI units differ)
+            if (instance.id === gui.playerid) global.selfRFrac = (isize || instance.size) * ratio / Math.max(1, global.screenWidth);
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
             alpha = handleScreenDistance(alpha, instance, false);
             // treasury gems inside a chamber ring: drawn from the baked sprite
@@ -4921,6 +4937,13 @@ import * as hitFx from './hitFx.js';
             drawHealth(x, y, instance, ratio, gui.visibleEntities ? 1 : alpha, instance.size);
             drawName(x, y, instance, ratio, gui.visibleEntities ? alpha * 0.75 + 0.25 : alpha, instance.size);
             drawStreakBadge(x, y, instance, ratio, gui.visibleEntities ? alpha * 0.75 + 0.25 : alpha, instance.size);
+            // the Crown Contest: a big gold crown over the stack (crowns.js)
+            if (royaleActive() && !raidFinale.active() && crowns.crownOf(instance.id)) {
+                try {
+                    const sx = x + global.screenWidth / 2, sy = y + global.screenHeight / 2;
+                    crowns.drawOverhead(ctx[1], sx, sy, crownStackTop(instance, sy, ratio, instance.size), instance.size, ratio, gui.visibleEntities ? alpha * 0.75 + 0.25 : alpha, instance.id);
+                } catch (e) { /* never break the frame */ }
+            }
         }
         for (let instance of global.entities) {
             if (!instance._onScreen) continue;
@@ -5315,9 +5338,10 @@ import * as hitFx from './hitFx.js';
     // right, a few seconds each, queued.
     const sideNotes = [];
     const SIDE_MS = 4200;
-    global.sideNote = (n) => { if (!n || !n.title) return; sideNotes.push({ kind: n.kind || "", id: n.id || "", title: String(n.title), sub: n.sub ? String(n.sub) : "", at: 0 }); if (sideNotes.length > 5) sideNotes.shift(); };
-    // QA and socketinit's 'ACH'
-    window.dwAch = (d) => global.sideNote({ kind: "ach", id: d && d.id, title: (d && (d.name || d.id)) || "Achievement", sub: "Achievement unlocked" });
+    global.sideNote = (n) => { if (!n || !n.title) return; sideNotes.push({ kind: n.kind || "", id: n.id || "", title: String(n.title), sub: n.sub ? String(n.sub) : "", at: 0, ach: n.ach || null, dur: n.dur || 0 }); if (sideNotes.length > 5) sideNotes.shift(); };
+    // QA and socketinit's 'ACH': achievementCard.js queues them (and holds
+    // all but First Steps in newcomer stage 0)
+    window.dwAch = (d) => achCard.receive(d);
     const achPaths = new Map();
     function achPath(id) {
         let p = achPaths.get(id);
@@ -5337,11 +5361,14 @@ import * as hitFx from './hitFx.js';
     }
     function drawSideNote(y) {
         const now = performance.now();
+        achCard.pump(sideNotes);
         let n = sideNotes[0];
-        while (n && n.at && now - n.at > SIDE_MS) { sideNotes.shift(); n = sideNotes[0]; }
+        while (n && n.at && now - n.at > (n.dur || SIDE_MS)) { sideNotes.shift(); n = sideNotes[0]; }
         if (!n || global.died) return y;
         if (!n.at) n.at = now;
         const age = now - n.at;
+        // an achievement: its own card (achievementCard.js)
+        if (n.kind === "ach" && n.ach) return y + achCard.draw(ctx[2], n, global.screenWidth - HUD.edge, y, age, n.dur || SIDE_MS) + 10;
         const a = Math.min(1, age / 200, (SIDE_MS - age) / 300);
         const c = ctx[2];
         // phones: the title only, the thumbs need that side
@@ -5538,11 +5565,18 @@ import * as hitFx from './hitFx.js';
     const streakGap = (fs) => Math.max(3, fs * 0.28);
     // the pill plus the pointer under it, in units of the text size
     const STREAK_H = 1.62, STREAK_TIP = 0.42;
-    function overheadTop(instance, y, ratio, isize) {
+    // the name stack plus the badge over it: where a crown sits
+    function crownStackTop(instance, y, ratio, isize) {
         const top = nameStackTop(instance, y, ratio, isize);
         if (!badgeOf(instance.id)) return top;
         const fs = streakSize(isize, ratio);
         return top - streakGap(fs) - fs * (STREAK_H + STREAK_TIP);
+    }
+    function overheadTop(instance, y, ratio, isize) {
+        const top = crownStackTop(instance, y, ratio, isize);
+        // a crown over it (the Crown Contest): chat goes above that too
+        if (royaleActive() && crowns.crownOf(instance.id)) return top - crowns.overheadH(instance.id, isize, ratio);
+        return top;
     }
     // Baked once per streak count at a fixed size and scaled on draw: a dark
     // HUD pill with an ink rim, "STREAK" in orange and the count in cream,
@@ -6118,6 +6152,10 @@ import * as hitFx from './hitFx.js';
                     const sn = styledName(name, instance.nameStyle, namecolor == "#ffffff" ? color.guiwhite : namecolor, nx, 0.55 * g, "center", ctx[1], ny);
                     drawText(sn.text, nx, ny, 0.55 * g, sn.fill, "center", false, 1, true, ctx[1]);
                     drawNameBadge(code, sn.text, nx, ny, 0.55 * g, "center", ctx[1]);
+                    // won a raid in the last 24 h: a small crown after the name
+                    if (royaleActive() && crowns.isChamp(instance.id)) {
+                        try { crowns.drawCrownIcon(ctx[1], nx + measureText(sn.text, 0.55 * g) / 2 + 0.5 * g, ny - 0.2 * g, 0.5 * g, "gold", 1); } catch (e) { /* */ }
+                    }
                     // duos: a little diamond in your team colour over your partner
                     const dm = global.royale && global.royale.duos && global.royale.duo && global.royale.duo.mate;
                     if (dm && dm.id === instance.id) {
@@ -7051,6 +7089,8 @@ import * as hitFx from './hitFx.js';
     stormFx.init({ hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), hudPanel, drawText, fmtDist });
     // hunted marks, the Core, drop-ins and the screen juice (raidHeat.js, juice.js)
     raidHeat.init({ HUD, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c) });
+    achCard.init({ HUD, hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, rr: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r) });
+    crowns.init({ HUD, hudPanel, hudTitle, hudTitleW, hudTextW, measureText, roundRectPath: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r), drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, myHex: () => playerHexCol() || HUD.gold });
     // the first raids: what the HUD shows per stage, the goal line, director moments
     newcomer.init({ hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, keyLabel: (id, d) => keyLabel(id, d), NOTE_H: 24, NOTE_GAP: 8 });
     // stage 3 (veterans) shows everything: every check below is true there
@@ -7244,6 +7284,7 @@ import * as hitFx from './hitFx.js';
         if (teamFeedRect) out.push(teamFeedRect);
         if (global.coachRect) out.push(global.coachRect);
         if (abilityBarRect) out.push(abilityBarRect);
+        if (!perkAvoidSkip) { const pr = raidPerks.avoidRect(); if (pr) out.push(pr); }
         return out;
     }
     // Where the main HUD pieces were drawn this frame (GUI units), for
@@ -7556,6 +7597,35 @@ import * as hitFx from './hitFx.js';
         if (n.sub) drawText(n.sub, x + 11 + tw + 10, y + h / 2, 11, "#ffd0d6", "left", true, a);
         return y + h + NOTE_GAP;
     }
+    // Rock biomes: the first time in a raid you settle into one, its name
+    // shows for a few seconds at the bottom of the note stack. Quiet on
+    // purpose: lowest priority, it simply doesn't show when the stack is busy.
+    // A raid start resends the map (terrainRenderer.inits), which clears it.
+    const biomeSeen = { inits: -1, seen: new Set(), cur: -1, since: 0, show: null, showAt: 0, checkAt: 0 };
+    const BIOME_SETTLE_MS = 1200, BIOME_NOTE_MS = 3500;
+    function biomeNote() {
+        const tr = window.terrainRenderer, B = window.DWBiomes;
+        if (!tr || !tr._bio || !B || global.tutorialMode) return null;
+        const bs = biomeSeen, now = performance.now();
+        if (bs.inits !== tr.inits) { bs.inits = tr.inits; bs.seen.clear(); bs.cur = -1; bs.show = null; }
+        if (global.died || royaleLobbyPhase()) { bs.cur = -1; return null; }
+        if (now >= bs.checkAt) {
+            bs.checkAt = now + 250;
+            const hw = global.gameWidth / 2, hh = global.gameHeight / 2;
+            if (hw > 0 && hh > 0) {
+                const bio = tr._bio;
+                const b = B.biomeAt(global.player.renderx / hw, global.player.rendery / hh, bio.cols, bio.rows, bio.seed);
+                // a moment inside first, so running along a seam stays quiet
+                if (b !== bs.cur) { bs.cur = b; bs.since = now; }
+                else if (now - bs.since >= BIOME_SETTLE_MS && !bs.seen.has(b)) {
+                    bs.seen.add(b);
+                    bs.show = B.BIOMES[b];
+                    bs.showAt = now;
+                }
+            }
+        }
+        return bs.show && now - bs.showAt < BIOME_NOTE_MS ? bs.show : null;
+    }
     function drawHudNotes(y) {
         const r = global.royale;
         const list = hudNoteList;
@@ -7566,10 +7636,14 @@ import * as hitFx from './hitFx.js';
             list.push(n);
         };
         const st = r.storm || {};
+        // (the Crown Contest keeps the last storm open: no lock there)
         if (r.lock) push(hudNote(0, "lock", st.fin ? "Last " + Math.max(0, r.lockLeft | 0) + "s of the raid. Nobody respawns now."
-            : "Final storm, " + Math.max(0, r.lockLeft | 0) + "s left. Nobody respawns now.", HUD.lilac));
+            : "Storm shuts in " + Math.max(0, r.lockLeft | 0) + "s. Respawns wait for it to open.", HUD.lilac));
         else if (r.toast && newcomer.toastAllowed(r.toast)) push(hudNote(NOTE_CRIT.test(r.toast) ? 0 : 2, "toast", r.toast, color.guiwhite));
         try { raidHeat.hudNotes(push); } catch (e) { /* */ }
+        // the Crown Contest: one line when there's no tracker panel (a first
+        // raid, a phone), or when you hold a crown
+        try { crowns.hudNotes(push, global.mobile || !nxShows("standings") || (global.nxKnown && (global.nxStage | 0) === 0)); } catch (e) { /* */ }
         // the first raids: the goal line, a challenge's clock, NEW intros
         try { newcomer.hudNotes(push, hudNote); } catch (e) { /* */ }
         const objs = nxShows("outposts") ? r.objectives || [] : [];
@@ -7590,6 +7664,8 @@ import * as hitFx from './hitFx.js';
             // Raid Night coming up (shared/events.js): a small chip in the last 24 h
             const evChip = global.tutorialMode || !nxShows("raidNight") ? "" : eventHudTick().chip;
             if (evChip) push(hudNote(3, "event", evChip, HUD.gold));
+            const biome = biomeNote();
+            if (biome) push(hudNote(3, "biome", biome.name, biome.ui));
         }
         list.sort((a, b) => a.pri - b.pri);
         const c = ctx[2], cx = global.screenWidth / 2, maxW = noteMaxW();
@@ -7911,6 +7987,14 @@ import * as hitFx from './hitFx.js';
     function drawRoyaleStandings() {
         const r = global.royale;
         if (r.duos && r.teams) return drawTeamStandings();
+        // the Crown Contest: the three crowns take the standings' place
+        if (crowns.active()) {
+            const W = Math.min(262, global.screenWidth * 0.3);
+            const x = global.screenWidth - HUD.edge - W, y0 = HUD.edge;
+            const bottom = crowns.drawTracker(ctx[2], x, y0, W);
+            standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: bottom - y0 + 16 };
+            return bottom;
+        }
         const board = r.board || [];
         if (!board.length) { standingsRect = null; return 36; }
         const W = Math.min(262, global.screenWidth * 0.3), rowH = 20;
@@ -7978,6 +8062,8 @@ import * as hitFx from './hitFx.js';
             return (myHex && (n || "") === myName) ? tag(nm, myHex) : nm;
         };
         let badge = null;
+        const crownLine = crowns.feedLine(f, who, tag);
+        if (crownLine) return crownLine;
         const heat = raidHeat.feedLine(f, who, tag);
         if (heat) return heat;
         if (f.boss) {
@@ -8907,6 +8993,61 @@ import * as hitFx from './hitFx.js';
         hudButton: (...a) => hudButton(...a),
     });
     abilityFx.setSelf(() => gui.playerid);
+    // ── raid perks (raidPerks.js): the cards, the Perk ready chip, your build ──
+    raidPerks.init({
+        HUD, hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, hudKey,
+        rr: (...a) => roundRectPath(...a), haloSprite: (k, rgb, st) => haloSprite(k, rgb, st),
+        queueTip: (t, b, x, y) => queueTip(t, b, x, y), newcomerStage: () => newcomer.stage(),
+    });
+    let perkAvoidSkip = false;
+    function drawRaidPerks() {
+        if (!royaleActive() || global.tutorialMode || global.royaleSpectating) return;
+        const sw = global.screenWidth, sh = global.screenHeight;
+        // the satchel pills (drawSelfInfo), or where they would be
+        const wallet = hudDrawn.wallet || { x: sw / 2 - 150, y: sh - 61.5, w: 300, h: 19 };
+        const cr = global.canvas.height / global.screenHeight / global.ratio;
+        // the row's lower edge sits just above your name (the name and the
+        // satchel pills take the bottom 112), its top under your tank
+        const bottom = wallet.y - 54;
+        const minTop = perkTankFloor(sh, (global.selfRFrac || 0) * sw);
+        // the band left and right: clear of every other HUD piece it would touch
+        let left = HUD.edge, right = sw - HUD.edge, blocked = false;
+        perkAvoidSkip = true;
+        let avoid = [];
+        try { avoid = hudAvoidRects(); } finally { perkAvoidSkip = false; }
+        const band = { x: 0, y: Math.min(minTop, bottom - 120), w: sw, h: bottom - Math.min(minTop, bottom - 120) };
+        for (const r of avoid) {
+            if (!rectsOverlap(r, band)) continue;
+            const mid = r.x + r.w / 2;
+            if (r.x <= sw / 2 && r.x + r.w >= sw / 2) blocked = true;
+            else if (mid < sw / 2) left = Math.max(left, r.x + r.w + 16);
+            else right = Math.min(right, r.x - 16);
+        }
+        if (right - left < 3 * 128 + 20 || bottom - minTop < 64 + 34) blocked = true;
+        // something else owns the middle: the shop or vault panel, the map,
+        // the tank tree, a new item reveal, the sky drop
+        const sp = global.shop;
+        if ((sp && sp.onPad && !sp.dismissed) || (global.vault && global.vault.onPad) || global.showBigMap || global.showTree ||
+            (global.kitUnlocks && global.kitUnlocks.length) || (raidHeat.landAt && raidHeat.landAt() > 0)) blocked = true;
+        const you = global.royale && global.royale.you;
+        raidPerks.drawHud(ctx[2], {
+            wallet, bottom, minTop, left, right, blocked,
+            score: you && you.score != null ? +you.score : +(global.royale && global.royale.youScore) || 0,
+            stage: newcomer.known() ? newcomer.stage() : 3,
+            mouse: global.mobile ? null : { x: global.mouse.x / cr, y: global.mouse.y / cr },
+        });
+        if (global.mobile) {
+            // taps reach canvas.mouseDown like clicks (touch.js anyClickable)
+            const k = touchUnits();
+            const st = window.dwRaidPerks ? window.dwRaidPerks() : null;
+            const put = (id, r) => { if (r) touch.uiRects[id] = { x: r.x / k, y: r.y / k, w: r.w / k, h: r.h / k }; };
+            if (st) {
+                (st.cards || []).forEach((r, i) => put("perk" + i, r));
+                put("perkChip", st.chip);
+                if (st.view === "cards") put("perkLater", st.later);
+            }
+        }
+    }
     let abilityBarRect = null;
     function drawAbilityBar() {
         abilityBarRect = null;
@@ -9426,6 +9567,7 @@ import * as hitFx from './hitFx.js';
         else if (glyph === "skull") { c.restore(); drawSkull(c, gx, gy, 6, col); c.save(); }
         else if (glyph === "contract") { c.beginPath(); c.arc(gx, gy, 6, 0, Math.PI * 2); c.fill(); c.stroke(); c.beginPath(); c.arc(gx, gy, 2.2, 0, Math.PI * 2); c.fillStyle = HUD.ink; c.fill(); }
         else if (glyph === "mate") { c.save(); c.translate(gx, gy); c.rotate(Math.PI / 4); c.fillRect(-4.5, -4.5, 9, 9); c.strokeRect(-4.5, -4.5, 9, 9); c.restore(); }
+        else if (glyph === "crown") crowns.drawCrownIcon(c, gx, gy, 11);
         else if (glyph.startsWith("ping:")) { c.beginPath(); c.arc(gx, gy, 7, 0, Math.PI * 2); c.fill(); c.stroke(); drawPingGlyph(c, gx, gy, 5, glyph.slice(5)); }
         else { c.beginPath(); c.moveTo(gx, gy - 6); c.lineTo(gx + 6, gy + 5); c.lineTo(gx - 6, gy + 5); c.closePath(); c.fill(); c.stroke(); }
         c.restore();
@@ -9513,6 +9655,7 @@ import * as hitFx from './hitFx.js';
             if (!onScreen(s, -30)) marks.push({ pri: 0, s, col: playerHexCol() || HUD.sky, glyph: "mate", name: shortName(dmate.name || "Teammate", 12).toUpperCase(), d: Math.hypot(tp.x - me.x, tp.y - me.y) });
         }
         raidHeat.worldMarks(marks, toScreen, onScreen, me, trackPos, ratio);
+        try { crowns.worldMarks(marks, toScreen, onScreen, me, trackPos); } catch (e) { /* */ }
         // a director moment (first raids): its arrow, or its ring when in view
         try { newcomer.worldMarks(marks, toScreen, onScreen, me, c, ratio); } catch (e) { /* */ }
         marks.sort((a, b) => a.pri - b.pri);
@@ -9941,6 +10084,7 @@ import * as hitFx from './hitFx.js';
             }
         }
         raidHeat.drawMap(c, T, inside, dotR, pulse, mapLabel, trackPos);
+        try { crowns.drawMap(c, T, inside, dotR, pulse); } catch (e) { /* */ }
     }
     // ── spawn shield ──────────────────────────────────────────────────────
     // The server holds the shield for 4 s, then drops it on the first move
@@ -10583,9 +10727,13 @@ import * as hitFx from './hitFx.js';
             // rebuilt (a rebuild of all of them every 0.7 s while anyone mined
             // made ~300 Path2D objects a time: Blink garbage, GC hitches).
             const MAP_CHUNKS = 12;
-            const mc = mapChunks || (mapChunks = { state: new Map(), cells: new Map(), alive: new Map(), dead: new Map(), cols: -1 });
-            if (mc.cols !== cols || mc.n !== tr._cellPolys.size) {
-                mc.state.clear(); mc.cells.clear(); mc.alive.clear(); mc.dead.clear(); mc.cols = cols; mc.n = tr._cellPolys.size;
+            const mc = mapChunks || (mapChunks = { state: new Map(), cells: new Map(), alive: new Map(), dead: new Map(), bio: new Map(), cols: -1 });
+            // rock biomes: live rock is also kept per biome, so the maps can
+            // tint it (see drawWorldWindow); a new map seed starts over
+            const bioN = tr._bio && window.DWBiomes ? window.DWBiomes.N : 0;
+            if (mc.cols !== cols || mc.n !== tr._cellPolys.size || mc.bioOf !== tr._bio) {
+                mc.state.clear(); mc.cells.clear(); mc.alive.clear(); mc.dead.clear(); mc.bio.clear(); mc.cols = cols; mc.n = tr._cellPolys.size;
+                mc.bioOf = tr._bio;
                 for (const [k, cell] of tr._cellPolys) {
                     const ck = Math.min(MAP_CHUNKS - 1, Math.max(0, Math.floor(cell.cx / cols * MAP_CHUNKS))) * MAP_CHUNKS +
                                Math.min(MAP_CHUNKS - 1, Math.max(0, Math.floor(cell.cy / rows * MAP_CHUNKS)));
@@ -10603,17 +10751,29 @@ import * as hitFx from './hitFx.js';
                 }
             }
             for (const ck of changed) {
-                let pa = null, pd = null;
+                let pa = null, pd = null, pb = null;
                 for (const k of mc.cells.get(ck)) {
                     const cell = tr._cellPolys.get(k);
                     if (!cell) continue;
-                    const p = mc.state.get(k) ? (pd || (pd = new Path2D())) : (pa || (pa = new Path2D()));
+                    let p;
+                    if (mc.state.get(k)) p = pd || (pd = new Path2D());
+                    else if (bioN) {
+                        // per biome; the chunk's live path is put together below
+                        const b = Math.max(0, tr.biomeOf(k));
+                        pb = pb || [];
+                        p = pb[b] || (pb[b] = new Path2D());
+                    } else p = pa || (pa = new Path2D());
                     const poly = cell.poly;
                     p.moveTo((poly[0][0] / cols - 0.5) * gw, (poly[0][1] / rows - 0.5) * gh);
                     for (let i = 1; i < poly.length; i++)
                         p.lineTo((poly[i][0] / cols - 0.5) * gw, (poly[i][1] / rows - 0.5) * gh);
                     p.closePath();
                 }
+                if (pb) {
+                    pa = new Path2D();
+                    for (const q of pb) if (q) pa.addPath(q);
+                    mc.bio.set(ck, pb);
+                } else mc.bio.delete(ck);
                 if (pa) mc.alive.set(ck, pa); else mc.alive.delete(ck);
                 if (pd) mc.dead.set(ck, pd); else mc.dead.delete(ck);
             }
@@ -10621,7 +10781,17 @@ import * as hitFx from './hitFx.js';
             const alive = new Path2D(), dead = new Path2D();
             for (const p of mc.alive.values()) alive.addPath(p);
             for (const p of mc.dead.values()) dead.addPath(p);
-            mapPaths = { alive, dead, epoch: (mapPaths ? mapPaths.epoch : 0) + 1, builtAt: nowMP };
+            let aliveBio = null;
+            if (bioN) {
+                aliveBio = [];
+                for (const pb of mc.bio.values()) {
+                    for (let b = 0; b < pb.length; b++) {
+                        if (!pb[b]) continue;
+                        (aliveBio[b] || (aliveBio[b] = new Path2D())).addPath(pb[b]);
+                    }
+                }
+            }
+            mapPaths = { alive, dead, aliveBio, epoch: (mapPaths ? mapPaths.epoch : 0) + 1, builtAt: nowMP };
         }
         return mapPaths;
     }
@@ -10715,8 +10885,19 @@ import * as hitFx from './hitFx.js';
             c.scale(s, s);
             c.fillStyle = "#2b2320";
             c.fill(paths.dead);
-            c.fillStyle = "#413c4c";
-            c.fill(paths.alive);
+            const BI = paths.aliveBio && window.DWBiomes ? window.DWBiomes.BIOMES : null;
+            if (BI) {
+                // rock tinted by biome, kept close to the old grey so pings,
+                // pads and players still sit on top
+                for (let b = 0; b < paths.aliveBio.length; b++) {
+                    if (!paths.aliveBio[b]) continue;
+                    c.fillStyle = (BI[b] && BI[b].map) || "#413c4c";
+                    c.fill(paths.aliveBio[b]);
+                }
+            } else {
+                c.fillStyle = "#413c4c";
+                c.fill(paths.alive);
+            }
             const borderW = 0.09 * (Math.min(tr._cols, 120) / 50.0) * (gw / tr._cols); 
             if (borderW * s > 0.45) {
                 c.strokeStyle = "rgb(8,7,10)";
@@ -12946,6 +13127,17 @@ import * as hitFx from './hitFx.js';
     // waits for a click, Enter, Space or RT. Nothing drops you in on its own;
     // the raid end queues everyone itself (raidFinale.js).
     const lastStormCount = () => !!(global.died && global.royale && global.royale.lock && raidFinale.countdownUp());
+    // "Your perks stay until the raid ends." centred on cx, your build's
+    // icons in front of it (raidPerks.js)
+    function drawDeathPerkLine(c, line, cx, y, maxW, A) {
+        const n = Math.min(10, raidPerks.build().length), s = 16;
+        const iconsW = n ? n * (s + 3) + 5 : 0;
+        const f = fitLine(line, 12.5, 9.5, Math.max(80, maxW - iconsW));
+        const tw = hudTextW(f.txt, f.qs);
+        const x0 = cx - (iconsW + tw) / 2;
+        if (n) raidPerks.drawDeathIcons(c, x0, y, s, A);
+        drawText(f.txt, x0 + iconsW, y, f.qs, HUD.gold, "left", true, A);
+    }
     // The first raids' death card (newcomer.js stages 0-1): what got you and
     // how to dodge it next time, what you kept, and one big Respawn.
     const gameDrawDeadNewcomer = () => {
@@ -12960,6 +13152,9 @@ import * as hitFx from './hitFx.js';
         const tipLines = wrapLines(info.tip, 17, iw - 70).slice(0, 3);
         const TIP_H = Math.max(64, 26 + tipLines.length * 23);
         const KEPT_H = 44;
+        // raid perks: they come back with you, said under what you kept
+        const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
+        const PERK_H = perkLine ? 26 : 0;
         // the rank card stays for the second raid (placement lives), not the first
         const hasRank = newcomer.stage() >= 1 && rankPanel.hasContent();
         const RANK_H = 106;
@@ -12967,7 +13162,7 @@ import * as hitFx from './hitFx.js';
         const PLAY_CSS_H = 74;
         const FOOT = Math.round(PLAY_CSS_H * cssK);
         const HEAD = 44;
-        const H = pad + HEAD + TIP_H + gap + KEPT_H + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 14;
+        const H = pad + HEAD + TIP_H + gap + KEPT_H + PERK_H + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 14;
         const BTN = Math.round((40 + 22) * cssK);
         const px = Math.round(sw / 2 - W / 2);
         const py = Math.round(Math.max(12, sh - H - BTN - 12));
@@ -13001,7 +13196,8 @@ import * as hitFx from './hitFx.js';
         c.restore();
         const kf = fitLine(info.kept, 15, 10, iw - 54);
         drawText(kf.txt, hx + 40, y + KEPT_H / 2, kf.qs, HUD.gold, "left", true, A);
-        y += KEPT_H + gap;
+        if (perkLine) drawDeathPerkLine(c, perkLine, cx, y + KEPT_H + PERK_H / 2 + 4, iw, A);
+        y += KEPT_H + PERK_H + gap;
         if (hasRank) {
             try {
                 rankPanel.draw(c, hx, y, iw, RANK_H,
@@ -13047,7 +13243,11 @@ import * as hitFx from './hitFx.js';
         const cssK = sh / Math.max(1, window.innerHeight);
         const PLAY_CSS_H = 58;
         const HEAD = 62, STEP = 46, TILE = 40, NEXT_H = 40, RANK_H = 106, FOOT = Math.round(PLAY_CSS_H * cssK);
-        const leftH = 3 * STEP - (STEP - TILE) + 26;
+        // raid perks: one more line under the stats, with your build's icons
+        // (not when it was the raid ending that took everyone down)
+        const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
+        const PERK_H = perkLine ? 24 : 0;
+        const leftH = 3 * STEP - (STEP - TILE) + 26 + PERK_H;
         const whoH = two ? leftH - 10 - NEXT_H : 74;
         const bodyH = two ? leftH : leftH + gap + whoH + 10 + NEXT_H;
         const H = pad + HEAD + gap + bodyH + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 12;
@@ -13117,6 +13317,7 @@ import * as hitFx from './hitFx.js';
         if (global.finalDrillLost) extras.push("Your drill dropped a tier");
         const ex = fitLine(extras.length ? extras.join(". ") + "." : "You dropped what you were carrying. Your bank is safe.", 12, 9, colW);
         drawText(ex.txt, hx + colW / 2, by + 3 * STEP + 8, ex.qs, extras.length ? color.gold : HUD.text2, "center", true, A);
+        if (perkLine) drawDeathPerkLine(c, perkLine, hx + colW / 2, by + 3 * STEP + 8 + PERK_H, colW, A);
 
         // ── right: who got you (revenge), then what's next ──
         const rx = two ? hx + colW + gap : hx;
@@ -13197,7 +13398,7 @@ import * as hitFx from './hitFx.js';
     function playAgainState() {
         const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
-        if (locked) return { ready: false, label: "No spawns in the final storm (" + Math.max(0, global.royale.lockLeft | 0) + "s)" };
+        if (locked) return { ready: false, label: "No spawns while the storm shuts (" + Math.max(0, global.royale.lockLeft | 0) + "s)" };
         if (global.respawnPending) return { ready: false, label: "Dropping in..." };
         // the first raids' card says Respawn (newcomer.js)
         const word = newcomer.deathCardWanted() ? "Respawn" : "Play again";
@@ -13229,7 +13430,7 @@ import * as hitFx from './hitFx.js';
         const homeCx = x + barW - 6 - bw / 2;
         const playCx = x + barW - 12 - bw * 1.5;
         const label = locked
-            ? ("Final storm " + lockLeft + "s" + (place > 0 ? ("  #" + place) : "") + "  ·  no respawns")
+            ? ("Storm shuts " + lockLeft + "s" + (place > 0 ? ("  #" + place) : "") + "  ·  respawn after")
             : queued ? "Dropping in..."
             : ("Spectating" + (place > 0 ? ("  #" + place) : "") +
                (global.died ? (waitMs > 0 ? ("  ·  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  ·  Press Play to rejoin") : ""));
@@ -13365,6 +13566,7 @@ import * as hitFx from './hitFx.js';
         drawRoyaleWorldMarkers(px, py, ratio);
         drawFx(px, py, ratio);
         try { abilityFx.drawWorld(ctx[2], px, py, ratio); } catch (e) { /* never break the frame */ }
+        try { raidPerks.drawWorld(ctx[2], px, py, ratio); } catch (e) { /* never break the frame */ }
         drawTankBursts(px, py, ratio);
         try { raidHeat.drawWorld(ctx[2], px, py, ratio); } catch (e) { /* never break the frame */ }
         // same camera transform as the entities; drawn before the HUD so the
@@ -13413,6 +13615,7 @@ import * as hitFx from './hitFx.js';
             updateMapSmoothing();
             drawLowHealthVignette();
             try { raidHeat.drawScreen(ctx[2]); } catch (e) { /* */ }
+            try { crowns.drawScreen(ctx[2]); } catch (e) { /* */ }
             drawSatchelDanger();
             drawTeamBankBar();
             drawRoyaleHUD();
@@ -13436,6 +13639,7 @@ import * as hitFx from './hitFx.js';
                 drawMineCombo();    // mining chain meter under the tank
                 drawKitBox(spacing, alcoveSize);
                 drawAbilityBar();
+                try { drawRaidPerks(); } catch (e) { /* never break the frame */ }
                 drawVaultUI();
                 drawShopUI();
             }
@@ -13550,6 +13754,8 @@ import * as hitFx from './hitFx.js';
                 // back to the menu, where the sign-up form opens
                 global.exit && global.exit();
                 if (window.dwAccount && window.dwAccount.openSignup) window.dwAccount.openSignup();
+                // the account UI may not be loaded yet (client/funnel.js adds it late)
+                else if (window.DWFunnel && window.DWFunnel.withAccountUi) window.DWFunnel.withAccountUi((a) => a.openSignup && a.openSignup());
                 return;
             }
         } catch { /* */ }
@@ -13892,8 +14098,8 @@ import * as hitFx from './hitFx.js';
                 return { mode: "late", title: "Final storm", lbl: "Next raid starts in", n: joinClock(n),
                     line: "This raid is ending, so nobody can spawn. You'll start fresh in the next raid.", back: true, dots: true };
             }
-            return { mode: "lock", title: "Final storm", lbl: lockN > 0.5 ? "You spawn in" : "", n: lockN > 0.5 ? joinClock(lockN) : "",
-                line: lockN > 0.5 ? "Nobody can spawn while the storm closes. You'll drop in as soon as it resets." : "Spawning you now…",
+            return { mode: "lock", title: "Storm closing", lbl: lockN > 0.5 ? "You spawn in" : "", n: lockN > 0.5 ? joinClock(lockN) : "",
+                line: lockN > 0.5 ? "Nobody spawns while the storm shuts. You'll drop in as soon as it opens." : "Spawning you now…",
                 back: true, dots: true };
         }
         return null;

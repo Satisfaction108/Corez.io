@@ -64,6 +64,8 @@ function gearMult(owner) {
         m *= shop.miningMult(owner);
     } catch { /* shop not loaded yet */ }
     if (owner.overdriveUntil && Date.now() < owner.overdriveUntil) m *= 2;
+    // Power Drill (raidPerks.js)
+    if (owner._pkfx) m *= owner._pkfx.mine || 1;
     try {
         const mods = require('./raidMods.js');
         m *= mods.num('miningMult', 1);

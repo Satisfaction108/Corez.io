@@ -195,8 +195,9 @@ function hasGear(body, id) {
     if (gearActive(shopOf(body), id)) return true;
     return !!(body && !body.socket && body._twistGear && body._twistGear.includes(id));
 }
-function magnetMult(body) { return hasGear(body, "magnet") ? 1.9 : 1; }
-function satchelCap(body) { return SATCHEL_BASE * (hasGear(body, "satchel") ? 1.5 : 1) * ((global.royaleMods && global.royaleMods.satchelMult) || 1); }
+// raid perks (raidPerks.js) ride on top: Ore Magnet, Deep Pockets
+function magnetMult(body) { return (hasGear(body, "magnet") ? 1.9 : 1) * ((body && body._pkfx && body._pkfx.magnet) || 1); }
+function satchelCap(body) { return SATCHEL_BASE * (hasGear(body, "satchel") ? 1.5 : 1) * ((global.royaleMods && global.royaleMods.satchelMult) || 1) * ((body && body._pkfx && body._pkfx.satchel) || 1); }
 function depositRateMult(body) { return hasGear(body, "express") ? 2 : 1; }
 function stormDamageMult(body) {
     if (body && body.stormAnchorUntil && Date.now() < body.stormAnchorUntil) return 0;
@@ -212,8 +213,10 @@ function keepsDrillOnRespawn(body) { const s = shopOf(body); return !!(s && s.dr
 function applyPassives(body) {
     if (!body) return;
     const s = shopOf(body);
-    body.bonusSpeedMult = (hasGear(body, "boots") ? 1.25 : 1) * abilities.speedMult(body);
-    body.bonusHealthMult = hasGear(body, "plating") ? 1.25 : 1;
+    // raid perks (raidPerks.js): Swift Treads and Thick Hide
+    const pk = body._pkfx;
+    body.bonusSpeedMult = (hasGear(body, "boots") ? 1.25 : 1) * abilities.speedMult(body) * ((pk && pk.speed) || 1);
+    body.bonusHealthMult = (hasGear(body, "plating") ? 1.25 : 1) * ((pk && pk.health) || 1);
     body.gemCap = satchelCap(body);
     applyStatPoints(body, s);
     try { body.refreshBodyAttributes(); } catch { /* */ }
@@ -703,6 +706,7 @@ function useKit(socket, slot, tx, ty, itemId) {
             if (Config.dig_royale) try { require('../gamemodes/scripts/dig_royale.js').onBanked(body, credit); } catch { /* */ }
             try { require('./milestones.js').checkBanked(body, credit); } catch { /* */ }
             used = true;
+            if (global.royaleAch) global.royaleAch.onFlash(body);
             msg = "Flash vault: " + credit + " gems banked.";
             break;
         }

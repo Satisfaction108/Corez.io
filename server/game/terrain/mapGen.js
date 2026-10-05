@@ -45,6 +45,8 @@ function generate(cfg) {
     // would show as missing rock on a circle. Top/bottom are never carved; the
     // client adds the jagged silhouette in _smoothClipLoop.
 grid.cellSize        = tileWidth / SUBCELLS;
+    // the map's own seed: the raid's rock biomes are laid out from it
+    grid.mapSeed         = seed;
     grid.subCellsPerTile = SUBCELLS;
     grid.tileCols        = tileCols;
     grid.tileRows        = tileRows;

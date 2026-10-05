@@ -1,5 +1,5 @@
 // Account UI boot. home.js has already set <html data-acct> from
-// localStorage.dwAcctHint before first paint ('new' shows the welcome gate
+// localStorage.dwAcctHint before first paint ('new', stored on log out, shows the welcome gate
 // from CSS alone); this module confirms the real state with /api/me, handles
 // the ?auth= / ?link= redirects from Discord, and exposes window.dwAccount
 // for app.js (playName, blocksEnter).
@@ -361,8 +361,10 @@ async function boot() {
     });
 
     const hint = ls.get(HINT);
-    // on a portal the game starts as a guest, no welcome gate in the way
-    setMode(hint === 'user' ? 'user' : hint === 'guest' || welcome.embedded() ? 'guest' : 'new');
+    // The gate only greets someone who logged out here. A first-time visitor
+    // (no hint yet) and a portal frame play as a guest with nothing in the way;
+    // the account chip, the locked tabs and the death screen offer sign up.
+    setMode(hint === 'user' ? 'user' : hint === 'new' && !welcome.embedded() ? 'new' : 'guest');
     menu.render();
     if (store.get('mode') === 'new') welcome.open('choose');
 

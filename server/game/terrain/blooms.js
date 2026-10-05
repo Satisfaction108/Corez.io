@@ -1,6 +1,6 @@
 // Ore blooms: a patch of wall sprouts rich veins for DURATION_MS, once per
 // storm cycle, announced and shown on the minimap.
-const { ORE, ORE_HP } = require('./terrainGrid.js');
+const { ORE, ORE_HP, rockTough } = require('./terrainGrid.js');
 
 const RADIUS = 340;
 const DURATION_MS = 100_000;
@@ -52,7 +52,8 @@ function start() {
         const frac = rock.maxHealth > 0 ? Math.min(1, rock.health / rock.maxHealth) : 1;
         const ore = copperOnly ? ORE.COPPER : (Math.random() < 0.28 ? ORE.SHARD : ORE.VEIN);
         rock.ore = ore;
-        rock.maxHealth = tg.plainRockHealth * (ORE_HP[ore] || 1) * (global.royaleMods && global.royaleMods.rockHpMult || 1);
+        rock.maxHealth = tg.plainRockHealth * (ORE_HP[ore] || 1) * (global.royaleMods && global.royaleMods.rockHpMult || 1) * rockTough(rock, ore);
+        rock.soft = false;
         rock.health = Math.max(1, rock.maxHealth * frac);
         try { rock.deposits = tg._buildDeposits(rock); } catch { rock.deposits = null; }
         rock.bloomed = true;

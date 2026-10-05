@@ -280,6 +280,11 @@ function endMotion(body, keep = 0.45) {
     body._abMove = null;
     // the hook lets go (pulled in, its target gone, cut short): it reels back
     if (m && m.kind === 'grapple') fx('hookend', body.x, body.y, 0, 0, body.id);
+    if (m && m.kind === 'fling' && body._flingBy && global.royaleAch) {
+        const by = body._flingBy;
+        body._flingBy = null;
+        if (by.socket || body.socket) global.royaleAch.onFlingEnd(body, by);
+    }
     if (!m || !body.velocity) return;
     if (BURSTS[m.kind] && body.PUSHABILITY != null) body.pushability = 1 * body.PUSHABILITY;
     // a little glide out of it, not a dead stop
@@ -681,6 +686,8 @@ function detonate(o, x, y, t, list) {
             busy.add(b);
         }
         b._shockedAt = t;
+        // who threw it (achievements: a fling that ends in the storm)
+        b._flingBy = o.owner || null;
         // damage through the normal path (shield first), credited to the thrower
         const hurt = foe && owner && !shielded(b);
         if (hurt) {
@@ -737,6 +744,7 @@ function use(body, tx, ty, id) {
         body._abCdUntil = t + (res.lock || 300);
         dropShield(body);
         body.abilityUses = (body.abilityUses | 0) + 1;
+        if (body.socket && global.royaleAch) global.royaleAch.onAbility(body, id, t);
         if (body.socket && body.socket._saving) { try { require('./saveCodes.js').interrupt(body.socket, "You used an ability, so the save stopped."); } catch { /* */ } }
     }
     if (body.socket) talkState(body.socket, res.msg || "");
@@ -1194,6 +1202,9 @@ function tickPads(t, actors) {
             if ((b.x - p.x) ** 2 + (b.y - p.y) ** 2 > rr * rr) continue;
             if (t - (b._padLaunchAt || 0) < PAD.againMs) continue;
             b._padLaunchAt = t;
+            // whose pad it was (achievements: Air Mail)
+            b._padBy = p.owner || null;
+            b._padAt = t;
             const sp = topSpeedOf(b) * PAD.mult;
             if (b._abMove) endMotion(b, 0);
             startMotion(b, { kind: 'launch', vx: Math.cos(p.ang) * sp, vy: Math.sin(p.ang) * sp, speed: sp, until: t + PAD.launchMs });

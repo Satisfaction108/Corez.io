@@ -604,6 +604,7 @@ function stats(i, caller) {
                 { name: 'Guests', value: `${n(g.n)} ever · ${n(g.new1)} new today · ${n(g.act1)} active today · ${n(g.act7)} this week · ${n(g.games)} games · ${n(g.conv)} made an account`, inline: false },
                 { name: 'New guests by source (7 days)', value: sourcesText(d, now - 7 * DAY), inline: false },
                 { name: 'Retention (guests new 1-8 days ago)', value: retentionText(d, now), inline: false },
+                { name: 'Funnel (7 days)', value: require('../funnel').weekText(now), inline: false },
                 { name: 'Gemdust', value: `${dustText(acc.dust)} held · ${dustText(earned.m)} ever earned`, inline: false },
                 { name: 'Purchases', value: `${n(buys.n)} (${n(buys.gifts)} gifts, ${n(buys.refunds)} refunded) · ${dustText(buys.dust)} dust spent`, inline: false },
                 { name: 'Invites', value: inviteStats(), inline: false },
@@ -761,18 +762,20 @@ function profile(i, caller) {
     if (t.error) return reply(t.error, { ephemeral: true });
     const row = t.row;
     const s = require('../routes/profile').statsOf(row.id);
-    const got = achievements.unlockedSet(row.id).size;
+    const got = achievements.countFor(row.id);
     const snap = rankStore.snapshot(row);
     const st = require('../streaks').view(row.id);
     const n = v => (v | 0).toLocaleString('en-US');
     const days = v => n(v) + ((v | 0) === 1 ? ' day' : ' days');
+    const champ = champLine(row);
     const embed = {
         title: md(row.username),
         color: COLOR,
+        description: champ || undefined,
         fields: [
             { name: 'Rank', value: rankLine(row), inline: false },
             { name: 'Peak', value: snap.peak.division == null ? '-' : snap.peak.name, inline: true },
-            { name: 'Achievements', value: `${got}/${achievements.DEFS.length}`, inline: true },
+            { name: 'Achievements', value: `🏅 ${got}/${achievements.DEFS.length}`, inline: true },
             { name: 'Games', value: n(s.lives), inline: true },
             { name: 'Knockouts', value: n(s.kills), inline: true },
             { name: 'Raid wins', value: n(s.raidWins), inline: true },
@@ -787,10 +790,22 @@ function profile(i, caller) {
     return reply('', { embeds: [embed] });
 }
 
+// a raid won in the last 24 h (the Crown Contest's Core Champion): '' or a line
+function champLine(row) {
+    try {
+        if (!(rankStore.championUntil(row.id) > Date.now())) return '';
+        const s = require('../routes/profile').statsOf(row.id);
+        const st = require('../streaks').view(row.id);
+        const streak = st.win.current > 1 ? ', ' + st.win.current + ' in a row' : '';
+        return `👑 Core Champion (${(s.raidWins | 0).toLocaleString('en-US')} raid wins${streak})`;
+    } catch (e) { return ''; }
+}
+
 function rank(i, caller) {
     const t = targetFor(i, caller);
     if (t.error) return reply(t.error, { ephemeral: true });
-    return reply(`**${md(t.row.username)}**: ${rankLine(t.row)}`);
+    const ch = champLine(t.row);
+    return reply(`**${md(t.row.username)}**: ${rankLine(t.row)}${ch ? '\n' + ch : ''}`);
 }
 
 function leaderboard() {
@@ -804,12 +819,25 @@ function achievementsCmd(i, caller) {
     const t = targetFor(i, caller);
     if (t.error) return reply(t.error, { ephemeral: true });
     const list = achievements.list(t.row.id);
-    const got = list.filter(a => a.unlockedAt != null).length;
+    const got = list.filter(a => a.unlockedAt != null);
+    const C = require('../../../shared/achievements.js');
     const n = v => (v | 0).toLocaleString('en-US');
-    const lines = list.map(a => a.unlockedAt != null
-        ? `✅ **${md(a.name)}**: ${md(a.desc)}`
-        : `▫️ ${md(a.name)}: ${md(a.desc)}${a.goal > 1 ? ` (${n(a.progress)}/${n(a.goal)})` : ''}`);
-    return reply('', { embeds: [{ title: `${md(t.row.username)} · medals ${got}/${list.length}`, color: COLOR, description: lines.join('\n').slice(0, 4000) }] });
+    const label = a => md(a.name) + (a.tier ? ' ' + C.ROMAN[a.tier] : '');
+    // one line per category: how many, then the newest few
+    const cats = C.CATS.map(c => {
+        const all = list.filter(a => a.cat === c.id);
+        const mine = got.filter(a => a.cat === c.id);
+        return `**${c.name}** ${mine.length}/${all.length}`;
+    });
+    const recent = got.slice().sort((a, b) => b.unlockedAt - a.unlockedAt).slice(0, 6)
+        .map(a => `✅ **${label(a)}**: ${md(a.desc)}${a.rarity ? ` (${a.rarity}% have it)` : ''}`);
+    // the closest ones still open (secret ones stay secret)
+    const next = list.filter(a => a.unlockedAt == null && !a.secret && a.goal > 1 && a.progress > 0)
+        .sort((a, b) => b.progress / b.goal - a.progress / a.goal).slice(0, 3)
+        .map(a => `▫️ ${label(a)}: ${md(a.desc)} (${n(a.progress)}/${n(a.goal)})`);
+    const lines = [cats.join(' · '), '', ...(recent.length ? ['Latest:', ...recent] : ['Nothing unlocked yet.'])];
+    if (next.length) lines.push('', 'Almost there:', ...next);
+    return reply('', { embeds: [{ title: `${md(t.row.username)} · achievements ${got.length}/${list.length}`, color: COLOR, description: lines.join('\n').slice(0, 4000) }] });
 }
 
 function invitesCmd(i, caller) {

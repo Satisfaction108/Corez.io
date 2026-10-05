@@ -334,6 +334,7 @@ function fireOre(body, t) {
         rock.ore = ore;
         try { rock.deposits = grid._buildDeposits(rock); } catch { rock.deposits = null; }
         rock.maxHealth = Math.max(10, grid.plainRockHealth * (ORE_HP[ore] || 1) * TUNE.ORE_SOFT);
+        rock.soft = true;   // the old flat gem pay, whatever the biome
         rock.health = rock.maxHealth;
         // it stays put until they get to it
         rock.noRegrowUntil = Math.max(rock.noRegrowUntil || 0, t + TUNE.ORE_MS);

@@ -240,6 +240,7 @@ function spawnCore() {
             if (root && (root.isPlayer || root.isBot)) {
                 // picking this fight drops a newcomer's last-blow mercy (bossGuard)
                 if (root.isPlayer) root._hitBossAt = t;
+                if (root.socket && !root._achCore && global.royaleAch) { root._achCore = 1; global.royaleAch.onCoreHit(root); }
                 const h = hitters.get(root.id);
                 hitters.set(root.id, { body: root, at: t, n: (h ? h.n : 0) + 1, dmg: (h ? h.dmg : 0) + each });
             }
@@ -324,6 +325,7 @@ function onBroken(o) {
     blast = { x: o.x, y: o.y, at: brokeAt + COLLAPSE_MS, killer };
     if (hooks.fxAt) hooks.fxAt(o.x, o.y, 'corecollapse', COLLAPSE_MS);
     if (killer && killer.socket) {
+        if (global.royaleAch) { try { global.royaleAch.onCoreBreak(killer); } catch (e) { /* */ } }
         if (hooks.addPts) hooks.addPts(killer, LAST_HIT_PTS);
         if (hooks.callout) hooks.callout(killer, 'corebreak', "YOU BROKE THE CORE", LAST_HIT_PTS, "Get clear, it's about to blow.", 2600);
     }
@@ -432,8 +434,9 @@ function tick(t, fighters) {
         return;
     }
     if (blast && t >= blast.at) { try { blow(t); } catch (e) { lastErr = String(e && e.stack || e); } }
-    // bots leave players alone while it stands (controllers.js reads this)
-    global.royaleCoreTruce = state === 'up' && !!core && alive(core);
+    // bots leave players alone while it stands (controllers.js reads this);
+    // the Crown Contest's sudden death ends the truce for good
+    global.royaleCoreTruce = state === 'up' && !!core && alive(core) && !global.royaleCrownSD;
     if (state !== 'up' || !core) return;
     if (!alive(core)) { onBroken(core); return; }
     core.invuln = false;

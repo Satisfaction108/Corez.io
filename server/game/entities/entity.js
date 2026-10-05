@@ -929,7 +929,7 @@ class Entity extends EventEmitter {
 
     upgrade(number, branchId) {
         // Account for upgrades that are too high level for the player to access
-        let upgraded = false;
+        let upgraded = false, upTier = 0;
         if (number.isDailyUpgrade && Config.daily_tank && Config.daily_tank.tank) {
             let hasWatchedAd = this.socket.status.daily_tank_watched_ad;
             if (!Config.daily_tank.ads) hasWatchedAd = true;
@@ -946,6 +946,7 @@ class Entity extends EventEmitter {
             if (number < this.upgrades.length && this.skill.level >= this.upgrades[number].level) {
                 upgraded = true;
                 let upgrade = this.upgrades[number], upgradeClass = upgrade.class, upgradeBranch = upgrade.branch, redefineAll = upgrade.redefineAll;
+                upTier = upgrade.tier | 0;
                 if (redefineAll) {
                     for (let i = 0; i < upgradeClass.length; i++) upgradeClass[i] = ensureIsClass(...upgradeClass[i]);
                     this.upgrades = [];
@@ -958,7 +959,7 @@ class Entity extends EventEmitter {
             }
         }
         if (!upgraded) return;
-        this.emit("upgrade", { body: this });
+        this.emit("upgrade", { body: this, tier: upTier });
         if (this.settings.shakeProperties) this.settings.shakeProperties.forEach(info => {
             if (info.applyOn.upgrade) {
                 this.socket.talk("SH", JSON.stringify(info));

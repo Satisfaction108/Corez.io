@@ -4,8 +4,8 @@
 // edge wide enough for a tank (precomputed once per terrain build). A cell is
 //   open      mined out / canyon (pits, pads, plaza) and not about to regrow
 //   closing   mined out but due to start regrowing within REGROW_SOON_MS
-//   rock      alive rock no tougher than HARD_ROCK_EQ fresh plain rocks
-//             (plain rock, softened pit rock, damaged ore): diggable
+//   rock      alive rock no tougher than HARD_ROCK_EQ fresh plain rocks of
+//             its biome (plain rock, softened pit rock, damaged ore): diggable
 //   wall      emerald, a rock that is regrowing right now, fresh ore (copper
 //             is 1.8x plain, shard 3x, emerald 6x), anything outside the zone
 //
@@ -128,7 +128,10 @@ function classify(grid, rock, ctx) {
     }
     if (rock.alive) {
         const eq = Math.max(0.05, (rock.health || 0) / ctx.plain);
-        if (!ctx.rescue && eq > REACH.HARD_ROCK_EQ) return { kind: 'wall', cost: Infinity };
+        // wall or not is against a fresh plain rock of the same biome (bHard,
+        // see royaleLayout.js), so obsidian's plain rock is still diggable;
+        // the cost stays in real HP
+        if (!ctx.rescue && eq / (rock.bHard || 1) > REACH.HARD_ROCK_EQ) return { kind: 'wall', cost: Infinity };
         return { kind: 'rock', cost: eq };
     }
     if (regrowDueAt(grid, rock, ctx.now) - ctx.now < REACH.REGROW_SOON_MS) return { kind: 'closing', cost: 0.25 };

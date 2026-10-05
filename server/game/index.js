@@ -1801,6 +1801,12 @@ class gameHandler {
         // a grown tank (terrain/growth.js) digs every hit harder, and its dig
         // budget rises by the same factor
         const growMine = (e) => (e.growthMult > 1 && global.royaleGrowth) ? global.royaleGrowth.mineMult(e.growthMult) : 1;
+        // raid perks (terrain/raidPerks.js): Power Drill and the extra barrels
+        // raise the dig budget (the drill's damage side is in mining.gearMult),
+        // and the shot perks (blast, chain, pierce, crit) live in raidPerks
+        const perkMine = (e) => e._pkfx ? (e._pkfx.budget || 1) : 1;
+        let raidPerksMod = null;
+        const raidPerks = () => raidPerksMod || (raidPerksMod = require('./terrain/raidPerks.js'));
 
         const crush = (instance, ms) => {
             if (!instance.health || !(instance.health.max > 0)) return;
@@ -1990,18 +1996,22 @@ class gameHandler {
                     // touches, then dies once like a single hit.
                     const hitRocks = _tg.rocksHitByCircle(instance.x, instance.y, instance.realSize, bulletRockHits);
                     if (growingNow) _tg.growingRocksHitByCircle(instance.x, instance.y, instance.realSize, tickNow, hitRocks);
+                    // a piercing shot (raid perk) never hits the same rock twice
+                    if (instance._pkHit && hitRocks.length) raidPerks().skipPassed(instance, hitRocks);
                     if (hitRocks.length) {
                         const owner = rootMaster(instance);
+                        const perkFx = owner._pkfx || null;
                         const nowT = Date.now();
                         let mb = mineBudget.get(owner.id);
                         if (!mb || nowT - mb.t >= 1000) {
-                            mb = { t: nowT, left: _tg.baseRockHealth * 3 * growMine(owner) };
+                            mb = { t: nowT, left: _tg.baseRockHealth * 3 * growMine(owner) * perkMine(owner) };
                             mineBudget.set(owner.id, mb);
                         }
 
                         const rp = instance.rockPower || 0;
                         const raw = _tg.baseRockHealth * mining.rockDamageFor(owner, instance)
-                                  * mining.skillFactor(owner) * (rp || 1) * growMine(owner);
+                                  * mining.skillFactor(owner) * (rp || 1) * growMine(owner)
+                                  * (perkFx ? raidPerks().critMult(instance, owner) : 1);
                         for (let hi = 0; hi < hitRocks.length; hi++) {
                             const rock = hitRocks[hi];
                             // lance bolts are rate-limited by their own reload, not the budget
@@ -2021,6 +2031,12 @@ class gameHandler {
                                     if (rock.ore === 4) announceEmerald(owner);
                                 }
                             }
+                        }
+                        // raid perks: blast and chain around the hit, and a
+                        // piercing shot lives on
+                        if (perkFx && raidPerks().afterRockHit(instance, owner, hitRocks, _tg, raw)) {
+                            hitRocks.length = 0;
+                            continue;
                         }
                         hitRocks.length = 0;
 

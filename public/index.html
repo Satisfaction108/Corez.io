@@ -114,6 +114,30 @@
         } catch (e) { /* stats only */ }
     })();
     </script>
+    <!-- Play works from the first paint, and the visit funnel (client/funnel.js).
+         defer: runs before every module script below -->
+    <script defer src="./client/funnel.js"></script>
+    <script>
+    // ...and until it runs (the page has to finish parsing first), a press
+    // of Play, Enter or Space is kept here for it
+    (function () {
+        var hold = function () {
+            if (window.DWFunnel || window.dwPlayEarly) return;
+            window.dwPlayEarly = 1;
+            var b = document.getElementById('startButton');
+            if (b) { b.classList.add('dw-queued'); var t = b.querySelector('b'); if (t) t.textContent = 'Starting\u2026'; }
+        };
+        document.addEventListener('click', function (e) {
+            if (e.target && e.target.closest && e.target.closest('#startButton')) hold();
+        }, true);
+        document.addEventListener('keydown', function (e) {
+            var t = e.target || {}, tag = String(t.tagName || '').toLowerCase();
+            if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+            if ((tag === 'input' && t.id !== 'playerNameInput') || tag === 'textarea' || tag === 'select' || tag === 'button' || t.isContentEditable) return;
+            if (e.key === 'Enter' || (e.key === ' ' && tag !== 'input')) hold();
+        }, true);
+    })();
+    </script>
     <link rel="canonical" href="https://corez.io/">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Corez.io">
@@ -150,7 +174,9 @@
     <title>Corez.io: free browser battle royale</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap">
+    <!-- the title font only: never hold the first paint for it (it swaps in) -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap"></noscript>
     <link rel="stylesheet" href="./font.css"/>
     <link rel="stylesheet" href="./main.css"/>
     <link rel="stylesheet" href="./home.css"/>
@@ -556,7 +582,7 @@
                             <div class="menu-row">
                                 <div class="menu-field">
                                     <label class="field-label" for="playerNameInput"><span class="dw-lbl-guest">Name</span><span class="dw-lbl-user">You</span></label>
-                                    <input type="text" autofocus tabindex="1" spellcheck="false" placeholder="your name" id="playerNameInput" maxlength="24">
+                                    <input type="text" tabindex="1" spellcheck="false" placeholder="optional" id="playerNameInput" maxlength="24" autocomplete="off">
                                     <!-- logged in: the account name replaces the input -->
                                     <button type="button" id="acctNameBox" title="Change it in Account"><span id="acctNameText"></span><svg class="dw-ic"><use href="#i-lock"/></svg></button>
                                 </div>
@@ -706,7 +732,8 @@
     <script src="/shared/events.js"></script>
     <script src="/shared/daily.js"></script>
     <script src="/shared/profanity.js"></script>
-    <script src="//code.jquery.com/jquery-2.2.0.min.js"></script>
+    <!-- rock biomes, laid out the same way the server does (window.DWBiomes) -->
+    <script src="/shared/rockBiomes.js"></script>
     <script type="module" src="./client/app.js"></script>
     <script type="module" src="./client/config.js"></script>
     <script type="module" src="./client/gameDraw.js"></script>
@@ -718,7 +745,11 @@
     <script src="./client/halloween.js"></script>
     <script src="./client/portal.js"></script>
     <script src="./client/home.js"></script>
-    <script type="module" src="./client/account/main.js"></script>
+    <!-- The account UI (client/account/main.js: shop, locker, friends, profile,
+         top 100, daily track) is about as many bytes as the game client and
+         isn't needed to press Play, so client/funnel.js adds it: at once for
+         accounts and account links, otherwise once the menu is idle or the
+         player is back from their first raid. -->
     <script type="module" src="./client/version.js"></script>
 </body>
 </html>

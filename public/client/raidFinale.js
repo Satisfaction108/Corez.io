@@ -9,6 +9,9 @@ import { global } from "./global.js";
 import { config } from "./config.js";
 import { gameSound } from "./sound.js";
 import * as raidShare from "./raidShare.js";
+import * as juice from "./juice.js";
+import * as CL from "./crownsLogic.js";
+import * as crownArt from "./crownArt.js";
 
 let A = null;
 export function init(helpers) { A = helpers; }
@@ -34,7 +37,7 @@ const S = {
     me: { score: 0, kills: 0, banked: 0, next: 0 },
     respawnAsked: false, filtered: false, lastTick: 0, podSnd: 0, tallyEnd: false,
     gemAcc: 0, paperAcc: 0, nextSpan: 0, crownHit: false, crownAt: 0, holdArmed: false, snapped: false, streak: null, fx: 0, fy: 0, fr: 0, fok: false,
-    cb: null, dc: null,
+    cb: null, dc: null, cw: null,
 };
 
 const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
@@ -91,7 +94,10 @@ export function start(sub) {
     S.me.banked = you.banked | 0;
     S.me.next = you.nextGems | 0;
     const w = S.top[0];
-    S.winner = w ? (w.name || "Unnamed") : "";
+    S.winner = res && res.champ ? (res.champ.name || "Unnamed") : w ? (w.name || "Unnamed") : "";
+    // the Crown Contest decided it: CORE CHAMPION, silver and bronze crowns
+    S.cw = null;
+    try { S.cw = CL.finale(res, S.place, S.isWin, S.winner, S.rows); } catch (e) { S.cw = null; }
     S.mate = S.duos && r.duo && r.duo.mate ? String(r.duo.mate.name || "your teammate") : "";
     if (!S.streak || now - S.streak.at > 20000) S.streak = null;
     P.n = 0;
@@ -102,6 +108,8 @@ export function start(sub) {
     // holds is the flash and RAID OVER, not the last second of the raid
     S.holdArmed = shakeOn() && !calm();
     if (S.holdArmed) kick(now, 0.05, 1.6, 1200);
+    // the champion's own moment: time all but stops, then crawls back
+    if (S.cw && S.isWin && !calm()) { try { juice.slowMo(1500, 0.22); } catch (e) { /* */ } }
     raidShare.clearView();
     countRaid();
     fetchComeBack();
@@ -224,60 +232,9 @@ window.dwFinaleShake = () => { const tr = wrapEl ? wrapEl.style.transform : ""; 
 
 // ── baked art ─────────────────────────────────────────────────────────────
 let crownSpr = null, spotSpr = null, raySpr = null;
+// the flat ink-rimmed crown (crownArt.js), baked big enough for the drop
 function crownSprite() {
-    if (crownSpr) return crownSpr;
-    const W = 240, H = 190;
-    const cv = document.createElement("canvas");
-    cv.width = W; cv.height = H;
-    const c = cv.getContext("2d");
-    const ink = "#120e15", gold = "#f2b83c", goldDk = "#a8750f", hi = "#ffd978";
-    c.lineJoin = "round"; c.lineCap = "round";
-    const bx = W / 2, base = H - 22, w = 176, h = 118;
-    const shape = () => {
-        c.beginPath();
-        c.moveTo(bx - w * 0.42, base);
-        c.lineTo(bx - w * 0.5, base - h * 0.78);
-        c.lineTo(bx - w * 0.2, base - h * 0.42);
-        c.lineTo(bx, base - h);
-        c.lineTo(bx + w * 0.2, base - h * 0.42);
-        c.lineTo(bx + w * 0.5, base - h * 0.78);
-        c.lineTo(bx + w * 0.42, base);
-        c.closePath();
-    };
-    const tips = [[bx - w * 0.5, base - h * 0.78], [bx, base - h], [bx + w * 0.5, base - h * 0.78]];
-    // ink rim, a hard drop under it, then the gold
-    c.save(); c.translate(0, 7);
-    shape(); c.lineWidth = 16; c.strokeStyle = ink; c.stroke(); c.fillStyle = ink; c.fill();
-    c.restore();
-    shape(); c.lineWidth = 16; c.strokeStyle = ink; c.stroke();
-    for (const [x, y] of tips) { c.beginPath(); c.arc(x, y, 17, 0, Math.PI * 2); c.fillStyle = ink; c.fill(); }
-    shape(); c.fillStyle = gold; c.fill();
-    for (const [x, y] of tips) { c.beginPath(); c.arc(x, y, 11, 0, Math.PI * 2); c.fillStyle = gold; c.fill(); }
-    // the band
-    c.beginPath();
-    c.rect(bx - w * 0.43, base - 26, w * 0.86, 26);
-    c.fillStyle = goldDk; c.fill();
-    c.lineWidth = 5; c.strokeStyle = ink; c.stroke();
-    // one flat lighter facet down the left, like the gem pickups
-    c.beginPath();
-    c.moveTo(bx - w * 0.4, base - 30);
-    c.lineTo(bx - w * 0.47, base - h * 0.72);
-    c.lineTo(bx - w * 0.22, base - h * 0.36);
-    c.lineTo(bx - w * 0.06, base - h * 0.86);
-    c.lineTo(bx - w * 0.04, base - 30);
-    c.closePath();
-    c.fillStyle = hi; c.globalAlpha = 0.5; c.fill(); c.globalAlpha = 1;
-    // an emerald set in the band
-    c.save();
-    c.translate(bx, base - 13);
-    c.beginPath();
-    c.moveTo(-13, -4); c.lineTo(-7, -11); c.lineTo(7, -11); c.lineTo(13, -4); c.lineTo(0, 11); c.closePath();
-    c.lineWidth = 4; c.strokeStyle = ink; c.stroke();
-    c.fillStyle = "#3fcf7a"; c.fill();
-    c.beginPath(); c.moveTo(-6, -5); c.lineTo(-3, -8); c.lineTo(3, -8); c.lineTo(6, -5); c.lineTo(0, 3); c.closePath();
-    c.fillStyle = "#8ff5b8"; c.fill();
-    c.restore();
-    crownSpr = { cv, w, h: h + 22, ax: bx, ay: base };
+    if (!crownSpr) crownSpr = crownArt.crownSprite("gold", 192);
     return crownSpr;
 }
 // dark everywhere except a soft round hole in the middle
@@ -606,7 +563,7 @@ export function draw() {
     c.restore();
     if (S.holdArmed) {
         S.holdArmed = false;
-        global.hitStop = Math.max(global.hitStop || 0, Date.now() + 240);
+        global.hitStop = Math.max(global.hitStop || 0, Date.now() + (S.cw && S.isWin ? 520 : 240));
     }
     // the share card's backdrop: the world once the crown is on
     if (S.reveal && !S.snapped && now - S.reveal > 700) {
@@ -619,7 +576,14 @@ function reveal(now, W, H) {
     S.reveal = now;
     const x = S.fok ? S.fx : W / 2, y = S.fok ? S.fy - S.fr : H / 2;
     burstAt(x, y, W, H);
-    try { if (S.isWin) gameSound.rankUp(true); else gameSound.bankCelebrate(); } catch (e) { /* */ }
+    try {
+        if (S.cw && S.isWin && gameSound.champion) gameSound.champion();
+        else if (S.isWin) gameSound.rankUp(true);
+        else if (S.cw && S.place <= 3) gameSound.rankUp(false);
+        else gameSound.bankCelebrate();
+    } catch (e) { /* */ }
+    // the champion: a second, bigger burst of paper
+    if (S.cw && S.isWin) burstAt(W / 2, H * 0.2, W, H);
 }
 
 function drawSpotlight(c, W, H, alpha, spot) {
@@ -711,6 +675,7 @@ function drawTitles(c, rt, W, H) {
     const a = Math.min(1, k * 2);
     const y = Math.max(96, H * 0.15);
     const winTxt = S.winner || "Nobody";
+    if (S.cw) { drawCrownTitles(c, rt, W, H, y, a, pop); return; }
     if (S.isWin) {
         const size = Math.min(150, W * 0.105);
         bigTitle(c, "VICTORY", W / 2, y, size, HUD.gold, HUD.goldDk, a, pop);
@@ -735,6 +700,44 @@ function drawTitles(c, rt, W, H) {
         A.hudTitle(winTxt, x0 + wl, yy, size2, HUD.gold, "left", a2, c);
         A.hudTitle(" won the raid", x0 + wl + wn, yy, size2, HUD.head, "left", a2, c);
     } else nameLine(c, winTxt, " won the raid", W / 2, y + size * 0.66, size2, a2);
+}
+
+// The Crown Contest's words (crownsLogic.finale): CORE CHAMPION for the
+// winner, a silver or bronze crown for 2nd and 3rd, and for everyone else
+// the champion's name with "is the Core Champion" under it.
+const CW_COL = { gold: ["#f2b83c", "#a8750f"], silver: ["#e6e1ee", "#8d8799"], bronze: ["#e07b2e", "#9e4a14"] };
+function drawCrownTitles(c, rt, W, H, y, a, pop) {
+    const HUD = A.HUD, cw = S.cw;
+    const a2 = clamp((rt - 450) / 400);
+    if (cw.champLine) {
+        // someone else won: their name, big and gold
+        const size = fitSize(cw.title, Math.min(120, W * 0.085), W - 80, 36);
+        bigTitle(c, cw.title, W / 2, y, size, HUD.gold, HUD.goldDk, a, pop);
+        const tail = S.place > 0 ? "  ·  you placed #" + S.place : "";
+        const sub = cw.sub + tail;
+        A.hudTitle(sub, W / 2, y + size * 0.68, fitSize(sub, 30, W - 60, 14), HUD.head, "center", a2, c);
+        return;
+    }
+    const [fill, dark] = CW_COL[cw.col] || CW_COL.gold;
+    const size = fitSize(cw.title, cw.col === "gold" ? Math.min(150, W * 0.1) : Math.min(124, W * 0.085), W - 60, 40);
+    bigTitle(c, cw.title, W / 2, y, size, fill, dark, a, pop);
+    if (S.isWin) {
+        let sub = S.duos && S.mate ? "You and " + shortName(S.mate, 20) + " took the crown home" : cw.sub;
+        if (S.streak && S.streak.kind === "win" && S.streak.n > 1) sub += "  ·  " + S.streak.n + " wins in a row";
+        else {
+            const cs = global.royale && global.royale.you && global.royale.you.cs | 0;
+            if (cs > 1) sub += "  ·  " + cs + " wins in a row";
+        }
+        A.hudTitle(sub, W / 2, y + size * 0.68, fitSize(sub, 30, W - 60, 14), HUD.head, "center", a2, c);
+        return;
+    }
+    // 2nd / 3rd: the champion's name in gold inside the line
+    const nm = S.winner || "Nobody", rest = " is the Core Champion";
+    const s2 = fitSize(nm + rest, 30, W - 60, 14);
+    const wn = A.hudTitleW(nm, s2), wr = A.hudTitleW(rest, s2);
+    const x0 = W / 2 - (wn + wr) / 2, yy = y + size * 0.64;
+    A.hudTitle(nm, x0, yy, s2, HUD.gold, "left", a2, c);
+    A.hudTitle(rest, x0 + wn, yy, s2, HUD.head, "left", a2, c);
 }
 
 // Side plates on a wide screen, leaving the winner in the middle clear;
@@ -792,6 +795,7 @@ function shareInfo() {
         place: S.place, rows: S.rows, duos: S.duos, name: global.playerName || "Unnamed",
         score: S.me.score, kills: S.me.kills, banked: S.me.banked, top: S.top,
         fok: S.fok, fx: S.fx, fy: S.fy, fr: S.fr, crown: crownSprite(),
+        champ: !!(S.cw && S.isWin), crownCol: S.cw ? S.cw.col : "", champName: S.cw ? S.winner : "",
     };
 }
 
@@ -847,7 +851,7 @@ function drawPodium(c, pt) {
         A.hudTitle(name, bx + colW / 2, top - 15, ns, mine ? HUD.gold : HUD.head, "center", a, c);
         if (rank === 1) {
             const cs = crownSprite();
-            const g = 34, sc = g / cs.w;
+            const g = 40, sc = g / cs.w;
             c.save();
             c.globalAlpha *= a;
             c.translate(bx + colW / 2, top - 30);

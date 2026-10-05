@@ -50,6 +50,19 @@ const REGROW = {
 
 function easeGrowth(p) { return p * p * (3 - 2 * p); }
 
+// How tough a rock is on top of its ore's own health: its biome's toughness
+// times its ore's (shared/rockBiomes.js toughness). 1 off the raid map (no
+// biome). Its gems pay the same factor (gems.js), unless it was softened
+// for a spawn (rock.soft), which keeps the old flat pay.
+const Biomes = require('../../../shared/rockBiomes.js');
+function rockTough(rock, ore = rock && rock.ore) {
+    if (!rock || !(rock.biome >= 0)) return 1;
+    return Biomes.toughness(rock.bHard || 1, ore | 0);
+}
+function rockPay(rock) {
+    return rock && rock.soft ? 1 : rockTough(rock);
+}
+
 class TerrainGrid {
     constructor(cols, rows) {
         this.cols = cols;
@@ -396,7 +409,26 @@ class TerrainGrid {
         const out = [];
 
         if (tier === 3 || tier === 4) {
-            out.push({ x: cx, y: cy, r: (tier === 4 ? 0.34 : 0.30) * rockSz,
+            // the big crystal sits at the rock's roomiest spot (the point
+            // farthest from its edge: a coarse grid, then a finer one round
+            // the best) and is never wider than that room allows, so it
+            // stays inside the rock with a margin. Mirrored in
+            // public/client/terrainRenderer.js _depositLayout.
+            let bx = cx, by = cy, bd = inPoly(cx, cy) ? distToBorder(cx, cy) : -1;
+            let sx = (maxX - minX) / 8, sy = (maxY - minY) / 8, ox = minX, oy = minY;
+            for (let pass = 0; pass < 2; pass++) {
+                for (let gy = 0; gy <= 8; gy++) {
+                    for (let gx = 0; gx <= 8; gx++) {
+                        const x = ox + gx * sx, y = oy + gy * sy;
+                        if (!inPoly(x, y)) continue;
+                        const d = distToBorder(x, y);
+                        if (d > bd) { bd = d; bx = x; by = y; }
+                    }
+                }
+                ox = bx - sx; oy = by - sy; sx /= 4; sy /= 4;
+            }
+            const r0 = (tier === 4 ? 0.34 : 0.30) * rockSz;
+            out.push({ x: bx, y: by, r: bd > 0 ? Math.min(r0, bd * 0.78) : r0,
                        rot: (h(1, 221) - 0.5) * 0.7, big: true });
         }
         for (let t = 0; t < 40 && out.length < want; t++) {
@@ -1080,7 +1112,10 @@ class TerrainGrid {
                 rock.bloomed = true;
             }
         }
-        rock.maxHealth  = ROCK_HEALTH * ORE_HP[rock.ore] * ((global.royaleMods && global.royaleMods.rockHpMult) || 1);
+        // biome x ore toughness (royaleLayout.js), 1 off the raid map; a
+        // regrown rock is never a softened spawn rock
+        rock.soft       = false;
+        rock.maxHealth  = ROCK_HEALTH * ORE_HP[rock.ore] * ((global.royaleMods && global.royaleMods.rockHpMult) || 1) * rockTough(rock);
         rock.health     = rock.maxHealth * REGROW.HP_FLOOR;
         rock.deposits   = rock.ore ? this._buildDeposits(rock) : null;
 
@@ -1275,7 +1310,7 @@ class TerrainGrid {
         const oldMax = best.maxHealth || 1;
         const frac = Math.min(1, best.health / oldMax);
         best.ore       = ORE.EMERALD;
-        best.maxHealth = ROCK_HEALTH * ORE_HP[ORE.EMERALD];
+        best.maxHealth = ROCK_HEALTH * ORE_HP[ORE.EMERALD] * rockTough(best, ORE.EMERALD);
         best.health    = frac * best.maxHealth;
         best.deposits  = this._buildDeposits(best);
         this.rockEvents.push({ k: best.k, e: 1 });
@@ -1415,6 +1450,8 @@ class TerrainGrid {
 
             if (!wasGrowing && rock.ore === ORE.EMERALD)
                 this._pendingEmeralds.push({ at: rock.diedAt + ((global.royaleMods && global.royaleMods.emeraldRespawnMs) || REGROW.EMERALD_RESPAWN_MS) });
+            // achievements (accounts/game/achHooks.js): a player broke it
+            if (!wasGrowing && owner && owner.socket && global.royaleAch) global.royaleAch.onRock(owner, rock);
         }
         const ev = { k: rock.k, h: rock.health / rock.maxHealth, d: destroyed ? 1 : 0 };
         // g: hull scraping, clients draw soft grind sparks
@@ -1674,4 +1711,4 @@ class TerrainGrid {
     }
 }
 
-module.exports = { TerrainGrid, CELL, ORE, ORE_HP, REGROW, easeGrowth };
+module.exports = { TerrainGrid, CELL, ORE, ORE_HP, REGROW, easeGrowth, rockTough, rockPay };

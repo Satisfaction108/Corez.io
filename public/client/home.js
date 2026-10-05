@@ -17,8 +17,10 @@
         if (!localStorage.getItem('dwThemeV3')) { localStorage.setItem(THEME_KEY, 'dark'); localStorage.setItem('dwThemeV3', '1'); }
     } catch (e) { /* private mode: default below */ }
     applyTheme(localStorage.getItem(THEME_KEY) || 'dark'); // immediate, no flash
-    // account gate, see client/account/main.js. Framed on a portal: straight to guest play.
-    var acctHint = localStorage.getItem('dwAcctHint') || 'new';
+    // account gate, see client/account/main.js. Only someone who logged out
+    // ('new' is stored then) gets it on load: a first-time visitor plays as a
+    // guest straight away, and so does a portal frame.
+    var acctHint = localStorage.getItem('dwAcctHint') || 'guest';
     document.documentElement.setAttribute('data-acct', window.dwEmbed && acctHint === 'new' ? 'guest' : acctHint);
 
     /* ── Fullscreen ────────────────────────────────────────────────────
@@ -117,6 +119,8 @@
     function initA2hsTip() {
         var tip = document.getElementById('a2hsTip');
         if (!tip || window.dwEmbed) return;
+        // not before the first raid: Play is the only thing a first-timer needs
+        if (window.DWFunnel && !window.DWFunnel.hasPlayed()) return;
         var ios = /iPhone|iPod/.test(navigator.userAgent);
         var installed = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
         if (!ios || installed) return;

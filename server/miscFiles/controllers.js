@@ -503,7 +503,8 @@ class io_nearestDifferentMaster extends IO {
         if (myMaster.isBot && theirMaster.nxScaryUntil && newcomer.scarySpared(myMaster, theirMaster, Date.now())) return false;
         // Core truce (coreFinale.js): a bot's guns and drones leave players
         // alone unless that player hit the bot in the last few seconds
-        if (myMaster.isBot && theirMaster.isPlayer && global.royaleCoreTruce &&
+        // (a crowned player is never under it: crowns are fair game)
+        if (myMaster.isBot && theirMaster.isPlayer && global.royaleCoreTruce && !theirMaster.crowned &&
             !(myMaster._lastDamageSource === theirMaster && Date.now() - (myMaster._lastDamageAt || 0) < 3000)) return false;
         if (isNaN(e.dangerValue)) return false;
         if (!(aiSettings.seeInvisible || this.body.isArenaCloser || e.alpha > 0.5)) return false;
@@ -1480,8 +1481,12 @@ function softSpared(bot, target, now) {
 function hunterCap(root, now) {
     if (botSoft(root, now)) return firstMinutes().NEW_MAX_HUNTERS;
     const cap = botDiff.maxHunters(botDiff.of(root, now), root.carriedGems, root.huntedLevel);
+    // a crowned player gets fought like anyone, never by a pack
+    // (crowns.js MAX_HUNTERS)
+    if (root.crowned) return Math.min(cap, CROWN_MAX_HUNTERS);
     return cap > 2 ? cap : Math.min(firstMinutes().MAX_HUNTERS || 2, cap);
 }
+const CROWN_MAX_HUNTERS = 2;
 // bots other than `self` currently aiming at / chasing `target`
 function botsOn(target, self) {
     let n = 0;
@@ -2203,7 +2208,8 @@ class io_digWarsGoals extends IO {
             if (root.adminSpec) continue;
             // the Core is up: bots leave players to it (one who shoots us
             // still gets fought, through the attacker override below)
-            if (root.isPlayer && global.royaleCoreTruce) continue;
+            // (a crowned player is fair game: the Crown Contest)
+            if (root.isPlayer && global.royaleCoreTruce && !root.crowned) continue;
             // soft window (first minutes of a life, or a new player): only
             // if they come right up to us or shoot us
             if (softSpared(body, root, now)) continue;
@@ -2644,7 +2650,8 @@ class io_digWarsGoals extends IO {
         // bank on threshold, and also periodically
         const bankOverdue = (body.carriedGems || 0) >= 25 &&
             now - (body._lastBankAt || this.bornAt) > 75000;
-        if (((body.carriedGems || 0) >= this.bankTarget() || body.vaultDeposit || bankOverdue) &&
+        // (a crown can't bank in sudden death: crowns.js)
+        if (!body.crownLocked && ((body.carriedGems || 0) >= this.bankTarget() || body.vaultDeposit || bankOverdue) &&
             (!human || body.vaultDeposit || this.bankNearHuman(human)))
             return { kind: 'bank' };
         // Fighting back comes first; picking fights comes near the bottom, so
@@ -2811,7 +2818,7 @@ class io_digWarsGoals extends IO {
                 return true;
             }
             case 'bank':
-                return !!body.vaultDeposit || (body.carriedGems || 0) >= 15;
+                return !body.crownLocked && (!!body.vaultDeposit || (body.carriedGems || 0) >= 15);
             case 'fight': {
                 if (!goal.target || goal.target.isDead?.() || !(goal.target.health?.amount > 0) ||
                     this.distanceTo(goal.target) >= (body.fov || 1200) * 1.4 ||

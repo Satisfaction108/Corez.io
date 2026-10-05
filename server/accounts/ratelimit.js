@@ -50,6 +50,8 @@ const WINDOWS = {
     dailyClaim:    { limit: 6,   windowMs: 10 * MIN },  // claim attempts per account or guest
     dailyNew:      { limit: 12,  windowMs: 60 * MIN },  // brand new guest tracks per IP (made-up guest ids)
     push:          { limit: 20,  windowMs: 10 * MIN },  // push subscribe / unsubscribe per IP
+    funnel:        { limit: 60,  windowMs: 1 * MIN },   // visit funnel steps per IP (a visit sends about 6)
+    achievements:  { limit: 30,  windowMs: 1 * MIN },   // achievement panel loads per IP
 };
 
 const BACKOFFS = {

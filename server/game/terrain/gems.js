@@ -1,4 +1,4 @@
-const { ORE } = require('./terrainGrid.js');
+const { ORE, rockPay } = require('./terrainGrid.js');
 
 const DEPOSIT_VALUE = {
     [ORE.COPPER]:  15,
@@ -81,11 +81,11 @@ function pityBurst(rock, breaker) {
     if (!breaker || breaker.isDead?.() || breaker.royaleLobby) return false;
     if ((breaker.carriedGems | 0) >= 60) return false;
     if (((breaker.rocksMined | 0) - (breaker.gemsMined | 0)) < 3) return false;
-    const { ORE, ORE_HP } = require('./terrainGrid.js');
+    const { ORE, ORE_HP, rockTough } = require('./terrainGrid.js');
     const tg = global.gameManager && global.gameManager.terrainGrid;
     rock.ore = ORE.COPPER;
     if (tg) {
-        rock.maxHealth = tg.plainRockHealth * (ORE_HP[ORE.COPPER] || 1);
+        rock.maxHealth = tg.plainRockHealth * (ORE_HP[ORE.COPPER] || 1) * rockTough(rock, ORE.COPPER);
         try { rock.deposits = tg._buildDeposits(rock); } catch { rock.deposits = null; }
     }
     return true;
@@ -101,7 +101,13 @@ function spawnOreBurst(rock, breaker) {
         : [{ wx: rock.wx, wy: rock.wy, wr: 9, big: false }];
     for (const d of deposits) {
         let value = d.big && rock.ore === ORE.SHARD ? SHARD_BIG : DEPOSIT_VALUE[rock.ore];
-        try { value = Math.round(value * require('./raidMods.js').gemValueMult(rock.ore)); } catch { /* */ }
+        // tougher rock pays more, by exactly how much tougher it is (biome x
+        // ore, terrainGrid.js rockTough), so gems per second of digging hold
+        value *= rockPay(rock);
+        try { value *= require('./raidMods.js').gemValueMult(rock.ore); } catch { /* */ }
+        value = Math.max(1, Math.round(value));
+        // Rich Veins (raidPerks.js)
+        if (breaker && breaker._pkfx && breaker._pkfx.value > 1) value = Math.round(value * breaker._pkfx.value);
         const bigCls = rock.ore === ORE.EMERALD ? 'gemPickupEmeraldCore' : 'gemPickupShardCore';
 
         const size  = Math.max(14, Math.min(34, d.wr));
@@ -637,10 +643,13 @@ function tickGem(gem, tg, players) {
         const v = gem.gemValue + Math.round(gem.gemValue * bonus);
         gem.gemValue = 0;
         toucher.carriedGems = (toucher.carriedGems | 0) + v;
+        if (toucher.socket && global.royaleAch) global.royaleAch.onGem(toucher, gem.gemOre | 0);
         // dust per gem entity, never per value: the combo bonus mints none
         if (Config.dig_royale) { try { dustMod().onPickup(toucher, gem); } catch { /* */ } }
         updateSatchel(toucher);
         talkGems(toucher, v);
+        // Gem Leech (raidPerks.js)
+        if (toucher._pkfx) { try { require('./raidPerks.js').onGemHeal(toucher); } catch { /* */ } }
         gem.kill();
         return;
     }
@@ -658,6 +667,7 @@ function tickGem(gem, tg, players) {
 
     let magBoost = 1;
     if (best.socket) { try { magBoost = shopMod().magnetMult(best); } catch { /* */ } }
+    else if (best._pkfx) magBoost = best._pkfx.magnet || 1;     // a bot's Ore Magnet perk
     const magR = (best.realSize * 2.6 + MAGNET_BONUS) * (bias ? 1.45 : 1) * magBoost;
     if (bestD < magR) {
         const pull  = 1 - bestD / magR;

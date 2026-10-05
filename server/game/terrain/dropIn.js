@@ -305,6 +305,7 @@ function seedRim(grid, x, y, n) {
         rock.ore = copperOnly ? ORE.COPPER : i === 0 ? ORE.SHARD : i <= 2 ? ORE.VEIN : ORE.COPPER;
         try { rock.deposits = grid._buildDeposits(rock); } catch { rock.deposits = null; }
         rock.maxHealth = Math.max(10, grid.plainRockHealth * (ORE_HP[rock.ore] || 1) * ORE_SOFT);
+        rock.soft = true;   // the old flat gem pay, whatever the biome
         rock.health = rock.maxHealth;
         grid.rockEvents.push({ k: rock.k, h: 1, d: 0, ore: rock.ore, bl: 1 });
     });
@@ -383,6 +384,7 @@ function seedOreOnWay(grid, x, y, v) {
             try { rock.deposits = grid._buildDeposits(rock); } catch { rock.deposits = null; }
         }
         rock.maxHealth = Math.max(10, grid.plainRockHealth * (ORE_HP[rock.ore] || 1) * ORE_SOFT);
+        rock.soft = true;   // the old flat gem pay, whatever the biome
         rock.health = rock.maxHealth;
         grid.rockEvents.push({ k: rock.k, h: 1, d: 0, ore: rock.ore, bl: 1 });
         n++;

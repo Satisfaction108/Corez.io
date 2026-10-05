@@ -6,6 +6,7 @@ import { AdvancedRecorder } from "./recorder.js";
 import { gameSound } from "./sound.js";
 import { touch, inputModeWatch } from "./touch.js";
 import * as abilityFx from "./abilityFx.js";
+import * as raidPerks from "./raidPerks.js";
 import { attachEmoji } from "./emoji.js";
 let { gui } = socketStuff;
 
@@ -26,7 +27,8 @@ function guiScale() { return (global.canvas && global.canvas.height / global.scr
 function overHudButton(mpos) {
     const c = global.clickables;
     return !!abilityFx.chipAt(mpos.x / guiScale(), mpos.y / guiScale()) || c.vault.check(mpos) !== -1 || c.shop.check(mpos) !== -1 || c.kit.check(mpos) !== -1 ||
-        c.skipUpgrades.check(mpos) !== -1 || (c.royalePlay && c.royalePlay.check(mpos) !== -1);
+        c.skipUpgrades.check(mpos) !== -1 || (c.royalePlay && c.royalePlay.check(mpos) !== -1) ||
+        raidPerks.hit(mpos.x / guiScale(), mpos.y / guiScale());
 }
 class Canvas {
     constructor() {
@@ -291,6 +293,8 @@ class Canvas {
             this.useKitSlot(slot);
             return true;
         }
+        // raid perk cards: Shift+1/2/3 (plain digits stay the stat keys)
+        if (raidPerks.key(event)) return true;
         if (kc === global.KEY_ESC && global.abilAim) { abilityFx.cancelAim(); gameSound.uiClick(); return true; }
         if (kc === global.KEY_ESC && global.shop.onPad && !global.shop.dismissed) {
             global.shop.dismissed = true;
@@ -740,6 +744,9 @@ class Canvas {
                     global.classTreeDrag.momentum = { x: 0, y: 0 };
                     break;
                 }
+                // a raid perk card, its Later button or the Perk ready chip:
+                // picked or opened here, and the press never fires the gun
+                if (raidPerks.click(mpos.x / guiScale(), mpos.y / guiScale())) break;
                 // a press on the dash or ability chip starts a drag to reorder
                 // them (mouseUp swaps); it never fires the gun
                 const chipHit = !global.died ? abilityFx.chipAt(mpos.x / guiScale(), mpos.y / guiScale()) : null;
@@ -841,6 +848,8 @@ class Canvas {
                     x: mouse.clientX * global.ratio,
                     y: mouse.clientY * global.ratio,
                 };
+                // the end of a tap on a raid perk card (touch picks on release)
+                if (raidPerks.release(mpos.x / guiScale(), mpos.y / guiScale())) break;
                 if (global.chipDrag) {
                     // dropped on the other chip: they trade places (layout only)
                     const d = global.chipDrag;

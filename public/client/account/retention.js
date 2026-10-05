@@ -8,8 +8,10 @@
 //   welcome back  a returning player whose reward is ready gets one short
 //                 card on load: the bank, the day, a big Claim, then Play.
 //                 Only when nothing else is open (never a card on a card)
-//   day 1         a first-time player's day 1 is claimed quietly on their
-//                 first visit, so tomorrow already has something waiting
+//   day 1         a first-time player's day 1 is claimed quietly when they
+//                 come back to the menu from their first raid, so tomorrow
+//                 already has something waiting. Before that first raid a
+//                 guest sees none of this: just Play (client/funnel.js)
 //   pings         after a player's first raid (never on a first load), one
 //                 soft ask under the strip for a push ping when the reward is
 //                 ready and before Raid Night. Asked once; the bell on the
@@ -87,7 +89,7 @@ export function start() { booted = true; refresh(); }
 export async function refresh() {
     if (!strip || !booted || inGame()) return;
     const s = store.get();
-    if (s.mode === 'new' || s.offline) { st = null; paint(); return; }
+    if (s.mode === 'new' || s.offline || (s.mode !== 'user' && !playedBefore())) { st = null; paint(); return; }
     const seq = ++loadSeq;
     const r = await api.daily(guestId());
     if (seq !== loadSeq || inGame()) return;
@@ -101,6 +103,12 @@ export async function refresh() {
     if (st.claims === 0 && st.ready) { await claim({ quiet: true }); return; }
     paint();
     if (st.ready && st.claims > 0 && !welcomed && freshLoad) openWelcomeSoon();
+}
+
+// A guest who hasn't been in a raid yet: no strip, no claim, no toast.
+function playedBefore() {
+    const F = window.DWFunnel;
+    return !F || !F.hasPlayed || F.hasPlayed();
 }
 
 function take(data) {

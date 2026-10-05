@@ -1,14 +1,15 @@
 var color = {
     // Ingame arras themes
     "normal": {
-        "blue": "#3ca4cb", // Blue Team
-        "green": "#8abc3f", // Green Team
-        "red": "#e03e41", // Red Team
-        "magenta": "#cc669c", // Purple Team
-        "mustard": "#c49608", // Yellow Team (todo: make colours that arent from diep theme)
-        "tangerine": "#ec7b0f", // Orange Team (todo: make colours that arent from diep theme)
-        "brown": "#895918", // Brown Team (todo: make colours that arent from diep theme)
-        "cyan": "#13808e", // Cyan Team (todo: make colours that arent from diep theme)
+        // the same gem colours as the dark theme, a touch deeper for a light floor
+        "blue": "#2f7ff2", // Blue Team: sapphire
+        "green": "#2fbf68", // Green Team: emerald
+        "red": "#f0405a", // Red Team: ruby
+        "magenta": "#ac5cf0", // Purple Team: amethyst
+        "mustard": "#f2b21e", // Yellow Team: topaz
+        "tangerine": "#f57a1c", // Orange Team: amber
+        "brown": "#cf8446", // Brown Team: polished copper
+        "cyan": "#1fc6d9", // Cyan Team: crystal
         "yellow": "#fdf380", // Netural Team
         "dgrey": "#726f6f", // Rogue Team
 
@@ -33,15 +34,17 @@ var color = {
         "border": 0.65
     },
     "dark": {
-        // slightly muted cobalt: stands apart from the cavern floor without reading electric
-        "blue": "#3d7cf0", // Blue Team (also the player's own color)
-        "green": "#8abc3f", // Green Team
-        "red": "#ff6c6e", // Red Team
-        "magenta": "#c8679b", // Purple Team
-        "mustard": "#c49608", // Yellow Team (todo: make colours that arent from diep theme)
-        "tangerine": "#ec7b0f", // Orange Team (todo: make colours that arent from diep theme)
-        "brown": "#895918", // Brown Team (todo: make colours that arent from diep theme)
-        "cyan": "#13808e", // Cyan Team (todo: make colours that arent from diep theme)
+        // Tank colours as cut gems, so tanks look like they belong in the ore
+        // world and pop off the rock: sapphire, emerald, ruby, amethyst,
+        // topaz, amber, copper, crystal. Bright, never dull.
+        "blue": "#3f8cff", // Blue Team (also the player's own color): sapphire
+        "green": "#3fd27a", // Green Team: emerald
+        "red": "#ff5068", // Red Team: ruby
+        "magenta": "#c070ff", // Purple Team: amethyst
+        "mustard": "#ffc23a", // Yellow Team: topaz
+        "tangerine": "#ff8a2e", // Orange Team: amber
+        "brown": "#e0965a", // Brown Team: polished copper
+        "cyan": "#2fd8ea", // Cyan Team: crystal
         "yellow": "#caca4e", // Netural Team
         "dgrey": "#73747a", // Rogue Team
 

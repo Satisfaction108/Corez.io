@@ -193,7 +193,7 @@ function settleLife(life) {
 // (`played`: the raid counts for it, see streaks.js). Idempotent per
 // (raid_key, user). -> {raidKey, place, of, score, bonusRP, bonusDustMilli,
 // before, after, rankUp, tierUp, balanceMilli, eligible, streak} | null
-function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now, played, active = true }) {
+function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now, played, active = true, contest = false, champ = false }) {
     const d = h();
     if (!d) return null;
     now = now || Date.now();
@@ -218,8 +218,14 @@ function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now, 
         if (bonus.dustMilli) balanceMilli = dust.creditExempt(userId, bonus.dustMilli, 'placement', raidKey, now) ?? balanceMilli;
         // wins and top-3s count on the same terms as the bonus (score, 5 minutes in, board size)
         const counts = bonus.eligible;
-        bumpStats(d, userId, now, { raids: 1, raidWins: counts && place === 1 ? 1 : 0, top3: counts && place <= 3 ? 1 : 0 });
-        const streak = streaks.onRaid(d, userId, { raidKey, win: counts && place === 1, played: !!played && !!active }, now);
+        // A Crown Contest raid is won by its Core Champion (the crowned top
+        // scorer, dig_royale/crowns.js): that counts as a win for anyone who
+        // really played, even a late joiner who stole the crown. Nobody else
+        // in that raid wins it. Top 3 and the bonus keep their own terms.
+        const won = contest ? !!champ && !!active && score > 0 : counts && place === 1;
+        bumpStats(d, userId, now, { raids: 1, raidWins: won ? 1 : 0, top3: counts && place <= 3 ? 1 : 0 });
+        // (a champion who joined late still really played this one)
+        const streak = streaks.onRaid(d, userId, { raidKey, win: won, played: (!!played || (contest && won)) && !!active }, now);
         if (streak && streak.balanceMilli != null) balanceMilli = streak.balanceMilli;
         const after = snapshot(d.get('SELECT * FROM users WHERE id = ?', userId), { fresh: true, now });
         return {
@@ -229,6 +235,7 @@ function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now, 
             tierUp: wasRanked && R.isTierUp(before.division, after.division),
             balanceMilli,
             eligible: !!counts,
+            champ: won && contest,
             streak,
         };
     });
@@ -259,6 +266,19 @@ function debugSetRp(userId, rp, now = Date.now()) {
     return d.get('SELECT * FROM users WHERE id = ?', userId);
 }
 
+// The Core Champion crown by a name lasts this long after a raid win
+// (place 1 of a raid with points, from raid_results; no extra column).
+// -> ms timestamp it ends at, 0 = none
+const CHAMP_MS = 24 * 60 * 60 * 1000;
+function championUntil(userId, now = Date.now()) {
+    const d = h();
+    if (!d || !userId) return 0;
+    const r = d.get('SELECT MAX(created_at) AS at FROM raid_results WHERE user_id = ? AND place = 1 AND score > 0 AND created_at > ?',
+        userId, now - CHAMP_MS);
+    return r && r.at ? Number(r.at) + CHAMP_MS : 0;
+}
+
 module.exports = {
     DB_REASON, isRanked, snapshot, codeOf, legendRank, openLife, settleLife, applyRaidPlacement, closeOrphans, debugSetRp,
+    championUntil, CHAMP_MS,
 };

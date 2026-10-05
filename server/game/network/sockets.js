@@ -194,6 +194,8 @@ class socketManager {
             JSON.stringify(require('../terrain/coreChambers.js').snapshot()),
             Config.dig_royale ? 1 : 0,
             JSON.stringify(require('../terrain/shop.js').snapshot()),
+            // rock biome seed (shared/rockBiomes.js), 0 = plain rock
+            tg.biomeSeed | 0,
         ];
     }
     sendTerrain(socket, packet = this.terrainPacket()) {
@@ -1369,6 +1371,13 @@ class socketManager {
                 // drops only work where every kit item is fair game.
                 if (Config.tutorial && !require('../tutorialSession.js').allowsAll(player.body, 'kit')) return;
                 require('../terrain/shop.js').dropKit(socket, m[0] | 0);
+            } break;
+            case "PKP": {
+                // a raid perk picked off the offer: its id (dig_royale.pickPerk
+                // checks it against the offer it actually sent)
+                if (!Config.dig_royale || Config.tutorial) return 1;
+                if (m.length !== 1 || typeof m[0] !== "string" || m[0].length > 16) return;
+                require('../gamemodes/scripts/dig_royale.js').pickPerk(socket, m[0]);
             } break;
             case "ko": {
                 // kit slots rearranged by drag and drop: from slot, to slot
