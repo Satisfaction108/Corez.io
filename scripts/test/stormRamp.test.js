@@ -15,6 +15,9 @@
 //   spawn      a fresh spawn's shield still keeps the storm off
 //   entity     a real tank in the game loop dies of it, logged as "storm"
 'use strict';
+// pin the pre-round-11 first storm (round11.test.js covers the gentler one)
+process.env.ROYALE_STORM_STAGE1 = process.env.ROYALE_STORM_STAGE1 || '0.5';
+process.env.ROYALE_STORM_RAMP1 = process.env.ROYALE_STORM_RAMP1 || '1';
 
 const assert = require('node:assert/strict');
 const path = require('path');

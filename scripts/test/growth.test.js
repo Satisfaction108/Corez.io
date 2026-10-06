@@ -254,8 +254,8 @@ test('rammer', () => {
     const owner = (pts, cap) => ({ skill: { raw: [0, 0, 0, 0, 0, 0, 12, 0, 0, 0, pts], caps: [12, 0, 0, 0, 0, 12, 12, 12, 12, 12, cap] }, guns: new Map() });
     const f9 = mining.skillFactor(owner(9, 12)), f12 = mining.skillFactor(owner(12, 12));
     assert.ok(f12 > f9, 'points 10-12 dig');
-    // a normal 9-cap tank maxed is unchanged: 2.0x
-    assert.ok(Math.abs(mining.skillFactor(owner(9, 9)) - 2.0) < 1e-9);
+    // a normal 9-cap tank maxed: 1.9x (Oct 5 2026: 2.0 x FULL_TRIM 0.95)
+    assert.ok(Math.abs(mining.skillFactor(owner(9, 9)) - 1.9) < 1e-9);
     assert.ok(mining.grindSecondsFor(owner(12, 12)) < mining.grindSecondsFor(owner(9, 12)));
 });
 

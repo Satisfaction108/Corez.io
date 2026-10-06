@@ -20,6 +20,63 @@ const BOUNTY_MS = 90_000;
 const BOUNTY_GEMS = 300;
 const BOUNTY_MIN_SCORE = 400;      // nobody worth a bounty below this
 const SUPPLY_DIST = 750;
+// Round 10 leader bounty: whoever leads the board by LEADER.minLead or more
+// carries a standing bounty of 10% of their lead over #2 (min 150, cap 2,500),
+// paid by the raid to whoever takes them down (the leader loses nothing extra,
+// banked gems stay safe). Same rule for humans and bots. It takes the bounty
+// slot (the RY bounty marker and badge) while it lasts.
+// ROYALE_LEADER_BOUNTY=0 turns it off.
+const LEADER_ON = process.env.ROYALE_LEADER_BOUNTY !== '0';
+const LEADER = { frac: 0.10, min: 150, cap: 2500, minLead: 1000, minScore: 1500, everyMs: 1000, announceGapMs: 40_000 };
+function leaderBountyFor(lead, score = Infinity) {
+    if (!LEADER_ON || !(lead >= LEADER.minLead) || !(score >= LEADER.minScore)) return 0;
+    return Math.max(LEADER.min, Math.min(LEADER.cap, Math.round((lead * LEADER.frac) / 5) * 5));
+}
+let leaderAt = 0;
+// Round 12 leader hunt (late-raid tension, the same for a human or a bot #1):
+// after the raid's opening grace, whoever leads #2 by HUNT.ratio or more is
+// a priority target for bots within HUNT.r (controllers.js leaderPull, more
+// the bigger the lead), and their spot is pinged on every minimap every
+// HUNT.pingMs (shown HUNT.showMs). ROYALE_LEADER_HUNT=0 turns it off.
+const HUNT_ON = process.env.ROYALE_LEADER_HUNT !== '0';
+const HUNT = {
+    ratio: +process.env.ROYALE_LEADER_HUNT_RATIO || 1.5, minScore: 1500, r: 2400, pingMs: 30_000, showMs: 6000,
+    openMs: (() => { const v = parseFloat(process.env.ROYALE_OPEN_GRACE_S); return (Number.isFinite(v) && v >= 0 ? v : 180) * 1000; })(),
+};
+let hunt = null;                // { id, key, ratio, lead, name }
+let huntPing = null;            // { id, x, y, name, at, ratio }
+// the board's #1 over #2 as a ratio (Infinity with nobody else on points)
+function leadRatio(score, lead) {
+    const second = Math.max(0, score - lead);
+    return second > 0 ? score / second : (score > 0 ? Infinity : 0);
+}
+function huntFor(L, t) {
+    if (!HUNT_ON || !L || !alive(L.body) || L.body.royaleFrozen || !(L.score >= HUNT.minScore)) return null;
+    const t0 = global.royaleRaidStartAt || 0;
+    if (!(t0 > 0) || t - t0 < HUNT.openMs) return null;
+    const ratio = leadRatio(L.score, L.lead);
+    return ratio >= HUNT.ratio ? { id: L.body.id, key: L.key, ratio: Math.min(ratio, 5), lead: L.lead, name: L.body.name || "Someone" } : null;
+}
+function huntTick(L, t) {
+    hunt = huntFor(L, t);
+    global.royaleLeaderHunt = hunt;
+    if (!hunt) return;
+    if (huntPing && huntPing.id === hunt.id && t - huntPing.at < HUNT.pingMs) return;
+    const b = L.body;
+    let at = b;
+    try { at = require('./abilities.js').shownAt(b); } catch { at = b; }
+    const n = huntPing && huntPing.id === b.id && t - huntPing.at < HUNT.pingMs * 2 ? huntPing.n + 1 : 0;
+    huntPing = { id: b.id, x: Math.round(at.x), y: Math.round(at.y), name: hunt.name, at: t, ratio: Math.round(hunt.ratio * 10) / 10, n };
+    // the plate on the first ping of a run, then every third (the rest is the minimap)
+    if (n % 3 === 0 && b.socket && hooks.callout) hooks.callout(b, "bounty", "You're the target", 0, "Leading " + (hunt.ratio >= 5 ? "big" : huntPing.ratio + "x") + ": your spot was pinged to everyone", 3000);
+}
+// RY: the latest leader ping while it shows, else null
+function huntSnapshot(t = Date.now()) {
+    if (!huntPing || t - huntPing.at > HUNT.showMs) return null;
+    return { id: huntPing.id, x: huntPing.x, y: huntPing.y, name: huntPing.name, r: huntPing.ratio, ms: Math.max(0, HUNT.showMs - (t - huntPing.at)) };
+}
+let leaderAnnouncedAt = -Infinity;
+let leaderAnnouncedKey = null;
 
 let lastBeatAt = 0;
 let gap = GAP_MAX_MS;
@@ -92,9 +149,37 @@ function startBounty(t) {
     return true;
 }
 
+// hooks.leader() -> { body, key, score, lead } for the board's #1 (body null
+// while they're down), or null
+function leaderTick(t) {
+    if (!hooks || !hooks.leader || t - leaderAt < LEADER.everyMs) return;
+    leaderAt = t;
+    let L = null;
+    try { L = hooks.leader(); } catch { L = null; }
+    try { huntTick(L, t); } catch { hunt = null; global.royaleLeaderHunt = null; }
+    if (!LEADER_ON) return;
+    const gems = L ? leaderBountyFor(L.lead, L.score) : 0;
+    const body = gems && L && alive(L.body) && !L.body.royaleFrozen ? L.body : null;
+    if (!body) {
+        if (bounty && bounty.leader) bounty = null;
+        return;
+    }
+    if (bounty && bounty.leader && bounty.body === body) { bounty.gems = gems; bounty.lead = L.lead; return; }
+    // a new leader (or the first): the slot is theirs, a filler bounty gives way
+    const key = L.key != null ? L.key : (hooks.keyOf ? hooks.keyOf(body) : null);
+    bounty = { body, key, name: body.name || "Someone", until: Infinity, gems, lead: L.lead, at: t, leader: true };
+    if (key !== leaderAnnouncedKey && t - leaderAnnouncedAt >= LEADER.announceGapMs) {
+        leaderAnnouncedKey = key;
+        leaderAnnouncedAt = t;
+        if (hooks.announce) hooks.announce("Bounty on the leader: " + bounty.name + ". " + gems.toLocaleString('en-US') + " gems to whoever takes them down.", { event: 1, kind: 'bounty', name: bounty.name, lead: 1 });
+        if (body.socket && hooks.callout) hooks.callout(body, "bounty", "Bounty on the leader", 0, "You lead the raid. Everyone gets paid for taking you down.", 3500);
+    }
+}
+
 function tick(t = Date.now()) {
     if (!hooks || (hooks.live && !hooks.live())) return;
     if (!lastBeatAt) note('start', t);
+    leaderTick(t);
     if (bounty) {
         if (!alive(bounty.body)) bounty = null;
         else if (t >= bounty.until) {
@@ -122,10 +207,24 @@ function tick(t = Date.now()) {
 
 // A kill: the bounty pays out to whoever took the target down.
 // -> the gems paid (0 if it wasn't the bounty)
-function onKill(killer, victim) {
+// `mult` is the kill's share (a bot victim pays a share, like every kill bonus).
+// The leader bounty pays bots too (hooks.payAny), the same rule for everyone.
+function onKill(killer, victim, mult = 1) {
     if (!bounty || bounty.body !== victim) return 0;
-    const gems = bounty.gems;
+    const b = bounty;
     bounty = null;
+    if (b.leader) {
+        leaderAt = 0;       // the next tick picks the next leader
+        if (!killer || killer === victim || (killer.team != null && killer.team === victim.team)) return 0;
+        const gems = Math.max(0, Math.round((b.gems * (mult > 0 ? mult : 0)) / 5) * 5);
+        if (!gems || !hooks) return 0;
+        const pay = hooks.payAny || hooks.pay;
+        if (pay) pay(killer, gems, 'leaderBounty');
+        if (killer.socket && hooks.callout) hooks.callout(killer, "bounty", "Leader bounty claimed", 0, "+" + gems.toLocaleString('en-US') + " gems banked");
+        if (hooks.announce) hooks.announce((killer.name || "Someone") + " took down the leader " + b.name + " for " + gems.toLocaleString('en-US') + " bounty gems.", null);
+        return gems;
+    }
+    const gems = b.gems;
     if (killer && killer.socket && hooks && hooks.pay) {
         hooks.pay(killer, gems, 'bounty');
         if (hooks.callout) hooks.callout(killer, "bounty", "Bounty claimed", 0, "+" + gems + " gems");
@@ -140,11 +239,16 @@ function snapshot(t = Date.now()) {
     if (!b) return null;
     let at = b.body;
     try { at = require('./abilities.js').shownAt(b.body); } catch { at = b.body; }     // smoke: where it went in
-    return { e: b.body.id, x: Math.round(at.x), y: Math.round(at.y), name: b.name, gems: b.gems, ms: Math.max(0, b.until - t) };
+    // a leader bounty has no clock (ms 0) and says so (lead: 1)
+    return { e: b.body.id, x: Math.round(at.x), y: Math.round(at.y), name: b.name, gems: b.gems, ms: b.leader ? 0 : Math.max(0, b.until - t), lead: b.leader ? 1 : undefined };
 }
 
 function reset(t = Date.now()) {
     bounty = null;
+    hunt = null; huntPing = null; global.royaleLeaderHunt = null;
+    leaderAt = 0;
+    leaderAnnouncedAt = -Infinity;
+    leaderAnnouncedKey = null;
     lastBeatAt = t;
     gap = rollGap();
     log = [];
@@ -153,4 +257,4 @@ function reset(t = Date.now()) {
 // DBG supply / bounty: fire that filler now
 function debugFire(kind, t = Date.now()) { return kind === 'bounty' ? startBounty(t) : supplyDrop(t); }
 
-module.exports = { attach, note, tick, debugFire, onKill, current, snapshot, reset, recent: () => log.slice(), GAP_MIN_MS, GAP_MAX_MS, BOUNTY_MS, BOUNTY_GEMS };
+module.exports = { HUNT, HUNT_ON, leadRatio, huntFor, huntSnapshot, hunt: () => hunt, LEADER, LEADER_ON, leaderBountyFor, leaderTick, attach, note, tick, debugFire, onKill, current, snapshot, reset, recent: () => log.slice(), GAP_MIN_MS, GAP_MAX_MS, BOUNTY_MS, BOUNTY_GEMS };

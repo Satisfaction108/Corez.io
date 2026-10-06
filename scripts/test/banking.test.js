@@ -258,7 +258,20 @@ test('numbers: dying never touches gems banked this raid', () => {
     done(p); loop(2);
 });
 
-test('numbers: savings pay 10% of a death, the raid part stays, the card is honest', () => {
+test('numbers: off by default, a death never costs savings (Oct 5 2026)', () => {
+    assert.equal(bank.deathLossEnabled(), false);
+    const p = spawn(120, 0, 0);
+    p.socket.gemBanked = 2500; p.socket.bankKept = 2000;
+    p.deathCause = 'bot';
+    assert.equal(bank.deathLossFor(p), 0);
+    done(p); loop(2);
+});
+
+test('numbers: with ROYALE_SAVINGS_DEATH_LOSS=1 savings pay 10% of a death, the raid part stays, the card is honest', () => {
+    bank.setDeathLoss(true);
+    try { savingsTax(); } finally { bank.setDeathLoss(false); }
+});
+function savingsTax() {
     const p = spawn(120, 0, 0);
     const s = p.socket;
     s.gemBanked = 2500; s.bankKept = 2000;     // 2000 brought in, 500 banked this raid
@@ -279,7 +292,7 @@ test('numbers: savings pay 10% of a death, the raid part stays, the card is hone
     s.gemBanked = 60_000; s.bankKept = 60_000;
     assert.equal(bank.deathLossFor(p), bank.DEATH_MAX);
     done(p); loop(2);
-});
+}
 
 test('numbers: a protected player loses nothing to a death', () => {
     const p = spawn(0, 0, 0);
@@ -305,7 +318,9 @@ const canvas = fs.readFileSync(path.join(CLIENT, 'canvas.js'), 'utf8');
 
 test('client: the vault panel says gems and leads with Bank all', () => {
     assert.ok(!/dust to cash out/.test(app), 'no "dust" in the vault panel');
-    assert.ok(/"Bank all  " \+ util\.formatLargeNumber\(g\.carried \| 0\) \+ " gems"/.test(app));
+    assert.ok(/const allTxt = util\.formatLargeNumber\(g\.carried \| 0\);/.test(app));
+    assert.ok(/\(touchBig \? "Bank all " : "Bank all  "\) \+ allTxt \+ " gems"/.test(app));
+    assert.ok(/kc === 66 && !global\.died[\s\S]{0,400}this\.socket\.talk\('vd', 0\)/.test(fs.readFileSync(path.join(CLIENT, 'canvas.js'), 'utf8')), 'B on a vault pad banks all');
     assert.ok(/type: "vault", index: 9/.test(app), 'Bank all is a vault clickable');
     assert.ok(/vaultClick === 9\) \{[\s\S]{0,200}talk\('vd', 0\)/.test(canvas), 'and sends 0 = everything');
 });
@@ -320,7 +335,7 @@ test('client: slams and the death card agree with the HUD', () => {
     const sl = fs.readFileSync(path.join(CLIENT, 'scoreLogic.js'), 'utf8');
     assert.ok(/const pt = scoreText\.tiles\(you\)/.test(app) && /\["BANKED THIS RAID", num\(pt\.b\), "gem"\]/.test(sl), 'banked points on the card');
     assert.ok(!/CARRIED \(50% PTS\)/.test(app), 'no half-points satchel tile');
-    assert.ok(/scoreText\.deathLine\(you, global\.finalCarried \| 0, global\.finalBankLoss \| 0\)/.test(app) && /if \(dln\.savings\) extras\.push\(dln\.savings\)/.test(app) && /older savings/.test(sl), 'a loss is said (round 9: in its own plain line)');
+    assert.ok(/scoreText\.deathLine\(you, global\.finalCarried \| 0, global\.finalBankLoss \| 0, global\.finalNxKept \| 0\)/.test(app) && /if \(dln\.savings\) extras\.push\(dln\.savings\)/.test(app) && /older savings/.test(sl), 'a loss is said (round 9: in its own plain line)');
 });
 
 test('client: the coach never steps back and a bank finishes mining', () => {

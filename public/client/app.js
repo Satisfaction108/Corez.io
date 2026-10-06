@@ -4036,6 +4036,8 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         }
     }
 
+    let teamBankTold = false;
+    let teamBankTip = null;   // pending/showing Team Bank tip (drawHudNotes)
     function drawOutpostLabels(px, py, ratio) {
         if (royaleLobbyPhase()) return;
         const c = ctx[2];
@@ -4046,6 +4048,14 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             if (sx < -R * 2 || sx > global.screenWidth + R * 2 ||
                 sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
             const st = global.outpostState.find(s => s.id === o.id) || {};
+            // round 12: the first Team Bank you come near says what it is, once
+            if (!teamBankTold && royaleActive() && !global.died && !global.tutorialMode &&
+                Math.hypot(sx - global.screenWidth / 2, sy - global.screenHeight / 2) < buildBtnLabels.TEAM_BANK_NEAR * ratio) {
+                teamBankTold = true;
+                // Oct 6 2026: it used to be a toast that sat on the spawn goal line; it
+                // waits for the drop-in intro and then takes a row in the note stack
+                if (buildBtnLabels.firstTime("teamBank", () => window.localStorage)) teamBankTip = { shownAt: 0 };
+            }
             // name in the HUD display face, just above the HP ring of a
             // standing structure, else above the bare pad
             const fs = Math.min(30, Math.max(13, R * 0.4));
@@ -5470,11 +5480,16 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
 
     function drawMessages(spacing, alcoveSize) {
         // the first seconds: the stack waits for the raid card (held, not lost) (round 8
-        if (!firstSeconds.shows("messages") || (global.mobile && (slamShowing() || global.introCardUp))) {
+        // playtest 9: the raid card (FRESH START) and the results / champion
+        // screen hold it too, on every screen; lines held through the results
+        // are old news once it goes (the finale said it) and drop
+        const finHold = raidFinale.active();
+        if (!firstSeconds.shows("messages") || global.introCardUp || finHold || (global.mobile && slamShowing())) {
             const t0 = Date.now();
-            for (const m of global.messages) m.time = t0;
+            for (const m of global.messages) { m.time = t0; if (finHold && !m.finAt) m.finAt = t0; }
             return;
         }
+        for (const m of global.messages) if (m.finAt) { if (Date.now() - m.finAt > 6000) m.duration = 0; m.finAt = 0; }
 
         let height = 18;
         let x = global.screenWidth / 2;
@@ -5492,17 +5507,41 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         if (global.mobile && msgRight && hudDrawn.minimap) y = Math.max(y, hudDrawn.minimap.y + hudDrawn.minimap.h + 16, global.screenHeight > global.screenWidth ? hudTopBottom + 10 : 0);
         // ...and the HP / shield bars under it (drawVitals)
         if (global.mobile && msgRight && vitalsRect) y = Math.max(y, vitalsRect.y + vitalsRect.h + 8);
+        // round 11: and under any card or banner already up in the right
+        // column (a perk banner, a coach card), so a spawn message never sits on one
+        if (msgRight) {
+            try {
+                const colX = global.screenWidth - 320, rs = hudAvoidRects();
+                for (let pass = 0; pass < 2; pass++) for (const r of rs) {
+                    if (!r || r === vitalsRect || r.x + r.w < colX || r.y > y + 4 || r.y + r.h <= y) continue;
+                    if (r.y + r.h > global.screenHeight * 0.6) continue;
+                    y = r.y + r.h + 8;
+                }
+            } catch (e) { /* */ }
+        }
 
         var Bd = Date.now();
         var yy = config.animationSettings.ScaleBar;
         // side cards (an achievement, growing) head the stack, one at a time
+        const ySide = y;
         if (msgRight) y = drawSideNote(y);
         // the right-hand stack stops above the minimap instead of running into it
         // (touch: above the kit buttons)
         const yLimit = !msgRight ? Infinity : global.mobile ? touchRightTop() - 30 : Math.min(global.screenHeight - alcoveSize - spacing - 22 - 30, vitalsRect ? vitalsRect.y - 8 : Infinity);
-        // and holds a few lines: anything older fades out early
-        const MSG_CAP = 4;
-        let shown = 0;
+        // and holds three toasts at most (a side card counts as one): the rest
+        // queue, oldest first, with their clocks held, and a long queue drops
+        // its oldest waiting lines
+        if (msgRight) {
+            const cap = y > ySide ? 2 : 3, QUEUE_MAX = 4;
+            let live = 0;
+            const waiting = [];
+            for (const m of global.messages) {
+                m.wait = false;
+                if (m.duration - (Bd - m.time) <= 0 || toastSaid(m.text)) continue;
+                if (++live > cap) { m.wait = true; m.time = Bd; waiting.push(m); }
+            }
+            for (let i = 0; i < waiting.length - QUEUE_MAX; i++) { waiting[i].wait = false; waiting[i].duration = 0; }
+        }
         let stackLeft = global.screenWidth;
         for (let i = global.messages.length - 1; i >= 0; i--) {
             let msg = global.messages[i],
@@ -5515,6 +5554,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                  global.messages.splice(i, 1);
                  continue;
             }
+            if (msg.wait) continue;
             if (y > yLimit) continue;
             // the toast pill up top says it (or said it a moment ago)
             if (msgRight && toastSaid(msg.text)) {
@@ -5527,11 +5567,6 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                 const maxW = global.screenWidth * (global.screenHeight > global.screenWidth ? 0.8 : 0.4);
                 if (measureText(text, height - 4.3) > maxW) msg.textJSON = wrapLines(text, height - 4.3, maxW).slice(0, 3);
             }
-            if (msgRight && ++shown > MSG_CAP && duration > 300) {
-                msg.duration = time + 300;
-                duration = 300;
-            }
-
             let K = Math.max(0, Math.min(1, time / 300, duration / 300));
             if (msg.textJSON) {
                 let len = 0;
@@ -5644,8 +5679,9 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             if (r.you && r.you.bt && id !== gui.playerid) return TOUGH_BADGE;
             // on your own tank it's the price on your head, not a reward, and a tiny "+"
             if (id === gui.playerid) return BOUNTY_ON_YOU || (BOUNTY_ON_YOU = { key: "btme", word: "BOUNTY ON YOU", num: "", col: HUD.gold });
-            const key = "bt" + (b.gems | 0);
-            if (!bountyBadge || bountyBadge.key !== key) bountyBadge = { key, word: "BOUNTY ", num: fmtNum(b.gems | 0) + " gems", col: HUD.gold };
+            // the leader bounty (lead: 1) stays on whoever leads, no countdown
+            const key = "bt" + (b.lead ? "L" : "") + (b.gems | 0);
+            if (!bountyBadge || bountyBadge.key !== key) bountyBadge = { key, word: b.lead ? "LEADER BOUNTY " : "BOUNTY ", num: fmtNum(b.gems | 0) + " gems", col: HUD.gold };
             return bountyBadge;
         }
         const n = streakOf(id);
@@ -6304,6 +6340,9 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
 
         // the first seconds of a first raid: the bars slide in a few seconds after landing
         statMenu.set(!firstSeconds.shows("stats") ? 0 : 0 + (global.died || global.statHover || (global.canSkill && !gui.skills.every(skill => skill.cap === skill.amount))));
+        // round 12: a tutorial card about the stats keeps the panel all the way
+        // in (it used to sit half off-screen, slid out, while the card talked about it)
+        if (global.tutorialMode) statMenu.set(1);
         global.clickables.stat.hide();
 
         let vspacing = STAT_BAR_GAP;
@@ -6694,6 +6733,39 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         }
     }
     const VAULT_CROWN_LINE = "Crowned: it banks now, then the vault pushes you off.";
+    // Playtest 9: a player parked on a vault with 8,098 gems for a minute and
+    // never saw the panel. Over it, a big gold call: "Press B to bank all N"
+    // (touch: "Tap Bank all to bank N"). Bottom edge at `bottom`, centred on cx.
+    function drawBankPrompt(c, cx, bottom, allTxt, now, alpha) {
+        const touchP = !!global.mobile;
+        const lead = touchP ? "Tap Bank all to bank " + allTxt : "or click to bank all " + allTxt;
+        const size = 22, keyH = 30;
+        const tw = hudTitleW(touchP ? lead : "Press", size) + (touchP ? 0 : 10 + hudTitleW("B", keyH * 0.62) + keyH * 0.55 + 10 + hudTitleW(lead, size));
+        const w = Math.min(global.screenWidth - 24, tw + 44), h = 50;
+        const calmP = global.reducedMotion && global.reducedMotion();
+        const k = calmP ? 1 : 1 + 0.035 * Math.sin(now / 170);
+        const y = bottom - h;
+        c.save();
+        c.globalAlpha *= alpha;
+        c.translate(cx, y + h / 2); c.scale(k, k); c.translate(-cx, -(y + h / 2));
+        hudPanel(c, cx - w / 2, y, w, h, { fill: "rgba(43,33,20,0.95)", r: 14 });
+        c.strokeStyle = HUD.gold; c.lineWidth = 3;
+        roundRectPath(c, cx - w / 2 + 1.5, y + 1.5, w - 3, h - 3, 13);
+        c.stroke();
+        let tx = cx - tw / 2;
+        const my = y + h / 2 - 1;
+        if (touchP) hudTitle(lead, cx, my, size, HUD.gold, "center", 1, c);
+        else {
+            hudTitle("Press", tx, my, size, HUD.gold, "left", 1, c);
+            tx += hudTitleW("Press", size) + 10;
+            tx += hudKey(c, tx, my - keyH / 2, "B", keyH) + 10;
+            hudTitle(lead, tx, my, size, HUD.gold, "left", 1, c);
+        }
+        // a chevron down at the button
+        c.fillStyle = HUD.gold;
+        c.beginPath(); c.moveTo(cx - 9, y + h - 1); c.lineTo(cx + 9, y + h - 1); c.lineTo(cx, y + h + 9); c.closePath(); c.fill();
+        c.restore();
+    }
     function drawVaultUI() {
         const v = global.vault, g = global.gems;
         const active = v.total > 0;
@@ -6763,9 +6835,13 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                      x + W / 2, by + bh + 18, 12.5, color.guiwhite, "center");
             hudButton(c, x + W / 2, y + H0 - 33, 110, 26, "Cancel", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 14, type: "vault", index: 11, cr });
         } else {
-            // one click banks everything (the server reads 0 as "all")
-            hudButton(c, x + W / 2, y + 60, W - 40, 42, "Bank all  " + util.formatLargeNumber(g.carried | 0) + " gems",
-                      { fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff", size: 18, type: "vault", index: 9, cr });
+            // one click (or B) banks everything (the server reads 0 as "all")
+            v.bankAllAt = now;
+            const allTxt = util.formatLargeNumber(g.carried | 0);
+            const touchBig = !!global.mobile;
+            hudButton(c, x + W / 2, y + (touchBig ? 54 : 60), W - 40, touchBig ? 54 : 42, (touchBig ? "Bank all " : "Bank all  ") + allTxt + " gems",
+                      { fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff", size: touchBig ? 22 : 18, type: "vault", index: 9, cr });
+            drawBankPrompt(c, x + W / 2, y - 14, allTxt, now, glide);
             drawText("or bank part of it", x + W / 2, y + 118, 11, HUD.text2, "center", true);
             const el = getVaultInput();
             const iw = 130, ih = 30;
@@ -7513,6 +7589,10 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         const lf = leftColumnFloor();
         out.push({ x: 0, y: lf, w: 232, h: sh - lf });
         out.push({ x: sw - 252, y: sh - 262, w: 252, h: 262 });
+        // round 12: the minimap as drawn plus its "Map [M]" key on the left
+        // (markers used to pile onto both); set where the minimap is drawn
+        const mh = global.minimapHintRect;
+        if (mh && !global.mobile) out.push(mh);
         // class-upgrade tiles and the quest card under them
         if ((global.upgradeBoxBottom | 0) > 0) out.push({ x: 0, y: 0, w: Math.max(280, (global.upgradeBoxRight | 0) + 8), h: global.upgradeBoxBottom + 8 });
         if (questRect) out.push(questRect);
@@ -7600,7 +7680,9 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         const t = Math.max(0, Math.min(tx, ty));
         const p = { x: cx + c * t, y: cy + s * t, ang };
         const bounds = { left, right, top, bottom };
-        for (const r of hudAvoidRects()) nudgeOut(p, r, bounds);
+        // twice: a step out of one panel can land in the next (round 12)
+        const rects = hudAvoidRects();
+        for (let pass = 0; pass < 2; pass++) for (const r of rects) nudgeOut(p, r, bounds);
         p.x = Math.max(left, Math.min(right, p.x));
         p.y = Math.max(top, Math.min(bottom, p.y));
         return p;
@@ -7878,12 +7960,22 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         if (r.lock) push(hudNote(0, "lock", st.fin ? "Last " + Math.max(0, r.lockLeft | 0) + "s of the raid. Nobody respawns now."
             : "Storm shuts in " + Math.max(0, r.lockLeft | 0) + "s. Respawns wait for it to open.", HUD.lilac));
         else if (r.toast && newcomer.toastAllowed(r.toast)) push(hudNote(NOTE_CRIT.test(r.toast) ? 0 : 2, "toast", r.toast, color.guiwhite));
+        // the pad timers, up top where nothing covers them (round 12)
+        if (!global.died && r.occupy > 0) push(hudNote(1, "padtime", "You can stay " + r.occupy + "s longer", color.gold));
+        else if (!global.died && r.lockout > 0) push(hudNote(1, "padtime", "You can come back in " + r.lockout + "s", color.guiwhite));
         try { raidHeat.hudNotes(push); } catch (e) { /* */ }
         // the Crown Contest: one line when there's no tracker panel (a first
         // raid, a phone), or when you hold a crown
         try { crowns.hudNotes(push, global.mobile || !nxShows("standings") || (global.nxKnown && (global.nxStage | 0) === 0)); } catch (e) { /* */ }
         // the first raids: the goal line, a challenge's clock, NEW intros
         try { newcomer.hudNotes(push, hudNote); } catch (e) { /* */ }
+        try { coach.mineTipNote(push, hudNote); } catch (e) { /* */ }
+        if (teamBankTip && !global.died) {
+            const tn = performance.now();
+            if (!teamBankTip.shownAt && !global.hudCardUp && tn - (global.spawnedAt || 0) > 7000) teamBankTip.shownAt = tn;
+            if (teamBankTip.shownAt && tn - teamBankTip.shownAt < 9000) push(hudNote(2, "teambank", buildBtnLabels.TEAM_BANK_TIP, HUD.gold));
+            else if (teamBankTip.shownAt) teamBankTip = null;
+        }
         const objs = nxShows("outposts") ? r.objectives || [] : [];
         for (let i = 0; i < Math.min(2, objs.length); i++) {
             const o = objs[i];
@@ -8042,10 +8134,8 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             if (core) raidHeat.drawCoreCard(c, x, y, W, BOSS_H);
             y += BOSS_H + BOSS_GAP;
         });
-        hudSafe("status", () => {
-            if (r.occupy > 0) drawText("You can stay " + r.occupy + "s longer", cx, global.screenHeight - 56, 15, color.gold, "center");
-            else if (r.lockout > 0) drawText("You can come back in " + r.lockout + "s", cx, global.screenHeight - 56, 15, color.guiwhite, "center");
-        });
+        // round 12: the pad timers ("You can come back in 1s") sat under your
+        // name and the carried bar; they are note-stack lines now (drawHudNotes)
         hudSafe("countdown", () => raidFinale.drawCountdown(y));
         // the storm warning gets its own row right here, away from the tank,
         // its chat and the slams (stormFx.drawHud fills it)
@@ -8388,7 +8478,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         if (f.bloom) return { text: "Ore bloom in " + (f.name || "the wall"), badge: null };
         if (f.event) return { text: f.kind === "meteor" ? "Meteor shower over " + (f.name || "the map")
             : f.kind === "supply" ? "Supply drop in " + (f.name || "the zone")
-            : f.kind === "bounty" ? "Bounty on " + who(f.name, "someone")
+            : f.kind === "bounty" ? (f.lead ? "Bounty on the leader: " : "Bounty on ") + who(f.name, "someone")
             : "Gem rain over the safe zone", badge: null };
         if (f.storm) return { text: who(f.name, "Someone") + " got caught by the storm", badge: null };
         if (f.rock) return { text: who(f.name, "Someone") + " got crushed by the wall", badge: null };
@@ -8837,6 +8927,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             hudPanel(c, cx - len / 2, cy - size * 0.85, len, ph, { alpha: a, fill: "rgba(43,37,51,0.72)", r: HUD.r * pop });
             // coach.js: this plate sits where its card goes on desktop
             global.hudCalloutUp = true;
+            global.hudCalloutAt = performance.now();   // raidPerks: the cards wait for it
             hudTitle(t.text, cx, cy, size, col, "center", a);
             if (t.pts) hudTitle("+" + fmtNum(t.pts) + " pts", cx, cy + size * 0.95 + 5, 15 * pop, HUD.gold, "center", a);
             if (t.sub) drawText(t.sub, cx, cy + size * 0.95 + 5 + (t.pts ? 18 * pop : 0), 12.5, t.kind === "contract" || t.kind === "bounty" ? HUD.emerald : "#d8dce6", "center", true, a, 4.5);
@@ -9370,8 +9461,13 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         if ((sp && sp.onPad && !sp.dismissed) || (global.vault && global.vault.onPad) || global.showBigMap || global.showTree ||
             (global.kitUnlocks && global.kitUnlocks.length) || (raidHeat.landAt && raidHeat.landAt() > 0)) blocked = true;
         const you = global.royale && global.royale.you;
+        // playtest 9: a fresh offer waits while the middle is busy (a callout
+        // plate like YOU'RE HUNTED, a slam, a new crown's card)
+        const tNow = performance.now();
+        let stage = false;
+        try { stage = tNow - (global.hudCalloutAt || -1e9) < 400 || !!(raidHeat.slamUp && raidHeat.slamUp()) || !!(crowns.cardFresh && crowns.cardFresh()); } catch (e) { stage = false; }
         raidPerks.drawHud(ctx[2], {
-            wallet, bottom, minTop, left, right, blocked, stripLeft,
+            wallet, bottom, minTop, left, right, blocked, stripLeft, stage,
             score: you && you.score != null ? +you.score : +(global.royale && global.royale.youScore) || 0,
             stage: newcomer.known() ? newcomer.stage() : 3,
             mouse: global.mobile ? null : { x: global.mouse.x / cr, y: global.mouse.y / cr },
@@ -10418,6 +10514,23 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                 c.restore();
                 gemPath(c, mx, my, dotR * 0.9);
                 c.fillStyle = colS; c.strokeStyle = color.black; c.lineWidth = 1; c.fill(); c.stroke();
+            }
+        }
+        // round 12: the runaway leader's spot, pinged every 30 s (a fixed
+        // point where they were, not a live track), for everyone but them
+        const lp = r.lping;
+        if (lp && lp.id !== gui.playerid) {
+            const mx = T.X(lp.x), my = T.Y(lp.y);
+            if (inside(mx, my)) {
+                const k = Math.max(0, Math.min(1, (lp.ms | 0) / 6000));
+                c.save();
+                c.globalAlpha = 0.35 + 0.65 * k;
+                c.strokeStyle = HUD.gold; c.lineWidth = 2.2;
+                c.beginPath(); c.arc(mx, my, dotR * (2.4 + 3.2 * (1 - pulse * 0.5)), 0, Math.PI * 2); c.stroke();
+                c.fillStyle = HUD.gold; c.strokeStyle = color.black; c.lineWidth = 1.5;
+                c.beginPath(); c.arc(mx, my, dotR * 1.5, 0, Math.PI * 2); c.fill(); c.stroke();
+                c.restore();
+                drawText("#1", mx, my - dotR * 4.2, 9, HUD.gold, "center", true);
             }
         }
         for (const p of (r.pings || [])) {
@@ -11929,6 +12042,8 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                 const kx = Math.round(mx - 8 - kw0), ky = Math.round(my + len - kh);
                 hudKey(ctx[2], kx, ky, keyName, kh);
                 hudTitle("Map", kx - 5, ky + (kh - 2.5) / 2, 13, HUD.head, "right");
+                const hx = kx - 5 - hudTitleW("Map", 13) - 10;
+                global.minimapHintRect = { x: hx, y: my - 10, w: global.screenWidth - hx, h: global.screenHeight - my + 10 };
             } else if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0) {
                 const mx = global.screenWidth - spacing - len - 5;
                 const my = global.screenHeight - len - spacing - 5;
@@ -13526,7 +13641,10 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         const half = (rw - 8) / 2;
         const rows = [
             ["CARRIED AT DEATH", String(global.finalCarried | 0), "gem"],
-            ["BANKED", String(global.finalBanked | 0), "gem"],
+            // one meaning per number: this raid's banked in a raid, else the bank
+            (global.royale && global.royale.you && global.royale.you.banked != null)
+                ? ["BANKED THIS RAID", String(global.royale.you.banked | 0), "gem"]
+                : [scoreText.BANK.toUpperCase(), String(global.finalBanked | 0), "gem"],
             ["ROCKS MINED", String(global.finalRocks | 0), "pickaxe"],
             ["SURVIVED", compactTime(global.finalLifetime.get()), "clock"],
             ["KILLS", String(Math.round(global.finalKills[0].get())), "combat"],
@@ -13613,7 +13731,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         const KEPT_H = 44;
         // the Points line, every death (playtest 5: the first two cards had none, later
         const you = (global.royale && global.royale.you) || {};
-        const dln = scoreText.deathLine(you, global.finalCarried | 0);
+        const dln = scoreText.deathLine(you, global.finalCarried | 0, 0, global.finalNxKept | 0);
         const PTS_H = 26;
         // raid perks: they come back with you, said under what you kept
         const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
@@ -13704,8 +13822,10 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         if ((global.finalStreak | 0) >= 3) extras.push("Your " + (global.finalStreak | 0) + " kill streak is over");
         if (global.finalDrillLost) extras.push("Your drill dropped a tier");
         // bank.js: only savings from earlier raids pay for a death "Points: 6,942 (lost
-        const dln = scoreText.deathLine(you, global.finalCarried | 0, global.finalBankLoss | 0);
+        const dln = scoreText.deathLine(you, global.finalCarried | 0, global.finalBankLoss | 0, global.finalNxKept | 0);
         if (dln.savings) extras.push(dln.savings);
+        // past the soft line: the BANKED PTS tile's gems (scoreLogic.bankSoftLine)
+        { const bsl = scoreText.bankSoftLine(scoreText.parts(you)); if (bsl) extras.push(bsl); }
         // raid perks: one more line under the stats, with your build's icons
         // (not when it was the raid ending that took everyone down)
         const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
@@ -13924,12 +14044,36 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         return { ready: true, label: "Respawn" };
     }
     // The death card button's font: the CSS size, or smaller until the label fits
-    function playAgainFont(st, pc, keyTxt) {
+    function playAgainFont(st, pc, keyTxt, label) {
         const base = pc.big && st.ready ? 34 : st.ready ? 26 : 22;
-        const room = Math.max(60, (pc.w | 0) - 36 - (keyTxt ? 64 : 0)) * (st.ended ? 2 : 1);
-        const len = Math.max(1, String(st.label || "").length);
+        const room = Math.max(40, (pc.w | 0) - 36 - (keyTxt ? 64 : 0)) * (st.ended ? 2 : 1);
+        const len = Math.max(1, String((label != null ? label : st.label) || "").length);
         const fit = Math.floor(room / (len * 0.55));
         return Math.max(12, Math.min(base, fit)) + "px";
+    }
+    // "Respawn in 3..." -> "Respawn 3" for the narrow button
+    function shortRespawn(label) {
+        const m = /^Respawn(?:ing)? in (\d+)\.\.\.$/.exec(label || "");
+        if (m) return "Respawn " + m[1];
+        // round 11: the storm-lock countdown was cut to "Respa..." on the narrow button
+        const l = /^Storm resetting(: you drop in)? \((\d+)s\)$/.exec(label || "");
+        return l ? (l[1] ? "Drop in " : "Respawn ") + l[2] + "s" : label;
+    }
+    // round 11: shrink a DOM button's font until its label fits (never "Respa..."),
+    // measured once per label / width / base size
+    function fitBtnFont(el, lab, text, widthPx, fsPx) {
+        const c = el._fit || (el._fit = {});
+        const key = text + "|" + widthPx + "|" + fsPx;
+        if (c.key === key) return c.fs;
+        c.key = key;
+        let fs = parseFloat(fsPx) || 16;
+        try {
+            if (lab.textContent !== text) lab.textContent = text;
+            el.style.width = widthPx;
+            el.style.fontSize = fs + "px";
+            while (fs > 10 && lab.scrollWidth > lab.clientWidth + 1) { fs -= 1; el.style.fontSize = fs + "px"; }
+        } catch (e) { /* */ }
+        return (c.fs = fs + "px");
     }
     window.dwPlayAgain = () => { const st = playAgainState(); return { label: st.label, ready: !!st.ready, ended: !!st.ended, font: global.deathPlayCss ? playAgainFont(st, global.deathPlayCss, "") : "" }; };
     // A respawn asked for during the storm lock or the death wait (canvas respawn
@@ -14403,6 +14547,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             setStyle(dead, "display", "none");
             setStyle(again, "display", "none");
             setStyle(asBuild, "display", "none");
+            setStyle(domEl("royaleDomBuildWhy"), "display", "none");
             return;
         }
         const countdown = lastStormCount();
@@ -14415,8 +14560,26 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             const show = deadShow && !!pc;
             setStyle(again, "display", show ? "inline-flex" : "none");
             const st0 = show ? playAgainState() : null;
-            const ra = show && !st0.ended && !global.tutorialMode ? buildBtnLabels.respawnAs(global.royale && global.royale.you) : null;
+            const ra = show && !st0.ended && !global.tutorialMode ? buildBtnLabels.respawnAs(global.royale && global.royale.you, global.diedAsTank) : null;
             if (asBuild) setStyle(asBuild, "display", ra ? "inline-flex" : "none");
+            // no saved build for an upgraded tank: a short reason line under the footer
+            {
+                if (!show) again._shownAt = 0; else if (!(again._shownAt > 0)) again._shownAt = performance.now();
+                let why = domEl("royaleDomBuildWhy");
+                if (!why) {
+                    why = document.createElement("div");
+                    why.id = "royaleDomBuildWhy";
+                    why.style.cssText = "position:fixed;z-index:31;display:none;transform:translateX(-50%);font:600 13px Ubuntu,sans-serif;color:#fff;opacity:0.85;text-shadow:0 1px 2px #000;white-space:nowrap;pointer-events:none;";
+                    document.body.appendChild(why);
+                }
+                const whyTxt = show && !st0.ended && !global.tutorialMode ? buildBtnLabels.respawnAsWhy(global.royale && global.royale.you, global.diedAsTank, performance.now() - again._shownAt) : "";
+                setStyle(why, "display", whyTxt ? "block" : "none");
+                if (whyTxt) {
+                    if (why.textContent !== whyTxt) why.textContent = whyTxt;
+                    setStyle(why, "left", pc.cx + "px");
+                    setStyle(why, "top", Math.round(pc.top + pc.h + 8) + "px");
+                }
+            }
             if (show) {
                 const st = st0;
                 // two buttons share the footer: Respawn (left) and Respawn as <Tank>
@@ -14427,7 +14590,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                     const x0 = pc.cx - (wa + gap + wb) / 2, grow = 8;
                     pcA = { cx: Math.round(x0 + wa / 2), top: pc.top, w: wa, h: pc.h, big: pc.big };
                     const bfs = Math.max(12, Math.min(pc.big ? 26 : 22, Math.floor((wb - 28) / (Math.max(1, ra.label.length) * 0.55)))) + "px";
-                    const wantB = { left: Math.round(x0 + wa + gap + wb / 2) + "px", top: Math.round(pc.top - grow / 2) + "px", width: wb + "px", height: (pc.h + grow) + "px", fontSize: bfs };
+                    const wantB = { left: Math.round(x0 + wa + gap + wb / 2) + "px", top: Math.round(pc.top - grow / 2) + "px", width: wb + "px", height: (pc.h + grow) + "px", fontSize: fitBtnFont(asBuild, asBuild.firstChild, ra.label, wb + "px", bfs) };
                     for (const k in wantB) if (asBuild.style[k] !== wantB[k]) asBuild.style[k] = wantB[k];
                     const bl = asBuild.firstChild, bs = asBuild.lastChild;
                     if (bl.textContent !== ra.label) bl.textContent = ra.label;
@@ -14436,13 +14599,21 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                     if (asBuild.disabled !== offB) asBuild.disabled = offB;
                 }
                 // Enter opens the team chat on the duo server, so Space there
-                const keyTxt = !st.ready || global.mobile ? "" : global.gamepadMode ? "RT" : (global.royale && global.royale.duos) ? "Space" : "Enter";
+                let keyTxt = !st.ready || global.mobile ? "" : global.gamepadMode ? "RT" : (global.royale && global.royale.duos) ? "Space" : "Enter";
+                // playtest 9 ("R... Enter"): beside Respawn as <Tank> the button is narrow,
+                // so the key chip goes and the countdown is short ("Respawn 3")
+                const narrow = !!(ra && asBuild) && pcA.w < 240;
+                if (narrow) keyTxt = "";
+                const labTxt = narrow ? shortRespawn(st.label) : st.label;
                 // the first raids' card: a bigger word on a bigger button
-                const fs = playAgainFont(st, pcA, keyTxt);
+                const lab0 = again.firstChild, key0 = again.lastChild;
+                if (key0.textContent !== keyTxt) key0.textContent = keyTxt;
+                setStyle(key0, "display", keyTxt ? "" : "none");
+                const fs = st.ended ? playAgainFont(st, pcA, keyTxt, labTxt) : fitBtnFont(again, lab0, labTxt, pcA.w + "px", playAgainFont(st, pcA, keyTxt, labTxt));
                 const want = { left: pcA.cx + "px", top: pcA.top + "px", width: pcA.w + "px", height: pcA.h + "px", fontSize: fs };
                 for (const k in want) if (again.style[k] !== want[k]) again.style[k] = want[k];
                 const lab = again.firstChild, key = again.lastChild;
-                if (lab.textContent !== st.label) lab.textContent = st.label;
+                if (lab.textContent !== labTxt) lab.textContent = labTxt;
                 setStyle(lab, "whiteSpace", st.ended ? "normal" : "");
                 setStyle(lab, "lineHeight", st.ended ? "1.1" : "");
                 if (key.textContent !== keyTxt) key.textContent = keyTxt;

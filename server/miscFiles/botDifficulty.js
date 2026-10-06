@@ -196,7 +196,60 @@ function turretTurn(d) { return knob(d, x => lerp(0.7, 1, x), 1.15); }
 // NEUTRAL, 1 at full lock-on
 function tactics(d) { return lockShare(d); }
 
+// ── gentler on humans (playtests: "dying feels like a tax") ─────────────
+// The same for every human target, whatever their difficulty: bots react a
+// bit later, aim a bit worse and lock on a bit slower when the target is a
+// player. Player stats are never touched. ROYALE_BOTS_GENTLE (0..0.5,
+// default 0.2; 0 turns it off).
+const GENTLE_DEFAULT = 0.2;
+let gentleShare = (() => {
+    const v = parseFloat(process.env.ROYALE_BOTS_GENTLE);
+    return Number.isFinite(v) ? Math.max(0, Math.min(0.5, v)) : GENTLE_DEFAULT;
+})();
+function setGentle(v) { gentleShare = Math.max(0, Math.min(0.5, +v || 0)); }
+// g for this target root: the share for a human, 0 for anyone else.
+// Round 12: not on top of the raid-opening grace (controllers.js sets
+// openingFn): the grace already holds bots back then, and from minute 3 on
+// this light touch is all that's left. ROYALE_GENTLE_STACK=1 brings back both.
+let openingFn = null;
+const GENTLE_STACK = process.env.ROYALE_GENTLE_STACK === '1';
+function setOpening(fn) { openingFn = typeof fn === 'function' ? fn : null; }
+function gentle(root, now = Date.now()) {
+    if (!root || !root.isPlayer) return 0;
+    if (!GENTLE_STACK && openingFn && openingFn(now)) return 0;
+    return gentleShare;
+}
+const gentleReact = g => 1 + g;            // reaction time x1.2
+const gentleAimErr = g => 1 + g;           // cursor error x1.2
+const gentleStiff = g => 1 - 0.75 * g;     // aim spring x0.85 (slower to settle)
+const gentleLead = g => 1 - 0.5 * g;       // lead x0.9
+const gentleLock = g => 1 - g;             // lock-on blend x0.8
+const gentleRange = g => 1 - 0.5 * g;      // starts a fight from 10% closer
+const gentlePenalty = g => 500 * g;        // target pick: counts 100 farther
+const gentleTurret = g => 1 - 0.5 * g;     // auto turrets turn x0.9
+// Bot vs bot: with a human and a bot both in reach, a bot prefers the bot
+// about half the time (a coin re-rolled every PREFER_MS), by scoring the
+// human PREFER_R farther. ROYALE_BOTS_PREFER_BOT (0..1, default 0.5).
+const PREFER_BOT = (() => {
+    const v = parseFloat(process.env.ROYALE_BOTS_PREFER_BOT);
+    return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.5;
+})();
+let preferBotShare = PREFER_BOT;
+function setPreferBot(v) { preferBotShare = Math.max(0, Math.min(1, +v || 0)); }
+const PREFER_R = 350, PREFER_MS = 8000;
+// the bot `io` (a controller) is in a prefer-bot spell right now?
+function prefersBot(io, now = Date.now(), rnd = Math.random) {
+    if (!io || !(preferBotShare > 0)) return false;
+    if (!(now < (io._preferBotUntil || 0))) {
+        io._preferBotUntil = now + PREFER_MS * (0.75 + rnd() * 0.5);
+        io._preferBot = rnd() < preferBotShare;
+    }
+    return !!io._preferBot;
+}
+
 module.exports = {
+    GENTLE_DEFAULT, PREFER_BOT, PREFER_R, PREFER_MS, setGentle, gentle, setOpening, setPreferBot, prefersBot,
+    gentleReact, gentleAimErr, gentleStiff, gentleLead, gentleLock, gentleRange, gentlePenalty, gentleTurret,
     NEUTRAL, NEW_FULL_MS, NEW_END_MS, NEW_FULL_LIVES, NEW_END_LIVES, LOCK_FULL_MS, RICH_CARRY,
     setLockOn, isLockOn, lockShare, lockFromTime,
     lerp, perfShare, fromRaid, fromTime, fromRank, newness, forPlayer, settled, of,

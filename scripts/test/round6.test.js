@@ -37,6 +37,8 @@ const imp = (f) => import(pathToFileURL(path.join(CLIENT, f)).href);
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-round6-test-'));
 process.env.DATA_DIR = path.join(ROOT, 'data');
 for (const k of ['ROYALE_DEBUG', 'ROYALE_CROWNS', 'ROYALE_PERKS', 'ROYALE_END_WAIT_MS', 'DB_PATH', 'PUBLIC_HOST', 'PUBLIC_ORIGIN', 'ALLOWED_ORIGINS', 'ACCOUNTS_ALLOW_DEBUG']) delete process.env[k];
+// round 11's early streak bonus would add to the second kill below (round11.test.js covers it)
+process.env.ROYALE_STREAK_PTS = '0';
 process.env.NODE_ENV = 'test';
 
 const log = console.log;
@@ -367,16 +369,16 @@ test('death card: the first raids card has the Points line too', () => {
     const app = src('app.js');
     const a = app.indexOf('const gameDrawDeadNewcomer = () => {'), b = app.indexOf('const gameDrawDeadRoyale = () => {');
     const nc = app.slice(a, b);
-    assert.match(nc, /const dln = scoreText\.deathLine\(you, global\.finalCarried \| 0\);/);
+    assert.match(nc, /const dln = scoreText\.deathLine\(you, global\.finalCarried \| 0, 0, global\.finalNxKept \| 0\);/);
     assert.match(nc, /fitLine\(dln\.head \+ " \(" \+ dln\.lost \+ "\)", 14, 9\.5, iw\)/);
 });
 
 // ── 7. results ───────────────────────────────────────────────────────────
-test('results: the next raid waits 21 s, the finale stays up past it', () => {
+test('results: the next raid waits 27 s (round 11), the finale stays up past it', () => {
     const dr = ssrc('game/gamemodes/scripts/dig_royale.js');
-    assert.match(dr, /const RAID_END_WAIT_MS = Math\.max\(5000, \+process\.env\.ROYALE_END_WAIT_MS \|\| 21_000\);/);
+    assert.match(dr, /const RAID_END_WAIT_MS = Math\.max\(5000, \+process\.env\.ROYALE_END_WAIT_MS \|\| 27_000\);/);
     const end = +src('raidFinale.js').match(/const END_MS = (\d+);/)[1];
-    assert.ok(end > 1600 + 21000, 'END_MS ' + end);
+    assert.ok(end > 1600 + 27000, 'END_MS ' + end);
 });
 
 (async () => {

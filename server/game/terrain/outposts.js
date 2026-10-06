@@ -441,7 +441,9 @@ function tick(players, dtMs) {
 
         let rateMult = 1;
         if (body.socket) { try { rateMult = require('./shop.js').depositRateMult(body); } catch { /* */ } }
-        d.spill = (d.spill || 0) + (DEPOSIT_RATE * rateMult * dtMs) / 1000;
+        let rate = DEPOSIT_RATE;
+        try { rate = require('./vault.js').depositRate(d.total / EFFICIENCY); } catch { /* */ }
+        d.spill = (d.spill || 0) + (rate * rateMult * dtMs) / 1000;
         const chunk = Math.min(
             Math.ceil(d.remaining / EFFICIENCY - 1e-9),
             body.carriedGems | 0,

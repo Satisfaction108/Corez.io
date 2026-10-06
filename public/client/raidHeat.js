@@ -221,6 +221,13 @@ export function onKC(m) {
             sfx("win");
             return true;
         }
+        case "coreloot":
+            // the Core's lucky drop (server coreDrop.js): a must-see slam
+            juice.slam(text, sub, GOLD, (m[4] | 0) || 5200, 60);
+            juice.lightLeak("242,184,60", 1600);
+            juice.flash("#fff1c2", 260, 0.3);
+            sfx("win");
+            return true;
         case "corebreak":
             juice.slam(text, (m[2] | 0) ? "+" + fmt(m[2] | 0) + " pts. " + sub : sub, GOLD, 3800, 56);
             juice.hitStop(50);
@@ -926,7 +933,8 @@ function drawLock(c, x, y, ratio, now) {
         }
     }
     c.restore();
-    if (A) A.drawText("LOCKED", x, y + R + 14, 12, RED, "center", true, 0.9, 5);
+    // round 11: plain words (the old one-word label read as a mystery)
+    if (A) A.drawText("Enemy aiming at you", x, y + R + 14, 12, RED, "center", true, 0.9, 5);
 }
 
 // after the world, before the HUD (app.js renderFrame)
@@ -1253,9 +1261,12 @@ export function slamBanked(title, bonus) {
 }
 
 // ── kill feed / callout colours ────────────────────────────────────────
+// the cosmetics rarity colours (shared/cosmetics.js RARITIES)
+const LOOT_COL = { common: "#b4b8bd", uncommon: "#5fd068", rare: "#4aa3ff", epic: "#b06bff", legendary: "#ffb23d" };
 export function feedLine(f, who, tag) {
     if (f.bounty) return { text: tag(String(f.by || "Someone").slice(0, 13), GOLD) + " cashed the bounty on " + who(f.name, "someone"), badge: f.g ? { t: "+" + fmt(f.g), col: GOLD } : null };
     if (f.hunt) return { text: who(f.name, "Someone") + " is the top target", badge: { t: fmtK(f.g | 0), col: RED } };
+    if (f.cloot) return { text: (f.by ? tag(String(f.by).slice(0, 13), GOLD) : "Someone") + " found " + tag(String(f.item || "loot").slice(0, 24), LOOT_COL[f.rar] || GOLD) + " in the Core", badge: null };
     if (f.core && f.spawn) return { text: tag("The Core", CORE) + " has surfaced", badge: null };
     if (f.core && f.broke) return { text: (f.by ? tag(String(f.by).slice(0, 13), GOLD) : "Someone") + " broke " + tag("the Core", CORE), badge: f.g ? { t: "+" + fmt(f.g), col: GOLD } : null };
     if (f.core) return { text: who(f.name, "Someone") + " got shattered by " + tag("the Core", CORE), badge: null };

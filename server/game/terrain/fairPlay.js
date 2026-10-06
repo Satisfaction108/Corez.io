@@ -18,6 +18,8 @@ const SW = {
     bankCover: flag('ROYALE_BANK_COVER'),
     // round 9: a protected player is fought once they've dealt 25% of a bot's max
     hit25: flag('ROYALE_FAIR_HIT25'),
+    // round 10: every tank that killed you lately, not just a repeat killer
+    pack: flag('ROYALE_FAIR_PACK'),
 };
 // never on the tutorial server: its lessons script the bots)
 function on(k) {
@@ -82,6 +84,11 @@ const TUNE = {
     FARM_COUNT_MS: 480_000,     // kills this far apart still add up
     FARM_SPAWN_R: 2100,         // a respawn keeps this far from a tank that farmed you
     FARM_SPAWN_MULT: 0.4,       // ...and it counts as this much closer when ranking spots
+    // round 10 pack rule (everyone): any bot that killed you in the last PACK_MS
+    // leaves you be for PACK_GRACE_MS of your next life (unless you shoot it),
+    // and the respawn keeps clear of all of them
+    PACK_MS: 180_000,
+    PACK_GRACE_MS: 60_000,
     // first kill (the bait)
     FIRST_AFTER_MS: 40_000,     // into a life (a new player's bot grace is 30 s)
     FIRST_RETRY_MS: 30_000,     // after a bait died to someone else or gave up
@@ -504,7 +511,14 @@ function farmEntry(bot, target) {
 function farmedRaw(bot, target, t) {
     const e = farmEntry(bot, target);
     if (!e) return false;
-    return e.n >= TUNE.FARM_KILLS && t - e.at < TUNE.FARM_MS;
+    if (e.n >= TUNE.FARM_KILLS && t - e.at < TUNE.FARM_MS) return true;
+    return packFresh(bot, target, e, t);
+}
+// the pack rule: a bot that killed `target` lately, early in their next life
+function packFresh(bot, target, e, t) {
+    if (!on('pack') || !bot || !bot.isBot || !e || !(e.n > 0) || t - e.at >= TUNE.PACK_MS) return false;
+    const born = +target.royaleBornAt || 0;
+    return born > 0 && born >= e.at && t - born < TUNE.PACK_GRACE_MS;
 }
 function farmed(bot, target, t = now()) {
     if (!on('bots') || !bot || !target || !target.isPlayer) return false;
@@ -519,7 +533,9 @@ function farmersOf(self, bodies, t = now()) {
     for (const b of bodies || []) {
         if (!b || b === self || (b.isDead && b.isDead()) || !(b.isBot || b.isPlayer)) continue;
         const e = self.socket._fpKilledBy.get(killerKey(b));
-        if (e && e.n >= TUNE.FARM_KILLS && t - e.at < TUNE.FARM_MS) out.push(b);
+        if (!e) continue;
+        // a repeat killer, or (pack rule) anyone who killed you in the last PACK_MS
+        if ((e.n >= TUNE.FARM_KILLS && t - e.at < TUNE.FARM_MS) || (on('pack') && e.n > 0 && t - e.at < TUNE.PACK_MS)) out.push(b);
     }
     return out;
 }

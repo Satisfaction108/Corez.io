@@ -310,7 +310,8 @@ test('e2e: persistent bank, Save & leave, $restore (local server, ports 6190-619
     fs.mkdirSync(E2E_DATA_DIR, { recursive: true });
     // ROYALE_FAIR_PLAY=0: these test guests are brand new, so fair play would
     // protect them and a death would cost their savings nothing (bank.js)
-    const env = { ...process.env, ROYALE_DEBUG: '1', ACCOUNTS_ALLOW_DEBUG: '1', ROYALE_FAIR_PLAY: '0',
+    // ROYALE_SAVINGS_DEATH_LOSS=1: the savings tax is off by default since Oct 5 2026; this checks the old path
+    const env = { ...process.env, ROYALE_DEBUG: '1', ACCOUNTS_ALLOW_DEBUG: '1', ROYALE_FAIR_PLAY: '0', ROYALE_SAVINGS_DEATH_LOSS: '1',
         SESSION_SECRET: SECRET, DATA_DIR: E2E_DATA_DIR, PUBLIC_ORIGIN: origin, PUBLIC_HOST: 'localhost:' + port,
         TRUSTED_PROXIES: '127.0.0.1', SINGLE_PROCESS: 'true', PORT: String(port), BR_PORT: String(port),
         TUT_PORT: String(port + 1), DUO_PORT: String(port + 2), DW_PORT: String(port + 3), BOT_CHAT_AI: 'false', NODE_ENV: 'development' };

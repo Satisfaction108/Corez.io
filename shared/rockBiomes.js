@@ -99,7 +99,9 @@
     // is the first, muted biome pass and 5 the full bright one above. Every
     // tone (and the map tint) sits BRIGHT of the way from muted to bright,
     // the rim shows BRIGHT as strongly. Turn it to taste: 0 muted, 1 bright.
-    const BRIGHT = 1;
+    // Oct 5: players missed the old stone look, so 0.6 (a little deeper),
+    // with the shader's grain, bevel and darker seams doing the rest.
+    const BRIGHT = 0.6;
     const MUTED = {
         sandstone: { ink: [30, 25, 20], dark: [63, 52, 42], face: [84, 70, 56], light: [109, 91, 73], map: '#473d32' },
         clay: { ink: [31, 22, 18], dark: [64, 46, 38], face: [86, 62, 50], light: [112, 81, 65], map: '#4e3b31' },

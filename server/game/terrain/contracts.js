@@ -193,7 +193,8 @@ const MAKERS = {
     },
     bountySurvive(body, t) {
         const b = hooks && hooks.bounty ? hooks.bounty() : null;
-        if (!b || b.body !== body) return null;
+        // the leader bounty has no clock to outlast (pacing.js)
+        if (!b || b.body !== body || b.leader) return null;
         const left = b.until - t;
         if (left < 15_000) return null;
         return { kind: 'bountySurvive', pri: 95, text: "You're the bounty. Stay alive", goal: 1, reward: R.bountySurvive, ms: left, noArrow: true };
@@ -233,7 +234,7 @@ const MAKERS = {
         if (b.until - t < 20_000 || d2(b.body, body.x, body.y) > 3000 * 3000) return null;
         if (fresh && hooks.isNew && hooks.isNew(body)) return null;
         if (hooks.tooStrong && hooks.tooStrong(body, b.body)) return null;
-        return { kind: 'bounty', pri: 66, text: "Claim the bounty on " + (b.body.name || "Unnamed"), goal: 1, reward: R.bounty, ms: b.until - t, ent: b.body };
+        return { kind: 'bounty', pri: 66, text: (b.leader ? "Take down the leader " : "Claim the bounty on ") + (b.body.name || "Unnamed"), goal: 1, reward: R.bounty, ms: Math.min(b.until - t, 120_000), ent: b.body };
     },
     streaker(body, t, fresh) {
         if (fresh) return null;

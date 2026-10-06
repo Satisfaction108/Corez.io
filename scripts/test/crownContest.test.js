@@ -22,6 +22,8 @@
 //              included), the 24 h champion crown, the Discord line
 //   client     the tracker, the note and the raid end words
 'use strict';
+// round 12: this file pins the plain formula; round12.test.js covers the banked soft line
+process.env.ROYALE_BANK_SOFT = '0';
 
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -40,6 +42,13 @@ fs.mkdirSync(ROOT, { recursive: true });
 process.env.DATA_DIR = path.join(ROOT, 'data');
 for (const k of ['ROYALE_DEBUG', 'ROYALE_CROWNS', 'ROYALE_PERKS', 'DB_PATH', 'PUBLIC_HOST', 'PUBLIC_ORIGIN', 'ALLOWED_ORIGINS', 'ACCOUNTS_ALLOW_DEBUG']) delete process.env[k];
 process.env.NODE_ENV = 'test';
+// the crown maths assume a flat 200-point kill and no leader bounty (round 10's storm-stage kill
+// multiplier and the leader bounty are covered in round10.test.js)
+process.env.ROYALE_STAGE_KILLS = '0';
+// round 11 raised the kill to 300 and added an early streak bonus (round11.test.js)
+process.env.ROYALE_KILL_SCORE = '200';
+process.env.ROYALE_STREAK_PTS = '0';
+process.env.ROYALE_LEADER_BOUNTY = '0';
 process.env.ACCOUNTS_ENABLED = 'true';
 process.env.SESSION_SECRET = 'crowns-test-secret-0123456789-abcdefghijklmnop';
 

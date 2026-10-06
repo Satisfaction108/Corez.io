@@ -3,18 +3,21 @@
 export const RULE = "Points = banked gems + kills & bonuses + crowns";
 export const RULE_SHORT = "PTS = BANKED + KILLS + CROWNS";
 export const RULE_BODY = "Most points at the bell wins. Banked gems are safe: dying never takes them. " +
-    "Carried gems count once you bank them. Kills, streaks, bosses and quests add bonus points. " +
+    "Carried gems count once you bank them. Past 5,000 in a raid, each banked gem counts half a point (you keep every gem). " +
+    "Kills, streaks, bosses and quests add bonus points. " +
     "A crown pays points every second, but whoever kills you takes it and up to 30% of your kill and crown points.";
 
 const num = (n) => String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 export const fmt = num;
 
 // Two different numbers, two different names (playtest 4 read "Banked 1,697" on
-export const BANK = "Bank";
+// Round 12: the HUD pill said "Bank: 16,547" next to "Banked this raid 11,060"
+// on the card and read as a mismatch; it is the spendable wallet, so it says so.
+export const BANK = "Spendable";
 export const BANKED_RAID = "Banked this raid";
-export const BANK_TIP = "Bank: gems you can spend at shops";
-export const BANK_TIP_BODY = "Spending lowers your Bank but never your points. " +
-    "Your points count everything you banked this raid (Banked this raid on the death card and results).";
+export const BANK_TIP = "Spendable: gems you can spend at shops";
+export const BANK_TIP_BODY = "It includes gems from earlier raids and bounties. Spending lowers it but never your points. " +
+    "Your points count what you banked this raid (Banked this raid on the death card and results).";
 
 // The one points number the death card shows (header and the "Points: X" line
 export function cardPoints(you) {
@@ -30,14 +33,18 @@ export function parts(you) {
     if (p && typeof p === "object") {
         const b = p.b | 0, k = p.k | 0, c = p.c | 0;
         const stolen = Math.max(0, p.s | 0, -c);
-        return { b, k, c, total: b + k + c, earned: Math.max(0, c + stolen), stolen };
+        // g: the banked gems when past the soft line (b is the points they make)
+        const out = { b, k, c, total: b + k + c, earned: Math.max(0, c + stolen), stolen };
+        if ((p.g | 0) > b) { out.g = p.g | 0; out.soft = p.t | 0; }
+        return out;
     }
     const total = y.score | 0, b = Math.min(total, y.banked | 0);
     return { b, k: total - b, c: 0, total, earned: 0, stolen: 0 };
 }
 
 // The death card's points line and its reason
-export function deathLine(you, carried, savingsLost = 0) {
+// kept: the part of the satchel that comes back with you (m[18 + killers])
+export function deathLine(you, carried, savingsLost = 0, kept = 0) {
     const y = you || {};
     const dl = y.dl || {};
     const lostPts = Math.max(0, dl.p | 0);
@@ -50,7 +57,10 @@ export function deathLine(you, carried, savingsLost = 0) {
     else if (dl.cr) lost = "lost 0: your crown fell, banked gems are safe";
     else lost = "lost 0: banked gems are safe";
     const c = Math.max(0, (carried != null ? carried : dl.c) | 0);
-    const sub = c > 0 ? "You dropped " + num(c) + " carried gems. They were not points yet: bank sooner." : "";
+    const k = Math.max(0, kept | 0);
+    const sub = k > 0
+        ? "You kept " + num(k) + " carried gems, dropped " + num(c) + ". Bank sooner to keep them all."
+        : c > 0 ? "You dropped " + num(c) + " carried gems. They were not points yet: bank sooner." : "";
     return { head, lost, sub, hurt: lostPts > 0, savings: savingsLine(sav) };
 }
 export function savingsLine(n) {
@@ -62,11 +72,28 @@ export function savingsLine(n) {
 export function tiles(you) {
     const pt = parts(you);
     return [
-        ["BANKED THIS RAID", num(pt.b), "gem"],
+        // past the soft line the tile says how many gems made those points
+        pt.g > pt.b ? bankTile(pt) : ["BANKED THIS RAID", num(pt.b), "gem"],
         ["KILLS & BONUSES", num(pt.k), "combat"],
         [pt.stolen > 0 ? "CROWNS · " + num(pt.stolen) + " STOLEN" : "CROWNS", num(pt.earned), "crown"],
     ];
 }
+
+// Oct 6 2026 playtest: "BANKED 5,545 GEMS" over 5,273 read as a mismatch. Past
+// the soft line the tile is the POINTS (labelled so) and a line says where they
+// came from. One set of words for the death card, the results and the podium.
+export const BANK_PTS_LABEL = "BANKED PTS";
+export function bankTile(pt) { return [BANK_PTS_LABEL, num(pt.b), "gem"]; }
+// short form under a number: "from 5,545 gems (past 5,000 counts half)"
+export function bankFrom(pt) {
+    return pt && pt.g > pt.b ? "from " + num(pt.g) + " gems (past " + num(pt.soft || 5000) + " counts half)" : "";
+}
+// the full sentence (death card text block)
+export function bankSoftLine(pt) {
+    return pt && pt.g > pt.b ? "Banked: " + num(pt.g) + " gems = " + num(pt.b) + " pts (past " + num(pt.soft || 5000) + ", each gem counts half)" : "";
+}
+// the podium's line for a top-3 row: gems are gems
+export function podiumBanked(gems) { return num(Math.max(0, gems | 0)) + " gems banked this raid"; }
 
 // Carrying a lot: a warning before the risk (note stack)
 export const CARRY_WARN = 600;      // with danger around

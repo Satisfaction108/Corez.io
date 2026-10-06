@@ -1,9 +1,22 @@
 // Round 9 build buttons, the words and when they show (pure
 
 // the death card's second button: "Respawn as Minigun", "same tank and stats"
-export function respawnAs(you) {
+// diedAs: the tank this life ended as (client side, socketinit.js). The server
+// saves that same tank at the death, but the RY that says so can land a moment
+// after the card opens (playtest 9: "Respawn as Vulture" for a Minigun), so an
+// upgraded died-as tank names the button.
+export function respawnAs(you, diedAs) {
     if (!you || !(you.lt || you.ls)) return null;
-    return { label: "Respawn as " + (you.lt || "Basic"), sub: you.lt ? "same tank and stats" : "same stats" };
+    const name = you.lt && diedAs && diedAs !== "Basic" ? diedAs : you.lt;
+    return { label: "Respawn as " + (name || "Basic"), sub: you.lt ? "same tank and stats" : "same stats" };
+}
+// Oct 6 2026: no "Respawn as" for an upgraded died-as tank (no saved build,
+// e.g. a new raid): say why instead of a silent Basic drop. Waits a moment so
+// the RY that carries lt can land first.
+export function respawnAsWhy(you, diedAs, openMs) {
+    if (respawnAs(you, diedAs)) return "";
+    if (!diedAs || diedAs === "Basic" || !(openMs >= 1500)) return "";
+    return "Your " + diedAs + " build was not saved, so this drop starts as Basic.";
 }
 // by "Don't upgrade": only while you're below the last tank
 export function lastTank(you, tutorial = false) {
@@ -39,4 +52,6 @@ export function firstTime(key, store) {
     } catch (e) { /* private mode: once per session */ }
     return true;
 }
-export const TEAM_BANK_TIP = "Team Banks go to whoever does the most damage to their banner. Vaults are open to everyone.";
+// round 12: shown on the first approach (app.js drawOutpostLabels), not only on the pad
+export const TEAM_BANK_TIP = "Team Bank: break its banner to own it. Owners bank here safely; Vaults are open to everyone.";
+export const TEAM_BANK_NEAR = 700;   // world units from your tank

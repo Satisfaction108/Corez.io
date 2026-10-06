@@ -1693,7 +1693,7 @@ class TerrainRenderer {
             g.fill();
         };
         g.strokeStyle = TR.ROCK_INK;
-        g.lineWidth = 0.048 * rockSz;
+        g.lineWidth = 0.056 * rockSz;
         g.lineJoin = 'round';
         for (const cell of this._cellPolys.values()) {
             if (cell.cx < x - 3 || cell.cx > x + w + 3 || cell.cy < y - 3 || cell.cy > y + h + 3) continue;
@@ -1705,7 +1705,7 @@ class TerrainRenderer {
             const vi = Math.floor(cell.k / 100003), vj = cell.k - vi * 100003;
             const [hx, hy] = this._vh2(vi, vj);
             const ox = (vi + hx) * rockSz, oy = (vj + hy) * rockSz;
-            const la = (hx - 0.5) * 0.5;
+            const la = (hx - 0.5) * 0.8;
             const up = Math.atan2(-Math.cos(la), Math.sin(la));   // ldir
             g.fillStyle = bc ? bc[3] : TR.ROCK_LIGHT; wedge(ox, oy, up + Math.PI);
             g.fillStyle = bc ? bc[1] : TR.ROCK_DARK;  wedge(ox, oy, up);
@@ -1774,6 +1774,21 @@ class TerrainRenderer {
             uniform float u_bioOn;
             uniform sampler2D u_bio;
 
+            // Surface grain only (never geometry): a cheap value noise in
+            // world space, so it lands the same in every cached tile and
+            // costs nothing per frame. Float quirks here only move a speck.
+            float hs(vec2 q){
+                vec3 p3=fract(vec3(q.xyx)*.1031);
+                p3+=dot(p3,p3.yzx+33.33);
+                return fract((p3.x+p3.y)*p3.z);
+            }
+            float vn(vec2 q){
+                vec2 i=floor(q), u=fract(q);
+                u=u*u*(3.-2.*u);
+                return mix(mix(hs(i),hs(i+vec2(1.,0.)),u.x),
+                           mix(hs(i+vec2(0.,1.)),hs(i+vec2(1.,1.)),u.x),u.y);
+            }
+
             // Seed jitter baked on the CPU (same code as collision/polygons)
             // and read back here - no GPU float math, no chance of desync.
             vec2 hash2(vec2 p){
@@ -1806,7 +1821,7 @@ class TerrainRenderer {
                 }
                 float nl=length(mr);
                 vec2 lh=hash2(n+mg);
-                float la=(lh.x-.5)*.5;
+                float la=(lh.x-.5)*.8;
                 vec2 ldir=vec2(sin(la),-cos(la));
                 // signed facet coordinate scaled to distance so the facet
                 // seams anti-alias over one texel like the ink does
@@ -1832,7 +1847,7 @@ class TerrainRenderer {
                     rimC  =texture2D(u_bio,vec2((bx+4.)/768.,by));
                     gemC  =texture2D(u_bio,vec2((bx+5.)/768.,by));
                 }
-                const float INK=.024;
+                const float INK=.028;
                 float aa=.6/(u_cellSz.x*u_rockSz);
                 vec3 col=darkC;
                 col=mix(col,faceC, smoothstep(-aa,aa,lt+nl/3.));
@@ -1841,11 +1856,22 @@ class TerrainRenderer {
                 // of the rock the light catches
                 float e=bd-INK;
                 float lit=smoothstep(-.2,.2,lt);
-                // the faces round off into the seams: a soft shade on the
-                // way down, deeper on the side away from the light, so the
-                // faces read as raised and lit
-                float ao=1.-smoothstep(0.,.1,e);
-                col*=1.-.14*ao*ao*(1.-.55*lit);
+                // Stone, not plastic (the pre-biome rock's weight, on the
+                // biome colours): a mottled surface with a fine grain, each
+                // rock its own (offset by its seed, so it breaks at seams)
+                vec2 gq=(n+mg+f)+lh*31.;
+                float mot=vn(gq*6.)*.62+vn(gq*12.7+5.3)*.38;
+                float grn=vn(gq*41.)*.6+vn(gq*83.+2.1)*.4;
+                col*=.91+.15*mot+(grn-.5)*.11;
+                // a chiselled bevel just inside the seam: the edge facing
+                // the light catches it (in the biome's rim tone), the far
+                // edge drops into shade
+                float bev=1.-smoothstep(0.,.07,e);
+                col=mix(col,max(col,rimC.rgb*.85),bev*lit*(.25+.5*rimC.a));
+                col*=1.+bev*(.14*lit-.24*(1.-lit));
+                // and the faces round off into the seams, darker edges
+                float ao=1.-smoothstep(0.,.17,e);
+                col*=1.-.22*ao*ao*(1.-.45*lit);
                 col=mix(col,inkC,1.-smoothstep(INK-aa,INK+aa,bd));
                 gl_FragColor=vec4(col,1.);
             }`;

@@ -321,21 +321,21 @@ test('death: a first death drops half and the other half comes back; the second 
     assert.equal(p2.carriedGems | 0, 200);
     assert.equal(director.youFields(sock).nxKept, undefined);
     assert.ok(kcs(sock, 'nx').some(k => k[2] === 'Back in the raid' && /200/.test(k[4])));
-    // second death: all of it
-    assert.equal(die(p2, 300), 300);
-    assert.equal(sock.gemDeathKept, 0);
+    // second death: the 30% everyone keeps (gems.CARRY_KEEP), no newcomer half
+    assert.equal(die(p2, 300), 210);
+    assert.equal(sock.gemDeathKept, 90);
     // a near-empty first death doesn't use it up
     const s2 = fakeSocket(0);
     const e = spawn(0, 0, (nextY += 1200), s2);
     die(e, 5);
-    assert.equal(s2.gemDeathKept, 0);
+    assert.equal(s2.gemDeathKept, Math.round(5 * gems.CARRY_KEEP), 'only the 30% everyone keeps');
     const e2 = spawn(0, 0, (nextY += 1200), s2);
     assert.equal(die(e2, 600), 300, 'still there for the first real one');
-    // a veteran (and a second raid) drops everything
+    // a veteran (and a second raid) drops 70%, like everyone (no newcomer half)
     for (const m of [12, 120]) {
         const v = spawn(m, 0, (nextY += 1200));
-        assert.equal(die(v, 400), 400, m + ' minutes');
-        assert.equal(v.socket.gemDeathKept, 0);
+        assert.equal(die(v, 400), 280, m + ' minutes');
+        assert.equal(v.socket.gemDeathKept, 120);
     }
     // the death packet carries it
     const src = require('fs').readFileSync(path.join(SERVER, 'game', 'network', 'sockets.js'), 'utf8');
@@ -594,7 +594,7 @@ test('veterans: none of it; ROYALE_NEWCOMER_DIRECTOR=0 turns it all off', () => 
         assert.equal(p.nxStage, undefined);
         assert.ok(!p.nxBossSafe);
         assert.equal(director.youFields(p.socket), null);
-        assert.equal(die(p, 400), 400, 'no kept half');
+        assert.equal(die(p, 400), 280, 'no kept half, only the 30% everyone keeps');
     } finally { director.setEnabled(true); }
     const env = require('fs').readFileSync(path.join(SERVER, '.env.example'), 'utf8');
     assert.ok(/^ROYALE_NEWCOMER_DIRECTOR=1$/m.test(env));

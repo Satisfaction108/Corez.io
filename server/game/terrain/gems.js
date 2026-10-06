@@ -29,6 +29,23 @@ const SATCHEL_CAP  = 8000;   // the base (shop.satchelCap has the gear and Deep 
 const DEATH_DROP   = 0.85;  
 
 const BANK_DEATH_LOSS = 0.4;
+// Raid: everyone (players and bots) keeps this share of the satchel through a
+// death and respawns with it; the rest drops as loot for the killer.
+// ROYALE_CARRY_KEEP=0 drops the full satchel again.
+const CARRY_KEEP = (() => {
+    const v = parseFloat(process.env.ROYALE_CARRY_KEEP);
+    return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.3;
+})();
+let carryKeep = CARRY_KEEP;
+function setCarryKeep(v) { carryKeep = Math.max(0, Math.min(1, +v || 0)); }
+// gems kept back from `carried` (after insurance) by the equal-for-all rule
+function carryKeepFor(body, carried) {
+    if (!Config.dig_royale || !body || !(carried > 0) || !(carryKeep > 0)) return 0;
+    const cause = body.deathCause || '';
+    if (cause === 'raidend' || cause === 'despawn' || cause === 'saved' || body._savedOut) return 0;
+    if (body.socket && (body.socket.leftOnPurpose || body.socket._drCleaned)) return 0;
+    return Math.max(0, Math.min(carried, Math.round(carried * carryKeep)));
+}
 const MAGNET_BONUS = 110;          // the repel bubbles (owned loot, full satchel)
 // The pull reach beyond the hull
 const MAGNET_REACH = 135;
@@ -471,6 +488,22 @@ function dropGemsOnDeath(body, killers = []) {
     if (raidMode && body.socket && carried - insured > 0) {
         try { kept = Math.max(0, Math.min(carried - insured, require('./newcomerDirector.js').keepOnDeath(body, carried - insured) | 0)); } catch { kept = 0; }
     }
+    // everyone keeps CARRY_KEEP of the satchel; a first death's half
+    // (newcomerDirector, restored by its own onSpawn) counts toward it: the
+    // larger of the two, never both
+    let keepExtra = 0;
+    if (raidMode && carried - insured > 0) {
+        const share = carryKeepFor(body, carried - insured);
+        keepExtra = Math.max(0, share - kept);
+        kept += keepExtra;
+    }
+    if (body.socket) {
+        body.socket._carryKeep = keepExtra;
+        body.socket._carryKeepRaid = global.royaleRaidSeq | 0;
+    } else if (body.isBot && keepExtra > 0) {
+        // the same bot coming back (botRoster) drops in with it
+        try { require('./botRoster.js').noteCarry(body, keepExtra); } catch { /* */ }
+    }
     // Death screen shows carried + banked before the drop. Snapshot here: this
     // runs on 'dead', before records() builds the death packet.
     if (body.socket) {
@@ -507,7 +540,7 @@ function dropGemsOnDeath(body, killers = []) {
     } else if (body.socket) body.socket.gemDeathInsured = 0;
     updateSatchel(body);
     talkGems(body, -carried, 1);
-    // Raid drops the FULL satchel minus insurance and a kept half. (2TDM keeps its 85% tax.)
+    // Raid drops the satchel minus insurance and the kept share. (2TDM keeps its 85% tax.)
     const drop = Math.floor((carried - insured - kept) * (raidMode ? 1 : DEATH_DROP)) + bankLoss;
     if (drop <= 0) {
         if (raidMode) { try { dustMod().onDeathDrop(body, []); } catch { /* */ } }
@@ -768,4 +801,4 @@ function tickGem(gem, tg, players) {
     }
 }
 
-module.exports = { chipHit, payoutOf, depositValue, stageGemMult, PLAIN_ROCK_MULT, CHIP_SHARE, COMBO_STEP, COMBO_CAP, spawnOreBurst, pityBurst, spawnGem, initSatchel, updateSatchel, orientSatchel, dropGemsOnDeath, tickGem, talkGems, setBanked, splitValue, SATCHEL_CAP, MAGNET_REACH };
+module.exports = { CARRY_KEEP, setCarryKeep, carryKeepFor, chipHit, payoutOf, depositValue, stageGemMult, PLAIN_ROCK_MULT, CHIP_SHARE, COMBO_STEP, COMBO_CAP, spawnOreBurst, pityBurst, spawnGem, initSatchel, updateSatchel, orientSatchel, dropGemsOnDeath, tickGem, talkGems, setBanked, splitValue, SATCHEL_CAP, MAGNET_REACH };

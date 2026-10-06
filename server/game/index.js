@@ -1963,6 +1963,8 @@ class gameHandler {
                                 const rock = _tg.rockHitByCircle(instance.x, instance.y, r * 1.06)
                                     || (growingNow ? _tg.growingRockHitByCircle(instance.x, instance.y, r * 1.06, tickNow) : null);
                                 if (rock) {
+                                    // the RY dig flag (Mining Power tip): hull mining counts too
+                                    instance._grindDigAt = nowT;
                                     let mb = mineBudget.get(instance.id);
                                     if (!mb || nowT - mb.t >= 1000) {
                                         mb = { t: nowT, left: _tg.baseRockHealth * 1.5 * growMine(instance) };

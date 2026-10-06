@@ -51,8 +51,34 @@ function isUpgraded(defs) {
     return !!d && d !== s;
 }
 
+// Oct 6 2026 playtest: the saved build lived only on the socket, so a reconnect
+// (reload, network blip, a raid-worker hop) lost it and the death card offered
+// no "Respawn as". It is also kept by the player's stable keys (resume token,
+// account) and the new socket adopts it.
+const byKey = new Map();
+function keysOf(socket) {
+    const out = [];
+    if (!socket) return out;
+    if (socket.resumeToken) out.push('t:' + socket.resumeToken);
+    if (socket.account && socket.account.id) out.push('a:' + socket.account.id);
+    return out;
+}
+function remember(socket, l) {
+    for (const k of keysOf(socket)) byKey.set(k, l);
+    if (byKey.size > 4000) { for (const k of byKey.keys()) { byKey.delete(k); if (byKey.size <= 3000) break; } }
+}
+function adopt(socket) {
+    if (!socket || socket._rbLast) return socket && socket._rbLast;
+    for (const k of keysOf(socket)) {
+        const l = byKey.get(k);
+        if (l && l.raid === raidOf()) { socket._rbLast = l; return l; }
+    }
+    return null;
+}
+
 // dig_royale onDeath: what this life played
 function save(socket, body, raid) {
+    if (socket) adopt(socket);
     if (!ON || !socket || !body || !body.skill) return null;
     const defs = (body.defs || []).slice();
     const raw = body.skill.raw ? Array.from(body.skill.raw) : [];
@@ -66,10 +92,11 @@ function save(socket, body, raid) {
         name: d ? String(d.LABEL || body.label || 'Tank') : (prev && prev.name) || '',
         raw: sum(raw) ? raw : (prev ? prev.raw : raw),
     };
+    remember(socket, socket._rbLast);
     return socket._rbLast;
 }
 function last(socket) {
-    const l = socket && socket._rbLast;
+    const l = socket && (socket._rbLast || adopt(socket));
     return l && l.raid === raidOf() ? l : null;
 }
 // the RY you-packet: lt = last tank's name, ltu = 1 while the tank button would
@@ -235,4 +262,4 @@ function onSpawn(socket, body) {
     }
 }
 
-module.exports = { ON, MODES, setRaidOf, children, pathTo, save, last, youFields, fitOnTop, randomFit, request, onSpawn, applyTank, applyStats, applyRandom };
+module.exports = { byKey, ON, MODES, setRaidOf, children, pathTo, save, last, youFields, fitOnTop, randomFit, request, onSpawn, applyTank, applyStats, applyRandom };

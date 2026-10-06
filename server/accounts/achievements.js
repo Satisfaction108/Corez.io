@@ -179,6 +179,32 @@ function unlockedSet(userId) {
 }
 function countFor(userId) { return unlockedSet(userId).size; }
 
+// ---- Core loot a guest found (game/terrain/coreDrop.js) ----
+// A guest's lucky Core drops wait in one guest_achievements counter row
+// (LOOT_ROW, the item ids in data) and are granted by adoptGuest at signup,
+// like a guest's achievement items. No new table.
+const LOOT_ROW = 'c:coreloot';
+function guestLoot(guestId) {
+    const d = h();
+    if (!d || !GUEST_RE.test(String(guestId || ''))) return [];
+    const r = d.get('SELECT data FROM guest_achievements WHERE guest_id = ? AND achievement_id = ?', guestId, LOOT_ROW);
+    return r ? parseSet(r.data) : [];
+}
+// -> true when it was added (false: already on the list, bad id, no db)
+function addGuestLoot(guestId, itemId, now = Date.now()) {
+    const d = h();
+    if (!d || !GUEST_RE.test(String(guestId || '')) || typeof itemId !== 'string') return false;
+    return d.tx(() => {
+        const list = guestLoot(guestId);
+        if (list.includes(itemId) || list.length >= SET_MAX) return false;
+        list.push(itemId);
+        d.run(`INSERT INTO guest_achievements (guest_id, achievement_id, progress, data) VALUES (?, ?, ?, ?)
+               ON CONFLICT(guest_id, achievement_id) DO UPDATE SET progress = excluded.progress, data = excluded.data`,
+            guestId, LOOT_ROW, list.length, JSON.stringify(list));
+        return true;
+    });
+}
+
 // ---- a guest who signs up ----
 
 // The browser's guest rows move onto the account (made in the last day),
@@ -199,6 +225,12 @@ function adoptGuest(guestId, userId, now = Date.now()) {
         if (!rows.length) return none;
         const out = { moved: [], rewardMilli: 0, balanceMilli: null, items: [] };
         for (const r of rows) {
+            // Core loot: the items it found are granted now (retention.grantItem)
+            if (r.id === LOOT_ROW) {
+                const retention = require('./retention');
+                for (const id of parseSet(r.data)) if (retention.grantItem(d, userId, id, now)) { out.items.push(id); (out.loot || (out.loot = [])).push(id); }
+                continue;
+            }
             if (r.id.startsWith('c:')) {
                 const mine = d.get('SELECT progress, data FROM user_achievements WHERE user_id = ? AND achievement_id = ?', userId, r.id);
                 let data = r.data;
@@ -236,5 +268,6 @@ function adoptGuest(guestId, userId, now = Date.now()) {
 module.exports = {
     DEFS, BY_ID, NEW_ACCOUNT_MS, RARITY_MS, SET_MAX,
     tableOf, load, seeds, unlock, saveCounters, rarity, listFor, list, unlockedSet, countFor, adoptGuest,
+    LOOT_ROW, guestLoot, addGuestLoot,
     _resetRarity,
 };

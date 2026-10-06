@@ -527,18 +527,27 @@
             ? function (f) { requestIdleCallback(f, { timeout: 500 }); }
             : function (f) { setTimeout(f, 16); };
         var bakeGen = 0;
-        // the rock is drawn a slice at a time (<= ~8 ms each) in idle moments
-        function bakeWorld() {
+        // the rock is drawn a slice at a time (<= ~8 ms each) in idle moments.
+        // The first bake of a page is a cheap low-detail one (a quarter of the
+        // pixels), so the world is there within a few frames of first paint;
+        // the full one follows and swaps in (same seed, same field).
+        var bakedOnce = false;
+        function bakeWorld(lo) {
             worldTimer = 0;
             if (!world || !homeFxOn) return;
             var gen = ++bakeGen;
-            try { world.build(W, H, dpr, root.getAttribute('data-theme') === 'light'); } catch (e) { world = null; return; }
+            var cheap = lo === true || (!bakedOnce && dpr > 0.75);
+            try { world.build(W, H, cheap ? 0.5 : dpr, root.getAttribute('data-theme') === 'light'); } catch (e) { world = null; return; }
             (function slice() {
                 if (gen !== bakeGen || !world || !homeFxOn) return;
                 var done;
                 try { done = world.step(8); } catch (e) { world = null; return; }
-                if (!done) { idle(slice); return; }
+                // the cheap one doesn't wait for idle time (up to 500 ms a slice while
+                // the game bundle loads); 8 ms slices still leave the page live
+                if (!done) { if (cheap) setTimeout(slice, 0); else idle(slice); return; }
+                bakedOnce = true;
                 if (!homeFxRaf) drawHomeFx();
+                if (cheap) worldTimer = setTimeout(function () { idle(function () { bakeWorld(false); }); }, 400);
             })();
         }
         function wantWorld(delay) {
@@ -547,9 +556,13 @@
             clearTimeout(worldTimer);
             worldTimer = setTimeout(function () { idle(bakeWorld); }, delay);
         }
+        // right after first paint, not on 'load' (which waits for the whole
+        // game bundle, fonts and images: playtest 9 saw a plain purple
+        // backdrop for a while). The slices run in idle time, so Play stays live.
         if (world) {
-            if (document.readyState === 'complete') wantWorld(60);
-            else window.addEventListener('load', function () { wantWorld(60); });
+            var firstPaint = function () { requestAnimationFrame(function () { setTimeout(function () { wantWorld(0); }, 0); }); };
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', firstPaint);
+            else firstPaint();
         }
 
         function resize() {

@@ -58,6 +58,8 @@
 //              flagged TOO STRONG (never their own tank)
 //   beaten     a bot a protected player beat leaves them be all raid
 'use strict';
+// the raid-opening grace (round 11, round11.test.js) would hold every bot off in these engage tests
+process.env.ROYALE_OPEN_GRACE_S = '0';
 
 const assert = require('node:assert/strict');
 const path = require('path');
@@ -778,6 +780,9 @@ test('farming: a bot that keeps killing the same player leaves them be for a whi
     const b = bot('basic', x + 400, y);
     const c = new G(b);
     const t = Date.now();
+    // these lives began before the kills (round 10's pack rule only covers the
+    // first 60 s of the NEXT life, see round10.test.js)
+    p.royaleBornAt = v.royaleBornAt = t - 1000;
     fair.noteBotKill(b, p, t, []);
     assert.equal(fair.farmed(b, p, t), false, 'once is a fight');
     fair.noteBotKill(b, p, t, []);
@@ -1214,7 +1219,9 @@ test('safe spawn: a screen from the last two killers (all raid), 2x-score tanks 
     const k2 = bot('basic', st.cx + 900, st.cy + 300); k2.botFamilyId = 5102;
     fair.noteKilledBy(me.socket, k1, t - 450_000, raid);
     fair.noteKilledBy(me.socket, k2, t - 1000, raid);
-    assert.equal(fair.farmersOf(me, [k1, k2], t).length, 0, 'one kill each: not farming');
+    // round 10 pack rule: one kill in the last 3 min is enough for the keep-away
+    // list (k2), a 7.5-minute-old one is not (k1)
+    assert.deepEqual(fair.farmersOf(me, [k1, k2], t), [k2], 'pack: only the recent killer');
     assert.deepEqual(fair.lastKillersOf(me, [k1, k2], raid), [k1, k2]);
     // a third killer pushes the oldest out
     const k0 = bot('basic', st.cx + 2200, st.cy); k0.botFamilyId = 5100;

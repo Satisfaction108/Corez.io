@@ -1391,6 +1391,9 @@ let incoming = async function(message, socket) {
                     r.at = performance.now();
                     r.raidId = d.raidId | 0 || d.matchId | 0 || r.raidId;
                     r.raidLeft = d.raidLeft | 0 || d.left | 0;
+                    // round 12: the raid's length (firstSeconds' new-raid check) and the leader ping
+                    r.raidMs = d.raidMs | 0;
+                    r.lping = d.lping || null;
                     // Raid Night staging (/raidreset): ms until the raid starts
                     r.staging = d.staging > 0 ? +d.staging : 0;
                     r.stagingAt = performance.now();
@@ -1714,6 +1717,7 @@ let incoming = async function(message, socket) {
                 pushDamageNumber(m[0], m[1] | 0, m[2] | 0, !!(m[3] | 0));
                 // your last hit taken (raidPerks holds a fresh offer while you're hit)
                 if (m[3] | 0) global.hurtAt = performance.now();
+                else global.dealtAt = performance.now();   // raidPerks: out of combat = neither for 3 s
                 try { raidHeat.onHit(m[0], m[1] | 0, m[2] | 0, !!(m[3] | 0)); } catch (e) { /* */ }
             } break;
             case 'DEAD': {
@@ -2274,6 +2278,8 @@ let incoming = async function(message, socket) {
             global.finalCarried = m[11 + m[8]] | 0;
             global.finalCause = m[12 + m[8]] || "";
             global.canvas.reverseDirection = false;
+            // the tank this life ended as (the death card's "Respawn as <Tank>")
+            try { global.diedAsTank = (global.mockups[parseInt(String(gui.type).split("-")[0], 10)] || {}).name || ""; } catch (e) { global.diedAsTank = ""; }
             global.died = true;
             const deathPlace = m[13 + m[8]] | 0;
             if (deathPlace > 0) global.royale.place = deathPlace;

@@ -19,7 +19,7 @@ let A = null;
 export function init(helpers) { A = helpers; }
 
 // ms after the KC raidend. The server takes everyone but the winners down at
-// 1.6 s and starts the next raid at 22.6 s
+// 1.6 s and starts the next raid at 28.6 s (round 11; was 22.6 s)
 // off the reveal, which waits for the camera to reach the winner.
 const FREEZE_OUT = 1700;
 const TITLE_OUT = 1900;
@@ -30,7 +30,7 @@ const REWARDS_AT = 2300;
 const TALLY_AT = 2900;
 const TALLY_MS = 2200;
 const NEXT_AT = 5200;
-const END_MS = 25000;       // past the server's next raid (22.6 s): the drop stops it first
+const END_MS = 31000;       // past the server's next raid (28.6 s): the drop stops it first
 
 const S = {
     on: false, at: 0, sub: "", reveal: 0,
@@ -116,6 +116,8 @@ export function start(sub) {
     // the cells add up the way the standings do: banked + kills & crowns
     const pt = SL.parts(you);
     S.me.banked = pt.b;
+    S.me.bankG = pt.g | 0;
+    S.me.bankSoft = pt.soft | 0;
     S.me.k = pt.k; S.me.c = pt.c;
     S.raidId = (res && res.raidId) | 0 || (r.raidId | 0);
     S.me.next = you.nextGems | 0;
@@ -911,12 +913,13 @@ function drawPodium(c, pt) {
         const cl = CL.crownLine(row);
         const kl = (row.kills | 0) + ((row.kills | 0) === 1 ? " kill" : " kills");
         if (cl) {
-            const kb = kl + " · " + A.fmtNum(row.gems | 0) + " banked";
+            const kb = kl + " · " + SL.podiumBanked(row.gems);
             A.drawText(kb, bx + colW / 2, top + 89, fitSize(kb, 11, colW - 6, 8), HUD.text2, "center", true, a);
             A.drawText(cl, bx + colW / 2, top + 103, fitSize(cl, 11, colW - 6, 8), HUD.gold, "center", true, a);
         } else {
             A.drawText(kl, bx + colW / 2, top + 89, 11, HUD.text2, "center", true, a);
-            A.drawText(A.fmtNum(row.gems | 0) + " banked", bx + colW / 2, top + 103, 11, HUD.text2, "center", true, a);
+            const bl = SL.podiumBanked(row.gems);
+            A.drawText(bl, bx + colW / 2, top + 103, fitSize(bl, 11, colW - 6, 8), HUD.text2, "center", true, a);
         }
         // the name over the block; yours in gold
         const name = shortName(row.name, S.duos ? 26 : 18);
@@ -949,7 +952,8 @@ function rewardChips() {
     const add = (t, col) => { chipCache.text[chipCache.n] = t; chipCache.col[chipCache.n] = col; chipCache.n++; };
     if (S.me.next > 0) add("Next raid: +" + A.fmtNum(S.me.next) + " starting gems", A.HUD.copper);
     if (st && st.n > 0) add(st.kind === "win" ? "Win streak x" + st.n : "Play streak day " + st.n, "#ffb347");
-    if (!chipCache.n) add(S.place > 10 || !S.place ? "Finish top 10 to start the next raid with bonus gems" : "Good raid", A.HUD.text2);
+    // no starting-gem head start any more (nextGems is 0): no promise of one
+    if (!chipCache.n) add(S.place === 1 ? "Champion" : S.place > 0 && S.place <= 3 ? "Top 3" : "Good raid", A.HUD.text2);
     return chipCache;
 }
 const RANK_H = 106, CB_H = 58;
@@ -1000,9 +1004,19 @@ function drawRewards(c, pt, now) {
         const x = 20 + i * (cw + 8);
         const full = i === 0 ? S.me.score : i === 1 ? S.me.banked : S.me.k + S.me.c;
         A.hudWell(c, x, wy, cw, wh, 10, i === 0 ? "rgba(242,184,60,0.12)" : HUD.well, HUD.ink, 2);
-        A.drawText(CELL_LABEL[i], x + cw / 2, wy + 16, fitSize(CELL_LABEL[i], 10.5, cw - 12, 8), HUD.text2, "center", true);
+        // round 12: past the soft line the banked cell is the points the gems made
+        const soft = i === 1 && S.me.bankG > S.me.banked;
+        const lab = soft ? SL.BANK_PTS_LABEL : CELL_LABEL[i];
+        if (soft) {
+            const from = SL.bankFrom({ g: S.me.bankG, b: S.me.banked, soft: S.me.bankSoft });
+            A.drawText(from, x + cw / 2, wy + wh - 9, fitSize(from, 9, cw - 10, 7), HUD.text2, "center", true);
+        }
+        A.drawText(lab, x + cw / 2, wy + 16, fitSize(lab, 10.5, cw - 12, 8), HUD.text2, "center", true);
         const size = fitSize(A.fmtNum(full), 26, cw - 14, 14);
-        A.hudTitle((full < 0 ? "-" : "") + A.fmtNum(Math.abs(Math.round(full * e))), x + cw / 2, wy + 44, size, i === 0 ? HUD.gold : i === 1 ? HUD.emerald : HUD.head, "center", 1, c);
+        // playtest 9: counting up from 0 read as "no data yet" (0 / 0 / 0 for
+        // two seconds), so the real numbers show at once; the tally is a pop
+        const pk = tk > 0 && tk < 1 ? 1 + 0.08 * Math.sin(Math.PI * e) : 1;
+        A.hudTitle((full < 0 ? "-" : "") + A.fmtNum(Math.abs(Math.round(full))), x + cw / 2, wy + 44, size * pk, i === 0 ? HUD.gold : i === 1 ? HUD.emerald : HUD.head, "center", 1, c);
     }
     // the next raid's head start and the streak
     const cy = wy + wh + 12, ch = 34;

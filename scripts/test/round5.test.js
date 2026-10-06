@@ -204,7 +204,7 @@ test('bank pops: every Bank rise has a label, deposits stay quiet, purchases say
 
 test('two banks: the HUD says Bank (spendable), the card and results say Banked this raid', async () => {
     const SL = await imp('scoreLogic.js');
-    assert.equal(SL.BANK, 'Bank');
+    assert.equal(SL.BANK, 'Spendable');
     assert.equal(SL.BANKED_RAID, 'Banked this raid');
     assert.match(SL.BANK_TIP_BODY, /never your points/);
     assert.equal(SL.tiles({ pts: { b: 1997, k: 90, c: 0 } })[0][0], 'BANKED THIS RAID');

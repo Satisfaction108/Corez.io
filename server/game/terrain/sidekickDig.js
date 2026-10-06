@@ -4,8 +4,10 @@
 const C = require('../../../shared/cosmetics.js');
 
 const ON = process.env.ROYALE_SIDEKICK_DIG !== '0';
-// 0.1 (a basic shot's dig) x 4 (a Pounder gun's dig power, mining.digPower) x 0.4
-const POUNDER_REF = 0.16;
+// 0.1 (a basic shot's dig) x 4 (a Pounder gun's dig power, mining.digPower) x
+// a bare Mining Power bar (mining.SHOT_BARE: 0.4 before the base boost, 0.54
+// now), so a sidekick keeps digging like a bare Pounder as the base moves
+const POUNDER_REF = 0.1 * 4 * require('./mining.js').SHOT_BARE;
 const SEARCH_MS = 400;
 const FIRE_MS = 1000;        // a shot a second (sidekickMath.DIG_GAP on the client)
 const SPEED = 600;           // world units a second (sidekickMath.DIG_SPEED)

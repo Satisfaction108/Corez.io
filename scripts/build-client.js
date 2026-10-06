@@ -53,6 +53,7 @@ const HOT = new Set([
     "client/tutorial.js",
     "client/util.js",
     "client/coach.js",
+    "client/coachLogic.js",
     "client/newcomer.js",
     "client/newcomerLogic.js",
     "client/firstSeconds.js",

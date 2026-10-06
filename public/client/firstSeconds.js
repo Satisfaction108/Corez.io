@@ -86,7 +86,9 @@ export function tick() {
     const rid = raidNow();
     try { noteResults(); } catch (e) { /* */ }
     // a new raid on this page: back to Basic with fresh points (also when the raid
-    const newRaid = on && S.used && L.isNewRaid(S.raid, rid);
+    const start = L.raidStartOf(global.royale, Date.now());
+    // (the raid-clock check only at a spawn: a storm end that moves mid-life never counts)
+    const newRaid = on && S.used && L.isNewRaid(S.raid, rid, S.alive ? 0 : S.raidStart, start);
     if (on && (!S.alive || newRaid)) {
         S.spawnAt = t;
         S.land = 0;
@@ -106,6 +108,7 @@ export function tick() {
         } else S.plan = null;
     }
     if (on && rid) S.raid = rid;
+    if (on && start > 0) S.raidStart = start;
     S.alive = on;
     if (!on) {
         // died or left with things still held: let them all in
@@ -127,7 +130,7 @@ export function tick() {
         S.age = S.land ? t - S.land : -1;
         if (!released() && S.land && (global.hurtAt || 0) > S.land) S.relAt = t;
         // played out: forget it
-        if (S.age > Math.max(p.intro, p.coach, p.ability, p.stats + p.nudge, p.tiles + p.nudge) + 500) S.plan = null;
+        if (S.age > L.planEnd(p) + 500) S.plan = null;
     }
     publish();
 }

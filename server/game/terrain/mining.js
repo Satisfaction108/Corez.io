@@ -73,6 +73,19 @@ function gearMult(owner) {
     return m;
 }
 
+// THE mining speed knob (playtests: "mining is glacial without Mining
+// Power"). Everyone's bare dig rate (tanks and bots, shots and ramming) is
+// BASE_BOOST times the old one; a full bar is FULL_TRIM of the old full bar,
+// so Mining Power still adds on top but over a slightly flatter curve.
+//   shots:  0.4x -> 2.0x  became  0.54x -> 1.90x
+//   grind:  0.55x -> 2.0x became  0.7425x -> 1.90x
+// ROYALE_MINE_BASE_BOOST=1 with ROYALE_MINE_FULL_TRIM=1 is the old curve.
+const envNum = (k, d) => { const v = parseFloat(process.env[k]); return Number.isFinite(v) && v > 0 ? v : d; };
+const BASE_BOOST = envNum('ROYALE_MINE_BASE_BOOST', 1.35);
+const FULL_TRIM = envNum('ROYALE_MINE_FULL_TRIM', 0.95);
+const SHOT_BARE = 0.4 * BASE_BOOST, SHOT_SPAN = 2.0 * FULL_TRIM - SHOT_BARE;
+const GRIND_BARE = 0.55 * BASE_BOOST, GRIND_SPAN = 2.0 * FULL_TRIM - GRIND_BARE;
+
 // Share of a normal 9-point Mining Power bar. Smasher hulls cap the stat at 12
 // like their other stats, so they can go past 1 the same way.
 function miningInvested(owner) {
@@ -88,7 +101,7 @@ function skillFactor(owner) {
     let f = 1;
     if (raw) {
         const invested = miningInvested(owner);
-        f = 0.4 + 1.6 * invested;      // 0.4x bare to 2.0x maxed
+        f = SHOT_BARE + SHOT_SPAN * invested;      // 0.54x bare to 1.90x maxed
     }
     if (owner && owner.weakDrillUntil && Date.now() < owner.weakDrillUntil) f *= 0.55;
     return f * gearMult(owner);
@@ -112,7 +125,7 @@ function grindSecondsFor(owner) {
         sec = 18.5 / b;
     }
     if (raw) {
-        sec /= 0.55 + 1.45 * miningInvested(owner);
+        sec /= GRIND_BARE + GRIND_SPAN * miningInvested(owner);
     }
     if (owner.settings && owner.settings.reloadToAcceleration) sec /= RAM_DIG;
     if (owner.weakDrillUntil && Date.now() < owner.weakDrillUntil) sec *= 1.8;
@@ -120,4 +133,4 @@ function grindSecondsFor(owner) {
     return sec;
 }
 
-module.exports = { digPower, rockDamageFor, skillFactor, grindSecondsFor, gearMult, MINE_BIAS };
+module.exports = { digPower, rockDamageFor, skillFactor, grindSecondsFor, gearMult, MINE_BIAS, BASE_BOOST, FULL_TRIM, SHOT_BARE, SHOT_SPAN, GRIND_BARE, GRIND_SPAN };

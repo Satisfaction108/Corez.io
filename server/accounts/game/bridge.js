@@ -218,6 +218,10 @@ function onGuestId(socket) {
             const dust = ach.rewardMilli / 1000;
             try { socket.talk('m', 8000, n + (n === 1 ? ' achievement' : ' achievements') + ' came with you' + (dust > 0 ? ': +' + (+dust.toFixed(2)) + ' gemdust.' : '.')); } catch (e) { /* */ }
         }
+        // Core loot found as a guest (terrain/coreDrop.js): granted in the adoption above
+        if (ach && ach.loot && ach.loot.length) {
+            try { socket.talk('m', 8000, 'Your Core loot came with you. Find it in your Locker.'); } catch (e) { /* */ }
+        }
     } else guests.seen(socket.guestId, Date.now(), socket.guestSource || null);
 }
 
@@ -487,7 +491,36 @@ function socketOf(userId, except = null) {
     return null;
 }
 
+// ── Core loot (terrain/coreDrop.js) ───────────────────────────────────
+// Who keeps a lucky drop: an account, or a guest browser (saved for signup,
+// achievements.addGuestLoot). null when accounts are off or nobody to keep it.
+function lootOwner(socket) {
+    if (!socket || !rankedOn()) return null;
+    if (socket.account && socket.account.id) return { kind: 'a', id: socket.account.id };
+    if (typeof socket.guestId === 'string' && /^[a-f0-9]{32}$/.test(socket.guestId)) return { kind: 'g', id: socket.guestId };
+    return null;
+}
+// the item ids this owner already has (a guest: what the Core gave it so far)
+function lootOwned(o) {
+    if (!o) return new Set();
+    if (o.kind === 'a') return require('../store').ownedSet(o.id);
+    return new Set(require('../achievements').guestLoot(o.id));
+}
+// The grant: an account gets it at once through retention.grantItem (the
+// owned_items row, put on if that slot is empty), a guest's waits for signup.
+// -> true when it was new
+function lootGrant(o, itemId, now = Date.now()) {
+    if (!o) return false;
+    if (o.kind === 'g') return require('../achievements').addGuestLoot(o.id, itemId, now);
+    const d = accounts.db.handle();
+    if (!d) return false;
+    const fresh = d.tx(() => require('../retention').grantItem(d, o.id, itemId, now));
+    if (fresh) { try { accounts.users.audit(o.id, 'core_loot', { itemId }, { now, actor: 'system' }); } catch (e) { /* best effort */ } }
+    return !!fresh;
+}
+
 module.exports = {
+    lootOwner, lootOwned, lootGrant,
     init, active, rankedOn, debugOn, onConnect, onGuestId, resolveName, adminBroadcast, adminSpec, adminSpecInvis, adminSpecZoom, applyIdentity, sendAccount, afterDeathPacket,
     du, tickDU, onClose, kickOut, chatHidden, sendStatus, loadBlocks, socketOf,
 };

@@ -14,7 +14,9 @@
 //              the bank goes back, capped at banks.CAP
 //   newRaid    a new raid on the same socket: the bank stays, trimmed to the
 //              cap, and all of it now counts as brought in
-// deathLoss dying costs DEATH_SHARE of the savings (the kept part brought in from
+// deathLoss off by default (banked gems are always safe); with
+//              ROYALE_SAVINGS_DEATH_LOSS=1 dying costs DEATH_SHARE of the
+//              savings (the kept part brought in from
 //
 // The 45 s resume carries the lease inside the snapshot (dig_royale
 // saveResume copies socket fields), so a reconnect keeps the same gems and
@@ -30,6 +32,11 @@ const crypto = require('crypto');
 const CHECKPOINT_MS = 15 * 1000;
 const DEATH_SHARE = 0.10;
 const DEATH_MAX = 2500;
+// Banked gems are 100% safe on death by default (playtests: "dying feels like
+// a tax"). ROYALE_SAVINGS_DEATH_LOSS=1 brings the savings tax back.
+let deathLossOn = process.env.ROYALE_SAVINGS_DEATH_LOSS === '1';
+function setDeathLoss(v) { deathLossOn = !!v; }
+function deathLossEnabled() { return deathLossOn; }
 
 let banksMod = null;
 function banks() { return banksMod || (banksMod = require('../../accounts/banks.js')); }
@@ -138,6 +145,7 @@ function newRaid(socket) {
 
 // -> gems lost (the caller takes them off)
 function deathLossFor(body) {
+    if (!deathLossOn) return 0;
     if (!body || !body.socket || body.isBot) return 0;
     if (!Config.dig_royale || Config.tutorial) return 0;
     const cause = body.deathCause || '';
@@ -166,6 +174,6 @@ function releaseAll(clients, held) {
 }
 
 module.exports = {
-    CHECKPOINT_MS, DEATH_SHARE, DEATH_MAX, cap, on, ownerOf, kept, raidPart, fixKept,
+    CHECKPOINT_MS, DEATH_SHARE, DEATH_MAX, setDeathLoss, deathLossEnabled, cap, on, ownerOf, kept, raidPart, fixKept,
     checkOut, release, checkpoint, tick, newRaid, deathLossFor, takeDeathLoss, releaseAll,
 };

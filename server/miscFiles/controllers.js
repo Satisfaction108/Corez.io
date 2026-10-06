@@ -680,7 +680,7 @@ class io_nearestDifferentMaster extends IO {
                 let turn = desired - this.botAimAngle;
                 while (turn > Math.PI) turn -= Math.PI * 2;
                 while (turn < -Math.PI) turn += Math.PI * 2;
-                this.botAimAngle += turn * (0.12 + skill * 0.28) * botDiff.turretTurn(diff);
+                this.botAimAngle += turn * (0.12 + skill * 0.28) * botDiff.turretTurn(diff) * botDiff.gentleTurret(botDiff.gentle(tr));
                 if (Date.now() >= this.botAimNoiseAt) {
                     this.botAimNoiseAt = Date.now() + 140;
                     this.botAimNoise = ran.gauss(0, (1 - skill) * 0.16 + botDiff.turretNoise(diff));
@@ -1471,6 +1471,55 @@ function firstMinutes() {
 function inBotGrace(root, now) {
     return !!(root && (root.isPlayer || root.isBot) && (root.botGraceUntil || 0) > now && !activity.unprotected(root, now));
 }
+// Round 11 (Oct 6 2026): raid-opening grace, the same for every human. In
+// the first ROYALE_OPEN_GRACE_S (180) seconds of a raid bots mostly mine and
+// fight each other: only a share of bots (ROYALE_OPEN_SHARE, 0.3, a fixed
+// roll per bot and player) start a fight with a human from range, the rest
+// only if the human comes within OPEN_CLOSE_R or shoots them. Humans rank
+// farther off as targets and bots take longer to react. Fighting back is
+// never blocked. 0 turns it off.
+function envNum(k, d) { const v = parseFloat(process.env[k]); return Number.isFinite(v) && v >= 0 ? v : d; }
+const OPEN_GRACE_MS = envNum('ROYALE_OPEN_GRACE_S', 180) * 1000;
+const OPEN_SHARE = Math.min(1, envNum('ROYALE_OPEN_SHARE', 0.3));
+const OPEN_CLOSE_R = 360;
+const OPEN_TARGET_PENALTY = 500;
+const OPEN_REACT = 1.6;
+function raidOpening(now) {
+    if (!OPEN_GRACE_MS || typeof Config === 'undefined' || !Config.dig_royale || Config.tutorial) return false;
+    const t0 = global.royaleRaidStartAt || 0;
+    return t0 > 0 && now >= t0 && now - t0 < OPEN_GRACE_MS;
+}
+// should this bot hold off starting a fight with this human right now?
+function openSpared(bot, target, now) {
+    if (!bot || !bot.isBot || !target || !target.isPlayer || !raidOpening(now)) return false;
+    if (bot._lastDamageSource === target && now - (bot._lastDamageAt || 0) < 4000) return false;
+    const roll = (((bot.id | 0) * 2654435761 + (target.id | 0) * 40503) >>> 0) % 1000 / 1000;
+    if (roll < OPEN_SHARE) return false;
+    return (target.x - bot.x) ** 2 + (target.y - bot.y) ** 2 > OPEN_CLOSE_R * OPEN_CLOSE_R;
+}
+botDiff.setOpening(raidOpening);
+// Round 12 leader hunt (pacing.js sets global.royaleLeaderHunt after the
+// opening grace while the #1 leads #2 by 1.5x or more, human or bot): bots
+// within LEADER_R treat them as a priority target, more the bigger the lead
+// (LEADER_PULL per 1x of lead past 1x, capped). The soft window does not hide
+// a runaway leader; spawn grace, the bank/vault holds, anti-farm, bot mercy
+// and the opening grace all still do. At most leaderCap bots go after them.
+const LEADER_R = 2400, LEADER_PULL = 520, LEADER_PULL_MAX = 1100;
+function leaderHunt(root, now) {
+    const h = global.royaleLeaderHunt;
+    if (!h || !root || root.id !== h.id || raidOpening(now)) return null;
+    return h;
+}
+function leaderPull(h) { return h ? Math.min(LEADER_PULL_MAX, LEADER_PULL * Math.max(0, h.ratio - 1)) : 0; }
+function leaderCap(h) { return h ? (h.ratio >= 2.5 ? 4 : h.ratio >= 2 ? 3 : 2) : 0; }
+function leaderHunters(id, self) {
+    let n = 0;
+    for (const tank of botWorldScan().tanks) {
+        if (!tank.isBot || tank === self || tank.isDead?.()) continue;
+        if (tank._leaderHuntId === id || tank._botEnemyId === id || tank._fightingPlayerId === id) n++;
+    }
+    return n;
+}
 // A player in the soft window (the start of every life, or any life of a
 // new player) is only fought by a bot they walk right up to or shoot. The
 // window is long while a player is new and short after (body.botSoftMs,
@@ -1505,6 +1554,8 @@ function sizePenalty(bot, target) {
 }
 // how many bots may be on one player at once (a third on a rich veteran)
 function hunterCap(root, now) {
+    const lh = leaderHunt(root, now);
+    if (lh) return leaderCap(lh);
     if (botSoft(root, now)) return firstMinutes().NEW_MAX_HUNTERS;
     const cap = botDiff.maxHunters(botDiff.of(root, now), root.carriedGems, root.huntedLevel);
     // a crowned player gets fought like anyone, never by a pack
@@ -2112,17 +2163,18 @@ class io_digWarsGoals extends IO {
     // it turns toward the target instead of snapping, with a slowly
     // re-rolled error.
     // `diff` is the target's bot difficulty (rocks and idle glances: neutral).
-    aimVector(x, y, now, skill = this.skill(), diff = botDiff.NEUTRAL) {
+    // `gentle`: botDiff.gentle of the target (a human: a softer spring and more error)
+    aimVector(x, y, now, skill = this.skill(), diff = botDiff.NEUTRAL, gentle = 0) {
         const desired = Math.atan2(y, x);
         if (this.aimAngle == null) { this.aimAngle = desired; this.aimVel = 0; }
         const turn = wrapAngle(desired - this.aimAngle);
         // Damped spring: slight overshoot before settling, more at low skill.
-        const stiff = botDiff.aimStiff(skill, diff), damp = botDiff.aimDamp(skill, diff);
+        const stiff = botDiff.aimStiff(skill, diff) * botDiff.gentleStiff(gentle), damp = botDiff.aimDamp(skill, diff);
         this.aimVel = (this.aimVel || 0) * damp + turn * stiff;
         this.aimAngle = wrapAngle(this.aimAngle + this.aimVel);
         if (now - this.aimErrorAt > 110) {
             this.aimErrorAt = now;
-            this.aimError = ran.gauss(0, botDiff.aimError(skill, diff)) * (this._aimErrMult || 1);
+            this.aimError = ran.gauss(0, botDiff.aimError(skill, diff) * botDiff.gentleAimErr(gentle)) * (this._aimErrMult || 1);
         }
         const tremor = Math.sin(now / 47 + (this.body.id % 9)) * 0.006 * (1.2 - skill);
         const a = this.aimAngle + this.aimError + tremor;
@@ -2163,6 +2215,7 @@ class io_digWarsGoals extends IO {
         // A player under mercy or in the soft window gets sloppier lead and
         // wider spray; how sloppy follows their bot difficulty.
         const diff = botDiff.of(this.rootOf(entity), now);
+        const gentle = botDiff.gentle(this.rootOf(entity));
         let skill = this.skill();
         if (entity.isPlayer && (entity.socket?.botMercyUntil || 0) > now) skill *= 0.45;
         else if (botSoft(entity, now)) skill *= botDiff.softAim(diff);
@@ -2174,17 +2227,17 @@ class io_digWarsGoals extends IO {
         this._aimErrMult = bait ? fairPlay.TUNE.FIRST_AIM_ERR : 1;
         // Lead time is capped at 1.2s; a lower cap undershoots moving targets
         // past medium range.
-        const lead = speed > 0 ? util.clamp(distance / speed, 0, 1.2) * botDiff.leadShare(skill, diff) : 0.2;
+        const lead = speed > 0 ? util.clamp(distance / speed, 0, 1.2) * botDiff.leadShare(skill, diff) * botDiff.gentleLead(gentle) : 0.2;
         let ax = dx + (entity.velocity?.x || 0) * lead, ay = dy + (entity.velocity?.y || 0) * lead;
         // Lock-on: aim where the shot actually meets them (their tracked
         // motion, the bullet's speed, the barrel tip), blended in with the
         // difficulty. Mercy and the soft window never get it.
-        const lock = skill === this.skill() ? botDiff.lockShare(diff) : 0;
+        const lock = skill === this.skill() ? botDiff.lockShare(diff) * botDiff.gentleLock(gentle) : 0;
         if (lock > 0) {
             const p = tactics.leadPoint(this, this.body, entity, speed, muzzleSpeed, now, this._leadOut || (this._leadOut = { x: 0, y: 0 }));
             if (p) { ax += (p.x - ax) * lock; ay += (p.y - ay) * lock; }
         }
-        return this.aimVector(ax, ay, now, skill, diff);
+        return this.aimVector(ax, ay, now, skill, diff, gentle);
     }
 
     // Shooting into smoke: at a guess of where they are (refreshed every
@@ -2219,6 +2272,9 @@ class io_digWarsGoals extends IO {
         const seeInvisible = !!body.aiSettings?.seeInvisible;
         let best = null, bestScore = Infinity, enemies = 0, allies = 0;
         let allyInTrouble = null, allyTroubleDistance = Infinity;
+        // bot vs bot spell (botDifficulty.prefersBot): humans score PREFER_R
+        // farther, except the one we're already on (no mid-fight swaps)
+        const preferBot = !!body.isBot && botDiff.prefersBot(this, now);
 
         for (const entity of botWorldScan().tanks) {
             const root = this.rootOf(entity);
@@ -2240,7 +2296,8 @@ class io_digWarsGoals extends IO {
             }
             // nobody past the widest sense range (hunted mark, radar) counts:
             // skip the rest of the checks for them
-            if (distance > SENSE_MAX_R && distance > fov * 1.85) continue;
+            const lh = root.id === (global.royaleLeaderHunt && global.royaleLeaderHunt.id) ? leaderHunt(root, now) : null;
+            if (distance > SENSE_MAX_R && distance > fov * 1.85 && !(lh && distance < LEADER_R)) continue;
             if (!this.isEnemy(root)) continue;
             // smoke: a bot already on them keeps at it (blindAim); a new one
             // only spots them point blank. Other invisibility hides fully.
@@ -2250,7 +2307,7 @@ class io_digWarsGoals extends IO {
             const marked = root.isPlayer && tactics.huntOn() ? Math.min(2, root.huntedLevel | 0) : 0;
             // a radar ping (its own ability) shows everyone out to 2500
             const radar = (body.radarUntil || 0) > now ? 2500 : 0;
-            if (distance > Math.max(radar, fov * (1.25 + marked * 0.3))) continue;
+            if (distance > Math.max(radar, fov * (1.25 + marked * 0.3), lh ? LEADER_R : 0)) continue;
             // fresh spawn in bot grace: not a target, not even counted
             if (inBotGrace(root, now)) continue;
             if (root.adminSpec) continue;
@@ -2260,7 +2317,9 @@ class io_digWarsGoals extends IO {
             if (root.isPlayer && global.royaleCoreTruce && !root.crowned) continue;
             // soft window (first minutes of a life, or a new player): only
             // if they come right up to us or shoot us
-            if (softSpared(body, root, now)) continue;
+            if (!lh && softSpared(body, root, now)) continue;
+            // raid opening (round 11): most bots leave humans be for now
+            if (openSpared(body, root, now)) continue;
             // first raid: no X-Hunter / Penta / Octo class bot on them yet
             if (root.nxScaryUntil && newcomer.scarySpared(body, root, now)) continue;
             // fairPlay: a protected player on the way in to bank, and grown bots never pick a
@@ -2281,17 +2340,22 @@ class io_digWarsGoals extends IO {
             // player (botTactics.carrierPull); so does someone already
             // losing a fight with somebody else.
             const rd = root.isPlayer ? botDiff.of(root, now) : botDiff.NEUTRAL;
-            const soft = botSoft(root, now);
+            const soft = !lh && botSoft(root, now);
             const lock = root.isPlayer && !soft ? botDiff.lockShare(rd) : 0;
             const base = distance
-                + (root.isPlayer ? botDiff.targetPenalty(rd) : 0)
+                + (root.isPlayer ? botDiff.targetPenalty(rd) + botDiff.gentlePenalty(botDiff.gentle(root, now)) : 0)
+                // bot vs bot: half the time a bot nearby wins over a human at a similar range
+                + (root.isPlayer && preferBot && root !== this._lastEnemy ? botDiff.PREFER_R : 0)
                 + (soft ? firstMinutes().NEW_TARGET_PENALTY : 0)
+                + (root.isPlayer && raidOpening(now) ? OPEN_TARGET_PENALTY : 0)
                 - tactics.carrierPull(root, lock)
                 - (lock > 0 && tactics.isEnabled() ? tactics.thirdParty(root, now) * 320 * lock : 0)
                 // a bot running away with the raid draws the others (fairPlay)
                 - (root._fpRunaway ? fairPlay.gangPull(body, root) : 0)
+                // round 12: the runaway leader draws everyone near (no size rule)
+                - leaderPull(lh)
                 // round 9: mostly tanks near our own size
-                + sizePenalty(body, root);
+                + (lh ? 0 : sizePenalty(body, root));
             // the line of sight (a terrain raycast) can only add to the
             // score, so it's only worth casting for someone who could win
             if (base >= bestScore) continue;
@@ -2328,7 +2392,8 @@ class io_digWarsGoals extends IO {
             // a new face takes a moment to register before the bot commits
             this._lastEnemy = best;
             this._enemySeenAt = now;
-            this.reactionMs = botDiff.reactionMs(this.skill(), botDiff.of(best, now), Math.random());
+            this.reactionMs = botDiff.reactionMs(this.skill(), botDiff.of(best, now), Math.random()) * botDiff.gentleReact(botDiff.gentle(best, now));
+            if (best && best.isPlayer && raidOpening(now)) this.reactionMs *= OPEN_REACT;
         }
         view.enemy = best;
         body._botEnemyId = best ? best.id : 0;   // read by botsOn() (new-player hunter cap)
@@ -2658,7 +2723,8 @@ class io_digWarsGoals extends IO {
             now - (this.body._lastDamageAt || 0) < 3000;
         if (attackedMe) return true;
         // fresh spawn (bot grace), or the soft window: bots don't start it
-        if (inBotGrace(target, now) || botSoft(target, now)) return false;
+        if (inBotGrace(target, now) || (!leaderHunt(target, now) && botSoft(target, now))) return false;
+        if (openSpared(this.body, target, now)) return false;
         if (target.nxScaryUntil && newcomer.scarySpared(this.body, target, now)) return false;
         if (fairPlay.guarded(target) && fairPlay.spared(this.body, target, now)) return false;
         if (fairPlay.farmed(this.body, target, now)) return false;
@@ -2710,8 +2776,19 @@ class io_digWarsGoals extends IO {
                 return { kind: 'regroup', mate: human, expiresAt: now + 6000 };
         }
 
+        // round 12 leader hunt: close in on a runaway #1 we can see from afar
+        body._leaderHuntId = 0;
+        const lhunt = Config.dig_royale && view.enemy && !human ? leaderHunt(view.enemy, now) : null;
+        if (lhunt && health > 0.45 && view.enemyDistance < LEADER_R &&
+            view.enemyDistance >= (view.enemy.isPlayer ? botDiff.initRange(botDiff.of(view.enemy, now)) : 1400) &&
+            !inEnemyBase(body.team, view.enemy.x, view.enemy.y) &&
+            leaderHunters(view.enemy.id, body) < leaderCap(lhunt) && this.canInitiateFight(view.enemy, now)) {
+            body._leaderHuntId = view.enemy.id;
+            const e = view.enemy, a = Math.atan2(body.y - e.y, body.x - e.x);
+            return { kind: 'explore', point: { ...this.safePoint(e.x + Math.cos(a) * 500, e.y + Math.sin(a) * 500), until: now + 3500 }, hunt: 1 };
+        }
         if (Config.dig_royale && view.enemy &&
-            view.enemyDistance < (view.enemy.isPlayer ? botDiff.initRange(botDiff.of(view.enemy, now)) : 1400) &&
+            view.enemyDistance < (view.enemy.isPlayer ? botDiff.initRange(botDiff.of(view.enemy, now)) * botDiff.gentleRange(botDiff.gentle(view.enemy)) : 1400) &&
             now - (this._enemySeenAt || 0) >= (this.reactionMs || 250) &&
             this.canInitiateFight(view.enemy, now))
             return { kind: 'fight', target: view.enemy };
@@ -3978,6 +4055,11 @@ class io_unstick extends IO {
 // Raid boss movement. nearestDifferentMaster (earlier in the chain) supplies
 // a target while a victim is in view; this closes to a preferred range, backs
 // off when crowded, strafes otherwise. With no victim it roams the safe zone.
+// bosses.js (vault no-loiter ring), or null in a test without it
+function bossVaults() {
+    if (!Config.dig_royale || Config.tutorial) return null;
+    try { return require('../game/terrain/bosses.js'); } catch { return null; }
+}
 class io_royaleBoss extends IO {
     constructor(body, opts = {}) {
         super(body);
@@ -4000,14 +4082,17 @@ class io_royaleBoss extends IO {
             cx = st.cx || 0; cy = st.cy || 0; r = Math.max(300, (st.r || 1200) * 0.6);
         } catch { /* */ }
         this.roam = null;
+        const bossMod = bossVaults();
         for (let i = 0; i < 16; i++) {
             const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * r;
             const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
             if (tg && tg.pointInRock && tg.pointInRock(x, y) && !body.bossDigs) continue;
+            // round 10: no roaming around a vault (the tutorial's home roam aside)
+            if (bossMod && !body.bossHome && bossMod.nearVault(x, y)) continue;
             this.roam = { x, y };
             break;
         }
-        if (!this.roam) this.roam = { x: cx, y: cy };
+        if (!this.roam) this.roam = bossMod && !body.bossHome ? bossMod.clearOfVaults({ x: cx, y: cy }) : { x: cx, y: cy };
         this.roamAt = now + 9000 + Math.random() * 6000;
         this.nav.arrived = false;
     }
@@ -4040,11 +4125,15 @@ class io_royaleBoss extends IO {
                 dest = { x: tx + Math.cos(a) * want, y: ty + Math.sin(a) * want };
             }
             this.roamAt = 0;
+            // round 10: a target on or by a vault is chased only to the ring's edge
+            const bm = bossVaults();
+            if (bm && !body.bossHome) dest = bm.clearOfVaults(dest);
             if (body.bossDigs) return { goal: dest, power: 1 };
             const st = this.nav.steer(dest, 40, now, !!body.bossContact);
             return st ? { goal: { x: st.x, y: st.y }, power: st.power } : { goal: { x: body.x, y: body.y }, power: 0 };
         }
         if (!this.roam || now > this.roamAt || this.nav.arrived) this.pickRoam(now);
+        else if (!body.bossHome) { const bm = bossVaults(); if (bm && bm.nearVault(this.roam.x, this.roam.y)) this.pickRoam(now); }
         if (body.bossDigs) {
             const dd = Math.hypot(this.roam.x - body.x, this.roam.y - body.y);
             if (dd < 90) this.pickRoam(now);
@@ -4102,4 +4191,4 @@ let ioTypes = {
 };
 
 module.exports = {
-    sizePenalty, ioTypes, IO, inEnemyBase };
+    sizePenalty, ioTypes, IO, inEnemyBase, raidOpening, openSpared, OPEN_GRACE_MS, OPEN_SHARE, leaderHunt, leaderPull, leaderCap, LEADER_R };

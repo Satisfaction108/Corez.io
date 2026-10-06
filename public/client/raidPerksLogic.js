@@ -60,11 +60,18 @@ export const IGNORE_MS = 12000;
 // cards until it's picked (hidden only while the shop, a vault, the map or
 // the death card owns the screen), and a queue comes one offer at a time.
 // Round 7: a fresh offer waits while you're taking hits (it popped up mid-fight
-export const CALM_MS = 2500;
+export const CALM_MS = 3000;
 export function viewFor(st, o) {
     if (!o || !o.key) return "";
     if (o.blocked) return "";
-    if (!(st && st.shown) && o.hurtAt != null && o.now - o.hurtAt < CALM_MS) return "";
+    // a fresh offer comes out only after CALM_MS with no hit taken or dealt,
+    // and not while something else holds the middle (o.hold: a callout, a
+    // slam, a new crown's card). Once out, it stays; Shift+1/2/3 always work.
+    if (!(st && st.shown)) {
+        const fight = Math.max(o.hurtAt != null ? o.hurtAt : -1e9, o.dealtAt != null ? o.dealtAt : -1e9);
+        if (o.now - fight < CALM_MS) return "";
+        if (o.hold) return "";
+    }
     return "cards";
 }
 // the header's words: it is never urgent

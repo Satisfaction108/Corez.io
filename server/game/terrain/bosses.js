@@ -120,7 +120,10 @@ function pickSpot() {
     const fresh = (t) => t.royaleBornAt && now - t.royaleBornAt < 45_000;
     let freshR = 1300;
     const farFromTanks = (x, y, d) => tanks.every(t => { const r = fresh(t) ? Math.max(d, freshR) : d; return (t.x - x) ** 2 + (t.y - y) ** 2 >= r * r; });
-    const cands = (tg && tg.spawnPits || []).filter(p => Math.hypot(p.x - st.cx, p.y - st.cy) < (st.r || 1000) * 0.8);
+    const inCircle = (tg && tg.spawnPits || []).filter(p => Math.hypot(p.x - st.cx, p.y - st.cy) < (st.r || 1000) * 0.8);
+    // never surface next to a vault (round 10)
+    const offVault = inCircle.filter(p => !nearVault(p.x, p.y));
+    const cands = offVault.length ? offVault : inCircle;
     cands.sort(() => Math.random() - 0.5);
     for (const d of [900, 650, 420]) {
         for (const p of cands) if (farFromTanks(p.x, p.y, d)) return { x: p.x, y: p.y };
@@ -246,6 +249,35 @@ function safePads() {
     try { for (const p of require('./shop.js').getShops()) out.push(p); } catch { /* */ }
     return out;
 }
+// Round 10: bosses don't hang around vaults either. Roam points, chase spots
+// and spawn pits stay VAULT_CLEAR past a vault's rim (ROYALE_BOSS_VAULT_CLEAR,
+// 0 = off; the Vault Warden too).
+const VAULT_CLEAR = (() => { const v = parseFloat(process.env.ROYALE_BOSS_VAULT_CLEAR); return Number.isFinite(v) && v >= 0 ? v : 400; })();
+function vaultRing(v) { return (v.r || 95) * (padGeom.OCT.scale || 1.4) + VAULT_CLEAR; }
+// the vault whose no-loiter ring holds (x, y), or null
+function nearVault(x, y, list) {
+    if (!(VAULT_CLEAR > 0)) return null;
+    let vs = list;
+    if (!vs) { try { vs = require('./vault.js').getVaults() || []; } catch { vs = []; } }
+    for (const v of vs) {
+        const R = vaultRing(v);
+        if ((x - v.x) ** 2 + (y - v.y) ** 2 < R * R) return v;
+    }
+    return null;
+}
+// (x, y) pushed straight out of any vault ring it is in
+function clearOfVaults(pt, list) {
+    let p = { x: pt.x, y: pt.y };
+    for (let i = 0; i < 3; i++) {
+        const v = nearVault(p.x, p.y, list);
+        if (!v) break;
+        let dx = p.x - v.x, dy = p.y - v.y, d = Math.hypot(dx, dy);
+        if (d < 1) { const a = Math.random() * Math.PI * 2; dx = Math.cos(a); dy = Math.sin(a); d = 1; }
+        const R = vaultRing(v) + 40;
+        p = { x: v.x + dx / d * R, y: v.y + dy / d * R };
+    }
+    return p;
+}
 function tickPads(o, pads = safePads()) {
     if (!BOSS_PADS || !o || !pads.length) return 0;
     for (const p of pads) {
@@ -332,4 +364,4 @@ function debugHit(body, dmg) {
     hitters.set(body.id, { body, at: Date.now(), dmg: (h ? h.dmg : 0) + (+dmg || 0) });
 }
 
-module.exports = { tickPads, _shots: shots, FIRST_CYCLE_DELAY_MS, CYCLE_SPAWN_DELAY_MS, debugHit, damageBy, KINDS, TUNING, RATE, BASE_INTERVAL_MS, LIFETIME_MS, firstDelay, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };
+module.exports = { VAULT_CLEAR, nearVault, clearOfVaults, tickPads, _shots: shots, FIRST_CYCLE_DELAY_MS, CYCLE_SPAWN_DELAY_MS, debugHit, damageBy, KINDS, TUNING, RATE, BASE_INTERVAL_MS, LIFETIME_MS, firstDelay, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };

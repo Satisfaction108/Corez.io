@@ -3,7 +3,17 @@ const war = require('./war.js');
 const milestones = require('./milestones.js');
 
 const PAD_RADIUS   = 95;
-const DEPOSIT_RATE = 300;
+// Round 10 (Oct 2026): banking is quick for everyone. At least BANK_RATE gems a
+// second, and no deposit takes longer than BANK_MAX_S (8,000 banks in 3 s).
+// Damage still cuts it. ROYALE_BANK_RATE=300 ROYALE_BANK_MAX_S=0 is the old pace.
+const envNum = (k, d) => { const v = parseFloat(process.env[k]); return Number.isFinite(v) && v >= 0 ? v : d; };
+const DEPOSIT_RATE = envNum('ROYALE_BANK_RATE', 1200) || 300;
+const BANK_MAX_S = envNum('ROYALE_BANK_MAX_S', 3);
+// gems per second for a deposit of `total` (same rule at vaults and bases)
+function depositRate(total) {
+    const t = Math.max(0, +total || 0);
+    return Math.max(DEPOSIT_RATE, BANK_MAX_S > 0 ? t / BANK_MAX_S : 0);
+}
 const PROGRESS_MS  = 50;
 // Stay limits doubled and re-entry waits halved on Oct 5 2026 (owner)
 const PAD_EJECT_MS = 20_000;      // idle time on the pad before a kick (nothing to bank; was 10 s)
@@ -448,7 +458,7 @@ function tick(actors, dtMs) {
 
         let rateMult = 1;
         if (body.socket) { try { rateMult = require('./shop.js').depositRateMult(body); } catch { /* */ } }
-        d.spill = (d.spill || 0) + (DEPOSIT_RATE * rateMult * dtMs) / 1000;
+        d.spill = (d.spill || 0) + (depositRate(d.total) * rateMult * dtMs) / 1000;
         const chunk = Math.min(d.remaining, body.carriedGems | 0, Math.floor(d.spill));
         if (chunk <= 0) {
             if ((body.carriedGems | 0) <= 0 || d.remaining <= 0) cancelDeposit(body);
@@ -499,4 +509,4 @@ function tick(actors, dtMs) {
     }
 }
 
-module.exports = { grantTimedShield, POST_BANK_SHIELD_MS, flushPremium, MIN_DEPOSIT, PAD_EJECT_MS, PAD_EJECT_CARRY_MS, AUTO_BANK_MS, CROWN_IDLE_MS, CROWN_PAD_MS, REENTRY_MS, CASHED_LOCK_MS, secondsText, campLimitMs, creditBank, tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, cancelDeposit, insideOctagon, onPadShape, OCT_SCALE };
+module.exports = { DEPOSIT_RATE, BANK_MAX_S, depositRate, grantTimedShield, POST_BANK_SHIELD_MS, flushPremium, MIN_DEPOSIT, PAD_EJECT_MS, PAD_EJECT_CARRY_MS, AUTO_BANK_MS, CROWN_IDLE_MS, CROWN_PAD_MS, REENTRY_MS, CASHED_LOCK_MS, secondsText, campLimitMs, creditBank, tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, cancelDeposit, insideOctagon, onPadShape, OCT_SCALE };

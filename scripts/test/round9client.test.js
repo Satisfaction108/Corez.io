@@ -69,6 +69,32 @@ test('rb: the tree path, saved build and you-packet fields', () => {
     RB.setRaidOf(() => 7);
 });
 
+test('rb: a reconnect keeps the saved build (resume token / account), the card says why when there is none', async () => {
+    const dead = body('minigun');
+    dead.skill.raw = [7, 7, 5, 7, 4, 2, 0, 5, 2, 5, 6];
+    const s = sock(dead);
+    s.resumeToken = 'tok-recon-1';
+    RB.save(s, dead, 7);
+    // a reload: a new socket with the same token, dead, nothing saved on it
+    const s2 = { player: { body: null }, resumeToken: 'tok-recon-1' };
+    assert.deepEqual(RB.youFields(s2, null), { lt: 'minigun', ls: 1 });
+    assert.equal(RB.request(s2, 'build'), 'queued', 'the death card button works');
+    // an account on another worker socket
+    const a1 = body('minigun'); a1.skill.raw[0] = 3;
+    const sa = sock(a1); sa.account = { id: 99 };
+    RB.save(sa, a1, 7);
+    assert.equal(RB.youFields({ account: { id: 99 } }, null).lt, 'minigun');
+    // another raid: not adopted
+    RB.setRaidOf(() => 9);
+    assert.equal(RB.youFields({ resumeToken: 'tok-recon-1' }, null), null);
+    RB.setRaidOf(() => 7);
+    const L = await imp('buildButtonsLogic.js');
+    assert.equal(L.respawnAsWhy({ lt: 'Minigun', ls: 1 }, 'Minigun', 5000), '', 'offered: no reason');
+    assert.equal(L.respawnAsWhy({}, 'Minigun', 500), '', 'waits for the RY');
+    assert.equal(L.respawnAsWhy({}, 'Basic', 5000), '', 'a Basic needs no reason');
+    assert.equal(L.respawnAsWhy({}, 'Minigun', 2000), 'Your Minigun build was not saved, so this drop starts as Basic.');
+    assert.ok(fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8').includes('buildBtnLabels.respawnAsWhy('));
+});
 test('rb: tank / stats / random / build are validated and legal', () => {
     const dead = body('minigun');
     dead.skill.raw = [7, 7, 5, 7, 4, 2, 0, 5, 2, 5, 6];
@@ -142,6 +168,9 @@ test('buttons: labels and when they show', async () => {
     const L = await imp('buildButtonsLogic.js');
     assert.deepEqual(L.respawnAs({ lt: 'Minigun', ls: 1 }), { label: 'Respawn as Minigun', sub: 'same tank and stats' });
     assert.equal(L.respawnAs({}), null, 'no last build: one button');
+    // playtest 9: the RY can still name the previous life's tank; the died-as tank wins
+    assert.equal(L.respawnAs({ lt: 'Vulture', ls: 1 }, 'Minigun').label, 'Respawn as Minigun');
+    assert.equal(L.respawnAs({ lt: 'Vulture', ls: 1 }, 'Basic').label, 'Respawn as Vulture', 'died as Basic: the saved tank');
     assert.equal(L.lastTank({ lt: 'Minigun', ltu: 1 }), 'Last tank: Minigun');
     assert.equal(L.lastTank({ lt: 'Minigun' }), '', 'not below it: no button');
     assert.equal(L.lastTank({ lt: 'Minigun', ltu: 1 }, true), '', 'never in the tutorial');
@@ -153,7 +182,7 @@ test('buttons: labels and when they show', async () => {
     const mem = new Map(), st = { getItem: k => mem.get(k) || null, setItem: (k, v) => mem.set(k, v) };
     assert.equal(L.firstTime('kitX', st), true);
     assert.equal(L.firstTime('kitX', st), false);
-    assert.match(L.TEAM_BANK_TIP, /^Team Banks go to whoever does the most damage to their banner\. Vaults are open to everyone\.$/);
+    assert.match(L.TEAM_BANK_TIP, /^Team Bank: break its banner to own it\. Owners bank here safely; Vaults are open to everyone\.$/);
 });
 
 test('buttons: the client draws them, sends rb, phones can tap them', () => {

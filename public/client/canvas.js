@@ -346,6 +346,13 @@ class Canvas {
             if (!event.repeat) { global.rbWantBuild = false; this.respawn(); }
             return true;
         }
+        // B on a vault pad: Bank all, the same request as the panel's button
+        // (app.js drawVaultUI stamps bankAllAt while that button is up)
+        if (kc === 66 && !global.died && !global.showChat && global.vault && global.vault.onPad &&
+            performance.now() - (global.vault.bankAllAt || 0) < 400 && !(document.activeElement && document.activeElement.id === "vaultInput")) {
+            if (!event.repeat) { this.socket.talk('vd', 0); gameSound.uiClick(); }
+            return true;
+        }
         // dash and the ability slot (abilityFx.js); before the server has said
         // the system is on, the keys keep their old jobs
         if (!global.died && global.abil && global.abil.on && !global.showTree && !global.showChat) {
@@ -406,6 +413,7 @@ class Canvas {
         // if its own order moved on (a drag swap still in flight)
         this.socket.talk('sk', slot, Math.round(wx), Math.round(wy), String(ko[slot]));
         global.kitUsedAt = performance.now();   // coach.js: the ability step
+        try { localStorage.setItem("dwAbilityUsed_v1", "1"); } catch (e) { /* */ }   // coachLogic.js ABILITY_KEY: for good
         gameSound.uiClick();
     }
     useDash() {
@@ -450,6 +458,7 @@ class Canvas {
         if (!isFinite(wx) || !isFinite(wy)) { wx = global.player.renderx; wy = global.player.rendery; }
         this.socket.talk('ab', 1, Math.round(wx), Math.round(wy));
         global.abilityUsedAt = performance.now();   // coach.js: the ability step
+        try { localStorage.setItem("dwAbilityUsed_v1", "1"); } catch (e) { /* */ }   // coachLogic.js ABILITY_KEY: for good
     }
     keyDown(event) {
         if (global.dailyTankAd.renderUI) return;

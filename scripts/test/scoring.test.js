@@ -16,6 +16,8 @@
 //              warning, the crown card; the recap before FRESH START when
 //              the podium was missed; the wiring in app/crowns/finale/firstSeconds
 'use strict';
+// round 12: this file pins the plain formula; round12.test.js covers the banked soft line
+process.env.ROYALE_BANK_SOFT = '0';
 
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -282,7 +284,7 @@ test('client: wired everywhere', () => {
     const app = read('app.js'), cr = read('crowns.js'), fin = read('raidFinale.js'), fs1 = read('firstSeconds.js');
     // the death card: the parts, then "Points: X (lost Y: why)"
     assert.ok(/const pt = scoreText\.tiles\(you\)/.test(app));
-    assert.ok(/scoreText\.deathLine\(you, global\.finalCarried \| 0\)/.test(app));
+    assert.ok(/scoreText\.deathLine\(you, global\.finalCarried \| 0, 0, global\.finalNxKept \| 0\)/.test(app));
     assert.ok(/dln\.head \+ " \(" \+ dln\.lost \+ "\)"/.test(app));
     assert.ok(!/CARRIED \(50% PTS\)/.test(app) && !/50% carried/.test(app), 'the half-points satchel is gone from the HUD');
     assert.ok(/drawText\("POINTS", scoreR/.test(app), 'the card calls it points, like the standings');

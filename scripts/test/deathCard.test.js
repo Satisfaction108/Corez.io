@@ -79,7 +79,10 @@ test('home: a raid behind the menu, baked in idle slices, still under reduced mo
     assert.match(html, /<ol class="hero-loop"/);
     const home = src('home.js');
     assert.match(home, /done = world\.step\(8\);/);
-    assert.match(home, /window\.addEventListener\('load', function \(\) \{ wantWorld\(60\); \}\);/);
+    // playtest 9: right after first paint (not 'load'), a cheap low-detail bake first
+    assert.match(home, /requestAnimationFrame\(function \(\) \{ setTimeout\(function \(\) \{ wantWorld\(0\); \}, 0\); \}\)/);
+    assert.ok(!/addEventListener\('load', function \(\) \{ wantWorld/.test(home), 'no wait for the whole page to load');
+    assert.match(home, /world\.build\(W, H, cheap \? 0\.5 : dpr,/);
     assert.match(home, /if \(!reduceMotion\) homeFxRaf = requestAnimationFrame\(drawHomeFx\);/);
     assert.match(home, /if \(hidden && world\) \{ world\.release\(\); worldIn = 0; \}/);
     assert.ok(!/TANK_KINDS/.test(home), 'the tank parade is gone');

@@ -83,6 +83,16 @@ function createMessage(con, dur = 10_000, JSONMessage = false) {
         // the same line again moves to the top instead of stacking twice
         const dup = global.messages.findIndex(m => !m.textJSON && m.text === con);
         if (dup >= 0) global.messages.splice(dup, 1);
+        // a quick run of upgrades (a "Respawn as" climb, Machine Gun then
+        // Minigun) is one line: the newest replaces the older ones (playtest 9:
+        // they read in reverse order, newest on top)
+        if (typeof con === "string" && con.startsWith("Upgraded to ")) {
+            const t = Date.now();
+            for (let i = global.messages.length - 1; i >= 0; i--) {
+                const m = global.messages[i];
+                if (!m.textJSON && typeof m.text === "string" && m.text.startsWith("Upgraded to ") && t - m.time < 6000) global.messages.splice(i, 1);
+            }
+        }
         global.messages.push({
             text: con,
             faded: 0,

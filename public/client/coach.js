@@ -1,6 +1,7 @@
 import { global } from "./global.js";
 import { gui } from "./socketinit.js";
 import { gameSound } from "./sound.js";
+import * as CL from "./coachLogic.js";
 
 // First-raid coach: a light do-it guide for new players in real raids.
 //
@@ -34,8 +35,7 @@ import { gameSound } from "./sound.js";
 // pass and drawIndicators() at the very end of the frame. window.dwHud (app.js)
 // gives the HUD rects and the edge marker.
 
-const KEY = "dwCoach_v1";
-const ORDER = ["tutorial", "move", "mine", "bank", "upgrade", "ability"];
+const ORDER = CL.ORDER;
 // the numbered steps; the tutorial offer is an intro card
 const STEPS = ORDER.filter(id => id !== "tutorial");
 const TUT_DONE_KEY = "digRoyaleTutorialDone_v1";   // tutorial.js / home.js
@@ -82,22 +82,12 @@ function keyName(id, dflt) {
 
 // ── persisted progress ─────────────────────────────────────────────────
 // status: "" undecided, "on", "done", "skipped", "veteran"
-function blank() { return { v: 1, status: "", done: {}, at: Date.now() }; }
-function load() {
-    try {
-        const r = JSON.parse(localStorage.getItem(KEY) || "null");
-        if (r && r.v === 1 && typeof r.done === "object" && r.done) {
-            // the old guide (points, tour, shop): past its first step, the
-            // warm-up is old news; its shop step became the ability step
-            if (r.done.points || r.done.upgrade || r.done.tour || r.done.mine) r.done.move = 1;
-            if (r.done.shop) r.done.ability = 1;
-            return r;
-        }
-    } catch (e) { }
-    return blank();
-}
+// (rules and storage: coachLogic.js)
+const store = () => { try { return window.localStorage; } catch (e) { return null; } };
+function blank() { return CL.blank(Date.now()); }
+function load() { return CL.load(store(), Date.now()); }
 let rec = load();
-function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch (e) { } }
+function save() { CL.save(store(), rec); }
 
 // ── runtime state ──────────────────────────────────────────────────────
 const st = {
@@ -124,6 +114,9 @@ const st = {
     death: null,         // { step, carried } until the respawn settles
     dropped: false,      // died with gems on the mine/bank step: say so on the mine step
     tutAt: 0,
+    cdWas: 0,            // the ability cooldown's end last frame (abilityUsed)
+    shownAt: 0,          // the card's last visible frame (noteShown)
+    left: "",            // style.left written when the card moved clear of the tank grid
     baseTop: 0,
     wroteTop: -1,
     top: -1,
@@ -269,8 +262,6 @@ function observe(t) {
     else if (cur.banked > p.banked && global.vault && global.vault.onPad && (global.vault.total > 0 || cur.doneAt > 0)) markDone("bank");
     // banking means they mined: a 186-gem deposit must not leave the card on "Gems 0
     if (rec.done.bank) markDone("mine");
-    if (cur.kitAt !== p.kitAt && cur.kitAt > 0) markDone("ability");
-    if (cur.abAt !== p.abAt && cur.abAt > 0) markDone("ability");
     if (((global.gems && global.gems.carried) | 0) >= mineGoal()) markDone("mine");
     // the warm-up: some driving and a shot
     const q = me(), lp = st.lastPos;
@@ -281,9 +272,42 @@ function observe(t) {
     if (st.moved >= MOVE_GOAL && st.fired) markDone("move");
 }
 
+// Any ability or kit use on this page finishes the ability step for good: a
+// level check, not an edge, so a use during the spawn settle, the raid card,
+// a death or before the guide decided still counts. The server's cooldown
+// starting (same ability, not just equipped) is a use too.
+function abilityUsed(t) {
+    if ((global.kitUsedAt || 0) > 0 || (global.abilityUsedAt || 0) > 0) return true;
+    const ab = global.abil;
+    if (!ab || !ab.eq) { st.cdWas = 0; return false; }
+    const cd = ab.cdAt || 0, was = st.cdWas;
+    st.cdWas = cd;
+    if (ab.act && ab.actAt > t) return true;
+    return cd > t && !(was > t) && t - (ab.swapAt || -1e9) > 1500;
+}
+function checkAbility(t) {
+    if (rec.done.ability || !abilityUsed(t)) return;
+    const on = st.step === "ability";
+    CL.abilityUsed(rec, store());
+    if (on) { st.flash = { until: now() + FLASH_MS }; sfxDone(); }
+}
+// the step's time on screen: it retires itself after a while, or when a new
+// raid starts after it was already shown (coachLogic.js)
+function raidNow() { const r = global.royale || {}; return (r.raidId | 0) || ((r.results && r.results.raidId) | 0); }
+function noteShown(t) {
+    const dt = st.shownAt > 0 && t - st.shownAt < 250 ? t - st.shownAt : 0;
+    st.shownAt = t;
+    if (st.step === "ability" && !st.flash && CL.abilityShown(rec, store(), dt, raidNow(), Date.now())) st.step = null;
+}
+
 // A step that can't be done right now is skipped over and comes back later.
 function waiting(id) {
     if (id === "tutorial" && tutorialPlayed()) { markDone("tutorial"); return false; }
+    // round 12: only in the first minute of a first raid, never later (quietly)
+    if (id === "tutorial" && !CL.tutorialOfferOpen(rec, Date.now())) {
+        if (!rec.done.tutorial) { rec.done.tutorial = 1; save(); }
+        return false;
+    }
     // a first raid (stage 0) has no shops yet: the ability step waits for the
     // next raid, unless a director moment already handed one out
     if (id === "ability" && global.nxKnown && (global.nxStage | 0) === 0 && !ownsKit()) return true;
@@ -299,14 +323,7 @@ function canStat() {
 }
 function ownsAbility() { return !!(global.abil && global.abil.on && global.abil.eq); }
 function ownsKit() { return ownsAbility() || !!((global.shop && global.shop.state && global.shop.state.kitOrder) || []).filter(Boolean).length; }
-function pickStep() {
-    for (const id of ORDER) {
-        if (rec.done[id]) continue;
-        if (waiting(id)) continue;
-        return id;
-    }
-    return ORDER.every(id => rec.done[id]) ? "final" : null;
-}
+function pickStep() { return CL.nextStep(rec, waiting); }
 
 // ── the tutorial offer ─────────────────────────────────────────────────
 function tutorialPlayed() {
@@ -502,6 +519,7 @@ function place(t) {
         const top = Math.round(window.innerHeight - h - 60);
         if (top !== st.top) { st.top = top; root.style.top = top + "px"; }
         restoreTop();
+        setLeft("");
         global.coachRect = { x: SW() / 2 - w / 2 / k - 6, y: top / k - 6, w: w / k + 12, h: h / k + 12 };
         return;
     }
@@ -512,7 +530,11 @@ function place(t) {
     if (top !== st.top) { st.top = top; root.style.top = top + "px"; }
     st.wroteTop = (hold ? Math.max(st.baseTop, top - 6) : st.baseTop) + h + 12;
     global.hudTopPx = st.wroteTop;
-    global.coachRect = { x: SW() / 2 - w / 2 / k - 6, y: top / k - 6, w: w / k + 12, h: h / k + 12 };
+    // slide right of the tank grid when it is in the way
+    const gx = gridClearX(top, w, h, k);
+    const cx = gx > 0 ? gx : SW() / 2;
+    setLeft(gx > 0 ? Math.round(gx * k) + "px" : "");
+    global.coachRect = { x: cx - w / 2 / k - 6, y: top / k - 6, w: w / k + 12, h: h / k + 12 };
 }
 // the last mouse position (CSS px), for place()
 const ptr = { x: -1e4, y: -1e4 };
@@ -521,6 +543,19 @@ function ptrNear(top, w, h) {
     const m = 70;
     return Math.abs(ptr.x - window.innerWidth / 2) < w / 2 + m && ptr.y > top - m && ptr.y < top + h + m;
 }
+// The tank grid (top left) under where the card would sit: the card's centre
+// x (HUD units) that clears it, -1 when nothing is in the way, null when there
+// is no room beside it.
+function gridClearX(top, w, h, k) {
+    if (global.mobile || !(gui.upgrades || []).length || !(w > 0)) return -1;
+    const g = hudRect("upgrades");
+    if (!g || !(g.w > 0)) return -1;
+    const hw = w / 2 / k, y0 = top / k, y1 = (top + h) / k, m = 14;
+    if (SW() / 2 - hw > g.x + g.w + m || y0 > g.y + g.h + m || y1 < g.y - m) return -1;
+    const cx = g.x + g.w + m + hw;
+    return cx + hw <= SW() - 8 ? cx : null;
+}
+function setLeft(v) { if (v !== st.left) { st.left = v; ui.root.style.left = v; } }
 function restoreTop() {
     if (global.hudTopPx === st.wroteTop) global.hudTopPx = st.baseTop;
     st.wroteTop = -1;
@@ -567,7 +602,7 @@ function content(t) {
             const tg = st.target;
             let text = "Follow the <b>VAULT</b> arrow. Die carrying and you drop it all.";
             if (v.onPad && v.total > 0) text = "Depositing. Stay on the pad.";
-            else if (v.onPad && (g.carried | 0) >= VAULT_MIN) text = (touch ? "Tap" : "Hit") + " <b>Bank all</b> to bank what you carry.";
+            else if (v.onPad && (g.carried | 0) >= VAULT_MIN) text = (touch ? "Tap <b>Bank all</b>" : "Press " + kbd("KEY_BANK_ALL", "B") + " or hit <b>Bank all</b>") + " to bank what you carry.";
             else if ((g.carried | 0) < VAULT_MIN) {
                 // a death on this step keeps the step: mine some, come back
                 text = st.dropped ? "You dropped your gems. Mine some more, then bank them."
@@ -643,6 +678,8 @@ function stepAside() {
     if (global.introHold) return true;
     // a director moment's banner (newcomer.js) has the middle
     if (global.nxBannerUp) return true;
+    // a new crown's card under the clock (crowns.js), playtest 9: they stacked
+    if (now() - (global.crownCardAt || -1e9) < 300) return true;
     // the kill / growth callouts (a couple of seconds, just above the tank)
     // meet the card only where it sits under the clock
     if (global.hudCalloutUp && !lowTouch()) return true;
@@ -650,6 +687,12 @@ function stepAside() {
     if (now() - (global.stormBannerAt || -1e9) < 250) return true;
     // the shop panel fills the middle; only the ability step talks over it
     if (sh.onPad && !sh.dismissed && st.step !== "ability") return true;
+    // the tutorial offer never sits on the tank grid: it waits for room
+    if (st.step === "tutorial" && !global.mobile && st.size.w > 0) {
+        const k = window.innerWidth / Math.max(1, SW());
+        const top = st.top > 0 ? st.top : Math.max(48, (global.hudTopPx | 0) + 6);
+        if (gridClearX(top, st.size.w, st.size.h, k) === null) return true;
+    }
     // the tank picker and the stat panel cover the middle of a phone
     if (global.mobile && (global.touchTilesOpen || global.touchPanelRight > 0) && lowTouch()) return true;
     return false;
@@ -665,6 +708,7 @@ export function holding() { return !rec.status || rec.status === "on"; }
 export function hook() {
     const t = now();
     syncServer();
+    checkAbility(t);
     if (rec.status !== "on" && !(st.step === "final" && t - st.finalAt < FINAL_MS)) {
         if (!rec.status && playing()) decide(t);
         if (rec.status !== "on") { ui.show(false); return; }
@@ -686,6 +730,8 @@ export function hook() {
         if (lateInRaid()) { st.tutAt = t; ui.show(false); return; }
         st.begun = true;
     }
+    // round 12: when the guide first saw you playing (the tutorial offer's minute)
+    if (!(rec.t0 > 0)) { rec.t0 = Date.now(); save(); }
     st.carried = (global.gems && global.gems.carried) | 0;
     if (st.death) afterDeath(st.death);
     if (st.flash && t > st.flash.until) st.flash = null;
@@ -720,6 +766,7 @@ export function hook() {
     ui.show(true);
     ui.render(o);
     place(t);
+    noteShown(t);
     // app.js: the touch chips' first-time pointers stay quiet while this card
     // points elsewhere, and on the upgrade step they are its pointer
     global.coachPointing = st.flash ? "flash" : (st.step || "");
@@ -970,7 +1017,7 @@ window.dwCoach = {
         rec: JSON.parse(JSON.stringify(rec)), step: st.step, visible: st.visible,
         rocks: st.rocks.slice(), oreFar: st.oreFar, dropped: st.dropped, moved: Math.round(st.moved), fired: st.fired,
     }),
-    reset() { rec = blank(); save(); st.step = null; st.flash = null; st.prev = null; st.dropped = false; clearMarks(); },
+    reset() { try { localStorage.removeItem(CL.ABILITY_KEY); } catch (e) { } rec = blank(); save(); st.step = null; st.flash = null; st.prev = null; st.dropped = false; clearMarks(); },
     jump(id) {
         const i = ORDER.indexOf(id);
         if (i < 0) return false;
@@ -983,3 +1030,23 @@ window.dwCoach = {
         return true;
     },
 };
+
+// Round 11: a one-time Mining Power tip in the HUD note stack (app.js
+// drawHudNotes) the first time you dig a while with 0 points in it.
+// Oct 6 2026: priority -1, above every 0 note (lock, storm toast, deposit,
+// challenge clock), so its one showing is never pushed past NOTE_ROWS.
+const mineSt = { dig: 0, show: 0, at: 0 };
+export function mineTipNote(push, mk) {
+    const t = now();
+    const dt = mineSt.at > 0 ? t - mineSt.at : 0;
+    mineSt.at = t;
+    const you = (global.royale && global.royale.you) || {};
+    const sk = (gui.skills || [])[10];
+    const pts = gui.points | 0;
+    const on = CL.mineTip(mineSt, store(), {
+        t, dt, alive: !global.died && !!sk, dig: you.dig === 1, mp: sk ? sk.amount | 0 : 0,
+        // a maxed Mining Power has nothing to add
+        pts: sk && (sk.amount | 0) < (sk.cap | 0) ? pts : 0, tut: !!global.tutorialMode,
+    });
+    if (on) push(mk(-1, "minetip", CL.mineTipText(!!global.mobile, keyName("KEY_UPGRADE_MIN", "-"), sk && (sk.amount | 0) > 0 ? pts : 0), "#ffd27a"));
+}

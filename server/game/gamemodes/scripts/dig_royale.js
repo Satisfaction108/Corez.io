@@ -64,6 +64,8 @@ const KILL_VERBS = ["killed", "slaughtered", "demolished", "wrecked", "ended", "
 const RESPAWN_MS = 3000;
 const WEAK_DRILL_MS = 30_000;
 const STARTER_GEMS = 75;
+// ROYALE_PLACE_BONUS=1: the top 10 start the next raid with extra gems again
+const PLACE_BONUS = process.env.ROYALE_PLACE_BONUS === '1';
 const QUICK_DEATH_MS = 30_000;  // round 9: a life shorter than this...
 const QUICK_SHIELD_MS = process.env.ROYALE_QUICK_SHIELD === '0' ? 0 : 8000;  // ...earns this shield next spawn
 function quickDeath(sock) {
@@ -152,7 +154,13 @@ const FIRST_MINUTES = {
 try { storm.setLockMs(FIRST_MINUTES.STORM_LOCK_MS); } catch { /* */ }
 // the Crown Contest keeps the last storm open: everyone can drop back in
 try { storm.setNoFinalLock(() => crowns.enabled()); } catch { /* */ }
-const KILL_SCORE = 200;
+// Round 11 (Oct 6 2026): a kill is worth 300 (was 200) so skill decides
+// more raids than one lucky carry; ROYALE_KILL_SCORE sets it. The storm-stage
+// multiplier still applies on top.
+const KILL_SCORE = Math.max(0, +process.env.ROYALE_KILL_SCORE || 300);
+// and a streak pays a little before the mark: kill 2 of a streak +40, kill 3
+// +80, kill 4 +120 (ROYALE_STREAK_PTS, 0 = off); past the mark STREAK_BONUS_PER
+const STREAK_EARLY_PTS = (v => v == null || v === '' || !isFinite(+v) ? 40 : Math.max(0, +v))(process.env.ROYALE_STREAK_PTS);
 // Streaks: STREAK_MARK_AT kills marks you on every minimap. Each kill past that pays
 // more, and whoever ends you collects a shutdown bounty.
 const STREAK_MARK_AT = 4;
@@ -178,7 +186,9 @@ let raidResults = null;
 let raidEnding = false;
 const RAID_END_BEAT_MS = 1600;     // the "RAID OVER" moment before everyone goes down
 // then everyone waits this long, together
-const RAID_END_WAIT_MS = Math.max(5000, +process.env.ROYALE_END_WAIT_MS || 21_000);
+// round 11: 27 s (was 21): the intro (freeze, title, reveal, podium) took ~8 s
+// of it, so the results were up ~10-13 s; now they get 18 s+ before the drop
+const RAID_END_WAIT_MS = Math.max(5000, +process.env.ROYALE_END_WAIT_MS || 27_000);
 // The winner (both partners in duos) stays up, frozen and untouchable, for the
 // victory lap everyone else watches; they go down this long before the next raid.
 const WINNER_DOWN_LEAD_MS = 1500;
@@ -341,6 +351,14 @@ function dropStaleRowsOf(s, socket) {
 }
 
 function killScore() { return Math.round(KILL_SCORE * raidMods.num('killScoreMult', 1)); }
+// Round 10: kills are worth more as the raid goes on, the same steps as gems
+// (x1 / x1.5 / x2 by storm stage, storm.gemStageMult), so the late raid still
+// moves the board for everyone. ROYALE_STAGE_KILLS=0 turns it off.
+const STAGE_KILLS = process.env.ROYALE_STAGE_KILLS !== '0';
+function killStageMult() {
+    if (!STAGE_KILLS) return 1;
+    try { const m = storm.gemStageMult(); return m > 0 ? m : 1; } catch { return 1; }
+}
 // a bot is worth a share of a human kill (crowns.js), so farming bots
 // can't win a raid
 function botKillScore() {
@@ -359,7 +377,25 @@ function scoreParts(s) {
     }
     const kills = kp + (s.revengeBonus | 0) + (s.extra | 0);
     // crown is the net: s.crownLost, what steals took, is already out of it
-    return { bank: s.banked | 0, kills, crown: (s.crownSwing | 0) + (s.crownPts | 0) };
+    return { bank: bankPtsOf(s), kills, crown: (s.crownSwing | 0) + (s.crownPts | 0) };
+}
+// Round 12 (playtest: a big miner coasted to 2-2.4x with 3 kills): banked
+// gems count 1:1 up to BANK_SOFT points per raid, then BANK_SOFT_RATE per gem.
+// Same rule for every player and bot. The gems themselves are never lost or
+// cut (the Bank, the shops and the savings keep every one); only how much
+// they weigh in this raid's points changes, so kills and crowns matter more
+// against a single big carry. A restored save's banked gems are left as they
+// were (earnedOf takes them back out). ROYALE_BANK_SOFT=0 turns it off.
+const BANK_SOFT = (() => { const v = parseFloat(process.env.ROYALE_BANK_SOFT); return Number.isFinite(v) && v >= 0 ? v : 5000; })();
+const BANK_SOFT_RATE = (() => { const v = parseFloat(process.env.ROYALE_BANK_SOFT_RATE); return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.5; })();
+function bankWeight(g) {
+    g = Math.max(0, g | 0);
+    if (!(BANK_SOFT > 0) || g <= BANK_SOFT) return g;
+    return Math.round(BANK_SOFT + (g - BANK_SOFT) * BANK_SOFT_RATE);
+}
+function bankPtsOf(s) {
+    const b = Math.max(0, s.banked | 0), rb = Math.max(0, Math.min(b, s.restoredBanked | 0));
+    return rb + bankWeight(b - rb);
 }
 function scoreOf(s) {
     const p = scoreParts(s);
@@ -373,8 +409,20 @@ function botDimScore(raw) {
     if (!BOT_DIM || !(raw > BOT_DIM_AT)) return raw;
     return Math.round(BOT_DIM_AT + BOT_DIM_AT * Math.log(1 + (raw - BOT_DIM_AT) / BOT_DIM_AT));
 }
+// Round 11: the board's "banked" next to points is this raid's banked gems
+// as points, so it is never bigger than the points beside it (a bot's points
+// past BOT_DIM_AT are on a log curve, which once showed "14,834 banked" under
+// 7,077 points on the podium).
+function bankShownOf(s) {
+    // round 12: the banked part of the points (bankPtsOf), never more
+    const b = bankPtsOf(s);
+    if (!s || !s.isBot) return Math.min(b, Math.max(0, scoreOf(s)));
+    const p = scoreParts(s), raw = p.bank + p.kills + p.crown;
+    if (!(raw > 0)) return 0;
+    return Math.max(0, Math.min(b, Math.round(b * scoreOf(s) / raw)));
+}
 // the part a crown steal can take: everything but the banked gems
-function atRiskOf(s) { return Math.max(0, scoreOf(s) - (s.banked | 0)); }
+function atRiskOf(s) { return Math.max(0, scoreOf(s) - bankPtsOf(s)); }
 // what crowns did for this row: holding points plus steals (minus what was stolen)
 function crownNetOf(s) { return (s.crownPts | 0) + (s.crownSwing | 0); }
 // growth keeps counting half of the satchel, as it always did, so a miner still
@@ -452,7 +500,7 @@ function boardSnapshot() {
         id: s.id,
         name: s.name || "Unnamed",
         kills: s.kills | 0,
-        gems: s.banked | 0,
+        gems: bankShownOf(s),
         holds: s.holds | 0,
         carried: s.carried | 0,
         score: scoreOf(s),
@@ -565,7 +613,7 @@ function compass(x, y) {
 // A contract reward goes straight into the bank; the board counts it too
 // (and with it growth).
 // why: a short label for the client's bank pop ("+300 banked: survived the
-const PAY_WHY = { bounty: "bounty claimed", bountySurvive: "survived the bounty", revenge: "revenge", hunt: "hunted bounty" };
+const PAY_WHY = { bounty: "bounty claimed", bountySurvive: "survived the bounty", revenge: "revenge", hunt: "hunted bounty", leaderBounty: "leader bounty" };
 function payLabel(why) {
     const w = String(why || "");
     return (PAY_WHY[w] || w).slice(0, 48);
@@ -580,6 +628,33 @@ function payGems(body, gemsN, why) {
         try { body.socket.talk('KC', 'bankpop', payLabel(why), gemsN | 0); } catch { /* */ }
         gems.talkGems(body, 0);
     } catch { /* */ }
+}
+// payGems for anyone: a bot's bank and board row get it the same way
+function payAny(body, gemsN, why) {
+    if (!body || !(gemsN > 0)) return;
+    if (body.socket) return payGems(body, gemsN, why);
+    if (!body.isBot) return;
+    try {
+        gems.setBanked(body, ((body.botBanked || 0) | 0) + gemsN);
+        const s = ensureStat(body);
+        if (s) s.banked = (s.banked || 0) + gemsN;
+    } catch { /* */ }
+}
+// pacing.js leader bounty: the board's #1, their lead over #2, and their body
+// (null while down)
+function leaderInfo() {
+    const order = boardOrder();
+    if (!order.length) return null;
+    const a = order[0];
+    let b = null;
+    for (let i = 1; i < order.length; i++) {
+        const e = order[i];
+        if (Config.royale_duos && a.s.teamKey && e.s.teamKey === a.s.teamKey) continue;
+        b = e; break;
+    }
+    let body = null;
+    for (const c of combatants()) if (statKeyFor(c) === a.s.key) { body = c; break; }
+    return { body, key: a.s.key, score: a.score, lead: a.score - (b ? b.score : 0) };
 }
 function streakOfBody(body) {
     const k = statKeyFor(body);
@@ -606,6 +681,8 @@ contracts.attach({
 pacing.attach({
     humans, fighters: () => combatants(), scoreOf: scoreOfBody, keyOf: statKeyFor,
     pay: (body, n, why) => payGems(body, n, why),
+    payAny: (body, n, why) => payAny(body, n, why),
+    leader: () => leaderInfo(),
     callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
     announce: (text, feed) => { if (feed) pushFeed(feed); setToastAndSay(text, 6000); },
     fxAt: (x, y, kind) => fxAt(x, y, kind),
@@ -643,6 +720,11 @@ coreFinale.attach({
     bank: (body, n) => vault.creditBank(body, n),
     addPts,
     callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
+    // Core lucky drop: a random lobby cosmetic for the breaker (coreDrop.js)
+    loot: (body) => require('../../terrain/coreDrop.js').onBreak(body, {
+        callout: (b, kind, text, pts, sub, dur) => callout(b, kind, text, pts, sub, dur),
+        feed: (entry) => pushFeed(entry),
+    }),
 });
 crowns.attach({
     keyOf: statKeyFor,
@@ -772,7 +854,7 @@ function broadcast(extra = {}) {
         phase: 'live', left: raidLeft, alive, fill: fillCap(), humans: humanCount, winner: null, storm: st, toast: liveToast,
         feed: killFeed.slice(-8), board, lock, lockLeft, matchId: raidId, raidId, raidLeft, raidMs: RAID_MS,
         occupyMs: OCCUPY_MS, lockoutMs: LOCKOUT_MS, objectives, bloom: bloomSnap, chest: null, chests: chestSnap,
-        boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, pings, hunt: hunted.snapshot(), core: coreFinale.snapshot(t), supply: supplyDrops.snapshot(t), crowns: crownSnap, results: raidResults, ending, nextIn, nextMs, ...extra,
+        boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, lping: pacing.huntSnapshot(t) || undefined, pings, hunt: hunted.snapshot(), core: coreFinale.snapshot(t), supply: supplyDrops.snapshot(t), crowns: crownSnap, results: raidResults, ending, nextIn, nextMs, ...extra,
     });
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
@@ -812,7 +894,10 @@ function broadcast(extra = {}) {
         const you = mine ? {
                 score: scoreOf(mine),
                 // the one definition: points = banked (b) + kills & bonuses (k) + crowns (c) (s
-                pts: { b: parts.bank, k: parts.kills, c: parts.crown, s: (mine.crownLost | 0) || undefined },
+                // g: banked gems when past the soft line (b is what they weigh), t / r: that line and its rate
+                pts: (mine.banked | 0) > parts.bank
+                    ? { b: parts.bank, k: parts.kills, c: parts.crown, s: (mine.crownLost | 0) || undefined, g: mine.banked | 0, t: BANK_SOFT, r: BANK_SOFT_RATE }
+                    : { b: parts.bank, k: parts.kills, c: parts.crown, s: (mine.crownLost | 0) || undefined },
                 // the last death this raid: points it cost (p), who (by), satchel dropped (c)
                 dl: mine.lastDeath || undefined,
                 crown: crownMe,
@@ -833,9 +918,11 @@ function broadcast(extra = {}) {
                 overdrive: bodyLive && body.overdriveUntil > t ? Math.ceil((body.overdriveUntil - t) / 1000) : 0,
                 anchor: bodyLive && body.stormAnchorUntil > t ? Math.ceil((body.stormAnchorUntil - t) / 1000) : 0,
                 // storm ramp while you're out in it: damage multiplier, 0 when safe
+                // your shots are landing on rock right now (the client's Mining Power tip)
+                dig: bodyLive && t - Math.max(body._rockHitAt || 0, body._grindDigAt || 0) < 1200 ? 1 : undefined,
                 sm: bodyLive && body._inStorm ? Math.round(storm.exposureOf(body, t).mult * 100) / 100 : 0,
                 // raid over: the head start your placement bought for the next one
-                nextGems: raidResults ? (client.raidBonus | 0) : undefined,
+                nextGems: raidResults && PLACE_BONUS ? (client.raidBonus | 0) : undefined,
                 // hunted: your mark and how many enemies are close
                 hunt: bodyLive ? hunted.forClient(body) : undefined,
                 // Core Champion wins in a row on this connection (accounts have the real one)
@@ -1351,12 +1438,25 @@ function spawnAudit(spot, forBot, kind, res) {
 function giveStarterKit(body, isRespawn, noStarter = false) {
     if (!body) return;
     try { gems.initSatchel(body); } catch { /* */ }
-    const bonus = body.socket ? ((body.socket.raidBonus || 0) | 0) : 0;
+    // round 11: only while the placement bonus is on (a restored socket could still carry one)
+    const bonus = body.socket && PLACE_BONUS ? ((body.socket.raidBonus || 0) | 0) : 0;
     if (body.socket) body.socket.raidBonus = 0;
     const starter = raidMods.num('starterGems', STARTER_GEMS);
     const grant = (isRespawn || noStarter ? 0 : starter) + bonus;
-    body.carriedGems = Math.max(body.carriedGems | 0, grant);
+    // a fresh start (new raid, first drop) is exactly the starting satchel
+    body.carriedGems = isRespawn || noStarter ? Math.max(body.carriedGems | 0, grant) : grant;
     try { gems.updateSatchel(body); gems.talkGems(body, grant); } catch { /* */ }
+    // the share of the satchel kept through the last death (gems.carryKeepFor),
+    // this raid only
+    if (body.socket) {
+        const keep = (body.socket._carryKeep | 0);
+        const same = (body.socket._carryKeepRaid | 0) === raidId;
+        body.socket._carryKeep = 0;
+        if (isRespawn && same && keep > 0) {
+            body.carriedGems = (body.carriedGems | 0) + keep;
+            try { gems.updateSatchel(body); gems.talkGems(body, keep); } catch { /* */ }
+        }
+    }
     // twist grants: what everyone starts this cycle with
     try { grantTwist(body); } catch { /* */ }
     if (isRespawn && !shop.keepsDrillOnRespawn(body)) body.weakDrillUntil = now() + WEAK_DRILL_MS;
@@ -1827,6 +1927,10 @@ function spawnRaidBot(back = null) {
     bot.botGraceUntil = now() + FIRST_MINUTES.BOT_GRACE_BOT_MS;
     bot.weakDrillUntil = 0;
     try { gems.initSatchel(bot); } catch { /* */ }
+    // the share of its satchel it kept through the death (gems.carryKeepFor)
+    if (back && (back.carry | 0) > 0) {
+        try { bot.carriedGems = (bot.carriedGems | 0) + (back.carry | 0); gems.updateSatchel(bot); } catch { /* */ }
+    }
     try { bot.refreshBodyAttributes(); } catch { /* */ }
     try { grantTwist(bot); } catch { /* */ }
     // a respawned bot keeps its raid perks (same family, same board row)
@@ -2075,7 +2179,7 @@ function onCombatantDead(body) {
         if (killerBody.socket && victimBot) guard('fair beat', () => fairPlay.noteBeat(killerBody, body));
         if (ks) {
             ks.kills = (ks.kills | 0) + 1;
-            const kp0 = victimBot ? botKillScore() : killScore();
+            const kp0 = Math.round((victimBot ? botKillScore() : killScore()) * killStageMult());
             const kp = killerBody._fpFodder ? Math.round(kp0 * fairPlay.fodderShare(killerBody)) : kp0;
             if (victimBot) ks.botKills = (ks.botKills | 0) + 1;
             pts += kp;
@@ -2086,6 +2190,11 @@ function onCombatantDead(body) {
             streakNow = ks.streak;
             if (ks.streak > ks.bestStreak) ks.bestStreak = ks.streak;
             if (killerBody.socket) { try { progressHooks.onStreak(killerBody, ks.streak); } catch (e) { guardLog('progress streak', e); } }
+            if (STREAK_EARLY_PTS > 0 && ks.streak >= 2 && ks.streak <= STREAK_MARK_AT) {
+                const eb = share(STREAK_EARLY_PTS * (ks.streak - 1));
+                ks.extra = (ks.extra | 0) + eb;
+                pts += eb;
+            }
             if (ks.streak > STREAK_MARK_AT) {
                 const sb = share(STREAK_BONUS_PER * (ks.streak - STREAK_MARK_AT));
                 ks.extra = (ks.extra | 0) + sb;
@@ -2120,7 +2229,7 @@ function onCombatantDead(body) {
             try { rankHooks.onKillCredited(killerBody, ks, body, s, pts); } catch (e) { guardLog('rank kill', e); }
         }
         // the bounty (pacing.js) pays whoever takes the target down
-        guard('bounty kill', () => pacing.onKill(killerBody, body));
+        guard('bounty kill', () => pacing.onKill(killerBody, body, vk));
         if (killerBody.socket) {
             let line = avenged ? "REVENGE" : huntBounty ? "BOUNTY CASHED" : shutdown ? "SHUTDOWN" : giantPts ? "GIANT DOWN" : "ELIMINATED";
             line += ": " + (body.name || "Unnamed");
@@ -3285,6 +3394,7 @@ function applyModsToWorld(prev, next) {
 function startRaid(first) {
     if (first && raidId) return;
     raidId++;
+    global.royaleRaidSeq = raidId;
     raidStartAt = now();
     // bossGuard.freshSpared reads the raid's age
     global.royaleRaidStartAt = raidStartAt;
@@ -3466,7 +3576,9 @@ function endRaid() {
         const client = byStat.get(e.s);
         if (!client || paidPlace.has(client)) return;
         paidPlace.add(client);
-        client.raidBonus = (client.raidBonus | 0) + bonuses[place - 1];
+        // round 10: off by default, a raid win no longer buys a head start in the
+        // next one (that was the "576 carried at the start of raid 2")
+        if (PLACE_BONUS) client.raidBonus = (client.raidBonus | 0) + bonuses[place - 1];
     });
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
@@ -4152,6 +4264,8 @@ module.exports = {
     DigRoyale, canSpawn, spawnWhy, requestPlay, onHumanJoin, onCombatantDead, markHumanDeath, disconnectCleanup, phase, isLobbyPhase, stormFleePoint,
     lobbyPos, tick, beginStaging, staging, onBanked, onCapture, FILL_CAP, stormLocked, boardSnapshot, scoreOf, scoreParts, botDimScore, quickDeath, baseWall, claimResume, applyPendingResume, applyRespawnBuild, resumeTeam, baseReserved,
     addGrowth, growthScore, earnedOf, boardOrder,
+    // round 10: late-raid kill points, the leader bounty, no cross-raid head start
+    killStageMult, PLACE_BONUS, KILL_SCORE, STREAK_EARLY_PTS, bankShownOf, bankWeight, bankPtsOf, BANK_SOFT, BANK_SOFT_RATE, _leaderInfo: () => leaderInfo(), _payAny: (b, n, why) => payAny(b, n, why),
     // raid perks: PKP (sockets.js), and the tests
     pickPerk, _tickPerks: (t, frozen) => tickPerks(t, frozen), _perkBuild: (body) => { const k = statKeyFor(body); return k ? perkBuildOf(raidStats.get(k)) : null; },
     // bot roster (scripts/test/botRoster.test.js)

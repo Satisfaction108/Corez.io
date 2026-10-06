@@ -818,8 +818,8 @@ test('digging: damage by rarity, Buddy barely scratches, the legendaries close t
     const { combineStats } = require(path.join(SERVER, 'lib', 'definitions', 'facilitators.js'));
     const g = require(path.join(SERVER, 'lib', 'definitions', 'gunvals.js'));
     const mining = require(path.join(SERVER, 'game', 'terrain', 'mining.js'));
-    // a level-45 Pounder bullet, no stat points (skillFactor 0.4), in baseRockHealth units
-    const pounder = 0.1 * mining.digPower(combineStats([g.basic, g.pounder])) * 0.4;
+    // a level-45 Pounder bullet, no stat points (skillFactor mining.SHOT_BARE, 0.54 since Oct 5 2026), in baseRockHealth units
+    const pounder = 0.1 * mining.digPower(combineStats([g.basic, g.pounder])) * mining.SHOT_BARE;
     assert.ok(Math.abs(pounder - dig.POUNDER_REF) < 1e-9, 'POUNDER_REF ' + dig.POUNDER_REF + ' vs ' + pounder);
     const kicks = C.ITEMS.filter(it => it.cat === 'sidekick' && !it.retired);
     const share = (id) => C.sidekickDigShare(C.byId(id));

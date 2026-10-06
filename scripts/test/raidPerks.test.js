@@ -505,6 +505,12 @@ test('client: cards sit low in the middle, clear of the tank, stat bars and mini
     assert.equal(L.viewFor({ folded: true, openedAt: 0 }, { now: 10, key: 'a' }), 'cards');
     assert.equal(L.viewFor({ folded: false, openedAt: 0 }, { now: 10, key: 'a', blocked: true }), '', 'hidden while a panel owns the screen');
     assert.equal(L.viewFor({ folded: false, openedAt: 0 }, { now: 10, key: '' }), '');
+    // playtest 9: a fresh offer waits for 3 s with no hit taken OR dealt, and
+    // for the middle to be free (a callout, a slam, a new crown's card)
+    assert.equal(L.viewFor({ shown: false }, { now: 10_000, key: 'a', dealtAt: 8_000 }), '', 'shooting someone: waits');
+    assert.equal(L.viewFor({ shown: false }, { now: 11_100, key: 'a', dealtAt: 8_000, hurtAt: 1 }), 'cards', 'calm 3 s: out');
+    assert.equal(L.viewFor({ shown: false }, { now: 60_000, key: 'a', hold: true }), '', 'centre stage busy: waits');
+    assert.equal(L.viewFor({ shown: true }, { now: 10_000, key: 'a', dealtAt: 9_990, hold: true }), 'cards', 'once out, it stays');
     // the strip ends left of the satchel pills
     const wallet = { x: W / 2 - 150, y: H - 61, w: 300, h: 18 };
     const st = L.stripLayout(wallet, 4, 120, 248);

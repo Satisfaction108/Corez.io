@@ -1,16 +1,22 @@
 // The first seconds of a raid, the rules
 
 // Round 8: the card stays up about 65% longer (owner: it went before it could be
+// The pointers come one at a time after the card (tilesNudge, then statsNudge),
+// and the guide card after the last one: never more than two new things up.
 export const NEW_PLAN = Object.freeze({
-    intro: 5600, messages: 2600, tiles: 5700, stats: 6700, ability: 7500, coach: 9000, nudge: 3400,
+    intro: 5600, messages: 2600, tiles: 5700, stats: 6700, ability: 7500, coach: 9500, nudge: 1850,
+    tilesNudge: 5700, statsNudge: 7550,
 });
 // Someone who has played before: the raid card, shorter, and nothing held but the
 export const VET_PLAN = Object.freeze({
     intro: 3800, messages: 0, tiles: 0, stats: 0, ability: 3800, coach: 0, nudge: 0,
 });
 // A new raid on the same page (the last one ended, the next started): the tank
+// The card lands alone (the toasts wait 2.6 s), then the tank pointer, then
+// the points pointer, then the guide card.
 export const NEW_RAID_PLAN = Object.freeze({
-    intro: 6000, messages: 0, tiles: 1, stats: 1, ability: 6000, coach: 0, nudge: 4200,
+    intro: 6000, messages: 2600, tiles: 1, stats: 1, ability: 6000, coach: 12000, nudge: 3000,
+    tilesNudge: 6000, statsNudge: 9000,
 });
 // Dead (or on the death card) when the last raid ended and its podium never got
 export const RECAP_MS = 4800;
@@ -25,15 +31,25 @@ export function planFor(o) {
     if (s.tutorial) return null;
     if (s.newRaid && s.recap) {
         const p = { ...NEW_RAID_PLAN, newcomer: !!s.newcomer, newRaid: true, recap: RECAP_MS };
-        for (const k of ["intro", "tiles", "stats", "ability"]) p[k] += RECAP_MS;
+        for (const k of ["intro", "messages", "tiles", "stats", "ability", "coach", "tilesNudge", "statsNudge"]) if (p[k] > 0) p[k] += RECAP_MS;
         return p;
     }
     if (s.newRaid) return { ...NEW_RAID_PLAN, newcomer: !!s.newcomer, newRaid: true };
     return { ...(s.newcomer ? NEW_PLAN : VET_PLAN), newcomer: !!s.newcomer };
 }
 // A spawn on a page that already had its first plan: a new raid gets the short
-export function isNewRaid(lastRaid, raidNow) {
-    return (lastRaid | 0) > 0 && (raidNow | 0) > 0 && (raidNow | 0) !== (lastRaid | 0);
+export function isNewRaid(lastRaid, raidNow, lastStart, startNow) {
+    if ((lastRaid | 0) > 0 && (raidNow | 0) > 0 && (raidNow | 0) !== (lastRaid | 0)) return true;
+    // round 12: raid ids repeat across raid workers (an overflow move between
+    // raids kept the id, and FRESH START never came): a raid clock that
+    // started RAID_START_JUMP_MS later than the last one is a new raid too
+    return (+lastStart || 0) > 0 && (+startNow || 0) > 0 && startNow - lastStart > RAID_START_JUMP_MS;
+}
+export const RAID_START_JUMP_MS = 30000;
+// when this raid's clock started (wall ms), from RY raidMs and raidLeft (s); 0 if unknown
+export function raidStartOf(r, wall) {
+    if (!r || !((r.raidMs | 0) > 0) || !((r.raidLeft | 0) > 0)) return 0;
+    return (+wall || 0) - ((r.raidMs | 0) - (r.raidLeft | 0) * 1000);
 }
 // The nudge beside a piece that just came in
 export function nudgeText(plan, piece) {
@@ -86,10 +102,38 @@ export function recapLines(o) {
     return { eyebrow: "LAST RAID RESULTS", title, goal, controls, status: top.join("  ·  ") };
 }
 
+// When a piece's nudge starts (its own slot, or with the piece)
+export function nudgeAt(plan, piece) {
+    if (!plan) return 0;
+    const own = plan[piece + "Nudge"];
+    return own > 0 ? own : plan[piece];
+}
+// When the whole plan has played out (the card, the holds, the nudges)
+export function planEnd(plan) {
+    if (!plan) return 0;
+    let end = Math.max(plan.intro, plan.coach, plan.ability, plan.messages | 0, plan.tiles, plan.stats);
+    if (plan.nudge > 0) {
+        for (const pc of ["tiles", "stats"]) {
+            const at = nudgeAt(plan, pc);
+            if (at > 0) end = Math.max(end, at + plan.nudge);
+        }
+    }
+    return end;
+}
+// How many of the staged pieces are new on screen at `age` (the card, a
+// pointer, the guide card): the calm-start rule keeps this at 2 or less
+export function busyAt(plan, age) {
+    if (!plan || age < 0) return 0;
+    let n = introAlpha(plan, age) > 0 ? 1 : 0;
+    for (const pc of ["tiles", "stats"]) if (nudgeAlpha(plan, age, pc, false) > 0) n++;
+    if (plan.coach > 0 && age >= plan.coach) n++;
+    return n;
+}
+
 // A short nudge beside a piece that just came in: 0..1 while it shows
 export function nudgeAlpha(plan, age, piece, released) {
     if (!plan || released || !(plan.nudge > 0)) return 0;
-    const at = plan[piece];
+    const at = nudgeAt(plan, piece);
     if (!(at > 0)) return 0;
     const k = age - at;
     if (k < 0 || k > plan.nudge) return 0;

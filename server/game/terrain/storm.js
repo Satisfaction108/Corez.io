@@ -21,7 +21,13 @@ const FINAL_RAMP_FLOOR_S = 5;
 const FINAL_DAMAGE_MULT = 1.35;
 // Stages: the first storm only stings, the second hurts, the last one is the
 // showdown above. Indexed by cycle; later non-final cycles take full damage.
-const STAGE_MULT = [0.5, 0.8];
+// Round 11 (Oct 6 2026): the first storm is gentler for everyone (two of a
+// tester's first three deaths were storm deaths): stage 1 hits at 0.35 and
+// its ramp runs 1.5x slower (full damage at 27 s out instead of 18 s).
+// ROYALE_STORM_STAGE1 / ROYALE_STORM_STAGE2 / ROYALE_STORM_RAMP1 tune it.
+function envNum(k, d) { const v = parseFloat(process.env[k]); return Number.isFinite(v) ? v : d; }
+const STAGE_MULT = [envNum('ROYALE_STORM_STAGE1', 0.35), envNum('ROYALE_STORM_STAGE2', 0.8)];
+const RAMP_SLOW_FIRST = Math.max(1, envNum('ROYALE_STORM_RAMP1', 1.5));
 function stageMult() {
     if (isFinal()) return 1;
     const m = STAGE_MULT[state.cycle];
@@ -353,7 +359,8 @@ function tickDamage(now = Date.now()) {
         // immune (Storm Anchor, medkit): no damage, and the ramp waits
         if (dmgMult <= 0) continue;
         // a protected player's ramp climbs slower: more time to get out)
-        body._stormExpMs = (body._stormExpMs || 0) + dt * speed;
+        const slow = (!fin && !isFinal() && (state.cycle | 0) === 0) ? RAMP_SLOW_FIRST : 1;
+        body._stormExpMs = (body._stormExpMs || 0) + dt * speed / slow;
         if (fin && body._stormExpMs < FINAL_RAMP_FLOOR_S * 1000) body._stormExpMs = FINAL_RAMP_FLOOR_S * 1000;
         if (now - (body._stormHurtAt || 0) < DAMAGE_EVERY_MS) continue;
         body._stormHurtAt = now;
@@ -375,4 +382,4 @@ function tickDamage(now = Date.now()) {
     }
 }
 
-module.exports = { etaFn, centerAt, CENTER_FRAC, resetAt, start, stop, setLockMs, setNoFinalLock, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT, STAGE_MULT, stageMult, gemStageMult, GEM_STAGE };
+module.exports = { etaFn, centerAt, CENTER_FRAC, resetAt, start, stop, setLockMs, setNoFinalLock, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT, STAGE_MULT, RAMP_SLOW_FIRST, stageMult, gemStageMult, GEM_STAGE };

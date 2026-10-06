@@ -366,6 +366,8 @@ export function hudNotes(push, compact) {
     if (S.mine && A) {
         CARD.card = SL.crownCard(S.mine);
         push(CARD);
+        // coach.js: its card steps aside while a new crown's card has the top
+        if (cardFresh()) global.crownCardAt = performance.now();
         return;
     }
     // the tracker already says it all on a big screen, unless you hold one
@@ -379,6 +381,8 @@ export function hudNotes(push, compact) {
 }
 
 const HOW_MS = 8000;
+// a crown just landed: its card has the middle (raidPerks waits for it)
+export function cardFresh() { return !!S.mine && performance.now() - S.gotAt < HOW_MS; }
 function drawCrownCard(c, card, cx, y, maxW) {
     const HUD = A.HUD;
     const now = performance.now();

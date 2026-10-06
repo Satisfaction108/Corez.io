@@ -338,6 +338,8 @@ function blow(t) {
     if (hooks.fxAt) hooks.fxAt(b.x, b.y, 'coredead');
     if (hooks.announce) hooks.announce('coredown', "THE CORE IS DOWN", "Gems everywhere. Grab them and bank them before the storm shuts!", 4200, b.killer);
     if (hooks.feed) hooks.feed({ core: 1, broke: 1, by: brokeBy, g: coreGems });
+    // the lucky drop for the breaker (terrain/coreDrop.js), after its slam
+    if (b.killer && b.killer.socket && hooks.loot) { try { hooks.loot(b.killer); } catch (e) { /* */ } }
 }
 
 function hurt(body, frac, t) {

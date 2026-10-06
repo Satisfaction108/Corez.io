@@ -119,6 +119,37 @@ function t(name, fn) {
         assert.equal(L.nudgeAlpha(p, p.tiles + 1000, 'tiles', true), 0, 'not after a hit');
     });
 
+    t('calm start: card first, then one pointer at a time, then the guide', () => {
+        const plans = [L.planFor({ newcomer: true }), L.planFor({ newcomer: false }), L.planFor({ newRaid: true }), L.planFor({ newRaid: true, recap: true })];
+        for (const p of plans) {
+            for (let age = 0; age <= L.planEnd(p) + 1000; age += 25) assert.ok(L.busyAt(p, age) <= 2, 'at most two at ' + age + ' ' + JSON.stringify(p));
+            if (!(p.nudge > 0)) continue;
+            const ta = L.nudgeAt(p, 'tiles'), sa = L.nudgeAt(p, 'stats');
+            assert.ok(ta >= p.intro, 'the tank pointer waits for the card');
+            assert.ok(sa >= ta + p.nudge, 'the points pointer waits for the tank pointer');
+            assert.ok(p.coach >= sa + p.nudge, 'the guide waits for the pointers');
+            for (let age = 0; age < 30000; age += 50)
+                assert.ok(!(L.nudgeAlpha(p, age, 'tiles', false) > 0 && L.nudgeAlpha(p, age, 'stats', false) > 0), 'one pointer at ' + age);
+        }
+        const r = L.planFor({ newRaid: true }), rr = L.planFor({ newRaid: true, recap: true });
+        assert.ok(r.messages > 0 && r.messages < r.intro, 'new raid: the card lands before the toasts');
+        assert.equal(rr.statsNudge - r.statsNudge, L.RECAP_MS, 'the recap pushes the pointers back too');
+        assert.equal(rr.coach - r.coach, L.RECAP_MS);
+        assert.equal(L.planEnd(L.planFor({ newcomer: false })), L.VET_PLAN.intro);
+    });
+    t('calm start wiring: toasts queue (3 at most), the guide stays done, the offer clears the grid', () => {
+        const app = fs.readFileSync(path.join(CLIENT, 'app.js'), 'utf8');
+        assert.match(app, /const cap = y > ySide \? 2 : 3, QUEUE_MAX = 4;/);
+        assert.match(app, /if \(msg\.wait\) continue;/);
+        assert.ok(!/MSG_CAP/.test(app), 'old fade-out cap gone');
+        const co = fs.readFileSync(path.join(CLIENT, 'coach.js'), 'utf8');
+        assert.match(co, /if \(\(global\.kitUsedAt \|\| 0\) > 0 \|\| \(global\.abilityUsedAt \|\| 0\) > 0\) return true;/);
+        assert.match(co, /syncServer\(\);\s*checkAbility\(t\);/);
+        assert.match(co, /st\.step === "tutorial" && !global\.mobile[\s\S]{0,240}gridClearX\(top, st\.size\.w, st\.size\.h, k\) === null\) return true;/);
+        const fsj = fs.readFileSync(path.join(CLIENT, 'firstSeconds.js'), 'utf8');
+        assert.ok(fsj.includes('S.age > L.planEnd(p) + 500'));
+    });
+
     // ── the shop ───────────────────────────────────────────────────────
     t('shop: nothing banked says how to get there', () => {
         const none = L.shopHint({ banked: 0, carried: 0, cheapest: 300 });
@@ -172,7 +203,7 @@ function t(name, fn) {
         assert.ok(app.includes('try { firstSeconds.draw(ctx[2], lanes); }'));
         assert.ok(app.includes('statMenu.set(!firstSeconds.shows("stats") ? 0 :'));
         assert.ok(app.includes('if (gui.upgrades.length > 0 && !firstSeconds.shows("tiles")) {'));
-        assert.ok(app.includes('if (!firstSeconds.shows("messages") || (global.mobile && (slamShowing() || global.introCardUp))) {'));
+        assert.ok(app.includes('if (!firstSeconds.shows("messages") || global.introCardUp || finHold || (global.mobile && slamShowing())) {'));
         assert.ok(app.includes('shopHint({ banked: global.gems.banked | 0'));
         assert.ok(app.includes('hudTitle("RAMS ROCK"'));
         const coach = src('coach.js');

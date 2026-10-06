@@ -144,10 +144,13 @@ function t(name, fn) {
         const p = FS.planFor({ newRaid: true });
         assert.equal(p.newRaid, true);
         assert.equal(FS.planFor({ newRaid: true, tutorial: true }), null);
-        // nothing held: tiles and stats come in on landing with the nudge
-        assert.ok(FS.shows(p, 10, 'tiles', false) && FS.shows(p, 10, 'stats', false) && FS.shows(p, 10, 'messages', false));
+        // tiles and stats come in on landing; the toasts wait a moment and the
+        // tank pointer waits for the card (calmer raid start)
+        assert.ok(FS.shows(p, 10, 'tiles', false) && FS.shows(p, 10, 'stats', false));
+        assert.ok(!FS.shows(p, 10, 'messages', false) && FS.shows(p, p.messages, 'messages', false));
         assert.ok(!FS.shows(p, -1, 'tiles', false), 'not while still falling');
-        assert.ok(FS.nudgeAlpha(p, 600, 'tiles', false) > 0.5);
+        assert.equal(FS.nudgeAlpha(p, 600, 'tiles', false), 0, 'no pointer under the card');
+        assert.ok(FS.nudgeAlpha(p, p.intro + 600, 'tiles', false) > 0.5);
         assert.ok(FS.introAlpha(p, 1000) > 0.9 && FS.introAlpha(p, p.intro + 1) === 0);
         assert.equal(FS.nudgeText(p, 'tiles'), 'New raid: pick your tank');
         assert.equal(FS.nudgeText(FS.planFor({ newcomer: true }), 'tiles'), 'New tanks! Pick one any time.');
@@ -157,7 +160,7 @@ function t(name, fn) {
         assert.ok(ln.status.includes('9 tanks'));
         assert.ok(!/—/.test(JSON.stringify(ln)), 'no em dashes');
         const fsj = src('firstSeconds.js');
-        assert.ok(fsj.includes('L.isNewRaid(S.raid, rid)') && fsj.includes('L.planFor({ newRaid: true, recap: missed })'), 'a new raid card (after the last raid\'s recap when its podium was missed)');
+        assert.ok(fsj.includes('L.isNewRaid(S.raid, rid, S.alive ? 0 : S.raidStart, start)') && fsj.includes('L.planFor({ newRaid: true, recap: missed })'), 'a new raid card (after the last raid\'s recap when its podium was missed)');
         assert.ok(fsj.includes('!S.plan.newRaid'), 'the falling re-plan keeps the new raid card');
     });
 

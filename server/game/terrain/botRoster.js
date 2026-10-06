@@ -73,4 +73,15 @@ function resetRaid() {
 
 function size() { return waiting.length; }
 
-module.exports = { DELAY_MS, DELAY_JITTER_MS, onBotGone, mayFill, next, trimTo, resetRaid, size, setEnabled, isEnabled, _waiting: waiting };
+// gems.dropGemsOnDeath: the share of the satchel a dying bot keeps rides on
+// its waiting entry and comes back with it (the same rule players have)
+function noteCarry(bot, n) {
+    if (!bot || !(n > 0)) return false;
+    const fam = bot.botFamilyId ?? bot.id;
+    const w = waiting.find(e => e.familyId === fam);
+    if (!w) return false;
+    w.carry = (w.carry | 0) + (n | 0);
+    return true;
+}
+
+module.exports = { DELAY_MS, DELAY_JITTER_MS, onBotGone, noteCarry, mayFill, next, trimTo, resetRaid, size, setEnabled, isEnabled, _waiting: waiting };

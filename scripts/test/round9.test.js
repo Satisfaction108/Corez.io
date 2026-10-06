@@ -296,3 +296,125 @@ test('round 10: every projectile dies on a vault or shop pad, Core shards too', 
         assert.equal(core.onSafePad(1500, 1500), false, 'open ground');
     } finally { vaultM.getVaults = gv; shopM.getShops = gs; }
 });
+
+// ── Oct 5 2026: "dying feels like a tax" (the same rules for everyone) ──
+const bankM = T('bank.js');
+const botRosterM = T('botRoster.js');
+const nxM = T('newcomerDirector.js');
+const botDiffM = require(path.join(SERVER, 'miscFiles', 'botDifficulty.js'));
+const miningM = T('mining.js');
+let deathIds = 70000;
+function deathBody({ bot = false, carried = 0, banked = 0, kept = 0 } = {}) {
+    const t = new Entity({ x: 4000 + (deathIds % 50) * 30, y: 4000 });
+    t.define('basic');
+    t.alwaysActive = true;
+    t.team = -1 - (deathIds++ & 0xff);
+    t.deathCause = 'bot';
+    if (bot) { t.isBot = true; t.botFamilyId = 'fam' + deathIds; t.name = 'Bot' + deathIds; }
+    else {
+        const s = { id: deathIds++, packets: [], status: {}, camera: { x: 0, y: 0 }, gemBanked: banked, bankKept: kept, _bankOut: true };
+        s.talk = (...a) => s.packets.push(a);
+        t.isPlayer = true; t.socket = s; s.player = { body: t };
+        t.nxStage = 3;          // not a first raid (that rule is checked below)
+    }
+    gems.initSatchel(t);
+    t.carriedGems = carried;
+    return t;
+}
+const msgs = s => s.packets.filter(a => a[0] === 'm').map(a => String(a[2])).join(' | ');
+
+test('rule 1: banked gems are 100% safe on death by default (env brings the savings tax back)', () => {
+    assert.equal(bankM.deathLossEnabled(), false, 'off unless ROYALE_SAVINGS_DEATH_LOSS=1');
+    const p = deathBody({ banked: 5000, kept: 5000, carried: 0 });
+    assert.equal(bankM.deathLossFor(p), 0);
+    gems.dropGemsOnDeath(p, []);
+    assert.equal(p.socket.gemBanked, 5000, 'savings untouched');
+    assert.equal(p.socket.gemDeathBankLoss, 0);
+    assert.ok(!/savings/.test(msgs(p.socket)), 'no "Dying cost N of your savings" message');
+    bankM.setDeathLoss(true);
+    try { assert.equal(bankM.deathLossFor(deathBody({ banked: 5000, kept: 5000 })), 500, 'the old 10% when switched on'); }
+    finally { bankM.setDeathLoss(false); }
+    assert.ok(/ROYALE_SAVINGS_DEATH_LOSS === '1'/.test(read('server/game/terrain/bank.js')));
+});
+
+test('rule 2: everyone keeps 30% of the satchel through a death, 70% drops as loot', async () => {
+    assert.equal(gems.CARRY_KEEP, 0.3);
+    const p = deathBody({ carried: 1000 });
+    gems.dropGemsOnDeath(p, []);
+    assert.equal(p.socket.gemDeathKept, 300, 'kept 30%');
+    assert.equal(p.socket.gemDeathCarried, 700, 'dropped 70%');
+    assert.equal(p.socket._carryKeep, 300, 'comes back on the respawn');
+    assert.equal(gems.carryKeepFor(p, 333), 100, 'rounded');
+    // bots too: the share rides on the roster entry of the same bot coming back
+    const b = deathBody({ bot: true, carried: 1000 });
+    botRosterM.onBotGone(b, Date.now(), 'bot');
+    gems.dropGemsOnDeath(b, []);
+    const w = botRosterM._waiting.find(e => e.familyId === b.botFamilyId);
+    assert.ok(w && w.carry === 300, 'a bot keeps the same 30%');
+    botRosterM.resetRaid();
+    // the raid ending or leaving keeps nothing
+    const q = deathBody({ carried: 1000 }); q.deathCause = 'raidend';
+    assert.equal(gems.carryKeepFor(q, 1000), 0);
+    // a first death's half and the 30% never stack: the larger one
+    const orig = nxM.keepOnDeath;
+    try {
+        nxM.keepOnDeath = (body, c) => Math.floor(c * 0.5);
+        const n = deathBody({ carried: 1000 });
+        gems.dropGemsOnDeath(n, []);
+        assert.equal(n.socket.gemDeathKept, 500, 'half, not half + 30%');
+        assert.equal(n.socket._carryKeep, 0, 'the newcomer half is restored by newcomerDirector only');
+        nxM.keepOnDeath = (body, c) => Math.floor(c * 0.1);
+        const m = deathBody({ carried: 1000 });
+        gems.dropGemsOnDeath(m, []);
+        assert.equal(m.socket.gemDeathKept, 300, 'max(10%, 30%)');
+        assert.equal(m.socket._carryKeep, 200, 'only the part past the other rule');
+    } finally { nxM.keepOnDeath = orig; }
+    // respawn gives it back (dig_royale giveStarterKit), the death card says it
+    const dr = read('server/game/gamemodes/scripts/dig_royale.js');
+    assert.ok(/body\.socket\._carryKeep \| 0/.test(dr) && /back\.carry \| 0/.test(dr));
+    const SL = await import(path.join(REPO, 'public', 'client', 'scoreLogic.js'));
+    assert.equal(SL.deathLine({ pts: { b: 0, k: 0, c: 0 }, dl: { p: 0 } }, 700, 0, 300).sub,
+        'You kept 300 carried gems, dropped 700. Bank sooner to keep them all.');
+    assert.ok(/scoreText\.deathLine\(you, global\.finalCarried \| 0, global\.finalBankLoss \| 0, global\.finalNxKept \| 0\)/.test(read('public/client/app.js')));
+});
+
+test('rule 3: bots are 20% gentler on every human and fight each other about half the time', () => {
+    assert.equal(botDiffM.GENTLE_DEFAULT, 0.2);
+    const g = botDiffM.gentle({ isPlayer: true });
+    assert.equal(g, 0.2);
+    assert.equal(botDiffM.gentle({ isBot: true }), 0, 'bot vs bot unchanged');
+    assert.ok(Math.abs(botDiffM.gentleReact(g) - 1.2) < 1e-9, 'reactions 20% slower');
+    assert.ok(Math.abs(botDiffM.gentleAimErr(g) - 1.2) < 1e-9, 'aim error x1.2');
+    assert.ok(Math.abs(botDiffM.gentleStiff(g) - 0.85) < 1e-9, 'aim spring x0.85');
+    assert.ok(Math.abs(botDiffM.gentleLead(g) - 0.9) < 1e-9, 'lead x0.9');
+    assert.ok(Math.abs(botDiffM.gentleLock(g) - 0.8) < 1e-9, 'lock-on x0.8');
+    assert.ok(Math.abs(botDiffM.gentleRange(g) - 0.9) < 1e-9, 'fights start 10% closer');
+    assert.ok(Math.abs(botDiffM.gentlePenalty(g) - 100) < 1e-9, 'picked as if 100 farther');
+    // the coin: about half of the spells prefer a bot
+    assert.equal(botDiffM.PREFER_BOT, 0.5);
+    let yes = 0;
+    for (let i = 0; i < 2000; i++) { const io = {}; if (botDiffM.prefersBot(io, 0)) yes++; }
+    assert.ok(yes > 850 && yes < 1150, 'about half: ' + yes);
+    const io = {}; const first = botDiffM.prefersBot(io, 1000);
+    assert.equal(botDiffM.prefersBot(io, 1000 + 4000), first, 'one spell lasts a few seconds');
+    // wiring: only humans get it, player stats and shot damage untouched
+    const c = read('server/miscFiles/controllers.js');
+    assert.ok(/botDiff\.gentleReact\(botDiff\.gentle\(best(, now)?\)\)/.test(c), 'reaction');   // round 12: (best, now)
+    assert.ok(/botDiff\.gentleLead\(gentle\)/.test(c) && /botDiff\.gentleLock\(gentle\)/.test(c), 'lead and lock');
+    assert.ok(/root\.isPlayer && preferBot && root !== this\._lastEnemy \? botDiff\.PREFER_R : 0/.test(c), 'bot vs bot');
+    assert.equal(botDiffM.shotMult(), 1, 'damage the same for everyone');
+});
+
+test('rule 4: everyone mines 35% faster bare, Mining Power still adds over a flatter curve', () => {
+    const owner = pts => ({ skill: { raw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, pts], caps: [] } });
+    const sf = pts => miningM.skillFactor(owner(pts));
+    assert.ok(Math.abs(sf(0) - 0.54) < 1e-9, 'bare 0.4 -> 0.54');
+    assert.ok(Math.abs(sf(Config.skill_cap || 9) - 1.9) < 1e-9, 'full 2.0 -> 1.9');
+    assert.ok(sf(4) > sf(0) && sf(9) > sf(4), 'points still add');
+    // ramming: the same boost
+    const ram = pts => { const o = owner(pts); o.skill.raw[6] = 9; o.guns = new Map([[1, {}]]); return miningM.grindSecondsFor(o); };
+    assert.ok(Math.abs(ram(0) - 18.5 / 9 / 0.7425) < 1e-6, 'bare grind x1.35');
+    assert.ok(Math.abs(ram(9) - 18.5 / 9 / 1.9) < 1e-6);
+    // a sidekick digs like a bare Pounder on the new base
+    assert.ok(Math.abs(T('sidekickDig.js').POUNDER_REF - 0.1 * 4 * 0.54) < 1e-9);
+});

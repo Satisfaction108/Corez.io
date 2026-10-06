@@ -1124,7 +1124,7 @@ const CHAPTERS = [
             {
                 id: "dying", next: true,
                 title: "Dying",
-                text: "When you die you drop everything you're carrying and lose *10%* of your bank (*2,500* at most). After *3 seconds* you can press *Play again* to drop back in, at your base if you have one, with a *5 second shield* that goes away when you move or shoot.",
+                text: "When you die you drop *70%* of what you're carrying and keep the rest. Your bank is always safe. After *3 seconds* you can press *Play again* to drop back in, at your base if you have one, with a *5 second shield* that goes away when you move or shoot.",
                 praise: "ok",
             },
             {
