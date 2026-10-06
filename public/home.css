@@ -743,6 +743,50 @@ body.mobile h1 { font-size: 28px; }
 .wordmark.sm { font-size: 44px; -webkit-text-stroke-width: 7px; text-shadow: 0 4px 0 var(--ink), 2px 4px 0 var(--ink); }
 body.mobile .game-title { font-size: 42px; margin: 2px 0 8px; }
 body.mobile .game-logo { width: 56px; height: 56px; }
+/* the one-line hook under the title, led by the four ore colours */
+.hero-tag {
+    margin: 0 auto 2px;
+    max-width: 420px;
+    font: 500 14px/1.35 var(--ui);
+    color: var(--text2);
+    text-align: center;
+    text-wrap: balance;
+}
+.hero-tag b { color: var(--heading); font-weight: 600; }
+.hero-gems { display: inline-flex; gap: 3px; margin-right: 7px; vertical-align: -1px; }
+.hero-gems i {
+    width: 10px; height: 10px;
+    transform: rotate(45deg);
+    border: 2px solid var(--ink);
+    border-radius: 2px;
+    background: #eda766;
+}
+.hero-gems i:nth-child(2) { background: #7fb1f2; }
+.hero-gems i:nth-child(3) { background: #d98af0; }
+.hero-gems i:nth-child(4) { background: #6ff5a8; }
+body.mobile .hero-tag { font-size: 13px; }
+@media (orientation: landscape) and (max-height: 500px) {
+    body.mobile .hero-tag { display: none; }
+}
+/* Mine > Bank > Win under the hook: what a raid is, at a glance */
+.hero-loop {
+    display: flex; justify-content: center; align-items: center; gap: 18px;
+    list-style: none; margin: 8px auto 0; padding: 0;
+    font: 700 13px/1 var(--ui); color: var(--heading);
+}
+.hero-loop li {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px 4px 6px; border-radius: 999px;
+    background: var(--well); border: 1px solid var(--line-soft);
+}
+.hero-loop li { position: relative; }
+.hero-loop li + li::before {
+    content: ""; position: absolute; left: -13px; top: 50%; margin-top: -5px;
+    border: 5px solid transparent; border-left: 6px solid var(--text2); border-right: 0;
+}
+.hero-loop svg { width: 20px; height: 20px; flex: none; }
+.hero-loop .dw-ic { color: var(--gold); }
+body.mobile .hero-loop { display: none; }
 
 /* two-column row: name (left) + region dropdown (right) */
 .menu-row {
@@ -1257,6 +1301,8 @@ body.in-game .igc, body.in-game .igc-pip, .gt-stack {
 /* the death card's Play again (app.js updateRoyaleDomButtons): the menu's
    big green key; greyed while the 3 s wait counts down */
 .dw-igbtn.play { gap: 12px; border-radius: 14px; font: 400 26px/1 var(--display); letter-spacing: .02em; }
+.dw-igbtn.play .pa-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dw-igbtn.play { justify-content: center; }
 .dw-igbtn.play .pa-key { font: 700 12px/1 var(--ui); letter-spacing: .04em; padding: 5px 7px 4px; border-radius: 6px; background: rgba(0,0,0,.22); color: rgba(255,255,255,.9); text-shadow: none; }
 .dw-igbtn.play:disabled { cursor: default; font-size: 22px; color: var(--text2); text-shadow: none; filter: none; transform: none; }
 
@@ -1870,13 +1916,14 @@ body:not(.in-game) .toast.hide { animation-name: toastDown; }
 .dw-nav-btn[aria-disabled="true"]:hover { background: transparent; }
 .dw-nav-btn[aria-disabled="true"]:active { transform: none; }
 /* guests: the same panes are account-only, marked with a small padlock in
-   the corner (from CSS, so it's there on first paint) */
+   the corner (from CSS, so it's there on first paint). Not the shop: guests
+   can look through its View all (menu.js GUEST_OPEN). */
 .dw-nav-lock { display: none; position: absolute; right: -3px; bottom: -3px; width: 16px !important; height: 16px !important; }
 html[data-acct="guest"] .dw-nav-btn[aria-disabled="true"],
 .dw-nav-btn.locked { opacity: 1; cursor: pointer; }
-html[data-acct="guest"] .dw-nav-btn[data-pane]:not([data-pane="play"]) > .dw-ic:not(.dw-nav-lock),
+html[data-acct="guest"] .dw-nav-btn[data-pane]:not([data-pane="play"]):not([data-pane="shop"]) > .dw-ic:not(.dw-nav-lock),
 .dw-nav-btn.locked > .dw-ic:not(.dw-nav-lock) { filter: saturate(.35); opacity: .75; }
-html[data-acct="guest"] .dw-nav-btn[data-pane]:not([data-pane="play"]) .dw-nav-lock,
+html[data-acct="guest"] .dw-nav-btn[data-pane]:not([data-pane="play"]):not([data-pane="shop"]) .dw-nav-lock,
 .dw-nav-btn.locked .dw-nav-lock { display: block; }
 .dw-nav-btn.locked:hover .dw-nav-lock { transform: none; }
 /* the menu's own dialogs sit above the nav and chip, like everything else */
@@ -3391,7 +3438,7 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 @media (prefers-reduced-motion: reduce) {
     .ev-card, .ev-dot, #startButton.ev-live::after { animation: none; }
 }
-body.mobile .ev-card { margin-bottom: 10px; }
+body.mobile .ev-card { margin-bottom: 0; }
 body.mobile .ev-link { padding: 6px 0; margin: -6px 0; }
 
 /* ── Daily rewards under Play (client/account/retention.js) ──
@@ -3438,13 +3485,13 @@ body.mobile .ev-link { padding: 6px 0; margin: -6px 0; }
     border: 1px solid var(--line); border-radius: 7px;
     background: var(--input-bg);
 }
-.dy-pip .dy-gem { width: 14px; height: 14px; opacity: .55; }
+.dy-pip :is(.dy-gem, .dy-dust) { width: 14px; height: 14px; opacity: .55; }
 .dy-pip .dy-art { opacity: .7; }
 .dy-pip.done { background: color-mix(in srgb, var(--copper) 26%, var(--surface2)); }
-.dy-pip.done .dy-gem, .dy-pip.done .dy-art { opacity: .35; }
+.dy-pip.done :is(.dy-gem, .dy-dust), .dy-pip.done .dy-art { opacity: .35; }
 .dy-pip.next { border: 2px dashed var(--gold-dk); }
 .dy-pip.now { border: 2px solid var(--gold); background: color-mix(in srgb, var(--gold) 22%, var(--surface2)); animation: dyNow 1.6s ease-in-out infinite; }
-.dy-pip.now .dy-gem, .dy-pip.now .dy-art, .dy-pip.next .dy-gem, .dy-pip.next .dy-art { opacity: 1; }
+.dy-pip.now :is(.dy-gem, .dy-dust), .dy-pip.now .dy-art, .dy-pip.next :is(.dy-gem, .dy-dust), .dy-pip.next .dy-art { opacity: 1; }
 .dy-pip-ok {
     position: absolute; right: -4px; top: -5px;
     display: inline-flex; width: 14px; height: 14px; border-radius: 50%;
@@ -3478,8 +3525,43 @@ body.mobile .ev-link { padding: 6px 0; margin: -6px 0; }
 .dy-ask .dw-btn.sm { height: 30px; font-size: 14px; }
 @media (prefers-reduced-motion: reduce) { .dy-strip, .dy-pip.now, .dy-ask { animation: none; } }
 /* phones: just the line that matters */
-body.mobile .dy-strip { margin-top: 8px; padding: 6px 10px 7px; }
+body.mobile .dy-strip { margin-top: 0; padding: 6px 10px 7px; }
 body.mobile .dy-pips, body.mobile .dy-reasons { display: none; }
+
+/* every day's prize (retention.js openDays): the card opens it */
+.dy-strip { cursor: pointer; }
+.dy-strip :is(.dy-ask) { cursor: auto; }
+.dy-head .dy-all { margin-left: 8px; font-size: 12px; font-weight: 700; }
+.dw-modal.dyd-modal { position: relative; width: 380px; max-width: 100%; padding: 16px 16px 14px; }
+.dyd-h { display: flex; align-items: center; gap: 8px; margin: 2px 44px 10px 2px; color: var(--heading); font: 400 24px/1.1 var(--display); letter-spacing: .01em; }
+.dyd-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+.dyd-row {
+    display: grid; grid-template-columns: 44px 30px 1fr auto; align-items: center; gap: 8px;
+    min-height: 40px; padding: 5px 9px; box-sizing: border-box;
+    border: 1px solid var(--line); border-radius: 9px; background: var(--input-bg);
+}
+.dyd-row.done { background: color-mix(in srgb, var(--copper) 18%, var(--surface2)); }
+.dyd-row.done :is(.dyd-art, .dyd-txt) { opacity: .6; }
+.dyd-row.today { border: 2px solid var(--gold); background: color-mix(in srgb, var(--gold) 20%, var(--surface2)); }
+.dyd-row.next { border: 2px dashed var(--gold-dk); }
+.dyd-day { color: var(--text2); font: 700 12px/1 var(--ui); white-space: nowrap; }
+.dyd-art { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; }
+.dyd-art :is(.dy-gem, .dy-dust) { width: 20px; height: 20px; }
+.dyd-txt { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dyd-txt b { color: var(--heading); font: 700 13px/1.25 var(--ui); }
+.dyd-row:not(.item) .dyd-txt b { color: var(--dust); }
+.dyd-txt small { color: var(--text2); font: 600 11px/1.25 var(--ui); }
+.dyd-tag { flex: none; padding: 3px 7px 4px; border-radius: 7px; background: var(--ink); color: #fff4dc; font: 700 11px/1 var(--ui); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dyd-row.today .dyd-tag { background: var(--gold-dk); }
+.dyd-tag.done { display: inline-flex; width: 18px; height: 18px; padding: 0; border-radius: 50%; align-items: center; justify-content: center; background: var(--play); color: #fff; }
+.dyd-tag.done .dw-ic { width: 12px; height: 12px; }
+.dyd-rule { margin: 10px 2px 0; color: var(--text2); font: 600 12px/1.4 var(--ui); }
+.dyd-su { margin: 6px 2px 0; color: var(--text2); font: 600 12px/1.4 var(--ui); }
+@media (max-width: 420px), (max-height: 460px) {
+    .dw-layer:has(> .dyd-modal) { padding: 12px 16px; }
+    .dw-modal.dyd-modal { max-width: calc(100vw - 32px); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
+    .dyd-row { min-height: 34px; padding: 4px 8px; }
+}
 
 /* the welcome-back card: one short card, then straight into Play */
 .dw-modal.dy-modal { position: relative; width: 410px; padding: 20px 22px 18px; text-align: center; }
@@ -3487,21 +3569,23 @@ body.mobile .dy-pips, body.mobile .dy-reasons { display: none; }
 .dy-back-h { margin: 2px 40px 6px; color: var(--heading); font: 400 31px/1.05 var(--display); letter-spacing: .01em; }
 .dy-back-bank { display: inline-flex; align-items: center; gap: 6px; color: var(--text2); font: 600 14px/1.2 var(--ui); }
 .dy-back-bank b { color: var(--heading); }
-.dy-back-bank .dy-gem { width: 18px; height: 18px; }
+.dy-back-bank :is(.dy-gem, .dy-dust) { width: 18px; height: 18px; }
 .dy-pips.dy-sz-big { gap: 5px; margin: 14px 0 12px; }
 .dy-pips.dy-sz-big .dy-pip { flex-direction: column; gap: 2px; height: 70px; border-radius: 9px; }
-.dy-pips.dy-sz-big .dy-gem { width: 22px; height: 22px; }
+.dy-pips.dy-sz-big :is(.dy-gem, .dy-dust) { width: 22px; height: 22px; }
 .dy-pip-d { color: var(--text2); font: 700 10px/1 var(--ui); letter-spacing: .02em; }
 .dy-pip-g { color: var(--text); font: 700 11px/1 var(--ui); }
 .dy-pip.now .dy-pip-d, .dy-pip.now .dy-pip-g { color: var(--heading); }
 .dy-pip.item:not(.done) .dy-pip-g { color: var(--gold); }
+.dy-pip:not(.item):not(.done) .dy-pip-g { color: var(--dust); }
+.dy-what b.dy-dust-amt, .dy-back-bank b.dy-dust-amt { color: var(--dust); }
 .dy-big {
     display: flex; align-items: center; gap: 12px;
     padding: 10px 14px; text-align: left;
     border: 1px solid var(--line); border-radius: 12px;
     background: var(--well);
 }
-.dy-big > .dy-gem { flex: none; width: 40px; height: 40px; }
+.dy-big > :is(.dy-gem, .dy-dust) { flex: none; width: 40px; height: 40px; }
 .dy-big > .dy-art { flex: none; }
 .dy-big-k { color: var(--text2); font: 700 12px/1.2 var(--ui); letter-spacing: .03em; text-transform: uppercase; }
 .dy-big-v { margin-top: 3px; color: var(--gold); font: 400 24px/1.05 var(--display); letter-spacing: .01em; }
@@ -3532,6 +3616,43 @@ body.mobile .dy-pips, body.mobile .dy-reasons { display: none; }
 #dwFinaleDiscord:hover { filter: brightness(1.08); }
 #dwFinaleDiscord .dw-ic { width: 22px; height: 22px; --ic-sw: 0; --ic-discord: #7c87ff; }
 #dwFinaleDiscord small { display: block; color: #a597b0; font: 600 11.5px/1.2 Rubik, Ubuntu, sans-serif; }
+
+/* ── The come-back card left of the menu (#homeLeft): Raid Night and the
+   daily rewards, out of the main card so it keeps just name, mode and Play.
+   The main card stays centred: this one hangs off its left edge the way
+   the quests note hangs off the right. Where there's no room beside it
+   (narrow windows, phones) it drops under the menu at the card's width.
+   Hidden while both cards in it are (first-timers before the account
+   bundle loads, or nothing to show). ── */
+.home-row { position: relative; width: fit-content; max-width: 100%; margin: 0 auto; }
+.home-left {
+    position: absolute;
+    top: 0;             /* the card's top margin collapses through .home-row */
+    right: calc(100% + 16px);
+    /* what's left between the left rail and the card (half the window, less
+       half the 410px card, the 16px gap and the 76px rail), 220-300px */
+    width: clamp(220px, calc(50vw - 297px), 300px);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: inset 0 1px 0 var(--line-soft), var(--panel-cast, 0 4px 0 var(--drop));
+    transition: background-color .25s;
+    z-index: 1;
+}
+[data-theme="light"] .home-left { border: 1.5px solid var(--edge); }
+.home-left:not(:has(> :not([hidden]))), body.in-game .home-left { display: none; }
+.home-left > .ev-card, .home-left > .dy-strip { margin: 0; }
+/* no room beside the card: under it, as wide as it (the width: 0 keeps its
+   text from widening the row) */
+@media (max-width: 1040px) {
+    .home-left { position: static; width: 0; min-width: 100%; margin-top: 12px; }
+}
+body.mobile .home-left { position: static; width: 0; min-width: 100%; margin-top: 2px; padding: 10px; gap: 8px; }
 
 /* ── Daily Quests (beside the menu card): a note pinned next to it ── */
 .startMenu { position: relative; }
@@ -4785,13 +4906,16 @@ body.mobile #dwWelcome { padding: calc(16px + var(--sa-t)) calc(12px + var(--sa-
     body.mobile .startMenuSlidingContent > .game-title { grid-row: 1; font-size: 34px; margin: 2px 0 0; }
     /* Play lines up with the fields, so a tall duo party never pushes it down */
     body.mobile .startMenuSlidingContent > .startButtonHolder { grid-column: 2; grid-row: 2 / span 5; margin-top: 26px; }
-    /* with the Raid Night card on top, the card lines up with the labels instead */
-    body.mobile .startMenuSlidingContent > .startButtonHolder:has(> .ev-card:not([hidden])) { margin-top: 8px; }
-    body.mobile .ev-card { padding: 7px 10px 8px; margin-bottom: 8px; }
+    /* the come-back card under the menu: Raid Night and the daily rewards side by side */
+    body.mobile .home-left { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: stretch; }
+    body.mobile .home-left:not(:has(> :not([hidden]))) { display: none; }
+    body.mobile .ev-card { padding: 7px 10px 8px; margin-bottom: 0; }
     body.mobile .ev-title { font-size: 17px; }
     body.mobile .ev-blurb { margin-top: 3px; font-size: 11.5px; }
     body.mobile .ev-links { margin-top: 4px; }
-    body.mobile .startButtonHolder:has(> .ev-card:not([hidden])) #startButton { height: 56px; }
+    /* the left rail fits a 390px tall screen: slightly smaller buttons, tighter gaps */
+    body.mobile #homeSidebar, body.mobile #homeSidebar .social-buttons { gap: 6px; }
+    body.mobile :is(#homeSettingsBtn, #homeChangelogBtn, #homeSidebar .social-btn) { width: 46px; height: 46px; }
     body.mobile .region-dropdown-menu { position: absolute; }
     /* two slots side by side so Add a mate stays on screen; its popover is a
        small sheet in the middle of the screen */
@@ -4891,3 +5015,68 @@ html[data-acct="user"] .name-hint { display: none; }
 #playerNameInput.name-bad + .name-hint { color: #ff8a7a; }
 @keyframes nameNudge { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
 @media (prefers-reduced-motion: reduce) { #playerNameInput.name-bad { animation: none; } }
+
+/* ── Shop: View all (client/account/shopGallery.js) ─────────────────────
+   A look-only gallery of the whole catalog: the shop's cards, minus the
+   click (no hover lift, no pointer), and category chips to narrow it. */
+.gal-note { margin: 12px 2px 0; color: var(--text2); font: 600 12.5px/1.4 var(--ui); }
+.gal-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.gal-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; margin: 0; padding: 0 10px;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--face);
+    color: var(--text2);
+    font: 700 13px/1 var(--ui); letter-spacing: .01em;
+    cursor: pointer;
+    transition: background-color 90ms, color 90ms;
+}
+.gal-chip:hover { color: var(--heading); }
+.gal-chip.on { background: var(--btn); color: var(--heading); box-shadow: 0 2px 0 var(--drop); }
+.gal-chip:focus-visible { outline: 3px solid var(--copper); outline-offset: 2px; }
+.gal-n { min-width: 18px; padding: 2px 5px 3px; box-sizing: border-box; border-radius: 6px; background: var(--ink); color: #fff4dc; font: 700 11px/1 var(--ui); text-align: center; }
+.gal-sec .shop-h { display: flex; align-items: baseline; gap: 8px; }
+.gal-hn { color: var(--text2); font: 700 13px/1 var(--ui); }
+.shop-grid.gal { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.shop-grid.gal .shop-card,
+.shop-grid.gal .shop-card:hover,
+.shop-grid.gal .shop-card:active,
+.shop-grid.gal .shop-card:nth-child(odd):hover,
+.shop-grid.gal .shop-card:nth-child(even):hover { cursor: default; transform: none; box-shadow: 0 3px 0 var(--drop); transition: none; }
+.shop-grid.gal .shop-card:hover::after { content: none; }
+.gal-prev { aspect-ratio: 160 / 110; overflow: hidden; }
+.gal-foot { justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.gal-tag {
+    padding: 1px 6px 2px;
+    border: 1.5px solid currentColor; border-radius: 5px;
+    color: var(--rc);
+    font: 700 11px/1.3 var(--ui);
+}
+.shop-owned.gal-owned { height: 19px; padding: 0 5px; border-width: 2px; font-size: 12px; transform: rotate(-4deg); }
+.gal-guest { justify-content: space-between; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--face); }
+.gal-guest-p { min-width: 0; flex: 1 1 200px; color: var(--text); font: 600 13.5px/1.4 var(--ui); }
+@media (max-width: 520px) {
+    .shop-grid.gal { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .shop-grid.gal .shop-name { font-size: 16px; }
+    .shop-grid.gal .shop-meta { padding: 7px 9px 9px; }
+}
+/* a phone on its side: the panel is short, so smaller cards, more a row */
+@media (max-height: 500px) and (min-width: 521px) {
+    .shop-grid.gal { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+    .shop-grid.gal .shop-name { font-size: 16px; }
+    .gal-note { display: none; }
+}
+
+/* death card: Respawn [Enter] and Respawn as <Tank> in bright magma
+   (round 10), white words with a dark outline, a darker rim and lip */
+#royaleDomPlayAgain:not(:disabled), #royaleDomPlayBuild:not(:disabled) {
+    --face-c: #ff5326; --lip-c: #9e2410;
+    background-color: #ff5326;
+    background-image: linear-gradient(#ff6a2b, #ff3d1f);
+    border: 2px solid #8a1f0c;
+    color: #fff;
+    text-shadow: -1px -1px 0 #4a1206, 1px -1px 0 #4a1206, -1px 1px 0 #4a1206, 1px 1px 0 #4a1206, 0 2px 0 #4a1206;
+    box-shadow: inset 0 -5px 0 #b02a10, inset 0 1px 0 rgba(255,255,255,.35), 0 4px 0 var(--drop), 0 0 14px rgba(255,90,40,.28);
+}
+#royaleDomPlayAgain:not(:disabled):hover, #royaleDomPlayBuild:not(:disabled):hover { filter: brightness(1.07); }
+#royaleDomPlayAgain:not(:disabled) .pa-key { background: rgba(60,10,0,.32); }

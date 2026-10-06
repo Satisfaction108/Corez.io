@@ -295,11 +295,11 @@ async function boot() {
     hub.register('account', { title: 'Account', render: account.render, onClose: account.onClose });
     hub.register('shop', { title: 'Shop', render: shop.render, onClose: shop.onClose });
     hub.register('locker', { title: 'Locker', render: locker.render, onClose: locker.onClose });
-    // the leaderboard is open to guests; every other pane needs an account
+    // the leaderboard and the shop (its look-only View all) are open to guests
     const openPane = (p, opts) => {
         if (welcome.isOpen()) return;
         if (p === 'play') return hub.close();
-        if (p === 'leaderboard' || store.get('user')) hub.open(p, opts);
+        if (p === 'leaderboard' || p === 'shop' || store.get('user')) hub.open(p, opts);
     };
     const openProfile = (from) => (p) => openPane('profile', { u: p.userId || p.username, from });
     hub.register('friends', { title: 'Friends', render: friendsPane.render, onClose: friendsPane.onClose });
@@ -324,6 +324,7 @@ async function boot() {
     try { party.init(); } catch (e) { console.error('[party] init failed', e); }
     shop.init({
         refreshMe: () => refresh(true),
+        onLogin: () => { if (store.get('offline')) ui.toast('Accounts are down rn. try again soon'); else welcome.open('choose', { dismissable: true }); },
         openLocker: (tab) => { if (tab) locker.setTab(tab); openPane('locker'); },
         // the chip shows the new balance at once, before /api/me answers
         onBalance(dust) { const u = store.get('user'); if (u && typeof dust === 'number' && u.dust !== dust) setUser(Object.assign({}, u, { dust })); },

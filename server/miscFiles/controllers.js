@@ -215,7 +215,14 @@ class io_listenToPlayer extends IO {
             let fresh = bits & ~this._heldAtShield;
             // Second Wind (shop gear): only shooting counts for a while longer
             if ((this.body.spawnMoveShieldUntil || 0) > Date.now()) fresh &= 16 | 32;
-            if (!grace && fresh) this.body.invuln = false;
+            // round 9 timed shields (quick-death respawn 8 s, post-bank 3 s): moving keeps
+            const endAt = this.body.shieldEndAt || 0;
+            if (endAt && (Date.now() >= endAt || (this.body.shootEndsShield && (fresh & (16 | 32))))) {
+                this.body.invuln = false;
+                this.body.shieldEndAt = 0;
+                this.body.shootEndsShield = false;
+                if (graceUntil > Date.now()) this.body.spawnGraceUntil = 0;
+            } else if (!grace && fresh) this.body.invuln = false;
         }
         this.body.autoOverride = this.player.command.override;
         // sidearm guns fire from their own key, not from alt (drone repel)
@@ -496,11 +503,16 @@ class io_nearestDifferentMaster extends IO {
         // spawn's bot grace too
         if ((myMaster.isBot || myMaster.isRoyaleBoss) && inBotGrace(theirMaster, Date.now())) return false;
         if (myMaster.isBot && softSpared(myMaster, theirMaster, Date.now())) return false;
-        // first raid (terrain/newcomerDirector.js): bosses never pick them,
-        // and the scariest bot classes leave them be for a while
-        // a first-minutes player is left alone until they've picked the fight
-        if (myMaster.isRoyaleBoss && theirMaster.nxBossSafe && !(bossGuard.angerOf(myMaster, theirMaster) > 0)) return false;
+        // a fresh life (anyone's) or a raid's first two minutes: bosses don't start on
+        if (myMaster.isRoyaleBoss && theirMaster.isPlayer && bossGuard.freshSpared(theirMaster)) return false;
+        // first raid (terrain/newcomerDirector.js): the scariest bot classes leave them
         if (myMaster.isBot && theirMaster.nxScaryUntil && newcomer.scarySpared(myMaster, theirMaster, Date.now())) return false;
+        // a protected player banking, someone banking vs their killer or a far bigger
+        if (myMaster.isBot && fairPlay.guarded(theirMaster) && fairPlay.spared(myMaster, theirMaster, Date.now())) return false;
+        // a bot that farmed this player leaves them be
+        if (myMaster.isBot && theirMaster.isPlayer && fairPlay.farmed(myMaster, theirMaster, Date.now())) return false;
+        if (myMaster.isBot && theirMaster.isBot && myMaster !== theirMaster &&
+            ((theirMaster._fpBait && fairPlay.baitOnDuty(theirMaster)) || (myMaster._fpBait && fairPlay.baitOnDuty(myMaster)))) return false;
         // Core truce (coreFinale.js): a bot's guns and drones leave players
         // alone unless that player hit the bot in the last few seconds
         // (a crowned player is never under it: crowns are fair game)
@@ -560,7 +572,8 @@ class io_nearestDifferentMaster extends IO {
         return finalTargets;
     }
     think(input) {
-        if (this.body.isBot && this.body._digWarsCollecting) {
+        if ((this.body.isBot && this.body._digWarsCollecting) || this.body.rockOnly) {
+            // rockOnly (raid perk drones): never chase a tank, they chew rock
             this.targetLock = undefined;
             return {};
         }
@@ -1394,6 +1407,8 @@ const tactics = require('./botTactics.js');
 const bossGuard = require('../game/terrain/bossGuard.js');
 const activity = require('../game/network/activity.js');
 const newcomer = require('../game/terrain/newcomerDirector.js');
+// who bots leave alone (vaults, banking, bullies, small fish, first kills) and
+const fairPlay = require('../game/terrain/fairPlay.js');
 // Shop pads are a no-go zone for bots (they cannot buy, and a bot on the pad
 // shoves the shopper). Refreshed once a second.
 let shopPadCache = { at: 0, pads: [] };
@@ -1473,9 +1488,20 @@ function botSoft(root, now) {
 function softSpared(bot, target, now) {
     if (!botSoft(target, now)) return false;
     const fm = firstMinutes();
-    if (bot._lastDamageSource === target && now - (bot._lastDamageAt || 0) < (fm.SOFT_HIT_MS || 4000)) return false;
+    // round 9: shot for 25% of the bot's health (fairPlay.provoked), not once
+    if ((!fairPlay.on('hit25') || fairPlay.provoked(bot, target)) &&
+        bot._lastDamageSource === target && now - (bot._lastDamageAt || 0) < (fm.SOFT_HIT_MS || 4000)) return false;
     const r = (fm.SOFT_CLOSE_R || 320) / 320 * botDiff.softCloseR(botDiff.of(target, now));
     return (target.x - bot.x) ** 2 + (target.y - bot.y) ** 2 > r * r;
+}
+// Round 9 target scoring: a bot mostly fights tanks near its own size
+const SIZE_PREF = process.env.ROYALE_BOT_SIZE_PREF !== '0';
+const SIZE_HI = 2, SIZE_LO = 0.5, SIZE_FLOOR = 150, SIZE_PENALTY = 420;
+function sizePenalty(bot, target) {
+    if (!SIZE_PREF || !bot || !target || !bot.isBot) return 0;
+    const b = Math.max(SIZE_FLOOR, +bot._fpPts || 0), r = Math.max(SIZE_FLOOR, +target._fpPts || 0);
+    const ratio = r / b;
+    return ratio > SIZE_HI || ratio < SIZE_LO ? SIZE_PENALTY : 0;
 }
 // how many bots may be on one player at once (a third on a rich veteran)
 function hunterCap(root, now) {
@@ -1954,6 +1980,8 @@ class io_digWarsGoals extends IO {
     // recent fight against them proved it.
     feared(enemy, now) {
         if (!enemy) return false;
+        // a small fish next to a protected player stands and trades (fairPlay)
+        if (this.body.botMinnow && fairPlay.minnowDuel(this.body, enemy, now)) return false;
         if ((this.fearUntil.get(enemy.id) || 0) > now) return true;
         return this.threatRatio(enemy) > 1.45;
     }
@@ -1998,9 +2026,17 @@ class io_digWarsGoals extends IO {
             const mine = digWarsOutposts.getOutposts().find(site => site.ownerId === this.body.id || digWarsOutposts.isOwner(site, this.body));
             if (mine) return mine;
             const vaults = digWarsVault.getVaults();
+            // fairPlay: not the one we were just kicked off, nor one a protected player is
+            const now = Date.now(), body = this.body;
+            const players = fairPlay.on('vault') ? botWorldScan().tanks.filter(e => e.isPlayer && e._fpProtect) : null;
             let best = null, bestD = Infinity;
             for (const vault of vaults) {
-                const d = this.distanceTo(vault);
+                let d = this.distanceTo(vault);
+                if (players) {
+                    if (body._padReentryPad === vault && (body._padReentryUntil || 0) > now) d += 2500;
+                    if (body._fpMoveOn && fairPlay.avoidVault(body, vault, now)) d += 2500;
+                    if (players.length && !fairPlay.vaultFreeFor(body, vault, players, now)) d += 4000;
+                }
                 if (d < bestD) { bestD = d; best = vault; }
             }
             return best;
@@ -2086,7 +2122,7 @@ class io_digWarsGoals extends IO {
         this.aimAngle = wrapAngle(this.aimAngle + this.aimVel);
         if (now - this.aimErrorAt > 110) {
             this.aimErrorAt = now;
-            this.aimError = ran.gauss(0, botDiff.aimError(skill, diff));
+            this.aimError = ran.gauss(0, botDiff.aimError(skill, diff)) * (this._aimErrMult || 1);
         }
         const tremor = Math.sin(now / 47 + (this.body.id % 9)) * 0.006 * (1.2 - skill);
         const a = this.aimAngle + this.aimError + tremor;
@@ -2101,6 +2137,12 @@ class io_digWarsGoals extends IO {
             const d = botDiff.of(target ? this.rootOf(target) : null, now);
             this.pauseUntil = now + botDiff.pauseMs(this.skill(), d, Math.random());
             this.burstUntil = this.pauseUntil + botDiff.burstMs(d, Math.random());
+            // a first-kill bait at its host: short bursts, long gaps (fairPlay)
+            if (this.body._fpBait && target && fairPlay.isBaitPair(this.body, this.rootOf(target), now)) {
+                const [lo, hi] = fairPlay.TUNE.FIRST_PAUSE_MS;
+                this.pauseUntil = now + lo + Math.random() * (hi - lo);
+                this.burstUntil = this.pauseUntil + botDiff.burstMs(d, Math.random()) * fairPlay.TUNE.FIRST_BURST;
+            }
         }
         return now >= this.pauseUntil;
     }
@@ -2124,6 +2166,12 @@ class io_digWarsGoals extends IO {
         let skill = this.skill();
         if (entity.isPlayer && (entity.socket?.botMercyUntil || 0) > now) skill *= 0.45;
         else if (botSoft(entity, now)) skill *= botDiff.softAim(diff);
+        // a bot running away with the raid, at a protected player (fairPlay)
+        if (this.body._fpRunaway && entity._fpProtect) skill *= fairPlay.aimMult(this.body, entity, now);
+        // a first-kill bait at its host: a beginner's aim (fairPlay)
+        const bait = !!this.body._fpBait && fairPlay.isBaitPair(this.body, entity, now);
+        if (bait) skill *= fairPlay.TUNE.FIRST_AIM_SKILL;
+        this._aimErrMult = bait ? fairPlay.TUNE.FIRST_AIM_ERR : 1;
         // Lead time is capped at 1.2s; a lower cap undershoots moving targets
         // past medium range.
         const lead = speed > 0 ? util.clamp(distance / speed, 0, 1.2) * botDiff.leadShare(skill, diff) : 0.2;
@@ -2215,6 +2263,12 @@ class io_digWarsGoals extends IO {
             if (softSpared(body, root, now)) continue;
             // first raid: no X-Hunter / Penta / Octo class bot on them yet
             if (root.nxScaryUntil && newcomer.scarySpared(body, root, now)) continue;
+            // fairPlay: a protected player on the way in to bank, and grown bots never pick a
+            if (fairPlay.guarded(root) && fairPlay.spared(body, root, now)) continue;
+            // and nobody we've killed again and again lately)
+            if (root.isPlayer && fairPlay.farmed(body, root, now)) continue;
+            // a first-kill bait on duty: nobody else's, and it minds its host
+            if (root.isBot && ((root._fpBait && fairPlay.baitOnDuty(root, now)) || (body._fpBait && fairPlay.baitOnDuty(body, now)))) continue;
             // enough bots on this player already: leave them to it
             // (self-defence still wins below through the attacker override)
             if (root.isPlayer && botsOn(root, body) >= hunterCap(root, now)) continue;
@@ -2233,7 +2287,11 @@ class io_digWarsGoals extends IO {
                 + (root.isPlayer ? botDiff.targetPenalty(rd) : 0)
                 + (soft ? firstMinutes().NEW_TARGET_PENALTY : 0)
                 - tactics.carrierPull(root, lock)
-                - (lock > 0 && tactics.isEnabled() ? tactics.thirdParty(root, now) * 320 * lock : 0);
+                - (lock > 0 && tactics.isEnabled() ? tactics.thirdParty(root, now) * 320 * lock : 0)
+                // a bot running away with the raid draws the others (fairPlay)
+                - (root._fpRunaway ? fairPlay.gangPull(body, root) : 0)
+                // round 9: mostly tanks near our own size
+                + sizePenalty(body, root);
             // the line of sight (a terrain raycast) can only add to the
             // score, so it's only worth casting for someone who could win
             if (base >= bestScore) continue;
@@ -2256,7 +2314,14 @@ class io_digWarsGoals extends IO {
             ? mSrc : null;
         if (mateAttacker && !inBotGrace(mateAttacker, now)) best = mateAttacker;
         if (attacker && this.isEnemy(attacker) && attacker.health?.amount > 0 &&
-            Math.hypot(attacker.x - body.x, attacker.y - body.y) < fov * 1.25) best = attacker;
+            Math.hypot(attacker.x - body.x, attacker.y - body.y) < fov * 1.25 &&
+            // a protected player under the 25% rule stays ignored until provoked)
+            !(fairPlay.on('hit25') && (softSpared(body, attacker, now) || (fairPlay.guarded(attacker) && fairPlay.spared(body, attacker, now))))) best = attacker;
+        // a first-kill bait keeps its eyes on its host (fairPlay)
+        if (body._fpBait) {
+            const host = fairPlay.baitHost(body, now);
+            if (host && !inBotGrace(host, now) && Math.hypot(host.x - body.x, host.y - body.y) < fov * 1.4) best = host;
+        }
         view.mateAttacker = mateAttacker;
 
         if (best !== this._lastEnemy) {
@@ -2511,11 +2576,17 @@ class io_digWarsGoals extends IO {
 
     // ── deciding ─────────────────────────────────────────────────────────
     bankTarget() {
-        return Math.min(this.bankAt, (this.body.gemCap || 4000) * 0.9);
+        return Math.min(this.bankAt, (this.body.gemCap || 8000) * 0.9);
     }
 
     retreatPoint() {
         const body = this.body, threat = this.view.enemy;
+        // Dig Royale (fairPlay): no running home to a vault to heal laps round it
+        if (Config.dig_royale && fairPlay.on('vault')) {
+            if (!threat) return fairPlay.outsideVaults({ x: body.x, y: body.y });
+            const away = Math.hypot(body.x - threat.x, body.y - threat.y) || 1;
+            return fairPlay.outsideVaults(this.safePoint(body.x + (body.x - threat.x) / away * 1000, body.y + (body.y - threat.y) / away * 1000));
+        }
         const vault = this.ownVault();
         if (!threat) return vault ? { x: vault.x, y: vault.y } : { x: body.x, y: body.y };
         const away = Math.hypot(body.x - threat.x, body.y - threat.y) || 1;
@@ -2561,11 +2632,14 @@ class io_digWarsGoals extends IO {
         // another bot is only picked on when it is the weaker one, so the
         // winners get big instead of every bot trading lives)
         const diff = botDiff.of(target, now);
-        if (this.threatRatio(target) > (target.isPlayer ? botDiff.initThreat(diff) : BOT_FIGHT_THREAT) ||
-            (this.fearUntil.get(target.id) || 0) > now) return false;
+        // fairPlay: a small fish takes on a protected player close by
+        const duel = this.body.botMinnow && fairPlay.minnowDuel(this.body, target, now);
+        const threatCap = target.isPlayer ? botDiff.initThreat(diff) : BOT_FIGHT_THREAT * (target._fpRunaway ? fairPlay.gangThreat(this.body, target) : 1);
+        if (!duel && (this.threatRatio(target) > threatCap ||
+            (this.fearUntil.get(target.id) || 0) > now)) return false;
         // nor one already wounded
         const health = this.body.health.max ? this.body.health.amount / this.body.health.max : 1;
-        if (health < 0.55) return false;
+        if (health < (duel ? 0.3 : 0.55)) return false;
         // Someone in an outpost pocket behind its walls is not a duel; the
         // objective logic sieges the outpost itself.
         if (!this.clearShot(target) && !Config.dig_royale) {
@@ -2574,6 +2648,11 @@ class io_digWarsGoals extends IO {
                 if (dx * dx + dy * dy < 300 * 300) return false;
             }
         }
+        // no bot-on-bot brawls round a vault (fairPlay): the crossfire camps it for
+        if (!target.isPlayer && Config.dig_royale &&
+            (fairPlay.inRing(this.body.x, this.body.y) || fairPlay.inRing(target.x, target.y))) return false;
+        // a first-kill bait on duty is its host's (fairPlay)
+        if (!target.isPlayer && target._fpBait && fairPlay.baitOnDuty(target, now)) return false;
         if (!target.isPlayer) return true;
         const attackedMe = this.body._lastDamageSource === target &&
             now - (this.body._lastDamageAt || 0) < 3000;
@@ -2581,6 +2660,8 @@ class io_digWarsGoals extends IO {
         // fresh spawn (bot grace), or the soft window: bots don't start it
         if (inBotGrace(target, now) || botSoft(target, now)) return false;
         if (target.nxScaryUntil && newcomer.scarySpared(this.body, target, now)) return false;
+        if (fairPlay.guarded(target) && fairPlay.spared(this.body, target, now)) return false;
+        if (fairPlay.farmed(this.body, target, now)) return false;
         // recently gave up chasing them
         if ((this.playerBreakUntil.get(target.id) || 0) > now) return false;
         // Mercy: a player dying repeatedly to bots is left alone until they
@@ -2640,11 +2721,28 @@ class io_digWarsGoals extends IO {
             if (flee && !(view.enemy && view.enemyDistance < 1100))
                 return { kind: 'survive', point: flee };
         }
+        // a first-kill bait (fairPlay): over to its host, then into it and no running off
+        if (Config.dig_royale && body._fpBait && !human) {
+            const host = fairPlay.baitHost(body, now);
+            if (host && !inBotGrace(host, now)) {
+                const d = this.distanceTo(host);
+                if (d < fairPlay.TUNE.FIRST_FIGHT_R) return { kind: 'fight', target: host };
+                const a = Math.atan2(body.y - host.y, body.x - host.x);
+                return { kind: 'explore', point: { ...this.safePoint(host.x + Math.cos(a) * 600, host.y + Math.sin(a) * 600), until: now + 4000 } };
+            }
+        }
 
-        // below a quarter health, disengage regardless of temperament
-        if (health < 0.25 || (threatened && (health < this.retreatAt() || (outnumbered && health < 0.6) ||
-            (this.feared(view.enemy, now) && health < 0.75))))
+        // below a quarter health, disengage regardless of temperament (a small fish
+        const duel = body.botMinnow && view.enemy && fairPlay.minnowDuel(body, view.enemy, now);
+        if (duel ? health < fairPlay.TUNE.MINNOW_DUEL_RETREAT
+            : (health < 0.25 || (threatened && (health < this.retreatAt() || (outnumbered && health < 0.6) ||
+            (this.feared(view.enemy, now) && health < 0.75)))))
             return { kind: 'survive', point: this.retreatPoint() };
+        // killed someone at a vault: grab the loot, then move on (fairPlay)
+        if (Config.dig_royale && !human && body._fpMoveOn) {
+            const mo = fairPlay.moveOnPoint(body, now);
+            if (mo) return { kind: 'explore', point: { ...this.safePoint(mo.x, mo.y), until: mo.until }, vaultLeave: true };
+        }
         const back = this.comebackTarget(now, health);
         if (back) return { kind: 'fight', target: back };
         // bank on threshold, and also periodically
@@ -2666,6 +2764,11 @@ class io_digWarsGoals extends IO {
         if (attackedBy && !(outnumbered && health < 0.55) &&
             !(this.feared(attackedBy, now) && health < 0.85))
             return { kind: 'fight', target: attackedBy };
+        // no hanging round a vault without banking (fairPlay): move on
+        if (Config.dig_royale && !human) {
+            const leave = fairPlay.lingerCheck(body, false, now);
+            if (leave) return { kind: 'explore', point: { ...this.safePoint(leave.x, leave.y), until: leave.until }, vaultLeave: true };
+        }
         // bot duo: someone is on our partner, go help
         if (view.mateAttacker && health > 0.35 && this.distanceTo(view.mateAttacker) < 1500 &&
             !(this.feared(view.mateAttacker, now) && health < 0.6))
@@ -2735,6 +2838,7 @@ class io_digWarsGoals extends IO {
         if (!cb || now > cb.until || health < 0.8 || !tactics.isEnabled()) return null;
         const t = cb.target;
         if (!t || t.isDead?.() || !this.isEnemy(t) || inBotGrace(t, now) || softSpared(this.body, t, now) ||
+            (fairPlay.guarded(t) && fairPlay.spared(this.body, t, now)) || fairPlay.farmed(this.body, t, now) ||
             this.distanceTo(t) > 1500 || inEnemyBase(this.body.team, t.x, t.y)) { this.comeback = null; return null; }
         if (t.isPlayer && botDiff.lockShare(botDiff.of(t, now)) <= 0) { this.comeback = null; return null; }
         if (!this.canInitiateFight(t, now)) return null;
@@ -2751,6 +2855,8 @@ class io_digWarsGoals extends IO {
         this.bossPick = null;
         const body = this.body;
         if (health < 0.7 || this.isRammer() || (body.carriedGems || 0) >= this.bankTarget() * 0.7) return null;
+        // a first-kill fish never goes after the boss (terrain/fairPlay.js fodder)
+        if (body._fpFodder && fairPlay.isFodder(body)) return null;
         let boss = null;
         try { boss = require('../game/terrain/bosses.js').current(); } catch { return null; }
         if (!boss || (this.fearUntil.get(boss.id) || 0) > now || this.distanceTo(boss) > 1800) return null;
@@ -2823,8 +2929,21 @@ class io_digWarsGoals extends IO {
                 if (!goal.target || goal.target.isDead?.() || !(goal.target.health?.amount > 0) ||
                     this.distanceTo(goal.target) >= (body.fov || 1200) * 1.4 ||
                     inEnemyBase(body.team, goal.target.x, goal.target.y)) return false;
+                // a protected player made it to a vault's approach: let them bank
+                if (fairPlay.guarded(goal.target) && fairPlay.spared(body, goal.target, now)) {
+                    this.playerBreakUntil.set(goal.target.id, now + 8000);
+                    return false;
+                }
+                // killed them twice lately: fought back while shot, now let them go
+                if (goal.target.isPlayer && fairPlay.farmed(body, goal.target, now)) {
+                    this.playerBreakUntil.set(goal.target.id, now + 15000);
+                    return false;
+                }
+                // a small fish trading shots with a protected player sees it through (fairPlay)
+                const duel = body.botMinnow && fairPlay.minnowDuel(body, goal.target, now);
+                if (duel) fairPlay.noteDuel(goal.target, now);
                 // a losing 1v2 is a fight to leave
-                if (this.view.enemies > this.view.allies + 1 &&
+                if (!duel && this.view.enemies > this.view.allies + 1 &&
                     (body.health.max ? body.health.amount / body.health.max : 1) < 0.55) return false;
                 // Score the trade while it runs: if our health drains much
                 // faster than theirs, leave and fear them for a while so the
@@ -2834,7 +2953,7 @@ class io_digWarsGoals extends IO {
                     ? goal.target.health.amount / goal.target.health.max : 1;
                 const myLoss = (this.fightMyHp ?? myHp) - myHp;
                 const theirLoss = (this.fightTheirHp ?? theirHp) - theirHp;
-                if (now - this.goalStartedAt > 2000 && myHp < 0.7 &&
+                if (!duel && now - this.goalStartedAt > 2000 && myHp < 0.7 &&
                     myLoss > 0.2 && myLoss > theirLoss * 1.5) {
                     if (this.fearUntil.size > 12) {
                         for (const [id, until] of this.fearUntil) if (until < now) this.fearUntil.delete(id);
@@ -3074,6 +3193,8 @@ class io_digWarsGoals extends IO {
         }
         const bias = this.body.botOrbitBias || (this.body.botOrbitBias = 0.85 + Math.random() * 0.35);
         range *= bias * (this.rhythm.mode === 'press' ? 0.72 : this.rhythm.mode === 'back' ? 1.3 : 1);
+        // a first-kill bait stands off where a beginner's shots connect (fairPlay)
+        if (this.body._fpBait && fairPlay.isBaitPair(this.body, target, now)) range = Math.max(range, fairPlay.TUNE.FIRST_RANGE);
         const point = this.orbitPoint(`f${target.id}`, target, range, now, 0, 3);
         // long approaches are weaved
         return this.distanceTo(target) > range * 1.6 ? this.weavePoint(point, now, 0.9) : point;
@@ -3159,7 +3280,7 @@ class io_digWarsGoals extends IO {
         return util.clamp((botDiff.of(enemy, now) - 0.25) / 0.75, 0, 1);
     }
 
-    // A soft player (newcomer, soft window) within `r`: no area abilities.
+    // A soft player (the soft window at the start of a life) within `r`: no area
     softPlayerNear(r, now) {
         for (const t of botWorldScan().tanks) {
             const root = this.rootOf(t);
@@ -3179,6 +3300,8 @@ class io_digWarsGoals extends IO {
         this.abAt = now + 400 + Math.random() * 300;
         const body = this.body, id = body.botAbility;
         const view = this.view, goal = this.goal, kind = goal && goal.kind;
+        // a first-kill bait has no tricks for its host (fairPlay)
+        if (body._fpBait && fairPlay.baitHost(body, now)) return;
         const enemy = view.enemy, dist = view.enemyDistance;
         const heat = this.abilityHeat(enemy, now);
         const fight = kind === 'fight' && !!enemy && goal.target === enemy;
@@ -3506,6 +3629,14 @@ class io_digWarsGoals extends IO {
             case 'bank': {
                 const vault = this.ownVault();
                 if (!vault) break;
+                // a protected player is heading in (or we were just kicked off): wait outside the
+                if (Config.dig_royale && !body.vaultOnPad && fairPlay.on('vault') &&
+                    (((body._padReentryUntil || 0) > now && body._padReentryPad === vault) ||
+                     !fairPlay.vaultFreeFor(body, vault, botWorldScan().tanks.filter(e => e.isPlayer && e._fpProtect), now))) {
+                    destination = fairPlay.outsideVaults({ x: vault.x + (body.x - vault.x) * 0.01, y: vault.y + (body.y - vault.y) * 0.01 });
+                    arrive = 80;
+                    break;
+                }
                 if (body.vaultOnPad) {
                     if (!body.vaultDeposit && (body.carriedGems || 0) >= 15) {
                         digWarsVault.depositFor(body, body.carriedGems);
@@ -3970,4 +4101,5 @@ let ioTypes = {
     royaleBoss: io_royaleBoss,
 };
 
-module.exports = { ioTypes, IO, inEnemyBase };
+module.exports = {
+    sizePenalty, ioTypes, IO, inEnemyBase };

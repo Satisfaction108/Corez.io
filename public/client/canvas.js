@@ -7,6 +7,7 @@ import { gameSound } from "./sound.js";
 import { touch, inputModeWatch } from "./touch.js";
 import * as abilityFx from "./abilityFx.js";
 import * as raidPerks from "./raidPerks.js";
+import * as raidFinale from "./raidFinale.js";
 import { attachEmoji } from "./emoji.js";
 let { gui } = socketStuff;
 
@@ -28,8 +29,21 @@ function overHudButton(mpos) {
     const c = global.clickables;
     return !!abilityFx.chipAt(mpos.x / guiScale(), mpos.y / guiScale()) || c.vault.check(mpos) !== -1 || c.shop.check(mpos) !== -1 || c.kit.check(mpos) !== -1 ||
         c.skipUpgrades.check(mpos) !== -1 || (c.royalePlay && c.royalePlay.check(mpos) !== -1) ||
+        (c.lastTank && c.lastTank.check(mpos) !== -1) || (c.statBtn && c.statBtn.check(mpos) !== -1) ||
         raidPerks.hit(mpos.x / guiScale(), mpos.y / guiScale());
 }
+// Enter right after a respawn does not open the chat (mashed on the death card)
+const ENTER_GUARD_MS = 1200;
+function enterGuarded(now) {
+    return now - (global.spawnedAt || -1e9) < ENTER_GUARD_MS;
+}
+// only movement letters typed (w a s d, any case, spaces): a chat opened by
+const MOVE_KEYS = [87, 65, 83, 68];
+function chatIsMash(value, kc) {
+    if (!MOVE_KEYS.includes(kc)) return false;
+    return /^[wasd\s]*$/i.test(String(value || ""));
+}
+
 class Canvas {
     constructor() {
         this.directionLock = false;
@@ -37,6 +51,13 @@ class Canvas {
         this.socket = global.socket;
         this.directions = [];
         this.chatListener = function(id, event) {
+            // a movement key held down in a chat with nothing but movement letters in it: it
+            if (event.repeat && chatIsMash(this[id] && this[id].value, event.keyCode)) {
+                event.preventDefault();
+                this[id].value = "";
+                this.chatListener(id, { keyCode: global.KEY_ESC, preventDefault() { } });
+                return;
+            }
             // duos: Tab flips between your partner (Team) and everyone nearby (All)
             if (event.keyCode === 9 && duoChat()) {
                 event.preventDefault();
@@ -138,6 +159,35 @@ class Canvas {
             if (global.gameStart) this.keyDown(event);
         });
         this.cv.addEventListener("keyup", (event) => {if (global.gameStart) this.keyUp(event)});
+        // The death card's Enter / Space work wherever the focus went (a click on a DOM
+        window.addEventListener("keydown", (event) => {
+            // Round 9 bug 1: after the death card the focus can sit on the page (the Respawn
+            if (event.target !== this.cv && global.gameStart && !global.died && !global.showChat && !global.disconnected) {
+                const t0 = event.target, tag0 = t0 && t0.tagName;
+                const stray = !t0 || t0 === document.body || t0 === document.documentElement ||
+                    (tag0 === "BUTTON" && t0.offsetParent === null);
+                if (stray && !event.metaKey && !event.ctrlKey) {
+                    try { this.cv.focus(); } catch (e) { /* */ }
+                    this.keyDown(event);
+                    return;
+                }
+            }
+            if (event.target === this.cv || !global.gameStart || !global.died || global.disconnected || global.tutorialMode) return;
+            if (!(global.royale && global.royale.at > 0)) return;
+            const kc = event.keyCode;
+            if (kc !== global.KEY_ENTER && kc !== 32) return;
+            if (kc === global.KEY_ENTER && duoChat()) return;
+            const t = event.target, tag = t && t.tagName;
+            if (global.showChat || tag === "TEXTAREA" || (t && t.isContentEditable)) return;
+            // a visible text box keeps its keys (a hidden one doesn't)
+            if (tag === "INPUT" && t.offsetParent !== null && t.type !== "button") return;
+            // the Play again button handles its own Enter / Space
+            if (t && t.id === "royaleDomPlayAgain") return;
+            event.preventDefault();
+            global.rbWantBuild = false;   // Enter / Space = plain Respawn
+            if (!event.repeat) this.respawn();
+            try { if (t && t.blur) t.blur(); this.cv.focus(); } catch (e) { /* */ }
+        });
         window.addEventListener("gamepadconnected", (e) => {
             global.createMessage("Controller connected. Gamepad mode on.");
             this.runGamepad();
@@ -244,11 +294,21 @@ class Canvas {
     }
 
     respawn() {
-        // Final storm: no spawns. Hold the death UI until the reset.
-        if (global.royale && global.royale.lock && global.royale.at > 0) return;
-        // Raid: the death card always gets its full wait, whatever asks
-        // (Enter, Play, the gamepad); the server holds the drop anyway.
-        if (global.died && global.raidRespawnAt > 0 && performance.now() < global.raidRespawnAt) return;
+        // the raid's results are for everyone: no click or key skips them (raidFinale
+        if (global.died && raidFinale.active() && !global.finaleRespawn) return;
+        // The storm's spawn lock, or the death card's wait: asking now queues the drop
+        if (global.died && !global.tutorialMode && global.royale && global.royale.lock && global.royale.at > 0 && global.royale.storm && global.royale.storm.fin) {
+            global.respawnQueued = false;
+            if (!global.royaleSpectating) { global.royaleSpectating = true; try { this.socket.talk('RS', 2); } catch (e) { /* */ } }
+            return;
+        }
+        const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);
+        const waiting = global.died && global.raidRespawnAt > 0 && performance.now() < global.raidRespawnAt;
+        if (locked || waiting) {
+            if (global.died && !global.respawnPending && !global.tutorialMode) global.respawnQueued = true;
+            return;
+        }
+        global.respawnQueued = false;
         // a new version is about to reload the page (version.js): no drop
         // that the reload would cut short
         if (global.died && global.updateHoldsRespawn) return;
@@ -260,6 +320,9 @@ class Canvas {
             global._specGlide = null;
             global.raidRespawnAt = 0;
             global.raidQueued = true;
+            // "Respawn as <Tank>": the server puts the last build back on the new body
+            if (global.rbWantBuild) { try { this.socket.talk('rb', 'build'); } catch (e) { /* */ } }
+            global.rbWantBuild = false;
             this.socket.talk('s', global.playerName, 0, 1 * config.game.autoLevelUp, false, 1 * config.game.incognitoMode);
             setTimeout(() => {
                 if (global.respawnPending) global.respawnPending = false;
@@ -275,7 +338,12 @@ class Canvas {
         // the duo server where it opens the team chat). A held fire key only
         // repeats, so it never counts.
         if (kc === 32 && global.died && !global.tutorialMode && !global.disconnected) {
-            if (!event.repeat && !global.showChat) this.respawn();
+            if (!event.repeat && !global.showChat) { global.rbWantBuild = false; this.respawn(); }
+            return true;
+        }
+        // Enter: the same as the button, whenever the button works
+        if (kc === global.KEY_ENTER && global.died && !global.tutorialMode && !global.disconnected && !duoChat() && !global.showChat) {
+            if (!event.repeat) { global.rbWantBuild = false; this.respawn(); }
             return true;
         }
         // dash and the ability slot (abilityFx.js); before the server has said
@@ -295,6 +363,8 @@ class Canvas {
         }
         // raid perk cards: Shift+1/2/3 (plain digits stay the stat keys)
         if (raidPerks.key(event)) return true;
+        // the raid card (firstSeconds.js): Esc lets it go early
+        if (kc === global.KEY_ESC && !event.repeat && global.introCardUp && global.introSkip && global.introSkip()) return true;
         if (kc === global.KEY_ESC && global.abilAim) { abilityFx.cancelAim(); gameSound.uiClick(); return true; }
         if (kc === global.KEY_ESC && global.shop.onPad && !global.shop.dismissed) {
             global.shop.dismissed = true;
@@ -383,6 +453,8 @@ class Canvas {
     }
     keyDown(event) {
         if (global.dailyTankAd.renderUI) return;
+        // the kept raid results: Esc puts them away
+        if (!event.repeat && raidFinale.key(event.keyCode)) { event.preventDefault(); return; }
         // Command on its own: the owner's spectator shows or hides (the server
         // ignores it for everyone else)
         if ((event.keyCode === 91 || event.keyCode === 93) && !event.repeat && !global.showChat && !global.died) {
@@ -442,6 +514,7 @@ class Canvas {
 
                 // or to talk instead
                 if (global.gameStart && !global.died && !global.disconnected) {
+                    if (enterGuarded(performance.now())) break;
                     this.spawnChatInput();
                     break;
                 }
@@ -715,6 +788,9 @@ class Canvas {
                 // press began on it: a shot fired elsewhere and released over
                 // the button must not throw the upgrade menu away.
                 this.skipUpgradePressed = global.clickables.skipUpgrades.check(mpos) !== -1;
+                // the build buttons (Last tank, Same stats, Random) act on release too
+                this.lastTankPressed = global.clickables.lastTank.check(mpos) !== -1;
+                this.statBtnPressed = global.clickables.statBtn.check(mpos);
                 // aim mode: the click puts the ability down and never fires the
                 // gun. On a pad, or on a HUD button (the vault's Deposit, the
                 // shop, the kit), the aim lets go and the click does its job.
@@ -747,6 +823,8 @@ class Canvas {
                 // a raid perk card, its Later button or the Perk ready chip:
                 // picked or opened here, and the press never fires the gun
                 if (raidPerks.click(mpos.x / guiScale(), mpos.y / guiScale())) break;
+                // raid results: the Keep button, or a click that puts kept results away
+                if (raidFinale.click(mpos.x / guiScale(), mpos.y / guiScale())) break;
                 // a press on the dash or ability chip starts a drag to reorder
                 // them (mouseUp swaps); it never fires the gun
                 const chipHit = !global.died ? abilityFx.chipAt(mpos.x / guiScale(), mpos.y / guiScale()) : null;
@@ -781,6 +859,8 @@ class Canvas {
                     global.optionsMenu_Anim.tabClickables.check(mpos) == -1 &&
                     global.clickables.vault.check(mpos) == -1 &&
                     global.clickables.skipUpgrades.check(mpos) == -1 &&
+                    global.clickables.lastTank.check(mpos) == -1 &&
+                    global.clickables.statBtn.check(mpos) == -1 &&
                     global.clickables.dailyTankUpgrade.check(mpos) == false &&
                     global.clickables.dailyTankAd.check(mpos) === false &&
                     global.clickables.royaleTab.check(mpos) == -1 &&
@@ -987,7 +1067,10 @@ class Canvas {
                 // 11 cancel
                 let vaultClick = global.clickables.vault.check(mpos);
                 if (vaultClick !== -1) {
-                    if (vaultClick === 10) {
+                    if (vaultClick === 9) {
+                        // Bank all: 0 is "everything carried" on the server, so a gem picked up a moment
+                        this.socket.talk('vd', 0);
+                    } else if (vaultClick === 10) {
                         const el = document.getElementById('vaultInput');
                         const carried = global.gems.carried | 0;
                         // an empty or cleared box means everything you carry
@@ -1085,6 +1168,15 @@ class Canvas {
                 } else if (this.skipUpgradePressed && global.clickables.skipUpgrades.check(mpos) !== -1) {
                     this.skipUpgradePressed = false;
                     global.clearUpgrades();
+                    gameSound.uiClick();
+                } else if (this.lastTankPressed && global.clickables.lastTank.check(mpos) !== -1) {
+                    this.lastTankPressed = false;
+                    this.socket.talk('rb', 'tank');
+                    global.upgradePickedAt = performance.now();
+                    gameSound.uiClick();
+                } else if (this.statBtnPressed > -1 && global.clickables.statBtn.check(mpos) === this.statBtnPressed) {
+                    this.socket.talk('rb', this.statBtnPressed === 0 ? 'stats' : 'random');
+                    this.statBtnPressed = -1;
                     gameSound.uiClick();
                 } else this.socket.cmd.set(primaryFire, false);
                 break;

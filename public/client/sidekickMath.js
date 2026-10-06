@@ -54,6 +54,16 @@ export const AIM_LEAD = 0.6;    // the barrels swing to a shot's direction this 
 export const SHOT_LIFE = 0.42;  // a shot pops this fast
 export const SHOT_SPEED = 240;  // world units a second
 export const SHOWN_ALPHA = 0.9;
+// mining (server/game/terrain/sidekickDig.js FIRE_MS / SPEED): a shot a second at
+export const DIG_GAP = 1.0;
+export const DIG_SPEED = 600;
+export const DIG_LIFE_MAX = 0.9;
+export function digLife(dist) { return Math.max(0.12, Math.min(DIG_LIFE_MAX, dist / DIG_SPEED)); }
+// a barrel at angle a from (x, y) points within ~35 degrees of the rock
+export function facesRock(a, x, y, rx, ry) {
+    const d = Math.atan2(ry - y, rx - x) - a;
+    return Math.cos(d) > 0.82;
+}
 
 const TAU = Math.PI * 2;
 const VEL = 6;                  // how fast its idea of the owner's velocity settles (1/s)
@@ -158,7 +168,7 @@ export function makeState(seed, move, path) {
         // its own pace: a touch quicker or lazier than the next one
         pace: 0.82 + h(2) * 0.36, stride: STRIDE * (0.85 + h(3) * 0.3), side: h(4) < 0.5 ? -1 : 1,
         x: 0, y: 0, init: false, snaps: 0, ox: 0, oy: 0, alpha: 1, sc: 1,
-        hop: 0, tilt: 0, sq: 1, face: 0, w: 0, aim: 0, aimJit: 0, aimAt: -1e9, firing: false,
+        hop: 0, tilt: 0, sq: 1, face: 0, w: 0, aim: 0, aimJit: 0, aimAt: -1e9, firing: false, dig: false,
         nextShot: 0, shots: 0, popAt: -1e9, tx: 0, ty: 0,
         vx: 0, vy: 0, hd: 0, mw: 0, hu: 1, idle: true, ga: 0, gd: 0, pgA: 0, pgD: 0, ptx: 0, pty: 0, pa: 0, pd: 0, loopOff: 0, nextSwap: 0,
         ex: 0, exEnd: 0, exA: 0, exD: 0, exThing: false, nextEx: 0,
@@ -413,14 +423,16 @@ function keepClear(st, ox, oy, lo, hi, sc, dt) {
 // wherever it has got to. rnd: a 0..1 random source.
 export function shotDue(st, t, random) {
     if (!st.nextShot) st.nextShot = t + SHOT_MIN * 0.5 + random() * SHOT_SPAN;
+    // mining: no waiting out a long idle gap
+    if (st.dig && st.nextShot - t > DIG_GAP) st.nextShot = t + AIM_LEAD;
     if (!(SPINS[st.move] && !st.hasEnemy) && !st.firing && t >= st.nextShot - AIM_LEAD) {
         st.firing = true;
-        st.aimJit = st.hasEnemy ? (random() - 0.5) * 0.14 : 0;
+        st.aimJit = st.hasEnemy ? (random() - 0.5) * (st.dig ? 0.04 : 0.14) : 0;
         st.aim = st.hasEnemy ? st.enemyA + st.aimJit : random() * TAU - Math.PI;
         st.aimAt = t;
     }
     if (t < st.nextShot) return NaN;
-    st.nextShot = t + SHOT_MIN + random() * SHOT_SPAN;
+    st.nextShot = t + (st.dig ? DIG_GAP : SHOT_MIN + random() * SHOT_SPAN);
     st.firing = false;
     st.shots++;
     st.popAt = t;

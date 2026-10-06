@@ -234,7 +234,8 @@ function allPads() {
 // hooks can carve one), inside where the storm will be in ~40 s, off every
 // pad, VAULT_CLEAR from everyone else, and escapable (spawnReach). Returns
 // { x, y, vault } or null.
-function vaultSpot(self, fighters, t = Date.now()) {
+// etaWant: seconds the storm should take to reach the spot (fairPlay) avoid(x
+function vaultSpot(self, fighters, t = Date.now(), etaWant = 0, avoid = null) {
     if (!enabled() || !FIRST_VAULT) return null;
     const grid = tg();
     if (!grid || !grid.pointInRock) return null;
@@ -251,6 +252,7 @@ function vaultSpot(self, fighters, t = Date.now()) {
     const mapR = (grid.circleRadius || 2700) - 220;
     const zone = { x: st.cx || 0, y: st.cy || 0, r: rAhead };
     const clearOf = (x, y) => { let m = Infinity; for (const o of others) { const d = Math.hypot(o.x - x, o.y - y); if (d < m) m = d; } return m; };
+    const etaOf = etaWant > 0 ? storm().etaFn(t, Math.ceil(etaWant)) : null;
     let best = null, bestRock = null;
     for (let i = 0; i < VAULT_TRIES * vaults.length; i++) {
         const v = vaults[i % vaults.length];
@@ -258,7 +260,9 @@ function vaultSpot(self, fighters, t = Date.now()) {
         const dist = VAULT_RING[0] + Math.random() * (VAULT_RING[1] - VAULT_RING[0]);
         const x = v.x + Math.cos(a) * dist, y = v.y + Math.sin(a) * dist;
         if (Math.hypot(x - st.cx, y - st.cy) > safeR || Math.hypot(x, y) > mapR) continue;
+        if (etaOf && etaOf(x, y) < etaWant) continue;
         if (pads.some(p => padGeom.insidePad(p, x, y, 160))) continue;
+        if (avoid && avoid(x, y)) continue;
         const clear = clearOf(x, y);
         if (clear < VAULT_CLEAR) continue;
         const score = Math.min(clear, 1600) - Math.abs(dist - 620) * 0.5 + Math.random() * 60;
@@ -315,7 +319,7 @@ function seedRim(grid, x, y, n) {
 // A spawn near the action: ACTION_RING from a fight (or a vault, or rich
 // ore), never closer than ACTION_RING[0] to any enemy, open ground inside
 // the zone, escapable. null = the normal safe spawn.
-function actionSpot(self, fighters, t = Date.now()) {
+function actionSpot(self, fighters, t = Date.now(), etaWant = 0, avoid = null) {
     if (!enabled() || !ACTION_ON) return null;
     const grid = tg();
     if (!grid || !grid.pointInRock) return null;
@@ -342,13 +346,16 @@ function actionSpot(self, fighters, t = Date.now()) {
     }
     if (!hot.length) return null;
     const clearOf = (x, y) => { let m = Infinity; for (const o of others) { const d = Math.hypot(o.x - x, o.y - y); if (d < m) m = d; } return m; };
+    const etaOf = etaWant > 0 ? storm().etaFn(t, Math.ceil(etaWant)) : null;
     let best = null;
     for (let i = 0; i < 40; i++) {
         const h = hot[(Math.random() * hot.length) | 0];
         const a = Math.random() * Math.PI * 2, dd = ACTION_RING[0] + Math.random() * (ACTION_RING[1] - ACTION_RING[0]);
         const x = h.x + Math.cos(a) * dd, y = h.y + Math.sin(a) * dd;
         if (Math.hypot(x - zone.x, y - zone.y) > safeR || Math.hypot(x, y) > mapR) continue;
+        if (etaOf && etaOf(x, y) < etaWant) continue;
         if (pads.some(p => padGeom.insidePad(p, x, y, 160))) continue;
+        if (avoid && avoid(x, y)) continue;
         const clear = clearOf(x, y);
         if (clear < ACTION_RING[0]) continue;
         if (grid.pointInRock(x, y)) continue;

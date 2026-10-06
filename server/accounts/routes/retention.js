@@ -11,7 +11,7 @@
 // socket sends in 'GI'). POST even for reads, so the guest id never sits in
 // a URL or an access log. An account made in the last day that sends the
 // guest id of the browser it was made on takes over that guest's track
-// (retention.adoptGuest), items owed included.
+// retention.adoptGuest), items and gemdust owed included
 //
 // Limits: 'daily' per IP for status + claim, 'dailyClaim' per owner,
 // 'dailyNew' per IP for brand new guest tracks (so a script making up guest
@@ -56,7 +56,7 @@ function postStatus(ctx) {
     const owner = ownerOf(ctx);
     const adopted = maybeAdopt(ctx, owner);
     const st = retention.status(owner, ctx.now, { touch: true });
-    ctx.json(200, { ...st, adoptedNow: adopted ? { items: adopted.items } : null, push: pushInfo(owner) });
+    ctx.json(200, { ...st, adoptedNow: adopted ? { items: adopted.items, dustMilli: adopted.dustMilli | 0 } : null, push: pushInfo(owner) });
 }
 
 function postClaim(ctx) {

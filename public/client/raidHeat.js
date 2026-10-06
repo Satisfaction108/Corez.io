@@ -37,6 +37,7 @@ import { gameSound } from "./sound.js";
 import * as juice from "./juice.js";
 import * as JM from "./juiceMath.js";
 import * as skyDrop from "./skyDrop.js";
+import * as mineDust from "./mineDust.js";
 import { shows as nxShows } from "./newcomerLogic.js";
 // the first-raids stage (newcomer.js keeps it fresh); 3 = veteran
 const nx = () => global.nxStage == null ? 3 : global.nxStage;
@@ -85,6 +86,35 @@ const mk = (n, f) => { const a = []; for (let i = 0; i < n; i++) a.push(f()); re
 const pulses = mk(4, () => ({ born: -1e9, x: 0, y: 0 }));
 const shards = mk(10, () => ({ born: -1e9, x: 0, y: 0, fx: 0, fy: 0, hit: false, ms: SHARD_MS }));
 let pulseI = 0, shardI = 0;
+// kill pops over your own tank ("KO kai" / "+350 pts"): strings made once per
+const KILL_POP_MS = 2600;
+const killPops = mk(3, () => ({ born: -1e9, head: "", pts: "", big: false }));
+let killPopI = 0;
+function addKillPop(text, pts, big, now) {
+    const kp = JM.killPop(text, pts, fmt);
+    const o = killPops[killPopI]; killPopI = (killPopI + 1) % killPops.length;
+    o.born = now; o.head = kp.head; o.pts = kp.pts; o.big = big;
+}
+function drawKillPops(c, ratio, now) {
+    if (!A || global.died) return;
+    const me = S.me;
+    const lift = ((me && me.size) || 30) * ratio + 58;
+    let row = 0;
+    // newest lowest, older ones pushed up above it
+    for (let k = 0; k < killPops.length; k++) {
+        const o = killPops[(killPopI - 1 - k + killPops.length * 2) % killPops.length];
+        const age = now - o.born;
+        if (age < 0 || age > KILL_POP_MS) continue;
+        const inT = Math.min(1, age / 120);
+        const a = inT * (age > KILL_POP_MS - 500 ? Math.max(0, (KILL_POP_MS - age) / 500) : 1);
+        const pop = calm() ? 1 : age < 260 ? 1.45 - 0.45 * (age / 260) : 1;
+        const y = vCy - lift - Math.min(1, age / 700) * 16 - row * 44;
+        const sz = (o.big ? 24 : 20) * pop;
+        A.hudTitle(o.head, vCx, y, sz, o.big ? GOLD : "#ffffff", "center", a, c);
+        if (o.pts) A.drawText(o.pts, vCx, y + sz * 0.5 + 10, 15 * Math.max(1, pop * 0.9), GOLD, "center", true, a, 5);
+        row++;
+    }
+}
 const ring = (x, y, col, r0, r1, dur, w) => juice.ring(x, y, col, r0, r1, dur, w);
 
 // ── packets ────────────────────────────────────────────────────────────
@@ -197,26 +227,26 @@ export function onKC(m) {
             juice.glitch(1, 600, true);
             sfx("win");
             return true;
-        case "kill": {
-            // ELIMINATED, with the streak count when kills come close together
+        case "kill": case "shutdown": case "revenge": case "huntkill": {
+            // Every kill of yours is a moment (playtest 5: only the first ELIMINATED got
             S.combo = JM.comboAfter(S.combo, S.comboAt, now);
             S.comboAt = now;
-            const who = text.indexOf(": ") >= 0 ? text.slice(text.indexOf(": ") + 2) : "";
-            const label = JM.comboLabel(S.combo);
             const pts = m[2] | 0;
-            juice.slam(label ? "ELIMINATED " + label : "ELIMINATED", (who ? who : "") + (pts ? (who ? "  ·  " : "") + "+" + fmt(pts) + " pts" : ""), S.combo >= 3 ? "#ff7a6b" : S.combo >= 2 ? "#ffd76e" : "#ffffff", 2000, S.combo >= 2 ? 72 : 66);
+            const big = JM.bigKillWord(kind, text);
+            const multi = JM.multiKillWord(S.combo);
+            const head = big || multi;
+            let line = JM.killSub(text, pts, fmt);
+            if (big && S.combo >= 2) line = multi + "  ·  " + line;
+            if (sub) line += "  ·  " + sub;
+            const col = big ? (kind === "revenge" || kind === "huntkill" ? RED : GOLD) : S.combo >= 3 ? "#ff7a6b" : S.combo >= 2 ? "#ffd76e" : "#ffffff";
+            juice.slamFirst(head, line, col, big ? 3000 : 2600, big ? 78 : S.combo >= 2 ? 72 : 64, JM.KILL_SLAM_KEY);
+            addKillPop(text, pts, !!big || S.combo >= 2, now);
+            killSound();
             juice.glitch(0.4 + 0.15 * Math.min(3, S.combo), 260);
-            if (S.combo >= 2) juice.hitStop(30 + 10 * Math.min(3, S.combo));
+            if (big) { juice.hitStop(45); juice.shake(30, 340); }
+            else if (S.combo >= 2) juice.hitStop(30 + 10 * Math.min(3, S.combo));
             return true;
         }
-        case "huntkill":
-            juice.hitStop(45);
-            juice.glitch(0.55, 300);
-            juice.shake(30, 340);
-            return false;
-        case "shutdown": case "revenge":
-            juice.hitStop(40);
-            return false;
     }
     return false;
 }
@@ -377,6 +407,8 @@ function colorHex(c) {
     try { const h = A && A.colorOf ? A.colorOf(c) : null; return typeof h === "string" && h[0] === "#" ? h : null; } catch (e) { return null; }
 }
 
+// your kill's sound (the DEAD packet plays it too
+function killSound() { try { if (gameSound.combatKill) gameSound.combatKill(); } catch (e) { /* */ } }
 // the few new sounds, made from the existing ones
 function sfx(kind) {
     try {
@@ -497,7 +529,10 @@ function bankWatch(now) {
         const first = !S.doneAt;
         S.doneAt = v.doneAt;
         if (first && now - v.doneAt > 1500) { S.depStart = -1; return; }
-        const got = S.depStart >= 0 ? Math.max(0, (g.banked | 0) - S.depStart) : 0;
+        // the deposit itself (what left the satchel)
+        const got = (v.lastDeposit | 0) > 0 ? (v.lastDeposit | 0)
+            : S.depStart >= 0 ? Math.max(0, (g.banked | 0) - S.depStart) : 0;
+        v.lastDeposit = 0;
         S.depStart = -1;
         if (got <= 0) return;
         const x = global.player.renderx, y = global.player.rendery;
@@ -870,8 +905,10 @@ export function drawWorld(c, px, py, ratio) {
     }
     // locked on: an enemy close by has its gun on you while you're hunted
     if (S.lockAim && S.mine && !global.died) drawLock(c, vCx, vCy, ratio, now);
+    drawKillPops(c, ratio, now);
     skyDrop.drawAir(c, px, py, ratio);
     juice.drawSparks(c, px, py, ratio);
+    mineDust.draw(c, px, py, ratio);
 }
 function drawLock(c, x, y, ratio, now) {
     const t = Math.min(1, (now - S.lockFrom) / 220);
@@ -1205,10 +1242,14 @@ export function drawSlams(c, y, k) {
     juice.drawSlams(c, global.screenWidth / 2, Math.round(y || global.screenHeight * 0.24), k);
 }
 export function slamUp() { return juice.slamUp(); }
+// QA: the kill pops up now
+window.dwKillPops = () => killPops.filter(o => performance.now() - o.born < KILL_POP_MS).map(o => o.head + (o.pts ? " " + o.pts : ""));
 export const SLAM_DROP = juice.SLAM_DROP;
 // the bank milestones (MS) take a turn in the slam lane in a raid
+// title: the rung ("100"), bonus: "+25"
 export function slamBanked(title, bonus) {
-    juice.slam(title + " BANKED", bonus ? bonus + " bonus" : "", GOLD, 2600, 54);
+    if (bonus) juice.slam(bonus + " BONUS", "Milestone: " + title + " gems banked in all", GOLD, 2600, 54);
+    else juice.slam("MILESTONE", title + " gems banked in all", GOLD, 2600, 54);
 }
 
 // ── kill feed / callout colours ────────────────────────────────────────

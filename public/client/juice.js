@@ -28,7 +28,7 @@ import * as JM from "./juiceMath.js";
 
 let A = null;
 // app.js: hudTitle, hudTitleW, drawText, haloSprite, vignetteSprite
-export function init(helpers) { A = helpers; }
+export function init(helpers) { A = helpers; if (helpers && helpers.cardHold) cardHold = helpers.cardHold; }
 
 const calm = () => !!(global.reducedMotion && global.reducedMotion());
 const lite = () => !!config.graphical.fewerEffects;
@@ -223,23 +223,55 @@ const SLAM_WAIT = 3;            // at most this many waiting; the oldest goes
 const SLAM_MIN_MS = 900;        // a slam is up at least this long before a newer one cuts it
 const SLAM_CUT_MS = 380;        // ...and fades over this
 const slamPool = [];
-for (let i = 0; i < SLAM_WAIT + 2; i++) slamPool.push({ on: false, key: "", text: "", sub: "", col: "#fff", born: 0, dur: 0, size: 54, roll: false, from: 0, to: 0, pre: "", shown: -1 });
+for (let i = 0; i < SLAM_WAIT + 2; i++) slamPool.push({ on: false, key: "", text: "", sub: "", col: "#fff", born: 0, dur: 0, size: 54, roll: false, from: 0, to: 0, pre: "", shown: -1, pri: false, keep: 0 });
 let slamCur = null;
 const slamQ = [];
 // skyDrop.landAt: while you fall in, a slam waits for the landing
-let holdUntil = () => 0;
-export function setSlamHold(fn) { holdUntil = fn || (() => 0); }
+let dropHold = () => 0;
+let introHold = () => 0;
+// slams wait for your own sky drop to land (skyDrop.js) and for the raid card of
+const holdUntil = () => Math.max(dropHold(), introHold());
+export function setSlamHold(fn) { dropHold = fn || (() => 0); }
+export function setIntroHold(fn) { introHold = fn || (() => 0); }
+// app.js deathCardUp: while the death card is up no slam prints over it
+let cardHold = () => false;
+export function setCardHold(fn) { cardHold = fn || (() => false); }
+const HELD = -1;   // slamCur.born while it waits out the death card
 const slamKey = (text) => { const t = String(text || ""); const i = t.indexOf(" "); return i > 0 ? t.slice(0, i) : t; };
 function slamFree() {
-    for (const s of slamPool) if (!s.on) return s;
-    // all busy: reuse the oldest waiting one
-    const s = slamQ.shift();
-    s.on = false;
+    for (const s of slamPool) if (!s.on) { s.pri = false; s.keep = 0; return s; }
+    // all busy: reuse the oldest waiting one that isn't a must-see
+    let i = slamQ.findIndex(q => !q.pri);
+    if (i < 0) i = 0;
+    const s = slamQ.splice(i, 1)[0];
+    s.on = false; s.pri = false; s.keep = 0;
     return s;
 }
-export function slam(text, sub, col, dur = 1800, size = 58) {
+// the queue is full: the oldest ordinary word goes, never a must-see one
+function trimQueue() {
+    while (slamQ.length > SLAM_WAIT) {
+        const i = slamQ.findIndex(q => !q.pri);
+        const s = slamQ.splice(i < 0 ? 0 : i, 1)[0];
+        s.on = false;
+    }
+}
+// how long the word up now must stay before a waiting one may cut it
+const minUp = (s) => s && s.pri ? Math.max(SLAM_MIN_MS, s.keep | 0) : SLAM_MIN_MS;
+// A slam that jumps the queue (your own kill): whatever is up wraps up now key
+export function slamFirst(text, sub, col, dur, size, key) {
+    const s = slam(text, sub, col, dur, size, key);
+    const i = slamQ.indexOf(s);
+    if (i > 0) { slamQ.splice(i, 1); slamQ.unshift(s); }
+    if (i >= 0 && slamCur && slamCur.on && slamCur !== s) {
+        const now = performance.now(), age = now - slamCur.born;
+        if (slamCur.born === HELD || age < 0) { slamCur.on = false; nextSlam(now); }
+        else slamCur.dur = Math.min(slamCur.dur, Math.max(age + SLAM_CUT_MS, slamCur.pri ? minUp(slamCur) : 0));
+    }
+    return s;
+}
+export function slam(text, sub, col, dur = 1800, size = 58, key0) {
     const now = performance.now();
-    const key = slamKey(text);
+    const key = key0 || slamKey(text);
     let s = null;
     if (slamCur && slamCur.on && slamCur.key === key && now - slamCur.born < slamCur.dur) s = slamCur;
     else s = slamQ.find(q => q.key === key) || null;
@@ -250,10 +282,39 @@ export function slam(text, sub, col, dur = 1800, size = 58) {
     if (s === slamCur) s.born = now;
     else {
         s.born = 0;
-        if (fresh) { slamQ.push(s); while (slamQ.length > SLAM_WAIT) slamQ.shift().on = false; }
+        if (fresh) { slamQ.push(s); trimQueue(); }
     }
     if (!slamCur || !slamCur.on) nextSlam(now);
     return s;
+}
+// A must-see word (you got a crown): it jumps the queue like slamFirst, is never
+export function slamMust(text, sub, col, dur, size, keepMs = 2600) {
+    const now = performance.now();
+    const s = slamFree();
+    s.on = true; s.key = "!" + String(text || ""); s.text = text; s.sub = sub || ""; s.col = col || "#ffffff";
+    s.dur = Math.max(dur | 0, keepMs + SLAM_CUT_MS); s.size = size || 58; s.roll = false; s.pri = true; s.keep = keepMs; s.born = 0;
+    // ahead of everything ordinary, behind other must-see words
+    let at = 0;
+    while (at < slamQ.length && slamQ[at].pri) at++;
+    slamQ.splice(at, 0, s);
+    trimQueue();
+    if (slamCur && slamCur.on && !slamCur.pri) {
+        const age = now - slamCur.born;
+        if (slamCur.born === HELD || age < 0) {
+            // not shown yet: it waits its turn behind this one
+            const w = slamCur;
+            w.born = 0;
+            slamQ.splice(at + 1, 0, w);
+            slamCur = null;
+            trimQueue();
+        } else slamCur.dur = Math.min(slamCur.dur, age + SLAM_CUT_MS);
+    }
+    if (!slamCur || !slamCur.on) nextSlam(now);
+    return s;
+}
+// did this slam get on screen (and stay a moment)? For a fallback that must not
+export function slamSeen(s, ms = 600) {
+    return !!s && s.born > 0 && s.born !== HELD && performance.now() - s.born >= ms;
 }
 function nextSlam(now) {
     slamCur = slamQ.shift() || null;
@@ -264,9 +325,14 @@ export function slamRoll(pre, from, to, sub, col, dur, size, fmt) {
     s.roll = true; s.from = from; s.to = to; s.pre = pre; s.fmt = fmt; s.shown = from;
     return s;
 }
+// a word on screen right now (not one waiting or held for a card)
+export function slamShowing() {
+    const now = performance.now();
+    return !!(slamCur && slamCur.on && slamCur.born !== HELD && slamCur.born <= now && now - slamCur.born < slamCur.dur);
+}
 export function slamUp() {
     const now = performance.now();
-    return !!(slamCur && slamCur.on && now - slamCur.born < slamCur.dur) || slamQ.length > 0;
+    return !!(slamCur && slamCur.on && slamCur.born !== HELD && now - slamCur.born < slamCur.dur) || slamQ.length > 0;
 }
 // screen space, gui layer. cx/cy: where the word sits, k: its scale (a
 // short screen shrinks it to fit its lane)
@@ -279,10 +345,20 @@ export function drawSlams(c, cx, cy, k = 1) {
     // (only a word that hasn't started yet waits; one already up plays out,
     // or it would hang over the death card until the next landing)
     if (s && s.on && hold > now && s.born < hold && s.born > now - 50) s.born = hold;
+    if (cardHold()) {
+        // the death card: a word just starting waits, one well under way goes
+        if (s && s.on && s.born !== HELD) {
+            if (now - s.born < 250) s.born = HELD;
+            else { s.on = false; slamCur = null; }
+        }
+        return;
+    }
+    if (s && s.on && s.born === HELD) s.born = Math.max(now, hold);
+    if ((!s || !s.on) && slamQ.length) { nextSlam(now); s = slamCur; }
     if (s && s.on && slamQ.length) {
-        // something is waiting: this one wraps up soon
+        // something is waiting: this one wraps up soon (a must-see word first gets its
         const age = now - s.born;
-        if (age >= 0) s.dur = Math.min(s.dur, Math.max(age + SLAM_CUT_MS, SLAM_MIN_MS));
+        if (age >= 0) s.dur = Math.min(s.dur, Math.max(age + SLAM_CUT_MS, minUp(s)));
     }
     if (s && s.on && now - s.born > s.dur) { s.on = false; nextSlam(now); s = slamCur; }
     if (!s || !s.on) return;

@@ -195,14 +195,21 @@ function spawnStructure(site, team, owner = null) {
         o.health.amount = o.health.max;
         if (o.shield) { o.shield.max = 0; o.shield.amount = 0; }
     }
-    o.on('damage', ({ damageInflictor = [] } = {}) => {
-        const attacker = damageInflictor
-            .map(source => {
-                let root = source, hops = 0;
-                while (root?.master && root.master !== root && hops++ < 8) root = root.master;
-                return root;
-            })
-            .find(root => root && (root.isPlayer || root.isBot));
+    // damage dealt to THIS banner, by tank and by team: the base goes to the team
+    site._dmg = new Map();
+    site._dmgTeam = new Map();
+    o.on('damage', ({ damageInflictor = [], amount = 0 } = {}) => {
+        let attacker = null, n = 0;
+        const roots = damageInflictor.map(source => {
+            let root = source, hops = 0;
+            while (root?.master && root.master !== root && hops++ < 8) root = root.master;
+            if (root && (root.isPlayer || root.isBot)) { n++; if (!attacker) attacker = root; return root; }
+            return null;
+        });
+        if (n && amount > 0 && site.banner === o) {
+            const share = amount / n;
+            for (const r of roots) if (r) creditDamage(site, r, share);
+        }
         if (attacker) {
             site._lastHitter = attacker;
             // only under attack once the banner is below half health
@@ -222,7 +229,30 @@ function spawnStructure(site, team, owner = null) {
     site._lastHitAt = 0;            
 }
 
+function creditDamage(site, who, amt) {
+    if (!site._dmg) { site._dmg = new Map(); site._dmgTeam = new Map(); }
+    const e = site._dmg.get(who.id);
+    if (e) { e.dmg += amt; e.body = who; } else site._dmg.set(who.id, { body: who, dmg: amt, team: who.team });
+    site._dmgTeam.set(who.team, (site._dmgTeam.get(who.team) || 0) + amt);
+}
+// The team that dealt the most damage to this banner, and its top damage dealer
+function topDamager(site) {
+    if (!site || !site._dmgTeam || !site._dmgTeam.size) return null;
+    let best = -1, team = null;
+    for (const [t, d] of site._dmgTeam) if (d > best + 1e-6) { best = d; team = t; }
+    const lh = site._lastHitter;
+    if (lh && Math.abs((site._dmgTeam.get(lh.team) || 0) - best) <= 1e-6) team = lh.team;
+    let pick = null, pickAlive = null;
+    for (const e of site._dmg.values()) {
+        if (e.team !== team) continue;
+        if (!pick || e.dmg > pick.dmg) pick = e;
+        if (!(e.body.isDead && e.body.isDead()) && !e.body.isGhost && (!pickAlive || e.dmg > pickAlive.dmg)) pickAlive = e;
+    }
+    return (pickAlive || pick || {}).body || null;
+}
 function killerOf(dead, site) {
+    const top = topDamager(site);
+    if (top) return top;
     for (const k of (dead && dead.finalKillers) || []) {
         if (k && (k.isPlayer || k.isBot)) return k;
     }
@@ -510,7 +540,7 @@ function requestCancel(socket) {
 }
 
 module.exports = {
-    tick, snapshot, stateSnapshot, ownedBy, getOutposts,
+    tick, snapshot, stateSnapshot, ownedBy, getOutposts, killerOf, creditDamage, topDamager,
     requestDeposit, requestCancel, EFFICIENCY, ownerKeyFor, rebindOwner, releaseOwner, rekeyOwner, isOwner,
     // Tutorial: put one site back to neutral (optionally locked), fresh banner.
     resetSite(id, locked = false) {

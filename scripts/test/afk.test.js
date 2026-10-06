@@ -284,6 +284,10 @@ function loopPart() {
         assert.equal(botDiff.of(p, now), 0);
         skew = 61 * 1000;
         now = Date.now();
+        // (idle: fair play stops protecting them too)
+        const fairPlay = require(path.join(SERVER, 'game', 'terrain', 'fairPlay.js'));
+        assert.equal(fairPlay.isProtected(p, now), false, 'idle: not protected');
+        ctl.threatCache && ctl.threatCache.clear && ctl.threatCache.clear();
         ctl.senseAt = 0; ctl.sense(now);
         assert.equal(ctl.view.enemy, p, 'idle a minute: fair game');
         assert.equal(ctl.canInitiateFight(p, now), true);

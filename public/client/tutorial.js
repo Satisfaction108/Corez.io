@@ -730,7 +730,7 @@ const CHAPTERS = [
             {
                 id: "satchel", next: true,
                 title: "Your satchel",
-                text: "I gave you *3,900* gems. You can carry *4,000* max, and once you're full you can't pick up any more. Everyone can see that glow btw, so you're a target now.",
+                text: "I gave you *3,900* gems. You can carry *8,000* max (more with a Reinforced Satchel or Deep Pockets), and once you're full you can't pick up any more. Everyone can see that glow btw, so you're a target now.",
                 onEnter: () => tut("gems", 3900),
                 target: () => ({ kind: "self" }),
                 praise: "ok",
@@ -758,7 +758,7 @@ const CHAPTERS = [
                     ? "Stay on the pad till the bar fills. Getting hit cancels it."
                     : "If you die you drop what you're carrying. *Banked* gems are safe. Drive onto the rainbow vault.",
                 hint: () => global.vault.onPad
-                    ? "Hit *Deposit* in the panel."
+                    ? "Hit *Bank all* in the panel."
                     : "Follow the arrow to the rainbow pad.",
                 praise: "safe",
                 onEnter: () => {
@@ -813,7 +813,7 @@ const CHAPTERS = [
                 id: "baseBank", allow: "bank:base",
                 title: "Bank at your base",
                 text: "Your base works as a bank too. You only keep *80%*, but it's usually way closer than a vault. Drive on and deposit.",
-                hint: () => global.vault.onPad ? "Hit *Deposit* in the panel." : "Drive onto the middle of your base.",
+                hint: () => global.vault.onPad ? "Hit *Bank all* in the panel." : "Drive onto the middle of your base.",
                 praise: "nice",
                 onEnter: () => {
                     tut("gems", 400);
@@ -831,7 +831,7 @@ const CHAPTERS = [
             {
                 id: "baseRules", next: true,
                 title: "Why bases matter",
-                text: "You respawn at your base (unless the storm is on it). Only you can stand on it, 10 seconds at a time. If someone shoots it you get an *UNDER ATTACK* warning, and whoever breaks it gets it.",
+                text: "You respawn at your base (unless the storm is on it). Only you can stand on it, 10 seconds at a time. If someone shoots it you get an *UNDER ATTACK* warning, and whoever does the most damage to it gets it.",
                 target: () => basePad(),
                 praise: "ok",
             },
@@ -902,7 +902,7 @@ const CHAPTERS = [
                 text: () => mob()
                     ? "Step off the pad, aim at a rock and tap the *ability* button above the dash. The hook yanks you right to it."
                     : `Step off the pad, put your mouse on a rock and press ${kc("KEY_ABILITY")}. The hook yanks you right to it.`,
-                hint: "Up to 900 away. It catches tanks too.",
+                hint: "Up to 900m away. It catches tanks too.",
                 praise: "yoink",
                 onEnter: () => { global.shop.dismissed = true; state.abUse0 = abil().cdAt || 0; },
                 target: () => ({ kind: "self" }),
@@ -1073,7 +1073,7 @@ const CHAPTERS = [
                 done: (p) => {
                     if (p >= 1) return true;
                     // Satchel full: nothing more can be picked up.
-                    if ((global.gems.carried | 0) >= ((global.gems.cap | 0) || 4000) - 10) return true;
+                    if ((global.gems.carried | 0) >= ((global.gems.cap | 0) || 8000) - 10) return true;
                     // Nothing left on the ground (or it never dropped).
                     if (nearestGem()) state.flagAt = 0;
                     else if (!state.flagAt) state.flagAt = T();
@@ -1155,7 +1155,7 @@ const CHAPTERS = [
     // ── 9 ────────────────────────────────────────────────────────────
     {
         id: "final", name: "Final fight", mins: 1,
-        blurb: "One quick 1v1 with a bot and you're done.",
+        blurb: "One quick 1v1 and you're done.",
         prep: () => { tut("kit", "medkit"); },
         steps: [
             {
@@ -1785,7 +1785,8 @@ function drawEdgeArrow(e) {
     c.lineWidth = 7; c.strokeStyle = INK; c.stroke();
     c.fillStyle = col; c.fill();
     c.restore();
-    const txt = Math.max(1, Math.round(distTo(e.tg) / 10)) + "m";
+    // the same metres as the raid HUD (round 8): game units, "570m" / "2.1km"
+    const dd = distTo(e.tg), txt = dd >= 1000 ? (dd / 1000).toFixed(1) + "km" : Math.max(1, Math.round(dd)) + "m";
     c.font = `400 ${14 * S}px ${DISPLAY}`;
     c.textAlign = "center";
     c.textBaseline = "middle";

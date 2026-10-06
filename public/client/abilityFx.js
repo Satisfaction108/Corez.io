@@ -504,7 +504,7 @@ const DUR = { dash: 380, launch: 520, shock: 900, radar: 1300, wall: 700, unsmok
 
 // Gem Magnet (shop gear): gems inside its pull streak in toward you, and a
 // faint field turns round the tank. The radius mirrors gems.js tickGem
-// (realSize * 2.6 + 110) * magnetMult.
+// realSize * 2.6 + MAGNET_REACH 135) * magnetMult
 const MAGNET_MULT = 1.9;
 function magnetOn() {
     const st = global.shop && global.shop.state;
@@ -515,7 +515,7 @@ function drawMagnet(c, px, py, ratio, now) {
     if (!H || !H.gemClass || global.died || !magnetOn()) return;
     const me = findEnt(myId());
     if (!me || !me.render) return;
-    const R = ((me.size || 24) * 2.6 + 110) * MAGNET_MULT;
+    const R = ((me.size || 24) * 2.6 + 135) * MAGNET_MULT;
     const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
     const mx = ratio * me.render.x - px + cx, my = ratio * me.render.y - py + cy;
     c.save();
@@ -1465,8 +1465,30 @@ function drawPlacement(c, px, py, ratio, now) {
         c.lineWidth = Math.max(1, 2 * ratio); c.strokeStyle = "#120e15"; c.stroke();
     }
     c.restore();
-    // aim mode (desktop): how to put it down or back out
-    if (a.mode === "click" && H) pill(c, sx, sy + 44, "Left click to place, right click or " + H.keyLabel("KEY_ABILITY", "Q") + " to cancel", 12, "#fff3d9");
+    // aim mode (desktop): what the next click does, right by the cursor, and how to
+    if (a.mode === "click" && H) {
+        const hint = aimHint(a.id, H.keyLabel("KEY_ABILITY", "Q"));
+        const ux = cx + (global.target ? global.target.x : sx - cx), uy = cy + (global.target ? global.target.y : sy - cy);
+        const pop = calm() ? 1 : Math.min(1, (now - (a.at || 0)) / 160);
+        const yy = Math.min(global.screenHeight - 50, uy + 38 + (1 - pop) * 8);
+        c.save();
+        c.globalAlpha *= pop;
+        pill(c, ux, yy, hint.main, 15, "#ffd76e");
+        pill(c, ux, yy + 25, hint.cancel, 11, "#fff3d9");
+        c.restore();
+    }
+}
+// "Click to throw SMOKE" / "Right click, Esc or Q to cancel" (cached per id + key)
+const aimHints = new Map();
+function aimHint(id, key) {
+    const k = id + "|" + key;
+    let h = aimHints.get(k);
+    if (!h) {
+        const verb = id === "smoke" || id === "shock" ? "throw" : "place";
+        h = { main: "Click to " + verb + " " + shortName(id), cancel: "Right click, Esc or " + key + " to cancel" };
+        aimHints.set(k, h);
+    }
+    return h;
 }
 const NO_DASH = [];
 const BLAST_DASH = [12, 10];

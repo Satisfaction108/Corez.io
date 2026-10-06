@@ -14,8 +14,7 @@ import { gameSound } from "./sound.js";
 //
 // Progress lives in localStorage, so a death, reload, resume or new raid
 // carries on from the current step. Anything done early (a deposit during the
-// mining step) counts. Dying on the bank step with the gems gone sends you back
-// to mining. The tutorial server never runs this.
+// mining step) counts, and a bank counts for the mining step too
 //
 // One card at a time: the guide steps aside while a big card holds the middle
 // of the screen (app.js global.hudCardUp: NEW ABILITY, event callouts, the
@@ -168,6 +167,11 @@ function tankName() {
     try { return global.mockups[parseInt(String(gui.type).split("-")[0], 10)].name || ""; }
     catch (e) { return ""; }
 }
+// a hull with no guns of its own (Smasher, Spike, ...) digs by ramming
+function gunless() {
+    try { return global.mockups[parseInt(String(gui.type).split("-")[0], 10)].guns.length === 0; }
+    catch (e) { return false; }
+}
 function mineGoal() {
     const cap = (global.gems && global.gems.cap) | 0;
     return cap > 0 ? Math.min(MINE_GOAL, cap) : MINE_GOAL;
@@ -200,7 +204,7 @@ function terr() {
     const t = window.terrainRenderer;
     return (t && t.ready && t._world && t._cellPolys) ? t : null;
 }
-function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "k" : String(Math.round(d)); }
+function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "km" : Math.round(d) + "m"; }
 function fmtNum(n) { return Math.round(n || 0).toLocaleString("en-US"); }
 
 // ── who gets the coach ─────────────────────────────────────────────────
@@ -261,6 +265,10 @@ function observe(t) {
     // "Don't upgrade" empties the menu without a new type: they know where it is
     else if (cur.type === p.type && p.ups > 0 && cur.ups === 0) markDone("upgrade");
     if (cur.doneAt !== p.doneAt && cur.doneAt > 0) markDone("bank");
+    // the bank going up while standing on a vault is a deposit too (a done packet
+    else if (cur.banked > p.banked && global.vault && global.vault.onPad && (global.vault.total > 0 || cur.doneAt > 0)) markDone("bank");
+    // banking means they mined: a 186-gem deposit must not leave the card on "Gems 0
+    if (rec.done.bank) markDone("mine");
     if (cur.kitAt !== p.kitAt && cur.kitAt > 0) markDone("ability");
     if (cur.abAt !== p.abAt && cur.abAt > 0) markDone("ability");
     if (((global.gems && global.gems.carried) | 0) >= mineGoal()) markDone("mine");
@@ -497,11 +505,21 @@ function place(t) {
         global.coachRect = { x: SW() / 2 - w / 2 / k - 6, y: top / k - 6, w: w / k + 12, h: h / k + 12 };
         return;
     }
-    const top = Math.max(48, st.baseTop + 6);
+    let top = Math.max(48, st.baseTop + 6);
+    // Hold still while the mouse is on the card or right by it: a boss bar coming up
+    const hold = st.top > 0 && top !== st.top && !global.mobile && ptrNear(st.top, w, h);
+    if (hold) top = st.top;
     if (top !== st.top) { st.top = top; root.style.top = top + "px"; }
-    st.wroteTop = st.baseTop + h + 12;
+    st.wroteTop = (hold ? Math.max(st.baseTop, top - 6) : st.baseTop) + h + 12;
     global.hudTopPx = st.wroteTop;
     global.coachRect = { x: SW() / 2 - w / 2 / k - 6, y: top / k - 6, w: w / k + 12, h: h / k + 12 };
+}
+// the last mouse position (CSS px), for place()
+const ptr = { x: -1e4, y: -1e4 };
+try { window.addEventListener("pointermove", e => { if (e.pointerType === "mouse") { ptr.x = e.clientX; ptr.y = e.clientY; } }, { passive: true }); } catch (e) { /* no window */ }
+function ptrNear(top, w, h) {
+    const m = 70;
+    return Math.abs(ptr.x - window.innerWidth / 2) < w / 2 + m && ptr.y > top - m && ptr.y < top + h + m;
 }
 function restoreTop() {
     if (global.hudTopPx === st.wroteTop) global.hudTopPx = st.baseTop;
@@ -535,12 +553,13 @@ function content(t) {
                     label: (st.moved >= MOVE_GOAL ? "Drove" : "Drive") + "  \u00b7  " + (st.fired ? "Fired" : "Fire") } };
         case "mine": {
             const goal = mineGoal(), c = (g.carried | 0);
-            let text = st.rocks.length ? "Shoot the circled rocks, then drive over the gems."
+            const ram = gunless();
+            let text = st.rocks.length ? (ram ? "No guns on this tank: push into the circled rocks to grind them, then drive over the gems." : "Shoot the circled rocks, then drive over the gems.")
                 : st.oreFar ? "Look for colored rocks. Follow the <b>ORE</b> arrow."
                 : "Look for colored rocks. They're full of gems.";
             if (st.dropped) text = "You dropped your gems. Mine some more, then bank them." +
                 (!st.rocks.length && st.oreFar ? " Follow the <b>ORE</b> arrow." : "");
-            return { ...base, title: "Shoot rocks. Grab the gems.", text,
+            return { ...base, title: ram ? "Ram rocks. Grab the gems." : "Shoot rocks. Grab the gems.", text,
                 bar: { frac: c / goal, label: "Gems  " + fmtNum(Math.min(c, goal)) + " / " + fmtNum(goal) } };
         }
         case "bank": {
@@ -548,8 +567,14 @@ function content(t) {
             const tg = st.target;
             let text = "Follow the <b>VAULT</b> arrow. Die carrying and you drop it all.";
             if (v.onPad && v.total > 0) text = "Depositing. Stay on the pad.";
-            else if (v.onPad && (g.carried | 0) >= VAULT_MIN) text = (touch ? "Tap" : "Hit") + " <b>Deposit</b> to bank what you carry.";
-            else if ((g.carried | 0) < VAULT_MIN) text = "Mine a few more gems first. You need " + VAULT_MIN + " to bank.";
+            else if (v.onPad && (g.carried | 0) >= VAULT_MIN) text = (touch ? "Tap" : "Hit") + " <b>Bank all</b> to bank what you carry.";
+            else if ((g.carried | 0) < VAULT_MIN) {
+                // a death on this step keeps the step: mine some, come back
+                text = st.dropped ? "You dropped your gems. Mine some more, then bank them."
+                    : "Mine a few more gems first. You need " + VAULT_MIN + " to bank.";
+                if (!st.rocks.length && st.oreFar) text += " Follow the <b>ORE</b> arrow.";
+                return { ...base, title: "Mine, then bank", text };
+            }
             else if (!tg) text = "Vaults are the gold rings on your minimap. " + mapOpens();
             else if (tg.on) text = "Drive onto the vault. Banked gems are safe when you die.";
             return { ...base, title: "Bank it before you lose it", text };
@@ -614,6 +639,8 @@ function syncServer() {
 function stepAside() {
     const sh = global.shop || {};
     if (global.showBigMap || global.hudCardUp) return true;
+    // the raid card and the HUD coming in, the first seconds (firstSeconds.js)
+    if (global.introHold) return true;
     // a director moment's banner (newcomer.js) has the middle
     if (global.nxBannerUp) return true;
     // the kill / growth callouts (a couple of seconds, just above the tank)
@@ -670,7 +697,7 @@ export function hook() {
             st.step = next;
             st.tutAt = t;
             clearMarks();
-            if (next !== "mine") st.dropped = false;
+            if (next !== "mine" && next !== "bank") st.dropped = false;
             if (next === "move") { st.moved = 0; st.fired = false; }
             if (next === "final") {
                 st.finalAt = t;
@@ -698,13 +725,11 @@ export function hook() {
     global.coachPointing = st.flash ? "flash" : (st.step || "");
 }
 // Once a respawn settles: gems lost on the bank step send you back to mining.
+// Steps never go back: a death on the bank step stays on the bank step, which
 function afterDeath(d) {
     st.death = null;
     const lost = d.carried > 0 && st.carried < d.carried;
-    if (d.step === "bank" && !rec.done.bank && st.carried < VAULT_MIN) {
-        if (rec.done.mine) { delete rec.done.mine; save(); }
-        st.dropped = lost;
-    } else if (d.step === "mine" && lost) st.dropped = true;
+    if ((d.step === "bank" || d.step === "mine") && lost) st.dropped = true;
 }
 
 // ── world layer: rocks to shoot, the pad to head for ───────────────────
@@ -920,8 +945,9 @@ export function drawIndicators() {
             else { const b = pad(clickRect("stat", 11) || hudRect("stats"), 6); if (b) { outline(c, b, t); tag(c, b, "Click a bar", "right", t); } }
         }
     } else if (st.step === "ability" && ownsKit()) {
-        const b = pad(hudRect("kit"), 6);
-        if (b) { outline(c, b, t); tag(c, b, touch ? "Tap one" : "Your kit", touch ? "left" : "right", t); }
+        // desktop: a tight ring (a wider one ran into the stat bars' header) and the tag
+        const b = pad(hudRect("kit"), touch ? 6 : 3);
+        if (b) { outline(c, b, t); tag(c, b, touch ? "Tap one" : "Your kit", touch ? "left" : "up", t); }
     } else if (st.step === "bank" && !st.target && (((global.gems && global.gems.carried) | 0) >= VAULT_MIN)) {
         // no vault known on screen: the minimap has them
         const b = pad(hudRect("minimap"), 4);

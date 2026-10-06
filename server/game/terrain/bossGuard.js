@@ -15,25 +15,9 @@
 // they stop to dodge), a group of three ~13-15 s.
 // ROYALE_BOSS_CAP=0 turns it off.
 //
-// The other way round, bosses go easy on new players (botNewness, stamped
-// by dig_royale: 1 for the first ~5 minutes / 5 lives, fading to 0 by 12
-// minutes / the 9th life):
-//   damage      boss bullets, turrets and hull hit a newcomer for
-//               NEWBIE_DMG_MIN at full newness, back up to full as it fades
-//   last blow   while still mostly new (NEWBIE_FLOOR_AT) a boss cannot take
-//               them below 1 health, unless they shot the boss in the last
-//               ATTACK_MS (picking that fight is on them)
-//   targeting   boss guns take anyone else in reach first
-// A player idle for a minute gets none of it. ROYALE_BOSS_NEWBIE=0 turns it
-// off.
+// Bosses treat every player alike (Oct 5 2026)
 //
-// A player in their first minutes (body.nxBossSafe, newcomerDirector.js) is
-// left alone: boss guns never pick them, a boss shot that reaches them fades
-// without hurting, and the boss's hull only pushes. Until they pick the
-// fight: once one of them has dealt ANGER_AT of a boss's pool, that boss
-// turns on them, gently at first (ANGER_MIN of its damage), getting angrier
-// as they keep hitting it (full at ANGER_FULL) or as time goes by since it
-// noticed them (full after ANGER_RAMP_MS).
+// Fresh tanks, anyone's: a life younger than FRESH_LIFE_MS, or a life in the
 'use strict';
 
 const HIT_SHARE = 0.0175;
@@ -57,7 +41,11 @@ const NEWBIE_DMG_MIN = 0.25, NEWBIE_FLOOR_AT = 0.25, ATTACK_MS = 8000, NEWBIE_AI
 let enabled = process.env.ROYALE_BOSS_CAP !== '0';
 let rateCap = process.env.ROYALE_BOSS_RATE_CAP === '1';
 function setRateCap(v) { rateCap = !!v; }
-let spare = process.env.ROYALE_BOSS_NEWBIE !== '0';
+let spare = process.env.ROYALE_BOSS_NEWBIE === '1';
+let freshOn = process.env.ROYALE_BOSS_FRESH !== '0';
+function setFresh(v) { freshOn = !!v; }
+// was 75 s / 0.3x, plus 150 s for a stock Basic and never the last point)
+const FRESH_LIFE_MS = 45_000, RAID_EARLY_MS = 120_000, BASIC_LIFE_MS = 0, FRESH_DMG = 0.6;
 function setEnabled(v) { enabled = !!v; }
 function isEnabled() { return enabled; }
 function setSpare(v) { spare = !!v; }
@@ -137,6 +125,17 @@ function newnessOf(p, now = Date.now()) {
     if (!(n > 0) || idle(p, now)) return 0;
     return n > 1 ? 1 : n;
 }
+// a tank too fresh for a boss to start on (see the header)
+function freshSpared(p, now = Date.now()) {
+    if (!freshOn || !p || !p.isPlayer || p.isDead?.()) return false;
+    if (now - (p._hitBossAt || 0) < ATTACK_MS) return false;
+    if (idle(p, now)) return false;
+    const life = p.royaleBornAt ? now - p.royaleBornAt : Infinity;
+    if (life < FRESH_LIFE_MS) return true;
+    // a raid's first minutes: bosses.js surfaces none before 3:00 at all
+    const rs = global.royaleRaidStartAt || 0;
+    return !!(rs && now - rs < RAID_EARLY_MS && life < RAID_EARLY_MS);
+}
 function bossRoot(e) {
     const r = rootOf(e);
     return r && r.isRoyaleBoss && !r.isTutorialBot ? r : null;
@@ -149,16 +148,9 @@ function intoPlayer(p, src, amount, now = Date.now()) {
     if (!(amount > 0)) return amount;
     const root = bossRoot(src);
     if (!root) return amount;
-    if (p.nxBossSafe) {
-        const anger = angerOf(root, p, now);
-        if (anger > 0) return amount * (BOSS_OUT[root.bossKind] || 1) * anger;
-        // a shot (not the hull, a drone or a minion) fades on contact
-        if (src !== root && src.type !== 'drone' && src.type !== 'minion' && src.type !== 'tank') {
-            try { src.kill(); } catch { /* */ }
-        }
-        return 0;
-    }
     amount *= BOSS_OUT[root.bossKind] || 1;
+    // a fresh life (anyone's): a share of it, never a shield against dying
+    if (freshSpared(p, now)) return amount * FRESH_DMG;
     if (!spare || !(p.botNewbie || p.botNewness > 0)) return amount;
     const n = newnessOf(p, now);
     if (!(n > 0)) return amount;
@@ -206,5 +198,5 @@ function regenGate(boss, normal, now = Date.now()) {
 module.exports = {
     HIT_SHARE, DRONE_HIT_SHARE, BIG_SHOT_HIT_SHARE, BIG_SHOT_SIZE, TANK_SHARE_S, ALL_SHARE_S, FIGHT_MS, NEWBIE_DMG_MIN, ATTACK_MS,
     capHit, regenGate, setEnabled, isEnabled, setRateCap, poolOf, angerOf, ANGER_AT, ANGER_FULL, ANGER_MIN,
-    setSpare, newnessOf, intoPlayer, aimPenalty, pickTarget, dropNewbieLock,
+    setSpare, setFresh, freshSpared, FRESH_LIFE_MS, RAID_EARLY_MS, BASIC_LIFE_MS, FRESH_DMG, newnessOf, intoPlayer, aimPenalty, pickTarget, dropNewbieLock,
 };

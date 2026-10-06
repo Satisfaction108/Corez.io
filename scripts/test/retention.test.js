@@ -3,13 +3,15 @@
 //   clock      shared/daily.js: unlock after 20 h, claimable to 48 h, a miss
 //              drops back 2 days (never to 0), the week wraps, the
 //              come-back countdown and its server-skew math, the ping time
-//   claim      accounts: gems + dust (ledger kind 'daily'), Buddy on day 3,
+//   claim      accounts: gemdust only (ledger kind 'daily'), Buddy on day 3,
 //              a sidekick skin on day 7, fallback dust for what they own;
 //              a second claim is refused, racing claims pay once
 //   reset      a missed window drops back gently and restarts the streak
-//   guests     gems into the guest bank (via banks.credit), day 3 / 7 items
-//              owed for sign up; a raid holding a lease loses nothing
-//   adopt      a guest browser that signs up brings its track and owed items
+//   table      no in-game gems at all; a week's dust sized to a cheap lobby item
+//   guests     no gems, the day's dust and the day 3 / 7 items owed for sign
+//              up; the bank is never touched (a raid's lease loses nothing)
+//   adopt      a guest browser that signs up brings its track, owed items
+//              and owed dust (capped at a week)
 //   http       POST /api/daily, /api/daily/claim (guests and accounts),
 //              CSRF, made-up guest ids capped per IP
 //   push       subscription storage (allowlisted push services only, upsert,
@@ -151,22 +153,25 @@ test('clock: the ping lands at the usual time, inside the claim window', () => {
 });
 
 // ── claiming (accounts) ────────────────────────────────────────────────
-test('claim: day 1 pays gems into the bank and dust (ledger kind daily); a second claim is refused', () => {
+test('claim: day 1 pays gemdust (ledger kind daily), no gems; a second claim is refused', () => {
     const u = mkUser();
     const before = dustOf(u);
     const r = retention.claim(A(u), T0);
     assert.equal(r.claimed.day, 1);
-    assert.equal(r.claimed.gems, 300);
+    assert.equal(r.claimed.gems, undefined, 'no gems on the reward');
     assert.equal(r.claimed.dustMilli, 1000);
     assert.equal(dustOf(u), before + 1000);
-    assert.equal(banks.peek('a:' + u.id), 300);
+    assert.equal(banks.peek('a:' + u.id), 0, 'the in-game bank is not touched');
     const led = d().get("SELECT * FROM dust_ledger WHERE user_id = ? AND kind = 'daily'", u.id);
     assert.equal(led.delta_milli, 1000);
     assert.equal(led.balance_milli, before + 1000);
     assert.equal(led.ref, 'daily:1');
+    const row = d().get('SELECT dc.gems, dc.dust_milli FROM daily_claims dc JOIN daily_track t ON t.id = dc.track_id WHERE t.user_id = ?', u.id);
+    assert.deepEqual({ ...row }, { gems: 0, dust_milli: 1000 });
     assert.equal(r.status.ready, false);
     assert.equal(r.status.day, 2);
-    assert.equal(r.status.tomorrow.gems, 500, 'tomorrow is shown before it is ready');
+    assert.equal(r.status.tomorrow.dustMilli, 1500, 'tomorrow is shown before it is ready');
+    assert.equal(r.status.bank, undefined, 'the status no longer carries the gem bank');
     assert.equal(errCode(() => retention.claim(A(u), T0 + 1000)), 'not_ready');
     assert.equal(errCode(() => retention.claim(A(u), T0 + 19 * HOUR)), 'not_ready');
     assert.equal(dustOf(u), before + 1000, 'paid once');
@@ -183,29 +188,29 @@ test('claim: racing requests pay once (the claims = ? guard and the claim row ke
     assert.throws(() => d().run('INSERT INTO daily_claims (track_id, claim_no, day, at) VALUES (?, 1, 1, ?)', tr.id, T0), /UNIQUE|PRIMARY/);
 });
 
-test('claim: a week of claims pays Buddy on day 3 and the Frosted skin on day 7, then wraps to day 1', () => {
+test('claim: a week of claims pays Buddy on day 3 and a common skin on day 7, then wraps to day 1', () => {
     const u = mkUser();
     const t = (i) => T0 + i * 21 * HOUR;
-    let gems = 0, dust = 0;
+    let dust = 0;
     for (let i = 0; i < 7; i++) {
         const r = retention.claim(A(u), t(i));
         assert.equal(r.claimed.day, i + 1);
-        gems += r.claimed.gems; dust += r.claimed.dustMilli;
+        dust += r.claimed.dustMilli;
         if (i + 1 === 3) {
             assert.equal(r.claimed.item.id, C.BASIC_SIDEKICK_ID);
             assert.ok(owns(u, 'sd_buddy'));
             assert.equal(accounts.users.byId(u.id).equip_sidekick, 'sd_buddy', 'put on: no sidekick was equipped');
         }
         if (i + 1 === 7) {
-            assert.equal(r.claimed.item.id, 'sds_frost');
-            assert.equal(C.byId('sds_frost').rarity, 'rare');
-            assert.equal(accounts.users.byId(u.id).equip_sd_skin, 'sds_frost', 'Buddy wears it');
+            assert.equal(r.claimed.item.id, 'sds_stripes');
+            assert.equal(C.byId('sds_stripes').rarity, 'common');
+            assert.equal(accounts.users.byId(u.id).equip_sd_skin, 'sds_stripes', 'Buddy wears it');
         }
     }
-    const expectGems = DY.TRACK.reduce((s, e) => s + e.gems, 0), expectDust = DY.TRACK.reduce((s, e) => s + e.dustMilli, 0);
-    assert.equal(gems, expectGems);
+    const expectDust = DY.TRACK.reduce((s, e) => s + e.dustMilli, 0);
     assert.equal(dust, expectDust);
-    assert.equal(banks.peek('a:' + u.id), expectGems);
+    assert.equal(expectDust, 10000, 'the first week: 10 dust plus the two items');
+    assert.equal(banks.peek('a:' + u.id), 0, 'no gems');
     const own = d().get("SELECT source FROM owned_items WHERE user_id = ? AND item_id = 'sd_buddy'", u.id);
     assert.equal(own.source, 'grant');
     // the ledger adds up
@@ -214,8 +219,36 @@ test('claim: a week of claims pays Buddy on day 3 and the Frosted skin on day 7,
     const st = retention.status(A(u), t(7));
     assert.equal(st.day, 1, 'a new week');
     assert.equal(st.streak, 7);
-    assert.equal(st.track[6].item.id, 'sds_checker', 'next week day 7 is the next skin they lack');
+    assert.equal(st.track[6].item.id, 'sds_dots', 'next week day 7 is the next skin they lack');
 });
+
+test('table: no in-game gems; a week of dust buys a cheap lobby item, and stays very low', () => {
+    const R = { common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4 };
+    for (const e of DY.TRACK) {
+        assert.equal(e.gems, undefined, 'day ' + e.day + ' pays no gems');
+        assert.ok(e.dustMilli + (e.fallbackMilli | 0) > 0, 'day ' + e.day + ' pays something');
+        assert.ok(e.dustMilli <= 3000 && (e.fallbackMilli | 0) <= 4000, 'day ' + e.day + ' dust');
+    }
+    // a week with every item already owned (what a regular gets week after week)
+    const week = DY.TRACK.reduce((s, e) => s + e.dustMilli + (e.fallbackMilli | 0), 0);
+    assert.equal(week, DY.WEEK_DUST_MILLI);
+    // the cheapest lobby items on sale: one every week or two, never much more
+    const shop = C.ITEMS.filter(it => !it.exclusive && !it.retired && it.price > 0 && it.id !== C.CUSTOM_COLOR_ID).map(it => it.price).sort((a, b) => a - b);
+    const cheapest = shop[0];
+    assert.ok(week >= cheapest, 'a week (' + week + ') buys the cheapest item (' + cheapest + ')');
+    assert.ok(week >= 15 * C.MILLI && week <= 25 * C.MILLI, 'a week is 15 to 25 dust, got ' + week);
+    const commonTank = C.ITEMS.filter(it => it.cat === 'skin' && it.rarity === 'common' && !it.retired && !it.exclusive).map(it => it.price);
+    assert.ok(2 * week >= Math.min(...commonTank), 'two weeks buy a common tank skin');
+    assert.ok(week < 0.5 * R_DAILY_CAP(), 'a week is under half of one day\'s capped raid dust');
+    const ids = DY.TRACK.filter(e => e.item && e.item !== 'day7').map(e => e.item).concat(DY.DAY7_ITEMS);
+    for (const id of ids) {
+        const it = C.byId(id);
+        assert.ok(it && !it.retired, id);
+        assert.equal(R[it.rarity], 0, id + ' is ' + it.rarity);
+        assert.ok(it.price <= 25 * C.MILLI, id + ' costs ' + it.price);
+    }
+});
+function R_DAILY_CAP() { return require('../../shared/ranks.js').DAILY_SOFT_CAP_MILLI; }
 
 test('claim: an item they already own pays the fallback dust instead', () => {
     const u = mkUser();
@@ -228,7 +261,7 @@ test('claim: an item they already own pays the fallback dust instead', () => {
     const r = retention.claim(A(u), T0 + 2 * 21 * HOUR);
     assert.equal(r.claimed.day, 3);
     assert.equal(r.claimed.dustMilli, DY.TRACK[2].fallbackMilli);
-    assert.equal(dustOf(u) - before, 5000);
+    assert.equal(dustOf(u) - before, 2500);
 });
 
 test('reset: missing the window drops back 2 days, not to 0, and restarts the flame', () => {
@@ -250,14 +283,16 @@ test('reset: missing the window drops back 2 days, not to 0, and restarts the fl
 });
 
 // ── guests ─────────────────────────────────────────────────────────────
-test('guests: gems go into the guest bank, no dust, items are owed for sign up', () => {
+test('guests: no gems, the dust and the items are owed for sign up', () => {
     const g = gid();
     guests.seen(g, T0, null);
     const r1 = retention.claim(G(g), T0);
-    assert.equal(r1.claimed.gems, 300);
-    assert.equal(r1.claimed.dustMilli, 0);
+    assert.equal(r1.claimed.gems, undefined);
+    assert.equal(r1.claimed.dustMilli, 1000, 'owed');
+    assert.equal(r1.claimed.signup, true, 'a guest\'s dust needs an account');
     assert.equal(r1.balanceMilli, null);
-    assert.equal(banks.peek('g:' + g), 300);
+    assert.equal(banks.peek('g:' + g), 0, 'the guest bank is not touched');
+    assert.equal(r1.status.owedMilli, 1000);
     retention.claim(G(g), T0 + 21 * HOUR);
     const st = retention.status(G(g), T0 + 42 * HOUR);
     assert.equal(st.owner, 'guest');
@@ -267,33 +302,42 @@ test('guests: gems go into the guest bank, no dust, items are owed for sign up',
     assert.equal(st.track[6].signup, true);
     const r3 = retention.claim(G(g), T0 + 42 * HOUR);
     assert.equal(r3.claimed.signup, true);
-    assert.equal(banks.peek('g:' + g), 300 + 500 + 750);
-    assert.deepEqual(retention.status(G(g), T0 + 43 * HOUR).owed.map(i => i.id), ['sd_buddy']);
+    assert.equal(r3.claimed.dustMilli, 0, 'an item day owes the item, not dust');
+    assert.equal(banks.peek('g:' + g), 0);
+    const after = retention.status(G(g), T0 + 43 * HOUR);
+    assert.deepEqual(after.owed.map(i => i.id), ['sd_buddy']);
+    assert.equal(after.owedMilli, 1000 + 1500);
 });
 
-test('guests: a raid holding the bank lease loses nothing and nobody spends it twice', () => {
+test('guests: a claim mid-raid leaves the bank lease alone', () => {
     const g = gid();
     guests.seen(g, T0, null);
     banks.checkout('g:' + g, 'seed-' + g);
     banks.release('seed-' + g, 1000);
     assert.equal(banks.checkout('g:' + g, 'raid-' + g, T0), 1000, 'a raid takes it all');
     retention.claim(G(g), T0);                                 // claimed in another tab mid-raid
-    assert.equal(banks.peek('g:' + g), 300, 'at rest while the raid holds the rest');
-    assert.equal(banks.checkout('g:' + g, 'tab2-' + g, T0), 300, 'a second tab only finds the reward');
-    banks.release('tab2-' + g, 300);
+    assert.equal(banks.peek('g:' + g), 0, 'the claim pays no gems, nothing lands at rest');
+    assert.equal(banks.checkout('g:' + g, 'tab2-' + g, T0), 0, 'a second tab finds nothing to spend');
+    banks.release('tab2-' + g, 0);
     banks.release('raid-' + g, 1400, T0 + HOUR);              // the raid banked 400 more
-    assert.equal(banks.peek('g:' + g), 1700);
+    assert.equal(banks.peek('g:' + g), 1400);
 });
 
-test('guests: a guest who signs up brings the track and gets the owed items', () => {
+test('guests: a guest who signs up brings the track and gets the owed items and dust', () => {
     const g = gid();
     guests.seen(g, T0, null);
     for (let i = 0; i < 3; i++) retention.claim(G(g), T0 + i * 21 * HOUR);
     const u = mkUser({ createdAt: Date.now() });
+    const before = dustOf(u);
     const r = retention.adoptGuest(u.id, g, Date.now());
     assert.equal(r.moved, true);
     assert.deepEqual(r.items.map(i => i.id), ['sd_buddy']);
     assert.ok(owns(u, 'sd_buddy'));
+    assert.equal(r.dustMilli, 1000 + 1500, 'days 1 and 2 dust');
+    assert.equal(dustOf(u) - before, 2500);
+    const led = d().get("SELECT * FROM dust_ledger WHERE user_id = ? AND kind = 'daily' AND ref = 'daily:adopt'", u.id);
+    assert.equal(led.delta_milli, 2500);
+    assert.equal(retention.status(G(g), Date.now()).owedMilli, 0, 'paid out: the closed guest row owes nothing');
     const tr = d().get('SELECT step, claims, streak FROM daily_track WHERE user_id = ?', u.id);
     assert.deepEqual({ ...tr }, { step: 3, claims: 3, streak: 3 });
     assert.equal(retention.adoptGuest(u.id, g, Date.now()).moved, false, 'once');
@@ -308,6 +352,27 @@ test('guests: a guest who signs up brings the track and gets the owed items', ()
     const other = mkUser(), mine = mkUser();
     guests.converted(g2, other.id);
     assert.equal(retention.adoptGuest(mine.id, g2, Date.now()).moved, false);
+});
+
+test('guests: owed dust is capped at a week, and claim rows from the gem days owe nothing', () => {
+    const g = gid();
+    guests.seen(g, T0, null);
+    for (let i = 0; i < 20; i++) retention.claim(G(g), T0 + i * 21 * HOUR);
+    assert.equal(retention.status(G(g), T0 + 20 * 21 * HOUR).owedMilli, DY.WEEK_DUST_MILLI);
+    // a track claimed before the switch: rows paid gems, dust 0
+    const g2 = gid();
+    guests.seen(g2, T0, null);
+    retention.claim(G(g2), T0);
+    retention.claim(G(g2), T0 + 21 * HOUR);
+    const tr = d().get('SELECT id FROM daily_track WHERE guest_id = ?', g2);
+    d().run('UPDATE daily_claims SET gems = 300, dust_milli = 0 WHERE track_id = ?', tr.id);
+    const u = mkUser({ createdAt: Date.now() });
+    const before = dustOf(u);
+    const r = retention.adoptGuest(u.id, g2, Date.now());
+    assert.equal(r.moved, true);
+    assert.equal(r.dustMilli, 0);
+    assert.equal(dustOf(u), before, 'nothing paid for the old gem claims');
+    assert.equal(d().get("SELECT count(*) AS n FROM dust_ledger WHERE user_id = ? AND ref = 'daily:adopt'", u.id).n, 0);
 });
 
 // ── HTTP ───────────────────────────────────────────────────────────────
@@ -338,10 +403,12 @@ test('http: a guest sees day 1, claims it, and is told when to come back', async
     assert.ok(s.json.shop && s.json.shop.name, 'a sidekick off today\'s shelf');
     const c = await api('/api/daily/claim', { guestId: g });
     assert.equal(c.status, 200, JSON.stringify(c.json));
-    assert.equal(c.json.claimed.gems, 300);
+    assert.equal(c.json.claimed.gems, undefined);
+    assert.equal(c.json.claimed.dustMilli, 1000);
+    assert.equal(c.json.claimed.signup, true);
     assert.equal(c.json.status.ready, false);
     assert.ok(c.json.status.readyAt > Date.now() + 19 * HOUR);
-    assert.equal(c.json.status.bank, 300);
+    assert.equal(c.json.status.owedMilli, 1000);
     const again = await api('/api/daily/claim', { guestId: g });
     assert.equal(again.status, 409);
     assert.equal(code(again), 'not_ready');
@@ -357,9 +424,11 @@ test('http: accounts claim with their session; a new account adopts its browser\
     assert.equal(s.json.owner, 'account');
     assert.equal(s.json.claims, 1, 'the guest\'s day 1 came along');
     assert.ok(s.json.adoptedNow);
+    assert.equal(s.json.adoptedNow.dustMilli, 1000, 'the guest\'s day 1 dust is paid on sign up');
     assert.equal(s.json.ready, false, 'day 1 was claimed as a guest: day 2 unlocks tomorrow');
     assert.equal(s.json.day, 2);
-    assert.equal(s.json.today.dustMilli, 1500, 'and as an account it pays dust too');
+    assert.equal(s.json.today.dustMilli, 1500, 'day 2 as an account');
+    assert.equal(s.json.today.signup, false);
     const u2 = mkUser();
     const c = await api('/api/daily/claim', {}, { cookie: cookieFor(u2) });
     assert.equal(c.status, 200);
@@ -453,7 +522,8 @@ test('push: the daily ping goes once, at the usual time, encrypted for that brow
     assert.equal(p.headers.Topic, 'daily');
     const msg = JSON.parse(webpush.decrypt(p.body, b.priv, b.auth).toString('utf8'));
     assert.equal(msg.title, 'Day 2 reward is ready');
-    assert.match(msg.body, /^500 gems/);
+    assert.match(msg.body, /^1\.5 gemdust for the shop is waiting, sign up to keep it\./);
+    assert.ok(!/\bgems\b/.test(msg.body), 'no in-game gems in the ping');
     assert.ok(!/—/.test(msg.title + msg.body), 'no em dash');
     // the VAPID token: ES256 over our key, for that push service
     const m = /^vapid t=([^,]+), k=(.+)$/.exec(p.headers.Authorization);
@@ -609,6 +679,69 @@ test('migration v12: from v11 the dust ledger is kept, the backup is written, da
     assert.throws(() => raw.run('INSERT INTO daily_track (user_id, claims, created_at) VALUES (1, 1, 1)'), /CHECK/, 'claims need a time');
     assert.deepEqual(migrations.apply(raw).applied, [], 'nothing left to do');
     raw.close();
+});
+
+// ── every day's prize (client/account/dailyView.js) ────────────────────
+const dailyView = () => import(require('url').pathToFileURL(path.join(REPO, 'public', 'client', 'account', 'dailyView.js')).href);
+test('daily panel: all 7 days with their prizes, claimed / today / next marked, the rule in one line', async () => {
+    const V = await dailyView();
+    const u = mkUser();
+    // before anything: day 1 is today, day 2 is next
+    let v = V.rows(retention.status(A(u), T0), DY);
+    assert.equal(v.rows.length, 7);
+    assert.deepEqual(v.rows.map(r => r.state), ['today', 'next', 'later', 'later', 'later', 'later', 'later']);
+    assert.deepEqual(v.rows.map(r => r.text), ['1 gemdust', '1.5 gemdust', 'Buddy sidekick', '2 gemdust', '2.5 gemdust', '3 gemdust', 'Stripes sidekick skin']);
+    assert.equal(v.rows[2].note, '2.5 gemdust if you have it');
+    assert.equal(v.rows[6].note, '4 gemdust if you have it');
+    assert.match(v.rule, /20h after your last claim/);
+    assert.match(v.rule, /Miss 48h and you drop back 2 days/);
+    // two claims in: 1 and 2 claimed, 3 is next (locked), the rest later
+    retention.claim(A(u), T0);
+    retention.claim(A(u), T0 + 21 * HOUR);
+    v = V.rows(retention.status(A(u), T0 + 22 * HOUR), DY);
+    assert.deepEqual(v.rows.map(r => r.state), ['done', 'done', 'next', 'later', 'later', 'later', 'later']);
+    // unlocked: 3 is today, 4 next
+    v = V.rows(retention.status(A(u), T0 + 42 * HOUR), DY);
+    assert.deepEqual(v.rows.map(r => r.state).slice(0, 4), ['done', 'done', 'today', 'next']);
+    // a full week: all seven claimed until day 1 comes round again
+    for (let i = 2; i < 7; i++) retention.claim(A(u), T0 + (i + 1) * 21 * HOUR);
+    v = V.rows(retention.status(A(u), T0 + 7 * 21 * HOUR + HOUR), DY);
+    assert.ok(v.rows.every(r => r.state === 'done'), v.rows.map(r => r.state).join());
+    // the next week: Buddy is owned, so day 3 is its dust and says so
+    v = V.rows(retention.status(A(u), T0 + 8 * 21 * HOUR), DY);
+    assert.equal(v.rows[0].state, 'today');
+    assert.equal(v.rows[2].text, '2.5 gemdust');
+    assert.equal(v.rows[2].note, 'you have Buddy sidekick');
+    assert.equal(v.rows[6].text, 'Polka Dots sidekick skin');
+    // no em dashes in anything it says
+    assert.ok(!/\u2014/.test(JSON.stringify(v)), 'no em dashes');
+});
+
+test('daily panel: a guest sees every prize with "sign up to claim"', async () => {
+    const V = await dailyView();
+    const g = gid();
+    const v = V.rows(retention.status(G(g), T0), DY, { guest: true });
+    assert.equal(v.guest, true);
+    assert.equal(v.rows.length, 7);
+    assert.ok(v.rows.every(r => /sign up to claim$/.test(r.note)), v.rows.map(r => r.note).join(' | '));
+    assert.equal(v.rows[2].text, 'Buddy sidekick');
+    // nothing to draw without a status
+    assert.deepEqual(V.rows(null, DY).rows, []);
+});
+
+test('daily panel: lazy and wired (card click, All days, Esc / outside / X via modal)', () => {
+    const src = fs.readFileSync(path.join(REPO, 'public', 'client', 'account', 'retention.js'), 'utf8');
+    assert.match(src, /import \* as view from '\.\/dailyView\.js'/);
+    assert.match(src, /strip\.addEventListener\('click'/);
+    assert.match(src, /class: 'dy-link dy-all'/);
+    assert.match(src, /modal\(\{ cls: 'dyd-modal'.*dismissable: true/);
+    assert.match(src, /'aria-label': 'Close'.*onclick: \(\) => m\.close\(\)/);
+    const viewSrc = fs.readFileSync(path.join(REPO, 'public', 'client', 'account', 'dailyView.js'), 'utf8');
+    assert.ok(!/\bimport\b|fetch\(|document\./.test(viewSrc.replace(/\/\/.*$/gm, '')), 'dailyView.js is pure');
+    const html = fs.readFileSync(path.join(REPO, 'public', 'index.html'), 'utf8');
+    assert.ok(!/dailyView/.test(html), 'nothing extra at first paint');
+    const css = fs.readFileSync(path.join(REPO, 'public', 'home.css'), 'utf8');
+    assert.match(css, /\.dw-modal\.dyd-modal \{[^}]*max-width: 100%/);
 });
 
 // ── client wiring ──────────────────────────────────────────────────────

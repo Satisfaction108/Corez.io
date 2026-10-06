@@ -39,13 +39,13 @@ const CATALOG = [
     { id: 'chain',   name: 'Chain Spark',     icon: 'chain',   max: 3, w: 3, kind: 'mine',  desc: 'Hitting rock can arc a spark into the rock nearby.' },
     { id: 'pierce',  name: 'Piercing Rounds', icon: 'pierce',  max: 3, w: 3, kind: 'mine',  desc: 'Shots punch through one more rock.' },
     { id: 'crit',    name: 'Lucky Strike',    icon: 'crit',    max: 3, w: 3, kind: 'mine',  desc: '12% of your shots hit rock for triple damage.' },
-    { id: 'satchel', name: 'Deep Pockets',    icon: 'satchel', max: 2, w: 3, kind: 'util',  desc: 'Carry 20% more gems.' },
+    { id: 'satchel', name: 'Deep Pockets',    icon: 'satchel', max: 1, w: 3, kind: 'util',  desc: 'Carry 4,000 more gems: 12,000, or 16,000 with a Reinforced Satchel.' },
     { id: 'speed',   name: 'Swift Treads',    icon: 'speed',   max: 3, w: 3, kind: 'move',  desc: 'Move 6% faster.' },
     { id: 'hide',    name: 'Thick Hide',      icon: 'hide',    max: 3, w: 2, kind: 'tough', desc: '7% more max health.' },
     { id: 'regen',   name: 'Field Repair',    icon: 'regen',   max: 2, w: 2, kind: 'tough', desc: 'Out of a fight for 5 seconds, heal 1.2% of your health a second.' },
     { id: 'vamp',    name: 'Gem Leech',       icon: 'vamp',    max: 2, w: 2, kind: 'tough', desc: 'Every gem you pick up heals you a little.' },
-    { id: 'twin',    name: 'Twin Drill',      icon: 'twin',    max: 2, w: 1, kind: 'fight', desc: 'A small extra barrel fires with your guns, and you dig more.' },
-    { id: 'drones',  name: 'Drone Bay',       icon: 'drones',  max: 2, w: 1, kind: 'fight', desc: 'Two swarm barrels fire with you. Their drones chew rock and chase enemies.' },
+    { id: 'twin',    name: 'Twin Drill',      icon: 'twin',    max: 2, w: 1, kind: 'fight', desc: 'A small extra barrel that only drills rock.' },
+    { id: 'drones',  name: 'Drone Bay',       icon: 'drones',  max: 2, w: 1, kind: 'fight', desc: 'Swarm drones that only chew rock.' },
     { id: 'reload',  name: 'Overclock',       icon: 'reload',  max: 3, w: 1, kind: 'fight', desc: 'Reload 5% faster.' },
 ];
 const BY_ID = new Map(CATALOG.map(p => [p.id, p]));
@@ -65,17 +65,37 @@ function newBuild() {
 }
 
 // Three different perks that still have room, weighted toward mining and
-// utility (fewer near the end when most are maxed).
+// utility (fewer near the end when most are maxed)
+const UPGRADE_W = 2;
 function rollOffer(build, rng = Math.random) {
-    const pool = CATALOG.filter(p => (build.perks[p.id] | 0) < p.max);
+    const perks = (build && build.perks) || {};
+    // Deep Pockets is already on for everyone during the twist of that name)
+    const twistDeep = !!(global.royaleMods && global.royaleMods.satchelDeep);
+    const pool = CATALOG.filter(p => (perks[p.id] | 0) < p.max && !(twistDeep && p.id === 'satchel'))
+        .map(p => ({ id: p.id, up: (perks[p.id] | 0) > 0, w: p.w * ((perks[p.id] | 0) > 0 ? UPGRADE_W : 1) }));
     const out = [];
-    while (out.length < OFFER_N && pool.length) {
+    // one weighted draw among the pool entries that pass `ok`
+    const draw = (ok) => {
         let total = 0;
-        for (const p of pool) total += p.w;
-        let r = rng() * total, i = 0;
-        for (; i < pool.length - 1; i++) { r -= pool[i].w; if (r < 0) break; }
-        out.push(pool[i].id);
-        pool.splice(i, 1);
+        for (const p of pool) if (ok(p)) total += p.w;
+        if (!(total > 0)) return false;
+        let r = rng() * total, k = -1;
+        for (let i = 0; i < pool.length; i++) {
+            if (!ok(pool[i])) continue;
+            k = i;
+            r -= pool[i].w;
+            if (r < 0) break;
+        }
+        out.push(pool[k].id);
+        pool.splice(k, 1);
+        return true;
+    };
+    draw(p => p.up);                       // an upgrade, when one exists
+    if (out.length < OFFER_N) draw(p => !p.up);   // and something new
+    while (out.length < OFFER_N && draw(() => true));
+    for (let i = out.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [out[i], out[j]] = [out[j], out[i]];
     }
     return out;
 }
@@ -170,7 +190,7 @@ function computeFx(perks) {
         // the per-second dig budget (game/index.js): more barrels dig more
         budget: mine * (1 + 0.2 * n('twin') + 0.15 * n('drones')),
         magnet: 1 + 0.4 * n('magnet'),
-        satchel: 1 + 0.2 * n('satchel'),
+        satchel: n('satchel'),          // held: +4,000 (shop.satchelCap)
         speed: 1 + 0.06 * n('speed'),
         health: 1 + 0.07 * n('hide'),
         reload: 1 + 0.05 * n('reload'),
@@ -214,21 +234,20 @@ function clearBody(body) {
     applyToBody(body, null);
 }
 
-// Hidden extra barrels. Small on purpose: a twin shot is half a basic
-// bullet, a drone a little over half a swarm drone.
+// Extra barrels
 function gunDefs(fx) {
     const { combineStats } = require('../../lib/definitions/facilitators.js');
     const g = require('../../lib/definitions/gunvals.js');
     const out = [];
     if (!fx) return out;
-    const twinSlots = [[0, 8, 0.5], [0, -8, 0.25]];
+    const twinSlots = [[6, 16, 0.5], [-6, -16, 0.25]];
     for (let i = 0; i < Math.min(2, fx.twin); i++) {
         const [y, ang, delay] = twinSlots[i];
         out.push({
-            POSITION: [18, 8, 1, 0, y, ang, delay],
+            POSITION: [16, 6.5, 1, 0, y, ang, delay],
             PROPERTIES: {
                 SHOOT_SETTINGS: combineStats([g.basic, { reload: 1.15, damage: 0.5 }]),
-                TYPE: "bullet", LABEL: "Twin Drill", COLOR: "mirror", HIDDEN: true,
+                TYPE: "bullet", LABEL: "Twin Drill", COLOR: "mirror", ROCK_ONLY: true, FIXED_BULLET_SIZE: true,
             },
         });
     }
@@ -239,9 +258,9 @@ function gunDefs(fx) {
         out.push({
             POSITION: [9, 7, 0.7, x, y, ang, delay],
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.swarm, { reload: 1.6, damage: 0.6 }]),
-                TYPE: "swarm", LABEL: "Drone Bay", COLOR: 16, HIDDEN: true,
-                STAT_CALCULATOR: "swarm", MAX_CHILDREN: 2,
+                SHOOT_SETTINGS: combineStats([g.swarm, { reload: 0.8, damage: 0.6 }]),
+                TYPE: "swarm", LABEL: "Drone Bay", COLOR: 16, HIDDEN: true, ROCK_ONLY: true,
+                STAT_CALCULATOR: "swarm", MAX_CHILDREN: 5,
             },
         });
     }
@@ -444,7 +463,7 @@ function onGemHeal(body) {
 }
 
 module.exports = {
-    STEP, OFFER_N, CATALOG, BY_ID, earnedAt, nextAt, newBuild, rollOffer, describeOffer, perkList, totalPicks,
+    STEP, OFFER_N, UPGRADE_W, CATALOG, BY_ID, earnedAt, nextAt, newBuild, rollOffer, describeOffer, perkList, totalPicks,
     grant, syncScore, pick, botPick, snapshot, computeFx,
     applyToBody, clearBody, attachGuns, detachGuns, gunDefs,
     critMult, skipPassed, afterRockHit, breakRock, tickBody, onGemHeal, fxNear, PIERCE_TANK_DAMAGE,

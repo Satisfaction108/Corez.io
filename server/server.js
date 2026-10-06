@@ -11,6 +11,7 @@ const crypto = require("crypto");
 const zlib = require("zlib");
 const pjson = require('../package.json')
 const { clientIp } = require("./lib/clientIp.js");
+const { listedPlayers } = require("./lib/listedPlayers.js");
 const { clientVersion, stampHtml } = require("./lib/clientVersion.js");
 
 const { Worker } = require("worker_threads");
@@ -414,9 +415,11 @@ server = http.createServer((req, res) => {
                 const cfg = serverCfg(server.id);
                 const duo = server.mode === "duo" || !!(cfg && cfg.properties && cfg.properties.royale_duos);
                 const extra = !duo && server.gameManager ? overflow : [];
+                const mode = duo ? "duo" : (server.mode || undefined);
                 return {
                     ip: duo || server.ip === Config.host ? ownHost : server.ip,
-                    players: extra.reduce((n, s) => n + (s.players | 0), server.players | 0),
+                    // people + bots, never under the bots a raid drops in with you
+                    players: listedPlayers({ mode, players: extra.reduce((n, s) => n + (s.players | 0), server.players | 0) }),
                     maxPlayers: extra.reduce((n, s) => n + (s.maxPlayers | 0), server.maxPlayers | 0),
                     id: server.id,
                     featured: server.featured,
@@ -424,7 +427,7 @@ server = http.createServer((req, res) => {
                     gameMode: server.gameMode,
                     // raid servers say which menu mode they are; the duo one is
                     // reached through this host at proxyPath, never its own port
-                    mode: duo ? "duo" : (server.mode || undefined),
+                    mode,
                     proxyPath: duo ? DUO_PROXY_PATH : undefined,
                 };
             }));

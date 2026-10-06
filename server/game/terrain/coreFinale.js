@@ -388,6 +388,16 @@ function pulse(t, fighters) {
     }
 }
 
+// Vault and shop pads are safe ground: a Core shard that would land on one (or
+function onSafePad(x, y, margin = SHARD_HIT_R) {
+    const padGeom = require('./padGeom.js');
+    let pads = [];
+    try { pads = require('./vault.js').getVaults(); } catch { /* */ }
+    for (let i = 0; i < pads.length; i++) if (padGeom.insidePad(pads[i], x, y, margin)) return true;
+    try { pads = require('./shop.js').getShops(); } catch { pads = []; }
+    for (let i = 0; i < pads.length; i++) if (padGeom.insidePad(pads[i], x, y, margin)) return true;
+    return false;
+}
 function fireShards(t, fighters) {
     const near = [];
     for (const b of fighters) {
@@ -401,6 +411,7 @@ function fireShards(t, fighters) {
     for (const { b } of near.slice(0, rage ? SHARD_RAGE_N : SHARD_N)) {
         // aimed where they will be, more or less: you can still juke it
         const x = b.x + (b.velocity.x || 0) * ticks * 0.7, y = b.y + (b.velocity.y || 0) * ticks * 0.7;
+        if (onSafePad(x, y)) continue;
         shards.push({ x, y, at: t + SHARD_FLIGHT_MS, dmg: rage ? SHARD_RAGE_DMG : SHARD_DMG });
         if (hooks.fxAt) hooks.fxAt(x, y, 'coreshard', SHARD_FLIGHT_MS);
     }
@@ -411,6 +422,7 @@ function landShards(t, fighters) {
     const keep = [];
     for (const s of shards) {
         if (s.at > t) { keep.push(s); continue; }
+        if (onSafePad(s.x, s.y)) continue;
         for (const b of fighters) {
             if (!alive(b)) continue;
             const r = SHARD_HIT_R + (b.realSize || 30);
@@ -501,7 +513,7 @@ function debugHp(f, by) {
     return frac();
 }
 
-module.exports = {
+module.exports = { onSafePad,
     ON, CORE_OFFSET, ARENA_R, LANE_R, COVER_R, ZONE_R, PULSE_R, SHARD_BELOW, RAGE_BELOW, LAST_HIT_GEMS, LAST_HIT_PTS,
     HP_MAX, CORE_BANK, MIN_SHARE, SPRAY_GEMS, splitPayout, SHARD_DMG, SHARD_RAGE_DMG, PULSE_DMG, CHARGE_MS, SHARD_CHARGE_MS, SHARD_FLIGHT_MS,
     COLLAPSE_MS, SPEW_PIECES, spew,

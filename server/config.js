@@ -158,6 +158,8 @@ module.exports = {
     damage_multiplier: 1,
     knockback_multiplier: 1.1,
     glass_health_factor: 2,
+    // how much a full Max Health bar adds to health (1 = double)
+    max_health_skill: 1,
     room_bound_force: 0.01,
     soft_max_skill: 0.59,
 

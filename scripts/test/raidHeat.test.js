@@ -251,7 +251,10 @@ test('core: the site is 330 from the Center Vault and the final circle aims betw
     storm.debugFinal(storm.CYCLE_MS / 1000 - 1);
     const st = storm.snapshot();
     assert.equal(st.fin, 1);
-    assert.ok(Math.abs(st.cx - s.mid.x) < 1e-6 && Math.abs(st.cy - s.mid.y) < 1e-6, 'final centre ' + st.cx + ',' + st.cy);
+    // it opens on the rock circle and slides there as it shrinks
+    assert.ok(Math.abs(st.tx - s.mid.x) < 1e-6 && Math.abs(st.ty - s.mid.y) < 1e-6, 'final target ' + st.tx + ',' + st.ty);
+    const end = storm.centerAt(Date.now() + storm.shrinkMs());
+    assert.ok(Math.abs(end.x - s.mid.x) < 1e-6 && Math.abs(end.y - s.mid.y) < 1e-6, 'closes onto it ' + end.x + ',' + end.y);
 });
 
 test('core: surfaces with the last storm in a cleared arena, off the pad, reachable', () => {
@@ -655,7 +658,7 @@ test('resume: a reload keeps its team and colour, and drops back in on screen on
     assert.deepEqual(kept, { team: -4321, color: 13 });
     // the spawn path uses it
     const sk = fs.readFileSync(path.join(SERVER, 'game', 'network', 'sockets.js'), 'utf8');
-    assert.ok(/if \(kept\) team = kept\.team;/.test(sk) && /const c = kept \? kept\.color : global\.assignTeamColor\(team\);/.test(sk));
+    assert.ok(/if \(kept\) team = kept\.team;/.test(sk) && /soloColor\.js'\)\.colorFor\(socket, team, rid, kept\)/.test(sk));
     const body = player(0, 0, back);
     body.team = kept.team; body.color.base = kept.color;
     const before = new Set([...grid.rocks.values()].filter(r => r.alive).map(r => r.k));

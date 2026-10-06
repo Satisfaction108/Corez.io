@@ -152,7 +152,7 @@ async function copyText(text) {
 }
 export function shareLine(info) {
     // the Crown Contest
-    if (info.champ) return "I'm the Core Champion on Corez.io! I took the crown home. https://corez.io";
+    if (info.champ) return "I'm the Core Champion on Corez.io! Most points in the raid. https://corez.io";
     if (info.crownCol && (info.place === 2 || info.place === 3)) return "I held a crown to the end on Corez.io! #" + info.place + (info.rows > 1 ? " of " + info.rows : "") + ". https://corez.io";
     if (info.place === 1) return (info.duos ? "We won a Duos raid on Corez.io!" : "I won a raid on Corez.io!") + " https://corez.io";
     if (info.place > 0) return "I placed #" + info.place + (info.rows > 1 ? " of " + info.rows : "") + " in a " + (info.duos ? "Duos " : "") + "raid on Corez.io! https://corez.io";
@@ -327,7 +327,7 @@ export function makeCard(info) {
     else { big = "RAID OVER"; fill = C.head; dark = "#9a8d78"; }
     const bs = fit(c, big, TITLE, place > 1 && big.length < 4 ? 150 : 124, 560, 40);
     title(c, big, L - 4, 118, bs, fill, dark);
-    const sub = info.champ ? "Took the crown home" + (info.rows > 1 ? ". #1 of " + info.rows : "")
+    const sub = info.champ ? "Most points" + (info.rows > 1 ? ". #1 of " + info.rows : "")
         : info.crownCol && (place === 2 || place === 3) ? "Held a crown to the bell. #" + place + (info.rows > 1 ? " of " + info.rows : "")
         : place === 1 ? (info.duos ? "Won a Duos raid" : "Won the raid") + (info.rows > 1 ? " out of " + info.rows : "")
         : place > 0 ? "Placed #" + place + (info.rows > 1 ? " of " + info.rows : "") + " in a " + (info.duos ? "Duos" : "Solo") + " raid"
@@ -338,7 +338,7 @@ export function makeCard(info) {
     word(c, name, L, 256, fit(c, name, TITLE, 46, 540, 22), C.gold);
 
     // the numbers
-    const cells = [["RAID SCORE", fmt(info.score), C.gold], ["KILLS", fmt(info.kills), C.head], ["BANKED", fmt(info.banked), C.emerald]];
+    const cells = [["POINTS", fmt(info.score), C.gold], ["KILLS", fmt(info.kills), C.head], ["BANKED", fmt(info.banked), C.emerald]];
     const cw = 170, ch = 104, cy = 304;
     for (let i = 0; i < 3; i++) {
         const x = L + i * (cw + 12);

@@ -197,6 +197,8 @@ const global = {
     syncingWithTank: false,
     respawnTimeout: false,
     respawnPending: false,
+    // asked to respawn during the storm lock / death wait (canvas respawn)
+    respawnQueued: false,
     showDebug: false,
     died: false,
     kicked: false,
@@ -228,6 +230,9 @@ const global = {
         clicked: false,
         hover: Region(1),
         skipUpgrades: Region(1),
+        // round 9 build buttons: Last tank (by Don't upgrade), Same stats / Random (by
+        lastTank: Region(1),
+        statBtn: Region(2),
         mobileButtons: Region(20),
         exitGame: Region(1),
         deathRespawn: Region(1),

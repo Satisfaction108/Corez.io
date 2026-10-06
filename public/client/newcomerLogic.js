@@ -108,13 +108,13 @@ export function goalFor(s) {
 export const INTROS = {
     shop: { stage: 1, text: "Shops sell abilities and gear. You pay with banked gems." },
     ability: { stage: 1, text: "Abilities recharge. Press {key} to use yours.", touch: "Abilities recharge. Tap the ability button to use yours." },
-    kit: { stage: 1, text: "Kit items work once each. Use them with {kit}.", touch: "Kit items work once each. Tap them on the right." },
+    kit: { stage: 1, text: "Your kit (bottom left) holds one-use items. Press {kit} to use one.", touch: "Your kit holds one-use items. Tap one on the right to use it." },
     boss: { stage: 2, text: "Bosses hit hard and pay big. Team up or keep clear." },
     contract: { stage: 2, text: "Contracts are quick jobs, top left. Each one pays gems." },
     bounty: { stage: 2, text: "A bounty is out. Take that player down for extra gems." },
     core: { stage: 2, text: "The Core rose in the middle. Everyone who hits it gets paid." },
     hunted: { stage: 2, text: "Carrying a lot makes you hunted. Bank to shake them off." },
-    twist: { stage: 2, text: "Every raid has a twist. It's on the card, top left." },
+    twist: { stage: 2, text: "Each raid has an Override, a special rule. It's on the card, top left." },
     // raid perks (raidPerks.js): from the first raid, the first time an offer is up
     perks: { stage: 0, text: "Every 5,000 points you pick a perk. It lasts until the raid ends." },
 };
@@ -126,7 +126,14 @@ export function introText(id, nx, seen, keys) {
     if (seen && seen[id]) return "";
     const k = keys || {};
     const raw = k.touch && it.touch ? it.touch : it.text;
-    return raw.replace("{key}", k.ability || "Q").replace("{kit}", k.kit || "Z, comma and N");
+    return raw.replace("{key}", k.ability || "Q").replace("{kit}", k.kit || "Z, comma or N");
+}
+// The three kit keys as words: ["Z", ",", "N"] -> "Z, comma or N"
+const KEY_WORDS = { ",": "comma", ".": "period", "/": "slash", ";": "semicolon", "'": "quote", "[": "[", "]": "]", "-": "minus", "=": "equals", " ": "Space" };
+export function kitKeysText(keys) {
+    const ks = (keys || []).filter(Boolean).map(k => KEY_WORDS[k] || String(k));
+    if (ks.length <= 1) return ks[0] || "";
+    return ks.slice(0, -1).join(", ") + " or " + ks[ks.length - 1];
 }
 
 // ── director moments (stage 0) ─────────────────────────────────────────
@@ -143,7 +150,10 @@ export function normKind(kind) {
 }
 const KIND_COL = { ore: "#ffd76e", crate: "#6ff5a8", ability: "#5ce0d8", chest: "#f2b83c", timed: "#ff9a5a", "": "#f2eef8" };
 const KIND_MARK = { ore: "VEIN", crate: "CRATE", chest: "CHEST", timed: "GO", "": "LOOK" };
-// The arrival banner. ev: the server's moment; o: { ability: name, key, touch }.
+// how close counts as "next to you" for a crate, and the distance words
+export const CRATE_NEXT_TO = 450;
+const distWord = (d) => d >= 1000 ? (d / 1000).toFixed(1) + "km" : (Math.round(d / 10) * 10) + "m";
+// The arrival banner
 // Unknown kinds: the event's own text if it has some, else no banner (the
 // arrow still points at it).
 export function bannerFor(ev, o) {
@@ -154,7 +164,7 @@ export function bannerFor(ev, o) {
     let title = "", line = "";
     switch (kind) {
         case "ore": title = "Rich vein nearby"; line = "Follow the arrow and dig in."; break;
-        case "crate": title = "Supply crate incoming!"; line = "It lands by the arrow. Crack it open."; break;
+        case "crate": title = "Supply crate incoming!"; line = "It lands by the arrow. Open it up."; break;
         case "chest": title = "Treasure chest nearby"; line = "Shoot it open for gems."; break;
         case "ability": {
             const name = opt.ability || e.name || "";
@@ -168,6 +178,12 @@ export function bannerFor(ev, o) {
     }
     if (kind !== "timed" && kind && t) title = t;
     if (kind !== "timed" && kind !== "ability" && sub) line = sub;
+    // "next to you" only when it is: the crate can land up to 1,500 away (playtest 4
+    const dist = +opt.dist;
+    if (kind === "crate" && isFinite(dist) && dist > CRATE_NEXT_TO) {
+        title = (/coming|incoming/i.test(title) ? "Supply drop coming, " : "Supply crate down, ") + distWord(dist) + " away";
+        if (!sub) line = "Follow the arrow. Open it up.";
+    }
     // a timed job at the vault (the server's "bank N gems") points at it
     const mark = kind === "ability" ? "" : kind === "timed" && e.goal > 0 ? "VAULT" : (KIND_MARK[kind] || KIND_MARK[""]);
     return { kind, title, sub: line, col: KIND_COL[kind] || KIND_COL[""], mark };
@@ -180,8 +196,8 @@ export function payoffFor(ev, leftMs) {
     const gems = r > 0 ? "+" + r + " gems" : "";
     switch (kind) {
         case "ore": return { title: "Vein cleared!", sub: gems || "Now bank it." };
-        case "crate": return { title: "Crate cracked!", sub: gems || "Grab the loot." };
-        case "chest": return { title: "Chest cracked!", sub: gems || "Grab the gems." };
+        case "crate": return { title: "Crate opened!", sub: gems || "Grab the loot." };
+        case "chest": return { title: "Chest opened!", sub: gems || "Grab the gems." };
         case "ability": return { title: "That's an ability!", sub: "Shops sell more of them." };
         case "timed": {
             const s = Math.max(0, Math.ceil((leftMs || 0) / 1000));
@@ -241,7 +257,7 @@ export function deathKind(d) {
     return "player";
 }
 export const DEATH_TIPS = {
-    bot: "A bot chased you. Bank gems before you get too heavy.",
+    bot: "Another miner hunted you down. Bank gems before you get too heavy.",
     player: "Another player got you. Bank your gems before you pick a fight.",
     boss: "A boss got you. Bosses hit hard, so keep your distance for now.",
     storm: "The storm got you. Follow the arrow back to the circle.",
@@ -265,4 +281,10 @@ export function keptLine(k) {
     if (banked > 0) return "You kept your " + fmt(banked) + " banked gems." + (lost > 0 ? " Your satchel dropped." : "");
     if (lost > 0) return "Nothing was banked, so your gems dropped. Bank them next time.";
     return "Nothing lost. Jump back in.";
+}
+
+// The sub line under an "OVERRIDE: NAME" popup: what an override is, then what
+export function modCalloutSub(desc) {
+    const d = String(desc || "").trim();
+    return d ? "This raid's special rule: " + d : "A special rule for this raid.";
 }

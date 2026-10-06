@@ -165,3 +165,48 @@ export function comboAfter(prevCount, prevAt, now) {
     return now - prevAt <= COMBO_MS ? prevCount + 1 : 1;
 }
 export function comboLabel(n) { return n >= 2 ? "x" + n : ""; }
+// Your own kill's slam sub line, from the KC text ("ELIMINATED: kai (300 gems
+export function killSub(text, pts, fmt) {
+    const t = String(text || "");
+    const i = t.indexOf(": ");
+    let who = i >= 0 ? t.slice(i + 2) : "";
+    const cut = who.indexOf("  (");
+    if (cut >= 0) who = who.slice(0, cut);
+    who = who.trim();
+    const p = pts | 0;
+    const head = who ? "You knocked out " + who : "You knocked them out";
+    return p > 0 ? head + "  ·  +" + (fmt ? fmt(p) : String(p)) + " pts" : head;
+}
+// Every kill of yours gets its own moment (playtest 5: only the first kill's
+export const KILL_SLAM_KEY = "KO";
+export function multiKillWord(n) {
+    n = n | 0;
+    if (n <= 1) return "ELIMINATED";
+    if (n === 2) return "DOUBLE KO";
+    if (n === 3) return "TRIPLE KO";
+    if (n === 4) return "QUAD KO";
+    return "RAMPAGE x" + n;
+}
+// the bigger kills (KC kind, or the server's headline word): their own word
+export function bigKillWord(kind, text) {
+    if (kind === "shutdown") return "SHUTDOWN";
+    if (kind === "revenge") return "REVENGE";
+    if (kind === "huntkill") return "BOUNTY CASHED";
+    if (/^GIANT DOWN/.test(String(text || ""))) return "GIANT DOWN";
+    return "";
+}
+// the victim's name from the KC text ("ELIMINATED: kai (300 gems dropped)")
+export function killWho(text) {
+    const t = String(text || "");
+    const i = t.indexOf(": ");
+    let who = i >= 0 ? t.slice(i + 2) : "";
+    const cut = who.indexOf("  (");
+    if (cut >= 0) who = who.slice(0, cut);
+    return who.trim();
+}
+// the kill pop over your own tank: { head: "KO kai", pts: "+350 pts" | "" }
+export function killPop(text, pts, fmt) {
+    const who = killWho(text);
+    const p = pts | 0;
+    return { head: who ? "KO  " + who : "KO", pts: p > 0 ? "+" + (fmt ? fmt(p) : String(p)) + " pts" : "" };
+}

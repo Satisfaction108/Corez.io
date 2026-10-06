@@ -12,12 +12,14 @@ import * as raidShare from "./raidShare.js";
 import * as juice from "./juice.js";
 import * as CL from "./crownsLogic.js";
 import * as crownArt from "./crownArt.js";
+import * as SL from "./scoreLogic.js";
+import * as RP from "./raidProgressLogic.js";
 
 let A = null;
 export function init(helpers) { A = helpers; }
 
 // ms after the KC raidend. The server takes everyone but the winners down at
-// 1.6 s and starts the next raid at 16.6 s. Everything from the crown on runs
+// 1.6 s and starts the next raid at 22.6 s
 // off the reveal, which waits for the camera to reach the winner.
 const FREEZE_OUT = 1700;
 const TITLE_OUT = 1900;
@@ -28,17 +30,26 @@ const REWARDS_AT = 2300;
 const TALLY_AT = 2900;
 const TALLY_MS = 2200;
 const NEXT_AT = 5200;
-const END_MS = 19000;
+const END_MS = 25000;       // past the server's next raid (22.6 s): the drop stops it first
 
 const S = {
     on: false, at: 0, sub: "", reveal: 0,
     winIds: new Set(), seen: new Map(),
     top: [], rows: 0, duos: false, winner: "", mate: "", place: 0, isWin: false,
-    me: { score: 0, kills: 0, banked: 0, next: 0 },
+    me: { score: 0, kills: 0, banked: 0, next: 0, k: 0, c: 0 },
+    // the raid whose podium you actually saw (firstSeconds shows a recap before FRESH
+    raidId: 0, seenRaid: 0,
     respawnAsked: false, filtered: false, lastTick: 0, podSnd: 0, tallyEnd: false,
     gemAcc: 0, paperAcc: 0, nextSpan: 0, crownHit: false, crownAt: 0, holdArmed: false, snapped: false, streak: null, fx: 0, fy: 0, fr: 0, fok: false,
     cb: null, dc: null, cw: null,
+    // "Keep results up" (the next-raid plate's button): the next raid's drop doesn't
+    keep: false,
 };
+// The results kept after the drop: drawn over the game until a click, Esc or
+const DOCK_MS = 45000;
+const D = { on: false, at: 0 };
+// hit boxes (screen units), filled where they're drawn
+const keepBox = { x: 0, y: 0, w: 0, h: 0, on: false };
 
 const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
 const easeOut = (k) => 1 - (1 - k) * (1 - k) * (1 - k);
@@ -55,15 +66,20 @@ const glowOn = () => !config.graphical.noGlow && !global.lowFx;
 const shakeOn = () => !config.graphical.noShake;
 
 export const active = () => S.on;
+// the kept results over the game (not the finale: the HUD and the raid run)
+export const docked = () => D.on;
 // the HUD steps aside once the freeze is over
 export const hidesHud = () => S.on && performance.now() - S.at > FREEZE_OUT;
 // a rank-up ceremony waits for the tally
 export const holdsCeremony = () => S.on && (!S.reveal || performance.now() - S.reveal < TALLY_AT + TALLY_MS + 600);
 export const watchIds = () => S.on ? S.winIds : null;
+// did this raid's podium get on screen long enough to read?
+export const sawResults = (raidId) => (raidId | 0) > 0 && (raidId | 0) === S.seenRaid;
 // QA hook (headless runs): what the finale thinks is going on
 window.dwFinale = () => ({ on: S.on, t: S.on ? Math.round(performance.now() - S.at) : -1, reveal: S.reveal ? Math.round(performance.now() - S.reveal) : 0,
     fok: S.fok, seen: S.seen.size, place: S.place, win: S.isWin, parts: P.n });
 
+const you0 = (r) => (r && r.you) || {};
 // ── in from the network ───────────────────────────────────────────────────
 export function start(sub) {
     const r = global.royale || {};
@@ -80,6 +96,12 @@ export function start(sub) {
     S.gemAcc = S.paperAcc = 0;
     S.nextSpan = 0;
     S.fok = false;
+    S.keep = false;
+    D.on = false;
+    S.progAt = 0;
+    S.prog = null;
+    try { S.best = RP.noteRaid((res && res.raidId) | 0 || (r.raidId | 0), (you0(r).score) | 0, window.localStorage); } catch (e) { S.best = { best: 0, isBest: false }; }
+    keepBox.on = false;
     S.seen.clear();
     S.winIds.clear();
     if (res && res.win) for (const id of res.win) S.winIds.add(id);
@@ -91,13 +113,18 @@ export function start(sub) {
     S.isWin = S.place === 1;
     S.me.score = (you.score != null ? you.score : r.youScore) | 0;
     S.me.kills = you.kills | 0;
-    S.me.banked = you.banked | 0;
+    // the cells add up the way the standings do: banked + kills & crowns
+    const pt = SL.parts(you);
+    S.me.banked = pt.b;
+    S.me.k = pt.k; S.me.c = pt.c;
+    S.raidId = (res && res.raidId) | 0 || (r.raidId | 0);
     S.me.next = you.nextGems | 0;
     const w = S.top[0];
     S.winner = res && res.champ ? (res.champ.name || "Unnamed") : w ? (w.name || "Unnamed") : "";
-    // the Crown Contest decided it: CORE CHAMPION, silver and bronze crowns
+    // a crown raid: CORE CHAMPION for #1 by points, and every title says the winner's
     S.cw = null;
-    try { S.cw = CL.finale(res, S.place, S.isWin, S.winner, S.rows); } catch (e) { S.cw = null; }
+    const wScore = res && res.champ ? res.champ.score | 0 : w ? w.score | 0 : 0;
+    try { S.cw = CL.finale(res, S.place, S.isWin, S.winner, S.rows, wScore); } catch (e) { S.cw = null; }
     S.mate = S.duos && r.duo && r.duo.mate ? String(r.duo.mate.name || "your teammate") : "";
     if (!S.streak || now - S.streak.at > 20000) S.streak = null;
     P.n = 0;
@@ -139,10 +166,37 @@ export function stop() {
     S.on = false;
     P.n = 0;
     K.n = 0;
+    keepBox.on = false;
     setFreezeFilter(false);
+    // asked to keep them: the podium and your raid stay up over the game a drop that
+    const now = performance.now();
+    if (S.keep || !S.reveal || now - S.reveal < PODIUM_AT + 4000) { D.on = true; D.at = now; return; }
     raidShare.hide();
     hideDiscord();
 }
+function undock() {
+    if (!D.on) return;
+    D.on = false;
+    raidShare.hide();
+    hideDiscord();
+}
+// canvas.js mouseDown (screen units): the Keep button, or a click that puts the
+export function click(x, y) {
+    if (D.on) { undock(); return true; }
+    if (S.on && keepBox.on && x >= keepBox.x && x <= keepBox.x + keepBox.w && y >= keepBox.y && y <= keepBox.y + keepBox.h) {
+        S.keep = !S.keep;
+        try { gameSound.uiClick && gameSound.uiClick(); } catch (e) { /* */ }
+        return true;
+    }
+    return false;
+}
+// canvas.js keyDown: Esc puts the kept results away
+export function key(kc) {
+    if (D.on && kc === 27) { undock(); return true; }
+    return false;
+}
+// QA (headless): keep on/off, docked or not
+window.dwKeepResults = (on) => { if (on != null) S.keep = !!on; return { keep: S.keep, docked: D.on, box: keepBox.on }; };
 
 function watchWinner(follow) {
     global.royaleDied = false;
@@ -470,6 +524,7 @@ function focus(now, W, H) {
 }
 
 export function draw() {
+    if (!S.on && D.on && A) { drawDock(); return; }
     if (!S.on || !A) return;
     const now = performance.now();
     const t = now - S.at;
@@ -485,8 +540,13 @@ export function draw() {
     // the dead queue for the next raid once the camera has landed
     if (global.died && !S.respawnAsked && t > 3200 && !global._specGlide && !global.respawnPending) {
         S.respawnAsked = true;
+        // the only respawn the finale lets through (canvas.respawn refuses clicks and
+        global.finaleRespawn = true;
         try { global.canvas.respawn(); } catch (e) { /* */ }
+        global.finaleRespawn = false;
     }
+    // the podium and your numbers were up long enough to read
+    if (S.reveal && now - S.reveal > PODIUM_AT + 2000 && S.raidId && !document.hidden) S.seenRaid = S.raidId;
     if (!S.reveal && t > REVEAL_MIN) {
         const near = S.fok && Math.abs(S.fx - W / 2) < W * 0.2 && Math.abs(S.fy - H / 2) < H * 0.22;
         if (near || t > REVEAL_MAX) reveal(now, W, H);
@@ -666,6 +726,10 @@ function drawWinnerFx(c, rt, now) {
     }
 }
 
+// The line under a big title: never into it
+export function subY(y, size, subSize, k = 0.68) {
+    return y + Math.max(size * k, size * 0.62 + subSize * 0.55 + 8);
+}
 function drawTitles(c, rt, W, H) {
     const HUD = A.HUD;
     const k = clamp((rt - 180) / 420);
@@ -681,7 +745,8 @@ function drawTitles(c, rt, W, H) {
         bigTitle(c, "VICTORY", W / 2, y, size, HUD.gold, HUD.goldDk, a, pop);
         const sub = S.duos ? (S.mate ? "You and " + shortName(S.mate, 20) + " won it together" : "Your team won the raid")
             : S.rows > 1 ? "You won the raid. #1 of " + S.rows : "You won the raid";
-        A.hudTitle(sub, W / 2, y + size * 0.68, fitSize(sub, 30, W - 60), HUD.head, "center", clamp((rt - 450) / 400), c);
+        const s2 = fitSize(sub, 30, W - 60);
+        A.hudTitle(sub, W / 2, subY(y, size, s2, 0.68), s2, HUD.head, "center", clamp((rt - 450) / 400), c);
         return;
     }
     const place = S.place;
@@ -695,16 +760,14 @@ function drawTitles(c, rt, W, H) {
     const a2 = clamp((rt - 450) / 400);
     if (lead) {
         const wl = A.hudTitleW(lead, size2), wn = A.hudTitleW(winTxt, size2), wr = A.hudTitleW(" won the raid", size2);
-        const x0 = W / 2 - (wl + wn + wr) / 2, yy = y + size * 0.62;
+        const x0 = W / 2 - (wl + wn + wr) / 2, yy = subY(y, size, size2, 0.62);
         A.hudTitle(lead, x0, yy, size2, HUD.head, "left", a2, c);
         A.hudTitle(winTxt, x0 + wl, yy, size2, HUD.gold, "left", a2, c);
         A.hudTitle(" won the raid", x0 + wl + wn, yy, size2, HUD.head, "left", a2, c);
-    } else nameLine(c, winTxt, " won the raid", W / 2, y + size * 0.66, size2, a2);
+    } else nameLine(c, winTxt, " won the raid", W / 2, subY(y, size, size2, 0.66), size2, a2);
 }
 
-// The Crown Contest's words (crownsLogic.finale): CORE CHAMPION for the
-// winner, a silver or bronze crown for 2nd and 3rd, and for everyone else
-// the champion's name with "is the Core Champion" under it.
+// A crown raid's words (crownsLogic.finale): CORE CHAMPION for the winner (#1 by
 const CW_COL = { gold: ["#f2b83c", "#a8750f"], silver: ["#e6e1ee", "#8d8799"], bronze: ["#e07b2e", "#9e4a14"] };
 function drawCrownTitles(c, rt, W, H, y, a, pop) {
     const HUD = A.HUD, cw = S.cw;
@@ -715,7 +778,8 @@ function drawCrownTitles(c, rt, W, H, y, a, pop) {
         bigTitle(c, cw.title, W / 2, y, size, HUD.gold, HUD.goldDk, a, pop);
         const tail = S.place > 0 ? "  ·  you placed #" + S.place : "";
         const sub = cw.sub + tail;
-        A.hudTitle(sub, W / 2, y + size * 0.68, fitSize(sub, 30, W - 60, 14), HUD.head, "center", a2, c);
+        const s2 = fitSize(sub, 30, W - 60, 14);
+        A.hudTitle(sub, W / 2, subY(y, size, s2, 0.68), s2, HUD.head, "center", a2, c);
         return;
     }
     const [fill, dark] = CW_COL[cw.col] || CW_COL.gold;
@@ -728,14 +792,15 @@ function drawCrownTitles(c, rt, W, H, y, a, pop) {
             const cs = global.royale && global.royale.you && global.royale.you.cs | 0;
             if (cs > 1) sub += "  ·  " + cs + " wins in a row";
         }
-        A.hudTitle(sub, W / 2, y + size * 0.68, fitSize(sub, 30, W - 60, 14), HUD.head, "center", a2, c);
+        const s2 = fitSize(sub, 30, W - 60, 14);
+        A.hudTitle(sub, W / 2, subY(y, size, s2, 0.68), s2, HUD.head, "center", a2, c);
         return;
     }
     // 2nd / 3rd: the champion's name in gold inside the line
-    const nm = S.winner || "Nobody", rest = " is the Core Champion";
+    const nm = S.winner || "Nobody", rest = cw.rest || " is the Core Champion";
     const s2 = fitSize(nm + rest, 30, W - 60, 14);
     const wn = A.hudTitleW(nm, s2), wr = A.hudTitleW(rest, s2);
-    const x0 = W / 2 - (wn + wr) / 2, yy = y + size * 0.64;
+    const x0 = W / 2 - (wn + wr) / 2, yy = subY(y, size, s2, 0.64);
     A.hudTitle(nm, x0, yy, s2, HUD.gold, "left", a2, c);
     A.hudTitle(rest, x0 + wn, yy, s2, HUD.head, "left", a2, c);
 }
@@ -795,7 +860,7 @@ function shareInfo() {
         place: S.place, rows: S.rows, duos: S.duos, name: global.playerName || "Unnamed",
         score: S.me.score, kills: S.me.kills, banked: S.me.banked, top: S.top,
         fok: S.fok, fx: S.fx, fy: S.fy, fr: S.fr, crown: crownSprite(),
-        champ: !!(S.cw && S.isWin), crownCol: S.cw ? S.cw.col : "", champName: S.cw ? S.winner : "",
+        champ: !!(S.cw && S.isWin), crownCol: S.cw && S.isWin ? S.cw.col : "", champName: S.cw ? S.winner : "",
     };
 }
 
@@ -842,8 +907,17 @@ function drawPodium(c, pt) {
             continue;
         }
         A.hudTitle(A.fmtNum(row.score | 0), bx + colW / 2, top + 68, 20, HUD.head, "center", a, c);
-        A.drawText((row.kills | 0) + ((row.kills | 0) === 1 ? " kill" : " kills"), bx + colW / 2, top + 89, 11, HUD.text2, "center", true, a);
-        A.drawText(A.fmtNum(row.gems | 0) + " banked", bx + colW / 2, top + 103, 11, HUD.text2, "center", true, a);
+        // what the points are made of
+        const cl = CL.crownLine(row);
+        const kl = (row.kills | 0) + ((row.kills | 0) === 1 ? " kill" : " kills");
+        if (cl) {
+            const kb = kl + " · " + A.fmtNum(row.gems | 0) + " banked";
+            A.drawText(kb, bx + colW / 2, top + 89, fitSize(kb, 11, colW - 6, 8), HUD.text2, "center", true, a);
+            A.drawText(cl, bx + colW / 2, top + 103, fitSize(cl, 11, colW - 6, 8), HUD.gold, "center", true, a);
+        } else {
+            A.drawText(kl, bx + colW / 2, top + 89, 11, HUD.text2, "center", true, a);
+            A.drawText(A.fmtNum(row.gems | 0) + " banked", bx + colW / 2, top + 103, 11, HUD.text2, "center", true, a);
+        }
         // the name over the block; yours in gold
         const name = shortName(row.name, S.duos ? 26 : 18);
         const mine = S.place === rank;
@@ -862,7 +936,8 @@ function drawPodium(c, pt) {
     }
 }
 
-const CELL_LABEL = ["RAID SCORE", "KILLS", "BANKED"];
+// POINTS = BANKED + KILLS & CROWNS (scoreLogic.js), so the cells add up
+const CELL_LABEL = ["POINTS", "BANKED THIS RAID", "KILLS + CROWNS"];
 // rebuilt only when what they say changes
 const chipCache = { key: "", n: 0, text: ["", ""], col: ["", ""] };
 function rewardChips() {
@@ -880,11 +955,32 @@ function rewardChips() {
 const RANK_H = 106, CB_H = 58;
 // the rewards plate's height: the rank panel when there is one, and the
 // come-back row once /api/daily has answered
+function progRows() {
+    const now = performance.now();
+    if (S.prog && now - (S.progAt || 0) < 500) return S.prog;
+    S.progAt = now;
+    try {
+        const acct = global.acct || null;
+        const id = S.raidId | 0;
+        let bestLife = 0;
+        try { bestLife = +window.localStorage.getItem("dwBestLife") || 0; } catch (e) { /* */ }
+        const lifeNow = !global.died && global.spawnedAt > 0 ? (now - global.spawnedAt) / 1000 : 0;
+        S.prog = RP.rows({
+            guest: !acct, rank: acct && acct.rank, rp: RP.rankThisRaid(id), rpSeen: RP.rankSeen(id),
+            dust: acct ? +acct.dust || 0 : 0, nu: acct && acct.nu, bestLife, lifeNow,
+            bestRaid: S.best ? S.best.best : 0, isBest: !!(S.best && S.best.isBest),
+        });
+    } catch (e) { S.prog = []; }
+    return S.prog;
+}
+const PROG_ROW = 20;
+const progH = () => { const n = progRows().length; return n ? 12 + n * PROG_ROW + 8 : 0; };
 function rewardsH() {
     const hasRank = !!(A && A.rankHasContent());
-    if (!S.cb) return hasRank ? PH : PH - RANK_H - 14;
+    const pg = progH();
+    if (!S.cb) return (hasRank ? PH : PH - RANK_H - 14) + pg;
     // the score cells, the chips, the rank panel, then the row and a margin
-    return 52 + 66 + 12 + 34 + (hasRank ? 14 + RANK_H : 0) + 14 + CB_H + 16;
+    return 52 + 66 + 12 + 34 + pg + (hasRank ? 14 + RANK_H : 0) + 14 + CB_H + 16;
 }
 function drawRewards(c, pt, now) {
     const HUD = A.HUD;
@@ -902,11 +998,11 @@ function drawRewards(c, pt, now) {
     const cw = (PW - 40 - 16) / 3, wy = 52, wh = 66;
     for (let i = 0; i < 3; i++) {
         const x = 20 + i * (cw + 8);
-        const full = i === 0 ? S.me.score : i === 1 ? S.me.kills : S.me.banked;
+        const full = i === 0 ? S.me.score : i === 1 ? S.me.banked : S.me.k + S.me.c;
         A.hudWell(c, x, wy, cw, wh, 10, i === 0 ? "rgba(242,184,60,0.12)" : HUD.well, HUD.ink, 2);
-        A.drawText(CELL_LABEL[i], x + cw / 2, wy + 16, 10.5, HUD.text2, "center", true);
+        A.drawText(CELL_LABEL[i], x + cw / 2, wy + 16, fitSize(CELL_LABEL[i], 10.5, cw - 12, 8), HUD.text2, "center", true);
         const size = fitSize(A.fmtNum(full), 26, cw - 14, 14);
-        A.hudTitle(A.fmtNum(Math.round(full * e)), x + cw / 2, wy + 44, size, i === 0 ? HUD.gold : i === 1 ? HUD.head : HUD.emerald, "center", 1, c);
+        A.hudTitle((full < 0 ? "-" : "") + A.fmtNum(Math.abs(Math.round(full * e))), x + cw / 2, wy + 44, size, i === 0 ? HUD.gold : i === 1 ? HUD.emerald : HUD.head, "center", 1, c);
     }
     // the next raid's head start and the streak
     const cy = wy + wh + 12, ch = 34;
@@ -922,9 +1018,25 @@ function drawRewards(c, pt, now) {
         const txt = chips.text[i];
         A.drawText(txt, x + chipW / 2, cy + ch / 2, fitSize(txt, 13, chipW - 20, 9), chips.col[i], "center", true, chipK);
     }
-    if (hasRank) A.rankDraw(c, 20, cy + ch + 14, PW - 40, rankH, clamp((pt - 600) / 400));
+    // progress: rank points, the next lobby unlock, your bests
+    const pr = progRows(), pg = progH();
+    if (pr.length) {
+        const py = cy + ch + 12, pk = clamp((pt - 1000) / 400);
+        c.save();
+        c.globalAlpha *= pk;
+        A.hudWell(c, 20, py, PW - 40, pg - 8, 10, HUD.well, HUD.ink, 2);
+        c.restore();
+        for (let i = 0; i < pr.length; i++) {
+            const ry = py + 6 + PROG_ROW * i + PROG_ROW / 2;
+            const col = pr[i].col === "gold" ? HUD.gold : pr[i].col === "play" ? HUD.play : pr[i].col === "lilac" ? (HUD.lilac || "#c9b6ff") : HUD.head;
+            A.drawText(pr[i].k, 34, ry, 9.5, HUD.text2, "left", true, pk);
+            A.drawText(pr[i].t, 118, ry, fitSize(pr[i].t, 12.5, PW - 40 - 112, 8.5), col, "left", true, pk);
+        }
+    }
+    const cy2 = cy + pg;
+    if (hasRank) A.rankDraw(c, 20, cy2 + ch + 14, PW - 40, rankH, clamp((pt - 600) / 400));
     if (S.cb) {
-        const y = (hasRank ? cy + ch + 14 + rankH : cy + ch) + 14;
+        const y = (hasRank ? cy2 + ch + 14 + rankH : cy2 + ch) + 14;
         c.save();
         c.globalAlpha *= clamp((performance.now() - S.cb.at) / 350) * clamp((pt - 1200) / 400);
         drawComeBack(c, 20, y, PW - 40, CB_H, now);
@@ -947,9 +1059,39 @@ function drawNext(c, rt, now, W, H) {
     A.hudPanel(c, x, y, w, h, { fill: HUD.solid, r: HUD.rBig, lip: 4 });
     A.drawText("NEXT RAID IN", x + 20, y + 19, 10.5, HUD.text2, "left", true);
     A.hudTitle(left > 0.5 ? Math.ceil(left) + "s" : "Now", x + 20, y + 39, 26, HUD.play, "left", 1, c);
-    const line = left > 0.5 ? "You're in. Everyone drops in together." : "Dropping you in…";
-    A.drawText(line, x + w - 20, y + 29, fitSize(line, 14, w - 130, 10), HUD.head, "right", true);
-    A.hudBar(c, x + 96, y + h - 13, w - 116, 6, S.nextSpan ? clamp(left / S.nextSpan) : 0, HUD.play);
+    // the Keep button (mouse only: a phone keeps the auto flow)
+    const bw = global.mobile ? 0 : 128, bh = 30;
+    const line = S.keep ? "Kept: they stay up after you drop in." : left > 0.5 ? "You're in. Everyone drops in together." : "Dropping you in…";
+    A.drawText(line, x + w - 20 - (bw ? bw + 10 : 0), y + 29, fitSize(line, 14, w - 130 - (bw ? bw + 10 : 0), 9), HUD.head, "right", true);
+    A.hudBar(c, x + 96, y + h - 13, w - 116 - (bw ? bw + 10 : 0), 6, S.nextSpan ? clamp(left / S.nextSpan) : 0, HUD.play);
+    if (bw && w > 380) {
+        const bx = x + w - 14 - bw, by = y + h / 2 - bh / 2;
+        A.hudWell(c, bx, by, bw, bh, bh / 2, S.keep ? "rgba(242,184,60,0.28)" : HUD.well, S.keep ? HUD.gold : HUD.ink, 2);
+        A.drawText(S.keep ? "Kept" : "Keep results up", bx + bw / 2, by + bh / 2, S.keep ? 13 : 11.5, S.keep ? HUD.gold : HUD.head, "center", true);
+        keepBox.x = bx; keepBox.y = by; keepBox.w = bw; keepBox.h = bh; keepBox.on = k > 0.6;
+    } else keepBox.on = false;
+    c.restore();
+}
+
+// The kept results, over the live game: dimmed world, the podium and your raid
+function drawDock() {
+    const now = performance.now();
+    if (now - D.at > DOCK_MS || global.died || S.on) { undock(); return; }
+    const c = A.ctx();
+    const W = global.screenWidth, H = global.screenHeight, HUD = A.HUD;
+    const k = clamp((now - D.at) / 250) * clamp((D.at + DOCK_MS - now) / 600);
+    c.save();
+    c.globalAlpha = 0.5 * k;
+    c.fillStyle = "#0d0b12";
+    c.fillRect(0, 0, W, H);
+    c.globalAlpha = k;
+    // everything fully in: no slide, no tally
+    drawPanels(c, 1e6, now, W, H);
+    const line = "Back to the raid: click anywhere or press Esc";
+    if (!D.tw) D.tw = A.measureText(line, 14) + 40;
+    const tw = Math.min(W - 40, D.tw), th = 36;
+    A.hudPanel(c, W / 2 - tw / 2, H - th - 22, tw, th, { fill: HUD.solid, r: th / 2 });
+    A.drawText(line, W / 2, H - 22 - th / 2, fitSize(line, 14, tw - 30, 10), HUD.head, "center", true);
     c.restore();
 }
 
@@ -979,13 +1121,12 @@ function fetchComeBack() {
 function countRaid() {
     try { localStorage.setItem("dwRaidsEnded", String((+localStorage.getItem("dwRaidsEnded") || 0) + 1)); } catch (e) { /* */ }
 }
+// the daily track pays gemdust for the menu's shop (and two common items a week)
 function rewardLine(r) {
     if (!r) return "";
-    const gems = (r.gems | 0).toLocaleString("en-US") + " gems";
-    if (r.item && r.signup) return gems + " + " + r.item.name + " (sign up)";
-    if (r.item) return gems + " + " + r.item.name + (r.item.cat === "sidekick" ? " sidekick" : r.item.cat === "sdSkin" ? " skin" : "");
-    if (r.dustMilli > 0) return gems + " + " + +(r.dustMilli / 1000).toFixed(2) + " dust";
-    return gems;
+    if (r.item) return r.item.name + (r.item.cat === "sidekick" ? " sidekick" : r.item.cat === "sdSkin" ? " skin" : "") + (r.signup ? " (sign up)" : "");
+    if (r.dustMilli > 0) return +(r.dustMilli / 1000).toFixed(2) + " gemdust" + (r.signup ? " (sign up)" : "");
+    return "";
 }
 const FLAME = "M12 21c-4 0-6.5-2.7-6.5-6.2 0-3.3 2.4-5 3.6-8.3.2-.6 1-.7 1.3-.1.9 1.6 1.2 3 1.1 4.6 1.2-.8 2-2.1 2.3-3.4.1-.5.8-.7 1.1-.2 1.5 2.2 2.6 4.6 2.6 7.4 0 3.5-2.5 6.2-5.5 6.2z";
 let flamePath = null;
@@ -1124,7 +1265,7 @@ export function drawCountdown(yTop) {
     if (!A) return;
     const now = performance.now();
     const left = raidLeftNow(now);
-    if (!(left > 0 && left <= 10.2) || (global.royale.raidLeft | 0) <= 0) { lastCount = 0; return; }
+    if (!(left > 0 && left <= 10.2) || (global.royale.raidLeft | 0) <= 0) { lastCount = 0; global.countdownRect = null; return; }
     const n = Math.max(1, Math.ceil(left));
     const HUD = A.HUD;
     if (n !== lastCount) {
@@ -1147,6 +1288,9 @@ export function drawCountdown(yTop) {
     const fade = into > 0.85 ? (1 - into) / 0.15 : 1;
     const size = big ? 128 : 84;
     const y = Math.max(yTop + size * 0.6 + 24, H * 0.25);
+    // app.js labelAlpha: world labels (the Vault's) step out from under it
+    const cr = global.countdownRect || (global.countdownRect = { x: 0, y: 0, w: 0, h: 0 });
+    cr.x = W / 2 - 150; cr.y = y - size * 0.72 - 14; cr.w = 300; cr.h = size * 1.35 + 14;
     A.hudTitle("RAID ENDS IN", W / 2, y - size * 0.72, 15, HUD.text2, "center", 1, c);
     bigTitle(c, String(n), W / 2, y, size, big ? "#ff6b5b" : HUD.head, big ? HUD.dangerDk : "#9a8d78", fade, pop);
 }

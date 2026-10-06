@@ -71,8 +71,7 @@ lazyRealSizes = new Proxy(lazyRealSizes, {
 
 // Shots from a raid boss or a bot hit softer than their definitions: the
 // root tank carries the factor (terrain/bosses.js tune, game/index.js
-// BOT_SHOT_MULT). A bot's shot into a player follows that player's bot
-// difficulty instead (miscFiles/botDifficulty.js), and a grown tank's shots
+// BOT_SHOT_MULT)
 // hit harder (terrain/growth.js damageMult). Read per collision by
 // damageMultiplier(other), `target` being what the shot hit.
 const botDiff = require('../../miscFiles/botDifficulty.js');
@@ -81,15 +80,23 @@ function rootOf(e) {
     while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
     return root;
 }
+let _fair = null;
+function fairPlay() { return _fair || (_fair = require('../terrain/fairPlay.js')); }
 function shotMult(o, target) {
     const root = rootOf(o.master);
     if (!root || root === o) return 1;
     let m = root.bossShotMult || 1;
     if (root.isBot) {
+        // bot fire lands the same into every player, whoever they are
         const hit = target ? rootOf(target) : null;
-        m = hit && hit.isPlayer ? botDiff.shotMult(botDiff.of(hit)) : root.botShotMult || 1;
+        m = hit && hit.isPlayer ? botDiff.shotMult() : root.botShotMult || 1;
     }
     if (root.growthMult > 1 && global.royaleGrowth) m *= global.royaleGrowth.damageMult(root.growthMult);
+    // anyone banking, bot or human, takes slightly softer shots from everyone
+    if (target) {
+        const hit = rootOf(target);
+        if (hit && hit._bankCover > 0 && hit !== root) m *= fairPlay().bankCoverMult(hit);
+    }
     return m;
 }
 

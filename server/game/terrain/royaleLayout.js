@@ -5,12 +5,12 @@ const Biomes = require('../../../shared/rockBiomes.js');
 // side vaults sit on the NW/SE diagonals, so every 45 degrees holds a landmark.
 const BASE_DIST = 0.70;
 const OUTPOSTS = [
-    { name: "North Base Bank",     color: "#e03e41", ang: -Math.PI / 2,     dist: BASE_DIST, shop: true },
-    { name: "Northeast Base Bank", color: "#8abc3f", ang: -Math.PI / 4,     dist: BASE_DIST },
-    { name: "East Base Bank",      color: "#8d6adf", ang: 0,                dist: BASE_DIST, shop: true },
-    { name: "South Base Bank",     color: "#efc74b", ang: Math.PI / 2,      dist: BASE_DIST, shop: true },
-    { name: "Southwest Base Bank", color: "#3d7cf0", ang: 3 * Math.PI / 4,  dist: BASE_DIST },
-    { name: "West Base Bank",      color: "#ec7b0f", ang: Math.PI,          dist: BASE_DIST, shop: true },
+    { name: "North Team Bank",     color: "#e03e41", ang: -Math.PI / 2,     dist: BASE_DIST, shop: true },
+    { name: "Northeast Team Bank", color: "#8abc3f", ang: -Math.PI / 4,     dist: BASE_DIST },
+    { name: "East Team Bank",      color: "#8d6adf", ang: 0,                dist: BASE_DIST, shop: true },
+    { name: "South Team Bank",     color: "#efc74b", ang: Math.PI / 2,      dist: BASE_DIST, shop: true },
+    { name: "Southwest Team Bank", color: "#3d7cf0", ang: 3 * Math.PI / 4,  dist: BASE_DIST },
+    { name: "West Team Bank",      color: "#ec7b0f", ang: Math.PI,          dist: BASE_DIST, shop: true },
 ];
 
 const SIDE_VAULT_DIST = 0.52;
@@ -24,7 +24,7 @@ const VAULTS = [
 const SHOP_DIST = 0.38;
 const SHOPS = OUTPOSTS.filter(o => o.shop).map((o, i) => ({
     id: i,
-    name: o.name.replace(" Base Bank", " Shop"),
+    name: o.name.replace(" Team Bank", " Shop"),
     ang: o.ang,
     dist: SHOP_DIST,
     color: o.color,

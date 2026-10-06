@@ -24,17 +24,80 @@ const FACET_CLASS = {
     gemPickupLoot:        'gemFacetLoot',
 };
 
-const SATCHEL_CAP  = 4000;
+const SATCHEL_CAP  = 8000;   // the base (shop.satchelCap has the gear and Deep Pockets)
 
 const DEATH_DROP   = 0.85;  
 
 const BANK_DEATH_LOSS = 0.4;
-const MAGNET_BONUS = 110;
+const MAGNET_BONUS = 110;          // the repel bubbles (owned loot, full satchel)
+// The pull reach beyond the hull
+const MAGNET_REACH = 135;
 // A full gem radius of grab slack; less lets a gem sliding past a moving tank
 // stay just outside the touch ring for its whole flyby.
 const PICKUP_SLOP  = 1.0;
 
 const GEM_MAX_SPEED = 6;
+
+// Round 9 mining feel
+const COMBO_STEP = 0.1, COMBO_CAP = 1;
+const PLAIN_ROCK_MULT = process.env.ROYALE_PLAIN_FAST === '0' ? 1 : 1.3;
+const CHIPS = process.env.ROYALE_MINE_CHIPS !== '0';
+const CHIP_SHARE = 0.35;
+const DUST_GAP_MS = 125;      // plain-rock dust events: at most 8 a second per player
+const PULL = process.env.ROYALE_GEM_PULL !== '0';
+const PULL_MS = 1500, PULL_SPEED = 10, PULL_REACH = 1400;
+
+// Storm stage gem multiplier (round 9): x1 / x1.5 / x2 (storm.gemStageMult)
+function stageGemMult() {
+    try { return require('./storm.js').gemStageMult(); } catch { return 1; }
+}
+// One deposit's value on a break: the single place gem value is computed
+function depositValue(rock, d, breaker) {
+    let value = d && d.big && rock.ore === ORE.SHARD ? SHARD_BIG : DEPOSIT_VALUE[rock.ore];
+    // tougher rock pays more, by exactly how much tougher it is (biome x ore
+    value *= rockPay(rock);
+    try { value *= require('./raidMods.js').gemValueMult(rock.ore); } catch { /* */ }
+    value *= stageGemMult();
+    value = Math.max(1, Math.round(value));
+    // Rich Veins (raidPerks.js)
+    if (breaker && breaker._pkfx && breaker._pkfx.value > 1) value = Math.round(value * breaker._pkfx.value);
+    return value;
+}
+function depositsOf(rock) {
+    return rock.deposits && rock.deposits.length ? rock.deposits : [{ wx: rock.wx, wy: rock.wy, wr: 9, big: false }];
+}
+function payoutOf(rock, breaker) {
+    if (!rock || !rock.ore) return 0;
+    let n = 0;
+    for (const d of depositsOf(rock)) n += depositValue(rock, d, breaker);
+    return n;
+}
+
+// Mining chip event, sent to the shooter only on the FX channel
+function chipHit(rock, owner, dmg, x, y, wasGrowing) {
+    if (!rock || !owner || !owner.socket || wasGrowing || rock.growing || owner.royaleLobby) return 0;
+    const t = Date.now();
+    let n = 0;
+    if (CHIPS && rock.ore && dmg > 0) {
+        const max = rock.maxHealth || 1;
+        const budget = Math.floor(payoutOf(rock, owner) * CHIP_SHARE);
+        const paid = rock._chipPaid || 0;
+        rock._chipAcc = Math.min(budget, (rock._chipAcc || 0) + budget * Math.min(1, dmg / max));
+        n = Math.max(0, Math.floor(rock._chipAcc) - paid);
+        const room = Math.max(0, (owner.gemCap | 0 || SATCHEL_CAP) - (owner.carriedGems | 0));
+        n = Math.min(n, room);
+        if (n > 0) {
+            rock._chipPaid = paid + n;
+            owner.carriedGems = (owner.carriedGems | 0) + n;
+            try { updateSatchel(owner); talkGems(owner, n); } catch { /* */ }
+        } else if (room <= 0) rock._chipAcc = paid;   // full satchel: nothing owed
+    }
+    if (n > 0 || t - (owner._dustFxAt || 0) >= DUST_GAP_MS) {
+        owner._dustFxAt = t;
+        try { owner.socket.talk('FX', Math.round(x), Math.round(y), 'mchip', rock.ore | 0, n | 0); } catch { /* */ }
+    }
+    return n;
+}
 
 let _shopMod = null;
 function shopMod() { return _shopMod || (_shopMod = require('./shop.js')); }
@@ -93,21 +156,17 @@ function pityBurst(rock, breaker) {
 
 function spawnOreBurst(rock, breaker) {
     if (!rock.ore) return;
+    // what per-hit chips already paid comes off the break (chipHit)
+    let owed = rock._chipPaid || 0;
+    rock._chipPaid = 0; rock._chipAcc = 0;
     // no gems in the BR lobby
     if (breaker && breaker.royaleLobby) return;
     const cls = ORE_CLASS[rock.ore];
-    const deposits = rock.deposits && rock.deposits.length
-        ? rock.deposits
-        : [{ wx: rock.wx, wy: rock.wy, wr: 9, big: false }];
+    const deposits = depositsOf(rock);
     for (const d of deposits) {
-        let value = d.big && rock.ore === ORE.SHARD ? SHARD_BIG : DEPOSIT_VALUE[rock.ore];
-        // tougher rock pays more, by exactly how much tougher it is (biome x
-        // ore, terrainGrid.js rockTough), so gems per second of digging hold
-        value *= rockPay(rock);
-        try { value *= require('./raidMods.js').gemValueMult(rock.ore); } catch { /* */ }
-        value = Math.max(1, Math.round(value));
-        // Rich Veins (raidPerks.js)
-        if (breaker && breaker._pkfx && breaker._pkfx.value > 1) value = Math.round(value * breaker._pkfx.value);
+        let value = depositValue(rock, d, breaker);
+        if (owed > 0) { const take = Math.min(owed, value); value -= take; owed -= take; }
+        if (value <= 0) continue;
         const bigCls = rock.ore === ORE.EMERALD ? 'gemPickupEmeraldCore' : 'gemPickupShardCore';
 
         const size  = Math.max(14, Math.min(34, d.wr));
@@ -116,7 +175,11 @@ function spawnOreBurst(rock, breaker) {
             : (Math.atan2(d.wy - rock.wy, d.wx - rock.wx) || Math.random() * Math.PI * 2);
         const gem = spawnGem(d.wx, d.wy, value, d.big ? bigCls : cls, size,
                              Math.cos(ang) * 1.5, Math.sin(ang) * 1.5, rock.ore);
-        if (gem && breaker && breaker.id !== undefined) gem.gemSourceId = breaker.id;
+        if (gem && breaker && breaker.id !== undefined) {
+            gem.gemSourceId = breaker.id;
+            // round 9: it flies to the breaker's tank (tickGem)
+            if (PULL && breaker.socket) gem.gemPullUntil = Date.now() + PULL_MS;
+        }
     }
 }
 
@@ -349,8 +412,8 @@ function orientSatchel(body) {
 
 function initSatchel(body) {
     body.carriedGems ??= 0;
-    body.gemCap = SATCHEL_CAP * ((global.royaleMods && global.royaleMods.satchelMult) || 1);
-    if (body.socket) { try { body.gemCap = require('./shop.js').satchelCap(body); } catch { /* */ } }
+    body.gemCap = SATCHEL_CAP;
+    try { body.gemCap = require('./shop.js').satchelCap(body); } catch { /* */ }
 
     body.botBanked ??= 0;
     if (body.socket) body.bankedGems = body.socket.gemBanked = body.socket.gemBanked || 0;
@@ -415,16 +478,18 @@ function dropGemsOnDeath(body, killers = []) {
         let raidBanked = banked;
         if (raidMode) { try { raidBanked = bankMod().raidPart(body.socket); } catch { /* */ } }
         body.socket.gemDeathScore = carried + raidBanked;
-        // Split too, since carriedGems is zeroed below. Banked is pre-loss so
-        // score = carried + banked. Carried is what was lost: a kept half isn't.
+        // Split too, since carriedGems is zeroed below
         body.socket.gemDeathCarried = carried - kept;
         body.socket.gemDeathKept = kept;
-        body.socket.gemDeathBanked = banked;
+        body.socket.gemDeathBanked = Math.max(0, banked - raidBankLoss) + insured;
         body.socket.gemDeathBankLoss = raidBankLoss;
     }
     if (raidBankLoss > 0) {
-        setBanked(body, banked - raidBankLoss);
-        try { body.socket.talk('m', 6000, "Dying cost you " + raidBankLoss.toLocaleString('en-US') + " banked gems."); } catch { /* */ }
+        // savings only: this raid's banked gems are never touched (bank.js)
+        let after = banked - raidBankLoss;
+        try { after = bankMod().takeDeathLoss(body.socket, raidBankLoss); } catch { /* */ }
+        setBanked(body, after);
+        try { body.socket.talk('m', 6000, "Dying cost you " + raidBankLoss.toLocaleString('en-US') + " gems from your savings. Gems banked this raid are safe."); } catch { /* */ }
     }
     if (carried <= 0 && bankLoss <= 0) {
         if (raidBankLoss > 0) talkGems(body, 0);
@@ -568,9 +633,12 @@ function tickGem(gem, tg, players) {
     let best = null, bestD = Infinity, bestScore = Infinity;
     let toucher = null, toucherD = Infinity;
     const bias = gem.chamberBias;
+    const pullId = gem.gemPullUntil && now < gem.gemPullUntil ? gem.gemSourceId : undefined;
+    let puller = null;
     for (const actor of players) {
         const body = actorBody(actor);
         if (!body || body.isDead() || body.isGhost) continue;
+        if (pullId !== undefined && body.id === pullId) puller = body;
         // unrelated bots skip a dead player's loot during the reclaim window
         const isKillerBot = body.isBot &&
             gem.gemLootKillerIds?.includes(body.id);
@@ -625,7 +693,7 @@ function tickGem(gem, tg, players) {
     }
 
     if (toucher) {
-        // Mining combo: chain pickups inside 2.5s for up to +50% dust.
+        // Mining combo: chain pickups inside 2.5s for up to +100% value
         // Banking keeps it (fun), death resets it (dropGemsOnDeath).
         const tnow = Date.now();
         if (tnow < (toucher._comboUntil || 0)) toucher._comboN = (toucher._comboN || 0) + 1;
@@ -639,7 +707,8 @@ function tickGem(gem, tg, players) {
             hist.push({ o: gem.gemOre, v: gem.gemValue });
             if (hist.length > 48) hist.shift();
         }
-        const bonus = Math.min(0.5, 0.05 * ((toucher._comboN || 1) - 1));
+        // round 9: doubled, +10% a chained pickup up to +100%)
+        const bonus = Math.min(COMBO_CAP, COMBO_STEP * ((toucher._comboN || 1) - 1));
         const v = gem.gemValue + Math.round(gem.gemValue * bonus);
         gem.gemValue = 0;
         toucher.carriedGems = (toucher.carriedGems | 0) + v;
@@ -661,6 +730,18 @@ function tickGem(gem, tg, players) {
         gem.velocity.x *= GEM_MAX_SPEED / spNow;
         gem.velocity.y *= GEM_MAX_SPEED / spNow;
     }
+    // round 9: a broken rock's gems fly straight to the breaker for PULL_MS
+    if (puller && (puller.carriedGems | 0) < (puller.gemCap | 0 || SATCHEL_CAP)) {
+        const dx = puller.x - gem.x, dy = puller.y - gem.y, d = Math.hypot(dx, dy) || 1;
+        if (d < PULL_REACH) {
+            const sp = Math.min(PULL_SPEED, 3 + d * 0.05);
+            gem.velocity.x += ((dx / d) * sp - gem.velocity.x) * 0.5;
+            gem.velocity.y += ((dy / d) * sp - gem.velocity.y) * 0.5;
+            // still flying when the window ends: let the magnet finish it off
+            if (now + 100 > gem.gemPullUntil && d > 60) gem.gemPullUntil = Math.min(now + 400, gem.gemBornAt + PULL_MS * 2);
+            return;
+        }
+    }
     if (!best) return;
     // boss eruptions and chest bursts fly free for a beat before the magnet grabs them
     if (gem.gemNoMagnetUntil && now < gem.gemNoMagnetUntil) return;
@@ -668,7 +749,7 @@ function tickGem(gem, tg, players) {
     let magBoost = 1;
     if (best.socket) { try { magBoost = shopMod().magnetMult(best); } catch { /* */ } }
     else if (best._pkfx) magBoost = best._pkfx.magnet || 1;     // a bot's Ore Magnet perk
-    const magR = (best.realSize * 2.6 + MAGNET_BONUS) * (bias ? 1.45 : 1) * magBoost;
+    const magR = (best.realSize * 2.6 + MAGNET_REACH) * (bias ? 1.45 : 1) * magBoost;
     if (bestD < magR) {
         const pull  = 1 - bestD / magR;
         const speed = 1.4 * pull + 4 * pull * pull;
@@ -687,4 +768,4 @@ function tickGem(gem, tg, players) {
     }
 }
 
-module.exports = { spawnOreBurst, pityBurst, spawnGem, initSatchel, updateSatchel, orientSatchel, dropGemsOnDeath, tickGem, talkGems, setBanked, splitValue, SATCHEL_CAP };
+module.exports = { chipHit, payoutOf, depositValue, stageGemMult, PLAIN_ROCK_MULT, CHIP_SHARE, COMBO_STEP, COMBO_CAP, spawnOreBurst, pityBurst, spawnGem, initSatchel, updateSatchel, orientSatchel, dropGemsOnDeath, tickGem, talkGems, setBanked, splitValue, SATCHEL_CAP, MAGNET_REACH };

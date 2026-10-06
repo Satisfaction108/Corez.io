@@ -16,6 +16,11 @@ import saveCode from "./saveCode.js";
 import * as abilityFx from "./abilityFx.js";
 import * as sidekicks from "./sidekicks.js";
 import * as raidPerks from "./raidPerks.js";
+import { modCalloutSub } from "./newcomerLogic.js";
+import * as bankPops from "./bankPopLogic.js";
+import * as scoreText from "./scoreLogic.js";
+import * as raidProg from "./raidProgressLogic.js";
+import * as mineDust from "./mineDust.js";
 // callouts (KC) that make your sidekick bounce about
 const SIDEKICK_CHEERS = { kill: 1, revenge: 1, huntkill: 1, shutdown: 1, bounty: 1, boss: 1, streak: 1, quest: 1, contract: 1 };
 window.fakeLagMS = 0;
@@ -1408,6 +1413,8 @@ let incoming = async function(message, socket) {
                         else if (due < r.nextAt) r.nextAt = due;
                     } else r.nextAt = 0;
                     r.you = d.you || null;
+                    // every points change gets a labelled pop (scoreLogic.js), dead or alive
+                    if (r.you) { try { scoreText.ptsOnScore(global.ptsPops || (global.ptsPops = scoreText.ptsPops()), r.you, performance.now(), r.raidId | 0); } catch (e) { /* */ } }
                     r.duos = d.duos | 0;
                     r.teams = d.teams || null;
                     r.duo = d.duo || null;
@@ -1418,11 +1425,11 @@ let incoming = async function(message, socket) {
                     // a new override: a popup that says what it does. The first
                     // one after joining waits a moment so it is not lost in the
                     // spawn messages.
+                    // Round 9: the raid card (firstSeconds) says the first one, the override card on
                     if (r.mod && r.mod.id && r.mod.id !== r._modSeenId) {
                         const firstMod = !r._modSeenId;
                         r._modSeenId = r.mod.id;
-                        global.callouts = global.callouts || [];
-                        global.callouts.push({ kind: "override", text: (firstMod ? "OVERRIDE: " : "NEW OVERRIDE: ") + String(r.mod.name).toUpperCase(), sub: String(r.mod.desc || ""), born: performance.now() + (firstMod ? 1800 : 0), dur: 4500 });
+                        if (!firstMod && global.createMessage) global.createMessage("New raid rule: " + String(r.mod.name) + ". " + modCalloutSub(r.mod.desc), 5000);
                     }
                     r.pings = d.pings || [];
                     r.bounty = d.bounty || null;
@@ -1482,7 +1489,9 @@ let incoming = async function(message, socket) {
                             global.vault.total = 0;
                         } catch { /* */ }
                     }
+                    // off the board (spectating) clears a stale place, or a bot's row sitting at that
                     if (d.youPlace > 0) r.place = d.youPlace | 0;
+                    else if (!global.died) r.place = 0;
                     // Queued for the final storm: watch until the reset drops us in.
                     if (r.lock && global.raidQueued && !global.died && !global.disconnected) {
                         global.royaleSpectating = true;
@@ -1578,6 +1587,28 @@ let incoming = async function(message, socket) {
                     raidFinale.start(global.raidEndFx.sub);
                     break;
                 }
+                // what paid into your bank (server payGems): the label for the bank pop by the
+                if (m[0] === "bankpop") {
+                    // a 1 after the amount: already in the bank, inside a deposit's rise)
+                    try {
+                        const bp = global.bankPops || (global.bankPops = bankPops.create());
+                        if ((m[3] | 0) === 1) bankPops.note(bp, m[2] | 0, String(m[1] || ""), performance.now());
+                        else bankPops.label(bp, m[2] | 0, String(m[1] || ""), performance.now());
+                    } catch (e) { /* */ }
+                    break;
+                }
+                // what moved your points (server notePts): the label for the points pop, never a
+                if (m[0] === "ptspop") {
+                    try { scoreText.ptsLabel(global.ptsPops || (global.ptsPops = scoreText.ptsPops()), +m[2] || 0, String(m[1] || ""), performance.now()); } catch (e) { /* */ }
+                    break;
+                }
+                // the Core's share banks too (raidHeat slams the number)
+                if (m[0] === "corepay") {
+                    const n = +String(m[1] || "").replace(/[^0-9]/g, "") || 0;
+                    try { bankPops.label(global.bankPops || (global.bankPops = bankPops.create()), n, "the Core", performance.now()); } catch (e) { /* */ }
+                }
+                // out in the storm: the storm banner under the clock already says it (and how far
+                if (m[0] === "nxstorm" && ((global.royale && global.royale.you && global.royale.you.sm > 0) || performance.now() - (global.stormBannerAt || -1e9) < 1500)) break;
                 // a kill, a bounty, a boss: your sidekick is thrilled
                 if (SIDEKICK_CHEERS[m[0]]) try { sidekicks.cheer(gui.playerid, 1); } catch (e) { /* */ }
                 // the Crown Contest's moments: crowns.js slams them
@@ -1616,6 +1647,14 @@ let incoming = async function(message, socket) {
                 let pushFx = true;
                 // raid perks: blast, chain spark, seismic pulse, lucky strike
                 if (typeof kindF === "string" && kindF.startsWith("pk")) { try { if (raidPerks.onFX(m)) break; } catch (e) { /* */ } }
+                // round 9: your shot chipped rock (server gems.js chipHit): dust flies into your
+                if (kindF === "mchip") { try { mineDust.burst(fx.x, fx.y, m[3] | 0, m[4] | 0); } catch (e) { /* */ } break; }
+                // a rich vein near you (server quietVein.js): an edge arrow for a while (app.js
+                if (kindF === "veinping") {
+                    global.veinPing = { x: fx.x, y: fx.y, until: nowF + Math.max(3000, Math.min(30000, (m[3] | 0) || 12000)) };
+                    try { gameSound.dustBank(); } catch (e) { /* */ }
+                    break;
+                }
                 try { if (raidHeat.onFX(kindF, fx.x, fx.y, m[3], m[4], m[5], m[6])) break; } catch (e) { /* */ }
                 try { if (crowns.onFX(kindF, fx.x, fx.y)) break; } catch (e) { /* */ }
                 if (kindF === "chest" || kindF === "chestrare") {
@@ -1673,6 +1712,8 @@ let incoming = async function(message, socket) {
                 // Combat text: targetId, amount (0-100 of max hp), tier
                 // (0/1/2), taken (0 = we dealt it, 1 = we took it).
                 pushDamageNumber(m[0], m[1] | 0, m[2] | 0, !!(m[3] | 0));
+                // your last hit taken (raidPerks holds a fresh offer while you're hit)
+                if (m[3] | 0) global.hurtAt = performance.now();
                 try { raidHeat.onHit(m[0], m[1] | 0, m[2] | 0, !!(m[3] | 0)); } catch (e) { /* */ }
             } break;
             case 'DEAD': {
@@ -1690,9 +1731,10 @@ let incoming = async function(message, socket) {
             case 'MS': {
                 // Personal achievement: kind, threshold, bonus paid
                 const kind = m[0] | 0, at = m[1] | 0, bonus = m[2] | 0;
+                if (kind === 0 && bonus > 0) try { bankPops.label(global.bankPops || (global.bankPops = bankPops.create()), bonus, "milestone " + util.formatLargeNumber(at), performance.now()); } catch (e) { /* */ }
                 if (kind === 0 && global.royale && global.royale.at > 0) {
-                    // in a raid it takes its turn in the slam lane, never on top of BANKED
-                    try { raidHeat.slamBanked(util.formatLargeNumber(at), bonus > 0 ? "+" + util.formatLargeNumber(bonus) : ""); } catch (e) { /* */ }
+                    // in a raid the bank pop above says it ("+250 banked · milestone 1,000")
+                    if (at >= 10000) try { raidHeat.slamBanked(util.formatLargeNumber(at), bonus > 0 ? "+" + util.formatLargeNumber(bonus) : ""); } catch (e) { /* */ }
                     global.celebrateAt = performance.now();
                     if (gameSound.bankCelebrate) gameSound.bankCelebrate();
                 } else if (kind === 0) {
@@ -1763,6 +1805,17 @@ let incoming = async function(message, socket) {
                 g.carried = carried;
                 g.cap = cap;
                 g.banked = m[3] | 0;
+                // every rise of the Bank gets a labelled pop (bankPopLogic)
+                if (g.banked !== g._popBank) {
+                    g._popBank = g.banked;
+                    try {
+                        const v = global.vault;
+                        bankPops.onBanked(global.bankPops || (global.bankPops = bankPops.create()), g.banked, now, {
+                            deposit: (delta < 0 && !m[4]) || v.total > 0 || now - (v.doneAt || -1e9) < 1500,
+                            spent: !!(global.shop && global.shop.onPad),
+                        });
+                    } catch (e) { /* */ }
+                }
                 // brought in from before this raid (the persistent bank)
                 g.kept = Math.min(g.banked, m[6] | 0);
                 if (!wasFull && cap > 0 && carried >= cap) {
@@ -1771,6 +1824,8 @@ let incoming = async function(message, socket) {
                 }
             } break;
             case 'VU': {
+                // VU 2: the vault shield just went up (you banked this visit)
+                if (m[0] === 2) { global.vaultShieldAt = performance.now(); break; }
                 global.vault.onPad = !!m[0];
                 global.vault.isOutpost = false;   
                 if (!global.vault.onPad) {
@@ -1781,11 +1836,24 @@ let incoming = async function(message, socket) {
             case 'VP': {
                 const v = global.vault;
                 const wasActive = v.total > 0;
+                // a deposit that stopped short (stepped off, a hit): VP 0 0 while gems were still
+                if (wasActive && v.remaining > 0 && !(m[0] | 0) && !(m[1] | 0)) {
+                    v.cutAt = performance.now();
+                    v.cutBanked = Math.max(0, (v.total | 0) - (v.remaining | 0));
+                    v.cutTotal = v.total | 0;
+                    // a deposit picked up again soon after counts as one visit (round 7: a 3,394
+                    v.partBanked = (v.cutAt - (v.partAt || -1e9) < 10000 ? v.partBanked | 0 : 0) + v.cutBanked;
+                    v.partAt = v.cutAt;
+                }
+                if ((m[1] | 0) > 0 && (m[0] | 0) > 0 && !wasActive) v.cutAt = 0;
                 v.remaining = m[0];
                 v.total = m[1];
                 if (v.total > 0 && v.remaining > 0) {
                     if (config.game.gemSounds) gameSound.depositTick();
                 } else if (wasActive && v.remaining <= 0 && (v.total > 0 || m[1] > 0)) {
+                    // what left the satchel (raidHeat's BANKED slam): bonuses that land at the same
+                    v.lastDeposit = ((m[1] | 0) || (v.total | 0)) + (performance.now() - (v.partAt || -1e9) < 10000 ? v.partBanked | 0 : 0);
+                    v.partBanked = 0; v.partAt = 0;
                     v.doneAt = performance.now();
                     v.total = 0;
                     v.remaining = 0;
@@ -1854,6 +1922,7 @@ let incoming = async function(message, socket) {
                     const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
                     rankPanel.setResult(d);
                     if (d && !d.guest && d.after && global.acct) global.acct.rank = d.after;
+                    if (d && !d.guest) raidProg.addRank(global.royale && global.royale.raidId, d.delta | 0);
                     if (d && !d.guest && d.after) rankCeremony.report(d.after);
                 } catch (e) { /* ignore */ }
             } break;
@@ -1862,6 +1931,7 @@ let incoming = async function(message, socket) {
                 try {
                     const d = typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0];
                     rankPanel.setRaidBonus(d);
+                    if (d) raidProg.addRank(global.royale && global.royale.raidId, d.bonusRP | 0);
                     if (d && d.after && global.acct) global.acct.rank = d.after;
                     if (d && d.after) rankCeremony.report(d.after);
                 } catch (e) { /* ignore */ }
@@ -1933,9 +2003,15 @@ let incoming = async function(message, socket) {
             case 'c': {
                 if (global.autoReconnect) { global.autoReconnect = null; global.createMessage && global.createMessage("Reconnected.", 3000); }
                 global.spawnedAt = performance.now();
+                // an empty chat box left open across the drop closes, so the keys drive the tank
+                try {
+                    const cv = global.canvas;
+                    if (global.showChat && cv && cv.chatInput && !String(cv.chatInput.value || "").trim()) cv.closeChat();
+                } catch (e) { /* */ }
                 raidFinale.stop();
                 global.shieldSeen = false;
                 global.respawnPending = false;
+                global.respawnQueued = false;
                 global.died = false;
                 global._specGlide = null;
                 rankPanel.clear({ spawned: true });
@@ -2165,6 +2241,7 @@ let incoming = async function(message, socket) {
             global.finalLifetime.set(m[1]);
             // the raid death card shows these as they are, no count-up
             global.finalLifeSecs = +m[1] || 0;
+            try { raidProg.noteLife(global.finalLifeSecs, window.localStorage); } catch (er) { /* */ }
             global.finalKillCount = m[3] | 0;
             global.finalKills = [util.AdvancedSmoothBar(0, 4), util.AdvancedSmoothBar(0, 5.5), util.AdvancedSmoothBar(0, 2.5), util.AdvancedSmoothBar(0, 2.5), util.AdvancedSmoothBar(0, 6)];
             global.respawnTimeout = m[2];
@@ -2205,6 +2282,8 @@ let incoming = async function(message, socket) {
             global.finalInsured = m[16 + m[8]] | 0;
             // first raids: the part of the satchel kept back for the respawn (newcomer.js)
             global.finalNxKept = m[18 + m[8]] | 0;
+            // savings the death cost (gems banked this raid are never touched)
+            global.finalBankLoss = m[19 + m[8]] | 0;
             // the server's own respawn wait (3 s from the death)
             const respawnWaitMs = m[17 + m[8]] | 0;
             global.shop.onPad = false;

@@ -1,5 +1,5 @@
 // The Crown Contest, the client half (server: game/terrain/crowns.js).
-// When the last storm starts the top 3 get crowns, and only a crown can win.
+// When the last storm starts the top 3 get crowns
 //
 //   crowns     a flat gold crown over every crowned tank (overhead stack),
 //              a crown on the minimap and the big map (a gold area until
@@ -9,8 +9,7 @@
 //              sit, with your distance to the nearest crown (app.js
 //              drawRoyaleStandings). A first raid, a phone, or no standings
 //              panel: one line in the note stack instead
-//   moments    the contest banner, YOU HOLD A CROWN, CROWN STOLEN / LOST,
-//              SUDDEN DEATH (a red edge pulse), the 10 second call
+// moments CROWNS ARE OUT, YOU GOT A CROWN, CROWN STOLEN / LOST, FINAL MINUTE (a
 //   champion   a small crown by the name of anyone who won a raid in the
 //              last 24 h (board rows `ch`)
 //
@@ -21,6 +20,7 @@ import { gui } from "./socketinit.js";
 import { gameSound } from "./sound.js";
 import * as juice from "./juice.js";
 import * as CL from "./crownsLogic.js";
+import * as SL from "./scoreLogic.js";
 import { drawCrown, drawCrownIcon, ASPECT } from "./crownArt.js";
 
 let A = null;
@@ -33,7 +33,9 @@ const calm = () => !!(global.reducedMotion && global.reducedMotion());
 const nx = () => global.nxStage == null ? 3 : global.nxStage;
 const stage0 = () => !!global.nxKnown && nx() === 0;
 
-const S = { src: null, c: null, byId: new Map(), champSrc: null, champ: new Set(), sdAt: -1e9, startAt: -1e9, stolenAt: -1e9, raidId: 0 };
+const S = { src: null, c: null, byId: new Map(), champSrc: null, champ: new Set(), sdAt: -1e9, startAt: -1e9, stolenAt: -1e9, raidId: 0,
+    // you wearing a crown (RY you.crown): since when, and the last crowned slam
+    mine: null, gotAt: -1e9, slamAt: -1e9, slam: null, popAt: -1e9, hadMine: false };
 
 // ── packets ────────────────────────────────────────────────────────────
 export function onRY(r) {
@@ -42,13 +44,48 @@ export function onRY(r) {
         S.c = r.crowns || null;
         S.byId.clear();
         for (const row of CL.rows(S.c)) S.byId.set(row.e, row);
+        // the crown lands on your own tank: the pop over it (drawOverhead)
+        const has = S.byId.has(gui.playerid);
+        if (has && !S.hadMine) S.popAt = performance.now();
+        S.hadMine = has;
     }
     if (r.board !== S.champSrc) {
         S.champSrc = r.board;
         S.champ.clear();
         if (r.board) for (const row of r.board) if (row.ch) S.champ.add(row.id);
     }
-    if ((r.raidId | 0) !== S.raidId) { S.raidId = r.raidId | 0; S.sdAt = -1e9; S.startAt = -1e9; }
+    if ((r.raidId | 0) !== S.raidId) { S.raidId = r.raidId | 0; S.sdAt = -1e9; S.startAt = -1e9; S.mine = null; }
+    // a crown on you, however it got there: a big moment you can't miss
+    const mc = r.you && r.you.crown && !global.died ? r.you.crown : null;
+    if (mc && !S.mine) {
+        const now = performance.now();
+        S.gotAt = now;
+        // the server's slam is on its way to the screen (queued, held for the landing) or
+        const ours = S.slam && S.slam.key && S.slam.key.charAt(0) === "!";
+        const told = now - S.slamAt <= 2500 || (ours && (S.slam.on || juice.slamSeen(S.slam)));
+        if (!told) {
+            const card = SL.crownCard(mc), how = CL.howLine(mc);
+            gotCrownFx(how.title, how.sub + " " + card.line1 + " " + card.line2, 5000);
+        }
+    }
+    // the risk is the server's live number (crowns.stealOf)
+    if (mc && S.mine && mc.lose == null && S.mine.lose != null) mc.lose = S.mine.lose;
+    S.mine = mc;
+}
+export const mineCrown = () => S.mine;
+function gotCrownFx(text, sub, dur) {
+    S.slamAt = performance.now();
+    // must-see: jumps the queue and stays up its full keep time
+    S.slam = juice.slamMust(text, sub, GOLD, dur || 4200, 64, 2800);
+    juice.shake(28, 420);
+    juice.lightLeak("242,184,60", 1600);
+    juice.flash("#fff1c2", 160, 0.2);
+    const me = meEntity();
+    if (me) {
+        juice.ring(me.x, me.y, GOLD, 24, 360, 900, 12);
+        juice.sparks(me.x, me.y, 30, 380, 1100, 3, GOLD, TAU, 0, 7);
+    }
+    sfx("crown");
 }
 
 export const active = () => !!(S.c && S.c.on && !S.c.done);
@@ -74,7 +111,7 @@ export function onKC(m) {
     switch (kind) {
         case "crowns":
             S.startAt = now;
-            if (stage0()) juice.slam("CROWNS ARE OUT", "Kill a crown holder to take it. Hold one at the end to win.", GOLD, 4600, 50);
+            if (stage0()) juice.slam("CROWNS ARE OUT", "Holding one earns points. Knock one off to steal it.", GOLD, 4600, 50);
             else juice.slam(text, sub, GOLD, 4400, 62);
             juice.flash("#fff1c2", 220, 0.25);
             juice.rumble(900, 6);
@@ -82,15 +119,14 @@ export function onKC(m) {
             sfx("crown");
             return true;
         case "crowned":
-            juice.slam(text, sub, GOLD, 3600, 64);
-            juice.shake(28, 420);
-            juice.lightLeak("242,184,60", 1600);
-            juice.flash("#fff1c2", 160, 0.2);
-            sfx("crown");
+            gotCrownFx(text, sub, Math.max(4200, (m[4] | 0) || 0));
+            S.gotAt = now;
             return true;
         case "crowntake": {
             S.stolenAt = now;
-            juice.slam(text, sub, GOLD, 3400, 70);
+            S.slamAt = now;
+            S.gotAt = now;
+            S.slam = juice.slamMust(text, sub, GOLD, 3400, 70, 2600);
             juice.hitStop(80, 90);
             juice.slowMo(520, 0.3);
             juice.shake(44, 520);
@@ -113,7 +149,9 @@ export function onKC(m) {
             return true;
         case "suddendeath":
             S.sdAt = now;
-            juice.slam(text, sub, RED, 3800, 76);
+            // wearing one: the vault rule is a must-see, big and early
+            if (S.mine) juice.slamMust(text, sub, RED, 4400, 76, 3200);
+            else juice.slam(text, sub, RED, 3800, 76);
             juice.glitch(1, 700, true);
             juice.rumble(1600, 8);
             juice.shake(36, 600);
@@ -170,11 +208,30 @@ export function drawOverhead(c, x, y, top, isize, ratio, alpha, id) {
     const now = performance.now();
     const w = crownW(isize, ratio);
     const bob = calm() ? 0 : Math.sin(now / 420 + id) * w * 0.05;
+    // your own crown landing: it drops in big and settles, with a gold ring
+    const pa = id === gui.playerid ? now - S.popAt : 1e9;
+    const pk = pa >= 0 && pa < POP_MS ? CL_pop(pa / POP_MS) : 1;
     c.save();
-    c.translate(x, top - 6 + bob);
+    c.translate(x, top - 6 + bob - (pk - 1) * w * 0.35);
     if (!calm()) c.rotate(Math.sin(now / 900 + id) * 0.05);
+    if (pk !== 1) {
+        c.save();
+        c.globalAlpha = alpha * Math.max(0, 1 - pa / POP_MS);
+        c.strokeStyle = GOLD; c.lineWidth = 3;
+        c.beginPath(); c.arc(0, w * 0.1, w * (0.4 + 0.9 * (pa / POP_MS)), 0, TAU); c.stroke();
+        c.restore();
+        c.scale(pk, pk);
+    }
     drawCrown(c, 0, 0, w, alpha);
     c.restore();
+}
+// the landing pop: 2.4x, a small overshoot, then 1
+const POP_MS = 1100;
+function CL_pop(k) {
+    if (calm()) return 1;
+    if (k < 0.35) return 2.4 - 1.5 * (k / 0.35);          // 2.4 -> 0.9
+    if (k < 0.6) return 0.9 + 0.18 * ((k - 0.35) / 0.25); // -> 1.08
+    return 1.08 - 0.08 * ((k - 0.6) / 0.4);              // -> 1
 }
 
 // ── edge marker: the nearest crown out of sight (app.js world marks) ────
@@ -226,18 +283,32 @@ export function drawMap(c, T, inside, dotR, pulse) {
     }
 }
 
+// the font size that fits `text` in `room` (measured once per text and room)
+const footSizes = new Map();
+function footSize(text, room, max) {
+    const k = text + "|" + Math.round(room);
+    let fs = footSizes.get(k);
+    if (fs == null) {
+        fs = max;
+        while (fs > 8 && A.measureText(text, fs) > room) fs -= 0.5;
+        if (footSizes.size > 64) footSizes.clear();
+        footSizes.set(k, fs);
+    }
+    return fs;
+}
 // ── the tracker (app.js puts it where the standings go) ────────────────
 // -> bottom y. myHex: your colour, fmt/fmtDist from the app.
 export function drawTracker(c, x, y0, W) {
     if (!A || !active()) return y0;
     const HUD = A.HUD;
     const me = global.player;
-    const t = CL.tracker(S.c, gui.playerid, me.renderx, me.rendery, A.fmtDist);
+    const r = global.royale || {};
+    const t = CL.tracker(S.c, gui.playerid, me.renderx, me.rendery, A.fmtDist, r.board);
     const rowH = 21;
-    const H = 32 + Math.max(1, t.rows.length) * rowH + (t.footer ? 20 : 6);
+    const H = 32 + Math.max(1, t.rows.length) * rowH + (t.footer ? 20 : 6) + (t.footer2 ? 14 : 0);
     const now = performance.now();
     A.hudPanel(c, x, y0, W, H);
-    // a gold edge so it reads as the contest, red in sudden death
+    // a gold edge so it reads as crown time, red in the final minute
     c.save();
     c.globalAlpha = 0.9;
     c.strokeStyle = S.c.sd ? RED : GOLD;
@@ -247,37 +318,56 @@ export function drawTracker(c, x, y0, W) {
     c.restore();
     c.fillStyle = "rgba(18,14,21,0.55)";
     c.fillRect(x + 10, y0 + 27, W - 20, 2);
-    drawCrownIcon(c, x + 22, y0 + 15, 13);
-    A.hudTitle("Crowns", x + 36, y0 + 15, 14, HUD.head, "left");
+    A.hudTitle("Standings", x + 12, y0 + 15, 14, HUD.head, "left");
     if (S.c.sd) {
         const a = calm() ? 1 : 0.65 + 0.35 * Math.sin(now / 140);
-        A.hudTitle("SUDDEN DEATH", x + W - 12, y0 + 15, 11, RED, "right", a);
-    } else A.hudTitle("PTS", x + W - 12, y0 + 15, 11, HUD.text2, "right");
+        A.hudTitle("CROWNS x2", x + W - 12, y0 + 15, 11, RED, "right", a);
+    } else {
+        const lbl = "+" + CL.pps(S.c) + "/SEC";
+        A.hudTitle(lbl, x + W - 12, y0 + 15, 11, GOLD, "right");
+        drawCrownIcon(c, x + W - 12 - A.hudTitleW(lbl, 11) - 10, y0 + 14, 12);
+    }
     let ry = y0 + 32;
     const myHex = A.myHex ? A.myHex() : GOLD;
     for (const row of t.rows) {
         const mid = ry + rowH / 2 - 1;
-        drawCrownIcon(c, x + 22, mid, 12, row.k === 1 ? "gold" : row.k === 2 ? "silver" : "bronze");
+        if (row.k) {
+            const kc = row.k === 1 ? HUD.gold : row.k === 2 ? "#d8dce6" : row.k === 3 ? "#d98a4e" : HUD.text2;
+            A.drawText("#" + row.k, x + 12, mid, 11, kc, "left", true);
+        }
+        if (row.crown) drawCrownIcon(c, x + 48, mid, 12, row.crown === 1 ? "gold" : row.crown === 2 ? "silver" : "bronze");
         const sc = A.fmtNum(row.score);
         const sw = A.hudTextW(sc, 12);
-        let name = row.name;
-        let ns = 12; while (ns > 8 && A.measureText(name, ns) > W - 50 - sw - 18) ns -= 0.5;
-        A.drawText(name, x + 38, mid, ns, row.me ? myHex : HUD.text, "left", true);
-        A.drawText(sc, x + W - 12, mid, 12, row.me ? myHex : HUD.gold, "right", true);
+        const nx0 = x + 60;
+        let ns = 12; while (ns > 8 && A.measureText(row.name, ns) > x + W - 12 - sw - 10 - nx0) ns -= 0.5;
+        A.drawText(row.name, nx0, mid, ns, row.me ? myHex : HUD.text, "left", true);
+        A.drawText(sc, x + W - 12, mid, 12, row.me ? myHex : row.crown ? HUD.gold : HUD.text, "right", true);
         ry += rowH;
     }
     if (!t.rows.length) { A.drawText("Nobody holds one", x + 38, ry + rowH / 2 - 1, 11, HUD.text2, "left", true); ry += rowH; }
-    if (t.footer) A.drawText(t.footer, x + W - 12, ry + 8, 10.5, CL.mine(S.c, gui.playerid) ? GOLD : HUD.text2, "right", true);
+    if (t.footer) {
+        // shrink to the card, never past its edge (sizes cached per line)
+        A.drawText(t.footer, x + W - 12, ry + 8, footSize(t.footer, W - 24, 10.5), CL.mine(S.c, gui.playerid) ? GOLD : HUD.text2, "right", true);
+        if (t.footer2) A.drawText(t.footer2, x + W - 12, ry + 22, footSize(t.footer2, W - 24, 10), HUD.text2, "right", true);
+    }
     return y0 + H;
 }
 
 // one line in the note stack: a first raid, a phone, a hidden standings
 // panel. push(note) like raidHeat.hudNotes.
 const NOTE = { pri: 1, key: "crown", text: "", sub: "", col: GOLD, pulse: 0, badge: true };
+// You wear a crown: a gold card at the top of the note stack for as long as you
+const CARD = { pri: 0, key: "crowncard", text: "YOU HAVE A CROWN", sub: "", col: GOLD, pulse: 1, badge: false, draw: null, card: null };
+CARD.draw = (c, n, cx, y, maxW) => drawCrownCard(c, n.card, cx, y, maxW);
 export function hudNotes(push, compact) {
     if (!active() || global.died) return;
     const me = global.player;
     const mineRow = CL.mine(S.c, gui.playerid);
+    if (S.mine && A) {
+        CARD.card = SL.crownCard(S.mine);
+        push(CARD);
+        return;
+    }
     // the tracker already says it all on a big screen, unless you hold one
     if (!compact && !mineRow) return;
     const n = CL.note(S.c, gui.playerid, me.renderx, me.rendery, A ? A.fmtDist : null, stage0() ? 0 : 3);
@@ -286,6 +376,40 @@ export function hudNotes(push, compact) {
     NOTE.col = n.hot && S.c.sd ? RED : GOLD;
     NOTE.pulse = calm() ? 1 : 0.75 + 0.25 * Math.sin(performance.now() / (S.c.sd ? 120 : 260));
     push(NOTE);
+}
+
+const HOW_MS = 8000;
+function drawCrownCard(c, card, cx, y, maxW) {
+    const HUD = A.HUD;
+    const now = performance.now();
+    const age = now - S.gotAt;
+    const sd = !!(S.mine && S.mine.sd);
+    const col = sd ? RED : GOLD;
+    const tSz = 15, lSz = 11.5;
+    // the first seconds say how you got it, then what it is
+    const title = age < HOW_MS && S.mine ? CL.howLine(S.mine).card : card.title;
+    const w = Math.min(maxW, Math.max(A.hudTitleW(title, tSz), A.hudTitleW(card.title, tSz), A.hudTextW(card.line1, lSz), A.hudTextW(card.line2, lSz)) + 72);
+    const h = 58, x = Math.round(cx - w / 2);
+    // it lands with a pop, then breathes
+    const pop = calm() ? 1 : age < 380 ? 1 + 0.18 * Math.sin(Math.PI * age / 380) : 1;
+    const breathe = calm() ? 1 : 0.8 + 0.2 * Math.sin(now / (sd ? 140 : 320));
+    c.save();
+    c.translate(cx, y + h / 2);
+    c.scale(pop, pop);
+    c.translate(-cx, -(y + h / 2));
+    A.hudPanel(c, x, y, w, h, { fill: "rgba(43,33,20,0.94)", r: 12 });
+    c.globalAlpha = breathe;
+    c.strokeStyle = col; c.lineWidth = 3;
+    A.roundRectPath(c, x + 1.5, y + 1.5, w - 3, h - 3, 11);
+    c.stroke();
+    c.globalAlpha = 1;
+    drawCrownIcon(c, x + 28, y + h / 2 - 1, 26);
+    const tx = x + 50;
+    A.hudTitle(title, tx, y + 15, tSz, col, "left");
+    A.drawText(card.line1, tx, y + 32, lSz, HUD.head, "left", true);
+    A.drawText(card.line2, tx, y + 47, lSz, sd ? "#ffb3bb" : "#ffe3a3", "left", true);
+    c.restore();
+    return y + h + 8;
 }
 
 // ── screen: the sudden death edge pulse ────────────────────────────────
@@ -307,8 +431,8 @@ export function feedLine(f, who, tag) {
     if (!x) return null;
     const crown = tag("crown", GOLD);
     switch (x.verb) {
-        case "start": return { text: tag("The Crown Contest", GOLD) + " is on", badge: null };
-        case "sd": return { text: tag("SUDDEN DEATH", RED) + ": crowns can't bank", badge: null };
+        case "start": return { text: tag("Crowns are out", GOLD) + ": they earn points", badge: null };
+        case "sd": return { text: tag("FINAL MINUTE", RED) + ": crowns pay double", badge: null };
         case "took": return { text: tag(String(x.by).slice(0, 13), GOLD) + " took " + who(x.name, "someone") + "'s " + crown + "!", badge: x.pts ? { t: "+" + (A ? A.fmtNum(x.pts) : x.pts), col: GOLD } : null };
         case "smash": return { text: who(x.by, "Someone") + " smashed " + who(x.name, "someone") + "'s " + crown, badge: x.to ? { t: String(x.to).slice(0, 10), col: GOLD } : null };
         case "fell": return { text: who(x.name, "Someone") + "'s " + crown + (x.to ? " fell to " + who(x.to, "someone") : " is gone"), badge: null };
@@ -317,4 +441,4 @@ export function feedLine(f, who, tag) {
 }
 
 // QA (headless runs)
-window.dwCrowns = () => ({ on: active(), sd: sudden(), list: CL.rows(S.c), champ: [...S.champ] });
+window.dwCrowns = () => ({ on: active(), sd: sudden(), list: CL.rows(S.c), champ: [...S.champ], mine: S.mine, gotAt: S.gotAt, slamAt: S.slamAt });

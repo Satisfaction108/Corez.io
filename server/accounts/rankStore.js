@@ -218,9 +218,7 @@ function applyRaidPlacement({ raidKey, userId, place, rows, score, raidMs, now, 
         if (bonus.dustMilli) balanceMilli = dust.creditExempt(userId, bonus.dustMilli, 'placement', raidKey, now) ?? balanceMilli;
         // wins and top-3s count on the same terms as the bonus (score, 5 minutes in, board size)
         const counts = bonus.eligible;
-        // A Crown Contest raid is won by its Core Champion (the crowned top
-        // scorer, dig_royale/crowns.js): that counts as a win for anyone who
-        // really played, even a late joiner who stole the crown. Nobody else
+        // A Crown Contest raid is won by its Core Champion (the top scorer on the board
         // in that raid wins it. Top 3 and the bonus keep their own terms.
         const won = contest ? !!champ && !!active && score > 0 : counts && place === 1;
         bumpStats(d, userId, now, { raids: 1, raidWins: won ? 1 : 0, top3: counts && place <= 3 ? 1 : 0 });

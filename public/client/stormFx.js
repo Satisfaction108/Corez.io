@@ -521,7 +521,7 @@ export function drawSafeZone(c, cx, cy, rr, ratio, sw, sh) {
 // ── maps ──────────────────────────────────────────────────────────────
 const DASH = [5, 4], NO_DASH = [];
 // hl: the safe-zone job is running, so the circle is picked out in gold
-export function drawMap(c, cx, cy, rr, x, y, w, h, toR, hl) {
+export function drawMap(c, cx, cy, rr, x, y, w, h, toR, hl, toX, toY) {
     c.save();
     c.beginPath();
     c.rect(x, y, w, h);
@@ -540,9 +540,11 @@ export function drawMap(c, cx, cy, rr, x, y, w, h, toR, hl) {
     c.lineWidth = 1.6;
     c.stroke();
     // where it's closing to
+    // its own centre: the zone slides as it closes)
+    const tcx = toX == null ? cx : toX, tcy = toY == null ? cy : toY;
     if (toR > 1 && toR < rr - 2) {
         c.beginPath();
-        c.arc(cx, cy, toR, 0, TAU);
+        c.arc(tcx, tcy, toR, 0, TAU);
         c.setLineDash(DASH);
         c.strokeStyle = "rgba(255, 255, 255, 0.7)";
         c.lineWidth = 1.2;
@@ -565,11 +567,55 @@ export function drawMap(c, cx, cy, rr, x, y, w, h, toR, hl) {
 const warn = { inside: false, since: 0, level: 0, warnAt: 0, distTxt: "", distN: -1, textA: 1 };
 // sm: the server's damage multiplier for you (0 when you're safe);
 // dist: how far you are from the safe zone; dirAng: the way to it.
+// A chevron on the screen's edge pointing the way to safety, so the way out reads
+function edgeArrow(c, sw, sh, ang, col, a, label) {
+    const m = 44, hw = sw / 2 - m, hh = sh / 2 - m;
+    const ux = Math.cos(ang), uy = Math.sin(ang);
+    const k = Math.min(Math.abs(ux) > 1e-6 ? hw / Math.abs(ux) : Infinity, Math.abs(uy) > 1e-6 ? hh / Math.abs(uy) : Infinity);
+    const x = sw / 2 + ux * k, y = sh / 2 + uy * k;
+    c.save();
+    c.globalAlpha = a;
+    c.translate(x, y);
+    c.save();
+    c.rotate(ang);
+    c.scale(2.2, 2.2);
+    c.fillStyle = col;
+    c.strokeStyle = "#120e15";
+    c.lineWidth = 1.4;
+    c.lineJoin = "round";
+    c.beginPath(); c.moveTo(10, 0); c.lineTo(-6, -9); c.lineTo(-2, 0); c.lineTo(-6, 9); c.closePath();
+    c.fill(); c.stroke();
+    c.restore();
+    c.restore();
+    // the label sits on the screen side of the chevron
+    if (label) A.drawText(label, x - ux * 36, y - uy * 30, 12, col, "center", true, a);
+}
+
+// Inside, but the edge is coming: a calm amber line and the way in
+function drawNear(c, sw, sh, st) {
+    const still = calm();
+    const now = performance.now();
+    const col = st.near <= 5 ? "#ffb070" : "#ffd76e";
+    const head = "Storm reaches you in " + st.near + "s";
+    const tail = "  ·  head for the middle";
+    const by = st.rowY || 60;
+    const hw = A.hudTitleW(head, 14), dw = A.hudTextW ? A.hudTextW(tail, 12) : tail.length * 6.5;
+    const W = hw + dw + 30, H = 26, x = sw / 2 - W / 2;
+    c.save();
+    A.hudPanel(c, x, by, W, H, { r: H / 2, bevel: false, stroke: col });
+    A.hudTitle(head, x + 15, by + H / 2, 14, col, "left", 1);
+    A.drawText(tail, x + 15 + hw, by + H / 2, 12, "#efe6d0", "left", true, 1);
+    c.restore();
+    const pulse = still ? 1 : 0.75 + 0.25 * Math.sin(now / 220);
+    edgeArrow(c, sw, sh, st.dirAng, col, pulse, "Safe");
+}
+
 export function drawHud(c, sw, sh, topY, st) {
     const now = performance.now();
     if (!st.inside) {
         warn.inside = false;
         warn.level += (0 - warn.level) * 0.15;
+        if (st.near > 0) drawNear(c, sw, sh, st);
         return;
     }
     if (!warn.inside) {
@@ -613,7 +659,9 @@ export function drawHud(c, sw, sh, topY, st) {
     if (!still) drawPour(c, sw, sh, 0.42 * inA, now);
     // banner, popping in on entry (coach.js steps aside while it is up)
     global.stormBannerAt = now;
-    const pop = still ? 1 : Math.min(1, age / 220);
+    // a frame or two "inside" at a landing (the camera catching up) never flashes the
+    if (age < 120) return;
+    const pop = still ? 1 : Math.min(1, (age - 120) / 220);
     // one compact line in the row app.js keeps for it under the raid clock
     // (away from your tank, its chat and the slams): what's happening and
     // how far the safe zone is
@@ -646,6 +694,8 @@ export function drawHud(c, sw, sh, topY, st) {
     c.beginPath(); c.moveTo(10, 0); c.lineTo(-6, -8); c.lineTo(-3, 0); c.lineTo(-6, 8); c.closePath();
     c.fill(); c.stroke();
     c.restore();
+    // and one on the screen's edge, which still reads mid-fight
+    if (!st.immune) edgeArrow(c, sw, sh, st.dirAng, col, pop * (still ? 1 : 0.8 + 0.2 * Math.sin(now / 160)), "Safe zone");
 }
 
 // QA hooks (headless runs)

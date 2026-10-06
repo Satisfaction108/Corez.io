@@ -202,17 +202,48 @@ test('arm: someone who bought the Annihilator keeps it after the override', () =
     die(sock, a);
 });
 
-test('pockets: Deep Pockets starting mid-raid raises the satchel to 6,000 at once', () => {
+test('pockets: Deep Pockets starting mid-raid raises the satchel to 12,000 at once', () => {
     raidMods.roll('copper_rush');
     const sock = mkSocket();
     const a = spawn(sock);
-    assert.equal(a.gemCap, 4000);
+    assert.equal(a.gemCap, 8000);
     royale.debugTwist('deep_pockets');
-    assert.equal(a.gemCap, 6000, 'live body');
+    assert.equal(a.gemCap, 12000, 'live body');
     const gem = sock.packets.filter(m => m[0] === 'GEM').pop();
-    assert.ok(gem && gem[2] === 6000, 'client told the new cap');
+    assert.ok(gem && gem[2] === 12000, 'client told the new cap');
     royale.debugTwist('giants');
-    assert.equal(a.gemCap, 4000, 'back to normal after');
+    assert.equal(a.gemCap, 8000, 'back to normal after');
+    die(sock, a);
+});
+
+test('satchel caps: 8,000; Reinforced or Deep Pockets 12,000; both 16,000', () => {
+    raidMods.roll('copper_rush');
+    const sock = mkSocket();
+    const a = spawn(sock);
+    const cap = () => { shop.applyPassives(a); return a.gemCap; };
+    assert.equal(cap(), 8000, 'base');
+    shop.stateOf(sock).gear.satchel = Date.now() + 60_000;
+    assert.equal(cap(), 12000, 'Reinforced Satchel');
+    a._pkfx = Object.assign({}, a._pkfx || {}, { satchel: 1 });
+    assert.equal(cap(), 16000, 'Reinforced + Deep Pockets perk');
+    delete shop.stateOf(sock).gear.satchel;
+    assert.equal(cap(), 12000, 'Deep Pockets perk');
+    // the twist is Deep Pockets too: no stacking with the perk
+    royale.debugTwist('deep_pockets');
+    assert.equal(cap(), 12000, 'perk + twist: still one Deep Pockets');
+    shop.stateOf(sock).gear.satchel = Date.now() + 60_000;
+    assert.equal(cap(), 16000, 'twist + Reinforced');
+    // no Deep Pockets perk on offer while the twist gives it to everyone
+    const perks = require(path.join(SERVER, 'game', 'terrain', 'raidPerks.js'));
+    for (let i = 0; i < 200; i++) assert.ok(!perks.rollOffer(perks.newBuild()).includes('satchel'));
+    royale.debugTwist('giants');
+    a._pkfx = null; delete shop.stateOf(sock).gear.satchel;
+    assert.equal(cap(), 8000);
+    // the words match
+    const item = shop.ITEMS ? shop.ITEMS.find(i => i.id === 'satchel') : null;
+    if (item) assert.ok(/12,000/.test(item.desc) && /8,000/.test(item.desc) && /16,000/.test(item.desc), item.desc);
+    assert.ok(/12,000/.test(perks.BY_ID.get('satchel').desc) && /16,000/.test(perks.BY_ID.get('satchel').desc));
+    assert.ok(/12,000/.test(raidMods.MODS ? raidMods.MODS.find(m => m.id === 'deep_pockets').desc : '12,000'));
     die(sock, a);
 });
 

@@ -18,7 +18,7 @@ const MODS = [
     { id: "meteor_season", name: "Meteor Season",      desc: "Meteor showers and gem rain twice as often.", weight: 1, eventRateMult: 2.5 },
     { id: "wardens_watch", name: "Warden's Watch",     desc: "Bosses show up twice as often.", weight: 1, bossRateMult: 2.5 },
     { id: "emerald_fever", name: "Emerald Fever",      desc: "Six emeralds in the wall instead of three, and they come back in 30 seconds.", weight: 0.9, extraEmeralds: 3, emeraldRespawnMs: 30000 },
-    { id: "deep_pockets",  name: "Deep Pockets",       desc: "Satchels hold 6,000 and vaults pay out 110%.", weight: 0.8, satchelMult: 1.5, bankMult: 1.1 },
+    { id: "deep_pockets",  name: "Deep Pockets",       desc: "Satchels hold 12,000 (16,000 with a Reinforced Satchel) and vaults pay out 110%.", weight: 0.8, satchelDeep: true, bankMult: 1.1 },
 ];
 
 let active = null;

@@ -2,7 +2,7 @@
 
 Corez.io is a free, fast top-down battle royale you play right in your browser. Drive a tank through an underground world packed with rock, blast your way through it, and dig up copper, azurite, purple shards and rare emeralds. Bank your haul in a vault before someone takes it, because anyone carrying a full satchel is a target.
 
-Every raid runs for two hours and you can jump in any time. A storm keeps closing in, so fights come to you whether you like it or not. Crack open loot chests, grab kit items from the shop pads, team up on giant bosses guarding the richest veins, and try to finish the raid at the top of the board.
+Every raid runs for two hours and you can jump in any time. A storm keeps closing in, so fights come to you whether you like it or not. Open loot chests, grab kit items from the shop pads, team up on giant bosses guarding the richest veins, and try to finish the raid at the top of the board.
 
 Play at **https://corez.io** and come hang out on our **[Discord](https://discord.gg/bx5FK3CMwp)**.
 

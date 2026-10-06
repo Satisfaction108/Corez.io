@@ -33,6 +33,7 @@
 // doesn't: smoke, burrow, invisibility, the sky drop and death all hide it
 // with the owner, and the server's hidden flag covers what the client can't
 // see. Fewer Effects / Low effects / the auto low-end trim drop the shots.
+// Digging: the SK packet's t rows say which rock each sidekick is mining (the
 import { config } from './config.js';
 import { global } from './global.js';
 import * as art from './sidekickArt.js';
@@ -83,6 +84,7 @@ function add(row) {
         st: M.makeState(id, kick.kick.move), label: null, spr: null, lastT: 0, lastReal: 0,
         frame: -1, ok: false, ox: 0, oy: 0, wx: 0, wy: 0, oR: 20, sx: 0, sy: 0,
         enemy: null, thing: null, sense: { ex: NaN, ey: NaN, gx: NaN, gy: NaN, gr: 0 },
+        digOn: false, dx: 0, dy: 0,
     });
 }
 export function onPacket(d) {
@@ -91,7 +93,15 @@ export function onPacket(d) {
     if (Array.isArray(d.a)) for (const r of d.a) add(r);
     if (Array.isArray(d.d)) for (const id of d.d) table.delete(id | 0);
     if (Array.isArray(d.h)) for (const f of d.h) { const e = table.get(f[0] | 0); if (e) e.hidden = !!f[1]; }
+    if (Array.isArray(d.t)) for (const r of d.t) {
+        const e = Array.isArray(r) && table.get(r[0] | 0);
+        if (!e) continue;
+        e.digOn = r.length >= 3 && Number.isFinite(+r[1]) && Number.isFinite(+r[2]);
+        if (e.digOn) { e.dx = +r[1]; e.dy = +r[2]; }
+    }
 }
+// QA / tests: the rock this owner's sidekick is mining, or null
+export function digOf(id) { const e = table.get(id | 0); return e && e.digOn ? { x: e.dx, y: e.dy } : null; }
 
 /* ── per frame ──────────────────────────────────────────────────────── */
 const lowFx = () => !!(config.graphical.fewerEffects || config.graphical.fxLevel === 0 || global.lowFx);
@@ -213,7 +223,11 @@ export function draw(c, ratio, px, py, tick, me) {
         const dt = e.st.init ? t - e.lastT : 0;
         e.lastT = t;
         if (look) pick(e, mate);
-        const s = M.step(e.st, e.wx, e.wy, e.oR, e.size, t, dt, senseOf(e, ratio, px, py, hw, hh, cam));
+        const S = senseOf(e, ratio, px, py, hw, hh, cam);
+        // mining: the rock is what it watches (and shoots)
+        if (e.digOn) { S.ex = e.dx; S.ey = e.dy; }
+        e.st.dig = e.digOn;
+        const s = M.step(e.st, e.wx, e.wy, e.oR, e.size, t, dt, S);
         const sx = e.ox + (s.x - e.wx) * ratio, sy = e.oy + (s.y - e.wy) * ratio;
         const lift = s.hop * ratio, y = sy - lift;
         const rpx = M.R * e.size * s.sc * ratio;
@@ -350,40 +364,53 @@ const shots = {
     born: new Float64Array(MAX_SHOTS).fill(-1e9), x: new Float32Array(MAX_SHOTS), y: new Float32Array(MAX_SHOTS),
     vx: new Float32Array(MAX_SHOTS), vy: new Float32Array(MAX_SHOTS), a: new Float32Array(MAX_SHOTS),
     owner: new Int32Array(MAX_SHOTS), kind: new Array(MAX_SHOTS).fill('bullet'), col: new Array(MAX_SHOTS).fill('#ffffff'), size: new Float32Array(MAX_SHOTS),
+    life: new Float32Array(MAX_SHOTS).fill(M.SHOT_LIFE), dig: new Uint8Array(MAX_SHOTS),
 };
 let shotI = 0, lastShotAt = 0;
 const KIND = { trap: 'trap', drone: 'drone' };
-function shot(e, x, y, a, kind, size, t) {
+function shot(e, x, y, a, kind, size, t, digTo) {
     const i = shotI; shotI = (shotI + 1) % MAX_SHOTS;
     shots.born[i] = t; shots.owner[i] = e.id; shots.a[i] = a;
     shots.x[i] = x; shots.y[i] = y;
-    const sp = kind === 'ring' ? 0 : M.SHOT_SPEED;
+    // a mining shot flies straight to its rock (digTo: the distance)
+    shots.dig[i] = digTo > 0 ? 1 : 0;
+    shots.life[i] = digTo > 0 ? M.digLife(digTo) : M.SHOT_LIFE;
+    const sp = kind === 'ring' ? 0 : digTo > 0 ? M.DIG_SPEED : M.SHOT_SPEED;
     shots.vx[i] = Math.cos(a) * sp; shots.vy[i] = Math.sin(a) * sp;
     shots.kind[i] = kind; shots.col[i] = e.body; shots.size[i] = size;
 }
 // a pop from every barrel (a Smasher just pops where it is)
 function fire(e, face, t) {
     const st = e.st, r = M.R * e.size * st.sc, guns = e.kick.kick.guns;
-    if (!guns.length) { shot(e, st.x, st.y, face, 'ring', r * 0.9, t); return; }
+    const dig = e.digOn;
+    if (!guns.length) {
+        shot(e, st.x, st.y, face, 'ring', r * 0.9, t);
+        // a Smasher has no barrel: its mining shot leaves its body
+        if (dig) shot(e, st.x, st.y, Math.atan2(e.dy - st.y, e.dx - st.x), 'bullet', r * 0.3, t, Math.max(1, Math.hypot(e.dx - st.x, e.dy - st.y) - r));
+        return;
+    }
     const ca = Math.cos(face), sa = Math.sin(face);
     for (let g = 0; g < guns.length && g < 8; g++) {
         const G = guns[g], m = art.muzzle(G);
         const mx = (m[0] * ca - m[1] * sa) * r, my = (m[0] * sa + m[1] * ca) * r;
-        shot(e, st.x + mx, st.y + my, face + G[0] * Math.PI / 180, KIND[G[5]] || 'bullet', r * Math.max(0.2, Math.min(0.42, G[2] * 0.36)), t);
+        const x = st.x + mx, y = st.y + my, a = face + G[0] * Math.PI / 180;
+        // the barrels facing the rock send theirs all the way there
+        const to = dig && M.facesRock(a, x, y, e.dx, e.dy) ? Math.max(1, Math.hypot(e.dx - x, e.dy - y)) : 0;
+        shot(e, x, y, to ? Math.atan2(e.dy - y, e.dx - x) : a, KIND[G[5]] || 'bullet', r * Math.max(0.2, Math.min(0.42, G[2] * 0.36)), t, to);
     }
 }
 function drawShots(c, ratio, t, low) {
     for (let i = 0; i < MAX_SHOTS; i++) {
-        const age = t - shots.born[i];
-        if (age < 0 || age >= M.SHOT_LIFE) continue;
+        const age = t - shots.born[i], life = shots.life[i];
+        if (age < 0 || age >= life) continue;
         // drawn from its owner's spot this frame, and gone with the owner
         const e = table.get(shots.owner[i]);
         if (low || !e || e.frame !== frame || !e.ok) { shots.born[i] = -1e9; continue; }
-        const k = age / M.SHOT_LIFE;
-        // quick out of the barrel, easing off as it pops
-        const d = age * (1 - 0.45 * k);
+        const k = age / life;
+        // quick out of the barrel, easing off as it pops (a mining shot keeps its speed
+        const d = shots.dig[i] ? age : age * (1 - 0.45 * k);
         const wx = shots.x[i] + shots.vx[i] * d, wy = shots.y[i] + shots.vy[i] * d;
-        c.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+        c.globalAlpha = shots.dig[i] ? (k < 0.85 ? 1 : 1 - (k - 0.85) / 0.15) : k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
         art.drawShot(c, shots.kind[i], e.ox + (wx - e.wx) * ratio, e.oy + (wy - e.wy) * ratio, shots.size[i] * ratio, shots.a[i], shots.col[i], k);
     }
     c.globalAlpha = 1;

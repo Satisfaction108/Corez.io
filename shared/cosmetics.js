@@ -570,10 +570,33 @@
         return Array.from(s).slice(0, SIDEKICK_NAME_MAX).join('').trim();
     }
 
+    // Sidekicks help you mine (server/game/terrain/sidekickDig.js): their shots hit
+    const SIDEKICK_DIG_LINE = 'Helps you mine: rock only.';
+    const SIDEKICK_DIG_BANDS = Object.freeze({
+        common: [0.10, 0.15], uncommon: [0.22, 0.28], rare: [0.37, 0.43], epic: [0.52, 0.58], legendary: [0.72, 0.78],
+    });
+    let digPrices = null;
+    function sidekickDigShare(item) {
+        if (!item || item.cat !== 'sidekick') return 0;
+        const band = SIDEKICK_DIG_BANDS[item.rarity];
+        if (!band) return 0;
+        if (!digPrices) {
+            digPrices = {};
+            for (const it of ITEMS) {
+                if (it.cat !== 'sidekick' || it.retired) continue;
+                const p = digPrices[it.rarity] || (digPrices[it.rarity] = [Infinity, -Infinity]);
+                p[0] = Math.min(p[0], it.price); p[1] = Math.max(p[1], it.price);
+            }
+        }
+        const p = digPrices[item.rarity];
+        const k = p && p[1] > p[0] ? Math.max(0, Math.min(1, (item.price - p[0]) / (p[1] - p[0]))) : 0.5;
+        return band[0] + (band[1] - band[0]) * k;
+    }
+
     return Object.freeze({
         CATALOG_VERSION, MILLI, RARITIES, RARITY_ORDER, CATS, TANK_CATS, SIDEKICK_CATS, CUSTOM_COLOR_ID, INVITE_STYLE_ID, BASIC_SIDEKICK_ID, ITEMS,
-        MIN_LUMINANCE, FLOOR_COLOR, SIDEKICK_COLORS, SIDEKICK_NAME_MAX, RETIRED,
+        MIN_LUMINANCE, FLOOR_COLOR, SIDEKICK_COLORS, SIDEKICK_NAME_MAX, RETIRED, SIDEKICK_DIG_LINE, SIDEKICK_DIG_BANDS,
         byId, byNid, isCat, parseHex, luminance, contrast, normalizeColor, isColorAllowed, colorDistance, accentFor, accent2For, priceDust,
-        isSidekickColor, cleanSidekickName,
+        isSidekickColor, cleanSidekickName, sidekickDigShare,
     });
 });

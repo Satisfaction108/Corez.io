@@ -26,7 +26,7 @@ const TIER_OF_SLOT = ['easy', 'medium', 'hard'];
 // best single value (minutes alive in one life).
 const POOL = [
     { id: 'bank_3k',    tier: 'easy',   event: 'bank',       mode: 'add', goal: 3000, text: 'Bank 3,000 gems' },
-    { id: 'elim_5',     tier: 'easy',   event: 'kill',       mode: 'add', goal: 5,    text: 'Knock out 5 miners (bots count!)' },
+    { id: 'elim_5',     tier: 'easy',   event: 'kill',       mode: 'add', goal: 5,    text: 'Knock out 5 miners' },
     { id: 'chests_2',   tier: 'easy',   event: 'chest',      mode: 'add', goal: 2,    text: 'Open 2 chests' },
     { id: 'elim_3p',    tier: 'medium', event: 'killPlayer', mode: 'add', goal: 3,    text: 'Knock out 3 players' },
     { id: 'purple_10',  tier: 'medium', event: 'purple',     mode: 'add', goal: 10,   text: 'Grab 10 purple shards' },

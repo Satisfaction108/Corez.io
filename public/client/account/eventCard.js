@@ -1,4 +1,4 @@
-// The Raid Night card above Play (#eventCard). Shows the next event from
+// The Raid Night card in the come-back card left of the menu (#eventCard)
 // shared/events.js (window.DWEvents): its start in the viewer's own time,
 // a live countdown, the blurb, a Discord link and an .ics "Add to calendar".
 // While the event runs it says so and Play pulses. Hidden in game, when

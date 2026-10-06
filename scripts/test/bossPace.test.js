@@ -13,11 +13,10 @@
 //              Constructor in about a second)
 //   regen      a boss under fire does not regenerate
 //   payout     a boss killed through the cap still erupts its gems
-//   newcomers  boss bullets and hull hit a new player for a quarter (back to
-//              full as newness fades), never take them under 1 health unless
-//              they shot the boss in the last 8 s, and boss guns take anyone
-//              else in reach first; idle players and ROYALE_BOSS_NEWBIE=0 get
-//              none of it
+//   newcomers  a boss treats a new player like anyone (Oct 5 2026): full
+//              damage, it can finish them, its guns take the nearest; the
+//              old mercy (a quarter of the damage, no last blow, guns looking
+//              elsewhere) only comes back with ROYALE_BOSS_NEWBIE=1
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -231,7 +230,11 @@ test('schedule: one boss per storm cycle, early in it, gone when it ends; none i
     bosses.resetRaid();
     bosses.tick(Date.now(), 2);
     assert.equal(bosses.current(), null, 'not in the first seconds of a cycle');
+    // (round 7) a raid's first cycle: not before 3 minutes
     storm.debugSeek(30);
+    bosses.tick(Date.now(), 2);
+    assert.equal(bosses.current(), null, 'not 30 s into a new raid');
+    storm.debugSeek(bosses.FIRST_CYCLE_DELAY_MS / 1000 + 5);
     bosses.tick(Date.now(), 2);
     const b = bosses.current();
     assert.ok(b, 'surfaces early in the cycle');
@@ -275,77 +278,44 @@ test('payout: a boss killed through the cap still erupts its gems', () => {
     clearAll();
 });
 
-test('first minutes: a boss ignores you until you deal 25%, then gets angrier', () => {
+test('first minutes: a boss no longer ignores a first-minutes player', () => {
     const boss = makeBoss();
     boss.bossKind = 'drillhead';
-    const pool = guard.poolOf(boss);
     const p = { id: 4242, isPlayer: true, nxBossSafe: true, health: { amount: 200 }, damageReceived: 0, sendMessage(m) { this.told = m; } };
     const shot = { master: boss, type: 'bullet', kill() { this.killed = true; } };
     const now = Date.now();
-    assert.equal(guard.intoPlayer(p, shot, 40, now), 0, 'left alone');
-    assert.ok(shot.killed, 'the shot fades');
-    // hit it for just under a quarter: still left alone
-    for (let i = 0; i < 1000 && (boss._dealtBy?.get(p.id) || 0) < pool * 0.24; i++) guard.capHit(boss, p, pool * 0.01, now);
-    assert.equal(guard.angerOf(boss, p, now), 0, 'under a quarter: not yet');
-    for (let i = 0; i < 1000 && (boss._dealtBy?.get(p.id) || 0) < pool * guard.ANGER_AT; i++) guard.capHit(boss, p, pool * 0.01, now);
-    const a0 = guard.angerOf(boss, p, now);
-    assert.ok(Math.abs(a0 - guard.ANGER_MIN) < 0.05, 'gently at first: ' + a0.toFixed(2));
-    assert.match(p.told || '', /noticed you/);
-    const s2 = { master: boss, type: 'bullet', kill() { this.killed = true; } };
-    assert.ok(Math.abs(guard.intoPlayer(p, s2, 40, now) - 40 * a0) < 1e-6, 'hits at that share');
-    assert.ok(!s2.killed, 'and the shot is real');
-    // keep hitting it: angrier
-    for (let i = 0; i < 1000 && (boss._dealtBy.get(p.id) || 0) < pool * 0.45; i++) guard.capHit(boss, p, pool * 0.01, now);
-    const a1 = guard.angerOf(boss, p, now);
-    assert.ok(a1 > a0 + 0.2 && a1 < 1, 'angrier: ' + a1.toFixed(2));
-    // or just wait: full after the ramp
-    assert.equal(guard.angerOf(boss, p, now + 30000), 1, 'full fury in the end');
-    // someone else who never hit it is still left alone
-    assert.equal(guard.angerOf(boss, { id: 7 }, now), 0);
+    assert.equal(guard.intoPlayer(p, shot, 40, now), 40, 'full damage');
+    assert.ok(!shot.killed, 'the shot is real');
+    const nd = require(path.join(SERVER, 'game', 'terrain', 'newcomerDirector.js'));
+    assert.equal(nd.TUNE.BOSS_SAFE_MIN, undefined, 'the director no longer grants boss immunity');
     clearAll();
 });
 
-test('newcomers: boss damage softened, no last blow, guns look elsewhere first', () => {
+test('newcomers: boss damage is the same as anyone\'s (the old mercy only with ROYALE_BOSS_NEWBIE=1)', () => {
     const boss = makeBoss();
-    // the Drillhead hits at full strength, so only the newcomer rules show here
     boss.bossKind = 'drillhead';
     const turret = { master: boss, type: 'bullet' };
     const shot = { master: turret, type: 'bullet' };
     const p = { isPlayer: true, botNewbie: true, health: { amount: 200 }, damageReceived: 0 };
+    const v = { isPlayer: true, botNewbie: false, botNewness: 0, health: { amount: 200 }, damageReceived: 0 };
     const now = Date.now();
-    assert.equal(guard.intoPlayer(p, shot, 40, now), 40 * guard.NEWBIE_DMG_MIN, 'a quarter at full newness');
-    assert.equal(guard.intoPlayer(p, boss, 40, now), 40 * guard.NEWBIE_DMG_MIN, 'hull contact too');
-    p.botNewbie = false; p.botNewness = 0.5;
-    assert.ok(Math.abs(guard.intoPlayer(p, shot, 40, now) - 40 * 0.625) < 1e-9, 'fading back');
-    p.botNewness = 0;
-    assert.equal(guard.intoPlayer(p, shot, 40, now), 40, 'not new: full damage');
+    assert.equal(guard.intoPlayer(p, shot, 40, now), guard.intoPlayer(v, shot, 40, now), 'newcomer = veteran');
+    assert.equal(guard.intoPlayer(p, shot, 40, now), 40, 'full damage');
+    assert.equal(guard.intoPlayer(p, boss, 40, now), 40, 'hull contact too');
+    // the last blow lands
+    p.health.amount = 6;
+    assert.equal(guard.intoPlayer(p, shot, 400, now), 400, 'no floor at 1 health');
+    p.health.amount = 200;
     // the Warden, Wraith and Colossus hit softer for everyone
     boss.bossKind = 'warden';
     assert.ok(Math.abs(guard.intoPlayer(p, shot, 40, now) - 24) < 1e-9, 'warden: 60%');
     boss.bossKind = 'wraith';
     assert.ok(Math.abs(guard.intoPlayer(p, shot, 40, now) - 22) < 1e-9, 'wraith: 55%');
     boss.bossKind = 'drillhead';
-    // a bot's shot is none of this
-    const bot = { isBot: true }; bot.master = bot;
-    p.botNewbie = true;
-    assert.equal(guard.intoPlayer(p, { master: bot }, 40, now), 40);
-    // the last blow: never under 1 health from a boss...
-    p.health.amount = 6;
-    assert.ok(guard.intoPlayer(p, shot, 400, now) <= 5, 'kept at 1');
-    p.damageReceived = 5;
-    assert.equal(guard.intoPlayer(p, shot, 400, now), 0, 'already at the floor this tick');
-    p.damageReceived = 0;
-    // ...unless they are fighting it
-    guard.capHit(boss, { master: p }, 1);
-    assert.ok(p._hitBossAt >= now);
-    assert.equal(guard.intoPlayer(p, shot, 400, now), 400 * guard.NEWBIE_DMG_MIN);
-    p._hitBossAt = 0;
-    // idle a minute: no mercy
-    const idler = { isPlayer: true, botNewbie: true, health: { amount: 6 }, damageReceived: 0, socket: { lastInputAt: now - 10 * MIN } };
-    assert.equal(guard.intoPlayer(idler, shot, 40, now), 40);
-    // switched off
-    guard.setSpare(false);
-    try { assert.equal(guard.intoPlayer(p, shot, 400, now), 400); } finally { guard.setSpare(true); }
+    // the env switch still brings the old rule back (off by default)
+    guard.setSpare(true);
+    try { assert.equal(guard.intoPlayer(p, shot, 40, now), 40 * guard.NEWBIE_DMG_MIN, 'ROYALE_BOSS_NEWBIE=1: the old quarter'); }
+    finally { guard.setSpare(process.env.ROYALE_BOSS_NEWBIE === '1'); }
     clearAll();
 });
 
@@ -367,45 +337,31 @@ function bossArmed() {
     return boss;
 }
 
-test('newcomers: a boss in full fire cannot finish one off', () => {
+test('newcomers: a boss in full fire finishes a newcomer like a veteran', () => {
     for (const newbie of [true, false]) {
         const boss = bossArmed();
         const p = player(-(boss.realSize + 140), 0, newbie);
-        let ticks = 0, low = Infinity;
+        let ticks = 0;
         for (; ticks < 30 * 25 && !p.isDead(); ticks++) {
             boss.x = 0; boss.y = 0; boss.velocity.x = boss.velocity.y = 0;
             p.x = -(boss.realSize + 140); p.y = 0; p.velocity.x = p.velocity.y = 0; p.invuln = false;
             loop(1);
             if (ticks % 3 === 0) handler.regenHealthAndShield();
-            low = Math.min(low, p.health.amount);
         }
-        if (newbie) {
-            assert.ok(!p.isDead(), 'the newcomer lives');
-            assert.ok(low >= 0.99, 'held at 1 health or more: ' + low);
-            assert.ok(low < p.health.max * 0.5, 'it was really under fire: ' + low);
-        } else assert.ok(p.isDead(), 'a veteran in the same spot dies (' + (ticks / 30).toFixed(1) + ' s)');
+        assert.ok(p.isDead(), (newbie ? 'a newcomer' : 'a veteran') + ' in that spot dies (' + (ticks / 30).toFixed(1) + ' s)');
         clearAll();
     }
 });
 
-test('newcomers: boss guns take someone else first', () => {
+test('newcomers: boss guns take the nearest, newcomer or not', () => {
     const boss = bossArmed();
     const ctl = boss.controllers[0];
     const fresh = player(-(boss.realSize + 120), 0, true);
     const vet = player(boss.realSize + 260, 0, false);
     loop(1);
     const aims = () => { ctl.targetLock = undefined; ctl.tick = 99; ctl.think({}); return ctl.targetLock; };
-    assert.equal(aims(), vet, 'the veteran, though further');
-    // locked on the newcomer already: lets go once someone else is in reach
-    ctl.targetLock = fresh; ctl.tick = 99; ctl.think({});
-    assert.equal(ctl.targetLock, vet);
-    // a newcomer shooting the boss is fair game
-    fresh._hitBossAt = Date.now();
-    assert.equal(aims(), fresh, 'picked the fight: nearest again');
-    fresh._hitBossAt = 0;
-    // alone, the newcomer is still a target (only the damage is soft)
-    vet.kill(); loop(2);
-    assert.equal(aims(), fresh);
+    assert.equal(aims(), fresh, 'the nearer newcomer');
+    vet.kill(); fresh.kill(); loop(2);
     clearAll();
 });
 

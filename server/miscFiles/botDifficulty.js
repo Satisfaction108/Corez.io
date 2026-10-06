@@ -2,7 +2,7 @@
 // (a brand-new player) to 1 (the best we ever want them). Bots read it per
 // target, so one bot fighting a newcomer and a veteran plays each differently.
 // dig_royale.js stamps it on every human body about once a second
-// (body.botDifficulty); controllers.js and subFunctions.shotMult read it.
+// body.botDifficulty)
 //
 // Who gets what:
 //   new player             0, fading into the numbers below (newness)
@@ -102,11 +102,16 @@ function fromRank(code) {
     return RANK_LO + (RANK_HI - RANK_LO) * Math.min(div, LEGEND) / LEGEND;
 }
 
-// p: { newbie, newness, rankCode, score, kills, sessionBest, playMs }
+// p: { newbie, newness, rankCode, score, kills, sessionBest, playMs, struggle }
 function forPlayer(p) {
     const fresh = p.newbie ? 1 : clamp01(+p.newness || 0);
     if (fresh >= 1) return 0;
-    return settled(p) * (1 - fresh);
+    let d = settled(p) * (1 - fresh);
+    if ((p.struggle | 0) > 0 && rankedDivision(p.rankCode) == null) d = Math.min(d, struggleCap(p.struggle));
+    return d;
+}
+function struggleCap(s) {
+    try { return require('../game/terrain/fairPlay.js').struggleCap(s); } catch { return 1; }
 }
 // lock-on: a guest's floor from time played
 function lockFromTime(playMs) {
@@ -162,8 +167,8 @@ function reactionMs(s, d, r) { return knob(d, x => oldReaction(s, x, r), 70 + (1
 // trigger released before a burst [200 + 450r(1.4-s)]; burst length [1300 + 2400r]
 function pauseMs(s, d, r) { return knob(d, x => oldPause(s, x, r), 40 + r * 90); }
 function burstMs(d, r) { return knob(d, x => lerp(700, 1250, x) + r * lerp(1500, 2300, x), 2600 + r * 2400); }
-// bullet / drone / trap damage share [1]
-function shotMult(d) { return knob(d, x => lerp(0.64, 0.92, x), 1); }
+// bullet / drone / trap damage share into a player [1]: the same for every
+function shotMult() { return lockOn ? 1 : 0.92; }
 // bots that may hunt one player at once [2]; lock-on lets a third onto a
 // veteran with a fat satchel (or one the raid marks as the top target)
 function maxHunters(d, carried = 0, hunted = 0) {
@@ -177,7 +182,7 @@ function company(d) { return d < 0.3 ? 1 : d < 0.75 ? 2 : 3; }
 function initThreat(d) { return knob(d, x => lerp(0.85, 1.2, x), 1.7); }
 // ...and only from this close [1400]
 function initRange(d) { return knob(d, x => lerp(800, 1400, x), 1900); }
-// target choice: a player counts as this much farther away [0]
+// target choice: a player counts as this much farther away [0] (bots pick someone
 function targetPenalty(d) { return knob(d, x => lerp(400, 0, x), 0); }
 // the soft window at the start of a life: its length share, the range at
 // which a soft player gets fought anyway, and the aim it still costs

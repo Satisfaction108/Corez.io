@@ -5,8 +5,19 @@ const milestones = require('./milestones.js');
 const PAD_RADIUS   = 95;
 const DEPOSIT_RATE = 300;
 const PROGRESS_MS  = 50;
-const PAD_EJECT_MS = 10_000;      // idle time on the pad before a kick
-const CASHED_LOCK_MS = 20_000;    // one visit per deposit
+// Stay limits doubled and re-entry waits halved on Oct 5 2026 (owner)
+const PAD_EJECT_MS = 20_000;      // idle time on the pad before a kick (nothing to bank; was 10 s)
+const PAD_EJECT_CARRY_MS = 50_000; // idle with a bankable satchel: time to pick an amount (was 25 s)
+const CAMP_WARN_MS = 4_000;       // the heads-up before an idle kick
+// Banking is by the vault panel (Bank all) for everyone again (Oct 5 2026
+const AUTO_BANK_MS = 300;
+const AUTO_BANK_RETRY_MS = 1500;
+// A crown in the final minute (body.crownLocked) banks like anyone, but the vault
+const CROWN_IDLE_MS = 3000;       // (was 1.5 s)
+const CROWN_PAD_MS = 20_000;      // (was 10 s)
+const CROWN_NO_HIDE = "A crown can't hide on the vault.";
+const REENTRY_MS = 2500;          // after a kick, before the same vault lets you back on (was 5 s)
+const CASHED_LOCK_MS = 10_000;    // one visit per deposit (was 20 s)
 // The raid pad is drawn as a flat-topped octagon 1.15x the pad radius; the
 // collision uses the same shape.
 const padGeom = require('./padGeom.js');
@@ -14,6 +25,16 @@ const OCT_SCALE = padGeom.OCT.scale;
 let _dustHooks = null;
 function dustHooks() { return _dustHooks || (_dustHooks = require('../../accounts/game/dustHooks.js')); }
 
+// Round 9 timed shield (also the quick-death respawn shield in dig_royale)
+const POST_BANK_SHIELD_MS = process.env.ROYALE_BANK_SHIELD === '0' ? 0 : 3000;
+function grantTimedShield(body, ms, t = Date.now()) {
+    if (!body || !(ms > 0) || body.isDead?.()) return false;
+    body.invuln = true;
+    body.spawnGraceUntil = Math.max(body.spawnGraceUntil || 0, t + ms);
+    body.shieldEndAt = Math.max(body.shieldEndAt || 0, t + ms);
+    body.shootEndsShield = true;
+    return true;
+}
 function insideOctagon(dx, dy, R) { return padGeom.insideNgon(dx, dy, R, 8); }
 function onPadShape(v, dx, dy, extra = 0) {
     if (Config.dig_royale || v.rainbow) return padGeom.insideNgon(dx, dy, v.r * OCT_SCALE + extra, 8);
@@ -80,8 +101,20 @@ function claimPad(pad, body) {
     return true;
 }
 
+// What a twist (Deep Pockets) paid on top of the satchel during a deposit: one
+function flushPremium(body, d) {
+    const n = d ? Math.round(d.premium || 0) : 0;
+    if (d) d.premium = 0;
+    if (!(n > 0) || !body || !body.socket) return;
+    const pct = Math.round((d.premiumMult || 1) * 100);
+    let name = "vault bonus";
+    try { const m = global.royaleMods; if (m && m.name) name = m.name; } catch { /* */ }
+    try { body.socket.talk('KC', 'bankpop', name + " " + pct + "%", n, 1); } catch { /* */ }
+}
+
 function cancelDeposit(body, notify = true) {
     if (!body || !body.vaultDeposit) { if (body) releasePad(body); return; }
+    flushPremium(body, body.vaultDeposit);
     body.vaultDeposit = null;
     releasePad(body);
     if (notify) talkProgress(body);
@@ -94,7 +127,12 @@ function pushOut(body, pad, speed, now) {
     return clear;
 }
 
-function ejectFromPad(body, pad, msg, lockMs = 5000) {
+// "2.5 seconds", "10 seconds"
+function secondsText(ms) {
+    const s = Math.round(ms / 100) / 10;
+    return (Number.isInteger(s) ? String(s) : s.toFixed(1)) + (s === 1 ? " second" : " seconds");
+}
+function ejectFromPad(body, pad, msg, lockMs = REENTRY_MS) {
     if (!body || body.isDead?.()) return;
     body._vaultPush = { pad, until: Date.now() + 4000 };
     body._padHold = null;
@@ -103,10 +141,54 @@ function ejectFromPad(body, pad, msg, lockMs = 5000) {
     // no re-entry for lockMs, scoped to this pad only
     body._padReentryUntil = Date.now() + lockMs;
     body._padReentryPad = pad;
-    if (msg) { try { body.sendMessage(msg + " You can come back in " + Math.round(lockMs / 1000) + " seconds."); } catch { /* */ } }
+    if (msg) { try { body.sendMessage(msg + " You can come back in " + secondsText(lockMs) + "."); } catch { /* */ } }
 }
 
-const MIN_DEPOSIT = 15;  
+const MIN_DEPOSIT = 15;
+
+// fairPlay.js: bank cover (the same for everyone)
+let _fair = null;
+function fairPlay() { return _fair || (_fair = require('./fairPlay.js')); }
+
+// How long a body may sit on a vault without a deposit running before the
+function campLimitMs(body) {
+    const carried = (body && body.carriedGems) | 0;
+    if (body && body.crownLocked) return CROWN_IDLE_MS;
+    if (carried >= MIN_DEPOSIT) return PAD_EJECT_CARRY_MS;
+    return PAD_EJECT_MS;
+}
+
+// > true when the body was kicked off the pad
+function campTick(body, pad, now) {
+    const since = body._vaultIdleSince;
+    if (!since) return false;
+    const limit = campLimitMs(body);
+    const idle = now - since;
+    if (idle > limit) {
+        ejectFromPad(body, pad, body.crownLocked ? CROWN_NO_HIDE : "No camping on the vault.");
+        return true;
+    }
+    if (body.crownLocked) return false;   // too short for a heads-up
+    if (idle > limit - CAMP_WARN_MS && body._campWarnFor !== since && body.socket) {
+        body._campWarnFor = since;
+        const carried = body.carriedGems | 0;
+        try {
+            body.sendMessage(carried >= MIN_DEPOSIT
+                ? "Bank your gems or move on. The vault frees up in " + Math.round(CAMP_WARN_MS / 1000) + " seconds."
+                : "Vaults are for banking. Move on in " + Math.round(CAMP_WARN_MS / 1000) + " seconds.");
+        } catch { /* */ }
+    }
+    return false;
+}
+
+// Only a final-minute crown banks without the panel (it has no time for it)
+function autoBankDue(body, pad, now) {
+    if (!body.crownLocked) return false;
+    if ((body.carriedGems | 0) < MIN_DEPOSIT) return false;
+    if (body._vaultPush && body._vaultPush.pad === pad) return false;
+    if (!body._vaultPadSince || now - body._vaultPadSince < AUTO_BANK_MS) return false;
+    return now - (body._autoBankTry || 0) >= AUTO_BANK_RETRY_MS;
+}
 
 function actorBody(actor) {
     return actor && actor.body ? actor.body : actor;
@@ -133,6 +215,8 @@ function refuse(body, msg) {
 function depositFor(body, amount) {
     if (!body || body.isDead()) return false;
     if (!body.vaultOnPad) return refuse(body, "Get onto the vault to bank.");
+    // asking to bank is not camping, even when the answer is no
+    if (Config.dig_royale) body._vaultIdleSince = Date.now();
     // the Crown Contest's sudden death: a crown can't bank
     let crownNo = null;
     try { crownNo = require('./crowns.js').bankBlocked(body); } catch { /* */ }
@@ -269,6 +353,8 @@ function tick(actors, dtMs) {
                 if (body.socket) body.socket.talk('VP', 0, 0);
             } else cancelDeposit(body, false);
             body._vaultPadSince = 0;
+            body._bankedVisit = false;
+            body._fpBank = 0; body._bankCover = 0; body._bankCoverAt = 0;
             continue;
         }
 
@@ -276,6 +362,10 @@ function tick(actors, dtMs) {
         for (const v of list) {
             if (!Config.dig_royale && v.team !== body.team) continue;
             if (onPadShape(v, body.x - v.x, body.y - v.y)) { pad = v; break; }
+        }
+        // bank cover (fairPlay.js): slightly softer shots while banking and just after
+        if (Config.dig_royale) {
+            try { fairPlay().bankStamp(body, body.vaultDeposit ? (body._vaultSite || pad) : null, now, list); } catch { /* */ }
         }
 
         const was = !!body.vaultOnPad;
@@ -310,17 +400,29 @@ function tick(actors, dtMs) {
             // the idle clock only runs while not depositing
             if (pad && body.vaultDeposit) body._vaultIdleSince = now;
             if (!pad) {
+                // off the vault (hull clear) after banking this visit: the 3 s vault shield
+                if (body._bankedVisit && !denyPad) {
+                    body._bankedVisit = false;
+                    if (grantTimedShield(body, POST_BANK_SHIELD_MS, now) && body.socket) body.socket.talk('VU', 2);
+                }
                 body._vaultPadSince = 0;
                 if (body._vaultPush && now > body._vaultPush.until) body._vaultPush = null;
                 if (was) cancelDeposit(body, !!body.socket);
-            } else if (!body.vaultDeposit && body._vaultIdleSince && now - body._vaultIdleSince > PAD_EJECT_MS) {
-                ejectFromPad(body, pad, "No camping on the vault.");
-                continue;
-            } else if (body.vaultDeposit && body._vaultSite && body._vaultSite !== pad) {
+            } else if (!body.vaultDeposit) {
+                if (autoBankDue(body, pad, now)) {
+                    body._autoBankTry = now;
+                    depositFor(body, body.carriedGems | 0);
+                }
+                if (!body.vaultDeposit && campTick(body, pad, now)) continue;
+            } else if (body._vaultSite && body._vaultSite !== pad) {
                 // walked to a different pad mid-deposit: move the lock or stop
                 if (!claimPad(pad, body)) { cancelDeposit(body, !!body.socket); continue; }
-            } else if (body.vaultDeposit && !body._vaultSite) {
+            } else if (!body._vaultSite) {
                 if (!claimPad(pad, body)) { cancelDeposit(body, !!body.socket); continue; }
+            }
+            // a final-minute crown: banked, then on its way
+            if (pad && body.crownLocked && body._vaultPadSince && now - body._vaultPadSince > CROWN_PAD_MS && !body._vaultPush) {
+                ejectFromPad(body, pad, CROWN_NO_HIDE);
             }
             if (body._vaultPush) {
                 if (body._vaultPush.pad !== pad) body._vaultPush = null;
@@ -334,10 +436,9 @@ function tick(actors, dtMs) {
 
         const d = body.vaultDeposit;
         if (!d) continue;
-        // sudden death caught a crown mid-deposit (crowns.js stops it too)
-        if (body.crownLocked) { cancelDeposit(body, !!body.socket); continue; }
+        // a crown banks in the final minute too: crowns.js BANK_IN_SD)
 
-        // storm damage doesn't interrupt a deposit; other damage does
+        // storm damage doesn't interrupt a deposit
         if (body.health.amount < d.lastHealth - 1e-3 && !body._inStorm) {
             cancelDeposit(body);
             if (body.socket && global.royaleAch) global.royaleAch.onDepositCut(body);
@@ -361,9 +462,13 @@ function tick(actors, dtMs) {
         if (Config.dig_royale) { try { dustHooks().onSatchelOut(body, chunk, carriedBefore, 1); } catch { /* */ } }
         const banked = body.socket ? (body.socket.gemBanked || 0) : (body.botBanked || 0);
         // deep pockets pays a premium at the vault
-        const credit = chunk * ((global.royaleMods && global.royaleMods.bankMult) || 1);
+        const bankMult = (global.royaleMods && global.royaleMods.bankMult) || 1;
+        const credit = chunk * bankMult;
+        // the twist's premium gets its own labelled pop when the deposit ends
+        if (bankMult !== 1) { d.premium = (d.premium || 0) + (credit - chunk); d.premiumMult = bankMult; }
         if (body.isBot) body.botGemsBanked = (body.botGemsBanked || 0) + credit;
         setBanked(body, banked + credit);
+        if (Config.dig_royale && body.socket && POST_BANK_SHIELD_MS > 0 && credit > 0) body._bankedVisit = true;
         war.add(body.team, credit);
         milestones.checkBanked(body, credit);
         if (Config.dig_royale) {
@@ -380,6 +485,7 @@ function tick(actors, dtMs) {
         }
         if (done) {
             const padDone = pad;
+            flushPremium(body, d);
             body.vaultDeposit = null;
             if (body.socket && global.royaleAch) global.royaleAch.onDeposit(body, d.total);
             releasePad(body);
@@ -393,4 +499,4 @@ function tick(actors, dtMs) {
     }
 }
 
-module.exports = { creditBank, tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, cancelDeposit, insideOctagon, onPadShape, OCT_SCALE };
+module.exports = { grantTimedShield, POST_BANK_SHIELD_MS, flushPremium, MIN_DEPOSIT, PAD_EJECT_MS, PAD_EJECT_CARRY_MS, AUTO_BANK_MS, CROWN_IDLE_MS, CROWN_PAD_MS, REENTRY_MS, CASHED_LOCK_MS, secondsText, campLimitMs, creditBank, tick, snapshot, requestDeposit, requestCancel, depositFor, getVaults, cancelDeposit, insideOctagon, onPadShape, OCT_SCALE };

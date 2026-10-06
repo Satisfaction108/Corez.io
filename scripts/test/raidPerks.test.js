@@ -3,7 +3,10 @@
 //   milestones   a pick of three at 5,000, 10,000, 15,000... board points;
 //                points lost later never take one back
 //   offers       three different perks with room left, mining and utility
-//                offered more than damage; a pick must be on the offer
+//                offered more than damage; a pick must be on the offer;
+//                holding a perk that can still level up puts at least one
+//                upgrade on every offer (owned ones weighted 2x) next to at
+//                least one new perk
 //   queue        milestones reached together wait behind the open offer
 //   raid         the build lives on the board row: every new body gets it
 //                (and an offer open at death is still open after), a new
@@ -186,6 +189,53 @@ test('offers: mining and utility come up more than damage', () => {
     assert.ok(kindOf('twin') === 'fight' && kindOf('reload') === 'fight' && kindOf('drones') === 'fight');
 });
 
+test('offers: a perk you hold below its max comes up as an upgrade on every offer, next to something new', () => {
+    assert.equal(perks.UPGRADE_W, 2);
+    const owned = (b, o) => o.filter(id => (b.perks[id] | 0) > 0);
+    // one perk held: it is on every offer, with two new ones beside it
+    const one = perks.newBuild();
+    one.perks.drill = 1;
+    for (let i = 0; i < 500; i++) {
+        const o = perks.rollOffer(one, rng(i));
+        assert.equal(o.length, 3);
+        assert.equal(new Set(o).size, 3);
+        assert.ok(o.includes('drill'), 'Power Drill II on offer ' + i + ': ' + o);
+    }
+    // the upgrade isn't always in the same slot
+    const slots = new Set();
+    for (let i = 0; i < 200; i++) slots.add(perks.rollOffer(one, rng(i)).indexOf('drill'));
+    assert.equal(slots.size, 3, 'shuffled');
+    // several held: always at least one upgrade and at least one new perk
+    const many = perks.newBuild();
+    Object.assign(many.perks, { drill: 1, magnet: 2, hide: 1, satchel: 1, reload: 1 });
+    let ups = 0, n = 0;
+    const r = rng(11);
+    for (let i = 0; i < 3000; i++) {
+        const o = perks.rollOffer(many, r);
+        const k = owned(many, o).length;
+        assert.ok(k >= 1, 'an upgrade: ' + o);
+        assert.ok(k <= 2, 'and something new: ' + o);
+        ups += k; n += 3;
+    }
+    // with 5 of 16 held, an even roll would put ~0.94 upgrades on an offer
+    assert.ok(ups / (n / 3) > 1.25, 'upgrades come up often: ' + (ups / (n / 3)).toFixed(2) + ' per offer');
+    // a maxed one is not an upgrade; nothing held: all new, as before
+    const maxed = perks.newBuild();
+    maxed.perks.drill = 3;
+    for (let i = 0; i < 200; i++) assert.ok(!perks.rollOffer(maxed, rng(i)).includes('drill'));
+    assert.equal(owned(perks.newBuild(), perks.rollOffer(perks.newBuild(), rng(5))).length, 0);
+    // everything new is gone: three upgrades
+    const late = perks.newBuild();
+    for (const p of perks.CATALOG) late.perks[p.id] = 1;
+    const lo = perks.rollOffer(late, rng(2));
+    assert.equal(lo.length, 3);
+    // only upgrades left and fewer than three: what there is
+    const end = perks.newBuild();
+    for (const p of perks.CATALOG) end.perks[p.id] = p.max;
+    end.perks.drill = 2; end.perks.hide = 1;
+    assert.deepEqual(perks.rollOffer(end, rng(3)).sort(), ['drill', 'hide']);
+});
+
 test('queue: milestones reached together wait behind the open offer', () => {
     const b = perks.newBuild(), r = rng(3);
     assert.equal(perks.syncScore(b, 16000, r), 3);
@@ -214,10 +264,21 @@ test('balance: damage perks stay small, every max is sane', () => {
     const defs = perks.gunDefs(fx);
     const twin = defs.filter(d => d.PROPERTIES.LABEL === 'Twin Drill');
     assert.equal(twin.length, 2);
-    for (const d of defs) assert.equal(d.PROPERTIES.HIDDEN, true);
+    // round 10: the Twin Drill barrel shows, Drone Bay's stay hidden; both
+    // only drill rock, twin shots are a Basic bullet at 0 score
+    for (const d of twin) { assert.ok(!d.PROPERTIES.HIDDEN, 'twin barrel visible'); assert.equal(d.PROPERTIES.FIXED_BULLET_SIZE, true); }
+    const bay = defs.filter(d => d.PROPERTIES.LABEL === 'Drone Bay');
+    assert.equal(bay.length, 4);
+    for (const d of bay) { assert.equal(d.PROPERTIES.HIDDEN, true); assert.ok(d.PROPERTIES.MAX_CHILDREN >= 4, 'a bigger swarm, not stronger drones'); }
+    for (const d of defs) assert.equal(d.PROPERTIES.ROCK_ONLY, true, 'perk shots only drill rock');
+    assert.ok(/only drills rock/.test(perks.BY_ID.get('twin').desc) && /only chew rock/.test(perks.BY_ID.get('drones').desc));
+    const idx = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'game', 'index.js'), 'utf8');
+    assert.ok(/instance\.rockOnly && other\.type !== "wall"/.test(idx), 'collide lets rock-only shots pass entities');
     for (const d of defs) assert.ok(!d.PROPERTIES.AUTOFIRE, 'perk barrels fire with you, never on their own');
     assert.ok(perks.PIERCE_TANK_DAMAGE < 1, 'a shot through rock hits a tank softer');
-    for (const p of perks.CATALOG) assert.ok(p.max >= 2 && p.max <= 3, p.id);
+    // (Deep Pockets is one step: +4,000, see raidMods.test satchel caps)
+    for (const p of perks.CATALOG) assert.ok(p.id === 'satchel' ? p.max === 1 : p.max >= 2 && p.max <= 3, p.id);
+    assert.equal(perks.computeFx({ satchel: 1 }).satchel, 1);
     assert.ok(perks.CATALOG.length >= 12 && perks.CATALOG.length <= 17);
 });
 
@@ -256,6 +317,15 @@ test('raid: the build and an open offer survive death; every new body gets it', 
     assert.ok(b.offer && b.offer.length === 3, 'the second milestone opened right after');
     const open = b.offer.slice();
     assert.equal(perkGuns(p).length, 1, 'Twin Drill barrel on');
+    {
+        const tg = perkGuns(p)[0];
+        assert.equal(tg.rockOnly, true);
+        assert.ok(!tg.hidden && tg.alpha > 0, 'drawn on the tank');
+        const sz = tg.basicBulletSize();
+        const g0 = p.growthMult; p.growthMult = 2;
+        assert.equal(tg.basicBulletSize(), sz, 'not scaled by raid growth');
+        p.growthMult = g0;
+    }
     const maxHp = p.health.max;
     // down it goes, offer still open
     p.kill(); loop(2);
@@ -316,7 +386,8 @@ test('raid: a pick puts nothing on the board or the rank basis', () => {
 test('bots: a random pick a few seconds after the milestone', () => {
     const b = bot(900, 0);
     royale.boardSnapshot();      // gives it a board row
-    setScore(b, 5100);
+    // (round 9: a bot's points past 2500 come in on a log curve, so 9000 shows ~5700)
+    setScore(b, 9000);
     perkTick(10);
     const build = royale._perkBuild(b);
     assert.ok(build.offer, 'offered');
@@ -441,6 +512,19 @@ test('client: cards sit low in the middle, clear of the tank, stat bars and mini
     assert.ok(st.icons[3].x + st.icons[3].w <= wallet.x - 10);
     assert.ok(st.badge.x + st.badge.w <= st.icons[0].x);
     assert.ok(st.badge.x >= 248);
+    // labelled chips take their own widths, and say when they don't fit
+    const lab = L.stripLayout(wallet, 3, 26, 248, [130, 120, 140]);
+    assert.ok(lab.fit);
+    assert.deepEqual(lab.icons.map(r => r.w), [130, 120, 140]);
+    assert.ok(lab.icons[0].x + lab.icons[0].w <= lab.icons[1].x && lab.icons[1].x + lab.icons[1].w <= lab.icons[2].x, 'no overlap');
+    assert.equal(L.stripLayout(wallet, 9, 26, 248, Array(9).fill(140)).fit, false, 'nine named perks need the short form');
+    // named chips wrap upward, newest nearest the satchel, badge bottom left
+    const rows = L.stripRows(wallet, Array(7).fill(130), 26, 248, 3);
+    assert.ok(rows.fit && rows.rows >= 2, 'seven names take more than one row');
+    assert.ok(rows.icons.every(r => r.x >= 248 && r.x + r.w <= wallet.x - 10));
+    assert.ok(rows.icons[6].y > rows.icons[0].y, 'the newest sits on the bottom row');
+    assert.ok(rows.badge.x >= 248 && rows.icons.filter(r => r.y === rows.badge.y).every(r => r.x >= rows.badge.x + rows.badge.w));
+    assert.equal(L.stripRows(wallet, Array(16).fill(160), 26, 248, 3).fit, false, 'sixteen names fall back to the short form');
     // the packet and the death line
     const parsed = L.parseState(JSON.stringify(perks.snapshot((() => { const b = perks.newBuild(); b.perks.drill = 2; b.granted = 2; return b; })())));
     assert.equal(parsed.offer, null);

@@ -40,6 +40,7 @@ function onBotGone(bot, t = Date.now(), why = '') {
         tank: bot.defs && bot.defs[0] != null ? String(bot.defs[0]) : null,
         ability: bot.botAbility || null,
         skill: bot.botSkill, temperament: bot.botTemperament, style: bot.botStyle,
+        minnow: !!bot.botMinnow,
         readyAt: t + delay,
     });
     return true;

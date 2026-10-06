@@ -3,6 +3,8 @@ let EventEmitter = require('events'),
     mining = require('../terrain/mining.js'),
     events,
     init = g => events = g.events;
+const MINING_RECOIL = (() => { const v = parseFloat(process.env.ROYALE_MINING_RECOIL); return Number.isFinite(v) && v >= 0 ? Math.min(1, v) : 0.4; })();
+const MINING_RECOIL_MS = 450;
 class Gun extends EventEmitter {
     constructor(body, info) {
         super();
@@ -70,6 +72,9 @@ class Gun extends EventEmitter {
             if (info.PROPERTIES.BORDERLESS != null) this.borderless = info.PROPERTIES.BORDERLESS;
             if (info.PROPERTIES.DRAW_FILL != null) this.drawFill = info.PROPERTIES.DRAW_FILL;
             if (info.PROPERTIES.HIDDEN) { this.hidden = true; this.alpha = 0; }
+            // ROCK_ONLY: its shots pass through entities and only hit rock
+            if (info.PROPERTIES.ROCK_ONLY) this.rockOnly = true;
+            if (info.PROPERTIES.FIXED_BULLET_SIZE) this.fixedBulletSize = true;
             this.drawAbove = (info.PROPERTIES.DRAW_ABOVE == null) ? false : info.PROPERTIES.DRAW_ABOVE;
             this.rockPower = info.PROPERTIES.ROCK_POWER || 0;
             this.digPower = mining.digPower(this.settings);
@@ -137,6 +142,8 @@ class Gun extends EventEmitter {
             // Apply recoil to motion
             if (this.motion > 0 || this.body.settings.hasNoReloadDelay) {
                 let recoilForce = (-this.position * this.trueRecoil * this.body.recoilMultiplier * 1.08 / this.body.size) / global.gameManager.roomSpeed;
+                // Dig Royale: shots landing on rock just now (index.js terrain pass stamps
+                if (this.body._rockHitAt && Date.now() - this.body._rockHitAt < MINING_RECOIL_MS) recoilForce *= MINING_RECOIL;
                 this.body.accel.x += recoilForce * Math.cos(this.recoilDir);
                 this.body.accel.y += recoilForce * Math.sin(this.recoilDir);
             }
@@ -446,7 +453,8 @@ class Gun extends EventEmitter {
             SKILL: this.getSkillRaw(),
         }, false);
         o.color.base = o.color.base ?? this.body.master.color.base;
-        o.SIZE = (this.body.size * this.width * this.settings.size) / 2;
+        o.SIZE = this.fixedBulletSize ? this.basicBulletSize() : (this.body.size * this.width * this.settings.size) / 2;
+        if (this.rockOnly) o.rockOnly = true;
         // Keep track of it and give it the function it needs to deutil.log itself upon death
         if (this.countsOwnKids) {
             o.parent = this;
@@ -611,6 +619,12 @@ class Gun extends EventEmitter {
         };
     }
 
+    // a Basic (gun width 8) at 0 score: the generic tank size at this level, no score
+    basicBulletSize() {
+        const b = this.body, base = (typeof Class !== 'undefined' && Class.genericTank && Class.genericTank.SIZE) || 12;
+        const lvl = b.settings && b.settings.healthWithLevel ? 1 + Math.min(45, b.level | 0) / 45 : 1;
+        return (base * lvl * 8 * this.settings.size) / 2;
+    }
     getPhotoInfo() {
         let p = this._photo;
         if (!p) p = this._photo = {};

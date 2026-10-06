@@ -203,7 +203,7 @@ function t(name, fn) {
         assert.equal(L.payoffFor({ kind: 'dragon' }).title, 'Nice!');
     });
     t('director: payoffs', () => {
-        assert.equal(L.payoffFor({ kind: 'crate' }).title, 'Crate cracked!');
+        assert.equal(L.payoffFor({ kind: 'crate' }).title, 'Crate opened!');
         assert.equal(L.payoffFor({ kind: 'ore', r: 250 }).sub, '+250 gems');
         const p = L.payoffFor({ kind: 'timed', r: 100 }, 12300);
         assert.equal(p.title, 'Challenge done!');
@@ -231,7 +231,7 @@ function t(name, fn) {
         const bots = new Set(['Rusty']);
         const isBot = n => bots.has(n);
         assert.equal(L.deathTip({ cause: 'storm' }), 'The storm got you. Follow the arrow back to the circle.');
-        assert.equal(L.deathTip({ killers: ['Rusty'], isBot }), 'A bot chased you. Bank gems before you get too heavy.');
+        assert.equal(L.deathTip({ killers: ['Rusty'], isBot }), 'Another miner hunted you down. Bank gems before you get too heavy.');
         assert.equal(L.deathKind({ killers: ['Alex'], isBot }), 'player');
         assert.equal(L.deathKind({ killers: ['The Warden'], isBot }), 'boss');
         assert.equal(L.deathKind({ killers: ['Big Thing'], bossName: 'Big Thing' }), 'boss');
@@ -275,11 +275,12 @@ function t(name, fn) {
         assert.ok(/export function deathCardWanted\(\) \{ return S\.stage <= 1; \}/.test(nc));
         assert.ok(/if \(S\.stage !== 0\) return true;/.test(nc), 'the shop only waits on stage 0');
         assert.ok(/if \(!inRaid\(\) \|\| S\.stage >= L\.VETERAN\) \{\s*global\.nxBannerUp = false;/.test(nc), 'no director for veterans');
-        // the death card and the Respawn word switch on deathCardWanted only
+        // the death card switches on deathCardWanted only; the button says
+        // Respawn at every stage (round 4: it used to flip mid-session)
         assert.ok(app.includes('if (newcomer.deathCardWanted()) return gameDrawDeadNewcomer();'));
-        assert.ok(app.includes('const word = newcomer.deathCardWanted() ? "Respawn" : "Play again";'));
+        assert.ok(app.includes('return { ready: true, label: "Respawn" };'));
         // scripts/test/newcomer.test.js reads this one
-        assert.ok(app.includes('"Play again in "'));
+        assert.ok(app.includes('"Respawn in "'));
         // the server's two callouts get colours, and nothing filters them
         assert.ok(L.calloutAllowed('nxstorm', 0) && L.calloutAllowed('nx', 0));
         assert.ok(src('raidHeat.js').includes('case "nxstorm": return'));

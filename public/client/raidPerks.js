@@ -25,6 +25,8 @@ let A = null;
 // app.js: HUD, hudPanel, hudTitle, hudTitleW, hudTextW, drawText, rr,
 // haloSprite, queueTip, hudKey, newcomerStage
 export function init(helpers) { A = helpers; }
+// app.js: one card's full width (the row it keeps clear for)
+export const CARD_W = L.CARD.w;
 
 const TAU = Math.PI * 2;
 const GOLD = "#f2b83c", GOLD_DK = "#a8750f", INK = "#120e15", TEAL = "#5ce0d8";
@@ -44,11 +46,14 @@ const S = {
     view: "",
     flashId: "", flashAt: -1e9, gotName: "",
     wasDead: false,
-    over: "", overSince: 0, armed: "",
+    over: "", overSince: 0, armed: "", lastShotAt: -1e9,
     seenNew: null,
+    shownKey: "",             // the offer that has come out at least once
 };
+// QA: pick card i as a tap would
+window.dwPerkPick = (i) => pick(i | 0);
 // QA and app.js (touch hit areas): what's up and where, in HUD units
-window.dwRaidPerks = () => ({ state: S.st, view: S.view, folded: S.folded, key: S.key, cards: S.cardRects, chip: S.chipRect, later: S.laterRect, strip: S.iconRects, badge: S.badgeRect });
+window.dwRaidPerks = () => ({ state: S.st, view: S.view, folded: S.folded, key: S.key, cards: S.cardRects, chip: S.chipRect, later: S.laterRect, strip: S.iconRects, badge: S.badgeRect, stripBox: S.stripBox, head: S.headRect });
 export function state() { return S.st; }
 export function build() { return (S.st && S.st.build) || []; }
 export function offerUp() { return !!(S.st && S.st.offer && S.picked < 0); }
@@ -200,6 +205,7 @@ export function pick(i) {
 }
 function unfold() {
     S.folded = false;
+    S.shownKey = S.key;      // asked for: a hit no longer holds it back
     S.openedAt = performance.now();
     sfx("uiClick");
 }
@@ -240,15 +246,18 @@ function act(k) {
 // across one still fires. On touch the cards only come out when asked for,
 // and a tap has to start and end on the same card (a thumb landing there
 // to steer drags off it).
-const DWELL_MS = 180;
+// the rule: raidPerksLogic.js clickPicks)
 // canvas.js mouseDown (touch taps arrive the same way), in HUD units.
 // -> true when the press was ours (it never fires the gun then).
+const pressIn = { k: "", over: "", overSince: 0, now: 0, lastShotAt: -1e9 };
 export function click(x, y) {
     if (global.died) return false;
+    const now = performance.now();
     const k = hitKey(x, y);
-    if (!k) return false;
+    if (!k) { S.lastShotAt = now; return false; }
     if (global.mobile) { S.armed = k; return true; }
-    if (S.over !== k || performance.now() - S.overSince < DWELL_MS) return false;
+    pressIn.k = k; pressIn.over = S.over; pressIn.overSince = S.overSince; pressIn.now = now; pressIn.lastShotAt = S.lastShotAt;
+    if (!L.clickPicks(pressIn)) { S.lastShotAt = now; return false; }
     act(k);
     return true;
 }
@@ -281,7 +290,7 @@ export function avoidRect() {
 //      blocked, score, mouse: {x, y}, touchK }
 export function drawHud(c, o) {
     S.cardRects.length = 0; S.iconRects.length = 0;
-    S.headRect = null; S.laterRect = null; S.chipRect = null; S.badgeRect = null;
+    S.headRect = null; S.laterRect = null; S.chipRect = null; S.badgeRect = null; S.stripBox = null;
     S.view = "";
     if (!A || !S.st || !o) return;
     const now = performance.now();
@@ -294,9 +303,14 @@ export function drawHud(c, o) {
     const st = S.st;
     // the pick animation runs on the old cards; done, they're gone
     if (S.picked >= 0 && now - S.pickedAt > 620) { S.picked = -1; S.out = null; S.outRects = null; }
-    const view = S.picked >= 0 ? "cards" : L.viewFor({ folded: S.folded, openedAt: S.openedAt, hover: S.hover >= 0 }, { now, key: S.key, blocked: !!o.blocked });
+    const view = S.picked >= 0 ? "cards" : L.viewFor({ folded: S.folded, openedAt: S.openedAt, hover: S.hover >= 0, shown: S.shownKey === S.key },
+        { now, key: S.key, blocked: !!o.blocked, hurtAt: global.hurtAt || -1e9 });
+    // first time out (after a fight held it back): fly in from now
+    if (view === "cards" && S.key && S.shownKey !== S.key) { S.shownKey = S.key; S.openedAt = now; }
     S.view = view;
     drawStrip(c, o, st, view, now);
+    // the cards' row keeps above the build strip, however tall it got
+    if (S.stripBox && S.stripBox.y - 10 < o.bottom) { cardOpt.bottom = S.stripBox.y - 10; o = Object.assign(cardO, o, cardOpt); }
     if (view === "cards") drawCards(c, o, st, now);
     else S.hover = -1;
     // how long the cursor has rested on what it's over (see DWELL_MS)
@@ -304,6 +318,9 @@ export function drawHud(c, o) {
     if (k !== S.over) { S.over = k; S.overSince = now; }
 }
 
+const cardOpt = { bottom: 0 }, cardO = {};
+// QA: where the strip went
+export function stripBox() { return S.stripBox; }
 // ── the build strip ────────────────────────────────────────────────────
 const PERK_COL = {
     twin: "#f2b83c", blast: "#ff6a3d", magnet: "#ff4a5a", drill: "#e9c46a", chain: "#8fd3ff", drones: "#b98bff",
@@ -312,6 +329,7 @@ const PERK_COL = {
 };
 function perkCol(p) { return PERK_COL[(p && (p.icon || p.id)) || ""] || "#e9e0cc"; }
 const ROMAN = ["", "I", "II", "III", "IV", "V"];
+const perkLabel = (p) => (p.name || p.id) + " " + (ROMAN[p.n | 0] || "I");
 
 function drawStrip(c, o, st, view, now) {
     if (!o.wallet) return;
@@ -327,32 +345,59 @@ function drawStrip(c, o, st, view, now) {
     const score = +o.score || 0;
     const showBadge = n > 0 || waiting || (o.stage == null || o.stage >= 1) || score >= st.step / 2;
     if (!n && !chipOn && !showBadge) return;
-    const lay = L.stripLayout(o.wallet, n, chipOn ? chipW : L.STRIP.s, o.left != null ? o.left : 240);
+    // each perk says its name and level ("Power Drill II")
+    const minX = o.stripLeft != null ? o.stripLeft : o.left != null ? o.left : 240, chip0 = chipOn ? chipW : L.STRIP.s;
+    const w0 = o.wallet;
+    if (S.stripFor !== st || S.stripMinX !== minX || S.stripChip !== chip0 || S.stripWx !== w0.x || S.stripWy !== w0.y) {
+        S.stripFor = st; S.stripMinX = minX; S.stripChip = chip0; S.stripWx = w0.x; S.stripWy = w0.y;
+        const s0 = L.STRIP.s;
+        const full = st.build.map(p => Math.round(s0 + 4 + A.hudTitleW(perkLabel(p), 12) + 10));
+        const lvl = st.build.map(p => Math.round(s0 + 2 + A.hudTitleW(ROMAN[p.n | 0] || "I", 12) + 8));
+        S.strip = L.stripPlan(w0, full, lvl, chip0, minX, 38);
+        S.stripTip = null;
+    }
+    const lay = S.strip;
+    S.stripBox = lay ? lay.box : null;
     if (!lay) return;
+    const mode = lay.mode;
     // icons
     for (let i = 0; i < n; i++) {
         const p = st.build[i], r = lay.icons[i];
+        if (!r) continue;
         S.iconRects.push(r);
         const fl = p.id === S.flashId && now - S.flashAt < 1100 ? 1 - (now - S.flashAt) / 1100 : 0;
         const lift = fl * 6;
         A.hudPanel(c, r.x, r.y - lift, r.w, r.h, { r: 7, lip: 2, fill: fl > 0.6 ? "#fff3d9" : "rgba(43,37,51,0.9)" });
-        drawPerkIcon(c, p, r.x + r.w / 2, r.y - lift + r.h / 2, r.w * 0.34);
-        if ((p.n | 0) > 1) {
-            // the stack count as pips along the bottom edge
-            for (let k = 0; k < Math.min(p.n, 3); k++) {
-                c.beginPath(); c.arc(r.x + r.w / 2 + (k - (Math.min(p.n, 3) - 1) / 2) * 6, r.y - lift + r.h - 2, 2.2, 0, TAU);
-                c.fillStyle = GOLD; c.fill(); c.lineWidth = 1; c.strokeStyle = H.line; c.stroke();
-            }
-        }
+        drawPerkIcon(c, p, r.x + r.h / 2, r.y - lift + r.h / 2, r.h * 0.34);
+        // the name in the perk's colour, then its level in gold
+        const lv = ROMAN[p.n | 0] || "I", tx = r.x + r.h + 2, ty = r.y - lift + r.h / 2 + 0.5;
+        const ink = fl > 0.6 ? "#3a2c1a" : null;
+        if (mode === 2) {
+            A.hudTitle(p.name || p.id, tx, ty, 12, ink || "#fff3d9", "left");
+            A.hudTitle(lv, tx + A.hudTitleW((p.name || p.id) + " ", 12), ty, 12, ink || GOLD, "left");
+        } else A.hudTitle(lv, tx, ty, 12, ink || GOLD, "left");
         if (o.mouse && L.rectAt([r], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
-            A.queueTip((p.name || p.id) + (p.n > 1 ? " " + ROMAN[p.n] : ""), (p.desc || "") + " Lasts until the raid ends.", r.x + r.w / 2, r.y);
+            A.queueTip(perkLabel(p), (p.desc || "") + " Level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + ". Lasts until the raid ends.", r.x + r.w / 2, r.y);
+        }
+    }
+    // the ones left out, behind a "+N" chip (hover lists them)
+    if (lay.more) {
+        const m = lay.more;
+        S.iconRects.push(m);
+        A.hudPanel(c, m.x, m.y, m.w, m.h, { r: 7, lip: 2, fill: "rgba(30,25,36,0.92)" });
+        A.hudTitle("+" + m.n, m.x + m.w / 2, m.y + m.h / 2 + 0.5, 12, GOLD, "center");
+        if (o.mouse && L.rectAt([m], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
+            if (!S.stripTip) S.stripTip = lay.hidden.map(i => perkLabel(st.build[i])).join(", ") + ".";
+            A.queueTip(m.n + " more perk" + (m.n > 1 ? "s" : ""), S.stripTip, m.x + m.w / 2, m.y);
         }
     }
     // a fresh pick says its name above the strip for a moment
-    if (S.gotName && now - S.flashAt < 1600 && lay.icons.length) {
+    if (S.gotName && now - S.flashAt < 1600 && lay.box) {
         const k = (now - S.flashAt) / 1600, a = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
-        const r = lay.icons[Math.max(0, st.build.findIndex(p => p.id === S.flashId))] || lay.icons[lay.icons.length - 1];
-        A.hudTitle("+ " + S.gotName, r.x + r.w / 2, r.y - 16 - 10 * k, 13, GOLD, "center", a);
+        const r = lay.icons[Math.max(0, st.build.findIndex(p => p.id === S.flashId))] || lay.icons[lay.icons.length - 1] || lay.box;
+        // above the top row, so it never sits on a chip
+        const top = lay.box.y;
+        A.hudTitle("+ " + S.gotName, r.x + r.w / 2, top - 16 - 10 * k, 13, GOLD, "center", a);
     }
     const b = lay.badge;
     if (chipOn) {
@@ -439,24 +484,38 @@ function drawCards(c, o, st, now) {
         if (a <= 0.01) continue;
         drawCard(c, r, p, i, dy, sc, a, i === hov || i === S.picked, compact, now);
     }
+    // hover: the whole description and what this pick changes (round 8: "even with
+    if (hov >= 0 && A.queueTip && S.picked < 0) {
+        const p = offer[hov], r = rects[hov];
+        if (S.tipFor !== p) { S.tipFor = p; S.tip = L.hoverText(p); }
+        if (S.tip) A.queueTip(S.tip.title, S.tip.body, r.x + r.w / 2, r.y - 6);
+    }
 }
+// Round 8, tidier: "Perk ready · pick any time [Shift] + [1][2][3] or click (+1
 function drawHeader(c, hr, st, a, now) {
     const H = A.HUD;
     const cx = hr.x + hr.w / 2, cy = hr.y + hr.h / 2;
     // veterans see it's new the first time (newcomers get the intro note)
     const isNew = !newSeen() && (A.newcomerStage ? A.newcomerStage() >= 3 : true);
     const q = st.queued | 0;
-    const title = "Pick a perk";
-    const hint = global.mobile ? "tap one" : L.KEY_HINT + " or click";
+    const title = L.HEAD_TITLE, note = L.HEAD_NOTE;
+    const G = 10, kh = 16;
     const more = q > 0 ? "+" + q + " more" : "";
     const tagW = isNew ? A.hudTitleW("NEW FEATURE", 9.5) + 14 : 0;
-    const tw = A.hudTitleW(title, 16), hw = A.hudTextW(hint, 11.5), mw = more ? A.hudTitleW(more, 11) + 16 : 0;
-    const w = Math.min(hr.w, tagW + (tagW ? 8 : 0) + tw + 12 + hw + (mw ? 10 + mw : 0) + 22);
+    const tw = A.hudTitleW(title, 16), nw = A.hudTextW(note, 11.5);
+    const mw = more ? A.hudTitleW(more, 11) + 16 : 0;
+    // keys: [Shift] + [1] [2] [3] or click (touch: "tap one")
+    const kw = (t) => Math.max(kh, A.hudTitleW(t, kh * 0.62) + kh * 0.55);
+    const plusW = A.hudTextW("+", 11), orW = A.hudTextW("or click", 11.5), tapW = A.hudTextW("tap one", 11.5);
+    const keysW = global.mobile ? tapW : kw("Shift") + 4 + plusW + 4 + kw("1") * 3 + 6 + 8 + orW;
+    const base = 12 + (tagW ? tagW + 8 : 0) + tw + G + nw + (mw ? G + mw : 0) + 12;
+    const keys = base + G + keysW <= hr.w;
+    const w = Math.min(hr.w, base + (keys ? G + keysW : 0));
     const x = Math.round(cx - w / 2), h = hr.h;
     const y = Math.round(cy - h / 2);
     S.headRect = { x, y, w, h };
-    A.hudPanel(c, x, y, w, h, { r: h / 2, lip: 2, alpha: a, fill: "rgba(30,25,36,0.9)" });
-    let tx = x + 11;
+    A.hudPanel(c, x, y, w, h, { r: h / 2, lip: 2, alpha: a, fill: "rgba(30,25,36,0.92)" });
+    let tx = x + 12;
     c.save(); c.globalAlpha *= a;
     if (isNew) {
         A.rr(c, tx, y + 4, tagW, h - 8, (h - 8) / 2); c.fillStyle = TEAL; c.fill();
@@ -465,11 +524,22 @@ function drawHeader(c, hr, st, a, now) {
     }
     c.restore();
     A.hudTitle(title, tx, cy + 0.5, 16, GOLD, "left", a);
-    tx += tw + 12;
-    A.drawText(hint, tx, cy + 0.5, 11.5, H.text2, "left", true, a);
-    tx += hw;
+    tx += tw + G;
+    A.drawText(note, tx, cy + 0.5, 11.5, H.text2, "left", true, a);
+    tx += nw + G;
+    if (keys) {
+        if (global.mobile) { A.drawText("tap one", tx, cy + 0.5, 11.5, H.text, "left", true, a); tx += tapW; }
+        else {
+            const ky = Math.round(cy - kh / 2);
+            tx += A.hudKey(c, tx, ky, "Shift", kh, a) + 4;
+            A.drawText("+", tx, cy + 0.5, 11, H.text2, "left", true, a); tx += plusW + 4;
+            for (const k of ["1", "2", "3"]) tx += A.hudKey(c, tx, ky, k, kh, a) + 2;
+            tx += 6;
+            A.drawText("or click", tx, cy + 0.5, 11.5, H.text2, "left", true, a); tx += orW;
+        }
+        tx += G;
+    }
     if (more) {
-        tx += 10;
         c.save(); c.globalAlpha *= a;
         A.rr(c, tx, y + 4, mw, h - 8, (h - 8) / 2); c.fillStyle = "rgba(242,184,60,0.18)"; c.fill();
         c.restore();
@@ -495,6 +565,14 @@ function wrapLines(text, size, maxW, max) {
     return lines;
 }
 const wrapCache = new Map();
+// the name without the level the server glued on, cached per offer
+const nameCache = new Map();
+function cardName(p) {
+    let n = nameCache.get(p.name);
+    if (n === undefined) { n = L.baseName(p.name || p.id); if (nameCache.size > 60) nameCache.clear(); nameCache.set(p.name, n); }
+    return n;
+}
+// Round 8 card: a colour cap, the icon in a disc with the level this pick gives
 function drawCard(c, r, p, i, dy, sc, a, lit, compact, now) {
     const H = A.HUD;
     const col = perkCol(p);
@@ -507,58 +585,67 @@ function drawCard(c, r, p, i, dy, sc, a, lit, compact, now) {
         const g = A.haloSprite("pkcard", "242,184,60", [[0, 0.45], [0.6, 0.12], [1, 0]]);
         c.drawImage(g, x - 30, y - 30, w + 60, h + 60);
     }
-    A.hudPanel(c, x, y, w, h, { r: 11, fill: "rgba(43,37,51,0.95)", lip: 3 });
+    A.hudPanel(c, x, y, w, h, { r: 12, fill: "rgba(43,37,51,0.96)", lip: 3 });
     // the colour cap along the top
     c.save();
-    A.rr(c, x, y, w, h, 11); c.clip();
+    A.rr(c, x, y, w, h, 12); c.clip();
     c.fillStyle = col;
     c.fillRect(x, y, w, 5);
     c.fillStyle = "rgba(255,255,255,0.04)";
-    c.fillRect(x, y + 5, w, compact ? 26 : 50);
+    c.fillRect(x, y + 5, w, compact ? 38 : 52);
     c.restore();
-    if (lit) { A.rr(c, x, y, w, h, 11); c.lineWidth = 2.5; c.strokeStyle = GOLD; c.stroke(); }
+    if (lit) { A.rr(c, x, y, w, h, 12); c.lineWidth = 2.5; c.strokeStyle = GOLD; c.stroke(); }
     // the icon in a disc
     const bob = lit && !calm() ? Math.sin(now / 160) * 1.2 : 0;
     const ir = compact ? 15 : 19;
-    const ix = x + 10 + ir, iy = y + (compact ? h / 2 + 2 : 12 + ir) + bob;
+    const ix = x + 12 + ir, iy = y + (compact ? 9 + ir : 12 + ir) + bob;
     c.beginPath(); c.arc(ix, iy, ir, 0, TAU);
     c.fillStyle = H.wellSolid; c.fill();
     c.lineWidth = 2.2; c.strokeStyle = col; c.stroke();
     drawPerkIcon(c, p, ix, iy, ir * 0.6);
+    // the level badge on the disc's lower right: what this pick makes it
+    const lv = L.roman(L.nextLevel(p));
+    const bh = compact ? 15 : 17, bw = Math.max(bh, A.hudTitleW(lv, bh * 0.68) + 9);
+    const bx = ix + ir * 0.55, by = iy + ir * 0.5;
+    A.hudPanel(c, bx - bw / 2, by - bh / 2, bw, bh, { r: bh / 2, lip: 1.5, fill: (p.n | 0) > 0 ? GOLD : TEAL, stroke: H.line });
+    A.hudTitle(lv, bx, by + 0.5, bh * 0.68, INK, "center");
     // the key to press, top right (touch: nothing, the card is the button)
     let kx = x + w - 8;
     if (!global.mobile) {
         const kt = String(i + 1);
         const kh = 20;
         const kw = Math.max(kh, A.hudTitleW(kt, 12) + 11);
-        kx = x + w - kw - 8;
+        kx = x + w - kw - 9;
         const ky = y + 11;
         A.hudPanel(c, kx, ky, kw, kh, { r: 5, lip: 2, fill: lit ? GOLD : H.face });
         A.hudTitle(kt, kx + kw / 2, ky + kh / 2 - 0.5, 12, lit ? "#2a1a05" : H.head, "center");
     }
-    // name, and pips for how many you'll hold after this pick
-    const nx = ix + ir + 9, room = kx - nx - 6;
-    let ns = compact ? 15 : 17;
-    while (ns > 11 && A.hudTitleW(p.name, ns) > room) ns -= 0.5;
+    // the name (never glued to its level) and pips for the levels
+    const name = cardName(p);
+    const nx = ix + ir + 12, room = kx - nx - 6;
+    let ns = compact ? 16 : 18;
+    while (ns > 12 && A.hudTitleW(name, ns) > room) ns -= 0.5;
     const max = +p.max || 0, have = +p.n || 0;
-    const nameY = compact ? y + 20 : y + (max > 1 ? 25 : 31);
-    A.hudTitle(p.name, nx, nameY, ns, H.head, "left");
+    const nameY = compact ? y + 22 : y + (max > 1 ? 26 : 33);
+    A.hudTitle(name, nx, nameY, ns, H.head, "left");
     if (max > 1 && !compact) {
+        const py = y + 45;
         for (let k = 0; k < Math.min(max, 6); k++) {
-            const px = nx + 4 + k * 11, py = y + 43;
-            c.beginPath(); c.arc(px, py, 3.4, 0, TAU);
+            const px = nx + 4 + k * 12;
+            c.beginPath(); c.arc(px, py, 3.8, 0, TAU);
             c.fillStyle = k < have ? col : k === have ? "#fff3d9" : "rgba(255,255,255,0.12)"; c.fill();
             c.lineWidth = 1.1; c.strokeStyle = H.line; c.stroke();
         }
+        A.drawText(have > 0 ? "level " + lv + " of " + L.roman(max) : "new", nx + 4 + Math.min(max, 6) * 12 + 4, py + 0.5, 10.5, H.text2, "left", true, 1);
     }
-    // what it does
-    const lines = compact ? 1 : 3;
-    const tx = compact ? nx : x + 12, tw = compact ? w - (nx - x) - 10 : w - 24;
+    // what it does: the whole line, wrapped (cached per card) (compact: no pip row
+    const lines = 3;
+    const tx = x + 13, tw = w - 26;
     const key = p.id + "|" + p.desc + "|" + Math.round(tw) + "|" + lines;
     let ls = wrapCache.get(key);
-    if (!ls) { ls = wrapLines(p.desc, 11.5, tw, lines); if (wrapCache.size > 60) wrapCache.clear(); wrapCache.set(key, ls); }
-    const ty0 = compact ? y + 41 : y + 58;
-    for (let k = 0; k < ls.length; k++) A.drawText(ls[k], tx, ty0 + k * 14, 11.5, H.text, "left", true, 1);
+    if (!ls) { ls = wrapLines(p.desc, L.DESC_SIZE, tw, lines); if (wrapCache.size > 60) wrapCache.clear(); wrapCache.set(key, ls); }
+    const ty0 = compact ? y + 48 : y + 70;
+    for (let k = 0; k < ls.length; k++) A.drawText(ls[k], tx, ty0 + k * L.DESC_LH, L.DESC_SIZE, H.text, "left", true, 1);
     c.restore();
 }
 

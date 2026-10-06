@@ -337,6 +337,17 @@ function resolveName(socket, name) {
     return clean;
 }
 
+function nextUnlock(row) {
+    try {
+        const v = require('../store').storeView(row);
+        let best = null;
+        for (const it of [...(v.featured || []), ...(v.daily || []), ...(v.sidekicks || []), ...(v.permanent || [])]) {
+            if (!it || it.owned || !(it.priceDust > 0)) continue;
+            if (!best || it.priceDust < best.p) best = { n: String(it.name || 'an item').slice(0, 28), p: it.priceDust };
+        }
+        return best;
+    } catch (e) { return null; }
+}
 function sendJson(socket, type, obj) {
     try { socket.talk(type, JSON.stringify(obj)); } catch (e) { /* socket closing */ }
 }
@@ -350,6 +361,8 @@ function sendAccount(socket, row, body) {
         rank: rankStore.snapshot(row),
         dust: dh.balanceOf(row.id) / 1000,
         dustCarried: dh.carriedOf(body) / 1000,
+        // the end screen's "next unlock": the cheapest lobby shop item you don't own yet
+        nu: nextUnlock(row),
     });
     du(socket, 0, 0, true);
 }

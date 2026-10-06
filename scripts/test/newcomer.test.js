@@ -113,7 +113,8 @@ test('shield: a raid spawn gets 5 s of shield; the soft window is 2 minutes only
     assert.ok(Math.abs(p.botSoftUntil - (t0 + FM.BOT_SOFT_SHORT_MS)) < 200);
     assert.ok(FM.BOT_SOFT_SHORT_MS >= 20_000 && FM.BOT_SOFT_SHORT_MS <= 30_000);
     // a new player: the full two minutes, three in their first raid
-    // (terrain/newcomerDirector.js, newcomerDirector.test.js)
+    // (terrain/newcomerDirector.js, newcomerDirector.test.js), and a longer
+    // bot grace; bot behaviour only, the same health as anyone
     const n = player(0, (nextY += 1200), fakeSocket({ _careerLives: 0, _careerPlayMs: 0 }));
     royale.freshRaidBody(n);
     assert.equal(n.botNewbie, true);
@@ -121,6 +122,10 @@ test('shield: a raid spawn gets 5 s of shield; the soft window is 2 minutes only
     const soft = director.isEnabled() ? director.TUNE.SOFT_MS[0] : FM.BOT_SOFT_MS;
     assert.ok(Math.abs(n.botSoftUntil - (t0 + soft)) < 200);
     assert.equal(FM.BOT_SOFT_MS, 120_000);
+    assert.equal(FM.BOT_GRACE_MS, 15_000);
+    assert.ok(Math.abs((n.botGraceUntil - t0) - FM.BOT_GRACE_NEW_MS) < 300, 'new: ' + FM.BOT_GRACE_NEW_MS + ' ms of bot grace');
+    assert.ok(Math.abs((p.botGraceUntil - t0) - FM.BOT_GRACE_MS) < 300);
+    assert.ok(Math.abs(n.health.max - p.health.max) < 1e-6, 'the same max health');
     p.kill(); n.kill();
     loop(2);
 });
@@ -158,7 +163,8 @@ test('respawn: the spawn loop refuses a drop before the wait is up', () => {
     assert.ok(/if \(socket\.royaleRespawnAt && Date\.now\(\) < socket\.royaleRespawnAt\) return;/.test(src));
     // and a client can't skip the card: respawn() waits out raidRespawnAt
     const cv = fs.readFileSync(path.join(REPO, 'public', 'client', 'canvas.js'), 'utf8');
-    assert.ok(/performance\.now\(\) < global\.raidRespawnAt\) return;/.test(cv));
+    // (it queues the drop for when the wait is up: round 6)
+    assert.ok(/performance\.now\(\) < global\.raidRespawnAt;\n\s+if \(locked \|\| waiting\) \{[^}]*\n\s+return;/.test(cv));
 });
 
 test('respawn: the death card waits for Play again; only the raid end queues you itself', () => {
@@ -166,17 +172,17 @@ test('respawn: the death card waits for Play again; only the raid end queues you
     const card = app.slice(app.indexOf('const gameDrawDeadRoyale = () => {'), app.indexOf('function playAgainState()'));
     assert.ok(card.length > 1000, 'found the death card');
     assert.ok(!/\.respawn\(\)/.test(card), 'the death card never calls respawn() itself');
-    assert.ok(/label: "Play again in " \+ Math\.ceil\(waitMs \/ 1000\) \+ "\.\.\."/.test(app), 'counts the wait down on the button');
-    assert.ok(/return \{ ready: true, label: "Play again" \}/.test(app));
-    assert.ok(/royaleDomBtn\("royaleDomPlayAgain", "Play again"\)/.test(app));
+    assert.ok(/label: "Respawn in " \+ Math\.ceil\(waitMs \/ 1000\) \+ "\.\.\."/.test(app), 'counts the wait down on the button');
+    assert.ok(/return \{ ready: true, label: "Respawn" \}/.test(app));
+    assert.ok(/royaleDomBtn\("royaleDomPlayAgain", "Respawn"\)/.test(app));
     // Space and Enter press it; the server's spawn loop only starts on 's'
     const cv = fs.readFileSync(path.join(REPO, 'public', 'client', 'canvas.js'), 'utf8');
-    assert.ok(/kc === 32 && global\.died[\s\S]{0,120}this\.respawn\(\)/.test(cv));
+    assert.ok(/kc === 32 && global\.died[\s\S]{0,160}this\.respawn\(\)/.test(cv));
     const src = fs.readFileSync(path.join(SERVER, 'game', 'network', 'sockets.js'), 'utf8');
     assert.equal((src.match(/socket\._spawnLoop = setInterval/g) || []).length, 1);
     // the raid end is not a normal death: the finale still queues the dead
     const fin = fs.readFileSync(path.join(REPO, 'public', 'client', 'raidFinale.js'), 'utf8');
-    assert.ok(/S\.respawnAsked = true;\s+try \{ global\.canvas\.respawn\(\); \}/.test(fin));
+    assert.ok(/S\.respawnAsked = true;[\s\S]{0,260}try \{ global\.canvas\.respawn\(\); \}/.test(fin));
     // a pending update reloads on the card after the wait instead of holding a drop
     const ver = fs.readFileSync(path.join(REPO, 'public', 'client', 'version.js'), 'utf8');
     assert.ok(/performance\.now\(\) < global\.raidRespawnAt\) return "hold";\s+return "later";/.test(ver));
@@ -246,12 +252,12 @@ test('softBots: soft players are skipped unless close or shooting, and bots neve
     assert.equal(ctl.canInitiateFight(p, now), false);
     // shoots the bot from range: the bot answers
     p.x = b.x + 600; loop(1);
-    b._lastDamageSource = p; b._lastDamageAt = Date.now();
+    b._lastDamageSource = p; b._lastDamageAt = Date.now(); b._dmgBy = new Map([[p.id, b.health.max * 0.25]]); // round 9: 25% dealt
     now = Date.now() + 400;
     ctl.senseAt = 0; ctl.sense(now);
     assert.equal(ctl.view.enemy, p, 'the attacker is fought back');
     // soft window over, not new: a normal target again
-    b._lastDamageSource = null; b._lastDamageAt = 0;
+    b._lastDamageSource = null; b._lastDamageAt = 0; b._dmgBy = null;
     p.botSoftUntil = 0;
     now = Date.now() + 600;
     ctl.senseAt = 0; ctl.sense(now);

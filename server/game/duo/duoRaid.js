@@ -455,7 +455,7 @@ function hudFor(socket, t) {
     const mate = mk ? book.mateOf(mk) : null;
     if (!mate && team && team.bot) {
         const tb = team.bot, mb = tb.body && !tb.body.isDead?.() ? tb.body : null;
-        const out = { name: (mb && mb.name) || tb.name || 'Bot', bot: 1, alive: mb ? 1 : 0, away: 0 };
+        const out = { name: (mb && mb.name) || tb.name || 'Teammate', bot: 1, alive: mb ? 1 : 0, away: 0 };
         if (mb) {
             out.id = mb.id;
             out.hp = mb.health && mb.health.max ? Math.max(0, Math.min(1, mb.health.amount / mb.health.max)) : 1;

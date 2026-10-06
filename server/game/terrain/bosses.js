@@ -2,6 +2,7 @@
 // cycles, roams the safe zone, and erupts gems plus a rare cache when it dies.
 const gems = require('./gems.js');
 const guard = require('./bossGuard.js');
+const padGeom = require('./padGeom.js');
 
 const KINDS = {
     // every boss digs (digRate = share of a rock's health per bite) so none
@@ -66,6 +67,8 @@ let lastKind = null;
 // (Warden's Watch lets a second one come in a cycle if the first dies early.)
 const CYCLE_SPAWN_DELAY_MS = 25 * 1000;   // after the cycle starts (spawns settle first)
 const CYCLE_MIN_LEFT_MS = 90 * 1000;      // not worth surfacing with less than this left
+// a raid's first cycle: not before FIRST_MIN_MS (round 7: a Drillhead was up 25 s
+const FIRST_CYCLE_DELAY_MS = process.env.ROYALE_BOSS_EARLY === '1' ? CYCLE_SPAWN_DELAY_MS : Math.max(CYCLE_SPAWN_DELAY_MS, FIRST_MIN_MS);
 let bossCycle = -1, cycleBosses = 0;
 let hitters = new Map();
 
@@ -84,8 +87,19 @@ function firstDelay() {
     return Math.max(FIRST_MIN_MS, FIRST_DELAY_MS / Math.min(2, RATE));
 }
 
+// its drones, shards and traps go with it (a new raid's fresh spawns landed among
+function killBrood(o) {
+    if (!o) return;
+    try {
+        for (const e of [...entities.values()]) {
+            if (!e || e === o || e.type === 'tank' || !(e.master === o || e.source === o || e.parent === o)) continue;
+            try { e.kill(); } catch { /* */ }
+        }
+    } catch { /* */ }
+}
 function resetRaid() {
     if (boss && !boss.isDead?.()) { boss.bossBurrowed = true; try { boss.kill(); } catch { /* */ } }
+    if (boss) killBrood(boss);
     boss = null; kindId = null; hitters.clear();
     bossCycle = -1; cycleBosses = 0;
     scheduleNext(firstDelay());
@@ -101,12 +115,18 @@ function pickSpot() {
     const st = storm().snapshot();
     const tanks = [];
     for (const e of entities.values()) if (e && (e.isPlayer || e.isBot) && !e.isDead?.()) tanks.push(e);
-    const farFromTanks = (x, y, d) => tanks.every(t => (t.x - x) ** 2 + (t.y - y) ** 2 >= d * d);
+    // a tank that only just landed (first drop of a raid, or a respawn) gets more
+    const now = Date.now();
+    const fresh = (t) => t.royaleBornAt && now - t.royaleBornAt < 45_000;
+    let freshR = 1300;
+    const farFromTanks = (x, y, d) => tanks.every(t => { const r = fresh(t) ? Math.max(d, freshR) : d; return (t.x - x) ** 2 + (t.y - y) ** 2 >= r * r; });
     const cands = (tg && tg.spawnPits || []).filter(p => Math.hypot(p.x - st.cx, p.y - st.cy) < (st.r || 1000) * 0.8);
     cands.sort(() => Math.random() - 0.5);
     for (const d of [900, 650, 420]) {
         for (const p of cands) if (farFromTanks(p.x, p.y, d)) return { x: p.x, y: p.y };
     }
+    freshR = 0;
+    for (const p of cands) if (farFromTanks(p.x, p.y, 420)) return { x: p.x, y: p.y };
     return { x: st.cx || 0, y: st.cy || 0 };
 }
 
@@ -157,6 +177,11 @@ function spawn(forceKind) {
         }
     });
     o.on('dead', () => onDead(o));
+    // round 9: its bullets (hull and turret guns) are tracked so the ones that reach
+    shots.length = 0;
+    for (const src of [o, ...(Array.isArray(o.turrets) ? o.turrets : [])]) {
+        try { src.on('fire', ({ child } = {}) => { if (child && shots.length < 400) shots.push(child); }); } catch { /* */ }
+    }
     try {
         royale().onBossSpawned(o, kind, id);
     } catch (e) { console.error('[BOSS] onBossSpawned', e && e.stack); }
@@ -212,6 +237,35 @@ function onDead(o) {
     scheduleNext();
 }
 
+// Round 9: bosses stay off vault and shop pads (padGeom.keepOut, the soft push
+const BOSS_PADS = process.env.ROYALE_BOSS_PADS !== '0';
+const shots = [];
+function safePads() {
+    const out = [];
+    try { for (const v of require('./vault.js').getVaults()) out.push(v); } catch { /* */ }
+    try { for (const p of require('./shop.js').getShops()) out.push(p); } catch { /* */ }
+    return out;
+}
+function tickPads(o, pads = safePads()) {
+    if (!BOSS_PADS || !o || !pads.length) return 0;
+    for (const p of pads) {
+        try { padGeom.keepOut(o, p, 8, 'boss:' + (p.id != null ? p.id : p.x + ',' + p.y)); } catch { /* */ }
+    }
+    let killed = 0;
+    for (let i = shots.length - 1; i >= 0; i--) {
+        const b = shots[i];
+        if (!b || b.isGhost || (b.isDead && b.isDead()) || (b.health && b.health.amount <= 0)) { shots.splice(i, 1); continue; }
+        for (const p of pads) {
+            if (padGeom.insidePad(p, b.x, b.y, b.size || 0)) {
+                try { b.velocity.x = 0; b.velocity.y = 0; b.accel.x = 0; b.accel.y = 0; b.kill(); } catch { /* */ }
+                shots.splice(i, 1);
+                killed++;
+                break;
+            }
+        }
+    }
+    return killed;
+}
 function tick(t, combatantCount) {
     if (!nextAt) scheduleNext(firstDelay());
     if (boss) {
@@ -227,6 +281,7 @@ function tick(t, combatantCount) {
         boss._inStorm = false;
         boss.invuln = false;
         guard.regenGate(boss, TUNING.regenEvery);
+        tickPads(boss);
         return;
     }
     const S = storm();
@@ -238,7 +293,7 @@ function tick(t, combatantCount) {
     const cycleStart = cycleEnd - S.shrinkMs() - S.holdMs();
     const allowed = mods().num('bossRateMult', 1) > 1 ? 2 : 1;
     if (cycleBosses >= allowed) { nextAt = Infinity; return; }
-    nextAt = cycleBosses === 0 ? cycleStart + CYCLE_SPAWN_DELAY_MS : t;
+    nextAt = cycleBosses === 0 ? cycleStart + (cyc === 0 ? FIRST_CYCLE_DELAY_MS : CYCLE_SPAWN_DELAY_MS) : t;
     if (t < nextAt || cycleEnd - t < CYCLE_MIN_LEFT_MS) return;
     if ((combatantCount || 0) < 2 || S.locked(t)) return;
     const b = spawn();
@@ -277,4 +332,4 @@ function debugHit(body, dmg) {
     hitters.set(body.id, { body, at: Date.now(), dmg: (h ? h.dmg : 0) + (+dmg || 0) });
 }
 
-module.exports = { debugHit, damageBy, KINDS, TUNING, RATE, BASE_INTERVAL_MS, LIFETIME_MS, firstDelay, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };
+module.exports = { tickPads, _shots: shots, FIRST_CYCLE_DELAY_MS, CYCLE_SPAWN_DELAY_MS, debugHit, damageBy, KINDS, TUNING, RATE, BASE_INTERVAL_MS, LIFETIME_MS, firstDelay, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };

@@ -9,17 +9,13 @@
 //   2  third         under 60
 //   3  veteran       anything more
 //
-// What a stage changes (TUNE below has the numbers; index 0 is stage 0):
-//   bosses      stage 0: boss guns never pick them, a boss shot that reaches
-//               them fades without hurting, a boss hull only pushes
-//               (bossGuard.intoPlayer, the boss check in controllers validate)
+// What a stage changes (TUNE below has the numbers
 //   bots        the soft window of every life is 3 min (stage 1: 2.5); for
 //               the first 5 minutes of the raid (stage 1: 2) no X-Hunter,
 //               Penta or Octo class bot goes after them unless they shoot it
 //               (scarySpared, read in controllers sense / canInitiateFight /
 //               validate)
-//   storm       0.4x damage (stage 1: 0.7x) through body.nxStormMult, and in
-//               the first raid a loud callout each time they wander out
+// storm in the first raid a loud callout each time they wander out
 //   first death stage 0: the first death with gems on board drops half the
 //               satchel; the other half comes back with them on the respawn
 //               (gems.dropGemsOnDeath asks keepOnDeath)
@@ -43,7 +39,7 @@
 //                     for the first 40 s; bots leave it alone
 //   ~4:30  objective  "bank N gems in 60 s" (N 150-300, from what they
 //                     carry); +250 banked gems and a kit item if they do
-// After WINDOW_MS anything not yet fired is dropped.
+// After WINDOW_MS anything not yet fired is dropped
 //
 // What the client gets (RY raid snapshot, `you`, only while this is on):
 //   you.nx        0 | 1 | 2 | 3
@@ -77,18 +73,18 @@
 const activity = require('../network/activity.js');
 
 let ON = process.env.ROYALE_NEWCOMER_DIRECTOR !== '0';
+let PAYDAY_ON = process.env.ROYALE_PAYDAY !== '0';
+function setPayday(v) { PAYDAY_ON = !!v; }
 function setEnabled(v) { ON = !!v; }
 function isEnabled() { return ON; }
 
 const MIN = 60_000;
 const TUNE = {
-    STAGE_MIN: [3, 7, 12],               // minutes played: under each, stage 0, 1, 2 (checked again mid-raid)
-    BOSS_SAFE_MIN: 8,                    // bosses leave you alone this long (until you pick the fight)
-    RECHECK_MS: 15_000,                  // how often the stage is looked at again during a raid
     SOFT_MS: [180_000, 150_000],         // bot soft window per life
-    STORM_MULT: [0.4, 0.7],
     SCARY_MS: [5 * MIN, 2 * MIN],        // from the first spawn in the raid
     SCARY_HIT_MS: 4000,                  // a scary bot they shot fights back this long
+    STAGE_MIN: [3, 7, 12],               // minutes played: under each, stage 0, 1, 2 (checked again mid-raid)
+    RECHECK_MS: 15_000,                  // how often the stage is looked at again during a raid
     KEEP_SHARE: 0.5,                     // of the satchel, on the first death
     KEEP_MIN: 20,                        // a death carrying less doesn't use it up
     MOMENTS: [['ore', 30_000], ['crate', 90_000], ['trial', 150_000], ['chest', 210_000], ['objective', 270_000]],
@@ -117,7 +113,16 @@ const TUNE = {
     JOB_GOAL: [150, 300],
     JOB_REWARD: 250,
     STORM_WARN_MS: 20_000,
+    OVERDUE_MS: 30_000,
+    OVERDUE_FIGHT_MS: 2500,
+    PAYDAY_AT_MS: 150_000,
+    PAYDAY_BY_MS: 240_000,
+    PAYDAY_GIVEUP_MS: 300_000,
+    PAYDAY_EARNED: 400,
+    PAYDAY_MAX_STAGE: 1,
+    PAYDAY_RETRY_MS: 4000,
 };
+
 // the classes new players kept dying to (prod, first raids)
 const SCARY = new Set(['X-Hunter', 'Penta Shot', 'Spreadshot', 'Octo Tank', 'Cyclone']);
 
@@ -161,7 +166,7 @@ function stateOf(socket, t = now()) {
         try { ms = hooks.careerMs ? hooks.careerMs(socket) : 0; } catch { ms = 0; }
         const stage = socket._nxPin != null ? socket._nxPin : stageFor(ms);
         st = {
-            raid: rid, epoch, stage, director: stage === 0, careerMs: ms, checkedAt: t, since: t, next: 0, dueAt: t + TUNE.MOMENTS[0][1], tries: 0, lastAt: 0,
+            raid: rid, epoch, stage, startStage: stage, director: stage === 0, careerMs: ms, payday: 0, paydayAt: 0, wantAt: t + TUNE.MOMENTS[0][1], checkedAt: t, since: t, next: 0, dueAt: t + TUNE.MOMENTS[0][1], tries: 0, lastAt: 0,
             event: null, deathUsed: false, kept: 0, respawned: false, stormWarnAt: 0,
         };
         if (key) ledger.set(key, st);
@@ -184,23 +189,18 @@ function recheck(body, st, t) {
     if (s > st.stage) {
         st.stage = s;
         body.nxStage = s;
-        body.nxStormMult = TUNE.STORM_MULT[s] || 0;
         body.nxScaryUntil = TUNE.SCARY_MS[s] ? st.since + TUNE.SCARY_MS[s] : 0;
     }
-    if (body.nxBossSafe && (st.careerMs >= TUNE.BOSS_SAFE_MIN * MIN || pin === 3)) body.nxBossSafe = false;
 }
 function stageOf(body) {
     return body && body.nxStage != null ? body.nxStage : 3;
 }
 
 // freshRaidBody (every life, after its own bot grace and soft window): the
-// stage and what it changes, stamped on the body
+// stage and the bot behaviour it brings, stamped on the body
 function applyBody(body, t = now()) {
     if (!body || !body.socket) return;
-    if (!active()) {
-        body.nxStage = undefined; body.nxStormMult = 0; body.nxBossSafe = false; body.nxScaryUntil = 0;
-        return;
-    }
+    if (!active()) { body.nxStage = undefined; body.nxScaryUntil = 0; return; }
     const st = stateOf(body.socket, t);
     const s = st.stage;
     body.nxStage = s;
@@ -209,13 +209,9 @@ function applyBody(body, t = now()) {
         body.botSoftMs = Math.max(body.botSoftMs || 0, soft);
         body.botSoftUntil = Math.max(body.botSoftUntil || 0, t + soft);
     }
-    body.nxStormMult = TUNE.STORM_MULT[s] || 0;
-    body.nxBossSafe = (st.careerMs || 0) < TUNE.BOSS_SAFE_MIN * MIN && socketPin(body.socket) !== 3;
     body.nxScaryUntil = TUNE.SCARY_MS[s] ? st.since + TUNE.SCARY_MS[s] : 0;
 }
-
-// controllers.js: a scary bot leaves this player alone (not while they're
-// idle, and not once they've shot it)
+// controllers.js: does `bot` (a scary class) leave this first-raid player be?
 function scarySpared(bot, target, t = now()) {
     if (!bot || !target || !target.isPlayer || !((target.nxScaryUntil || 0) > t)) return false;
     if (!SCARY.has(bot.label)) return false;
@@ -268,12 +264,17 @@ function say(body, kind, text, sub, dur) {
 
 // ── the moments ─────────────────────────────────────────────────────────
 // Why a moment waits: null when it can go now.
-function busyWhy(body, t) {
+// overdue: it has waited long enough
+function busyWhy(body, t, overdue = false) {
     if (!alive(body) || body.royaleFrozen || body.royaleLobby) return 'dead';
     if (t - (body.royaleBornAt || 0) < TUNE.SETTLE_MS) return 'landing';
-    const lastFight = Math.max(body.hitAt || 0, body._lastDamageAt || 0, body._dealtAt || 0);
-    if (t - lastFight < TUNE.FIGHT_MS) return 'fighting';
-    for (const b of (global.gameManager.gameHandler?.bots || [])) {
+    if (overdue) {
+        if (t - Math.max(body.hitAt || 0, body._lastDamageAt || 0) < TUNE.OVERDUE_FIGHT_MS) return 'fighting';
+    } else {
+        const lastFight = Math.max(body.hitAt || 0, body._lastDamageAt || 0, body._dealtAt || 0);
+        if (t - lastFight < TUNE.FIGHT_MS) return 'fighting';
+    }
+    if (!overdue) for (const b of (global.gameManager.gameHandler?.bots || [])) {
         if (!alive(b) || b.team === body.team) continue;
         if ((b._botEnemyId === body.id || b._fightingPlayerId === body.id) && (b.x - body.x) ** 2 + (b.y - body.y) ** 2 < 900 * 900) return 'fighting';
     }
@@ -300,7 +301,9 @@ function newEvent(kind, t, ms, extra) {
 }
 
 // ~0:30: a few rocks near them turn rich (one shard, the rest azurite) and soft
-function fireOre(body, t) {
+// opts.big: the payday vein (six rocks, two of them shards)
+function fireOre(body, t, opts) {
+    const big = !!(opts && opts.big);
     const grid = tg();
     if (!grid || !grid.rocks) return null;
     const { ORE, ORE_HP } = require('./terrainGrid.js');
@@ -321,12 +324,13 @@ function fireOre(body, t) {
     const seed = cand[(Math.random() * Math.min(cand.length, 6)) | 0];
     const cluster = cand
         .map(c => ({ c, dd: Math.hypot(c.x - seed.x, c.y - seed.y) }))
-        .filter(o => o.dd <= TUNE.ORE_CLUSTER_R)
+        .filter(o => o.dd <= TUNE.ORE_CLUSTER_R * (big ? 1.3 : 1))
         .sort((a, b) => a.dd - b.dd)
-        .slice(0, 4)
+        .slice(0, big ? 6 : 4)
         .map(o => o.c);
     const copperOnly = !!(global.royaleMods && global.royaleMods.ore === 'copper');
-    const ores = copperOnly ? [ORE.COPPER, ORE.COPPER, ORE.COPPER, ORE.COPPER] : [ORE.SHARD, ORE.VEIN, ORE.VEIN, ORE.VEIN];
+    const ores = copperOnly ? [ORE.COPPER, ORE.COPPER, ORE.COPPER, ORE.COPPER, ORE.COPPER, ORE.COPPER]
+        : big ? [ORE.SHARD, ORE.SHARD, ORE.VEIN, ORE.VEIN, ORE.VEIN, ORE.VEIN] : [ORE.SHARD, ORE.VEIN, ORE.VEIN, ORE.VEIN];
     const rocks = [];
     let sx = 0, sy = 0;
     cluster.forEach((c, i) => {
@@ -344,7 +348,9 @@ function fireOre(body, t) {
     });
     const x = Math.round(sx / cluster.length), y = Math.round(sy / cluster.length);
     try { body.socket.talk('FX', x, y, 'bloom'); } catch { /* */ }
-    return newEvent('ore', t, TUNE.ORE_MS, { x, y, title: "Rich vein nearby", sub: "Shoot the glowing rocks and gems burst out.", rocks });
+    return newEvent('ore', t, TUNE.ORE_MS, big
+        ? { x, y, title: "Payday vein nearby", sub: "Two shards in it. Mine it, then bank it at a vault.", rocks, big: true }
+        : { x, y, title: "Rich vein nearby", sub: "Shoot the glowing rocks and gems burst out.", rocks });
 }
 
 // ~1:30: the next supply drop, near them
@@ -362,7 +368,8 @@ function fireCrate(body, t) {
     const down = cur && cur.state === 'down' && plan === cur;
     return newEvent('crate', t, Math.max(0, landAt - t) + TUNE.CRATE_MS, {
         x: Math.round(plan.x), y: Math.round(plan.y), landAt, reward: supply.CRATE_GEMS,
-        title: down ? "Supply crate next to you" : "Supply drop coming to you",
+        // "next to you" only when it is (the client re-words it by the live distance too
+        title: down ? (Math.hypot(plan.x - body.x, plan.y - body.y) <= 450 ? "Supply crate next to you" : "Supply crate down nearby") : "Supply drop coming to you",
         sub: "Break it open for gems, a kit item and a new ability.", ent: down ? plan.entity : null,
     });
 }
@@ -408,7 +415,7 @@ function fireChest(body, t) {
         o._botClaim = { id: body.id, until: t + TUNE.CHEST_RESERVE_MS };
         return newEvent('chest', t, TUNE.CHEST_MS, {
             x: Math.round(o.x), y: Math.round(o.y), ent: o, reward: TUNE.CHEST_GEMS,
-            title: "A chest just for you", sub: "Nobody else can crack it for " + Math.round(TUNE.CHEST_RESERVE_MS / 1000) + " seconds. Go!",
+            title: "A chest just for you", sub: "Nobody else can open it for " + Math.round(TUNE.CHEST_RESERVE_MS / 1000) + " seconds. Go!",
         });
     }
     return null;
@@ -430,11 +437,14 @@ function fireObjective(body, t) {
 const FIRE = { ore: fireOre, crate: fireCrate, trial: fireTrial, chest: fireChest, objective: fireObjective };
 
 // where the nearest vault is, for the objective's arrow
+// one the storm has swallowed only when every vault is in it)
 function nearestVault(body) {
     let best = null, bd = Infinity;
     try {
+        const t = now();
         for (const v of require('./vault.js').getVaults()) {
-            const d = (v.x - body.x) ** 2 + (v.y - body.y) ** 2;
+            let d = (v.x - body.x) ** 2 + (v.y - body.y) ** 2;
+            if (!inZone(v.x, v.y, t)) d += 1e12;
             if (d < bd) { bd = d; best = v; }
         }
     } catch { /* */ }
@@ -513,7 +523,7 @@ function payObjective(body, ev) {
             if (id && shop.grantKit(body.socket, id)) item = (shop.BY_ID.get(id) || {}).name || '';
         } catch { /* */ }
     }
-    try { if (hooks.pay) hooks.pay(body, ev.reward); } catch { /* */ }
+    try { if (hooks.pay) hooks.pay(body, ev.reward, "challenge done"); } catch { /* */ }
     // the client's payoff is the banner; this says what landed where
     try { body.socket.talk('m', 5000, "Job done: +" + ev.reward + " gems banked" + (item ? " and a " + item + " in your kit." : ".")); } catch { /* */ }
 }
@@ -537,10 +547,46 @@ function fire(body, st, kind, t) {
     return ev;
 }
 
+// The payday vein (see the header)
+function tickPayday(body, st, t) {
+    if (!PAYDAY_ON || st.payday || (st.startStage != null ? st.startStage : st.stage) > TUNE.PAYDAY_MAX_STAGE) return false;
+    if (!alive(body) || global.royaleFinal90) return false;
+    const age = t - st.since;
+    if (age < TUNE.PAYDAY_AT_MS || t < (st.paydayAt || 0)) return false;
+    if (age > TUNE.PAYDAY_GIVEUP_MS) { st.payday = -1; return false; }
+    let earned = body.carriedGems | 0;
+    try { if (hooks.earned) earned = +hooks.earned(body) || 0; } catch { /* */ }
+    if (earned >= TUNE.PAYDAY_EARNED) { st.payday = 2; return false; }
+    // a director vein of their own is still out there: that one first
+    const ev0 = st.event;
+    if (ev0 && ev0.kind === 'ore' && ev0.state === 'live') { st.paydayAt = t + TUNE.PAYDAY_RETRY_MS; return false; }
+    // past PAYDAY_BY_MS only being hit right now holds it back
+    if (busyWhy(body, t, true) || (age < TUNE.PAYDAY_BY_MS && busyWhy(body, t, false) === 'fighting')) {
+        st.paydayAt = t + TUNE.PAYDAY_RETRY_MS;
+        return false;
+    }
+    let ev = null;
+    try { ev = fireOre(body, t, { big: true }); } catch { ev = null; }
+    if (!ev) { st.paydayAt = t + TUNE.PAYDAY_RETRY_MS; return false; }
+    st.payday = 1;
+    if (st.director && !(st.event && st.event.state === 'live')) {
+        st.event = ev;
+        st.lastAt = t;
+    } else say(body, 'nx', ev.title, ev.sub, 4500);
+    try { body.socket.talk('m', 6000, "Payday vein close by, to your " + dirWord(ev.x - body.x, ev.y - body.y) + ". Two shards in it."); } catch { /* */ }
+    return true;
+}
+const DIRS = ["east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast"];
+function dirWord(dx, dy) {
+    const a = Math.atan2(dy, dx);
+    return DIRS[Math.round(((a + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
+}
+
 function tickPlayer(body, t) {
     const st = body.socket._nx;
     if (!st || st.raid !== raidNow() || st.epoch !== epoch) return;
     recheck(body, st, t);
+    tickPayday(body, st, t);
     // the first-raid moments keep going for whoever started the raid new,
     // even after their stage moves up
     if (!st.director) return;
@@ -558,7 +604,8 @@ function tickPlayer(body, t) {
     // one thing at a time: a moment still on (a running trial needs no
     // chasing) or still showing how it went holds the next one back
     const chasing = st.event && (st.event.state !== 'live' || st.event.kind !== 'trial');
-    if (chasing || busyWhy(body, t)) { st.dueAt = t + TUNE.RETRY_MS; return; }
+    const overdue = t - (st.wantAt || st.dueAt) > TUNE.OVERDUE_MS;
+    if (chasing || busyWhy(body, t, overdue)) { st.dueAt = t + TUNE.RETRY_MS; return; }
     const kind = TUNE.MOMENTS[st.next][0];
     const ev = fire(body, st, kind, t);
     if (!ev && ++st.tries < TUNE.MAX_TRIES) { st.dueAt = t + TUNE.RETRY_MS; return; }
@@ -567,7 +614,7 @@ function tickPlayer(body, t) {
     st.next++;
     st.tries = 0;
     if (st.next < TUNE.MOMENTS.length) {
-        st.dueAt = Math.max(st.since + TUNE.MOMENTS[st.next][1], st.lastAt ? st.lastAt + TUNE.MIN_GAP_MS : t);
+        st.dueAt = st.wantAt = Math.max(st.since + TUNE.MOMENTS[st.next][1], st.lastAt ? st.lastAt + TUNE.MIN_GAP_MS : t);
     }
 }
 
@@ -630,7 +677,9 @@ function debugFire(body, kind, arg) {
 }
 
 module.exports = {
-    TUNE, SCARY, attach, setEnabled, isEnabled, stageFor, stateOf, stageOf, applyBody, scarySpared, keepOnDeath,
+    TUNE, SCARY, attach, setEnabled, isEnabled, setPayday, tickPayday, stageFor, stateOf, stageOf, applyBody, scarySpared, keepOnDeath,
     onSpawn, onBanked, tick, youFields, newRaid, busyWhy, debugFire,
     _fire: (body, kind, t) => fire(body, stateOf(body.socket, t), kind, t),
+    // quietVein.js: the same ore moment for anyone in a dead stretch (no banner state)
+    fireOre,
 };

@@ -261,7 +261,7 @@ function paint(el) {
         const problem = nameProblem(sk.name);
         const left = h('div', { class: 'lk-bar-l' },
             h('div', { class: 'lk-bar-name', text: kick ? (cleanName(sk.name) || kick.name) : 'No sidekick' }),
-            h('div', { class: 'lk-bar-sub', text: kick ? rarityName(kick.rarity) + ' sidekick · ' + (kick.blurb || '') : 'Nobody tags along.' }));
+            h('div', { class: 'lk-bar-sub', text: kick ? rarityName(kick.rarity) + ' sidekick · ' + (kick.blurb || '') + ' ' + ((C && C.SIDEKICK_DIG_LINE) || 'Helps you mine: rock only.') : 'Nobody tags along.' }));
         const right = h('div', { class: 'lk-bar-r' });
         const go = h('button', { type: 'button', class: 'dw-btn primary', text: 'Save', onclick: () => skSave(go) });
         go.disabled = saved || !!problem;

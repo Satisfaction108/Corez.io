@@ -13,11 +13,7 @@
 // midnight UTC) and drop EU players at 1 or 2 AM, which kills the "come
 // back tomorrow" pull.
 //
-// Rewards: gems go into the bank (accounts and guests). Accounts also get
-// gemdust each day and the items on days 3 and 7; a guest sees those items
-// as "sign up to claim", and they are handed over when that browser signs up
-// (retention.adoptGuest). An item the account already owns pays
-// fallbackMilli dust instead. After day 7 the next claim is day 1 again.
+// Rewards: gemdust only, the lobby currency (Store and Locker on the menu)
 (function (root, factory) {
     const api = factory();
     if (typeof module === 'object' && module.exports) module.exports = api;
@@ -33,17 +29,20 @@
 
     // dustMilli is gemdust in thousandths (1000 = 1 dust). item 'day7' is the
     // first of DAY7_ITEMS the account doesn't have yet.
+    // Very low on purpose, sized against the lobby shop: the cheapest shelf items are
     const TRACK = Object.freeze([
-        Object.freeze({ day: 1, gems: 300, dustMilli: 1000 }),
-        Object.freeze({ day: 2, gems: 500, dustMilli: 1500 }),
-        Object.freeze({ day: 3, gems: 750, dustMilli: 0, item: 'sd_buddy', fallbackMilli: 5000 }),
-        Object.freeze({ day: 4, gems: 1000, dustMilli: 2000 }),
-        Object.freeze({ day: 5, gems: 1250, dustMilli: 3000 }),
-        Object.freeze({ day: 6, gems: 1500, dustMilli: 4000 }),
-        Object.freeze({ day: 7, gems: 2500, dustMilli: 0, item: 'day7', fallbackMilli: 10000 }),
+        Object.freeze({ day: 1, dustMilli: 1000 }),
+        Object.freeze({ day: 2, dustMilli: 1500 }),
+        Object.freeze({ day: 3, dustMilli: 0, item: 'sd_buddy', fallbackMilli: 2500 }),
+        Object.freeze({ day: 4, dustMilli: 2000 }),
+        Object.freeze({ day: 5, dustMilli: 2500 }),
+        Object.freeze({ day: 6, dustMilli: 3000 }),
+        Object.freeze({ day: 7, dustMilli: 0, item: 'day7', fallbackMilli: 4000 }),
     ]);
-    // sidekick skins, the rare one first
-    const DAY7_ITEMS = Object.freeze(['sds_frost', 'sds_checker', 'sds_camo', 'sds_dots', 'sds_stripes', 'sds_twotone']);
+    // common sidekick skins only (the uncommon and rare ones stay in the shop)
+    const DAY7_ITEMS = Object.freeze(['sds_stripes', 'sds_dots', 'sds_twotone']);
+    // a full week of dust with every item already owned (the most a week pays in dust
+    const WEEK_DUST_MILLI = TRACK.reduce((s, e) => s + e.dustMilli + (e.fallbackMilli | 0), 0);
 
     // Where a track stands at `now`. st: {step, streak, claims, lastClaimAt}
     // (a missing or never-claimed track is day 1, ready).
@@ -128,7 +127,7 @@
     }
 
     return Object.freeze({
-        HOUR, UNLOCK_MS, GRACE_MS, DROP_BACK, DAYS, TRACK, DAY7_ITEMS,
+        HOUR, UNLOCK_MS, GRACE_MS, DROP_BACK, DAYS, TRACK, DAY7_ITEMS, WEEK_DUST_MILLI,
         evaluate, afterClaim, nextDay, countdown, leftMs, smoothMinute, minuteOf, pingAt,
     });
 });

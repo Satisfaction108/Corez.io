@@ -18,6 +18,8 @@ let handlers = { onChip() {}, onNameBox() {}, onNav() {}, onLogin() {} };
 
 // What a guest is told about each account-only pane. The nav keeps these
 // visible (with a lock) so guests can see what an account gets them.
+// The shop opens for guests too, on its look-only View all (log in to buy)
+const GUEST_OPEN = { shop: 'Shop (log in to buy)' };
 const LOCKED = {
     shop: { tip: 'Shop (log in first)', title: 'The shop needs an account' },
     locker: { tip: 'Locker (log in first)', title: 'Your locker needs an account' },
@@ -137,8 +139,12 @@ function renderNav(s) {
             if (READY.has(b.dataset.pane)) { b.removeAttribute('aria-disabled'); b.classList.remove('locked'); b.title = ''; }
             return;
         }
-        b.classList.toggle('locked', guest);
-        if (guest) {
+        b.classList.toggle('locked', guest && !GUEST_OPEN[b.dataset.pane]);
+        if (guest && GUEST_OPEN[b.dataset.pane]) {
+            b.removeAttribute('aria-disabled');
+            b.title = GUEST_OPEN[b.dataset.pane];
+            b.setAttribute('aria-label', b.dataset.label + ', browse only');
+        } else if (guest) {
             b.removeAttribute('aria-disabled');
             b.title = s.offline ? 'Accounts are down rn' : L.tip;
             b.setAttribute('aria-label', b.dataset.label + ', needs an account');

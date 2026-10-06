@@ -566,6 +566,7 @@
     <div class="mainWrapper">
         <div id="startMenuWrapper">
             <div id="menuTabs" class="menuTabs" style="text-align: right;"></div>
+            <div class="home-row">
             <div class="startMenu">
 
                 <!-- Daily Quests beside the card (client/account/dailyQuests.js) -->
@@ -577,6 +578,14 @@
 
                             <!-- Corez.io title, free-standing on top, with the emblem (scripts/make-logo.py) -->
                             <h1 class="game-title"><img class="game-logo" src="/img/logo.svg" alt="" width="100" height="100"><span class="wordmark" data-text="Corez.io">Corez<i>.io</i></span></h1>
+                            <!-- the hook in one line: what you do here that no other tank game does -->
+                            <p class="hero-tag"><span class="hero-gems" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Blast through colorful rock for gems. <b>Bank them before another tank takes them.</b></p>
+                            <!-- a raid in three steps (desktop; phones keep the card short) -->
+                            <ol class="hero-loop" aria-label="How a raid goes">
+                                <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20.5 14.5 10" stroke="#0c0a0e" stroke-width="5.2" stroke-linecap="round"/><path d="M4 20.5 14.5 10" stroke="#d9a066" stroke-width="2.4" stroke-linecap="round"/><path d="M7.5 3.2Q17.5 3.5 21 15.8L18.4 16.4Q15.5 9.8 7 5.8Z" fill="#c5cad6" stroke="#0c0a0e" stroke-width="1.6" stroke-linejoin="round"/></svg>Mine</li>
+                                <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.3 2.5h7.4l5.8 5.8v7.4l-5.8 5.8H8.3l-5.8-5.8V8.3Z" fill="#26324a" stroke="#0c0a0e" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="5.6" fill="#2a2a33" stroke="#7fb1f2" stroke-width="2"/><path d="M9.3 11 10.5 9.4h3L14.7 11 12 14.8Z" fill="#7fb1f2" stroke="#0c0a0e" stroke-width="1" stroke-linejoin="round"/></svg>Bank</li>
+                                <li><svg class="dw-ic" aria-hidden="true" style="--ic-sw:2.2"><use href="#i-trophy"/></svg>Win</li>
+                            </ol>
 
                             <!-- name (left) + region dropdown (right) -->
                             <div class="menu-row">
@@ -623,15 +632,11 @@
 
                             <!-- play button, full width below both fields -->
                             <div class="startButtonHolder">
-                                <!-- the next Raid Night (client/account/eventCard.js, schedule in shared/events.js) -->
-                                <div id="eventCard" class="ev-card" hidden></div>
                                 <button id="startButton" tabindex="3"><b>Play</b></button>
                                 <button id="tutorialButton" tabindex="5" title="Learn the basics on your own map">
                                     <b>Tutorial</b>
                                     <span class="tut-badge" id="tutorialBadge" hidden>new? start here</span>
                                 </button>
-                                <!-- the daily rewards track, tomorrow's reward and the reasons to come back (client/account/retention.js) -->
-                                <div id="dailyStrip" class="dy-strip" hidden></div>
                             </div>
 
                             <!-- credits, sleek -->
@@ -679,6 +684,18 @@
                     </div>
                 </div>
 
+            </div>
+
+            <!-- the reasons to come back, in their own card left of the menu (below it on
+                 narrow screens): the next Raid Night and the daily rewards. Both are
+                 filled by the account bundle once it loads (never blocks Play); the
+                 card stays hidden while both are. -->
+            <aside id="homeLeft" class="home-left" aria-label="Raid Night and daily rewards">
+                <!-- the next Raid Night (client/account/eventCard.js, schedule in shared/events.js) -->
+                <div id="eventCard" class="ev-card" hidden></div>
+                <!-- the daily rewards track, tomorrow's reward and the reasons to come back (client/account/retention.js) -->
+                <div id="dailyStrip" class="dy-strip" hidden></div>
+            </aside>
             </div>
         </div>
     </div>
@@ -744,6 +761,7 @@
     <script type="module" src="./client/serverSelectorHandler.js"></script>
     <script src="./client/halloween.js"></script>
     <script src="./client/portal.js"></script>
+    <script src="./client/homeWorld.js"></script>
     <script src="./client/home.js"></script>
     <!-- The account UI (client/account/main.js: shop, locker, friends, profile,
          top 100, daily track) is about as many bytes as the game client and

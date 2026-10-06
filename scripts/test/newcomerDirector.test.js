@@ -3,13 +3,15 @@
 //   stage      under 8 minutes played is a first raid (0), under 25 the
 //              second (1), under 60 the third (2), then a veteran (3); fixed
 //              for the whole raid, a reload included; the next raid looks again
-//   bosses     never pick a first-raid player, their shots fade on contact
-//              and the hull only pushes; everyone else is hit as before
-//   bots       no X-Hunter / Penta / Octo class bot hunts a first-raid
-//              player for 5 minutes (unless they shoot it); a Basic still
-//              does, and so does the Penta once the 5 minutes are up
-//   storm      0.4x the damage in a first raid, 0.7x in the second, full
-//              after; a loud callout when a first-raid player is out in it
+//   bots       (bot behaviour only) no X-Hunter / Penta / Octo class bot
+//              hunts a first-raid player for 5 minutes (unless they shoot
+//              it); a Basic still does, and so does the Penta once the 5
+//              minutes are up; the soft window of every life is 3 minutes in
+//              a first raid (2.5 in the second)
+//   fair       (Oct 5 2026) no stat or damage changes: bosses hit and pick a
+//              first-raid player like anyone and the storm hurts them the
+//              same; a loud callout when a first-raid player is out in the
+//              storm
 //   death      the first death drops half the satchel and the other half
 //              comes back with the respawn (death packet and message say
 //              so); the second death drops it all
@@ -127,16 +129,16 @@ royale.tick();
 
 // ===================================================================
 
-test('stage: 3 / 7 / 12 minutes played, moving up mid-raid; bosses leave you 8 minutes', () => {
+test('stage: 3 / 7 / 12 minutes played, moving up mid-raid; no boss grace at any stage', () => {
     assert.deepEqual(T.STAGE_MIN, [3, 7, 12]);
-    assert.equal(T.BOSS_SAFE_MIN, 8);
+    assert.equal(T.BOSS_SAFE_MIN, undefined);
     const at = (m) => director.stageFor(m * MIN);
     assert.deepEqual([at(0), at(2.99), at(3), at(6.9), at(7), at(11.9), at(12), at(600)], [0, 0, 1, 1, 2, 2, 3, 3]);
     // through the real spawn path
-    for (const [m, want, safe] of [[0, 0, true], [2, 0, true], [5, 1, true], [9, 2, false], [30, 3, false]]) {
+    for (const [m, want] of [[0, 0], [2, 0], [5, 1], [9, 2], [30, 3]]) {
         const p = spawn(m);
         assert.equal(p.nxStage, want, m + ' minutes');
-        assert.equal(p.nxBossSafe, safe, m + ' minutes: boss grace');
+        assert.ok(!p.nxBossSafe, m + ' minutes: no boss grace');
         assert.equal(director.youFields(p.socket).nx, want);
         p.kill();
     }
@@ -153,7 +155,6 @@ test('stage: 3 / 7 / 12 minutes played, moving up mid-raid; bosses leave you 8 m
     } finally { Date.now = realNow; }
     assert.equal(q.nxStage, 1, 'stage 1 mid-raid');
     assert.equal(director.youFields(q.socket).nx, 1);
-    assert.equal(q.nxBossSafe, true, 'still under 8 minutes: bosses still leave them be');
     q.kill();
     for (const [m, want] of [[0, 0], [2, 0], [5, 1], [9, 2], [30, 3]]) {
         const p = spawn(m);
@@ -185,7 +186,7 @@ test('stage: 3 / 7 / 12 minutes played, moving up mid-raid; bosses leave you 8 m
     loop(2);
 });
 
-test('bosses: never pick a first-raid player, shots fade, the hull only pushes', () => {
+test('bosses: a first-raid player is picked and hit like a veteran', () => {
     const y = (nextY += 1500);
     const boss = new Entity({ x: 0, y });
     boss.define(bosses.KINDS.warden.cls);
@@ -196,80 +197,68 @@ test('bosses: never pick a first-raid player, shots fade, the hull only pushes',
     boss.alwaysActive = true;
     const p = spawn(0, 400, y), v = spawn(120, -400, y);
     bare(p); bare(v);
-    assert.equal(p.nxBossSafe, true);
-    assert.equal(v.nxBossSafe, false);
+    // both well into a life (the fresh-life rule, bossGuard.freshSpared, is
+    // everyone's and not what this checks)
+    for (const b of [p, v]) b.royaleBornAt = Date.now() - 600_000;
+    const raidStartWas = global.royaleRaidStartAt; global.royaleRaidStartAt = 0;
+    assert.ok(!p.nxBossSafe);
     const shot = () => { const s = new Entity({ x: 200, y }, boss); s.define('bullet'); s.team = boss.team; return s; };
-    const s1 = shot();
-    assert.equal(bossGuard.intoPlayer(p, s1, 50), 0, 'a shot does nothing to them');
-    assert.ok(s1.health.amount <= 0, 'and fades');
-    const s2 = shot();
-    assert.ok(bossGuard.intoPlayer(v, s2, 50) > 0, 'a veteran is hit');
-    assert.ok(s2.health.amount > 0);
-    assert.equal(bossGuard.intoPlayer(p, boss, 80), 0, 'the hull hurts nobody new');
-    assert.ok(!(boss.health.amount <= 0), 'and nothing happens to the boss');
-    // the boss's guns never pick them
+    const s1 = shot(), s2 = shot();
+    assert.equal(bossGuard.intoPlayer(p, s1, 50), bossGuard.intoPlayer(v, s2, 50), 'the same hit');
+    assert.ok(bossGuard.intoPlayer(p, s1, 50) > 0);
+    assert.ok(s1.health.amount > 0, 'the shot is real');
+    assert.ok(bossGuard.intoPlayer(p, boss, 80) > 0, 'the hull hurts');
     const aim = new ioTypes.nearestDifferentMaster(boss);
-    assert.equal(aim.validate(p, boss, boss, 1e12, 1e12), false);
+    assert.equal(aim.validate(p, boss, boss, 1e12, 1e12), true, 'boss guns pick them');
     assert.equal(aim.validate(v, boss, boss, 1e12, 1e12), true);
-    // a real shot from a boss gun, point blank, through the game loop
-    for (const t of boss.turrets.values()) t.controllers = [];
-    const g = [...boss.guns.values()].find(gg => gg.bulletType);
-    p.health.amount = p.health.max;
-    p.shield.amount = p.shield.max;
-    const pool = p.health.amount + p.shield.amount;
-    const before = new Set(entities.keys());
-    g.fire(0, 0);
-    const made = [...entities.values()].filter(e => !before.has(e.id));
-    for (const m of made.slice(1)) m.kill();
-    const b = made[0];
-    b.x = p.x - (p.realSize + (b.realSize || 8) + 4); b.y = p.y;
-    b.velocity.x = 6; b.velocity.y = 0;
-    b.alwaysActive = true;
-    loop(20);
-    assert.equal(p.health.amount + p.shield.amount, pool, 'not a scratch');
-    assert.ok(b.isDead() || b.health.amount <= 0, 'the shot is gone');
-    for (const o of [boss, p, v, s2]) o.kill();
+    global.royaleRaidStartAt = raidStartWas;
+    for (const o of [boss, p, v, s1, s2]) o.kill();
     loop(2);
 });
 
-test('bots: no X-Hunter / Penta / Octo class on a first-raid player for 5 minutes', () => {
+test('bots: no X-Hunter / Penta / Octo class on a first-raid player for 5 minutes; a longer soft window', () => {
     const G = ioTypes.digWarsGoals;
-    for (const label of ['Penta Shot', 'X-Hunter', 'Octo Tank']) assert.ok(director.SCARY.has(label), label);
+    assert.ok(director.SCARY.has('Penta Shot') && director.SCARY.has('X-Hunter') && director.SCARY.has('Octo Tank'));
     const penta = bot('pentaShot', 0, (nextY += 4000));
     assert.equal(penta.label, 'Penta Shot');
-    const basic = bot('basic', 0, (nextY += 4000));
-    const p = spawn(0, penta.x + 600, penta.y), q = spawn(0, basic.x + 600, basic.y);
-    bare(p); bare(q);
-    assert.ok(Math.abs(p.nxScaryUntil - (Date.now() + T.SCARY_MS[0])) < 2000);
-    const cp = new G(penta), cb = new G(basic);
+    const basic = bot('basic', penta.x, penta.y + 900);
+    const p = spawn(0, penta.x + 600, penta.y);
+    bare(p);
+    assert.ok(p.nxScaryUntil > Date.now(), 'first raid: the scary window is on');
+    const cp = new G(penta);
     loop(2); waitScan();
     let now = Date.now();
+    assert.equal(director.scarySpared(penta, p, now), true);
+    assert.equal(director.scarySpared(basic, p, now), false, 'a Basic still hunts them');
     cp.senseAt = 0; cp.sense(now);
-    assert.equal(cp.view.enemy, null, 'the Penta leaves them alone');
+    assert.notEqual(cp.view.enemy, p, 'the Penta leaves them be');
     assert.equal(cp.canInitiateFight(p, now), false);
-    assert.equal(new ioTypes.nearestDifferentMaster(penta).validate(p, penta, penta, 1e12, 1e12), false, 'its guns too');
-    cb.senseAt = 0; cb.sense(now);
-    assert.equal(cb.view.enemy, q, 'a Basic still comes for them');
-    // they shoot the Penta: it shoots back
-    penta._lastDamageSource = p; penta._lastDamageAt = Date.now();
-    now = Date.now() + 200;
-    cp.senseAt = 0; cp.sense(now);
-    assert.equal(cp.view.enemy, p, 'fought back');
+    assert.equal(new ioTypes.nearestDifferentMaster(penta).validate(p, penta, penta, 1e12, 1e12), false, 'its guns hold fire');
+    // they shoot it: it fights back
+    penta._lastDamageSource = p; penta._lastDamageAt = now;
+    assert.equal(director.scarySpared(penta, p, now), false, 'shot first: fights back');
     penta._lastDamageSource = null; penta._lastDamageAt = 0;
-    // five minutes on: fair game
-    p.nxScaryUntil = Date.now() - 1;
-    now = Date.now() + 400;
-    cp.senseAt = 0; cp.sense(now);
-    assert.equal(cp.view.enemy, p, 'after the window');
-    // the soft window is 3 minutes a life in a first raid
-    const r = spawn(0);
-    assert.ok(Math.abs(r.botSoftUntil - (Date.now() + T.SOFT_MS[0])) < 2000);
-    assert.equal(T.SOFT_MS[0], 180_000);
-    for (const o of [penta, basic, p, q, r]) o.kill();
+    // after 5 minutes: fair game
+    assert.equal(director.scarySpared(penta, p, p.nxScaryUntil + 1), false, 'window over');
+    // a veteran: no window
+    const v = spawn(120, penta.x - 600, penta.y);
+    assert.ok(!v.nxScaryUntil);
+    assert.equal(director.scarySpared(penta, v, now), false);
+    // the soft window: 3 minutes in a first raid, 2.5 in the second, the
+    // raid's own after
+    assert.deepEqual(T.SOFT_MS, [180_000, 150_000]);
+    const r = spawn(0), q = spawn(5), w = spawn(120);
+    now = Date.now();
+    assert.ok(Math.abs((r.botSoftUntil - now) - T.SOFT_MS[0]) < 2000, 'first raid: 3 min');
+    assert.ok(Math.abs((q.botSoftUntil - now) - T.SOFT_MS[1]) < 2000, 'second raid: 2.5 min');
+    assert.ok(w.botSoftUntil - now <= royale.FIRST_MINUTES.BOT_SOFT_SHORT_MS + 50, 'a veteran: the short one');
+    // nothing about the player changes with it
+    assert.ok(Math.abs(r.health.max - w.health.max) < 1e-6, 'same max health');
+    for (const o of [penta, basic, p, v, r, q, w]) o.kill();
     loop(2);
 });
 
-test('storm: 0.4x in a first raid, 0.7x in the second, full after, and a loud warning', () => {
+test('storm: the same damage in a first raid, a second and after, and a loud warning', () => {
     storm.setCycles(3);
     storm.start();
     const st = storm.snapshot();
@@ -277,15 +266,17 @@ test('storm: 0.4x in a first raid, 0.7x in the second, full after, and a loud wa
     const bodies = [0, 5, 120].map((m, i) => { const o = out(i); return spawn(m, o.x, o.y); });
     for (const b of bodies) { b.spawnGraceUntil = 0; b.invuln = false; b.health.amount = b.health.max; b.shield.amount = b.shield.max; b._stormExpMs = 0; b._stormSeenAt = 0; }
     const pool = (b) => b.health.amount + b.shield.amount;
+    const full = (b) => b.health.max;     // storm damage is a share of max health
     const start = bodies.map(pool);
     let t = Date.now();
     for (let i = 0; i < 40; i++) { storm.tickDamage(t); t += 250; }
-    const lost = bodies.map((b, i) => start[i] - pool(b));
+    // the storm takes a share of max health: compare shares (a protected
+    // player's +15% health makes the raw number bigger, not the share)
+    const lost = bodies.map((b, i) => (start[i] - pool(b)) / full(b));
     assert.ok(lost[2] > 0, 'the veteran takes damage');
-    assert.ok(Math.abs(lost[0] / lost[2] - 0.4) < 0.03, 'first raid ' + (lost[0] / lost[2]).toFixed(3));
-    assert.ok(Math.abs(lost[1] / lost[2] - 0.7) < 0.03, 'second raid ' + (lost[1] / lost[2]).toFixed(3));
-    // the HUD's storm multiplier says the same
-    assert.ok(Math.abs(storm.exposureOf(bodies[0]).mult / storm.exposureOf(bodies[2]).mult - 0.4) < 0.01);
+    assert.ok(Math.abs(lost[0] / lost[2] - 1) < 0.05, 'first raid ' + (lost[0] / lost[2]).toFixed(3));
+    assert.ok(Math.abs(lost[1] / lost[2] - 1) < 0.05, 'second raid ' + (lost[1] / lost[2]).toFixed(3));
+    assert.ok(Math.abs(storm.exposureOf(bodies[0]).mult / storm.exposureOf(bodies[2]).mult - 1) < 0.01, 'the HUD says the same');
     // the warning (first raid only)
     global.gameManager.socketManager.clients = bodies.map(b => b.socket);
     director.tick(Date.now() + 5000);
@@ -348,7 +339,7 @@ test('death: a first death drops half and the other half comes back; the second 
     }
     // the death packet carries it
     const src = require('fs').readFileSync(path.join(SERVER, 'game', 'network', 'sockets.js'), 'utf8');
-    assert.ok(/royaleRespawnAt - Date\.now\(\)\) : 0\) \| 0,\s+\/\/[^\n]*\n\s+\(socket && socket\.gemDeathKept\) \| 0,\s+\];/.test(src), 'm[18 + killers]');
+    assert.ok(/royaleRespawnAt - Date\.now\(\)\) : 0\) \| 0,\s+\/\/[^\n]*\n\s+\(socket && socket\.gemDeathKept\) \| 0,\s+(\/\/[^\n]*\n\s+\(socket && socket\.gemDeathBankLoss\) \| 0,\s+)?\];/.test(src), 'm[18 + killers]');
 });
 
 // ── the moments ───────────────────────────────────────────────────────
@@ -585,10 +576,7 @@ test('moments: the schedule waits while fighting, hiding or dead, then goes on',
 test('veterans: none of it; ROYALE_NEWCOMER_DIRECTOR=0 turns it all off', () => {
     const v = spawn(120);
     assert.equal(v.nxStage, 3);
-    assert.equal(v.nxBossSafe, false);
-    assert.equal(v.nxScaryUntil, 0);
-    assert.equal(v.nxStormMult || 0, 0);
-    assert.ok(v.botSoftMs < T.SOFT_MS[1], 'their usual soft window');
+    assert.ok(!v.nxBossSafe && !v.nxScaryUntil && !v.nxStormMult);
     // no moments ever
     global.gameManager.socketManager.clients = [v.socket];
     const st = director.stateOf(v.socket);
@@ -604,7 +592,7 @@ test('veterans: none of it; ROYALE_NEWCOMER_DIRECTOR=0 turns it all off', () => 
     try {
         const p = spawn(0);
         assert.equal(p.nxStage, undefined);
-        assert.equal(p.nxBossSafe, false);
+        assert.ok(!p.nxBossSafe);
         assert.equal(director.youFields(p.socket), null);
         assert.equal(die(p, 400), 400, 'no kept half');
     } finally { director.setEnabled(true); }

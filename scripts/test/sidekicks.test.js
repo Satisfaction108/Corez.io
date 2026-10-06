@@ -1,8 +1,11 @@
 // Sidekicks: node scripts/test/sidekicks.test.js
 //
 //   harmless    no entity is ever made for one, so nothing can hit, push,
-//               target or count it, and its shots do zero damage (they
-//               only exist on the clients)
+//               target or count it; the client's shots are drawn only
+//   digging     it always shoots the rock in front of (else nearest to)
+//               its owner, rock only, damage by rarity (Buddy 10% of a
+//               bare Pounder shot, the legendaries 72-78%), gems to the
+//               owner, no rock-count credit, cheap, ROYALE_SIDEKICK_DIG=0
 //   hidden      smoke, burrow, the sky drop, the raid-end freeze and a faded
 //               tank all flag the owner hidden; the client draws nothing for
 //               a hidden owner or one it isn't drawing
@@ -52,6 +55,18 @@ const { spawnSync } = require('child_process');
 const REPO = path.join(__dirname, '..', '..');
 const SERVER = path.join(REPO, 'server');
 
+if (process.argv[2] === '--dig-off') {
+    process.env.ROYALE_SIDEKICK_DIG = '0';
+    global.Config = { dig_royale: true };
+    const dig = require(path.join(SERVER, 'game', 'terrain', 'sidekickDig.js'));
+    const hits = [];
+    global.gameManager = { terrainGrid: { baseRockHealth: 100, nearestRock: () => ({ wx: 50, wy: 0, alive: true, health: 1e3 }), damageRock: (...a) => hits.push(a) } };
+    const e = { body: { id: 3, x: 0, y: 0, facing: 0, size: 24 }, kick: { nid: 217 }, hidden: false };
+    let changed = 0;
+    for (let t = 0; t < 10000; t += 100) if (dig.step(e, t)) changed++;
+    process.stdout.write(JSON.stringify({ on: dig.ON, hits: hits.length, changed }));
+    process.exit(0);
+}
 if (process.argv[2] === '--off') {
     process.env.ROYALE_SIDEKICKS = '0';
     global.Config = { dig_royale: true };
@@ -144,10 +159,14 @@ test('harmless: a sidekick is a table row, never an entity (no damage, no hits, 
         const src = fs.readFileSync(path.join(SERVER, 'game', ...f), 'utf8');
         assert.ok(!/sidekick/i.test(src), f[f.length - 1] + ' knows nothing about sidekicks');
     }
+    // the digging touches rock and nothing else
+    const digSrc = fs.readFileSync(path.join(SERVER, 'game', 'terrain', 'sidekickDig.js'), 'utf8').replace(/\/\/.*$/gm, '');
+    for (const word of ['new Entity', 'entities', '.kill(', 'collisionArray', 'velocity', 'getEntities', 'bosses', 'chests']) assert.ok(!digSrc.includes(word), 'sidekickDig.js touches ' + word);
+    assert.deepEqual(digSrc.match(/\.damage\w*\(/g), ['.damageRock('], 'its only damage is damageRock');
     sidekicks.reset();
 });
 
-test('harmless: its shots live only on the client and carry no damage', async () => {
+test('harmless: the client\'s own shots are drawn only and never reported to the server', async () => {
     const M = await import(pathToFileURL(path.join(REPO, 'public', 'client', 'sidekickMath.js')).href);
     for (const move of ['orbit', 'spin']) {
         const st = M.makeState(5, move);
@@ -398,7 +417,7 @@ test('aim: its own, never its owner\'s: enemies, gems, the owner, a look about w
     assert.equal(M.step.length, 8, 'step(st, ox, oy, oR, size, t, dt, sense)');
     const rt = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekicks.js'), 'utf8');
     assert.ok(!/render\.f\b|e\.of\b/.test(rt), 'sidekicks.js never reads the owner\'s facing');
-    assert.match(rt, /M\.step\(e\.st, e\.wx, e\.wy, e\.oR, e\.size, t, dt, senseOf\(/);
+    assert.match(rt, /const S = senseOf\(e, ratio, px, py, hw, hh, cam\);[\s\S]{0,200}M\.step\(e\.st, e\.wx, e\.wy, e\.oR, e\.size, t, dt, S\)/);
     const fps = 60, oR = 24;
     // an owner aiming all over the place while it runs a loop: the sidekick's
     // barrels don't follow (owner aim and sidekick face don't move together)
@@ -758,6 +777,183 @@ test('network: the whole table once per socket, then changes only, nothing when 
     tick(many, [fresh]);
     assert.ok(fresh.said[0][1].length < 2000, 'full table ' + fresh.said[0][1].length + ' bytes');
     sidekicks.reset();
+});
+
+// ── digging (sidekickDig.js) ──────────────────────────────────────────
+const dig = require(path.join(SERVER, 'game', 'terrain', 'sidekickDig.js'));
+const gemsMod = require(path.join(SERVER, 'game', 'terrain', 'gems.js'));
+const mkRock = (x, y, ore = 0, hp = 1000) => ({ wx: x, wy: y, alive: true, growing: false, ore, health: hp, maxHealth: hp });
+function fakeTg(rocks) {
+    const calls = [];
+    return {
+        calls, rocks, baseRockHealth: 100, searches: 0,
+        nearestRock(x, y, maxR) {
+            this.searches++;
+            let best = maxR * maxR, hit = null;
+            for (const r of rocks) { if (!r.alive) continue; const q = (r.wx - x) ** 2 + (r.wy - y) ** 2; if (q < best) { best = q; hit = r; } }
+            return hit;
+        },
+        damageRock(rock, dmg, x, y, grind, who) {
+            calls.push({ rock, dmg, who });
+            rock.health -= dmg;
+            if (rock.health <= 0) { rock.health = 0; rock.alive = false; return true; }
+            return false;
+        },
+    };
+}
+// gems: spy on the owner's payout (no gem entities in a unit test)
+function spyGems() {
+    const real = { chipHit: gemsMod.chipHit, spawnOreBurst: gemsMod.spawnOreBurst };
+    const said = { chips: [], bursts: [] };
+    gemsMod.chipHit = (rock, who, dmg) => { said.chips.push({ rock, who, dmg }); return 0; };
+    gemsMod.spawnOreBurst = (rock, who) => { said.bursts.push({ rock, who }); };
+    said.restore = () => Object.assign(gemsMod, real);
+    return said;
+}
+function digOwner(nid, extra = {}) { return owner({ facing: 0, size: 24, sidekick: { nid, skin: 0, ns: 0, name: '', color: '' }, ...extra }); }
+// the t rows of the change packets (not a socket's first whole table)
+const T = (s) => SK(s).filter(p => p.t && !p.f).map(p => p.t);
+
+test('digging: damage by rarity, Buddy barely scratches, the legendaries close to (under) a bare Pounder shot', () => {
+    const { combineStats } = require(path.join(SERVER, 'lib', 'definitions', 'facilitators.js'));
+    const g = require(path.join(SERVER, 'lib', 'definitions', 'gunvals.js'));
+    const mining = require(path.join(SERVER, 'game', 'terrain', 'mining.js'));
+    // a level-45 Pounder bullet, no stat points (skillFactor 0.4), in baseRockHealth units
+    const pounder = 0.1 * mining.digPower(combineStats([g.basic, g.pounder])) * 0.4;
+    assert.ok(Math.abs(pounder - dig.POUNDER_REF) < 1e-9, 'POUNDER_REF ' + dig.POUNDER_REF + ' vs ' + pounder);
+    const kicks = C.ITEMS.filter(it => it.cat === 'sidekick' && !it.retired);
+    const share = (id) => C.sidekickDigShare(C.byId(id));
+    assert.ok(Math.abs(share(C.BASIC_SIDEKICK_ID) - 0.10) < 1e-9, 'Buddy ' + share(C.BASIC_SIDEKICK_ID));
+    for (const id of ['sd_jack', 'sd_closer']) {
+        assert.ok(share(id) >= 0.7 && share(id) < 0.8, id + ' ' + share(id));
+        assert.ok(dig.damageFor(C.byId(id), 100) < pounder * 100, id + ' under a Pounder shot');
+    }
+    // rarities never overlap, and inside one the dearer one digs at least as hard
+    const order = C.RARITY_ORDER;
+    for (let i = 1; i < order.length; i++) {
+        const lo = Math.max(...kicks.filter(k => k.rarity === order[i - 1]).map(k => C.sidekickDigShare(k)));
+        const hi = Math.min(...kicks.filter(k => k.rarity === order[i]).map(k => C.sidekickDigShare(k)));
+        assert.ok(lo < hi, order[i - 1] + ' ' + lo + ' < ' + order[i] + ' ' + hi);
+    }
+    for (const a of kicks) for (const b of kicks) if (a.rarity === b.rarity && a.price < b.price) assert.ok(C.sidekickDigShare(a) <= C.sidekickDigShare(b));
+    assert.equal(C.sidekickDigShare(C.byId('sds_stripes')), 0, 'a skin digs nothing');
+    assert.equal(dig.damageFor({ nid: 217 }, 100), 100 * dig.POUNDER_REF * share('sd_jack'));
+});
+
+test('digging: always shoots the rock in front of its owner (else the nearest), a shot a second, told to the clients on change only', () => {
+    sidekicks.reset();
+    const front = mkRock(150, 0), behind = mkRock(-110, 0), far = mkRock(5000, 0);
+    const tg = fakeTg([front, behind, far]);
+    global.gameManager = { terrainGrid: tg };
+    try {
+        const o = digOwner(217), viewer = sock();
+        for (let i = 0; i < 100; i++) tick([o], [o.socket, viewer]);   // ten seconds
+        const t = T(viewer).flat();
+        assert.deepEqual(t[0], [o.id, 150, 0], 'the rock in front, not the nearer one behind');
+        assert.equal(T(viewer).length, 1, 'one t packet while it keeps the same rock');
+        const shots = tg.calls.length;
+        assert.ok(shots >= 9 && shots <= 10, 'a shot a second: ' + shots);
+        assert.ok(tg.calls.every(c => c.rock === front && c.who === null), 'rock only, and no owner on the rock (no rock credit)');
+        assert.ok(tg.searches <= 2 * 26, 'one search per ' + dig.SEARCH_MS + ' ms at most: ' + tg.searches);
+        // the owner turns round: the one behind is in front now
+        o.facing = Math.PI;
+        o._rockHitAt = clock;
+        for (let i = 0; i < 10; i++) tick([o], [o.socket, viewer]);
+        assert.deepEqual(T(viewer).pop()[0], [o.id, -110, 0], 'it follows what its owner is mining');
+        // nothing in range: it stops (and says so), never shoots the far one
+        front.alive = false; behind.alive = false;
+        const n = tg.calls.length;
+        for (let i = 0; i < 30; i++) tick([o], [o.socket, viewer]);
+        assert.deepEqual(T(viewer).pop()[0], [o.id], 'no rock: nothing to aim at');
+        assert.ok(tg.calls.length <= n + 1 && tg.calls.every(c => c.rock !== far), 'nothing out of range');
+        // hidden (smoke): no shots
+        front.alive = true; front.health = 1e9;
+        o.smokeHidden = true;
+        const m = tg.calls.length;
+        for (let i = 0; i < 30; i++) tick([o], [o.socket, viewer]);
+        assert.ok(tg.calls.length <= m + 1, 'hidden owners\' sidekicks hold fire');
+        // a new socket gets the whole table with the targets
+        o.smokeHidden = false;
+        for (let i = 0; i < 10; i++) tick([o], [o.socket, viewer]);
+        const late = sock();
+        tick([o], [late]);
+        assert.deepEqual(SK(late)[0].t, [[o.id, 150, 0]]);
+    } finally { delete global.gameManager; sidekicks.reset(); }
+});
+
+test('digging: rock only (players, bosses and chests in the way are never touched), gems to the owner, no rock-count credit', () => {
+    sidekicks.reset();
+    const ore = mkRock(140, 0, 2, 40), plain = mkRock(140, 40, 0, 1e9);
+    const tg = fakeTg([ore, plain]);
+    global.gameManager = { terrainGrid: tg };
+    const spy = spyGems();
+    const before = global.entities.size;
+    try {
+        const o = digOwner(228);
+        // an enemy tank, a boss and a chest sitting on the line of fire
+        const bystanders = [{ id: 1, x: 70, y: 0, health: { amount: 100 } }, { id: 2, x: 100, y: 0, isBoss: true, health: { amount: 1e4 } }, { id: 3, x: 120, y: 0, chest: true, health: { amount: 50 } }];
+        for (let i = 0; i < 80; i++) tick([o, ...bystanders], [o.socket]);
+        assert.ok(bystanders.every(b => b.health.amount === (b.isBoss ? 1e4 : b.chest ? 50 : 100)), 'nobody else lost anything');
+        assert.equal(global.entities.size, before, 'no bullet entity, ever');
+        assert.equal(ore.alive, false, 'it broke the ore rock');
+        const per = dig.damageFor({ nid: 228 }, tg.baseRockHealth);
+        const oreHit = tg.calls.find(c => c.rock === ore), plainHit = tg.calls.find(c => c.rock === plain);
+        assert.ok(Math.abs(oreHit.dmg - per) < 1e-9, 'ore takes the shot as is');
+        assert.ok(plainHit && Math.abs(plainHit.dmg - per * gemsMod.PLAIN_ROCK_MULT) < 1e-9, 'plain rock takes PLAIN_ROCK_MULT, like any shot');
+        assert.ok(spy.chips.length > 0 && spy.chips.every(c => c.who === o), 'ore chips go to the owner');
+        assert.deepEqual(spy.bursts.map(b => [b.rock, b.who]), [[ore, o]], 'the break payout flies to the owner');
+        assert.equal(o.rocksMined, undefined, 'no rocksMined (pity copper, achievements)');
+        assert.equal(o.gemsMined, undefined, 'no gemsMined');
+        assert.ok(tg.calls.every(c => c.who === null), 'damageRock gets no owner: no rock achievement credit');
+        // a Buddy digs a seventh of that
+        assert.ok(dig.damageFor({ nid: 201 }, 100) < dig.damageFor({ nid: 228 }, 100) / 7 + 1e-9);
+    } finally { spy.restore(); delete global.gameManager; sidekicks.reset(); }
+});
+
+test('digging: cheap: one shot in the air each, a per-tick cap across the raid, ROYALE_SIDEKICK_DIG=0 turns it off', () => {
+    sidekicks.reset();
+    const rocks = [];
+    for (let i = 0; i < 60; i++) rocks.push(mkRock(i * 400 + 150, 0, 0, 1e12));
+    const tg = fakeTg(rocks);
+    global.gameManager = { terrainGrid: tg };
+    try {
+        const many = [];
+        for (let i = 0; i < 60; i++) many.push(digOwner(201, { x: i * 400 }));
+        let worst = 0;
+        for (let i = 0; i < 40; i++) { const n = tg.calls.length; tick(many, []); worst = Math.max(worst, tg.calls.length - n); }
+        assert.ok(worst <= dig.MAX_FIRES, 'at most ' + dig.MAX_FIRES + ' landings a tick: ' + worst);
+        assert.ok(tg.calls.length >= 60 * 2, 'they all still dig: ' + tg.calls.length);
+    } finally { delete global.gameManager; sidekicks.reset(); }
+    const r = spawnSync(process.execPath, ['--no-warnings', __filename, '--dig-off'], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout), { on: false, hits: 0, changed: 0 });
+    assert.match(fs.readFileSync(path.join(SERVER, '.env.example'), 'utf8'), /^ROYALE_SIDEKICK_DIG=1$/m);
+});
+
+test('digging: the client aims at the rock and fires a shot a second that flies all the way there', async () => {
+    const M = await mathMod();
+    const st = M.makeState(11, 'spin');
+    const sense = { ex: 300, ey: 120, gx: NaN, gy: NaN };
+    st.dig = true;
+    let last = -1, gaps = [], off = 0;
+    for (let t = 0; t < 20; t += 1 / 60) {
+        M.step(st, 0, 0, 24, 1, t, 1 / 60, sense);
+        const a = M.shotDue(st, t, Math.random);
+        if (a === a) { if (last >= 0) gaps.push(t - last); last = t; if (t > 2) off = Math.max(off, angDiff(a, Math.atan2(sense.ey - st.y, sense.ex - st.x))); }
+    }
+    assert.ok(gaps.length >= 16 && gaps.every(g => Math.abs(g - M.DIG_GAP) < 0.03), 'gaps ' + gaps.map(g => g.toFixed(2)));
+    assert.ok(off < 0.15, 'aimed at the rock, ' + off.toFixed(3) + ' rad off');
+    assert.equal(M.DIG_GAP * 1000, dig.FIRE_MS);
+    assert.equal(M.DIG_SPEED, dig.SPEED);
+    assert.ok(Math.abs(M.digLife(300) - 0.5) < 1e-9 && M.digLife(5000) === M.DIG_LIFE_MAX);
+    assert.equal(M.facesRock(0, 0, 0, 100, 10), true);
+    assert.equal(M.facesRock(Math.PI, 0, 0, 100, 0), false, 'a back barrel just pops');
+    const client = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekicks.js'), 'utf8');
+    assert.match(client, /Array\.isArray\(d\.t\)/, 'it reads the t rows');
+    assert.match(client, /if \(e\.digOn\) \{ S\.ex = e\.dx; S\.ey = e\.dy; \}/, 'the rock is what it watches');
+    // the shop and the Locker say it helps you mine
+    assert.equal(C.SIDEKICK_DIG_LINE, 'Helps you mine: rock only.');
+    for (const f of ['shop.js', 'locker.js']) assert.match(fs.readFileSync(path.join(REPO, 'public', 'client', 'account', f), 'utf8'), /SIDEKICK_DIG_LINE/);
 });
 
 // ── shop ──────────────────────────────────────────────────────────────

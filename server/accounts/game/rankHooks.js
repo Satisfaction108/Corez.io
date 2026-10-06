@@ -2,8 +2,7 @@
 // objects (raidStats values).
 //
 // A life's rank points = basisOf(s) at its end - s.lifeBase (taken at its
-// start). basisOf is the board score minus the carried half and minus
-// s.rankDiscount (half of every bot kill, all of an excluded kill). Kill
+// start)
 // points are booked at kill time (s.killPts), so a twist that changes kill
 // scoring mid-raid does not re-price old kills. The carried half counts only
 // when the raid ends under you.

@@ -514,114 +514,42 @@
         if (!canvas) return;
         var ctx = canvas.getContext('2d');
         var W = 0, H = 0, dpr = 1;
-        var tanks = [];
         var homeFxOn = true;
         var homeFxRaf = 0;
         var reduceMotion = window.matchMedia &&
             window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        // October: the tanks get carved rock hulls, with bats and the storm (client/halloween.js)
+        // October: bats and the storm bank over the world (client/halloween.js)
         var hfx = root.classList.contains('dw-halloween') && window.dwHalloweenFx;
-
-        // Same gun math as the game (LENGTH/10, trapezoid barrels), then an
-        // opaque hull on top. The whole sprite is faded afterward so it is
-        // translucent without barrels showing through the body.
-        function G(length, width, aspect, x, y, angle) {
-            var ox = x || 0, oy = y || 0;
-            return {
-                length: length / 10,
-                width: width / 10,
-                aspect: aspect == null ? 1 : aspect,
-                angle: ((angle || 0) * Math.PI) / 180,
-                offset: Math.hypot(ox, oy) / 10,
-                direction: Math.atan2(oy, ox)
-            };
+        // The background is a slice of a raid (client/homeWorld.js): rock, ore, a vault
+        var world = window.dwHomeWorld || null;
+        var worldIn = 0, worldWanted = false, worldTimer = 0;
+        var idle = window.requestIdleCallback
+            ? function (f) { requestIdleCallback(f, { timeout: 500 }); }
+            : function (f) { setTimeout(f, 16); };
+        var bakeGen = 0;
+        // the rock is drawn a slice at a time (<= ~8 ms each) in idle moments
+        function bakeWorld() {
+            worldTimer = 0;
+            if (!world || !homeFxOn) return;
+            var gen = ++bakeGen;
+            try { world.build(W, H, dpr, root.getAttribute('data-theme') === 'light'); } catch (e) { world = null; return; }
+            (function slice() {
+                if (gen !== bakeGen || !world || !homeFxOn) return;
+                var done;
+                try { done = world.step(8); } catch (e) { world = null; return; }
+                if (!done) { idle(slice); return; }
+                if (!homeFxRaf) drawHomeFx();
+            })();
         }
-        function around(guns, count) {
-            var out = [];
-            for (var i = 0; i < count; i++) {
-                var add = (Math.PI * 2 * i) / count;
-                for (var j = 0; j < guns.length; j++) {
-                    var g = guns[j];
-                    out.push({
-                        length: g.length, width: g.width, aspect: g.aspect,
-                        angle: g.angle + add, offset: g.offset, direction: g.direction
-                    });
-                }
-            }
-            return out;
+        function wantWorld(delay) {
+            worldWanted = true;
+            if (!world) return;
+            clearTimeout(worldTimer);
+            worldTimer = setTimeout(function () { idle(bakeWorld); }, delay);
         }
-        var TANK_KINDS = [
-            { guns: [G(18, 8)] },
-            { guns: [G(20, 8, 1, 0, 5.5), G(20, 8, 1, 0, -5.5)] },
-            { guns: [G(19, 8, 1, 0, 2, 18), G(19, 8, 1, 0, -2, -18), G(22, 8)] },
-            { guns: [G(24, 8)] },
-            { guns: [G(12, 10, 1.4, 8, 0)] },
-            { guns: around([G(18, 8)], 3) },
-            { guns: around([G(18, 8)], 4) },
-            { guns: [G(20.5, 12)] },
-            { guns: [G(20.5, 14)] },
-            { guns: [G(20.5, 19.5)] },
-            { guns: around([G(18, 8, 1, 0, 0, 45), G(18, 8)], 4) },
-            { guns: [G(15, 7), G(3, 7, 1.7, 15, 0)] },
-            { guns: [G(5, 11, 1.3, 8, 0)] },
-            { guns: [G(6, 12, 1.2, 8, 0, 90), G(6, 12, 1.2, 8, 0, -90)] },
-            { guns: [G(12, 3.5, 1, 0, 7.25), G(16, 3.5, 1, 0, 3.75), G(16, 3.5, 1, 0, -3.75), G(12, 3.5, 1, 0, -7.25)] },
-            { guns: [G(23, 7), G(12, 10, 1.4, 8, 0)] },
-            { guns: [G(18, 8), G(16, 8, 1, 0, 0, 150), G(16, 8, 1, 0, 0, -150)] },
-            { guns: [G(18, 8), G(14, 8, 1, 0, 0, 135), G(16, 8, 1, 0, 0, 150), G(14, 8, 1, 0, 0, -135), G(16, 8, 1, 0, 0, -150)] },
-            { guns: [G(18, 8), G(16, 8, 1, 0, -1, 90), G(16, 8, 1, 0, 1, -90), G(16, 8, 1, 0, 0, 150), G(16, 8, 1, 0, 0, -150)] },
-            { guns: [G(16, 8, 1, 0, 3, 30), G(16, 8, 1, 0, -3, -30), G(19, 8, 1, 0, 2, 15), G(19, 8, 1, 0, -2, -15), G(22, 8)] },
-            { guns: [G(17.5, 8, 1, 0, 5.5), G(17.5, 8, 1, 0, -5.5), G(21, 8)] },
-            { guns: [G(25, 8), G(23, 8), G(21, 8), G(19, 8), G(17, 8)] },
-            { guns: [G(21, 8), G(19, 8), G(17, 8)] },
-            { guns: [G(27, 8), G(13, 8, -2.2)] },
-            { guns: [G(32, 8), G(13, 8, -2.2)] },
-            { guns: around([G(20, 8, 1, 0, 5.5), G(20, 8, 1, 0, -5.5)], 3) },
-            { guns: [], smasher: true }
-        ];
-
-        function tankPalette() {
-            var s = getComputedStyle(root);
-            var gun = (s.getPropertyValue('--tank-gun') || '#9a9288').trim();
-            var keys = ['a', 'b', 'c', 'd', 'e'];
-            var out = [];
-            for (var i = 0; i < keys.length; i++) {
-                var k = keys[i];
-                out.push({
-                    fill: (s.getPropertyValue('--tank-' + k) || '#4ec4e8').trim(),
-                    stroke: (s.getPropertyValue('--tank-' + k + '-line') || '#142838').trim(),
-                    gun: gun
-                });
-            }
-            return out;
-        }
-
-        var spriteCache = {};
-
-        function rebuildTanks() {
-            spriteCache = {};
-            tanks = [];
-            var pal = tankPalette();
-            var n = Math.max(10, Math.min(18, Math.round((W * H) / 70000)));
-            for (var i = 0; i < n; i++) {
-                var dir = Math.random() < 0.7 ? 1 : -1;
-                tanks.push({
-                    x: Math.random() * W,
-                    y: (0.06 + Math.random() * 0.88) * H,
-                    r: 28,
-                    ang: Math.random() * Math.PI * 2,
-                    spin: (0.006 + Math.random() * 0.022) * (Math.random() < 0.5 ? 1 : -1),
-                    vx: dir * (1.15 + Math.random() * 1.7),
-                    bob: 4 + Math.random() * 14,
-                    bobT: Math.random() * Math.PI * 2,
-                    bobS: 0.012 + Math.random() * 0.02,
-                    a: (root.getAttribute('data-theme') === 'light' ? 0.34 : 0.30) + Math.random() * 0.12,
-                    kind: TANK_KINDS[(Math.random() * TANK_KINDS.length) | 0],
-                    pal: pal[i % pal.length],
-                    key: i
-                });
-            }
-            if (hfx) hfx.build(W, H, dpr, root.getAttribute('data-theme') === 'light', 28);
+        if (world) {
+            if (document.readyState === 'complete') wantWorld(60);
+            else window.addEventListener('load', function () { wantWorld(60); });
         }
 
         function resize() {
@@ -633,146 +561,18 @@
             canvas.style.width = W + 'px';
             canvas.style.height = H + 'px';
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            rebuildTanks();
+            if (hfx) hfx.build(W, H, dpr, root.getAttribute('data-theme') === 'light', 28);
+            if (worldWanted) wantWorld(150);
+            if (reduceMotion && !homeFxRaf && window.dwCalmZone) drawHomeFx();
         }
         resize();
         window.addEventListener('resize', resize);
-        new MutationObserver(function () { rebuildTanks(); }).observe(root, {
+        new MutationObserver(function () {
+            if (hfx) hfx.build(W, H, dpr, root.getAttribute('data-theme') === 'light', 28);
+            if (worldWanted) wantWorld(0);
+        }).observe(root, {
             attributes: true, attributeFilter: ['data-theme']
         });
-
-        // tip: Halloween only, the last part of the barrel in another colour
-        function drawArrasGun(c, size, g, tip) {
-            var length = size * g.length / 2;
-            var height = size * g.width / 2;
-            var h0 = g.aspect > 0 ? height * g.aspect : height;
-            var h1 = g.aspect > 0 ? height : -height * g.aspect;
-            var ang = g.direction + g.angle;
-            var gx = size * g.offset * Math.cos(ang);
-            var gy = size * g.offset * Math.sin(ang);
-            var sinT = Math.sin(g.angle), cosT = Math.cos(g.angle);
-            var pts = [[0, h1], [length * 2, h0], [length * 2, -h0], [0, -h1]];
-            c.beginPath();
-            for (var i = 0; i < 4; i++) {
-                c.lineTo(pts[i][0] * cosT - pts[i][1] * sinT + gx,
-                         pts[i][0] * sinT + pts[i][1] * cosT + gy);
-            }
-            c.closePath();
-            if (!tip) {
-                c.fill();
-                c.stroke();
-                return;
-            }
-            var iron = c.fillStyle;
-            c.fillStyle = tip;
-            c.fill();
-            // the iron part, up to where the band starts
-            var k = 0.7, hk = h1 + (h0 - h1) * k, lk = length * 2 * k;
-            var ip = [[0, h1], [lk, hk], [lk, -hk], [0, -h1]];
-            c.beginPath();
-            for (var j = 0; j < 4; j++) {
-                c.lineTo(ip[j][0] * cosT - ip[j][1] * sinT + gx,
-                         ip[j][0] * sinT + ip[j][1] * cosT + gy);
-            }
-            c.closePath();
-            c.fillStyle = iron;
-            c.fill();
-            var lw = c.lineWidth;
-            c.lineWidth = lw * 0.45;
-            c.beginPath();
-            c.moveTo(lk * cosT - hk * sinT + gx, lk * sinT + hk * cosT + gy);
-            c.lineTo(lk * cosT + hk * sinT + gx, lk * sinT - hk * cosT + gy);
-            c.stroke();
-            c.lineWidth = lw;
-            c.beginPath();
-            for (var m = 0; m < 4; m++) {
-                c.lineTo(pts[m][0] * cosT - pts[m][1] * sinT + gx,
-                         pts[m][0] * sinT + pts[m][1] * cosT + gy);
-            }
-            c.closePath();
-            c.stroke();
-        }
-
-        function drawSmasherRim(c, size, pal) {
-            var hr = size * 1.14;
-            c.beginPath();
-            for (var s = 0; s < 6; s++) {
-                var a = Math.PI / 6 + (Math.PI * 2 * s) / 6;
-                var x = Math.cos(a) * hr, y = Math.sin(a) * hr;
-                if (s) c.lineTo(x, y); else c.moveTo(x, y);
-            }
-            c.closePath();
-            c.fillStyle = pal.stroke;
-            c.fill();
-            c.stroke();
-        }
-
-        function drawOpaqueTank(c, t) {
-            var size = t.r, pal = t.pal, lw = Math.max(3.2, size * 0.2);
-            c.lineJoin = 'round';
-            c.lineCap = 'round';
-            c.lineWidth = lw;
-            c.strokeStyle = pal.stroke;
-            c.fillStyle = pal.gun;
-            var guns = t.kind.guns || [];
-            if (hfx) {
-                // Halloween: iron barrels with a pumpkin or storm band at the
-                // muzzle; the hull is drawn upright on top (hfx.body)
-                var hg = hfx.guns();
-                c.strokeStyle = hg.ink;
-                c.fillStyle = hg.iron;
-                var tip = hg.tips[t.key % hg.tips.length];
-                for (var hi = 0; hi < guns.length; hi++) drawArrasGun(c, size, guns[hi], tip);
-                if (t.kind.smasher) drawSmasherRim(c, size, { stroke: hg.iron });
-                return;
-            }
-            for (var i = 0; i < guns.length; i++) drawArrasGun(c, size, guns[i]);
-            // Same fill-then-stroke as the barrels so the hull outline is
-            // not a thinner inner ring.
-            c.fillStyle = pal.fill;
-            c.beginPath();
-            c.arc(0, 0, size, 0, Math.PI * 2);
-            c.fill();
-            c.stroke();
-            if (t.kind.smasher) {
-                drawSmasherRim(c, size, pal);
-                c.fillStyle = pal.fill;
-                c.beginPath();
-                c.arc(0, 0, size, 0, Math.PI * 2);
-                c.fill();
-                c.stroke();
-            }
-        }
-
-        function tankSprite(t) {
-            var id = t.key + ':' + t.pal.fill + ':' + t.r;
-            if (spriteCache[id]) return spriteCache[id];
-            var pad = Math.ceil(t.r * 3.2);
-            var spr = document.createElement('canvas');
-            spr.width = Math.max(1, Math.floor(pad * 2 * dpr));
-            spr.height = spr.width;
-            var sctx = spr.getContext('2d');
-            sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            sctx.translate(pad, pad);
-            drawOpaqueTank(sctx, t);
-            var out = { canvas: spr, pad: pad };
-            spriteCache[id] = out;
-            return out;
-        }
-
-        function tickTanks() {
-            var pad = 110;
-            for (var i = 0; i < tanks.length; i++) {
-                var t = tanks[i];
-                if (!reduceMotion) {
-                    t.x += t.vx;
-                    t.ang += t.spin;
-                    t.bobT += t.bobS;
-                }
-                if (t.x > W + pad) t.x = -pad;
-                else if (t.x < -pad) t.x = W + pad;
-            }
-        }
 
         // Light theme: a calm patch behind the card and the side notes. The
         // background canvases cut a soft hole there (the sky behind shows
@@ -784,7 +584,8 @@
         function calmPanels() {
             var a = document.querySelector('.startMenu');
             var b = document.getElementById('lobbySide');
-            return [a, b && !b.hidden && b.offsetParent ? b : null];
+            var l = document.getElementById('homeLeft');
+            return [a, b && !b.hidden && b.offsetParent ? b : null, l && l.offsetParent ? l : null];
         }
         function bakeCalm() {
             calm.dirty = false;
@@ -843,29 +644,29 @@
                 ro.observe(side);
                 new MutationObserver(markCalm).observe(side, { attributes: true, attributeFilter: ['hidden'] });
             }
+            // the come-back card left of the menu: shows up when its Raid Night or daily card
+            var left = document.getElementById('homeLeft');
+            if (left) {
+                ro.observe(left);
+                new MutationObserver(markCalm).observe(left, { attributes: true, subtree: true, attributeFilter: ['hidden'] });
+            }
         } else setInterval(markCalm, 1000);
 
         function drawHomeFx() {
             homeFxRaf = 0;
             if (!homeFxOn) return;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.clearRect(0, 0, W, H);
-            if (hfx) hfx.back(ctx, reduceMotion);
-            tickTanks();
-            for (var i = 0; i < tanks.length; i++) {
-                var t = tanks[i];
-                var spr = tankSprite(t);
-                var ty = t.y + Math.sin(t.bobT) * t.bob;
-                ctx.save();
-                ctx.globalAlpha = hfx ? t.a + 0.4 : t.a;
-                ctx.translate(t.x, ty);
-                ctx.rotate(t.ang);
-                ctx.drawImage(spr.canvas, -spr.pad, -spr.pad, spr.pad * 2, spr.pad * 2);
-                ctx.restore();
-                if (hfx) hfx.body(ctx, t.key, t.x, ty, reduceMotion);
+            var live = world && world.ready();
+            if (live) {
+                worldIn = reduceMotion ? 1 : Math.min(1, worldIn + 0.05);
+                world.draw(ctx, performance.now(), reduceMotion, worldIn);
             }
+            if (hfx) hfx.back(ctx, reduceMotion);
             ctx.globalAlpha = 1;
-            window.dwCalmZone.apply(ctx);
+            if (window.dwCalmZone) window.dwCalmZone.apply(ctx);
             if (hfx) hfx.front(ctx, reduceMotion);
+            // reduced motion: one still frame (again on resize and theme)
             if (!reduceMotion) homeFxRaf = requestAnimationFrame(drawHomeFx);
         }
         drawHomeFx();
@@ -888,6 +689,9 @@
                 document.body.classList.toggle('in-game', hidden);
                 if (hidden) { closeCL(); closeP(); setDropdownOpen(false); }
                 homeFxOn = !hidden;
+                // the baked world is a big canvas: let it go while playing
+                if (hidden && world) { world.release(); worldIn = 0; }
+                else if (!hidden && worldWanted) wantWorld(0);
                 if (homeFxOn && !homeFxRaf) drawHomeFx();
                 else if (!homeFxOn && homeFxRaf) {
                     cancelAnimationFrame(homeFxRaf);

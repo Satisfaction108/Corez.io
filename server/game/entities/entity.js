@@ -1165,7 +1165,7 @@ class Entity extends EventEmitter {
                 damageInflictor.push(instance.master)
                 damageTool.push(instance)
             }
-            this.emit('damage', { body: this, damageInflictor, damageTool });
+            this.emit('damage', { body: this, damageInflictor, damageTool, amount: this.damageReceived });
         }
         // Life-limiting effects
         if (this.settings.diesAtRange) {
@@ -1299,7 +1299,10 @@ class Entity extends EventEmitter {
                     }
                     // Only if we give messages
                     if (doISendAText) {
-                        instance.sendMessage("You killed " + name + (killers.length > 1 ? " (with some help)." : "."));
+                        // Dig Royale: the player, never their class ("You killed mega_blaze's Ranger"
+                        const royaleTank = Config.dig_royale && this.master.type === "tank";
+                        if (royaleTank) instance.sendMessage("You knocked out " + (this.master.name || "an unnamed tank") + (killers.length > 1 ? " (with some help)." : "."));
+                        else instance.sendMessage("You killed " + name + (killers.length > 1 ? " (with some help)." : "."));
                     }
                     if (this.settings.killMessage) {
                         instance.sendMessage("You " + this.settings.killMessage + " " + name + (killers.length > 1 ? " (with some help)." : "."));

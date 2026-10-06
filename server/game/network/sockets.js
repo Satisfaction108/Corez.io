@@ -525,6 +525,14 @@ class socketManager {
                 if (socket._spawnLoop) {
                     try { clearInterval(socket._spawnLoop); } catch { /* */ }
                 }
+                // a respawn the raid holds back says why, once (round 7: a Respawn that did
+                const askedAt = Date.now();
+                let toldWhy = false;
+                const tellWhy = (dr) => {
+                    if (toldWhy || Date.now() - askedAt < 2000) return;
+                    toldWhy = true;
+                    try { socket.talk('m', 5000, dr.spawnWhy ? dr.spawnWhy() : "Respawns are closed right now."); } catch { /* */ }
+                };
                 let loop = socket._spawnLoop = setInterval(() => {
 
                     if (!global.cannotRespawn && !global.gameManager.arenaClosed && socket.status.readyToSpawn) {
@@ -536,7 +544,7 @@ class socketManager {
                             if (Config.royale_duos && require('../duo/duoRaid.js').holdSpawn(socket, name)) return;
                             // Dead players stay dead until they click Play in lobby.
                             // The 20ms retry must not auto-spawn when a match rolls over.
-                            if (!dr.canSpawn()) return;
+                            if (!dr.canSpawn()) { tellWhy(dr); return; }
                             if (socket.royaleNeedClick) return;
                             // Server-side backstop for the death wait (dig_royale RESPAWN_MS,
                             // from the death itself): no early drop however the client asks.
@@ -833,6 +841,12 @@ class socketManager {
                     } while (limit-- && max && player.body.skill.points && player.body.skill.amount(stat) < player.body.skill.cap(stat))
                 }
 
+            } break;
+            case "rb": {
+                // the build buttons (terrain/respawnBuild.js): Respawn as, Last tank, Same stats
+                if (m.length !== 1 || typeof m[0] !== "string" || m[0].length > 8) break;
+                if (!Config.dig_royale || Config.tutorial) break;
+                try { require('../terrain/respawnBuild.js').request(socket, m[0]); } catch (e) { console.error('[RB]', e && e.message); }
             } break;
             case "L": {
 
@@ -1672,7 +1686,7 @@ class socketManager {
                         let site = m[1] !== undefined && m[1] !== "" ? ops[m[1] | 0] : null;
                         if (!site) { let bd = 1e12; for (const o of ops) { const d = (o.x - b.x) ** 2 + (o.y - b.y) ** 2; if (d < bd) { bd = d; site = o; } } }
                         if (site) {
-                            if (what === "takebase" && site.banner && !site.banner.isDead?.()) { site._lastHitter = b; site.banner.godmode = false; site.banner.health.amount = -1; }
+                            if (what === "takebase" && site.banner && !site.banner.isDead?.()) { site._lastHitter = b; site._dmg = null; site._dmgTeam = null; site.banner.godmode = false; site.banner.health.amount = -1; }
                             const tg = global.gameManager.terrainGrid;
                             for (const [dx, dy] of [[-260, 0], [260, 0], [0, 260], [0, -260], [190, 190], [-190, -190]]) {
                                 if (!tg.pointInRock || !tg.pointInRock(site.x + dx, site.y + dy)) { b.x = site.x + dx; b.y = site.y + dy; break; }
@@ -2065,6 +2079,14 @@ class socketManager {
         // the level-45 fill above is done.
         if (Config.dig_royale && socket._resume) {
             try { require('../gamemodes/scripts/dig_royale.js').applyPendingResume(socket); } catch (e) { console.error('[RESUME]', e && e.message); }
+        } else if (Config.dig_royale && !Config.tutorial && socket._fpBuild) {
+            // a respawn in the same raid: the tank and stat points it died with
+            try { require('../gamemodes/scripts/dig_royale.js').applyRespawnBuild(socket); } catch (e) { console.error('[FAIR]', e && e.message); }
+        }
+        // "Respawn as <Tank>" on the death card (terrain/respawnBuild.js)
+        if (Config.dig_royale && !Config.tutorial && socket._rbWant) {
+            if (socket._resume) socket._rbWant = false;
+            else { try { require('../terrain/respawnBuild.js').onSpawn(socket, socket.player.body); } catch (e) { console.error('[RB]', e && e.message); } }
         }
                 util.log(`[INFO]: ${name == "" ? "An unnamed player" : name} has spawned into the game on team ${socket.player.body.team}! Players: ${this.players.length}`);
 
@@ -2251,7 +2273,9 @@ class socketManager {
                 body.team = team;
                 if (Config.dig_royale) {
                     // one palette colour per player, shared by hull, HUD, leaderboard and minimap
-                    const c = kept ? kept.color : global.assignTeamColor(team);
+                    let rid = 0;
+                    if (!Config.royale_duos) { try { rid = require('../gamemodes/scripts/dig_royale.js').raidIdNow(); } catch (e) { rid = 0; } }
+                    const c = require('../terrain/soloColor.js').colorFor(socket, team, rid, kept);
                     body.color.base = c;
                     body.leaderboardColor = c;
                     body.minimapColor = c;
@@ -2333,6 +2357,8 @@ class socketManager {
                 (socket && socket.royaleRespawnAt ? Math.max(0, socket.royaleRespawnAt - Date.now()) : 0) | 0,
                 // raid: gems a first death kept back (newcomerDirector.js), m[18 + killers]
                 (socket && socket.gemDeathKept) | 0,
+                // raid: savings the death cost (bank.js deathLossFor), m[19 + killers]
+                (socket && socket.gemDeathBankLoss) | 0,
             ];
         }
 

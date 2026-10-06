@@ -14,9 +14,7 @@
 //              the bank goes back, capped at banks.CAP
 //   newRaid    a new raid on the same socket: the bank stays, trimmed to the
 //              cap, and all of it now counts as brought in
-//   deathLoss  dying costs DEATH_SHARE of the bank (at most DEATH_MAX); the
-//              gems are gone, not dropped, so feeding kills to a friend
-//              pays nothing
+// deathLoss dying costs DEATH_SHARE of the savings (the kept part brought in from
 //
 // The 45 s resume carries the lease inside the snapshot (dig_royale
 // saveResume copies socket fields), so a reconnect keeps the same gems and
@@ -24,7 +22,7 @@
 //
 // bankKept is only for the HUD split and never feeds score or growth: the
 // raid board counts banking events (stat.banked), not the balance. Spending
-// and losses come out of this raid's gems first, then the kept part.
+// comes out of this raid's gems first, then the kept part
 'use strict';
 
 const crypto = require('crypto');
@@ -59,8 +57,7 @@ function logErr(what, e) {
     console.error('[bank] ' + what + ' failed: ' + ((e && e.stack) || e));
 }
 
-// Keeps bankKept within the balance: a spend or a loss eats this raid's
-// gems first.
+// Keeps bankKept within the balance: a spend eats this raid's gems first
 function fixKept(socket) {
     if (!socket) return 0;
     const b = Math.max(0, (socket.gemBanked || 0) | 0);
@@ -148,8 +145,18 @@ function deathLossFor(body) {
     // already out of the raid (a disconnect or idle kick drops the satchel
     // after the cleanup): leaving is not dying
     if (body.royaleAlive === false || body.socket.leftOnPurpose || body.socket._drCleaned) return 0;
-    const banked = Math.max(0, (body.socket.gemBanked || 0) | 0);
-    return Math.min(DEATH_MAX, Math.floor(banked * DEATH_SHARE));
+    // the promise on every screen: gems banked this raid are safe
+    try { if (require('./fairPlay.js').isProtected(body)) return 0; } catch { /* */ }
+    return Math.min(DEATH_MAX, Math.floor(kept(body.socket) * DEATH_SHARE));
+}
+
+// Takes a death's loss off the bank, out of the savings part (deathLossFor only
+function takeDeathLoss(socket, loss) {
+    if (!socket) return 0;
+    const b = Math.max(0, (socket.gemBanked || 0) | 0);
+    loss = Math.max(0, Math.min(b, loss | 0));
+    socket.bankKept = Math.max(0, kept(socket) - loss);
+    return b - loss;
 }
 
 // shutdown: every lease this thread holds goes back now
@@ -160,5 +167,5 @@ function releaseAll(clients, held) {
 
 module.exports = {
     CHECKPOINT_MS, DEATH_SHARE, DEATH_MAX, cap, on, ownerOf, kept, raidPart, fixKept,
-    checkOut, release, checkpoint, tick, newRaid, deathLossFor, releaseAll,
+    checkOut, release, checkpoint, tick, newRaid, deathLossFor, takeDeathLoss, releaseAll,
 };

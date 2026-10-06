@@ -18,8 +18,11 @@ import * as nameCheck from './nameHint.js';
 import { tabSeen, markTabSeen, TAB_SEEN_MS } from './abilityIntroLogic.js';
 import * as raidHeat from './raidHeat.js';
 import * as crowns from './crowns.js';
+import * as scoreText from './scoreLogic.js';
 import * as newcomer from './newcomer.js';
-import { full as fxFull } from './juice.js';
+import * as firstSeconds from './firstSeconds.js';
+import { shopHint, minesBy } from './firstSecondsLogic.js';
+import { full as fxFull, slamShowing, slamUp as juiceSlamUp } from './juice.js';
 import * as autoQ from './autoQuality.js';
 import * as rankBadges from './account/rankBadges.js';
 import * as rankPanel from './account/rankPanel.js';
@@ -31,7 +34,10 @@ import * as cosmetics from './account/cosmetics.js';
 import * as sidekicks from './sidekicks.js';
 import * as hitFx from './hitFx.js';
 import * as raidPerks from './raidPerks.js';
+import * as bankPopLogic from './bankPopLogic.js';
 import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerksLogic.js';
+import * as deathText from './deathCardLogic.js';
+import * as buildBtnLabels from './buildButtonsLogic.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -692,7 +698,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             (11 === currentDate.getMonth() && 31 === currentDate.getDate()) ||
             (0 === currentDate.getMonth() && 3 >= currentDate.getDate());
 
-        if (!global.mobile) {
+        // the menu shows a raid behind it now (homeWorld.js), no fireworks over that
+        if (!global.mobile && !window.dwHomeWorld) {
             let fireworkCanvas = document.createElement("canvas");
             fireworkCanvas.id = "homeFireworkCanvas";
             fireworkCanvas.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;";
@@ -3110,7 +3117,9 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             c.fillStyle = "rgba(255,255,255,0.13)";
             c.fill();
         });
-        const label = upgTileBitmap("l" + name, len, height, dpr, (key || "") + state, (c) => {
+        // no guns of its own (Smasher, Spike, ...): it digs by ramming, and the tile says
+        const ram = !!(picture.guns && minesBy(picture.guns.length) === "ram");
+        const label = upgTileBitmap("l" + name + (ram ? "|ram" : ""), len, height, dpr, (key || "") + state, (c) => {
             // name band across the bottom of the face, inside the plate
             c.save();
             roundRectPath(c, 0, down, len, faceH, r);
@@ -3141,6 +3150,14 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 hudTitle(l2, len / 2, mid + size * 0.52, size, HUD.head, "center", 1, c);
             }
             if (key) hudKey(c, 5 * k, down + 5 * k, key, Math.max(10, 17 * k));
+            if (ram) {
+                const rs = Math.max(7, 10.5 * k), rw = hudTitleW("RAMS ROCK", rs) + 8 * k, rh = rs + 6 * k;
+                const rx = len - 5 * k - rw, ry = down + 5 * k;
+                roundRectPath(c, rx, ry, rw, rh, rh / 2);
+                c.fillStyle = "rgba(18,14,21,0.72)";
+                c.fill();
+                hudTitle("RAMS ROCK", rx + rw / 2, ry + rh / 2, rs, HUD.gold, "center", 1, c);
+            }
             // the fine keyline last so nothing paints over the edge
             c.lineJoin = "round";
             c.lineWidth = Math.max(1, 1.5 * k);
@@ -3438,6 +3455,13 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
     }
 
     let depositVault = null;   // the vault the cash-out effects play on
+    // A pad label (screen x, y = its centre line, w wide, size tall) moved clear of
+    function padLabelY(lx, ly, w, size) {
+        if (selfOver.at < overheadFrame - 2 || !(selfOver.r > 0) || global.died) return ly;
+        const r = selfOver.r + 4, hh = size * 0.6;
+        if (Math.abs(lx - selfOver.x) > w / 2 + r || Math.abs(ly - selfOver.y) > r + hh) return ly;
+        return Math.min(ly, Math.min(selfOver.top, selfOver.y - r) - hh - 6);
+    }
     function drawVaults(roomX, roomY, ratio) {
         if (royaleLobbyPhase()) return;
         if (!global.vaults.length) return;
@@ -3468,8 +3492,9 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             const mine = v === depositVault;
             const depositing = mine && v0.total > 0 && v0.onPad && !v0.isOutpost;
             const doneFlash = mine ? Math.max(0, 1 - (now - v0.doneAt) / 700) : 0;
+            // raid vaults (the old "rainbow" ones) are one steady colour: the Banked pill's
             const rainbow = !!v.rainbow;
-            const teamCol = rainbow ? hsvCss((now / 12) % 360)
+            const teamCol = rainbow ? BANK_PILL
                 : gameDraw.getColor(v.team === -1 ? "blue" : "red");
             const pal = rainbow ? { main: teamCol, light: "#ffffff", high: "#ffffff" }
                 : (v.team === -1 ? BLUE_PAL : RED_PAL);
@@ -3480,7 +3505,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             c.translate(sx, sy);
             c.lineJoin = "round";
             const lw = Math.max(1.5, R * 0.035);
-            const hue = rainbow ? hsvRgb((now / 12) % 360) : hexToRgb(teamCol);
+            const hue = hexToRgb(teamCol);
             // octagonal foundation so the vault doesn't read as a tank: ink
             // drop, deep team shade, ink outline, bright rim band for the claim
             polyPath(c, 0, R * 0.07, R * 1.22, 8, Math.PI / 8);
@@ -3566,7 +3591,15 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 }
             }
             // the name floats above the door in the HUD's display face
-            hudTitle("Vault", sx, sy - R * 1.42, Math.max(13, R * 0.28), HUD.head, "center", labelAlpha(sx, sy - R * 1.42, 60, 24), c);
+            const vls = Math.max(13, R * 0.28);
+            let vly = padLabelY(sx, sy - R * 1.42, hudTitleW("Vault", vls), vls);
+            let vla = labelAlpha(sx, vly, 60, 24);
+            // under a banner: the name moves below the pad instead of hiding (round 9 bug 4
+            if (vla < 1 && !deathCardUp()) {
+                const alt = sy + R * 1.3, la2 = labelAlpha(sx, alt, 60, 24);
+                if (la2 > vla) { vly = alt; vla = la2; }
+            }
+            hudTitle("Vault", sx, vly, vls, HUD.head, "center", vla, c);
 
             if (doneFlash > 0) {
                 // completion burst: one-off ring of gold sparks
@@ -4058,7 +4091,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
     }
 
     // one reused object: this runs several times a frame
-    const stormView = { a: 0, cx: 0, cy: 0, r: 0, max: 0, to: 0, fin: 0, hold: 0 };
+    const stormView = { a: 0, cx: 0, cy: 0, tx: 0, ty: 0, r: 0, max: 0, to: 0, fin: 0, hold: 0 };
     function stormSnap() {
         const s = global.royale && global.royale.storm;
         if (!s || !s.a) return null;
@@ -4067,8 +4100,13 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         // stutter); the cap only guards stalls.
         const t = s.n == null ? 0 : Math.min(4, Math.max(0, (performance.now() - global.royale.at) / 250));
         const v = stormView;
-        v.a = s.a; v.cx = s.cx || 0; v.cy = s.cy || 0; v.max = s.max || 0; v.to = s.to || 0; v.fin = s.fin || 0; v.hold = s.hold || 0;
+        v.a = s.a; v.max = s.max || 0; v.to = s.to || 0; v.fin = s.fin || 0; v.hold = s.hold || 0;
         v.r = (s.r || 0) + (s.n == null ? 0 : ((s.n || s.r) - s.r) * t);
+        // the centre slides too (each cycle opens on the rock circle, then closes toward
+        const cx0 = s.cx || 0, cy0 = s.cy || 0;
+        v.cx = s.nx == null ? cx0 : cx0 + (s.nx - cx0) * t;
+        v.cy = s.ny == null ? cy0 : cy0 + (s.ny - cy0) * t;
+        v.tx = s.tx == null ? v.cx : s.tx; v.ty = s.ty == null ? v.cy : s.ty;
         return v;
     }
     function fillStormOnMap(c, mapX, mapY, scale, x, y, w, h) {
@@ -4076,7 +4114,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         if (!s) return;
         const cx = mapX(s.cx || 0), cy = mapY(s.cy || 0);
         const rr = Math.max(2, (s.r || 0) * scale);
-        stormFx.drawMap(c, cx, cy, rr, x, y, w, h, (s.to || 0) * scale, safeZoneJob());
+        stormFx.drawMap(c, cx, cy, rr, x, y, w, h, (s.to || 0) * scale, safeZoneJob(), mapX(s.tx), mapY(s.ty));
     }
     function playerInStorm() {
         const s = stormSnap();
@@ -4759,6 +4797,22 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         pocket();
         c.lineJoin = "round"; c.lineWidth = Math.max(1.5, borderPx * 0.8); c.strokeStyle = "rgb(5,4,7)"; c.stroke();
         c.restore();
+        drawChestLabel(c, x, y - R * 1.12, R, instance, kind, alpha);
+    }
+    // Round 8: a light name over every chest ("Epic chest"), since new players took
+    const CHEST_LABEL = { copper: "Copper chest", epic: "Epic chest", crate: "Supply crate" };
+    const CHEST_LABEL_COL = { copper: "#eda766", epic: "#d98af0", crate: "#6ff5a8" };
+    function drawChestLabel(c, x, y, R, instance, kind, alpha) {
+        if (!royaleActive() || global.showBigMap || R < 6) return;
+        const k = kind.emerald ? "crate" : kind.epic ? "epic" : "copper";
+        const d = Math.hypot(instance.render.x - global.player.renderx, instance.render.y - global.player.rendery);
+        const far = d < 900 ? 1 : Math.max(0.35, 1 - (d - 900) / 1100);
+        const size = Math.max(12, Math.min(17, R * 0.3));
+        const ly = y - size * 0.55;
+        const w = hudTitleW(CHEST_LABEL[k], size) + 8;
+        const a = alpha * 0.92 * far * labelAlpha(x, ly, w, size + 6);
+        if (a < 0.03) return;
+        hudTitle(CHEST_LABEL[k], x, ly, size, CHEST_LABEL_COL[k], "center", a, c);
     }
     let bgCanvasEl = null, bgHidden = false;
     function drawEntities(px, py, ratio, tick) {
@@ -4852,6 +4906,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 global.player.screenx = x;
                 global.player.screeny = y;
                 global.player.name = instance.name ?? "";
+                // the HUD's HP / shield bars read your own entity (drawVitals)
+                global.selfEnt = instance;
             }
             x += global.screenWidth / 2;
             y += global.screenHeight / 2;
@@ -4919,6 +4975,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             }
         }
         if (skCount) { try { sidekicks.draw(ctx[1], ratio, px, py, tick, gui.playerid); } catch (e) { /* never break the frame */ } }
+        // the death card owns the screen: names, badges and crowns step back
+        const lblK = deathCardUp() ? 0.45 : 1;
         for (let instance of global.entities) {
             // Dig Wars: same banner skip as the shape pass (no generic HP bar)
             if (!instance._onScreen) continue;
@@ -4931,17 +4989,25 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             // their names and bars are clutter and text cost
             if (global.dropZoom < 0.75 && instance.id !== gui.playerid && window.dwDropOpt !== false) continue;
             let alpha = instance.id === gui.playerid ? 1 : instance.alpha;
-            alpha = handleScreenDistance(alpha, instance);
+            alpha = handleScreenDistance(alpha, instance) * lblK;
             let x = instance.id === gui.playerid ? global.player.screenx : instance._sx - global.screenWidth / 2,
                 y = instance.id === gui.playerid ? global.player.screeny : instance._sy - global.screenHeight / 2;
             drawHealth(x, y, instance, ratio, gui.visibleEntities ? 1 : alpha, instance.size);
-            drawName(x, y, instance, ratio, gui.visibleEntities ? alpha * 0.75 + 0.25 : alpha, instance.size);
-            drawStreakBadge(x, y, instance, ratio, gui.visibleEntities ? alpha * 0.75 + 0.25 : alpha, instance.size);
+            drawName(x, y, instance, ratio, gui.visibleEntities ? (alpha * 0.75 + 0.25) * lblK : alpha, instance.size);
+            drawStreakBadge(x, y, instance, ratio, gui.visibleEntities ? (alpha * 0.75 + 0.25) * lblK : alpha, instance.size);
+            // the top of your own overhead stack (badge, crown): the +N gem pops rise from
+            if (instance.id === gui.playerid) {
+                selfOver.top = overheadTop(instance, y + global.screenHeight / 2, ratio, instance.size);
+                selfOver.at = overheadFrame;
+                selfOver.x = x + global.screenWidth / 2;
+                selfOver.y = y + global.screenHeight / 2;
+                selfOver.r = instance.size * ratio;
+            }
             // the Crown Contest: a big gold crown over the stack (crowns.js)
             if (royaleActive() && !raidFinale.active() && crowns.crownOf(instance.id)) {
                 try {
                     const sx = x + global.screenWidth / 2, sy = y + global.screenHeight / 2;
-                    crowns.drawOverhead(ctx[1], sx, sy, crownStackTop(instance, sy, ratio, instance.size), instance.size, ratio, gui.visibleEntities ? alpha * 0.75 + 0.25 : alpha, instance.id);
+                    crowns.drawOverhead(ctx[1], sx, sy, crownStackTop(instance, sy, ratio, instance.size), instance.size, ratio, gui.visibleEntities ? (alpha * 0.75 + 0.25) * lblK : alpha, instance.id);
                 } catch (e) { /* never break the frame */ }
             }
         }
@@ -5406,6 +5472,12 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
     let messageStackLeft = 1e9;
 
     function drawMessages(spacing, alcoveSize) {
+        // the first seconds: the stack waits for the raid card (held, not lost) (round 8
+        if (!firstSeconds.shows("messages") || (global.mobile && (slamShowing() || global.introCardUp))) {
+            const t0 = Date.now();
+            for (const m of global.messages) m.time = t0;
+            return;
+        }
 
         let height = 18;
         let x = global.screenWidth / 2;
@@ -5421,6 +5493,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         }
         // touch: the minimap owns the top-right corner, the stack starts under it
         if (global.mobile && msgRight && hudDrawn.minimap) y = Math.max(y, hudDrawn.minimap.y + hudDrawn.minimap.h + 16, global.screenHeight > global.screenWidth ? hudTopBottom + 10 : 0);
+        // ...and the HP / shield bars under it (drawVitals)
+        if (global.mobile && msgRight && vitalsRect) y = Math.max(y, vitalsRect.y + vitalsRect.h + 8);
 
         var Bd = Date.now();
         var yy = config.animationSettings.ScaleBar;
@@ -5428,7 +5502,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         if (msgRight) y = drawSideNote(y);
         // the right-hand stack stops above the minimap instead of running into it
         // (touch: above the kit buttons)
-        const yLimit = !msgRight ? Infinity : global.mobile ? touchRightTop() - 30 : global.screenHeight - alcoveSize - spacing - 22 - 30;
+        const yLimit = !msgRight ? Infinity : global.mobile ? touchRightTop() - 30 : Math.min(global.screenHeight - alcoveSize - spacing - 22 - 30, vitalsRect ? vitalsRect.y - 8 : Infinity);
         // and holds a few lines: anything older fades out early
         const MSG_CAP = 4;
         let shown = 0;
@@ -5537,21 +5611,44 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         }
         return streakById.get(id) || 0;
     }
+    // Raid points per entity id, from the standings (RY board), as the plate label
+    const boardLabelById = new Map();
+    let boardLabelSrc = null;
+    function boardScoreLabel(id) {
+        const board = global.royale && global.royale.board;
+        if (board !== boardLabelSrc) {
+            boardLabelSrc = board;
+            boardLabelById.clear();
+            if (board) for (let i = 0; i < board.length; i++) {
+                const row = board[i];
+                if (row && row.id != null) boardLabelById.set(row.id, fmtNum(Math.max(0, row.score | 0)) + " pts");
+            }
+        }
+        return boardLabelById.get(id) || "";
+    }
     // The badge over a tank: your revenge target, the bounty, or a streak.
     const streakBadges = new Map();
     const REVENGE_BADGE = { key: "rv", word: "REVENGE", num: "", col: "#ff6b5e" };
+    // a tank far beyond a new or struggling player: the server flags it
+    const TOUGH_BADGE = { key: "tough", word: "TOO STRONG", num: "", col: "#b9b2c8" };
     let bountyBadge = null;
+    // HUD is defined further down, so its gold is read on first use)
+    let BOUNTY_ON_YOU = null;
     function badgeOf(id) {
         if (!royaleActive() || raidFinale.active()) return null;
         const r = global.royale;
         const rv = r.you && r.you.revenge;
-        if (rv && rv.alive && rv.e === id) return REVENGE_BADGE;
+        if (rv && rv.alive && rv.e === id && id !== gui.playerid) return rv.tough ? TOUGH_BADGE : REVENGE_BADGE;
         const hb = raidHeat.badge(id);
         if (hb) return hb;
         const b = r.bounty;
         if (b && b.e === id) {
+            // TOO STRONG is about someone else: never on your own tank (you can be the bounty
+            if (r.you && r.you.bt && id !== gui.playerid) return TOUGH_BADGE;
+            // on your own tank it's the price on your head, not a reward, and a tiny "+"
+            if (id === gui.playerid) return BOUNTY_ON_YOU || (BOUNTY_ON_YOU = { key: "btme", word: "BOUNTY ON YOU", num: "", col: HUD.gold });
             const key = "bt" + (b.gems | 0);
-            if (!bountyBadge || bountyBadge.key !== key) bountyBadge = { key, word: "BOUNTY ", num: "+" + (b.gems | 0), col: HUD.gold };
+            if (!bountyBadge || bountyBadge.key !== key) bountyBadge = { key, word: "BOUNTY ", num: fmtNum(b.gems | 0) + " gems", col: HUD.gold };
             return bountyBadge;
         }
         const n = streakOf(id);
@@ -5562,7 +5659,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
     }
     // badge text size: grows with the tank and the zoom, capped both ways
     const streakSize = (isize, ratio) => Math.min(26, Math.max(14, 0.46 * Math.max(20, isize * ratio)));
-    const streakGap = (fs) => Math.max(3, fs * 0.28);
+    // the pointer sits right on the name (or the hull), so the tag reads as that
+    const streakGap = (fs) => Math.max(2, fs * 0.12);
     // the pill plus the pointer under it, in units of the text size
     const STREAK_H = 1.62, STREAK_TIP = 0.42;
     // the name stack plus the badge over it: where a crown sits
@@ -5581,12 +5679,15 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
     // Baked once per streak count at a fixed size and scaled on draw: a dark
     // HUD pill with an ink rim, "STREAK" in orange and the count in cream,
     // and the old red marker as a pointer down at the tank.
+    // Baked near the size it's drawn at (device pixels, 4 px steps): one 40 px bake
     const STREAK_BAKE = 40;
     const streakSprites = new Map();
-    function streakSprite(bd) {
-        let spr = streakSprites.get(bd.key);
+    function streakSprite(bd, want = STREAK_BAKE) {
+        const bake = Math.max(12, Math.min(64, Math.round(want / 4) * 4));
+        const sk = bd.key + "@" + bake;
+        let spr = streakSprites.get(sk);
         if (spr) return spr;
-        const fs = STREAK_BAKE, pad = Math.ceil(fs * 0.22);
+        const fs = bake, pad = Math.ceil(fs * 0.22);
         const word = bd.word, num = bd.num;
         const cv = document.createElement("canvas");
         let c = cv.getContext("2d");
@@ -5632,13 +5733,15 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         c.fillStyle = bd.col; c.fillText(word, tx, ty);
         c.fillStyle = HUD.head; if (num) c.fillText(num, tx + ww, ty);
         spr = { cv, ax: cx, tipY: y0 + ph + tip, fs };
-        if (streakSprites.size > 40) streakSprites.clear();
-        streakSprites.set(bd.key, spr);
+        if (streakSprites.size > 80) streakSprites.clear();
+        streakSprites.set(sk, spr);
         return spr;
     }
     // the ids whose badge drew this frame; the edge marker skips them
     const streakShownAt = new Map();
     let overheadFrame = 0;
+    // your own overhead stack's top this frame (screen units), for the gem pops
+    const selfOver = { top: 0, at: -1, x: 0, y: 0, r: 0 };
     function drawStreakBadge(x, y, instance, ratio, alpha, isize) {
         const bd = badgeOf(instance.id);
         if (!bd || alpha < 0.02) return;
@@ -5648,7 +5751,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         x += global.screenWidth / 2;
         y += global.screenHeight / 2;
         const fs = streakSize(isize, ratio);
-        const spr = streakSprite(bd);
+        const c = ctx[1];
+        const spr = streakSprite(bd, fs * (c._tf ? tfOf(c).a : 1));
         const k = fs / spr.fs;
         const w = spr.cv.width * k, h = spr.cv.height * k;
         // the pointer tip sits a small gap over the name (or the hull)
@@ -5659,10 +5763,11 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         if (tipY < minTip) tipY = Math.min(minTip, y - isize * ratio);
         let bx = x - spr.ax * k;
         bx = Math.max(4, Math.min(global.screenWidth - w - 4, bx));
-        const c = ctx[1];
         c.save();
-        c.globalAlpha = alpha * alpha * fade * (0.88 + 0.12 * Math.sin(performance.now() / 300));
-        c.drawImage(spr.cv, bx, tipY - spr.tipY * k, w, h);
+        // a tank under a HUD panel (the ability bar, the wallet row) keeps its badge as a
+        const by = tipY - spr.tipY * k;
+        c.globalAlpha = alpha * alpha * fade * (0.88 + 0.12 * Math.sin(performance.now() / 300)) * labelAlpha(bx + w / 2, by + h / 2, w, h);
+        c.drawImage(spr.cv, bx, by, w, h);
         c.restore();
         if (streakShownAt.size > 64 && !streakShownAt.has(instance.id)) streakShownAt.clear();
         streakShownAt.set(instance.id, overheadFrame);
@@ -6172,7 +6277,12 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                         dc.restore();
                     }
                 }
-                if (global.GUIStatus.renderPlayerScores || typeof instance.score === "string") drawText(typeof instance.score === "string" ? instance.score : util.handleLargeNumber(instance.score), x, y - 1.45 * g, 0.3 * g, namecolor == "#ffffff" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
+                if (global.GUIStatus.renderPlayerScores || typeof instance.score === "string") {
+                    // raids: the standings' points, never the hull's own XP score (the two disagreed
+                    const lbl = typeof instance.score === "string" ? instance.score
+                        : royaleActive() ? boardScoreLabel(instance.id) : util.handleLargeNumber(instance.score);
+                    if (lbl) drawText(lbl, x, y - 1.45 * g, 0.3 * g, namecolor == "#ffffff" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
+                }
                 if (global.showDebug && instance.digWarsGoal) {
                     drawText(`goal: ${instance.digWarsGoal}`, x, y + 1.2 * g, 0.28 * g, color.teal, "center", false, 1, true, ctx[1]);
                 }
@@ -6191,10 +6301,12 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             if (!allow.includes("stats") && !ui.startsWith("skill") &&
                 !ui.startsWith("stat") && ui !== "points") return;
         }
+        global.clickables.statBtn.hide();
         // touch: the stats chip and panel (drawTouchStats)
         if (global.mobile) return;
 
-        statMenu.set(0 + (global.died || global.statHover || (global.canSkill && !gui.skills.every(skill => skill.cap === skill.amount))));
+        // the first seconds of a first raid: the bars slide in a few seconds after landing
+        statMenu.set(!firstSeconds.shows("stats") ? 0 : 0 + (global.died || global.statHover || (global.canSkill && !gui.skills.every(skill => skill.cap === skill.amount))));
         global.clickables.stat.hide();
 
         let vspacing = STAT_BAR_GAP;
@@ -6294,10 +6406,34 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         global.clickables.hover.place(0, 0, y * clickableRatio, 0.8 * len * clickableRatio, (global.screenHeight - y) * clickableRatio);
         if (gui.points !== 0) {
 
-            drawText("x" + gui.points, Math.round(x + len - 2) - 13, Math.round(y + height - 4) + 2, 22, color.guiwhite, "right");
+            const ptsX = Math.round(x + len - 2) - 13, ptsY = Math.round(y + height - 4) + 2;
+            drawText("x" + gui.points, ptsX, ptsY, 22, color.guiwhite, "right");
+            // round 9: Same stats / Random in one row from the panel's left edge, centred on
+            const sb = buildBtnLabels.statButtons(global.royale && global.royale.you, gui.points, global.died, global.tutorialMode);
+            if (sb.length && royaleActive()) {
+                const right = ptsX - measureText("x" + gui.points, 22) - 10;
+                const mid = ptsY - 0.35 * (22 + config.graphical.fontSizeBoost) + 3;
+                drawStatBuildButtons(sb, right, mid, x + 1, clickableRatio, true);
+            }
+        }
+    }
+    // the stat panel's build buttons, right-aligned to `right`, centred on cy
+    function drawStatBuildButtons(sb, right, cy, minX, cr, leftAlign = false) {
+        let size = 11.5, bh = 20, gap = 6;
+        const widthAt = (sz) => { let w = 0; for (const b of sb) w += hudTitleW(b.label, sz) + 16; return w + gap * (sb.length - 1); };
+        while (size > 9 && right - widthAt(size) < minX) size -= 0.5;
+        let bx = leftAlign ? Math.min(right, minX + widthAt(size)) : right;
+        for (let i = sb.length - 1; i >= 0; i--) {
+            const b = sb[i], w = hudTitleW(b.label, size) + 16;
+            hudButton(ctx[2], bx - w / 2, cy - bh / 2 - 1, w, bh, b.label, { size, type: "statBtn", index: b.i, cr, textCol: HUD.text, r: 6 });
+            bx -= w + gap;
         }
     }
 
+    // the raid death card (gameDrawDeadRoyale) is on screen
+    function deathCardUp() {
+        return !!(global.died && global.royaleDied && !global.royaleSpectating && !raidFinale.active() && !lastStormCount());
+    }
     const BANK_PILL = "#7fb1f2", BANK_PILL_TEXT = "#120e15";
     function drawSelfInfo(max) {
 
@@ -6360,15 +6496,25 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 // Big numbers go short (47.5k), then the kept part drops, so
                 // the text never spills out of the pill.
                 const room = (rx2 - bankX1) - 10, banked = g.banked | 0, kept = g.kept | 0;
+                // "Bank": what you can spend now
+                const BL = scoreText.BANK + ": ";
                 const tries = kept > 0
-                    ? ["Banked: " + util.formatLargeNumber(banked) + "  (" + util.formatLargeNumber(kept) + " kept)",
-                        "Banked: " + shortGems(banked) + " (" + shortGems(kept) + " kept)",
-                        "Banked: " + util.formatLargeNumber(banked), "Banked: " + shortGems(banked)]
-                    : ["Banked: " + util.formatLargeNumber(banked), "Banked: " + shortGems(banked)];
+                    ? [BL + util.formatLargeNumber(banked) + "  (" + util.formatLargeNumber(kept) + " savings)",
+                        BL + shortGems(banked) + " (" + shortGems(kept) + " savings)",
+                        BL + util.formatLargeNumber(banked), BL + shortGems(banked)]
+                    : [BL + util.formatLargeNumber(banked), BL + shortGems(banked)];
                 let bankTxt = tries[tries.length - 1];
                 for (const t of tries) if (hudTextW(t, 11) <= room) { bankTxt = t; break; }
                 let bs2 = 13; while (bs2 > 9 && hudTextW(bankTxt, bs2) > room) bs2 -= 0.5;
                 drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, BANK_PILL_TEXT, "center", false, 1, false);
+                // what "Bank" means, on hover (it is not the points number)
+                if (royaleActive() && !global.mobile && global.canvas && !global.died) {
+                    const cr2 = global.canvas.height / global.screenHeight / global.ratio;
+                    const mx2 = global.mouse.x / cr2, my2 = global.mouse.y / cr2;
+                    if (mx2 >= bankX1 - capR && mx2 <= rx2 + capR && my2 >= ry - pillH / 2 && my2 <= ry + pillH / 2) queueTip(scoreText.BANK_TIP, scoreText.BANK_TIP_BODY, (bankX1 + rx2) / 2, ry - pillH / 2, true);
+                }
+                // above your name, never on it (round 7: "+250 banked · milestone 1,000" sat on
+                drawBankPops(global.screenWidth / 2, Math.round(y - 10 - 4) - 1 - 30);
             }
             // gemdust (accounts): satchel dust under Carried, balance under Banked
             if (nxShows("cosmetics")) try { dustHud.draw(ctx[2], { carX: (rx1 + carX2) / 2, bankX: (bankX1 + rx2) / 2, y: ry + 19 }, { drawText, measureText }); } catch (e) { /* never break the HUD */ }
@@ -6382,6 +6528,64 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         drawText(mySn.text, nameX, nameY, 31, mySn.fill, "center");
         drawNameBadge(myCode, mySn.text, nameX, nameY, 31, "center", ctx[2]);
     }
+
+    // Bank pops (bankPopLogic.js): every rise of the Bank says what paid ("+300
+    let bankPopOpt = null;
+    function drawBankPops(cx, y0) {
+        if (!global.bankPops || !royaleActive() || global.died) return;
+        const now = performance.now();
+        const list = bankPopLogic.live(global.bankPops, now);
+        if (!list.length) return;
+        const c = ctx[2];
+        let y = y0;
+        for (let i = list.length - 1; i >= 0; i--) {
+            const p = list[i];
+            const age = now - p.at, k = age / bankPopLogic.POP_MS;
+            const a = Math.min(1, age / 160) * (k > 0.75 ? Math.max(0, (1 - k) / 0.25) : 1);
+            const pop = age < 220 ? 1 + 0.25 * Math.sin(Math.PI * age / 220) : 1;
+            const rise = Math.min(1, age / 420) * 10;
+            if (p.w == null || p.wFor !== p.str) { p.w = measureText(p.str, 13) + 22; p.wFor = p.str; }
+            const sz = 13 * pop, w = Math.round(p.w), h = 22;
+            const yy = y - h / 2 - rise;
+            if (!bankPopOpt) bankPopOpt = [{ r: 11, bevel: false, stroke: HUD.gold }, { r: 11, bevel: false, stroke: HUD.text2 }];
+            c.save();
+            c.globalAlpha = a;
+            hudPanel(c, Math.round(cx - w / 2), yy - h / 2, w, h, bankPopOpt[p.n < 0 ? 1 : 0]);
+            c.restore();
+            // drawText sets its glyphs size/20 left of x: put that back so the words sit dead
+            drawText(p.str, cx + (sz + config.graphical.fontSizeBoost) / 20, yy, sz, p.n < 0 ? HUD.text : HUD.gold, "center", true, a);
+            y -= h + 4;
+        }
+    }
+    window.dwBankPops = () => global.bankPops ? global.bankPops.pops.map(p => p.str) : [];
+
+    // Points pops (scoreLogic.js ptsPops): every change of your points says why ("+60
+    let ptsPopOpt = null;
+    function drawPtsPops(x0, y0, align, dir = -1) {
+        if (!global.ptsPops || !royaleActive()) return;
+        const now = performance.now();
+        const list = scoreText.ptsLive(global.ptsPops, now);
+        if (!list.length) return;
+        const c = ctx[2];
+        let y = y0;
+        if (!ptsPopOpt) ptsPopOpt = [{ r: 11, bevel: false, stroke: HUD.gold }, { r: 11, bevel: false, stroke: "#ff6b5e" }];
+        for (let i = list.length - 1; i >= 0; i--) {
+            const p = list[i];
+            const age = now - p.at, k = age / scoreText.PTS_POP_MS;
+            const a = Math.min(1, age / 160) * (k > 0.75 ? Math.max(0, (1 - k) / 0.25) : 1);
+            const pop = age < 220 ? 1 + 0.25 * Math.sin(Math.PI * age / 220) : 1;
+            if (p.w == null) p.w = measureText(p.str, 13) + 22;
+            const w = p.w, h = 22;
+            const x = align === "right" ? x0 - w : x0;
+            c.save();
+            c.globalAlpha = a;
+            hudPanel(c, x, y - h / 2, w, h, ptsPopOpt[p.n < 0 ? 1 : 0]);
+            c.restore();
+            drawText(p.str, x + w / 2, y, 13 * pop, p.n < 0 ? "#ff9a8c" : HUD.gold, "center", true, a);
+            y += dir * (h + 4);
+        }
+    }
+    window.dwPtsPops = () => global.ptsPops ? global.ptsPops.pops.map(p => p.str) : [];
 
     // 47500 -> "47.5k", 1250000 -> "1.25m"
     function shortGems(n) {
@@ -6492,6 +6696,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             c.restore();
         }
     }
+    const VAULT_CROWN_LINE = "Crowned: it banks now, then the vault pushes you off.";
     function drawVaultUI() {
         const v = global.vault, g = global.gems;
         const active = v.total > 0;
@@ -6510,9 +6715,13 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             return;
         }
         const now = performance.now();
-        const W = 340, H = belowMin ? 92 : 136;
+        // a final-minute crown banks like anyone, but the vault won't hold it (server
+        const ry = royaleActive() && global.royale.you;
+        const crownSd = !!(ry && ry.crown && ry.crown.sd) && !v.isOutpost;
+        const H0 = belowMin ? 92 : 168;
+        const W = 340, H = H0 + (crownSd ? 24 : 0);
         const x = (global.screenWidth - W) / 2;
-        const y = global.screenHeight - 318 + (1 - glide) * 26;
+        const y = global.screenHeight - 350 + (1 - glide) * 26;
         const cr = global.canvas ? global.canvas.height / global.screenHeight / global.ratio : 1;
         const c = ctx[2];
         // guarded: getColor can return undefined for unmapped indices and
@@ -6524,17 +6733,19 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         c.save();
         c.globalAlpha = glide;
         hudPanel(c, x, y, W, H, { fill: HUD.solid, r: HUD.r + 2 });
-        hudTitle(v.isOutpost ? "Base bank · 80% credit" : (royaleActive() ? "Vault · 100% credit" : "Team vault"),
+        hudTitle(v.isOutpost ? "Team Bank · 80% credit" : (royaleActive() ? "Vault · 100% credit" : "Team vault"),
                  x + W / 2, y + 19, 17, teamCol, "center");
+        // the first Team Bank you stand on says what it is (round 9)
+        if (v.isOutpost && buildBtnLabels.firstTime("teamBank", () => window.localStorage)) global.createMessage(buildBtnLabels.TEAM_BANK_TIP, 7000);
         c.fillStyle = "rgba(18,14,21,0.6)";
         c.fillRect(x + 14, y + 33, W - 28, 2);
-        drawText("Banked  " + util.formatLargeNumber(g.banked | 0), x + 16, y + 49, 12, color.teal, "left", true);
+        drawText(scoreText.BANK + "  " + util.formatLargeNumber(g.banked | 0), x + 16, y + 49, 12, color.teal, "left", true);
         drawText("Carried  " + util.formatLargeNumber(g.carried | 0), x + W - 16, y + 49, 12, HUD.gold, "right", true);
 
         global.clickables.vault.hide();
         if (belowMin) {
             hideVaultInput();
-            drawText("Need at least " + VAULT_MIN_DEPOSIT + " dust to cash out.",
+            drawText("You need at least " + VAULT_MIN_DEPOSIT + " gems to bank.",
                      x + W / 2, y + 70, 12.5, "#ff9a8c", "center");
         } else if (active) {
             // ── channeling: gold progress + live count + cancel ──
@@ -6547,18 +6758,21 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             v.shownFrac += (target - v.shownFrac) * Math.min(1, dt * 8);
             const frac = v.shownFrac;
             const bx = x + 20, bw = W - 40, by = y + 62, bh = 16;
-            // Rainbow vaults bank in the vault's live hue; base banks stay gold.
-            const chanCol = (royaleActive() && !v.isOutpost) ? hsvCss((now / 12) % 360) : HUD.gold;
+            // raid vaults bank in the vault's own blue
+            const chanCol = (royaleActive() && !v.isOutpost) ? BANK_PILL : HUD.gold;
             drawChannelBar(c, bx, by, bw, bh, Math.max(0.04, frac), chanCol, now);
             drawText(util.formatLargeNumber(Math.round(v.total - v.remaining)) + " / " +
                      util.formatLargeNumber(v.total) + "  secured…",
                      x + W / 2, by + bh + 18, 12.5, color.guiwhite, "center");
-            hudButton(c, x + W / 2, y + H - 33, 110, 26, "Cancel", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 14, type: "vault", index: 11, cr });
+            hudButton(c, x + W / 2, y + H0 - 33, 110, 26, "Cancel", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 14, type: "vault", index: 11, cr });
         } else {
-            drawText("How much dust to cash out?", x + W / 2, y + 71, 12, HUD.text, "center", true);
+            // one click banks everything (the server reads 0 as "all")
+            hudButton(c, x + W / 2, y + 60, W - 40, 42, "Bank all  " + util.formatLargeNumber(g.carried | 0) + " gems",
+                      { fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff", size: 18, type: "vault", index: 9, cr });
+            drawText("or bank part of it", x + W / 2, y + 118, 11, HUD.text2, "center", true);
             const el = getVaultInput();
-            const iw = 150, ih = 30;
-            const ix = x + W / 2 - iw / 2 - 62, iy = y + 86;
+            const iw = 130, ih = 30;
+            const ix = x + W / 2 - 120, iy = y + 126;
             el.style.left = (ix * cr) + "px";
             el.style.top = (iy * cr) + "px";
             el.style.width = (iw * cr - 4) + "px";
@@ -6570,8 +6784,14 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 el.style.display = "block";
                 el.value = "" + (g.carried | 0);   // defaults to everything
             }
-            const dbx = x + W / 2 + 26, dby = y + 85, dbw = 108, dbh = 32;
-            hudButton(c, dbx + dbw / 2, dby, dbw, dbh, "Deposit", { fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff", size: 16, type: "vault", index: 10, cr });
+            const dbx = ix + iw + 10, dby = y + 125, dbw = 100, dbh = 32;
+            hudButton(c, dbx + dbw / 2, dby, dbw, dbh, "Bank", { fill: HUD.face, lipCol: HUD.faceDk, textCol: HUD.text, size: 15, type: "vault", index: 10, cr });
+        }
+        if (crownSd) {
+            c.fillStyle = "rgba(255,59,78,0.16)";
+            c.fillRect(x + 14, y + H0 - 6, W - 28, 24);
+            const cl = fitLine(VAULT_CROWN_LINE, 12, 9, W - 40);
+            drawText(cl.txt, x + W / 2, y + H0 + 6, cl.qs, "#ffb3bb", "center", true);
         }
         c.restore();
     }
@@ -6598,12 +6818,14 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             ctx[2].restore();
         }
 
-        // +N numbers: rise off the tank and fade; chains heat gold → white
+        // +N numbers: rise off the tank and fade
+        const stackTop = selfOver.at === overheadFrame ? selfOver.top : cy;
+        const base = Math.max(52, cy - stackTop + 18);
         for (let i = g.popups.length - 1; i >= 0; i--) {
             const p = g.popups[i];
             const t = (now - p.born) / 1000;
             if (t >= 1) { g.popups.splice(i, 1); continue; }
-            const rise  = 52 + 42 * (1 - Math.pow(1 - t, 2.2));
+            const rise  = base + 42 * (1 - Math.pow(1 - t, 2.2));
             const alpha = t < 0.55 ? 1 : 1 - (t - 0.55) / 0.45;
             const heat  = Math.min(1, (p.combo || 0) / 8);
             const size  = 16 + Math.min(10, p.value / 25) + Math.min(6, (p.combo || 0));
@@ -6631,7 +6853,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const a = Math.min(1, left * 3) * (raidHeat.slamUp() ? 0.45 : 0.85);
         const c = ctx[2];
         c.save();
-        drawText("Mining x" + n + "  ·  +" + bonus + "% dust", cx, cy, 11.5, "#f2d69a", "center", true, a, 4);
+        drawText("Mining x" + n + "  ·  +" + bonus + "% gems", cx, cy, 11.5, "#f2d69a", "center", true, a, 4);
         const bw = 80, bx = cx - bw / 2, by = cy + 9;
         c.globalAlpha = a;
         c.fillStyle = "rgba(0,0,0,0.55)";
@@ -7085,14 +7307,27 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         rankDraw: (c, x, y, w, h, a) => rankPanel.draw(c, x, y, w, h,
             { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk }, a),
     });
-    function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "k" : String(Math.round(d)); }
+    // distances read as metres everywhere (round 8): "570m", "2.1km"
+    function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "km" : Math.round(d) + "m"; }
     stormFx.init({ hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), hudPanel, drawText, fmtDist });
     // hunted marks, the Core, drop-ins and the screen juice (raidHeat.js, juice.js)
-    raidHeat.init({ HUD, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c) });
+    raidHeat.init({ HUD, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c), cardHold: () => deathCardUp() });
     achCard.init({ HUD, hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, rr: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r) });
     crowns.init({ HUD, hudPanel, hudTitle, hudTitleW, hudTextW, measureText, roundRectPath: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r), drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, myHex: () => playerHexCol() || HUD.gold });
     // the first raids: what the HUD shows per stage, the goal line, director moments
     newcomer.init({ hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, keyLabel: (id, d) => keyLabel(id, d), NOTE_H: 24, NOTE_GAP: 8 });
+    // the first seconds of a raid: the raid card, then the HUD in steps
+    firstSeconds.init({
+        HUD, panel: hudPanel, title: hudTitle, titleW: hudTitleW, textW: (t, sz) => hudTextW(t, sz),
+        text: (t, x, y, sz, col, align, alpha) => drawText(t, x, y, sz, col, align, true, alpha),
+        gemPath: (c, x, y, r) => gemPath(c, x, y, r), keyLabel: (id, d) => keyLabel(id, d), rect: (k) => hudRectOf(k),
+        // the stat bars' block (desktop), drawn or not
+        statRect: () => {
+            if (global.mobile || !gui.points) return null;
+            const bottom = global.screenHeight - 20 - 5.5, top = bottom - 11 * STAT_BAR_H - 10 * STAT_BAR_GAP - 30;
+            return { x: HUD.edge, y: top, w: 210, h: bottom - top };
+        },
+    });
     // stage 3 (veterans) shows everything: every check below is true there
     function nxShows(piece, opts) { return newcomer.shows(piece, opts); }
     function gemPath(c, x, y, r) {
@@ -7256,12 +7491,17 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
     let labelRects = [], labelRectsAt = 0;
     function labelAlpha(cx0, cy0, w, h) {
         if (!royaleActive()) return 1;
+        // the death card owns the screen: pad and site labels step back
+        if (deathCardUp()) return 0.25;
         const now = performance.now();
         if (now - labelRectsAt > 120) {
             labelRectsAt = now;
             labelRects = hudAvoidRects();
             if (hudDrawn.feed) labelRects.push(hudDrawn.feed);
             if (messageStackBottom > royaleFeedBottom && messageStackLeft < global.screenWidth) labelRects.push({ x: messageStackLeft, y: royaleFeedBottom, w: global.screenWidth - messageStackLeft, h: messageStackBottom - royaleFeedBottom });
+            // round 9 bug 4: the big banners (a slam, the last ten seconds)
+            if (global.countdownRect) labelRects.push(global.countdownRect);
+            if (global.hudSlamY > 0 && juiceSlamUp()) labelRects.push({ x: global.screenWidth / 2 - 380, y: global.hudSlamY - 52, w: 760, h: 104 });
         }
         const x = cx0 - w / 2, y = cy0 - h / 2;
         for (const R of labelRects) if (x < R.x + R.w && x + w > R.x && y < R.y + R.h && y + h > R.y) return 0.18;
@@ -7284,6 +7524,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         if (teamFeedRect) out.push(teamFeedRect);
         if (global.coachRect) out.push(global.coachRect);
         if (abilityBarRect) out.push(abilityBarRect);
+        if (vitalsRect) out.push(vitalsRect);
         if (!perkAvoidSkip) { const pr = raidPerks.avoidRect(); if (pr) out.push(pr); }
         return out;
     }
@@ -7659,6 +7900,30 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 if (you.anchor > 0) parts.push("STORM ANCHOR " + you.anchor + "s");
                 push(hudNote(2, "buff", parts.join("   "), color.teal));
             }
+            // a big satchel with danger around: bank it, it isn't points yet
+            const carryN = global.gems && global.gems.carried != null ? global.gems.carried | 0 : you.carried | 0;
+            const cn = scoreText.carryNote({
+                carried: carryN, near: you.hunt ? you.hunt.n | 0 : 0, storm: (you.sm || 0) > 0, noBank: false,
+                hp: global.hurtAt && performance.now() - global.hurtAt < 4000 ? 0.5 : 1,
+            });
+            // the vault deposit: how far it got, and what's still carried when it stops short
+            const v0 = global.vault;
+            if (v0 && (v0.total > 0 || v0.cutAt > 0)) {
+                const nowD = performance.now();
+                const live = (v0.total | 0) > 0 && (v0.remaining | 0) > 0;
+                if (live || nowD - v0.cutAt < scoreText.DEP_CUT_MS) {
+                    const dc = global._depNote || (global._depNote = { t: -1, r: -1, cut: -1, car: -1, n: null });
+                    if (dc.t !== (v0.total | 0) || dc.r !== (v0.remaining | 0) || dc.cut !== (v0.cutAt || 0) || dc.car !== carryN) {
+                        dc.t = v0.total | 0; dc.r = v0.remaining | 0; dc.cut = v0.cutAt || 0; dc.car = carryN;
+                        dc.n = scoreText.depositNote(v0, carryN, nowD);
+                    }
+                    const dn = dc.n;
+                    if (dn) push(hudNote(0, "deposit", dn.text, dn.hot ? "#ff9a5c" : HUD.gold));
+                }
+            }
+            if (cn) {
+                push(hudNote(cn.hot ? 1 : 2, "carry", cn.text + ". " + cn.sub, cn.hot ? "#ffb347" : HUD.gold));
+            }
             const myStreak = you.streak | 0;
             if (myStreak >= 4 && nxShows("streaks")) push(hudNote(3, "streak", myStreak + " kill streak. You're on everyone's map", "#ffb347"));
             // Raid Night coming up (shared/events.js): a small chip in the last 24 h
@@ -7729,6 +7994,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             const PW = 300, rowH = 38, footH = (placeTxt || stormTxt) ? 24 : 0, PH = rowH + footH;
             const px = Math.round(cx - PW / 2), py = y;
             hudPanel(c, px, py, PW, PH);
+            // your points sit on this plate: hover it for how they add up
+            if (placeTxt) pointsRuleTip(px, py + rowH, PW, footH);
             hudDrawn.clock = { x: px, y: py, w: PW, h: PH };
             const pair = (label, value, zx) => {
                 const lw2 = hudTitleW(label, 12), vw = hudTitleW(value, 21), gap = 7;
@@ -7749,6 +8016,16 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 } else drawText(placeTxt || stormTxt, cx, fy, 12, placeTxt ? HUD.gold : stormCol, "center", true);
             }
             drawTopToggle(c, px + PW - 17, py + 6, false);
+            // round 9: the storm stage's gem multiplier (server RY storm.gmul), a small pill
+            const gm = +st.gmul || 1;
+            if (gm > 1 && st.a) {
+                const gt = gm === 1.5 ? "GEMS x1.5" : gm === 2 ? "GEMS x2" : "GEMS x" + (Math.round(gm * 10) / 10);
+                const gw = hudTitleW(gt, 12) + 20, gh = 22, gx = px - 8 - gw, gy = py + rowH + footH / 2 - gh / 2;
+                hudWell(c, gx, gy, gw, gh, gh / 2, "rgba(242,184,60,0.22)", HUD.ink, 2);
+                hudTitle(gt, gx + gw / 2, gy + gh / 2, 12, HUD.gold, "center");
+            }
+            // what moved your points, right by them (scoreLogic ptsPops)
+            if (placeTxt && !global.died) drawPtsPops(px + PW + 10, py + rowH + footH / 2, "left", 1);
             y = py + PH + HUD.lip + 8;
         });
         hudSafe("notes", () => { y = drawHudNotes(y); });
@@ -7776,7 +8053,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         // the storm warning gets its own row right here, away from the tank,
         // its chat and the slams (stormFx.drawHud fills it)
         stormHud.rowY = 0;
-        if (stormHud.inside) { stormHud.rowY = y; y += 34; }
+        if (stormHud.inside || stormHud.near) { stormHud.rowY = y; y += 34; }
         hudTopBottom = y;
         // CSS px, for the DOM notification cards under the clock (gameToasts.js)
         global.hudTopPx = y * window.innerWidth / Math.max(1, global.screenWidth);
@@ -7794,7 +8071,9 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         hudSafe("storm", () => {
             const hs = stormHud;
             const s = stormSnap();
-            hs.inside = !!s && !global.died && playerInStorm();
+            // round 8: not before your tank exists or while it is still falling in: the
+            const placed = !!global.selfEnt && global.selfEnt.id === gui.playerid && !global.raidQueued && !(raidHeat.landAt && raidHeat.landAt() > performance.now());
+            hs.inside = !!s && !global.died && placed && playerInStorm();
             if (hs.inside) {
                 const px = global.player.renderx, py = global.player.rendery;
                 const you = r.you || {};
@@ -7804,6 +8083,18 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 hs.dist = Math.hypot(px - s.cx, py - s.cy) - s.r;
                 hs.dirAng = Math.atan2(s.cy - py, s.cx - px);
             }
+            // still inside, but the edge gets here soon: seconds until it does
+            hs.near = 0;
+            if (!hs.inside && s && !global.died) {
+                const raw = global.royale.storm || {};
+                const speed = raw.n == null ? 0 : ((raw.r || 0) - raw.n) * 4;
+                const px = global.player.renderx, py = global.player.rendery;
+                const gap = s.r - Math.hypot(px - s.cx, py - s.cy);
+                if (speed > 0.5 && gap / speed < STORM_NEAR_S) {
+                    hs.near = Math.max(1, Math.ceil(gap / speed));
+                    hs.dirAng = Math.atan2(s.cy - py, s.cx - px);
+                }
+            }
             hs.laneY = hudLanes().slamY;
             hs.yieldText = raidHeat.slamUp();
             ctx[2].save();
@@ -7812,7 +8103,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         });
         if (hudErrText) drawText("HUD error: " + hudErrText, cx, global.screenHeight - 78, 11, "#ff7a6b", "center");
     }
-    const stormHud = { inside: false, sm: 0, immune: 0, final: false, dist: 0, dirAng: 0, laneY: 0, yieldText: false, rowY: 0 };
+    const stormHud = { inside: false, near: 0, sm: 0, immune: 0, final: false, dist: 0, dirAng: 0, laneY: 0, yieldText: false, rowY: 0 };
+    const STORM_NEAR_S = 15;   // warn this many seconds before the edge reaches you
     const BOSS_H = 44, BOSS_GAP = 10;
     let spectateBarBottom = 0;   // the top cluster starts under the spectate bar while dead
     function drawBossBar(x, y, W, a) {
@@ -7993,6 +8285,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             const x = global.screenWidth - HUD.edge - W, y0 = HUD.edge;
             const bottom = crowns.drawTracker(ctx[2], x, y0, W);
             standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: bottom - y0 + 16 };
+            pointsRuleTip(x, y0, W, bottom - y0);
             return bottom;
         }
         const board = r.board || [];
@@ -8001,7 +8294,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const x = global.screenWidth - HUD.edge - W, y0 = HUD.edge;
         const myPlace = r.place | 0;
         const top = board.slice(0, 3);
-        const me = myPlace > 3 ? board.find(row => row.place === myPlace) : null;
+        const me = myPlace > 3 ? board.find(row => !row.bot && row.place === myPlace) : null;
         const rows = me ? top.concat([me]) : top;
         const H = 32 + rows.length * rowH + (myPlace > 1 ? 18 : 6);
         standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: H + 16 };
@@ -8010,15 +8303,20 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         c.fillStyle = "rgba(18,14,21,0.55)";
         c.fillRect(x + 10, y0 + 27, W - 20, 2);
         hudTitle("Standings", x + 12, y0 + 15, 14, HUD.head, "left");
-        hudTitle("PTS", x + W - 12, y0 + 15, 11, HUD.text2, "right");
+        // "PTS (?)": hover the panel for how points add up (scoreLogic.js)
+        drawRuleDot(c, x + W - 19, y0 + 15);
+        hudTitle("PTS", x + W - 30, y0 + 15, 11, HUD.text2, "right");
+        pointsRuleTip(x, y0, W, H);
         const myHex = playerHexCol() || color.gold;
         // rank badges sit between place and name; the column only opens when
         // someone on the board has one, so names stay aligned either way
-        const codeOf = (row) => row.place === myPlace && myPlace > 0 ? nameBadgeCode(myRankCode() || row.rk, true) : nameBadgeCode(row.rk, false);
+        // a bot is never you, even if a stale place lines up with its row)
+        const mineRow = (row) => !row.bot && row.place === myPlace && myPlace > 0;
+        const codeOf = (row) => mineRow(row) ? nameBadgeCode(myRankCode() || row.rk, true) : nameBadgeCode(row.rk, false);
         const rkCol = rows.some(row => codeOf(row)) ? 18 : 0;
         let ry = y0 + 32;
         for (const row of rows) {
-            const isMe = row.place === myPlace && myPlace > 0;
+            const isMe = mineRow(row);
             // your row: only the name changes colour, no band behind it
             const nameCol = isMe ? myHex : color.guiwhite;
             const rankCol = row.place === 1 ? HUD.gold : row.place === 2 ? "#d8dce6" : row.place === 3 ? "#d98a4e" : HUD.text2;
@@ -8053,6 +8351,23 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         return y0 + H;
     }
 
+    // How points add up, on hover over the standings (desktop)
+    function drawRuleDot(c, cx, cy) {
+        c.save();
+        c.beginPath(); c.arc(cx, cy, 6.5, 0, Math.PI * 2);
+        c.fillStyle = "rgba(14,11,18,0.6)"; c.fill();
+        c.lineWidth = 1.5; c.strokeStyle = HUD.text2; c.stroke();
+        c.restore();
+        drawText("?", cx, cy + 0.5, 9.5, HUD.text2, "center", true);
+    }
+    function pointsRuleTip(x, y, w, h) {
+        if (global.mobile || !global.canvas || global.died) return;
+        const cr = global.canvas.height / global.screenHeight / global.ratio;
+        const mx = global.mouse.x / cr, my = global.mouse.y / cr;
+        if (mx >= x && mx <= x + w && my >= y && my <= y + h) queueTip(scoreText.RULE, scoreText.RULE_BODY, x + w / 2, y + h, false);
+    }
+    window.dwPointsRule = () => ({ rule: scoreText.RULE, body: scoreText.RULE_BODY });
+
     // ── kill feed: one line, one badge at most, quiet ───────────────────
     function feedLine(f) {
         const myHex = playerHexCol(), myName = global.playerName || "";
@@ -8072,7 +8387,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             if (f.gone) return { text: nm + " burrowed away", badge: null };
             if (f.slain) return { text: tag(shortName(f.by || "The wall", 14), (myHex && (f.by || "") === myName) ? myHex : color.gold) + " took down " + nm, badge: f.pts ? { t: "+" + fmtNum(f.pts), col: color.gold } : null };
         }
-        if (f.chest) return { text: who(f.name, "Someone") + " cracked an epic chest", badge: null };
+        if (f.chest) return { text: who(f.name, "Someone") + " opened an epic chest", badge: null };
         if (f.bloom) return { text: "Ore bloom in " + (f.name || "the wall"), badge: null };
         if (f.event) return { text: f.kind === "meteor" ? "Meteor shower over " + (f.name || "the map")
             : f.kind === "supply" ? "Supply drop in " + (f.name || "the zone")
@@ -8219,17 +8534,17 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         overrideRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
         const c = ctx[2];
         if (L.modMin) {
-            // folded: "Override" and the name on one line
+            // folded: "Raid rule" and the name on one line (hover opens it)
             hudPanel(c, x, y, W, H, { alpha: 0.9 });
-            const lw = hudTextW("Override", 10.5);
-            drawText("Override", x + 10, y + H / 2, 10.5, HUD.text2, "left", true, 0.95);
+            const lw = hudTextW("Raid rule", 10.5);
+            drawText("Raid rule", x + 10, y + H / 2, 10.5, HUD.text2, "left", true, 0.95);
             const name = String(mod.name);
             let ns = 13; while (ns > 9.5 && hudTitleW(name, ns) > W - 28 - lw) ns -= 0.5;
             hudTitle(name, x + 18 + lw, y + H / 2, ns, HUD.copper, "left", 0.95);
             return;
         }
         hudPanel(c, x, y, W, H);
-        hudTitle("Raid override", x + 12, y + 14, 12, HUD.text2, "left");
+        hudTitle("Override (raid rule)", x + 12, y + 14, 12, HUD.text2, "left");
         const name = String(mod.name);
         let ns = 16; while (ns > 11 && hudTitleW(name, ns) > W - 24) ns -= 0.5;
         hudTitle(name, x + 12, y + 31, ns, HUD.copper, "left");
@@ -8425,22 +8740,12 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         else if (m.fight) { status = "Fighting"; stCol = HUD.gold; }
         else status = "";
         const stW = status ? hudTextW(status, 10.5) + 8 : 0;
-        // a bot teammate wears a small BOT tag after its name
-        const tagW = m.bot ? hudTextW("BOT", 8.5) + 10 : 0;
-        const nameRoom = W - 40 - stW - (tagW ? tagW + 6 : 0);
+        // every teammate reads as a player: no tag after the name
+        const nameRoom = W - 40 - stW;
         const nameSz = fitTitle(name, 15, 10, nameRoom);
         // still too long at the smallest size: trim it so the tag and status fit
         for (let n = name.length; hudTitleW(name, nameSz) > nameRoom && n > 4; n--) name = String(m.name || "Teammate").slice(0, n - 1) + "…";
         hudTitle(name, x + 28, y + 15, nameSz, col, "left");
-        if (m.bot) {
-            const tx = x + 28 + hudTitleW(name, nameSz) + 6;
-            c.save();
-            roundRectPath(c, tx, y + 8, tagW, 14, 5);
-            c.fillStyle = HUD.ink; c.fill();
-            c.lineWidth = 1.5; c.strokeStyle = col; c.globalAlpha = 0.9; c.stroke();
-            c.restore();
-            drawText("BOT", tx + tagW / 2, y + 15.5, 8.5, HUD.text2, "center", true);
-        }
         if (status) drawText(status, x + W - 12, y + 15, 10.5, stCol, "right", true);
         const bx = x + 12, bw = W - 24, bh = 10, by = y + 26;
         const hp = m.alive ? Math.max(0, Math.min(1, +m.hp || 0)) : 0;
@@ -8478,6 +8783,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         let top = Math.max(hudTopBottom || HUD.edge, evHud.toastFloor || 0);
         const cr = global.coachRect;
         if (cr && cr.y < H * 0.4) top = Math.max(top, cr.y + cr.h);
+        // upright phones: the HP / shield bars sit under the clock panel
+        if (global.mobile && vitalsRect && vitalsRect.y < H * 0.4 && global.screenHeight > global.screenWidth) top = Math.max(top, vitalsRect.y + vitalsRect.h);
         // a slam needs about 40 above its line and SLAM_DROP below; on a short
         // screen (a phone with the boss bar up) it shrinks to fit above the tank
         const room = H * 0.47 - top;
@@ -8493,7 +8800,10 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
     // a plate holds its place in the queue while the lanes overlap
     let plateWaitAt = 0;
     function platesWait(now) {
-        const wait = lanes.tight && raidHeat.slamUp() || (global.mobile && now - (global.kitCardAt || 0) < 150);
+        // the death card: plates wait for it to go, the newest two kept)
+        const card = deathCardUp();
+        if (card && global.callouts && global.callouts.length > 2) global.callouts.splice(0, global.callouts.length - 2);
+        const wait = lanes.tight && raidHeat.slamUp() || (global.mobile && now - (global.kitCardAt || 0) < 150) || global.introCardUp || global.introWait || card;
         const dt = wait && plateWaitAt ? now - plateWaitAt : 0;
         plateWaitAt = wait ? now : 0;
         return dt;
@@ -8855,8 +9165,9 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const barsTop = global.screenHeight - spacing - 5.5 - barH - (bars - 1) * (barH + vsp);
         const W = alcoveSize - 10, H = 118;
         const x = HUD.edge;
-        const y = barsTop - 30 - H + (1 - g) * 14;
-        kitBoxTop = barsTop - 30 - H;
+        // 42 clear above the bars: room for the counter row (Same stats / Random) between
+        const y = barsTop - 42 - H + (1 - g) * 14;
+        kitBoxTop = barsTop - 42 - H;
         const c = ctx[2];
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         const hov = global.clickables.kit.check({ x: global.mouse.x, y: global.mouse.y });
@@ -9000,6 +9311,9 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         queueTip: (t, b, x, y) => queueTip(t, b, x, y), newcomerStage: () => newcomer.stage(),
     });
     let perkAvoidSkip = false;
+    // QA: the perk row's room last frame
+    const perkLay = { bottom: 0, minTop: 0, left: 0, right: 0, blocked: false };
+    window.dwPerkLay = () => perkLay;
     function drawRaidPerks() {
         if (!royaleActive() || global.tutorialMode || global.royaleSpectating) return;
         const sw = global.screenWidth, sh = global.screenHeight;
@@ -9008,22 +9322,51 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         // the row's lower edge sits just above your name (the name and the
         // satchel pills take the bottom 112), its top under your tank
-        const bottom = wallet.y - 54;
-        const minTop = perkTankFloor(sh, (global.selfRFrac || 0) * sw);
+        let bottom = wallet.y - 54;
+        let minTop = perkTankFloor(sh, (global.selfRFrac || 0) * sw);
+        // round 8, touch: a landscape phone has no room under the tank for the desktop
+        const touchRow = !!global.mobile;
+        if (touchRow) {
+            bottom = wallet.y - 8;
+            minTop = Math.round(sh / 2 + Math.max(40, (global.selfRFrac || 0) * sw + 22));
+            // a grown hull on a phone: the row may cover its lower edge rather than never
+            minTop = Math.max(Math.round(sh / 2 + 24), Math.min(minTop, Math.floor(bottom - 94 - 34)));
+        }
         // the band left and right: clear of every other HUD piece it would touch
         let left = HUD.edge, right = sw - HUD.edge, blocked = false;
         perkAvoidSkip = true;
         let avoid = [];
         try { avoid = hudAvoidRects(); } finally { perkAvoidSkip = false; }
-        const band = { x: 0, y: Math.min(minTop, bottom - 120), w: sw, h: bottom - Math.min(minTop, bottom - 120) };
+        // round 8: a piece that only grazes the band's lower edge (the dash / ability
+        const want = 3 * raidPerks.CARD_W + 2 * 16;
+        if (!touchRow) for (const r of avoid) {
+            if (r.y >= bottom || r.y + r.h <= bottom - 40 || r.y < bottom - 40) continue;
+            if (r.x < sw / 2 + want / 2 && r.x + r.w > sw / 2 - want / 2 && r.y - 8 - minTop >= 94 + 34) bottom = Math.min(bottom, r.y - 8);
+        }
+        // touch: the name and wallet row's keep-out is the one the row may cover)
+        const bandBottom = touchRow ? Math.min(bottom, sh - 113) : bottom;
+        const band = { x: 0, y: Math.min(minTop, bottom - 120), w: sw, h: bandBottom - Math.min(minTop, bottom - 120) };
+        if (touchRow && touch.L && touch.L.dash && touch.L.ability) {
+            // the dash / ability thumb buttons on the right
+            const k = touchUnits(), L = touch.L;
+            right = Math.min(right, (Math.min(L.dash.x - L.dash.r, L.ability.x - L.ability.r) - 10) * k);
+        }
         for (const r of avoid) {
             if (!rectsOverlap(r, band)) continue;
+            // touch: the first-raid guide card steps aside for an offer (hudCardUp below)
+            if (touchRow && r === global.coachRect && raidPerks.offerUp()) continue;
             const mid = r.x + r.w / 2;
             if (r.x <= sw / 2 && r.x + r.w >= sw / 2) blocked = true;
             else if (mid < sw / 2) left = Math.max(left, r.x + r.w + 16);
             else right = Math.min(right, r.x - 16);
         }
-        if (right - left < 3 * 128 + 20 || bottom - minTop < 64 + 34) blocked = true;
+        // the build strip's own left limit: whatever sits at its height on the left (the
+        let stripLeft = HUD.edge + 8;
+        const sBand = { x: 0, y: wallet.y - 84, w: wallet.x, h: wallet.h + 90 };
+        for (const r of avoid) if (r.x + r.w / 2 < sw / 2 && r.x + r.w < wallet.x && rectsOverlap(r, sBand)) stripLeft = Math.max(stripLeft, r.x + r.w + 12);
+        // touch: clear of the move stick's "Drag to move" line at the bottom left
+        if (touchRow) stripLeft = Math.max(stripLeft, Math.round(sw * 0.26));
+        if (right - left < 3 * 184 + 32 || bottom - minTop < 94 + 34) blocked = true;
         // something else owns the middle: the shop or vault panel, the map,
         // the tank tree, a new item reveal, the sky drop
         const sp = global.shop;
@@ -9031,15 +9374,17 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             (global.kitUnlocks && global.kitUnlocks.length) || (raidHeat.landAt && raidHeat.landAt() > 0)) blocked = true;
         const you = global.royale && global.royale.you;
         raidPerks.drawHud(ctx[2], {
-            wallet, bottom, minTop, left, right, blocked,
+            wallet, bottom, minTop, left, right, blocked, stripLeft,
             score: you && you.score != null ? +you.score : +(global.royale && global.royale.youScore) || 0,
             stage: newcomer.known() ? newcomer.stage() : 3,
             mouse: global.mobile ? null : { x: global.mouse.x / cr, y: global.mouse.y / cr },
         });
+        perkLay.bottom = bottom; perkLay.minTop = minTop; perkLay.left = left; perkLay.right = right; perkLay.blocked = blocked;
         if (global.mobile) {
             // taps reach canvas.mouseDown like clicks (touch.js anyClickable)
             const k = touchUnits();
             const st = window.dwRaidPerks ? window.dwRaidPerks() : null;
+            if (st && st.view === "cards" && !global.hudCardUp) global.hudCardUp = "perk";
             const put = (id, r) => { if (r) touch.uiRects[id] = { x: r.x / k, y: r.y / k, w: r.w / k, h: r.h / k }; };
             if (st) {
                 (st.cards || []).forEach((r, i) => put("perk" + i, r));
@@ -9207,8 +9552,9 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         // the top under the clock, clear of both thumbs
         let x, y;
         if (global.mobile) {
-            x = (sw - W) / 2;
-            y = (hudTopBottom | 0) + 10;
+            // round 8: toward the left (the owner: the NEW ITEM / NEW ABILITY card should
+            x = Math.max(HUD.edge, 12);
+            y = Math.max((hudTopBottom | 0) + 10, 60 * touchUnits() + 8);
             // the plates (drawKillCallouts) wait while this card has the spot
             global.kitCardAt = now;
         } else {
@@ -9388,7 +9734,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         c.lineWidth = 1.5; c.strokeStyle = HUD.ink; c.stroke();
         c.restore();
         hudTitle(bankTxt, bx2 + bw2 - 12, by2 + bh2 / 2, 16, HUD.head, "right", g);
-        hudTitle("Banked", bx2 - 8, by2 + bh2 / 2, 12, HUD.text2, "right", g);
+        hudTitle(scoreText.BANK, bx2 - 8, by2 + bh2 / 2, 12, HUD.text2, "right", g);
         // close: the menu's little red button
         const cbs = 30;
         hudButton(c, x + W - 14 - cbs / 2, y + 11, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15, type: "shop", index: 41, cr, alpha: g });
@@ -9421,7 +9767,27 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const items = catalog.filter(it => it.cat === sh.tab);
         sh.tabItems = items;
         if (!sh.sel || !items.find(it => it.id === sh.sel)) sh.sel = items.length ? items[0].id : null;
-        const gridX = x + 20, gridY = tabY + tabH + 16, GAP = 10;
+        // nothing to spend yet: say how to get there, over the grid
+        let hintH = 0;
+        if (!global.tutorialMode) {
+            let cheapest = 0;
+            for (const it of catalog) if (it && it.price > 0 && (!cheapest || it.price < cheapest)) cheapest = it.price;
+            const hint = shopHint({ banked: global.gems.banked | 0, carried: global.gems.carried | 0, cheapest });
+            if (hint) {
+                hintH = 44;
+                const hx = x + 20, hy = tabY + tabH + 12, hw = W - 40;
+                c.save(); c.globalAlpha = g;
+                hudWell(c, hx, hy, hw, 38, 10, HUD.wellSolid, HUD.gold, 2);
+                gemPath(c, hx + 20, hy + 19, 8);
+                c.fillStyle = HUD.gold; c.fill();
+                c.lineWidth = 1.5; c.strokeStyle = HUD.ink; c.stroke();
+                c.restore();
+                hudTitle(hint.title, hx + 36, hy + 12, 13, HUD.gold, "left", g);
+                let hs = 11.5; while (hs > 9 && hudTextW(hint.text, hs) > hw - 48) hs -= 0.5;
+                drawText(hint.text, hx + 36, hy + 28, hs, HUD.text, "left", true, g);
+            }
+        }
+        const gridX = x + 20, gridY = tabY + tabH + 16 + hintH, GAP = 10;
         const detailW = 240;
         const gridW = W - 40 - detailW - 14;
         // every item in the tab must fit: cards shrink, and a third column
@@ -9615,9 +9981,17 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 if (d > 120) drawContractRing(c, s.x, s.y, rr, now);
             } else marks.push({ pri: -1, s, col: HUD.gold, glyph: "contract", name: CONTRACT_LABEL[ob.k] || "CONTRACT", d });
         }
+        // round 9: the rich vein ping (socketinit FX veinping)
+        const vp = global.veinPing;
+        if (vp && now < vp.until) {
+            const s = toScreen(vp.x, vp.y);
+            const d = Math.hypot(vp.x - me.x, vp.y - me.y);
+            if (d < 220) global.veinPing = null;
+            else if (!onScreen(s, -30)) marks.push({ pri: 0, s, col: "#7fe3ff", glyph: "gem", name: "RICH VEIN", d });
+        }
         // revenge: your last killer, when it's not already the contract target
         const rv = r.you && r.you.revenge;
-        if (rv && rv.alive && rv.e !== contractE && isFinite(rv.x) && nxShows("revenge")) {
+        if (rv && rv.alive && !rv.tough && rv.e !== contractE && isFinite(rv.x) && nxShows("revenge")) {
             const p = trackPos("revenge", rv.x, rv.y, 0.8);
             const s = toScreen(p.x, p.y);
             const d = Math.hypot(p.x - me.x, p.y - me.y);
@@ -10092,23 +10466,31 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
     const SHIELD_GRACE_MS = 5000;
     const WIND_SHIELD_MS = 10000;   // shop.js WIND_SHIELD_MS
     let shieldOnPrev = false;
+    // VU 2 (socketinit) marks the post-bank vault shield, labelled apart from the
+    const VAULT_SHIELD_MS = 3000;   // vault.js POST_BANK_SHIELD_MS
+    function vaultShieldNow() {
+        const at = global.vaultShieldAt || 0;
+        return at > (global.spawnedAt || 0) && performance.now() - at < VAULT_SHIELD_MS + 1500;
+    }
     function drawSpawnShield(c, x, y, R, invuln) {
         const on = !!invuln;
-        if (shieldOnPrev && !on && global.spawnedAt && performance.now() - global.spawnedAt < 120000) {
-            try { global.createMessage("Shield's gone. You can be hit now.", 3000); } catch { /* */ }
+        if (shieldOnPrev && !on && (vaultShieldNow() || (global.spawnedAt && performance.now() - global.spawnedAt < 120000))) {
+            try { global.createMessage(vaultShieldNow() ? "Vault shield's gone. You can be hit now." : "Shield's gone. You can be hit now.", 3000); } catch { /* */ }
         }
         shieldOnPrev = on;
         if (!on) return;
+        const vs = vaultShieldNow();
         global.shieldSeen = true;
         const now = performance.now();
         const pulse = 0.5 + 0.5 * Math.sin(now / 180);
         c.save();
         c.globalAlpha = 0.18 + 0.1 * pulse;
-        c.fillStyle = "#7fe3ff";
+        // the vault shield is gold, the spawn shield cyan
+        c.fillStyle = vs ? "#ffd166" : "#7fe3ff";
         c.beginPath(); c.arc(x, y, R * 1.55, 0, Math.PI * 2); c.fill();
         c.globalAlpha = 0.75;
         c.lineWidth = Math.max(2, R * 0.09);
-        c.strokeStyle = "#bff2ff";
+        c.strokeStyle = vs ? "#ffe9a8" : "#bff2ff";
         c.setLineDash([R * 0.35, R * 0.22]);
         c.lineDashOffset = -now / 40;
         c.beginPath(); c.arc(x, y, R * 1.55, 0, Math.PI * 2); c.stroke();
@@ -10116,6 +10498,15 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
     }
     function drawSpawnShieldHint() {
         if (global.died || !global.shieldSeen || !shieldOnPrev || raidFinale.active()) return;
+        if (vaultShieldNow()) {
+            const vl = Math.max(1, Math.ceil((VAULT_SHIELD_MS - (performance.now() - global.vaultShieldAt)) / 1000));
+            const vline = "Vault shield: safe for " + vl + "s, shooting drops it";
+            const vy = global.mobile ? Math.round(global.screenHeight * 0.75) : global.screenHeight / 2 + 150, vsz = 13;
+            const vw = measureText(vline, vsz) + 26, vh = vsz + 13;
+            hudPanel(ctx[2], global.screenWidth / 2 - vw / 2, vy - vh / 2, vw, vh, { alpha: 0.9, r: vh / 2, bevel: false });
+            drawText(vline, global.screenWidth / 2, vy, vsz, "#ffe9a8", "center", true);
+            return;
+        }
         const since = performance.now() - (global.spawnedAt || 0);
         // a few seconds to read it, then the first-raid card (which says to
         // move) gets the spot instead; the shield ring on the tank stays
@@ -11084,7 +11475,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             }
             // Revenge mark: red diamond + pulse ring, tracking live.
             const revm = (rr.you && rr.you.revenge) || null;
-            if (revm && revm.alive && isFinite(revm.x) && isFinite(revm.y)) {
+            if (revm && revm.alive && !revm.tough && isFinite(revm.x) && isFinite(revm.y)) {
                 const mx = T.X(revm.x), my = T.Y(revm.y);
                 if (inside(mx, my)) {
                     const s2 = dotR * 2.4;
@@ -11455,12 +11846,12 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 ? ((global.royale.board || []).filter(r => r.alive || r.here)).map((r, i) => ({
                     num: (i + 1) + ".", name: r.name || "Unnamed", rk: r.rk | 0, ns: r.ns | 0, nc: r.nc,
                     extra: !r.alive ? "respawning" : (r.kills | 0) ? ((r.kills | 0) + " kills") : "alive",
-                    me: r.id === gui.playerid || (r.place > 0 && r.place === (global.royale.place | 0)),
+                    me: r.id === gui.playerid || (!r.bot && r.place > 0 && r.place === (global.royale.place | 0)),
                 }))
                 : royaleBoardRows().map((r, i) => ({
                     num: (i + 1) + ".", name: r.name || "Unnamed", rk: r.rk | 0, ns: r.ns | 0, nc: r.nc,
                     extra: util.formatLargeNumber(r.score || r.gems | 0) + " pts  " + (r.kills | 0) + " kills",
-                    me: r.id === gui.playerid || (r.place > 0 && r.place === (global.royale.place | 0)),
+                    me: r.id === gui.playerid || (!r.bot && r.place > 0 && r.place === (global.royale.place | 0)),
                 }));
         if (!rows.length) {
             drawText(tab === "alive" ? "Nobody is alive" : "Nobody here yet", x + w / 2, y + h / 2, 16, color.guiwhite, "center");
@@ -11469,7 +11860,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const rowH = 28;
         let headH = 0;
         if (tab === "standings") {
-            drawText("PTS = banked + 200 per kill + 50% carried", x + 18, y + 16, 12, HUD.text2, "left");
+            drawText(scoreText.RULE + ". Banked gems are safe.", x + 18, y + 16, 12, HUD.text2, "left");
             headH = 22;
         }
         const meHex = playerHexCol() || color.gold;
@@ -11535,10 +11926,10 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 const my = global.screenHeight - len - HUD.edge - HUD.lip;
                 drawFortniteMinimap(mx, my, len);
                 hudDrawn.minimap = { x: mx, y: my, w: len, h: len };
-                // map key as a keycap in the corner the round map leaves free
+                // map key as a keycap beside the round map, level with its bottom and clear of
                 const keyName = keyLabel("KEY_TOGGLE_MAP", "M");
                 const kh = 20, kw0 = Math.max(kh, hudTitleW(keyName, kh * 0.62) + kh * 0.55);
-                const kx = Math.round(mx + len * 0.5 - len * 0.5 * Math.SQRT1_2 - kw0 * 0.5), ky = Math.round(my + len * 0.5 + len * 0.5 * Math.SQRT1_2 - kh * 0.5);
+                const kx = Math.round(mx - 8 - kw0), ky = Math.round(my + len - kh);
                 hudKey(ctx[2], kx, ky, keyName, kh);
                 hudTitle("Map", kx - 5, ky + (kh - 2.5) / 2, 13, HUD.head, "right");
             } else if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0) {
@@ -11735,6 +12126,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         } else if (royaleActive() || global.mobile) {
             // raid: one quiet line over the map, the rest lives behind debug
             // (touch: under it, the map is at the top)
+            drawVitals();
             const mm = hudDrawn.minimap;
             const ly = mm ? (global.mobile ? mm.y + mm.h + 4 : mm.y - 8) : y - 50;
             const slow = global.metrics.rendertime < 30 ? "§" + color.orange + "§" : "";
@@ -11745,6 +12137,51 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             drawText(ping.toFixed(1) + " ms / " + global.serverStats.serverGamemodeName + " " + global.locationHash, x + len, y - 50, 10, color.guiwhite, "right");
         }
     }
+
+    // ── HP and shield, Fortnite style (round 8) ────────────────────────
+    // Two bars over the minimap and its FPS line (touch: under them, the map is top
+    const VITAL_W = { hpTxt: "", hp: -1, hpMax: -1, shTxt: "", sh: -1, shMax: -1 };
+    const HP_COLS = [];
+    for (let i = 0; i <= 20; i++) {
+        // red (0) -> amber (0.5) -> green (1)
+        const f = i / 20, a = [224, 71, 59], b = [242, 184, 60], g = [79, 207, 92];
+        const p = f < 0.5 ? a : b, q = f < 0.5 ? b : g, k = f < 0.5 ? f * 2 : (f - 0.5) * 2;
+        HP_COLS.push("rgb(" + Math.round(p[0] + (q[0] - p[0]) * k) + "," + Math.round(p[1] + (q[1] - p[1]) * k) + "," + Math.round(p[2] + (q[2] - p[2]) * k) + ")");
+    }
+    const SHIELD_COL = "#5cb8ff";
+    var vitalsRect = null;
+    function drawVitals() {
+        vitalsRect = null;
+        const mm = hudDrawn.minimap, me = global.selfEnt;
+        if (!mm || !me || !royaleActive() || global.tutorialMode || global.died || global.royaleSpectating || global.showBigMap || raidFinale.active()) return;
+        if (me.id !== gui.playerid || !(me.maxHealthN > 0)) return;
+        const c = ctx[2];
+        const hpMax = me.maxHealthN | 0, hp = Math.max(0, Math.min(hpMax, Math.round((me.health || 0) * hpMax)));
+        const you = global.royale && global.royale.you;
+        const shMax = you && you.shm > 0 ? you.shm | 0 : 0;
+        const sh = shMax ? Math.max(0, Math.min(shMax, Math.round((me.shield || 0) * shMax))) : 0;
+        const V = VITAL_W;
+        if (hp !== V.hp || hpMax !== V.hpMax) { V.hp = hp; V.hpMax = hpMax; V.hpTxt = "HP " + fmtNum(hp) + " / " + fmtNum(hpMax); }
+        if (sh !== V.sh || shMax !== V.shMax) { V.sh = sh; V.shMax = shMax; V.shTxt = "Shield " + fmtNum(sh) + " / " + fmtNum(shMax); }
+        const w = mm.w, x = mm.x;
+        const hH = global.mobile ? 15 : 17, sH = global.mobile ? 13 : 14, gap = 4;
+        const total = (shMax ? sH + gap : 0) + hH;
+        // desktop: above the FPS line (which sits 8 over the map)
+        let y0 = global.mobile ? mm.y + mm.h + 18 : mm.y - 22 - total;
+        if (global.mobile && global.screenHeight > global.screenWidth) y0 = Math.max(y0, (hudTopBottom | 0) + 8);
+        const hf = me.render && me.render.health ? me.render.health.get() : me.health;
+        const sf = me.render && me.render.shield ? me.render.shield.get() : me.shield;
+        let y = y0;
+        if (shMax) {
+            hudBar(c, x, y, w, sH, sf, SHIELD_COL);
+            drawText(V.shTxt, x + w / 2, y + sH / 2, sH - 4, HUD.head, "center", true, 1);
+            y += sH + gap;
+        }
+        hudBar(c, x, y, w, hH, hf, HP_COLS[Math.max(0, Math.min(20, Math.round((me.health || 0) * 20)))]);
+        drawText(V.hpTxt, x + w / 2, y + hH / 2, hH - 5, HUD.head, "center", true, 1);
+        vitalsRect = { x: x - 4, y: y0 - 4, w: w + 8, h: total + 8 };
+    }
+    window.dwVitals = () => ({ rect: vitalsRect, hp: VITAL_W.hpTxt, sh: VITAL_W.shTxt });
 
     function drawLeaderboard(spacing, alcoveSize, max) {
 
@@ -11854,8 +12291,16 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
 
     function drawAvailableUpgrades(spacing, alcoveSize) {
 
+        global.clickables.lastTank.hide();
         if (global.optionsMenu_Anim.isOpened) global.clickables.upgrade.hide();
         global.upgradeBoxBottom = 0;
+        // the first seconds of a first raid: the tiles glide in a few seconds after
+        if (gui.upgrades.length > 0 && !firstSeconds.shows("tiles")) {
+            global.canUpgrade = false;
+            global.clickables.upgrade.hide();
+            global.clickables.skipUpgrades.hide();
+            return;
+        }
         if (gui.upgrades.length > 0) {
             let internalSpacing = 15;
             let len = alcoveSize / 2;
@@ -11998,6 +12443,14 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 m = hudTitleW(msg, 13) + 24,
                 buttonX = tp ? tp.x + tp.w / 2 : initialX + (rowWidth + len - initialX) / 2,
                 buttonY = initialY + height + internalSpacing - 5;
+            // round 9: "Last tank: <Tank>" right next to it while you're below the tank you
+            const ltLab = buildBtnLabels.lastTank(global.royale && global.royale.you, global.tutorialMode);
+            const ltW = ltLab ? hudTitleW(ltLab, 13) + 24 : 0;
+            if (ltLab) {
+                const lx = buttonX - (m + 8 + ltW) / 2;
+                buttonX = lx + m / 2;
+                hudButton(ctx[2], lx + m + 8 + ltW / 2, buttonY, ltW, h, ltLab, { size: 13, type: "lastTank", index: 0, cr: clickableRatio, fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff" });
+            }
             // the quest card sits below this edge while the tiles are on screen
             if (glide > -0.5 && !tp) {
                 global.upgradeBoxBottom = buttonY + h + 2.5 + 6;
@@ -12493,6 +12946,11 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         hudButton(c, px + W - 10 - cbs / 2, py + 5, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15 });
         touch.zones.statsClose = { x: (px + W - 10 - cbs) / k - 6, y: (py + 5) / k - 6, w: cbs / k + 12, h: cbs / k + 12, tap: () => { touchStats.open = false; } };
         const cr = global.canvas.height / global.screenHeight / global.ratio;
+        // round 9: Same stats / Random in the header, left of the close button
+        {
+            const sb = buildBtnLabels.statButtons(global.royale && global.royale.you, pts, global.died, global.tutorialMode);
+            if (sb.length && royaleActive()) drawStatBuildButtons(sb, px + W - 10 - cbs - 8, py + 21, px + 70 + measureText(pts + " points to spend", 11), cr);
+        }
         for (let n = 0; n < cells.length; n++) {
             const { sk, statIdx, name } = cells[n];
             const cx = px + 10 + (n % cols) * (cellW + gap), cy = py + 50 + ((n / cols) | 0) * (cellH + gap);
@@ -12876,6 +13334,10 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 c.fill(); c.stroke();
                 break;
             }
+            case "crown": {
+                try { crowns.drawCrownIcon(c, x, y, s * 0.95, "gold", a); } catch (e) { /* */ }
+                break;
+            }
             case "pulse": { 
                 c.beginPath();
                 c.moveTo(x - s * 0.5, y);
@@ -13152,6 +13614,10 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const tipLines = wrapLines(info.tip, 17, iw - 70).slice(0, 3);
         const TIP_H = Math.max(64, 26 + tipLines.length * 23);
         const KEPT_H = 44;
+        // the Points line, every death (playtest 5: the first two cards had none, later
+        const you = (global.royale && global.royale.you) || {};
+        const dln = scoreText.deathLine(you, global.finalCarried | 0);
+        const PTS_H = 26;
         // raid perks: they come back with you, said under what you kept
         const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
         const PERK_H = perkLine ? 26 : 0;
@@ -13162,7 +13628,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const PLAY_CSS_H = 74;
         const FOOT = Math.round(PLAY_CSS_H * cssK);
         const HEAD = 44;
-        const H = pad + HEAD + TIP_H + gap + KEPT_H + PERK_H + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 14;
+        const H = pad + HEAD + TIP_H + gap + KEPT_H + PTS_H + PERK_H + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 14;
         const BTN = Math.round((40 + 22) * cssK);
         const px = Math.round(sw / 2 - W / 2);
         const py = Math.round(Math.max(12, sh - H - BTN - 12));
@@ -13173,6 +13639,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             top: Math.round((py + H) * window.innerHeight / Math.max(1, sh)) + 10,
         };
         hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
+        drawPtsPops(px + W - 16, Math.max(14, py - 16), "right", -1);
         const hx = px + pad;
         let y = py + pad;
         hudTitle("You died", cx, y + 16, 30, HUD.gold, "center", A);
@@ -13196,8 +13663,10 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         c.restore();
         const kf = fitLine(info.kept, 15, 10, iw - 54);
         drawText(kf.txt, hx + 40, y + KEPT_H / 2, kf.qs, HUD.gold, "left", true, A);
-        if (perkLine) drawDeathPerkLine(c, perkLine, cx, y + KEPT_H + PERK_H / 2 + 4, iw, A);
-        y += KEPT_H + PERK_H + gap;
+        const pf = fitLine(dln.head + " (" + dln.lost + ")", 14, 9.5, iw);
+        drawText(pf.txt, cx, y + KEPT_H + PTS_H / 2 + 2, pf.qs, dln.hurt ? "#ff9a8c" : HUD.gold, "center", true, A);
+        if (perkLine) drawDeathPerkLine(c, perkLine, cx, y + KEPT_H + PTS_H + PERK_H / 2 + 4, iw, A);
+        y += KEPT_H + PTS_H + PERK_H + gap;
         if (hasRank) {
             try {
                 rankPanel.draw(c, hx, y, iw, RANK_H,
@@ -13230,40 +13699,71 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const you = global.royale.you || {};
         const rv = you.revenge || null;
         const c = ctx[2];
-        const sw = global.screenWidth, sh = global.screenHeight;
         clearScreen(color.black, 0.34 * A, c);
 
-        // ── layout ──
-        const W = Math.min(1040, sw - 32);
-        const pad = 20, gap = 14;
-        const two = W >= 820;
-        const colW = two ? Math.floor((W - pad * 2 - gap) / 2) : W - pad * 2;
-        const hasRank = rankPanel.hasContent();
-        // canvas units per CSS px: the Play again button is DOM, sized in px
-        const cssK = sh / Math.max(1, window.innerHeight);
-        const PLAY_CSS_H = 58;
-        const HEAD = 62, STEP = 46, TILE = 40, NEXT_H = 40, RANK_H = 106, FOOT = Math.round(PLAY_CSS_H * cssK);
+        // ── the words under the tiles (they size the card, deathCardLogic) ──
+        const extras = [];
+        if ((global.finalInsured | 0) > 0) extras.push("Your insurance saved " + util.formatLargeNumber(global.finalInsured | 0) + " of it");
+        if ((global.finalStreak | 0) >= 3) extras.push("Your " + (global.finalStreak | 0) + " kill streak is over");
+        if (global.finalDrillLost) extras.push("Your drill dropped a tier");
+        // bank.js: only savings from earlier raids pay for a death "Points: 6,942 (lost
+        const dln = scoreText.deathLine(you, global.finalCarried | 0, global.finalBankLoss | 0);
+        if (dln.savings) extras.push(dln.savings);
         // raid perks: one more line under the stats, with your build's icons
         // (not when it was the raid ending that took everyone down)
         const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
-        const PERK_H = perkLine ? 24 : 0;
-        const leftH = 3 * STEP - (STEP - TILE) + 26 + PERK_H;
-        const whoH = two ? leftH - 10 - NEXT_H : 74;
-        const bodyH = two ? leftH : leftH + gap + whoH + 10 + NEXT_H;
-        const H = pad + HEAD + gap + bodyH + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 12;
-        // the DOM buttons (Spectate, Home) sit under the card
-        const BTN = Math.round((40 + 22) * cssK);
+        const perkIcons = perkLine ? Math.min(10, raidPerks.build().length) : 0;
+        const hasRank = rankPanel.hasContent();
+        const HEAD = 62, STEP = 46, TILE = 40, NEXT_H = 40, RANK_H = 106, PLAY_CSS_H = 58;
+        const pad = 20, gap = 14;
+        // ── layout ── (in card units; a card taller than the screen is drawn
+        // scaled down by k, and sw/sh are the screen in card units)
+        const cardLayout = (sw, sh) => {
+            const W = Math.min(1040, sw - 32);
+            const two = W >= 820;
+            const colW = two ? Math.floor((W - pad * 2 - gap) / 2) : W - pad * 2;
+            // canvas units per CSS px: the Play again button is DOM, sized in px
+            const cssK = sh / Math.max(1, window.innerHeight);
+            const FOOT = Math.round(PLAY_CSS_H * cssK);
+            const block = deathText.layoutText({
+                pts: dln.head + " (" + dln.lost + ")", extras,
+                sub: dln.sub || "Banked gems are safe points. Carried gems count once banked.",
+                perkLine, perkIcons, w: colW, measure: hudTextW,
+            });
+            const tilesH = 3 * STEP - (STEP - TILE);
+            const leftH = tilesH + block.h;
+            // the right column: who got you (at least 74 tall), then what's next
+            const whoH = two ? Math.max(74, leftH - 10 - NEXT_H) : 74;
+            const bodyH = two ? Math.max(leftH, whoH + 10 + NEXT_H) : leftH + gap + whoH + 10 + NEXT_H;
+            const H = pad + HEAD + gap + bodyH + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 12;
+            // the DOM buttons (Spectate, Home) sit under the card
+            const BTN = Math.round((40 + 22) * cssK);
+            return { W, two, colW, cssK, FOOT, block, tilesH, leftH, whoH, bodyH, H, BTN };
+        };
+        const SW = global.screenWidth, SH = global.screenHeight;
+        let k = 1, Lc = cardLayout(SW, SH);
+        for (let it = 0; it < 4; it++) {
+            const room = SH / k, need = Lc.H + Lc.BTN + 24;
+            if (need <= room + 0.5) break;
+            k = Math.max(0.62, k * room / need);
+            Lc = cardLayout(SW / k, SH / k);
+        }
+        const sw = SW / k, sh = SH / k;
+        const { W, two, colW, cssK, FOOT, block, tilesH, leftH, whoH, bodyH, H, BTN } = Lc;
         const px = Math.round(sw / 2 - W / 2);
         const py = Math.round(Math.max(12, sh - H - BTN - 12));
         const cx = sw / 2;
         // the killer sits in the middle of the room above the card
-        global.deathCamLift = Math.max(0, sh / 2 - Math.max(110, py / 2 + 10));
+        global.deathCamLift = Math.max(0, sh / 2 - Math.max(110, py / 2 + 10)) * k;
         global.deathPanelCss = {
             cx: Math.round(cx * window.innerWidth / Math.max(1, sw)),
             top: Math.round((py + H) * window.innerHeight / Math.max(1, sh)) + 10,
         };
+        if (k !== 1) { c.save(); c.scale(k, k); }
 
         hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
+        // points that move while you're down say why, over the card
+        drawPtsPops(px + W - 16, Math.max(14, py - 16), "right", -1);
 
         // ── header: what happened, and where you stand ──
         const hx = px + pad, hy = py + pad, hw = W - pad * 2;
@@ -13281,28 +13781,31 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 ? "Taken down by " + global.finalKillers.join(" and ")
                 : "Nobody finished you off";
         const place = (you.place || global.royale.place) | 0;
-        const score = (you.score != null ? you.score : global.royale.youScore) | 0;
+        // one number for the header and the "Points: X" line (scoreLogic cardPoints): the
+        const score = you.score != null || you.pts ? scoreText.cardPoints(you) : (global.royale.youScore | 0);
         const placeTxt = place > 0 ? "#" + place : "";
         const placeW = placeTxt ? hudTitleW(placeTxt, 28) : 0;
         const scoreTxt = util.formatLargeNumber(Math.round(score));
         const scoreR = hx + hw - 16 - (placeW ? placeW + 22 : 0);
-        const scoreW = Math.max(hudTitleW(scoreTxt, 26), hudTextW("RAID SCORE", 11));
+        const scoreW = Math.max(hudTitleW(scoreTxt, 26), hudTextW("POINTS", 11));
         hudTitle("You died", hx + 16, hy + 26, 28, HUD.gold, "left", A);
         const kb = fitLine(killedBy, 13, 10, Math.max(120, scoreR - scoreW - 30 - (hx + 16)));
         drawText(kb.txt, hx + 16, hy + 47, kb.qs, HUD.text, "left", true, A);
-        drawText("RAID SCORE", scoreR, hy + 18, 11, HUD.text2, "right", true, A);
+        drawText("POINTS", scoreR, hy + 18, 11, HUD.text2, "right", true, A);
         hudTitle(scoreTxt, scoreR, hy + 42, 26, HUD.gold, "right", A);
         if (placeTxt) hudTitle(placeTxt, hx + hw - 16, hy + 34, 28, HUD.head, "right", A);
 
         // ── left: the life in numbers ──
         const by = hy + HEAD + gap;
         const half = (colW - 8) / 2;
+        // the points, split the way the standings add them up (scoreLogic.js): banked
+        const pt = scoreText.tiles(you);
         const rows = [
-            ["BANKED (KEPT)", util.formatLargeNumber((you.banked != null ? you.banked : global.finalBanked) | 0), "gem"],
-            ["SATCHEL LOST", util.formatLargeNumber(global.finalCarried | 0), "gem"],
-            ["KILLS", String((you.kills != null ? you.kills : global.finalKillCount) | 0), "combat"],
-            ["CARRIED (50% PTS)", util.formatLargeNumber((you.carried != null ? you.carried : 0) | 0), "gem"],
-            ["ROCKS MINED", String(global.finalRocks | 0), "pickaxe"],
+            pt[0],
+            pt[1],
+            pt[2],
+            ["DROPPED (NOT PTS)", util.formatLargeNumber(global.finalCarried | 0), "gem"],
+            ["KILLS", String((you.kills != null ? you.kills : global.finalKillCount) | 0), "skull"],
             ["SURVIVED", compactTime(global.finalLifeSecs || 0), "clock"],
         ];
         c.save();
@@ -13311,13 +13814,20 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             deathStat(rows[i][0], rows[i][1], rows[i][2], hx + (i % 2) * (half + 8), by + ((i / 2) | 0) * STEP, half, A);
         }
         c.restore();
-        const extras = [];
-        if ((global.finalInsured | 0) > 0) extras.push("Your insurance saved " + util.formatLargeNumber(global.finalInsured | 0) + " of it");
-        if ((global.finalStreak | 0) >= 3) extras.push("Your " + (global.finalStreak | 0) + " kill streak is over");
-        if (global.finalDrillLost) extras.push("Your drill dropped a tier");
-        const ex = fitLine(extras.length ? extras.join(". ") + "." : "You dropped what you were carrying. Your bank is safe.", 12, 9, colW);
-        drawText(ex.txt, hx + colW / 2, by + 3 * STEP + 8, ex.qs, extras.length ? color.gold : HUD.text2, "center", true, A);
-        if (perkLine) drawDeathPerkLine(c, perkLine, hx + colW / 2, by + 3 * STEP + 8 + PERK_H, colW, A);
+        // the Points line, the extras and the perks row, laid out to fit (wrapped, never
+        const ty0 = by + tilesH, lx = hx + colW / 2;
+        for (const r of block.rows) {
+            const ry = ty0 + r.y;
+            if (r.kind === "pts") drawText(r.text, lx, ry, r.size, dln.hurt ? "#ff9a8c" : HUD.gold, "center", true, A);
+            else if (r.kind === "ex") drawText(r.text, lx, ry, r.size, color.gold, "center", true, A);
+            else if (r.kind === "sub") drawText(r.text, lx, ry, r.size, HUD.text2, "center", true, A);
+            else if (r.kind === "icons") raidPerks.drawDeathIcons(c, lx - r.iconsW / 2, ry, deathText.TEXT.icon, A);
+            else if (r.kind === "perk") {
+                const iw = r.iconsW || 0, x0 = lx - (iw + hudTextW(r.text, r.size)) / 2;
+                if (iw) raidPerks.drawDeathIcons(c, x0, ry, deathText.TEXT.icon, A);
+                drawText(r.text, x0 + iw, ry, r.size, HUD.gold, "left", true, A);
+            }
+        }
 
         // ── right: who got you (revenge), then what's next ──
         const rx = two ? hx + colW + gap : hx;
@@ -13329,11 +13839,12 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const wy = ry + whoH / 2;
         if (rv) {
             drawSkull(c, rx + 34, wy, 13, "#ff6b5e");
-            drawText("REVENGE", rx + 64, wy - 24, 11, HUD.text2, "left", true, A);
+            drawText(rv.tough ? "TOO STRONG FOR NOW" : "REVENGE", rx + 64, wy - 24, 11, HUD.text2, "left", true, A);
             const nm = shortName(rv.name || "Unnamed", 18);
             let ns = 24; while (ns > 14 && hudTitleW(nm, ns) > colW - 84) ns -= 1;
             hudTitle(nm, rx + 64, wy + 2, ns, "#ff9a8c", "left", A);
-            const sub = rv.alive ? "Marked for you. +" + fmtNum(rv.bonus || 200) + " gems if you get them." : "Marked for you once they're back.";
+            const sub = rv.tough ? "Way ahead of you. Mine, bank and grow, then pay them back."
+                : rv.alive ? "Marked for you. +" + fmtNum(rv.bonus || 200) + " gems if you get them." : "Marked for you once they're back.";
             const f = fitLine(sub, 12, 9.5, colW - 84);
             drawText(f.txt, rx + 64, wy + 25, f.qs, HUD.text, "left", true, A);
         } else {
@@ -13369,7 +13880,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         }
 
         // ── footer: the Play again button (DOM, placed here) ──
-        const playW = Math.min(W - pad * 2, Math.round(380 * cssK));
+        const playW = Math.min(W - pad * 2, Math.round((buildBtnLabels.respawnAs(you) ? 640 : 380) * cssK));
         const toCssX = window.innerWidth / Math.max(1, sw), toCssY = window.innerHeight / Math.max(1, sh);
         global.deathPlayCss = {
             cx: Math.round(cx * toCssX),
@@ -13381,8 +13892,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         global.clickables.royaleNext.hide();
         global.clickables.deathRespawn.hide();
         // DOM Play again / Spectate / Home take the clicks.
-        if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) { global.clickables.royalePlay.hide(); return; }
-        if (!global.disconnected) {
+        if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) global.clickables.royalePlay.hide();
+        else if (!global.disconnected) {
             const cr = global.canvas.height / global.screenHeight / global.ratio;
             const st = playAgainState();
             drawButton(cx, fy, playW, FOOT, st.ready ? A : A * 0.5, "rect", st.label, 22, false, false, false, st.ready, "royalePlay", cr, 0);
@@ -13391,23 +13902,49 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             drawButton(cx - 90, bty, 150, 32, A, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
             drawButton(cx + 90, bty, 150, 32, A, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
         }
+        if (k !== 1) c.restore();
     };
     // The death card's Play again button: its label, and whether it works yet.
     // respawn() (canvas.js) enforces the same rules; the server enforces the
     // 3 s wait on its own.
+    // queue: the button still takes a click (or Enter) while it waits, and that
     function playAgainState() {
         const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);
         const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
-        if (locked) return { ready: false, label: "No spawns while the storm shuts (" + Math.max(0, global.royale.lockLeft | 0) + "s)" };
+        const q = !!global.respawnQueued;
+        if (locked) {
+            const left = Math.max(0, global.royale.lockLeft | 0);
+            // the raid's last lock: nobody comes back, so the button says so and takes you to
+            if (global.royale.storm && global.royale.storm.fin) return { ready: false, ended: true, label: "Raid ending: no more respawns. Watch the finish" };
+            // short enough for the button (round 7: the old line spilled off both edges)
+            return { ready: false, queue: true, queued: q, label: q ? "Storm resetting: you drop in (" + left + "s)" : "Storm resetting (" + left + "s)" };
+        }
         if (global.respawnPending) return { ready: false, label: "Dropping in..." };
-        // the first raids' card says Respawn (newcomer.js)
-        const word = newcomer.deathCardWanted() ? "Respawn" : "Play again";
-        if (waitMs > 0 && word === "Respawn") return { ready: false, label: "Respawn in " + Math.ceil(waitMs / 1000) + "..." };
-        if (waitMs > 0) return { ready: false, label: "Play again in " + Math.ceil(waitMs / 1000) + "..." };
+        if (q && waitMs > 0) return { ready: false, queue: true, queued: true, label: "Respawning in " + Math.ceil(waitMs / 1000) + "..." };
+        // one word for it, every death of every raid: you drop back into the same raid
+        if (waitMs > 0) return { ready: false, queue: true, label: "Respawn in " + Math.ceil(waitMs / 1000) + "..." };
         if (global.updateHoldsRespawn) return { ready: false, label: "Updating the game..." };
-        if (word === "Respawn") return { ready: true, label: "Respawn" };
-        return { ready: true, label: "Play again" };
+        return { ready: true, label: "Respawn" };
     }
+    // The death card button's font: the CSS size, or smaller until the label fits
+    function playAgainFont(st, pc, keyTxt) {
+        const base = pc.big && st.ready ? 34 : st.ready ? 26 : 22;
+        const room = Math.max(60, (pc.w | 0) - 36 - (keyTxt ? 64 : 0)) * (st.ended ? 2 : 1);
+        const len = Math.max(1, String(st.label || "").length);
+        const fit = Math.floor(room / (len * 0.55));
+        return Math.max(12, Math.min(base, fit)) + "px";
+    }
+    window.dwPlayAgain = () => { const st = playAgainState(); return { label: st.label, ready: !!st.ready, ended: !!st.ended, font: global.deathPlayCss ? playAgainFont(st, global.deathPlayCss, "") : "" }; };
+    // A respawn asked for during the storm lock or the death wait (canvas respawn
+    function flushQueuedRespawn() {
+        if (!global.respawnQueued) return;
+        if (!global.died || global.disconnected || raidFinale.active()) { global.respawnQueued = false; return; }
+        const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);
+        if (locked || global.respawnPending || global.updateHoldsRespawn) return;
+        if (global.raidRespawnAt > 0 && performance.now() < global.raidRespawnAt) return;
+        try { if (global.canvas && global.canvas.respawn) global.canvas.respawn(); } catch (e) { /* */ }
+    }
+    window.dwRespawnQueued = () => !!global.respawnQueued;
     const drawRoyaleSpectateBar = () => {
         const sw = global.screenWidth;
         const barW = Math.min(620, sw - 40);
@@ -13429,8 +13966,10 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         const nextCx = x + 12 + bw * 1.5;
         const homeCx = x + barW - 6 - bw / 2;
         const playCx = x + barW - 12 - bw * 1.5;
-        const label = locked
-            ? ("Storm shuts " + lockLeft + "s" + (place > 0 ? ("  #" + place) : "") + "  ·  respawn after")
+        const finalLock = locked && !!(global.royale.storm && global.royale.storm.fin);
+        const label = finalLock ? "Raid ending: no more respawns. Watch the finish"
+            : locked
+            ? ("Storm shuts " + lockLeft + "s" + (place > 0 ? ("  #" + place) : "") + (global.respawnQueued ? "  ·  respawning when it settles" : "  ·  respawn after"))
             : queued ? "Dropping in..."
             : ("Spectating" + (place > 0 ? ("  #" + place) : "") +
                (global.died ? (waitMs > 0 ? ("  ·  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  ·  Press Play to rejoin") : ""));
@@ -13593,6 +14132,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         // the first raids (newcomer.js): reads last frame's big card first
         global._nxCardWas = global.hudCardUp;
         try { newcomer.tick(); } catch (e) { /* never break the frame */ }
+        try { firstSeconds.tick(); } catch (e) { /* never break the frame */ }
         // big center-screen cards this frame; coach.js waits while one is up
         global.hudCardUp = "";
         global.hudCalloutUp = false;
@@ -13622,6 +14162,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             hudLanes();
             drawKillCallouts();
             try { raidHeat.drawSlams(ctx[2], lanes.slamY, lanes.slamK); } catch (e) { /* */ }
+            global.hudSlamY = lanes.slamY;
+            try { firstSeconds.draw(ctx[2], lanes); } catch (e) { /* */ }
             if (global.royaleSpectating && !lastStormCount()) drawRoyaleSpectateBar();
             try { updateRoyaleDomButtons(); } catch { /* */ }
             drawRoyaleBoard();
@@ -13634,7 +14176,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             const finaleHud = raidFinale.hidesHud();
             if (global.GUIStatus.renderUpgrades && !finaleHud) drawSkillBars(spacing, alcoveSize);
             if (global.GUIStatus.renderPlayerBars && !finaleHud) {
-                drawSelfInfo(max);
+                // the death card covers the middle: your name and wallet row under it only leaked
+                if (!deathCardUp()) drawSelfInfo(max);
                 drawGemPopups();   // +N numbers + pickup ring over the tank
                 drawMineCombo();    // mining chain meter under the tank
                 drawKitBox(spacing, alcoveSize);
@@ -13744,6 +14287,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 cv && cv.socket && cv.socket.talk('RS', 1);
             } else if (kind === "spectate") {
                 global.royaleSpectating = true;
+                global.respawnQueued = false;
                 // duos: your partner first (3), else your killer (2)
                 cv && cv.socket && cv.socket.talk('RS', duoMateAlive() ? 3 : 2);
             } else if (kind === "play") {
@@ -13807,12 +14351,41 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         dead.append(sp, homeD, signup);
         document.body.appendChild(dead);
         // the death card's footer: big, green, counts the wait down first
-        const again = royaleDomBtn("royaleDomPlayAgain", "Play again");
+        const again = royaleDomBtn("royaleDomPlayAgain", "Respawn");
         again.classList.add("play");
         again.style.cssText = "position:fixed;z-index:31;display:none;transform:translateX(-50%);";
         again.innerHTML = '<span class="pa-label"></span><kbd class="pa-key"></kbd>';
-        again.onclick = () => { if (!again.disabled) { gameSound.uiClick(); royaleDomAct("play"); } };
+        // pointerdown, not click: a click needs the press and the release on the same
+        const againAct = () => {
+            if (again.disabled) return;
+            const t = performance.now();
+            if (t - (again._actAt || 0) < 400) return;
+            again._actAt = t;
+            gameSound.uiClick();
+            global.rbWantBuild = false;
+            royaleDomAct(again.dataset.ended ? "spectate" : "play");
+        };
+        // preventDefault: the press must not leave the focus on a button that hides on
+        again.addEventListener("pointerdown", (e) => { if (e.button === 0 || e.pointerType === "touch") { e.preventDefault(); againAct(); } });
+        again.onclick = againAct;
         document.body.appendChild(again);
+        // round 9: "Respawn as <Tank>" beside it (same tank and stats)
+        const asBuild = royaleDomBtn("royaleDomPlayBuild", "");
+        asBuild.classList.add("play", "build");
+        asBuild.style.cssText = "position:fixed;z-index:31;display:none;transform:translateX(-50%);flex-direction:column;justify-content:center;line-height:1.05;";
+        asBuild.innerHTML = '<span class="pb-label"></span><span class="pb-sub" style="font-size:0.5em;opacity:0.85;margin-top:3px"></span>';
+        const buildAct = () => {
+            if (asBuild.disabled) return;
+            const t = performance.now();
+            if (t - (asBuild._actAt || 0) < 400) return;
+            asBuild._actAt = t;
+            gameSound.uiClick();
+            global.rbWantBuild = true;
+            royaleDomAct("play");
+        };
+        asBuild.addEventListener("pointerdown", (e) => { if (e.button === 0 || e.pointerType === "touch") { e.preventDefault(); buildAct(); } });
+        asBuild.onclick = buildAct;
+        document.body.appendChild(asBuild);
         try { updateRoyaleDomButtons(); } catch { /* */ }
     }
     // Runs every frame: the DOM is only written when a value changes (a style
@@ -13827,10 +14400,12 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
         if (!spec || !dead) return;
         const inGame = !!(global.gameStart && !global.disconnected);
         const again = domEl("royaleDomPlayAgain");
+        const asBuild = domEl("royaleDomPlayBuild");
         if (raidFinale.active()) {
             setStyle(spec, "display", "none");
             setStyle(dead, "display", "none");
             setStyle(again, "display", "none");
+            setStyle(asBuild, "display", "none");
             return;
         }
         const countdown = lastStormCount();
@@ -13842,18 +14417,49 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             const pc = global.deathPlayCss;
             const show = deadShow && !!pc;
             setStyle(again, "display", show ? "inline-flex" : "none");
+            const st0 = show ? playAgainState() : null;
+            const ra = show && !st0.ended && !global.tutorialMode ? buildBtnLabels.respawnAs(global.royale && global.royale.you) : null;
+            if (asBuild) setStyle(asBuild, "display", ra ? "inline-flex" : "none");
             if (show) {
-                const st = playAgainState();
+                const st = st0;
+                // two buttons share the footer: Respawn (left) and Respawn as <Tank>
+                let pcA = pc;
+                if (ra && asBuild) {
+                    // Respawn as <Tank> is the bigger of the two (wider and a little taller, centred
+                    const gap = 12, wa = Math.round((pc.w - gap) * 0.4), wb = pc.w - gap - wa;
+                    const x0 = pc.cx - (wa + gap + wb) / 2, grow = 8;
+                    pcA = { cx: Math.round(x0 + wa / 2), top: pc.top, w: wa, h: pc.h, big: pc.big };
+                    const bfs = Math.max(12, Math.min(pc.big ? 26 : 22, Math.floor((wb - 28) / (Math.max(1, ra.label.length) * 0.55)))) + "px";
+                    const wantB = { left: Math.round(x0 + wa + gap + wb / 2) + "px", top: Math.round(pc.top - grow / 2) + "px", width: wb + "px", height: (pc.h + grow) + "px", fontSize: bfs };
+                    for (const k in wantB) if (asBuild.style[k] !== wantB[k]) asBuild.style[k] = wantB[k];
+                    const bl = asBuild.firstChild, bs = asBuild.lastChild;
+                    if (bl.textContent !== ra.label) bl.textContent = ra.label;
+                    if (bs.textContent !== ra.sub) bs.textContent = ra.sub;
+                    const offB = !st.ready && !(st.queue && !st.queued);
+                    if (asBuild.disabled !== offB) asBuild.disabled = offB;
+                }
+                // Enter opens the team chat on the duo server, so Space there
+                const keyTxt = !st.ready || global.mobile ? "" : global.gamepadMode ? "RT" : (global.royale && global.royale.duos) ? "Space" : "Enter";
                 // the first raids' card: a bigger word on a bigger button
-                const want = { left: pc.cx + "px", top: pc.top + "px", width: pc.w + "px", height: pc.h + "px", fontSize: pc.big && st.ready ? "34px" : "" };
+                const fs = playAgainFont(st, pcA, keyTxt);
+                const want = { left: pcA.cx + "px", top: pcA.top + "px", width: pcA.w + "px", height: pcA.h + "px", fontSize: fs };
                 for (const k in want) if (again.style[k] !== want[k]) again.style[k] = want[k];
                 const lab = again.firstChild, key = again.lastChild;
                 if (lab.textContent !== st.label) lab.textContent = st.label;
-                // Enter opens the team chat on the duo server, so Space there
-                const keyTxt = !st.ready || global.mobile ? "" : global.gamepadMode ? "RT" : (global.royale && global.royale.duos) ? "Space" : "Enter";
+                setStyle(lab, "whiteSpace", st.ended ? "normal" : "");
+                setStyle(lab, "lineHeight", st.ended ? "1.1" : "");
                 if (key.textContent !== keyTxt) key.textContent = keyTxt;
                 setStyle(key, "display", keyTxt ? "" : "none");
-                if (again.disabled !== !st.ready) again.disabled = !st.ready;
+                // a wait can still be clicked: it queues the drop
+                const off = !st.ready && !(st.queue && !st.queued) && !st.ended;
+                if (again.disabled !== off) again.disabled = off;
+                again.dataset.ended = st.ended ? "1" : "";
+                // no respawns left: after a moment on the card, watch the finish
+                if (st.ended) {
+                    const now = performance.now();
+                    if (!(again._endedAt > 0)) again._endedAt = now;
+                    else if (now - again._endedAt > 2500 && !global.royaleSpectating) royaleDomAct("spectate");
+                } else again._endedAt = 0;
             }
         }
         // the buttons sit right under the death card (gameDrawDeadRoyale)
@@ -13874,14 +14480,16 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
             const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);
             const waitMs = Math.max(0, (global.raidRespawnAt || 0) - performance.now());
             let label = "Play";
-            if (locked) label = Math.max(0, global.royale.lockLeft | 0) + "s";
+            if (locked) label = (global.respawnQueued ? "Queued " : "") + Math.max(0, global.royale.lockLeft | 0) + "s";
             else if (global.respawnPending) label = "Wait";
             else if (global.died && waitMs > 0) label = "Play (" + Math.ceil(waitMs / 1000) + "s)";
             if (play.textContent !== label) play.textContent = label;
             // respawn() refuses until the death wait is up; look it too
             const off = !global.died || locked || global.respawnPending || waitMs > 0;
             setStyle(play, "opacity", off ? "0.55" : "1");
-            if (play.disabled !== (off && global.died)) play.disabled = off && global.died;
+            // a lock or a wait still takes the click: it queues the drop
+            const noClick = global.died && (global.respawnPending || global.respawnQueued);
+            if (play.disabled !== noClick) play.disabled = noClick;
         }
     }
     function getIngameSettingsBtn() {
@@ -14132,11 +14740,11 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 const between = r.at > 0 && r.ending;
                 return { mode: "fill", title: "Finding a teammate…", lbl: "Searching", n: joinClock(Math.floor((df.waited + age) / 1000)),
                     line: between ? "The raid's wrapping up. You'll team up and drop in with the next one."
-                        : "You'll team up with the next player who joins alone. Nobody around? A bot will partner up with you.",
+                        : "You'll team up with the next player who joins alone. Nobody free? We'll find you a teammate.",
                     back: true, backLbl: "Cancel", solo: true, dots: true };
             }
             if (df.phase === "bot" && age < 6000)
-                return { mode: "fillbot", title: "No teammates around", line: "Matching you with a bot…", dots: true };
+                return { mode: "fillbot", title: "No teammates around", line: "Finding you a teammate…", dots: true };
             if (df.phase === "paired" && age < 6000)
                 return { mode: "paired", title: "Teamed up!", line: "Dropping in with " + (df.name || "your teammate") + "…", dots: true };
             if (df.phase === "solo" && age < 6000)
@@ -14367,6 +14975,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
                 drawConnectingScreen();
             };
             if (global.died) {
+                flushQueuedRespawn();
                 gameDrawDead();
                 // duos: your partner's pings and chat stay readable over the death card
                 if (global.GUIStatus.renderGUI && global.royale && global.royale.duos && !global.disconnected) {

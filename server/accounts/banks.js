@@ -93,7 +93,7 @@ function claimGuest(guestId, userId, now = Date.now()) {
     });
 }
 
-// Gems paid in from outside a raid (the daily rewards track). Added to what
+// Gems paid in from outside a raid (the daily rewards track paid these until Oct
 // is at rest, in one transaction (a savepoint inside the caller's), for the
 // account a converted guest became. Safe while a lease is out: at rest is
 // 0 then, and release / recoverStale only ever add to it, so the reward is

@@ -207,9 +207,8 @@ function buildRecord(socket, body, t) {
         growEff: Math.max(0, Math.round(body._growEff || 0)),
         growth: +(body.growthMult || 1).toFixed(3),
         score,
-        // the raid points without the satchel's half (the satchel comes back
-        // as gems and counts half again)
-        pts: Math.max(0, score - Math.floor(carried / 2)),
+        // the raid points (the satchel was never points: it comes back as gems)
+        pts: Math.max(0, score),
         carried,
         banked: Math.max(0, (socket.gemBanked || 0) | 0),
         kept: Math.max(0, socket.bankKept | 0),

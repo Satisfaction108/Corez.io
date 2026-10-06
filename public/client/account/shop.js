@@ -5,18 +5,20 @@
 // countdown to the 00:00 UTC reset, the item modal (big live preview,
 // team-colour swatches, tank picker, Buy / Equip / Gift), purchase history
 // with refunds, and the gift flow. Whatever you buy goes on straight away.
+// A third tab, View all, is a look-only gallery of the whole catalog
 import * as api from './api.js';
 import * as state from './state.js';
 import { h, icon, clear, modal, confirm, toast, humanError, setBusy, animate, T_MID, fmtDateTime, fmtDust } from './ui.js';
 import * as pv from './previews.js';
 import * as cos from './cosmetics.js';
+import * as gallery from './shopGallery.js';
 
 const RAR = () => (window.DWCosmetics && window.DWCosmetics.RARITIES) || {};
 export const GIFT_MESSAGES = ['Enjoy!', 'GG, well played!', 'For you!', 'Happy birthday!'];
 
-let handlers = { refreshMe() {}, openLocker() {}, onBalance() {} };
+let handlers = { refreshMe() {}, openLocker() {}, onBalance() {}, onLogin() {} };
 let paneEl = null, data = null, timer = 0, loadSeq = 0, fetchedAt = 0;
-let tab = 'shop';   // 'shop' | 'sidekicks'
+let tab = 'shop';   // 'shop' | 'sidekicks' | 'all'
 
 export function init(hs) { Object.assign(handlers, hs); }
 
@@ -87,6 +89,7 @@ export function render(el) {
     stopTimer();
     pv.stopUnder(el);
     clear(el);
+    if (!me()) { paintGuest(el); return; }
     if (data && Date.now() - fetchedAt < 30000) paint(el);
     else {
         el.appendChild(h('div', { class: 'shop-loading', text: 'Opening the shop...' }));
@@ -138,7 +141,7 @@ function paint(el) {
     const body = h('div', { class: 'shop-tabbody', role: 'tabpanel' });
     const paintTabs = () => {
         clear(tabs);
-        for (const [k, label] of [['shop', 'Shop'], ['sidekicks', 'Sidekicks']]) {
+        for (const [k, label] of [['shop', 'Shop'], ['sidekicks', 'Sidekicks'], ['all', 'View all']]) {
             tabs.appendChild(h('button', {
                 type: 'button', class: 'lk-tab' + (tab === k ? ' on' : ''), role: 'tab', 'aria-selected': tab === k ? 'true' : 'false',
                 onclick: () => { if (tab === k) return; tab = k; paintTabs(); paintBody(); },
@@ -149,6 +152,7 @@ function paint(el) {
         pv.stopUnder(body);
         clear(body);
         const of = (list, cat) => list.filter((it) => it.cat === cat);
+        if (tab === 'all') { gallery.render(body, galleryDeps()); return; }
         if (tab === 'sidekicks') {
             // Buddy (the Basic one) is always first on the shelf
             body.appendChild(section('Sidekicks', perm.filter((it) => it.cat === 'sidekick').concat(of(shelf, 'sidekick')).map((it) => card(it, 'side')), 'side'));
@@ -176,6 +180,45 @@ function paint(el) {
     timer = setInterval(tick, 1000);
 }
 function stopTimer() { if (timer) { clearInterval(timer); timer = 0; } }
+
+/* ── View all (look only) ───────────────────────────────────────────── */
+// What the gallery gets: drawing helpers and what you own, never a way to buy
+function galleryDeps() {
+    return {
+        h, icon, clear, rarityName,
+        items: (window.DWCosmetics && window.DWCosmetics.ITEMS) || [],
+        preview: (it, w, hh) => itemPreview(it, w, hh, { custom: it.id === cos.CUSTOM_ID ? customNow() : null, px: 18 }),
+        stop: pv.stopUnder,
+        owned: ownedIds(),
+    };
+}
+// The ids you own (the Locker's list, kept for 30 s), or null for a guest
+let ownedCache = null;   // { at, user, set | promise }
+function ownedIds() {
+    const u = me();
+    if (!u) return null;
+    if (ownedCache && ownedCache.user === u.userId && Date.now() - ownedCache.at < 30000) return ownedCache.set;
+    const seen = new Set();
+    if (data) for (const list of [data.featured || [], data.daily || [], data.sidekicks || [], data.permanent || []]) for (const x of list) if (x.owned) seen.add(x.id);
+    const c = { at: Date.now(), user: u.userId, set: null };
+    c.set = api.locker().then((r) => {
+        const out = new Set(seen);
+        for (const x of (r.ok && r.data && r.data.owned) || []) out.add(typeof x === 'string' ? x : x && (x.id || x.itemId));
+        if (ownedCache === c) c.set = out;
+        return out;
+    });
+    ownedCache = c;
+    return c.set;
+}
+// A guest: the gallery, and a way to log in to buy
+function paintGuest(el) {
+    el.appendChild(h('div', { class: 'shop-top gal-guest' },
+        h('div', { class: 'gal-guest-p', text: 'Browsing as a guest. Log in to buy stuff from the daily Shop.' }),
+        h('button', { type: 'button', class: 'dw-btn sm primary', text: 'Log in', onclick: () => handlers.onLogin() })));
+    const body = h('div', { class: 'shop-tabbody', role: 'region', 'aria-label': 'View all' });
+    el.appendChild(body);
+    gallery.render(body, galleryDeps());
+}
 
 function section(title, cards, kind) {
     return h('div', { class: 'shop-sec ' + kind },
@@ -398,8 +441,10 @@ function pop(el) {
     animate(el, [{ transform: 'scale(1)' }, { transform: 'scale(1.08)' }, { transform: 'scale(1)' }], { duration: T_MID + 80 });
 }
 
+// sidekicks help you mine (server/game/terrain/sidekickDig.js)
+const digLine = () => (typeof window !== 'undefined' && window.DWCosmetics && window.DWCosmetics.SIDEKICK_DIG_LINE) || 'Helps you mine: rock only.';
 function describe(it) {
-    if (it.blurb) return it.blurb;
+    if (it.blurb) return it.cat === 'sidekick' ? it.blurb + ' ' + digLine() : it.blurb;
     if (it.id === cos.CUSTOM_ID) return 'Any colour you want for your name. Buy once, change it whenever.';
     if (it.cat === 'skin') return isAnimated(it) ? 'Glows and moves. Goes on your tank.' : 'A pattern for your tank, in your team colour.';
     const s = it.style || {};
@@ -410,6 +455,7 @@ function describe(it) {
 
 // After a buy: mark it owned in the cached store, update the balance.
 function markOwned(id, res) {
+    ownedCache = null;
     if (!data) return;
     for (const list of [data.featured, data.daily, data.sidekicks || [], data.permanent || []]) for (const x of list) if (x.id === id) x.owned = true;
     if (res && res.balance != null) { data.balance = res.balance; data.balanceMilli = res.balanceMilli; }
@@ -530,6 +576,7 @@ function histRow(e, tokens, refill) {
             setBusy(btn, false);
             if (!r.ok) { toast(storeError(r), { kind: 'error' }); return; }
             toast(e.name + ' refunded', { kind: 'ok' });
+            ownedCache = null;
             if (data) { data.balance = r.data.balance; data.balanceMilli = r.data.balanceMilli; for (const l of [data.featured, data.daily, data.permanent || []]) for (const x of l) if (x.id === e.itemId) x.owned = false; data._sig = null; handlers.onBalance(data.balance); }
             handlers.refreshMe();
             if (paneEl && paneEl.isConnected) { stopTimer(); pv.stopUnder(paneEl); clear(paneEl); paint(paneEl); }

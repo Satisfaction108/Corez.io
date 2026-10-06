@@ -308,7 +308,9 @@ test('e2e: persistent bank, Save & leave, $restore (local server, ports 6190-619
     const port = 6190;
     const origin = 'http://localhost:' + port;
     fs.mkdirSync(E2E_DATA_DIR, { recursive: true });
-    const env = { ...process.env, ROYALE_DEBUG: '1', ACCOUNTS_ALLOW_DEBUG: '1',
+    // ROYALE_FAIR_PLAY=0: these test guests are brand new, so fair play would
+    // protect them and a death would cost their savings nothing (bank.js)
+    const env = { ...process.env, ROYALE_DEBUG: '1', ACCOUNTS_ALLOW_DEBUG: '1', ROYALE_FAIR_PLAY: '0',
         SESSION_SECRET: SECRET, DATA_DIR: E2E_DATA_DIR, PUBLIC_ORIGIN: origin, PUBLIC_HOST: 'localhost:' + port,
         TRUSTED_PROXIES: '127.0.0.1', SINGLE_PROCESS: 'true', PORT: String(port), BR_PORT: String(port),
         TUT_PORT: String(port + 1), DUO_PORT: String(port + 2), DW_PORT: String(port + 3), BOT_CHAT_AI: 'false', NODE_ENV: 'development' };
@@ -372,7 +374,9 @@ test('e2e: persistent bank, Save & leave, $restore (local server, ports 6190-619
         assert.equal(gem[6], 3000, 'GEM carries the kept part for the HUD');
         assert.equal(b.stat.banked, 0, 'the board counts none of it');
         assert.ok(b.stat.score < 100, 'score: starter satchel only, ' + b.stat.score);
-        assert.equal(b.growth.score, b.stat.score, 'growth runs on the board score, not the bank');
+        // growth = board points + half the satchel (scoreOf/progressOf), never the bank
+        assert.equal(b.growth.score, b.stat.score + Math.floor((b.stat.carried | 0) / 2), 'growth runs on the board score and the satchel, not the bank');
+        assert.ok(b.growth.score < 100, 'the 3,000 brought in does not grow you, ' + b.growth.score);
         assert.equal(q('SELECT bank_gems FROM guests WHERE guest_id = ?', G).bank_gems, 0, 'nothing at rest while it is out');
 
         // ---- two tabs of the same guest at once ----
@@ -392,7 +396,7 @@ test('e2e: persistent bank, Save & leave, $restore (local server, ports 6190-619
         let i0 = g2.mark();
         g2.talk('DBG', 'god');              // off
         await g2.die(i0);
-        await g2.waitFor('m', m => /Dying cost you 200 banked gems/.test(String(m[m.length - 1])), i0, 5000);
+        await g2.waitFor('m', m => /Dying cost you 200 gems from your savings/.test(String(m[m.length - 1])), i0, 5000);
         b = await g2.bank();
         assert.equal(b.banked, 1800, '10% of 2,000 gone');
         assert.equal(b.kept, 1800, 'the loss comes out of the kept part once this raid has none');
@@ -542,7 +546,7 @@ test('e2e: persistent bank, Save & leave, $restore (local server, ports 6190-619
         assert.equal(saveRow.used_at, null);
         assert.ok(data.carried >= carriedAtSave && data.carried >= 500, 'the satchel is in the code: ' + data.carried);
         assert.ok(data.score >= 1600, 'the score at the save: ' + data.score);
-        assert.equal(data.pts, data.score - Math.floor(data.carried / 2), 'raid points without the satchel half');
+        assert.equal(data.pts, data.score, 'raid points (the satchel is not points)');
         assert.ok(data.growEff >= 7000, 'growth score saved: ' + data.growEff);
         assert.ok(Array.isArray(data.defs) && data.defs.length, 'the class');
         assert.equal(data.skillRaw.length, 11);
@@ -570,7 +574,7 @@ test('e2e: persistent bank, Save & leave, $restore (local server, ports 6190-619
         b2 = await S2.bank();
         const me2 = await S2.dbg('me');
         assert.equal(b2.stat.restoredPts, data.pts);
-        assert.equal(b2.stat.score >= data.pts + Math.floor(data.carried / 2), true, 'the board shows the points: ' + b2.stat.score);
+        assert.equal(b2.stat.score >= data.pts, true, 'the board shows the points: ' + b2.stat.score);
         assert.ok(b2.stat.earned < 200, 'placement leaves them out: earned ' + b2.stat.earned);
         assert.ok(me2.carried >= data.carried, 'the satchel is back');
         assert.equal(b2.banked, 900, 'the bank was not in the code (no copy of it)');

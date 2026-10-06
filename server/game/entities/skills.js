@@ -104,12 +104,15 @@ class Skill {
         this.ghost = attrib[skcnv.pen];
         this.shi = Config.glass_health_factor * apply(3 / Config.glass_health_factor - 1, attrib[skcnv.shi]);
         this.atk = apply(0.021, attrib[skcnv.atk]);
-        this.hlt = Config.glass_health_factor * apply(2 / Config.glass_health_factor - 1, attrib[skcnv.hlt]);
+        // Max Health: with glass_health_factor 2 the stock formula is 2 * apply(0, x), a
+        const hf = Config.max_health_skill != null ? Config.max_health_skill : 2 / Config.glass_health_factor - 1;
+        this.hlt = Config.glass_health_factor * apply(hf, attrib[skcnv.hlt]);
         this.mob = apply(0.8, attrib[skcnv.mob]);
         this.rgn = apply(25, attrib[skcnv.rgn]);
         this.brst = 0.3 * (0.5 * attrib[skcnv.atk] + 0.5 * attrib[skcnv.hlt] + attrib[skcnv.rgn]);
         // linear on purpose: a point of mining is always worth the same
-        this.mine = 1 + 2.1 * (this.raw[skcnv.min] / Config.skill_cap);
+        // round 9: 2.1 -> 2.5, about +13% at full points)
+        this.mine = 1 + 2.5 * (this.raw[skcnv.min] / Config.skill_cap);
     }
     set(thing) {
         const t = pad(thing, 0);

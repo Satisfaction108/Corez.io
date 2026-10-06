@@ -9,8 +9,7 @@
 // beside its owner's tank and moves it and fires its shots locally
 // (public/client/sidekicks.js). So nothing on the server can hit, push,
 // target or count it (bots, turrets, drones, radar, bounty, hunted, kill
-// credit, the board, gems, rock, bosses, the Core), its shots do nothing
-// because they never exist here, and a full raid of them costs a few
+// credit, the board, bosses, the Core), its shots only ever dig rock
 // hundred bytes when someone spawns or dies instead of an entity in every
 // view packet.
 //
@@ -24,8 +23,11 @@
 //   {a: [row...], d: [id...], h: [[id, 0|1]...]}   added, gone, hidden flips
 //   row = [ownerId, sidekickNid, skinNid, nameStyleNid, colour ('' = own), name, hidden 0|1]
 //
+// t: [[ownerId, x, y] | [ownerId]...] the rock each one aims at (none) Digging
 // ROYALE_SIDEKICKS=0 turns them off.
 'use strict';
+
+const dig = require('./sidekickDig.js');
 
 const ON = process.env.ROYALE_SIDEKICKS !== '0';
 const EVERY_MS = 100;
@@ -33,7 +35,7 @@ const SHOWN_ALPHA = 0.9;     // a tank faded below this (invisibility) hides its
 
 let hooks = {};
 const table = new Map();     // owner body id -> { body, kick, hidden }
-let adds = [], dels = [], flips = [];
+let adds = [], dels = [], flips = [], targs = [];
 let lastAt = 0;
 
 // dig_royale.js: clients() (connected sockets)
@@ -58,19 +60,19 @@ function send(client, json) {
 
 // Every connected socket gets the whole table once, then the changes.
 function flush(clients) {
-    const changed = adds.length || dels.length || flips.length;
+    const changed = adds.length || dels.length || flips.length || targs.length;
     let full = null, diff = null;
     for (const c of clients || []) {
         // not before the handshake: the client clears its table on 'w'
         if (!c || c.terminated || (c.status && !c.status.verified)) continue;
         if (!c._skFull) {
             c._skFull = true;
-            if (table.size) send(c, full || (full = JSON.stringify({ f: [...table].map(([id, e]) => rowOf(id, e)) })));
+            if (table.size) send(c, full || (full = JSON.stringify({ f: [...table].map(([id, e]) => rowOf(id, e)), t: [...table].map(([id, e]) => dig.targetOf(id, e)) })));
             continue;
         }
-        if (changed) send(c, diff || (diff = JSON.stringify({ a: adds, d: dels, h: flips })));
+        if (changed) send(c, diff || (diff = JSON.stringify(targs.length ? { a: adds, d: dels, h: flips, t: targs } : { a: adds, d: dels, h: flips })));
     }
-    adds = []; dels = []; flips = [];
+    adds = []; dels = []; flips = []; targs = [];
 }
 
 // bodies: the live players this tick (humans only have sidekicks)
@@ -78,6 +80,7 @@ function tick(t, bodies, clients) {
     if (!enabled()) return;
     if (t - lastAt < EVERY_MS) return;
     lastAt = t;
+    dig.beginTick();
     for (const b of bodies || []) {
         if (!b || !b.sidekick || !b.socket || table.has(b.id) || !alive(b)) continue;
         const e = { body: b, kick: b.sidekick, hidden: hiddenNow(b, t) };
@@ -93,6 +96,7 @@ function tick(t, bodies, clients) {
         }
         const h = hiddenNow(b, t);
         if (h !== e.hidden) { e.hidden = h; flips.push([id, h ? 1 : 0]); }
+        if (dig.step(e, t)) targs.push(dig.targetOf(id, e));
     }
     flush(clients || (hooks.clients ? hooks.clients() : []));
 }

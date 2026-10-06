@@ -27,6 +27,13 @@ function stageMult() {
     const m = STAGE_MULT[state.cycle];
     return m == null ? 1 : m;
 }
+// Round 9: gems are worth more as the raid goes on: x1 the first storm, x1.5 the
+const GEM_STAGE = [1, 1.5, 2];
+function gemStageMult() {
+    if (process.env.ROYALE_STAGE_GEMS === '0' || !state.active) return 1;
+    if (isFinal()) return GEM_STAGE[GEM_STAGE.length - 1];
+    return GEM_STAGE[Math.min(GEM_STAGE.length - 1, Math.max(0, state.cycle | 0))];
+}
 function rampMult(sec) {
     if (!(sec > 0)) return RAMP[0][1];
     for (let i = 1; i < RAMP.length; i++) {
@@ -78,8 +85,11 @@ function isFinal() { return state.cycle >= cycles - 1; }
 
 let state = {
     active: false,
+    // cx/cy: the live centre
     cx: 0,
     cy: 0,
+    tx: 0,
+    ty: 0,
     maxR: 1,
     cycle: 0,
     cycleStartAt: 0,
@@ -99,11 +109,15 @@ function maxRadius() {
 let finalCenter = null;
 function setFinalCenter(x, y) {
     finalCenter = x == null || !isFinite(x) || !isFinite(y) ? null : { x: +x, y: +y };
+    // already in the last cycle: it closes there from now on
+    if (finalCenter && state.active && isFinal()) { state.tx = finalCenter.x; state.ty = finalCenter.y; }
 }
 
+// Where a cycle closes to
+const CENTER_FRAC = 0.5;
 function pickCenter(maxR) {
     if (finalCenter && isFinal()) return { x: finalCenter.x, y: finalCenter.y };
-    const r = maxR * 0.18 * Math.random();
+    const r = maxR * CENTER_FRAC * Math.sqrt(Math.random());
     const a = Math.random() * Math.PI * 2;
     return { x: Math.cos(a) * r, y: Math.sin(a) * r };
 }
@@ -113,9 +127,24 @@ function start() {
     state.maxR = maxRadius();
     state.cycle = 0;
     state.cycleStartAt = state.startAt = Date.now();
-    const c = pickCenter(state.maxR);
-    state.cx = c.x;
-    state.cy = c.y;
+    setTarget(pickCenter(state.maxR));
+}
+function setTarget(c) {
+    state.tx = c.x; state.ty = c.y;
+    state.cx = 0; state.cy = 0;
+}
+// The centre at `now`: the rock circle's middle when a cycle opens, the target
+function centerAt(now = Date.now()) {
+    if (!state.active) return { x: 0, y: 0 };
+    const ph = cyclePhase(now);
+    if (ph === "roll") return { x: 0, y: 0 };
+    if (ph !== "shrink") return { x: state.tx, y: state.ty };
+    const k = Math.max(0, Math.min(1, (now - state.cycleStartAt) / shrinkMs()));
+    return { x: state.tx * k, y: state.ty * k };
+}
+function syncCenter(now) {
+    const c = centerAt(now);
+    state.cx = c.x; state.cy = c.y;
 }
 
 // ROYALE_DEBUG (DBG stormat): jump to `sec` seconds into the current cycle
@@ -126,8 +155,8 @@ function debugSeek(sec) {
 // ROYALE_DEBUG (DBG stormedge): move the zone's centre, for visual checks
 function debugCenter(x, y) {
     if (!state.active) start();
-    state.cx = +x || 0;
-    state.cy = +y || 0;
+    state.tx = state.cx = +x || 0;
+    state.ty = state.cy = +y || 0;
 }
 // ROYALE_DEBUG (DBG raidleft): jump into the raid's last cycle with `sec`
 // seconds to go. Returns the new end time.
@@ -138,7 +167,8 @@ function debugFinal(sec) {
     if (cycles !== Infinity) state.cycle = cycles - 1;
     state.cycleStartAt = t + left - CYCLE_MS;
     state.startAt = state.cycleStartAt - state.cycle * CYCLE_MS;
-    if (finalCenter && isFinal()) { state.cx = finalCenter.x; state.cy = finalCenter.y; }
+    if (finalCenter && isFinal()) { state.tx = finalCenter.x; state.ty = finalCenter.y; }
+    syncCenter(t);
     return endAt();
 }
 // When the raid's last cycle shuts (Infinity while the storm cycles forever)
@@ -172,15 +202,13 @@ function maybeRoll(now = Date.now()) {
         state.cycle++;
     }
     state.maxR = maxRadius();
-    const c = pickCenter(state.maxR);
-    state.cx = c.x;
-    state.cy = c.y;
+    setTarget(pickCenter(state.maxR));
 }
 
 // peek: a look ahead that must not roll the cycle early
 function radius(now = Date.now(), peek = false) {
     if (!state.active) return maxRadius();
-    if (!peek) maybeRoll(now);
+    if (!peek) { maybeRoll(now); syncCenter(now); }
     const ph = cyclePhase(now);
     if (ph === "roll") return state.maxR;
     if (ph === "done") return state.maxR * FINAL_FRAC;
@@ -227,16 +255,39 @@ function lockLeftSec(now = Date.now()) {
 function inStorm(x, y, now = Date.now()) {
     if (!state.active) return false;
     const r = radius(now);
-    const dx = x - state.cx, dy = y - state.cy;
+    const c = centerAt(now);
+    const dx = x - c.x, dy = y - c.y;
     return dx * dx + dy * dy > r * r;
 }
 
+// How many seconds until the storm reaches (x, y): a lookup built once (1 s steps
+function etaFn(now = Date.now(), horizonS = 180) {
+    if (!state.active) return () => horizonS;
+    const rs = [], xs = [], ys = [];
+    for (let k = 0; k <= horizonS; k++) {
+        const t = now + k * 1000;
+        if (cyclePhase(t) === "roll") break;
+        rs.push(radius(t, true));
+        const c = centerAt(t); xs.push(c.x); ys.push(c.y);
+    }
+    return (x, y) => {
+        for (let k = 0; k < rs.length; k++) if (Math.hypot(x - xs[k], y - ys[k]) > rs[k]) return k;
+        return horizonS;
+    };
+}
+
 function snapshot(now = Date.now()) {
-    if (state.active) maybeRoll(now);
+    if (state.active) { maybeRoll(now); syncCenter(now); }
+    const nc = state.active ? centerAt(now + 250) : { x: 0, y: 0 };
     return {
         a: state.active ? 1 : 0,
         cx: state.cx,
         cy: state.cy,
+        // the centre 250 ms on (with n) and where this cycle ends up (with to)
+        nx: nc.x,
+        ny: nc.y,
+        tx: state.active ? state.tx : 0,
+        ty: state.active ? state.ty : 0,
         r: state.active ? radius(now) : maxRadius(),
         max: state.maxR,
         n: state.active ? radius(now + 250, true) : maxRadius(),
@@ -249,6 +300,7 @@ function snapshot(now = Date.now()) {
         left: phaseLeftSec(now),
         lock: locked(now) ? 1 : 0,
         lockLeft: lockLeftSec(now),
+        gmul: gemStageMult(),
     };
 }
 
@@ -262,13 +314,9 @@ function finalSqueeze(now) {
 // squeeze) and the damage multiplier that gives. The HUD reads this.
 function exposureOf(body, now = Date.now()) {
     const sec = ((body && body._stormExpMs) || 0) / 1000;
-    return { sec, mult: rampMult(sec) * stageMult() * (finalSqueeze(now) ? FINAL_DAMAGE_MULT : 1) * newcomerMult(body) };
+    return { sec, mult: rampMult(sec) * stageMult() * (finalSqueeze(now) ? FINAL_DAMAGE_MULT : 1) };
 }
-// A player's first raids sting less (body.nxStormMult, newcomerDirector.js)
-function newcomerMult(body) {
-    const m = body && body.nxStormMult;
-    return m > 0 && m < 1 ? m : 1;
-}
+// Oct 5 2026: the storm hurts everyone alike
 
 function tickDamage(now = Date.now()) {
     if (!state.active) return;
@@ -304,13 +352,14 @@ function tickDamage(now = Date.now()) {
         if (body.socket) { try { dmgMult = require('./shop.js').stormDamageMult(body); } catch { /* */ } }
         // immune (Storm Anchor, medkit): no damage, and the ramp waits
         if (dmgMult <= 0) continue;
+        // a protected player's ramp climbs slower: more time to get out)
         body._stormExpMs = (body._stormExpMs || 0) + dt * speed;
         if (fin && body._stormExpMs < FINAL_RAMP_FLOOR_S * 1000) body._stormExpMs = FINAL_RAMP_FLOOR_S * 1000;
         if (now - (body._stormHurtAt || 0) < DAMAGE_EVERY_MS) continue;
         body._stormHurtAt = now;
         if (!body.health || !(body.health.max > 0)) continue;
         const ramp = rampMult(body._stormExpMs / 1000) * stageMult() * (fin ? FINAL_DAMAGE_MULT : 1);
-        const dmg = body.health.max * DAMAGE_FRAC * ramp * dmgMult * newcomerMult(body) * (global.royaleMods && global.royaleMods.stormDamageMult || 1);
+        const dmg = body.health.max * DAMAGE_FRAC * ramp * dmgMult * (global.royaleMods && global.royaleMods.stormDamageMult || 1);
         if (body.shield && body.shield.amount > 0) {
             const soak = Math.min(body.shield.amount, dmg);
             body.shield.amount -= soak;
@@ -326,4 +375,4 @@ function tickDamage(now = Date.now()) {
     }
 }
 
-module.exports = { resetAt, start, stop, setLockMs, setNoFinalLock, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT, STAGE_MULT, stageMult };
+module.exports = { etaFn, centerAt, CENTER_FRAC, resetAt, start, stop, setLockMs, setNoFinalLock, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT, STAGE_MULT, stageMult, gemStageMult, GEM_STAGE };

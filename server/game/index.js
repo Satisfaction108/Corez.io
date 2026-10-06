@@ -10,6 +10,7 @@ const mining = require('./terrain/mining.js');
 const vault = require('./terrain/vault.js');
 const outposts = require('./terrain/outposts.js');
 const shop = require('./terrain/shop.js');
+const padGeom = require('./terrain/padGeom.js');
 const coreChambers = require('./terrain/coreChambers.js');
 const { REGROW: TG_REGROW } = require('./terrain/terrainGrid.js');
 const { inEnemyBase } = require('../miscFiles/controllers.js');
@@ -23,6 +24,7 @@ const REBOUND_KEEP = 0.85;    // how much of the shot's speed survives the bounc
 // (into another bot; into a player it follows that player's difficulty)
 const BOT_SHOT_MULT = 0.8;
 const botDiff = require('../miscFiles/botDifficulty.js');
+const fairPlay = require('./terrain/fairPlay.js');
 const botTanks = require('../miscFiles/botTanks.js');
 const botTactics = require('../miscFiles/botTactics.js');
 const activity = require('./network/activity.js');
@@ -203,6 +205,8 @@ class gameHandler {
 
     collide = (instance, other) => {
         if (instance.noclip || other.noclip) return 0;
+        // raid perk shots (Twin Drill, Drone Bay) only drill rock: they pass through
+        if ((instance.rockOnly && other.type !== "wall") || (other.rockOnly && instance.type !== "wall")) return 0;
 
         // Remove an existing bot/tank overlap before advancedcollide computes
         // its direction vector; coincident centers otherwise produce NaNs.
@@ -837,6 +841,7 @@ class gameHandler {
                 if (raw[i] > 0 && raw[i] < 9) { raw[i]++; bonus--; }
             }
         }
+        if (bot.botMinnow) raw = fairPlay.minnowRaw(raw);
         bot.skill.set(raw);
         bot.skill.points = 0;
         bot.skill.update();
@@ -955,9 +960,11 @@ class gameHandler {
     // timers, nobody sees a Basic or a Twin). Same two-of-a-kind rule as
     // botUpgradeIndex.
     botStartTank(o, same = null) {
+        // a small fish stops a tier short (terrain/fairPlay.js)
+        const pathOf = (c) => o.botMinnow ? fairPlay.minnowPath(c.path) : c.path;
         // a bot respawning as itself climbs back into its own tank
-        const own = same ? botTanks.pool(this.botTankExclusions()).find(c => c.name === same) : null;
-        if (own && botTanks.climb(o, own.path)) {
+        const own = same ? botTanks.pool(this.botTankExclusions()).find(c => c.name === same || (o.botMinnow && fairPlay.minnowPath(c.path)[1] === same)) : null;
+        if (own && botTanks.climb(o, pathOf(own))) {
             o.botRammerAllowed = false; o.leftoverUpgrades = 0;
             this.configureBotStats(o);
             return true;
@@ -971,7 +978,7 @@ class gameHandler {
         const choice = botTanks.pick(this.botTankExclusions(), counts);
         if (!choice) return false;
         o.botRammerAllowed = false;
-        if (!botTanks.climb(o, choice.path)) return false;
+        if (!botTanks.climb(o, pathOf(choice))) return false;
         o.leftoverUpgrades = 0;
         this.configureBotStats(o);
         return true;
@@ -1132,9 +1139,13 @@ class gameHandler {
             const near = live.filter(b => Math.hypot(b.x - host.x, b.y - host.y) <= NEAR);
             if (near.length >= WANT) continue;
 
+            // a protected player (terrain/fairPlay.js) gets the small fish first and never a
+            const prot = fairPlay.isProtected(host, now);
             const candidates = live
-                .filter(b => !near.includes(b) && now >= (b._botDirectorUntil || 0))
-                .sort((a, b) =>
+                .filter(b => !near.includes(b) && now >= (b._botDirectorUntil || 0) && !(prot && fairPlay.isBig(b)) &&
+                    // a bait has its own host
+                    !b._fpBait && !fairPlay.farmed(b, host, now))
+                .sort((a, b) => (prot ? (b.botMinnow ? 1 : 0) - (a.botMinnow ? 1 : 0) : 0) ||
                     Math.hypot(a.x - host.x, a.y - host.y) - Math.hypot(b.x - host.x, b.y - host.y));
 
             for (const bot of candidates.slice(0, WANT - near.length)) {
@@ -1241,6 +1252,10 @@ class gameHandler {
         // Body-only tanks are rare (about one rammer in fifty bots). The upgrade
         // picker below forces the body branch only for this group.
         o.botRammerAllowed = ran.chance(0.02);
+        // a small fish (terrain/fairPlay.js): weak tank, few points, low skill
+        if (Config.dig_royale && lifecycle?.minnow) { fairPlay.makeMinnow(o); o.botRammerAllowed = false; }
+        // ...and a first-kill fish's family comes back as one all raid (fairPlay fodder)
+        else if (Config.dig_royale && fairPlay.isFodder(o)) { fairPlay.makeMinnow(o); o.botRammerAllowed = false; fairPlay.applyFodder(o); }
         o.name = botName;
         o.invuln = true;
         o.leftoverUpgrades = ran.chooseChance(...Config.bot_class_upgrade_chances);
@@ -1270,7 +1285,7 @@ class gameHandler {
         if (Config.dig_wars || Config.dig_royale) gems.initSatchel(o);
         // Last enemy that damaged this tank: the goal controller uses it for a short
         // "fight back or run" reaction instead of mining through incoming fire.
-        o.on('damage', ({ damageInflictor = [] }) => {
+        o.on('damage', ({ damageInflictor = [], amount = 0 }) => {
             const attacker = damageInflictor
                 .map(source => {
                     let root = source, hops = 0;
@@ -1281,6 +1296,12 @@ class gameHandler {
             if (attacker) {
                 o._lastDamageSource = attacker;
                 o._lastDamageAt = Date.now();
+                // cumulative damage per attacker this life (fairPlay.provoked: a protected player
+                if (amount > 0) {
+                    const m = o._dmgBy || (o._dmgBy = new Map());
+                    m.set(attacker.id, (m.get(attacker.id) || 0) + amount);
+                    if (m.size > 24) m.delete(m.keys().next().value);
+                }
                 // and the shooter is in a fight too (dig_royale's reload rule)
                 attacker._dealtAt = o._lastDamageAt;
                 // a fresh spawn (player or bot) that shoots a bot has ended its
@@ -1312,6 +1333,8 @@ class gameHandler {
                 if (s.botDeathStreak >= 3)
                     s.botMercyUntil = now + 30_000;
                 o._victoryEmoteUntil = now + 1300;
+                // fairPlay: no farming the same player, no parking on a vault
+                if (Config.dig_royale) fairPlay.noteBotKill(o, victim, now);
             }
         });
         this.bots.push(o);
@@ -1951,7 +1974,7 @@ class gameHandler {
                                         instance.grindAcc -= dmg;
                                         // soft spark at the hull contact point
                                         const wasGrowing = rock.growing;
-                                        const destroyed = _tg.damageRock(rock, dmg,
+                                        const destroyed = _tg.damageRock(rock, rock.ore ? dmg : dmg * gems.PLAIN_ROCK_MULT,
                                             instance.x - (instance.grindNx || 0) * r,
                                             instance.y - (instance.grindNy || 0) * r,
                                             true, instance);
@@ -1990,6 +2013,21 @@ class gameHandler {
                             }
                         }
                         if (instance.isDead?.()) continue;
+                        // shop pads too (round 10): every projectile, any owner (players, bots, bosses)
+                        const sps = shop.getShops();
+                        for (let si = 0; si < sps.length; si++) {
+                            const sp = sps[si];
+                            const sdx = instance.x - sp.x, sdy = instance.y - sp.y;
+                            const sr = sp.r * 1.25 + 8 + (instance.realSize || 0);
+                            if (sdx * sdx + sdy * sdy > sr * sr) continue;
+                            if (padGeom.insidePad(sp, instance.x, instance.y, 8)) {
+                                instance.velocity.x = 0; instance.velocity.y = 0;
+                                instance.accel.x = 0;    instance.accel.y = 0;
+                                instance.kill();
+                                break;
+                            }
+                        }
+                        if (instance.isDead?.()) continue;
                     }
 
                     // A shot landing on a seam between cells chips every cell it
@@ -2002,6 +2040,8 @@ class gameHandler {
                         const owner = rootMaster(instance);
                         const perkFx = owner._pkfx || null;
                         const nowT = Date.now();
+                        // mining: its guns kick less while the shots land on rock (gun.js recoil)
+                        owner._rockHitAt = nowT;
                         let mb = mineBudget.get(owner.id);
                         if (!mb || nowT - mb.t >= 1000) {
                             mb = { t: nowT, left: _tg.baseRockHealth * 3 * growMine(owner) * perkMine(owner) };
@@ -2019,7 +2059,12 @@ class gameHandler {
                             if (!(dmg > 0)) break;
                             mb.left -= dmg;
                             const wasGrowing = rock.growing;
-                            const destroyed = _tg.damageRock(rock, dmg, instance.x, instance.y, false, owner);
+                            // round 9: plain rock breaks ~30% faster (ore keeps its toughness)
+                            const hitDmg = rock.ore ? dmg : dmg * gems.PLAIN_ROCK_MULT;
+                            const hpBefore = rock.health;
+                            const destroyed = _tg.damageRock(rock, hitDmg, instance.x, instance.y, false, owner);
+                            // round 9: ore pays a gem chip per hit out of its break payout, plain rock sends
+                            if (Config.dig_royale && owner.socket) gems.chipHit(rock, owner, Math.min(hitDmg, Math.max(0, hpBefore)), instance.x, instance.y, wasGrowing);
                             // breaking an ore cell erupts its gem payout
 
                             if (destroyed) owner.rocksMined = (owner.rocksMined || 0) + 1;

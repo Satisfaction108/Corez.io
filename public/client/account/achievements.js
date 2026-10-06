@@ -63,7 +63,7 @@ export const GLYPHS = {
 // the same thing). Used until window.DWAchievements is loaded.
 export const ACHIEVEMENTS = [
     { id: 'first_blood', name: 'First Blood', desc: 'Knock out another player', color: '#ff7a6b', icon: 'crosshair' },
-    { id: 'bot_buster', name: 'Bot Buster', desc: 'Knock out 50 bots', color: '#ff7a6b', icon: 'bot' },
+    { id: 'bot_buster', name: 'Tank Buster', desc: 'Knock out 50 tanks in raids', color: '#ff7a6b', icon: 'crosshair' },
     { id: 'banker', name: 'Piggy Bank', desc: 'Bank 10,000 gems', color: '#4fe08f', icon: 'vault' },
     { id: 'tycoon', name: 'Tycoon', desc: 'Bank 250,000 gems', color: '#ffc665', icon: 'tycoon' },
     { id: 'podium', name: 'Podium', desc: 'Finish a raid in the top 3', color: '#d8dfea', icon: 'podium' },

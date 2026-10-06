@@ -7,7 +7,7 @@
 //
 // One at a time. A finished one pays (banked gems, which the board and growth
 // count too, sometimes a kit item) and shows its result for a moment; then
-// there's a 30 s breather (the card counts it down) before the next rolls,
+// there's a 15 s breather (the card counts it down) before the next rolls
 // done or missed. Two things skip the wait: a fresh spawn's first job comes
 // within FIRST_ROLL_MS, and the safe-zone job turns up whenever the storm
 // really has you. Players who go idle get none rolled and are never paid,
@@ -25,13 +25,13 @@ const activity = require('../network/activity.js');
 
 const GAP_DONE_MS = 2200;      // a finished contract shows its result this long
 const GAP_FAIL_MS = 1600;      // ...and a missed one this long
-const COOLDOWN_MS = 30_000;    // from the finish to the next roll (done or missed)
+const COOLDOWN_MS = +process.env.ROYALE_CONTRACT_GAP_MS || 15_000;    // from the finish to the next roll (done or missed; round 9: was 30 s)
 const FIRST_ROLL_MS = 1500;    // after a spawn: long enough for the tank to arrive, well inside 10 s
 const IDLE_MS = 40_000;        // no real input for this long: nothing rolls, nothing pays
 const FRESH_MS = 12_000;       // a life this young gets an easy contract near it
 const REVENGE_MS = 4 * 60 * 1000;
-const REVENGE_GEMS = 200;
-const REVENGE_PTS = 200;
+const REVENGE_GEMS = 400;     // round 9: doubled (was 200)
+const REVENGE_PTS = 400;
 const TICK_MS = 250;
 // The safe-zone job. "Safe" is the current circle less a small margin: where
 // the edge will be ZONE_LEAD_MS from now, ZONE_MARGIN further in. It is only
@@ -232,6 +232,7 @@ const MAKERS = {
         if (!b || !alive(b.body) || b.body === body || b.body.team === body.team) return null;
         if (b.until - t < 20_000 || d2(b.body, body.x, body.y) > 3000 * 3000) return null;
         if (fresh && hooks.isNew && hooks.isNew(body)) return null;
+        if (hooks.tooStrong && hooks.tooStrong(body, b.body)) return null;
         return { kind: 'bounty', pri: 66, text: "Claim the bounty on " + (b.body.name || "Unnamed"), goal: 1, reward: R.bounty, ms: b.until - t, ent: b.body };
     },
     streaker(body, t, fresh) {
@@ -241,6 +242,7 @@ const MAKERS = {
             if (f === body || f.team === body.team) continue;
             const n = hooks && hooks.streakOf ? hooks.streakOf(f) : 0;
             if (n < 4) continue;
+            if (hooks && hooks.tooStrong && hooks.tooStrong(body, f)) continue;
             const d = d2(f, body.x, body.y);
             if (d < bd) { bd = d; best = { f, n }; }
         }
@@ -259,6 +261,7 @@ const MAKERS = {
             // someone near you and one of you is in a fight; a brand-new
             // player only gets this once they are the one being hit
             if (newbie ? !hot(body) : !(hot(body) || hot(f))) continue;
+            if (hooks && hooks.tooStrong && hooks.tooStrong(body, f)) continue;
             bd = d; best = f;
         }
         if (!best) return null;
@@ -300,7 +303,7 @@ const MAKERS = {
         const reward = best.supplyDrop ? R.chestSupply : best.chestRare ? R.chestEpic : R.chest;
         const d = Math.hypot(best.x - body.x, best.y - body.y);
         return {
-            kind: 'chest', pri: (fresh ? 75 : 50) + (best.supplyDrop ? 12 : 0), text: "Crack " + name + " " + dirWord(best.x - body.x, best.y - body.y),
+            kind: 'chest', pri: (fresh ? 75 : 50) + (best.supplyDrop ? 12 : 0), text: "Open " + name + " " + dirWord(best.x - body.x, best.y - body.y),
             goal: 1, reward, ms: Math.round(Math.min(110_000, 50_000 + d * 30)), ent: best,
         };
     },
@@ -495,7 +498,8 @@ function finish(body, c, t, ok, why) {
             if (shop.grantKit(sock, id)) kitName = (shop.BY_ID.get(id) || {}).name || "";
         } catch { /* */ }
     }
-    try { if (hooks && hooks.pay) hooks.pay(body, c.reward, c.kind); } catch { /* */ }
+    // the bank pop says what paid: "+250 banked: contract: Open the chest"
+    try { if (hooks && hooks.pay) hooks.pay(body, c.reward, "contract: " + String(c.text || c.kind || "done").slice(0, 38)); } catch { /* */ }
     const sub = "+" + c.reward.toLocaleString("en-US") + " gems" + (kitName ? " and a " + kitName : "");
     try { if (hooks && hooks.callout) hooks.callout(body, "contract", "Contract done", 0, sub); } catch { /* */ }
 }
@@ -589,7 +593,7 @@ function planFor(sock) {
     let hasChest = false;
     try { hasChest = chests.alive().some(c => c && !c._opened); } catch { /* */ }
     sock.contractPlan = hasChest ? 'chest' : 'mine';
-    return hasChest ? "Crack a chest near where you land" : "Mine some gems near where you land";
+    return hasChest ? "Open a chest near where you land" : "Mine some gems near where you land";
 }
 
 function onDeath(body, killer, t = Date.now()) {

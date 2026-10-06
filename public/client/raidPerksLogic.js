@@ -59,11 +59,17 @@ export const IGNORE_MS = 12000;
 // The owner wants no folding and no "Perk ready" chip: an offer shows as
 // cards until it's picked (hidden only while the shop, a vault, the map or
 // the death card owns the screen), and a queue comes one offer at a time.
+// Round 7: a fresh offer waits while you're taking hits (it popped up mid-fight
+export const CALM_MS = 2500;
 export function viewFor(st, o) {
     if (!o || !o.key) return "";
     if (o.blocked) return "";
+    if (!(st && st.shown) && o.hurtAt != null && o.now - o.hurtAt < CALM_MS) return "";
     return "cards";
 }
+// the header's words: it is never urgent
+export const HEAD_TITLE = "Perk ready";
+export const HEAD_NOTE = "pick any time";
 
 // ── where the cards go ─────────────────────────────────────────────────
 // A row low in the middle: its lower edge sits on `bottom` (just above your
@@ -71,7 +77,9 @@ export function viewFor(st, o) {
 // and its shield hint), and inside left..right (clear of the stat bars, the
 // kit box, the upgrade tiles and the minimap). Short on room it goes
 // compact (name and one line); narrow, the cards shrink. All in HUD units.
-export const CARD = { w: 228, h: 96, hc: 64, gap: 14, head: 34, minW: 128 };
+// Round 8 (owner: "tiny, the text is cut off"): bigger cards with room for the
+export const CARD = { w: 300, h: 124, hc: 94, gap: 16, head: 34, minW: 184, fullW: 236 };
+export const DESC_SIZE = 13, DESC_LH = 16;
 export function cardLayout(W, n, o) {
     n = Math.max(0, Math.min(3, n | 0));
     if (!n) return { rects: [], compact: false, head: null, box: null, tight: false };
@@ -85,7 +93,7 @@ export function cardLayout(W, n, o) {
     const room = Math.max(0, 2 * Math.min(W / 2 - left, right - W / 2));
     const w = Math.round(Math.max(CARD.minW, Math.min(CARD.w, (room - gap * (n - 1)) / n)));
     const avail = bottom - minTop - CARD.head;
-    const compact = avail < CARD.h || w < 170;
+    const compact = avail < CARD.h || w < CARD.fullW;
     const h = compact ? CARD.hc : CARD.h;
     const total = w * n + gap * (n - 1);
     const x0 = Math.round(W / 2 - total / 2);
@@ -94,6 +102,14 @@ export function cardLayout(W, n, o) {
     for (let i = 0; i < n; i++) rects.push({ x: x0 + i * (w + gap), y, w, h });
     const head = { x: x0, y: y - CARD.head + 2, w: total, h: CARD.head - 12 };
     return { rects, compact, head, box: { x: x0, y: head.y, w: total, h: bottom - head.y }, tight: avail < CARD.hc };
+}
+// A mouse press on a perk card (raidPerks.click): does it pick? The cards sit
+export const DWELL_MS = 180;
+export const FIRE_GAP_MS = 450;
+export function clickPicks(o) {
+    if (!o || !o.k) return false;
+    if (!(o.now - (o.lastShotAt || -1e9) < FIRE_GAP_MS)) return true;
+    return o.over === o.k && o.now - o.overSince >= DWELL_MS;
 }
 export function rectAt(rects, x, y) {
     for (let i = 0; i < (rects || []).length; i++) {
@@ -111,25 +127,112 @@ export function tankFloor(H, tankR) {
     return H / 2 + Math.max(168, (tankR || 0) + 40);
 }
 
+// ── a card's words ─────────────────────────────────────────────────────
+// The server names a perk you already hold with the level this pick takes it to
+export const ROMAN = ["", "I", "II", "III", "IV", "V", "VI"];
+export function roman(n) { return ROMAN[n | 0] || String(n | 0); }
+export function baseName(name) { return String(name || "").replace(/\s+(?:I|II|III|IV|V|VI)$/, ""); }
+// the level this pick gives you (a perk held at n goes to n + 1)
+export function nextLevel(p) { return Math.max(1, ((p && p.n) | 0) + 1); }
+// hover: the whole description and what changes, never cut
+export function hoverText(p) {
+    if (!p) return null;
+    const name = baseName(p.name || p.id), lv = nextLevel(p), max = (p.max | 0);
+    const have = (p.n | 0);
+    const step = have > 0
+        ? "You have level " + roman(have) + ". This takes it to " + roman(lv) + (max ? " of " + roman(max) : "") + ", stacking the effect again."
+        : "New perk, level I" + (max > 1 ? " of " + roman(max) + ". Pick it again later to stack it." : ".");
+    return { title: name + "  " + roman(lv), body: String(p.desc || "").trim() + " " + step + " Lasts until the raid ends." };
+}
+
 // ── the build strip, beside the satchel ────────────────────────────────
 // Little perk chips right-aligned to the satchel pills' left edge (the dash
 // and ability chips sit on the right). The first slot is the progress
 // badge, or the "Perk ready" chip while an offer waits folded. -> rects,
 // left to right, plus the badge / chip rect.
 export const STRIP = { s: 26, gap: 4, lead: 18 };
-export function stripLayout(anchor, n, chipW, minX) {
+// widths (optional): each chip's own width, for chips that carry a label
+export function stripLayout(anchor, n, chipW, minX, widths) {
     if (!anchor) return null;
     const s = STRIP.s, cy = anchor.y + anchor.h / 2, cw = chipW || s;
     const right = anchor.x - STRIP.lead;
-    let step = s + STRIP.gap;
-    // short on room: the icons overlap like a fanned hand
-    if (minX != null && n > 0 && right - n * step - cw < minX) step = Math.max(10, (right - minX - cw) / n);
+    const wOf = (i) => (widths && widths[i] > s ? widths[i] : s);
+    let need = cw;
+    for (let i = 0; i < n; i++) need += wOf(i) + STRIP.gap;
+    const fit = minX == null || right - need >= minX;
+    // short on room: plain icons overlap like a fanned hand
+    let squeeze = 0;
+    if (!fit && n > 0) squeeze = Math.max(0, need - (right - minX)) / n;
     // x walks right to left: the build's last icon sits nearest the satchel
     const icons = [];
     let x = right;
-    for (let i = n - 1; i >= 0; i--) { icons[i] = { x: x - s, y: cy - s / 2, w: s, h: s }; x -= step; }
+    for (let i = n - 1; i >= 0; i--) {
+        const w = wOf(i);
+        icons[i] = { x: x - w, y: cy - s / 2, w, h: s };
+        x -= Math.max(10, w + STRIP.gap - squeeze);
+    }
     const badge = { x: x - cw, y: cy - s / 2, w: cw, h: s };
-    return { icons, badge, box: { x: badge.x, y: badge.y, w: right - badge.x, h: s } };
+    return { icons, badge, fit, box: { x: badge.x, y: badge.y, w: right - badge.x, h: s } };
+}
+
+// Named chips wrap upward in rows (the newest perk nearest the satchel, the badge
+export function stripRows(anchor, widths, chipW, minX, maxRows = 3) {
+    if (!anchor) return null;
+    const s = STRIP.s, g = STRIP.gap, cy = anchor.y + anchor.h / 2, cw = chipW || s;
+    const right = anchor.x - STRIP.lead, lo = minX == null ? -Infinity : minX;
+    const icons = [];
+    let row = 0, x = right;
+    for (let i = widths.length - 1; i >= 0; i--) {
+        const w = Math.max(s, widths[i] | 0);
+        // the bottom row keeps room for the badge at its left end
+        if (x - w < lo + (row === 0 ? cw + g : 0)) {
+            if (x === right) return { icons, badge: null, fit: false };    // one chip wider than the room
+            row++; x = right;
+            if (row >= maxRows) return { icons, badge: null, fit: false };
+        }
+        icons[i] = { x: x - w, y: cy - s / 2 - row * (s + 8), w, h: s };
+        x -= w + g;
+    }
+    let bx = right;
+    for (const r of icons) if (r && r.y === cy - s / 2) bx = Math.min(bx, r.x - g);
+    const badge = { x: bx - cw, y: cy - s / 2, w: cw, h: s };
+    return { icons, badge, fit: true, rows: row + 1 };
+}
+
+// The whole strip, tidy at any size (round 8: "might get overloaded"): mode 2
+export const STRIP_ROWS = 2;
+export function stripPlan(anchor, full, lvl, chipW, minX, moreW = 34) {
+    if (!anchor) return null;
+    const n = full.length;
+    let lay = stripRows(anchor, full, chipW, minX, STRIP_ROWS);
+    let mode = 2;
+    if (!lay.fit) { mode = 1; lay = stripRows(anchor, lvl, chipW, minX, 1); }
+    if (!lay.fit) lay = stripRows(anchor, lvl, chipW, minX, STRIP_ROWS);
+    let more = null, hidden = [];
+    if (!lay.fit) {
+        mode = 0;
+        // keep the newest k (nearest the satchel), the rest go behind "+N"
+        for (let k = n - 1; k >= 0; k--) {
+            const widths = lvl.slice(n - k);
+            // the "+N" chip takes the far (left) end of the top row: lay out with it as the
+            const w2 = [moreW].concat(widths);
+            const t = stripRows(anchor, w2, chipW, minX, STRIP_ROWS);
+            if (!t.fit) continue;
+            const icons = new Array(n).fill(null);
+            for (let i = 0; i < k; i++) icons[n - k + i] = t.icons[i + 1];
+            const m = t.icons[0];
+            more = { x: m.x, y: m.y, w: m.w, h: m.h, n: n - k };
+            for (let i = 0; i < n - k; i++) hidden.push(i);
+            lay = { icons, badge: t.badge, fit: true, rows: t.rows };
+            break;
+        }
+        if (!lay.fit) return null;
+    }
+    // the box round everything (for the cards' row to keep above it)
+    let x0 = lay.badge ? lay.badge.x : anchor.x, y0 = lay.badge ? lay.badge.y : anchor.y, x1 = anchor.x - STRIP.lead, y1 = y0 + STRIP.s;
+    for (const r of lay.icons) if (r) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); }
+    if (more) { x0 = Math.min(x0, more.x); y0 = Math.min(y0, more.y); }
+    return { mode, icons: lay.icons, badge: lay.badge, more, hidden, box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } };
 }
 
 // "7,420 / 10,000" for the badge tooltip

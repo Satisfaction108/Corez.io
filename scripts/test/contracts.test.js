@@ -182,7 +182,7 @@ test('fresh: a new spawn gets the chest next to it within 10 s, and the drop-in 
     const c = tank.socket.contract;
     assert.equal(c.kind, 'chest');
     assert.equal(c.ent, chest);
-    assert.match(c.text, /^Crack the copper chest (to the east|nearby)$/);
+    assert.match(c.text, /^Open the copper chest (to the east|nearby)$/);
     assert.equal(c.reward, contracts.REWARDS.chest);
     const cue = kc(tank.socket, 'dropin');
     assert.equal(cue.length, 1);
@@ -288,7 +288,7 @@ test('complete: a bank job pays once into the bank and the board, then the next 
     const wait = contracts.snapshotFor(tank.socket, tank, t);
     assert.equal(wait.st, 3);
     assert.ok(Math.abs(wait.ms - (c.endAt + contracts.COOLDOWN_MS - t)) < 5, 'counts down to the next: ' + wait.ms);
-    assert.equal(contracts.COOLDOWN_MS, 30_000);
+    assert.equal(contracts.COOLDOWN_MS, 15_000);
     activity.noteCommand(tank.socket, -310, 60, 0, c.endAt + contracts.COOLDOWN_MS - 200);
     at(c.endAt + contracts.COOLDOWN_MS - 300);
     assert.equal(tank.socket.contract, c, 'not a moment early');

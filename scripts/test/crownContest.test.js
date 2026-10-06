@@ -1,18 +1,22 @@
 // The Crown Contest: node scripts/test/crownContest.test.js
 //
-//   start      the last storm hands crowns to the top 3 (bots too), and
-//              crown holders take places 1-3 on the board
-//   steal      killing a crowned tank takes its crown and 30% of its points
+//   start      the last storm hands crowns to the top 3 (bots too); the
+//              board stays in points order (crowns never reorder it)
+//   hold       a crown pays PPS a second (double in the final minute) and
+//              BELL_BONUS at the bell, board only
+//   steal      killing a crowned tank takes its crown and 30% of its kill and
+//              crown points, at most STEAL_CAP; banked gems are never taken
 //              (board only: the rank basis never sees the swing)
 //   pass       a storm death hands the crown to the best uncrowned tank; a
 //              bot that kills a crown takes it; a killer who already wears
 //              one gets the points and the crown moves on
 //   spawns     no respawn lock in the last storm (cycle ends still lock)
-//   sudden     the last 60 s: crowns can't bank, the Core truce is over,
-//              crowns show at their real spot
-//   winner     the crowned top scorer wins, even past a bigger uncrowned
-//              score; the endRaid results shape; a crowns failure can't
-//              stop the raid ending
+//   sudden     the last 60 s: crowns pay double, the Core truce is over,
+//              crowns show at their real spot; a crown still banks (round 5)
+//              but the vault won't hide it
+//   winner     the most points wins, crown or not; the crown bonus is on
+//              the results rows (cb); the endRaid results shape; a crowns
+//              failure can't stop the raid ending
 //   bots       a bot kill pays 30% of a human kill (streak bonus too)
 //   accounts   a Core Champion's raid win and win streak (late joiners
 //              included), the 24 h champion crown, the Discord line
@@ -171,6 +175,8 @@ function freshRaid() {
 // a raid with five tanks and a contest started
 function contest() {
     freshRaid();
+    // a twist that leaves points alone (Bounty Week doubles kills, Copper Rush gem values)
+    require('../../server/game/terrain/raidMods.js').roll('rocket_fuel');
     const a = human(0, 0), b = human(300, 0), c = human(600, 0), d = human(900, 0);
     const e = bot(1200, 0);
     for (const x of [a, b, c, d, e]) x.carriedGems = 0;
@@ -184,26 +190,72 @@ function contest() {
 }
 
 // ── the contest ─────────────────────────────────────────────────────────
-test('start: the top 3 get crowns at the last storm, bots too; crowns place 1-3', () => {
+test('start: the top 3 get crowns at the last storm, bots too; the board stays by points', () => {
     const { a, b, c, d, e } = contest();
     assert.equal(crowns._state().on, true);
     assert.deepEqual([a, b, c, d, e].map(x => !!x.crowned), [false, true, true, false, true]);
     assert.ok(kcs(a, 'crowns').length === 1 && kcs(d, 'crowns').length === 1, 'the contest banner for everyone else');
-    assert.ok(kcs(b, 'crowned').length === 1 && kcs(c, 'crowned').length === 1, 'YOU HOLD A CROWN for the crowned');
+    assert.ok(kcs(b, 'crowned').length === 1 && kcs(c, 'crowned').length === 1, 'YOU GOT A CROWN for the crowned');
     assert.equal(kcs(b, 'crowns').length, 0, 'not both');
+    // every moment says what it is worth, in one line
+    const out = kcs(a, 'crowns')[0];
+    assert.equal(out[2], 'CROWNS ARE OUT');
+    assert.ok(/Holding one earns points/.test(out[4]) && /steal it and 30% of their kill and crown points/.test(out[4]), out[4]);
+    const got = kcs(b, 'crowned')[0];
+    assert.ok(/YOU GOT A CROWN/.test(got[2]) && /\+5 pts\/sec while you hold it/.test(got[4]), got[4]);
+    // and what a kill would cost them, right there
+    // ("now": the steal grows as they earn, the crown card keeps it live)
+    assert.ok(/Others will hunt you\. If they get you now, you lose 1,500 pts, more as you earn \(your crown card keeps count; banked gems are safe\)\./.test(got[4]), got[4]);
     const r = ry(a.socket);
     assert.equal(r.crowns.on, 1);
+    assert.equal(r.crowns.pps, crowns.PPS);
+    assert.equal(r.crowns.bell, crowns.BELL_BONUS);
     assert.deepEqual(r.crowns.list.map(x => x.e), [b.id, e.id, c.id], 'best first');
     assert.equal(r.crowns.list[0].f, 1, 'only the area until sudden death');
     assert.ok(Math.abs(r.crowns.list[0].x % crowns.FUZZ) === 0, 'snapped to the grid');
-    // a big uncrowned score still places after the crowns
+    // a big uncrowned score leads the board: points only
     setScore(d, 9000);
     const board = royale.boardSnapshot();
-    assert.deepEqual(board.slice(0, 4).map(x => x.id), [b.id, e.id, c.id, d.id]);
-    assert.ok(board[0].cr && board[1].cr && board[2].cr && !board[3].cr);
+    assert.deepEqual(board.slice(0, 4).map(x => x.id), [d.id, b.id, e.id, c.id]);
+    assert.ok(!board[0].cr && board[1].cr && board[2].cr && board[3].cr);
+    assert.deepEqual(board.map(x => x.place), board.map((x, i) => i + 1));
+    for (let i = 1; i < board.length; i++) assert.ok(board[i - 1].score >= board[i].score, 'sorted by points');
+    assert.equal(JSON.stringify(board).includes('"_k"'), false, 'the stat key never goes on the wire');
+    const src = fs.readFileSync(path.join(SERVER, 'game', 'gamemodes', 'scripts', 'dig_royale.js'), 'utf8');
+    assert.ok(!/crowns\.rank\(/.test(src) && typeof crowns.rank === 'undefined', 'no crown reordering anywhere');
 });
 
-test('steal: a kill takes the crown and 30% of the points, board only', () => {
+test('hold: a crown pays points a second, double in the final minute, a bonus at the bell', () => {
+    const { a, b, d } = contest();
+    const b0 = scoreOf(b), a0 = scoreOf(a);
+    for (let i = 0; i < 10; i++) tick(1000);
+    assert.equal(scoreOf(b) - b0, 10 * crowns.PPS, 'PPS a second');
+    assert.equal(scoreOf(a), a0, 'no crown, no pay');
+    assert.equal(royale._statOf(b).crownPts, 10 * crowns.PPS);
+    let r = lastRY(b.socket);
+    assert.equal(r.crowns.list.find(x => x.e === b.id).p, 10 * crowns.PPS, 'RY: what this crown paid');
+    const row = royale.boardSnapshot().find(x => x.id === b.id);
+    assert.equal(row.cb, 10 * crowns.PPS, 'board rows carry the crown bonus');
+    // the final minute: double
+    royale.debugRaidLeft(50);
+    tick(300);
+    const b1 = scoreOf(b);
+    for (let i = 0; i < 4; i++) tick(1000);
+    assert.equal(scoreOf(b) - b1, 4 * crowns.PPS * crowns.SD_MULT);
+    assert.equal(lastRY(b.socket).crowns.pps, crowns.PPS * crowns.SD_MULT);
+    assert.ok(/pays double/.test(kcs(b, 'suddendeath').pop()[4]));
+    // the bell: everyone still wearing one gets BELL_BONUS
+    const b2 = scoreOf(b), d2 = scoreOf(d);
+    for (const x of [a, b, d]) royale._statOf(x).since = Date.now() - 120000;
+    const next = endRaidNow(() => { royale.debugEndRaid(); tick(50); });
+    assert.ok(scoreOf(b) - b2 >= crowns.BELL_BONUS && scoreOf(b) - b2 < crowns.BELL_BONUS + 10, 'bell bonus ' + (scoreOf(b) - b2));
+    assert.equal(scoreOf(d), d2);
+    const top = royale._results().top;
+    assert.ok(top.find(x => x.id === b.id).cb >= 10 * crowns.PPS + 4 * 10 + crowns.BELL_BONUS);
+    next();
+});
+
+test('steal: a kill takes the crown and 30% of the kill and crown points, board only', () => {
     const { a, b } = contest();
     const rankBasis = (s) => (s.banked | 0) + (s.killPts | 0) + (s.revengeBonus | 0) + (s.extra | 0) - (s.rankDiscount || 0);
     const a0 = scoreOf(a), b0 = scoreOf(b);
@@ -224,10 +276,48 @@ test('steal: a kill takes the crown and 30% of the points, board only', () => {
     assert.ok(!/crownSwing/.test(hooks), 'rankHooks never reads the swing');
     const take = kcs(a, 'crowntake').pop(), lost = kcs(b, 'crownlost').pop();
     assert.ok(take && /CROWN STOLEN/.test(take[2]) && take[3] === stolen, 'the slam for the thief');
+    assert.equal(take[4], "You took " + b.name + "'s crown: +1,500 pts, +5/sec while you hold it.");
     assert.ok(lost && /CROWN LOST/.test(lost[2]) && new RegExp(a.name).test(lost[4]), 'and for the victim');
+    assert.equal(lost[4], a.name + " took your crown and 1,500 of your kill and crown points. Your banked gems are safe.");
     const feed = ry(a.socket).feed;
     assert.ok(feed.some(f => f.crown && f.took && f.by === a.name && f.name === b.name && f.pts === stolen), "X took Y's crown");
     assert.ok(!feed.some(f => f.name === b.name && f.verb), 'no second kill line for it');
+});
+
+test('steal: banked gems are safe points, and one steal takes at most STEAL_CAP', () => {
+    const { a, b, c } = contest();
+    assert.equal(crowns.STEAL_CAP, 1500);
+    // b is a pure banker: 9,455 banked, no kills, wearing a crown it never asked for
+    const sb = royale._statOf(b);
+    sb.extra = 0; sb.kills = 0; sb.botKills = 0; sb.crownPts = 0; sb.crownSwing = 0;
+    sb.banked = 9455;
+    assert.equal(scoreOf(b), 9455);
+    let r = ry(b.socket);
+    assert.deepEqual(r.you.pts, { b: 9455, k: 0, c: r.you.pts.c }, 'the parts: banked, kills & bonuses, crowns');
+    assert.equal(r.you.score, r.you.pts.b + r.you.pts.k + r.you.pts.c, 'the parts add up to the points');
+    assert.ok(r.you.crown && r.you.crown.pps === crowns.PPS, 'RY: you wear a crown');
+    assert.ok(r.you.crown.lose <= 10, 'a banker risks (almost) nothing: ' + r.you.crown.lose);
+    const b0 = scoreOf(b);
+    die(b, a);
+    assert.equal(a.crowned, true, 'the crown still moves');
+    assert.ok(b0 - scoreOf(b) <= 10, 'the banked 9,455 stay: lost ' + (b0 - scoreOf(b)));
+    assert.equal(royale._statOf(b).banked, 9455);
+    const lost = kcs(b, 'crownlost').pop();
+    assert.ok(/Your banked gems are safe/.test(lost[4]), lost[4]);
+    // the death card's line: what it cost and why
+    r = ry(b.socket);
+    assert.ok(r.you.dl && r.you.dl.cr === 1 && (r.you.dl.p | 0) <= 10, JSON.stringify(r.you.dl));
+    // a big fighter: 30% would be 6,000, the cap holds it to 1,500
+    setScore(c, 20000);
+    const c0 = scoreOf(c), a0 = scoreOf(a);
+    const sa = royale._statOf(a);
+    sa.crownSwing = 0;
+    die(c, a);      // a already wears one: a smash
+    assert.equal(c0 - scoreOf(c), 1500, 'capped');
+    assert.ok(scoreOf(a) - a0 >= 1500, 'the killer gets it');
+    r = ry(c.socket);
+    assert.equal(r.you.dl.p, 1500);
+    assert.equal(r.you.dl.by, a.name);
 });
 
 test('pass: storm death, a bot thief, and a killer who already has one', () => {
@@ -281,7 +371,7 @@ test('spawns: no lock in the last storm; cycle ends still lock', () => {
     assert.ok(/if \(noFinalLock && isFinal\(\)\)/.test(src), 'only the final cycle skips it');
 });
 
-test('sudden death: crowns cannot bank, the truce ends, crowns are revealed', () => {
+test('sudden death: crowns bank but cannot hide, the truce ends, crowns are revealed', () => {
     const { a, b } = contest();
     global.royaleCoreTruce = true;
     royale.debugRaidLeft(50);
@@ -289,12 +379,17 @@ test('sudden death: crowns cannot bank, the truce ends, crowns are revealed', ()
     assert.equal(crowns.suddenOn(), true);
     assert.equal(global.royaleCrownSD, true);
     assert.ok(kcs(b, 'suddendeath').length && kcs(a, 'suddendeath').length, 'everyone hears it');
-    assert.ok(/can't bank/.test(kcs(b, 'suddendeath').pop()[4]));
-    // on the vault, a crown is refused with a reason; the uncrowned bank
+    assert.ok(/still bank/.test(kcs(b, 'suddendeath').pop()[4]) && /pushes a crown off/.test(kcs(b, 'suddendeath').pop()[4]));
+    assert.equal(kcs(a, 'suddendeath').pop()[2], 'FINAL MINUTE');
+    // on the vault a crown banks like anyone (round 5); the vault rule is
+    // that it won't hide one (vault.js CROWN_IDLE_MS / CROWN_PAD_MS)
+    assert.equal(crowns.bankBlocked(b), null);
+    assert.equal(b.crownLocked, true);
     for (const t of [a, b]) { t.x = 0; t.y = -3000; t.vaultOnPad = true; t.carriedGems = 500; t._depositNoAt = 0; }
-    assert.equal(vault.depositFor(b, 500), false);
-    assert.ok(b.msgs.some(m => /Crowns can't bank/.test(m)), 'the reason: ' + b.msgs.slice(-2));
-    assert.ok(!b.vaultDeposit);
+    assert.equal(vault.depositFor(b, 500), true, 'a crown banks in the final minute');
+    assert.ok(b.vaultDeposit && b.vaultDeposit.total === 500);
+    vault.cancelDeposit(b, false);
+    assert.equal(vault.campLimitMs(b), vault.CROWN_IDLE_MS, 'pushed off right after');
     assert.equal(vault.depositFor(a, 500), true, 'no crown, no problem');
     vault.cancelDeposit(a, false);
     // the Core truce: coreFinale reads the flag
@@ -309,12 +404,12 @@ test('sudden death: crowns cannot bank, the truce ends, crowns are revealed', ()
     royale.debugRaidLeft(9);
     tick();
     assert.ok(kcs(a, 'crown10').length === 1 && /Take a crown/.test(kcs(a, 'crown10')[0][4]));
-    assert.ok(/Hold on/.test(kcs(b, 'crown10')[0][4]));
+    assert.ok(/Hold on/.test(kcs(b, 'crown10')[0][4]) && /\+500 pts/.test(kcs(b, 'crown10')[0][4]));
 });
 
-test('winner: the crowned top scorer, past a bigger uncrowned score; results shape', () => {
+test('winner: the most points wins, crown or not; results shape', () => {
     const { a, b, c, d, e } = contest();
-    setScore(d, 20000);          // no crown: no win
+    setScore(d, 20000);          // no crown, the most points: the win
     setScore(c, 6000);           // crowned, now ahead of b
     royale.debugRaidLeft(40);
     tick();
@@ -324,18 +419,23 @@ test('winner: the crowned top scorer, past a bigger uncrowned score; results sha
     const res = royale._results();
     assert.ok(res, 'the raid ended');
     assert.equal(res.crowns, 1);
-    assert.deepEqual(res.top.slice(0, 4).map(x => x.id), [c.id, b.id, e.id, d.id]);
-    assert.deepEqual(res.champ, { id: c.id, name: c.name, score: 6000, bot: 0 });
+    assert.deepEqual(res.top.slice(0, 4).map(x => x.id), [d.id, c.id, b.id, e.id]);
+    for (let i = 1; i < res.top.length; i++) assert.ok(res.top[i - 1].score >= res.top[i].score, 'points order');
+    assert.deepEqual(res.champ, { id: d.id, name: d.name, score: 20000, bot: 0 });
+    assert.ok(res.top[1].cb >= crowns.BELL_BONUS, 'the crowned get their bell bonus, shown as a line');
+    assert.equal(res.top[0].cb, undefined);
     assert.deepEqual(Object.keys(res).sort(), ['at', 'champ', 'crowns', 'duos', 'raidId', 'rows', 'top', 'win'].sort());
-    assert.deepEqual(res.win, [c.id], 'the victory lap is the champion\'s');
+    assert.deepEqual(res.win, [d.id], 'the victory lap is the champion\'s');
     const end = kcs(a, 'raidend').pop();
-    assert.equal(end[4], c.name + ' is the Core Champion');
-    assert.equal(royale._statOf(c).champWin, true);
-    assert.ok(c.socket._champUntil > Date.now() + 23 * 3600 * 1000, '24 h champion crown (session)');
-    assert.equal(c.socket._crownStreak, 1);
+    assert.equal(end[4], d.name + ' is the Core Champion with 20,000 pts');
+    assert.equal(royale._statOf(d).champWin, true);
+    assert.ok(!royale._statOf(c).champWin);
+    assert.ok(d.socket._champUntil > Date.now() + 23 * 3600 * 1000, '24 h champion crown (session)');
+    assert.equal(d.socket._crownStreak, 1);
+    assert.equal(c.socket._crownStreak | 0, 0);
     assert.equal(a.socket._crownStreak | 0, 0);
     // the champion's crown is on the board rows for everyone
-    assert.equal(royale.boardSnapshot().find(x => x.id === c.id).ch, 1);
+    assert.equal(royale.boardSnapshot().find(x => x.id === d.id).ch, 1);
     // the crowns froze at the bell
     assert.equal(crowns._state().done, true);
     next();                              // the next raid
@@ -345,9 +445,8 @@ test('winner: the crowned top scorer, past a bigger uncrowned score; results sha
 test('stability: a crowns failure never blocks the raid end', () => {
     const { a, b } = contest();
     for (const x of [a, b]) royale._statOf(x).since = Date.now() - 120000;
-    const fin = crowns.finish, rank = crowns.rank;
+    const fin = crowns.finish, snap = crowns.crownKeys;
     crowns.finish = () => { throw new Error('boom'); };
-    crowns.rank = () => { throw new Error('boom'); };
     const err = console.error, warn = console.warn;
     console.error = () => {}; console.warn = () => {};
     let next = null;
@@ -355,7 +454,7 @@ test('stability: a crowns failure never blocks the raid end', () => {
         next = endRaidNow(() => { royale.debugEndRaid(); tick(50); });
         assert.ok(royale._results(), 'still ended');
         assert.ok(royale._results().top.length >= 2);
-    } finally { crowns.finish = fin; crowns.rank = rank; console.error = err; console.warn = warn; }
+    } finally { crowns.finish = fin; crowns.crownKeys = snap; console.error = err; console.warn = warn; }
     if (next) next();
 });
 
@@ -393,21 +492,37 @@ test('client: tracker, note and the raid end words', async () => {
     const c = { on: 1, sd: 0, fz: 450, list: [{ e: 1, n: 'Ann', s: 5000, x: 900, y: 0, f: 1 }, { e: 2, n: 'Bot', s: 4000, b: 1, x: 0, y: 1800, f: 1 }, { e: 3, n: 'Cy', s: 3000, x: -450, y: 0, f: 1 }] };
     const fd = (d) => Math.round(d) + "";
     const t = L.tracker(c, 9, 0, 0, fd);
-    assert.deepEqual(t.rows.map(r => [r.k, r.name, r.score]), [[1, 'Ann', 5000], [2, 'Bot', 4000], [3, 'Cy', 3000]]);
-    assert.equal(t.footer, 'Nearest crown ~450');
-    assert.equal(L.tracker(c, 1, 0, 0, fd).footer, 'Keep it to the bell');
-    assert.equal(L.tracker(Object.assign({}, c, { sd: 1 }), 1, 0, 0, fd).footer, "Can't bank. Survive!");
-    assert.deepEqual(L.note(c, 9, 0, 0, fd, 0), { text: 'Kill a crown to win', sub: '~450', hot: false }, 'a first raid: simple');
-    assert.equal(L.note(c, 1, 0, 0, fd, 0).text, 'You have a crown');
+    assert.deepEqual(t.rows.map(r => [r.crown, r.name, r.score]), [[1, 'Ann', 5000], [2, 'Bot', 4000], [3, 'Cy', 3000]]);
+    assert.equal(t.footer, 'Nearest crown: about 450 away');
+    assert.equal(t.footer2, 'Knock it off its holder to steal it');
+    assert.equal(L.tracker(c, 1, 0, 0, fd).footer, 'Your crown: +5 pts/sec');
+    assert.equal(L.tracker(Object.assign({}, c, { sd: 1, pps: 10 }), 1, 0, 0, fd).footer, "Your crown: +10 pts/sec, the vault won't hide you");
+    // with the board: the points race, crowns marked, you included
+    const board = [
+        { id: 7, name: 'Rich', score: 9000, place: 1 }, { id: 1, name: 'Ann', score: 5000, place: 2, cr: 1 },
+        { id: 2, name: 'Bot', score: 4000, place: 3, cr: 1, bot: 1 }, { id: 8, name: 'Dee', score: 3500, place: 4 },
+        { id: 3, name: 'Cy', score: 3000, place: 5, cr: 1 }, { id: 9, name: 'Me', score: 100, place: 9 },
+    ];
+    const tb = L.tracker(c, 9, 0, 0, fd, board);
+    assert.deepEqual(tb.rows.map(r => [r.k, r.name, r.crown, r.me]), [[1, 'Rich', 0, false], [2, 'Ann', 1, false], [3, 'Bot', 2, false], [5, 'Cy', 3, false], [9, 'Me', 0, true]]);
+    assert.deepEqual(L.note(c, 9, 0, 0, fd, 0), { text: 'Kill a crown holder to steal points', sub: '~450', hot: false }, 'a first raid: simple');
+    assert.equal(L.note(c, 1, 0, 0, fd, 0).text, 'Your crown: +5 pts/sec');
+    assert.deepEqual(L.note(Object.assign({}, c, { list: [Object.assign({}, c.list[0], { p: 1240 })] }), 1, 0, 0, fd), { text: 'CROWN +5 PTS/SEC', sub: '+1,240 so far', hot: true });
     assert.equal(L.note(null, 1, 0, 0, fd), null);
-    const res = { crowns: 1 };
-    assert.equal(L.finale(res, 1, true, 'Me', 8).title, 'CORE CHAMPION');
-    assert.deepEqual(L.finale(res, 2, false, 'Ann', 8), { title: 'SILVER CROWN', sub: 'Ann is the Core Champion', col: 'silver' });
-    assert.equal(L.finale(res, 3, false, 'Ann', 8).title, 'BRONZE CROWN');
-    const other = L.finale(res, 7, false, 'Ann', 8);
-    assert.equal(other.title, 'ANN');
-    assert.equal(other.sub, 'is the Core Champion');
+    const res = { crowns: 1, champ: { id: 7, name: 'Rich', score: 9675 } };
+    assert.deepEqual(L.finale(res, 1, true, 'Me', 8), { title: 'CORE CHAMPION', sub: 'Most points: 9,675. #1 of 8', col: 'gold' });
+    assert.deepEqual(L.finale(res, 2, false, 'Rich', 8), { title: '#2', sub: 'Rich won with 9,675 pts', rest: ' won with 9,675 pts', col: 'silver' });
+    assert.equal(L.finale(res, 3, false, 'Rich', 8).col, 'bronze');
+    const other = L.finale(res, 7, false, 'Rich', 8);
+    assert.equal(other.title, 'RICH');
+    assert.equal(other.sub, 'is the Core Champion with 9,675 pts');
     assert.equal(L.finale({}, 1, true, 'Me', 8), null, 'a raid without crowns keeps VICTORY');
+    assert.equal(L.crownLine({ cb: 1240 }), '+1,240 from crowns');
+    assert.equal(L.crownLine({ cb: -300 }), '');
+    assert.equal(L.crownLine({}), '');
+    // the end screen shows the crown line and every title says the points
+    const fin = fs.readFileSync(path.join(CLIENT, 'raidFinale.js'), 'utf8');
+    assert.ok(/CL\.crownLine\(row\)/.test(fin) && /cw\.rest/.test(fin));
     assert.deepEqual(L.feed({ crown: 1, took: 1, by: 'X', name: 'Y', pts: 300 }), { verb: 'took', by: 'X', name: 'Y', pts: 300 });
     // wired up: the socket feeds it, the app draws it, the build keeps it hot
     const sock = fs.readFileSync(path.join(CLIENT, 'socketinit.js'), 'utf8');
@@ -445,7 +560,7 @@ test('accounts: a Core Champion gets the win and the streak; nobody else in that
     assert.equal(r1.champ, true);
     assert.equal(stat(champ.id).raid_wins, 1);
     assert.equal(r1.streak && r1.streak.streak, 1, 'win streak 1');
-    // the uncrowned top scorer of the same raid (placed 4th by the crowns) does not
+    // anyone else in the same raid (placed 4th) does not
     rankStore.applyRaidPlacement({ raidKey: 'c:1', userId: rich.id, place: 4, rows: 8, score: 20000, raidMs: 15 * 60000, played: true, active: true, contest: true, champ: false });
     assert.equal(stat(rich.id).raid_wins | 0, 0);
     // a second win: streak 2; a played raid without one resets it

@@ -7,19 +7,15 @@
 // move it with UPDATE ... WHERE claims = <what was read> (a second click, a
 // second tab or a replayed request finds nothing to update), write the
 // daily_claims row (its primary key is the same guard again), then pay:
-//   gems  banks.credit, onto what is at rest (safe while a raid holds a lease)
 //   dust  dust.creditExempt, ledger kind 'daily' (exempt from the soft cap,
 //         like quest and streak dust)
 //   items owned_items source 'grant', put on if that slot is empty; already
 //         owned pays the day's fallback dust instead
-// A guest's day 3 and day 7 items go on the track's `owed` list and are
-// handed over by adoptGuest when that browser shows up logged in to a brand
-// new account; the guest's progress on the track comes along too.
+// No in-game gems: the track pays lobby currency only (since Oct 5 2026
 'use strict';
 
 const db = require('./db');
 const config = require('./config');
-const banks = require('./banks');
 const dust = require('./dust');
 const users = require('./users');
 const store = require('./store');
@@ -68,15 +64,20 @@ function itemFor(entry, owned) {
     return D.DAY7_ITEMS.find(id => !owned.has(id)) || D.DAY7_ITEMS[0];
 }
 // What claiming `day` pays this owner. owned: the account's owned set, or
-// null for a guest. -> {day, gems, dustMilli, item, signup}
+// null for a guest
 //   item    {id, name, cat, rarity} | null
-//   signup  true when the item only comes with an account (guests)
+// signup true for a guest: the dust and the item only come with an account (owed
 function rewardFor(day, owned) {
     const e = D.TRACK[Math.max(1, Math.min(D.DAYS, day | 0)) - 1];
     const id = itemFor(e, owned);
-    if (!owned) return { day: e.day, gems: e.gems, dustMilli: 0, item: itemView(id), signup: !!id };
-    if (id && owned.has(id)) return { day: e.day, gems: e.gems, dustMilli: e.dustMilli + (e.fallbackMilli | 0), item: null, signup: false, had: itemView(id) };
-    return { day: e.day, gems: e.gems, dustMilli: e.dustMilli, item: itemView(id), signup: false };
+    if (!owned) return { day: e.day, dustMilli: e.dustMilli, item: itemView(id), signup: true };
+    if (id && owned.has(id)) return { day: e.day, dustMilli: e.dustMilli + (e.fallbackMilli | 0), item: null, signup: false, had: itemView(id) };
+    return { day: e.day, dustMilli: e.dustMilli, item: itemView(id), signup: false };
+}
+// The dust a guest track is owed so far (its claim rows), capped at a week
+function owedDust(d, trackId) {
+    const r = d.get('SELECT coalesce(sum(dust_milli), 0) AS m FROM daily_claims WHERE track_id = ?', trackId);
+    return Math.min(D.WEEK_DUST_MILLI, Math.max(0, (r && r.m) | 0));
 }
 
 // ── visits ─────────────────────────────────────────────────────────────
@@ -91,10 +92,10 @@ function touch(d, row, now) {
 // A guest browser that just signed up: its track (and anything it is owed)
 // moves onto the account, once. Only for an account made in the last day
 // that has no track of its own yet, and a guest row nobody else converted.
-// -> {moved: bool, items: [item views granted]}
+// > {moved: bool, items: [item views granted], dustMilli: owed dust paid}
 function adoptGuest(userId, guestId, now = Date.now()) {
     const d = h();
-    const none = { moved: false, items: [] };
+    const none = { moved: false, items: [], dustMilli: 0 };
     if (!d || !on() || !GUEST_RE.test(String(guestId || '')) || !Number.isInteger(userId)) return none;
     return d.tx(() => {
         const u = d.get('SELECT id, created_at, equip_sidekick, equip_sd_skin FROM users WHERE id = ? AND deleted_at IS NULL', userId);
@@ -112,8 +113,11 @@ function adoptGuest(userId, guestId, now = Date.now()) {
         for (const id of owedOf(g)) {
             if (grantItem(d, userId, id, now)) items.push(itemView(id));
         }
-        users.audit(userId, 'daily_adopt', { guest: guestId.slice(0, 6), claims: g.claims, step: g.step, items: items.map(i => i.id) }, { now, actor: 'system' });
-        return { moved: true, items };
+        // the dust it was owed (guest claim rows before Oct 5 2026 paid gems and owe 0)
+        let dustMilli = owedDust(d, g.id);
+        if (dustMilli > 0 && dust.creditExempt(userId, dustMilli, 'daily', 'daily:adopt', now) == null) dustMilli = 0;
+        users.audit(userId, 'daily_adopt', { guest: guestId.slice(0, 6), claims: g.claims, step: g.step, items: items.map(i => i.id), dustMilli }, { now, actor: 'system' });
+        return { moved: true, items, dustMilli };
     });
 }
 
@@ -149,8 +153,7 @@ function shopPick(now) {
 
 // What the menu and the raid end show. Notes the visit when opts.touch.
 // -> {on, owner, day, ready, readyAt, expiresAt, missed, from, streak, best,
-//     claims, step, today, tomorrow, track:[7], owed:[items], adopted, bank,
-//     shop, now}
+// claims, step, today, tomorrow, track:[7], owed:[items], owedMilli, adopted
 function status(o, now = Date.now(), opts = {}) {
     if (!on()) return { on: false, now };
     const d = h();
@@ -181,15 +184,15 @@ function status(o, now = Date.now(), opts = {}) {
         tomorrow: rewardFor(nextAfter, owned),
         track,
         owed: row && o.kind === 'g' ? owedOf(row).map(itemView) : [],
+        owedMilli: row && o.kind === 'g' && !row.adopted_by ? owedDust(d, row.id) : 0,
         adopted: !!(row && row.adopted_by),
-        bank: banks.peek(ownerKey(o)),
         shop: shopPick(now),
         now,
     };
 }
 
 // ── claiming ───────────────────────────────────────────────────────────
-// -> {claimed: {day, gems, dustMilli, item, signup, had}, balanceMilli, status}
+// > {claimed: {day, dustMilli, item, signup, had}, balanceMilli, status}
 // Throws 409 not_ready (with readyAt) when it isn't time yet, 409
 // already_claimed when another request just took it, 409 adopted when the
 // guest track moved to an account.
@@ -217,8 +220,6 @@ function claim(o, now = Date.now(), opts = {}) {
         if (!moved) throw new HttpError(409, 'already_claimed', 'Already claimed!');
         const owned = ownedOf(o);
         const reward = rewardFor(ev.day, owned);
-        // gems: into the bank (the account a converted guest became, if any)
-        const gems = banks.credit(ownerKey(o), reward.gems, now) || 0;
         let dustMilli = 0, balanceMilli = null, itemId = null;
         if (o.kind === 'a') {
             if (reward.item) {
@@ -234,16 +235,20 @@ function claim(o, now = Date.now(), opts = {}) {
                 balanceMilli = dust.creditExempt(o.id, reward.dustMilli, 'daily', 'daily:' + next.claims, now);
                 if (balanceMilli != null) dustMilli = reward.dustMilli;
             }
-            users.audit(o.id, 'daily_claim', { day: ev.day, claim: next.claims, gems, dustMilli, item: itemId, missed: ev.missed }, { now, ip: opts.ip });
-        } else if (reward.item) {
-            const owed = owedOf(row);
-            if (!owed.includes(reward.item.id)) owed.push(reward.item.id);
-            d.run('UPDATE daily_track SET owed = ? WHERE id = ?', JSON.stringify(owed.slice(-4)), row.id);
+            users.audit(o.id, 'daily_claim', { day: ev.day, claim: next.claims, dustMilli, item: itemId, missed: ev.missed }, { now, ip: opts.ip });
+        } else {
+            // a guest: the dust is owed (this claim row), the item goes on the owed list
+            dustMilli = reward.dustMilli;
+            if (reward.item) {
+                const owed = owedOf(row);
+                if (!owed.includes(reward.item.id)) owed.push(reward.item.id);
+                d.run('UPDATE daily_track SET owed = ? WHERE id = ?', JSON.stringify(owed.slice(-4)), row.id);
+            }
         }
-        d.run('INSERT INTO daily_claims (track_id, claim_no, day, at, gems, dust_milli, item_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            row.id, next.claims, ev.day, now, gems, dustMilli, itemId || (reward.signup && reward.item ? reward.item.id : null));
+        d.run('INSERT INTO daily_claims (track_id, claim_no, day, at, gems, dust_milli, item_id) VALUES (?, ?, ?, ?, 0, ?, ?)',
+            row.id, next.claims, ev.day, now, dustMilli, itemId || (reward.signup && reward.item ? reward.item.id : null));
         return {
-            claimed: { day: ev.day, gems, dustMilli, item: reward.item, signup: reward.signup, had: reward.had || null, missed: ev.missed, from: ev.from },
+            claimed: { day: ev.day, dustMilli, item: reward.item, signup: reward.signup, had: reward.had || null, missed: ev.missed, from: ev.from },
             balanceMilli,
         };
     });

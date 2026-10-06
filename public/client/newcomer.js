@@ -179,7 +179,9 @@ function director(t) {
         // banner waits for it
         if (global.died || global._nxCardWas) return;
         S.lastKey = key;
-        const b = L.bannerFor(live, { ability: abilityName(live), key: keyLabel("KEY_ABILITY", "Q"), touch: !!global.mobile });
+        const q0 = me();
+        const dist = isFinite(num(live.x)) && isFinite(num(live.y)) && q0 ? Math.hypot(num(live.x) - q0.x, num(live.y) - q0.y) : NaN;
+        const b = L.bannerFor(live, { ability: abilityName(live), key: keyLabel("KEY_ABILITY", "Q"), touch: !!global.mobile, dist });
         S.cur = { key, ev: live, rAt, kind: b.kind, b, at: t, wasNear: false, used: false, leftWas: L.leftMs(live, rAt, t, Date.now()),
             abAt: global.abilityUsedAt || 0, kitAt: global.kitUsedAt || 0 };
         if (b.title) {
@@ -248,7 +250,7 @@ function intros(t) {
     S.introAt = t;
     // the one-time ability tour already covers the dash, ability and shop
     const tour = !!global.abilityIntroOn || abilityTourDone();
-    const keys = { ability: keyLabel("KEY_ABILITY", "Q"), kit: [keyLabel("KEY_KIT_1", "Z"), keyLabel("KEY_KIT_2", ","), keyLabel("KEY_KIT_3", "N")].join("  "), touch: !!global.mobile };
+    const keys = { ability: keyLabel("KEY_ABILITY", "Q"), kit: L.kitKeysText([keyLabel("KEY_KIT_1", "Z"), keyLabel("KEY_KIT_2", ","), keyLabel("KEY_KIT_3", "N")]), touch: !!global.mobile };
     // the start of raid 2 and raid 3: one quiet line about what just opened up
     const unlock = "unlock" + S.stage;
     if (S.known && S.stage >= 1 && S.stage < L.VETERAN && !seen()[unlock] && !S.introQ.some(q => q.id === unlock) && !(S.intro && S.intro.id === unlock)) {

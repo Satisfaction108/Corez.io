@@ -15,8 +15,9 @@
 //              least as sharp as the bots before 07e28b1, and below 0.5
 //              nothing changed
 //   middle     at 0.5 the knobs sit on the 07e28b1 tuning
-//   shots      a bot's shot into a player follows that player's difficulty;
-//              a boss's shot is the same into everyone
+//   shots      a bot's shot lands the same into every player, whatever
+//              their difficulty (Oct 5 2026: no hidden damage cut for
+//              newcomers); a boss's shot is the same into everyone
 //   bots       one bot plays a newcomer and a veteran differently: soft
 //              window length, hunter cap, reaction time, fight range
 //   stamp      the raid stamps rank or raid score; newness comes from play
@@ -156,7 +157,7 @@ legacy('ceiling', () => {
             assert.ok(D.burstMs(1, r) < PRE.burstMs(r), 'burst');
         }
     }
-    assert.ok(D.shotMult(1) < 1);
+    assert.equal(D.shotMult(1), 0.92, 'the old ceiling, for everyone');
     assert.ok(D.maxHunters(1) <= 2);
     assert.ok(D.company(1) < 4);
     assert.equal(D.company(0), 1);
@@ -167,7 +168,8 @@ legacy('ceiling', () => {
         assert.ok(D.aimError(0.4, d) < D.aimError(0.4, d - 0.1));
         assert.ok(D.aimStiff(0.4, d) > D.aimStiff(0.4, d - 0.1));
         assert.ok(D.reactionMs(0.4, d, 0.5) < D.reactionMs(0.4, d - 0.1, 0.5));
-        assert.ok(D.shotMult(d) > D.shotMult(d - 0.1));
+        assert.equal(D.shotMult(d), D.shotMult(d - 0.1), 'shot damage never follows difficulty');
+        assert.ok(D.targetPenalty(d) < D.targetPenalty(d - 0.1), 'a newer player is passed over first (target choice only)');
         assert.ok(D.softShare(d) < D.softShare(d - 0.1));
     }
 });
@@ -220,11 +222,12 @@ test('lockon: knobs', () => {
         assert.ok(D.aimError(0.4, d) < D.aimError(0.4, d - 0.1));
         assert.ok(D.aimStiff(0.4, d) > D.aimStiff(0.4, d - 0.1));
         assert.ok(D.reactionMs(0.4, d, 0.5) < D.reactionMs(0.4, d - 0.1, 0.5));
-        assert.ok(D.shotMult(d) > D.shotMult(d - 0.1));
+        assert.equal(D.shotMult(d), 1, 'full damage into everyone');
+        assert.ok(D.targetPenalty(d) <= D.targetPenalty(d - 0.1), 'never more passing over as they get better');
         assert.ok(D.softShare(d) < D.softShare(d - 0.1));
     }
     const knobs = d => [D.aimError(0.4, d), D.aimStiff(0.4, d), D.leadShare(0.4, d), D.reactionMs(0.4, d, 0.3),
-        D.pauseMs(0.4, d, 0.3), D.burstMs(d, 0.3), D.shotMult(d), D.initRange(d), D.softShare(d), D.turretNoise(d)];
+        D.pauseMs(0.4, d, 0.3), D.burstMs(d, 0.3), D.initRange(d), D.softShare(d), D.turretNoise(d)];
     for (const d of [0, 0.15, 0.3, 0.5]) {
         const on = knobs(d);
         D.setLockOn(false);
@@ -249,7 +252,7 @@ test('lockon: shots', () => {
     const newbie = { isPlayer: true, botNewbie: true };
     const vet = { isPlayer: true, botDifficulty: 1 };
     for (const p of [newbie, vet]) p.master = p;
-    assert.ok(near(shotMult({ master: bot }, newbie), D.shotMult(0)), 'a newcomer still takes the soft shots');
+    assert.equal(shotMult({ master: bot }, newbie), 1, 'a newcomer takes full damage too');
     assert.equal(shotMult({ master: bot }, vet), 1, 'a veteran takes full damage');
 });
 
@@ -263,7 +266,7 @@ test('middle', () => {
         close(D.pauseMs(s, 0.5, 0.5), CUR.pauseMs(s, 0.5), 'pause');
     }
     close(D.burstMs(0.5, 0.5), CUR.burstMs(0.5), 'burst');
-    close(D.shotMult(0.5), 0.8, 'shot damage');
+    assert.equal(D.shotMult(0.5), 1, 'shot damage: the same for everyone');
     assert.equal(D.maxHunters(0.5), 2);
     assert.equal(D.company(0.5), 2, 'the 07e28b1 director kept two near everyone');
     assert.equal(D.maxHunters(0.1), 1);
@@ -278,10 +281,9 @@ legacy('shots', () => {
     const vet = { isPlayer: true, botDifficulty: 1 };
     const mid = { isPlayer: true, botDifficulty: 0.5 };
     for (const p of [newbie, vet, mid]) p.master = p;
-    assert.ok(near(shotMult(shot, newbie), D.shotMult(0)));
-    assert.ok(near(shotMult(shot, vet), D.shotMult(1)));
-    assert.ok(shotMult(shot, newbie) < shotMult(shot, mid) && shotMult(shot, mid) < shotMult(shot, vet));
-    assert.ok(shotMult(shot, vet) < 1);
+    assert.ok(near(shotMult(shot, newbie), 0.92));
+    assert.ok(near(shotMult(shot, vet), 0.92));
+    assert.ok(shotMult(shot, newbie) === shotMult(shot, mid) && shotMult(shot, mid) === shotMult(shot, vet), 'the same into everyone');
     // hitting the player's bullet counts as hitting the player
     assert.ok(near(shotMult(shot, { master: vet }), D.shotMult(1)));
     // bot on bot, and no target: the flat bot share
@@ -463,8 +465,11 @@ legacy('stamp: newness runs on play time and lives, the soft window follows it',
     assert.equal(q.botNewbie, false);
     assert.equal(q.botSoftMs, FM.BOT_SOFT_SHORT_MS);
     assert.ok(q.botSoftMs <= 30_000);
+    // ...and that holds for the session (fairPlay earned out: 12 minutes in all)
+    assert.equal(sock._fpOut, 'time');
     // halfway through the fade (about 8.5 minutes in all): between the two
-    sock._royalePlayMs = min(7.5);
+    // (as a different guest: the clock can't run back for the same one)
+    sock._royalePlayMs = min(7.5); sock._fpOut = '';
     royale.freshRaidBody(q);
     assert.ok(q.botNewness > 0.4 && q.botNewness < 0.6, 'newness ' + q.botNewness);
     assert.ok(q.botSoftMs > FM.BOT_SOFT_SHORT_MS && q.botSoftMs < FM.BOT_SOFT_MS);
@@ -483,6 +488,10 @@ legacy('stamp: newness runs on play time and lives, the soft window follows it',
 });
 
 test('bosses: boss guns target a new player once the grace is over', () => {
+    // (the fresh-life spare, bossGuard FRESH_LIFE_MS, is its own rule: off here)
+    const guard = require('../../server/game/terrain/bossGuard.js');
+    guard.setFresh(false);
+    try {
     const boss = new Entity({ x: 0, y: (nextY += 1500) });
     boss.define('royaleVaultWarden');
     boss.isRoyaleBoss = true; boss.team = TEAM_ENEMIES; boss.alwaysActive = true;
@@ -503,6 +512,7 @@ test('bosses: boss guns target a new player once the grace is over', () => {
     assert.equal(aimsAt(), true, 'mercy is about bots, not bosses');
     boss.kill(); p.kill();
     loop(2);
+    } finally { guard.setFresh(true); }
 });
 
 let failed = 0;

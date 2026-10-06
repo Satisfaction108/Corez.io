@@ -39,7 +39,17 @@ function multFor(score) {
 // the growth score that lands exactly on RESPAWN_CAP
 const CAP_SCORE = SCALE * (Math.exp((RESPAWN_CAP - 1) / GAIN) - 1);
 
-function scoreMult(body) { return body && body.isBot ? BOT_SCORE_MULT : 1; }
+// Round 9: past BOT_DIM_AT growth score a bot's new growth comes in at
+const BOT_DIM = process.env.ROYALE_BOT_DIM !== '0';
+const BOT_DIM_AT = +process.env.ROYALE_BOT_DIM_GROW || 5000;
+function botDimAdd(eff, add) {
+    if (!BOT_DIM || !(add > 0) || eff <= BOT_DIM_AT) return add;
+    return add * BOT_DIM_AT / eff;
+}
+// a small fish (terrain/fairPlay.js) grows from its plain score
+function scoreMult(body) { return body && body.isBot && !body.botMinnow ? BOT_SCORE_MULT : 1; }
+// body.growthCap (a small fish): never past it
+function capped(body, g) { return body && body.growthCap > 0 ? Math.min(g, body.growthCap) : g; }
 
 // What a fresh life starts growing from: a quarter of the raid score, capped.
 function spawnEff(score) {
@@ -94,7 +104,7 @@ function onSpawn(body, score, keep) {
     const s = Math.max(0, score || 0) * scoreMult(body);
     body._growScore0 = s;
     body._growEff = keep > 0 ? keep : spawnEff(s);
-    body._growTarget = multFor(body._growEff);
+    body._growTarget = capped(body, multFor(body._growEff));
     body.growthMult = body._growTarget;
     body._growStage = stageOf(body.growthMult);
     body._growRefreshed = body.growthMult;
@@ -124,11 +134,12 @@ function tick(t, bodies, scoreFor, onStage, onRefit) {
         }
         // growth never undoes itself inside a life (carried gems are half
         // the score and a shop trip spends them)
-        const eff = body._growEff + Math.max(0, score - body._growScore0);
+        const add = Math.max(0, score - body._growScore0);
+        const eff = body._growEff + (body.isBot && !body.botMinnow ? botDimAdd(body._growEff, add) : add);
         if (eff > body._growEff) {
             body._growEff = eff;
             body._growScore0 = score;
-            body._growTarget = multFor(eff);
+            body._growTarget = capped(body, multFor(eff));
         } else if (score < body._growScore0) body._growScore0 = score;
         const target = body._growTarget;
         let g = body.growthMult || 1;
@@ -154,5 +165,5 @@ module.exports = {
     RESPAWN_SHARE, RESPAWN_CAP, STAGES, CAP_SCORE,
     BOT_SCORE_MULT, enabled, multFor, spawnEff, scoreMult, onSpawn, tick, applyPerks, stageOf,
     speedMult, healthMult, damageMult, bodyDamageMult, statMult, fovMult, viewMult, mineMult,
-    SCALE, GAIN, STAT_AT_100K, VIEW_POW,
+    SCALE, GAIN, STAT_AT_100K, VIEW_POW, botDimAdd, BOT_DIM_AT,
 };

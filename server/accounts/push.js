@@ -138,19 +138,19 @@ function trackFor(d, sub) {
         : d.get('SELECT * FROM daily_track WHERE guest_id = ?', sub.guest_id);
 }
 
-const gemsText = (n) => (n | 0).toLocaleString('en-US') + ' gems';
+const dustText = (milli) => +((milli | 0) / 1000).toFixed(2) + ' gemdust';
 function dailyPayload(sub, tr, now) {
     const owner = sub.user_id != null ? { kind: 'a', id: sub.user_id } : { kind: 'g', id: sub.guest_id };
     const st = retention.status(owner, now);
     const r = st.today;
-    let what = gemsText(r.gems);
-    if (r.item) what += r.signup ? ' (and a ' + r.item.name + ' if you sign up)' : ' and a ' + r.item.name;
-    else if (r.dustMilli > 0) what += ' and ' + +(r.dustMilli / 1000).toFixed(1) + ' gemdust';
+    // "2.5 gemdust for the shop is waiting.", "A free Buddy sidekick is waiting."
+    const what = r.item ? 'A free ' + r.item.name + (r.item.cat === 'sidekick' ? ' sidekick' : r.item.cat === 'sdSkin' ? ' skin' : '')
+        : dustText(r.dustMilli) + ' for the shop';
     const streak = st.streak >= 2 ? ' Your ' + st.streak + '-day streak is still alive.' : '';
     return {
         kind: 'daily',
         title: 'Day ' + st.day + ' reward is ready',
-        body: what + ' waiting in your bank.' + streak,
+        body: what + (r.signup ? ' is waiting, sign up to keep it.' : ' is waiting.') + streak,
         tag: 'dw-daily',
         url: '/?from=push-daily',
     };

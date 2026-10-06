@@ -8,7 +8,7 @@
 //
 // body.huntedLevel is the shared state (bots read it too). Levels are worked
 // out every EVERY_MS, not every tick. A brand new player (botNewbie) is left
-// alone until they have banked once this raid.
+// alone until they have banked once this raid (bots read the mark, so this only
 //
 // ROYALE_HUNTED=0 turns the whole thing off.
 'use strict';

@@ -1,29 +1,32 @@
 // Reasons to come back, on the menu (accounts and guests alike):
 //
-//   the strip     under Play (#dailyStrip): the 7-day track, tomorrow's
+// the strip in the come-back card left of the menu (#dailyStrip): the 7-day
 //                 reward with a live countdown (or today's, with Claim), the
-//                 streak flame, and one quiet line of reasons: the bank, a
+// streak flame, and one quiet line of reasons: the gemdust balance (or a guest's
 //                 sidekick on today's shelf, the next Raid Night when the
 //                 event card above Play isn't already saying it
 //   welcome back  a returning player whose reward is ready gets one short
-//                 card on load: the bank, the day, a big Claim, then Play.
+// card on load: the gemdust, the day, a big Claim, then Play
 //                 Only when nothing else is open (never a card on a card)
 //   day 1         a first-time player's day 1 is claimed quietly when they
 //                 come back to the menu from their first raid, so tomorrow
 //                 already has something waiting. Before that first raid a
 //                 guest sees none of this: just Play (client/funnel.js)
+// every day clicking the card (or All days) opens a small panel with all 7 days
 //   pings         after a player's first raid (never on a first load), one
 //                 soft ask under the strip for a push ping when the reward is
 //                 ready and before Raid Night. Asked once; the bell on the
 //                 strip turns them off again
 //
+// The track pays gemdust (the Store / Locker currency) and two common items a
 // Rules, rewards and the clock live on the server (server/accounts/
 // retention.js, shared/daily.js); this only draws what /api/daily says.
 import * as api from './api.js';
 import * as store from './state.js';
-import { h, icon, clear, modal, toast, animate, reducedMotion, hasLayers, T_MID } from './ui.js';
+import { h, icon, clear, modal, toast, animate, reducedMotion, hasLayers, fmtDust, T_MID } from './ui.js';
 import { achIcon } from './achievements.js';
 import * as skArt from '../sidekickArt.js';
+import * as view from './dailyView.js';
 
 const DY = window.DWDaily, EV = window.DWEvents, C = window.DWCosmetics;
 const ls = {
@@ -41,7 +44,6 @@ let gameAt = 0, freshLoad = true, booted = false, ownerSig = '';
 
 const inGame = () => document.body.classList.contains('in-game');
 const embedded = () => !!window.dwEmbed;
-const fmt = (n) => (Math.round(+n || 0)).toLocaleString('en-US');
 const dustTxt = (milli) => { const v = (+milli || 0) / 1000; return Number.isInteger(v) ? String(v) : String(+v.toFixed(2)); };
 
 function guestId() {
@@ -59,6 +61,11 @@ export function init(hs) {
     Object.assign(hooks, hs || {});
     strip = document.getElementById('dailyStrip');
     if (!strip || !DY) return;
+    // the card (not its buttons) opens every day's prize
+    strip.addEventListener('click', (e) => {
+        if (e.target && e.target.closest && e.target.closest('button, a, input, .dy-ask')) return;
+        openDays();
+    });
     // logging in or out, or accounts going down: a different owner
     store.on((s) => {
         const sig = s.mode + '|' + (s.user ? s.user.userId : '') + '|' + (s.offline ? 1 : 0);
@@ -95,9 +102,8 @@ export async function refresh() {
     if (seq !== loadSeq || inGame()) return;
     if (!r.ok || !r.data || !r.data.on) { st = null; paint(); return; }
     take(r.data);
-    if (r.data.adoptedNow && r.data.adoptedNow.items && r.data.adoptedNow.items.length) {
-        toast('Your guest streak came with you, plus ' + r.data.adoptedNow.items.map(itemName).join(' and ') + '!', { kind: 'ok', duration: 6000 });
-    }
+    const brought = r.data.adoptedNow ? adoptedText(r.data.adoptedNow) : '';
+    if (brought) toast('Your guest streak came with you, plus ' + brought + '!', { kind: 'ok', duration: 6000 });
     syncPush();
     // a brand new player: day 1 is theirs on the first visit, no card about it
     if (st.claims === 0 && st.ready) { await claim({ quiet: true }); return; }
@@ -127,7 +133,10 @@ async function claim(opts = {}) {
         take(r.data.status);
         if (r.data.push) st.push = r.data.push;
         const c = r.data.claimed;
-        if (opts.quiet) toast('Day 1 reward: +' + fmt(c.gems) + ' gems in your bank. More tomorrow!', { kind: 'ok', duration: 5200 });
+        if (opts.quiet) {
+            toast(c.signup ? 'Day 1 reward: ' + rewardText(c) + ' saved for when you sign up. More tomorrow!'
+                : 'Day 1 reward: +' + rewardText(c) + ' for the shop. More tomorrow!', { kind: 'ok', duration: 5200 });
+        }
         if (typeof r.data.balanceMilli === 'number' && hooks.onDust) hooks.onDust(r.data.balanceMilli / 1000);
         paint(c);
         return c;
@@ -144,34 +153,32 @@ function itemName(it) {
     if (!it) return '';
     return it.cat === 'sidekick' ? it.name + ' sidekick' : it.cat === 'sdSkin' ? it.name + ' skin' : it.name;
 }
-// "500 gems + 1.5 dust", "750 gems + Buddy sidekick"
+// "1.5 gemdust", "Buddy sidekick" (an item day pays dust only when the item is
 export function rewardText(r, opts = {}) {
     if (!r) return '';
-    const bits = [fmt(r.gems) + ' gems'];
+    const bits = [];
     if (r.item) bits.push(itemName(r.item));
-    else if (r.dustMilli > 0) bits.push(dustTxt(r.dustMilli) + ' dust');
+    if (r.dustMilli > 0) bits.push(dustTxt(r.dustMilli) + ' gemdust');
     return bits.join(opts.sep || ' + ');
+}
+function adoptedText(a) {
+    const bits = (a.items || []).map(itemName);
+    if (a.dustMilli > 0) bits.push(dustTxt(a.dustMilli) + ' gemdust');
+    return bits.join(' and ');
+}
+// the line's bold part: amethyst when it's just dust
+function rewardB(r) {
+    return h('b', { class: r && !r.item ? 'dy-dust-amt' : null, text: rewardText(r) });
 }
 
 /* ── little art ─────────────────────────────────────────────────────── */
 const SVG_NS = 'http://www.w3.org/2000/svg';
-function gemIcon(cls) {
-    const s = document.createElementNS(SVG_NS, 'svg');
-    s.setAttribute('viewBox', '0 0 24 24');
-    s.setAttribute('class', 'dw-ic dy-gem' + (cls ? ' ' + cls : ''));
-    s.setAttribute('aria-hidden', 'true');
-    const p = document.createElementNS(SVG_NS, 'path');
-    p.setAttribute('d', 'M7 4h10l4.5 5.5L12 21 2.5 9.5z');
-    const f = document.createElementNS(SVG_NS, 'path');
-    f.setAttribute('d', 'M7 4l-1.6 5.5H18.6L17 4M12 21 5.4 9.5M12 21l6.6-11.5');
-    f.setAttribute('class', 'dy-gem-f');
-    s.append(p, f);
-    return s;
-}
+// the gemdust icon the Store and quests use
+const dustIcon = () => icon('dust', 'dy-dust');
 // A sidekick (or Buddy wearing a skin) drawn by the game's own art.
 function itemArt(it, size) {
     const item = it && C ? C.byId(it.id) : null;
-    if (!item) return gemIcon();
+    if (!item) return dustIcon();
     const kickItem = item.cat === 'sidekick' ? item : C.byId(C.BASIC_SIDEKICK_ID);
     const look = item.cat === 'sdSkin' ? item.look : null;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -184,7 +191,7 @@ function itemArt(it, size) {
         c.scale(dpr, dpr);
         c.translate(size / 2, size / 2 + size * 0.04);
         skArt.drawSidekick(c, kickItem.kick, look, size * 0.27, null, -0.6);
-    } catch (e) { return gemIcon(); }
+    } catch (e) { return dustIcon(); }
     return cv;
 }
 function flame(n, cls) {
@@ -200,11 +207,11 @@ function pips(size) {
     for (let i = 1; i <= 7; i++) {
         const r = st.track[i - 1];
         const cls = i <= done ? ' done' : i === st.day && done < 7 ? (st.ready ? ' now' : ' next') : '';
-        const art = r.item ? itemArt(r.item, size === 'big' ? 30 : 18) : gemIcon();
-        row.appendChild(h('div', { class: 'dy-pip' + cls + (r.item ? ' item' : ''), role: 'listitem', title: 'Day ' + i + ': ' + rewardText(r) + (r.signup ? ' (sign up to claim the ' + itemName(r.item) + ')' : '') },
+        const art = r.item ? itemArt(r.item, size === 'big' ? 30 : 18) : dustIcon();
+        row.appendChild(h('div', { class: 'dy-pip' + cls + (r.item ? ' item' : ''), role: 'listitem', title: 'Day ' + i + ': ' + rewardText(r) + (r.signup ? ' (sign up to claim it)' : '') },
             size === 'big' ? h('span', { class: 'dy-pip-d', text: 'Day ' + i }) : null,
             art,
-            size === 'big' ? h('span', { class: 'dy-pip-g', text: r.item ? (r.signup ? 'sign up' : 'free') : fmt(r.gems) }) : null,
+            size === 'big' ? h('span', { class: 'dy-pip-g', text: r.item ? (r.signup ? 'sign up' : 'free') : dustTxt(r.dustMilli) }) : null,
             i <= done ? h('span', { class: 'dy-pip-ok' }, icon('check')) : null));
     }
     return row;
@@ -221,7 +228,8 @@ function paint(justClaimed) {
     clear(strip);
     strip.hidden = false;
     strip.classList.toggle('ready', !!st.ready);
-    const head = h('div', { class: 'dy-head' }, h('span', { class: 'dy-title', text: 'Daily rewards' }));
+    const head = h('div', { class: 'dy-head' }, h('span', { class: 'dy-title', text: 'Daily rewards' }),
+        h('button', { type: 'button', class: 'dy-link dy-all', text: 'All days', 'aria-haspopup': 'dialog', onclick: () => openDays() }));
     if (st.streak >= 2) head.appendChild(flame(st.streak));
     const asking = askOpen || wantAsk();
     // the ask says it all; the bell comes back once it's answered
@@ -233,7 +241,7 @@ function paint(justClaimed) {
     if (st.ready) {
         const lead = st.missed ? 'Back on day ' + st.day + ':' : 'Day ' + st.day + ' is ready:';
         strip.appendChild(h('div', { class: 'dy-line' },
-            h('span', { class: 'dy-what' }, h('span', { class: 'dy-lead', text: lead + ' ' }), h('b', { text: rewardText(st.today) })),
+            h('span', { class: 'dy-what' }, h('span', { class: 'dy-lead', text: lead + ' ' }), rewardB(st.today)),
             h('button', { type: 'button', class: 'dw-btn primary sm dy-claim', text: 'Claim', onclick: (e) => { e.currentTarget.disabled = true; claim(); } })));
         const su = st.today.signup ? signupLine(st.today) : null;
         if (su) strip.appendChild(su);
@@ -242,7 +250,7 @@ function paint(justClaimed) {
         const tmr = st.tomorrow || st.today;
         const lead = justClaimed ? 'Got it! Tomorrow:' : st.step === 7 ? 'Week done! Tomorrow:' : 'Tomorrow:';
         strip.appendChild(h('div', { class: 'dy-line' },
-            h('span', { class: 'dy-what' }, h('span', { class: 'dy-lead', text: lead + ' ' }), h('b', { text: rewardText(tmr) })),
+            h('span', { class: 'dy-what' }, h('span', { class: 'dy-lead', text: lead + ' ' }), rewardB(tmr)),
             cdEl));
         const su = tmr.signup ? signupLine(tmr) : null;
         if (su) strip.appendChild(su);
@@ -260,18 +268,29 @@ function paint(justClaimed) {
     }
 }
 
+// "The Buddy sidekick needs an account." / "Gemdust needs an account."
+function signupWords(r) {
+    return (r.item ? 'The ' + itemName(r.item) : 'Gemdust') + ' needs an account. ';
+}
 function signupLine(r) {
     if (store.get('mode') === 'user') return null;
     return h('div', { class: 'dy-signup' },
-        h('span', { text: 'The ' + itemName(r.item) + ' needs an account. ' }),
+        h('span', { text: signupWords(r) }),
         h('button', { type: 'button', class: 'dy-link', text: 'Sign up to claim it', onclick: () => hooks.onSignup() }));
 }
+// an account's gemdust balance (the chip's number), or null
+function dustBalance() {
+    const u = store.get('mode') === 'user' ? store.get('user') : null;
+    return u && typeof u.dust === 'number' ? u.dust : null;
+}
 
-// "Bank 3,200 gems · On the shelf: Hexie · Raid Night Sat 8:00 PM (in 2d 4h)"
+// "Gemdust 12.50 · On the shelf: Hexie · Raid Night Sat 8:00 PM (in 2d 4h)" (a
 function paintReasons() {
     if (!reasonsEl) return;
     const bits = [];
-    if (st.bank > 0) bits.push(['Bank ', fmt(st.bank) + ' gems']);
+    const bal = dustBalance();
+    if (bal != null) bits.push(['Gemdust ', fmtDust(bal)]);
+    else if (st.owedMilli > 0) bits.push(['Saved for sign up ', dustTxt(st.owedMilli) + ' gemdust']);
     if (st.shop) bits.push(['On the shelf: ', st.shop.name]);
     const card = document.getElementById('eventCard');
     const c = EV && (!card || card.hidden) ? EV.current(EV.now()) : null;
@@ -298,6 +317,36 @@ function tick() {
     paintReasons();
 }
 
+/* ── every day's prize ──────────────────────────────────────────────── */
+let daysM = null;
+export function openDays() {
+    if (!st || !st.on || daysM || inGame()) return;
+    const guest = store.get('mode') !== 'user';
+    const v = view.rows(st, DY, { guest });
+    const list = h('ol', { class: 'dyd-list' });
+    for (const r of v.rows) {
+        let tag = view.STATE_WORDS[r.state];
+        if (r.state === 'next' && !st.ready) tag = 'In ' + DY.countdown(DY.leftMs(st.readyAt, Date.now(), skew));
+        list.appendChild(h('li', { class: 'dyd-row ' + r.state + (r.item ? ' item' : '') },
+            h('span', { class: 'dyd-day', text: 'Day ' + r.day }),
+            h('span', { class: 'dyd-art' }, r.item ? itemArt(r.item, 26) : dustIcon()),
+            h('span', { class: 'dyd-txt' }, h('b', { text: r.text }), r.note ? h('small', { text: r.note }) : null),
+            r.state === 'done' ? h('span', { class: 'dyd-tag done', 'aria-label': 'Claimed' }, icon('check'))
+                : tag ? h('span', { class: 'dyd-tag', text: tag }) : null));
+    }
+    const body = h('div', { class: 'dyd' },
+        h('div', { class: 'dyd-h' }, h('span', { text: 'Daily rewards' }), st.streak >= 2 ? flame(st.streak, 'inline') : null),
+        list,
+        h('p', { class: 'dyd-rule', text: v.rule }),
+        guest ? h('p', { class: 'dyd-su' }, h('span', { text: 'Gemdust and items need an account. ' }),
+            h('button', { type: 'button', class: 'dy-link', text: 'Sign up to claim', onclick: () => { m.close(); hooks.onSignup(); } })) : null);
+    const m = modal({ cls: 'dyd-modal', title: null, body, dismissable: true, onClose: () => { daysM = null; } });
+    m.card.setAttribute('aria-label', 'Daily rewards, all 7 days');
+    m.card.prepend(h('button', { type: 'button', class: 'wl-x dy-x', 'aria-label': 'Close', 'data-autofocus': '', onclick: () => m.close() }, icon('close')));
+    daysM = m;
+    return m;
+}
+
 /* ── welcome back ───────────────────────────────────────────────────── */
 function openWelcomeSoon() {
     let n = 0;
@@ -317,7 +366,7 @@ export function openWelcome() {
     const r = st.today;
     const user = store.get('user');
     const rewardEl = h('div', { class: 'dy-big' },
-        r.item ? itemArt(r.item, 46) : gemIcon('big'),
+        r.item ? itemArt(r.item, 46) : dustIcon(),
         h('div', { class: 'dy-big-txt' },
             h('div', { class: 'dy-big-k', text: st.missed ? 'Back on day ' + st.day : 'Day ' + st.day + ' reward ready' }),
             h('div', { class: 'dy-big-v', text: rewardText(r) })));
@@ -328,10 +377,10 @@ export function openWelcome() {
     const tmrEl = h('p', { class: 'dy-after', hidden: true });
     const body = h('div', { class: 'dy-back' },
         h('div', { class: 'dy-back-h', text: user ? 'Welcome back, ' + user.username + '!' : 'Welcome back!' }),
-        h('div', { class: 'dy-back-bank' }, gemIcon(), h('span', null, 'Your bank: ', h('b', { text: fmt(st.bank) + ' gems' }))),
+        dustLine(),
         pips('big'),
         rewardEl,
-        r.signup && store.get('mode') !== 'user' ? h('p', { class: 'dy-note' }, 'The ' + itemName(r.item) + ' needs an account. ',
+        r.signup && store.get('mode') !== 'user' ? h('p', { class: 'dy-note' }, signupWords(r),
             h('button', { type: 'button', class: 'dy-link', text: 'Sign up to claim it', onclick: () => { m.close(); hooks.onSignup(); } })) : null,
         note,
         tmrEl,
@@ -352,8 +401,10 @@ export function openWelcome() {
         if (!c) { m.close(); return; }
         claimed = true;
         rewardEl.querySelector('.dy-big-k').textContent = 'Claimed!';
-        rewardEl.querySelector('.dy-big-v').textContent = '+' + rewardText(c);
+        rewardEl.querySelector('.dy-big-v').textContent = (c.signup ? 'Saved: ' : '+') + rewardText(c);
         rewardEl.classList.add('got');
+        const bankEl = body.querySelector('.dy-back-bank'), fresh = dustLine();
+        if (bankEl && fresh) bankEl.replaceWith(fresh);
         const old = body.querySelector('.dy-pips');
         if (old) old.replaceWith(pipsAfter(c));
         const t = st.tomorrow;
@@ -364,6 +415,14 @@ export function openWelcome() {
         animate(rewardEl, [{ transform: 'scale(1.08)' }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.3,1.5,.6,1)' });
         btn.focus();
     };
+}
+// "Your gemdust: 12.50" (accounts), "Saved for sign up: 2.5 gemdust" (a guest
+function dustLine() {
+    const bal = dustBalance();
+    if (bal == null && !(st.owedMilli > 0)) return null;
+    return h('div', { class: 'dy-back-bank' }, dustIcon(), bal != null
+        ? h('span', null, 'Your gemdust: ', h('b', { class: 'dy-dust-amt', text: fmtDust(bal) }))
+        : h('span', null, 'Saved for sign up: ', h('b', { class: 'dy-dust-amt', text: dustTxt(st.owedMilli) + ' gemdust' })));
 }
 function pipsAfter(c) {
     const p = pips('big');
@@ -487,4 +546,4 @@ async function syncPush() {
 }
 
 // QA hook (standalone renders): draw from a canned status
-window.dwDaily = { state: () => st, paint: (s) => { take(s); paint(); }, welcome: (s) => { if (s) take(s); welcomed = false; openWelcome(); }, ask: () => { askOpen = true; paint(); } };
+window.dwDaily = { days: () => openDays(), state: () => st, paint: (s) => { take(s); paint(); }, welcome: (s) => { if (s) take(s); welcomed = false; openWelcome(); }, ask: () => { askOpen = true; paint(); } };
