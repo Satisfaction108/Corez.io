@@ -55,9 +55,13 @@ function fresh() {
 // leftMs(t), live(), clients(), callout(body, kind, text, pts, sub, dur),
 // feed(entry), fxAt(x, y, kind, ...), move(from, to, n), award(body, n)
 function attach(h) { hooks = h || {}; }
-function enabled() { return ON && !!(global.Config && Config.dig_royale) && !Config.tutorial && !Config.royale_duos; }
-// bot kills: a share of a human kill (duos too, they have no contest but
-// the same farming problem)
+// Duos too: crowns still sit on single tanks (the top 3 tanks by points),
+// but what one earns or steals is its holder's points, so it lands in the
+// team's combined score (dig_royale boardOrder / duoTeams.teamStandings)
+// and the team with the most points wins.
+function enabled() { return ON && !!(global.Config && Config.dig_royale) && !Config.tutorial; }
+const duos = () => !!(global.Config && Config.royale_duos);
+// bot kills: a share of a human kill
 function botKillShare() { return ON && !!(global.Config && Config.dig_royale) && !Config.tutorial ? BOT_KILL_SHARE : 1; }
 
 const alive = (b) => !!b && !b.isGhost && !(b.isDead && b.isDead());
@@ -103,7 +107,7 @@ function sayAll(kind, text, sub, dur, skip) {
 }
 const fmt = (n) => (n | 0).toLocaleString('en-US');
 const rate = () => PPS * (S.sd ? SD_MULT : 1);
-const rateText = () => "+" + rate() + " pts/sec while you hold it";
+const rateText = () => "+" + rate() + " pts/sec" + (duos() ? " for your team" : "") + " while you hold it";
 function feed(e) { try { if (hooks.feed) hooks.feed(e); } catch { /* */ } }
 function fx(b, kind) { try { if (hooks.fxAt && b) hooks.fxAt(b.x, b.y, kind, b.id | 0); } catch { /* */ } }
 
@@ -154,7 +158,7 @@ function start(t) {
         .map(b => ({ b, s: scoreOf(b) })).sort((a, c) => c.s - a.s).slice(0, SLOTS);
     for (const { b } of cands) give(b, t, 'top3');
     const crowned = new Set(cands.map(c => c.b));
-    sayAll('crowns', "CROWNS ARE OUT", "Holding one earns points. Knock one off to steal it and " + Math.round(STEAL_FRAC * 100) + "% of their kill and crown points.", 5200, crowned);
+    sayAll('crowns', "CROWNS ARE OUT", (duos() ? "Holding one earns your team points." : "Holding one earns points.") + " Knock one off to steal it and " + Math.round(STEAL_FRAC * 100) + "% of their kill and crown points.", 5200, crowned);
     for (const b of crowned) say(b, 'crowned', "YOU GOT A CROWN", "You're top 3 on points: " + rateText() + ". Others will hunt you. " + riskText(b), 5200);
     feed({ crown: 1, start: 1, names: cands.map(c => nameOf(c.b)) });
 }

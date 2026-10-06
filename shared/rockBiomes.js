@@ -101,7 +101,10 @@
     // the rim shows BRIGHT as strongly. Turn it to taste: 0 muted, 1 bright.
     // Oct 5: players missed the old stone look, so 0.6 (a little deeper),
     // with the shader's grain, bevel and darker seams doing the rest.
-    const BRIGHT = 0.6;
+    // Oct 6: "the game looks kinda dull": the stone tones go to 0.8 with a
+    // touch more saturation (POP) while the rim, seam glow and veins stay at
+    // the 0.6 look (EDGE), so it is brighter without glowing.
+    const BRIGHT = 0.8, EDGE = 0.6, POP = 1.1;
     const MUTED = {
         sandstone: { ink: [30, 25, 20], dark: [63, 52, 42], face: [84, 70, 56], light: [109, 91, 73], map: '#473d32' },
         clay: { ink: [31, 22, 18], dark: [64, 46, 38], face: [86, 62, 50], light: [112, 81, 65], map: '#4e3b31' },
@@ -117,10 +120,15 @@
     for (const b of BIOMES) {
         const m = MUTED[b.id];
         if (!m) continue;
-        for (const k of ['ink', 'dark', 'face', 'light']) b[k] = b[k].map((v, i) => Math.round(m[k][i] + (v - m[k][i]) * BRIGHT));
-        b.rimA = Math.round(b.rimA * BRIGHT * 1000) / 1000;
-        b.glow = Math.round(b.glow * BRIGHT * 1000) / 1000;
-        b.vein = Math.round(b.vein * BRIGHT * 1000) / 1000;
+        for (const k of ['ink', 'dark', 'face', 'light']) {
+            const t = b[k].map((v, i) => m[k][i] + (v - m[k][i]) * BRIGHT);
+            // saturation around the tone's own grey, so the biomes pop
+            const L = 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2];
+            b[k] = t.map(v => Math.max(0, Math.min(255, Math.round(L + (v - L) * POP))));
+        }
+        b.rimA = Math.round(b.rimA * EDGE * 1000) / 1000;
+        b.glow = Math.round(b.glow * EDGE * 1000) / 1000;
+        b.vein = Math.round(b.vein * EDGE * 1000) / 1000;
         b.map = hexMix(m.map, b.map, BRIGHT);
     }
 

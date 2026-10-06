@@ -1788,6 +1788,16 @@ let incoming = async function(message, socket) {
                         if (g.popups.length > 6) g.popups.shift();
                     }
                     g.flashAt = now;
+                    // a few bright gem glints off the hull (pooled sparks; juice
+                    // scales them with the FX level, none under reduced motion)
+                    if (config.game.gemPopups && !reducedMotion() && !(now - (g.glintAt || 0) < 110)) {
+                        g.glintAt = now;
+                        try {
+                            const me = global.entities.find(e => e.id === gui.playerid);
+                            const r = me && me.render;
+                            if (r && isFinite(r.x) && isFinite(r.y)) juice.burst(r.x, r.y, 5 + Math.min(4, g.combo | 0), g.combo >= 4 ? "#fff6d0" : "#ffe17a", 90, 420, 3, 3.5);
+                        } catch (e) { /* */ }
+                    }
                     try { raidHeat.onGem(delta); } catch (e) { /* */ }
                     try { sidekicks.cheer(gui.playerid, 0.45); } catch (e) { /* */ }
                 } else if (delta < 0) {

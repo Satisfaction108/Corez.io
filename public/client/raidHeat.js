@@ -12,7 +12,7 @@
 //              hudNotes), then SAFE when you bank.
 //   core       drawn here (a crystal heart that cracks as it loses health),
 //              a bar under the clock, a floor glow and its shockwave ring,
-//              the pulses, the shards, the big break
+//              the pulses, the big break
 //   sky drop   skyDrop.js draws the fall; the FX and the camera hooks pass through here
 //   moments    kills (ELIMINATED with a combo count, shatter in their colour),
 //              hits (sparks), banking (gems streaming in, the counter rolling
@@ -60,7 +60,6 @@ const CORE_HOT = "#ff5ad8";
 const GOLD = "#f2b83c";
 const EMERALD = "#3fcf7a";
 const PULSE_R = 620;               // coreFinale.js PULSE_R
-const SHARD_MS = 650;              // coreFinale.js SHARD_FLIGHT_MS (the FX carries it)
 const calm = () => !!(global.reducedMotion && global.reducedMotion());
 const lite = () => !!config.graphical.fewerEffects;
 const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
@@ -84,8 +83,7 @@ const hitCracks = [JM.crackPaths(913, 4, 3, 1), JM.crackPaths(331, 5, 3, 1), JM.
 // fixed pools for the short-lived world bits
 const mk = (n, f) => { const a = []; for (let i = 0; i < n; i++) a.push(f()); return a; };
 const pulses = mk(4, () => ({ born: -1e9, x: 0, y: 0 }));
-const shards = mk(10, () => ({ born: -1e9, x: 0, y: 0, fx: 0, fy: 0, hit: false, ms: SHARD_MS }));
-let pulseI = 0, shardI = 0;
+let pulseI = 0;
 // kill pops over your own tank ("KO kai" / "+350 pts"): strings made once per
 const KILL_POP_MS = 2600;
 const killPops = mk(3, () => ({ born: -1e9, head: "", pts: "", big: false }));
@@ -282,13 +280,6 @@ export function onFX(kind, x, y, extra, extra2, extra3, extra4) {
             juice.sparks(x, y, 22, PULSE_R * 0.9, 650, 1, "#2b2433", TAU, 0, 7);
             if (near(x, y, 950)) { juice.shake(26, 360); juice.glitch(0.45, 220); }
             try { if (gameSound.rockBreak) gameSound.rockBreak(x, y); } catch (e) { /* */ }
-            return true;
-        }
-        case "coreshard": {
-            const c = S.core;
-            const s = shards[shardI]; shardI = (shardI + 1) % shards.length;
-            s.born = now; s.x = x; s.y = y; s.hit = false; s.ms = (extra | 0) > 0 ? extra | 0 : SHARD_MS;
-            s.fx = c ? c.x : x; s.fy = c ? c.y : y;
             return true;
         }
         case "corecharge":
@@ -817,38 +808,6 @@ export function drawWorld(c, px, py, ratio) {
         c.strokeStyle = CORE; c.lineWidth = Math.max(1.5, 7 * (1 - k) * ratio);
         c.beginPath(); c.arc(toX(p.x), toY(p.y), R * 0.88, 0, TAU); c.stroke();
     }
-    // crystal shards in flight, with a warning where they land
-    for (const s of shards) {
-        const age = now - s.born;
-        const SMS = s.ms || SHARD_MS;
-        if (age < 0 || age > SMS + 260) continue;
-        const tx = toX(s.x), ty = toY(s.y);
-        if (age < SMS) {
-            const k = age / SMS;
-            c.globalAlpha = 0.5 + 0.4 * k;
-            c.strokeStyle = RED; c.lineWidth = Math.max(1.5, 3 * ratio);
-            c.beginPath(); c.arc(tx, ty, (70 - 30 * k) * ratio, 0, TAU); c.stroke();
-            const sx = toX(s.fx + (s.x - s.fx) * k * k), sy = toY(s.fy + (s.y - s.fy) * k * k);
-            const a = Math.atan2(s.y - s.fy, s.x - s.fx);
-            const L = 52 * ratio, W = 15 * ratio, ca = Math.cos(a), sa = Math.sin(a);
-            c.globalAlpha = 1;
-            c.beginPath();
-            c.moveTo(sx + ca * L, sy + sa * L); c.lineTo(sx - sa * W, sy + ca * W);
-            c.lineTo(sx - ca * L * 0.6, sy - sa * L * 0.6); c.lineTo(sx + sa * W, sy - ca * W); c.closePath();
-            c.fillStyle = S.core && S.core.hp < 0.5 ? "#ff8ae3" : "#9ff6ff"; c.fill();
-            c.strokeStyle = "#0c0a0e"; c.lineWidth = Math.max(1.5, 2.5 * ratio); c.stroke();
-        } else {
-            const k = (age - SMS) / 260;
-            if (!s.hit) {
-                s.hit = true;
-                juice.sparks(s.x, s.y, 10, 140, 420, 2, "#9ff6ff", TAU, 0, 5);
-                if (near(s.x, s.y, 300)) juice.shake(16, 200);
-            }
-            c.globalAlpha = 1 - k;
-            c.strokeStyle = "#ffffff"; c.lineWidth = Math.max(1.5, 6 * (1 - k) * ratio);
-            c.beginPath(); c.arc(tx, ty, (30 + 60 * k) * ratio, 0, TAU); c.stroke();
-        }
-    }
     // the Core caving in: shrinking to a point, brighter and faster as it
     // goes, with rings rushing in
     const ca = now - S.collAt;
@@ -1122,7 +1081,7 @@ export function drawCoreCard(c, x, y, W, H) {
     A.hudTitle(gems, x + W - 10, y + 13, 12, GOLD, "right");
     A.hudBar(c, x + 10, y + 22, W - 20, 8, core.hp, hot ? CORE_HOT : core.hp > 0.6 ? CORE : "#9ff6ff");
     const dist = Math.hypot(core.x - global.player.renderx, core.y - global.player.rendery);
-    A.drawText(Math.round(core.hp * 100) + "%" + (hot ? "  ·  shards!" : ""), x + 12, y + H - 8, 9.5, hot ? CORE_HOT : A.HUD.text2, "left", true);
+    A.drawText(Math.round(core.hp * 100) + "%" + (hot ? "  ·  fighting back" : ""), x + 12, y + H - 8, 9.5, hot ? CORE_HOT : A.HUD.text2, "left", true);
     A.drawText(A.fmtDist(dist) + " away", x + W - 12, y + H - 8, 9.5, A.HUD.text2, "right", true);
 }
 // the slim strip's version: a hex and a hp sliver, w wide

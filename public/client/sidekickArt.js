@@ -35,10 +35,9 @@ export function mix(a, b, t) {
 // the outline of anything filled with `col`: a dark shade of it
 export const edgeOf = (col) => mix(col, INK, 0.62);
 
-// The body colour actually drawn: a skin's own colour (gold, galaxy, camo),
-// else the Locker colour, else the design's.
+// The body colour actually drawn: the Locker colour, else the design's.
+// A skin never changes it (owner rule, Oct 6 2026); `look` is ignored here.
 export function bodyColor(kick, look, col) {
-    if (look && look.col) return look.col;
     return col || kick.col;
 }
 
@@ -180,7 +179,7 @@ function skinFill(c, fill, body, r, shape) {
         }
         case 'camo': {
             const rnd = seeded(41);
-            const shades = [mix(body, INK, 0.38), mix(body, '#e8dcb0', 0.35), mix(body, '#3b2a1a', 0.3)];
+            const shades = [mix(body, INK, 0.3), mix(body, '#ffffff', 0.28), mix(body, INK, 0.5)];
             for (let i = 0, n = 0; i < 40 && n < 10; i++) {
                 const a = rnd() * TAU, d = (0.55 + rnd() * 0.5) * r, ex = (0.2 + rnd() * 0.16) * r, ey = (0.12 + rnd() * 0.08) * r, rot = rnd() * Math.PI;
                 const x = Math.cos(a) * d, y = Math.sin(a) * d;
@@ -190,11 +189,11 @@ function skinFill(c, fill, body, r, shape) {
             }
             break;
         }
-        case 'frost':
-            // a pale rim inside the outline and a little snow cap on top
-            c.lineWidth = 0.4 * r; c.strokeStyle = mix(body, '#ffffff', 0.62);
+        case 'frost': {
+            // a frosted rim and an icy cap, pale tints of its own colour
+            const pale = mix(body, '#ffffff', 0.62), ice = mix(body, '#ffffff', 0.8);
+            c.lineWidth = 0.38 * r; c.strokeStyle = pale;
             bodyPath(c, shape, r); c.stroke();
-            c.fillStyle = '#f4fbff';
             c.beginPath();
             c.moveTo(-1.1 * r, -0.55 * r);
             c.quadraticCurveTo(-0.75 * r, -0.4 * r, -0.55 * r, -0.62 * r);
@@ -203,33 +202,40 @@ function skinFill(c, fill, body, r, shape) {
             c.quadraticCurveTo(0.6 * r, -0.44 * r, 0.8 * r, -0.6 * r);
             c.quadraticCurveTo(0.95 * r, -0.5 * r, 1.1 * r, -0.55 * r);
             c.lineTo(1.1 * r, -1.2 * r); c.lineTo(-1.1 * r, -1.2 * r);
-            c.closePath(); c.fill();
+            c.closePath();
+            c.fillStyle = ice; c.fill();
+            c.lineWidth = Math.max(1, LINE * r * 0.55); c.strokeStyle = edgeOf(body); c.stroke();
             break;
-        case 'gold':
-            // two flat bands of shine, no gloss
-            c.fillStyle = mix(body, '#ffffff', 0.5);
-            for (const [x, w] of [[-0.55, 0.22], [-0.22, 0.09]]) {
-                c.beginPath();
-                c.moveTo(x * r, -1.2 * r); c.lineTo((x + w) * r, -1.2 * r); c.lineTo((x + w - 0.5) * r, 1.2 * r); c.lineTo((x - 0.5) * r, 1.2 * r);
-                c.closePath(); c.fill();
+        }
+        case 'gold': {
+            // a gilded rim: a light band inside the outline, studs on it, a shine
+            const rim = mix(body, '#ffffff', 0.5), stud = mix(body, '#ffffff', 0.82), ink = edgeOf(body);
+            c.lineWidth = 0.6 * r; c.strokeStyle = rim;
+            bodyPath(c, shape, r); c.stroke();
+            c.lineWidth = Math.max(1, LINE * r * 0.5); c.strokeStyle = ink;
+            c.beginPath(); c.arc(0, 0, 0.7 * r, 0, TAU); c.stroke();
+            for (let i = 0; i < 8; i++) {
+                const a = (i + 0.5) * TAU / 8;
+                c.beginPath(); c.arc(Math.cos(a) * 0.8 * r, Math.sin(a) * 0.8 * r, 0.075 * r, 0, TAU);
+                c.fillStyle = stud; c.fill(); c.lineWidth = Math.max(1, LINE * r * 0.4); c.strokeStyle = ink; c.stroke();
             }
-            c.fillStyle = mix(body, '#a86a00', 0.35);
-            c.beginPath(); c.arc(0, 0, r, 0.15 * Math.PI, 0.85 * Math.PI); c.arc(0, -0.25 * r, r * 1.02, 0.78 * Math.PI, 0.22 * Math.PI, true); c.closePath(); c.fill();
+            c.fillStyle = mix(body, '#ffffff', 0.55);
+            c.beginPath(); c.ellipse(-0.42 * r, -0.5 * r, 0.2 * r, 0.07 * r, -0.7, 0, TAU); c.fill();
             break;
+        }
         case 'galaxy': {
-            c.fillStyle = mix(body, '#1b1450', 0.45);
-            c.beginPath(); c.ellipse(0.35 * r, 0.45 * r, 0.9 * r, 0.42 * r, -0.5, 0, TAU); c.fill();
-            c.fillStyle = mix(body, '#ff9be0', 0.35);
-            c.beginPath(); c.ellipse(-0.55 * r, -0.5 * r, 0.6 * r, 0.26 * r, -0.5, 0, TAU); c.fill();
-            const rnd = seeded(5);
-            c.fillStyle = '#ffffff';
-            for (let i = 0; i < 12; i++) {
-                const a = rnd() * TAU, d = (0.55 + rnd() * 0.45) * r;
-                c.beginPath(); c.arc(Math.cos(a) * d, Math.sin(a) * d, (0.035 + rnd() * 0.035) * r, 0, TAU); c.fill();
+            // a little planet: shade on one side, an orbit ring below the
+            // smile, stars twinkling over the top, all in its own colour
+            c.fillStyle = mix(body, INK, 0.36);
+            c.beginPath(); c.arc(0, 0, 1.3 * r, 0, TAU); c.arc(-0.36 * r, -0.36 * r, 1.08 * r, 0, TAU, true); c.fill('evenodd');
+            const ring = mix(body, '#ffffff', 0.55), ink = edgeOf(body);
+            c.beginPath(); c.ellipse(0, 0.8 * r, 1.25 * r, 0.2 * r, -0.12, 0, TAU);
+            c.lineWidth = 0.2 * r; c.strokeStyle = ink; c.stroke();
+            c.lineWidth = 0.1 * r; c.strokeStyle = ring; c.stroke();
+            c.fillStyle = mix(body, '#ffffff', 0.85); c.strokeStyle = ink; c.lineWidth = Math.max(1, LINE * r * 0.4);
+            for (const [x, y, k] of [[-0.6, -0.62, 0.17], [0.58, -0.66, 0.13], [0.8, -0.1, 0.09], [-0.86, -0.08, 0.08]]) {
+                sparkle(c, x * r, y * r, k * r); c.stroke(); c.fill();
             }
-            c.fillStyle = '#fff3b0';
-            sparkle(c, 0.62 * r, -0.5 * r, 0.16 * r); c.fill();
-            sparkle(c, -0.66 * r, 0.42 * r, 0.12 * r); c.fill();
             break;
         }
     }
@@ -276,13 +282,7 @@ export function drawBody(c, kick, look, r, col) {
         c.restore();
     }
     bodyPath(c, kick.body, r);
-    if (fill === 'frost') {
-        // an icy edge sitting on a dark line, so it still reads on a pale floor
-        c.lineWidth = lw * 1.7; c.strokeStyle = mix(body, INK, 0.7); c.stroke();
-        c.lineWidth = lw; c.strokeStyle = '#e4f6ff'; c.stroke();
-    } else {
-        c.lineWidth = lw; c.strokeStyle = edgeOf(body); c.stroke();
-    }
+    c.lineWidth = lw; c.strokeStyle = edgeOf(body); c.stroke();
     if (kick.body === 'pumpkin') stem(c, r, lw);
     drawFace(c, r);
 }
@@ -379,6 +379,14 @@ function drawNameAt(c, text, x, y, px, st, plain, w) {
     } else if (kind === 'sparkle') {
         const g = c.createLinearGradient(0, y - px * 0.5, 0, y + px * 0.5);
         g.addColorStop(0, st.stops[0]); g.addColorStop(1, st.stops[1] || st.stops[0]);
+        // the soft glow: the player name styles' passes (account/cosmetics.js
+        // HALO_PASSES), a bright core hugging the ink, two soft steps out
+        const glow = st.star || st.stops[1];
+        for (const [k, a, hiCol] of [[2.3, 0.18, 0], [1.95, 0.42, 0], [1.6, 1, 1]]) {
+            c.globalAlpha = a; c.lineWidth = px * 0.3 * k; c.strokeStyle = hiCol ? mix(glow, '#ffffff', 0.45) : glow;
+            c.strokeText(text, x, y);
+        }
+        c.globalAlpha = 1;
         strokeFill(c, text, x, y, [[px * 0.3, st.rim]], g);
         c.fillStyle = st.star; c.strokeStyle = st.rim; c.lineWidth = Math.max(1, px * 0.07);
         // three little stars: before the name, and two after it

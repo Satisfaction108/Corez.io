@@ -67,6 +67,53 @@ if (process.argv[2] === '--dig-off') {
     process.stdout.write(JSON.stringify({ on: dig.ON, hits: hits.length, changed }));
     process.exit(0);
 }
+// The real client runtime (public/client/sidekicks.js) on a recording
+// canvas, with config / global / raidFinale stubbed: counts the shots it
+// draws over 6 s with a rock to mine. argv[3]: 'low' (Low effects, Fewer
+// Effects and the auto trim's lowFx all on) or 'normal'.
+if (process.argv[2] === '--client-shots') {
+    const low = process.argv[3] === 'low';
+    const { register } = require('node:module');
+    globalThis.__cfg = { graphical: low ? { fxLevel: 0, fewerEffects: true } : { fxLevel: 1, fewerEffects: false } };
+    globalThis.__g = { lowFx: low, screenWidth: 800, screenHeight: 600, dropZoom: 1, entities: [], royale: null };
+    const stub = (src) => 'data:text/javascript,' + encodeURIComponent(src);
+    const STUBS = {
+        'config.js': stub('export const config = globalThis.__cfg;'),
+        'global.js': stub('export const global = globalThis.__g;'),
+        'raidFinale.js': stub('export function active() { return false; }'),
+    };
+    const hooks = 'const S = ' + JSON.stringify(STUBS) + ';\n' +
+        'export async function resolve(spec, ctx, next) { const k = spec.replace(/^.*\\//, ""); if (spec.startsWith("./") && S[k] && /sidekicks\\.js$/.test(ctx.parentURL || "")) return { url: S[k], shortCircuit: true }; return next(spec, ctx); }';
+    register('data:text/javascript,' + encodeURIComponent(hooks));
+    let arcs = 0;
+    const mkCtx = (count) => new Proxy({}, {
+        get(o, k) {
+            if (k in o) return o[k];
+            if (k === 'measureText') return (t) => ({ width: String(t).length * 6, actualBoundingBoxAscent: 8, actualBoundingBoxDescent: 2 });
+            if (k === 'createLinearGradient' || k === 'createRadialGradient') return () => ({ addColorStop() {} });
+            if (k === 'arc' && count) return () => { arcs++; };
+            return () => {};
+        },
+        set(o, k, v) { o[k] = v; return true; },
+    });
+    globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => mkCtx(false) }) };
+    globalThis.window = { DWCosmetics: require(path.join(REPO, 'shared', 'cosmetics.js')) };
+    let fakeNow = 1000;
+    Object.defineProperty(performance, 'now', { value: () => fakeNow, configurable: true });
+    (async () => {
+        const sk = await import(pathToFileURL(path.join(REPO, 'public', 'client', 'sidekicks.js')).href);
+        sk.onPacket({ f: [[5, 217, 0, 0, '', 'Buddy', 0]], t: [[5, 260, 40]] });
+        const c = mkCtx(true), inst = { id: 5, size: 24, render: { x: 0, y: 0 } };
+        for (let i = 0; i < 360; i++) {
+            fakeNow += 1000 / 60;
+            sk.note(inst, 400, 300, 1, 1, 24, false);
+            sk.draw(c, 1, 0, 0, fakeNow, 99);
+        }
+        process.stdout.write(JSON.stringify({ rows: sk.count(), dig: sk.digOf(5), arcs }));
+        process.exit(0);
+    })().catch((e) => { process.stderr.write(String(e && e.stack || e)); process.exit(1); });
+    return;
+}
 if (process.argv[2] === '--off') {
     process.env.ROYALE_SIDEKICKS = '0';
     global.Config = { dig_royale: true };
@@ -1113,6 +1160,27 @@ test('dig: a shot hits the first rock on its line, not a rock behind it', () => 
     const b = { x: 0, y: 0, size: 20 };
     assert.equal(dig.firstOnLine(tg, b, far), near, 'the rock in the way takes it');
     assert.equal(dig.firstOnLine(tg, b, near), near, 'a clear line keeps the target');
+});
+
+// Regression (Oct 6 2026, "sidekicks aren't shooting"): the client dropped
+// every sidekick shot under Low effects / Fewer Effects / lowFx, and the auto
+// low-end trim's first rung is Low effects, so on most machines they never
+// fired. The real runtime, on a recording canvas, must fire at every level.
+test('shots: fired and drawn at every effects level (Low, Fewer Effects, the auto trim)', () => {
+    const run = (lvl) => {
+        const r = spawnSync(process.execPath, ['--no-warnings', __filename, '--client-shots', lvl], { encoding: 'utf8' });
+        assert.equal(r.status, 0, r.stderr);
+        return JSON.parse(r.stdout);
+    };
+    for (const lvl of ['normal', 'low']) {
+        const o = run(lvl);
+        assert.equal(o.rows, 1, lvl + ': the row is there');
+        assert.deepEqual(o.dig, { x: 260, y: 40 }, lvl + ': it knows its rock');
+        // a shot a second while mining: ~5 in 6 s, each drawn for several frames
+        assert.ok(o.arcs >= 20, lvl + ': shots drawn, ' + o.arcs + ' arc calls');
+    }
+    const rt = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekicks.js'), 'utf8');
+    assert.ok(!/lowFx|fxLevel|fewerEffects/.test(rt), 'no effects gate on its shots');
 });
 
 test('switch: ROYALE_SIDEKICKS=0 turns them off; the tutorial never has them', () => {

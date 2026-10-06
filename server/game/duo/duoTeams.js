@@ -277,11 +277,15 @@ function teamStandings(rows) {
             }
         }
         let t = by.get(k);
-        if (!t) { t = { tm: typeof k === 'string' && k[0] === 'x' ? null : r.tm, rows: [], score: 0, kills: 0, gems: 0, alive: false, here: false }; by.set(k, t); }
+        if (!t) { t = { tm: typeof k === 'string' && k[0] === 'x' ? null : r.tm, rows: [], score: 0, kills: 0, gems: 0, cb: 0, cr: 0, alive: false, here: false }; by.set(k, t); }
         t.rows.push(r);
         t.score += r.score | 0;
         t.kills += r.kills | 0;
         t.gems += r.gems | 0;
+        // the Crown Contest: what the partners' crowns earned and stole (net),
+        // already inside score, and how many crowns the team wears now
+        t.cb += r.cb | 0;
+        if (r.cr) t.cr++;
         if (r.alive) t.alive = true;
         if (r.here) t.here = true;
     }

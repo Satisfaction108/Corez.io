@@ -25,8 +25,14 @@ const nodeCrypto = require('crypto');
 
 const MAX_MEMBERS = 2;
 const INVITE_MS = 60 * 1000;
-const GUEST_IDLE_MS = 45 * 1000;
+// a guest's tab polls GET /api/party (every 3 s, 10 s in a background tab;
+// Chrome slows a long-hidden tab's timers to once a minute, so this outlasts that)
+const GUEST_IDLE_MS = 90 * 1000;
 const ACCOUNT_IDLE_MS = 60 * 1000;
+// An account with no event stream (it fell back to polling, or is reconnecting)
+// still polls GET /api/party while in a party: that counts as on the menu, so
+// the mate never reads "Away" for a player who is right there.
+const AWAY_GRACE_MS = 20 * 1000;
 const GUEST_TOKEN_IDLE_MS = 6 * 60 * 60 * 1000;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no I, O, 0, 1
 const CODE_LEN = 5;
@@ -145,7 +151,8 @@ function memberFrom(actor, t) {
 
 function stateOf(m) {
     if (m.playing) return 'playing';
-    if (!m.guest && m.userId && !hooks.isOnline(m.userId)) return 'away';
+    if (m.guest) return now() - m.seenAt > AWAY_GRACE_MS ? 'away' : 'menu';
+    if (m.userId && !hooks.isOnline(m.userId) && now() - m.seenAt > AWAY_GRACE_MS) return 'away';
     return 'menu';
 }
 
@@ -249,6 +256,14 @@ function invite(actor, target) {
     if (theirs && p && theirs === p) fail(409, 'already_together', 'You’re already in a party together.');
     if (theirs && theirs.members.length >= MAX_MEMBERS) fail(409, 'in_party', target.name + ' is already in a party.');
     if (p && p.members.length >= MAX_MEMBERS) fail(409, 'party_full', 'Your party’s full. Two per duo.');
+    // Cross-invites: they already asked you. That's a yes both ways, so you
+    // join their party now instead of making a second one with a second invite.
+    const t0 = now();
+    const theirAsk = [...invites.values()].find(x => x.fromUserId === target.userId && x.toUserId === actor.userId && x.exp > t0);
+    if (theirAsk) {
+        const r = respond(actor, theirAsk.id, true);
+        return { party: r.party, invite: theirAsk, fresh: false, merged: true };
+    }
     if (!p) { p = makeParty(actor); hooks.changed(p, 'create'); }
     const t = now();
     let iv = [...invites.values()].find(x => x.pid === p.id && x.toUserId === target.userId);
@@ -382,7 +397,7 @@ function stop() { if (timer) clearInterval(timer); timer = null; }
 function reset() { parties.clear(); byMember.clear(); byCode.clear(); guests.clear(); invites.clear(); }
 
 module.exports = {
-    PartyError, MAX_MEMBERS, INVITE_MS, GUEST_IDLE_MS, ACCOUNT_IDLE_MS, CODE_LEN,
+    PartyError, MAX_MEMBERS, INVITE_MS, GUEST_IDLE_MS, ACCOUNT_IDLE_MS, AWAY_GRACE_MS, CODE_LEN,
     setHooks, newGuest, guestByToken, cleanName, normCode,
     partyOf, memberOf, mateOf, byId, userInParty, view, invitesFor,
     create, joinByCode, invite, respond, cancelInvite, leave, launch, touch, onGameMessage, sweep, start, stop, reset,

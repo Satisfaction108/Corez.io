@@ -353,6 +353,28 @@ export function drawTracker(c, x, y0, W) {
     return y0 + H;
 }
 
+// Duos: the team standings stay up during the contest (teams win on
+// combined points); this gives them the crown look: the gold (final minute:
+// red) edge and the crown rate in the header. -> true when it drew.
+export function drawTeamEdge(c, x, y0, W, H) {
+    if (!A || !active()) return false;
+    const HUD = A.HUD;
+    c.save();
+    c.globalAlpha = 0.9;
+    c.strokeStyle = S.c.sd ? RED : GOLD;
+    c.lineWidth = 2;
+    A.roundRectPath(c, x + 1, y0 + 1, W - 2, H - 2, HUD.r);
+    c.stroke();
+    c.restore();
+    if (S.c.sd) A.hudTitle("CROWNS x2", x + W - 44, y0 + 15, 11, RED, "right", calm() ? 1 : 0.65 + 0.35 * Math.sin(performance.now() / 140));
+    else {
+        const lbl = "+" + CL.pps(S.c) + "/SEC";
+        A.hudTitle(lbl, x + W - 44, y0 + 15, 11, GOLD, "right");
+        drawCrownIcon(c, x + W - 44 - A.hudTitleW(lbl, 11) - 10, y0 + 14, 12);
+    }
+    return true;
+}
+
 // one line in the note stack: a first raid, a phone, a hidden standings
 // panel. push(note) like raidHeat.hudNotes.
 const NOTE = { pri: 1, key: "crown", text: "", sub: "", col: GOLD, pulse: 0, badge: true };

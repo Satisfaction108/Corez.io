@@ -391,7 +391,8 @@ export function slamState() { return { up: slamCur && slamCur.on ? slamCur.text 
 // ── sparks ─────────────────────────────────────────────────────────────
 // kind 0 spark streak, 1 chunk, 2 crystal shard, 3 gem glint, 4 confetti
 const pool = JM.makePool(240);
-const SPARK_COL = ["#ffe9b0", "#2b2433", "#8ff2ff", "#ffd76e", "#ffffff"];
+// (Oct 6: crystal shard and gem glint a step brighter)
+const SPARK_COL = ["#ffe9b0", "#2b2433", "#a6f7ff", "#ffe17a", "#ffffff"];
 const CONFETTI = ["#f2b83c", "#3fcf7a", "#5ce8ff", "#ff5ad8", "#ff8a3a", "#fff3d9"];
 export function sparks(x, y, n, speed, life, kind, col, spread = Math.PI * 2, ang0 = 0, size = 4) {
     n = JM.countFor(n, scale());

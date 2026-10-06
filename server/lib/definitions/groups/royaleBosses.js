@@ -253,3 +253,38 @@ Class.royaleCore = {
     BODY: { DAMAGE: 0, HEALTH: 15000, RESIST: 1, SPEED: 0, PUSHABILITY: 0, DENSITY: 50, SHIELD: 0, REGEN: 0 },
     PROPS: [],
 };
+
+// The Core's attack (terrain/coreFinale.js moves and scores both by hand):
+// a bolt from one of its six barrels (noclip, it checks rock, pads and tanks
+// itself), and a drone that chases whoever is near. Damage is a share of the
+// target's max health set in coreFinale.js, not these stats.
+Class.royaleCoreBolt = {
+    TYPE: "bullet",
+    LABEL: "Core Bolt",
+    SHAPE: 0,
+    COLOR: "#5ce8ff",
+    SIZE: 12,
+    NO_COLLISIONS: true,
+    IGNORED_BY_AI: true,
+    DRAW_HEALTH: false,
+    DIE_AT_RANGE: false,
+    HEALTH_WITH_LEVEL: false,
+    DAMAGE_EFFECTS: false,
+    ACCEPTS_SCORE: false,
+    BODY: { DAMAGE: 1, HEALTH: 1000, SPEED: 0, PUSHABILITY: 0, DENSITY: 1, RANGE: 1000 },
+};
+Class.royaleCoreDrone = {
+    TYPE: "drone",
+    LABEL: "Core Drone",
+    SHAPE: 3,
+    COLOR: "#5ce8ff",
+    SIZE: 16,
+    ACCEPTS_SCORE: false,
+    MOTION_TYPE: "drift",
+    FACING_TYPE: "smoothWithMotion",
+    DIE_AT_RANGE: false,
+    HEALTH_WITH_LEVEL: false,
+    DRAW_HEALTH: true,
+    HITS_OWN_TYPE: "droneCollision",
+    BODY: { PENETRATION: 1.2, PUSHABILITY: 0.6, ACCELERATION: 0.085, HEALTH: 30, DAMAGE: 2, SPEED: 0, RANGE: 1000, DENSITY: 0.03, RESIST: 1, FOV: 0.5 },
+};

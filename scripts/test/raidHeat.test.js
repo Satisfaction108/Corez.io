@@ -324,26 +324,78 @@ test('core: it fights back as it breaks, every attack telegraphed; no mercy for 
     let r = run(9000);
     assert.ok(r.kinds.includes('corecharge') && r.kinds.includes('corepulse'), 'a telegraphed shockwave: ' + r.kinds.join(','));
     assert.ok(r.kinds.indexOf('corecharge') < r.kinds.indexOf('corepulse'), 'the warning comes first');
-    assert.ok(!r.kinds.includes('coreshard'), 'no shards above half');
+    assert.ok(!r.kinds.includes('coreshard'), 'no shards, ever');
+    assert.equal(coreFinale._state().bolts + coreFinale._state().drones, 0, 'no bolts or drones above half');
     assert.equal(r.lost, 0, 'healthy, the shockwave only shoves');
+    // Oct 6: bolts and drones instead of shards
+    assert.equal(coreFinale.SHARD_ATTACK, false, 'the shard volleys are off by default');
     coreFinale.debugHp(0.4);
     place();
-    r = run(3200);
-    assert.ok(r.kinds.includes('coreshard'), 'shards from half health: ' + r.kinds.join(','));
-    const charge = r.fx.findIndex(f => f[0] === 'corecharge' && f[2] === 0), shot = r.kinds.indexOf('coreshard');
-    assert.ok(charge >= 0 && charge < shot, 'shards are telegraphed too');
-    assert.ok(r.lost >= coreFinale.SHARD_DMG * 0.99, 'and they hurt: ' + r.lost.toFixed(3));
+    let maxBolts = 0, maxDrones = 0;
+    const run2 = (ms) => {
+        const t0 = fx.length, hp0 = p.health.amount;
+        for (let k = 0; k < ms; k += 33) {
+            t += 33; place0(); coreFinale.tick(t, [p]);
+            const st = coreFinale._state();
+            maxBolts = Math.max(maxBolts, st.bolts); maxDrones = Math.max(maxDrones, st.drones);
+        }
+        return { kinds: fx.slice(t0).map(f => f[0]), lost: (hp0 - p.health.amount) / p.health.max, fx: fx.slice(t0) };
+    };
+    r = run2(4000);
+    assert.ok(!r.kinds.includes('coreshard'), 'no shard FX');
+    assert.ok(r.fx.some(f => f[0] === 'corecharge' && f[2] === 0), 'the attack phase is telegraphed');
+    assert.ok(maxBolts >= 1, 'it fires bolts: ' + maxBolts);
+    assert.ok(maxDrones >= 1 && maxDrones <= coreFinale.DRONE_MAX, 'and sends drones: ' + maxDrones);
+    const br = coreFinale._brood();
+    assert.ok(br.bolts.concat(br.drones).every(e => e.isCoreShot && e.master === c), 'real entities, the Core their master');
+    assert.ok(br.drones.every(e => e.type === 'drone' && !e.noclip), 'drones can be shot down');
+    assert.ok(r.lost >= coreFinale.BOLT_HIT * 0.99, 'and they hurt: ' + r.lost.toFixed(3));
+    // rage: faster, more drones, no deadlier per hit. A level-45 tank standing
+    // still in the open 300 from it, no shield: well under 60% in 10 s
     coreFinale.debugHp(0.2);
     place();
-    r = run(9000);
-    const nShard = r.kinds.filter(k => k === 'coreshard').length;
-    assert.ok(nShard >= 4, 'faster below a quarter: ' + nShard);
-    assert.ok(r.lost > coreFinale.SHARD_RAGE_DMG * 2, 'it is dangerous now: ' + r.lost.toFixed(2));
+    run2(1000);
+    place();
+    maxDrones = 0;
+    r = run2(10_000);
+    console.log('    core rage, 10 s standing in the open: lost ' + (r.lost * 100).toFixed(0) + '% of max health, drones ' + maxDrones + ', pulses ' + r.kinds.filter(k => k === 'corepulse').length);
+    assert.ok(r.lost < 0.6, 'survivable: ' + r.lost.toFixed(2));
+    assert.ok(r.lost > 0.25, 'still dangerous: ' + r.lost.toFixed(2));
+    assert.ok(maxDrones <= coreFinale.DRONE_RAGE_MAX, 'drone cap ' + maxDrones);
+    // the meter: a tiny or a grown tank, the same share, never more than the burst at once
+    const q = player(c.x + 2000, c.y);
+    let got = 0;
+    for (let k = 0; k < 10; k++) got += coreFinale.projectileHit(q, coreFinale.BOLT_HIT, t);
+    assert.ok(Math.abs(got - coreFinale.CAP_BURST) < 1e-9, 'a burst of hits is metered: ' + got);
+    q.kill();
+    // a drone on a pad dies; one at the rim is held out
+    const v = centre();
+    const d1 = coreFinale._debugDrone(v.x, v.y, t);
+    assert.ok(d1, 'a drone');
+    t += 33; place0(); coreFinale.tick(t, [p]);
+    assert.ok(!coreFinale._brood().drones.includes(d1), 'a drone on the vault pad is gone');
+    // bolts never cross a pad: stand behind the Center Vault
+    const ux = (v.x - c.x), uy = (v.y - c.y), ul = Math.hypot(ux, uy);
+    const R = padGeom.shapeOf ? padGeom.shapeOf(v).R : 140;
+    const behind = () => { p.x = v.x + ux / ul * (R + 70); p.y = v.y + uy / ul * (R + 70); p.velocity.x = 0; p.velocity.y = 0; p.padSafe = false; p.spawnGraceUntil = 0; };
+    p._coreMeter = null;
+    let inPad = 0;
+    for (let k = 0; k < 4000; k += 33) {
+        t += 33; behind(); coreFinale.tick(t, [p]);
+        for (const e of coreFinale._brood().bolts) if (padGeom.insidePad(v, e.x, e.y, 0)) inPad++;
+    }
+    assert.equal(inPad, 0, 'no bolt inside the pad');
+    assert.ok(!p._coreMeter, 'nothing reached the tank behind the vault');
     // a brand new player gets no boss mercy from the Core: the full hit
-    place(); p.botNewness = 1; p.health.amount = p.health.max;
+    place(); p.botNewness = 1; p.health.amount = p.health.max; p._coreMeter = null;
     const n0 = p.health.amount;
     for (let k = 0; k < 3000; k += 33) { t += 33; p.x = c.x + 300; p.y = c.y; p.velocity.x = 0; p.velocity.y = 0; coreFinale.tick(t, [p]); }
-    assert.ok(n0 - p.health.amount >= p.health.max * coreFinale.SHARD_RAGE_DMG * 0.99, 'newcomers take the full hit: ' + ((n0 - p.health.amount) / p.health.max).toFixed(3));
+    assert.ok(n0 - p.health.amount >= p.health.max * coreFinale.BOLT_HIT * 0.99, 'newcomers take the full hit: ' + ((n0 - p.health.amount) / p.health.max).toFixed(3));
+    // and a kill by it reads as the Core
+    p.health.amount = 1; p._coreMeter = null;
+    coreFinale.projectileHit(p, coreFinale.BOLT_HIT, t + 5000);
+    assert.equal(p.deathCause, 'core', 'killed by the Core');
+    p.deathCause = ''; p.dontSendDeathMessage = false;
     p.botNewness = 0; p.health.amount = p.health.max;
     coreFinale.debugHp(1);
 });

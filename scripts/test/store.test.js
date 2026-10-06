@@ -69,7 +69,7 @@ test('catalog: unique ids/nids, cats, prices from the plan, colour stops readabl
         assert.equal(C.byId(it.id), it);
         assert.equal(C.byNid(it.nid), it);
         if (it.style && it.style.stops) for (const s of it.style.stops) assert.ok(C.isColorAllowed(s), it.id + ' ' + s);
-        if (it.skin) assert.ok(it.skin.pattern && it.skin.accent && it.skin.altAccent, it.id);
+        if (it.skin) assert.ok(it.skin.pattern, it.id);
     }
     const price = id => C.byId(id).price;
     assert.equal(price('ns_custom'), 8000);
@@ -155,13 +155,17 @@ test('rotation: every item for sale turns up within a season', () => {
     assert.deepEqual(missing, []);
 });
 
-test('catalog: skin accents swap off a team colour they would vanish into', () => {
-    const it = C.byId('sk_sapphire');
-    assert.equal(C.accentFor(it, '#3d7cf0'), it.skin.altAccent, 'blue on blue');
-    assert.equal(C.accentFor(it, '#ff6c6e'), it.skin.accent);
-    assert.equal(C.accentFor(C.byId('sk_sash'), '#3d7cf0'), '#ff5a5f', 'red reads fine on blue');
-    assert.equal(C.accent2For(C.byId('sk_lava_cracks'), '#ec7b0f'), C.byId('sk_lava_cracks').skin.alt2);
-    assert.equal(C.accent2For(C.byId('sk_racer'), '#3d7cf0'), null);
+test('catalog: skins never recolour (Oct 6 2026 owner rule): no colours in tank or sidekick skins', () => {
+    for (const it of C.ITEMS.filter(i => i.cat === 'skin')) {
+        assert.ok(!/#[0-9a-f]{3,6}|accent|color/i.test(JSON.stringify(it.skin)), it.id + ' carries a colour');
+    }
+    for (const it of C.ITEMS.filter(i => i.cat === 'sdSkin')) assert.deepEqual(Object.keys(it.look), ['fill'], it.id + ' only decorates');
+    assert.equal(C.accentFor, undefined, 'no accent swapping left');
+    // the renderer paints from the team colour alone
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'client', 'account', 'cosmetics.js'), 'utf8');
+    assert.ok(!/s\.accent|accentFor|em\.color/.test(src), 'no catalog colours in the skin painter');
+    const art = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'client', 'sidekickArt.js'), 'utf8');
+    assert.ok(!/look\.col/.test(art), 'a sidekick skin never replaces the body colour');
 });
 
 test('rotation: persisted per day, and skips items featured in the previous 2 days', () => {

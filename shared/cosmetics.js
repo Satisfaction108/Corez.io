@@ -29,24 +29,22 @@
 //   glint  a highlight rides along with the scroll (legendary)
 //   glyph  suffix glyph drawn after the name (legendary), `glyphColor`
 //
-// Skin render params (item.skin): a flat pattern painted over the hull in
-// the team colour (barrels and turrets stay as they are).
-//   pattern   stripes | racer | halves | quarters | checker | rings | rim |
-//             core | dots | chevrons | sash | sunburst | pinwheel | tiger |
-//             camo | strata | hex | circuit | facets | vein | gem | geode |
-//             bolt | crosshair | vault | cracks | frost | drill | shards |
-//             storm | gilded | heart | spiral | aurora | prism | nova | void
-//   seed      deterministic seed for the little randomness some patterns use
-//   scale     pattern cell size as a fraction of the hull radius
-//   accent    main pattern colour; altAccent when it clashes with the team
-//             colour (see accentFor). accent2 / alt2 the same for a second
-//             colour, when the pattern has one
-//   opacity   pattern alpha over the hull (1 = flat, the default)
-//   emissive  null, or {kind, color, speed (cycles per second)}:
-//             pulse | twinkle | spinGlow | flash | shift (color2) are glows
-//             (No Glow drops them); spin turns the pattern itself; spiral
-//             turns it backwards with a breathing glow; shimmer is a light
-//             sweep every `every` seconds. Fewer Effects freezes them all.
+// Skin render params (item.skin). Owner rule (Oct 6 2026): a skin never
+// changes the colour, only adds body effects. Every skin keeps the tank's
+// own team colour and lays decorations over the hull in shades of it (a
+// darker and a lighter tone, a pale highlight) with dark ink outlines, in
+// the game's flat style: rings, rims, studs, spokes, stripes, gems, a
+// centre emblem. So the params carry no colours at all (validated below).
+// Barrels and turrets stay as they are.
+//   pattern   the design (public/client/account/cosmetics.js PAINT)
+//   seed      deterministic seed for the little randomness some designs use
+//   scale     cell size as a fraction of the hull radius (grid designs)
+//   angle / rivets / arms   per-design shape knobs
+//   emissive  null, or {kind, speed (cycles per second)}, a light tint of
+//             the team colour: pulse | flash | spiral | shift are glows (No
+//             Glow drops them); twinkle sparkles; spin turns the design;
+//             spiral turns it backwards with a breathing glow; shimmer is a
+//             light sweep every `every` seconds. Fewer Effects freezes them.
 //
 // Sidekicks (cat 'sidekick', nid 201..299): a tiny arras tank with a smiley
 // face that follows its owner around a raid (server/game/terrain/sidekicks.js,
@@ -65,10 +63,11 @@
 //   size   radius multiplier
 // Every sidekick wears the same smiley; nothing in the catalog changes it.
 // blurb is the shop line.
-// Sidekick skins (cat 'sdSkin', nid 301..399): item.look = {fill, ...}, a
-// paint job for the body only (never the face or the barrels):
+// Sidekick skins (cat 'sdSkin', nid 301..399): item.look = {fill}, a
+// decoration for the body only (never the face or the barrels), in shades
+// of the sidekick's own (or Locker) colour; like tank skins they never
+// recolour it:
 //   stripes | dots | twoTone | checker | camo | frost | gold | galaxy
-// col (where there is one) replaces the body colour.
 // Sidekick name styles (cat 'sdName', nid 401..499): item.style = {kind,
 // ...}, their own look, baked by sidekickArt.js bakeName:
 //   sticker | bubbly | candy | pixel | sparkle
@@ -198,7 +197,7 @@
         ns(30, 'ns_ruby', 'Ruby', 'rare', 60,
             { kind: 'vertical', stops: ['#ffd1d8', '#ff6b85', '#ff4060'], rim: '#420010' }),
         ns(31, 'ns_neon', 'Neon', 'rare', 65,
-            { kind: 'vertical', stops: ['#f4ffe0', '#baff5c'], rim: '#173300', halo: '#9dff3d' }),
+            { kind: 'vertical', stops: ['#f6ffd6', '#b8ff4a', '#86f23a'], rim: '#122900', halo: '#9dff3d' }),
         ns(32, 'ns_crimson', 'Crimson', 'rare', 55,
             { kind: 'split', stops: ['#ffa3a3', '#f0404a'], rim: '#360006' }),
 
@@ -255,102 +254,89 @@
 
         // ---- skins (nid 101..199) ----
         sk(101, 'sk_hazard_stripes', 'Hazard Stripes', 'common', 35,
-            { pattern: 'stripes', seed: 1101, scale: 0.3, angle: 45, accent: '#ffd23f', altAccent: '#2b2a28', emissive: null }),
+            { pattern: 'stripes', seed: 1101, scale: 0.3, angle: 45, emissive: null }),
         sk(102, 'sk_riveted_plate', 'Riveted Plate', 'common', 35,
-            { pattern: 'rim', seed: 1102, rivets: 8, accent: '#c9ced6', altAccent: '#5a6270', accent2: '#eef1f5', emissive: null }),
+            { pattern: 'rim', seed: 1102, rivets: 8, emissive: null }),
         sk(113, 'sk_racer', 'Racer', 'common', 30,
-            { pattern: 'racer', seed: 1113, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+            { pattern: 'racer', seed: 1113, emissive: null }),
         sk(114, 'sk_split', 'Split', 'common', 30,
-            { pattern: 'halves', seed: 1114, accent: '#2b2a28', altAccent: '#f2f2f2', emissive: null }),
+            { pattern: 'halves', seed: 1114, emissive: null }),
         sk(115, 'sk_bullseye', 'Bullseye', 'common', 35,
-            { pattern: 'rings', seed: 1115, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+            { pattern: 'rings', seed: 1115, emissive: null }),
         sk(116, 'sk_polka', 'Polka', 'common', 30,
-            { pattern: 'dots', seed: 1116, scale: 0.56, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+            { pattern: 'dots', seed: 1116, scale: 0.56, emissive: null }),
         sk(117, 'sk_checkers', 'Checkers', 'common', 35,
-            { pattern: 'checker', seed: 1117, scale: 0.5, accent: '#2b2a28', altAccent: '#f2f2f2', emissive: null }),
+            { pattern: 'checker', seed: 1117, scale: 0.5, emissive: null }),
         sk(118, 'sk_pip', 'Pip', 'common', 30,
-            { pattern: 'core', seed: 1118, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+            { pattern: 'core', seed: 1118, emissive: null }),
         sk(119, 'sk_sash', 'Sash', 'common', 30,
-            { pattern: 'sash', seed: 1119, angle: -35, accent: '#ff5a5f', altAccent: '#ffffff', emissive: null }),
+            { pattern: 'sash', seed: 1119, angle: -35, emissive: null }),
 
         sk(103, 'sk_cave_camo', 'Cave Camo', 'uncommon', 65,
-            { pattern: 'camo', seed: 1103, accent: '#5e4e3b', altAccent: '#c9b690', accent2: '#8a7456', alt2: '#a8946e', emissive: null }),
+            { pattern: 'camo', seed: 1103, emissive: null }),
         sk(104, 'sk_strata', 'Strata', 'uncommon', 65,
-            { pattern: 'strata', seed: 1104, accent: '#d9a066', altAccent: '#6e4a2c', accent2: '#8f6a45', alt2: '#b98752', emissive: null }),
+            { pattern: 'strata', seed: 1104, emissive: null }),
         sk(105, 'sk_hex_armor', 'Hex Armor', 'uncommon', 65,
-            { pattern: 'hex', seed: 1105, scale: 0.36, accent: '#8fd8ff', altAccent: '#2f5d7a', emissive: null }),
+            { pattern: 'hex', seed: 1105, scale: 0.36, emissive: null }),
         sk(120, 'sk_chevron', 'Chevron', 'uncommon', 60,
-            { pattern: 'chevrons', seed: 1120, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+            { pattern: 'chevrons', seed: 1120, emissive: null }),
         sk(121, 'sk_copper_trim', 'Copper Trim', 'uncommon', 70,
-            { pattern: 'rim', seed: 1121, rivets: 6, core: true, accent: '#d9814a', altAccent: '#8a4a22', accent2: '#ffc49a', emissive: null }),
+            { pattern: 'trim', seed: 1121, rivets: 6, emissive: null }),
         sk(122, 'sk_sunburst', 'Sunburst', 'uncommon', 70,
-            { pattern: 'sunburst', seed: 1122, accent: '#ffd23f', altAccent: '#ff8a3d', emissive: null }),
+            { pattern: 'sunburst', seed: 1122, emissive: null }),
         sk(123, 'sk_quarters', 'Quarters', 'uncommon', 60,
-            { pattern: 'quarters', seed: 1123, accent: '#2b2a28', altAccent: '#f2f2f2', emissive: null }),
+            { pattern: 'quarters', seed: 1123, emissive: null }),
         sk(124, 'sk_pinwheel', 'Pinwheel', 'uncommon', 70,
-            { pattern: 'pinwheel', seed: 1124, accent: '#ffffff', altAccent: '#2b2a28', emissive: null }),
+            { pattern: 'pinwheel', seed: 1124, emissive: null }),
         sk(125, 'sk_tiger', 'Tiger', 'uncommon', 75,
-            { pattern: 'tiger', seed: 1125, accent: '#26221f', altAccent: '#ff9a3d', emissive: null }),
+            { pattern: 'tiger', seed: 1125, emissive: null }),
 
         sk(106, 'sk_drill_circuit', 'Drill Circuit', 'rare', 125,
-            { pattern: 'circuit', seed: 1106, accent: '#4dffb8', altAccent: '#1f7a58', emissive: null }),
+            { pattern: 'circuit', seed: 1106, emissive: null }),
         sk(107, 'sk_crystal_facets', 'Crystal Facets', 'rare', 125,
-            { pattern: 'facets', seed: 1107, accent: '#e0f4ff', altAccent: '#6f8cff', emissive: null }),
+            { pattern: 'facets', seed: 1107, emissive: null }),
         sk(108, 'sk_gold_vein', 'Gold Vein', 'rare', 125,
-            { pattern: 'vein', seed: 1108, accent: '#ffd84d', altAccent: '#a8780a', emissive: null }),
+            { pattern: 'vein', seed: 1108, emissive: null }),
         sk(126, 'sk_sapphire', 'Sapphire', 'rare', 130,
-            { pattern: 'gem', seed: 1126, accent: '#4a8cff', altAccent: '#a8d4ff', accent2: '#dfe4ea', emissive: null }),
+            { pattern: 'gem', seed: 1126, emissive: null }),
         sk(127, 'sk_amethyst', 'Amethyst', 'rare', 130,
-            { pattern: 'geode', seed: 1127, accent: '#b07aff', altAccent: '#e6c2ff', accent2: '#3a2352', emissive: null }),
+            { pattern: 'geode', seed: 1127, emissive: null }),
         sk(128, 'sk_storm_front', 'Storm Front', 'rare', 120,
-            { pattern: 'bolt', seed: 1128, accent: '#ffe14d', altAccent: '#2b2a28', emissive: null }),
+            { pattern: 'bolt', seed: 1128, emissive: null }),
         sk(129, 'sk_cyclone', 'Cyclone', 'rare', 120,
-            { pattern: 'spiral', seed: 1129, arms: 2, accent: '#eaf6ff', altAccent: '#2f5d7a', accent2: '#9fd4ff', alt2: '#5c8fb3', emissive: null }),
+            { pattern: 'spiral', seed: 1129, arms: 2, emissive: null }),
         sk(130, 'sk_crosshair', 'Crosshair', 'rare', 110,
-            { pattern: 'crosshair', seed: 1130, accent: '#ff4d4d', altAccent: '#ffffff', emissive: null }),
+            { pattern: 'crosshair', seed: 1130, emissive: null }),
         sk(131, 'sk_warden', 'Warden', 'rare', 140,
-            { pattern: 'vault', seed: 1131, accent: '#c9ced6', altAccent: '#5a6270', accent2: '#ffd23f', emissive: null }),
+            { pattern: 'vault', seed: 1131, emissive: null }),
 
         sk(109, 'sk_lava_cracks', 'Lava Cracks', 'epic', 250,
-            { pattern: 'cracks', seed: 1109, accent: '#ff6a1f', altAccent: '#ffd84d', accent2: '#ffd84d', alt2: '#fff4c2',
-              emissive: { kind: 'pulse', color: '#ff7a2f', speed: 0.6 } }),
+            { pattern: 'cracks', seed: 1109, emissive: { kind: 'pulse', speed: 0.6 } }),
         sk(110, 'sk_permafrost', 'Permafrost', 'epic', 250,
-            { pattern: 'frost', seed: 1110, accent: '#e6f7ff', altAccent: '#4f9dff',
-              emissive: { kind: 'twinkle', color: '#ffffff', speed: 0.9 } }),
+            { pattern: 'frost', seed: 1110, emissive: { kind: 'twinkle', speed: 0.9 } }),
         sk(132, 'sk_drillhead', 'Drillhead', 'epic', 240,
-            { pattern: 'drill', seed: 1132, accent: '#ff8a1f', altAccent: '#ffd84d', accent2: '#3a2a22', alt2: '#3a2a22',
-              emissive: { kind: 'spin', speed: 0.25 } }),
+            { pattern: 'drill', seed: 1132, emissive: { kind: 'spin', speed: 0.25 } }),
         sk(133, 'sk_geode', 'Geode', 'epic', 250,
-            { pattern: 'geode', seed: 1133, gems: 2, accent: '#62e0d8', altAccent: '#c9fff9', accent2: '#2a2f3a',
-              emissive: { kind: 'twinkle', color: '#eaffff', speed: 0.8 } }),
+            { pattern: 'gear', seed: 1133, emissive: { kind: 'twinkle', speed: 0.8 } }),
         sk(134, 'sk_wraith', 'Wraith', 'epic', 240,
-            { pattern: 'shards', seed: 1134, accent: '#ff6bd6', altAccent: '#ffd1f2',
-              emissive: { kind: 'pulse', color: '#ff6bd6', speed: 0.5 } }),
+            { pattern: 'shards', seed: 1134, emissive: { kind: 'pulse', speed: 0.5 } }),
         sk(135, 'sk_thunderhead', 'Thunderhead', 'epic', 260,
-            { pattern: 'storm', seed: 1135, accent: '#e8eef7', altAccent: '#5a6270', accent2: '#ffe14d', alt2: '#ffe14d',
-              emissive: { kind: 'flash', color: '#fff6b0', speed: 0.3 } }),
+            { pattern: 'storm', seed: 1135, emissive: { kind: 'flash', speed: 0.3 } }),
         sk(136, 'sk_gilded', 'Gilded', 'epic', 260,
-            { pattern: 'gilded', seed: 1136, accent: '#ffcf4a', altAccent: '#b8860b',
-              emissive: { kind: 'shimmer', every: 3 } }),
+            { pattern: 'gilded', seed: 1136, emissive: { kind: 'shimmer', every: 3 } }),
 
         sk(111, 'sk_emerald_heart', 'Emerald Heart', 'legendary', 500,
-            { pattern: 'heart', seed: 1111, accent: '#1fd67a', altAccent: '#7dffb6', accent2: '#ffd23f', alt2: '#ffd23f',
-              emissive: { kind: 'shimmer', every: 2.6 } }),
+            { pattern: 'heart', seed: 1111, emissive: { kind: 'shimmer', every: 2.6 } }),
         sk(112, 'sk_molten_core', 'Molten Core', 'legendary', 500,
-            { pattern: 'spiral', seed: 1112, arms: 3, accent: '#ff8a1f', altAccent: '#ff3d1f', accent2: '#ffd84d', alt2: '#ffd84d',
-              emissive: { kind: 'spiral', color: '#ffd84d', speed: 0.4 } }),
+            { pattern: 'molten', seed: 1112, arms: 3, emissive: { kind: 'spiral', speed: 0.4 } }),
         sk(137, 'sk_aurora', 'Aurora', 'legendary', 480,
-            { pattern: 'aurora', seed: 1137, accent: '#4dffb8', altAccent: '#b88cff', accent2: '#b88cff', alt2: '#4dffb8',
-              emissive: { kind: 'shift', color: '#4dffb8', color2: '#b88cff', speed: 0.12 } }),
+            { pattern: 'aurora', seed: 1137, emissive: { kind: 'shift', speed: 0.12 } }),
         sk(138, 'sk_prism', 'Prism', 'legendary', 500,
-            { pattern: 'prism', seed: 1138, accent: '#ffffff', altAccent: '#2b2a28',
-              emissive: { kind: 'spin', speed: 0.06 } }),
+            { pattern: 'prism', seed: 1138, emissive: { kind: 'spin', speed: 0.06 } }),
         sk(139, 'sk_supernova', 'Supernova', 'legendary', 480,
-            { pattern: 'nova', seed: 1139, accent: '#fff0a8', altAccent: '#ffb23d', accent2: '#ffffff', alt2: '#ffffff',
-              emissive: { kind: 'pulse', color: '#ffc94d', speed: 0.45 } }),
+            { pattern: 'nova', seed: 1139, emissive: { kind: 'pulse', speed: 0.45 } }),
         sk(140, 'sk_void', 'Void', 'legendary', 450,
-            { pattern: 'void', seed: 1140, accent: '#8a5cff', altAccent: '#c9b3ff', accent2: '#140c26', alt2: '#140c26',
-              emissive: { kind: 'pulse', color: '#9a70ff', speed: 0.35 } }),
+            { pattern: 'void', seed: 1140, emissive: { kind: 'pulse', speed: 0.35 } }),
 
         // ---- sidekicks (nid 201..299): plain arras tanks, one smiley each ----
         sd(201, BASIC_SIDEKICK_ID, 'Buddy', 'common', 20,
@@ -423,10 +409,10 @@
         sds(312, 'sds_dots', 'Polka Dots', 'common', 20, { fill: 'dots' }, 'White polka dots all over.'),
         sds(313, 'sds_twotone', 'Two-Tone', 'common', 25, { fill: 'twoTone' }, 'A darker bottom half, like a little jacket.'),
         sds(314, 'sds_checker', 'Checker', 'uncommon', 40, { fill: 'checker' }, 'A racing checkerboard.'),
-        sds(315, 'sds_camo', 'Camo', 'uncommon', 45, { fill: 'camo', col: '#8a9a5b' }, 'Army green camo. Hides nowhere, smiles anyway.'),
-        sds(316, 'sds_frost', 'Frosted', 'rare', 70, { fill: 'frost' }, 'An icy white rim with a little frost on top.'),
-        sds(309, 'sds_gold', 'Solid Gold', 'epic', 140, { fill: 'gold', col: '#ffcf4a' }, 'Solid gold, with a shine.'),
-        sds(310, 'sds_galaxy', 'Galaxy', 'legendary', 260, { fill: 'galaxy', col: '#6a5cff' }, 'A pocket of night sky, stars and all.'),
+        sds(315, 'sds_camo', 'Camo', 'uncommon', 45, { fill: 'camo' }, 'Camo blotches in darker shades of its own colour.'),
+        sds(316, 'sds_frost', 'Frosted', 'rare', 70, { fill: 'frost' }, 'A frosted rim and an icy cap, in its own colour.'),
+        sds(309, 'sds_gold', 'Solid Gold', 'epic', 140, { fill: 'gold' }, 'A gilded rim with studs and a little shine.'),
+        sds(310, 'sds_galaxy', 'Galaxy', 'legendary', 260, { fill: 'galaxy' }, 'An orbit ring and twinkling stars over its own colour.'),
 
         // ---- sidekick name styles (nid 401..499): their own looks ----
         sdn(407, 'sdn_sticker', 'Sticker', 'common', 15,
@@ -452,7 +438,9 @@
             if (it.cat === 'nameStyle') {
                 if (!(it.nid >= 1 && it.nid <= 99) || !it.style || !Array.isArray(it.style.stops) || !it.style.stops.length) throw new Error(where + ' bad name style');
             } else if (it.cat === 'skin') {
-                if (!(it.nid >= 101 && it.nid <= 199) || !it.skin || !it.skin.pattern || !it.skin.accent || !it.skin.altAccent) throw new Error(where + ' bad skin');
+                if (!(it.nid >= 101 && it.nid <= 199) || !it.skin || !it.skin.pattern) throw new Error(where + ' bad skin');
+                // skins never recolour: no colour anywhere in the params
+                if (/#[0-9a-f]{3,6}\b|accent|color/i.test(JSON.stringify(it.skin))) throw new Error(where + ' a skin carries a colour');
             } else if (it.cat === 'sidekick') {
                 const k = it.kick;
                 if (!(it.nid >= 201 && it.nid <= 299) || !k || !BODIES[k.body] || !/^#[0-9a-f]{6}$/.test(k.col) || !Array.isArray(k.guns) || !k.move || !it.blurb) throw new Error(where + ' bad sidekick');
@@ -462,6 +450,7 @@
                 }
             } else if (it.cat === 'sdSkin') {
                 if (!(it.nid >= 301 && it.nid <= 399) || !it.look || !SKIN_FILLS[it.look.fill] || !it.blurb) throw new Error(where + ' bad sidekick skin');
+                if (Object.keys(it.look).some(k => k !== 'fill')) throw new Error(where + ' a sidekick skin only decorates (no colour)');
             } else if (it.cat === 'sdName') {
                 if (!(it.nid >= 401 && it.nid <= 499) || !it.style || !NAME_KINDS[it.style.kind] || !it.blurb) throw new Error(where + ' bad sidekick name style');
             } else throw new Error(where + ' bad cat');
@@ -534,23 +523,6 @@
         return Math.sqrt((2 + r / 256) * dr * dr + 4 * dg * dg + (2 + (255 - r) / 256) * db * db);
     }
 
-    // Skin accent for a given team colour: altAccent when the accent is too
-    // close to the team colour to read (near in colour, or near-ish and
-    // about as bright).
-    function accentFor(item, teamHex) {
-        const s = item && item.skin;
-        if (!s) return null;
-        if (!teamHex || !parseHex(teamHex)) return s.accent;
-        const d = colorDistance(s.accent, teamHex);
-        return d < 130 || (d < 210 && contrast(s.accent, teamHex) < 1.25) ? s.altAccent : s.accent;
-    }
-    // The second colour follows the first: alt2 when the accent was swapped.
-    function accent2For(item, teamHex) {
-        const s = item && item.skin;
-        if (!s || !s.accent2) return null;
-        return s.alt2 && accentFor(item, teamHex) !== s.accent ? s.alt2 : s.accent2;
-    }
-
     function priceDust(item) { return item ? item.price / MILLI : 0; }
 
     // ---- sidekicks ----
@@ -596,7 +568,7 @@
     return Object.freeze({
         CATALOG_VERSION, MILLI, RARITIES, RARITY_ORDER, CATS, TANK_CATS, SIDEKICK_CATS, CUSTOM_COLOR_ID, INVITE_STYLE_ID, BASIC_SIDEKICK_ID, ITEMS,
         MIN_LUMINANCE, FLOOR_COLOR, SIDEKICK_COLORS, SIDEKICK_NAME_MAX, RETIRED, SIDEKICK_DIG_LINE, SIDEKICK_DIG_BANDS,
-        byId, byNid, isCat, parseHex, luminance, contrast, normalizeColor, isColorAllowed, colorDistance, accentFor, accent2For, priceDust,
+        byId, byNid, isCat, parseHex, luminance, contrast, normalizeColor, isColorAllowed, colorDistance, priceDust,
         isSidekickColor, cleanSidekickName, sidekickDigShare,
     });
 });

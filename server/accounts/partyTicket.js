@@ -60,7 +60,9 @@ function sign(data, now = Date.now(), ttlMs = TTL_MS) {
 const MK_RE = /^[ug]:[A-Za-z0-9_-]{1,40}$/;
 
 // -> the payload, or null (bad signature, expired, malformed)
-function verify(token, now = Date.now()) {
+// opts.graceMs: also take a ticket expired at most this long ago (the duo
+// server lets a member back onto the team they already hold with one)
+function verify(token, now = Date.now(), opts = {}) {
     const k = key();
     if (!k || typeof token !== 'string' || !token || token.length > MAX_LEN) return null;
     const dot = token.indexOf('.');
@@ -73,7 +75,7 @@ function verify(token, now = Date.now()) {
     let d;
     try { d = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch (e) { return null; }
     if (!d || typeof d !== 'object' || d._p !== PURPOSE) return null;
-    if (typeof d.exp !== 'number' || d.exp <= now) return null;
+    if (typeof d.exp !== 'number' || d.exp + Math.max(0, +opts.graceMs || 0) <= now) return null;
     if (typeof d.pid !== 'string' || !/^[A-Za-z0-9_-]{6,40}$/.test(d.pid)) return null;
     if (typeof d.mk !== 'string' || !MK_RE.test(d.mk)) return null;
     const mates = Array.isArray(d.mates) ? d.mates.filter(m => typeof m === 'string' && MK_RE.test(m)).slice(0, 2) : [];
@@ -82,6 +84,7 @@ function verify(token, now = Date.now()) {
         pid: d.pid, mk: d.mk, mates, exp: d.exp,
         n: typeof d.n === 'string' ? d.n.slice(0, 24) : '',
         fill: d.fill !== false,
+        expired: d.exp <= now,
     };
 }
 

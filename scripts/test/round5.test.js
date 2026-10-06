@@ -235,7 +235,7 @@ test('bounty tag: BOUNTY ON YOU on your own tank, no "+" sign, baked at the size
     assert.match(app, /if \(id === gui\.playerid\) return BOUNTY_ON_YOU \|\| \(BOUNTY_ON_YOU = \{ key: "btme", word: "BOUNTY ON YOU", num: "", col: HUD\.gold \}\);/);
     assert.match(app, /num: fmtNum\(b\.gems \| 0\) \+ " gems"/);
     assert.ok(!/num: "\+" \+ \(b\.gems \| 0\)/.test(app));
-    assert.match(app, /const bake = Math\.max\(12, Math\.min\(64, Math\.round\(want \/ 4\) \* 4\)\);/);
+    assert.match(app, /const bake = Math\.max\(12, Math\.min\(64, Math\.round\(want \/ 2\) \* 2\)\);/);
     assert.match(app, /streakSprite\(bd, fs \* \(c\._tf \? tfOf\(c\)\.a : 1\)\)/);
 });
 

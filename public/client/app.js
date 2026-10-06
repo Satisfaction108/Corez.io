@@ -39,6 +39,7 @@ import * as bankPopLogic from './bankPopLogic.js';
 import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerksLogic.js';
 import * as deathText from './deathCardLogic.js';
 import * as buildBtnLabels from './buildButtonsLogic.js';
+import { layoutLabels } from './labelLayout.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -1880,7 +1881,9 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         }
         return w;
     }
-    let nameRim = null, nameHalo = null, nameHaloA = 0;
+    // nameHalo: null, or nameGlow (the armed style's glow, copied out of cosmetics.nameFx)
+    let nameRim = null, nameHalo = null;
+    const nameGlow = { halo: null, haloHi: null, haloA: 1 };
     // drawText is the busiest text path (names, labels, feed): a string that
     // has been asked for a few frames in a row gets drawn once into a sprite
     // by drawTextDirect itself and reused, so it looks exactly the same.
@@ -2051,7 +2054,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         context.textAlign = "left";
         context.textBaseline = "middle";
         // a name style's outline / halo (styledName sets them for this one call)
-        const rim = nameRim, halo = nameHalo, haloA = nameHaloA;
+        const rim = nameRim, halo = nameHalo;
         nameRim = nameHalo = null;
         context.strokeStyle = rim || color.black;
         context.fillStyle = defaultFillStyle;
@@ -2068,16 +2071,10 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         Yoffset += y * ratio - Yoffset * (center ? 1.05 : 1.5);
         if (stroke) {
             if (halo) {
-                const lw = context.lineWidth, ga = context.globalAlpha, hp = cosmetics.HALO_PASSES;
-                context.strokeStyle = halo;
-                for (let i = 0; i < hp.length; i++) {
-                    context.lineWidth = lw * hp[i][0];
-                    context.globalAlpha = ga * haloA * hp[i][1];
-                    context.strokeText(renderedFullText, Xoffset, Yoffset);
-                }
-                context.lineWidth = lw;
+                // the style's glow (cosmetics.strokeHalo): a bright core
+                // hugging the outline, two soft steps out
+                cosmetics.strokeHalo(context, renderedFullText, Xoffset, Yoffset, halo);
                 context.strokeStyle = rim || color.black;
-                context.globalAlpha = ga;
             }
             context.strokeText(renderedFullText, Xoffset, Yoffset);
         }
@@ -3199,7 +3196,8 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         };
         // three flat tones: base, lighter, darker. Neutral near-black so the
         // wall and team colours own the contrast.
-        const BASE = "#1e1d1b", LIGHT = "#232220", DARK = "#191817";
+        // (Oct 6: lifted a step, the cave read murky; still well under the rocks)
+        const BASE = "#282624", LIGHT = "#2e2c29", DARK = "#222120";
         t.fillStyle = BASE;
         t.fillRect(0, 0, S, S);
         // toroidal draw: paint each feature at all 9 wrap offsets so the
@@ -3249,7 +3247,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         // layer 2: small light dirt clods on the patches
         for (let i = 0; i < 26; i++) {
             const path = blob(rng() * S, rng() * S, 2.5 + rng() * 4.5);
-            const tone = rng() < 0.5 ? "#262521" : "#161514";
+            const tone = rng() < 0.5 ? "#33312c" : "#1e1d1b";
             wrapped(() => { path(); t.fillStyle = tone; t.fill(); });
         }
         // layer 3: pebbles with the same dark border the rocks wear
@@ -3257,7 +3255,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             const x = rng() * S, y = rng() * S;
             const r = 2.2 + rng() * 2.8, rot = rng() * Math.PI;
             const squish = 0.65 + rng() * 0.3;
-            const col = rng() < 0.5 ? "#393732" : "#454239";
+            const col = rng() < 0.5 ? "#44413b" : "#514d44";
             wrapped(() => {
                 t.save();
                 t.translate(x, y);
@@ -3596,7 +3594,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                 const alt = sy + R * 1.3, la2 = labelAlpha(sx, alt, 60, 24);
                 if (la2 > vla) { vly = alt; vla = la2; }
             }
-            hudTitle("Vault", sx, vly, vls, HUD.head, "center", vla, c);
+            worldLabel(c, "Vault", sx, vly, vls, HUD.head, 1, 0, hudTitleW("Vault", vls) + 8, vls + 6);
 
             if (doneFlash > 0) {
                 // completion burst: one-off ring of gold sparks
@@ -4061,7 +4059,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             const fs = Math.min(30, Math.max(13, R * 0.4));
             const top = (st.t || st.h) ? R * 1.33 * 1.1 + Math.max(4, R * 0.085) : R * 1.08;
             const ty = sy - top - fs * 0.5 - Math.max(6, R * 0.12);
-            hudTitle(o.name, sx, ty, fs, o.color || st.c || HUD.head, "center", labelAlpha(sx, ty, fs * o.name.length * 0.55, fs * 1.4), c);
+            worldLabel(c, o.name, sx, ty, fs, o.color || st.c || HUD.head, 1, 1, fs * o.name.length * 0.55, fs * 1.4);
             // contested: callout + the banner's remaining HP, shown to both sides
             if (st.cont && (st.h || 0) < 0.5) {
                 const blink = 0.65 + 0.35 * Math.sin(performance.now() / 240);
@@ -4161,7 +4159,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         ctx[0].globalAlpha = 1;
         // room base = the dirt tile's ground colour, so a failed pattern
         // still leaves a dark floor
-        ctx[0].fillStyle = "#1e1d1b";
+        ctx[0].fillStyle = "#282624";
 
         let roomX = -px + global.screenWidth / 2 - ratio * gameWidth / 2,
             roomY = -py + global.screenHeight / 2 - ratio * gameHeight / 2,
@@ -4193,7 +4191,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             ctx[0].scale(ratio, ratio);
             ctx[0].beginPath();
             ctx[0].arc(island.x, island.y, island.r + 40, 0, Math.PI * 2);
-            ctx[0].fillStyle = "#1e1d1b";
+            ctx[0].fillStyle = "#282624";
             ctx[0].fill();
             ctx[0].fillStyle = floorPattern;
             ctx[0].fill();
@@ -4214,7 +4212,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                 ctx[0].save();
                 ctx[0].translate(roomX + roomWidth / 2, roomY + roomHeight / 2);
                 ctx[0].scale(ratio, ratio);
-                ctx[0].fillStyle = "#1e1d1b";
+                ctx[0].fillStyle = "#282624";
                 ctx[0].fill(islPaths.alive);
                 ctx[0].fill(islPaths.dead);
                 ctx[0].fillStyle = floorPattern;
@@ -4817,9 +4815,9 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         const size = Math.max(12, Math.min(17, R * 0.3));
         const ly = y - size * 0.55;
         const w = hudTitleW(CHEST_LABEL[k], size) + 8;
-        const a = alpha * 0.92 * far * labelAlpha(x, ly, w, size + 6);
+        const a = alpha * 0.92 * far;
         if (a < 0.03) return;
-        hudTitle(CHEST_LABEL[k], x, ly, size, CHEST_LABEL_COL[k], "center", a, c);
+        worldLabel(c, CHEST_LABEL[k], x, ly, size, CHEST_LABEL_COL[k], a, k === "crate" ? 1 : k === "epic" ? 2 : 3, w, size + 6);
     }
     let bgCanvasEl = null, bgHidden = false;
     function drawEntities(px, py, ratio, tick) {
@@ -5606,7 +5604,8 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
 
     // ── overhead stack ──────────────────────────────────────────────────
     // Everything over a tank, bottom up: the hull, the name + rank badge (and
-    // score), the partner diamond, the streak badge, then chat. Each piece
+    // score), the partner chevron or ONE tag (bounty, revenge, hunted,
+    // streak), then chat. Each piece
     // asks for the top of what sits under it, so nothing overlaps at any
     // tank size or zoom.
     const chatScale = (size) => Math.min(34, Math.max(20, size));
@@ -5620,14 +5619,40 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         if (m && m.className && String(m.className).startsWith("royale")) return Math.min(top, y - size - 44);
         if (global.GUIStatus.renderPlayerNames) {
             const ny = y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45);
-            top = Math.min(top, ny - 0.56 * g);                 // name cap height and the badge top
-            const dm = global.royale && global.royale.duos && global.royale.duo && global.royale.duo.mate;
-            if (dm && dm.id === instance.id) {
-                const ds = Math.max(9, 0.42 * g);
-                top = Math.min(top, ny - 0.55 * g - ds * 1.62 - 3);  // the partner diamond
-            }
+            // far plates are drawn smaller (drawName sets _plateK this frame)
+            const pk = instance._plateK || 1;
+            top = Math.min(top, ny - 0.56 * g * pk);            // name cap height and the badge top
+            if (isDuoMate(instance.id)) top = Math.min(top, mateChevronTop(ny, g, pk));  // the partner chevron
         } else if (global.GUIStatus.renderPlayerScores) top = Math.min(top, y - 1.75 * g);
         return top;
+    }
+    // duos: your partner (their plate carries the team chevron, and nothing else over it)
+    function isDuoMate(id) {
+        const r = global.royale, dm = r && r.duos && r.duo && r.duo.mate;
+        return !!(dm && dm.id === id);
+    }
+    // The partner chevron: a small team-colour "v" pointing down at the name.
+    // ds is its width; the tip sits a small gap over the name's cap height.
+    // (function declarations, so they are hoisted: no TDZ whatever calls first)
+    function mateChevronSize(g, pk) { return Math.max(7, 0.34 * g * pk); }
+    function mateChevronTip(ny, g, pk) { return ny - 0.52 * g * pk - 2; }
+    function mateChevronTop(ny, g, pk) { return mateChevronTip(ny, g, pk) - mateChevronSize(g, pk) * 0.62 - 2; }
+    function drawMateChevron(c, x, ny, g, pk) {
+        const ds = mateChevronSize(g, pk), tip = mateChevronTip(ny, g, pk), h = ds * 0.62;
+        c.save();
+        c.lineJoin = "round";
+        c.beginPath();
+        c.moveTo(x - ds / 2, tip - h);
+        c.lineTo(x, tip - h * 0.42);
+        c.lineTo(x + ds / 2, tip - h);
+        c.lineTo(x, tip);
+        c.closePath();
+        c.lineWidth = Math.max(1.5, ds * 0.22);
+        c.strokeStyle = HUD.ink;
+        c.stroke();
+        c.fillStyle = playerHexCol() || HUD.sky;
+        c.fill();
+        c.restore();
     }
     // Marked streakers (RY pings, 4+ kills in a row): id -> streak, rebuilt
     // only when a new packet brings a new list.
@@ -5669,10 +5694,10 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
     function badgeOf(id) {
         if (!royaleActive() || raidFinale.active()) return null;
         const r = global.royale;
-        const rv = r.you && r.you.revenge;
-        if (rv && rv.alive && rv.e === id && id !== gui.playerid) return rv.tough ? TOUGH_BADGE : REVENGE_BADGE;
-        const hb = raidHeat.badge(id);
-        if (hb) return hb;
+        // ONE tag over a tank (Oct 6, the plates were cluttered), by priority:
+        // your duo partner's chevron (drawName) > the bounty > revenge / too
+        // strong > hunted > a streak
+        if (isDuoMate(id)) return null;
         const b = r.bounty;
         if (b && b.e === id) {
             // TOO STRONG is about someone else: never on your own tank (you can be the bounty
@@ -5684,6 +5709,10 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             if (!bountyBadge || bountyBadge.key !== key) bountyBadge = { key, word: b.lead ? "LEADER BOUNTY " : "BOUNTY ", num: fmtNum(b.gems | 0) + " gems", col: HUD.gold };
             return bountyBadge;
         }
+        const rv = r.you && r.you.revenge;
+        if (rv && rv.alive && rv.e === id && id !== gui.playerid) return rv.tough ? TOUGH_BADGE : REVENGE_BADGE;
+        const hb = raidHeat.badge(id);
+        if (hb) return hb;
         const n = streakOf(id);
         if (!n) return null;
         let bd = streakBadges.get(n);
@@ -5716,7 +5745,8 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
     const STREAK_BAKE = 40;
     const streakSprites = new Map();
     function streakSprite(bd, want = STREAK_BAKE) {
-        const bake = Math.max(12, Math.min(64, Math.round(want / 4) * 4));
+        // 2 px steps (Oct 6, was 4): drawn within ~5% of its bake, so it stays sharp
+        const bake = Math.max(12, Math.min(64, Math.round(want / 2) * 2));
         const sk = bd.key + "@" + bake;
         let spr = streakSprites.get(sk);
         if (spr) return spr;
@@ -5799,8 +5829,10 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         c.save();
         // a tank under a HUD panel (the ability bar, the wallet row) keeps its badge as a
         const by = tipY - spr.tipY * k;
-        c.globalAlpha = alpha * alpha * fade * (0.88 + 0.12 * Math.sin(performance.now() / 300)) * labelAlpha(bx + w / 2, by + h / 2, w, h);
-        c.drawImage(spr.cv, bx, by, w, h);
+        c.globalAlpha = alpha * alpha * fade * (instance._plateA || 1) * (0.88 + 0.12 * Math.sin(performance.now() / 300)) * labelAlpha(bx + w / 2, by + h / 2, w, h);
+        // whole device pixels, so the baked pill stays crisp
+        const ds = c._tf ? tfOf(c).a : 1;
+        c.drawImage(spr.cv, Math.round(bx * ds) / ds, Math.round(by * ds) / ds, w, h);
         c.restore();
         if (streakShownAt.size > 64 && !streakShownAt.has(instance.id)) streakShownAt.clear();
         streakShownAt.set(instance.id, overheadFrame);
@@ -6199,22 +6231,24 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
     }
     // Room a badge takes left of a name (badge + gap), so callers can centre
     // badge and name together.
-    const nameBadgeRoom = (code, size) => code ? 1.65 * size : 0;
+    // bk: badge height in font sizes (1.25 on the HUD, smaller on world plates)
+    function nameBadgeRoom(code, size, bk = 1.25) { return code ? (bk + 0.4) * size : 0; }
     // Rank badge just left of a name drawn by drawText (code from
-    // nameBadgeCode). The badge is 1.25x the font size and centred on the
+    // nameBadgeCode). The badge is bk x the font size and centred on the
     // text's own middle, which drawText puts 0.35 of a size above y unless
-    // centred. Returns the width it took (0 when nothing drew).
-    function drawNameBadge(code, text, x, y, size, align = "center", c = ctx[2], centered = false) {
+    // centred. tw: the text's width when the caller has it. Returns the
+    // width it took (0 when nothing drew).
+    function drawNameBadge(code, text, x, y, size, align = "center", c = ctx[2], centered = false, bk = 1.25, tw = -1) {
         code = code | 0;
         if (!code) return 0;
         const fs = size + config.graphical.fontSizeBoost;
-        const bh = 1.25 * size;
-        const tw = align === "left" ? 0 : measureText(text, size);
+        const bh = bk * size;
+        if (tw < 0) tw = align === "left" ? 0 : measureText(text, size);
         // drawText's glyphs start size/20 left of the measured box
         const left = (align === "center" ? x - tw / 2 : align === "right" ? x - tw : x) - 0.05 * fs;
         const cy = centered ? y - 0.035 * fs : y - 0.35 * fs;
         rankBadges.drawBadge(c, left - bh * 0.5 - size * 0.4, cy, bh, rankBadges.codeToDivision(code));
-        return nameBadgeRoom(code, size);
+        return nameBadgeRoom(code, size, bk);
     }
 
     // Name style (accounts): what drawText should draw for a name and with
@@ -6237,7 +6271,9 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         const fs = size + config.graphical.fontSizeBoost;
         const still = !!(global.lowFx || config.graphical.fewerEffects);
         const fx = cosmetics.nameFx(st, { still });
-        nameRim = fx.rim; nameHalo = fx.halo; nameHaloA = fx.haloA;
+        nameRim = fx.rim;
+        nameHalo = fx.halo ? nameGlow : null;
+        nameGlow.halo = fx.halo; nameGlow.haloHi = fx.haloHi; nameGlow.haloA = fx.haloA;
         out.text = text;
         if (fs < 8) { out.fill = cosmetics.solidOf(st, solid); return out; }
         const full = measureText(text, size);
@@ -6249,6 +6285,63 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         return out;
     }
     const hexOr = (v, dflt) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v : dflt;
+
+    // A world plate's name, centred on x. A still name style (gradient, rim,
+    // halo) is baked once per name / style / size / layer scale into a
+    // drawText sprite at device pixels and blitted 1:1 (it went direct before:
+    // two halo strokes, a stroke and a pattern fill every frame, soft at the
+    // edges). Scrolling or pulsing styles still draw direct. Returns the
+    // drawn width (glyph included), so callers needn't measure again.
+    function drawPlateName(name, nid, solid, x, y, size, c) {
+        const st = nid ? cosmetics.nameStyleOf(nid) : null;
+        if (!st || !name) {
+            drawText(name, x, y, size, solid, "center", false, 1, true, c);
+            return measureText(name, size);
+        }
+        const s = st.style;
+        const still = !!(global.lowFx || config.graphical.fewerEffects);
+        const anim = !still && (s.kind === "scroll" || s.kind === "prism" || (!!s.pulse && !config.graphical.noGlow));
+        const t = c._tf ? tfOf(c) : null;
+        if (anim || !t || t.b || t.c || crispOff || !(t.a > 0)) {
+            const sn = styledName(name, nid, solid, x, size, "center", c, y);
+            drawText(sn.text, x, y, size, sn.fill, "center", false, 1, true, c);
+            return measureText(sn.text, size);
+        }
+        const sc = spriteScale(t.a), q = spriteSize(size);
+        const key = "\u0001" + name + "|" + nid + "|" + q + "|" + solid + "|" + sc + "|" + (config.graphical.noGlow ? 1 : 0) + (still ? 1 : 0);
+        let e = textSprites.get(key);
+        if (!e) {
+            const text = cosmetics.withGlyph(name, st);
+            const fs = q + config.graphical.fontSizeBoost;
+            const w = measureText(text, q);
+            const pad = fs * 0.6 + 4, W = w + pad * 2, H = fs * 2.6 + 8;
+            const pw = Math.max(1, Math.ceil(W * sc)), ph = Math.max(1, Math.ceil(H * sc));
+            const cv = spriteCanvas(pw, ph);
+            const g = cv.getContext("2d");
+            g.setTransform(1, 0, 0, 1, 0, 0);
+            g.clearRect(0, 0, cv.width, cv.height);
+            g.scale(sc, sc);
+            const sn = styledName(name, nid, solid, pad, q, "left", g, H / 2);
+            drawTextDirect(sn.text, pad, H / 2, q, sn.fill, "left", false, 1, true, g);
+            e = { cv, w, W, H, X0: pad, Y0: H / 2, pw, ph, used: textFrame };
+            if (textSprites.size > 700) { let n = 0; for (const [kk, old] of textSprites) { textSprites.delete(kk); freeSprite(old); if (++n >= 150) break; } }
+            textSprites.set(key, e);
+        }
+        e.used = textFrame;
+        const k = size / q;
+        blitSprite(c, t, e.cv, e.pw, e.ph, x - e.w * k * 0.5 - e.X0 * k, y - e.Y0 * k, e.pw / sc * k, e.ph / sc * k);
+        return e.w * k;
+    }
+    // Plates far from the screen centre, or on tiny tanks, step back: smaller
+    // and fainter, in three fixed steps (so sprites stay cached). Plain
+    // numbers, no consts: nothing here can hit a TDZ.
+    function plateStep(x, y, size) {
+        const hw = global.screenWidth / 2, hh = global.screenHeight / 2;
+        const nd = Math.max(Math.abs(x - hw) / hw, Math.abs(y - hh) / hh);
+        let s = nd < 0.62 ? 0 : nd < 0.84 ? 1 : 2;
+        if (size < 16 && s < 1) s = 1;
+        return s;
+    }
 
     function drawName(x, y, instance, ratio, alpha, isize) {
         if (!(0.02 > alpha)) {
@@ -6283,32 +6376,33 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                     return;
                 }
                 let g = Math.max(20, size);
+                // never a plate for a tank whose plate can't be on screen
+                if (x < -260 || x > global.screenWidth + 260 || y < -60 || y > global.screenHeight + 3 * g + 20) {
+                    ctx[1].globalAlpha = 1;
+                    return;
+                }
+                // far or tiny: smaller and fainter (the tag over it reads these too)
+                const step = plateStep(x, y, size);
+                const pk = step === 0 ? 1 : step === 1 ? 0.9 : 0.8;
+                instance._plateK = pk;
+                instance._plateA = step === 0 ? 1 : step === 1 ? 0.8 : 0.62;
+                ctx[1].globalAlpha = alpha * alpha * fade * instance._plateA;
                 if (global.GUIStatus.renderPlayerNames) {
                     const ny = y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45);
-                    // badge and name are centred over the hull as one
-                    const code = nameBadgeCode(instance.rankCode, false), nx = x + nameBadgeRoom(code, 0.55 * g) / 2;
-                    const sn = styledName(name, instance.nameStyle, namecolor == "#ffffff" ? color.guiwhite : namecolor, nx, 0.55 * g, "center", ctx[1], ny);
-                    drawText(sn.text, nx, ny, 0.55 * g, sn.fill, "center", false, 1, true, ctx[1]);
-                    drawNameBadge(code, sn.text, nx, ny, 0.55 * g, "center", ctx[1]);
+                    const fsz = 0.55 * g * pk;
+                    // name first; the rank badge small, just left of it; the two
+                    // centred over the hull as one
+                    const bk = 0.95;
+                    const code = nameBadgeCode(instance.rankCode, false), nx = x + nameBadgeRoom(code, fsz, bk) / 2;
+                    const tw = drawPlateName(name, instance.nameStyle, namecolor == "#ffffff" ? color.guiwhite : namecolor, nx, ny, fsz, ctx[1]);
+                    drawNameBadge(code, name, nx, ny, fsz, "center", ctx[1], false, bk, tw);
                     // won a raid in the last 24 h: a small crown after the name
                     if (royaleActive() && crowns.isChamp(instance.id)) {
-                        try { crowns.drawCrownIcon(ctx[1], nx + measureText(sn.text, 0.55 * g) / 2 + 0.5 * g, ny - 0.2 * g, 0.5 * g, "gold", 1); } catch (e) { /* */ }
+                        try { crowns.drawCrownIcon(ctx[1], nx + tw / 2 + 0.5 * g * pk, ny - 0.2 * g * pk, 0.5 * g * pk, "gold", 1); } catch (e) { /* */ }
                     }
-                    // duos: a little diamond in your team colour over your partner
-                    const dm = global.royale && global.royale.duos && global.royale.duo && global.royale.duo.mate;
-                    if (dm && dm.id === instance.id) {
-                        const ds = Math.max(9, 0.42 * g), dyy = ny - 0.55 * g - ds * 0.9 - 3;
-                        const dc = ctx[1];
-                        dc.save();
-                        dc.translate(x, dyy);
-                        dc.rotate(Math.PI / 4);
-                        dc.fillStyle = playerHexCol() || HUD.sky;
-                        dc.strokeStyle = HUD.ink;
-                        dc.lineWidth = Math.max(1.5, ds * 0.35);
-                        dc.fillRect(-ds / 2, -ds / 2, ds, ds);
-                        dc.strokeRect(-ds / 2, -ds / 2, ds, ds);
-                        dc.restore();
-                    }
+                    // duos: a small chevron in your team colour over your partner
+                    // (it takes the tag spot: badgeOf gives a partner no tag)
+                    if (isDuoMate(instance.id)) drawMateChevron(ctx[1], x, ny, g, pk);
                 }
                 if (global.GUIStatus.renderPlayerScores || typeof instance.score === "string") {
                     // raids: the standings' points, never the hull's own XP score (the two disagreed
@@ -6880,15 +6974,27 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
 
         const ft = (now - g.flashAt) / 380;
         if (ft >= 0 && ft < 1) {
-            const fe = 1 - Math.pow(1 - ft, 3);
-            ctx[2].save();
-            ctx[2].globalAlpha = (1 - ft) * 0.5;
-            ctx[2].strokeStyle = color.gold;
-            ctx[2].lineWidth = 3.5 * (1 - ft) + 0.5;
-            ctx[2].beginPath();
-            ctx[2].arc(cx, cy, 26 + fe * 30, 0, Math.PI * 2);
-            ctx[2].stroke();
-            ctx[2].restore();
+            // Oct 6: brighter and crisper (a gold ring plus a thin cream one
+            // inside it); reduced motion keeps it still and just fades it
+            const calmFx = !!(global.reducedMotion && global.reducedMotion());
+            const fe = calmFx ? 0.4 : 1 - Math.pow(1 - ft, 3);
+            const c2 = ctx[2];
+            c2.save();
+            c2.globalAlpha = (1 - ft) * 0.82;
+            c2.strokeStyle = "#ffcf4a";
+            c2.lineWidth = 3.5 * (1 - ft) + 0.75;
+            c2.beginPath();
+            c2.arc(cx, cy, 26 + fe * 30, 0, Math.PI * 2);
+            c2.stroke();
+            if (ft < 0.6) {
+                c2.globalAlpha = (1 - ft / 0.6) * 0.75;
+                c2.strokeStyle = "#fff4cf";
+                c2.lineWidth = 1.5;
+                c2.beginPath();
+                c2.arc(cx, cy, 22 + fe * 22, 0, Math.PI * 2);
+                c2.stroke();
+            }
+            c2.restore();
         }
 
         // +N numbers: rise off the tank and fade
@@ -6906,7 +7012,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             ctx[2].globalAlpha = alpha;
             drawText("+" + p.value,
                      Math.round(cx + (p.drift || 0)), Math.round(cy - rise),
-                     size, gameDraw.mixColors(color.gold, "#ffffff", heat), "center");
+                     size, gameDraw.mixColors("#ffd04d", "#ffffff", heat * 0.85), "center");
             ctx[2].restore();
         }
     }
@@ -7566,6 +7672,11 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         if (!royaleActive()) return 1;
         // the death card owns the screen: pad and site labels step back
         if (deathCardUp()) return 0.25;
+        const x = cx0 - w / 2, y = cy0 - h / 2;
+        for (const R of labelRectsNow()) if (x < R.x + R.w && x + w > R.x && y < R.y + R.h && y + h > R.y) return 0.18;
+        return 1;
+    }
+    function labelRectsNow() {
         const now = performance.now();
         if (now - labelRectsAt > 120) {
             labelRectsAt = now;
@@ -7576,15 +7687,42 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             if (global.countdownRect) labelRects.push(global.countdownRect);
             if (global.hudSlamY > 0 && juiceSlamUp()) labelRects.push({ x: global.screenWidth / 2 - 380, y: global.hudSlamY - 52, w: 760, h: 104 });
         }
-        const x = cx0 - w / 2, y = cy0 - h / 2;
-        for (const R of labelRects) if (x < R.x + R.w && x + w > R.x && y < R.y + R.h && y + h > R.y) return 0.18;
-        return 1;
+        return labelRects;
+    }
+    // World labels: queued while the world draws (worldLabel), then laid out
+    // so none prints over another and drawn (flushWorldLabels, labelLayout.js).
+    // Each keeps its own canvas. The pool lives on the function (no per-frame
+    // allocations, nothing for module evaluation to trip over).
+    //   pri: 0 pads, 1 crates and outposts, 2 epic chests, 3 the rest
+    function worldLabel(c, text, x, y, size, col, alpha, pri, w, h) {
+        const S = worldLabel.S || (worldLabel.S = { pool: [], q: [], placed: [] });
+        const it = S.pool[S.q.length] || (S.pool[S.q.length] = {});
+        it.c = c; it.text = text; it.x = x; it.y = y; it.size = size; it.col = col; it.alpha = alpha;
+        it.pri = pri; it.w = w; it.h = h; it.dy = 0; it.blocked = false;
+        it.d = Math.abs(x - global.screenWidth / 2) + Math.abs(y - global.screenHeight / 2);
+        S.q.push(it);
+    }
+    function flushWorldLabels() {
+        const S = worldLabel.S;
+        if (!S || !S.q.length) return;
+        const rects = royaleActive() && !deathCardUp() ? labelRectsNow() : null;
+        layoutLabels(S.q, rects, S.placed);
+        for (let i = 0; i < S.q.length; i++) {
+            const it = S.q[i];
+            const ly = it.y + it.dy;
+            const a = it.alpha * (it.blocked ? 0.3 : 1) * labelAlpha(it.x, ly, it.w, it.h);
+            // (the background canvas goes under the blackout: those draw on the gameplay one)
+            if (a >= 0.03) hudTitle(it.text, it.x, ly, it.size, it.col, "center", a, it.c === ctx[0] ? ctx[1] : it.c);
+            it.c = null;
+        }
+        S.q.length = 0;
     }
     function hudAvoidRects() {
         const sw = global.screenWidth, sh = global.screenHeight;
         const out = [];
         if (standingsRect) out.push(standingsRect);
-        out.push({ x: sw / 2 - 240, y: 0, w: 480, h: hudTopBottom + 6 });
+        const topW = Math.max(480, noteMaxW() + 8);
+        out.push({ x: sw / 2 - topW / 2, y: 0, w: topW, h: hudTopBottom + 6 });
         out.push({ x: sw / 2 - 250, y: sh - 112, w: 500, h: 112 });   // name + wallet row
         const lf = leftColumnFloor();
         out.push({ x: 0, y: lf, w: 232, h: sh - lf });
@@ -7765,8 +7903,8 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             c.restore();
             c.lineWidth = Math.max(1.2, R * 0.028); c.strokeStyle = HUD.ink; c.stroke();
             c.restore();
-            hudTitle("Shop", sx, sy - R * 1.4, Math.max(13, R * 0.25), SHOP_ACCENT, "center", labelAlpha(sx, sy - R * 1.4, 60, 24), c);
-            hudTitle(String(s.name || "").replace(" Shop", ""), sx, sy + R * 1.42, Math.max(11, R * 0.17), HUD.text2, "center", labelAlpha(sx, sy + R * 1.42, 70, 18), c);
+            worldLabel(c, "Shop", sx, sy - R * 1.4, Math.max(13, R * 0.25), SHOP_ACCENT, 1, 0, 60, 24);
+            worldLabel(c, String(s.name || "").replace(" Shop", ""), sx, sy + R * 1.42, Math.max(11, R * 0.17), HUD.text2, 1, 3, 70, 18);
         }
     }
 
@@ -7856,8 +7994,11 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         }
         fxQ.last = now;
         if (document.hidden) return;
-        if (fxQ.ema > 34) { fxQ.fastSince = 0; if (!fxQ.slowSince) fxQ.slowSince = now; }
-        else if (fxQ.ema < 20) { fxQ.slowSince = 0; if (!fxQ.fastSince) fxQ.fastSince = now; }
+        // the 30 FPS cap draws every ~33 ms by design: slow is past 45 ms
+        // there (34 latched lowFx on for good, since 20 never comes back)
+        const cap30 = !!config.graphical.fpsCap30;
+        if (fxQ.ema > (cap30 ? 45 : 34)) { fxQ.fastSince = 0; if (!fxQ.slowSince) fxQ.slowSince = now; }
+        else if (fxQ.ema < (cap30 ? 38 : 20)) { fxQ.slowSince = 0; if (!fxQ.fastSince) fxQ.fastSince = now; }
         else { fxQ.slowSince = 0; fxQ.fastSince = 0; }
         if (!global.lowFx && fxQ.slowSince && now - fxQ.slowSince > 3000) { global.lowFx = true; fxQ.slowSince = 0; }
         if (global.lowFx && fxQ.fastSince && now - fxQ.fastSince > 6000) { global.lowFx = false; fxQ.fastSince = 0; }
@@ -7963,6 +8104,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         // the pad timers, up top where nothing covers them (round 12)
         if (!global.died && r.occupy > 0) push(hudNote(1, "padtime", "You can stay " + r.occupy + "s longer", color.gold));
         else if (!global.died && r.lockout > 0) push(hudNote(1, "padtime", "You can come back in " + r.lockout + "s", color.guiwhite));
+        try { push(spawnShieldNote()); } catch (e) { /* */ }
         try { raidHeat.hudNotes(push); } catch (e) { /* */ }
         // the Crown Contest: one line when there's no tracker panel (a first
         // raid, a phone), or when you hold a crown
@@ -8334,6 +8476,9 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         c.fillRect(x + 10, y0 + 27, W - 20, 2);
         hudTitle("Team standings", x + 12, y0 + 15, 14, HUD.head, "left");
         hudTitle("PTS", x + W - 12, y0 + 15, 11, HUD.text2, "right");
+        // the Crown Contest runs in duos too: crown edge, rate, a crown per one worn
+        let crownOn = false;
+        try { crownOn = crowns.drawTeamEdge(c, x, y0, W, H); } catch (e) { /* */ }
         const myHex = playerHexCol() || color.gold;
         let ry = y0 + 32;
         for (const t of rows) {
@@ -8345,7 +8490,10 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             const scoreTxt = fmtNum(t.score | 0);
             const scoreW = hudTextW(scoreTxt, 12);
             const names = (t.names || []).map(n => shortName(n, t.names.length > 1 ? 9 : 16)).join(" & ");
-            const room = W - 40 - scoreW - 22;
+            const nCr = crownOn ? Math.min(2, t.cr | 0) : 0;
+            for (let k = 0; k < nCr; k++) { try { crowns.drawCrownIcon(c, x + 46 + k * 13, rowMid, 11, "gold", 1); } catch (e) { /* */ } }
+            const nx = x + 40 + nCr * 13;
+            const room = W - 40 - nCr * 13 - scoreW - 22;
             const fitKey = names + "|" + (room | 0);
             let ns = standingsFit.get(fitKey);
             if (ns === undefined) {
@@ -8353,7 +8501,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
                 if (standingsFit.size > 64) standingsFit.clear();
                 standingsFit.set(fitKey, ns);
             }
-            drawText(names, x + 40, rowMid, ns, t.alive ? nameCol : HUD.text2, "left", true);
+            drawText(names, nx, rowMid, ns, t.alive ? nameCol : HUD.text2, "left", true);
             drawText(scoreTxt, x + W - 12, rowMid, 12, nameCol, "right", true);
             ry += rowH;
         }
@@ -10378,12 +10526,18 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             const k = Math.max(0.75, Math.min(2.2, (b.size || 30) / 30)) * ratio;
             const reach = (b.self ? 250 : 140) * k;
             c.save();
-            if (b.self && t < 0.6 && !config.graphical.noGlow) {
-                const rgb = toRgb(b.shades[0]) || { r: 200, g: 200, b: 200 };
-                const tint = rgb.r + "," + rgb.g + "," + rgb.b;
-                const hr = (70 + 220 * eo) * k;
-                c.globalAlpha = (1 - t / 0.6) * 0.75;
-                c.drawImage(haloSprite("ko|" + tint, tint, [[0, 1], [0.45, 0.5], [1, 0]]), sx - hr, sy - hr, hr * 2, hr * 2);
+            // the flash of colour behind the wreck: yours big, a kill's smaller
+            // and quicker (Oct 6: kills popped flat against the rock)
+            const glowT = b.self ? 0.6 : 0.4;
+            if (t < glowT && !config.graphical.noGlow) {
+                if (!b.koKey) {
+                    const rgb = toRgb(b.shades[0]) || { r: 200, g: 200, b: 200 };
+                    b.koTint = rgb.r + "," + rgb.g + "," + rgb.b;
+                    b.koKey = "ko|" + b.koTint;
+                }
+                const hr = (b.self ? 70 + 220 * eo : 40 + 110 * eo) * k;
+                c.globalAlpha = (1 - t / glowT) * (b.self ? 0.75 : 0.6);
+                c.drawImage(haloSprite(b.koKey, b.koTint, [[0, 1], [0.45, 0.5], [1, 0]]), sx - hr, sy - hr, hr * 2, hr * 2);
             }
             for (const sm of config.graphical.fewerEffects ? [] : b.smoke) {
                 const d = sm.d * reach * eo;
@@ -10606,21 +10760,18 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         c.beginPath(); c.arc(x, y, R * 1.55, 0, Math.PI * 2); c.stroke();
         c.restore();
     }
-    function drawSpawnShieldHint() {
-        if (global.died || !global.shieldSeen || !shieldOnPrev || raidFinale.active()) return;
+    // The shield's status line is a note-stack row under the clock (Oct 6:
+    // under the tank it printed over chest and crate labels)
+    function spawnShieldNote() {
+        if (global.died || !global.shieldSeen || !shieldOnPrev || raidFinale.active()) return null;
         if (vaultShieldNow()) {
             const vl = Math.max(1, Math.ceil((VAULT_SHIELD_MS - (performance.now() - global.vaultShieldAt)) / 1000));
-            const vline = "Vault shield: safe for " + vl + "s, shooting drops it";
-            const vy = global.mobile ? Math.round(global.screenHeight * 0.75) : global.screenHeight / 2 + 150, vsz = 13;
-            const vw = measureText(vline, vsz) + 26, vh = vsz + 13;
-            hudPanel(ctx[2], global.screenWidth / 2 - vw / 2, vy - vh / 2, vw, vh, { alpha: 0.9, r: vh / 2, bevel: false });
-            drawText(vline, global.screenWidth / 2, vy, vsz, "#ffe9a8", "center", true);
-            return;
+            return hudNote(1, "shield", "Vault shield: safe for " + vl + "s, shooting drops it", "#ffe9a8");
         }
         const since = performance.now() - (global.spawnedAt || 0);
         // a few seconds to read it, then the first-raid card (which says to
-        // move) gets the spot instead; the shield ring on the tank stays
-        if (global.coachRect && since > 4000) return;
+        // move) gets the room instead; the shield ring on the tank stays
+        if (global.coachRect && since > 4000) return null;
         const left = Math.ceil((SHIELD_GRACE_MS - since) / 1000);
         // Second Wind (shop gear): moving keeps the shield up to 10 s
         const wu = global.shop && global.shop.state && global.shop.state.gearUntil && global.shop.state.gearUntil.wind;
@@ -10630,14 +10781,8 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             : left > 0
             ? "Spawn shield: safe for " + left + "s, then moving or shooting drops it"
             : "Spawn shield: moving or shooting drops it";
-        // under the mining combo that sits below the tank
-        // phones: between the mining line and your name; the top is full there
-        const y = global.mobile ? Math.round(global.screenHeight * 0.75) : global.screenHeight / 2 + 150, size = 13;
-        const w = measureText(line, size) + 26, h = size + 13;
         if (since < 4000) global.hudCardUp = "shield";
-        const c = ctx[2];
-        hudPanel(c, global.screenWidth / 2 - w / 2, y - h / 2, w, h, { alpha: 0.9, r: h / 2, bevel: false });
-        drawText(line, global.screenWidth / 2, y, size, "#bff2ff", "center", true);
+        return hudNote(1, "shield", line, "#bff2ff");
     }
 
     // ── raid over: raidFinale.js owns the whole sequence ──────────────────
@@ -14243,6 +14388,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         try { abilityFx.drawFloor(ctx[0], px, py, ratio); } catch (e) { /* never break the frame */ }
         drawEntities(px, py, ratio, tick, spacing);
         drawOutpostLabels(px, py, ratio);
+        flushWorldLabels();
         drawRoyaleWorldMarkers(px, py, ratio);
         drawFx(px, py, ratio);
         try { abilityFx.drawWorld(ctx[2], px, py, ratio); } catch (e) { /* never break the frame */ }
@@ -14312,7 +14458,6 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
             drawMilestones();
             drawEventCallout();
             drawWarBanner();
-            drawSpawnShieldHint();
             // the raid-end finale takes the whole screen: the winner's own HUD steps aside
             const finaleHud = raidFinale.hidesHud();
             if (global.GUIStatus.renderUpgrades && !finaleHud) drawSkillBars(spacing, alcoveSize);

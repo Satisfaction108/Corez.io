@@ -32,9 +32,9 @@
 // this very frame (sidekickMath.shown), so it can never show where its owner
 // doesn't: smoke, burrow, invisibility, the sky drop and death all hide it
 // with the owner, and the server's hidden flag covers what the client can't
-// see. Fewer Effects / Low effects / the auto low-end trim drop the shots.
-// Digging: the SK packet's t rows say which rock each sidekick is mining (the
-import { config } from './config.js';
+// see. Its shots show at every effects level (they are how you see it mine).
+// Digging: the SK packet's t rows say which rock each sidekick is mining; it
+// watches that rock and its shots fly all the way there.
 import { global } from './global.js';
 import * as art from './sidekickArt.js';
 import * as M from './sidekickMath.js';
@@ -104,7 +104,6 @@ export function onPacket(d) {
 export function digOf(id) { const e = table.get(id | 0); return e && e.digOn ? { x: e.dx, y: e.dy } : null; }
 
 /* ── per frame ──────────────────────────────────────────────────────── */
-const lowFx = () => !!(config.graphical.fewerEffects || config.graphical.fxLevel === 0 || global.lowFx);
 // software rendering (the terrain renderer found no GPU), as stormFx.js
 const softCanvas = () => { const tr = typeof window !== 'undefined' && window.terrainRenderer; return !!(tr && tr._rockQuality != null && tr._rockQuality < 1); };
 
@@ -202,7 +201,6 @@ export function draw(c, ratio, px, py, tick, me) {
     const now = performance.now();
     const t = advance(tick === tick && tick != null ? tick : now);
     if (me != null) meId = me;
-    const low = lowFx();
     baked = false;
     // the sky drop's wide view: tanks are specks, so are these
     const wide = global.dropZoom < 0.75;
@@ -263,12 +261,15 @@ export function draw(c, ratio, px, py, tick, me) {
         c.globalAlpha = 1;
         e.sx = sx; e.sy = y;
         drawLabel(c, e, ratio, fade, s.sc);
-        if (!low && now - lastShotAt >= SHOT_GAP_MS) {
+        // always: its shots are how you see it mining, and they are a fixed
+        // pool of tiny arcs (Low effects used to drop them, and the auto
+        // low-end trim's first rung is Low, so most machines saw none)
+        if (now - lastShotAt >= SHOT_GAP_MS) {
             const a = M.shotDue(s, t, Math.random);
             if (a === a) { lastShotAt = now; fire(e, a, t); }
-        } else if (low) s.firing = false;
+        }
     }
-    drawShots(c, ratio, t, low);
+    drawShots(c, ratio, t);
     frame++;
 }
 
@@ -399,13 +400,13 @@ function fire(e, face, t) {
         shot(e, x, y, to ? Math.atan2(e.dy - y, e.dx - x) : a, KIND[G[5]] || 'bullet', r * Math.max(0.2, Math.min(0.42, G[2] * 0.36)), t, to);
     }
 }
-function drawShots(c, ratio, t, low) {
+function drawShots(c, ratio, t) {
     for (let i = 0; i < MAX_SHOTS; i++) {
         const age = t - shots.born[i], life = shots.life[i];
         if (age < 0 || age >= life) continue;
         // drawn from its owner's spot this frame, and gone with the owner
         const e = table.get(shots.owner[i]);
-        if (low || !e || e.frame !== frame || !e.ok) { shots.born[i] = -1e9; continue; }
+        if (!e || e.frame !== frame || !e.ok) { shots.born[i] = -1e9; continue; }
         const k = age / life;
         // quick out of the barrel, easing off as it pops (a mining shot keeps its speed
         const d = shots.dig[i] ? age : age * (1 - 0.45 * k);

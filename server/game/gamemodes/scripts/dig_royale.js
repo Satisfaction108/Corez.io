@@ -476,7 +476,11 @@ function teamRows(board) {
         tm: t.tm, names: t.rows.map(r => r.name || "Unnamed"), ids: t.rows.map(r => r.id),
         score: t.score, kills: t.kills, gems: t.gems, alive: t.alive ? 1 : 0, here: t.here ? 1 : 0,
         bot: t.rows.every(r => r.bot) ? 1 : 0, place: t.place,
-    }));
+        // the Crown Contest: the team's net crown points and crowns worn now
+        cb: t.cb || undefined, cr: t.cr || undefined,
+        // the partners' stat keys ride along for endRaid, never on the wire
+        _ks: t.rows.map(r => r._k).filter(Boolean),
+    })).map(row => { const ks = row._ks; delete row._ks; Object.defineProperty(row, '_ks', { value: ks }); return row; });
 }
 
 function boardSnapshot() {
@@ -3558,7 +3562,7 @@ function endRaid() {
     // duos: the results are team rows ("Alex & Sam", combined score) and
     // both partners get their team's placement bonus
     const top = Config.royale_duos
-        ? teamRows(board).slice(0, 10).map(t => ({ id: t.ids[0], ids: t.ids, name: t.names.join(" & "), names: t.names, score: t.score, kills: t.kills, gems: t.gems, place: t.place, bot: t.bot, alive: t.alive }))
+        ? teamRows(board).slice(0, 10).map(t => Object.defineProperty({ id: t.ids[0], ids: t.ids, name: t.names.join(" & "), names: t.names, score: t.score, kills: t.kills, gems: t.gems, cb: t.cb, place: t.place, bot: t.bot, alive: t.alive }, '_ks', { value: t._ks }))
         : board.slice(0, 10);
     // the next raid's head start goes by earned points (boardOrder), so a
     // restored save's points never buy one
@@ -3604,13 +3608,13 @@ function endRaid() {
         raidResults.crowns = 1;
         const champRow = top[0];
         raidResults.champ = { id: champRow.id, name: champRow.name || "Unnamed", score: champRow.score | 0, bot: champRow.bot ? 1 : 0 };
-        const champKey = champRow._k;
-        const champStat = champKey ? raidStats.get(champKey) : null;
+        // duos: the winning team's partners are both champions
+        const champStats = new Set((champRow._ks || [champRow._k]).map(k => k ? raidStats.get(k) : null).filter(Boolean));
         const t = now();
         for (const client of connectedClients()) {
             const st = client.id ? raidStats.get("s:" + client.id) : null;
             if (!st) continue;
-            if (st === champStat) {
+            if (champStats.has(st)) {
                 st.champWin = true;
                 client._champUntil = t + crowns.CHAMP_MS;
                 client._crownStreak = (client._crownStreak | 0) + 1;

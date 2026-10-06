@@ -16,6 +16,12 @@ const FILL_KEY = 'dwDuoFill';
 const GUEST_KEY = 'dwPartyGuest';
 const POLL_MENU_MS = 3000;
 const POLL_IDLE_MS = 15000;
+// a background tab still polls in a party (guests have no event stream, and
+// the server drops a member it hasn't heard from)
+const POLL_HIDDEN_MS = 10000;
+// Play pressed but no camera from the duo server yet: try once more with a
+// fresh ticket, then say so (never a forever "Connecting...")
+const JOIN_WATCH_MS = 20000;
 
 const ls = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -35,6 +41,7 @@ const st = {
     party: null,          // the server's view of your party, or null
     invites: [],          // incoming invites (accounts)
     seenSeq: null,        // last launch.seq we saw (the mate pressing Play moves it)
+    seenPid: null,        // ...in this party
     adding: false,        // the "add a teammate" popover is open
     showOffline: false,   // ...with the offline friends listed too
     codeDraft: '',        // a code being typed survives a re-render
@@ -85,9 +92,14 @@ function applyParty(p, why, who) {
     st.party = p || null;
     // the mate pressed Play: follow them in (menu only, never over a dialog)
     const seq = p && p.launch ? p.launch.seq | 0 : null;
-    // (a stale one, say from while you were in a solo raid, only changes the hint)
-    if (p && p.launch && !p.launch.byYou && st.seenSeq !== null && seq > st.seenSeq && (p.launch.ago | 0) < 20000) followLaunch(p.launch.by);
+    // A fresh launch we haven't seen in this party. A party we only just got a
+    // view of counts from 0, so a cross-invite (out of one party, into the
+    // other) or a missed event can't swallow the mate's Play. (A stale one,
+    // say from while you were in a solo raid, only changes the hint.)
+    const seen = p && st.seenPid === p.id && st.seenSeq !== null ? st.seenSeq : 0;
+    if (p && p.launch && !p.launch.byYou && seq > seen && (p.launch.ago | 0) < 20000) followLaunch(p.launch.by);
     st.seenSeq = seq === null ? (p ? 0 : null) : seq;
+    st.seenPid = p ? p.id : null;
     if (why && who && before) {
         if (why === 'join' && !before.full) toast(who + ' joined your party', { kind: 'ok' });
         else if (why === 'left' || why === 'timeout') toast(who + (why === 'timeout' ? ' dropped out of' : ' left') + ' the party');
@@ -110,6 +122,10 @@ async function load() {
     if (!r.data.you && ss.get(GUEST_KEY) && !loggedIn()) { ss.del(GUEST_KEY); api.setPartyGuest(''); }
     applyParty(r.data.party);
     const inv = Array.isArray(r.data.invites) ? r.data.invites : [];
+    // an invite that's gone (they joined you, it ran out) leaves with its toast
+    // even when the event stream that says so is down
+    const live = new Set(inv.map((iv) => iv.id));
+    for (const [id, t] of inviteToasts) if (!live.has(id) && t && !t.game) { try { t.dismiss(); } catch (e) { /* */ } inviteToasts.delete(id); }
     for (const iv of inv) showInvite(iv);
     st.invites = inv;
 }
@@ -142,6 +158,10 @@ async function respond(iv, accept) {
     const name = (iv.from && iv.from.username) || 'your friend';
     if (!r.ok) {
         if (!accept) return;
+        // a cross-invite: the other one was taken first and you're already
+        // together, which is what Join wanted
+        const fromId = iv.from && iv.from.userId;
+        if (fromId) { loadSeq++; await load(); if (partyHas(fromId)) { setMode('duo'); toast('You’re teamed up with ' + name, { kind: 'ok' }); return; } }
         if (inGame()) gameToasts.note('err' + iv.id, errText(r), { kind: 'error', tag: 'Duos' });
         else toast(errText(r), { kind: 'error' });
         return;
@@ -166,15 +186,17 @@ export async function inviteFriend(f) {
     const r = await api.partyInvite(f.userId);
     if (!r.ok) { toast(errText(r), { kind: 'error' }); return false; }
     setMode('duo');
+    loadSeq++;   // a poll in flight predates this
     applyParty(r.data.party);
-    toast('Invite sent to ' + f.username + '. It lasts a minute', { kind: 'ok' });
+    if (r.data.merged) toast(f.username + ' had invited you too. You’re teamed up', { kind: 'ok' });
+    else toast('Invite sent to ' + f.username + '. It lasts a minute', { kind: 'ok' });
     return true;
 }
 export const partyHas = (userId) => !!(st.party && st.party.members.some((m) => m.userId === userId));
 export const invitePending = (username) => !!(st.party && (st.party.pending || []).some((p) => p.to === username));
 
 function onPartyEvent(type, d) {
-    if (type === 'party') applyParty(d.party || null, d.why, d.who);
+    if (type === 'party') { loadSeq++; applyParty(d.party || null, d.why, d.who); }
     else if (type === 'partyInvite') showInvite(d);
     else if (type === 'partyInviteGone') {
         const t = inviteToasts.get(d.id);
@@ -460,9 +482,11 @@ export function wantsDuo() { return st.mode === 'duo'; }
 
 // Get a ticket (when in a party), point the socket at the duo server, and
 // start the game for real. follow: the mate pressed Play first.
-export async function arm(follow = false) {
+export async function arm(follow = false, retry = 0) {
     const g = window.global;
     if (!g || st.arming) return;
+    // already on the way in (Play and a follow landing together): one socket only
+    if (g.gameLoading || g.gameStart) return;
     const sv = duoServer();
     if (!sv) { toast('Duos isn’t up right now. Try Solo?', { kind: 'error' }); return; }
     if (sv.maxPlayers && sv.players >= sv.maxPlayers) { toast('The duo server is full. Try again in a minute', { kind: 'error' }); return; }
@@ -471,18 +495,56 @@ export async function arm(follow = false) {
     if (start) { start.disabled = true; const b = start.querySelector('b'); if (b) b.textContent = 'Joining...'; }
     let ticket = null;
     try {
-        if (st.party) {
+        // Ask the server even when this menu thinks there's no party: a view
+        // that's a beat behind (a poll racing an accept) must not send a
+        // partied player in alone. 404 is the real "no party".
+        if (st.party || loggedIn() || ss.get(GUEST_KEY)) {
             const r = follow ? await api.partyTicket(st.fill) : await api.partyLaunch(st.fill);
-            if (r.ok && r.data) { ticket = r.data.ticket || null; st.party = r.data.party || st.party; st.seenSeq = st.party && st.party.launch ? st.party.launch.seq | 0 : st.seenSeq; }
-            else if (r.status !== 404) toast(errText(r) + '. Going in without the party', { kind: 'error' });
+            if (r.ok && r.data) {
+                ticket = r.data.ticket || null;
+                st.party = r.data.party || null;
+                st.seenSeq = st.party && st.party.launch ? st.party.launch.seq | 0 : 0;
+                st.seenPid = st.party ? st.party.id : null;
+            } else if (r.status !== 404) toast(errText(r) + '. Going in without the party', { kind: 'error' });
         }
     } finally {
         st.arming = false;
         if (start) start.disabled = false;
     }
+    if (g.gameLoading || g.gameStart) return;
     g.duoArmed = { ticket, fill: st.fill, path: sv.proxyPath || '/duo' };
     render();
     g.startGame();
+    g.duoArmed = null;   // used or refused: never left for a later start
+    watchJoin(retry);
+}
+
+// Watches one duo join: in once the first camera lands (gameStart), fine
+// while the server says why it holds the spawn (teammate queue, final storm,
+// between raids). Otherwise, after JOIN_WATCH_MS, the socket goes (LV, so the
+// server drops anything it made for it) and Play runs again with a fresh
+// ticket; a second miss goes back to the menu with a message.
+let joinWatch = 0;
+function watchJoin(retry) {
+    clearInterval(joinWatch);
+    const g = window.global;
+    if (!g || !g.gameLoading) return;
+    const sock = g.socket;
+    let since = Date.now();
+    joinWatch = setInterval(() => {
+        // in, left, dropped (its own plate), or a newer start took over
+        if (g.gameStart || !g.gameLoading || g.disconnected || g.autoReconnect || g.socket !== sock) { clearInterval(joinWatch); return; }
+        const r = g.royale || {};
+        const held = !!(g.duoFill || r.lock || r.staging > 0 || g.noAutoReconnect);
+        if (held) { since = Date.now(); return; }
+        if (Date.now() - since < JOIN_WATCH_MS) return;
+        clearInterval(joinWatch);
+        try { if (g.exit) g.exit(); } catch (e) { /* */ }
+        if (retry < 1) {
+            toast('Couldn’t get you in. Trying again...', { kind: 'error', duration: 3000 });
+            setTimeout(() => { if (!inGame() && !g.gameLoading && !g.gameStart) arm(true, retry + 1); }, 600);
+        } else toast('Couldn’t join the duo raid. Try Play again in a moment', { kind: 'error', duration: 6000 });
+    }, 1000);
 }
 
 let followTimer = 0;
@@ -502,12 +564,13 @@ function followLaunch(byName) {
 let pollTimer = 0;
 function schedule() {
     clearTimeout(pollTimer);
-    const ms = inGame() ? POLL_IDLE_MS * 2 : st.party ? POLL_MENU_MS : POLL_IDLE_MS;
+    const ms = inGame() ? POLL_IDLE_MS * 2 : st.party ? (document.hidden ? POLL_HIDDEN_MS : POLL_MENU_MS) : POLL_IDLE_MS;
     pollTimer = setTimeout(async () => {
         // in a party: keep the mate's status fresh (guests have no stream);
         // an account with its event stream down: still catch invites
         const need = st.party || (loggedIn() && !social.streamOpen());
-        if (need && !document.hidden) { try { await load(); } catch (e) { /* */ } }
+        // (a hidden tab in a party too: it must still hear the mate's Play)
+        if (need && (!document.hidden || st.party)) { try { await load(); } catch (e) { /* */ } }
         schedule();
     }, ms);
 }
@@ -535,9 +598,11 @@ export function init() {
     setInterval(paintCounts, 2500);
     load();
     schedule();
+    // back to a background tab: catch up at once
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && !inGame()) { load(); schedule(); } });
     // a login / logout changes who you are to the party server
     store.on((s, changed) => {
-        if (changed.includes('user')) { st.party = null; st.seenSeq = null; load(); render(); }
+        if (changed.includes('user')) { st.party = null; st.seenSeq = null; st.seenPid = null; load(); render(); }
     });
     // back on the menu: fresh state at once
     new MutationObserver(() => {

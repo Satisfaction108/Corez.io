@@ -151,7 +151,9 @@ test('chest labels: rarity in words, constant strings, faded by distance and und
     assert.match(app, /const CHEST_LABEL = \{ copper: "Copper chest", epic: "Epic chest", crate: "Supply crate" \};/);
     assert.match(app, /drawChestLabel\(c, x, y - R \* 1\.12, R, instance, kind, alpha\);/);
     const fn = app.slice(app.indexOf('function drawChestLabel('), app.indexOf('function drawChestLabel(') + 900);
-    assert.match(fn, /labelAlpha\(x, ly, w, size \+ 6\)/);
+    // Oct 6: queued for the de-overlap pass, which fades it under HUD text (labelLayout.js)
+    assert.match(fn, /worldLabel\(c, CHEST_LABEL\[k\], x, ly, size, CHEST_LABEL_COL\[k\], a, /);
+    assert.match(app, /const a = it\.alpha \* \(it\.blocked \? 0\.3 : 1\) \* labelAlpha\(it\.x, ly, it\.w, it\.h\);/);
     assert.ok(!/\+ "|`|\[\]|\{ /.test(fn.replace(/CHEST_LABEL(_COL)?\[k\]/g, '')), 'no strings or objects built per frame');
 });
 

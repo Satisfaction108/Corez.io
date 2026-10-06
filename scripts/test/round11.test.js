@@ -178,7 +178,7 @@ test('numbers, kills, small fixes: server source', () => {
 
 test('numbers and small fixes: client source', () => {
     const rf = csrc('raidFinale.js');
-    assert.ok(rf.includes('SL.podiumBanked(row.gems)'), 'podium says gems banked this raid (scoreLogic)');
+    assert.ok(rf.includes('SL.podiumBanked(gems)'), 'podium says gems banked this raid (scoreLogic), shorter only when it must fit');
     assert.ok(!/fmtNum\(row\.gems \| 0\) \+ " banked"/.test(rf), 'no bare banked on the podium');
     assert.ok(+rf.match(/const END_MS = (\d+);/)[1] > 1600 + 27000);
     assert.ok(rf.includes('if (S.me.next > 0) add("Next raid: +"'), 'the chip only shows a real bonus');

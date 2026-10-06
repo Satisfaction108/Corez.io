@@ -339,6 +339,9 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
             // ...and go easy on new players (only bodies with newness set pay for the check)
             if (my.isPlayer && __my > 0 && my.team != n.team) __my = bossGuard.intoPlayer(my, n, __my);
             if (n.isPlayer && __n > 0 && my.team != n.team) __n = bossGuard.intoPlayer(n, my, __n);
+            // the Core's drones score their own touches (terrain/coreFinale.js)
+            if (n.isCoreShot && my.type === "tank") __my = 0;
+            if (my.isCoreShot && n.type === "tank") __n = 0;
             my.damageReceived += __my * Number(__my > 0
                 ? my.team != n.team
                 : !!n.healer && n.team == my.team && my.type == "tank" && n.master.id != my.id);

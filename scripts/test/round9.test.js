@@ -283,7 +283,7 @@ test('round 10: a Team Bank goes to the most damage, ties to the last hitter', (
     assert.equal(outposts.killerOf({ finalKillers: [b] }, {}), b, 'no damage record: the old killer rule');
 });
 
-test('round 10: every projectile dies on a vault or shop pad, Core shards too', () => {
+test('round 10: every projectile dies on a vault or shop pad, the Core\'s bolts and drones too', () => {
     const idx = read('server/game/index.js');
     assert.ok(/shop\.getShops\(\)[\s\S]{0,400}padGeom\.insidePad\(sp, instance\.x, instance\.y, 8\)[\s\S]{0,200}instance\.kill\(\)/.test(idx), 'shop pads kill projectiles in the main loop');
     const core = T('coreFinale.js'), vaultM = T('vault.js'), shopM = T('shop.js');
@@ -295,6 +295,11 @@ test('round 10: every projectile dies on a vault or shop pad, Core shards too', 
         assert.equal(core.onSafePad(3020, 0), true, 'on the shop');
         assert.equal(core.onSafePad(1500, 1500), false, 'open ground');
     } finally { vaultM.getVaults = gv; shopM.getShops = gs; }
+    // Oct 6: no shard volleys; bolts and drones check the pads themselves
+    assert.equal(core.SHARD_ATTACK, false);
+    const cf = read('server/game/terrain/coreFinale.js');
+    assert.ok(/if \(onAnyPad\(padList, e\.x, e\.y, BOLT_RADIUS\)\) \{ dead = true; break; \}/.test(cf), 'bolts die on pads');
+    assert.ok(/if \(!dead && onAnyPad\(padList, e\.x, e\.y, 0\)\) dead = true;/.test(cf) && cf.includes("padGeom.keepOut(e, p, 6, 'core:'"), 'drones die on pads and are held out');
 });
 
 // ── Oct 5 2026: "dying feels like a tax" (the same rules for everyone) ──

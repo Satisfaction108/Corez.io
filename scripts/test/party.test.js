@@ -167,6 +167,38 @@ test('store: invites - self, dedupe, accept, decline, expiry, full, in another p
     assert.equal(code(() => party.respond(d, rd.invite.id, true)), '404:invite_gone', 'joining ended the other invite');
 });
 
+test('store: cross-invites collapse into one party, no leftover invite', () => {
+    storeWithClock();
+    const a = acct(1, 'Ann'), b = acct(2, 'Bob');
+    // both ask at once: the second ask is a yes, so Bob joins Ann's party
+    const ra = party.invite(a, { userId: 2, name: 'Bob' });
+    const rb = party.invite(b, { userId: 1, name: 'Ann' });
+    assert.equal(rb.merged, true);
+    assert.equal(rb.party.id, ra.party.id);
+    assert.deepEqual(rb.party.members.map(m => m.name), ['Ann', 'Bob']);
+    assert.equal(party._counts().parties, 1);
+    assert.equal(party._counts().invites, 0, 'the ask that was answered is gone');
+    assert.equal(code(() => party.respond(b, ra.invite.id, true)), '404:invite_gone', 'a late Join on it: gone (the client sees it is teamed)');
+    // tickets for both name the same party
+    ticket._setSecret('unit-secret');
+    const mates = rb.party.members.map(m => m.mk);
+    const ta = ticket.verify(ticket.sign({ pid: rb.party.id, mk: a.mk, mates }));
+    const tb = ticket.verify(ticket.sign({ pid: rb.party.id, mk: b.mk, mates }));
+    assert.equal(ta.pid, tb.pid);
+});
+
+test('tickets: an expired ticket verifies only inside the grace window, marked expired', () => {
+    ticket._setSecret('unit-secret');
+    const t0 = 7_000_000;
+    const tk = ticket.sign({ pid: 'abcdefgh', mk: 'u:7', mates: ['u:7', 'u:8'] }, t0);
+    const late = t0 + ticket.TTL_MS + 60_000;
+    assert.equal(ticket.verify(tk, late), null);
+    const v = ticket.verify(tk, late, { graceMs: 120_000 });
+    assert.ok(v && v.expired === true && v.mk === 'u:7');
+    assert.equal(ticket.verify(tk, t0 + 1).expired, false);
+    assert.equal(ticket.verify(tk, late + 120_000, { graceMs: 120_000 }), null, 'past the grace too');
+});
+
 test('store: leaving cancels your invites; the inviter leaving voids the invite', () => {
     storeWithClock();
     const a = acct(1, 'Ann'), b = acct(2, 'Bob');
@@ -213,8 +245,10 @@ test('store: sweep drops idle guests and offline accounts, never someone in the 
     const pa = party.create(a);
     party.respond(b, party.invite(a, { userId: 2, name: 'Bob' }).invite.id, true);
     online = false;
+    assert.equal(party.view(pa, a.mk).members[1].state, 'menu', 'no stream but seen just now (a polling menu): not away');
+    clock += party.AWAY_GRACE_MS + 1;
     assert.equal(party.view(pa, a.mk).members[1].state, 'away');
-    clock += party.ACCOUNT_IDLE_MS - 1000;
+    clock += party.ACCOUNT_IDLE_MS - 1000 - party.AWAY_GRACE_MS - 1;
     party.sweep();
     assert.equal(pa.members.length, 2, 'not yet');
     clock += 2000;

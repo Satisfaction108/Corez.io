@@ -508,6 +508,31 @@ function fitSize(text, size, maxW, min = 10) {
     const w = A.hudTitleW(text, size);
     return w <= maxW ? size : Math.max(min, Math.floor(size * maxW / w));
 }
+// The podium's small lines are drawText, so they're measured in its font
+// (hudTitleW is the title face and runs narrow for them, which let "10,163
+// gems banked this raid" spill past its column). Cached: measureText makes
+// garbage, and these redraw every frame.
+const fitCache = new Map();
+function fitLine(text, size, maxW, min = 8) {
+    const key = text + "|" + size + "|" + maxW;
+    let v = fitCache.get(key);
+    if (v == null) {
+        const w = A.measureText ? A.measureText(text, size) : A.hudTitleW(text, size) * 1.15;
+        v = w <= maxW ? size : Math.max(min, Math.floor(size * maxW / w * 10) / 10);
+        if (fitCache.size > 200) fitCache.clear();
+        fitCache.set(key, v);
+    }
+    return v;
+}
+// "10,163 gems banked this raid" when it fits the column at full size,
+// else "10,163 gems banked", else "10,163 banked" (shrunk if it must be)
+function bankedFit(gems, prefix, size, maxW) {
+    const n = A.fmtNum(Math.max(0, gems | 0));
+    const opts = [SL.podiumBanked(gems), n + " gems banked", n + " banked"];
+    for (const o of opts) { const t = prefix + o; if (fitLine(t, size, maxW) >= size) return [t, size]; }
+    const t = prefix + opts[2];
+    return [t, fitLine(t, size, maxW)];
+}
 function shortName(n, max) { n = String(n || "Unnamed"); return n.length > max ? n.slice(0, max - 1) + "…" : n; }
 
 // ── the frame ─────────────────────────────────────────────────────────────
@@ -912,19 +937,21 @@ function drawPodium(c, pt) {
         // what the points are made of
         const cl = CL.crownLine(row);
         const kl = (row.kills | 0) + ((row.kills | 0) === 1 ? " kill" : " kills");
+        const lineW = colW - 12;
         if (cl) {
-            const kb = kl + " · " + SL.podiumBanked(row.gems);
-            A.drawText(kb, bx + colW / 2, top + 89, fitSize(kb, 11, colW - 6, 8), HUD.text2, "center", true, a);
-            A.drawText(cl, bx + colW / 2, top + 103, fitSize(cl, 11, colW - 6, 8), HUD.gold, "center", true, a);
+            const [kb, ks] = bankedFit(row.gems, kl + " · ", 11, lineW);
+            A.drawText(kb, bx + colW / 2, top + 89, ks, HUD.text2, "center", true, a);
+            A.drawText(cl, bx + colW / 2, top + 103, fitLine(cl, 11, lineW), HUD.gold, "center", true, a);
         } else {
-            A.drawText(kl, bx + colW / 2, top + 89, 11, HUD.text2, "center", true, a);
-            const bl = SL.podiumBanked(row.gems);
-            A.drawText(bl, bx + colW / 2, top + 103, fitSize(bl, 11, colW - 6, 8), HUD.text2, "center", true, a);
+            A.drawText(kl, bx + colW / 2, top + 89, fitLine(kl, 11, lineW), HUD.text2, "center", true, a);
+            const [bl, bs] = bankedFit(row.gems, "", 11, lineW);
+            A.drawText(bl, bx + colW / 2, top + 103, bs, HUD.text2, "center", true, a);
         }
-        // the name over the block; yours in gold
+        // the name over the block; yours in gold. Duo names ("Kongming &
+        // ZyroX") are long: they shrink to the column plus a little overhang.
         const name = shortName(row.name, S.duos ? 26 : 18);
         const mine = S.place === rank;
-        const ns = fitSize(name, 17, colW + 8, 10);
+        const ns = fitSize(name, 17, colW + 4, 9);
         A.hudTitle(name, bx + colW / 2, top - 15, ns, mine ? HUD.gold : HUD.head, "center", a, c);
         if (rank === 1) {
             const cs = crownSprite();

@@ -95,16 +95,28 @@ function toMain(msg) {
 // The 'DQ' packet: [ticket string, fill 0/1]. A valid ticket makes this
 // socket a party member; an account ticket only counts on that account's
 // socket (a copied ticket can't seat someone else in the party).
+// A ticket that ran out (a raid longer than its 10 minutes, then a dropped
+// link and an auto-reconnect with the same ticket) still seats its member
+// back on the team they hold for that party, never anywhere new.
+const TICKET_GRACE_MS = 2 * 60 * 60 * 1000;
 function onHello(socket, ticket, fill) {
     if (!on() || !socket) return;
     socket.duoFill = fill !== 0 && fill !== false;
     let t = null;
     if (typeof ticket === 'string' && ticket) {
-        try { t = tickets().verify(ticket); } catch { t = null; }
+        try { t = tickets().verify(ticket, Date.now(), { graceMs: TICKET_GRACE_MS }); } catch { t = null; }
     }
+    if (t && t.expired) {
+        const held = book.teamOf(t.mk);
+        if (!held || held.pid !== t.pid) t = null;
+    }
+    // An account ticket only on that account's socket. A socket with no account
+    // at all (its session cookie didn't reach this worker, or accounts are down
+    // here) still takes it: dropping the ticket put partied players in alone.
     if (t && t.mk.startsWith('u:')) {
         const acct = socket.account && socket.account.id;
-        if (!acct || 'u:' + acct !== t.mk) t = null;
+        if (acct && 'u:' + acct !== t.mk) t = null;
+        else if (!acct) console.warn('[DUO] party ticket on a socket without its account session (' + t.mk + ')');
     }
     if (t) {
         socket.duoKey = t.mk;

@@ -534,7 +534,13 @@ class socketManager {
                     try { socket.talk('m', 5000, dr.spawnWhy ? dr.spawnWhy() : "Respawns are closed right now."); } catch { /* */ }
                 };
                 let loop = socket._spawnLoop = setInterval(() => {
-
+                    // never a body for a link that can't get its camera (closed,
+                    // or killed as half-open while the raid held the spawn)
+                    if (socket.readyState !== socket.OPEN || socket._deadLink) {
+                        clearInterval(loop);
+                        if (socket._spawnLoop === loop) socket._spawnLoop = null;
+                        return;
+                    }
                     if (!global.cannotRespawn && !global.gameManager.arenaClosed && socket.status.readyToSpawn) {
                         if (Config.dig_royale) {
                             const dr = require('../gamemodes/scripts/dig_royale.js');

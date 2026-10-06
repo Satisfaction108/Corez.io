@@ -24,6 +24,7 @@ function fakeCtx(cv) {
         get(o, k) {
             if (k in o) return o[k];
             if (k === 'getTransform') return () => T;
+            if (k === 'createLinearGradient') return () => ({ addColorStop: noop });
             if (k === 'drawImage') return (img) => { drawn.push(img); };
             return noop;
         },
@@ -104,5 +105,27 @@ performance.now = () => clock;
         assert.ok(C.cacheSize() < 20, 'cache ' + C.cacheSize());
         console.log('ok   budget');
     }
-    console.log('all 3 passed');
+    // every skin paints (a missing or throwing design logs and paints nothing)
+    // from the team colour alone, and the name glow has its bright core
+    {
+        const errs = [], err0 = console.error;
+        console.error = (...a) => errs.push(a.join(' '));
+        try {
+            for (const it of DWCosmetics.ITEMS.filter(i => i.cat === 'skin')) {
+                for (const team of ['#3f8cff', '#ff5068', '#3fd27a']) {
+                    clock += 50;
+                    drawn.length = 0;
+                    C.paintHull(fakeCtx(null), 0, 0, 40, 0, 0, it.nid, team, Object.assign(opts(), { force: true }));
+                    assert.ok(drawn.length, it.id + ' drew nothing on ' + team);
+                }
+            }
+        } finally { console.error = err0; }
+        assert.deepEqual(errs, [], 'skin painters threw');
+        const fx = C.nameFx(DWCosmetics.byId('ns_toxic'), { still: true });
+        assert.ok(fx.halo && /^#[0-9a-f]{6}$/.test(fx.haloHi) && fx.haloHi !== fx.halo && fx.haloA === 1, 'glow core ' + JSON.stringify(fx));
+        assert.ok(C.HALO_PASSES.length >= 2 && C.HALO_PASSES.every(p => p[0] > 1 && p[0] <= 2.5), 'a tight glow, at most 2.5x the outline');
+        assert.equal(typeof C.strokeHalo, 'function');
+        console.log('ok   designs');
+    }
+    console.log('all 4 passed');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -3,6 +3,7 @@
 //   POST /api/party/create          {name?}            -> {party, guestToken?}
 //   POST /api/party/join            {code, name?}      -> {party, guestToken?}
 //   POST /api/party/invite          {userId}           -> {party, invite}      accounts only
+//                                                         (or {party, merged:true} when they had invited you)
 //   POST /api/party/invite/cancel   {id}               -> {party}
 //   POST /api/party/respond         {id, accept}       -> {party}             accounts only
 //   POST /api/party/leave           {}                 -> {party:null}
@@ -126,6 +127,8 @@ function postInvite(ctx) {
     // a friend in a raid gets the invite as an in-game card and joins after
     const actor = { mk: 'u:' + a.user.id, userId: a.user.id, publicId: a.user.public_id, name: a.user.username, guest: false };
     const res = party.invite(actor, { userId: target.id, name: target.username });
+    // they had already invited you: you're in their party now (no second invite)
+    if (res.merged) return reply(ctx, { actor }, { merged: true, with: target.username });
     events().push(target.id, 'partyInvite', { id: res.invite.id, from: { userId: a.user.public_id, username: a.user.username }, at: res.invite.at, exp: res.invite.exp });
     reply(ctx, { actor }, { invite: { id: res.invite.id, to: target.username, exp: res.invite.exp } });
 }

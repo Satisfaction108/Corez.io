@@ -3,10 +3,13 @@
 // on the pair of them. It takes a whole raid's focused fire (about 1.5-2
 // minutes, see healthFor), throws a shockwave every few seconds that shoves
 // tanks back and cracks the rock around it, and fights back as it breaks:
-// from SHARD_BELOW crystal shards at whoever is close, from RAGE_BELOW faster
-// and more of them, and the shockwave hurts. Every attack is telegraphed
-// (FX corecharge: the heart glows up, a ring closes on it) and the shards
-// mark where they land. Breaking it: it caves in to a bright point for
+// from SHARD_BELOW its six barrels fire bolts at whoever is close and it
+// sends out drones that chase them (both dodgeable, blocked by rock, killed
+// on vault and shop pads), from RAGE_BELOW a bit faster and more drones, and
+// the shockwave hurts. Hits are a share of the target's max health, metered
+// per target (CAP_S), so grown and tiny tanks last about as long. The
+// shockwave is telegraphed (FX corecharge), and so is the start of each
+// attack phase. ROYALE_CORE_ATTACK=shards brings back the old shard volleys. Breaking it: it caves in to a bright point for
 // COLLAPSE_MS (FX corecollapse), then blows (FX coredead) and throws all
 // CORE_BANK gems across the final circle. Nothing is banked for anyone:
 // grab what you can and get it to the vault before the storm shuts.
@@ -36,8 +39,8 @@ const PULSE_FAST_MS = 5500;        // below half health
 const PULSE_FIRST_MS = 6000;
 const PULSE_R = 620;
 const PULSE_PUSH = 24;             // outward kick at the rim of the Core, u/tick
-const PULSE_DMG = 0.12;            // of max health at the rim, from SHARD_BELOW (and PULSE_RAGE_DMG below RAGE_BELOW)
-const PULSE_RAGE_DMG = 0.18;
+const PULSE_DMG = 0.08;            // of max health at the rim, from SHARD_BELOW (and PULSE_RAGE_DMG below RAGE_BELOW); was 0.12
+const PULSE_RAGE_DMG = 0.12;       // was 0.18
 const CHARGE_MS = 900;             // the telegraph before a shockwave
 const SHARD_CHARGE_MS = 600;       // ...and before a volley of shards
 const PULSE_ROCK = 0.55;           // of a rock's max health
@@ -45,7 +48,7 @@ const SHARD_BELOW = 0.5;
 const RAGE_BELOW = 0.25;
 const SHARD_MS = 2200;
 const SHARD_RAGE_MS = 1300;
-const PULSE_RAGE_MS = 4200;
+const PULSE_RAGE_MS = 5000;        // was 4200 (Oct 6: the Core killed in ~6 s)
 const SHARD_R = 950;
 const SHARD_N = 3;
 const SHARD_RAGE_N = 4;
@@ -53,7 +56,31 @@ const SHARD_FLIGHT_MS = 650;       // where it lands is marked this long first
 const SHARD_HIT_R = 70;
 const SHARD_DMG = 0.13;            // of max health: it was barely felt at 0.09
 const SHARD_RAGE_DMG = 0.17;
-const LAST_HIT_GEMS = 1000;
+// Oct 6 2026: bolts and drones instead of the shards (they were undodgeable
+// for a grown tank and killed in ~6 s). Standing still in the open next to
+// it in rage, a tank loses about half its health in 10 s.
+const SHARD_ATTACK = process.env.ROYALE_CORE_ATTACK === 'shards';
+const BARRELS = 6;
+const BARREL_SPIN = 0.0025;        // rad per tick the barrel ring turns
+const BOLT_MS = 1200, BOLT_RAGE_MS = 850;
+const BOLT_TARGETS = 3, BOLT_RAGE_TARGETS = 4;
+const BOLT_R = 950;                // fires at tanks this close
+const BOLT_SPEED = 12;             // u/tick: ~0.8 s to cross 300, a side step dodges it
+const BOLT_RANGE = 1100;
+const BOLT_RADIUS = 12;
+const BOLT_HIT = 0.03;             // of max health a bolt, rage too
+const DRONE_MAX = 4, DRONE_RAGE_MAX = 6;
+const DRONE_MS = 2600, DRONE_RAGE_MS = 1700;
+const DRONE_SPEED = 5.5;
+const DRONE_SENSE = 900;           // chases tanks this close to it...
+const DRONE_LEASH = 1200;          // ...and this close to the Core
+const DRONE_LIFE_MS = 15_000;
+const DRONE_HP = 60;               // a few shots from anyone
+const DRONE_HIT = 0.025;           // of max health a touch...
+const DRONE_HIT_MS = 700;          // ...at most this often from one drone
+// a target's Core damage (bolts and drones, not the shockwave) refills at
+// CAP_S of max health a second, up to CAP_BURST
+const CAP_S = 0.03, CAP_BURST = 0.045;const LAST_HIT_GEMS = 1000;
 const CORE_BANK = 20_000;          // split among the players who broke it
 const MIN_SHARE_AT = 0.02;         // dealt at least this share: never less than MIN_SHARE
 const MIN_SHARE = 500;
@@ -102,7 +129,12 @@ let nextPulseAt = 0;
 let nextShardAt = 0;
 let charge = null;      // { kind: 'pulse' | 'shard', at } the attack being telegraphed
 let shards = [];
-let zone = null;
+let bolts = [];         // { e, vx, vy, left, at }
+let drones = [];        // { e, until, hits: Map(target id -> ms) }
+let nextBoltAt = 0;
+let nextDroneAt = 0;
+let phase = 0;          // 0 calm, 1 firing, 2 rage: a rise is telegraphed
+let barrelAng = 0;let zone = null;
 let hitters = new Map();
 let coreGems = 0;
 let brokeBy = "";
@@ -161,6 +193,8 @@ function clear() {
     if (zone) { zone.until = Date.now(); zone = null; }
     state = 'idle';
     shards = [];
+    killBrood();
+    phase = 0;
     charge = null;
     hitters.clear();
     coreGems = 0;
@@ -252,6 +286,7 @@ function spawnCore() {
     state = 'up';
     nextPulseAt = Date.now() + PULSE_FIRST_MS;
     nextShardAt = 0;
+    nextBoltAt = 0; nextDroneAt = 0; phase = 0;
     const fmt = (n) => n.toLocaleString('en-US');
     if (hooks.announce) hooks.announce('core', "THE CORE HAS SURFACED", "Break it and " + fmt(coreGems) + " gems blow out across the circle. Bank what you grab.", 4800);
     if (hooks.feed) hooks.feed({ core: 1, spawn: 1, g: coreGems });
@@ -314,6 +349,7 @@ function spew(x, y, total, t) {
 
 function onBroken(o) {
     if (o !== core || state !== 'up') return;
+    killBrood();
     state = 'down';
     core = null;
     brokeAt = Date.now();
@@ -342,6 +378,14 @@ function blow(t) {
     if (b.killer && b.killer.socket && hooks.loot) { try { hooks.loot(b.killer); } catch (e) { /* */ } }
 }
 
+// its bolts and drones go with it
+function killBrood() {
+    for (const b of bolts) { try { if (b.e && !b.e.isDead?.()) b.e.kill(); } catch { /* */ } }
+    for (const d of drones) { try { if (d.e && !d.e.isDead?.()) d.e.kill(); } catch { /* */ } }
+    bolts = [];
+    drones = [];
+}
+
 function hurt(body, frac, t) {
     if (!body.health || !(body.health.max > 0)) return;
     if ((body.spawnGraceUntil || 0) > t || body.godmode || body.royaleFrozen || body.invuln || body.padSafe) return;
@@ -359,6 +403,199 @@ function hurt(body, frac, t) {
     if (body.health.amount <= 0) {
         body.deathCause = "core";
         body.dontSendDeathMessage = true;
+    }
+}
+
+// A bolt or drone landing on `body`: `frac` of max health, metered per target
+// (CAP_S a second, CAP_BURST stored). Returns the share that landed.
+function projectileHit(body, frac, t = Date.now()) {
+    if (!body || !body.health || !(body.health.max > 0)) return 0;
+    if ((body.spawnGraceUntil || 0) > t || body.godmode || body.royaleFrozen || body.invuln || body.padSafe) return 0;
+    const m = body._coreMeter || (body._coreMeter = { left: CAP_BURST, at: t });
+    m.left = Math.min(CAP_BURST, m.left + Math.max(0, t - m.at) / 1000 * CAP_S);
+    m.at = t;
+    const f = Math.min(frac, m.left);
+    if (!(f > 0)) return 0;
+    m.left -= f;
+    hurt(body, f, t);
+    return f;
+}
+function eligible(b, t) {
+    return alive(b) && !b.royaleFrozen && !((b.spawnGraceUntil || 0) > t) && !b.padSafe && !b.godmode;
+}
+function pads() {
+    const out = [];
+    try { for (const v of require('./vault.js').getVaults()) out.push(v); } catch { /* */ }
+    try { for (const p of require('./shop.js').getShops()) out.push(p); } catch { /* */ }
+    return out;
+}
+function onAnyPad(list, x, y, margin) {
+    const padGeom = require('./padGeom.js');
+    for (let i = 0; i < list.length; i++) if (padGeom.insidePad(list[i], x, y, margin)) return true;
+    return false;
+}
+
+// a bolt from the barrel facing each of the nearest tanks, aimed where they are now
+function fireBolts(t, fighters) {
+    const near = [];
+    for (const b of fighters) {
+        if (!eligible(b, t)) continue;
+        const d = Math.hypot(b.x - core.x, b.y - core.y);
+        if (d <= BOLT_R) near.push({ b, d });
+    }
+    near.sort((a, c) => a.d - c.d);
+    const cr = core.realSize || core.size || 100;
+    const step = Math.PI * 2 / BARRELS;
+    for (const { b } of near.slice(0, phase >= 2 ? BOLT_RAGE_TARGETS : BOLT_TARGETS)) {
+        const want = Math.atan2(b.y - core.y, b.x - core.x);
+        const k = Math.round((want - barrelAng) / step);
+        const a = barrelAng + k * step;
+        const sx = core.x + Math.cos(a) * (cr + 16), sy = core.y + Math.sin(a) * (cr + 16);
+        const dx = b.x - sx, dy = b.y - sy, d = Math.hypot(dx, dy) || 1;
+        let o;
+        try {
+            o = new Entity({ x: sx, y: sy }, core);
+            o.define('royaleCoreBolt');
+            o.team = core.team;
+            o.source = core;
+            o.noclip = true;
+            o.isCoreShot = true;
+            o.settings.diesAtRange = false;
+            o.alwaysActive = true;
+            o.refreshBodyAttributes();
+            o.damage = 1;
+            o.velocity.x = 0; o.velocity.y = 0;
+            o.facing = Math.atan2(dy, dx);
+        } catch (e) { lastErr = String(e && e.stack || e); continue; }
+        bolts.push({ e: o, vx: dx / d * BOLT_SPEED, vy: dy / d * BOLT_SPEED, left: BOLT_RANGE, at: t });
+    }
+}
+
+function moveBolts(t, fighters, padList) {
+    if (!bolts.length) return;
+    const grid = tg();
+    for (let i = bolts.length - 1; i >= 0; i--) {
+        const s = bolts[i], e = s.e;
+        const dt = Math.min(3, Math.max(0.2, (t - s.at) / 33.3));
+        s.at = t;
+        let dead = !e || e.isDead?.() || s.left <= 0;
+        if (!dead) {
+            const steps = Math.max(1, Math.ceil(BOLT_SPEED * dt / BOLT_RADIUS));
+            const sx = s.vx * dt / steps, sy = s.vy * dt / steps;
+            for (let k = 0; k < steps && !dead; k++) {
+                e.x += sx; e.y += sy;
+                s.left -= Math.hypot(sx, sy);
+                for (const b of fighters) {
+                    if (!alive(b)) continue;
+                    const r = BOLT_RADIUS + (b.realSize || b.size || 30);
+                    if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 > r * r) continue;
+                    projectileHit(b, BOLT_HIT, t);
+                    dead = true;
+                    break;
+                }
+                if (dead) break;
+                if (onAnyPad(padList, e.x, e.y, BOLT_RADIUS)) { dead = true; break; }
+                if (grid && grid.rockHitByCircle && (grid.rockHitByCircle(e.x, e.y, BOLT_RADIUS)
+                    || (grid.growingRockHitByCircle && grid.growingRockHitByCircle(e.x, e.y, BOLT_RADIUS, t)))) { dead = true; break; }
+                if (s.left <= 0) dead = true;
+            }
+            e.velocity.x = 0; e.velocity.y = 0; e.accel.x = 0; e.accel.y = 0;
+        }
+        if (dead) {
+            try { if (e && !e.isDead?.()) e.kill(); } catch { /* */ }
+            bolts.splice(i, 1);
+        }
+    }
+}
+
+function spawnDrone(t) {
+    const cr = core.realSize || core.size || 100;
+    const a = barrelAng + Math.random() * Math.PI * 2;
+    let o;
+    try {
+        o = new Entity({ x: core.x + Math.cos(a) * (cr + 30), y: core.y + Math.sin(a) * (cr + 30) }, core);
+        o.define('royaleCoreDrone');
+        o.team = core.team;
+        o.source = core;
+        o.controllers = [];
+        o.isCoreShot = true;
+        o.settings.diesAtRange = false;
+        o.alwaysActive = true;
+        o.refreshBodyAttributes();
+        o.health.set(DRONE_HP);
+        o.health.amount = DRONE_HP;
+        if (o.shield) { o.shield.max = 0; o.shield.amount = 0; }
+        o.damp = 0.05;
+        o.velocity.x = Math.cos(a) * DRONE_SPEED; o.velocity.y = Math.sin(a) * DRONE_SPEED;
+    } catch (e) { lastErr = String(e && e.stack || e); return null; }
+    drones.push({ e: o, until: t + DRONE_LIFE_MS, hits: new Map() });
+    return o;
+}
+
+function tickDrones(t, fighters, padList) {
+    if (!drones.length) return;
+    const padGeom = require('./padGeom.js');
+    for (let i = drones.length - 1; i >= 0; i--) {
+        const d = drones[i], e = d.e;
+        let dead = !e || e.isDead?.() || (e.health && e.health.amount <= 0) || t >= d.until
+            || Math.hypot(e.x - core.x, e.y - core.y) > DRONE_LEASH + 400;
+        // a pad kills it outright, and the rim is a wall before that
+        if (!dead && onAnyPad(padList, e.x, e.y, 0)) dead = true;
+        if (dead) {
+            try { if (e && !e.isDead?.()) e.kill(); } catch { /* */ }
+            drones.splice(i, 1);
+            continue;
+        }
+        for (const p of padList) { try { padGeom.keepOut(e, p, 6, 'core:' + (p.id != null ? p.id : p.x + ',' + p.y), true); } catch { /* */ } }
+        const er = e.realSize || e.size || 16;
+        let best = null, bestD = DRONE_SENSE;
+        for (const b of fighters) {
+            if (!eligible(b, t)) continue;
+            const dd = Math.hypot(b.x - e.x, b.y - e.y);
+            if (dd < bestD && Math.hypot(b.x - core.x, b.y - core.y) <= DRONE_LEASH) { best = b; bestD = dd; }
+            // a touch: the share, at most every DRONE_HIT_MS per target
+            if (dd <= er + (b.realSize || b.size || 30) + 6 && t - (d.hits.get(b.id) || 0) >= DRONE_HIT_MS) {
+                d.hits.set(b.id, t);
+                projectileHit(b, DRONE_HIT, t);
+            }
+        }
+        // chase, or circle the Core
+        let gx, gy;
+        if (best) { gx = best.x; gy = best.y; }
+        else {
+            const cr = core.realSize || core.size || 100;
+            const a = Math.atan2(e.y - core.y, e.x - core.x) + 0.35;
+            gx = core.x + Math.cos(a) * (cr + 140); gy = core.y + Math.sin(a) * (cr + 140);
+        }
+        const dx = gx - e.x, dy = gy - e.y, dl = Math.hypot(dx, dy) || 1;
+        const sp = best ? DRONE_SPEED : DRONE_SPEED * 0.6;
+        e.velocity.x += (dx / dl * sp - e.velocity.x) * 0.2;
+        e.velocity.y += (dy / dl * sp - e.velocity.y) * 0.2;
+    }
+}
+
+function attack(t, list) {
+    const f = frac();
+    const want = f < RAGE_BELOW ? 2 : f < SHARD_BELOW ? 1 : 0;
+    // a new phase winds up first (the old shard telegraph)
+    if (want > phase) {
+        phase = want;
+        if (hooks.fxAt) hooks.fxAt(core.x, core.y, 'corecharge', SHARD_CHARGE_MS, 0);
+        nextBoltAt = Math.max(nextBoltAt, t + SHARD_CHARGE_MS);
+        nextDroneAt = Math.max(nextDroneAt, t + SHARD_CHARGE_MS);
+    } else if (want < phase) phase = want;
+    barrelAng += BARREL_SPIN * Math.max(1, (t - (attack._at || t)) / 33.3);
+    attack._at = t;
+    const padList = pads();
+    moveBolts(t, list, padList);
+    tickDrones(t, list, padList);
+    if (!phase) return;
+    if (t >= nextBoltAt) { nextBoltAt = t + (phase >= 2 ? BOLT_RAGE_MS : BOLT_MS); fireBolts(t, list); }
+    if (t >= nextDroneAt) {
+        nextDroneAt = t + (phase >= 2 ? DRONE_RAGE_MS : DRONE_MS);
+        let anyone = false;
+        for (const b of list) if (eligible(b, t) && Math.hypot(b.x - core.x, b.y - core.y) <= DRONE_LEASH) { anyone = true; break; }
+        if (anyone && drones.length < (phase >= 2 ? DRONE_RAGE_MAX : DRONE_MAX)) spawnDrone(t);
     }
 }
 
@@ -390,7 +627,7 @@ function pulse(t, fighters) {
     }
 }
 
-// Vault and shop pads are safe ground: a Core shard that would land on one (or
+// Vault and shop pads are safe ground: nothing of the Core's lands on one
 function onSafePad(x, y, margin = SHARD_HIT_R) {
     const padGeom = require('./padGeom.js');
     let pads = [];
@@ -458,6 +695,7 @@ function tick(t, fighters) {
     if (core.pinX !== undefined) { core.x = core.pinX; core.y = core.pinY; core.velocity.x = 0; core.velocity.y = 0; }
     const list = fighters || [];
     landShards(t, list);
+    if (!SHARD_ATTACK) attack(t, list);
     const f = frac();
     // the telegraph: CHARGE_MS (shards SHARD_CHARGE_MS) of glow and a closing ring first
     if (charge && t >= charge.at) {
@@ -467,7 +705,7 @@ function tick(t, fighters) {
         else { nextShardAt = t + (f < RAGE_BELOW ? SHARD_RAGE_MS : SHARD_MS); fireShards(t, list); }
     }
     if (!charge && t >= nextPulseAt - CHARGE_MS) startCharge('pulse', Math.max(t, nextPulseAt - CHARGE_MS) + CHARGE_MS);
-    else if (!charge && f < SHARD_BELOW && t >= nextShardAt) startCharge('shard', t + SHARD_CHARGE_MS);
+    else if (SHARD_ATTACK && !charge && f < SHARD_BELOW && t >= nextShardAt) startCharge('shard', t + SHARD_CHARGE_MS);
 }
 function startCharge(kind, at) {
     charge = { kind, at };
@@ -515,10 +753,12 @@ function debugHp(f, by) {
     return frac();
 }
 
-module.exports = { onSafePad,
+module.exports = { onSafePad, projectileHit, SHARD_ATTACK, BOLT_HIT, DRONE_HIT, DRONE_MAX, DRONE_RAGE_MAX, CAP_S, CAP_BURST, PULSE_RAGE_DMG,
+    _brood: () => ({ bolts: bolts.map(b => b.e), drones: drones.map(d => d.e) }),
+    _debugDrone: (x, y, t = Date.now()) => { if (!core) return null; const o = spawnDrone(t); if (o) { o.x = x; o.y = y; o.velocity.x = 0; o.velocity.y = 0; } return o; },
     ON, CORE_OFFSET, ARENA_R, LANE_R, COVER_R, ZONE_R, PULSE_R, SHARD_BELOW, RAGE_BELOW, LAST_HIT_GEMS, LAST_HIT_PTS,
     HP_MAX, CORE_BANK, MIN_SHARE, SPRAY_GEMS, splitPayout, SHARD_DMG, SHARD_RAGE_DMG, PULSE_DMG, CHARGE_MS, SHARD_CHARGE_MS, SHARD_FLIGHT_MS,
     COLLAPSE_MS, SPEW_PIECES, spew,
     attach, enabled, newRaid, clear, tick, snapshot, current, siteOf, planSite, carveArena, healthFor, gemsFor, erupt,
-    debugSpawn, debugHp, _state: () => ({ state, warned, lastErr, shards: shards.length, frac: frac(), charge: charge && charge.kind }),
+    debugSpawn, debugHp, _state: () => ({ state, warned, lastErr, shards: shards.length, bolts: bolts.length, drones: drones.length, phase, frac: frac(), charge: charge && charge.kind }),
 };

@@ -451,6 +451,102 @@ test('winner: the most points wins, crown or not; results shape', () => {
     assert.equal(crowns._state().on, false);
 });
 
+// ── duos: crowns on single tanks, their points are the team's ──────────────
+// teams are faked through duoRaid.teamKeyOf (the party book is covered in
+// party.test.js / duos e2e); everything else is the real raid
+function duoContest() {
+    const duo = require(path.join(SERVER, 'game', 'duo', 'duoRaid.js'));
+    const keyOf0 = duo.teamKeyOf;
+    Config.royale_duos = true;
+    duo.teamKeyOf = (b) => (b && b._tk) || null;
+    const restore = () => { duo.teamKeyOf = keyOf0; Config.royale_duos = false; };
+    try {
+        const r = contest();
+        // team 1: a (900) + b (5000); team 2: c (3000) + d (2000); e: a lone bot (4000)
+        r.a._tk = r.b._tk = 'T1';
+        r.c._tk = r.d._tk = 'T2';
+        royale.boardSnapshot();
+        return Object.assign(r, { restore });
+    } catch (err) { restore(); throw err; }
+}
+const teamOf = (r, tm) => (r.teams || []).find(t => t.tm === tm);
+
+test('duos: the contest runs; crowns go to the top 3 tanks, their points and steals count for the team', () => {
+    const { a, b, c, d, e, restore } = duoContest();
+    try {
+        assert.equal(crowns.enabled(), true, 'the Crown Contest is on in duos');
+        assert.equal(crowns._state().on, true);
+        assert.deepEqual([a, b, c, d, e].map(x => !!x.crowned), [false, true, true, false, true], 'single tanks, top 3 by their own points');
+        assert.ok(/Holding one earns your team points/.test(kcs(a, 'crowns')[0][4]), kcs(a, 'crowns')[0][4]);
+        assert.ok(/\+5 pts\/sec for your team while you hold it/.test(kcs(b, 'crowned')[0][4]), kcs(b, 'crowned')[0][4]);
+        // holding: the holder's points, so the team's
+        const t1a = teamOf(ry(a.socket), 'T1').score;
+        for (let i = 0; i < 10; i++) tick(1000);
+        let r = ry(a.socket);
+        assert.equal(r.duos, 1);
+        const T1 = teamOf(r, 'T1'), T2 = teamOf(r, 'T2');
+        assert.ok(T1.score - t1a >= 10 * crowns.PPS && T1.score - t1a <= 12 * crowns.PPS, 'crown points in the team score: +' + (T1.score - t1a));
+        assert.equal(T1.score, scoreOf(a) + scoreOf(b), 'team score = both partners');
+        assert.ok(T1.cb >= 10 * crowns.PPS && T2.cb >= 10 * crowns.PPS, 'team rows carry the crown points');
+        assert.equal(T1.cr, 1); assert.equal(T2.cr, 1);
+        assert.equal(JSON.stringify(r.teams).includes('_ks'), false, 'stat keys never go on the wire');
+        assert.ok(r.crowns && r.crowns.on === 1 && r.crowns.list.length === 3, 'the crowns ride RY in duos too');
+        // a steal: d (team 2, uncrowned) knocks b's crown off: the crown and 1,500 move teams
+        const s1 = teamOf(r, 'T1').score, s2 = teamOf(r, 'T2').score;
+        die(b, d);
+        assert.equal(d.crowned, true, 'the thief wears it');
+        r = ry(a.socket);
+        const n1 = teamOf(r, 'T1').score, n2 = teamOf(r, 'T2').score;
+        assert.ok(s1 - n1 >= 1500 && s1 - n1 <= 1500 + 3 * crowns.PPS, 'team 1 lost the steal: ' + (s1 - n1));
+        assert.ok(n2 - s2 >= 1500 + 200 && n2 - s2 <= 1700 + 6 * crowns.PPS, 'team 2 got the kill and the steal: ' + (n2 - s2));
+        assert.equal(teamOf(r, 'T2').cr, 2, 'both partners crowned');
+        assert.equal(teamOf(r, 'T1').cr || 0, 0);
+    } finally { restore(); }
+});
+
+test('duos: the team with the most points wins; both partners are champions; podium rows show crown points', () => {
+    const { a, b, c, d, e, restore } = duoContest();
+    let next = null;
+    try {
+        // the best single tank (b, 8,000) is on the losing team: 8,000 + 100
+        // against c + d's 6,000 + 3,000 (+ crowns), so team 2 wins
+        setScore(a, 100); setScore(b, 8000); setScore(c, 6000); setScore(d, 3000); setScore(e, 500);
+        royale.debugRaidLeft(40);
+        tick();
+        for (const x of [a, b, c, d]) royale._statOf(x).since = Date.now() - 120000;
+        next = endRaidNow(() => { royale.debugEndRaid(); tick(50); });
+        const res = royale._results();
+        assert.equal(res.duos, 1);
+        assert.equal(res.crowns, 1);
+        const top = res.top[0];
+        assert.deepEqual([...top.ids].sort(), [c.id, d.id].sort(), 'team 2 on top');
+        assert.ok(top.score > res.top[1].score);
+        assert.equal(top.score, scoreOf(c) + scoreOf(d));
+        assert.ok(top.cb >= crowns.BELL_BONUS, 'the podium row shows the team crown points: ' + top.cb);
+        assert.equal(JSON.stringify(res).includes('_ks'), false);
+        assert.equal(res.champ.name, top.name);
+        assert.ok(/ & /.test(res.champ.name), res.champ.name);
+        assert.deepEqual([...res.win].sort(), [c.id, d.id].sort(), 'the victory lap is the team\'s');
+        for (const x of [c, d]) {
+            assert.equal(royale._statOf(x).champWin, true, x.name + ' champion');
+            assert.ok(x.socket._champUntil > Date.now() + 23 * 3600 * 1000);
+            assert.equal(x.socket._crownStreak, 1);
+        }
+        for (const x of [a, b]) assert.ok(!royale._statOf(x).champWin, x.name + ' not champion');
+        // ranked reads the team placement (teamScore), so both partners take place 1
+        const order = royale.boardOrder ? royale.boardOrder() : null;
+        if (order) for (const x of [c, d]) assert.equal(order.find(o => o.s === royale._statOf(x)).place, 1);
+        // crown achievements have no duo gate (crown_ko, crown_steal, crown_win)
+        const ach = fs.readFileSync(path.join(SERVER, 'accounts', 'game', 'achHooks.js'), 'utf8');
+        assert.ok(!/royale_duos/.test(ach));
+        // the client's duo standings show the crowns
+        const app = fs.readFileSync(path.join(CLIENT, 'app.js'), 'utf8');
+        assert.match(app, /crowns\.drawTeamEdge\(c, x, y0, W, H\)/);
+        assert.match(app, /Math\.min\(2, t\.cr \| 0\)/);
+    } finally { restore(); }
+    if (next) next();
+});
+
 test('stability: a crowns failure never blocks the raid end', () => {
     const { a, b } = contest();
     for (const x of [a, b]) royale._statOf(x).since = Date.now() - 120000;
