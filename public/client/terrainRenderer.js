@@ -2738,8 +2738,17 @@ class TerrainRenderer {
         const r = this._hdR || (this._hdR = [0, 0, 0, 0]);
         let L = this._hdLayer;
         // a layer far denser than needed (the view widened a lot: a dive)
-        // would need too many tiles: start a coarse one
-        if (L && (L.cols !== this._cols || L.ratioY !== ratioY || L.d > want * 1.5)) { this._hdDropLayer(L); L = null; }
+        // would need too many tiles: start a coarse one. A denser layer that still has every tile on screen stays up while
+        // the right one is shaded behind it (a lower resolution step, Fewer
+        // Effects, a zoom out): dropping it first showed a half-density
+        // stand-in, the whole screen going grainy for a moment.
+        if (L && L.d > want * 1.5 && L.cols === this._cols && L.ratioY === ratioY && !diving) {
+            this._hdRange(L, view, 0, r);
+            let have = 0, n = 0;
+            for (let j = r[1]; j <= r[3]; j++) for (let i = r[0]; i <= r[2]; i++) { n++; if (L.tiles.has(hdKey(i, j))) have++; }
+            L.keep = n - have <= HD_URGENT_MAX && n <= 96;
+        } else if (L) L.keep = false;
+        if (L && (L.cols !== this._cols || L.ratioY !== ratioY || (L.d > want * 1.5 && !L.keep))) { this._hdDropLayer(L); L = null; }
         if (!L) L = this._hdLayer = this._hdNewLayer(stable ? want : want * 0.5, ratioY, want, stable);
         // stale tiles' new looks come in, now they are ready
         L.tiles.forEach((t) => { if (t.nb && t.nbAt <= frame) { t.bm.close(); t.bm = t.nb; t.nb = null; } });
@@ -2748,7 +2757,7 @@ class TerrainRenderer {
         this._hdRange(L, view, 0, r);
         let missing = 0;
         for (let j = r[1]; j <= r[3]; j++) for (let i = r[0]; i <= r[2]; i++) if (!L.tiles.has(hdKey(i, j))) missing++;
-        if (missing > HD_URGENT_MAX && L.full) {
+        if (missing > HD_URGENT_MAX && L.full && !L.keep) {
             this._hdDropLayer(L);
             this._hdDropLayer(this._hdNext); this._hdNext = null;
             L = this._hdLayer = this._hdNewLayer(want * 0.5, ratioY, want, false);
@@ -2767,8 +2776,10 @@ class TerrainRenderer {
         // moves again before it is done.
         const sharp = L.full && Math.abs(L.want / want - 1) < HD_SNAP;
         let N = this._hdNext;
-        if (N && (sharp || !stable || Math.abs(N.want / want - 1) >= HD_SNAP || N.ratioY !== ratioY || N.cols !== this._cols)) { this._hdDropLayer(N); N = this._hdNext = null; }
-        if (!N && !sharp && stable) N = this._hdNext = this._hdNewLayer(want, ratioY, want, true);
+        // (a kept denser layer: the replacement starts at once, zoom moving or not)
+        if (N && L.keep && !stable && Math.abs(N.want / want - 1) < 0.25) { /* keep filling it */ }
+        else if (N && (sharp || !stable || Math.abs(N.want / want - 1) >= HD_SNAP || N.ratioY !== ratioY || N.cols !== this._cols)) { this._hdDropLayer(N); N = this._hdNext = null; }
+        if (!N && !sharp && (stable || L.keep)) N = this._hdNext = this._hdNewLayer(want, ratioY, want, true);
         // background shading, inside the frame's budget
         const t0 = performance.now();
         this._hdBg = frame < (this._hdCool | 0) ? HD_MAX_BG : 0;

@@ -48,6 +48,20 @@ function keep(b, r, t) {
     return dx * dx + dy * dy <= KEEP_FRONT * KEEP_FRONT;
 }
 
+// The first rock on the line from the owner to `to` (a shot can't pass through rock)
+const LINE_STEP = 14, LINE_R = 5;
+function firstOnLine(tg, b, to) {
+    const x1 = rx(to), y1 = ry(to);
+    const dx = x1 - b.x, dy = y1 - b.y, len = Math.hypot(dx, dy);
+    if (!(len > 0) || !tg.rockHitByCircle) return to;
+    const ux = dx / len, uy = dy / len;
+    for (let d = (b.size || 20) + LINE_R; d < len; d += LINE_STEP) {
+        const r = tg.rockHitByCircle(b.x + ux * d, b.y + uy * d, LINE_R);
+        if (r && r.alive) return r;
+    }
+    return to;
+}
+
 // One shot lands: rock damage, gems to the owner
 function land(tg, rock, raw, owner) {
     if (!tg || !rock || !(rock.alive || rock.growing) || !(raw > 0)) return false;
@@ -87,6 +101,7 @@ function step(e, t) {
     if (d.rock && !d.hitRock && t >= d.fireAt && firedThisTick < MAX_FIRES) {
         firedThisTick++;
         d.fireAt = t + FIRE_MS;
+        d.rock = firstOnLine(tg, b, d.rock);
         const dist = Math.hypot(rx(d.rock) - b.x, ry(d.rock) - b.y);
         d.hitRock = d.rock;
         d.hitAt = t + Math.max(0, dist - (b.size || 20)) / SPEED * 1000;
@@ -101,4 +116,4 @@ function targetOf(id, e) {
     return r ? [id, Math.round(rx(r)), Math.round(ry(r))] : [id];
 }
 
-module.exports = { ON, POUNDER_REF, SEARCH_MS, FIRE_MS, SPEED, RANGE, MAX_FIRES, shareOf, damageFor, step, beginTick, targetOf, land };
+module.exports = { firstOnLine, ON, POUNDER_REF, SEARCH_MS, FIRE_MS, SPEED, RANGE, MAX_FIRES, shareOf, damageFor, step, beginTick, targetOf, land };

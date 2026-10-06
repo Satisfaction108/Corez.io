@@ -1107,6 +1107,14 @@ test('migration v11: retired items are refunded once at what was paid, ledger ad
 });
 
 // ── switch ────────────────────────────────────────────────────────────
+test('dig: a shot hits the first rock on its line, not a rock behind it', () => {
+    const near = { alive: true, worldCx: 200, worldCy: 1 }, far = { alive: true, worldCx: 400, worldCy: 1 };
+    const tg = { rockHitByCircle: (x, y) => Math.abs(y) < 40 ? (Math.abs(x - 200) < 40 ? near : Math.abs(x - 400) < 40 ? far : null) : null };
+    const b = { x: 0, y: 0, size: 20 };
+    assert.equal(dig.firstOnLine(tg, b, far), near, 'the rock in the way takes it');
+    assert.equal(dig.firstOnLine(tg, b, near), near, 'a clear line keeps the target');
+});
+
 test('switch: ROYALE_SIDEKICKS=0 turns them off; the tutorial never has them', () => {
     const r = spawnSync(process.execPath, ['--no-warnings', __filename, '--off'], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);

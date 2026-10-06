@@ -24,6 +24,7 @@ import * as firstSeconds from './firstSeconds.js';
 import { shopHint, minesBy } from './firstSecondsLogic.js';
 import { full as fxFull, slamShowing, slamUp as juiceSlamUp } from './juice.js';
 import * as autoQ from './autoQuality.js';
+import { ResGovernor, RES, resBudget, resLevels } from './autoQualityLogic.js';
 import * as rankBadges from './account/rankBadges.js';
 import * as rankPanel from './account/rankPanel.js';
 import * as rankCeremony from './account/rankCeremony.js';
@@ -877,61 +878,47 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
     // The floor is ~1100x820; below that HUD text turns to mush on a 1080p
     // screen. A remembered level is only trusted one step down; each session
     // re-learns the rest. "Full HD" in settings keeps it at 1080p or better.
-    const AUTO_RES_BUDGET = [Infinity, 1920 * 1080, 1400 * 1000, 1100 * 820];
-    const fullHDFloor = () => (global.GUIStatus && global.GUIStatus.fullHDMode) ? 1 : AUTO_RES_BUDGET.length - 1;
-    let autoResLevel = 0;
-    try { autoResLevel = Math.max(0, Math.min(1, parseInt(localStorage.getItem("dwAutoResLevel"), 10) || 0)); } catch (e) { }
-    const autoRes = { ema: 16.7, last: 0, slowSince: 0, smoothSince: 0, changedAt: 0, noUpUntil: 0, upAt: 0, told: false };
+    // Levels and timing live in autoQualityLogic.js (ResGovernor, tested):
+    // small steps (75% of the pixels each) after a sustained dip only, never
+    // on a tab refocus or one hitch, and back up one level at a time.
+    const AUTO_RES_FLOOR = () => (global.GUIStatus && global.GUIStatus.fullHDMode) ? 1920 * 1080 : RES.FLOOR;
+    let autoResNative = 0;   // the screen's own pixel count (resizeEvent)
+    const autoResMax = () => resLevels(autoResNative, AUTO_RES_FLOOR());
+    let autoResStart = 0;
+    try { autoResStart = Math.max(0, Math.min(3, parseInt(localStorage.getItem("dwAutoResStep"), 10) || 0)); } catch (e) { }
+    const autoRes = new ResGovernor(autoResStart);
+    let autoResLast = 0, autoResTold = false;
     autoQ.init({ toast: (text) => global.createMessage(text, 5000) });
-    function setAutoResLevel(level, why) {
-        level = Math.max(0, Math.min(fullHDFloor(), level));
-        if (level === autoResLevel) return;
-        const down = level > autoResLevel;
-        autoResLevel = level;
-        try { localStorage.setItem("dwAutoResLevel", String(level)); } catch (e) { }
-        autoRes.changedAt = performance.now();
-        autoRes.slowSince = autoRes.smoothSince = 0;
+    function setAutoResLevel(level) {
+        const down = level > autoRes.level;
+        if (!autoRes.set(performance.now(), Math.max(0, Math.min(autoResMax(), level)))) return;
+        autoResChanged(down);
+    }
+    function autoResChanged(down) {
+        try { localStorage.setItem("dwAutoResStep", String(autoRes.level)); } catch (e) { }
         resizeEvent();
-        if (down && !autoRes.told) {
-            autoRes.told = true;
+        if (down && !autoResTold) {
+            autoResTold = true;
             try { global.createMessage("Dropped the resolution so the game runs smoother.", 4000); } catch (e) { }
         }
     }
     function autoResTick(now) {
-        const dt = autoRes.last ? now - autoRes.last : 16.7;
-        autoRes.last = now;
+        const dt = autoResLast ? now - autoResLast : 16.7;
+        autoResLast = now;
         // tab switches, hidden panes and the menu are not slow frames
         // the sky drop's dive (skyDrop.js) is a second of wide view, not a slow machine
         const diving = global.dropZoom !== undefined && global.dropZoom !== 1;
-        if (document.hidden || dt > 400 || !global.gameStart || diving || autoRes.hold) { autoRes.slowSince = autoRes.smoothSince = 0; return; }
-        autoRes.ema = autoRes.ema * 0.92 + dt * 0.08;
-        if (now - autoRes.changedAt < 1500) return;          // let a change settle
-        // under ~26 fps. Not 30: Chrome's battery saver pins rAF to 30 fps,
-        // and that is a steady cap, not a slow machine.
+        if (document.hidden || !global.gameStart || diving || autoRes.hold) { autoRes.pause(now); return; }
         // the effects ladder (autoQuality.js) goes first, resolution last
-        if (autoRes.ema > 38 && autoQ.resolutionTurn(autoRes.ema)) {
-            autoRes.smoothSince = 0;
-            if (!autoRes.slowSince) autoRes.slowSince = now;
-            if (now - autoRes.slowSince > 2000 && autoResLevel < fullHDFloor()) {
-                // stepping up just caused this: go back and stay there a while
-                if (autoRes.upAt && now - autoRes.upAt < 12000) autoRes.noUpUntil = now + 300000;
-                setAutoResLevel(autoResLevel + 1);
-            }
-        } else if (autoRes.ema < 24) {                       // holding ~42 fps or better
-            autoRes.slowSince = 0;
-            if (!autoRes.smoothSince) autoRes.smoothSince = now;
-            if (autoResLevel > 0 && now > autoRes.noUpUntil && now - autoRes.smoothSince > 15000) {
-                autoRes.upAt = now;
-                setAutoResLevel(autoResLevel - 1);
-            }
-        } else { autoRes.slowSince = 0; autoRes.smoothSince = 0; }
+        const step = autoRes.frame(now, dt, (ema) => autoQ.resolutionTurn(ema), autoResMax());
+        if (step) autoResChanged(step > 0);
     }
     // QA: dwAutoRes() reports, dwAutoRes(n) jumps to a level, dwAutoRes(n, true)
     // holds it there (A/B runs on a busy machine), dwAutoRes(null, false) lets go
     window.dwAutoRes = (level, hold) => {
         if (hold != null) autoRes.hold = !!hold;
         if (level != null) setAutoResLevel(level | 0);
-        return { level: autoResLevel, fpsEma: +(1000 / autoRes.ema).toFixed(1), canvas: global.screenWidth + "x" + global.screenHeight, hud: ctx[2].canvas.width + "x" + ctx[2].canvas.height };
+        return { level: autoRes.level, max: autoResMax(), fpsEma: +(1000 / autoRes.ema).toFixed(1), canvas: global.screenWidth + "x" + global.screenHeight, hud: ctx[2].canvas.width + "x" + ctx[2].canvas.height };
     };
 
     let resizedW = 0, resizedH = 0;
@@ -948,10 +935,11 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         if (config.graphical.lowResolution) {
             scale *= 0.5;
         }
-        let budget = AUTO_RES_BUDGET[Math.min(autoResLevel, fullHDFloor())] || Infinity;
+        let pixels = window.innerWidth * window.innerHeight * scale * scale;
         // touch: about a 2x phone screen; a tablet's panel is 3-4x that
-        if (global.mobile) budget = Math.min(budget, 1.6e6);
-        const pixels = window.innerWidth * window.innerHeight * scale * scale;
+        const native = global.mobile ? Math.min(pixels, 1.6e6) : pixels;
+        autoResNative = native;
+        const budget = Math.min(native < pixels ? native : Infinity, resBudget(Math.min(autoRes.level, autoResMax()), native, AUTO_RES_FLOOR()));
         // The HUD keeps its own, higher budget: a big tank's wide view slows
         // the world down and steps the resolution down, and the HUD drawn at
         // that resolution (pixelated, see main.css) went soft as you grew.
@@ -961,12 +949,21 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
         // the bars, tiles and text look low-res. Deeper steps are a slow
         // machine (often no GPU canvas), and those keep the 1080p+ floor.
         const guiBudget = global.mobile ? Math.max(budget, 1.6e6)
-            : autoResLevel <= 1 ? Infinity : Math.max(budget, HUD_PIXEL_FLOOR);
+            : budget >= 1920 * 1080 ? Infinity : Math.max(budget, HUD_PIXEL_FLOOR);
         const guiScale = pixels > guiBudget ? scale * Math.sqrt(guiBudget / pixels) : scale;
         if (pixels > budget) scale *= Math.sqrt(budget / pixels);
         global.screenWidth = global.vscreenSize = window.innerWidth * scale;
         global.screenHeight = global.vscreenSizey = window.innerHeight * scale;
         const k = Math.max(1, guiScale / scale);
+        // the canvases are drawn nearest-neighbour (main.css) for a crisp
+        // 1:1 screen; a lowered resolution stretched that way is grain, so
+        // a stretched layer is filtered smooth instead
+        const nat = Math.min(2, window.devicePixelRatio || 1) * (config.graphical.lowResolution ? 0.5 : 1);
+        const soft = scale < nat * 0.99 ? "auto" : "", softGui = scale * k < nat * 0.99 ? "auto" : "";
+        if (global.canvas && global.canvas.cvb && global.canvas.cvb.style.imageRendering !== soft) {
+            global.canvas.cvb.style.imageRendering = global.canvas.cvg.style.imageRendering = global.canvas.cv.style.imageRendering = soft;
+        }
+        if (global.canvas && global.canvas.cvu && global.canvas.cvu.style.imageRendering !== softGui) global.canvas.cvu.style.imageRendering = softGui;
         c.resize(global.screenWidth, global.screenHeight, Math.round(global.screenWidth * k), Math.round(global.screenHeight * k));
         // the HUD context draws in the same units as the world ones, k times denser
         if (ctx && ctx[2]) {

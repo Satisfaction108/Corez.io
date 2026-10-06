@@ -83,9 +83,9 @@ export function frame(now, work) {
     const dt = lastAt ? now - lastAt : 0;
     lastAt = now;
     if (window.dwFrameLog) window.dwFrameLog.push(now, work);   // QA: drawn frames, not rAF ticks
-    if (off || !user || !global.gameStart || document.hidden) { if (ladder) ladder.reset(); playing = false; return; }
+    if (off || !user || !global.gameStart || document.hidden) { if (ladder) ladder.pause(now); playing = false; return; }
     // the sky drop's dive is a second or two of a wide view: not counted
-    if (global.dropZoom !== undefined && global.dropZoom !== 1) { if (ladder) ladder.reset(); return; }
+    if (global.dropZoom !== undefined && global.dropZoom !== 1) { if (ladder) ladder.pause(now); return; }
     const L = ensure();
     // the first seconds of a life hitch anyway (drop-in, shader warm-up)
     if (!playing) { playing = true; L.changedAt = now; }

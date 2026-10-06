@@ -933,6 +933,13 @@ function breakAndHold(tg, list, holdMs) {
 }
 
 // Where the storm edge will be `aheadS` seconds from now (st: storm.snapshot).
+// storm.snapshot with cx/cy moved to where the centre will be aheadS from now
+function aheadSnap(t, aheadS) {
+    const st = storm.snapshot(t);
+    if (!st || !st.a || !storm.centerAt) return st;
+    const c = storm.centerAt(t + aheadS * 1000);
+    return Object.assign({}, st, { cx: c.x, cy: c.y });
+}
 function stormRAhead(st, aheadS) {
     const rNow = st.r || 0;
     return Math.max(0, rNow - Math.max(0, rNow - (st.n || rNow)) * (aheadS * 4));
@@ -980,7 +987,8 @@ function carveSpawnPocket(tg, x, y, R, zone) {
 function safeSpawnSpot(self, forBot, etaWant = 0) {
     const FM = FIRST_MINUTES;
     const t = now();
-    const st = storm.snapshot(t);
+    // the zone slides as it shrinks: judge spots by where its centre will be
+    const st = aheadSnap(t, FM.SPAWN_STORM_AHEAD_S);
     const holes = pits();
     const bodies = combatants().filter(b => b !== self);
     // plan for the circle a little ahead (st.n is the radius 250 ms from now),
@@ -1325,7 +1333,8 @@ function spawnAudit(spot, forBot, kind, res) {
     try {
         const tg = global.gameManager.terrainGrid;
         const st = storm.snapshot(now());
-        const zone = { x: st.cx || 0, y: st.cy || 0, r: stormRAhead(st, FIRST_MINUTES.SPAWN_STORM_AHEAD_S) };
+        const sa = aheadSnap(now(), FIRST_MINUTES.SPAWN_STORM_AHEAD_S);
+        const zone = { x: sa.cx || 0, y: sa.cy || 0, r: stormRAhead(st, FIRST_MINUTES.SPAWN_STORM_AHEAD_S) };
         spawnReach.invalidate();
         const r = res || spawnReach.check(tg, spot.x, spot.y, { zone, now: now() });
         spawnLog.n++;
@@ -1766,7 +1775,8 @@ function mateReachTest(tg) {
     const t = now();
     let st = null;
     try { st = storm.snapshot(t); } catch { return () => true; }
-    const zone = { x: st.cx || 0, y: st.cy || 0, r: stormRAhead(st, FIRST_MINUTES.SPAWN_STORM_AHEAD_S) };
+    const sa = aheadSnap(now(), FIRST_MINUTES.SPAWN_STORM_AHEAD_S);
+    const zone = { x: sa.cx || 0, y: sa.cy || 0, r: stormRAhead(st, FIRST_MINUTES.SPAWN_STORM_AHEAD_S) };
     const margin = Math.min(FIRST_MINUTES.SPAWN_EDGE_MARGIN, zone.r * FIRST_MINUTES.SPAWN_EDGE_MARGIN_FRAC);
     const digR = stormRAhead(st, FIRST_MINUTES.SPAWN_STORM_AHEAD_DIG_S) - margin;
     return (x, y) => {
@@ -2554,7 +2564,7 @@ function onHumanJoin(body) {
             try { body.sendMessage("You're back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size" + (capped ? ", the most a respawn gives." : ", from a quarter of your score.")); } catch { /* */ }
         }
         if (bankIn > 0) {
-            try { body.sendMessage("You brought " + bankIn.toLocaleString('en-US') + " banked gems. Spend them at a shop. Each death costs 10% of them, but gems you bank this raid are safe."); } catch { /* */ }
+            try { body.sendMessage("You brought " + bankIn.toLocaleString('en-US') + " gems to spend at shops."); } catch { /* */ }
         }
         if (!isRespawn && !resumeSnap) {
             try { chests.ensureNearSpawn(body); } catch { /* */ }

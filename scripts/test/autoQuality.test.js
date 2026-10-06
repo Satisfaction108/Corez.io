@@ -54,9 +54,9 @@ function run(L, t, until, dt, opts = {}) {
     // down: 30 ms frames step one rung after SLOW_FOR, then wait out the cooldown
     {
         const L = new Ladder(0);
-        let [t, steps] = run(L, 0, 2500, 30);
+        let [t, steps] = run(L, 0, TUNE.SLOW_FOR - 500, 30);
         assert.equal(steps.length, 0, 'not before SLOW_FOR');
-        [t, steps] = run(L, t, 4200, 30);
+        [t, steps] = run(L, t, TUNE.SLOW_FOR + 1200, 30);
         assert.equal(steps.length, 1, 'one step');
         assert.equal(L.rung, 1);
         assert.ok(L.on('fxLow') && !L.on('fewerFx'), 'Effects Low first');
@@ -76,7 +76,7 @@ function run(L, t, until, dt, opts = {}) {
         assert.equal(L.rung, 3, 'no cap on 40 ms frames');
         assert.ok(L.exhausted(), 'resolution next');
         const M = new Ladder(3);
-        run(M, 0, 4200, 30, { work: 20 });
+        run(M, 0, TUNE.SLOW_FOR + 1200, 30, { work: 20 });
         assert.equal(M.rung, 4, 'cap on 20 ms of work running at 30 ms');
     }
     // a run of hitches is lag even when the average is fine
@@ -89,6 +89,28 @@ function run(L, t, until, dt, opts = {}) {
             step = L.frame(t, dt, 6);
         }
         assert.equal(step, 1, 'hitches step down');
+    }
+    // sustained-dip rule: a short dip, one GC burst or a tab refocus never
+    // steps down; only slow frames held for several seconds do
+    {
+        const L = new Ladder(0);
+        let [t, steps] = run(L, 0, 60000, 16.7, { work: 5 });
+        // a 2.5 s dip to ~33 fps, then smooth again
+        [t, steps] = run(L, t, t + 2500, 30);
+        [t, steps] = run(L, t, t + 8000, 16.7, { work: 5 });
+        assert.equal(L.rung, 0, 'a short dip is not lag');
+        // one GC burst: 12 hitches in a second, then smooth
+        for (let i = 0; i < 12; i++) { t += 80; L.frame(t, 80, 6); }
+        [t, steps] = run(L, t, t + 8000, 16.7, { work: 5 });
+        assert.equal(L.rung, 0, 'one burst of hitches is not lag');
+        // a refocus: a long gap, then a few seconds of slow warm-up frames
+        t += 5000; L.frame(t, 5000, 2);
+        [t, steps] = run(L, t, t + TUNE.GRACE - 100, 60);
+        [t, steps] = run(L, t, t + 8000, 16.7, { work: 5 });
+        assert.equal(L.rung, 0, 'warm-up after a refocus is not lag');
+        // a sustained dip does step, once
+        [t, steps] = run(L, t, t + TUNE.SLOW_FOR + 1500, 30);
+        assert.deepEqual(steps.map(s => s[2]), [1], 'a sustained dip steps one rung');
     }
     // a hidden tab or a stall is not slow
     {
@@ -134,7 +156,7 @@ function run(L, t, until, dt, opts = {}) {
         assert.equal(M.rung, 2, 'and a pinned 30 steps back up');
         // the same 30 fps with heavy frames is a slow machine
         const N = new Ladder(0);
-        [t, steps] = run(N, 0, 4500, 1000 / 30, { work: 25 });
+        [t, steps] = run(N, 0, TUNE.SLOW_FOR + 1500, 1000 / 30, { work: 25 });
         assert.equal(N.rung, 1, 'heavy 30 fps steps down');
         // a jittery 30 (frames anywhere from 20 to 47 ms) is lag too
         const J = new Ladder(0);
@@ -159,7 +181,7 @@ function run(L, t, until, dt, opts = {}) {
     {
         const L = new Ladder(0);
         L.setSkip(['fewerFx', 'simpleTerrain']);
-        let [t] = run(L, 0, 4200, 30);
+        let [t] = run(L, 0, TUNE.SLOW_FOR + 1200, 30);
         assert.equal(L.rung, 1);
         [t] = run(L, t, t + TUNE.COOLDOWN + TUNE.SLOW_FOR + 500, 30);
         assert.equal(L.rung, 4, 'straight past the player\'s rungs to the cap');
@@ -180,6 +202,43 @@ function run(L, t, until, dt, opts = {}) {
         assert.ok(!L.active());
     }
 
+    // automatic resolution: small steps after a sustained dip, back up gradually
+    {
+        const { ResGovernor, RES, resBudget, resLevels } = Q;
+        const retina = 1728 * 1117 * 4;
+        assert.equal(resBudget(0, retina), Infinity, 'level 0 is native');
+        assert.ok(resBudget(1, retina) >= retina * 0.7, 'one step keeps most of the pixels');
+        for (let l = 1; l < 12; l++) assert.ok(resBudget(l + 1, retina) <= resBudget(l, retina), 'monotonic');
+        assert.equal(resBudget(40, retina), RES.FLOOR, 'never under the floor');
+        assert.ok(resLevels(retina) >= 4 && resLevels(1024 * 768) === 0, 'levels per screen');
+        const res = (G, t, until, dt, turn = () => true, max = 8) => {
+            const steps = [];
+            while (t < until) { t += dt; const s = G.frame(t, dt, turn, max); if (s) steps.push([Math.round(t), s, G.level]); }
+            return [t, steps];
+        };
+        const G = new ResGovernor(0);
+        let [t, steps] = res(G, 0, 20000, 16.7);
+        [t, steps] = res(G, t, t + 3000, 50);
+        [t, steps] = res(G, t, t + 6000, 16.7);
+        assert.equal(G.level, 0, 'a 3 s dip keeps full resolution');
+        t += 3000; G.frame(t, 3000);
+        [t, steps] = res(G, t, t + RES.GRACE - 100, 120);
+        assert.equal(G.level, 0, 'nor the frames after a refocus');
+        [t, steps] = res(G, t, t + 4000, 16.7);
+        [t, steps] = res(G, t, t + 4000, 30, () => false);
+        assert.equal(G.level, 0, 'the effects ladder goes first');
+        [t, steps] = res(G, t, t + RES.SLOW_FOR + 2000, 45);
+        assert.deepEqual(steps.map(s => s[2]), [1], 'a sustained dip: one small step');
+        [t, steps] = res(G, t, t + RES.UP_AFTER + RES.SETTLE + 1000, 16.7);
+        assert.deepEqual(steps.map(s => s[1]), [-1], 'smooth again: back up one level');
+        const W = new ResGovernor(0);
+        [t, steps] = res(W, 0, 30000, 120);
+        assert.ok(W.level >= 4, 'a genuinely weak device still walks down: ' + W.level);
+        assert.ok(steps.every((s, i) => !i || s[0] - steps[i - 1][0] >= RES.SETTLE), 'one level at a time');
+        res(W, t, t + 30000, 120, () => true, 2);
+        assert.equal(W.level, 2, 'clamped when the screen has fewer levels');
+    }
+
     // wiring
     const app = fs.readFileSync(path.join(CLIENT, 'app.js'), 'utf8');
     const glue = fs.readFileSync(path.join(CLIENT, 'autoQuality.js'), 'utf8');
@@ -187,12 +246,15 @@ function run(L, t, until, dt, opts = {}) {
     assert.match(app, /import \* as autoQ from '\.\/autoQuality\.js'/);
     assert.match(app, /fpsCap30 = on\("opt30Fps"\);[\s\S]{0,200}autoQ\.applyTo\(config\.graphical\)/, 'rungs on top of loadSettings');
     assert.match(app, /renderFrame\(tick\);\s*\n\s*try \{ autoQ\.frame\(/, 'drawn frames feed the ladder');
-    assert.match(app, /autoRes\.ema > 38 && autoQ\.resolutionTurn\(autoRes\.ema\)/, 'resolution waits its turn');
+    assert.match(app, /autoRes\.frame\(now, dt, \(ema\) => autoQ\.resolutionTurn\(ema\), autoResMax\(\)\)/, 'resolution waits its turn');
+    assert.match(app, /scale < nat \* 0\.99 \? "auto" : ""/, 'a lowered resolution is filtered, not nearest-neighbour grain');
+    const tr = fs.readFileSync(path.join(CLIENT, 'terrainRenderer.js'), 'utf8');
+    assert.match(tr, /L\.d > want \* 1\.5 && !L\.keep/, 'the last good rock tiles stay up while the new ones shade');
     assert.ok(!/submitToLocalStorage|\.checked\s*=/.test(glue), 'never writes the player\'s settings');
     assert.match(glue, /e\.isTrusted/, 'only a real click makes a setting manual');
     assert.match(glue, /Lowered effects to keep it smooth\. Change it in Settings\./);
     assert.match(juice, /autoTrim\(\) \? Q > 0\.25/, 'glitches stay on under the trim');
     assert.match(juice, /autoTrim\(\) && now - lastBurstAt < LOW_GLITCH_GAP/, 'and come rarer');
 
-    console.log('ok   auto quality: start, down, up, skip, capped, wiring');
+    console.log('ok   auto quality: start, down, sustained dip, up, skip, capped, resolution, wiring');
 })().catch(e => { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); });

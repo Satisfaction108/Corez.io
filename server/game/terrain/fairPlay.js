@@ -778,7 +778,11 @@ function edgeSafe(x, y, st, margin = TUNE.EDGE_MARGIN, aheadS = TUNE.EDGE_AHEAD_
     const rNow = st.r || 0;
     const rAhead = Math.max(0, rNow - Math.max(0, rNow - (st.n || rNow)) * (aheadS * 4));
     const m = Math.min(margin, rAhead * 0.3);
-    return Math.hypot(x - (st.cx || 0), y - (st.cy || 0)) < rAhead - m;
+    // where the sliding centre will be by then
+    const k = aheadS * 4;   // nx/ny: the centre 250 ms on (storm.snapshot)
+    const cx = (st.cx || 0) + (st.nx != null ? (st.nx - (st.cx || 0)) * k : 0);
+    const cy = (st.cy || 0) + (st.ny != null ? (st.ny - (st.cy || 0)) * k : 0);
+    return Math.hypot(x - cx, y - cy) < rAhead - m;
 }
 
 // ── storm at spawns ────────────────────────────────────────────────────

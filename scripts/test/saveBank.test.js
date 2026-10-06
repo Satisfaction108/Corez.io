@@ -368,7 +368,7 @@ test('e2e: persistent bank, Save & leave, $restore (local server, ports 6190-619
         b = await g2.bank();
         assert.equal(b.banked, 3000, 'back in the next session');
         assert.equal(b.kept, 3000, 'all of it brought in');
-        assert.ok(g2.said(/You brought 3,000 banked gems/), 'told at spawn');
+        assert.ok(g2.said(/You brought 3,000 gems/), 'told at spawn');
         const gem = g2.log.filter(e => e.type === 'GEM').pop().m;
         assert.equal(gem[3], 3000);
         assert.equal(gem[6], 3000, 'GEM carries the kept part for the HUD');

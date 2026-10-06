@@ -1052,22 +1052,30 @@ function drawNext(c, rt, now, W, H) {
     // when the plate came up, so it only ever empties
     const left = global.raidNextLeft ? global.raidNextLeft(now) : 0;
     if (!S.nextSpan && left > 0) S.nextSpan = Math.max(1, left);
-    const w = Math.min(470, W - 40), h = 60;
-    const x = W / 2 - w / 2, y = H - h - 22;
+    // three columns on the plate's midline: the countdown, the message over
+    // its bar, the Keep button (mouse only: a phone keeps the auto flow)
+    const w = Math.min(470, W - 32), h = 64, pad = 16, gap = 18;
+    const x = W / 2 - w / 2, y = H - h - 22, my = y + h / 2;
     c.save();
     c.globalAlpha *= k;
     A.hudPanel(c, x, y, w, h, { fill: HUD.solid, r: HUD.rBig, lip: 4 });
-    A.drawText("NEXT RAID IN", x + 20, y + 19, 10.5, HUD.text2, "left", true);
-    A.hudTitle(left > 0.5 ? Math.ceil(left) + "s" : "Now", x + 20, y + 39, 26, HUD.play, "left", 1, c);
-    // the Keep button (mouse only: a phone keeps the auto flow)
-    const bw = global.mobile ? 0 : 128, bh = 30;
+    // left: label over the number, the pair centred on the midline; the
+    // column is as wide as its widest state so nothing shifts as it counts
+    const lw = Math.ceil(Math.max(A.measureText("NEXT RAID IN", 10.5), A.hudTitleW("88s", 26)));
+    A.drawText("NEXT RAID IN", x + pad, my - 11, 10.5, HUD.text2, "left", true);
+    A.hudTitle(left > 0.5 ? Math.ceil(left) + "s" : "Now", x + pad, my + 8, 26, HUD.play, "left", 1, c);
+    const btn = !global.mobile && w > 380, bw = btn ? 128 : 0, bh = 32;
+    const mx = x + pad + lw + gap, mw = Math.max(40, x + w - pad - (btn ? bw + gap : 0) - mx);
+    // middle: the message, a gap, the bar the width of the column
     const line = S.keep ? "Kept: they stay up after you drop in." : left > 0.5 ? "You're in. Everyone drops in together." : "Dropping you in…";
-    A.drawText(line, x + w - 20 - (bw ? bw + 10 : 0), y + 29, fitSize(line, 14, w - 130 - (bw ? bw + 10 : 0), 9), HUD.head, "right", true);
-    A.hudBar(c, x + 96, y + h - 13, w - 116 - (bw ? bw + 10 : 0), 6, S.nextSpan ? clamp(left / S.nextSpan) : 0, HUD.play);
-    if (bw && w > 380) {
-        const bx = x + w - 14 - bw, by = y + h / 2 - bh / 2;
+    // sized on drawText's own font so it never runs past the bar
+    const lt = A.measureText(line, 14), ls = lt > mw ? Math.max(9, Math.floor(14 * mw / lt * 10) / 10) : 14;
+    A.drawText(line, mx, my - 7, ls, HUD.head, "left", true);
+    A.hudBar(c, mx, my + 7, mw, 6, S.nextSpan ? clamp(left / S.nextSpan) : 0, HUD.play);
+    if (btn) {
+        const bx = x + w - pad - bw, by = my - bh / 2;
         A.hudWell(c, bx, by, bw, bh, bh / 2, S.keep ? "rgba(242,184,60,0.28)" : HUD.well, S.keep ? HUD.gold : HUD.ink, 2);
-        A.drawText(S.keep ? "Kept" : "Keep results up", bx + bw / 2, by + bh / 2, S.keep ? 13 : 11.5, S.keep ? HUD.gold : HUD.head, "center", true);
+        A.drawText(S.keep ? "Kept" : "Keep results up", bx + bw / 2, my, S.keep ? 13 : 11.5, S.keep ? HUD.gold : HUD.head, "center", true);
         keepBox.x = bx; keepBox.y = by; keepBox.w = bw; keepBox.h = bh; keepBox.on = k > 0.6;
     } else keepBox.on = false;
     c.restore();
