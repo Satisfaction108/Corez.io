@@ -949,6 +949,9 @@ class Entity extends EventEmitter {
                 upgraded = true;
                 let upgrade = this.upgrades[number], upgradeClass = upgrade.class, upgradeBranch = upgrade.branch, redefineAll = upgrade.redefineAll;
                 upTier = upgrade.tier | 0;
+                // the tanks this life came through (respawnBuild.js: a Tier 5 build that comes back
+                // gated returns as the Tier 4 tank the player actually upgraded it from)
+                if (this.defs && this.defs.length === 1) (this.tankPath || (this.tankPath = [])).push(this.defs[0]);
                 if (redefineAll) {
                     for (let i = 0; i < upgradeClass.length; i++) upgradeClass[i] = ensureIsClass(...upgradeClass[i]);
                     this.upgrades = [];

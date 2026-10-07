@@ -253,4 +253,22 @@ function grammar(f) {
     });
     return out;
 }
-module.exports = { symmetry, radialOrder, overlap, turrets, stubby, layoutSig, sameLayout, covers, boltOn, kinds, mainKind, hybrid, lineOK, converted, deadGuns, decoSig, hullR, kind, armed, tCenter, na, grammar, sprayLook, MG_ASP, DRONE_ASP };
+// ---- facing: every barrel points where its tank fights (owner: "Mastodon with a trap on
+// backwards doesn't make sense"). A ram hull (smasher) fights with its body, nose first: it
+// carries no weapon barrels, only thrusters that push it into the fight (and auto turrets).
+// Thrusters (Tri-Angle's recoil guns) push a forward gun at its target, so they need one: on a
+// drone, trap or turret-only tank they are recoil vents dressed up as guns.
+// -> [{ i, why }] for the barrels that break it (empty when the layout reads right)
+const isThruster = x => x.typed && kind(x) === 'b' && Math.abs(na(x.a)) >= 120 && x.ss && x.ss.resist <= 0.75 && x.ss.recoil >= 1.5;
+function facing(f) {
+    const out = [], typed = f.guns.map((x, i) => [x, i]).filter(([x]) => x.typed);
+    if (f.smasher) {
+        for (const [x, i] of typed) if (!isThruster(x)) out.push({ i, why: 'ram hull with a ' + ({ t: 'trap launcher', d: 'drone spawner', s: 'swarm launcher', b: 'gun' })[kind(x)] + ' at ' + Math.round(na(x.a)) + ' deg' });
+        return out;
+    }
+    const thr = typed.filter(([x]) => isThruster(x));
+    const gunFront = typed.some(([x]) => !isThruster(x) && (kind(x) === 'b' || kind(x) === 's') && Math.abs(na(x.a)) <= 45);
+    if (thr.length && !gunFront) for (const [x, i] of thr) out.push({ i, why: 'thruster with no forward gun to push' });
+    return out;
+}
+module.exports = { symmetry, radialOrder, overlap, turrets, stubby, layoutSig, sameLayout, covers, boltOn, kinds, mainKind, hybrid, lineOK, converted, deadGuns, decoSig, hullR, kind, armed, tCenter, na, grammar, sprayLook, facing, isThruster, MG_ASP, DRONE_ASP };

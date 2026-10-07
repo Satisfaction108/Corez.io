@@ -745,7 +745,7 @@ function saveBuild(socket, body, raid) {
     const base = String(Config.spawn_class || 'basic');
     const upgraded = defs.length && !(defs.length === 1 && String(defs[0]) === base);
     if (!upgraded && !spent) { socket._fpBuild = null; return null; }
-    socket._fpBuild = { raid, defs, raw, at: now() };
+    socket._fpBuild = { raid, defs, raw, at: now(), via: (body.tankPath || []).slice(-6) };
     return socket._fpBuild;
 }
 // Points to place: the saved spread, trimmed to what the new body holds and to
@@ -770,7 +770,7 @@ function restoreBuild(socket, body, raid) {
             // the fresh body is the spawn class: clear its menu first, or the spawn class's
             body.upgrades = [];
             // a Tier 5 tank comes back as its Tier 4 parent until this life is 2x
-            const d0 = b.defs.length === 1 ? require('./tier5.js').gateDef(body, b.defs[0]).def : null;
+            const d0 = b.defs.length === 1 ? require('./tier5.js').gateDef(body, b.defs[0], b.via).def : null;
             body.define(b.defs.length === 1 ? d0 : b.defs);
         }
         const sk = body.skill;

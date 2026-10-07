@@ -1,11 +1,12 @@
 // The Core: the raid's last fight. When the final storm cycle starts, a huge
 // crystal heart surfaces beside the Center Vault and the last circle closes
-// on the pair of them. It takes a whole raid's focused fire (about 1.5-2
-// minutes, see healthFor), throws a shockwave every few seconds that shoves
+// on the pair of them. It takes a whole raid's focused fire (about a
+// minute, see healthFor), throws a shockwave every few seconds that shoves
 // tanks back and cracks the rock around it, and fights back as it breaks:
 // from SHARD_BELOW its six barrels fire bolts at whoever is close and it
-// sends out drones that chase them (both dodgeable, blocked by rock, killed
-// on vault and shop pads), from RAGE_BELOW a bit faster and more drones, and
+// sends out drones that chase them (both dodgeable, both shot down by
+// players' bullets, drones and traps, blocked by rock, killed on vault and
+// shop pads), from RAGE_BELOW a bit faster and more drones, and
 // the shockwave hurts. Hits are a share of the target's max health, metered
 // per target (CAP_S), so grown and tiny tanks last about as long. The
 // shockwave is telegraphed (FX corecharge), and so is the start of each
@@ -39,9 +40,12 @@ const PULSE_FAST_MS = 5500;        // below half health
 const PULSE_FIRST_MS = 6000;
 const PULSE_R = 620;
 const PULSE_PUSH = 24;             // outward kick at the rim of the Core, u/tick
-const PULSE_DMG = 0.08;            // of max health at the rim, from SHARD_BELOW (and PULSE_RAGE_DMG below RAGE_BELOW); was 0.12
-const PULSE_RAGE_DMG = 0.12;       // was 0.18
-const CHARGE_MS = 900;             // the telegraph before a shockwave
+const PULSE_DMG = 0.12;            // of max health hugging the Core, from SHARD_BELOW (and PULSE_RAGE_DMG below RAGE_BELOW); 0.08 Oct 6, back to 0.12 Oct 7 now it fades out and the dodge works
+// Oct 7 2026: it fades to nothing at PULSE_R (it was half strength out
+// there, so nobody in the arena could get clear of it): backing off on the
+// wind-up is the dodge
+const PULSE_RAGE_DMG = 0.18;       // 0.12 Oct 6, back to 0.18 Oct 7: standing in it is the careless death
+const CHARGE_MS = 1100;            // the telegraph before a shockwave (was 900)
 const SHARD_CHARGE_MS = 600;       // ...and before a volley of shards
 const PULSE_ROCK = 0.55;           // of a rock's max health
 const SHARD_BELOW = 0.5;
@@ -65,22 +69,33 @@ const BARREL_SPIN = 0.0025;        // rad per tick the barrel ring turns
 const BOLT_MS = 1200, BOLT_RAGE_MS = 850;
 const BOLT_TARGETS = 3, BOLT_RAGE_TARGETS = 4;
 const BOLT_R = 950;                // fires at tanks this close
-const BOLT_SPEED = 12;             // u/tick: ~0.8 s to cross 300, a side step dodges it
+// Oct 7 2026: bolts were noclip with 2000 health, so nothing a player fired
+// could touch them ("I can't even kill its bullets"), and at 12 u/tick they
+// outran an average bullet (basic ~9). Now they fly at bullet speed (~1.1 s
+// to cross 300) and anyone's shots meet them: every hostile bullet, drone or
+// trap that touches one takes BOLT_HP off it (its damage; traps count
+// double), a hit blunts it (what lands scales with what is left) and it
+// breaks at zero. About 5 shots of an average basic, 2-3 shells, 3 drones.
+const BOLT_SPEED = 9;              // u/tick (was 12)
 const BOLT_RANGE = 1100;
 const BOLT_RADIUS = 12;
-const BOLT_HIT = 0.03;             // of max health a bolt, rage too
+const BOLT_HIT = 0.045;            // of max health a bolt at full strength, rage too (was 0.03: most are shot down or blunted now)
+const BOLT_HP = 70;                // in shot damage: an average basic bullet is ~16
+const BOLT_TRAP_MULT = 2;          // a trap is a wall: it counts double
+const BOLT_BLOCK_WEAR = 0.5;       // a drone or trap that stops one loses this share of its max health (scaled by the bolt's strength)
 const DRONE_MAX = 4, DRONE_RAGE_MAX = 6;
 const DRONE_MS = 2600, DRONE_RAGE_MS = 1700;
 const DRONE_SPEED = 5.5;
 const DRONE_SENSE = 900;           // chases tanks this close to it...
 const DRONE_LEASH = 1200;          // ...and this close to the Core
 const DRONE_LIFE_MS = 15_000;
-const DRONE_HP = 60;               // a few shots from anyone
+const DRONE_HP = 120;              // a few shots from anyone (~0.8 s of an average basic; was 60, shot down before it ever touched anyone)
 const DRONE_HIT = 0.025;           // of max health a touch...
 const DRONE_HIT_MS = 700;          // ...at most this often from one drone
 // a target's Core damage (bolts and drones, not the shockwave) refills at
 // CAP_S of max health a second, up to CAP_BURST
-const CAP_S = 0.03, CAP_BURST = 0.045;const LAST_HIT_GEMS = 1000;
+const CAP_S = 0.035, CAP_BURST = 0.06;   // was 0.03 / 0.045
+const LAST_HIT_GEMS = 1000;
 const CORE_BANK = 20_000;          // split among the players who broke it
 const MIN_SHARE_AT = 0.02;         // dealt at least this share: never less than MIN_SHARE
 const MIN_SHARE = 500;
@@ -99,7 +114,12 @@ const GEM_TRAVEL = 21;             // a gem launched at v slides about 21 * v (m
 // apply to it.
 // Oct 3: three quarters of what it was (halved felt too quick), so a full
 // raid breaks it in about a minute and a half.
-const HP_BASE = 112_500, HP_HUMAN = 67_500, HP_BOT = 18_750, HP_MIN = 225_000, HP_MAX = 1_650_000;
+// Oct 7 2026 (owner): about half of that, so three average players and a bot
+// break it in about 2 minutes in the balance sim (it was ~3) and a full raid
+// in ~40-45 s. Shootable bolts soak some of the fire, which is why it took
+// more than the first cut (75_000 / 45_000 / 12_500 / 150_000 / 1_100_000).
+// Was 112_500 / 67_500 / 18_750 / 225_000 / 1_650_000.
+const HP_BASE = 58_500, HP_HUMAN = 35_000, HP_BOT = 9_750, HP_MIN = 117_000, HP_MAX = 855_000;
 function healthFor(humans, bots) {
     return Math.round(Math.max(HP_MIN, Math.min(HP_MAX, HP_BASE + HP_HUMAN * humans + HP_BOT * bots)));
 }
@@ -135,6 +155,9 @@ let nextBoltAt = 0;
 let nextDroneAt = 0;
 let phase = 0;          // 0 calm, 1 firing, 2 rage: a rise is telegraphed
 let barrelAng = 0;let zone = null;
+// what the fight did (tests and the balance sim read it through _state)
+const freshStats = () => ({ bolts: 0, boltHits: 0, shotHits: 0, boltsShot: 0, drones: 0, dronesShot: 0, droneHits: 0, pulses: 0, pulseHits: 0 });
+let stats = freshStats();
 let hitters = new Map();
 let coreGems = 0;
 let brokeBy = "";
@@ -287,6 +310,7 @@ function spawnCore() {
     nextPulseAt = Date.now() + PULSE_FIRST_MS;
     nextShardAt = 0;
     nextBoltAt = 0; nextDroneAt = 0; phase = 0;
+    stats = freshStats();
     const fmt = (n) => n.toLocaleString('en-US');
     if (hooks.announce) hooks.announce('core', "THE CORE HAS SURFACED", "Break it and " + fmt(coreGems) + " gems blow out across the circle. Bank what you grab.", 4800);
     if (hooks.feed) hooks.feed({ core: 1, spawn: 1, g: coreGems });
@@ -467,8 +491,78 @@ function fireBolts(t, fighters) {
             o.velocity.x = 0; o.velocity.y = 0;
             o.facing = Math.atan2(dy, dx);
         } catch (e) { lastErr = String(e && e.stack || e); continue; }
-        bolts.push({ e: o, vx: dx / d * BOLT_SPEED, vy: dy / d * BOLT_SPEED, left: BOLT_RANGE, at: t });
+        bolts.push({ e: o, vx: dx / d * BOLT_SPEED, vy: dy / d * BOLT_SPEED, left: BOLT_RANGE, at: t, hp: BOLT_HP });
+        stats.bolts++;
     }
+}
+
+// Hostile shots that can meet a bolt: anything a tank fired (bullets, drones,
+// traps, swarms, minions), never the Core's own and never rock-only perk shots
+const SHOT_TYPES = new Set(['bullet', 'drone', 'trap', 'swarm', 'satellite', 'minion']);
+function shotOfTank(o) {
+    if (!o || o.isCoreShot || o.rockOnly || !SHOT_TYPES.has(o.type) || o.isGhost || (o.isDead && o.isDead())) return false;
+    if (core && o.team === core.team) return false;
+    if (!(o.health && o.health.amount > 0)) return false;
+    let root = o.master, hops = 0;
+    while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+    return !!root && root !== o && (root.isPlayer || root.isBot || root.type === 'tank');
+}
+// the shots near a bolt's path this tick (global.grid is the engine's
+// collision grid; it holds this tick's entities)
+function shotsNear(x0, y0, x1, y1, pad) {
+    const g = global.grid;
+    if (!g || !g.query) return [];
+    const out = [];
+    for (const o of g.query(Math.min(x0, x1) - pad, Math.min(y0, y1) - pad, Math.max(x0, x1) + pad, Math.max(y0, y1) + pad)) {
+        if (shotOfTank(o)) out.push(o);
+    }
+    return out;
+}
+// First touch (0..1 of the step) between a bolt moving a -> b and a shot
+// moving q0 -> q1 over the same step, or -1. Relative motion, closest
+// approach, so neither can tunnel through the other.
+function sweptTouch(ax, ay, bx, by, qx0, qy0, qx1, qy1, r) {
+    const rx = ax - qx0, ry = ay - qy0;
+    const dx = (bx - ax) - (qx1 - qx0), dy = (by - ay) - (qy1 - qy0);
+    const c = rx * rx + ry * ry - r * r;
+    if (c <= 0) return 0;
+    const a = dx * dx + dy * dy;
+    if (!(a > 1e-9)) return -1;
+    const bq = rx * dx + ry * dy;
+    const disc = bq * bq - a * c;
+    if (bq >= 0 || disc < 0) return -1;
+    const s = (-bq - Math.sqrt(disc)) / a;
+    return s <= 1 ? s : -1;
+}
+// A shot meets bolt `s`: the bolt loses the shot's damage, the shot is
+// spent (the one that breaks it flies on with the damage it had to spare). Returns true if it broke.
+function shotHitsBolt(s, o) {
+    const blocker = o.type === 'trap' || o.type === 'drone' || o.type === 'satellite' || o.type === 'minion';
+    const power = Math.max(0, +o.damage || 0) * (o.type === 'trap' ? BOLT_TRAP_MULT : 1);
+    const before = s.hp;
+    const str = before / BOLT_HP;
+    s.hp -= power;
+    stats.shotHits++;
+    const sp = Math.hypot(s.vx, s.vy) || 1, ux = s.vx / sp, uy = s.vy / sp;
+    if (blocker && o.health && o.health.max > 0) {
+        // a drone or trap takes the hit like a body: worn and knocked back
+        o.health.amount -= o.health.max * BOLT_BLOCK_WEAR * str;
+        if (o.velocity) { o.velocity.x += ux * 4 * str; o.velocity.y += uy * 4 * str; }
+        if (o.health.amount <= 0) { try { o.kill(); } catch { /* */ } }
+    } else if (!(power > before)) {
+        // a bullet is spent on it, as bullet meets bullet
+        try { o.kill(); } catch { /* */ }
+    } else {
+        // the one that breaks it flies on with what it had to spare, a little slower
+        o.damage = power - before;
+        if (o.velocity) { o.velocity.x *= 0.85; o.velocity.y *= 0.85; }
+    }
+    if (s.hp <= 0) { stats.boltsShot++; return true; }
+    // the bolt takes the hit where you can see it: smaller, and knocked slower
+    const k = Math.min(1, power / BOLT_HP);
+    s.vx *= 1 - 0.25 * k; s.vy *= 1 - 0.25 * k;
+    try { s.e.SIZE = BOLT_RADIUS * (0.55 + 0.45 * s.hp / BOLT_HP); } catch { /* */ }
+    return false;
 }
 
 function moveBolts(t, fighters, padList) {
@@ -482,14 +576,30 @@ function moveBolts(t, fighters, padList) {
         if (!dead) {
             const steps = Math.max(1, Math.ceil(BOLT_SPEED * dt / BOLT_RADIUS));
             const sx = s.vx * dt / steps, sy = s.vy * dt / steps;
+            // players' shots in reach of this tick's path
+            const shots = shotsNear(e.x, e.y, e.x + s.vx * dt, e.y + s.vy * dt, BOLT_RADIUS + 60);
             for (let k = 0; k < steps && !dead; k++) {
+                const ax = e.x, ay = e.y;
                 e.x += sx; e.y += sy;
                 s.left -= Math.hypot(sx, sy);
+                // shots first: they meet it before it reaches the tank behind them
+                for (let j = 0; j < shots.length && !dead; j++) {
+                    const o = shots[j];
+                    if (!o || !shotOfTank(o)) { shots[j] = null; continue; }
+                    const ovx = (o.velocity && o.velocity.x) || 0, ovy = (o.velocity && o.velocity.y) || 0;
+                    const f0 = 1 - k / steps, f1 = 1 - (k + 1) / steps;
+                    const r = BOLT_RADIUS * (0.55 + 0.45 * Math.max(0, s.hp) / BOLT_HP) + (o.realSize || o.size || 6);
+                    if (sweptTouch(ax, ay, e.x, e.y, o.x - ovx * dt * f0, o.y - ovy * dt * f0, o.x - ovx * dt * f1, o.y - ovy * dt * f1, r) < 0) continue;
+                    shots[j] = null;
+                    if (shotHitsBolt(s, o)) dead = true;
+                }
+                if (dead) break;
                 for (const b of fighters) {
                     if (!alive(b)) continue;
                     const r = BOLT_RADIUS + (b.realSize || b.size || 30);
                     if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 > r * r) continue;
-                    projectileHit(b, BOLT_HIT, t);
+                    // a blunted bolt lands what is left of it
+                    if (projectileHit(b, BOLT_HIT * Math.max(0, s.hp) / BOLT_HP, t) > 0) stats.boltHits++;
                     dead = true;
                     break;
                 }
@@ -529,6 +639,7 @@ function spawnDrone(t) {
         o.velocity.x = Math.cos(a) * DRONE_SPEED; o.velocity.y = Math.sin(a) * DRONE_SPEED;
     } catch (e) { lastErr = String(e && e.stack || e); return null; }
     drones.push({ e: o, until: t + DRONE_LIFE_MS, hits: new Map() });
+    stats.drones++;
     return o;
 }
 
@@ -537,8 +648,10 @@ function tickDrones(t, fighters, padList) {
     const padGeom = require('./padGeom.js');
     for (let i = drones.length - 1; i >= 0; i--) {
         const d = drones[i], e = d.e;
-        let dead = !e || e.isDead?.() || (e.health && e.health.amount <= 0) || t >= d.until
+        const shot = !!e && ((e.isDead && e.isDead()) || (e.health && e.health.amount <= 0));
+        let dead = !e || shot || t >= d.until
             || Math.hypot(e.x - core.x, e.y - core.y) > DRONE_LEASH + 400;
+        if (shot) stats.dronesShot++;
         // a pad kills it outright, and the rim is a wall before that
         if (!dead && onAnyPad(padList, e.x, e.y, 0)) dead = true;
         if (dead) {
@@ -556,7 +669,7 @@ function tickDrones(t, fighters, padList) {
             // a touch: the share, at most every DRONE_HIT_MS per target
             if (dd <= er + (b.realSize || b.size || 30) + 6 && t - (d.hits.get(b.id) || 0) >= DRONE_HIT_MS) {
                 d.hits.set(b.id, t);
-                projectileHit(b, DRONE_HIT, t);
+                if (projectileHit(b, DRONE_HIT, t) > 0) stats.droneHits++;
             }
         }
         // chase, or circle the Core
@@ -600,6 +713,7 @@ function attack(t, list) {
 }
 
 function pulse(t, fighters) {
+    stats.pulses++;
     if (hooks.fxAt) hooks.fxAt(core.x, core.y, 'corepulse');
     const rage = frac() < RAGE_BELOW;
     const cr = core.realSize || core.size || 100;
@@ -612,7 +726,7 @@ function pulse(t, fighters) {
         const kick = PULSE_PUSH * (0.35 + 0.65 * k);
         b.velocity.x += dx / d * kick;
         b.velocity.y += dy / d * kick;
-        if (frac() < SHARD_BELOW) hurt(b, (rage ? PULSE_RAGE_DMG : PULSE_DMG) * (0.5 + 0.5 * k), t);
+        if (frac() < SHARD_BELOW && k > 0) { hurt(b, (rage ? PULSE_RAGE_DMG : PULSE_DMG) * k, t); stats.pulseHits++; }
     }
     const grid = tg();
     if (!grid || !grid.rocks) return;
@@ -753,12 +867,12 @@ function debugHp(f, by) {
     return frac();
 }
 
-module.exports = { onSafePad, projectileHit, SHARD_ATTACK, BOLT_HIT, DRONE_HIT, DRONE_MAX, DRONE_RAGE_MAX, CAP_S, CAP_BURST, PULSE_RAGE_DMG,
-    _brood: () => ({ bolts: bolts.map(b => b.e), drones: drones.map(d => d.e) }),
+module.exports = { onSafePad, projectileHit, SHARD_ATTACK, BOLT_HIT, BOLT_HP, BOLT_SPEED, BOLT_TRAP_MULT, sweptTouch, DRONE_HIT, DRONE_MAX, DRONE_RAGE_MAX, CAP_S, CAP_BURST, PULSE_RAGE_DMG,
+    _brood: () => ({ bolts: bolts.map(b => b.e), boltHp: bolts.map(b => b.hp), drones: drones.map(d => d.e) }),
     _debugDrone: (x, y, t = Date.now()) => { if (!core) return null; const o = spawnDrone(t); if (o) { o.x = x; o.y = y; o.velocity.x = 0; o.velocity.y = 0; } return o; },
     ON, CORE_OFFSET, ARENA_R, LANE_R, COVER_R, ZONE_R, PULSE_R, SHARD_BELOW, RAGE_BELOW, LAST_HIT_GEMS, LAST_HIT_PTS,
     HP_MAX, CORE_BANK, MIN_SHARE, SPRAY_GEMS, splitPayout, SHARD_DMG, SHARD_RAGE_DMG, PULSE_DMG, CHARGE_MS, SHARD_CHARGE_MS, SHARD_FLIGHT_MS,
     COLLAPSE_MS, SPEW_PIECES, spew,
     attach, enabled, newRaid, clear, tick, snapshot, current, siteOf, planSite, carveArena, healthFor, gemsFor, erupt,
-    debugSpawn, debugHp, _state: () => ({ state, warned, lastErr, shards: shards.length, bolts: bolts.length, drones: drones.length, phase, frac: frac(), charge: charge && charge.kind }),
+    debugSpawn, debugHp, _state: () => ({ state, warned, lastErr, shards: shards.length, bolts: bolts.length, drones: drones.length, phase, frac: frac(), charge: charge && charge.kind, stats: { ...stats } }),
 };

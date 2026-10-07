@@ -558,11 +558,11 @@ const global = {
     tankTree: (type) => {
         if (type === "open") {
             if (global.died) return;
-            global.showTree = true;
-            global.pullUpgradeMenu = true;
-            global.pullSkillBar = true;
-            global.socket.talk('T');
+            // Oct 7: T shows the /tanks tree over the game (the old in-game
+            // tree broke on the expanded tree: one column, blank previews)
+            tanksOverlay(true);
         } else if (type === "exit") {
+            tanksOverlay(false);
             global.showTree = false;
             global.renderTankTree = false;
             global.pullUpgradeMenu = false;
@@ -689,3 +689,39 @@ const global = {
 };
 export { global };
 window.global = global;
+
+// The tank tree over the game (T): /tanks in a frame, closed by its X, a click
+// outside it, T or Esc (the page posts { dwTanks: "close" } for keys pressed in it)
+let tanksOv = null;
+function tanksOverlay(on) {
+    if (typeof document === "undefined") return;
+    if (on) {
+        if (!tanksOv) {
+            tanksOv = document.createElement("div");
+            tanksOv.id = "dwTanksOverlay";
+            tanksOv.style.cssText = "position:fixed;inset:0;z-index:60;background:rgba(10,8,14,0.62);display:flex;align-items:center;justify-content:center;";
+            const box = document.createElement("div");
+            box.style.cssText = "position:relative;width:min(1400px,92vw);height:min(900px,88vh);border-radius:14px;border:3px solid #120e15;box-shadow:0 8px 30px rgba(0,0,0,0.5);background:#1c1722;";
+            const fr = document.createElement("iframe");
+            fr.src = "/tanks";
+            fr.title = "Every tank";
+            fr.style.cssText = "width:100%;height:100%;border:0;display:block;border-radius:11px;";
+            const x = document.createElement("button");
+            x.textContent = "\u2715";
+            x.setAttribute("aria-label", "Close the tank tree");
+            x.style.cssText = "position:absolute;top:-17px;right:-17px;width:38px;height:38px;border-radius:50%;border:3px solid #120e15;background:#e04848;color:#fff;font:bold 18px sans-serif;cursor:pointer;z-index:2;";
+            x.onclick = () => global.tankTree("exit");
+            tanksOv.onclick = (e) => { if (e.target === tanksOv) global.tankTree("exit"); };
+            box.appendChild(fr); box.appendChild(x); tanksOv.appendChild(box);
+            document.body.appendChild(tanksOv);
+            window.addEventListener("message", (e) => { if (e && e.data && e.data.dwTanks === "close") global.tankTree("exit"); });
+            window.addEventListener("keydown", (e) => { if (tanksOv && tanksOv.style.display !== "none" && e.key === "Escape") global.tankTree("exit"); });
+        }
+        tanksOv.style.display = "flex";
+        try { global.canvas && global.canvas.releaseMovement && global.canvas.releaseMovement(); } catch (e) { /* */ }
+    } else if (tanksOv && tanksOv.style.display !== "none") {
+        tanksOv.style.display = "none";
+        try { if (global.canvas && global.canvas.tankTreeProps) global.canvas.tankTreeProps.enabled = false; } catch (e) { /* */ }
+        try { global.canvas && global.canvas.cv && global.canvas.cv.focus(); } catch (e) { /* */ }
+    }
+}

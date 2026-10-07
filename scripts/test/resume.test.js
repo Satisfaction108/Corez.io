@@ -177,7 +177,7 @@ test('push: a grown hull buried in solid rock cracks out where it is', () => {
     const tank = spawnTank(sock);
     grow(tank, 200000);
     const r = tank.realSize;
-    assert.ok(tank.growthMult > 5 && r > 100, 'grown: ' + tank.growthMult.toFixed(2) + 'x r ' + r.toFixed(0));
+    assert.ok(tank.growthMult > 3.9 && r > 80, 'the biggest a tank gets: ' + tank.growthMult.toFixed(2) + 'x r ' + r.toFixed(0));
     tank.invuln = false;
     const s = solidSpot(r, []);
     tank.x = s.x; tank.y = s.y;

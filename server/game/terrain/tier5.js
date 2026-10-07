@@ -98,12 +98,20 @@ function t4ParentsOf(key) {
     }
     return parentCache.get(key) || [];
 }
+// the Tier 4 parent of Tier 5 tank `key` that a life came through (via: the classes it upgraded
+// from, entity.tankPath), else the tree's first. Oct 7 2026: Architect -> Glacis came back as
+// Mega-3, Glacis's first parent in the tree, not the Architect the player had picked.
+function t4ParentFor(key, via) {
+    const ps = t4ParentsOf(keyOfClass(key));
+    if (Array.isArray(via)) for (let i = via.length - 1; i >= 0; i--) { const k = keyOfClass(via[i]); if (k && ps.includes(k)) return k; }
+    return ps[0] || null;
+}
 // A saved build's class for this body: a Tier 5 tank this life has not earned
-function gateDef(body, def) {
+function gateDef(body, def, via = null) {
     if (!active() || has(body)) return { def, gated: false };
     const k = keyOfClass(def);
     if (!k || tierOf(k) !== 5) return { def, gated: false };
-    const p = t4ParentsOf(k)[0];
+    const p = t4ParentFor(k, via);
     return p ? { def: p, gated: true } : { def, gated: false };
 }
 
@@ -137,4 +145,4 @@ function warmStep() {
     if (warmQ.length) setTimeout(warmStep, 4); else warming = false;
 }
 
-module.exports = { warm, T5_GROWTH, T5_ENGINE_TIER, setRaidOf, active, has, note, open, tierOf, bodyTier, t4ParentsOf, gateDef, youFields };
+module.exports = { warm, T5_GROWTH, T5_ENGINE_TIER, setRaidOf, active, has, note, open, tierOf, bodyTier, t4ParentsOf, t4ParentFor, gateDef, youFields };

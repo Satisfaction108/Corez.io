@@ -1203,6 +1203,29 @@ test('gem magnet: back on the shelf, pulls from almost twice as far for 5 minute
     cleanup(t);
 });
 
+test('bulwark: raises the dug-out ring out to 420 fast, and speeds up rock already rising on its own', () => {
+    clearDisc(AX, AY, 700);
+    const t = tank(AX, AY, mkSocket());
+    const B = shop.BULWARK;
+    // one cell already rising at the normal pace, inside the ring
+    const ring = [...grid.rocks.values()].filter(r => r.worldPoly && !r.canyon && !r.alive && Math.hypot(r.worldCx - AX, r.worldCy - AY) > 200 && Math.hypot(r.worldCx - AX, r.worldCy - AY) < 380);
+    assert.ok(ring.length > 4, 'dug-out cells in the ring');
+    const slow = ring[0];
+    slow.noRegrowUntil = 0;
+    grid.startRegrow(slow, clock, 0);
+    assert.equal(slow.growRate, 1, 'rising at the normal pace');
+    const n = shop.bulwarkRaise(grid, t, clock);
+    assert.ok(n >= Math.min(B.max, ring.length), 'raised ' + n);
+    assert.ok(slow.growFast && slow.growRate === B.rate, 'the slow one sped up: ' + slow.growRate);
+    for (const r of ring) if (r.growing) assert.ok(r.growRate >= B.rate, 'quick rise');
+    const far = [...grid.rocks.values()].filter(r => r.growing && Math.hypot(r.worldCx - AX, r.worldCy - AY) > B.r + 1);
+    assert.equal(far.length, 0, 'nothing past the ring');
+    const under = [...grid.rocks.values()].filter(r => r.growing && Math.hypot(r.worldCx - AX, r.worldCy - AY) < (t.realSize || 30) + B.gap - 1);
+    assert.equal(under.length, 0, 'nothing under the tank');
+    for (const r of grid.rocks.values()) if (r.growing) { r.growing = false; r.growFast = false; r.growRate = 1; }
+    cleanup(t);
+});
+
 test('kit effects: every kit item sends its look, the decoy only to its owner', () => {
     clearDisc(AX, AY, 1000);
     const s = mkSocket();

@@ -92,6 +92,9 @@ function save(socket, body, raid) {
         def: d || (prev && prev.def) || null,
         name: d ? String(d.LABEL || body.label || 'Tank') : (prev && prev.name) || '',
         raw: sum(raw) ? raw : (prev ? prev.raw : raw),
+        // the tanks this life upgraded through (entity.tankPath): a gated Tier 5 build names and
+        // comes back as the Tier 4 tank the player came from, not the tree's first parent
+        via: d ? (body.tankPath || []).slice(-6) : (prev && prev.via) || [],
     };
     remember(socket, socket._rbLast);
     return socket._rbLast;
@@ -107,7 +110,7 @@ function youFields(socket, body) {
     const out = {};
     if (l.def && l.name) out.lt = l.name;
     // a Tier 5 build comes back as its Tier 4 parent until this life is 2x (tier5.js)
-    const g = l.def ? tier5.gateDef(body || { socket }, l.def) : null;
+    const g = l.def ? tier5.gateDef(body || { socket }, l.def, l.via) : null;
     if (g && g.gated) { const p = cls(g.def); if (p) { out.lt = String(p.LABEL || out.lt); out.ltg = Math.round(tier5.T5_GROWTH * 100); } }
     if (sum(l.raw)) out.ls = 1;
     if (l.def && body && body.defs && body.defs.length === 1) {
@@ -139,7 +142,10 @@ function stepTo(body, c) {
 }
 function applyTank(body, l) {
     if (!l || !l.def || !body.defs || body.defs.length !== 1) return false;
-    const p = pathTo(body.defs[0], l.def);
+    // through the Tier 4 tank this build came from (a Tier 5 tank has several parents; a gated one stops there)
+    const t4 = tier5.tierOf(l.def) === 5 ? tier5.t4ParentFor(l.def, l.via) : null;
+    const head = t4 ? pathTo(body.defs[0], t4) : null;
+    const p = head ? [...head, cls(l.def)] : pathTo(body.defs[0], l.def);
     if (!p || !p.length) return false;
     let moved = false;
     for (const c of p) { if (!stepTo(body, c)) break; moved = true; }

@@ -158,7 +158,7 @@ test('kills: ELIMINATED, DOUBLE KO, TRIPLE KO... and the big words', async () =>
     assert.deepEqual([1, 2, 3, 4, 5, 7].map(J.multiKillWord), ['ELIMINATED', 'DOUBLE KO', 'TRIPLE KO', 'QUAD KO', 'RAMPAGE x5', 'RAMPAGE x7']);
     assert.equal(J.bigKillWord('shutdown', 'SHUTDOWN: kai'), 'SHUTDOWN');
     assert.equal(J.bigKillWord('revenge', 'REVENGE: kai'), 'REVENGE');
-    assert.equal(J.bigKillWord('huntkill', 'BOUNTY CASHED: kai'), 'BOUNTY CASHED');
+    assert.equal(J.bigKillWord('huntkill', 'HUNTED DOWN: kai'), 'HUNTED DOWN');
     assert.equal(J.bigKillWord('kill', 'GIANT DOWN: kai'), 'GIANT DOWN');
     assert.equal(J.bigKillWord('kill', 'ELIMINATED: kai'), '');
     assert.equal(J.killWho('ELIMINATED: mega_blaze  (420 gems dropped)'), 'mega_blaze');

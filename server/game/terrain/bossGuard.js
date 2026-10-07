@@ -40,6 +40,9 @@ const NEWBIE_DMG_MIN = 0.25, NEWBIE_FLOOR_AT = 0.25, ATTACK_MS = 8000, NEWBIE_AI
 
 let enabled = process.env.ROYALE_BOSS_CAP !== '0';
 let rateCap = process.env.ROYALE_BOSS_RATE_CAP === '1';
+// Oct 7: the expansion's damage floor made bosses melt in seconds; every
+// tank's damage into a raid boss counts this much (same for everyone)
+const TANK_DMG_MULT = (() => { const v = parseFloat(process.env.ROYALE_BOSS_DMG_MULT); return v > 0 ? v : 0.5; })();
 function setRateCap(v) { rateCap = !!v; }
 let spare = process.env.ROYALE_BOSS_NEWBIE === '1';
 let freshOn = process.env.ROYALE_BOSS_FRESH !== '0';
@@ -77,7 +80,7 @@ function capHit(boss, src, amount, now) {
         : src.type === 'drone' ? DRONE_HIT_SHARE
         : src.type === 'bullet' && (src.size || 0) >= BIG_SHOT_SIZE ? BIG_SHOT_HIT_SHARE
         : HIT_SHARE;
-    let dmg = Math.min(amount, pool * share);
+    let dmg = Math.min(amount * TANK_DMG_MULT, pool * share);
     if (!rateCap) return note(boss, root0, dmg);
     const ticks = now == null && global.gameTick != null;
     if (now == null) now = ticks ? global.gameTick : Date.now();
@@ -195,7 +198,7 @@ function regenGate(boss, normal, now = Date.now()) {
     boss.regenEvery = enabled && now - (boss.hitAt || 0) < FIGHT_MS ? 1e9 : normal;
 }
 
-module.exports = {
+module.exports = { TANK_DMG_MULT,
     HIT_SHARE, DRONE_HIT_SHARE, BIG_SHOT_HIT_SHARE, BIG_SHOT_SIZE, TANK_SHARE_S, ALL_SHARE_S, FIGHT_MS, NEWBIE_DMG_MIN, ATTACK_MS,
     capHit, regenGate, setEnabled, isEnabled, setRateCap, poolOf, angerOf, ANGER_AT, ANGER_FULL, ANGER_MIN,
     setSpare, setFresh, freshSpared, FRESH_LIFE_MS, RAID_EARLY_MS, BASIC_LIFE_MS, FRESH_DMG, newnessOf, intoPlayer, aimPenalty, pickTarget, dropNewbieLock,

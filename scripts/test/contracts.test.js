@@ -35,6 +35,9 @@
 // pacing's own supply drop is the fallback for when the sky drops
 // (supplyDrops.js, tested in raidHeat.test.js) are off; this file tests that path
 if (process.env.ROYALE_SUPPLY == null) process.env.ROYALE_SUPPLY = '0';
+// bounties are off in play since Oct 7; the pacing test covers them switched on
+process.env.ROYALE_BOUNTY = '1';
+process.env.ROYALE_LEADER_BOUNTY = '1';
 
 const assert = require('node:assert/strict');
 const fs = require('fs');

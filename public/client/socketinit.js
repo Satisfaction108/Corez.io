@@ -1605,6 +1605,16 @@ let incoming = async function(message, socket) {
                     try { scoreText.ptsLabel(global.ptsPops || (global.ptsPops = scoreText.ptsPops()), +m[2] || 0, String(m[1] || ""), performance.now()); } catch (e) { /* */ }
                     break;
                 }
+                // debug replies (DBG ... under ROYALE_DEBUG answer as KC 'dbg', or a
+                // JSON payload under another kind): the console and window.dwDbgLog,
+                // never a callout (raw JSON used to print in the middle of the screen)
+                if (m[0] === "dbg" || /^\s*[{[]/.test(String(m[1] || ""))) {
+                    const log = window.dwDbgLog || (window.dwDbgLog = []);
+                    log.push({ kind: m[0], text: String(m[1] || ""), at: Date.now() });
+                    if (log.length > 30) log.shift();
+                    try { console.info("[DBG " + m[0] + "]", m[1]); } catch (e) { /* */ }
+                    break;
+                }
                 // the Core's share banks too (raidHeat slams the number)
                 if (m[0] === "corepay") {
                     const n = +String(m[1] || "").replace(/[^0-9]/g, "") || 0;

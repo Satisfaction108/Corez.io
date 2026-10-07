@@ -154,7 +154,8 @@ test('chest labels: rarity in words, constant strings, faded by distance and und
     const fn = app.slice(app.indexOf('function drawChestLabel('), app.indexOf('function drawChestLabel(') + 900);
     // Oct 6: queued for the de-overlap pass, which fades it under HUD text (labelLayout.js)
     assert.match(fn, /worldLabel\(c, CHEST_LABEL\[k\], x, ly, size, CHEST_LABEL_COL\[k\], a, /);
-    assert.match(app, /const a = it\.alpha \* \(it\.blocked \? 0\.3 : 1\) \* labelAlpha\(it\.x, ly, it\.w, it\.h\);/);
+    // (and toward the screen edges: labelNear, Oct 7 2026 declutter)
+    assert.match(app, /const a = it\.alpha \* \(it\.blocked \? 0\.3 : 1\) \* labelAlpha\(it\.x, ly, it\.w, it\.h\) \* labelNear\(it\.x, ly\);/);
     assert.ok(!/\+ "|`|\[\]|\{ /.test(fn.replace(/CHEST_LABEL(_COL)?\[k\]/g, '')), 'no strings or objects built per frame');
 });
 
@@ -171,7 +172,7 @@ test('distances: metres everywhere', async () => {
     // the server's range texts
     const ab = ssrc('game/terrain/abilities.js'), sh = ssrc('game/terrain/shop.js');
     for (const t of ['up to 900m away', 'up to 550m away', 'within 2.5km']) assert.ok(ab.includes(t), t);
-    for (const t of ['within 1.5km', 'up to 500m away', 'within 150m', 'up to 420m', 'within 260m']) assert.ok(sh.includes(t), t);
+    for (const t of ['within 1.5km', 'up to 500m away', 'within 150m', 'up to 420m', 'within 420m']) assert.ok(sh.includes(t), t);
     assert.ok(!/\b\d{3,}\s+away\b/.test(ab + sh), 'no bare numbers before "away"');
 });
 

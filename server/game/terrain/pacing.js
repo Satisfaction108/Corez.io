@@ -25,8 +25,10 @@ const SUPPLY_DIST = 750;
 // paid by the raid to whoever takes them down (the leader loses nothing extra,
 // banked gems stay safe). Same rule for humans and bots. It takes the bounty
 // slot (the RY bounty marker and badge) while it lasts.
-// ROYALE_LEADER_BOUNTY=0 turns it off.
-const LEADER_ON = process.env.ROYALE_LEADER_BOUNTY !== '0';
+// Off since Oct 7 (the owner didn't like bounties; hunted and TOP TARGET stay):
+// ROYALE_LEADER_BOUNTY=1 turns it back on, ROYALE_BOUNTY=1 the filler bounty.
+const LEADER_ON = process.env.ROYALE_LEADER_BOUNTY === '1';
+const BOUNTY_ON = process.env.ROYALE_BOUNTY === '1';
 const LEADER = { frac: 0.10, min: 150, cap: 2500, minLead: 1000, minScore: 1500, everyMs: 1000, announceGapMs: 40_000 };
 function leaderBountyFor(lead, score = Infinity) {
     if (!LEADER_ON || !(lead >= LEADER.minLead) || !(score >= LEADER.minScore)) return 0;
@@ -131,6 +133,7 @@ function supplyDrop(t) {
 }
 
 function startBounty(t) {
+    if (!BOUNTY_ON) return false;
     const list = hooks && hooks.fighters ? hooks.fighters() : [];
     let best = null, bs = BOUNTY_MIN_SCORE - 1;
     for (const b of list) {
@@ -257,4 +260,4 @@ function reset(t = Date.now()) {
 // DBG supply / bounty: fire that filler now
 function debugFire(kind, t = Date.now()) { return kind === 'bounty' ? startBounty(t) : supplyDrop(t); }
 
-module.exports = { HUNT, HUNT_ON, leadRatio, huntFor, huntSnapshot, hunt: () => hunt, LEADER, LEADER_ON, leaderBountyFor, leaderTick, attach, note, tick, debugFire, onKill, current, snapshot, reset, recent: () => log.slice(), GAP_MIN_MS, GAP_MAX_MS, BOUNTY_MS, BOUNTY_GEMS };
+module.exports = { BOUNTY_ON, HUNT, HUNT_ON, leadRatio, huntFor, huntSnapshot, hunt: () => hunt, LEADER, LEADER_ON, leaderBountyFor, leaderTick, attach, note, tick, debugFire, onKill, current, snapshot, reset, recent: () => log.slice(), GAP_MIN_MS, GAP_MAX_MS, BOUNTY_MS, BOUNTY_GEMS };

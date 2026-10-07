@@ -535,6 +535,9 @@ function place(t) {
     const cx = gx > 0 ? gx : SW() / 2;
     setLeft(gx > 0 ? Math.round(gx * k) + "px" : "");
     global.coachRect = { x: cx - w / 2 / k - 6, y: top / k - 6, w: w / k + 12, h: h / k + 12 };
+    // your own chat bubbles reach up under the card: it steps back for them
+    const dim = performance.now() - (global.chatUnderCoachAt || 0) < 400;
+    if (dim !== st.dim) { st.dim = dim; root.style.opacity = dim ? "0.15" : ""; root.style.pointerEvents = dim ? "none" : ""; }
 }
 // the last mouse position (CSS px), for place()
 const ptr = { x: -1e4, y: -1e4 };

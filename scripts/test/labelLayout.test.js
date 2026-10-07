@@ -55,7 +55,10 @@ const REPO = path.join(__dirname, '..', '..');
         assert.ok(app.includes("import { layoutLabels } from './labelLayout.js';"));
         assert.ok(/drawOutpostLabels\(px, py, ratio\);\s*flushWorldLabels\(\);/.test(app), 'flushed after the world draws');
         assert.ok(app.includes('worldLabel(c, CHEST_LABEL[k]'), 'chest and crate labels');
-        assert.ok(app.includes('worldLabel(c, "Vault"') && app.includes('worldLabel(c, "Shop"'), 'pad labels');
+        assert.ok(app.includes('worldLabel(c, "Vault"') && app.includes('worldLabel(c, sl, sx, sy - R * 1.4'), 'pad labels');
+        // one label per pad (the shop's name used to sit under it as well), fading by distance
+        assert.ok(!app.includes('String(s.name || "").replace(" Shop", "")'), 'no second shop label');
+        assert.ok(app.includes('labelAlpha(it.x, ly, it.w, it.h) * labelNear(it.x, ly)'), 'labels fade toward the edges');
         assert.ok(!app.includes('drawSpawnShieldHint'), 'the shield line left the tank');
         assert.ok(app.includes('try { push(spawnShieldNote()); }'), 'and is a note under the clock');
     });

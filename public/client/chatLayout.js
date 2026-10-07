@@ -17,7 +17,9 @@ function sortItems(items, n) {
     }
 }
 
-// rects: HUD boxes in the same units as the items
+// rects: HUD boxes in the same units as the items. A bubble that can't get
+// clear of them stays where it is (on screen) and draws over the HUD; only a
+// `hard` rect (a centre card) hides it. Your own bubble (it.self) only minds those.
 export function layoutChat(items, n, rects, o) {
     const gap = o && o.gap != null ? o.gap : BUBBLE_GAP;
     const top = o && o.top != null ? o.top : 0;
@@ -30,6 +32,7 @@ export function layoutChat(items, n, rects, o) {
         let x = x0;
         let y = it.y - it.h;    // top edge
         it.hide = false;
+        let hard = false;
         // step past whatever is in the way until nothing is
         for (let round = 0; round < 12; round++) {
             let moved = false;
@@ -49,13 +52,19 @@ export function layoutChat(items, n, rects, o) {
             }
             if (rects) for (let k = 0; k < rects.length; k++) {
                 const r = rects[k];
-                if (overlaps(x, y, it.w, it.h, r)) { y = r.y - gap - it.h; moved = true; }
+                if (it.self && !r.hard) continue;
+                if (overlaps(x, y, it.w, it.h, r)) { y = r.y - gap - it.h; moved = true; if (r.hard) hard = true; }
             }
             if (!moved) break;
         }
         it.dy = y - (it.y - it.h);
         it.dx = x - x0;
-        if (-it.dy > maxShift || y < top) { it.hide = true; it.dy = 0; it.dx = 0; }
+        if (-it.dy > maxShift || y < top) {
+            it.hide = hard;
+            // back on its tank, pulled down onto the screen (a big tank's stack runs off the top)
+            it.dx = 0;
+            it.dy = Math.max(0, top - (it.y - it.h));
+        }
     }
 }
 
@@ -92,3 +101,18 @@ export function wrapText(text, maxW, measure, maxLines, out) {
     }
     return out;
 }
+
+// How many of a tank's messages show at once, each its own bubble stacked
+// upward over the tank (newest at the bottom, nearest the hull): your own
+// and others' up to 3 (2 on a phone), and how many lines each can wrap to.
+export const CHAT_STACK = 3, CHAT_STACK_MOBILE = 2, CHAT_LINES = 2;
+export function chatStackMax(mobile) { return mobile ? CHAT_STACK_MOBILE : CHAT_STACK; }
+// older bubbles fade: i = 0 is the newest
+// The old arras bubble grows with its tank: text is half the tank's on-screen
+// size, never under `base` (readable) or over 2.2x it; 2 px steps so a growing
+// tank doesn't rebake its text every frame
+export function chatSizeFor(base, tankPx) {
+    const fs = Math.min(base * 2.2, Math.max(base, 0.5 * Math.max(20, +tankPx || 0)));
+    return Math.max(2, Math.round(fs / 2) * 2);
+}
+export function bubbleFade(i) { return i <= 0 ? 1 : i === 1 ? 0.8 : 0.62; }

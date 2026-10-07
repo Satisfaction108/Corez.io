@@ -40,6 +40,9 @@ const REGROW = {
     NEAR_R:                260,
     NEAR_OFF_R:            300,
     NEAR_RATE:          1 / 1.2, // 20% longer rise
+    // a grown tank (growth.js) slows it more: the rate divides by 1 + GROWN_SLOW
+    // per 1x it has gained (in 0.25x steps), so a 3x hull isn't closed in
+    GROWN_SLOW:              1,
     NEAR_BUCKET:           512,
     // rock raised by a Bulwark or the between-raids wipe keeps the old pace
     // and ignores nearby tanks (it's meant to go up around you)
@@ -873,18 +876,19 @@ class TerrainGrid {
             const reach = R + maxSize;
             const bx0 = Math.floor((x - reach) / B), bx1 = Math.floor((x + reach) / B);
             const by0 = Math.floor((y - reach) / B), by1 = Math.floor((y + reach) / B);
-            let near = false;
-            for (let bx = bx0; bx <= bx1 && !near; bx++) {
-                for (let by = by0; by <= by1 && !near; by++) {
+            let near = false, g = 1;
+            for (let bx = bx0; bx <= bx1; bx++) {
+                for (let by = by0; by <= by1; by++) {
                     const cell = grid.get(bx * 65536 + by);
                     if (!cell) continue;
                     for (const e of cell) {
                         const rr = R + (e.size || 0);
-                        if ((e.x - x) ** 2 + (e.y - y) ** 2 <= rr * rr) { near = true; break; }
+                        if ((e.x - x) ** 2 + (e.y - y) ** 2 <= rr * rr) { near = true; if ((e.growthMult || 1) > g) g = e.growthMult; }
                     }
                 }
             }
-            this._setRiseRate(rock, now, near ? REGROW.NEAR_RATE : 1);
+            const gq = Math.round(g * 4) / 4;
+            this._setRiseRate(rock, now, near ? REGROW.NEAR_RATE / (1 + REGROW.GROWN_SLOW * Math.max(0, gq - 1)) : 1);
         }
     }
 

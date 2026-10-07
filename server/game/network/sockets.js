@@ -298,9 +298,18 @@ class socketManager {
                     }
                 }
             }
-            if (view.socket.status.disablechat) {
-                view.socket.talk("CHAT_MESSAGE_ENTITY", JSON.stringify(array.map(o => {return {id: o.id, messages: []}})));
-            } else view.socket.talk("CHAT_MESSAGE_ENTITY", JSON.stringify(array));
+            const payload = view.socket.status.disablechat
+                ? JSON.stringify(array.map(o => {return {id: o.id, messages: []}}))
+                : JSON.stringify(array);
+            // 5 times a second per client, nearly always the same as last
+            // time (usually "[]"); the client keeps state from the last one,
+            // so an unchanged list needs no packet. One with live messages
+            // still goes out every second: the client drops a tank's chat
+            // when the tank leaves its snapshot, and gets it back from this.
+            if (payload === view.socket._chatSent && (!array.some(o => o.messages.length) || now - view.socket._chatSentAt < 1000)) continue;
+            view.socket._chatSent = payload;
+            view.socket._chatSentAt = now;
+            view.socket.talk("CHAT_MESSAGE_ENTITY", payload);
         }
     }
 
@@ -1596,6 +1605,12 @@ class socketManager {
                     else if (what === "rain") { const ev = require('../terrain/raidEvents.js').startRain(Date.now()); if (ev) require('../gamemodes/scripts/dig_royale.js').onEvent(ev); }
                     else if (what === "chest" && b) require('../terrain/chests.js').spawnChest(b.x + 120, b.y, !!m[1]);
                     else if (what === "kill" && b) { b.health.amount = -1; }
+                    // DBG lvl <n>: level up to n (HUD checks: upgrade tiles, stat points)
+                    else if (what === "lvl" && b) {
+                        const want = Math.max(1, Math.min(Config.level_cap_cheat || 45, (m[1] | 0) || 15));
+                        for (let i = 0; i < 200 && b.skill.level < want; i++) { b.skill.score += b.skill.levelScore; b.skill.maintain(); }
+                        b.refreshBodyAttributes();
+                    }
                     // die to the nearest bot, as if it shot you (revenge / death screen checks)
                     else if (what === "killby" && b) {
                         const bots = (global.gameManager.gameHandler.bots || []).filter(o => o && !o.isDead());
@@ -2800,13 +2815,23 @@ class socketManager {
                     const camXBound = camFovBroad + 100 + extra;
                     const camYBound = camFovBroad * 0.5625 + 100 + extra;
                     const g = global.grid;
-                    if (g) {
-                        const found = g.query(
-                            camera.x - camXBound,
-                            camera.y - camYBound,
-                            camera.x + camXBound,
-                            camera.y + camYBound
-                        );
+                    const qx0 = camera.x - camXBound, qy0 = camera.y - camYBound,
+                        qx1 = camera.x + camXBound, qy1 = camera.y + camYBound;
+                    // The view box is thousands of 128-unit grid cells (more
+                    // with a grown tank's wide view), each a Map lookup plus a
+                    // walk over every entity filed in it, per client. Past
+                    // one cell per entity, one pass over the entities with
+                    // the same box test (what the grid holds: active, unbonded)
+                    // is cheaper.
+                    const gcs = g ? g.cellSize : 0;
+                    const gCells = g ? ((qx1 >> gcs) - (qx0 >> gcs) + 1) * ((qy1 >> gcs) - (qy0 >> gcs) + 1) : 0;
+                    if (g && gCells > entities.size) {
+                        for (const e of entities.values()) {
+                            if (!e.isInGrid || e.bond) continue;
+                            if (e.minX < qx1 && e.maxX > qx0 && e.minY < qy1 && e.maxY > qy0) nearby.set(e.id, e);
+                        }
+                    } else if (g) {
+                        const found = g.query(qx0, qy0, qx1, qy1);
                         for (let i = 0; i < found.length; i++) {
                             nearby.set(found[i].id, found[i]);
                         }

@@ -2,6 +2,8 @@
 // and each base). Paid from banked gems only; state lives on the socket, so it
 // survives death and resets with the raid.
 
+// Bulwark: rock from gap past your hull out to r rises at rate x the normal pace (16 s / rate), up to max cells
+const BULWARK = { r: 420, gap: 70, rate: 5, max: 36 };
 const PAD_RADIUS = 95;
 
 const DRILL_MULT = [1, 1.25, 1.5, 1.8, 2.15, 2.6];
@@ -41,7 +43,7 @@ const ITEMS = [
     { id: "overdrive", cat: "kit", name: "Overdrive Core", price: 450, max: 2, retired: true, desc: "Double mining power and 30% faster reload for 20 seconds." },
     { id: "anchor",    cat: "kit", name: "Storm Anchor",   price: 400, max: 2, desc: "The storm can't hurt you for 15 seconds." },
     { id: "flash",     cat: "kit", name: "Flash Vault",    price: 500, max: 2, desc: "Banks up to 1,000 of the gems you're carrying from wherever you are, minus a 30% fee." },
-    { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Regrows the dug-out rock within 260m of you. Instant cover." },
+    { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Regrows the dug-out rock within 420m of you, fast. Instant cover." },
     { id: "decoy",     cat: "kit", name: "Decoy Satchel",  price: 250, max: 3, desc: "Makes you look like you're hauling a full satchel for 20 seconds. Bait." },
     { id: "barrage",   cat: "kit", name: "Rock Barrage",   price: 3000, max: 1, desc: "Hurls 10 rock chunks at your cursor. Each hit takes 9% of a tank's health right through its shield, so a full volley finishes anyone who isn't topped up. Each chunk smashes through two rocks on the way." },
     // sidearms: one mounted at a time, fired with the sidearm key (command bit 128)
@@ -605,6 +607,28 @@ function swapKit(socket, from, to) {
     return true;
 }
 
+// Bulwark (Oct 7: a wider ring to BULWARK.r, more rock, a quick rise; rock
+// already rising on its own speeds up too, it used to be skipped) -> cells raised
+function bulwarkRaise(tg, body, now) {
+    const B = BULWARK, inner = (body.realSize || 30) + B.gap;
+    let n = 0;
+    for (const rock of tg.rocks.values()) {
+        if (!rock || rock.alive || rock.canyon || !rock.worldPoly) continue;
+        const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+        const d2 = (rx - body.x) ** 2 + (ry - body.y) ** 2;
+        if (d2 > B.r * B.r || d2 < inner * inner) continue;
+        if (rock.growing) {
+            if (rock.growFast && rock.growRate >= B.rate) continue;
+            rock.growFast = true;
+            try { if (tg._setRiseRate(rock, now, B.rate)) n++; } catch { /* */ }
+        } else {
+            rock.noRegrowUntil = 0;
+            try { if (tg.startRegrow(rock, now + n * 25, 0, { fast: true, rate: B.rate }) !== false) n++; } catch { /* */ }
+        }
+        if (n >= B.max) break;
+    }
+    return n;
+}
 function useKit(socket, slot, tx, ty, itemId) {
     const body = socket && socket.player && socket.player.body;
     const s = normalizeKit(stateOf(socket));
@@ -719,16 +743,7 @@ function useKit(socket, slot, tx, ty, itemId) {
         }
         case "bulwark": {
             if (!tg) break;
-            let n = 0;
-            for (const rock of tg.rocks.values()) {
-                if (!rock || rock.alive || rock.growing || rock.canyon || !rock.worldPoly) continue;
-                const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
-                const d2 = (rx - body.x) ** 2 + (ry - body.y) ** 2;
-                if (d2 > 260 * 260 || d2 < 110 * 110) continue;
-                rock.noRegrowUntil = 0;
-                try { if (tg.startRegrow(rock, now + n * 40, 0, { fast: true }) !== false) n++; } catch { /* */ }
-                if (n >= 14) break;
-            }
+            const n = bulwarkRaise(tg, body, now);
             used = n > 0;
             msg = used ? "Bulwark: the wall rises around you." : "No fallen rock nearby to raise.";
             break;
@@ -896,7 +911,7 @@ function tick(actors) {
 module.exports = {
     ITEMS, BY_ID, getShops, snapshot, catalog, stateOf, freshState, resetAll, talkState, dropKit,
     miningMult, hasGear, magnetMult, satchelCap, deepPockets, SATCHEL_BASE, SATCHEL_STEP, depositRateMult, stormDamageMult, spawnMoveShieldMs, WIND_SHIELD_MS, killBonus,
-    keepsDrillOnRespawn, applyPassives, armOf, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, swapKit, onDeath, tick,
+    BULWARK, bulwarkRaise, keepsDrillOnRespawn, applyPassives, armOf, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, swapKit, onDeath, tick,
     KIT_SLOTS, kitCount, kitFreeSlot,
     PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE, launchBarrage, BARRAGE, STRUT_RADIUS, gearActive, GEAR_MAX,
     offered,

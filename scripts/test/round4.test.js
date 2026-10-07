@@ -116,9 +116,9 @@ test('tough: TOO STRONG is never your own tank, only far ahead of a protected pl
     assert.match(app, /rv\.tough \? TOUGH_BADGE : REVENGE_BADGE/);
 });
 
-test('tags: the pointer sits on the name; gem pops start above your own tag', () => {
+test('tags: an icon on the name row (no pointer stack since Oct 7); gem pops start above your own overhead stack', () => {
     const app = src('app.js');
-    assert.match(app, /const streakGap = \(fs\) => Math\.max\(2, fs \* 0\.12\);/);
+    assert.match(app, /instance\._nameRight = nx \+ tw \/ 2;/);
     assert.match(app, /selfOver\.top = overheadTop\(instance, y \+ global\.screenHeight \/ 2, ratio, instance\.size\);/);
     assert.match(app, /const stackTop = selfOver\.at === overheadFrame \? selfOver\.top : cy;/);
     assert.match(app, /const rise {2}= base \+ 42 \*/);

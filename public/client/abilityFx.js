@@ -1261,13 +1261,13 @@ export function drawWorld(c, px, py, ratio) {
                 const n = fewer() ? 8 : 16, dust = smokeSprite("n");
                 for (let k = 0; k < n; k++) {
                     const a = k / n * Math.PI * 2;
-                    const d = (150 + 40 * (k & 1)) * ratio, r = (24 + 26 * ease(t)) * ratio;
+                    const d = (260 + 70 * (k & 1)) * ratio, r = (28 + 30 * ease(t)) * ratio;   // the ring reaches 420 (shop.js BULWARK)
                     c.globalAlpha = 0.55 * (1 - t);
                     c.drawImage(dust, x + Math.cos(a) * d - r, y + Math.sin(a) * d - r - 18 * ratio * t, r * 2, r * 2);
                 }
                 c.globalAlpha = (1 - t) * 0.6;
                 c.strokeStyle = "#b9c3d1"; c.lineWidth = Math.max(1.5, 6 * (1 - t) * ratio);
-                c.beginPath(); c.arc(x, y, (110 + 80 * ease(t)) * ratio, 0, Math.PI * 2); c.stroke();
+                c.beginPath(); c.arc(x, y, (140 + 280 * ease(t)) * ratio, 0, Math.PI * 2); c.stroke();
                 break;
             }
             case "k_decoy": {

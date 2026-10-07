@@ -12,6 +12,8 @@
 //              the vault, never on the pad; breaking it erupts exactly its
 //              gems and banks the last-hit bonus; the raid still ends on time
 //              with both inside the last circle
+//              its bolts fly at bullet speed and players' bullets, drones and
+//              traps shoot them down (a hit blunts one)
 //   dropin     a new player's first spot is 520-760 from a safe vault, open
 //              and escapable, with soft ore on the way; the landing smashes
 //              the plain rock around it (a crater on the first drop) and
@@ -212,7 +214,7 @@ test('bounty: killing a hunted player banks it for the killer, with a feed line'
     royale.onCombatantDead(victim);
     assert.equal((killer.socket.gemBanked | 0) - before, 300);
     assert.equal(victim.huntedLevel, 0);
-    assert.ok(kc && /BOUNTY CASHED/.test(kc[2]), 'callout ' + (kc && kc[2]));
+    assert.ok(kc && /HUNTED DOWN/.test(kc[2]), 'callout ' + (kc && kc[2]));
     assert.equal(kc[1], 'huntkill');
     const st = JSON.parse(captureRY());
     assert.ok(st.feed.some(f => f.bounty && f.g === 300 && f.name === victim.name), 'feed line');
@@ -349,9 +351,12 @@ test('core: it fights back as it breaks, every attack telegraphed; no mercy for 
     const br = coreFinale._brood();
     assert.ok(br.bolts.concat(br.drones).every(e => e.isCoreShot && e.master === c), 'real entities, the Core their master');
     assert.ok(br.drones.every(e => e.type === 'drone' && !e.noclip), 'drones can be shot down');
-    assert.ok(r.lost >= coreFinale.BOLT_HIT * 0.99, 'and they hurt: ' + r.lost.toFixed(3));
+    // at 300 the tank can stand behind the cover ring's rock, which eats bolts:
+    // a drone's touch at least
+    assert.ok(r.lost >= Math.min(coreFinale.BOLT_HIT, coreFinale.DRONE_HIT) * 0.99, 'and they hurt: ' + r.lost.toFixed(3));
     // rage: faster, more drones, no deadlier per hit. A level-45 tank standing
-    // still in the open 300 from it, no shield: well under 60% in 10 s
+    // still in the open 300 from it, no shield, not backing off the shockwave
+    // (Oct 7: it hits harder close in, then fades out): under 65% in 10 s
     coreFinale.debugHp(0.2);
     place();
     run2(1000);
@@ -359,7 +364,7 @@ test('core: it fights back as it breaks, every attack telegraphed; no mercy for 
     maxDrones = 0;
     r = run2(10_000);
     console.log('    core rage, 10 s standing in the open: lost ' + (r.lost * 100).toFixed(0) + '% of max health, drones ' + maxDrones + ', pulses ' + r.kinds.filter(k => k === 'corepulse').length);
-    assert.ok(r.lost < 0.6, 'survivable: ' + r.lost.toFixed(2));
+    assert.ok(r.lost < 0.65, 'survivable: ' + r.lost.toFixed(2));
     assert.ok(r.lost > 0.25, 'still dangerous: ' + r.lost.toFixed(2));
     assert.ok(maxDrones <= coreFinale.DRONE_RAGE_MAX, 'drone cap ' + maxDrones);
     // the meter: a tiny or a grown tank, the same share, never more than the burst at once
@@ -398,6 +403,110 @@ test('core: it fights back as it breaks, every attack telegraphed; no mercy for 
     p.deathCause = ''; p.dontSendDeathMessage = false;
     p.botNewness = 0; p.health.amount = p.health.max;
     coreFinale.debugHp(1);
+});
+
+// Oct 7 2026: "I can't even kill its bullets". A bolt is met by whatever a
+// player fires: every touch takes the shot's damage off it (traps double), a
+// hit blunts it, it breaks at zero; the shot is spent unless it had damage to
+// spare. Its own side's shots and rock-only perk shots pass.
+test('core: players shoot its bolts down, a hit blunts them; they fly at bullet speed', () => {
+    const c = coreFinale.current();
+    assert.ok(c, 'the Core is up');
+    const p = global.gameManager.socketManager.players[0].body;
+    coreFinale.attach({ humans: () => [p], fighters: () => [p], announce() {}, feed() {}, fxAt() {}, toast() {}, payGems() {}, addPts() {}, callout() {} });
+    assert.ok(coreFinale.BOLT_SPEED <= 9.5, 'no faster than an average bullet: ' + coreFinale.BOLT_SPEED);
+    // the swept test: head-on at 9 + 9 u a step, they can't tunnel through
+    assert.ok(coreFinale.sweptTouch(0, 0, 9, 0, 20, 0, 11, 0, 4) >= 0, 'a head-on pass is caught');
+    assert.equal(coreFinale.sweptTouch(0, 0, 9, 0, 20, 40, 11, 40, 20), -1, 'a wide miss is not');
+    coreFinale.debugHp(0.4);
+    // inside the cleared arena (ARENA_R): no cover rock between it and the tank
+    let t = Date.now() + 60_000;
+    const hold = () => { p.x = c.x + 230; p.y = c.y; p.velocity.x = 0; p.velocity.y = 0; p.invuln = false; p.spawnGraceUntil = 0; p.padSafe = false; p.health.amount = p.health.max; };
+    // a fresh bolt in flight
+    const freshBolt = () => {
+        for (let k = 0; k < 200; k++) {
+            t += 33; hold(); coreFinale.tick(t, [p]);
+            const br = coreFinale._brood();
+            const i = br.bolts.findIndex((e, j) => br.boltHp[j] === coreFinale.BOLT_HP && Math.hypot(e.x - c.x, e.y - c.y) < 150);
+            if (i >= 0) return br.bolts[i];
+        }
+        return null;
+    };
+    // a shot of `type` with `dmg`, sitting just ahead of the bolt, flying at it
+    const shotAt = (b, dmg, type = 'bullet', team = p.team) => {
+        const ux = (p.x - b.x), uy = (p.y - b.y), ul = Math.hypot(ux, uy) || 1;
+        const o = new Entity({ x: b.x + ux / ul * 14, y: b.y + uy / ul * 14 }, p);
+        o.define(type === 'trap' ? 'trap' : 'bullet');
+        o.team = team; o.alwaysActive = true; o.settings.diesAtRange = false;
+        o.refreshBodyAttributes();
+        o.damage = dmg;
+        o.health.set(10); o.health.amount = 10;
+        o.velocity.x = type === 'trap' ? 0 : -ux / ul * 9; o.velocity.y = type === 'trap' ? 0 : -uy / ul * 9;
+        o.updateAABB(true);
+        global.grid.clear();
+        global.grid.insert(o, o.minX, o.minY, o.maxX, o.maxY);
+        return o;
+    };
+    const hpOf = (b) => { const br = coreFinale._brood(); const i = br.bolts.indexOf(b); return i < 0 ? null : br.boltHp[i]; };
+    const step = () => { t += 33; hold(); coreFinale.tick(t, [p]); global.grid.clear(); };
+    // an average basic bullet (~16): blunts it, and is spent
+    let b = freshBolt();
+    assert.ok(b, 'a bolt ' + JSON.stringify(coreFinale._state()));
+    let s0 = coreFinale._state().stats;
+    let o = shotAt(b, 16);
+    step();
+    assert.ok(Math.abs(hpOf(b) - (coreFinale.BOLT_HP - 16)) < 1e-6, 'blunted by 16: ' + hpOf(b));
+    assert.ok(o.isDead(), 'the bullet is spent');
+    assert.ok(b.SIZE < 12, 'a blunted bolt reads smaller: ' + b.SIZE);
+    // a few more break it
+    const need = Math.ceil(coreFinale.BOLT_HP / 16);
+    assert.ok(need >= 3 && need <= 6, 'a few average bullets a bolt: ' + need);
+    for (let k = 1; k < need; k++) { assert.notEqual(hpOf(b), null, 'still up after ' + k); o = shotAt(b, 16); step(); }
+    assert.equal(hpOf(b), null, need + ' average bullets break it');
+    assert.ok(b.isDead(), 'gone');
+    assert.equal(coreFinale._state().stats.boltsShot - s0.boltsShot, 1);
+    // a heavy shell goes through a fresh one and flies on
+    b = freshBolt();
+    o = shotAt(b, coreFinale.BOLT_HP * 2.2); step();
+    assert.equal(hpOf(b), null, 'one shell');
+    assert.ok(!o.isDead(), 'the shell had damage to spare');
+    o.kill();
+    // a trap counts double and is worn, not spent
+    b = freshBolt();
+    o = shotAt(b, 8, 'trap'); const tr0 = o.health.amount; step();
+    assert.ok(Math.abs(hpOf(b) - (coreFinale.BOLT_HP - 8 * coreFinale.BOLT_TRAP_MULT)) < 1e-6, 'trap counts double: ' + hpOf(b));
+    assert.ok(!o.isDead() && o.health.amount < tr0, 'the trap is worn');
+    o.kill();
+    // the Core's own side and rock-only perk shots pass straight through
+    b = freshBolt();
+    o = shotAt(b, 100, 'bullet', c.team); step();
+    assert.equal(hpOf(b), coreFinale.BOLT_HP, "its own side's shots pass");
+    o.kill();
+    o = shotAt(b, 100); o.rockOnly = true; step();
+    assert.equal(hpOf(b), coreFinale.BOLT_HP, 'rock-only perk shots pass');
+    o.kill();
+    // a blunted bolt lands what is left of it
+    const blunt = freshBolt();
+    o = shotAt(blunt, coreFinale.BOLT_HP * 0.5); step();
+    const left = hpOf(blunt) / coreFinale.BOLT_HP;
+    assert.ok(Math.abs(left - 0.5) < 1e-6, 'half left');
+    p._coreMeter = null;
+    let lost = 0;
+    for (let k = 0; k < 150 && hpOf(blunt) !== null; k++) {
+        // only this bolt: drop the rest
+        const h0 = p.health.amount; t += 33; p.x = c.x + 230; p.y = c.y; p.velocity.x = 0; p.velocity.y = 0; p.padSafe = false; p.spawnGraceUntil = 0; p.invuln = false;
+        for (const e of coreFinale._brood().bolts) if (e !== blunt) e.kill();
+        for (const e of coreFinale._brood().drones) e.kill();
+        const pulses0 = coreFinale._state().stats.pulses;
+        coreFinale.tick(t, [p]);
+        // the shockwave is not the bolt's doing
+        if (coreFinale._state().stats.pulses === pulses0) lost += Math.max(0, h0 - p.health.amount);
+        p.health.amount = p.health.max;
+    }
+    assert.ok(lost > 0, 'it reached the tank');
+    assert.ok(lost / p.health.max <= coreFinale.BOLT_HIT * 0.5 + 1e-6, 'and landed half a bolt at most: ' + (lost / p.health.max).toFixed(4));
+    coreFinale.debugHp(1);
+    for (let k = 0; k < 60; k++) { t += 33; hold(); coreFinale.tick(t, [p]); }
 });
 
 test('core: breaking it caves in, then blows all 20,000 gems across the circle, nothing banked', () => {
@@ -452,12 +561,14 @@ test('core: breaking it caves in, then blows all 20,000 gems across the circle, 
     assert.ok(coreFinale.healthFor(5, 1) > coreFinale.healthFor(1, 5));
     assert.equal(coreFinale.gemsFor(20, 0), B);
     assert.equal(coreFinale.healthFor(30, 0), coreFinale.HP_MAX);
-    // three quarters of the old health (Oct 3): at ~1000 a second per human
-    // and ~400 per bot of focused fire, a full raid needs about 75-90 s
+    // three quarters of the old health (Oct 3), then about half of that (Oct
+    // 7, owner: three average players ~2 minutes in the balance sim): at
+    // ~1000 a second per human and ~400 per bot of focused fire, a full raid
+    // needs about 40-45 s
     const ttk = (h, b) => coreFinale.healthFor(h, b) / (1000 * h + 400 * b);
-    for (const h of [6, 10, 15, 20]) assert.ok(ttk(h, 0) >= 45 && ttk(h, 0) <= 95, h + ' humans: ' + ttk(h, 0).toFixed(0) + ' s');
-    assert.ok(ttk(1, 5) >= 45 && ttk(1, 5) <= 95, 'one player and five bots: ' + ttk(1, 5).toFixed(0) + ' s');
-    assert.ok(coreFinale.healthFor(1, 5) >= 5 * 51_000 * 0.7, 'about five times the old base');
+    for (const h of [6, 10, 15, 20]) assert.ok(ttk(h, 0) >= 35 && ttk(h, 0) <= 60, h + ' humans: ' + ttk(h, 0).toFixed(0) + ' s');
+    assert.ok(ttk(1, 5) >= 35 && ttk(1, 5) <= 60, 'one player and five bots: ' + ttk(1, 5).toFixed(0) + ' s');
+    assert.ok(coreFinale.healthFor(1, 5) >= 5 * 51_000 * 0.5, 'still well over twice the old base');
     for (const e of entities.values()) if (e.isGemPickup) e.kill();
     p2.kill(); p3.kill(); bot.kill();
 });
@@ -943,6 +1054,15 @@ test('supply: anyone on the landing spot is rolled off and warned, and nobody en
     const said0 = said.length;
     supply.tick(t0 + 100);
     assert.equal(said.length, said0, 'not every tick');
+    // the drawn ring (CRATE_SIZE) is the wall: just outside it nothing pushes,
+    // a hull driving into it stops on the edge
+    const wall = supply.CRATE_SIZE + p.realSize;
+    p.x = plan.x + wall + 6; p.y = plan.y; p.velocity.x = 0; p.velocity.y = 0;
+    supply.tick(t0 + 150);
+    assert.ok(p.x === plan.x + wall + 6 && p.velocity.x === 0, 'outside the ring: left alone');
+    p.x = plan.x + wall - 4; p.velocity.x = -5; p.velocity.y = 2;
+    supply.tick(t0 + 200);
+    assert.ok(Math.abs(Math.hypot(p.x - plan.x, p.y - plan.y) - wall) < 1e-6 && p.velocity.x >= 0 && p.velocity.y === 2, 'on the edge: held there, sliding along it');
     // the bot stands its ground: still on it at the hit, it goes to the rim
     bot.x = plan.x; bot.y = plan.y;
     p.x = plan.x + 600; p.y = plan.y;

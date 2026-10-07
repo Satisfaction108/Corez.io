@@ -95,7 +95,8 @@ export function draw(c, n, right, y, age, dur) {
     const kIn = Math.min(1, age / 260);
     const ease = 1 - Math.pow(1 - kIn, 3) * (1 - 1.6 * kIn * (1 - kIn));
     const a = Math.max(0, Math.min(1, age / 140, (dur - age) / 320));
-    const x = right - W + Math.round((1 - ease) * (W * 0.6));
+    // centred in the lane under the raid clock (n.centreX), or right-aligned
+    const x = n.centreX != null ? Math.round(n.centreX - W / 2) : right - W + Math.round((1 - ease) * (W * 0.6));
     if (!n.sounded) {
         n.sounded = true;
         try { if (window.gameSound && window.gameSound.achievement) window.gameSound.achievement(!!d.secret || !!d.summary); } catch (e) { /* */ }

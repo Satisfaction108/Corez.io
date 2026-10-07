@@ -40,7 +40,7 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
 import * as deathText from './deathCardLogic.js';
 import * as buildBtnLabels from './buildButtonsLogic.js';
 import { layoutLabels } from './labelLayout.js';
-import { layoutChat, wrapText } from './chatLayout.js';
+import { layoutChat, wrapText, chatStackMax, bubbleFade, chatSizeFor, CHAT_LINES } from './chatLayout.js';
 import * as upGrid from './upgradeGridLogic.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
@@ -1840,11 +1840,29 @@ import * as upGrid from './upgradeGridLogic.js';
     if (localHost) window.dwDebug = global;
 
     const fontWidth = "bold";
+    // Widths by size|text. HUD labels and the shrink-to-fit loops ask for the
+    // same strings every frame; each real measureText is a Blink object (GC
+    // pressure) plus a split of the colour codes. The font is still set, as
+    // callers may draw with it straight after.
+    // (var + lazy init: measureText is hoisted, so no TDZ if it runs early)
+    var measureCache;
     function measureText(text, fontSize, withHeight = false) {
         fontSize += config.graphical.fontSizeBoost;
         ctx[2].font = fontWidth + " " + fontSize + "px Rubik, Ubuntu";
-        let measurement = ctx[2].measureText(arrayifyText(text).reduce((a, b, i) => (i & 1) ? a : a + b, ''));
-        return withHeight ? { width: measurement.width, height: fontSize } : measurement.width;
+        if (!measureCache) {
+            measureCache = new Map();
+            try { document.fonts.addEventListener("loadingdone", () => measureCache.clear()); } catch (e) { }
+        }
+        const mk = fontSize + "|" + text;
+        let width = measureCache.get(mk);
+        if (width === undefined) {
+            width = ctx[2].measureText(arrayifyText(text).reduce((a, b, i) => (i & 1) ? a : a + b, '')).width;
+            // drop the oldest quarter, not everything: a full clear re-measures
+            // every label on screen in one frame
+            if (measureCache.size >= 1200) { let n = 300; for (const k of measureCache.keys()) { measureCache.delete(k); if (--n <= 0) break; } }
+            measureCache.set(mk, width);
+        }
+        return withHeight ? { width, height: fontSize } : width;
     }
 
     function arrayifyText(rawText) {
@@ -1872,7 +1890,7 @@ import * as upGrid from './upgradeGridLogic.js';
     // the size. Run text like the kill feed repeats every frame.
     const runWidths = new Map();
     // a web font arriving changes every width
-    try { document.fonts.addEventListener("loadingdone", () => { runWidths.clear(); streakSprites.clear(); }); } catch (e) { }
+    try { document.fonts.addEventListener("loadingdone", () => { runWidths.clear(); tagIcons.clear(); }); } catch (e) { }
     function runWidth(context, size, text) {
         const k = size + "|" + text;
         let w = runWidths.get(k);
@@ -1904,6 +1922,20 @@ import * as upGrid from './upgradeGridLogic.js';
     function spriteCanvas(pw, ph) {
         const key = bucketOf(pw, ph), list = spritePool.get(key);
         if (list && list.length) { spritePooled--; return list.pop(); }
+        // no exact bucket: the smallest pooled canvas that fits within twice
+        // the area (users clear the whole canvas and blit only pw x ph), so
+        // changing strings stop making a new canvas each
+        if (spritePooled) {
+            const need = Math.ceil(pw / 32) * 32 * Math.ceil(ph / 8) * 8;
+            let best = null, bestA = need * 2 + 1;
+            for (const l of spritePool.values()) {
+                const c0 = l[l.length - 1];
+                if (!c0 || c0.width < pw || c0.height < ph) continue;
+                const a = c0.width * c0.height;
+                if (a < bestA) { bestA = a; best = l; }
+            }
+            if (best) { spritePooled--; return best.pop(); }
+        }
         const cv = document.createElement("canvas");
         cv.width = Math.ceil(pw / 32) * 32; cv.height = Math.ceil(ph / 8) * 8;
         cv._bucket = key;
@@ -3698,7 +3730,9 @@ import * as upGrid from './upgradeGridLogic.js';
                 const alt = sy + R * 1.3, la2 = labelAlpha(sx, alt, 60, 24);
                 if (la2 > vla) { vly = alt; vla = la2; }
             }
-            worldLabel(c, "Vault", sx, vly, vls, HUD.head, 1, 0, hudTitleW("Vault", vls) + 8, vls + 6);
+            // standing on it: the deposit panel says it, so the name steps aside
+            const onThis = global.vault.onPad && !global.vault.isOutpost && Math.hypot(sx - global.screenWidth / 2, sy - global.screenHeight / 2) < R;
+            if (!onThis) worldLabel(c, "Vault", sx, vly, vls, HUD.head, 1, 0, hudTitleW("Vault", vls) + 8, vls + 6);
 
             if (doneFlash > 0) {
                 // completion burst: one-off ring of gold sparks
@@ -5538,7 +5572,8 @@ import * as upGrid from './upgradeGridLogic.js';
         achPaths.set(id, p);
         return p;
     }
-    function drawSideNote(y) {
+    // cx: centred in the lane under the clock (Royale); else the right edge
+    function drawSideNote(y, cx) {
         const now = performance.now();
         achCard.pump(sideNotes);
         let n = sideNotes[0];
@@ -5547,7 +5582,7 @@ import * as upGrid from './upgradeGridLogic.js';
         if (!n.at) n.at = now;
         const age = now - n.at;
         // an achievement: its own card (achievementCard.js)
-        if (n.kind === "ach" && n.ach) return y + achCard.draw(ctx[2], n, global.screenWidth - HUD.edge, y, age, n.dur || SIDE_MS) + 10;
+        if (n.kind === "ach" && n.ach) { n.centreX = cx != null ? cx : null; return y + achCard.draw(ctx[2], n, global.screenWidth - HUD.edge, y, age, n.dur || SIDE_MS) + 10; }
         const a = Math.min(1, age / 200, (SIDE_MS - age) / 300);
         const c = ctx[2];
         // phones: the title only, the thumbs need that side
@@ -5555,7 +5590,7 @@ import * as upGrid from './upgradeGridLogic.js';
         const tw = hudTitleW(n.title, 15), sw = n.sub ? hudTextW(n.sub, 10.5) : 0;
         const W = Math.round(Math.max(tw, sw) + 58), H = n.sub ? 42 : 30;
         const slide = Math.max(0, 1 - age / 200);
-        const x = global.screenWidth - HUD.edge - W + Math.round(slide * slide * 40);
+        const x = cx != null ? Math.round(cx - W / 2) : global.screenWidth - HUD.edge - W + Math.round(slide * slide * 40);
         hudPanel(c, x, y, W, H, { alpha: a });
         // the medal: the achievement's colour with its glyph in ink, or an up chevron
         const ix = x + 21, iy = y + H / 2, ir = 12;
@@ -5596,6 +5631,13 @@ import * as upGrid from './upgradeGridLogic.js';
             return;
         }
         for (const m of global.messages) if (m.finAt) { if (Date.now() - m.finAt > 6000) m.duration = 0; m.finAt = 0; }
+        // Royale: these lines go through the one lane under the raid clock
+        // (laneMessage in drawHudNotes), one at a time, never the right edge
+        if (typeof royaleActive === "function" && royaleActive()) {
+            messageStackBottom = hudTopBottom || 0;
+            messageStackLeft = 1e9;
+            return;
+        }
 
         let height = 18;
         let x = global.screenWidth / 2;
@@ -5716,7 +5758,6 @@ import * as upGrid from './upgradeGridLogic.js';
     // streak), then chat. Each piece
     // asks for the top of what sits under it, so nothing overlaps at any
     // tank size or zoom.
-    const chatScale = (size) => Math.min(34, Math.max(20, size));
     // the top of the hull and the name block (no streak badge)
     function nameStackTop(instance, y, ratio, isize) {
         const size = isize * ratio, g = Math.max(20, size);
@@ -5786,16 +5827,17 @@ import * as upGrid from './upgradeGridLogic.js';
             boardLabelById.clear();
             if (board) for (let i = 0; i < board.length; i++) {
                 const row = board[i];
-                if (row && row.id != null) boardLabelById.set(row.id, fmtNum(Math.max(0, row.score | 0)) + " pts");
+                // a tank with no points yet carries just its name ("0 pts" under every fresh plate was noise)
+                if (row && row.id != null && (row.score | 0) > 0) boardLabelById.set(row.id, fmtNum(row.score | 0) + " pts");
             }
         }
         return boardLabelById.get(id) || "";
     }
     // The badge over a tank: your revenge target, the bounty, or a streak.
     const streakBadges = new Map();
-    const REVENGE_BADGE = { key: "rv", word: "REVENGE", num: "", col: "#ff6b5e" };
+    const REVENGE_BADGE = { key: "rv", word: "REVENGE", num: "", col: "#ff4b4b", icon: "skull" };
     // a tank far beyond a new or struggling player: the server flags it
-    const TOUGH_BADGE = { key: "tough", word: "TOO STRONG", num: "", col: "#b9b2c8" };
+    const TOUGH_BADGE = { key: "tough", word: "TOO STRONG", num: "", col: "#b9b2c8", icon: "skull" };
     let bountyBadge = null;
     // HUD is defined further down, so its gold is read on first use)
     let BOUNTY_ON_YOU = null;
@@ -5803,18 +5845,22 @@ import * as upGrid from './upgradeGridLogic.js';
         if (!royaleActive() || raidFinale.active()) return null;
         const r = global.royale;
         // ONE tag over a tank (Oct 6, the plates were cluttered), by priority:
-        // your duo partner's chevron (drawName) > the bounty > revenge / too
+        // your duo partner's chevron (drawName) > a crown > the bounty > revenge / too
         // strong > hunted > a streak
         if (isDuoMate(id)) return null;
+        // a tag is about other players: never one on your own tank (Oct 7)
+        if (id === gui.playerid) return null;
+        // a worn crown is the one thing over that tank (crown > bounty > streak)
+        try { if (crowns.overheadH(id, 1, 1) > 0) return null; } catch (e) { /* */ }
         const b = r.bounty;
         if (b && b.e === id) {
             // TOO STRONG is about someone else: never on your own tank (you can be the bounty
             if (r.you && r.you.bt && id !== gui.playerid) return TOUGH_BADGE;
             // on your own tank it's the price on your head, not a reward, and a tiny "+"
-            if (id === gui.playerid) return BOUNTY_ON_YOU || (BOUNTY_ON_YOU = { key: "btme", word: "BOUNTY ON YOU", num: "", col: HUD.gold });
+            if (id === gui.playerid) return BOUNTY_ON_YOU || (BOUNTY_ON_YOU = { key: "btme", word: "BOUNTY ON YOU", num: "", col: HUD.gold, icon: "target" });
             // the leader bounty (lead: 1) stays on whoever leads, no countdown
             const key = "bt" + (b.lead ? "L" : "") + (b.gems | 0);
-            if (!bountyBadge || bountyBadge.key !== key) bountyBadge = { key, word: b.lead ? "LEADER BOUNTY " : "BOUNTY ", num: fmtNum(b.gems | 0) + " gems", col: HUD.gold };
+            if (!bountyBadge || bountyBadge.key !== key) bountyBadge = { key, word: b.lead ? "LEADER BOUNTY " : "BOUNTY ", num: "", col: HUD.gold, icon: "target" };
             return bountyBadge;
         }
         const rv = r.you && r.you.revenge;
@@ -5824,95 +5870,118 @@ import * as upGrid from './upgradeGridLogic.js';
         const n = streakOf(id);
         if (!n) return null;
         let bd = streakBadges.get(n);
-        if (!bd) { bd = { key: "s" + n, word: "STREAK ", num: "x" + n, col: "#ffb347", streak: n }; streakBadges.set(n, bd); }
+        if (!bd) { bd = { key: "s" + n, word: "STREAK ", num: String(n), col: "#ff9a2e", streak: n, icon: "flame" }; streakBadges.set(n, bd); }
         return bd;
     }
-    // badge text size: grows with the tank and the zoom, capped both ways
-    const streakSize = (isize, ratio) => Math.min(26, Math.max(14, 0.46 * Math.max(20, isize * ratio)));
-    // the pointer sits right on the name (or the hull), so the tag reads as that
-    const streakGap = (fs) => Math.max(2, fs * 0.12);
-    // the pill plus the pointer under it, in units of the text size
-    const STREAK_H = 1.62, STREAK_TIP = 0.42;
     // the name stack plus the badge over it: where a crown sits
+    // (the tag is an icon on the name row since Oct 7, so it adds no height;
+    // a tank with no name drawn, like your own, has it just over the hull)
     function crownStackTop(instance, y, ratio, isize) {
         const top = nameStackTop(instance, y, ratio, isize);
-        if (!badgeOf(instance.id)) return top;
-        const fs = streakSize(isize, ratio);
-        return top - streakGap(fs) - fs * (STREAK_H + STREAK_TIP);
+        if (tagOnName(instance) || !badgeOf(instance.id)) return top;
+        return top - selfTagD(isize, ratio) - 4;
     }
+    function tagOnName(instance) { return instance._nameAt === overheadFrame && instance.id !== gui.playerid; }
+    function selfTagD(isize, ratio) { return Math.max(20, Math.min(34, 0.65 * Math.max(20, isize * ratio))); }
     function overheadTop(instance, y, ratio, isize) {
         const top = crownStackTop(instance, y, ratio, isize);
         // a crown over it (the Crown Contest): chat goes above that too
         if (royaleActive() && crowns.crownOf(instance.id)) return top - crowns.overheadH(instance.id, isize, ratio);
         return top;
     }
-    // Baked once per streak count at a fixed size and scaled on draw: a dark
-    // HUD pill with an ink rim, "STREAK" in orange and the count in cream,
-    // and the old red marker as a pointer down at the tank.
-    // Baked near the size it's drawn at (device pixels, 4 px steps): one 40 px bake
-    const STREAK_BAKE = 40;
-    const streakSprites = new Map();
-    function streakSprite(bd, want = STREAK_BAKE) {
-        // 2 px steps (Oct 6, was 4): drawn within ~5% of its bake, so it stays sharp
-        const bake = Math.max(12, Math.min(64, Math.round(want / 2) * 2));
-        const sk = bd.key + "@" + bake;
-        let spr = streakSprites.get(sk);
-        if (spr) return spr;
-        const fs = bake, pad = Math.ceil(fs * 0.22);
-        const word = bd.word, num = bd.num;
-        const cv = document.createElement("canvas");
-        let c = cv.getContext("2d");
-        c.font = fs + "px " + HUD.font;
-        const ww = c.measureText(word).width, nw = c.measureText(num).width;
-        const ph = fs * STREAK_H, pw = Math.ceil(ww + nw + fs * 1.1), tip = fs * STREAK_TIP;
-        cv.width = pw + pad * 2;
-        cv.height = Math.ceil(ph + tip + pad * 2);
-        c = cv.getContext("2d");
-        c.lineJoin = "round";
-        const x0 = pad, y0 = pad, cx = cv.width / 2, rim = fs * 0.14;
-        // the pointer first, so the pill's rim cuts across its base
-        c.beginPath();
-        c.moveTo(cx - fs * 0.42, y0 + ph - rim);
-        c.lineTo(cx + fs * 0.42, y0 + ph - rim);
-        c.lineTo(cx, y0 + ph + tip);
-        c.closePath();
-        c.lineWidth = rim * 1.6; c.strokeStyle = HUD.ink; c.stroke();
-        c.fillStyle = "#e03e41"; c.fill();
-        // the drop under the pill, then the pill
-        roundRectPath(c, x0, y0 + fs * 0.1, pw, ph, ph / 2);
-        c.fillStyle = HUD.ink; c.fill();
-        roundRectPath(c, x0, y0, pw, ph, ph / 2);
-        c.lineWidth = rim * 1.6; c.strokeStyle = HUD.ink; c.stroke();
-        c.fillStyle = HUD.raised; c.fill();
-        // a warm band along the top edge, like the podium blocks
-        c.save();
-        roundRectPath(c, x0, y0, pw, ph, ph / 2);
-        c.clip();
-        c.fillStyle = bd.col;
-        c.globalAlpha = 0.22;
-        c.fillRect(x0, y0, pw, ph * 0.34);
-        c.restore();
-        roundRectPath(c, x0, y0, pw, ph, ph / 2);
-        c.lineWidth = rim; c.strokeStyle = HUD.ink; c.stroke();
-        // the words: ink rim, then fill
-        c.font = fs + "px " + HUD.font;
-        c.textBaseline = "middle";
-        c.textAlign = "left";
-        const tx = cx - (ww + nw) / 2, ty = y0 + ph / 2 + fs * 0.06;
-        c.lineWidth = fs * 0.2; c.strokeStyle = HUD.ink;
-        c.strokeText(word, tx, ty); c.strokeText(num, tx + ww, ty);
-        c.fillStyle = bd.col; c.fillText(word, tx, ty);
-        c.fillStyle = HUD.head; if (num) c.fillText(num, tx + ww, ty);
-        spr = { cv, ax: cx, tipY: y0 + ph + tip, fs };
-        if (streakSprites.size > 80) streakSprites.clear();
-        streakSprites.set(sk, spr);
-        return spr;
-    }
     // the ids whose badge drew this frame; the edge marker skips them
     const streakShownAt = new Map();
     let overheadFrame = 0;
     // your own overhead stack's top this frame (screen units), for the gem pops
     const selfOver = { top: 0, at: -1, x: 0, y: 0, r: 0 };
+    // Oct 7: the tag is a small icon on the name row (red skull = your revenge,
+    // grey skull = too strong, target = hunted / top target, flame + count =
+    // a streak), right of the name; on your own tank (no name) beside the hull.
+    // Nothing stacks over the name for it, so chat and the chat box sit clear.
+    const tagIcons = new Map();
+    function tagIconSprite(bd, want) {
+        const bake = Math.max(12, Math.min(72, Math.round(want / 2) * 2));
+        const sk = bd.key + "@" + bake;
+        let spr = tagIcons.get(sk);
+        if (spr) return spr;
+        const d = bake, ow = Math.max(1.5, d * 0.1), pad = Math.ceil(ow + 1);
+        const num = bd.icon === "flame" ? bd.num : "";
+        const cv = document.createElement("canvas");
+        let c = cv.getContext("2d");
+        const fs = Math.round(d * 0.72);
+        c.font = fs + "px " + HUD.font;
+        const nw = num ? Math.ceil(c.measureText(num).width) + Math.round(d * 0.12) : 0;
+        cv.width = d + nw + pad * 2; cv.height = d + pad * 2;
+        c = cv.getContext("2d");
+        c.lineJoin = "round"; c.lineCap = "round";
+        const cx = pad + d / 2, cy = pad + d / 2, r = d / 2;
+        const ink = HUD.ink;
+        if (bd.icon === "skull") {
+            // cranium and jaw in one outline, then the eyes and nose cut in ink
+            c.beginPath();
+            c.arc(cx, cy - r * 0.12, r * 0.78, Math.PI * 0.82, Math.PI * 2.18);
+            c.lineTo(cx + r * 0.46, cy + r * 0.86);
+            c.lineTo(cx - r * 0.46, cy + r * 0.86);
+            c.closePath();
+            c.lineWidth = ow * 2; c.strokeStyle = ink; c.stroke();
+            c.fillStyle = bd.col; c.fill();
+            c.fillStyle = ink;
+            c.beginPath(); c.ellipse(cx - r * 0.32, cy - r * 0.1, r * 0.2, r * 0.24, 0, 0, Math.PI * 2); c.fill();
+            c.beginPath(); c.ellipse(cx + r * 0.32, cy - r * 0.1, r * 0.2, r * 0.24, 0, 0, Math.PI * 2); c.fill();
+            c.beginPath(); c.moveTo(cx, cy + r * 0.2); c.lineTo(cx - r * 0.1, cy + r * 0.38); c.lineTo(cx + r * 0.1, cy + r * 0.38); c.closePath(); c.fill();
+            c.lineWidth = Math.max(1, ow * 0.7);
+            for (const k of [-0.2, 0, 0.2]) { c.beginPath(); c.moveTo(cx + r * k, cy + r * 0.62); c.lineTo(cx + r * k, cy + r * 0.86); c.stroke(); }
+        } else if (bd.icon === "target") {
+            const top = /TOP/.test(bd.word);
+            // TOP TARGET in gold, so it reads apart from a plain hunted mark
+            if (top) bd = { ...bd, col: "#ffc93c" };
+            c.lineWidth = ow * 2; c.strokeStyle = ink;
+            c.beginPath(); c.arc(cx, cy, r * 0.8, 0, Math.PI * 2); c.stroke();
+            c.lineWidth = ow * 1.1; c.strokeStyle = bd.col;
+            c.beginPath(); c.arc(cx, cy, r * 0.8, 0, Math.PI * 2); c.stroke();
+            if (top) { c.beginPath(); c.arc(cx, cy, r * 0.48, 0, Math.PI * 2); c.lineWidth = ow * 2; c.strokeStyle = ink; c.stroke(); c.lineWidth = ow * 1.1; c.strokeStyle = bd.col; c.stroke(); }
+            // the crosshair ticks and the centre dot
+            for (let k = 0; k < 4; k++) {
+                const a = k * Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a);
+                c.beginPath(); c.moveTo(cx + ca * r * 0.55, cy + sa * r * 0.55); c.lineTo(cx + ca * r * 0.98, cy + sa * r * 0.98);
+                c.lineWidth = ow * 2; c.strokeStyle = ink; c.stroke(); c.lineWidth = ow * 1.1; c.strokeStyle = bd.col; c.stroke();
+            }
+            c.beginPath(); c.arc(cx, cy, r * 0.2, 0, Math.PI * 2); c.lineWidth = ow * 1.4; c.strokeStyle = ink; c.stroke(); c.fillStyle = bd.col; c.fill();
+        } else {
+            // a flame: an outer tongue, then a lighter core
+            const flame = (k) => {
+                c.beginPath();
+                c.moveTo(cx, cy - r * 0.95 * k);
+                c.bezierCurveTo(cx + r * 0.25 * k, cy - r * 0.5 * k, cx + r * 0.85 * k, cy - r * 0.1 * k, cx + r * 0.62 * k, cy + r * 0.45 * k);
+                c.bezierCurveTo(cx + r * 0.45 * k, cy + r * 0.9 * k, cx - r * 0.45 * k, cy + r * 0.9 * k, cx - r * 0.62 * k, cy + r * 0.45 * k);
+                c.bezierCurveTo(cx - r * 0.8 * k, cy, cx - r * 0.35 * k, cy - r * 0.35 * k, cx, cy - r * 0.95 * k);
+                c.closePath();
+            };
+            flame(1); c.lineWidth = ow * 2; c.strokeStyle = ink; c.stroke(); c.fillStyle = bd.col; c.fill();
+            c.save(); c.translate(0, r * 0.22); flame(0.55); c.fillStyle = "#ffe08a"; c.fill(); c.restore();
+            if (num) {
+                c.font = "bold " + fs + "px " + HUD.font;
+                c.textBaseline = "middle"; c.textAlign = "left";
+                const tx = pad + d + Math.round(d * 0.08), ty = cy + d * 0.04;
+                c.lineWidth = fs * 0.24; c.strokeStyle = ink; c.strokeText(num, tx, ty);
+                c.fillStyle = HUD.head; c.fillText(num, tx, ty);
+            }
+        }
+        spr = { cv, d, pad };
+        if (tagIcons.size > 80) tagIcons.clear();
+        tagIcons.set(sk, spr);
+        return spr;
+    }
+    // QA: every tag icon on one strip (data URL), to look at without a raid
+    window.dwTagIcons = (d = 48) => {
+        const list = [REVENGE_BADGE, TOUGH_BADGE, { key: "huQA", word: "HUNTED ", num: "", col: "#ff5a48", icon: "target" }, { key: "tpQA", word: "TOP TARGET ", num: "", col: "#ff5a48", icon: "target" }, { key: "s7", word: "STREAK ", num: "7", col: "#ff9a2e", icon: "flame" }];
+        const sp = list.map(b => tagIconSprite(b, d));
+        const cv = document.createElement("canvas");
+        cv.width = sp.reduce((a, s2) => a + s2.cv.width + 12, 12); cv.height = d + 24;
+        const c = cv.getContext("2d"); c.fillStyle = "#3a3340"; c.fillRect(0, 0, cv.width, cv.height);
+        let x = 12; for (const s2 of sp) { c.drawImage(s2.cv, x, 12); x += s2.cv.width + 12; }
+        return cv.toDataURL();
+    };
     function drawStreakBadge(x, y, instance, ratio, alpha, isize) {
         const bd = badgeOf(instance.id);
         if (!bd || alpha < 0.02) return;
@@ -5921,30 +5990,27 @@ import * as upGrid from './upgradeGridLogic.js';
         if (fade < 0.02) return;
         x += global.screenWidth / 2;
         y += global.screenHeight / 2;
-        const fs = streakSize(isize, ratio);
         const c = ctx[1];
-        const spr = streakSprite(bd, fs * (c._tf ? tfOf(c).a : 1));
-        const k = fs / spr.fs;
+        const size = isize * ratio;
+        // on the name row (drawName left its right edge this frame), else beside the hull
+        const onName = tagOnName(instance);
+        const d = onName ? Math.max(14, instance._nameFs * 1.3) : selfTagD(isize, ratio);
+        const ds = c._tf ? tfOf(c).a : 1;
+        const spr = tagIconSprite(bd, d * ds);
+        const k = d / spr.d;
         const w = spr.cv.width * k, h = spr.cv.height * k;
-        // the pointer tip sits a small gap over the name (or the hull)
-        let tipY = nameStackTop(instance, y, ratio, isize) - streakGap(fs);
-        // near the top of the screen it slides down to stay readable, never
-        // below the top of the hull
-        const minTip = spr.tipY * k + 2;
-        if (tipY < minTip) tipY = Math.min(minTip, y - isize * ratio);
-        let bx = x - spr.ax * k;
+        let bx, by;
+        if (onName) { bx = instance._nameRight + d * 0.22 - spr.pad * k; by = instance._nameMid - h / 2; }
+        else { const top = nameStackTop(instance, y, ratio, isize); bx = x - d / 2 - spr.pad * k; by = top - 2 - d - spr.pad * k; }
         bx = Math.max(4, Math.min(global.screenWidth - w - 4, bx));
         c.save();
-        // a tank under a HUD panel (the ability bar, the wallet row) keeps its badge as a
-        const by = tipY - spr.tipY * k;
-        c.globalAlpha = alpha * alpha * fade * (instance._plateA || 1) * (0.88 + 0.12 * Math.sin(performance.now() / 300)) * labelAlpha(bx + w / 2, by + h / 2, w, h);
-        // whole device pixels, so the baked pill stays crisp
-        const ds = c._tf ? tfOf(c).a : 1;
+        c.globalAlpha = alpha * alpha * fade * (instance._plateA || 1) * labelAlpha(bx + w / 2, by + h / 2, w, h);
         c.drawImage(spr.cv, Math.round(bx * ds) / ds, Math.round(by * ds) / ds, w, h);
         c.restore();
         if (streakShownAt.size > 64 && !streakShownAt.has(instance.id)) streakShownAt.clear();
         streakShownAt.set(instance.id, overheadFrame);
     }
+    // the bubble: warm cream, dark ink text (the HUD's head colour and ink)
     // ── chat bubbles (layout: chatLayout.js) ── drawChatMessages queues one bubble per
     function chatState() {
         return drawChatMessages.S || (drawChatMessages.S = {
@@ -5954,14 +6020,16 @@ import * as upGrid from './upgradeGridLogic.js';
             prune: null,
         });
     }
-    // The chat size in canvas px: 16 UI units (it follows the UI Scale and the screen)
+    // The smallest chat text in canvas px: 23 UI units (it follows the UI Scale and the screen)
     function chatFontPx() {
         const cssK = global.ratio || 1;
         let sr = 1;
         try { sr = util.getScreenRatio() || 1; } catch (e) { sr = 1; }
-        return Math.max(10, Math.round(Math.max(14 * cssK, 16 * sr)));
+        return Math.max(13, Math.round(Math.max(15 * cssK, 23 * sr)));
     }
-    function chatBake(lines, n, fs, font, fill) {
+    // the chat input pill's height in canvas px for chat size fs (one bubble line)
+    function chatBoxH(fs) { return Math.round(fs * 1.22) + 2 * Math.round(fs * 0.22); }
+    function chatBake(lines, n, fs, font, fill, stroke = true) {
         const S = chatState();
         const o = Math.ceil(fs * 0.14) + 1, lh = Math.round(fs * 1.22);
         S.mc.font = font;
@@ -5974,7 +6042,7 @@ import * as upGrid from './upgradeGridLogic.js';
         c.lineWidth = o * 1.6; c.strokeStyle = "#120e15"; c.fillStyle = fill;
         for (let i = 0; i < n; i++) {
             const ly = o + lh * i + lh / 2 + fs * 0.04;
-            c.strokeText(lines[i], o, ly);
+            if (stroke) c.strokeText(lines[i], o, ly);
             c.fillText(lines[i], o, ly);
         }
         return { cv, w: cv.width, h: cv.height, o, lh, n, tw: Math.ceil(w) };
@@ -5989,7 +6057,8 @@ import * as upGrid from './upgradeGridLogic.js';
         const mc = S.mc;
         const lines = wrapText(chat.text, maxW, s => mc.measureText(s).width, lim, S.lines);
         if (!lines.length) lines.push(" ");
-        chat._spr = chatBake(lines, lines.length, fs, font, "#fff3d9");
+        // white with the game's dark outline, as arras draws it
+        chat._spr = chatBake(lines, lines.length, fs, font, "#ffffff");
         chat._fs = fs; chat._lim = lim;
         return chat._spr;
     }
@@ -6017,21 +6086,23 @@ import * as upGrid from './upgradeGridLogic.js';
         fade *= fade;
         const A = (self ? 1 : alpha * alpha) * fade;
         if (A < 0.02) return;
-        const fs = chatFontPx();
+        // the old arras bubble: a pill in the tank's own colour per message,
+        // white outlined text, sized to the tank (chatSizeFor)
+        const fs = chatSizeFor(chatFontPx(), isize * ratio);
         const cssK = global.ratio || 1;
-        const maxW = Math.round(Math.min(fs * 15, global.screenWidth * (global.mobile ? 0.5 : 0.34)));
-        // your own: the newest line, two rows at most
-        const maxRows = self ? 2 : global.mobile ? 3 : 5, lim = self || global.mobile ? 2 : 3;
-        let rows = 0, contentH = 0, w = 0, count = 0;
-        const mgap = Math.round(fs * 0.3);
-        for (let i = messages.length - 1; i >= 0 && rows < maxRows; i--) {
+        const maxW = Math.round(Math.min(fs * 14, global.screenWidth * (global.mobile ? 0.5 : 0.36)));
+        // stacked upward over the tank (newest at the bottom), up to 3, each wrapping to two lines
+        const maxN = chatStackMax(global.mobile), lim = CHAT_LINES;
+        const padX = Math.round(fs * 0.62), padY = Math.round(fs * 0.22);
+        const mgap = Math.round(fs * 0.42);
+        let contentH = 0, w = 0, count = 0;
+        for (let i = messages.length - 1; i >= 0 && count < maxN; i--) {
             const chat = messages[i];
-            if (self && count >= 1) break;
             const va = chat.alpha.get();
             if (va <= 0) continue;
-            const spr = chatMsgSprite(chat, fs, maxW, Math.min(lim, maxRows - rows));
-            rows += spr.n; count++;
-            contentH += (spr.lh * spr.n + (count > 1 ? mgap : 0)) * (chat.erased ? va : Math.min(1, va * 1.6));
+            const spr = chatMsgSprite(chat, fs, maxW, lim);
+            count++;
+            contentH += (spr.lh * spr.n + padY * 2 + (count > 1 ? mgap : 0)) * (chat.erased ? va : Math.min(1, va * 1.6));
             w = Math.max(w, spr.tw);
         }
         if (!count) return;
@@ -6039,46 +6110,27 @@ import * as upGrid from './upgradeGridLogic.js';
         y += global.screenHeight / 2;
 
         let st = S.groups.get(instance.id);
-        if (!st) { st = { a: 0, dx: 0, dy: 0, nameSpr: null, rawName: null, rawStyle: null, nfs: 0, seen: S.frame, born: S.frame }; S.groups.set(instance.id, st); }
+        if (!st) { st = { a: 0, dx: 0, dy: 0, seen: S.frame, born: S.frame }; S.groups.set(instance.id, st); }
         // back on screen after a while: it fades in where it lands
         if (S.frame - st.seen > 30) { st.a = 0; st.born = S.frame; }
         st.seen = S.frame;
-        let nameSpr = null;
-        if (!self) {
-            // baked once per name / style / size (nothing built per frame)
-            const nfs = Math.round(fs * 0.86);
-            if (st.rawName !== instance.name || st.rawStyle !== instance.nameStyle || st.nfs !== nfs) {
-                st.rawName = instance.name; st.rawStyle = instance.nameStyle; st.nfs = nfs;
-                const raw = String(instance.name || "");
-                const nm = raw.length > 7 && raw[0] === "#" ? raw.substring(7) : raw;
-                let col = raw[0] === "#" ? raw.substring(0, 7) : "#ffffff";
-                if (col.toLowerCase() === "#ffffff") col = HUD.head;
-                try { const ns = instance.nameStyle ? cosmetics.nameStyleOf(instance.nameStyle) : null; if (ns) col = cosmetics.solidOf(ns, col) || col; } catch (e) { /* plain */ }
-                if (st.nameSpr) { st.nameSpr.cv.width = 0; st.nameSpr = null; }
-                if (nm) {
-                    S.lines.length = 0; S.lines.push(nm.length > 18 ? nm.slice(0, 17) + "…" : nm);
-                    st.nameSpr = chatBake(S.lines, 1, nfs, nfs + "px " + HUD.font, col);
-                }
-            }
-            nameSpr = st.nameSpr;
-            if (nameSpr) w = Math.max(w, nameSpr.tw);
-        }
-        const padX = Math.round(fs * 0.55), padY = Math.round(fs * 0.38);
-        const headH = nameSpr ? Math.round(nameSpr.lh * 0.92) : 0;
-        // the bubble's bottom (its tail tip): a small gap over the name / hull
+        // the stack's bottom (the newest bubble's tail tip): a small gap over the name / hull
         let base = overheadTop(instance, y, ratio, isize) - 3 * cssK;
         // drawChatInput: the box is 0.95 g tall, 0.2 g over the stack
-        if (self && !global.mobile && global.showChatGlide > 0 && global.canvas.chatBox) base -= global.showChatGlide * (1.15 * Math.max(30, chatScale(isize * ratio)) + 4 * cssK);
-        const tail = Math.round(fs * 0.36);
+        // your stack steps up over the input pill while it's open (drawChatInput sizes it the same way)
+        if (self && !global.mobile && global.showChatGlide > 0 && global.canvas.chatBox) base -= global.showChatGlide * (chatBoxH(fs) + mgap);
+        const tail = Math.round(fs * 0.3);   // just a gap over the name (no tail)
+        let col = "#7f7f7f";
+        try { col = gameDraw.modifyColor(instance.color) || col; } catch (e) { /* grey */ }
 
         const it = S.items[S.n] || (S.items[S.n] = { x: 0, y: 0, w: 0, h: 0, id: 0, pri: 1, dx: 0, dy: 0, hide: false });
         S.n++;
         it.x = x; it.y = base; it.id = instance.id; it.pri = self ? 0 : 1;
         it.w = Math.ceil(w) + padX * 2;
-        it.h = Math.ceil(contentH + headH + padY * 2) + tail;
+        it.h = Math.ceil(contentH) + tail;
         it.self = self; it.st = st; it.msgs = messages; it.A = A; it.fs = fs; it.maxW = maxW;
-        it.nameSpr = nameSpr; it.padX = padX; it.padY = padY; it.headH = headH; it.tail = tail;
-        it.maxRows = maxRows; it.lim = lim; it.mgap = mgap;
+        it.padX = padX; it.padY = padY; it.tail = tail;
+        it.maxN = maxN; it.lim = lim; it.mgap = mgap; it.sw = global.screenWidth; it.col = col;
     }
     // a rounded rect path (arcTo: no Path2D, no allocation)
     function chatRRect(c, x, y, w, h, r) {
@@ -6114,9 +6166,12 @@ import * as upGrid from './upgradeGridLogic.js';
         if (evHud.toastFloor > 0) out.push({ x: W / 2 - 330, y: 0, w: 660, h: evHud.toastFloor + 8 });
         // centre cards: the death card as drawn, any other one as a centre block
         const dc = global.deathCardFrac;
-        if (deathCardUp() && dc) out.push({ x: dc.x * W, y: dc.y * H, w: dc.w * W, h: dc.h * H });
+        if (deathCardUp() && dc) out.push({ x: dc.x * W, y: dc.y * H, w: dc.w * W, h: dc.h * H, hard: true });
         const card = global._nxCardWas;
-        if (card && card !== "perk" && card !== "skydrop") out.push({ x: W / 2 - 400, y: H * 0.14, w: 800, h: H * 0.64 });
+        // (only the real centre cards: "shield" is a note line, "event" a plate
+        // over the tank and "place" a touch prompt, so chat stays up for those;
+        // it used to hide your own bubbles for the first 4 s after every spawn)
+        if (card === "intro" || card === "results") out.push({ x: W / 2 - 400, y: H * 0.14, w: 800, h: H * 0.64, hard: true });
     }
     function flushChat() {
         const S = drawChatMessages.S;
@@ -6141,6 +6196,7 @@ import * as upGrid from './upgradeGridLogic.js';
             const g = S.gui[i];
             const r = S.rectPool[i] || (S.rectPool[i] = { x: 0, y: 0, w: 0, h: 0 });
             r.x = g.x * sr; r.y = g.y * sr; r.w = g.w * sr; r.h = g.h * sr;
+            r.hard = !!g.hard;
             rects.push(r);
         }
         const cssK = global.ratio || 1;
@@ -6159,43 +6215,41 @@ import * as upGrid from './upgradeGridLogic.js';
             st.a += ((it.hide ? 0 : 1) - st.a) * Math.min(1, k * 1.4);
             const A = it.A * st.a;
             if (A < 0.02) { it.msgs = null; it.st = null; continue; }
-            const bw = it.w, bh = it.h - it.tail;
-            const bx = Math.round(it.x + st.dx - bw / 2), by = Math.round(it.y + st.dy - it.h);
-            const r = Math.round(it.fs * 0.5);
-            // the plate (and its tail while the bubble sits on its tank)
-            c.globalAlpha = A * 0.84;
-            c.fillStyle = "#16111d";
-            chatRRect(c, bx, by, bw, bh, r);
-            c.fill();
-            // the tail points at the tank, inside the plate's straight edge
-            const t = it.tail, tx = Math.round(Math.max(bx + r + t, Math.min(bx + bw - r - t, it.x)));
-            if (Math.abs(st.dy) < t && Math.abs(tx - it.x) < bw * 0.5) {
-                c.beginPath(); c.moveTo(tx - t, by + bh - 0.5); c.lineTo(tx, by + bh + t); c.lineTo(tx + t, by + bh - 0.5); c.closePath();
-                c.fill();
-            }
-            c.globalAlpha = A;
-            c.lineWidth = (it.self ? 2 : 1.25) * cssK;
-            c.strokeStyle = it.self ? teamCol : "rgba(255,243,217,0.18)";
-            chatRRect(c, bx + c.lineWidth / 2, by + c.lineWidth / 2, bw - c.lineWidth, bh - c.lineWidth, r);
-            c.stroke();
-            if (it.nameSpr) c.drawImage(it.nameSpr.cv, bx + it.padX - it.nameSpr.o, by + it.padY - it.nameSpr.o + Math.round(it.fs * 0.02));
-            // the lines, newest at the bottom
-            let yb = by + bh - it.padY, rows = 0, count = 0;
+            // each message its own bubble, centred over the tank, newest at
+            // the bottom with the tail; older ones above, fading
+            const cxs = it.x + st.dx, sw = it.sw;
+            let yb = Math.round(it.y + st.dy - it.tail);
             const msgs = it.msgs;
-            for (let m = msgs.length - 1; m >= 0 && rows < it.maxRows; m--) {
+            const ow = Math.max(1.5, it.fs * 0.09);
+            let count = 0;
+            for (let m = msgs.length - 1; m >= 0 && count < it.maxN; m--) {
                 const chat = msgs[m];
-                if (it.self && count >= 1) break;
                 const va = chat.alpha.get();
                 if (va <= 0) continue;
-                const spr = chatMsgSprite(chat, it.fs, it.maxW, Math.min(it.lim, it.maxRows - rows));
-                rows += spr.n; count++;
-                const mh = spr.lh * spr.n;
-                if (yb - mh < by + it.padY + it.headH - 2 * cssK && count > 1) break;
-                c.globalAlpha = A * va * va;
-                if (chat.team) { c.fillStyle = teamCol; c.fillRect(bx + Math.round(it.padX * 0.35), yb - mh + 2 * cssK, Math.max(2, Math.round(2.5 * cssK)), mh - 4 * cssK); }
-                c.drawImage(spr.cv, bx + it.padX - spr.o, Math.round(yb - mh - spr.o));
-                yb -= (mh + it.mgap) * (chat.erased ? va : Math.min(1, va * 1.6));
+                const spr = chatMsgSprite(chat, it.fs, it.maxW, it.lim);
+                const bw = spr.tw + it.padX * 2, bh = spr.lh * spr.n + it.padY * 2;
+                const bx = Math.round(Math.max(4 * cssK, Math.min(sw - bw - 4 * cssK, cxs - bw / 2))), by = Math.round(yb - bh);
+                const r = spr.n > 1 ? Math.round(it.fs * 0.6) : bh / 2;
+                const aa = A * va * bubbleFade(count);
+                // a dark rim so the pill reads on any rock, then the tank's colour
+                c.globalAlpha = aa * 0.75;
+                c.fillStyle = "#120e15";
+                chatRRect(c, bx - ow, by - ow, bw + ow * 2, bh + ow * 2, r + ow);
+                c.fill();
+                c.globalAlpha = aa * 0.92;
+                c.fillStyle = it.col;
+                chatRRect(c, bx, by, bw, bh, r);
+                c.fill();
+                c.globalAlpha = aa;
+                if (chat.team) { c.fillStyle = "#ffffff"; c.fillRect(bx + Math.round(it.padX * 0.35), by + Math.round(bh * 0.25), Math.max(2, Math.round(2.5 * cssK)), Math.round(bh * 0.5)); }
+                c.drawImage(spr.cv, Math.round(bx + it.padX - spr.o), Math.round(by + it.padY - spr.o));
+                yb -= (bh + it.mgap) * (chat.erased ? va : Math.min(1, va * 1.6));
+                count++;
             }
+            // coach.js dims its card while your stack reaches up under it
+            // (its rect is in UI units, x sr to canvas px like the HUD rects)
+            const cr = it.self && count ? global.coachRect : null;
+            if (cr && yb + it.mgap < (cr.y + cr.h) * sr && Math.abs(cxs - (cr.x + cr.w / 2) * sr) < (cr.w * sr + it.w) / 2) global.chatUnderCoachAt = now;
             it.msgs = null; it.st = null;
         }
         c.restore();
@@ -6698,9 +6752,12 @@ import * as upGrid from './upgradeGridLogic.js';
                     const code = nameBadgeCode(instance.rankCode, false), nx = x + nameBadgeRoom(code, fsz, bk) / 2;
                     const tw = drawPlateName(name, instance.nameStyle, namecolor == "#ffffff" ? color.guiwhite : namecolor, nx, ny, fsz, ctx[1]);
                     drawNameBadge(code, name, nx, ny, fsz, "center", ctx[1], false, bk, tw);
+                    // where the name ends: the tag icon (drawStreakBadge) sits right of it
+                    instance._nameRight = nx + tw / 2; instance._nameMid = ny - fsz * 0.36; instance._nameFs = fsz; instance._nameAt = overheadFrame;
                     // won a raid in the last 24 h: a small crown after the name
                     if (royaleActive() && crowns.isChamp(instance.id)) {
                         try { crowns.drawCrownIcon(ctx[1], nx + tw / 2 + 0.5 * g * pk, ny - 0.2 * g * pk, 0.5 * g * pk, "gold", 1); } catch (e) { /* */ }
+                        instance._nameRight += 0.75 * g * pk;
                     }
                     // duos: a small chevron in your team colour over your partner
                     // (it takes the tag spot: badgeOf gives a partner no tag)
@@ -6735,7 +6792,8 @@ import * as upGrid from './upgradeGridLogic.js';
         if (global.mobile) return;
 
         // the first seconds of a first raid: the bars slide in a few seconds after landing
-        statMenu.set(!firstSeconds.shows("stats") ? 0 : 0 + (global.died || global.statHover || (global.canSkill && !gui.skills.every(skill => skill.cap === skill.amount))));
+        // (the raid death card owns the screen: the bars tuck away under it)
+        statMenu.set(!firstSeconds.shows("stats") || deathCardUp() ? 0 : 0 + (global.died || global.statHover || (global.canSkill && !gui.skills.every(skill => skill.cap === skill.amount))));
         // round 12: a tutorial card about the stats keeps the panel all the way
         // in (it used to sit half off-screen, slid out, while the card talked about it)
         if (global.tutorialMode) statMenu.set(1);
@@ -6873,7 +6931,7 @@ import * as upGrid from './upgradeGridLogic.js';
     }
     const BANK_PILL = "#7fb1f2", BANK_PILL_TEXT = "#120e15";
     // the bottom bar's "Tank: <name>" line: your current tank's name, or ""
-    const SELF_TANK_LIFT = 12;
+    const SELF_TANK_LIFT = 18;
     let selfTankFor = null, selfTankLabel = "";
     function selfTankName() {
         if (global.died || !gui.type) return "";
@@ -6929,6 +6987,23 @@ import * as upGrid from './upgradeGridLogic.js';
                 blink = load >= 1 && Math.floor(Date.now() / 160) % 2 === 0;
             const pillH = height + 1;
             hudDrawn.wallet = { x: rx1 - capR, y: ry - pillH / 2, w: rx2 - rx1 + capR * 2, h: pillH };
+            // one plate under the whole player bar (name, tank, wallet and the
+            // ability slots beside it, last frame's rect), so it reads as one thing
+            if (royaleActive()) {
+                const ab = abilityBarRect;
+                // centred on the screen like the name and the pops over it (the
+                // ability slots on the right used to pull it off centre)
+                const pcx = global.screenWidth / 2;
+                const half = Math.max(pcx - (rx1 - capR - 14), Math.max(rx2 + capR, ab ? ab.x + ab.w : 0) + 12 - pcx);
+                const px0 = pcx - half, px1 = pcx + half;
+                const py0 = Math.round(y - 14 - SELF_TANK_LIFT - 34), py1 = Math.min(global.screenHeight - 3, ry + pillH / 2 + 9);
+                const c0 = ctx[2];
+                c0.save();
+                roundRectPath(c0, px0, py0, px1 - px0, py1 - py0, 14);
+                c0.fillStyle = "rgba(16,12,20,0.42)";
+                c0.fill();
+                c0.restore();
+            }
             hudBar(ctx[2], rx1 - capR, ry - pillH / 2, carX2 - rx1 + capR * 2, pillH, load, blink ? HUD.danger : HUD.gold);
             {
                 // text never leaves its pill: shrink to fit
@@ -6975,9 +7050,15 @@ import * as upGrid from './upgradeGridLogic.js';
         const tankName = selfTankName();
         const nameX = Math.round(x + width / 2 + nameBadgeRoom(myCode, 31) / 2) + 1.5, nameY = Math.round(y - 10 - 4) - 1 - (tankName ? SELF_TANK_LIFT : 0);
         if (tankName) {
-            const tl = "Tank: " + tankName;
-            let ts = 12; while (ts > 9 && hudTextW(tl, ts) > width - 40) ts -= 0.5;
-            drawText(tl, Math.round(x + width / 2) + 0.5, Math.round(y - 5) - 0.5, ts, HUD.text, "center");
+            // a dark chip with the tank's name in the display face: readable on any rock
+            let ts = 14.5; while (ts > 10 && hudTitleW(tankName, ts) + hudTextW("TANK", 10) + 30 > width - 40) ts -= 0.5;
+            const lw2 = hudTextW("TANK", 10), tw2 = hudTitleW(tankName, ts);
+            const cw = Math.round(lw2 + 7 + tw2 + 22), chh = Math.round(ts + 8);
+            const ccx = Math.round(x + width / 2), ccy = Math.round(y - 13);
+            const chx = ccx - cw / 2;
+            hudWell(ctx[2], chx, ccy - chh / 2, cw, chh, chh / 2, "rgba(12,9,16,0.88)", HUD.ink, 2);
+            drawText("TANK", chx + 11, ccy + 0.5, 10, HUD.text2, "left", true);
+            hudTitle(tankName, chx + 11 + lw2 + 7, ccy, ts, HUD.head, "left");
         }
         const mySn = styledName(name, global.myNameStyle, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, nameX, 31, "center", ctx[2], nameY);
         drawText(mySn.text, nameX, nameY, 31, mySn.fill, "center");
@@ -7185,8 +7266,19 @@ import * as upGrid from './upgradeGridLogic.js';
         c.beginPath(); c.moveTo(cx - 9, y + h - 1); c.lineTo(cx + 9, y + h - 1); c.lineTo(cx, y + h + 9); c.closePath(); c.fill();
         c.restore();
     }
+    // a deposit has finished once (this visit or any before, localStorage)
+    let vaultTaughtK = null;
+    function vaultTaught(v) {
+        if (vaultTaughtK === null) { try { vaultTaughtK = window.localStorage.getItem("dwBankTaught_v1") === "1"; } catch (e) { vaultTaughtK = false; } }
+        if (!vaultTaughtK && v && v.doneAt > 0 && !global.tutorialMode) {
+            vaultTaughtK = true;
+            try { window.localStorage.setItem("dwBankTaught_v1", "1"); } catch (e) { /* */ }
+        }
+        return vaultTaughtK;
+    }
     function drawVaultUI() {
         const v = global.vault, g = global.gems;
+        if (v && v.doneAt > 0) vaultTaught(v);
         const active = v.total > 0;
         if (!active) v.shownFrac = -1;
         const belowMin = !active && (g.carried | 0) < VAULT_MIN_DEPOSIT;
@@ -7258,9 +7350,12 @@ import * as upGrid from './upgradeGridLogic.js';
             v.bankAllAt = now;
             const allTxt = util.formatLargeNumber(g.carried | 0);
             const touchBig = !!global.mobile;
-            hudButton(c, x + W / 2, y + (touchBig ? 54 : 60), W - 40, touchBig ? 54 : 42, (touchBig ? "Bank all " : "Bank all  ") + allTxt + " gems",
+            // the big "Press B" prompt over the panel teaches the key until your
+            // first deposit lands; after that the button carries the key
+            const taught = vaultTaught(v);
+            hudButton(c, x + W / 2, y + (touchBig ? 54 : 60), W - 40, touchBig ? 54 : 42, (touchBig ? "Bank all " : "Bank all  ") + allTxt + " gems" + (taught && !touchBig ? "  (B)" : ""),
                       { fill: HUD.play, lipCol: HUD.playDk, textCol: "#fff", size: touchBig ? 22 : 18, type: "vault", index: 9, cr });
-            drawBankPrompt(c, x + W / 2, y - 14, allTxt, now, glide);
+            if (!taught) drawBankPrompt(c, x + W / 2, y - 14, allTxt, now, glide);
             drawText("or bank part of it", x + W / 2, y + 118, 11, HUD.text2, "center", true);
             const el = getVaultInput();
             const iw = 130, ih = 30;
@@ -7353,7 +7448,11 @@ import * as upGrid from './upgradeGridLogic.js';
         const left = 1 - (now - (g.mcomboAt || 0)) / 2500;
         if (left <= 0) return;
         const bonus = Math.min(50, 5 * (n - 1));
-        const cx = global.screenWidth / 2, cy = global.screenHeight / 2 + 96;
+        // under your hull and its health bar (a fixed +96 sat on the bar, and
+        // inside a grown hull)
+        let cy = global.screenHeight / 2 + 96;
+        if (selfOver.at >= overheadFrame - 1 && selfOver.r > 0) cy = Math.max(cy, selfOver.y + selfOver.r * 1.45 + 40);
+        const cx = global.screenWidth / 2;
         const a = Math.min(1, left * 3) * (raidHeat.slamUp() ? 0.45 : 0.85);
         const c = ctx[2];
         c.save();
@@ -7662,15 +7761,21 @@ import * as upGrid from './upgradeGridLogic.js';
     const hudTitleWidths = new Map();
     function hudTitleW(text, size) {
         size += config.graphical.fontSizeBoost;
-        const k = text + "|" + size;
+        // zoom-scaled world labels and popping titles ask for a new size
+        // every frame: measure on a quarter-unit grid and scale (canvas text
+        // width is linear in the font size), so they hit the cache
+        let q = Math.max(0.25, Math.round(size * 4) / 4);
+        if ((q >= HUD.titleMin) !== (size >= HUD.titleMin)) q = size;   // hudFont switches face there
+        const k = text + "|" + q;
         let w = hudTitleWidths.get(k);
         if (w === undefined) {
             const c = ctx[2];
-            c.save(); c.font = hudFont(size); w = c.measureText(text).width; c.restore();
-            if (hudTitleWidths.size > 300) hudTitleWidths.clear();
+            c.save(); c.font = hudFont(q); w = c.measureText(text).width; c.restore();
+            // drop the oldest quarter: a full clear re-measured every label at once
+            if (hudTitleWidths.size >= 800) { let n = 200; for (const kk of hudTitleWidths.keys()) { hudTitleWidths.delete(kk); if (--n <= 0) break; } }
             hudTitleWidths.set(k, w);
         }
-        return w;
+        return q === size ? w : w * size / q;
     }
     // Cached measureText for HUD strings that repeat frame to frame.
     const hudTextWidths = new Map();
@@ -7679,7 +7784,7 @@ import * as upGrid from './upgradeGridLogic.js';
         let w = hudTextWidths.get(k);
         if (w === undefined) {
             w = measureText(text, size);
-            if (hudTextWidths.size > 400) hudTextWidths.clear();
+            if (hudTextWidths.size >= 800) { let n = 200; for (const kk of hudTextWidths.keys()) { hudTextWidths.delete(kk); if (--n <= 0) break; } }
             hudTextWidths.set(k, w);
         }
         return w;
@@ -8027,6 +8132,15 @@ import * as upGrid from './upgradeGridLogic.js';
         it.d = Math.abs(x - global.screenWidth / 2) + Math.abs(y - global.screenHeight / 2);
         S.q.push(it);
     }
+    // World labels show when the thing is reasonably near: full in the middle
+    // of the screen, fading out toward the edges (the thing itself still
+    // draws; its name stops crowding the corners and the HUD)
+    function labelNear(x, y) {
+        const hw = global.screenWidth / 2, hh = global.screenHeight / 2;
+        if (!(hw > 0) || !(hh > 0) || global.tutorialMode) return 1;
+        const r = Math.hypot((x - hw) / hw, (y - hh) / hh);
+        return Math.max(0, Math.min(1, (0.98 - r) / 0.4));
+    }
     function flushWorldLabels() {
         const S = worldLabel.S;
         if (!S || !S.q.length) return;
@@ -8035,7 +8149,7 @@ import * as upGrid from './upgradeGridLogic.js';
         for (let i = 0; i < S.q.length; i++) {
             const it = S.q[i];
             const ly = it.y + it.dy;
-            const a = it.alpha * (it.blocked ? 0.3 : 1) * labelAlpha(it.x, ly, it.w, it.h);
+            const a = it.alpha * (it.blocked ? 0.3 : 1) * labelAlpha(it.x, ly, it.w, it.h) * labelNear(it.x, ly);
             // (the background canvas goes under the blackout: those draw on the gameplay one)
             if (a >= 0.03) hudTitle(it.text, it.x, ly, it.size, it.col, "center", a, it.c === ctx[0] ? ctx[1] : it.c);
             it.c = null;
@@ -8048,7 +8162,7 @@ import * as upGrid from './upgradeGridLogic.js';
         if (standingsRect) out.push(standingsRect);
         const topW = Math.max(480, noteMaxW() + 8);
         out.push({ x: sw / 2 - topW / 2, y: 0, w: topW, h: hudTopBottom + 6 });
-        out.push({ x: sw / 2 - 250, y: sh - 112, w: 500, h: 112 });   // name + wallet row
+        out.push({ x: sw / 2 - 250, y: sh - 130, w: 500, h: 130 });   // the player bar: name, tank chip, wallet row
         const lf = leftColumnFloor();
         out.push({ x: 0, y: lf, w: 232, h: sh - lf });
         out.push({ x: sw - 252, y: sh - 262, w: 252, h: 262 });
@@ -8228,8 +8342,12 @@ import * as upGrid from './upgradeGridLogic.js';
             c.restore();
             c.lineWidth = Math.max(1.2, R * 0.028); c.strokeStyle = HUD.ink; c.stroke();
             c.restore();
-            worldLabel(c, "Shop", sx, sy - R * 1.4, Math.max(13, R * 0.25), SHOP_ACCENT, 1, 0, 60, 24);
-            worldLabel(c, String(s.name || "").replace(" Shop", ""), sx, sy + R * 1.42, Math.max(11, R * 0.17), HUD.text2, 1, 3, 70, 18);
+            // one label per pad ("North Shop"), above it; none while you stand
+            // on it (the shop panel says where you are)
+            if (!mine) {
+                const sl = String(s.name || "Shop"), sls = Math.max(13, R * 0.25);
+                worldLabel(c, sl, sx, sy - R * 1.4, sls, SHOP_ACCENT, 1, 0, hudTitleW(sl, sls) + 8, sls + 6);
+            }
         }
     }
 
@@ -8260,7 +8378,8 @@ import * as upGrid from './upgradeGridLogic.js';
         c.lineDashOffset = -now / 25;
         c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2); c.stroke();
         c.restore();
-        drawText("ORE BLOOM  " + Math.ceil(left) + "s", sx, sy - R - 14 * ratio, Math.max(11, 16 * ratio), "#ffd76e", "center", true, fade, 5, ctx[0]);
+        const bla = fade * labelNear(sx, sy - R - 14 * ratio) * labelAlpha(sx, sy - R - 14 * ratio, 160, 24);
+        if (bla > 0.03) drawText("ORE BLOOM  " + Math.ceil(left) + "s", sx, sy - R - 14 * ratio, Math.max(11, 16 * ratio), "#ffd76e", "center", true, bla, 5, ctx[0]);
     }
 
     function drawEventZone(roomX, roomY, ratio) {
@@ -8383,6 +8502,104 @@ import * as upGrid from './upgradeGridLogic.js';
         if (n.sub) drawText(n.sub, x + 11 + tw + 10, y + h / 2, 11, "#ffd0d6", "left", true, a);
         return y + h + NOTE_GAP;
     }
+    // ── the lane message ───────────────────────────────────────────────
+    // Server lines ('m': "Slow down a sec.", the new raid rule, "Taken down
+    // by ivy"), the kill feed lines that matter (drawRoyaleFeed) and the side
+    // cards (an achievement, growing) all share ONE row in the note stack
+    // under the clock: one at a time, oldest first, the rest wait with their
+    // clocks held. A queue moves each one along faster. Nothing on the right edge.
+    const LANE_MS = 5200, LANE_BUSY_MS = 3000, LANE_WAIT_MAX = 4, LANE_PRI = 1.4;   // over the steady goal line (1.5), under hunted (1)
+    const lane = { cur: null, at: 0, shown: false, last: 0, lines: [], fitKey: "", fs: 13 };
+    const laneText = (m) => m.textJSON ? m.textJSON.join(" ") : String(m.text == null ? "" : m.text);
+    function laneHeld() {
+        return !firstSeconds.shows("messages") || !!global.introCardUp || raidFinale.active() || (global.mobile && slamShowing());
+    }
+    function laneMessage(push) {
+        const now = Date.now();
+        const dt = lane.last ? Math.min(250, Math.max(0, now - lane.last)) : 0;
+        lane.last = now;
+        // it lost its row last frame (more urgent lines up): its clock waits
+        if (lane.cur && !lane.shown) lane.at += dt;
+        lane.shown = false;
+        if (laneHeld()) return;
+        // a side card takes the row first; it runs on its own clock
+        if (sideNotes.length && !global.died) {
+            if (lane.cur) lane.at += dt;
+            const n = hudNote(LANE_PRI, "lane", "side:" + sideNotes[0].title, color.guiwhite);
+            n.draw = drawLaneSide;
+            push(n);
+            return;
+        }
+        const msgs = global.messages;
+        let waiting = 0;
+        for (let i = msgs.length - 1; i >= 0; i--) {
+            const m = msgs[i];
+            if (m === lane.cur) continue;
+            if (!(m.duration > 0) || toastSaid(laneText(m))) { msgs.splice(i, 1); continue; }
+            m.time = now;
+            waiting++;
+        }
+        // a long queue drops its oldest quiet lines (other people's kills) first, then the oldest
+        for (let i = 0; waiting > LANE_WAIT_MAX && i < msgs.length; i++) {
+            if (msgs[i] !== lane.cur && msgs[i].lo) { msgs.splice(i, 1); i--; waiting--; }
+        }
+        while (waiting > LANE_WAIT_MAX) { const i = msgs[0] === lane.cur ? 1 : 0; msgs.splice(i, 1); waiting--; }
+        if (lane.cur && msgs.indexOf(lane.cur) < 0) lane.cur = null;
+        if (lane.cur) {
+            const life = Math.min(lane.cur.duration, waiting > 0 ? LANE_BUSY_MS : LANE_MS);
+            if (now - lane.at > life) { msgs.splice(msgs.indexOf(lane.cur), 1); lane.cur = null; waiting = Math.max(0, waiting - 1); }
+        }
+        if (!lane.cur) {
+            // your own lines go before other people's kills
+            let pick = null;
+            for (const m of msgs) if (!m.lo) { pick = m; break; }
+            lane.cur = pick || msgs[0] || null;
+            lane.at = now;
+            if (lane.cur) waiting = Math.max(0, waiting - 1);
+        }
+        const m = lane.cur;
+        if (!m) return;
+        const n = hudNote(LANE_PRI, "lane", laneText(m), color.guiwhite);
+        n.draw = drawLaneMsg;
+        n.msgAge = now - lane.at;
+        n.msgLife = Math.min(m.duration, waiting > 0 ? LANE_BUSY_MS : LANE_MS);
+        n.rich = !!m.rich;
+        push(n);
+    }
+    function drawLaneSide(c, n, cx, y) {
+        lane.shown = true;
+        const y2 = drawSideNote(y, cx);
+        return y2 > y ? y2 - 10 + NOTE_GAP : y;
+    }
+    // one or two lines in a pill, the same face as the other notes
+    function drawLaneMsg(c, n, cx, y, maxW) {
+        lane.shown = true;
+        const room = Math.min(maxW, 620) - 32;
+        const fk = n.text + "|" + (room | 0);
+        if (lane.fitKey !== fk) {
+            lane.fitKey = fk;
+            lane.fs = 13;
+            lane.lines = [n.text];
+            // feed lines carry colour codes: one line, shrunk to fit
+            if (n.rich) { while (lane.fs > 10 && measureText(n.text, lane.fs) > room) lane.fs -= 0.5; }
+            else if (hudTextW(n.text, 13) > room) {
+                lane.lines = wrapLines(n.text, 12.5, room).slice(0, 2);
+                lane.fs = 12.5;
+                while (lane.fs > 10 && lane.lines.some(l => hudTextW(l, lane.fs) > room)) lane.fs -= 0.5;
+            }
+        }
+        const lines = lane.lines, fs = lane.fs, lh = fs + 5;
+        let tw = 0;
+        for (const l of lines) tw = Math.max(tw, hudTextW(l, fs));
+        const H = Math.max(NOTE_H, lines.length * lh + 9);
+        const a = Math.max(0, Math.min(1, n.msgAge / 180, (n.msgLife - n.msgAge) / 260));
+        hudPanel(c, Math.round(cx - tw / 2 - 14), y, tw + 28, H, { r: Math.min(H / 2, 12), lw: 2.5, lip: 2.5, bevel: false, alpha: a });
+        for (let i = 0; i < lines.length; i++) drawText(lines[i], cx, y + H / 2 + (i - (lines.length - 1) / 2) * lh, fs, color.guiwhite, "center", true, a);
+        return y + H + NOTE_GAP;
+    }
+    // QA: what's in the lane queue
+    window.dwLane = () => ({ cur: lane.cur ? laneText(lane.cur) : "", waiting: (global.messages || []).filter(m => m !== lane.cur).map(laneText), side: sideNotes.length });
+
     // Rock biomes: the first time in a raid you settle into one, its name
     // shows for a few seconds at the bottom of the note stack. Quiet on
     // purpose: lowest priority, it simply doesn't show when the stack is busy.
@@ -8488,6 +8705,8 @@ import * as upGrid from './upgradeGridLogic.js';
             const biome = biomeNote();
             if (biome) push(hudNote(3, "biome", biome.name, biome.ui));
         }
+        // the one message row: server lines, your kills, side cards
+        try { laneMessage(push); } catch (e) { /* never break the frame */ }
         list.sort((a, b) => a.pri - b.pri);
         const c = ctx[2], cx = global.screenWidth / 2, maxW = noteMaxW();
         for (let i = 0; i < list.length && i < NOTE_ROWS; i++) {
@@ -8965,48 +9184,42 @@ import * as upGrid from './upgradeGridLogic.js';
         return { text, badge };
     }
 
+    // The kill feed no longer has its own column on the right: the lines
+    // that matter go through the lane under the clock (laneMessage), once
+    // each. Yours (you killed, you died, your crown) first; other people's
+    // big moments (a shutdown, a streak, a boss, a bounty) only when the
+    // lane is quiet; everyday kills between other tanks stay on the big map's feed.
+    const feedSeen = new Map();
+    function feedNotable(f) {
+        return !!(f.shutdown || f.streak >= 4 || f.bounty || f.hunt || f.cloot || (f.core && f.broke) || (f.boss && f.slain) || f.chest || crowns.feedLine(f, (n) => n || "", (n) => n));
+    }
     function drawRoyaleFeed(yTop) {
-        const feed = (global.royale.feed || []).slice(-3);
-        const now = Date.now();
-        const right = global.screenWidth - HUD.edge;
-        let y = yTop;
-        const c = ctx[2];
-        for (let i = feed.length - 1; i >= 0; i--) {
+        const feed = global.royale.feed || [];
+        const now = Date.now(), myName = global.playerName || "";
+        for (let i = Math.max(0, feed.length - 4); i < feed.length; i++) {
             const f = feed[i];
             if (!f) continue;
-            // arrivals (a boss, the Core, a supply drop, a bloom) are the
-            // toast's news under the clock: the feed keeps who did what
+            const key = (f.at || 0) + "|" + (f.name || "") + "|" + (f.by || "") + "|" + (f.verb || "");
+            if (feedSeen.has(key)) continue;
+            feedSeen.set(key, now);
+            if (feedSeen.size > 60) feedSeen.delete(feedSeen.keys().next().value);
+            // arrivals (a boss, the Core, a supply drop, a bloom) are the toast's news
             if (f.event || f.bloom || (f.spawn && (f.boss || f.core))) continue;
             // the first raid: only lines with your name in them
-            if (!newcomer.feedAllowed(f, global.playerName || "")) continue;
-            const age = now - (f.at || now);
-            if (age > 11000) continue;
-            const a = age > 8500 ? Math.max(0.12, 1 - (age - 8500) / 2500) : 1;
-            const line = feedLine(f);
-            let bx = right;
-            if (line.badge) {
-                // a dark tag with the colour in its text, so the feed stays quiet
-                const bw = hudTitleW(line.badge.t, 11) + 12;
-                c.save();
-                c.globalAlpha = a;
-                roundRectPath(c, right - bw, y + 1, bw, 16, 5);
-                c.fillStyle = HUD.raised;
-                c.fill();
-                c.lineWidth = 1.5;
-                c.strokeStyle = HUD.ink;
-                c.stroke();
-                c.font = (11 + config.graphical.fontSizeBoost) + "px " + HUD.font;
-                c.textAlign = "center"; c.textBaseline = "middle";
-                c.fillStyle = line.badge.col;
-                c.fillText(line.badge.t, right - bw / 2, y + 9.5);
-                c.restore();
-                bx = right - bw - 8;
-            }
-            drawText(String(line.text).replace(/§reset§$/, ""), bx, y + 9, 12, color.guiwhite, "right", true, a, 5);
-            y += 21;
+            if (!newcomer.feedAllowed(f, myName)) continue;
+            // old news (the first broadcast after joining carries the last few)
+            if (now - (f.at || now) > 6000) continue;
+            const mine = !!myName && (f.name === myName || f.by === myName);
+            if (!mine && !feedNotable(f)) continue;
+            let line = null;
+            try { line = feedLine(f); } catch (e) { line = null; }
+            if (!line || !line.text) continue;
+            let text = String(line.text).replace(/§reset§$/, "");
+            if (line.badge) text += "§reset§   §" + line.badge.col + "§" + line.badge.t;
+            global.messages.push({ text, time: now, duration: mine ? 4200 : 3000, rich: true, lo: !mine, faded: 0 });
         }
-        royaleFeedBottom = y;
-        hudDrawn.feed = { x: right - 262, y: yTop, w: 262, h: y - yTop };
+        royaleFeedBottom = yTop;
+        hudDrawn.feed = null;
     }
 
     // ── contract tracker ───────────────────────────────────────────────
@@ -10448,9 +10661,10 @@ import * as upGrid from './upgradeGridLogic.js';
     // ── world layer: boss and bloom edge markers, streak marks, fx ──────
     // `placed` collects pill rects so two markers on the same edge slide
     // apart instead of stacking.
-    function drawEdgeMarker(c, e, col, glyph, name, distText, placed) {
+    // mini: the quieter second marker, its glyph and distance only, a little faded
+    function drawEdgeMarker(c, e, col, glyph, name, distText, placed, mini = false) {
         const sw = global.screenWidth, sh = global.screenHeight;
-        const label = name + (distText ? "  " + distText : "");
+        const label = mini ? (distText || "") : name + (distText ? "  " + distText : "");
         const tw = hudTextW(label, 10.5);
         const pw = tw + 36, ph = 21;
         const inX = -Math.cos(e.ang), inY = -Math.sin(e.ang);
@@ -10479,6 +10693,8 @@ import * as upGrid from './upgradeGridLogic.js';
             placed.push(rect);
         }
         const px = rect.cx, py = rect.cy;
+        const a0 = c.globalAlpha;
+        if (mini) c.globalAlpha = a0 * 0.72;
         c.save();
         c.translate(e.x, e.y);
         c.rotate(e.ang);
@@ -10504,7 +10720,8 @@ import * as upGrid from './upgradeGridLogic.js';
         else if (glyph.startsWith("ping:")) { c.beginPath(); c.arc(gx, gy, 7, 0, Math.PI * 2); c.fill(); c.stroke(); drawPingGlyph(c, gx, gy, 5, glyph.slice(5)); }
         else { c.beginPath(); c.moveTo(gx, gy - 6); c.lineTo(gx + 6, gy + 5); c.lineTo(gx - 6, gy + 5); c.closePath(); c.fill(); c.stroke(); }
         c.restore();
-        drawText(label, px - pw / 2 + 23, py + 0.5, 10.5, color.guiwhite, "left", true, c.globalAlpha, 5);
+        if (label) drawText(label, px - pw / 2 + 23, py + 0.5, 10.5, color.guiwhite, "left", true, c.globalAlpha, 5);
+        c.globalAlpha = a0;
     }
     // Damage reads on the chest itself: jagged cracks grow from the centre
     // as health falls, seeded per chest so they do not flicker.
@@ -10602,15 +10819,17 @@ import * as upGrid from './upgradeGridLogic.js';
         marks.sort((a, b) => a.pri - b.pri);
         const placed = [], kept = [];
         // one chip per thing (the contract on the boss, a supply drop said
-        // twice) and three at most
+        // twice) and two at most: the most important one named, the next
+        // one a quiet glyph and distance (the big map has the rest)
         for (const mk of marks) {
-            if (kept.length >= 3) break;
+            if (kept.length >= 2) break;
             if (kept.some(o => o.name === mk.name || Math.hypot(o.s.x - mk.s.x, o.s.y - mk.s.y) < 90)) continue;
             kept.push(mk);
         }
-        for (const mk of kept) {
+        for (let i = 0; i < kept.length; i++) {
+            const mk = kept[i];
             const e = edgePoint(mk.s.x - cx, mk.s.y - cy);
-            drawEdgeMarker(c, e, mk.col, mk.glyph, mk.name, fmtDist(mk.d), placed);
+            drawEdgeMarker(c, e, mk.col, mk.glyph, mk.name, fmtDist(mk.d), placed, i > 0);
         }
         // a chest seen for the first time while still young plays its landing
         const seen = new Set();
@@ -13785,11 +14004,6 @@ import * as upGrid from './upgradeGridLogic.js';
         const dead = !instance;
         if (dead || instance.id === gui.playerid) {
             const duo = !!(global.royale && global.royale.duos);
-            let size = isize * ratio,
-                g = chatScale(size);
-            // touch: one steady size, a 16px line (iOS zooms into smaller inputs)
-            if (global.mobile) g = 32;
-            else g = Math.max(30, g);
 
             if (!global.showChat) {
                 if (ichatInput === 0) chatInput.force(0);
@@ -13810,11 +14024,18 @@ import * as upGrid from './upgradeGridLogic.js';
             global.showChatGlide = global.showChat ? chatInput.get() : 1 - chatInput.get();
             x += global.screenWidth / 2;
             y += global.screenHeight / 2;
-            const boxH = 0.95 * g;
-            // box top, in GUI units: over the hull, or under the death card
+            // canvas px -> CSS px
+            const toPx = window.innerWidth / global.screenWidth;
+            // the same pill as the chat bubbles: the tank's colour, white outlined
+            // text, sized to the tank (chatSizeFor); touch keeps a 16px line
+            // (iOS zooms into smaller inputs)
+            let fs = dead || global.mobile ? Math.max(chatFontPx(), (global.mobile ? 16 : 14) / toPx) : chatSizeFor(chatFontPx(), isize * ratio);
+            fs = Math.round(fs);
+            const padX = Math.round(fs * 0.62), boxH = chatBoxH(fs), ow = Math.max(2, Math.round(fs * 0.09));
+            // box top: over the hull where the newest bubble sits, or under the death card
             let top = dead
                 ? Math.min(global.screenHeight - boxH - 70, global.screenHeight / 2 + 250)
-                : overheadTop(instance, y, ratio, isize) - 0.2 * g - boxH;
+                : overheadTop(instance, y, ratio, isize) - 3 * (global.ratio || 1) - Math.round(fs * 0.3) - boxH;
             // touch: the keyboard comes up from the bottom, so the box sits at
             // the top, under the button row, where it can't be covered
             if (global.mobile) {
@@ -13822,66 +14043,70 @@ import * as upGrid from './upgradeGridLogic.js';
                 x = global.screenWidth / 2;
                 top = (Math.max(8, sa.t) + 60) * k;
             }
-            const toPx = window.innerWidth / global.screenWidth;
-            // g is CSS px for the line
-            let boxLengthHalf = (10.49 * g) / 2 / (global.mobile ? 1 : Math.min(1, toPx));
+            const gC = fs * toPx;   // the line's font size in CSS px
+            let boxW = Math.min(fs * 14, global.screenWidth * (global.mobile ? 0.6 : 0.36)) + padX * 2;
             global.canvas.chatBox.loadedProperly = true;
 
             // duos: who hears this line
             const pill = chatPill();
             const team = duo && (global.died || !global.duoChatAll);
             let pillW = 0;
+            const boxCss = boxH * toPx;
             if (duo) {
                 const label = team ? "Team" : "All";
-                // the box's own units: widths are % of the canvas, heights raw px
-                const pillPx = hudTitleW(label, 0.46 * g) + 0.7 * g;
-                pillW = (pillPx + 0.3 * g) / toPx;   // pill + a gap, in layout units
+                const pillPx = hudTitleW(label, 0.7 * gC) + 0.9 * gC, pillH = Math.round(boxCss * 0.66);
+                pillW = (pillPx + 0.35 * gC) / toPx;   // pill + a gap, canvas px
+                boxW += pillW;
                 pill.textContent = label;
                 pill.style.display = "flex";
                 pill.style.background = team ? (playerHexCol() || HUD.sky) : "#4a4156";
-                pill.style.color = "#fff3d9";
+                pill.style.color = "#ffffff";
                 pill.style.textShadow = "0 1px 0 #120e15";
-                pill.style.fontSize = 0.46 * g + "px";
-                pill.style.height = 0.64 * g + "px";
+                pill.style.fontSize = 0.7 * gC + "px";
+                pill.style.height = pillH + "px";
                 pill.style.width = pillPx + "px";
                 pill.style.opacity = global.showChatGlide;
-                boxLengthHalf += pillW / 2;
-                pill.style.left = ((x - boxLengthHalf - 0.75 * g / 2) * toPx + 0.3 * g) + "px";
-                // centred on the box as laid out (its CSS padding can make it taller than boxH)
-                const bh = global.canvas.chatBox.offsetHeight || boxH;
-                const mt = parseFloat(getComputedStyle(global.canvas.chatBox).marginTop) || 0;
-                pill.style.top = (top * toPx + mt + (bh - 0.64 * g) / 2) + "px";
+                pill.style.left = ((x - boxW / 2) * toPx + padX * 0.5 * toPx) + "px";
+                pill.style.top = (top * toPx + (boxCss - pillH) / 2) + "px";
                 global.canvas.chatInput.placeholder = global.died ? "Only your teammate can hear you" : global.mobile ? (team ? "To your teammate" : "To everyone") : team ? "Chat with your teammate, press Tab for all" : "Chat with everyone, press Tab for team";
             } else {
                 pill.style.display = "none";
                 global.canvas.chatInput.placeholder = "";
             }
 
-            // the chat bubbles' dark plate: input well, ink keyline, cream text
-            global.canvas.chatBox.style.color = "#fff3d9";
-            global.canvas.chatBox.style.backgroundColor = "rgba(22,17,29,0.92)";
-            global.canvas.chatBox.style.borderColor = "#0c0a0e";
-            global.canvas.chatBox.style.borderWidth = Math.max(2, 0.08 * g) + 'px';
-            global.canvas.chatBox.style.boxShadow = "inset 0 0 0 1px rgba(255,243,217,0.18), 0 2px 0 rgba(0,0,0,0.32)";
-            global.canvas.chatBox.style.opacity = global.showChatGlide;
-            global.canvas.chatBox.style.width = (boxLengthHalf * 2 + 0.75 * g) / global.screenWidth * 100 + `%`;
-            global.canvas.chatBox.style.height = boxH + `px`;
-            global.canvas.chatBox.style.left = (x - boxLengthHalf - 0.75 * g / 2) / global.screenWidth * 100 + `%`;
-            global.canvas.chatBox.style.top = top * toPx + `px`;
+            let col = null;
+            try { col = instance ? gameDraw.modifyColor(instance.color) : null; } catch (e) { col = null; }
+            const rgb = hexToRgb(col || playerHexCol() || HUD.sky);
+            const left = x - boxW / 2;
+            const box = global.canvas.chatBox.style, inp = global.canvas.chatInput.style;
+            box.color = "#ffffff";
+            box.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.92)`;
+            box.borderColor = "rgba(18,14,21,0.75)";
+            box.borderWidth = ow * toPx + "px";
+            box.borderRadius = boxCss / 2 + "px";
+            box.padding = "0";
+            box.boxShadow = "none";
+            box.opacity = global.showChatGlide;
+            box.width = boxW / global.screenWidth * 100 + "%";
+            box.height = boxCss + "px";
+            box.left = left / global.screenWidth * 100 + "%";
+            box.top = top * toPx + "px";
 
-            global.canvas.chatInput.style.opacity = global.showChatGlide;
-            global.canvas.chatInput.style["font-size"] = 0.5 * g + 'px';
-            // always cream on the dark box, whatever the site theme did to inputs
-            global.canvas.chatInput.style.color = "#fff3d9";
-            global.canvas.chatInput.style.caretColor = "#f2b83c";
-            global.canvas.chatInput.style.backgroundColor = "transparent";
-            global.canvas.chatInput.style.width = (boxLengthHalf * 2 + 0.35 * g - pillW) / global.screenWidth * 100 + `%`;
-            global.canvas.chatInput.style.height = boxH + `px`;
+            const o = Math.max(1, Math.round(gC * 0.09));
+            inp.opacity = global.showChatGlide;
+            inp.font = `bold ${gC}px Rubik, Ubuntu, sans-serif`;
+            inp.color = "#ffffff";
+            inp.textShadow = `-${o}px -${o}px 0 #120e15, ${o}px -${o}px 0 #120e15, -${o}px ${o}px 0 #120e15, ${o}px ${o}px 0 #120e15`;
+            inp.caretColor = "#ffffff";
+            inp.backgroundColor = "transparent";
+            inp.border = "0";
+            inp.width = (boxW - padX - pillW) / global.screenWidth * 100 + "%";
+            inp.height = boxCss + "px";
             // no vertical padding: the browser centres the line in the box
-            global.canvas.chatInput.style.padding = `0 ${0.3 * g}px`;
-            global.canvas.chatInput.style.lineHeight = "normal";
-            global.canvas.chatInput.style.left = (x - boxLengthHalf - 0.35 * g / 2 + pillW) / global.screenWidth * 100 + `%`;
-            global.canvas.chatInput.style.top = top * toPx + `px`;
+            inp.padding = `0 ${padX * 0.5 * toPx}px`;
+            inp.lineHeight = "normal";
+            inp.left = (left + padX * 0.5 + pillW) / global.screenWidth * 100 + "%";
+            inp.top = top * toPx + "px";
             if (global.canvas.chatBox && global.showChatGlide < 0.005 && !global.showChat) {
                 chatInput.force(0), global.canvas.chatInput.remove(), global.canvas.chatBox.remove(), global.canvas.chatBox = false;
                 pill.style.display = "none";

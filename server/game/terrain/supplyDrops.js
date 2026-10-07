@@ -224,18 +224,31 @@ function awayFrom(p, b) {
     const a = Math.random() * Math.PI * 2;
     return { nx: Math.cos(a), ny: Math.sin(a), d: 0 };
 }
-// every tick of the warning and the fall
+// every tick of the warning and the fall: the ring the client draws
+// (CRATE_SIZE, snapshot z) is a solid wall. A hull touching it stops at its
+// edge, nothing outside it is pushed, and anyone caught inside is walked out
 function clearSpot(p, t) {
-    for (const b of onSpot(p, CLEAR_MARGIN)) {
-        const { nx, ny } = awayFrom(p, b);
-        if (!b.velocity) continue;
-        const vOut = b.velocity.x * nx + b.velocity.y * ny;
-        if (vOut < CLEAR_SPEED) { b.velocity.x += (CLEAR_SPEED - vOut) * nx; b.velocity.y += (CLEAR_SPEED - vOut) * ny; }
+    for (const b of (hooks.fighters ? hooks.fighters() : [])) {
+        if (!alive(b) || !b.velocity) continue;
+        const rs = b.realSize || 30, wall = CRATE_SIZE + rs;
+        const dx = b.x - p.x, dy = b.y - p.y, d2 = dx * dx + dy * dy;
+        if (d2 >= wall * wall) continue;
+        const { nx, ny, d } = awayFrom(p, b);
+        if (d >= wall - CLEAR_SPEED * 3) {
+            // at the edge: held on it, the inward part of its motion taken away
+            b.x = p.x + nx * wall; b.y = p.y + ny * wall;
+            const vIn = b.velocity.x * nx + b.velocity.y * ny;
+            if (vIn < 0) { b.velocity.x -= vIn * nx; b.velocity.y -= vIn * ny; }
+        } else {
+            // inside (it was there when the warning went up): out it rolls
+            const vOut = b.velocity.x * nx + b.velocity.y * ny;
+            if (vOut < CLEAR_SPEED) { b.velocity.x += (CLEAR_SPEED - vOut) * nx; b.velocity.y += (CLEAR_SPEED - vOut) * ny; }
+        }
         if (b.accel) {
             const aIn = b.accel.x * nx + b.accel.y * ny;
             if (aIn < 0) { b.accel.x -= aIn * nx; b.accel.y -= aIn * ny; }
         }
-        if (b.socket && b.sendMessage && t - (b._supplyWarnAt || 0) > WARN_EVERY_MS) {
+        if (b.socket && b.sendMessage && d < wall - CLEAR_SPEED * 3 && t - (b._supplyWarnAt || 0) > WARN_EVERY_MS) {
             b._supplyWarnAt = t;
             try { b.sendMessage("Move! Supply drop incoming."); } catch { /* */ }
         }

@@ -16,7 +16,7 @@ const SCALE = 1100;          // 2x at ~4.1k score (was 1500: ~5.7k)
 // tanks around to chase. Growth only: the board keeps the real score.
 const BOT_SCORE_MULT = 2;
 // the "you grew" card fires when a life crosses one of these
-const STAGES = [1.25, 1.5, 1.75, 2, 2.3, 2.6, 2.9, 3.25, 3.5, 4, 4.5, 5, 6, 7, 8, 10];
+const STAGES = [1.25, 1.5, 1.75, 2, 2.3, 2.6, 2.9, 3.25, 3.6];
 const REFRESH_STEP = 0.03;   // stats are recomputed every time size moves this much
 const EASE_MS = 900;
 
@@ -25,15 +25,15 @@ function enabled() {
 }
 
 // 1 + GAIN*ln(1 + s/SCALE) up to 2x, so early points show. Past 2x it
-// switches to a square root tail with the same slope at the join, which
-// keeps growing steadily instead of flattening out. No ceiling.
+// eases toward MAX_GROWTH with the same slope at the join (Oct 7: the old
+// square root tail had no ceiling, ~4.5x at 100k)
+const MAX_GROWTH = 4;   // Oct 7: 3 felt too small; 4x at the top
 const TAIL_AT = SCALE * (Math.exp(1 / GAIN) - 1);           // score where the log reaches 2x
-const TAIL_K = 0.009;
-const TAIL_C = Math.pow(TAIL_K * (SCALE + TAIL_AT) / (2 * GAIN), 2);
+const TAIL_TAU = (MAX_GROWTH - 2) * (SCALE + TAIL_AT) / GAIN;
 function multFor(score) {
     const s = Math.max(0, score || 0);
     if (s <= TAIL_AT) return 1 + GAIN * Math.log(1 + s / SCALE);
-    return 2 + TAIL_K * (Math.sqrt(s - TAIL_AT + TAIL_C) - Math.sqrt(TAIL_C));
+    return 2 + (MAX_GROWTH - 2) * (1 - Math.exp(-(s - TAIL_AT) / TAIL_TAU));
 }
 
 // the growth score that lands exactly on RESPAWN_CAP
@@ -58,14 +58,17 @@ function spawnEff(score) {
 
 // Trade-offs, all 1 at normal size.
 function speedMult(g) { return 1 / (1 + 0.28 * (g - 1)); }
-// Health and damage creep up with size, slowly: STAT_AT_100K at a 100k
-// growth score, following ln(size) so it keeps slowing down past that.
+// Health and damage creep up with size, slowly, following ln(size): the
+// same per size as before the ceiling (1.6 at the old 4.47x), so 1.44 at 3x.
 // Damage covers everything the tank deals: shots and rams into tanks,
 // chests and rock.
 const STAT_AT_100K = 1.6;
-const STAT_K = (STAT_AT_100K - 1) / Math.log(multFor(100000));
+const STAT_K = (STAT_AT_100K - 1) / Math.log(4.4716);
 function statMult(g) { return 1 + STAT_K * Math.log(Math.max(1, g)); }
-function healthMult(g) { return statMult(g); }
+// Health grows faster than damage (Oct 7: big tanks were too easy to pop):
+// 1.4x at 2x, 1.8x at the 3x ceiling
+const HEALTH_PER_X = 0.4;
+function healthMult(g) { return 1 + HEALTH_PER_X * (Math.max(1, g) - 1); }
 function damageMult(g) { return statMult(g); }
 function bodyDamageMult(g) { return statMult(g); }
 // The camera: arras' own sqrt(size) times this, so the view follows
@@ -165,5 +168,5 @@ module.exports = {
     RESPAWN_SHARE, RESPAWN_CAP, STAGES, CAP_SCORE,
     BOT_SCORE_MULT, enabled, multFor, spawnEff, scoreMult, onSpawn, tick, applyPerks, stageOf,
     speedMult, healthMult, damageMult, bodyDamageMult, statMult, fovMult, viewMult, mineMult,
-    SCALE, GAIN, STAT_AT_100K, VIEW_POW, botDimAdd, BOT_DIM_AT,
+    SCALE, GAIN, STAT_AT_100K, MAX_GROWTH, VIEW_POW, botDimAdd, BOT_DIM_AT,
 };

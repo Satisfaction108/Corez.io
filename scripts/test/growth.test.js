@@ -57,14 +57,15 @@ test('curve', () => {
     assert.ok(Math.abs(growth.multFor(growth.CAP_SCORE) - growth.RESPAWN_CAP) < 1e-9);
     // 2x comes about a quarter sooner than the old 5656
     assert.ok(growth.CAP_SCORE > 3800 && growth.CAP_SCORE < 5656 * 0.76, 'cap score ' + growth.CAP_SCORE);
-    // no ceiling, and it keeps going: each doubling past 2x adds more than the last
-    const d1 = growth.multFor(40000) - growth.multFor(20000), d2 = growth.multFor(80000) - growth.multFor(40000);
-    assert.ok(d1 > 0.4 && d2 > d1, 'steady tail ' + d1 + ' ' + d2);
+    // past 2x it eases toward the 4x ceiling (Oct 7: no ceiling had a 100k tank at ~4.5x)
+    assert.equal(growth.MAX_GROWTH, 4);
+    assert.ok(growth.multFor(10000) > 2.4 && growth.multFor(20000) > 3, 'still grows past 2x');
+    assert.ok(growth.multFor(100000) <= 4 && growth.multFor(100000) > 3.95, 'a 100k tank is about 4x');
     // no kink where the log hands over to the tail
     const at = growth.CAP_SCORE;
     assert.ok(Math.abs((growth.multFor(at + 10) - growth.multFor(at)) - (growth.multFor(at) - growth.multFor(at - 10))) < 1e-4, 'smooth join');
     assert.ok(growth.multFor(1000) > 1.25, 'the first kills show');
-    assert.ok(growth.multFor(1e6) > 5, 'no cap');
+    assert.ok(growth.multFor(1e9) <= 4, 'never past 4x');
 });
 
 test('spawn', () => {
@@ -104,7 +105,7 @@ test('life', () => {
     settle(b, 68000, (body, st) => stages.push(st));
     assert.ok(Math.abs(b.growthMult - growth.multFor(growth.CAP_SCORE + 8000)) < 1e-9);
     assert.ok(b.growthMult > growth.RESPAWN_CAP);
-    assert.deepEqual(stages, [2.3]);
+    assert.deepEqual(stages, [2.3, 2.6]);
     // the score drops (carried gems spent or lost): no shrinking
     const g = b.growthMult;
     settle(b, 65000);
@@ -141,12 +142,12 @@ test('perks', () => {
     b.growthMult = 2.3;
     growth.applyPerks(b);
     assert.ok(b.topSpeed < 0.8 && b.topSpeed > 0.65);
-    // health and ram damage grow slowly: about 1.27x at 2.3x, 1.6x at a 100k score
-    assert.ok(b.health.max > 120 && b.health.max < 135, 'health ' + b.health.max);
+    // health grows a bit faster than damage: 1.52x at 2.3x, 1.8x at the 3x ceiling; ram damage about 1.27x
+    assert.ok(b.health.max > 145 && b.health.max < 160, 'health ' + b.health.max);
     assert.ok(b.damage > 1.2 && b.damage < 1.35, 'ram ' + b.damage);
-    assert.ok(Math.abs(growth.healthMult(growth.multFor(100000)) - 1.6) < 1e-9);
-    assert.ok(Math.abs(growth.damageMult(growth.multFor(100000)) - 1.6) < 1e-9);
-    assert.ok(growth.healthMult(growth.multFor(1e6)) < 2.6, "slow past 100k too");
+    assert.ok(Math.abs(growth.healthMult(3) - 1.8) < 0.01);
+    assert.ok(Math.abs(growth.healthMult(2) - 1.4) < 0.01);
+    assert.ok(Math.abs(growth.damageMult(growth.multFor(1e9)) - growth.damageMult(growth.MAX_GROWTH)) < 1e-6, 'capped with the size');
     let prev = 1;
     for (let s = 500; s <= 200000; s *= 2) {
         const h = growth.healthMult(growth.multFor(s));

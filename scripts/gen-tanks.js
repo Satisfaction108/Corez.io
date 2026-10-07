@@ -91,7 +91,7 @@ const MOUNT_OLD = { 1: [10, 0], 2: [8, 5], 3: [7, 5.5], 4: [6.5, 6], 5: [6, 6.5]
 // Bullet spray guns get the Machine Gun flare, swarm launchers the Cruiser's; WIDTH (projectile
 // size, so balance) never changes. A design that differs only in its look keeps its key and name.
 const tName = t => typeof t === 'string' ? t : Array.isArray(t) ? tName(t[0]) : null;
-function look(w) {
+function lookBase(w) {
     if (!w || !w.guns) return w;
     const R = N.hullR(w.shape), guns = w.guns;
     const out = guns.map(gn => {
@@ -116,13 +116,45 @@ function look(w) {
     if (out.every((gn, i) => gn === guns[i]) && tur === w.turrets) return w;
     return { ...w, guns: out, turrets: tur };
 }
+const look = w => (!w || !w.guns) ? w : turnLook(lookBase(w));
+// Oct 7 2026 (owner): the layout turns to face the fight; a turn is a look too (key and name kept)
+//  - a drone tank whose spawners sit only nose and tail (Sultan: Big Cheese doubled) reads as a
+//    Gatepost: it turns 90 degrees, spawners on the sides like Overseer's, the rest turning with them
+//  - a tank on a spinning body (Auto-3, Mega-3, Architect) that gets fixed barrels faces the cursor
+//    (defOf), so its ring turns until a barrel sits on the nose
+const ssOf = gn => gn.PROPERTIES && gn.PROPERTIES.SHOOT_SETTINGS && gn.PROPERTIES.TYPE != null;
+const spins = k => !!(k && Class[k]) && /spin/i.test(JSON.stringify(B.get(Class[k], 'FACING_TYPE')) || '');
+// the published tank a generated line starts from (a generated parent is not in Class yet while
+// the legacy names are hashed: the published tree's own parent links answer then)
+const LEGPARENT = {}, BUILT = {};    // BUILT: byKey once the tree is being built
+const rootOf = k => { for (let n = 0; n < 12 && /^xp_/.test(k || ''); n++) k = (BUILT.byKey && BUILT.byKey[k] && BUILT.byKey[k].w && BUILT.byKey[k].w.parent) || LEGPARENT[k]; return k; };
+const aimable = w => w.guns.some(gn => ssOf(gn) && !gn.PROPERTIES.AUTOFIRE);
+function turnBy(w, rot) {
+    if (!rot) return w;
+    return { ...w, guns: w.guns.map(gn => ({ ...gn, POSITION: { ...gn.POSITION, ANGLE: r3(N.na(gn.POSITION.ANGLE + rot)) } })),
+        turrets: (w.turrets || []).map(t => ({ ...t, POSITION: { ...t.POSITION, ANGLE: r3(N.na(t.POSITION.ANGLE + rot)) } })) };
+}
+function turnLook(w) {
+    const typedG = w.guns.filter(ssOf);
+    if (!typedG.length) return w;
+    const angs = new Set(typedG.map(gn => Math.round(Math.abs(N.na(gn.POSITION.ANGLE)))));
+    if (typedG.every(gn => B.isStock(tName(gn.PROPERTIES.TYPE))) && angs.size === 2 && angs.has(0) && angs.has(180)) return turnBy(w, 90);
+    if (spins(rootOf(w.parent)) && aimable(w)) {
+        const fixed = typedG.filter(gn => !gn.PROPERTIES.AUTOFIRE).map(gn => N.na(gn.POSITION.ANGLE));
+        if (!fixed.some(a => Math.abs(a) <= 20)) { const a = fixed.reduce((m, x) => Math.abs(x) < Math.abs(m) - 1e-6 || (Math.abs(Math.abs(x) - Math.abs(m)) < 1e-6 && x > m) ? x : m); return turnBy(w, -a); }
+    }
+    return w;
+}
 const designHash = w => rawHash(look(w));
 const LEG = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(path.join(__dirname, 'tanks', 'legacy.json.gz'))));
+for (const t of LEG.tanks) LEGPARENT[t.key] = t.w.parent;
 const LEGACY = {}, RAW = {}; for (const t of LEG.tanks) { const h = designHash(t.w); LEGACY[h] = [t.key, t.label]; RAW[h] = rawHash(t.w); }
 const sanityHash = w => { const h = designHash(w); return RAW[h] || rawHash(w); };
 const legacyKeys = new Set(Object.values(LEGACY).map(v => v[0]));
 // duel sanity (scripts/tanks/sanity.js check): a damage factor per design, inside its band
 const SANITY = fs.existsSync(path.join(__dirname, 'tanks', 'duelSanity.json')) ? JSON.parse(fs.readFileSync(path.join(__dirname, 'tanks', 'duelSanity.json'), 'utf8')) : { k: {}, drop: [] };
+// aimed damage floor (scripts/tanks/dpsFloor.js): a damage factor per design, keyed by its def
+const DPSF = fs.existsSync(path.join(__dirname, 'tanks', 'dpsFloor.json')) ? JSON.parse(fs.readFileSync(path.join(__dirname, 'tanks', 'dpsFloor.json'), 'utf8')).f : {};
 
 // the factor that puts a tank on a power target: hp clamps toughness into its tier band
 const TOL = 0.25;
@@ -202,6 +234,8 @@ function defOf(w, label) {
     if (w.maxChildren) d.MAX_CHILDREN = w.maxChildren;
     if (w.statNames) d.STAT_NAMES = w.statNames;
     if (w.invisible) d.INVISIBLE = w.invisible;
+    // a spinning body (Auto-3, Mega-3, Architect) with barrels you fire faces the cursor (turnLook)
+    if (aimable(w) && /spin/i.test(JSON.stringify(B.get(par, 'FACING_TYPE')) || '')) d.FACING_TYPE = 'toTarget';
     return d;
 }
 const flatW = w => B.flatten(defOf(w, 'probe'));
@@ -510,7 +544,7 @@ const T4RULES = {
     director: ['swarmPair', 'bird', 'alt', 'over', 'droneSwap', 'guard', 'cross', 'ring2', 'ring3', 'sideTraps', 'remount', 'remountGaps', 'remountTraps', 'remountOne', 'nose', 'heavyAll', 'pairUp'],
     pounder: ['alt', 'ring2', 'rear', 'sides90', 'sides120', 'stack', 'fan', 'guard', 'bird', 'trapSwap', 'cross', 'twinify', 'longshot', 'sideTraps'],
     trapper: ['swarmPair', 'ring2', 'ring3', 'ring4', 'rear', 'sides90', 'fan', 'over', 'cross', 'trapToGun', 'sideTraps', 'remount', 'remountGaps', 'remountTraps', 'remountOne', 'heavyAll', 'pairUp', 'longTraps'],
-    smasher: ['hat2', 'hatDouble', 'hatMix', 'bird', 'guard'],
+    smasher: ['hat2', 'hatDouble', 'hatMix', 'bird'],      // no 'guard': a ram hull carries no weapon barrels (neat.js facing)
     splitter: ['alt', 'ring2', 'ring3', 'rear', 'sides90', 'sides120', 'fan', 'stack', 'guard', 'bird', 'cross', 'heavy', 'longshot'],
 };
 const T5EXTRA = { flankGuard: ['thin', 'nose'], director: ['thin'], twin: ['thin', 'trapSwap', 'nose'], machineGun: ['thin', 'nose', 'remount', 'remountGaps', 'remountTraps', 'remountOne'], trapper: ['thin', 'trapSwap', 'nose'], pounder: ['thin', 'nose', 'remount', 'remountGaps', 'remountTraps', 'remountOne'], sniper: ['nose'], splitter: ['nose'], smasher: [] };
@@ -552,7 +586,7 @@ const bySig = new Map();              // layoutSig -> flattened tanks already ac
 const sigAdd = f => { const k = N.layoutSig(f); if (!bySig.has(k)) bySig.set(k, []); bySig.get(k).push(f); };
 const dupOf = f => (bySig.get(N.layoutSig(f)) || []).find(o => N.sameLayout(f, o));
 const tanks = [];                 // every tank of the expanded tree, old and new
-const byKey = {};
+const byKey = {}; BUILT.byKey = byKey;
 const fps = [];                   // fingerprints of everything accepted so far
 const childCount = {};
 const addChild = (p, t) => { childCount[p + ':' + t] = (childCount[p + ':' + t] || 0) + 1; };
@@ -569,6 +603,7 @@ let lastRej = null;
 const rej = r => { lastRej = r; rejects[r] = (rejects[r] || 0) + 1; const k = rejTag + ' ' + r; rejects[k] = (rejects[k] || 0) + 1; return null; };
 function evaluate(w, tier, branch, parents, rule, label = null, hand = false, key = null) {
     if (!w) return rej('rule');
+    const wPrev = lookBase(w);     // before the Oct 7 turns (dpsFloor.json keys measured designs by it)
     w = look(w);
     const f = flatW(w);
     const pt = byKey[parents[0]] || null, pf = pt ? pt.f : null;
@@ -578,6 +613,8 @@ function evaluate(w, tier, branch, parents, rule, label = null, hand = false, ke
     if (deadOf(f).length) { if (hand) throw Error(label + ' has a barrel that fires nothing'); return rej('dead'); }
     // every barrel reads as what it throws (scripts/tanks/neat.js grammar)
     { const gm = N.grammar(f); if (gm.length) { if (hand) throw Error(label + ' barrel look: ' + gm[0]); return rej('look'); } }
+    // every barrel points where the tank fights: no weapons on a ram hull, no thrusters without a gun to push (neat.js facing)
+    { const fc = N.facing(f); if (fc.length) { if (hand) throw Error(label + ' facing: ' + fc[0].why); return rej('facing'); } }
     if (!hand) {
         // drone lines stay drone lines, trap lines stay trap lines
         if (parents.some(p => byKey[p] && !N.lineOK(f, byKey[p].f))) return rej('line');
@@ -602,7 +639,7 @@ function evaluate(w, tier, branch, parents, rule, label = null, hand = false, ke
     if (!hand && parents.some(p => kids(p, tier) >= CAP[tier])) return rej('cap');
     if (!key) { const lg = LEGACY[designHash(w)]; key = lg && !byKey[lg[0]] ? lg[0] : null; }
     if (!key) { do key = 'xp_g' + (nextKey++); while (legacyKeys.has(key)); }
-    const t = { key, label, tier, branch, parents, rule, isNew: true, w, f, fp, hand };
+    const t = { key, label, tier, branch, parents, rule, isNew: true, w, wPrev, f, fp, hand };
     tanks.push(t); fps.push(fp); f.key = key; sigAdd(f); for (const p of parents) addChild(p, tier);
     if (f.shape === 4) SQUARE.add(key);
     byKey[key] = t; Class[key] = defOf(w, label || key);   // so later children can build on it
@@ -617,13 +654,26 @@ for (const id in HAND) {
     const u = ugly(t.f) || neatFail(t.f, null); if (u) console.warn('signature', h.label, 'flagged', u, JSON.stringify(N.overlap(t.f)));
 }
 // ---- the published tree first: each design that still passes keeps its place, key and name
-const legacyDropped = {};
+const legacyDropped = {}, refaced = [];
+// the barrels neat.js facing flags, with the housings that only served them; null when none
+function unface(w) {
+    const bad = new Set(N.facing(flatW(look(w))).map(x => x.i));
+    if (!bad.size) return null;
+    const gone = w.guns.filter((gn, i) => bad.has(i)), keep = w.guns.filter((gn, i) => !bad.has(i));
+    const same = (a, b) => Math.abs(na(a.POSITION.ANGLE - b.POSITION.ANGLE)) < 1 && Math.abs(a.POSITION.Y - b.POSITION.Y) < 0.5;
+    const guns = keep.filter(gn => typed(gn) || !gone.some(x => same(x, gn)) || keep.some(o => o !== gn && typed(o) && same(o, gn)));
+    return { ...w, guns };
+}
 for (const lt of LEG.tanks) {
     if (byKey[lt.key] || HAND[lt.key.slice(3)]) continue;            // signatures are made above
     if (!byKey[lt.w.parent]) { legacyDropped[lt.label] = 'parent gone'; continue; }
     rejTag = 'legacy';
-    const t = evaluate(clone(lt.w), lt.tier, lt.branch, [lt.w.parent], 'legacy', null, false, lt.key);
-    if (!t) { legacyDropped[lt.label] = lastRej; continue; }
+    // a published design with a barrel facing the wrong way (neat.js facing) loses that barrel
+    // and keeps its key and name: the tank players picked stays the same tank
+    const lw = clone(lt.w), fixed = unface(lw);
+    const t = evaluate(fixed || lw, lt.tier, lt.branch, [lt.w.parent], 'legacy', null, false, lt.key);
+    if (!t) { legacyDropped[lt.label] = (fixed ? 'refaced ' : '') + lastRej; if (fixed) refaced.push(lt.label + ' (dropped: ' + lastRej + ')'); continue; }
+    if (fixed) { t.keepLabel = lt.label; refaced.push(lt.label); }
     for (const p of lt.parents.slice(1)) if (byKey[p] && byKey[p].tier === lt.tier - 1 && t.parents.length < 3 && kids(p, lt.tier) < CAP[lt.tier] && fitsUnder(t, p)) { t.parents.push(p); addChild(p, lt.tier); }
 }
 const inBranch = (t, b) => t.branch === b || (!t.isNew && branchesOf(t.key).includes(b));
@@ -748,7 +798,8 @@ let renamed = 0, kept = 0;
 for (const t of tanks) {
     if (!t.isNew || t.label) continue;
     const lg = legacyLabel[t.key];
-    if (lg && lg[0] === designHash(t.w)) { t.label = lg[1]; kept++; }
+    if (t.keepLabel) { t.label = t.keepLabel; kept++; }
+    else if (lg && lg[0] === designHash(t.w)) { t.label = lg[1]; kept++; }
 }
 const nameIdx = {};
 function nextName(poolName) {
@@ -777,6 +828,26 @@ for (const t of tanks) {
     renamed++;
     t.nameTag = tag;
 }
+// Oct 7 2026 (owner: "Glacis upgrades from Architect and shoots triangles"): a launcher throws
+// what its line throws. Under parents that lay only square blocks (Builder, Architect), a new
+// triangle trap launcher becomes a block launcher (Builder's cap, its setTrap stats). Done after
+// naming, so the published key and name stay; a parent with triangle traps keeps its children's.
+const TRI = t => /^trap$/i.test(t || ''), BLOCK = t => /setTrap|unsetTrap|block|pillbox|assemblent|shotTrapBox/i.test(t || '');
+const trapKinds = (f, depth = 0) => !f || depth > 3 ? [] : [...f.guns.filter(x => x.typed).map(x => x.type), ...f.turrets.filter(t => !t.prop).flatMap(t => trapKinds(t.def, depth + 1))];
+const toBlocks = [];
+for (const t of [...tanks].sort((a, b) => a.tier - b.tier)) {
+    if (!t.isNew || !t.w.guns.some(gn => ssOf(gn) && TRI(tName(gn.PROPERTIES.TYPE)))) continue;
+    const pk = t.parents.flatMap(p => byKey[p] ? trapKinds(byKey[p].f) : []);
+    if (!pk.some(BLOCK) || pk.some(TRI)) continue;
+    t.wLook = t.w;
+    t.w = { ...t.w, guns: t.w.guns.map(gn => {
+        if (!ssOf(gn) || !TRI(tName(gn.PROPERTIES.TYPE))) return gn;
+        const pr = gn.PROPERTIES;
+        return { POSITION: { ...gn.POSITION, LENGTH: 2, ASPECT: 1.1 }, PROPERTIES: { ...pr, SHOOT_SETTINGS: cs([pr.SHOOT_SETTINGS, g.setTrap]), TYPE: 'setTrap', STAT_CALCULATOR: 'block' } };
+    }) };
+    t.f = flatW(t.w); t.f.key = t.key;
+    toBlocks.push(t.label);
+}
 // invisibility runs in the family: anything under Stalker, Manager or Landmine
 const invOf = k => { const t = byKey[k]; if (t && t.isNew) return t.w.invisible || null; const v = B.get(Class[k], 'INVISIBLE'); return Array.isArray(v) && (v[0] || v[1]) ? v : null; };
 for (const tr of [4, 5]) for (const t of tanks) if (t.isNew && t.tier === tr) { const v = t.parents.map(invOf).find(Boolean); if (v) t.w.invisible = clone(v); else delete t.w.invisible; }
@@ -791,6 +862,15 @@ const OLDP = CAL.oldParentPremium ? CAL.oldParentPremium.value : 1;
 // (measured on tier 4 and 5; a hand-made tier 2 or 3 tank duels today's at par without it)
 const powerOf = (k, tier) => { const t = byKey[k]; return t.isNew ? t.bal.T : B.power(t.f).P * (tier >= 4 ? OLDP : 1); };
 const effK = {};
+const steered = [], ceiled = [], dpsfMoved = {};
+const droneTurrets = f => f.guns.some(x => x.typed && B.isStock(x.type)) && f.turrets.some(x => !x.prop && armed(x));
+function steerFloor(t, s) {
+    if (!droneTurrets(t.f)) return 1;
+    const own = B.gunOffense(t.f) * s;
+    const ps = t.parents.map(p => { const o = byKey[p]; return o.isNew ? B.gunOffense(o.f) * o.bal.s : B.gunOffense(o.f) * (t.tier >= 4 ? OLDP : 1); });
+    const want = ps.reduce((a, b) => a + b, 0) / ps.length * STEP[t.tier];
+    return own > 0 ? want / own : 1;
+}
 for (const t of [...tanks].sort((a, b) => a.tier - b.tier)) {
     if (!t.isNew) { const p = B.power(t.f); t.bal = { O: p.O, S: p.S, P: p.P, T: p.P, hp: 1, s: 1 }; continue; }
     const ps = t.parents.map(p => powerOf(p, t.tier));
@@ -799,11 +879,39 @@ for (const t of [...tanks].sort((a, b) => a.tier - b.tier)) {
     if (!isFinite(bal.s)) { console.warn('no offence:', t.key); continue; }
     // the duel pass nudges the damage factor (sanity.js check, kept inside its band)
     // relative to its primary parent: a parent's factor carries down to its children
-    const pk = t.parents[0], k = +((SANITY.k[sanityHash(t.w)] || 1) * (effK[pk] || 1)).toFixed(4);
-    effK[t.key] = k;
-    if (k !== 1) bal.s = +(bal.s * k).toFixed(4);
-    t.bal = bal; t.duelK = k;
-    balance[t.key] = k !== 1 ? [bal.s, bal.hp, T, k] : [bal.s, bal.hp, T];
+    // (the duel and damage-floor files key a design as it was measured: before the block launchers and the turns)
+    const pk = t.parents[0], k0 = (SANITY.k[sanityHash(t.wLook || t.w)] || 1) * (effK[pk] || 1);
+    effK[t.key] = +k0.toFixed(4);
+    // the aimed damage floor is the tank's own: not carried down (each child is measured and floored itself)
+    // (with the duel factor, at most 2.5x: tanksExpansion.test.js 'out of reason')
+    // (a turned or re-capped design keeps the factor it was measured with until the next fit)
+    const hNow = rawHash(t.w), hPrev = rawHash(t.wPrev || t.w);
+    if (DPSF[hNow] == null && DPSF[hPrev] != null) dpsfMoved[hNow] = DPSF[hPrev];
+    const df = DPSF[hNow] ?? DPSF[hPrev] ?? 1;
+    // a floor (df > 1) raises before the steer floor below, a ceiling (df < 1) lowers the result
+    const up = Math.max(1, df), down = Math.min(1, df);
+    let k = +Math.min(2.5, k0 * up).toFixed(4);
+    // Oct 7 2026 (owner: Sultan's drones "barely do any damage"): on a drone tank the auto turrets
+    // ride on top. The budget prices autos like barrels, so a drone child that gains them (Sultan:
+    // Big Cheese's drone doubled, plus 2 autos) paid with its drones, each at half Big Cheese's
+    // damage. What you steer (its drones and barrels, turrets left out) carries the tier step over
+    // its parents' steered weapons, as the whole tank's target does, the duel verdict (k0) still on
+    // top. Only the guns take that factor (balance[0]); the turrets keep the budget's (balance[4]).
+    const s0 = bal.s, sf = steerFloor(t, s0), G = B.gunOffense(t.f), Tu = B.turretOffense(t.f);
+    let sg = +(s0 * k).toFixed(4), ts = sg;
+    if (sf > 1 && k0 * sf > k) {
+        const S1 = bal.S * bal.hp;
+        let g2 = Math.min(s0 * k0 * sf, (2.5 * T / S1 - Tu * ts) / G);   // the whole tank at most 2.5x its target
+        g2 = +g2.toFixed(4);
+        if (g2 > ts) { steered.push(t.label + ' drones x' + (g2 / ts).toFixed(2)); sg = g2; }
+    }
+    // the aimed ceiling (dpsFloor.js CEIL) scales guns and turrets alike, never under 0.2x of the target overall
+    if (down < 1) { const S1 = bal.S * bal.hp, P = (G * sg + Tu * ts) * S1, lo = 0.2 * T / P, d = Math.max(down, Math.min(1, lo)); sg = +(sg * d).toFixed(4); ts = +(ts * d).toFixed(4); ceiled.push(t.label + ' x' + d.toFixed(2)); }
+    // the whole factor over the target (balance[3]): k itself unless the steer floor or the ceiling moved it
+    const moved = ts !== sg || down < 1, kk = moved ? +((G * sg + Tu * ts) * bal.S * bal.hp / T).toFixed(4) : k;
+    bal.s = sg; if (ts !== sg) bal.ts = ts;
+    t.bal = bal; t.duelK = kk;
+    balance[t.key] = ts !== sg ? [sg, bal.hp, T, kk, ts] : kk !== 1 ? [sg, bal.hp, T, kk] : [sg, bal.hp, T];
 }
 const ORDER = ['basic', ...BRANCHES];
 tanks.sort((a, b) => ORDER.indexOf(a.branch) - ORDER.indexOf(b.branch) || a.tier - b.tier || (a.isNew - b.isNew) || (a.label < b.label ? -1 : 1));
@@ -870,6 +978,17 @@ for (const tr of [2, 3, 4, 5]) {
 if (shortT4b.length || shortT5.length) console.warn('FEWER THAN ' + MIN_KIDS + ' CHILDREN:', [...shortT4b, ...shortT5].join(', '));
 { const why = {}; for (const r of Object.values(legacyDropped)) why[r] = (why[r] || 0) + 1; console.log('published designs dropped', Object.keys(legacyDropped).length, JSON.stringify(why)); }
 if (process.env.GEN_LEGACY) console.log(Object.entries(legacyDropped).map(([l, r]) => l + ':' + r).join(' '));
+if (toBlocks.length) console.log('trap launchers to blocks (a line of block layers)', toBlocks.length + ':', toBlocks.join(', '));
+if (ceiled.length) console.log('lowered by the aimed ceiling', ceiled.length + ':', ceiled.join(', '));
+// --migrate-dpsf: copy each turned design's factor to its new key in dpsFloor.json (so a fit's `had` is right)
+if (argv.includes('--migrate-dpsf') && Object.keys(dpsfMoved).length) {
+    const F0 = path.join(__dirname, 'tanks', 'dpsFloor.json'), J = JSON.parse(fs.readFileSync(F0, 'utf8'));
+    Object.assign(J.f, dpsfMoved); J.f = Object.fromEntries(Object.entries(J.f).sort());
+    fs.writeFileSync(F0, JSON.stringify(J).replace(/,"f":/, ',\n"f":') + '\n');
+    console.log('dpsFloor.json: moved', Object.keys(dpsfMoved).length, 'factors to turned designs');
+}
+if (steered.length) console.log('drone tanks whose drones carry the step over their autos', steered.length + ':', steered.join(', '));
+if (refaced.length) console.log('refaced (a barrel facing the wrong way removed, key and name kept)', refaced.length + ':', refaced.join(', '));
 if (handDropped.length) console.log('signatures dropped as duplicates:', handDropped.join(', '));
 if (process.env.GEN_DEBUG) for (const k of process.env.GEN_DEBUG.split(',')) console.log(k, Object.entries(rejects).filter(([r]) => r.startsWith(k + ' ')).map(([r, n]) => r.slice(k.length + 1) + ':' + n).join(' '));
 console.log('wrote', path.relative(REPO, OUT), (fs.statSync(OUT).size / 1024).toFixed(0) + ' KB;', REPORT);

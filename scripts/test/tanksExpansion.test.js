@@ -51,6 +51,7 @@ if (process.argv[2] === '--dump') {
     for (const k in flat) if (k.startsWith('xp_')) {
         const f = flat[k];
         tanks[k].look = N.grammar(f);
+        tanks[k].facing = N.facing(f).map(x => x.why);
         tanks[k].dead = N.deadGuns(f, { decos, valid: x => typeof x.type === 'string' && !!Class[x.type] && (!B.isStock(x.type) || x.max > 0 || f.maxChildren > 0) }).length;
         tanks[k].line = parents[k].filter(p => !N.lineOK(f, flat[p])).map(p => p + ' ' + N.mainKind(flat[p]) + '>' + N.mainKind(f));
         tanks[k].conv = /^xp_g\d+$/.test(k) && N.converted(f, flat[parents[k][0]]) && !N.hybrid(flat[parents[k][0]]);
@@ -200,7 +201,8 @@ test('balance: today\'s tanks untouched, new tanks balanced against their parent
         const kk = D.balance[k][3] || 1, sref = D.sref[t.tier], s = t.S / sref, o = t.O / (target * kk / sref);
         if (Math.abs(target / want - 1) > 0.03) bad.push(`${k} T${t.tier} target ${target.toFixed(1)} vs parents x step ${want.toFixed(1)}`);
         if (Math.abs(t.P / (target * kk) - 1) > 0.03) bad.push(`${k} T${t.tier} power x${(t.P / target).toFixed(3)} of its target (duel factor ${kk})`);
-        if (kk < 0.4 || kk > 2.5) bad.push(`${k} duel factor ${kk} (with its parents') out of reason`);
+        // (0.2: the aimed ceiling, dpsFloor.js CEIL, can take a duel-trimmed design well under its budget: Glacis 0.26)
+        if (kk < 0.2 || kk > 2.5) bad.push(`${k} duel factor ${kk} (with its parents') out of reason`);
         if (s < tlo - 0.02 || s > thi + 0.02 || o < tlo - 0.02 || o > thi + 0.02) bad.push(`${k} T${t.tier} O x${o.toFixed(2)} S x${s.toFixed(2)}`);
     }
     assert.deepEqual(bad, [], bad.length + ' off budget:\n' + bad.slice(0, 12).join('\n'));
@@ -241,6 +243,11 @@ test('barrel grammar: a barrel looks like what it throws (spray guns flared like
     const ring = D.tanks.filter(t => { const T = (t.def.TURRETS || []).filter(x => x.POSITION.LAYER === 1 && Math.hypot(x.POSITION.X, x.POSITION.Y) > 1);
         return T.length >= 2 && T.every(x => /autoTurret$/.test(x.TYPE[0])) && T.some(x => Math.hypot(x.POSITION.X, x.POSITION.Y) - x.POSITION.SIZE / 2 < 2.4); }).map(t => t.label);
     assert.deepEqual(ring, [], ring.length + ' with an auto ring covering the centre: ' + ring.slice(0, 12).join(', '));
+});
+
+test('facing: no weapon barrels on a ram hull, no thrusters without a forward gun to push (Mastodon\'s rear trap)', () => {
+    const bad = D.tanks.filter(t => ON.tanks[t.key].facing.length).map(t => t.label + ' [' + ON.tanks[t.key].facing.join('; ') + ']');
+    assert.deepEqual(bad, [], bad.length + ' with a barrel facing the wrong way: ' + bad.slice(0, 12).join(', '));
 });
 
 test('weapons: no dead barrels, drone and trap lines keep their weapon, no conversions, no sibling bolt-ons', () => {

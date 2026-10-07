@@ -63,28 +63,61 @@ const REPO = path.join(__dirname, '..', '..');
         L.layoutChat(b, 2, null, {});
         assert.equal(b.find(i => i.id === 3).dy, 0);
     });
-    test('layout: a bubble under a HUD rect steps over it, or hides when that is too far', () => {
+    test('layout: a bubble under a HUD rect steps over it, or stays put over the HUD when that is too far', () => {
         const slam = { x: 300, y: 330, w: 400, h: 60 };
         const near = item(1, 500, 400);           // top 360: under the rect by 30
         L.layoutChat([near], 1, [slam], { gap: 4, maxShift: 200 });
         assert.ok(!near.hide);
         assert.ok(!hit(box(near), slam));
-        const card = { x: 0, y: 100, w: 1000, h: 600 };   // a centre card: no room
-        const under = item(2, 500, 400);
+        const wide = { x: 0, y: 100, w: 1000, h: 600 };   // no room: it stays on its tank
+        const stay = item(2, 500, 400);
+        L.layoutChat([stay], 1, [wide], { gap: 4 });
+        assert.ok(!stay.hide, 'chat never vanishes behind the HUD');
+        assert.equal(stay.dy, 0);
+        const card = { x: 0, y: 100, w: 1000, h: 600, hard: true };   // a centre card hides it
+        const under = item(3, 500, 400);
         L.layoutChat([under], 1, [card], { gap: 4 });
         assert.ok(under.hide);
         assert.equal(under.dy, 0);
+        const mine = Object.assign(item(4, 500, 400), { self: true });
+        L.layoutChat([mine], 1, [slam], { gap: 4 });
+        assert.ok(!mine.hide && mine.dy === 0, 'your own bubble stays on your tank');
     });
-    test('layout: never above the top of the screen', () => {
-        const top = item(1, 500, 30);
+    test('layout: a big tank\'s bubble is pulled onto the screen, not hidden', () => {
+        const top = item(1, 500, 30);             // top edge at -10
         L.layoutChat([top], 1, [{ x: 0, y: 0, w: 1000, h: 20 }], { top: 0, maxShift: 500 });
-        assert.ok(top.hide);
+        assert.ok(!top.hide);
+        assert.equal(top.y - top.h + top.dy, 0);
+    });
+    test('size: grows with the tank, never under the base or past 2.2x it, 2 px steps', () => {
+        assert.equal(L.chatSizeFor(16, 20), 16, 'a small tank still gets readable text');
+        assert.equal(L.chatSizeFor(16, 60), 30, 'half the tank on screen');
+        assert.equal(L.chatSizeFor(16, 400), 36, 'capped at 2.2x the base (35.2, to 2 px)');
+        assert.ok(L.chatSizeFor(16, 61) % 2 === 0);
+        assert.ok(L.chatSizeFor(16, 80) > L.chatSizeFor(16, 50), 'a bigger tank, bigger chat');
     });
     test('layout: only the first n items are laid out (pooled array)', () => {
         const items = [item(1, 500, 400), item(2, 500, 400)];
         items[1].dy = 123;
         L.layoutChat(items, 1, null, {});
         assert.equal(items[1].dy, 123);
+    });
+
+    test('stack: up to 3 bubbles a tank (2 on a phone), older ones fade', () => {
+        assert.equal(L.chatStackMax(false), 3);
+        assert.equal(L.chatStackMax(true), 2);
+        assert.equal(L.CHAT_LINES, 2);
+        assert.equal(L.bubbleFade(0), 1);
+        assert.ok(L.bubbleFade(1) < 1 && L.bubbleFade(2) < L.bubbleFade(1) && L.bubbleFade(2) > 0.4);
+    });
+    test('app.js: one bubble per message, no name header, your own stack is not cut to one', () => {
+        const fs = require('fs');
+        const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
+        const fn = app.slice(app.indexOf('function drawChatMessages('), app.indexOf('function drawHealth('));
+        assert.ok(fn.includes('chatStackMax(global.mobile)'));
+        assert.ok(!fn.includes('nameSpr = chatBake') && !fn.includes('it.nameSpr'), 'no name inside the bubble');
+        assert.ok(!/self && count >= 1/.test(fn), 'your own messages stack too');
+        assert.ok(fn.includes('bubbleFade(count)'));
     });
 
     let fail = 0;

@@ -552,10 +552,15 @@ class io_nearestDifferentMaster extends IO {
         // A raid boss is everyone's problem: its guns take the nearest tank,
         // not the highest tier in reach (a Basic next to it used to be
         // ignored while any upgraded tank was in range).
-        const anyTier = this.body.aiSettings.farm || this.body.master.master.isRoyaleBoss;
+        // Dig Royale: a tank's auto turrets and drones take the nearest tank, any
+        // tier (the highest DANGER in reach used to win, so they swung at some far
+        // bot past the tank right next to you); tanks before shapes
+        const royaleGun = Config.dig_royale && (this.body.master.master.isPlayer || this.body.master.master.isBot);
+        const anyTier = this.body.aiSettings.farm || this.body.master.master.isRoyaleBoss || royaleGun;
+        const tanksIn = royaleGun && validCandidates.some(e => io_nearestDifferentMaster.validEntityTypes.has(e.type));
         const finalTargets = validCandidates.filter((e) => {
             // Even more expensive
-            return !this.wouldHitWall(e);
+            return !this.wouldHitWall(e) && (!tanksIn || io_nearestDifferentMaster.validEntityTypes.has(e.type));
         }).filter(e => {
             if (anyTier || e.dangerValue === mostDangerous) {
                 if (this.targetLock && e.id === this.targetLock.id) {
@@ -625,6 +630,12 @@ class io_nearestDifferentMaster extends IO {
             // a boss gun takes anyone else before a new player (terrain/bossGuard.js)
             const bossGun = this.body.master.master.isRoyaleBoss;
             if (bossGun && this.targetLock && bossGuard.dropNewbieLock(this.targetLock, this.validTargets)) this.targetLock = undefined;
+            // a royale tank's guns: someone much closer than the lock takes over
+            if (!bossGun && this.targetLock && Config.dig_royale && this.validTargets.length > 1 && !this.body._digWarsCombatTarget) {
+                const d2 = (e) => (e.x - this.body.x) ** 2 + (e.y - this.body.y) ** 2;
+                const cur = d2(this.targetLock) * 0.5;   // ~0.7x the distance
+                if (this.validTargets.some(e => e !== this.targetLock && d2(e) < cur)) this.targetLock = undefined;
+            }
             if (this.targetLock == null && this.validTargets.length) {
                 const preferred = this.body._digWarsCombatTarget && this.validTargets.find(target =>
                     target.id === this.body._digWarsCombatTarget.id

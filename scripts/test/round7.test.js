@@ -415,7 +415,7 @@ test('bank pops: a payout inside a deposit pops now; the same payout never pops 
     assert.match(si, /if \(\(m\[3\] \| 0\) === 1\) bankPops\.note\(bp, m\[2\] \| 0, String\(m\[1\] \|\| ""\), performance\.now\(\)\);/);
     assert.match(si, /if \(at >= 10000\) try \{ raidHeat\.slamBanked\(/, 'a milestone is the bank pop; the slam is for the big rungs');
     assert.match(si, /v\.lastDeposit = \(\(m\[1\] \| 0\) \|\| \(v\.total \| 0\)\) \+ \(performance\.now\(\) - \(v\.partAt \|\| -1e9\) < 10000 \? v\.partBanked \| 0 : 0\);/, 'a deposit in two goes is one number');
-    assert.match(src('app.js'), /drawBankPops\(global\.screenWidth \/ 2, Math\.round\(y - 10 - 4\) - 1 - 30\);/, 'above the name, never on it (round 8: centred like it)');
+    assert.match(src('app.js'), /drawBankPops\(global\.screenWidth \/ 2, Math\.round\(y - 10 - 4\) - 1 - 30( - \(selfTankName\(\) \? SELF_TANK_LIFT : 0\))?\);/, 'above the name, never on it (round 8: centred like it; lifted with the tank line)');
 });
 
 test('bank pops: the Deep Pockets premium goes out labelled when the deposit ends', () => {

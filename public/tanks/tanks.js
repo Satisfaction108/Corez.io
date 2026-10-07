@@ -269,7 +269,14 @@ $("zin").onclick = () => zoomAt(1.4, cssW() / 2, cssH() / 2);
 $("zout").onclick = () => zoomAt(1 / 1.4, cssW() / 2, cssH() / 2);
 $("fit").onclick = fit;
 window.addEventListener("resize", () => { size(); });
-window.addEventListener("keydown", (e) => { if (e.key === "Escape") pick(-1); });
+// in the game the Play button just closes the tree
+try { const pl = document.querySelector("a.play"); if (pl && window.parent !== window) pl.addEventListener("click", (e) => { e.preventDefault(); window.parent.postMessage({ dwTanks: "close" }, location.origin); }); } catch (e) { /* */ }
+window.addEventListener("keydown", (e) => {
+    // in the game (T opens this in a frame): Esc or T closes it; the search box keeps its keys
+    const inGame = window.parent !== window, typing = document.activeElement && document.activeElement.tagName === "INPUT";
+    if (inGame && !typing && (e.key === "Escape" || e.key === "t" || e.key === "T")) { try { window.parent.postMessage({ dwTanks: "close" }, location.origin); } catch (err) { /* */ } return; }
+    if (e.key === "Escape") pick(-1);
+});
 
 // search: names that contain what you typed
 let hits = [], hi = 0;

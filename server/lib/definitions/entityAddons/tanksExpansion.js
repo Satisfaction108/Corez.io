@@ -46,9 +46,10 @@ for (const key in D.balance) {
     snap[key] = { guns: arr(get(def, 'GUNS')), turrets: arr(get(def, 'TURRETS')), body: body(def), smasher: !!get(def, 'IS_SMASHER') };
 }
 for (const key in snap) {
-    const [s, hp] = D.balance[key], o = snap[key], def = Class[key];
+    // [4]: the turrets' own factor when it differs (a drone tank's autos ride on top: gen-tanks.js)
+    const [s, hp, , , ts] = D.balance[key], o = snap[key], def = Class[key];
     def.GUNS = o.guns.map(g => scaleGun(g, s, 0));
-    def.TURRETS = o.turrets.map(t => scaleTurret(t, s, 0));
+    def.TURRETS = o.turrets.map(t => scaleTurret(t, ts ?? s, 0));
     const b = { ...o.body };
     if (o.smasher) b.DAMAGE = (b.DAMAGE ?? 1) * s;
     if (hp !== 1) b.HEALTH = (b.HEALTH ?? 1) * hp;

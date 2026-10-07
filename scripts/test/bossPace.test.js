@@ -144,7 +144,7 @@ function capChecks() {
     const a = { id: 1 }, b = { id: 2 }, c = { id: 3 }, d = { id: 4 };
     const now = 1e12;
     assert.ok(Math.abs(guard.capHit(boss, a, pool, now) - pool * guard.HIT_SHARE) < 1e-9, 'one huge hit');
-    assert.equal(guard.capHit(boss, a, 1, now), 1, 'small hits pass');
+    assert.equal(guard.capHit(boss, a, 1, now), guard.TANK_DMG_MULT, 'small hits pass (at the tank damage cut)');
     let got = 0;
     for (let i = 0; i < 60; i++) got += guard.capHit(boss, a, pool * 0.01, now + i);
     assert.ok(got <= pool * guard.TANK_SHARE_S + 1e-6, 'one tank, one second');
@@ -185,7 +185,7 @@ test('default: no per-second cap, only the per-hit one', () => {
     const a = { id: 1 };
     let got = 0;
     for (let i = 0; i < 60; i++) got += guard.capHit(boss, a, pool * 0.01, 1e12 + i);
-    assert.ok(got > pool * 0.5, 'one tank lands what it deals: ' + (got / pool * 100).toFixed(1) + '% in a second');
+    assert.ok(got > pool * 0.5 * guard.TANK_DMG_MULT, 'one tank lands what it deals (cut to TANK_DMG_MULT): ' + (got / pool * 100).toFixed(1) + '% in a second');
     assert.ok(Math.abs(guard.capHit(boss, a, pool, 1e12 + 99) - pool * guard.HIT_SHARE) < 1e-9, 'one huge hit is still capped');
     const anni = ttk('annihilator', { limit: 60 });
     const basic = ttk('basic', { limit: 150 });

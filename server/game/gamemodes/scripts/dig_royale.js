@@ -620,7 +620,7 @@ function compass(x, y) {
 // A contract reward goes straight into the bank; the board counts it too
 // (and with it growth).
 // why: a short label for the client's bank pop ("+300 banked: survived the
-const PAY_WHY = { bounty: "bounty claimed", bountySurvive: "survived the bounty", revenge: "revenge", hunt: "hunted bounty", leaderBounty: "leader bounty" };
+const PAY_WHY = { bounty: "bounty claimed", bountySurvive: "survived the bounty", revenge: "revenge", hunt: "hunted down", leaderBounty: "leader bounty" };
 function payLabel(why) {
     const w = String(why || "");
     return (PAY_WHY[w] || w).slice(0, 48);
@@ -2240,12 +2240,12 @@ function onCombatantDead(body) {
         // the bounty (pacing.js) pays whoever takes the target down
         guard('bounty kill', () => pacing.onKill(killerBody, body, vk));
         if (killerBody.socket) {
-            let line = avenged ? "REVENGE" : huntBounty ? "BOUNTY CASHED" : shutdown ? "SHUTDOWN" : giantPts ? "GIANT DOWN" : "ELIMINATED";
+            let line = avenged ? "REVENGE" : huntBounty ? "HUNTED DOWN" : shutdown ? "SHUTDOWN" : giantPts ? "GIANT DOWN" : "ELIMINATED";
             line += ": " + (body.name || "Unnamed");
             if (carriedAtDeath >= 300) line += "  (" + carriedAtDeath + " gems dropped)";
             notePts(killerBody, pts, "KO " + String(body.name || "Unnamed").slice(0, 20));
             callout(killerBody, avenged ? "revenge" : huntBounty ? "huntkill" : shutdown ? "shutdown" : "kill", line, pts,
-                avenged ? "+" + contracts.REVENGE_GEMS + " gems" : huntBounty && huntBounty.gems ? "+" + huntBounty.gems + " bounty gems banked" : "");
+                avenged ? "+" + contracts.REVENGE_GEMS + " gems" : huntBounty && huntBounty.gems ? "+" + huntBounty.gems + " hunt gems banked" : "");
             if (streakNow === STREAK_MARK_AT) {
                 try { killerBody.socket.talk('KC', "streak", streakNow + " kill streak. You're marked on everyone's map", 0); } catch { /* */ }
             }

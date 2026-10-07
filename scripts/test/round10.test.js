@@ -24,6 +24,8 @@ process.env.DATA_DIR = path.join(ROOT, 'data');
 for (const k of ['ROYALE_DEBUG', 'ROYALE_LEADER_BOUNTY', 'ROYALE_STAGE_KILLS', 'ROYALE_BANK_RATE', 'ROYALE_BANK_MAX_S',
     'ROYALE_FAIR_PACK', 'ROYALE_FAIR_BOTS', 'ROYALE_FAIR_PLAY', 'ROYALE_BOSS_VAULT_CLEAR', 'ROYALE_PLACE_BONUS', 'ROYALE_FAIR_HIT25']) delete process.env[k];
 process.env.NODE_ENV = 'test';
+// the leader bounty is off in play since Oct 7; these tests cover it switched on
+process.env.ROYALE_LEADER_BOUNTY = '1';
 
 const log = console.log;
 console.log = () => {};

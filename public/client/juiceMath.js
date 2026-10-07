@@ -191,7 +191,7 @@ export function multiKillWord(n) {
 export function bigKillWord(kind, text) {
     if (kind === "shutdown") return "SHUTDOWN";
     if (kind === "revenge") return "REVENGE";
-    if (kind === "huntkill") return "BOUNTY CASHED";
+    if (kind === "huntkill") return "HUNTED DOWN";
     if (/^GIANT DOWN/.test(String(text || ""))) return "GIANT DOWN";
     return "";
 }

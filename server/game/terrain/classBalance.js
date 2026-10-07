@@ -14,6 +14,11 @@ const VS_TANKS = {
     'Octo Tank': 0.88,
     'Penta Shot': 1.12,
 };
+// Oct 7 2026 (owner: "nerf traps a little bit please"): every trap and block (any projectile of
+// type 'trap': Trapper's triangles, Builder/Architect blocks, boomerangs, pillbox bodies), from
+// every tank, classic or expanded, player or bot, lands 13% softer on other tanks. Rock, chests
+// and bosses take the same as before.
+const TRAP_VS_TANKS = 0.87;
 
 // The expanded tree (entityAddons/tanksExpansion.js)
 let derived = null;
@@ -49,8 +54,9 @@ function intoTank(target, src, amount) {
     if (!enabled || !(amount > 0) || !target || !(target.isPlayer || target.isBot) || target.isRoyaleBoss) return amount;
     const root = rootTank(src);
     if (!root || root === target || root.isRoyaleBoss) return amount;
+    if (src.type === 'trap') amount *= TRAP_VS_TANKS;
     const m = multOf(root.label);
     return m ? amount * m : amount;
 }
 
-module.exports = { intoTank, VS_TANKS, multOf };
+module.exports = { intoTank, VS_TANKS, TRAP_VS_TANKS, multOf };

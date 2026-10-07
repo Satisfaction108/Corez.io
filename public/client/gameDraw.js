@@ -269,8 +269,14 @@ var gameDraw = {
     },
     getColor: (colorNumber, ctx, x1, y1, x2, y2) => {
         if (colorNumber == undefined || colorNumber == null) return gameDraw.color.black;
-        if (colorNumber[0] == '#') return colorNumber;
-        if (util.isNumeric(colorNumber)) colorNumber = parseInt(colorNumber);
+        // a plain integer is the common case: the regex test would turn it
+        // into a string first, thousands of times a frame
+        if (typeof colorNumber === "number") {
+            if (!Number.isInteger(colorNumber) && util.isNumeric(colorNumber)) colorNumber = parseInt(colorNumber);
+        } else {
+            if (colorNumber[0] == '#') return colorNumber;
+            if (util.isNumeric(colorNumber)) colorNumber = parseInt(colorNumber);
+        }
         // Gradient color
         if (colorNumber.gradient && ctx) {
             try {

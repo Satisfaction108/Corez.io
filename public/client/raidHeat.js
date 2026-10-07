@@ -566,7 +566,7 @@ export function drawFloor(c, px, py, ratio) {
     const now = performance.now();
     const left = Math.max(0, (core.p || 0) - (now - (global.royale.at || now)));
     // the charge: brighter the closer the next shockwave is
-    const charge = left < 900 ? 1 - left / 900 : 0;
+    const charge = left < 1100 ? 1 - left / 1100 : 0;   // coreFinale CHARGE_MS
     c.save();
     if (juice.glowOn() && A && A.haloSprite) {
         const hot = core.hp < 0.5;
@@ -951,7 +951,7 @@ export function badge(id) {
     let b = badges.get(key);
     if (!b) {
         if (badges.size > 60) badges.clear();
-        b = { key, word, num, col: RED };
+        b = { key, word, num, col: RED, icon: "target" };
         badges.set(key, b);
     }
     return b;
@@ -1019,7 +1019,8 @@ export function drawMap(c, T, inside, dotR, pulse, mapLabel, trackPos) {
             c.fillRect(mx - s2, my - s2 * 0.2, s2 * 2, s2 * 0.4); c.fillRect(mx - s2 * 0.2, my - s2, s2 * 0.4, s2 * 2);
             c.restore();
             const lt = sup.s === "soon" ? Math.ceil(Math.max(0, (sup.left || 0) - (performance.now() - (r.at || 0))) / 1000) + "s" : "CRATE";
-            A.drawText(lt, mx, my - s2 - 9, Math.max(10, dotR * 4.2), "#6ff5a8", "center", true, 1, 5);
+            // the big map only: on the minimap the label ran past the circle (the edge marker has it)
+            if (dotR * 2.6 >= 8) A.drawText(lt, mx, my - s2 - 9, Math.max(10, dotR * 4.2), "#6ff5a8", "center", true, 1, 5);
         }
     }
     const ba = now - S.bossUpAt;
@@ -1223,7 +1224,7 @@ export function slamBanked(title, bonus) {
 // the cosmetics rarity colours (shared/cosmetics.js RARITIES)
 const LOOT_COL = { common: "#b4b8bd", uncommon: "#5fd068", rare: "#4aa3ff", epic: "#b06bff", legendary: "#ffb23d" };
 export function feedLine(f, who, tag) {
-    if (f.bounty) return { text: tag(String(f.by || "Someone").slice(0, 13), GOLD) + " cashed the bounty on " + who(f.name, "someone"), badge: f.g ? { t: "+" + fmt(f.g), col: GOLD } : null };
+    if (f.bounty) return { text: tag(String(f.by || "Someone").slice(0, 13), GOLD) + " hunted down " + who(f.name, "someone"), badge: f.g ? { t: "+" + fmt(f.g), col: GOLD } : null };
     if (f.hunt) return { text: who(f.name, "Someone") + " is the top target", badge: { t: fmtK(f.g | 0), col: RED } };
     if (f.cloot) return { text: (f.by ? tag(String(f.by).slice(0, 13), GOLD) : "Someone") + " found " + tag(String(f.item || "loot").slice(0, 24), LOOT_COL[f.rar] || GOLD) + " in the Core", badge: null };
     if (f.core && f.spawn) return { text: tag("The Core", CORE) + " has surfaced", badge: null };

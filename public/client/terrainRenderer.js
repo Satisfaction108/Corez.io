@@ -3110,24 +3110,7 @@ class TerrainRenderer {
         const d   = 1.8;
         const sq3 = Math.sqrt(3);
 
-        const hex = [
-            [ d,       0        ],
-            [ d / 2,  -d*sq3/2  ],
-            [-d / 2,  -d*sq3/2  ],
-            [-d,       0        ],
-            [-d / 2,   d*sq3/2  ],
-            [ d / 2,   d*sq3/2  ],
-        ];
-        const pick = [3, 1, 2, 0, 5, 4];
-
         this._buildLineRocks();
-
-        const centerG = [
-            [[-2.20,-1.65],[-1.05,-2.35],[ 0.15,-2.50],[ 1.35,-2.20],[ 2.35,-1.45]],
-            [[-3.05,-0.45],[-1.35,-1.00],[ 0.20,-0.85],[ 1.55,-0.70],[ 3.05,-0.20]],
-            [[-3.05, 0.95],[-1.20, 0.55],[ 0.30, 0.70],[ 1.65, 0.55],[ 2.70, 1.05]],
-            [[-1.95, 1.70],[-0.70, 2.35],[ 0.45, 2.45],[ 1.45, 2.05],[ 2.25, 1.35]],
-        ];
 
         if (this.useVoronoi && this._silClip) {
             const tlx = -originX / cellW;
@@ -3300,8 +3283,17 @@ class TerrainRenderer {
                     const [tox, toy] = this._trembleOf(k, nowMs);
                     const shx = tox * 0.7 * (1 - p * 0.6), shy = toy * 0.7 * (1 - p * 0.6);
                     const ax2 = g.ax + shx, ay2 = g.ay + shy;
-                    const spoly = cell.poly.map(pt => [ax2 + (pt[0] - g.ax) * sc,
-                                                       ay2 + (pt[1] - g.ay) * sc]);
+                    // scaled outline in reused point pairs (only read below,
+                    // within this rock): a bloom grows dozens at once
+                    const sPts = this._spolyPts || (this._spolyPts = []);
+                    const spoly = this._spolyView || (this._spolyView = []);
+                    spoly.length = cell.poly.length;
+                    for (let pi = 0; pi < cell.poly.length; pi++) {
+                        const pt = cell.poly[pi], q = sPts[pi] || (sPts[pi] = [0, 0]);
+                        q[0] = ax2 + (pt[0] - g.ax) * sc;
+                        q[1] = ay2 + (pt[1] - g.ay) * sc;
+                        spoly[pi] = q;
+                    }
                     tracePoly(spoly);
 
                     // the ink drop grows in with the rock so a sprouting
@@ -3337,7 +3329,7 @@ class TerrainRenderer {
                             ctx.strokeStyle = cpal.base || 'rgba(16,13,22,0.8)';
                             ctx.lineWidth = w * 2.1;
                             ctx.stroke(cpath);
-                            ctx.strokeStyle = `rgba(${cpal.hot},0.4)`;
+                            ctx.strokeStyle = cpal._hot04 || (cpal._hot04 = `rgba(${cpal.hot},0.4)`);
                             ctx.lineWidth = w * 0.5;
                             ctx.stroke(cpath);
                             ctx.restore();
@@ -3448,12 +3440,17 @@ class TerrainRenderer {
                         ctx.stroke(path);
                         // simple: just the dark line, not the lit layers on it
                         if (simple) { ctx.restore(); return; }
-                        ctx.strokeStyle = `rgba(${cpal.hot},${Math.min(1, 0.75 + boost * 0.25)})`;
+                        // (the resting colours are cached on the palette: a string per
+                        // damaged rock per frame otherwise)
+                        ctx.strokeStyle = boost ? `rgba(${cpal.hot},${Math.min(1, 0.75 + boost * 0.25)})`
+                            : cpal._hotRest || (cpal._hotRest = `rgba(${cpal.hot},${Math.min(1, 0.75 + boost * 0.25)})`);
                         ctx.lineWidth   = w * 0.5;
                         ctx.stroke(path);
                         ctx.save();
                         ctx.translate(0, w * 0.85);
-                        ctx.strokeStyle = `rgba(${cpal.hair},${Math.max(0.22 + 0.03 * stage, boost * 0.8)})`;
+                        const hairRest = cpal._hairRest || (cpal._hairRest = []);
+                        ctx.strokeStyle = boost ? `rgba(${cpal.hair},${Math.max(0.22 + 0.03 * stage, boost * 0.8)})`
+                            : hairRest[stage] || (hairRest[stage] = `rgba(${cpal.hair},${Math.max(0.22 + 0.03 * stage, boost * 0.8)})`);
                         ctx.lineWidth   = w * 0.32;
                         ctx.stroke(path);
                         ctx.restore();
@@ -3815,6 +3812,22 @@ class TerrainRenderer {
         } else {
             // the voronoi wall with no silhouette built: build it again
             if (this.useVoronoi && ++this._blankFrames > 20) this.recover('no silhouette');
+            // (only this fallback uses these: built here, not every frame)
+            const hex = [
+                [ d,       0        ],
+                [ d / 2,  -d*sq3/2  ],
+                [-d / 2,  -d*sq3/2  ],
+                [-d,       0        ],
+                [-d / 2,   d*sq3/2  ],
+                [ d / 2,   d*sq3/2  ],
+            ];
+            const pick = [3, 1, 2, 0, 5, 4];
+            const centerG = [
+                [[-2.20,-1.65],[-1.05,-2.35],[ 0.15,-2.50],[ 1.35,-2.20],[ 2.35,-1.45]],
+                [[-3.05,-0.45],[-1.35,-1.00],[ 0.20,-0.85],[ 1.55,-0.70],[ 3.05,-0.20]],
+                [[-3.05, 0.95],[-1.20, 0.55],[ 0.30, 0.70],[ 1.65, 0.55],[ 2.70, 1.05]],
+                [[-1.95, 1.70],[-0.70, 2.35],[ 0.45, 2.45],[ 1.45, 2.05],[ 2.25, 1.35]],
+            ];
             const order = [1, 2, 3, 0, 4, 5];
             const drawList = order.map(i => {
                 const rock = this._lineRocks[pick[i]];

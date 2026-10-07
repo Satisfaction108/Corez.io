@@ -153,6 +153,27 @@ test('respawn: a Tier 5 build comes back as the Tier 4 parent', () => {
     assert.equal(tier5.gateDef(nb2, T5.key).def, T4);
 });
 
+test('respawn: a Tier 5 tank with several parents comes back as the one the player came from', () => {
+    // Oct 7 2026: Architect -> Glacis, died, "Respawn as Mega-3" (Glacis's first parent in the tree)
+    const G = D.tanks.find(t => t.label === 'Glacis' && tier5.t4ParentsOf(t.key).length >= 2) || D.tanks.find(t => t.tier === 5 && tier5.t4ParentsOf(t.key).length >= 2);
+    const ps = tier5.t4ParentsOf(G.key), P2 = ps.includes('architect') && ps[0] !== 'architect' ? 'architect' : ps[1];
+    assert.notEqual(ps[0], P2);
+    const s = mkSocket(), b = mkBody(s);
+    assert.ok(rb.applyTank(b, { def: Class[P2] }) && key0(b) === P2, 'climbed to ' + P2);
+    b._growTarget = 2.2; tier5.note(b);
+    const i = b.upgrades.findIndex(u => u.tier === 4 && u.class.length === 1 && (u.class[0] === G.key || u.class[0] === Class[G.key]));
+    b.upgrade(i);
+    assert.equal(key0(b), G.key);
+    rb.save(s, b, raid);
+    assert.equal(rb.youFields(s, null).lt, Class[P2].LABEL, 'the death card names ' + Class[P2].LABEL + ', not ' + Class[ps[0]].LABEL);
+    s._rbWant = true;
+    const nb = mkBody(s);
+    rb.onSpawn(s, nb);
+    assert.equal(key0(nb), P2, 'back as ' + P2);
+    assert.equal(tier5.gateDef(nb, G.key, rb.last(s).via).def, P2, 'keep-build restore too');
+    assert.equal(tier5.gateDef(nb, G.key).def, ps[0], 'no history: the tree\'s first parent');
+});
+
 test('bots: 2x growth takes a Tier 5 child; after a respawn it stops at Tier 4 until 2x again', () => {
     const bot = mkBody(null, { isBot: true, botFamilyId: 9001 });
     assert.ok(botTanks.climb(bot, path4));

@@ -201,7 +201,7 @@ function t(name, fn) {
         const app = src('app.js');
         assert.ok(app.includes('try { firstSeconds.tick(); }'));
         assert.ok(app.includes('try { firstSeconds.draw(ctx[2], lanes); }'));
-        assert.ok(app.includes('statMenu.set(!firstSeconds.shows("stats") ? 0 :'));
+        assert.ok(app.includes('statMenu.set(!firstSeconds.shows("stats") || deathCardUp() ? 0 :'));
         assert.ok(app.includes('if (gui.upgrades.length > 0 && !firstSeconds.shows("tiles")) {'));
         assert.ok(app.includes('if (!firstSeconds.shows("messages") || global.introCardUp || finHold || (global.mobile && slamShowing())) {'));
         assert.ok(app.includes('shopHint({ banked: global.gems.banked | 0'));

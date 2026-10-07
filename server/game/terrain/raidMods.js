@@ -14,7 +14,7 @@ const MODS = [
     { id: "hook_storm",    name: "Hook Storm",         desc: "Everyone gets a Grapple Hook, and every gem is worth 25% more.", weight: 1, freeAbility: "grapple", gemValueMult: 1.25, abilities: true },
     { id: "rocket_fuel",   name: "Rocket Fuel",        desc: "Everyone moves 35% faster.", weight: 1, speedMult: 1.35 },
     { id: "fast_storm",    name: "Fast Storm",         desc: "The storm closes in twice as fast, then holds longer.", weight: 1, stormShrinkMult: 0.55 },
-    { id: "bounty_week",   name: "Bounty Week",        desc: "Kills are worth double points.", weight: 1, killScoreMult: 2 },
+    { id: "bounty_week",   name: "Hunting Season",        desc: "Kills are worth double points.", weight: 1, killScoreMult: 2 },
     { id: "meteor_season", name: "Meteor Season",      desc: "Meteor showers and gem rain twice as often.", weight: 1, eventRateMult: 2.5 },
     { id: "wardens_watch", name: "Warden's Watch",     desc: "Bosses show up twice as often.", weight: 1, bossRateMult: 2.5 },
     { id: "emerald_fever", name: "Emerald Fever",      desc: "Six emeralds in the wall instead of three, and they come back in 30 seconds.", weight: 0.9, extraEmeralds: 3, emeraldRespawnMs: 30000 },

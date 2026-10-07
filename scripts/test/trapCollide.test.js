@@ -154,6 +154,21 @@ test('thrown', () => {
     assert.ok(overlap(a, b) < 0.05, 'pushed apart, overlap ' + overlap(a, b).toFixed(2));
 });
 
+// Oct 7 2026 (owner: "nerf traps a little bit"): every trap or block lands 13% softer on a tank,
+// any shooter alike; bullets, and traps into rock / chests / bosses, unchanged
+test('trapNerf', () => {
+    const cb = require(path.join(SERVER, 'game', 'terrain', 'classBalance.js'));
+    assert.equal(cb.TRAP_VS_TANKS, 0.87);
+    const shooter = { label: 'Trapper' }, other = { label: 'Builder' };
+    const trap = { type: 'trap', master: shooter }, block = { type: 'trap', master: other }, bullet = { type: 'bullet', master: shooter };
+    const player = { isPlayer: true }, bot = { isBot: true };
+    assert.equal(cb.intoTank(player, trap, 100), 87);
+    assert.equal(cb.intoTank(bot, block, 100), 87);
+    assert.equal(cb.intoTank(player, bullet, 100), 100);
+    assert.equal(cb.intoTank({ isRoyaleBoss: true, isBot: true }, trap, 100), 100);
+    assert.equal(cb.intoTank({}, trap, 100), 100, 'not a tank (rock, a chest)');
+});
+
 let failed = 0;
 for (const t of tests) {
     try { t.fn(); console.log('ok   ' + t.name); }

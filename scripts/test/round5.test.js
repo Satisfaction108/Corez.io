@@ -198,7 +198,7 @@ test('bank pops: every Bank rise has a label, deposits stay quiet, purchases say
     assert.match(si, /bankPops\.onBanked\(global\.bankPops/);
     assert.match(si, /"milestone " \+ util\.formatLargeNumber\(at\)/);
     const app = src('app.js');
-    assert.match(app, /drawBankPops\((\(bankX1 \+ rx2\) \/ 2|global\.screenWidth \/ 2), (ry - pillH \/ 2 - 8|Math\.round\(y - 10 - 4\) - 1 - 30)\)/);
+    assert.match(app, /drawBankPops\((\(bankX1 \+ rx2\) \/ 2|global\.screenWidth \/ 2), (ry - pillH \/ 2 - 8|Math\.round\(y - 10 - 4\) - 1 - 30)( - \(selfTankName\(\) \? SELF_TANK_LIFT : 0\))?\)/);
     assert.ok(fs.readFileSync(path.join(REPO, 'scripts', 'build-client.js'), 'utf8').includes('"client/bankPopLogic.js"'), 'light build profile');
 });
 
@@ -229,14 +229,14 @@ test('death card: the header and the Points line are one number, after the loss'
     assert.match(src('app.js'), /const score = you\.score != null \|\| you\.pts \? scoreText\.cardPoints\(you\)/);
 });
 
-test('bounty tag: BOUNTY ON YOU on your own tank, no "+" sign, baked at the size drawn', () => {
+test('tags: icons beside other players\' names, never one on your own tank, baked at the size drawn', () => {
     const app = src('app.js');
-    // made on first use: HUD isn't defined yet when this part of app.js runs
-    assert.match(app, /if \(id === gui\.playerid\) return BOUNTY_ON_YOU \|\| \(BOUNTY_ON_YOU = \{ key: "btme", word: "BOUNTY ON YOU", num: "", col: HUD\.gold \}\);/);
-    assert.match(app, /num: fmtNum\(b\.gems \| 0\) \+ " gems"/);
-    assert.ok(!/num: "\+" \+ \(b\.gems \| 0\)/.test(app));
-    assert.match(app, /const bake = Math\.max\(12, Math\.min\(64, Math\.round\(want \/ 2\) \* 2\)\);/);
-    assert.match(app, /streakSprite\(bd, fs \* \(c\._tf \? tfOf\(c\)\.a : 1\)\)/);
+    // Oct 7: the word pills became icons (skull, target, flame) on the name row
+    assert.match(app, /if \(id === gui\.playerid\) return null;/, 'no tag on your own tank');
+    assert.match(app, /icon: "skull"/);
+    assert.match(app, /icon: "flame"/);
+    assert.match(app, /const bake = Math\.max\(12, Math\.min\(72, Math\.round\(want \/ 2\) \* 2\)\);/);
+    assert.match(app, /const spr = tagIconSprite\(bd, d \* ds\);/);
 });
 
 test('crate: "next to you" only within reach, else the distance', async () => {
