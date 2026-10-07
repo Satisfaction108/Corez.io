@@ -45,6 +45,16 @@ if (process.argv[2] === '--dump') {
         tanks[k].same = sig[N.layoutSig(flat[k])].filter(o => o !== k && N.sameLayout(flat[k], flat[o]));
         tanks[k].lazy = parents[k].filter(p => N.sameLayout(bare(flat[k]), bare(flat[p])) && flat[k].turrets.filter(N.armed).length > flat[p].turrets.filter(N.armed).length);
     }
+    // dead barrels, line identity, sibling bolt-ons (scripts/tanks/neat.js, as gen-tanks.js uses them)
+    const decos = new Set(); for (const k of [...Object.keys(flat).filter(k => !k.startsWith('xp_')), ...(Class.desmos ? ['desmos'] : [])]) for (const x of (flat[k] || B.flatten(k)).guns) if (!x.typed) decos.add(N.decoSig(x));
+    const byParent = {}; for (const k in tier) for (const p of parents[k]) (byParent[p + ':' + tier[k]] = byParent[p + ':' + tier[k]] || []).push(k);
+    for (const k in flat) if (k.startsWith('xp_')) {
+        const f = flat[k];
+        tanks[k].dead = N.deadGuns(f, { decos, valid: x => typeof x.type === 'string' && !!Class[x.type] && (!B.isStock(x.type) || x.max > 0 || f.maxChildren > 0) }).length;
+        tanks[k].line = parents[k].filter(p => !N.lineOK(f, flat[p])).map(p => p + ' ' + N.mainKind(flat[p]) + '>' + N.mainKind(f));
+        tanks[k].conv = /^xp_g\d+$/.test(k) && N.converted(f, flat[parents[k][0]]) && !N.hybrid(flat[parents[k][0]]);
+        tanks[k].bolt = /^xp_g\d+$/.test(k) ? [...new Set(parents[k].flatMap(p => byParent[p + ':' + tier[k]].filter(o => o !== k && N.boltOn(f, flat[o]))))] : [];
+    }
     process.stdout.write(JSON.stringify({ tanks, xp: Object.keys(Class).filter(k => k.startsWith('xp_')).length, hash: B.treeHash(), basic1: Class.basic.UPGRADES_TIER_1 }), () => process.exit(0));
     return;
 }
@@ -79,7 +89,7 @@ if (process.argv[2] === '--ram') {
             reload: e.settings.skillNames && e.settings.skillNames.reload, live: e.skill.caps.slice(), accel: !!e.settings.reloadToAcceleration, build: botTanks.buildKind({ defs: [k] }) };
         e.destroy && e.destroy();
     }
-    out.labels = { bumper: byLabel('Bumper'), grinder: byLabel('Grinder'), tusk: byLabel('Tusk'), wrecker: byLabel('Wrecker'), auto3: 'auto3', booster: 'booster', fighter: 'fighter' };
+    out.labels = { bumper: byLabel('Bumper'), grinder: byLabel('Grinder'), wrecker: byLabel('Wrecker'), auto3: 'auto3', booster: 'booster', fighter: 'fighter' };
     process.stdout.write(JSON.stringify(out));
     return;
 }
@@ -184,10 +194,12 @@ test('balance: today\'s tanks untouched, new tanks balanced against their parent
             continue;
         }
         const [, , target] = D.balance[k];
-        const ps = t.parents.map(p => ON.tanks[p].P), want = ps.reduce((a, b) => a + b, 0) / ps.length * steps[t.tier];
-        const sref = D.sref[t.tier], s = t.S / sref, o = t.O / (target / sref);
+        // a parent counts at its target (a generated one) or its power times the premium (today's)
+        const ps = t.parents.map(p => p.startsWith('xp_') ? D.balance[p][2] : ON.tanks[p].P * (t.tier >= 4 ? D.tolerance.oldPremium || 1 : 1)), want = ps.reduce((a, b) => a + b, 0) / ps.length * steps[t.tier];
+        const kk = D.balance[k][3] || 1, sref = D.sref[t.tier], s = t.S / sref, o = t.O / (target * kk / sref);
         if (Math.abs(target / want - 1) > 0.03) bad.push(`${k} T${t.tier} target ${target.toFixed(1)} vs parents x step ${want.toFixed(1)}`);
-        if (Math.abs(t.P / target - 1) > 0.03) bad.push(`${k} T${t.tier} power x${(t.P / target).toFixed(3)} of its target`);
+        if (Math.abs(t.P / (target * kk) - 1) > 0.03) bad.push(`${k} T${t.tier} power x${(t.P / target).toFixed(3)} of its target (duel factor ${kk})`);
+        if (kk < 0.4 || kk > 2.5) bad.push(`${k} duel factor ${kk} (with its parents') out of reason`);
         if (s < tlo - 0.02 || s > thi + 0.02 || o < tlo - 0.02 || o > thi + 0.02) bad.push(`${k} T${t.tier} O x${o.toFixed(2)} S x${s.toFixed(2)}`);
     }
     assert.deepEqual(bad, [], bad.length + ' off budget:\n' + bad.slice(0, 12).join('\n'));
@@ -219,6 +231,30 @@ test('layouts: no duplicate barrel layouts, no turret-only upgrades', () => {
     for (const k of ['chorus', 'tripod']) assert.ok(!D.tanks.some(t => t.key === 'xp_' + k), k + ' is back');
     const lazy = D.tanks.filter(t => ON.tanks[t.key].lazy.length).map(t => t.label + ' < ' + ON.tanks[t.key].lazy.map(k => ON.tanks[k].label).join('/'));
     assert.deepEqual(lazy, [], lazy.length + ' lazy: ' + lazy.slice(0, 12).join(', '));
+});
+
+test('weapons: no dead barrels, drone and trap lines keep their weapon, no conversions, no sibling bolt-ons', () => {
+    const lab = k => ON.tanks[k].label;
+    const dead = D.tanks.filter(t => ON.tanks[t.key].dead).map(t => t.label);
+    assert.deepEqual(dead, [], dead.length + ' with barrels that fire nothing: ' + dead.slice(0, 12).join(', '));
+    const line = D.tanks.filter(t => ON.tanks[t.key].line.length).map(t => t.label + ' (' + ON.tanks[t.key].line.join('; ') + ')');
+    assert.deepEqual(line, [], line.length + ' left their line: ' + line.slice(0, 12).join(', '));
+    const conv = D.tanks.filter(t => ON.tanks[t.key].conv).map(t => t.label);
+    assert.deepEqual(conv, [], conv.length + ' turned a weapon into another kind on a parent that does not mix kinds: ' + conv.slice(0, 12).join(', '));
+    const bolt = D.tanks.filter(t => ON.tanks[t.key].bolt.length).map(t => t.label + ' ~ ' + ON.tanks[t.key].bolt.map(lab).join('/'));
+    assert.deepEqual(bolt, [], bolt.length + ' sibling plus a bolt-on: ' + bolt.slice(0, 12).join(', '));
+});
+
+test('duel sanity: new tanks vs parents and siblings (scripts/tanks/sanity.js)', () => {
+    const S = require(path.join(REPO, 'scripts', 'tanks', 'duelSanity.json'));
+    const s = S.summary;
+    console.log(`     round ${S.round}, ${S.duels} duels, ${s.tanks} tanks: mean vs parent ${s.meanVsParent}, child loses clearly ${s.childLosesClearly}, sibling dominates ${s.siblingDominates}, flagged ${S.flagged.length}`);
+    for (const v of Object.values(S.k)) assert.ok(v >= S.band[0] - 1e-9 && v <= S.band[1] + 1e-9, 'factor ' + v);
+    assert.ok(s.meanVsParent >= 0.4 && s.meanVsParent <= 0.75, 'children vs parents ' + s.meanVsParent);
+    // a light pass (a few duels a tank): flagged tanks are reported, not failed on
+    if (S.flagged.length) console.log('     flagged (first 15): ' + S.flagged.slice(0, 15).join(', '));
+    const used = new Set(Object.keys(D.balance).filter(k => D.balance[k][3]).map(k => D.balance[k][3]));
+    assert.ok(Object.keys(S.k).length === 0 || used.size > 0, 'duel factors not applied (re-run scripts/gen-tanks.js)');
 });
 
 test('children: every Tier 3 tank has 3+ Tier 4 children, every Tier 4 tank 3+ Tier 5', () => {
@@ -262,7 +298,7 @@ test('engine: every tank builds a mockup and spawns, fires and ticks without err
 test('ram: ram tanks get the Smasher / Auto Smasher stat set, bot builds follow', () => {
     const r = JSON.parse(execFileSync(process.execPath, [__filename, '--ram'], { env: { ...process.env, ROYALE_TANKS: 'expanded' }, maxBuffer: 64 << 20, cwd: REPO }).toString());
     const T = r.tanks, L = r.labels;
-    for (const k of [L.bumper, L.grinder, L.tusk, L.wrecker, 'smasher', 'autoSmasher', 'spike', 'landmine']) assert.ok(T[k] && T[k].ram, k + ' is a ram tank');
+    for (const k of [L.bumper, L.grinder, L.wrecker, 'smasher', 'autoSmasher', 'spike', 'landmine']) assert.ok(T[k] && T[k].ram, k + ' is a ram tank');
     for (const k of [L.auto3, L.booster, L.fighter, 'basic', 'twin', 'auto5', 'architect']) assert.ok(T[k] && !T[k].ram, k + ' is not a ram tank');
     assert.equal(T[L.wrecker].kind, 'ram', 'Wrecker: smasher body + thrusters only');
     assert.equal(T[L.grinder].kind, 'ramAuto', 'Grinder: smasher body + auto turrets');

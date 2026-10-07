@@ -28,7 +28,7 @@
     "minion": 0.52,
     "stock": 0.35,
     "side": 0.49,
-    "turret": 0.324,
+    "turret": 1,
     "rateExp": 0.6,
     "reachExp": 0.6
   },
@@ -41,5 +41,33 @@
   "accuracy": {
     "prior": 0.57,
     "fitted": 0.666
+  },
+  "duelGamma": {
+    "probe": 1.3,
+    "duels": 96,
+    "winRate": 0.948,
+    "gamma": 10.405,
+    "effective": 4.0,
+    "effectiveNote": "16 children that lost to their parents, re-duelled at 1x/1.5x/2.2x damage (192 duels): win 0.10/0.44/0.64, about 4 logits per unit of log damage; the mirror probe (gamma) overstates it"
+  },
+  "turretRefit": {
+    "from": 0.324,
+    "to": 1,
+    "duels": 752,
+    "moreTurretsWon": 0.559,
+    "deviance": [
+      0.7195,
+      0.6704
+    ],
+    "slope": 1.5,
+    "childOffset": -1.4,
+    "joint": {
+      "oldDuels": 2440,
+      "value": 1
+    }
+  },
+  "oldParentPremium": {
+    "value": 1.35,
+    "note": "children of today's tanks won 0.27 of their duels at budget parity (1272 duels, sanity pass 1): today's tanks are about 35% stronger in a duel than the budget says next to a generated design (effective slope 4)"
   }
 }

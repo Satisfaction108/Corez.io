@@ -76,6 +76,18 @@ TARGET[5] = TARGET[4] * 1.15; SREF[5] = SREF[4];
 // ram: the stock Smasher lands exactly on the tier 3 target
 { const f = flatOld.smasher, p0 = (B.setRamK(0), B.power(f)); B.setRamK((TARGET[3] / p0.S - p0.guns) / (f.body.DAMAGE || 1)); }
 const CONSTANTS = { ...B.C, ram: B.ram({ smasher: true, body: { DAMAGE: 1 } }) };
+// the shells today's tanks wear on their own (helix fins, triplex spines): allowed as they are
+const DECOS = new Set(); for (const k of oldKeys) for (const x of flatOld[k].guns) if (!x.typed) DECOS.add(N.decoSig(x));
+// every barrel fires something real: a known projectile, drones with somewhere to count them
+const deadOf = f => N.deadGuns(f, { decos: DECOS, valid: x => typeof x.type === 'string' && !!Class[x.type] && (!B.isStock(x.type) || x.max > 0 || f.maxChildren > 0) });
+// published names and keys: a design that did not change keeps both (scripts/tanks/legacy.json)
+const crypto = require('crypto');
+const designHash = w => crypto.createHash('sha1').update(JSON.stringify([w.parent, w.guns, w.turrets, w.shape || 0, w.maxChildren || 0])).digest('hex').slice(0, 12);
+const LEG = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(path.join(__dirname, 'tanks', 'legacy.json.gz'))));
+const LEGACY = {}; for (const t of LEG.tanks) LEGACY[designHash(t.w)] = [t.key, t.label];
+const legacyKeys = new Set(Object.values(LEGACY).map(v => v[0]));
+// duel sanity (scripts/tanks/sanity.js check): a damage factor per design, inside its band
+const SANITY = fs.existsSync(path.join(__dirname, 'tanks', 'duelSanity.json')) ? JSON.parse(fs.readFileSync(path.join(__dirname, 'tanks', 'duelSanity.json'), 'utf8')) : { k: {}, drop: [] };
 
 // the factor that puts a tank on a power target: hp clamps toughness into its tier band
 const TOL = 0.25;
@@ -118,7 +130,7 @@ function units(guns) {
     for (const gn of guns) { const k = Math.round(na(gn.POSITION.ANGLE) * 2) + ':' + Math.round(gn.POSITION.Y * 2); if (!m.has(k)) m.set(k, []); m.get(k).push(gn); }
     return [...m.values()].map(gs => ({ a: na(gs[0].POSITION.ANGLE), y: gs[0].POSITION.Y, guns: gs, typed: gs.some(typed), kind: (gs.find(typed) && kindOf(gs.find(typed))) || 'deco' }));
 }
-const core = w => units(w.guns).filter(u => Math.abs(u.a) <= 15 && u.typed);
+const core = w => units(w.guns).filter(u => Math.abs(u.a) <= 20 && u.typed);   // 20: a fork (Tusker 16) counts as the nose
 const front = w => w.guns.filter(gn => Math.abs(na(gn.POSITION.ANGLE)) <= 45);
 // a turret sits at its X/Y offset turned by its ANGLE (turretEntity.js)
 const tAt = P => { const d = Math.atan2(P.Y, P.X) + P.ANGLE * Math.PI / 180, o = Math.hypot(P.X, P.Y); return [o * Math.cos(d), o * Math.sin(d), na(d * 180 / Math.PI), o]; };
@@ -322,6 +334,45 @@ const RULES = {
         const sw = y => gun(7, 7.5, { asp: 0.6, x: 7, y }, [g.swarm], 'swarm', { STAT_CALCULATOR: 'swarm' });
         return { ...w, guns: [...w.guns, normGun(sw(4)), normGun(sw(-4))] };
     },
+    // every launcher of the main kind (drones, traps, swarms) turns heavy: wider, a little longer
+    heavyAll: w => {
+        const us = units(w.guns).filter(u => u.typed && u.kind !== 'bullet');
+        if (!us.length || us.some(u => u.guns.some(gn => gn.POSITION.WIDTH > 12))) return null;
+        const hv = new Set(us.flatMap(u => u.guns));
+        return { ...w, guns: w.guns.map(gn => { if (!hv.has(gn)) return gn; const c = clone(gn), P = c.POSITION; P.WIDTH = r3(P.WIDTH * 1.5); P.LENGTH = r3(P.LENGTH * 1.05); P.X = r3(P.X * 1.05);
+            if (typed(c)) c.PROPERTIES.SHOOT_SETTINGS = cs([c.PROPERTIES.SHOOT_SETTINGS, g.pounder]); return c; }) };
+    },
+    // each centred trap launcher or spawner splits into a side-by-side pair
+    pairUp: w => {
+        const us = units(w.guns).filter(u => u.typed && (u.kind === 'trap' || u.kind === 'drone') && Math.abs(u.y) < 0.5);
+        if (!us.length || us.length > 4) return null;
+        const drop = new Set(us.flatMap(u => u.guns)), add = [];
+        for (const u of us) {
+            const Wd = Math.max(...u.guns.map(gn => gn.POSITION.WIDTH)), off = Wd * 0.75 * 0.62;
+            for (const [y, d] of [[off, 0], [-off, 0.5]]) for (const gn of u.guns) {
+                const c = clone(gn), P = c.POSITION; P.WIDTH = r3(P.WIDTH * 0.75); P.Y = r3(y); P.DELAY = r3(((P.DELAY || 0) + d) % 1);
+                if (typed(c)) { c.PROPERTIES.SHOOT_SETTINGS = cs([c.PROPERTIES.SHOOT_SETTINGS, g.twin]); if (c.PROPERTIES.MAX_CHILDREN) c.PROPERTIES.MAX_CHILDREN = Math.max(1, Math.ceil(c.PROPERTIES.MAX_CHILDREN * 0.6)); }
+                add.push(c);
+            }
+        }
+        return { ...w, guns: [...w.guns.filter(gn => !drop.has(gn)), ...add] };
+    },
+    // trap launchers grow long (faster, farther traps)
+    longTraps: w => {
+        const us = units(w.guns).filter(u => u.typed && u.kind === 'trap');
+        if (!us.length || us.some(u => u.guns.some(gn => gn.POSITION.LENGTH + gn.POSITION.X > 20))) return null;
+        const lg = new Set(us.flatMap(u => u.guns));
+        return { ...w, guns: w.guns.map(gn => { if (!lg.has(gn)) return gn; const c = clone(gn), P = c.POSITION; if (typed(c)) { P.X = r3(P.X * 1.4); c.PROPERTIES.SHOOT_SETTINGS = cs([c.PROPERTIES.SHOOT_SETTINGS, g.sniper]); } else P.LENGTH = r3(P.LENGTH * 1.4); return c; }) };
+    },
+    // a front barrel gets a shorter pair at its sides (Triplet's)
+    triplet: w => {
+        const us = units(w.guns).filter(u => u.typed && u.kind === 'bullet' && Math.abs(u.a) <= 2 && Math.abs(u.y) < 0.5 && u.guns.length === 1);
+        if (us.length !== 1 || w.guns.some(gn => Math.abs(na(gn.POSITION.ANGLE)) <= 2 && Math.abs(gn.POSITION.Y) > 1)) return null;
+        const gn = us[0].guns[0], Wd = gn.POSITION.WIDTH, add = [];
+        for (const [y, d] of [[Wd * 0.62, 0.5], [-Wd * 0.62, 0.5]]) { const c = clone(gn), P = c.POSITION; P.LENGTH = r3(P.LENGTH * 0.84); P.WIDTH = r3(Wd * 0.85); P.Y = r3(y); P.DELAY = r3(((P.DELAY || 0) + d) % 1); c.PROPERTIES.SHOOT_SETTINGS = cs([c.PROPERTIES.SHOOT_SETTINGS, g.tripleShot]); add.push(c); }
+        const main = clone(gn); main.PROPERTIES.SHOOT_SETTINGS = cs([main.PROPERTIES.SHOOT_SETTINGS, g.tripleShot]);
+        return { ...w, guns: [...add, ...w.guns.map(x => x === gn ? main : x)] };
+    },
     // smashers: a new spiked shell from the existing families
     hat: w => ({ ...w, turrets: [...realTurrets(w), hat('hexagonHat_spin', pick([21.5, 23, 25]))] }),
     hat2: w => ({ ...w, turrets: [...realTurrets(w), ...F.weaponArray(hat('triangleHat_spin', pick([16, 18])), pick([3, 5, 6])).map(normTur)] }),
@@ -422,13 +473,15 @@ const T4RULES = {
     sniper: ['alt', 'ring2', 'rear', 'sides120', 'sides150', 'stack', 'guard', 'bird', 'cross', 'heavy', 'twinify', 'remount', 'remountGaps', 'remountTraps', 'remountOne'],
     machineGun: ['alt', 'ring2', 'ring3', 'rear', 'sides90', 'fan', 'stack', 'guard', 'bird', 'rearGunner', 'cross', 'heavy', 'twinify', 'longshot'],
     flankGuard: ['alt', 'thin', 'ring3', 'ring4', 'sides90', 'stack', 'guard', 'bird', 'trapSwap', 'cross', 'thin', 'twinify', 'heavy', 'longshot', 'sideTraps', 'trapToGun', 'remount', 'remountGaps', 'remountTraps', 'remountOne'],
-    director: ['swarmPair', 'bird', 'alt', 'over', 'droneSwap', 'guard', 'cross', 'ring2', 'ring3', 'sideTraps', 'remount', 'remountGaps', 'remountTraps', 'remountOne', 'nose'],
+    director: ['swarmPair', 'bird', 'alt', 'over', 'droneSwap', 'guard', 'cross', 'ring2', 'ring3', 'sideTraps', 'remount', 'remountGaps', 'remountTraps', 'remountOne', 'nose', 'heavyAll', 'pairUp'],
     pounder: ['alt', 'ring2', 'rear', 'sides90', 'sides120', 'stack', 'fan', 'guard', 'bird', 'trapSwap', 'cross', 'twinify', 'longshot', 'sideTraps'],
-    trapper: ['swarmPair', 'ring2', 'ring3', 'ring4', 'rear', 'sides90', 'fan', 'over', 'cross', 'trapToGun', 'sideTraps', 'remount', 'remountGaps', 'remountTraps', 'remountOne'],
+    trapper: ['swarmPair', 'ring2', 'ring3', 'ring4', 'rear', 'sides90', 'fan', 'over', 'cross', 'trapToGun', 'sideTraps', 'remount', 'remountGaps', 'remountTraps', 'remountOne', 'heavyAll', 'pairUp', 'longTraps'],
     smasher: ['hat2', 'hatDouble', 'hatMix', 'bird', 'guard'],
     splitter: ['alt', 'ring2', 'ring3', 'rear', 'sides90', 'sides120', 'fan', 'stack', 'guard', 'bird', 'cross', 'heavy', 'longshot'],
 };
 const T5EXTRA = { flankGuard: ['thin', 'nose'], director: ['thin'], twin: ['thin', 'trapSwap', 'nose'], machineGun: ['thin', 'nose', 'remount', 'remountGaps', 'remountTraps', 'remountOne'], trapper: ['thin', 'trapSwap', 'nose'], pounder: ['thin', 'nose', 'remount', 'remountGaps', 'remountTraps', 'remountOne'], sniper: ['nose'], splitter: ['nose'], smasher: [] };
+// launchers made heavier or doubled, a Triplet front: for every line (a rule that does not fit returns nothing)
+for (const b in T5EXTRA) if (b !== 'smasher') T5EXTRA[b].push('heavyAll', 'pairUp', 'triplet', 'longTraps');
 const MOUNTS = { smasher: ['auto', 'radial2', 'radial3'], director: ['auto', 'radial2', 'radial3'], _: ['auto', 'radial2', 'radial3', 'radial4'] };
 const CROSS_KINDS = { director: ['drone', 'bullet', 'trap', 'swarm'], trapper: ['trap', 'bullet', 'drone'], smasher: [], _: ['bullet', 'trap'] };
 const CAP = { 4: 12, 5: 5 };
@@ -451,7 +504,14 @@ const bare = f => ({ ...f, turrets: f.turrets.filter(t => !N.armed(t)) });
 // only turrets added on top of the same barrels (and shell)
 const lazyOver = (f, pf) => N.sameLayout(bare(f), bare(pf)) && f.turrets.filter(N.armed).length > pf.turrets.filter(N.armed).length;
 const handDropped = [];
-let tryNow = false, lastDup = null, nextKey = 0;            // GEN_TRY=<parent>:<rule> prints why that child fails
+let tryNow = false, lastDup = null, nextKey = 0;
+// a design that equals one of its siblings plus a bolt-on (either way round)
+const childrenOf = (p, tier) => tanks.filter(t => t.tier === tier && t.parents.includes(p));
+const siblingClash = (f, p, tier, self = null) => childrenOf(p, tier).some(o => o !== self && o.f !== f && N.boltOn(f, o.f));
+// may `t` (already built) also sit under parent `p`?
+const fitsUnder = (t, p) => N.lineOK(t.f, byKey[p].f) && !siblingClash(t.f, p, t.tier, t) && !lazyOver(t.f, byKey[p].f);
+// rules that turn one weapon kind into another: only on a parent that already mixes kinds
+const CONVERT = new Set(['sideTraps', 'trapToGun', 'trapSwap', 'droneSwap', 'remountTraps']);            // GEN_TRY=<parent>:<rule> prints why that child fails
 // the Necromancer line (square bodies): Underseer and everything under it
 const SQUARE = new Set(['underseer', 'necromancer', 'maleficitor']);
 const bySig = new Map();              // layoutSig -> flattened tanks already accepted
@@ -471,21 +531,31 @@ for (const k of Object.keys(EXP.tier)) {
 }
 const rejects = {};
 let rejTag = '';
-const rej = r => { rejects[r] = (rejects[r] || 0) + 1; const k = rejTag + ' ' + r; rejects[k] = (rejects[k] || 0) + 1; return null; };
+let lastRej = null;
+const rej = r => { lastRej = r; rejects[r] = (rejects[r] || 0) + 1; const k = rejTag + ' ' + r; rejects[k] = (rejects[k] || 0) + 1; return null; };
 function evaluate(w, tier, branch, parents, rule, label = null, hand = false, key = null) {
     if (!w) return rej('rule');
     const f = flatW(w);
     const pt = byKey[parents[0]] || null, pf = pt ? pt.f : null;
     // round bodies only
     if (f.shape && !(f.shape === 4 && SQUARE.has(parents[0]))) { if (hand) throw Error(label + ' body shape ' + f.shape); return rej('shape'); }
+    // no dead barrels, ever
+    if (deadOf(f).length) { if (hand) throw Error(label + ' has a barrel that fires nothing'); return rej('dead'); }
     if (!hand) {
+        // drone lines stay drone lines, trap lines stay trap lines
+        if (parents.some(p => byKey[p] && !N.lineOK(f, byKey[p].f))) return rej('line');
+        // one weapon kind turned into another (sides to traps, traps to guns): only on a mixed parent
+        if (pf && N.converted(f, pf) && !N.hybrid(pf)) return rej('convert');
+        if ((SANITY.drop || []).includes(designHash(w))) return rej('duel');
         const had = pf ? uglySet(pf) : new Set();
         const u = [...uglySet(f, pf ? stats(pf) : null)].find(r => !had.has(r)); if (u) return rej(u);
         const nf = neatFail(f, pt); if (nf) return rej(nf);
         // an upgrade that only bolts turrets onto its parent's barrels
         if (pf && lazyOver(f, pf)) return rej('lazy');
+        // nor a sibling plus a bolt-on (turrets, an extra barrel)
+        if (parents.some(p => siblingClash(f, p, tier))) return rej('sibling');
     }
-    { const d = dupOf(f); lastDup = d; if (d && tryNow) console.warn('DUP of', d.label); if (d) { if (hand) { const dl = (byKey[d.key] && byKey[d.key].label) || d.label; console.warn('signature', label, 'dropped: same layout as', dl); handDropped.push(label + ' (= ' + dl + ')'); } return rej('duplicate'); } }
+    { const d = dupOf(f); lastDup = d; if (d && tryNow) console.warn('DUP of', d.key, byKey[d.key] && byKey[d.key].parents.join('/'), byKey[d.key] && byKey[d.key].hand); if (d) { if (hand) { const dl = (byKey[d.key] && byKey[d.key].label) || d.label; console.warn('signature', label, 'dropped: same layout as', dl); handDropped.push(label + ' (= ' + dl + ')'); } return rej('duplicate'); } }
     const fp = fingerprint(f);
     if (!hand) { let worst = 0; for (const o of fps) { const j = jacc(fp, o); if (j > worst) worst = j; if (worst > 0.8) return rej('nearDuplicate'); } }
     const bal = balanceOf(f, tier);
@@ -493,7 +563,8 @@ function evaluate(w, tier, branch, parents, rule, label = null, hand = false, ke
     const ps = !hand && pt ? balanceOf(pf, tier - 1).s : 1;
     if (!hand && (bal.s / ps < 0.3 || bal.s / ps > 3)) return rej("budget");
     if (!hand && parents.some(p => kids(p, tier) >= CAP[tier])) return rej('cap');
-    key = key || 'xp_g' + (nextKey++);
+    if (!key) { const lg = LEGACY[designHash(w)]; key = lg && !byKey[lg[0]] ? lg[0] : null; }
+    if (!key) { do key = 'xp_g' + (nextKey++); while (legacyKeys.has(key)); }
     const t = { key, label, tier, branch, parents, rule, isNew: true, w, f, fp, hand };
     tanks.push(t); fps.push(fp); f.key = key; sigAdd(f); for (const p of parents) addChild(p, tier);
     if (f.shape === 4) SQUARE.add(key);
@@ -508,6 +579,16 @@ for (const id in HAND) {
     if (!t) continue;
     const u = ugly(t.f) || neatFail(t.f, null); if (u) console.warn('signature', h.label, 'flagged', u, JSON.stringify(N.overlap(t.f)));
 }
+// ---- the published tree first: each design that still passes keeps its place, key and name
+const legacyDropped = {};
+for (const lt of LEG.tanks) {
+    if (byKey[lt.key] || HAND[lt.key.slice(3)]) continue;            // signatures are made above
+    if (!byKey[lt.w.parent]) { legacyDropped[lt.label] = 'parent gone'; continue; }
+    rejTag = 'legacy';
+    const t = evaluate(clone(lt.w), lt.tier, lt.branch, [lt.w.parent], 'legacy', null, false, lt.key);
+    if (!t) { legacyDropped[lt.label] = lastRej; continue; }
+    for (const p of lt.parents.slice(1)) if (byKey[p] && byKey[p].tier === lt.tier - 1 && t.parents.length < 3 && kids(p, lt.tier) < CAP[lt.tier] && fitsUnder(t, p)) { t.parents.push(p); addChild(p, lt.tier); }
+}
 const inBranch = (t, b) => t.branch === b || (!t.isNew && branchesOf(t.key).includes(b));
 function pool(tier, b) { return tanks.filter(t => t.tier === tier && inBranch(t, b)).map(t => t.key); }
 function partnerFor(tier, b) {
@@ -517,9 +598,10 @@ function partnerFor(tier, b) {
     return cands.length ? pick(cands).key : null;
 }
 function child(parentKey, tier, b, rules, share = false) {
-    rejTag = b + tier; if (process.env.GEN_DEBUG && tier === 5) rejTag = parentKey;
+    rejTag = b + tier; if (process.env.GEN_DEBUG) rejTag = parentKey;
     const base = W(parentKey); if (!base) return rej('fn');
     const rule = pick(rules); const ctx = {};
+    if (CONVERT.has(rule) && !N.hybrid(byKey[parentKey].f) && !(rule === 'remountTraps' && N.mainKind(byKey[parentKey].f) === 't')) return rej('convert');
     if (rule === 'cross') { ctx.partner = partnerFor(tier - 1, b); if (!ctx.partner || ctx.partner === parentKey) return rej('rule'); }
     let w;
     try { w = RULES[rule](cloneW(base), ctx); } catch (e) { if (process.env.GEN_THROW) console.warn(rule, e.message); return rej('throw'); }
@@ -534,11 +616,11 @@ function child(parentKey, tier, b, rules, share = false) {
     lastDup = null;
     const t = evaluate(w, tier, b, parents, name);
     // the second parent (a cross) must also see a real change
-    if (t && t.parents.length > 1 && lazyOver(t.f, byKey[t.parents[1]].f)) { childCount[t.parents[1] + ':' + tier]--; t.parents.splice(1, 1); }
+    if (t && t.parents.length > 1 && (lazyOver(t.f, byKey[t.parents[1]].f) || siblingClash(t.f, t.parents[1], tier, t))) { childCount[t.parents[1] + ':' + tier]--; t.parents.splice(1, 1); }
     // the design already exists one parent over: share it (a second parent)
     if (!t && share && lastDup && byKey[lastDup.key]) {
         const o = byKey[lastDup.key];
-        if (o.isNew && !o.hand && o.tier === tier && !o.parents.includes(parentKey) && o.parents.length < 3 && !lazyOver(o.f, byKey[parentKey].f)) { o.parents.push(parentKey); addChild(parentKey, tier); return o; }
+        if (o.isNew && !o.hand && o.tier === tier && !o.parents.includes(parentKey) && o.parents.length < 3 && fitsUnder(o, parentKey)) { o.parents.push(parentKey); addChild(parentKey, tier); return o; }
     }
     return t;
 }
@@ -561,7 +643,7 @@ function adopt(p, tier, min) {
     for (const t of tanks) {
         if (!t.isNew || t.hand || t.tier !== tier || t.parents.includes(p) || t.parents.length >= 3) continue;
         if (!t.branch || (P.isNew ? P.branch !== t.branch : !branchesOf(p).includes(t.branch) && t.branch !== P.branch)) continue;
-        const c = contains(t.fp, P.fp); if (c >= min && (!best || c > best.c) && !lazyOver(t.f, P.f)) best = { t, c };
+        const c = contains(t.fp, P.fp); if (c >= min && (!best || c > best.c) && fitsUnder(t, p)) best = { t, c };
     }
     if (!best) return false;
     best.t.parents.push(p); addChild(p, tier); return true;
@@ -604,7 +686,7 @@ for (const t of tanks) {
     for (const o of tanks) {
         if (t.parents.length >= 3) break;
         if (o.tier !== t.tier - 1 || t.parents.includes(o.key) || kids(o.key, t.tier) >= CAP[t.tier]) continue;
-        if (contains(t.fp, o.fp) >= 0.9 && !lazyOver(t.f, o.f)) { t.parents.push(o.key); addChild(o.key, t.tier); }
+        if (contains(t.fp, o.fp) >= 0.9 && fitsUnder(t, o.key)) { t.parents.push(o.key); addChild(o.key, t.tier); }
     }
 }
 
@@ -621,7 +703,15 @@ for (const k in Class) if (Class[k] && typeof Class[k].LABEL === 'string' && !k.
 for (const t of tanks) if (t.hand) { if (taken.has(t.label.toLowerCase()) && !byKey[t.key].isNew) throw Error('clash ' + t.label); }
 const handLabels = tanks.filter(t => t.hand).map(t => t.label.toLowerCase());
 for (const l of handLabels) if (taken.has(l)) throw Error('signature name already used: ' + l);
-const used = new Set([...taken, ...handLabels, ...NAMES.retired.map(n => n.toLowerCase())]);
+// names already published stay with their designs; a redesigned or new tank gets a name never used before
+const legacyLabel = {}; for (const [h, [k, l]] of Object.entries(LEGACY)) legacyLabel[k] = [h, l];
+const used = new Set([...taken, ...handLabels, ...NAMES.retired.map(n => n.toLowerCase()), ...Object.values(LEGACY).map(v => v[1].toLowerCase())]);
+let renamed = 0, kept = 0;
+for (const t of tanks) {
+    if (!t.isNew || t.label) continue;
+    const lg = legacyLabel[t.key];
+    if (lg && lg[0] === designHash(t.w)) { t.label = lg[1]; kept++; }
+}
 const nameIdx = {};
 function nextName(poolName) {
     const list = poolName === 'retired' ? [] : NAMES[poolName] || [];
@@ -643,8 +733,10 @@ function tagOf(t) {
 for (const t of tanks) {
     if (!t.isNew || t.label) continue;
     const tag = tagOf(t);
-    t.label = nextName(tag) || nextName(t.branch) || nextName('spare');
+    t.label = nextName(tag) || nextName(t.branch) || nextName('spare') || nextName('spare2');
+    if (!t.label && process.env.GEN_NONAME) t.label = 'Zz' + (renamed + 1);
     if (!t.label) throw Error('out of names for ' + tag);
+    renamed++;
     t.nameTag = tag;
 }
 // invisibility runs in the family: anything under Stalker, Manager or Landmine
@@ -655,15 +747,25 @@ for (const t of tanks) if (t.isNew) Class[t.key] = defOf(t.w, t.label);
 // ---------------------------------------------------------------- balance + output tier
 const rows = [];
 const balance = {};
-const powerOf = k => { const t = byKey[k]; return t.isNew ? t.bal.T : B.power(t.f).P; };
+// today's tanks duel about a third stronger than the budget says next to a generated design
+// (calibration.json oldParentPremium): a child of one aims at that strength
+const OLDP = CAL.oldParentPremium ? CAL.oldParentPremium.value : 1;
+// (measured on tier 4 and 5; a hand-made tier 2 or 3 tank duels today's at par without it)
+const powerOf = (k, tier) => { const t = byKey[k]; return t.isNew ? t.bal.T : B.power(t.f).P * (tier >= 4 ? OLDP : 1); };
+const effK = {};
 for (const t of [...tanks].sort((a, b) => a.tier - b.tier)) {
     if (!t.isNew) { const p = B.power(t.f); t.bal = { O: p.O, S: p.S, P: p.P, T: p.P, hp: 1, s: 1 }; continue; }
-    const ps = t.parents.map(powerOf);
+    const ps = t.parents.map(p => powerOf(p, t.tier));
     const T = +(ps.reduce((a, b) => a + b, 0) / ps.length * STEP[t.tier]).toFixed(4);
     const bal = balanceOf(t.f, t.tier, T);
     if (!isFinite(bal.s)) { console.warn('no offence:', t.key); continue; }
-    t.bal = bal;
-    balance[t.key] = [bal.s, bal.hp, T];
+    // the duel pass nudges the damage factor (sanity.js check, kept inside its band)
+    // relative to its primary parent: a parent's factor carries down to its children
+    const pk = t.parents[0], k = +((SANITY.k[designHash(t.w)] || 1) * (effK[pk] || 1)).toFixed(4);
+    effK[t.key] = k;
+    if (k !== 1) bal.s = +(bal.s * k).toFixed(4);
+    t.bal = bal; t.duelK = k;
+    balance[t.key] = k !== 1 ? [bal.s, bal.hp, T, k] : [bal.s, bal.hp, T];
 }
 const ORDER = ['basic', ...BRANCHES];
 tanks.sort((a, b) => ORDER.indexOf(a.branch) - ORDER.indexOf(b.branch) || a.tier - b.tier || (a.isNew - b.isNew) || (a.label < b.label ? -1 : 1));
@@ -689,7 +791,7 @@ const newTanks = tanks.filter(t => t.isNew).sort((a, b) => a.tier - b.tier || a.
 const data = {
     generator: 'scripts/gen-tanks.js', constants: CONSTANTS, targets: TARGET, sref: SREF, root: 'xp_splitter', removed: ['desmos'],
     base: { hash: B.treeHash() },
-    tolerance: { steps: STEP, tough: [0.82, 1.22], calibration: { duels: CAL.duels, beta: CAL.beta, accuracy: CAL.accuracy } },
+    tolerance: { steps: STEP, oldPremium: OLDP, tough: [0.82, 1.22], calibration: { duels: CAL.duels, beta: CAL.beta, accuracy: CAL.accuracy } },
     tanks: newTanks.map(t => ({ key: t.key, label: t.label, tier: t.tier, branch: t.branch, parents: t.parents, def: defOf(t.w, t.label) })),
     balance,
 };
@@ -717,6 +819,8 @@ console.log('tanks', tanks.length, 'old', tanks.filter(t => !t.isNew).length, 'n
 console.log(Object.entries(count).map(([k, v]) => k + ': ' + v[0] + ' old + ' + v[1] + ' new').join('\n'));
 const rj = {}; for (const [k, v] of Object.entries(rejects)) if (!k.includes(' ')) rj[k] = v;
 console.log('rejected', JSON.stringify(rj));
+const legacyGone = Object.values(LEGACY).filter(([k]) => !byKey[k] || byKey[k].label !== LEGACY[designHash(byKey[k].w || {})]?.[1]).length;
+console.log('names: kept', kept, 'new', renamed, '; published designs gone or changed', legacyGone, '; duel-adjusted', tanks.filter(t => t.duelK && t.duelK !== 1).length);
 console.log('old tanks: all', tanks.filter(t => !t.isNew).length, 'untouched (no balance entry)');
 for (const tr of [2, 3, 4, 5]) {
     const nw = tanks.filter(t => t.isNew && t.tier === tr && t.bal), od = tanks.filter(t => !t.isNew && t.tier === tr);
@@ -726,6 +830,8 @@ for (const tr of [2, 3, 4, 5]) {
         ', damage factor ' + Math.min(...sv).toFixed(2) + '-' + Math.max(...sv).toFixed(2) + ', health factor != 1: ' + nw.filter(t => t.bal.hp !== 1).length);
 }
 if (shortT4b.length || shortT5.length) console.warn('FEWER THAN ' + MIN_KIDS + ' CHILDREN:', [...shortT4b, ...shortT5].join(', '));
+{ const why = {}; for (const r of Object.values(legacyDropped)) why[r] = (why[r] || 0) + 1; console.log('published designs dropped', Object.keys(legacyDropped).length, JSON.stringify(why)); }
+if (process.env.GEN_LEGACY) console.log(Object.entries(legacyDropped).map(([l, r]) => l + ':' + r).join(' '));
 if (handDropped.length) console.log('signatures dropped as duplicates:', handDropped.join(', '));
 if (process.env.GEN_DEBUG) for (const k of process.env.GEN_DEBUG.split(',')) console.log(k, Object.entries(rejects).filter(([r]) => r.startsWith(k + ' ')).map(([r, n]) => r.slice(k.length + 1) + ':' + n).join(' '));
 console.log('wrote', path.relative(REPO, OUT), (fs.statSync(OUT).size / 1024).toFixed(0) + ' KB;', REPORT);

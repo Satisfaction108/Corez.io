@@ -73,6 +73,19 @@ module.exports = {
         Damson Apricot Nectarine Tangerine Clementine Kumquat Pomelo Citron Lime Lemon Paprika Saffron Nutmeg Cinnamon Ginger Clove
         Anise Fennel Basil Thyme Sage Oregano Parsley Chive Mint Lavender Rosemary Marigold Daisy Tulip Poppy Orchid Lotus Iris Peony
         Dahlia Azalea Begonia Camellia Gardenia Hibiscus Jasmine Primrose Snapdragon Sunflower Bluebell Foxglove Buttercup`),
+    // a second spare drawer (Oct 2026 redesign): minerals, woods, birds, tools, knots and sweets
+    spare2: w(`Agate Jasper Onyx Garnet Topaz Beryl Zircon Spinel Peridot Opal Jade Malachite Azurite Pyrite Galena Mica Feldspar
+        Quartzite Gypsum Calcite Fluorite Hematite Magnetite Cobalt Nickel Bismuth Tungsten Iridium Osmium Cadmium Indium Gallium
+        Teak Walnut Hickory Mahogany Ebony Balsa Alder Hemlock Juniper Cypress Linden Sassafras Tamarack Poplar Sycamore
+        Wren Finch Robin Thrush Starling Magpie Jay Plover Curlew Dunlin Sandpiper Avocet Bittern Grebe Coot Moorhen Lapwing Siskin
+        Linnet Bunting Warbler Oriole Tanager Cardinal Grosbeak Junco Towhee Vireo Kinglet Nuthatch Treecreeper Dipper Hoopoe
+        Chisel Gimlet Auger Awl Bradawl Rasp Plane Spokeshave Adze Mattock Pickaxe Trowel Spade Shovel Rake Hoe Scythe Sickle
+        Bowline Hitch Sheepshank Clove Halyard Lanyard Grommet Cleat Bollard Capstan Windlass Davit Gunwale Keel Rudder Tiller
+        Toffee Fudge Nougat Praline Brittle Truffle Bonbon Macaron Meringue Eclair Strudel Cobbler Crumble Scone Muffin Bagel
+        Pretzel Waffle Pancake Crumpet Biscuit Shortcake Gingersnap Marzipan Licorice Gumdrop Lollipop Caramel Butterscotch
+        Pinto Mustang Bronco Palomino Appaloosa Clydesdale Shetland Percheron Lipizzan Arabian Pony Filly Colt Stallion
+        Badger Otter Weasel Ferret Marten Stoat Mink Wolverine Raccoon Coati Kinkajou Lemur Loris Tarsier Marmoset Capuchin
+        Ibex Chamois Gazelle Impala Kudu Eland Oryx Gemsbok Springbok Dikdik Okapi Tapir Wombat Quokka Numbat Bilby`),
 };
 // names the owner saw on wonky stage 1 designs: not reused
 module.exports.retired = w(`Hurdle Caltrop Marble Hazel Gorge Marimba Mambo Collie Apiary Chorus Tripod`);

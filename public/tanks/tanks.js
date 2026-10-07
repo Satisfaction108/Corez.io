@@ -6,7 +6,7 @@ const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { ret
 let D = null, T = [], pal = {}, sel = -1, need = true;
 const view = { x: 0, y: 0, z: 0.2 };
 const atlas = { s: null, l: null, lWant: false };
-const NAME_PX = 11;
+const NAME_PX = 12;
 const nameW = new Map();
 
 // theme: saved choice, else the system's
@@ -66,8 +66,8 @@ function draw() {
 
     // a card per line
     for (const b of D.blocks) {
-        if (!vis(b.x - 16, b.y - 10, b.w + 32, b.h + 26)) continue;
-        rr(ctx, b.x - 16, b.y - 8, b.w + 18, b.h + 24, 16);
+        if (!vis(b.x - 40, b.y - 10, b.w + 56, b.h + 26)) continue;
+        rr(ctx, b.x - 40, b.y - 8, b.w + 42, b.h + 24, 16);
         ctx.fillStyle = pal.card; ctx.fill();
         ctx.lineWidth = 2; ctx.strokeStyle = pal.line; ctx.stroke();
         const br = D.branches[b.b];
@@ -78,11 +78,18 @@ function draw() {
         const w = ctx.measureText(br.name).width;
         ctx.font = "500 13px Rubik, system-ui, sans-serif"; ctx.fillStyle = pal.soft;
         ctx.fillText(b.n + " tanks", b.x + 22 + w, b.y + 14);
+        // the tier of each row, down the card's left edge
+        ctx.font = '15px "Lilita One", Rubik, sans-serif'; ctx.textAlign = "center";
+        for (const [tr, y] of b.t || []) {
+            rr(ctx, b.x - 35, y + S / 2 - 11, 28, 22, 7);
+            ctx.fillStyle = tr === 5 ? pal.gold : pal.well; ctx.fill();
+            ctx.fillStyle = tr === 5 ? pal.bg : pal.ink; ctx.fillText("T" + tr, b.x - 21, y + S / 2 + 1);
+        }
     }
 
     // the tree: every tank to the parent it is laid out under
     const rel = related(sel);
-    ctx.lineWidth = Math.max(1.5, 1.2 / z);
+    ctx.lineWidth = Math.max(2, 1.7 / z);
     ctx.strokeStyle = pal.wire;
     ctx.beginPath();
     const trunk = T[0].x + S / 2;
@@ -118,33 +125,51 @@ function draw() {
         ctx.restore();
     }
 
-    // the tiles
-    const big = atlas.l && dpr * z * S > D.atlas.s.cell * 1.15;
-    if (!atlas.l && !atlas.lWant && dpr * z * S > D.atlas.s.cell * 1.15) loadLarge();
+    // the tiles: the game's upgrade plates (coloured face over a darker lip, a keyline)
+    const px = dpr * z * S, big = atlas.l && px > D.atlas.s.cell * 0.8;
+    if (!atlas.l && !atlas.lWant && px > D.atlas.s.cell * 0.6) loadLarge();
     const A = big ? atlas.l : atlas.s, cell = big ? D.atlas.l.cell : D.atlas.s.cell, cols = D.atlas.cols;
-    const labels = z * S >= 38;
-    if (labels) { ctx.font = "600 " + NAME_PX + "px Rubik, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top"; }
+    const labels = z * S >= 38, kl = S / 100, keyW = Math.max(1.5 * kl, 1 / (dpr * z));
+    const pics = [];
     for (let i = 0; i < T.length; i++) {
         const t = T[i];
         if (!vis(t.x, t.y, S, S + 16)) continue;
-        const on = i === sel, near = rel && rel.has(i);
+        const r = t.real >= 0 ? t.real : i, on = r === sel, near = rel && rel.has(r);
+        const [face, lip] = (D.tiles && D.tiles[t.col % D.tiles.length]) || [pal.tile, pal.tileLip];
+        const lipH = Math.max(3, 4 * kl);
         rr(ctx, t.x, t.y, S, S, 9);
-        ctx.fillStyle = pal.tileLip; ctx.fill();
-        rr(ctx, t.x, t.y, S, S - 3, 9);
-        ctx.fillStyle = pal.tile; ctx.fill();
-        ctx.fillStyle = t.branch >= 0 ? D.branches[t.branch].color : pal.soft;
-        rr(ctx, t.x + 7, t.y + 3, S - 14, 3, 1.5); ctx.fill();
-        if (t.tier === 5) { rr(ctx, t.x + 1, t.y + 1, S - 2, S - 2, 8); ctx.lineWidth = 2; ctx.strokeStyle = pal.gold; ctx.stroke(); }
+        ctx.fillStyle = lip; ctx.fill();
+        rr(ctx, t.x, t.y, S, S - lipH, 9);
+        ctx.fillStyle = face; ctx.fill();
+        rr(ctx, t.x + 3 * kl, t.y + 3 * kl, S - 6 * kl, Math.max(2, 5 * kl), 2.5 * kl);
+        ctx.fillStyle = "rgba(255,255,255,0.13)"; ctx.fill();
+        rr(ctx, t.x, t.y, S, S, 9);
+        ctx.lineWidth = keyW; ctx.strokeStyle = "rgba(10,8,13,0.92)"; ctx.stroke();
+        if (t.tier === 5) { rr(ctx, t.x + 1.5, t.y + 1.5, S - 3, S - 3, 8); ctx.lineWidth = 2; ctx.strokeStyle = pal.gold; ctx.stroke(); }
         if (on || near) { rr(ctx, t.x - 3, t.y - 3, S + 6, S + 6, 11); ctx.lineWidth = on ? 4 : 2.5; ctx.strokeStyle = pal.gold; ctx.stroke(); }
-        if (A && t.cell >= 0) ctx.drawImage(A, (t.cell % cols) * cell, Math.floor(t.cell / cols) * cell, cell, cell, t.x + 2, t.y + 1, S - 4, S - 4);
+        if (A && t.cell >= 0) pics.push(t);
         else { ctx.beginPath(); ctx.arc(t.x + S / 2, t.y + S / 2 - 1, S * 0.24, 0, Math.PI * 2); ctx.fillStyle = "#3f8cff"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "#2c3a55"; ctx.stroke(); }
         if (labels) {
+            ctx.font = "700 " + NAME_PX + "px Rubik, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
             let w = nameW.get(t.name); if (w == null) { w = ctx.measureText(t.name).width; nameW.set(t.name, w); }
             const room = 60, k = w > room ? room / w : 1;
-            ctx.fillStyle = on ? pal.gold : pal.ink;
-            if (k < 1) { ctx.save(); ctx.translate(t.x + S / 2, t.y + S + 3); ctx.scale(k, 1); ctx.fillText(t.name, 0, 0); ctx.restore(); }
-            else ctx.fillText(t.name, t.x + S / 2, t.y + S + 3);
+            ctx.save(); ctx.translate(t.x + S / 2, t.y + S + 3); if (k < 1) ctx.scale(k, 1);
+            ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = pal.bg; ctx.strokeText(t.name, 0, 0);
+            ctx.fillStyle = on ? pal.gold : pal.ink; ctx.fillText(t.name, 0, 0);
+            ctx.restore();
         }
+    }
+    // the pictures on whole device pixels, so they stay crisp at any zoom
+    if (pics.length) {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+        const k = dpr * z, side = Math.round((S - 2) * k);
+        for (const t of pics) {
+            const dx = Math.round((t.x + 1 - view.x) * k), dy = Math.round((t.y - 1.5 - view.y) * k);
+            ctx.drawImage(A, (t.cell % cols) * cell, Math.floor(t.cell / cols) * cell, cell, cell, dx, dy, side, side);
+        }
+        ctx.restore();
     }
 }
 function loop() { if (need && D) draw(); requestAnimationFrame(loop); }
@@ -204,7 +229,7 @@ const ptrs = new Map();
 let drag = null, pinch = null;
 function hit(sx, sy) {
     const wx = view.x + sx / view.z, wy = view.y + sy / view.z, S = D.tile;
-    for (let i = 0; i < T.length; i++) { const t = T[i]; if (wx >= t.x && wx <= t.x + S && wy >= t.y && wy <= t.y + S + (view.z * S >= 38 ? 14 : 0)) return i; }
+    for (let i = 0; i < T.length; i++) { const t = T[i]; if (wx >= t.x && wx <= t.x + S && wy >= t.y && wy <= t.y + S + (view.z * S >= 38 ? 14 : 0)) return t.real >= 0 ? t.real : i; }
     return -1;
 }
 function local(e) { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
@@ -261,7 +286,7 @@ function showHits() {
 function choose(i) { $("q").value = T[i].name; hits = []; showHits(); pick(i, true); $("q").blur(); }
 $("q").addEventListener("input", () => {
     const q = $("q").value.trim().toLowerCase();
-    hits = q ? T.map((t, i) => [t.name.toLowerCase().indexOf(q), i]).filter(h => h[0] >= 0).sort((a, b) => a[0] - b[0] || T[a[1]].tier - T[b[1]].tier).slice(0, 8).map(h => h[1]) : [];
+    hits = q ? T.map((t, i) => [t.real >= 0 ? -1 : t.name.toLowerCase().indexOf(q), i]).filter(h => h[0] >= 0).sort((a, b) => a[0] - b[0] || T[a[1]].tier - T[b[1]].tier).slice(0, 8).map(h => h[1]) : [];
     hi = 0; showHits();
 });
 $("q").addEventListener("keydown", (e) => {
@@ -275,8 +300,8 @@ $("q").addEventListener("blur", () => setTimeout(() => { hits = []; showHits(); 
 // ---- start -----------------------------------------------------------------
 (async () => {
     D = await (await fetch("/tanks/tanks.json", { cache: "no-cache" })).json();
-    T = D.tanks.map(([name, tier, branch, parents, kids, cell, x, y, prim]) => ({ name, tier, branch, parents, kids, cell, x, y, prim }));
-    $("count").textContent = T.length + " tanks, 5 tiers";
+    T = D.tanks.map(([name, tier, branch, parents, kids, cell, x, y, prim, real, col]) => ({ name, tier, branch, parents, kids, cell, x, y, prim, real: real == null ? -1 : real, col: col || 0 }));
+    $("count").textContent = D.count + " tanks, 5 tiers";
     size();
     fit();
     const h = decodeURIComponent(location.hash.slice(1));

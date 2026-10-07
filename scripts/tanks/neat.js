@@ -106,6 +106,8 @@ function layoutSig(f) {
     const live = f.turrets.filter(armed).length, hats = f.turrets.filter(t => !armed(t)).map(t => (t.def ? t.def.shape : 0) + '/' + Math.round(t.S / 3)).sort().join(',');
     return Object.keys(n).sort().map(k => k + n[k]).join('') + '|T' + live + '|H' + hats + '|#' + (f.shape || 0);
 }
+// what a turret throws (a trap turret is not a gun turret)
+const tKind = t => { const g = ((t.def && t.def.guns) || []).filter(x => x.typed); return g.length ? kind(g[0]) : 'x'; };
 const tW = t => Math.max(1, ...((t.def && t.def.guns) || []).filter(x => x.typed).map(x => x.W));
 const aspC = a => a > 1.15 ? 'c' : a < 0.85 ? 'n' : 'f';
 const within = (a, b, r) => Math.max(a, b) <= r * Math.max(1e-6, Math.min(a, b));
@@ -128,10 +130,83 @@ function sameLayout(fa, fb) {
     const TA = fa.turrets.filter(armed), TB = fb.turrets.filter(armed), tu = new Array(TB.length).fill(false);
     for (const t of TA) {
         const [ax, ay] = tCenter(t); let hit = -1;
-        for (let j = 0; j < TB.length && hit < 0; j++) { const [bx, by] = tCenter(TB[j]); if (!tu[j] && Math.hypot(ax - bx, ay - by) <= 3 && within(t.S, TB[j].S, 1.4) && within(tW(t), tW(TB[j]), 1.25)) hit = j; }
+        for (let j = 0; j < TB.length && hit < 0; j++) { const [bx, by] = tCenter(TB[j]); if (!tu[j] && Math.hypot(ax - bx, ay - by) <= 3 && within(t.S, TB[j].S, 1.4) && within(tW(t), tW(TB[j]), 1.25) && tKind(t) === tKind(TB[j])) hit = j; }
         if (hit < 0) return false;
         tu[hit] = true;
     }
     return true;
 }
-module.exports = { symmetry, radialOrder, overlap, turrets, stubby, layoutSig, sameLayout, hullR, kind, armed, tCenter, na };
+// every barrel, armed turret and shell of `small` is also on `big` (big may add more)
+function covers(big, small) {
+    const A = small.guns.filter(x => x.typed), Bg = big.guns.filter(x => x.typed), used = new Array(Bg.length).fill(false);
+    for (const x of A) {
+        let hit = -1;
+        for (let j = 0; j < Bg.length && hit < 0; j++) {
+            const y = Bg[j];
+            if (used[j] || kind(x) !== kind(y) || Math.abs(na(x.a - y.a)) > 6 || aspC(x.asp) !== aspC(y.asp)) continue;
+            if (Math.abs(x.Y - y.Y) > Math.max(2, 0.35 * Math.max(x.W, y.W)) || Math.sign(Math.round(x.Y)) !== Math.sign(Math.round(y.Y))) continue;
+            if (!within(x.X + x.L, y.X + y.L, 1.15) || !within(x.W, y.W, 1.45)) continue;
+            hit = j;
+        }
+        if (hit < 0) return false;
+        used[hit] = true;
+    }
+    const TB = big.turrets, tu = new Array(TB.length).fill(false);
+    for (const t of small.turrets) {
+        const [ax, ay] = tCenter(t), ar = armed(t); let hit = -1;
+        for (let j = 0; j < TB.length && hit < 0; j++) {
+            const u = TB[j]; if (tu[j] || armed(u) !== ar) continue;
+            const [bx, by] = tCenter(u);
+            if (Math.hypot(ax - bx, ay - by) > 3 || !within(t.S, u.S, ar ? 1.4 : 1.2)) continue;
+            if (ar ? !within(tW(t), tW(u), 1.25) || tKind(t) !== tKind(u) : (t.def && t.def.shape) !== (u.def && u.def.shape)) continue;
+            hit = j;
+        }
+        if (hit < 0) return false;
+        tu[hit] = true;
+    }
+    return (small.shape || 0) === (big.shape || 0);
+}
+const parts2 = f => f.guns.filter(x => x.typed).length + f.turrets.length;
+// one design is the other plus a bolt-on (more barrels, turrets or a shell on the same layout)
+const boltOn = (a, b) => (parts2(a) > parts2(b) && covers(a, b)) || (parts2(b) > parts2(a) && covers(b, a));
+// what a tank throws: typed barrels by kind, armed turrets by what their barrels throw
+function kinds(f) {
+    const n = { d: 0, t: 0, b: 0, s: 0 };
+    for (const x of f.guns) if (x.typed) n[kind(x)]++;
+    for (const t of f.turrets) if (armed(t)) { const m = kinds(t.def); const k = ['d', 't', 's', 'b'].find(q => m[q] && m[q] >= Math.max(m.d, m.t, m.b, m.s)) || 'b'; n[k]++; }
+    return n;
+}
+// the main weapon: the kind with the most barrels (drones, traps or guns), 'mix' on a tie
+function mainKind(f) {
+    const n = kinds(f), c = { d: n.d, t: n.t, b: n.b + n.s }, top = Math.max(c.d, c.t, c.b);
+    if (!top) return null;
+    const ks = Object.keys(c).filter(k => c[k] === top);
+    return ks.length > 1 ? 'mix' : ks[0];
+}
+const hybrid = f => { const n = kinds(f); return [n.d, n.t, n.b + n.s].filter(Boolean).length >= 2; };
+// line identity: a drone tank's children stay drone tanks (drones at least level with
+// anything else), a trap tank's stay trap tanks; mixed and gun parents are free
+function lineOK(child, parent) {
+    const pm = mainKind(parent);
+    if (pm !== 'd' && pm !== 't') return true;
+    const n = kinds(child), c = { d: n.d, t: n.t, b: n.b + n.s };
+    return c[pm] > 0 && c[pm] >= Math.max(c.d, c.t, c.b);
+}
+// a barrel of the parent's turned into another kind on the child (same direction, other weapon)
+function converted(child, parent) {
+    const C = child.guns.filter(x => x.typed);
+    return parent.guns.some(x => x.typed && !C.some(y => kind(y) === kind(x) && Math.abs(na(x.a - y.a)) <= 10) && C.some(y => kind(y) !== kind(x) && Math.abs(na(x.a - y.a)) <= 10));
+}
+// barrels that fire nothing: a gun without a real TYPE, or a bare shell with no barrel of its own
+// beside it (unless today's tanks wear that exact piece: helix fins, triplex spines)
+const decoSig = x => [x.L, x.W, x.asp, x.X, x.Y, x.a].map(v => Math.round(v * 10)).join('/');
+function deadGuns(f, { valid = () => true, decos = null } = {}) {
+    const out = [];
+    f.guns.forEach((x, i) => {
+        if (x.typed) { if (!x.type || /^none$/i.test(x.type) || !valid(x)) out.push(i); return; }
+        const paired = f.guns.some(y => y.typed && Math.abs(na(x.a - y.a)) <= 20 && Math.abs(x.Y - y.Y) <= Math.max(x.W, y.W) / 2 + 2);
+        if (!paired && !(decos && decos.has(decoSig(x)))) out.push(i);
+    });
+    return out;
+}
+module.exports = { symmetry, radialOrder, overlap, turrets, stubby, layoutSig, sameLayout, covers, boltOn, kinds, mainKind, hybrid, lineOK, converted, deadGuns, decoSig, hullR, kind, armed, tCenter, na };

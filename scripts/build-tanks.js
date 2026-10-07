@@ -26,6 +26,17 @@ const BRANCH_COLORS = {
 
 const sha = (s) => crypto.createHash('sha1').update(s).digest('hex');
 
+// the upgrade tiles' colours, as app.js draws them (upgTileColors over getIconColor's cycle):
+// the default ("dark") palette, the face calmed toward HUD.wellSolid, the lip toward HUD.ink
+function tileColors() {
+    const src = fs.readFileSync(path.join(PUBLIC, 'client', 'color.js'), 'utf8').replace(/export\s*\{[^}]*\};?/, '');
+    const pal = require('vm').runInNewContext(src + ';color', {}).dark;
+    const byIndex = ['teal', 'lgreen', 'orange', 'yellow', 'aqua', 'pink', 'vlgrey', 'lgrey', 'guiwhite', 'black', 'blue', 'green', 'red', 'gold', 'purple', 'magenta'];
+    const order = [10, 11, 12, 15, 13, 2, 14, 4, 5, 1, 0, 3];
+    const mix = (a, b, m) => { const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), x = p(a), y = p(b); return '#' + x.map((v, i) => ((v + (y[i] - v) * m) | 0).toString(16).padStart(2, '0')).join(''); };
+    return order.map(i => { const c = pal[byIndex[i]]; return [mix(c, '#1e1924', 0.18), mix(c, '#120e15', 0.5)]; });
+}
+
 // ---- the tree, as the game defines it ------------------------------------
 function loadTree() {
     for (const k of ['ROYALE_TANKS', 'ROYALE_TANKS_T5_FREE']) delete process.env[k];
@@ -101,12 +112,23 @@ function rendererHash() {
 }
 
 // ---- layout --------------------------------------------------------------- Basic top
-const L = { tile: 48, px: 62, row: 92, stack: 66, gapX: 46, gapY: 64, head: 34, maxW: 4700, left: 70 };
+const L = { tile: 48, px: 62, row: 92, stack: 66, gapX: 62, gapY: 64, head: 34, maxW: 4700, left: 84 };
 function layout(T) {
     const prim = new Map();                      // primary parent: the first one found
     for (const k of T.order) if (k !== T.root) prim.set(k, T.parents.get(k)[0]);
     const pk = new Map(); for (const k of T.order) pk.set(k, []);
     for (const [k, p] of prim) pk.get(p).push(k);
+    // a tank with more parents also shows under each of them (a copy tile, no subtree)
+    const ghosts = new Map();
+    for (const k of T.order) {
+        if (k === T.root) continue;
+        for (const p of T.parents.get(k).slice(1)) {
+            const g = k + '#' + p;
+            ghosts.set(g, { real: k, parent: p });
+            T.tier.set(g, T.tier.get(k));
+            pk.get(p).push(g); pk.set(g, []);
+        }
+    }
     // one block per line: Basic's own upgrades, grouped by their branch
     let D = null; try { D = require(path.join(SERVER, 'lib', 'definitions', 'tanks_expansion_data.js')); } catch (e) { /* classic */ }
     const dBranch = new Map(D ? D.tanks.map(t => [t.key, t.branch]) : []);
@@ -143,7 +165,9 @@ function layout(T) {
         for (const r of grp.roots) place(r);
         for (const [k, c] of cols) if (!pos.has(k)) pos.set(k, { blk: blocks.length, c, y: (T.tier.get(k) - top) * L.row });
         const w = col * L.px, h = (5 - top) * L.row - 12 + Math.max(0, deepest - 1) * L.stack + L.tile;
-        blocks.push({ root: grp.key, roots: grp.roots, w, h, n: [...cols.keys()].length });
+        // the rows of the block, for the tier labels down its left side
+        const rowsT = []; for (let t = top; t <= 5; t++) rowsT.push([t, t === 5 ? (5 - top) * L.row - 12 : (t - top) * L.row]);
+        blocks.push({ root: grp.key, roots: grp.roots, w, h, n: [...cols.keys()].length, rowsT });
     }
     // rows of blocks, first fit in line order (a wide page, like a screen)
     const rows = [];
@@ -165,7 +189,9 @@ function layout(T) {
         out.set(k, { x: Math.round(bl.x + p.c * L.px), y: Math.round(bl.y + p.y) });
     }
     let W = 0, H = 0; for (const p of out.values()) { W = Math.max(W, p.x + L.tile); H = Math.max(H, p.y + L.tile); }
-    return { pos: out, prim, blocks, W: W + 40, H: H + 40 };
+    // a tile's colour: its place among its parent's upgrades, as the game's class tree does
+    const sib = new Map(); for (const ks of pk.values()) ks.forEach((k, i) => sib.set(k, i));
+    return { pos: out, prim, ghosts, blocks, sib, W: W + 40, H: H + 40 };
 }
 
 // ---- the atlas, drawn by the game's renderer in headless Chrome ----------
@@ -313,20 +339,28 @@ async function main() {
         const p = lay.pos.get(k), b = branchOf(k);
         return [String(Class[k].LABEL), T.tier.get(k), b ? branchKeys.indexOf(b) : -1,
             T.parents.get(k).map(x => id.get(x)), T.kids.get(k).map(x => id.get(x)), cellOf(i), p.x, p.y,
-            k === T.root ? -1 : id.get(lay.prim.get(k))];
+            k === T.root ? -1 : id.get(lay.prim.get(k)), -1, lay.sib.get(k) || 0];
     });
+    const real = tanks.length;
+    for (const [g, gh] of lay.ghosts) {
+        const p = lay.pos.get(g); if (!p) continue;
+        const i = id.get(gh.real), b = branchOf(gh.parent);
+        const r = tanks[i];
+        tanks.push([r[0], r[1], b ? branchKeys.indexOf(b) : r[2], r[3], r[4], r[5], p.x, p.y, id.get(gh.parent), i, lay.sib.get(g) || 0]);
+    }
     const atlasV = map ? sha(map.builtAt + map.renderer).slice(0, 8) : '0';
     const data = {
-        v: 1, count: tanks.length, w: lay.W, h: lay.H, tile: L.tile,
+        v: 1, count: real, w: lay.W, h: lay.H, tile: L.tile,
         branches,
-        blocks: lay.blocks.map(b => ({ b: branchKeys.indexOf(b.root), x: b.x, y: b.y - L.head, w: b.w, h: b.h + L.head, n: b.n })),
+        blocks: lay.blocks.map(b => ({ b: branchKeys.indexOf(b.root), x: b.x, y: b.y - L.head, w: b.w, h: b.h + L.head, n: b.n, t: b.rowsT.map(([t, y]) => [t, b.y + y]) })),
+        tiles: tileColors(),
         atlas: { cols: map ? map.cols : COLS, s: { src: '/tanks/atlas-s.webp?v=' + atlasV, cell: CELL.s }, l: { src: '/tanks/atlas-l.webp?v=' + atlasV, cell: CELL.l } },
-        // [name, tier, branch, parents, upgrades, picture cell, x, y, primary parent]
+        // [name, tier, branch, parents, upgrades, picture cell, x, y, primary parent, real tank (copies) or -1, tile colour]
         tanks,
     };
     fs.writeFileSync(path.join(OUT, 'tanks.json'), JSON.stringify(data));
     const size = ['tanks.json', 'atlas-s.webp', 'atlas-l.webp', 'index.html', 'tanks.js', 'tanks.css'].reduce((n, f) => { try { return n + fs.statSync(path.join(OUT, f)).size; } catch (e) { return n; } }, 0);
-    console.log(`[tanks] ${tanks.length} tanks, ${branches.length} lines, layout ${lay.W}x${lay.H}, ${note}, ${(size / 1048576).toFixed(2)} MB in ${path.relative(REPO, OUT) || OUT}, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    console.log(`[tanks] ${real} tanks (+${tanks.length - real} copies), ${branches.length} lines, layout ${lay.W}x${lay.H}, ${note}, ${(size / 1048576).toFixed(2)} MB in ${path.relative(REPO, OUT) || OUT}, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 
 main().then(() => process.exit(0), (e) => { console.error('[tanks] build failed: ' + (e && e.stack || e)); process.exit(1); });

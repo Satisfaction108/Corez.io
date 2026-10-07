@@ -17,7 +17,10 @@ const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'tanks-page-'));
 for (const f of ['atlas-s.webp', 'atlas-l.webp']) if (fs.existsSync(path.join(PUB, f))) fs.copyFileSync(path.join(PUB, f), path.join(OUT, f));
 const log = execFileSync(process.execPath, [path.join(REPO, 'scripts', 'build-tanks.js'), '--no-atlas'], { env: { ...process.env, TANKS_OUT: OUT }, cwd: REPO }).toString();
 const D = JSON.parse(fs.readFileSync(path.join(OUT, 'tanks.json'), 'utf8'));
-const T = D.tanks.map(([name, tier, branch, parents, kids, cell, x, y, prim]) => ({ name, tier, branch, parents, kids, cell, x, y, prim }));
+const ALL = D.tanks.map(([name, tier, branch, parents, kids, cell, x, y, prim, real, col]) => ({ name, tier, branch, parents, kids, cell, x, y, prim, real: real == null ? -1 : real, col }));
+// copy tiles (a tank shown under its other parents) come after the real rows
+const T = ALL.filter(t => t.real < 0);
+const COPIES = ALL.filter(t => t.real >= 0);
 
 test('builds: every tank, tiers 1 to 5, Basic at the root', () => {
     assert.ok(/\[tanks\] \d+ tanks/.test(log), log);
@@ -40,14 +43,36 @@ test('tree: parents and upgrades agree, one tier apart in the game\'s slots', ()
 
 test('layout: no two tiles overlap, all inside the page, every tank in a line', () => {
     const S = D.tile;
-    const sorted = [...T].sort((a, b) => a.y - b.y || a.x - b.x);
+    const sorted = [...ALL].sort((a, b) => a.y - b.y || a.x - b.x);
     for (let i = 0; i < sorted.length; i++) for (let j = i + 1; j < sorted.length && sorted[j].y < sorted[i].y + S + 12; j++) {
         const a = sorted[i], b = sorted[j];
         assert.ok(Math.abs(a.x - b.x) >= S + 8 || Math.abs(a.y - b.y) >= S + 12, a.name + ' overlaps ' + b.name);
     }
     for (const t of T) assert.ok(t.x >= 0 && t.y >= 0 && t.x + S <= D.w && t.y + S <= D.h, t.name + ' outside');
+    // every extra parent shows a copy of the tank under it, pointing back at the real one
+    const realIdx = new Map(ALL.map((t, i) => [t, i]));
+    for (const t of T) for (const p of t.parents.slice(1)) {
+        assert.ok(COPIES.some(c => c.real === realIdx.get(t) && c.prim === p), t.name + ' missing under ' + ALL[p].name);
+    }
     assert.ok(T.slice(1).every(t => t.branch >= 0 && t.branch < D.branches.length), 'a tank without a line');
     assert.deepEqual(D.branches.map(b => b.name).slice(0, 3), ['Twin', 'Sniper', 'Machine Gun']);
+});
+
+test('tiles: the game\'s upgrade-tile colours, no branch strip, tier labels on every line', () => {
+    assert.equal(D.tiles.length, 12, 'the 12-colour cycle of the upgrade tiles');
+    const lum = h => { const v = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); return 0.3 * v[0] + 0.59 * v[1] + 0.11 * v[2]; };
+    for (const [face, lip] of D.tiles) { assert.ok(/^#[0-9a-f]{6}$/.test(face) && /^#[0-9a-f]{6}$/.test(lip), face + ' ' + lip); assert.ok(lum(lip) < lum(face) * 0.75, 'lip ' + lip + ' not darker than ' + face); }
+    assert.equal(new Set(D.tiles.map(t => t[0])).size, 12, 'twelve different faces');
+    // the first face is the game's: dark-theme blue calmed toward the HUD well
+    assert.equal(D.tiles[0][0], '#3977d7');
+    assert.ok(ALL.every(t => Number.isInteger(t.col) && t.col >= 0), 'a tile without a colour');
+    // brothers side by side never share a colour (up to the 12 of the cycle)
+    const under = new Map(); for (const t of ALL) if (t.prim >= 0) { if (!under.has(t.prim)) under.set(t.prim, []); under.get(t.prim).push(t.col % 12); }
+    for (const [p, cs] of under) if (cs.length <= 12) assert.equal(new Set(cs).size, cs.length, ALL[p].name + "'s upgrades repeat a colour");
+    const js = fs.readFileSync(path.join(PUB, 'tanks.js'), 'utf8');
+    assert.ok(!/D\.branches\[t\.branch\]\.color/.test(js), 'the branch-colour strip is back on the tiles');
+    assert.ok(/D\.tiles/.test(js) && /strokeText/.test(js), 'tiles coloured from D.tiles, names with a halo');
+    for (const b of D.blocks) { assert.ok(b.t && b.t.some(r => r[0] === 5), 'line ' + b.b + ' has no tier labels'); for (const [tr, y] of b.t) assert.ok(tr >= 2 && tr <= 5 && y >= b.y, 'tier label ' + tr); }
 });
 
 test('pictures: one atlas cell per tank, drawn by the game renderer, under 3 MB in all', () => {
