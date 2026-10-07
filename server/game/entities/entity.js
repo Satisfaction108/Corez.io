@@ -2,6 +2,7 @@ let EventEmitter = require('events');
 global.entitiesIdLog = 0;
 const forceTwiggle = ["autospin", "turnWithSpeed", "spin", "fastspin", "veryfastspin", "withMotion", "smoothWithMotion", "looseWithMotion"];
 const { combineStats } = require('../../lib/definitions/facilitators.js');
+const tier5 = require('../terrain/tier5.js');
 // How long a body reports as freshly hit. The client blinks on the rising edge,
 // so this only needs to outlast a couple of network ticks without merging rapid fire.
 const HIT_FLASH_MS = 160;
@@ -943,7 +944,8 @@ class Entity extends EventEmitter {
             }
         } else {
             for (let i = 0; i < branchId; i++) { number += this.skippedUpgrades[i] ?? 0; };
-            if (number < this.upgrades.length && this.skill.level >= this.upgrades[number].level) {
+            // terrain/tier5.js: a Tier 5 option opens with growth, not level
+            if (number < this.upgrades.length && tier5.open(this, this.upgrades[number])) {
                 upgraded = true;
                 let upgrade = this.upgrades[number], upgradeClass = upgrade.class, upgradeBranch = upgrade.branch, redefineAll = upgrade.redefineAll;
                 upTier = upgrade.tier | 0;

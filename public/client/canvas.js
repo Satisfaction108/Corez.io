@@ -9,6 +9,7 @@ import * as abilityFx from "./abilityFx.js";
 import * as raidPerks from "./raidPerks.js";
 import * as raidFinale from "./raidFinale.js";
 import { attachEmoji } from "./emoji.js";
+import * as upGrid from "./upgradeGridLogic.js";
 let { gui } = socketStuff;
 
 // duos: team chat and pings are on (the duo server says so in RY)
@@ -30,6 +31,7 @@ function overHudButton(mpos) {
     return !!abilityFx.chipAt(mpos.x / guiScale(), mpos.y / guiScale()) || c.vault.check(mpos) !== -1 || c.shop.check(mpos) !== -1 || c.kit.check(mpos) !== -1 ||
         c.skipUpgrades.check(mpos) !== -1 || (c.royalePlay && c.royalePlay.check(mpos) !== -1) ||
         (c.lastTank && c.lastTank.check(mpos) !== -1) || (c.statBtn && c.statBtn.check(mpos) !== -1) ||
+        (c.upgradePage && c.upgradePage.check(mpos) !== -1) ||
         raidPerks.hit(mpos.x / guiScale(), mpos.y / guiScale());
 }
 // Enter right after a respawn does not open the chat (mashed on the death card)
@@ -200,6 +202,20 @@ class Canvas {
     }
 
     wheel(event) {
+        // over the upgrade tiles with more than one page: the wheel turns it
+        {
+            const UG = global.upgradePg, pg = UG && UG.pg;
+            if (pg && pg.pages > 1 && global.canUpgrade && !global.showBigMap) {
+                const k = this.height / global.screenHeight;
+                const gx = (event.clientX * global.ratio) / k, gy = (event.clientY * global.ratio) / k;
+                if (gx <= (global.upgradeBoxRight || 0) + 10 && gy >= (global.upgradeBoxTop || 0) - 10 && gy <= (global.upgradeBoxBottom || 0) + 10) {
+                    const t = performance.now();
+                    if (t - (UG.wheelAt || 0) > 180) { UG.wheelAt = t; UG.page = upGrid.turn(UG.page, pg.pages, event.deltaY > 0 ? 1 : -1); }
+                    event.preventDefault && event.preventDefault();
+                    return;
+                }
+            }
+        }
         // full-map overlay: wheel zooms toward the cursor
         if (global.showBigMap) {
             const bm = global.bigMap;
@@ -686,31 +702,16 @@ class Canvas {
                 }
             }
             if (global.canUpgrade) {
-                switch (event.keyCode) {
-                    case global.KEY_CHOOSE_1:
-                        this.socket.talk("U", 0, parseInt(gui.upgrades[0][0]));
+                // the choose keys pick from the page on screen (app.js pager)
+                const keys = [global.KEY_CHOOSE_1, global.KEY_CHOOSE_2, global.KEY_CHOOSE_3, global.KEY_CHOOSE_4, global.KEY_CHOOSE_5, global.KEY_CHOOSE_6];
+                const kn = keys.indexOf(event.keyCode);
+                if (kn >= 0) {
+                    const pg = global.upgradePg && global.upgradePg.pg;
+                    const i = pg ? upGrid.keyPick(kn, gui.upgrades.length, upGrid.pageSize(global.mobile), pg.page) : kn;
+                    if (i >= 0 && gui.upgrades[i]) {
+                        this.socket.talk("U", i, parseInt(gui.upgrades[i][0]));
                         gameSound.uiClick();
-                        break;
-                    case global.KEY_CHOOSE_2:
-                        this.socket.talk("U", 1, parseInt(gui.upgrades[1][0]));
-                        gameSound.uiClick();
-                        break;
-                    case global.KEY_CHOOSE_3:
-                        this.socket.talk("U", 2, parseInt(gui.upgrades[2][0]));
-                        gameSound.uiClick();
-                        break;
-                    case global.KEY_CHOOSE_4:
-                        this.socket.talk("U", 3, parseInt(gui.upgrades[3][0]));
-                        gameSound.uiClick();
-                        break;
-                    case global.KEY_CHOOSE_5:
-                        this.socket.talk("U", 4, parseInt(gui.upgrades[4][0]));
-                        gameSound.uiClick();
-                        break;
-                    case global.KEY_CHOOSE_6:
-                        this.socket.talk("U", 5, parseInt(gui.upgrades[5][0]));
-                        gameSound.uiClick();
-                        break;
+                    }
                 }
             }
         }
@@ -869,6 +870,7 @@ class Canvas {
                     global.clickables.vault.check(mpos) == -1 &&
                     global.clickables.skipUpgrades.check(mpos) == -1 &&
                     global.clickables.lastTank.check(mpos) == -1 &&
+                    global.clickables.upgradePage.check(mpos) == -1 &&
                     global.clickables.statBtn.check(mpos) == -1 &&
                     global.clickables.dailyTankUpgrade.check(mpos) == false &&
                     global.clickables.dailyTankAd.check(mpos) === false &&
@@ -1129,6 +1131,11 @@ class Canvas {
                     gameSound.uiClick();
                     break;
                 }
+                if (global.clickables.classTreeAll.check(mpos) === 0) {
+                    try { window.open("/tanks", "_blank", "noopener"); } catch (e) { /* popup blocked */ }
+                    gameSound.uiClick();
+                    break;
+                }
                 if (global.clickables.classTreeZoomOut.check(mpos) === 1) {
                     global.targetTreeScale = Math.max(global.targetTreeScale / 1.2, 0.5);
                     gameSound.uiClick();
@@ -1177,6 +1184,10 @@ class Canvas {
                 } else if (this.skipUpgradePressed && global.clickables.skipUpgrades.check(mpos) !== -1) {
                     this.skipUpgradePressed = false;
                     global.clearUpgrades();
+                    gameSound.uiClick();
+                } else if (global.clickables.upgradePage.check(mpos) !== -1 && global.upgradePg && global.upgradePg.pg) {
+                    const UG = global.upgradePg;
+                    UG.page = upGrid.turn(UG.page, UG.pg.pages, global.clickables.upgradePage.check(mpos) === 0 ? -1 : 1);
                     gameSound.uiClick();
                 } else if (this.lastTankPressed && global.clickables.lastTank.check(mpos) !== -1) {
                     this.lastTankPressed = false;

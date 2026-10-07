@@ -47,9 +47,11 @@ function placeBuild(raw, points, caps, rammer = false) {
     return { raw: out, left };
 }
 
+// no guns, or a smasher hull
 function isRammer(body) {
     const guns = body && body.guns;
     if (!guns) return false;
+    if (body.settings && body.settings.reloadToAcceleration) return true;
     const n = typeof guns.size === 'number' ? guns.size : (guns.length | 0);
     return n === 0;
 }

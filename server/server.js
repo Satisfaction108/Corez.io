@@ -532,6 +532,12 @@ server = http.createServer((req, res) => {
             ok = false;
             sendStatic(res, path.join(publicRoot, "about.html"), req);
         } break;
+        // every tank as one tree (public/tanks, scripts/build-tanks.js)
+        case "/tanks":
+        case "/tanks/": {
+            ok = false;
+            sendStatic(res, path.join(publicRoot, "tanks", "index.html"), req);
+        } break;
         case "/devlog":
         case "/devlog/": {
             ok = false;

@@ -7,6 +7,8 @@
 // upgraded died-as tank names the button.
 export function respawnAs(you, diedAs) {
     if (!you || !(you.lt || you.ls)) return null;
+    // ltg: a Tier 5 build comes back as its Tier 4 parent until this life is 2x
+    if (you.ltg && you.lt) return { label: "Respawn as " + you.lt, sub: "Grow to " + (you.ltg > 100 ? you.ltg / 100 : 2) + "x this life to unlock Tier 5" };
     const name = you.lt && diedAs && diedAs !== "Basic" ? diedAs : you.lt;
     return { label: "Respawn as " + (name || "Basic"), sub: you.lt ? "same tank and stats" : "same stats" };
 }

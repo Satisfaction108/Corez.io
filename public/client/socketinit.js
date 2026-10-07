@@ -1636,7 +1636,7 @@ let incoming = async function(message, socket) {
                 if (list.length > 5) list.shift();
                 // falling in: the plate waits for the landing
                 try { const la = raidHeat.landAt(); if (la && list.length) list[list.length - 1].born = Math.max(list[list.length - 1].born, la); } catch (e) { /* */ }
-                if (m[0] === "boss" || m[0] === "quest" || m[0] === "contract" || m[0] === "revenge") { punchUI(8, 260); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
+                if (m[0] === "boss" || m[0] === "quest" || m[0] === "contract" || m[0] === "revenge" || m[0] === "tier5") { punchUI(8, 260); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
                 else if (m[0] === "bounty") { punchUI(5, 220); if (gameSound.bankCelebrate) gameSound.bankCelebrate(); }
                 else if (m[0] === "dropin") { if (gameSound.depositDone) gameSound.depositDone(); }
                 else if (m[0] === "grown" || m[0] === "restored") { punchUI(5, 220); if (gameSound.depositDone) gameSound.depositDone(); }

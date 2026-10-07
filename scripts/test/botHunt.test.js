@@ -81,7 +81,8 @@ function vet(p, d = 1) {
 const waitScan = () => { for (const t = Date.now(); Date.now() - t < 130;); };
 
 test('tanks: raid bots spawn as tier 3 tanks from the pool', () => {
-    const pool = T.pool();
+    // the expanded tree (default) pools every Tier 4 of the tree
+    const pool = T.pool(handler.botTankExclusions());
     assert.ok(pool.length >= 10, 'a real pool: ' + pool.length);
     for (const o of pool) {
         assert.equal(o.path.length, 3, o.name);

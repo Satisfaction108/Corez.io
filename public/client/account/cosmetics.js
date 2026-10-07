@@ -2,8 +2,7 @@
 // nameFx), from the shared catalog (window.DWCosmetics). No DOM: app.js
 // calls this every frame, so the hot paths allocate nothing.
 // Skins: a flat design tile per skin + team colour + size bucket (32..4096
-// device px, following the hull on screen; skins never recolour, every
-// design is drawn in shades of the team colour), in hull space, clipped to the
+// device px, following the hull on screen
 // hull path (same maths as drawBody in app.js). At most one tile is built
 // per ~frame; until then the hull reuses another size of the same tile, or
 // stays plain.
@@ -410,27 +409,28 @@ function spiralArm(k, n, arms, turn) {
     }
     return pts;
 }
-// Skins never recolour (owner rule, Oct 6 2026): every design is the hull's
-// own team colour with decorations laid over it in shades of that colour
-// (D darker, DD darker still, L lighter, LL pale) and outlined in K, a dark
-// ink of it, the game's flat style. G / G2 are the glow tints (emissive).
-const SKIN_INK = '#120e15';
-function paletteFor(teamHex) {
-    const T = teamHex;
-    return {
-        T, D: mix(T, SKIN_INK, 0.24), DD: mix(T, SKIN_INK, 0.44), L: mix(T, '#ffffff', 0.34), LL: mix(T, '#ffffff', 0.62),
-        K: mix(T, SKIN_INK, 0.66), G: mix(T, '#ffffff', 0.55), G2: mix(T, '#ffffff', 0.85),
-    };
+// Skins never recolour the body: the hull keeps the team colour wherever the design is
+const SKIN_INK = '#131313';
+function swatch(hex) {
+    return { f: hex, d: mix(hex, SKIN_INK, 0.3), l: mix(hex, '#ffffff', 0.45), k: mix(hex, SKIN_INK, 0.68) };
 }
-// raised (lighter) and inset (darker) parts, each with the ink edge
-const up = (c, P, w) => paint(c, P.L, P.K, w);
-const hi = (c, P, w) => paint(c, P.LL, P.K, w);
-const dn = (c, P, w) => paint(c, P.D, P.K, w);
-function studs(c, P, n, rr, sz, rot, fill) {
+const WHITE_SW = swatch('#f2f2f2');
+function paletteFor(it, teamHex) {
+    const C = CAT();
+    const cs = C && C.skinColors ? C.skinColors(it, teamHex) : [];
+    const a = swatch(cs[0] || '#f2f2f2');
+    const b = cs[1] ? swatch(cs[1]) : swatch(a.d);
+    const c = cs[2] ? swatch(cs[2]) : b;
+    return { T: teamHex, a, b, c, spark: (cs.length > 1 ? b : a).l };
+}
+// a flat fill in a colour with its ink edge
+const fl = (c, X, w) => paint(c, X.f, X.k, w);
+const fd = (c, X, w) => paint(c, X.d, X.k, w);
+function studs(c, X, n, rr, sz, rot) {
     for (let i = 0; i < n; i++) {
         const p = pol(rr, (rot || 0) + (i / n) * TAU);
         disc(c, p[0], p[1], sz);
-        paint(c, fill || P.LL, P.K, OW * 0.8);
+        fl(c, X, OW * 0.8);
     }
 }
 function hexagon(c, x, y, r, rot) {
@@ -451,12 +451,13 @@ function crackSeams() {
     for (const a of ang) out.push([pol(0.2, a), pol(0.5, a + 0.28), pol(0.86, a - 0.1), pol(1.5, a + 0.14)]);
     return out;
 }
+// a cloud bank over the front of the hull
 function cloud(c) {
     c.beginPath();
-    c.moveTo(-1.4, -1.4); c.lineTo(-1.4, -0.12);
+    c.moveTo(-1.4, -1.4); c.lineTo(-1.4, -0.36);
     for (let i = 0; i < 6; i++) {
         const x0 = -1.4 + i * 0.47;
-        c.quadraticCurveTo(x0 + 0.235, 0.22 + (i & 1 ? -0.06 : 0.04), x0 + 0.47, -0.12);
+        c.quadraticCurveTo(x0 + 0.235, -0.04 + (i & 1 ? -0.06 : 0.04), x0 + 0.47, -0.36);
     }
     c.lineTo(1.4, -1.4);
     c.closePath();
@@ -468,144 +469,183 @@ function eyePath(c, w, h) {
     c.quadraticCurveTo(0, h * 2, -w, 0);
     c.closePath();
 }
+function tigerStripes(c, w) {
+    c.beginPath();
+    for (let k = -3; k <= 3; k++) {
+        for (const sg of [-1, 1]) {
+            const x = k * 0.44 + (sg > 0 ? 0.22 : 0), len = (k + sg) & 1 ? 0.95 : 1.2;
+            const y0 = sg * 1.35, tip = sg * (1.35 - len), bend = 0.12;
+            c.moveTo(x - w, y0);
+            c.quadraticCurveTo(x - w * 0.8 + bend, (y0 + tip) / 2, x + bend * 1.5, tip);
+            c.quadraticCurveTo(x + w * 0.6 + bend, (y0 + tip) / 2, x + w, y0);
+            c.closePath();
+        }
+    }
+}
+const STRATA = [-0.6, 0, 0.6];
+function strataBand(c, i) { wave(c, STRATA[i], 0.11, 0.09, 2.4, i * 1.7); }
+const AURORA = [-0.5, 0, 0.5];
+function auroraBand(c, i) { wave(c, AURORA[i], 0.1, 0.13, 2.2, i * 1.3); }
+function sunRays(c) {
+    const n = 12, w = (TAU / n) * 0.32;
+    c.beginPath();
+    for (let i = 0; i < n; i++) { const a = (i / n) * TAU; c.moveTo(0, 0); c.arc(0, 0, 2, a - w / 2, a + w / 2); c.closePath(); }
+}
+function geodeRing(c) {
+    c.beginPath();
+    c.arc(0, 0, 0.86, 0, TAU);
+    const n = 14, pts = [];
+    for (let i = 0; i < n * 2; i++) pts.push(pol(i & 1 ? 0.48 : 0.7, (i * Math.PI) / n));
+    c.moveTo(pts[0][0], pts[0][1]);
+    for (let i = pts.length - 1; i >= 0; i--) c.lineTo(pts[i][0], pts[i][1]);
+    c.closePath();
+}
+function vaultSpokes(c) {
+    c.beginPath();
+    for (let i = 0; i < 3; i++) { const a = (i / 3) * TAU - Math.PI / 2, cs = Math.cos(a), sn = Math.sin(a); c.moveTo(-0.07 * sn, 0.07 * cs); c.lineTo(0.66 * cs - 0.07 * sn, 0.66 * sn + 0.07 * cs); c.lineTo(0.66 * cs + 0.07 * sn, 0.66 * sn - 0.07 * cs); c.lineTo(0.07 * sn, -0.07 * cs); c.closePath(); }
+}
+function blade(c, k, s) {
+    const a = (k / 3) * TAU;
+    poly(c, [pol(0.14, a - 0.42 * s), pol(0.72, a - 0.2 * s), pol(1.3, a), pol(0.72, a + 0.2 * s), pol(0.14, a + 0.42 * s)]);
+}
+function prismWedge(c, i) {
+    const n = 12, a0 = (i / n) * TAU, a1 = ((i + 1) / n) * TAU;
+    c.beginPath(); c.arc(0, 0, 0.9, a0, a1); c.arc(0, 0, 0.52, a1, a0, true); c.closePath();
+}
 
-// Each painter draws its design in hull space (radius 1 = the hull edge);
-// GLOW painters draw the matching emissive layer (additive, No Glow drops it).
+// Each painter draws its design in hull space (radius 1 = the hull edge)
 const PAINT = {
     // a strip of hazard tape across the hull
     stripes(c, P, s) {
         c.rotate(((s.angle == null ? 45 : s.angle) * Math.PI) / 180);
-        c.beginPath(); c.rect(-3, -0.34, 6, 0.68); paint(c, P.DD, null);
+        c.beginPath(); c.rect(-3, -0.3, 6, 0.6); paint(c, P.a.f, null);
         c.save(); c.clip();
         c.beginPath();
-        for (let x = -3; x < 3; x += 0.44) { c.moveTo(x, -0.4); c.lineTo(x + 0.22, -0.4); c.lineTo(x + 0.02, 0.4); c.lineTo(x - 0.2, 0.4); c.closePath(); }
-        paint(c, P.L, null);
+        for (let x = -3; x < 3; x += 0.44) { c.moveTo(x, -0.36); c.lineTo(x + 0.22, -0.36); c.lineTo(x + 0.02, 0.36); c.lineTo(x - 0.2, 0.36); c.closePath(); }
+        paint(c, P.b.f, null);
         c.restore();
-        c.beginPath(); c.rect(-3, -0.34, 6, 0.68); paint(c, null, P.K);
+        c.beginPath(); c.rect(-3, -0.3, 6, 0.6); paint(c, null, P.a.k);
     },
     // two racing stripes nose to tail
     racer(c, P) {
-        c.beginPath(); c.rect(-3, -0.38, 6, 0.21); c.rect(-3, 0.17, 6, 0.21);
-        hi(c, P);
+        c.beginPath(); c.rect(-3, -0.36, 6, 0.18); c.rect(-3, 0.18, 6, 0.18);
+        fl(c, P.a);
     },
-    // a darker half with a riveted seam
+    // a zigzag seam through the middle, riveted at the bends
     halves(c, P) {
-        c.beginPath(); c.rect(-3, 0, 6, 3); dn(c, P, OW * 1.2);
-        for (const x of [-0.62, 0, 0.62]) { disc(c, x, 0, 0.08); hi(c, P, OW * 0.8); }
+        c.lineJoin = 'miter';
+        band(c, [[-1.5, 0.12], [-0.7, -0.12], [0, 0.12], [0.7, -0.12], [1.5, 0.12]], 0.18, P.a.f, P.a.k);
+        c.lineJoin = 'round';
+        for (const [x, y] of [[-0.7, -0.12], [0, 0.12], [0.7, -0.12]]) { disc(c, x, y, 0.075); fl(c, P.b, OW * 0.8); }
     },
-    // a donut ring round a dot
+    // a target: outer ring, a pale ring, a dot
     rings(c, P) {
-        annulus(c, 0.5, 0.76); up(c, P);
-        disc(c, 0, 0, 0.24); up(c, P);
+        annulus(c, 0.58, 0.76); fl(c, P.a);
+        annulus(c, 0.24, 0.4); fl(c, P.b);
+        disc(c, 0, 0, 0.24); fl(c, P.a);
     },
     dots(c, P, s) {
-        const sp = s.scale || 0.56, r = sp * 0.22;
+        const sp = s.scale || 0.56, r = sp * 0.2;
         c.beginPath();
         for (let j = -4; j <= 4; j++) {
             const y = j * sp * 0.866;
             for (let i = -4; i <= 4; i++) { const x = i * sp + (j & 1 ? sp / 2 : 0); c.moveTo(x + r, y); c.arc(x, y, r, 0, TAU); }
         }
-        hi(c, P, OW * 0.8);
+        fl(c, P.a, OW * 0.8);
     },
+    // a chequered band nose to tail, two rows of squares
     checker(c, P, s) {
-        const cs = s.scale || 0.5;
-        c.rotate(Math.PI / 4);
+        const cs = s.scale ? s.scale * 0.6 : 0.3;
         c.beginPath();
-        for (let j = -6; j < 6; j++) for (let i = -6; i < 6; i++) if ((i + j) & 1) c.rect(i * cs, j * cs, cs, cs);
-        dn(c, P, OW * 0.7);
+        for (let j = -1; j < 1; j++) for (let i = -8; i < 8; i++) if ((i + j) & 1) c.rect(i * cs, j * cs, cs, cs);
+        paint(c, P.a.f, null);
+        c.beginPath();
+        for (let j = -1; j < 1; j++) for (let i = -8; i < 8; i++) if (!((i + j) & 1)) c.rect(i * cs, j * cs, cs, cs);
+        paint(c, P.b.f, null);
+        c.beginPath(); c.rect(-3, -cs, 6, 2 * cs); paint(c, null, P.b.k);
     },
-    // a lit button in the middle
+    // a button in the middle
     core(c, P) {
-        disc(c, 0, 0, 0.44); up(c, P);
-        disc(c, 0, 0, 0.17); dn(c, P);
-        disc(c, -0.13, -0.15, 0.07); paint(c, P.LL, null);
+        disc(c, 0, 0, 0.42); fl(c, P.a);
+        disc(c, 0, 0, 0.18); fd(c, P.a);
     },
     sash(c, P, s) {
         c.rotate(((s.angle == null ? -35 : s.angle) * Math.PI) / 180);
-        c.beginPath(); c.rect(-3, -0.22, 6, 0.44); up(c, P);
-        c.beginPath(); c.rect(-3, -0.05, 6, 0.1); paint(c, P.D, null);
-        disc(c, 0, 0, 0.2); hi(c, P);
+        c.beginPath(); c.rect(-3, -0.2, 6, 0.4); fl(c, P.a);
+        c.beginPath(); c.rect(-3, -0.04, 6, 0.08); paint(c, P.a.d, null);
+        disc(c, 0, 0, 0.21); fl(c, P.b);
+        star(c, 5, 0.07, 0.15, -Math.PI / 2); paint(c, P.b.d, null);
     },
     // a riveted rim
     rim(c, P, s) {
-        annulus(c, 0.52, 0.78); dn(c, P);
-        studs(c, P, s.rivets || 8, 0.65, 0.07, Math.PI / (s.rivets || 8));
+        annulus(c, 0.56, 0.8); fl(c, P.a);
+        studs(c, P.b, s.rivets || 8, 0.68, 0.07, Math.PI / (s.rivets || 8));
     },
     // a trimmed rim with clamps and a boss
     trim(c, P, s) {
-        annulus(c, 0.7, 0.92); up(c, P);
+        annulus(c, 0.75, 0.88); fl(c, P.a);
         const n = s.rivets || 6;
         for (let i = 0; i < n; i++) {
             c.save(); c.rotate((i / n) * TAU);
-            c.beginPath(); c.rect(0.62, -0.1, 0.4, 0.2); dn(c, P, OW * 0.8);
+            c.beginPath(); c.rect(0.66, -0.09, 0.3, 0.18); fd(c, P.a, OW * 0.8);
             c.restore();
         }
-        disc(c, 0, 0, 0.28); up(c, P);
-        disc(c, 0, 0, 0.11); dn(c, P);
+        disc(c, 0, 0, 0.28); fl(c, P.a);
+        disc(c, 0, 0, 0.11); fd(c, P.a);
     },
     camo(c, P, s, rnd) {
-        const B = [[-0.55, -0.5, 0.4, 0], [0.45, -0.62, 0.34, 1], [0.12, 0.2, 0.42, 0], [-0.78, 0.42, 0.32, 1],
-            [0.86, 0.34, 0.32, 1], [-0.1, -1.08, 0.28, 0], [0.3, 0.98, 0.3, 1], [-1.08, -0.18, 0.24, 0]];
-        for (const [x, y, r, k] of B) { blob(c, rnd, x, y, r); paint(c, k ? P.DD : P.D, P.K, OW * 0.7); }
+        const B = [[-0.55, -0.5, 0.34, 0], [0.45, -0.62, 0.28, 1], [0.12, 0.2, 0.34, 0], [-0.78, 0.42, 0.26, 1],
+            [0.86, 0.34, 0.27, 1], [-0.1, -1.08, 0.24, 0], [0.3, 0.98, 0.25, 1], [-1.08, -0.18, 0.2, 0]];
+        for (const [x, y, r, k] of B) { blob(c, rnd, x, y, r); fl(c, k ? P.b : P.a, OW * 0.7); }
     },
     strata(c, P) {
-        const bands = [[-0.62, P.D], [-0.04, P.L], [0.56, P.D]];
-        for (let i = 0; i < bands.length; i++) { wave(c, bands[i][0], 0.16, 0.09, 2.4, i * 1.7); paint(c, bands[i][1], P.K, OW * 0.8); }
+        for (let i = 0; i < 3; i++) { strataBand(c, i); fl(c, i === 1 ? P.b : P.a, OW * 0.8); }
     },
-    // armour plates: a hex grid, a few plates darker, the middle one raised
+    // armour plates: an inked hex grid, every third plate filled
     hex(c, P, s) {
         const R = s.scale || 0.36, w = Math.sqrt(3) * R;
         for (let row = -4; row <= 4; row++) {
             for (let col = -4; col <= 4; col++) {
                 const x = col * w + (row & 1 ? w / 2 : 0), y = row * 1.5 * R;
                 if (x * x + y * y > 2.2) continue;
-                hexagon(c, x, y, R * 0.9, Math.PI / 6);
-                const mid = row === 0 && col === 0;
-                paint(c, mid ? P.L : ((row + col * 2) % 3 === 0 ? P.D : null), P.K, OW * (mid ? 1 : 0.7));
+                hexagon(c, x, y, R * 0.86, Math.PI / 6);
+                const on = (row === 0 && col === 0) || (((row + col * 2) % 3) + 3) % 3 === 0;
+                paint(c, on ? P.a.f : null, P.a.k, OW * 0.7);
             }
         }
     },
     chevrons(c, P) {
         c.lineJoin = 'miter';
-        for (let k = -1; k <= 1; k++) { const x0 = k * 0.52 + 0.08; band(c, [[x0 - 0.34, -1.3], [x0 + 0.22, 0], [x0 - 0.34, 1.3]], 0.19, P.L, P.K); }
+        for (let k = -1; k <= 1; k++) { const x0 = k * 0.52 + 0.08; band(c, [[x0 - 0.34, -1.3], [x0 + 0.22, 0], [x0 - 0.34, 1.3]], 0.17, P.a.f, P.a.k); }
         c.lineJoin = 'round';
     },
     sunburst(c, P) {
-        const n = 16;
-        c.beginPath();
-        for (let i = 0; i < n; i += 2) { c.moveTo(0, 0); c.arc(0, 0, 2, (i / n) * TAU, ((i + 1) / n) * TAU); c.closePath(); }
-        dn(c, P, OW * 0.6);
-        disc(c, 0, 0, 0.3); up(c, P);
+        sunRays(c); fl(c, P.a, OW * 0.6);
+        disc(c, 0, 0, 0.3); fl(c, P.b);
     },
+    // a quartered roundel, two quarters filled
     quarters(c, P) {
         c.rotate(Math.PI / 4);
-        c.beginPath(); c.rect(0, 0, 3, 3); c.rect(-3, -3, 3, 3);
-        dn(c, P);
-        disc(c, 0, 0, 0.16); hi(c, P);
+        c.beginPath();
+        c.moveTo(0, 0); c.arc(0, 0, 0.7, 0, Math.PI / 2); c.closePath();
+        c.moveTo(0, 0); c.arc(0, 0, 0.7, Math.PI, Math.PI * 1.5); c.closePath();
+        fl(c, P.a);
+        disc(c, 0, 0, 0.7); paint(c, null, P.a.k, OW * 0.8);
+        disc(c, 0, 0, 0.13); fl(c, P.a);
     },
     pinwheel(c, P) {
-        c.beginPath();
         for (let i = 0; i < 4; i++) {
             const a = (i / 4) * TAU;
-            c.moveTo(0, 0); c.lineTo(Math.cos(a) * 1.5, Math.sin(a) * 1.5); c.arc(0, 0, 1.5, a, a + 0.72);
-            const q = pol(0.62, a + 0.95); c.quadraticCurveTo(q[0], q[1], 0, 0); c.closePath();
+            c.beginPath();
+            c.moveTo(0, 0); c.lineTo(Math.cos(a) * 1.5, Math.sin(a) * 1.5); c.arc(0, 0, 1.5, a, a + 0.5);
+            const q = pol(0.6, a + 0.7); c.quadraticCurveTo(q[0], q[1], 0, 0); c.closePath();
+            fl(c, i & 1 ? P.b : P.a);
         }
-        up(c, P);
-        disc(c, 0, 0, 0.16); dn(c, P);
+        disc(c, 0, 0, 0.16); fl(c, P.c);
     },
     tiger(c, P) {
-        c.beginPath();
-        for (let k = -3; k <= 3; k++) {
-            for (const sg of [-1, 1]) {
-                const x = k * 0.4 + (sg > 0 ? 0.2 : 0), len = (k + sg) & 1 ? 1.0 : 1.22;
-                const y0 = sg * 1.35, tip = sg * (1.35 - len), bend = 0.12;
-                c.moveTo(x - 0.15, y0);
-                c.quadraticCurveTo(x - 0.12 + bend, (y0 + tip) / 2, x + bend * 1.5, tip);
-                c.quadraticCurveTo(x + 0.1 + bend, (y0 + tip) / 2, x + 0.15, y0);
-                c.closePath();
-            }
-        }
-        paint(c, P.DD, P.K, OW * 0.6);
+        tigerStripes(c, 0.19); fl(c, P.a, OW * 0.7);
+        tigerStripes(c, 0.07); paint(c, P.b.f, null);
     },
     // a chip with traces running out to pads
     circuit(c, P) {
@@ -613,119 +653,117 @@ const PAINT = {
             c.save(); c.rotate((i / 4) * TAU + Math.PI / 4);
             for (const sg of [-1, 1]) {
                 const pts = [[0.3, sg * 0.1], [0.55, sg * 0.1], [0.72, sg * 0.28]];
-                line(c, pts, 0.13, P.K); line(c, pts, 0.055, P.LL);
-                disc(c, 0.72, sg * 0.28, 0.075); hi(c, P, OW * 0.7);
+                line(c, pts, 0.14, P.a.k); line(c, pts, 0.07, P.a.f);
+                disc(c, 0.72, sg * 0.28, 0.08); fl(c, P.b, OW * 0.7);
             }
             c.restore();
         }
-        c.beginPath(); c.rect(-0.34, -0.34, 0.68, 0.68); dn(c, P);
-        c.beginPath(); c.rect(-0.18, -0.18, 0.36, 0.36); up(c, P);
+        c.beginPath(); c.rect(-0.34, -0.34, 0.68, 0.68); fl(c, P.c);
+        c.beginPath(); c.rect(-0.16, -0.16, 0.32, 0.32); fl(c, P.b);
     },
-    // a cut crystal in the middle, small facets round it
+    // a cut crystal in the middle, small facets round it, facet lines inked
     facets(c, P) {
         for (let i = 0; i < 4; i++) {
             const a = (i / 4) * TAU + Math.PI / 4, p = pol(0.8, a);
             poly(c, [pol(0.66, a), [p[0] + Math.cos(a + 1.57) * 0.12, p[1] + Math.sin(a + 1.57) * 0.12], pol(0.94, a), [p[0] - Math.cos(a + 1.57) * 0.12, p[1] - Math.sin(a + 1.57) * 0.12]]);
-            dn(c, P, OW * 0.7);
+            fl(c, P.a, OW * 0.7);
         }
-        const n = 8, R = 0.56;
-        for (let i = 0; i < n; i++) {
-            poly(c, [[0, 0], pol(R, (i / n) * TAU), pol(R, ((i + 1) / n) * TAU)]);
-            paint(c, i & 1 ? P.L : P.LL, P.K, OW * 0.6);
-        }
-        poly(c, Array.from({ length: n }, (_, i) => pol(R, (i / n) * TAU)));
-        paint(c, null, P.K);
+        const n = 8, R = 0.56, r = 0.26;
+        poly(c, Array.from({ length: n }, (_, i) => pol(R, (i / n) * TAU))); fl(c, P.a);
+        c.beginPath();
+        for (let i = 0; i < n; i++) { const p = pol(r, (i / n) * TAU), q = pol(R, (i / n) * TAU); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); }
+        c.lineWidth = OW * 0.6; c.strokeStyle = P.a.k; c.stroke();
+        poly(c, Array.from({ length: n }, (_, i) => pol(r, (i / n) * TAU))); paint(c, null, P.a.k, OW * 0.6);
     },
-    // pale veins branching across, with nuggets where they meet
+    // veins branching across, with nuggets where they meet
     vein(c, P) {
         const V = [[[-1.3, 0.5], [-0.6, 0.2], [-0.1, 0.42], [0.5, -0.1], [1.3, -0.3]], [[-0.6, 0.2], [-0.5, -0.5], [-0.8, -1.1]], [[0.5, -0.1], [0.7, 0.6], [0.5, 1.2]]];
-        for (const p of V) band(c, p, 0.1, P.LL, P.K);
-        for (const [x, y] of [[-0.6, 0.2], [0.5, -0.1], [-0.1, 0.42]]) { disc(c, x, y, 0.12); hi(c, P); }
+        for (const p of V) band(c, p, 0.11, P.a.f, P.a.k);
+        for (const [x, y, r] of [[-0.6, 0.2, 0.13], [0.5, -0.1, 0.15], [-0.1, 0.42, 0.11]]) { disc(c, x, y, r); fl(c, P.a); }
     },
-    // a brilliant-cut gem crest
+    // a cut gem crest in a thin ring, facets drawn as ink lines
     gem(c, P) {
-        annulus(c, 0.68, 0.84); dn(c, P);
-        const R = 0.58, r = 0.3, rot = Math.PI / 6;
-        for (let i = 0; i < 6; i++) {
-            const a0 = rot + (i / 6) * TAU, a1 = rot + ((i + 1) / 6) * TAU;
-            poly(c, [pol(r, a0), pol(R, a0), pol(R, a1), pol(r, a1)]);
-            paint(c, i & 1 ? P.L : P.D, P.K, OW * 0.6);
-        }
-        hexagon(c, 0, 0, r, rot); hi(c, P);
+        annulus(c, 0.75, 0.85); fl(c, P.a);
+        const R = 0.52, r = 0.27, rot = Math.PI / 6;
+        hexagon(c, 0, 0, R, rot); fl(c, P.a);
+        c.beginPath();
+        for (let i = 0; i < 6; i++) { const p = pol(r, rot + (i / 6) * TAU), q = pol(R, rot + (i / 6) * TAU); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); }
+        c.lineWidth = OW * 0.6; c.strokeStyle = P.a.k; c.stroke();
+        hexagon(c, 0, 0, r, rot); fd(c, P.a, OW * 0.6);
     },
-    // a toothy crystal ring round the bare hull (a geode cut open)
+    // a geode cut open: a rim with crystal teeth pointing in
     geode(c, P) {
-        disc(c, 0, 0, 0.9); dn(c, P);
-        star(c, 14, 0.46, 0.8, 0); hi(c, P, OW * 0.7);
-        disc(c, 0, 0, 0.42); paint(c, P.T, P.K);
+        geodeRing(c);
+        c.fillStyle = P.a.f; c.fill('evenodd');
+        c.lineWidth = OW * 0.8; c.strokeStyle = P.a.k; c.stroke();
+        studs(c, P.a, 7, 0.78, 0.045, 0.3);
     },
     // a gear rim with a crystal cluster
     gear(c, P) {
         const n = 14;
-        for (let i = 0; i < n; i++) { c.save(); c.rotate((i / n) * TAU); c.beginPath(); c.rect(0.7, -0.1, 0.32, 0.2); up(c, P, OW * 0.8); c.restore(); }
-        annulus(c, 0.56, 0.8); up(c, P);
+        for (let i = 0; i < n; i++) { c.save(); c.rotate((i / n) * TAU); c.beginPath(); c.rect(0.72, -0.08, 0.22, 0.16); fl(c, P.a, OW * 0.8); c.restore(); }
+        annulus(c, 0.62, 0.79); fl(c, P.a);
         for (const [x, y, k, a] of [[0, -0.1, 0.34, 0], [-0.2, 0.16, 0.24, -0.5], [0.22, 0.16, 0.24, 0.5]]) {
             const cs = Math.cos(a), sn = Math.sin(a), q = (px, py) => [x + px * cs - py * sn, y + px * sn + py * cs];
-            poly(c, [q(0, -k), q(k * 0.5, 0), q(0, k * 0.7), q(-k * 0.5, 0)]); hi(c, P, OW * 0.7);
+            poly(c, [q(0, -k), q(k * 0.5, 0), q(0, k * 0.7), q(-k * 0.5, 0)]); fl(c, P.b, OW * 0.7);
         }
     },
     bolt(c, P) {
-        disc(c, 0, 0, 0.7); dn(c, P);
-        bolt(c, 0.78, 0.25); hi(c, P);
+        disc(c, 0, 0, 0.6); fl(c, P.b);
+        bolt(c, 0.72, 0.25); fl(c, P.a);
     },
     spiral(c, P, s) {
         const arms = s.arms || 2;
-        for (let k = 0; k < arms; k++) band(c, spiralArm(k, 0, arms, 3.2), 0.15, P.L, P.K);
-        disc(c, 0, 0, 0.26); dn(c, P);
-        disc(c, 0, 0, 0.1); hi(c, P);
+        for (let k = 0; k < arms; k++) band(c, spiralArm(k, 0, arms, 3.2), 0.15, P.a.f, P.a.k);
+        disc(c, 0, 0, 0.26); fl(c, P.b);
+        disc(c, 0, 0, 0.1); fl(c, P.a);
     },
-    // three thick arms winding into a glowing core
+    // three thick arms winding into a core
     molten(c, P, s) {
         const arms = s.arms || 3;
-        for (let k = 0; k < arms; k++) band(c, spiralArm(k, 0, arms, 3.0), 0.2, P.D, P.K);
-        for (let k = 0; k < arms; k++) line(c, spiralArm(k, 0, arms, 3.0), 0.06, P.L);
-        disc(c, 0, 0, 0.3); hi(c, P);
-        disc(c, 0, 0, 0.12); up(c, P);
+        for (let k = 0; k < arms; k++) band(c, spiralArm(k, 0, arms, 3.0), 0.2, P.a.f, P.a.k);
+        for (let k = 0; k < arms; k++) line(c, spiralArm(k, 0, arms, 3.0), 0.06, P.b.f);
+        disc(c, 0, 0, 0.3); fl(c, P.b);
+        disc(c, 0, 0, 0.12); fl(c, P.a);
     },
     // crossed bars through a ring
     crosshair(c, P) {
-        annulus(c, 0.54, 0.7); up(c, P);
+        annulus(c, 0.54, 0.7); fl(c, P.a);
         c.beginPath();
         for (let i = 0; i < 4; i++) { const a = (i / 4) * TAU + Math.PI / 4, cs = Math.cos(a), sn = Math.sin(a); c.moveTo(0.26 * cs + 0.08 * sn, 0.26 * sn - 0.08 * cs); c.lineTo(1 * cs + 0.08 * sn, 1 * sn - 0.08 * cs); c.lineTo(1 * cs - 0.08 * sn, 1 * sn + 0.08 * cs); c.lineTo(0.26 * cs - 0.08 * sn, 0.26 * sn + 0.08 * cs); c.closePath(); }
-        hi(c, P, OW * 0.8);
-        disc(c, 0, 0, 0.13); dn(c, P);
+        fl(c, P.a, OW * 0.8);
+        disc(c, 0, 0, 0.13); fl(c, P.b);
     },
     // a vault door: bolted rim, three spokes, a hub
     vault(c, P) {
-        annulus(c, 0.62, 0.92); dn(c, P);
-        studs(c, P, 8, 0.77, 0.07, 0);
-        c.beginPath();
-        for (let i = 0; i < 3; i++) { const a = (i / 3) * TAU - Math.PI / 2, cs = Math.cos(a), sn = Math.sin(a); c.moveTo(-0.07 * sn, 0.07 * cs); c.lineTo(0.62 * cs - 0.07 * sn, 0.62 * sn + 0.07 * cs); c.lineTo(0.62 * cs + 0.07 * sn, 0.62 * sn - 0.07 * cs); c.lineTo(0.07 * sn, -0.07 * cs); c.closePath(); }
-        up(c, P, OW * 0.8);
-        disc(c, 0, 0, 0.22); up(c, P);
-        disc(c, 0, 0, 0.09); dn(c, P);
+        annulus(c, 0.7, 0.86); fl(c, P.a);
+        studs(c, P.b, 8, 0.78, 0.06, 0);
+        vaultSpokes(c); fl(c, P.a, OW * 0.8);
+        disc(c, 0, 0, 0.22); fl(c, P.b);
+        disc(c, 0, 0, 0.09); fd(c, P.b);
     },
     cracks(c, P) {
         const seams = crackSeams();
-        for (const p of seams) line(c, p, 0.24, P.K);
-        for (const p of seams) line(c, p, 0.12, P.DD);
-        disc(c, 0, 0, 0.26); paint(c, P.DD, P.K);
+        for (const p of seams) line(c, p, 0.24, P.a.k);
+        for (const p of seams) line(c, p, 0.13, P.a.f);
+        disc(c, 0, 0, 0.26); fl(c, P.a);
+        disc(c, 0, 0, 0.12); fl(c, P.b);
     },
     // a six-armed snowflake
     frost(c, P) {
         for (let i = 0; i < 6; i++) {
             c.save(); c.rotate((i / 6) * TAU);
-            band(c, [[0.2, 0], [0.92, 0]], 0.1, P.LL, P.K);
-            band(c, [[0.5, 0], [0.7, 0.18]], 0.07, P.LL, P.K);
-            band(c, [[0.5, 0], [0.7, -0.18]], 0.07, P.LL, P.K);
+            band(c, [[0.2, 0], [0.92, 0]], 0.1, P.a.f, P.a.k);
+            band(c, [[0.5, 0], [0.7, 0.18]], 0.07, P.a.f, P.a.k);
+            band(c, [[0.5, 0], [0.7, -0.18]], 0.07, P.a.f, P.a.k);
             c.restore();
         }
-        hexagon(c, 0, 0, 0.26, 0); up(c, P);
+        hexagon(c, 0, 0, 0.26, 0); fl(c, P.b);
     },
-    // drill flutes winding in
+    // drill flutes winding in, every other one plated
     drill(c, P) {
         const n = 6;
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < n; i += 2) {
             const a = (i / n) * TAU;
             c.beginPath();
             c.moveTo(0, 0);
@@ -734,102 +772,98 @@ const PAINT = {
             c.lineTo(p2[0], p2[1]);
             c.quadraticCurveTo(cp[0] * 0.75, cp[1] * 0.75, 0, 0);
             c.closePath();
-            paint(c, i & 1 ? P.L : P.D, P.K, OW * 0.8);
+            fl(c, P.a, OW * 0.8);
         }
-        disc(c, 0, 0, 0.24); paint(c, P.DD, P.K);
-        disc(c, 0, 0, 0.09); hi(c, P);
+        disc(c, 0, 0, 0.24); fl(c, P.b);
+        disc(c, 0, 0, 0.09); fd(c, P.b);
     },
     // three blades
     shards(c, P) {
         for (let k = 0; k < 3; k++) {
-            const a = (k / 3) * TAU;
-            poly(c, [pol(0.12, a - 0.5), pol(0.72, a - 0.24), pol(1.35, a), pol(0.72, a + 0.24), pol(0.12, a + 0.5)]);
-            up(c, P);
-            poly(c, [pol(0.3, a), pol(0.72, a - 0.1), pol(1.1, a), pol(0.72, a + 0.1)]);
-            paint(c, P.LL, null);
+            blade(c, k, 1); fl(c, P.a);
+            blade(c, k, 0.3); paint(c, P.b.f, null);
         }
-        disc(c, 0, 0, 0.2); dn(c, P);
+        disc(c, 0, 0, 0.2); fl(c, P.b);
     },
-    // a storm cloud with a bolt under it
+    // a storm cloud over the nose with a bolt under it
     storm(c, P) {
-        cloud(c); dn(c, P);
-        c.save(); c.translate(0.04, 0.48); bolt(c, 0.45, 0.2); hi(c, P); c.restore();
+        cloud(c); fl(c, P.a);
+        c.save(); c.translate(0.04, 0.3); bolt(c, 0.42, 0.2); fl(c, P.b); c.restore();
     },
     // a star crest in a studded ring
     gilded(c, P) {
-        annulus(c, 0.66, 0.84); up(c, P);
-        studs(c, P, 10, 0.75, 0.05, 0, P.D);
-        star(c, 5, 0.24, 0.54, -Math.PI / 2); hi(c, P);
+        annulus(c, 0.68, 0.84); fl(c, P.a);
+        studs(c, P.b, 10, 0.76, 0.05, 0);
+        star(c, 5, 0.24, 0.54, -Math.PI / 2); fl(c, P.a);
     },
     // a heart crest in a ring of studs
     heart(c, P) {
-        annulus(c, 0.68, 0.86); dn(c, P);
-        studs(c, P, 8, 0.77, 0.07, Math.PI / 8);
-        c.save(); c.rotate(Math.PI / 2); heartPath(c, 1.05); hi(c, P);
-        heartPath(c, 0.5); paint(c, P.L, null); c.restore();
+        annulus(c, 0.7, 0.86); fl(c, P.b);
+        studs(c, P.b, 8, 0.78, 0.065, Math.PI / 8);
+        c.save(); c.rotate(Math.PI / 2); heartPath(c, 1.05); fl(c, P.a);
+        heartPath(c, 0.5); fd(c, P.a, OW * 0.6); c.restore();
     },
     aurora(c, P) {
-        const bands = [P.L, P.LL, P.L];
-        for (let i = 0; i < 3; i++) { wave(c, -0.52 + i * 0.52, 0.12, 0.13, 2.2, i * 1.3); paint(c, bands[i], P.K, OW * 0.8); }
+        const cols = [P.a, P.b, P.c];
+        for (let i = 0; i < 3; i++) { auroraBand(c, i); fl(c, cols[i], OW * 0.8); }
     },
-    // a faceted ring of light and dark wedges
+    // a ring of wedges, every other one filled
     prism(c, P) {
-        const n = 12, cols = [P.L, P.D, P.LL];
-        for (let i = 0; i < n; i++) {
-            const a0 = (i / n) * TAU, a1 = ((i + 1) / n) * TAU;
-            c.beginPath(); c.arc(0, 0, 0.92, a0, a1); c.arc(0, 0, 0.5, a1, a0, true); c.closePath();
-            paint(c, cols[i % 3], P.K, OW * 0.7);
-        }
-        hexagon(c, 0, 0, 0.26, 0); up(c, P);
+        const cols = [P.a, P.b, P.c];
+        for (let i = 0; i < 12; i += 2) { prismWedge(c, i); fl(c, cols[(i / 2) % 3], OW * 0.7); }
+        hexagon(c, 0, 0, 0.26, 0); fl(c, WHITE_SW);
     },
     // an eight-point star in a ring
     nova(c, P) {
-        annulus(c, 0.74, 0.9); up(c, P);
-        star(c, 8, 0.3, 0.68, 0); hi(c, P);
-        disc(c, 0, 0, 0.16); up(c, P);
+        annulus(c, 0.8, 0.9); fl(c, P.b);
+        star(c, 8, 0.26, 0.62, 0); fl(c, P.a);
+        disc(c, 0, 0, 0.16); fl(c, P.b);
     },
     // an eye that watches back
     void(c, P) {
-        annulus(c, 0.78, 0.94); dn(c, P);
+        annulus(c, 0.82, 0.94); fl(c, P.a);
         c.save(); c.rotate(Math.PI / 2);
-        eyePath(c, 0.7, 0.3); hi(c, P);
-        disc(c, 0, 0, 0.27); paint(c, P.DD, P.K);
-        disc(c, 0, 0, 0.11); paint(c, P.K, null);
-        disc(c, -0.09, -0.09, 0.055); paint(c, P.LL, null);
+        eyePath(c, 0.66, 0.28); fl(c, P.c);
+        disc(c, 0, 0, 0.27); fl(c, P.b);
+        disc(c, 0, 0, 0.11); paint(c, P.a.f, null);
         c.restore();
     },
 };
-
-const GLOW = {
-    cracks(g, P, s, col) {
-        for (const p of crackSeams()) line(g, p, 0.1, col);
-        disc(g, 0, 0, 0.2); paint(g, col, null);
+// The lit layers: the same parts in their lighter flat shade
+const LIT = {
+    cracks(g, P) {
+        for (const p of crackSeams()) line(g, p, 0.07, P.b.l);
+        disc(g, 0, 0, 0.12); paint(g, P.b.l, null);
     },
-    shards(g, P, s, col) {
-        for (let k = 0; k < 3; k++) {
-            const a = (k / 3) * TAU;
-            poly(g, [pol(0.12, a - 0.5), pol(0.72, a - 0.24), pol(1.35, a), pol(0.72, a + 0.24), pol(0.12, a + 0.5)]);
-            paint(g, mix(col, '#000000', 0.45), null);
-        }
+    shards(g, P) {
+        for (let k = 0; k < 3; k++) { blade(g, k, 1); paint(g, P.a.l, P.a.k); }
     },
-    storm(g, P, s, col) {
-        g.translate(0.04, 0.48); bolt(g, 0.45, 0.2); paint(g, col, null);
+    storm(g, P) {
+        g.translate(0.04, 0.3); bolt(g, 0.42, 0.2); paint(g, P.b.l, P.b.k);
     },
-    molten(g, P, s, col) {
+    molten(g, P, s) {
         const arms = s.arms || 3;
-        for (let k = 0; k < arms; k++) line(g, spiralArm(k, 0, arms, 3.0), 0.08, col);
-        disc(g, 0, 0, 0.3); paint(g, col, null);
+        for (let k = 0; k < arms; k++) line(g, spiralArm(k, 0, arms, 3.0), 0.06, P.b.l);
+        disc(g, 0, 0, 0.3); paint(g, P.b.l, P.b.k);
     },
-    aurora(g, P, s, col) {
-        for (let i = 0; i < 3; i++) { wave(g, -0.52 + i * 0.52, 0.1, 0.13, 2.2, i * 1.3); paint(g, mix(col, '#000000', 0.35), null); }
+    aurora(g, P, s, alt) {
+        const cols = alt ? [P.b, P.c, P.a] : [P.a, P.b, P.c];
+        for (let i = 0; i < 3; i++) { auroraBand(g, i); paint(g, alt ? cols[i].f : cols[i].l, cols[i].k, OW * 0.8); }
     },
-    nova(g, P, s, col) {
-        annulus(g, 0.76, 0.88); paint(g, col, null);
-        star(g, 8, 0.3, 0.68, 0); paint(g, mix(col, '#000000', 0.5), null);
+    nova(g, P) {
+        star(g, 8, 0.26, 0.62, 0); paint(g, P.a.l, P.a.k);
     },
-    void(g, P, s, col) {
-        annulus(g, 0.8, 0.92); paint(g, col, null);
-        g.rotate(Math.PI / 2); eyePath(g, 0.7, 0.3); paint(g, mix(col, '#000000', 0.6), null);
+    void(g, P) {
+        g.rotate(Math.PI / 2);
+        disc(g, 0, 0, 0.27); paint(g, P.b.l, P.b.k);
+        disc(g, 0, 0, 0.11); paint(g, P.a.f, null);
+    },
+    gilded(g, P) {
+        star(g, 5, 0.24, 0.54, -Math.PI / 2); paint(g, P.a.l, P.a.k);
+    },
+    heart(g, P) {
+        g.rotate(Math.PI / 2); heartPath(g, 1.05); paint(g, P.a.l, P.a.k);
+        heartPath(g, 0.5); paint(g, P.a.f, P.a.k, OW * 0.6);
     },
 };
 
@@ -860,31 +894,31 @@ function mkCanvas(n) {
     return [cv, c];
 }
 
-const GLOW_KINDS = { pulse: 1, spinGlow: 1, spiral: 1, flash: 1, shift: 1 };
+const LIT_KINDS = { pulse: 1, spinGlow: 1, spiral: 1, flash: 1, shift: 1, shimmer: 1 };
 function buildTile(it, teamHex, px) {
     const s = it.skin;
     const [cv, c] = mkCanvas(px);
-    const P = paletteFor(teamHex);
+    const P = paletteFor(it, teamHex);
     const em = s.emissive;
     let glow = null, glow2 = null;
     try {
         const painter = PAINT[s.pattern];
         if (painter) { c.save(); painter(c, P, s, mulberry32(s.seed | 0)); c.restore(); }
-        const gp = GLOW[s.pattern];
-        if (em && GLOW_KINDS[em.kind] && gp) {
+        const lp = LIT[s.pattern];
+        if (em && LIT_KINDS[em.kind] && lp) {
             const gpx = Math.min(px, GLOW_MAX);
             const g1 = mkCanvas(gpx);
-            gp(g1[1], P, s, P.G);
+            lp(g1[1], P, s, false);
             glow = g1[0];
             if (em.kind === 'shift') {
                 const g2 = mkCanvas(gpx);
-                gp(g2[1], P, s, P.G2);
+                lp(g2[1], P, s, true);
                 glow2 = g2[0];
             }
         }
     } catch (e) { console.error('[cosmetics] skin paint failed', s.pattern, e); }
-    // the twinkle's sparkles: a pale tint of the team colour, picked once
-    return { cv, glow, glow2, spark: P.G2, area: areaOf(it, px), used: 0 };
+    // the twinkle's sparkles: a pale shade of the pattern's colour
+    return { cv, glow, glow2, spark: P.spark, area: areaOf(it, px), used: 0 };
 }
 
 // The tile size for a hull `dev` device px in radius.
@@ -898,7 +932,7 @@ const bucketOf = (px) => { const i = SIZES.indexOf(px); return i < 0 ? SIZES.len
 // The px a tile of this size will take, glow layers included.
 function areaOf(it, px) {
     const em = it.skin.emissive, gpx = Math.min(px, GLOW_MAX);
-    if (!em || !GLOW_KINDS[em.kind] || !GLOW[it.skin.pattern]) return px * px;
+    if (!em || !LIT_KINDS[em.kind] || !LIT[it.skin.pattern]) return px * px;
     return px * px + gpx * gpx * (em.kind === 'shift' ? 2 : 1);
 }
 
@@ -949,22 +983,6 @@ function tileFor(it, teamHex, px, force) {
     for (let i = b - 1; i >= 0; i--) if (sizes[i]) { sizes[i].used = now; return sizes[i]; }
     for (let i = b + 1; i < SIZES.length; i++) if (sizes[i]) { sizes[i].used = now; return sizes[i]; }
     return null;
-}
-
-// The light band a shimmer sweeps across the hull (built once).
-let bandCv = null;
-function shimmerBand() {
-    if (!bandCv) {
-        bandCv = plainCanvas(32, 1);
-        const c = bandCv.getContext('2d');
-        const g = c.createLinearGradient(0, 0, 32, 0);
-        g.addColorStop(0, 'rgba(255,255,255,0)');
-        g.addColorStop(0.5, 'rgba(255,255,255,1)');
-        g.addColorStop(1, 'rgba(255,255,255,0)');
-        c.fillStyle = g;
-        c.fillRect(0, 0, 32, 1);
-    }
-    return bandCv;
 }
 
 const sparkleSpots = new Map();    // nid -> [x, y, phase] x 5, hull units
@@ -1025,40 +1043,31 @@ export function paintHull(c, x, y, r, shape, rot, nid, baseHex, o) {
     if (em) {
         const sp = em.speed || 1;
         if (em.kind === 'twinkle') {
-            c.globalCompositeOperation = 'lighter';
             sparkles(c, it, r, still ? 0.2 : t, a0 * 0.9, tile.spark);
-            c.globalCompositeOperation = 'source-over';
-        } else if (em.kind === 'shimmer') {
-            const every = Math.max(1, em.every || 3), p = (t % every) / 0.9;
-            if (!still && p < 1) {
-                c.rotate(-0.5);
-                c.globalAlpha = a0 * 0.4;
-                c.drawImage(shimmerBand(), -1.6 * R + 3.2 * R * p - 0.3 * R, -1.5 * R, 0.6 * R, 3 * R);
-            }
         } else if (tile.glow && !glowOff()) {
-            let a = 0.55;
+            // the lit layer fades in and out over the design, flat
+            let a = 0;
             if (!still) {
-                if (em.kind === 'pulse') a = 0.25 + 0.6 * (0.5 + 0.5 * Math.sin(t * sp * TAU));
+                if (em.kind === 'pulse') a = 0.15 + 0.7 * (0.5 + 0.5 * Math.sin(t * sp * TAU));
                 else if (em.kind === 'flash') {
                     const ph = (t * sp) % 1;
                     a = Math.max(0, 1 - Math.abs(ph - 0.03) / 0.03) + 0.7 * Math.max(0, 1 - Math.abs(ph - 0.12) / 0.035);
+                } else if (em.kind === 'shimmer') {
+                    const every = Math.max(1, em.every || 3), p = (t % every) / 0.9;
+                    a = p < 1 ? Math.sin(p * Math.PI) * 0.8 : 0;
                 } else if (em.kind === 'spinGlow') {
                     c.rotate(t * sp * TAU);
                     a = 0.5 + 0.2 * Math.sin(t * sp * Math.PI * 4);
-                } else if (em.kind === 'spiral') a = 0.4 + 0.3 * Math.sin(t * sp * Math.PI * 4);
-            } else if (em.kind === 'flash') a = 0.3;
-            c.globalCompositeOperation = 'lighter';
+                } else if (em.kind === 'spiral') a = 0.3 + 0.4 * (0.5 + 0.5 * Math.sin(t * sp * Math.PI * 4));
+            }
             if (em.kind === 'shift' && tile.glow2) {
-                const w = still ? 0.5 : 0.5 + 0.5 * Math.sin(t * sp * TAU);
-                c.globalAlpha = a0 * 0.5 * w;
-                c.drawImage(tile.glow, -R, -R, 2 * R, 2 * R);
-                c.globalAlpha = a0 * 0.5 * (1 - w);
-                c.drawImage(tile.glow2, -R, -R, 2 * R, 2 * R);
+                const w = still ? 0 : 0.5 + 0.5 * Math.sin(t * sp * TAU);
+                c.globalAlpha = a0 * Math.min(1, w);
+                if (w > 0.01) c.drawImage(tile.glow2, -R, -R, 2 * R, 2 * R);
             } else if (a > 0.01) {
                 c.globalAlpha = a0 * Math.min(1, a);
                 c.drawImage(tile.glow, -R, -R, 2 * R, 2 * R);
             }
-            c.globalCompositeOperation = 'source-over';
         }
     }
     // the blinks the plain body got from mixColors, at the same strength

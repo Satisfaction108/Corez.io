@@ -68,6 +68,7 @@ const HOT = new Set([
     "client/scoreLogic.js",
     "client/bankPopLogic.js",
     "client/raidPerks.js",
+    "client/upgradeGridLogic.js",
     "client/raidPerksLogic.js",
     "client/juice.js",
     "client/juiceMath.js",

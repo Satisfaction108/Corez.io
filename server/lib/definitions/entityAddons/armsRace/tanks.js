@@ -7476,7 +7476,8 @@ Config.spawn_message = "You have spawned! Welcome to the game.\n"
 
 if (!use_original_tree) {
 
-const increased_level_cap = true
+// raids stay at level 45: with the cap there, tier 4+ upgrades hang off tier 3
+const increased_level_cap = !Config.dig_royale
 if (increased_level_cap) {
     Config.level_cap = 60
     Config.level_cap_cheat = 60

@@ -142,7 +142,8 @@ test('perk strip: never more than 2 rows, never past its limits, "+N" for the re
 
 test('bank pops: centred on the screen, under your name', () => {
     const app = src('app.js');
-    assert.match(app, /drawBankPops\(global\.screenWidth \/ 2, Math\.round\(y - 10 - 4\) - 1 - 30\);/);
+    // over the name, which moves up with the "Tank: <name>" line under it
+    assert.match(app, /drawBankPops\(global\.screenWidth \/ 2, Math\.round\(y - 10 - 4\) - 1 - 30 - \(selfTankName\(\) \? SELF_TANK_LIFT : 0\)\);/);
     assert.match(app, /drawText\(p\.str, cx \+ \(sz \+ config\.graphical\.fontSizeBoost\) \/ 20, yy/);
 });
 

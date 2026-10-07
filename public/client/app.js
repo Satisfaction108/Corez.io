@@ -40,6 +40,8 @@ import { tankFloor as perkTankFloor, overlaps as rectsOverlap } from './raidPerk
 import * as deathText from './deathCardLogic.js';
 import * as buildBtnLabels from './buildButtonsLogic.js';
 import { layoutLabels } from './labelLayout.js';
+import { layoutChat, wrapText } from './chatLayout.js';
+import * as upGrid from './upgradeGridLogic.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -3082,7 +3084,48 @@ import { layoutLabels } from './labelLayout.js';
         } else ctx[2].drawImage(bm.cv, x - bm.pad, y - bm.pad, w + bm.pad * 2, h + bm.pad * 2);
     }
     // state: 0 idle, 1 hover, 2 pressed. key: keycap label or false.
-    function drawUpgradeTile(model, x, y, len, height, colorIndex, key, state = 0, angle = -Math.PI / 4, lineWidthMult = 1, alpha = 1) {
+    // A tile's tank at device pixels with a light rim
+    const tilePrev = { cv: null, halo: null };
+    const TILE_RIM = "rgba(255,243,217,0.9)";
+    function drawTilePreview(picture, ex, ey, scale, axis, lineWidthMult, angle, k) {
+        if (crispOff) return false;
+        const t = tfOf(ctx[2]);
+        const a = Math.abs(t.a);
+        if (!(a > 0) || t.b || t.c || Math.abs(Math.abs(t.d) - a) > 1e-6) return false;
+        const rim = Math.max(1.25, 1.7 * k) * a;                    // device px
+        const R = Math.ceil(scale * axis * 0.8 * a + rim + 3);
+        const S = R * 2;
+        if (S > 1024) return false;
+        if (!tilePrev.cv) { tilePrev.cv = document.createElement("canvas"); tilePrev.halo = document.createElement("canvas"); }
+        const cv = tilePrev.cv, hv = tilePrev.halo;
+        if (cv.width < S || cv.height < S) { cv.width = cv.height = hv.width = hv.height = Math.max(S, cv.width); }
+        const c = cv.getContext("2d"), h = hv.getContext("2d");
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        c.clearRect(0, 0, S + 2, S + 2);
+        // the tank's centre on a whole device pixel
+        const dx = Math.round(ex * a), dy = Math.round(ey * a);  // tracked transforms carry no translation
+        c.setTransform(a, 0, 0, a, 0, 0);
+        c.lineCap = "round";
+        c.lineJoin = "round";
+        drawEntity(picture.color, R / a, R / a, picture, 1, 1, scale / picture.size, lineWidthMult, angle, true, c);
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        h.setTransform(1, 0, 0, 1, 0, 0);
+        h.globalCompositeOperation = "copy";
+        h.drawImage(cv, 0, 0, S, S, 0, 0, S, S);
+        h.globalCompositeOperation = "source-in";
+        h.fillStyle = TILE_RIM;
+        h.fillRect(0, 0, S, S);
+        h.globalCompositeOperation = "source-over";
+        const g = ctx[2], ux = 1 / a, x0 = (dx - R) * ux, y0 = (dy - R) * ux, w = S * ux;
+        for (let i = 0; i < 8; i++) {
+            const an = i * Math.PI / 4;
+            g.drawImage(hv, 0, 0, S, S, x0 + Math.cos(an) * rim * ux, y0 + Math.sin(an) * rim * ux, w, w);
+        }
+        g.drawImage(cv, 0, 0, S, S, x0, y0, w, w);
+        return true;
+    }
+    // crisp: the choose grid's tiles: a bigger tank
+    function drawUpgradeTile(model, x, y, len, height, colorIndex, key, state = 0, angle = -Math.PI / 4, lineWidthMult = 1, alpha = 1, crisp = false) {
         const picture = (typeof model == "object") ? model : mockupPicture(model, gui.color);
         const position = picture.position;
         const t = tfOf(ctx[2]);
@@ -3111,8 +3154,9 @@ import { layoutLabels } from './labelLayout.js';
             c.fillStyle = "rgba(255,255,255,0.13)";
             c.fill();
         });
-        // no guns of its own (Smasher, Spike, ...): it digs by ramming, and the tile says
-        const ram = !!(picture.guns && minesBy(picture.guns.length) === "ram");
+        // no guns of its own (Smasher, Spike, ...) or a ram tank's smasher stat set
+        const ram = !!(picture.guns && (minesBy(picture.guns.length) === "ram" ||
+            upGrid.isRamMockup(global.mockups && global.mockups[parseInt(String(picture.index).split("-")[0])])));
         const label = upgTileBitmap("l" + name + (ram ? "|ram" : ""), len, height, dpr, (key || "") + state, (c) => {
             // name band across the bottom of the face, inside the plate
             c.save();
@@ -3144,20 +3188,23 @@ import { layoutLabels } from './labelLayout.js';
                 hudTitle(l2, len / 2, mid + size * 0.52, size, HUD.head, "center", 1, c);
             }
             if (key) hudKey(c, 5 * k, down + 5 * k, key, Math.max(10, 17 * k));
-            if (ram) {
-                const rs = Math.max(7, 10.5 * k), rw = hudTitleW("RAMS ROCK", rs) + 8 * k, rh = rs + 6 * k;
-                const rx = len - 5 * k - rw, ry = down + 5 * k;
-                roundRectPath(c, rx, ry, rw, rh, rh / 2);
-                c.fillStyle = "rgba(18,14,21,0.72)";
-                c.fill();
-                hudTitle("RAMS ROCK", rx + rw / 2, ry + rh / 2, rs, HUD.gold, "center", 1, c);
-            }
             // the fine keyline last so nothing paints over the edge
             c.lineJoin = "round";
             c.lineWidth = Math.max(1, 1.5 * k);
             c.strokeStyle = HUD.line;
             roundRectPath(c, 0, down, len, height - down, r);
             c.stroke();
+            // "RAMS ROCK": a small chip hanging under the name
+            if (ram) {
+                const b = upGrid.ramBadge(len, height, (sz) => hudTitleW("RAMS ROCK", sz));
+                roundRectPath(c, b.x, b.y, b.w, b.h, b.h / 2);
+                c.fillStyle = "rgba(18,14,21,0.92)";
+                c.fill();
+                c.lineWidth = Math.max(1, 1.2 * k);
+                c.strokeStyle = HUD.gold;
+                c.stroke();
+                hudTitle("RAMS ROCK", len / 2, b.y + b.h / 2, b.size, HUD.gold, "center", 1, c);
+            }
         });
 
         // the plate lands on whole pixels; the tank keeps its place on it
@@ -3166,14 +3213,16 @@ import { layoutLabels } from './labelLayout.js';
         ctx[2].globalAlpha *= alpha;
         upgBlit(plate, x, y, len, height);
         // the live tank, centred in the face above the name band
-        const scale = (0.55 * len) / position.axis;
+        const box = crisp ? upGrid.tankBox(len, height) : null;
+        const scale = (crisp ? box.size : 0.55 * len) / position.axis;
         const areaH = faceH - band;
         let entityX = x + 0.5 * len, entityY = y + down + areaH * 0.5 + 1;
         const xShift = position.middle.x * Math.cos(angle) - position.middle.y * Math.sin(angle),
             yShift = position.middle.x * Math.sin(angle) + position.middle.y * Math.cos(angle);
         entityX -= scale * xShift;
         entityY -= scale * yShift;
-        drawEntity(picture.color, entityX, entityY, picture, 1, 1, scale / picture.size, lineWidthMult, angle, true, ctx[2]);
+        if (!crisp || !drawTilePreview(picture, entityX, entityY, scale, position.axis, lineWidthMult, angle, k))
+            drawEntity(picture.color, entityX, entityY, picture, 1, 1, scale / picture.size, lineWidthMult, angle, true, ctx[2]);
         ctx[2].globalAlpha = alpha;
         upgBlit(label, x, y, len, height);
         ctx[2].restore();
@@ -5027,6 +5076,7 @@ import { layoutLabels } from './labelLayout.js';
             drawChatMessages(x, y, py, instance, ratio, gui.visibleEntities ? 1 : alpha, instance.size, px, py);
             drawChatInput(x, y, instance, ratio, instance.size);
         }
+        try { flushChat(); } catch (e) { drawChatMessages.S && (drawChatMessages.S.n = 0); }
         // duos, dead: the chat box to your partner sits under the death card
         if (global.died && global.showChat && global.canvas.chatBox) drawChatInput(0, 0, null, ratio, 28 / Math.max(0.01, ratio));
         if (global.advanced.blackout.active) {
@@ -5367,6 +5417,9 @@ import { layoutLabels } from './labelLayout.js';
         const zoomOutX = zoomInX + buttonSize + buttonSpacing;
         hudButton(ctx[2], zoomInX, searchBarY, buttonSize, searchBarHeight, "+", { size: 20, type: "classTreeZoomIn", index: 0, cr });
         hudButton(ctx[2], zoomOutX, searchBarY, buttonSize, searchBarHeight, "-", { size: 20, type: "classTreeZoomOut", index: 1, cr });
+        // every tank on one page (/tanks), opens in a new tab
+        const allW = hudTitleW("All tanks", 15) + 22;
+        hudButton(ctx[2], zoomOutX + buttonSize / 2 + buttonSpacing + allW / 2, searchBarY, allW, searchBarHeight, "All tanks", { size: 15, type: "classTreeAll", index: 0, cr, fill: HUD.gold, lipCol: HUD.goldDk, textCol: HUD.ink });
 
         const closeButtonSize = 35;
         const closeButtonX = searchBarX - buttonSpacing * 2.6;
@@ -5837,67 +5890,261 @@ import { layoutLabels } from './labelLayout.js';
         if (streakShownAt.size > 64 && !streakShownAt.has(instance.id)) streakShownAt.clear();
         streakShownAt.set(instance.id, overheadFrame);
     }
+    // ── chat bubbles (layout: chatLayout.js) ── drawChatMessages queues one bubble per
+    function chatState() {
+        return drawChatMessages.S || (drawChatMessages.S = {
+            items: [], n: 0, groups: new Map(), frame: 0, lastT: 0,
+            gui: [], rectsAt: 0, rects: [], rectPool: [],
+            lines: [], mc: document.createElement("canvas").getContext("2d"),
+            prune: null,
+        });
+    }
+    // The chat size in canvas px: 16 UI units (it follows the UI Scale and the screen)
+    function chatFontPx() {
+        const cssK = global.ratio || 1;
+        let sr = 1;
+        try { sr = util.getScreenRatio() || 1; } catch (e) { sr = 1; }
+        return Math.max(10, Math.round(Math.max(14 * cssK, 16 * sr)));
+    }
+    function chatBake(lines, n, fs, font, fill) {
+        const S = chatState();
+        const o = Math.ceil(fs * 0.14) + 1, lh = Math.round(fs * 1.22);
+        S.mc.font = font;
+        let w = 1;
+        for (let i = 0; i < n; i++) w = Math.max(w, S.mc.measureText(lines[i]).width);
+        const cv = document.createElement("canvas");
+        cv.width = Math.ceil(w) + o * 2; cv.height = lh * n + o * 2;
+        const c = cv.getContext("2d");
+        c.font = font; c.textBaseline = "middle"; c.lineJoin = "round"; c.miterLimit = 2;
+        c.lineWidth = o * 1.6; c.strokeStyle = "#120e15"; c.fillStyle = fill;
+        for (let i = 0; i < n; i++) {
+            const ly = o + lh * i + lh / 2 + fs * 0.04;
+            c.strokeText(lines[i], o, ly);
+            c.fillText(lines[i], o, ly);
+        }
+        return { cv, w: cv.width, h: cv.height, o, lh, n, tw: Math.ceil(w) };
+    }
+    // one message's wrapped lines, rebaked only when the size changes
+    function chatMsgSprite(chat, fs, maxW, lim) {
+        if (chat._spr && chat._fs === fs && chat._lim === lim) return chat._spr;
+        const S = chatState();
+        if (chat._spr) chat._spr.cv.width = 0;
+        const font = "bold " + fs + "px Rubik, Ubuntu, sans-serif";
+        S.mc.font = font;
+        const mc = S.mc;
+        const lines = wrapText(chat.text, maxW, s => mc.measureText(s).width, lim, S.lines);
+        if (!lines.length) lines.push(" ");
+        chat._spr = chatBake(lines, lines.length, fs, font, "#fff3d9");
+        chat._fs = fs; chat._lim = lim;
+        return chat._spr;
+    }
     function drawChatMessages(x, y, py, instance, ratio, alpha, isize) {
         if (global.GUIStatus.renderChat === false) return;
         if (!(instance.id === gui.playerid) && instance.alpha < 0.25) return;
         let messages = global.chats && global.chats[instance.id];
         if (!messages || !messages.length) return;
+        const S = chatState();
         const self = instance.id === gui.playerid;
-        const g = chatScale(isize * ratio);
-        const fs = 0.5 * g, bh = 1.5 * fs, step = bh + 0.3 * fs;
+        const now = performance.now();
+        // drop the faded ones (and their canvases)
+        for (let i = messages.length - 1; i >= 0; i--) {
+            const chat = messages[i];
+            if (chat.local && !chat.erased && now > chat.expires) { chat.erased = true; chat.alpha.set(0); }
+            if (chat.erased && chat.alpha.get() === 0) {
+                if (chat._spr) { chat._spr.cv.width = 0; chat._spr = null; }
+                util.remove(messages, i);
+            }
+        }
+        if (!messages.length) return;
+        if (messages.length > 1) for (let i = 1; i < messages.length; i++) if (messages[i].id < messages[i - 1].id) { messages.sort((a, b) => a.id - b.id); break; }
 
         let fade = instance.render.status.getFade();
         fade *= fade;
-        ctx[1].globalAlpha = fade;
-
+        const A = (self ? 1 : alpha * alpha) * fade;
+        if (A < 0.02) return;
+        const fs = chatFontPx();
+        const cssK = global.ratio || 1;
+        const maxW = Math.round(Math.min(fs * 15, global.screenWidth * (global.mobile ? 0.5 : 0.34)));
+        // your own: the newest line, two rows at most
+        const maxRows = self ? 2 : global.mobile ? 3 : 5, lim = self || global.mobile ? 2 : 3;
+        let rows = 0, contentH = 0, w = 0, count = 0;
+        const mgap = Math.round(fs * 0.3);
+        for (let i = messages.length - 1; i >= 0 && rows < maxRows; i--) {
+            const chat = messages[i];
+            if (self && count >= 1) break;
+            const va = chat.alpha.get();
+            if (va <= 0) continue;
+            const spr = chatMsgSprite(chat, fs, maxW, Math.min(lim, maxRows - rows));
+            rows += spr.n; count++;
+            contentH += (spr.lh * spr.n + (count > 1 ? mgap : 0)) * (chat.erased ? va : Math.min(1, va * 1.6));
+            w = Math.max(w, spr.tw);
+        }
+        if (!count) return;
         x += global.screenWidth / 2;
         y += global.screenHeight / 2;
-        // the lowest bubble's centre: a small gap over the name / hull, and
-        // above your own chat box while you type
-        let base = overheadTop(instance, y, ratio, isize) - 0.35 * fs - bh / 2;
-        if (self && global.showChatGlide > 0 && global.canvas.chatBox) base -= global.showChatGlide * (0.95 * g + 0.35 * fs);
-        const now = performance.now();
-        const teamCol = playerHexCol() || HUD.sky;
 
-        for (let i = 0; i < messages.length; i++) {
-            let chatIndex = messages.length - 1 - i;
-            let chat = messages[chatIndex];
-            if (!chat) continue;
-            // team lines are ours (socketinit 'TC'): they expire here
-            if (chat.local && !chat.erased && now > chat.expires) { chat.erased = true; chat.alpha.set(0); }
-            let text = chat.text,
-                msgLengthHalf = measureText(text, fs) / 2,
-                valpha = chat.alpha.get();
-
-            if (chat.erased && valpha === 0) {
-                util.remove(global.chats[instance.id], chatIndex);
-                messages.sort((a, b) => a.id - b.id);
-                continue;
+        let st = S.groups.get(instance.id);
+        if (!st) { st = { a: 0, dx: 0, dy: 0, nameSpr: null, rawName: null, rawStyle: null, nfs: 0, seen: S.frame, born: S.frame }; S.groups.set(instance.id, st); }
+        // back on screen after a while: it fades in where it lands
+        if (S.frame - st.seen > 30) { st.a = 0; st.born = S.frame; }
+        st.seen = S.frame;
+        let nameSpr = null;
+        if (!self) {
+            // baked once per name / style / size (nothing built per frame)
+            const nfs = Math.round(fs * 0.86);
+            if (st.rawName !== instance.name || st.rawStyle !== instance.nameStyle || st.nfs !== nfs) {
+                st.rawName = instance.name; st.rawStyle = instance.nameStyle; st.nfs = nfs;
+                const raw = String(instance.name || "");
+                const nm = raw.length > 7 && raw[0] === "#" ? raw.substring(7) : raw;
+                let col = raw[0] === "#" ? raw.substring(0, 7) : "#ffffff";
+                if (col.toLowerCase() === "#ffffff") col = HUD.head;
+                try { const ns = instance.nameStyle ? cosmetics.nameStyleOf(instance.nameStyle) : null; if (ns) col = cosmetics.solidOf(ns, col) || col; } catch (e) { /* plain */ }
+                if (st.nameSpr) { st.nameSpr.cv.width = 0; st.nameSpr = null; }
+                if (nm) {
+                    S.lines.length = 0; S.lines.push(nm.length > 18 ? nm.slice(0, 17) + "…" : nm);
+                    st.nameSpr = chatBake(S.lines, 1, nfs, nfs + "px " + HUD.font, col);
+                }
             }
-            if (chat.targetY === undefined) {
-                chat.targetY = i * step;
-                chat.currentY = i === 0 ? 0 : (i - 1) * step;
-            }
-            chat.targetY = i * step;
-            const animationSpeed = 10;
-            chat.currentY += (chat.targetY - chat.currentY) * Math.min(1, animationSpeed / global.metrics.rendertime);
-            const cy = base - chat.currentY;
-
-            if (valpha <= 0) continue;
-            // your own tank: the newest line only, cut short, and it backs off
-            // while a big word is up
-            if (self && i > 0) continue;
-            if (self && text.length > 34) { text = text.slice(0, 33) + "…"; msgLengthHalf = measureText(text, fs) / 2; }
-            if (self && raidHeat.slamUp()) valpha *= 0.3;
-
-            const col = chat.team ? teamCol : gameDraw.getColorDark(gameDraw.getColor(instance.color.split(" ")[0]));
-            ctx[1].globalAlpha = (chat.team ? 0.85 : 0.5) * valpha * alpha * alpha * fade;
-            drawBar(x - msgLengthHalf, x + msgLengthHalf, cy, bh, col, ctx[1]);
-            ctx[1].globalAlpha = valpha * alpha * fade;
-            config.graphical.fontStrokeRatio *= 1.2;
-            drawText(text, x, cy + 0.42 * fs, fs, color.guiwhite, "center", false, 1, true, ctx[1]);
-            config.graphical.fontStrokeRatio /= 1.2;
+            nameSpr = st.nameSpr;
+            if (nameSpr) w = Math.max(w, nameSpr.tw);
         }
+        const padX = Math.round(fs * 0.55), padY = Math.round(fs * 0.38);
+        const headH = nameSpr ? Math.round(nameSpr.lh * 0.92) : 0;
+        // the bubble's bottom (its tail tip): a small gap over the name / hull
+        let base = overheadTop(instance, y, ratio, isize) - 3 * cssK;
+        // drawChatInput: the box is 0.95 g tall, 0.2 g over the stack
+        if (self && !global.mobile && global.showChatGlide > 0 && global.canvas.chatBox) base -= global.showChatGlide * (1.15 * Math.max(30, chatScale(isize * ratio)) + 4 * cssK);
+        const tail = Math.round(fs * 0.36);
+
+        const it = S.items[S.n] || (S.items[S.n] = { x: 0, y: 0, w: 0, h: 0, id: 0, pri: 1, dx: 0, dy: 0, hide: false });
+        S.n++;
+        it.x = x; it.y = base; it.id = instance.id; it.pri = self ? 0 : 1;
+        it.w = Math.ceil(w) + padX * 2;
+        it.h = Math.ceil(contentH + headH + padY * 2) + tail;
+        it.self = self; it.st = st; it.msgs = messages; it.A = A; it.fs = fs; it.maxW = maxW;
+        it.nameSpr = nameSpr; it.padX = padX; it.padY = padY; it.headH = headH; it.tail = tail;
+        it.maxRows = maxRows; it.lim = lim; it.mgap = mgap;
+    }
+    // a rounded rect path (arcTo: no Path2D, no allocation)
+    function chatRRect(c, x, y, w, h, r) {
+        r = Math.min(r, w / 2, h / 2);
+        c.beginPath();
+        c.moveTo(x + r, y);
+        c.arcTo(x + w, y, x + w, y + h, r);
+        c.arcTo(x + w, y + h, x, y + h, r);
+        c.arcTo(x, y + h, x, y, r);
+        c.arcTo(x, y, x + w, y, r);
+        c.closePath();
+    }
+    // HUD rects chat stays out from under, in UI units
+    function chatAvoidRebuild() {
+        const S = chatState();
+        const now = performance.now();
+        if (now - S.rectsAt < 120) return;
+        S.rectsAt = now;
+        const out = S.gui;
+        out.length = 0;
+        if (!royaleActive()) return;
+        const W = global.screenWidth, H = global.screenHeight;
+        const base = hudAvoidRects();
+        for (let i = 0; i < base.length; i++) out.push(base[i]);
+        if (hudDrawn.feed) out.push(hudDrawn.feed);
+        if (messageStackBottom > royaleFeedBottom && messageStackLeft < W) out.push({ x: messageStackLeft, y: royaleFeedBottom, w: W - messageStackLeft, h: messageStackBottom - royaleFeedBottom });
+        if (global.countdownRect) out.push(global.countdownRect);
+        // the slam lane while a big word is up, the plate lane under it
+        const sk = lanes.slamK || 1;
+        if (global.hudSlamY > 0 && juiceSlamUp()) out.push({ x: W / 2 - 380 * sk, y: global.hudSlamY - 52 * sk, w: 760 * sk, h: 104 * sk });
+        if (global.callouts && global.callouts.length && lanes.plateY > 0) out.push({ x: W / 2 - 330, y: lanes.plateY - 36, w: 660, h: 72 });
+        // the DOM notification cards under the clock
+        if (evHud.toastFloor > 0) out.push({ x: W / 2 - 330, y: 0, w: 660, h: evHud.toastFloor + 8 });
+        // centre cards: the death card as drawn, any other one as a centre block
+        const dc = global.deathCardFrac;
+        if (deathCardUp() && dc) out.push({ x: dc.x * W, y: dc.y * H, w: dc.w * W, h: dc.h * H });
+        const card = global._nxCardWas;
+        if (card && card !== "perk" && card !== "skydrop") out.push({ x: W / 2 - 400, y: H * 0.14, w: 800, h: H * 0.64 });
+    }
+    function flushChat() {
+        const S = drawChatMessages.S;
+        if (!S) return;
+        S.frame++;
+        const n = S.n;
+        S.n = 0;
+        const now = performance.now();
+        const dt = Math.min(100, S.lastT ? now - S.lastT : 16.7);
+        S.lastT = now;
+        if (S.groups.size > 48 && (S.frame & 63) === 0) {
+            S.prune = S.prune || ((st, id, m) => { if (S.frame - st.seen > 120) { if (st.nameSpr) st.nameSpr.cv.width = 0; m.delete(id); } });
+            S.groups.forEach(S.prune);
+        }
+        if (!n) return;
+        // the HUD rects in canvas px (UI units x the screen ratio)
+        let sr = 1;
+        try { sr = util.getScreenRatio() || 1; } catch (e) { sr = 1; }
+        const rects = S.rects;
+        rects.length = 0;
+        for (let i = 0; i < S.gui.length; i++) {
+            const g = S.gui[i];
+            const r = S.rectPool[i] || (S.rectPool[i] = { x: 0, y: 0, w: 0, h: 0 });
+            r.x = g.x * sr; r.y = g.y * sr; r.w = g.w * sr; r.h = g.h * sr;
+            rects.push(r);
+        }
+        const cssK = global.ratio || 1;
+        layoutChat(S.items, n, rects, { gap: 4 * cssK, top: 4 * cssK });
+        const c = ctx[1];
+        const k = 1 - Math.pow(0.82, dt / 16.7);
+        const teamCol = playerHexCol() || HUD.sky;
+        c.save();
+        c.lineJoin = "round";
+        for (let i = n - 1; i >= 0; i--) {
+            const it = S.items[i], st = it.st;
+            // fresh bubbles appear in place
+            if (st.born === S.frame - 1 && st.a === 0) { st.dy = it.dy; st.dx = it.dx; }
+            st.dy += (it.dy - st.dy) * k;
+            st.dx += (it.dx - st.dx) * k;
+            st.a += ((it.hide ? 0 : 1) - st.a) * Math.min(1, k * 1.4);
+            const A = it.A * st.a;
+            if (A < 0.02) { it.msgs = null; it.st = null; continue; }
+            const bw = it.w, bh = it.h - it.tail;
+            const bx = Math.round(it.x + st.dx - bw / 2), by = Math.round(it.y + st.dy - it.h);
+            const r = Math.round(it.fs * 0.5);
+            // the plate (and its tail while the bubble sits on its tank)
+            c.globalAlpha = A * 0.84;
+            c.fillStyle = "#16111d";
+            chatRRect(c, bx, by, bw, bh, r);
+            c.fill();
+            // the tail points at the tank, inside the plate's straight edge
+            const t = it.tail, tx = Math.round(Math.max(bx + r + t, Math.min(bx + bw - r - t, it.x)));
+            if (Math.abs(st.dy) < t && Math.abs(tx - it.x) < bw * 0.5) {
+                c.beginPath(); c.moveTo(tx - t, by + bh - 0.5); c.lineTo(tx, by + bh + t); c.lineTo(tx + t, by + bh - 0.5); c.closePath();
+                c.fill();
+            }
+            c.globalAlpha = A;
+            c.lineWidth = (it.self ? 2 : 1.25) * cssK;
+            c.strokeStyle = it.self ? teamCol : "rgba(255,243,217,0.18)";
+            chatRRect(c, bx + c.lineWidth / 2, by + c.lineWidth / 2, bw - c.lineWidth, bh - c.lineWidth, r);
+            c.stroke();
+            if (it.nameSpr) c.drawImage(it.nameSpr.cv, bx + it.padX - it.nameSpr.o, by + it.padY - it.nameSpr.o + Math.round(it.fs * 0.02));
+            // the lines, newest at the bottom
+            let yb = by + bh - it.padY, rows = 0, count = 0;
+            const msgs = it.msgs;
+            for (let m = msgs.length - 1; m >= 0 && rows < it.maxRows; m--) {
+                const chat = msgs[m];
+                if (it.self && count >= 1) break;
+                const va = chat.alpha.get();
+                if (va <= 0) continue;
+                const spr = chatMsgSprite(chat, it.fs, it.maxW, Math.min(it.lim, it.maxRows - rows));
+                rows += spr.n; count++;
+                const mh = spr.lh * spr.n;
+                if (yb - mh < by + it.padY + it.headH - 2 * cssK && count > 1) break;
+                c.globalAlpha = A * va * va;
+                if (chat.team) { c.fillStyle = teamCol; c.fillRect(bx + Math.round(it.padX * 0.35), yb - mh + 2 * cssK, Math.max(2, Math.round(2.5 * cssK)), mh - 4 * cssK); }
+                c.drawImage(spr.cv, bx + it.padX - spr.o, Math.round(yb - mh - spr.o));
+                yb -= (mh + it.mgap) * (chat.erased ? va : Math.min(1, va * 1.6));
+            }
+            it.msgs = null; it.st = null;
+        }
+        c.restore();
+        c.globalAlpha = 1;
     }
 
     function drawHealth(x, y, instance, ratio, alpha, isize) {
@@ -6560,11 +6807,27 @@ import { layoutLabels } from './labelLayout.js';
         }
     }
 
+    // where the death card is, as fractions of the screen
+    function deathCardFrac(x, y, w, h) {
+        const f = global.deathCardFrac || (global.deathCardFrac = { x: 0, y: 0, w: 0, h: 0 });
+        f.x = x; f.y = y; f.w = w; f.h = h;
+    }
     // the raid death card (gameDrawDeadRoyale) is on screen
     function deathCardUp() {
         return !!(global.died && global.royaleDied && !global.royaleSpectating && !raidFinale.active() && !lastStormCount());
     }
     const BANK_PILL = "#7fb1f2", BANK_PILL_TEXT = "#120e15";
+    // the bottom bar's "Tank: <name>" line: your current tank's name, or ""
+    const SELF_TANK_LIFT = 12;
+    let selfTankFor = null, selfTankLabel = "";
+    function selfTankName() {
+        if (global.died || !gui.type) return "";
+        if (selfTankFor === gui.type && selfTankLabel) return selfTankLabel;
+        const m = global.mockups && global.mockups[parseInt(String(gui.type).split("-")[0])];
+        selfTankFor = gui.type;
+        selfTankLabel = m && m.name ? String(m.name) : "";
+        return selfTankLabel;
+    }
     function drawSelfInfo(max) {
 
         // Dig Wars bottom stack (bottom → top): team war bar, wallet row,
@@ -6644,7 +6907,7 @@ import { layoutLabels } from './labelLayout.js';
                     if (mx2 >= bankX1 - capR && mx2 <= rx2 + capR && my2 >= ry - pillH / 2 && my2 <= ry + pillH / 2) queueTip(scoreText.BANK_TIP, scoreText.BANK_TIP_BODY, (bankX1 + rx2) / 2, ry - pillH / 2, true);
                 }
                 // above your name, never on it (round 7: "+250 banked · milestone 1,000" sat on
-                drawBankPops(global.screenWidth / 2, Math.round(y - 10 - 4) - 1 - 30);
+                drawBankPops(global.screenWidth / 2, Math.round(y - 10 - 4) - 1 - 30 - (selfTankName() ? SELF_TANK_LIFT : 0));
             }
             // gemdust (accounts): satchel dust under Carried, balance under Banked
             if (nxShows("cosmetics")) try { dustHud.draw(ctx[2], { carX: (rx1 + carX2) / 2, bankX: (bankX1 + rx2) / 2, y: ry + 19 }, { drawText, measureText }); } catch (e) { /* never break the HUD */ }
@@ -6653,7 +6916,14 @@ import { layoutLabels } from './labelLayout.js';
         var name = global.player.name.substring(7, global.player.name.length + 1);
         // your rank badge (placement "?" included) and name, centred as one
         const myCode = name ? nameBadgeCode(myRankCode(), true) : 0;
-        const nameX = Math.round(x + width / 2 + nameBadgeRoom(myCode, 31) / 2) + 1.5, nameY = Math.round(y - 10 - 4) - 1;
+        // "Tank: Rhino" in a small line between the name and the wallet row
+        const tankName = selfTankName();
+        const nameX = Math.round(x + width / 2 + nameBadgeRoom(myCode, 31) / 2) + 1.5, nameY = Math.round(y - 10 - 4) - 1 - (tankName ? SELF_TANK_LIFT : 0);
+        if (tankName) {
+            const tl = "Tank: " + tankName;
+            let ts = 12; while (ts > 9 && hudTextW(tl, ts) > width - 40) ts -= 0.5;
+            drawText(tl, Math.round(x + width / 2) + 0.5, Math.round(y - 5) - 0.5, ts, HUD.text, "center");
+        }
         const mySn = styledName(name, global.myNameStyle, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, nameX, 31, "center", ctx[2], nameY);
         drawText(mySn.text, nameX, nameY, 31, mySn.fill, "center");
         drawNameBadge(myCode, mySn.text, nameX, nameY, 31, "center", ctx[2]);
@@ -9065,6 +9335,7 @@ import { layoutLabels } from './labelLayout.js';
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
             const col = raidHeat.calloutCol(t.kind) || (t.kind === "override" || t.kind === "late" ? HUD.copper : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
                 : t.kind === "chest" || t.kind === "dropin" || t.kind === "bounty" || t.kind === "restored" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
+                : t.kind === "tier5" ? HUD.gold
                 : t.kind === "grown" || t.kind === "contract" ? HUD.emerald : t.kind === "revenge" ? "#ff6b5e" : color.guiwhite);
             const base = t.kind === "streak" ? 16 : 23, size = base * pop;
             const len = (Math.max(hudTitleW(t.text, base), t.sub ? hudTextW(t.sub, 12.5) : 0) + 44) * pop;
@@ -12559,6 +12830,20 @@ import { layoutLabels } from './labelLayout.js';
             return;
         }
         if (gui.upgrades.length > 0) {
+            // pages (upgradeGridLogic.js): 6 a page on desktop
+            const UG = global.upgradePg || (global.upgradePg = { key: "", page: 0, pg: null, seen: new Set() });
+            const ukey = upGrid.optionsKey(gui.upgrades);
+            if (ukey !== UG.key) { UG.key = ukey; UG.page = 0; UG.seen = new Set(); }
+            const pg = upGrid.pageOf(gui.upgrades.length, upGrid.pageSize(global.mobile), UG.page);
+            UG.page = pg.page; UG.pg = pg;
+            // the pages of these options seen so far: "+N more" pulses until all were
+            if (!UG.seen) UG.seen = new Set();
+            UG.seen.add(pg.page);
+            const shownUps = pg.pages > 1 ? gui.upgrades.slice(pg.start, pg.end) : gui.upgrades;
+            const pagerH = pg.pages > 1 ? (global.mobile ? 36 : 30) : 0;
+            // Tier 5 options (server terrain/tier5.js): gold pips
+            const t5s = upGrid.t5State(global.royale && global.royale.you);
+            const goldOpts = !!(t5s && t5s.gold);
             let internalSpacing = 15;
             let len = alcoveSize / 2;
             let height = len;
@@ -12576,7 +12861,7 @@ import { layoutLabels } from './labelLayout.js';
                 tp = {};
             }
 
-            global.columnCount = Math.max(3, Math.floor(gui.upgrades.length ** 0.55));
+            global.columnCount = pg.pages > 1 ? upGrid.COLS_DESKTOP : Math.max(3, Math.floor(gui.upgrades.length ** 0.55));
             // Room for the DOM gear + chat buttons (10px + 42px + 3px drop,
             // CSS px) above the first row; on a small window at Small scale
             // 46 UI units is not enough.
@@ -12586,9 +12871,9 @@ import { layoutLabels } from './labelLayout.js';
             // stat bars. Six at most, or it reaches the raid clock.
             if (tp) {
                 // touch panel: up to five across, centred, sized to its rows
-                global.columnCount = Math.min(5, Math.max(3, Math.ceil(gui.upgrades.length / 2)));
+                global.columnCount = pg.pages > 1 ? upGrid.COLS_TOUCH : Math.min(5, Math.max(3, Math.ceil(gui.upgrades.length / 2)));
                 let rows = 0, branch = -1, tick = global.columnCount, labels = 0;
-                for (const u of gui.upgrades) {
+                for (const u of shownUps) {
                     if (tick === global.columnCount || u[0] != branch) {
                         rows++;
                         if (u[0] != branch && u[1] != "undefined" && String(u[1]).length > 0) labels++;
@@ -12596,17 +12881,17 @@ import { layoutLabels } from './labelLayout.js';
                     }
                     tick++;
                 }
-                const cols = Math.min(global.columnCount, gui.upgrades.length);
+                const cols = Math.min(global.columnCount, shownUps.length);
                 tp.gw = cols * (len + internalSpacing) - internalSpacing;
                 tp.w = tp.gw + 32;
                 const head = 60;
                 tp.w = Math.max(tp.w, 330);
-                tp.h = head + rows * (height + internalSpacing) + labels * 3 * internalSpacing + (global.tutorialMode ? 4 : 34);
+                tp.h = head + rows * (height + internalSpacing) + labels * 3 * internalSpacing + (global.tutorialMode ? 4 : 34) + pagerH;
                 tp.x = Math.round((global.screenWidth - tp.w) / 2);
                 tp.y = Math.round(Math.max(40, (global.screenHeight - tp.h) / 2 - 10));
                 topPad = tp.y + head - spacing - 5;
                 hudPanel(ctx[2], tp.x, tp.y, tp.w, tp.h, { fill: HUD.solid, r: HUD.rBig });
-                hudTitle("Pick your next tank", tp.x + 16, tp.y + 22, 17, HUD.head, "left");
+                hudTitle(goldOpts ? "Pick your Tier 5 tank" : "Pick your next tank", tp.x + 16, tp.y + 22, 17, goldOpts ? HUD.gold : HUD.head, "left");
                 // just picked: this is the next tier, straight away
                 const fresh = performance.now() - (touchTiles.nextAt || -1e9) < 3000;
                 drawText(fresh ? "Nice. Here's the next tier." : "Each one fights differently. Tap one.", tp.x + 16, tp.y + 44, 11.5, fresh ? HUD.gold : HUD.text2, "left", true);
@@ -12618,7 +12903,7 @@ import { layoutLabels } from './labelLayout.js';
             } else {
                 const gridBottom = cols => {
                     let gy = spacing - height - internalSpacing + 5 + topPad, tick = cols, branch = -1;
-                    for (const u of gui.upgrades) {
+                    for (const u of shownUps) {
                         if (tick === cols || u[0] != branch) {
                             gy += height + internalSpacing;
                             if (u[0] != branch && u[1] != "undefined" && String(u[1]).length > 0) gy += 3 * internalSpacing;
@@ -12627,7 +12912,7 @@ import { layoutLabels } from './labelLayout.js';
                         }
                         tick++;
                     }
-                    return gy + height + internalSpacing - 5 + 24 + 2.5 + 6;
+                    return gy + height + internalSpacing - 5 + 24 + 2.5 + 6 + pagerH;
                 };
                 const limit = leftColumnFloor() - 8;
                 while (global.columnCount < 6 && gridBottom(global.columnCount) > limit) global.columnCount++;
@@ -12658,8 +12943,10 @@ import { layoutLabels } from './labelLayout.js';
             let lastBranch = -1;
             let upgradeHoverIndex = global.clickables.upgrade.check({ x: global.mouse.x, y: global.mouse.y });
             let gridTop = null, gridRight = 0;
+            // only the page on screen is clickable
+            global.clickables.upgrade.hide();
 
-            for (let i = 0; i < gui.upgrades.length; i++) {
+            for (let i = pg.start; i < pg.end; i++) {
                 let upgrade = gui.upgrades[i];
                 let upgradeBranch = upgrade[0];
                 let upgradeBranchLabel = upgrade[1] == "undefined" ? "" : upgrade[1];
@@ -12688,18 +12975,72 @@ import { layoutLabels } from './labelLayout.js';
                 !global.optionsMenu_Anim.isOpened && global.clickables.upgrade.place(i, x * clickableRatio, y * clickableRatio, len * clickableRatio, height * clickableRatio);
                 let upgradeKey = getClassUpgradeKey(upgradeNum);
 
-                const tileState = !global.mobile && upgradeNum == upgradeHoverIndex ? (global.clickables.clicked ? 2 : 1) : 0;
-                drawUpgradeTile(model, x, y, len, height, colorIndex++, !global.mobile ? upgradeKey : false, tileState, upgradeSpin);
+                const tileState = !global.mobile && i == upgradeHoverIndex ? (global.clickables.clicked ? 2 : 1) : 0;
+                drawUpgradeTile(model, x, y, len, height, colorIndex++, !global.mobile ? upgradeKey : false, tileState, upgradeSpin, 1, 1, true);
+                if (goldOpts) drawT5Pip(ctx[2], x, y + (tileState === 2 ? 2 * len / 100 : 0), len, height);
 
                 ticker++;
                 upgradeNum++;
             }
 
+            // paged: centre on the full grid, so a short last page doesn't slide the buttons left
+            if (pg.pages > 1) {
+                const cols = Math.max(1, global.columnCount | 0);
+                gridRight = Math.max(gridRight, xStart + cols * len + (cols - 1) * internalSpacing);
+                rowWidth = Math.max(rowWidth, gridRight - len);
+            }
             let h = 24,
                 msg = "Don't upgrade",
                 m = hudTitleW(msg, 13) + 24,
                 buttonX = tp ? tp.x + tp.w / 2 : initialX + (rowWidth + len - initialX) / 2,
                 buttonY = initialY + height + internalSpacing - 5;
+            // the pager: "< +N more" back, page dots, a pulsing "+N more >" on
+            if (pg.pages > 1) {
+                const now = performance.now();
+                const px = tp ? tp.x + tp.w / 2 : initialX + (gridRight - initialX) / 2, py = buttonY - 4;
+                const ps = upGrid.pageSize(!!tp);
+                const nextTxt = upGrid.nextLabel(gui.upgrades.length, pg, ps), prevTxt = upGrid.prevLabel(gui.upgrades.length, pg, ps);
+                const L = upGrid.pagerLayout(px, py, pg.pages, prevTxt, nextTxt, (t, sz) => hudTitleW(t, sz), !!tp);
+                const pulse = upGrid.pagerPulse(UG.seen, pg.pages);
+                const c2 = ctx[2];
+                global.clickables.upgradePage.hide();
+                const big = (r, txt, index, glow) => {
+                    if (glow) {
+                        // a gold ring breathing out from the button
+                        const ph = (now % 1100) / 1100, grow = 2 + ph * 7;
+                        c2.save();
+                        c2.globalAlpha *= 0.85 * (1 - ph);
+                        c2.lineWidth = 3;
+                        c2.strokeStyle = HUD.gold;
+                        roundRectPath(c2, r.x - grow, r.y - grow, r.w + grow * 2, L.h + grow * 2, 8 + grow);
+                        c2.stroke();
+                        c2.restore();
+                    }
+                    const bob = glow ? Math.sin(now / 180) * 1.5 : 0;
+                    hudButton(c2, r.x + r.w / 2, r.y, r.w, L.h, txt, { size: L.size + (glow ? 0.5 + bob * 0.3 : 0), type: "upgradePage", index, cr: clickableRatio, fill: HUD.gold, lipCol: HUD.goldDk, textCol: HUD.ink });
+                };
+                if (L.prev) big(L.prev, prevTxt, 0, false);
+                if (L.next) big(L.next, nextTxt, 1, pulse);
+                c2.save();
+                for (let d = 0; d < pg.pages; d++) {
+                    c2.beginPath();
+                    c2.arc(L.dots.x + L.dots.gap / 2 + d * L.dots.gap, L.dots.y, d === pg.page ? 4.5 : 3.5, 0, Math.PI * 2);
+                    c2.fillStyle = d === pg.page ? HUD.gold : "rgba(255,243,217,0.35)";
+                    c2.fill();
+                    c2.lineWidth = 1.5;
+                    c2.strokeStyle = HUD.ink;
+                    c2.stroke();
+                }
+                c2.restore();
+                buttonY += pagerH;
+                if (tp) {
+                    const k = touchUnits();
+                    if (L.prev) touch.zones.tilesPrev = { x: L.prev.x / k - 4, y: py / k - 6, w: L.prev.w / k + 8, h: L.h / k + 12, tap: () => { UG.page = upGrid.turn(UG.page, pg.pages, -1); } };
+                    else delete touch.zones.tilesPrev;
+                    if (L.next) touch.zones.tilesNext = { x: L.next.x / k - 4, y: py / k - 6, w: L.next.w / k + 8, h: L.h / k + 12, tap: () => { UG.page = upGrid.turn(UG.page, pg.pages, 1); } };
+                    else delete touch.zones.tilesNext;
+                }
+            } else global.clickables.upgradePage.hide();
             // round 9: "Last tank: <Tank>" right next to it while you're below the tank you
             const ltLab = buildBtnLabels.lastTank(global.royale && global.royale.you, global.tutorialMode);
             const ltW = ltLab ? hudTitleW(ltLab, 13) + 24 : 0;
@@ -12723,31 +13064,33 @@ import { layoutLabels } from './labelLayout.js';
                 let image = util.requestEntityImage(gui.dailyTank.tank, gui.color);
                 let hover = global.clickables.dailyTankUpgrade.check({ x: global.mouse.x, y: global.mouse.y });
                 image.upgradeColor = "36 0 1 0 false";
-                drawUpgradeTile(image, xStart, initialY + height + internalSpacing + 50, len, height, 10, false, hover ? (global.clickables.clicked ? 2 : 1) : 0, upgradeSpin);
+                drawUpgradeTile(image, xStart, initialY + height + internalSpacing + 50, len, height, 10, false, hover ? (global.clickables.clicked ? 2 : 1) : 0, upgradeSpin, 1, 1, true);
                 hudTitle("Daily Tank!", xStart + len / 2, initialY + height + internalSpacing + 40, 13, HUD.gold, "center");
                 global.clickables.dailyTankUpgrade.set(xStart * clickableRatio, (initialY + height + internalSpacing + 50) * clickableRatio, len * clickableRatio, height * clickableRatio);
                 gui.dailyTank.ads && drawButton(xStart + 50, initialY + height + internalSpacing + 160, m, h, 1, "rect", "Watch An Ad", 9.8, false, false, false, true, "dailyTankAd", clickableRatio, false);
             }
 
-            if (upgradeHoverIndex > -1 && upgradeHoverIndex < gui.upgrades.length && !global.mobile) {
+            if (upgradeHoverIndex >= pg.start && upgradeHoverIndex < pg.end && upgradeHoverIndex < gui.upgrades.length && !global.mobile) {
                 let picture = gui.upgrades[upgradeHoverIndex][2];
-                if (picture.upgradeTooltip.length > 0) {
+                // the name always (long ones shrink on the tile), Tier 5 says so
+                const tipText = (goldOpts ? "Tier 5" + (picture.upgradeTooltip ? "\n" : "") : "") + (picture.upgradeTooltip || "");
+                if (picture && picture.name) {
                     let boxWidth = measureText(picture.name, alcoveSize / 10),
                         boxX = global.mouse.x * global.screenWidth / global.canvas.width + 2,
                         boxY = global.mouse.y * global.screenHeight / global.canvas.height + 2,
                         boxPadding = 6,
-                        splitTooltip = picture.upgradeTooltip.split("\n"),
+                        splitTooltip = tipText ? tipText.split("\n") : [],
                         textY = boxY + boxPadding + alcoveSize / 10;
 
                     for (let line of splitTooltip) boxWidth = Math.max(boxWidth, measureText(line, alcoveSize / 15));
 
                     boxWidth = Math.max(boxWidth, hudTitleW(picture.name, alcoveSize / 10));
                     hudPanel(ctx[2], boxX, boxY, boxWidth + boxPadding * 3, alcoveSize * (splitTooltip.length + 1) / 10 + boxPadding * 3, { fill: HUD.solid, r: HUD.rSmall });
-                    hudTitle(picture.name, boxX + boxPadding * 1.5, textY - alcoveSize / 30, alcoveSize / 10, HUD.head);
+                    hudTitle(picture.name, boxX + boxPadding * 1.5, textY - alcoveSize / 30, alcoveSize / 10, goldOpts ? HUD.gold : HUD.head);
 
                     for (let t of splitTooltip) {
                         textY += boxPadding + alcoveSize / 15
-                        drawText(t, boxX + boxPadding * 1.5, textY, alcoveSize / 15, HUD.text);
+                        drawText(t, boxX + boxPadding * 1.5, textY, alcoveSize / 15, t === "Tier 5" ? HUD.gold : HUD.text);
                     }
                 }
             }
@@ -12756,7 +13099,61 @@ import { layoutLabels } from './labelLayout.js';
             upgradeMenu.force(0);
             global.clickables.upgrade.hide();
             global.clickables.skipUpgrades.hide();
+            global.clickables.upgradePage.hide();
+            if (global.upgradePg) global.upgradePg.pg = null;
+            // Tier 4, Tier 5 not earned yet: the gold progress ring where the tiles go
+            const st = t5RingUp();
+            if (st && !global.mobile) {
+                const cssPerUi = global.canvas.height / global.screenHeight / global.ratio;
+                const topPad = Math.max(46, Math.ceil(63 / (cssPerUi || 1)) - spacing - 5);
+                const x = spacing + 5, y = spacing + 5 + topPad;
+                const r = drawT5Ring(ctx[2], x, y, st, performance.now());
+                global.upgradeBoxTop = y;
+                global.upgradeBoxBottom = y + r.h;
+                global.upgradeBoxRight = x + r.w;
+            }
         }
+    }
+    // the Tier 5 ring's state, or null (Tier 4 in a raid, not earned, alive, no tiles)
+    function t5RingUp() {
+        if (gui.upgrades.length || global.died || global.tutorialMode || !global.royale) return null;
+        const st = upGrid.t5State(global.royale.you);
+        return st && st.ring ? st : null;
+    }
+    // gold progress ring + "Grow to 2x to unlock Tier 5"
+    function drawT5Ring(c, x, y, st, now, h = 58) {
+        const title = upGrid.ringTitle(st), sub = upGrid.ringSub(st);
+        const w = Math.round(h + 14 + Math.max(hudTitleW(title, 13), hudTextW(sub, 10.5)) + 16);
+        hudPanel(c, x, y, w, h, { fill: HUD.solid, r: HUD.rSmall });
+        const cx = x + h / 2 + 2, cy = y + h / 2, rr = h * 0.33;
+        c.save();
+        c.lineCap = "round";
+        c.lineWidth = 5; c.strokeStyle = "rgba(18,14,21,0.55)";
+        c.beginPath(); c.arc(cx, cy, rr, 0, Math.PI * 2); c.stroke();
+        c.lineWidth = 5; c.strokeStyle = HUD.gold;
+        c.beginPath(); c.arc(cx, cy, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, st.progress)); c.stroke();
+        // the head of the ring breathes so it reads as live
+        const a = -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, st.progress);
+        c.globalAlpha = 0.55 + 0.45 * Math.sin(now / 300);
+        c.beginPath(); c.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, 4, 0, Math.PI * 2); c.fillStyle = HUD.gold; c.fill();
+        c.restore();
+        hudTitle("T5", cx, cy, 13, HUD.gold, "center");
+        hudTitle(title, x + h + 12, y + h * 0.36, 13, HUD.gold, "left");
+        drawText(sub, x + h + 12, y + h * 0.7, 10.5, HUD.text2, "left", true);
+        return { w, h };
+    }
+    // a Tier 5 option: gold keyline and a gold pip top right
+    function drawT5Pip(c, x, y, len, height) {
+        const k = len / 100, r = Math.max(3, 10 * k);
+        c.save();
+        c.lineWidth = Math.max(1.5, 2.5 * k);
+        c.strokeStyle = HUD.gold;
+        roundRectPath(c, x, y, len, height - UPG_LIP * k, r);
+        c.stroke();
+        const pr = Math.max(3, 5 * k), px = x + len - 9 * k, py = y + 9 * k;
+        c.beginPath(); c.arc(px, py, pr + 1.5 * k, 0, Math.PI * 2); c.fillStyle = HUD.ink; c.fill();
+        c.beginPath(); c.arc(px, py, pr, 0, Math.PI * 2); c.fillStyle = HUD.gold; c.fill();
+        c.restore();
     }
 
     // ── touch HUD (phones and tablets) ─────────────────────────────────
@@ -12780,7 +13177,7 @@ import { layoutLabels } from './labelLayout.js';
     }
     function touchChipH() { return 44 * touchUnits() * 0.95; }
     function touchLeftFloor() {
-        return touchChipBase() - (gui.upgrades.length > 0 ? touchChipH() + 10 : 0);
+        return touchChipBase() - (gui.upgrades.length > 0 || t5RingUp() ? touchChipH() + 10 : 0);
     }
     const touchTiles = { open: false, seen: "" };
     touch.closeTiles = () => { touchTiles.open = false; };
@@ -13167,8 +13564,12 @@ import { layoutLabels } from './labelLayout.js';
             return r;
         };
         if (gui.upgrades.length > 0 && !touchTiles.open && !touchStats.open) {
-            hudDrawn.upgrades = chip("tiles", touchChipBase() - chipH - 12, "New tank!", "", "arrow", () => { touchTiles.open = true; touchStats.open = false; });
+            const t5g = upGrid.t5State(global.royale && global.royale.you);
+            hudDrawn.upgrades = chip("tiles", touchChipBase() - chipH - 12, t5g && t5g.gold ? "Tier 5!" : "New tank!", "", "arrow", () => { touchTiles.open = true; touchStats.open = false; });
         }
+        // Tier 4, Tier 5 not earned: the gold ring sits in the New tank chip's place
+        const ring5 = !touchTiles.open && !touchStats.open ? t5RingUp() : null;
+        if (ring5) { const ry = touchChipBase() - chipH - 12, rs = drawT5Ring(c, x0, ry, ring5, now, chipH); hudDrawn.upgrades = { x: x0, y: ry, w: rs.w, h: rs.h }; }
         if (!touchStats.open) {
             if (!canAny) return;
             hudDrawn.stats = touchStats.chip = chip("stats", touchChipBase(), "Stats", "+" + pts, "plus", () => { touchStats.open = true; touchStats.at = performance.now(); touchTiles.open = false; });
@@ -13333,6 +13734,7 @@ import { layoutLabels } from './labelLayout.js';
                 g = chatScale(size);
             // touch: one steady size, a 16px line (iOS zooms into smaller inputs)
             if (global.mobile) g = 32;
+            else g = Math.max(30, g);
 
             if (!global.showChat) {
                 if (ichatInput === 0) chatInput.force(0);
@@ -13365,8 +13767,9 @@ import { layoutLabels } from './labelLayout.js';
                 x = global.screenWidth / 2;
                 top = (Math.max(8, sa.t) + 60) * k;
             }
-            let boxLengthHalf = (10.49 * g) / 2;
             const toPx = window.innerWidth / global.screenWidth;
+            // g is CSS px for the line
+            let boxLengthHalf = (10.49 * g) / 2 / (global.mobile ? 1 : Math.min(1, toPx));
             global.canvas.chatBox.loadedProperly = true;
 
             // duos: who hears this line
@@ -13399,10 +13802,12 @@ import { layoutLabels } from './labelLayout.js';
                 global.canvas.chatInput.placeholder = "";
             }
 
-            global.canvas.chatBox.style.color = color.black;
-            global.canvas.chatBox.style.backgroundColor = color.guiwhite;
-            global.canvas.chatBox.style.borderColor = color.black;
-            global.canvas.chatBox.style.borderWidth = 0.1 * g + 'px';
+            // the chat bubbles' dark plate: input well, ink keyline, cream text
+            global.canvas.chatBox.style.color = "#fff3d9";
+            global.canvas.chatBox.style.backgroundColor = "rgba(22,17,29,0.92)";
+            global.canvas.chatBox.style.borderColor = "#0c0a0e";
+            global.canvas.chatBox.style.borderWidth = Math.max(2, 0.08 * g) + 'px';
+            global.canvas.chatBox.style.boxShadow = "inset 0 0 0 1px rgba(255,243,217,0.18), 0 2px 0 rgba(0,0,0,0.32)";
             global.canvas.chatBox.style.opacity = global.showChatGlide;
             global.canvas.chatBox.style.width = (boxLengthHalf * 2 + 0.75 * g) / global.screenWidth * 100 + `%`;
             global.canvas.chatBox.style.height = boxH + `px`;
@@ -13411,9 +13816,9 @@ import { layoutLabels } from './labelLayout.js';
 
             global.canvas.chatInput.style.opacity = global.showChatGlide;
             global.canvas.chatInput.style["font-size"] = 0.5 * g + 'px';
-            // always dark ink on the light box, whatever the site theme did to inputs
-            global.canvas.chatInput.style.color = color.black;
-            global.canvas.chatInput.style.caretColor = color.black;
+            // always cream on the dark box, whatever the site theme did to inputs
+            global.canvas.chatInput.style.color = "#fff3d9";
+            global.canvas.chatInput.style.caretColor = "#f2b83c";
             global.canvas.chatInput.style.backgroundColor = "transparent";
             global.canvas.chatInput.style.width = (boxLengthHalf * 2 + 0.35 * g - pillW) / global.screenWidth * 100 + `%`;
             global.canvas.chatInput.style.height = boxH + `px`;
@@ -13894,6 +14299,7 @@ import { layoutLabels } from './labelLayout.js';
         const py = Math.round(Math.max(12, sh - H - BTN - 12));
         const cx = sw / 2;
         global.deathCamLift = Math.max(0, sh / 2 - Math.max(110, py / 2 + 10));
+        deathCardFrac(px / sw, py / sh, W / sw, (H + BTN) / sh);
         global.deathPanelCss = {
             cx: Math.round(cx * window.innerWidth / Math.max(1, sw)),
             top: Math.round((py + H) * window.innerHeight / Math.max(1, sh)) + 10,
@@ -13952,6 +14358,17 @@ import { layoutLabels } from './labelLayout.js';
             drawButton(cx + 90, bty, 150, 32, A, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
         }
     };
+    // the tank this life ended in, kept from the moment of death
+    let deathTankAt = -1, deathTank = null;
+    function deathTankOf() {
+        const at = global.royaleDiedAt || 0;
+        if (at !== deathTankAt || !deathTank) {
+            deathTankAt = at;
+            const m = gui.type && global.mockups && global.mockups[parseInt(String(gui.type).split("-")[0])];
+            deathTank = m ? { type: String(gui.type), color: gui.color, name: String(m.name || "") } : null;
+        }
+        return deathTank;
+    }
     const gameDrawDeadRoyale = () => {
         if (newcomer.deathCardWanted()) return gameDrawDeadNewcomer();
         const now = performance.now();
@@ -14017,6 +14434,7 @@ import { layoutLabels } from './labelLayout.js';
         const cx = sw / 2;
         // the killer sits in the middle of the room above the card
         global.deathCamLift = Math.max(0, sh / 2 - Math.max(110, py / 2 + 10)) * k;
+        deathCardFrac(px / sw, py / sh, W / sw, (H + BTN) / sh);
         global.deathPanelCss = {
             cx: Math.round(cx * window.innerWidth / Math.max(1, sw)),
             top: Math.round((py + H) * window.innerHeight / Math.max(1, sh)) + 10,
@@ -14050,9 +14468,32 @@ import { layoutLabels } from './labelLayout.js';
         const scoreTxt = util.formatLargeNumber(Math.round(score));
         const scoreR = hx + hw - 16 - (placeW ? placeW + 22 : 0);
         const scoreW = Math.max(hudTitleW(scoreTxt, 26), hudTextW("POINTS", 11));
-        hudTitle("You died", hx + 16, hy + 26, 28, HUD.gold, "left", A);
-        const kb = fitLine(killedBy, 13, 10, Math.max(120, scoreR - scoreW - 30 - (hx + 16)));
-        drawText(kb.txt, hx + 16, hy + 47, kb.qs, HUD.text, "left", true, A);
+        // the tank you died in: a picture left of the title and "Tank: <name>"
+        const dTank = deathTankOf();
+        const PORT = dTank ? HEAD - 12 : 0, tx0 = hx + 16 + (PORT ? PORT + 4 : 0);
+        if (dTank) {
+            c.save();
+            c.globalAlpha = A;
+            hudWell(c, hx + 8, hy + 6, PORT, PORT, 9, HUD.well, HUD.ink, 2);
+            try {
+                const picture = mockupPicture(dTank.type, dTank.color);
+                const position = global.mockups[parseInt(String(dTank.type).split("-")[0])].position;
+                const sc = (PORT * 0.8) / position.axis, ang = -Math.PI / 4;
+                const pcx = hx + 8 + PORT / 2 - sc * (position.middle.x * Math.cos(ang) - position.middle.y * Math.sin(ang));
+                const pcy = hy + 6 + PORT / 2 - sc * (position.middle.x * Math.sin(ang) + position.middle.y * Math.cos(ang));
+                drawEntity(picture.color, pcx, pcy, picture, 1, 1, sc / picture.size, 1, ang, true, c);
+            } catch (e) { /* no mockup: the recess stays empty */ }
+            c.restore();
+        }
+        hudTitle("You died", tx0, hy + 26, 28, HUD.gold, "left", A);
+        const textRoom = Math.max(120, scoreR - scoreW - 30 - tx0);
+        if (dTank && dTank.name) {
+            const tl = "Tank: " + dTank.name, tlx = tx0 + hudTitleW("You died", 28) + 14;
+            const f = fitLine(tl, 13, 10, tx0 + textRoom - tlx);
+            if (tx0 + textRoom - tlx > 60) drawText(f.txt, tlx, hy + 27, f.qs, HUD.head, "left", true, A);
+        }
+        const kb = fitLine(killedBy, 13, 10, textRoom);
+        drawText(kb.txt, tx0, hy + 47, kb.qs, HUD.text, "left", true, A);
         drawText("POINTS", scoreR, hy + 18, 11, HUD.text2, "right", true, A);
         hudTitle(scoreTxt, scoreR, hy + 42, 26, HUD.gold, "right", A);
         if (placeTxt) hudTitle(placeTxt, hx + hw - 16, hy + 34, 28, HUD.head, "right", A);
@@ -14418,6 +14859,7 @@ import { layoutLabels } from './labelLayout.js';
         hudDrawn = {};
         // the first raids (newcomer.js): reads last frame's big card first
         global._nxCardWas = global.hudCardUp;
+        try { chatAvoidRebuild(); } catch (e) { /* never break the frame */ }
         try { newcomer.tick(); } catch (e) { /* never break the frame */ }
         try { firstSeconds.tick(); } catch (e) { /* never break the frame */ }
         // big center-screen cards this frame; coach.js waits while one is up

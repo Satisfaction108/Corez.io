@@ -327,6 +327,10 @@ input.error {
 	transition: none;
 }
 
+#chatInput::placeholder {
+	color: rgba(233, 224, 204, 0.55);
+}
+
 #startMenuWrapper {
 	transition: top 1s;
 	position: relative;

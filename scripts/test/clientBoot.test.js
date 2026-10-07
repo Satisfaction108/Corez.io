@@ -242,6 +242,26 @@ async function main() {
             if (p.colours < 6) throw new Error('the canvas looks blank after the respawn: ' + JSON.stringify(p));
             return 'queued ' + queued;
         });
+
+        // the public tank tree (public/tanks, built by scripts/build-tanks.js)
+        await check('tanks: /tanks serves the tree, its data and script, and draws', async () => {
+            const html = await fetch(origin + '/tanks');
+            const body = await html.text();
+            if (html.status !== 200 || !body.includes('/tanks/tanks.js')) throw new Error('/tanks: ' + html.status);
+            const js = await fetch(origin + '/tanks/tanks.js'), src = await js.text();
+            if (js.status !== 200 || !/javascript/.test(js.headers.get('content-type') || '')) throw new Error('/tanks/tanks.js: ' + js.status + ' ' + js.headers.get('content-type'));
+            if (process.env.CLIENT_BUILD === 'obfuscated' && src.includes('// The /tanks page')) throw new Error('/tanks/tanks.js is not the obfuscated build');
+            const data = await (await fetch(origin + '/tanks/tanks.json')).json();
+            if (!(data.count >= 700)) throw new Error('tanks.json count ' + data.count);
+            await page.send('Page.navigate', { url: origin + '/tanks' });
+            let ready = false;
+            for (let i = 0; i < 80 && !ready; i++) { await sleep(250); try { ready = await page.eval('!!(window.dwTanks && window.dwTanks.ready())'); } catch (e) { /* navigating */ } }
+            if (!ready) throw new Error('the tree never loaded its pictures');
+            await page.eval('dwTanks.pick(dwTanks.find("Twin"), true), true');
+            await sleep(600);
+            noErrors('on /tanks');
+            return data.count + ' tanks';
+        });
     } catch (e) {
         results.push(false);
         console.log('FAIL setup\n     ' + String(e && e.stack || e).split('\n').slice(0, 6).join('\n     '));

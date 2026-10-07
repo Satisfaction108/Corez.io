@@ -14,6 +14,7 @@ const { clientIp } = require("../../lib/clientIp.js");
 const accountBridge = require("../../accounts/game/bridge.js");
 const activity = require("./activity.js");
 const { unpackMove } = require("../../lib/touchMove.js");
+const tier5 = require("../terrain/tier5.js");
 
 // Same rule as the accounts config: NODE_ENV, or a real public hostname.
 function isProduction() {
@@ -781,7 +782,7 @@ class socketManager {
                         if (player.body._tutorialLock) {
                             const b = player.body;
                             const idx = b.upgrades.findIndex(u =>
-                                b.skill.level >= u.level && tut.upgradeAllowed(b, u));
+                                tier5.open(b, u) && tut.upgradeAllowed(b, u));
                             if (idx >= 0) { b.upgrade(idx, 0); tut.noteUpgraded(b); }
                             return;
                         }
@@ -1224,10 +1225,9 @@ class socketManager {
                     for (let root of allRoots) {
                         if (!rerootUpgradeTree.includes(root)) rerootUpgradeTree.push(root);
                     }
-                    for (let i of rerootUpgradeTree) {
-                        let ind = Class[i].index;
-                        this.sendMockupUpgrades(ind, socket);
-                    }
+                    // the expanded tree is ~1,600 mockups (~2.7 MB)
+                    this.sendTreeSliced(rerootUpgradeTree, socket, () => socket.talk("T"));
+                    break;
                 }
                 socket.talk("T");
             } break;
@@ -1891,7 +1891,7 @@ class socketManager {
             // A lesson can also pin the menu to one tank so the learner ends
             // up on the build the next lesson is written for.
             if (tutGate && !tutGate.upgradeAllowed(b, upgrade)) continue;
-            if (b.skill.level >= b.upgrades[i].level) {
+            if (tier5.open(b, upgrade)) {
                 upgrades.push(upgrade.branch.toString() + "_" + upgrade.branchLabel + "_" + upgrade.index);
             } else {
                 if (upgrade.branch >= skippedUpgrades.length) {
@@ -2593,6 +2593,37 @@ class socketManager {
         }
     }
 
+    // Every class under `roots`
+    sendTreeSliced(roots, socket, done) {
+        const SLICE = 40;
+        const md = socket.status.mockupData;
+        const sent = new Set(md.receivedUpgradePackIndexes.map(String));
+        const order = [], seen = new Set(), q = [...roots];
+        while (q.length) {
+            let k = q.shift();
+            if (k && typeof k === "object") k = classMap.get(k.index);
+            if (typeof k !== "string" || seen.has(k) || !Class[k]) continue;
+            seen.add(k);
+            order.push(String(Class[k].index));
+            for (const prop in Class[k]) {
+                if (!prop.startsWith("UPGRADES_TIER_") || !Array.isArray(Class[k][prop])) continue;
+                for (const e of Class[k][prop]) { if (Array.isArray(e)) { for (const x of e) if (x !== true) q.push(x); } else q.push(e); }
+            }
+        }
+        const pending = order.filter(i => !sent.has(i));
+        const step = () => {
+            if (socket.terminated || socket.readyState > 1) return;
+            for (let n = 0; n < SLICE && pending.length; n++) {
+                const i = pending.shift();
+                try { this.sendMockup(i, socket); } catch { continue; }
+                if (!md.receivedUpgradePackIndexes.includes(i)) md.receivedUpgradePackIndexes.push(i);
+            }
+            if (pending.length) setTimeout(step, 33);
+            else if (done) done();
+        };
+        step();
+    }
+
     sendMockupUpgrades(index, socket) {
         for (let splittedIndex of index.toString().split("-")) {
             if (socket.status.mockupData.receivedUpgradePackIndexes.includes(splittedIndex)) continue;
@@ -2855,7 +2886,7 @@ class socketManager {
                 }
                 if (!Config.load_all_mockups) {
                     for (let upgrade of (player.body?.upgrades || [])) {
-                        if (player.body.skill.level >= upgrade.level) {
+                        if (tier5.open(player.body, upgrade)) {
                             this.sendMockup(upgrade.index, socket);
                         }
                     }

@@ -816,7 +816,9 @@ class gameHandler {
     }
 
     configureBotStats(bot) {
-        const rammer = !bot.guns || bot.guns.size === 0;
+        const kind = botTanks.buildKind(bot);
+        // ram tanks (definitions/ramTanks.js) build like a smasher
+        const rammer = !bot.guns || bot.guns.size === 0 || kind === 'ram' || kind === 'ramAuto';
         const defs = (bot.defs || []).join(' ').toLowerCase();
         // A 35-point base (a level-45 player has 50), shaped like the builds
         // players win with, per class archetype, so a player who spends their
@@ -825,8 +827,15 @@ class gameHandler {
         // Order: [rld, pen, str, dam, spd, shi, atk, hlt, rgn, mob].
         // 11th slot is mining power: bots dig like a player who bought in (a
         // little deeper than before the combat cut, so they still dig as fast)
+        // the expanded tree (miscFiles/botTanks.js buildKind)
+        bot.botDroneSteer = kind === 'drone';
         let raw;
-        if (rammer) raw = [0, 0, 0, 0, 0, 7, 7, 7, 5, 8, 7];
+        if (rammer && kind === 'ramAuto') raw = [2, 3, 2, 3, 0, 5, 6, 6, 3, 4, 7];
+        else if (rammer) raw = [0, 0, 0, 0, 0, 7, 7, 7, 5, 8, 7];
+        else if (kind === 'drone') raw = [5, 6, 5, 7, 6, 0, 0, 2, 0, 4, 7];
+        else if (kind === 'trap') raw = [7, 6, 7, 7, 1, 0, 0, 4, 0, 3, 7];
+        else if (kind === 'sniper') raw = [5, 7, 3, 7, 6, 0, 0, 3, 0, 4, 7];
+        else if (kind === 'heavy') raw = [5, 7, 6, 7, 2, 0, 0, 4, 0, 4, 7];
         else if (/sniper|assassin|ranger|marksman|stalker|rifle|predator|hunter|deadeye|sidewinder|musket|crossbow/.test(defs))
             raw = [5, 7, 3, 7, 6, 0, 0, 3, 0, 4, 7];
         else if (/destroyer|artillery|mortar|launcher|ordnance|annihilator|hybrid/.test(defs))
@@ -963,8 +972,10 @@ class gameHandler {
         // a small fish stops a tier short (terrain/fairPlay.js)
         const pathOf = (c) => o.botMinnow ? fairPlay.minnowPath(c.path) : c.path;
         // a bot respawning as itself climbs back into its own tank
-        const own = same ? botTanks.pool(this.botTankExclusions()).find(c => c.name === same || (o.botMinnow && fairPlay.minnowPath(c.path)[1] === same)) : null;
-        if (own && botTanks.climb(o, pathOf(own))) {
+        let own = same ? botTanks.pool(this.botTankExclusions()).find(c => c.name === same || (o.botMinnow && fairPlay.minnowPath(c.path)[1] === same)) : null;
+        // a Tier 5 tank (expanded tree): back through its Tier 4 parent
+        if (!own && same && !o.botMinnow) { const p = botTanks.pathFor(same); if (p && p.length === 4) own = { name: same, path: p }; }
+        if (own && (botTanks.climb(o, pathOf(own)) || (own.path.length === 4 && (o.defs && o.defs[0]) === own.path[2]))) {
             o.botRammerAllowed = false; o.leftoverUpgrades = 0;
             this.configureBotStats(o);
             return true;
@@ -974,6 +985,7 @@ class gameHandler {
             if (!other || other === o || other.isDead?.()) continue;
             const key = String(other.defs?.[0] || '').toLowerCase();
             if (key) counts.set(key, (counts.get(key) || 0) + 1);
+            if (other.defs?.[0] && botTanks.kindOf(other.defs[0]).drone) counts.droneBots = (counts.droneBots || 0) + 1;
         }
         const choice = botTanks.pick(this.botTankExclusions(), counts);
         if (!choice) return false;

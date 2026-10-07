@@ -155,15 +155,36 @@ test('rotation: every item for sale turns up within a season', () => {
     assert.deepEqual(missing, []);
 });
 
-test('catalog: skins never recolour (Oct 6 2026 owner rule): no colours in tank or sidekick skins', () => {
+test('catalog: skins never recolour the body (Oct 6 2026 owner rule): pattern colours only, from the flat palette', () => {
     for (const it of C.ITEMS.filter(i => i.cat === 'skin')) {
-        assert.ok(!/#[0-9a-f]{3,6}|accent|color/i.test(JSON.stringify(it.skin)), it.id + ' carries a colour');
+        assert.ok(!/#[0-9a-f]{3,6}|accent|tint|body|fill|recolou?r/i.test(JSON.stringify(it.skin)), it.id + ' recolours the body');
+        assert.ok(Array.isArray(it.skin.colors) && it.skin.colors.length >= 1 && it.skin.colors.length <= 3, it.id + ' pattern colours');
+        for (const k of it.skin.colors) assert.ok(C.SKIN_SWATCHES[k], it.id + ' unknown swatch ' + k);
     }
+    // every swatch is a flat palette colour, never a neon
+    for (const [k, pair] of Object.entries(C.SKIN_SWATCHES)) {
+        for (const hex of pair) {
+            const [r, g, b] = C.parseHex(hex), mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+            assert.ok(!(mx > 225 && (mx - mn) / mx > 0.8), k + ' ' + hex + ' reads as neon');
+        }
+    }
+    assert.ok(/^#[0-9a-f]{6}$/.test(C.SKIN_SWATCHES.gold[0]));
     for (const it of C.ITEMS.filter(i => i.cat === 'sdSkin')) assert.deepEqual(Object.keys(it.look), ['fill'], it.id + ' only decorates');
     assert.equal(C.accentFor, undefined, 'no accent swapping left');
+    // the pattern always reads on the hull: no team colour (all ten) swallows it
+    const teams = ['#3f8cff', '#3fd27a', '#ff5068', '#c070ff', '#ffc23a', '#ff8a2e', '#e0965a', '#2fd8ea', '#caca4e', '#73747a'];
+    for (const it of C.ITEMS.filter(i => i.cat === 'skin')) {
+        for (const t of teams) {
+            const cs = C.skinColors(it, t);
+            assert.equal(cs.length, it.skin.colors.length);
+            assert.ok(C.colorDistance(cs[0], t) >= 105, it.id + ' main colour ' + cs[0] + ' vanishes on ' + t);
+        }
+    }
+    assert.equal(C.skinColors(C.byId('sk_gold_vein'), '#ffc23a')[0], C.SKIN_SWATCHES.gold[1], 'gold vein swaps shade on a yellow tank');
     // the renderer paints from the team colour alone
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'client', 'account', 'cosmetics.js'), 'utf8');
     assert.ok(!/s\.accent|accentFor|em\.color/.test(src), 'no catalog colours in the skin painter');
+    assert.ok(!/createLinearGradient|createRadialGradient|'lighter'|shadowBlur/.test(src.slice(src.indexOf('skins: drawing kit'))), 'skins paint flat: no gradients, additive glow or blur');
     const art = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'client', 'sidekickArt.js'), 'utf8');
     assert.ok(!/look\.col/.test(art), 'a sidekick skin never replaces the body colour');
 });

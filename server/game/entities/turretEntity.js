@@ -165,7 +165,8 @@ class turretEntity extends EventEmitter {
                 this.facingTypeArgs = {};
             }
         };
-        if (set.SKILL_CAP != null && set.SKILL_CAP != []) {
+        // a turret shares its tank's skill: its own caps must not overwrite the tank's
+        if (set.SKILL_CAP != null && set.SKILL_CAP != [] && !(this.bond && this.skill === this.bond.skill)) {
             if (set.SKILL_CAP.length != 10) throw "Inappropiate skill cap amount.";
             this.skill.setCaps(set.SKILL_CAP);
         }

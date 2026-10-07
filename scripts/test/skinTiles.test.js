@@ -6,6 +6,7 @@
 //              a 256 one scaled up 12x
 //   budget     two huge skins on screen at once never rebuild each other
 //              every frame; ones that left the screen make room for a new one
+// designs every skin paints on every team colour, never in the team colour itself
 'use strict';
 
 // the client files are ES modules in a CommonJS package: skip node's notice
@@ -28,10 +29,10 @@ function fakeCtx(cv) {
             if (k === 'drawImage') return (img) => { drawn.push(img); };
             return noop;
         },
-        set(o, k, v) { o[k] = v; return true; },
+        set(o, k, v) { if (k === 'fillStyle' || k === 'strokeStyle') styles.push(v); o[k] = v; return true; },
     });
 }
-const built = [], drawn = [];
+const built = [], drawn = [], styles = [];
 class FakeOffscreen {
     constructor(w, h) { this.width = w; this.height = h; built.push(this); }
     getContext() { return fakeCtx(this); }
@@ -121,6 +122,25 @@ performance.now = () => clock;
             }
         } finally { console.error = err0; }
         assert.deepEqual(errs, [], 'skin painters threw');
+        // the pattern brings its own colours and never repaints the body
+        for (const it of DWCosmetics.ITEMS.filter(i => i.cat === 'skin')) {
+            for (const team of ['#3f8cff', '#ff5068', '#3fd27a', '#c070ff', '#ffc23a']) {
+                clock += 50;
+                styles.length = 0;
+                const n0 = built.length;
+                C.paintHull(fakeCtx(null), 0, 0, 30, 0, 0, it.nid, team, Object.assign(opts(), { force: true }));
+                const own = DWCosmetics.skinColors(it, team);
+                assert.ok(built.length > n0, it.id + ' built its tile on ' + team);
+                assert.ok(!styles.includes(team), it.id + ' paints the team colour ' + team);
+                assert.ok(styles.includes(own[0]), it.id + ' uses its pattern colour ' + own[0] + ' on ' + team);
+                // cached: the same skin, team and size builds nothing more
+                if (C.cacheSize() > 90) continue;
+                const n1 = built.length;
+                clock += 50;
+                C.paintHull(fakeCtx(null), 0, 0, 30, 0, 0, it.nid, team, Object.assign(opts(), { force: true }));
+                assert.equal(built.length, n1, it.id + ' rebuilt a cached tile');
+            }
+        }
         const fx = C.nameFx(DWCosmetics.byId('ns_toxic'), { still: true });
         assert.ok(fx.halo && /^#[0-9a-f]{6}$/.test(fx.haloHi) && fx.haloHi !== fx.halo && fx.haloA === 1, 'glow core ' + JSON.stringify(fx));
         assert.ok(C.HALO_PASSES.length >= 2 && C.HALO_PASSES.every(p => p[0] > 1 && p[0] <= 2.5), 'a tight glow, at most 2.5x the outline');

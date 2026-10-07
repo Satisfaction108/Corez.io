@@ -5,7 +5,8 @@ module.exports = {
     do_not_override_room: false,
     room_setup: ["room_dig_royale"],
     enable_food: false,
-    arms_race: false,
+    // ROYALE_ARMS_RACE=1: the Arms Race tank tree (entityAddons/armsRace)
+    arms_race: process.env.ROYALE_ARMS_RACE === '1',
     dig_wars: false,
     dig_royale: true,
     war_enabled: false,

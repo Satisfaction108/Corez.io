@@ -257,12 +257,12 @@ Class.royaleCore = {
 // The Core's attack (terrain/coreFinale.js moves and scores both by hand):
 // a bolt from one of its six barrels (noclip, it checks rock, pads and tanks
 // itself), and a drone that chases whoever is near. Damage is a share of the
-// target's max health set in coreFinale.js, not these stats.
+// target's max health set in coreFinale.js, not these stats
 Class.royaleCoreBolt = {
     TYPE: "bullet",
     LABEL: "Core Bolt",
     SHAPE: 0,
-    COLOR: "#5ce8ff",
+    COLOR: "#ff5ad8",
     SIZE: 12,
     NO_COLLISIONS: true,
     IGNORED_BY_AI: true,
@@ -277,7 +277,7 @@ Class.royaleCoreDrone = {
     TYPE: "drone",
     LABEL: "Core Drone",
     SHAPE: 3,
-    COLOR: "#5ce8ff",
+    COLOR: "#ff5ad8",
     SIZE: 16,
     ACCEPTS_SCORE: false,
     MOTION_TYPE: "drift",

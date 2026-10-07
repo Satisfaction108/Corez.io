@@ -38,6 +38,8 @@ const supplyDrops = require('../../terrain/supplyDrops.js'); // crates out of th
 const raidOpening = require('../../terrain/raidOpening.js'); // early ore and the 1:30 meteor rush
 const newcomer = require('../../terrain/newcomerDirector.js'); // first raids: fair, and something new every minute
 const fairPlay = require('../../terrain/fairPlay.js');     // vaults, small fish, kept builds, struggling players
+const tier5 = require('../../terrain/tier5.js');              // Tier 5 opens at 2x growth, per life
+const botTanks = require('../../../miscFiles/botTanks.js');
 const respawnBuild = require('../../terrain/respawnBuild.js');   // Respawn as / Last tank / Same stats buttons
 const autoStats = require('../../terrain/autoStats.js');   // unspent stat points placed after 20 s
 const raidPerks = require('../../terrain/raidPerks.js');   // a perk pick every 5,000 points, kept until the raid ends
@@ -173,6 +175,7 @@ const GIANT_BOUNTY_PER = 250;
 
 let raidId = 0;
 respawnBuild.setRaidOf(() => raidId);
+tier5.setRaidOf(() => raidId);
 let raidStartAt = 0;
 let raidEndsAt = 0;
 let raidStats = new Map();
@@ -938,6 +941,8 @@ function broadcast(extra = {}) {
         if (you) { try { const nx = newcomer.youFields(client, t); if (nx) Object.assign(you, nx); } catch (e) { guardLog('newcomer you', e); } }
         // build buttons: lt (last tank), ltu (tank button climbs), ls (spread saved)
         if (you) { try { const rb = respawnBuild.youFields(client, bodyLive ? body : null); if (rb) Object.assign(you, rb); } catch (e) { guardLog('rb you', e); } }
+        // Tier 5: t5 = [tier, earned, growth x100, mark x100] once you're Tier 4
+        if (you && bodyLive) { try { const f5 = tier5.youFields(body); if (f5) Object.assign(you, f5); } catch (e) { guardLog('t5 you', e); } }
         // shared part stringified once per broadcast; only the per-client tail differs
         let duoTail = '';
         if (duos) {
@@ -2561,6 +2566,8 @@ function onHumanJoin(body) {
     if (body.socket && !body._achWired && typeof body.on === 'function') {
         body._achWired = true;
         body.on('upgrade', (e) => guard('ach upgrade', () => achHooks.onUpgrade(body, e && e.tier, body.label)));
+        // Tier 4: build its Tier 5 mockups ahead (terrain/tier5.js warm)
+        body.on('upgrade', () => guard('t5 warm', () => tier5.warm(body)));
         body.on('skillUp', (stat) => guard('ach skill', () => achHooks.onSkillUp(body, stat)));
     }
     // duos: next to your partner if they're alive and not in a fight; that
@@ -4052,6 +4059,15 @@ function growRoom(body, hold) {
     if (n) { try { spawnReach.invalidate(); } catch { /* */ } }
     return n;
 }
+// Tier 5 just opened for this life (terrain/tier5.js): a gold card for a player
+function onTier5(body) {
+    if (body.socket) {
+        guard('t5 card', () => body.socket.talk('KC', 'tier5', 'Tier 5 unlocked!', 0, tier5.bodyTier(body) === 4 ? 'Pick a Tier 5 tank from your upgrades.' : 'Yours for this life. Each new life grows to 2x again.'));
+        return;
+    }
+    if (body.isBot) guard('t5 bot', () => botTanks.tier5Up(body, global.gameManager && global.gameManager.gameHandler));
+}
+
 function onGrown(body, stage, idx) {
     if (!body.socket) return;
     guard('ach grow', () => achHooks.onGrow(body, stage));
@@ -4107,6 +4123,7 @@ function tick() {
     guard('saves', () => saveCodes.tick(t, connectedClients()));
     const fighters = combatants();
     guard('growth', () => growth.tick(t, fighters, growthScore, onGrown, growRoom));
+    guard('tier5', () => { for (const b of fighters) if (tier5.note(b)) onTier5(b); });
     try { bosses.tick(t, fighters.length); } catch (e) { /* */ }
     try { blooms.tick(t); } catch (e) { /* */ }
     try { raidEvents.tick(t); } catch (e) { /* */ }

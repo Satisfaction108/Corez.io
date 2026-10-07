@@ -230,6 +230,7 @@ const global = {
         clicked: false,
         hover: Region(1),
         skipUpgrades: Region(1),
+        upgradePage: Region(3),
         // round 9 build buttons: Last tank (by Don't upgrade), Same stats / Random (by
         lastTank: Region(1),
         statBtn: Region(2),
@@ -240,6 +241,7 @@ const global = {
         classTreeZoomOut: Region(2),
         classTreeZoomIn: Region(2),
         classTreeClose: Region(1),
+        classTreeAll: Region(1),
 
         dailyTankUpgrade: Clickable(),
         dailyTankAd: Clickable(),

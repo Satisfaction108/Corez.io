@@ -2,6 +2,7 @@
 'use strict';
 
 const autoStats = require('./autoStats.js');
+const tier5 = require('./tier5.js');
 
 const ON = process.env.ROYALE_BUILD_BUTTONS !== '0';
 const MODES = ['build', 'tank', 'stats', 'random'];
@@ -105,6 +106,9 @@ function youFields(socket, body) {
     if (!ON || !l) return null;
     const out = {};
     if (l.def && l.name) out.lt = l.name;
+    // a Tier 5 build comes back as its Tier 4 parent until this life is 2x (tier5.js)
+    const g = l.def ? tier5.gateDef(body || { socket }, l.def) : null;
+    if (g && g.gated) { const p = cls(g.def); if (p) { out.lt = String(p.LABEL || out.lt); out.ltg = Math.round(tier5.T5_GROWTH * 100); } }
     if (sum(l.raw)) out.ls = 1;
     if (l.def && body && body.defs && body.defs.length === 1) {
         const cur = cls(body.defs[0]);
@@ -126,7 +130,7 @@ function stepTo(body, c) {
         const u = ups[i];
         if (!u || u.branch !== 0 || !u.class || u.class.length !== 1 || u.redefineAll) continue;
         if (cls(u.class[0]) !== c) continue;
-        if (body.skill.level < u.level) return false;
+        if (!tier5.open(body, u)) return false;
         const before = body.defs && body.defs[0];
         body.upgrade(i, 0);
         return cls(body.defs && body.defs[0]) === c && before !== body.defs[0];
@@ -198,7 +202,7 @@ function applyStats(body, l) {
 function applyRandom(body, rand = Math.random) {
     let moved = false;
     for (let d = 0; d < MAX_DEPTH; d++) {
-        const ups = (body.upgrades || []).filter((u) => u && u.branch === 0 && u.class && u.class.length === 1 && !u.redefineAll && body.skill.level >= u.level);
+        const ups = (body.upgrades || []).filter((u) => u && u.branch === 0 && u.class && u.class.length === 1 && !u.redefineAll && tier5.open(body, u));
         if (!ups.length) break;
         const u = ups[Math.floor(rand() * ups.length) % ups.length];
         if (!stepTo(body, cls(u.class[0]))) break;
@@ -206,7 +210,7 @@ function applyRandom(body, rand = Math.random) {
     }
     const sk = body.skill;
     if ((sk.points | 0) > 0) {
-        const rammer = !(body.guns && (typeof body.guns.size === 'number' ? body.guns.size : body.guns.length));
+        const rammer = !(body.guns && (typeof body.guns.size === 'number' ? body.guns.size : body.guns.length)) || !!(body.settings && body.settings.reloadToAcceleration);
         setRaw(body, randomFit(sk.raw, sk.points, sk.caps, rammer, rand));
         moved = true;
     }
@@ -254,7 +258,8 @@ function onSpawn(socket, body) {
         const base = new Array((sk.raw || []).length).fill(0);
         const fit = fitOnTop(base, l.raw || [], pool, sk.caps);
         setRaw(body, fit);
-        try { body.sendMessage("Back in your " + (body.label || "tank") + " with the same stats."); } catch { /* */ }
+        const short = tier5.tierOf(l.def) === 5 && !tier5.has(body);
+        try { body.sendMessage(short ? "Back in your " + (body.label || "tank") + ". Grow to " + tier5.T5_GROWTH + "x this life to unlock Tier 5." : "Back in your " + (body.label || "tank") + " with the same stats."); } catch { /* */ }
         return true;
     } catch (e) {
         console.error('[RB] spawn', e && e.message);

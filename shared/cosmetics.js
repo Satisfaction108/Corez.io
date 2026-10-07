@@ -29,22 +29,12 @@
 //   glint  a highlight rides along with the scroll (legendary)
 //   glyph  suffix glyph drawn after the name (legendary), `glyphColor`
 //
-// Skin render params (item.skin). Owner rule (Oct 6 2026): a skin never
-// changes the colour, only adds body effects. Every skin keeps the tank's
-// own team colour and lays decorations over the hull in shades of it (a
-// darker and a lighter tone, a pale highlight) with dark ink outlines, in
-// the game's flat style: rings, rims, studs, spokes, stripes, gems, a
-// centre emblem. So the params carry no colours at all (validated below).
-// Barrels and turrets stay as they are.
+// Skin render params (item.skin)
 //   pattern   the design (public/client/account/cosmetics.js PAINT)
 //   seed      deterministic seed for the little randomness some designs use
 //   scale     cell size as a fraction of the hull radius (grid designs)
 //   angle / rivets / arms   per-design shape knobs
-//   emissive  null, or {kind, speed (cycles per second)}, a light tint of
-//             the team colour: pulse | flash | spiral | shift are glows (No
-//             Glow drops them); twinkle sparkles; spin turns the design;
-//             spiral turns it backwards with a breathing glow; shimmer is a
-//             light sweep every `every` seconds. Fewer Effects freezes them.
+// emissive null, or {kind, speed (cycles per second)}
 //
 // Sidekicks (cat 'sidekick', nid 201..299): a tiny arras tank with a smiley
 // face that follows its owner around a raid (server/game/terrain/sidekicks.js,
@@ -104,6 +94,30 @@
     function ns(nid, id, name, rarity, priceDust, style, extra) {
         return Object.assign({ nid, id, cat: 'nameStyle', name, rarity, price: Math.round(priceDust * MILLI), style }, extra || {});
     }
+    // Tank skin pattern colours: [main, alternate]
+    const SKIN_SWATCHES = Object.freeze({
+        gold:     Object.freeze(['#ffc665', '#b47a26']),
+        orange:   Object.freeze(['#ef8a4c', '#a8502a']),
+        red:      Object.freeze(['#f0505f', '#9e2f3d']),
+        lava:     Object.freeze(['#f26a3a', '#ffc665']),
+        copper:   Object.freeze(['#e0965a', '#9a5a2e']),
+        sapphire: Object.freeze(['#3b7ce0', '#a9cdf7']),
+        ice:      Object.freeze(['#cdeeff', '#4f97c8']),
+        teal:     Object.freeze(['#6ecedc', '#2f8f9c']),
+        emerald:  Object.freeze(['#4fc08a', '#1f7a4c']),
+        purple:   Object.freeze(['#9673e8', '#5d3fae']),
+        amethyst: Object.freeze(['#b46ee0', '#6a3496']),
+        void:     Object.freeze(['#3d2a5c', '#8e6ad6']),
+        pink:     Object.freeze(['#ef99c3', '#b0457f']),
+        white:    Object.freeze(['#f2f2f2', '#8f8c9a']),
+        ghost:    Object.freeze(['#e2dcf5', '#7a6fa0']),
+        steel:    Object.freeze(['#c4c6d0', '#6f7180']),
+        slate:    Object.freeze(['#4a4658', '#8a86a0']),
+        stone:    Object.freeze(['#9a93ab', '#5c566b']),
+        ink:      Object.freeze(['#26232e', '#5a5666']),
+    });
+    const SKIN_NEAR = 110;    // colorDistance under which a swatch swaps shade
+
     function sk(nid, id, name, rarity, priceDust, skin) {
         return { nid, id, cat: 'skin', name, rarity, price: Math.round(priceDust * MILLI), skin };
     }
@@ -254,89 +268,89 @@
 
         // ---- skins (nid 101..199) ----
         sk(101, 'sk_hazard_stripes', 'Hazard Stripes', 'common', 35,
-            { pattern: 'stripes', seed: 1101, scale: 0.3, angle: 45, emissive: null }),
+            { pattern: 'stripes', seed: 1101, colors: ['gold', 'ink'], scale: 0.3, angle: 45, emissive: null }),
         sk(102, 'sk_riveted_plate', 'Riveted Plate', 'common', 35,
-            { pattern: 'rim', seed: 1102, rivets: 8, emissive: null }),
+            { pattern: 'rim', seed: 1102, colors: ['steel'], rivets: 8, emissive: null }),
         sk(113, 'sk_racer', 'Racer', 'common', 30,
-            { pattern: 'racer', seed: 1113, emissive: null }),
+            { pattern: 'racer', seed: 1113, colors: ['white'], emissive: null }),
         sk(114, 'sk_split', 'Split', 'common', 30,
-            { pattern: 'halves', seed: 1114, emissive: null }),
+            { pattern: 'halves', seed: 1114, colors: ['ink', 'steel'], emissive: null }),
         sk(115, 'sk_bullseye', 'Bullseye', 'common', 35,
-            { pattern: 'rings', seed: 1115, emissive: null }),
+            { pattern: 'rings', seed: 1115, colors: ['red', 'white'], emissive: null }),
         sk(116, 'sk_polka', 'Polka', 'common', 30,
-            { pattern: 'dots', seed: 1116, scale: 0.56, emissive: null }),
+            { pattern: 'dots', seed: 1116, colors: ['white'], scale: 0.56, emissive: null }),
         sk(117, 'sk_checkers', 'Checkers', 'common', 35,
-            { pattern: 'checker', seed: 1117, scale: 0.5, emissive: null }),
+            { pattern: 'checker', seed: 1117, colors: ['white', 'ink'], scale: 0.5, emissive: null }),
         sk(118, 'sk_pip', 'Pip', 'common', 30,
-            { pattern: 'core', seed: 1118, emissive: null }),
+            { pattern: 'core', seed: 1118, colors: ['gold'], emissive: null }),
         sk(119, 'sk_sash', 'Sash', 'common', 30,
-            { pattern: 'sash', seed: 1119, angle: -35, emissive: null }),
+            { pattern: 'sash', seed: 1119, colors: ['red', 'gold'], angle: -35, emissive: null }),
 
         sk(103, 'sk_cave_camo', 'Cave Camo', 'uncommon', 65,
-            { pattern: 'camo', seed: 1103, emissive: null }),
+            { pattern: 'camo', seed: 1103, colors: ['stone', 'ink'], emissive: null }),
         sk(104, 'sk_strata', 'Strata', 'uncommon', 65,
-            { pattern: 'strata', seed: 1104, emissive: null }),
+            { pattern: 'strata', seed: 1104, colors: ['copper', 'gold'], emissive: null }),
         sk(105, 'sk_hex_armor', 'Hex Armor', 'uncommon', 65,
-            { pattern: 'hex', seed: 1105, scale: 0.36, emissive: null }),
+            { pattern: 'hex', seed: 1105, colors: ['steel'], scale: 0.36, emissive: null }),
         sk(120, 'sk_chevron', 'Chevron', 'uncommon', 60,
-            { pattern: 'chevrons', seed: 1120, emissive: null }),
+            { pattern: 'chevrons', seed: 1120, colors: ['orange'], emissive: null }),
         sk(121, 'sk_copper_trim', 'Copper Trim', 'uncommon', 70,
-            { pattern: 'trim', seed: 1121, rivets: 6, emissive: null }),
+            { pattern: 'trim', seed: 1121, colors: ['copper'], rivets: 6, emissive: null }),
         sk(122, 'sk_sunburst', 'Sunburst', 'uncommon', 70,
-            { pattern: 'sunburst', seed: 1122, emissive: null }),
+            { pattern: 'sunburst', seed: 1122, colors: ['gold', 'orange'], emissive: null }),
         sk(123, 'sk_quarters', 'Quarters', 'uncommon', 60,
-            { pattern: 'quarters', seed: 1123, emissive: null }),
+            { pattern: 'quarters', seed: 1123, colors: ['white'], emissive: null }),
         sk(124, 'sk_pinwheel', 'Pinwheel', 'uncommon', 70,
-            { pattern: 'pinwheel', seed: 1124, emissive: null }),
+            { pattern: 'pinwheel', seed: 1124, colors: ['pink', 'teal', 'white'], emissive: null }),
         sk(125, 'sk_tiger', 'Tiger', 'uncommon', 75,
-            { pattern: 'tiger', seed: 1125, emissive: null }),
+            { pattern: 'tiger', seed: 1125, colors: ['orange', 'ink'], emissive: null }),
 
         sk(106, 'sk_drill_circuit', 'Drill Circuit', 'rare', 125,
-            { pattern: 'circuit', seed: 1106, emissive: null }),
+            { pattern: 'circuit', seed: 1106, colors: ['teal', 'gold', 'ink'], emissive: null }),
         sk(107, 'sk_crystal_facets', 'Crystal Facets', 'rare', 125,
-            { pattern: 'facets', seed: 1107, emissive: null }),
+            { pattern: 'facets', seed: 1107, colors: ['ice'], emissive: null }),
         sk(108, 'sk_gold_vein', 'Gold Vein', 'rare', 125,
-            { pattern: 'vein', seed: 1108, emissive: null }),
+            { pattern: 'vein', seed: 1108, colors: ['gold'], emissive: null }),
         sk(126, 'sk_sapphire', 'Sapphire', 'rare', 130,
-            { pattern: 'gem', seed: 1126, emissive: null }),
+            { pattern: 'gem', seed: 1126, colors: ['sapphire'], emissive: null }),
         sk(127, 'sk_amethyst', 'Amethyst', 'rare', 130,
-            { pattern: 'geode', seed: 1127, emissive: null }),
+            { pattern: 'geode', seed: 1127, colors: ['amethyst'], emissive: null }),
         sk(128, 'sk_storm_front', 'Storm Front', 'rare', 120,
-            { pattern: 'bolt', seed: 1128, emissive: null }),
+            { pattern: 'bolt', seed: 1128, colors: ['gold', 'slate'], emissive: null }),
         sk(129, 'sk_cyclone', 'Cyclone', 'rare', 120,
-            { pattern: 'spiral', seed: 1129, arms: 2, emissive: null }),
+            { pattern: 'spiral', seed: 1129, colors: ['teal', 'white'], arms: 2, emissive: null }),
         sk(130, 'sk_crosshair', 'Crosshair', 'rare', 110,
-            { pattern: 'crosshair', seed: 1130, emissive: null }),
+            { pattern: 'crosshair', seed: 1130, colors: ['red', 'white'], emissive: null }),
         sk(131, 'sk_warden', 'Warden', 'rare', 140,
-            { pattern: 'vault', seed: 1131, emissive: null }),
+            { pattern: 'vault', seed: 1131, colors: ['steel', 'gold'], emissive: null }),
 
         sk(109, 'sk_lava_cracks', 'Lava Cracks', 'epic', 250,
-            { pattern: 'cracks', seed: 1109, emissive: { kind: 'pulse', speed: 0.6 } }),
+            { pattern: 'cracks', seed: 1109, colors: ['lava', 'gold'], emissive: { kind: 'pulse', speed: 0.6 } }),
         sk(110, 'sk_permafrost', 'Permafrost', 'epic', 250,
-            { pattern: 'frost', seed: 1110, emissive: { kind: 'twinkle', speed: 0.9 } }),
+            { pattern: 'frost', seed: 1110, colors: ['ice', 'white'], emissive: { kind: 'twinkle', speed: 0.9 } }),
         sk(132, 'sk_drillhead', 'Drillhead', 'epic', 240,
-            { pattern: 'drill', seed: 1132, emissive: { kind: 'spin', speed: 0.25 } }),
+            { pattern: 'drill', seed: 1132, colors: ['steel', 'gold'], emissive: { kind: 'spin', speed: 0.25 } }),
         sk(133, 'sk_geode', 'Geode', 'epic', 250,
-            { pattern: 'gear', seed: 1133, emissive: { kind: 'twinkle', speed: 0.8 } }),
+            { pattern: 'gear', seed: 1133, colors: ['copper', 'teal'], emissive: { kind: 'twinkle', speed: 0.8 } }),
         sk(134, 'sk_wraith', 'Wraith', 'epic', 240,
-            { pattern: 'shards', seed: 1134, emissive: { kind: 'pulse', speed: 0.5 } }),
+            { pattern: 'shards', seed: 1134, colors: ['ghost', 'purple'], emissive: { kind: 'pulse', speed: 0.5 } }),
         sk(135, 'sk_thunderhead', 'Thunderhead', 'epic', 260,
-            { pattern: 'storm', seed: 1135, emissive: { kind: 'flash', speed: 0.3 } }),
+            { pattern: 'storm', seed: 1135, colors: ['slate', 'gold'], emissive: { kind: 'flash', speed: 0.3 } }),
         sk(136, 'sk_gilded', 'Gilded', 'epic', 260,
-            { pattern: 'gilded', seed: 1136, emissive: { kind: 'shimmer', every: 3 } }),
+            { pattern: 'gilded', seed: 1136, colors: ['gold', 'white'], emissive: { kind: 'shimmer', every: 3 } }),
 
         sk(111, 'sk_emerald_heart', 'Emerald Heart', 'legendary', 500,
-            { pattern: 'heart', seed: 1111, emissive: { kind: 'shimmer', every: 2.6 } }),
+            { pattern: 'heart', seed: 1111, colors: ['emerald', 'gold'], emissive: { kind: 'shimmer', every: 2.6 } }),
         sk(112, 'sk_molten_core', 'Molten Core', 'legendary', 500,
-            { pattern: 'molten', seed: 1112, arms: 3, emissive: { kind: 'spiral', speed: 0.4 } }),
+            { pattern: 'molten', seed: 1112, colors: ['lava', 'gold'], arms: 3, emissive: { kind: 'spiral', speed: 0.4 } }),
         sk(137, 'sk_aurora', 'Aurora', 'legendary', 480,
-            { pattern: 'aurora', seed: 1137, emissive: { kind: 'shift', speed: 0.12 } }),
+            { pattern: 'aurora', seed: 1137, colors: ['teal', 'emerald', 'purple'], emissive: { kind: 'shift', speed: 0.12 } }),
         sk(138, 'sk_prism', 'Prism', 'legendary', 500,
-            { pattern: 'prism', seed: 1138, emissive: { kind: 'spin', speed: 0.06 } }),
+            { pattern: 'prism', seed: 1138, colors: ['pink', 'gold', 'teal'], emissive: { kind: 'spin', speed: 0.06 } }),
         sk(139, 'sk_supernova', 'Supernova', 'legendary', 480,
-            { pattern: 'nova', seed: 1139, emissive: { kind: 'pulse', speed: 0.45 } }),
+            { pattern: 'nova', seed: 1139, colors: ['gold', 'orange'], emissive: { kind: 'pulse', speed: 0.45 } }),
         sk(140, 'sk_void', 'Void', 'legendary', 450,
-            { pattern: 'void', seed: 1140, emissive: { kind: 'pulse', speed: 0.35 } }),
+            { pattern: 'void', seed: 1140, colors: ['void', 'amethyst', 'ghost'], emissive: { kind: 'pulse', speed: 0.35 } }),
 
         // ---- sidekicks (nid 201..299): plain arras tanks, one smiley each ----
         sd(201, BASIC_SIDEKICK_ID, 'Buddy', 'common', 20,
@@ -439,8 +453,10 @@
                 if (!(it.nid >= 1 && it.nid <= 99) || !it.style || !Array.isArray(it.style.stops) || !it.style.stops.length) throw new Error(where + ' bad name style');
             } else if (it.cat === 'skin') {
                 if (!(it.nid >= 101 && it.nid <= 199) || !it.skin || !it.skin.pattern) throw new Error(where + ' bad skin');
-                // skins never recolour: no colour anywhere in the params
-                if (/#[0-9a-f]{3,6}\b|accent|color/i.test(JSON.stringify(it.skin))) throw new Error(where + ' a skin carries a colour');
+                // the body keeps the team colour: no hex
+                if (/#[0-9a-f]{3,6}\b|accent|tint|body|fill|recolou?r/i.test(JSON.stringify(it.skin))) throw new Error(where + ' a skin recolours the body');
+                const cs = it.skin.colors;
+                if (!Array.isArray(cs) || !cs.length || cs.length > 3 || cs.some(k => !Object.prototype.hasOwnProperty.call(SKIN_SWATCHES, k))) throw new Error(where + ' bad skin colours');
             } else if (it.cat === 'sidekick') {
                 const k = it.kick;
                 if (!(it.nid >= 201 && it.nid <= 299) || !k || !BODIES[k.body] || !/^#[0-9a-f]{6}$/.test(k.col) || !Array.isArray(k.guns) || !k.move || !it.blurb) throw new Error(where + ' bad sidekick');
@@ -523,6 +539,19 @@
         return Math.sqrt((2 + r / 256) * dr * dr + 4 * dg * dg + (2 + (255 - r) / 256) * db * db);
     }
 
+    // A skin's pattern colours for a hull of this team colour (hex list)
+    function skinColors(item, teamHex) {
+        const cs = item && item.skin && item.skin.colors;
+        if (!cs) return [];
+        return cs.map(k => {
+            const sw = SKIN_SWATCHES[k];
+            if (!sw) return '#f2f2f2';
+            const dm = colorDistance(sw[0], teamHex);
+            if (!(dm < SKIN_NEAR)) return sw[0];
+            return colorDistance(sw[1], teamHex) > dm ? sw[1] : sw[0];
+        });
+    }
+
     function priceDust(item) { return item ? item.price / MILLI : 0; }
 
     // ---- sidekicks ----
@@ -569,6 +598,7 @@
         CATALOG_VERSION, MILLI, RARITIES, RARITY_ORDER, CATS, TANK_CATS, SIDEKICK_CATS, CUSTOM_COLOR_ID, INVITE_STYLE_ID, BASIC_SIDEKICK_ID, ITEMS,
         MIN_LUMINANCE, FLOOR_COLOR, SIDEKICK_COLORS, SIDEKICK_NAME_MAX, RETIRED, SIDEKICK_DIG_LINE, SIDEKICK_DIG_BANDS,
         byId, byNid, isCat, parseHex, luminance, contrast, normalizeColor, isColorAllowed, colorDistance, priceDust,
+        SKIN_SWATCHES, SKIN_NEAR, skinColors,
         isSidekickColor, cleanSidekickName, sidekickDigShare,
     });
 });

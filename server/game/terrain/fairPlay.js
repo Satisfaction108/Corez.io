@@ -769,7 +769,9 @@ function restoreBuild(socket, body, raid) {
         if (b.defs && b.defs.length) {
             // the fresh body is the spawn class: clear its menu first, or the spawn class's
             body.upgrades = [];
-            body.define(b.defs.length === 1 ? b.defs[0] : b.defs);
+            // a Tier 5 tank comes back as its Tier 4 parent until this life is 2x
+            const d0 = b.defs.length === 1 ? require('./tier5.js').gateDef(body, b.defs[0]).def : null;
+            body.define(b.defs.length === 1 ? d0 : b.defs);
         }
         const sk = body.skill;
         const already = (sk.raw || []).reduce((a, v) => a + (v | 0), 0);

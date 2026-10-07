@@ -446,7 +446,7 @@ const digLine = () => (typeof window !== 'undefined' && window.DWCosmetics && wi
 function describe(it) {
     if (it.blurb) return it.cat === 'sidekick' ? it.blurb + ' ' + digLine() : it.blurb;
     if (it.id === cos.CUSTOM_ID) return 'Any colour you want for your name. Buy once, change it whenever.';
-    if (it.cat === 'skin') return isAnimated(it) ? 'Glows and moves. Goes on your tank.' : 'A pattern for your tank, in your team colour.';
+    if (it.cat === 'skin') return isAnimated(it) ? 'A moving pattern for your tank. Your team colour stays.' : 'A pattern for your tank. Your team colour stays.';
     const s = it.style || {};
     if (s.kind === 'prism') return 'Rainbow name that sparkles.';
     if (s.kind === 'scroll') return s.glint ? 'Name with colours that flow and sparkle.' : 'Name with colours that flow.';

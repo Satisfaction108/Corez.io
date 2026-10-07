@@ -3822,8 +3822,8 @@ class io_digWarsGoals extends IO {
             fire: weapon.fire,
             // main must stay false: auto-turret IOs treat input.main as "the
             // pilot is aiming, follow their cursor", and bots fire nearly
-            // constantly, so main:true would disable their autos.
-            main: false,
+            // constantly, so main:true would disable their autos
+            main: !!(body.botDroneSteer && weapon.fire),
             alt: false,
         };
     }

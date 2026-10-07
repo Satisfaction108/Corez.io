@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>All tanks - Corez.io</title>
+    <meta name="description" content="Every tank in Corez.io as one upgrade tree: what each tank upgrades from and into, all five tiers.">
+    <link rel="canonical" href="https://corez.io/tanks">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Corez.io">
+    <meta property="og:title" content="All tanks - Corez.io">
+    <meta property="og:description" content="Every tank in Corez.io as one upgrade tree.">
+    <meta property="og:url" content="https://corez.io/tanks">
+    <meta property="og:image" content="https://corez.io/img/og.png">
+    <link rel="icon" type="image/svg+xml" href="/img/logo.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap">
+    <link rel="stylesheet" href="/font.css">
+    <style>
+        :root { --bg: #f6f3ee; --card: #ffffff; --ink: #1b1510; --soft: #6b6259; --line: #e1d9cd; --lip: #cfc4b4; --well: #ece6dc; --gold: #c98a12; --tile: #f3eee6; --tileLip: #d6ccbd; --wire: #b6aa99; }
+        :root[data-theme="dark"] { --bg: #14121a; --card: #221d29; --ink: #f1ece4; --soft: #a597b0; --line: #342d3e; --lip: #0e0b12; --well: #1a1620; --gold: #f2b83c; --tile: #2b2533; --tileLip: #120e15; --wire: #4c4358; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 400 15px/1.45 Rubik, system-ui, sans-serif; }
+        body { display: flex; flex-direction: column; overflow: hidden; }
+        a { color: inherit; }
+        header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 2px solid var(--line); background: var(--card); flex-wrap: wrap; }
+        header .home { display: flex; align-items: center; gap: 8px; text-decoration: none; font: 400 22px "Lilita One", Rubik, sans-serif; }
+        header .home img { width: 30px; height: 30px; }
+        h1 { margin: 0; font: 400 22px "Lilita One", Rubik, sans-serif; color: var(--gold); }
+        .count { color: var(--soft); font-size: 13px; }
+        .tools { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+        button, .btn { font: 400 16px "Lilita One", Rubik, sans-serif; color: var(--ink); background: var(--tile); border: 2px solid var(--lip); border-bottom-width: 4px; border-radius: 10px; padding: 3px 11px; cursor: pointer; min-width: 36px; }
+        button:active { border-bottom-width: 2px; transform: translateY(2px); }
+        button.play { background: #4fcf5c; border-color: #2c8f37; color: #fff; text-decoration: none; }
+        .search { position: relative; }
+        .search input { font: 500 14px Rubik, system-ui, sans-serif; width: 180px; padding: 6px 10px; border-radius: 10px; border: 2px solid var(--lip); background: var(--well); color: var(--ink); outline: none; }
+        .search ul { position: absolute; z-index: 5; top: 100%; left: 0; right: 0; margin: 4px 0 0; padding: 4px; list-style: none; background: var(--card); border: 2px solid var(--lip); border-radius: 10px; }
+        .search li { padding: 4px 8px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+        .search li:hover, .search li.on { background: var(--well); }
+        .note { padding: 6px 16px; font-size: 13px; color: var(--soft); border-bottom: 2px solid var(--line); }
+        .note b { color: var(--gold); font-weight: 600; }
+        #stage { position: relative; flex: 1; min-height: 0; }
+        #c { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
+        #c.drag { cursor: grabbing; }
+        .zoom { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
+        .zoom button { width: 42px; height: 42px; padding: 0; font-size: 22px; }
+        #info { position: absolute; top: 12px; left: 12px; width: 300px; max-height: calc(100% - 24px); overflow: auto; background: var(--card); border: 2px solid var(--lip); border-bottom-width: 5px; border-radius: 14px; padding: 14px 16px; display: none; }
+        #info.open { display: block; }
+        #info .x { position: absolute; top: 8px; right: 8px; min-width: 32px; padding: 0 8px; }
+        #info .pic { width: 112px; height: 112px; margin: 0 auto 4px; display: block; background: var(--well); border-radius: 12px; }
+        #info h2 { margin: 2px 0 0; text-align: center; font: 400 26px "Lilita One", Rubik, sans-serif; }
+        #info .sub { text-align: center; color: var(--soft); margin-bottom: 8px; }
+        #info .t5 { background: var(--well); border-radius: 8px; padding: 6px 10px; font-size: 13px; margin: 6px 0; }
+        #info h3 { margin: 10px 0 4px; font: 400 16px "Lilita One", Rubik, sans-serif; color: var(--soft); }
+        .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .chip { display: flex; align-items: center; gap: 6px; font: 500 13px Rubik, system-ui, sans-serif; padding: 2px 10px 2px 2px; border-radius: 9px; border: 2px solid var(--lip); background: var(--tile); color: var(--ink); cursor: pointer; }
+        .chip i, .search i { width: 28px; height: 28px; display: inline-block; background-repeat: no-repeat; border-radius: 6px; flex: none; }
+        .none { color: var(--soft); font-size: 13px; }
+        @media (max-width: 640px) {
+            header { padding: 8px 12px; gap: 8px; }
+            .count { display: none; }
+            .tools { margin-left: 0; width: 100%; }
+            .search { flex: 1; }
+            .search input { width: 100%; }
+            #info { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 52%; }
+            .zoom { bottom: auto; top: 12px; }
+            .note { font-size: 12px; padding: 5px 12px; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <a class="home" href="/"><img src="/img/logo.svg" alt="">Corez.io</a>
+    <h1>All tanks</h1>
+    <span class="count" id="count"></span>
+    <div class="tools">
+        <div class="search"><input id="q" type="search" placeholder="Find a tank" autocomplete="off" aria-label="Find a tank"><ul id="hits" hidden></ul></div>
+        <button id="theme" type="button" aria-label="Switch light or dark">Dark</button>
+        <a class="btn play" href="/">Play</a>
+    </div>
+</header>
+<div class="note">Every tank starts as Basic and upgrades as you score. Drag to move, scroll or pinch to zoom, tap a tank to see where it leads. <b>Tier 5</b> opens in a raid once you grow to 2x in that life.</div>
+<div id="stage">
+    <canvas id="c" aria-label="The tank upgrade tree"></canvas>
+    <div class="zoom"><button id="zin" type="button" aria-label="Zoom in">+</button><button id="zout" type="button" aria-label="Zoom out">-</button><button id="fit" type="button" aria-label="Show the whole tree" style="font-size:14px">All</button></div>
+    <div id="info" role="dialog" aria-live="polite"></div>
+</div>
+<script type="module" src="/tanks/tanks.js"></script>
+</body>
+</html>
