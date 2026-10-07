@@ -209,4 +209,48 @@ function deadGuns(f, { valid = () => true, decos = null } = {}) {
     });
     return out;
 }
-module.exports = { symmetry, radialOrder, overlap, turrets, stubby, layoutSig, sameLayout, covers, boltOn, kinds, mainKind, hybrid, lineOK, converted, deadGuns, decoSig, hullR, kind, armed, tCenter, na };
+
+// ---- barrel grammar: a barrel's shape tells you what it throws (arras/diep)
+// bullets: straight (ASPECT 1); a spray gun wears the Machine Gun flare (ASPECT 1.4, mounted
+// at the hull edge, sticking out about its own width); a taper (Helix, Stalker) or a
+// Machine Gunner nozzle (ASPECT 4, width 4 or less) as today's tanks wear them.
+// drones: the short Overseer barrel (ASPECT 1.1 to 1.35, a stub out of the hull).
+// swarms: the Cruiser launcher (ASPECT below 1). traps: a short flared cap.
+const MG_ASP = [1.4, 1.6], DRONE_ASP = [1.1, 1.35];
+const r3 = x => Math.round(x * 1000) / 1000;
+const isSpray = (asp, W) => asp > 1 && !(asp >= 3.5 && W <= 4);
+const sprayReach = (Y, W, R) => Math.sqrt(Math.max(0, R * R - Y * Y)) + W;
+const sprayBase = (Y, W, R) => Math.min(8, Math.max(0, Math.sqrt(Math.max(0, R * R - (Math.abs(Y) + W / 2) ** 2)) - 0.7));
+// the look pass, on POSITION objects of bullet barrels (WIDTH never changes, so neither does balance)
+function sprayLook(P, R, pairY = false) {
+    if (!isSpray(P.ASPECT, P.WIDTH)) return P;
+    const asp = Math.min(MG_ASP[1], Math.max(MG_ASP[0], P.ASPECT));
+    let Y = P.Y;
+    // a side-by-side pair keeps its two mouths apart
+    if (pairY && Math.abs(Y) > 0.5 && Math.abs(Y) < P.WIDTH * asp / 2 + 0.3) Y = Math.sign(Y) * r3(P.WIDTH * asp / 2 + 0.3);
+    const reach = Math.max(P.X + P.LENGTH, r3(sprayReach(Y, P.WIDTH, R))), X = Math.max(P.X, r3(sprayBase(Y, P.WIDTH, R)));
+    return { ...P, ASPECT: asp, Y, X, LENGTH: r3(reach - X) };
+}
+// mismatches on a flattened tank (empty when every barrel reads right)
+function grammar(f) {
+    const R = hullR(f.shape), out = [];
+    f.guns.forEach((x, i) => {
+        if (!x.typed) return;
+        const k = kind(x), out1 = Math.hypot(x.X + x.L, x.Y) - R, why = [];
+        if (k === 'b' && /^bullet$|casing/i.test(x.type || '')) {
+            if (isSpray(x.asp, x.W)) {
+                if (x.asp < MG_ASP[0] - 1e-6 || x.asp > MG_ASP[1] + 1e-6) why.push('drone-style flare on a bullet gun');
+                else if (out1 < 0.8 * x.W) why.push('stubby flared bullet barrel (reads as a spawner)');
+            }
+        } else if (k === 'd' && /drone|sunchip|chip/i.test(x.type || '')) {
+            if (x.asp < DRONE_ASP[0] - 1e-6 || x.asp > DRONE_ASP[1] + 1e-6) why.push('drone gun not in the drone shape');
+        } else if (k === 's' && /swarm/i.test(x.type || '')) {
+            if (x.asp >= 1) why.push('swarm launcher flared outward');
+        } else if (k === 't' && /trap/i.test(x.type || '')) {
+            if (x.asp <= 1 || x.L > 6) why.push('trap launcher without a trap cap');
+        }
+        if (why.length) out.push(i + ':' + x.type + ' ' + why.join(', '));
+    });
+    return out;
+}
+module.exports = { symmetry, radialOrder, overlap, turrets, stubby, layoutSig, sameLayout, covers, boltOn, kinds, mainKind, hybrid, lineOK, converted, deadGuns, decoSig, hullR, kind, armed, tCenter, na, grammar, sprayLook, MG_ASP, DRONE_ASP };

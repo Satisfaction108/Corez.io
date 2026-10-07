@@ -82,9 +82,44 @@ const DECOS = new Set(); for (const k of oldKeys) for (const x of flatOld[k].gun
 const deadOf = f => N.deadGuns(f, { decos: DECOS, valid: x => typeof x.type === 'string' && !!Class[x.type] && (!B.isStock(x.type) || x.max > 0 || f.maxChildren > 0) });
 // published names and keys: a design that did not change keeps both (scripts/tanks/legacy.json)
 const crypto = require('crypto');
-const designHash = w => crypto.createHash('sha1').update(JSON.stringify([w.parent, w.guns, w.turrets, w.shape || 0, w.maxChildren || 0])).digest('hex').slice(0, 12);
+const rawHash = w => crypto.createHash('sha1').update(JSON.stringify([w.parent, w.guns, w.turrets, w.shape || 0, w.maxChildren || 0])).digest('hex').slice(0, 12);
+// size, offset, first angle. A ring sits near the rim (0.6 of the radius) with compact turrets so
+// the centre of the body (where a skin's emblem sits) stays visible; a single auto is centred, small.
+const MOUNT = { 1: [8, 0, 0], 2: [7, 6.2, 90], 3: [6.5, 6.2, 180], 4: [6, 6.3, 45], 5: [5.5, 6.5, 0], 6: [5, 6.6, 0] };
+const MOUNT_OLD = { 1: [10, 0], 2: [8, 5], 3: [7, 5.5], 4: [6.5, 6], 5: [6, 6.5], 6: [5.5, 6.8] };   // the first published rings
+// the barrel look pass (scripts/tanks/neat.js grammar): a barrel's shape tells you what it throws.
+// Bullet spray guns get the Machine Gun flare, swarm launchers the Cruiser's; WIDTH (projectile
+// size, so balance) never changes. A design that differs only in its look keeps its key and name.
+const tName = t => typeof t === 'string' ? t : Array.isArray(t) ? tName(t[0]) : null;
+function look(w) {
+    if (!w || !w.guns) return w;
+    const R = N.hullR(w.shape), guns = w.guns;
+    const out = guns.map(gn => {
+        const P = gn.POSITION, tn = gn.PROPERTIES && gn.PROPERTIES.SHOOT_SETTINGS ? tName(gn.PROPERTIES.TYPE) : null;
+        if (tn === 'bullet') {
+            const pair = guns.some(o => o !== gn && o.PROPERTIES && o.PROPERTIES.SHOOT_SETTINGS && Math.abs(N.na(o.POSITION.ANGLE - P.ANGLE)) < 1 && Math.abs(o.POSITION.Y + P.Y) < 0.3);
+            const Q = N.sprayLook(P, R, pair); return Q === P ? gn : { ...gn, POSITION: Q };
+        }
+        if (tn === 'swarm' && P.ASPECT < 1) {   // Cruiser: LENGTH 9 from X 5 (reach 14)
+            const reach = P.X + P.LENGTH, X = r3(5 * reach / 14);
+            return Math.abs(X - P.X) < 1e-6 ? gn : { ...gn, POSITION: { ...P, X, LENGTH: r3(reach - X) } };
+        }
+        return gn;
+    });
+    // body rings from the first published layout move to the rim (MOUNT)
+    let tur = w.turrets;
+    if (tur && tur.length) for (const m in MOUNT_OLD) {
+        const [S0, o0] = MOUNT_OLD[m], hit = tur.filter(t => t.POSITION.LAYER === 1 && Math.abs(t.POSITION.SIZE - S0) < 1e-6 && Math.abs(Math.hypot(t.POSITION.X, t.POSITION.Y) - o0) < 1e-3);
+        if (hit.length !== +m) continue;
+        tur = tur.map(t => { if (!hit.includes(t)) return t; const P = t.POSITION, k = o0 ? MOUNT[m][1] / o0 : 0; return { ...t, POSITION: { ...P, SIZE: MOUNT[m][0], X: r3(P.X * k), Y: r3(P.Y * k) } }; });
+    }
+    if (out.every((gn, i) => gn === guns[i]) && tur === w.turrets) return w;
+    return { ...w, guns: out, turrets: tur };
+}
+const designHash = w => rawHash(look(w));
 const LEG = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(path.join(__dirname, 'tanks', 'legacy.json.gz'))));
-const LEGACY = {}; for (const t of LEG.tanks) LEGACY[designHash(t.w)] = [t.key, t.label];
+const LEGACY = {}, RAW = {}; for (const t of LEG.tanks) { const h = designHash(t.w); LEGACY[h] = [t.key, t.label]; RAW[h] = rawHash(t.w); }
+const sanityHash = w => { const h = designHash(w); return RAW[h] || rawHash(w); };
 const legacyKeys = new Set(Object.values(LEGACY).map(v => v[0]));
 // duel sanity (scripts/tanks/sanity.js check): a damage factor per design, inside its band
 const SANITY = fs.existsSync(path.join(__dirname, 'tanks', 'duelSanity.json')) ? JSON.parse(fs.readFileSync(path.join(__dirname, 'tanks', 'duelSanity.json'), 'utf8')) : { k: {}, drop: [] };
@@ -156,7 +191,6 @@ const spawner = (o = {}, stats = [], max = 3) => ({ POSITION: pos(6, 11, { asp: 
 const thrusters = () => [gun(16, 8, { a: 153, d: 0.1 }, [g.basic, g.flankGuard, g.triAngle, g.thruster]), gun(16, 8, { a: -153, d: 0.1 }, [g.basic, g.flankGuard, g.triAngle, g.thruster]), gun(18, 8, { a: 180, d: 0.6 }, [g.basic, g.flankGuard, g.triAngle, g.thruster])];
 // the standard auto turret (grey base, short barrel), always sitting on the body
 const autoT = (size, x, a, arc = 360) => ({ POSITION: { SIZE: size, X: x, Y: 0, ANGLE: a, ARC: arc, LAYER: 1 }, TYPE: ['autoTurret', { CONTROLLERS: ['nearestDifferentMaster'], INDEPENDENT: true, COLOR: 'grey' }] });
-const MOUNT = { 1: [10, 0, 0], 2: [8, 5, 90], 3: [7, 5.5, 180], 4: [6.5, 6, 45], 5: [6, 6.5, 0], 6: [5.5, 6.8, 0] };   // size, offset, first angle
 const mountRing = (n, type = null) => { const [S, o, a0] = MOUNT[n]; return Array.from({ length: n }, (_, k) => { const t = normTur(autoT(S, o, na(a0 + 360 * k / n))); if (type) t.TYPE[0] = type; return t; }); };
 const hat = (name, size, a = 0) => ({ POSITION: { SIZE: size, X: 0, Y: 0, ANGLE: a, ARC: 360, LAYER: 0 }, TYPE: [name, { COLOR: 'black' }] });
 
@@ -535,18 +569,21 @@ let lastRej = null;
 const rej = r => { lastRej = r; rejects[r] = (rejects[r] || 0) + 1; const k = rejTag + ' ' + r; rejects[k] = (rejects[k] || 0) + 1; return null; };
 function evaluate(w, tier, branch, parents, rule, label = null, hand = false, key = null) {
     if (!w) return rej('rule');
+    w = look(w);
     const f = flatW(w);
     const pt = byKey[parents[0]] || null, pf = pt ? pt.f : null;
     // round bodies only
     if (f.shape && !(f.shape === 4 && SQUARE.has(parents[0]))) { if (hand) throw Error(label + ' body shape ' + f.shape); return rej('shape'); }
     // no dead barrels, ever
     if (deadOf(f).length) { if (hand) throw Error(label + ' has a barrel that fires nothing'); return rej('dead'); }
+    // every barrel reads as what it throws (scripts/tanks/neat.js grammar)
+    { const gm = N.grammar(f); if (gm.length) { if (hand) throw Error(label + ' barrel look: ' + gm[0]); return rej('look'); } }
     if (!hand) {
         // drone lines stay drone lines, trap lines stay trap lines
         if (parents.some(p => byKey[p] && !N.lineOK(f, byKey[p].f))) return rej('line');
         // one weapon kind turned into another (sides to traps, traps to guns): only on a mixed parent
         if (pf && N.converted(f, pf) && !N.hybrid(pf)) return rej('convert');
-        if ((SANITY.drop || []).includes(designHash(w))) return rej('duel');
+        if ((SANITY.drop || []).includes(sanityHash(w))) return rej('duel');
         const had = pf ? uglySet(pf) : new Set();
         const u = [...uglySet(f, pf ? stats(pf) : null)].find(r => !had.has(r)); if (u) return rej(u);
         const nf = neatFail(f, pt); if (nf) return rej(nf);
@@ -620,7 +657,7 @@ function child(parentKey, tier, b, rules, share = false) {
     // the design already exists one parent over: share it (a second parent)
     if (!t && share && lastDup && byKey[lastDup.key]) {
         const o = byKey[lastDup.key];
-        if (o.isNew && !o.hand && o.tier === tier && !o.parents.includes(parentKey) && o.parents.length < 3 && fitsUnder(o, parentKey)) { o.parents.push(parentKey); addChild(parentKey, tier); return o; }
+        if (o.isNew && !o.hand && o.rule !== 'legacy' && o.tier === tier && !o.parents.includes(parentKey) && o.parents.length < 3 && fitsUnder(o, parentKey)) { o.parents.push(parentKey); addChild(parentKey, tier); return o; }
     }
     return t;
 }
@@ -641,7 +678,8 @@ for (const b of BRANCHES) {
 function adopt(p, tier, min) {
     const P = byKey[p]; let best = null;
     for (const t of tanks) {
-        if (!t.isNew || t.hand || t.tier !== tier || t.parents.includes(p) || t.parents.length >= 3) continue;
+        // a published design keeps its parents (and so its balance target)
+        if (!t.isNew || t.hand || t.rule === 'legacy' || t.tier !== tier || t.parents.includes(p) || t.parents.length >= 3) continue;
         if (!t.branch || (P.isNew ? P.branch !== t.branch : !branchesOf(p).includes(t.branch) && t.branch !== P.branch)) continue;
         const c = contains(t.fp, P.fp); if (c >= min && (!best || c > best.c) && fitsUnder(t, p)) best = { t, c };
     }
@@ -682,7 +720,7 @@ for (let round = 0; round < 4 && shortT5.length; round++) { if (!prune()) break;
 fps.length = 0; for (const t of tanks) fps.push(t.fp);
 // a design that carries another tank's whole layout is listed under that tank too
 for (const t of tanks) {
-    if (!t.isNew || t.hand || t.tier < 4) continue;
+    if (!t.isNew || t.hand || t.rule === 'legacy' || t.tier < 4) continue;
     for (const o of tanks) {
         if (t.parents.length >= 3) break;
         if (o.tier !== t.tier - 1 || t.parents.includes(o.key) || kids(o.key, t.tier) >= CAP[t.tier]) continue;
@@ -761,7 +799,7 @@ for (const t of [...tanks].sort((a, b) => a.tier - b.tier)) {
     if (!isFinite(bal.s)) { console.warn('no offence:', t.key); continue; }
     // the duel pass nudges the damage factor (sanity.js check, kept inside its band)
     // relative to its primary parent: a parent's factor carries down to its children
-    const pk = t.parents[0], k = +((SANITY.k[designHash(t.w)] || 1) * (effK[pk] || 1)).toFixed(4);
+    const pk = t.parents[0], k = +((SANITY.k[sanityHash(t.w)] || 1) * (effK[pk] || 1)).toFixed(4);
     effK[t.key] = k;
     if (k !== 1) bal.s = +(bal.s * k).toFixed(4);
     t.bal = bal; t.duelK = k;

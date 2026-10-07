@@ -2243,6 +2243,11 @@ import * as upGrid from './upgradeGridLogic.js';
         else if (type == "bar") drawBarStroke(x - width / 2, y, width, color3 ? color3 : color.black, height);
     }
 
+    // Previews (upgrade tiles, /tanks atlas): the theme's grey barrels and turrets
+    // drawn light with a dark edge, so they read on any tile colour
+    let previewGrey = false;
+    const PREVIEW_GREY = "#b4b3bd", PREVIEW_GREY_EDGE = "#55535f";
+    window.dwPreviewGrey = (on) => { previewGrey = !!on; };
     const drawEntity = (() => {
         let drawPolyImgs = [],
         drawPoly3D = new Map(),
@@ -2831,11 +2836,14 @@ import * as upGrid from './upgradeGridLogic.js';
                     const gy = g.offset * sinGunAngle;
 
                     let gunColor = g.color == null ? color.grey : gameDraw.modifyColor(g.color, baseColor);
+                    const lightGun = previewGrey && gunColor === color.grey;
+                    if (lightGun) gunColor = PREVIEW_GREY;
                     const gunAlpha = g.alpha === undefined ? 1 : g.alpha;
                     let mixedColor = gameDraw.mixColors(gunColor, statusColor, blend);
                     global.gameUpdate && instance.invuln !== 0 && 100 > (Date.now() - instance.invuln) % 200 && ((mixedColor = gameDraw.mixColors(gunColor, gameDraw.getColor(6), 0.3)));
                     if (hitBlend > 0) mixedColor = gameDraw.mixColors(mixedColor, hitTint, hitBlend * 0.6);
                     gameDraw.setColor(context, mixedColor);
+                    if (lightGun) context.strokeStyle = PREVIEW_GREY_EDGE;
 
                     drawGun(
                         context,
@@ -2858,12 +2866,15 @@ import * as upGrid from './upgradeGridLogic.js';
                     context.lineWidth = initStrokeWidth * m.strokeWidth;
 
                     // bodyBase: the unmixed hull colour (skins are built from it)
-                    const bodyBase = gameDraw.modifyColor(instance.color, baseColor);
+                    let bodyBase = gameDraw.modifyColor(instance.color, baseColor);
+                    const lightBody = previewGrey && bodyBase === color.grey;
+                    if (lightBody) bodyBase = PREVIEW_GREY;
                     const invulnBlink = !!(global.gameUpdate && instance.invuln !== 0 && 100 > (Date.now() - instance.invuln) % 200);
                     let bodyColor = gameDraw.mixColors(bodyBase, statusColor, blend);
                     if (invulnBlink) bodyColor = gameDraw.mixColors(bodyBase, gameDraw.getColor(6), 0.3);
                     if (hitBlend > 0) bodyColor = gameDraw.mixColors(bodyColor, hitTint, hitBlend);
                     gameDraw.setColor(context, bodyColor);
+                    if (lightBody) context.strokeStyle = PREVIEW_GREY_EDGE;
 
                     const glow = m.glow;
                     const glowRadius = config.graphical.noGlow ? 0 : glow.radius;
@@ -3084,44 +3095,75 @@ import * as upGrid from './upgradeGridLogic.js';
         } else ctx[2].drawImage(bm.cv, x - bm.pad, y - bm.pad, w + bm.pad * 2, h + bm.pad * 2);
     }
     // state: 0 idle, 1 hover, 2 pressed. key: keycap label or false.
-    // A tile's tank at device pixels with a light rim
-    const tilePrev = { cv: null, halo: null };
+    // A tile's tank at device pixels with a light rim, drawn once per tank and
+    // tile size (fr: upGrid.tileFrame) and blitted after
     const TILE_RIM = "rgba(255,243,217,0.9)";
-    function drawTilePreview(picture, ex, ey, scale, axis, lineWidthMult, angle, k) {
+    const tilePrevCache = new Map();
+    let tilePrevHalo = null;
+    function tankMockOf(picture) {
+        const ids = String(picture.index).split("-").map(i => global.mockups && global.mockups[parseInt(i)]).filter(Boolean);
+        if (ids.length < 2) return ids[0] || null;
+        return { ...ids[0], guns: ids.flatMap(m => m.guns || []), turrets: ids.flatMap(m => m.turrets || []) };
+    }
+    const tileFrames = new Map();
+    function tileFrameOf(picture, len, height) {
+        const key = picture.index + "|" + len.toFixed(2) + "|" + height.toFixed(2);
+        let fr = tileFrames.get(key);
+        if (!fr) {
+            const m = tankMockOf(picture);
+            fr = upGrid.tileFrame(m || { shape: 0 }, len, height, (i) => global.mockups && global.mockups[i]);
+            fr.box = upGrid.silhouette(m || { shape: 0 }, fr.angle, (i) => global.mockups && global.mockups[i]);
+            if (tileFrames.size > 160) tileFrames.clear();
+            tileFrames.set(key, fr);
+        }
+        return fr;
+    }
+    function drawTilePreview(picture, ex, ey, fr, lineWidthMult, k) {
         if (crispOff) return false;
         const t = tfOf(ctx[2]);
         const a = Math.abs(t.a);
         if (!(a > 0) || t.b || t.c || Math.abs(Math.abs(t.d) - a) > 1e-6) return false;
-        const rim = Math.max(1.25, 1.7 * k) * a;                    // device px
-        const R = Math.ceil(scale * axis * 0.8 * a + rim + 3);
-        const S = R * 2;
-        if (S > 1024) return false;
-        if (!tilePrev.cv) { tilePrev.cv = document.createElement("canvas"); tilePrev.halo = document.createElement("canvas"); }
-        const cv = tilePrev.cv, hv = tilePrev.halo;
-        if (cv.width < S || cv.height < S) { cv.width = cv.height = hv.width = hv.height = Math.max(S, cv.width); }
-        const c = cv.getContext("2d"), h = hv.getContext("2d");
-        c.setTransform(1, 0, 0, 1, 0, 0);
-        c.clearRect(0, 0, S + 2, S + 2);
-        // the tank's centre on a whole device pixel
-        const dx = Math.round(ex * a), dy = Math.round(ey * a);  // tracked transforms carry no translation
-        c.setTransform(a, 0, 0, a, 0, 0);
-        c.lineCap = "round";
-        c.lineJoin = "round";
-        drawEntity(picture.color, R / a, R / a, picture, 1, 1, scale / picture.size, lineWidthMult, angle, true, c);
-        c.setTransform(1, 0, 0, 1, 0, 0);
-        h.setTransform(1, 0, 0, 1, 0, 0);
-        h.globalCompositeOperation = "copy";
-        h.drawImage(cv, 0, 0, S, S, 0, 0, S, S);
-        h.globalCompositeOperation = "source-in";
-        h.fillStyle = TILE_RIM;
-        h.fillRect(0, 0, S, S);
-        h.globalCompositeOperation = "source-over";
-        const g = ctx[2], ux = 1 / a, x0 = (dx - R) * ux, y0 = (dy - R) * ux, w = S * ux;
-        for (let i = 0; i < 8; i++) {
-            const an = i * Math.PI / 4;
-            g.drawImage(hv, 0, 0, S, S, x0 + Math.cos(an) * rim * ux, y0 + Math.sin(an) * rim * ux, w, w);
+        const key = picture.index + "|" + picture.color + "|" + fr.scale.toFixed(3) + "|" + lineWidthMult + "|" + a.toFixed(3);
+        let e = tilePrevCache.get(key);
+        if (!e) {
+            const rim = Math.max(1.25, 1.7 * k) * a;                // device px
+            const P = Math.ceil(rim + 4 * a + 3), sc = fr.scale * a, b = fr.box;
+            const W = Math.ceil((b.x1 - b.x0) * sc) + P * 2, H = Math.ceil((b.y1 - b.y0) * sc) + P * 2;
+            if (W > 1024 || H > 1024) return false;
+            const ox = Math.round(-b.x0 * sc) + P, oy = Math.round(-b.y0 * sc) + P;
+            const cv = document.createElement("canvas");
+            cv.width = W; cv.height = H;
+            if (!tilePrevHalo) tilePrevHalo = document.createElement("canvas");
+            const hv = tilePrevHalo;
+            if (hv.width < W || hv.height < H) { hv.width = Math.max(W, hv.width); hv.height = Math.max(H, hv.height); }
+            const tank = document.createElement("canvas");
+            tank.width = W; tank.height = H;
+            const c = tank.getContext("2d"), h = hv.getContext("2d"), o = cv.getContext("2d");
+            c.setTransform(a, 0, 0, a, 0, 0);
+            c.lineCap = "round";
+            c.lineJoin = "round";
+            previewGrey = true;
+            try { drawEntity(picture.color, ox / a, oy / a, picture, 1, 1, fr.scale / picture.size, lineWidthMult, fr.angle, true, c); }
+            finally { previewGrey = false; }
+            h.setTransform(1, 0, 0, 1, 0, 0);
+            h.clearRect(0, 0, hv.width, hv.height);
+            h.drawImage(tank, 0, 0);
+            h.globalCompositeOperation = "source-in";
+            h.fillStyle = TILE_RIM;
+            h.fillRect(0, 0, W, H);
+            h.globalCompositeOperation = "source-over";
+            for (let i = 0; i < 8; i++) {
+                const an = i * Math.PI / 4;
+                o.drawImage(hv, 0, 0, W, H, Math.cos(an) * rim, Math.sin(an) * rim, W, H);
+            }
+            o.drawImage(tank, 0, 0);
+            e = { cv, ox, oy };
+            if (tilePrevCache.size >= 64) tilePrevCache.delete(tilePrevCache.keys().next().value);
+            tilePrevCache.set(key, e);
         }
-        g.drawImage(cv, 0, 0, S, S, x0, y0, w, w);
+        // the tank's centre on a whole device pixel (tracked transforms carry no translation)
+        const ux = 1 / a, dx = Math.round(ex * a), dy = Math.round(ey * a);
+        ctx[2].drawImage(e.cv, (dx - e.ox) * ux, (dy - e.oy) * ux, e.cv.width * ux, e.cv.height * ux);
         return true;
     }
     // crisp: the choose grid's tiles: a bigger tank
@@ -3212,21 +3254,34 @@ import * as upGrid from './upgradeGridLogic.js';
         ctx[2].save();
         ctx[2].globalAlpha *= alpha;
         upgBlit(plate, x, y, len, height);
-        // the live tank, centred in the face above the name band
-        const box = crisp ? upGrid.tankBox(len, height) : null;
-        const scale = (crisp ? box.size : 0.55 * len) / position.axis;
-        const areaH = faceH - band;
-        let entityX = x + 0.5 * len, entityY = y + down + areaH * 0.5 + 1;
-        const xShift = position.middle.x * Math.cos(angle) - position.middle.y * Math.sin(angle),
-            yShift = position.middle.x * Math.sin(angle) + position.middle.y * Math.cos(angle);
-        entityX -= scale * xShift;
-        entityY -= scale * yShift;
-        if (!crisp || !drawTilePreview(picture, entityX, entityY, scale, position.axis, lineWidthMult, angle, k))
+        if (crisp) {
+            // the choose grid: the whole silhouette (barrels, turrets) framed above the
+            // name band at the arras tilt, front barrels to the upper right; still, cached
+            const fr = tileFrameOf(picture, len, height);
+            const ex = x + fr.x, ey = y + down + fr.y;
+            if (!drawTilePreview(picture, ex, ey, fr, lineWidthMult, k)) {
+                previewGrey = true;
+                try { drawEntity(picture.color, ex, ey, picture, 1, 1, fr.scale / picture.size, lineWidthMult, fr.angle, true, ctx[2]); }
+                finally { previewGrey = false; }
+            }
+        } else {
+            // the live tank, centred in the face above the name band
+            const scale = 0.55 * len / position.axis;
+            const areaH = faceH - band;
+            let entityX = x + 0.5 * len, entityY = y + down + areaH * 0.5 + 1;
+            const xShift = position.middle.x * Math.cos(angle) - position.middle.y * Math.sin(angle),
+                yShift = position.middle.x * Math.sin(angle) + position.middle.y * Math.cos(angle);
+            entityX -= scale * xShift;
+            entityY -= scale * yShift;
             drawEntity(picture.color, entityX, entityY, picture, 1, 1, scale / picture.size, lineWidthMult, angle, true, ctx[2]);
+        }
         ctx[2].globalAlpha = alpha;
         upgBlit(label, x, y, len, height);
         ctx[2].restore();
     }
+
+    // QA: one upgrade tile into any 2d context (tile previews, scripts/build-tanks.js checks)
+    window.dwUpgradeTile = (c, ...args) => { const o = ctx[2]; ctx[2] = c; try { drawUpgradeTile(...args); } finally { ctx[2] = o; } };
 
     // Dig Wars: the cavern floor. A seamless flat-fill tile (no gradients):
     // two-tone earth patches plus a few pebbles outlined like the walls.

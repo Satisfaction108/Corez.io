@@ -59,6 +59,74 @@ export function tankBox(len, height) {
     return { cx: len / 2, cy: area / 2 + k, size };
 }
 
+// ── a tank's whole silhouette (body, guns, turrets), as miscFiles/mockups.js sizes it ──
+// The preview's tilt, as arras draws it: the tank's front to the upper right.
+export const PREVIEW_TILT = -Math.PI / 4;
+const SIDES = 16;
+function extentOf(m, byIndex, x, y, ang, s, b, depth) {
+    if (!m || depth > 4) return;
+    const sh = m.shape;
+    const r = typeof sh === "number" && sh >= 3 && sh < SIDES ? s * ((+m.realSize || 1) / (+m.size || 1)) : s;
+    const n = typeof sh === "number" && sh >= 3 && sh < SIDES ? Math.floor(sh) : SIDES;
+    const off = typeof sh === "number" && n !== SIDES ? (sh % 1) * 2 * Math.PI : 0;
+    for (let i = 0; i < n; i++) {
+        const t = 2 * Math.PI / n * i + off + ang;
+        const px = x + Math.cos(t) * r, py = y + Math.sin(t) * r;
+        if (px < b.x0) b.x0 = px; if (px > b.x1) b.x1 = px; if (py < b.y0) b.y0 = py; if (py > b.y1) b.y1 = py;
+    }
+    for (const g of m.guns || []) {
+        const asp = +g.aspect || 1, w = +g.width || 0, len = +g.length || 0;
+        const wd = asp > 0 ? [w * asp / 2, w / 2] : [w / 2, -w * asp / 2];
+        const a = (+g.angle || 0) + ang, c = Math.cos(a), sn = Math.sin(a);
+        const o = +g.offset || 0, od = (+g.direction || 0) + a;
+        const ox = x + o * Math.cos(od) * s, oy = y + o * Math.sin(od) * s;
+        for (const [qx, qy] of [[0, wd[1]], [len, wd[0]], [len, -wd[0]], [0, -wd[1]]]) {
+            const px = ox + (qx * c - qy * sn) * s, py = oy + (qx * sn + qy * c) * s;
+            if (px < b.x0) b.x0 = px; if (px > b.x1) b.x1 = px; if (py < b.y0) b.y0 = py; if (py > b.y1) b.y1 = py;
+        }
+    }
+    for (const t of m.turrets || []) {
+        const f = +t.sizeFactor || 0;
+        if (!f) continue;
+        const a = ang + (+t.angle || 0), d = (+t.direction || 0) + a, o = (+t.offset || 0) * s;
+        // a turret entry carries its own guns; its nested turrets by index
+        const sub = (t.guns || t.turrets) ? t : byIndex ? byIndex(t.index) : null;
+        extentOf(sub || { shape: 0 }, byIndex, x + o * Math.cos(d), y + o * Math.sin(d), a, s * f, b, depth + 1);
+    }
+}
+// bbox in body radii around the tank's centre, turned by `angle`: { x0, y0, x1, y1 }
+export function silhouette(m, angle = 0, byIndex = null) {
+    const b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    extentOf(m, byIndex, 0, 0, angle, 1, b, 0);
+    if (!(b.x1 > b.x0)) return { x0: -1, y0: -1, x1: 1, y1: 1 };
+    return b;
+}
+// where the tank's barrels point (radians, 0 = its own front): the barrel tips summed;
+// a balanced spread (Octo, flank rings) keeps its own front
+export function frontAngle(m) {
+    let sx = 0, sy = 0, sum = 0;
+    for (const g of (m && m.guns) || []) {
+        const a = +g.angle || 0, o = +g.offset || 0, d = (+g.direction || 0) + a, len = +g.length || 0;
+        const tx = o * Math.cos(d) + len * Math.cos(a), ty = o * Math.sin(d) + len * Math.sin(a);
+        sx += tx; sy += ty; sum += Math.hypot(tx, ty);
+    }
+    return sum > 0 && Math.hypot(sx, sy) > 0.35 * sum ? Math.atan2(sy, sx) : 0;
+}
+// A preview's framing: the whole silhouette in a w x h box with `margin` px all round.
+// { angle, scale (px per body radius), x, y (the tank's centre from the box centre) }
+export function previewFrame(m, w, h, margin = 0, byIndex = null, maxBody = Infinity) {
+    const angle = PREVIEW_TILT - frontAngle(m);
+    const b = silhouette(m, angle, byIndex);
+    const scale = Math.max(0.1, Math.min((w - 2 * margin) / (b.x1 - b.x0), (h - 2 * margin) / (b.y1 - b.y0), maxBody));
+    return { angle, scale, x: -scale * (b.x0 + b.x1) / 2, y: -scale * (b.y0 + b.y1) / 2 };
+}
+// the choose grid's tank framing in tile units: the face above the name band, a small margin
+export function tileFrame(m, len, height, byIndex = null) {
+    const k = len / 100, faceH = height - TILE.lip * k, area = faceH - faceH * TILE.band;
+    const f = previewFrame(m, len, area, 10 * k, byIndex, 0.25 * len);   // the margin clears the outline and rim
+    return { angle: f.angle, scale: f.scale, x: len / 2 + f.x, y: area / 2 + k + f.y };
+}
+
 // "RAMS ROCK": a small chip hanging under the name band
 export function ramBadge(len, height, textW) {
     const k = len / 100;

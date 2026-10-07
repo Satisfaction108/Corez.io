@@ -50,6 +50,7 @@ if (process.argv[2] === '--dump') {
     const byParent = {}; for (const k in tier) for (const p of parents[k]) (byParent[p + ':' + tier[k]] = byParent[p + ':' + tier[k]] || []).push(k);
     for (const k in flat) if (k.startsWith('xp_')) {
         const f = flat[k];
+        tanks[k].look = N.grammar(f);
         tanks[k].dead = N.deadGuns(f, { decos, valid: x => typeof x.type === 'string' && !!Class[x.type] && (!B.isStock(x.type) || x.max > 0 || f.maxChildren > 0) }).length;
         tanks[k].line = parents[k].filter(p => !N.lineOK(f, flat[p])).map(p => p + ' ' + N.mainKind(flat[p]) + '>' + N.mainKind(f));
         tanks[k].conv = /^xp_g\d+$/.test(k) && N.converted(f, flat[parents[k][0]]) && !N.hybrid(flat[parents[k][0]]);
@@ -231,6 +232,15 @@ test('layouts: no duplicate barrel layouts, no turret-only upgrades', () => {
     for (const k of ['chorus', 'tripod']) assert.ok(!D.tanks.some(t => t.key === 'xp_' + k), k + ' is back');
     const lazy = D.tanks.filter(t => ON.tanks[t.key].lazy.length).map(t => t.label + ' < ' + ON.tanks[t.key].lazy.map(k => ON.tanks[k].label).join('/'));
     assert.deepEqual(lazy, [], lazy.length + ' lazy: ' + lazy.slice(0, 12).join(', '));
+});
+
+test('barrel grammar: a barrel looks like what it throws (spray guns flared like Machine Gun, drones short, swarms and traps as the originals)', () => {
+    const bad = D.tanks.filter(t => ON.tanks[t.key].look.length).map(t => t.label + ' [' + ON.tanks[t.key].look.join('; ') + ']');
+    assert.deepEqual(bad, [], bad.length + ' with a misleading barrel: ' + bad.slice(0, 12).join(', '));
+    // body auto rings sit near the rim, the centre stays clear (skins)
+    const ring = D.tanks.filter(t => { const T = (t.def.TURRETS || []).filter(x => x.POSITION.LAYER === 1 && Math.hypot(x.POSITION.X, x.POSITION.Y) > 1);
+        return T.length >= 2 && T.every(x => /autoTurret$/.test(x.TYPE[0])) && T.some(x => Math.hypot(x.POSITION.X, x.POSITION.Y) - x.POSITION.SIZE / 2 < 2.4); }).map(t => t.label);
+    assert.deepEqual(ring, [], ring.length + ' with an auto ring covering the centre: ' + ring.slice(0, 12).join(', '));
 });
 
 test('weapons: no dead barrels, drone and trap lines keep their weapon, no conversions, no sibling bolt-ons', () => {

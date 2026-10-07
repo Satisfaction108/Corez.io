@@ -108,7 +108,7 @@ function rendererHash() {
     const app = fs.readFileSync(path.join(PUBLIC, 'client', 'app.js'), 'utf8');
     const a = app.indexOf('const drawEntity = (() => {'), b = app.indexOf('window.dwDrawEntity = drawEntity;');
     const part = a >= 0 && b > a ? app.slice(a, b) : app;
-    return sha([part, ...['gameDraw.js', 'color.js', 'util.js'].map(f => fs.readFileSync(path.join(PUBLIC, 'client', f), 'utf8')), JSON.stringify(CELL), COLOR, 'rim1'].join('\n'));
+    return sha([part, ...['gameDraw.js', 'color.js', 'util.js', 'upgradeGridLogic.js'].map(f => fs.readFileSync(path.join(PUBLIC, 'client', f), 'utf8')), JSON.stringify(CELL), COLOR, 'rim1'].join('\n'));
 }
 
 // ---- layout --------------------------------------------------------------- Basic top
@@ -246,6 +246,7 @@ async function renderAtlas(list) {
             const { util } = await import('/client/util.js');
             const { gameDraw } = await import('/client/gameDraw.js');
             const { color: themes } = await import('/client/color.js');
+            const upGrid = await import('/client/upgradeGridLogic.js');
             const g = window.global, draw = window.dwDrawEntity;
             const had = gameDraw.color; gameDraw.color = themes.dark; gameDraw.colorCache = {};
             const saved = g.mockups; g.mockups = IN.mockups;
@@ -254,11 +255,14 @@ async function renderAtlas(list) {
             const s = sc.getContext('2d', { willReadFrequently: true });
             const out = {};
             for (const key of ['s', 'l']) { const cv = document.createElement('canvas'); cv.width = IN.COLS * IN.CELL[key]; cv.height = rows * IN.CELL[key]; out[key] = cv; }
-            const rot = -Math.PI / 4, r0 = 26, tmp = {}, rimC = {};
+            // the upgrade tiles' look: front barrels to the upper right, light grey barrels
+            window.dwPreviewGrey && window.dwPreviewGrey(true);
+            const r0 = 26, tmp = {}, rimC = {};
             for (const key of ['s', 'l']) { tmp[key] = document.createElement('canvas'); rimC[key] = document.createElement('canvas'); tmp[key].width = tmp[key].height = rimC[key].width = rimC[key].height = IN.CELL[key]; }
             for (const [cell, idx] of IN.list) {
                 const pic = util.getEntityImageFromMockup(String(idx), IN.COLOR);
                 pic.realSize = pic.size;
+                const rot = upGrid.previewFrame(IN.mockups[idx] || { shape: 0 }, 1, 1).angle;
                 s.setTransform(1, 0, 0, 1, 0, 0); s.clearRect(0, 0, W, W); s.lineCap = s.lineJoin = 'round';
                 draw(IN.COLOR, W / 2, W / 2, pic, 1, 1, r0 / pic.size, 1, rot, true, s);
                 const d = s.getImageData(0, 0, W, W).data;
@@ -281,8 +285,9 @@ async function renderAtlas(list) {
                     c.drawImage(tmp[key], cx, cy);
                 }
             }
+            window.dwPreviewGrey && window.dwPreviewGrey(false);
             g.mockups = saved; gameDraw.color = had; gameDraw.colorCache = {};
-            return { s: out.s.toDataURL('image/webp', 0.8), l: out.l.toDataURL('image/webp', 0.8) };
+            return { s: out.s.toDataURL('image/webp', 0.76), l: out.l.toDataURL('image/webp', 0.76) };
         })()`);
         ws.close();
         if (!res || !/^data:image\/webp/.test(res.s || '')) throw new Error('no WebP from Chrome');
