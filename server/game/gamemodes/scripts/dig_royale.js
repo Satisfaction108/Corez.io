@@ -181,6 +181,10 @@ let raidEndsAt = 0;
 let raidStats = new Map();
 let killFeed = [];
 let occupy = new Map();
+const mapScale = require('../../terrain/mapScale.js');
+// safe spawn on a big map: a clear-enough spot at most this many times the
+// wanted room from the nearest threat is preferred (see safeSpawnSpot)
+const ROOMY_MAX = 2;
 const PIT_RESERVE_MS = 20_000;
 const PIT_RESERVE_R = 260;
 let lockout = new Map();
@@ -1249,8 +1253,14 @@ function safeSpawnSpot(self, forBot, etaWant = 0) {
     const want = Math.min(FM.SPAWN_CLEAR, r * FM.SPAWN_CLEAR_STORM_FRAC);
     let pick = null;
     if (scored.length) {
-        let top = scored.filter(s => s.h.pit && s.m >= want).slice(0, 3);
-        if (!top.length) top = scored.filter(s => s.m >= want).slice(0, 3);
+        // On a map bigger than the 16-tile one (terrain/mapScale.js) the
+        // roomiest spot can be a long way from anyone, so clear enough means
+        // up to ROOMY_MAX x want when such spots exist: room to settle in,
+        // not a lonely corner of the disk.
+        const roomy = mapScale.lin() > 1 ? want * ROOMY_MAX : Infinity;
+        const near = scored.filter(s => s.m >= want && s.m <= roomy);
+        let top = (near.some(s => s.h.pit) ? near : scored).filter(s => s.h.pit && s.m >= want).slice(0, 3);
+        if (!top.length) top = (near.length ? near : scored).filter(s => s.m >= want).slice(0, 3);
         // (clearance can be negative next to a boss, so the tie band is |best|-based)
         if (!top.length) top = scored.filter(s => s.m >= scored[0].m - Math.abs(scored[0].m) * 0.05);
         if (!top.length) top = [scored[0]];
@@ -3352,6 +3362,8 @@ function wipeWall() {
     if (!tg || !tg.rocks) return;
     const t = now();
     let queued = 0;
+    // the cap grows with the map (terrain/mapScale.js): 900 on the 16-tile one
+    const cap = Math.round(900 * mapScale.area());
     tg._noRegrowZones = [];          // struts from the last raid are gone too
     for (const rock of tg.rocks.values()) {
         if (rock.alive || rock.growing) continue;
@@ -3360,7 +3372,7 @@ function wipeWall() {
         rock.noRegrowUntil = 0;
         try { tg.startRegrow(rock, t + (queued % 20) * 50, 0, { fast: true }); } catch { /* */ }
         queued++;
-        if (queued > 900) break;
+        if (queued > cap) break;
     }
 }
 

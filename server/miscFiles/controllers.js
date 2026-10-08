@@ -2609,6 +2609,32 @@ class io_digWarsGoals extends IO {
         return { x, y };
     }
 
+    royaleRoamPoint(now) {
+        const body = this.body;
+        let st = null;
+        try { st = require('../game/terrain/storm.js').snapshot(); } catch { return null; }
+        if (!st || !st.a || !(st.r > 0)) return null;
+        const tg = global.gameManager && global.gameManager.terrainGrid;
+        const mapR = ((tg && tg.circleRadius) || 3000) - 260;
+        let x, y;
+        if (ran.chance(0.4)) {
+            // somewhere in the circle this cycle closes to
+            const tr = Math.max(500, st.to || st.r * 0.5);
+            x = (st.tx || 0) + ran.gauss(0, tr * 0.6);
+            y = (st.ty || 0) + ran.gauss(0, tr * 0.6);
+        } else {
+            x = body.x + ran.gauss(0, 1500);
+            y = body.y + ran.gauss(0, 1500);
+        }
+        // inside the zone (with a margin) and on the map
+        const keep = Math.max(150, st.r - 300);
+        const dx = x - st.cx, dy = y - st.cy, d = Math.hypot(dx, dy);
+        if (d > keep) { x = st.cx + dx / d * keep * 0.9; y = st.cy + dy / d * keep * 0.9; }
+        const m = Math.hypot(x, y);
+        if (m > mapR) { x = x / m * mapR; y = y / m * mapR; }
+        return { ...this.safePoint(x, y), until: now + 16000 };
+    }
+
     explorePoint(now) {
         const body = this.body;
         // bot duo: roam where the partner is, not across the map from them
@@ -2625,6 +2651,15 @@ class io_digWarsGoals extends IO {
         const marker = body._botHelpMarker && body._botHelpMarker.expiresAt > now ? body._botHelpMarker : null;
         if (marker && this.distanceTo(marker) > 300)
             return { ...this.safePoint(marker.x, marker.y), until: now + 14000 };
+        // Dig Royale free roam: the map is big (20 tiles, terrain/mapScale.js)
+        // and a solo raid holds 5 tanks, so a roaming bot drifts the way the
+        // players do, toward where this storm closes, and never picks a spot
+        // out in the storm. That is what brings a small raid together. The
+        // rest of the time it goes about its old errands (bases, a long walk).
+        if (Config.dig_royale && !Config.tutorial && ran.chance(0.55)) {
+            const roam = this.royaleRoamPoint(now);
+            if (roam) return roam;
+        }
         const room = global.gameManager && global.gameManager.room;
         const halfWidth = (room?.width || 6300) / 2, halfHeight = (room?.height || 6300) / 2;
         const all = digWarsOutposts.getOutposts();

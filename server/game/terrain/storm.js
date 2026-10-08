@@ -67,6 +67,25 @@ function holdMs() { return CYCLE_MS - shrinkMs(); }
 const MIN_FRAC = 0.20;
 // the last cycle's hold closes from MIN_FRAC down to this
 const FINAL_FRAC = 0.07;
+// Both fractions are of the 16-tile map (mapScale.REF_R). On a bigger map the
+// hold and final circles keep that size in world units (670 and 235), so a
+// raid with a handful of players still ends up in the same small rings, and
+// the shrink is front-loaded (SHRINK_EASE) so the empty outer rim goes first
+// and mid-cycle the zone is about as big as it was on the old map. On the
+// reference map (and anything smaller) all of this is the old linear storm.
+const mapScale = require('./mapScale.js');
+// (mapScale reads the raid disk itself: a bare room with no disk, like a
+// test's 20000-unit room, is scale 1 and keeps the old storm)
+function minFrac() { return MIN_FRAC / mapScale.lin(); }
+function finalFrac() { return FINAL_FRAC / mapScale.lin(); }
+// shrink progress 0..1 at time share k: 1 - (1 - k)^p, p = 1 + 1.2 per unit of
+// extra map size (1.3 on the 20-tile map), capped at 1.4. The centre slides on
+// the same curve, so each moment's circle still sits inside the last one.
+const SHRINK_EASE_PER = 1.2, SHRINK_EASE_MAX = 1.4;
+function shrinkEase(k) {
+    const p = Math.min(SHRINK_EASE_MAX, 1 + SHRINK_EASE_PER * (mapScale.lin() - 1));
+    return p === 1 ? k : 1 - Math.pow(1 - k, p);
+}
 // Final-zone spawn lock: nobody (re)spawns in the last 45s of a cycle (end of
 // the hold); the dead spectate. Capped at 3/4 of the hold when a twist
 // changes the cycle. The raid's last cycle locks for FINAL_LOCK_MS.
@@ -145,7 +164,7 @@ function centerAt(now = Date.now()) {
     const ph = cyclePhase(now);
     if (ph === "roll") return { x: 0, y: 0 };
     if (ph !== "shrink") return { x: state.tx, y: state.ty };
-    const k = Math.max(0, Math.min(1, (now - state.cycleStartAt) / shrinkMs()));
+    const k = shrinkEase(Math.max(0, Math.min(1, (now - state.cycleStartAt) / shrinkMs())));
     return { x: state.tx * k, y: state.ty * k };
 }
 function syncCenter(now) {
@@ -217,20 +236,21 @@ function radius(now = Date.now(), peek = false) {
     if (!peek) { maybeRoll(now); syncCenter(now); }
     const ph = cyclePhase(now);
     if (ph === "roll") return state.maxR;
-    if (ph === "done") return state.maxR * FINAL_FRAC;
+    const mf = minFrac(), ff = finalFrac();
+    if (ph === "done") return state.maxR * ff;
     if (ph === "hold") {
-        if (!isFinal()) return state.maxR * MIN_FRAC;
+        if (!isFinal()) return state.maxR * mf;
         const k = Math.max(0, Math.min(1, (now - state.cycleStartAt - shrinkMs()) / holdMs()));
-        return state.maxR * (MIN_FRAC - (MIN_FRAC - FINAL_FRAC) * k);
+        return state.maxR * (mf - (mf - ff) * k);
     }
-    const t = Math.max(0, Math.min(1, (now - state.cycleStartAt) / shrinkMs()));
-    return state.maxR * (1 - t * (1 - MIN_FRAC));
+    const t = shrinkEase(Math.max(0, Math.min(1, (now - state.cycleStartAt) / shrinkMs())));
+    return state.maxR * (1 - t * (1 - mf));
 }
 
 function targetRadius(now = Date.now()) {
     const ph = cyclePhase(now);
-    if (ph === "shrink") return state.maxR * MIN_FRAC;
-    if (ph === "hold" && isFinal()) return state.maxR * FINAL_FRAC;
+    if (ph === "shrink") return state.maxR * minFrac();
+    if (ph === "hold" && isFinal()) return state.maxR * finalFrac();
     return 0;
 }
 
@@ -382,4 +402,4 @@ function tickDamage(now = Date.now()) {
     }
 }
 
-module.exports = { etaFn, centerAt, CENTER_FRAC, resetAt, start, stop, setLockMs, setNoFinalLock, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT, STAGE_MULT, RAMP_SLOW_FIRST, stageMult, gemStageMult, GEM_STAGE };
+module.exports = { minFrac, finalFrac, shrinkEase, etaFn, centerAt, CENTER_FRAC, resetAt, start, stop, setLockMs, setNoFinalLock, setFinalCenter, setCycles, endAt, isFinal, debugSeek, debugFinal, debugCenter, ensureActive, radius, inStorm, snapshot, tickDamage, exposureOf, rampMult, cyclePhase, locked, lockLeftSec, shrinkMs, holdMs, DAMAGE_EVERY_MS, SHRINK_MS, HOLD_MS, CYCLE_MS, LOCK_MS, FINAL_LOCK_MS, MIN_FRAC, FINAL_FRAC, DAMAGE_FRAC, RAMP, RAMP_MAX, RAMP_RESET_MS, FINAL_RAMP_SPEED, FINAL_RAMP_FLOOR_S, FINAL_DAMAGE_MULT, STAGE_MULT, RAMP_SLOW_FIRST, stageMult, gemStageMult, GEM_STAGE };

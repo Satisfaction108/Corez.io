@@ -37,6 +37,8 @@ Config.tutorial = false;
 
 const { gameHandler } = require(path.join(SERVER, 'game', 'index.js'));
 const mapGen = require(path.join(SERVER, 'game', 'terrain', 'mapGen.js'));
+// the live raid map's size, from its config
+const RT = require(path.join(SERVER, 'game', 'gamemodes', 'config', 'dig_royale.js')).dig_royale_terrain;
 const { socketManager } = require(path.join(SERVER, 'game', 'network', 'sockets.js'));
 
 // the real socket manager's terrain methods on a bare object (its
@@ -46,11 +48,11 @@ sm.clients = [];
 sm.players = [];
 sm.broadcast = () => {};
 global.gameManager = {
-    room: { width: 13 * 420, height: 9 * 420, topPlayerID: -1, isIn: () => false, getAt: () => null, isInNorm: () => true },
+    room: { width: RT.room_width * 420, height: RT.room_height * 420, topPlayerID: -1, isIn: () => false, getAt: () => null, isInNorm: () => true },
     views: [], minimap: [], roomSpeed: 1, runSpeed: 1, clients: [], terrainGrid: null,
     socketManager: sm,
 };
-const grid = mapGen.generate({ cols: 13, rows: 9, tileWidth: 420, fullLattice: true });
+const grid = mapGen.generate({ cols: RT.room_width, rows: RT.room_height, tileWidth: 420, fullLattice: true });
 grid.buildContour();
 global.gameManager.terrainGrid = grid;
 global.gameManager.gameHandler = new gameHandler(global.gameManager);

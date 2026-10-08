@@ -24,7 +24,14 @@ module.exports = {
     dig_royale_terrain: {
         seed: 11,
         extrusion_chance: 0.40,
-        room_width: 16,    // was 15: a little more room to roam
-        room_height: 16,
+        // Oct 8 2026: 20 x 20 (was 16 x 16, 15 before that). The raid is the
+        // rock disk inscribed in this square, radius ~4190 (was ~3350), 1.56x
+        // the area. Rocks keep their size (the lattice is capped at 120
+        // columns, terrainGrid.js), so the map gets ~3500 rocks instead of
+        // ~2250. Things that should not grow with it read terrain/mapScale.js:
+        // the storm's hold and final circles keep their old size and the
+        // shrink is front-loaded, so few-player raids meet up as before.
+        room_width: 20,
+        room_height: 20,
     },
 };

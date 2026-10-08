@@ -27,7 +27,8 @@
 //   wiring       served at /shared/rockBiomes.js, loaded by index.html, the
 //                seed reaches init, the maps and the HUD note use it
 //
-// Builds the real 16x16 Dig Royale map in this process (no game server).
+// Builds the real Dig Royale map (size and seed from its config, 20x20
+// since Oct 8 2026) in this process (no game server).
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -64,18 +65,22 @@ const spawnReach = require(path.join(SERVER, 'game', 'terrain', 'spawnReach.js')
 const royaleLayout = require(path.join(SERVER, 'game', 'terrain', 'royaleLayout.js'));
 const { socketManager } = require(path.join(SERVER, 'game', 'network', 'sockets.js'));
 
-const TILES = 16, TILE_W = 420, SEED = 11, W = TILES * TILE_W;
+// the live raid map's size and seed, straight from its config
+const ROYALE_TERRAIN = require(path.join(SERVER, 'game', 'gamemodes', 'config', 'dig_royale.js')).dig_royale_terrain;
+const TILES = ROYALE_TERRAIN.room_width, TILE_W = 420, SEED = ROYALE_TERRAIN.seed, W = TILES * TILE_W;
 global.gameManager = {
     room: { width: W, height: W, topPlayerID: -1, isIn: () => false, getAt: () => null, isInNorm: () => true },
     views: [], minimap: [], roomSpeed: 1, runSpeed: 1, clients: [], terrainGrid: null,
 };
-function build(seed = SEED, contour = true) {
+function build(seed = SEED, contour = true, tiles = TILES) {
     const quiet = console.log;
     console.log = () => {};
     try {
-        const g = mapGen.generate({ cols: TILES, rows: TILES, tileWidth: TILE_W, seed, fullLattice: true });
+        const g = mapGen.generate({ cols: tiles, rows: tiles, tileWidth: TILE_W, seed, fullLattice: true });
         global.gameManager.terrainGrid = g;
-        if (contour) g.buildContour(); else g.buildVoronoiColliders();
+        // the bare lattice: buildContour's lookup bucket (cellSize * 4) without
+        // the contour, or the colliders file every edge in 1-unit buckets (~1.3 GB)
+        if (contour) g.buildContour(); else { g._contourBucket = g.cellSize * 4; g.buildVoronoiColliders(); }
         return g;
     } finally { console.log = quiet; }
 }
@@ -422,8 +427,11 @@ test('geometry: the same rock polygons before and after', () => {
         assert.deepEqual(r.worldPoly, o.worldPoly, 'rock ' + r.k + ' polygon');
         assert.equal(r.wx, o.wx); assert.equal(r.wy, o.wy);
     }
-    assert.equal(polys(grid), GEOMETRY_PIN, 'rock polygons match the pre-biome build');
-    assert.equal(polys(bare), GEOMETRY_PIN);
+    // the pin is the 16-tile lattice (the map when biomes went in, before
+    // Oct 8 2026's 20-tile map): built bare at that size it must not move
+    const ref16 = build(SEED, false, 16);
+    assert.equal(polys(ref16), GEOMETRY_PIN, 'rock polygons match the pre-biome build');
+    if (TILES === 16) assert.equal(polys(grid), GEOMETRY_PIN);
     global.gameManager.terrainGrid = grid;
     // the client's copies: seed jitter, silhouette, the shader's voronoi
     const src = fs.readFileSync(path.join(REPO, 'public', 'client', 'terrainRenderer.js'), 'utf8');

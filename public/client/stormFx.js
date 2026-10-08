@@ -265,19 +265,39 @@ function visibleArc(cx, cy, rr, sw, sh) {
 }
 
 // ── world layer ───────────────────────────────────────────────────────
+// Oct 8 (owner: seeing the rain from outside "makes the game dull"): the
+// sky, clouds, rain and lightning only show while YOU are in the storm.
+// From the safe side it's the edge alone: the bright line, its glow and a
+// soft dark band just past it, so you can see where it is and the screen
+// stays clear and bright. Stepping in fades the weather up (and out again).
+let weatherK = 0;
+const BAND_W = 150;    // world units of soft dark band past the edge, seen from inside
 // (cx, cy, rr): the safe circle on screen; (ox, oy): world (0, 0) on screen.
 export function drawWorld(c, cx, cy, rr, ox, oy, ratio, sw, sh) {
     const now = performance.now();
     const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
     lastT = now;
-    // nothing to draw when the whole screen is inside the circle
+    const still = calm();
+    // the weather follows you: up over ~0.3 s when you step in, gone as fast when you step out
+    const wantK = warn.inside ? 1 : 0;
+    weatherK = still ? wantK : weatherK + (wantK - weatherK) * Math.min(1, dt * 7);
+    if (Math.abs(weatherK - wantK) < 0.01) weatherK = wantK;
+    // nothing to draw when the whole screen is inside the circle (band included)
     const fx = Math.max(Math.abs(cx), Math.abs(sw - cx)), fy = Math.max(Math.abs(cy), Math.abs(sh - cy));
     if (fx * fx + fy * fy < rr * rr) { bolt.on = false; return; }
-    const still = calm();
+    if (weatherK <= 0) {
+        bolt.on = false;
+        drawBand(c, cx, cy, rr, ratio, sw, sh, 1);
+        drawRim(c, cx, cy, rr, ratio, sw, sh, still ? 0 : dt);
+        return;
+    }
     const t = still ? 0 : now / 1000;
     ensureClouds();
+    // stepping in or out: the clear view's band under the fading weather
+    if (weatherK < 1) drawBand(c, cx, cy, rr, ratio, sw, sh, 1 - weatherK);
 
     c.save();
+    c.globalAlpha = weatherK;
     c.beginPath();
     c.rect(-40, -40, sw + 80, sh + 80);
     c.arc(cx, cy, rr, 0, TAU, true);
@@ -376,10 +396,10 @@ function drawBolt(c, ox, oy, ratio, e) {
     const sx = ox + bolt.mx * ratio, sy = oy + bolt.my * ratio;
     if (glowOn()) {
         const R = bolt.size * ratio * 1.8;
-        c.globalAlpha = 0.45 * e;
+        c.globalAlpha = 0.45 * e * weatherK;
         c.drawImage(ensureFlash(), sx - R, sy - R, R * 2, R * 2);
     }
-    c.globalAlpha = e;
+    c.globalAlpha = e * weatherK;
     c.lineJoin = "round";
     c.lineCap = "round";
     c.beginPath();
@@ -394,6 +414,24 @@ function drawBolt(c, ox, oy, ratio, e) {
     c.lineWidth = Math.max(2, 3 * ratio);
     c.stroke();
     c.globalAlpha = 1;
+}
+
+// Seen from the safe side: a soft dark band just past the edge (a few wide
+// strokes, darkest at the line), so the storm reads as a place, not a wash.
+function drawBand(c, cx, cy, rr, ratio, sw, sh, a) {
+    if (rr < 1 || a <= 0.01) return;
+    visibleArc(cx, cy, rr, sw, sh);
+    const bw = Math.max(40, BAND_W * ratio), n = 4, w = bw / n;
+    c.save();
+    c.strokeStyle = "rgb(30, 20, 66)";
+    c.lineWidth = w + 1;
+    for (let i = 0; i < n; i++) {
+        c.globalAlpha = a * 0.3 * (1 - i / n) * (1 - i / n);
+        c.beginPath();
+        c.arc(cx, cy, rr + w * (i + 0.5), visA0, visA1);
+        c.stroke();
+    }
+    c.restore();
 }
 
 // The edge: soft glow and blowing wisps on the storm side, then one crisp

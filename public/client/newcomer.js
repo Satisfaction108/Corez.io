@@ -121,8 +121,22 @@ export function shopOpen() {
 }
 
 // ── per frame (top of the GUI pass) ────────────────────────────────────
+// Deposits finished, ever (this browser): the goal line's "bank them at the
+// vault" goes once you've done it a few times (Oct 8)
+const BANKS_KEY = "dwBanks_v1", BANKS_TAUGHT = 3;
+let banksDone = -1, bankSeenAt = 0;
+function banksCount() {
+    if (banksDone < 0) { try { banksDone = Math.max(0, parseInt(localStorage.getItem(BANKS_KEY), 10) || 0); } catch (e) { banksDone = 0; } }
+    const v = global.vault, at = v && v.doneAt ? v.doneAt : 0;
+    if (at && at !== bankSeenAt) {
+        if (bankSeenAt) { banksDone++; try { localStorage.setItem(BANKS_KEY, String(banksDone)); } catch (e) { /* */ } }
+        bankSeenAt = at;
+    } else if (!bankSeenAt && !at) bankSeenAt = -1;
+    return banksDone;
+}
 export function tick() {
     refreshStage();
+    try { banksCount(); } catch (e) { /* */ }
     if (!inRaid() || S.stage >= L.VETERAN) {
         global.nxBannerUp = false;
         if (S.cur) S.cur = null;
@@ -312,11 +326,17 @@ export function hudNotes(push, mk) {
     if (L.shows("goalLine", S.stage) && !(c && c.kind === "timed")) {
         const g = goal();
         S.goal = g;
+        // only while it teaches something: "bank them" until you've banked a few
+        // times, never the catch-all "stay out of the storm" (the storm has its own lines)
+        if (!L.goalWanted(g, banksCount(), BANKS_TAUGHT)) return pushShopNote(push, mk);
         const n = mk(1.5, "nxgoal", g.text, "#f2eef8");
         n.draw = drawGoal;
         n.arrow = g.arrow;
         push(n);
     }
+    pushShopNote(push, mk);
+}
+function pushShopNote(push, mk) {
     const sh = global.shop;
     if (sh && sh.onPad && !sh.dismissed && !shopOpen()) push(mk(2, "nxshop", "The shop opens up soon. Dig and bank first.", "#d8dce6"));
 }

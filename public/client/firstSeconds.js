@@ -104,7 +104,7 @@ export function tick() {
             const lr = S.lastRes;
             const missed = !!lr && lr.raidId === (S.raid | 0) && !raidFinale.sawResults(lr.raidId);
             S.recap = missed ? lr : null;
-            S.plan = L.planFor({ newRaid: true, recap: missed });
+            S.plan = L.planFor({ newRaid: true, recap: missed, newcomer: isNew() });
         } else S.plan = null;
     }
     if (on && rid) S.raid = rid;
@@ -194,33 +194,35 @@ function drawCard(c, lanes, a, t, recap) {
     const ln = recap || lines(t);
     const touch = !!global.mobile;
     const k = touch ? Math.min(1, W0 / 760) : 1;
-    const titleSz = 40 * k, goalSz = 14.5 * k, ctlSz = 12.5 * k;
-    const w = Math.min(W0 - 40, Math.max(A.textW(ln.goal, goalSz) + 56, A.textW(ln.controls, ctlSz) + 56, ln.status ? A.textW(ln.status, ctlSz) + 56 : 0, A.titleW(ln.title, titleSz) + 150 * k));
-    const h = (ln.status ? 150 : 128) * k;
-    const top = Math.max((lanes && lanes.slamY ? lanes.slamY - 40 : H0 * 0.18), H0 * 0.14);
-    const rise = (1 - Math.min(1, S.age / 300)) * 14;
+    // Oct 8: compact, docked in the top lane right under the clock (it was a
+    // 40-unit title card reaching down over the play area)
+    const titleSz = 26 * k, goalSz = 13 * k, ctlSz = 11.5 * k;
+    const w = Math.min(W0 - 40, Math.max(A.textW(ln.goal, goalSz) + 48, A.textW(ln.controls, ctlSz) + 48, ln.status ? A.textW(ln.status, ctlSz) + 48 : 0, A.titleW(ln.title, titleSz) + 130 * k));
+    const h = (ln.status ? 118 : 98) * k;
+    const top = lanes && lanes.top ? lanes.top + 6 : H0 * 0.12;
+    const rise = (1 - Math.min(1, S.age / 300)) * 8;
     const x = Math.round(W0 / 2 - w / 2), y = Math.round(top + rise);
     const cx = W0 / 2;
     A.panel(c, x, y, w, h, { fill: H.solid, r: H.rBig, alpha: a });
-    A.title(ln.eyebrow, cx, y + 18 * k, 11.5 * k, H.lilac, "center", a);
-    A.title(ln.title, cx, y + 50 * k, titleSz, H.gold, "center", a);
+    A.title(ln.eyebrow, cx, y + 15 * k, 10.5 * k, H.lilac, "center", a);
+    A.title(ln.title, cx, y + 38 * k, titleSz, H.gold, "center", a);
     // two gems either side of the title, the four ore colours
     const tw = A.titleW(ln.title, titleSz) / 2;
     c.save();
     c.globalAlpha = a;
     for (let i = 0; i < 4; i++) {
         const side = i < 2 ? -1 : 1, j = i % 2;
-        const gx = cx + side * (tw + 24 * k + j * 26 * k), gy = y + 50 * k + Math.sin(t / 260 + i) * 2;
-        A.gemPath(c, gx, gy, (j ? 8 : 11) * k);
+        const gx = cx + side * (tw + 18 * k + j * 20 * k), gy = y + 38 * k + Math.sin(t / 260 + i) * 2;
+        A.gemPath(c, gx, gy, (j ? 6 : 8) * k);
         c.fillStyle = ORE[i]; c.fill();
         c.lineWidth = 2; c.strokeStyle = H.ink; c.stroke();
     }
     c.restore();
-    A.text(ln.goal, cx, y + 84 * k, goalSz, H.head, "center", a);
-    A.text(ln.controls, cx, y + 106 * k, ctlSz, H.text2, "center", a);
-    if (ln.status) A.text(ln.status, cx, y + 130 * k, ctlSz, H.gold, "center", a);
+    A.text(ln.goal, cx, y + 64 * k, goalSz, H.head, "center", a);
+    A.text(ln.controls, cx, y + 83 * k, ctlSz, H.text2, "center", a);
+    if (ln.status) A.text(ln.status, cx, y + 102 * k, ctlSz, H.gold, "center", a);
     // it can go early (desktop: Esc
-    if (!touch && !released()) A.text("Esc to close", x + w - 12, y + 16, 9.5, H.text2, "right", a * 0.7);
+    if (!touch && !released()) A.text("Esc to close", x + w - 12, y + 14, 9, H.text2, "right", a * 0.7);
 }
 function drawNudges(c, t) {
     for (const piece of ["tiles", "stats"]) {

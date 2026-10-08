@@ -2,7 +2,7 @@
 // Royale terrain build, no game server:
 //   node scripts/test/spawnReach.test.js
 //
-// Builds the live map's lattice (13x13 tiles, royale layout), then hand-makes
+// Builds the live map's lattice (its config size, royale layout), then hand-makes
 // the pockets a naive spawn picker can drop players into (a cell ringed by
 // shard / emerald / regrowing rock, a mined-out cell about to close, a way
 // out that leaves the zone) and checks the rule, the exit-tunnel planner and
@@ -12,13 +12,15 @@
 const assert = require('node:assert/strict');
 
 global.Config = { dig_royale: true };
-global.gameManager = { room: { width: 5460, height: 5460 } };
+// the live raid map's size, from its config (20 x 20 tiles since Oct 8 2026)
+const RT = require('../../server/game/gamemodes/config/dig_royale.js').dig_royale_terrain;
+global.gameManager = { room: { width: RT.room_width * 420, height: RT.room_height * 420 } };
 
 const mapGen = require('../../server/game/terrain/mapGen.js');
 const { ORE, ORE_HP, REGROW } = require('../../server/game/terrain/terrainGrid.js');
 const reach = require('../../server/game/terrain/spawnReach.js');
 
-const grid = mapGen.generate({ cols: 13, rows: 13, tileWidth: 420, fullLattice: true });
+const grid = mapGen.generate({ cols: RT.room_width, rows: RT.room_height, tileWidth: 420, fullLattice: true });
 grid.buildVoronoiColliders();
 const adj = reach.adjacency(grid);
 const PLAIN = grid.plainRockHealth;
@@ -52,7 +54,8 @@ function solidCell() {
 function kill(r, t = Date.now()) { r.alive = false; r.health = 0; r.diedAt = t; r.noRegrowUntil = t + 120_000; }
 function setOre(r, ore) { r.ore = ore; r.maxHealth = PLAIN * ORE_HP[ore]; r.health = r.maxHealth; r.alive = true; r.growing = false; }
 const at = (r) => [r.worldCx, r.worldCy];
-const bigZone = { x: 0, y: 0, r: 2800 };
+// the whole disk (a full storm) on whatever size the live map is
+const bigZone = { x: 0, y: 0, r: grid.circleRadius + 100 };
 function fresh() { reach.invalidate(); }
 
 test('adjacency: every cell has 2..8 neighbours, symmetric', () => {
@@ -171,7 +174,9 @@ test('exit tunnel from a planned pocket reaches an open region, plain rock only,
     fresh();
     const p = reach.exitPath(grid, ...at(c), { zone: bigZone, assumeOpen: new Set([c.k]), maxCells: 8 });
     assert.ok(p, 'tunnel found');
-    assert.ok(p.every(r => r.ore !== ORE.EMERALD && (!r.alive || r.health <= PLAIN * 1.05)));
+    // plain rock of its biome (magma's plain rock is 1.3x a flat one, see
+    // spawnReach classify)
+    assert.ok(p.every(r => r.ore !== ORE.EMERALD && (!r.alive || r.health <= PLAIN * (r.bHard || 1) * 1.05)));
     // dig it: the pocket escapes via the region now
     kill(c);
     for (const r of p) kill(r);

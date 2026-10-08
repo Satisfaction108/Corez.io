@@ -30,11 +30,13 @@ export function planFor(o) {
     const s = o || {};
     if (s.tutorial) return null;
     if (s.newRaid && s.recap) {
-        const p = { ...NEW_RAID_PLAN, newcomer: !!s.newcomer, newRaid: true, recap: RECAP_MS };
+        const p = { ...NEW_RAID_PLAN, newcomer: !!s.newcomer, newRaid: true, recap: RECAP_MS, ...(s.newcomer ? {} : { nudge: 0 }) };
         for (const k of ["intro", "messages", "tiles", "stats", "ability", "coach", "tilesNudge", "statsNudge"]) if (p[k] > 0) p[k] += RECAP_MS;
         return p;
     }
-    if (s.newRaid) return { ...NEW_RAID_PLAN, newcomer: !!s.newcomer, newRaid: true };
+    // Oct 8: the "pick your tank" / "click a bar" pointers are for the first
+    // raids only; a veteran's new raid starts with a clean HUD
+    if (s.newRaid) return { ...NEW_RAID_PLAN, newcomer: !!s.newcomer, newRaid: true, ...(s.newcomer ? {} : { nudge: 0 }) };
     return { ...(s.newcomer ? NEW_PLAN : VET_PLAN), newcomer: !!s.newcomer };
 }
 // A spawn on a page that already had its first plan: a new raid gets the short

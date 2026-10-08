@@ -105,11 +105,12 @@ function drawKillPops(c, ratio, now) {
         if (age < 0 || age > KILL_POP_MS) continue;
         const inT = Math.min(1, age / 120);
         const a = inT * (age > KILL_POP_MS - 500 ? Math.max(0, (KILL_POP_MS - age) / 500) : 1);
-        const pop = calm() ? 1 : age < 260 ? 1.45 - 0.45 * (age / 260) : 1;
-        const y = vCy - lift - Math.min(1, age / 700) * 16 - row * 44;
-        const sz = (o.big ? 24 : 20) * pop;
+        const pop = calm() ? 1 : age < 260 ? 1.3 - 0.3 * (age / 260) : 1;
+        const y = vCy - lift - Math.min(1, age / 700) * 16 - row * 36;
+        // (Oct 8: a size smaller, the lane up top carries the big word)
+        const sz = (o.big ? 19 : 16) * pop;
         A.hudTitle(o.head, vCx, y, sz, o.big ? GOLD : "#ffffff", "center", a, c);
-        if (o.pts) A.drawText(o.pts, vCx, y + sz * 0.5 + 10, 15 * Math.max(1, pop * 0.9), GOLD, "center", true, a, 5);
+        if (o.pts) A.drawText(o.pts, vCx, y + sz * 0.5 + 9, 12.5 * Math.max(1, pop * 0.9), GOLD, "center", true, a, 4);
         row++;
     }
 }
@@ -1213,6 +1214,7 @@ export function slamUp() { return juice.slamUp(); }
 // QA: the kill pops up now
 window.dwKillPops = () => killPops.filter(o => performance.now() - o.born < KILL_POP_MS).map(o => o.head + (o.pts ? " " + o.pts : ""));
 export const SLAM_DROP = juice.SLAM_DROP;
+export const SLAM_RISE = juice.SLAM_RISE;
 // the bank milestones (MS) take a turn in the slam lane in a raid
 // title: the rung ("100"), bonus: "+25"
 export function slamBanked(title, bonus) {

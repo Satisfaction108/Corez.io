@@ -347,6 +347,7 @@ import * as upGrid from './upgradeGridLogic.js';
         util.retrieveFromLocalStorage("optRenderScores");
         util.retrieveFromLocalStorage("optRenderPlayerBars");
         util.retrieveFromLocalStorage("optReducedInfo");
+        util.retrieveFromLocalStorage("optShowFps");
         util.retrieveFromLocalStorage("showCrosshair");
         util.retrieveFromLocalStorage("showJoystick");
         util.retrieveFromLocalStorage("optFullHD");
@@ -1417,6 +1418,7 @@ import * as upGrid from './upgradeGridLogic.js';
             const fl = document.getElementById("optFxLevel");
             config.graphical.fxLevel = fl && fl.value === "low" ? 0 : fl && fl.value === "max" ? 2 : 1;
             config.graphical.fpsCap30 = on("opt30Fps");
+            config.graphical.showFps = on("optShowFps");
             // slow machines: automatic rungs on top of the player's choices
             autoQ.applyTo(config.graphical);
         }
@@ -1612,6 +1614,7 @@ import * as upGrid from './upgradeGridLogic.js';
         util.submitToLocalStorage("optRenderScores");
         util.submitToLocalStorage("optRenderPlayerBars");
         util.submitToLocalStorage("optReducedInfo");
+        util.submitToLocalStorage("optShowFps");
         util.submitToLocalStorage("showCrosshair");
         util.submitToLocalStorage("showJoystick");
         util.submitToLocalStorage("optFullHD");
@@ -7845,7 +7848,7 @@ import * as upGrid from './upgradeGridLogic.js';
             if (messageStackBottom > royaleFeedBottom && messageStackLeft < global.screenWidth) labelRects.push({ x: messageStackLeft, y: royaleFeedBottom, w: global.screenWidth - messageStackLeft, h: messageStackBottom - royaleFeedBottom });
             // round 9 bug 4: the big banners (a slam, the last ten seconds)
             if (global.countdownRect) labelRects.push(global.countdownRect);
-            if (global.hudSlamY > 0 && juiceSlamUp()) labelRects.push({ x: global.screenWidth / 2 - 380, y: global.hudSlamY - 52, w: 760, h: 104 });
+            if (global.hudSlamY > 0 && juiceSlamUp()) labelRects.push({ x: global.screenWidth / 2 - 300, y: global.hudSlamY - 26, w: 600, h: 62 });
         }
         return labelRects;
     }
@@ -8184,7 +8187,9 @@ import * as upGrid from './upgradeGridLogic.js';
     // timers, 3 the rest. NOTE_ROWS show at once, the same width rules for
     // all; the others wait for a free row (they're states, still there when
     // one frees up). The same line twice shows once.
-    const NOTE_ROWS = 2, NOTE_H = 24, NOTE_GAP = 8;
+    // Oct 8: one row (owner: two pills under the clock at once read as clutter);
+    // the hunted badge sits beside the clock instead of taking the row
+    const NOTE_ROWS = 1, NOTE_H = 24, NOTE_GAP = 8;
     const NOTE_CRIT = /storm|vault|clos|respawn/i;
     const hudNoteList = [], notePool = [];
     let notePoolN = 0;
@@ -8220,6 +8225,7 @@ import * as upGrid from './upgradeGridLogic.js';
         return y + NOTE_H + NOTE_GAP;
     }
     // hunted: a small red tag and a count, not a whole line
+    function noteBadgeW(n) { return hudTitleW(n.text, 12) + (n.sub ? hudTextW(n.sub, 11) + 10 : 0) + 22; }
     function drawNoteBadge(c, n, cx, y) {
         const tw = hudTitleW(n.text, 12), sw = n.sub ? hudTextW(n.sub, 11) + 10 : 0;
         const w = tw + sw + 22, h = 22, x = Math.round(cx - w / 2);
@@ -8240,7 +8246,13 @@ import * as upGrid from './upgradeGridLogic.js';
     // cards (an achievement, growing) all share ONE row in the note stack
     // under the clock: one at a time, oldest first, the rest wait with their
     // clocks held. A queue moves each one along faster. Nothing on the right edge.
-    const LANE_MS = 5200, LANE_BUSY_MS = 3000, LANE_WAIT_MAX = 4, LANE_PRI = 1.4;   // over the steady goal line (1.5), under hunted (1)
+    // Oct 8: one row under the clock, so news goes over the steady states (the
+    // shield and pad timers, hunted, the goal line) and under the critical ones (0)
+    const LANE_MS = 5200, LANE_BUSY_MS = 3000, LANE_WAIT_MAX = 4, LANE_PRI = 0.9;
+    // waited this long for the row: old news, dropped
+    const LANE_STALE_MS = 14000;
+    // said by a line of its own up here already (the spawn shield note)
+    const LANE_DUPE = /^You're shielded for \d+ seconds/i;
     const lane = { cur: null, at: 0, shown: false, last: 0, lines: [], fitKey: "", fs: 13 };
     const laneText = (m) => m.textJSON ? m.textJSON.join(" ") : String(m.text == null ? "" : m.text);
     function laneHeld() {
@@ -8267,7 +8279,8 @@ import * as upGrid from './upgradeGridLogic.js';
         for (let i = msgs.length - 1; i >= 0; i--) {
             const m = msgs[i];
             if (m === lane.cur) continue;
-            if (!(m.duration > 0) || toastSaid(laneText(m))) { msgs.splice(i, 1); continue; }
+            if (!m.laneAt) m.laneAt = now;
+            if (!(m.duration > 0) || toastSaid(laneText(m)) || LANE_DUPE.test(laneText(m)) || now - m.laneAt > LANE_STALE_MS) { msgs.splice(i, 1); continue; }
             m.time = now;
             waiting++;
         }
@@ -8426,7 +8439,13 @@ import * as upGrid from './upgradeGridLogic.js';
                     if (dn) push(hudNote(0, "deposit", dn.text, dn.hot ? "#ff9a5c" : HUD.gold));
                 }
             }
-            if (cn) {
+            // a full satchel says it once, in the stack (it used to print on its own under it too)
+            const gfull = global.gems && global.gems.cap > 0 && (global.gems.carried | 0) >= global.gems.cap;
+            if (gfull && config.game.satchelWarning) {
+                const fn = hudNote(0, "carry", "Your satchel is full. Go bank it.", "#ff7a6b");
+                fn.pulse = 0.5 + 0.5 * Math.sin(performance.now() / 160);
+                push(fn);
+            } else if (cn) {
                 push(hudNote(cn.hot ? 1 : 2, "carry", cn.text + ". " + cn.sub, cn.hot ? "#ffb347" : HUD.gold));
             }
             const myStreak = you.streak | 0;
@@ -8441,13 +8460,23 @@ import * as upGrid from './upgradeGridLogic.js';
         try { laneMessage(push); } catch (e) { /* never break the frame */ }
         list.sort((a, b) => a.pri - b.pri);
         const c = ctx[2], cx = global.screenWidth / 2, maxW = noteMaxW();
+        // a badge (hunted) goes left of the clock plate, level with its top row
+        const ck = hudDrawn.clock;
+        if (ck && !topMin.on) {
+            for (let i = list.length - 1; i >= 0; i--) {
+                if (!list[i].badge) continue;
+                const b = list.splice(i, 1)[0];
+                const bw = noteBadgeW(b);
+                drawNoteBadge(c, b, Math.round(ck.x - 10 - bw / 2), ck.y + 8);
+            }
+        }
         for (let i = 0; i < list.length && i < NOTE_ROWS; i++) {
             y = list[i].draw ? list[i].draw(c, list[i], cx, y, maxW) : list[i].badge ? drawNoteBadge(c, list[i], cx, y) : drawNotePill(c, list[i], cx, y, maxW);
         }
         return y;
     }
     // QA: what the stack shows this frame
-    window.dwHudNotes = () => hudNoteList.slice(0, NOTE_ROWS).map(n => n.text + (n.sub ? " " + n.sub : ""));
+    window.dwHudNotes = () => hudNoteList.slice(0, NOTE_ROWS + 1).map(n => n.text + (n.sub ? " " + n.sub : ""));
 
     function drawRoyaleHUD() {
         const cx = global.screenWidth / 2;
@@ -8990,6 +9019,7 @@ import * as upGrid from './upgradeGridLogic.js';
         return line._lay;
     }
     // the idle row's keycap + words (drawn in drawChatPanel)
+    let chatOpenedEver = (() => { try { return localStorage.getItem("dwChatOpened_v1") === "1"; } catch (e) { return true; } })();
     function chatHintW() { return Math.max(15, hudTitleW("Enter", 15 * 0.62) + 15 * 0.55) + 6 + hudTextW("to chat", 10.5) + 8; }
     function chatModePillW(label, fs) { return hudTitleW(label, fs - 1.5) + 14; }
     function chatInputHide() {
@@ -9077,7 +9107,9 @@ import * as upGrid from './upgradeGridLogic.js';
         chatPanelLay = { x, y, W, floor };
         const textW = W - CHAT_PAD_X * 2;
         // the bottom row: the input while typing; on desktop a quiet "Enter to chat" otherwise
-        const showHint = !open && !mob && !global.died && royaleActive();
+        // (Oct 8: the hint is for the first raids, until you've opened chat once)
+        if (open && !chatOpenedEver) { chatOpenedEver = true; try { localStorage.setItem("dwChatOpened_v1", "1"); } catch (e) { /* */ } }
+        const showHint = !open && !mob && !global.died && royaleActive() && !chatOpenedEver && (global.nxStage == null ? 3 : global.nxStage | 0) < 3;
         // touch: the input's text is 16 CSS px at least (iOS zooms into smaller)
         const inFs = mob ? Math.max(fs, 16 * uiPerCss) : fs;
         const rowH = open ? Math.round(Math.max(22, inFs * 1.65)) : showHint ? 18 : 0;
@@ -9489,15 +9521,14 @@ import * as upGrid from './upgradeGridLogic.js';
         if (m.alive) drawText(Math.round(hp * 100) + "%", x + W - 12, y + 47, 10, HUD.text2, "right", true);
     }
 
-    // ── centre callouts ────────────────────────────────────────────────
-    // ── the centre lanes ───────────────────────────────────────────────
-    // The big words (raidHeat slams: ELIMINATED, BANKED, YOU'RE HUNTED, the
-    // Core) have their own lane under everything at the top (the clock stack,
-    // the DOM notification cards, the first-raid guide); the plates (kill
-    // callouts, event callouts) go right under that lane, clear of the tags
-    // over your own tank. On a short screen the
-    // two can't both fit, so a plate waits while a slam is up.
-    const lanes = { slamY: 0, plateY: 0, tight: false, slamK: 1 };
+    // ── the top lane ───────────────────────────────────────────────────
+    // Oct 8 (owner: "popups covering the screen"): the slams (raidHeat:
+    // ELIMINATED, BANKED, YOU'RE HUNTED, the Core) and the plates (kill
+    // callouts, event callouts) share ONE compact lane right under everything
+    // at the top (the clock stack, the DOM notification cards, the first-raid
+    // guide). The middle of the screen stays clear. One thing at a time: a
+    // plate waits (its clock held) while a slam is up or queued.
+    const lanes = { slamY: 0, plateY: 0, tight: true, slamK: 1, top: 0 };
     function hudLanes() {
         const H = global.screenHeight;
         if (!global.tutorialMode) eventHudTick();
@@ -9506,16 +9537,14 @@ import * as upGrid from './upgradeGridLogic.js';
         if (cr && cr.y < H * 0.4) top = Math.max(top, cr.y + cr.h);
         // upright phones: the HP / shield bars sit under the clock panel
         if (global.mobile && vitalsRect && vitalsRect.y < H * 0.4 && global.screenHeight > global.screenWidth) top = Math.max(top, vitalsRect.y + vitalsRect.h);
-        // a slam needs about 40 above its line and SLAM_DROP below; on a short
-        // screen (a phone with the boss bar up) it shrinks to fit above the tank
-        const room = H * 0.47 - top;
-        lanes.slamK = Math.max(0.55, Math.min(1, room / (40 + raidHeat.SLAM_DROP)));
-        lanes.slamY = Math.round(Math.max(H * 0.22, top + 6 + 40 * lanes.slamK));
-        const below = lanes.slamY + raidHeat.SLAM_DROP * lanes.slamK + 26;
-        lanes.plateY = Math.round(Math.max(H * 0.3, Math.min(H * 0.42, below)));
-        lanes.tight = lanes.plateY < below;
-        // tight: a plate never shares the screen with a slam, so it goes right under the stack
-        if (lanes.tight) lanes.plateY = Math.round(Math.max(H * 0.3, top + 28));
+        lanes.top = top;
+        // a slam needs SLAM_RISE above its line and SLAM_DROP below; on a
+        // short screen (a phone with the boss bar up) it shrinks to fit above the tank
+        const room = H * 0.42 - top;
+        lanes.slamK = Math.max(0.7, Math.min(1, room / (8 + raidHeat.SLAM_RISE + raidHeat.SLAM_DROP)));
+        lanes.slamY = Math.round(top + 8 + raidHeat.SLAM_RISE * lanes.slamK);
+        lanes.plateY = lanes.slamY;
+        lanes.tight = true;
         return lanes;
     }
     // a plate holds its place in the queue while the lanes overlap
@@ -9553,19 +9582,18 @@ import * as upGrid from './upgradeGridLogic.js';
                 : t.kind === "chest" || t.kind === "dropin" || t.kind === "bounty" || t.kind === "restored" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
                 : t.kind === "tier5" ? HUD.gold
                 : t.kind === "grown" || t.kind === "contract" ? HUD.emerald : t.kind === "revenge" ? "#ff6b5e" : color.guiwhite);
-            const base = t.kind === "streak" ? 16 : 23, size = base * pop;
-            const len = (Math.max(hudTitleW(t.text, base), t.sub ? hudTextW(t.sub, 12.5) : 0) + 44) * pop;
-            // points and a sub line stack: points first
-            const lines = (t.pts ? 1 : 0) + (t.sub ? 1 : 0);
-            const extra = lines ? (22 + (lines - 1) * 18) * pop : 0;
-            const ph = size * 1.7 + extra;
-            hudPanel(c, cx - len / 2, cy - size * 0.85, len, ph, { alpha: a, fill: "rgba(43,37,51,0.72)", r: HUD.r * pop });
+            // Oct 8: a compact plate in the top lane (it was a 23-unit title over the play area)
+            const base = t.kind === "streak" ? 14 : 17, size = base * pop;
+            // the points ride on the sub line: one plate, two lines at most
+            const subTxt = t.pts ? "+" + fmtNum(t.pts) + " pts" + (t.sub ? "  ·  " + t.sub : "") : t.sub || "";
+            const len = (Math.max(hudTitleW(t.text, base), subTxt ? hudTextW(subTxt, 11) : 0) + 32) * pop;
+            const ph = size * 1.6 + (subTxt ? 16 * pop : 0);
+            hudPanel(c, cx - len / 2, cy - size * 0.8, len, ph, { alpha: a, fill: "rgba(43,37,51,0.72)", r: HUD.r * pop });
             // coach.js: this plate sits where its card goes on desktop
             global.hudCalloutUp = true;
             global.hudCalloutAt = performance.now();   // raidPerks: the cards wait for it
             hudTitle(t.text, cx, cy, size, col, "center", a);
-            if (t.pts) hudTitle("+" + fmtNum(t.pts) + " pts", cx, cy + size * 0.95 + 5, 15 * pop, HUD.gold, "center", a);
-            if (t.sub) drawText(t.sub, cx, cy + size * 0.95 + 5 + (t.pts ? 18 * pop : 0), 12.5, t.kind === "contract" || t.kind === "bounty" ? HUD.emerald : "#d8dce6", "center", true, a, 4.5);
+            if (subTxt) drawText(subTxt, cx, cy + size * 0.8 + 6, 11, t.pts ? HUD.gold : t.kind === "contract" || t.kind === "bounty" ? HUD.emerald : "#d8dce6", "center", true, a, 4);
             break;
         }
     }
@@ -11386,7 +11414,8 @@ import * as upGrid from './upgradeGridLogic.js';
         const c = ctx[2];
         // touch: the HUD is scaled up, so a smaller plate keeps it clear of the
         // message stack on the right
-        const TS = global.mobile ? 22 : 30, SS = global.mobile ? 12 : 14, PH = global.mobile ? 64 : 84;
+        // Oct 8: a compact plate in the top lane, the middle stays clear
+        const TS = global.mobile ? 15 : 18, SS = global.mobile ? 10.5 : 11.5, PH = global.mobile ? 42 : 48;
         if (!evHud.w) evHud.w = Math.max(hudTitleW(evHud.title, TS), evHud.sub ? hudTextW(evHud.sub, SS) : 0) + (global.mobile ? 44 : 64);
         const inT = Math.min(1, age / 260), outT = Math.min(1, (EV_CALL_MS - age) / 600);
         const a = inT * inT * (3 - 2 * inT) * outT;
@@ -11400,13 +11429,13 @@ import * as upGrid from './upgradeGridLogic.js';
         if (cr && cr.y < global.screenHeight * 0.4) top = Math.max(top, cr.y + cr.h);   // touch puts it at the bottom
         top = Math.max(top, evHud.toastFloor);
         // never lower than just above the tank, which sits at mid screen
-        const cy = Math.round(Math.min(global.screenHeight * 0.48 - h / 2, Math.max(lanes.plateY - h * 0.3, top + 18 + h / 2)));
+        const cy = Math.round(Math.min(global.screenHeight * 0.42 - h / 2, Math.max(lanes.top || 0, top) + 8 + h / 2));
         evPanelOpts.alpha = a;
         global.hudCardUp = "event";
         hudPanel(c, cx - w / 2, cy - h / 2, w, h, evPanelOpts);
         // the words stay put while the plate pops (one font size, cached widths)
-        hudTitle(evHud.title, cx, cy - (evHud.sub ? TS * 0.4 : 0), TS, HUD.gold, "center", a);
-        if (evHud.sub) drawText(evHud.sub, cx, cy + SS * 1.55, SS, color.guiwhite, "center", true, a);
+        hudTitle(evHud.title, cx, cy - (evHud.sub ? TS * 0.45 : 0), TS, HUD.gold, "center", a);
+        if (evHud.sub) drawText(evHud.sub, cx, cy + SS * 1.05, SS, color.guiwhite, "center", true, a);
     }
 
     // Banked-gem rungs: a short gold pop (label, number, bonus).
@@ -11811,13 +11840,7 @@ import * as upGrid from './upgradeGridLogic.js';
         c.drawImage(vignetteSprite(w, h, inner, rgb), 0, 0, w, h);
         c.restore();
 
-        if (full) {
-            c.save();
-            c.globalAlpha = 0.68 + 0.32 * beat;
-            // under the clock group and its notes, never on top of them
-            drawText("Your satchel is full. Go bank it.", w / 2, Math.max(112, (hudTopBottom || 0) + 16), 16, "#eb4034", "center");
-            c.restore();
-        }
+        // (full: "Your satchel is full. Go bank it." is a note-stack line now, drawHudNotes)
     }
 
     function handleSpeedMonitor() {
@@ -12674,13 +12697,14 @@ import * as upGrid from './upgradeGridLogic.js';
                 const my = global.screenHeight - len - HUD.edge - HUD.lip;
                 drawFortniteMinimap(mx, my, len);
                 hudDrawn.minimap = { x: mx, y: my, w: len, h: len };
-                // map key as a keycap beside the round map, level with its bottom and clear of
-                const keyName = keyLabel("KEY_TOGGLE_MAP", "M");
-                const kh = 20, kw0 = Math.max(kh, hudTitleW(keyName, kh * 0.62) + kh * 0.55);
-                const kx = Math.round(mx - 8 - kw0), ky = Math.round(my + len - kh);
-                hudKey(ctx[2], kx, ky, keyName, kh);
-                hudTitle("Map", kx - 5, ky + (kh - 2.5) / 2, 13, HUD.head, "right");
-                const hx = kx - 5 - hudTitleW("Map", 13) - 10;
+                // Oct 8: no "Map M" label beside it any more (M still opens the big
+                // map, and a hover on the minimap says so); the rect stays the map's corner
+                if (global.canvas && !global.died) {
+                    const crm = global.canvas.height / global.screenHeight / global.ratio;
+                    const mxm = global.mouse.x / crm, mym = global.mouse.y / crm;
+                    if (Math.hypot(mxm - (mx + len / 2), mym - (my + len / 2)) < len / 2) queueTip("Map  ·  " + keyLabel("KEY_TOGGLE_MAP", "M"), "Press " + keyLabel("KEY_TOGGLE_MAP", "M") + " for the full map.", mx + len / 2, my, true);
+                }
+                const hx = mx - 10;
                 global.minimapHintRect = { x: hx, y: my - 10, w: global.screenWidth - hx, h: global.screenHeight - my + 10 };
             } else if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0) {
                 const mx = global.screenWidth - spacing - len - 5;
@@ -12879,8 +12903,11 @@ import * as upGrid from './upgradeGridLogic.js';
             drawVitals();
             const mm = hudDrawn.minimap;
             const ly = mm ? (global.mobile ? mm.y + mm.h + 4 : mm.y - 8) : y - 50;
-            const slow = global.metrics.rendertime < 30 ? "§" + color.orange + "§" : "";
-            drawText(`${slow}${global.metrics.rendertime} FPS${slow ? "§reset§" : ""}  ·  ${Math.round(ping)} ms`, mm ? mm.x + mm.w : x + len, ly, 9.5, HUD.text2, "right", true);
+            // opt-in since Oct 8 (Settings > UI Elements > FPS and ping)
+            if (config.graphical.showFps) {
+                const slow = global.metrics.rendertime < 30 ? "§" + color.orange + "§" : "";
+                drawText(`${slow}${global.metrics.rendertime} FPS${slow ? "§reset§" : ""}  ·  ${Math.round(ping)} ms`, mm ? mm.x + mm.w : x + len, ly, 9.5, HUD.text2, "right", true);
+            }
         } else if (!global.GUIStatus.minimapReducedInfo) {
             drawText(`§${global.serverStats.lag_color}§ ${(100 * gui.fps).toFixed(2)}% §reset§/ ` + global.serverStats.players + ` player${global.serverStats.players == 1 ? "" : "s"}`, x + len, y - 50 - 2 * 14, 10, color.guiwhite, "right");
             drawText(`§${global.metrics.rendertime_color}§ ${global.metrics.rendertime} FPS §reset§/` + `§${global.serverStats.mspt_color}§ ${global.serverStats.mspt} mspt`, x + len, y - 50 - 1 * 14, 10, color.guiwhite, "right");
@@ -12918,6 +12945,8 @@ import * as upGrid from './upgradeGridLogic.js';
         const total = (shMax ? sH + gap : 0) + hH;
         // desktop: above the FPS line (which sits 8 over the map)
         let y0 = global.mobile ? mm.y + mm.h + 18 : mm.y - 22 - total;
+        // no FPS line between them (it's opt-in): the bars sit right over the map
+        if (!global.mobile && !config.graphical.showFps) y0 += 12;
         if (global.mobile && global.screenHeight > global.screenWidth) y0 = Math.max(y0, (hudTopBottom | 0) + 8);
         const hf = me.render && me.render.health ? me.render.health.get() : me.health;
         const sf = me.render && me.render.shield ? me.render.shield.get() : me.shield;
@@ -13725,7 +13754,8 @@ import * as upGrid from './upgradeGridLogic.js';
         const forced = coachStep === "upgrade", blocked = !!coachStep && !forced;
         const tilesUp = gui.upgrades.length > 0 && !touchTiles.open && !touchStats.open;
         const statsUp = !touchStats.open && canAny;
-        const wants = id => !blocked && (forced || !chipHint[id]);
+        // (Oct 8: the pointers are for the first raids; a veteran's chips speak for themselves)
+        const wants = id => !blocked && (forced || (!chipHint[id] && (global.nxStage == null ? 3 : global.nxStage | 0) < 3));
         const tw = tilesUp && wants("tiles"), sw2 = statsUp && wants("stats");
         let pointAt = null;
         if (tw && sw2) {

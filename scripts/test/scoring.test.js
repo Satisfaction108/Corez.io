@@ -302,7 +302,7 @@ test('client: wired everywhere', () => {
     // round 5: "Banked this raid" everywhere it means points (the HUD's Bank is the spendable one)
     assert.ok(/const CELL_LABEL = \["POINTS", "BANKED THIS RAID", "KILLS \+ CROWNS"\]/.test(fin));
     assert.ok(/export const sawResults/.test(fin) && /S\.seenRaid = S\.raidId/.test(fin));
-    assert.ok(/!raidFinale\.sawResults\(lr\.raidId\)/.test(fs1) && /L\.planFor\(\{ newRaid: true, recap: missed \}\)/.test(fs1));
+    assert.ok(/!raidFinale\.sawResults\(lr\.raidId\)/.test(fs1) && /L\.planFor\(\{ newRaid: true, recap: missed, newcomer: isNew\(\) \}\)/.test(fs1));
     // the build keeps the new module on the light profile
     const build = fs.readFileSync(path.join(REPO, 'scripts', 'build-client.js'), 'utf8');
     assert.ok(/"client\/scoreLogic\.js"/.test(build));

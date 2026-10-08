@@ -103,6 +103,16 @@ export function goalFor(s) {
     return { id, text: GOALS[id], arrow: id === "dig" ? "vault" : "" };
 }
 
+// Is the goal line still teaching? (Oct 8) The dig/bank line goes once the
+// player has finished `taught` deposits (any raid); the catch-all storm line
+// never shows (the storm has its own warnings).
+export function goalWanted(g, banks, taught) {
+    if (!g || !g.text) return false;
+    if (g.id === "storm") return false;
+    if (g.id === "dig" && (banks | 0) >= (taught | 0 || 3)) return false;
+    return true;
+}
+
 // ── first-time intros (stages 1 and 2) ─────────────────────────────────
 // {key} is the ability key, {kit} the kit keys
 export const INTROS = {

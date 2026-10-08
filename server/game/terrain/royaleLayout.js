@@ -30,7 +30,10 @@ const SHOPS = OUTPOSTS.filter(o => o.shop).map((o, i) => ({
     color: o.color,
 }));
 
-const SPAWN_PITS = 48;
+// drop pits on the 16-tile map; bigger maps get more at the same spacing
+// (mapScale.area), so a spawn is never farther from a ready-made gap
+const SPAWN_PITS_REF = 48;
+const mapScale = require('./mapScale.js');
 const VAULT_R = 115;
 const OUTPOST_R = 135;
 const SHOP_R = 110;
@@ -157,6 +160,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     const half = Math.min(room?.width || 5460, room?.height || 5460) / 2;
     const circleR = half * 0.998;
     grid.circleRadius = circleR;
+    const SPAWN_PITS = Math.round(SPAWN_PITS_REF * mapScale.area(circleR));
     // the map seed picks the biome layout (same seed, same map every boot);
     // the tutorial's plots are not a raid map, so no biomes there
     const tutorial = typeof Config !== 'undefined' && Config.tutorial;
@@ -234,10 +238,13 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         }
     }
 
-    // Emeralds: exactly 3, spread 120° apart at mid-rim so no quadrant
+    // Emeralds: exactly 3 on the 16-tile map (4 on the 20-tile one: one per
+    // mapScale.lin x 3, rounded), in equal sectors at mid-rim so no quadrant
     // starves. Deepest deterministic candidates per sector win.
     try {
-        const sectors = [[-Math.PI, -Math.PI / 3], [-Math.PI / 3, Math.PI / 3], [Math.PI / 3, Math.PI]];
+        const nEm = Math.max(3, Math.round(3 * mapScale.lin(circleR)));
+        const sectors = [];
+        for (let i = 0; i < nEm; i++) sectors.push([-Math.PI + i * 2 * Math.PI / nEm, -Math.PI + (i + 1) * 2 * Math.PI / nEm]);
         const alive = [...grid.rocks.values()].filter(r =>
             r.alive && !canyonKeys.has(r.k) && r.ore !== ORE.EMERALD);
         for (const [a0, a1] of sectors) {
@@ -247,8 +254,10 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
                 const d = Math.hypot(x, y) / circleR;
                 if (d < 0.45 || d > 0.9) continue;
                 let a = Math.atan2(y, x);
-                // normalize test angle into sector check
-                const inSector = a >= a0 && a <= a1;
+                // the middle 70% of the sector, so two neighbours' picks
+                // never end up side by side on their shared edge
+                const pad = (a1 - a0) * 0.15;
+                const inSector = a >= a0 + pad && a <= a1 - pad;
                 if (!inSector) continue;
                 const score = hash01(rock.vi, rock.vj, salt + 777);
                 if (score < bestScore) { bestScore = score; best = rock; }
@@ -275,7 +284,8 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
 
     const candidates = [];
     for (const rock of grid.rocks.values()) {
-        if (!rock.alive || canyonKeys.has(rock.k)) continue;
+        // a pit is a killed rock: never one of the emeralds placed above
+        if (!rock.alive || canyonKeys.has(rock.k) || rock.ore === ORE.EMERALD) continue;
         const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
         const d = Math.hypot(x, y);
         if (d < CENTER_CLEAR_R + 80 || d > circleR - 160) continue;

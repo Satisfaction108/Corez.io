@@ -156,15 +156,26 @@
     const EDGE_OBSIDIAN = 0.20;   // obsidian | magma
     const EDGE_MAGMA = 0.41;      // magma | crystal
     const EDGE_CRYSTAL = 0.65;    // crystal | sandstone
-    // half the width of a seam blend; one rock is about 0.038 of the radius
-    // on the raid map, so this blends over about three rocks
+    // half the width of a seam blend; one rock is about 0.030 of the radius
+    // on the 20-tile raid map (0.038 on the old 16-tile one), so this blends
+    // over about three to four rocks
     const BLEND = 0.065;
     // How the rings bend. LOBE: a stretch by direction (+-, a share of the
     // radius), so even the small inner rings come out lumpy, with about
     // LOBE_FREQ * 6 lobes round the map. WARP: a slow wobble in radius
     // units on top, so no two seams run parallel.
-    const LOBE = 0.22, LOBE_FREQ = 1.25;
-    const WARP = 0.06, WARP_FREQ = 2.3;
+    // Oct 8 2026 (bigger map): a few more lobes and a little more wobble, so
+    // the bigger rings break up into separate bays and headlands.
+    const LOBE = 0.24, LOBE_FREQ = 1.5;
+    const WARP = 0.07, WARP_FREQ = 2.6;
+    // Pockets: patches of one biome inside another's band, each from its own
+    // slow noise (frequency F, over the map's half size, so they grow with
+    // the map). Oct 8 2026: the map went from 16 to 20 tiles and the owner
+    // wanted bigger and more varied biome sections, so the moss and clay
+    // pockets come up more often, and two new kinds break up the rings:
+    // crystal geodes out in the sandstone flats and magma fissures cutting
+    // into the crystal band. Same six biomes, same toughness table.
+    const MOSS_F = 3.6, CLAY_F = 3.3, GEODE_F = 3.9, FISSURE_F = 3.6;
 
     function hash(x, y, s) {
         let h = (Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 1284865837) ^ Math.imul((s | 0) + 1, 668265263)) | 0;
@@ -205,17 +216,23 @@
         const tB = smooth(EDGE_MAGMA - BLEND, EDGE_MAGMA + BLEND, d);
         const tC = smooth(EDGE_CRYSTAL - BLEND, EDGE_CRYSTAL + BLEND, d);
         // pockets: moss where the middle band meets the outer one, clay out
-        // in the sandstone. Their own slow noise picks where.
-        const m = fbm(nx * 3.4 - 11.2, ny * 3.4 + 4.6, s + 20);
-        const c = fbm(nx * 3.1 + 8.4, ny * 3.1 + 13.9, s + 40);
-        let moss = smooth(0.55, 0.67, m) * smooth(0.52, 0.62, d) * (1 - smooth(0.86, 0.95, d));
-        let clay = smooth(0.55, 0.67, c) * smooth(0.72, 0.82, d);
-        const pk = moss + clay;
-        if (pk > 1) { moss /= pk; clay /= pk; }
-        const rest = Math.max(0, 1 - moss - clay);
+        // in the sandstone, crystal geodes in the outer flats, magma fissures
+        // pushing out into the crystal. Their own slow noise picks where.
+        const m = fbm(nx * MOSS_F - 11.2, ny * MOSS_F + 4.6, s + 20);
+        const c = fbm(nx * CLAY_F + 8.4, ny * CLAY_F + 13.9, s + 40);
+        const g = fbm(nx * GEODE_F - 3.7, ny * GEODE_F - 15.1, s + 80);
+        const f = fbm(nx * FISSURE_F + 21.4, ny * FISSURE_F + 6.2, s + 100);
+        let moss = smooth(0.52, 0.64, m) * smooth(0.50, 0.60, d) * (1 - smooth(0.88, 0.97, d));
+        let clay = smooth(0.52, 0.64, c) * smooth(0.70, 0.80, d);
+        // a geode keeps clear of the clay and moss (a three-way seam reads grey)
+        let geode = smooth(0.58, 0.68, g) * smooth(0.76, 0.86, d) * (1 - smooth(0.95, 1.04, d)) * (1 - clay) * (1 - moss);
+        let fissure = smooth(0.57, 0.72, f) * smooth(0.37, 0.45, d) * (1 - smooth(0.54, 0.63, d)) * (1 - moss);
+        const pk = moss + clay + geode + fissure;
+        if (pk > 1) { moss /= pk; clay /= pk; geode /= pk; fissure /= pk; }
+        const rest = Math.max(0, 1 - moss - clay - geode - fissure);
         out[IDX.obsidian] = (1 - tA) * rest;
-        out[IDX.magma] = (tA - tB) * rest;
-        out[IDX.crystal] = (tB - tC) * rest;
+        out[IDX.magma] = (tA - tB) * rest + fissure;
+        out[IDX.crystal] = (tB - tC) * rest + geode;
         out[IDX.sandstone] = tC * rest;
         out[IDX.moss] = moss;
         out[IDX.clay] = clay;

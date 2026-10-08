@@ -141,8 +141,11 @@ function t(name, fn) {
         assert.equal(FS.isNewRaid(5, 5), false);
         assert.equal(FS.isNewRaid(5, 0), false);
         assert.equal(FS.isNewRaid(5, 6), true);
-        const p = FS.planFor({ newRaid: true });
+        const p = FS.planFor({ newRaid: true, newcomer: true });
         assert.equal(p.newRaid, true);
+        // Oct 8: a veteran's new raid gets the card but no pointers
+        assert.equal(FS.planFor({ newRaid: true }).nudge, 0);
+        assert.equal(FS.nudgeAlpha(FS.planFor({ newRaid: true }), FS.planFor({ newRaid: true }).intro + 600, 'tiles', false), 0);
         assert.equal(FS.planFor({ newRaid: true, tutorial: true }), null);
         // tiles and stats come in on landing; the toasts wait a moment and the
         // tank pointer waits for the card (calmer raid start)
@@ -160,7 +163,7 @@ function t(name, fn) {
         assert.ok(ln.status.includes('9 tanks'));
         assert.ok(!/—/.test(JSON.stringify(ln)), 'no em dashes');
         const fsj = src('firstSeconds.js');
-        assert.ok(fsj.includes('L.isNewRaid(S.raid, rid, S.alive ? 0 : S.raidStart, start)') && fsj.includes('L.planFor({ newRaid: true, recap: missed })'), 'a new raid card (after the last raid\'s recap when its podium was missed)');
+        assert.ok(fsj.includes('L.isNewRaid(S.raid, rid, S.alive ? 0 : S.raidStart, start)') && fsj.includes('L.planFor({ newRaid: true, recap: missed, newcomer: isNew() })'), 'a new raid card (after the last raid\'s recap when its podium was missed)');
         assert.ok(fsj.includes('!S.plan.newRaid'), 'the falling re-plan keeps the new raid card');
     });
 

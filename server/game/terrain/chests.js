@@ -1,4 +1,4 @@
-// Loot chests (WANT: 4 copper, 2 epic), each parked in an empty rock cell
+// Loot chests (WANT: 4 copper, 2 epic on the 16-tile map, scaled by area), each parked in an empty rock cell
 // that is held from regrowing until the chest is taken. Breaking one sprays
 // mixed ore gems; epic chests always carry a kit item, copper ones rarely.
 // A broken chest respawns elsewhere after RESPAWN_MS.
@@ -16,7 +16,12 @@ const RESPAWN_MS = 30000;
 const WANT = { common: 4, epic: 2 };
 // twists scale both (Loot Flood: twice the chests, half the wait)
 function mods() { try { return require('./raidMods.js').get() || {}; } catch { return {}; } }
-function want() { const m = mods().chestMult || 1; return { common: Math.round(WANT.common * m), epic: Math.round(WANT.epic * m) }; }
+// a bigger raid map keeps the same chests per area (terrain/mapScale.js):
+// 6 copper + 3 epic on the 20-tile map
+function want() {
+    const m = (mods().chestMult || 1) * require('./mapScale.js').area();
+    return { common: Math.round(WANT.common * m), epic: Math.round(WANT.epic * m) };
+}
 function respawnMs() { return RESPAWN_MS * (mods().chestRespawnMult || 1); }
 let chests = [];
 let nextId = 1;

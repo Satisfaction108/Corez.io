@@ -120,11 +120,14 @@ export function glide(id, text) {
 }
 // "YOUR ABILITY: GRAPPLE", big in the middle; juice.js holds a slam until
 // the sky drop has landed.
+// Oct 8: it's a line in the top lane now (juice.js), and the key hint is
+// for the first raids only
+const learning = () => (global.nxStage == null ? 3 : global.nxStage | 0) < 3;
 function freeSlam(id) {
     const J = window.dwJuice;
     if (!J || global.tutorialMode) return;
     const key = H ? H.keyLabel("KEY_ABILITY", "Q") : "Q";
-    const sub = global.mobile ? "Free for this raid. Tap the ability button." : "Free for this raid. Press " + key + " to use it.";
+    const sub = !learning() ? "Free this raid" : global.mobile ? "Free for this raid. Tap the ability button." : "Free for this raid. Press " + key + " to use it.";
     try { J.slam("YOUR ABILITY: " + shortName(id), sub, AB_COLOR[id] || "#f2b83c", 2600, 44); } catch (e) { /* */ }
 }
 
@@ -1944,7 +1947,8 @@ export function drawHud(c, anchor, mouse) {
             }
         }
         H.hudKey(c, x - 6, y - 8 + press, dashKey, 16);
-        if (!dashSeen && !global.tutorialMode) {
+        // first raids only (Oct 8): a veteran who never dashes isn't nagged every raid
+        if (!dashSeen && !global.tutorialMode && learning()) {
             const k = calm() ? 0.6 : 0.5 + 0.5 * Math.sin(now / 220);
             c.save(); c.globalAlpha = 0.5 + 0.5 * k;
             H.roundRectPath(c, x - 4 - 3 * k, y - 4 - 3 * k, sz + 8 + 6 * k, sz + 8 + 6 * k, 15);

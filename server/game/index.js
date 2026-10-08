@@ -1182,7 +1182,8 @@ class gameHandler {
                     y: host.y + Math.sin(angle) * dist,
                 };
                 // long enough to walk there on a compact map, then free to be re-tasked
-                bot._botDirectorUntil = now + 14000;
+                // (a bigger raid map gives the walk longer: terrain/mapScale.js)
+                bot._botDirectorUntil = now + Math.round(14000 * require('./terrain/mapScale.js').lin());
             }
         }
     }
@@ -1776,7 +1777,7 @@ class gameHandler {
                             const v = tr.ms.slice().sort((a, b) => a - b), avg = v.reduce((a, b) => a + b, 0) / v.length;
                             let bots = 0; for (const e of entities.values()) if (e.isBot && !e.isDead()) bots++;
                             const bp = global.botProf || {}, bpTop = Object.entries(bp).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, ms]) => k + ' ' + ms.toFixed(0)).join(', ');
-                            console.log(`[TICK-TRACE] n ${v.length} avg ${avg.toFixed(2)} p95 ${v[Math.floor(v.length * 0.95)].toFixed(2)} max ${v[v.length - 1].toFixed(1)} entities ${entities.size} bots ${bots} | bot ms/10s: ${bpTop}`);
+                            console.log(`[TICK-TRACE] n ${v.length} avg ${avg.toFixed(2)} p95 ${v[Math.floor(v.length * 0.95)].toFixed(2)} p99 ${v[Math.floor(v.length * 0.99)].toFixed(2)} max ${v[v.length - 1].toFixed(1)} entities ${entities.size} bots ${bots} | bot ms/10s: ${bpTop}`);
                             for (const k in bp) bp[k] = 0;
                             tr.at = performance.now(); tr.ms.length = 0;
                         }

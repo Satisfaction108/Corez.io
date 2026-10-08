@@ -146,8 +146,8 @@ export function draw(c, k) {
     const fadeIn = Math.min(1, (now - T.stepAt) / 220);
     const calm = !!(global.reducedMotion && global.reducedMotion());
     c.save();
-    // dim everything but the spot
-    c.globalAlpha = 0.55 * fadeIn;
+    // dim everything but the spot (light: the game keeps going under it)
+    c.globalAlpha = 0.3 * fadeIn;
     c.fillStyle = "#08060c";
     c.beginPath();
     c.rect(0, 0, W, Hh);

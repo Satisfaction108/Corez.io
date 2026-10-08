@@ -214,7 +214,8 @@ function drawStatic(c, W, H, k, now) {
 }
 
 // ── slam text ──────────────────────────────────────────────────────────
-// One big word at a time in the middle of the screen, never two on top of
+// One word at a time in the lane under the raid clock (Oct 8: it used to sit
+// big over the play area; now it's a compact line, the middle stays clear), never two on top of
 // each other: a new one waits its turn (the one up gets cut short so the
 // queue keeps moving), and one of the same kind (the first word: ELIMINATED,
 // BANKED, YOU'RE...) replaces the one up or waiting, so a kill combo counts up
@@ -370,21 +371,29 @@ export function drawSlams(c, cx, cy, k = 1) {
     }
     const inT = Math.min(1, age / 140);
     const outT = age > s.dur - SLAM_CUT_MS ? Math.max(0, 1 - (age - (s.dur - SLAM_CUT_MS)) / SLAM_CUT_MS) : 1;
-    // a hard punch in: big, then settles
-    const pop = calm() ? 1 : inT < 1 ? 1.6 - 0.6 * (inT * inT * (3 - 2 * inT)) : 1 + 0.03 * Math.sin(age / 90) * (age < 600 ? 1 : 0);
+    // a small punch in, then it settles
+    const pop = calm() ? 1 : inT < 1 ? 1.22 - 0.22 * (inT * inT * (3 - 2 * inT)) : 1;
     const a = inT * outT;
-    const size = s.size * pop * k;
-    const jitter = !calm() && full() && glitchOn() && age < 260 ? (JM.hash01(age | 0, 5) - 0.5) * 14 : 0;
+    const base = slamLaneSize(s.size) * k;
+    const size = base * pop;
+    const jitter = !calm() && full() && glitchOn() && age < 220 ? (JM.hash01(age | 0, 5) - 0.5) * 6 : 0;
     if (jitter) {
         // the RGB-split ghosts behind the word for the first beat
-        A.hudTitle(s.text, cx - 4 + jitter, cy, size, "#ff2d6f", "center", a * 0.55, c);
-        A.hudTitle(s.text, cx + 4 - jitter, cy, size, "#2df0ff", "center", a * 0.55, c);
+        A.hudTitle(s.text, cx - 2 + jitter, cy, size, "#ff2d6f", "center", a * 0.5, c);
+        A.hudTitle(s.text, cx + 2 - jitter, cy, size, "#2df0ff", "center", a * 0.5, c);
     }
     A.hudTitle(s.text, cx + jitter * 0.3, cy, size, s.col, "center", a, c);
-    if (s.sub) A.drawText(s.sub, cx, cy + (s.size * 0.62 + 14) * k, 15 * Math.max(0.8, k), "#f2eef8", "center", true, a, 5);
+    if (s.sub) A.drawText(s.sub, cx, cy + base * 0.5 + 11 * Math.max(0.85, k), 12 * Math.max(0.85, k), "#f2eef8", "center", true, a, 4);
 }
+// The lane size for a slam asked for at `size` (32..80): the order between
+// them stays (a SHUTDOWN still reads bigger than a +250), but nothing goes
+// past SLAM_MAX, so a slam is a line in the lane and not a wall of text.
+export const SLAM_MAX = 28;
+export function slamLaneSize(size) { return Math.max(17, Math.min(SLAM_MAX, (+size || 54) * 0.4)); }
 // how far below its centre line a slam reaches (its sub line included)
-export const SLAM_DROP = 78;
+export const SLAM_DROP = 34;
+// how far above it the word reaches
+export const SLAM_RISE = 18;
 // QA: what's up and what's waiting
 export function slamState() { return { up: slamCur && slamCur.on ? slamCur.text : "", wait: slamQ.map(q => q.text) }; }
 

@@ -130,6 +130,14 @@ function t(name, fn) {
         assert.equal(L.goalFor({ coachStep: 'tutorial', bankedRaid: 0 }).id, 'dig');
         assert.equal(L.goalFor(null).id, 'dig');
     });
+    t('goal: only while it teaches (Oct 8)', () => {
+        const dig = L.goalFor({ bankedRaid: 0 });
+        assert.ok(L.goalWanted(dig, 0, 3) && L.goalWanted(dig, 2, 3));
+        assert.ok(!L.goalWanted(dig, 3, 3), 'banked a few times: no more "bank them" line');
+        assert.ok(L.goalWanted(L.goalFor({ bankedRaid: 120, canUpgrade: true }), 9, 3), 'upgrade still shows');
+        assert.ok(!L.goalWanted(L.goalFor({ bankedRaid: 120, canUpgrade: false }), 0, 3), 'never the catch-all storm line');
+        assert.ok(!L.goalWanted(null, 0, 3));
+    });
     t('goal and coach copy: no em dashes', () => {
         for (const v of Object.values(L.GOALS)) assert.ok(!/—/.test(v), v);
         for (const v of Object.values(L.DEATH_TIPS)) assert.ok(!/—/.test(v), v);

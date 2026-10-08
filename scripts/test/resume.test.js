@@ -52,13 +52,15 @@ Config.tutorial = false;
 
 const { gameHandler } = require(path.join(SERVER, 'game', 'index.js'));
 const mapGen = require(path.join(SERVER, 'game', 'terrain', 'mapGen.js'));
+// the live raid map's size, from its config
+const RT = require(path.join(SERVER, 'game', 'gamemodes', 'config', 'dig_royale.js')).dig_royale_terrain;
 global.gameManager = {
-    room: { width: 13 * 420, height: 9 * 420, topPlayerID: -1, isIn: () => false, getAt: () => null, isInNorm: () => true },
+    room: { width: RT.room_width * 420, height: RT.room_height * 420, topPlayerID: -1, isIn: () => false, getAt: () => null, isInNorm: () => true },
     views: [], minimap: [], roomSpeed: 1, runSpeed: 1, clients: [], terrainGrid: null,
     socketManager: { players: [], clients: [], broadcast() {} },
 };
 // the raid's own map: the disk is cut (royaleLayout) as on the server
-const grid = mapGen.generate({ cols: 13, rows: 9, tileWidth: 420, fullLattice: true });
+const grid = mapGen.generate({ cols: RT.room_width, rows: RT.room_height, tileWidth: 420, fullLattice: true });
 grid.buildContour();
 global.gameManager.terrainGrid = grid;
 const handler = new gameHandler(global.gameManager);
@@ -360,7 +362,8 @@ test('small: a normal tank resting on a wall gets its spot back and the wall sta
 
 test('bounds: huge tanks never land off the map, spawns stay in the safe circle', () => {
     const R = grid.circleRadius;
-    assert.ok(R > 1000 && R < 2000, 'the disk is cut: ' + R);
+    // the disk inscribed in the room (the live map's size, from its config)
+    assert.ok(R > 1000 && R < Math.min(RT.room_width, RT.room_height) * 420 / 2, 'the disk is cut: ' + R);
     const st = storm.snapshot(Date.now());
     const onMap = (b) => Math.hypot(b.x, b.y) <= R - Math.min(b.realSize, R * 0.5) + 1;
     // a resume may keep a spot on the rim's open ground (and rock contact
