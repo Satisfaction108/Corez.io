@@ -65,13 +65,17 @@ function speedMult(g) { return 1 / (1 + 0.28 * (g - 1)); }
 const STAT_AT_100K = 1.6;
 const STAT_K = (STAT_AT_100K - 1) / Math.log(4.4716);
 function statMult(g) { return 1 + STAT_K * Math.log(Math.max(1, g)); }
-// Health grows a little faster than damage: 1.3x at 2x, 1.6x at the 3x
+// Health grows a little faster than damage: 1.2x at 2x, 1.4x at the 3x
 // ceiling, where it stops (Oct 7: 0.4 per x and a 4x ceiling made big tanks
 // shrug off an Annihilator)
-const HEALTH_PER_X = 0.3;
+const HEALTH_PER_X = 0.2;   // Oct 8: 0.3 still too tanky; 1.4x at 3x
 function healthMult(g) { return 1 + HEALTH_PER_X * (Math.min(MAX_GROWTH, Math.max(1, g)) - 1); }
-function damageMult(g) { return statMult(g); }
-function bodyDamageMult(g) { return statMult(g); }
+// Damage (shots and rams) grows gently and stops at the ceiling: 1.2x at 3x
+// (Oct 8: it was 1.44x, and a grown Factory melted everything); digging keeps
+// the old curve (mineMult)
+const DAMAGE_PER_X = 0.1;
+function damageMult(g) { return 1 + DAMAGE_PER_X * (Math.min(MAX_GROWTH, Math.max(1, g)) - 1); }
+function bodyDamageMult(g) { return damageMult(g); }
 // The camera: arras' own sqrt(size) times this, so the view follows
 // g^VIEW_POW with no ceiling (the map edge is the limit).
 // 0.45: the camera opens up, but slower than the tank grows, so growing
@@ -81,7 +85,7 @@ function viewMult(g) { return Math.pow(Math.max(1, g), VIEW_POW); }
 function fovMult(g) { return viewMult(g) / Math.sqrt(Math.max(1, g)); }
 // Rock: every hit digs damageMult harder, and the per-second dig budget
 // rises by the same factor, so a grown tank digs at most that much faster.
-function mineMult(g) { return damageMult(g); }
+function mineMult(g) { return statMult(g); }
 
 // Called from refreshBodyAttributes, after the skill math.
 function applyPerks(body) {

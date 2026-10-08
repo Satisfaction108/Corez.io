@@ -995,7 +995,8 @@ export function drawMap(c, T, inside, dotR, pulse, mapLabel, trackPos) {
                 c.restore();
             }
             c.restore();
-            if (core.s !== "soon") mapLabel(core.s === "down" ? "CORE (BROKEN)" : "THE CORE", mx, my + dotR * 4, false, col);
+            // broken, it's just a dim dot: its name only while it's a fight
+            if (core.s !== "soon" && core.s !== "down") mapLabel("THE CORE", mx, my + dotR * 4, false, col);
         }
     }
     const sup = r.supply;

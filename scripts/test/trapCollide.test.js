@@ -169,6 +169,20 @@ test('trapNerf', () => {
     assert.equal(cb.intoTank({}, trap, 100), 100, 'not a tank (rock, a chest)');
 });
 
+// Oct 8 2026 (owner: "nerf the factory/spawner branch"): minions and their shots land 40% softer on tanks
+test('minionNerf', () => {
+    const cb = require(path.join(SERVER, 'game', 'terrain', 'classBalance.js'));
+    assert.equal(cb.MINION_VS_TANKS, 0.6);
+    const owner = { label: 'Factory' };
+    const minion = { type: 'minion', master: owner };
+    const shot = { type: 'bullet', master: minion };
+    const player = { isPlayer: true };
+    assert.equal(cb.intoTank(player, minion, 100), 60, 'a minion ramming');
+    assert.equal(cb.intoTank(player, shot, 100), 60, "a minion's own bullet");
+    assert.equal(cb.intoTank(player, { type: 'bullet', master: owner }, 100), 100, "the Factory's own gun is unchanged");
+    assert.equal(cb.intoTank({ isRoyaleBoss: true, isBot: true }, minion, 100), 100, 'bosses take the same');
+});
+
 let failed = 0;
 for (const t of tests) {
     try { t.fn(); console.log('ok   ' + t.name); }

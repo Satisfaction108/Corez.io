@@ -11112,7 +11112,19 @@ import * as upGrid from './upgradeGridLogic.js';
         const pulse = 1 + 0.18 * Math.sin(now / 240);
         // labels scale with the map: tiny on the minimap, readable on the big map
         const labelPx = Math.max(7, Math.min(12, dotR * 2.6));
-        const mapLabel = (text, mx, my, above, col) => drawText(text, mx, my + (above ? -1 : 1) * (above ? labelPx * 0.6 + 2 : labelPx * 0.9 + 2), labelPx, col, "center", true, 0.95, 4);
+        // labels never pile up (Oct 8: Core, Vault, boss and event names stacked
+        // on one spot): one that would overlap a placed one, or a vault's own
+        // name, is left out; earlier calls win
+        const placed = [];
+        for (const v of (global.vaults || [])) { const vx = T.X(v.x), vy = T.Y(v.y); placed.push({ x: vx - labelPx * 2, y: vy - labelPx * 2.6, w: labelPx * 4, h: labelPx * 1.6 }); }
+        const mapLabel = (text, mx, my, above, col) => {
+            const ly = my + (above ? -1 : 1) * (above ? labelPx * 0.6 + 2 : labelPx * 0.9 + 2);
+            const w = text.length * labelPx * 0.62 + 4, h = labelPx + 3;
+            const r0 = { x: mx - w / 2, y: ly - h / 2, w, h };
+            for (const q of placed) if (r0.x < q.x + q.w && r0.x + r0.w > q.x && r0.y < q.y + q.h && r0.y + r0.h > q.y) return;
+            placed.push(r0);
+            drawText(text, mx, ly, labelPx, col, "center", true, 0.95, 4);
+        };
         // duos: your partner, a dot in your colour with a ring and their name
         const dmate = r.duos && r.duo && r.duo.mate;
         if (dmate && dmate.alive && dmate.x != null) {

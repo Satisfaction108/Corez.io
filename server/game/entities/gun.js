@@ -361,7 +361,7 @@ class Gun extends EventEmitter {
             this.bulletInitIndependent(o);
             o.parentID = this.body.id;
             o.color.base = o.color.base ?? this.body.master.color.base;
-            o.SIZE = (this.body.size * this.width * this.settings.size) / 2;
+            o.SIZE = (this.shotBodySize() * this.width * this.settings.size) / 2;
             o.velocity = s;
             o.facing = o.velocity.direction;
             o.refreshBodyAttributes();
@@ -453,7 +453,7 @@ class Gun extends EventEmitter {
             SKILL: this.getSkillRaw(),
         }, false);
         o.color.base = o.color.base ?? this.body.master.color.base;
-        o.SIZE = this.fixedBulletSize ? this.basicBulletSize() : (this.body.size * this.width * this.settings.size) / 2;
+        o.SIZE = this.fixedBulletSize ? this.basicBulletSize() : (this.shotBodySize() * this.width * this.settings.size) / 2;
         if (this.rockOnly) o.rockOnly = true;
         // Keep track of it and give it the function it needs to deutil.log itself upon death
         if (this.countsOwnKids) {
@@ -542,7 +542,7 @@ class Gun extends EventEmitter {
                     o.define({
                         BODY: this.interpret(this.settings3),
                         SKILL: this.getSkillRaw(),
-                        SIZE: (this.body.size * this.width * this.settings2.size) / 2,
+                        SIZE: (this.shotBodySize() * this.width * this.settings2.size) / 2,
                         LABEL:
                             this.master.label +
                             (this.label ? " " + this.label : "") +
@@ -574,7 +574,7 @@ class Gun extends EventEmitter {
                 e.define({
                     BODY: this.interpret(this.settings2),
                     SKILL: this.getSkillRaw(),
-                    SIZE: (this.body.size * this.width * this.settings2.size) / 2,
+                    SIZE: (this.shotBodySize() * this.width * this.settings2.size) / 2,
                     LABEL:
                         this.master.label +
                         (this.label ? " " + this.label : "") +
@@ -644,6 +644,15 @@ class Gun extends EventEmitter {
         p.direction = this.direction;
         p.offset = this.offset;
         return p;
+    }
+
+    // The body size a shot is sized from: a grown tank's (raid growth) shots,
+    // drones and minions grow with growth^0.65, not all of it (Oct 8: a 3x
+    // Factory's huge drones hit everything; 3x now makes shots about 2x)
+    shotBodySize() {
+        const tank = this.body && this.body.master && this.body.master.growthMult > 1 ? this.body.master : this.body;
+        const g = tank && tank.growthMult > 1 ? tank.growthMult : 1;
+        return g > 1 ? this.body.size / Math.pow(g, 0.35) : this.body.size;
     }
 
     interpret() {

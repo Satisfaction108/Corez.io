@@ -19,6 +19,10 @@ const VS_TANKS = {
 // every tank, classic or expanded, player or bot, lands 13% softer on other tanks. Rock, chests
 // and bosses take the same as before.
 const TRAP_VS_TANKS = 0.87;
+// Oct 8 2026 (owner: "nerf the factory/spawner branch, holy op"): minions (Spawner, Factory and
+// every tank that makes them, classic or expanded) hit other tanks 40% softer, by ramming and
+// with their own guns. Rock, chests and bosses take the same as before.
+const MINION_VS_TANKS = 0.6;
 
 // The expanded tree (entityAddons/tanksExpansion.js)
 let derived = null;
@@ -55,8 +59,9 @@ function intoTank(target, src, amount) {
     const root = rootTank(src);
     if (!root || root === target || root.isRoyaleBoss) return amount;
     if (src.type === 'trap') amount *= TRAP_VS_TANKS;
+    if (src.type === 'minion' || (src.master && src.master !== src && src.master.type === 'minion')) amount *= MINION_VS_TANKS;
     const m = multOf(root.label);
     return m ? amount * m : amount;
 }
 
-module.exports = { intoTank, VS_TANKS, TRAP_VS_TANKS, multOf };
+module.exports = { intoTank, VS_TANKS, TRAP_VS_TANKS, MINION_VS_TANKS, multOf };

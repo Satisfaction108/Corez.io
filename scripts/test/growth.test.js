@@ -142,11 +142,12 @@ test('perks', () => {
     b.growthMult = 2.3;
     growth.applyPerks(b);
     assert.ok(b.topSpeed < 0.8 && b.topSpeed > 0.65);
-    // health grows a bit faster than damage: 1.39x at 2.3x, 1.6x at the 3x ceiling; ram damage about 1.27x
-    assert.ok(b.health.max > 132 && b.health.max < 145, 'health ' + b.health.max);
-    assert.ok(b.damage > 1.2 && b.damage < 1.35, 'ram ' + b.damage);
-    assert.ok(Math.abs(growth.healthMult(3) - 1.6) < 0.01);
-    assert.ok(Math.abs(growth.healthMult(2) - 1.3) < 0.01);
+    // gentle and capped (Oct 8): health 1.26x at 2.3x and 1.4x at the 3x ceiling, damage 1.13x and 1.2x
+    assert.ok(b.health.max > 122 && b.health.max < 130, 'health ' + b.health.max);
+    assert.ok(b.damage > 1.1 && b.damage < 1.16, 'ram ' + b.damage);
+    assert.ok(Math.abs(growth.healthMult(3) - 1.4) < 0.01);
+    assert.ok(Math.abs(growth.healthMult(2) - 1.2) < 0.01);
+    assert.ok(Math.abs(growth.damageMult(3) - 1.2) < 0.01);
     assert.equal(growth.healthMult(5), growth.healthMult(3), 'health stops at the size ceiling');
     assert.ok(Math.abs(growth.damageMult(growth.multFor(1e9)) - growth.damageMult(growth.MAX_GROWTH)) < 1e-6, 'capped with the size');
     let prev = 1;
@@ -199,8 +200,8 @@ test('damage', () => {
     const bot = { isBot: true, botShotMult: 0.8, growthMult: g };
     bot.master = bot;
     assert.ok(Math.abs(shotMult({ master: bot }) - 0.8 * growth.damageMult(g)) < 1e-9);
-    // rock: every hit and the per-second budget move together; slow past 100k too
-    assert.equal(growth.mineMult(g), growth.damageMult(g));
+    // rock keeps its own, faster curve (digging, not fighting)
+    assert.ok(growth.mineMult(g) >= growth.damageMult(g));
     assert.ok(growth.mineMult(growth.multFor(1e6)) < 2.6);
     delete global.royaleGrowth;
 });
