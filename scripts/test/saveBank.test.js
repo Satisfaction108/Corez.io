@@ -589,7 +589,7 @@ test('e2e: persistent bank, Save & leave, $restore (local server, ports 6190-619
         assert.equal(pts2.lifeBasis - basis0, 300, 'only what was earned after');
         const lifeR = q('SELECT life_id FROM rank_lives WHERE user_id = ? AND ended_at IS NULL', uid).life_id;
         // the chat never saw the code
-        assert.ok(!watcher.log.some(e => e.type === 'CHAT_MESSAGE_ENTITY' && String(e.m[0]).includes(done.code)), 'not shown as chat');
+        assert.ok(!watcher.log.some(e => e.type === 'CH' && e.m.some(v => String(v).includes(done.code))), 'not shown as chat');
         assert.ok(!fs.readFileSync(logFile, 'utf8').includes(done.code), 'not in the server log');
         assert.equal(q('SELECT used_user_id FROM saves ORDER BY id DESC LIMIT 1').used_user_id, uid);
 

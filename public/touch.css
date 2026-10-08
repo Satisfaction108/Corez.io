@@ -27,8 +27,6 @@ body.mobile #ingameFullscreenBtn { left: calc(max(8px, env(safe-area-inset-left)
 /* duos: Ping takes the fullscreen key's place, which moves one along */
 body.mobile #touchPingBtn { left: calc(max(8px, env(safe-area-inset-left)) + 220px); width: 56px; }
 body.mobile.duo-raid #ingameFullscreenBtn { left: calc(max(8px, env(safe-area-inset-left)) + 284px) !important; }
-/* the chat mode toggle: on touch the pill beside the chat box flips it */
-body.mobile #ingameChatModeBtn { display: none !important; }
 /* duos on a phone: Ping takes the row's last spot, fullscreen steps aside
    (Android goes fullscreen on Play anyway) */
 @media (max-width: 1000px) { body.mobile.duo-raid #ingameFullscreenBtn { display: none !important; } }

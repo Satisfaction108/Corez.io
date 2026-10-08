@@ -125,8 +125,14 @@ function render(body, d, m, fresh, cat) {
             h('span', {},
                 'You’re playing as a guest. ',
                 owed || items ? h('b', { text: (owed ? dustTxt(owed) + ' gemdust' : '') + (owed && items ? ' and ' : '') + (items ? items + (items === 1 ? ' name style' : ' name styles') : '') }) : null,
-                owed || items ? ' waiting for you. Sign up to keep your rewards.' : 'Sign up to keep your rewards.'),
-            h('button', { type: 'button', text: 'Sign up', onclick: () => { m.close(); const c = document.getElementById('accountChip'); if (c) c.click(); } })));
+                owed || items ? ' waiting for you. Keep your rewards, no password needed.' : 'Keep your rewards, no password needed.'),
+            h('button', { type: 'button', text: 'Keep my stuff', onclick: () => {
+                m.close();
+                // the one-tap sheet; the account chip's full sign-up if it isn't there
+                const a = window.dwAccount;
+                if (a && a.openSignup) return a.openSignup();
+                const c = document.getElementById('accountChip'); if (c) c.click();
+            } })));
     }
     if (d.adoptedNow && d.adoptedNow.ids && d.adoptedNow.ids.length) {
         body.appendChild(h('div', { class: 'ach-guest' }, h('span', { text: d.adoptedNow.ids.length + ' achievements came over from playing as a guest: +' + dustTxt(d.adoptedNow.rewardMilli) + ' gemdust.' })));

@@ -57,15 +57,15 @@ test('curve', () => {
     assert.ok(Math.abs(growth.multFor(growth.CAP_SCORE) - growth.RESPAWN_CAP) < 1e-9);
     // 2x comes about a quarter sooner than the old 5656
     assert.ok(growth.CAP_SCORE > 3800 && growth.CAP_SCORE < 5656 * 0.76, 'cap score ' + growth.CAP_SCORE);
-    // past 2x it eases toward the 4x ceiling (Oct 7: no ceiling had a 100k tank at ~4.5x)
-    assert.equal(growth.MAX_GROWTH, 4);
-    assert.ok(growth.multFor(10000) > 2.4 && growth.multFor(20000) > 3, 'still grows past 2x');
-    assert.ok(growth.multFor(100000) <= 4 && growth.multFor(100000) > 3.95, 'a 100k tank is about 4x');
+    // past 2x it eases toward the 3x ceiling (Oct 7: no ceiling had a 100k tank at ~4.5x)
+    assert.equal(growth.MAX_GROWTH, 3);
+    assert.ok(growth.multFor(10000) > 2.4 && growth.multFor(20000) > 2.8, 'still grows past 2x');
+    assert.ok(growth.multFor(100000) <= 3 && growth.multFor(100000) > 2.99, 'a 100k tank is 3x');
     // no kink where the log hands over to the tail
     const at = growth.CAP_SCORE;
     assert.ok(Math.abs((growth.multFor(at + 10) - growth.multFor(at)) - (growth.multFor(at) - growth.multFor(at - 10))) < 1e-4, 'smooth join');
     assert.ok(growth.multFor(1000) > 1.25, 'the first kills show');
-    assert.ok(growth.multFor(1e9) <= 4, 'never past 4x');
+    assert.ok(growth.multFor(1e9) <= 3, 'never past 3x');
 });
 
 test('spawn', () => {
@@ -142,11 +142,12 @@ test('perks', () => {
     b.growthMult = 2.3;
     growth.applyPerks(b);
     assert.ok(b.topSpeed < 0.8 && b.topSpeed > 0.65);
-    // health grows a bit faster than damage: 1.52x at 2.3x, 1.8x at the 3x ceiling; ram damage about 1.27x
-    assert.ok(b.health.max > 145 && b.health.max < 160, 'health ' + b.health.max);
+    // health grows a bit faster than damage: 1.39x at 2.3x, 1.6x at the 3x ceiling; ram damage about 1.27x
+    assert.ok(b.health.max > 132 && b.health.max < 145, 'health ' + b.health.max);
     assert.ok(b.damage > 1.2 && b.damage < 1.35, 'ram ' + b.damage);
-    assert.ok(Math.abs(growth.healthMult(3) - 1.8) < 0.01);
-    assert.ok(Math.abs(growth.healthMult(2) - 1.4) < 0.01);
+    assert.ok(Math.abs(growth.healthMult(3) - 1.6) < 0.01);
+    assert.ok(Math.abs(growth.healthMult(2) - 1.3) < 0.01);
+    assert.equal(growth.healthMult(5), growth.healthMult(3), 'health stops at the size ceiling');
     assert.ok(Math.abs(growth.damageMult(growth.multFor(1e9)) - growth.damageMult(growth.MAX_GROWTH)) < 1e-6, 'capped with the size');
     let prev = 1;
     for (let s = 500; s <= 200000; s *= 2) {

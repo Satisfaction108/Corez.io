@@ -90,16 +90,16 @@ const REPO = path.join(__dirname, '..', '..');
         }
     });
 
-    test('badge: RAMS ROCK under the name, off the tank, smaller', () => {
+    test('badge: RAMS ROCK under the name, inside the band and the tile, off the tank', () => {
         const w = (s) => 'RAMS ROCK'.length * s * 0.62;
-        for (const len of [100, 74, 60]) {
-            const k = len / 100, b = G.ramBadge(len, len, w), t = G.tankBox(len, len);
-            const faceH = len - 4 * k, bandTop = faceH * 0.75;
-            assert.ok(b.y > bandTop + faceH * 0.25 * 0.5, len + ': badge below the middle of the name band');
-            assert.ok(b.y + b.h / 2 >= len - 1e-9 && b.y < len, len + ': straddles the bottom edge');
+        for (const len of [100, 74, 60]) for (const down of [0, 2 * len / 100]) {
+            const k = len / 100, b = G.ramBadge(len, len, w, down), t = G.tankBox(len, len);
+            const faceH = len - 4 * k, bandTop = down + faceH * 0.75, bandBottom = down + faceH;
+            assert.ok(b.y >= bandTop && b.y + b.h <= bandBottom, len + ': the chip sits in the name band');
+            assert.ok(b.y + b.h <= len, len + ': wholly inside the tile (the bitmap cut it in half)');
+            assert.ok(b.nameMid > bandTop && b.nameMid + b.nameMax / 2 <= b.y + 1e-9, len + ': the name sits over the chip');
             assert.ok(b.y > t.cy + t.size / 2, len + ': clear of the tank box');
             assert.ok(Math.abs(b.x + b.w / 2 - len / 2) < 1e-9, 'centred');
-            assert.ok(b.size < 10.5 * k, len + ': smaller than the old 10.5');
             assert.ok(b.w < len * 0.8, len + ': a chip, not a bar');
         }
         const t = G.tankBox(100, 100);

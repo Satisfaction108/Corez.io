@@ -87,6 +87,19 @@ test('full: refused once every stat is maxed', () => {
     assert.ok(s.packets.some(p => JSON.stringify(p).includes('maxed out')), 'told why');
 });
 
+test('cap: at most 10 bought a raid, the 11th is refused and not charged', () => {
+    const s = socket();
+    const b = player(s);
+    b.skill.points = 0;
+    s.gemBanked = 100000;
+    let n = 0;
+    for (let i = 0; i < 20; i++) if (shop.buy(s, 'statpt')) n++;
+    assert.equal(shop.STATPT_MAX, 10);
+    assert.equal(n, 10, 'bought ' + n);
+    assert.equal(s.gemBanked, 100000 - 10 * 1000, 'the extra tries cost nothing');
+    assert.ok(s.packets.some(p => JSON.stringify(p).includes('most stat points')), 'told why');
+});
+
 test('flash: the Flash Vault banks up to 1,000 of the satchel, minus 30%', () => {
     const it = shop.ITEMS ? shop.ITEMS.find(i => i.id === 'flash') : null;
     const src = require('fs').readFileSync(path.join(SERVER, 'game', 'terrain', 'shop.js'), 'utf8');

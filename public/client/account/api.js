@@ -62,6 +62,8 @@ function withRef(body) {
 }
 
 export const signup = (username, password) => post('/api/auth/signup', withRef({ username, password }));
+// one tap "Keep my stuff": no password, this browser stays logged in
+export const quickSignup = (username) => post('/api/auth/quick', withRef({ username }));
 export const login = (username, password) => post('/api/auth/login', { username, password });
 export const logout = () => post('/api/auth/logout', {});
 export const logoutAll = () => post('/api/auth/logout-all', {});

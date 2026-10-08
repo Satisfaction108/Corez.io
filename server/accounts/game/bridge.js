@@ -311,7 +311,7 @@ function adminSpecZoom(socket, dir) {
     try { body.refreshBodyAttributes(); } catch (e) { /* */ }
 }
 
-// Chat filter (sockets.js chatLoop): hide what `speaker` says from `viewer`.
+// Chat filter (network/raidChat.js): hide what `speaker` says from `viewer`.
 function chatHidden(viewer, speaker) {
     const b = viewer && viewer.account && viewer.account.blocked;
     return !!(b && b.size && speaker && speaker.accountId && b.has(speaker.accountId));

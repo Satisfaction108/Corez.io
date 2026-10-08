@@ -25,6 +25,7 @@ import * as invite from './invite.js';
 import * as feedback from './feedback.js';
 import * as eventCard from './eventCard.js';
 import * as retention from './retention.js';
+import * as achHome from './achHome.js';
 
 const html = document.documentElement;
 const HINT = 'dwAcctHint';
@@ -90,15 +91,37 @@ window.dwAccount = {
         return { nameStyle: ns ? ns.nid : 0, skin: sk ? sk.nid : 0, customColor: eq.customColor || null };
     },
     refresh: () => refresh(),
-    // the raid death screen's "Create account": opens sign-up once the
-    // menu is back (the game is still sliding away when it is called)
-    openSignup() {
-        if (store.get('offline')) return;
-        if (inGame()) { signupOnMenu = true; return; }
-        welcome.open('auth', { tab: 'signup', dismissable: true });
+    // the raid death screen's "Get an account" and the post-raid "Keep my
+    // stuff" card: the one-tap sheet (the full sign-up is a link in it),
+    // once the menu is back (the game is still sliding away when it is called)
+    // opts: { headline }
+    openSignup(opts) {
+        if (store.get('offline') || store.get('user')) return;
+        if (inGame()) { signupOnMenu = opts || {}; return; }
+        openQuick(opts);
     },
 };
-let signupOnMenu = false;
+let signupOnMenu = null;
+// The raid's achievements replay on the home screen (achHome.js), once the
+// rank ceremony, the hub and any sheet are out of the way.
+let achTimer = 0;
+function achMoment(delay) {
+    clearTimeout(achTimer);
+    let tries = 0;
+    const go = () => {
+        if (inGame() || achHome.isPlaying() || !achHome.waiting()) return;
+        if (welcome.isOpen() || ui.hasLayers() || hub.isOpen() || rankCeremony.playing() || rankCeremony.pending()) {
+            if (++tries < 50) achTimer = setTimeout(go, 600);
+            return;
+        }
+        achHome.play({ onKeep: () => openQuick() });
+    };
+    achTimer = setTimeout(go, delay);
+}
+function openQuick(opts) {
+    if (store.get('offline') || store.get('user')) return;
+    welcome.open('quick', Object.assign({}, opts || {}, { dismissable: true }));
+}
 
 /* ── transitions ────────────────────────────────────────────────────── */
 function goGuest() {
@@ -116,6 +139,7 @@ function onAuthed(user) {
 }
 
 function loggedOut(message) {
+    achHome.stop();
     setUser(null);
     ls.del('dwAcctRank');
     ls.set(HINT, 'new');
@@ -346,13 +370,13 @@ async function boot() {
     });
     invite.init({
         refreshMe: () => refresh(true),
-        onSignup() { if (!store.get('offline')) welcome.open('auth', { tab: 'signup', dismissable: true }); },
+        onSignup() { openQuick(); },
     });
     try { feedback.init(); } catch (e) { console.error('[feedback] init failed', e); }
     try { eventCard.init(); } catch (e) { console.error('[events] init failed', e); }
     try {
         retention.init({
-            onSignup() { if (!store.get('offline')) welcome.open('auth', { tab: 'signup', dismissable: true }); },
+            onSignup() { openQuick(); },
             playing: () => rankCeremony.playing(),
             onDust(dust) { const u = store.get('user'); if (u && typeof dust === 'number' && u.dust !== dust) setUser(Object.assign({}, u, { dust })); },
         });
@@ -382,6 +406,7 @@ async function boot() {
     handleParams(params);
     if (resetToken) openReset(resetToken);
     openFromHash();
+    achMoment(1500);
     schedule();
     social.sync();
     try { retention.start(); } catch (e) { console.error('[daily] start failed', e); }
@@ -401,6 +426,8 @@ async function boot() {
         wasInGame = now;
         if (now) {
             clearTimeout(pollTimer);
+            clearTimeout(achTimer);
+            achHome.stop();
             hub.close();
             ui.closeAllModals();
             if (welcome.isOpen()) welcome.close();
@@ -409,11 +436,14 @@ async function boot() {
             refresh();
             schedule();
             if (signupOnMenu) {
-                signupOnMenu = false;
-                setTimeout(() => { if (!inGame() && !store.get('user')) welcome.open('auth', { tab: 'signup', dismissable: true }); }, 350);
+                const opts = signupOnMenu;
+                signupOnMenu = null;
+                setTimeout(() => { if (!inGame() && !store.get('user')) openQuick(opts); }, 350);
             }
             // a rank-up the game never got to show plays here
             setTimeout(() => { if (!inGame() && !welcome.isOpen()) rankCeremony.playPending(); }, 700);
+            // then what the raid's achievements paid
+            achMoment(1100);
         }
     }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 }

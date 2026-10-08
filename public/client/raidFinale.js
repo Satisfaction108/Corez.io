@@ -14,6 +14,7 @@ import * as CL from "./crownsLogic.js";
 import * as crownArt from "./crownArt.js";
 import * as SL from "./scoreLogic.js";
 import * as RP from "./raidProgressLogic.js";
+import * as keepNudge from "./keepNudge.js";
 
 let A = null;
 export function init(helpers) { A = helpers; }
@@ -128,6 +129,8 @@ export function start(sub) {
     const wScore = res && res.champ ? res.champ.score | 0 : w ? w.score | 0 : 0;
     try { S.cw = CL.finale(res, S.place, S.isWin, S.winner, S.rows, wScore); } catch (e) { S.cw = null; }
     S.mate = S.duos && r.duo && r.duo.mate ? String(r.duo.mate.name || "your teammate") : "";
+    // a guest's "Keep my stuff" card (a win, top 3, a new best or their 2nd raid)
+    try { keepNudge.noteRaidEnd({ raidId: S.raidId, place: S.place, isWin: S.isWin, score: S.me.score, prevBest: S.best ? S.best.prev : 0 }); } catch (e) { /* */ }
     if (!S.streak || now - S.streak.at > 20000) S.streak = null;
     P.n = 0;
     S.crownHit = false;
@@ -170,12 +173,27 @@ export function stop() {
     K.n = 0;
     keepBox.on = false;
     setFreezeFilter(false);
+    // never over a running raid
+    keepNudge.drop();
     // asked to keep them: the podium and your raid stay up over the game a drop that
     const now = performance.now();
     if (S.keep || !S.reveal || now - S.reveal < PODIUM_AT + 4000) { D.on = true; D.at = now; return; }
     raidShare.hide();
     hideDiscord();
 }
+// leaving for the menu from the results ("Keep my stuff"): nothing of
+// them stays up over the menu
+function leaveResults() {
+    S.on = false;
+    D.on = false;
+    P.n = 0;
+    K.n = 0;
+    keepBox.on = false;
+    setFreezeFilter(false);
+    raidShare.hide();
+    hideDiscord();
+}
+keepNudge.setOnGo(leaveResults);
 function undock() {
     if (!D.on) return;
     D.on = false;
@@ -881,6 +899,24 @@ function drawPanels(c, rt, now, W, H) {
         else raidShare.place(W - A.HUD.edge * 0.8, H - A.HUD.edge * 0.6, shareInfo);
     }
     if (S.dc && rt > PODIUM_AT + 900) placeDiscord(W, H);
+    if (S.on && rt > REWARDS_AT + 700 && keepNudge.wanted()) placeKeep(W, H);
+}
+// The guest's "Keep my stuff" card: under your raid's plate when the plates
+// sit side by side, else centred just above the two plates.
+function placeKeep(W, H) {
+    const k = window.innerWidth / Math.max(1, global.screenWidth);
+    const sz = keepNudge.size();
+    const ew = sz.w / k, eh = sz.h / k;
+    let x, y;
+    if (lay.side) {
+        x = lay.rx + (PW * lay.s - ew) / 2;
+        y = lay.ry + rewardsH() * lay.s + 18;
+        if (y + eh > H - 12) y = lay.ry - eh - 16;
+    } else {
+        x = W / 2 - ew / 2;
+        y = lay.ly - eh - 14;
+    }
+    keepNudge.place(x * k, Math.max(8, y) * k);
 }
 function shareInfo() {
     return {

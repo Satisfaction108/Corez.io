@@ -766,7 +766,7 @@ class Entity extends EventEmitter {
         return this.density * (this.size ** 2 + 1);
     }
     get realSize() {
-        return this.size * lazyRealSizes[Math.floor(Math.abs(this.shape))];
+        return this.size * realSizeFactor(this.shape);
     }
     get xMotion() {
         return (this.velocity.x + this.accel.x) / global.gameManager.roomSpeed;
@@ -1394,14 +1394,9 @@ class Entity extends EventEmitter {
         entitiesToAvoid.push(this); this.isProtected = true;
     }
 
-    say(message, duration = Config.chat_message_duration) {
-        if (!chats[this.id]) {
-            chats[this.id] = [];
-            chats[this.id].messages = [];
-        }
-        chats[this.id].messages.unshift({ message, expires: Date.now() + duration, id: global.chatID++ });
-        // Cap chat lines so unseen bot chatter doesn't pile up.
-        if (chats[this.id].messages.length > 3) chats[this.id].messages.length = 3;
+    // a bot's line: the raid chat panel, like a player's (network/raidChat.js)
+    say(message) {
+        require('../network/raidChat.js').send({ body: this, text: message });
     }
 
     sendMessage(message) { } // Dummy

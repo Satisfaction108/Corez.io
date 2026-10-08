@@ -217,6 +217,13 @@ function passwordCard(u) {
     return row('as-card-password', 'Password', value, null, form);
 }
 
+function openPasswordForm() {
+    if (expanded.password) return;
+    expanded.password = true;
+    const next = swap(document.querySelector('#dwHub .as-card-password'), passwordCard);
+    if (next) { expandIn(next.querySelector('.as-form')); focusIn(next); }
+}
+
 /* ── Discord ────────────────────────────────────────────────────────── */
 function discordCard(u) {
     const cfg = store.get('config') || {};
@@ -248,6 +255,15 @@ function discordCard(u) {
 // Linking needs a fresh sign-in, so a borrowed session can't attach its own
 // Discord and take the account over.
 async function linkDiscord() {
+    const u = store.get('user');
+    if (u && !u.hasPassword) {
+        // a quick sign-up: fine in its first 10 minutes, else a password first
+        const r = await api.reauthPassword('');
+        if (r.ok) { location.href = api.discordStartUrl('link'); return; }
+        toast(humanError(r), { kind: 'error' });
+        if (errCode(r) === 'password_needed') openPasswordForm();
+        return;
+    }
     const ok = await formModal({
         title: 'Link Discord',
         message: 'Password first, then pick your Discord.',
@@ -301,8 +317,9 @@ export async function regenAfterReauth() {
     toast(humanError(r), { kind: 'error' });
 }
 
-function recoveryCard() {
-    return row('as-card-recovery', 'Backup code', h('span', { class: 'as-muted', text: 'for when you forget your password' }), smallBtn('New one', regenerate));
+function recoveryCard(u) {
+    const what = u && !u.hasPassword && !u.discord ? 'how you log in on another device' : 'for when you forget your password';
+    return row('as-card-recovery', 'Backup code', h('span', { class: 'as-muted', text: what }), smallBtn('New one', regenerate));
 }
 
 /* ── log out / delete ───────────────────────────────────────────────── */
@@ -344,7 +361,7 @@ export function openDelete(opts) {
     typed.addEventListener('input', sync);
     if (pw) pw.input.addEventListener('input', sync);
     let note = null;
-    if (!u.hasPassword) {
+    if (!u.hasPassword && u.discord) {
         note = opts.reauthed
             ? h('div', { class: 'dw-alert show info', text: 'Discord says it’s you. Type DELETE to finish.' })
             : h('p', { class: 'as-p as-small', text: 'Discord has to say it’s you first.' });

@@ -44,7 +44,7 @@ function t(name, fn) {
     });
 
     t('badges: a badge over a HUD rect is ghosted with labelAlpha', () => {
-        const fn = app.slice(app.indexOf('function drawStreakBadge('), app.indexOf('function drawChatMessages('));
+        const fn = app.slice(app.indexOf('function drawStreakBadge('), app.indexOf('function drawHealth('));
         assert.ok(/labelAlpha\(bx \+ w \/ 2, by \+ h \/ 2, w, h\)/.test(fn));
         // the ability bar is one of the rects
         const av = app.slice(app.indexOf('function hudAvoidRects()'), app.indexOf('function hudAvoidRects()') + 1400);

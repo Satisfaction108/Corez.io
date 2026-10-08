@@ -16,7 +16,7 @@ const SCALE = 1100;          // 2x at ~4.1k score (was 1500: ~5.7k)
 // tanks around to chase. Growth only: the board keeps the real score.
 const BOT_SCORE_MULT = 2;
 // the "you grew" card fires when a life crosses one of these
-const STAGES = [1.25, 1.5, 1.75, 2, 2.3, 2.6, 2.9, 3.25, 3.6];
+const STAGES = [1.25, 1.5, 1.75, 2, 2.3, 2.6, 2.9];
 const REFRESH_STEP = 0.03;   // stats are recomputed every time size moves this much
 const EASE_MS = 900;
 
@@ -27,7 +27,7 @@ function enabled() {
 // 1 + GAIN*ln(1 + s/SCALE) up to 2x, so early points show. Past 2x it
 // eases toward MAX_GROWTH with the same slope at the join (Oct 7: the old
 // square root tail had no ceiling, ~4.5x at 100k)
-const MAX_GROWTH = 4;   // Oct 7: 3 felt too small; 4x at the top
+const MAX_GROWTH = 3;   // Oct 7: 4x with its health was far too tanky, back to 3x
 const TAIL_AT = SCALE * (Math.exp(1 / GAIN) - 1);           // score where the log reaches 2x
 const TAIL_TAU = (MAX_GROWTH - 2) * (SCALE + TAIL_AT) / GAIN;
 function multFor(score) {
@@ -65,10 +65,11 @@ function speedMult(g) { return 1 / (1 + 0.28 * (g - 1)); }
 const STAT_AT_100K = 1.6;
 const STAT_K = (STAT_AT_100K - 1) / Math.log(4.4716);
 function statMult(g) { return 1 + STAT_K * Math.log(Math.max(1, g)); }
-// Health grows faster than damage (Oct 7: big tanks were too easy to pop):
-// 1.4x at 2x, 1.8x at the 3x ceiling
-const HEALTH_PER_X = 0.4;
-function healthMult(g) { return 1 + HEALTH_PER_X * (Math.max(1, g) - 1); }
+// Health grows a little faster than damage: 1.3x at 2x, 1.6x at the 3x
+// ceiling, where it stops (Oct 7: 0.4 per x and a 4x ceiling made big tanks
+// shrug off an Annihilator)
+const HEALTH_PER_X = 0.3;
+function healthMult(g) { return 1 + HEALTH_PER_X * (Math.min(MAX_GROWTH, Math.max(1, g)) - 1); }
 function damageMult(g) { return statMult(g); }
 function bodyDamageMult(g) { return statMult(g); }
 // The camera: arras' own sqrt(size) times this, so the view follows

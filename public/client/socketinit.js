@@ -21,6 +21,7 @@ import * as bankPops from "./bankPopLogic.js";
 import * as scoreText from "./scoreLogic.js";
 import * as raidProg from "./raidProgressLogic.js";
 import * as mineDust from "./mineDust.js";
+import { chatLog, pushMessage as pushChat } from "./chatPanelLogic.js";
 // callouts (KC) that make your sidekick bounce about
 const SIDEKICK_CHEERS = { kill: 1, revenge: 1, huntkill: 1, shutdown: 1, bounty: 1, boss: 1, streak: 1, quest: 1, contract: 1 };
 window.fakeLagMS = 0;
@@ -394,26 +395,16 @@ const GunContainer = n => {
             offset: 0,
         });
     }
+    // drawEntity reads these every frame for every body: hand out one reused
+    // positions array and the gun records themselves (they carry the config
+    // fields) instead of fresh copies per draw
+    const pos = new Array(n).fill(0);
     return {
-        getPositions: () => a.map(g => {
-            return g.position;
-        }),
-        getConfig: () => a.map(g => {
-            return {
-                color: g.color,
-                borderless: g.borderless,
-                alpha: g.alpha,
-                strokeWidth: g.strokeWidth,
-                drawFill: g.drawFill,
-                drawAbove: g.drawAbove,
-                length: g.length,
-                width: g.width,
-                aspect: g.aspect,
-                angle: g.angle,
-                direction: g.direction,
-                offset: g.offset,
-            };
-        }),
+        getPositions: () => {
+            for (let i = 0; i < a.length; i++) pos[i] = a[i].position;
+            return pos;
+        },
+        getConfig: () => a,
         setConfig: (ind, c) => {
             let g = a[ind];
             if (!g.configLoaded) {
@@ -968,12 +959,6 @@ const convert = {
             if (e.render.status.getFade() !== 0 && util.isInView(e.render.x - global.player.renderx, e.render.y - global.player.rendery, e.size, true)) {
                 output.push(e);
             } else {
-                if (global.chats[e.id]) {
-                    for (let o of global.chats[e.id]) {
-                        util.remove(global.chats[e.id], global.chats[e.id].indexOf(o));
-                    };
-                    delete global.chats[e.id];
-                };
                 if (e.render.textobjs != null) {
                     for (let o of e.render.textobjs) {
                         o.remove();
@@ -1320,24 +1305,19 @@ let incoming = async function(message, socket) {
             } break;
             case 'TC': {
                 // duos: team chat [name, text, bodyId, mine]. Reaches you from
-                // your partner at any distance, dead or alive; the feed by the
-                // teammate card shows it, and a bubble over the sender when
-                // they are on screen.
+                // your partner at any distance, dead or alive; the chat panel
+                // shows it with a [Team] tag in the team colour.
                 const name = String(m[0] || 'Teammate'), text = String(m[1] || ''), bid = m[2] | 0, mine = !!m[3];
                 if (!text) break;
-                const now = performance.now();
-                global.teamChat.push({ name, text, mine, at: now });
-                if (global.teamChat.length > 6) global.teamChat.shift();
-                const id = bid || (mine ? gui.playerid : 0);
-                if (id) {
-                    if (!global.chats) global.chats = {};
-                    const list = global.chats[id] || (global.chats[id] = []);
-                    const alpha = util.AdvancedSmoothBar(0, 0.3, 1.5);
-                    list.push({ text, id: 1e9 + (global.teamChatSeq = (global.teamChatSeq | 0) + 1), alpha, local: true, team: true, expires: now + 9000 });
-                    alpha.set(1);
-                    while (list.filter(c => !c.erased).length > 3) { const old = list.find(c => !c.erased); old.erased = true; old.alpha.set(0); }
-                }
+                pushChat(chatLog, { sid: bid || (mine ? gui.playerid : 0), name, text, team: true, mine }, performance.now());
                 if (!mine) { try { gameSound.dustPop(); } catch (e) { /* */ } }
+            } break;
+            case 'CH': {
+                // raid chat, everyone in the raid [id, bodyId, name, color, text, team]
+                const text = String(m[4] || '');
+                if (!text) break;
+                const sid = m[1] | 0;
+                pushChat(chatLog, { id: m[0] | 0, sid, name: String(m[2] || ''), color: String(m[3] || ''), text, team: !!m[5], mine: !!sid && sid === gui.playerid }, performance.now());
             } break;
             case 'PG': {
                 // duos: a quick ping [x, y, kind, name, bodyId, mine]; one per
@@ -2536,32 +2516,6 @@ let incoming = async function(message, socket) {
         case 'DS': {
             if (!config.graphical.smoothcamera2) config.graphical.smoothcamera = false;
             delete config.graphical.smoothcamera2;
-        } break;
-        case 'CHAT_MESSAGE_ENTITY': {
-            if (!global.chats) global.chats = {};
-            for (let data of JSON.parse(m[0])) {
-                if (!global.chats[data.id]) global.chats[data.id] = [];
-                for (let e of data.messages) {
-                    const alreadyExists = global.chats[data.id].find(msg => msg.id === e.id);
-                    if (!alreadyExists) {
-                        let alpha = util.AdvancedSmoothBar(0, 0.3, 1.5);
-                        global.chats[data.id].push({
-                            text: e.text,
-                            id: e.id,
-                            alpha: alpha
-                        })
-                        alpha.set(1);
-                    }
-                }
-                for (let i = 0; i < global.chats[data.id].length; i++) {
-                    let e = global.chats[data.id][i];
-                    const existing = data.messages.find(o => o.id === e.id);
-                    if (!existing && !e.erased) {
-                        e.erased = true;
-                        e.alpha.set(0);
-                    };
-                }
-            }
         } break;
     };
 }

@@ -75,6 +75,8 @@ const HOT = new Set([
     "client/hitFx.js",
     "client/skyDrop.js",
     "client/raidShare.js",
+    "client/chatPanelLogic.js",
+    "client/keepNudge.js",
     "client/touch.js",
     "client/touchInput.js",
     "client/abilityFx.js",

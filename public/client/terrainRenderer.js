@@ -61,6 +61,146 @@ const GEM_CUT = [
     [-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95],
 ];
 
+// ---- rock damage index (bench: scratchpad terr/bench.mjs) ----
+// Rock damage bookkeeping, indexed so the per-frame
+// damage overlay costs what is near the view, not every rock ever hit this
+// raid (dead and regrown rocks stay in the health map until the next init).
+//
+// RockHealthMap is the renderer's _rockHealth: a Map (key -> health 0..1)
+// that also files each key, the first time it is set, under a coarse grid
+// bucket of its cell centre and a sequence number (the Map's own insertion
+// order, since keys are never deleted between clears). inView() lists the
+// keys whose bucket overlaps a box, in that order, so drawing them gives the
+// same overlay, in the same order, as walking the whole Map.
+// It also keeps the low-health keys (stage 5: the cut-out, trembling cells)
+// as a small set, for the same reason.
+
+const DMG_BUCKET = 8;   // tile units per side
+
+class RockHealthMap extends Map {
+    constructor(cellOf, isLow) {
+        super();
+        this._cellOf = cellOf;        // k -> { cx, cy } or undefined
+        this._isLow = isLow;          // health -> stage 5?
+        this._seq = new Map();        // k -> insertion number
+        this._keyOf = [];             // insertion number -> k
+        this._n = 0;
+        this._buckets = new Map();    // bucket key -> [insertion number...]
+        this._tmp = new Int32Array(256);
+        this._unplaced = [];          // keys whose cell was not known yet
+        this._low = new Set();
+        this._out = [];               // reused result of inView()
+        this._lowOut = [];
+        this.reindexes = 0;
+    }
+    set(k, v) {
+        if (this._seq !== undefined) {
+            if (!super.has(k)) {
+                this._seq.set(k, this._n);
+                this._keyOf[this._n++] = k;
+                this._place(k);
+            }
+            if (this._isLow(v)) this._low.add(k); else this._low.delete(k);
+        }
+        return super.set(k, v);
+    }
+    delete(k) {
+        if (super.has(k)) {
+            this._seq.delete(k);
+            this._low.delete(k);
+            // rare (nothing deletes today): a full re-file keeps it simple
+            this.reindex();
+        }
+        return super.delete(k);
+    }
+    clear() {
+        super.clear();
+        if (this._seq === undefined) return;
+        this._seq.clear();
+        this._keyOf.length = 0;
+        this._n = 0;
+        this._buckets.clear();
+        this._unplaced.length = 0;
+        this._low.clear();
+    }
+    _place(k) {
+        const c = this._cellOf(k);
+        if (!c) { this._unplaced.push(k); return; }
+        const bk = Math.floor(c.cx / DMG_BUCKET) * 65536 + Math.floor(c.cy / DMG_BUCKET);
+        const sq = this._seq.get(k);
+        const b = this._buckets.get(bk);
+        if (b) b.push(sq); else this._buckets.set(bk, [sq]);
+    }
+    // the cells were rebuilt: file every key again
+    reindex() {
+        this.reindexes++;
+        this._buckets.clear();
+        this._unplaced.length = 0;
+        this._seq.forEach((_, k) => this._place(k));
+    }
+    // keys whose cell centre may lie in [x0, x1] x [y0, y1] (tile units), in
+    // insertion order; the caller still tests each cell exactly
+    inView(x0, y0, x1, y1) {
+        let n = 0;
+        if (this._unplaced.length) {
+            const left = this._unplaced;
+            this._unplaced = [];
+            for (let i = 0; i < left.length; i++) this._place(left[i]);
+            // the ones still without a cell are skipped by the caller anyway,
+            // but keep them in the walk so nothing depends on cells arriving
+            for (let i = 0; i < this._unplaced.length; i++) n = this._add(n, this._seq.get(this._unplaced[i]));
+        }
+        const bx0 = Math.floor(x0 / DMG_BUCKET), bx1 = Math.floor(x1 / DMG_BUCKET);
+        const by0 = Math.floor(y0 / DMG_BUCKET), by1 = Math.floor(y1 / DMG_BUCKET);
+        for (let bx = bx0; bx <= bx1; bx++) {
+            for (let by = by0; by <= by1; by++) {
+                const b = this._buckets.get(bx * 65536 + by);
+                if (!b) continue;
+                for (let i = 0; i < b.length; i++) n = this._add(n, b[i]);
+            }
+        }
+        return this._keysInOrder(n);
+    }
+    _add(n, sq) {
+        if (n === this._tmp.length) { const t = new Int32Array(n * 2); t.set(this._tmp); this._tmp = t; }
+        this._tmp[n] = sq;
+        return n + 1;
+    }
+    // the first n gathered insertion numbers, sorted, as keys (reused array)
+    _keysInOrder(n) {
+        const s = this._tmp.subarray(0, n);
+        if (n > 1) s.sort();
+        const out = this._out;
+        out.length = n;
+        for (let i = 0; i < n; i++) out[i] = this._keyOf[s[i]];
+        return out;
+    }
+    // stage-5 keys (alive or not: the caller filters), in insertion order
+    lowKeys() {
+        let n = 0;
+        this._low.forEach(k => { n = this._add(n, this._seq.get(k)); });
+        const keys = this._keysInOrder(n);
+        const out = this._lowOut;
+        out.length = n;
+        for (let i = 0; i < n; i++) out[i] = keys[i];
+        return out;
+    }
+}
+
+// _cellPolys: a Map that tells the health index when the cells are cleared
+// (they are rebuilt from the lattice, possibly elsewhere).
+class CellMap extends Map {
+    constructor() {
+        super();
+        this.onClear = null;
+    }
+    clear() {
+        super.clear();
+        if (this.onClear) this.onClear();
+    }
+}
+// ---- end rock damage index ----
+
 class TerrainRenderer {
     static ORE_FX = {
         1: ['201,111,46', '237,167,102', '160,80,30'],
@@ -132,9 +272,13 @@ class TerrainRenderer {
         this.debugCollision      = false;
         this._debugVoronoiSegs   = null;
 
-        this._rockHealth = new Map();   
+        // health per touched rock, indexed by place (rockDamageIndex.js):
+        // the damage overlay visits what is near the view, not every rock
+        // hit this raid
+        this._cellPolys  = new CellMap();
+        this._rockHealth = new RockHealthMap(k => this._cellPolys.get(k), h => this._stageOf(h) >= 5);
+        this._cellPolys.onClear = () => this._rockHealth.reindex();
         this._rockDead   = new Set();   
-        this._cellPolys  = new Map();   
         this._crackCache = new Map();   
         this._fx         = [];          
         this._impacts    = [];          
@@ -3076,6 +3220,175 @@ class TerrainRenderer {
         this.mapDirty = true;
     }
 
+    // Rock-hit chips and trickling pebbles (from _drawScene, unchanged).
+    _drawImpacts(ctx, nowMs, rockSz, lite) {
+        if (this._impacts.length || this._pebbles.length) {
+            const CHIPC = TerrainRenderer.ROCK_CHIP;
+            ctx.save();
+            for (let i = this._impacts.length - 1; i >= 0; i--) {
+                const im = this._impacts[i];
+                const dt = nowMs - im.born;
+                if (im.ticksOnly && dt >= 400) { this._impacts.splice(i, 1); continue; }
+                const tc = dt / 1800;
+                if (tc >= 1) { this._impacts.splice(i, 1); continue; }
+                const baseAng = Math.atan2(im.dy ?? 0, im.dx ?? 1);
+                // grind scrapes render at half scale with fewer chips
+                const isc = im.small ? 0.45 : 1;
+
+                const ts = dt / 280;
+                if (!im.ticksOnly && ts < 1) {
+                    ctx.globalAlpha = (1 - ts) * (im.small ? 0.45 : 0.9);
+                    ctx.fillStyle = 'rgb(255,235,180)';
+                    ctx.beginPath();
+                    ctx.arc(im.x, im.y, 0.13 * rockSz * isc * (1 - ts * 0.6), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+                // rock hits are one-shot, no combo. skip grind scrapes.
+                if (!im.small) {
+                    const tickT = dt / 400;
+                    if (tickT < 1) {
+                        const ha = (1 - tickT) * (1 - tickT) * 0.85;
+                        const spread = (0.16 + 0.28 * tickT) * rockSz;
+                        ctx.save();
+                        ctx.globalAlpha = ha;
+                        ctx.strokeStyle = "rgba(255,244,210,0.95)";
+                        ctx.lineWidth = Math.max(0.035, 0.042 * rockSz);
+                        ctx.lineCap = "round";
+                        for (let k = 0; k < 4; k++) {
+                            const ang = Math.PI / 4 + k * Math.PI / 2;
+                            const ca = Math.cos(ang), sa = Math.sin(ang);
+                            ctx.beginPath();
+                            ctx.moveTo(im.x + ca * spread * 0.42, im.y + sa * spread * 0.42);
+                            ctx.lineTo(im.x + ca * spread, im.y + sa * spread);
+                            ctx.stroke();
+                        }
+                        ctx.restore();
+                    }
+                }
+                if (im.ticksOnly) {
+                    ctx.globalAlpha = 1;
+                    continue;
+                }
+                // rock chips flying out fast off the rock
+                const fly = Math.min(1, tc / 0.3);
+                const fe  = 1 - Math.pow(1 - fly, 3);
+                const al  = tc < 0.5 ? 0.9 : 0.9 * (1 - (tc - 0.5) / 0.5);
+                ctx.globalAlpha = al;
+                for (let s = 0; s < (lite ? (im.small ? 2 : 6) : im.small ? 5 : 12); s++) {
+                    const ang = baseAng + (this._h(s, im.seed, 55) - 0.5) * 1.5;
+                    const sp  = (0.2 + this._h(s, im.seed, 56) * 0.75) * rockSz * isc;
+                    const sz  = (0.016 + this._h(s, im.seed, 57) * 0.028) * rockSz * (im.small ? 0.8 : 1);
+                    ctx.save();
+                    ctx.translate(im.x + Math.cos(ang) * fe * sp,
+                                  im.y + Math.sin(ang) * fe * sp);
+                    ctx.rotate(ang + fe * (this._h(s, im.seed, 58) - 0.5) * 8);
+                    ctx.fillStyle = (im.chips || CHIPC)[s % 3];
+                    ctx.fillRect(-sz, -sz * 0.7, sz * 2, sz * 1.4);
+                    ctx.restore();
+                }
+                ctx.globalAlpha = 1;
+            }
+
+            for (let i = this._pebbles.length - 1; i >= 0; i--) {
+                const pb = this._pebbles[i];
+                const tp = (nowMs - pb.born) / 1100;
+                if (tp >= 1) { this._pebbles.splice(i, 1); continue; }
+                const fe = 1 - Math.pow(1 - Math.min(1, tp / 0.35), 3);
+                const range = (0.35 + this._h(1, pb.seed, 61) * 0.45) * rockSz;
+                const sz = (0.018 + this._h(0, pb.seed, 60) * 0.022) * rockSz;
+                ctx.globalAlpha = tp < 0.4 ? 0.85 : 0.85 * (1 - (tp - 0.4) / 0.6);
+                ctx.fillStyle = (pb.chips || CHIPC)[pb.seed % 3];
+                ctx.fillRect(pb.x + pb.dx * fe * range - sz,
+                             pb.y + pb.dy * fe * range - sz, sz * 2, sz * 2);
+            }
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
+    }
+
+    // Shatter bursts (from _drawScene, unchanged).
+    _drawShatter(ctx, nowMs, rockSz, lite) {
+        // ── Shatter: brief flash + dust ring, streaks, then rock chips.
+        // One path per streak colour and per chip shade, alpha for the
+        // fades, so a burst costs a handful of draw calls a frame.
+        if (this._fx.length) {
+            const CHIPS = TerrainRenderer.ROCK_CHIP;
+            const pool = this._fxPool || (this._fxPool = []);
+            ctx.save();
+            for (let i = this._fx.length - 1; i >= 0; i--) {
+                const fx = this._fx[i];
+                const t  = (nowMs - fx.born) / 620;
+                if (t < 0) continue;   // hit-stop: burst starts after the freeze
+                if (t >= 1) { pool.push(fx); this._fx.splice(i, 1); continue; }
+                const eo   = 1 - Math.pow(1 - t, 4);
+                const fade = t < 0.5 ? 1 : 1 - (t - 0.5) / 0.5;
+                // hard white flash filling the rock's silhouette
+                if (t < 0.12) {
+                    ctx.globalAlpha = (1 - t / 0.12) * 0.9;
+                    ctx.fillStyle = 'rgb(240,232,250)';
+                    ctx.fill(fx.path);
+                }
+                // fast double dust ring
+                ctx.strokeStyle = 'rgb(110,100,125)';
+                for (let rgi = 0; rgi < 2; rgi++) {
+                    const rt = rgi === 0 ? t : (t - 0.07) / 0.93;
+                    if (rt <= 0 || rt >= 1) continue;
+                    const rq = 1 - Math.pow(1 - rt, 4);          // easeOutQuart
+                    ctx.globalAlpha = Math.pow(1 - rt, 1.5) * 0.6;
+                    ctx.beginPath();
+                    ctx.arc(fx.cx, fx.cy, (0.25 + (rgi ? 1.9 : 3.0) * rq) * rockSz, 0, Math.PI * 2);
+                    ctx.lineWidth   = 0.12 * rockSz * (1 - rt) + 0.01;
+                    ctx.stroke();
+                }
+                // colored firework streaks flying out with the debris
+                const pal = fx.colors, S = fx.sparks, nS = lite ? fx.nSparks >> 1 : fx.nSparks;
+                ctx.lineCap = 'round';
+                ctx.lineWidth = 0.028 * rockSz * (1 - t * 0.5);
+                ctx.globalAlpha = fade * 0.9;
+                for (let ci = 0; ci < pal.length; ci++) {
+                    let any = false;
+                    for (let e = 0; e < nS; e++) {
+                        if (S[e * 3 + 2] !== ci) continue;
+                        if (!any) { any = true; ctx.beginPath(); }
+                        const r2 = eo * S[e * 3 + 1] * rockSz, r1 = r2 * 0.6;
+                        const ca = Math.cos(S[e * 3]), sa = Math.sin(S[e * 3]);
+                        ctx.moveTo(fx.cx + ca * r1, fx.cy + sa * r1);
+                        ctx.lineTo(fx.cx + ca * r2, fx.cy + sa * r2);
+                    }
+                    if (any) { ctx.strokeStyle = pal[ci]; ctx.stroke(); }
+                }
+                // rock chips: little turned oblongs, one path per shade
+                ctx.globalAlpha = fade;
+                const P = fx.parts, chips = fx.chips || CHIPS;
+                const step = lite ? 2 : 1, shrink = 1 - t * 0.6;
+                for (let sh = 0; sh < 3; sh++) {
+                    ctx.beginPath();
+                    for (let e = 0; e < SHATTER_CHIPS; e += step) {
+                        const o = e * 8;
+                        if (P[o + 3] !== sh) continue;
+                        const ang = P[o], dist = eo * P[o + 1] * rockSz;
+                        const px = fx.cx + P[o + 6] + Math.cos(ang) * dist;
+                        const py = fx.cy + P[o + 7] + Math.sin(ang) * dist;
+                        const hw = P[o + 2] * rockSz * shrink, hh = hw * P[o + 5];
+                        const r = ang + P[o + 4] * eo, c = Math.cos(r), sn = Math.sin(r);
+                        const ax = c * hw, ay = sn * hw, bx = -sn * hh, by = c * hh;
+                        ctx.moveTo(px - ax - bx, py - ay - by);
+                        ctx.lineTo(px + ax - bx, py + ay - by);
+                        ctx.lineTo(px + ax + bx, py + ay + by);
+                        ctx.lineTo(px - ax + bx, py - ay + by);
+                        ctx.closePath();
+                    }
+                    ctx.fillStyle = chips[sh];
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+            }
+            ctx.restore();
+        }
+    }
+
     _drawScene(ctx, px, py, ratio, gameWidth, gameHeight, screenW, screenH) {
         if (!this.ready) return;
 
@@ -3146,7 +3459,10 @@ class TerrainRenderer {
                 // usually unchanged: keep the old path rather than copying the
                 // whole silhouette again.
                 const shaking = [];
-                for (const k of this._rockHealth.keys()) {
+                // only the stage-5 keys (kept by the health map), same order
+                const low = this._rockHealth.lowKeys();
+                for (let li = 0; li < low.length; li++) {
+                    const k = low[li];
                     if (this._rockDead.has(k)) continue;
                     if (this._stageOf(this._rockHealth.get(k)) < 5) continue;
                     const cell = this._cellPolys.get(k);
@@ -3386,9 +3702,10 @@ class TerrainRenderer {
                 ctx.save();
                 ctx.lineJoin = 'round';
                 ctx.lineCap  = 'round';
-                // forEach, not for..of: most of these are dead or off screen,
-                // and an iterator step per rock per frame adds up
-                this._rockHealth.forEach((frac, k) => {
+                // only the touched rocks filed near the view, in the order
+                // the whole map would give them (rockDamageIndex.js): the walk
+                // no longer grows with every rock mined this raid
+                const drawDamage = (frac, k) => {
                     if (this._rockDead.has(k)) return;
                     const cell = this._cellPolys.get(k);
                     if (!cell) return;
@@ -3479,7 +3796,9 @@ class TerrainRenderer {
                             }
                         }
                     }
-                });
+                };
+                const near = this._rockHealth.inView(tlx - 3, tly - 3, tlx + tlw + 3, tly + tlh + 3);
+                for (let ni = 0; ni < near.length; ni++) drawDamage(this._rockHealth.get(near[ni]), near[ni]);
                 ctx.restore();
             }
 
@@ -3648,167 +3967,10 @@ class TerrainRenderer {
                 ctx.restore();
             }
 
-            if (this._impacts.length || this._pebbles.length) {
-                const CHIPC = TerrainRenderer.ROCK_CHIP;
-                ctx.save();
-                for (let i = this._impacts.length - 1; i >= 0; i--) {
-                    const im = this._impacts[i];
-                    const dt = nowMs - im.born;
-                    if (im.ticksOnly && dt >= 400) { this._impacts.splice(i, 1); continue; }
-                    const tc = dt / 1800;
-                    if (tc >= 1) { this._impacts.splice(i, 1); continue; }
-                    const baseAng = Math.atan2(im.dy ?? 0, im.dx ?? 1);
-                    // grind scrapes render at half scale with fewer chips
-                    const isc = im.small ? 0.45 : 1;
-
-                    const ts = dt / 280;
-                    if (!im.ticksOnly && ts < 1) {
-                        ctx.globalAlpha = (1 - ts) * (im.small ? 0.45 : 0.9);
-                        ctx.fillStyle = 'rgb(255,235,180)';
-                        ctx.beginPath();
-                        ctx.arc(im.x, im.y, 0.13 * rockSz * isc * (1 - ts * 0.6), 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.globalAlpha = 1;
-                    }
-                    // rock hits are one-shot, no combo. skip grind scrapes.
-                    if (!im.small) {
-                        const tickT = dt / 400;
-                        if (tickT < 1) {
-                            const ha = (1 - tickT) * (1 - tickT) * 0.85;
-                            const spread = (0.16 + 0.28 * tickT) * rockSz;
-                            ctx.save();
-                            ctx.globalAlpha = ha;
-                            ctx.strokeStyle = "rgba(255,244,210,0.95)";
-                            ctx.lineWidth = Math.max(0.035, 0.042 * rockSz);
-                            ctx.lineCap = "round";
-                            for (let k = 0; k < 4; k++) {
-                                const ang = Math.PI / 4 + k * Math.PI / 2;
-                                const ca = Math.cos(ang), sa = Math.sin(ang);
-                                ctx.beginPath();
-                                ctx.moveTo(im.x + ca * spread * 0.42, im.y + sa * spread * 0.42);
-                                ctx.lineTo(im.x + ca * spread, im.y + sa * spread);
-                                ctx.stroke();
-                            }
-                            ctx.restore();
-                        }
-                    }
-                    if (im.ticksOnly) {
-                        ctx.globalAlpha = 1;
-                        continue;
-                    }
-                    // rock chips flying out fast off the rock
-                    const fly = Math.min(1, tc / 0.3);
-                    const fe  = 1 - Math.pow(1 - fly, 3);
-                    const al  = tc < 0.5 ? 0.9 : 0.9 * (1 - (tc - 0.5) / 0.5);
-                    ctx.globalAlpha = al;
-                    for (let s = 0; s < (lite ? (im.small ? 2 : 6) : im.small ? 5 : 12); s++) {
-                        const ang = baseAng + (this._h(s, im.seed, 55) - 0.5) * 1.5;
-                        const sp  = (0.2 + this._h(s, im.seed, 56) * 0.75) * rockSz * isc;
-                        const sz  = (0.016 + this._h(s, im.seed, 57) * 0.028) * rockSz * (im.small ? 0.8 : 1);
-                        ctx.save();
-                        ctx.translate(im.x + Math.cos(ang) * fe * sp,
-                                      im.y + Math.sin(ang) * fe * sp);
-                        ctx.rotate(ang + fe * (this._h(s, im.seed, 58) - 0.5) * 8);
-                        ctx.fillStyle = (im.chips || CHIPC)[s % 3];
-                        ctx.fillRect(-sz, -sz * 0.7, sz * 2, sz * 1.4);
-                        ctx.restore();
-                    }
-                    ctx.globalAlpha = 1;
-                }
-
-                for (let i = this._pebbles.length - 1; i >= 0; i--) {
-                    const pb = this._pebbles[i];
-                    const tp = (nowMs - pb.born) / 1100;
-                    if (tp >= 1) { this._pebbles.splice(i, 1); continue; }
-                    const fe = 1 - Math.pow(1 - Math.min(1, tp / 0.35), 3);
-                    const range = (0.35 + this._h(1, pb.seed, 61) * 0.45) * rockSz;
-                    const sz = (0.018 + this._h(0, pb.seed, 60) * 0.022) * rockSz;
-                    ctx.globalAlpha = tp < 0.4 ? 0.85 : 0.85 * (1 - (tp - 0.4) / 0.6);
-                    ctx.fillStyle = (pb.chips || CHIPC)[pb.seed % 3];
-                    ctx.fillRect(pb.x + pb.dx * fe * range - sz,
-                                 pb.y + pb.dy * fe * range - sz, sz * 2, sz * 2);
-                }
-                ctx.globalAlpha = 1;
-                ctx.restore();
-            }
-
-            // ── Shatter: brief flash + dust ring, streaks, then rock chips.
-            // One path per streak colour and per chip shade, alpha for the
-            // fades, so a burst costs a handful of draw calls a frame.
-            if (this._fx.length) {
-                const CHIPS = TerrainRenderer.ROCK_CHIP;
-                const pool = this._fxPool || (this._fxPool = []);
-                ctx.save();
-                for (let i = this._fx.length - 1; i >= 0; i--) {
-                    const fx = this._fx[i];
-                    const t  = (nowMs - fx.born) / 620;
-                    if (t < 0) continue;   // hit-stop: burst starts after the freeze
-                    if (t >= 1) { pool.push(fx); this._fx.splice(i, 1); continue; }
-                    const eo   = 1 - Math.pow(1 - t, 4);
-                    const fade = t < 0.5 ? 1 : 1 - (t - 0.5) / 0.5;
-                    // hard white flash filling the rock's silhouette
-                    if (t < 0.12) {
-                        ctx.globalAlpha = (1 - t / 0.12) * 0.9;
-                        ctx.fillStyle = 'rgb(240,232,250)';
-                        ctx.fill(fx.path);
-                    }
-                    // fast double dust ring
-                    ctx.strokeStyle = 'rgb(110,100,125)';
-                    for (let rgi = 0; rgi < 2; rgi++) {
-                        const rt = rgi === 0 ? t : (t - 0.07) / 0.93;
-                        if (rt <= 0 || rt >= 1) continue;
-                        const rq = 1 - Math.pow(1 - rt, 4);          // easeOutQuart
-                        ctx.globalAlpha = Math.pow(1 - rt, 1.5) * 0.6;
-                        ctx.beginPath();
-                        ctx.arc(fx.cx, fx.cy, (0.25 + (rgi ? 1.9 : 3.0) * rq) * rockSz, 0, Math.PI * 2);
-                        ctx.lineWidth   = 0.12 * rockSz * (1 - rt) + 0.01;
-                        ctx.stroke();
-                    }
-                    // colored firework streaks flying out with the debris
-                    const pal = fx.colors, S = fx.sparks, nS = lite ? fx.nSparks >> 1 : fx.nSparks;
-                    ctx.lineCap = 'round';
-                    ctx.lineWidth = 0.028 * rockSz * (1 - t * 0.5);
-                    ctx.globalAlpha = fade * 0.9;
-                    for (let ci = 0; ci < pal.length; ci++) {
-                        let any = false;
-                        for (let e = 0; e < nS; e++) {
-                            if (S[e * 3 + 2] !== ci) continue;
-                            if (!any) { any = true; ctx.beginPath(); }
-                            const r2 = eo * S[e * 3 + 1] * rockSz, r1 = r2 * 0.6;
-                            const ca = Math.cos(S[e * 3]), sa = Math.sin(S[e * 3]);
-                            ctx.moveTo(fx.cx + ca * r1, fx.cy + sa * r1);
-                            ctx.lineTo(fx.cx + ca * r2, fx.cy + sa * r2);
-                        }
-                        if (any) { ctx.strokeStyle = pal[ci]; ctx.stroke(); }
-                    }
-                    // rock chips: little turned oblongs, one path per shade
-                    ctx.globalAlpha = fade;
-                    const P = fx.parts, chips = fx.chips || CHIPS;
-                    const step = lite ? 2 : 1, shrink = 1 - t * 0.6;
-                    for (let sh = 0; sh < 3; sh++) {
-                        ctx.beginPath();
-                        for (let e = 0; e < SHATTER_CHIPS; e += step) {
-                            const o = e * 8;
-                            if (P[o + 3] !== sh) continue;
-                            const ang = P[o], dist = eo * P[o + 1] * rockSz;
-                            const px = fx.cx + P[o + 6] + Math.cos(ang) * dist;
-                            const py = fx.cy + P[o + 7] + Math.sin(ang) * dist;
-                            const hw = P[o + 2] * rockSz * shrink, hh = hw * P[o + 5];
-                            const r = ang + P[o + 4] * eo, c = Math.cos(r), sn = Math.sin(r);
-                            const ax = c * hw, ay = sn * hw, bx = -sn * hh, by = c * hh;
-                            ctx.moveTo(px - ax - bx, py - ay - by);
-                            ctx.lineTo(px + ax - bx, py + ay - by);
-                            ctx.lineTo(px + ax + bx, py + ay + by);
-                            ctx.lineTo(px - ax + bx, py - ay + by);
-                            ctx.closePath();
-                        }
-                        ctx.fillStyle = chips[sh];
-                        ctx.fill();
-                    }
-                    ctx.globalAlpha = 1;
-                }
-                ctx.restore();
-            }
+            // hit chips, pebbles and shatter bursts: in their own methods so they
+            // run optimised (in the scene's giant body every float allocated)
+            if (this._impacts.length || this._pebbles.length) this._drawImpacts(ctx, nowMs, rockSz, lite);
+            if (this._fx.length) this._drawShatter(ctx, nowMs, rockSz, lite);
         } else {
             // the voronoi wall with no silhouette built: build it again
             if (this.useVoronoi && ++this._blankFrames > 20) this.recover('no silhouette');

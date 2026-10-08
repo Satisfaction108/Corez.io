@@ -77,7 +77,8 @@ test('account usernames are refused with a clear message', () => {
 test('wiring: raid names, in-game chat, friend chat, party guests, the shared file and the client hint', () => {
     const read = (...p) => fs.readFileSync(path.join(REPO, ...p), 'utf8');
     const so = read('server', 'game', 'network', 'sockets.js');
-    assert.match(so, /message = profanity\.mask\(message\);/, 'in-game chat masked for everyone');
+    assert.match(read('server', 'game', 'network', 'raidChat.js'), /message = profanity\.mask\(String\(message\)\);/, 'in-game chat masked for everyone');
+    assert.match(so, /raidChat\.fromPlayer\(socket, m\[0\], !!m\[1\]\);/, 'the M packet goes through raidChat');
     assert.match(so, /else name = profanity\.guestName\(name, socket\);/);
     const br = read('server', 'accounts', 'game', 'bridge.js');
     assert.match(br, /clean = profanity\.guestName\(clean, socket\);/, 'guests in raids');

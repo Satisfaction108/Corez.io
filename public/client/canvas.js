@@ -60,24 +60,25 @@ class Canvas {
                 this.chatListener(id, { keyCode: global.KEY_ESC, preventDefault() { } });
                 return;
             }
-            // duos: Tab flips between your partner (Team) and everyone nearby (All)
-            if (event.keyCode === 9 && duoChat()) {
+            // duos: Tab flips between your partner (Team) and the whole raid (All)
+            // (solo: Tab stays in the box)
+            if (event.keyCode === 9) {
                 event.preventDefault();
+                if (!duoChat()) return;
                 global.duoChatAll = !global.duoChatAll;
                 gameSound.uiClick();
                 return;
             }
             if (![global.KEY_ENTER, global.KEY_ESC].includes(event.keyCode)) return;
+            event.preventDefault && event.preventDefault();
             // closed before the blur: a phone treats blur as Done (spawnChatInput)
             global.showChat = false;
             // iOS can leave the page scrolled after its keyboard goes away
             if (global.mobile) setTimeout(() => { if (window.scrollY || window.scrollX) window.scrollTo(0, 0); if (window.resizeEvent) window.resizeEvent(); }, 60);
             if (this.chatAutoPaused) { this.chatAutoPaused = false; if (!global.died) this.socket.talk("t", 1, false); }
+            this[id].style.display = "none";
             this[id].blur();
             this.cv.focus();
-            setTimeout(() => {
-                if (this.chatBox && !this.chatBox.loadedProperly) this.chatBox.remove(), this.chatInput.remove(), this.chatBox = false;
-            }, 50)
             if (!this[id].value) return;
             if (event.keyCode === global.KEY_ENTER) {
                 let text = this[id].value, team = duoChat() && !global.duoChatAll;
@@ -90,7 +91,7 @@ class Canvas {
                 if (/^\s*\$restore(\s|$)/i.test(text)) team = false;
                 if (text.trim()) {
                     if (team) this.socket.talk('TC', text);
-                    else this.socket.talk('M', text, global.chatMode === 'team' ? 1 : 0);
+                    else this.socket.talk('M', text, 0);
                 }
             }
             this[id].value = "";
@@ -270,24 +271,31 @@ class Canvas {
         // keys, otherwise the tank drifts until the key is pressed again
         for (let i = 0; i < 4; i++) this.socket.cmd.set(i, false);
     }
+    // The chat box: one DOM input over the chat panel's bottom row (app.js
+    // drawChatPanel places and styles it every frame, and hides it closed).
     spawnChatInput() {
-        if (!this.chatBox) {
-            this.chatBox = document.createElement("div");
-            this.chatBox.id = "chatBox";
-            this.chatBox.style.zIndex = 10;
-            document.getElementById("gameAreaWrapper").appendChild(this.chatBox);
-            // Input
+        if (!this.chatInput || !this.chatInput.isConnected) {
             this.chatInput = document.createElement("input");
             this.chatInput.id = "chatInput";
+            this.chatInput.type = "text";
+            this.chatInput.maxLength = 56;
+            this.chatInput.autocomplete = "off";
+            this.chatInput.spellcheck = false;
+            this.chatInput.setAttribute("aria-label", "Chat");
             this.chatInput.style.zIndex = 11;
+            this.chatInput.style.display = "none";
             this.chatInput.addEventListener('keydown', event => this.chatListener("chatInput", event));
             if (global.mobile) {
                 // the phone keyboard's Done (or closing it) sends what's typed
                 this.chatInput.setAttribute("enterkeyhint", "send");
-                this.chatInput.addEventListener('blur', () => {
-                    if (global.showChat) this.chatListener("chatInput", { keyCode: global.KEY_ENTER, preventDefault() { } });
-                });
             }
+            this.chatInput.addEventListener('blur', () => {
+                if (!global.showChat) return;
+                // touch: Done sends; a click back into the game (desktop)
+                // closes the box and keeps the draft for next time
+                if (global.mobile) this.chatListener("chatInput", { keyCode: global.KEY_ENTER, preventDefault() { } });
+                else this.blurChat();
+            });
             document.getElementById("gameAreaWrapper").appendChild(this.chatInput);
             attachEmoji(this.chatInput);
         }
@@ -300,8 +308,15 @@ class Canvas {
             // auto-fire holds too, and comes back when the box closes
             if (touch.autoFire && !this.chatAutoPaused) { this.chatAutoPaused = true; this.socket.talk("t", 1, false); }
         }
-        this.chatInput.focus();
         global.showChat = true;
+        this.chatInput.style.display = "block";
+        this.chatInput.focus();
+    }
+    // desktop: focus went back to the game; the box closes, the draft stays
+    blurChat() {
+        global.showChat = false;
+        if (this.chatInput) this.chatInput.style.display = "none";
+        this.releaseMovement();
     }
     // touch: a tap outside the box closes it and sends what's typed, like Done
     closeChat() {
@@ -797,6 +812,13 @@ class Canvas {
                 // "Don't upgrade" acts on release, so remember whether the
                 // press began on it: a shot fired elsewhere and released over
                 // the button must not throw the upgrade menu away.
+                // the chat panel's bottom row ("Enter to chat"): a click opens the box
+                if (!global.showChat && !global.died && hitClientRect({ clientX: mpos.x / guiScale(), clientY: mpos.y / guiScale() }, global.chatPanelRow)) {
+                    // (no default: the canvas taking focus would close the box again)
+                    if (mouse.preventDefault) mouse.preventDefault();
+                    this.spawnChatInput();
+                    break;
+                }
                 this.skipUpgradePressed = global.clickables.skipUpgrades.check(mpos) !== -1;
                 // the build buttons (Last tank, Same stats, Random) act on release too
                 this.lastTankPressed = global.clickables.lastTank.check(mpos) !== -1;

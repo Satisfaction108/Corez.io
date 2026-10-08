@@ -18,7 +18,6 @@ global.unspawnableTeam = [];
 global.walls = [];
 global.entitiesToAvoid = [];
 global.servers = [];
-global.chats = {};
 global.travellingPlayers = [];
 global.fps = "Unknown";
 

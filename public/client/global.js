@@ -1,4 +1,5 @@
 import { util } from "./util.js";
+import { chatLog, clearLog as clearChatLog } from "./chatPanelLogic.js";
 
 const missingno = {
     index: -1,
@@ -133,7 +134,7 @@ const global = {
     KEY_AUTO_ALT: 71,
     KEY_OVER_RIDE: 82,     // R: AI override
     KEY_REVERSE_TANK: 86,
-    KEY_REVERSE_MOUSE: 66,
+    KEY_REVERSE_MOUSE: -1,  // unbound (Oct 7: it sat on B, the Bank key, and swapped the mouse buttons)
     KEY_SIDEARM: 88,       // X
 
     KEY_LEVEL_UP: 221, 
@@ -353,12 +354,9 @@ const global = {
     teammates: [],
 
     enemyPings: [],
-    // duos: partner talk (socketinit 'TC' / 'PG', drawn in app.js)
-    teamChat: [],
+    // duos: partner pings (socketinit 'PG', drawn in app.js); team chat is in the chat panel
     duoPings: [],
-    duoChatAll: false,     // duos: chat goes to everyone nearby instead of your partner
-
-    chatMode: 'global',
+    duoChatAll: false,     // duos: chat goes to everyone in the raid instead of your partner
 
     showBigMap: false,
     bigMap: { zoom: 1, cx: 0, cy: 0, dragging: false, lastX: 0, lastY: 0 },
@@ -497,7 +495,6 @@ const global = {
     ratio: window.devicePixelRatio,
     mockupLoading: { then: cb => cb() },
     treeScale: 1,
-    chats: {},
     initPlayer: () => {
         global.optionsMenu_Anim = {
             switchMenu_button: util.Smoothbar(0, 2, 3, 0.08, 0.025, true),
@@ -620,7 +617,7 @@ const global = {
         global.deadFlashAt = -1e9;
         global.celebrateAt = -1e9;
         global.metrics.latency = [];
-        global.chats = {};
+        clearChatLog(chatLog);
         global.metrics.rendertime = 0;
         global.metrics.rendertimes = 1;
         global.time = 0;
@@ -672,7 +669,7 @@ const global = {
         global.deadFlashAt = -1e9;
         global.celebrateAt = -1e9;
         global.metrics.latency = [];
-        global.chats = {};
+        clearChatLog(chatLog);
         global.metrics.rendertime = 0;
         global.metrics.rendertimes = 1;
         global.time = 0;

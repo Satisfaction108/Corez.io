@@ -127,12 +127,17 @@ export function tileFrame(m, len, height, byIndex = null) {
     return { angle: f.angle, scale: f.scale, x: len / 2 + f.x, y: area / 2 + k + f.y };
 }
 
-// "RAMS ROCK": a small chip hanging under the name band
-export function ramBadge(len, height, textW) {
-    const k = len / 100;
-    const size = Math.max(6, 8 * k);
-    const w = (textW ? textW(size) : size * 5.6) + 8 * k, h = size + 4 * k;
-    return { x: (len - w) / 2, y: height - h / 2, w, h, size };
+// "RAMS ROCK": a small chip in the lower half of the name band, under the
+// name, wholly inside the tile (Oct 7: it hung over the bottom edge and the
+// tile's bitmap cut it in half). `down`: the face's top (a pressed tile).
+export function ramBadge(len, height, textW, down = 0) {
+    const k = len / 100, faceH = height - TILE.lip * k, band = faceH * TILE.band;
+    const size = Math.max(5.5, 7 * k);
+    const w = (textW ? textW(size) : size * 5.6) + 7 * k, h = size + 3.5 * k;
+    const bandBottom = down + faceH, y = bandBottom - h - Math.max(1, 1.5 * k);
+    // the name takes the room left over the chip
+    const free = y - (bandBottom - band) - 1;
+    return { x: (len - w) / 2, y, w, h, size, nameMid: bandBottom - band + free / 2, nameMax: Math.min(band * 0.42, free * 0.9) };
 }
 
 // a mockup that digs by ramming: no guns of its own, or the smasher stat set

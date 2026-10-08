@@ -235,7 +235,7 @@ class turretEntity extends EventEmitter {
         return this.bond.size * this.bound.size;
     };
     get realSize() {
-        return this.size * lazyRealSizes[Math.floor(Math.abs(this.shape))];
+        return this.size * realSizeFactor(this.shape);
     };
 
     updateBodyInfo() { 

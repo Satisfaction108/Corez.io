@@ -317,7 +317,7 @@ class bulletEntity { // Basically an (Entity) but with heavy limitations to impr
         return this.density * (this.size ** 2 + 1);
     }
     get realSize() {
-        return this.size * lazyRealSizes[Math.floor(Math.abs(this.shape))];
+        return this.size * realSizeFactor(this.shape);
     }
     get xMotion() {
         return (this.velocity.x + this.accel.x) / global.gameManager.roomSpeed;

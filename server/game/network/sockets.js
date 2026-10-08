@@ -9,10 +9,10 @@ let bans = global.bans || (global.bans = []);
 // snapshots are skipped instead of sent.
 const FLOW_SLACK_MS = +process.env.FLOW_SLACK_MS || 250;
 let permBans = global.permBans || (global.permBans = []);
-global.chatID = 0;
 const { clientIp } = require("../../lib/clientIp.js");
 const accountBridge = require("../../accounts/game/bridge.js");
 const activity = require("./activity.js");
+const raidChat = require("./raidChat.js");
 const { unpackMove } = require("../../lib/touchMove.js");
 const tier5 = require("../terrain/tier5.js");
 
@@ -271,48 +271,6 @@ class socketManager {
 
         fs.writeFileSync(PERMABAN_FILE, JSON.stringify(permBans, null, 2));
     }
-    chatLoop() {
-
-        let now = Date.now();
-        for (let i in chats) {
-            chats[i].messages = chats[i].messages.filter((chat) => chat.expires > now);
-        }
-
-        for (let view of global.gameManager.views) {
-            let nearby = view.getNearby(),
-            array = [];
-
-            const viewTeam = view.socket.player && view.socket.player.body
-                ? view.socket.player.body.team
-                : (view.socket.player ? view.socket.player.team : undefined);
-            for (let entity of nearby.values()) {
-                let id = entity.id;
-                if (chats[id]) {
-                    array.push({ id: id, messages: [] });
-                    let index = array.length - 1;
-                    // blocked accounts (either way) never see each other's chat
-                    if (entity.accountId && accountBridge.chatHidden(view.socket, entity)) continue;
-                    for (let chat of chats[id].messages) {
-                        if (chat.team != null && chat.team !== viewTeam) continue;
-                        array[index].messages.push({ text: chat.team != null ? "[TEAM] " + chat.message : chat.message, id: chat.id });
-                    }
-                }
-            }
-            const payload = view.socket.status.disablechat
-                ? JSON.stringify(array.map(o => {return {id: o.id, messages: []}}))
-                : JSON.stringify(array);
-            // 5 times a second per client, nearly always the same as last
-            // time (usually "[]"); the client keeps state from the last one,
-            // so an unchanged list needs no packet. One with live messages
-            // still goes out every second: the client drops a tank's chat
-            // when the tank leaves its snapshot, and gets it back from this.
-            if (payload === view.socket._chatSent && (!array.some(o => o.messages.length) || now - view.socket._chatSentAt < 1000)) continue;
-            view.socket._chatSent = payload;
-            view.socket._chatSentAt = now;
-            view.socket.talk("CHAT_MESSAGE_ENTITY", payload);
-        }
-    }
-
     close(socket) {
 
         let player = socket.player,
@@ -1182,43 +1140,13 @@ class socketManager {
                 }
                 if (player.body == null) return 1;
                 activity.noteChat(socket);
-                let abort, message = m[0], original = m[0];
-
-                if ("string" !==  typeof message) {
+                if ("string" !== typeof m[0]) {
                     socket.kick("Non-string chat message.");
                     return 1;
                 }
-
-                util.log(player.body.name + ': ' + original);
-
-                if (Config.sanitize_chat_input) {
-
-                    message = message.replace(/§/g, "§§§§");
-                    original = original.replace(/§/g, "§§§§");
-                }
-
-                Events.emit('chatMessage', { gameManager: global.gameManager, message: original, socket, preventDefault: () => abort = true, setMessage: str => message = str });
-
-                if (abort) break;
-                // swears and slurs turn into asterisks for everyone (shared/profanity.js)
-                message = profanity.mask(message);
-
-                if (message !== original) {
-                    util.log('changed to: ' + message);
-                }
-
-                let id = player.body.id;
-                if (!chats[id]) {
-                    chats[id] = {};
-                    chats[id].messages = [];
-                }
-
-                const chatTeam = m[1] ? player.body.team : null;
-                chats[id].messages.unshift({ message, team: chatTeam, expires: Date.now() + Config.chat_message_duration, id: global.chatID++ });
-
-                if (chats[id].messages.length > 3) chats[id].messages.length = 3;
-
-                this.chatLoop();
+                util.log(player.body.name + ': ' + m[0]);
+                // spam limits, then the mask, then everyone in the raid (raidChat.js)
+                raidChat.fromPlayer(socket, m[0], !!m[1]);
             } break;
             case "T": {
 
@@ -1474,6 +1402,12 @@ class socketManager {
                             }
                             if (spot) { b.x = spot.x; b.y = spot.y; b.velocity.x = 0; b.velocity.y = 0; }
                         }
+                    }
+                    else if (what === "botsay") {
+                        // the n-th live bot says a line to the raid (chat panel QA)
+                        const bots = [...entities.values()].filter(e => e && e.isBot && !e.isDead?.()).sort((p, q) => p.id - q.id);
+                        const bot = bots[(m[1] | 0) % Math.max(1, bots.length)];
+                        if (bot) bot.say(String(m[2] || "gg").slice(0, 56));
                     }
                     else if (what === "tobot" && b) {
                         // beside the nearest live bot, for kill/revenge testing
@@ -2577,6 +2511,17 @@ class socketManager {
     }
 
     sendMockup(index, socket) {
+        // gazeUpon asks for every class in view, per client per tick: an index
+        // whose parts all went out already is one Set lookup, not a split and
+        // a scan of the sent list per part
+        const md = socket.status.mockupData;
+        const sent = md._sentWhole || (md._sentWhole = new Set());
+        if (sent.has(index)) return;
+        this._sendMockupParts(index, socket);
+        sent.add(index);
+    }
+
+    _sendMockupParts(index, socket) {
         for (let splittedIndex of index.toString().split("-")) {
             if (socket.status.mockupData.receivedIndexes.includes(splittedIndex)) continue;
 

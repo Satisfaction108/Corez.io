@@ -4,6 +4,8 @@
 
 // Bulwark: rock from gap past your hull out to r rises at rate x the normal pace (16 s / rate), up to max cells
 const BULWARK = { r: 420, gap: 70, rate: 5, max: 36 };
+// bought stat points per raid (Oct 7)
+const STATPT_MAX = 10;
 const PAD_RADIUS = 95;
 
 const DRILL_MULT = [1, 1.25, 1.5, 1.8, 2.15, 2.6];
@@ -23,7 +25,7 @@ const ITEMS = [
     { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 2600, desc: "Mines through rock 115% faster." },
     { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 4000, desc: "Mines through rock 160% faster, and you keep it when you die." },
     // gear: timed (GEAR_MS); `on` is the message shown when it starts
-    { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, desc: "One extra upgrade point to spend on any stat. It stays for the whole raid, even after you die. Buy as many as you have room for." },
+    { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, desc: "One extra upgrade point to spend on any stat. It stays for the whole raid, even after you die. Up to 10 a raid." },
     { id: "scanner",   cat: "gear", name: "Ore Scanner",        price: 1000, desc: "Shows shard and emerald veins within 1.5km on your minimap for 5 minutes.", on: "Veins near you now show on your minimap." },
     { id: "magnet",    cat: "gear", name: "Gem Magnet",         price: 900,  desc: "Pulls in gems from almost twice as far away for 5 minutes.", on: "Gems now come to you from much farther away." },
     { id: "satchel",   cat: "gear", name: "Reinforced Satchel", price: 700,  desc: "Carry 12,000 gems instead of 8,000 for 5 minutes (16,000 with Deep Pockets).", on: "Your satchel holds 4,000 more gems now." },
@@ -363,6 +365,7 @@ function canBuy(socket, item) {
         if (item.tier !== s.drill + 1) return { ok: false, why: "Buy Drill " + ["I", "II", "III", "IV", "V"][s.drill] + " first." };
     } else if (item.id === "statpt") {
         const body = socket.player && socket.player.body;
+        if ((s.statPts | 0) >= STATPT_MAX) return { ok: false, why: "That's the most stat points you can buy this raid (" + STATPT_MAX + ")." };
         if (!body || statRoom(body) <= 0) return { ok: false, why: "Every stat is maxed out. Nothing to put another point into." };
     } else if (item.cat === "gear") {
         if (gearActive(s, item.id)) return { ok: false, why: "That one is already running." };
@@ -911,7 +914,7 @@ function tick(actors) {
 module.exports = {
     ITEMS, BY_ID, getShops, snapshot, catalog, stateOf, freshState, resetAll, talkState, dropKit,
     miningMult, hasGear, magnetMult, satchelCap, deepPockets, SATCHEL_BASE, SATCHEL_STEP, depositRateMult, stormDamageMult, spawnMoveShieldMs, WIND_SHIELD_MS, killBonus,
-    BULWARK, bulwarkRaise, keepsDrillOnRespawn, applyPassives, armOf, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, swapKit, onDeath, tick,
+    BULWARK, bulwarkRaise, STATPT_MAX, keepsDrillOnRespawn, applyPassives, armOf, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, swapKit, onDeath, tick,
     KIT_SLOTS, kitCount, kitFreeSlot,
     PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE, launchBarrage, BARRAGE, STRUT_RADIUS, gearActive, GEAR_MAX,
     offered,

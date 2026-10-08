@@ -47,7 +47,7 @@
     // Script files the menu needs before Play works (the app.js module graph
     // plus the shared rules). Only drives the progress bar; a test keeps it
     // close to the real count.
-    var EXPECTED_JS = 64;
+    var EXPECTED_JS = 86;
     var MINUTE = 60000;
 
     function get(ls, k) { try { return ls ? ls.getItem(k) : null; } catch (e) { return null; } }

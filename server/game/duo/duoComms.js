@@ -1,6 +1,6 @@
 // Duo talk: team chat and quick pings, duo server only (Config.royale_duos).
 //
-// Unlike chat bubbles, both packets go straight to the partner's socket
+// Unlike raid chat (network/raidChat.js), both go straight to the partner's socket
 // (and nowhere else) at any distance, and work while dead or spectating.
 //
 //   'TC' [text]                  -> partner and you get 'TC' [name, text, bodyId, mine 0/1]
@@ -51,7 +51,7 @@ function nameOf(socket) {
     return String(n || 'Teammate').slice(0, 24);
 }
 
-// Blocked either way: neither sees the other's chat (same rule as bubbles).
+// Blocked either way: neither sees the other's chat (same rule as raid chat).
 function blocked(a, b) {
     const ida = a && a.account && a.account.id, idb = b && b.account && b.account.id;
     if (!ida || !idb) return false;

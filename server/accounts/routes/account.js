@@ -38,7 +38,14 @@ async function requireCredential(ctx, a, currentPassword) {
     }
     if (sessions.isFresh(a.session, ctx.now)) return;
     if (a.user.password_hash) throw new HttpError(401, 'bad_password', 'Enter your current password.');
+    if (!a.user.discord_id) throw passwordNeeded();
     throw new HttpError(403, 'reauth_required', 'Quick Discord check first.');
+}
+
+// A quick sign-up (no password, no Discord) past its first 10 minutes has
+// nothing to re-check with: it adds a password first.
+function passwordNeeded() {
+    return new HttpError(403, 'password_needed', 'Add a password first. You can do it in Account.');
 }
 
 function cooldown(availableAt, now) {
@@ -87,10 +94,13 @@ async function changePassword(ctx) {
         } else if (!sessions.isFresh(a.session, ctx.now)) {
             throw new HttpError(401, 'bad_password', 'Enter your current password.');
         }
-    } else if (!sessions.isFresh(a.session, ctx.now)) {
+    } else if (a.user.discord_id && !sessions.isFresh(a.session, ctx.now)) {
         // A first password on a Discord-only account also needs a fresh
         // Discord login: otherwise anything riding the session (a stolen
         // cookie, XSS) could set one, unlink Discord and own the account.
+        // A quick sign-up (no password, no Discord) has nothing to check
+        // against: the live session is enough, and its recovery code
+        // (untouched here) still takes the account back.
         throw new HttpError(403, 'reauth_required', 'Quick Discord check first.');
     }
     const hash = await crypto.hashPassword(newPassword);
@@ -169,4 +179,4 @@ function register(router) {
     router.add('POST', '/api/account/sessions/revoke', revokeSession);
 }
 
-module.exports = { register, requireCredential, checkPassword };
+module.exports = { register, requireCredential, checkPassword, passwordNeeded };

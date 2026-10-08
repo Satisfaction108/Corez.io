@@ -927,6 +927,18 @@ class gameHandler {
         // The editable checklist is the source of truth, read at selection time so an
         // admin can change [x] entries and restart the match without a code edit. A
         // missing file means no extra exclusions beyond the built-in filters below.
+        // The maintain loop asks for it per bot with an upgrade pending, so a
+        // read is kept for a few seconds (a synchronous file read per call
+        // was ~2% of a raid worker). Callers only read the set.
+        const now = Date.now();
+        const cached = this._botExclCache;
+        if (cached && now - cached.at < 5000) return cached.set;
+        const set = this._readBotTankExclusions();
+        this._botExclCache = { at: now, set };
+        return set;
+    }
+
+    _readBotTankExclusions() {
         try {
             const checklist = fs.readFileSync(
                 path.join(__dirname, '..', '..', 'BOT_TANK_CHECKLIST.md'),
@@ -1814,7 +1826,6 @@ class gameHandler {
             this.quickMaintainLoop();
             this.sampleBotTelemetry();
             this.botAmbientChat();
-            global.gameManager.socketManager.chatLoop();
         }, 200)
         let healingLoop = setInterval(() => {
             if (!this.active) return clearInterval(healingLoop);

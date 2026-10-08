@@ -28,11 +28,11 @@ export function noteLife(secs, store) {
 }
 // the raid's end: best raid by points, once per raid id
 export function noteRaid(raidId, score, store) {
-    if (!store) return { best: 0, isBest: false };
+    if (!store) return { best: 0, isBest: false, prev: 0 };
     const prev = read(store, "dwBestRaid");
     const isBest = (score | 0) > prev && (score | 0) > 0;
     if (isBest && read(store, "dwBestRaidId") !== (raidId | 0)) { write(store, "dwBestRaid", score | 0); write(store, "dwBestRaidId", raidId | 0); }
-    return { best: Math.max(prev, score | 0), isBest };
+    return { best: Math.max(prev, score | 0), isBest, prev };
 }
 
 // o: { guest, rank: AC rank snapshot, rp: rank points this raid, rpSeen, dust

@@ -8,6 +8,7 @@
 // Newcomer stage 0 holds everything but First Steps (localStorage
 // dwAchHeld_v1); they come out once the stage moves on.
 import * as L from "./achievementsLogic.js";
+import * as HL from "./achHomeLogic.js";
 import { glyphPath } from "./account/achievements.js";
 import { global } from "./global.js";
 
@@ -38,6 +39,8 @@ export function receive(d) {
         const k = "dwAchNew_v1", n = JSON.parse(localStorage.getItem(k) || "[]");
         if (Array.isArray(n) && n.indexOf(d.id) < 0) { n.push(d.id); localStorage.setItem(k, JSON.stringify(n.slice(-60))); }
     } catch (e) { /* private mode */ }
+    // and its replay on the home screen once the player is back there (account/achHome.js)
+    try { HL.note(window.localStorage, d); } catch (e) { /* private mode */ }
     const v = L.admit(d, global.nxStage);
     if (v === "drop") return;
     if (v === "hold") {

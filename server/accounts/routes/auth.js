@@ -12,7 +12,7 @@ const bus = require('../bus');
 const discordOAuth = require('./discordOAuth');
 const referrals = require('../referrals');
 const cookies = require('../cookies');
-const { checkPassword } = require('./account');
+const { checkPassword, passwordNeeded } = require('./account');
 const { HttpError, bannedError, str } = require('../http');
 
 const PW_MAX = 1024;   // longer than any valid password; validatePassword reports too_long
@@ -113,6 +113,34 @@ async function signup(ctx) {
     ctx.json(201, { user: users.toPublic(r.user), recoveryCode: recovery.code });
 }
 
+// One tap "Keep my stuff": an account from just a username, no password.
+// Same name rules, holds, caps, referral and audit as signup. The browser
+// stays logged in (the usual 60-day session); the recovery code it gets
+// back is how it logs in anywhere else (POST /api/auth/recover with no new
+// password), and a password can be added later in settings. A guest's
+// progress moves over the same way as after signup: on this browser's next
+// game connection (bridge.js onGuestId) and POST /api/achievements.
+async function quickSignup(ctx) {
+    ctx.limit('signupTry', ctx.ipKey);
+    ctx.checkLimit('signup', ctx.ipKey);
+    const username = str(ctx.body.username, 64).trim();
+    const v = names.validateUsername(username);
+    if (!v.ok) throw invalidUsername(v);
+    const av = users.availability(username, null, ctx.now);
+    if (!av.available) throw usernameTaken(av.reason);
+
+    let recovery = null;
+    const r = await withSignupCharge(ctx, async () => {
+        recovery = await newRecovery();
+        return users.create({ username, passwordHash: null, recoveryHash: recovery.hash, now: Date.now() });
+    });
+    if (!r.ok) throw usernameTaken(r.reason);
+    users.audit(r.user.id, 'signup', { method: 'quick' }, { ip: ctx.ip });
+    takeReferral(ctx, r.user, 'quick');
+    ctx.startSession(r.user, 'signup');
+    ctx.json(201, { user: users.toPublic(r.user), recoveryCode: recovery.code });
+}
+
 async function login(ctx) {
     const username = str(ctx.body.username, 64).trim();
     const lc = username.toLowerCase();
@@ -174,7 +202,14 @@ function logoutAll(ctx) {
 // /auth/discord/start?mode=reauth instead.
 async function reauth(ctx) {
     const a = ctx.requireAuth();
-    if (!a.user.password_hash) throw new HttpError(403, 'reauth_required', 'Quick Discord check first.');
+    if (!a.user.password_hash) {
+        // a quick sign-up: still inside its first 10 minutes, or not at all
+        if (!a.user.discord_id) {
+            if (sessions.isFresh(a.session, ctx.now)) return ctx.noContent();
+            throw passwordNeeded();
+        }
+        throw new HttpError(403, 'reauth_required', 'Quick Discord check first.');
+    }
     const pw = str(ctx.body.currentPassword, PW_MAX);
     if (!pw) throw new HttpError(401, 'bad_password', 'Enter your current password.');
     if (!(await checkPassword(ctx, a.user, pw))) throw new HttpError(401, 'bad_password', 'Wrong password.');
@@ -207,8 +242,12 @@ async function recover(ctx) {
 
     let ok;
     try {
-        const pv = names.validatePassword(newPassword, user ? user.username : username);
-        if (!pv.ok) throw weakPassword(pv);
+        // No new password: a log in for an account that never had one
+        // (quick sign-up), checked once the code is right.
+        if (newPassword) {
+            const pv = names.validatePassword(newPassword, user ? user.username : username);
+            if (!pv.ok) throw weakPassword(pv);
+        }
         ok = user && user.recovery_hash && code
             ? await crypto.verifyPassword(code, user.recovery_hash)
             : await crypto.dummyVerify(code || '');
@@ -219,6 +258,10 @@ async function recover(ctx) {
     if (!ok) throw new HttpError(401, 'bad_recovery', "That username and recovery code don't match.");
     charge.refund();
     if (users.isBanned(user, Date.now())) throw bannedError(user);
+    if (!newPassword) {
+        if (user.password_hash) throw weakPassword(names.validatePassword('', user.username));
+        return recoveryLogin(ctx, user, lc);
+    }
 
     const [passwordHash, recovery] = await Promise.all([crypto.hashPassword(newPassword), newRecovery()]);
     const d = db.handle();
@@ -235,6 +278,25 @@ async function recover(ctx) {
     ratelimit.clear('recoverUser', lc);
     kick(user.id, 'Your account got recovered on another device. Log in again.');
     ctx.startSession(user, 'recovery');
+    ctx.json(200, { user: users.toPublic(users.byId(user.id)), recoveryCode: recovery.code });
+}
+
+// recover() for a passwordless account with the right code: logs this
+// browser in and swaps the code for a fresh one (each code works once).
+// The account's other sessions stay: this is how it moves to a new device.
+async function recoveryLogin(ctx, user, lc) {
+    const recovery = await newRecovery();
+    const applied = db.handle().tx(() => {
+        const cur = users.byId(user.id);
+        if (!cur || cur.password_hash) return false;   // deleted, or got a password meanwhile
+        if (!users.setRecovery(user.id, recovery.hash, user.recovery_hash)) return false;
+        users.audit(user.id, 'recovery_login', null, { ip: ctx.ip });
+        return true;
+    });
+    if (!applied) throw new HttpError(401, 'bad_recovery', "That username and recovery code don't match.");
+    ratelimit.clear('recoverUser', lc);
+    ctx.startSession(user, 'recovery');
+    users.touchSeen(user.id);
     ctx.json(200, { user: users.toPublic(users.byId(user.id)), recoveryCode: recovery.code });
 }
 
@@ -308,6 +370,7 @@ function register(router) {
     router.add('GET', '/api/config', getConfig, { alwaysOn: true });
     router.add('GET', '/api/me', getMe, { alwaysOn: true });
     router.add('POST', '/api/auth/signup', signup);
+    router.add('POST', '/api/auth/quick', quickSignup);
     router.add('POST', '/api/auth/login', login);
     router.add('POST', '/api/auth/logout', logout, { alwaysOn: true });
     router.add('POST', '/api/auth/logout-all', logoutAll);

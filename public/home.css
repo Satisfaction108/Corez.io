@@ -1244,7 +1244,7 @@ h3 { font-size: 14px; line-height: 16px; color: var(--text2); text-align: center
    outline, lip, hard ink drop, Lilita labels), always in the dark cave
    palette so they match the canvas HUD (app.js HUD tokens) whatever the
    site theme is. Dark tokens are scoped to these elements only. */
-#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn,
+#ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn,
 body.in-game #homeSettingsPanel, body.in-game #homeSettingsOverlay,
 body.in-game .igc, body.in-game .igc-pip, .gt-stack {
     --surface: #2b2533; --surface2: #352e3f; --panel-bg: #2b2533; --hub-bg: #2b2533;
@@ -1262,7 +1262,7 @@ body.in-game .igc, body.in-game .igc-pip, .gt-stack {
     --line: #120e16; --line-soft: rgba(255,255,255,.06); --cast: rgba(0,0,0,.42); --drop: rgba(0,0,0,.3); --well: rgba(0,0,0,.22);
 }
 /* one button recipe for all of them: .dw-btn / #homeSettingsBtn */
-#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn {
+#ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn {
     position: fixed;
     top: 10px;
     z-index: 30;
@@ -1287,10 +1287,9 @@ body.in-game .igc, body.in-game .igc-pip, .gt-stack {
 #ingameSettingsBtn { left: 10px; width: 42px; }
 #ingameSettingsBtn .dw-ic { width: 24px; height: 24px; transition: transform .25s cubic-bezier(.3,1.6,.5,1); }
 #ingameSettingsBtn:hover .dw-ic { transform: rotate(45deg); }
-#ingameChatModeBtn { left: 62px; padding: 0 14px 4px; }
 #ingameTutorialBtn { left: 170px; width: 42px; color: var(--gold); font-size: 20px; }
-#ingameSettingsBtn:hover, #ingameChatModeBtn:hover, #ingameTutorialBtn:hover, #ingameFullscreenBtn:hover, .dw-igbtn:hover { filter: brightness(1.08); }
-#ingameSettingsBtn:active, #ingameChatModeBtn:active, #ingameTutorialBtn:active, #ingameFullscreenBtn:active, .dw-igbtn:active {
+#ingameSettingsBtn:hover:hover, #ingameTutorialBtn:hover, #ingameFullscreenBtn:hover, .dw-igbtn:hover { filter: brightness(1.08); }
+#ingameSettingsBtn:active:active, #ingameTutorialBtn:active, #ingameFullscreenBtn:active, .dw-igbtn:active {
     transform: translateY(3px);
     box-shadow: inset 0 -2px 0 var(--face-dk), 0 0 0 transparent;
 }
@@ -2597,6 +2596,12 @@ html[data-acct="new"] #accountChip, html.dw-wl-open #accountChip { visibility: h
 .wl-who-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .wl-who-k { color: var(--text2); font: 700 11px var(--ui); }
 .wl-who-txt b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--heading); font: 400 19px var(--display); letter-spacing: .02em; }
+.wl-quick { text-align: center; }
+.wl-quick .wl-p { text-align: center; text-wrap: balance; }
+.wl-quick .wl-form { text-align: left; }
+.wl-quick-line { margin: -4px 0 0; text-align: center; color: var(--text2); font: 600 12.5px/1.4 var(--ui); }
+.dw-link.wl-quiet { color: var(--text2); font: 600 12.5px var(--ui); }
+.dw-link.wl-quiet:hover { color: var(--text); }
 .wl-codeview { text-align: center; }
 .wl-codeview .wl-p { text-align: center; text-wrap: balance; }
 .wl-badge {
@@ -3616,6 +3621,89 @@ body.mobile .dy-pips, body.mobile .dy-reasons { display: none; }
 #dwFinaleDiscord:hover { filter: brightness(1.08); }
 #dwFinaleDiscord .dw-ic { width: 22px; height: 22px; --ic-sw: 0; --ic-discord: #7c87ff; }
 #dwFinaleDiscord small { display: block; color: #a597b0; font: 600 11.5px/1.2 Rubik, Ubuntu, sans-serif; }
+/* back on the home screen: the raid's achievements, one card at a time,
+   their dust flying to the account chip's counter (client/account/achHome.js) */
+#dwAchHome {
+    position: fixed; inset: 0; z-index: 305;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    padding-top: 22vh; gap: 12px; box-sizing: border-box;
+    cursor: pointer;
+}
+#dwAchHome .ah-stage { min-height: 92px; display: flex; justify-content: center; }
+#dwAchHome .ah-card {
+    display: flex; align-items: center; gap: 14px;
+    min-width: 300px; max-width: min(440px, calc(100vw - 32px));
+    padding: 14px 20px 14px 14px; box-sizing: border-box;
+    border: 2px solid #120e15; border-radius: 16px;
+    background: rgba(43, 37, 51, .97); box-shadow: 0 5px 0 rgba(0, 0, 0, .32), 0 18px 40px rgba(0, 0, 0, .35);
+    color: #fff3d9;
+}
+#dwAchHome .ah-icon {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 60px; height: 60px; border-radius: 14px;
+    background: #1d1822; border: 1px solid rgba(255, 255, 255, .08);
+    color: #ffc665; transform: rotate(-5deg);
+}
+#dwAchHome .ah-icon .dw-ic { width: 40px; height: 40px; }
+#dwAchHome .ah-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#dwAchHome .ah-label { color: #a597b0; font: 700 11.5px/1.2 Rubik, Ubuntu, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+#dwAchHome .ah-title { color: #fff3d9; font: 400 24px/1.1 var(--display, Rubik), Rubik, sans-serif; letter-spacing: .02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dwAchHome .ah-reward { align-self: flex-start; margin-top: 2px; color: #f2a6ff; font: 800 18px/1.1 Rubik, Ubuntu, sans-serif; text-shadow: 0 0 12px rgba(214, 120, 255, .45); }
+#dwAchHome .ah-reward.item { color: #ffd36b; text-shadow: none; font-size: 15px; }
+#dwAchHome .ah-wait {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 10px 16px 12px; border: 2px solid #120e15; border-radius: 14px;
+    background: rgba(29, 24, 34, .96); box-shadow: 0 4px 0 rgba(0, 0, 0, .3);
+    color: #fff3d9; cursor: default;
+}
+#dwAchHome .ah-jar { display: inline-flex; align-items: center; gap: 8px; font: 700 14px/1 Rubik, Ubuntu, sans-serif; color: #f2d4fa; }
+#dwAchHome .ah-jar .dw-ic { width: 22px; height: 22px; }
+#dwAchHome .ah-jar b { color: #f2a6ff; }
+#dwAchHome .ah-foot { display: flex; align-items: center; gap: 12px; color: #a597b0; font: 600 13px/1.2 Rubik, Ubuntu, sans-serif; }
+#dwAchHome .ah-keep {
+    height: 36px; padding: 0 16px 4px; border: 1px solid #2b8a2c; border-radius: 10px;
+    background: #4cc24a linear-gradient(rgba(255,255,255,.13), rgba(255,255,255,0) 55%);
+    box-shadow: inset 0 -4px 0 #2b8a2c, inset 0 1px 0 rgba(255,255,255,.28), 0 3px 0 rgba(0,0,0,.35);
+    color: #fff; text-shadow: 0 1px 0 rgba(0,0,0,.22); font: 700 14px/1 Rubik, Ubuntu, sans-serif; cursor: pointer;
+}
+#dwAchHome .ah-keep:hover { filter: brightness(1.06); }
+.ah-p {
+    position: fixed; z-index: 330; width: 7px; height: 7px; pointer-events: none;
+    background: #e88bff; border-radius: 2px; transform: translate(-50%, -50%) rotate(45deg);
+    box-shadow: 0 0 8px rgba(232, 139, 255, .8);
+}
+.ah-p.big { width: 10px; height: 10px; background: #f6c6ff; }
+
+/* a guest's "Keep my stuff" card on the raid results (client/keepNudge.js) */
+#dwKeepNudge {
+    position: fixed; z-index: 40; left: 0; top: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    width: max-content; max-width: min(360px, calc(100vw - 32px));
+    padding: 12px 16px 14px; box-sizing: border-box;
+    border: 2px solid #120e15; border-radius: 14px;
+    background: rgba(43, 37, 51, .97); box-shadow: 0 4px 0 rgba(0, 0, 0, .32);
+    color: #fff3d9; text-align: center;
+    opacity: 0; pointer-events: none; transform: translateY(6px);
+    transition: opacity 200ms ease-out, transform 200ms ease-out;
+}
+#dwKeepNudge.open { opacity: 1; pointer-events: auto; transform: none; }
+#dwKeepNudge .kn-h { font: 700 18px/1.2 Rubik, Ubuntu, sans-serif; color: #ffd36b; }
+#dwKeepNudge .kn-p { font: 600 12px/1.3 Rubik, Ubuntu, sans-serif; color: #a597b0; }
+#dwKeepNudge .kn-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+#dwKeepNudge .kn-go {
+    height: 40px; padding: 0 18px 4px; border: 1px solid #2b8a2c; border-radius: 11px;
+    background: #4cc24a linear-gradient(rgba(255,255,255,.13), rgba(255,255,255,0) 55%);
+    box-shadow: inset 0 -4px 0 #2b8a2c, inset 0 1px 0 rgba(255,255,255,.28), 0 3px 0 rgba(0,0,0,.35);
+    color: #fff; text-shadow: 0 1px 0 rgba(0,0,0,.22); font: 700 15px/1 Rubik, Ubuntu, sans-serif; cursor: pointer;
+}
+#dwKeepNudge .kn-go:hover { filter: brightness(1.06); }
+#dwKeepNudge .kn-go:active { transform: translateY(3px); box-shadow: inset 0 -1px 0 #2b8a2c, 0 0 0 transparent; }
+#dwKeepNudge .kn-no {
+    padding: 4px 2px; border: 0; background: none; color: #a597b0;
+    font: 600 13px/1 Rubik, Ubuntu, sans-serif; cursor: pointer;
+}
+#dwKeepNudge .kn-no:hover { color: #fff3d9; text-decoration: underline; text-underline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { #dwKeepNudge { transition: none; transform: none; } }
 
 /* ── The come-back card left of the menu (#homeLeft): Raid Night and the
    daily rewards, out of the main card so it keeps just name, mode and Play.
@@ -3866,7 +3954,7 @@ body.mobile .home-left { position: static; width: 0; min-width: 100%; margin-top
 :is(#startButton, #tutorialButton, #themeToggleBtn, #accountChip, #homeSettingsBtn, #homeChangelogBtn,
     #homeSidebar .social-btn, #homeSettingsClose, #homeChangelogClose, .dw-btn, .wl-opt, .dwt-play,
     .dwt-menu, .fr-ic, .fr-back, .hub-close, .wl-x, .dw-toast-act,
-    #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn):active::after {
+    #ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn):active::after {
     content: ''; position: absolute; left: -4px; right: -4px; top: -10px; bottom: -4px; z-index: -1;
 }
 .shop-grid .shop-card:hover::after, .lk-tile:hover::after {
@@ -4221,7 +4309,7 @@ body:not(.in-game) .gt-stack { display: none; }
     --tip-bg: #2a2016;
     --panel-cast: 0 4px 0 rgba(96,66,22,.2);
 }
-#ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn,
+#ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn,
 body.in-game #homeSettingsPanel, body.in-game #homeSettingsOverlay,
 body.in-game .igc, body.in-game .igc-pip, .gt-stack {
     --btn: #3a3344; --btn-hover: #443c50; --btn-edge: #17131c; --btn-shade: rgba(0,0,0,.34);
@@ -4291,7 +4379,7 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
 .duo-check { border-width: 1px; box-shadow: inset 0 1px 2px var(--well); border-radius: 5px; }
 
 /* ── buttons: flat and tonal. Pressed = sunk in, not pushed off a lip ── */
-.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn {
+.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn {
     --face-c: var(--btn);
     --lip-c: var(--btn-edge);
     border: 1px solid var(--btn-edge);
@@ -4306,11 +4394,11 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
 .dw-btn { font: 600 14px/1 var(--ui); height: 38px; border-radius: 10px; }
 .dw-btn .dw-ic { width: 18px; height: 18px; }
 .dw-btn.block { height: 48px; font: 700 16px/1 var(--ui); border-width: 1px; border-radius: 12px; }
-:is(.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn):hover:not(:disabled) {
+:is(.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn):hover:not(:disabled) {
     background-color: var(--btn-hover);
     filter: none;
 }
-:is(.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn):active:not(:disabled) {
+:is(.dw-btn, #tutorialButton, .wl-opt, .fr-ic, .fr-back, .gt-btn, .q-guest, .dw-igbtn, #ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn):active:not(:disabled) {
     transform: translateY(1px);
     box-shadow: inset 0 2px 4px var(--well), 0 0 0 transparent;
 }
@@ -4322,9 +4410,8 @@ input.dw-input.bad { border-color: var(--danger); box-shadow: inset 0 2px 3px va
 .fr-ic { width: 34px; height: 32px; border-radius: 9px; }
 .fr-ic .dw-ic { width: 19px; height: 19px; }
 .gt-btn { height: 28px; border-radius: 8px; font: 600 13px/1 var(--ui); }
-.dw-igbtn, #ingameSettingsBtn, #ingameChatModeBtn, #ingameTutorialBtn, #ingameFullscreenBtn { padding-bottom: 0; border-radius: 11px; font: 700 14px/1 var(--ui); }
+.dw-igbtn, #ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn { padding-bottom: 0; border-radius: 11px; font: 700 14px/1 var(--ui); }
 .dw-igbtn { padding: 0 16px; }
-#ingameChatModeBtn { padding: 0 14px; }
 .wl-opt { height: 46px; border-radius: 12px; font: 700 15px/1 var(--ui); }
 .wl-opt > .dw-ic { width: 20px; height: 20px; }
 

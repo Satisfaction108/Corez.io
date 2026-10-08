@@ -137,9 +137,7 @@ module.exports = {
                  + "Please report any bugs you encounter!",
     token_message: "Friendly reminder: Please do not repeatedly kill others with an overpowered tank.",
 
-    chat_message_duration: 9_000,
     popup_message_duration: 10_000,
-    sanitize_chat_input: true,
     // Stripped from player names (sockets.js 's'). '§' opens the in-name
     // colour codes, so typing it would fake a paid name colour; control,
     // zero-width and bidi-override characters hide or reorder text.

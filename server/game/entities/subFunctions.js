@@ -59,6 +59,7 @@ for (var i = 3; i < 17; i++) {
     lazyRealSizes.push(Math.sqrt(circum * (1 / Math.sin(circum))));
 }
 
+const realSizeTable = lazyRealSizes;
 lazyRealSizes = new Proxy(lazyRealSizes, {
     get: function(arr, i) {
         if (!(i in arr) && !isNaN(i)) {
@@ -100,4 +101,14 @@ function shotMult(o, target) {
     return m;
 }
 
-module.exports = { dirtyCheck, remapTarget, lazyRealSizes, Activation, shotMult }
+// The realSize factor of a shape: what lazyRealSizes[Math.floor(Math.abs(shape))]
+// gives, read off the plain table (the Proxy trap costs ~0.1-0.5 us a read, and
+// realSize is read many times per bullet per tick); the Proxy fills a new side
+// count into the same table once.
+function realSizeFactor(shape) {
+    const i = Math.floor(Math.abs(shape));
+    const v = realSizeTable[i];
+    return v !== undefined ? v : lazyRealSizes[i];
+}
+
+module.exports = { dirtyCheck, remapTarget, lazyRealSizes, realSizeFactor, Activation, shotMult }
