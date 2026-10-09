@@ -144,7 +144,7 @@ export function invite(iv, handlers) {
     };
     const c = card(key, {
         kind: 'invite', tag: 'Duos', title: clip(name, 16) + ' wants to duo',
-        sub: 'Join now and play together next raid',
+        sub: 'Join to play together in the next raid.',
         buttons: [
             { label: 'Join', key: k || null, primary: true, onClick: () => answer(true) },
             { label: 'No thanks', onClick: () => answer(false) },

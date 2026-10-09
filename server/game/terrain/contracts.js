@@ -197,7 +197,7 @@ const MAKERS = {
         if (!b || b.body !== body || b.leader) return null;
         const left = b.until - t;
         if (left < 15_000) return null;
-        return { kind: 'bountySurvive', pri: 95, text: "You're the bounty. Stay alive", goal: 1, reward: R.bountySurvive, ms: left, noArrow: true };
+        return { kind: 'bountySurvive', pri: 95, text: "You're the bounty, so stay alive", goal: 1, reward: R.bountySurvive, ms: left, noArrow: true };
     },
     bank(body, t) {
         const carried = (body.carriedGems || 0) | 0;

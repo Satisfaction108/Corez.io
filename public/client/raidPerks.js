@@ -377,7 +377,7 @@ function drawStrip(c, o, st, view, now) {
             A.hudTitle(lv, tx + A.hudTitleW((p.name || p.id) + " ", 12), ty, 12, ink || GOLD, "left");
         } else A.hudTitle(lv, tx, ty, 12, ink || GOLD, "left");
         if (o.mouse && L.rectAt([r], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
-            A.queueTip(perkLabel(p), (p.desc || "") + " Level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + ". Lasts the whole raid.", r.x + r.w / 2, r.y);
+            A.queueTip(perkLabel(p), (p.desc || "") + " You have level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + ", and it lasts the whole raid.", r.x + r.w / 2, r.y);
         }
     }
     // the ones left out, behind a "+N" chip (hover lists them)
@@ -506,7 +506,7 @@ function drawHeader(c, hr, st, a, now) {
     const mw = more ? A.hudTitleW(more, 11) + 16 : 0;
     // keys: [Shift] + [1] [2] [3] or click (touch: "tap one")
     const kw = (t) => Math.max(kh, A.hudTitleW(t, kh * 0.62) + kh * 0.55);
-    const plusW = A.hudTextW("+", 11), orW = A.hudTextW("or click", 11.5), tapW = A.hudTextW("tap one", 11.5);
+    const plusW = A.hudTextW("+", 11), orW = A.hudTextW("or click", 11.5), tapW = A.hudTextW("Tap one", 11.5);
     const keysW = global.mobile ? tapW : kw("Shift") + 4 + plusW + 4 + kw("1") * 3 + 6 + 8 + orW;
     const base = 12 + (tagW ? tagW + 8 : 0) + tw + G + nw + (mw ? G + mw : 0) + 12;
     const keys = base + G + keysW <= hr.w;
@@ -528,7 +528,7 @@ function drawHeader(c, hr, st, a, now) {
     A.drawText(note, tx, cy + 0.5, 11.5, H.text2, "left", true, a);
     tx += nw + G;
     if (keys) {
-        if (global.mobile) { A.drawText("tap one", tx, cy + 0.5, 11.5, H.text, "left", true, a); tx += tapW; }
+        if (global.mobile) { A.drawText("Tap one", tx, cy + 0.5, 11.5, H.text, "left", true, a); tx += tapW; }
         else {
             const ky = Math.round(cy - kh / 2);
             tx += A.hudKey(c, tx, ky, "Shift", kh, a) + 4;

@@ -127,7 +127,7 @@ function freeSlam(id) {
     const J = window.dwJuice;
     if (!J || global.tutorialMode) return;
     const key = H ? H.keyLabel("KEY_ABILITY", "Q") : "Q";
-    const sub = !learning() ? "Free this raid" : global.mobile ? "Free this raid, tap the ability button" : "Free this raid, press " + key + " to use it";
+    const sub = !learning() ? "Free for this raid" : global.mobile ? "Free for this raid. Tap the ability button to use it." : "Free for this raid. Press " + key + " to use it.";
     try { J.slam("YOUR ABILITY: " + shortName(id), sub, AB_COLOR[id] || "#f2b83c", 2600, 44); } catch (e) { /* */ }
 }
 
@@ -1956,7 +1956,7 @@ export function drawHud(c, anchor, mouse) {
             H.hudTitle("Try it!", mx, y - 20, 12, DASH_COL, "center", 1, c);
         }
         if (mouse && mouse.x >= x && mouse.x <= x + sz && mouse.y >= y && mouse.y <= y + sz) {
-            H.queueTip("Dash  ·  " + dashKey, "Quick burst the way you're moving. 2 charges, each one comes back in 5s.", mx, y);
+            H.queueTip("Dash  ·  " + dashKey, "A quick burst of speed the way you're moving. You have 2 charges, and each one comes back after 5s.", mx, y);
         }
     }
     // ── ability ──
@@ -2004,8 +2004,8 @@ export function drawHud(c, anchor, mouse) {
         }
         if (mouse && mouse.x >= x && mouse.x <= x + sz && mouse.y >= y && mouse.y <= y + sz) {
             const item = id ? (global.shop.catalog || []).find(i => i.id === id) : null;
-            if (item) H.queueTip(item.name + "  ·  " + abKey, item.desc + (item.place ? " " + abKey + " to aim, then left click to place it." : "") + (ownedCount() > 1 ? " Swap abilities with Equip in a shop." : ""), mx, y);
-            else H.queueTip("Ability  ·  " + abKey, "Buy one in a shop. You keep it the whole raid.", mx, y);
+            if (item) H.queueTip(item.name + "  ·  " + abKey, item.desc + (item.place ? " Press " + abKey + " to aim, then left click to place it." : "") + (ownedCount() > 1 ? " Swap abilities with Equip in a shop." : ""), mx, y);
+            else H.queueTip("Ability  ·  " + abKey, "Buy one in a shop and you'll keep it for the whole raid.", mx, y);
         }
     }
     drawChipDrag(c, mouse);
@@ -2059,10 +2059,10 @@ function touchTipText(name) {
     const cat = (global.shop && global.shop.catalog) || [];
     const find = (id) => id ? cat.find(i => i.id === id) : null;
     const st = (global.shop && global.shop.state) || {};
-    if (name === "dash") return ["Dash", "Quick burst the way you're moving. 2 charges, each one comes back in 5s."];
+    if (name === "dash") return ["Dash", "A quick burst of speed the way you're moving. You have 2 charges, and each one comes back after 5s."];
     if (name === "ability") {
         const it = find(S.eq);
-        if (!it) return ["Ability", "Buy one in a shop. You keep it the whole raid."];
+        if (!it) return ["Ability", "Buy one in a shop and you'll keep it for the whole raid."];
         return [it.name, it.desc + (it.place ? " Tap to use it where you aim, or drag off the button to aim it." : " Tap to use it.")];
     }
     if (name === "arm") {
@@ -2071,7 +2071,7 @@ function touchTipText(name) {
     }
     if (name.startsWith("kit")) {
         const it = find((st.kitOrder || [])[+name.slice(3)]);
-        return it ? [it.name, it.desc + " Tap to use it, drag it away to drop it."] : null;
+        return it ? [it.name, it.desc + " Tap to use it, or drag it away to drop it."] : null;
     }
     return null;
 }

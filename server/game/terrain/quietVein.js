@@ -88,7 +88,7 @@ function tick(humans, scoreOf, raid, t = Date.now(), fire = null) {
         q.gainAt = t;
         if (!ev || ev === 'skip') { q.firedAt = t - TUNE.COOLDOWN_MS + 30_000; continue; }
         n++;
-        try { sock.talk('m', 6000, "Rich vein close by, to your " + dirTo(ev.x - b.x, ev.y - b.y) + ". Follow the arrow to it."); } catch { /* */ }
+        try { sock.talk('m', 6000, "There's a rich vein to your " + dirTo(ev.x - b.x, ev.y - b.y) + ". Follow the arrow to find it."); } catch { /* */ }
         try { sock.talk('FX', Math.round(ev.x), Math.round(ev.y), 'veinping', TUNE.PING_MS); } catch { /* */ }
         try { sock.talk('FX', Math.round(ev.x), Math.round(ev.y), 'bloom'); } catch { /* */ }
     }

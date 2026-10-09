@@ -503,7 +503,7 @@ export function drawFrame(c, ev, prep, t) {
         c.textAlign = 'center';
         c.textBaseline = 'middle';
         c.fillStyle = '#c9c1ad';
-        c.fillText('click to keep going', cx, Math.min(H - 28, cy + S * 1.25));
+        c.fillText('Click to continue', cx, Math.min(H - 28, cy + S * 1.25));
         c.globalAlpha = 1;
     }
     c.restore();

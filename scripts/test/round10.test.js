@@ -88,7 +88,7 @@ test('leader bounty: marks the leader, pays any killer (bots too), the leader lo
     const snap = pacing.snapshot(10_000);
     assert.ok(snap && snap.e === 11 && snap.lead === 1 && snap.gems === 600 && snap.ms === 0, JSON.stringify(snap));
     assert.equal(said.length, 1);
-    assert.match(said[0].text, /^Bounty on the leader: Leader\. 600 gems/);
+    assert.match(said[0].text, /^Bounty on the leader, Leader! Whoever takes them down gets 600 gems/);
     assert.ok(!/—/.test(said[0].text), 'no em dash');
     // the lead grows: same holder, bigger price, no second announcement
     L = { body: leader, key: 'k1', score: 14_000, lead: 8000 };

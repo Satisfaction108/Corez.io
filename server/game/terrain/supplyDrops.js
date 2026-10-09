@@ -164,7 +164,7 @@ function warn(t, spot = pickSpot(t), reserve = null) {
     if (!spot) { nextAt = t + RETRY_MS; return; }
     const where = hooks.compass ? hooks.compass(spot.x, spot.y) : "the zone";
     plan = { x: Math.round(spot.x), y: Math.round(spot.y), at: t + WARN_MS, falling: false, where, reserve };
-    if (hooks.announce) hooks.announce("Supply drop incoming in " + where + ". A new ability inside.", { event: 1, kind: 'supply', name: where });
+    if (hooks.announce) hooks.announce("Supply drop incoming in " + where + "! There's a new ability inside.", { event: 1, kind: 'supply', name: where });
     talkAll(c => c.talk('FX', plan.x, plan.y, 'supplysoon', WARN_MS, CRATE_SIZE));
 }
 

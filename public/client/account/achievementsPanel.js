@@ -93,7 +93,7 @@ export async function open(opts) {
     clear(body);
     if (!r.ok || !r.data || !Array.isArray(r.data.achievements)) {
         body.appendChild(head(null, m));
-        body.appendChild(h('div', { class: 'ach-empty', text: store.get('offline') ? 'Achievements are down rn. You can still play.' : 'Achievements didn’t load. Try again in a bit.' }));
+        body.appendChild(h('div', { class: 'ach-empty', text: store.get('offline') ? 'Achievements aren’t available right now, but you can still play.' : 'Your achievements didn’t load. Please try again in a bit.' }));
         return;
     }
     render(body, r.data, m, fresh, (opts && opts.cat) || 'all');
@@ -110,7 +110,7 @@ function head(d, m) {
         h('span', { class: 'ach-top-medal' }, glyphIcon('cup')),
         h('div', { class: 'ach-top-txt' },
             h('div', { class: 'ach-title', text: d ? 'Achievements ' + got + ' / ' + list.length : 'Achievements' }),
-            d ? h('div', { class: 'ach-sub', text: got ? pct + '% done · ' + dustTxt(dust) + ' gemdust earned' : 'Play a raid and they start popping.' }) : null,
+            d ? h('div', { class: 'ach-sub', text: got ? pct + '% done · ' + dustTxt(dust) + ' gemdust earned' : 'Play a raid to start unlocking them.' }) : null,
             d ? h('div', { class: 'ach-bar' }, bar) : null),
         h('button', { type: 'button', class: 'ach-close', 'aria-label': 'Close', text: '✕', onclick: () => m.close() }));
 }
@@ -124,8 +124,9 @@ function render(body, d, m, fresh, cat) {
         body.appendChild(h('div', { class: 'ach-guest' },
             h('span', {},
                 'You’re playing as a guest. ',
+                owed || items ? 'You have ' : null,
                 owed || items ? h('b', { text: (owed ? dustTxt(owed) + ' gemdust' : '') + (owed && items ? ' and ' : '') + (items ? items + (items === 1 ? ' name style' : ' name styles') : '') }) : null,
-                owed || items ? ' waiting for you. Keep your rewards, no password needed.' : 'Keep your rewards, no password needed.'),
+                owed || items ? ' waiting for you. Sign up to keep your rewards, no password needed.' : 'Sign up to keep your rewards, no password needed.'),
             h('button', { type: 'button', text: 'Keep my stuff', onclick: () => {
                 m.close();
                 // the one-tap sheet; the account chip's full sign-up if it isn't there
@@ -135,7 +136,7 @@ function render(body, d, m, fresh, cat) {
             } })));
     }
     if (d.adoptedNow && d.adoptedNow.ids && d.adoptedNow.ids.length) {
-        body.appendChild(h('div', { class: 'ach-guest' }, h('span', { text: d.adoptedNow.ids.length + ' achievements came over from playing as a guest: +' + dustTxt(d.adoptedNow.rewardMilli) + ' gemdust.' })));
+        body.appendChild(h('div', { class: 'ach-guest' }, h('span', { text: d.adoptedNow.ids.length + ' achievements carried over from your guest play, worth +' + dustTxt(d.adoptedNow.rewardMilli) + ' gemdust.' })));
     }
     const chips = h('div', { class: 'ach-chips', role: 'tablist' });
     const scroll = h('div', { class: 'ach-scroll' });

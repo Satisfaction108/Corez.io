@@ -12,10 +12,14 @@ let hooks = { openProfile() {}, onLogin() {} };
 export function init(hs) { Object.assign(hooks, hs); }
 
 const BOARDS = {
-    ranked: { tab: 'Ranked', sub: 'by RP', col: 'RP', val: (r) => r.rp, empty: ['Nobody’s ranked yet', 'Play 3 placement games to get on it.'] },
-    banked: { tab: 'Banked', sub: 'most gems banked', col: 'Banked', val: (r) => r.value, empty: ['Nothing banked yet', 'Bank some gems and claim #1.'] },
-    wins: { tab: 'Wins', sub: 'raid wins', col: 'Wins', val: (r) => r.value, empty: ['No winners yet', 'Win a raid and you’re #1.'] },
+    ranked: { tab: 'Ranked', sub: 'by RP', col: 'RP', val: (r) => r.rp, empty: ['Nobody’s ranked yet', 'Play 3 placement games to get on the board.'] },
+    banked: { tab: 'Banked', sub: 'by gems banked', col: 'Banked', val: (r) => r.value, empty: ['Nothing banked yet', 'Bank some gems to take the top spot.'] },
+    wins: { tab: 'Wins', sub: 'by raid wins', col: 'Wins', val: (r) => r.value, empty: ['No winners yet', 'Win a raid to take the top spot.'] },
 };
+function valCell(v) {
+    const text = v >= 10e6 ? (v / 1e6).toFixed(v >= 100e6 ? 0 : 1) + 'M' : fmtNum(v);
+    return h('span', { class: 'lb-rp' + (text.length >= 9 ? ' long' : ''), role: 'cell', text, title: fmtNum(v) });
+}
 let board = 'ranked';
 let paneEl = null, loadSeq = 0, cache = null, cachedAt = 0;
 
@@ -40,7 +44,7 @@ async function load(el) {
         if (cache) return;
         clear(el);
         el.appendChild(h('div', { class: 'shop-empty' },
-            h('div', { class: 'shop-empty-h', text: 'Didn’t load' }),
+            h('div', { class: 'shop-empty-h', text: 'The leaderboard didn’t load' }),
             h('div', { class: 'shop-empty-p', text: humanError(r) }),
             h('button', { type: 'button', class: 'dw-btn sm', text: 'Retry', onclick: () => render(el) })));
         return;
@@ -71,7 +75,7 @@ function paint(el, d) {
         })));
     const head = h('div', { class: 'lb-top' },
         h('div', { class: 'lb-title' }, h('span', { text: 'Best miners' }), h('span', { class: 'lb-sub', text: B.sub })),
-        d.updatedAt ? h('span', { class: 'lb-upd', text: 'updated ' + fmtAgo(d.updatedAt) }) : null);
+        d.updatedAt ? h('span', { class: 'lb-upd', text: 'Updated ' + fmtAgo(d.updatedAt) }) : null);
     const table = h('div', { class: 'lb-table', role: 'table', 'aria-label': 'Top 100 players' },
         h('div', { class: 'lb-row lb-head', role: 'row' },
             h('span', { class: 'lb-place', role: 'columnheader', text: '#' }),
@@ -119,7 +123,7 @@ function row(r, mine, clickable) {
             nameEl(r.username, r.nameStyleNid, r.nameColor, 14, 'lb-name'),
             mine ? h('span', { class: 'lb-you', text: 'You' }) : null),
         h('span', { class: 'lb-rank', role: 'cell', style: color ? { '--tc': color } : null, text: v.text }),
-        h('span', { class: 'lb-rp', role: 'cell', text: fmtNum(BOARDS[board].val(r) | 0) }),
+        valCell(BOARDS[board].val(r) | 0),
     ];
     const cls = 'lb-row' + (mine ? ' me' : '') + (r.place <= 3 ? ' top' + medal : '');
     if (!clickable) return h('div', { class: cls, role: 'row' }, kids);

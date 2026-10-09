@@ -292,6 +292,24 @@ function main() {
             inBytes += Buffer.byteLength(src);
             outBytes += Buffer.byteLength(out);
         }
+        // the shared rules the client loads from /shared/ (server/accounts/index.js
+        // serveShared): obfuscated copies under _shared/; the server keeps
+        // requiring the readable originals
+        const SHARED_SRC = path.join(ROOT, "shared");
+        for (const name of fs.readdirSync(SHARED_SRC).filter(n => /\.js$/.test(n)).sort()) {
+            const code = fs.readFileSync(path.join(SHARED_SRC, name), "utf8");
+            const module = isModule(code);
+            const opts = { ...light, renameGlobals: false, inputFileName: "shared/" + name };
+            if (!module) opts.identifiersPrefix = "x" + crypto.createHash("md5").update(name).digest("hex").slice(0, 5);
+            const out = JavaScriptObfuscator.obfuscate(code, opts).getObfuscatedCode();
+            parse(out, module ? "module" : "script");
+            const dest = path.join(tmp, "_shared", name);
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.writeFileSync(dest, out);
+            manifest.files["_shared/" + name] = crypto.createHash("sha1").update(code).digest("hex");
+            inBytes += Buffer.byteLength(code);
+            outBytes += Buffer.byteLength(out);
+        }
         fs.writeFileSync(path.join(tmp, MANIFEST), JSON.stringify(manifest, null, 1));
     } catch (e) {
         fs.rmSync(tmp, { recursive: true, force: true });

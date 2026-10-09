@@ -27,17 +27,17 @@
     const ANYWHERE = [
         'fuck', 'fck', 'phuck', 'motherfuck', 'shit', 'bitch', 'biatch', 'whore', 'slut', 'jizz',
         'nigger', 'nigga', 'niggr', 'faggot', 'fagot', 'dickhead', 'asshole', 'arsehole', 'cocksuck',
-        'dipshit', 'bullshit', 'wanker', 'bastard', 'pedophil', 'paedophil', 'kkk', 'hitler',
+        'dipshit', 'bullshit', 'wanker', 'bastard', 'pedophil', 'paedophil', 'kkk', 'hitler', 'cunt',
     ];
     const WHOLE = [
-        'fuk', 'fuking', 'ass', 'arse', 'cunt', 'cunty', 'cock', 'dick', 'pussy', 'pussies', 'twat', 'wank', 'cum',
+        'fuk', 'fuking', 'ass', 'arse', 'kunt', 'cock', 'dick', 'pussy', 'pussies', 'twat', 'wank', 'cum',
         'tit', 'tits', 'titty', 'titties', 'boob', 'boobs', 'porn', 'porno', 'dildo', 'rape', 'raped', 'rapist',
         'fag', 'dyke', 'kike', 'chink', 'spic', 'coon', 'tranny', 'retard', 'retarded', 'nazi', 'kys',
         'killyourself', 'pedo', 'prick', 'bollocks', 'skank',
     ];
-    const ENDINGS = ['s', 'es', 'er', 'ers', 'ed', 'ing'];
+    const ENDINGS = ['s', 'es', 'er', 'ers', 'ed', 'ing', 'z'];
     // words that only look like a listed one
-    const ALLOW = new Set(['shiitake', 'snigger', 'sniggers', 'sniggered', 'sniggering', 'cocktail', 'cocktails', 'cockpit', 'peacock', 'dickens']);
+    const ALLOW = new Set(['shiitake', 'snigger', 'sniggers', 'sniggered', 'sniggering', 'cocktail', 'cocktails', 'cockpit', 'peacock', 'dickens', 'scunthorpe']);
 
     // "fuck" -> /f+u+c+k+/: any letter may be stretched
     const stretch = (w) => new RegExp(w.split('').map(ch => ch + '+').join(''));
@@ -56,7 +56,7 @@
     const letters = (s) => s.replace(/[^a-z]/g, '');
 
     function wordIsBad(word) {
-        for (const one of ['i', 'l']) {
+        for (const one of ['i', 'l', '']) {
             const w = letters(norm(word, one));
             if (!w) continue;
             if (ALLOW.has(w)) return false;

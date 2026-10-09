@@ -599,7 +599,7 @@ class TouchControls {
                 touchPref("armAuto", this.armOn);
                 const cb = document.getElementById("touchArm");
                 if (cb) cb.checked = this.armOn;
-                global.createMessage(this.armOn ? "Sidearm fires with your gun." : "Sidearm off. Tap it again to turn it back on.", 2200);
+                global.createMessage(this.armOn ? "Your sidearm now fires with your gun." : "Your sidearm is off. Tap it again to turn it back on.", 2200);
                 gameSound.uiClick();
             }
         }
@@ -862,7 +862,7 @@ TouchControls.prototype.buildDom = function () {
     const rot = document.createElement("div");
     rot.id = "touchRotate";
     rot.innerHTML = '<div class="rot-card"><div class="rot-phone"></div><h2>Turn your phone sideways</h2>' +
-        '<p>You see way more of the raid like that.</p>' +
+        '<p>You can see much more of the raid that way.</p>' +
         '<p class="rot-lock">Not turning? Switch off rotation lock.</p>' +
         '<button type="button">Play upright anyway</button></div>';
     rot.querySelector("button").onclick = () => { this.portraitOk = true; rot.classList.remove("show"); };

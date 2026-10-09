@@ -3,22 +3,22 @@
 const MODS = [
     { id: "copper_rush",   name: "Copper Rush",        desc: "All the ore is copper, and copper is worth triple.", weight: 1, ore: "copper", gemValueMult: { 1: 3 } },
     // growth mode (royale_growth) replaces this one, see terrain/growth.js
-    { id: "giants",        name: "Giants",             desc: "Everyone's tank is half again as big. Good luck hiding.", weight: 1.1, sizeMult: 1.5, noGrowth: true },
-    { id: "overclocked",   name: "Overclocked",        desc: "Ten extra skill points for everyone.", weight: 1.2, extraSkill: 10 },
+    { id: "giants",        name: "Giants",             desc: "Everyone's tank is 50% bigger, so good luck hiding!", weight: 1.1, sizeMult: 1.5, noGrowth: true },
+    { id: "overclocked",   name: "Overclocked",        desc: "Everyone gets ten extra skill points.", weight: 1.2, extraSkill: 10 },
     { id: "arsenal",       name: "Annihilator Arsenal", desc: "Everyone gets an Annihilator sidearm for the whole raid.", weight: 1.2, freeArm: "flak" },
-    { id: "glass_cannons", name: "Glass Cannons",      desc: "Double damage, half health, for everyone.", weight: 1.1, damageMult: 2, healthMult: 0.5 },
-    { id: "demolition",    name: "Demolition Day",     desc: "Three Seismic Charges in every kit, and the rock breaks 40% easier.", weight: 1, kitStart: { charge: 3 }, rockHpMult: 0.6 },
-    { id: "loot_flood",    name: "Loot Flood",         desc: "Twelve chests instead of six, and they come back in 15 seconds.", weight: 1, chestMult: 2, chestRespawnMult: 0.5 },
+    { id: "glass_cannons", name: "Glass Cannons",      desc: "Everyone does double damage but has half the health.", weight: 1.1, damageMult: 2, healthMult: 0.5 },
+    { id: "demolition",    name: "Demolition Day",     desc: "Everyone starts with three Seismic Charges, and the rock breaks 40% easier.", weight: 1, kitStart: { charge: 3 }, rockHpMult: 0.6 },
+    { id: "loot_flood",    name: "Loot Flood",         desc: "There are twelve chests instead of six, and they come back after 15 seconds.", weight: 1, chestMult: 2, chestRespawnMult: 0.5 },
     // Magnet Storm with the ability system off; Hook Storm with it on
     { id: "magnet_storm",  name: "Magnet Storm",       desc: "Everyone gets a Gem Magnet, and every gem is worth 25% more.", weight: 1, freeGear: ["magnet"], gemValueMult: 1.25, legacy: true },
     { id: "hook_storm",    name: "Hook Storm",         desc: "Everyone gets a Grapple Hook, and every gem is worth 25% more.", weight: 1, freeAbility: "grapple", gemValueMult: 1.25, abilities: true },
     { id: "rocket_fuel",   name: "Rocket Fuel",        desc: "Everyone moves 35% faster.", weight: 1, speedMult: 1.35 },
-    { id: "fast_storm",    name: "Fast Storm",         desc: "The storm closes in twice as fast, then holds longer.", weight: 1, stormShrinkMult: 0.55 },
+    { id: "fast_storm",    name: "Fast Storm",         desc: "The storm closes in almost twice as fast, then holds for longer.", weight: 1, stormShrinkMult: 0.55 },
     { id: "bounty_week",   name: "Hunting Season",        desc: "Kills are worth double points.", weight: 1, killScoreMult: 2 },
-    { id: "meteor_season", name: "Meteor Season",      desc: "Meteor showers and gem rain twice as often.", weight: 1, eventRateMult: 2.5 },
+    { id: "meteor_season", name: "Meteor Season",      desc: "Meteor showers and gem rain happen twice as often.", weight: 1, eventRateMult: 2.5 },
     { id: "wardens_watch", name: "Warden's Watch",     desc: "Bosses show up twice as often.", weight: 1, bossRateMult: 2.5 },
-    { id: "emerald_fever", name: "Emerald Fever",      desc: "Six emeralds in the wall instead of three, and they come back in 30 seconds.", weight: 0.9, extraEmeralds: 3, emeraldRespawnMs: 30000 },
-    { id: "deep_pockets",  name: "Deep Pockets",       desc: "Satchels hold 12,000 (16,000 with a Reinforced Satchel) and vaults pay out 110%.", weight: 0.8, satchelDeep: true, bankMult: 1.1 },
+    { id: "emerald_fever", name: "Emerald Fever",      desc: "There are six emeralds in the rock instead of three, and they come back after 30 seconds.", weight: 0.9, extraEmeralds: 3, emeraldRespawnMs: 30000 },
+    { id: "deep_pockets",  name: "Deep Pockets",       desc: "Satchels hold 12,000 gems, or 16,000 with a Reinforced Satchel, and vaults pay out 110%.", weight: 0.8, satchelDeep: true, bankMult: 1.1 },
 ];
 
 let active = null;

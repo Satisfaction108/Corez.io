@@ -278,13 +278,13 @@ async function dispatch(req, res, pathname, query) {
         if (!methods) throw new http.HttpError(404, 'not_found', 'Nothing here.');
         route = methods[ctx.method];
         if (!route) {
-            throw new http.HttpError(405, 'method_not_allowed', 'Something went wrong. Refresh and try again.', null, { Allow: Object.keys(methods).join(', ') });
+            throw new http.HttpError(405, 'method_not_allowed', 'Something went wrong. Please refresh and try again.', null, { Allow: Object.keys(methods).join(', ') });
         }
         const isApi = pathname.startsWith('/api/');
         if (isApi && ctx.method !== 'GET') http.csrfGuard(ctx);
         if (!ctx.accountsOn && !route.opts.alwaysOn) {
             if (route.opts.navigation) return ctx.redirect('/?auth=error&reason=accounts_unavailable');
-            throw new http.HttpError(503, 'accounts_unavailable', 'Accounts are down rn. You can still play as a guest.');
+            throw new http.HttpError(503, 'accounts_unavailable', 'Accounts are down right now, but you can still play as a guest.');
         }
         // /api/config and /api/me always answer 200 (the menu boots from them).
         // Always per IP, so rotating sessions (or made-up cookies) cannot
@@ -306,7 +306,7 @@ async function dispatch(req, res, pathname, query) {
         console.error(`[accounts] ${req.method} ${pathname} failed: ` + ((e && e.stack) || e));
         if (!ctx.responded) {
             if (route && route.opts.navigation) return ctx.redirect('/?auth=error&reason=server');
-            return ctx.fail(500, 'server_error', 'Something broke on our end. Try again.');
+            return ctx.fail(500, 'server_error', 'Something went wrong on our end. Please try again.');
         }
         try { res.end(); } catch (_) { /* already gone */ }
     }
@@ -316,6 +316,9 @@ async function dispatch(req, res, pathname, query) {
 // A fixed list, read-only, from <repo>/shared; anything else under /shared/
 // is a 404. Guests need them too, so they are served with accounts off.
 const SHARED_DIR = path.join(__dirname, '..', '..', 'shared');
+// production serves the build's obfuscated copies (scripts/build-client.js), same rule as server.js
+const SHARED_BUILT = path.join(__dirname, '..', '..', 'build', 'public', '_shared');
+const SHARED_OBF = (process.env.CLIENT_BUILD || (process.env.NODE_ENV === 'production' ? 'obfuscated' : 'source')) === 'obfuscated';
 const SHARED_FILES = new Set(['ranks.js', 'cosmetics.js', 'events.js', 'profanity.js', 'daily.js', 'rockBiomes.js', 'achievements.js']);
 const sharedCache = new Map();   // name -> {mtimeMs, size, body, etag}
 
@@ -330,7 +333,8 @@ function serveShared(req, res, pathname) {
     let file = null;
     if (SHARED_FILES.has(name)) {
         try {
-            const full = path.join(SHARED_DIR, name);
+            let full = path.join(SHARED_DIR, name);
+            if (SHARED_OBF) { const b = path.join(SHARED_BUILT, name); try { if (fs.statSync(b).isFile()) full = b; } catch (e) { /* no build: the source */ } }
             const st = fs.statSync(full);
             file = sharedCache.get(name);
             if (!file || file.mtimeMs !== st.mtimeMs || file.size !== st.size) {

@@ -174,7 +174,7 @@
                     if (!sv || !(sv.ip || sv.proxyPath)) throw new Error('tutorial server unavailable');
                     if (sv.maxPlayers && sv.players >= sv.maxPlayers) {
                         if (btn) { btn.disabled = false; }
-                        alert('The tutorial is full rn. Try again in a minute.');
+                        alert('The tutorial is full right now. Please try again in a minute.');
                         return;
                     }
                     g.serverAdd = gameHost(sv);
@@ -187,11 +187,11 @@
                 })
                 .catch(function () {
                     if (btn) { btn.disabled = false; }
-                    alert("Can't reach the tutorial server. Try again in a sec.");
+                    alert("Couldn't reach the tutorial server. Please try again in a moment.");
                 });
         }, function () {
             if (btn) { btn.disabled = false; }
-            alert('Still loading. Give it a sec and try again.');
+            alert('The game is still loading. Give it a moment and try again.');
         });
     }
 
@@ -214,11 +214,11 @@
                 })
                 .catch(function () {
                     if (btn) { btn.disabled = false; }
-                    alert("Can't reach Corez.io 2TDM rn. Try again in a sec.");
+                    alert("Couldn't reach Corez.io 2TDM. Please try again in a moment.");
                 });
         }, function () {
             if (btn) { btn.disabled = false; }
-            alert('Still loading. Give it a sec and try again.');
+            alert('The game is still loading. Give it a moment and try again.');
         });
     }
 
@@ -357,7 +357,7 @@
             }, 2600);
         }
         var ytSoon = document.getElementById('ytSoon');
-        if (ytSoon) ytSoon.onclick = function () { showToast('No YouTube yet. Maybe soon'); };
+        if (ytSoon) ytSoon.onclick = function () { showToast('There is no YouTube channel yet, but maybe soon!'); };
 
         // Regions with live servers get a count and are selectable. The first
         // live region is selected unless the player picked another live one.

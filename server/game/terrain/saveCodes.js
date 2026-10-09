@@ -106,9 +106,9 @@ function start(socket) {
     if (!on()) return refuse("Saving isn't available on this server right now.");
     const body = bodyOf(socket);
     if (!body) return refuse("You can only save while you're alive in a raid.");
-    if (ctx && ctx.ending()) return refuse("The raid is over. Save next raid.");
+    if (ctx && ctx.ending()) return refuse("The raid is over, so you'll have to save next raid.");
     const t = Date.now();
-    if (t - (socket._lastSaveTry || 0) < SAVE_GAP_MS) return refuse("Give it a second.");
+    if (t - (socket._lastSaveTry || 0) < SAVE_GAP_MS) return refuse("Please wait a second and try again.");
     const held = heldInput(socket);
     if (held) return refuse("Stop moving and shooting first, then save.");
     if (inStorm(body)) return refuse("Get out of the storm first.");
@@ -277,10 +277,10 @@ function restore(socket, code, t = Date.now()) {
     if (!on()) { say(socket, "Restoring isn't available on this server right now."); return { ok: false, reason: 'off' }; }
     const body = bodyOf(socket);
     if (!body || body.royaleLobby || body.royaleFrozen) { say(socket, "You can restore a save while you're alive in a raid."); return { ok: false, reason: 'dead' }; }
-    if (ctx && ctx.ending()) { say(socket, "The raid is over. Restore it next raid."); return { ok: false, reason: 'ending' }; }
+    if (ctx && ctx.ending()) { say(socket, "The raid is over, so restore it next raid."); return { ok: false, reason: 'ending' }; }
     if (socket._saving) cancel(socket, "Save cancelled.");
     if (!saves().normalize(code)) { say(socket, "That doesn't look like a save code. It's 25 letters and numbers."); return { ok: false, reason: 'format' }; }
-    if (!tryAllowed(socket, t)) { say(socket, "Too many tries. Wait a few minutes."); return { ok: false, reason: 'tries' }; }
+    if (!tryAllowed(socket, t)) { say(socket, "You've tried too many times. Please wait a few minutes."); return { ok: false, reason: 'tries' }; }
     let res = null;
     try {
         res = saves().restore({
@@ -290,12 +290,12 @@ function restore(socket, code, t = Date.now()) {
     if (!res.ok) {
         const why = {
             format: "That doesn't look like a save code.",
-            unknown: "No save with that code. Check it and try again.",
+            unknown: "There's no save with that code. Check it and try again.",
             used: "That code was already used. Each one works once.",
-            expired: "That code ran out. Codes last 7 days.",
+            expired: "That code ran out, since codes only last 7 days.",
             mode: "That's a " + modeName(res.mode) + " save. Restore it in " + modeName(res.mode) + ".",
             wait: "You restored a save not long ago. Try again in " + Math.ceil((res.waitMs || 0) / 60000) + " min.",
-        }[res.reason] || "Couldn't restore that right now.";
+        }[res.reason] || "That save couldn't be restored right now.";
         say(socket, why);
         return res;
     }

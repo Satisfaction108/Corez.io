@@ -44,8 +44,8 @@ export function rows(o) {
     } else if (r.division == null) {
         const pl = r.placement || {};
         const left = Math.max(0, (pl.of | 0) - (pl.lives | 0));
-        out.push({ k: "RANK", t: left > 0 ? "Placement: " + left + " more " + (left === 1 ? "life" : "lives") + " to get your rank" : "Placement done, your rank shows next life", col: "gold" });
-    } else {
+        out.push({ k: "RANK", t: left > 0 ? "Placement: " + left + " more " + (left === 1 ? "life" : "lives") + " to get your rank" : "Placement is done, so your rank shows up next life", col: "gold" });
+    } else if (!o.rankCard) {
         const d = o.rp | 0;
         const head = o.rpSeen ? (d >= 0 ? "+" : "-") + num(Math.abs(d)) + " RP this raid" : (r.name || "Ranked");
         const toNext = Math.max(0, (r.size | 0) - (r.into | 0));
@@ -63,8 +63,8 @@ export function rows(o) {
     const life = Math.max(o.bestLife || 0, o.lifeNow || 0);
     const raid = Math.max(o.bestRaid | 0, 0);
     const bits = [];
-    if (life > 0) bits.push("Best life " + dur(life));
-    if (raid > 0) bits.push((o.isBest ? "New best raid " : "Best raid ") + num(raid) + " pts");
+    if (raid > 0) bits.push((o.isBest ? "New best raid: " : "Best raid: ") + num(raid) + " pts");
+    if (life > 0) bits.push("Longest life: " + dur(life));
     if (bits.length) out.push({ k: "BESTS", t: bits.join("  ·  "), col: o.isBest ? "gold" : "text" });
     return out.slice(0, 3);
 }

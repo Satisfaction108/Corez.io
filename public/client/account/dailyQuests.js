@@ -87,7 +87,7 @@ function paint() {
     const resetEl = h('span', { class: 'q-reset' });
     const tick = () => {
         const left = (+data.resetsAt || 0) - (Date.now() + (data._skew || 0));
-        resetEl.textContent = left > 0 ? 'new in ' + fmtIn(left) : 'new ones soon';
+        resetEl.textContent = left > 0 ? 'New in ' + fmtIn(left) : 'New ones soon';
         if (left <= 0) { clearInterval(tickTimer); setTimeout(refresh, 3000); }
     };
     if (sig === next && side.querySelector('.q-reset')) {
@@ -107,7 +107,7 @@ function paint() {
     const card = h('div', { class: 'q-card' + (doneN === quests.length && quests.length ? ' all' : '') },
         h('div', { class: 'q-head' }, h('span', { class: 'q-title', text: 'Quests' }), resetEl),
         h('div', { class: 'q-list' }, quests.map(row)),
-        doneN === quests.length && quests.length ? h('div', { class: 'q-foot', text: 'All done. Come back tomorrow' }) : null);
+        doneN === quests.length && quests.length ? h('div', { class: 'q-foot', text: 'All done! Come back tomorrow for new ones.' }) : null);
     side.appendChild(card);
     const sc = data.streaks ? streakCard(data.streaks) : null;
     if (sc) side.appendChild(sc);
@@ -134,7 +134,7 @@ function row(q) {
         h('div', { class: 'q-barrow' },
             h('span', { class: 'q-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(goal), 'aria-valuenow': String(prog), 'aria-label': (q.text || 'Quest') + ', ' + prog + ' of ' + goal },
                 h('span', { class: 'q-fill', dataset: { w: pct + '%' } })),
-            q.done ? h('span', { class: 'q-done' }, icon('check'), h('span', { text: 'done' }))
+            q.done ? h('span', { class: 'q-done' }, icon('check'), h('span', { text: 'Done' }))
                 : h('span', { class: 'q-num', text: fmtNum(prog) + '/' + fmtNum(goal) })));
 }
 const fmtNum = (n) => (Math.round(+n || 0)).toLocaleString();
@@ -152,13 +152,13 @@ function streakCard(st) {
     const cur = p.current | 0, max = Math.max(1, p.maxDay | 0);
     const toTop = Math.max(0, max - cur);
     let playSub;
-    if (p.today) playSub = toTop > 0 ? 'Done today. Tomorrow +' + fmtReward(p.nextMilli) : 'Max reward. Keep it going';
-    else if (cur > 0) playSub = 'Play a raid today to keep it: +' + fmtReward(p.nextMilli);
-    else playSub = 'Play a raid to start one: +' + fmtReward(p.nextMilli);
+    if (p.today) playSub = toTop > 0 ? 'Done for today. Tomorrow is worth +' + fmtReward(p.nextMilli) + '.' : 'You’re at the top reward. Keep it going!';
+    else if (cur > 0) playSub = 'Play a raid today to keep it going for +' + fmtReward(p.nextMilli) + '.';
+    else playSub = 'Play a raid to start a streak for +' + fmtReward(p.nextMilli) + '.';
     const tier = toTop > 0 ? toTop + (toTop === 1 ? ' day' : ' days') + ' to +' + fmtReward(p.maxMilli) + ' a day' : '+' + fmtReward(p.maxMilli) + ' a day';
     const wc = w.current | 0, wb = w.best | 0;
     return h('div', { class: 'q-card st-card' },
-        h('div', { class: 'q-head' }, h('span', { class: 'q-title', text: 'Streaks' }), h('span', { class: 'st-utc', text: 'days end 00:00 UTC' })),
+        h('div', { class: 'q-head' }, h('span', { class: 'q-title', text: 'Streaks' }), h('span', { class: 'st-utc', text: 'Days end at 00:00 UTC' })),
         h('div', { class: 'st-row' + (cur > 0 ? '' : ' off') },
             medal('streaker', cur, 'Play streak'),
             h('div', { class: 'st-body' },
@@ -175,6 +175,6 @@ function streakCard(st) {
             h('div', { class: 'st-body' },
                 h('div', { class: 'q-line' },
                     h('span', { class: 'q-text', text: wc > 0 ? 'Win streak: x' + wc : 'No win streak' }),
-                    h('span', { class: 'st-best', text: 'best x' + wb })),
+                    h('span', { class: 'st-best', text: 'Best x' + wb })),
                 h('div', { class: 'st-sub', text: 'Next #1 finish: +' + fmtReward(w.nextMilli) }))));
 }

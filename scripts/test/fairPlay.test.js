@@ -1417,7 +1417,7 @@ test('quiet vein: a player with flat points for 70 s gets a rich vein close by',
         assert.equal(quietVein.tick([p], () => score, 7, t0 + 100_000, fire), 0);
         sock.lastInputAt = t0 + 129_000;
         assert.equal(quietVein.tick([p], () => score, 7, t0 + 131_000, fire), 1, 'quiet for 71 s: a vein');
-        assert.ok(msgs(sock).some(m => /Rich vein close by, to your east/.test(m)), msgs(sock).join(' | '));
+        assert.ok(msgs(sock).some(m => /rich vein to your east/.test(m)), msgs(sock).join(' | '));
         assert.equal(quietVein.tick([p], () => score, 7, t0 + 210_000, fire), 0, 'cooldown');
         // fighting is not a dead stretch
         p._lastDamageAt = t0 + 295_000;

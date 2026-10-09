@@ -27,8 +27,8 @@ function weakPassword(v) {
 
 function usernameTaken(reason) {
     return new HttpError(409, 'username_taken', reason === 'held'
-        ? 'Someone just had that name. Try another one.'
-        : "That name's taken. Try another one.", { reason: reason || 'taken' });
+        ? 'Someone used that name recently. Please try another one.'
+        : "That name is already taken. Please try another one.", { reason: reason || 'taken' });
 }
 
 async function newRecovery() {
@@ -62,8 +62,21 @@ function getMe(ctx) {
 // Runs `work` (slow hashing + insert) with one 'signup' pre-charged to this
 // IP, so parallel requests cannot all pass the cap while still hashing. The
 // charge is refunded unless an account was created. work() -> users.create result.
+// The day window is seeded from the audit log the first time an address
+// signs up after a restart, so restarting the server doesn't reset it.
+const seededIps = new Set();
+function checkSignupCaps(ctx) {
+    ctx.checkLimit('signup', ctx.ipKey);
+    if (ctx.ip && !seededIps.has(ctx.ipKey)) {
+        seededIps.add(ctx.ipKey);
+        const day = ratelimit.WINDOWS.signupDay;
+        for (const at of users.signupTimesFromIp(ctx.ip, Date.now() - day.windowMs)) ratelimit.hit('signupDay', ctx.ipKey, at);
+    }
+    ctx.checkLimit('signupDay', ctx.ipKey);
+}
+
 async function withSignupCharge(ctx, work) {
-    const charge = ctx.charge(['signup', ctx.ipKey]);
+    const charge = ctx.charge(['signup', ctx.ipKey], ['signupDay', ctx.ipKey]);
     let r;
     try {
         r = await work();
@@ -90,7 +103,7 @@ function takeReferral(ctx, user, method) {
 
 async function signup(ctx) {
     ctx.limit('signupTry', ctx.ipKey);
-    ctx.checkLimit('signup', ctx.ipKey);
+    checkSignupCaps(ctx);
     const username = str(ctx.body.username, 64).trim();
     const password = str(ctx.body.password, PW_MAX);
     const v = names.validateUsername(username);
@@ -122,7 +135,7 @@ async function signup(ctx) {
 // game connection (bridge.js onGuestId) and POST /api/achievements.
 async function quickSignup(ctx) {
     ctx.limit('signupTry', ctx.ipKey);
-    ctx.checkLimit('signup', ctx.ipKey);
+    checkSignupCaps(ctx);
     const username = str(ctx.body.username, 64).trim();
     const v = names.validateUsername(username);
     if (!v.ok) throw invalidUsername(v);
@@ -208,10 +221,10 @@ async function reauth(ctx) {
             if (sessions.isFresh(a.session, ctx.now)) return ctx.noContent();
             throw passwordNeeded();
         }
-        throw new HttpError(403, 'reauth_required', 'Quick Discord check first.');
+        throw new HttpError(403, 'reauth_required', 'Please confirm it’s you with Discord first.');
     }
     const pw = str(ctx.body.currentPassword, PW_MAX);
-    if (!pw) throw new HttpError(401, 'bad_password', 'Enter your current password.');
+    if (!pw) throw new HttpError(401, 'bad_password', 'Please enter your current password.');
     if (!(await checkPassword(ctx, a.user, pw))) throw new HttpError(401, 'bad_password', 'Wrong password.');
     sessions.markReauth(a.session.id);
     ctx.noContent();
@@ -305,7 +318,7 @@ async function reset(ctx) {
     const token = str(ctx.body.token, 200).trim();
     const newPassword = str(ctx.body.newPassword, PW_MAX);
     const user = users.peekResetToken(token, ctx.now);
-    if (!user) throw new HttpError(400, 'invalid_token', "This reset link is dead. Ask for a new one.");
+    if (!user) throw new HttpError(400, 'invalid_token', "This reset link has expired. Please ask for a new one.");
     const pv = names.validatePassword(newPassword, user.username);
     if (!pv.ok) throw weakPassword(pv);
     if (users.isBanned(user, ctx.now)) throw bannedError(user);
@@ -317,7 +330,7 @@ async function reset(ctx) {
         users.audit(user.id, 'password_reset', null, { ip: ctx.ip });
         return true;
     });
-    if (!applied) throw new HttpError(400, 'invalid_token', "This reset link is dead. Ask for a new one.");
+    if (!applied) throw new HttpError(400, 'invalid_token', "This reset link has expired. Please ask for a new one.");
     kick(user.id, 'Your password changed. Log in again.');
     ctx.startSession(user, 'reset');
     ctx.json(200, { user: users.toPublic(users.byId(user.id)) });
@@ -329,8 +342,8 @@ async function reset(ctx) {
 async function discordComplete(ctx) {
     ctx.limit('discordDone', ctx.ipKey);
     const pending = discordOAuth.readPending(ctx);
-    if (!pending) throw new HttpError(401, 'pending_expired', 'Your Discord login timed out. Log in with Discord again.');
-    ctx.checkLimit('signup', ctx.ipKey);
+    if (!pending) throw new HttpError(401, 'pending_expired', 'Your Discord login timed out. Please log in with Discord again.');
+    checkSignupCaps(ctx);
     const username = str(ctx.body.username, 64).trim();
     const password = str(ctx.body.password, PW_MAX);
     const v = names.validateUsername(username);

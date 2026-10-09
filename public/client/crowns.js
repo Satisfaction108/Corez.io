@@ -111,7 +111,7 @@ export function onKC(m) {
     switch (kind) {
         case "crowns":
             S.startAt = now;
-            if (stage0()) juice.slam("CROWNS ARE OUT", "Hold one for points, kill a holder to steal it", GOLD, 4600, 50);
+            if (stage0()) juice.slam("CROWNS ARE OUT", "Hold one for points, or kill a holder to steal theirs", GOLD, 4600, 50);
             else juice.slam(text, sub, GOLD, 4400, 62);
             juice.flash("#fff1c2", 220, 0.25);
             juice.rumble(900, 6);
@@ -457,7 +457,7 @@ export function feedLine(f, who, tag) {
     if (!x) return null;
     const crown = tag("crown", GOLD);
     switch (x.verb) {
-        case "start": return { text: tag("Crowns are out", GOLD) + ", hold one for points", badge: null };
+        case "start": return { text: tag("Crowns are out!", GOLD) + " Hold one for points", badge: null };
         case "sd": return { text: tag("FINAL MINUTE", RED) + ": crowns pay double", badge: null };
         case "took": return { text: tag(String(x.by).slice(0, 13), GOLD) + " took " + who(x.name, "someone") + "'s " + crown + "!", badge: x.pts ? { t: "+" + (A ? A.fmtNum(x.pts) : x.pts), col: GOLD } : null };
         case "smash": return { text: who(x.by, "Someone") + " smashed " + who(x.name, "someone") + "'s " + crown, badge: x.to ? { t: String(x.to).slice(0, 10), col: GOLD } : null };

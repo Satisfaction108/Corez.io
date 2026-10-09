@@ -15,7 +15,7 @@ export function render(el, deps) {
     const chips = h('div', { class: 'gal-chips', role: 'group', 'aria-label': 'Show' });
     const list = h('div', { class: 'gal-list' });
     const root = h('div', { class: 'gal' },
-        h('div', { class: 'gal-note', text: 'Every item in the game. The Shop tab has what’s for sale today.' }),
+        h('div', { class: 'gal-note', text: 'This is every item in the game. The Shop tab shows what’s for sale today.' }),
         chips, list);
     el.appendChild(root);
 

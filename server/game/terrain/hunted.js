@@ -78,17 +78,17 @@ function say(body, kind, text, sub, dur) {
 function onChange(body, prev, next, t) {
     if (next > prev) {
         if (next === 2) {
-            say(body, 'toptarget', "TOP TARGET", "Biggest haul in the raid. Everyone's after you.", 3200);
+            say(body, 'toptarget', "TOP TARGET", "You have the biggest haul in the raid, so everyone's after you.", 3200);
             if (hooks.feed && t - (body._huntFeedAt || 0) > TOP_FEED_GAP_MS) {
                 body._huntFeedAt = t;
                 try { hooks.feed({ hunt: 1, name: body.name || "Someone", g: body.carriedGems | 0 }); } catch { /* */ }
             }
         } else if (prev === 0) {
-            say(body, 'hunted', "YOU'RE HUNTED", "Everyone sees you on the map. Bank it or fight.", 3000);
+            say(body, 'hunted', "YOU'RE HUNTED", "Everyone can see you on the map. Bank your gems or fight!", 3000);
         }
     } else if (next === 0 && prev > 0) {
         const banking = !!(body.vaultDeposit || body.vaultOnPad || body.outpostDeposit);
-        say(body, 'safe', "SAFE", banking ? "Banked. The hunt is off." : "You're off the map.", 1800);
+        say(body, 'safe', "SAFE", banking ? "You banked, so the hunt is off." : "You're off the map.", 1800);
     }
 }
 

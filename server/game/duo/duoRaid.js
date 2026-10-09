@@ -169,7 +169,7 @@ function teamForSpawn(socket, name) {
     if (mate && (!before || before !== team || !hadMate)) {
         const ms = socketOfKey(mate.mk, socket);
         const filled = !socket.duoPid;
-        say(socket, filled ? "You're teamed up with " + (mate.name || 'a random') + ". Stick together." : "You're in with " + (mate.name || 'your mate') + ".");
+        say(socket, filled ? "You're teamed up with " + (mate.name || 'a random player') + ". Stick together." : "You're in with " + (mate.name || 'your mate') + ".");
         if (ms) say(ms, (name || 'Someone') + (filled ? " joined you as your teammate." : " is here."));
     }
     return team.id;
@@ -252,7 +252,7 @@ function runMatch(t) {
                     s._duoGo = true;
                     s._duoNearMate = true;     // drop in right beside them
                     talkWait(s, 'paired', t, mateName);
-                    say(s, "Teamed up with " + mateName + ". Stick together.");
+                    say(s, "You're teamed up with " + mateName + ". Stick together.");
                 } else {
                     // already in the raid: someone takes the empty slot
                     const newcomer = mks.find(x => x !== mk);

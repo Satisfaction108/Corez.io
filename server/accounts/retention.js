@@ -157,7 +157,7 @@ function shopPick(now) {
 function status(o, now = Date.now(), opts = {}) {
     if (!on()) return { on: false, now };
     const d = h();
-    if (!d || !validOwner(o)) throw new HttpError(503, 'accounts_unavailable', 'Accounts are down rn. You can still play as a guest.');
+    if (!d || !validOwner(o)) throw new HttpError(503, 'accounts_unavailable', 'Accounts are down right now, but you can still play as a guest.');
     let row = rowOf(d, o);
     if (opts.touch && row) { touch(d, row, now); row = rowOf(d, o); }
     const st = stateOf(row);
@@ -197,9 +197,9 @@ function status(o, now = Date.now(), opts = {}) {
 // already_claimed when another request just took it, 409 adopted when the
 // guest track moved to an account.
 function claim(o, now = Date.now(), opts = {}) {
-    if (!on()) throw new HttpError(404, 'daily_off', 'Daily rewards are off rn.');
+    if (!on()) throw new HttpError(404, 'daily_off', 'Daily rewards are turned off right now.');
     const d = h();
-    if (!d || !validOwner(o)) throw new HttpError(503, 'accounts_unavailable', 'Accounts are down rn. You can still play as a guest.');
+    if (!d || !validOwner(o)) throw new HttpError(503, 'accounts_unavailable', 'Accounts are down right now, but you can still play as a guest.');
     const res = d.tx(() => {
         let row = rowOf(d, o);
         if (row && row.adopted_by) throw new HttpError(409, 'adopted', 'Your streak moved to your account. Log in to claim it.');
@@ -212,12 +212,12 @@ function claim(o, now = Date.now(), opts = {}) {
         }
         const st = stateOf(row);
         const ev = D.evaluate(st, now);
-        if (!ev.ready) throw new HttpError(409, 'not_ready', 'Not yet. Come back in ' + D.countdown(ev.readyAt - now) + '.', { readyAt: ev.readyAt });
+        if (!ev.ready) throw new HttpError(409, 'not_ready', 'It’s not ready yet. Come back in ' + D.countdown(ev.readyAt - now) + '.', { readyAt: ev.readyAt });
         const next = D.afterClaim(st, ev, now);
         const moved = d.run(`UPDATE daily_track SET step = ?, streak = ?, best = ?, claims = ?, last_claim_at = ?, seen_at = ?, play_min = ?
                              WHERE id = ? AND claims = ?`,
             next.step, next.streak, next.best, next.claims, now, now, D.smoothMinute(row.play_min, D.minuteOf(now)), row.id, st.claims).changes;
-        if (!moved) throw new HttpError(409, 'already_claimed', 'Already claimed!');
+        if (!moved) throw new HttpError(409, 'already_claimed', 'You already claimed this one!');
         const owned = ownedOf(o);
         const reward = rewardFor(ev.day, owned);
         let dustMilli = 0, balanceMilli = null, itemId = null;

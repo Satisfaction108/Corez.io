@@ -522,7 +522,7 @@ test('push: the daily ping goes once, at the usual time, encrypted for that brow
     assert.equal(p.headers.Topic, 'daily');
     const msg = JSON.parse(webpush.decrypt(p.body, b.priv, b.auth).toString('utf8'));
     assert.equal(msg.title, 'Day 2 reward is ready');
-    assert.match(msg.body, /^1\.5 gemdust for the shop is waiting, sign up to keep it\./);
+    assert.match(msg.body, /^1\.5 gemdust for the shop is waiting for you\. Sign up to keep it\./);
     assert.ok(!/\bgems\b/.test(msg.body), 'no in-game gems in the ping');
     assert.ok(!/—/.test(msg.title + msg.body), 'no em dash');
     // the VAPID token: ES256 over our key, for that push service
@@ -691,10 +691,10 @@ test('daily panel: all 7 days with their prizes, claimed / today / next marked, 
     assert.equal(v.rows.length, 7);
     assert.deepEqual(v.rows.map(r => r.state), ['today', 'next', 'later', 'later', 'later', 'later', 'later']);
     assert.deepEqual(v.rows.map(r => r.text), ['1 gemdust', '1.5 gemdust', 'Buddy sidekick', '2 gemdust', '2.5 gemdust', '3 gemdust', 'Stripes sidekick skin']);
-    assert.equal(v.rows[2].note, '2.5 gemdust if you have it');
-    assert.equal(v.rows[6].note, '4 gemdust if you have it');
+    assert.equal(v.rows[2].note, '2.5 gemdust if you already own it');
+    assert.equal(v.rows[6].note, '4 gemdust if you already own it');
     assert.match(v.rule, /20h after your last claim/);
-    assert.match(v.rule, /Miss 48h and you drop back 2 days/);
+    assert.match(v.rule, /If you miss 48h, you drop back 2 days/);
     // two claims in: 1 and 2 claimed, 3 is next (locked), the rest later
     retention.claim(A(u), T0);
     retention.claim(A(u), T0 + 21 * HOUR);
@@ -711,7 +711,7 @@ test('daily panel: all 7 days with their prizes, claimed / today / next marked, 
     v = V.rows(retention.status(A(u), T0 + 8 * 21 * HOUR), DY);
     assert.equal(v.rows[0].state, 'today');
     assert.equal(v.rows[2].text, '2.5 gemdust');
-    assert.equal(v.rows[2].note, 'you have Buddy sidekick');
+    assert.equal(v.rows[2].note, 'You already own the Buddy sidekick');
     assert.equal(v.rows[6].text, 'Polka Dots sidekick skin');
     // no em dashes in anything it says
     assert.ok(!/\u2014/.test(JSON.stringify(v)), 'no em dashes');
@@ -723,7 +723,7 @@ test('daily panel: a guest sees every prize with "sign up to claim"', async () =
     const v = V.rows(retention.status(G(g), T0), DY, { guest: true });
     assert.equal(v.guest, true);
     assert.equal(v.rows.length, 7);
-    assert.ok(v.rows.every(r => /sign up to claim$/.test(r.note)), v.rows.map(r => r.note).join(' | '));
+    assert.ok(v.rows.every(r => /Sign up to claim it\.$/.test(r.note)), v.rows.map(r => r.note).join(' | '));
     assert.equal(v.rows[2].text, 'Buddy sidekick');
     // nothing to draw without a status
     assert.deepEqual(V.rows(null, DY).rows, []);

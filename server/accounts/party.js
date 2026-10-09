@@ -75,7 +75,7 @@ function newCode() {
         for (let i = 0; i < CODE_LEN; i++) s += CODE_ALPHABET[b[i] % CODE_ALPHABET.length];
         if (!byCode.has(s)) return s;
     }
-    fail(503, 'busy', 'Couldn’t make a party code. Try again.');
+    fail(503, 'busy', 'Couldn’t make a party code. Please try again.');
 }
 
 // What people type: any case, spaces or dashes. Codes never use I, O, 0
@@ -188,7 +188,7 @@ function invitesFor(userId) {
 // ---- mutations ----
 
 function makeParty(actor) {
-    if (parties.size >= MAX_PARTIES) fail(503, 'busy', 'Too many parties right now. Try again soon.');
+    if (parties.size >= MAX_PARTIES) fail(503, 'busy', 'There are too many parties right now. Please try again soon.');
     const t = now();
     const p = { id: randomId(9), code: newCode(), leader: actor.mk, members: [memberFrom(actor, t)], createdAt: t, launch: null };
     parties.set(p.id, p);
@@ -231,10 +231,10 @@ function addMember(p, actor, why) {
 // hooks.blocked(userIdA, userIdB) -> true stops two accounts teaming up by code
 function joinByCode(actor, code, opts = {}) {
     const c = normCode(code);
-    if (!c || c.length !== CODE_LEN) fail(400, 'bad_code', 'Party codes are 5 letters.');
+    if (!c || c.length !== CODE_LEN) fail(400, 'bad_code', 'Party codes are 5 letters long.');
     const pid = byCode.get(c);
     const p = pid ? parties.get(pid) : null;
-    if (!p) fail(404, 'no_party', 'No party with that code.');
+    if (!p) fail(404, 'no_party', 'There’s no party with that code.');
     if (memberOf(p, actor.mk)) { touch(actor.mk); return p; }
     if (p.members.length >= MAX_MEMBERS) fail(409, 'party_full', 'That party’s already full.');
     if (opts.blocked && actor.userId && p.members.some(m => m.userId && opts.blocked(actor.userId, m.userId))) {
@@ -249,13 +249,13 @@ function joinByCode(actor, code, opts = {}) {
 // presence). -> {party, invite, fresh}
 function invite(actor, target) {
     if (!actor.userId) fail(401, 'unauthorized', 'Log in to invite friends.');
-    if (!target || !target.userId) fail(404, 'user_not_found', 'Nobody’s called that.');
-    if (target.userId === actor.userId) fail(400, 'self', 'That’s you lol');
+    if (!target || !target.userId) fail(404, 'user_not_found', 'There’s nobody with that name.');
+    if (target.userId === actor.userId) fail(400, 'self', 'You can’t invite yourself. Nice try!');
     const theirs = userInParty(target.userId);
     let p = partyOf(actor.mk);
     if (theirs && p && theirs === p) fail(409, 'already_together', 'You’re already in a party together.');
     if (theirs && theirs.members.length >= MAX_MEMBERS) fail(409, 'in_party', target.name + ' is already in a party.');
-    if (p && p.members.length >= MAX_MEMBERS) fail(409, 'party_full', 'Your party’s full. Two per duo.');
+    if (p && p.members.length >= MAX_MEMBERS) fail(409, 'party_full', 'Your party is full. A duo has two players.');
     // Cross-invites: they already asked you. That's a yes both ways, so you
     // join their party now instead of making a second one with a second invite.
     const t0 = now();
@@ -291,8 +291,8 @@ function endInvite(iv, reason) {
 // -> {party|null, invite}
 function respond(actor, inviteId, accept) {
     const iv = invites.get(String(inviteId || ''));
-    if (!iv || !actor.userId || iv.toUserId !== actor.userId) fail(404, 'invite_gone', 'That invite’s gone.');
-    if (iv.exp <= now()) { endInvite(iv, 'expired'); fail(410, 'invite_gone', 'That invite ran out. Ask for a new one.'); }
+    if (!iv || !actor.userId || iv.toUserId !== actor.userId) fail(404, 'invite_gone', 'That invite isn’t there anymore.');
+    if (iv.exp <= now()) { endInvite(iv, 'expired'); fail(410, 'invite_gone', 'That invite expired. Ask your friend for a new one.'); }
     invites.delete(iv.id);
     const p = parties.get(iv.pid);
     if (!accept) {

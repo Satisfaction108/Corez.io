@@ -54,27 +54,27 @@ let els = null;
 
 /* ── errors ─────────────────────────────────────────────────────────── */
 const ERR = {
-    no_party: 'That party’s gone',
-    bad_code: 'Party codes are 5 letters',
-    party_full: 'That party’s already full',
-    already_in_party: 'Leave your party first',
-    already_together: 'You’re already teamed up',
-    in_party: 'They’re already in a party',
-    in_raid: 'They’re in a raid right now',
-    offline: 'They’re offline',
-    not_friends: 'You can only invite friends',
-    cant_invite: 'You can’t invite them',
-    cant_join: 'You can’t join that party',
-    invite_gone: 'That invite’s gone',
-    self: 'That’s you lol',
-    accounts_unavailable: 'Invites are down rn. Share your code instead',
+    no_party: 'That party doesn’t exist anymore.',
+    bad_code: 'Party codes are 5 letters long.',
+    party_full: 'That party is already full.',
+    already_in_party: 'Please leave your party first.',
+    already_together: 'You’re already teamed up.',
+    in_party: 'They’re already in a party.',
+    in_raid: 'They’re in a raid right now.',
+    offline: 'They’re offline.',
+    not_friends: 'You can only invite friends.',
+    cant_invite: 'You can’t invite them.',
+    cant_join: 'You can’t join that party.',
+    invite_gone: 'That invite has expired.',
+    self: 'You can’t invite yourself. Nice try!',
+    accounts_unavailable: 'Invites are down right now. You can share your code instead.',
 };
 function errText(r) {
     const code = r && r.data && r.data.error && r.data.error.code;
     if (code && ERR[code]) return ERR[code];
-    if (r && r.status === 429) return 'Slow down a sec';
-    if (r && r.status === 0) return 'Couldn’t reach the server';
-    return (r && r.data && r.data.error && r.data.error.message) || 'Didn’t work. Try again?';
+    if (r && r.status === 429) return 'You’re doing that too fast. Please wait a moment.';
+    if (r && r.status === 0) return 'Couldn’t reach the server.';
+    return (r && r.data && r.data.error && r.data.error.message) || 'That didn’t work. Please try again.';
 }
 
 /* ── state from the server ──────────────────────────────────────────── */
@@ -104,7 +104,7 @@ function applyParty(p, why, who) {
         if (why === 'join' && !before.full) toast(who + ' joined your party', { kind: 'ok' });
         else if (why === 'left' || why === 'timeout') toast(who + (why === 'timeout' ? ' dropped out of' : ' left') + ' the party');
         else if (why === 'declined') toast(who + ' can’t duo right now');
-        else if (why === 'inviteExpired') toast('No answer from ' + who);
+        else if (why === 'inviteExpired') toast(who + ' didn’t answer your invite.');
     }
     if (p && p.full && st.mode !== 'duo') setMode('duo');
     render();
@@ -188,8 +188,8 @@ export async function inviteFriend(f) {
     setMode('duo');
     loadSeq++;   // a poll in flight predates this
     applyParty(r.data.party);
-    if (r.data.merged) toast(f.username + ' had invited you too. You’re teamed up', { kind: 'ok' });
-    else toast('Invite sent to ' + f.username + '. It lasts a minute', { kind: 'ok' });
+    if (r.data.merged) toast(f.username + ' had invited you too, so you’re teamed up!', { kind: 'ok' });
+    else toast('Invite sent to ' + f.username + '. It lasts for one minute.', { kind: 'ok' });
     return true;
 }
 export const partyHas = (userId) => !!(st.party && st.party.members.some((m) => m.userId === userId));
@@ -227,7 +227,7 @@ async function quickCreate() {
     setMode('duo');
     st.adding = true;
     applyParty(r.data.party);
-    toast('Invite a friend to duo, or flip to Solo to go alone', { kind: 'ok', duration: 6000 });
+    toast('Invite a friend to play duos, or switch to Solo to play alone.', { kind: 'ok', duration: 6000 });
     return true;
 }
 
@@ -292,7 +292,7 @@ function portalLink(code) {
 function copyCode(code) {
     const link = portalLink(code);
     const what = link || code;
-    const done = () => toast((link ? 'Invite link' : 'Code') + ' copied. Send it to your friend', { kind: 'ok' });
+    const done = () => toast((link ? 'Invite link' : 'Code') + ' copied. Send it to your friend!', { kind: 'ok' });
     const fail = () => toast(link ? 'Your party code is ' + code : 'Your code is ' + code);
     try {
         if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(what).then(done, fail); return; }
@@ -360,7 +360,7 @@ function friendsDrawer() {
     const offline = all.filter((f) => state(f) === 'offline').slice(0, 12);
     const box = h('div', { class: 'duo-friends' });
     if (!d.loaded) { box.appendChild(h('div', { class: 'duo-note', text: 'Finding your friends...' })); social.load(); return box; }
-    if (!all.length) { box.appendChild(h('div', { class: 'duo-note', text: 'No friends yet. Add some in Friends, or use a code.' })); return box; }
+    if (!all.length) { box.appendChild(h('div', { class: 'duo-note', text: 'No friends yet. You can add some in Friends or use a code.' })); return box; }
     if (!online.length) box.appendChild(h('div', { class: 'duo-note', text: 'Nobody’s online right now.' }));
     const shown = st.showOffline ? online.concat(offline) : online;
     for (const f of shown) {
@@ -368,7 +368,7 @@ function friendsDrawer() {
         const inParty = partyHas(f.userId), pending = invitePending(f.username);
         const can = (s === 'menu' || s === 'raid') && !inParty;
         const why = inParty ? 'Teamed up' : pending ? 'Invited' : s === 'raid' ? (f.presence && f.presence.mode === 'duo' ? 'In a duo raid' : 'In a raid') : s === 'offline' ? 'Offline' : 'In the lobby';
-        const btn = h('button', { type: 'button', class: 'dw-btn sm' + (can && !pending ? ' primary' : ''), text: pending ? 'Again' : 'Invite', disabled: !can,
+        const btn = h('button', { type: 'button', class: 'dw-btn sm' + (can && !pending ? ' primary' : ''), text: pending ? 'Resend' : 'Invite', disabled: !can,
             onclick: async (e) => { const b = e.currentTarget; setBusy(b, true, '...'); await inviteFriend(f); setBusy(b, false); } });
         box.appendChild(h('div', { class: 'duo-friend st-' + s },
             h('span', { class: 'duo-dot st-' + s, 'aria-hidden': 'true' }),
@@ -426,8 +426,8 @@ function render() {
         slots.appendChild(h('button', { type: 'button', class: 'duo-slot empty' + (open ? ' open' : ''), 'aria-expanded': open ? 'true' : 'false', 'aria-haspopup': 'dialog',
             onclick: () => { st.adding = !st.adding; render(); } },
             h('span', { class: 'duo-plus', 'aria-hidden': 'true', text: '+' }),
-            h('span', { class: 'duo-who' }, h('span', { class: 'duo-name', text: 'Add a mate' }),
-                h('span', { class: 'duo-sub' + (p && (p.pending || []).length ? ' st-menu' : ''), text: p && (p.pending || []).length ? 'Invite sent' : 'invite or use a code' }))));
+            h('span', { class: 'duo-who' }, h('span', { class: 'duo-name', text: 'Add a teammate' }),
+                h('span', { class: 'duo-sub' + (p && (p.pending || []).length ? ' st-menu' : ''), text: p && (p.pending || []).length ? 'Invite sent' : 'Invite or use a code' }))));
     }
     panel.appendChild(slots);
 
@@ -437,7 +437,7 @@ function render() {
         foot.appendChild(h('label', { class: 'duo-fill', for: 'duoFillCb' }, cb, h('span', { class: 'duo-check', 'aria-hidden': 'true' }),
             h('span', { text: 'Fill with a random teammate' })));
     } else {
-        foot.appendChild(h('span', { class: 'duo-note', text: mate.state === 'playing' ? mate.name + ' is in the raid. Hit Play to join them.' : 'Hit Play and you both drop in.' }));
+        foot.appendChild(h('span', { class: 'duo-note', text: mate.state === 'playing' ? mate.name + ' is in the raid. Press Play to join them.' : 'Press Play and you’ll both drop in.' }));
     }
     if (p) foot.appendChild(h('button', { type: 'button', class: 'dw-btn sm duo-leave', text: 'Leave', onclick: (e) => leaveParty(e.currentTarget) }));
     panel.appendChild(foot);
@@ -445,7 +445,7 @@ function render() {
     // the invite popover hangs under the slots, over the card, so the card
     // keeps its height and Play stays where it was
     if (open) {
-        const pop = h('div', { class: 'duo-pop', role: 'dialog', 'aria-label': 'Add a mate' });
+        const pop = h('div', { class: 'duo-pop', role: 'dialog', 'aria-label': 'Add a teammate' });
         if (loggedIn() && !store.get('offline') && !document.documentElement.classList.contains('dw-cg')) {
             pop.appendChild(h('div', { class: 'duo-h', text: 'Invite a friend' }));
             pop.appendChild(friendsDrawer());
@@ -488,8 +488,8 @@ export async function arm(follow = false, retry = 0) {
     // already on the way in (Play and a follow landing together): one socket only
     if (g.gameLoading || g.gameStart) return;
     const sv = duoServer();
-    if (!sv) { toast('Duos isn’t up right now. Try Solo?', { kind: 'error' }); return; }
-    if (sv.maxPlayers && sv.players >= sv.maxPlayers) { toast('The duo server is full. Try again in a minute', { kind: 'error' }); return; }
+    if (!sv) { toast('Duos isn’t available right now. You can play Solo instead.', { kind: 'error' }); return; }
+    if (sv.maxPlayers && sv.players >= sv.maxPlayers) { toast('The duo server is full. Please try again in a minute.', { kind: 'error' }); return; }
     st.arming = true;
     const start = document.getElementById('startButton');
     if (start) { start.disabled = true; const b = start.querySelector('b'); if (b) b.textContent = 'Joining...'; }
@@ -543,7 +543,7 @@ function watchJoin(retry) {
         if (retry < 1) {
             toast('Couldn’t get you in. Trying again...', { kind: 'error', duration: 3000 });
             setTimeout(() => { if (!inGame() && !g.gameLoading && !g.gameStart) arm(true, retry + 1); }, 600);
-        } else toast('Couldn’t join the duo raid. Hit Play again', { kind: 'error', duration: 6000 });
+        } else toast('Couldn’t join the duo raid. Please press Play again.', { kind: 'error', duration: 6000 });
     }, 1000);
 }
 
@@ -553,9 +553,9 @@ function followLaunch(byName) {
     const g = window.global;
     if (!g || g.gameStart || g.gameLoading) return;
     const blocked = window.dwAccount && window.dwAccount.blocksEnter && window.dwAccount.blocksEnter();
-    if (blocked) { toast((byName || 'Your mate') + ' dropped in. Hit Play to join them'); return; }
+    if (blocked) { toast((byName || 'Your teammate') + ' dropped in. Press Play to join them.'); return; }
     setMode('duo');
-    toast((byName || 'Your mate') + ' hit Play. Dropping you in...', { kind: 'ok', duration: 2200 });
+    toast((byName || 'Your teammate') + ' pressed Play. Dropping you in...', { kind: 'ok', duration: 2200 });
     clearTimeout(followTimer);
     followTimer = setTimeout(() => { if (!inGame() && !(window.global && window.global.gameStart)) arm(true); }, 700);
 }

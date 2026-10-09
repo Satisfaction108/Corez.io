@@ -2,7 +2,7 @@
 
 export const RULE = "Points = banked gems + kills & bonuses + crowns";
 export const RULE_SHORT = "PTS = BANKED + KILLS + CROWNS";
-export const RULE_BODY = "Most points when the raid ends wins. Banked gems are safe, dying never takes them. " +
+export const RULE_BODY = "Whoever has the most points when the raid ends wins. Banked gems are safe, and dying never takes them. " +
     "Carried gems only count once you bank them. Past 5,000 in a raid, each banked gem counts half a point (you keep every gem). " +
     "Kills, streaks, bosses and quests give bonus points. " +
     "A crown gives points every second, but whoever kills you takes it and up to 30% of your kill and crown points.";
@@ -16,7 +16,7 @@ export const fmt = num;
 export const BANK = "Spendable";
 export const BANKED_RAID = "Banked this raid";
 export const BANK_TIP = "Spendable: gems you can spend at shops";
-export const BANK_TIP_BODY = "Includes gems from earlier raids and bounties. Spending lowers it, never your points. " +
+export const BANK_TIP_BODY = "This includes gems from earlier raids and bounties. Spending lowers it, but never your points. " +
     "Points only count what you banked this raid.";
 
 // The one points number the death card shows (header and the "Points: X" line
@@ -59,13 +59,13 @@ export function deathLine(you, carried, savingsLost = 0, kept = 0) {
     const c = Math.max(0, (carried != null ? carried : dl.c) | 0);
     const k = Math.max(0, kept | 0);
     const sub = k > 0
-        ? "You kept " + num(k) + " carried gems, dropped " + num(c) + ". Bank sooner to keep them all."
+        ? "You kept " + num(k) + " carried gems and dropped " + num(c) + ". Bank sooner to keep them all."
         : c > 0 ? "You dropped " + num(c) + " carried gems. Bank sooner next time." : "";
     return { head, lost, sub, hurt: lostPts > 0, savings: savingsLine(sav) };
 }
 export function savingsLine(n) {
     n = Math.max(0, n | 0);
-    return n > 0 ? "Your savings from earlier raids paid " + num(n) + " gems for this death. Your points are fine" : "";
+    return n > 0 ? "Your savings from earlier raids paid " + num(n) + " gems for this death. Your points are fine." : "";
 }
 
 // The three parts as death card / results tiles: [label, value, icon]
@@ -105,7 +105,7 @@ export function carryNote(o) {
     if (s.died || s.noBank || n < CARRY_WARN) return null;
     const danger = (s.near | 0) > 0 || !!s.storm || (s.hp != null && s.hp < 0.6);
     if (!danger && n < CARRY_LOUD) return null;
-    return { text: "Carrying " + num(n) + ": bank it", sub: danger ? "Dying drops it, it's not points yet" : "Not points until banked", hot: danger };
+    return { text: "Carrying " + num(n) + ": bank it", sub: danger ? "If you die, you'll drop most of it" : "It only counts as points once you bank it", hot: danger };
 }
 
 // The crown card while you wear one
@@ -219,7 +219,7 @@ export function depositNote(v, carried, now) {
         const left = Math.max(0, carried | 0);
         return {
             text: "Deposit stopped: banked " + num(v.cutBanked | 0) + " of " + num(v.cutTotal | 0) +
-                (left > 0 ? ". Still carrying " + num(left) + ", get back on the pad" : ""),
+                (left > 0 ? ". You still have " + num(left) + " on you, so get back on the pad" : ""),
             hot: true,
         };
     }

@@ -114,7 +114,7 @@ function t(name, fn) {
     t('goal: dig, then upgrade, then the storm', () => {
         let g = L.goalFor({ bankedRaid: 0, canUpgrade: true });
         assert.equal(g.id, 'dig');
-        assert.equal(g.text, 'Dig gems, bank them at a vault');
+        assert.equal(g.text, 'Mine gems and bank them at a vault');
         assert.equal(g.arrow, 'vault');
         g = L.goalFor({ bankedRaid: 120, canUpgrade: true });
         assert.equal(g.text, 'Upgrade your tank');
@@ -257,8 +257,8 @@ function t(name, fn) {
         assert.equal(L.keptLine({ banked: 0, carried: 300, kept: 100 }), 'You kept 100 gems from your satchel.');
         assert.equal(L.keptLine({ banked: 1340, carried: 50, kept: 0 }), 'You kept your 1,340 banked gems. Your satchel dropped.');
         assert.equal(L.keptLine({ banked: 40, carried: 0 }), 'You kept your 40 banked gems.');
-        assert.equal(L.keptLine({ banked: 0, carried: 80 }), 'Nothing banked, so your gems dropped.');
-        assert.equal(L.keptLine({}), 'Nothing lost. Jump back in.');
+        assert.equal(L.keptLine({ banked: 0, carried: 80 }), 'You had nothing banked, so your gems dropped.');
+        assert.equal(L.keptLine({}), "You didn't lose anything, so jump back in!");
     });
 
     // ── veterans ──────────────────────────────────────────────────────

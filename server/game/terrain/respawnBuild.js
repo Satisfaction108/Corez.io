@@ -265,7 +265,7 @@ function onSpawn(socket, body) {
         const fit = fitOnTop(base, l.raw || [], pool, sk.caps);
         setRaw(body, fit);
         const short = tier5.tierOf(l.def) === 5 && !tier5.has(body);
-        try { body.sendMessage(short ? "Back in your " + (body.label || "tank") + ". Grow to " + tier5.T5_GROWTH + "x this life to unlock Tier 5." : "Back in your " + (body.label || "tank") + " with the same stats."); } catch { /* */ }
+        try { body.sendMessage(short ? "You're back in your " + (body.label || "tank") + ". Grow to " + tier5.T5_GROWTH + "x this life to unlock Tier 5." : "You're back in your " + (body.label || "tank") + " with the same stats."); } catch { /* */ }
         return true;
     } catch (e) {
         console.error('[RB] spawn', e && e.message);

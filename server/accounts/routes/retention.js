@@ -33,7 +33,7 @@ function ownerOf(ctx) {
     }
     const g = ctx.body && ctx.body.guestId;
     if (guests.valid(g)) return { kind: 'g', id: g };
-    throw new HttpError(400, 'no_owner', 'Something went wrong. Refresh and try again.');
+    throw new HttpError(400, 'no_owner', 'Something went wrong. Please refresh and try again.');
 }
 
 // a new account sending its browser's guest id: bring the guest track over
@@ -74,11 +74,11 @@ function postClaim(ctx) {
 
 function postSubscribe(ctx) {
     ctx.limit('push', ctx.ipKey);
-    if (!push.enabled()) throw new HttpError(503, 'push_off', 'Pings are off rn.');
+    if (!push.enabled()) throw new HttpError(503, 'push_off', 'Pings are turned off right now.');
     const owner = ownerOf(ctx);
     const b = ctx.body || {};
     const r = push.subscribe(owner, b.subscription, { daily: b.daily !== false, events: b.events !== false }, ctx.now);
-    if (!r.ok) throw new HttpError(400, r.code, "That browser can't do pings.");
+    if (!r.ok) throw new HttpError(400, r.code, "This browser doesn't support pings.");
     ctx.json(200, { ok: true });
 }
 

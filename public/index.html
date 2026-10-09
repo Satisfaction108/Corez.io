@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
-    <meta name="description" content="Corez.io is a tank battle royale where you dig gems out of rock and bank them. Free, in your browser, no download.">
+    <meta name="description" content="Corez.io is a 2D tank battle royale where you mine for gems, bank them, and win the game! It's free and runs in your browser, no download needed.">
     <meta name="robots" content="index, follow">
     <script>
     // Runs before everything else. Game portals show us in an iframe on their
@@ -141,17 +141,17 @@
     <link rel="canonical" href="https://corez.io/">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Corez.io">
-    <meta property="og:title" content="Corez.io: free tank battle royale">
-    <meta property="og:description" content="Tank battle royale where you dig for gems. Die and you drop them. Free in your browser.">
+    <meta property="og:title" content="Corez.io | Free 2D tank battle royale">
+    <meta property="og:description" content="A 2D tank battle royale where you mine for gems, bank them, and win the game!">
     <meta property="og:url" content="https://corez.io/">
     <meta property="og:image" content="https://corez.io/img/og-brawl.jpg">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="Four tanks fighting in a hole dug out of the rock, gems all over the place">
+    <meta property="og:image:alt" content="Four tanks fighting in a cave dug out of the rock, with gems scattered around them">
     <meta property="og:image:type" content="image/jpeg">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Corez.io: free tank battle royale">
-    <meta name="twitter:description" content="Tank battle royale where you dig for gems. Die and you drop them. Free in your browser.">
+    <meta name="twitter:title" content="Corez.io | Free 2D tank battle royale">
+    <meta name="twitter:description" content="A 2D tank battle royale where you mine for gems, bank them, and win the game!">
     <meta name="twitter:image" content="https://corez.io/img/og-brawl.jpg">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <!-- installable: from the home screen it runs full screen, sideways (Safari on iPhone has no fullscreen API for pages) -->
@@ -166,13 +166,13 @@
     <link rel="help" href="/about">
     <script type="application/ld+json">
     {"@context": "https://schema.org", "@type": "VideoGame", "name": "Corez.io", "url": "https://corez.io/",
-     "description": "Free top down tank battle royale in your browser. You dig gems out of rock and bank them at a vault. If you die you drop most of what you're carrying.",
+     "description": "A free 2D tank battle royale where you mine for gems, bank them, and win the game! If you die, you drop most of the gems you haven't banked yet.",
      "image": "https://corez.io/img/og-brawl.jpg", "genre": ["Battle royale", "Action", "Multiplayer", ".io"],
      "gamePlatform": "Web browser", "applicationCategory": "Game", "operatingSystem": "Any",
      "playMode": "MultiPlayer", "author": {"@type": "Person", "name": "ZyroX"},
      "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
     </script>
-    <title>Corez.io: free tank battle royale</title>
+    <title>Corez.io | Free 2D tank battle royale</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- the title font only: never hold the first paint for it (it swaps in) -->
@@ -251,7 +251,7 @@
         <canvas id="gameCanvas-gui" tabindex="4"></canvas>
     </div>
 
-    <button id="themeToggleBtn" title="Light / dark" aria-label="Switch light or dark">
+    <button id="themeToggleBtn" title="Light or dark theme" aria-label="Switch between light and dark">
         <span id="themeIcon" aria-hidden="true">&#9790;</span>
         <svg class="dw-ic th-sun" aria-hidden="true"><use href="#i-sun"/></svg>
         <svg class="dw-ic th-moon" aria-hidden="true"><use href="#i-moon"/></svg>
@@ -290,8 +290,8 @@
         <button class="social-btn" id="homeFeedbackBtn" title="Send feedback" aria-label="Send feedback"><svg class="dw-ic"><use href="#i-chat"/></svg></button>
         <button class="social-btn dw-fs-toggle" id="homeFullscreenBtn" title="Fullscreen" aria-label="Fullscreen" hidden><svg class="dw-ic fs-on"><use href="#i-fs"/></svg><svg class="dw-ic fs-off"><use href="#i-fs-exit"/></svg></button>
         <div class="social-buttons">
-            <a href="https://discord.gg/bx5FK3CMwp" target="_blank" rel="noopener"><button class="social-btn" title="Our Discord" aria-label="Our Discord"><svg class="dw-ic dc"><use href="#i-discord"/></svg></button></a>
-            <button class="social-btn" id="ytSoon" title="No YouTube yet" aria-label="No YouTube yet"><svg class="dw-ic"><use href="#i-yt"/></svg></button>
+            <a href="https://discord.gg/bx5FK3CMwp" target="_blank" rel="noopener"><button class="social-btn" title="Join our Discord" aria-label="Join our Discord"><svg class="dw-ic dc"><use href="#i-discord"/></svg></button></a>
+            <button class="social-btn" id="ytSoon" title="No YouTube channel yet" aria-label="No YouTube channel yet"><svg class="dw-ic"><use href="#i-yt"/></svg></button>
         </div>
     </div>
 
@@ -332,7 +332,7 @@
         <!-- in a raid only (saveCode.js): stay still 20 s, get a code, leave -->
         <div id="spSaveRow" class="sp-save" style="display:none">
             <button type="button" id="spSaveBtn" class="dw-btn"><span id="spSaveBtnTxt">Save &amp; leave</span><kbd id="spSaveKey" class="sp-desktop-only">L</kbd></button>
-            <span class="sp-save-note">Sit still for 20 seconds to get a code. Next time type <b>$restore</b> and the code in chat.</span>
+            <span class="sp-save-note">Stay still for 20 seconds to get a save code. Next time, type <b>$restore</b> and the code in chat.</span>
         </div>
         <div class="sp-tabs">
             <span class="sp-tab active" data-tab="sp-options">Options</span>
@@ -394,7 +394,7 @@
                     <label class="container"><input id="optRenderMinimap" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Minimap</label>
                     <label class="container"><input id="optRenderKillbar" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Kill bar</label>
                     <label class="container"><input id="optReducedInfo" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Reduced info</label>
-                    <label class="container" title="FPS and ping over the minimap"><input id="optShowFps" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>FPS and ping</label>
+                    <label class="container" title="Shows your FPS and ping above the minimap"><input id="optShowFps" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>FPS and ping</label>
                     <label class="container"><input id="optRenderGui" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>GUI</label>
                     <label class="container"><input id="optLeaderIndicators" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Leader indicators</label>
                     <label class="container"><input id="optWarBar" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Team score bar</label>
@@ -419,16 +419,16 @@
                     <label class="container"><input id="optLerpAnim" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Lerp animations</label>
                     <label class="container"><input id="optOptimizeMode" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Optimize mode</label>
                     <label class="container"><input id="optFullHD" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Full HD</label>
-                    <label class="container" title="Less sparks and particles"><input id="optFewerFx" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Fewer effects</label>
-                    <label class="container" title="Plainer rocks, easier on slow computers"><input id="optSimpleTerrain" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Simple terrain</label>
-                    <label class="container" title="No shake or freeze frames"><input id="optNoShake" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No screen shake</label>
-                    <label class="container" title="Turns off the glowy stuff"><input id="optNoGlow" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No glow</label>
-                    <label class="container" title="Turns off the glitchy screen effects"><input id="optNoGlitch" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No glitch effects</label>
-                    <label class="container" title="No flashing or glitching, softer shake"><input id="optLightSafe" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Light sensitive</label>
-                    <label class="container" title="Half the frames, saves battery"><input id="opt30Fps" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>30 FPS cap</label>
+                    <label class="container" title="Fewer sparks and particles"><input id="optFewerFx" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Fewer effects</label>
+                    <label class="container" title="Plainer rocks that are easier on slow computers"><input id="optSimpleTerrain" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Simple terrain</label>
+                    <label class="container" title="Turns off screen shake and freeze frames"><input id="optNoShake" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No screen shake</label>
+                    <label class="container" title="Turns off the glow effects"><input id="optNoGlow" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No glow</label>
+                    <label class="container" title="Turns off the glitch screen effects"><input id="optNoGlitch" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No glitch effects</label>
+                    <label class="container" title="No flashing or glitch effects, and a softer screen shake"><input id="optLightSafe" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Light sensitive</label>
+                    <label class="container" title="Caps the game at 30 FPS to save battery"><input id="opt30Fps" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>30 FPS cap</label>
                 </div>
                 <div class="sp-label">Effects</div>
-                <select id="optFxLevel" tabindex="-1" title="Low is best on slow computers">
+                <select id="optFxLevel" tabindex="-1" title="Low works best on slow computers">
                     <option value="low">Low</option>
                     <option value="normal" selected>Normal</option>
                     <option value="max">Max</option>
@@ -537,7 +537,7 @@
                     <div class="kb-row"><b data-key="KEY_SCREENSHOT">.</b><span>Screenshot</span></div>
                     <div class="kb-row"><b data-key="KEY_PARTY_ACCEPT">F2</b><span>Accept duo invite</span></div>
                 </div>
-                <p class="kb-note">* needs a token &middot; click a key to change it</p>
+                <p class="kb-note">* Needs a token. Click a key to change it.</p>
             </div>
         </div>
     </div>
@@ -581,7 +581,7 @@
                             <!-- Corez.io title, free-standing on top, with the emblem (scripts/make-logo.py) -->
                             <h1 class="game-title"><img class="game-logo" src="/img/logo.svg" alt="" width="100" height="100"><span class="wordmark" data-text="Corez.io">Corez<i>.io</i></span></h1>
                             <!-- the hook in one line: what you do here that no other tank game does -->
-                            <p class="hero-tag"><span class="hero-gems" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Dig up gems and bank them <b>(if you survive)</b></p>
+                            <p class="hero-tag">Mine for gems, bank them, and <b>win the game!</b></p>
                             <!-- a raid in three steps (desktop; phones keep the card short) -->
                             <ol class="hero-loop" aria-label="How a raid goes">
                                 <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20.5 14.5 10" stroke="#0c0a0e" stroke-width="5.2" stroke-linecap="round"/><path d="M4 20.5 14.5 10" stroke="#d9a066" stroke-width="2.4" stroke-linecap="round"/><path d="M7.5 3.2Q17.5 3.5 21 15.8L18.4 16.4Q15.5 9.8 7 5.8Z" fill="#c5cad6" stroke="#0c0a0e" stroke-width="1.6" stroke-linejoin="round"/></svg>Mine</li>
@@ -592,7 +592,7 @@
                             <!-- name (left) + region dropdown (right) -->
                             <div class="menu-row">
                                 <div class="menu-field">
-                                    <label class="field-label" for="playerNameInput"><span class="dw-lbl-guest">Who's driving?</span><span class="dw-lbl-user">You</span></label>
+                                    <label class="field-label" for="playerNameInput"><span class="dw-lbl-guest">Name</span><span class="dw-lbl-user">You</span></label>
                                     <input type="text" tabindex="1" spellcheck="false" placeholder="optional" id="playerNameInput" maxlength="24" autocomplete="off">
                                     <!-- logged in: the account name replaces the input -->
                                     <button type="button" id="acctNameBox" title="Change it in Account"><span id="acctNameText"></span><svg class="dw-ic"><use href="#i-lock"/></svg></button>
@@ -637,7 +637,7 @@
                                 <button id="startButton" tabindex="3"><b>Play</b></button>
                                 <button id="tutorialButton" tabindex="5" title="Learn how to play on your own map">
                                     <b>Tutorial</b>
-                                    <span class="tut-badge" id="tutorialBadge" hidden>new? start here</span>
+                                    <span class="tut-badge" id="tutorialBadge" hidden>New? Start here</span>
                                 </button>
                             </div>
 
@@ -721,7 +721,7 @@
                 <img class="wl-logo" src="/img/logo.svg" alt="" width="64" height="64">
                 <div class="wl-title" id="wlTitle"><span class="wordmark sm" data-text="Corez.io">Corez<i>.io</i></span></div>
                 <div class="wl-opts">
-                    <div class="wl-sub">log in to keep your rank + gemdust</div>
+                    <div class="wl-sub">Log in to keep your rank and gemdust.</div>
                     <div class="wl-login-row">
                         <button type="button" class="wl-opt wl-opt-discord" id="wlDiscord">
                             <svg class="dw-ic"><use href="#i-discord"/></svg><span>Discord</span>
@@ -736,8 +736,8 @@
                         <svg class="dw-ic"><use href="#i-play"/></svg><span>Just play</span>
                     </button>
                 </div>
-                <div class="wl-offline-note">Accounts are down rn. You can still play.</div>
-                <div class="wl-embed-note">Logging in opens corez.io in a new tab. Here you play as a guest.</div>
+                <div class="wl-offline-note">Accounts are down right now, but you can still play.</div>
+                <div class="wl-embed-note">Logging in opens corez.io in a new tab. On this page you'll play as a guest.</div>
                 <div class="wl-legal"><a href="/about" target="_blank" rel="noopener">How to play</a> &middot; <a href="/tanks" target="_blank" rel="noopener">All tanks</a> &middot; <a href="/terms.html" target="_blank" rel="noopener">Terms</a> &middot; <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></div>
             </div>
             <div class="wl-view" id="wlDyn" hidden></div>

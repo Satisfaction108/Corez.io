@@ -131,9 +131,9 @@ function paint(el) {
     const count = h('span', { class: 'shop-count' });
     // purchases + refunds are a quiet link, not a button
     const top = h('div', { class: 'shop-top' },
-        h('div', { class: 'shop-reset' }, h('span', { class: 'shop-reset-l', text: 'new stuff in' }), count),
+        h('div', { class: 'shop-reset' }, h('span', { class: 'shop-reset-l', text: 'New items in' }), count),
         h('div', { class: 'shop-top-r' },
-            h('button', { type: 'button', class: 'dw-link', text: 'my purchases', onclick: openHistory }), bal));
+            h('button', { type: 'button', class: 'dw-link', text: 'My purchases', onclick: openHistory }), bal));
     el.appendChild(top);
     const perm = data.permanent || [];
     const shelf = data.sidekicks || [];
@@ -160,7 +160,7 @@ function paint(el) {
             body.appendChild(section('Sidekick name styles', of(shelf, 'sdName').map((it) => card(it, 'side')), 'side'));
             return;
         }
-        body.appendChild(section('Today’s big ones', data.featured.map((it) => card(it, 'feat')), 'feat'));
+        body.appendChild(section('Today’s featured items', data.featured.map((it) => card(it, 'feat')), 'feat'));
         const daily = data.daily.filter((it) => !isSidekickCat(it.cat));
         if (of(daily, 'skin').length) body.appendChild(section('Skins', of(daily, 'skin').map((it) => card(it, 'daily')), 'daily'));
         if (of(daily, 'nameStyle').length) body.appendChild(section('Name styles', of(daily, 'nameStyle').map((it) => card(it, 'daily')), 'daily'));
@@ -213,7 +213,7 @@ function ownedIds() {
 // A guest: the gallery, and a way to log in to buy
 function paintGuest(el) {
     el.appendChild(h('div', { class: 'shop-top gal-guest' },
-        h('div', { class: 'gal-guest-p', text: 'You’re a guest. Log in to buy stuff.' }),
+        h('div', { class: 'gal-guest-p', text: 'You’re playing as a guest. Log in to buy items.' }),
         h('button', { type: 'button', class: 'dw-btn sm primary', text: 'Log in', onclick: () => handlers.onLogin() })));
     const body = h('div', { class: 'shop-tabbody', role: 'region', 'aria-label': 'View all' });
     el.appendChild(body);
@@ -283,7 +283,7 @@ export function colorEditor(initial, onChange) {
         if (from !== 'hex') hex.value = good ? c : hex.value;
         const allowed = good && ok(c);
         hex.classList.toggle('bad', !allowed);
-        msg.textContent = !good ? 'Needs a hex colour, like #7ad3ff' : allowed ? '' : 'Too dark, nobody will see it in the caves';
+        msg.textContent = !good ? 'Please enter a hex colour, like #7ad3ff.' : allowed ? '' : 'That’s too dark to see in the caves.';
         msg.classList.toggle('show', !allowed);
         presets.querySelectorAll('.lk-preset').forEach((b) => b.classList.toggle('on', b.title === val));
         if (onChange) onChange(val, allowed && good);
@@ -299,21 +299,21 @@ export function colorEditor(initial, onChange) {
 
 /* ── the item modal ─────────────────────────────────────────────────── */
 const ERR = {
-    insufficient_dust: 'Not enough gemdust',
-    already_owned: 'You already have it',
-    not_in_shop: 'That’s gone from the shop',
-    shop_rotated: 'Shop just changed. New stuff is up',
-    bad_color: 'Too dark, nobody will see it in the caves',
-    color_required: 'Pick a colour first',
-    not_owned: 'You don’t have that one',
-    not_friends: 'Friends only',
-    friends_too_new: 'You can gift someone 2 days after you add them',
-    recipient_owns: 'They have it already',
-    gift_limit: '5 gifts a day max. More tomorrow',
-    no_refund_tokens: 'No refunds left',
-    refund_expired: 'Too late, refunds are 24h only',
-    already_refunded: 'Already refunded',
-    gift_not_refundable: 'Gifts don’t refund',
+    insufficient_dust: 'You don’t have enough gemdust.',
+    already_owned: 'You already have this.',
+    not_in_shop: 'That item isn’t in the shop anymore.',
+    shop_rotated: 'The shop just changed, so there are new items up.',
+    bad_color: 'That’s too dark to see in the caves.',
+    color_required: 'Please pick a colour first.',
+    not_owned: 'You don’t own that item.',
+    not_friends: 'You can only send gifts to friends.',
+    friends_too_new: 'You can send a gift 2 days after you become friends.',
+    recipient_owns: 'They already have it.',
+    gift_limit: 'You can send up to 5 gifts a day. Try again tomorrow.',
+    no_refund_tokens: 'You don’t have any refunds left.',
+    refund_expired: 'Refunds only work for 24h after you buy, so it’s too late for this one.',
+    already_refunded: 'That was already refunded.',
+    gift_not_refundable: 'Gifts can’t be refunded.',
 };
 export function storeError(res) {
     const code = res && res.data && res.data.error && res.data.error.code;
@@ -378,28 +378,28 @@ export function openItem(raw) {
                 actions.append(
                     h('span', { class: 'lk-eqlabel', text: 'Wearing it' }),
                     h('button', { type: 'button', class: 'dw-link', text: 'or gift one', onclick: () => openGift(it) }));
-                note.textContent = it.cat === 'sidekick' ? 'It’s on. Give it a name in your Locker.' : 'It’s on. Shows up next spawn.';
+                note.textContent = it.cat === 'sidekick' ? 'It’s on. You can give it a name in your Locker.' : 'It’s on. You’ll see it next time you spawn.';
                 return;
             }
             actions.append(
                 h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Wear it', onclick: (e) => doEquip(e.currentTarget) }),
                 h('button', { type: 'button', class: 'dw-link', text: 'or gift one', onclick: () => openGift(it) }));
-            note.textContent = 'In your locker. Shows up next spawn.';
+            note.textContent = 'It’s in your locker, ready to wear.';
             return;
         }
         const short = Math.max(0, it.price - bal);
         const buy = h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Buy', onclick: (e) => doBuy(e.currentTarget) });
         if (short > 0 || (editor && !editor.valid())) buy.disabled = true;
         actions.append(buy, h('button', { type: 'button', class: 'dw-link', text: 'or gift it', onclick: () => openGift(it) }));
-        if (short > 0) note.textContent = fmtPrice(short) + ' more gemdust to go.';
+        if (short > 0) note.textContent = 'You need ' + fmtPrice(short) + ' more gemdust.';
     }
     paintActions();
 
     async function doBuy(btn) {
         const yes = await confirm({
-            title: it.name + '?',
-            message: fmtPrice(it.price) + ' gemdust. You have ' + fmtDust(data ? data.balance : 0) + '.',
-            confirmLabel: 'Buy', cancelLabel: 'Nah',
+            title: 'Buy ' + it.name + '?',
+            message: 'It costs ' + fmtPrice(it.price) + ' gemdust, and you have ' + fmtDust(data ? data.balance : 0) + '.',
+            confirmLabel: 'Buy', cancelLabel: 'Cancel',
         });
         if (!yes) return;
         setBusy(btn, true, 'Buying...');
@@ -419,8 +419,8 @@ export function openItem(raw) {
         paintActions();
         swapPrice();
         const t = it.wornNow
-            ? toast('Got ' + it.name + '. It’s on', { kind: 'ok', actions: it.cat === 'sidekick' ? [{ label: 'Name it', onClick: () => handlers.openLocker('sidekick') }] : [] })
-            : toast('Got ' + it.name, { kind: 'ok', actions: [{ label: 'Wear it', onClick: () => equipItem(it, editor ? editor.value() : null) }] });
+            ? toast('You got ' + it.name + ', and it’s on!', { kind: 'ok', actions: it.cat === 'sidekick' ? [{ label: 'Name it', onClick: () => handlers.openLocker('sidekick') }] : [] })
+            : toast('You got ' + it.name + '!', { kind: 'ok', actions: [{ label: 'Wear it', onClick: () => equipItem(it, editor ? editor.value() : null) }] });
         pop(m.card.querySelector('.shop-mprice'));
         return t;
     }
@@ -442,15 +442,15 @@ function pop(el) {
 }
 
 // sidekicks help you mine (server/game/terrain/sidekickDig.js)
-const digLine = () => (typeof window !== 'undefined' && window.DWCosmetics && window.DWCosmetics.SIDEKICK_DIG_LINE) || 'Helps you mine: rock only.';
+const digLine = () => (typeof window !== 'undefined' && window.DWCosmetics && window.DWCosmetics.SIDEKICK_DIG_LINE) || 'It helps you mine, but it only shoots rocks.';
 function describe(it) {
     if (it.blurb) return it.cat === 'sidekick' ? it.blurb + ' ' + digLine() : it.blurb;
-    if (it.id === cos.CUSTOM_ID) return 'Any colour you want for your name. Change it whenever.';
-    if (it.cat === 'skin') return isAnimated(it) ? 'A moving pattern for your tank. Your team colour stays.' : 'A pattern for your tank. Your team colour stays.';
+    if (it.id === cos.CUSTOM_ID) return 'Any colour you want for your name, and you can change it whenever you like.';
+    if (it.cat === 'skin') return isAnimated(it) ? 'A moving pattern for your tank that keeps your team colour.' : 'A pattern for your tank that keeps your team colour.';
     const s = it.style || {};
-    if (s.kind === 'prism') return 'Rainbow name that sparkles.';
-    if (s.kind === 'scroll') return s.glint ? 'Name with colours that flow and sparkle.' : 'Name with colours that flow.';
-    return 'Name that fades between colours.';
+    if (s.kind === 'prism') return 'A rainbow name that sparkles.';
+    if (s.kind === 'scroll') return s.glint ? 'A name with colours that flow and sparkle.' : 'A name with colours that flow.';
+    return 'A name that fades between colours.';
 }
 
 // After a buy: mark it owned in the cached store, update the balance.
@@ -473,7 +473,7 @@ export async function equipItem(it, color, alertEl) {
         if (alertEl) { alertEl.textContent = msg; alertEl.className = 'dw-alert show'; } else toast(msg, { kind: 'error' });
         return false;
     }
-    toast(it.name + ' on. Shows up next spawn', { kind: 'ok' });
+    toast(it.name + ' is on. You’ll see it next time you spawn.', { kind: 'ok' });
     handlers.refreshMe();
     return true;
 }
@@ -503,7 +503,7 @@ async function openGift(it) {
         list.appendChild(h('div', { class: 'shop-gnone' },
             icon('friends'),
             h('div', { class: 'shop-gnone-h', text: 'No friends to gift yet' }),
-            h('div', { class: 'shop-gnone-p', text: 'Add some. After 2 days you can gift them anything here.' })));
+            h('div', { class: 'shop-gnone-p', text: 'Add some friends first. After 2 days, you can gift them anything here.' })));
         send.hidden = true;
         return;
     }
@@ -517,7 +517,7 @@ async function openGift(it) {
     });
     send.addEventListener('click', async () => {
         if (!to) return;
-        const yes = await confirm({ title: 'Send ' + it.name + '?', message: 'To ' + (to.username || 'your friend') + ' for ' + fmtPrice(it.price) + ' gemdust. Gifts don’t refund.', confirmLabel: 'Send' });
+        const yes = await confirm({ title: 'Send ' + it.name + '?', message: 'This sends it to ' + (to.username || 'your friend') + ' for ' + fmtPrice(it.price) + ' gemdust. Gifts can’t be refunded.', confirmLabel: 'Send' });
         if (!yes) return;
         setBusy(send, true, 'Sending...');
         const g = await api.gift(it.id, data ? data.day : 0, to.userId || to.id, api.idemKey(), preset);
@@ -526,7 +526,7 @@ async function openGift(it) {
         if (data && g.data && g.data.balance != null) { data.balance = g.data.balance; data.balanceMilli = g.data.balanceMilli; handlers.onBalance(data.balance); }
         handlers.refreshMe();
         m.close();
-        toast('Sent to ' + (to.username || 'your friend'), { kind: 'ok' });
+        toast('Gift sent to ' + (to.username || 'your friend') + '!', { kind: 'ok' });
     });
 }
 
@@ -538,7 +538,7 @@ async function openHistory() {
         title: 'My purchases', cls: 'shop-histm',
         body: h('div', {},
             h('div', { class: 'shop-tokens' }, h('span', { text: 'Refunds left' }), pips),
-            h('div', { class: 'shop-tokens-p', text: 'You can refund stuff for 24h after you buy it. Only 3 refunds ever.' }),
+            h('div', { class: 'shop-tokens-p', text: 'You can refund an item for 24h after you buy it. You get 3 refunds in total.' }),
             list,
             h('div', { class: 'dw-modal-actions' }, h('button', { type: 'button', class: 'dw-btn', text: 'Done', onclick: () => m.close() }))),
     });
@@ -558,16 +558,16 @@ async function openHistory() {
 }
 
 function histRow(e, tokens, refill) {
-    const what = e.direction === 'sent' ? 'gift to ' + ((e.to && e.to.username) || 'a friend')
-        : e.direction === 'received' ? 'gift from ' + ((e.from && e.from.username) || 'a friend') : 'bought';
+    const what = e.direction === 'sent' ? 'Gift to ' + ((e.to && e.to.username) || 'a friend')
+        : e.direction === 'received' ? 'Gift from ' + ((e.from && e.from.username) || 'a friend') : 'Bought';
     const right = [];
-    if (e.refundedAt) right.push(h('span', { class: 'shop-htag', text: 'refunded' }));
+    if (e.refundedAt) right.push(h('span', { class: 'shop-htag', text: 'Refunded' }));
     else if (e.refundable) {
         right.push(h('button', { type: 'button', class: 'dw-btn sm', text: 'Refund', onclick: async (ev) => {
             const btn = ev.currentTarget;
             const yes = await confirm({
                 title: 'Refund ' + e.name + '?',
-                message: 'You get ' + fmtPrice(e.priceMilli) + ' gemdust back and it leaves your locker. Uses 1 of your ' + tokens + ' refund' + (tokens === 1 ? '' : 's') + '.',
+                message: 'You’ll get ' + fmtPrice(e.priceMilli) + ' gemdust back, and it leaves your locker. This uses 1 of your ' + tokens + ' refund' + (tokens === 1 ? '' : 's') + '.',
                 confirmLabel: 'Refund', danger: true,
             });
             if (!yes) return;

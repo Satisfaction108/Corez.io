@@ -27,7 +27,7 @@ function rateLimited(retryAfter, code = 'rate_limited', message = 'Whoa, slow do
 }
 
 function busyError() {
-    return new HttpError(503, 'busy', "Server's busy. Try again in a sec.", { retryAfter: 2 }, { 'Retry-After': '2' });
+    return new HttpError(503, 'busy', "The server is busy. Please try again in a moment.", { retryAfter: 2 }, { 'Retry-After': '2' });
 }
 
 // server/lib/clientIp.js trusts X-Forwarded-For only from TRUSTED_PROXIES.
@@ -80,7 +80,7 @@ function readJson(req, limit = BODY_LIMIT) {
     return new Promise((resolve, reject) => {
         const declared = Number(req.headers['content-length']);
         if (declared > limit) {
-            reject(new HttpError(413, 'payload_too_large', 'Something went wrong. Refresh and try again.', null, { Connection: 'close' }));
+            reject(new HttpError(413, 'payload_too_large', 'Something went wrong. Please refresh and try again.', null, { Connection: 'close' }));
             return;
         }
         const chunks = [];
@@ -90,7 +90,7 @@ function readJson(req, limit = BODY_LIMIT) {
             size += chunk.length;
             if (size > limit) {
                 done = true;
-                reject(new HttpError(413, 'payload_too_large', 'Something went wrong. Refresh and try again.', null, { Connection: 'close' }));
+                reject(new HttpError(413, 'payload_too_large', 'Something went wrong. Please refresh and try again.', null, { Connection: 'close' }));
                 return;
             }
             chunks.push(chunk);
@@ -104,17 +104,17 @@ function readJson(req, limit = BODY_LIMIT) {
             try {
                 body = JSON.parse(text);
             } catch (e) {
-                return reject(new HttpError(400, 'bad_json', 'Something went wrong. Refresh and try again.'));
+                return reject(new HttpError(400, 'bad_json', 'Something went wrong. Please refresh and try again.'));
             }
             if (!body || typeof body !== 'object' || Array.isArray(body)) {
-                return reject(new HttpError(400, 'bad_json', 'Something went wrong. Refresh and try again.'));
+                return reject(new HttpError(400, 'bad_json', 'Something went wrong. Please refresh and try again.'));
             }
             resolve(body);
         });
         req.on('error', e => {
             if (done) return;
             done = true;
-            reject(new HttpError(400, 'bad_request', 'Something went wrong. Refresh and try again.'));
+            reject(new HttpError(400, 'bad_request', 'Something went wrong. Please refresh and try again.'));
         });
     });
 }
@@ -202,7 +202,7 @@ class Ctx {
 
     requireAuth() {
         const a = this.auth();
-        if (!a) throw new HttpError(401, 'unauthorized', 'Log in first.');
+        if (!a) throw new HttpError(401, 'unauthorized', 'Please log in first.');
         if (users.isBanned(a.user, this.now)) throw bannedError(a.user);
         return a;
     }
@@ -262,11 +262,11 @@ function bannedError(user) {
 // and a JSON body. A cross-site form or fetch fails at least one of these.
 function csrfGuard(ctx) {
     const origin = ctx.header('origin');
-    if (!origin || !config.isAllowedOrigin(origin)) throw new HttpError(403, 'bad_origin', 'Something went wrong. Refresh and try again.');
+    if (!origin || !config.isAllowedOrigin(origin)) throw new HttpError(403, 'bad_origin', 'Something went wrong. Please refresh and try again.');
     const site = ctx.header('sec-fetch-site');
-    if (site && site !== 'same-origin') throw new HttpError(403, 'bad_origin', 'Something went wrong. Refresh and try again.');
+    if (site && site !== 'same-origin') throw new HttpError(403, 'bad_origin', 'Something went wrong. Please refresh and try again.');
     const type = String(ctx.header('content-type') || '').split(';')[0].trim().toLowerCase();
-    if (type !== 'application/json') throw new HttpError(415, 'unsupported_media_type', 'Something went wrong. Refresh and try again.');
+    if (type !== 'application/json') throw new HttpError(415, 'unsupported_media_type', 'Something went wrong. Please refresh and try again.');
 }
 
 // path -> {METHOD: {handler, opts}}

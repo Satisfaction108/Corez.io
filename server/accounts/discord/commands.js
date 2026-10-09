@@ -887,7 +887,7 @@ function shopCmd() {
                 { name: 'Daily', value: daily.join('\n') || '-', inline: false },
                 { name: 'Sidekicks', value: side.join('\n') || '-', inline: false },
             ],
-            footer: { text: 'New shop ' + 'in ' + Math.max(1, Math.round((store.resetsAt(store.dayOf(now)) - now) / 3600000)) + 'h · earn gemdust by banking gems at ' + config.publicOrigin.replace(/^https?:\/\//, '') },
+            footer: { text: 'New shop ' + 'in ' + Math.max(1, Math.round((store.resetsAt(store.dayOf(now)) - now) / 3600000)) + 'h · Earn gemdust by banking gems at ' + config.publicOrigin.replace(/^https?:\/\//, '') },
         }],
     });
 }
@@ -900,13 +900,13 @@ function onlineCmd() {
     return reply('', {
         embeds: [{
             title: total === 1 ? '1 person is playing Corez.io' : `${total} people are playing Corez.io`, color: COLOR,
-            description: (rows.join('\n') || 'The servers are starting up.') + `\n\nJump in: ${config.publicOrigin}`,
+            description: (rows.join('\n') || 'The servers are starting up.') + `\n\nPlay here: ${config.publicOrigin}`,
         }],
     });
 }
 
 function playCmd() {
-    return reply(`**Corez.io**: mine, loot, fight, buy upgrades and climb the leaderboard in a free browser battle royale.\nPlay now: ${config.publicOrigin}`);
+    return reply(`**Corez.io** is a 2D tank battle royale where you mine for gems, bank them, and win the game! It's free to play in your browser.\nPlay now: ${config.publicOrigin}`);
 }
 
 const PLAYER_HANDLERS = { profile, rank, leaderboard, achievements: achievementsCmd, invites: invitesCmd, shop: shopCmd, online: onlineCmd, play: playCmd };
@@ -922,7 +922,7 @@ function isAdmin(i, caller) {
 function handle(i) {
     const name = String((i.data && i.data.name) || '');
     const caller = callerOf(i);
-    if (!db.handle()) return reply('Corez.io accounts are down right now. Try again later.', { ephemeral: true });
+    if (!db.handle()) return reply('Corez.io accounts are down right now. Please try again later.', { ephemeral: true });
     if (ADMIN_NAMES.has(name)) {
         if (!isAdmin(i, caller)) {
             try {

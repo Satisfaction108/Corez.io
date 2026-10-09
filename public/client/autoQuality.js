@@ -103,7 +103,7 @@ function changed(step) {
     store.set("dwAutoQ", String(ladder.rung));
     if (step > 0 && state.active && !store.get("dwAutoQTold")) {
         store.set("dwAutoQTold", "1");
-        try { toast && toast("Lowered effects to keep it smooth. Change it in Settings."); } catch (e) { }
+        try { toast && toast("Effects were turned down to keep the game smooth. You can change this in Settings."); } catch (e) { }
     }
 }
 

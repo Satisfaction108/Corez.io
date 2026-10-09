@@ -456,7 +456,7 @@ function onDestroyed(chest) {
         const shop = require('./shop.js');
         const item = shop.BY_ID.get(chest.chestItem);
         if (socket && shop.grantKit(socket, chest.chestItem)) itemMsg = item ? item.name : "";
-        else if (socket) { bonus = 150; itemMsg = "kit full, +150 gems"; }
+        else if (socket) { bonus = 150; itemMsg = "Your kit was full, so you got 150 gems instead"; }
     }
     eruptGems(chest.x, chest.y, chest.chestGems + bonus, body, chest.chestRare);
     // a supply crate (supplyDrops.js) adds its own prize to the message

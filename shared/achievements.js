@@ -27,7 +27,7 @@
     'use strict';
 
     const CATS = Object.freeze([
-        { id: 'first',     name: 'First Steps', color: '#7ad3ff' },
+        { id: 'first',     name: 'First steps', color: '#7ad3ff' },
         { id: 'combat',    name: 'Combat',      color: '#ff7a6b' },
         { id: 'mining',    name: 'Mining',      color: '#e0a060' },
         { id: 'banking',   name: 'Banking',     color: '#4fe08f' },
@@ -118,18 +118,18 @@
         A('abilities', 'ab_pad',         'Liftoff',         'Drop a Launch Pad',     'pad', 1),
         A('abilities', 'ab_all',         'Swiss Army Tank', 'Use every ability',     'star', 3, { track: 'abils', mode: 'set', goal: 8, solo: true }),
         A('abilities', 'pad_kill',       'Air Mail',        'Knock out a tank you sent flying with your Launch Pad', 'pad', 4),
-        A('abilities', 'grapple_escape', 'Great Escape',    'Grapple out on low health and live to tell it', 'hook', 3),
+        A('abilities', 'grapple_escape', 'Great Escape',    'Grapple away on low health and survive', 'hook', 3),
         A('abilities', 'fling_storm',    'Get Out',         'Shockwave a tank out into the storm', 'wave', 4),
 
         // ---- Raid ----
         A('raid', 'raid_survive', 'Still Standing',      'Be alive when a raid ends',          'shield', 2),
         A('raid', 'final_circle', 'Inner Circle',        'Make it to the final storm circle',  'ring', 2),
-        A('raid', 'survivor',     'Survivor',            'Survive 15 minutes without dying',   'shield', 3),
+        A('raid', 'survivor',     'Survivor',            'Stay alive for 15 minutes in one life', 'shield', 3),
         A('raid', 'chest_open',   'Treasure Hunter',     'Open a chest',                       'chest', 1),
         A('raid', 'podium',       'Podium',              'Finish a raid in the top 3',         'podium', 3),
         A('raid', 'champion',     'Champion',            'Win a raid',                         'cup', 4, { track: 'wins', goal: 1 }),
         A('raid', 'wins_2',       'Dynasty',             'Win 10 raids',                       'cup', 5, { track: 'wins', goal: 10 }),
-        A('raid', 'crown_win',    'Heavy Is the Head',   'Wear a crown to the final bell',     'crown', 4, { item: 'ns_crownkeeper', color: '#ffd84d' }),
+        A('raid', 'crown_win',    'Heavy Is the Head',   'Still wear a crown when the raid ends', 'crown', 4, { item: 'ns_crownkeeper', color: '#ffd84d' }),
         A('raid', 'games_1',      'Regular',             'Play 25 games',                      'chevron', 2, { track: 'games', goal: 25 }),
         A('raid', 'games_2',      'Lifer',               'Play 100 games',                     'chevron', 3, { track: 'games', goal: 100 }),
         A('raid', 'veteran',      'Veteran',             'Play 250 games',                     'chevron', 4, { track: 'games', goal: 250 }),

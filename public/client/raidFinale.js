@@ -821,7 +821,7 @@ function drawCrownTitles(c, rt, W, H, y, a, pop) {
         // someone else won: their name, big and gold
         const size = fitSize(cw.title, Math.min(120, W * 0.085), W - 80, 36);
         bigTitle(c, cw.title, W / 2, y, size, HUD.gold, HUD.goldDk, a, pop);
-        const tail = S.place > 0 ? "  ·  you placed #" + S.place : "";
+        const tail = S.place > 0 ? "  ·  You placed #" + S.place : "";
         const sub = cw.sub + tail;
         const s2 = fitSize(sub, 30, W - 60, 14);
         A.hudTitle(sub, W / 2, subY(y, size, s2, 0.68), s2, HUD.head, "center", a2, c);
@@ -1033,14 +1033,14 @@ function progRows() {
         try { bestLife = +window.localStorage.getItem("dwBestLife") || 0; } catch (e) { /* */ }
         const lifeNow = !global.died && global.spawnedAt > 0 ? (now - global.spawnedAt) / 1000 : 0;
         S.prog = RP.rows({
-            guest: !acct, rank: acct && acct.rank, rp: RP.rankThisRaid(id), rpSeen: RP.rankSeen(id),
+            guest: !acct, rank: acct && acct.rank, rankCard: !!(A && A.rankHasContent()), rp: RP.rankThisRaid(id), rpSeen: RP.rankSeen(id),
             dust: acct ? +acct.dust || 0 : 0, nu: acct && acct.nu, bestLife, lifeNow,
             bestRaid: S.best ? S.best.best : 0, isBest: !!(S.best && S.best.isBest),
         });
     } catch (e) { S.prog = []; }
     return S.prog;
 }
-const PROG_ROW = 20;
+const PROG_ROW = 22;
 const progH = () => { const n = progRows().length; return n ? 12 + n * PROG_ROW + 8 : 0; };
 function rewardsH() {
     const hasRank = !!(A && A.rankHasContent());
@@ -1070,10 +1070,6 @@ function drawRewards(c, pt, now) {
         // round 12: past the soft line the banked cell is the points the gems made
         const soft = i === 1 && S.me.bankG > S.me.banked;
         const lab = soft ? SL.BANK_PTS_LABEL : CELL_LABEL[i];
-        if (soft) {
-            const from = SL.bankFrom({ g: S.me.bankG, b: S.me.banked, soft: S.me.bankSoft });
-            A.drawText(from, x + cw / 2, wy + wh - 9, fitSize(from, 9, cw - 10, 7), HUD.text2, "center", true);
-        }
         A.drawText(lab, x + cw / 2, wy + 16, fitSize(lab, 10.5, cw - 12, 8), HUD.text2, "center", true);
         const size = fitSize(A.fmtNum(full), 26, cw - 14, 14);
         // playtest 9: counting up from 0 read as "no data yet" (0 / 0 / 0 for
@@ -1144,7 +1140,7 @@ function drawNext(c, rt, now, W, H) {
     const btn = !global.mobile && w > 380, bw = btn ? 128 : 0, bh = 32;
     const mx = x + pad + lw + gap, mw = Math.max(40, x + w - pad - (btn ? bw + gap : 0) - mx);
     // middle: the message, a gap, the bar the width of the column
-    const line = S.keep ? "Kept, they'll stay up after you drop in" : left > 0.5 ? "Everyone drops in together" : "Dropping you in…";
+    const line = S.keep ? "The results will stay up after you drop in" : left > 0.5 ? "Everyone drops in together" : "Dropping you in…";
     // sized on drawText's own font so it never runs past the bar
     const lt = A.measureText(line, 14), ls = lt > mw ? Math.max(9, Math.floor(14 * mw / lt * 10) / 10) : 14;
     A.drawText(line, mx, my - 7, ls, HUD.head, "left", true);
@@ -1238,7 +1234,7 @@ function drawComeBack(c, x, y, w, h, now) {
         cbText.key = key;
         const r = ready ? d.today : (d.tomorrow || d.today);
         cbText.label = ready ? "DAY " + d.day + " REWARD IS READY" : "COME BACK TOMORROW";
-        cbText.main = ready ? rewardLine(r) + ", grab it on the menu" : rewardLine(r);
+        cbText.main = ready ? rewardLine(r) + " is waiting for you on the menu" : rewardLine(r);
     }
     A.hudWell(c, x, y, w, h, 12, "rgba(242,184,60,0.1)", HUD.ink, 2);
     const flameW = d.streak >= 2 ? 44 : 0;
@@ -1298,7 +1294,7 @@ function placeDiscord(W, H) {
     const E = window.DWEvents, c = S.dc;
     if (!dcShown) {
         dcEl.querySelector(".dc-t").textContent = "Join the Discord for " + c.ev.name;
-        dcEl.querySelector("small").textContent = E.localWhen(c.ev, E.now()) + ", prizes for the top spots";
+        dcEl.querySelector("small").textContent = E.localWhen(c.ev, E.now()) + ", with prizes for the top spots";
     }
     const k = window.innerWidth / Math.max(1, global.screenWidth);
     const ew = dcEl.offsetWidth / k, eh = dcEl.offsetHeight / k;

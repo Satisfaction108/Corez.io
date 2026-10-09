@@ -44,7 +44,7 @@ async function load(el) {
     clear(el);
     if (!r.ok || !r.data) {
         el.appendChild(h('div', { class: 'shop-empty' },
-            h('div', { class: 'shop-empty-h', text: 'Locker didn’t open' }),
+            h('div', { class: 'shop-empty-h', text: 'Your locker didn’t open' }),
             h('div', { class: 'shop-empty-p', text: humanError(r) }),
             h('button', { type: 'button', class: 'dw-btn sm', text: 'Retry', onclick: () => render(el) })));
         return;
@@ -71,9 +71,9 @@ function cleanName(raw) { const C = CAT(); return C ? C.cleanSidekickName(raw) :
 // '' when the typed name is fine, else what's wrong with it
 function nameProblem(raw) {
     const n = cleanName(raw);
-    if (String(raw || '').trim() && !n) return 'Letters and numbers only.';
+    if (String(raw || '').trim() && !n) return 'Please use only letters and numbers.';
     const P = window.DWProfanity;
-    if (n && P && P.hasProfanity(n)) return 'Pick a nicer name for it.';
+    if (n && P && P.hasProfanity(n)) return 'Please pick a nicer name for it.';
     return '';
 }
 
@@ -91,7 +91,7 @@ function paint(el) {
     el.append(
         h('div', { class: 'lk-stagewrap' }, stage, swatches),
         tabs, grid, bar,
-        h('div', { class: 'lk-note', text: 'Changes show up next spawn.' }));
+        h('div', { class: 'lk-note', text: 'Changes show up the next time you spawn.' }));
 
     function drawStage() {
         pv.stopUnder(stage);
@@ -129,8 +129,8 @@ function paint(el) {
             const what = tab === 'skin' ? 'No skins yet' : tab === 'sidekick' ? 'No sidekicks yet' : 'No name styles yet';
             grid.appendChild(h('div', { class: 'lk-empty' },
                 h('div', { class: 'lk-empty-h', text: what }),
-                h('div', { class: 'lk-empty-p', text: tab === 'sidekick' ? 'Buddy is always in the shop. The rest change every day.' : 'The shop changes every day.' }),
-                h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'To the shop', onclick: () => handlers.openShop() })));
+                h('div', { class: 'lk-empty-p', text: tab === 'sidekick' ? 'Buddy is always in the shop, and the other sidekicks change every day.' : 'The shop changes every day.' }),
+                h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'Go to the shop', onclick: () => handlers.openShop() })));
         }
         if (fade) animate(grid, [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
     }
@@ -169,7 +169,7 @@ function paint(el) {
         const colorChanged = custom && isEq && draftColor && draftColor !== equipped.customColor;
         const left = h('div', { class: 'lk-bar-l' },
             h('div', { class: 'lk-bar-name', text: it ? it.name : 'Default' }),
-            h('div', { class: 'lk-bar-sub', text: it ? (it.exclusive ? (it.earn ? 'Achievement reward' : 'Invite reward') : rarityName(it.rarity)) + ' ' + catName(it.cat) + (isAnimated(it) ? ' · moves' : '') : (tab === 'skin' ? 'No skin' : 'No name style') }));
+            h('div', { class: 'lk-bar-sub', text: it ? (it.exclusive ? (it.earn ? 'Achievement reward' : 'Invite reward') : rarityName(it.rarity)) + ' ' + catName(it.cat) + (isAnimated(it) ? ' · animated' : '') : (tab === 'skin' ? 'No skin' : 'No name style') }));
         const right = h('div', { class: 'lk-bar-r' });
         let editor = null;
         if (custom) {
@@ -189,7 +189,7 @@ function paint(el) {
             if (isEq && !colorChanged) go.hidden = true;
             right.appendChild(go);
         }
-        if (!isEq) right.appendChild(h('button', { type: 'button', class: 'dw-btn', text: 'Undo', title: 'Back to what you have on', onclick: () => { sel[tab] = equipped[tab] || null; draftColor = equipped.customColor; paintGrid(); paintBar(); drawStage(); } }));
+        if (!isEq) right.appendChild(h('button', { type: 'button', class: 'dw-btn', text: 'Undo', title: 'Go back to what you’re wearing', onclick: () => { sel[tab] = equipped[tab] || null; draftColor = equipped.customColor; paintGrid(); paintBar(); drawStage(); } }));
         if (isEq) {
             eqLabel = h('span', { class: 'lk-eqlabel', text: 'Wearing it' });
             if (colorChanged) eqLabel.hidden = true;
@@ -218,7 +218,7 @@ function paint(el) {
         draftColor = equipped.customColor || draftColor;
         sel[tab] = equipped[tab] || null;
         const it = itemById(id);
-        toast(id ? (it ? it.name : 'Item') + ' on. Shows up next spawn' : 'Took it off', { kind: 'ok' });
+        toast(id ? (it ? it.name : 'Item') + ' is on. You’ll see it next time you spawn.' : 'You took it off.', { kind: 'ok' });
         handlers.refreshMe();
         paintGrid();
         paintBar();
@@ -243,7 +243,7 @@ function paint(el) {
             isEq ? h('span', { class: 'lk-ribbon', text: 'On' }) : null,
             h('span', { class: 'lk-tprev' }, prev),
             h('span', { class: 'lk-tname', text: it ? it.name : 'None' }),
-            h('span', { class: 'lk-tsub', text: it ? rarityName(it.rarity) : 'on your own' }));
+            h('span', { class: 'lk-tsub', text: it ? rarityName(it.rarity) : 'Just you' }));
     }
     // a row of small choices; items: [{id, label, el}]
     function chips(label, items, current, onPick) {
@@ -261,14 +261,14 @@ function paint(el) {
         const problem = nameProblem(sk.name);
         const left = h('div', { class: 'lk-bar-l' },
             h('div', { class: 'lk-bar-name', text: kick ? (cleanName(sk.name) || kick.name) : 'No sidekick' }),
-            h('div', { class: 'lk-bar-sub', text: kick ? rarityName(kick.rarity) + ' sidekick · ' + (kick.blurb || '') + ' ' + ((C && C.SIDEKICK_DIG_LINE) || 'Helps you mine: rock only.') : 'Nobody tags along.' }));
+            h('div', { class: 'lk-bar-sub', text: kick ? rarityName(kick.rarity) + ' sidekick · ' + (kick.blurb || '') + ' ' + ((C && C.SIDEKICK_DIG_LINE) || 'It helps you mine, but it only shoots rocks.') : 'Nobody comes along with you.' }));
         const right = h('div', { class: 'lk-bar-r' });
         const go = h('button', { type: 'button', class: 'dw-btn primary', text: 'Save', onclick: () => skSave(go) });
         go.disabled = saved || !!problem;
         // .dw-btn sets its own display, so [hidden] alone doesn't hide it
         go.hidden = saved; go.style.display = saved ? 'none' : '';
         right.appendChild(go);
-        if (!saved) right.appendChild(h('button', { type: 'button', class: 'dw-btn', text: 'Undo', title: 'Back to what you have', onclick: () => { skReset(); paintGrid(); paintBar(); drawStage(); } }));
+        if (!saved) right.appendChild(h('button', { type: 'button', class: 'dw-btn', text: 'Undo', title: 'Go back to what you have', onclick: () => { skReset(); paintGrid(); paintBar(); drawStage(); } }));
         else right.appendChild(h('span', { class: 'lk-eqlabel', text: kick ? 'With you' : 'Saved' }));
         bar.append(h('div', { class: 'lk-bar-row' }, left, right));
         if (!kick) return;
@@ -295,7 +295,7 @@ function paint(el) {
         if (problem) input.classList.add('bad');
         bar.appendChild(h('div', { class: 'lk-sk-row' },
             h('div', { class: 'lk-sk-label', text: 'Name' }),
-            h('div', { class: 'lk-sk-namebox' }, input, h('div', { class: 'lk-sk-hint', text: 'Up to 16 letters. Empty keeps its own name.' }), msg)));
+            h('div', { class: 'lk-sk-namebox' }, input, h('div', { class: 'lk-sk-hint', text: 'Up to 16 letters. Leave it empty to keep its own name.' }), msg)));
 
         // colour
         const cols = [null].concat(C ? C.SIDEKICK_COLORS : []);
@@ -321,8 +321,8 @@ function paint(el) {
         sk.sdName, (id) => { sk.sdName = id; paintBar(); drawStage(); }));
         if (!skins.length || !styles.length) {
             bar.appendChild(h('div', { class: 'lk-sk-more' },
-                h('span', { text: 'More skins and name styles turn up in the shop’s Sidekicks tab.' }),
-                h('button', { type: 'button', class: 'dw-link', text: 'To the shop', onclick: () => handlers.openShop() })));
+                h('span', { text: 'You can find more skins and name styles in the shop’s Sidekicks tab.' }),
+                h('button', { type: 'button', class: 'dw-link', text: 'Go to the shop', onclick: () => handlers.openShop() })));
         }
     }
     async function skSave(btn) {
@@ -332,14 +332,14 @@ function paint(el) {
         setBusy(btn, false);
         if (!r.ok) {
             const code = r.data && r.data.error && r.data.error.code;
-            toast(code === 'bad_name' ? 'Pick a nicer name for it.' : storeError(r), { kind: 'error' });
+            toast(code === 'bad_name' ? 'Please pick a nicer name for it.' : storeError(r), { kind: 'error' });
             return;
         }
         const eq = (r.data && r.data.equipped) || {};
         for (const k of SK_KEYS) equipped[k] = eq[k] == null ? null : eq[k];
         skReset();
         const kick = sk.sidekick ? itemById(sk.sidekick) : null;
-        toast(kick ? (equipped.sidekickName || kick.name) + ' is coming along. Shows up next spawn' : 'No sidekick next spawn', { kind: 'ok' });
+        toast(kick ? (equipped.sidekickName || kick.name) + ' is coming along! You’ll see it next time you spawn.' : 'You won’t have a sidekick next time you spawn.', { kind: 'ok' });
         handlers.refreshMe();
         paintGrid();
         paintBar();

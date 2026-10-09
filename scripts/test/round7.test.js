@@ -300,7 +300,7 @@ test('payday: a first or second raid with little to show 2:30 in gets a big vein
         assert.equal(rich.length, 6, 'six rocks');
         assert.equal(rich.filter(r => r.ore === ORE.SHARD).length, 2, 'two shards');
         assert.ok(rich.every(r => r.soft), 'soft');
-        assert.ok(h.msgs.concat(h.socket.packets.filter(p => p[0] === 'm').map(p => p[2])).some(m => /Payday vein close by, to your \w+\. Two shards in it\./.test(m)));
+        assert.ok(h.msgs.concat(h.socket.packets.filter(p => p[0] === 'm').map(p => p[2])).some(m => /There's a payday vein to your \w+, with two shards in it\./.test(m)));
         assert.equal(nx.tickPayday(h, st, at(250_000)), false, 'once');
     } finally { global.gameManager.terrainGrid = null; global.royaleMods = modsWas; }
 });
@@ -342,20 +342,20 @@ test('moments: one that waited 30 s on a fight goes once nobody is hitting them'
 // ── 3. respawn near the end ──────────────────────────────────────────────
 test('respawn: the raid\'s last lock says so and takes you to the finish; a held-back spawn says why', () => {
     const app = src('app.js');
-    assert.match(app, /if \(global\.royale\.storm && global\.royale\.storm\.fin\) return \{ ready: false, ended: true, label: "Raid's ending, no more respawns" \};/);
+    assert.match(app, /if \(global\.royale\.storm && global\.royale\.storm\.fin\) return \{ ready: false, ended: true, label: "No more respawns this raid" \};/);
     assert.match(app, /else if \(now - again\._endedAt > 2500 && !global\.royaleSpectating\) royaleDomAct\("spectate"\);/);
     assert.match(app, /royaleDomAct\(again\.dataset\.ended \? "spectate" : "play"\);/);
     assert.match(app, /again\.addEventListener\("pointerdown", \(e\) => \{ if \(e\.button === 0 \|\| e\.pointerType === "touch"\) \{ e\.preventDefault\(\); againAct\(\); \} \}\);/, 'the press counts, not just a full click');
-    assert.match(app, /const label = finalLock \? "Raid's ending, no more respawns"/);
+    assert.match(app, /const label = finalLock \? "No more respawns this raid"/);
     const cv = src('canvas.js');
     assert.match(cv, /if \(global\.died && !global\.tutorialMode && global\.royale && global\.royale\.lock && global\.royale\.at > 0 && global\.royale\.storm && global\.royale\.storm\.fin\) \{/);
     const so = ssrc('game/network/sockets.js');
     assert.match(so, /if \(!dr\.canSpawn\(\)\) \{ tellWhy\(dr\); return; \}/);
     // the server's words
-    assert.match(royale.spawnWhy(), /Storm resetting|Raid ending|raid is over/);
+    assert.match(royale.spawnWhy(), /storm is resetting|raid is ending|raid is over/);
     const end = storm.debugFinal(20);
     assert.ok(isFinite(end));
-    assert.equal(royale.spawnWhy(), "Raid ending: no more respawns. Watch the finish.");
+    assert.equal(royale.spawnWhy(), "The raid is ending, so there are no more respawns. You can watch the finish.");
     storm.start();
 });
 
@@ -365,10 +365,10 @@ test('button text: "Storm resetting (3s)", and every label fits the button', () 
     assert.match(app, /return \{ ready: false, queue: true, queued: q, label: q \? "Storm resetting: you drop in \(" \+ left \+ "s\)" : "Storm resetting \(" \+ left \+ "s\)" \};/);
     assert.ok(!/No spawns while the storm shuts/.test(app));
     const font = grabFn('app.js', 'playAgainFont')({});
-    for (const [label, ready, w] of [["Storm resetting (45s)", false, 380], ["Storm resetting: you drop in (45s)", false, 380], ["Raid's ending, no more respawns", false, 380],
-        ["Respawn", true, 380], ["Raid's ending, no more respawns", false, 300]]) {
-        const fs0 = parseFloat(font({ label, ready, ended: /Raid's ending/.test(label) }, { w, big: false }, ready ? "Enter" : ""));
-        const room = (w - 36 - (ready ? 64 : 0)) * (/Raid's ending/.test(label) ? 2 : 1);
+    for (const [label, ready, w] of [["Storm resetting (45s)", false, 380], ["Storm resetting: you drop in (45s)", false, 380], ["No more respawns this raid", false, 380],
+        ["Respawn", true, 380], ["No more respawns this raid", false, 300]]) {
+        const fs0 = parseFloat(font({ label, ready, ended: /No more respawns/.test(label) }, { w, big: false }, ready ? "Enter" : ""));
+        const room = (w - 36 - (ready ? 64 : 0)) * (/No more respawns/.test(label) ? 2 : 1);
         assert.ok(label.length * 0.55 * fs0 <= room + 1 || fs0 === 12, label + ' at ' + fs0 + 'px in ' + w);
         assert.ok(fs0 >= 12 && fs0 <= 26);
     }
@@ -501,7 +501,7 @@ test('perks: a fresh offer waits while you\'re hit, then comes out; it says ther
     assert.equal(L.viewFor({ shown: false }, { now: 12_000, key: 'a', hurtAt: 9_000 }), 'cards', 'calm 2.5 s: out');
     assert.equal(L.viewFor({ shown: true }, { now: 10_000, key: 'a', hurtAt: 9_900 }), 'cards', 'once out, a hit does not hide it');
     assert.equal(L.viewFor({}, { now: 10, key: 'a' }), 'cards', 'no hit known: out');
-    assert.equal(L.HEAD_TITLE + ": " + L.HEAD_NOTE, 'Perk ready: pick any time');
+    assert.equal(L.HEAD_TITLE + ": " + L.HEAD_NOTE, 'Perk ready: Pick one any time');
     const rp = src('raidPerks.js');
     assert.match(rp, /if \(view === "cards" && S\.key && S\.shownKey !== S\.key\) \{ S\.shownKey = S\.key; S\.openedAt = now; \}/);
     assert.match(src('socketinit.js'), /if \(m\[3\] \| 0\) global\.hurtAt = performance\.now\(\);/);

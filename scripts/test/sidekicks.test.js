@@ -999,7 +999,7 @@ test('digging: the client aims at the rock and fires a shot a second that flies 
     assert.match(client, /Array\.isArray\(d\.t\)/, 'it reads the t rows');
     assert.match(client, /if \(e\.digOn\) \{ S\.ex = e\.dx; S\.ey = e\.dy; \}/, 'the rock is what it watches');
     // the shop and the Locker say it helps you mine
-    assert.equal(C.SIDEKICK_DIG_LINE, 'Helps you mine: rock only.');
+    assert.equal(C.SIDEKICK_DIG_LINE, 'It helps you mine, but it only shoots rocks.');
     for (const f of ['shop.js', 'locker.js']) assert.match(fs.readFileSync(path.join(REPO, 'public', 'client', 'account', f), 'utf8'), /SIDEKICK_DIG_LINE/);
 });
 

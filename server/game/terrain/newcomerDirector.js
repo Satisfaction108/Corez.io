@@ -229,8 +229,8 @@ function keepOnDeath(body, carried) {
     const kept = Math.floor(carried * TUNE.KEEP_SHARE);
     st.kept += kept;
     try {
-        body.socket.talk('m', 9000, "First raid bonus: you only dropped half. " + kept.toLocaleString('en-US') +
-            " gems are safe and come back with you when you drop in again.");
+        body.socket.talk('m', 9000, "Since it's your first raid, you only dropped half your gems. The other " + kept.toLocaleString('en-US') +
+            " come back with you when you drop in again.");
     } catch { /* */ }
     return kept;
 }
@@ -253,7 +253,7 @@ function onSpawn(body, isRespawn, t = now()) {
         st.respawned = true;
         const sub = kept > 0
             ? "You kept " + kept.toLocaleString('en-US') + " gems. Bank them at a vault and they're safe for good."
-            : "Your bank is safe. Mine some ore, bank it, and you're back in it.";
+            : "Your banked gems are still safe, so mine some more and bank them.";
         say(body, 'nx', "Back in the raid", sub, 4500);
     }
 }
@@ -349,8 +349,8 @@ function fireOre(body, t, opts) {
     const x = Math.round(sx / cluster.length), y = Math.round(sy / cluster.length);
     try { body.socket.talk('FX', x, y, 'bloom'); } catch { /* */ }
     return newEvent('ore', t, TUNE.ORE_MS, big
-        ? { x, y, title: "Payday vein nearby", sub: "Two shards in it. Mine it, then bank it at a vault.", rocks, big: true }
-        : { x, y, title: "Rich vein nearby", sub: "Shoot the glowing rocks and gems burst out.", rocks });
+        ? { x, y, title: "Payday vein nearby", sub: "There are two shards in it. Mine them, then bank the gems at a vault.", rocks, big: true }
+        : { x, y, title: "Rich vein nearby", sub: "Shoot the glowing rocks to break the gems out.", rocks });
 }
 
 // ~1:30: the next supply drop, near them
@@ -390,7 +390,7 @@ function fireTrial(body, t) {
     st.trialUsed = true;
     // the client's FREE TRIAL card is the intro (abilityFx: a new trial id)
     abilities.talkState(body.socket, "Free trial: " + def.name + " for 2 minutes. Buy it at a shop to keep it.");
-    return newEvent('trial', t, abilities.TRIAL_MS, { ab: id, title: "Free trial: " + def.name, sub: "Yours for 2 minutes. Give it a go." });
+    return newEvent('trial', t, abilities.TRIAL_MS, { ab: id, title: "Free trial: " + def.name, sub: "It's yours for 2 minutes, so give it a try!" });
 }
 
 // ~3:30: a chest close by that only they can crack for a while
@@ -415,7 +415,7 @@ function fireChest(body, t) {
         o._botClaim = { id: body.id, until: t + TUNE.CHEST_RESERVE_MS };
         return newEvent('chest', t, TUNE.CHEST_MS, {
             x: Math.round(o.x), y: Math.round(o.y), ent: o, reward: TUNE.CHEST_GEMS,
-            title: "A chest just for you", sub: "Nobody else can open it for " + Math.round(TUNE.CHEST_RESERVE_MS / 1000) + " seconds. Go!",
+            title: "A chest just for you", sub: "Nobody else can open it for " + Math.round(TUNE.CHEST_RESERVE_MS / 1000) + " seconds, so go grab it!",
         });
     }
     return null;
@@ -430,7 +430,7 @@ function fireObjective(body, t) {
     if (sock) sock.contractNextAt = Math.max(sock.contractNextAt || 0, t + TUNE.JOB_MS + 2000);
     return newEvent('objective', t, TUNE.JOB_MS, {
         goal, prog: 0, reward: TUNE.JOB_REWARD,
-        title: "Bank " + goal + " gems in 60 seconds", sub: "Pull it off for +" + TUNE.JOB_REWARD + " gems and a kit item.",
+        title: "Bank " + goal + " gems in 60 seconds", sub: "If you make it, you get +" + TUNE.JOB_REWARD + " gems and a kit item.",
     });
 }
 
@@ -503,7 +503,7 @@ function upkeep(body, st, t) {
             }
             if (!live || t >= ev.until) {
                 endEvent(st, t, 'failed');
-                try { if (body.socket) body.socket.talk('m', 5000, "Out of time on that one. Every gem you bank still counts."); } catch { /* */ }
+                try { if (body.socket) body.socket.talk('m', 5000, "You ran out of time on that one, but every gem you bank still counts."); } catch { /* */ }
                 return;
             }
             const v = live ? nearestVault(body) : null;
@@ -525,7 +525,7 @@ function payObjective(body, ev) {
     }
     try { if (hooks.pay) hooks.pay(body, ev.reward, "challenge done"); } catch { /* */ }
     // the client's payoff is the banner; this says what landed where
-    try { body.socket.talk('m', 5000, "Job done: +" + ev.reward + " gems banked" + (item ? " and a " + item + " in your kit." : ".")); } catch { /* */ }
+    try { body.socket.talk('m', 5000, "You did it! +" + ev.reward + " gems went into your bank" + (item ? ", and you got a " + item + " for your kit." : ".")); } catch { /* */ }
 }
 
 // dig_royale onBanked: the objective counts it
@@ -573,7 +573,7 @@ function tickPayday(body, st, t) {
         st.event = ev;
         st.lastAt = t;
     } else say(body, 'nx', ev.title, ev.sub, 4500);
-    try { body.socket.talk('m', 6000, "Payday vein close by, to your " + dirWord(ev.x - body.x, ev.y - body.y) + ". Two shards in it."); } catch { /* */ }
+    try { body.socket.talk('m', 6000, "There's a payday vein to your " + dirWord(ev.x - body.x, ev.y - body.y) + ", with two shards in it."); } catch { /* */ }
     return true;
 }
 const DIRS = ["east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast"];

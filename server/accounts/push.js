@@ -150,7 +150,7 @@ function dailyPayload(sub, tr, now) {
     return {
         kind: 'daily',
         title: 'Day ' + st.day + ' reward is ready',
-        body: what + (r.signup ? ' is waiting, sign up to keep it.' : ' is waiting.') + streak,
+        body: what + (r.signup ? ' is waiting for you. Sign up to keep it.' : ' is waiting for you.') + streak,
         tag: 'dw-daily',
         url: '/?from=push-daily',
     };
@@ -159,7 +159,7 @@ function eventPayload(ev) {
     return {
         kind: 'event',
         title: ev.name + ' in 30 minutes',
-        body: 'Everyone in one raid, prizes for the top spots. Hop in!',
+        body: 'Everyone plays in one big raid, with prizes for the top spots.',
         tag: 'dw-event-' + ev.id,
         url: '/?from=push-event',
     };

@@ -252,7 +252,7 @@ function run(L, t, until, dt, opts = {}) {
     assert.match(tr, /L\.d > want \* 1\.5 && !L\.keep/, 'the last good rock tiles stay up while the new ones shade');
     assert.ok(!/submitToLocalStorage|\.checked\s*=/.test(glue), 'never writes the player\'s settings');
     assert.match(glue, /e\.isTrusted/, 'only a real click makes a setting manual');
-    assert.match(glue, /Lowered effects to keep it smooth\. Change it in Settings\./);
+    assert.match(glue, /Effects were turned down to keep the game smooth\. You can change this in Settings\./);
     assert.match(juice, /autoTrim\(\) \? Q > 0\.25/, 'glitches stay on under the trim');
     assert.match(juice, /autoTrim\(\) && now - lastBurstAt < LOW_GLITCH_GAP/, 'and come rarer');
 

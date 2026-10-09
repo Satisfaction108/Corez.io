@@ -44,7 +44,7 @@ function postAchievements(ctx) {
             if (r.moved.length) adoptedNow = { ids: r.moved, rewardMilli: r.rewardMilli, items: r.items };
         }
     } else if (guests.valid(g)) owner = { kind: 'g', id: g };
-    else throw new HttpError(400, 'no_owner', 'Something went wrong. Refresh and try again.');
+    else throw new HttpError(400, 'no_owner', 'Something went wrong. Please refresh and try again.');
     ctx.json(200, { achievements: achievements.listFor(owner, ctx.now), players: achievements.rarity(ctx.now).players, guest: owner.kind === 'g', adoptedNow });
 }
 

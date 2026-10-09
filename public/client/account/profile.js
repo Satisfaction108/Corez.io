@@ -45,8 +45,8 @@ async function load(el, opts) {
     if (!r.ok || !r.data || !r.data.username) {
         el.appendChild(backLink(opts));
         el.appendChild(h('div', { class: 'shop-empty' },
-            h('div', { class: 'shop-empty-h', text: r.status === 404 ? 'Nobody by that name' : 'Profile didn’t load' }),
-            h('div', { class: 'shop-empty-p', text: r.status === 404 ? 'Maybe they changed it?' : humanError(r) }),
+            h('div', { class: 'shop-empty-h', text: r.status === 404 ? 'There’s nobody by that name' : 'The profile didn’t load' }),
+            h('div', { class: 'shop-empty-p', text: r.status === 404 ? 'They might have changed it.' : humanError(r) }),
             r.status === 404 ? null : h('button', { type: 'button', class: 'dw-btn sm', text: 'Retry', onclick: () => render(el, opts) })));
         return;
     }
@@ -73,20 +73,20 @@ function paint(el, p, opts) {
         const pl = rk.placement || { lives: 0, of: 3 };
         const left = Math.max(0, (pl.of || 3) - (pl.lives | 0));
         barPct = (pl.lives | 0) / (pl.of || 3);
-        barText = left > 0 ? left + ' placement ' + (left === 1 ? 'game' : 'games') + ' to go' : 'Rank coming up next game';
+        barText = left > 0 ? left + ' placement ' + (left === 1 ? 'game' : 'games') + ' to go' : 'You’ll get your rank after your next game';
     } else if ((rk.division | 0) >= TOP_DIV) {
         barPct = 1;
         barText = fmtNum(rk.rp) + ' RP';
     } else {
         barPct = Math.max(0, Math.min(1, +rk.pct || (rk.size ? rk.into / rk.size : 0)));
         const next = R && R.DIVISIONS[(rk.division | 0) + 1];
-        barText = fmtNum(rk.into) + ' / ' + fmtNum(rk.size) + ' RP' + (next ? ' · next ' + next.name : '');
+        barText = fmtNum(rk.into) + ' / ' + fmtNum(rk.size) + ' RP' + (next ? ' · Next: ' + next.name : '');
     }
     const fill = h('span', { class: 'pf-fill' });
     const meta = [];
-    if (p.peak && p.peak.division != null) meta.push('best ' + (p.peak.name || (R ? R.nameOf(p.peak.division) : '')));
-    if (p.relation === 'friend' && p.friendsSince) meta.push('friends since ' + fmtDate(p.friendsSince));
-    else meta.push('since ' + fmtDate(p.createdAt));
+    if (p.peak && p.peak.division != null) meta.push('Best rank ' + (p.peak.name || (R ? R.nameOf(p.peak.division) : '')));
+    if (p.relation === 'friend' && p.friendsSince) meta.push('Friends since ' + fmtDate(p.friendsSince));
+    else meta.push('Joined ' + fmtDate(p.createdAt));
     const pres = p.presence && p.relation === 'friend' ? h('div', { class: 'pf-pres st-' + presenceState(p.presence) }, h('span', { class: 'fr-dot ' + presenceState(p.presence) }), h('span', { text: presenceText(p.presence, p.rank) })) : null;
     const skin = p.skinNid ? cos.skinOf(p.skinNid) : null;
     const tank = h('div', { class: 'pf-tank', title: skin ? skin.name : 'No skin' },
@@ -145,7 +145,7 @@ function actions(p) {
         case 'outgoing':
             row.append(
                 h('span', { class: 'pf-note', text: 'Request sent' }),
-                btn('Take back', '', async () => {
+                btn('Cancel', '', async () => {
                     const r = await api.friendCancel(p.userId);
                     if (!r.ok) { toast(social.friendError(r), { kind: 'error' }); return false; }
                     social.apply('canceled', person);
@@ -159,10 +159,10 @@ function actions(p) {
                     if (!r.ok) { toast(social.friendError(r), { kind: 'error' }); return false; }
                     if (r.data && r.data.status === 'accepted') {
                         social.apply('friend', r.data.friend || Object.assign({ since: Date.now(), presence: null }, person));
-                        toast('You and ' + p.username + ' are friends now', { kind: 'ok' });
+                        toast('You and ' + p.username + ' are now friends!', { kind: 'ok' });
                     } else {
                         social.apply('outgoing', Object.assign({ at: Date.now() }, person));
-                        toast('Sent ' + p.username + ' a request', { kind: 'ok' });
+                        toast('Friend request sent to ' + p.username + '.', { kind: 'ok' });
                     }
                     return true;
                 }),
@@ -183,7 +183,7 @@ function tiers(p) {
     TIERS.forEach((t, i) => {
         const on = have.has(t);
         const div = i * 3;
-        row.appendChild(h('div', { class: 'pf-tier' + (on ? ' on' : ''), title: on ? TIER_NAME[t] + ': got it' : TIER_NAME[t] + ': not yet' },
+        row.appendChild(h('div', { class: 'pf-tier' + (on ? ' on' : ''), title: on ? TIER_NAME[t] + ': reached' : TIER_NAME[t] + ': not yet' },
             badge(div, 54, 'pf-tier-img'),
             h('span', { class: 'pf-tier-l', text: TIER_NAME[t] })));
     });
@@ -202,19 +202,19 @@ function achievements(p) {
     const own = !lastOpts.u || lastOpts.u === myName();
     const list = Array.from(got.keys()).map((id) => ACH.get(id)).filter(Boolean)
         .sort((x, y) => (got.get(y.id) || 0) - (got.get(x.id) || 0)).slice(0, MEDALS_MAX);
-    if (!list.length) grid.appendChild(h('span', { class: 'pf-h-r', text: own ? 'None yet. Play a raid and they start popping.' : 'None yet.' }));
+    if (!list.length) grid.appendChild(h('span', { class: 'pf-h-r', text: own ? 'None yet. Play a raid to start unlocking them.' : 'None yet.' }));
     for (const a of list) {
         const at = got.get(a.id);
         const on = at != null;
         // a row of little medals; name + how to get it pops up on hover/focus
         grid.appendChild(h('div', {
             class: 'pf-ach' + (on ? ' on' : ''), style: { '--ac': a.color }, tabindex: '0',
-            'aria-label': on ? a.name + ', got it ' + fmtDate(at) : a.name + ', locked: ' + a.desc,
+            'aria-label': on ? a.name + ', unlocked ' + fmtDate(at) : a.name + ', locked: ' + a.desc,
         },
             h('span', { class: 'pf-ach-ic' }, achIcon(a.id)),
             h('span', { class: 'pf-ach-txt' },
                 h('span', { class: 'pf-ach-n', text: a.name }),
-                h('span', { class: 'pf-ach-d', text: on ? a.desc + ' · got it ' + fmtDate(at) : a.desc }))));
+                h('span', { class: 'pf-ach-d', text: on ? a.desc + ' · unlocked ' + fmtDate(at) : a.desc }))));
     }
     if (own) grid.appendChild(h('button', { type: 'button', class: 'pf-ach-more', text: 'See all', onclick: () => achPanel.open() }));
     return section('Achievements', got.size + (total ? ' / ' + total : ''), grid);
@@ -232,13 +232,13 @@ function champTag(p) {
 function stats(p) {
     const s = p.stats || {};
     const tiles = [
-        ['games', fmtNum(s.lives)],
-        ['knockouts', fmtNum(s.kills)],
-        ['raid wins', fmtNum(s.raidWins)],
-        ['win streak', fmtNum(p.winStreak | 0)],
-        ['top 3s', fmtNum(s.top3)],
-        ['gems banked', fmtNum(s.gemsBanked)],
-        ['best game', fmtNum(s.bestLife)],
+        ['Games', fmtNum(s.lives)],
+        ['Knockouts', fmtNum(s.kills)],
+        ['Raid wins', fmtNum(s.raidWins)],
+        ['Win streak', fmtNum(p.winStreak | 0)],
+        ['Top 3s', fmtNum(s.top3)],
+        ['Gems banked', fmtNum(s.gemsBanked)],
+        ['Best game', fmtNum(s.bestLife)],
     ];
     return section('Stats', null, h('div', { class: 'pf-stats' },
         tiles.map(([k, val]) => h('div', { class: 'pf-stat' }, h('span', { class: 'pf-stat-v', text: val }), h('span', { class: 'pf-stat-k', text: k })))));

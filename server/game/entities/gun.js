@@ -647,12 +647,12 @@ class Gun extends EventEmitter {
     }
 
     // The body size a shot is sized from: a grown tank's (raid growth) shots,
-    // drones and minions grow with growth^0.65, not all of it (Oct 8: a 3x
-    // Factory's huge drones hit everything; 3x now makes shots about 2x)
+    // drones and minions grow with growth^0.5, not all of it (Oct 9: 3x
+    // makes shots about 1.7x)
     shotBodySize() {
         const tank = this.body && this.body.master && this.body.master.growthMult > 1 ? this.body.master : this.body;
         const g = tank && tank.growthMult > 1 ? tank.growthMult : 1;
-        return g > 1 ? this.body.size / Math.pow(g, 0.35) : this.body.size;
+        return g > 1 ? this.body.size / Math.pow(g, 0.5) : this.body.size;
     }
 
     interpret() {

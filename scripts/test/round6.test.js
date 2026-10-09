@@ -233,7 +233,7 @@ test('crowns: the risk on the crown card is the steal, the death card says the s
     assert.equal(!!d.crowned, true, 'd is top 3');
     // the slam's risk says "now" and that it grows
     const got = kcs(d, 'crowned').pop();
-    assert.match(got[4], /If they get you now, you lose [\d,]+ pts, more as you earn \(your crown card keeps count; banked gems are safe\)\./);
+    assert.match(got[4], /If they get you now, you lose [\d,]+ pts, and that grows as you earn\. Your banked gems are safe\./);
     // 90 s of crown points later the steal has grown: the card keeps up
     for (let i = 0; i < 300; i++) tick(300);
     tick(600);
@@ -356,7 +356,7 @@ test('deposit: progress while it runs; cut short, what banked and what is still 
     const SL = await imp('scoreLogic.js');
     assert.deepEqual(SL.depositNote({ total: 718, remaining: 300 }, 300, 0), { text: 'Banking 418 / 718: stay on the pad', hot: false });
     const cut = { total: 0, remaining: 0, cutAt: 1000, cutBanked: 418, cutTotal: 718 };
-    assert.deepEqual(SL.depositNote(cut, 300, 2000), { text: 'Deposit stopped: banked 418 of 718. Still carrying 300, get back on the pad', hot: true });
+    assert.deepEqual(SL.depositNote(cut, 300, 2000), { text: 'Deposit stopped: banked 418 of 718. You still have 300 on you, so get back on the pad', hot: true });
     assert.equal(SL.depositNote(cut, 300, 1000 + SL.DEP_CUT_MS + 1), null);
     assert.equal(SL.depositNote({ total: 0, remaining: 0 }, 0, 0), null);
     const si = src('socketinit.js');

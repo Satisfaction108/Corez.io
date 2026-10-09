@@ -224,7 +224,7 @@ function grantArm(socket, id) {
     if (!s) return false;
     s.arm = item.id;
     shop.attachSidearm(body, item.id);
-    shop.talkState(socket, item.name + " mounted. Fire it with the sidearm key.", true);
+    shop.talkState(socket, item.name + " is mounted. Fire it with the sidearm key.", true);
     return true;
 }
 

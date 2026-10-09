@@ -38,8 +38,8 @@ html.dw-halloween .startMenu::before {
 }
 html.dw-halloween body.mobile .startMenu::before { width: 54px; height: 54px; }
 
-/* PLAY: a pumpkin. Same box and lip, ribs on the face, a warm light
-   inside, and the letters inked like the wordmark so they stay readable */
+/* PLAY: pumpkin orange. Same box and lip, and the letters inked like
+   the wordmark so they stay readable */
 html.dw-halloween #startButton,
 html.dw-halloween #startButton:hover,
 html.dw-halloween #startButton:active {
@@ -49,13 +49,8 @@ html.dw-halloween #startButton:active {
     background-color: var(--hw-pumpkin);
 }
 html.dw-halloween #startButton {
-    background-image:
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 100' preserveAspectRatio='none'%3E%3Cpath d='M102 2Q90 44 102 90M202 2Q195 44 202 90M398 2Q405 44 398 90M498 2Q510 44 498 90' fill='none' stroke='%237a2600' stroke-opacity='.2' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M109 4Q97 44 109 88M209 4Q202 44 209 88M391 4Q398 44 391 88M491 4Q503 44 491 88' fill='none' stroke='%23ffe2a8' stroke-opacity='.14' stroke-width='2' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"),
-        linear-gradient(rgba(255, 255, 255, .14), rgba(255, 255, 255, 0) 55%),
-        radial-gradient(120% 150% at 50% 25%, rgba(110, 32, 0, 0) 55%, rgba(110, 32, 0, .22) 100%);
-    background-size: 100% 100%;
-    background-repeat: no-repeat;
-    box-shadow: inset 0 -6px 0 var(--hw-pumpkin-dk), inset 0 1px 0 rgba(255, 232, 186, .45), inset 0 0 22px rgba(255, 210, 110, .3), 0 4px 0 var(--drop);
+    background-image: none;
+    box-shadow: inset 0 -6px 0 var(--hw-pumpkin-dk), 0 4px 0 var(--drop);
 }
 html.dw-halloween #startButton:active:not(:disabled) {
     box-shadow: inset 0 -2px 0 var(--hw-pumpkin-dk), inset 0 2px 4px rgba(0, 0, 0, .14), 0 0 0 transparent;
@@ -73,7 +68,7 @@ html.dw-halloween .mode-opt.on {
     background: var(--btn);
     color: var(--heading);
     text-shadow: none;
-    box-shadow: inset 0 -3px 0 var(--hw-pumpkin), 0 2px 0 var(--drop);
+    box-shadow: inset 0 0 0 2px var(--btn-edge), inset 0 -5px 0 var(--hw-pumpkin), 0 2px 0 var(--drop);
 }
 html.dw-halloween .mode-opt.on .mode-count { background: color-mix(in srgb, var(--hw-pumpkin) 24%, transparent); color: var(--heading); }
 

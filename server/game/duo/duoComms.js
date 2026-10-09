@@ -73,11 +73,11 @@ function teamChat(socket, text) {
     const st = socket._duoChat || (socket._duoChat = { last: 0, times: [], warned: 0 });
     st.times = st.times.filter(at => now - at < CHAT_WINDOW_MS);
     if (now - st.last < CHAT_GAP_MS || st.times.length >= CHAT_BURST) {
-        if (now - st.warned > 3000) { st.warned = now; try { socket.talk('m', 2000, 'Slow down a sec'); } catch { /* */ } }
+        if (now - st.warned > 3000) { st.warned = now; try { socket.talk('m', 2000, "Slow down a little, you're sending messages too fast."); } catch { /* */ } }
         return false;
     }
     if (Array.from(t).length > CHAT_MAX) {
-        try { socket.talk('m', 2000, 'Too long!'); } catch { /* */ }
+        try { socket.talk('m', 2000, 'That message is too long.'); } catch { /* */ }
         return false;
     }
     st.last = now;

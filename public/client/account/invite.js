@@ -153,7 +153,7 @@ function rewards(d, name) {
             art: h('span', { class: 'iv-skin-art' }, pv.tankPreview({ w: 124, h: 48, size: 14, color: pv.TEAM_COLORS[0].col }), h('span', { class: 'iv-skin-q', text: '?' })),
             tag: '5 friends', name: 'Your own custom skin',
             sub: skinOn
-                ? h('span', null, 'DM ', h('b', { text: 'ZyroX' }), ' on ', h('a', { href: DISCORD_URL, target: '_blank', rel: 'noopener', text: 'Discord' }), ' and we’ll make it')
+                ? h('span', null, 'DM ', h('b', { text: 'ZyroX' }), ' on ', h('a', { href: DISCORD_URL, target: '_blank', rel: 'noopener', text: 'Discord' }), ' and we’ll make it for you')
                 : 'Made just for you',
             on: skinOn, state: status(skinOn, 5, count),
         }));
@@ -180,7 +180,7 @@ function linkBox(d) {
     const copy = h('button', { type: 'button', class: 'dw-btn accent-fill iv-copy', text: 'Copy' });
     copy.addEventListener('click', async () => {
         const ok = await copyText(link);
-        if (!ok) { toast('Couldn’t copy. Select the link instead', { kind: 'error' }); return; }
+        if (!ok) { toast('Couldn’t copy it. Please select the link and copy it yourself.', { kind: 'error' }); return; }
         copy.textContent = 'Copied';
         copy.classList.add('copied');
         clearTimeout(copy._t);
@@ -204,15 +204,15 @@ function userBody(d, name) {
         head,
         rewards(d, name),
         friendsList(d),
-        h('div', { class: 'iv-fine', text: 'Friends count once they sign up with your link and finish a game. Alts don’t count.' }),
+        h('div', { class: 'iv-fine', text: 'A friend counts once they sign up with your link and finish a game. Alt accounts don’t count.' }),
     ];
 }
 
 function guestBody(onSignup) {
     return [
         h('div', { class: 'iv-guest' },
-            h('div', { class: 'iv-guest-t', text: 'Make an account to get your invite link' }),
-            h('div', { class: 'iv-guest-p', text: 'You get stuff for every friend who joins.' })),
+            h('div', { class: 'iv-guest-t', text: 'Make an account to get your invite link.' }),
+            h('div', { class: 'iv-guest-p', text: 'You’ll earn rewards for every friend who joins.' })),
         rewards(null, 'You'),
         h('div', { class: 'dw-modal-actions' },
             h('button', { type: 'button', class: 'dw-btn', text: 'Later', onclick: () => close() }),
@@ -259,13 +259,13 @@ async function load() {
 
 export function open() {
     if (panel) return;
-    if (store.get('offline')) { toast('Accounts are down rn. Try again soon'); return; }
+    if (store.get('offline')) { toast('Accounts are down right now. Please try again soon.'); return; }
     const body = h('div', { class: 'iv-body' });
     const u = store.get('user');
     if (u) body.appendChild(h('div', { class: 'iv-loading', text: 'Getting your link...' }));
     const m = modal({
         title: 'Invite friends', cls: 'dw-invite',
-        message: u ? 'Share your link, get stuff for every friend who joins.' : null,
+        message: u ? 'Share your link and earn rewards for every friend who joins.' : null,
         body,
         onClose: () => { if (panel && panel.m === m) { pv.stopUnder(body); panel = null; } if (btn) btn.classList.remove('active'); },
     });

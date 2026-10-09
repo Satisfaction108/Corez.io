@@ -30,9 +30,9 @@ function reauth(intent) {
 
 async function askReauth(intent, what) {
     const ok = await confirm({
-        title: 'Discord check',
-        message: 'For ' + what + ' we need Discord to say it’s you. You’ll land right back here.',
-        confirmLabel: 'Go',
+        title: 'Confirm with Discord',
+        message: 'To set ' + what + ', Discord needs to confirm it’s you. You’ll come right back here after.',
+        confirmLabel: 'Continue',
     });
     if (ok) reauth(intent);
 }
@@ -52,7 +52,7 @@ export function clearIntent() {
 export function render(el, opts) {
     const u = store.get('user');
     if (!u) {
-        el.appendChild(h('p', { class: 'as-p', text: 'Not logged in.' }));
+        el.appendChild(h('p', { class: 'as-p', text: 'You’re not logged in.' }));
         return;
     }
     if (opts && opts.focus === 'username') expanded.username = true;
@@ -112,7 +112,7 @@ function profile(u) {
     const idBtn = h('button', { type: 'button', class: 'as-copy', title: 'Copy ID', 'aria-label': 'Copy player ID' }, icon('copy'));
     idBtn.onclick = async () => {
         const ok = await copyText(u.userId);
-        toast(ok ? 'ID copied' : 'Didn’t copy. Select it and copy it yourself', { kind: ok ? 'ok' : 'error' });
+        toast(ok ? 'ID copied' : 'Couldn’t copy it. Please select it and copy it yourself.', { kind: ok ? 'ok' : 'error' });
     };
     return h('div', { class: 'as-profile' },
         avatar(u.username, u.discord && u.discord.avatarUrl, 56),
@@ -123,10 +123,10 @@ function profile(u) {
                 h('span', { class: 'as-dot', text: '·' }),
                 h('span', { class: 'as-dustline' }, icon('dust'), fmtDust(u.dust)),
                 u.createdAt ? h('span', { class: 'as-dot', text: '·' }) : null,
-                u.createdAt ? h('span', { text: 'since ' + fmtDate(u.createdAt) }) : null)),
+                u.createdAt ? h('span', { text: 'Joined ' + fmtDate(u.createdAt) }) : null)),
         h('div', { class: 'as-id' },
             h('span', { class: 'field-label', text: 'ID' }),
-            h('div', { class: 'as-id-row', title: 'Locked out? Send this to us on Discord' }, h('span', { class: 'as-id-val', text: u.userId }), idBtn)));
+            h('div', { class: 'as-id-row', title: 'If you ever get locked out, send us this ID on Discord.' }, h('span', { class: 'as-id-val', text: u.userId }), idBtn)));
 }
 
 /* ── username ───────────────────────────────────────────────────────── */
@@ -134,26 +134,26 @@ function usernameCard(u) {
     const wait = +u.usernameChangeAt > Date.now();
     if (wait) {
         return row('as-card-username', 'Name', u.username,
-            h('span', { class: 'as-row-note', text: 'can change ' + fmtDate(u.usernameChangeAt) }));
+            h('span', { class: 'as-row-note', text: 'Can change on ' + fmtDate(u.usernameChangeAt) }));
     }
     if (!expanded.username) {
         return row('as-card-username', 'Name', u.username, smallBtn('Change', toggler('username', usernameCard, true)));
     }
-    const uf = usernameField({ label: 'New name', current: u.username, check: true, autocomplete: 'off', placeholder: 'new name' });
+    const uf = usernameField({ label: 'New name', current: u.username, check: true, autocomplete: 'off', placeholder: 'New name' });
     const pw = u.hasPassword ? passwordInput('Current password') : null;
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
     const go = h('button', { type: 'submit', class: 'dw-btn accent-fill', text: 'Save' });
     const form = h('form', { class: 'dw-form as-form', novalidate: true },
         uf.el, pw ? pw.el : null,
-        h('p', { class: 'as-p as-small', text: 'Once every 14 days, so pick a good one.' }),
+        h('p', { class: 'as-p as-small', text: 'You can change your name once every 14 days, so pick a good one.' }),
         alert,
         h('div', { class: 'as-actions' },
-            h('button', { type: 'button', class: 'dw-btn', text: 'Nvm', onclick: toggler('username', usernameCard, false) }), go));
+            h('button', { type: 'button', class: 'dw-btn', text: 'Cancel', onclick: toggler('username', usernameCard, false) }), go));
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const bad = uf.problem();
         if (bad) return showAlert(alert, bad);
-        if (pw && !pw.value) return showAlert(alert, 'Need your current password');
+        if (pw && !pw.value) return showAlert(alert, 'Please enter your current password.');
         showAlert(alert, '');
         setBusy(go, true, 'Saving…');
         const r = await api.changeUsername(uf.value, pw ? pw.value : undefined);
@@ -162,7 +162,7 @@ function usernameCard(u) {
             expanded.username = false;
             await collapseOut(form);
             hooks.setUser(r.data.user);
-            toast('You’re ' + r.data.user.username + ' now', { kind: 'ok' });
+            toast('Your name is now ' + r.data.user.username + '.', { kind: 'ok' });
             return;
         }
         const c = errCode(r);
@@ -184,21 +184,21 @@ export function focusUsername(value) {
 
 /* ── password ───────────────────────────────────────────────────────── */
 function passwordCard(u) {
-    const value = u.hasPassword ? h('span', { class: 'as-dots', text: '••••••••' }) : h('span', { class: 'as-muted', text: 'none yet' });
+    const value = u.hasPassword ? h('span', { class: 'as-dots', text: '••••••••' }) : h('span', { class: 'as-muted', text: 'None yet' });
     if (!expanded.password) {
         return row('as-card-password', 'Password', value, smallBtn(u.hasPassword ? 'Change' : 'Add', toggler('password', passwordCard, true)));
     }
     const cur = u.hasPassword ? passwordInput('Current password') : null;
-    const pp = passwordPair({ username: () => u.username, label: 'New password', confirmLabel: 'Again' });
+    const pp = passwordPair({ username: () => u.username, label: 'New password', confirmLabel: 'Confirm password' });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
     const go = h('button', { type: 'submit', class: 'dw-btn accent-fill', text: 'Save' });
     const form = h('form', { class: 'dw-form as-form', novalidate: true },
         cur ? cur.el : null, pp.els, alert,
         h('div', { class: 'as-actions' },
-            h('button', { type: 'button', class: 'dw-btn', text: 'Nvm', onclick: toggler('password', passwordCard, false) }), go));
+            h('button', { type: 'button', class: 'dw-btn', text: 'Cancel', onclick: toggler('password', passwordCard, false) }), go));
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (cur && !cur.value) return showAlert(alert, 'Need your current password');
+        if (cur && !cur.value) return showAlert(alert, 'Please enter your current password.');
         const bad = pp.problem();
         if (bad) return showAlert(alert, bad);
         showAlert(alert, '');
@@ -207,7 +207,7 @@ function passwordCard(u) {
         setBusy(go, false);
         if (r.ok) {
             await setRow('password', form.closest('.as-row'), passwordCard, false);
-            toast(u.hasPassword ? 'Password changed' : 'Password added. You can log in with your name now too', { kind: 'ok' });
+            toast(u.hasPassword ? 'Password changed' : 'Password added. You can now log in with your name and password.', { kind: 'ok' });
             hooks.refresh();
             return;
         }
@@ -228,7 +228,7 @@ function openPasswordForm() {
 function discordCard(u) {
     const cfg = store.get('config') || {};
     if (u.discord) {
-        const unlink = smallBtn('Unlink', null, { disabled: !u.hasPassword, title: u.hasPassword ? '' : 'Add a password first or you’re locked out' });
+        const unlink = smallBtn('Unlink', null, { disabled: !u.hasPassword, title: u.hasPassword ? '' : 'Add a password first so you don’t get locked out.' });
         unlink.onclick = async () => {
             const done = await formModal({
                 title: 'Unlink Discord?',
@@ -236,7 +236,7 @@ function discordCard(u) {
                 fields: [{ name: 'pw', label: 'Current password', type: 'password', autocomplete: 'current-password' }],
                 confirmLabel: 'Unlink', danger: true,
                 submit: async (v) => {
-                    if (!v.pw) return { ok: false, error: 'Need your current password' };
+                    if (!v.pw) return { ok: false, error: 'Please enter your current password.' };
                     const r = await api.unlinkDiscord(v.pw);
                     return r.ok ? { ok: true } : { ok: false, error: humanError(r) };
                 },
@@ -248,7 +248,7 @@ function discordCard(u) {
             unlink);
     }
     const can = cfg.discordLogin !== false;
-    return row('as-card-discord', 'Discord', h('span', { class: 'as-muted', text: can ? 'not linked' : 'not yet' }),
+    return row('as-card-discord', 'Discord', h('span', { class: 'as-muted', text: can ? 'Not linked' : 'Not available yet' }),
         h('button', { type: 'button', class: 'dw-btn sm discord', disabled: !can, onclick: linkDiscord }, icon('discord'), 'Link'));
 }
 
@@ -266,11 +266,11 @@ async function linkDiscord() {
     }
     const ok = await formModal({
         title: 'Link Discord',
-        message: 'Password first, then pick your Discord.',
+        message: 'Enter your password first, then choose your Discord account.',
         fields: [{ name: 'pw', label: 'Current password', type: 'password', autocomplete: 'current-password' }],
-        confirmLabel: 'Go',
+        confirmLabel: 'Continue',
         submit: async (v) => {
-            if (!v.pw) return { ok: false, error: 'Need your current password' };
+            if (!v.pw) return { ok: false, error: 'Please enter your current password.' };
             const r = await api.reauthPassword(v.pw);
             return r.ok ? { ok: true } : { ok: false, error: humanError(r) };
         },
@@ -289,12 +289,12 @@ async function regenerate() {
     if (!u) return;
     if (u.hasPassword) {
         const code = await formModal({
-            title: 'New backup code?',
-            message: 'The old one stops working.',
+            title: 'Make a new backup code?',
+            message: 'Your old code will stop working.',
             fields: [{ name: 'pw', label: 'Current password', type: 'password', autocomplete: 'current-password' }],
-            confirmLabel: 'Make it',
+            confirmLabel: 'Make new code',
             submit: async (v) => {
-                if (!v.pw) return { ok: false, error: 'Need your current password' };
+                if (!v.pw) return { ok: false, error: 'Please enter your current password.' };
                 const r = await api.regenRecoveryCode(v.pw);
                 if (r.ok && r.data && r.data.recoveryCode) return { ok: true, value: r.data.recoveryCode };
                 return { ok: false, error: humanError(r) };
@@ -303,7 +303,7 @@ async function regenerate() {
         if (code) showNewCode(code);
         return;
     }
-    const ok = await confirm({ title: 'New backup code?', message: 'The old one stops working.', confirmLabel: 'Make it' });
+    const ok = await confirm({ title: 'Make a new backup code?', message: 'Your old code will stop working.', confirmLabel: 'Make new code' });
     if (!ok) return;
     const r = await api.regenRecoveryCode();
     if (r.ok && r.data && r.data.recoveryCode) return showNewCode(r.data.recoveryCode);
@@ -318,8 +318,8 @@ export async function regenAfterReauth() {
 }
 
 function recoveryCard(u) {
-    const what = u && !u.hasPassword && !u.discord ? 'how you log in on another device' : 'for when you forget your password';
-    return row('as-card-recovery', 'Backup code', h('span', { class: 'as-muted', text: what }), smallBtn('New one', regenerate));
+    const what = u && !u.hasPassword && !u.discord ? 'How you log in on another device' : 'For when you forget your password';
+    return row('as-card-recovery', 'Backup code', h('span', { class: 'as-muted', text: what }), smallBtn('New code', regenerate));
 }
 
 /* ── log out / delete ───────────────────────────────────────────────── */
@@ -329,24 +329,24 @@ function footer() {
         setBusy(out, true, 'Logging out…');
         const r = await api.logout();
         setBusy(out, false);
-        if (r.ok || r.status === 401) hooks.onLoggedOut('Logged out. cya');
+        if (r.ok || r.status === 401) hooks.onLoggedOut('You’re logged out. See you soon!');
         else toast(humanError(r), { kind: 'error' });
     };
-    const all = h('button', { type: 'button', class: 'dw-link as-quiet', text: 'log out everywhere' });
+    const all = h('button', { type: 'button', class: 'dw-link as-quiet', text: 'Log out everywhere' });
     all.onclick = async () => {
         const ok = await confirm({
             title: 'Log out everywhere?',
-            message: 'This one too.',
+            message: 'This logs you out on every device, including this one.',
             confirmLabel: 'Log out', danger: true,
         });
         if (!ok) return;
         const r = await api.logoutAll();
-        if (r.ok || r.status === 401) hooks.onLoggedOut('Logged out everywhere. cya');
+        if (r.ok || r.status === 401) hooks.onLoggedOut('You’re logged out on every device. See you soon!');
         else toast(humanError(r), { kind: 'error' });
     };
     return h('div', { class: 'as-foot' },
         out, all, h('span', { class: 'as-foot-gap' }),
-        h('button', { type: 'button', class: 'dw-link as-quiet as-del', text: 'delete account', onclick: () => openDelete() }));
+        h('button', { type: 'button', class: 'dw-link as-quiet as-del', text: 'Delete account', onclick: () => openDelete() }));
 }
 
 export function openDelete(opts) {
@@ -363,15 +363,15 @@ export function openDelete(opts) {
     let note = null;
     if (!u.hasPassword && u.discord) {
         note = opts.reauthed
-            ? h('div', { class: 'dw-alert show info', text: 'Discord says it’s you. Type DELETE to finish.' })
-            : h('p', { class: 'as-p as-small', text: 'Discord has to say it’s you first.' });
+            ? h('div', { class: 'dw-alert show info', text: 'Discord confirmed it’s you. Type DELETE to finish.' })
+            : h('p', { class: 'as-p as-small', text: 'Discord needs to confirm it’s you first.' });
     }
     const form = h('form', { class: 'dw-form', novalidate: true },
         pw ? pw.el : null,
         h('label', { class: 'dw-field' }, h('span', { class: 'field-label' }, 'Type ', h('b', { class: 'as-kbd', text: 'DELETE' }), ' to confirm'), typed),
         note, alert,
         h('div', { class: 'dw-modal-actions' },
-            h('button', { type: 'button', class: 'dw-btn', text: 'Keep it', onclick: () => m.close() }), go));
+            h('button', { type: 'button', class: 'dw-btn', text: 'Keep my account', onclick: () => m.close() }), go));
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (go.disabled) return;
@@ -386,7 +386,7 @@ export function openDelete(opts) {
     });
     const m = modal({
         title: 'Delete account?', cls: 'dw-modal-danger',
-        message: h('span', null, h('b', { text: u.username }), ' and all its rank, gemdust and items. Gone for good, no undo.'),
+        message: h('span', null, 'This deletes ', h('b', { text: u.username }), ' along with its rank, gemdust and items. You can’t undo it.'),
         body: form,
         focus: pw ? 'input[type=password]' : 'input[name=confirm-delete]',
     });

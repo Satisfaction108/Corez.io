@@ -86,7 +86,7 @@ function tick(body, t = Date.now()) {
     }
     const used = before - fit.left;
     try {
-        body.sendMessage("Your " + used + " unspent stat points went into a balanced build. Pick your own next life to play it your way.");
+        body.sendMessage("Your " + used + " unspent stat points went into a balanced build. Next life, you can pick your own.");
     } catch { /* */ }
     return true;
 }
@@ -108,7 +108,7 @@ function newbieMining(body, sk) {
         console.error('[AUTOSTATS]', e && e.message);
         return false;
     }
-    try { body.sendMessage("A little help while you learn: Mining Power starts at " + want + "."); } catch { /* */ }
+    try { body.sendMessage("To help you while you learn, your Mining Power starts at " + want + "."); } catch { /* */ }
     return true;
 }
 

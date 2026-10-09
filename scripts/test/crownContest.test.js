@@ -214,7 +214,7 @@ test('start: the top 3 get crowns at the last storm, bots too; the board stays b
     assert.ok(/YOU GOT A CROWN/.test(got[2]) && /\+5 pts\/sec while you hold it/.test(got[4]), got[4]);
     // and what a kill would cost them, right there
     // ("now": the steal grows as they earn, the crown card keeps it live)
-    assert.ok(/Others will hunt you\. If they get you now, you lose 1,500 pts, more as you earn \(your crown card keeps count; banked gems are safe\)\./.test(got[4]), got[4]);
+    assert.ok(/Others will hunt you\. If they get you now, you lose 1,500 pts, and that grows as you earn\. Your banked gems are safe\./.test(got[4]), got[4]);
     const r = ry(a.socket);
     assert.equal(r.crowns.on, 1);
     assert.equal(r.crowns.pps, crowns.PPS);

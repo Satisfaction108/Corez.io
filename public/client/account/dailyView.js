@@ -10,8 +10,8 @@ export function itemWords(it) {
 const hours = (ms) => Math.round(ms / 3600000);
 
 export function ruleLine(DY) {
-    return 'Next day unlocks ' + hours(DY.UNLOCK_MS) + 'h after your last claim. Miss ' +
-        hours(DY.GRACE_MS) + 'h and you drop back ' + DY.DROP_BACK + ' days (not to zero). After day ' + DY.DAYS + ' it starts over.';
+    return 'The next day unlocks ' + hours(DY.UNLOCK_MS) + 'h after your last claim. If you miss ' +
+        hours(DY.GRACE_MS) + 'h, you drop back ' + DY.DROP_BACK + ' days, but never to zero. After day ' + DY.DAYS + ', it starts over.';
 }
 
 export function rows(st, DY, opts = {}) {
@@ -31,12 +31,12 @@ export function rows(st, DY, opts = {}) {
         let text, note = '';
         if (r.item) {
             text = itemWords(r.item);
-            if (def.fallbackMilli > 0) note = dustTxt(def.fallbackMilli + (r.dustMilli | 0)) + ' gemdust if you have it';
+            if (def.fallbackMilli > 0) note = dustTxt(def.fallbackMilli + (r.dustMilli | 0)) + ' gemdust if you already own it';
         } else {
             text = dustTxt(r.dustMilli) + ' gemdust';
-            if (r.had) note = 'you have ' + itemWords(r.had);
+            if (r.had) note = 'You already own the ' + itemWords(r.had);
         }
-        if (guest && state !== 'done') note = note ? note + ', sign up to claim' : 'sign up to claim';
+        if (guest && state !== 'done') note = note ? note + '. Sign up to claim it.' : 'Sign up to claim it.';
         out.push({ day: i, state, text, note, item: r.item || null });
     }
     return { rows: out, rule: ruleLine(DY), guest };

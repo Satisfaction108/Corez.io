@@ -35,7 +35,7 @@ async function request(method, path, body) {
         const timeout = e && e.name === 'AbortError';
         return {
             ok: false, status: 0,
-            data: { error: { code: timeout ? 'timeout' : 'network', message: timeout ? 'The server’s taking too long.' : 'Couldn’t reach the server.' } },
+            data: { error: { code: timeout ? 'timeout' : 'network', message: timeout ? 'The server is taking too long to answer.' : 'Couldn’t reach the server.' } },
         };
     } finally {
         if (timer) clearTimeout(timer);

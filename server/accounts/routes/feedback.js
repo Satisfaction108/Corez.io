@@ -19,13 +19,13 @@ const { HttpError } = require('../http');
 
 function postFeedback(ctx) {
     const b = ctx.body || {};
-    if (b.text != null && typeof b.text !== 'string') throw new HttpError(400, 'bad_text', 'Something went wrong. Refresh and try again.');
+    if (b.text != null && typeof b.text !== 'string') throw new HttpError(400, 'bad_text', 'Something went wrong. Please refresh and try again.');
     const text = feedback.cleanText(b.text);
-    if (text.length < feedback.MIN_TEXT) throw new HttpError(400, 'too_short', 'Write a few words first!');
-    if (text.length > feedback.MAX_TEXT) throw new HttpError(400, 'too_long', `Too long. Keep it under ${feedback.MAX_TEXT} characters.`);
+    if (text.length < feedback.MIN_TEXT) throw new HttpError(400, 'too_short', 'Please write a few words first.');
+    if (text.length > feedback.MAX_TEXT) throw new HttpError(400, 'too_long', `That's too long. Please keep it under ${feedback.MAX_TEXT} characters.`);
     let category = null;
     if (b.category != null && b.category !== '') {
-        if (!feedback.CATEGORIES.includes(b.category)) throw new HttpError(400, 'bad_category', 'Something went wrong. Refresh and try again.');
+        if (!feedback.CATEGORIES.includes(b.category)) throw new HttpError(400, 'bad_category', 'Something went wrong. Please refresh and try again.');
         category = b.category;
     }
 

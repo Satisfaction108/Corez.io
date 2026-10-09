@@ -29,7 +29,7 @@ export function openInTab(path) {
     // not 'noopener': that makes window.open return null even when it worked
     const w = window.open(location.origin + path, '_blank');
     if (w) { try { w.opener = null; } catch (e) { /* */ } }
-    else toast('Open corez.io in a new tab to log in', { duration: 6000 });
+    else toast('Please open corez.io in a new tab to log in.', { duration: 6000 });
 }
 
 export function init(h0) {
@@ -258,21 +258,21 @@ function viewAuth(opts) {
 }
 
 function loginForm(opts) {
-    const user = h('input', { class: 'dw-input', type: 'text', name: 'username', autocomplete: 'username', spellcheck: 'false', autocapitalize: 'off', maxlength: 16, placeholder: 'your name', value: opts.username || cachedName() });
-    const pw = passwordInput('Password', { placeholder: 'password' });
+    const user = h('input', { class: 'dw-input', type: 'text', name: 'username', autocomplete: 'username', spellcheck: 'false', autocapitalize: 'off', maxlength: 16, placeholder: 'Your name', value: opts.username || cachedName() });
+    const pw = passwordInput('Password', { placeholder: 'Password' });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
     const go = submitBtn('Log in');
     const form = h('form', { class: 'wl-form', novalidate: true },
         h('label', { class: 'dw-field' }, h('span', { class: 'field-label', text: 'Name' }), user),
         pw.el, alert, go,
         h('div', { class: 'wl-foot' },
-            h('button', { type: 'button', class: 'dw-link', text: 'forgot password? use your backup code', onclick: () => show('recover', { username: user.value.trim() }) })));
+            h('button', { type: 'button', class: 'dw-link', text: 'Forgot your password? Use your backup code', onclick: () => show('recover', { username: user.value.trim() }) })));
     // focus the empty field
     if (user.value) pw.input.setAttribute('data-autofocus', '');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const name = user.value.trim();
-        if (!name || !pw.value) return showAlert(alert, 'Need your name and password');
+        if (!name || !pw.value) return showAlert(alert, 'Please enter your name and password.');
         showAlert(alert, '');
         setBusy(go, true, 'Logging in...');
         const r = await api.login(name, pw.value);
@@ -280,7 +280,7 @@ function loginForm(opts) {
         if (r.ok && r.data && r.data.user) {
             hooks.onAuthed(r.data.user, 'login');
             close();
-            toast('Hey ' + r.data.user.username + ', welcome back', { kind: 'ok' });
+            toast('Welcome back, ' + r.data.user.username + '!', { kind: 'ok' });
             return;
         }
         showAlert(alert, humanError(r));
@@ -290,10 +290,10 @@ function loginForm(opts) {
 }
 
 function signupForm() {
-    const uf = usernameField({ check: true, autocomplete: 'username', placeholder: 'pick a name' });
+    const uf = usernameField({ check: true, autocomplete: 'username', placeholder: 'Pick a name' });
     const pp = passwordPair({ username: () => uf.value });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
-    const go = submitBtn('Make it');
+    const go = submitBtn('Create account');
     const legal = h('div', { class: 'wl-foot wl-note' }, 'By making an account you agree to the ',
         h('a', { href: '/terms.html', target: '_blank', rel: 'noopener', text: 'Terms' }), ' and ',
         h('a', { href: '/privacy.html', target: '_blank', rel: 'noopener', text: 'Privacy Policy' }), '.');
@@ -301,7 +301,7 @@ function signupForm() {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (stopAtFirstProblem(alert, uf, pp)) return;
-        setBusy(go, true, 'Making it...');
+        setBusy(go, true, 'Creating...');
         const r = await api.signup(uf.value, pp.value);
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
@@ -332,7 +332,7 @@ function guestName() {
 
 // opts: { headline, name }
 function viewQuick(opts) {
-    const uf = usernameField({ check: true, autocomplete: 'username', placeholder: 'pick a name', value: opts.name || guestName() });
+    const uf = usernameField({ check: true, autocomplete: 'username', placeholder: 'Pick a name', value: opts.name || guestName() });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
     const go = submitBtn('Keep my stuff');
     const legal = h('div', { class: 'wl-foot wl-note' }, 'By making an account you agree to the ',
@@ -340,7 +340,7 @@ function viewQuick(opts) {
         h('a', { href: '/privacy.html', target: '_blank', rel: 'noopener', text: 'Privacy Policy' }), '.');
     const form = h('form', { class: 'wl-form', novalidate: true },
         uf.el, alert, go,
-        h('p', { class: 'wl-quick-line', text: 'No password needed. You stay logged in here.' }),
+        h('p', { class: 'wl-quick-line', text: 'You don’t need a password, and you’ll stay logged in on this browser.' }),
         h('div', { class: 'wl-foot' },
             h('button', { type: 'button', class: 'dw-link wl-quiet', text: 'Use a password or Discord instead', onclick: () => show('choose') })),
         legal);
@@ -363,7 +363,7 @@ function viewQuick(opts) {
         topBar(null),
         h('div', { class: 'wl-badge' }, icon('trophy')),
         h('div', { class: 'wl-h', text: opts.headline || 'Keep your progress?' }),
-        h('p', { class: 'wl-p', text: 'Pick a name and all your stuff comes with you.' }),
+        h('p', { class: 'wl-p', text: 'Pick a name, and your gems, stats and rewards come with you.' }),
         form);
 }
 
@@ -371,11 +371,11 @@ function viewQuick(opts) {
 function viewPick() {
     const pend = store.get('pending') || {};
     const suggestion = String(pend.name || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
-    const uf = usernameField({ check: true, label: false, autocomplete: 'username', placeholder: 'your name', value: suggestion.length >= 3 ? suggestion : '' });
+    const uf = usernameField({ check: true, label: false, autocomplete: 'username', placeholder: 'Your name', value: suggestion.length >= 3 ? suggestion : '' });
     const pp = passwordPair({ username: () => uf.value, label: 'Password (optional)' });
     const pwBox = h('div', { class: 'wl-optional', hidden: true }, pp.els);
     const pwToggle = h('button', { type: 'button', class: 'dw-link wl-addpw', onclick: () => { pwBox.hidden = false; pwToggle.hidden = true; pp.pw.focus(); } },
-        '+ add a password too');
+        '+ Add a password too');
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
     const go = submitBtn('Done');
     const form = h('form', { class: 'wl-form', novalidate: true }, uf.el, pwToggle, pwBox, alert, go);
@@ -395,7 +395,7 @@ function viewPick() {
         const code = r.data && r.data.error && r.data.error.code;
         if (code === 'username_taken' || code === 'invalid_username') { uf.setError(humanError(r)); uf.focus(); }
         if (r.status === 401 || r.status === 410 || /pending|expired/.test(code || '')) {
-            showAlert(alert, 'Discord login timed out. Hit Discord again');
+            showAlert(alert, 'Discord login timed out. Please press Discord again.');
             return;
         }
         showAlert(alert, humanError(r));
@@ -416,18 +416,18 @@ function viewCode(opts) {
     const code = String(opts.code || '');
     const name = opts.username || '';
     const quick = opts.context === 'quick';
-    const title = { recover: 'You’re back in', regen: 'New backup code', quick: 'Your stuff is saved' }[opts.context] || 'Save this code';
+    const title = { recover: 'You’re back in', regen: 'New backup code', quick: 'Your progress is saved' }[opts.context] || 'Save this code';
     const lead = {
-        quick: 'Save this to log in on another device. Add a password anytime in settings.',
-        discord: 'If you ever lose your Discord, this gets you back in.',
-        recover: 'Here’s a fresh one. The old one is dead now.',
-        regen: 'The old one is dead now.',
-    }[opts.context] || 'Forget your password? This gets you back in.';
+        quick: 'Save this code to log in on another device. You can add a password any time in settings.',
+        discord: 'If you ever lose access to your Discord, this code gets you back in.',
+        recover: 'Here’s a new code. Your old one doesn’t work anymore.',
+        regen: 'Your old code doesn’t work anymore.',
+    }[opts.context] || 'If you forget your password, this code gets you back in.';
 
     const copyBtn = h('button', { type: 'button', class: 'dw-btn' }, icon('copy'), h('span', { text: 'Copy' }));
     copyBtn.onclick = async () => {
         const ok = await copyText(code);
-        copyBtn.lastChild.textContent = ok ? 'Copied' : 'Didn’t copy';
+        copyBtn.lastChild.textContent = ok ? 'Copied' : 'Couldn’t copy';
         copyBtn.classList.toggle('done', ok);
         setTimeout(() => { copyBtn.lastChild.textContent = 'Copy'; copyBtn.classList.remove('done'); }, 1800);
     };
@@ -440,9 +440,9 @@ function viewCode(opts) {
             'Recovery code: ' + code,
             'Saved: ' + fmtDate(Date.now()),
             '',
-            'Forgot your password, or never set one? Go to ' + origin + ', hit "Username",',
-            'then "forgot password? use your backup code". Each code works once,',
-            'you get a new one after. Don\'t share this file.',
+            'Forgot your password, or never set one? Go to ' + origin + ', click "Username",',
+            'then "Forgot your password? Use your backup code". Each code works once,',
+            'and you get a new one after. Don\'t share this file.',
             '',
         ].join('\r\n'));
     } }, icon('download'), h('span', { text: 'Save' }));
@@ -453,7 +453,7 @@ function viewCode(opts) {
     go.onclick = () => {
         close();
         if (opts.onDone) opts.onDone();
-        else if (opts.context === 'signup' || opts.context === 'discord' || quick) toast('You’re in, ' + name, { kind: 'ok' });
+        else if (opts.context === 'signup' || opts.context === 'discord' || quick) toast('You’re in, ' + name + '!', { kind: 'ok' });
     };
     return h('div', { class: 'wl-codeview' },
         h('div', { class: 'wl-badge' }, icon('key')),
@@ -467,9 +467,9 @@ function viewCode(opts) {
 
 /* ── log in with a recovery code ────────────────────────────────────── */
 function viewRecover(opts) {
-    const user = h('input', { class: 'dw-input', type: 'text', name: 'username', autocomplete: 'username', spellcheck: 'false', autocapitalize: 'off', maxlength: 16, placeholder: 'your name', value: opts.username || cachedName() });
+    const user = h('input', { class: 'dw-input', type: 'text', name: 'username', autocomplete: 'username', spellcheck: 'false', autocapitalize: 'off', maxlength: 16, placeholder: 'Your name', value: opts.username || cachedName() });
     const codeIn = h('input', { class: 'dw-input mono', type: 'text', name: 'recovery-code', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'characters', maxlength: 24, placeholder: 'XXXX-XXXX-XXXX' });
-    const pp = passwordPair({ username: () => user.value.trim(), label: 'New password', confirmLabel: 'Again' });
+    const pp = passwordPair({ username: () => user.value.trim(), label: 'New password', confirmLabel: 'Confirm password' });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
     const go = submitBtn('Log in');
     if (user.value) codeIn.setAttribute('data-autofocus', '');
@@ -481,7 +481,7 @@ function viewRecover(opts) {
         e.preventDefault();
         const name = user.value.trim();
         const code = codeIn.value.trim();
-        if (!name || !code) return showAlert(alert, 'Need your name and code');
+        if (!name || !code) return showAlert(alert, 'Please enter your name and backup code.');
         // both blank: an account that never had a password just logs in
         const noPw = !pp.pw.value && !pp.cf.value;
         const bad = noPw ? '' : pp.problem();
@@ -496,20 +496,20 @@ function viewRecover(opts) {
             return;
         }
         const ec = (r.data && r.data.error && r.data.error.code) || '';
-        if (r.status === 401 || /credential|code|recovery/.test(ec)) showAlert(alert, 'That code isn’t for that name');
-        else if (noPw && ec === 'weak_password') { showAlert(alert, 'This account has a password. Pick a new one'); pp.pw.focus(); }
+        if (r.status === 401 || /credential|code|recovery/.test(ec)) showAlert(alert, 'That backup code doesn’t match that name.');
+        else if (noPw && ec === 'weak_password') { showAlert(alert, 'This account has a password, so please pick a new one.'); pp.pw.focus(); }
         else showAlert(alert, humanError(r));
     });
     return h('div', { class: 'wl-recover' },
         topBar(() => show('auth', { tab: 'login' })),
         h('div', { class: 'wl-h', text: 'Use your backup code' }),
-        h('p', { class: 'wl-p', text: 'Set a new password. Never had one? Leave it blank.' }),
+        h('p', { class: 'wl-p', text: 'Enter your name and backup code, then set a new password. If you never had a password, you can leave those blank.' }),
         form);
 }
 
 /* ── a reset link (#reset=<token>) ──────────────────────────────────── */
 function viewReset(opts) {
-    const pp = passwordPair({ label: 'New password', confirmLabel: 'Again' });
+    const pp = passwordPair({ label: 'New password', confirmLabel: 'Confirm password' });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
     const go = submitBtn('Save');
     pp.pw.setAttribute('data-autofocus', '');
@@ -530,12 +530,12 @@ function viewReset(opts) {
         if (r.ok && r.data && r.data.user) {
             hooks.onAuthed(r.data.user, 'reset');
             close();
-            toast('Saved. you’re in as ' + r.data.user.username, { kind: 'ok' });
+            toast('Password saved. You’re logged in as ' + r.data.user.username + '.', { kind: 'ok' });
             return;
         }
         const ec = (r.data && r.data.error && r.data.error.code) || '';
         if (ec === 'invalid_token' || /token/.test(ec)) {
-            showAlert(alert, 'This link is old or already used. Get a new one');
+            showAlert(alert, 'This link has expired or was already used. Please get a new one.');
             go.disabled = true;
         } else showAlert(alert, humanError(r));
     });
@@ -543,6 +543,6 @@ function viewReset(opts) {
         topBar(dismissable ? null : () => show('choose')),
         h('div', { class: 'wl-badge' }, icon('key')),
         h('div', { class: 'wl-h', text: 'New password' }),
-        h('p', { class: 'wl-p', text: 'Pick one. You get logged in right after.' }),
+        h('p', { class: 'wl-p', text: 'Pick a new password, and you’ll be logged in right after.' }),
         form);
 }

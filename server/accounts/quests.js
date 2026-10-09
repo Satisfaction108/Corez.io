@@ -31,7 +31,7 @@ const POOL = [
     { id: 'elim_3p',    tier: 'medium', event: 'killPlayer', mode: 'add', goal: 3,    text: 'Knock out 3 players' },
     { id: 'purple_10',  tier: 'medium', event: 'purple',     mode: 'add', goal: 10,   text: 'Grab 10 purple shards' },
     { id: 'emerald_2',  tier: 'medium', event: 'emerald',    mode: 'add', goal: 2,    text: 'Grab 2 emeralds' },
-    { id: 'survive_15', tier: 'medium', event: 'survive',    mode: 'max', goal: 15,   text: 'Survive 15 minutes without dying' },
+    { id: 'survive_15', tier: 'medium', event: 'survive',    mode: 'max', goal: 15,   text: 'Stay alive for 15 minutes in one life' },
     { id: 'capture_1',  tier: 'medium', event: 'capture',    mode: 'add', goal: 1,    text: 'Capture a base' },
     { id: 'bank_8k',    tier: 'hard',   event: 'bank',       mode: 'add', goal: 8000, text: 'Bank 8,000 gems' },
     { id: 'top_10',     tier: 'hard',   event: 'top10',      mode: 'add', goal: 1,    text: 'Finish a raid in the top 10' },

@@ -4,12 +4,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Corez.io devlog: how the rock works</title>
-    <meta name="description" content="How the rock in Corez.io works, and the stuff that broke while I was making it.">
+    <meta name="description" content="How the rock in Corez.io works, and the things that broke while I was making it.">
     <link rel="canonical" href="https://corez.io/devlog">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Corez.io">
     <meta property="og:title" content="Corez.io devlog: how the rock works">
-    <meta property="og:description" content="How the rock works, and the stuff that broke while I was making it.">
+    <meta property="og:description" content="How the rock works, and the things that broke while I was making it.">
     <meta property="og:url" content="https://corez.io/devlog">
     <meta property="og:image" content="https://corez.io/img/og-brawl.jpg">
     <meta property="og:image:width" content="1200">
@@ -38,12 +38,12 @@
 <main>
     <header><img src="/img/logo.svg" alt=""><a href="/">Corez.io</a></header>
     <h1>How the rock works</h1>
-    <p class="updated">By ZyroX. I make this game by myself. September 2026.</p>
+    <p class="updated">By ZyroX, September 2026. I make this game by myself.</p>
 
     <section class="tldr">
-        <p>Corez.io is a tank battle royale but the whole map is rock. You shoot the rock to get gems out. If you die you drop most of what you're carrying, so you want to get to a vault and bank it before someone kills you for it.</p>
+        <p>Corez.io is a 2D tank battle royale where you mine for gems, bank them, and win the game! The whole map is made of rock, and you shoot the rock to get the gems out. If you die, you drop most of the gems you're carrying, so you want to reach a vault and bank them before someone takes them from you.</p>
         <p>I didn't start from zero. The base is Open Source Arras, the community remake of arras.io (Node server, raw WebSockets, canvas client). The tanks, bullets and physics are theirs. I added the rock, mining, banking, the storm, bots, bosses, the shop, contracts, ranked, duos and the tutorial on top. Huge thanks to the Open Source Arras people, I couldn't have done this without them.</p>
-        <p>This is mostly the stuff that broke on me and how I fixed it, if you're into that.</p>
+        <p>This post is mostly about the things that broke along the way and how I fixed them, in case you're into that kind of thing.</p>
     </section>
 
     <figure>
@@ -53,17 +53,17 @@
 
     <section>
         <h2>The rock</h2>
-        <p>The map is a grid of points and each point gets nudged off center by a hash. Every rock is the Voronoi cell around one point, that's why they look like broken stone and not squares. The map always ends up about 50 rocks wide, however big it is.</p>
+        <p>The map is a grid of points and each point gets nudged off center by a hash. Every rock is the Voronoi cell around one point, which is why they look like broken stone instead of squares. The map always ends up about 50 rocks wide, however big it is.</p>
 
         <h3>Four copies that have to match</h3>
-        <p>Hardest part by far. The same rock layout lives in four places: the server's collision code, the client's rock outline, a debug view, and the shader that draws the rock. If one point is off you get a rock you can drive through, or a wall you can't see.</p>
-        <p>Which is exactly what happened lol. One or two rocks per map were drawn in the wrong spot. Turns out the GPU does its float math a tiny bit differently (fused multiply-add) right where the hash wraps around, so a few points moved. So I stopped letting the GPU do the hash. The server does it in float32 with <code>Math.fround</code> at every step, the client does the same on the CPU and hands the shader a small texture with the answers. They match exactly now.</p>
-        <p>Ore has its own hash with a new salt every time the server starts. So the gems move around each run, but everyone sees the same ones.</p>
+        <p>This was the hardest part by far. The same rock layout lives in four places: the server's collision code, the client's rock outline, a debug view, and the shader that draws the rock. If one point is off you get a rock you can drive through, or a wall you can't see.</p>
+        <p>That's exactly what happened. One or two rocks per map were drawn in the wrong spot. It turned out the GPU does its float math a tiny bit differently (fused multiply-add) right where the hash wraps around, so a few points moved. So I stopped letting the GPU do the hash. The server does it in float32 with <code>Math.fround</code> at every step, the client does the same on the CPU and hands the shader a small texture with the answers. They match exactly now.</p>
+        <p>Ore has its own hash with a new salt every time the server starts. That way the gems move around every run, but everyone sees the same ones.</p>
         <p>Rock shapes never go over the network. Your browser builds them from a few numbers, and then the server only tells you which rocks got hit or broke.</p>
 
         <h3>Bullets and regrowth</h3>
-        <p>A bullet that hits right on the line between two rocks damages both, but only counts as one hit. Every tank also has a cap on how fast it can mine, or a tank with eight guns just melts walls.</p>
-        <p>Broken rock grows back. About 46 seconds after it breaks it starts growing, and it takes 16 seconds to fill in. It grows slower if a tank is right next to it so you have time to get out. If you're still inside when it finishes it pushes you out.</p>
+        <p>A bullet that hits right on the line between two rocks damages both, but only counts as one hit. Every tank also has a cap on how fast it can mine, otherwise a tank with eight guns would melt straight through walls.</p>
+        <p>Broken rock grows back. About 46 seconds after it breaks it starts growing, and it takes 16 seconds to fill in. It grows slower if a tank is right next to it, so you have time to get out. If you're still inside when it finishes, it pushes you out.</p>
     </section>
 
     <figure>
@@ -73,25 +73,25 @@
 
     <section>
         <h2>The server</h2>
-        <p>The game runs at 30 ticks a second in Node. The first raids stuttered even though the server was barely doing anything. Two problems. The terrain had its own timer that kept fighting the main loop. And the timestamps I sent to clients came straight off the clock, so they jumped around, and clients use those to smooth movement. Everything looked jittery.</p>
+        <p>The game runs at 30 ticks a second in Node. The first raids stuttered even though the server was barely doing anything. There were two problems. The terrain had its own timer that kept fighting the main loop, and the timestamps I sent to clients came straight off the clock, so they jumped around. Clients use those timestamps to smooth movement, so everything looked jittery.</p>
         <p>I moved terrain into the main loop and made the timestamps tick evenly, only slowly correcting toward real time. Jitter went from about 11 ms to under 1 ms. A tick takes 2 to 4 ms on the live server now.</p>
 
         <h3>Players far away</h3>
-        <p>Messages are compressed, which about halves them. What helped bad connections more was skipping old updates. Each update is the full state of what you can see, so an old one is useless once there's a newer one. The client confirms every update, and if they start piling up the server just skips one.</p>
+        <p>Messages are compressed, which roughly halves their size. What helped bad connections more was skipping old updates. Each update is the full state of what you can see, so an old one is useless once there's a newer one. The client confirms every update, and if they start piling up the server just skips one.</p>
     </section>
 
     <section>
         <h2>Bots</h2>
-        <p>Bots fill in when there aren't enough people. Smooth movement gives a bot away in like two seconds, so bots move like they're pressing keys: eight directions, full speed or stopped, and they let go at slightly random times. Some of them zone out for a sec too.</p>
+        <p>Bots fill in when there aren't enough people. Smooth movement gives a bot away in about two seconds, so bots move as if they're pressing keys: eight directions, full speed or stopped, and they let go at slightly random times. Some of them zone out for a moment, too.</p>
         <h3>They go easier on new players</h3>
-        <p>My stats showed new players dying to bots in under a minute and leaving. So every bot checks who it's fighting now. If you're new, bots are easy for your first few minutes. In ranked, bots match your rank. Guests get tougher bots the longer and better they play, but never all the way. That changes their aim, reaction time, damage, and how many will go after you at once.</p>
-        <p>If bots kill you three times quick, they leave you alone for 30 seconds. Only if you're actually playing though. Someone figured out you could sit behind the spawn shield forever, so now if you don't touch anything for a minute you lose the protection, and after 5 minutes you get sent back to the menu.</p>
+        <p>My stats showed new players dying to bots in under a minute and leaving. So now every bot checks who it's fighting. If you're new, bots are easy for your first few minutes. In ranked, bots match your rank. Guests get tougher bots the longer and better they play, but never all the way. That changes their aim, reaction time, damage, and how many will go after you at once.</p>
+        <p>If bots kill you three times in a short space of time, they leave you alone for 30 seconds, but only if you're actually playing. Someone figured out you could sit behind the spawn shield forever, so now if you don't touch anything for a minute you lose the protection, and after 5 minutes you get sent back to the menu.</p>
     </section>
 
     <section>
         <h2>Slow computers</h2>
         <p>One player told me they were getting 6 fps. Their browser was running WebGL on the CPU, and my rock shader alone took about 220 ms a frame. The rock doesn't move, so now I draw it once into a bigger image and slide that around as you move. On that kind of setup frames went from 236 ms to 16 ms.</p>
-        <p>The small freezes after that were the garbage collector. I was measuring text over 2000 times a second (oops). Cutting that down fixed most of it. If the game is still slow it drops the resolution by itself, and you can turn effects off in settings.</p>
+        <p>The small freezes after that were the garbage collector. It turned out I was measuring text over 2000 times a second, and cutting that down fixed most of it. If the game is still slow it drops the resolution by itself, and you can turn effects off in settings.</p>
     </section>
 
     <figure>
@@ -101,17 +101,17 @@
 
     <section>
         <h2>How a raid plays</h2>
-        <p>A raid is 21 minutes, three storms of 7 minutes each. The last one closes all the way and the raid ends. Most points wins. You can join any time.</p>
-        <p>Banking is basically the game. Die and you drop your gems. Vaults bank fast but getting hit stops you, so those last few seconds on a vault are scary. Your tank also gets bigger as your score goes up. Bigger is slower but tougher, and killing a giant pays a lot.</p>
+        <p>A raid lasts 21 minutes, split into three storms of 7 minutes each. The last storm closes all the way and the raid ends. Whoever has the most points wins, and you can join at any time.</p>
+        <p>Banking is basically the whole game, because if you die you drop your gems. Vaults bank quickly, but getting hit stops you, so those last few seconds on a vault are scary. Your tank also gets bigger as your score goes up. A bigger tank is slower but tougher, and killing a giant pays a lot.</p>
         <p>Contracts give you one small job at a time based on what's near you, like a chest, a boss, a fight, or getting back inside the storm circle.</p>
-        <h3>Stuff players taught me</h3>
-        <p>New players would just stand in the storm and not get that they had to move. So now the storm starts weak and gets worse the longer you stay in it. You get a warning before it gets bad.</p>
-        <p>Making bots worse on purpose felt like cheating at first. But if a new player never banks anything they never find out what the game even is.</p>
+        <h3>What players taught me</h3>
+        <p>New players would just stand in the storm without realizing they had to move. So now the storm starts weak and gets worse the longer you stay in it. You get a warning before it gets bad.</p>
+        <p>Making bots worse on purpose felt like cheating at first, but if a new player never banks anything, they never find out what the game is about.</p>
     </section>
 
     <section>
         <h2>Go play it</h2>
-        <p>It's free, it runs in your browser, no account needed. Keyboard and mouse is best but phones work if you turn them sideways. If something confused you in the first minute or felt bad, tell me. I read everything.</p>
+        <p>It's free and runs in your browser, and you don't need an account. Keyboard and mouse works best, but phones work too if you turn them sideways. If something confused you in your first minute or just felt bad, please tell me. I read everything.</p>
         <a class="play" href="https://corez.io/?utm_source=devlog" target="_top">Play Corez.io</a>
         <a class="ghost" href="https://discord.gg/bx5FK3CMwp" rel="noopener">Discord</a>
     </section>

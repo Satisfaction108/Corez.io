@@ -152,11 +152,11 @@ async function copyText(text) {
 }
 export function shareLine(info) {
     // the Crown Contest
-    if (info.champ) return "I got Core Champion on Corez.io, most points in the raid https://corez.io";
+    if (info.champ) return "I was the Core Champion on Corez.io with the most points in the raid! https://corez.io";
     if (info.crownCol && (info.place === 2 || info.place === 3)) return "I held a crown to the end on Corez.io, #" + info.place + (info.rows > 1 ? " of " + info.rows : "") + ". https://corez.io";
     if (info.place === 1) return (info.duos ? "We won a Duos raid on Corez.io!" : "I won a raid on Corez.io!") + " https://corez.io";
     if (info.place > 0) return "I placed #" + info.place + (info.rows > 1 ? " of " + info.rows : "") + " in a " + (info.duos ? "Duos " : "") + "raid on Corez.io! https://corez.io";
-    return "Just played a raid on Corez.io https://corez.io";
+    return "I just played a raid on Corez.io! https://corez.io";
 }
 const touchFirst = () => !!(global.mobile || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches));
 async function run(info) {
@@ -182,7 +182,7 @@ async function run(info) {
         if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
             try {
                 await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-                showNote("Copied, paste it anywhere", blob, text, true);
+                showNote("Copied! You can paste it anywhere.", blob, text, true);
                 return;
             } catch (e) { /* no clipboard permission: save it instead */ }
         }

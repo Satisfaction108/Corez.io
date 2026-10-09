@@ -37,7 +37,7 @@ function clean(body) {
     // swears and slurs come out as asterisks (shared/profanity.js)
     const s = require('../../shared/profanity.js').mask(sanitizeMessage(typeof body === 'string' ? body.slice(0, MAX_LEN * 4) : ''));
     if (!s) fail(400, 'empty', 'Type something first.');
-    if (Array.from(s).length > MAX_LEN) fail(400, 'too_long', `Messages can be ${MAX_LEN} characters max.`);
+    if (Array.from(s).length > MAX_LEN) fail(400, 'too_long', `Messages can be up to ${MAX_LEN} characters long.`);
     return s;
 }
 

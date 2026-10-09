@@ -1,7 +1,7 @@
 {
   "name": "Corez.io",
   "short_name": "Corez.io",
-  "description": "Tank battle royale where you dig for gems and bank them.",
+  "description": "A 2D tank battle royale where you mine for gems, bank them, and win the game!",
   "id": "/",
   "start_url": "/",
   "scope": "/",

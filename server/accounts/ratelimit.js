@@ -19,7 +19,8 @@ const MIN = 60 * 1000;
 const WINDOWS = {
     loginFail:     { limit: 5,   windowMs: 15 * MIN },  // per IP + username
     loginIpFail:   { limit: 30,  windowMs: 15 * MIN },  // per IP, any username (password spraying)
-    signup:        { limit: 12,  windowMs: 60 * MIN },  // accounts created per IP (schools share one)
+    signup:        { limit: 3,   windowMs: 60 * MIN },  // accounts created per IP
+    signupDay:     { limit: 5,   windowMs: 24 * 60 * MIN }, // ...and per day (also checked in the database, so restarts don't reset it)
     signupTry:     { limit: 60,  windowMs: 60 * MIN },  // signup attempts per IP
     recoverFail:   { limit: 5,   windowMs: 15 * MIN },  // per IP
     recoverUser:   { limit: 5,   windowMs: 60 * MIN },  // per username

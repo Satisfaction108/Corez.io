@@ -1174,7 +1174,7 @@ const RECONNECT_TRIES = 8;
 // nothing to resume.
 const IDLE_CLOSE_CODE = 4001;
 const SAVED_CLOSE_CODE = 4003;
-const IDLE_TEXT = "Kicked for being AFK for 5 minutes";
+const IDLE_TEXT = "You were kicked for being AFK for 5 minutes.";
 function idleExit(text) {
     global.noAutoReconnect = true;
     global.autoReconnect = null;
@@ -1452,11 +1452,11 @@ let incoming = async function(message, socket) {
                     if (placeNow > 0 && r.lastPlace > 0 && placeNow !== r.lastPlace && !global.died && r.board && r.board.length && !((global.nxStage | 0) === 0 && global.nxKnown) && !r.crowns) {
                         if (placeNow < r.lastPlace) {
                             const below = r.board.find(row => row.place === placeNow + 1);
-                            global.createMessage("You passed " + (below ? below.name : "someone") + ", now #" + placeNow, 3200);
+                            global.createMessage("You passed " + (below ? below.name : "someone") + " and moved up to #" + placeNow + "!", 3200);
                             if (gameSound.gemPickup) gameSound.gemPickup(3);
                         } else {
                             const above = r.board.find(row => row.place === placeNow - 1);
-                            global.createMessage((above ? above.name : "Someone") + " passed you. You're #" + placeNow, 3200);
+                            global.createMessage((above ? above.name : "Someone") + " passed you. You're now #" + placeNow + ".", 3200);
                         }
                     }
                     if (placeNow > 0) r.lastPlace = placeNow;
@@ -1884,7 +1884,7 @@ let incoming = async function(message, socket) {
             } break;
             case "temporaryban": {
                 global.noAutoReconnect = true;
-                global.message = "You're temp banned till the server restarts.";
+                global.message = "You're temporarily banned until the server restarts.";
             } break;
             case "permanentban": {
                 global.noAutoReconnect = true;
@@ -1974,8 +1974,8 @@ let incoming = async function(message, socket) {
                     const paid = (+d.rewardMilli || 0) > 0 ? ': +' + fmt(d.rewardMilli) + ' gemdust' : '';
                     const title = (d.kind === 'play' ? 'Play streak day ' + n : 'Win streak x' + n) + paid;
                     const sub = d.kind === 'play'
-                        ? 'Play tomorrow for +' + fmt(d.nextMilli) + '. Days roll over at 00:00 UTC'
-                        : paid ? 'Win the next raid for +' + fmt(d.nextMilli) : 'Win dust is maxed for today, the streak still counts';
+                        ? 'Play tomorrow for +' + fmt(d.nextMilli) + '. Days roll over at 00:00 UTC.'
+                        : paid ? 'Win the next raid for +' + fmt(d.nextMilli) : "You've hit today's limit for win dust, but the streak still counts.";
                     const t = window.dwGameToasts;
                     if (t && t.note) t.note('streak:' + d.kind, title, { tag: 'Streak', kind: 'streak', sub, ms: 7000 });
                     else global.createMessage(title, 5000);
@@ -2622,7 +2622,7 @@ const socketInit = () => {
         }
         if (global.autoReconnect && !global.noAutoReconnect) {
             // every retry failed
-            global.message = "Can't reach the server. School and work wifi often block games. Check your connection and hit Reconnect.";
+            global.message = "Couldn't reach the server. School and work wifi often block games, so check your connection and hit Reconnect.";
         }
         global.autoReconnect = null;
         global.disconnected = true;
@@ -2631,7 +2631,7 @@ const socketInit = () => {
     socket.onerror = error => {
         clearInterval(socket.commandCycle);
         clearInterval(global.socketMotionCycle);
-        global.message = 'Socket error. Try another server.';
+        global.message = 'Something went wrong with the connection. Please try another server.';
     };
 
     return socket;

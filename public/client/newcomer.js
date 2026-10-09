@@ -180,7 +180,7 @@ function director(t) {
             left > 400 && (cur.wasNear || (cur.kind === "ability" && cur.used)));
         if (done && !cur.paid) payoff(cur, left);
         // (the server says "out of time" itself when it sends a state)
-        else if (cur.kind === "timed" && !told) S.upNote = { text: "Time's up. Another one soon.", until: t + 3200 };
+        else if (cur.kind === "timed" && !told) S.upNote = { text: "Time's up! Another challenge will come along soon.", until: t + 3200 };
         S.cur = null;
         if (end) { S.lastKey = key; return; }
     }
@@ -338,7 +338,7 @@ export function hudNotes(push, mk) {
 }
 function pushShopNote(push, mk) {
     const sh = global.shop;
-    if (sh && sh.onPad && !sh.dismissed && !shopOpen()) push(mk(2, "nxshop", "The shop opens soon, dig and bank first.", "#d8dce6"));
+    if (sh && sh.onPad && !sh.dismissed && !shopOpen()) push(mk(2, "nxshop", "The shop unlocks soon, so mine and bank some gems first.", "#d8dce6"));
 }
 const wCache = new Map();
 function textW(text, size) {

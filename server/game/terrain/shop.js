@@ -19,16 +19,16 @@ const SATCHEL_STEP = 4000;
 // with the ability system on.
 const ITEMS = [
     // drills: one tier at a time, lose a tier on death
-    { id: "drill1", cat: "drill", tier: 1, name: "Drill I",   price: 400,  desc: "Mines through rock 25% faster." },
-    { id: "drill2", cat: "drill", tier: 2, name: "Drill II",  price: 900,  desc: "Mines through rock 50% faster." },
-    { id: "drill3", cat: "drill", tier: 3, name: "Drill III", price: 1600, desc: "Mines through rock 80% faster." },
-    { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 2600, desc: "Mines through rock 115% faster." },
-    { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 4000, desc: "Mines through rock 160% faster, and you keep it when you die." },
+    { id: "drill1", cat: "drill", tier: 1, name: "Drill I",   price: 400,  desc: "You mine 25% faster." },
+    { id: "drill2", cat: "drill", tier: 2, name: "Drill II",  price: 900,  desc: "You mine 50% faster." },
+    { id: "drill3", cat: "drill", tier: 3, name: "Drill III", price: 1600, desc: "You mine 80% faster." },
+    { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 2600, desc: "You mine 115% faster." },
+    { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 4000, desc: "You mine 160% faster, and you keep it when you die." },
     // gear: timed (GEAR_MS); `on` is the message shown when it starts
-    { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, desc: "One extra upgrade point to spend on any stat. It stays for the whole raid, even after you die. Up to 10 a raid." },
+    { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, desc: "Gives you one extra stat point that you keep after dying. You can buy up to 10 per raid." },
     { id: "scanner",   cat: "gear", name: "Ore Scanner",        price: 1000, desc: "Shows shard and emerald veins within 1.5km on your minimap for 5 minutes.", on: "Veins near you now show on your minimap." },
     { id: "magnet",    cat: "gear", name: "Gem Magnet",         price: 900,  desc: "Pulls in gems from almost twice as far away for 5 minutes.", on: "Gems now come to you from much farther away." },
-    { id: "satchel",   cat: "gear", name: "Reinforced Satchel", price: 700,  desc: "Carry 12,000 gems instead of 8,000 for 5 minutes (16,000 with Deep Pockets).", on: "Your satchel holds 4,000 more gems now." },
+    { id: "satchel",   cat: "gear", name: "Reinforced Satchel", price: 700,  desc: "You can carry 12,000 gems instead of 8,000 for 5 minutes, or 16,000 with Deep Pockets.", on: "Your satchel holds 4,000 more gems now." },
     { id: "insurance", cat: "gear", name: "Insurance",          price: 1200, desc: "If you die in the next 5 minutes, a quarter of your satchel gets banked instead of dropped.", on: "If you die, a quarter of your satchel gets banked." },
     { id: "cloak",     cat: "gear", name: "Storm Cloak",        price: 1100, retired: true, desc: "The storm only does half damage to you for 5 minutes.", on: "The storm now does half damage to you." },
     { id: "boots",     cat: "gear", name: "Quick Treads",       price: 1300, retired: true, desc: "Move 25% faster for 5 minutes.", on: "You move 25% faster." },
@@ -40,18 +40,18 @@ const ITEMS = [
     { id: "charge",    cat: "kit", name: "Seismic Charge", price: 350, max: 3, desc: "Throws a charge at your cursor (up to 500m away) that shatters every rock within 150m." },
     { id: "strut",     cat: "kit", name: "Support Strut",  price: 250, max: 3, retired: true, desc: "Props open everything within 320m of you for 3 minutes: nothing grows back there, and rock that is already regrowing crumbles." },
     { id: "medkit",    cat: "kit", name: "Medkit",         price: 300, max: 3, desc: "Heals half your health on the spot and keeps the storm off you for 3 seconds." },
-    { id: "rocket",    cat: "kit", name: "Rocket Boots",   price: 300, max: 3, fresh: true, desc: "7 seconds of more than double speed. Outrun anything." },
+    { id: "rocket",    cat: "kit", name: "Rocket Boots",   price: 300, max: 3, fresh: true, desc: "You move more than twice as fast for 7 seconds." },
     { id: "flare",     cat: "kit", name: "Escape Flare",   price: 450, max: 2, fresh: true, desc: "Blinks you up to 420m toward the nearest vault, straight through rock." },
     { id: "overdrive", cat: "kit", name: "Overdrive Core", price: 450, max: 2, retired: true, desc: "Double mining power and 30% faster reload for 20 seconds." },
     { id: "anchor",    cat: "kit", name: "Storm Anchor",   price: 400, max: 2, desc: "The storm can't hurt you for 15 seconds." },
     { id: "flash",     cat: "kit", name: "Flash Vault",    price: 500, max: 2, desc: "Banks up to 1,000 of the gems you're carrying from wherever you are, minus a 30% fee." },
-    { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Regrows the dug-out rock within 420m of you, fast. Instant cover." },
-    { id: "decoy",     cat: "kit", name: "Decoy Satchel",  price: 250, max: 3, desc: "Makes you look like you're hauling a full satchel for 20 seconds. Bait." },
-    { id: "barrage",   cat: "kit", name: "Rock Barrage",   price: 3000, max: 1, desc: "Hurls 10 rock chunks at your cursor. Each hit takes 9% of a tank's health right through its shield, so a full volley finishes anyone who isn't topped up. Each chunk smashes through two rocks on the way." },
+    { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Quickly regrows the dug-out rock within 420m of you, so you get instant cover." },
+    { id: "decoy",     cat: "kit", name: "Decoy Satchel",  price: 250, max: 3, desc: "Makes you look like you're carrying a full satchel for 20 seconds, to lure other players in." },
+    { id: "barrage",   cat: "kit", name: "Rock Barrage",   price: 3000, max: 1, desc: "Hurls 10 rock chunks at your cursor, and each one smashes through two rocks on the way. Every hit takes 9% of a tank's health, even through its shield." },
     // sidearms: one mounted at a time, fired with the sidearm key (command bit 128)
-    { id: "flak",  cat: "arm", name: "Annihilator", price: 1500, desc: "Fires one huge annihilator shell at your cursor. 7 second reload." },
-    { id: "lance", cat: "arm", name: "Drill Lance", price: 1200, desc: "Fires a bolt that shatters any rock it hits. 5 second reload." },
-    { id: "pod",   cat: "arm", name: "Swarm Barrels", price: 1800, desc: "Two battleship barrels on each side that send seeker drones at your cursor. They burn out after 2.5 minutes." },
+    { id: "flak",  cat: "arm", name: "Annihilator", price: 1500, desc: "Fires one huge annihilator shell at your cursor. It has a 7 second reload." },
+    { id: "lance", cat: "arm", name: "Drill Lance", price: 1200, desc: "Fires a bolt that shatters any rock it hits. It has a 5 second reload." },
+    { id: "pod",   cat: "arm", name: "Swarm Barrels", price: 1800, desc: "Adds two battleship barrels on each side that send seeker drones at your cursor. They burn out after 2.5 minutes." },
     // abilities (abilities.js): owned for the raid, one in the slot at a time
     ...require('./abilities.js').catalog().map(a => Object.assign(a, { fresh: true })),
 ];
@@ -361,21 +361,21 @@ function canBuy(socket, item) {
         if (!a.ok) return a;
         if (a.equip) return { ok: true, equip: true };
     } else if (item.cat === "drill") {
-        if (s.drill >= item.tier) return { ok: false, why: "Already owned." };
+        if (s.drill >= item.tier) return { ok: false, why: "You already own that." };
         if (item.tier !== s.drill + 1) return { ok: false, why: "Buy Drill " + ["I", "II", "III", "IV", "V"][s.drill] + " first." };
     } else if (item.id === "statpt") {
         const body = socket.player && socket.player.body;
         if ((s.statPts | 0) >= STATPT_MAX) return { ok: false, why: "That's the most stat points you can buy this raid (" + STATPT_MAX + ")." };
-        if (!body || statRoom(body) <= 0) return { ok: false, why: "Every stat is maxed out. Nothing to put another point into." };
+        if (!body || statRoom(body) <= 0) return { ok: false, why: "Every stat is already maxed out, so there's nowhere to put another point." };
     } else if (item.cat === "gear") {
         if (gearActive(s, item.id)) return { ok: false, why: "That one is already running." };
         if (Object.keys(s.gear).filter(id => gearActive(s, id)).length >= GEAR_MAX) return { ok: false, why: "You can only have " + GEAR_MAX + " gear items running at once." };
     } else if (item.cat === "kit") {
         const have = s.kit[item.id] | 0;
-        if (have >= (item.max || 1)) return { ok: false, why: "You already have the most of those you can carry." };
-        if (!have && kitCount(s.kitOrder) >= KIT_SLOTS) return { ok: false, why: "Your kit is full. It holds 3 kinds of item." };
+        if (have >= (item.max || 1)) return { ok: false, why: "You're already carrying as many of those as you can." };
+        if (!have && kitCount(s.kitOrder) >= KIT_SLOTS) return { ok: false, why: "Your kit is full. It can hold 3 kinds of items." };
     } else if (item.cat === "arm") {
-        if (s.arm === item.id) return { ok: false, why: "Already mounted." };
+        if (s.arm === item.id) return { ok: false, why: "You already have that one mounted." };
     }
     if (bankedOf(socket) < item.price) return { ok: false, why: "You don't have enough banked gems." };
     return { ok: true };
@@ -404,7 +404,7 @@ function buy(socket, itemId) {
     else if (item.id === "statpt") {
         s.statPts = (s.statPts | 0) + 1;
         applyStatPoints(body, s);
-        msg = "+1 stat point. Spend it on any stat. It's yours for the rest of the raid.";
+        msg = "You got an extra stat point! Spend it on any stat, and it's yours for the rest of the raid.";
     }
     else if (item.cat === "gear") {
         s.gear[item.id] = Date.now() + GEAR_MS;
@@ -423,7 +423,7 @@ function buy(socket, itemId) {
         s._twistArm = null;
         s._paidArm = null;
         attachSidearm(body, item.id);
-        msg = item.name + " mounted. Fire it with the sidearm key.";
+        msg = item.name + " is mounted. Fire it with the sidearm key.";
     } else if (item.cat === "ability") {
         abilities.grant(socket, item.id);
         msg = item.name + " is yours for the raid. It's in your ability slot.";
@@ -444,8 +444,8 @@ function grantKit(socket, itemId, count = 1) {
     const item = BY_ID.get(itemId);
     if (!s || !item || item.cat !== "kit") return false;
     const have = s.kit[item.id] | 0;
-    if (!have && kitCount(s.kitOrder) >= KIT_SLOTS) { talkState(socket, "Your kit is full. It holds 3 kinds of item."); return false; }
-    if (have >= (item.max || 1)) { talkState(socket, item.name + " stack full."); return false; }
+    if (!have && kitCount(s.kitOrder) >= KIT_SLOTS) { talkState(socket, "Your kit is full. It can hold 3 kinds of items."); return false; }
+    if (have >= (item.max || 1)) { talkState(socket, "Your " + item.name + " stack is full."); return false; }
     s.kit[item.id] = Math.min(item.max || 1, have + count);
     kitPlace(s, item.id);
     talkState(socket, "Found " + item.name + ".", true);
@@ -589,7 +589,7 @@ function dropKit(socket, slot) {
     const item = BY_ID.get(id);
     delete s.kit[id];
     kitEmpty(s, id);
-    talkState(socket, "Dropped the " + (item ? item.name : "item") + ".");
+    talkState(socket, "You dropped the " + (item ? item.name : "item") + ".");
     return true;
 }
 
@@ -671,7 +671,7 @@ function useKit(socket, slot, tx, ty, itemId) {
                 }
             }
             used = true;
-            msg = broke ? ("Seismic charge: " + broke + " rocks shattered.") : "Seismic charge fizzled on open ground.";
+            msg = broke ? ("Your Seismic Charge shattered " + broke + " rocks.") : "Your Seismic Charge went off on open ground and hit nothing.";
             if (Config.dig_royale) try { require('../gamemodes/scripts/dig_royale.js').fxAt(cx, cy, "charge"); } catch { /* */ }
             break;
         }
@@ -696,7 +696,7 @@ function useKit(socket, slot, tx, ty, itemId) {
             if (!tg) break;
             launchBarrage(body, tx, ty);
             used = true;
-            msg = "Rock Barrage away.";
+            msg = "Rock Barrage launched!";
             break;
         }
         case "medkit": {
@@ -705,7 +705,7 @@ function useKit(socket, slot, tx, ty, itemId) {
             // 3 s of storm immunity so the heal isn't erased inside the storm
             body.stormAnchorUntil = Math.max(body.stormAnchorUntil || 0, now + 3000);
             used = true;
-            msg = "Medkit used. Half your health back, and the storm is off you for 3 seconds.";
+            msg = "You got half your health back, and the storm can't hurt you for 3 seconds.";
             break;
         }
         case "overdrive": {
@@ -717,12 +717,12 @@ function useKit(socket, slot, tx, ty, itemId) {
         case "anchor": {
             body.stormAnchorUntil = now + 15_000;
             used = true;
-            msg = "Anchor dropped. The storm can't touch you for 15 seconds.";
+            msg = "Your Storm Anchor is down, so the storm can't hurt you for 15 seconds.";
             break;
         }
         case "flash": {
             const carried = body.carriedGems | 0;
-            if (carried < 15) { msg = "Not enough in the satchel to bother banking."; break; }
+            if (carried < 15) { msg = "You don't have enough gems in your satchel to bank."; break; }
             const take = Math.min(1000, carried);
             const credit = Math.floor(take * 0.7);
             const gems = require('./gems.js');
@@ -741,32 +741,32 @@ function useKit(socket, slot, tx, ty, itemId) {
             try { require('./milestones.js').checkBanked(body, credit); } catch { /* */ }
             used = true;
             if (global.royaleAch) global.royaleAch.onFlash(body);
-            msg = "Flash vault: " + credit + " gems banked.";
+            msg = "Flash Vault banked " + credit + " gems.";
             break;
         }
         case "bulwark": {
             if (!tg) break;
             const n = bulwarkRaise(tg, body, now);
             used = n > 0;
-            msg = used ? "Bulwark: the wall rises around you." : "No fallen rock nearby to raise.";
+            msg = used ? "The rock grows back up around you." : "There's no dug-out rock nearby to regrow.";
             break;
         }
         case "rocket": {
             abilities.rocketBoots(body);
             used = true;
-            msg = "Rocket Boots lit. " + Math.round(abilities.ROCKET.ms / 1000) + " seconds, go.";
+            msg = "Your Rocket Boots are on for " + Math.round(abilities.ROCKET.ms / 1000) + " seconds!";
             break;
         }
         case "flare": {
             used = abilities.escapeFlare(body);
-            msg = used ? "Flare! You blinked toward the nearest vault." : "No open ground to land on that way.";
+            msg = used ? "You blinked toward the nearest vault!" : "There's no open ground to land on in that direction.";
             break;
         }
         case "decoy": {
             body.decoyUntil = now + 20_000;
             try { require('./gems.js').updateSatchel(body); } catch { /* */ }
             used = true;
-            msg = "Decoy up. You look fully loaded for 20 seconds.";
+            msg = "Your decoy is up, so you look fully loaded for 20 seconds.";
             break;
         }
     }
@@ -792,7 +792,7 @@ function onDeath(body) {
     if (!s) return { drillLost: 0 };
     let drillLost = 0;
     if (s.drill > 0 && s.drill < 5) { s.drill--; drillLost = 1; }
-    if (body.socket) talkState(body.socket, drillLost ? "Drill dropped a tier." : "");
+    if (body.socket) talkState(body.socket, drillLost ? "Your drill dropped a tier." : "");
     return { drillLost };
 }
 
@@ -863,7 +863,7 @@ function tick(actors) {
         s._occupant = keep;
         for (const body of on) {
             if (body === keep) continue;
-            shopEject(body, s, "Someone's using this shop. Wait your turn.", 3000);
+            shopEject(body, s, "Someone else is using this shop, so wait your turn.", 3000);
         }
     }
     // pass 3: the shopper's clock and the client panel
@@ -896,13 +896,13 @@ function tick(actors) {
             const busyAt = Math.max(body._shopSince || now, body._shopLastBuyAt || 0);
             // no browse clock in the tutorial: the lesson waits for the purchase
             if (!Config.tutorial && now - busyAt > SHOP_IDLE_MS) {
-                shopEject(body, pad, "Shop closed. Move along.", 10_000);
+                shopEject(body, pad, "You browsed for a while, so the shop closed.", 10_000);
                 on = false;
             }
         } else if (was && body._shopBought && body._shopPad && !Config.tutorial) {
             // walked off after buying: one visit per purchase (not in the
             // tutorial, whose lessons make two purchases on one pad)
-            shopEject(body, body._shopPad, "Come back for more later.", SHOP_LOCK_MS);
+            shopEject(body, body._shopPad, "Thanks for shopping!", SHOP_LOCK_MS);
         }
         if (on) body._shopPad = pad;
         body.shopOnPad = on;

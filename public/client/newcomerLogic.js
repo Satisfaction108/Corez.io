@@ -83,7 +83,7 @@ export function feedAllowed(f, nx, myName) {
 
 // ── the goal line under the clock (stage 0) ────────────────────────────
 export const GOALS = {
-    dig: "Dig gems, bank them at a vault",
+    dig: "Mine gems and bank them at a vault",
     upgrade: "Upgrade your tank",
     ability: "Try your new ability",
     storm: "Stay out of the storm",
@@ -120,13 +120,13 @@ export const INTROS = {
     ability: { stage: 1, text: "Press {key} to use your ability. It recharges.", touch: "Tap the ability button to use it. It recharges." },
     kit: { stage: 1, text: "Kit items are one-use. Press {kit} to use one.", touch: "Kit items are one-use. Tap one on the right." },
     boss: { stage: 2, text: "Bosses hit hard but drop a ton of gems." },
-    contract: { stage: 2, text: "Contracts are quick jobs that pay gems, top left." },
+    contract: { stage: 2, text: "Contracts are quick jobs that pay gems. You'll find them at the top left." },
     bounty: { stage: 2, text: "Someone has a bounty. Kill them for extra gems." },
     core: { stage: 2, text: "The Core is up in the middle. Everyone who hits it gets paid." },
     hunted: { stage: 2, text: "You're carrying a lot, so you're being hunted. Bank to shake them." },
-    twist: { stage: 2, text: "Each raid has an Override, a special rule. It's top left." },
+    twist: { stage: 2, text: "Each raid has an Override, a special rule you can see at the top left." },
     // raid perks (raidPerks.js): from the first raid, the first time an offer is up
-    perks: { stage: 0, text: "Every 5,000 points you pick a perk for this raid." },
+    perks: { stage: 0, text: "Every 5,000 points, you get to pick a perk for this raid." },
 };
 // The intro to show the first time a piece appears, or "" (veterans, a
 // stage that hides the piece, or seen before).
@@ -268,13 +268,13 @@ export function deathKind(d) {
 }
 export const DEATH_TIPS = {
     bot: "A miner got you. Bank before you carry too much.",
-    player: "A player got you. Bank first next time.",
+    player: "Another player got you. Try banking your gems before a fight.",
     boss: "A boss got you. Keep your distance for now.",
     storm: "The storm got you. Follow the arrow to the circle.",
-    rock: "The rock grew back on you. Don't sit in old tunnels.",
+    rock: "The rock grew back on you, so try not to sit in old tunnels.",
     base: "An enemy base shot you. Stay off bases that aren't yours.",
     core: "The Core's shockwave got you. Back off when it glows bright.",
-    raidend: "Raid's over. A new one starts soon.",
+    raidend: "The raid is over, and a new one starts soon.",
     none: "You died. Bank more often to keep more.",
 };
 export function deathTip(d) { return DEATH_TIPS[deathKind(d)]; }
@@ -289,8 +289,8 @@ export function keptLine(k) {
         return head + (banked > 0 ? " Your bank is safe too." : "");
     }
     if (banked > 0) return "You kept your " + fmt(banked) + " banked gems." + (lost > 0 ? " Your satchel dropped." : "");
-    if (lost > 0) return "Nothing banked, so your gems dropped.";
-    return "Nothing lost. Jump back in.";
+    if (lost > 0) return "You had nothing banked, so your gems dropped.";
+    return "You didn't lose anything, so jump back in!";
 }
 
 // The sub line under an "OVERRIDE: NAME" popup: what an override is, then what

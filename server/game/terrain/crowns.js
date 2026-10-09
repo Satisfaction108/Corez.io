@@ -43,7 +43,7 @@ const CHAMP_MS = 24 * 60 * 60 * 1000;
 // Crowns bank in the final minute too (see above)
 const BANK_IN_SD = true;
 // the vault rule a crown hears, in one place
-const VAULT_RULE = "You can still bank, but the vault pushes a crown off as soon as it's done.";
+const VAULT_RULE = "You can still bank, but the vault pushes a crown off as soon as you're done.";
 
 let hooks = {};
 let S = fresh();
@@ -85,7 +85,7 @@ function stealOf(b) {
 // stealOf as a number: "-1,500 pts" style text for the crowned
 function riskText(b) {
     const n = stealOf(b);
-    return n > 0 ? "If they get you now, you lose " + fmt(n) + " pts, more as you earn (your crown card keeps count; banked gems are safe)." : "Your banked gems are safe if they get you.";
+    return n > 0 ? "If they get you now, you lose " + fmt(n) + " pts, and that grows as you earn. Your banked gems are safe." : "Your banked gems are safe if they get you.";
 }
 function keyOf(b) { try { return hooks.keyOf ? hooks.keyOf(b) : null; } catch { return null; } }
 function holderOf(b) { return b ? S.holders.find(h => h.body === b) || null : null; }
@@ -159,7 +159,7 @@ function start(t) {
     for (const { b } of cands) give(b, t, 'top3');
     const crowned = new Set(cands.map(c => c.b));
     sayAll('crowns', "CROWNS ARE OUT", (duos() ? "Holding one earns your team points." : "Holding one earns points.") + " Knock one off to steal it and " + Math.round(STEAL_FRAC * 100) + "% of their kill and crown points.", 5200, crowned);
-    for (const b of crowned) say(b, 'crowned', "YOU GOT A CROWN", "You're top 3 on points: " + rateText() + ". Others will hunt you. " + riskText(b), 5200);
+    for (const b of crowned) say(b, 'crowned', "YOU GOT A CROWN", "You're top 3 on points, so you get " + rateText() + ". Others will hunt you. " + riskText(b), 5200);
     feed({ crown: 1, start: 1, names: cands.map(c => nameOf(c.b)) });
 }
 
@@ -243,7 +243,7 @@ function tenSeconds() {
     for (const c of (hooks.clients ? hooks.clients() : [])) {
         const b = c && c.player && c.player.body;
         const mine = b && holderOf(b);
-        try { c.talk('KC', 'crown10', "10 SECONDS", 0, mine ? "Hold on: wear it at the bell for +" + fmt(BELL_BONUS) + " pts." : "Take a crown now: +" + fmt(BELL_BONUS) + " pts if you wear it at the bell.", 2600); } catch { /* */ }
+        try { c.talk('KC', 'crown10', "10 SECONDS", 0, mine ? "Hold on! Wear it at the bell for +" + fmt(BELL_BONUS) + " pts." : "Take a crown now and get +" + fmt(BELL_BONUS) + " pts if you wear it at the bell.", 2600); } catch { /* */ }
     }
 }
 

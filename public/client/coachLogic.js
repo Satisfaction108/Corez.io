@@ -96,10 +96,10 @@ export const MINE_TIP_DIG_MS = 10000;
 export const MINE_TIP_SHOW_MS = 9000;
 export function mineTipText(touch, key, pts) {
     const n = pts | 0;
-    if (n > 0) return touch ? "You have " + n + " stat points: put some in Mining Power to dig faster."
-        : "You have " + n + " stat points: Mining Power [" + (key || "-") + "] digs faster.";
+    if (n > 0) return touch ? "You have " + n + " stat points. Put some in Mining Power to dig faster."
+        : "You have " + n + " stat points. Mining Power [" + (key || "-") + "] makes you dig faster.";
     return touch ? "Mining Power makes you dig faster. Add points in the stats panel."
-        : "Mining Power makes you dig faster (stat [" + (key || "-") + "]).";
+        : "Mining Power makes you dig faster. Its stat key is [" + (key || "-") + "].";
 }
 // worth telling: no Mining Power yet, or points waiting to be spent
 export function mineTipWanted(o) { return !!o && ((o.mp | 0) <= 0 || (o.pts | 0) > 0); }

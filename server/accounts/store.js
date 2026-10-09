@@ -233,13 +233,13 @@ function checkOffered(item, day, now) {
     if (item.permanent) return;
     const today = dayOf(now);
     const d = Number(day);
-    if (!Number.isInteger(d)) fail(400, 'bad_request', 'Something went wrong. Refresh and try again.');
+    if (!Number.isInteger(d)) fail(400, 'bad_request', 'Something went wrong. Please refresh and try again.');
     if (d === today) {
-        if (!inRotation(rotationFor(today, FEATURED_SKIP_DAYS, now), item.id)) fail(409, 'not_in_shop', "That's not in today's shop any more.");
+        if (!inRotation(rotationFor(today, FEATURED_SKIP_DAYS, now), item.id)) fail(409, 'not_in_shop', "That item isn't in today's shop anymore.");
         return;
     }
     if (d === today - 1 && now - today * DAY <= RESET_GRACE_MS && inRotation(rotationFor(d, FEATURED_SKIP_DAYS, now), item.id)) return;
-    fail(409, 'shop_rotated', 'The shop just flipped over. Go look at the new stuff.', { day: today });
+    fail(409, 'shop_rotated', 'The shop just changed, so take a look at the new items.', { day: today });
 }
 
 // ---- ownership ----
@@ -356,7 +356,7 @@ function storeView(row, now = Date.now()) {
 // ---- money ----
 
 function checkIdem(key) {
-    if (typeof key !== 'string' || !IDEM_RE.test(key)) fail(400, 'bad_idempotency_key', 'Something went wrong. Refresh and try again.');
+    if (typeof key !== 'string' || !IDEM_RE.test(key)) fail(400, 'bad_idempotency_key', 'Something went wrong. Please refresh and try again.');
     return key;
 }
 
@@ -371,7 +371,7 @@ function replay(userId, key, itemId, isGift) {
     const p = h().get('SELECT item_id, is_gift, result FROM purchases WHERE user_id = ? AND idem_key = ?', userId, key);
     if (!p) return null;
     if (p.item_id !== itemId || (p.is_gift | 0) !== (isGift ? 1 : 0) || !p.result) {
-        fail(409, 'idempotency_conflict', 'Something went wrong. Refresh and try again.');
+        fail(409, 'idempotency_conflict', 'Something went wrong. Please refresh and try again.');
     }
     let r;
     try { r = JSON.parse(p.result); } catch (e) { r = {}; }
@@ -383,7 +383,7 @@ function charge(userId, price) {
     const r = h().run('UPDATE users SET dust_milli = dust_milli - ? WHERE id = ? AND deleted_at IS NULL AND dust_milli >= ?', price, userId, price);
     if (!r.changes) {
         const have = balanceOf(userId).milli;
-        fail(402, 'insufficient_dust', 'Not enough gemdust yet. Keep digging!', { balance: have / C.MILLI, balanceMilli: have, price: price / C.MILLI, priceMilli: price });
+        fail(402, 'insufficient_dust', "You don't have enough gemdust yet. Keep mining!", { balance: have / C.MILLI, balanceMilli: have, price: price / C.MILLI, priceMilli: price });
     }
     return balanceOf(userId).milli;
 }
@@ -395,8 +395,8 @@ function ledger(userId, delta, balance, kind, ref, now) {
 
 function colorOrFail(raw) {
     const c = C.normalizeColor(raw);
-    if (!/^#[0-9a-f]{6}$/.test(c)) fail(400, 'bad_color', 'Try a hex colour like #7ad3ff.', { reason: 'format' });
-    if (!C.isColorAllowed(c)) fail(400, 'bad_color', 'Too dark to see in the caves. Go lighter.', { reason: 'too_dark' });
+    if (!/^#[0-9a-f]{6}$/.test(c)) fail(400, 'bad_color', 'Please use a hex colour, like #7ad3ff.', { reason: 'format' });
+    if (!C.isColorAllowed(c)) fail(400, 'bad_color', "That's too dark to see in the caves. Try a lighter one.", { reason: 'too_dark' });
     return c;
 }
 
@@ -444,7 +444,7 @@ function checkGiftable(fromId, toId, now) {
     const f = h().get('SELECT created_at FROM friendships WHERE user_lo = ? AND user_hi = ?', lo, hi);
     if (blocked || !f) fail(403, 'not_friends', 'You can only gift to friends.');
     if (now - f.created_at < GIFT_FRIEND_AGE_MS) {
-        fail(403, 'friends_too_new', 'You can gift a friend 2 days after you add them.', { availableAt: f.created_at + GIFT_FRIEND_AGE_MS });
+        fail(403, 'friends_too_new', 'You can send a gift 2 days after you become friends.', { availableAt: f.created_at + GIFT_FRIEND_AGE_MS });
     }
 }
 
@@ -455,19 +455,19 @@ function gift(userId, input, opts = {}) {
     const key = checkIdem(input.idempotencyKey);
     const item = itemOrFail(input.itemId);
     const preset = input.preset == null ? 0 : Number(input.preset);
-    if (!Number.isInteger(preset) || preset < 0 || preset >= GIFT_PRESETS) fail(400, 'bad_preset', 'Pick a gift message first.');
+    if (!Number.isInteger(preset) || preset < 0 || preset >= GIFT_PRESETS) fail(400, 'bad_preset', 'Please pick a gift message first.');
     const d = h();
     return d.tx(() => {
         const again = replay(userId, key, item.id, true);
         if (again) return again;
         const to = users.byPublicId(typeof input.toUserId === 'string' ? input.toUserId : '');
         if (!to) fail(404, 'user_not_found', "Couldn't find that player.");
-        if (to.id === userId) fail(400, 'self_gift', "You can't gift yourself. Nice try!");
+        if (to.id === userId) fail(400, 'self_gift', "You can't send a gift to yourself. Nice try!");
         checkGiftable(userId, to.id, now);
         checkOffered(item, input.day, now);
-        if (owns(to.id, item.id)) fail(409, 'recipient_owns', 'They already have that one.');
+        if (owns(to.id, item.id)) fail(409, 'recipient_owns', 'They already have that item.');
         const sent = giftsSentToday(userId, now);
-        if (sent >= GIFTS_PER_DAY) fail(429, 'gift_limit', `That's ${GIFTS_PER_DAY} gifts for today. More tomorrow.`, { resetsAt: resetsAt(dayOf(now)) });
+        if (sent >= GIFTS_PER_DAY) fail(429, 'gift_limit', `You've sent ${GIFTS_PER_DAY} gifts today, which is the limit. You can send more tomorrow.`, { resetsAt: resetsAt(dayOf(now)) });
         const balance = charge(userId, item.price);
         const pid = d.run(`INSERT INTO purchases (user_id, idem_key, item_id, price_milli, day, is_gift, recipient_id, gift_message, created_at)
                            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
@@ -490,18 +490,18 @@ function gift(userId, input, opts = {}) {
 function refund(userId, purchaseId, opts = {}) {
     const now = opts.now || Date.now();
     const id = Number(purchaseId);
-    if (!Number.isInteger(id) || id <= 0) fail(400, 'bad_request', 'Something went wrong. Refresh and try again.');
+    if (!Number.isInteger(id) || id <= 0) fail(400, 'bad_request', 'Something went wrong. Please refresh and try again.');
     const d = h();
     return d.tx(() => {
         const p = d.get('SELECT * FROM purchases WHERE id = ? AND user_id = ?', id, userId);
         if (!p) fail(404, 'not_found', "Couldn't find that purchase.");
         if (p.is_gift) fail(409, 'gift_not_refundable', "Gifts can't be refunded.");
         if (p.refunded_at != null) fail(409, 'already_refunded', 'You already refunded that.');
-        if (now - p.created_at >= REFUND_WINDOW_MS) fail(409, 'refund_expired', 'Too late, refunds only last 24 hours.');
+        if (now - p.created_at >= REFUND_WINDOW_MS) fail(409, 'refund_expired', 'Refunds only last 24 hours, so this one is too late.');
         const u = d.get('SELECT refund_tokens FROM users WHERE id = ? AND deleted_at IS NULL', userId);
-        if (!u || (u.refund_tokens | 0) <= 0) fail(409, 'no_refund_tokens', "You're out of refund tokens.");
+        if (!u || (u.refund_tokens | 0) <= 0) fail(409, 'no_refund_tokens', "You don't have any refunds left.");
         const gone = d.run('DELETE FROM owned_items WHERE user_id = ? AND item_id = ? AND purchase_id = ?', userId, p.item_id, p.id).changes;
-        if (!gone) fail(409, 'not_owned', "That's not in your Locker any more.");
+        if (!gone) fail(409, 'not_owned', "That item isn't in your Locker anymore.");
         d.run('UPDATE purchases SET refunded_at = ? WHERE id = ? AND refunded_at IS NULL', now, p.id);
         const r = d.run(`UPDATE users SET dust_milli = dust_milli + ?, refund_tokens = refund_tokens - 1,
                              equip_name_style = CASE WHEN equip_name_style = ? THEN NULL ELSE equip_name_style END,
@@ -511,7 +511,7 @@ function refund(userId, purchaseId, opts = {}) {
                              equip_sd_name = CASE WHEN equip_sd_name = ? THEN NULL ELSE equip_sd_name END
                          WHERE id = ? AND refund_tokens > 0 AND deleted_at IS NULL`,
             p.price_milli, p.item_id, p.item_id, p.item_id, p.item_id, p.item_id, userId);
-        if (!r.changes) fail(409, 'no_refund_tokens', "You're out of refund tokens.");
+        if (!r.changes) fail(409, 'no_refund_tokens', "You don't have any refunds left.");
         const bal = balanceOf(userId);
         ledger(userId, p.price_milli, bal.milli, 'refund', 'refund:' + p.id, now);
         users.audit(userId, 'store_refund', { purchaseId: p.id, itemId: p.item_id, priceMilli: p.price_milli }, { now, ip: opts.ip });
@@ -592,7 +592,7 @@ function lockerView(row) {
 // equip(userId, slot, itemId|null, color?, opts) -> {equipped}
 // Takes effect on the next spawn.
 function equip(userId, slot, itemId, color, opts = {}) {
-    if (!C.isCat(slot) || !SLOT_COL[slot]) fail(400, 'bad_slot', 'Something went wrong. Refresh and try again.');
+    if (!C.isCat(slot) || !SLOT_COL[slot]) fail(400, 'bad_slot', 'Something went wrong. Please refresh and try again.');
     const col = SLOT_COL[slot];
     const d = h();
     return d.tx(() => {
@@ -603,11 +603,11 @@ function equip(userId, slot, itemId, color, opts = {}) {
             return { equipped: equippedOf(users.byId(userId)) };
         }
         const item = itemOrFail(itemId);
-        if (item.cat !== slot) fail(400, 'bad_item', "That item doesn't go there.");
-        if (!owns(userId, item.id)) fail(403, 'not_owned', "You don't have that one.");
+        if (item.cat !== slot) fail(400, 'bad_item', "That item doesn't go in that slot.");
+        if (!owns(userId, item.id)) fail(403, 'not_owned', "You don't own that item.");
         if (item.id === C.CUSTOM_COLOR_ID) {
             const c = color != null && color !== '' ? colorOrFail(color) : row.custom_color;
-            if (!c || !C.isColorAllowed(c)) fail(400, 'color_required', 'Pick a colour first.');
+            if (!c || !C.isColorAllowed(c)) fail(400, 'color_required', 'Please pick a colour first.');
             d.run(`UPDATE users SET ${col} = ?, custom_color = ? WHERE id = ?`, item.id, c, userId);
         } else {
             d.run(`UPDATE users SET ${col} = ? WHERE id = ?`, item.id, userId);
@@ -623,18 +623,18 @@ function equip(userId, slot, itemId, color, opts = {}) {
 function saveSidekick(userId, input = {}) {
     const d = h();
     const name = C.cleanSidekickName(input.name);
-    if (input.name != null && String(input.name).trim() && !name) fail(400, 'bad_name', 'Letters and numbers only, please.');
-    if (name && profanity.hasProfanity(name)) fail(400, 'bad_name', 'Pick a nicer name for it.');
+    if (input.name != null && String(input.name).trim() && !name) fail(400, 'bad_name', 'Please use only letters and numbers.');
+    if (name && profanity.hasProfanity(name)) fail(400, 'bad_name', 'Please pick a nicer name for it.');
     const color = input.color == null || input.color === '' ? null : C.normalizeColor(input.color);
-    if (color && !C.isSidekickColor(color)) fail(400, 'bad_color', 'Pick one of the colours.');
+    if (color && !C.isSidekickColor(color)) fail(400, 'bad_color', 'Please pick one of the colours.');
     return d.tx(() => {
         const row = users.byId(userId);
         if (!row) fail(404, 'not_found', "Couldn't find that account.");
         const pick = (id, cat) => {
             if (id == null || id === '') return null;
             const item = itemOrFail(id);
-            if (item.cat !== cat) fail(400, 'bad_item', "That item doesn't go there.");
-            if (!owns(userId, item.id)) fail(403, 'not_owned', "You don't have that one.");
+            if (item.cat !== cat) fail(400, 'bad_item', "That item doesn't go in that slot.");
+            if (!owns(userId, item.id)) fail(403, 'not_owned', "You don't own that item.");
             return item.id;
         };
         const kick = pick(input.sidekick, 'sidekick');

@@ -21,7 +21,7 @@ Events.on('chatMessage', ({ message, socket, preventDefault, setMessage }) => {
 	// Fortunately, this returns false if 'recent[id] is 'undefined'.
 	if (recent[id] >= ratelimit) {
 		preventDefault(); // 'preventDefault()' prevents the message from being sent.
-		socket.talk('m', Config.popup_message_duration, 'Slow down a sec.');
+		socket.talk('m', Config.popup_message_duration, "Slow down a little, you're sending messages too fast.");
 		return;
 	}
 
@@ -44,6 +44,6 @@ Events.on('chatMessage', ({ message, socket, preventDefault, setMessage }) => {
 	// If message above the character limit, lets stop that from getting through
 	if (message.length > 56) {
 		preventDefault();
-		socket.talk('m', Config.popup_message_duration, 'Too long!')
+		socket.talk('m', Config.popup_message_duration, 'That message is too long.')
 	}
 });

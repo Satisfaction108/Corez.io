@@ -99,12 +99,12 @@ function originOf(ctx) {
 // POST /api/auth/move {storage} on the old host -> {code}
 function start(ctx) {
     if (!config.isMoveHost(ctx.header('host')) || !config.moveOrigins.has(originOf(ctx))) {
-        throw new HttpError(403, 'bad_origin', 'Something went wrong. Refresh and try again.');
+        throw new HttpError(403, 'bad_origin', 'Something went wrong. Please refresh and try again.');
     }
     ctx.limit('moveStart', 'ip:' + ctx.ipKey);
     const clean = cleanStorage(ctx.body.storage);
-    if (clean === null) throw new HttpError(400, 'bad_request', 'Something went wrong. Refresh and try again.');
-    if (clean === false) throw new HttpError(413, 'payload_too_large', 'Something went wrong. Refresh and try again.');
+    if (clean === null) throw new HttpError(400, 'bad_request', 'Something went wrong. Please refresh and try again.');
+    if (clean === false) throw new HttpError(413, 'payload_too_large', 'Something went wrong. Please refresh and try again.');
     const code = put({
         ua: uaHash(ctx.header('user-agent')),
         storage: clean.storage,
@@ -113,14 +113,14 @@ function start(ctx) {
         dev: cookieValue(ctx, config.cookies.dev),
         pending: cookieValue(ctx, config.cookies.pending),
     }, ctx.now);
-    if (!code) throw new HttpError(503, 'busy', "Server's busy. Try again in a sec.", { retryAfter: 5 }, { 'Retry-After': '5' });
+    if (!code) throw new HttpError(503, 'busy', "The server is busy. Please try again in a moment.", { retryAfter: 5 }, { 'Retry-After': '5' });
     ctx.json(200, { code });
 }
 
 // POST /api/auth/move/claim {code} on the new host -> {storage, cookies}
 function claim(ctx) {
     if (config.isMoveHost(ctx.header('host')) || config.moveOrigins.has(originOf(ctx))) {
-        throw new HttpError(403, 'bad_origin', 'Something went wrong. Refresh and try again.');
+        throw new HttpError(403, 'bad_origin', 'Something went wrong. Please refresh and try again.');
     }
     ctx.limit('moveClaim', 'ip:' + ctx.ipKey);
     const code = typeof ctx.body.code === 'string' && /^[A-Za-z0-9_-]{20,64}$/.test(ctx.body.code) ? ctx.body.code : '';

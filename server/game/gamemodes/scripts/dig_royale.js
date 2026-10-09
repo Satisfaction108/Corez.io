@@ -250,10 +250,10 @@ function spawnWhy() {
     if (raidEnding) return "The raid is over. The next one starts in a moment.";
     let fin = false;
     try { fin = storm.isFinal(); } catch { /* */ }
-    if (fin) return "Raid ending: no more respawns. Watch the finish.";
+    if (fin) return "The raid is ending, so there are no more respawns. You can watch the finish.";
     let left = 0;
     try { left = storm.lockLeftSec(); } catch { /* */ }
-    return "Storm resetting. You drop in when it opens" + (left > 0 ? " (" + left + "s)." : ".");
+    return "The storm is resetting. You'll drop back in when it opens" + (left > 0 ? " (" + left + "s)." : ".");
 }
 function requestPlay() { return true; }
 function isLobbyPhase() { return false; }
@@ -1390,7 +1390,7 @@ function tickSpawnRescue(t) {
         spawnReach.invalidate();
         spawnRescue.n++; spawnRescue.cells += path.length;
         if (process.env.SPAWN_DEBUG) console.log('[SPAWN-RESCUE]', body.name, 'cells', path.length, 'cost', +cost.toFixed(2), 'at', Math.round(body.x), Math.round(body.y));
-        try { if (body.sendMessage) body.sendMessage("The storm cracked the rock open: get back inside!"); } catch { /* */ }
+        try { if (body.sendMessage) body.sendMessage("The storm broke a path through the rock. Get back inside!"); } catch { /* */ }
     }
 }
 
@@ -1833,14 +1833,14 @@ function lateJoinNote(body) {
         // the Crown Contest: late is fine, a crown is up for grabs
         key = "crowns:" + raidId;
         title = "Crowns are out";
-        sub = "Crowns earn points while you hold one. Knock one off to steal it and a chunk of their points.";
+        sub = "You earn points while you wear a crown. Knock one off someone to take it and some of their points.";
     } else if (raidLeft > 0 && raidLeft <= FM.LATE_RAID_SEC) {
         key = "raid:" + raidId;
         title = "Final minutes of this raid";
         sub = "A fresh raid starts in " + fmtClock(raidLeft + (RAID_END_BEAT_MS + RAID_END_WAIT_MS) / 1000) + ". Bank what you can!";
     } else if (cycleLeft <= FM.LATE_STORM_SEC) {
         key = "storm:" + raidId + ":" + (st.c | 0);
-        title = "The storm's almost shut";
+        title = "The storm is about to close";
         sub = "It opens back up in " + fmtClock(cycleLeft) + ". Stay inside and bank what you can.";
     } else return;
     if (sock._lateNoteKey === key) return;
@@ -2267,7 +2267,7 @@ function onCombatantDead(body) {
             callout(killerBody, avenged ? "revenge" : huntBounty ? "huntkill" : shutdown ? "shutdown" : "kill", line, pts,
                 avenged ? "+" + contracts.REVENGE_GEMS + " gems" : huntBounty && huntBounty.gems ? "+" + huntBounty.gems + " hunt gems banked" : "");
             if (streakNow === STREAK_MARK_AT) {
-                try { killerBody.socket.talk('KC', "streak", streakNow + " kill streak. You're marked on everyone's map", 0); } catch { /* */ }
+                try { killerBody.socket.talk('KC', "streak", streakNow + " kill streak! You're marked on everyone's map now.", 0); } catch { /* */ }
             }
         }
     }
@@ -2315,7 +2315,7 @@ function onCombatantDead(body) {
     if (Config.royale_duos && body.socket && !raidEndDeath) {
         try {
             const mb = duo.mateBody(body);
-            if (mb && mb.socket) mb.sendMessage((body.name || "Your teammate") + " is down. Hold on till they're back.");
+            if (mb && mb.socket) mb.sendMessage((body.name || "Your teammate") + " is down. Hold on until they're back.");
         } catch { /* */ }
     }
     // contracts: the victim's job ends, and whoever took them down is marked
@@ -2340,7 +2340,7 @@ function onCombatantDead(body) {
             const lockLeft = storm.lockLeftSec ? storm.lockLeftSec() : 0;
             if (lockLeft > 0 && stormLocked()) {
                 body.socket._fpLockWait = true;
-                try { body.socket.talk('m', 6000, "The storm is resetting. You can drop back in " + lockLeft + " seconds from now, inside the new circle."); } catch { /* */ }
+                try { body.socket.talk('m', 6000, "The storm is resetting. You can drop back in " + lockLeft + " seconds, inside the new circle."); } catch { /* */ }
             }
         } else body.socket._fpBuild = null;
         const dl = shop.onDeath(body);
@@ -2362,7 +2362,7 @@ function onCombatantDead(body) {
 function onBossSpawned(o, kind, id) {
     pacing.note('boss');
     pushFeed({ boss: 1, spawn: 1, name: kind.name, c: kind.color, x: Math.round(o.x), y: Math.round(o.y) });
-    setToastAndSay(kind.name + " has surfaced in " + compass(o.x, o.y) + ". " + kind.gems + " gems to whoever ends it.", 6000);
+    setToastAndSay(kind.name + " has appeared in " + compass(o.x, o.y) + "! It drops " + kind.gems + " gems when it goes down.", 6000);
     fxAt(o.x, o.y, "boss");
 }
 
@@ -2411,7 +2411,7 @@ function onBossDead(o, kind, killer, burrowed, shares = []) {
         try { client.talk('KC', 'boss', "BOSS DOWN: " + kind.name + (by ? "  ·  " + by : ""), 0); } catch { /* */ }
     }
     pushFeed({ boss: 1, slain: 1, name: kind.name, by, c: kind.color, pts: kind.score });
-    setToastAndSay((by || "The wall") + " killed the " + kind.name + ". Gems everywhere. Go get them.", 6000);
+    setToastAndSay((by || "The wall") + " killed the " + kind.name + ", and its gems are all over the ground. Go grab them!", 6000);
     fxAt(o.x, o.y, "bossdead");
 }
 
@@ -2435,7 +2435,7 @@ function onChestOpened(body, chest, itemMsg) {
 function onBloom(b) {
     pacing.note('bloom');
     pushFeed({ bloom: 1, name: compass(b.x, b.y) });
-    setToastAndSay("Ore bloom in " + compass(b.x, b.y) + ". Rich veins for 100 seconds.", 6000);
+    setToastAndSay("An ore bloom opened up in " + compass(b.x, b.y) + ". The veins there are extra rich for 100 seconds.", 6000);
     fxAt(b.x, b.y, "bloom");
 }
 
@@ -2443,10 +2443,10 @@ function onEvent(ev) {
     pacing.note(ev.kind);
     if (ev.kind === 'meteor') {
         pushFeed({ event: 1, kind: 'meteor', name: ev.where });
-        setToastAndSay("Meteor shower incoming over " + ev.where + ". Ore falls with it.", 6000);
+        setToastAndSay("A meteor shower is coming down over " + ev.where + ", and it brings ore with it.", 6000);
     } else {
         pushFeed({ event: 1, kind: 'rain', name: ev.where });
-        setToastAndSay("Gem rain over the safe zone. Twenty-five seconds.", 6000);
+        setToastAndSay("Gems are raining down over the safe zone for 25 seconds!", 6000);
     }
 }
 
@@ -2630,7 +2630,7 @@ function onHumanJoin(body) {
             homeSpawn = true;
             occupy.delete(occKey(home, body));
             moveTo(body, home.x + (Math.random() - 0.5) * 30, home.y + (Math.random() - 0.5) * 30);
-            try { body.sendMessage("You're back at your base. You can stay 10 seconds."); } catch { /* */ }
+            try { body.sendMessage("You're back at your base. You can stay here for 10 seconds."); } catch { /* */ }
         }
     }
     if (!homeSpawn && !mateSpawn) {
@@ -2701,7 +2701,7 @@ function onHumanJoin(body) {
         if (resuming) body.socket._dropCue = false;
         if (isRespawn && (body.growthMult || 1) >= 1.1) {
             const capped = growthScore(body) * growth.RESPAWN_SHARE > growth.CAP_SCORE + 1;
-            try { body.sendMessage("You're back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size" + (capped ? ", the most a respawn gives." : ", from a quarter of your score.")); } catch { /* */ }
+            try { body.sendMessage("You came back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size" + (capped ? ", which is the most a respawn gives you." : ", based on a quarter of your score.")); } catch { /* */ }
         }
         if (bankIn > 0) {
             try { body.sendMessage("You brought " + bankIn.toLocaleString('en-US') + " gems to spend at shops."); } catch { /* */ }
@@ -2710,8 +2710,8 @@ function onHumanJoin(body) {
             try { chests.ensureNearSpawn(body); } catch { /* */ }
             const mod = raidMods.get();
             try {
-                body.sendMessage("You're shielded for " + Math.round(SPAWN_GRACE_MS / 1000) + " seconds, and after that until you move or shoot.");
-                if (!mod) body.sendMessage("No override this raid, for once.");
+                body.sendMessage("You're shielded for " + Math.round(SPAWN_GRACE_MS / 1000) + " seconds, and it stays up after that until you move or shoot.");
+                if (!mod) body.sendMessage("There's no override this raid.");
             } catch { /* */ }
         }
         try { shop.talkState(body.socket); } catch { /* */ }
@@ -2990,7 +2990,7 @@ function applyResume(body, snap) {
         body.bankedGems = socket.gemBanked || 0;
         try { shop.applyPassives(body); shop.talkState(socket); gems.talkGems(body, 0); } catch { /* */ }
         applyPerks(body, ensureStat(body));
-        try { body.sendMessage(snap.fresh ? "Reconnected. You dropped back in somewhere new." : "Reconnected. Your raid picked up where you left off."); } catch { /* */ }
+        try { body.sendMessage(snap.fresh ? "Reconnected. You dropped back in at a new spot." : "Reconnected. Your raid picked up where you left off."); } catch { /* */ }
         // drop back in from the sky: drawn only, nothing held, smashed or reset
         if (snap.alive) guard('resume drop', () => dropIn.visual(body));
         if (process.env.RESUME_DEBUG) console.log('[RESUME] applied: banked', socket.gemBanked | 0, 'carried', body.carriedGems | 0, 'drill', (shop.stateOf(socket) || {}).drill, 'class', (body.defs || []).join('/'), 'raw', body.skill.raw.join(','), 'pts', body.skill.points, 'pos', Math.round(body.x) + ',' + Math.round(body.y), 'was', Math.round(snap.x) + ',' + Math.round(snap.y));
@@ -3295,7 +3295,7 @@ function tickOutpostRules(t) {
                     body._baseExpel = site;
                     pushOut(body, site, 6, "camp:" + site.id, 'expel');
                     site.occupyLeft = 0;
-                    try { body.sendMessage("Time's up. Off the base, and no coming back for " + Math.round(LOCKOUT_MS / 1000) + " seconds."); } catch { /* */ }
+                    try { body.sendMessage("Time's up, so you have to leave the base. You can't come back for " + Math.round(LOCKOUT_MS / 1000) + " seconds."); } catch { /* */ }
                 }
             } else if (own && !inside) {
                 const rec = occupy.get(occKey(site, body));
@@ -3361,7 +3361,7 @@ function tickVaultPinch(t) {
         const margin = st.r - d;
         if (margin > 0 && margin < st.max * 0.18) {
             lastVaultPinchAt = t;
-            toast("A vault's about to go under the storm. Bank while you still can.", 5000);
+            toast("A vault is about to get stuck in the storm, bank while you can!", 5000);
             return;
         }
     }
@@ -3538,8 +3538,8 @@ function startRaid(first) {
         }
     }
     const twist = mod ? (" Twist: " + mod.name + ".") : "";
-    broadcast({ toast: (first ? "Raid's live. Grab gems and bank them before the storm gets you." : "New raid. The wall is growing back.") + twist });
-    toast((first ? "The raid has started!" : "New raid.") + twist, 7000);
+    broadcast({ toast: (first ? "The raid is live! Grab gems and bank them before the storm reaches you." : "A new raid has started, and the rock is growing back.") + twist });
+    toast((first ? "The raid has started!" : "A new raid has started.") + twist, 7000);
 }
 
 // Everyone goes down at once at the raid end; nothing drops, it is not a kill.
@@ -3673,7 +3673,7 @@ function endRaid() {
     try {
         const names = top.slice(0, 3).map((r, i) => "#" + (i + 1) + " " + r.name).join(", ");
         const champ = raidResults.champ ? raidResults.champ.name + " is the Core Champion! " : "";
-        global.gameManager.socketManager.broadcast(champ + "Raid over. Top: " + (names || "no scores") + ". New raid starting.");
+        global.gameManager.socketManager.broadcast(champ + "The raid is over! Top players: " + (names || "nobody scored") + ". A new raid is starting.");
     } catch { /* */ }
     // time stops: every tank and every shot holds where it is. godmode, not
     // invuln: invuln makes a tank blink on every screen
@@ -3681,7 +3681,7 @@ function endRaid() {
         try { setFrozen(body, true); body.invuln = false; body.godmode = true; } catch { /* */ }
     }
     freezeShots();
-    broadcast({ toast: "Raid over. The next raid starts in " + Math.round((RAID_END_BEAT_MS + RAID_END_WAIT_MS) / 1000) + " seconds." });
+    broadcast({ toast: "The raid is over. The next one starts in " + Math.round((RAID_END_BEAT_MS + RAID_END_WAIT_MS) / 1000) + " seconds." });
     raidEnding = true;
     const winner = top[0] ? top[0].name || "Unnamed" : "";
     for (const client of connectedClients()) {
@@ -3708,7 +3708,7 @@ function endRaid() {
             for (const client of connectedClients()) {
                 let cut = 0;
                 try { cut = bank.newRaid(client); } catch (e) { guardLog('bank new raid', e); client.gemBanked = 0; }
-                if (cut > 0) { try { client.talk('m', 8000, "Your bank carries up to " + bank.cap().toLocaleString('en-US') + " gems into a new raid. The other " + cut.toLocaleString('en-US') + " are gone."); } catch { /* */ } }
+                if (cut > 0) { try { client.talk('m', 8000, "You can carry up to " + bank.cap().toLocaleString('en-US') + " banked gems into a new raid, so the other " + cut.toLocaleString('en-US') + " are gone."); } catch { /* */ } }
                 client._milestoneIdx = 0;
                 client.gemDeposited = 0;
             }
@@ -3840,8 +3840,8 @@ function beginStaging(ms, opts = {}) {
     stagingUntil = now() + ms;
     stageGoAt = 0;
     guard('stage lobby', () => carveStageLobby());
-    downEveryone(ms > 0 ? "Raid reset! Everyone starts fresh. Wait in the lobby for the start."
-        : "Raid reset! Everyone starts fresh.");
+    downEveryone(ms > 0 ? "The raid was reset, so everyone starts fresh. Wait in the lobby until it begins."
+        : "The raid was reset, so everyone starts fresh.");
     stageWipeAt = now() + STAGE_DOWN_MS;
     _combAt = 0;   // a fresh list: a tank that joined this tick is caught too
     for (const b of combatants()) holdForStaging(b);
@@ -3865,7 +3865,7 @@ function tickStaging(t) {
     const say = left <= 10 ? left : Math.ceil(left / 60) * 60;
     if (say !== stagingSaid && (left <= 10 || left % 60 === 0 || stagingSaid < 0)) {
         stagingSaid = say;
-        const txt = left <= 0 ? "" : left <= 10 ? "The raid starts in " + left + "..."
+        const txt = left <= 0 ? "" : left <= 10 ? "The raid starts in " + left + (left === 1 ? " second." : " seconds.")
             : "The raid starts in " + Math.ceil(left / 60) + " minute" + (Math.ceil(left / 60) === 1 ? "" : "s") + ". Nobody can get hurt until then.";
         if (txt) setToastAndSay(txt, 6000);
     }
@@ -4084,7 +4084,7 @@ function growRoom(body, hold) {
 // Tier 5 just opened for this life (terrain/tier5.js): a gold card for a player
 function onTier5(body) {
     if (body.socket) {
-        guard('t5 card', () => body.socket.talk('KC', 'tier5', 'Tier 5 unlocked!', 0, tier5.bodyTier(body) === 4 ? 'Pick a Tier 5 tank from your upgrades.' : 'Yours for this life. Each new life grows to 2x again.'));
+        guard('t5 card', () => body.socket.talk('KC', 'tier5', 'Tier 5 unlocked!', 0, tier5.bodyTier(body) === 4 ? 'Pick a Tier 5 tank from your upgrades.' : 'You keep it for this life. In a new life you need to grow to 2x again.'));
         return;
     }
     if (body.isBot) guard('t5 bot', () => botTanks.tier5Up(body, global.gameManager && global.gameManager.gameHandler));
@@ -4093,8 +4093,8 @@ function onTier5(body) {
 function onGrown(body, stage, idx) {
     if (!body.socket) return;
     guard('ach grow', () => achHooks.onGrow(body, stage));
-    const sub = stage >= growth.RESPAWN_CAP && stage < 2.3 ? "A respawn brings you back at a quarter of your score's size, " + fmtGrow(growth.RESPAWN_CAP) + " at most."
-        : "Harder hits, more health, a wider view, a little slower.";
+    const sub = stage >= growth.RESPAWN_CAP && stage < 2.3 ? "When you respawn, you come back at a size based on a quarter of your score, up to " + fmtGrow(growth.RESPAWN_CAP) + "."
+        : "You hit harder and have more health and a wider view, but you're a little slower.";
     try { body.socket.talk('KC', "grown", "You grew to " + fmtGrow(stage), 0, sub); } catch { /* */ }
 }
 
@@ -4183,7 +4183,7 @@ function tick() {
                 if (!c._fpLockWait) continue;
                 c._fpLockWait = false;
                 const b = c.player && c.player.body;
-                if (!b || b.isDead?.()) { try { c.talk('m', 5000, "The new circle is open. Drop back in."); } catch { /* */ } }
+                if (!b || b.isDead?.()) { try { c.talk('m', 5000, "The new circle is open, so you can drop back in."); } catch { /* */ } }
             }
         }
     }

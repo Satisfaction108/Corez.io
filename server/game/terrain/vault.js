@@ -184,8 +184,8 @@ function campTick(body, pad, now) {
         const carried = body.carriedGems | 0;
         try {
             body.sendMessage(carried >= MIN_DEPOSIT
-                ? "Bank your gems or move on. The vault frees up in " + Math.round(CAMP_WARN_MS / 1000) + " seconds."
-                : "Vaults are for banking. Move on in " + Math.round(CAMP_WARN_MS / 1000) + " seconds.");
+                ? "Bank your gems or move on. You'll be moved off the vault in " + Math.round(CAMP_WARN_MS / 1000) + " seconds."
+                : "Vaults are for banking, so you'll be moved off this one in " + Math.round(CAMP_WARN_MS / 1000) + " seconds.");
         } catch { /* */ }
     }
     return false;
@@ -246,7 +246,7 @@ function depositFor(body, amount) {
             const t = Date.now();
             if (t - (body._vaultBusyAt || 0) > 3000) {
                 body._vaultBusyAt = t;
-                try { body.sendMessage("Someone's already using this vault. One at a time."); } catch { /* */ }
+                try { body.sendMessage("Someone else is already using this vault, so wait your turn."); } catch { /* */ }
             }
             return false;
         }
@@ -343,7 +343,7 @@ function tick(actors, dtMs) {
                 if (body === keep) continue;
                 cancelDeposit(body, !!body.socket);
                 if (!body._vaultPush || body._vaultPush.pad !== v) {
-                    ejectFromPad(body, v, body.socket ? "Someone's already in this vault. One at a time." : "");
+                    ejectFromPad(body, v, body.socket ? "Someone else is already in this vault, so wait your turn." : "");
                 } else {
                     pushOut(body, v, 9, now);
                 }
@@ -504,7 +504,7 @@ function tick(actors, dtMs) {
             setBanked(body, Math.round(banked));
             gems.updateSatchel(body);
             if (Config.dig_royale) { try { dustHooks().onBankDone(body); } catch { /* */ } }
-            if (Config.dig_royale && padDone) ejectFromPad(body, padDone, "Cashed out. Make room for the next miner.", CASHED_LOCK_MS);
+            if (Config.dig_royale && padDone) ejectFromPad(body, padDone, "You cashed out! Make room for the next miner.", CASHED_LOCK_MS);
         }
     }
 }

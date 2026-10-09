@@ -574,7 +574,7 @@ function kitKeys() {
 }
 function content(t) {
     const base = { eyebrow: "First raid", pips: pips() };
-    if (st.flash) return { ...base, title: "Nice", text: "Next one.", done: true };
+    if (st.flash) return { ...base, title: "Nice!", text: "On to the next one.", done: true };
     const g = global.gems || {};
     const touch = !!global.mobile;
     switch (st.step) {
@@ -583,16 +583,16 @@ function content(t) {
                 next: "Play the tutorial", alt: "Maybe later" };
         case "move":
             return { ...base, title: "Drive and shoot",
-                text: touch ? "Drive with your left thumb, shoot with the right." : "Drive with " + kbd("KEY_UP", "W") + kbd("KEY_LEFT", "A") + kbd("KEY_DOWN", "S") + kbd("KEY_RIGHT", "D") + " and click to shoot.",
+                text: touch ? "Drive with your left thumb and shoot with your right." : "Drive with " + kbd("KEY_UP", "W") + kbd("KEY_LEFT", "A") + kbd("KEY_DOWN", "S") + kbd("KEY_RIGHT", "D") + " and click to shoot.",
                 bar: { frac: (Math.min(1, st.moved / MOVE_GOAL) + (st.fired ? 1 : 0)) / 2,
                     label: (st.moved >= MOVE_GOAL ? "Drove" : "Drive") + "  \u00b7  " + (st.fired ? "Fired" : "Fire") } };
         case "mine": {
             const goal = mineGoal(), c = (g.carried | 0);
             const ram = gunless();
-            let text = st.rocks.length ? (ram ? "No guns, so ram the circled rocks. Then drive over the gems." : "Shoot the circled rocks, then drive over the gems.")
+            let text = st.rocks.length ? (ram ? "Your tank has no guns, so ram the circled rocks, then drive over the gems." : "Shoot the circled rocks, then drive over the gems.")
                 : st.oreFar ? "Follow the <b>ORE</b> arrow."
                 : "Colored rocks have gems in them.";
-            if (st.dropped) text = "rip, you dropped your gems. Mine some more." +
+            if (st.dropped) text = "You dropped your gems when you died. Mine some more and try again." +
                 (!st.rocks.length && st.oreFar ? " Follow the <b>ORE</b> arrow." : "");
             return { ...base, title: ram ? "Ram some rocks" : "Shoot some rocks", text,
                 bar: { frac: c / goal, label: "Gems  " + fmtNum(Math.min(c, goal)) + " / " + fmtNum(goal) } };
@@ -601,11 +601,11 @@ function content(t) {
             const v = global.vault || {};
             const tg = st.target;
             let text = "Follow the <b>VAULT</b> arrow and bank your gems.";
-            if (v.onPad && v.total > 0) text = "Banking, stay on the pad.";
+            if (v.onPad && v.total > 0) text = "You're banking now, so stay on the pad.";
             else if (v.onPad && (g.carried | 0) >= VAULT_MIN) text = (touch ? "Tap <b>Bank all</b>" : "Press " + kbd("KEY_BANK_ALL", "B") + " or hit <b>Bank all</b>") + ".";
             else if ((g.carried | 0) < VAULT_MIN) {
                 // a death on this step keeps the step: mine some, come back
-                text = st.dropped ? "rip, you dropped your gems. Mine some more."
+                text = st.dropped ? "You dropped your gems when you died. Mine some more and try again."
                     : "You need " + VAULT_MIN + " gems to bank. Mine a bit more.";
                 if (!st.rocks.length && st.oreFar) text += " Follow the <b>ORE</b> arrow.";
                 return { ...base, title: "Mine, then bank", text };
@@ -618,7 +618,7 @@ function content(t) {
             const tiles = (gui.upgrades || []).length > 0, stat = canStat();
             let text;
             if (touch) text = tiles && stat ? "Tap <b>New tank!</b> or <b>Stats</b> on the left." : tiles ? "Tap <b>New tank!</b> on the left and pick one." : "Tap <b>Stats</b> on the left, then a <b>+</b>.";
-            else text = tiles && stat ? "Pick a tank from the tiles, top left, or click a stat bar." : tiles ? "Pick a new tank from the tiles, top left." : "Click a stat bar, or press its number key.";
+            else text = tiles && stat ? "Pick a tank from the tiles at the top left, or click a stat bar." : tiles ? "Pick a new tank from the tiles at the top left." : "Click a stat bar, or press its number key.";
             return { ...base, title: "Upgrade your tank", text };
         }
         case "ability": {
@@ -630,7 +630,7 @@ function content(t) {
                 const aimed = !!(it && it.place);
                 return { ...base, title: "Use your ability",
                     text: touch
-                        ? (aimed ? "Drag off the ability button by your right thumb to aim your " + name + ", lift to place it." : "Tap the ability button by your right thumb to fire your " + name + ".")
+                        ? (aimed ? "Drag off the ability button by your right thumb to aim your " + name + ", then lift your finger to place it." : "Tap the ability button by your right thumb to fire your " + name + ".")
                         : aimed ? "Press " + kbd("KEY_ABILITY", "Q") + " to aim your " + name + ", then left click to place it." : "Press " + kbd("KEY_ABILITY", "Q") + " to fire your " + name + ". It aims at your mouse." };
             }
             if (ownsKit()) {
@@ -641,7 +641,7 @@ function content(t) {
             const banked = g.banked | 0;
             let text = "Follow the <b>SHOP</b> arrow.";
             if (sh.onPad) text = "Pick an item, then " + (touch ? "tap" : "hit") + " <b>Buy</b>.";
-            else if (price && banked < price) text = "The cheapest ability is " + fmtNum(price) + " banked gems. Bank more first.";
+            else if (price && banked < price) text = "The cheapest ability costs " + fmtNum(price) + " banked gems, so bank some more first.";
             else if (!tg) text = "Find a shop on the minimap. " + mapOpens();
             else if (tg.on) text = "Drive onto the shop pad.";
             return { ...base, title: "Buy an ability", text };
@@ -649,7 +649,7 @@ function content(t) {
         case "final":
             return { ...base, title: "You're set",
                 // contracts only show from the third raid (newcomer.js)
-                text: global.nxKnown && (global.nxStage | 0) < 2 ? "That's the basics. Keep digging and banking." : "Contracts show up top left now, they pay gems.",
+                text: global.nxKnown && (global.nxStage | 0) < 2 ? "That's the basics! Keep mining and banking." : "Contracts now show up at the top left, and they pay gems.",
                 next: "Let's go", done: true };
     }
     return null;

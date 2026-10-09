@@ -909,7 +909,7 @@ import * as upGrid from './upgradeGridLogic.js';
         resizeEvent();
         if (down && !autoResTold) {
             autoResTold = true;
-            try { global.createMessage("Lowered the resolution so it runs smoother.", 4000); } catch (e) { }
+            try { global.createMessage("The resolution was lowered so the game runs smoother.", 4000); } catch (e) { }
         }
     }
     function autoResTick(now) {
@@ -1254,7 +1254,7 @@ import * as upGrid from './upgradeGridLogic.js';
                 author: (typeof author === 'string' && author) || '',
                 content,
             }
-        } catch (e) { logError && alert("Couldn't read your theme. It's broken or too old."); }
+        } catch (e) { logError && alert("Couldn't read your theme. It might be broken or too old."); }
 
         return {
             name: 'Unknown Theme',
@@ -6978,7 +6978,7 @@ import * as upGrid from './upgradeGridLogic.js';
             c.restore();
         }
     }
-    const VAULT_CROWN_LINE = "You have a crown. You'll bank, then get pushed off.";
+    const VAULT_CROWN_LINE = "You have a crown, so you'll bank and then get pushed off the vault.";
     // Playtest 9: a player parked on a vault with 8,098 gems for a minute and
     // never saw the panel. Over it, a big gold call: "Press B to bank all N"
     // (touch: "Tap Bank all to bank N"). Bottom edge at `bottom`, centred on cx.
@@ -8400,8 +8400,8 @@ import * as upGrid from './upgradeGridLogic.js';
         };
         const st = r.storm || {};
         // (the Crown Contest keeps the last storm open: no lock there)
-        if (r.lock) push(hudNote(0, "lock", st.fin ? "Last " + Math.max(0, r.lockLeft | 0) + "s of the raid. Nobody respawns now."
-            : "Storm shuts in " + Math.max(0, r.lockLeft | 0) + "s. No respawns till it opens.", HUD.lilac));
+        if (r.lock) push(hudNote(0, "lock", st.fin ? "Last " + Math.max(0, r.lockLeft | 0) + "s of the raid, so nobody respawns now."
+            : "The storm shuts in " + Math.max(0, r.lockLeft | 0) + "s, and nobody respawns until it opens.", HUD.lilac));
         else if (r.toast && newcomer.toastAllowed(r.toast)) push(hudNote(NOTE_CRIT.test(r.toast) ? 0 : 2, "toast", r.toast, color.guiwhite));
         // the pad timers, up top where nothing covers them (round 12)
         if (!global.died && r.occupy > 0) push(hudNote(1, "padtime", "You can stay " + r.occupy + "s longer", color.gold));
@@ -8464,7 +8464,7 @@ import * as upGrid from './upgradeGridLogic.js';
                 push(hudNote(cn.hot ? 1 : 2, "carry", cn.text + ". " + cn.sub, cn.hot ? "#ffb347" : HUD.gold));
             }
             const myStreak = you.streak | 0;
-            if (myStreak >= 4 && nxShows("streaks")) push(hudNote(3, "streak", myStreak + " kill streak, you're on everyone's map", "#ffb347"));
+            if (myStreak >= 4 && nxShows("streaks")) push(hudNote(3, "streak", myStreak + " kill streak! You're on everyone's map now", "#ffb347"));
             // Raid Night coming up (shared/events.js): a small chip in the last 24 h
             const evChip = global.tutorialMode || !nxShows("raidNight") ? "" : eventHudTick().chip;
             if (evChip) push(hudNote(3, "event", evChip, HUD.gold));
@@ -8537,7 +8537,7 @@ import * as upGrid from './upgradeGridLogic.js';
                 const x0 = cx - (lw2 + 8 + vw) / 2;
                 hudTitle("RAID STARTS IN", x0, sy0 + 22, 12, HUD.text2, "left");
                 hudTitle(fmtRaidClock(secs), x0 + lw2 + 8, sy0 + 22, 24, secs <= 10 ? HUD.gold : HUD.head, "left");
-                drawText("Raid hasn't started yet. Hang out for a bit.", cx, sy0 + 48, 12, HUD.lilac, "center", true);
+                drawText("The raid hasn't started yet, so hang out for a bit.", cx, sy0 + 48, 12, HUD.lilac, "center", true);
                 y = sy0 + SH + HUD.lip + 8;
                 return;
             }
@@ -9531,7 +9531,7 @@ import * as upGrid from './upgradeGridLogic.js';
             const dist = Math.hypot(tp.x - global.player.renderx, tp.y - global.player.rendery);
             foot = global.died ? "Still fighting" : dist < 700 ? "Right by you" : fmtDist(dist) + " away";
         } else if (m.away) foot = "Their spot stays open 2 min";
-        else foot = m.bot ? "Drops back in beside you" : "Stay alive till they're back";
+        else foot = m.bot ? "Drops back in beside you" : "Stay alive until they're back";
         drawText(foot, x + 12, y + 47, 10, HUD.text2, "left", true);
         if (m.alive) drawText(Math.round(hp * 100) + "%", x + W - 12, y + 47, 10, HUD.text2, "right", true);
     }
@@ -9964,7 +9964,7 @@ import * as upGrid from './upgradeGridLogic.js';
         const gearIds = (st.gear || []).filter(id => byId(id));
         hudTitle("Gear", x + pad + 1, gearY + gearH / 2, 10, HUD.text2, "left", g);
         if (!gearIds.length) {
-            drawText("none yet", x + pad + 34, gearY + gearH / 2, 9, HUD.text2, "left", true, g);
+            drawText("None yet", x + pad + 34, gearY + gearH / 2, 9, HUD.text2, "left", true, g);
         } else {
             const gx0 = x + pad + 32, gwAll = W - pad * 2 - 32;
             const bw = Math.min(36, (gwAll - 3 * (gearIds.length - 1)) / gearIds.length);
@@ -10027,7 +10027,7 @@ import * as upGrid from './upgradeGridLogic.js';
                 c.setLineDash([3, 3]);
                 c.lineWidth = 1; c.strokeStyle = "#ffffff"; c.stroke();
                 c.restore();
-                drawText("empty", sx + slotW / 2, slotY + slotH - 8, 8, HUD.text2, "center", true, g);
+                drawText("Empty", sx + slotW / 2, slotY + slotH - 8, 8, HUD.text2, "center", true, g);
                 global.clickables.kit.place(i, sx * cr, slotY * cr, slotW * cr, slotH * cr);
                 if (hov === i) queueTip("Kit slot " + (i + 1) + "  ·  " + keys[i], "Holds one kind of item. Get them at shops or from chests.", sx + slotW / 2, y);
             }
@@ -10618,12 +10618,12 @@ import * as upGrid from './upgradeGridLogic.js';
             let ly = dy + 60;
             for (const ln of lines.slice(0, 5)) { drawText(ln, dx + 14, ly, 11.5, HUD.text, "left", true, g); ly += 16; }
             if (sel.cat === "ability") {
-                for (const ln of wrapLines("Yours for the whole raid, even after you die. Swap them here with Equip.", 10.5, detailW - 28)) {
+                for (const ln of wrapLines("You keep it for the whole raid, even after you die. You can swap abilities here with Equip.", 10.5, detailW - 28)) {
                     drawText(ln, dx + 14, ly + 2, 10.5, HUD.text2, "left", true, g); ly += 14;
                 }
             }
             if (sel.cat === "kit" && !status.buy && status.text === "KIT FULL") {
-                for (const ln of wrapLines("Your kit only holds 3 kinds. Use one up first.", 10.5, detailW - 28)) {
+                for (const ln of wrapLines("Your kit only holds 3 kinds of items, so use one up first.", 10.5, detailW - 28)) {
                     drawText(ln, dx + 14, ly + 2, 10.5, "#ff9a8c", "left", true, g); ly += 14;
                 }
             }
@@ -11287,7 +11287,7 @@ import * as upGrid from './upgradeGridLogic.js';
     function drawSpawnShield(c, x, y, R, invuln) {
         const on = !!invuln;
         if (shieldOnPrev && !on && (vaultShieldNow() || (global.spawnedAt && performance.now() - global.spawnedAt < 120000))) {
-            try { global.createMessage(vaultShieldNow() ? "Vault shield's gone. You can be hit now." : "Shield's gone. You can be hit now.", 3000); } catch { /* */ }
+            try { global.createMessage(vaultShieldNow() ? "Your vault shield is gone, so you can be hit now." : "Your shield is gone, so you can be hit now.", 3000); } catch { /* */ }
         }
         shieldOnPrev = on;
         if (!on) return;
@@ -11314,7 +11314,7 @@ import * as upGrid from './upgradeGridLogic.js';
         if (global.died || !global.shieldSeen || !shieldOnPrev || raidFinale.active()) return null;
         if (vaultShieldNow()) {
             const vl = Math.max(1, Math.ceil((VAULT_SHIELD_MS - (performance.now() - global.vaultShieldAt)) / 1000));
-            return hudNote(1, "shield", "Vault shield: safe for " + vl + "s, shooting drops it", "#ffe9a8");
+            return hudNote(1, "shield", "Vault shield: safe for " + vl + "s, but shooting drops it", "#ffe9a8");
         }
         const since = performance.now() - (global.spawnedAt || 0);
         // a few seconds to read it, then the first-raid card (which says to
@@ -11325,7 +11325,7 @@ import * as upGrid from './upgradeGridLogic.js';
         const wu = global.shop && global.shop.state && global.shop.state.gearUntil && global.shop.state.gearUntil.wind;
         const windLeft = wu === true || +wu > Date.now() ? Math.ceil((WIND_SHIELD_MS - since) / 1000) : 0;
         const line = windLeft > 0
-            ? (left > 0 ? "Spawn shield: safe for " + left + "s, then shooting drops it" : "Spawn shield: holds while you move for " + windLeft + "s, shooting drops it")
+            ? (left > 0 ? "Spawn shield: safe for " + left + "s, then shooting drops it" : "Spawn shield: holds while you move for " + windLeft + "s, but shooting drops it")
             : left > 0
             ? "Spawn shield: safe for " + left + "s, then moving or shooting drops it"
             : "Spawn shield: moving or shooting drops it";
@@ -11348,7 +11348,7 @@ import * as upGrid from './upgradeGridLogic.js';
         const PH = 64 + rows.length * 22;
         const px = cx - PW / 2, py = cy - PH / 2;
         hudPanel(c, px, py, PW, PH, { fill: HUD.solid, r: HUD.rBig });
-        hudTitle(r.duos ? "Raid over. Top 10 teams paid." : "Raid over. Top 10 paid.", cx, py + 24, 19, HUD.gold, "center");
+        hudTitle(r.duos ? "Raid over! The top 10 teams get paid." : "Raid over! The top 10 get paid.", cx, py + 24, 19, HUD.gold, "center");
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             drawText("#" + (i + 1) + " " + (row.name || "Unnamed") + "  " + util.formatLargeNumber(row.score | 0),
@@ -13172,7 +13172,7 @@ import * as upGrid from './upgradeGridLogic.js';
                 hudTitle(goldOpts ? "Pick your Tier 5 tank" : "Pick your next tank", tp.x + 16, tp.y + 22, 17, goldOpts ? HUD.gold : HUD.head, "left");
                 // just picked: this is the next tier, straight away
                 const fresh = performance.now() - (touchTiles.nextAt || -1e9) < 3000;
-                drawText(fresh ? "Nice, here's the next tier" : "Each one fights differently, tap one", tp.x + 16, tp.y + 44, 11.5, fresh ? HUD.gold : HUD.text2, "left", true);
+                drawText(fresh ? "Nice! Here's the next tier" : "Each one fights differently, so pick one", tp.x + 16, tp.y + 44, 11.5, fresh ? HUD.gold : HUD.text2, "left", true);
                 const cbs = 30;
                 hudButton(ctx[2], tp.x + tp.w - 10 - cbs / 2, tp.y + 7, cbs, cbs, "X", { fill: HUD.danger, lipCol: HUD.dangerDk, textCol: "#fff", size: 15 });
                 const k = touchUnits();
@@ -13688,7 +13688,7 @@ import * as upGrid from './upgradeGridLogic.js';
         }
         // the prompt
         const item = (global.shop.catalog || []).find(it => it.id === p.id);
-        const line = !s ? "Tap where to deploy" : s.out ? "Too far, it lands on the ring" : "Lift your finger to deploy";
+        const line = !s ? "Tap where to deploy" : s.out ? "Too far, so it will land on the ring" : "Lift your finger to deploy";
         const sub = (item ? item.name : "Ability") + "  \u00b7  range " + p.max;
         const cbs = 30, pw = Math.max(hudTitleW(line, 19), hudTextW(sub, 11.5)) + 34 + cbs + 10, ph = 54;
         // low in the middle, above the carried / banked row (where the
@@ -14550,7 +14550,7 @@ import * as upGrid from './upgradeGridLogic.js';
             const FOOT = Math.round(PLAY_CSS_H * cssK);
             const block = deathText.layoutText({
                 pts: dln.head + " (" + dln.lost + ")", extras,
-                sub: dln.sub || "Banked gems are safe. Carried ones only count once you bank.",
+                sub: dln.sub || "Banked gems are safe, and carried gems only count once you bank them.",
                 perkLine, perkIcons, w: colW, measure: hudTextW,
             });
             const tilesH = 3 * STEP - (STEP - TILE);
@@ -14690,8 +14690,8 @@ import * as upGrid from './upgradeGridLogic.js';
             const nm = shortName(rv.name || "Unnamed", 18);
             let ns = 24; while (ns > 14 && hudTitleW(nm, ns) > colW - 84) ns -= 1;
             hudTitle(nm, rx + 64, wy + 2, ns, "#ff9a8c", "left", A);
-            const sub = rv.tough ? "Way stronger than you. Get bigger, then get them back."
-                : rv.alive ? "Marked for you. +" + fmtNum(rv.bonus || 200) + " gems if you get them." : "Marked for you once they're back.";
+            const sub = rv.tough ? "They're much stronger than you. Get bigger first, then get them back."
+                : rv.alive ? "They're marked for you. Get them for +" + fmtNum(rv.bonus || 200) + " gems." : "They'll be marked for you once they're back.";
             const f = fitLine(sub, 12, 9.5, colW - 84);
             drawText(f.txt, rx + 64, wy + 25, f.qs, HUD.text, "left", true, A);
         } else {
@@ -14762,7 +14762,7 @@ import * as upGrid from './upgradeGridLogic.js';
         if (locked) {
             const left = Math.max(0, global.royale.lockLeft | 0);
             // the raid's last lock: nobody comes back, so the button says so and takes you to
-            if (global.royale.storm && global.royale.storm.fin) return { ready: false, ended: true, label: "Raid's ending, no more respawns" };
+            if (global.royale.storm && global.royale.storm.fin) return { ready: false, ended: true, label: "No more respawns this raid" };
             // short enough for the button (round 7: the old line spilled off both edges)
             return { ready: false, queue: true, queued: q, label: q ? "Storm resetting: you drop in (" + left + "s)" : "Storm resetting (" + left + "s)" };
         }
@@ -14838,9 +14838,9 @@ import * as upGrid from './upgradeGridLogic.js';
         const homeCx = x + barW - 6 - bw / 2;
         const playCx = x + barW - 12 - bw * 1.5;
         const finalLock = locked && !!(global.royale.storm && global.royale.storm.fin);
-        const label = finalLock ? "Raid's ending, no more respawns"
+        const label = finalLock ? "No more respawns this raid"
             : locked
-            ? ("Storm shuts " + lockLeft + "s" + (place > 0 ? ("  #" + place) : "") + (global.respawnQueued ? "  ·  respawning when it settles" : "  ·  respawn after"))
+            ? ("Storm shuts in " + lockLeft + "s" + (place > 0 ? ("  #" + place) : "") + (global.respawnQueued ? "  ·  Respawning when it settles" : "  ·  Respawn after"))
             : queued ? "Dropping in..."
             : ("Spectating" + (place > 0 ? ("  #" + place) : "") +
                (global.died ? (waitMs > 0 ? ("  ·  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  ·  Press Play to rejoin") : ""));
@@ -15573,7 +15573,7 @@ import * as upGrid from './upgradeGridLogic.js';
         if (r.ending) {
             const n = global.raidNextLeft(now);
             return { mode: "ending", title: "Raid over", lbl: n > 0.5 ? "Next raid starts in" : "", n: n > 0.5 ? joinClock(n) : "",
-                line: n > 0.5 ? "Raid's over. You'll drop in when the next one starts." : "The next raid is starting…",
+                line: n > 0.5 ? "The raid is over. You'll drop in when the next one starts." : "The next raid is starting…",
                 back: true, dots: true };
         }
         if (r.lock) {
@@ -15583,10 +15583,10 @@ import * as upGrid from './upgradeGridLogic.js';
                 // the raid ends before the storm lock lifts
                 const n = raidN + 17;
                 return { mode: "late", title: "Final storm", lbl: "Next raid starts in", n: joinClock(n),
-                    line: "Raid's ending so nobody can spawn. You'll be in the next one.", back: true, dots: true };
+                    line: "The raid is ending, so nobody can spawn. You'll be in the next one.", back: true, dots: true };
             }
             return { mode: "lock", title: "Storm closing", lbl: lockN > 0.5 ? "You spawn in" : "", n: lockN > 0.5 ? joinClock(lockN) : "",
-                line: lockN > 0.5 ? "Nobody spawns while the storm shuts. You'll drop in when it opens." : "Spawning you now…",
+                line: lockN > 0.5 ? "Nobody can spawn while the storm is closing. You'll drop in when it opens." : "Spawning you now…",
                 back: true, dots: true };
         }
         return null;
@@ -15600,12 +15600,12 @@ import * as upGrid from './upgradeGridLogic.js';
             const msg = String(global.message || "");
             let title = "Lost connection";
             if (global.noAutoReconnect) {
-                title = /another tab|somewhere else|another device/i.test(msg) ? "Open somewhere else"
+                title = /another tab|somewhere else|another device/i.test(msg) ? "Opened somewhere else"
                     : /banned/i.test(msg) ? "You're banned"
                     : /signed out|log in/i.test(msg) ? "Signed out"
                     : "Disconnected";
             }
-            return { mode: "down", title, line: msg || "Connection closed. Hit Reconnect to get back in.",
+            return { mode: "down", title, line: msg || "Connection closed. Press Reconnect to get back in.",
                 back: true, re: true, dots: false, see: !!global.gameStart };
         }
         if (ra) {
@@ -15618,7 +15618,7 @@ import * as upGrid from './upgradeGridLogic.js';
             if (df.phase === "find") {
                 const between = r.at > 0 && r.ending;
                 return { mode: "fill", title: "Finding a teammate…", lbl: "Searching", n: joinClock(Math.floor((df.waited + age) / 1000)),
-                    line: between ? "Raid's almost over. You'll team up for the next one."
+                    line: between ? "The raid is almost over, so you'll team up for the next one."
                         : "You'll team up with the next solo player who joins.",
                     back: true, backLbl: "Cancel", solo: true, dots: true };
             }
@@ -15627,7 +15627,7 @@ import * as upGrid from './upgradeGridLogic.js';
             if (df.phase === "paired" && age < 6000)
                 return { mode: "paired", title: "Teamed up!", line: "Dropping in with " + (df.name || "your teammate") + "…", dots: true };
             if (df.phase === "solo" && age < 6000)
-                return { mode: "fillsolo", title: "Going solo", line: df.mine ? "Dropping you in solo…" : "Nobody around, dropping you in solo…", dots: true };
+                return { mode: "fillsolo", title: "Going solo", line: df.mine ? "Dropping you in solo…" : "Nobody's around, so you're dropping in solo…", dots: true };
         }
         if (global.gameConnecting && !global.gameStart) {
             // joined during the final storm or between raids: the server
@@ -15637,7 +15637,7 @@ import * as upGrid from './upgradeGridLogic.js';
             const slow = joinMode === "connect" && now - joinModeAt > 7000;
             const msg = String(global.message || "");
             return { mode: "connect", title: "Connecting…",
-                line: msg || (slow ? "Taking a while, hang on." : String(global.tips || "")),
+                line: msg || (slow ? "This is taking a while, please hang on." : String(global.tips || "")),
                 back: true, dots: true };
         }
         // in the game, not spawned yet
@@ -15650,7 +15650,7 @@ import * as upGrid from './upgradeGridLogic.js';
                 if (now - joinState._waitAt < 600) return null;
             }
             const slow = joinMode === "join" && now - joinModeAt > 8000;
-            return { mode: "join", title: "Getting you in…", line: slow ? "Taking a while, hang on." : "Finding you a spot to drop in.",
+            return { mode: "join", title: "Getting you in…", line: slow ? "This is taking a while, please hang on." : "Finding you a spot to drop in.",
                 back: true, dots: true };
         }
         joinState._waitAt = 0;
@@ -15691,15 +15691,15 @@ import * as upGrid from './upgradeGridLogic.js';
         scaleScreenRatio(ratio, true);
         clearScreen(gameDraw.mixColors(color.black, color.guiblack, 0.3), 0.25, ctx[2]);
         drawText("Out of sync", global.screenWidth / 2, global.screenHeight / 2 - 10, 30, color.red, "center");
-        drawText("Your game got out of sync. Hang on, it fixes itself.", global.screenWidth / 2, global.screenHeight / 2 + 40, 15, color.guiwhite, "center");
-        drawText("Paused till it catches up.", global.screenWidth / 2, global.screenHeight / 2 + 90, 15, color.guiwhite, "center");
+        drawText("Your game got out of sync. Hang on while it fixes itself.", global.screenWidth / 2, global.screenHeight / 2 + 40, 15, color.guiwhite, "center");
+        drawText("The game is paused until it catches up.", global.screenWidth / 2, global.screenHeight / 2 + 90, 15, color.guiwhite, "center");
     };
 
     const drawErrorScreen = () => {
         let ratio = util.getScreenRatio();
         scaleScreenRatio(ratio, true);
         clearScreen(gameDraw.mixColors(color.black, color.guiblack, 0.3), 0.25, ctx[2]);
-        drawText("Something broke", global.screenWidth / 2, global.screenHeight / 2, 30, color.red, "center");
+        drawText("Something went wrong", global.screenWidth / 2, global.screenHeight / 2, 30, color.red, "center");
         drawText("If something on screen did it, try moving away from it.", global.screenWidth / 2, global.screenHeight / 2 + 30, 15, color.guiwhite, "center");
         drawText("Check the browser console (F12) and send me what it says.", global.screenWidth / 2, global.screenHeight / 2 + 60, 15, color.guiwhite, "center");
     }

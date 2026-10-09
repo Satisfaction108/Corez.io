@@ -47,7 +47,7 @@ export function t5State(you) {
 // "2x", "1.5x"
 function fmtX(x) { return (Math.round(x * 100) / 100).toString() + "x"; }
 export function ringTitle(st) { return st ? "Grow to " + fmtX(st.at) + " this life to unlock Tier 5" : ""; }
-export function ringSub(st) { return st ? "You're " + fmtX(Math.floor(st.growth * 10) / 10) + " now. Score grows you." : ""; }
+export function ringSub(st) { return st ? "You're at " + fmtX(Math.floor(st.growth * 10) / 10) + " now, and your score makes you grow." : ""; }
 
 // ── tile layout (same numbers as app.js drawUpgradeTile) ──
 const TILE = { lip: 4, band: 0.25, tank: 0.6, tankAreaFill: 0.86 };

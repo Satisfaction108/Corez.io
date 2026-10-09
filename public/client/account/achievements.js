@@ -69,7 +69,7 @@ export const ACHIEVEMENTS = [
     { id: 'podium', name: 'Podium', desc: 'Finish a raid in the top 3', color: '#d8dfea', icon: 'podium' },
     { id: 'champion', name: 'Champion', desc: 'Win a raid', color: '#ffb23d', icon: 'cup' },
     { id: 'boss_slayer', name: 'Boss Slayer', desc: 'Land the final hit on a boss', color: '#c3a6ff', icon: 'sword' },
-    { id: 'survivor', name: 'Survivor', desc: 'Stay alive for 15 minutes', color: '#6ee0d6', icon: 'shield' },
+    { id: 'survivor', name: 'Survivor', desc: 'Stay alive for 15 minutes in one life', color: '#6ee0d6', icon: 'shield' },
     { id: 'streaker', name: 'Streaker', desc: 'Get a 5 knockout streak', color: '#ff9f43', icon: 'fire' },
     { id: 'hoarder', name: 'Hoarder', desc: 'Carry 3,000 gems at once', color: '#e0a060', icon: 'sack' },
     { id: 'emerald_eye', name: 'Emerald Eye', desc: 'Grab 25 emeralds', color: '#1fbf6b', icon: 'eye' },

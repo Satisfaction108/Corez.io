@@ -404,7 +404,7 @@ class socketManager {
                     if (stillLive) return 1;
                 }
                 if (!global.gameManager.webProperties.maxPlayers < 1 && this.clients.length > global.gameManager.webProperties.maxPlayers) return (
-                    socket.talk("message", "Server's full. Try again in a bit."),
+                    socket.talk("message", "The server is full. Please try again in a bit."),
                     socket.kick("Server full.")
                 )
                 let b = bans.find((ban) => ban.ip === socket.ip);
@@ -434,9 +434,9 @@ class socketManager {
                 if (incognitoMode && Config.allow_incognito !== false) socket.status.incognito = true;
                 if (global.gameManager.arenaClosed) {
                     if (needsRoom) {
-                      socket.talk("message", "Arena closed. Try again in a few seconds.");
+                      socket.talk("message", "The arena is closed. Please try again in a few seconds.");
                       socket.terminate("Bad spawn while arena closed.");
-                    } else socket.talk("m", 5_000, "Arena's closed.");
+                    } else socket.talk("m", 5_000, "The arena is closed.");
                     return;
                 };
 
@@ -2094,7 +2094,7 @@ class socketManager {
                 // Every plot is occupied. Spawning anyway would place them by
                 // the normal rules - inside another learner's plot.
                 socket.talk("m", Config.popup_message_duration ?? 10000,
-                    "The tutorial's full rn. Try again in a minute.");
+                    "The tutorial is full right now. Please try again in a minute.");
                 socket.kick("Tutorial full.");
                 return;
             }

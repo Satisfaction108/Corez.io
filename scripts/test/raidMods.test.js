@@ -276,7 +276,7 @@ test('kit: Demolition Day tops the kit up to three charges each life, quietly wh
     die(sock, b);
     const c = spawn(sock);
     const msgs = sock.packets.slice(n0).filter(p => p[0] === 'SHP').map(p => JSON.parse(p[1]).msg);
-    assert.ok(!msgs.some(m => /stack full|kit is full/i.test(m)), 'no "full" nag on a full kit: ' + msgs.join(' | '));
+    assert.ok(!msgs.some(m => /stack is full|stack full|kit is full/i.test(m)), 'no "full" nag on a full kit: ' + msgs.join(' | '));
     die(sock, c);
 });
 

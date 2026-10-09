@@ -480,7 +480,7 @@ class Canvas {
         const ab = global.abil || {};
         if (global.shop && global.shop.onPad) { global.createMessage("Equip abilities with the Equip button.", 2000); return; }
         if (global.vault && global.vault.onPad) { global.createMessage("Equip abilities at a shop.", 2000); return; }
-        if (!ab.eq) { global.createMessage("No ability yet. Shops sell them.", 2200); return; }
+        if (!ab.eq) { global.createMessage("You don't have an ability yet. Shops sell them.", 2200); return; }
         if (abilityFx.cdLeft() > 0) return;
         const wr = util.getRatio();
         let wx = global.player.renderx + global.target.x / wr;
@@ -1301,7 +1301,7 @@ class Canvas {
                     const anim = () => {
                         if (stop) return;
                         if (srcW !== this.cv.width || srcH !== this.cv.height) {
-                            global.createMessage("The window resized so recording stopped. Saving...", 5_000);
+                            global.createMessage("Recording stopped because the window was resized. Saving it now.", 5_000);
                             this.videoRecorderCanvas.stop();
                             if (this.videoRecorder.state === "recording") this.videoRecorder.stop();
                             return;
@@ -1336,7 +1336,7 @@ class Canvas {
                 ? new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 30, { maxBps: 6e6, onSaved: (blob, name) => touch.showClip(blob, name) })
                 : new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 60);
             this.videoRecorder.start();
-            global.createMessage(global.mobile ? "Recording. Tap the red button again to stop." : "Recording. Press the record key again to stop.", 3_000);
+            global.createMessage(global.mobile ? "Recording now. Tap the red button again to stop." : "Recording now. Press the record key again to stop.", 3_000);
         } catch (e) {
             this.videoRecorderCanvas.stop();
             this.videoRecorder = null;

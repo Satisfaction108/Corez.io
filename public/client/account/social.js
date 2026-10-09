@@ -194,26 +194,26 @@ export async function acceptRequest(p) {
     const r = await api.friendRespond(p.userId, true);
     if (!r.ok) { toast(friendError(r), { kind: 'error' }); return false; }
     apply('friend', (r.data && r.data.friend) || { userId: p.userId, username: p.username, since: Date.now(), rank: p.rank, presence: null });
-    toast('You and ' + p.username + ' are friends now', { kind: 'ok' });
+    toast('You and ' + p.username + ' are now friends!', { kind: 'ok' });
     return true;
 }
 
 const ERR = {
-    user_not_found: 'Nobody’s called that',
-    self: 'That’s you lol',
-    already_friends: 'Already friends',
-    you_blocked: 'You blocked them. Unblock first',
-    outgoing_limit: 'Too many requests out. Cancel some first',
-    friend_limit: 'Your friends list is full',
-    their_friend_limit: 'Their friends list is full',
-    not_found: 'That request is gone',
+    user_not_found: 'There’s nobody with that name.',
+    self: 'You can’t add yourself. Nice try!',
+    already_friends: 'You’re already friends.',
+    you_blocked: 'You blocked them. Unblock them first.',
+    outgoing_limit: 'You have too many requests out. Cancel some first.',
+    friend_limit: 'Your friends list is full.',
+    their_friend_limit: 'Their friends list is full.',
+    not_found: 'That request doesn’t exist anymore.',
 };
 export function friendError(r) {
     const code = r && r.data && r.data.error && r.data.error.code;
     if (code && ERR[code]) return ERR[code];
     if (r && r.status === 404) return ERR.user_not_found;
-    if (r && r.status === 429) return 'Too fast. Wait a minute';
-    return (r && r.data && r.data.error && r.data.error.message) || 'Didn’t work. Try again?';
+    if (r && r.status === 429) return 'You’re doing that too fast. Please wait a minute.';
+    return (r && r.data && r.data.error && r.data.error.message) || 'That didn’t work. Please try again.';
 }
 
 /* ── live events ────────────────────────────────────────────────────── */
@@ -257,7 +257,7 @@ function onEvent(type, d) {
         case 'friendAccepted':
             if (!d || !d.userId) break;
             apply('friend', d);
-            menuToast(d.username + ' said yes', { kind: 'ok' });
+            menuToast(d.username + ' accepted your friend request!', { kind: 'ok' });
             break;
         case 'friendRemoved':
             if (!d || !d.userId) break;
@@ -270,7 +270,7 @@ function onEvent(type, d) {
             emit('rank');
             const R = window.DWRanks;
             const tierName = R && d.tier && R.TIER_NAMES ? R.TIER_NAMES[d.tier] : null;
-            menuToast(d.tierUp && tierName ? d.username + ' hit ' + tierName : d.username + ' ranked up to ' + rankOf(rank).text, {
+            menuToast(d.tierUp && tierName ? d.username + ' reached ' + tierName + '!' : d.username + ' ranked up to ' + rankOf(rank).text + '!', {
                 actions: [{ label: 'Profile', onClick: () => hooks.openPane('profile', { u: d.userId, from: 'friends' }) }],
             });
             break;
@@ -280,7 +280,7 @@ function onEvent(type, d) {
             const it = C && d ? C.byId(d.itemId) : null;
             const who = (d && d.from && d.from.username) || 'Someone';
             hooks.refreshMe();
-            menuToast(who + ' sent you ' + (it ? it.name : 'a gift'), {
+            menuToast(who + ' sent you ' + (it ? it.name : 'a gift') + '!', {
                 kind: 'ok', duration: 8000,
                 actions: [{ label: 'Locker', onClick: () => hooks.openPane('locker') }],
             });
@@ -315,9 +315,9 @@ function onEvent(type, d) {
             const got = Array.isArray(d.granted) ? d.granted : [];
             if (got.indexOf('name_style') >= 0) {
                 const C = window.DWCosmetics, it = C && C.byId(C.INVITE_STYLE_ID);
-                menuToast((it ? it.name : 'Exclusive') + ' name style unlocked', { kind: 'ok', duration: 8000, actions: [{ label: 'Locker', onClick: () => hooks.openPane('locker') }] });
+                menuToast('You unlocked the ' + (it ? it.name : 'exclusive') + ' name style!', { kind: 'ok', duration: 8000, actions: [{ label: 'Locker', onClick: () => hooks.openPane('locker') }] });
             }
-            if (got.indexOf('custom_skin') >= 0) menuToast('5 friends! DM ZyroX on Discord for your custom skin', { kind: 'ok', duration: 10000 });
+            if (got.indexOf('custom_skin') >= 0) menuToast('You invited 5 friends! DM ZyroX on Discord to get your custom skin.', { kind: 'ok', duration: 10000 });
             hooks.onInvite(d);
             break;
         }

@@ -259,6 +259,12 @@ function consumeResetToken(token, now = Date.now()) {
 }
 
 // opts: {ip, actor:'self'|'system'|'admin:<id>'}
+function signupTimesFromIp(ip, since) {
+    const d = h();
+    if (!d || !ip) return [];
+    return d.all("SELECT at FROM audit_log WHERE action = 'signup' AND ip = ? AND at >= ? ORDER BY at", ip, since).map(r => r.at);
+}
+
 function audit(userId, action, detail, opts = {}) {
     const d = h();
     if (!d) return;
@@ -328,6 +334,7 @@ module.exports = {
     updateDiscordProfile,
     touchSeen,
     softDelete,
+    signupTimesFromIp,
     createResetToken,
     peekResetToken,
     consumeResetToken,

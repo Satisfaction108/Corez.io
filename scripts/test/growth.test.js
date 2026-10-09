@@ -57,10 +57,10 @@ test('curve', () => {
     assert.ok(Math.abs(growth.multFor(growth.CAP_SCORE) - growth.RESPAWN_CAP) < 1e-9);
     // 2x comes about a quarter sooner than the old 5656
     assert.ok(growth.CAP_SCORE > 3800 && growth.CAP_SCORE < 5656 * 0.76, 'cap score ' + growth.CAP_SCORE);
-    // past 2x it eases toward the 3x ceiling (Oct 7: no ceiling had a 100k tank at ~4.5x)
+    // past 2x it eases toward the 3x ceiling (Oct 7: no ceiling had a 100k tank at ~4.5x; Oct 9: half as fast)
     assert.equal(growth.MAX_GROWTH, 3);
-    assert.ok(growth.multFor(10000) > 2.4 && growth.multFor(20000) > 2.8, 'still grows past 2x');
-    assert.ok(growth.multFor(100000) <= 3 && growth.multFor(100000) > 2.99, 'a 100k tank is 3x');
+    assert.ok(growth.multFor(10000) > 2.2 && growth.multFor(20000) > 2.5 && growth.multFor(20000) < 2.75, 'still grows past 2x');
+    assert.ok(growth.multFor(100000) < 3 && growth.multFor(100000) > 2.9, 'a 100k tank is nearly 3x');
     // no kink where the log hands over to the tail
     const at = growth.CAP_SCORE;
     assert.ok(Math.abs((growth.multFor(at + 10) - growth.multFor(at)) - (growth.multFor(at) - growth.multFor(at - 10))) < 1e-4, 'smooth join');
@@ -105,7 +105,7 @@ test('life', () => {
     settle(b, 68000, (body, st) => stages.push(st));
     assert.ok(Math.abs(b.growthMult - growth.multFor(growth.CAP_SCORE + 8000)) < 1e-9);
     assert.ok(b.growthMult > growth.RESPAWN_CAP);
-    assert.deepEqual(stages, [2.3, 2.6]);
+    assert.deepEqual(stages, [2.3]);
     // the score drops (carried gems spent or lost): no shrinking
     const g = b.growthMult;
     settle(b, 65000);
@@ -142,12 +142,12 @@ test('perks', () => {
     b.growthMult = 2.3;
     growth.applyPerks(b);
     assert.ok(b.topSpeed < 0.8 && b.topSpeed > 0.65);
-    // gentle and capped (Oct 8): health 1.26x at 2.3x and 1.4x at the 3x ceiling, damage 1.13x and 1.2x
-    assert.ok(b.health.max > 122 && b.health.max < 130, 'health ' + b.health.max);
-    assert.ok(b.damage > 1.1 && b.damage < 1.16, 'ram ' + b.damage);
-    assert.ok(Math.abs(growth.healthMult(3) - 1.4) < 0.01);
-    assert.ok(Math.abs(growth.healthMult(2) - 1.2) < 0.01);
-    assert.ok(Math.abs(growth.damageMult(3) - 1.2) < 0.01);
+    // gentle and capped (Oct 9): health 1.13x at 2.3x and 1.2x at the 3x ceiling, no extra damage
+    assert.ok(b.health.max > 111 && b.health.max < 115, 'health ' + b.health.max);
+    assert.ok(Math.abs(b.damage - 1) < 1e-9, 'ram ' + b.damage);
+    assert.ok(Math.abs(growth.healthMult(3) - 1.2) < 0.01);
+    assert.ok(Math.abs(growth.healthMult(2) - 1.1) < 0.01);
+    assert.ok(Math.abs(growth.damageMult(3) - 1) < 0.01);
     assert.equal(growth.healthMult(5), growth.healthMult(3), 'health stops at the size ceiling');
     assert.ok(Math.abs(growth.damageMult(growth.multFor(1e9)) - growth.damageMult(growth.MAX_GROWTH)) < 1e-6, 'capped with the size');
     let prev = 1;

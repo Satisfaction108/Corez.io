@@ -166,7 +166,7 @@ test('rb: the packet in sockets.js, the save at death, the RY fields', () => {
 
 test('buttons: labels and when they show', async () => {
     const L = await imp('buildButtonsLogic.js');
-    assert.deepEqual(L.respawnAs({ lt: 'Minigun', ls: 1 }), { label: 'Respawn as Minigun', sub: 'same tank and stats' });
+    assert.deepEqual(L.respawnAs({ lt: 'Minigun', ls: 1 }), { label: 'Respawn as Minigun', sub: 'Same tank and stats' });
     assert.equal(L.respawnAs({}), null, 'no last build: one button');
     // playtest 9: the RY can still name the previous life's tank; the died-as tank wins
     assert.equal(L.respawnAs({ lt: 'Vulture', ls: 1 }, 'Minigun').label, 'Respawn as Minigun');
@@ -182,7 +182,7 @@ test('buttons: labels and when they show', async () => {
     const mem = new Map(), st = { getItem: k => mem.get(k) || null, setItem: (k, v) => mem.set(k, v) };
     assert.equal(L.firstTime('kitX', st), true);
     assert.equal(L.firstTime('kitX', st), false);
-    assert.match(L.TEAM_BANK_TIP, /^Team Bank: break its banner to own it, then bank here safely\.$/);
+    assert.match(L.TEAM_BANK_TIP, /^Break this Team Bank's banner to own it, then you can bank here safely\.$/);
 });
 
 test('buttons: the client draws them, sends rb, phones can tap them', () => {
@@ -234,7 +234,7 @@ test('finale: results for everyone, the subtitle clears the title, progress', as
     let rows = P.rows({ rank: rk, rp: P.rankThisRaid(12), rpSeen: P.rankSeen(12), dust: 3.5, nu: { n: 'Neon Trail', p: 10 }, bestLife: 252, bestRaid: 9000 });
     assert.equal(rows[0].t, '+65 RP this raid, 40 RP to the next rank');
     assert.equal(rows[1].t, '6.5 gemdust to Neon Trail (3.5 / 10)');
-    assert.equal(rows[2].t, 'Best life 4m 12s  ·  Best raid 9,000 pts');
+    assert.equal(rows[2].t, 'Best raid: 9,000 pts  ·  Longest life: 4m 12s');
     rows = P.rows({ guest: true, bestRaid: 0 });
     assert.match(rows[0].t, /^Sign up to get ranked/);
     const mem = new Map(), st = { getItem: k => mem.get(k) || null, setItem: (k, v) => mem.set(k, String(v)) };

@@ -338,7 +338,7 @@ function tick(dtMs) {
                 // 50% health = exposed: one global warning per life
                 if (!c._exposed && b.health.amount < b.health.max * 0.5) {
                     c._exposed = true;
-                    announce(`The ${c.name} is exposed. Go hit it.`);
+                    announce(`The ${c.name} is exposed, so go hit it!`);
                 }
             }
         } else if (c.state === 'destroyed') {

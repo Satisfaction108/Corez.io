@@ -56,7 +56,7 @@ export function raidStartOf(r, wall) {
 // The nudge beside a piece that just came in
 export function nudgeText(plan, piece) {
     if (plan && plan.newRaid) return piece === "tiles" ? "New raid: pick your tank" : "Fresh points: click a bar";
-    return piece === "tiles" ? "New tanks, pick one any time" : "Points to spend, click a bar";
+    return piece === "tiles" ? "You can pick a new tank any time" : "Click a bar to spend your points";
 }
 
 // May this piece show? plan null (no intro this life) or released: yes
@@ -164,13 +164,13 @@ export function introLines(o) {
         return {
             eyebrow: lastTxt || "NEW RAID", title: "FRESH START",
             goal: "Everyone starts over as Basic. Pick your tank" + (pts > 0 ? " and spend your " + (pts === 1 ? "1 point." : pts + " points.") : "."),
-            controls: (s.gunless ? "Ram" : "Shoot") + " colored rocks for gems and bank them at a vault.",
+            controls: (s.gunless ? "Ram" : "Shoot") + " the colored rocks for gems and bank them at a vault.",
             status: bits.join("  ·  "),
         };
     }
     const goal = s.gunless
-        ? "Ram colored rocks for gems and bank them at a vault. Most points at the end wins."
-        : "Shoot colored rocks for gems and bank them at a vault. Most points at the end wins.";
+        ? "Ram the colored rocks for gems and bank them at a vault. Whoever has the most points at the end wins."
+        : "Shoot the colored rocks for gems and bank them at a vault. Whoever has the most points at the end wins.";
     const controls = s.mobile
         ? "Left thumb moves  ·  Right thumb aims and fires"
         : (s.keys || "WASD") + " to move  ·  Mouse to aim  ·  Click to shoot";
@@ -179,7 +179,7 @@ export function introLines(o) {
     if (n > 1) bits.push(n + " tanks in this raid");
     if ((s.leftMs | 0) > 0) bits.push(clock(s.leftMs) + " left");
     if (s.twist) bits.push("Twist: " + s.twist);
-    return { eyebrow: "raid started", title: "Mine, Bank, Win", goal, controls, status: bits.join("  ·  ") };
+    return { eyebrow: "Raid started", title: "Mine, Bank, Win", goal, controls, status: bits.join("  ·  ") };
 }
 
 // Tank tiles: a hull with no guns of its own (Smasher, Spike, ...) digs by
@@ -197,8 +197,8 @@ export function shopHint(o) {
     if (banked === 0 && carried >= min)
         return { title: "Bank first", text: "Bank your " + fmt(carried) + " gems at a vault first. Vaults are the gold rings on the map." };
     if (banked === 0)
-        return { title: "Shops only take banked gems", text: "Get some gems, bank them at a vault, then come back." };
+        return { title: "Shops only take banked gems", text: "Mine some gems and bank them at a vault, then come back." };
     if (cheapest > 0)
-        return { title: "Almost", text: "Bank " + fmt(cheapest - banked) + " more gems for the cheapest thing here." + (carried >= min ? " You have " + fmt(carried) + " on you." : "") };
+        return { title: "Almost", text: "Bank " + fmt(cheapest - banked) + " more gems to afford the cheapest item here." + (carried >= min ? " You have " + fmt(carried) + " on you." : "") };
     return null;
 }

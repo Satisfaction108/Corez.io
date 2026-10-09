@@ -37,15 +37,15 @@ async function requireCredential(ctx, a, currentPassword) {
         throw new HttpError(401, 'bad_password', 'Wrong password.');
     }
     if (sessions.isFresh(a.session, ctx.now)) return;
-    if (a.user.password_hash) throw new HttpError(401, 'bad_password', 'Enter your current password.');
+    if (a.user.password_hash) throw new HttpError(401, 'bad_password', 'Please enter your current password.');
     if (!a.user.discord_id) throw passwordNeeded();
-    throw new HttpError(403, 'reauth_required', 'Quick Discord check first.');
+    throw new HttpError(403, 'reauth_required', 'Please confirm it’s you with Discord first.');
 }
 
 // A quick sign-up (no password, no Discord) past its first 10 minutes has
 // nothing to re-check with: it adds a password first.
 function passwordNeeded() {
-    return new HttpError(403, 'password_needed', 'Add a password first. You can do it in Account.');
+    return new HttpError(403, 'password_needed', 'Please add a password first. You can do that in Account.');
 }
 
 function cooldown(availableAt, now) {
@@ -73,8 +73,8 @@ async function changeUsername(ctx) {
         if (r.code === 'cooldown') throw cooldown(r.availableAt, Date.now());
         if (r.code === 'username_taken') {
             throw new HttpError(409, 'username_taken', r.reason === 'held'
-                ? 'Someone just had that name. Try another one.'
-                : "That name's taken. Try another one.", { reason: r.reason });
+                ? 'Someone used that name recently. Please try another one.'
+                : "That name is already taken. Please try another one.", { reason: r.reason });
         }
         throw new HttpError(404, 'not_found', "Couldn't find that account.");
     }
@@ -92,7 +92,7 @@ async function changePassword(ctx) {
         if (current) {
             if (!(await checkPassword(ctx, a.user, current))) throw new HttpError(401, 'bad_password', 'Wrong password.');
         } else if (!sessions.isFresh(a.session, ctx.now)) {
-            throw new HttpError(401, 'bad_password', 'Enter your current password.');
+            throw new HttpError(401, 'bad_password', 'Please enter your current password.');
         }
     } else if (a.user.discord_id && !sessions.isFresh(a.session, ctx.now)) {
         // A first password on a Discord-only account also needs a fresh
@@ -101,7 +101,7 @@ async function changePassword(ctx) {
         // A quick sign-up (no password, no Discord) has nothing to check
         // against: the live session is enough, and its recovery code
         // (untouched here) still takes the account back.
-        throw new HttpError(403, 'reauth_required', 'Quick Discord check first.');
+        throw new HttpError(403, 'reauth_required', 'Please confirm it’s you with Discord first.');
     }
     const hash = await crypto.hashPassword(newPassword);
     db.handle().tx(() => {
@@ -163,7 +163,7 @@ function listSessions(ctx) {
 function revokeSession(ctx) {
     const a = begin(ctx);
     const id = Number(ctx.body.id);
-    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'bad_request', 'Something went wrong. Refresh and try again.');
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'bad_request', 'Something went wrong. Please refresh and try again.');
     if (!sessions.revokeForUser(a.user.id, id)) throw new HttpError(404, 'not_found', 'That device is already logged out.');
     if (id === a.session.id) ctx.setCookie(sessions.clearCookie());
     ctx.noContent();

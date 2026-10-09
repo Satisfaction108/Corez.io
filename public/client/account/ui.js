@@ -238,8 +238,8 @@ export function confirm(opts) {
         const m = modal({
             title: opts.title, message: opts.message,
             body: h('div', { class: 'dw-modal-actions' },
-                h('button', { type: 'button', class: 'dw-btn', text: opts.cancelLabel || 'Nah', onclick: () => m.close() }),
-                h('button', { type: 'button', class: 'dw-btn ' + (opts.danger ? 'danger' : 'accent-fill'), 'data-autofocus': '', text: opts.confirmLabel || 'Yep', onclick: () => { answer = true; m.close(); } })),
+                h('button', { type: 'button', class: 'dw-btn', text: opts.cancelLabel || 'Cancel', onclick: () => m.close() }),
+                h('button', { type: 'button', class: 'dw-btn ' + (opts.danger ? 'danger' : 'accent-fill'), 'data-autofocus': '', text: opts.confirmLabel || 'OK', onclick: () => { answer = true; m.close(); } })),
             onClose: () => resolve(answer),
         });
     });
@@ -254,7 +254,7 @@ export function formModal(opts) {
         let result = null;
         const inputs = {};
         const alert = h('div', { class: 'dw-alert', role: 'alert' });
-        const go = h('button', { type: 'submit', class: 'dw-btn ' + (opts.danger ? 'danger' : 'accent-fill'), text: opts.confirmLabel || 'Go' });
+        const go = h('button', { type: 'submit', class: 'dw-btn ' + (opts.danger ? 'danger' : 'accent-fill'), text: opts.confirmLabel || 'Continue' });
         const fields = (opts.fields || []).map((f) => {
             const inp = h('input', { class: 'dw-input', type: f.type || 'text', name: f.name, placeholder: f.placeholder || '', autocomplete: f.autocomplete || 'off', spellcheck: 'false', maxlength: f.maxlength || 128 });
             inputs[f.name] = inp;
@@ -272,7 +272,7 @@ export function formModal(opts) {
             const r = await opts.submit(values);
             setBusy(go, false);
             if (r && r.ok) { result = r.value === undefined ? true : r.value; m.close(); }
-            else showAlert(alert, (r && r.error) || 'Something broke. Try again?');
+            else showAlert(alert, (r && r.error) || 'Something went wrong. Please try again.');
         });
         const m = modal({ title: opts.title, message: opts.message, body: form, onClose: () => resolve(result) });
     });
@@ -322,34 +322,34 @@ export function toast(message, opts) {
 
 /* ── errors → words ──────────────────────────────────────────────────── */
 const NAME_REASONS = {
-    taken: 'Taken. Try another one',
-    username_taken: 'Taken. Try another one',
-    reserved: 'Can’t use that one',
-    profane: 'Nope, not that name',
-    profanity: 'Nope, not that name',
-    offensive: 'Nope, not that name',
-    held: 'Someone just had that name. Try another',
-    too_short: '3 letters minimum',
-    short: '3 letters minimum',
-    too_long: '16 letters max',
-    long: '16 letters max',
-    invalid_chars: 'Letters, numbers and _ only',
-    chars: 'Letters, numbers and _ only',
-    charset: 'Letters, numbers and _ only',
-    format: 'Letters, numbers and _ only',
-    invalid: 'Letters, numbers and _ only',
-    underscores: 'Too many underscores in a row',
-    same: 'That’s already your name',
+    taken: 'That name is already taken.',
+    username_taken: 'That name is already taken.',
+    reserved: 'That name is reserved.',
+    profane: 'Please pick a different name.',
+    profanity: 'Please pick a different name.',
+    offensive: 'Please pick a different name.',
+    held: 'Someone used that name recently. Please try another one.',
+    too_short: 'Use at least 3 characters.',
+    short: 'Use at least 3 characters.',
+    too_long: 'Use 16 characters or fewer.',
+    long: 'Use 16 characters or fewer.',
+    invalid_chars: 'Use only letters, numbers and _.',
+    chars: 'Use only letters, numbers and _.',
+    charset: 'Use only letters, numbers and _.',
+    format: 'Use only letters, numbers and _.',
+    invalid: 'Use only letters, numbers and _.',
+    underscores: 'Too many underscores in a row.',
+    same: 'That’s already your name.',
 };
 const PASSWORD_REASONS = {
-    too_short: '8 characters minimum',
-    short: '8 characters minimum',
-    too_long: '128 characters max',
-    long: '128 characters max',
-    same_as_username: 'Can’t be the same as your name',
-    username: 'Can’t be the same as your name',
-    common: 'Everyone uses that one. Pick something else',
-    too_common: 'Everyone uses that one. Pick something else',
+    too_short: 'Use at least 8 characters.',
+    short: 'Use at least 8 characters.',
+    too_long: 'Use 128 characters or fewer.',
+    long: 'Use 128 characters or fewer.',
+    same_as_username: 'It can’t be the same as your name.',
+    username: 'It can’t be the same as your name.',
+    common: 'That password is too common. Please pick another one.',
+    too_common: 'That password is too common. Please pick another one.',
 };
 
 // Reasons may arrive as short codes or as ready-made sentences.
@@ -360,33 +360,33 @@ function reasonText(map, reason, fallback) {
     if (/\s/.test(reason)) return String(reason);
     return fallback;
 }
-export const nameReason = (reason) => reasonText(NAME_REASONS, reason, 'Can’t use that name');
+export const nameReason = (reason) => reasonText(NAME_REASONS, reason, 'You can’t use that name.');
 
 export function humanError(res) {
     const err = (res && res.data && res.data.error) || {};
     const code = err.code || '';
     switch (code) {
-        case 'network': return 'Can’t reach the server. Your wifi ok?';
-        case 'timeout': return 'Server’s being slow. Try again';
-        case 'bad_credentials': return 'Wrong name or password';
-        case 'bad_password': return 'Wrong password';
-        case 'username_taken': return 'Taken. Try another one';
-        case 'invalid_username': return reasonText(NAME_REASONS, err.reason, err.message || 'Can’t use that name');
-        case 'weak_password': return reasonText(PASSWORD_REASONS, err.reason, err.message || 'Needs a better password');
-        case 'rate_limited': return 'Too fast. Try again ' + fmtRetry(err.retryAfter);
-        case 'banned': return 'Banned' + (err.until ? ' until ' + fmtDateTime(err.until) : '') + '.' + (err.reason ? ' Reason: ' + err.reason : '');
-        case 'cooldown': return 'You can rename again on ' + fmtDate(err.availableAt);
-        case 'no_password': return 'Add a password first so you can still get in without Discord';
-        case 'reauth_required': return 'Quick Discord check first';
-        case 'unauthorized': case 'not_logged_in': case 'no_session': return 'You got logged out. Log back in';
-        case 'accounts_disabled': case 'accounts_unavailable': return 'Accounts are down rn. You can still play';
-        case 'busy': return 'Server’s busy. Give it a sec';
-        case 'already_linked': return 'Already has a Discord on it. Unlink that first';
+        case 'network': return 'Couldn’t reach the server. Please check your connection.';
+        case 'timeout': return 'The server is being slow. Please try again.';
+        case 'bad_credentials': return 'Wrong name or password.';
+        case 'bad_password': return 'Wrong password.';
+        case 'username_taken': return 'That name is already taken.';
+        case 'invalid_username': return reasonText(NAME_REASONS, err.reason, err.message || 'You can’t use that name.');
+        case 'weak_password': return reasonText(PASSWORD_REASONS, err.reason, err.message || 'Please pick a stronger password.');
+        case 'rate_limited': return 'You’re doing that too fast. Please try again ' + fmtRetry(err.retryAfter) + '.';
+        case 'banned': return 'You’re banned' + (err.until ? ' until ' + fmtDateTime(err.until) : '') + '.' + (err.reason ? ' Reason: ' + err.reason : '');
+        case 'cooldown': return 'You can change your name again on ' + fmtDate(err.availableAt) + '.';
+        case 'no_password': return 'Add a password first so you can still log in without Discord.';
+        case 'reauth_required': return 'Please confirm it’s you with Discord first.';
+        case 'unauthorized': case 'not_logged_in': case 'no_session': return 'You got logged out. Please log back in.';
+        case 'accounts_disabled': case 'accounts_unavailable': return 'Accounts are down right now, but you can still play.';
+        case 'busy': return 'The server is busy. Please try again in a moment.';
+        case 'already_linked': return 'This account already has a Discord linked. Unlink it first.';
     }
-    if (res && res.status === 429) return 'Too fast. Try again ' + fmtRetry(err.retryAfter);
+    if (res && res.status === 429) return 'You’re doing that too fast. Please try again ' + fmtRetry(err.retryAfter) + '.';
     if (err.message && /\s/.test(err.message)) return err.message;
-    if (res && res.status >= 500) return 'Server tripped over. Try again in a bit';
-    return 'Something broke' + (res && res.status ? ' (' + res.status + ')' : '') + '. Try again?';
+    if (res && res.status >= 500) return 'Something went wrong on the server. Please try again in a bit.';
+    return 'Something went wrong' + (res && res.status ? ' (' + res.status + ')' : '') + '. Please try again.';
 }
 
 /* ── formatters ──────────────────────────────────────────────────────── */

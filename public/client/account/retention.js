@@ -134,8 +134,8 @@ async function claim(opts = {}) {
         if (r.data.push) st.push = r.data.push;
         const c = r.data.claimed;
         if (opts.quiet) {
-            toast(c.signup ? 'Day 1 reward: ' + rewardText(c) + ' saved for when you sign up. More tomorrow!'
-                : 'Day 1 reward: +' + rewardText(c) + ' for the shop. More tomorrow!', { kind: 'ok', duration: 5200 });
+            toast(c.signup ? 'Day 1 reward: ' + rewardText(c) + ', saved for when you sign up. Come back tomorrow for more!'
+                : 'Day 1 reward: +' + rewardText(c) + ' to spend in the shop. Come back tomorrow for more!', { kind: 'ok', duration: 5200 });
         }
         if (typeof r.data.balanceMilli === 'number' && hooks.onDust) hooks.onDust(r.data.balanceMilli / 1000);
         paint(c);
@@ -143,8 +143,8 @@ async function claim(opts = {}) {
     }
     const code = r.data && r.data.error && r.data.error.code;
     if (code === 'not_ready' || code === 'already_claimed') { refresh(); return null; }
-    if (code === 'adopted') { toast('Your streak lives on your account now. Log in to claim it.'); return null; }
-    if (!opts.quiet) toast((r.data && r.data.error && r.data.error.message) || 'Couldn’t claim it. Try again in a sec.', { kind: 'error' });
+    if (code === 'adopted') { toast('Your streak is on your account now. Log in to claim it.'); return null; }
+    if (!opts.quiet) toast((r.data && r.data.error && r.data.error.message) || 'Couldn’t claim it. Please try again in a moment.', { kind: 'error' });
     return null;
 }
 
@@ -248,7 +248,7 @@ function paint(justClaimed) {
     } else {
         cdEl = h('span', { class: 'dy-cd' });
         const tmr = st.tomorrow || st.today;
-        const lead = justClaimed ? 'Got it! Tomorrow:' : st.step === 7 ? 'Week done! Tomorrow:' : 'Tomorrow:';
+        const lead = justClaimed ? 'Got it! Tomorrow:' : st.step === 7 ? 'Week complete! Tomorrow:' : 'Tomorrow:';
         strip.appendChild(h('div', { class: 'dy-line' },
             h('span', { class: 'dy-what' }, h('span', { class: 'dy-lead', text: lead + ' ' }), rewardB(tmr)),
             cdEl));
@@ -270,7 +270,7 @@ function paint(justClaimed) {
 
 // "The Buddy sidekick needs an account." / "Gemdust needs an account."
 function signupWords(r) {
-    return (r.item ? 'The ' + itemName(r.item) : 'Gemdust') + ' needs an account. ';
+    return (r.item ? 'You need an account for the ' + itemName(r.item) : 'You need an account for gemdust') + '. ';
 }
 function signupLine(r) {
     if (store.get('mode') === 'user') return null;
@@ -290,8 +290,8 @@ function paintReasons() {
     const bits = [];
     const bal = dustBalance();
     if (bal != null) bits.push(['Gemdust ', fmtDust(bal)]);
-    else if (st.owedMilli > 0) bits.push(['Saved for sign up ', dustTxt(st.owedMilli) + ' gemdust']);
-    if (st.shop) bits.push(['On the shelf: ', st.shop.name]);
+    else if (st.owedMilli > 0) bits.push(['Saved for when you sign up: ', dustTxt(st.owedMilli) + ' gemdust']);
+    if (st.shop) bits.push(['In the shop: ', st.shop.name]);
     const card = document.getElementById('eventCard');
     const c = EV && (!card || card.hidden) ? EV.current(EV.now()) : null;
     if (c && !c.live && c.ms < 21 * 864e5) bits.push([c.ev.name + ' ', EV.localWhen(c.ev, EV.now()) + ' (in ' + EV.countdown(c.ms) + ')']);
@@ -338,8 +338,8 @@ export function openDays() {
         h('div', { class: 'dyd-h' }, h('span', { text: 'Daily rewards' }), st.streak >= 2 ? flame(st.streak, 'inline') : null),
         list,
         h('p', { class: 'dyd-rule', text: v.rule }),
-        guest ? h('p', { class: 'dyd-su' }, h('span', { text: 'Gemdust and items need an account. ' }),
-            h('button', { type: 'button', class: 'dy-link', text: 'Sign up to claim', onclick: () => { m.close(); hooks.onSignup(); } })) : null);
+        guest ? h('p', { class: 'dyd-su' }, h('span', { text: 'You need an account for gemdust and items. ' }),
+            h('button', { type: 'button', class: 'dy-link', text: 'Sign up to claim them', onclick: () => { m.close(); hooks.onSignup(); } })) : null);
     const m = modal({ cls: 'dyd-modal', title: null, body, dismissable: true, onClose: () => { daysM = null; } });
     m.card.setAttribute('aria-label', 'Daily rewards, all 7 days');
     m.card.prepend(h('button', { type: 'button', class: 'wl-x dy-x', 'aria-label': 'Close', 'data-autofocus': '', onclick: () => m.close() }, icon('close')));
@@ -368,15 +368,15 @@ export function openWelcome() {
     const rewardEl = h('div', { class: 'dy-big' },
         r.item ? itemArt(r.item, 46) : dustIcon(),
         h('div', { class: 'dy-big-txt' },
-            h('div', { class: 'dy-big-k', text: st.missed ? 'Back on day ' + st.day : 'Day ' + st.day + ' reward ready' }),
+            h('div', { class: 'dy-big-k', text: st.missed ? 'Back on day ' + st.day : 'Your day ' + st.day + ' reward is ready' }),
             h('div', { class: 'dy-big-v', text: rewardText(r) })));
     const note = st.missed
-        ? h('p', { class: 'dy-note', text: 'You missed a day, so you dropped back to day ' + st.day + '. Not to zero, promise.' })
-        : st.streak >= 2 ? h('p', { class: 'dy-note' }, flame(st.streak, 'inline'), ' days in a row, nice') : null;
+        ? h('p', { class: 'dy-note', text: 'You missed a day, so you dropped back to day ' + st.day + '. Don’t worry, it never drops to zero.' })
+        : st.streak >= 2 ? h('p', { class: 'dy-note' }, flame(st.streak, 'inline'), ' days in a row. Keep it going!') : null;
     const btn = h('button', { type: 'button', class: 'wl-opt wl-opt-guest dy-go', 'data-autofocus': '' }, h('span', { text: 'Claim' }));
     const tmrEl = h('p', { class: 'dy-after', hidden: true });
     const body = h('div', { class: 'dy-back' },
-        h('div', { class: 'dy-back-h', text: user ? 'Welcome back, ' + user.username : 'Welcome back' }),
+        h('div', { class: 'dy-back-h', text: user ? 'Welcome back, ' + user.username + '!' : 'Welcome back!' }),
         dustLine(),
         pips('big'),
         rewardEl,
@@ -422,7 +422,7 @@ function dustLine() {
     if (bal == null && !(st.owedMilli > 0)) return null;
     return h('div', { class: 'dy-back-bank' }, dustIcon(), bal != null
         ? h('span', null, 'Your gemdust: ', h('b', { class: 'dy-dust-amt', text: fmtDust(bal) }))
-        : h('span', null, 'Saved for sign up: ', h('b', { class: 'dy-dust-amt', text: dustTxt(st.owedMilli) + ' gemdust' })));
+        : h('span', null, 'Saved for when you sign up: ', h('b', { class: 'dy-dust-amt', text: dustTxt(st.owedMilli) + ' gemdust' })));
 }
 function pipsAfter(c) {
     const p = pips('big');
@@ -469,7 +469,7 @@ async function turnOn(loud) {
         const regP = registration();
         const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
         if (perm !== 'granted') {
-            if (loud) toast('No pings then. Hit the bell if you change your mind.');
+            if (loud) toast('Okay, no pings. You can turn them on with the bell any time.');
             paint();
             return;
         }
@@ -480,9 +480,9 @@ async function turnOn(loud) {
         if (!(await sendSub(sub))) throw new Error('subscribe failed');
         ls.set(SYNC_KEY, String(Math.floor(Date.now() / 864e5)));
         st.push.subscribed = true;
-        if (loud) toast('Pings on. Only your daily reward and Raid Night, nothing else.', { kind: 'ok', duration: 5000 });
+        if (loud) toast('Pings are on. We’ll only ping you for your daily reward and Raid Night.', { kind: 'ok', duration: 5000 });
     } catch (e) {
-        if (loud) toast('This browser can’t do pings.', { kind: 'error' });
+        if (loud) toast('Sorry, this browser doesn’t support pings.', { kind: 'error' });
     }
     paint();
 }
@@ -494,7 +494,7 @@ async function turnOff() {
     } catch (e) { /* the server side still drops it on the next 410 */ }
     if (st && st.push) st.push.subscribed = false;
     ls.set(ASK_KEY, 'no');
-    toast('Pings off.');
+    toast('Pings are off.');
     paint();
 }
 function bellButton() {
@@ -503,7 +503,7 @@ function bellButton() {
     // before the first raid there's nothing to ring about yet
     if (!on && !playedOnce()) return null;
     return h('button', {
-        type: 'button', class: 'dy-bell' + (on ? ' on' : ''), title: on ? 'Pings are on. Click to turn them off' : 'Get a ping when your reward is ready',
+        type: 'button', class: 'dy-bell' + (on ? ' on' : ''), title: on ? 'Pings are on. Click to turn them off.' : 'Get a ping when your reward is ready',
         'aria-label': on ? 'Turn pings off' : 'Turn pings on', 'aria-pressed': on ? 'true' : 'false',
         onclick: () => (on ? turnOff() : turnOn(true)),
     }, bellSvg(on));

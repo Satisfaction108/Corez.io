@@ -50,7 +50,7 @@ const REPO = path.join(__dirname, '..', '..');
         assert.ok(r.ring && !r.gold && !r.unlocked);
         assert.equal(r.progress, 0.5);
         assert.equal(G.ringTitle(r), 'Grow to 2x this life to unlock Tier 5');
-        assert.equal(G.ringSub(r), "You're 1.5x now. Score grows you.");
+        assert.equal(G.ringSub(r), "You're at 1.5x now, and your score makes you grow.");
         const g = G.t5State({ t5: [4, 1, 210, 200] });
         assert.ok(g.gold && !g.ring && g.progress === 1);
         const five = G.t5State({ t5: [5, 1, 230, 200] });
@@ -61,7 +61,7 @@ const REPO = path.join(__dirname, '..', '..');
 
     test('respawn as: a gated Tier 5 build names the Tier 4 parent', () => {
         assert.deepStrictEqual(B.respawnAs({ lt: 'Harmony', ltg: 200 }, 'Castanet'), { label: 'Respawn as Harmony', sub: 'Grow to 2x this life to unlock Tier 5' });
-        assert.deepStrictEqual(B.respawnAs({ lt: 'Castanet' }, 'Castanet'), { label: 'Respawn as Castanet', sub: 'same tank and stats' });
+        assert.deepStrictEqual(B.respawnAs({ lt: 'Castanet' }, 'Castanet'), { label: 'Respawn as Castanet', sub: 'Same tank and stats' });
     });
 
     test('pager: +N more on the right, < +N more on the left, no wrap, fits under the grid', () => {

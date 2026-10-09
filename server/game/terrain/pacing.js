@@ -70,7 +70,7 @@ function huntTick(L, t) {
     const n = huntPing && huntPing.id === b.id && t - huntPing.at < HUNT.pingMs * 2 ? huntPing.n + 1 : 0;
     huntPing = { id: b.id, x: Math.round(at.x), y: Math.round(at.y), name: hunt.name, at: t, ratio: Math.round(hunt.ratio * 10) / 10, n };
     // the plate on the first ping of a run, then every third (the rest is the minimap)
-    if (n % 3 === 0 && b.socket && hooks.callout) hooks.callout(b, "bounty", "You're the target", 0, "Leading " + (hunt.ratio >= 5 ? "big" : huntPing.ratio + "x") + ": your spot was pinged to everyone", 3000);
+    if (n % 3 === 0 && b.socket && hooks.callout) hooks.callout(b, "bounty", "You're the target", 0, "You're " + (hunt.ratio >= 5 ? "far" : huntPing.ratio + "x") + " ahead, so your spot was pinged to everyone.", 3000);
 }
 // RY: the latest leader ping while it shows, else null
 function huntSnapshot(t = Date.now()) {
@@ -146,8 +146,8 @@ function startBounty(t) {
     }
     if (!best) return false;
     bounty = { body: best, key: hooks.keyOf ? hooks.keyOf(best) : null, name: best.name || "Someone", until: t + BOUNTY_MS, gems: BOUNTY_GEMS, at: t };
-    if (hooks.announce) hooks.announce("Bounty on " + bounty.name + ". " + BOUNTY_GEMS + " gems to whoever takes them down.", { event: 1, kind: 'bounty', name: bounty.name });
-    if (best.socket && hooks.callout) hooks.callout(best, "bounty", "You're the bounty", 0, "Stay alive " + Math.round(BOUNTY_MS / 1000) + "s for a payout", 3500);
+    if (hooks.announce) hooks.announce("Bounty on " + bounty.name + "! Whoever takes them down gets " + BOUNTY_GEMS + " gems.", { event: 1, kind: 'bounty', name: bounty.name });
+    if (best.socket && hooks.callout) hooks.callout(best, "bounty", "You're the bounty", 0, "Stay alive for " + Math.round(BOUNTY_MS / 1000) + "s to get paid", 3500);
     note('bounty', t);
     return true;
 }
@@ -174,8 +174,8 @@ function leaderTick(t) {
     if (key !== leaderAnnouncedKey && t - leaderAnnouncedAt >= LEADER.announceGapMs) {
         leaderAnnouncedKey = key;
         leaderAnnouncedAt = t;
-        if (hooks.announce) hooks.announce("Bounty on the leader: " + bounty.name + ". " + gems.toLocaleString('en-US') + " gems to whoever takes them down.", { event: 1, kind: 'bounty', name: bounty.name, lead: 1 });
-        if (body.socket && hooks.callout) hooks.callout(body, "bounty", "Bounty on the leader", 0, "You lead the raid. Everyone gets paid for taking you down.", 3500);
+        if (hooks.announce) hooks.announce("Bounty on the leader, " + bounty.name + "! Whoever takes them down gets " + gems.toLocaleString('en-US') + " gems.", { event: 1, kind: 'bounty', name: bounty.name, lead: 1 });
+        if (body.socket && hooks.callout) hooks.callout(body, "bounty", "Bounty on the leader", 0, "You're leading the raid, so everyone gets paid for taking you down.", 3500);
     }
 }
 

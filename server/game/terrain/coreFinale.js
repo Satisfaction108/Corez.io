@@ -312,9 +312,9 @@ function spawnCore() {
     nextBoltAt = 0; nextDroneAt = 0; phase = 0;
     stats = freshStats();
     const fmt = (n) => n.toLocaleString('en-US');
-    if (hooks.announce) hooks.announce('core', "THE CORE HAS SURFACED", "Break it and " + fmt(coreGems) + " gems blow out across the circle. Bank what you grab.", 4800);
+    if (hooks.announce) hooks.announce('core', "THE CORE HAS SURFACED", "Break it open and " + fmt(coreGems) + " gems spill out across the circle. Bank as many as you can grab!", 4800);
     if (hooks.feed) hooks.feed({ core: 1, spawn: 1, g: coreGems });
-    if (hooks.toast) hooks.toast("The Core has surfaced at the centre. Break it, grab the gems, bank them next door.", 9000);
+    if (hooks.toast) hooks.toast("The Core is up in the middle of the map. Break it open for a big pile of gems.", 9000);
     if (hooks.fxAt) hooks.fxAt(site.x, site.y, 'coreup');
     return o;
 }
@@ -396,7 +396,7 @@ function blow(t) {
     blast = null;
     spew(b.x, b.y, coreGems || CORE_BANK, t);
     if (hooks.fxAt) hooks.fxAt(b.x, b.y, 'coredead');
-    if (hooks.announce) hooks.announce('coredown', "THE CORE IS DOWN", "Gems everywhere. Grab them and bank them before the storm shuts!", 4200, b.killer);
+    if (hooks.announce) hooks.announce('coredown', "THE CORE IS DOWN", "There are gems everywhere! Grab them and bank them before the storm closes.", 4200, b.killer);
     if (hooks.feed) hooks.feed({ core: 1, broke: 1, by: brokeBy, g: coreGems });
     // the lucky drop for the breaker (terrain/coreDrop.js), after its slam
     if (b.killer && b.killer.socket && hooks.loot) { try { hooks.loot(b.killer); } catch (e) { /* */ } }
@@ -792,7 +792,7 @@ function tick(t, fighters) {
     if (state === 'planned') {
         if (!warned && st.cn > 1 && st.c === st.cn - 2 && st.hold && (st.left | 0) <= WARN_S) {
             warned = true;
-            if (hooks.toast) hooks.toast("Something is waking up under the centre...", 8000);
+            if (hooks.toast) hooks.toast("Something is waking up under the middle of the map.", 8000);
             if (hooks.fxAt) hooks.fxAt(site.x, site.y, 'corewarn');
         }
         if (st.fin) spawnCore();

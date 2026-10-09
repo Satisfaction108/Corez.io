@@ -112,13 +112,13 @@ function postJoin(ctx) {
 }
 
 function postInvite(ctx) {
-    if (!ctx.accountsOn) throw new HttpError(503, 'accounts_unavailable', 'Invites need accounts, and they’re down rn. Share your party code instead!');
+    if (!ctx.accountsOn) throw new HttpError(503, 'accounts_unavailable', 'Invites need accounts, which are down right now. You can share your party code instead!');
     const a = ctx.requireAuth();
     const A = acc();
     ctx.limit('partyInvite', a.user.id);
     const target = A.users.byPublicId(str(ctx.body.userId, 32));
-    if (!target || target.deleted_at) throw new HttpError(404, 'user_not_found', 'Nobody’s called that.');
-    if (target.id === a.user.id) throw new HttpError(400, 'self', 'That’s you lol');
+    if (!target || target.deleted_at) throw new HttpError(404, 'user_not_found', 'There’s nobody with that name.');
+    if (target.id === a.user.id) throw new HttpError(400, 'self', 'You can’t invite yourself. Nice try!');
     if (A.friends.blockedEitherWay(a.user.id, target.id)) throw new HttpError(403, 'cant_invite', 'You can’t invite them.');
     if (!A.friends.areFriends(a.user.id, target.id)) throw new HttpError(403, 'not_friends', 'You can only invite friends.');
     if (A.users.isBanned(target)) throw new HttpError(403, 'cant_invite', 'You can’t invite them.');

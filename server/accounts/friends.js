@@ -87,7 +87,7 @@ function lists(id) {
 
 function targetOrFail(me, row) {
     if (!row) fail(404, 'user_not_found', "Couldn't find anyone with that name.");
-    if (row.id === me) fail(400, 'self', "That's you lol");
+    if (row.id === me) fail(400, 'self', "You can't add yourself. Nice try!");
     return row;
 }
 
@@ -131,9 +131,9 @@ function request(me, username, now = Date.now()) {
 function respond(me, from, accept, now = Date.now()) {
     const d = h();
     return d.tx(() => {
-        if (!from || from.id === me) fail(404, 'no_request', 'That request is gone.');
+        if (!from || from.id === me) fail(404, 'no_request', "That request doesn't exist anymore.");
         const r = d.get('SELECT silent FROM friend_requests WHERE from_id = ? AND to_id = ?', from.id, me);
-        if (!r || r.silent) fail(404, 'no_request', 'That request is gone.');
+        if (!r || r.silent) fail(404, 'no_request', "That request doesn't exist anymore.");
         if (!accept) {
             d.run('DELETE FROM friend_requests WHERE from_id = ? AND to_id = ?', from.id, me);
             return { status: 'declined', user: from };
@@ -146,9 +146,9 @@ function respond(me, from, accept, now = Date.now()) {
 
 // cancel(me, toRow) -> {user, silent}
 function cancel(me, to) {
-    if (!to) fail(404, 'no_request', 'That request is gone.');
+    if (!to) fail(404, 'no_request', "That request doesn't exist anymore.");
     const r = h().get('SELECT silent FROM friend_requests WHERE from_id = ? AND to_id = ?', me, to.id);
-    if (!r) fail(404, 'no_request', 'That request is gone.');
+    if (!r) fail(404, 'no_request', "That request doesn't exist anymore.");
     h().run('DELETE FROM friend_requests WHERE from_id = ? AND to_id = ?', me, to.id);
     return { user: to, silent: !!r.silent };
 }

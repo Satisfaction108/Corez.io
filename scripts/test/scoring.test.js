@@ -245,8 +245,8 @@ test('client: the words (rule, death card, carry warning, crown card)', async ()
     // carrying: quiet when small or safe, loud when big or in danger
     assert.equal(L.carryNote({ carried: 400, near: 2 }), null);
     assert.equal(L.carryNote({ carried: 900 }), null, 'no danger, not huge');
-    assert.deepEqual(L.carryNote({ carried: 3074, near: 1 }), { text: 'Carrying 3,074: bank it', sub: "Dying drops it, it's not points yet", hot: true });
-    assert.deepEqual(L.carryNote({ carried: 2500 }), { text: 'Carrying 2,500: bank it', sub: 'Not points until banked', hot: false });
+    assert.deepEqual(L.carryNote({ carried: 3074, near: 1 }), { text: 'Carrying 3,074: bank it', sub: "If you die, you'll drop most of it", hot: true });
+    assert.deepEqual(L.carryNote({ carried: 2500 }), { text: 'Carrying 2,500: bank it', sub: 'It only counts as points once you bank it', hot: false });
     assert.equal(L.carryNote({ carried: 3000, near: 1, noBank: true }), null, "a final-minute crown can't bank");
     assert.equal(L.carryNote({ carried: 3000, died: true }), null);
     // the crown card

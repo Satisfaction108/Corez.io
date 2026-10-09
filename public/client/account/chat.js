@@ -78,12 +78,12 @@ export function mount(host, friend, opts) {
     const top = h('div', { class: 'fr-chat-top' });
     const list = h('div', { class: 'fr-chat-msgs', role: 'log', 'aria-live': 'polite' });
     const log = h('div', { class: 'fr-chat-log' }, top, list);
-    const pill = h('button', { type: 'button', class: 'fr-chat-pill', onclick: () => toBottom(true) }, 'new message');
+    const pill = h('button', { type: 'button', class: 'fr-chat-pill', onclick: () => toBottom(true) }, 'New message');
 
     // input
     const input = h('input', {
         class: 'dw-input fr-chat-in', type: 'text', maxlength: MAX, autocomplete: 'off', spellcheck: 'true', enterkeyhint: 'send',
-        placeholder: 'say something', 'aria-label': 'Message ' + friend.username,
+        placeholder: 'Say something', 'aria-label': 'Message ' + friend.username,
     });
     attachEmoji(input);
     const left = h('span', { class: 'fr-chat-left', 'aria-live': 'polite' });
@@ -106,11 +106,11 @@ export function mount(host, friend, opts) {
     function paintTop() {
         clear(top);
         if (loadFailed) {
-            top.appendChild(h('button', { type: 'button', class: 'fr-chat-retry', text: 'Didn’t load. Retry', onclick: () => (t.loaded ? older() : first()) }));
+            top.appendChild(h('button', { type: 'button', class: 'fr-chat-retry', text: 'Couldn’t load messages. Retry', onclick: () => (t.loaded ? older() : first()) }));
         } else if (!t.loaded || loadingOlder) {
             top.appendChild(h('div', { class: 'fr-chat-hint', text: 'Loading...' }));
         } else if (t.hasMore) {
-            top.appendChild(h('button', { type: 'button', class: 'fr-chat-older', text: 'Older', onclick: older }));
+            top.appendChild(h('button', { type: 'button', class: 'fr-chat-older', text: 'Older messages', onclick: older }));
         } else if (t.msgs.length) {
             top.appendChild(h('div', { class: 'fr-chat-hint', text: 'Start of your chat with ' + friend.username }));
         }
@@ -122,7 +122,7 @@ export function mount(host, friend, opts) {
             list.appendChild(h('div', { class: 'fr-chat-empty' },
                 icon('friends'),
                 h('div', { class: 'fr-empty-h', text: 'Say hi to ' + friend.username }),
-                h('div', { class: 'fr-empty-p', text: 'Just you two can see this.' })));
+                h('div', { class: 'fr-empty-p', text: 'Only the two of you can see this chat.' })));
             return;
         }
         let prev = null;
@@ -141,9 +141,9 @@ export function mount(host, friend, opts) {
             }
             list.appendChild(b);
             if (m.state === 'failed') {
-                list.appendChild(h('button', { type: 'button', class: 'fr-msg-retry', onclick: () => retry(m) }, (m.why || 'Didn’t send') + ' · ', h('b', { text: 'Retry' })));
+                list.appendChild(h('button', { type: 'button', class: 'fr-msg-retry', onclick: () => retry(m) }, (m.why || 'Not sent') + ' · ', h('b', { text: 'Retry' })));
             } else if (i === lastMine && m.read) {
-                list.appendChild(h('div', { class: 'fr-msg-seen', text: 'seen' }));
+                list.appendChild(h('div', { class: 'fr-msg-seen', text: 'Seen' }));
             }
             prev = m;
         });
@@ -249,7 +249,7 @@ export function mount(host, friend, opts) {
             const code = r.data && r.data.error && r.data.error.code;
             if (code === 'not_friends') { t.msgs = t.msgs.filter((x) => x !== m); if (alive) opts.onBack('gone'); return; }
             m.state = 'failed';
-            m.why = r.status === 429 ? 'Too fast' : code === 'too_long' ? 'Too long' : '';
+            m.why = r.status === 429 ? 'Sending too fast' : code === 'too_long' ? 'Message too long' : '';
         }
         if (alive) repaint(false);
     }

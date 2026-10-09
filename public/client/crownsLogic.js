@@ -123,6 +123,6 @@ export function howLine(crown) {
         case "steal": return { title: "CROWN STOLEN", sub: "You took " + (from || "their") + (from ? "'s" : "") + " crown.", card: "CROWN: TAKEN" + (from ? " FROM " + from.toUpperCase() : "") };
         case "fell": return { title: "A CROWN FELL TO YOU", sub: "Its holder" + (from ? " " + from : "") + " died.", card: "CROWN: IT FELL TO YOU" };
         case "left": return { title: "A CROWN FELL TO YOU", sub: "Its holder" + (from ? " " + from : "") + " left the raid.", card: "CROWN: IT FELL TO YOU" };
-        default: return { title: "YOU GOT A CROWN", sub: "A crown was free, you were next.", card: "CROWN: IT WAS FREE" };
+        default: return { title: "YOU GOT A CROWN", sub: "A crown was free, and you were next in line.", card: "CROWN: IT WAS FREE" };
     }
 }

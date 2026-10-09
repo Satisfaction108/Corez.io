@@ -111,13 +111,13 @@ global.tips = [[
     ], [
         "Tip: Banked gems are safe. What you're carrying drops when you die.",
         "Tip: Laggy? Turn on Fewer effects or Simple terrain in Settings.",
-        "Tip: Mining Power makes you break rock way faster. Fill it early.",
-        "Tip: Your base works as a bank too. You just keep 80%.",
+        "Tip: Mining Power makes you break rock much faster, so fill it early.",
+        "Tip: Your base works as a bank too, but you only keep 80%.",
         "Tip: Chests and bosses pay the most, so grab them fast."
     ], [
-        "Teaming up in solos is lame. Take it too far and you can get punished.",
-        "Hunting one person all raid just to grief them isn't cool. You can get punished for it.",
-        "Multiboxing (running a bunch of tanks with a script) is cheating. That's a ban."
+        "Teaming up in solo raids isn't fair to everyone else, and you can get punished for it.",
+        "Hunting one person all raid just to grief them isn't cool, and you can get punished for it.",
+        "Multiboxing (running several tanks with a script) is cheating and will get you banned."
     ]
 ];
 global.createMessage = (content, duration, JSONMessageMode) => createMessage(content, duration, JSONMessageMode);

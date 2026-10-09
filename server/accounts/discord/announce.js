@@ -90,7 +90,7 @@ function raidTopText(msg) {
         lines.push(`${PLACE[e.place]}: **${rest.escapeMd(row.username)}** (${(e.score | 0).toLocaleString('en-US')} pts)`);
     }
     if (head) return lines.length ? head + '\nTop finishers:\n' + lines.join('\n') : head;
-    return lines.length ? 'Raid over. Top finishers:\n' + lines.join('\n') : null;
+    return lines.length ? 'The raid is over! Here are the top finishers:\n' + lines.join('\n') : null;
 }
 
 function onBus(serverId, msg) {

@@ -100,7 +100,7 @@ function collectContext(version) {
 // "game version 1.2.3, Chrome 131 on macOS, 1440x900 window, US East, your username (ZyroX)"
 function contextSummary(c) {
     const user = store.get('user');
-    const who = user && user.username ? 'your username (' + user.username + ')' : guestId() ? 'your guest id' : '';
+    const who = user && user.username ? 'your username (' + user.username + ')' : guestId() ? 'your guest ID' : '';
     const bits = [];
     if (c.version) bits.push('game version ' + c.version);
     if (c.browser) bits.push(c.browser);
@@ -118,7 +118,7 @@ function openModal() {
     let sent = false;
     const text = h('textarea', {
         class: 'dw-input fb-text', maxlength: MAX, rows: 5, spellcheck: 'true', 'data-autofocus': '',
-        placeholder: 'Type your bug or idea here', 'aria-label': 'Your feedback',
+        placeholder: 'Tell us about a bug or an idea.', 'aria-label': 'Your feedback',
     });
     text.value = (ls.get(DRAFT_KEY) || '').slice(0, MAX);
     const counter = h('span', { class: 'fb-count', 'aria-live': 'polite' });
@@ -167,7 +167,7 @@ function openModal() {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const body = text.value.trim();
-        if (body.length < MIN) { ui.showAlert(alert, 'Write a few words first.'); text.focus(); return; }
+        if (body.length < MIN) { ui.showAlert(alert, 'Please write a few words first.'); text.focus(); return; }
         ui.setBusy(send, true, 'Sending...');
         ui.showAlert(alert, '');
         const payload = { text: body };
@@ -180,7 +180,7 @@ function openModal() {
         if (!r.ok) {
             const code = r.data && r.data.error && r.data.error.code;
             ui.showAlert(alert, code === 'accounts_unavailable' || r.status === 404
-                ? 'Feedback is down rn. Hit us up on Discord instead.'
+                ? 'Feedback isn’t working right now. Please message us on Discord instead.'
                 : ui.humanError(r));
             return;
         }
@@ -191,7 +191,7 @@ function openModal() {
 
     function showThanks() {
         ui.clear(m.card);
-        const done = h('button', { type: 'button', class: 'dw-btn accent-fill', 'data-autofocus': '', text: 'Nice', onclick: () => m.close() });
+        const done = h('button', { type: 'button', class: 'dw-btn accent-fill', 'data-autofocus': '', text: 'Done', onclick: () => m.close() });
         m.card.appendChild(h('div', { class: 'fb-thanks' },
             h('div', { class: 'fb-thanks-ic' }, ui.icon('check')),
             h('div', { class: 'dw-modal-h', text: THANKS }),
@@ -201,7 +201,7 @@ function openModal() {
 
     const m = ui.modal({
         title: 'Send feedback',
-        message: 'This goes straight to the dev.',
+        message: 'Tell us about bugs, ideas or balance. It goes straight to the dev.',
         body: form,
         cls: 'fb-modal',
         focus: '.fb-text',

@@ -121,7 +121,7 @@ test('spam: the fourth line in 10 s is stopped with a popup, long lines too', ()
     const lou = sock('Lou');
     reset();
     assert.equal(chat.fromPlayer(lou, 'x'.repeat(57), 0), 0, 'over 56 characters');
-    assert.ok(popups(lou).includes('Too long!'));
+    assert.ok(popups(lou).includes('That message is too long.'));
     assert.equal(lines(ann).length, 0);
     clients.splice(clients.indexOf(sam), 1); clients.splice(clients.indexOf(lou), 1);
 });

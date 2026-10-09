@@ -51,19 +51,19 @@ const ABILITIES = [
     { id: "grapple", name: "Grapple Hook", price: 700,  cd: 9000,  trial: true,
       desc: "Fires a hook up to 900m away. If it catches rock or a tank, it yanks you straight there." },
     { id: "burrow",  name: "Burrow Drill", price: 900,  cd: 45000,
-      desc: "Dig underground for up to 10 seconds, plowing through rock. Slower, and you can't shoot. Press again to come up." },
+      desc: "Lets you dig underground through rock for up to 10 seconds. You're slower and can't shoot, and you can press it again to come up." },
     { id: "shock",   name: "Shockwave",    price: 900,  cd: 14000, trial: true, place: 550,
-      desc: "Throw a shock grenade up to 550m away. It blows on impact: rock shatters and every tank in the blast gets launched, you too. Only enemies get hurt." },
+      desc: "Throws a shock grenade up to 550m away that shatters rock and launches every tank in the blast, including you. Only enemies take damage." },
     { id: "radar",   name: "Radar Ping",   price: 600,  cd: 22000,
-      desc: "Shows every tank within 2.5km for 10 seconds, on screen and on the minimap. Carriers glow gold." },
+      desc: "Shows every tank within 2.5km on your screen and minimap for 10 seconds. Tanks carrying lots of gems glow gold." },
     { id: "wall",    name: "Barricade",    price: 700,  cd: 18000, place: 600,
       desc: "Raises a wall of rock where you aim, almost instantly. It stands for 20 seconds." },
     { id: "smoke",   name: "Smoke Bomb",   price: 800,  cd: 22000, trial: true, place: 550,
-      desc: "Throw a smoke bomb up to 550m away. Anyone inside the cloud is hidden for 8 seconds. Shooting gives you away." },
+      desc: "Throws a smoke bomb up to 550m away that hides anyone inside the cloud for 8 seconds. Shooting gives you away." },
     { id: "rush",    name: "Adrenaline",   price: 1000, cd: 24000, trial: true,
-      desc: "10 seconds of 60% faster fire and 30% more speed." },
+      desc: "You fire 60% faster and move 30% faster for 10 seconds." },
     { id: "pad",     name: "Launch Pad",   price: 600,  cd: 16000, trial: true, place: 600,
-      desc: "Puts a pad where you aim that flings anyone who touches it onward. Lasts 30 seconds." },
+      desc: "Puts a pad where you aim that flings anyone who touches it. It lasts 30 seconds." },
 ];
 const AB_BY_ID = new Map(ABILITIES.map(a => [a.id, a]));
 
@@ -500,7 +500,7 @@ const USES = {
         busy.add(body);
         tickBurrow(body, t);
         fx('burrow', body.x, body.y, 0, BURROW.maxMs, body.id);
-        return { ok: true, cd: 0, msg: "Underground. Press it again to come up." };
+        return { ok: true, cd: 0, msg: "You're underground. Press it again to come up." };
     },
 
     // Thrown: it flies to the aim spot (held to the range) and blows there,
@@ -528,7 +528,7 @@ const USES = {
     wall(body, tx, ty) {
         const g = tg();
         const plan = wallPlan(body, tx, ty);
-        if (!plan) return { ok: false, msg: "No rock to raise here." };
+        if (!plan) return { ok: false, msg: "There's no rock to raise here." };
         const t = now();
         const rate = REGROW_MS / WALL.riseMs;
         let n = 0;
@@ -540,7 +540,7 @@ const USES = {
             walls.push({ rock, gen: rock.gen, until: t + WALL.ms });
             n++;
         }
-        if (!n) return { ok: false, msg: "Nothing to raise there. Aim at ground you dug out." };
+        if (!n) return { ok: false, msg: "There's nothing to raise there. Aim at ground you've dug out." };
         fx('wall', plan.x, plan.y, plan.ang, n, body.id);
         return { ok: true };
     },
@@ -569,7 +569,7 @@ const USES = {
 
     pad(body, tx, ty) {
         const P = placeAt(body, tx, ty, AB_BY_ID.get('pad').place);
-        if (!padSpotOk(P.x, P.y)) return { ok: false, msg: "No room for a pad there. Aim at open ground." };
+        if (!padSpotOk(P.x, P.y)) return { ok: false, msg: "There's no room for a pad there. Aim at open ground." };
         const t = now();
         const mine = pads.filter(p => p.owner === body);
         while (mine.length >= PAD.perOwner) { const old = mine.shift(); pads.splice(pads.indexOf(old), 1); fx('padgone', old.x, old.y, 0, 0, old.id); }
@@ -718,7 +718,7 @@ function use(body, tx, ty, id) {
     const st = stateFor(body);
     id = id || equippedOf(st);
     if (!id || !owns(st, id) || !USES[id]) {
-        if (body.socket) tell(body, "No ability yet. Shops sell them.");
+        if (body.socket) tell(body, "You don't have an ability yet. You can buy one at a shop.");
         return false;
     }
     const t = now();
@@ -729,7 +729,7 @@ function use(body, tx, ty, id) {
         return true;
     }
     if (onAnyPad(body)) {
-        if (body.socket) tell(body, "Can't use abilities on a pad.");
+        if (body.socket) tell(body, "You can't use abilities on a pad.");
         return false;
     }
     if (cdOf(st, id) > 0) return false;
@@ -762,7 +762,7 @@ function cycle(socket) {
 function canBuy(socket, item) {
     const st = stateOf(socket);
     if (st.own.includes(item.id)) {
-        if (equippedOf(st) === item.id && !trialLive(st)) return { ok: false, why: "Already equipped." };
+        if (equippedOf(st) === item.id && !trialLive(st)) return { ok: false, why: "That's already equipped." };
         return { ok: true, equip: true };
     }
     return { ok: true };

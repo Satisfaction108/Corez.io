@@ -76,7 +76,7 @@ export function viewFor(st, o) {
 }
 // the header's words: it is never urgent
 export const HEAD_TITLE = "Perk ready";
-export const HEAD_NOTE = "pick any time";
+export const HEAD_NOTE = "Pick one any time";
 
 // ── where the cards go ─────────────────────────────────────────────────
 // A row low in the middle: its lower edge sits on `bottom` (just above your
@@ -148,8 +148,8 @@ export function hoverText(p) {
     const have = (p.n | 0);
     const step = have > 0
         ? "You have level " + roman(have) + ". This takes it to " + roman(lv) + (max ? " of " + roman(max) : "") + "."
-        : "New perk, level I" + (max > 1 ? " of " + roman(max) + ". Pick it again to stack it." : ".");
-    return { title: name + "  " + roman(lv), body: String(p.desc || "").trim() + " " + step + " Lasts the whole raid." };
+        : "This is a new perk at level I" + (max > 1 ? " of " + roman(max) + ". Pick it again to stack it." : ".");
+    return { title: name + "  " + roman(lv), body: String(p.desc || "").trim() + " " + step + " It lasts the whole raid." };
 }
 
 // ── the build strip, beside the satchel ────────────────────────────────

@@ -51,8 +51,8 @@ a{color:var(--accent)}
       .then(function(res){
         if (res.ok) { f.hidden = true; say('Password changed. You’re logged in' + (res.j.user ? ' as ' + res.j.user.username : '') + '.', 'ok');
           var a2 = document.createElement('a'); a2.href = '/'; a2.textContent = 'Play Corez.io'; msg.appendChild(document.createElement('br')); msg.appendChild(a2); return; }
-        go.disabled = false; say((res.j.error && res.j.error.message) || "That didn't work. Try again.", 'bad');
-      }, function(){ go.disabled = false; say("Couldn't reach the server. Try again.", 'bad'); });
+        go.disabled = false; say((res.j.error && res.j.error.message) || "That didn't work. Please try again.", 'bad');
+      }, function(){ go.disabled = false; say("Couldn't reach the server. Please try again.", 'bad'); });
   });
 })();
 </script></body></html>`;

@@ -31,22 +31,22 @@ const OFFER_N = 3;
 // utility 3, survival 2, anything that adds damage to a fight 1).
 // icon: the client's glyph key (raidPerks.js GLYPH).
 const CATALOG = [
-    { id: 'drill',   name: 'Power Drill',     icon: 'drill',   max: 3, w: 3, kind: 'mine',  desc: 'Mine rock 20% faster.' },
+    { id: 'drill',   name: 'Power Drill',     icon: 'drill',   max: 3, w: 3, kind: 'mine',  desc: 'You mine 20% faster.' },
     { id: 'blast',   name: 'Blast Rounds',    icon: 'blast',   max: 3, w: 3, kind: 'mine',  desc: 'Shots that hit rock crack the rock around them.' },
     { id: 'rich',    name: 'Rich Veins',      icon: 'rich',    max: 3, w: 3, kind: 'mine',  desc: 'Ore you break drops 12% more gems.' },
     { id: 'magnet',  name: 'Ore Magnet',      icon: 'magnet',  max: 3, w: 3, kind: 'util',  desc: 'Gems fly to you from 40% farther away.' },
     { id: 'quake',   name: 'Seismic Pulse',   icon: 'quake',   max: 2, w: 3, kind: 'mine',  desc: 'Every few seconds a pulse cracks the rock around you.' },
-    { id: 'chain',   name: 'Chain Spark',     icon: 'chain',   max: 3, w: 3, kind: 'mine',  desc: 'Hitting rock can arc a spark into the rock nearby.' },
+    { id: 'chain',   name: 'Chain Spark',     icon: 'chain',   max: 3, w: 3, kind: 'mine',  desc: 'Hitting rock can send a spark into nearby rock.' },
     { id: 'pierce',  name: 'Piercing Rounds', icon: 'pierce',  max: 3, w: 3, kind: 'mine',  desc: 'Shots punch through one more rock.' },
     { id: 'crit',    name: 'Lucky Strike',    icon: 'crit',    max: 3, w: 3, kind: 'mine',  desc: '12% of your shots hit rock for triple damage.' },
-    { id: 'satchel', name: 'Deep Pockets',    icon: 'satchel', max: 1, w: 3, kind: 'util',  desc: 'Carry 4,000 more gems: 12,000, or 16,000 with a Reinforced Satchel.' },
-    { id: 'speed',   name: 'Swift Treads',    icon: 'speed',   max: 3, w: 3, kind: 'move',  desc: 'Move 6% faster.' },
-    { id: 'hide',    name: 'Thick Hide',      icon: 'hide',    max: 3, w: 2, kind: 'tough', desc: '7% more max health.' },
-    { id: 'regen',   name: 'Field Repair',    icon: 'regen',   max: 2, w: 2, kind: 'tough', desc: 'Out of a fight for 5 seconds, heal 1.2% of your health a second.' },
+    { id: 'satchel', name: 'Deep Pockets',    icon: 'satchel', max: 1, w: 3, kind: 'util',  desc: 'Your satchel holds 12,000 gems, or 16,000 with a Reinforced Satchel.' },
+    { id: 'speed',   name: 'Swift Treads',    icon: 'speed',   max: 3, w: 3, kind: 'move',  desc: 'You move 6% faster.' },
+    { id: 'hide',    name: 'Thick Hide',      icon: 'hide',    max: 3, w: 2, kind: 'tough', desc: 'You get 7% more max health.' },
+    { id: 'regen',   name: 'Field Repair',    icon: 'regen',   max: 2, w: 2, kind: 'tough', desc: 'After 5 seconds out of a fight, you heal 1.2% of your health per second.' },
     { id: 'vamp',    name: 'Gem Leech',       icon: 'vamp',    max: 2, w: 2, kind: 'tough', desc: 'Every gem you pick up heals you a little.' },
-    { id: 'twin',    name: 'Twin Drill',      icon: 'twin',    max: 2, w: 1, kind: 'fight', desc: 'A small extra barrel that only drills rock.' },
-    { id: 'drones',  name: 'Drone Bay',       icon: 'drones',  max: 2, w: 1, kind: 'fight', desc: 'Swarm drones that only chew rock.' },
-    { id: 'reload',  name: 'Overclock',       icon: 'reload',  max: 3, w: 1, kind: 'fight', desc: 'Reload 5% faster.' },
+    { id: 'twin',    name: 'Twin Drill',      icon: 'twin',    max: 2, w: 1, kind: 'fight', desc: 'Adds a small extra barrel that only drills rock.' },
+    { id: 'drones',  name: 'Drone Bay',       icon: 'drones',  max: 2, w: 1, kind: 'fight', desc: 'Adds swarm drones that only chew rock.' },
+    { id: 'reload',  name: 'Overclock',       icon: 'reload',  max: 3, w: 1, kind: 'fight', desc: 'You reload 5% faster.' },
 ];
 const BY_ID = new Map(CATALOG.map(p => [p.id, p]));
 
