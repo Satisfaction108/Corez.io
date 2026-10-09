@@ -95,7 +95,7 @@ function t(name, fn) {
     });
     t('card: goal, controls and who is in', () => {
         const d = L.introLines({ keys: 'WASD', tanks: 9, leftMs: 462000, twist: 'Low Gravity' });
-        assert.equal(d.title, 'go get gems');
+        assert.equal(d.title, 'Mine, Bank, Win');
         assert.match(d.goal, /colored rocks/);
         assert.match(d.goal, /vault/);
         assert.match(d.controls, /^WASD to move/);

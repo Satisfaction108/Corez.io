@@ -179,7 +179,7 @@ export function introLines(o) {
     if (n > 1) bits.push(n + " tanks in this raid");
     if ((s.leftMs | 0) > 0) bits.push(clock(s.leftMs) + " left");
     if (s.twist) bits.push("Twist: " + s.twist);
-    return { eyebrow: "raid started", title: "go get gems", goal, controls, status: bits.join("  ·  ") };
+    return { eyebrow: "raid started", title: "Mine, Bank, Win", goal, controls, status: bits.join("  ·  ") };
 }
 
 // Tank tiles: a hull with no guns of its own (Smasher, Spike, ...) digs by
