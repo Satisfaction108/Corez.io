@@ -13,6 +13,13 @@ const RAM_BUILD = [0, 0, 0, 0, 0, 8, 9, 9, 7, 9, 8];
 const GUN_PRIORITY = [3, 0, 1, 2, 7, 10, 9, 4, 5, 8, 6];
 const RAM_PRIORITY = [6, 7, 9, 5, 8, 10, 0, 1, 2, 3, 4];
 const TEMPLATE_POINTS = 50;
+// Oct 8 (owner): a new player (fewer than NEW_LIVES lives ever) picks their own
+// build, but Mining Power is lifted to NEW_MINING for free, on top of their own
+// points, so rock doesn't take forever to break while they learn
+const NEW_LIVES = 10;
+const NEW_AFTER_MS = 1000;
+const MINING = 10;            // raw slot of Mining Power
+const NEW_MINING = 5;
 
 // combat points spent (slots 0..9)
 function combatSpent(raw) {
@@ -58,12 +65,13 @@ function isRammer(body) {
 
 // once a second per human body
 function tick(body, t = Date.now()) {
-    if (!ON || !body || !body.socket || !body.skill || !body.isPlayer) return false;
+    if (!body || !(ON || body._autoStatsNew) || !body.socket || !body.skill || !body.isPlayer) return false;
     if (typeof Config !== 'undefined' && Config.tutorial) return false;
     if (body.isDead && body.isDead()) return false;
     if (!body._autoStatsAt || t < body._autoStatsAt) return false;
     body._autoStatsAt = 0;
     const sk = body.skill;
+    if (body._autoStatsNew) return newbieMining(body, sk);
     if (!((sk.points | 0) > 0) || combatSpent(sk.raw) > 0) return false;
     const before = sk.points | 0;
     const fit = placeBuild(sk.raw, before, sk.caps, isRammer(body));
@@ -84,6 +92,31 @@ function tick(body, t = Date.now()) {
 }
 
 // arm (again) for this body: a new life or a new raid's respec
-function arm(body, t = Date.now()) { if (body) body._autoStatsAt = t + AFTER_MS; }
+// A new player's free Mining Power: up to NEW_MINING (never past the cap), their
+// own points untouched. -> true when it lifted it
+function newbieMining(body, sk) {
+    const raw = (sk.raw || []).slice();
+    const cap = sk.caps && sk.caps[MINING] != null ? sk.caps[MINING] | 0 : 9;
+    const want = Math.min(cap, NEW_MINING);
+    if (!((raw[MINING] | 0) < want)) return false;
+    raw[MINING] = want;
+    try {
+        sk.set(raw);
+        body.refreshBodyAttributes();
+        if (body.syncSkillsToGuns) body.syncSkillsToGuns();
+    } catch (e) {
+        console.error('[AUTOSTATS]', e && e.message);
+        return false;
+    }
+    try { body.sendMessage("A little help while you learn: Mining Power starts at " + want + "."); } catch { /* */ }
+    return true;
+}
 
-module.exports = { AFTER_MS, GUN_BUILD, RAM_BUILD, setEnabled, isEnabled, combatSpent, placeBuild, tick, arm };
+// `newbie`: a new player (lifetime lives under NEW_LIVES): the free Mining Power, right away
+function arm(body, t = Date.now(), newbie = false) {
+    if (!body) return;
+    body._autoStatsNew = !!newbie;
+    body._autoStatsAt = t + (newbie ? NEW_AFTER_MS : AFTER_MS);
+}
+
+module.exports = { AFTER_MS, NEW_AFTER_MS, NEW_LIVES, NEW_MINING, GUN_BUILD, RAM_BUILD, setEnabled, isEnabled, combatSpent, placeBuild, tick, arm, newbieMining };

@@ -1526,7 +1526,7 @@ function respecForNewRaid(body) {
         body._modSkillGiven = false;
         // bought Stat Points were for the raid that just ended
         body._shopStatPts = 0;
-        if (body.socket) autoStats.arm(body);
+        if (body.socket) autoStats.arm(body, now(), careerLives(body.socket) < autoStats.NEW_LIVES);
         if (body.isBot && global.gameManager.gameHandler) {
             try { global.gameManager.gameHandler.configureBotStats(body); } catch { /* */ }
         }
@@ -1569,7 +1569,7 @@ function freshRaidBody(body) {
         body.botGraceUntil = now() + (fresh ? FIRST_MINUTES.BOT_GRACE_NEW_MS : FIRST_MINUTES.BOT_GRACE_MS);
         body.botSoftMs = botDiff.lerp(FIRST_MINUTES.BOT_SOFT_SHORT_MS, FIRST_MINUTES.BOT_SOFT_MS, n);
         body.botSoftUntil = now() + body.botSoftMs;
-        autoStats.arm(body);
+        autoStats.arm(body, now(), !!body.socket && careerLives(body.socket) < autoStats.NEW_LIVES);
         stampBotDifficulty(body);
         // first raids (stage fixed per raid): a longer bot soft window, no scary bot
         guard('newcomer stage', () => newcomer.applyBody(body));

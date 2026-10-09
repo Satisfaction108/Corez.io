@@ -147,9 +147,31 @@ test('tick: placed 20 s in when nothing is spent; a chosen build is never touche
 
 test('wiring: armed every life and every new raid, ticked once a second', () => {
     const dr = fs.readFileSync(path.join(SERVER, 'game', 'gamemodes', 'scripts', 'dig_royale.js'), 'utf8');
-    assert.match(dr, /body\.botSoftUntil = now\(\) \+ body\.botSoftMs;\n\s*autoStats\.arm\(body\);/, 'freshRaidBody arms it');
-    assert.match(dr, /body\._shopStatPts = 0;\n\s*if \(body\.socket\) autoStats\.arm\(body\);/, 'a new raid re-arms it');
+    assert.match(dr, /body\.botSoftUntil = now\(\) \+ body\.botSoftMs;\n\s*autoStats\.arm\(body, now\(\), !!body\.socket && careerLives\(body\.socket\) < autoStats\.NEW_LIVES\);/, 'freshRaidBody arms it (new players flagged)');
+    assert.match(dr, /body\._shopStatPts = 0;\n\s*if \(body\.socket\) autoStats\.arm\(body, now\(\), careerLives\(body\.socket\) < autoStats\.NEW_LIVES\);/, 'a new raid re-arms it');
     assert.match(dr, /guard\('auto stats', \(\) => autoStats\.tick\(body, t\)\)/, 'the stamp loop ticks it');
+});
+
+test('newbie: no build picked, Mining Power lifted to 5 for free, their own points untouched', () => {
+    const raw = Array(11).fill(0); raw[10] = 1; raw[3] = 4;
+    const sk = { raw: raw.slice(), caps: Array(11).fill(9), points: 30, set(r) { this.raw = r.slice(); } };
+    const said = [];
+    const b = { isPlayer: true, socket: {}, skill: sk, refreshBodyAttributes() {}, sendMessage: m => said.push(m), isDead: () => false };
+    auto.arm(b, 1000, true);
+    assert.equal(b._autoStatsNew, true);
+    assert.equal(b._autoStatsAt, 1000 + auto.NEW_AFTER_MS);
+    assert.equal(auto.tick(b, 1000 + auto.NEW_AFTER_MS), true);
+    assert.equal(sk.raw[10], auto.NEW_MINING, 'mining lifted to 5');
+    assert.equal(sk.raw[3], 4, 'their own choice kept');
+    assert.equal(sk.points, 30, 'the free points cost nothing');
+    assert.ok(said.length === 1);
+    // already at 5 or more: nothing
+    const sk2 = { raw: Object.assign(Array(11).fill(0), { 10: 7 }), caps: Array(11).fill(9), points: 0, set(r) { this.raw = r.slice(); } };
+    assert.equal(auto.newbieMining({ refreshBodyAttributes() {}, sendMessage() {} }, sk2), false);
+    // a regular player is armed as before (off unless ROYALE_AUTO_STATS)
+    auto.arm(b, 1000, false);
+    assert.equal(b._autoStatsNew, false);
+    assert.equal(b._autoStatsAt, 1000 + auto.AFTER_MS);
 });
 
 let failed = 0;

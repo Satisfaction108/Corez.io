@@ -213,16 +213,25 @@ class io_listenToPlayer extends IO {
             this._heldAtShield &= bits;     // let go: pressing it again is fresh
             const grace = graceUntil && Date.now() < graceUntil;
             let fresh = bits & ~this._heldAtShield;
+            // Oct 8 (owner: "it doesn't let you shoot at all"): a shielded tank's
+            // guns don't fire, so shooting always ends the shield: a fresh
+            // press at once (even in the spawn grace), and a trigger already
+            // held (autofire, the respawn click) once the grace is over
+            if (!grace) fresh |= bits & this._heldAtShield & (16 | 32);
+            const shot = fresh & (16 | 32);
             // Second Wind (shop gear): only shooting counts for a while longer
             if ((this.body.spawnMoveShieldUntil || 0) > Date.now()) fresh &= 16 | 32;
             // round 9 timed shields (quick-death respawn 8 s, post-bank 3 s): moving keeps
             const endAt = this.body.shieldEndAt || 0;
-            if (endAt && (Date.now() >= endAt || (this.body.shootEndsShield && (fresh & (16 | 32))))) {
+            if (endAt && (Date.now() >= endAt || (this.body.shootEndsShield && shot))) {
                 this.body.invuln = false;
                 this.body.shieldEndAt = 0;
                 this.body.shootEndsShield = false;
                 if (graceUntil > Date.now()) this.body.spawnGraceUntil = 0;
-            } else if (!grace && fresh) this.body.invuln = false;
+            } else if (shot || (!grace && fresh)) {
+                this.body.invuln = false;
+                if (graceUntil > Date.now()) this.body.spawnGraceUntil = 0;
+            }
         }
         this.body.autoOverride = this.player.command.override;
         // sidearm guns fire from their own key, not from alt (drone repel)

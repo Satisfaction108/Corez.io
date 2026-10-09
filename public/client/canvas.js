@@ -279,6 +279,8 @@ class Canvas {
             this.chatInput.id = "chatInput";
             this.chatInput.type = "text";
             this.chatInput.maxLength = 56;
+            // commands ($broadcast is up to 200 on the server) get room to type
+            this.chatInput.addEventListener("input", () => { const ci = this.chatInput; if (ci) ci.maxLength = ci.value.charAt(0) === "$" ? 220 : 56; });
             this.chatInput.autocomplete = "off";
             this.chatInput.spellcheck = false;
             this.chatInput.setAttribute("aria-label", "Chat");
