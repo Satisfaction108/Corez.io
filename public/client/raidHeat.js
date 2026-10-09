@@ -142,7 +142,7 @@ export function onRY(r) {
     if (b && b.id !== S.bossSeen) {
         S.bossSeen = b.id; S.bossUpAt = fresh ? -1e9 : now; S.bossX = b.x; S.bossY = b.y;
         if (!global.died && !fresh && nxShows("boss", nx(), { near: near(b.x, b.y, 1800) })) {
-            juice.slam(String(b.name || "BOSS").toUpperCase(), "has surfaced. " + fmt(b.gems | 0) + " gems to whoever ends it.", b.c || "#c9a8ff", 2800, 50);
+            juice.slam(String(b.name || "BOSS").toUpperCase(), "is up. " + fmt(b.gems | 0) + " gems to whoever kills it", b.c || "#c9a8ff", 2800, 50);
             juice.glitch(0.8, 420, true);
             juice.rumble(900, 8);
             juice.lightLeak("201,168,255", 1300);
@@ -154,7 +154,7 @@ export function onRY(r) {
     if (st && st.a) {
         const c = st.c | 0;
         if (S.stormCycle >= 0 && c !== S.stormCycle && !global.died && !r.ending) {
-            juice.slam(st.fin ? "LAST STORM" : "STORM CLOSING", st.fin ? "It closes all the way. Get to the middle." : "Stay inside the circle.", "#b98bff", 2600, 56);
+            juice.slam(st.fin ? "LAST STORM" : "STORM CLOSING", st.fin ? "It closes all the way, get to the middle" : "Stay inside the circle", "#b98bff", 2600, 56);
             juice.glitch(0.9, 520);
             juice.rumble(700, 6);
             juice.flash("#b98bff", 260, 0.2);
@@ -193,7 +193,7 @@ export function onKC(m) {
             S.coreUpAt = now;
             if (!nxShows("core", nx())) {
                 // before stage 2: one plain line, a lighter shake
-                juice.slam("A giant Core rose in the middle.", "Break it with everyone.", CORE, 3800, 40);
+                juice.slam("A giant Core is up in the middle", "Everyone break it together", CORE, 3800, 40);
                 juice.shake(20, 500);
                 juice.rumble(1200, 5);
                 juice.lightLeak(CORE_RGB, 1800);
@@ -541,7 +541,7 @@ function bankWatch(now) {
         }
         if (!S.firstBank) {
             S.firstBank = true;
-            juice.slamRoll("BANKED +", 0, got, "Dying can't take these now.", GOLD, 2400, 62, fmt);
+            juice.slamRoll("BANKED +", 0, got, "These are safe now", GOLD, 2400, 62, fmt);
             juice.shake(24, 360);
             sfx("relief");
             juice.sparks(x, y, 26, 260, 900, 3, GOLD, TAU, 0, 6);
@@ -1219,8 +1219,8 @@ export const SLAM_RISE = juice.SLAM_RISE;
 // the bank milestones (MS) take a turn in the slam lane in a raid
 // title: the rung ("100"), bonus: "+25"
 export function slamBanked(title, bonus) {
-    if (bonus) juice.slam(bonus + " BONUS", "Milestone: " + title + " gems banked in all", GOLD, 2600, 54);
-    else juice.slam("MILESTONE", title + " gems banked in all", GOLD, 2600, 54);
+    if (bonus) juice.slam(bonus + " BONUS", "You've banked " + title + " gems total", GOLD, 2600, 54);
+    else juice.slam("MILESTONE", "You've banked " + title + " gems total", GOLD, 2600, 54);
 }
 
 // ── kill feed / callout colours ────────────────────────────────────────
@@ -1230,9 +1230,9 @@ export function feedLine(f, who, tag) {
     if (f.bounty) return { text: tag(String(f.by || "Someone").slice(0, 13), GOLD) + " hunted down " + who(f.name, "someone"), badge: f.g ? { t: "+" + fmt(f.g), col: GOLD } : null };
     if (f.hunt) return { text: who(f.name, "Someone") + " is the top target", badge: { t: fmtK(f.g | 0), col: RED } };
     if (f.cloot) return { text: (f.by ? tag(String(f.by).slice(0, 13), GOLD) : "Someone") + " found " + tag(String(f.item || "loot").slice(0, 24), LOOT_COL[f.rar] || GOLD) + " in the Core", badge: null };
-    if (f.core && f.spawn) return { text: tag("The Core", CORE) + " has surfaced", badge: null };
+    if (f.core && f.spawn) return { text: tag("The Core", CORE) + " is up", badge: null };
     if (f.core && f.broke) return { text: (f.by ? tag(String(f.by).slice(0, 13), GOLD) : "Someone") + " broke " + tag("the Core", CORE), badge: f.g ? { t: "+" + fmt(f.g), col: GOLD } : null };
-    if (f.core) return { text: who(f.name, "Someone") + " got shattered by " + tag("the Core", CORE), badge: null };
+    if (f.core) return { text: who(f.name, "Someone") + " died to " + tag("the Core", CORE), badge: null };
     return null;
 }
 export function calloutCol(kind) {

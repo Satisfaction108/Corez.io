@@ -234,7 +234,7 @@ test('client: the words (rule, death card, carry warning, crown card)', async ()
     // the death card's line
     let d = L.deathLine({ pts: { b: 6000, k: 900, c: 42 }, dl: { p: 1500, by: 'kai', cr: 1, c: 3074 } }, 3074);
     assert.equal(d.head + ' (' + d.lost + ')', 'Points: 6,942 (lost 1,500: kai took your crown)');
-    assert.equal(d.sub, 'You dropped 3,074 carried gems. They were not points yet: bank sooner.');
+    assert.equal(d.sub, 'You dropped 3,074 carried gems. Bank sooner next time.');
     assert.equal(d.hurt, true);
     d = L.deathLine({ pts: { b: 9455, k: 0, c: 0 }, dl: { p: 0, c: 0 } }, 0);
     assert.equal(d.head + ' (' + d.lost + ')', 'Points: 9,455 (lost 0: banked gems are safe)');

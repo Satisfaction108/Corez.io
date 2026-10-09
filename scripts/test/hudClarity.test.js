@@ -156,7 +156,7 @@ function t(name, fn) {
         assert.ok(FS.nudgeAlpha(p, p.intro + 600, 'tiles', false) > 0.5);
         assert.ok(FS.introAlpha(p, 1000) > 0.9 && FS.introAlpha(p, p.intro + 1) === 0);
         assert.equal(FS.nudgeText(p, 'tiles'), 'New raid: pick your tank');
-        assert.equal(FS.nudgeText(FS.planFor({ newcomer: true }), 'tiles'), 'New tanks! Pick one any time.');
+        assert.equal(FS.nudgeText(FS.planFor({ newcomer: true }), 'tiles'), 'New tanks, pick one any time');
         const ln = FS.introLines({ newRaid: true, points: 50, tanks: 9, leftMs: 600000 });
         assert.equal(ln.eyebrow, 'NEW RAID');
         assert.ok(ln.goal.includes('Basic') && ln.goal.includes('50 points'), ln.goal);

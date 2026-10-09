@@ -113,10 +113,10 @@ global.tips = [[
         "Tip: Laggy? Turn on Fewer effects or Simple terrain in Settings.",
         "Tip: Mining Power makes you break rock way faster. Fill it early.",
         "Tip: Your base works as a bank too. You just keep 80%.",
-        "Tip: Chests and bosses pay the most. Grab them before someone else does."
+        "Tip: Chests and bosses pay the most, so grab them fast."
     ], [
         "Teaming up in solos is lame. Take it too far and you can get punished.",
-        "Chasing one person all raid just to grief them isn't cool. Take it too far and you can get punished.",
+        "Hunting one person all raid just to grief them isn't cool. You can get punished for it.",
         "Multiboxing (running a bunch of tanks with a script) is cheating. That's a ban."
     ]
 ];

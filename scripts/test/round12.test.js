@@ -225,7 +225,7 @@ function memStore() {
     });
 
     test('small: Team Bank line, pad timers, minimap markers, stats in the tutorial, FRESH START', () => {
-        assert.equal(BL.TEAM_BANK_TIP, 'Team Bank: break its banner to own it. Owners bank here safely; Vaults are open to everyone.');
+        assert.equal(BL.TEAM_BANK_TIP, 'Team Bank: break its banner to own it, then bank here safely.');
         const app = csrc('app.js');
         assert.ok(app.includes('Math.hypot(sx - global.screenWidth / 2, sy - global.screenHeight / 2) < buildBtnLabels.TEAM_BANK_NEAR * ratio'));
         assert.ok(app.includes('push(hudNote(1, "padtime", "You can come back in " + r.lockout + "s", color.guiwhite))'));

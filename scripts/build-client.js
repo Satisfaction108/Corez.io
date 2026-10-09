@@ -165,6 +165,44 @@ function listJs(dir, rel = "") {
     return out.sort();
 }
 
+function listPages(dir, rel = "") {
+    const out = [];
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (ent.name.startsWith(".")) continue;
+        const r = rel ? rel + "/" + ent.name : ent.name;
+        if (ent.isDirectory()) out.push(...listPages(path.join(dir, ent.name), r));
+        else if (ent.isFile() && /\.(html|css)$/.test(ent.name)) out.push(r);
+    }
+    return out.sort();
+}
+
+// Pages and styles ship with no comments and no indentation, and a page's
+// inline scripts are obfuscated like the files (Oct 8: the menu's HTML
+// comments were readable in view-source). The server takes .html and .css
+// from here too.
+const stripCss = (css) => css.replace(/\/\*[\s\S]*?\*\//g, "").split("\n").map(l => l.trim()).filter(Boolean).join("\n");
+function cleanHtml(html, rel) {
+    let n = 0;
+    // inline <script> and <style> first, so their comments go their own way
+    html = html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (all, attrs, code) => {
+        if (/\bsrc\s*=/i.test(attrs) || !code.trim()) return "<script" + attrs + "></script>";
+        const type = (attrs.match(/\btype\s*=\s*["']?([^"'\s>]+)/i) || [])[1] || "";
+        if (/json/i.test(type)) {
+            try { return "<script" + attrs + ">" + JSON.stringify(JSON.parse(code)) + "</script>"; } catch (e) { return all; }
+        }
+        const module = /module/i.test(type);
+        const opts = { ...light, renameGlobals: false, inputFileName: rel + "#" + (n++) };
+        if (!module) opts.identifiersPrefix = "h" + crypto.createHash("md5").update(rel + n).digest("hex").slice(0, 5);
+        const out = JavaScriptObfuscator.obfuscate(code, opts).getObfuscatedCode();
+        parse(out, module ? "module" : "script");
+        return "<script" + attrs + ">" + out + "</script>";
+    });
+    html = html.replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, (all, attrs, css) => "<style" + attrs + ">" + stripCss(css) + "</style>");
+    html = html.replace(/<!--[\s\S]*?-->/g, "");
+    if (/<(pre|textarea)\b/i.test(html)) return html;
+    return html.split("\n").map(l => l.trim()).filter(Boolean).join("\n");
+}
+
 function parse(code, sourceType) {
     return acorn.parse(code, { ecmaVersion: "latest", sourceType, allowHashBang: true });
 }
@@ -243,6 +281,16 @@ function main() {
             inBytes += Buffer.byteLength(code);
             outBytes += Buffer.byteLength(out);
             console.log(`  ${rel.padEnd(36)} ${profile.padEnd(6)} ${sourceType.padEnd(6)} ${kb(code)} -> ${kb(out)}  ${Date.now() - t} ms`);
+        }
+        for (const rel of listPages(SRC)) {
+            const src = fs.readFileSync(path.join(SRC, rel), "utf8");
+            const out = rel.endsWith(".css") ? stripCss(src) : cleanHtml(src, rel);
+            const dest = path.join(tmp, rel);
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.writeFileSync(dest, out);
+            manifest.files[rel] = crypto.createHash("sha1").update(src).digest("hex");
+            inBytes += Buffer.byteLength(src);
+            outBytes += Buffer.byteLength(out);
         }
         fs.writeFileSync(path.join(tmp, MANIFEST), JSON.stringify(manifest, null, 1));
     } catch (e) {

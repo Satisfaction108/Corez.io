@@ -4,7 +4,7 @@
 import * as api from './api.js';
 import { h, nameReason } from './ui.js';
 
-const RULE_HINT = '3–16 letters, numbers or _';
+const RULE_HINT = '3 to 16 letters, numbers or _';
 
 // Mirrors the server rule /^[A-Za-z0-9_]{3,16}$/, not all underscores, no "___".
 // Returns null when the name passes, else { level: 'hint'|'bad', text }.

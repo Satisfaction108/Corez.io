@@ -342,11 +342,11 @@ test('moments: one that waited 30 s on a fight goes once nobody is hitting them'
 // ── 3. respawn near the end ──────────────────────────────────────────────
 test('respawn: the raid\'s last lock says so and takes you to the finish; a held-back spawn says why', () => {
     const app = src('app.js');
-    assert.match(app, /if \(global\.royale\.storm && global\.royale\.storm\.fin\) return \{ ready: false, ended: true, label: "Raid ending: no more respawns\. Watch the finish" \};/);
+    assert.match(app, /if \(global\.royale\.storm && global\.royale\.storm\.fin\) return \{ ready: false, ended: true, label: "Raid's ending, no more respawns" \};/);
     assert.match(app, /else if \(now - again\._endedAt > 2500 && !global\.royaleSpectating\) royaleDomAct\("spectate"\);/);
     assert.match(app, /royaleDomAct\(again\.dataset\.ended \? "spectate" : "play"\);/);
     assert.match(app, /again\.addEventListener\("pointerdown", \(e\) => \{ if \(e\.button === 0 \|\| e\.pointerType === "touch"\) \{ e\.preventDefault\(\); againAct\(\); \} \}\);/, 'the press counts, not just a full click');
-    assert.match(app, /const label = finalLock \? "Raid ending: no more respawns\. Watch the finish"/);
+    assert.match(app, /const label = finalLock \? "Raid's ending, no more respawns"/);
     const cv = src('canvas.js');
     assert.match(cv, /if \(global\.died && !global\.tutorialMode && global\.royale && global\.royale\.lock && global\.royale\.at > 0 && global\.royale\.storm && global\.royale\.storm\.fin\) \{/);
     const so = ssrc('game/network/sockets.js');
@@ -365,10 +365,10 @@ test('button text: "Storm resetting (3s)", and every label fits the button', () 
     assert.match(app, /return \{ ready: false, queue: true, queued: q, label: q \? "Storm resetting: you drop in \(" \+ left \+ "s\)" : "Storm resetting \(" \+ left \+ "s\)" \};/);
     assert.ok(!/No spawns while the storm shuts/.test(app));
     const font = grabFn('app.js', 'playAgainFont')({});
-    for (const [label, ready, w] of [["Storm resetting (45s)", false, 380], ["Storm resetting: you drop in (45s)", false, 380], ["Raid ending: no more respawns. Watch the finish", false, 380],
-        ["Respawn", true, 380], ["Raid ending: no more respawns. Watch the finish", false, 300]]) {
-        const fs0 = parseFloat(font({ label, ready, ended: /Raid ending/.test(label) }, { w, big: false }, ready ? "Enter" : ""));
-        const room = (w - 36 - (ready ? 64 : 0)) * (/Raid ending/.test(label) ? 2 : 1);
+    for (const [label, ready, w] of [["Storm resetting (45s)", false, 380], ["Storm resetting: you drop in (45s)", false, 380], ["Raid's ending, no more respawns", false, 380],
+        ["Respawn", true, 380], ["Raid's ending, no more respawns", false, 300]]) {
+        const fs0 = parseFloat(font({ label, ready, ended: /Raid's ending/.test(label) }, { w, big: false }, ready ? "Enter" : ""));
+        const room = (w - 36 - (ready ? 64 : 0)) * (/Raid's ending/.test(label) ? 2 : 1);
         assert.ok(label.length * 0.55 * fs0 <= room + 1 || fs0 === 12, label + ' at ' + fs0 + 'px in ' + w);
         assert.ok(fs0 >= 12 && fs0 <= 26);
     }
@@ -514,7 +514,7 @@ test('crowns: the standings line says it in plain words', async () => {
     const fd = (d) => d >= 1000 ? (d / 1000).toFixed(1) + "k" : String(Math.round(d));
     const t = L.tracker(c, 9, 0, 0, fd);
     assert.equal(t.footer, 'Nearest crown: about 2.1k away');
-    assert.equal(t.footer2, 'Knock it off its holder to steal it');
+    assert.equal(t.footer2, 'Kill the holder to steal it');
     c.list[0].f = 0;
     assert.equal(L.tracker(c, 9, 0, 0, fd).footer, 'Nearest crown: 2.1k away');
     assert.equal(L.tracker(c, 1, 0, 0, fd).footer2, '', 'your own crown: no steal line');

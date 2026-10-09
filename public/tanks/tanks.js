@@ -211,9 +211,9 @@ function info() {
     if (!atlas.l) { (atlas.lWant ? img(D.atlas.l.src) : loadLarge()).then(draw); }
     const br = t.branch >= 0 ? D.branches[t.branch].name : "";
     box.append(x, pic, el("h2", "", t.name), el("div", "sub", "Tier " + t.tier + (br ? " · " + br + " line" : "")));
-    if (t.tier === 5) box.append(el("div", "t5", "Tier 5 opens in a raid once you grow to 2x in that life. It closes again when you die."));
-    box.append(el("h3", "", "Upgrades from"), t.parents.length ? chips(t.parents) : el("div", "none", "Every tank starts here."));
-    box.append(el("h3", "", "Upgrades into"), t.kids.length ? chips(t.kids) : el("div", "none", "Nothing after this one. It's as far as this line goes."));
+    if (t.tier === 5) box.append(el("div", "t5", "Tier 5 unlocks when you grow to 2x size. You lose it when you die."));
+    box.append(el("h3", "", "Upgrades from"), t.parents.length ? chips(t.parents) : el("div", "none", "Everyone starts here."));
+    box.append(el("h3", "", "Upgrades into"), t.kids.length ? chips(t.kids) : el("div", "none", "Nothing after this one, it's the end of the line."));
     box.classList.add("open");
 }
 function pick(i, fly) {

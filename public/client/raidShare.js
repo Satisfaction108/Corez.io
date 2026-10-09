@@ -152,11 +152,11 @@ async function copyText(text) {
 }
 export function shareLine(info) {
     // the Crown Contest
-    if (info.champ) return "I'm the Core Champion on Corez.io! Most points in the raid. https://corez.io";
-    if (info.crownCol && (info.place === 2 || info.place === 3)) return "I held a crown to the end on Corez.io! #" + info.place + (info.rows > 1 ? " of " + info.rows : "") + ". https://corez.io";
+    if (info.champ) return "I got Core Champion on Corez.io, most points in the raid https://corez.io";
+    if (info.crownCol && (info.place === 2 || info.place === 3)) return "I held a crown to the end on Corez.io, #" + info.place + (info.rows > 1 ? " of " + info.rows : "") + ". https://corez.io";
     if (info.place === 1) return (info.duos ? "We won a Duos raid on Corez.io!" : "I won a raid on Corez.io!") + " https://corez.io";
     if (info.place > 0) return "I placed #" + info.place + (info.rows > 1 ? " of " + info.rows : "") + " in a " + (info.duos ? "Duos " : "") + "raid on Corez.io! https://corez.io";
-    return "I just played a raid on Corez.io! https://corez.io";
+    return "Just played a raid on Corez.io https://corez.io";
 }
 const touchFirst = () => !!(global.mobile || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches));
 async function run(info) {
@@ -182,7 +182,7 @@ async function run(info) {
         if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
             try {
                 await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-                showNote("Copied! Paste it anywhere", blob, text, true);
+                showNote("Copied, paste it anywhere", blob, text, true);
                 return;
             } catch (e) { /* no clipboard permission: save it instead */ }
         }
@@ -327,8 +327,8 @@ export function makeCard(info) {
     else { big = "RAID OVER"; fill = C.head; dark = "#9a8d78"; }
     const bs = fit(c, big, TITLE, place > 1 && big.length < 4 ? 150 : 124, 560, 40);
     title(c, big, L - 4, 118, bs, fill, dark);
-    const sub = info.champ ? "Most points" + (info.rows > 1 ? ". #1 of " + info.rows : "")
-        : info.crownCol && (place === 2 || place === 3) ? "Held a crown to the bell. #" + place + (info.rows > 1 ? " of " + info.rows : "")
+    const sub = info.champ ? "Most points" + (info.rows > 1 ? ", #1 of " + info.rows : "")
+        : info.crownCol && (place === 2 || place === 3) ? "Held a crown to the end, #" + place + (info.rows > 1 ? " of " + info.rows : "")
         : place === 1 ? (info.duos ? "Won a Duos raid" : "Won the raid") + (info.rows > 1 ? " out of " + info.rows : "")
         : place > 0 ? "Placed #" + place + (info.rows > 1 ? " of " + info.rows : "") + " in a " + (info.duos ? "Duos" : "Solo") + " raid"
         : "A " + (info.duos ? "Duos" : "Solo") + " raid";

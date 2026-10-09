@@ -12,9 +12,9 @@ let hooks = { openProfile() {}, onLogin() {} };
 export function init(hs) { Object.assign(hooks, hs); }
 
 const BOARDS = {
-    ranked: { tab: 'Ranked', sub: 'by RP', col: 'RP', val: (r) => r.rp, empty: ['Nobody’s ranked yet', 'Play 3 placement games and #1 is yours.'] },
+    ranked: { tab: 'Ranked', sub: 'by RP', col: 'RP', val: (r) => r.rp, empty: ['Nobody’s ranked yet', 'Play 3 placement games to get on it.'] },
     banked: { tab: 'Banked', sub: 'most gems banked', col: 'Banked', val: (r) => r.value, empty: ['Nothing banked yet', 'Bank some gems and claim #1.'] },
-    wins: { tab: 'Wins', sub: 'raid wins', col: 'Wins', val: (r) => r.value, empty: ['No winners yet', 'Be the last one standing and you’re on top.'] },
+    wins: { tab: 'Wins', sub: 'raid wins', col: 'Wins', val: (r) => r.value, empty: ['No winners yet', 'Win a raid and you’re #1.'] },
 };
 let board = 'ranked';
 let paneEl = null, loadSeq = 0, cache = null, cachedAt = 0;
@@ -97,7 +97,7 @@ function paint(el, d) {
         el.appendChild(h('div', { class: 'lb-pin' }, row(me, true, loggedIn)));
     } else if (!loggedIn) {
         el.appendChild(h('div', { class: 'lb-guest' },
-            h('span', { text: board === 'ranked' ? 'Want your name here? Get an account and play ranked.' : 'Want your name here? Get an account and it counts.' }),
+            h('span', { text: board === 'ranked' ? 'Get an account and play ranked to show up here.' : 'Get an account to show up here.' }),
             h('button', { type: 'button', class: 'dw-btn sm accent-fill', text: 'Log in', onclick: () => hooks.onLogin() })));
     } else if (!me && d.hidden) {
         el.appendChild(h('div', { class: 'lb-guest', text: 'Your account is kept off the leaderboards.' }));

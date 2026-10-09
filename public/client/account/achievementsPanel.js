@@ -14,7 +14,7 @@ import { glyphIcon, loadCatalog } from './achievements.js';
 
 const NEW_KEY = 'dwAchNew_v1';     // ids unlocked in a raid since the panel was last opened (achievementCard.js writes it)
 const CATS = [
-    { id: 'first', name: 'First Steps', color: '#7ad3ff' },
+    { id: 'first', name: 'First steps', color: '#7ad3ff' },
     { id: 'combat', name: 'Combat', color: '#ff7a6b' },
     { id: 'mining', name: 'Mining', color: '#e0a060' },
     { id: 'banking', name: 'Banking', color: '#4fe08f' },
@@ -93,7 +93,7 @@ export async function open(opts) {
     clear(body);
     if (!r.ok || !r.data || !Array.isArray(r.data.achievements)) {
         body.appendChild(head(null, m));
-        body.appendChild(h('div', { class: 'ach-empty', text: store.get('offline') ? 'Achievements are down right now. You can still play.' : 'Couldn’t load your achievements. Try again in a bit.' }));
+        body.appendChild(h('div', { class: 'ach-empty', text: store.get('offline') ? 'Achievements are down rn. You can still play.' : 'Achievements didn’t load. Try again in a bit.' }));
         return;
     }
     render(body, r.data, m, fresh, (opts && opts.cat) || 'all');

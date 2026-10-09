@@ -455,16 +455,16 @@ const CHAPTERS = [
     // ── 1 ────────────────────────────────────────────────────────────
     {
         id: "basics", name: "Basics", mins: 1,
-        blurb: "Moving, shooting and the keys you'll actually use.",
+        blurb: "Moving, shooting and the main keys.",
         steps: [
             {
                 id: "move",
                 title: "Move around",
                 text: () => mob()
-                    ? "Put your left thumb down and drag to drive. Your right thumb aims. Drive around a bit."
-                    : `${kc("KEY_UP")} ${kc("KEY_LEFT")} ${kc("KEY_DOWN")} ${kc("KEY_RIGHT")} to drive. Your gun points at the mouse, so move that around too.`,
+                    ? "Drag your left thumb to drive. Your right thumb aims."
+                    : `${kc("KEY_UP")} ${kc("KEY_LEFT")} ${kc("KEY_DOWN")} ${kc("KEY_RIGHT")} to drive. Your gun follows the mouse.`,
                 hint: () => mob()
-                    ? "Drag your left thumb any way, and swing the right one around."
+                    ? "Drag both thumbs around."
                     : `Hold ${kc("KEY_UP")} and move the mouse in a circle.`,
                 praise: "nice",
                 target: () => ({ kind: "self" }),
@@ -479,8 +479,8 @@ const CHAPTERS = [
                 id: "dash",
                 title: "Dash",
                 text: () => mob()
-                    ? "The arrows button by your right thumb is a *dash*, a quick burst of speed. You get 2, and they come back in a few seconds. Dash twice."
-                    : `${kc("KEY_DASH")} is a *dash*, a quick burst the way you're driving. You get 2, and they come back in a few seconds. Dash twice.`,
+                    ? "The arrows button by your right thumb is a *dash*. You get 2, use both."
+                    : `${kc("KEY_DASH")} is a *dash*. You get 2, use both.`,
                 hint: () => mob() ? "Tap the arrows button twice." : `Drive and tap ${kc("KEY_DASH")}, twice.`,
                 praise: "zoom",
                 onEnter: () => { state.dash0 = abil().dashes | 0; },
@@ -494,7 +494,7 @@ const CHAPTERS = [
                 id: "shoot",
                 title: "Shoot",
                 text: () => mob()
-                    ? "Hold your right thumb down and drag it to shoot that way. A quick tap shoots at the spot. Try it on the rocks."
+                    ? "Hold and drag your right thumb to shoot. Try it on the rocks."
                     : "Hold [[Left click]] to shoot. Try it on the rocks.",
                 hint: "Keep holding it for a sec.",
                 praise: "ok",
@@ -508,11 +508,11 @@ const CHAPTERS = [
                 title: () => state.sub === 0 ? "Auto-fire" : "Auto-spin",
                 text: () => {
                     if (state.sub === 0) return mob()
-                        ? "Tap *Auto* at the top and you shoot without holding anything, handy while you mine. Tap it again to turn it off."
-                        : `${kc("KEY_AUTO_FIRE")} is auto-fire, you shoot without holding click. Press it again to turn it off. Lots of people just leave it on.`;
+                        ? "Tap *Auto* at the top to shoot without holding. Tap it again to turn it off."
+                        : `${kc("KEY_AUTO_FIRE")} is auto-fire, lots of people just leave it on. Turn it on, then off.`;
                     return mob()
-                        ? "Now tap *Autospin*. You spin and shoot everywhere, good when you're surrounded. Turn it on, then off."
-                        : `Now ${kc("KEY_AUTO_SPIN")}. You spin and shoot everywhere, good when you're surrounded. Turn it on, then off.`;
+                        ? "Now *Autospin*, good when you're surrounded. Turn it on, then off."
+                        : `Now ${kc("KEY_AUTO_SPIN")} for autospin, good when you're surrounded. Turn it on, then off.`;
                 },
                 hint: () => state.sub === 0
                     ? (mob() ? "Tap Auto, then tap it again." : `Press ${kc("KEY_AUTO_FIRE")} twice.`)
@@ -540,7 +540,7 @@ const CHAPTERS = [
                 id: "map",
                 omit: mob,
                 title: "Big map",
-                text: () => `${kc("KEY_TOGGLE_MAP")} opens the big map. Bosses and the storm show up on it. Open it and close it.`,
+                text: () => `${kc("KEY_TOGGLE_MAP")} opens the big map. Open it, then close it.`,
                 hint: () => `${kc("KEY_TOGGLE_MAP")} to open, ${kc("KEY_TOGGLE_MAP")} again to close.`,
                 praise: "got it",
                 progress: () => state.mapOpened ? (global.showBigMap ? 0.5 : 1) : 0,
@@ -553,7 +553,7 @@ const CHAPTERS = [
                 omit: mob,
                 next: true,
                 title: "Keys",
-                text: "These are the ones you'll use most. You can change any of them in *Settings* > *Keybinds*.",
+                text: "The ones you'll use most. Change them in *Settings* > *Keybinds*.",
                 extra: "keys",
                 praise: "ok",
             },
@@ -577,8 +577,8 @@ const CHAPTERS = [
                 id: "statGun", stats: GUN_STATS, need: 3, ui: "stats:" + GUN_STATS.join(","),
                 title: "Gun stats",
                 text: () => mob()
-                    ? "Tap *Stats* on the left. The lit up ones make your bullets better. Tap their + *3 times*."
-                    : "Bottom left are your stats. The lit up ones make your bullets better. Put *3 points* in with [[3]] to [[7]] or just click them.",
+                    ? "Tap *Stats* on the left, then tap + on the lit up ones *3 times*."
+                    : "Put *3 points* in the lit up stats, bottom left. Use [[3]] to [[7]] or click them.",
                 hint: "Any of the lit up bars works.",
                 praise: "stronger",
                 onEnter: () => { if ((gui.points | 0) < 12) tut("points", 30); },
@@ -590,9 +590,9 @@ const CHAPTERS = [
                 id: "statBody", stats: BODY_STATS, need: 2, ui: "stats:" + BODY_STATS.join(","),
                 title: "Body stats",
                 text: () => mob()
-                    ? "These ones keep you alive. Tap *2 points* in. Stats is on the left if it closed."
-                    : "These ones keep you alive. Put *2 points* in ([[1]] [[2]] [[8]] [[9]] [[0]]).",
-                hint: "Shield takes hits before your health does, regen fills it back up.",
+                    ? "These keep you alive, tap *2 points* in. Stats is on the left if it closed."
+                    : "These keep you alive. Put *2 points* in ([[1]] [[2]] [[8]] [[9]] [[0]]).",
+                hint: "Your shield gets hit before your health.",
                 praise: "tankier",
                 progress: () => clamp(statGain() / 2, 0, 1),
                 done: (p) => p >= 1 || groupRoom(BODY_STATS) === 0,
@@ -602,8 +602,8 @@ const CHAPTERS = [
                 id: "statMine", stats: MINE_STATS, need: 2, ui: "stats:10",
                 title: "Mining Power",
                 text: () => mob()
-                    ? "Last bar is *Mining Power*. You break rock way faster with it, most people fill it early. Tap it twice."
-                    : `Last bar is *Mining Power*. You break rock way faster with it, most people fill it early. Press ${kc("KEY_UPGRADE_MIN")} twice.`,
+                    ? "Last bar is *Mining Power*, it breaks rock way faster. Tap it twice."
+                    : `Last bar is *Mining Power*, it breaks rock way faster. Press ${kc("KEY_UPGRADE_MIN")} twice.`,
                 hint: () => mob() ? "It's the one at the very end." : `Hold ${kc("KEY_MAX_STAT")} and press a stat key to max it all at once.`,
                 praise: "there we go",
                 progress: () => clamp(statGain() / 2, 0, 1),
@@ -616,8 +616,8 @@ const CHAPTERS = [
             {
                 id: "upgrade", allow: "upgrade", ui: "upgrades",
                 title: "Upgrade",
-                text: () => mob() ? "These are tanks you can turn into. Pick whatever looks fun, there's no wrong one."
-                    : "Top left are tanks you can turn into. Pick whatever looks fun, there's no wrong one.",
+                text: () => mob() ? "These are tanks you can turn into. Pick any, there's no wrong one."
+                    : "Top left are tanks you can turn into. Pick any, there's no wrong one.",
                 hint: () => mob() ? "Tap a tank. If the picker closed, tap New tank on the left." : `${kc("KEY_CLASS_TREE")} shows the whole upgrade tree.`,
                 praise: () => tankName() ? `${tankName()}, nice` : "looks good",
                 onEnter: () => { tut("unlock"); state.askAt = T(); },
@@ -633,8 +633,8 @@ const CHAPTERS = [
             {
                 id: "families",
                 title: "Destroyer",
-                text: "You're a *Destroyer* for a sec. Big slow shots break rock fast, so it's a good mining tank. Break the marked rock.",
-                hint: "Aim at the gold outline and shoot. Should take one or two.",
+                text: "You're a *Destroyer* for a sec, it breaks rock fast. Shoot the marked rock.",
+                hint: "Shoot the gold outline. Takes one or two.",
                 praise: "boom",
                 // Remember the learner's own pick before the loan lands, so
                 // the next card can name the tank they actually get back.
@@ -649,7 +649,7 @@ const CHAPTERS = [
             {
                 id: "familiesCard", next: true,
                 title: "Tank types",
-                text: () => `${state.ownType && tankName(state.ownType) ? `Your *${tankName(state.ownType)}*'s` : "Your tank's"} back. The first pick is just where a branch starts, it keeps upgrading from there. Pounder side digs fastest, Machine Gun side wins fights.`,
+                text: () => `${state.ownType && tankName(state.ownType) ? `Your *${tankName(state.ownType)}*'s` : "Your tank's"} back. Here's where each branch goes.`,
                 extra: "families",
                 praise: "ok",
             },
@@ -659,17 +659,17 @@ const CHAPTERS = [
     // ── 3 ────────────────────────────────────────────────────────────
     {
         id: "mining", name: "Mining", mins: 1,
-        blurb: "Breaking rock and picking up gems.",
+        blurb: "Breaking rock for gems.",
         prep: () => { if ((global.gems.carried | 0) > 3000) tut("gems", 0); },
         steps: [
             {
                 id: "rock",
                 title: "Break a rock",
                 text: () => mob()
-                    ? "Gems are inside the rocks. Shoot the glowing one till it breaks."
-                    : `Gems are inside the rocks. Shoot the glowing one till it breaks. ${kc("KEY_AUTO_FIRE")} helps.`,
+                    ? "Shoot the glowing rock till it breaks."
+                    : `Shoot the glowing rock till it breaks. ${kc("KEY_AUTO_FIRE")} helps.`,
                 hint: () => distTo(state.target) > 700 ? "Follow the arrow, it's close."
-                    : "Better ore takes more hits, keep going.",
+                    : "Better ore takes more hits.",
                 praise: "nice",
                 // What the satchel held before the rock broke, so the next
                 // step can tell the gems were already picked up.
@@ -687,7 +687,7 @@ const CHAPTERS = [
             {
                 id: "gems",
                 title: "Pick up the gems",
-                text: "Drive over them to pick them up. They disappear after like 10 seconds so be quick.",
+                text: "Drive over the gems. They vanish after like 10 seconds.",
                 hint: "Just drive through them.",
                 praise: "got em",
                 // Gems picked up while the last card was still clearing count:
@@ -724,13 +724,13 @@ const CHAPTERS = [
             {
                 id: "ores", next: true, extra: "ores",
                 title: "Ore types",
-                text: "Better ore takes more hits and is further from the middle. There's only *3 emeralds* per map. Broken rock grows back after about a minute.",
+                text: "Better ore is further from the middle. There's only *3 emeralds* per map.",
                 praise: "ok",
             },
             {
                 id: "satchel", next: true,
                 title: "Your satchel",
-                text: "I gave you *3,900* gems. You can carry *8,000* max (more with a Reinforced Satchel or Deep Pockets), and once you're full you can't pick up any more. Everyone can see that glow btw, so you're a target now.",
+                text: "I gave you *3,900* gems. You can carry *8,000*, and everyone can see that glow btw.",
                 onEnter: () => tut("gems", 3900),
                 target: () => ({ kind: "self" }),
                 praise: "ok",
@@ -741,7 +741,7 @@ const CHAPTERS = [
     // ── 4 ────────────────────────────────────────────────────────────
     {
         id: "bank", name: "Banking and bases", mins: 1,
-        blurb: "Keeping your gems safe, and getting a base.",
+        blurb: "Keeping your gems safe.",
         prep: () => {
             // A replay starts from a neutral, locked base: owning it from
             // last time would let the vault step bank at the base instead
@@ -756,7 +756,7 @@ const CHAPTERS = [
                 title: () => global.vault.onPad ? "Deposit" : "Bank your gems",
                 text: () => global.vault.onPad
                     ? "Stay on the pad till the bar fills. Getting hit cancels it."
-                    : "If you die you drop what you're carrying. *Banked* gems are safe. Drive onto the rainbow vault.",
+                    : "*Banked* gems are safe when you die. Drive onto the rainbow vault.",
                 hint: () => global.vault.onPad
                     ? "Hit *Bank all* in the panel."
                     : "Follow the arrow to the rainbow pad.",
@@ -779,8 +779,8 @@ const CHAPTERS = [
             {
                 id: "capture",
                 title: "Take the base",
-                text: "Bases are the octagons around the map. Shoot the block in the middle till it breaks and it's yours.",
-                hint: "Sit next to it and keep shooting. This one breaks fast.",
+                text: "Bases are the octagons. Break the block in the middle and it's yours.",
+                hint: "Sit next to it and keep shooting.",
                 praise: "yours now",
                 onEnter: () => {
                     // No reset here (prep already did it): a second reset races
@@ -812,7 +812,7 @@ const CHAPTERS = [
             {
                 id: "baseBank", allow: "bank:base",
                 title: "Bank at your base",
-                text: "Your base works as a bank too. You only keep *80%*, but it's usually way closer than a vault. Drive on and deposit.",
+                text: "Your base is a bank too, but you only keep *80%*. Drive on it.",
                 hint: () => global.vault.onPad ? "Hit *Bank all* in the panel." : "Drive onto the middle of your base.",
                 praise: "nice",
                 onEnter: () => {
@@ -830,8 +830,8 @@ const CHAPTERS = [
             },
             {
                 id: "baseRules", next: true,
-                title: "Why bases matter",
-                text: "You respawn at your base (unless the storm is on it). Only you can stand on it, 10 seconds at a time. If someone shoots it you get an *UNDER ATTACK* warning, and whoever does the most damage to it gets it.",
+                title: "Bases",
+                text: "You respawn at your base if the storm's not on it. If someone shoots it you get *UNDER ATTACK*, and whoever does the most damage takes it.",
                 target: () => basePad(),
                 praise: "ok",
             },
@@ -841,7 +841,7 @@ const CHAPTERS = [
     // ── 5 ────────────────────────────────────────────────────────────
     {
         id: "shop", name: "Shops", mins: 1.5,
-        blurb: "Spending banked gems on stuff that helps.",
+        blurb: "Spending your banked gems.",
         prep: () => {
             global.shop.dismissed = false;
             // Clear purchases for replays: owned items can't be re-bought and
@@ -853,7 +853,7 @@ const CHAPTERS = [
             {
                 id: "shopGo",
                 title: "Shop",
-                text: "Shops take *banked* gems, I put some in yours. Drive onto the teal pad to open it.",
+                text: "Shops use *banked* gems, I gave you some. Drive onto the teal pad.",
                 hint: "Follow the arrow to the teal hexagon.",
                 praise: "ok",
                 onEnter: () => {
@@ -868,9 +868,9 @@ const CHAPTERS = [
             {
                 id: "drill", allow: "shop:drill",
                 title: "Buy Drill I",
-                text: "Drills make you break rock faster. Go to *Drills*, pick *Drill I* and hit *Buy*.",
+                text: "Drills dig faster. Go to *Drills*, pick *Drill I* and hit *Buy*.",
                 hint: () => global.shop.onPad
-                    ? (global.shop.dismissed ? "Closed it? Step off the pad and back on." : "Drills tab. Drill V even stays when you die.")
+                    ? (global.shop.dismissed ? "Closed it? Step off the pad and back on." : "It's in the Drills tab.")
                     : "Get back on the teal pad.",
                 praise: "drill on",
                 onEnter: () => { global.shop.dismissed = false; if (!global.shop.onPad) tut("goto", "shop"); },
@@ -886,7 +886,7 @@ const CHAPTERS = [
             {
                 id: "ability", allow: "shop:ability",
                 title: "Abilities",
-                text: "Abilities are yours for the *whole raid*, even after you die. Open *Abilities* and buy the *Grapple Hook*.",
+                text: "Abilities last the *whole raid*, even if you die. Buy the *Grapple Hook* in *Abilities*.",
                 hint: () => global.shop.onPad ? "Abilities tab, then Grapple Hook." : "Get back on the teal pad.",
                 praise: "nice",
                 onEnter: () => { global.shop.dismissed = false; state.ab0 = (abil().own || []).length; if (!global.shop.onPad) tut("goto", "shop"); },
@@ -900,9 +900,9 @@ const CHAPTERS = [
                 id: "grapple",
                 title: "Grapple",
                 text: () => mob()
-                    ? "Step off the pad, aim at a rock and tap the *ability* button above the dash. The hook yanks you right to it."
-                    : `Step off the pad, put your mouse on a rock and press ${kc("KEY_ABILITY")}. The hook yanks you right to it.`,
-                hint: "Up to 900m away. It catches tanks too.",
+                    ? "Step off the pad, aim at a rock and tap the *ability* button above the dash."
+                    : `Step off the pad, aim at a rock and press ${kc("KEY_ABILITY")}.`,
+                hint: "Reaches 900m and grabs tanks too.",
                 praise: "yoink",
                 onEnter: () => { global.shop.dismissed = true; state.abUse0 = abil().cdAt || 0; },
                 target: () => ({ kind: "self" }),
@@ -916,16 +916,16 @@ const CHAPTERS = [
                 title: () => state.sub === 0 ? "Kit items" : "Rock Barrage",
                 text: () => {
                     if (state.sub === 0) return mob()
-                        ? "Kit items are one-use things, they sit in the buttons on the right. I took some of your health and gave you a *Medkit*. Tap it."
-                        : `Kit items are one-use things in the box above your stats. I took some of your health and gave you a *Medkit*. Press ${kc(kitKeyFor("medkit"))}.`;
+                        ? "I hurt you a bit. Tap the *Medkit* on the right."
+                        : `I hurt you a bit. Press ${kc(kitKeyFor("medkit"))} to use the *Medkit* above your stats.`;
                     return mob()
-                        ? "That's a *Rock Barrage*, 10 rocks that go through shields. Aim at the dummy, then tap it. It flies where you last aimed."
-                        : `That's a *Rock Barrage*, 10 rocks that go through shields. Aim at the dummy and press ${kc(kitKeyFor("barrage"))}.`;
+                        ? "*Rock Barrage* throws 10 rocks that go through shields. Aim at the dummy, then tap it."
+                        : `*Rock Barrage* throws 10 rocks that go through shields. Aim at the dummy and press ${kc(kitKeyFor("barrage"))}.`;
                 },
                 hint: () => state.sub === 0
-                    ? "It heals half your health and keeps the storm off you for 3 seconds."
-                    : mob() ? "You can hold 3 kinds of item. In a real raid you can drag one off its button to throw it away."
-                    : "You can hold 3 kinds of item. In a real raid you can drag one out of the box to throw it away.",
+                    ? "Kit items are one-use. This one heals half your health."
+                    : mob() ? "You can hold 3 kinds. In a raid, drag one off its button to drop it."
+                    : "You can hold 3 kinds. In a raid, drag one out of the box to drop it.",
                 praise: "nice",
                 onEnter: () => {
                     global.shop.dismissed = true;
@@ -975,9 +975,9 @@ const CHAPTERS = [
                 id: "sidearm",
                 title: "Sidearms",
                 text: () => mob()
-                    ? "Shops also sell *sidearms*, a second gun. Here's a *Drill Lance*, one shot breaks any rock. It fires with your gun, so just shoot a rock."
-                    : `Shops also sell *sidearms*, a second gun on ${kc("KEY_SIDEARM")}. Here's a *Drill Lance*, one shot breaks any rock. Try it.`,
-                hint: () => mob() ? "Aim at a rock and hold. The round button bottom right turns the sidearm on and off." : `Hold ${kc("KEY_SIDEARM")} at some rock.`,
+                    ? "Here's a *Drill Lance* sidearm, one shot breaks any rock. It fires with your gun, so shoot a rock."
+                    : `*Sidearms* are a second gun on ${kc("KEY_SIDEARM")}. This *Drill Lance* breaks any rock in one shot.`,
+                hint: () => mob() ? "Aim at a rock and hold. The round button bottom right toggles it." : `Hold ${kc("KEY_SIDEARM")} at some rock.`,
                 praise: "boom",
                 onEnter: () => { tut("clear"); tut("arm", "lance"); },
                 target: () => ({ kind: "self" }),
@@ -1001,7 +1001,7 @@ const CHAPTERS = [
             {
                 id: "chest",
                 title: "Open a chest",
-                text: "Every map has *6 chests*. Copper ones give *250* gems, epic ones give *500* plus a kit item. Shoot it open.",
+                text: "Copper chests give *250* gems, epic ones *500* plus a kit item. Shoot it open.",
                 hint: "They break like rock, just tougher.",
                 praise: "loot",
                 onEnter: () => { state.askAt = T() + 700; },
@@ -1029,10 +1029,10 @@ const CHAPTERS = [
                 title: "Boss",
                 text: () => {
                     const b = bossEntity();
-                    if (b && hpFrac(me()) < 0.45) return "Low? Back off and let your shield come back. It can't kill you here.";
-                    return "Bosses dig out of the rock every 14 minutes or so. This practice *Vault Warden* only has a tenth of the health. Stay back and keep shooting.";
+                    if (b && hpFrac(me()) < 0.45) return "Low? Back off till your shield's back. It can't kill you here.";
+                    return "This practice *Vault Warden* has a tenth of a real boss's health. Stay back and shoot.";
                 },
-                hint: "Circle it. Real ones usually take a few people.",
+                hint: "Circle it. Real ones show up every 14 min or so.",
                 praise: "boss down",
                 onEnter: () => { tut("heal"); tut("goto", "clearing"); state.askAt = T() + 700; state.bossCarry = global.gems.carried | 0; },
                 target: () => {
@@ -1057,7 +1057,7 @@ const CHAPTERS = [
             {
                 id: "bossLoot",
                 title: "Grab the loot",
-                text: "Bosses drop a ton of gems and an epic chest. Everyone gets a *BOSS DOWN* message, so in a real raid grab it fast.",
+                text: "Bosses drop a ton of gems and an epic chest. Grab it fast, everyone gets told.",
                 hint: "Drive through the gems.",
                 praise: "rich",
                 target: () => {
@@ -1084,7 +1084,7 @@ const CHAPTERS = [
             {
                 id: "events", next: true,
                 title: "Events",
-                text: "Each storm cycle can have an *ore bloom* (some rock turns rich for 100 seconds), a *meteor shower* or *gem rain*. They show on your map. Every cycle also has a *twist*, like giant tanks or double damage. That one shows on the left.",
+                text: "Each storm can have an *ore bloom*, *meteor shower* or *gem rain*, check your map. There's also a *twist* like double damage.",
                 praise: "ok",
             },
         ],
@@ -1093,13 +1093,13 @@ const CHAPTERS = [
     // ── 7 ────────────────────────────────────────────────────────────
     {
         id: "raid", name: "The raid", mins: 1,
-        blurb: "How a raid actually plays out.",
+        blurb: "How a raid goes.",
         steps: [
             {
                 id: "storm",
                 title: () => state.storm && state.storm.outside ? "Get inside" : "The storm",
-                text: "The purple wall is the *storm*. You lose health fast out there. Get into the gold circle before the wall gets to you and stay in it.",
-                hint: "The wall stops at the circle. Just get in and wait.",
+                text: "The purple wall is the *storm* and it hurts. Get in the gold circle.",
+                hint: "The wall stops at the circle, just wait inside.",
                 praise: "safe",
                 onEnter: () => {
                     tut("heal");
@@ -1117,20 +1117,20 @@ const CHAPTERS = [
             },
             {
                 id: "raidClock", next: true,
-                title: "How a raid works",
-                text: "A raid is *3 storms*, 21 minutes. Each storm shrinks for 6 minutes, holds for a minute, then opens up somewhere else. The *3rd storm* closes all the way and ends the raid. Nobody respawns in the last seconds of a storm.",
+                title: "Raids",
+                text: "A raid is *3 storms*, 21 minutes. The *3rd storm* closes all the way and ends it.",
                 praise: "ok",
             },
             {
                 id: "dying", next: true,
                 title: "Dying",
-                text: "When you die you drop *70%* of what you're carrying and keep the rest. Your bank is always safe. After *3 seconds* you can press *Play again* to drop back in, at your base if you have one, with a *5 second shield* that goes away when you move or shoot.",
+                text: "Dying drops *70%* of what you're carrying, your bank is safe. *Play again* after *3 seconds* puts you at your base if you have one.",
                 praise: "ok",
             },
             {
                 id: "score", next: true,
                 title: "Score",
-                text: "Score is gems you bank this raid, plus *200* per kill, plus half of what you're carrying. Your bank carries into the next raid (up to *50,000*) for shopping, but only this raid's banking counts for score. *Top 10* get bonus gems next raid. Get *4 kills* in a row and you're on everyone's map with a bounty on you. The contract card on the left always has a quick job that pays gems.",
+                text: "Score is gems banked this raid, *200* per kill and half of what you're carrying. *Top 10* get bonus gems next raid.",
                 praise: "ok",
             },
         ],
@@ -1145,7 +1145,7 @@ const CHAPTERS = [
                 id: "rankedCard", next: true,
                 title: () => signedIn() ? "Ranked" : "Play ranked",
                 text: () => signedIn()
-                    ? "You're signed in, so every raid is ranked, *Bronze* all the way up to *Corez*. Your first *3 lives* are placement. You get *gemdust* from banking and kills (and chests, bosses, daily quests). Spend it in the *Item Shop*, then equip stuff in the *Locker*."
+                    ? "You're signed in, so every raid is ranked, *Bronze* up to *Corez*. Banking and kills get you *gemdust* for the *Item Shop*."
                     : "Sign in from the menu to play ranked and earn *gemdust* for cosmetics.",
                 praise: "ok",
             },
@@ -1163,8 +1163,8 @@ const CHAPTERS = [
                 title: "Beat the Rookie",
                 text: () => {
                     if (!mob() && kitCount("medkit") > 0 && hpFrac(me()) < 0.45)
-                        return `Low on health? ${kc(kitKeyFor("medkit"))} uses your Medkit.`;
-                    return "Last one. Keep moving and keep shooting. It can't actually kill you.";
+                        return `Low? ${kc(kitKeyFor("medkit"))} uses your Medkit.`;
+                    return "Last one. Keep moving and shooting, it can't kill you.";
                 },
                 hint: () => mob()
                     ? "Circle around it so it misses."
@@ -2103,10 +2103,10 @@ const ui = {
               '<div class="dwt-end-title">You\'re ready</div>' +
               '<div class="dwt-end-sub">Quick recap:</div>' +
               '<ul class="dwt-end-list">' +
-                `<li>${ICONS.gem}<span><b>Mine</b> and <b>bank a lot</b>. You drop what you're carrying when you die.</span></li>` +
-                `<li>${ICONS.base}<span>Get a <b>base</b> so you respawn close and can bank on the way. Spend gems at <b>shops</b>.</span></li>` +
+                `<li>${ICONS.gem}<span><b>Mine</b> and <b>bank a lot</b>. Dying drops what you carry.</span></li>` +
+                `<li>${ICONS.base}<span>Get a <b>base</b> to respawn and bank closer. Spend gems at <b>shops</b>.</span></li>` +
                 `<li>${ICONS.storm}<span>Stay out of the <b>storm</b>. Chests and bosses pay the most.</span></li>` +
-                `<li>${ICONS.crown}<span>Highest score when the <b>3rd storm</b> shuts wins. Top 10 all get paid.</span></li>` +
+                `<li>${ICONS.crown}<span>Top score when the <b>3rd storm</b> shuts wins. Top 10 get paid.</span></li>` +
               '</ul>' +
               '<button class="dwt-play" type="button"><b>Play</b></button>' +
               '<button class="dwt-menu dwt-back" type="button">Back to menu</button>' +
@@ -2234,9 +2234,9 @@ const ui = {
         const allDone = CHAPTERS.every(c => done.has(c.id));
         this.menuWrap.querySelector(".dwt-end-sub").textContent = midway
             ? "Jump to any chapter, or keep going."
-            : fresh ? `${CHAPTERS.length} short chapters, about ${total} minutes. Tap one to jump in.`
+            : fresh ? `${CHAPTERS.length} short chapters, about ${total} minutes.`
             : allDone ? "You've done them all. Redo any you want."
-            : "Welcome back. Keep going or pick a chapter.";
+            : "Keep going or pick a chapter.";
         const go = this.menuWrap.querySelector(".dwt-go b");
         go.textContent = midway ? "Keep going" : fresh ? "Start" : allDone ? "Start over" : `Continue: ${CHAPTERS[cur].name}`;
         this.root.classList.remove("show");

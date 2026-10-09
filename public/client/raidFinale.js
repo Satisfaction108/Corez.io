@@ -789,7 +789,7 @@ function drawTitles(c, rt, W, H) {
         const size = Math.min(150, W * 0.105);
         bigTitle(c, "VICTORY", W / 2, y, size, HUD.gold, HUD.goldDk, a, pop);
         const sub = S.duos ? (S.mate ? "You and " + shortName(S.mate, 20) + " won it together" : "Your team won the raid")
-            : S.rows > 1 ? "You won the raid. #1 of " + S.rows : "You won the raid";
+            : S.rows > 1 ? "You won the raid, #1 of " + S.rows : "You won the raid";
         const s2 = fitSize(sub, 30, W - 60);
         A.hudTitle(sub, W / 2, subY(y, size, s2, 0.68), s2, HUD.head, "center", clamp((rt - 450) / 400), c);
         return;
@@ -1144,7 +1144,7 @@ function drawNext(c, rt, now, W, H) {
     const btn = !global.mobile && w > 380, bw = btn ? 128 : 0, bh = 32;
     const mx = x + pad + lw + gap, mw = Math.max(40, x + w - pad - (btn ? bw + gap : 0) - mx);
     // middle: the message, a gap, the bar the width of the column
-    const line = S.keep ? "Kept: they stay up after you drop in." : left > 0.5 ? "You're in. Everyone drops in together." : "Dropping you in…";
+    const line = S.keep ? "Kept, they'll stay up after you drop in" : left > 0.5 ? "Everyone drops in together" : "Dropping you in…";
     // sized on drawText's own font so it never runs past the bar
     const lt = A.measureText(line, 14), ls = lt > mw ? Math.max(9, Math.floor(14 * mw / lt * 10) / 10) : 14;
     A.drawText(line, mx, my - 7, ls, HUD.head, "left", true);
@@ -1172,7 +1172,7 @@ function drawDock() {
     c.globalAlpha = k;
     // everything fully in: no slide, no tally
     drawPanels(c, 1e6, now, W, H);
-    const line = "Back to the raid: click anywhere or press Esc";
+    const line = "Click anywhere or press Esc to go back";
     if (!D.tw) D.tw = A.measureText(line, 14) + 40;
     const tw = Math.min(W - 40, D.tw), th = 36;
     A.hudPanel(c, W / 2 - tw / 2, H - th - 22, tw, th, { fill: HUD.solid, r: th / 2 });
@@ -1238,7 +1238,7 @@ function drawComeBack(c, x, y, w, h, now) {
         cbText.key = key;
         const r = ready ? d.today : (d.tomorrow || d.today);
         cbText.label = ready ? "DAY " + d.day + " REWARD IS READY" : "COME BACK TOMORROW";
-        cbText.main = ready ? rewardLine(r) + ". Grab it on the menu" : rewardLine(r);
+        cbText.main = ready ? rewardLine(r) + ", grab it on the menu" : rewardLine(r);
     }
     A.hudWell(c, x, y, w, h, 12, "rgba(242,184,60,0.1)", HUD.ink, 2);
     const flameW = d.streak >= 2 ? 44 : 0;

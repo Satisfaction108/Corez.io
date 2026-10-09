@@ -213,7 +213,7 @@ function ownedIds() {
 // A guest: the gallery, and a way to log in to buy
 function paintGuest(el) {
     el.appendChild(h('div', { class: 'shop-top gal-guest' },
-        h('div', { class: 'gal-guest-p', text: 'Browsing as a guest. Log in to buy stuff from the daily Shop.' }),
+        h('div', { class: 'gal-guest-p', text: 'You’re a guest. Log in to buy stuff.' }),
         h('button', { type: 'button', class: 'dw-btn sm primary', text: 'Log in', onclick: () => handlers.onLogin() })));
     const body = h('div', { class: 'shop-tabbody', role: 'region', 'aria-label': 'View all' });
     el.appendChild(body);
@@ -445,7 +445,7 @@ function pop(el) {
 const digLine = () => (typeof window !== 'undefined' && window.DWCosmetics && window.DWCosmetics.SIDEKICK_DIG_LINE) || 'Helps you mine: rock only.';
 function describe(it) {
     if (it.blurb) return it.cat === 'sidekick' ? it.blurb + ' ' + digLine() : it.blurb;
-    if (it.id === cos.CUSTOM_ID) return 'Any colour you want for your name. Buy once, change it whenever.';
+    if (it.id === cos.CUSTOM_ID) return 'Any colour you want for your name. Change it whenever.';
     if (it.cat === 'skin') return isAnimated(it) ? 'A moving pattern for your tank. Your team colour stays.' : 'A pattern for your tank. Your team colour stays.';
     const s = it.style || {};
     if (s.kind === 'prism') return 'Rainbow name that sparkles.';
@@ -538,7 +538,7 @@ async function openHistory() {
         title: 'My purchases', cls: 'shop-histm',
         body: h('div', {},
             h('div', { class: 'shop-tokens' }, h('span', { text: 'Refunds left' }), pips),
-            h('div', { class: 'shop-tokens-p', text: 'Regret it? You can refund within 24h. 3 refunds total, ever.' }),
+            h('div', { class: 'shop-tokens-p', text: 'You can refund stuff for 24h after you buy it. Only 3 refunds ever.' }),
             list,
             h('div', { class: 'dw-modal-actions' }, h('button', { type: 'button', class: 'dw-btn', text: 'Done', onclick: () => m.close() }))),
     });

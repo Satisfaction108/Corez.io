@@ -1174,7 +1174,7 @@ const RECONNECT_TRIES = 8;
 // nothing to resume.
 const IDLE_CLOSE_CODE = 4001;
 const SAVED_CLOSE_CODE = 4003;
-const IDLE_TEXT = "Removed for being inactive for 5 minutes";
+const IDLE_TEXT = "Kicked for being AFK for 5 minutes";
 function idleExit(text) {
     global.noAutoReconnect = true;
     global.autoReconnect = null;
@@ -1452,7 +1452,7 @@ let incoming = async function(message, socket) {
                     if (placeNow > 0 && r.lastPlace > 0 && placeNow !== r.lastPlace && !global.died && r.board && r.board.length && !((global.nxStage | 0) === 0 && global.nxKnown) && !r.crowns) {
                         if (placeNow < r.lastPlace) {
                             const below = r.board.find(row => row.place === placeNow + 1);
-                            global.createMessage("You passed " + (below ? below.name : "someone") + " - now #" + placeNow, 3200);
+                            global.createMessage("You passed " + (below ? below.name : "someone") + ", now #" + placeNow, 3200);
                             if (gameSound.gemPickup) gameSound.gemPickup(3);
                         } else {
                             const above = r.board.find(row => row.place === placeNow - 1);
@@ -1884,7 +1884,7 @@ let incoming = async function(message, socket) {
             } break;
             case "temporaryban": {
                 global.noAutoReconnect = true;
-                global.message = "You're temp banned. You can come back after the server restarts.";
+                global.message = "You're temp banned till the server restarts.";
             } break;
             case "permanentban": {
                 global.noAutoReconnect = true;
@@ -1975,7 +1975,7 @@ let incoming = async function(message, socket) {
                     const title = (d.kind === 'play' ? 'Play streak day ' + n : 'Win streak x' + n) + paid;
                     const sub = d.kind === 'play'
                         ? 'Play tomorrow for +' + fmt(d.nextMilli) + '. Days roll over at 00:00 UTC'
-                        : paid ? 'Win the next raid for +' + fmt(d.nextMilli) : 'Win dust is capped for today. The streak still counts';
+                        : paid ? 'Win the next raid for +' + fmt(d.nextMilli) : 'Win dust is maxed for today, the streak still counts';
                     const t = window.dwGameToasts;
                     if (t && t.note) t.note('streak:' + d.kind, title, { tag: 'Streak', kind: 'streak', sub, ms: 7000 });
                     else global.createMessage(title, 5000);
@@ -1993,7 +1993,7 @@ let incoming = async function(message, socket) {
                 // the server closes it next, and it must not auto-reconnect.
                 global.noAutoReconnect = true;
                 global.autoReconnect = null;
-                global.message = String(m[0] || "You got signed out of your account.");
+                global.message = String(m[0] || "You got signed out.");
             } break;
             case "svInfo": {
 
@@ -2313,11 +2313,11 @@ let incoming = async function(message, socket) {
             try {
                 const dcause = global.finalCause || "";
                 global.createMessage(
-                    dcause === "raidend" ? "The raid ended. Everyone went down together"
+                    dcause === "raidend" ? "The raid ended"
                     : dcause === "rock" ? "Crushed by the living rock"
                     : dcause === "storm" ? "Lost in the storm"
-                    : dcause === "base" ? "Shot down by the enemy base"
-                    : global.finalKillers.length ? ("Taken down by " + global.finalKillers.join(" and "))
+                    : dcause === "base" ? "Shot by the enemy base"
+                    : global.finalKillers.length ? ("Killed by " + global.finalKillers.join(" and "))
                     : "You died",
                     5000);
             } catch { /* */ }
@@ -2622,7 +2622,7 @@ const socketInit = () => {
         }
         if (global.autoReconnect && !global.noAutoReconnect) {
             // every retry failed
-            global.message = "Can't reach the server from your network. School and work networks sometimes block games. Check your connection, then press Reconnect.";
+            global.message = "Can't reach the server. School and work wifi often block games. Check your connection and hit Reconnect.";
         }
         global.autoReconnect = null;
         global.disconnected = true;
@@ -2631,7 +2631,7 @@ const socketInit = () => {
     socket.onerror = error => {
         clearInterval(socket.commandCycle);
         clearInterval(global.socketMotionCycle);
-        global.message = 'Socket error. Maybe another server will work.';
+        global.message = 'Socket error. Try another server.';
     };
 
     return socket;

@@ -241,7 +241,19 @@ function sendEntry(req, res, type, entry, cacheControl) {
     res.end(req && req.method === "HEAD" ? undefined : body);
 }
 
+// With the obfuscated build, pages and styles come from it too (no comments,
+// inline scripts obfuscated: scripts/build-client.js), falling back to public/
+function builtPage(file) {
+    if (!clientBuild || !/\.(html|css)$/i.test(file)) return file;
+    const abs = path.resolve(file);
+    if (!insideDir(publicRootAbs, abs)) return file;
+    const built = path.join(clientBuild.abs, path.relative(publicRootAbs, abs));
+    try { return fs.statSync(built).isFile() ? built : file; } catch (e) { return file; }
+}
+
 function sendStatic(res, file, req) {
+    const source = file;
+    file = builtPage(file);
     const extension = file.split(".").pop().toLowerCase();
     if (extension === "html") allowFraming(res);
     const type = mimeSet[extension] || "text/html";
@@ -252,7 +264,7 @@ function sendStatic(res, file, req) {
         // No heuristic caching: a client must never run a stale app.js against a
         // freshly restarted server, so scripts, styles and pages revalidate
         // (a cheap 304). Pictures, sounds and fonts may sit for an hour.
-        if (path.resolve(file) === menuPage) {
+        if (path.resolve(source) === menuPage) {
             const version = currentClient();
             return fs.readFile(file, "utf8", (err, html) => {
                 if (err) return fail();

@@ -363,7 +363,7 @@ function viewQuick(opts) {
         topBar(null),
         h('div', { class: 'wl-badge' }, icon('trophy')),
         h('div', { class: 'wl-h', text: opts.headline || 'Keep your progress?' }),
-        h('p', { class: 'wl-p', text: 'Your gems, stats and rewards come with you. Pick your name and you’re done.' }),
+        h('p', { class: 'wl-p', text: 'Pick a name and all your stuff comes with you.' }),
         form);
 }
 
@@ -503,7 +503,7 @@ function viewRecover(opts) {
     return h('div', { class: 'wl-recover' },
         topBar(() => show('auth', { tab: 'login' })),
         h('div', { class: 'wl-h', text: 'Use your backup code' }),
-        h('p', { class: 'wl-p', text: 'Forgot your password? Set a new one. Never had one? Leave those blank.' }),
+        h('p', { class: 'wl-p', text: 'Set a new password. Never had one? Leave it blank.' }),
         form);
 }
 

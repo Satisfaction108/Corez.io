@@ -377,7 +377,7 @@ function drawStrip(c, o, st, view, now) {
             A.hudTitle(lv, tx + A.hudTitleW((p.name || p.id) + " ", 12), ty, 12, ink || GOLD, "left");
         } else A.hudTitle(lv, tx, ty, 12, ink || GOLD, "left");
         if (o.mouse && L.rectAt([r], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
-            A.queueTip(perkLabel(p), (p.desc || "") + " Level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + ". Lasts until the raid ends.", r.x + r.w / 2, r.y);
+            A.queueTip(perkLabel(p), (p.desc || "") + " Level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + ". Lasts the whole raid.", r.x + r.w / 2, r.y);
         }
     }
     // the ones left out, behind a "+N" chip (hover lists them)
@@ -424,7 +424,7 @@ function drawStrip(c, o, st, view, now) {
             c.beginPath(); c.arc(qx, qy, 8, 0, TAU); c.fillStyle = "#e0473b"; c.fill(); c.lineWidth = 1.5; c.strokeStyle = H.line; c.stroke();
             A.hudTitle(String(q + 1), qx, qy + 0.5, 10, "#fff3d9", "center");
         }
-        if (hov && A.queueTip) A.queueTip("Pick a perk", (global.mobile ? "Tap to see your three choices." : "Click or press Shift+1 to see your three choices.") + " It lasts until the raid ends.", b.x + b.w / 2, b.y);
+        if (hov && A.queueTip) A.queueTip("Pick a perk", (global.mobile ? "Tap to see your 3 choices." : "Click or press Shift+1 to see your 3 choices."), b.x + b.w / 2, b.y);
     } else if (showBadge) {
         S.badgeRect = b;
         // a ring filling toward the next pick, your pick count inside
@@ -440,7 +440,7 @@ function drawStrip(c, o, st, view, now) {
         if (tot > 0) A.hudTitle(String(tot), cx, cy + 0.5, 11, "#fff3d9", "center");
         else star(c, cx, cy, 5.5, 2.4, "rgba(255,243,217,0.55)");
         if (o.mouse && L.rectAt([b], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
-            A.queueTip("Raid perks", "Every 5,000 points you pick a perk. Next one at " + L.fmtNum(st.next) + " (you have " + L.fmtNum(score) + "). They last until the raid ends.", cx, b.y);
+            A.queueTip("Raid perks", "You get a perk every 5,000 points. Next one at " + L.fmtNum(st.next) + ", you have " + L.fmtNum(score) + ".", cx, b.y);
         }
     }
 }

@@ -92,7 +92,7 @@ test('rb: a reconnect keeps the saved build (resume token / account), the card s
     assert.equal(L.respawnAsWhy({ lt: 'Minigun', ls: 1 }, 'Minigun', 5000), '', 'offered: no reason');
     assert.equal(L.respawnAsWhy({}, 'Minigun', 500), '', 'waits for the RY');
     assert.equal(L.respawnAsWhy({}, 'Basic', 5000), '', 'a Basic needs no reason');
-    assert.equal(L.respawnAsWhy({}, 'Minigun', 2000), 'Your Minigun build was not saved, so this drop starts as Basic.');
+    assert.equal(L.respawnAsWhy({}, 'Minigun', 2000), 'Your Minigun build didn\'t save, so you start as Basic.');
     assert.ok(fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8').includes('buildBtnLabels.respawnAsWhy('));
 });
 test('rb: tank / stats / random / build are validated and legal', () => {
@@ -182,7 +182,7 @@ test('buttons: labels and when they show', async () => {
     const mem = new Map(), st = { getItem: k => mem.get(k) || null, setItem: (k, v) => mem.set(k, v) };
     assert.equal(L.firstTime('kitX', st), true);
     assert.equal(L.firstTime('kitX', st), false);
-    assert.match(L.TEAM_BANK_TIP, /^Team Bank: break its banner to own it\. Owners bank here safely; Vaults are open to everyone\.$/);
+    assert.match(L.TEAM_BANK_TIP, /^Team Bank: break its banner to own it, then bank here safely\.$/);
 });
 
 test('buttons: the client draws them, sends rb, phones can tap them', () => {
@@ -211,7 +211,7 @@ test('words: Team Bank, savings vs points lost, 1 point', async () => {
     const SL = await imp('scoreLogic.js');
     const d = SL.deathLine({ pts: { b: 900, k: 0, c: 0 }, dl: { p: 0 } }, 0, 1166);
     assert.equal(d.head + ' (' + d.lost + ')', 'Points: 900 (points lost: 0)');
-    assert.match(d.savings, /older savings \(from earlier raids\) paid 1,166 gems/);
+    assert.match(d.savings, /savings from earlier raids paid 1,166 gems/);
     assert.ok(!/banked gems are safe/.test(d.lost + d.savings), 'never "safe" next to "it cost your savings"');
     assert.equal(SL.deathLine({ pts: { b: 900, k: 0, c: 0 }, dl: { p: 0 } }, 0).lost, 'lost 0: banked gems are safe');
     const FS = await imp('firstSecondsLogic.js');
@@ -232,11 +232,11 @@ test('finale: results for everyone, the subtitle clears the title, progress', as
     P.addRank(12, 40); P.addRank(12, 25);
     const rk = { division: 3, name: 'Copper II', rp: 400, into: 60, size: 100 };
     let rows = P.rows({ rank: rk, rp: P.rankThisRaid(12), rpSeen: P.rankSeen(12), dust: 3.5, nu: { n: 'Neon Trail', p: 10 }, bestLife: 252, bestRaid: 9000 });
-    assert.equal(rows[0].t, '+65 RP this raid. 40 RP to the next rank');
+    assert.equal(rows[0].t, '+65 RP this raid, 40 RP to the next rank');
     assert.equal(rows[1].t, '6.5 gemdust to Neon Trail (3.5 / 10)');
     assert.equal(rows[2].t, 'Best life 4m 12s  ·  Best raid 9,000 pts');
     rows = P.rows({ guest: true, bestRaid: 0 });
-    assert.match(rows[0].t, /^Sign up to earn rank points/);
+    assert.match(rows[0].t, /^Sign up to get ranked/);
     const mem = new Map(), st = { getItem: k => mem.get(k) || null, setItem: (k, v) => mem.set(k, String(v)) };
     assert.equal(P.noteRaid(3, 5000, st).isBest, true);
     assert.equal(P.noteRaid(4, 4000, st).best, 5000);

@@ -171,7 +171,7 @@ test('distances: metres everywhere', async () => {
     assert.match(src('tutorial.js'), /\(dd \/ 1000\)\.toFixed\(1\) \+ "km" : Math\.max\(1, Math\.round\(dd\)\) \+ "m"/);
     // the server's range texts
     const ab = ssrc('game/terrain/abilities.js'), sh = ssrc('game/terrain/shop.js');
-    for (const t of ['up to 900m away', 'up to 550m away', 'within 2.5km']) assert.ok(ab.includes(t), t);
+    for (const t of ['up to 900m', 'up to 550m', 'within 2.5km']) assert.ok(ab.includes(t), t);
     for (const t of ['within 1.5km', 'up to 500m away', 'within 150m', 'up to 420m', 'within 420m']) assert.ok(sh.includes(t), t);
     assert.ok(!/\b\d{3,}\s+away\b/.test(ab + sh), 'no bare numbers before "away"');
 });

@@ -327,7 +327,7 @@ test('client: the vault panel says gems and leads with Bank all', () => {
 
 test('client: slams and the death card agree with the HUD', () => {
     assert.ok(/v\.lastDeposit \| 0\) > 0 \? \(v\.lastDeposit \| 0\)/.test(heat), 'BANKED +N is the deposit');
-    assert.ok(/bonus \+ " BONUS", "Milestone: "/.test(heat), 'the milestone leads with its bonus');
+    assert.ok(/bonus \+ " BONUS", "You've banked "/.test(heat), 'the milestone leads with its bonus');
     assert.ok(!/BANKED \(KEPT\)/.test(app), 'no "kept" on the death card');
     // the card adds points up the way the standings do (scoreLogic.js):
     // banked this raid (safe) + kills & bonuses + crowns; the wallet's
@@ -335,7 +335,7 @@ test('client: slams and the death card agree with the HUD', () => {
     const sl = fs.readFileSync(path.join(CLIENT, 'scoreLogic.js'), 'utf8');
     assert.ok(/const pt = scoreText\.tiles\(you\)/.test(app) && /\["BANKED THIS RAID", num\(pt\.b\), "gem"\]/.test(sl), 'banked points on the card');
     assert.ok(!/CARRIED \(50% PTS\)/.test(app), 'no half-points satchel tile');
-    assert.ok(/scoreText\.deathLine\(you, global\.finalCarried \| 0, global\.finalBankLoss \| 0, global\.finalNxKept \| 0\)/.test(app) && /if \(dln\.savings\) extras\.push\(dln\.savings\)/.test(app) && /older savings/.test(sl), 'a loss is said (round 9: in its own plain line)');
+    assert.ok(/scoreText\.deathLine\(you, global\.finalCarried \| 0, global\.finalBankLoss \| 0, global\.finalNxKept \| 0\)/.test(app) && /if \(dln\.savings\) extras\.push\(dln\.savings\)/.test(app) && /savings from earlier raids/.test(sl), 'a loss is said (round 9: in its own plain line)');
 });
 
 test('client: the coach never steps back and a bank finishes mining', () => {

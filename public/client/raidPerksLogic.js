@@ -147,9 +147,9 @@ export function hoverText(p) {
     const name = baseName(p.name || p.id), lv = nextLevel(p), max = (p.max | 0);
     const have = (p.n | 0);
     const step = have > 0
-        ? "You have level " + roman(have) + ". This takes it to " + roman(lv) + (max ? " of " + roman(max) : "") + ", stacking the effect again."
-        : "New perk, level I" + (max > 1 ? " of " + roman(max) + ". Pick it again later to stack it." : ".");
-    return { title: name + "  " + roman(lv), body: String(p.desc || "").trim() + " " + step + " Lasts until the raid ends." };
+        ? "You have level " + roman(have) + ". This takes it to " + roman(lv) + (max ? " of " + roman(max) : "") + "."
+        : "New perk, level I" + (max > 1 ? " of " + roman(max) + ". Pick it again to stack it." : ".");
+    return { title: name + "  " + roman(lv), body: String(p.desc || "").trim() + " " + step + " Lasts the whole raid." };
 }
 
 // ── the build strip, beside the satchel ────────────────────────────────
@@ -256,4 +256,4 @@ export const DEATH_LINE = "Your perks stay until the raid ends.";
 export function deathLine(build) { return totalPicks(build) > 0 ? DEATH_LINE : ""; }
 
 // ── the first offer's intro ────────────────────────────────────────────
-export const INTRO_TEXT = "Every 5,000 points you pick a perk. It lasts until the raid ends.";
+export const INTRO_TEXT = "You get a perk every 5,000 points. It lasts the whole raid.";

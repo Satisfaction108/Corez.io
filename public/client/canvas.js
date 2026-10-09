@@ -1301,7 +1301,7 @@ class Canvas {
                     const anim = () => {
                         if (stop) return;
                         if (srcW !== this.cv.width || srcH !== this.cv.height) {
-                            global.createMessage("Recording stopped because the window resized. Saving...", 5_000);
+                            global.createMessage("The window resized so recording stopped. Saving...", 5_000);
                             this.videoRecorderCanvas.stop();
                             if (this.videoRecorder.state === "recording") this.videoRecorder.stop();
                             return;
@@ -1336,7 +1336,7 @@ class Canvas {
                 ? new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 30, { maxBps: 6e6, onSaved: (blob, name) => touch.showClip(blob, name) })
                 : new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 60);
             this.videoRecorder.start();
-            global.createMessage(global.mobile ? "Recording. Tap the red button again to stop." : "Recording... press the record key again to stop.", 3_000);
+            global.createMessage(global.mobile ? "Recording. Tap the red button again to stop." : "Recording. Press the record key again to stop.", 3_000);
         } catch (e) {
             this.videoRecorderCanvas.stop();
             this.videoRecorder = null;
@@ -1400,16 +1400,16 @@ class Canvas {
     runGamepad() {
         let sendHelp = () => {
             let helpLines = [
-                "Control help menu:",
-                "Options button = Help Menu",
-                "RT / R2 = Fire",
-                "LT / L2 = Alt Fire",
-                "Left Joystick: Move Body",
-                "Right Joystick: Move Face",
-                "A / X = Autofire",
-                "B / O = Autospin",
-                "X / ■ = Override",
-                "Y / ▲ = Take Control",
+                "Controller buttons:",
+                "Options = this help",
+                "RT / R2 = shoot",
+                "LT / L2 = alt fire",
+                "Left stick = move",
+                "Right stick = aim",
+                "A / X = autofire",
+                "B / O = autospin",
+                "X / ■ = override",
+                "Y / ▲ = take control",
             ];
             global.createMessage(JSON.stringify(helpLines), 15_000, true);
         }

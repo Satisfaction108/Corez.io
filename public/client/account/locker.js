@@ -71,7 +71,7 @@ function cleanName(raw) { const C = CAT(); return C ? C.cleanSidekickName(raw) :
 // '' when the typed name is fine, else what's wrong with it
 function nameProblem(raw) {
     const n = cleanName(raw);
-    if (String(raw || '').trim() && !n) return 'Letters and numbers only, please.';
+    if (String(raw || '').trim() && !n) return 'Letters and numbers only.';
     const P = window.DWProfanity;
     if (n && P && P.hasProfanity(n)) return 'Pick a nicer name for it.';
     return '';

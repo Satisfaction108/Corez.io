@@ -18,7 +18,7 @@ export function respawnAs(you, diedAs) {
 export function respawnAsWhy(you, diedAs, openMs) {
     if (respawnAs(you, diedAs)) return "";
     if (!diedAs || diedAs === "Basic" || !(openMs >= 1500)) return "";
-    return "Your " + diedAs + " build was not saved, so this drop starts as Basic.";
+    return "Your " + diedAs + " build didn't save, so you start as Basic.";
 }
 // by "Don't upgrade": only while you're below the last tank
 export function lastTank(you, tutorial = false) {
@@ -55,5 +55,5 @@ export function firstTime(key, store) {
     return true;
 }
 // round 12: shown on the first approach (app.js drawOutpostLabels), not only on the pad
-export const TEAM_BANK_TIP = "Team Bank: break its banner to own it. Owners bank here safely; Vaults are open to everyone.";
+export const TEAM_BANK_TIP = "Team Bank: break its banner to own it, then bank here safely.";
 export const TEAM_BANK_NEAR = 700;   // world units from your tank

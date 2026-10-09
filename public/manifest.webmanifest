@@ -1,7 +1,7 @@
 {
   "name": "Corez.io",
   "short_name": "Corez.io",
-  "description": "Mine gems, bank them at a vault and fight other tanks while the storm closes in.",
+  "description": "Tank battle royale where you dig for gems and bank them.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

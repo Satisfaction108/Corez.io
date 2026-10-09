@@ -95,7 +95,7 @@ function t(name, fn) {
     });
     t('card: goal, controls and who is in', () => {
         const d = L.introLines({ keys: 'WASD', tanks: 9, leftMs: 462000, twist: 'Low Gravity' });
-        assert.equal(d.title, 'DIG. BANK. WIN.');
+        assert.equal(d.title, 'go get gems');
         assert.match(d.goal, /colored rocks/);
         assert.match(d.goal, /vault/);
         assert.match(d.controls, /^WASD to move/);
@@ -155,7 +155,7 @@ function t(name, fn) {
         const none = L.shopHint({ banked: 0, carried: 0, cheapest: 300 });
         assert.match(none.text, /bank them at a vault/);
         const carry = L.shopHint({ banked: 0, carried: 420, cheapest: 300 });
-        assert.match(carry.text, /You carry 420 gems/);
+        assert.match(carry.text, /420 gems/);
         const near = L.shopHint({ banked: 180, carried: 0, cheapest: 300 });
         assert.match(near.text, /Bank 120 more/);
         assert.equal(L.shopHint({ banked: 300, carried: 0, cheapest: 300 }), null);
@@ -208,7 +208,7 @@ function t(name, fn) {
         assert.ok(app.includes('hudTitle("RAMS ROCK"'));
         const coach = src('coach.js');
         assert.ok(coach.includes('if (global.introHold) return true;'));
-        assert.ok(coach.includes('"Ram rocks. Grab the gems."'));
+        assert.ok(coach.includes('ram the circled rocks'));
         const juice = src('juice.js');
         assert.ok(juice.includes('export function setIntroHold(fn)'));
         assert.ok(juice.includes('Math.max(dropHold(), introHold())'));

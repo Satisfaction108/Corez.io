@@ -599,7 +599,7 @@ test('client: tracker, note and the raid end words', async () => {
     const t = L.tracker(c, 9, 0, 0, fd);
     assert.deepEqual(t.rows.map(r => [r.crown, r.name, r.score]), [[1, 'Ann', 5000], [2, 'Bot', 4000], [3, 'Cy', 3000]]);
     assert.equal(t.footer, 'Nearest crown: about 450 away');
-    assert.equal(t.footer2, 'Knock it off its holder to steal it');
+    assert.equal(t.footer2, 'Kill the holder to steal it');
     assert.equal(L.tracker(c, 1, 0, 0, fd).footer, 'Your crown: +5 pts/sec');
     assert.equal(L.tracker(Object.assign({}, c, { sd: 1, pps: 10 }), 1, 0, 0, fd).footer, "Your crown: +10 pts/sec, the vault won't hide you");
     // with the board: the points race, crowns marked, you included
@@ -615,7 +615,7 @@ test('client: tracker, note and the raid end words', async () => {
     assert.deepEqual(L.note(Object.assign({}, c, { list: [Object.assign({}, c.list[0], { p: 1240 })] }), 1, 0, 0, fd), { text: 'CROWN +5 PTS/SEC', sub: '+1,240 so far', hot: true });
     assert.equal(L.note(null, 1, 0, 0, fd), null);
     const res = { crowns: 1, champ: { id: 7, name: 'Rich', score: 9675 } };
-    assert.deepEqual(L.finale(res, 1, true, 'Me', 8), { title: 'CORE CHAMPION', sub: 'Most points: 9,675. #1 of 8', col: 'gold' });
+    assert.deepEqual(L.finale(res, 1, true, 'Me', 8), { title: 'CORE CHAMPION', sub: 'Most points (9,675), #1 of 8', col: 'gold' });
     assert.deepEqual(L.finale(res, 2, false, 'Rich', 8), { title: '#2', sub: 'Rich won with 9,675 pts', rest: ' won with 9,675 pts', col: 'silver' });
     assert.equal(L.finale(res, 3, false, 'Rich', 8).col, 'bronze');
     const other = L.finale(res, 7, false, 'Rich', 8);

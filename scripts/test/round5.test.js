@@ -104,7 +104,7 @@ test('crown moment: every way a crown reaches you has a reason', async () => {
     // the client's words for each
     const CL = await imp('crownsLogic.js');
     assert.equal(CL.howLine({ how: 'top3' }).sub, "You're top 3 on points.");
-    assert.equal(CL.howLine({ how: 'fell', from: 'kai' }).sub, 'Its holder kai went down.');
+    assert.equal(CL.howLine({ how: 'fell', from: 'kai' }).sub, 'Its holder kai died.');
     assert.equal(CL.howLine({ how: 'steal', from: 'kai' }).sub, "You took kai's crown.");
     assert.equal(CL.howLine({ how: 'left', from: 'kai' }).title, 'A CROWN FELL TO YOU');
     assert.equal(CL.howLine({}).card, 'CROWN: IT WAS FREE');

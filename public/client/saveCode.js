@@ -73,7 +73,7 @@ function showBar(on) {
 function toggle() {
     const sock = global.socket;
     if (!inRaid() || global.died || !sock || !sock.talk) {
-        if (global.gameStart && !global.tutorialMode) say("You can save while you're alive in a raid.");
+        if (global.gameStart && !global.tutorialMode) say("You can only save while you're alive in a raid.");
         return false;
     }
     sock.talk("SV", st.saving ? 0 : 1);
@@ -116,7 +116,7 @@ function savedExit() {
     global.message = "";
     const d = st.done;
     if (d) setTimeout(() => showCode(d), 250);
-    else toast("Your tank was saved, but the code didn't reach you. Sorry about that.", { kind: "error", duration: 9000 });
+    else toast("Your tank saved but the code got lost. Sorry.", { kind: "error", duration: 9000 });
 }
 
 function fmtDay(ms) {
@@ -135,11 +135,11 @@ function showCode(d) {
     const body = h("div", { class: "sv-modal" },
         h("div", { class: "sv-code", tabindex: "0", text: d.code }),
         h("p", { class: "sv-how" }, "Type ", h("b", { text: "$restore " + d.code }), " in chat next time you play."),
-        h("p", { class: "sv-note", text: "It works once, in a " + mode + " raid, while you're alive. Good until " + fmtDay(d.exp) + ". Anyone with the code can use it, so keep it to yourself." }),
+        h("p", { class: "sv-note", text: "Works once, in a " + mode + " raid, while you're alive. Good until " + fmtDay(d.exp) + ". Don't share it, anyone with it can use it." }),
         h("div", { class: "dw-modal-actions" },
             copyBtn,
             h("button", { type: "button", class: "dw-btn", "data-autofocus": "", text: "Done", onclick: () => m.close() })));
-    const m = modal({ title: "Saved. See you later", message: "Your tank, build, satchel, kit and raid points are in this code. Your bank keeps itself.", body, dismissable: false, cls: "sv-modal-card" });
+    const m = modal({ title: "Saved, see you later", message: "This code has your tank, build, satchel, kit and raid points. Your bank stays saved anyway.", body, dismissable: false, cls: "sv-modal-card" });
 }
 
 // the settings panel's button (desktop and phones)

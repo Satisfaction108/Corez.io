@@ -10,8 +10,8 @@ export function itemWords(it) {
 const hours = (ms) => Math.round(ms / 3600000);
 
 export function ruleLine(DY) {
-    return 'One claim a day: the next day unlocks ' + hours(DY.UNLOCK_MS) + 'h after your last claim. Miss ' +
-        hours(DY.GRACE_MS) + 'h and you drop back ' + DY.DROP_BACK + ' days, never to zero. After day ' + DY.DAYS + ' it starts again.';
+    return 'Next day unlocks ' + hours(DY.UNLOCK_MS) + 'h after your last claim. Miss ' +
+        hours(DY.GRACE_MS) + 'h and you drop back ' + DY.DROP_BACK + ' days (not to zero). After day ' + DY.DAYS + ' it starts over.';
 }
 
 export function rows(st, DY, opts = {}) {

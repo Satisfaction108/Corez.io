@@ -140,11 +140,19 @@ export function ramBadge(len, height, textW, down = 0) {
     return { x: (len - w) / 2, y, w, h, size, nameMid: bandBottom - band + free / 2, nameMax: Math.min(band * 0.42, free * 0.9) };
 }
 
-// a mockup that digs by ramming: no guns of its own, or the smasher stat set
+// guns on its turrets (an Architect's launchers, an Auto-3's autos)
+export function turretGuns(m) {
+    for (const t of (m && m.turrets) || []) {
+        if (t && Array.isArray(t.guns) && t.guns.length) return true;
+        if (t && t.turrets && turretGuns(t)) return true;
+    }
+    return false;
+}
+// a mockup that digs by ramming: no guns of its own or on its turrets, or the smasher stat set
 export function isRamMockup(m) {
     if (!m) return false;
-    if (Array.isArray(m.guns) && m.guns.length === 0) return true;
-    return !!(m.statnames && m.statnames.reload === "Engine Acceleration");
+    if (m.statnames && m.statnames.reload === "Engine Acceleration") return true;
+    return Array.isArray(m.guns) && m.guns.length === 0 && !turretGuns(m);
 }
 
 // ── the pager ──

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
-    <meta name="description" content="Corez.io: Dig gems out of the rock and bank them before someone blows you up for them. Free tank battle royale in your browser.">
+    <meta name="description" content="Corez.io is a tank battle royale where you dig gems out of rock and bank them. Free, in your browser, no download.">
     <meta name="robots" content="index, follow">
     <script>
     // Runs before everything else. Game portals show us in an iframe on their
@@ -141,17 +141,17 @@
     <link rel="canonical" href="https://corez.io/">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Corez.io">
-    <meta property="og:title" content="Corez.io: free browser battle royale">
-    <meta property="og:description" content="Dig gems out of the rock and bank them before someone blows you up for them. Free tank battle royale in your browser.">
+    <meta property="og:title" content="Corez.io: free tank battle royale">
+    <meta property="og:description" content="Tank battle royale where you dig for gems. Die and you drop them. Free in your browser.">
     <meta property="og:url" content="https://corez.io/">
     <meta property="og:image" content="https://corez.io/img/og-brawl.jpg">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="Corez.io gameplay: four tanks fighting in a dug-out pocket of coloured rock while gems burst out">
+    <meta property="og:image:alt" content="Four tanks fighting in a hole dug out of the rock, gems all over the place">
     <meta property="og:image:type" content="image/jpeg">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Corez.io: free browser battle royale">
-    <meta name="twitter:description" content="Dig gems out of the rock and bank them before someone blows you up for them. Free tank battle royale in your browser.">
+    <meta name="twitter:title" content="Corez.io: free tank battle royale">
+    <meta name="twitter:description" content="Tank battle royale where you dig for gems. Die and you drop them. Free in your browser.">
     <meta name="twitter:image" content="https://corez.io/img/og-brawl.jpg">
     <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
     <!-- installable: from the home screen it runs full screen, sideways (Safari on iPhone has no fullscreen API for pages) -->
@@ -166,13 +166,13 @@
     <link rel="help" href="/about">
     <script type="application/ld+json">
     {"@context": "https://schema.org", "@type": "VideoGame", "name": "Corez.io", "url": "https://corez.io/",
-     "description": "A free top-down tank battle royale in your browser. Dig gems out of the rock, bank them at a vault, and fight other tanks while the storm closes in.",
+     "description": "Free top down tank battle royale in your browser. You dig gems out of rock and bank them at a vault. If you die you drop most of what you're carrying.",
      "image": "https://corez.io/img/og-brawl.jpg", "genre": ["Battle royale", "Action", "Multiplayer", ".io"],
      "gamePlatform": "Web browser", "applicationCategory": "Game", "operatingSystem": "Any",
      "playMode": "MultiPlayer", "author": {"@type": "Person", "name": "ZyroX"},
      "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
     </script>
-    <title>Corez.io: free browser battle royale</title>
+    <title>Corez.io: free tank battle royale</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- the title font only: never hold the first paint for it (it swaps in) -->
@@ -332,7 +332,7 @@
         <!-- in a raid only (saveCode.js): stay still 20 s, get a code, leave -->
         <div id="spSaveRow" class="sp-save" style="display:none">
             <button type="button" id="spSaveBtn" class="dw-btn"><span id="spSaveBtnTxt">Save &amp; leave</span><kbd id="spSaveKey" class="sp-desktop-only">L</kbd></button>
-            <span class="sp-save-note">Stay still for 20 seconds and get a code. Type <b>$restore</b> and the code in chat next time to pick up where you left off.</span>
+            <span class="sp-save-note">Sit still for 20 seconds to get a code. Next time type <b>$restore</b> and the code in chat.</span>
         </div>
         <div class="sp-tabs">
             <span class="sp-tab active" data-tab="sp-options">Options</span>
@@ -342,7 +342,7 @@
         <div class="sp-body">
 
             <div id="sp-theme" class="sp-pane">
-                <div class="sp-label">Game Theme</div>
+                <div class="sp-label">Theme</div>
                 <select id="optColors" tabindex="-1" onchange="document.getElementById('optCustom').style.display = this.value === 'custom' ? 'block' : 'none'" onfocus="document.getElementById('optCustom').style.display = this.value === 'custom' ? 'block' : 'none'">
                     <option value="normal">Light (by Neph/CX)</option>
                     <option value="dark" selected>Dark (by Neph/CX)</option>
@@ -374,7 +374,7 @@
             </div>
 
             <div id="sp-options" class="sp-pane active">
-                <div class="sp-label">Game Appearance</div>
+                <div class="sp-label">In game</div>
                 <div class="sp-checks">
                     <label class="container"><input id="optRenderNames" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Player names</label>
                     <label class="container"><input id="optChatMessages" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Chat messages</label>
@@ -386,7 +386,7 @@
                     <label class="container"><input id="optCurvyTraps" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Curvy traps</label>
                     <label class="container"><input id="optSharpEdges" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Sharp polygons</label>
                 </div>
-                <div class="sp-label">UI Elements</div>
+                <div class="sp-label">HUD</div>
                 <div class="sp-checks">
                     <label class="container"><input id="optRenderUpgrades" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Upgrades</label>
                     <label class="container"><input id="optRenderLeaderboard" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Leaderboard</label>
@@ -419,16 +419,16 @@
                     <label class="container"><input id="optLerpAnim" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Lerp animations</label>
                     <label class="container"><input id="optOptimizeMode" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Optimize mode</label>
                     <label class="container"><input id="optFullHD" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Full HD</label>
-                    <label class="container" title="Fewer particles, sparks and bursts"><input id="optFewerFx" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Fewer effects</label>
-                    <label class="container" title="Plainer rocks: softer shading, plain cracks, no wobble"><input id="optSimpleTerrain" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Simple terrain</label>
-                    <label class="container" title="No shaking, camera kicks or freeze frames"><input id="optNoShake" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No screen shake</label>
-                    <label class="container" title="No glows, halos or screen-edge tints"><input id="optNoGlow" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No glow</label>
-                    <label class="container" title="No glitch frames, static or colour split"><input id="optNoGlitch" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No glitch effects</label>
-                    <label class="container" title="Reduces flashing and glitch effects: no glitches, colour split, white-outs or strobing pulses, softer screen shake"><input id="optLightSafe" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Light sensitive (reduces flashing and glitch effects)</label>
-                    <label class="container" title="Draws half as many frames to save power"><input id="opt30Fps" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>30 FPS cap</label>
+                    <label class="container" title="Less sparks and particles"><input id="optFewerFx" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Fewer effects</label>
+                    <label class="container" title="Plainer rocks, easier on slow computers"><input id="optSimpleTerrain" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Simple terrain</label>
+                    <label class="container" title="No shake or freeze frames"><input id="optNoShake" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No screen shake</label>
+                    <label class="container" title="Turns off the glowy stuff"><input id="optNoGlow" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No glow</label>
+                    <label class="container" title="Turns off the glitchy screen effects"><input id="optNoGlitch" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>No glitch effects</label>
+                    <label class="container" title="No flashing or glitching, softer shake"><input id="optLightSafe" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Light sensitive</label>
+                    <label class="container" title="Half the frames, saves battery"><input id="opt30Fps" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>30 FPS cap</label>
                 </div>
                 <div class="sp-label">Effects</div>
-                <select id="optFxLevel" tabindex="-1" title="How many sparks, glitches and flashes. Low is easiest on slow machines">
+                <select id="optFxLevel" tabindex="-1" title="Low is best on slow computers">
                     <option value="low">Low</option>
                     <option value="normal" selected>Normal</option>
                     <option value="max">Max</option>
@@ -465,7 +465,7 @@
             </div>
 
             <div id="sp-sound" class="sp-pane">
-                <div class="sp-label">Master</div>
+                <div class="sp-label">Main</div>
                 <div class="sp-checks">
                     <label class="container"><input id="sfxOn" class="checkbox" type="checkbox"><span class="checkmark"></span>Sound effects</label>
                     <label class="container"><input id="sfxHeadphones" class="checkbox" type="checkbox" checked><span class="checkmark"></span>3D headphones</label>
@@ -489,23 +489,23 @@
                 <div class="kb-header"><span>Keybinds</span><i id="resetControls" class="reset resetControls" title="Reset controls"></i></div>
                 <div class="kb-grid" id="homeKeybindGrid">
                     <div class="kb-section" style="grid-column:span 2">Movement</div>
-                    <div class="kb-row"><b data-key="KEY_UP">W</b><span>Move Up</span></div>
-                    <div class="kb-row"><b data-key="KEY_DOWN">S</b><span>Move Down</span></div>
-                    <div class="kb-row"><b data-key="KEY_LEFT">A</b><span>Move Left</span></div>
-                    <div class="kb-row"><b data-key="KEY_RIGHT">D</b><span>Move Right</span></div>
+                    <div class="kb-row"><b data-key="KEY_UP">W</b><span>Move up</span></div>
+                    <div class="kb-row"><b data-key="KEY_DOWN">S</b><span>Move down</span></div>
+                    <div class="kb-row"><b data-key="KEY_LEFT">A</b><span>Move left</span></div>
+                    <div class="kb-row"><b data-key="KEY_RIGHT">D</b><span>Move right</span></div>
                     <div class="kb-section" style="grid-column:span 2">Combat</div>
-                    <div class="kb-row"><b data-key="KEY_AUTO_FIRE">E</b><span>Auto-Fire</span></div>
-                    <div class="kb-row"><b data-key="KEY_AUTO_SPIN">C</b><span>Auto-Spin</span></div>
+                    <div class="kb-row"><b data-key="KEY_AUTO_FIRE">E</b><span>Auto fire</span></div>
+                    <div class="kb-row"><b data-key="KEY_AUTO_SPIN">C</b><span>Auto spin</span></div>
                     <div class="kb-row"><b data-key="KEY_DASH">Alt</b><span>Dash</span></div>
                     <div class="kb-row"><b data-key="KEY_ABILITY">Q</b><span>Ability</span></div>
-                    <div class="kb-row"><b data-key="KEY_SIDEARM">X</b><span>Fire Sidearm</span></div>
-                    <div class="kb-row"><b data-key="KEY_REVERSE_TANK">V</b><span>Reverse Tank</span></div>
-                    <div class="kb-row"><b data-key="KEY_REVERSE_MOUSE">-</b><span>Reverse Mouse</span></div>
-                    <div class="kb-row"><b data-key="KEY_AUTO_ALT">G</b><span>Ping for your teammate (duos)</span></div>
-                    <div class="kb-row"><b data-key="KEY_OVER_RIDE">R</b><span>AI Override</span></div>
-                    <div class="kb-row"><b data-key="KEY_SUICIDE">O</b><span>Self-Destruct</span></div>
-                    <div class="kb-row"><b data-key="KEY_MAX_STAT">F</b><span>Maximize Stat</span></div>
-                    <div class="kb-row"><b data-key="KEY_CLASS_TREE">T</b><span>Class Tree</span></div>
+                    <div class="kb-row"><b data-key="KEY_SIDEARM">X</b><span>Fire sidearm</span></div>
+                    <div class="kb-row"><b data-key="KEY_REVERSE_TANK">V</b><span>Reverse tank</span></div>
+                    <div class="kb-row"><b data-key="KEY_REVERSE_MOUSE">-</b><span>Reverse mouse</span></div>
+                    <div class="kb-row"><b data-key="KEY_AUTO_ALT">G</b><span>Ping your duo</span></div>
+                    <div class="kb-row"><b data-key="KEY_OVER_RIDE">R</b><span>AI override</span></div>
+                    <div class="kb-row"><b data-key="KEY_SUICIDE">O</b><span>Self destruct</span></div>
+                    <div class="kb-row"><b data-key="KEY_MAX_STAT">F</b><span>Max out a stat</span></div>
+                    <div class="kb-row"><b data-key="KEY_CLASS_TREE">T</b><span>Tank tree</span></div>
                     <div class="kb-section" style="grid-column:span 2">Upgrades</div>
                     <div class="kb-row"><b data-key="KEY_CHOOSE_1">Y</b><span>Upgrade 1</span></div>
                     <div class="kb-row"><b data-key="KEY_CHOOSE_2">U</b><span>Upgrade 2</span></div>
@@ -524,27 +524,27 @@
                     <div class="kb-row"><b data-key="KEY_UPGRADE_MOB">8</b><span>MOB</span></div>
                     <div class="kb-row"><b data-key="KEY_UPGRADE_RGN">9</b><span>RGN</span></div>
                     <div class="kb-row"><b data-key="KEY_UPGRADE_SHI">0</b><span>SHI</span></div>
-                    <div class="kb-row"><b data-key="KEY_UPGRADE_MIN">-</b><span>Mining Power</span></div>
+                    <div class="kb-row"><b data-key="KEY_UPGRADE_MIN">-</b><span>Mining power</span></div>
                     <div class="kb-section" style="grid-column:span 2">Kit</div>
-                    <div class="kb-row"><b data-key="KEY_KIT_1">Z</b><span>Kit Slot 1</span></div>
-                    <div class="kb-row"><b data-key="KEY_KIT_2">,</b><span>Kit Slot 2</span></div>
-                    <div class="kb-row"><b data-key="KEY_KIT_3">N</b><span>Kit Slot 3</span></div>
+                    <div class="kb-row"><b data-key="KEY_KIT_1">Z</b><span>Kit slot 1</span></div>
+                    <div class="kb-row"><b data-key="KEY_KIT_2">,</b><span>Kit slot 2</span></div>
+                    <div class="kb-row"><b data-key="KEY_KIT_3">N</b><span>Kit slot 3</span></div>
                     <div class="kb-section" style="grid-column:span 2">Other</div>
-                    <div class="kb-row"><b data-key="KEY_TOKEN">-</b><span>Token Tank*</span></div>
+                    <div class="kb-row"><b data-key="KEY_TOKEN">-</b><span>Token tank*</span></div>
                     <div class="kb-row"><b data-key="KEY_RECORD">P</b><span>Record</span></div>
-                    <div class="kb-row"><b data-key="KEY_TOGGLE_MAP">M</b><span>Full Map</span></div>
-                    <div class="kb-row"><b data-key="KEY_SAVE">L</b><span>Save &amp; Leave</span></div>
+                    <div class="kb-row"><b data-key="KEY_TOGGLE_MAP">M</b><span>Big map</span></div>
+                    <div class="kb-row"><b data-key="KEY_SAVE">L</b><span>Save &amp; leave</span></div>
                     <div class="kb-row"><b data-key="KEY_SCREENSHOT">.</b><span>Screenshot</span></div>
-                    <div class="kb-row"><b data-key="KEY_PARTY_ACCEPT">F2</b><span>Join Duo Invite</span></div>
+                    <div class="kb-row"><b data-key="KEY_PARTY_ACCEPT">F2</b><span>Accept duo invite</span></div>
                 </div>
-                <p class="kb-note">* Requires token &middot; Click a key to rebind</p>
+                <p class="kb-note">* needs a token &middot; click a key to change it</p>
             </div>
         </div>
     </div>
     <div id="homeSettingsOverlay"></div>
 
     <div id="changelogTabs" style="display:none;">
-        <span class="active" data-type="default">Bulletin Board</span>
+        <span class="active" data-type="default">Bulletin board</span>
         <span data-type="updates">Updates</span>
         <span data-type="balance">Balance</span>
         <span data-type="changelog">Changelog</span>
@@ -556,7 +556,7 @@
             <button id="homeChangelogClose">&#10005;</button>
         </div>
         <div class="cl-tabs">
-            <span class="cl-tab active" data-type="default">Bulletin Board</span>
+            <span class="cl-tab active" data-type="default">Bulletin board</span>
             <span class="cl-tab" data-type="updates">Updates</span>
             <span class="cl-tab" data-type="balance">Balance</span>
             <span class="cl-tab" data-type="changelog">Changelog</span>
@@ -581,7 +581,7 @@
                             <!-- Corez.io title, free-standing on top, with the emblem (scripts/make-logo.py) -->
                             <h1 class="game-title"><img class="game-logo" src="/img/logo.svg" alt="" width="100" height="100"><span class="wordmark" data-text="Corez.io">Corez<i>.io</i></span></h1>
                             <!-- the hook in one line: what you do here that no other tank game does -->
-                            <p class="hero-tag"><span class="hero-gems" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Blast through colorful rock for gems. <b>Bank them before another tank takes them.</b></p>
+                            <p class="hero-tag"><span class="hero-gems" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Dig up gems and bank them <b>(if you survive)</b></p>
                             <!-- a raid in three steps (desktop; phones keep the card short) -->
                             <ol class="hero-loop" aria-label="How a raid goes">
                                 <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20.5 14.5 10" stroke="#0c0a0e" stroke-width="5.2" stroke-linecap="round"/><path d="M4 20.5 14.5 10" stroke="#d9a066" stroke-width="2.4" stroke-linecap="round"/><path d="M7.5 3.2Q17.5 3.5 21 15.8L18.4 16.4Q15.5 9.8 7 5.8Z" fill="#c5cad6" stroke="#0c0a0e" stroke-width="1.6" stroke-linejoin="round"/></svg>Mine</li>
@@ -592,7 +592,7 @@
                             <!-- name (left) + region dropdown (right) -->
                             <div class="menu-row">
                                 <div class="menu-field">
-                                    <label class="field-label" for="playerNameInput"><span class="dw-lbl-guest">Name</span><span class="dw-lbl-user">You</span></label>
+                                    <label class="field-label" for="playerNameInput"><span class="dw-lbl-guest">Who's driving?</span><span class="dw-lbl-user">You</span></label>
                                     <input type="text" tabindex="1" spellcheck="false" placeholder="optional" id="playerNameInput" maxlength="24" autocomplete="off">
                                     <!-- logged in: the account name replaces the input -->
                                     <button type="button" id="acctNameBox" title="Change it in Account"><span id="acctNameText"></span><svg class="dw-ic"><use href="#i-lock"/></svg></button>
@@ -628,14 +628,14 @@
                             <input type="text" class="conceal" tabindex="4" placeholder="Token (optional)" id="playerKeyInput" maxlength="64" />
 
                             <!-- touch screens only (home.js initMobileNote); CSS picks the line for the orientation -->
-                            <p id="mobileNote" class="mobile-note" hidden><span class="mn-tall"><i class="mn-phone" aria-hidden="true"></i>Turn your phone sideways to play</span><span class="mn-wide">Twin-stick controls: one thumb moves, one aims.</span></p>
+                            <p id="mobileNote" class="mobile-note" hidden><span class="mn-tall"><i class="mn-phone" aria-hidden="true"></i>Turn your phone sideways to play</span><span class="mn-wide">One thumb moves, the other aims.</span></p>
                             <!-- Safari on iPhone can't go full screen from a page: an installed icon can (home.js initA2hsTip) -->
                             <p id="a2hsTip" class="a2hs-tip" hidden><span>For full screen, tap <b>Share</b>, then <b>Add to Home Screen</b>.</span><button type="button" class="a2hs-x" aria-label="Got it"><svg class="dw-ic"><use href="#i-close"/></svg></button></p>
 
                             <!-- play button, full width below both fields -->
                             <div class="startButtonHolder">
                                 <button id="startButton" tabindex="3"><b>Play</b></button>
-                                <button id="tutorialButton" tabindex="5" title="Learn the basics on your own map">
+                                <button id="tutorialButton" tabindex="5" title="Learn how to play on your own map">
                                     <b>Tutorial</b>
                                     <span class="tut-badge" id="tutorialBadge" hidden>new? start here</span>
                                 </button>
@@ -662,12 +662,12 @@
                             <div id="tabControls">
                                 <div style="height:0;overflow:hidden;">
                                     <table class="controlTable" id="controlSettings"><tbody>
-                                        <tr><td><div><b data-key="KEY_UP">W</b><span> - </span>move up</div></td><td><div><b data-key="KEY_DOWN">S</b><span> - </span>move down</div></td><td><div><b data-key="KEY_PARTY_ACCEPT">F2</b><span> - </span>join duo invite</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_UP">W</b><span> - </span>move up</div></td><td><div><b data-key="KEY_DOWN">S</b><span> - </span>move down</div></td><td><div><b data-key="KEY_PARTY_ACCEPT">F2</b><span> - </span>accept duo invite</div></td></tr>
                                         <tr><td><div><b data-key="KEY_LEFT">A</b><span> - </span>move left</div></td><td><div><b data-key="KEY_RIGHT">D</b><span> - </span>move right</div></td><td><div><b data-key="KEY_SAVE">L</b><span> - </span>save &amp; leave</div></td></tr>
                                         <tr><td><div><b data-key="KEY_AUTO_FIRE">E</b><span> - </span>auto-fire</div></td><td><div><b data-key="KEY_AUTO_SPIN">C</b><span> - </span>auto-spin</div></td><td><div><b data-key="KEY_SIDEARM">X</b><span> - </span>fire sidearm</div></td></tr>
                                         <tr><td><div><b data-key="KEY_DASH">Alt</b><span> - </span>dash</div></td><td><div><b data-key="KEY_REVERSE_TANK">V</b><span> - </span>reverse tank</div></td><td><div><b data-key="KEY_REVERSE_MOUSE">-</b><span> - </span>reverse mouse</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_AUTO_ALT">G</b><span> - </span>ping</div></td><td><div><b data-key="KEY_SUICIDE">O</b><span> - </span>self-destruct</div></td><td><div><b data-key="KEY_CLASS_TREE">T</b><span> - </span>show class tree</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_OVER_RIDE">R</b><span> - </span>AI override</div></td><td><div><b data-key="KEY_MAX_STAT">F</b><span> - </span>maximize stat</div></td><td><div><b data-key="KEY_TOGGLE_MAP">M</b><span> - </span>full map</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_AUTO_ALT">G</b><span> - </span>ping your duo</div></td><td><div><b data-key="KEY_SUICIDE">O</b><span> - </span>self-destruct</div></td><td><div><b data-key="KEY_CLASS_TREE">T</b><span> - </span>tank tree</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_OVER_RIDE">R</b><span> - </span>AI override</div></td><td><div><b data-key="KEY_MAX_STAT">F</b><span> - </span>max out a stat</div></td><td><div><b data-key="KEY_TOGGLE_MAP">M</b><span> - </span>full map</div></td></tr>
                                         <tr><td><div><b data-key="KEY_TOKEN">-</b><span> - </span>token tank*</div></td><td><div><b data-key="KEY_RECORD">P</b><span> - </span>record video</div></td><td><div><b data-key="KEY_SCREENSHOT">.</b><span> - </span>screenshot</div></td></tr>
                                         <tr><td><div><b data-key="KEY_CHOOSE_1">Y</b><span> - </span>upgrade 1</div></td><td><div><b data-key="KEY_CHOOSE_2">U</b><span> - </span>upgrade 2</div></td><td><div><b data-key="KEY_CHOOSE_3">I</b><span> - </span>upgrade 3</div></td></tr>
                                         <tr><td><div><b data-key="KEY_CHOOSE_4">H</b><span> - </span>upgrade 4</div></td><td><div><b data-key="KEY_CHOOSE_5">J</b><span> - </span>upgrade 5</div></td><td><div><b data-key="KEY_CHOOSE_6">K</b><span> - </span>upgrade 6</div></td></tr>

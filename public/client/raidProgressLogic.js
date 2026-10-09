@@ -40,17 +40,17 @@ export function rows(o) {
     const out = [];
     const r = o.rank;
     if (o.guest || !r) {
-        out.push({ k: "RANK", t: "Sign up to earn rank points and keep your gemdust", col: "lilac" });
+        out.push({ k: "RANK", t: "Sign up to get ranked and keep your gemdust", col: "lilac" });
     } else if (r.division == null) {
         const pl = r.placement || {};
         const left = Math.max(0, (pl.of | 0) - (pl.lives | 0));
-        out.push({ k: "RANK", t: left > 0 ? "Placement: " + left + " more " + (left === 1 ? "life" : "lives") + " to get your rank" : "Placement done: your rank shows next life", col: "gold" });
+        out.push({ k: "RANK", t: left > 0 ? "Placement: " + left + " more " + (left === 1 ? "life" : "lives") + " to get your rank" : "Placement done, your rank shows next life", col: "gold" });
     } else {
         const d = o.rp | 0;
         const head = o.rpSeen ? (d >= 0 ? "+" : "-") + num(Math.abs(d)) + " RP this raid" : (r.name || "Ranked");
         const toNext = Math.max(0, (r.size | 0) - (r.into | 0));
         const tail = (r.size | 0) > 0 ? (toNext > 0 ? num(toNext) + " RP to the next rank" : "next rank on your next win") : "";
-        out.push({ k: "RANK", t: head + (tail ? ". " + tail : ""), col: d < 0 ? "text" : "gold" });
+        out.push({ k: "RANK", t: head + (tail ? ", " + tail : ""), col: d < 0 ? "text" : "gold" });
     }
     if (o.nu && o.nu.p > 0) {
         const have = Math.max(0, +o.dust || 0);
@@ -58,7 +58,7 @@ export function rows(o) {
         const fmt = (v) => +(+v).toFixed(v < 10 ? 1 : 0);
         out.push({ k: "NEXT UNLOCK", t: need > 0 ? fmt(need) + " gemdust to " + o.nu.n + " (" + fmt(have) + " / " + fmt(o.nu.p) + ")" : o.nu.n + " is ready in the lobby shop", col: need > 0 ? "play" : "gold" });
     } else if (o.guest) {
-        out.push({ k: "NEXT UNLOCK", t: "Accounts spend gemdust on skins in the lobby shop", col: "text" });
+        out.push({ k: "NEXT UNLOCK", t: "Sign up to spend gemdust on skins", col: "text" });
     }
     const life = Math.max(o.bestLife || 0, o.lifeNow || 0);
     const raid = Math.max(o.bestRaid | 0, 0);

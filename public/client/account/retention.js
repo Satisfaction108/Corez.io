@@ -372,11 +372,11 @@ export function openWelcome() {
             h('div', { class: 'dy-big-v', text: rewardText(r) })));
     const note = st.missed
         ? h('p', { class: 'dy-note', text: 'You missed a day, so you dropped back to day ' + st.day + '. Not to zero, promise.' })
-        : st.streak >= 2 ? h('p', { class: 'dy-note' }, flame(st.streak, 'inline'), ' days in a row. Keep it going!') : null;
+        : st.streak >= 2 ? h('p', { class: 'dy-note' }, flame(st.streak, 'inline'), ' days in a row, nice') : null;
     const btn = h('button', { type: 'button', class: 'wl-opt wl-opt-guest dy-go', 'data-autofocus': '' }, h('span', { text: 'Claim' }));
     const tmrEl = h('p', { class: 'dy-after', hidden: true });
     const body = h('div', { class: 'dy-back' },
-        h('div', { class: 'dy-back-h', text: user ? 'Welcome back, ' + user.username + '!' : 'Welcome back!' }),
+        h('div', { class: 'dy-back-h', text: user ? 'Welcome back, ' + user.username : 'Welcome back' }),
         dustLine(),
         pips('big'),
         rewardEl,
@@ -469,7 +469,7 @@ async function turnOn(loud) {
         const regP = registration();
         const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
         if (perm !== 'granted') {
-            if (loud) toast('No pings then. You can switch them on with the bell any time.');
+            if (loud) toast('No pings then. Hit the bell if you change your mind.');
             paint();
             return;
         }
@@ -482,7 +482,7 @@ async function turnOn(loud) {
         st.push.subscribed = true;
         if (loud) toast('Pings on. Only your daily reward and Raid Night, nothing else.', { kind: 'ok', duration: 5000 });
     } catch (e) {
-        if (loud) toast('This browser wouldn’t do pings. Sorry!', { kind: 'error' });
+        if (loud) toast('This browser can’t do pings.', { kind: 'error' });
     }
     paint();
 }

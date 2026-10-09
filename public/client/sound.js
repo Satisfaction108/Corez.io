@@ -18,10 +18,10 @@ const MIX_CATS = [
     { id: 'mining',      label: 'Mining' },
     { id: 'gems',        label: 'Gems' },
     { id: 'depositing',  label: 'Depositing' },
-    { id: 'celebration', label: 'Bank Celebration' },
-    { id: 'ui',          label: 'Menu & Upgrades' },
-    { id: 'movement',    label: 'Rammer Movement' },
-    { id: 'satchel',     label: 'Satchel Tension' },
+    { id: 'celebration', label: 'Bank celebration' },
+    { id: 'ui',          label: 'Menu & upgrades' },
+    { id: 'movement',    label: 'Rammer movement' },
+    { id: 'satchel',     label: 'Satchel heartbeat' },
 ];
 
 function defaultPrefs() {

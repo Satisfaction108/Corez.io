@@ -270,7 +270,7 @@ async function linkDiscord() {
         fields: [{ name: 'pw', label: 'Current password', type: 'password', autocomplete: 'current-password' }],
         confirmLabel: 'Go',
         submit: async (v) => {
-            if (!v.pw) return { ok: false, error: 'Enter your current password.' };
+            if (!v.pw) return { ok: false, error: 'Need your current password' };
             const r = await api.reauthPassword(v.pw);
             return r.ok ? { ok: true } : { ok: false, error: humanError(r) };
         },
@@ -294,7 +294,7 @@ async function regenerate() {
             fields: [{ name: 'pw', label: 'Current password', type: 'password', autocomplete: 'current-password' }],
             confirmLabel: 'Make it',
             submit: async (v) => {
-                if (!v.pw) return { ok: false, error: 'Enter your current password.' };
+                if (!v.pw) return { ok: false, error: 'Need your current password' };
                 const r = await api.regenRecoveryCode(v.pw);
                 if (r.ok && r.data && r.data.recoveryCode) return { ok: true, value: r.data.recoveryCode };
                 return { ok: false, error: humanError(r) };

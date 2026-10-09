@@ -328,7 +328,6 @@ function resolveName(socket, name) {
             const row = accounts.users.byId(socket.account.id);
             if (row && !row.deleted_at) socket.account.username = row.username;
         } catch (e) { /* keep the cached name */ }
-        // an older account name the filter would refuse today
         return profanity.hasProfanity(socket.account.username) ? profanity.fallbackName(socket) : socket.account.username;
     }
     let clean = String(name == null ? '' : name);

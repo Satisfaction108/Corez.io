@@ -574,45 +574,45 @@ function kitKeys() {
 }
 function content(t) {
     const base = { eyebrow: "First raid", pips: pips() };
-    if (st.flash) return { ...base, title: "Nice.", text: "On to the next one.", done: true };
+    if (st.flash) return { ...base, title: "Nice", text: "Next one.", done: true };
     const g = global.gems || {};
     const touch = !!global.mobile;
     switch (st.step) {
         case "tutorial":
-            return { ...base, title: "New here?", text: "The tutorial shows you the basics in about 10 minutes.",
+            return { ...base, title: "New here?", text: "The tutorial takes about 10 minutes.",
                 next: "Play the tutorial", alt: "Maybe later" };
         case "move":
             return { ...base, title: "Drive and shoot",
-                text: touch ? "Left thumb drives. Right thumb aims and fires." : "Drive with " + kbd("KEY_UP", "W") + kbd("KEY_LEFT", "A") + kbd("KEY_DOWN", "S") + kbd("KEY_RIGHT", "D") + ", aim with the mouse and click to shoot.",
+                text: touch ? "Drive with your left thumb, shoot with the right." : "Drive with " + kbd("KEY_UP", "W") + kbd("KEY_LEFT", "A") + kbd("KEY_DOWN", "S") + kbd("KEY_RIGHT", "D") + " and click to shoot.",
                 bar: { frac: (Math.min(1, st.moved / MOVE_GOAL) + (st.fired ? 1 : 0)) / 2,
                     label: (st.moved >= MOVE_GOAL ? "Drove" : "Drive") + "  \u00b7  " + (st.fired ? "Fired" : "Fire") } };
         case "mine": {
             const goal = mineGoal(), c = (g.carried | 0);
             const ram = gunless();
-            let text = st.rocks.length ? (ram ? "No guns on this tank: push into the circled rocks to grind them, then drive over the gems." : "Shoot the circled rocks, then drive over the gems.")
-                : st.oreFar ? "Look for colored rocks. Follow the <b>ORE</b> arrow."
-                : "Look for colored rocks. They're full of gems.";
-            if (st.dropped) text = "You dropped your gems. Mine some more, then bank them." +
+            let text = st.rocks.length ? (ram ? "No guns, so ram the circled rocks. Then drive over the gems." : "Shoot the circled rocks, then drive over the gems.")
+                : st.oreFar ? "Follow the <b>ORE</b> arrow."
+                : "Colored rocks have gems in them.";
+            if (st.dropped) text = "rip, you dropped your gems. Mine some more." +
                 (!st.rocks.length && st.oreFar ? " Follow the <b>ORE</b> arrow." : "");
-            return { ...base, title: ram ? "Ram rocks. Grab the gems." : "Shoot rocks. Grab the gems.", text,
+            return { ...base, title: ram ? "Ram some rocks" : "Shoot some rocks", text,
                 bar: { frac: c / goal, label: "Gems  " + fmtNum(Math.min(c, goal)) + " / " + fmtNum(goal) } };
         }
         case "bank": {
             const v = global.vault || {};
             const tg = st.target;
-            let text = "Follow the <b>VAULT</b> arrow. Die carrying and you drop it all.";
-            if (v.onPad && v.total > 0) text = "Depositing. Stay on the pad.";
-            else if (v.onPad && (g.carried | 0) >= VAULT_MIN) text = (touch ? "Tap <b>Bank all</b>" : "Press " + kbd("KEY_BANK_ALL", "B") + " or hit <b>Bank all</b>") + " to bank what you carry.";
+            let text = "Follow the <b>VAULT</b> arrow and bank your gems.";
+            if (v.onPad && v.total > 0) text = "Banking, stay on the pad.";
+            else if (v.onPad && (g.carried | 0) >= VAULT_MIN) text = (touch ? "Tap <b>Bank all</b>" : "Press " + kbd("KEY_BANK_ALL", "B") + " or hit <b>Bank all</b>") + ".";
             else if ((g.carried | 0) < VAULT_MIN) {
                 // a death on this step keeps the step: mine some, come back
-                text = st.dropped ? "You dropped your gems. Mine some more, then bank them."
-                    : "Mine a few more gems first. You need " + VAULT_MIN + " to bank.";
+                text = st.dropped ? "rip, you dropped your gems. Mine some more."
+                    : "You need " + VAULT_MIN + " gems to bank. Mine a bit more.";
                 if (!st.rocks.length && st.oreFar) text += " Follow the <b>ORE</b> arrow.";
                 return { ...base, title: "Mine, then bank", text };
             }
             else if (!tg) text = "Vaults are the gold rings on your minimap. " + mapOpens();
-            else if (tg.on) text = "Drive onto the vault. Banked gems are safe when you die.";
-            return { ...base, title: "Bank it before you lose it", text };
+            else if (tg.on) text = "Drive onto the vault.";
+            return { ...base, title: "Bank your gems", text };
         }
         case "upgrade": {
             const tiles = (gui.upgrades || []).length > 0, stat = canStat();
@@ -634,22 +634,22 @@ function content(t) {
                         : aimed ? "Press " + kbd("KEY_ABILITY", "Q") + " to aim your " + name + ", then left click to place it." : "Press " + kbd("KEY_ABILITY", "Q") + " to fire your " + name + ". It aims at your mouse." };
             }
             if (ownsKit()) {
-                return { ...base, title: "Use an ability",
-                    text: touch ? "Tap a kit button on the right. Some then ask where to land." : "Press " + kitKeys() + " to use your kit items." };
+                return { ...base, title: "Use a kit item",
+                    text: touch ? "Tap a kit button on the right." : "Press " + kitKeys() + " to use your kit items." };
             }
             const price = cheapestPrice();
             const banked = g.banked | 0;
-            let text = "Follow the <b>SHOP</b> arrow on the edge of your screen.";
-            if (sh.onPad) text = "Pick an item, then " + (touch ? "tap" : "hit") + " <b>Buy</b>. You pay with banked gems.";
-            else if (price && banked < price) text = "Abilities start at " + fmtNum(price) + " banked gems. Bank a bit more first.";
+            let text = "Follow the <b>SHOP</b> arrow.";
+            if (sh.onPad) text = "Pick an item, then " + (touch ? "tap" : "hit") + " <b>Buy</b>.";
+            else if (price && banked < price) text = "The cheapest ability is " + fmtNum(price) + " banked gems. Bank more first.";
             else if (!tg) text = "Find a shop on the minimap. " + mapOpens();
             else if (tg.on) text = "Drive onto the shop pad.";
-            return { ...base, title: "Get an ability at a shop", text };
+            return { ...base, title: "Buy an ability", text };
         }
         case "final":
             return { ...base, title: "You're set",
                 // contracts only show from the third raid (newcomer.js)
-                text: global.nxKnown && (global.nxStage | 0) < 2 ? "You've got the basics. Keep digging and banking." : "Contracts show up top left now. Each one pays gems.",
+                text: global.nxKnown && (global.nxStage | 0) < 2 ? "That's the basics. Keep digging and banking." : "Contracts show up top left now, they pay gems.",
                 next: "Let's go", done: true };
     }
     return null;

@@ -543,7 +543,7 @@ function watchJoin(retry) {
         if (retry < 1) {
             toast('Couldn’t get you in. Trying again...', { kind: 'error', duration: 3000 });
             setTimeout(() => { if (!inGame() && !g.gameLoading && !g.gameStart) arm(true, retry + 1); }, 600);
-        } else toast('Couldn’t join the duo raid. Try Play again in a moment', { kind: 'error', duration: 6000 });
+        } else toast('Couldn’t join the duo raid. Hit Play again', { kind: 'error', duration: 6000 });
     }, 1000);
 }
 

@@ -46,15 +46,15 @@ function abilityName() {
 }
 function stepText(id) {
     if (id === "dash") return touch()
-        ? ["Dash", "Tap to dash, hold to see what it does. 2 charges, each back in 5 seconds."]
+        ? ["Dash", "Tap to dash. 2 charges, each back in 5 seconds."]
         : ["Dash", keyName("KEY_DASH", "Alt") + " to dash. 2 charges, each back in 5 seconds."];
     if (id === "ability") {
         const a = abilityName();
-        const how = touch() ? (a.aimed ? "Drag off the button to aim, lift to use. Hold to see what it does." : "Tap to use, hold to see what it does.")
+        const how = touch() ? (a.aimed ? "Drag off the button to aim, lift to use." : "Tap to use it.")
             : a.aimed ? keyName("KEY_ABILITY", "Q") + " to aim, left click to use." : keyName("KEY_ABILITY", "Q") + " to use it.";
         return ["Your ability", how + " You got " + a.name + " this raid."];
     }
-    return ["The shop", "More abilities in the shop. Equip them there."];
+    return ["The shop", "The shop sells more abilities."];
 }
 
 // where each step points (GUI units): a circle round the thing

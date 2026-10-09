@@ -599,7 +599,7 @@ class TouchControls {
                 touchPref("armAuto", this.armOn);
                 const cb = document.getElementById("touchArm");
                 if (cb) cb.checked = this.armOn;
-                global.createMessage(this.armOn ? "Sidearm fires with your gun." : "Sidearm off. Tap it to fire it with your gun again.", 2200);
+                global.createMessage(this.armOn ? "Sidearm fires with your gun." : "Sidearm off. Tap it again to turn it back on.", 2200);
                 gameSound.uiClick();
             }
         }
@@ -862,7 +862,7 @@ TouchControls.prototype.buildDom = function () {
     const rot = document.createElement("div");
     rot.id = "touchRotate";
     rot.innerHTML = '<div class="rot-card"><div class="rot-phone"></div><h2>Turn your phone sideways</h2>' +
-        '<p>You see way more of the raid, and each thumb gets its own side of the screen.</p>' +
+        '<p>You see way more of the raid like that.</p>' +
         '<p class="rot-lock">Not turning? Switch off rotation lock.</p>' +
         '<button type="button">Play upright anyway</button></div>';
     rot.querySelector("button").onclick = () => { this.portraitOk = true; rot.classList.remove("show"); };
@@ -887,9 +887,9 @@ TouchControls.prototype.buildSettings = function () {
         if (pane && pane.firstElementChild !== label) { pane.insertBefore(box, pane.firstElementChild); pane.insertBefore(label, box); }
     }
     const rows = [
-        ["touchAssist", "Aim Assist", "assist", "Aim bends a little toward the nearest tank, chest or ore rock"],
+        ["touchAssist", "Aim assist", "assist", "Your aim pulls a bit toward the nearest tank, chest or ore"],
         ["touchHaptics", "Vibration", "haptics", "A short buzz on hits, kills and banking (Android)"],
-        ["touchArm", "Sidearm With Gun", "armAuto", "The sidearm fires whenever your main gun does"],
+        ["touchArm", "Sidearm with gun", "armAuto", "Your sidearm shoots whenever your main gun does"],
     ];
     // the old switches stay in the page (settings code still reads them), hidden
     for (const el of box.children) el.style.display = "none";

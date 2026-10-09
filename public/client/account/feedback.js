@@ -118,7 +118,7 @@ function openModal() {
     let sent = false;
     const text = h('textarea', {
         class: 'dw-input fb-text', maxlength: MAX, rows: 5, spellcheck: 'true', 'data-autofocus': '',
-        placeholder: 'Found a bug or got an idea? Tell us.', 'aria-label': 'Your feedback',
+        placeholder: 'Type your bug or idea here', 'aria-label': 'Your feedback',
     });
     text.value = (ls.get(DRAFT_KEY) || '').slice(0, MAX);
     const counter = h('span', { class: 'fb-count', 'aria-live': 'polite' });
@@ -201,7 +201,7 @@ function openModal() {
 
     const m = ui.modal({
         title: 'Send feedback',
-        message: 'Bugs, ideas, balance, anything. It goes straight to the dev.',
+        message: 'This goes straight to the dev.',
         body: form,
         cls: 'fb-modal',
         focus: '.fb-text',

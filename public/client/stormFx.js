@@ -706,7 +706,7 @@ export function drawHud(c, sw, sh, topY, st) {
     const col = st.immune ? "#9fd0ff" : L > 0.7 ? "#ffb0c8" : "#efe6ff";
     const d = Math.max(0, Math.round(st.dist / 10) * 10);
     if (d !== warn.distN) { warn.distN = d; warn.distTxt = "safe zone " + A.fmtDist(d) + " away"; }
-    const head = st.immune ? "Storm Anchor " + st.immune + "s" : st.final ? "Final storm. Get out!" : "In the storm. Get out!";
+    const head = st.immune ? "Storm Anchor " + st.immune + "s" : st.final ? "Final storm, get out!" : "In the storm, get out!";
     const by = st.rowY || Math.max(topY + 6, 60);
     const hw = A.hudTitleW(head, 15), dw = A.hudTextW ? A.hudTextW("  ·  " + warn.distTxt, 12) : warn.distTxt.length * 6.5;
     const W = hw + dw + 30, H = 26, x = sw / 2 - W / 2;

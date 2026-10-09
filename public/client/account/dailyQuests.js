@@ -152,7 +152,7 @@ function streakCard(st) {
     const cur = p.current | 0, max = Math.max(1, p.maxDay | 0);
     const toTop = Math.max(0, max - cur);
     let playSub;
-    if (p.today) playSub = toTop > 0 ? 'Done today. Tomorrow +' + fmtReward(p.nextMilli) : 'Top reward reached. Keep it going';
+    if (p.today) playSub = toTop > 0 ? 'Done today. Tomorrow +' + fmtReward(p.nextMilli) : 'Max reward. Keep it going';
     else if (cur > 0) playSub = 'Play a raid today to keep it: +' + fmtReward(p.nextMilli);
     else playSub = 'Play a raid to start one: +' + fmtReward(p.nextMilli);
     const tier = toTop > 0 ? toTop + (toTop === 1 ? ' day' : ' days') + ' to +' + fmtReward(p.maxMilli) + ' a day' : '+' + fmtReward(p.maxMilli) + ' a day';

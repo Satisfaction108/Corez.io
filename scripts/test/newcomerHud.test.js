@@ -114,7 +114,7 @@ function t(name, fn) {
     t('goal: dig, then upgrade, then the storm', () => {
         let g = L.goalFor({ bankedRaid: 0, canUpgrade: true });
         assert.equal(g.id, 'dig');
-        assert.equal(g.text, 'Dig gems → Bank them at the vault');
+        assert.equal(g.text, 'Dig gems, bank them at a vault');
         assert.equal(g.arrow, 'vault');
         g = L.goalFor({ bankedRaid: 120, canUpgrade: true });
         assert.equal(g.text, 'Upgrade your tank');
@@ -161,7 +161,7 @@ function t(name, fn) {
 
     // ── director moments ──────────────────────────────────────────────
     t('director: banners per kind', () => {
-        assert.equal(L.bannerFor({ kind: 'crate' }).title, 'Supply crate incoming!');
+        assert.equal(L.bannerFor({ kind: 'crate' }).title, 'Supply crate incoming');
         assert.equal(L.bannerFor({ kind: 'supply' }).kind, 'crate');
         assert.equal(L.bannerFor({ kind: 'ore_pocket' }).title, 'Rich vein nearby');
         assert.equal(L.bannerFor({ kind: 'orePocket' }).kind, 'ore');
@@ -174,7 +174,7 @@ function t(name, fn) {
         const tm = L.bannerFor({ kind: 'timed', t: 'Mine 5 rocks' });
         assert.equal(tm.title, 'Mine 5 rocks');
         assert.equal(tm.kind, 'timed');
-        assert.equal(L.bannerFor({ kind: 'timed' }).title, 'Quick challenge!');
+        assert.equal(L.bannerFor({ kind: 'timed' }).title, 'Quick challenge');
     });
     t('director: the server contract (newcomerDirector.js)', () => {
         // kinds as the server names them
@@ -238,8 +238,8 @@ function t(name, fn) {
     t('death: a tip per cause', () => {
         const bots = new Set(['Rusty']);
         const isBot = n => bots.has(n);
-        assert.equal(L.deathTip({ cause: 'storm' }), 'The storm got you. Follow the arrow back to the circle.');
-        assert.equal(L.deathTip({ killers: ['Rusty'], isBot }), 'Another miner hunted you down. Bank gems before you get too heavy.');
+        assert.equal(L.deathTip({ cause: 'storm' }), 'The storm got you. Follow the arrow to the circle.');
+        assert.equal(L.deathTip({ killers: ['Rusty'], isBot }), 'A miner got you. Bank before you carry too much.');
         assert.equal(L.deathKind({ killers: ['Alex'], isBot }), 'player');
         assert.equal(L.deathKind({ killers: ['The Warden'], isBot }), 'boss');
         assert.equal(L.deathKind({ killers: ['Big Thing'], bossName: 'Big Thing' }), 'boss');
@@ -257,7 +257,7 @@ function t(name, fn) {
         assert.equal(L.keptLine({ banked: 0, carried: 300, kept: 100 }), 'You kept 100 gems from your satchel.');
         assert.equal(L.keptLine({ banked: 1340, carried: 50, kept: 0 }), 'You kept your 1,340 banked gems. Your satchel dropped.');
         assert.equal(L.keptLine({ banked: 40, carried: 0 }), 'You kept your 40 banked gems.');
-        assert.equal(L.keptLine({ banked: 0, carried: 80 }), 'Nothing was banked, so your gems dropped. Bank them next time.');
+        assert.equal(L.keptLine({ banked: 0, carried: 80 }), 'Nothing banked, so your gems dropped.');
         assert.equal(L.keptLine({}), 'Nothing lost. Jump back in.');
     });
 

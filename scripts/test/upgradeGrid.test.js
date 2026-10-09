@@ -109,6 +109,8 @@ const REPO = path.join(__dirname, '..', '..');
         assert.equal(G.isRamMockup({ guns: [{}], statnames: { reload: 'Engine Acceleration' } }), true, 'thrusters + smasher set');
         assert.equal(G.isRamMockup({ guns: [{}], statnames: { reload: 'Reload' } }), false);
         assert.equal(G.isRamMockup(null), false);
+        assert.equal(G.isRamMockup({ guns: [], turrets: [{ guns: [{}] }] }), false, 'Architect: launchers on its turrets, it shoots');
+        assert.equal(G.isRamMockup({ guns: [], turrets: [{ guns: [] }] }), true, 'Smasher: a spiked body turret, no guns');
     });
 
     let failed = 0;

@@ -77,7 +77,7 @@ export function tracker(c, myId, x, y, fmtDist, board) {
         const n = nearest(c, myId, x, y);
         if (n) {
             footer = "Nearest crown: " + (n.row.f ? "about " : "") + (fmtDist ? fmtDist(n.d) : Math.round(n.d) + "m") + " away";
-            footer2 = "Knock it off its holder to steal it";
+            footer2 = "Kill the holder to steal it";
         }
     }
     return { rows: out, footer, footer2 };
@@ -90,7 +90,7 @@ export function finale(res, place, win, winner, rows, score) {
     if (!crowned) return null;
     const pts = score == null && res && res.champ ? res.champ.score : score;
     const withPts = (pts | 0) > 0 ? " with " + num(pts) + " pts" : "";
-    if (win) return { title: "CORE CHAMPION", sub: "Most points" + ((pts | 0) > 0 ? ": " + num(pts) : "") + (rows > 1 ? ". #1 of " + rows : ""), col: "gold" };
+    if (win) return { title: "CORE CHAMPION", sub: "Most points" + ((pts | 0) > 0 ? " (" + num(pts) + ")" : "") + (rows > 1 ? ", #1 of " + rows : ""), col: "gold" };
     const rest = " won" + withPts;
     if (place === 2) return { title: "#2", sub: champ + rest, rest, col: "silver" };
     if (place === 3) return { title: "#3", sub: champ + rest, rest, col: "bronze" };
@@ -121,8 +121,8 @@ export function howLine(crown) {
     switch (c.how) {
         case "top3": return { title: "YOU GOT A CROWN", sub: "You're top 3 on points.", card: "CROWN: YOU'RE TOP 3" };
         case "steal": return { title: "CROWN STOLEN", sub: "You took " + (from || "their") + (from ? "'s" : "") + " crown.", card: "CROWN: TAKEN" + (from ? " FROM " + from.toUpperCase() : "") };
-        case "fell": return { title: "A CROWN FELL TO YOU", sub: "Its holder" + (from ? " " + from : "") + " went down.", card: "CROWN: IT FELL TO YOU" };
+        case "fell": return { title: "A CROWN FELL TO YOU", sub: "Its holder" + (from ? " " + from : "") + " died.", card: "CROWN: IT FELL TO YOU" };
         case "left": return { title: "A CROWN FELL TO YOU", sub: "Its holder" + (from ? " " + from : "") + " left the raid.", card: "CROWN: IT FELL TO YOU" };
-        default: return { title: "YOU GOT A CROWN", sub: "A crown was free and you were next.", card: "CROWN: IT WAS FREE" };
+        default: return { title: "YOU GOT A CROWN", sub: "A crown was free, you were next.", card: "CROWN: IT WAS FREE" };
     }
 }

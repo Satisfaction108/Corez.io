@@ -235,7 +235,7 @@ function setChatCount(b, n) {
 function paintFriends(d) {
     const list = d.friends.slice().sort(byPresence);
     if (!list.length) {
-        listEl.appendChild(empty('Nobody here yet', 'Type a name up top. Once they say yes you can chat and see when they’re on.'));
+        listEl.appendChild(empty('Nobody here yet', 'Type a name up top to add someone.'));
         return;
     }
     const groups = { raid: [], menu: [], offline: [] };

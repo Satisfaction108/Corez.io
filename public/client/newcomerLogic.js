@@ -83,7 +83,7 @@ export function feedAllowed(f, nx, myName) {
 
 // ── the goal line under the clock (stage 0) ────────────────────────────
 export const GOALS = {
-    dig: "Dig gems → Bank them at the vault",
+    dig: "Dig gems, bank them at a vault",
     upgrade: "Upgrade your tank",
     ability: "Try your new ability",
     storm: "Stay out of the storm",
@@ -116,17 +116,17 @@ export function goalWanted(g, banks, taught) {
 // ── first-time intros (stages 1 and 2) ─────────────────────────────────
 // {key} is the ability key, {kit} the kit keys
 export const INTROS = {
-    shop: { stage: 1, text: "Shops sell abilities and gear. You pay with banked gems." },
-    ability: { stage: 1, text: "Abilities recharge. Press {key} to use yours.", touch: "Abilities recharge. Tap the ability button to use yours." },
-    kit: { stage: 1, text: "Your kit (bottom left) holds one-use items. Press {kit} to use one.", touch: "Your kit holds one-use items. Tap one on the right to use it." },
-    boss: { stage: 2, text: "Bosses hit hard and pay big. Team up or keep clear." },
-    contract: { stage: 2, text: "Contracts are quick jobs, top left. Each one pays gems." },
-    bounty: { stage: 2, text: "A bounty is out. Take that player down for extra gems." },
-    core: { stage: 2, text: "The Core rose in the middle. Everyone who hits it gets paid." },
-    hunted: { stage: 2, text: "Carrying a lot makes you hunted. Bank to shake them off." },
-    twist: { stage: 2, text: "Each raid has an Override, a special rule. It's on the card, top left." },
+    shop: { stage: 1, text: "Shops sell abilities and gear for banked gems." },
+    ability: { stage: 1, text: "Press {key} to use your ability. It recharges.", touch: "Tap the ability button to use it. It recharges." },
+    kit: { stage: 1, text: "Kit items are one-use. Press {kit} to use one.", touch: "Kit items are one-use. Tap one on the right." },
+    boss: { stage: 2, text: "Bosses hit hard but drop a ton of gems." },
+    contract: { stage: 2, text: "Contracts are quick jobs that pay gems, top left." },
+    bounty: { stage: 2, text: "Someone has a bounty. Kill them for extra gems." },
+    core: { stage: 2, text: "The Core is up in the middle. Everyone who hits it gets paid." },
+    hunted: { stage: 2, text: "You're carrying a lot, so you're being hunted. Bank to shake them." },
+    twist: { stage: 2, text: "Each raid has an Override, a special rule. It's top left." },
     // raid perks (raidPerks.js): from the first raid, the first time an offer is up
-    perks: { stage: 0, text: "Every 5,000 points you pick a perk. It lasts until the raid ends." },
+    perks: { stage: 0, text: "Every 5,000 points you pick a perk for this raid." },
 };
 // The intro to show the first time a piece appears, or "" (veterans, a
 // stage that hides the piece, or seen before).
@@ -173,17 +173,17 @@ export function bannerFor(ev, o) {
     const sub = typeof e.sub === "string" ? e.sub : "";
     let title = "", line = "";
     switch (kind) {
-        case "ore": title = "Rich vein nearby"; line = "Follow the arrow and dig in."; break;
-        case "crate": title = "Supply crate incoming!"; line = "It lands by the arrow. Open it up."; break;
+        case "ore": title = "Rich vein nearby"; line = "Follow the arrow."; break;
+        case "crate": title = "Supply crate incoming"; line = "It lands by the arrow."; break;
         case "chest": title = "Treasure chest nearby"; line = "Shoot it open for gems."; break;
         case "ability": {
             const name = opt.ability || e.name || "";
-            title = name ? "Free ability: " + name : "Free ability!";
+            title = name ? "Free ability: " + name : "Free ability";
             // always how to use it, whatever the server's sub line says
             line = opt.touch ? "Tap the ability button to try it." : "Press " + (opt.key || "Q") + " to try it.";
             break;
         }
-        case "timed": title = t || "Quick challenge!"; line = sub || "Beat the clock."; break;
+        case "timed": title = t || "Quick challenge"; line = sub || "Beat the clock."; break;
         default: title = t; line = sub;
     }
     if (kind !== "timed" && kind && t) title = t;
@@ -192,7 +192,7 @@ export function bannerFor(ev, o) {
     const dist = +opt.dist;
     if (kind === "crate" && isFinite(dist) && dist > CRATE_NEXT_TO) {
         title = (/coming|incoming/i.test(title) ? "Supply drop coming, " : "Supply crate down, ") + distWord(dist) + " away";
-        if (!sub) line = "Follow the arrow. Open it up.";
+        if (!sub) line = "Follow the arrow.";
     }
     // a timed job at the vault (the server's "bank N gems") points at it
     const mark = kind === "ability" ? "" : kind === "timed" && e.goal > 0 ? "VAULT" : (KIND_MARK[kind] || KIND_MARK[""]);
@@ -208,7 +208,7 @@ export function payoffFor(ev, leftMs) {
         case "ore": return { title: "Vein cleared!", sub: gems || "Now bank it." };
         case "crate": return { title: "Crate opened!", sub: gems || "Grab the loot." };
         case "chest": return { title: "Chest opened!", sub: gems || "Grab the gems." };
-        case "ability": return { title: "That's an ability!", sub: "Shops sell more of them." };
+        case "ability": return { title: "That's an ability!", sub: "Shops sell more." };
         case "timed": {
             const s = Math.max(0, Math.ceil((leftMs || 0) / 1000));
             return { title: "Challenge done!", sub: [gems, s > 0 ? s + "s to spare" : ""].filter(Boolean).join("  ·  ") };
@@ -267,15 +267,15 @@ export function deathKind(d) {
     return "player";
 }
 export const DEATH_TIPS = {
-    bot: "Another miner hunted you down. Bank gems before you get too heavy.",
-    player: "Another player got you. Bank your gems before you pick a fight.",
-    boss: "A boss got you. Bosses hit hard, so keep your distance for now.",
-    storm: "The storm got you. Follow the arrow back to the circle.",
-    rock: "The rock grew back around you. Keep moving through fresh tunnels.",
+    bot: "A miner got you. Bank before you carry too much.",
+    player: "A player got you. Bank first next time.",
+    boss: "A boss got you. Keep your distance for now.",
+    storm: "The storm got you. Follow the arrow to the circle.",
+    rock: "The rock grew back on you. Don't sit in old tunnels.",
     base: "An enemy base shot you. Stay off bases that aren't yours.",
     core: "The Core's shockwave got you. Back off when it glows bright.",
-    raidend: "The raid ended. A new one starts in a moment.",
-    none: "You went down. Bank your gems often so you keep more.",
+    raidend: "Raid's over. A new one starts soon.",
+    none: "You died. Bank more often to keep more.",
 };
 export function deathTip(d) { return DEATH_TIPS[deathKind(d)]; }
 // What you kept. k: { banked, carried (dropped), kept (saved from the satchel) }
@@ -289,7 +289,7 @@ export function keptLine(k) {
         return head + (banked > 0 ? " Your bank is safe too." : "");
     }
     if (banked > 0) return "You kept your " + fmt(banked) + " banked gems." + (lost > 0 ? " Your satchel dropped." : "");
-    if (lost > 0) return "Nothing was banked, so your gems dropped. Bank them next time.";
+    if (lost > 0) return "Nothing banked, so your gems dropped.";
     return "Nothing lost. Jump back in.";
 }
 

@@ -268,8 +268,8 @@ function intros(t) {
     // the start of raid 2 and raid 3: one quiet line about what just opened up
     const unlock = "unlock" + S.stage;
     if (S.known && S.stage >= 1 && S.stage < L.VETERAN && !seen()[unlock] && !S.introQ.some(q => q.id === unlock) && !(S.intro && S.intro.id === unlock)) {
-        const text = S.stage === 1 ? "Shops, abilities and kits are open to you now."
-            : "Bosses, contracts, bounties and the Core are in play now.";
+        const text = S.stage === 1 ? "You can use shops now."
+            : "You get bosses and contracts now too.";
         S.introQ.unshift({ id: unlock, text });
     }
     for (const id of introTriggers()) {
@@ -338,7 +338,7 @@ export function hudNotes(push, mk) {
 }
 function pushShopNote(push, mk) {
     const sh = global.shop;
-    if (sh && sh.onPad && !sh.dismissed && !shopOpen()) push(mk(2, "nxshop", "The shop opens up soon. Dig and bank first.", "#d8dce6"));
+    if (sh && sh.onPad && !sh.dismissed && !shopOpen()) push(mk(2, "nxshop", "The shop opens soon, dig and bank first.", "#d8dce6"));
 }
 const wCache = new Map();
 function textW(text, size) {
