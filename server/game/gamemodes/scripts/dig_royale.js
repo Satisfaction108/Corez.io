@@ -1739,7 +1739,7 @@ function botCapNow() {
     const FM = FIRST_MINUTES;
     const hs = humansInRaid();
     // duos: a lone player (who may be filled later) still counts as a pair,
-    // so 1 or 2 humans both meet 5 bots
+    // so 1 or 2 humans both meet 4 bots (two bot duos)
     let cap = fillCap() - (Config.royale_duos ? Math.max(2, hs) : hs);
     try {
         const st = storm.snapshot(now());
@@ -1749,6 +1749,8 @@ function botCapNow() {
             cap = Math.min(cap, Math.max(hs ? FM.DENSITY_MIN_BOTS : 0, total - hs));
         }
     } catch { /* */ }
+    // duos: bots come in pairs, so an even number (no lone bot row on the team board)
+    if (Config.royale_duos) cap -= ((cap % 2) + 2) % 2;
     return Math.max(0, cap);
 }
 
@@ -1910,12 +1912,20 @@ function mateReachTest(tg) {
 function spawnRaidBot(back = null) {
     const handler = global.gameManager.gameHandler;
     if (!handler) return;
-    // duos: two of the bots are a team (they spawn together and cover each other)
-    const plan = Config.royale_duos && !back ? duo.botSpawnPlan(enemyBots()) : null;
+    // duos: bots play in pairs (they spawn together and cover each other). One
+    // coming back rejoins its living partner; else it fills a lone bot or starts a pair
+    let plan = null;
+    if (Config.royale_duos) {
+        if (back && back.team != null) {
+            const mate = enemyBots().find(b => b && b.isDuoBot && !b.isTeamBot && !b.isDead?.() && b.team === back.team);
+            if (mate) plan = { team: back.team, near: mate, duo: true };
+        }
+        if (!plan) plan = duo.botSpawnPlan(enemyBots());
+    }
     const hole = (plan && plan.near && spotNearMate(null, plan.near)) || safeSpawnSpot(null, true);
     // a team id nobody had this raid (stale board rows keep theirs). Solo too:
     // a plain random id can match a live body's and make the two a team
-    const team = back && back.team != null ? back.team : plan ? plan.team : duo.freshTeamId();
+    const team = plan ? plan.team : back && back.team != null ? back.team : duo.freshTeamId();
     let life = back ? { familyId: back.familyId, nameKey: back.nameKey, respawnsRemaining: 0, tank: back.tank, ability: back.ability } : null;
     // small fish (fairPlay): while a protected player is in the raid, a couple of
     let minnow = false;

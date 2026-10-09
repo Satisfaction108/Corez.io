@@ -36,6 +36,9 @@ let pending = "";
 let checkedAt = 0, inFlight = null;
 let safeSince = 0, noteShown = "", lastKeyAt = 0;
 let tick = 0;
+let hiddenAt = 0, openedAt = 0;
+const FRESH_MS = 30000;       // an update found this soon after joining reloads at once
+const PLAY_WAIT_MS = 1500;    // Play waits at most this long for a version answer
 
 function guard() {
     try { return JSON.parse(sessionStorage.getItem(GUARD_KEY) || "null"); } catch (e) { return null; }
@@ -77,6 +80,7 @@ export function check() {
 
 // a socket just opened (a fresh game or a reconnect after a restart)
 export function onSocketOpen() {
+    openedAt = Date.now();
     if (Date.now() - checkedAt > SOCKET_CHECK_GAP_MS) check();
 }
 
@@ -97,6 +101,9 @@ function menuBusy() {
 // wait not up yet) or "" (keep playing)
 function moment() {
     if (onMenu()) return menuBusy() ? "" : "menu";
+    // just joined on an old client (a tab left open over a deploy can't draw
+    // the new map, the "void"): nothing to lose yet, reload now
+    if (openedAt && Date.now() - openedAt < FRESH_MS && !global.died && !raidFinale.active() && !global.tutorialMode) return "now";
     if (global.tutorialMode || global.launchingTutorial) return "";
     if (global.disconnected && !global.autoReconnect) return "later";
     if (raidFinale.active()) return raidFinale.holdsCeremony() ? "" : "later";
@@ -125,7 +132,7 @@ function note() {
 function step() {
     if (!pending) return stopWatch();
     const m = moment();
-    if (m === "menu") return reload();
+    if (m === "menu" || m === "now") return reload();
     // dead with an update waiting: the reload comes once the card's 3 s are
     // up, so Play again stays off from the moment you die (app.js, canvas.js)
     global.updateHoldsRespawn = (m === "later" || m === "hold") && global.died;
@@ -145,15 +152,30 @@ function stopWatch() {
     tick = 0;
 }
 
+// Play (app.js startGame): a tab that slept (hidden, or no check this
+// minute) asks first, so an old client never joins a new server.
+// -> Promise<true when it is reloading instead>
+export function beforePlay() {
+    if (pending && !reloadedRecently(pending)) { reload(); return Promise.resolve(true); }
+    if (checkedAt && Date.now() - checkedAt < CHECK_MS && hiddenAt < checkedAt) return Promise.resolve(false);
+    const late = new Promise((r) => setTimeout(() => r(false), PLAY_WAIT_MS));
+    const asked = check().then(() => {
+        if (pending && !reloadedRecently(pending)) { reload(); return true; }
+        return false;
+    });
+    return Promise.race([asked, late]);
+}
+
 function init() {
     addEventListener("keydown", () => { lastKeyAt = Date.now(); }, true);
     setInterval(() => { if (!document.hidden) check(); }, CHECK_MS);
     document.addEventListener("visibilitychange", () => {
-        if (!document.hidden && Date.now() - checkedAt > CHECK_MS) check();
+        if (document.hidden) { hiddenAt = Date.now(); return; }
+        if (Date.now() - checkedAt > CHECK_MS) check();
     });
     if (!running) check();
     window.dwVersion = {
-        check, onSocketOpen,
+        check, onSocketOpen, beforePlay,
         // QA: what this tab runs, what it is waiting to load, and why not yet
         state: () => ({ running, pending, moment: pending ? moment() : "", safeFor: safeSince ? Date.now() - safeSince : 0 }),
     };

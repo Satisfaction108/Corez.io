@@ -1512,6 +1512,19 @@ import * as upGrid from './upgradeGridLogic.js';
     function startGame() {
 
         if (global.gameLoading) return;
+        // a tab left open over a deploy checks the version first and reloads
+        // instead of joining on old code (version.js beforePlay)
+        if (!global._reconnecting && !startGame._checked && window.dwVersion && window.dwVersion.beforePlay) {
+            if (startGame._asking) return;
+            startGame._asking = true;
+            window.dwVersion.beforePlay().then((reloading) => {
+                startGame._asking = false;
+                if (reloading) return;
+                startGame._checked = true;
+                try { startGame(); } finally { startGame._checked = false; }
+            }, () => { startGame._asking = false; startGame._checked = true; try { startGame(); } finally { startGame._checked = false; } });
+            return;
+        }
         // Guests: a typed name that's too short or rude has to be fixed first;
         // an empty box gets a random name (no hoops for someone who just
         // wants to play). Accounts play under their username.

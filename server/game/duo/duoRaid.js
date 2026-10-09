@@ -502,17 +502,19 @@ function hudFor(socket, t) {
     return { mate: out, alone: 0, fill: 0, party: socket.duoPid ? 1 : 0 };
 }
 
-// ---- bots: one bot duo per raid ----
+// ---- bots: every bot plays in a pair ----
 
-// Which team a freshly spawning bot should take: the living half of the bot
-// duo (the new bot joins it and spawns at its side), or a new bot duo when
-// there is none. -> {team, near: body|null, duo: bool}
+// Which team a spawning bot should take (Oct 8: on the duo server every bot
+// is in a bot duo, not just one pair, so the team standings are all teams):
+// a living bot whose partner is gone (the new bot joins it and spawns at its
+// side), else a new bot duo. -> {team, near: body|null, duo: bool}
 function botSpawnPlan(bots) {
     if (!on()) return null;
     const duoBots = bots.filter(b => b && b.isDuoBot && !b.isTeamBot && !b.isDead?.());
-    if (duoBots.length === 1) return { team: duoBots[0].team, near: duoBots[0], duo: true };
-    if (duoBots.length === 0) return { team: freshTeamId(), near: null, duo: true };
-    return null;
+    const per = new Map();
+    for (const b of duoBots) per.set(b.team, (per.get(b.team) || 0) + 1);
+    for (const b of duoBots) if (per.get(b.team) === 1) return { team: b.team, near: b, duo: true };
+    return { team: freshTeamId(), near: null, duo: true };
 }
 
 // A bot joins the bot duo. Each pairing is a new formation (a new standings
