@@ -578,7 +578,7 @@ export function drawFloor(c, px, py, ratio) {
         c.scale(pop, pop);
         // the plate: dark ring, gold face, ink keyline
         c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2);
-        c.fillStyle = "rgba(18,14,21,0.75)"; c.fill();
+        c.fillStyle = "rgba(0,0,0,0.75)"; c.fill();
         c.beginPath(); c.arc(0, 0, R * 0.82, 0, Math.PI * 2);
         c.fillStyle = "rgba(242,184,60,0.28)"; c.fill();
         c.lineWidth = Math.max(1.5, 3 * ratio); c.strokeStyle = AB_COLOR.pad; c.stroke();
@@ -1848,12 +1848,18 @@ export function drawMapRadar(c, T) {
 // ── HUD ─────────────────────────────────────────────────────────────────
 const AB_SHORT = { grapple: "GRAPPLE", burrow: "BURROW", shock: "SHOCK", radar: "RADAR", wall: "WALL", smoke: "SMOKE", rush: "RUSH", pad: "PAD" };
 export function shortName(id) { return AB_SHORT[id] || String(id || "").toUpperCase(); }
+const chipCases = new Map();
+function chipCase(t) {
+    let v = chipCases.get(t);
+    if (v === undefined) { v = String(t).charAt(0) + String(t).slice(1).toLowerCase(); chipCases.set(t, v); }
+    return v;
+}
 
 // A small label pill: dark plate, thin rim, medium-weight text, no outline
 // on the letters (the thick outlined title face read as a blob this small).
 const pillW = new Map();
 function pill(c, cx, cy, text, size, col) {
-    const font = "600 " + size + "px Rubik, Ubuntu, sans-serif";
+    const font = "700 " + size + "px Ubuntu, sans-serif";
     let w = pillW.get(font + text);
     if (w === undefined) {
         c.save(); c.font = font; w = c.measureText(text).width; c.restore();
@@ -1863,7 +1869,7 @@ function pill(c, cx, cy, text, size, col) {
     const h = size + 7, pw = w + size * 1.1;
     c.save();
     H.roundRectPath(c, cx - pw / 2, cy - h / 2, pw, h, h / 2);
-    c.fillStyle = "rgba(18,14,21,0.92)"; c.fill();
+    c.fillStyle = "rgba(0,0,0,0.92)"; c.fill();
     c.lineWidth = 1.25; c.strokeStyle = col; c.stroke();
     c.font = font; c.textAlign = "center"; c.textBaseline = "middle";
     c.fillStyle = col;
@@ -1891,7 +1897,7 @@ function dashGlyph(c, x, y, s, alpha) {
 // Ring around a round button: done part bright, the rest a dark track.
 function ring(c, x, y, r, frac, col, lw) {
     c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2);
-    c.lineWidth = lw; c.strokeStyle = "rgba(14,11,18,0.7)"; c.stroke();
+    c.lineWidth = lw; c.strokeStyle = "rgba(0,0,0,0.7)"; c.stroke();
     if (frac > 0.001) {
         c.beginPath(); c.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, frac));
         c.strokeStyle = col; c.stroke();
@@ -1903,7 +1909,7 @@ function sweep(c, x, y, r, frac) {
     c.beginPath(); c.moveTo(x, y);
     c.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, frac));
     c.closePath();
-    c.fillStyle = "rgba(14,11,18,0.62)"; c.fill();
+    c.fillStyle = "rgba(0,0,0,0.62)"; c.fill();
 }
 
 function ownedCount() { return S.own.length + (S.tw && !S.own.includes(S.tw) ? 1 : 0); }
@@ -1926,7 +1932,7 @@ export function drawHud(c, anchor, mouse) {
         const x = dashX, y = y0, mx = x + sz / 2, my = y + sz / 2;
         const used = now - S.dashAt, got = now - S.gotAt;
         const press = used < 120 ? 2 : 0;
-        H.hudPanel(c, x, y + press, sz, sz, { r: 12, fill: S.d > 0 ? "rgba(43,37,51,0.9)" : "rgba(30,25,36,0.9)" });
+        H.hudPanel(c, x, y + press, sz, sz, { r: 5, fill: S.d > 0 ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.6)" });
         if (got < 500) {
             c.save(); c.globalAlpha = 1 - got / 500;
             H.roundRectPath(c, x - 3, y - 3 + press, sz + 6, sz + 6, 14);
@@ -1939,7 +1945,7 @@ export function drawHud(c, anchor, mouse) {
         for (let i = 0; i < S.dm; i++) {
             const px = mx - pw / 2 + i * (pipW + pg), py = y + sz - 12 + press;
             H.roundRectPath(c, px, py, pipW, pipH, 2.5);
-            c.fillStyle = "rgba(14,11,18,0.75)"; c.fill();
+            c.fillStyle = "rgba(0,0,0,0.75)"; c.fill();
             const fill = i < S.d ? 1 : i === S.d ? Math.max(0, Math.min(1, frac)) : 0;
             if (fill > 0) {
                 H.roundRectPath(c, px, py, Math.max(pipH, pipW * fill), pipH, 2.5);
@@ -1965,7 +1971,7 @@ export function drawHud(c, anchor, mouse) {
         const id = S.eq;
         const cd = Math.max(0, S.cdAt - now), cdFrac = S.cdm ? cd / S.cdm : 0;
         const col = id ? (AB_COLOR[id] || "#f2b83c") : null;
-        H.hudPanel(c, x, y, sz, sz, { r: 12, fill: id && !cd ? "rgba(43,37,51,0.9)" : "rgba(30,25,36,0.9)" });
+        H.hudPanel(c, x, y, sz, sz, { r: 5, fill: id && !cd ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.6)" });
         if (id) {
             H.markSlot(id, { x: mx, y: my - 4, w: sz, h: sz, sx: x, sy: y, at: now });
             if (global.kitUnlockHeld !== id) H.drawKitIcon(c, id, mx, my - 4, 30);
@@ -1975,7 +1981,7 @@ export function drawHud(c, anchor, mouse) {
             c.restore();
             if (cd > 0) H.hudTitle(fmtSec(cd), mx, my - 4, 16, "#fff3d9", "center", 1, c);
             const down = S.act === "burrow" && S.actAt > now;
-            H.drawText(down ? "SURFACE" : shortName(id), mx, y + sz - 7, 7.5, down ? "#ffd37a" : cd ? H.HUD.text2 : "#ffffff", "center", true);
+            H.drawText(down ? "Surface" : chipCase(shortName(id)), mx, y + sz - 7, 8.5, down ? "#ffd37a" : cd ? H.HUD.text2 : "#ffffff", "center", true);
             // ready again: a flash in its colour
             const rd = now - S.readyAt;
             if (rd < 600) {
@@ -1995,7 +2001,7 @@ export function drawHud(c, anchor, mouse) {
             H.roundRectPath(c, mx - 13, my - 17, 26, 26, 6);
             c.setLineDash([3, 3]); c.lineWidth = 1; c.strokeStyle = "#ffffff"; c.stroke(); c.setLineDash(NO_DASH);
             c.restore();
-            H.drawText("NONE", mx, y + sz - 7, 7.5, H.HUD.text2, "center", true);
+            H.drawText("None", mx, y + sz - 7, 8.5, H.HUD.text2, "center", true);
         }
         H.hudKey(c, x - 6, y - 8, abKey, 16, id ? 1 : 0.55);
         // a trial: its time left over the chip
@@ -2129,14 +2135,14 @@ export function drawTouch(c, L, k, held) {
         c.save();
         c.beginPath(); c.arc(x, y + 3, r, 0, Math.PI * 2); c.fillStyle = "rgba(0,0,0,0.3)"; c.fill();
         c.beginPath(); c.arc(x, y + (down ? 2 : 0), r, 0, Math.PI * 2);
-        c.fillStyle = S.d > 0 ? (down ? H.HUD.raised : "rgba(43,37,51,0.88)") : "rgba(30,25,36,0.8)"; c.fill();
+        c.fillStyle = S.d > 0 ? (down ? H.HUD.raised : "rgba(0,0,0,0.53)") : "rgba(0,0,0,0.52)"; c.fill();
         c.lineWidth = 1.5; c.strokeStyle = H.HUD.line; c.stroke();
         const frac = S.d >= S.dm ? 1 : S.drAt ? 1 - Math.max(0, S.drAt - now) / S.drm : 0;
         ring(c, x, y, r + 4, S.d >= S.dm ? 1 : frac, S.d > 0 ? DASH_COL : "rgba(191,239,255,0.5)", 4);
         dashGlyph(c, x, y - r * 0.12 + (down ? 2 : 0), r * 0.85, S.d > 0 ? 1 : 0.45);
         for (let i = 0; i < S.dm; i++) {
             c.beginPath(); c.arc(x + (i - (S.dm - 1) / 2) * r * 0.42, y + r * 0.52, r * 0.11, 0, Math.PI * 2);
-            c.fillStyle = i < S.d ? DASH_COL : "rgba(14,11,18,0.8)"; c.fill();
+            c.fillStyle = i < S.d ? DASH_COL : "rgba(0,0,0,0.8)"; c.fill();
         }
         c.restore();
     }
@@ -2148,7 +2154,7 @@ export function drawTouch(c, L, k, held) {
         c.globalAlpha = id ? 1 : 0.5;
         c.beginPath(); c.arc(x, y + 3, r, 0, Math.PI * 2); c.fillStyle = "rgba(0,0,0,0.3)"; c.fill();
         c.beginPath(); c.arc(x, y + (down ? 2 : 0), r, 0, Math.PI * 2);
-        c.fillStyle = down ? H.HUD.raised : "rgba(43,37,51,0.88)"; c.fill();
+        c.fillStyle = down ? H.HUD.raised : "rgba(0,0,0,0.53)"; c.fill();
         c.lineWidth = 1.5; c.strokeStyle = H.HUD.line; c.stroke();
         if (id) {
             H.markSlot(id, { x, y, w: r * 2, h: r * 2, sx: x - r, sy: y - r, at: now });

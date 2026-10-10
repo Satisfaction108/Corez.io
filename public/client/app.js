@@ -42,6 +42,7 @@ import * as buildBtnLabels from './buildButtonsLogic.js';
 import { layoutLabels } from './labelLayout.js';
 import * as chatPanel from './chatPanelLogic.js';
 import * as upGrid from './upgradeGridLogic.js';
+import * as treeUi from './tankTree.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -1786,69 +1787,6 @@ import * as upGrid from './upgradeGridLogic.js';
         return keyLabel("KEY_CHOOSE_" + (number + 1), CHOOSE_KEY_DEFAULTS[number]);
     };
 
-    let tiles,
-        branches,
-        tankTree,
-        measureSize = (x, y, colorIndex, { index, tier = 0 }) => {
-            tiles.push({ x, y, colorIndex, index });
-            let { upgrades } = global.mockups[parseInt(index)],
-                xStart = x,
-                cumulativeWidth = 1,
-                maxHeight = 1,
-                hasUpgrades = [],
-                noUpgrades = [];
-            for (let i = 0; i < upgrades.length; i++) {
-                let upgrade = upgrades[i];
-                if (global.mockups[upgrade.index].upgrades.length) {
-                    hasUpgrades.push(upgrade);
-                } else {
-                    noUpgrades.push(upgrade);
-                }
-            }
-            for (let i = 0; i < hasUpgrades.length; i++) {
-                let upgrade = hasUpgrades[i],
-                    spacing = 2 * Math.max(1, upgrade.tier - tier),
-                    measure = measureSize(x, y + spacing, upgrade.upgradeColor ?? i, upgrade);
-                branches.push([{ x, y: y + Math.sign(i) }, { x, y: y + spacing + 1 }]);
-                if (i === hasUpgrades.length - 1 && !noUpgrades.length) {
-                    branches.push([{ x: xStart, y: y + 1 }, { x, y: y + 1 }]);
-                }
-                x += measure.width;
-                cumulativeWidth += measure.width;
-                if (maxHeight < measure.height) maxHeight = measure.height;
-            }
-            y++;
-            for (let i = 0; i < noUpgrades.length; i++) {
-                let upgrade = noUpgrades[i],
-                    height = 2 + upgrades.length;
-                measureSize(x, y + 1 + i + Math.sign(hasUpgrades.length) * 2, upgrade.upgradeColor ?? i, upgrade);
-                if (i === noUpgrades.length - 1) {
-                    if (hasUpgrades.length > 1) cumulativeWidth++;
-                    branches.push([{ x: xStart, y }, { x, y }]);
-                    branches.push([{ x, y }, { x, y: y + noUpgrades.length + Math.sign(hasUpgrades.length) * 2 }]);
-                }
-                if (maxHeight < height) maxHeight = height;
-            }
-            return {
-                width: cumulativeWidth,
-                height: 2 + maxHeight,
-            };
-        };
-
-    function generateTankTree(indexes) {
-        tiles = [];
-        branches = [];
-        tankTree = { width: 0, height: 0 };
-        let rightmostSoFar = 0;
-        if (!Array.isArray(indexes)) indexes = [indexes];
-        for (let index of indexes) {
-            rightmostSoFar += 3 + measureSize(rightmostSoFar, 0, 0, { index }).width;
-        }
-        for (let { x, y } of tiles) {
-            tankTree.width = Math.max(tankTree.width, x);
-            tankTree.height = Math.max(tankTree.height, y);
-        }
-    };
 
     function clearScreen(clearColor, alpha, context) {
         context.fillStyle = clearColor;
@@ -1869,7 +1807,7 @@ import * as upGrid from './upgradeGridLogic.js';
     var measureCache;
     function measureText(text, fontSize, withHeight = false) {
         fontSize += config.graphical.fontSizeBoost;
-        ctx[2].font = fontWidth + " " + fontSize + "px Rubik, Ubuntu";
+        ctx[2].font = fontWidth + " " + fontSize + "px Ubuntu, sans-serif";
         if (!measureCache) {
             measureCache = new Map();
             try { document.fonts.addEventListener("loadingdone", () => measureCache.clear()); } catch (e) { }
@@ -2083,7 +2021,7 @@ import * as upGrid from './upgradeGridLogic.js';
         if (ratio !== 1) {
             size *= ratio;
         }
-        context.font = "bold " + size + "px Rubik, Ubuntu";
+        context.font = "bold " + size + "px Ubuntu, sans-serif";
 
         let Xoffset = offset,
             Yoffset = (size + 2 * offset) / 2,
@@ -3276,7 +3214,7 @@ import * as upGrid from './upgradeGridLogic.js';
             c.fillStyle = face;
             c.fill();
             if (state === 1) { c.fillStyle = "rgba(255,255,255,0.16)"; c.fill(); }
-            else if (state === 2) { c.fillStyle = "rgba(18,14,21,0.14)"; c.fill(); }
+            else if (state === 2) { c.fillStyle = "rgba(0,0,0,0.14)"; c.fill(); }
             // flat top highlight strip, like the menu's plates
             roundRectPath(c, 3 * k, down + 3 * k, len - 6 * k, Math.max(2, 5 * k), 2.5 * k);
             c.fillStyle = "rgba(255,255,255,0.13)";
@@ -3292,7 +3230,7 @@ import * as upGrid from './upgradeGridLogic.js';
             c.save();
             roundRectPath(c, 0, down, len, faceH, r);
             c.clip();
-            c.fillStyle = "rgba(18,14,21,0.5)";
+            c.fillStyle = "rgba(0,0,0,0.5)";
             c.fillRect(0, down + faceH - band, len, band);
             c.restore();
             // one line if it fits near full size, else two lines, else shrink
@@ -3330,7 +3268,7 @@ import * as upGrid from './upgradeGridLogic.js';
             if (rb) {
                 const b = rb;
                 roundRectPath(c, b.x, b.y, b.w, b.h, b.h / 2);
-                c.fillStyle = "rgba(18,14,21,0.92)";
+                c.fillStyle = "rgba(0,0,0,0.92)";
                 c.fill();
                 c.lineWidth = Math.max(1, 1.2 * k);
                 c.strokeStyle = HUD.gold;
@@ -3698,7 +3636,7 @@ import * as upGrid from './upgradeGridLogic.js';
             // octagonal foundation so the vault doesn't read as a tank: ink
             // drop, deep team shade, ink outline, bright rim band for the claim
             polyPath(c, 0, R * 0.07, R * 1.22, 8, Math.PI / 8);
-            c.fillStyle = "rgba(18,14,21,0.6)";
+            c.fillStyle = "rgba(0,0,0,0.6)";
             c.fill();
             polyPath(c, 0, 0, R * 1.22, 8, Math.PI / 8);
             c.fillStyle = inkShade(hue, 0.6);
@@ -3887,7 +3825,7 @@ import * as upGrid from './upgradeGridLogic.js';
                 o._smoothH += (tgtH - o._smoothH) * 0.12;
                 const frac = o._smoothH;
                 polyPath(c, 0, R * 0.08, bodyR, 8, 0);
-                c.fillStyle = "rgba(18,14,21,0.6)";
+                c.fillStyle = "rgba(0,0,0,0.6)";
                 c.fill();
                 polyPath(c, 0, 0, bodyR, 8, 0);
                 c.fillStyle = inkShade(hue, 0.6);
@@ -3917,7 +3855,7 @@ import * as upGrid from './upgradeGridLogic.js';
             } else {
                 // neutral pad: the same plate, grey (or the site colour)
                 polyPath(c, 0, R * 0.07, R * 1.08, 8, Math.PI / 8);
-                c.fillStyle = "rgba(18,14,21,0.6)";
+                c.fillStyle = "rgba(0,0,0,0.6)";
                 c.fill();
                 polyPath(c, 0, 0, R * 1.08, 8, Math.PI / 8);
                 c.fillStyle = inkShade(hue, 0.6);
@@ -5281,302 +5219,10 @@ import * as upGrid from './upgradeGridLogic.js';
         }
     }
 
-    global.scrollX = global.scrollY = global.fixedScrollX = global.fixedScrollY = -1;
-    global.scrollVelocityY = global.scrollVelocityX = 0;
-    let lastGuiType = null;
-    let classTreeDrag = {
-        isDragging: false,
-        startX: 0,
-        startY: 0,
-        lastX: 0,
-        lastY: 0,
-        momentum: { x: 0, y: 0 }
-    };
-
-    let searchResults = [];
-    let filteredTiles = null;
-    let searchCache = new Map();
-
-    const SHOW_NAMES_ZOOM_THRESHOLD = 1.5;
-    const CULL_MARGIN = 200;
-
-    let tankNameCache = new Map();
-    global.searchQuery = '';
-    function searchTankByName(query) {
-        if (!query || query.trim() === '') {
-            searchResults = [];
-            filteredTiles = null;
-            tankNameCache.clear();
-            global.searchQuery = '';
-            return;
-        }
-
-        const lowerQuery = query.toLowerCase().trim();
-        global.searchQuery = query;
-
-        if (searchCache.has(lowerQuery)) {
-            const cached = searchCache.get(lowerQuery);
-            searchResults = cached.results;
-            filteredTiles = cached.tiles;
-            return;
-        }
-
-        if (tankNameCache.size === 0) {
-            for (let i = 0; i < global.mockups.length; i++) {
-                const m = global.mockups[i];
-                if (m && m.name) {
-                    tankNameCache.set(i, m.name.toLowerCase());
-                }
-            }
-        }
-
-        searchResults = [];
-        const matchingIndexes = new Set();
-
-        for (let [index, name] of tankNameCache) {
-            if (name.includes(lowerQuery)) {
-                searchResults.push(global.mockups[index]);
-                matchingIndexes.add(index);
-            }
-        }
-
-        if (searchResults.length > 0) {
-
-            filteredTiles = [];
-
-            const leadsToSearchResult = (tankIndex, visited = new Set()) => {
-                if (visited.has(tankIndex)) return false;
-                visited.add(tankIndex);
-
-                if (matchingIndexes.has(parseInt(tankIndex))) return true;
-
-                const mockup = global.mockups[parseInt(tankIndex)];
-                if (mockup && mockup.upgrades) {
-                    for (let upgrade of mockup.upgrades) {
-                        if (leadsToSearchResult(upgrade.index, visited)) {
-                            return true;
-                        }
-                    }
-                }
-                return false;
-            };
-
-            for (let tile of tiles) {
-                const tileIndex = parseInt(tile.index);
-                if (matchingIndexes.has(tileIndex) || leadsToSearchResult(tile.index)) {
-                    filteredTiles.push(tile);
-                }
-            }
-        } else {
-
-            filteredTiles = tiles.filter(tile => {
-                const mockup = global.mockups[parseInt(tile.index)];
-                return mockup && mockup.className === 'basic';
-            });
-        }
-
-        searchCache.set(lowerQuery, {
-            results: searchResults,
-            tiles: filteredTiles
-        });
-    }
-    global.searchTankByName = searchTankByName;
-
-    function drawUpgradeTree(spacing, alcoveSize) {
-        if (global.died) {
-
-            global.tankTree("exit");
-            return;
-        }
-
-        if (lastGuiType != gui.type || global.generateTankTree) {
-            try {
-                let m = util.requestEntityImage(gui.type),
-                    rootName = m.rerootUpgradeTree,
-                    rootIndex = [];
-                for (let name of rootName) {
-                    let mockup = global.mockups.find(i => i && i.className === name);
-                    let ind = name == undefined || !mockup ? -1 : mockup.index;
-                    rootIndex.push(ind);
-                }
-                if (!rootIndex.includes(-1)) {
-                    generateTankTree(rootIndex);
-                }
-                lastGuiType = gui.type;
-                global.generateTankTree = false;
-
-                global.searchQuery = '';
-                searchResults = [];
-                filteredTiles = null;
-                searchCache.clear();
-            } catch { }
-        }
-
-        if (!tankTree) {
-            console.log('No class tree rendered yet.');
-            return;
-        }
-
-        // dark ink wash, like the big map and the death screen
-        ctx[2].globalAlpha = 0.78;
-        ctx[2].fillStyle = HUD.wellSolid;
-        ctx[2].fillRect(0, 0, global.screenWidth, global.screenHeight);
-        ctx[2].globalAlpha = 1;
-
-        if (global.renderTankTree) {
-            let tileSize = alcoveSize / 2,
-                size = tileSize - 4,
-                spaceBetween = 10,
-                screenDivisor = (spaceBetween + tileSize) * 2 * global.treeScale,
-                padding = tileSize / screenDivisor,
-                dividedWidth = global.screenWidth / screenDivisor,
-                dividedHeight = global.screenHeight / screenDivisor,
-                treeFactor = 1 + spaceBetween / tileSize;
-
-            if (!classTreeDrag.isDragging) {
-                const friction = 0.92;
-                classTreeDrag.momentum.x *= friction;
-                classTreeDrag.momentum.y *= friction;
-
-                if (Math.abs(classTreeDrag.momentum.x) < 0.1) classTreeDrag.momentum.x = 0;
-                if (Math.abs(classTreeDrag.momentum.y) < 0.1) classTreeDrag.momentum.y = 0;
-            }
-
-            global.scrollVelocityX = classTreeDrag.momentum.x;
-            global.scrollVelocityY = classTreeDrag.momentum.y;
-
-            global.fixedScrollX = Math.max(
-                dividedWidth - padding,
-                Math.min(
-                    tankTree.width * treeFactor + padding - dividedWidth,
-                    global.fixedScrollX + global.scrollVelocityX
-                )
-            );
-            global.fixedScrollY = Math.max(
-                dividedHeight - padding,
-                Math.min(
-                    tankTree.height * treeFactor + padding - dividedHeight,
-                    global.fixedScrollY + global.scrollVelocityY
-                )
-            );
-            if (Math.abs(global.targetTreeScale - global.treeScale) > 0.001) {
-                global.treeScale += (global.targetTreeScale - global.treeScale) * 0.15;
-                if (Math.abs(global.targetTreeScale - global.treeScale) < 0.001) {
-                    global.treeScale = global.targetTreeScale;
-                }
-            }
-
-            global.scrollX = util.lerp(global.scrollX, global.fixedScrollX, 0.10, true);
-            global.scrollY = util.lerp(global.scrollY, global.fixedScrollY, 0.10, true);
-
-            const tilesToRender = filteredTiles || tiles;
-
-            const halfWidth = global.screenWidth / 2;
-            const halfHeight = global.screenHeight / 2;
-            const tileSpacing = tileSize + spaceBetween;
-            const scaledSpacing = tileSpacing * global.treeScale;
-            const halfSize = 0.5 * size;
-
-            ctx[2].strokeStyle = HUD.text2;
-            ctx[2].lineWidth = 3 * global.treeScale;
-            ctx[2].lineCap = "round";
-            ctx[2].beginPath();
-
-            for (let [start, end] of branches) {
-                let sx = ((start.x - global.scrollX) * tileSpacing + 1 + halfSize) * global.treeScale + halfWidth,
-                    sy = ((start.y - global.scrollY) * tileSpacing + 1 + halfSize) * global.treeScale + halfHeight,
-                    ex = ((end.x - global.scrollX) * tileSpacing + 1 + halfSize) * global.treeScale + halfWidth,
-                    ey = ((end.y - global.scrollY) * tileSpacing + 1 + halfSize) * global.treeScale + halfHeight;
-
-                if (ex < -CULL_MARGIN || sx > global.screenWidth + CULL_MARGIN ||
-                    ey < -CULL_MARGIN || sy > global.screenHeight + CULL_MARGIN) continue;
-
-                ctx[2].moveTo(sx, sy);
-                ctx[2].lineTo(ex, ey);
-            }
-            ctx[2].stroke();
-
-            let angle = -Math.PI / 4;
-            const scaledTileSize = tileSize * global.treeScale;
-
-            for (let { x, y, colorIndex, index } of tilesToRender) {
-                let ax = (x - global.scrollX) * scaledSpacing + halfWidth,
-                    ay = (y - global.scrollY) * scaledSpacing + halfHeight;
-
-                if (ax < -scaledTileSize - CULL_MARGIN || ax > global.screenWidth + CULL_MARGIN ||
-                    ay < -scaledTileSize - CULL_MARGIN || ay > global.screenHeight + CULL_MARGIN) continue;
-
-                drawUpgradeTile(index.toString(), ax, ay, scaledTileSize, scaledTileSize, colorIndex, false, 0, angle, global.treeScale);
-            }
-        }
-
-        drawClassTreeUI(spacing);
-
-        ctx[2].globalAlpha = 1;
-    }
-    global.targetTreeScale = 1;
-    global.classTreeDrag = classTreeDrag;
-    function drawClassTreeUI(spacing) {
-        if (!global.renderTankTree) {
-
-            return;
-        }
-        const uiY = spacing + 20;
-        const buttonSize = 40;
-        const buttonSpacing = 10;
-
-        drawText("Arrows or drag to move, Shift to go faster. Scroll or +/- to zoom.", global.screenWidth / 2, spacing + 8, 12, HUD.text2, "center");
-
-        const searchBarWidth = 300;
-        const searchBarHeight = 35;
-        const searchBarX = global.screenWidth / 2 - searchBarWidth / 2;
-        const searchBarY = uiY;           // canvas.js hit-tests the bar at this y
-
-        hudWell(ctx[2], searchBarX, searchBarY, searchBarWidth, searchBarHeight, HUD.rSmall, HUD.wellSolid,
-            global.searchBarActive ? HUD.gold : HUD.ink, global.searchBarActive ? 3 : 2.5);
-
-        const displayText = global.searchBarActive && !global.searchQuery
-            ? "Type to search..."
-            : global.searchQuery || "Click to search tanks...";
-        const showCursor = global.searchBarActive && Date.now() % 1000 < 500;
-
-        drawText(
-            displayText + (showCursor ? "|" : ""),
-            searchBarX + 12,
-            searchBarY + searchBarHeight / 2,
-            14,
-            global.searchQuery ? HUD.head : HUD.text2,
-            "left",
-            true
-        );
-
-        const cr = global.canvas.height / global.screenHeight / global.ratio;
-        const zoomInX = searchBarX + searchBarWidth + buttonSpacing + 20;
-        const zoomOutX = zoomInX + buttonSize + buttonSpacing;
-        hudButton(ctx[2], zoomInX, searchBarY, buttonSize, searchBarHeight, "+", { size: 20, type: "classTreeZoomIn", index: 0, cr });
-        hudButton(ctx[2], zoomOutX, searchBarY, buttonSize, searchBarHeight, "-", { size: 20, type: "classTreeZoomOut", index: 1, cr });
-        // every tank on one page (/tanks), opens in a new tab
-        const allW = hudTitleW("All tanks", 15) + 22;
-        hudButton(ctx[2], zoomOutX + buttonSize / 2 + buttonSpacing + allW / 2, searchBarY, allW, searchBarHeight, "All tanks", { size: 15, type: "classTreeAll", index: 0, cr, fill: HUD.gold, lipCol: HUD.goldDk, textCol: HUD.ink });
-
-        const closeButtonSize = 35;
-        const closeButtonX = searchBarX - buttonSpacing * 2.6;
-        hudButton(ctx[2], closeButtonX, searchBarY, closeButtonSize, closeButtonSize, "X", { size: 17, type: "classTreeClose", index: 0, cr, fill: HUD.danger, lipCol: HUD.dangerDk });
-
-        const instructionY = searchBarY + searchBarHeight + 5;
-        if (global.searchQuery) {
-            const resultsText = searchResults.length > 0
-                ? `Found ${searchResults.length} tank${searchResults.length !== 1 ? 's' : ''} (showing upgrade paths)`
-                : "No tanks found, showing Basic";
-            drawText(
-                resultsText,
-                global.screenWidth / 2,
-                instructionY + 10,
-                11,
-                searchResults.length > 0 ? color.green : color.orange,
-                "center"
-            );
-        }
+    function drawUpgradeTree() {
+        if (global.died) { global.tankTree("exit"); return; }
+        if (!treeUi.opened()) treeUi.open();
+        treeUi.draw(ctx[2], global.screenWidth, global.screenHeight);
     }
 
     // Bottom of the top-centre message stack, refreshed every frame by
@@ -6733,23 +6379,6 @@ import * as upGrid from './upgradeGridLogic.js';
                 blink = load >= 1 && Math.floor(Date.now() / 160) % 2 === 0;
             const pillH = height + 1;
             hudDrawn.wallet = { x: rx1 - capR, y: ry - pillH / 2, w: rx2 - rx1 + capR * 2, h: pillH };
-            // one plate under the whole player bar (name, tank, wallet and the
-            // ability slots beside it, last frame's rect), so it reads as one thing
-            if (royaleActive()) {
-                const ab = abilityBarRect;
-                // centred on the screen like the name and the pops over it (the
-                // ability slots on the right used to pull it off centre)
-                const pcx = global.screenWidth / 2;
-                const half = Math.max(pcx - (rx1 - capR - 14), Math.max(rx2 + capR, ab ? ab.x + ab.w : 0) + 12 - pcx);
-                const px0 = pcx - half, px1 = pcx + half;
-                const py0 = Math.round(y - 14 - SELF_TANK_LIFT - 34), py1 = Math.min(global.screenHeight - 3, ry + pillH / 2 + 9);
-                const c0 = ctx[2];
-                c0.save();
-                roundRectPath(c0, px0, py0, px1 - px0, py1 - py0, 14);
-                c0.fillStyle = "rgba(16,12,20,0.42)";
-                c0.fill();
-                c0.restore();
-            }
             hudBar(ctx[2], rx1 - capR, ry - pillH / 2, carX2 - rx1 + capR * 2, pillH, load, blink ? HUD.danger : HUD.gold);
             {
                 // text never leaves its pill: shrink to fit
@@ -6775,7 +6404,7 @@ import * as upGrid from './upgradeGridLogic.js';
                 let bankTxt = tries[tries.length - 1];
                 for (const t of tries) if (hudTextW(t, 11) <= room) { bankTxt = t; break; }
                 let bs2 = 13; while (bs2 > 9 && hudTextW(bankTxt, bs2) > room) bs2 -= 0.5;
-                drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, BANK_PILL_TEXT, "center", false, 1, false);
+                drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, color.guiwhite, "center");
                 // what "Bank" means, on hover (it is not the points number)
                 if (royaleActive() && !global.mobile && global.canvas && !global.died) {
                     const cr2 = global.canvas.height / global.screenHeight / global.ratio;
@@ -6796,15 +6425,8 @@ import * as upGrid from './upgradeGridLogic.js';
         const tankName = selfTankName();
         const nameX = Math.round(x + width / 2 + nameBadgeRoom(myCode, 31) / 2) + 1.5, nameY = Math.round(y - 10 - 4) - 1 - (tankName ? SELF_TANK_LIFT : 0);
         if (tankName) {
-            // a dark chip with the tank's name in the display face: readable on any rock
-            let ts = 14.5; while (ts > 10 && hudTitleW(tankName, ts) + hudTextW("TANK", 10) + 30 > width - 40) ts -= 0.5;
-            const lw2 = hudTextW("TANK", 10), tw2 = hudTitleW(tankName, ts);
-            const cw = Math.round(lw2 + 7 + tw2 + 22), chh = Math.round(ts + 8);
-            const ccx = Math.round(x + width / 2), ccy = Math.round(y - 13);
-            const chx = ccx - cw / 2;
-            hudWell(ctx[2], chx, ccy - chh / 2, cw, chh, chh / 2, "rgba(12,9,16,0.88)", HUD.ink, 2);
-            drawText("TANK", chx + 11, ccy + 0.5, 10, HUD.text2, "left", true);
-            hudTitle(tankName, chx + 11 + lw2 + 7, ccy, ts, HUD.head, "left");
+            let ts = 15; while (ts > 10 && hudTitleW(tankName, ts) > width - 40) ts -= 0.5;
+            hudTitle(tankName, Math.round(x + width / 2), Math.round(y - 13), ts, HUD.head, "center");
         }
         const mySn = styledName(name, global.myNameStyle, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, nameX, 31, "center", ctx[2], nameY);
         drawText(mySn.text, nameX, nameY, 31, mySn.fill, "center");
@@ -6957,7 +6579,7 @@ import * as upGrid from './upgradeGridLogic.js';
         c.fillStyle = "rgba(255,255,255," + (0.05 + 0.07 * pulse).toFixed(3) + ")";
         c.fillRect(bx, by, fw, bh);
         // notches flowing right, like gems pouring into the vault
-        c.fillStyle = "rgba(18,14,21,0.16)";
+        c.fillStyle = "rgba(0,0,0,0.16)";
         const gap = 14, off = (now / 60) % gap;
         for (let sx = bx - gap + off; sx < bx + fw; sx += gap) {
             c.beginPath();
@@ -7063,7 +6685,7 @@ import * as upGrid from './upgradeGridLogic.js';
                  x + W / 2, y + 19, 17, teamCol, "center");
         // the first Team Bank you stand on says what it is (round 9)
         if (v.isOutpost && buildBtnLabels.firstTime("teamBank", () => window.localStorage)) global.createMessage(buildBtnLabels.TEAM_BANK_TIP, 7000);
-        c.fillStyle = "rgba(18,14,21,0.6)";
+        c.fillStyle = "rgba(0,0,0,0.6)";
         c.fillRect(x + 14, y + 33, W - 28, 2);
         drawText(scoreText.BANK + "  " + util.formatLargeNumber(g.banked | 0), x + 16, y + 49, 12, color.teal, "left", true);
         drawText("Carried  " + util.formatLargeNumber(g.carried | 0), x + W - 16, y + 49, 12, HUD.gold, "right", true);
@@ -7312,90 +6934,72 @@ import * as upGrid from './upgradeGridLogic.js';
     // filters, and per-frame text measurement is cached.
     // ═════════════════════════════════════════════════════════════════════
     const HUD = {
-        ink: "#120e15",
-        panel: "rgba(43,37,51,0.84)",     // --surface, see-through for combat
-        solid: "rgba(43,37,51,0.97)",     // modal plates (shop, death, map)
-        raised: "#352e3f",                // --surface2: cards on a plate
-        well: "rgba(14,11,18,0.55)",      // recessed slots and tracks
-        wellSolid: "#1e1924",             // --input-bg
-        face: "#4a4156", faceDk: "#2e2837",
-        bevel: "rgba(255,255,255,0.07)",
-        head: "#fff3d9", text: "#e9e0cc", text2: "#a597b0",
+        ink: "#1a1a1a",
+        panel: "rgba(0,0,0,0.4)",
+        solid: "rgba(18,18,20,0.86)",
+        raised: "rgba(0,0,0,0.28)",
+        well: "rgba(0,0,0,0.3)",
+        wellSolid: "#3a3a3a",
+        track: "rgba(0,0,0,0.55)",
+        face: "#555555", faceDk: "#3a3a3a",
+        bevel: "rgba(0,0,0,0)",
+        head: "#ffffff", text: "#f2f2f2", text2: "#cfcfcf",
         copper: "#e07b2e", copperDk: "#9e4a14",
         gold: "#f2b83c", goldDk: "#a8750f",
         emerald: "#3fcf7a", play: "#4fcf5c", playDk: "#2c8f37",
         danger: "#e0473b", dangerDk: "#9c2a21",
         lilac: "#b98bff", sky: "#4ec4e8",   // lilac is the storm, nothing else
-        r: 9, rSmall: 6, rBig: 13,         // radius family
-        lw: 1.5, lip: 3,                   // keyline + the soft drop under a plate
-        line: "rgba(10,8,13,0.92)",        // the keyline
-        drop: "rgba(0,0,0,0.32)",          // the drop
-        edge: 25,                          // margin from every screen edge
-        font: '"Lilita One", Rubik, Ubuntu, sans-serif',
-        ui: 'Rubik, Ubuntu, sans-serif',   // labels (weight 700)
-        titleMin: 15,                      // below this a hudTitle is a label: Rubik
+        r: 5, rSmall: 4, rBig: 6,
+        lw: 1.5, lip: 0,
+        line: "#333333",
+        frame: "rgba(0,0,0,0.6)",
+        drop: "rgba(0,0,0,0)",
+        edge: 25,
+        font: 'Ubuntu, sans-serif',
+        ui: 'Ubuntu, sans-serif',
+        titleMin: 15,
     };
-    try { document.fonts && document.fonts.load('20px "Lilita One"'); } catch (e) { /* falls back to Rubik */ }
+    try { document.fonts && document.fonts.load('700 20px Ubuntu'); } catch (e) { }
     // A plate: a soft drop under it, flat fill, fine keyline, and a single
     // highlight along the top edge. o: { fill, r, lw, lip, bevel:false, stroke, alpha }
     function hudPanel(c, x, y, w, h, o = {}) {
-        const r = o.r != null ? o.r : HUD.r;
-        // an explicit lw is scaled down to the fine keyline
-        const lw = Math.min(2, o.lw != null ? o.lw * 0.55 : HUD.lw);
-        const lip = o.lip != null ? o.lip : HUD.lip;
+        const r = Math.min(o.r != null ? o.r : HUD.r, 6, h / 2);
         c.save();
         if (o.alpha != null) c.globalAlpha *= o.alpha;
-        if (lip > 0) {
-            // the drop: the plate's own shape, dark and see-through, a few px down
-            roundRectPath(c, x, y + lip * 0.8, w, h + lip * 0.4, r);
-            c.fillStyle = HUD.drop;
-            c.fill();
-        }
         roundRectPath(c, x, y, w, h, r);
         c.fillStyle = o.fill || HUD.panel;
         c.fill();
-        c.lineWidth = lw;
-        c.lineJoin = "round";
-        c.strokeStyle = o.stroke || HUD.line;
-        c.stroke();
-        if (o.bevel !== false && w > 2 * r + 4 && h > 8) {
-            c.beginPath();
-            c.moveTo(x + r, y + lw + 0.75);
-            c.lineTo(x + w - r, y + lw + 0.75);
-            c.lineWidth = 1.25;
-            c.strokeStyle = HUD.bevel;
+        if (o.stroke || o.fill === HUD.solid) {
+            c.lineWidth = 2;
+            c.lineJoin = "round";
+            c.strokeStyle = o.stroke || HUD.frame;
             c.stroke();
         }
         c.restore();
     }
     // A recessed slot inside a plate: darker fill, thin ink keyline.
     function hudWell(c, x, y, w, h, r = HUD.rSmall, fill = HUD.well, line = HUD.line, lw = 1) {
-        roundRectPath(c, x, y, w, h, r);
+        roundRectPath(c, x, y, w, h, Math.min(r, 5, h / 2));
         c.fillStyle = fill;
         c.fill();
-        if (lw > 0) { c.lineWidth = Math.min(1.25, lw * 0.5); c.strokeStyle = line === HUD.ink ? HUD.line : line; c.stroke(); }
+        if (lw > 0 && line !== HUD.line && line !== HUD.ink) { c.lineWidth = 1.5; c.strokeStyle = line; c.stroke(); }
     }
-    // Progress bar: dark track, flat fill, fine keyline, fully rounded.
-    function hudBar(c, x, y, w, h, frac, col, track = HUD.wellSolid) {
+    function hudBar(c, x, y, w, h, frac, col, track = HUD.track) {
+        if (track === HUD.wellSolid) track = HUD.track;
         roundRectPath(c, x, y, w, h, h / 2);
         c.fillStyle = track;
         c.fill();
+        c.lineWidth = 1.5;
+        c.strokeStyle = HUD.frame;
+        c.stroke();
         frac = Math.max(0, Math.min(1, frac || 0));
-        if (frac > 0.001) {
-            roundRectPath(c, x, y, Math.max(h, w * frac), h, h / 2);
+        const inset = h >= 10 ? 2.5 : h >= 6 ? 1.5 : 1;
+        const ih = h - inset * 2;
+        if (frac > 0.001 && ih > 0.5) {
+            roundRectPath(c, x + inset, y + inset, Math.max(ih, (w - inset * 2) * frac), ih, ih / 2);
             c.fillStyle = col;
             c.fill();
-            // lighter top third, like the menu's quest bars
-            if (h >= 8) {
-                roundRectPath(c, x + 2, y + 1.5, Math.max(h - 4, w * frac - 4), h * 0.3, h * 0.15);
-                c.fillStyle = "rgba(255,255,255,0.22)";
-                c.fill();
-            }
         }
-        roundRectPath(c, x, y, w, h, h / 2);
-        c.lineWidth = 1.25;
-        c.strokeStyle = HUD.line;
-        c.stroke();
     }
     // Title text, centred on y. Lilita One from HUD.titleMin up; smaller
     // labels are Rubik bold. A thin dark rim keeps either readable.
@@ -7403,7 +7007,7 @@ import * as upGrid from './upgradeGridLogic.js';
     function hudFont(size) {
         let f = hudFonts.get(size);
         if (f === undefined) {
-            f = size >= HUD.titleMin ? size + "px " + HUD.font : "700 " + (size * 0.94).toFixed(2) + "px " + HUD.ui;
+            f = "700 " + size + "px " + HUD.font;
             if (hudFonts.size > 400) hudFonts.clear();
             hudFonts.set(size, f);
         }
@@ -7433,7 +7037,7 @@ import * as upGrid from './upgradeGridLogic.js';
         if (!titleSpritesFontsOk && document.fonts && document.fonts.status === "loaded") titleSpritesFontsOk = true;
         const m = ctx[2];
         m.save(); m.font = hudFont(q); const w = m.measureText(text).width; m.restore();
-        const lw = Math.max(1.5, q * (q >= HUD.titleMin ? 0.15 : 0.17));
+        const lw = Math.max(1.75, q * 0.19);
         const pad = lw + 2, W = w + pad * 2, H = q * 1.5 + pad * 2;
         const pw = Math.max(1, Math.ceil(W * scale)), ph = Math.max(1, Math.ceil(H * scale));
         const cv = spriteCanvas(pw, ph);
@@ -7447,7 +7051,7 @@ import * as upGrid from './upgradeGridLogic.js';
         g.lineJoin = "round";
         g.lineWidth = lw;
         g.strokeStyle = HUD.line;
-        const dy = q >= HUD.titleMin ? q * 0.06 : q * 0.03;
+        const dy = q * 0.04;
         g.strokeText(text, pad, H / 2 + dy);
         g.fillStyle = col;
         g.fillText(text, pad, H / 2 + dy);
@@ -7496,8 +7100,8 @@ import * as upGrid from './upgradeGridLogic.js';
         c.textAlign = align;
         c.textBaseline = "middle";
         c.lineJoin = "round";
-        const dy = size >= HUD.titleMin ? size * 0.06 : size * 0.03;
-        c.lineWidth = Math.max(1.5, size * (size >= HUD.titleMin ? 0.15 : 0.17));
+        const dy = size * 0.04;
+        c.lineWidth = Math.max(1.75, size * 0.19);
         c.strokeStyle = HUD.line;
         c.strokeText(text, x, y + dy);
         c.fillStyle = col;
@@ -7535,25 +7139,31 @@ import * as upGrid from './upgradeGridLogic.js';
         }
         return w;
     }
+    const labelCases = new Map();
+    function labelCase(t) {
+        let v = labelCases.get(t);
+        if (v === undefined) {
+            v = String(t).toLowerCase().replace(/\b([ivx]+)\b/g, (m) => m.toUpperCase()).replace(/^\s*\S/, (m) => m.toUpperCase());
+            if (labelCases.size > 300) labelCases.clear();
+            labelCases.set(t, v);
+        }
+        return v;
+    }
+    window.dwLabelCase = labelCase;
     // A keycap: small raised face over its own darker lip. Returns its width.
     function hudKey(c, x, y, label, h = 18, alpha = 1) {
         const size = h * 0.62;
         const w = Math.max(h, hudTitleW(label, size) + h * 0.55);
-        const lip = Math.max(1.5, h * 0.12);
         c.save();
         if (alpha < 1) c.globalAlpha *= alpha;
-        roundRectPath(c, x, y, w, h, h * 0.24);
-        c.fillStyle = HUD.faceDk;
+        roundRectPath(c, x, y, w, h, Math.min(3, h * 0.2));
+        c.fillStyle = "rgba(0,0,0,0.45)";
         c.fill();
-        roundRectPath(c, x, y, w, h - lip, h * 0.24);
-        c.fillStyle = HUD.face;
-        c.fill();
-        roundRectPath(c, x, y, w, h, h * 0.24);
-        c.lineWidth = 1;
-        c.strokeStyle = HUD.line;
+        c.lineWidth = 1.5;
+        c.strokeStyle = "rgba(255,255,255,0.28)";
         c.stroke();
         c.restore();
-        hudTitle(label, x + w / 2, y + (h - lip) / 2, size, HUD.head, "center", alpha, c);
+        hudTitle(label, x + w / 2, y + h / 2, size, HUD.head, "center", alpha, c);
         return w;
     }
     // Chunky button with a lip, like .dw-btn. Registers the same clickables
@@ -7571,40 +7181,27 @@ import * as upGrid from './upgradeGridLogic.js';
             const hv = cl.check({ x: global.mouse.x, y: global.mouse.y });
             hover = (o.index === false || o.index == null) ? hv === true : hv === o.index;
         }
-        const down = hover && global.clickables.clicked ? 2 : 0;
-        const fill = o.fill || HUD.face, lipCol = o.lipCol || HUD.faceDk;
-        const r = o.r != null ? o.r : 8;
+        const down = hover && global.clickables.clicked ? 1 : 0;
+        const fill = o.fill || HUD.face;
+        const r = Math.min(o.r != null ? o.r : 4, 5);
         c.save();
         c.globalAlpha *= alpha * (on ? 1 : 0.55);
         const yy = y + down;
-        roundRectPath(c, x, yy, w, h - down, r);
-        c.fillStyle = lipCol;
-        c.fill();
-        roundRectPath(c, x, yy, w, h - down - 4 + down, r);
+        roundRectPath(c, x, yy, w, h, r);
         c.fillStyle = fill;
         c.fill();
         if (hover && !down) {
-            c.fillStyle = "rgba(255,255,255,0.12)";
+            c.fillStyle = "rgba(255,255,255,0.14)";
             c.fill();
         }
-        // top highlight, then the fine keyline (the lip is the drop)
-        if (!down && w > 2 * r) {
-            c.beginPath();
-            c.moveTo(x + r, yy + 1.5);
-            c.lineTo(x + w - r, yy + 1.5);
-            c.lineWidth = 1;
-            c.strokeStyle = "rgba(255,255,255,0.14)";
-            c.stroke();
-        }
-        roundRectPath(c, x, yy, w, h - down, r);
-        c.lineWidth = 1.25;
-        c.strokeStyle = HUD.line;
+        c.lineWidth = 2.5;
+        c.strokeStyle = HUD.frame;
         c.stroke();
         c.restore();
         if (label) {
             let s = o.size || Math.min(16, h * 0.5);
             while (s > 8 && hudTitleW(label, s) > w - 12) s -= 0.5;
-            hudTitle(label, cx, yy + (h - 4) / 2, s, o.textCol || HUD.head, "center", alpha * (on ? 1 : 0.7), c);
+            hudTitle(label, cx, yy + h / 2, s, o.textCol || HUD.head, "center", alpha * (on ? 1 : 0.7), c);
         }
         return hover;
     }
@@ -7668,6 +7265,34 @@ import * as upGrid from './upgradeGridLogic.js';
     // hunted marks, the Core, drop-ins and the screen juice (raidHeat.js, juice.js)
     raidHeat.init({ HUD, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c), cardHold: () => deathCardUp() });
     achCard.init({ HUD, hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, rr: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r) });
+    function treeTankPaint(c, key, x, y, w, h) {
+        const picture = mockupPicture(String(key), gui.color);
+        const m = tankMockOf(picture);
+        const f = upGrid.previewFrame(m || { shape: 0 }, w, h, 2, (i) => global.mockups && global.mockups[i], 0.28 * w);
+        c.save();
+        c.lineCap = "round";
+        c.lineJoin = "round";
+        previewGrey = true;
+        try { drawEntity(picture.color, x + w / 2 + f.x, y + h / 2 + f.y, picture, 1, 1, f.scale / picture.size, 1, f.angle, true, c); }
+        finally { previewGrey = false; c.restore(); }
+    }
+    treeUi.init({
+        HUD, hudPanel, hudTitle, hudTitleW,
+        rr: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r),
+        mockups: () => global.mockups,
+        tankType: () => gui.type,
+        playerColor: () => gui.color,
+        ready: () => !!global.renderTankTree && !!global.mockups && global.mockups.length > 0,
+        tileColors: (key, ci) => upgTileColors(mockupPicture(String(key), gui.color), ci),
+        paintTank: treeTankPaint,
+        mobile: () => !!global.mobile,
+        devScale: () => Math.hypot(tfOf(ctx[2]).a, tfOf(ctx[2]).b) || 1,
+        click: () => { try { gameSound.uiClick(); } catch (e) { } },
+        mix: (a, b, t) => gameDraw.mixColors(a, b, t),
+        t5Label: () => { const st = upGrid.t5State(global.royale && global.royale.you); const at = st && st.at > 1 ? st.at : 2; return (Math.round(at * 100) / 100) + "x"; },
+    });
+    global.treeUi = treeUi;
+    window.dwTree = treeUi;
     crowns.init({ HUD, hudPanel, hudTitle, hudTitleW, hudTextW, measureText, roundRectPath: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r), drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, myHex: () => playerHexCol() || HUD.gold });
     // the first raids: what the HUD shows per stage, the goal line, director moments
     newcomer.init({ hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, keyLabel: (id, d) => keyLabel(id, d), NOTE_H: 24, NOTE_GAP: 8 });
@@ -7938,6 +7563,7 @@ import * as upGrid from './upgradeGridLogic.js';
         switch (kind) {
             case "standings": return standingsRect;
             case "quest": case "contract": return questRect;
+            case "vitals": return vitalsRect;
             case "feed": {
                 const f = hudDrawn.feed;
                 return f ? { x: f.x, y: f.y, w: f.w, h: Math.max(f.h, 63) } : null;
@@ -8055,7 +7681,7 @@ import * as upGrid from './upgradeGridLogic.js';
             // vault plate style on a hexagon (the hitbox): ink drop, deep
             // teal face, ink outline, rim band
             polyPath(c, 0, R * 0.07, R * 1.16, 6, Math.PI / 6);
-            c.fillStyle = "rgba(18,14,21,0.6)"; c.fill();
+            c.fillStyle = "rgba(0,0,0,0.6)"; c.fill();
             polyPath(c, 0, 0, R * 1.16, 6, Math.PI / 6);
             c.fillStyle = SHOP_FACE; c.fill();
             c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
@@ -8533,9 +8159,9 @@ import * as upGrid from './upgradeGridLogic.js';
                 hudPanel(c, sx0, sy0, SW, SH);
                 hudDrawn.clock = { x: sx0, y: sy0, w: SW, h: SH };
                 const secs = Math.ceil(stLeft / 1000);
-                const lw2 = hudTitleW("RAID STARTS IN", 12), vw = hudTitleW(fmtRaidClock(secs), 24);
+                const lw2 = hudTitleW("Raid starts in", 15), vw = hudTitleW(fmtRaidClock(secs), 24);
                 const x0 = cx - (lw2 + 8 + vw) / 2;
-                hudTitle("RAID STARTS IN", x0, sy0 + 22, 12, HUD.text2, "left");
+                hudTitle("Raid starts in", x0, sy0 + 22, 15, HUD.text2, "left");
                 hudTitle(fmtRaidClock(secs), x0 + lw2 + 8, sy0 + 22, 24, secs <= 10 ? HUD.gold : HUD.head, "left");
                 drawText("The raid hasn't started yet, so hang out for a bit.", cx, sy0 + 48, 12, HUD.lilac, "center", true);
                 y = sy0 + SH + HUD.lip + 8;
@@ -8549,18 +8175,15 @@ import * as upGrid from './upgradeGridLogic.js';
             if (placeTxt) pointsRuleTip(px, py + rowH, PW, footH);
             hudDrawn.clock = { x: px, y: py, w: PW, h: PH };
             const pair = (label, value, zx) => {
-                const lw2 = hudTitleW(label, 12), vw = hudTitleW(value, 21), gap = 7;
+                const lw2 = hudTitleW(label, 15), vw = hudTitleW(value, 21), gap = 6;
                 const x0 = zx - (lw2 + gap + vw) / 2;
-                hudTitle(label, x0, py + rowH / 2, 12, HUD.text2, "left");
+                hudTitle(label, x0, py + rowH / 2 + 1, 15, HUD.text2, "left");
                 hudTitle(value, x0 + lw2 + gap, py + rowH / 2, 21, HUD.head, "left");
             };
-            pair("RAID", fmtRaidClock(r.raidLeft | 0), px + PW * 0.25);
-            pair("ALIVE", String(r.alive | 0), px + PW * 0.72);
-            c.fillStyle = "rgba(18,14,21,0.55)";
-            c.fillRect(cx - 1, py + 9, 2, rowH - 18);
+            pair("Raid", fmtRaidClock(r.raidLeft | 0), px + PW * 0.27);
+            pair("Alive", String(r.alive | 0), px + PW * 0.7);
             if (footH) {
-                c.fillRect(px + 10, py + rowH - 1, PW - 20, 2);
-                const fy = py + rowH + footH / 2;
+                const fy = py + rowH + footH / 2 - 3;
                 if (placeTxt && stormTxt) {
                     drawText(placeTxt, px + 14, fy, 12, HUD.gold, "left", true);
                     drawText(stormTxt, px + PW - 14, fy, 12, stormCol, "right", true);
@@ -8570,10 +8193,10 @@ import * as upGrid from './upgradeGridLogic.js';
             // round 9: the storm stage's gem multiplier (server RY storm.gmul), a small pill
             const gm = +st.gmul || 1;
             if (gm > 1 && st.a) {
-                const gt = gm === 1.5 ? "GEMS x1.5" : gm === 2 ? "GEMS x2" : "GEMS x" + (Math.round(gm * 10) / 10);
-                const gw = hudTitleW(gt, 12) + 20, gh = 22, gx = px - 8 - gw, gy = py + rowH + footH / 2 - gh / 2;
-                hudWell(c, gx, gy, gw, gh, gh / 2, "rgba(242,184,60,0.22)", HUD.ink, 2);
-                hudTitle(gt, gx + gw / 2, gy + gh / 2, 12, HUD.gold, "center");
+                const gt = gm === 1.5 ? "Gems x1.5" : gm === 2 ? "Gems x2" : "Gems x" + (Math.round(gm * 10) / 10);
+                const gw = hudTitleW(gt, 13) + 16, gh = 22, gx = px - 8 - gw, gy = py + rowH + footH / 2 - gh / 2;
+                hudPanel(c, gx, gy, gw, gh, { r: 4 });
+                hudTitle(gt, gx + gw / 2, gy + gh / 2, 13, HUD.gold, "center");
             }
             // what moved your points, right by them (scoreLogic ptsPops)
             if (placeTxt && !global.died) drawPtsPops(px + PW + 10, py + rowH + footH / 2, "left", 1);
@@ -8775,58 +8398,61 @@ import * as upGrid from './upgradeGridLogic.js';
 
     // ── race panel: top three plus you, with your gap to first ──────────
     const standingsFit = new Map();
+    function standingsHex(ci) {
+        let h = null;
+        if (ci != null) { try { h = gameDraw.getColor(ci); } catch (e) { h = null; } }
+        return typeof h === "string" && h[0] === "#" ? h : color.red;
+    }
+    function fitStandingsText(head, name, tail, room) {
+        const key = head + "|" + name + "|" + tail + "|" + (room | 0);
+        let f = standingsFit.get(key);
+        if (f) return f;
+        const full = String(name || "Unnamed");
+        let ns = 11.5, text = head + full + tail;
+        while (ns > 9 && measureText(text, ns) > room) ns -= 0.5;
+        for (let k = full.length - 1; k >= 1 && measureText(text, ns) > room; k--) text = head + full.slice(0, k).trimEnd() + "…" + tail;
+        f = { text, ns };
+        if (standingsFit.size > 64) standingsFit.clear();
+        standingsFit.set(key, f);
+        return f;
+    }
     // duos: team rows ("Alex & Sam", combined score); your team's names in your colour
     function drawTeamStandings() {
         const r = global.royale;
         const teams = r.teams || [];
         if (!teams.length) { standingsRect = null; return 36; }
-        const W = Math.min(262, global.screenWidth * 0.3), rowH = 20;
+        const W = Math.min(262, global.screenWidth * 0.3), rowH = 22;
         const x = global.screenWidth - HUD.edge - W, y0 = HUD.edge;
         const myTm = r.duo ? r.duo.tm : null;
         const myPlace = r.duo ? r.duo.place | 0 : 0;
         const top = teams.slice(0, 3);
         const me = myPlace > 3 ? teams.find(t => t.tm === myTm) : null;
         const rows = me ? top.concat([me]) : top;
-        const H = 32 + rows.length * rowH + (myPlace > 1 ? 18 : 6);
+        const H = 30 + rows.length * rowH + (myPlace > 1 ? 16 : 2);
         standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: H + 16 };
         const c = ctx[2];
-        hudPanel(c, x, y0, W, H);
-        c.fillStyle = "rgba(18,14,21,0.55)";
-        c.fillRect(x + 10, y0 + 27, W - 20, 2);
-        hudTitle("Team standings", x + 12, y0 + 15, 14, HUD.head, "left");
-        hudTitle("PTS", x + W - 12, y0 + 15, 11, HUD.text2, "right");
-        // the Crown Contest runs in duos too: crown edge, rate, a crown per one worn
+        hudTitle("Team leaderboard", x + W / 2, y0 + 12, 19, HUD.head, "center");
         let crownOn = false;
-        try { crownOn = crowns.drawTeamEdge(c, x, y0, W, H); } catch (e) { /* */ }
+        try { crownOn = crowns.drawTeamEdge(c, x, y0, W, H); } catch (e) { }
         const myHex = playerHexCol() || color.gold;
-        let ry = y0 + 32;
+        const best = Math.max(1, (top[0] && top[0].score) | 0);
+        const barH = 18;
+        let ry = y0 + 28;
         for (const t of rows) {
             const isMe = myTm != null && t.tm === myTm;
-            const nameCol = isMe ? myHex : color.guiwhite;
-            const rankCol = t.place === 1 ? HUD.gold : t.place === 2 ? "#d8dce6" : t.place === 3 ? "#d98a4e" : HUD.text2;
-            const rowMid = ry + rowH / 2 - 1;
-            drawText("#" + t.place, x + 12, rowMid, 11, rankCol, "left", true);
-            const scoreTxt = fmtNum(t.score | 0);
-            const scoreW = hudTextW(scoreTxt, 12);
-            const names = (t.names || []).map(n => shortName(n, t.names.length > 1 ? 9 : 16)).join(" & ");
+            const rowMid = ry + barH / 2;
             const nCr = crownOn ? Math.min(2, t.cr | 0) : 0;
-            for (let k = 0; k < nCr; k++) { try { crowns.drawCrownIcon(c, x + 46 + k * 13, rowMid, 11, "gold", 1); } catch (e) { /* */ } }
-            const nx = x + 40 + nCr * 13;
-            const room = W - 40 - nCr * 13 - scoreW - 22;
-            const fitKey = names + "|" + (room | 0);
-            let ns = standingsFit.get(fitKey);
-            if (ns === undefined) {
-                ns = 12; while (ns > 8 && measureText(names, ns) > room) ns -= 0.5;
-                if (standingsFit.size > 64) standingsFit.clear();
-                standingsFit.set(fitKey, ns);
-            }
-            drawText(names, nx, rowMid, ns, t.alive ? nameCol : HUD.text2, "left", true);
-            drawText(scoreTxt, x + W - 12, rowMid, 12, nameCol, "right", true);
+            const bx = x + nCr * 13, bw = W - nCr * 13;
+            for (let k = 0; k < nCr; k++) { try { crowns.drawCrownIcon(c, x + 5 + k * 13, rowMid, 11, "gold", 1); } catch (e) { } }
+            hudBar(c, bx, ry, bw, barH, Math.max(0.05, (t.score | 0) / best), isMe ? myHex : standingsHex(t.c));
+            const names = (t.names || []).map(n => shortName(n, t.names.length > 1 ? 9 : 16)).join(" & ");
+            const fit = fitStandingsText(t.place > 3 ? "#" + t.place + " " : "", names, " - " + fmtNum(t.score | 0), bw - barH - 4);
+            drawText(fit.text, bx + bw / 2, rowMid, fit.ns, t.alive ? color.guiwhite : HUD.text2, "center", true);
             ry += rowH;
         }
         if (myPlace > 1 && top[0]) {
             const gap = (top[0].score | 0) - ((r.duo && r.duo.score) | 0);
-            drawText(fmtNum(Math.max(0, gap)) + " behind #1", x + W - 12, ry + 7, 10, HUD.text2, "right", true);
+            drawText(fmtNum(Math.max(0, gap)) + " behind #1", x + W / 2, ry + 5, 11, HUD.text2, "center", true);
         }
         return y0 + H;
     }
@@ -8844,63 +8470,41 @@ import * as upGrid from './upgradeGridLogic.js';
         }
         const board = r.board || [];
         if (!board.length) { standingsRect = null; return 36; }
-        const W = Math.min(262, global.screenWidth * 0.3), rowH = 20;
+        const W = Math.min(262, global.screenWidth * 0.3), rowH = 22, barH = 18;
         const x = global.screenWidth - HUD.edge - W, y0 = HUD.edge;
         const myPlace = r.place | 0;
         const top = board.slice(0, 3);
         const me = myPlace > 3 ? board.find(row => !row.bot && row.place === myPlace) : null;
         const rows = me ? top.concat([me]) : top;
-        const H = 32 + rows.length * rowH + (myPlace > 1 ? 18 : 6);
+        const H = 30 + rows.length * rowH + (myPlace > 1 ? 16 : 2);
         standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: H + 16 };
         const c = ctx[2];
-        hudPanel(c, x, y0, W, H);
-        c.fillStyle = "rgba(18,14,21,0.55)";
-        c.fillRect(x + 10, y0 + 27, W - 20, 2);
-        hudTitle("Standings", x + 12, y0 + 15, 14, HUD.head, "left");
-        // "PTS (?)": hover the panel for how points add up (scoreLogic.js)
-        drawRuleDot(c, x + W - 19, y0 + 15);
-        hudTitle("PTS", x + W - 30, y0 + 15, 11, HUD.text2, "right");
+        hudTitle("Leaderboard", x + W / 2, y0 + 12, 19, HUD.head, "center");
+        drawRuleDot(c, x + W / 2 + hudTitleW("Leaderboard", 19) / 2 + 14, y0 + 12);
         pointsRuleTip(x, y0, W, H);
         const myHex = playerHexCol() || color.gold;
-        // rank badges sit between place and name; the column only opens when
-        // someone on the board has one, so names stay aligned either way
-        // a bot is never you, even if a stale place lines up with its row)
         const mineRow = (row) => !row.bot && row.place === myPlace && myPlace > 0;
         const codeOf = (row) => mineRow(row) ? nameBadgeCode(myRankCode() || row.rk, true) : nameBadgeCode(row.rk, false);
         const rkCol = rows.some(row => codeOf(row)) ? 18 : 0;
-        let ry = y0 + 32;
+        const best = Math.max(1, (top[0] && top[0].score) | 0);
+        let ry = y0 + 28;
         for (const row of rows) {
             const isMe = mineRow(row);
-            // your row: only the name changes colour, no band behind it
-            const nameCol = isMe ? myHex : color.guiwhite;
-            const rankCol = row.place === 1 ? HUD.gold : row.place === 2 ? "#d8dce6" : row.place === 3 ? "#d98a4e" : HUD.text2;
-            const rowMid = ry + rowH / 2 - 1;
-            drawText("#" + row.place, x + 12, rowMid, 11, rankCol, "left", true);
-            const scoreTxt = fmtNum(row.score | 0);
-            const scoreW = hudTextW(scoreTxt, 12);
-            const nameTxt = shortName(row.name, 18) + (row.streak >= 4 ? "  §#ff7a6b§x" + row.streak : "");
-            const plain = shortName(row.name, 18) + (row.streak >= 4 ? "  x" + row.streak : "");
-            // shrink-to-fit is measured once per row per name width, not per frame
-            const nameRoom = W - 40 - rkCol - scoreW - 22;
-            const fitKey = plain + "|" + (nameRoom | 0);
-            let ns = standingsFit.get(fitKey);
-            if (ns === undefined) {
-                ns = 12; while (ns > 8 && measureText(plain, ns) > nameRoom) ns -= 0.5;
-                if (standingsFit.size > 64) standingsFit.clear();
-                standingsFit.set(fitKey, ns);
-            }
+            const barCol = isMe ? myHex : standingsHex(row.c);
+            const rowMid = ry + barH / 2;
             const rk = codeOf(row);
-            if (rk) rankBadges.drawBadge(c, x + 47, rowMid - 0.5, 15, rankBadges.codeToDivision(rk));
-            // a name style replaces the plain colour (yours included)
-            const rowName = shortName(row.name, 18);
-            const rowSn = styledName(rowName, row.ns, hexOr(row.nc, nameCol), x + 40 + rkCol, ns, "left", c, rowMid, true);
-            drawText(rowSn.text + nameTxt.slice(rowName.length), x + 40 + rkCol, rowMid, ns, rowSn.fill, "left", true);
-            drawText(scoreTxt, x + W - 12, rowMid, 12, nameCol, "right", true);
+            if (rk) rankBadges.drawBadge(c, x + 7, rowMid, 15, rankBadges.codeToDivision(rk));
+            const bx = x + rkCol, bw = W - rkCol;
+            hudBar(c, bx, ry, bw, barH, Math.max(0.05, (row.score | 0) / best), barCol);
+            const head = row.place > 3 ? "#" + row.place + " " : "";
+            const tail = " - " + fmtNum(row.score | 0) + (row.streak >= 4 ? " x" + row.streak : "");
+            const fit = fitStandingsText(head, shortName(row.name, 18), tail, bw - barH - 4);
+            drawText(fit.text, bx + bw / 2, rowMid, fit.ns, color.guiwhite, "center", true);
             ry += rowH;
         }
         if (myPlace > 1 && top[0]) {
             const gap = (top[0].score | 0) - (r.youScore | 0);
-            drawText(fmtNum(gap) + " behind #1", x + W - 12, ry + 7, 10, HUD.text2, "right", true);
+            drawText(fmtNum(gap) + " behind #1", x + W / 2, ry + 5, 11, HUD.text2, "center", true);
         }
         return y0 + H;
     }
@@ -8909,10 +8513,9 @@ import * as upGrid from './upgradeGridLogic.js';
     function drawRuleDot(c, cx, cy) {
         c.save();
         c.beginPath(); c.arc(cx, cy, 6.5, 0, Math.PI * 2);
-        c.fillStyle = "rgba(14,11,18,0.6)"; c.fill();
-        c.lineWidth = 1.5; c.strokeStyle = HUD.text2; c.stroke();
+        c.fillStyle = "rgba(0,0,0,0.45)"; c.fill();
         c.restore();
-        drawText("?", cx, cy + 0.5, 9.5, HUD.text2, "center", true);
+        drawText("?", cx, cy + 0.5, 10, HUD.head, "center", true);
     }
     function pointsRuleTip(x, y, w, h) {
         if (global.mobile || !global.canvas || global.died) return;
@@ -9149,7 +8752,7 @@ import * as upGrid from './upgradeGridLogic.js';
         if (global.died && !open && deathCardUp() && dc && x < (dc.x + dc.w) * sw && x + W > dc.x * sw && y < (dc.y + dc.h) * sh && y + H > dc.y * sh) { chatInputHide(); return; }
         const c = ctx[2];
         chatPanelRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
-        hudPanel(c, x, y, W, H, { alpha: A * (open ? 1 : rows ? 0.85 : 0.75), fill: open ? HUD.panel : "rgba(43,37,51,0.66)" });
+        hudPanel(c, x, y, W, H, { alpha: A, fill: open ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.3)", r: 4 });
         // the lines, oldest first
         let ly = y + CHAT_PAD_Y + lh / 2;
         const teamHex = playerHexCol() || HUD.sky;
@@ -9603,7 +9206,7 @@ import * as upGrid from './upgradeGridLogic.js';
             const subTxt = t.pts ? "+" + fmtNum(t.pts) + " pts" + (t.sub ? "  ·  " + t.sub : "") : t.sub || "";
             const len = (Math.max(hudTitleW(t.text, base), subTxt ? hudTextW(subTxt, 11) : 0) + 32) * pop;
             const ph = size * 1.6 + (subTxt ? 16 * pop : 0);
-            hudPanel(c, cx - len / 2, cy - size * 0.8, len, ph, { alpha: a, fill: "rgba(43,37,51,0.72)", r: HUD.r * pop });
+            hudPanel(c, cx - len / 2, cy - size * 0.8, len, ph, { alpha: a, fill: "rgba(0,0,0,0.43)", r: HUD.r * pop });
             // coach.js: this plate sits where its card goes on desktop
             global.hudCalloutUp = true;
             global.hudCalloutAt = performance.now();   // raidPerks: the cards wait for it
@@ -9955,7 +9558,7 @@ import * as upGrid from './upgradeGridLogic.js';
         for (const ch of chips) {
             const fl = ch.flash ? Math.max(0, 1 - (now - ch.flash) / 700) : 0;
             hudWell(c, ch.x, chipY, chipW, chipH, 5, hov === ch.i ? "rgba(255,255,255,0.14)" : fl > 0 ? "rgba(255,255,255," + (0.25 * fl) + ")" : HUD.well, HUD.ink, 1.5);
-            drawText(ch.text, ch.x + chipW / 2, chipY + chipH / 2 + 0.5, 9, ch.col, "center", true, g);
+            drawText(labelCase(ch.text), ch.x + chipW / 2, chipY + chipH / 2 + 0.5, 10, ch.col, "center", true, g);
             global.clickables.kit.place(ch.i, ch.x * cr, chipY * cr, chipW * cr, chipH * cr);
             if (hov === ch.i) queueTip(ch.tip[0], ch.tip[1], ch.x + chipW / 2, y);
         }
@@ -10007,7 +9610,7 @@ import * as upGrid from './upgradeGridLogic.js';
                 kitSlotIcons[item.id] = { x: sx + slotW / 2, y: slotY + 30, w: slotW, h: slotH, sx, sy: slotY, at: now };
                 // the item's card: rounded corners, its own colour, its own glyph
                 if (global.kitUnlockHeld !== item.id) drawKitIcon(c, item.id, sx + slotW / 2, slotY + 30, 26);
-                drawText(KIT_SHORT[item.id] || item.name.slice(0, 7).toUpperCase(), sx + slotW / 2, slotY + slotH - 8, 8, color.guiwhite, "center", true, g);
+                drawText(labelCase(KIT_SHORT[item.id] || item.name.slice(0, 7)), sx + slotW / 2, slotY + slotH - 8, 9, color.guiwhite, "center", true, g);
                 global.clickables.kit.place(i, sx * cr, slotY * cr, slotW * cr, slotH * cr);
                 if (hov === i) queueTip(item.name + "  ·  " + keys[i], item.desc + " Drag to move it, or drag it out to throw it away.", sx + slotW / 2, y);
                 if (fl && fl.kind === "use" && flT > 0) {
@@ -10486,7 +10089,7 @@ import * as upGrid from './upgradeGridLogic.js';
         c.save();
         c.globalAlpha = g;
         hudPanel(c, x, y, W, H, { fill: HUD.solid, r: HUD.rBig });
-        c.fillStyle = "rgba(18,14,21,0.6)";
+        c.fillStyle = "rgba(0,0,0,0.6)";
         c.fillRect(x + 14, y + 50, W - 28, 2);
         gemPath(c, x + 28, y + 26, 10);
         c.fillStyle = HUD.gold; c.fill();
@@ -10655,6 +10258,7 @@ import * as upGrid from './upgradeGridLogic.js';
     // mini: the quieter second marker, its glyph and distance only, a little faded
     function drawEdgeMarker(c, e, col, glyph, name, distText, placed, mini = false) {
         const sw = global.screenWidth, sh = global.screenHeight;
+        if (name && name === name.toUpperCase()) name = labelCase(name);
         const label = mini ? (distText || "") : name + (distText ? "  " + distText : "");
         const tw = hudTextW(label, 10.5);
         const pw = tw + 36, ph = 21;
@@ -10770,12 +10374,12 @@ import * as upGrid from './upgradeGridLogic.js';
             const p = trackPos("revenge", rv.x, rv.y, 0.8);
             const s = toScreen(p.x, p.y);
             const d = Math.hypot(p.x - me.x, p.y - me.y);
-            if (!onScreen(s, -20) && d < 3600) marks.push({ pri: 2, s, col: "#ff6b5e", glyph: "skull", name: "REVENGE " + shortName(rv.name, 10).toUpperCase(), d });
+            if (!onScreen(s, -20) && d < 3600) marks.push({ pri: 2, s, col: "#ff6b5e", glyph: "skull", name: "Revenge: " + shortName(rv.name, 10), d });
         }
         if (r.boss && nxShows("boss", { near: newcomer.bossNear() })) {
             const p = trackPos("boss", r.boss.x, r.boss.y, 0.6);
             const s = toScreen(p.x, p.y);
-            if (!onScreen(s, -60)) marks.push({ pri: 1, s, col: r.boss.c || "#c9a8ff", glyph: "boss", name: String(r.boss.name || "BOSS").toUpperCase(), d: Math.hypot(p.x - me.x, p.y - me.y) });
+            if (!onScreen(s, -60)) marks.push({ pri: 1, s, col: r.boss.c || "#c9a8ff", glyph: "boss", name: String(r.boss.name || "Boss"), d: Math.hypot(p.x - me.x, p.y - me.y) });
         }
         if (r.bloom && r.bloom.until > Date.now()) {
             const s = toScreen(r.bloom.x, r.bloom.y);
@@ -10792,7 +10396,7 @@ import * as upGrid from './upgradeGridLogic.js';
             if (onScreen(s, -20)) continue;
             const d = Math.hypot(tp.x - me.x, tp.y - me.y);
             if (!nearest || d < nearest.d) {
-                nearest = { pri: 3, s, col: "#ffb347", glyph: "streak", name: "STREAK x" + p.streak + " " + shortName(p.name, 10).toUpperCase(), d };
+                nearest = { pri: 3, s, col: "#ffb347", glyph: "streak", name: shortName(p.name, 10) + " x" + p.streak, d };
             }
         }
         if (nearest) marks.push(nearest);
@@ -10801,7 +10405,7 @@ import * as upGrid from './upgradeGridLogic.js';
         if (dmate && dmate.alive && dmate.x != null) {
             const tp = trackPos("duomate", dmate.x, dmate.y, 0.8);
             const s = toScreen(tp.x, tp.y);
-            if (!onScreen(s, -30)) marks.push({ pri: 0, s, col: playerHexCol() || HUD.sky, glyph: "mate", name: shortName(dmate.name || "Teammate", 12).toUpperCase(), d: Math.hypot(tp.x - me.x, tp.y - me.y) });
+            if (!onScreen(s, -30)) marks.push({ pri: 0, s, col: playerHexCol() || HUD.sky, glyph: "mate", name: shortName(dmate.name || "Teammate", 12), d: Math.hypot(tp.x - me.x, tp.y - me.y) });
         }
         raidHeat.worldMarks(marks, toScreen, onScreen, me, trackPos, ratio);
         try { crowns.worldMarks(marks, toScreen, onScreen, me, trackPos); } catch (e) { /* */ }
@@ -11428,7 +11032,7 @@ import * as upGrid from './upgradeGridLogic.js';
         evHud.callAt = performance.now();
         try { gameSound.dustBank(); } catch (e) { /* */ }
     }
-    const evPanelOpts = { alpha: 1, r: 13, fill: "rgba(43,37,51,0.94)" };
+    const evPanelOpts = { alpha: 1, r: 13, fill: "rgba(0,0,0,0.55)" };
     function drawEventCallout() {
         if (!evHud.callAt) return;
         const age = performance.now() - evHud.callAt;
@@ -12396,10 +12000,11 @@ import * as upGrid from './upgradeGridLogic.js';
             cornerCache.wy0 = cWy0;
             cornerCache.epoch = epoch;
         }
+        const mmR = size * 0.12;
         ctx[2].save();
-        // round island, round map
-        ctx[2].beginPath();
-        ctx[2].arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+        roundRectPath(ctx[2], x, y, size, size, mmR);
+        ctx[2].fillStyle = "rgba(0,0,0,0.35)";
+        ctx[2].fill();
         ctx[2].clip();
         const ppw = S / cSpan;
         ctx[2].imageSmoothingEnabled = true;
@@ -12416,16 +12021,12 @@ import * as upGrid from './upgradeGridLogic.js';
         drawMapMarkers(T, x, y, size, size, 8.5, 3.4);
         strokeStormCircle(ctx[2], T.X, T.Y, T.s, x, y, size, size);
         ctx[2].restore();
-        // the plate's rim: ink ring, ink drop underneath, faint inner bevel
-        const c2 = ctx[2], mcx = x + size / 2, mcy = y + size / 2, R = size / 2;
+        const c2 = ctx[2];
         c2.save();
-        c2.lineWidth = HUD.lw;
-        c2.strokeStyle = HUD.ink;
-        c2.beginPath(); c2.arc(mcx, mcy, R, 0, Math.PI * 2); c2.stroke();
-        c2.beginPath(); c2.arc(mcx, mcy + HUD.lip, R, 0.05 * Math.PI, 0.95 * Math.PI); c2.stroke();
-        c2.lineWidth = 1.5;
-        c2.strokeStyle = "rgba(255,255,255,0.12)";
-        c2.beginPath(); c2.arc(mcx, mcy, R - 2.5, 0, Math.PI * 2); c2.stroke();
+        c2.lineWidth = 3;
+        c2.strokeStyle = "#555555";
+        roundRectPath(c2, x, y, size, size, mmR);
+        c2.stroke();
         c2.restore();
     }
 
@@ -12724,14 +12325,15 @@ import * as upGrid from './upgradeGridLogic.js';
                 const my = global.screenHeight - len - HUD.edge - HUD.lip;
                 drawFortniteMinimap(mx, my, len);
                 hudDrawn.minimap = { x: mx, y: my, w: len, h: len };
-                // Oct 8: no "Map M" label beside it any more (M still opens the big
-                // map, and a hover on the minimap says so); the rect stays the map's corner
+                const mapTxt = "Map (" + keyLabel("KEY_TOGGLE_MAP", "M") + ")";
+                const mapLx = Math.round(mx - 7), mapLy = Math.round(my + len - 8);
+                hudTitle(mapTxt, mapLx, mapLy, 11, HUD.head, "right");
                 if (global.canvas && !global.died) {
                     const crm = global.canvas.height / global.screenHeight / global.ratio;
                     const mxm = global.mouse.x / crm, mym = global.mouse.y / crm;
                     if (Math.hypot(mxm - (mx + len / 2), mym - (my + len / 2)) < len / 2) queueTip("Map  ·  " + keyLabel("KEY_TOGGLE_MAP", "M"), "Press " + keyLabel("KEY_TOGGLE_MAP", "M") + " for the full map.", mx + len / 2, my, true);
                 }
-                const hx = mx - 10;
+                const hx = mapLx - hudTitleW(mapTxt, 11) - 10;
                 global.minimapHintRect = { x: hx, y: my - 10, w: global.screenWidth - hx, h: global.screenHeight - my + 10 };
             } else if (window.terrainRenderer && window.terrainRenderer.ready && global.gems && global.gems.cap > 0) {
                 const mx = global.screenWidth - spacing - len - 5;
@@ -12968,7 +12570,7 @@ import * as upGrid from './upgradeGridLogic.js';
         if (hp !== V.hp || hpMax !== V.hpMax) { V.hp = hp; V.hpMax = hpMax; V.hpTxt = "HP " + fmtNum(hp) + " / " + fmtNum(hpMax); }
         if (sh !== V.sh || shMax !== V.shMax) { V.sh = sh; V.shMax = shMax; V.shTxt = "Shield " + fmtNum(sh) + " / " + fmtNum(shMax); }
         const w = mm.w, x = mm.x;
-        const hH = global.mobile ? 15 : 17, sH = global.mobile ? 13 : 14, gap = 4;
+        const hH = global.mobile ? 19 : 20, sH = global.mobile ? 17 : 18, gap = 4;
         const total = (shMax ? sH + gap : 0) + hH;
         // desktop: above the FPS line (which sits 8 over the map)
         let y0 = global.mobile ? mm.y + mm.h + 18 : mm.y - 22 - total;
@@ -12980,12 +12582,19 @@ import * as upGrid from './upgradeGridLogic.js';
         let y = y0;
         if (shMax) {
             hudBar(c, x, y, w, sH, sf, SHIELD_COL);
-            drawText(V.shTxt, x + w / 2, y + sH / 2, sH - 4, HUD.head, "center", true, 1);
+            vitalLabel(c, V.shTxt, x, y, w, sH);
             y += sH + gap;
         }
         hudBar(c, x, y, w, hH, hf, HP_COLS[Math.max(0, Math.min(20, Math.round((me.health || 0) * 20)))]);
-        drawText(V.hpTxt, x + w / 2, y + hH / 2, hH - 5, HUD.head, "center", true, 1);
+        vitalLabel(c, V.hpTxt, x, y, w, hH);
         vitalsRect = { x: x - 4, y: y0 - 4, w: w + 8, h: total + 8 };
+    }
+    function vitalLabel(c, text, x, y, w, h) {
+        const boost = config.graphical.fontSizeBoost || 0;
+        let size = Math.max(7, (h - 5) / 1.12 - boost);
+        const tw = hudTitleW(text, size);
+        if (tw > w - 14) size = Math.max(6, size * (w - 14) / tw);
+        hudTitle(text, x + w / 2, y + h / 2, size, HUD.head, "center", 1, c);
     }
     window.dwVitals = () => ({ rect: vitalsRect, hp: VITAL_W.hpTxt, sh: VITAL_W.shTxt });
 
@@ -13406,7 +13015,7 @@ import * as upGrid from './upgradeGridLogic.js';
         const cx = x + h / 2 + 2, cy = y + h / 2, rr = h * 0.33;
         c.save();
         c.lineCap = "round";
-        c.lineWidth = 5; c.strokeStyle = "rgba(18,14,21,0.55)";
+        c.lineWidth = 5; c.strokeStyle = "rgba(0,0,0,0.55)";
         c.beginPath(); c.arc(cx, cy, rr, 0, Math.PI * 2); c.stroke();
         c.lineWidth = 5; c.strokeStyle = HUD.gold;
         c.beginPath(); c.arc(cx, cy, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, st.progress)); c.stroke();
@@ -13494,7 +13103,7 @@ import * as upGrid from './upgradeGridLogic.js';
         // base: a dark see-through disc with a fine rim and the dead zone ring
         c.globalAlpha = 0.55;
         c.beginPath(); c.arc(ox, oy, R, 0, Math.PI * 2);
-        c.fillStyle = "rgba(14,11,18,0.5)"; c.fill();
+        c.fillStyle = "rgba(0,0,0,0.5)"; c.fill();
         c.lineWidth = 2; c.strokeStyle = "rgba(255,243,217,0.35)"; c.stroke();
         c.globalAlpha = 0.35;
         c.beginPath(); c.arc(ox, oy, R * STICK.DEAD, 0, Math.PI * 2);
@@ -13587,7 +13196,7 @@ import * as upGrid from './upgradeGridLogic.js';
                     hudWell(c, x + w - bw + 4, y - 6, bw, 17, 8, HUD.wellSolid, HUD.ink, 2);
                     drawText("x" + n, x + w - bw / 2 + 4, y + 2.5, 10.5, color.teal, "center", true);
                 }
-                drawText(KIT_SHORT[item.id] || item.name.slice(0, 7).toUpperCase(), x + w / 2, y + h - 9, 8.5, color.guiwhite, "center", true);
+                drawText(labelCase(KIT_SHORT[item.id] || item.name.slice(0, 7)), x + w / 2, y + h - 9, 9, color.guiwhite, "center", true);
                 // the server's short use cooldown as a sweep
                 const used = fl && fl.kind === "use" ? now - fl.at : 1e9;
                 if (used < 600) {
@@ -13596,7 +13205,7 @@ import * as upGrid from './upgradeGridLogic.js';
                     c.arc(x + w / 2, y + h / 2, Math.max(w, h), -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - used / 600));
                     c.closePath();
                     c.save(); roundRectPath(c, x, y, w, h, 12); c.clip();
-                    c.fillStyle = "rgba(14,11,18,0.6)"; c.fillRect(x, y, w, h);
+                    c.fillStyle = "rgba(0,0,0,0.6)"; c.fillRect(x, y, w, h);
                     c.restore();
                 }
             } else {
@@ -14174,28 +13783,29 @@ import * as upGrid from './upgradeGridLogic.js';
     const fitText = (txt, cx, cy, size, maxW, col) => {
         const c = ctx[2];
         let s2 = size;
-        c.font = "bold " + s2 + "px Rubik, Ubuntu";
+        c.font = "bold " + s2 + "px Ubuntu, sans-serif";
         let w = c.measureText(txt).width;
         while (w > maxW && s2 > 8) {
             s2 -= 0.5;
-            c.font = "bold " + s2 + "px Rubik, Ubuntu";
+            c.font = "bold " + s2 + "px Ubuntu, sans-serif";
             w = c.measureText(txt).width;
         }
         drawText(txt, cx, cy, s2, col, "center");
     };
-    const deathStat = (label, value, iconKind, bx, by, bw, alpha) => {
+    const deathStat = (label, value, iconKind, bx, by, bw, alpha, bh = 40) => {
         const c = ctx[2];
+        label = labelCase(label);
         c.save();
         c.globalAlpha = alpha;
-        hudWell(c, bx, by, bw, 40, 8, HUD.well, HUD.ink, 2);
+        hudWell(c, bx, by, bw, bh, 8, HUD.well, HUD.ink, 2);
         c.restore();
-        if (iconKind) drawDeathIcon(iconKind, bx + 20, by + 20, 17, alpha);
+        if (iconKind) drawDeathIcon(iconKind, bx + 20, by + bh / 2, 17, alpha);
         // shrink to fit the box: long labels and six-figure values both happen
         const maxW = bw - 50;
         let ls = 11; while (ls > 7.5 && hudTextW(label, ls) > maxW) ls -= 0.5;
         let vs = 17; while (vs > 9 && hudTitleW(value, vs) > maxW) vs -= 0.5;
-        drawText(label, bx + 40, by + 12, ls, HUD.text2, "left");
-        hudTitle(value, bx + 40, by + 27, vs, HUD.head, "left", alpha);
+        drawText(label, bx + 40, by + bh / 2 - 8, ls, HUD.text2, "left");
+        hudTitle(value, bx + 40, by + bh / 2 + 7, vs, HUD.head, "left", alpha);
     };
     const roundRectPath = (c, x, y, w, h, r) => {
         // on a game layer, the sides land on whole device pixels: plates,
@@ -14467,7 +14077,7 @@ import * as upGrid from './upgradeGridLogic.js';
         // what you kept
         c.save();
         c.globalAlpha = A;
-        hudWell(c, hx, y, iw, KEPT_H, 10, "rgba(14,11,18,0.45)", HUD.ink, 2);
+        hudWell(c, hx, y, iw, KEPT_H, 10, "rgba(0,0,0,0.45)", HUD.ink, 2);
         c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
         gemPath(c, hx + 22, y + KEPT_H / 2, 7); c.fill(); c.stroke();
         c.restore();
@@ -14537,31 +14147,27 @@ import * as upGrid from './upgradeGridLogic.js';
         const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
         const perkIcons = perkLine ? Math.min(10, raidPerks.build().length) : 0;
         const hasRank = rankPanel.hasContent();
-        const HEAD = 62, STEP = 46, TILE = 40, NEXT_H = 40, RANK_H = 106, PLAY_CSS_H = 58;
-        const pad = 20, gap = 14;
-        // ── layout ── (in card units; a card taller than the screen is drawn
-        // scaled down by k, and sw/sh are the screen in card units)
+        const HEAD = 64, TILE = 44, NEXT_H = 40, WHO_H = 74, PLAY_CSS_H = 58;
+        const RANK_H = hasRank ? rankPanel.panelHeight() : 0;
+        const pad = 18, gap = 10, IN = 12;
         const cardLayout = (sw, sh) => {
             const W = Math.min(1040, sw - 32);
             const two = W >= 820;
             const colW = two ? Math.floor((W - pad * 2 - gap) / 2) : W - pad * 2;
-            // canvas units per CSS px: the Play again button is DOM, sized in px
             const cssK = sh / Math.max(1, window.innerHeight);
             const FOOT = Math.round(PLAY_CSS_H * cssK);
             const block = deathText.layoutText({
                 pts: dln.head + " (" + dln.lost + ")", extras,
                 sub: dln.sub || "Banked gems are safe, and carried gems only count once you bank them.",
-                perkLine, perkIcons, w: colW, measure: hudTextW,
+                perkLine, perkIcons, w: colW - IN * 2, measure: hudTextW,
             });
-            const tilesH = 3 * STEP - (STEP - TILE);
+            const gridH = 3 * TILE + 2 * gap;
+            const tilesH = gridH + gap;
             const leftH = tilesH + block.h;
-            // the right column: who got you (at least 74 tall), then what's next
-            const whoH = two ? Math.max(74, leftH - 10 - NEXT_H) : 74;
-            const bodyH = two ? Math.max(leftH, whoH + 10 + NEXT_H) : leftH + gap + whoH + 10 + NEXT_H;
-            const H = pad + HEAD + gap + bodyH + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 12;
-            // the DOM buttons (Spectate, Home) sit under the card
+            const bodyH = two ? leftH : leftH + gap + WHO_H + gap + NEXT_H;
+            const H = pad + HEAD + gap + bodyH + (hasRank ? gap + RANK_H : 0) + gap + FOOT + pad;
             const BTN = Math.round((40 + 22) * cssK);
-            return { W, two, colW, cssK, FOOT, block, tilesH, leftH, whoH, bodyH, H, BTN };
+            return { W, two, colW, cssK, FOOT, block, gridH, tilesH, leftH, bodyH, H, BTN };
         };
         const SW = global.screenWidth, SH = global.screenHeight;
         let k = 1, Lc = cardLayout(SW, SH);
@@ -14572,11 +14178,10 @@ import * as upGrid from './upgradeGridLogic.js';
             Lc = cardLayout(SW / k, SH / k);
         }
         const sw = SW / k, sh = SH / k;
-        const { W, two, colW, cssK, FOOT, block, tilesH, leftH, whoH, bodyH, H, BTN } = Lc;
+        const { W, two, colW, cssK, FOOT, block, gridH, tilesH, leftH, bodyH, H, BTN } = Lc;
         const px = Math.round(sw / 2 - W / 2);
         const py = Math.round(Math.max(12, sh - H - BTN - 12));
         const cx = sw / 2;
-        // the killer sits in the middle of the room above the card
         global.deathCamLift = Math.max(0, sh / 2 - Math.max(110, py / 2 + 10)) * k;
         deathCardFrac(px / sw, py / sh, W / sw, (H + BTN) / sh);
         global.deathPanelCss = {
@@ -14586,11 +14191,9 @@ import * as upGrid from './upgradeGridLogic.js';
         if (k !== 1) { c.save(); c.scale(k, k); }
 
         hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
-        // points that move while you're down say why, over the card
         drawPtsPops(px + W - 16, Math.max(14, py - 16), "right", -1);
 
-        // ── header: what happened, and where you stand ──
-        const hx = px + pad, hy = py + pad, hw = W - pad * 2;
+        const hx = px + pad, hy = py + pad, hw = W - pad * 2, hmid = hy + HEAD / 2;
         c.save();
         c.globalAlpha = A;
         hudWell(c, hx, hy, hw, HEAD, 10, "rgba(242,184,60,0.12)", HUD.ink, 2.5);
@@ -14605,47 +14208,39 @@ import * as upGrid from './upgradeGridLogic.js';
                 ? "Killed by " + global.finalKillers.join(" and ")
                 : "Nobody finished you off";
         const place = (you.place || global.royale.place) | 0;
-        // one number for the header and the "Points: X" line (scoreLogic cardPoints): the
         const score = you.score != null || you.pts ? scoreText.cardPoints(you) : (global.royale.youScore | 0);
         const placeTxt = place > 0 ? "#" + place : "";
         const placeW = placeTxt ? hudTitleW(placeTxt, 28) : 0;
         const scoreTxt = util.formatLargeNumber(Math.round(score));
-        const scoreR = hx + hw - 16 - (placeW ? placeW + 22 : 0);
+        const scoreR = hx + hw - IN - 4 - (placeW ? placeW + 22 : 0);
         const scoreW = Math.max(hudTitleW(scoreTxt, 26), hudTextW("POINTS", 11));
-        // the tank you died in: a picture left of the title and "Tank: <name>"
         const dTank = deathTankOf();
-        const PORT = dTank ? HEAD - 12 : 0, tx0 = hx + 16 + (PORT ? PORT + 4 : 0);
+        const PORT = dTank ? HEAD - 16 : 0, tx0 = PORT ? hx + 8 + PORT + IN : hx + IN + 4;
         if (dTank) {
             c.save();
             c.globalAlpha = A;
-            hudWell(c, hx + 8, hy + 6, PORT, PORT, 9, HUD.well, HUD.ink, 2);
+            hudWell(c, hx + 8, hy + 8, PORT, PORT, 9, HUD.well, HUD.ink, 2);
             try {
                 const picture = mockupPicture(dTank.type, dTank.color);
                 const position = global.mockups[parseInt(String(dTank.type).split("-")[0])].position;
                 const sc = (PORT * 0.8) / position.axis, ang = -Math.PI / 4;
                 const pcx = hx + 8 + PORT / 2 - sc * (position.middle.x * Math.cos(ang) - position.middle.y * Math.sin(ang));
-                const pcy = hy + 6 + PORT / 2 - sc * (position.middle.x * Math.sin(ang) + position.middle.y * Math.cos(ang));
+                const pcy = hy + 8 + PORT / 2 - sc * (position.middle.x * Math.sin(ang) + position.middle.y * Math.cos(ang));
                 drawEntity(picture.color, pcx, pcy, picture, 1, 1, sc / picture.size, 1, ang, true, c);
-            } catch (e) { /* no mockup: the recess stays empty */ }
+            } catch (e) { void e; }
             c.restore();
         }
-        hudTitle("You died", tx0, hy + 26, 28, HUD.gold, "left", A);
-        const textRoom = Math.max(120, scoreR - scoreW - 30 - tx0);
-        if (dTank && dTank.name) {
-            const tl = "Tank: " + dTank.name, tlx = tx0 + hudTitleW("You died", 28) + 14;
-            const f = fitLine(tl, 13, 10, tx0 + textRoom - tlx);
-            if (tx0 + textRoom - tlx > 60) drawText(f.txt, tlx, hy + 27, f.qs, HUD.head, "left", true, A);
-        }
-        const kb = fitLine(killedBy, 13, 10, textRoom);
-        drawText(kb.txt, tx0, hy + 47, kb.qs, HUD.text, "left", true, A);
-        drawText("POINTS", scoreR, hy + 18, 11, HUD.text2, "right", true, A);
-        hudTitle(scoreTxt, scoreR, hy + 42, 26, HUD.gold, "right", A);
-        if (placeTxt) hudTitle(placeTxt, hx + hw - 16, hy + 34, 28, HUD.head, "right", A);
+        hudTitle("You died", tx0, hmid - 9, 28, HUD.gold, "left", A);
+        const textRoom = Math.max(120, scoreR - scoreW - 24 - tx0);
+        const whoLine = killedBy + (dTank && dTank.name ? " · " + dTank.name : "");
+        const kb = fitLine(whoLine, 13, 10, textRoom);
+        drawText(kb.txt, tx0, hmid + 14, kb.qs, HUD.text, "left", true, A);
+        drawText("Points", scoreR, hmid - 11, 12, HUD.text2, "right", true, A);
+        hudTitle(scoreTxt, scoreR, hmid + 9, 26, HUD.gold, "right", A);
+        if (placeTxt) hudTitle(placeTxt, hx + hw - IN - 4, hmid, 28, HUD.head, "right", A);
 
-        // ── left: the life in numbers ──
         const by = hy + HEAD + gap;
-        const half = (colW - 8) / 2;
-        // the points, split the way the standings add them up (scoreLogic.js): banked
+        const half = (colW - gap) / 2;
         const pt = scoreText.tiles(you);
         const rows = [
             pt[0],
@@ -14658,87 +14253,91 @@ import * as upGrid from './upgradeGridLogic.js';
         c.save();
         c.globalAlpha = A;
         for (let i = 0; i < rows.length; i++) {
-            deathStat(rows[i][0], rows[i][1], rows[i][2], hx + (i % 2) * (half + 8), by + ((i / 2) | 0) * STEP, half, A);
+            deathStat(rows[i][0], rows[i][1], rows[i][2], hx + (i % 2) * (half + gap), by + ((i / 2) | 0) * (TILE + gap), half, A, TILE);
         }
         c.restore();
-        // the Points line, the extras and the perks row, laid out to fit (wrapped, never
-        const ty0 = by + tilesH, lx = hx + colW / 2;
+        const ty0 = by + tilesH, lx = hx + IN;
+        c.save();
+        c.globalAlpha = A;
+        hudWell(c, hx, ty0, colW, block.h, 10, "rgba(0,0,0,0.45)", HUD.ink, 2);
+        c.restore();
         for (const r of block.rows) {
-            const ry = ty0 + r.y;
-            if (r.kind === "pts") drawText(r.text, lx, ry, r.size, dln.hurt ? "#ff9a8c" : HUD.gold, "center", true, A);
-            else if (r.kind === "ex") drawText(r.text, lx, ry, r.size, color.gold, "center", true, A);
-            else if (r.kind === "sub") drawText(r.text, lx, ry, r.size, HUD.text2, "center", true, A);
-            else if (r.kind === "icons") raidPerks.drawDeathIcons(c, lx - r.iconsW / 2, ry, deathText.TEXT.icon, A);
+            const ly = ty0 + r.y;
+            if (r.kind === "pts") drawText(r.text, lx, ly, r.size, dln.hurt ? "#ff9a8c" : HUD.gold, "left", true, A);
+            else if (r.kind === "ex") drawText(r.text, lx, ly, r.size, color.gold, "left", true, A);
+            else if (r.kind === "sub") drawText(r.text, lx, ly, r.size, HUD.text2, "left", true, A);
+            else if (r.kind === "icons") raidPerks.drawDeathIcons(c, lx, ly, deathText.TEXT.icon, A);
             else if (r.kind === "perk") {
-                const iw = r.iconsW || 0, x0 = lx - (iw + hudTextW(r.text, r.size)) / 2;
-                if (iw) raidPerks.drawDeathIcons(c, x0, ry, deathText.TEXT.icon, A);
-                drawText(r.text, x0 + iw, ry, r.size, HUD.gold, "left", true, A);
+                const piw = r.iconsW || 0;
+                if (piw) raidPerks.drawDeathIcons(c, lx, ly, deathText.TEXT.icon, A);
+                drawText(r.text, lx + piw, ly, r.size, HUD.gold, "left", true, A);
             }
         }
 
-        // ── right: who got you (revenge), then what's next ──
         const rx = two ? hx + colW + gap : hx;
         const ry = two ? by : by + leftH + gap;
+        const whoH = two ? gridH : WHO_H;
         c.save();
         c.globalAlpha = A;
-        hudWell(c, rx, ry, colW, whoH, 10, rv ? "rgba(255,107,94,0.10)" : "rgba(14,11,18,0.45)", HUD.ink, 2);
+        hudWell(c, rx, ry, colW, whoH, 10, rv ? "rgba(255,107,94,0.10)" : "rgba(0,0,0,0.45)", HUD.ink, 2);
         c.restore();
-        const wy = ry + whoH / 2;
+        const wy = ry + whoH / 2, wtx = rx + IN + 44, wRoom = colW - IN * 2 - 44;
         if (rv) {
-            drawSkull(c, rx + 34, wy, 13, "#ff6b5e");
-            drawText(rv.tough ? "TOO STRONG FOR NOW" : "REVENGE", rx + 64, wy - 24, 11, HUD.text2, "left", true, A);
+            drawSkull(c, rx + IN + 20, wy, 13, "#ff6b5e");
+            drawText(rv.tough ? "Too strong for now" : "Revenge", wtx, wy - 24, 12, HUD.text2, "left", true, A);
             const nm = shortName(rv.name || "Unnamed", 18);
-            let ns = 24; while (ns > 14 && hudTitleW(nm, ns) > colW - 84) ns -= 1;
-            hudTitle(nm, rx + 64, wy + 2, ns, "#ff9a8c", "left", A);
+            let ns = 24; while (ns > 14 && hudTitleW(nm, ns) > wRoom) ns -= 1;
+            hudTitle(nm, wtx, wy + 2, ns, "#ff9a8c", "left", A);
             const sub = rv.tough ? "They're much stronger than you. Get bigger first, then get them back."
                 : rv.alive ? "They're marked for you. Get them for +" + fmtNum(rv.bonus || 200) + " gems." : "They'll be marked for you once they're back.";
-            const f = fitLine(sub, 12, 9.5, colW - 84);
-            drawText(f.txt, rx + 64, wy + 25, f.qs, HUD.text, "left", true, A);
+            const sf = fitLine(sub, 12, 9.5, wRoom);
+            drawText(sf.txt, wtx, wy + 25, sf.qs, HUD.text, "left", true, A);
         } else {
-            drawDeathIcon(cause === "storm" ? "clock" : "skull", rx + 34, wy, 22, A * 0.8);
-            const t1 = fitLine(killedBy, 15, 10, colW - 84);
-            drawText(t1.txt, rx + 64, wy - 9, t1.qs, HUD.head, "left", true, A);
-            drawText("No one to get revenge on.", rx + 64, wy + 13, 12, HUD.text2, "left", true, A);
+            drawDeathIcon(cause === "storm" ? "clock" : "skull", rx + IN + 20, wy, 22, A * 0.8);
+            const t1 = fitLine(killedBy, 15, 10, wRoom);
+            drawText(t1.txt, wtx, wy - 9, t1.qs, HUD.head, "left", true, A);
+            drawText("No one to get revenge on.", wtx, wy + 13, 12, HUD.text2, "left", true, A);
         }
-        const nyTop = ry + whoH + 10;
+        const nyTop = two ? ty0 : ry + whoH + gap;
+        const nextH = two ? block.h : NEXT_H;
         c.save();
         c.globalAlpha = A;
-        hudWell(c, rx, nyTop, colW, NEXT_H, 10, "rgba(14,11,18,0.45)", HUD.ink, 2);
+        hudWell(c, rx, nyTop, colW, nextH, 10, "rgba(0,0,0,0.45)", HUD.ink, 2);
         c.restore();
-        const ny = nyTop + NEXT_H / 2;
+        const ny = nyTop + nextH / 2;
         const nextTxt = you.next ? "Next: " + String(you.next).charAt(0).toLowerCase() + String(you.next).slice(1) : "Next: a new contract when you land";
-        const fn = fitLine(nextTxt, 12, 9.5, colW - 44);
+        const fn = fitLine(nextTxt, 12, 9.5, colW - IN * 2 - 18);
         c.save();
         c.globalAlpha = A;
         c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
-        c.beginPath(); c.arc(rx + 18, ny, 5.5, 0, Math.PI * 2); c.fill(); c.stroke();
-        c.beginPath(); c.arc(rx + 18, ny, 2, 0, Math.PI * 2); c.fillStyle = HUD.ink; c.fill();
+        c.beginPath(); c.arc(rx + IN + 6, ny, 5.5, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.beginPath(); c.arc(rx + IN + 6, ny, 2, 0, Math.PI * 2); c.fillStyle = HUD.ink; c.fill();
         c.restore();
-        drawText(fn.txt, rx + 30, ny, fn.qs, HUD.gold, "left", true, A);
+        drawText(fn.txt, rx + IN + 18, ny, fn.qs, HUD.gold, "left", true, A);
 
-        // ── ranked: the life's rank result, full width ──
         let fy = by + bodyH + gap;
         if (hasRank) {
             try {
                 rankPanel.draw(c, hx, fy, hw, RANK_H,
                     { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk }, A);
-            } catch (e) { /* never break the death screen */ }
+            } catch (e) { void e; }
             fy += RANK_H + gap;
         }
 
-        // ── footer: the Play again button (DOM, placed here) ──
-        const playW = Math.min(W - pad * 2, Math.round((buildBtnLabels.respawnAs(you) ? 640 : 380) * cssK));
+        const pair = !!buildBtnLabels.respawnAs(you, global.diedAsTank);
+        const playW = pair ? hw : Math.min(colW, Math.round(380 * cssK));
         const toCssX = window.innerWidth / Math.max(1, sw), toCssY = window.innerHeight / Math.max(1, sh);
         global.deathPlayCss = {
             cx: Math.round(cx * toCssX),
             top: Math.round(fy * toCssY),
             w: Math.round(playW * toCssX),
             h: PLAY_CSS_H,
+            gap: Math.round(gap * toCssX),
+            split: pair ? Math.round(colW * toCssX) : 0,
         };
         global.clickables.royalePrev.hide();
         global.clickables.royaleNext.hide();
         global.clickables.deathRespawn.hide();
-        // DOM Play again / Spectate / Home take the clicks.
         if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) global.clickables.royalePlay.hide();
         else if (!global.disconnected) {
             const cr = global.canvas.height / global.screenHeight / global.ratio;
@@ -14791,6 +14390,9 @@ import * as upGrid from './upgradeGridLogic.js';
     }
     // round 11: shrink a DOM button's font until its label fits (never "Respa..."),
     // measured once per label / width / base size
+    function setFontSize(el, v) {
+        if (el.style.getPropertyValue("font-size") !== v || el.style.getPropertyPriority("font-size") !== "important") el.style.setProperty("font-size", v, "important");
+    }
     function fitBtnFont(el, lab, text, widthPx, fsPx) {
         const c = el._fit || (el._fit = {});
         const key = text + "|" + widthPx + "|" + fsPx;
@@ -14800,8 +14402,8 @@ import * as upGrid from './upgradeGridLogic.js';
         try {
             if (lab.textContent !== text) lab.textContent = text;
             el.style.width = widthPx;
-            el.style.fontSize = fs + "px";
-            while (fs > 10 && lab.scrollWidth > lab.clientWidth + 1) { fs -= 1; el.style.fontSize = fs + "px"; }
+            setFontSize(el, fs + "px");
+            while (fs > 10 && lab.scrollWidth > lab.clientWidth + 1) { fs -= 1; setFontSize(el, fs + "px"); }
         } catch (e) { /* */ }
         return (c.fs = fs + "px");
     }
@@ -15077,9 +14679,7 @@ import * as upGrid from './upgradeGridLogic.js';
             if (global.GUIStatus.renderUpgrades) drawAvailableUpgrades(spacing, alcoveSize);
             if (global.mobile) drawTouchHud();
         }
-        if (global.showTree) {
-            drawUpgradeTree(spacing, alcoveSize);
-        }
+        if (global.showTree) global.hudCardUp = "tankTree";
         if (shake) ctx[2].translate(-shake.dx, -shake.dy);
         global.metrics.lastrender = getNow();
     }
@@ -15317,12 +14917,13 @@ import * as upGrid from './upgradeGridLogic.js';
                 let pcA = pc;
                 if (ra && asBuild) {
                     // Respawn as <Tank> is the bigger of the two (wider and a little taller, centred
-                    const gap = 12, wa = Math.round((pc.w - gap) * 0.4), wb = pc.w - gap - wa;
-                    const x0 = pc.cx - (wa + gap + wb) / 2, grow = 8;
+                    const gap = pc.gap || 12, wa = pc.split ? Math.max(60, Math.min(pc.split, pc.w - gap - 60)) : Math.round((pc.w - gap) * 0.4), wb = pc.w - gap - wa;
+                    const x0 = pc.cx - pc.w / 2;
                     pcA = { cx: Math.round(x0 + wa / 2), top: pc.top, w: wa, h: pc.h, big: pc.big };
                     const bfs = Math.max(12, Math.min(pc.big ? 26 : 22, Math.floor((wb - 28) / (Math.max(1, ra.label.length) * 0.55)))) + "px";
-                    const wantB = { left: Math.round(x0 + wa + gap + wb / 2) + "px", top: Math.round(pc.top - grow / 2) + "px", width: wb + "px", height: (pc.h + grow) + "px", fontSize: fitBtnFont(asBuild, asBuild.firstChild, ra.label, wb + "px", bfs) };
+                    const wantB = { left: Math.round(x0 + wa + gap + wb / 2) + "px", top: pc.top + "px", width: wb + "px", height: pc.h + "px" };
                     for (const k in wantB) if (asBuild.style[k] !== wantB[k]) asBuild.style[k] = wantB[k];
+                    setFontSize(asBuild, fitBtnFont(asBuild, asBuild.firstChild, ra.label, wb + "px", bfs));
                     const bl = asBuild.firstChild, bs = asBuild.lastChild;
                     if (bl.textContent !== ra.label) bl.textContent = ra.label;
                     if (bs.textContent !== ra.sub) bs.textContent = ra.sub;
@@ -15341,8 +14942,9 @@ import * as upGrid from './upgradeGridLogic.js';
                 if (key0.textContent !== keyTxt) key0.textContent = keyTxt;
                 setStyle(key0, "display", keyTxt ? "" : "none");
                 const fs = st.ended ? playAgainFont(st, pcA, keyTxt, labTxt) : fitBtnFont(again, lab0, labTxt, pcA.w + "px", playAgainFont(st, pcA, keyTxt, labTxt));
-                const want = { left: pcA.cx + "px", top: pcA.top + "px", width: pcA.w + "px", height: pcA.h + "px", fontSize: fs };
+                const want = { left: pcA.cx + "px", top: pcA.top + "px", width: pcA.w + "px", height: pcA.h + "px" };
                 for (const k in want) if (again.style[k] !== want[k]) again.style[k] = want[k];
+                setFontSize(again, fs);
                 const lab = again.firstChild, key = again.lastChild;
                 if (lab.textContent !== labTxt) lab.textContent = labTxt;
                 setStyle(lab, "whiteSpace", st.ended ? "normal" : "");
@@ -15830,6 +15432,7 @@ import * as upGrid from './upgradeGridLogic.js';
             tutorial.hook();
             try { coach.hook(); } catch (e) { }
             drawTopIndicators();
+            if (global.showTree) drawUpgradeTree();
             if (global.gameStart && !global.died && !global.disconnected) {
                 let ram = 0;
                 const type = gui && gui.type;

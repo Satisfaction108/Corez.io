@@ -119,6 +119,7 @@ export function setRaidBonus(p) {
 
 export const isGuestNudge = () => !!S.guest;
 export const hasContent = () => !!(S.guest || S.steps.length || (S.acct && S.diedAt));
+export const panelHeight = () => S.guest ? 80 : 106;
 export const debugState = () => S;
 
 /* ── the timeline ────────────────────────────────────────────────────── */
@@ -326,25 +327,25 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     c.globalAlpha = alpha;
     // the HUD's recessed well (app.js hudWell): dark fill, ink keyline
     rrect(c, x, y, w, h, 10);
-    c.fillStyle = 'rgba(14,11,18,0.55)';
+    c.fillStyle = 'rgba(0,0,0,0.55)';
     c.fill();
     c.lineWidth = 2;
     c.strokeStyle = '#120e15';
     c.stroke();
     c.restore();
 
-    const bx = x + 50, by = y + h / 2;
-    const x0 = x + 98, x1 = x + w - 16;
+    const bx = x + 44, by = y + h / 2;
+    const x0 = x + 92, x1 = x + w - 16;
     const grey = A.color.grey, white = A.color.guiwhite;
 
     if (S.guest) {
-        drawBadge(c, bx, by, 64, 'placement', { alpha: alpha * 0.7 });
-        A.drawText('RANKED', x0, y + 22, 10, grey, 'left', true, alpha);
+        drawBadge(c, bx, by, Math.min(56, h - 24), 'placement', { alpha: alpha * 0.7 });
+        A.drawText('RANKED', x0, by - 21, 10, grey, 'left', true, alpha);
         const t = 'Get an account to play ranked';
-        A.drawText(t, x0, y + 46, fitSize(A, t, 17, x1 - x0), white, 'left', true, alpha);
+        A.drawText(t, x0, by, fitSize(A, t, 17, x1 - x0), white, 'left', true, alpha);
         const wb = S.guest.wouldBe;
         const line = wb && wb.name ? 'That game would have put you in ' + wb.name : 'Every raid counts once you’re ranked';
-        A.drawText(line, x0, y + 72, fitSize(A, line, 12, x1 - x0), SOFT, 'left', true, alpha);
+        A.drawText(line, x0, by + 21, fitSize(A, line, 12, x1 - x0), SOFT, 'left', true, alpha);
         return true;
     }
 
@@ -366,7 +367,7 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     // badge (a quick settle when it swaps to the new division)
     const sk = easeOut(v.swapK);
     const ba = alpha * (0.35 + 0.65 * sk);
-    drawBadge(c, bx, by, 72, v.division == null ? 'placement' : v.division, { legendNo: v.legendNo, alpha: ba });
+    drawBadge(c, bx, by, 64, v.division == null ? 'placement' : v.division, { legendNo: v.legendNo, alpha: ba });
     if (v.swapK < 1) {
         c.save();
         c.globalAlpha = alpha * (1 - sk) * 0.8;

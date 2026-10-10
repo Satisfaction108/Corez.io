@@ -334,7 +334,13 @@ function serveShared(req, res, pathname) {
     if (SHARED_FILES.has(name)) {
         try {
             let full = path.join(SHARED_DIR, name);
-            if (SHARED_OBF) { const b = path.join(SHARED_BUILT, name); try { if (fs.statSync(b).isFile()) full = b; } catch (e) { /* no build: the source */ } }
+            if (SHARED_OBF) {
+                const b = path.join(SHARED_BUILT, name);
+                let built = false;
+                try { built = fs.statSync(b).isFile(); } catch (e) { }
+                if (built) full = b;
+                else if (process.env.NODE_ENV === 'production' && !process.env.CLIENT_BUILD) full = path.join(SHARED_BUILT, '__missing__');
+            }
             const st = fs.statSync(full);
             file = sharedCache.get(name);
             if (!file || file.mtimeMs !== st.mtimeMs || file.size !== st.size) {

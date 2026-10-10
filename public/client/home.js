@@ -518,9 +518,6 @@
         var homeFxRaf = 0;
         var reduceMotion = window.matchMedia &&
             window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        // October: bats and the storm bank over the world (client/halloween.js)
-        var hfx = root.classList.contains('dw-halloween') && window.dwHalloweenFx;
-        // The background is a slice of a raid (client/homeWorld.js): rock, ore, a vault
         var world = window.dwHomeWorld || null;
         var worldIn = 0, worldWanted = false, worldTimer = 0;
         var idle = window.requestIdleCallback
@@ -574,14 +571,12 @@
             canvas.style.width = W + 'px';
             canvas.style.height = H + 'px';
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            if (hfx) hfx.build(W, H, dpr, root.getAttribute('data-theme') === 'light', 28);
             if (worldWanted) wantWorld(150);
             if (reduceMotion && !homeFxRaf && window.dwCalmZone) drawHomeFx();
         }
         resize();
         window.addEventListener('resize', resize);
         new MutationObserver(function () {
-            if (hfx) hfx.build(W, H, dpr, root.getAttribute('data-theme') === 'light', 28);
             if (worldWanted) wantWorld(0);
         }).observe(root, {
             attributes: true, attributeFilter: ['data-theme']
@@ -675,10 +670,7 @@
                 worldIn = reduceMotion ? 1 : Math.min(1, worldIn + 0.05);
                 world.draw(ctx, performance.now(), reduceMotion, worldIn);
             }
-            if (hfx) hfx.back(ctx, reduceMotion);
             ctx.globalAlpha = 1;
-            if (window.dwCalmZone) window.dwCalmZone.apply(ctx);
-            if (hfx) hfx.front(ctx, reduceMotion);
             // reduced motion: one still frame (again on resize and theme)
             if (!reduceMotion) homeFxRaf = requestAnimationFrame(drawHomeFx);
         }

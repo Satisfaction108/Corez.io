@@ -44,6 +44,7 @@ const respawnBuild = require('../../terrain/respawnBuild.js');   // Respawn as /
 const autoStats = require('../../terrain/autoStats.js');   // unspent stat points placed after 20 s
 const raidPerks = require('../../terrain/raidPerks.js');   // a perk pick every 5,000 points, kept until the raid ends
 const crowns = require('../../terrain/crowns.js');         // crowns: the last storm's top 3 wear points-earning, stealable crowns
+const soloColor = require('../../terrain/soloColor.js');
 
 // A raid is RAID_CYCLES storm cycles (7 min each, twists included), 21 min,
 // and ends as the last storm shuts (storm.js closes the final circle).
@@ -303,6 +304,12 @@ function statKeyFor(body) {
     return "b:" + body.id;
 }
 
+function colorIndexOf(body) {
+    const bc = body.leaderboardColor != null ? body.leaderboardColor : body.color && body.color.base;
+    if (typeof bc === 'number') return bc;
+    return /^\d+$/.test(String(bc)) ? +bc : null;
+}
+
 function ensureStat(body) {
     const key = statKeyFor(body);
     if (!key) return null;
@@ -320,6 +327,8 @@ function ensureStat(body) {
     // nameplate cosmetics for the board rows (bridge.applyIdentity)
     s.ns = body.nameStyleNid | 0;
     s.nc = body.customNameColor || null;
+    const ci = colorIndexOf(body);
+    if (ci != null) s.c = ci;
     // Core Champion crown by the name (accounts: 24 h, guests: this session)
     s.champUntil = Math.max(body.champUntil || 0, (body.socket && body.socket._champUntil) || 0);
     s.alive = true;
@@ -483,6 +492,7 @@ function teamRows(board) {
         tm: t.tm, names: t.rows.map(r => r.name || "Unnamed"), ids: t.rows.map(r => r.id),
         score: t.score, kills: t.kills, gems: t.gems, alive: t.alive ? 1 : 0, here: t.here ? 1 : 0,
         bot: t.rows.every(r => r.bot) ? 1 : 0, place: t.place,
+        c: (t.rows.find(r => r.c != null) || {}).c,
         // the Crown Contest: the team's net crown points and crowns worn now
         cb: t.cb || undefined, cr: t.cr || undefined,
         // the partners' stat keys ride along for endRaid, never on the wire
@@ -523,6 +533,7 @@ function boardSnapshot() {
         rk: s.rankCode | 0,
         ns: s.ns | 0,
         nc: s.nc || undefined,
+        c: s.c != null ? s.c : undefined,
         tm: Config.royale_duos && s.teamKey ? s.teamKey : undefined,
         // a crown right now (the Crown Contest), and a Core Champion of the last 24 h
         cr: crownKeys.has(s.key) ? 1 : undefined,
@@ -1942,7 +1953,7 @@ function spawnRaidBot(back = null) {
     if (!bot) return;
     bot.team = team;
     if (back) {
-        if (back.color != null) { bot.color.base = back.color; bot.leaderboardColor = back.color; bot.minimapColor = back.color; }
+        if (back.color != null) { const bc = soloColor.keep(team, back.color); bot.color.base = bc; bot.leaderboardColor = bc; bot.minimapColor = bc; }
         // a small fish that comes back as a regular gets a regular's head)
         const own = !bot.botMinnow && !back.minnow;
         if (back.skill != null && own) bot.botSkill = back.skill;

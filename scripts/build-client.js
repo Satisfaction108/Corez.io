@@ -42,6 +42,8 @@ const HOT = new Set([
     "client/bankPopLogic.js",
     "client/raidPerks.js",
     "client/upgradeGridLogic.js",
+    "client/tankTree.js",
+    "client/tankTreeLogic.js",
     "client/raidPerksLogic.js",
     "client/juice.js",
     "client/juiceMath.js",
@@ -88,7 +90,6 @@ const light = {
     renameVariables: true,
     renameLabels: true,
     identifierGenerator: "randomized",
-    movedDeclarations: true,
 };
 
 const lightStrings = {

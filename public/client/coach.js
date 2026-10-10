@@ -531,7 +531,8 @@ function place(t) {
     st.wroteTop = (hold ? Math.max(st.baseTop, top - 6) : st.baseTop) + h + 12;
     global.hudTopPx = st.wroteTop;
     // slide right of the tank grid when it is in the way
-    const gx = gridClearX(top, w, h, k);
+    const gx0 = gridClearX(top, w, h, k);
+    const gx = gx0 > 0 ? gx0 : vitalsClearX(top, w, h, k);
     const cx = gx > 0 ? gx : SW() / 2;
     setLeft(gx > 0 ? Math.round(gx * k) + "px" : "");
     global.coachRect = { x: cx - w / 2 / k - 6, y: top / k - 6, w: w / k + 12, h: h / k + 12 };
@@ -554,6 +555,15 @@ function gridClearX(top, w, h, k) {
     if (SW() / 2 - hw > g.x + g.w + m || y0 > g.y + g.h + m || y1 < g.y - m) return -1;
     const cx = g.x + g.w + m + hw;
     return cx + hw <= SW() - 8 ? cx : null;
+}
+function vitalsClearX(top, w, h, k) {
+    if (!global.mobile || !(w > 0)) return -1;
+    const v = hudRect("vitals");
+    if (!v || !(v.w > 0)) return -1;
+    const hw = w / 2 / k, y0 = top / k, y1 = (top + h) / k, m = 10;
+    if (SW() / 2 + hw < v.x - m || y0 > v.y + v.h + m || y1 < v.y - m) return -1;
+    const cx = v.x - m - hw;
+    return cx - hw >= 6 ? cx : -1;
 }
 function setLeft(v) { if (v !== st.left) { st.left = v; ui.root.style.left = v; } }
 function restoreTop() {

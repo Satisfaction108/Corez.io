@@ -15,7 +15,7 @@ const pops = [];
 for (let i = 0; i < POP_CAP; i++) pops.push({ on: false, x: 0, y: 0, at: 0, text: "" });
 const popText = new Map();
 let popHead = 0;
-const FONT = "bold 15px Rubik, sans-serif";
+const FONT = "bold 15px Ubuntu, sans-serif";
 
 const easeOut = (k) => 1 - (1 - k) * (1 - k);
 function count(ore) {

@@ -131,6 +131,10 @@ const clientBuild = (() => {
     try {
         manifest = JSON.parse(fs.readFileSync(path.join(buildRoot, ".client-build.json"), "utf8"));
     } catch (e) {
+        if (process.env.NODE_ENV === "production" && !process.env.CLIENT_BUILD) {
+            console.error("[client] no obfuscated build in build/public (run `npm run build`); refusing to serve readable source");
+            return { abs: path.resolve(buildRoot), real: path.resolve(buildRoot), missing: true };
+        }
         console.error("[client] no obfuscated build in build/public (run `npm run build`); serving readable source");
         return null;
     }
@@ -152,7 +156,7 @@ const clientBuild = (() => {
     console.log(`[client] serving obfuscated client built ${manifest.builtAt}`);
     return rootOf(buildRoot);
 })();
-const currentClient = clientVersion({ publicDir: publicRootAbs, buildDir: clientBuild ? buildRoot : null });
+const currentClient = clientVersion({ publicDir: publicRootAbs, buildDir: clientBuild && !clientBuild.missing ? buildRoot : null });
 const menuPage = path.resolve(publicRoot, Config.main_menu);
 
 function publicFile(pathname) {
@@ -245,6 +249,7 @@ function sendEntry(req, res, type, entry, cacheControl) {
 // inline scripts obfuscated: scripts/build-client.js), falling back to public/
 function builtPage(file) {
     if (!clientBuild || !/\.(html|css)$/i.test(file)) return file;
+    if (clientBuild.missing) return path.join(clientBuild.abs, "__missing__");
     const abs = path.resolve(file);
     if (!insideDir(publicRootAbs, abs)) return file;
     const built = path.join(clientBuild.abs, path.relative(publicRootAbs, abs));

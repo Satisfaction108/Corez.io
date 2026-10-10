@@ -185,6 +185,7 @@
          ?halloween=1 or 0 (remembered), ?halloween=auto goes back to the dates.
          To retire it: this block, halloween.css, client/halloween.js and its tag. -->
     <link rel="stylesheet" href="./halloween.css"/>
+    <link rel="stylesheet" href="./ingame.css"/>
     <script>
     (function () {
         var d = new Date(), on = d.getMonth() === 9 || (d.getMonth() === 10 && d.getDate() <= 2);
@@ -590,14 +591,23 @@
                             </ol>
 
                             <!-- name (left) + region dropdown (right) -->
-                            <div class="menu-row">
+                            <div class="menu-row name-row">
                                 <div class="menu-field">
                                     <label class="field-label" for="playerNameInput"><span class="dw-lbl-guest">Name</span><span class="dw-lbl-user">You</span></label>
-                                    <input type="text" tabindex="1" spellcheck="false" placeholder="optional" id="playerNameInput" maxlength="24" autocomplete="off">
-                                    <!-- logged in: the account name replaces the input -->
-                                    <button type="button" id="acctNameBox" title="Change it in Account"><span id="acctNameText"></span><svg class="dw-ic"><use href="#i-lock"/></svg></button>
+                                    <div class="name-play">
+                                        <input type="text" tabindex="1" spellcheck="false" placeholder="optional" id="playerNameInput" maxlength="24" autocomplete="off">
+                                        <button type="button" id="acctNameBox" title="Change it in Account"><span id="acctNameText"></span><svg class="dw-ic"><use href="#i-lock"/></svg></button>
+                                        <button id="startButton" tabindex="3"><b>Play</b></button>
+                                    </div>
                                 </div>
-                                <div class="menu-field">
+                            </div>
+
+                            <div class="menu-row mode-row">
+                                <div class="mode-toggle" id="modeToggle" role="radiogroup" aria-label="Mode">
+                                    <button type="button" class="mode-opt on" data-mode="solo" role="radio" aria-checked="true"><span class="mode-name">Solo</span><span class="mode-count" data-count="solo"></span></button>
+                                    <button type="button" class="mode-opt" data-mode="duo" role="radio" aria-checked="false"><span class="mode-name">Duos</span><span class="mode-count" data-count="duo"></span></button>
+                                </div>
+                                <div class="menu-field region-field">
                                     <span class="field-label">Region</span>
                                     <div class="region-dropdown" id="serverDropdown">
                                         <button type="button" class="region-dropdown-trigger" id="serverDropdownTrigger" tabindex="2" title="Pick a server">
@@ -617,12 +627,6 @@
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- SOLO | DUOS, and the duo party under it (client/account/party.js) -->
-                            <div class="mode-toggle" id="modeToggle" role="radiogroup" aria-label="Mode">
-                                <button type="button" class="mode-opt on" data-mode="solo" role="radio" aria-checked="true"><span class="mode-name">Solo</span><span class="mode-count" data-count="solo"></span></button>
-                                <button type="button" class="mode-opt" data-mode="duo" role="radio" aria-checked="false"><span class="mode-name">Duos</span><span class="mode-count" data-count="duo"></span></button>
-                            </div>
                             <div id="duoPanel" class="duo-panel" hidden></div>
 
                             <input type="text" class="conceal" tabindex="4" placeholder="Token (optional)" id="playerKeyInput" maxlength="64" />
@@ -634,7 +638,6 @@
 
                             <!-- play button, full width below both fields -->
                             <div class="startButtonHolder">
-                                <button id="startButton" tabindex="3"><b>Play</b></button>
                                 <button id="tutorialButton" tabindex="5" title="Learn how to play on your own map">
                                     <b>Tutorial</b>
                                     <span class="tut-badge" id="tutorialBadge" hidden>New? Start here</span>

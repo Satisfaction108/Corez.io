@@ -132,7 +132,7 @@ function buildKind(bot) {
 }
 function weightOf(key) {
     const k = kindOf(key);
-    if (k.heal || k.smasher || (k.necro && !k.bullet && !k.autos && !k.trap)) return 0;
+    if (k.heal || k.smasher || (k.necro && k.bullet + k.autos + k.trap < 2)) return 0;
     let w = POOL[key] || (k.isNew ? 2.5 : 2);
     if (k.drone) w *= k.bullet || k.autos ? 0.7 : 0.45;
     if (k.trap && !k.bullet && !k.drone) w *= 0.55;

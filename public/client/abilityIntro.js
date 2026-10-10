@@ -106,7 +106,7 @@ function eligible(now) {
 // boost and its rim included), so nothing reaches the card's edge.
 function wrap(c, text, size, maxW) {
     const H = abilityFx.hud();
-    const width = H && H.hudTextW ? (t) => H.hudTextW(t, size) : (t) => { c.font = "700 " + (size + (config.graphical.fontSizeBoost || 0)) + "px Rubik, Ubuntu, sans-serif"; return c.measureText(t).width; };
+    const width = H && H.hudTextW ? (t) => H.hudTextW(t, size) : (t) => { c.font = "700 " + (size + (config.graphical.fontSizeBoost || 0)) + "px Ubuntu, sans-serif"; return c.measureText(t).width; };
     const out = [];
     let line = "";
     for (const w of text.split(" ")) {

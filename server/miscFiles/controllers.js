@@ -471,6 +471,8 @@ class io_stackGuns extends IO {
         };
     }
 }
+const BOT_SIC_TYPES = new Set(['drone', 'minion', 'swarm']);
+const BOT_SIC_REACH = 1400;
 class io_nearestDifferentMaster extends IO {
     static validEntityTypes = new Set(["tank", "miniboss", "crasher"]);
     constructor(body, opts = {}) {
@@ -534,6 +536,23 @@ class io_nearestDifferentMaster extends IO {
         }
         return true;
     }
+    botSic() {
+        const body = this.body;
+        if (!BOT_SIC_TYPES.has(body.type)) return null;
+        let root = body.master, hops = 0;
+        while (root && root.master && root.master !== root && hops++ < 6) root = root.master;
+        if (!root || root === body || !root.isBot) return null;
+        const s = root.botSic;
+        if (!s || Date.now() > s.until || (root.isDead && root.isDead())) return null;
+        let x = s.x, y = s.y;
+        if (s.e) {
+            if ((s.e.isDead && s.e.isDead()) || !this.validate(s.e, body, root, Infinity, Infinity)) return null;
+            x = s.e.x; y = s.e.y;
+        }
+        if ((x - root.x) * (x - root.x) + (y - root.y) * (y - root.y) > BOT_SIC_REACH * BOT_SIC_REACH) return null;
+        this.targetLock = undefined;
+        return { target: { x: x - body.x, y: y - body.y }, fire: true, main: true };
+    }
     wouldHitWall(entity) {
         if (!this.lockThroughWalls) return wouldHitWall(this.body, entity);
         else return false;
@@ -595,6 +614,8 @@ class io_nearestDifferentMaster extends IO {
             this.targetLock = undefined;
             return {};
         }
+        const sic = this.botSic();
+        if (sic) return sic;
         let tracking = this.body.topSpeed,
             range = this.body.fov;
         // Use whether we have functional guns to decide
@@ -3726,6 +3747,23 @@ class io_digWarsGoals extends IO {
         return { target: forward(), fire: false };
     }
 
+    sicChildren(now, weapon) {
+        const body = this.body;
+        if (body.botDroneSteer || !weapon || !weapon.fire || !weapon.target) return;
+        const v = this.view, g = this.goal, reach = this.weaponRange() * 1.3;
+        let foe = v && v.enemy && v.enemyDistance < reach ? v.enemy : null;
+        if (!foe && g && (g.kind === 'fight' || g.kind === 'defend') && g.target && !(g.target.isDead && g.target.isDead()) &&
+            this.distanceTo(g.target) < reach) foe = g.target;
+        if (!foe) return;
+        const tx = weapon.target.x, ty = weapon.target.y;
+        const at = Math.atan2(ty, tx), to = Math.atan2(foe.y - body.y, foe.x - body.x);
+        const onFoe = Math.abs(util.angleDifference(at, to)) < 0.6;
+        const s = body.botSic || (body.botSic = { e: null, x: 0, y: 0, until: 0 });
+        s.e = onFoe ? foe : null;
+        s.x = body.x + tx; s.y = body.y + ty;
+        s.until = now + 500;
+    }
+
     // Keys are on or off: a change of plan is a beat with the keys up, not
     // part throttle.
     tempo(now) {
@@ -3870,6 +3908,7 @@ class io_digWarsGoals extends IO {
         }
         const movement = destination ? this.nav.steer(destination, arrive, now, contact) : null;
         const weapon = this.weapon(now);
+        this.sicChildren(now, weapon);
         return {
             goal: movement ? { x: movement.x, y: movement.y } : { x: body.x, y: body.y },
             power: movement ? (movement.power ?? 1) * this.tempo(now) : 0,

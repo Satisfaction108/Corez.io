@@ -212,7 +212,7 @@ function onKey(e) {
     if (code === 27) {
         // Esc's own jobs in a raid come first
         if (global.shop && global.shop.onPad && !global.shop.dismissed) return;
-        if (global.showTree && global.searchBarActive) return;
+        if (global.showTree) return;
     }
     e.preventDefault(); e.stopPropagation();
     // a DM card on screen: Esc opens that chat

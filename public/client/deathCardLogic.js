@@ -1,12 +1,12 @@
 // The raid death card's text block, under the stat tiles: the Points line, the
 
 export const TEXT = {
-    top: 16,          // tiles' bottom edge to the first line's top
+    top: 12,
     pts: 14, ptsMin: 12, ptsLH: 19,
     gap: 9,           // between the groups
     ex: 12.5, exMin: 11.5, exLH: 17,
     perk: 12.5, perkMin: 11, perkLH: 17, icon: 16, iconGap: 3,
-    bottom: 10,       // last line to the block's bottom edge
+    bottom: 12,
     maxLines: 6,      // per group; past that the size steps down instead
 };
 

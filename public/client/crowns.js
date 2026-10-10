@@ -316,7 +316,7 @@ export function drawTracker(c, x, y0, W) {
     A.roundRectPath(c, x + 1, y0 + 1, W - 2, H - 2, HUD.r);
     c.stroke();
     c.restore();
-    c.fillStyle = "rgba(18,14,21,0.55)";
+    c.fillStyle = "rgba(0,0,0,0.55)";
     c.fillRect(x + 10, y0 + 27, W - 20, 2);
     A.hudTitle("Standings", x + 12, y0 + 15, 14, HUD.head, "left");
     if (S.c.sd) {

@@ -1,0 +1,123 @@
+#ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn {
+    --face-c: #5a5a5a;
+    --lip-c: #3a3a3a;
+    border: 3px solid #3a3a3a !important;
+    border-radius: 5px !important;
+    background: #5a5a5a !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    color: #fff !important;
+    font: 700 15px/1 Ubuntu, sans-serif !important;
+    letter-spacing: 0 !important;
+    text-shadow: none;
+    -webkit-text-stroke: 3px #333;
+    paint-order: stroke fill;
+    filter: none !important;
+}
+#ingameSettingsBtn:hover:not(:disabled), #ingameTutorialBtn:hover:not(:disabled), #ingameFullscreenBtn:hover:not(:disabled), .dw-igbtn:hover:not(:disabled) {
+    background: #686868 !important;
+}
+#ingameSettingsBtn:active:not(:disabled), #ingameTutorialBtn:active:not(:disabled), #ingameFullscreenBtn:active:not(:disabled), .dw-igbtn:active:not(:disabled) {
+    transform: translateY(1px);
+    background: #4e4e4e !important;
+    box-shadow: none !important;
+}
+#ingameSettingsBtn .dw-ic, #ingameFullscreenBtn .dw-ic { filter: drop-shadow(0 0 0 #333); }
+#ingameSettingsBtn:hover .dw-ic { transform: none; }
+.dw-igbtn.accent { background: #e07b2e !important; border-color: #9e4a14 !important; }
+.dw-igbtn.accent:hover:not(:disabled) { background: #ea8a3e !important; }
+.dw-igbtn.play:not(:disabled) { background: #4fcf5c !important; border-color: #2c8f37 !important; }
+.dw-igbtn.play:not(:disabled):hover { background: #5edb6b !important; }
+.dw-igbtn.play { font: 700 24px/1 Ubuntu, sans-serif !important; -webkit-text-stroke: 4px #333; }
+.dw-igbtn.play .pa-key { font: 700 12px/1 Ubuntu, sans-serif; -webkit-text-stroke: 0; padding: 4px 6px; border-radius: 3px; background: rgba(0,0,0,.3); color: #fff; }
+.dw-igbtn.play:disabled { background: #4a4a4a !important; border-color: #333 !important; color: #cfcfcf !important; font-size: 21px !important; }
+#royaleDomPlayAgain, #royaleDomPlayBuild { padding: 0 14px; align-items: center; justify-content: center; }
+#royaleDomPlayBuild .pb-label { max-width: 100%; overflow: hidden; white-space: nowrap; }
+#royaleDomPlayBuild .pb-sub { font: 700 13px/1 Ubuntu, sans-serif !important; -webkit-text-stroke: 3px #333; }
+
+#chatInput {
+    color: #fff;
+    caret-color: #fff;
+    font-family: Ubuntu, sans-serif;
+    font-weight: 700;
+}
+#chatInput::placeholder { color: rgba(255, 255, 255, 0.55); }
+
+body #dwCoach {
+    --display: Ubuntu, sans-serif;
+    --ui: Ubuntu, sans-serif;
+    --text: #f2f2f2; --text2: #cfcfcf; --heading: #fff;
+    --well: rgba(0, 0, 0, .55);
+    border: 0;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.5);
+    box-shadow: none;
+}
+#dwCoach .dwc-eyebrow { text-transform: none; letter-spacing: 0; font-size: .86em; }
+#dwCoach .dwc-title { font: 700 1.22em/1.15 Ubuntu, sans-serif; text-shadow: none; -webkit-text-stroke: .16em #333; paint-order: stroke fill; }
+#dwCoach .dwc-text kbd { border: 2px solid #333; border-radius: 3px; background: #5a5a5a; box-shadow: none; font: 700 .9em/1.3 Ubuntu, sans-serif; }
+#dwCoach .dwc-bar { border: 2px solid rgba(0, 0, 0, .6); background: rgba(0, 0, 0, .55); }
+#dwCoach .dwc-bar i { box-shadow: none; border-radius: 999px; }
+#dwCoach .dwc-bar span { text-shadow: none; -webkit-text-stroke: .2em #333; paint-order: stroke fill; }
+#dwCoach .dwc-btn { border: 3px solid #2c8f37; border-radius: 4px; box-shadow: none; background-image: none; }
+#dwCoach .dwc-btn.dwc-danger { border-color: #9c2a21; box-shadow: none; }
+#dwCoach .dwc-btn.dwc-alt { border-color: #3a3a3a; background: #5a5a5a; box-shadow: none; }
+
+.gt-card {
+    border: 0;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.5);
+    box-shadow: none;
+}
+.gt-tag { border: 0; border-radius: 3px; letter-spacing: 0; }
+.gt-title { letter-spacing: 0; -webkit-text-stroke: 3px #333; paint-order: stroke fill; color: #fff; }
+.gt-btn { border: 2px solid #3a3a3a; border-radius: 4px; background: #5a5a5a; box-shadow: none; letter-spacing: 0; }
+.gt-btn.primary { border-color: #2c8f37; background: #4fcf5c; box-shadow: none; background-image: none; }
+
+body.in-game .igc {
+    border: 0;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.6);
+    box-shadow: none;
+}
+body.in-game .igc-title { font: 700 19px Ubuntu, sans-serif; letter-spacing: 0; -webkit-text-stroke: 3px #333; paint-order: stroke fill; color: #fff; }
+
+#dwFinaleDiscord, #dwKeepNudge, #dwShareNote {
+    border: 2px solid rgba(0, 0, 0, .6);
+    border-radius: 5px;
+    background: rgba(18, 18, 20, .86);
+    box-shadow: none;
+    color: #fff;
+    font-family: Ubuntu, sans-serif;
+}
+#dwFinaleDiscord small, #dwKeepNudge .kn-p { color: #cfcfcf; font-family: Ubuntu, sans-serif; }
+#dwKeepNudge .kn-h { font-family: Ubuntu, sans-serif; color: #fff; -webkit-text-stroke: 3px #333; paint-order: stroke fill; }
+#dwShareBtn, #dwKeepNudge .kn-go, #dwShareNote .dw-btn {
+    border: 3px solid #2c8f37 !important;
+    border-radius: 5px !important;
+    background: #4fcf5c !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    color: #fff !important;
+    font-family: Ubuntu, sans-serif !important;
+    font-weight: 700 !important;
+    letter-spacing: 0 !important;
+    -webkit-text-stroke: 3px #333;
+    paint-order: stroke fill;
+}
+#dwShareNote .dw-btn { border-color: #3a3a3a !important; background: #5a5a5a !important; }
+#dwKeepNudge .kn-no { font-family: Ubuntu, sans-serif; font-weight: 700; color: #cfcfcf; }
+
+#touchChatBtn, #touchRecBtn, #touchAutoBtn, #touchPingBtn {
+    border: 3px solid #3a3a3a;
+    border-radius: 5px;
+    background: #5a5a5a;
+    box-shadow: none;
+    color: #fff;
+    font-family: Ubuntu, sans-serif;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+#touchAutoBtn.on { background: #e07b2e; border-color: #9e4a14; box-shadow: none; text-shadow: none; }
+#touchChatBtn:active, #touchRecBtn:active, #touchAutoBtn:active, #touchPingBtn:active { transform: translateY(1px); box-shadow: none; background: #4e4e4e; }
+#touchClip .clip-txt b, #touchRotate h2 { font-family: Ubuntu, sans-serif; font-weight: 700; }

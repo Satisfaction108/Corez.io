@@ -320,6 +320,7 @@ class TouchControls {
         if (global.showChat) { if (this.cv) this.cv.closeChat(); this.swallow = true; return; }
         // the friends panel likewise: a tap on the game closes it
         if (friendChatOpen()) { const x = document.querySelector("#dwIgc .igc-x"); if (x) x.click(); this.swallow = true; return; }
+        if (global.showTree && global.treeUi) { this.releaseAll(); global.treeUi.touch("start", e); return; }
         const now = performance.now();
         for (const t of e.changedTouches) {
             const x = t.clientX, y = t.clientY, id = t.identifier;
@@ -373,6 +374,7 @@ class TouchControls {
     onMove(e) {
         e.preventDefault();
         if (this.swallow || !this.enabled) return;
+        if (global.showTree && global.treeUi) { global.treeUi.touch("move", e); return; }
         for (const t of e.changedTouches) {
             const id = t.identifier;
             if (this.pinch && (id === this.pinch.a || id === this.pinch.b)) { this.movePinch(e.touches); continue; }
@@ -407,6 +409,7 @@ class TouchControls {
         if (!this.enabled) return;
         // the finger that closed the chat is done once it lifts
         if (this.swallow) { if (!e.touches || !e.touches.length) this.swallow = false; return; }
+        if (global.showTree && global.treeUi) { global.treeUi.touch("end", e); return; }
         for (const t of e.changedTouches) {
             const id = t.identifier;
             if (this.pinch && (id === this.pinch.a || id === this.pinch.b)) this.pinch = null;

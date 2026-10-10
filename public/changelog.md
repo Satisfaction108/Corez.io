@@ -1,6 +1,55 @@
-# Announcement [2026-09-24] We're Corez.io now
-- The game has a new name and a new logo. The logo is an octo-tank with an emerald in it, yes really.
-- We have a <a href="https://discord.gg/bx5FK3CMwp">Discord</a> now, so come and say hi!
+# Update [2026-10-09] New look
+- The menu, sign up screens and in-game HUD have a new, simpler look that's easier to read.
+- The home screen has a new background.
+- Text that was hard to read, like the tutorial list and the connecting screen, is clearer now.
+- New accounts are limited per network to stop spam, and the name filter catches more tricks.
+
+# Balance [2026-10-09] Big tanks
+- Growing no longer makes you hit harder, and the extra health you get from growing is halved.
+- Tanks grow more slowly past 2x, and big tanks fire smaller bullets.
+
+# Update [2026-10-08] Bigger map and a new chat
+- The raid map is bigger, with more rock and bigger biomes.
+- Chat is now a panel under the leaderboard, with names in each player's colour.
+- In Duos, bots come in pairs too.
+- New players get Mining Power 5 for free for their first 10 lives.
+- Shooting ends your spawn and vault shield.
+- Bounties are gone. Hunted, revenge and crowns stay, as small icons next to names.
+
+# Balance [2026-10-07] Tanks, traps and bosses
+- Tanks do half damage to bosses.
+- Traps and the factory and spawner tanks were nerfed.
+- Weak tanks like Hailstorm and Sultan were buffed, and broken ones like Mastodon and Glacis were fixed.
+- The Core has less health, and you can shoot down its bullets and drones.
+- You can buy at most 10 stat points per raid.
+- The supply drop ring is a solid wall now, and Bulwark raises a bigger ring faster.
+
+# Update [2026-10-06] 635 new tanks
+- There are 635 new tanks to upgrade into, and Tier 5 unlocks once you grow to 2x.
+- Press <b>T</b> in a raid to see the whole tank tree.
+
+# Update [2026-10-03] Spectating and achievements
+- You can spectate after you die.
+- Achievements and daily rewards pay out gemdust, which you collect on the menu.
+- Each rock biome has its own colours.
+
+# Update [2026-10-01] Halloween
+- The game has a Halloween theme until November 2.
+- Lots of lag fixes.
+- Abilities show a short intro the first time you get one.
+
+# Update [2026-09-30] Phones and save codes
+- You can play on phones and tablets with on-screen sticks.
+- Save codes let you move your progress to another device.
+
+# Update [2026-09-28] Growth and streaks
+- Your tank grows as you score during a raid.
+- Win streaks and play streaks give you rewards.
+
+# Update [2026-09-26] Duos and sound
+- Duos is here, so you can play with a friend or a random teammate.
+- All the sounds are new.
+- The rock and gem art got a polish.
 
 # Update [2026-09-24] Friends and chat
 - You can add people by name and see whether they're in the menu, in a raid or offline.

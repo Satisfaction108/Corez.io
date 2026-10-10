@@ -896,7 +896,7 @@ function cracks(c, main, stage, ink) {
 // division ribbon, so it carries the division's pips left of the number.
 function legendPlate(c, n, K, pips) {
     const txt = '#' + n;
-    c.font = 'bold 15px Rubik, Ubuntu, sans-serif';
+    c.font = 'bold 15px Ubuntu, sans-serif';
     const tw = c.measureText(txt).width;
     const pw = 3.4, ph = 4.6, gap = 8.4;
     const pipW = pips > 0 ? (pips - 1) * gap + pw * 2 + 5 : 0;

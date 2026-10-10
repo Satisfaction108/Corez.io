@@ -275,7 +275,7 @@ function sparkle(c, x, y, s, col) {
 }
 
 function outlinedText(c, txt, x, y, size, fill) {
-    c.font = 'bold ' + Math.round(size) + 'px Rubik, Ubuntu, sans-serif';
+    c.font = 'bold ' + Math.round(size) + 'px Ubuntu, sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.lineJoin = 'round';
@@ -499,7 +499,7 @@ export function drawFrame(c, ev, prep, t) {
     }
     if (t >= 1800) {
         c.globalAlpha = 0.55 * easeOut(clamp((t - 1800) / 400)) * fade;
-        c.font = 'bold 13px Rubik, Ubuntu, sans-serif';
+        c.font = 'bold 13px Ubuntu, sans-serif';
         c.textAlign = 'center';
         c.textBaseline = 'middle';
         c.fillStyle = '#c9c1ad';

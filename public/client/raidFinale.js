@@ -471,7 +471,7 @@ const fonts = new Map();
 function titleFont(size) {
     const k = Math.round(size);
     let f = fonts.get(k);
-    if (!f) { f = k + "px " + A.HUD.font; if (fonts.size > 64) fonts.clear(); fonts.set(k, f); }
+    if (!f) { f = "700 " + k + "px " + A.HUD.font; if (fonts.size > 64) fonts.clear(); fonts.set(k, f); }
     return f;
 }
 // A chunky title: ink rim, a darker copy dropped under it, the fill on top.
@@ -485,13 +485,9 @@ function bigTitle(c, text, x, y, size, fill, dark, alpha, scale = 1) {
     c.textAlign = "center";
     c.textBaseline = "middle";
     c.lineJoin = "round";
-    const drop = size * 0.075;
-    c.lineWidth = Math.max(4, size * 0.2);
-    c.strokeStyle = A.HUD.ink;
-    c.strokeText(text, 0, drop);
+    c.lineWidth = Math.max(4, size * 0.16);
+    c.strokeStyle = A.HUD.line;
     c.strokeText(text, 0, 0);
-    c.fillStyle = dark;
-    c.fillText(text, 0, drop);
     c.fillStyle = fill;
     c.fillText(text, 0, 0);
     c.restore();
@@ -953,12 +949,11 @@ function drawPodium(c, pt) {
         const top = baseY - h;
         const [col, dk] = RANK_COL[rank];
         if (h > 2) {
-            A.hudPanel(c, bx, top, colW, h, { fill: HUD.raised, r: HUD.r, lip: 3 });
+            A.hudPanel(c, bx, top, colW, h, { fill: HUD.raised, r: HUD.r });
             c.save();
             c.beginPath();
-            c.rect(bx + 2, top + 2, colW - 4, 7);
+            c.rect(bx, top, colW, 5);
             c.fillStyle = col;
-            c.globalAlpha *= 0.85;
             c.fill();
             c.restore();
         }
@@ -1049,6 +1044,17 @@ function rewardsH() {
     // the score cells, the chips, the rank panel, then the row and a margin
     return 52 + 66 + 12 + 34 + pg + (hasRank ? 14 + RANK_H : 0) + 14 + CB_H + 16;
 }
+const rowLabels = new Map();
+function rowLabel(t) {
+    let v = rowLabels.get(t);
+    if (v === undefined) {
+        v = String(t || "");
+        if (v === v.toUpperCase()) v = v.charAt(0) + v.slice(1).toLowerCase();
+        if (rowLabels.size > 64) rowLabels.clear();
+        rowLabels.set(t, v);
+    }
+    return v;
+}
 function drawRewards(c, pt, now) {
     const HUD = A.HUD;
     const rankH = RANK_H;
@@ -1070,7 +1076,7 @@ function drawRewards(c, pt, now) {
         // round 12: past the soft line the banked cell is the points the gems made
         const soft = i === 1 && S.me.bankG > S.me.banked;
         const lab = soft ? SL.BANK_PTS_LABEL : CELL_LABEL[i];
-        A.drawText(lab, x + cw / 2, wy + 16, fitSize(lab, 10.5, cw - 12, 8), HUD.text2, "center", true);
+        A.drawText(rowLabel(lab), x + cw / 2, wy + 16, fitSize(rowLabel(lab), 12, cw - 12, 8), HUD.text2, "center", true);
         const size = fitSize(A.fmtNum(full), 26, cw - 14, 14);
         // playtest 9: counting up from 0 read as "no data yet" (0 / 0 / 0 for
         // two seconds), so the real numbers show at once; the tally is a pop
@@ -1102,7 +1108,7 @@ function drawRewards(c, pt, now) {
         for (let i = 0; i < pr.length; i++) {
             const ry = py + 6 + PROG_ROW * i + PROG_ROW / 2;
             const col = pr[i].col === "gold" ? HUD.gold : pr[i].col === "play" ? HUD.play : pr[i].col === "lilac" ? (HUD.lilac || "#c9b6ff") : HUD.head;
-            A.drawText(pr[i].k, 34, ry, 9.5, HUD.text2, "left", true, pk);
+            A.drawText(rowLabel(pr[i].k), 34, ry, 11, HUD.text2, "left", true, pk);
             A.drawText(pr[i].t, 118, ry, fitSize(pr[i].t, 12.5, PW - 40 - 112, 8.5), col, "left", true, pk);
         }
     }
@@ -1134,8 +1140,8 @@ function drawNext(c, rt, now, W, H) {
     A.hudPanel(c, x, y, w, h, { fill: HUD.solid, r: HUD.rBig, lip: 4 });
     // left: label over the number, the pair centred on the midline; the
     // column is as wide as its widest state so nothing shifts as it counts
-    const lw = Math.ceil(Math.max(A.measureText("NEXT RAID IN", 10.5), A.hudTitleW("88s", 26)));
-    A.drawText("NEXT RAID IN", x + pad, my - 11, 10.5, HUD.text2, "left", true);
+    const lw = Math.ceil(Math.max(A.measureText("Next raid in", 12), A.hudTitleW("88s", 26)));
+    A.drawText("Next raid in", x + pad, my - 11, 12, HUD.text2, "left", true);
     A.hudTitle(left > 0.5 ? Math.ceil(left) + "s" : "Now", x + pad, my + 8, 26, HUD.play, "left", 1, c);
     const btn = !global.mobile && w > 380, bw = btn ? 128 : 0, bh = 32;
     const mx = x + pad + lw + gap, mw = Math.max(40, x + w - pad - (btn ? bw + gap : 0) - mx);
@@ -1241,7 +1247,7 @@ function drawComeBack(c, x, y, w, h, now) {
     const pill = ready ? "" : "in " + DY.countdown(left);
     const pillW = pill ? Math.max(84, A.hudTitleW(pill, 17) + 22) : 0;
     const textW = w - 28 - pillW - flameW - (pill ? 10 : 0);
-    A.drawText(cbText.label, x + 14, y + 17, 10.5, ready ? HUD.gold : HUD.text2, "left", true);
+    A.drawText(rowLabel(cbText.label), x + 14, y + 17, 12, ready ? HUD.gold : HUD.text2, "left", true);
     A.hudTitle(cbText.main, x + 14, y + 39, fitSize(cbText.main, 19, textW, 11), ready ? HUD.play : HUD.gold, "left", 1, c);
     let rx = x + w - 12;
     if (pill) {

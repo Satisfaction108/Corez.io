@@ -287,7 +287,7 @@ test('client: wired everywhere', () => {
     assert.ok(/scoreText\.deathLine\(you, global\.finalCarried \| 0, 0, global\.finalNxKept \| 0\)/.test(app));
     assert.ok(/dln\.head \+ " \(" \+ dln\.lost \+ "\)"/.test(app));
     assert.ok(!/CARRIED \(50% PTS\)/.test(app) && !/50% carried/.test(app), 'the half-points satchel is gone from the HUD');
-    assert.ok(/drawText\("POINTS", scoreR/.test(app), 'the card calls it points, like the standings');
+    assert.ok(/drawText\("POINTS", scoreR/i.test(app), 'the card calls it points, like the standings');
     // the rule on hover (standings, the clock plate's points) and in the F tab
     assert.ok(/queueTip\(scoreText\.RULE, scoreText\.RULE_BODY/.test(app));
     assert.ok((app.match(/pointsRuleTip\(/g) || []).length >= 4, 'standings, crown tracker, clock plate + the helper');

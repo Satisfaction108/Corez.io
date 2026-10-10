@@ -367,7 +367,7 @@ function drawStrip(c, o, st, view, now) {
         S.iconRects.push(r);
         const fl = p.id === S.flashId && now - S.flashAt < 1100 ? 1 - (now - S.flashAt) / 1100 : 0;
         const lift = fl * 6;
-        A.hudPanel(c, r.x, r.y - lift, r.w, r.h, { r: 7, lip: 2, fill: fl > 0.6 ? "#fff3d9" : "rgba(43,37,51,0.9)" });
+        A.hudPanel(c, r.x, r.y - lift, r.w, r.h, { r: 7, lip: 2, fill: fl > 0.6 ? "#fff3d9" : "rgba(0,0,0,0.54)" });
         drawPerkIcon(c, p, r.x + r.h / 2, r.y - lift + r.h / 2, r.h * 0.34);
         // the name in the perk's colour, then its level in gold
         const lv = ROMAN[p.n | 0] || "I", tx = r.x + r.h + 2, ty = r.y - lift + r.h / 2 + 0.5;
@@ -384,7 +384,7 @@ function drawStrip(c, o, st, view, now) {
     if (lay.more) {
         const m = lay.more;
         S.iconRects.push(m);
-        A.hudPanel(c, m.x, m.y, m.w, m.h, { r: 7, lip: 2, fill: "rgba(30,25,36,0.92)" });
+        A.hudPanel(c, m.x, m.y, m.w, m.h, { r: 7, lip: 2, fill: "rgba(0,0,0,0.6)" });
         A.hudTitle("+" + m.n, m.x + m.w / 2, m.y + m.h / 2 + 0.5, 12, GOLD, "center");
         if (o.mouse && L.rectAt([m], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
             if (!S.stripTip) S.stripTip = lay.hidden.map(i => perkLabel(st.build[i])).join(", ") + ".";
@@ -430,7 +430,7 @@ function drawStrip(c, o, st, view, now) {
         // a ring filling toward the next pick, your pick count inside
         const frac = waiting ? 1 : L.progress(score, st.next, st.step);
         const cx = b.x + b.w / 2, cy = b.y + b.h / 2, R = b.w / 2;
-        c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.fillStyle = "rgba(30,25,36,0.88)"; c.fill();
+        c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.fillStyle = "rgba(0,0,0,0.57)"; c.fill();
         c.lineWidth = 1.5; c.strokeStyle = H.line; c.stroke();
         if (frac > 0.01) {
             c.beginPath(); c.arc(cx, cy, R - 3.5, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
@@ -514,7 +514,7 @@ function drawHeader(c, hr, st, a, now) {
     const x = Math.round(cx - w / 2), h = hr.h;
     const y = Math.round(cy - h / 2);
     S.headRect = { x, y, w, h };
-    A.hudPanel(c, x, y, w, h, { r: h / 2, lip: 2, alpha: a, fill: "rgba(30,25,36,0.92)" });
+    A.hudPanel(c, x, y, w, h, { r: h / 2, lip: 2, alpha: a, fill: "rgba(0,0,0,0.6)" });
     let tx = x + 12;
     c.save(); c.globalAlpha *= a;
     if (isNew) {
@@ -585,7 +585,7 @@ function drawCard(c, r, p, i, dy, sc, a, lit, compact, now) {
         const g = A.haloSprite("pkcard", "242,184,60", [[0, 0.45], [0.6, 0.12], [1, 0]]);
         c.drawImage(g, x - 30, y - 30, w + 60, h + 60);
     }
-    A.hudPanel(c, x, y, w, h, { r: 12, fill: "rgba(43,37,51,0.96)", lip: 3 });
+    A.hudPanel(c, x, y, w, h, { r: 12, fill: "rgba(0,0,0,0.55)", lip: 3 });
     // the colour cap along the top
     c.save();
     A.rr(c, x, y, w, h, 12); c.clip();
@@ -745,7 +745,7 @@ const GLYPH = {
     rich(c, r, F) {
         c.beginPath(); c.moveTo(-r, -r * 0.3); c.lineTo(-r * 0.55, -r * 0.85); c.lineTo(r * 0.55, -r * 0.85); c.lineTo(r, -r * 0.3); c.lineTo(0, r * 0.95); c.closePath(); F();
         c.beginPath(); c.moveTo(-r, -r * 0.3); c.lineTo(r, -r * 0.3); c.moveTo(-r * 0.3, -r * 0.3); c.lineTo(0, r * 0.95); c.lineTo(r * 0.3, -r * 0.3);
-        c.lineWidth = Math.max(1, r * 0.1); c.strokeStyle = "rgba(18,14,21,0.55)"; c.stroke();
+        c.lineWidth = Math.max(1, r * 0.1); c.strokeStyle = "rgba(0,0,0,0.55)"; c.stroke();
     },
     // a circular arrow
     reload(c, r, F, S) {
@@ -779,7 +779,7 @@ export function drawDeathIcons(c, x, y, s, a) {
     c.save(); c.globalAlpha *= a;
     let px = x;
     for (const p of b.slice(0, 10)) {
-        A.hudPanel(c, px, y - s / 2, s, s, { r: 5, lip: 1.5, fill: "rgba(43,37,51,0.95)" });
+        A.hudPanel(c, px, y - s / 2, s, s, { r: 5, lip: 1.5, fill: "rgba(0,0,0,0.55)" });
         drawPerkIcon(c, p, px + s / 2, y, s * 0.34);
         px += s + 3;
     }

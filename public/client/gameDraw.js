@@ -512,6 +512,26 @@ var gameDraw = {
             case "animatedMagenta":
                 return gameDraw.animatedColor.magenta;
 
+            case 43:
+            case "tankSilver":
+                return "#d4d9e2";
+
+            case 44:
+            case "tankLime":
+                return "#a6e23a";
+
+            case 45:
+            case "tankRose":
+                return "#ff8fb8";
+
+            case 46:
+            case "tankIndigo":
+                return "#4f5fe8";
+
+            case 47:
+            case "tankJade":
+                return "#1fb39a";
+
             case "nest":
                 return config.graphical.coloredNest ? gameDraw.color.lavender : gameDraw.color.white;
 

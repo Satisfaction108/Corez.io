@@ -114,11 +114,8 @@ class Canvas {
         this.inverseMouse = false;
         this.spinLock = false;
         this.mouseMoved = false;
-        this.treeScrollSpeed = 0.5;
-        this.treeScrollSpeedMultiplier = 1;
         this.initalized = false;
         this.tankTreeProps = {
-            searchQuery: '',
             enabled: false,
         }
         global.canvas = this;
@@ -146,6 +143,18 @@ class Canvas {
         // (the canvas only hears moves under a held button then)
         window.addEventListener("mousemove", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseMove(event)});
         this.cv.addEventListener("mousedown", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseDown(event)});
+        window.addEventListener("mousedown", (event) => {
+            if (global.mobile || !global.showTree || !global.treeUi || event.target === this.cv || event.button !== 0) return;
+            const t = event.target;
+            if (t && t.closest && t.closest("button, a, input, textarea, select, [role=button], #dwIgc")) return;
+            global.treeUi.down(event.clientX, event.clientY);
+        });
+        window.addEventListener("wheel", (event) => {
+            if (global.mobile || !global.showTree || !global.treeUi || event.target === this.cv) return;
+            const t = event.target;
+            if (t && t.closest && t.closest("input, textarea, select, #dwIgc")) return;
+            global.treeUi.wheel(event);
+        }, { passive: true });
         // the release is heard anywhere on the window: a press on the game let
         // go over a DOM box (the vault input, chat, an overlay) used to be
         // lost, leaving a kit or chip drag armed to eat the next click
@@ -203,6 +212,11 @@ class Canvas {
     }
 
     wheel(event) {
+        if (global.showTree && global.treeUi) {
+            global.treeUi.wheel(event);
+            event.preventDefault && event.preventDefault();
+            return;
+        }
         // over the upgrade tiles with more than one page: the wheel turns it
         {
             const UG = global.upgradePg, pg = UG && UG.pg;
@@ -248,23 +262,9 @@ class Canvas {
                 this.socket.talk('SPZ', event.deltaY > 0 ? 1 : -1);
             }
         }
-        if (!global.died && global.showTree) {
-            if (event.deltaY > 1) {
-                global.targetTreeScale = Math.max(global.targetTreeScale / 1.2, 0.5);
-            } else {
-                global.targetTreeScale = Math.min(global.targetTreeScale * 1.2, 8);
-            }
-        }
     }
     keyPress(event) {
-        switch (event.keyCode) {
-            case global.KEY_ZOOM_OUT:
-                if (!global.died && global.showTree) global.targetTreeScale = Math.max(global.targetTreeScale / 1.2, 0.5);
-                break;
-            case global.KEY_ZOOM_IN:
-                if (!global.died && global.showTree) global.targetTreeScale = Math.min(global.targetTreeScale * 1.2, 8);
-                break;
-        }
+        if (global.showTree) event.preventDefault && event.preventDefault();
     }
     releaseMovement() {
         // any UI that steals focus (chat, map, inputs) drops held movement
@@ -508,38 +508,16 @@ class Canvas {
             this.socket.talk("#", ...global.specialKeysPressed);
             return;
         }
+        if (global.showTree && global.treeUi && event.keyCode !== global.KEY_CLASS_TREE && global.treeUi.key(event, true)) {
+            event.preventDefault && event.preventDefault();
+            return;
+        }
         // raid kit, shop and free-camera keys take priority
         if (this.royaleKeyDown(event)) return;
 
-        // Handle search input when tree is open and search bar is active
-        if (global.showTree && global.searchBarActive) {
-            if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
-                event.preventDefault();
-                this.tankTreeProps.searchQuery += event.key;
-                global.searchTankByName(this.tankTreeProps.searchQuery);
-                return;
-            } else if (event.keyCode === 8) { // Backspace
-                event.preventDefault();
-                this.tankTreeProps.searchQuery = this.tankTreeProps.searchQuery.slice(0, -1);
-                global.searchTankByName(this.tankTreeProps.searchQuery);
-                return;
-            } else if (event.keyCode === 27) { // Escape
-                event.preventDefault();
-                this.tankTreeProps.searchQuery = '';
-                global.searchTankByName('');
-                global.searchBarActive = false;
-                return;
-            } else if (event.keyCode === global.KEY_ENTER) {
-                event.preventDefault();
-                global.searchBarActive = false;
-                return;
-            }
-        }
-
         switch (event.keyCode) {
             case global.KEY_SHIFT:
-                if (global.showTree) this.treeScrollSpeedMultiplier = 5;
-                else this.socket.cmd.set(6, true);
+                this.socket.cmd.set(6, true);
                 break;
 
             case global.KEY_ENTER:
@@ -563,17 +541,14 @@ class Canvas {
                 break;
 
             case global.KEY_UP_ARROW:
-                if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.y = -this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_UP:
                 this.socket.cmd.set(0, true);
                 break;
             case global.KEY_DOWN_ARROW:
-                if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.y = +this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_DOWN:
                 this.socket.cmd.set(1, true);
                 break;
             case global.KEY_LEFT_ARROW:
-                if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = -this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_LEFT:
                 // A is movement, so never start spectate from it: key-repeat after
                 // death would jump the camera to a random player.
@@ -585,7 +560,6 @@ class Canvas {
                 this.socket.cmd.set(2, true);
                 break;
             case global.KEY_RIGHT_ARROW:
-                if (!global.died && global.showTree) return (global.classTreeDrag.isDragging = true, global.classTreeDrag.momentum.x = +this.treeScrollSpeed * this.treeScrollSpeedMultiplier);
             case global.KEY_RIGHT:
                 if (global.royaleSpectating && global.died && !event.repeat) {
                     this.socket.talk('RS', 1);
@@ -735,6 +709,7 @@ class Canvas {
     }
     keyUp(event) {
         if (global.dailyTankAd.renderUI) return;
+        if (global.treeUi && global.treeUi.opened() && global.treeUi.key(event, false)) return;
         if (this.royaleKeyUp(event)) return;
         switch (event.keyCode) {
             case global.KEY_SPECIAL:
@@ -742,30 +717,21 @@ class Canvas {
                 global.specialKeysPressed = [];
                 break;
             case global.KEY_SHIFT:
-                if (global.showTree) this.treeScrollSpeedMultiplier = 1;
-                else this.socket.cmd.set(6, false);
+                this.socket.cmd.set(6, false);
                 break;
             case global.KEY_UP_ARROW:
-                global.classTreeDrag.momentum.y = 0;
-                global.classTreeDrag.isDragging = false;
             case global.KEY_UP:
                 this.socket.cmd.set(0, false);
                 break;
             case global.KEY_DOWN_ARROW:
-                global.classTreeDrag.momentum.y = 0;
-                global.classTreeDrag.isDragging = false;
             case global.KEY_DOWN:
                 this.socket.cmd.set(1, false);
                 break;
             case global.KEY_LEFT_ARROW:
-                global.classTreeDrag.momentum.x = 0;
-                global.classTreeDrag.isDragging = false;
             case global.KEY_LEFT:
                 this.socket.cmd.set(2, false);
                 break;
             case global.KEY_RIGHT_ARROW:
-                global.classTreeDrag.momentum.x = 0;
-                global.classTreeDrag.isDragging = false;
             case global.KEY_RIGHT:
                 this.socket.cmd.set(3, false);
                 break;
@@ -797,6 +763,10 @@ class Canvas {
         }
     }
     mouseDown(mouse) {
+        if (global.showTree && global.treeUi) {
+            if (mouse.button === 0) global.treeUi.down(mouse.clientX, mouse.clientY);
+            return;
+        }
         let primaryFire = 4,
             secondaryFire = 6;
         if (this.inverseMouse) [primaryFire, secondaryFire] = [secondaryFire, primaryFire];
@@ -844,14 +814,6 @@ class Canvas {
                     global.bigMap.dragging = true;
                     global.bigMap.lastX = mpos.x / mScale;
                     global.bigMap.lastY = mpos.y / mScale;
-                    break;
-                }
-                if (global.showTree) {
-                    // Start dragging if not clicking UI elements
-                    global.classTreeDrag.isDragging = true;
-                    global.classTreeDrag.startX = global.classTreeDrag.lastX = mouse.clientX;
-                    global.classTreeDrag.startY = global.classTreeDrag.lastY = mouse.clientY;
-                    global.classTreeDrag.momentum = { x: 0, y: 0 };
                     break;
                 }
                 // a raid perk card, its Later button or the Perk ready chip:
@@ -951,6 +913,7 @@ class Canvas {
         if (isFinite(wx) && isFinite(wy)) this.socket.talk('PG', Math.round(wx), Math.round(wy));
     }
     mouseUp(mouse) {
+        if (global.treeUi && mouse.button === 0 && global.treeUi.up(mouse.clientX, mouse.clientY)) return;
         let primaryFire = 4,
             secondaryFire = 6;
         if (this.inverseMouse) [primaryFire, secondaryFire] = [secondaryFire, primaryFire];
@@ -1139,48 +1102,6 @@ class Canvas {
                     gameSound.uiClick();
                     break;
                 }
-                // Stop dragging class tree
-                if (global.classTreeDrag.isDragging) {
-                    global.classTreeDrag.isDragging = false;
-                }
-                if (global.clickables.classTreeClose.check(mpos) === 0) {
-                    global.tankTree("exit");
-                    gameSound.uiClick();
-                    break;
-                }
-
-                // Check zoom buttons
-                if (global.clickables.classTreeZoomIn.check(mpos) === 0) {
-                    global.targetTreeScale = Math.min(global.targetTreeScale * 1.2, 8);
-                    gameSound.uiClick();
-                    break;
-                }
-                if (global.clickables.classTreeAll.check(mpos) === 0) {
-                    try { window.open("/tanks", "_blank", "noopener"); } catch (e) { /* popup blocked */ }
-                    gameSound.uiClick();
-                    break;
-                }
-                if (global.clickables.classTreeZoomOut.check(mpos) === 1) {
-                    global.targetTreeScale = Math.max(global.targetTreeScale / 1.2, 0.5);
-                    gameSound.uiClick();
-                    break;
-                }
-
-                // Check search bar click
-                const searchBarWidth = 300;
-                const searchBarHeight = 35;
-                const searchBarX = global.screenWidth / 2 / global.ratio - searchBarWidth / 2;
-                const searchBarY = 30;
-
-                if (mpos.x / global.ratio >= searchBarX && 
-                    mpos.x / global.ratio <= searchBarX + searchBarWidth &&
-                    mpos.y / global.ratio >= searchBarY && 
-                    mpos.y / global.ratio <= searchBarY + searchBarHeight) {
-                    global.searchBarActive = true;
-                    break;
-                } else {
-                    global.searchBarActive = false;
-                }
                 if (global.clickables.royaleTab.check(mpos) !== -1) {
                     const tab = global.clickables.royaleTab.check(mpos);
                     global.royaleBoard.tab = ['map', 'standings', 'feed', 'alive'][tab] || 'map';
@@ -1233,6 +1154,10 @@ class Canvas {
         }
     }
     mouseMove(mouse) {
+        if (global.showTree && global.treeUi) {
+            global.treeUi.move(mouse.clientX, mouse.clientY);
+            return;
+        }
         // full-map overlay: drag to pan (world-space, so it tracks 1:1 at
         // any zoom)
         if (global.showBigMap && global.bigMap.dragging) {
@@ -1248,19 +1173,6 @@ class Canvas {
             bm.lastY = my;
             global.mouse.x = mouse.clientX * global.ratio;
             global.mouse.y = mouse.clientY * global.ratio;
-            return;
-        }
-        // Handle class tree dragging with smooth momentum
-        if (global.showTree && global.classTreeDrag.isDragging) {
-            const dx = (mouse.clientX - global.classTreeDrag.lastX) / global.treeScale;
-            const dy = (mouse.clientY - global.classTreeDrag.lastY) / global.treeScale;
-
-            // Smooth momentum update
-            global.classTreeDrag.momentum.x = -dx * 0.01;
-            global.classTreeDrag.momentum.y = -dy * 0.01;
-
-            global.classTreeDrag.lastX = mouse.clientX;
-            global.classTreeDrag.lastY = mouse.clientY;
             return;
         }
         global.statHover =
