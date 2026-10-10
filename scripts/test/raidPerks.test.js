@@ -505,6 +505,10 @@ test('client: cards sit low in the middle, clear of the tank, stat bars and mini
     assert.equal(L.viewFor({ folded: true, openedAt: 0 }, { now: 10, key: 'a' }), 'cards');
     assert.equal(L.viewFor({ folded: false, openedAt: 0 }, { now: 10, key: 'a', blocked: true }), '', 'hidden while a panel owns the screen');
     assert.equal(L.viewFor({ folded: false, openedAt: 0 }, { now: 10, key: '' }), '');
+    assert.equal(L.viewFor({ openedAt: 0 }, { now: 2000, key: 'a', hurtAt: 1900 }), '', 'a fresh offer waits out a fight');
+    assert.equal(L.viewFor({ openedAt: 0 }, { now: 2000, key: 'a', hold: true }), '', 'and a callout');
+    assert.equal(L.viewFor({ openedAt: 0 }, { now: L.MAX_WAIT_MS + 10, key: 'a', hurtAt: L.MAX_WAIT_MS, dealtAt: L.MAX_WAIT_MS, hold: true }), 'cards', 'never waits more than MAX_WAIT_MS');
+    assert.equal(L.viewFor({ openedAt: 0 }, { now: L.MAX_WAIT_MS + 10, key: 'a', blocked: true }), '', 'a panel still hides it');
     // playtest 9: a fresh offer waits for 3 s with no hit taken OR dealt, and
     // for the middle to be free (a callout, a slam, a new crown's card)
     assert.equal(L.viewFor({ shown: false }, { now: 10_000, key: 'a', dealtAt: 8_000 }), '', 'shooting someone: waits');

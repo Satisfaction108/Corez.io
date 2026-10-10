@@ -61,9 +61,12 @@ export const IGNORE_MS = 12000;
 // the death card owns the screen), and a queue comes one offer at a time.
 // Round 7: a fresh offer waits while you're taking hits (it popped up mid-fight
 export const CALM_MS = 3000;
+export const MAX_WAIT_MS = 6000;
 export function viewFor(st, o) {
     if (!o || !o.key) return "";
     if (o.blocked) return "";
+    const waited = st && st.openedAt != null ? o.now - st.openedAt : 0;
+    if (waited >= MAX_WAIT_MS) return "cards";
     // a fresh offer comes out only after CALM_MS with no hit taken or dealt,
     // and not while something else holds the middle (o.hold: a callout, a
     // slam, a new crown's card). Once out, it stays; Shift+1/2/3 always work.

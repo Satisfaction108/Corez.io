@@ -1245,6 +1245,13 @@ class socketManager {
                 // leaving on purpose (menu, Home, exit): no resume for this one
                 socket.leftOnPurpose = true;
             } break;
+            case "TQ": {
+                if (m.length !== 0 || !global.gameManager.terrainGrid) return;
+                const at = Date.now();
+                if (at - (socket._terrainAskAt || 0) < 3000) return;
+                socket._terrainAskAt = at;
+                this.sendTerrain(socket);
+            } break;
             case "RZ": {
                 // resume token: a per-tab id the client re-sends after a drop
                 if (typeof m[0] !== "string" || !/^[a-z0-9]{8,64}$/i.test(m[0])) return;

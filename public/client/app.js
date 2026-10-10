@@ -1515,7 +1515,7 @@ import * as treeUi from './tankTree.js';
         if (global.gameLoading) return;
         // a tab left open over a deploy checks the version first and reloads
         // instead of joining on old code (version.js beforePlay)
-        if (!global._reconnecting && !startGame._checked && window.dwVersion && window.dwVersion.beforePlay) {
+        if (!global._reconnecting && !global.duoArmed && !startGame._checked && window.dwVersion && window.dwVersion.beforePlay) {
             if (startGame._asking) return;
             startGame._asking = true;
             window.dwVersion.beforePlay().then((reloading) => {
@@ -9680,6 +9680,8 @@ import * as treeUi from './tankTree.js';
         queueTip: (t, b, x, y) => queueTip(t, b, x, y), newcomerStage: () => newcomer.stage(),
     });
     let perkAvoidSkip = false;
+    let perkBlockedBy = "";
+    window.dwPerkBlock = () => perkBlockedBy;
     // QA: the perk row's room last frame
     const perkLay = { bottom: 0, minTop: 0, left: 0, right: 0, blocked: false };
     window.dwPerkLay = () => perkLay;
@@ -9703,6 +9705,7 @@ import * as treeUi from './tankTree.js';
         }
         // the band left and right: clear of every other HUD piece it would touch
         let left = HUD.edge, right = sw - HUD.edge, blocked = false;
+        perkBlockedBy = "";
         perkAvoidSkip = true;
         let avoid = [];
         try { avoid = hudAvoidRects(); } finally { perkAvoidSkip = false; }
@@ -9725,7 +9728,11 @@ import * as treeUi from './tankTree.js';
             // touch: the first-raid guide card steps aside for an offer (hudCardUp below)
             if (touchRow && r === global.coachRect && raidPerks.offerUp()) continue;
             const mid = r.x + r.w / 2;
-            if (r.x <= sw / 2 && r.x + r.w >= sw / 2) blocked = true;
+            if (r.x <= sw / 2 && r.x + r.w >= sw / 2) {
+                if (r.y - 8 - minTop >= 94 + 34) bottom = Math.min(bottom, r.y - 8);
+                else if (bottom - (r.y + r.h + 8) >= 94 + 34) minTop = Math.max(minTop, r.y + r.h + 8);
+                else { perkBlockedBy = "centre " + Math.round(r.x) + "," + Math.round(r.y) + " " + Math.round(r.w) + "x" + Math.round(r.h); blocked = true; }
+            }
             else if (mid < sw / 2) left = Math.max(left, r.x + r.w + 16);
             else right = Math.min(right, r.x - 16);
         }
@@ -9735,12 +9742,12 @@ import * as treeUi from './tankTree.js';
         for (const r of avoid) if (r.x + r.w / 2 < sw / 2 && r.x + r.w < wallet.x && rectsOverlap(r, sBand)) stripLeft = Math.max(stripLeft, r.x + r.w + 12);
         // touch: clear of the move stick's "Drag to move" line at the bottom left
         if (touchRow) stripLeft = Math.max(stripLeft, Math.round(sw * 0.26));
-        if (right - left < 3 * 184 + 32 || bottom - minTop < 94 + 34) blocked = true;
+        if (right - left < 3 * 184 + 32 || bottom - minTop < 94 + 34) { perkBlockedBy = "space " + Math.round(right - left) + "x" + Math.round(bottom - minTop); blocked = true; }
         // something else owns the middle: the shop or vault panel, the map,
         // the tank tree, a new item reveal, the sky drop
         const sp = global.shop;
         if ((sp && sp.onPad && !sp.dismissed) || (global.vault && global.vault.onPad) || global.showBigMap || global.showTree ||
-            (global.kitUnlocks && global.kitUnlocks.length) || (raidHeat.landAt && raidHeat.landAt() > 0)) blocked = true;
+            (global.kitUnlocks && global.kitUnlocks.length) || (raidHeat.landAt && raidHeat.landAt() > 0)) { perkBlockedBy = perkBlockedBy || "panel"; blocked = true; }
         const you = global.royale && global.royale.you;
         // playtest 9: a fresh offer waits while the middle is busy (a callout
         // plate like YOU'RE HUNTED, a slam, a new crown's card)
@@ -14495,11 +14502,54 @@ import * as treeUi from './tankTree.js';
         global.player.rendery += cdy;
     }
     let deathLift = 0;
+    const voidWatch = { since: 0, lastFrame: 0, scenes: -1, stage: 0, playing: false, heals: 0, asks: 0, reconnects: 0, reconnectAt: -1e9, warned: false };
+    function healCamera() {
+        deathLift = 0;
+        lasttick = 0;
+        fovlasttick = 0;
+        global._specGlide = null;
+        if (!(global.player.renderv > 0 && isFinite(global.player.renderv))) global.player.renderv = 2000;
+        if (!isFinite(global.player.renderx) || !isFinite(global.player.rendery)) {
+            global.player.renderx = global.player.cx && isFinite(global.player.cx.x) ? global.player.cx.x : 0;
+            global.player.rendery = global.player.cy && isFinite(global.player.cy.y) ? global.player.cy.y : 0;
+        }
+        voidWatch.heals++;
+    }
+    function watchVoid(now) {
+        const vw = voidWatch, tr = window.terrainRenderer;
+        const playing = !!(global.gameStart && !global.died && !global.disconnected && global.gameWidth > 0);
+        if (!playing) { vw.playing = false; vw.since = 0; vw.stage = 0; return; }
+        if (!vw.playing) { vw.playing = true; vw.since = 0; vw.stage = 0; }
+        if (now - vw.lastFrame > 1000) vw.since = 0;
+        vw.lastFrame = now;
+        const scenes = tr ? tr.scenes | 0 : 0;
+        const drew = !!(tr && tr.ready) && scenes !== vw.scenes;
+        vw.scenes = scenes;
+        if (drew) { vw.since = 0; vw.stage = 0; return; }
+        if (!vw.since) { vw.since = now; return; }
+        const gone = now - vw.since;
+        if (gone > 2000 && vw.stage < 1) {
+            vw.stage = 1;
+            vw.asks++;
+            if (!vw.warned) { vw.warned = true; console.warn('No rock drawn for 2 s after spawning, resyncing the map'); }
+            healCamera();
+            try { if (tr && tr.ready) tr.rebuild('void after spawn'); } catch (e) { }
+            try { if (global.socket && global.socket.readyState === 1) global.socket.talk('TQ'); } catch (e) { }
+        } else if (gone > 7000 && vw.stage < 2) {
+            vw.stage = 2;
+            if (!global.digRoyaleMode || global.tutorialMode || now - vw.reconnectAt < 60000 || !global.reconnect) return;
+            vw.reconnectAt = now;
+            vw.reconnects++;
+            try { global.reconnect(); } catch (e) { }
+        }
+    }
+    window.dwVoid = () => ({ since: voidWatch.since, stage: voidWatch.stage, heals: voidWatch.heals, asks: voidWatch.asks, reconnects: voidWatch.reconnects, scenes: window.terrainRenderer ? window.terrainRenderer.scenes | 0 : 0 });
     const drawGameplay = (tick, ratio) => {
 
         global.metrics.rendertimes++;
         global.GRAPHDATA = 0;
         let tickMotion = lasttick ? tick - lasttick : null;
+        if (!(tickMotion >= 0 && tickMotion < 5000)) tickMotion = null;
         lasttick = tick;
         let motion = compensation();
         motion.set();
@@ -14563,7 +14613,16 @@ import * as treeUi from './tankTree.js';
             const dt = Math.min(100, tickMotion || 16.7);
             deathLift += (want - deathLift) * Math.min(1, 1 - Math.pow(0.8, dt / 16.7));
             if (Math.abs(deathLift) < 0.5 && !want) deathLift = 0;
+            if (!isFinite(deathLift)) { deathLift = 0; voidWatch.heals++; }
             py += deathLift;
+        }
+        if (!isFinite(px) || !isFinite(py)) {
+            healCamera();
+            const fx = isFinite(playerx) ? playerx : 0, fy = isFinite(playery) ? playery : 0;
+            global.player.renderx = fx;
+            global.player.rendery = fy;
+            px = ratio * fx;
+            py = ratio * fy;
         }
 
         if (!global.mobile && !global.gamepadMode) calculateTarget();
@@ -15308,12 +15367,12 @@ import * as treeUi from './tankTree.js';
     let animationFrame =
     (!/Chrome\/8[4-6]\.0\.41([4-7][0-9]|8[0-3])\./.test(navigator.userAgent) &&
       window.requestAnimationFrame) ||
-    ((a) => setTimeout(() => a(Date.now()), 1e3 / 60));
+    ((a) => setTimeout(() => a(performance.now()), 1e3 / 60));
     let lastCappedFrame = -1e9;
     function animloop(tick) {
         if (document.getElementById("gameAreaWrapper").style.display === "none") {
             hideJoinState();
-            setTimeout(() => animloop(Date.now()), 200);
+            setTimeout(() => animloop(performance.now()), 200);
             return;
         }
         animationFrame(animloop);
@@ -15342,10 +15401,15 @@ import * as treeUi from './tankTree.js';
         if (global.gameStart) {
 
             let fovtickMotion = fovlasttick ? tick - fovlasttick : null;
+            if (!(fovtickMotion >= 0 && fovtickMotion < 5000)) fovtickMotion = null;
             fovlasttick = tick;
             let renderv = null == fovtickMotion ? 0 : config.graphical.slowerFOV ? 0.98 : 0.99 ** fovtickMotion;
             let renderfov = global.player.animv.get(tick);
             global.player.renderv = global.player.renderv * renderv + renderfov * (1 - renderv);
+            if (!(global.player.renderv > 0 && isFinite(global.player.renderv))) {
+                global.player.renderv = renderfov > 0 && isFinite(renderfov) ? renderfov : 2000;
+                voidWatch.heals++;
+            }
 
             global.renderingInfo.entities = 0;
             global.renderingInfo.turretEntities = 0;
@@ -15426,6 +15490,7 @@ import * as treeUi from './tankTree.js';
         let p = performance.now();
         try {
             drawGameplay(tick, ratio);
+            try { watchVoid(performance.now()); } catch (e) { }
             // glitch strips and the low-health colour drain, under the HUD
             try { raidHeat.postWorld(ctx); } catch (e) { /* */ }
             drawGUI(tick, util.getScreenRatio());

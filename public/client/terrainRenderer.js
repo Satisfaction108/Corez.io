@@ -3448,6 +3448,7 @@ class TerrainRenderer {
                 return;
             }
             this._blankFrames = 0;
+            this.scenes = (this.scenes | 0) + 1;
             if (this._checkRock(this._view)) { ctx.restore(); return; }
 
             if (this._damageDirty || !this._damageBatch) {
