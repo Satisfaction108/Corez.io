@@ -322,7 +322,6 @@ async function main() {
             const t = Date.now();
             const code = fs.readFileSync(path.join(SRC, rel), "utf8");
             const profile = HOT.has(rel) ? "light" : "strong";
-            console.log(`  ${rel.padEnd(36)} ${profile.padEnd(6)} ${sourceType.padEnd(6)} ${kb(code)} -> ${kb(out)}  ${Date.now() - t} ms`);
             const { out, module } = await obfuscate(code, profile, rel, moduleSrcs.has(rel));
             put(rel, code, out);
             console.log(`  ${rel.padEnd(36)} ${profile.padEnd(6)} ${(module ? "module" : "script").padEnd(6)} ${kb(code)} -> ${kb(out)}  ${Date.now() - t} ms`);
