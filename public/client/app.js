@@ -9748,7 +9748,7 @@ import * as treeUi from './tankTree.js';
         let stage = false;
         try { stage = tNow - (global.hudCalloutAt || -1e9) < 400 || !!(raidHeat.slamUp && raidHeat.slamUp()) || !!(crowns.cardFresh && crowns.cardFresh()); } catch (e) { stage = false; }
         raidPerks.drawHud(ctx[2], {
-            wallet, bottom, minTop, left, right, blocked, stripLeft, stage,
+            wallet, bottom, minTop, left, right, blocked, stripLeft, hold: stage,
             score: you && you.score != null ? +you.score : +(global.royale && global.royale.youScore) || 0,
             stage: newcomer.known() ? newcomer.stage() : 3,
             mouse: global.mobile ? null : { x: global.mouse.x / cr, y: global.mouse.y / cr },

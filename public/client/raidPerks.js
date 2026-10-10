@@ -304,7 +304,7 @@ export function drawHud(c, o) {
     // the pick animation runs on the old cards; done, they're gone
     if (S.picked >= 0 && now - S.pickedAt > 620) { S.picked = -1; S.out = null; S.outRects = null; }
     const view = S.picked >= 0 ? "cards" : L.viewFor({ folded: S.folded, openedAt: S.openedAt, hover: S.hover >= 0, shown: S.shownKey === S.key },
-        { now, key: S.key, blocked: !!o.blocked, hurtAt: global.hurtAt || -1e9, dealtAt: global.dealtAt || -1e9, hold: !!o.stage });
+        { now, key: S.key, blocked: !!o.blocked, hurtAt: global.hurtAt || -1e9, dealtAt: global.dealtAt || -1e9, hold: !!o.hold });
     // first time out (after a fight held it back): fly in from now
     if (view === "cards" && S.key && S.shownKey !== S.key) { S.shownKey = S.key; S.openedAt = now; }
     S.view = view;

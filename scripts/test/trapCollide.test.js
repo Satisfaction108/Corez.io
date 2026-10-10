@@ -173,13 +173,17 @@ test('trapNerf', () => {
 test('minionNerf', () => {
     const cb = require(path.join(SERVER, 'game', 'terrain', 'classBalance.js'));
     assert.equal(cb.MINION_VS_TANKS, 0.6);
-    const owner = { label: 'Factory' };
+    const owner = { label: 'Spawner' };
     const minion = { type: 'minion', master: owner };
     const shot = { type: 'bullet', master: minion };
     const player = { isPlayer: true };
     assert.equal(cb.intoTank(player, minion, 100), 60, 'a minion ramming');
     assert.equal(cb.intoTank(player, shot, 100), 60, "a minion's own bullet");
-    assert.equal(cb.intoTank(player, { type: 'bullet', master: owner }, 100), 100, "the Factory's own gun is unchanged");
+    assert.equal(cb.intoTank(player, { type: 'bullet', master: owner }, 100), 100, "the Spawner's own gun is unchanged");
+    for (const label of ['Factory', 'Flotilla', 'Kumquat', 'Pomelo']) {
+        const f = { label };
+        assert.equal(cb.intoTank(player, { type: 'minion', master: f }, 100), 30, label + ' minions hit tanks for 30%');
+    }
     assert.equal(cb.intoTank({ isRoyaleBoss: true, isBot: true }, minion, 100), 100, 'bosses take the same');
 });
 

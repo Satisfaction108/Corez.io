@@ -13,6 +13,7 @@ const VS_TANKS = {
     'Constructor': 0.8,
     'Octo Tank': 0.88,
     'Penta Shot': 1.12,
+    'Factory': 0.5, 'Flotilla': 0.5, 'Kumquat': 0.5, 'Pomelo': 0.5,
 };
 // Oct 7 2026 (owner: "nerf traps a little bit please"): every trap and block (any projectile of
 // type 'trap': Trapper's triangles, Builder/Architect blocks, boomerangs, pillbox bodies), from
