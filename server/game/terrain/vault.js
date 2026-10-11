@@ -42,6 +42,7 @@ function grantTimedShield(body, ms, t = Date.now()) {
     body.invuln = true;
     body.spawnGraceUntil = Math.max(body.spawnGraceUntil || 0, t + ms);
     body.shieldEndAt = Math.max(body.shieldEndAt || 0, t + ms);
+    body.shieldCapAt = Math.max(body.shieldCapAt || 0, t + ms);
     body.shootEndsShield = true;
     return true;
 }

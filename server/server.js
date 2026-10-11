@@ -779,7 +779,9 @@ const FORWARDING_HEADERS = new Set([
 function proxyUpgradeToWorker(req, socket, head, proxyPath, port) {
     if (!port) return socket.destroy();
 
+    try { socket.setNoDelay(true); } catch (e) { }
     const upstream = net.connect(port, "127.0.0.1", () => {
+        try { upstream.setNoDelay(true); } catch (e) { }
         const path = req.url.slice(proxyPath.length) || "/";
         let raw = `GET ${path} HTTP/1.1\r\n`;
         for (let i = 0; i < req.rawHeaders.length; i += 2) {

@@ -28,6 +28,7 @@ const fairPlay = require('./terrain/fairPlay.js');
 const botTanks = require('../miscFiles/botTanks.js');
 const botTactics = require('../miscFiles/botTactics.js');
 const activity = require('./network/activity.js');
+const predictInput = require('./network/predictInput.js');
 
 function deflectBullet(chamber, body) {
     const dx = body.x - chamber.x, dy = body.y - chamber.y;
@@ -535,6 +536,7 @@ class gameHandler {
         this._tickStart = performance.now();
         // tick count (terrain/bossGuard.js meters boss damage per 30 ticks)
         global.gameTick = (global.gameTick || 0) + 1;
+        predictInput.tick(global.gameManager.clients, Config);
         logs.loops.tally();
         logs.master.set();
 

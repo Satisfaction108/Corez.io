@@ -3279,13 +3279,17 @@ class TerrainRenderer {
                     const ang = baseAng + (this._h(s, im.seed, 55) - 0.5) * 1.5;
                     const sp  = (0.2 + this._h(s, im.seed, 56) * 0.75) * rockSz * isc;
                     const sz  = (0.016 + this._h(s, im.seed, 57) * 0.028) * rockSz * (im.small ? 0.8 : 1);
-                    ctx.save();
-                    ctx.translate(im.x + Math.cos(ang) * fe * sp,
-                                  im.y + Math.sin(ang) * fe * sp);
-                    ctx.rotate(ang + fe * (this._h(s, im.seed, 58) - 0.5) * 8);
+                    const tx = im.x + Math.cos(ang) * fe * sp, ty = im.y + Math.sin(ang) * fe * sp;
+                    const rr = ang + fe * (this._h(s, im.seed, 58) - 0.5) * 8;
+                    const rc = Math.cos(rr), rs = Math.sin(rr), hx = sz, hy = sz * 0.7;
                     ctx.fillStyle = (im.chips || CHIPC)[s % 3];
-                    ctx.fillRect(-sz, -sz * 0.7, sz * 2, sz * 1.4);
-                    ctx.restore();
+                    ctx.beginPath();
+                    ctx.moveTo(tx - hx * rc + hy * rs, ty - hx * rs - hy * rc);
+                    ctx.lineTo(tx + hx * rc + hy * rs, ty + hx * rs - hy * rc);
+                    ctx.lineTo(tx + hx * rc - hy * rs, ty + hx * rs + hy * rc);
+                    ctx.lineTo(tx - hx * rc - hy * rs, ty - hx * rs + hy * rc);
+                    ctx.closePath();
+                    ctx.fill();
                 }
                 ctx.globalAlpha = 1;
             }

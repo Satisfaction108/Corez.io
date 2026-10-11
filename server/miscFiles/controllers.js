@@ -211,19 +211,33 @@ class io_listenToPlayer extends IO {
                 this._heldAtShield = bits & (16 | 32);
             }
             this._heldAtShield &= bits;     // let go: pressing it again is fresh
-            const grace = graceUntil && Date.now() < graceUntil;
+            const tNow = Date.now();
+            const grace = graceUntil && tNow < graceUntil;
+            const uiBusy = spawnShield.uiBusy(this.body, tNow);
             let fresh = bits & ~this._heldAtShield;
             // Oct 8 (owner: "it doesn't let you shoot at all"): a shielded tank's
             // guns don't fire, so shooting always ends the shield: a fresh
             // press at once (even in the spawn grace), and a trigger already
             // held (autofire, the respawn click) once the grace is over
-            if (!grace) fresh |= bits & this._heldAtShield & (16 | 32);
+            if (!grace && !uiBusy) fresh |= bits & this._heldAtShield & (16 | 32);
             const shot = fresh & (16 | 32);
             // Second Wind (shop gear): only shooting counts for a while longer
-            if ((this.body.spawnMoveShieldUntil || 0) > Date.now()) fresh &= 16 | 32;
+            if ((this.body.spawnMoveShieldUntil || 0) > tNow) fresh &= 16 | 32;
             // round 9 timed shields (quick-death respawn 8 s, post-bank 3 s): moving keeps
-            const endAt = this.body.shieldEndAt || 0;
-            if (endAt && (Date.now() >= endAt || (this.body.shootEndsShield && shot))) {
+            let endAt = this.body.shieldEndAt || 0;
+            if (endAt && tNow >= endAt && this.body.shieldSoftEnd && !shot) {
+                this.body.shieldEndAt = 0;
+                this.body.shootEndsShield = false;
+                this.body.shieldSoftEnd = false;
+                endAt = 0;
+            }
+            if (spawnShield.capped(this.body, tNow)) {
+                this.body.invuln = false;
+                this.body.shieldEndAt = 0;
+                this.body.shootEndsShield = false;
+                this.body.shieldSoftEnd = false;
+                if (graceUntil > tNow) this.body.spawnGraceUntil = 0;
+            } else if (endAt && (tNow >= endAt || (this.body.shootEndsShield && shot))) {
                 this.body.invuln = false;
                 this.body.shieldEndAt = 0;
                 this.body.shootEndsShield = false;
@@ -1447,6 +1461,7 @@ const SENSE_MAX_R = 2500;       // the radar ping's reach, the widest a bot ever
 const tactics = require('./botTactics.js');
 const bossGuard = require('../game/terrain/bossGuard.js');
 const activity = require('../game/network/activity.js');
+const spawnShield = require('../game/terrain/spawnShield.js');
 const newcomer = require('../game/terrain/newcomerDirector.js');
 // who bots leave alone (vaults, banking, bullies, small fish, first kills) and
 const fairPlay = require('../game/terrain/fairPlay.js');

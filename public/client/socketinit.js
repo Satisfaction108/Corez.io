@@ -22,6 +22,8 @@ import * as scoreText from "./scoreLogic.js";
 import * as raidProg from "./raidProgressLogic.js";
 import * as mineDust from "./mineDust.js";
 import { chatLog, pushMessage as pushChat } from "./chatPanelLogic.js";
+import { netSmooth } from "./netSmooth.js";
+import { predictor } from "./predict.js";
 // callouts (KC) that make your sidekick bounce about
 const SIDEKICK_CHEERS = { kill: 1, revenge: 1, huntkill: 1, shutdown: 1, bounty: 1, boss: 1, streak: 1, quest: 1, contract: 1 };
 window.fakeLagMS = 0;
@@ -879,6 +881,8 @@ const process = (z = {}) => {
         z.render.xAnim.add(z.x);
         z.render.yAnim.add(z.y);
         z.render.faceAnim.add(z.facing);
+        if (!z.render.ns) z.render.ns = netSmooth.track();
+        netSmooth.push(z.render.ns, global.player.lastUpdate, z.x, z.y, z.facing);
 
         if (!isNew && z.oldIndex !== z.index) isNew = true;
         z.oldIndex = z.index;
@@ -1204,6 +1208,7 @@ let incoming = async function(message, socket) {
                     socket.talk('p', payload);
                 };
                 socket.commandCycle = setInterval(() => {
+                    try { predictor.pump(performance.now()); } catch (e) { }
                     if (socket.cmd.check()) socket.cmd.talk();
                 });
             }
@@ -1532,6 +1537,9 @@ let incoming = async function(message, socket) {
                     if (d.msg && d.ok && gameSound.bankCelebrate) gameSound.bankCelebrate();
                     else if (d.msg && gameSound.uiClick) gameSound.uiClick();
                 } catch (e) { /* */ }
+            } break;
+            case 'PZ': {
+                predictor.onAdvert(m);
             } break;
             case 'AB': {
                 // dash charges and the ability slot (abilityFx.js)
@@ -2005,6 +2013,7 @@ let incoming = async function(message, socket) {
                 global.serverStats.players = m[1];
             } break;
             case 'c': {
+                predictor.onSpawn();
                 if (global.autoReconnect) { global.autoReconnect = null; global.createMessage && global.createMessage("Reconnected.", 3000); }
                 global.spawnedAt = performance.now();
                 // an empty chat box left open across the drop closes, so the keys drive the tank
@@ -2042,6 +2051,7 @@ let incoming = async function(message, socket) {
                 // old (spectate) spot to the tank instead of cutting to it
                 global.player.animX.add(m[0]); global.player.animX.add(m[0]);
                 global.player.animY.add(m[1]); global.player.animY.add(m[1]);
+                netSmooth.camCut(m[0], m[1]);
             } break;
             case 'S': {
                 let clientTime = m[0],
@@ -2163,7 +2173,8 @@ let incoming = async function(message, socket) {
                 camfov = m[3],
                 camvx = m[4],
                 camvy = m[5],
-                camscoping = m[6],
+                camword = m[6],
+                camscoping = typeof camword === "number" && camword >= 64 ? (camword & 1) === 1 : camword,
 
                 theshit = m.slice(7);
 
@@ -2184,6 +2195,7 @@ let incoming = async function(message, socket) {
                     console.log('yo some bullshit is up wtf');
                 }
                 global.player.lastUpdate = camtime;
+                netSmooth.onSnapshot(camtime, performance.now());
 
                 convert.begin(theshit);
                 convert.gui();
@@ -2198,9 +2210,19 @@ let incoming = async function(message, socket) {
                 global.player.loc = { x: camx, y: camy };
                 global.player.vx = global.died ? 0 : camvx;
                 global.player.vy = global.died ? 0 : camvy;
+                netSmooth.camPush(camtime, camx, camy);
 
                 global.player.isScoping = camscoping;
                 moveCompensation.reset();
+                try {
+                    let meSize = 0;
+                    if (!global.died && gui.playerid >= 0) {
+                        const me = global.selfEnt && global.selfEnt.id === gui.playerid ? global.selfEnt : global.entities.find(e => e.id === gui.playerid);
+                        const mk = me && global.mockups ? global.mockups[me.index] : null;
+                        if (me && !(mk && Math.abs(mk.shape || 0) >= 3)) meSize = me.size || 0;
+                    }
+                    predictor.onSnapshot(camword, camx, camy, camvx, camvy, gui.accel, gui.topspeed, meSize);
+                } catch (e) { }
 
                 global.player.animX.add(m[1]);
                 global.player.animY.add(m[2]);
@@ -2281,6 +2303,7 @@ let incoming = async function(message, socket) {
             // the tank this life ended as (the death card's "Respawn as <Tank>")
             try { global.diedAsTank = (global.mockups[parseInt(String(gui.type).split("-")[0], 10)] || {}).name || ""; } catch (e) { global.diedAsTank = ""; }
             global.died = true;
+            predictor.onDeath();
             const deathPlace = m[13 + m[8]] | 0;
             if (deathPlace > 0) global.royale.place = deathPlace;
             global.finalStreak = m[14 + m[8]] | 0;
@@ -2530,6 +2553,7 @@ const socketInit = () => {
 
     socket.binaryType = 'arraybuffer';
     socket.open = false;
+    try { predictor.onAdvert(null); } catch (e) { }
 
     let flag = false;
     let commands = [
@@ -2549,8 +2573,21 @@ const socketInit = () => {
                 flag = true;
             }
         },
+        fields: () => {
+            let o = 0;
+            for (let i = 0; i < 8; i++) {
+                if (commands[i]) o += Math.pow(2, i);
+            }
+            let ratio = util.getRatio();
+            let held = false;
+            try { held = raidHeat.inputHeld(); } catch (e) { held = false; }
+            const tx = Math.round(global.target.x / ratio), ty = Math.round(global.target.y / ratio);
+            if (held) return [tx, ty, global.reverseTank, 0, 0];
+            return [tx, ty, global.reverseTank, o, global.touchMovePacked > 0 ? global.touchMovePacked : 0];
+        },
         talk: () => {
             flag = false;
+            if (predictor.sending()) return;
             let o = 0;
             for (let i = 0; i < 8; i++) {
                 if (commands[i]) o += Math.pow(2, i);
@@ -2651,6 +2688,8 @@ const resync = () => {
     leaderboardInt.elements = {};
     leaderboard.entries = {};
     minimap.map = {};
+    netSmooth.reset();
+    predictor.stop("resync");
     socket.talk('S', Date.now() - clockDiff - serverStart);
 };
 
@@ -2690,6 +2729,7 @@ global.reconnectSocket = () => {
     leaderboard.entries = {};
     leaderboardInt.reset();
     global.socket = [];
+    netSmooth.reset();
     global.socket = socketInit();
 }
 

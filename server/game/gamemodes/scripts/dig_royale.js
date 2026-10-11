@@ -1,5 +1,6 @@
 const storm = require('../../terrain/storm.js');
 const vault = require('../../terrain/vault.js');
+const spawnShield = require('../../terrain/spawnShield.js');
 const outposts = require('../../terrain/outposts.js');
 const gems = require('../../terrain/gems.js');
 const shop = require('../../terrain/shop.js');
@@ -1558,10 +1559,11 @@ function freshRaidBody(body) {
     try { windMs = shop.spawnMoveShieldMs(body); } catch { /* */ }
     body.spawnMoveShieldUntil = windMs ? now() + windMs : 0;
     // round 9: a quick death (last life under QUICK_DEATH_MS): 8 s shield that holds
-    body.shieldEndAt = 0; body.shootEndsShield = false;
+    body.shieldEndAt = 0; body.shootEndsShield = false; body.shieldSoftEnd = false;
+    spawnShield.arm(body, now());
     const sock = body.socket;
     if (sock && body.isPlayer) {
-        if (QUICK_SHIELD_MS > 0 && quickDeath(sock)) vault.grantTimedShield(body, QUICK_SHIELD_MS, now());
+        if (QUICK_SHIELD_MS > 0 && quickDeath(sock) && vault.grantTimedShield(body, QUICK_SHIELD_MS, now())) body.shieldSoftEnd = true;
         sock._r9LifeAt = now();
     }
     body.passive = false;
@@ -2862,6 +2864,7 @@ function saveResume(socket, body) {
         snap.shielded = !!body.invuln;
         snap.graceLeft = Math.max(0, (body.spawnGraceUntil || 0) - t);
         snap.moveShieldLeft = Math.max(0, (body.spawnMoveShieldUntil || 0) - t);
+        snap.shieldCapLeft = spawnShield.capLeft(body, t);
         // ...and so is the bot grace: a reload never starts a fresh one
         snap.botGraceLeft = Math.max(0, (body.botGraceUntil || 0) - t);
         snap.botSoftLeft = Math.max(0, (body.botSoftUntil || 0) - t);
@@ -2981,6 +2984,7 @@ function applyResume(body, snap) {
             body.invuln = !!snap.shielded;
             body.spawnGraceUntil = snap.shielded ? now() + Math.min(SPAWN_GRACE_MS, snap.graceLeft | 0) : 0;
             body.spawnMoveShieldUntil = snap.shielded && (snap.moveShieldLeft | 0) > 0 ? now() + (snap.moveShieldLeft | 0) : 0;
+            if (snap.shielded && (snap.shieldCapLeft | 0) > 0) body.shieldCapAt = now() + (snap.shieldCapLeft | 0);
             body.botGraceUntil = (snap.botGraceLeft | 0) > 0 ? now() + (snap.botGraceLeft | 0) : 0;
             body.botSoftUntil = now() + (snap.botSoftLeft | 0);
             body.botNewbie = !!snap.botNewbie;

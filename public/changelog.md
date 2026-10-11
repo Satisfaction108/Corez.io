@@ -1,3 +1,23 @@
+# Update [2026-10-11] Smoother and fairer
+- Your tank reacts to your keys right away now, even if you live far from the server.
+- Other tanks move smoothly on a laggy connection instead of freezing and jumping.
+- The game runs faster on weaker laptops. If it does need to cut back, it drops screen shake and effects first and lowers resolution only as a last resort.
+- Choosing upgrades, spending stat points or picking a perk no longer drops your spawn shield.
+- Fixed your keyboard or mouse sometimes not responding, for example after switching tabs.
+- The first time you see a Core shard, a vault or a shop, a short card explains what it is.
+- Recording now captures the whole game at full resolution.
+- The "Enemy aiming at you" warning is gone.
+
+# Update [2026-10-10] Tank tree, colours and fixes
+- Press <b>T</b> for a new tank tree that shows your path and everything you can still upgrade into.
+- Every tank in a raid has its own colour, and the leaderboard shows it.
+- The minimap has rounded corners again, and the death screen is tidier.
+- Bots with drones and minions now actually send them at you.
+- Fixed perk cards not showing up, Duos getting stuck when you pressed Play, and spawning into an empty void after going back to the menu.
+
+# Balance [2026-10-10] Factory nerf
+- Factory, Flotilla, Kumquat and Pomelo do half damage to other tanks, so their minions hit much softer than before.
+
 # Update [2026-10-09] New look
 - The menu, sign up screens and in-game HUD have a new, simpler look that's easier to read.
 - The home screen has a new background.

@@ -131,7 +131,17 @@ test('quick death: an 8 s shield that holds while moving and ends on a shot', ()
     body.shieldEndAt = Date.now() - 1;
     io.think();
     assert.equal(body.invuln, false, 'over after 8 s');
-    assert.ok(/quickDeath\(sock\)\) vault\.grantTimedShield\(body, QUICK_SHIELD_MS/.test(read('server/game/gamemodes/scripts/dig_royale.js')));
+    assert.ok(/quickDeath\(sock\) && vault\.grantTimedShield\(body, QUICK_SHIELD_MS, now\(\)\)\) body\.shieldSoftEnd = true/.test(read('server/game/gamemodes/scripts/dig_royale.js')));
+    vault.grantTimedShield(body, 8000, Date.now());
+    body.shieldSoftEnd = true;
+    player.command.up = false; player.command.right = false; player.command.lmb = false;
+    io.think();
+    body.shieldEndAt = body.spawnGraceUntil = Date.now() - 1;
+    io.think();
+    assert.equal(body.invuln, true, 'a respawn shield turns into the normal one at 8 s while you stand still');
+    player.command.up = true;
+    io.think();
+    assert.equal(body.invuln, false, 'and moving then ends it');
 });
 
 test('post-bank: banking during a visit gives a 3 s vault shield on every exit', () => {

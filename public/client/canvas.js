@@ -6,6 +6,7 @@ import { AdvancedRecorder } from "./recorder.js";
 import { gameSound } from "./sound.js";
 import { touch, inputModeWatch } from "./touch.js";
 import * as abilityFx from "./abilityFx.js";
+import { predictor } from "./predict.js";
 import * as raidPerks from "./raidPerks.js";
 import * as raidFinale from "./raidFinale.js";
 import { attachEmoji } from "./emoji.js";
@@ -33,6 +34,49 @@ function overHudButton(mpos) {
         (c.lastTank && c.lastTank.check(mpos) !== -1) || (c.statBtn && c.statBtn.check(mpos) !== -1) ||
         (c.upgradePage && c.upgradePage.check(mpos) !== -1) ||
         raidPerks.hit(mpos.x / guiScale(), mpos.y / guiScale());
+}
+function inGuiBox(mpos, b, pad = 0) {
+    return !!b && mpos.x >= b.x - pad && mpos.x <= b.x + b.w + pad && mpos.y >= b.y - pad && mpos.y <= b.y + b.h + pad;
+}
+function upgradeBoxNow() {
+    if (!global.canUpgrade || !((global.upgradeBoxBottom | 0) > 0)) return null;
+    const top = Math.max(0, (global.upgradeBoxTop || 0) - 48);
+    return { x: 0, y: top, w: (global.upgradeBoxRight || 0) + 12, h: global.upgradeBoxBottom + 12 - top };
+}
+const UPGRADE_FOLLOW_MS = 1500;
+let lastUpgradeBox = null;
+function overHudPanel(mpos) {
+    const k = (global.ratio || 1) * guiScale();
+    mpos = { x: mpos.x / k, y: mpos.y / k };
+    const ub = upgradeBoxNow();
+    if (ub) { lastUpgradeBox = ub; if (inGuiBox(mpos, ub)) return true; }
+    if (lastUpgradeBox && performance.now() - (global.upgradePickedAt || -1e9) < UPGRADE_FOLLOW_MS && inGuiBox(mpos, lastUpgradeBox)) return true;
+    const sb = global.statPanelBox;
+    return !!sb && performance.now() - (sb.at || 0) < 500 && inGuiBox(mpos, sb, 6);
+}
+function touchUiAt(cx, cy) {
+    const rs = touch && touch.uiRects;
+    if (!global.mobile || !rs || !isFinite(cx) || !isFinite(cy)) return false;
+    for (const id in rs) {
+        const z = rs[id];
+        if (z && cx >= z.x && cx <= z.x + z.w && cy >= z.y && cy <= z.y + z.h) return true;
+    }
+    return false;
+}
+const TEXT_INPUT = /^(text|search|email|password|number|tel|url)$/i;
+function typingInto(t) {
+    if (!t || t === document.body || t === document.documentElement) return false;
+    const tag = t.tagName;
+    const field = tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable || (tag === "INPUT" && TEXT_INPUT.test(t.type || "text"));
+    if (!field) return false;
+    if (!t.getClientRects || !t.getClientRects().length) return false;
+    try {
+        const cs = getComputedStyle(t);
+        if (cs.visibility === "hidden" || +cs.opacity < 0.05) return false;
+        const r = t.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2 || r.right < 0 || r.bottom < 0 || r.left > innerWidth || r.top > innerHeight) return false;
+    } catch (e) { }
+    return true;
 }
 // Enter right after a respawn does not open the chat (mashed on the death card)
 const ENTER_GUARD_MS = 1200;
@@ -159,6 +203,11 @@ class Canvas {
         // go over a DOM box (the vault input, chat, an overlay) used to be
         // lost, leaving a kit or chip drag armed to eat the next click
         window.addEventListener("mouseup", (event) => {if (!global.mobile && (global.gameStart || global.disconnected)) this.mouseUp(event)});
+        window.addEventListener("mouseup", (event) => this.releaseButton(event.button), true);
+        window.addEventListener("keyup", (event) => this.releaseKey(event.keyCode), true);
+        window.addEventListener("blur", () => this.releaseAllInput());
+        window.addEventListener("pointercancel", (event) => { if (event.pointerType === "mouse") this.releaseAllInput(); });
+        document.addEventListener("visibilitychange", () => { if (document.hidden) this.releaseAllInput(); });
         this.cv.addEventListener("keypress", (event) => {if (!global.mobile && global.gameStart) this.keyPress(event)});
         this.cv.addEventListener("wheel", (event) => {if (!global.mobile && global.gameStart) this.wheel(event)});
         this.cv.addEventListener("keydown", (event) => {
@@ -175,11 +224,11 @@ class Canvas {
         window.addEventListener("keydown", (event) => {
             // Round 9 bug 1: after the death card the focus can sit on the page (the Respawn
             if (event.target !== this.cv && global.gameStart && !global.died && !global.showChat && !global.disconnected) {
-                const t0 = event.target, tag0 = t0 && t0.tagName;
-                const stray = !t0 || t0 === document.body || t0 === document.documentElement ||
-                    (tag0 === "BUTTON" && t0.offsetParent === null);
+                const t0 = event.target;
+                const stray = !typingInto(t0) && !(t0 && t0.closest && t0.closest("#dwIgc, #homeSettingsPanel, #homeSettingsOverlay, [role=dialog], dialog"));
                 if (stray && !event.metaKey && !event.ctrlKey) {
-                    try { this.cv.focus(); } catch (e) { /* */ }
+                    if (t0 && t0 !== document.body && (event.keyCode === 32 || event.keyCode === global.KEY_ENTER)) event.preventDefault();
+                    try { if (t0 && t0.blur && t0 !== document.body) t0.blur(); this.cv.focus(); } catch (e) { }
                     this.keyDown(event);
                     return;
                 }
@@ -270,6 +319,45 @@ class Canvas {
         // any UI that steals focus (chat, map, inputs) drops held movement
         // keys, otherwise the tank drifts until the key is pressed again
         for (let i = 0; i < 4; i++) this.socket.cmd.set(i, false);
+    }
+    releaseButton(button) {
+        if (!this.socket || !this.socket.cmd) return;
+        const primary = this.inverseMouse ? 6 : 4, secondary = this.inverseMouse ? 4 : 6;
+        if (button === 0 && !this.keyFire) this.socket.cmd.set(primary, false);
+        else if (button === 1) this.socket.cmd.set(5, false);
+        else if (button === 2) this.socket.cmd.set(secondary, false);
+        if (button === 0 && global.bigMap) global.bigMap.dragging = false;
+    }
+    releaseKey(kc) {
+        if (!this.socket || !this.socket.cmd) return;
+        const cmd = this.socket.cmd;
+        if (kc === global.KEY_UP || kc === global.KEY_UP_ARROW) cmd.set(0, false);
+        else if (kc === global.KEY_DOWN || kc === global.KEY_DOWN_ARROW) cmd.set(1, false);
+        else if (kc === global.KEY_LEFT || kc === global.KEY_LEFT_ARROW) cmd.set(2, false);
+        else if (kc === global.KEY_RIGHT || kc === global.KEY_RIGHT_ARROW) cmd.set(3, false);
+        else if (kc === global.KEY_MOUSE_0) { this.keyFire = false; cmd.set(4, false); }
+        else if (kc === global.KEY_MOUSE_1) cmd.set(5, false);
+        else if (kc === global.KEY_MOUSE_2 || kc === global.KEY_SHIFT) cmd.set(6, false);
+        else if (kc === global.KEY_SIDEARM) cmd.set(7, false);
+        else if (kc === global.KEY_MAX_STAT) global.statMaxing = false;
+    }
+    releaseAllInput() {
+        if (!this.socket || !this.socket.cmd) return;
+        for (let i = 0; i < 8; i++) this.socket.cmd.set(i, false);
+        this.keyFire = false;
+        this.aimClickHeld = false;
+        this.skipUpgradePressed = false;
+        this.lastTankPressed = false;
+        this.statBtnPressed = -1;
+        this.shopPressed = -1;
+        global.statMaxing = false;
+        global.specialPressed = false;
+        global.specialKeysPressed = [];
+        global.clickables.clicked = false;
+        global.kitDrag = null;
+        global.chipDrag = null;
+        if (global.bigMap) global.bigMap.dragging = false;
+        try { this.socket.cmd.reactNow(); } catch (e) { }
     }
     // The chat box: one DOM input over the chat panel's bottom row (app.js
     // drawChatPanel places and styles it every frame, and hides it closed).
@@ -450,7 +538,7 @@ class Canvas {
         gameSound.uiClick();
     }
     useDash() {
-        if (abilityFx.predictDash()) this.socket.talk('ab', 0);
+        if (abilityFx.predictDash()) { if (!predictor.dash()) this.socket.talk('ab', 0); }
         else if (global.abil && global.abil.d <= 0) gameSound.uiClick();
     }
     // The ability key: a placed or thrown one (pad, wall, shockwave, smoke)
@@ -569,6 +657,7 @@ class Canvas {
                 this.socket.cmd.set(3, true);
                 break;
             case global.KEY_MOUSE_0:
+                this.keyFire = true;
                 this.socket.cmd.set(4, true);
                 break;
             case global.KEY_MOUSE_1:
@@ -658,6 +747,7 @@ class Canvas {
                     global.showDebug = !global.showDebug;
                     break;
                 case global.KEY_CLASS_TREE:
+                    this.releaseMovement();
                     this.tankTreeProps.enabled = !this.tankTreeProps.enabled;
                     global.tankTree(this.tankTreeProps.enabled ? "open" : "exit");
                     break;
@@ -708,6 +798,7 @@ class Canvas {
         }
     }
     keyUp(event) {
+        this.releaseKey(event.keyCode);
         if (global.dailyTankAd.renderUI) return;
         if (global.treeUi && global.treeUi.opened() && global.treeUi.key(event, false)) return;
         if (this.royaleKeyUp(event)) return;
@@ -868,6 +959,9 @@ class Canvas {
                     global.clickables.shop.check(mpos) == -1 &&
                     global.clickables.kit.check(mpos) == -1 &&
                     upgradeCheck == -1 &&
+                    !overHudButton(mpos) &&
+                    !overHudPanel(mpos) &&
+                    !touchUiAt(mouse.clientX, mouse.clientY) &&
                     !global.died
                 ) this.socket.cmd.set(primaryFire, true);
                 break;
@@ -913,6 +1007,7 @@ class Canvas {
         if (isFinite(wx) && isFinite(wy)) this.socket.talk('PG', Math.round(wx), Math.round(wy));
     }
     mouseUp(mouse) {
+        this.releaseButton(mouse.button);
         if (global.treeUi && mouse.button === 0 && global.treeUi.up(mouse.clientX, mouse.clientY)) return;
         let primaryFire = 4,
             secondaryFire = 6;
@@ -1189,71 +1284,61 @@ class Canvas {
         }
     }
     record() {
-        // Merges the stacked game canvases into one each frame for the
-        // recorder. The recorder saves the file itself when it stops.
-        // phones record a lighter file: at most 1280 wide, 30 fps, 6 Mbps
-        const scale = global.mobile ? Math.min(1, 1280 / Math.max(this.cv.width, this.cv.height)) : 1;
-        let AdvancedCanvasCapturer = () => {
-            let canvas = document.createElement("canvas");
-            let ctx = canvas.getContext("2d", { alpha: false });
-            let layers = [];
-            let stop = false;
-            let srcW = 0, srcH = 0;
-            return {
-                init: () => {
-                    layers = [this.cvb, global.glCanvas || null, this.cvg, this.cvu].filter(Boolean);
-                    canvas.width = Math.round(this.cv.width * scale);
-                    canvas.height = Math.round(this.cv.height * scale);
-                },
-                start: () => {
-                    stop = false;
-                    srcW = this.cv.width; srcH = this.cv.height;
-                    canvas.width = Math.round(srcW * scale);
-                    canvas.height = Math.round(srcH * scale);
-                    const anim = () => {
-                        if (stop) return;
-                        if (srcW !== this.cv.width || srcH !== this.cv.height) {
-                            global.createMessage("Recording stopped because the window was resized. Saving it now.", 5_000);
-                            this.videoRecorderCanvas.stop();
-                            if (this.videoRecorder.state === "recording") this.videoRecorder.stop();
-                            return;
-                        }
-                        ctx.fillStyle = "#000";
-                        ctx.fillRect(0, 0, canvas.width, canvas.height);
-                        for (const layer of layers) ctx.drawImage(layer, 0, 0, canvas.width, canvas.height);
-                        requestAnimationFrame(anim);
-                    };
-                    anim();
-                },
-                stop: () => { stop = true; },
-                getCanvas: () => canvas
-            }
-        }
         if (!this.cv.captureStream || !window.MediaRecorder) {
             global.createMessage("Your browser can't record video.", 4_000);
             return;
         }
         if (this.videoRecorder && this.videoRecorder.state === "recording") {
             if (!global.mobile) global.createMessage("Recording saved!", 4_000);
-            this.videoRecorderCanvas.stop();
-            this.videoRecorder.stop();
+            this.stopRecording();
             return;
         }
-        // a fresh recorder each time: the canvas size may have changed
-        this.videoRecorderCanvas = AdvancedCanvasCapturer();
-        this.videoRecorderCanvas.init();
-        this.videoRecorderCanvas.start();
+        if (global.recordQuality) global.recordQuality(true);
+        const layers = [this.cvb, this.cvg, this.cvu];
+        const fullW = () => Math.max(this.cvb.width, this.cvg.width, this.cvu.width);
+        const fullH = () => Math.max(this.cvb.height, this.cvg.height, this.cvu.height);
+        const srcW = fullW(), srcH = fullH();
+        const scale = global.mobile ? Math.min(1, 1280 / Math.max(srcW, srcH)) : 1;
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(srcW * scale);
+        canvas.height = Math.round(srcH * scale);
+        const ctx = canvas.getContext("2d", { alpha: false });
+        let stop = false;
+        const anim = () => {
+            if (stop) return;
+            if (srcW !== fullW() || srcH !== fullH()) {
+                global.createMessage("Recording stopped because the window was resized. Saving it now.", 5_000);
+                this.stopRecording();
+                return;
+            }
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            for (const layer of layers) {
+                if (layer.width === canvas.width && layer.height === canvas.height) ctx.drawImage(layer, 0, 0);
+                else ctx.drawImage(layer, 0, 0, canvas.width, canvas.height);
+            }
+            requestAnimationFrame(anim);
+        };
+        this.videoRecorderCanvas = { stop: () => { stop = true; }, getCanvas: () => canvas };
+        anim();
         try {
             this.videoRecorder = global.mobile
-                ? new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 30, { maxBps: 6e6, onSaved: (blob, name) => touch.showClip(blob, name) })
-                : new AdvancedRecorder(this.videoRecorderCanvas.getCanvas(), 60);
+                ? new AdvancedRecorder(canvas, 30, { maxBps: 6e6, onSaved: (blob, name) => touch.showClip(blob, name) })
+                : new AdvancedRecorder(canvas, 60);
             this.videoRecorder.start();
+            window.dwRecInfo = this.videoRecorder.info;
             global.createMessage(global.mobile ? "Recording now. Tap the red button again to stop." : "Recording now. Press the record key again to stop.", 3_000);
         } catch (e) {
             this.videoRecorderCanvas.stop();
             this.videoRecorder = null;
+            if (global.recordQuality) global.recordQuality(false);
             global.createMessage("Couldn't start recording.", 4_000);
         }
+    }
+    stopRecording() {
+        if (this.videoRecorderCanvas) this.videoRecorderCanvas.stop();
+        if (this.videoRecorder && this.videoRecorder.state === "recording") this.videoRecorder.stop();
+        if (global.recordQuality) global.recordQuality(false);
     }
     screenshot() {
         let AdvancedCanvasCapturer = () => {

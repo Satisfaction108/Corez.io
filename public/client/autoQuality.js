@@ -4,20 +4,20 @@
 // these settings by hand hands it back to the player for good.
 import { global } from "./global.js";
 import { config } from "./config.js";
-import { Ladder, startRung, RUNGS } from "./autoQualityLogic.js";
+import { Ladder, startRung, RUNGS, after } from "./autoQualityLogic.js";
 
-const IDS = { fxLow: "optFxLevel", fewerFx: "optFewerFx", simpleTerrain: "optSimpleTerrain", fps30: "opt30Fps" };
+const IDS = { noShake: "optNoShake", fxLow: "optFxLevel", noGlow: "optNoGlow", fewerFx: "optFewerFx", simpleTerrain: "optSimpleTerrain", fps30: "opt30Fps" };
 const store = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) { } },
 };
 
 // read by juice.js (glitches stay on, rarer, while the trim is what lowered things)
-const state = global.autoQ = { active: false, rung: 0, fxLow: false, fewerFx: false, simpleTerrain: false, fps30: false };
+const state = global.autoQ = { active: false, rung: 0, recording: false, noShake: false, fxLow: false, noGlow: false, fewerFx: false, simpleTerrain: false, fps30: false };
 
 let manual = new Set();
 try { manual = new Set(JSON.parse(store.get("dwAutoManual") || "[]")); } catch (e) { }
-let ladder = null, user = null, off = false, softSeen = false, lastAt = 0, toast = null, playing = false;
+let ladder = null, user = null, off = false, softSeen = false, lastAt = 0, toast = null, playing = false, resStart = 0;
 
 function env() {
     return {
@@ -34,12 +34,15 @@ function ensure() {
     if (ladder) return ladder;
     // what worked last time, trusted one rung less (each session re-learns the rest)
     const kept = (parseInt(store.get("dwAutoQ"), 10) || 0) - 1;
-    ladder = new Ladder(Math.max(startRung(env()), Math.min(kept, RUNGS.length)));
+    ladder = new Ladder(resStart > 0 ? RUNGS.length : Math.max(startRung(env()), Math.min(kept, RUNGS.length)));
+    ladder.setResLow(resStart > 0);
     return ladder;
 }
 
 export function init(opts = {}) {
     toast = opts.toast || null;
+    resStart = opts.resLevel | 0;
+    if (ladder && resStart > 0) { ladder.rung = RUNGS.length; ladder.setResLow(true); }
     ensure();
     // a real click on one of these settings makes it the player's
     document.addEventListener("change", (e) => {
@@ -55,7 +58,7 @@ export function init(opts = {}) {
 
 // g = config.graphical just after loadSettings() read the player's choices
 export function applyTo(g = config.graphical) {
-    user = { fxLevel: g.fxLevel, fewerEffects: g.fewerEffects, simpleTerrain: g.simpleTerrain, fpsCap30: g.fpsCap30 };
+    user = { noShake: g.noShake, fxLevel: g.fxLevel, noGlow: g.noGlow, fewerEffects: g.fewerEffects, simpleTerrain: g.simpleTerrain, fpsCap30: g.fpsCap30 };
     put(g);
 }
 
@@ -63,19 +66,24 @@ function put(g = config.graphical) {
     const L = ensure();
     if (!user) return;
     const skip = [...manual];
+    if (user.noShake) skip.push("noShake");
     if (user.fxLevel === 0) skip.push("fxLow");
+    if (user.noGlow) skip.push("noGlow");
     if (user.fewerEffects) skip.push("fewerFx");
     if (user.simpleTerrain) skip.push("simpleTerrain");
     if (user.fpsCap30) skip.push("fps30");
     L.setSkip(skip);
     const on = (r) => !off && L.on(r);
+    g.noShake = user.noShake || on("noShake");
     g.fxLevel = on("fxLow") ? 0 : user.fxLevel;
+    g.noGlow = user.noGlow || on("noGlow");
     g.fewerEffects = user.fewerEffects || on("fewerFx");
     g.simpleTerrain = user.simpleTerrain || on("simpleTerrain");
     g.fpsCap30 = user.fpsCap30 || on("fps30");
     for (const r of RUNGS) state[r] = on(r);
     state.rung = off ? 0 : L.rung;
     state.active = !off && L.active();
+    state.recording = L.rec;
 }
 
 // once per drawn frame; work = ms the frame took to draw
@@ -92,7 +100,8 @@ export function frame(now, work) {
     // software WebGL is only known once the rock shader is up
     if (!softSeen && softGpu()) {
         softSeen = true;
-        if (L.rung < 3) { L.rung = 3; changed(1); return; }
+        const soft = after("simpleTerrain");
+        if (L.rung < soft && !L.rec) { L.rung = soft; changed(1); return; }
     }
     const step = L.frame(now, dt, work, !!config.graphical.fpsCap30);
     if (step) changed(step);
@@ -107,10 +116,20 @@ function changed(step) {
     }
 }
 
-// the automatic resolution waits its turn: last rung reached, or frames so
-// slow that only fewer pixels will do
 export function resolutionTurn(emaMs) {
-    return off || !ladder || ladder.exhausted() || emaMs > 60;
+    if (global.recording || (ladder && ladder.rec)) return false;
+    return off || !ladder || ladder.exhausted();
+}
+
+export function resolutionLow(low) {
+    const L = ensure();
+    L.setResLow(low);
+}
+
+export function recording(on) {
+    const L = ensure();
+    if (!L.setRecording(on, performance.now())) return;
+    put();
 }
 
 // QA: dwAutoQ() reports, dwAutoQ(n) jumps to rung n, dwAutoQ(false) turns

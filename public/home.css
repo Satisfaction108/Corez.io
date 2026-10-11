@@ -636,6 +636,7 @@ body.mobile #homeSettingsPanel { width: 90%; max-width: 340px; }
     z-index: 10;
 }
 body.mobile .mainWrapper { padding: 10px 10px 0; }
+body.in-game .mainWrapper { pointer-events: none; }
 
 /* the menu card: one big plate, slightly uneven corners, a hard ink drop */
 .startMenu {

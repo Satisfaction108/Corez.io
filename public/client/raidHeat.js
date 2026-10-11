@@ -870,33 +870,11 @@ export function drawWorld(c, px, py, ratio) {
         }
         c.restore();
     }
-    // locked on: an enemy close by has its gun on you while you're hunted
-    if (S.lockAim && S.mine && !global.died) drawLock(c, vCx, vCy, ratio, now);
     drawKillPops(c, ratio, now);
     skyDrop.drawAir(c, px, py, ratio);
     juice.drawSparks(c, px, py, ratio);
     mineDust.draw(c, px, py, ratio);
 }
-function drawLock(c, x, y, ratio, now) {
-    const t = Math.min(1, (now - S.lockFrom) / 220);
-    const R = (70 + 50 * (1 - t)) * ratio;
-    const spin = calm() ? 0 : now / 700;
-    c.save();
-    c.lineCap = "round";
-    c.globalAlpha = 0.55 + 0.35 * Math.sin(now / 90);
-    for (let pass = 0; pass < 2; pass++) {
-        c.strokeStyle = pass ? RED : "#120e15";
-        c.lineWidth = Math.max(pass ? 2 : 4, (pass ? 3 : 6) * ratio);
-        for (let i = 0; i < 4; i++) {
-            const a = spin + i * Math.PI / 2;
-            c.beginPath(); c.arc(x, y, R, a - 0.35, a + 0.35); c.stroke();
-        }
-    }
-    c.restore();
-    // round 11: plain words (the old one-word label read as a mystery)
-    if (A) A.drawText("Enemy aiming at you", x, y + R + 14, 12, RED, "center", true, 0.9, 5);
-}
-
 // after the world, before the HUD (app.js renderFrame)
 export function postWorld(ctxs) {
     // low health drains the colour out of the world

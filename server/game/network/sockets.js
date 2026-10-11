@@ -8,13 +8,16 @@ let bans = global.bans || (global.bans = []);
 // How much queueing past the base round trip a client may build up before
 // snapshots are skipped instead of sent.
 const FLOW_SLACK_MS = +process.env.FLOW_SLACK_MS || 250;
+const FLOW_TRICKLE_MS = +process.env.FLOW_TRICKLE_MS || 200;
 let permBans = global.permBans || (global.permBans = []);
 const { clientIp } = require("../../lib/clientIp.js");
 const accountBridge = require("../../accounts/game/bridge.js");
 const activity = require("./activity.js");
 const raidChat = require("./raidChat.js");
 const { unpackMove } = require("../../lib/touchMove.js");
+const predictInput = require("./predictInput.js");
 const tier5 = require("../terrain/tier5.js");
+const spawnShield = require("../terrain/spawnShield.js");
 
 // Same rule as the accounts config: NODE_ENV, or a real public hostname.
 function isProduction() {
@@ -618,7 +621,7 @@ class socketManager {
             case "C": {
 
             // a fifth field is the touch stick's analog move (see unpackMove)
-            if (m.length !== 4 && m.length !== 5) {
+            if (m.length !== 4 && m.length !== 5 && m.length !== 6) {
                 socket.kick("Ill-sized command packet.");
                 return 1;
             }
@@ -633,7 +636,8 @@ class socketManager {
             if (
                 typeof target.x !== "number" ||
                 typeof target.y !== "number" ||
-                typeof commands !== "number"
+                typeof commands !== "number" ||
+                (m.length === 6 && (typeof m[5] !== "number" || !(m[5] >= 0) || m[5] !== Math.floor(m[5])))
             ) {
                 socket.kick("Weird downlink.");
                 return 1;
@@ -648,6 +652,12 @@ class socketManager {
             activity.noteCommand(socket, target.x, target.y, commands);
 
             if (player.body == null) return;
+
+            if (m.length === 6 && predictInput.enabled()) {
+                predictInput.enqueue(socket, target, reverseTank, commands, m[4], m[5]);
+                break;
+            }
+            predictInput.legacy(socket);
 
             if (!socket.player.body.eastereggs.braindamage) player.target = target;
 
@@ -665,7 +675,7 @@ class socketManager {
                 // touch sticks: full-circle direction and partial speed. Only
                 // counts while a movement bit is down, so a stale value can't
                 // keep a tank walking.
-                const analog = m.length === 5 && (commands & 15) ? unpackMove(m[4]) : null;
+                const analog = m.length >= 5 && (commands & 15) ? unpackMove(m[4]) : null;
                 player.command.moveX = analog ? analog.x : 0;
                 player.command.moveY = analog ? analog.y : 0;
                 player.command.analog = !!analog;
@@ -718,6 +728,7 @@ class socketManager {
             } break;
             case "U": {
                 if (Config.dig_royale && player.body && (player.body.royaleFrozen || (global.royaleInFall && global.royaleInFall(player.body)))) break;   // falling, or the raid-end freeze
+                if (player && player.body) spawnShield.noteUi(player.body);
 
                 m[0] = util.isStringified(m[0]);
                 if (Array.isArray(m[0])) m[0] = m[0][0];
@@ -763,6 +774,7 @@ class socketManager {
             } break;
             case "x": {
                 if (Config.dig_royale && player.body && (player.body.royaleFrozen || (global.royaleInFall && global.royaleInFall(player.body)))) break;
+                if (player && player.body) spawnShield.noteUi(player.body);
 
                 if (m.length !== 2) {
                     socket.kick("Ill-sized skill request.");
@@ -820,6 +832,7 @@ class socketManager {
                 // the build buttons (terrain/respawnBuild.js): Respawn as, Last tank, Same stats
                 if (m.length !== 1 || typeof m[0] !== "string" || m[0].length > 8) break;
                 if (!Config.dig_royale || Config.tutorial) break;
+                if (player && player.body) spawnShield.noteUi(player.body);
                 try { require('../terrain/respawnBuild.js').request(socket, m[0]); } catch (e) { console.error('[RB]', e && e.message); }
             } break;
             case "L": {
@@ -1341,6 +1354,7 @@ class socketManager {
                 // checks it against the offer it actually sent)
                 if (!Config.dig_royale || Config.tutorial) return 1;
                 if (m.length !== 1 || typeof m[0] !== "string" || m[0].length > 16) return;
+                if (player && player.body) spawnShield.noteUi(player.body);
                 require('../gamemodes/scripts/dig_royale.js').pickPerk(socket, m[0]);
             } break;
             case "ko": {
@@ -1559,9 +1573,10 @@ class socketManager {
                         if (bots[0]) { b.godmode = false; b.invuln = false; b.finalKillers = [bots[0]]; b.collisionArray.push(bots[0]); b.health.amount = -1; }
                     }
                     else if (what === "god" && b) { b.godmode = !b.godmode; }
+                    else if (what === "boots" && b) { require('../terrain/abilities.js').rocketBoots(b); }
                     // a hit without a shooter (save-code tests: a save stops when you're hurt)
                     else if (what === "hurt" && b) { b.hitAt = Date.now(); b.health.amount = Math.max(1, b.health.amount - Math.max(1, (m[1] | 0) || 20)); }
-                    else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), x: Math.round(b.x), y: Math.round(b.y), hp: Math.round(b.health.amount), sh: Math.round(b.shield.amount), dead: !!(b.isDead && b.isDead()), carried: b.carriedGems | 0, arm: b.sidearmId || null } : { nobody: true }), 0);
+                    else if (what === "me") socket.talk('KC', 'dbg', JSON.stringify(b ? { invuln: !!b.invuln, grace: Math.max(0, (b.spawnGraceUntil || 0) - Date.now()), cap: spawnShield.capLeft(b), ui: spawnShield.uiBusy(b), x: Math.round(b.x), y: Math.round(b.y), hp: Math.round(b.health.amount), sh: Math.round(b.shield.amount), dead: !!(b.isDead && b.isDead()), carried: b.carriedGems | 0, arm: b.sidearmId || null } : { nobody: true }), 0);
                     // every human tank in the world (drop tests: a dropped player's tank is gone)
                     else if (what === "humans") socket.talk('KC', 'dbg', JSON.stringify({ humans: [...entities.values()].filter(e => e && e.socket && e.isPlayer && !(e.isDead && e.isDead())).map(e => e.name) }), 0);
                     else if (what === "chesthp" && b) {
@@ -2343,6 +2358,7 @@ class socketManager {
         }
 
         socket.talk("c", socket.camera.x, socket.camera.y, socket.camera.fov);
+        predictInput.advert(socket, Config);
 
         socket.status.readyToBroadcast = true;
     }
@@ -2632,7 +2648,7 @@ class socketManager {
                 const flow = socket.flow, nowFlow = util.time();
                 if (!updateCam && flow.sent.length &&
                     nowFlow - flow.sent[0] > (flow.rttMin ?? 300) + FLOW_SLACK_MS &&
-                    nowFlow - flow.lastSentAt < 1000) {
+                    nowFlow - flow.lastSentAt < FLOW_TRICKLE_MS) {
                     flow.skipped++;
                     return;
                 }
@@ -2887,7 +2903,7 @@ class socketManager {
                         fovNow,
                         camera.vx,
                         camera.vy,
-                        camera.scoping,
+                        predictInput.ackWord(socket, player.body, camera.scoping),
                         ...player.gui.publish(),
                         visible.length,
                         ...view

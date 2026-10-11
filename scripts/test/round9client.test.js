@@ -199,7 +199,7 @@ test('buttons: the client draws them, sends rb, phones can tap them', () => {
     // touch: clickables are tappable (touch.anyClickable walks them all)
     assert.match(src('touch.js'), /for \(const k in c\) \{/);
     // bug 1: stray keys after the death card reach the game
-    assert.match(cv, /const stray = !t0 \|\| t0 === document\.body/);
+    assert.match(cv, /const stray = !typingInto\(t0\)/);
     assert.match(app, /e\.preventDefault\(\); againAct\(\);/);
 });
 

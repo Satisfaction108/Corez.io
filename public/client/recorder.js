@@ -1,27 +1,27 @@
-// In-game video recorder (the record key, see canvas.js).
-//
-// The file is saved from the recorder's own "stop" event: the last chunk only
-// arrives after stop(), so saving on a timer gives empty or truncated files.
-// The extension follows the real container (Chrome and Safari give H.264 MP4,
-// Firefox gives WebM); the bitrate scales with the canvas size.
-//
-// opts.maxBps caps the bitrate (phones: a lighter encode), and opts.onSaved
-// takes the finished file instead of the automatic download (touch.js shows
-// a Share / Save card, since a phone has nowhere obvious to put a download).
 const TYPES = [
-    "video/mp4;codecs=avc1.64002A",   // H.264 High: opens everywhere
+    "video/mp4;codecs=avc1.640033",
+    "video/mp4;codecs=avc1.64002A",
     "video/mp4;codecs=avc1",
-    "video/mp4",
     "video/webm;codecs=vp9",
     "video/webm;codecs=vp8",
+    "video/mp4",
     "video/webm",
 ];
 
+const BPS_1080 = 20e6;
+const PX_1080 = 1920 * 1080;
+
 function pickType() {
     for (const t of TYPES) {
-        try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (e) { /* */ }
+        try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (e) { }
     }
     return "";
+}
+
+function bitrateFor(width, height, fps, maxBps) {
+    const hi = maxBps || 60e6, lo = Math.min(8e6, hi);
+    const want = BPS_1080 * (width * height) / PX_1080 * Math.max(0.5, fps / 60);
+    return Math.round(Math.min(hi, Math.max(lo, want)));
 }
 
 function stamp() {
@@ -32,10 +32,14 @@ function stamp() {
 class AdvancedRecorder extends MediaRecorder {
     constructor(canvas, framePerSecond = 60, opts = {}) {
         const mimeType = pickType();
-        // ~0.12 bits per pixel per frame, 8-24 Mbps: sharp text and rock edges
-        const hi = opts.maxBps || 24e6, lo = Math.min(8e6, hi);
-        const bps = Math.round(Math.min(hi, Math.max(lo, canvas.width * canvas.height * framePerSecond * 0.12)));
-        super(canvas.captureStream(framePerSecond), mimeType ? { mimeType, videoBitsPerSecond: bps } : { videoBitsPerSecond: bps });
+        const bps = bitrateFor(canvas.width, canvas.height, framePerSecond, opts.maxBps);
+        const stream = canvas.captureStream(framePerSecond);
+        const o = { videoBitsPerSecond: bps };
+        if (mimeType) o.mimeType = mimeType;
+        super(stream, o);
+        const track = stream.getVideoTracks()[0];
+        const set = track && track.getSettings ? track.getSettings() : {};
+        this.info = { mimeType: this.mimeType || mimeType, videoBitsPerSecond: this.videoBitsPerSecond || bps, width: canvas.width, height: canvas.height, fps: framePerSecond, trackWidth: set.width || 0, trackHeight: set.height || 0, trackFps: set.frameRate || 0 };
         this.onSaved = opts.onSaved || null;
         this.startedAt = 0;
         this.chunks = [];
@@ -44,7 +48,6 @@ class AdvancedRecorder extends MediaRecorder {
         });
         this.addEventListener("stop", () => this.save());
     }
-    // 1 s chunks keep memory flat on long recordings
     start() { this.startedAt = performance.now(); super.start(1000); }
     save() {
         const type = (this.mimeType || "video/webm").split(";")[0];
@@ -64,4 +67,4 @@ class AdvancedRecorder extends MediaRecorder {
     }
 }
 
-export { AdvancedRecorder };
+export { AdvancedRecorder, pickType, bitrateFor };

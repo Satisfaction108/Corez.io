@@ -68,7 +68,8 @@ let slowUntil = 0, slowSpeed = 1;
 let rumbleUntil = 0, rumblePow = 0;
 export function frameStart(now) {
     // not on the sky drop's dive: its wide frames would thin the landing's effects
-    if (lastFrameAt && (global.dropZoom === undefined || global.dropZoom === 1)) Q = JM.nextQuality(Q, now - lastFrameAt);
+    if (global.recording) Q = 1;
+    else if (lastFrameAt && (global.dropZoom === undefined || global.dropZoom === 1)) Q = JM.nextQuality(Q, now - lastFrameAt);
     lastFrameAt = now;
     const dt = clockReal ? Math.min(100, now - clockReal) : 0;
     clockReal = now;

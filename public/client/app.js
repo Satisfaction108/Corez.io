@@ -9,6 +9,7 @@ import './terrainRenderer.js';
 import { gameSound } from "./sound.js";
 import * as tutorial from './tutorial.js';
 import * as coach from './coach.js';
+import * as firstHints from './firstHints.js';
 import { touch, STICK, touchPref, haptic, AIMED_KIT, mobileFullscreen, touchPrimary } from './touch.js';
 import * as raidFinale from './raidFinale.js';
 import * as stormFx from './stormFx.js';
@@ -43,6 +44,8 @@ import { layoutLabels } from './labelLayout.js';
 import * as chatPanel from './chatPanelLogic.js';
 import * as upGrid from './upgradeGridLogic.js';
 import * as treeUi from './tankTree.js';
+import { netSmooth } from './netSmooth.js';
+import { predictor } from './predict.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -896,10 +899,10 @@ import * as treeUi from './tankTree.js';
     let autoResNative = 0;   // the screen's own pixel count (resizeEvent)
     const autoResMax = () => resLevels(autoResNative, AUTO_RES_FLOOR());
     let autoResStart = 0;
-    try { autoResStart = Math.max(0, Math.min(3, parseInt(localStorage.getItem("dwAutoResStep"), 10) || 0)); } catch (e) { }
+    try { autoResStart = Math.max(0, Math.min(3, (parseInt(localStorage.getItem("dwAutoResStep"), 10) || 0) - 1)); } catch (e) { }
     const autoRes = new ResGovernor(autoResStart);
     let autoResLast = 0, autoResTold = false;
-    autoQ.init({ toast: (text) => global.createMessage(text, 5000) });
+    autoQ.init({ toast: (text) => global.createMessage(text, 5000), resLevel: autoResStart });
     function setAutoResLevel(level) {
         const down = level > autoRes.level;
         if (!autoRes.set(performance.now(), Math.max(0, Math.min(autoResMax(), level)))) return;
@@ -907,6 +910,7 @@ import * as treeUi from './tankTree.js';
     }
     function autoResChanged(down) {
         try { localStorage.setItem("dwAutoResStep", String(autoRes.level)); } catch (e) { }
+        autoQ.resolutionLow(autoRes.level > 0);
         resizeEvent();
         if (down && !autoResTold) {
             autoResTold = true;
@@ -919,13 +923,27 @@ import * as treeUi from './tankTree.js';
         // tab switches, hidden panes and the menu are not slow frames
         // the sky drop's dive (skyDrop.js) is a second of wide view, not a slow machine
         const diving = global.dropZoom !== undefined && global.dropZoom !== 1;
-        if (document.hidden || !global.gameStart || diving || autoRes.hold) { autoRes.pause(now); return; }
+        if (document.hidden || !global.gameStart || diving || autoRes.hold || global.recording) { autoRes.pause(now); return; }
         // the effects ladder (autoQuality.js) goes first, resolution last
         const step = autoRes.frame(now, dt, (ema) => autoQ.resolutionTurn(ema), autoResMax());
         if (step) autoResChanged(step > 0);
     }
     // QA: dwAutoRes() reports, dwAutoRes(n) jumps to a level, dwAutoRes(n, true)
     // holds it there (A/B runs on a busy machine), dwAutoRes(null, false) lets go
+    let recResLevel = 0;
+    global.recordQuality = (on) => {
+        if (on) {
+            recResLevel = autoRes.level;
+            global.recording = true;
+            autoQ.recording(true);
+            if (autoRes.level) setAutoResLevel(0);
+        } else {
+            global.recording = false;
+            autoQ.recording(false);
+            if (recResLevel > autoRes.level) setAutoResLevel(recResLevel);
+            recResLevel = 0;
+        }
+    };
     window.dwAutoRes = (level, hold) => {
         if (hold != null) autoRes.hold = !!hold;
         if (level != null) setAutoResLevel(level | 0);
@@ -1015,10 +1033,11 @@ import * as treeUi from './tankTree.js';
             return P.scale.call(this, x, y);
         };
         c.rotate = function (r) { tf.ok = false; return P.rotate.call(this, r); };
-        c.transform = function (...a) { tf.ok = false; return P.transform.apply(this, a); };
-        c.setTransform = function (...a) {
-            if (typeof a[0] === "number") { tf.a = a[0]; tf.b = a[1]; tf.c = a[2]; tf.d = a[3]; tf.ok = true; } else tf.ok = false;
-            return P.setTransform.apply(this, a);
+        c.transform = function (a, b, cc, d, e, f) { tf.ok = false; return P.transform.call(this, a, b, cc, d, e, f); };
+        c.setTransform = function (a, b, cc, d, e, f) {
+            if (typeof a === "number") { tf.a = a; tf.b = b; tf.c = cc; tf.d = d; tf.ok = true; return P.setTransform.call(this, a, b, cc, d, e, f); }
+            tf.ok = false;
+            return arguments.length ? P.setTransform.call(this, a) : P.setTransform.call(this);
         };
         c.resetTransform = function () { tf.a = 1; tf.b = 0; tf.c = 0; tf.d = 1; tf.ok = true; return P.resetTransform.call(this); };
     }
@@ -4964,6 +4983,8 @@ import * as treeUi from './tankTree.js';
 
         const motion = compensation();
         let livingPred = false;
+        const nsNow = Math.abs(performance.now() - tick) < 100 ? tick : performance.now();
+        const nsOn = netSmooth.active(nsNow) && config.graphical.interpolation && !config.graphical.lerpAnimations;
         const finaleIds = raidFinale.watchIds();
         const skCount = sidekicks.count();
         overheadFrame++;
@@ -5018,6 +5039,7 @@ import * as treeUi from './tankTree.js';
                 motion.set(instance.render.lastRender, instance.render.interval);
             }
             let isize = instance.render.size.get(tick, 1 !== rst);
+            const nsT = nsOn && instance.render.ns ? netSmooth.entity(instance.render.ns, nsNow) : null;
             instance.render.x = !config.graphical.interpolation ?
                 motion.predict(instance.render.lastx, instance.x, instance.render.lastvx, instance.vx) :
                 config.graphical.lerpAnimations ?
@@ -5033,6 +5055,9 @@ import * as treeUi from './tankTree.js';
             instance.render.f = !config.graphical.interpolation ?
                 motion.predictFacing(instance.render.lastf, instance.facing) :
                 instance.render.faceAnim.get(tick, 1 !== rst);
+            if (nsT) { instance.render.x = nsT.x; instance.render.y = nsT.y; instance.render.f = nsT.f; }
+            if (nsOn && instance.id === gui.playerid && !global.died && !global.player.isScoping) { const nsC = netSmooth.camNow(); if (nsC) { instance.render.x = nsC.x; instance.render.y = nsC.y; } }
+            if (global.player.predOn && instance.id === gui.playerid && !global.died && rst === 1) { instance.render.x = global.player.predX; instance.render.y = global.player.predY; }
 
             instance.id === gui.playerid &&
                 !global.autoSpin &&
@@ -6170,6 +6195,7 @@ import * as treeUi from './tankTree.js';
     }
 
     function drawSkillBars(spacing, alcoveSize) {
+        global.statPanelBox = null;
         // Tutorial: stat bars show only when the lesson allows stats or
         // highlights them (the "find your points" step); otherwise they are
         // hidden, since the server refuses the clicks.
@@ -6286,6 +6312,10 @@ import * as treeUi from './tankTree.js';
         }
 
         global.clickables.hover.place(0, 0, y * clickableRatio, 0.8 * len * clickableRatio, (global.screenHeight - y) * clickableRatio);
+        if (statMenu.get() > 0.5) {
+            const panelTop = y + height + vspacing - 2, panelBottom = global.screenHeight - spacing - 3;
+            global.statPanelBox = { x: 0, y: panelTop, w: Math.max(0, x + save * ska(gui.skills.reduce((m, sk) => Math.max(m, sk.cap), 0)) + 40), h: panelBottom - panelTop, at: performance.now() };
+        }
         if (gui.points !== 0) {
 
             const ptsX = Math.round(x + len - 2) - 13, ptsY = Math.round(y + height - 4) + 2;
@@ -7550,6 +7580,7 @@ import * as treeUi from './tankTree.js';
         if (duoRect) out.push(duoRect);
         if (chatPanelRect) out.push(chatPanelRect);
         if (global.coachRect) out.push(global.coachRect);
+        if (global.hintRect) out.push(global.hintRect);
         if (abilityBarRect) out.push(abilityBarRect);
         if (vitalsRect) out.push(vitalsRect);
         if (!perkAvoidSkip) { const pr = raidPerks.avoidRect(); if (pr) out.push(pr); }
@@ -7812,6 +7843,7 @@ import * as treeUi from './tankTree.js';
         }
         fxQ.last = now;
         if (document.hidden) return;
+        if (global.recording) { global.lowFx = false; fxQ.slowSince = fxQ.fastSince = 0; return; }
         // the 30 FPS cap draws every ~33 ms by design: slow is past 45 ms
         // there (34 latched lowFx on for good, since 20 never comes back)
         const cap30 = !!config.graphical.fpsCap30;
@@ -14557,6 +14589,20 @@ import * as treeUi from './tankTree.js';
 
         let playerx = global.player.animX.get(tick);
         let playery = global.player.animY.get(tick);
+        const nsNow = Math.abs(performance.now() - tick) < 100 ? tick : performance.now();
+        if (netSmooth.active(nsNow)) {
+            netSmooth.frame(nsNow);
+            const nsCam = !global.died && !global._specGlide ? netSmooth.camera(nsNow) : null;
+            if (nsCam) { playerx = nsCam.x; playery = nsCam.y; }
+        }
+        let pred = null;
+        if (!global.died && !global._specGlide) {
+            try { pred = predictor.frame(nsNow, playerx, playery); } catch (e) { pred = null; }
+        } else {
+            try { predictor.frame(nsNow, NaN, NaN); } catch (e) { }
+        }
+        global.player.predOn = !!pred;
+        if (pred) { playerx = pred.x; playery = pred.y; global.player.predX = pred.x; global.player.predY = pred.y; }
         if (global._specGlide) {
             // Spectate glide owns the camera (the chase below would drag it
             // back toward the corpse); it retargets from server updates, then
@@ -14575,6 +14621,9 @@ import * as treeUi from './tankTree.js';
                 global.player.renderx = util.lerp(global.player.renderx, playerx, k);
                 global.player.rendery = util.lerp(global.player.rendery, playery, k);
             }
+        } else if (pred) {
+            global.player.renderx = playerx;
+            global.player.rendery = playery;
         } else if (config.graphical.lerpAnimations) {
             // lerp toward the interpolated position, not raw 30Hz updates
             global.player.renderx = util.lerp(global.player.renderx, playerx, 0.15, true);
@@ -15496,6 +15545,7 @@ import * as treeUi from './tankTree.js';
             drawGUI(tick, util.getScreenRatio());
             tutorial.hook();
             try { coach.hook(); } catch (e) { }
+            try { firstHints.hook(hudAvoidRects); } catch (e) { }
             drawTopIndicators();
             if (global.showTree) drawUpgradeTree();
             if (global.gameStart && !global.died && !global.disconnected) {
