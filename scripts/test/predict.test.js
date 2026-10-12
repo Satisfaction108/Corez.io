@@ -55,7 +55,7 @@ function settle(f, tUp, ms, dir) {
 
 (async () => {
     const t0 = Date.now();
-    const { page, origin, stop } = await H.start({ port: 4760, env: { ROYALE_FILL_CAP: '2' } });
+    const { page, origin, stop } = await H.start({ port: 4760, env: { ROYALE_FILL_CAP: '2', PREDICT: '1' } });
     let results = [];
     try {
         await H.play(page, origin);

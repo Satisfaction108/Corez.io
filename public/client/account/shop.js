@@ -60,7 +60,8 @@ const serverNow = () => Date.now() + clockSkew();
 function myKick() {
     const u = me(), eq = u && u.equipped;
     const id = eq && eq.sidekick && cos.byId(eq.sidekick) ? eq.sidekick : 'sd_buddy';
-    return { kick: id, name: (eq && eq.sidekickName) || null, col: (eq && eq.sidekickColor) || null };
+    const c = (eq && eq.sidekickColor) || null;
+    return { kick: id, name: (eq && eq.sidekickName) || null, col: c === 'own' ? null : c || '#00b2e1' };
 }
 // A preview for an item at w x h: a skin on a tank, a name style on a
 // nameplate, a sidekick, or a sidekick face / name style on your sidekick.

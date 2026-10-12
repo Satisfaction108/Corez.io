@@ -560,7 +560,8 @@
     const SIDEKICK_COLORS = Object.freeze(['#ff6b6b', '#ff9f43', '#ffd84d', '#a3e635', '#4ade80', '#2dd4bf',
         '#38bdf8', '#818cf8', '#c084fc', '#f472b6', '#f2f2f2', '#a8a29e']);
     const SIDEKICK_NAME_MAX = 16;
-    function isSidekickColor(hex) { return SIDEKICK_COLORS.indexOf(hex) >= 0; }
+    const SIDEKICK_OWN = 'own';
+    function isSidekickColor(hex) { return hex === SIDEKICK_OWN || SIDEKICK_COLORS.indexOf(hex) >= 0; }
     // Letters, digits, spaces and a little punctuation, one space at a time,
     // at most SIDEKICK_NAME_MAX characters. '' when nothing is left (the
     // sidekick then goes by its own name). Swear words are the caller's job
@@ -596,7 +597,7 @@
 
     return Object.freeze({
         CATALOG_VERSION, MILLI, RARITIES, RARITY_ORDER, CATS, TANK_CATS, SIDEKICK_CATS, CUSTOM_COLOR_ID, INVITE_STYLE_ID, BASIC_SIDEKICK_ID, ITEMS,
-        MIN_LUMINANCE, FLOOR_COLOR, SIDEKICK_COLORS, SIDEKICK_NAME_MAX, RETIRED, SIDEKICK_DIG_LINE, SIDEKICK_DIG_BANDS,
+        MIN_LUMINANCE, FLOOR_COLOR, SIDEKICK_COLORS, SIDEKICK_OWN, SIDEKICK_NAME_MAX, RETIRED, SIDEKICK_DIG_LINE, SIDEKICK_DIG_BANDS,
         byId, byNid, isCat, parseHex, luminance, contrast, normalizeColor, isColorAllowed, colorDistance, priceDust,
         SKIN_SWATCHES, SKIN_NEAR, skinColors,
         isSidekickColor, cleanSidekickName, sidekickDigShare,

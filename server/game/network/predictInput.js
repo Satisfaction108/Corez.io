@@ -1,7 +1,7 @@
 "use strict";
 const { unpackMove } = require("../../lib/touchMove.js");
 
-const ON = process.env.PREDICT !== "0";
+const ON = process.env.PREDICT === "1";
 const SEQ_MOD = 1 << 24;
 const QMAX = 12;
 const DEEP = 4;

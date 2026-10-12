@@ -114,6 +114,35 @@ if (process.argv[2] === '--client-shots') {
     })().catch((e) => { process.stderr.write(String(e && e.stack || e)); process.exit(1); });
     return;
 }
+if (process.argv[2] === '--colour') {
+    const { register } = require('node:module');
+    globalThis.__cfg = { graphical: { fxLevel: 1, fewerEffects: false } };
+    globalThis.__g = { lowFx: false, screenWidth: 800, screenHeight: 600, dropZoom: 1, entities: [], royale: null };
+    const stub = (src) => 'data:text/javascript,' + encodeURIComponent(src);
+    const STUBS = {
+        'config.js': stub('export const config = globalThis.__cfg;'),
+        'global.js': stub('export const global = globalThis.__g;'),
+        'raidFinale.js': stub('export function active() { return false; }'),
+    };
+    const hooks = 'const S = ' + JSON.stringify(STUBS) + ';\n' +
+        'export async function resolve(spec, ctx, next) { const k = spec.replace(/^.*\\//, ""); if (spec.startsWith("./") && S[k] && /sidekicks\\.js$/.test(ctx.parentURL || "")) return { url: S[k], shortCircuit: true }; return next(spec, ctx); }';
+    register('data:text/javascript,' + encodeURIComponent(hooks));
+    globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => new Proxy({}, { get: () => () => ({}) }) }) };
+    globalThis.window = { DWCosmetics: require(path.join(REPO, 'shared', 'cosmetics.js')) };
+    (async () => {
+        const sk = await import(pathToFileURL(path.join(REPO, 'public', 'client', 'sidekicks.js')).href);
+        sk.setColorResolver((c) => c === 'tank-a' ? '#123456' : c === 'tank-b' ? '#abcdef' : null);
+        sk.onPacket({ f: [[1, 217, 0, 0, '', 'A', 0], [2, 217, 0, 0, 'own', 'B', 0], [3, 217, 0, 0, '#ff6b6b', 'C', 0]] });
+        const at = (id, color) => sk.note({ id, size: 24, color, render: { x: 0, y: 0 } }, 0, 0, 1, 1, 24, false);
+        at(1, 'tank-a'); at(2, 'tank-a'); at(3, 'tank-a');
+        const first = sk.debug();
+        at(1, 'tank-b');
+        const after = sk.debug();
+        process.stdout.write(JSON.stringify({ first, after }));
+        process.exit(0);
+    })().catch((e) => { process.stderr.write(String(e && e.stack || e)); process.exit(1); });
+    return;
+}
 if (process.argv[2] === '--off') {
     process.env.ROYALE_SIDEKICKS = '0';
     global.Config = { dig_royale: true };
@@ -1183,6 +1212,18 @@ test('shots: fired and drawn at every effects level (Low, Fewer Effects, the aut
     assert.ok(!/lowFx|fxLevel|fewerEffects/.test(rt), 'no effects gate on its shots');
 });
 
+test('colour: matches the owner tank by default, its own or a picked colour otherwise', () => {
+    const r = spawnSync(process.execPath, ['--no-warnings', __filename, '--colour'], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const o = JSON.parse(r.stdout);
+    const by = (list, id) => list.find((e) => e.id === id);
+    assert.equal(by(o.first, 1).match, true, 'an empty colour matches the tank');
+    assert.equal(by(o.first, 1).body, '#123456');
+    assert.equal(by(o.after, 1).body, '#abcdef', 'follows the tank when its colour changes');
+    assert.equal(by(o.first, 2).match, false);
+    assert.equal(by(o.first, 2).col, null, "'own' keeps the sidekick's own colour");
+    assert.equal(by(o.first, 3).body, '#ff6b6b', 'a picked colour stays');
+});
 test('switch: ROYALE_SIDEKICKS=0 turns them off; the tutorial never has them', () => {
     const r = spawnSync(process.execPath, ['--no-warnings', __filename, '--off'], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);

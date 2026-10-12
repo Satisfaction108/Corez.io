@@ -39,6 +39,8 @@ import { global } from './global.js';
 import * as art from './sidekickArt.js';
 import * as M from './sidekickMath.js';
 import * as raidFinale from './raidFinale.js';
+let colorOf = null;
+export function setColorResolver(fn) { colorOf = typeof fn === 'function' ? fn : null; }
 
 const CAT = () => (typeof window !== 'undefined' && window.DWCosmetics) || null;
 const STEP = 2;               // tags are baked in 2 px steps
@@ -74,11 +76,12 @@ function add(row) {
     const kick = C.byNid(row[1] | 0);
     if (!kick || kick.cat !== 'sidekick') return;
     const skin = C.byNid(row[2] | 0), style = C.byNid(row[3] | 0);
-    const col = typeof row[4] === 'string' && C.isSidekickColor(row[4]) ? row[4] : null;
+    const match = !(typeof row[4] === 'string' && C.isSidekickColor(row[4]));
+    const col = !match && row[4] !== C.SIDEKICK_OWN ? row[4] : null;
     const look = skin && skin.cat === 'sdSkin' ? skin.look : null;
     table.set(id, {
         id, kick, look, skinNid: look ? skin.nid : 0,
-        style: style && style.cat === 'sdName' ? style : null, col, body: art.bodyColor(kick.kick, look, col),
+        style: style && style.cat === 'sdName' ? style : null, col, match, ownerCol: null, body: art.bodyColor(kick.kick, look, col),
         name: String(row[5] || kick.name).slice(0, 24), hidden: !!row[6],
         size: kick.kick.size || 1,
         st: M.makeState(id, kick.kick.move), label: null, spr: null, lastT: 0, lastReal: 0,
@@ -116,6 +119,12 @@ export function note(inst, x, y, alpha, fade, size, falling) {
     e.wx = inst.render.x; e.wy = inst.render.y;
     e.oR = size || inst.size || 20;
     e.ok = M.shown(e.hidden, alpha, fade, falling, raidFinale.active());
+    if (e.match && inst.color !== e.ownerCol) {
+        e.ownerCol = inst.color;
+        let hex = null;
+        try { hex = colorOf ? colorOf(inst.color) : null; } catch (err) { hex = null; }
+        if (typeof hex === 'string' && hex[0] === '#' && hex !== e.col) { e.col = hex; e.body = art.bodyColor(e.kick.kick, e.look, hex); e.label = null; }
+    }
 }
 
 // The frame clock: steady seconds from app.js's frame time. A stall or a
@@ -419,5 +428,5 @@ function drawShots(c, ratio, t) {
 
 // QA: what the client thinks is out there
 export function debug() {
-    return [...table.values()].map((e) => ({ id: e.id, kick: e.kick.id, name: e.name, hidden: e.hidden, ok: e.ok, x: Math.round(e.st.x), y: Math.round(e.st.y), shots: e.st.shots, snaps: e.st.snaps, sc: +e.st.sc.toFixed(2), face: +e.st.face.toFixed(3), look: e.st.look, enemy: e.enemy ? e.enemy.id : null }));
+    return [...table.values()].map((e) => ({ id: e.id, kick: e.kick.id, name: e.name, hidden: e.hidden, ok: e.ok, x: Math.round(e.st.x), y: Math.round(e.st.y), shots: e.st.shots, snaps: e.st.snaps, sc: +e.st.sc.toFixed(2), face: +e.st.face.toFixed(3), look: e.st.look, enemy: e.enemy ? e.enemy.id : null, col: e.col, body: e.body, match: !!e.match }));
 }

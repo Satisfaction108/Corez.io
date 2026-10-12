@@ -2,6 +2,7 @@ import { global } from "./global.js";
 import { util } from "./util.js";
 import * as L from "./firstHintsLogic.js";
 import { isCoreEntity } from "./raidHeat.js";
+import { active as coachActive } from "./coach.js";
 
 const now = () => performance.now();
 const SCAN_MS = 250;
@@ -16,7 +17,7 @@ function saveSeen(seen) {
 }
 
 const st = L.createState(loadSeen());
-let scanAt = 0, aliveAt = 0, wasPlaying = false, lastH = 112, shardKey = null;
+let scanAt = 0, aliveAt = 0, wasPlaying = false, lastH = 112, shardKey = null, shardSince = 0;
 let visible = new Set(), reached = new Set();
 const pinned = new Set();
 let el = null, titleEl = null, bodyEl = null, barEl = null, shownId = null;
@@ -87,8 +88,10 @@ function close(why) {
 
 function playing() {
     const r = global.royale;
+    let guide = false;
+    try { guide = coachActive(); } catch (e) { guide = false; }
     return !!(global.gameStart && r && r.at > 0 && !global.tutorialMode && !global.died && !global.disconnected &&
-        !global.royaleSpectating && !global.royaleDied && !r.ending);
+        !global.royaleSpectating && !global.royaleDied && !r.ending && !guide);
 }
 
 function terr() {
@@ -128,11 +131,16 @@ function scan() {
                 const c = tr._cellPolys.get(k);
                 if (!c) continue;
                 const x = c.cx * w.s - w.hw, y = c.cy * w.s - w.hh;
-                if (!inView(v, x, y)) continue;
+                if (Math.abs(x - v.x) > v.hw * 0.6 || Math.abs(y - v.y) > v.hh * 0.6) continue;
                 const d = Math.hypot(x - v.x, y - v.y);
                 if (d < bd) { bd = d; best = k; }
             }
-            if (best !== null) { visible.add("shard"); if (st.cur !== "shard") shardKey = best; }
+            if (best === null) shardSince = 0;
+            else {
+                const t = now();
+                if (!shardSince) shardSince = t;
+                if (st.cur === "shard" || t - shardSince >= 800) { visible.add("shard"); if (st.cur !== "shard") shardKey = best; }
+            }
         }
     }
     if (want("core")) {

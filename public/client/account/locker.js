@@ -20,6 +20,8 @@ let owned = [], equipped = { nameStyle: null, skin: null, customColor: null };
 let tab = 'skin', sel = { skin: null, nameStyle: null }, colorIdx = 0, draftColor = null;
 // the Sidekick tab's unsaved choices
 let sk = { sidekick: null, sdSkin: null, sdName: null, name: '', color: null };
+const MATCH_PREVIEW = '#00b2e1';
+const skCol = (c) => c === null || c === undefined || c === '' ? MATCH_PREVIEW : c === 'own' ? null : c;
 
 const myName = () => (state.get('user') && state.get('user').username) || 'Player';
 const CAT = () => window.DWCosmetics;
@@ -101,7 +103,7 @@ function paint(el) {
             const kick = sk.sidekick ? itemById(sk.sidekick) : null;
             stage.appendChild(pv.sidekickStage({
                 w: 700, h: 200, color: pv.TEAM_COLORS[colorIdx].col, r: 40, cls: 'dw-prev lk-canvas',
-                kick: kick ? kick.id : null, look: sk.sdSkin, style: sk.sdName, col: sk.color,
+                kick: kick ? kick.id : null, look: sk.sdSkin, style: sk.sdName, col: (sk.color || null) === null ? pv.TEAM_COLORS[colorIdx].col : skCol(sk.color),
                 name: cleanName(sk.name) || (kick ? kick.name : ''),
             }));
             return;
@@ -233,7 +235,7 @@ function paint(el) {
         const isEq = (equipped.sidekick || null) === id;
         const isSel = (sk.sidekick || null) === id;
         const prev = it
-            ? pv.sidekickPreview({ w: 132, h: 92, kick: it, r: 20, col: isSel ? sk.color : null, look: isSel ? sk.sdSkin : null, still: true })
+            ? pv.sidekickPreview({ w: 132, h: 92, kick: it, r: 20, col: isSel ? skCol(sk.color) : MATCH_PREVIEW, look: isSel ? sk.sdSkin : null, still: true })
             : h('span', { class: 'lk-sk-none', text: 'None' });
         return h('button', {
             type: 'button', class: 'lk-tile r-' + (it ? it.rarity : 'none') + (isSel ? ' sel' : '') + (isEq ? ' eq' : ''), 'aria-pressed': isSel ? 'true' : 'false',
@@ -298,24 +300,27 @@ function paint(el) {
             h('div', { class: 'lk-sk-namebox' }, input, h('div', { class: 'lk-sk-hint', text: 'Up to 16 letters. Leave it empty to keep its own name.' }), msg)));
 
         // colour
-        const cols = [null].concat(C ? C.SIDEKICK_COLORS : []);
+        const OWN = C ? C.SIDEKICK_OWN : 'own';
+        const cols = [null, OWN].concat(C ? C.SIDEKICK_COLORS : []);
+        const swTitle = (c) => c === null ? 'Match my tank' : c === OWN ? 'Its own colour' : c;
         bar.appendChild(h('div', { class: 'lk-sk-row' },
             h('div', { class: 'lk-sk-label', text: 'Colour' }),
             h('div', { class: 'lk-sk-swatches', role: 'radiogroup', 'aria-label': 'Sidekick colour' }, cols.map((c) => h('button', {
-                type: 'button', class: 'lk-sk-sw' + ((sk.color || null) === c ? ' on' : '') + (c ? '' : ' own'), role: 'radio',
-                'aria-checked': (sk.color || null) === c ? 'true' : 'false', title: c ? c : 'Its own colour', 'aria-label': c ? c : 'Its own colour',
-                style: { background: c || kick.kick.col },
+                type: 'button', class: 'lk-sk-sw' + ((sk.color || null) === c ? ' on' : '') + (c === OWN ? ' own' : c === null ? ' match' : ''), role: 'radio',
+                'aria-checked': (sk.color || null) === c ? 'true' : 'false', title: swTitle(c), 'aria-label': swTitle(c),
+                style: { background: c === null ? MATCH_PREVIEW : c === OWN ? kick.kick.col : c },
                 onclick: () => { sk.color = c; paintBar(); drawStage(); },
-            })))));
+            }))),
+            h('div', { class: 'lk-sk-hint', text: (sk.color || null) === null ? 'Matches your tank colour in each raid.' : (sk.color === OWN ? 'Uses the sidekick\'s own colour.' : '') })));
 
         // skin and name style: what you own, plus the default
         const skins = owned.filter((x) => x.cat === 'sdSkin');
-        bar.appendChild(chips('Skin', [{ id: null, label: 'Plain', el: pv.sidekickPreview({ w: 60, h: 54, kick, col: sk.color, r: 12, still: true }) }]
-            .concat(skins.map((f) => ({ id: f.id, label: f.name, el: pv.sidekickPreview({ w: 60, h: 54, kick, look: f, col: sk.color, r: 12, still: true }) }))),
+        bar.appendChild(chips('Skin', [{ id: null, label: 'Plain', el: pv.sidekickPreview({ w: 60, h: 54, kick, col: skCol(sk.color), r: 12, still: true }) }]
+            .concat(skins.map((f) => ({ id: f.id, label: f.name, el: pv.sidekickPreview({ w: 60, h: 54, kick, look: f, col: skCol(sk.color), r: 12, still: true }) }))),
         sk.sdSkin, (id) => { sk.sdSkin = id; paintBar(); drawStage(); }));
         const styles = owned.filter((x) => x.cat === 'sdName');
         const shown = cleanName(sk.name) || kick.name;
-        const tag = (s) => pv.sidekickName(shown, s, { px: 14, h: 30, maxW: 120, kick, col: sk.color, look: sk.sdSkin });
+        const tag = (s) => pv.sidekickName(shown, s, { px: 14, h: 30, maxW: 120, kick, col: skCol(sk.color), look: sk.sdSkin });
         bar.appendChild(chips('Name style', [{ id: null, label: 'Plain', el: tag(null) }]
             .concat(styles.map((s) => ({ id: s.id, label: s.name, el: tag(s) }))),
         sk.sdName, (id) => { sk.sdName = id; paintBar(); drawStage(); }));

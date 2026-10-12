@@ -6955,6 +6955,12 @@ import { predictor } from './predict.js';
         return h;
     }
     window.dwGuiColor = () => ({ color: gui.color, hex: playerHexCol() });
+    sidekicks.setColorResolver((c) => {
+        let h = null;
+        try { h = gameDraw.modifyColor(c); } catch (e) { h = null; }
+        if (!(typeof h === "string" && h[0] === "#")) { const g2 = gameDraw.getColor(c); h = (typeof g2 === "string" && g2[0] === "#") ? g2 : null; }
+        return h;
+    });
 
     // ═════════════════════════════════════════════════════════════════════
     // HUD look: the menu's plates (home.css), drawn on the canvas. Fine
@@ -14555,21 +14561,24 @@ import { predictor } from './predict.js';
         if (now - vw.lastFrame > 1000) vw.since = 0;
         vw.lastFrame = now;
         const scenes = tr ? tr.scenes | 0 : 0;
-        const drew = !!(tr && tr.ready) && scenes !== vw.scenes;
+        const building = !!(tr && tr.ready && (tr._blankFrames | 0) > 0);
+        const drew = (!!(tr && tr.ready) && scenes !== vw.scenes) || building;
         vw.scenes = scenes;
         if (drew) { vw.since = 0; vw.stage = 0; return; }
         if (!vw.since) { vw.since = now; return; }
         const gone = now - vw.since;
+        const noMap = !(tr && tr.ready);
         if (gone > 2000 && vw.stage < 1) {
             vw.stage = 1;
-            vw.asks++;
-            if (!vw.warned) { vw.warned = true; console.warn('No rock drawn for 2 s after spawning, resyncing the map'); }
             healCamera();
-            try { if (tr && tr.ready) tr.rebuild('void after spawn'); } catch (e) { }
-            try { if (global.socket && global.socket.readyState === 1) global.socket.talk('TQ'); } catch (e) { }
-        } else if (gone > 7000 && vw.stage < 2) {
+            if (noMap) {
+                vw.asks++;
+                if (!vw.warned) { vw.warned = true; console.warn('No map 2 s after spawning, asking the server again'); }
+                try { if (global.socket && global.socket.readyState === 1) global.socket.talk('TQ'); } catch (e) { }
+            }
+        } else if (gone > 10000 && vw.stage < 2) {
             vw.stage = 2;
-            if (!global.digRoyaleMode || global.tutorialMode || now - vw.reconnectAt < 60000 || !global.reconnect) return;
+            if (!noMap || !global.digRoyaleMode || global.tutorialMode || now - vw.reconnectAt < 60000 || !global.reconnect) return;
             vw.reconnectAt = now;
             vw.reconnects++;
             try { global.reconnect(); } catch (e) { }

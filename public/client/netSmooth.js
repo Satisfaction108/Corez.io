@@ -1,14 +1,14 @@
 const CFG = {
     on: true,
-    extrapMs: 220,
+    extrapMs: 100,
     tauMs: 70,
     snapDist: 420,
     cutDist: 300,
     jitterGain: 0.6,
-    maxDelay: 220,
+    maxDelay: 0,
     histMax: 12,
     rate: 0.12,
-    ownDelayTicks: 1,
+    ownDelayTicks: 0,
 };
 
 const S = {
@@ -17,8 +17,8 @@ const S = {
     buckets: [],
     offMin: null,
     jit: 0,
-    delay: 1000 / 30,
-    ownDelay: 1000 / 30,
+    delay: 0,
+    ownDelay: 0,
     R: null,
     Rown: null,
     lastNow: 0,
@@ -58,8 +58,8 @@ function onSnapshot(stamp, now) {
     const late = Math.min(Math.max(0, off - S.offMin), S.tick * 4);
     if (late > S.tick) stats.late++;
     S.jit += (late - S.jit) * (late > S.jit ? 0.25 : 0.015);
-    S.delay = Math.max(S.tick, Math.min(CFG.maxDelay, S.tick + S.jit * CFG.jitterGain));
-    S.ownDelay = Math.max(S.tick * 0.5, Math.min(S.delay, S.tick * CFG.ownDelayTicks));
+    S.delay = Math.min(CFG.maxDelay, S.jit * CFG.jitterGain);
+    S.ownDelay = Math.min(S.delay, S.tick * CFG.ownDelayTicks);
 }
 
 function stepClock(cur, target, dt) {

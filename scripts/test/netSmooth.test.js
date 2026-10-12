@@ -304,7 +304,7 @@ async function main() {
         ns.reset();
         const r = simulate(ns, { lat: 250, jit: 60, stalls: [[200, 700], [520, 500]], teleportAt: 0 });
         if (!(r.max < 30)) throw new Error('a frame jumped ' + r.max.toFixed(1) + ' units: ' + JSON.stringify(r.stats));
-        if (!(r.stats.delay >= 33 && r.stats.delay <= 220)) throw new Error('interpolation delay out of range: ' + r.stats.delay);
+        if (r.stats.delay !== 0) throw new Error('other tanks must be drawn at their latest position, delay was ' + r.stats.delay);
         return 'max step ' + r.max.toFixed(1) + ', p99 ' + r.p99.toFixed(1) + ', delay ' + r.stats.delay + ' ms';
     });
     await check('logic: local play keeps a short delay and no extrapolation', async () => {

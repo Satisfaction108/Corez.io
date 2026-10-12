@@ -5763,3 +5763,5 @@ html[data-theme] :is(.q-guest, #inviteBtn):is(.q-guest, #inviteBtn):hover:not(:d
 @media (prefers-reduced-motion: reduce) {
     html[data-theme] :is(.q-guest, #inviteBtn):is(.q-guest, #inviteBtn) { animation: none; --rb-h: 140; }
 }
+.lk-sk-sw.match { position: relative; }
+.lk-sk-sw.match::after { content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.35); }
