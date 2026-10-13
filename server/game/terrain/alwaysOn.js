@@ -215,6 +215,7 @@ function releaseBots(id) {
         if (b._aoBotEv === id) { b._botDirectorPoint = null; b._botDirectorUntil = 0; b._aoBotJoin = false; b._aoGoalPt = null; }
     }
 }
+const CONTESTED_SHARE = 0.5;
 const BOT_SHARE = { storm: 0.75, core: 0.8, boss: 0.75, rush: 0.7, hill: 0.75, meteor: 0.65 };
 const SOON_SHARE = 0.6;
 function botJoins(b, id, share) {
@@ -480,11 +481,13 @@ const EVENTS = {
             ev.data.contested = teams.size > 1;
             ev.data.on = onHill.length;
             ev.data.holder = onHill.length && !ev.data.contested ? nameOf(onHill[0]) : '';
-            if (onHill.length && !ev.data.contested) for (const b of onHill) score(ev, b, ev.data.pps * secs);
+            ev.data.names = onHill.slice(0, 4).map(b => nameOf(b).slice(0, 16));
+            const rate = ev.data.contested ? ev.data.pps * CONTESTED_SHARE : ev.data.pps;
+            for (const b of onHill) score(ev, b, rate * secs);
             return false;
         },
         end() { },
-        snap(ev) { return { pr: ev.padR, ct: ev.data.contested ? 1 : 0, h: ev.data.holder || undefined, on: ev.data.on | 0 }; },
+        snap(ev) { return { pr: ev.padR, ct: ev.data.contested ? 1 : 0, h: ev.data.holder || undefined, on: ev.data.on | 0, ns: ev.data.contested ? ev.data.names : undefined }; },
     },
     meteor: {
         plan(region) {

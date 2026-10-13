@@ -267,7 +267,7 @@ test('runtime: a Storm Circle is announced, runs, scores, ends with a top 3 and 
     assert.equal(inA._inStorm, false);
 });
 
-test('runtime: King of the Vault pays only an uncontested hill', () => {
+test('runtime: King of the Vault pays full alone, half when contested', () => {
     ao._reset();
     const W = fakeWorld();
     const a = W.mk(11, 0, 0), b = W.mk(12, 0, 0);
@@ -282,11 +282,14 @@ test('runtime: King of the Vault pays only an uncontested hill', () => {
     assert.ok(p1.pts >= 80, 'holding alone scores');
     b.x = ev.x - ev.padR - 60;
     for (let i = 0; i < 10; i++) { t += 1000; ao.tick(t, W.bodies); }
-    assert.equal(S.placeOf(ev.scores, 's:11').pts, p1.pts, 'contested: nobody scores');
+    const p2 = S.placeOf(ev.scores, 's:11');
+    assert.ok(p2.pts - p1.pts >= 40 && p2.pts - p1.pts <= 60, 'contested: half rate (' + (p2.pts - p1.pts) + ')');
+    assert.ok(S.placeOf(ev.scores, 's:12').pts >= 40, 'the rival earns half too');
     assert.equal(ao.snapshot(t).ev.ct, 1);
+    assert.ok((ao.snapshot(t).ev.ns || []).length === 2, 'the snapshot names who is on the hill');
     b.onVaultPad = true; b.x = ev.x; b.y = ev.y;
     for (let i = 0; i < 5; i++) { t += 1000; ao.tick(t, W.bodies); }
-    assert.ok(S.placeOf(ev.scores, 's:11').pts > p1.pts, 'standing on the safe pad does not count');
+    assert.ok(S.placeOf(ev.scores, 's:11').pts - p2.pts >= 40, 'standing on the safe pad does not contest');
     ao.finish(t, true);
     assert.equal(W.ended[0].awards[0].key, 's:11');
 });

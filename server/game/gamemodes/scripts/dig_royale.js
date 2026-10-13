@@ -3050,14 +3050,6 @@ function onHumanJoin(body) {
 const RESUME_MS = (process.env.ROYALE_DEBUG && parseInt(process.env.ROYALE_RESUME_MS, 10) > 0)
     ? parseInt(process.env.ROYALE_RESUME_MS, 10) : 45_000;
 const RESUME_SAFE_MS = 8000;
-// A reload only keeps the tank where it was when there's something to
-// protect: this many gems carried on top of the starter gems everyone drops
-// in with, a fight in the last RESUME_COMBAT_MS (hurt
-// or hurting), or a hunted mark. Otherwise it's a fresh drop somewhere new
-// (same build, bank, shop and raid), which also stops the "always the same
-// spot" reload.
-const RESUME_KEEP_GEMS = 50;
-const RESUME_COMBAT_MS = 10_000;
 const resumeStore = new Map();
 // Keyed by the tab's token only. A resume is for a real drop: the same tab
 // reconnecting (or reloading) within the window. Another tab, going to the
@@ -3150,10 +3142,6 @@ function saveResume(socket, body) {
         carried: 0,
     };
     if (alive) {
-        const lastFight = Math.max(body._lastDamageAt || 0, body.hitAt || 0, body._dealtAt || 0);
-        const keepGems = raidMods.num('starterGems', STARTER_GEMS) + RESUME_KEEP_GEMS;
-        const keep = (body.carriedGems | 0) >= keepGems || t - lastFight < RESUME_COMBAT_MS || (body.huntedLevel | 0) > 0;
-        if (!keep) { snap.alive = false; snap.fresh = true; }
         snap.x = body.x; snap.y = body.y;
         snap.defs = (body.defs || []).slice();
         snap.skillRaw = body.skill ? body.skill.raw.slice() : null;
@@ -3311,8 +3299,6 @@ function applyResume(body, snap) {
         try { shop.applyPassives(body); shop.talkState(socket); gems.talkGems(body, 0); } catch { /* */ }
         applyPerks(body, ensureStat(body));
         try { body.sendMessage(snap.fresh ? "Reconnected. You dropped back in at a new spot." : AO() ? "Reconnected. You picked up where you left off." : "Reconnected. Your raid picked up where you left off."); } catch (e) { void e; }
-        // drop back in from the sky: drawn only, nothing held, smashed or reset
-        if (snap.alive) guard('resume drop', () => dropIn.visual(body));
         if (process.env.RESUME_DEBUG) console.log('[RESUME] applied: banked', socket.gemBanked | 0, 'carried', body.carriedGems | 0, 'drill', (shop.stateOf(socket) || {}).drill, 'class', (body.defs || []).join('/'), 'raw', body.skill.raw.join(','), 'pts', body.skill.points, 'pos', Math.round(body.x) + ',' + Math.round(body.y), 'was', Math.round(snap.x) + ',' + Math.round(snap.y));
     } catch (e) { console.error('[RAID] resume failed', e && e.message); }
 }

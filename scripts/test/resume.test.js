@@ -6,10 +6,8 @@
 //              and spot back; rock that grew into the spot meanwhile is
 //              cleared like a spawn pocket (no ejection), it is never crushed
 //              or flung in the ticks after, and the resume happens once
-//   reload     with nothing to protect a reload drops you somewhere new
-//              (build, bank, raid kept; no new life or starter gems; the big
-//              fall); gems, a fight or a hunted mark keep the spot, the full
-//              fall drawn only
+//   reload     a reload always puts you back where you were, with no drop
+//              animation (build, bank, raid kept; no new life)
 //   emerald    an emerald where the hull would land moves it to the nearest
 //              spot it fits, a short way off
 //   small      a normal tank resting against a wall keeps that wall
@@ -245,62 +243,38 @@ function reload(tank, sock) {
     royale.applyPendingResume(back);
     return { back, body };
 }
-test('reload: nothing to protect drops you in somewhere new with the big fall, build and bank kept', () => {
-    const dropIn = require(path.join(SERVER, 'game', 'terrain', 'dropIn.js'));
-    const sock = mkSocket();
-    const tank = spawnTank(sock);
-    tank.upgrades = [];
-    tank.define('twin'); tank.refreshBodyAttributes();
-    const raw = tank.skill.raw.slice();
-    sock.gemBanked = 640;
-    const lives = sock._royaleLives | 0;
-    tank.x = 600; tank.y = -400;
-    tank.carriedGems = 75;   // the starter gems alone are nothing to protect
-    tank._lastDamageAt = 0; tank.hitAt = 0; tank._dealtAt = 0; tank.huntedLevel = 0;
-    const { back, body } = reload(tank, sock);
-    // a resume puts it back within a few units; a fresh spawn is picked anew
-    // (it can land in the same area by chance, never on the old spot)
-    assert.ok(Math.hypot(body.x - 600, body.y + 400) > 40, 'a new spot: ' + (body.x | 0) + ',' + (body.y | 0));
-    assert.deepEqual(body.defs, tank.defs, 'same tank');
-    assert.deepEqual(body.skill.raw, raw, 'same build');
-    assert.equal(back.gemBanked, 640, 'bank kept');
-    assert.equal(body.carriedGems, 75, 'the gems come along, no second starter grant on top');
-    assert.equal(back._royaleLives | 0, lives, 'not a new life');
-    assert.equal(back.lastRaidDeathAt | 0, 0, 'not a death');
-    const fx = back.packets.filter(a => a[0] === 'FX' && a[3] === 'dropin');
-    assert.equal(fx.length, 1, 'it drops in');
-    assert.equal(fx[0][6], dropIn.FALL_MS.first, 'the long first fall');
-    assert.ok(fx[0][5] >= dropIn.CRATER_R, 'with a crater');
-    assert.notEqual(fx[0][7], 1, 'a real landing, not a picture');
-    assert.equal(dropIn.inAir(body), true, 'held until it lands');
-    body.kill(); loop(2);
-});
-test('reload: gems, a fight or a hunted mark keep the tank where it was, with the full fall drawn', () => {
+test('reload: you come back where you were with no drop animation, build, bank and gems kept', () => {
     const dropIn = require(path.join(SERVER, 'game', 'terrain', 'dropIn.js'));
     const cases = [
+        ['nothing', (t) => { t.carriedGems = 75; }],
         ['gems', (t) => { t.carriedGems = 130; }],
         ['hurt', (t) => { t.carriedGems = 0; t._lastDamageAt = Date.now() - 3000; }],
-        ['hurting', (t) => { t.carriedGems = 0; t._dealtAt = Date.now() - 2000; }],
         ['hunted', (t) => { t.carriedGems = 0; t.huntedLevel = 1; }],
     ];
     for (const [why, set] of cases) {
         const sock = mkSocket();
         const tank = spawnTank(sock);
+        tank.upgrades = [];
+        tank.define('twin'); tank.refreshBodyAttributes();
+        const raw = tank.skill.raw.slice();
+        sock.gemBanked = 640;
+        const lives = sock._royaleLives | 0;
         for (let i = 0; i < 6; i++) grid.pushCircleFromVoronoi(tank, tank.realSize);
         const x0 = tank.x, y0 = tank.y;
         tank._lastDamageAt = 0; tank.hitAt = 0; tank._dealtAt = 0; tank.huntedLevel = 0;
         set(tank);
         const { back, body } = reload(tank, sock);
         assert.ok(Math.hypot(body.x - x0, body.y - y0) < 30, why + ': same spot');
+        assert.deepEqual(body.defs, tank.defs, why + ': same tank');
+        assert.deepEqual(body.skill.raw, raw, why + ': same build');
+        assert.equal(back.gemBanked, 640, why + ': bank kept');
+        assert.equal(back._royaleLives | 0, lives, why + ': not a new life');
         const fx = back.packets.filter(a => a[0] === 'FX' && a[3] === 'dropin');
-        assert.equal(fx.length, 1, why + ': drawn');
-        assert.equal(fx[0][7], 1, why + ': only a picture');
-        assert.equal(fx[0][6], dropIn.FALL_MS.first, why + ': the full fall');
+        assert.equal(fx.length, 0, why + ': no drop animation');
         assert.equal(dropIn.inAir(body), false, why + ': nothing held');
         body.kill(); loop(2);
     }
 });
-
 test('emerald: a hull that would land on one goes to the nearest spot it fits', () => {
     // an emerald well inside the map (one is planted if the build has none there)
     let emerald = [...grid.rocks.values()].find(rk => rk.ore === 4 && rk.alive && Math.abs(rk.worldCx) < 1800 && Math.abs(rk.worldCy) < 1100);

@@ -5,7 +5,7 @@ const KIND_INFO = {
     core: "The Core comes up and shoots back. Everyone who hurts it gets a share of 1,500 points, and the last hit gets 400 more.",
     boss: "A boss shows up. Everyone who hurts it gets a share of 1,200 points, and the last hit gets 400 more.",
     rush: "One area turns rich for a few minutes. Mine the glowing rock there, then bank it: every 2 gems you bank from the rush give you 1 point. If you die first, they stop counting.",
-    hill: "One vault becomes the hill. Stand in the ring around it, not on the pad, to earn 10 points a second. If another tank is in the ring too, nobody scores.",
+    hill: "One vault becomes the hill. Stand in the ring around it, not on the pad, to earn 10 points a second. If another tank is in the ring too, everyone in it earns half.",
     meteor: "Meteors land in one area and leave ore behind. Every gem you pick up there is worth 1 point.",
 };
 const KIND_COL = {
@@ -160,7 +160,12 @@ export function hudNotes(push, hudNote, HUD) {
     if (a.ev) {
         const ev = a.ev;
         const col = KIND_COL[ev.k] || HUD.gold;
-        if (ev.k === "hill" && ev.ct) push(hudNote(1, "aohill", "The hill is contested, so nobody scores until it's cleared", HUD.danger));
+        const me = global.player || {};
+        const myName = global.playerName || "";
+        const rivals = ev.k === "hill" && ev.ct ? (ev.ns || []).filter(n => n && n !== myName).slice(0, 2) : [];
+        const onPad = ev.k === "hill" && isFinite(me.renderx) && Math.hypot(me.renderx - ev.x, me.rendery - ev.y) < (ev.pr || 130);
+        if (onPad && !global.died) push(hudNote(1, "aohillpad", "Step off the vault pad into the ring to score", HUD.gold));
+        else if (ev.k === "hill" && ev.ct) push(hudNote(1, "aohill", "The hill is contested" + (rivals.length ? " by " + rivals.join(" and ") : "") + ", so points are halved", HUD.danger));
         else if (ev.k === "rush" && yao.eh > 0) push(hudNote(1, "aoheld", "Bank your " + num(yao.eh) + " rush gems to score them", HUD.gold));
         else if (yao.epl > 0) push(hudNote(2, "aome", "You're " + ordinal(yao.epl) + " in " + ev.n + " with " + num(yao.ep) + " points", col));
         else push(hudNote(2, "aohint", ev.n + " in " + ev.w + ": " + (KIND_HINT[ev.k] || "Join in"), col));
