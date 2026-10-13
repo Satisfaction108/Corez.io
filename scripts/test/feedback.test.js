@@ -383,7 +383,7 @@ test('migration: v7 -> v8 keeps every row, writes a backup, adds feedback', () =
     bk.close();
     assert.equal(db.userVersion(), migrations.latestVersion());
     // later versions may add columns (v9: bank_gems, v10: sidekicks); the rows themselves stay
-    const strip = rows => rows.map(r => { const o = { ...r }; delete o.bank_gems; for (const k of ['equip_sidekick', 'equip_sd_skin', 'equip_sd_name', 'sidekick_name', 'sidekick_color']) { if (k in o) assert.equal(o[k], null); delete o[k]; } return o; });
+    const strip = rows => rows.map(r => { const o = { ...r }; delete o.bank_gems; for (const k of ['equip_sidekick', 'equip_sd_skin', 'equip_sd_name', 'sidekick_name', 'sidekick_color']) { if (k in o) assert.equal(o[k], null); delete o[k]; } for (const k of ['xp', 'level', 'xp_day', 'xp_day_n', 'xp_to']) { if (k in o) assert.equal(o[k], k === 'level' ? 1 : k === 'xp_to' ? null : 0); delete o[k]; } return o; });
     for (const t of tables) assert.deepEqual(strip(db.all(`SELECT * FROM "${t}"`)), before[t], t + ' unchanged');
     assert.ok(db.get("SELECT 1 AS x FROM sqlite_master WHERE type = 'index' AND name = 'feedback_at'"));
     assert.throws(() => db.run("INSERT INTO feedback (at, category, text) VALUES (1, 'rant', 'x')"), /CHECK/);

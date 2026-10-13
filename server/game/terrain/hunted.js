@@ -1,3 +1,4 @@
+function aoWorld() { try { return require('./alwaysOn.js').on(); } catch { return false; } }
 // Carriers get hunted. A tank hauling a lot of unbanked gems shows up on
 // every minimap; the biggest haul in the raid is the TOP TARGET. Whoever
 // takes a hunted tank down cashes a bounty on top of the gems it drops.
@@ -78,7 +79,7 @@ function say(body, kind, text, sub, dur) {
 function onChange(body, prev, next, t) {
     if (next > prev) {
         if (next === 2) {
-            say(body, 'toptarget', "TOP TARGET", "You have the biggest haul in the raid, so everyone's after you.", 3200);
+            say(body, 'toptarget', "TOP TARGET", aoWorld() ? "You have the biggest haul on the map, so everyone's after you." : "You have the biggest haul in the raid, so everyone's after you.", 3200);
             if (hooks.feed && t - (body._huntFeedAt || 0) > TOP_FEED_GAP_MS) {
                 body._huntFeedAt = t;
                 try { hooks.feed({ hunt: 1, name: body.name || "Someone", g: body.carriedGems | 0 }); } catch { /* */ }

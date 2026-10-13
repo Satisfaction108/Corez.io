@@ -175,9 +175,8 @@
             doc.body.appendChild(s);
         }
         if (accountUiNow({ hint: get(ls, 'dwAcctHint'), search: w.location.search, hash: w.location.hash })) addAccountUi();
-        // a tap on something it draws (tabs, the account chip, Solo | Duos)
         doc.addEventListener('pointerdown', function (e) {
-            if (!acctAdded && e.target && e.target.closest && e.target.closest('#menuNav, #accountChip, #modeToggle, #lobbySide')) { acctAsked = true; addAccountUi(); }
+            if (!acctAdded && e.target && e.target.closest && e.target.closest('#menuNav, #accountChip, #lobbySide, #lvRow')) { acctAsked = true; addAccountUi(); }
         }, true);
 
         var api = w.DWFunnel;

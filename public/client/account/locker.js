@@ -159,7 +159,7 @@ function paint(el) {
             isEq ? h('span', { class: 'lk-ribbon', text: 'On' }) : null,
             h('span', { class: 'lk-tprev' }, prev),
             h('span', { class: 'lk-tname', text: it ? it.name : 'Default' }),
-            h('span', { class: 'lk-tsub', text: it ? (it.exclusive ? (it.earn ? 'Achievement reward' : 'Invite reward') : rarityName(it.rarity)) : (tab === 'skin' ? 'plain' : 'plain') }));
+            h('span', { class: 'lk-tsub', text: it ? (it.exclusive ? (it.lvl ? 'Level ' + it.lvl + ' reward' : it.earn ? 'Achievement reward' : 'Invite reward') : rarityName(it.rarity)) : (tab === 'skin' ? 'plain' : 'plain') }));
     }
     function paintBar() {
         clear(bar);
@@ -171,7 +171,7 @@ function paint(el) {
         const colorChanged = custom && isEq && draftColor && draftColor !== equipped.customColor;
         const left = h('div', { class: 'lk-bar-l' },
             h('div', { class: 'lk-bar-name', text: it ? it.name : 'Default' }),
-            h('div', { class: 'lk-bar-sub', text: it ? (it.exclusive ? (it.earn ? 'Achievement reward' : 'Invite reward') : rarityName(it.rarity)) + ' ' + catName(it.cat) + (isAnimated(it) ? ' · animated' : '') : (tab === 'skin' ? 'No skin' : 'No name style') }));
+            h('div', { class: 'lk-bar-sub', text: it ? (it.exclusive ? (it.lvl ? 'Level ' + it.lvl + ' reward' : it.earn ? 'Achievement reward' : 'Invite reward') : rarityName(it.rarity)) + ' ' + catName(it.cat) + (isAnimated(it) ? ' · animated' : '') : (tab === 'skin' ? 'No skin' : 'No name style') }));
         const right = h('div', { class: 'lk-bar-r' });
         let editor = null;
         if (custom) {

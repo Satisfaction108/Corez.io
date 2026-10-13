@@ -71,6 +71,17 @@ const CYCLE_MIN_LEFT_MS = 90 * 1000;      // not worth surfacing with less than 
 const FIRST_CYCLE_DELAY_MS = process.env.ROYALE_BOSS_EARLY === '1' ? CYCLE_SPAWN_DELAY_MS : Math.max(CYCLE_SPAWN_DELAY_MS, FIRST_MIN_MS);
 let bossCycle = -1, cycleBosses = 0;
 let hitters = new Map();
+const RISE_MS = 1800;
+const EXIT_MS = 1500;
+let pending = null;
+let exitAt = 0;
+function fx(x, y, kind, ...extra) {
+    try { royale().fxAt(x, y, kind, ...extra); } catch (e) { }
+}
+function sizeOf(id) {
+    const k = KINDS[id];
+    try { const c = Class[k.cls]; return Math.round((c && c.SIZE) || 60); } catch (e) { return 60; }
+}
 
 function storm() { return require('./storm.js'); }
 function mods() { return require('./raidMods.js'); }
@@ -98,7 +109,8 @@ function killBrood(o) {
     } catch { /* */ }
 }
 function resetRaid() {
-    if (boss && !boss.isDead?.()) { boss.bossBurrowed = true; try { boss.kill(); } catch { /* */ } }
+    pending = null; exitAt = 0;
+    if (boss && !boss.isDead?.()) { boss.bossBurrowed = true; try { boss.kill(); } catch (e) { boss.bossBurrowed = true; } }
     if (boss) killBrood(boss);
     boss = null; kindId = null; hitters.clear();
     bossCycle = -1; cycleBosses = 0;
@@ -133,11 +145,11 @@ function pickSpot() {
     return { x: st.cx || 0, y: st.cy || 0 };
 }
 
-function spawn(forceKind) {
+function spawn(forceKind, at = null) {
     if (boss && !boss.isDead?.()) return boss;
     const id = forceKind && KINDS[forceKind] ? forceKind : pickKind();
     const kind = KINDS[id];
-    const spot = pickSpot();
+    const spot = at && isFinite(at.x) && isFinite(at.y) ? { x: at.x, y: at.y } : pickSpot();
     let o;
     try {
         o = new Entity(spot);
@@ -161,7 +173,8 @@ function spawn(forceKind) {
     try { global.gameManager.terrainGrid.pushCircleFromVoronoi(o, o.realSize || 60); } catch { /* */ }
     boss = o; kindId = id; lastKind = id; hitters.clear();
     spawnedAt = Date.now();
-    expiresAt = spawnedAt + LIFETIME_MS;
+    expiresAt = spawnedAt + (at && at.ms > 0 ? at.ms : LIFETIME_MS);
+    if (at && at.home) o.bossHome = { x: spot.x, y: spot.y, r: at.home };
     o.on('damage', ({ damageInflictor = [] } = {}) => {
         // this tick's damage, split evenly between the tanks behind it (the
         // boss-reward assist share reads dmg)
@@ -178,6 +191,7 @@ function spawn(forceKind) {
             const h = hitters.get(root.id);
             hitters.set(root.id, { body: root, at: Date.now(), dmg: (h ? h.dmg : 0) + per });
         }
+        try { require('./bigHit.js').note(o, damageInflictor, Math.max(0, +o.damageReceived || 0), Date.now(), 'boss'); } catch (e) { }
     });
     o.on('dead', () => onDead(o));
     // round 9: its bullets (hull and turret guns) are tracked so the ones that reach
@@ -185,10 +199,66 @@ function spawn(forceKind) {
     for (const src of [o, ...(Array.isArray(o.turrets) ? o.turrets : [])]) {
         try { src.on('fire', ({ child } = {}) => { if (child && shots.length < 400) shots.push(child); }); } catch { /* */ }
     }
+    if (at && at.land) {
+        const r = (o.realSize || o.size || 60);
+        try { require('./eventSpot.js').clearRock(o.x, o.y, r + 70); } catch (e) { }
+        try { require('./eventSpot.js').shove(o.x, o.y, r + 260, royale().fightersNow ? royale().fightersNow() : [], 11); } catch (e) { }
+    }
+    fx(o.x, o.y, 'bossland', o.id | 0, Math.round(o.realSize || o.size || 60), kind.color || '#c9a8ff');
     try {
         royale().onBossSpawned(o, kind, id);
     } catch (e) { console.error('[BOSS] onBossSpawned', e && e.stack); }
     return o;
+}
+
+function rise(forceKind, at, t = Date.now()) {
+    if ((boss && !boss.isDead?.()) || pending) return null;
+    const id = forceKind && KINDS[forceKind] ? forceKind : pickKind();
+    if (!at || !isFinite(at.x) || !isFinite(at.y)) return null;
+    const ms = at.riseMs > 0 ? at.riseMs : RISE_MS;
+    pending = { id, at: Object.assign({}, at, { land: true }), due: t + ms, startAt: t, x: at.x, y: at.y };
+    lastKind = id;
+    fx(at.x, at.y, 'bossrise', ms, sizeOf(id), KINDS[id].color || '#c9a8ff');
+    return pending;
+}
+function pendingRise() { return pending; }
+function land(t = Date.now()) {
+    const p = pending;
+    pending = null;
+    if (!p) return null;
+    const ms = p.at.ms > 0 ? Math.max(1000, p.at.ms - (t - p.startAt)) : 0;
+    return spawn(p.id, Object.assign({}, p.at, ms ? { ms } : {}));
+}
+
+function exit(ms = EXIT_MS, t = Date.now()) {
+    if (!boss || boss.isDead?.() || boss.bossExiting) return false;
+    const o = boss;
+    o.bossExiting = true;
+    o.invuln = true;
+    o.pinX = o.x; o.pinY = o.y;
+    exitAt = t + ms;
+    killBrood(o);
+    for (const b of shots) { try { if (b && !b.isDead?.()) b.kill(); } catch (e) { } }
+    shots.length = 0;
+    fx(o.x, o.y, 'bossexit', o.id | 0, ms, Math.round(o.realSize || o.size || 60), (KINDS[kindId] || {}).color || '#c9a8ff');
+    return true;
+}
+function tickExit(t) {
+    const o = boss;
+    if (!o || !o.bossExiting) return false;
+    o.invuln = true;
+    if (o.pinX !== undefined) { o.x = o.pinX; o.y = o.pinY; }
+    if (o.velocity) { o.velocity.x = 0; o.velocity.y = 0; }
+    if (o.accel) { o.accel.x = 0; o.accel.y = 0; }
+    for (const b of shots) { try { if (b && !b.isDead?.()) b.kill(); } catch (e) { } }
+    shots.length = 0;
+    if (t >= exitAt) {
+        exitAt = 0;
+        o.bossBurrowed = true;
+        o.invuln = false;
+        try { o.kill(); } catch (e) { }
+    }
+    return true;
 }
 
 function rootKiller(dead) {
@@ -300,13 +370,17 @@ function tickPads(o, pads = safePads()) {
 }
 function tick(t, combatantCount) {
     if (!nextAt) scheduleNext(firstDelay());
+    if (pending && !boss) {
+        if (t >= pending.due) land(t);
+        return;
+    }
     if (boss) {
         // Health hit zero before the 'dead' event fired: settle it here, or
         // the handler sees a stale boss and skips the eruption, chest and fx.
         if (boss.isDead?.()) { onDead(boss); return; }
+        if (tickExit(t)) return;
         if (t > expiresAt) {
-            boss.bossBurrowed = true;
-            try { boss.kill(); } catch { /* */ }
+            if (!exit()) { boss.bossBurrowed = true; try { boss.kill(); } catch (e) { boss.bossBurrowed = true; } }
             return;
         }
         // stormed bosses stay dangerous: no storm chip on them
@@ -337,7 +411,7 @@ function tick(t, combatantCount) {
 }
 
 function snapshot() {
-    if (!boss || boss.isDead?.()) return null;
+    if (!boss || boss.isDead?.() || boss.bossExiting) return null;
     const kind = KINDS[kindId] || {};
     const hp = boss.health && boss.health.max ? Math.max(0, Math.min(1, boss.health.amount / boss.health.max)) : 1;
     const sh = boss.shield && boss.shield.max ? Math.max(0, Math.min(1, boss.shield.amount / boss.shield.max)) : 0;
@@ -348,7 +422,20 @@ function snapshot() {
     };
 }
 
-function current() { return boss && !boss.isDead?.() ? boss : null; }
+function current() { return boss && !boss.isDead?.() && !boss.bossExiting ? boss : null; }
+function hitterList() {
+    let total = 0;
+    for (const h of hitters.values()) total += Math.max(0, h.dmg || 0);
+    return [...hitters.values()].map(h => ({ body: h.body, dmg: h.dmg || 0, share: total > 0 ? Math.max(0, h.dmg || 0) / total : 0, at: h.at }));
+}
+function burrow() {
+    pending = null;
+    if (!boss || boss.isDead?.()) return false;
+    exitAt = 0;
+    boss.bossBurrowed = true;
+    try { boss.kill(); } catch { }
+    return true;
+}
 function nextIn() { return Math.max(0, nextAt - Date.now()); }
 
 // Damage this tank has done to the current boss (contracts).
@@ -364,4 +451,4 @@ function debugHit(body, dmg) {
     hitters.set(body.id, { body, at: Date.now(), dmg: (h ? h.dmg : 0) + (+dmg || 0) });
 }
 
-module.exports = { VAULT_CLEAR, nearVault, clearOfVaults, tickPads, _shots: shots, FIRST_CYCLE_DELAY_MS, CYCLE_SPAWN_DELAY_MS, debugHit, damageBy, KINDS, TUNING, RATE, BASE_INTERVAL_MS, LIFETIME_MS, firstDelay, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };
+module.exports = { RISE_MS, EXIT_MS, rise, land, exit, pendingRise, exiting: () => !!(boss && boss.bossExiting && !boss.isDead?.()), hitterList, burrow, VAULT_CLEAR, nearVault, clearOfVaults, tickPads, _shots: shots, FIRST_CYCLE_DELAY_MS, CYCLE_SPAWN_DELAY_MS, debugHit, damageBy, KINDS, TUNING, RATE, BASE_INTERVAL_MS, LIFETIME_MS, firstDelay, tune, spawn, tick, snapshot, current, resetRaid, nextIn, scheduleNext, erupt };

@@ -865,7 +865,7 @@ TouchControls.prototype.buildDom = function () {
     const rot = document.createElement("div");
     rot.id = "touchRotate";
     rot.innerHTML = '<div class="rot-card"><div class="rot-phone"></div><h2>Turn your phone sideways</h2>' +
-        '<p>You can see much more of the raid that way.</p>' +
+        '<p>You can see much more of the map that way.</p>' +
         '<p class="rot-lock">Not turning? Switch off rotation lock.</p>' +
         '<button type="button">Play upright anyway</button></div>';
     rot.querySelector("button").onclick = () => { this.portraitOk = true; rot.classList.remove("show"); };
@@ -973,7 +973,7 @@ TouchControls.prototype.showClip = function (blob, name) {
     card.querySelector(".clip-x").onclick = close;
     const sh = card.querySelector(".clip-share");
     if (sh) sh.onclick = async () => {
-        try { await navigator.share({ files: [file], title: "Corez.io", text: "A clip from my raid on corez.io" }); close(); }
+        try { await navigator.share({ files: [file], title: "Corez.io", text: global.aoWorld ? "A clip from my game on corez.io" : "A clip from my raid on corez.io" }); close(); }
         catch (e) { /* cancelled: the card stays for Save */ }
     };
     clearTimeout(this.clipTimer);

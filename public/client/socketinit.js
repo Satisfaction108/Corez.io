@@ -21,9 +21,12 @@ import * as bankPops from "./bankPopLogic.js";
 import * as scoreText from "./scoreLogic.js";
 import * as raidProg from "./raidProgressLogic.js";
 import * as mineDust from "./mineDust.js";
+import * as levelsHud from "./levelsHud.js";
 import { chatLog, pushMessage as pushChat } from "./chatPanelLogic.js";
 import { netSmooth } from "./netSmooth.js";
 import { predictor } from "./predict.js";
+import * as aoHud from "./alwaysOn.js";
+import * as deathText from "./deathCardLogic.js";
 // callouts (KC) that make your sidekick bounce about
 const SIDEKICK_CHEERS = { kill: 1, revenge: 1, huntkill: 1, shutdown: 1, bounty: 1, boss: 1, streak: 1, quest: 1, contract: 1 };
 window.fakeLagMS = 0;
@@ -529,6 +532,7 @@ function reducedMotion() {
     } catch (e) { return false; }
 }
 global.reducedMotion = reducedMotion;
+try { global.aoWorld = localStorage.getItem("dwAoWorld") === "1"; } catch (e) { global.aoWorld = false; }
 hitFx.init({ config, global, juice });
 // Seconds until the next raid while one is over (0 otherwise), off the one
 // deadline the RY handler keeps. Stale raid state reads as 0.
@@ -551,14 +555,22 @@ function selfKnockout() {
     const x = me ? (me.render && isFinite(me.render.x) ? me.render.x : me.x) : global.player.cx.x;
     const y = me ? (me.render && isFinite(me.render.y) ? me.render.y : me.y) : global.player.cy.y;
     if (!isFinite(x) || !isFinite(y)) return;
-    const calm = reducedMotion();
-    const hold = calm ? 0 : 120;
-    if (hold) global.hitStop = Math.max(global.hitStop || 0, Date.now() + hold);
-    pushTankBurst(x, y, (me && me.color) || gui.color, (me && me.size) || 30, true, performance.now() + hold);
-    global.selfDeathAt = performance.now() + hold;
-    punchCamera(calm ? 6 : 30, calm ? 200 : 480, true);
+    const calm = reducedMotion() || !!config.graphical.lightSafe;
+    const at = performance.now();
+    pushTankBurst(x, y, (me && me.color) || gui.color, (me && me.size) || 30, true, at);
+    const b = global.tankBursts[global.tankBursts.length - 1];
+    b.type = gui.type ? String(gui.type) : "";
+    b.colIdx = gui.color;
+    b.facing = me && me.render && isFinite(me.render.f) ? me.render.f : (me && me.facing) || 0;
+    b.gems = global.finalCarried | 0;
+    global.selfDeathAt = at;
+    if (!calm) juice.slowMo(deathText.INTRO.slow, deathText.INTRO.slowSpeed);
+    punchCamera(calm ? 6 : 30, calm ? 200 : 520, true);
     punchUI(calm ? 2 : 11, calm ? 160 : 340);
-    try { if (gameSound.oreBreak) gameSound.oreBreak(x, y, 3); } catch (e) { /* */ }
+    if (b.gems >= 10 && !config.graphical.fewerEffects) {
+        try { juice.burst(x, y, Math.min(14, 4 + Math.floor(b.gems / 60)), "#ffd75e", 260, 900, 3, 5); } catch (e) { void e; }
+    }
+    try { if (gameSound.oreBreak) gameSound.oreBreak(x, y, 3); } catch (e) { void e; }
 }
 // Damage the server attributed to or against us. targetId locates the body to
 // float the number over; taken=true means we were the one hit. amount is
@@ -1223,8 +1235,6 @@ let incoming = async function(message, socket) {
                     // a fresh socket starts out visible on the server
                     tabStateSent = 0;
                     if (document.hidden) tellTabState(1);
-                    // duos: the party ticket (or "" for a lone queue) and fill
-                    if (global.duoSession) socket.talk('DQ', String(global.duoSession.ticket || ""), global.duoSession.fill === false ? 0 : 1);
                     socket.talk('s', "", 1, 0, false, 0);
                 }
             }; break;
@@ -1402,7 +1412,7 @@ let incoming = async function(message, socket) {
                     } else r.nextAt = 0;
                     r.you = d.you || null;
                     // every points change gets a labelled pop (scoreLogic.js), dead or alive
-                    if (r.you) { try { scoreText.ptsOnScore(global.ptsPops || (global.ptsPops = scoreText.ptsPops()), r.you, performance.now(), r.raidId | 0); } catch (e) { /* */ } }
+                    if (r.you) { try { scoreText.ptsOnScore(global.ptsPops || (global.ptsPops = scoreText.ptsPops()), r.you, performance.now(), d.ao && d.ao.day ? (r.raidId | 0) + ":" + d.ao.day : r.raidId | 0); } catch (e) { } }
                     r.duos = d.duos | 0;
                     r.teams = d.teams || null;
                     r.duo = d.duo || null;
@@ -1425,6 +1435,13 @@ let incoming = async function(message, socket) {
                     r.hunt = d.hunt || null;
                     r.core = d.core || null;
                     r.supply = d.supply || null;
+                    r.ao = d.ao || null;
+                    r.aoStorm = d.aoStorm || null;
+                    {
+                        const aoW = !!((d.ao && d.ao.on) || d.aom);
+                        if (global.aoWorld !== aoW) { global.aoWorld = aoW; try { localStorage.setItem("dwAoWorld", aoW ? "1" : "0"); } catch (e) { void e; } }
+                    }
+                    try { aoHud.onRY(r); } catch (e) { }
                     try { raidHeat.onRY(r); } catch (e) { /* */ }
                     // the Crown Contest (crowns.js)
                     r.crowns = d.crowns || null;
@@ -1457,11 +1474,11 @@ let incoming = async function(message, socket) {
                     if (placeNow > 0 && r.lastPlace > 0 && placeNow !== r.lastPlace && !global.died && r.board && r.board.length && !((global.nxStage | 0) === 0 && global.nxKnown) && !r.crowns) {
                         if (placeNow < r.lastPlace) {
                             const below = r.board.find(row => row.place === placeNow + 1);
-                            global.createMessage("You passed " + (below ? below.name : "someone") + " and moved up to #" + placeNow + "!", 3200);
+                            global.createMessage(below && below.name ? "You passed " + below.name + " and moved up to #" + placeNow + "!" : "You moved up to #" + placeNow + "!", 3200);
                             if (gameSound.gemPickup) gameSound.gemPickup(3);
                         } else {
                             const above = r.board.find(row => row.place === placeNow - 1);
-                            global.createMessage((above ? above.name : "Someone") + " passed you. You're now #" + placeNow + ".", 3200);
+                            global.createMessage(above && above.name ? above.name + " passed you. You're now #" + placeNow + "." : "You dropped to #" + placeNow + ".", 3200);
                         }
                     }
                     if (placeNow > 0) r.lastPlace = placeNow;
@@ -1573,6 +1590,7 @@ let incoming = async function(message, socket) {
             case 'KC': {
                 // Raid over: its own full-screen moment, not a queued callout.
                 if (m[0] === "raidend") {
+                    if (aoHud.on()) break;
                     global.raidEndFx = { at: performance.now(), sub: typeof m[3] === "string" ? m[3] : "" };
                     global.callouts.length = 0;
                     raidFinale.start(global.raidEndFx.sub);
@@ -1656,6 +1674,7 @@ let incoming = async function(message, socket) {
                     try { gameSound.dustBank(); } catch (e) { /* */ }
                     break;
                 }
+                if (aoHud.onFX(kindF)) break;
                 try { if (raidHeat.onFX(kindF, fx.x, fx.y, m[3], m[4], m[5], m[6])) break; } catch (e) { /* */ }
                 try { if (crowns.onFX(kindF, fx.x, fx.y)) break; } catch (e) { /* */ }
                 if (kindF === "chest" || kindF === "chestrare") {
@@ -1717,6 +1736,10 @@ let incoming = async function(message, socket) {
                 if (m[3] | 0) global.hurtAt = performance.now();
                 else global.dealtAt = performance.now();   // raidPerks: out of combat = neither for 3 s
                 try { raidHeat.onHit(m[0], m[1] | 0, m[2] | 0, !!(m[3] | 0)); } catch (e) { /* */ }
+            } break;
+            case 'BH': {
+                global.dealtAt = performance.now();
+                try { raidHeat.onBigHit(m[0] | 0, m[1] | 0, m[2] | 0, m[3] | 0, m[4] | 0, m[5] == null ? -1 : m[5] | 0); } catch (e) { }
             } break;
             case 'DEAD': {
                 // You just killed someone. Skull + DEAD! at their last spot.
@@ -1971,6 +1994,9 @@ let incoming = async function(message, socket) {
                     if (d && d.id) { if (window.dwAch) window.dwAch(d); else global.createMessage('Achievement unlocked: ' + (d.name || d.id), 5000); }
                 } catch (e) { /* ignore */ }
             } break;
+            case 'LV': {
+                try { levelsHud.receive(typeof m[0] === 'string' ? JSON.parse(m[0]) : m[0]); } catch (e) { void e; }
+            } break;
             case 'STK': {
                 // a play or win streak moved: a card under the raid clock
                 try {
@@ -1983,7 +2009,7 @@ let incoming = async function(message, socket) {
                     const title = (d.kind === 'play' ? 'Play streak day ' + n : 'Win streak x' + n) + paid;
                     const sub = d.kind === 'play'
                         ? 'Play tomorrow for +' + fmt(d.nextMilli) + '. Days roll over at 00:00 UTC.'
-                        : paid ? 'Win the next raid for +' + fmt(d.nextMilli) : "You've hit today's limit for win dust, but the streak still counts.";
+                        : paid ? (global.aoWorld ? 'Win again for +' : 'Win the next raid for +') + fmt(d.nextMilli) : "You've hit today's limit for win dust, but the streak still counts.";
                     const t = window.dwGameToasts;
                     if (t && t.note) t.note('streak:' + d.kind, title, { tag: 'Streak', kind: 'streak', sub, ms: 7000 });
                     else global.createMessage(title, 5000);
@@ -2370,10 +2396,11 @@ let incoming = async function(message, socket) {
                 global.raidRespawnWaitMs = waitMs;
                 try { global.deathAnimation.force(4); } catch { /* */ }
                 const diedAt = global.royaleDiedAt;
+                const camAfter = deathText.introBeat(reducedMotion() || !!config.graphical.lightSafe);
                 setTimeout(() => {
                     if (!global.died || global.royaleDiedAt !== diedAt) return;
                     try { global.canvas.socket.talk('RS', 2); } catch { /* */ }
-                }, 300);
+                }, camAfter);
                 // A dead miner leaves every pad panel behind.
                 try {
                     global.vault.onPad = false;

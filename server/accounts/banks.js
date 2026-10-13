@@ -84,7 +84,9 @@ function claimGuest(guestId, userId, now = Date.now()) {
     return d.tx(() => {
         const g = { kind: 'g', id: guestId };
         const to = mergeTarget(d, g);
-        if (!to || to.kind !== 'a' || to.id !== userId) return 0;
+        if (!to) return 0;
+        if (to.kind === 'a' && to.id !== userId) return 0;
+        if (to.kind !== 'a' && !d.get('SELECT 1 AS x FROM users WHERE id = ? AND deleted_at IS NULL AND created_at >= ?', userId, now - NEW_ACCOUNT_MS)) return 0;
         const n = atRest(d, g);
         if (!(n > 0)) return 0;
         setAtRest(d, g, 0, now);

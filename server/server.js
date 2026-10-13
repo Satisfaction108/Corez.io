@@ -313,9 +313,8 @@ let server; // HTTP server instance
 // websocket is spliced through.
 const TUTORIAL_PROXY_PATH = "/tut";
 const DIG_WARS_PROXY_PATH = "/dw";
-// The duo raid server (a worker, like the tutorial): the menu's DUOS mode
-// dials <this host>/duo and the websocket is spliced through to its port.
 const DUO_PROXY_PATH = "/duo";
+const DUOS_REMOVED_TEXT = require("./accounts/routes/duosRemoved.js").TEXT;
 
 // The host a page reached us on, when it is the old domain (MOVE_FROM_HOST):
 // its raid sockets dial the same host so its cookie goes along. Anything
@@ -430,11 +429,10 @@ server = http.createServer((req, res) => {
             const ownHost = gameHostFor(req);
             readString = JSON.stringify((global.servers || []).filter((s) => s && s.id && !s.hidden).map((server) => {
                 const cfg = serverCfg(server.id);
-                const duo = server.mode === "duo" || !!(cfg && cfg.properties && cfg.properties.royale_duos);
-                const extra = !duo && server.gameManager ? overflow : [];
-                const mode = duo ? "duo" : (server.mode || undefined);
+                const extra = server.gameManager ? overflow : [];
+                const mode = server.mode || undefined;
                 return {
-                    ip: duo || server.ip === Config.host ? ownHost : server.ip,
+                    ip: server.ip === Config.host ? ownHost : server.ip,
                     // people + bots, never under the bots a raid drops in with you
                     players: listedPlayers({ mode, players: extra.reduce((n, s) => n + (s.players | 0), server.players | 0) }),
                     maxPlayers: extra.reduce((n, s) => n + (s.maxPlayers | 0), server.maxPlayers | 0),
@@ -442,10 +440,7 @@ server = http.createServer((req, res) => {
                     featured: server.featured,
                     region: server.region || (cfg && cfg.region) || "",
                     gameMode: server.gameMode,
-                    // raid servers say which menu mode they are; the duo one is
-                    // reached through this host at proxyPath, never its own port
                     mode,
-                    proxyPath: duo ? DUO_PROXY_PATH : undefined,
                 };
             }));
         } break;
@@ -877,8 +872,9 @@ server.on("upgrade", (req, socket, head) => {
     }
     if (url === DUO_PROXY_PATH || url.startsWith(DUO_PROXY_PATH + "/") ||
         url.startsWith(DUO_PROXY_PATH + "?")) {
-        if (!workerPort("duo")) { try { socket.destroy(); } catch (e) { /* */ } return; }
-        return proxyUpgradeToWorker(req, socket, head, DUO_PROXY_PATH, workerPort("duo"));
+        return wsServer.handleUpgrade(req, socket, head, (ws) => {
+            try { ws.close(4001, DUOS_REMOVED_TEXT); } catch (e) { try { ws.terminate(); } catch (_) { } }
+        });
     }
     if (url === DIG_WARS_PROXY_PATH || url.startsWith(DIG_WARS_PROXY_PATH + "/") ||
         url.startsWith(DIG_WARS_PROXY_PATH + "?")) {

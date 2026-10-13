@@ -1931,7 +1931,7 @@ class BotNav {
 // or etiquette satisfied), so its high value is mostly self-defense.
 const GOAL_PRIORITY = {
     survive: 100, regroup: 90, bank: 75, fight: 70, objective: 65, rally: 63,
-    collect: 60, defend: 58, chest: 45, mine: 30, explore: 10,
+    collect: 60, defend: 58, aoshoot: 52, aogo: 50, chest: 45, mine: 30, explore: 10,
 };
 // Duos, a human's bot teammate: past TEAM_LEASH_FAR from its human it drops
 // whatever it is doing and regroups; past TEAM_LEASH it does when nothing is
@@ -1944,7 +1944,7 @@ const BOSS_HUNTERS = 3;
 const BOT_FIGHT_THREAT = 0.9;
 const GOAL_HOLD = {
     survive: 2200, regroup: 3000, bank: 7000, fight: 2800, collect: 2600,
-    defend: 4500, objective: 9000, rally: 6000, chest: 7000, mine: 5000, explore: 9000,
+    defend: 4500, objective: 9000, rally: 6000, chest: 7000, mine: 5000, explore: 9000, aoshoot: 6000, aogo: 6000,
 };
 
 // A bot's hands on a keyboard. Players drive with WASD: eight directions,
@@ -2959,6 +2959,10 @@ class io_digWarsGoals extends IO {
             return { kind: 'rally', point: this.safePoint(marker.x, marker.y), expiresAt: marker.expiresAt };
         if (view.allyInTrouble)
             return { kind: 'rally', point: this.safePoint(view.allyInTrouble.x, view.allyInTrouble.y), expiresAt: now + 6000 };
+        if (Config.dig_royale && !human) {
+            const ev = this.eventGoal(now, health);
+            if (ev) return ev;
+        }
         // never chase someone into their own base (the tiles kill us)
         if (view.enemy && view.enemyDistance < this.engageRange() && !outnumbered &&
             !inEnemyBase(body.team, view.enemy.x, view.enemy.y) &&
@@ -3041,6 +3045,27 @@ class io_digWarsGoals extends IO {
         return boss;
     }
 
+    eventGoal(now, health) {
+        const body = this.body;
+        if (body.isTeamBot || health < 0.4) return null;
+        let g = null;
+        try { g = require('../game/terrain/alwaysOn.js').botGoal(body, now); } catch { return null; }
+        if (!g) return null;
+        const fish = body._fpBait || (body._fpFodder && fairPlay.isFodder(body));
+        if (fish && g.fight) return null;
+        if (g.kind === 'boss' && g.target && !g.target.isDead?.()) {
+            if (this.isRammer() || (this.fearUntil.get(g.target.id) || 0) > now) return null;
+            if (this.distanceTo(g.target) < 1500) { body._botBossHuntUntil = now + 3000; return { kind: 'fight', target: g.target }; }
+            return { kind: 'aogo', point: { x: g.x, y: g.y }, arrive: 400, until: now + 8000 };
+        }
+        if (g.kind === 'shoot' && g.target && !g.target.isDead?.()) {
+            if (this.isRammer()) return null;
+            return { kind: 'aoshoot', target: g.target, r: g.r || 100 };
+        }
+        if (g.kind === 'go') return { kind: 'aogo', point: this.safePoint(g.x, g.y), arrive: g.arrive || 150, until: now + 9000 };
+        return null;
+    }
+
     nearChest(now) {
         if (now < (this.chestCheckAt || 0)) return this.chestPick || null;
         this.chestCheckAt = now + 500;
@@ -3067,6 +3092,8 @@ class io_digWarsGoals extends IO {
             case 'fight': return a.target === b.target;
             case 'collect': return a.gem === b.gem;
             case 'chest': return a.target === b.target;
+            case 'aoshoot': return a.target === b.target;
+            case 'aogo': return Math.hypot(a.point.x - b.point.x, a.point.y - b.point.y) < 120;
             // any rock is the same job, so a nearer one never replaces a
             // half-broken one
             case 'mine': return true;
@@ -3084,6 +3111,13 @@ class io_digWarsGoals extends IO {
                 const health = body.health.max ? body.health.amount / body.health.max : 1;
                 return health < this.retreatAt() + 0.08;
             }
+            case 'aoshoot': {
+                const c = goal.target;
+                if (!c || c.isDead?.() || !(c.health && c.health.amount > 0)) return false;
+                return this.distanceTo(c) < 3200;
+            }
+            case 'aogo':
+                return !!goal.point && now < (goal.until || 0) && this.distanceTo(goal.point) > (goal.arrive || 150) + 40;
             case 'chest': {
                 const c = goal.target;
                 if (!c || c._opened || c.isDead?.()) return false;
@@ -3702,6 +3736,14 @@ class io_digWarsGoals extends IO {
                 : goal.kind === 'mine' && goal.rock ? { x: goal.rock.wx, y: goal.rock.wy } : null;
             return { target: target ? { x: target.x - body.x, y: target.y - body.y } : forward(), fire: false };
         }
+        if (goal.kind === 'aoshoot' && goal.target && !goal.target.isDead?.() && now - (body._lastDamageAt || 0) > 2500 &&
+            this.distanceTo(goal.target) < this.weaponRange() + (goal.r || 100) * 0.8) {
+            if (this.clearShot(goal.target))
+                return { target: this.aimVector(goal.target.x - body.x, goal.target.y - body.y, now), fire: true };
+            const rock = this.firstRockAlong(goal.target);
+            if (rock && rock.alive)
+                return { target: this.aimVector(rock.wx - body.x, rock.wy - body.y, now), fire: true };
+        }
         const enemy = this.view.enemy;
         // Any enemy inside weapon range gets shot at; etiquette (mercy,
         // dogpile caps, chase break-offs) only governs pursuit. A new target
@@ -3847,6 +3889,16 @@ class io_digWarsGoals extends IO {
             case 'collect':
                 destination = goal.gem;
                 arrive = 0;
+                break;
+            case 'aoshoot': {
+                const r = (goal.r || 100) + Math.max(240, Math.min(480, this.weaponRange() * 0.7));
+                destination = this.orbitPoint('ao' + goal.target.id, goal.target, r, now, 0, 0.8);
+                arrive = 45;
+                break;
+            }
+            case 'aogo':
+                destination = goal.point;
+                arrive = goal.arrive || 150;
                 break;
             case 'defend':
                 destination = goal.target && this.clearShot(goal.target)

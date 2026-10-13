@@ -1559,7 +1559,7 @@ class socketManager {
                     else if (what === "meteor") { const ev = require('../terrain/raidEvents.js').startMeteor(Date.now()); if (ev) require('../gamemodes/scripts/dig_royale.js').onEvent(ev); }
                     else if (what === "rain") { const ev = require('../terrain/raidEvents.js').startRain(Date.now()); if (ev) require('../gamemodes/scripts/dig_royale.js').onEvent(ev); }
                     else if (what === "chest" && b) require('../terrain/chests.js').spawnChest(b.x + 120, b.y, !!m[1]);
-                    else if (what === "kill" && b) { b.health.amount = -1; }
+                    else if (what === "kill" && b) { b.invuln = false; b.godmode = false; b.padSafe = false; b.spawnGraceUntil = 0; if (b.shield) b.shield.amount = 0; b.health.amount = -1; try { if (typeof b.kill === "function") b.kill(); } catch (e) { b.health.amount = -1; } }
                     // DBG lvl <n>: level up to n (HUD checks: upgrade tiles, stat points)
                     else if (what === "lvl" && b) {
                         const want = Math.max(1, Math.min(Config.level_cap_cheat || 45, (m[1] | 0) || 15));
@@ -1621,6 +1621,22 @@ class socketManager {
                     else if (what === "tobloom" && b) { const bl = require('../terrain/blooms.js').current(); if (bl) { b.x = bl.x + 200; b.y = bl.y + 200; } }
                     else if (what === "toevent" && b) { const ev = require('../terrain/raidEvents.js').current(); if (ev) { b.x = ev.x + 250; b.y = ev.y; } }
                     else if (what === "tochest" && b) { const ch = require('../terrain/chests.js').alive()[0]; if (ch) { b.x = ch.x + 160; b.y = ch.y; } }
+                    else if (what === "event" || what === "aostate" || what === "dayreset") {
+                        const ao = require('../terrain/alwaysOn.js');
+                        const sub = String(m[1] || "");
+                        let res = null;
+                        if (what === "dayreset") res = require('../gamemodes/scripts/dig_royale.js').aoDebugDay();
+                        else if (what === "aostate") res = ao.debugState();
+                        else if (sub === "next") { const r = ao.debugNext(); res = { ended: r.ended ? r.ended.k : null, started: r.started ? r.started.kind : null }; }
+                        else if (sub === "start") { const ev = ao.debugStart(m[2] ? String(m[2]) : undefined); res = { started: ev ? ev.kind : null }; }
+                        else if (sub === "end") { const r = ao.finish(Date.now(), true); res = { ended: r ? r.k : null }; }
+                        else if (sub === "plan") { const n = ao.debugPlan(m[2] ? String(m[2]) : undefined, m[3]); res = { next: n ? n.kind : null }; }
+                        else if (sub === "left") res = { left: ao.debugLeft(m[2]) };
+                        else if (sub === "score" && b) res = ao.debugScore(b, m[2]);
+                        else if (sub === "go" && b) { const e = ao.current() || ao.nextEvent(); if (e) { b.x = e.x + (+m[2] || 0); b.y = e.y; b.velocity.x = 0; b.velocity.y = 0; } res = { at: e ? [e.x, e.y] : null }; }
+                        else res = ao.debugState();
+                        socket.talk('KC', 'dbg', JSON.stringify({ ao: what + (sub ? ' ' + sub : ''), res }), 0);
+                    }
                     else if (what === "twist") require('../gamemodes/scripts/dig_royale.js').debugTwist(m[1] ? String(m[1]) : undefined);
                     else if (what === "raidend") require('../gamemodes/scripts/dig_royale.js').debugEndRaid();
                     // jump the storm to N seconds into its cycle (300 = a minute before the hold)

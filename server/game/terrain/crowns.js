@@ -46,9 +46,11 @@ const BANK_IN_SD = true;
 const VAULT_RULE = "You can still bank, but the vault pushes a crown off as soon as you're done.";
 
 let hooks = {};
+let aoMode = false;
+function setAlwaysOn(on) { aoMode = !!on; }
 let S = fresh();
 function fresh() {
-    return { on: false, at: 0, sd: false, ten: false, done: false, lastAt: 0, holders: [], n: 0 };
+    return { on: false, at: 0, sd: false, ten: false, done: false, lastAt: 0, holders: [], n: 0, waiting: [] };
 }
 
 // dig_royale.js: keyOf(body), scoreOf(body), riskOf(body) (the points a steal can
@@ -65,7 +67,7 @@ const duos = () => !!(global.Config && Config.royale_duos);
 function botKillShare() { return ON && !!(global.Config && Config.dig_royale) && !Config.tutorial ? BOT_KILL_SHARE : 1; }
 
 const alive = (b) => !!b && !b.isGhost && !(b.isDead && b.isDead());
-const nameOf = (b) => String((b && b.name) || "Someone").slice(0, 24);
+const nameOf = (b) => String((b && b.name) || (b && b.isBot ? "A bot" : "A player")).slice(0, 24);
 function eligible(b) {
     return alive(b) && (b.isPlayer || b.isBot) && !b.isRoyaleBoss && !b.adminSpec && !b.royaleFrozen && !b.sidekickOf;
 }
@@ -106,7 +108,8 @@ function sayAll(kind, text, sub, dur, skip) {
     }
 }
 const fmt = (n) => (n | 0).toLocaleString('en-US');
-const rate = () => PPS * (S.sd ? SD_MULT : 1);
+const AO_PPS = 3;
+const rate = () => (aoMode ? AO_PPS : PPS) * (S.sd ? SD_MULT : 1);
 const rateText = () => "+" + rate() + " pts/sec" + (duos() ? " for your team" : "") + " while you hold it";
 function feed(e) { try { if (hooks.feed) hooks.feed(e); } catch { /* */ } }
 function fx(b, kind) { try { if (hooks.fxAt && b) hooks.fxAt(b.x, b.y, kind, b.id | 0); } catch { /* */ } }
@@ -179,6 +182,7 @@ function onDeath(victim, killer, t = Date.now()) {
     }
     let to = null, how = 'fall';
     if (k && !holderOf(k)) { to = k; how = 'steal'; }
+    else if (aoMode) { to = null; how = k ? 'pass' : 'fall'; }
     else { to = nextEligible([victim]); how = k ? 'pass' : 'fall'; }
     if (to) give(to, t, how === 'steal' ? 'steal' : 'fell', nameOf(victim));
     const vn = nameOf(victim), kn = k ? nameOf(k) : "", tn = to ? nameOf(to) : "";
@@ -188,8 +192,8 @@ function onDeath(victim, killer, t = Date.now()) {
         fx(k, 'crownsteal');
         feed({ crown: 1, took: 1, by: kn, name: vn, pts: stolen });
     } else {
-        if (k) say(k, 'crowntake', "CROWN SMASHED", (stolen ? "+" + fmt(stolen) + " pts from " + vn + ". " : "") + "You already wear one, so it went to " + (tn || "nobody") + ".", 3400, stolen);
-        say(victim, 'crownlost', "CROWN LOST", k ? kn + " knocked it off" + (stolen ? " and took " + fmt(stolen) + " of your kill and crown points" : "") + ". It went to " + (tn || "nobody") + "." : "You went down, so it fell to " + (tn || "nobody") + ". Go take it back.", 3400);
+        if (k) say(k, 'crowntake', "CROWN SMASHED", (stolen ? "+" + fmt(stolen) + " pts from " + vn + ". " : "") + (tn ? "You already wear one, so it went to " + tn + "." : "You already wear one, so that crown is gone."), 3400, stolen);
+        say(victim, 'crownlost', "CROWN LOST", k ? kn + " knocked it off" + (stolen ? " and took " + fmt(stolen) + " of your kill and crown points" : "") + (tn ? ". It went to " + tn + "." : ". It's gone now.") : tn ? "You went down, so it fell to " + tn + ". Go take it back." : aoMode ? "You went down, so your crown is gone. Place top 3 in an event to win another." : "You went down, so your crown is gone.", 3400);
         if (to) say(to, 'crowned', "A CROWN FELL TO YOU", "Its holder " + vn + (k ? " was knocked out" : " died") + ". " + rateText() + ". " + riskText(to), 4600);
         feed(k ? { crown: 1, smash: 1, by: kn, name: vn, to: tn, pts: stolen } : { crown: 1, fell: 1, name: vn, to: tn });
     }
@@ -207,14 +211,14 @@ function validate(t) {
             if (t - h.goneAt < 1500) continue;
         }
         drop(h);
-        const to = nextEligible([h.body]);
+        const to = aoMode ? null : nextEligible([h.body]);
         if (to) {
             give(to, t, 'left', nameOf(h.body));
             say(to, 'crowned', "A CROWN FELL TO YOU", "Its holder " + nameOf(h.body) + " left the raid. " + rateText() + ". " + riskText(to), 4600);
             feed({ crown: 1, fell: 1, name: nameOf(h.body), to: nameOf(to) });
         }
     }
-    while (S.holders.length < SLOTS) {
+    while (!aoMode && S.holders.length < SLOTS) {
         const to = nextEligible(null);
         if (!to) break;
         give(to, t, 'free');
@@ -253,6 +257,14 @@ function tick(t = Date.now()) {
     S.lastAt = t;
     let left = Infinity;
     try { left = hooks.leftMs ? hooks.leftMs(t) : Infinity; } catch { /* */ }
+    if (aoMode) {
+        if (!S.on) return;
+        tidyWaiting(t);
+        validate(t);
+        for (const h of S.holders) accrue(h, t);
+        for (const h of S.holders) { h.body.crowned = true; h.body.crownLocked = false; }
+        return;
+    }
     if (!S.on) {
         let fin = false;
         try { fin = !!(hooks.isFinal && hooks.isFinal()); } catch { /* */ }
@@ -319,6 +331,53 @@ function newRaid() {
     global.royaleCrownSD = false;
 }
 
+const WAIT_MS = 4 * 60 * 1000;
+function awardEvent(bodies, t = Date.now(), label = "", waiting = []) {
+    if (!enabled()) return [];
+    for (const h of S.holders.slice()) { accrue(h, t); drop(h); }
+    S.on = true;
+    S.done = false;
+    S.sd = false;
+    S.at = t;
+    S.n++;
+    S.waiting = [];
+    const given = [];
+    for (const b of bodies || []) {
+        if (given.length >= SLOTS || !eligible(b) || holderOf(b)) continue;
+        give(b, t, 'event', String(label || ""));
+        given.push(b);
+    }
+    for (const w of waiting || []) {
+        if (!w || !w.key || given.length + S.waiting.length >= SLOTS) continue;
+        if (given.some(b => keyOf(b) === w.key) || S.waiting.some(x => x.key === w.key)) continue;
+        S.waiting.push({ key: w.key, name: String(w.name || "").slice(0, 24), label: String(label || ""), until: t + WAIT_MS });
+    }
+    for (const b of given) say(b, 'crowned', "YOU GOT A CROWN", "Top 3 in " + (label || "the event") + "! It earns " + rate() + " points a second until someone takes it.", 5200);
+    const names = given.map(nameOf).concat(S.waiting.map(w => w.name).filter(Boolean));
+    if (names.length) feed({ crown: 1, start: 1, names });
+    return given;
+}
+function onSpawn(body, t = Date.now()) {
+    if (!enabled() || !S.waiting.length || !body || !eligible(body) || holderOf(body)) return false;
+    const key = keyOf(body);
+    const i = key ? S.waiting.findIndex(w => w.key === key) : -1;
+    if (i < 0) return false;
+    const w = S.waiting.splice(i, 1)[0];
+    if (t > w.until || S.holders.length >= SLOTS) return false;
+    give(body, t, 'event', w.label);
+    say(body, 'crowned', "YOUR CROWN IS HERE", "You made the top 3 in " + (w.label || "the event") + ", so your crown was waiting for you. It earns " + rate() + " points a second while you keep it.", 5200);
+    return true;
+}
+function tidyWaiting(t) {
+    if (!S.waiting.length) return;
+    S.waiting = S.waiting.filter(w => t <= w.until && !(hooks.keyPresent && !hooks.keyPresent(w.key)));
+}
+function waitingKeys() { return S.waiting.map(w => w.key); }
+function clearAll() {
+    for (const h of S.holders.slice()) drop(h);
+    S.holders = [];
+    S.waiting = [];
+}
 function active() { return enabled() && S.on && !S.done; }
 // RY you.crown: how you got yours and whose it was -> { how, from } | null
 function howOf(b) { const h = holderOf(b); return h ? { how: h.how || 'free', from: h.from || "" } : null; }
@@ -328,6 +387,7 @@ function ran() { return enabled() && S.on; }
 
 module.exports = {
     ON, SLOTS, STEAL_FRAC, STEAL_CAP, PPS, SD_MULT, BELL_BONUS, BOT_KILL_SHARE, SUDDEN_MS, TEN_MS, MIN_LEFT_MS, FUZZ, MAX_HUNTERS, CHAMP_MS, BANK_IN_SD, VAULT_RULE, howOf,
+    setAlwaysOn, awardEvent, onSpawn, waitingKeys, WAIT_MS, clearAll, alwaysOn: () => aoMode,
     attach, enabled, botKillShare, tick, onDeath, bankBlocked, crownKeys, standings, finish, snapshot, newRaid,
     active, suddenOn, ran, isCrowned, holderOf, stealOf, stealFor, riskText, rate,
     _state: () => S,

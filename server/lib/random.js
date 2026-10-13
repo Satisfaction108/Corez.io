@@ -235,9 +235,11 @@ exports.chooseBotName = (() => {
         return name;
     }
     chooseBotName.release = name => { issued.delete(name); };
+    chooseBotName.reserve = name => { if (name) issued.add(String(name)); };
     return chooseBotName;
 })();
 
 exports.releaseBotName = name => { exports.chooseBotName.release(name); };
+exports.reserveBotName = name => { exports.chooseBotName.reserve(name); };
 
 exports.chooseBossName = (code, amount) => code in exports.nameLists ? exports.chooseN(exports.nameLists[code], amount) : []

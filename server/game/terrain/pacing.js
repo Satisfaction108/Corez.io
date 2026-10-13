@@ -1,3 +1,4 @@
+function aoWorld() { try { return require('./alwaysOn.js').on(); } catch { return false; } }
 // Raid pacing: something worth hearing about every 60-90 s. The big beats
 // already have their own clocks (blooms and events once per storm cycle,
 // the boss every ~14 min, the storm moving every 7 min); dig_royale.js
@@ -175,7 +176,7 @@ function leaderTick(t) {
         leaderAnnouncedKey = key;
         leaderAnnouncedAt = t;
         if (hooks.announce) hooks.announce("Bounty on the leader, " + bounty.name + "! Whoever takes them down gets " + gems.toLocaleString('en-US') + " gems.", { event: 1, kind: 'bounty', name: bounty.name, lead: 1 });
-        if (body.socket && hooks.callout) hooks.callout(body, "bounty", "Bounty on the leader", 0, "You're leading the raid, so everyone gets paid for taking you down.", 3500);
+        if (body.socket && hooks.callout) hooks.callout(body, "bounty", "Bounty on the leader", 0, aoWorld() ? "You're leading today's board, so everyone gets paid for taking you down." : "You're leading the raid, so everyone gets paid for taking you down.", 3500);
     }
 }
 

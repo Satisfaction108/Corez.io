@@ -19,6 +19,7 @@ export const notSold = (it) => !!(it && (it.exclusive || !(+it.price > 0)));
 // The tag beside the price line, or null
 export function rewardTag(it) {
     if (!notSold(it)) return null;
+    if (it.lvl) return 'Level ' + it.lvl + ' reward';
     if (it.earn) return 'Achievement reward';
     if (it.id === 'ns_ringleader') return 'Invite reward';
     return 'Not sold';

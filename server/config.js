@@ -52,32 +52,6 @@ module.exports = {
                 bot_cap: 0
             }
         },
-        {
-            // DUOS: the Battle Royale with teams of two (parties, fill, shared bases,
-            // team standings: game/duo/). Always its own worker on a loopback port,
-            // spliced through at <host>/duo (HTTP upgrade) like the tutorial, since the
-            // box exposes one public port. royale_duos is copied onto Config in that
-            // worker only, so the solo raid never sees it.
-            share_client_server: false,
-            host: publicHost ? publicHost + ':' + (parseInt(process.env.DUO_PORT) || 3102) : ('localhost:' + (parseInt(process.env.DUO_PORT) || 3102)),
-            port: parseInt(process.env.DUO_PORT) || 3102,
-            id: 'duo',
-            proxyPath: '/duo',
-
-            region: "Local",
-            gamemode: ['dig_royale'],
-            player_cap: 20,
-
-            featured: false,
-            unlisted: false,
-            private: false,
-
-            properties: {
-                teams: 1,
-                bot_cap: 0,
-                royale_duos: true,
-            }
-        },
         // Dig Wars 2TDM is parked for now: no worker, and #dw routes nowhere.
         // {
         //     share_client_server: false,

@@ -20,14 +20,11 @@ export function effectiveStage(serverNx, forced) {
 // The first stage each one shows at. Anything not listed shows at every
 // stage. Some pieces have a smaller form before that (see shows()).
 export const MIN_STAGE = {
-    // the basics, always: health, satchel/bank, raid clock and storm, minimap, coach
     clock: 0, health: 0, wallet: 0, storm: 0, minimap: 0, coach: 0,
-    // the second raid: the rest of the "old" HUD and the shop side
-    standings: 1, feed: 1, shop: 1, ability: 1, kit: 1, abilityTour: 1,
-    raidEvents: 1, outposts: 1, raidNight: 1, cosmetics: 1, placeMsgs: 1,
-    // the third raid: the big systems
-    boss: 2, contracts: 2, bounties: 2, hunted: 2, core: 2, twist: 2,
-    streaks: 2, revenge: 2,
+    standings: 0, feed: 0, shop: 0, ability: 0, kit: 0, abilityTour: 0,
+    raidEvents: 0, outposts: 0, raidNight: 0, cosmetics: 0, placeMsgs: 0,
+    boss: 0, contracts: 0, bounties: 0, hunted: 0, core: 0, twist: 0,
+    streaks: 0, revenge: 0,
 };
 // pieces that only exist in the early stages
 export const MAX_STAGE = { goalLine: 0, directorMoments: 2 };
@@ -57,12 +54,8 @@ export function stageTable(nx) {
 // always; the big systems from stage 2; the rest from stage 1
 const CRIT = /storm|vault|clos|respawn/i;
 const BIG = /\bboss|surfaced|\bcore\b|bounty|contract|override|twist|hunted|top target|warden|colossus|wraith|drillhead|streak/i;
-export function toastAllowed(text, nx) {
-    if (nx >= VETERAN || !text) return true;
-    if (CRIT.test(text)) return true;
-    if (nx >= 2) return true;
-    if (BIG.test(text)) return false;
-    return nx >= 1;
+export function toastAllowed() {
+    return true;
 }
 // centre plates (KC kinds); unknown kinds show
 const CALLOUT_STAGE = {
@@ -122,11 +115,11 @@ export const INTROS = {
     boss: { stage: 2, text: "Bosses hit hard but drop a ton of gems." },
     contract: { stage: 2, text: "Contracts are quick jobs that pay gems. You'll find them at the top left." },
     bounty: { stage: 2, text: "Someone has a bounty. Kill them for extra gems." },
-    core: { stage: 2, text: "The Core is up in the middle. Everyone who hits it gets paid." },
+    core: { stage: 2, text: "The Core is up in the middle. Everyone who hits it gets paid.", ao: "The Core is up. Everyone who hits it gets a share of its points." },
     hunted: { stage: 2, text: "You're carrying a lot, so you're being hunted. Bank to shake them." },
     twist: { stage: 2, text: "Each raid has an Override, a special rule you can see at the top left." },
     // raid perks (raidPerks.js): from the first raid, the first time an offer is up
-    perks: { stage: 0, text: "Every 5,000 points, you get to pick a perk for this raid." },
+    perks: { stage: 0, text: "Every 5,000 points, you get to pick a perk for this raid.", ao: "Every 5,000 points, you get to pick a perk. It lasts for the rest of the day." },
 };
 // The intro to show the first time a piece appears, or "" (veterans, a
 // stage that hides the piece, or seen before).
@@ -135,7 +128,7 @@ export function introText(id, nx, seen, keys) {
     if (!it || nx >= VETERAN || nx < it.stage) return "";
     if (seen && seen[id]) return "";
     const k = keys || {};
-    const raw = k.touch && it.touch ? it.touch : it.text;
+    const raw = k.ao && it.ao ? it.ao : k.touch && it.touch ? it.touch : it.text;
     return raw.replace("{key}", k.ability || "Q").replace("{kit}", k.kit || "Z, comma or N");
 }
 // The three kit keys as words: ["Z", ",", "N"] -> "Z, comma or N"

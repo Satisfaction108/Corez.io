@@ -205,7 +205,7 @@ function onGuestId(socket) {
     const guests = require('../guests');
     if (socket.account) {
         // a guest who just signed up: their bank comes with them
-        if (!guests.converted(socket.guestId, socket.account.id)) return;
+        guests.converted(socket.guestId, socket.account.id);
         let moved = 0;
         try { moved = require('../banks').claimGuest(socket.guestId, socket.account.id); } catch (e) { /* */ }
         if (moved > 0) {
@@ -218,9 +218,18 @@ function onGuestId(socket) {
             const dust = ach.rewardMilli / 1000;
             try { socket.talk('m', 8000, n + (n === 1 ? ' achievement' : ' achievements') + ' came with you' + (dust > 0 ? ': +' + (+dust.toFixed(2)) + ' gemdust.' : '.')); } catch (e) { /* */ }
         }
+        try {
+            const champMilli = require('../dailyScores').adoptGuest(socket.guestId, socket.account.id);
+            if (champMilli > 0) socket.talk('m', 8000, 'Your daily champion reward came with you: +' + (+(champMilli / 1000).toFixed(2)) + ' gemdust.');
+        } catch (e) { }
         // Core loot found as a guest (terrain/coreDrop.js): granted in the adoption above
         if (ach && ach.loot && ach.loot.length) {
             try { socket.talk('m', 8000, 'Your Core loot came with you. Find it in your Locker.'); } catch (e) { /* */ }
+        }
+        const lv = require('./levelHooks').adoptGuest(socket, socket.guestId, socket.account.id);
+        if (lv && lv.moved) {
+            const got = lv.ups.filter(u => u.item).length;
+            try { socket.talk('m', 8000, 'Your levels came with you: you are Level ' + lv.level + (got ? ', and ' + got + (got === 1 ? ' unlock is' : ' unlocks are') + ' in your Locker now.' : '.')); } catch (e) { void e; }
         }
     } else guests.seen(socket.guestId, Date.now(), socket.guestSource || null);
 }

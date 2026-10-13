@@ -2,6 +2,7 @@ import { global } from "./global.js";
 import { util } from "./util.js";
 import { gui } from "./socketinit.js";
 import { gameSound } from "./sound.js";
+const aoT = () => !!global.aoWorld;
 
 // ── Corez.io training ──────────────────────────────────────────────────
 // Nine chapters of do-it steps. Players can jump to, skip, or resume any
@@ -886,7 +887,7 @@ const CHAPTERS = [
             {
                 id: "ability", allow: "shop:ability",
                 title: "Abilities",
-                text: "Abilities last the *whole raid*, even if you die. Buy the *Grapple Hook* in *Abilities*.",
+                text: () => aoT() ? "You keep an ability for as long as you play, even if you die. Buy the *Grapple Hook* in *Abilities*." : "Abilities last the *whole raid*, even if you die. Buy the *Grapple Hook* in *Abilities*.",
                 hint: () => global.shop.onPad ? "Open the Abilities tab, then pick Grapple Hook." : "Get back on the teal pad.",
                 praise: "Nice!",
                 onEnter: () => { global.shop.dismissed = false; state.ab0 = (abil().own || []).length; if (!global.shop.onPad) tut("goto", "shop"); },
@@ -924,8 +925,8 @@ const CHAPTERS = [
                 },
                 hint: () => state.sub === 0
                     ? "Kit items are one-use. This one heals half your health."
-                    : mob() ? "You can hold 3 kinds. In a raid, drag one off its button to drop it."
-                    : "You can hold 3 kinds. In a raid, drag one out of the box to drop it.",
+                    : mob() ? "You can hold 3 kinds. In the real game, drag one off its button to drop it."
+                    : "You can hold 3 kinds. In the real game, drag one out of the box to drop it.",
                 praise: "Nice!",
                 onEnter: () => {
                     global.shop.dismissed = true;
@@ -1032,7 +1033,7 @@ const CHAPTERS = [
                     if (b && hpFrac(me()) < 0.45) return "Low on health? Back off until your shield comes back. It can't kill you here.";
                     return "This practice *Vault Warden* has a tenth of a real boss's health. Stay back and shoot.";
                 },
-                hint: "Circle around it. Real bosses show up about every 14 minutes.",
+                hint: () => aoT() ? "Circle around it. Real bosses show up in Boss Hunt events." : "Circle around it. Real bosses show up about every 14 minutes.",
                 praise: "Boss down!",
                 onEnter: () => { tut("heal"); tut("goto", "clearing"); state.askAt = T() + 700; state.bossCarry = global.gems.carried | 0; },
                 target: () => {
@@ -1084,7 +1085,9 @@ const CHAPTERS = [
             {
                 id: "events", next: true,
                 title: "Events",
-                text: "Each storm can bring an *ore bloom*, a *meteor shower* or *gem rain*, so check your map. There's also a *twist*, like double damage.",
+                text: () => aoT()
+                    ? "Every 6 to 8 minutes an *event* starts somewhere on the map: *Storm Circle*, *Core Siege*, *Boss Hunt*, *Gem Rush*, *King of the Vault* or *Meteor Shower*. Check your map when one is coming."
+                    : "Each storm can bring an *ore bloom*, a *meteor shower* or *gem rain*, so check your map. There's also a *twist*, like double damage.",
                 praise: "OK",
             },
         ],
@@ -1092,13 +1095,13 @@ const CHAPTERS = [
 
     // ── 7 ────────────────────────────────────────────────────────────
     {
-        id: "raid", name: "The raid", mins: 1,
-        blurb: "How a raid goes.",
+        id: "raid", get name() { return aoT() ? "Points and events" : "The raid"; }, mins: 1,
+        blurb: () => aoT() ? "How points and events work." : "How a raid goes.",
         steps: [
             {
                 id: "storm",
                 title: () => state.storm && state.storm.outside ? "Get inside" : "The storm",
-                text: "The purple wall is the *storm*, and it hurts. Get inside the gold circle.",
+                text: () => aoT() ? "In a *Storm Circle* event, the purple wall is the *storm*, and it hurts. Get inside the gold circle." : "The purple wall is the *storm*, and it hurts. Get inside the gold circle.",
                 hint: "The wall stops at the circle, so just wait inside.",
                 praise: "Safe!",
                 onEnter: () => {
@@ -1117,20 +1120,24 @@ const CHAPTERS = [
             },
             {
                 id: "raidClock", next: true,
-                title: "Raids",
-                text: "A raid is *3 storms* over 21 minutes. The *3rd storm* closes all the way and ends it.",
+                title: () => aoT() ? "Events" : "Raids",
+                text: () => aoT()
+                    ? "Every 6 to 8 minutes an *event* starts, like a *Gem Rush* or *King of the Vault*. The *top 3* of each one get bonus points and a *crown*."
+                    : "A raid is *3 storms* over 21 minutes. The *3rd storm* closes all the way and ends it.",
                 praise: "OK",
             },
             {
                 id: "dying", next: true,
                 title: "Dying",
-                text: "Dying drops *70%* of what you're carrying, but your bank is safe. *Play again* after *3 seconds* puts you back at your base if you have one.",
+                text: "Dying drops *70%* of what you're carrying, but your bank is safe. *Respawn* after *3 seconds* drops you back in, at your base if you have one.",
                 praise: "OK",
             },
             {
                 id: "score", next: true,
                 title: "Score",
-                text: "Your score is the gems you banked this raid, plus points for every kill. Gems you're carrying only count once you bank them. The *top 10* get bonus gems next raid.",
+                text: () => aoT()
+                    ? "Your points are the gems you bank today, plus kills, events and crowns. Gems you're carrying only count once you bank them. The board resets at *00:00 UTC*, and the *top 3* win gemdust."
+                    : "Your points are the gems you banked this raid, plus kills, bonuses and crowns. Gems you're carrying only count once you bank them. Whoever has the most points when the raid ends *wins*.",
                 praise: "OK",
             },
         ],
@@ -1145,7 +1152,7 @@ const CHAPTERS = [
                 id: "rankedCard", next: true,
                 title: () => signedIn() ? "Ranked" : "Play ranked",
                 text: () => signedIn()
-                    ? "You're signed in, so every raid is ranked from *Bronze* up to *Corez*. Banking and kills earn you *gemdust* for the *Item Shop*."
+                    ? (aoT() ? "You're signed in, so your games are ranked from *Bronze* up to *Corez*. Banking and kills earn you *gemdust* for the *Item Shop*." : "You're signed in, so every raid is ranked from *Bronze* up to *Corez*. Banking and kills earn you *gemdust* for the *Item Shop*.")
                     : "Sign in from the menu to play ranked and earn *gemdust* for cosmetics.",
                 praise: "OK",
             },

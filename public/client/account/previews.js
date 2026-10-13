@@ -184,15 +184,17 @@ export function namePreview(opts) {
 export function nameCanvas(name, style, opts) {
     opts = opts || {};
     const st = itemOf(style);
-    const px = opts.px || 14;
     const font = opts.font || 'Ubuntu, Rubik, sans-serif';
     const m = document.createElement('canvas').getContext('2d');
-    m.font = 'bold ' + px + 'px ' + font;
     const glyph = st && st.style && st.style.glyph ? ' ' + st.style.glyph : '';
-    const pad = opts.stroke ? Math.ceil(px * (st && st.style && st.style.halo ? 0.38 : 0.3)) : 2;
-    const tw = Math.ceil(m.measureText(name + glyph).width) + pad * 2;
+    const padFor = (size) => opts.stroke ? Math.ceil(size * (st && st.style && st.style.halo ? 0.38 : 0.3)) : 2;
+    const widthAt = (size) => { m.font = 'bold ' + size + 'px ' + font; return Math.ceil(m.measureText(name + glyph).width) + padFor(size) * 2; };
+    const want = opts.px || 14;
+    let px = want, tw = widthAt(px);
+    while (opts.maxW && tw > opts.maxW && px > 8) { px -= 1; tw = widthAt(px); }
+    const pad = padFor(px);
     const w = opts.maxW ? Math.min(opts.maxW, tw) : tw;
-    const h = opts.h || Math.ceil(px * 1.45);
+    const h = opts.h || Math.ceil(want * 1.45);
     const cv = canvas(w, h, opts.cls || 'dw-name-cv');
     cv.setAttribute('role', 'img');
     cv.setAttribute('aria-label', name);

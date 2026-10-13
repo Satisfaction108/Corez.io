@@ -7,6 +7,12 @@ export const RULE_BODY = "Whoever has the most points when the raid ends wins. B
     "Kills, streaks, bosses and quests give bonus points. " +
     "A crown gives points every second, but whoever kills you takes it and up to 30% of your kill and crown points.";
 
+export const RULE_BODY_AO = "Your points add up all day and reset at 00:00 UTC. The top 3 on the daily board win gemdust and a crown by their name for the next day. " +
+    "Banked gems are safe, and dying never takes them. Carried gems only count once you bank them. Past 5,000 in a day, each banked gem counts half a point (you keep every gem). " +
+    "Kills, streaks, bosses, quests and events give bonus points. " +
+    "The top 3 of each event get a crown that gives points every second, but whoever kills you takes it and up to 30% of your kill and crown points.";
+export function ruleBody(ao) { return ao ? RULE_BODY_AO : RULE_BODY; }
+
 const num = (n) => String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 export const fmt = num;
 
@@ -18,6 +24,9 @@ export const BANKED_RAID = "Banked this raid";
 export const BANK_TIP = "Spendable: gems you can spend at shops";
 export const BANK_TIP_BODY = "This includes gems from earlier raids and bounties. Spending lowers it, but never your points. " +
     "Points only count what you banked this raid.";
+export const BANK_TIP_BODY_AO = "This includes gems from earlier days and bounties. Spending lowers it, but never your points. " +
+    "Points only count what you banked today.";
+export function bankTipBody(ao) { return ao ? BANK_TIP_BODY_AO : BANK_TIP_BODY; }
 
 // The one points number the death card shows (header and the "Points: X" line
 export function cardPoints(you) {

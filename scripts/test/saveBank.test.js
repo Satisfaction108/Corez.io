@@ -92,7 +92,7 @@ test('migration: v8 -> v9 writes a backup first, keeps every row, adds saves, ba
     assert.equal(bk.get('SELECT count(*) AS n FROM guests').n, 10);
     bk.close();
     assert.equal(db.userVersion(), migrations.latestVersion());
-    const strip = rows => rows.map(r => { const o = { ...r }; assert.equal(o.bank_gems, 0); delete o.bank_gems; for (const k of ['equip_sidekick', 'equip_sd_skin', 'equip_sd_name', 'sidekick_name', 'sidekick_color']) { if (k in o) assert.equal(o[k], null); delete o[k]; } return o; });
+    const strip = rows => rows.map(r => { const o = { ...r }; assert.equal(o.bank_gems, 0); delete o.bank_gems; for (const k of ['equip_sidekick', 'equip_sd_skin', 'equip_sd_name', 'sidekick_name', 'sidekick_color']) { if (k in o) assert.equal(o[k], null); delete o[k]; } for (const k of ['xp', 'level', 'xp_day', 'xp_day_n', 'xp_to']) { if (k in o) assert.equal(o[k], k === 'level' ? 1 : k === 'xp_to' ? null : 0); delete o[k]; } return o; });
     assert.deepEqual(strip(db.all('SELECT * FROM users')), before.users);
     assert.deepEqual(strip(db.all('SELECT * FROM guests')), before.guests);
     assert.throws(() => db.run('UPDATE users SET bank_gems = -1 WHERE id = 1'), /CHECK/);
@@ -311,7 +311,7 @@ test('e2e: persistent bank, Save & leave, $restore (local server, ports 6190-619
     // ROYALE_FAIR_PLAY=0: these test guests are brand new, so fair play would
     // protect them and a death would cost their savings nothing (bank.js)
     // ROYALE_SAVINGS_DEATH_LOSS=1: the savings tax is off by default since Oct 5 2026; this checks the old path
-    const env = { ...process.env, ROYALE_DEBUG: '1', ACCOUNTS_ALLOW_DEBUG: '1', ROYALE_FAIR_PLAY: '0', ROYALE_SAVINGS_DEATH_LOSS: '1',
+    const env = { ...process.env, ROYALE_ALWAYS_ON: '0', ROYALE_DEBUG: '1', ACCOUNTS_ALLOW_DEBUG: '1', ROYALE_FAIR_PLAY: '0', ROYALE_SAVINGS_DEATH_LOSS: '1',
         SESSION_SECRET: SECRET, DATA_DIR: E2E_DATA_DIR, PUBLIC_ORIGIN: origin, PUBLIC_HOST: 'localhost:' + port,
         TRUSTED_PROXIES: '127.0.0.1', SINGLE_PROCESS: 'true', PORT: String(port), BR_PORT: String(port),
         TUT_PORT: String(port + 1), DUO_PORT: String(port + 2), DW_PORT: String(port + 3), BOT_CHAT_AI: 'false', NODE_ENV: 'development' };

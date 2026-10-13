@@ -56,15 +56,13 @@ function t(name, fn) {
     const BASICS = ['clock', 'health', 'wallet', 'storm', 'minimap', 'coach'];
     const STAGE1 = ['standings', 'feed', 'shop', 'ability', 'kit', 'abilityTour', 'raidEvents', 'outposts', 'raidNight', 'cosmetics', 'placeMsgs'];
     const STAGE2 = ['boss', 'contracts', 'bounties', 'hunted', 'core', 'twist', 'streaks', 'revenge'];
-    t('stage 0: only the basics and the goal line', () => {
-        for (const p of BASICS) assert.ok(L.shows(p, 0), p);
+    t('stage 0: everything shows from the first game, plus the goal line', () => {
+        for (const p of BASICS.concat(STAGE1, STAGE2)) assert.ok(L.shows(p, 0), p);
         assert.ok(L.shows('goalLine', 0));
         assert.ok(L.shows('directorMoments', 0));
-        for (const p of STAGE1.concat(STAGE2)) assert.ok(!L.shows(p, 0), p);
     });
-    t('stage 1: the shop side comes in', () => {
-        for (const p of BASICS.concat(STAGE1)) assert.ok(L.shows(p, 1), p);
-        for (const p of STAGE2) assert.ok(!L.shows(p, 1), p);
+    t('stage 1: everything shows', () => {
+        for (const p of BASICS.concat(STAGE1, STAGE2)) assert.ok(L.shows(p, 1), p);
         assert.ok(!L.shows('goalLine', 1));
     });
     t('stage 2: bosses, contracts, bounties, the Core', () => {
@@ -74,25 +72,19 @@ function t(name, fn) {
     t('early pieces: near or owned', () => {
         assert.ok(L.shows('boss', 0, { near: true }));
         assert.ok(L.shows('core', 1, { near: true }));
-        assert.ok(!L.shows('contracts', 0, { near: true }));
+        assert.ok(L.shows('contracts', 0, { near: true }));
         assert.ok(L.shows('ability', 0, { owned: true }));
         assert.ok(L.shows('kit', 0, { owned: true }));
-        assert.ok(!L.shows('shop', 0, { owned: true }));
+        assert.ok(L.shows('shop', 0, { owned: true }));
     });
     t('unknown pieces always show', () => {
         for (const n of [0, 1, 2, 3]) assert.ok(L.shows('somethingNew', n));
     });
 
     // ── filters ───────────────────────────────────────────────────────
-    t('toasts: critical always, big systems from stage 2', () => {
-        assert.ok(L.toastAllowed('Storm closes in 10s', 0));
-        assert.ok(L.toastAllowed('The vault is closing', 0));
-        assert.ok(!L.toastAllowed('Meteor shower over the north', 0));
-        assert.ok(L.toastAllowed('Meteor shower over the north', 1));
-        assert.ok(!L.toastAllowed('The Warden has surfaced', 1));
-        assert.ok(!L.toastAllowed('Bounty on Alex', 1));
-        assert.ok(L.toastAllowed('The Warden has surfaced', 2));
-        assert.ok(L.toastAllowed('', 0));
+    t('toasts: every note shows from the first game', () => {
+        for (const txt of ['Storm closes in 10s', 'The vault is closing', 'Meteor shower over the north', 'The Warden has surfaced', 'Bounty on Alex', ''])
+            for (const nx of [0, 1, 2]) assert.ok(L.toastAllowed(txt, nx), txt + ' at ' + nx);
     });
     t('plates: twists, bounties and contracts wait', () => {
         for (const k of ['override', 'bounty', 'contract', 'boss', 'streak', 'revenge', 'shutdown']) {
@@ -102,11 +94,9 @@ function t(name, fn) {
         }
         for (const k of ['chest', 'dropin', 'restored', 'grown', 'mystery']) assert.ok(L.calloutAllowed(k, 0), k);
     });
-    t('feed: stage 0 keeps your own lines', () => {
+    t('feed: the whole kill feed from the first game', () => {
         assert.ok(L.feedAllowed({ name: 'Me', by: 'Bot' }, 0, 'Me'));
-        assert.ok(L.feedAllowed({ name: 'Bot', by: 'Me' }, 0, 'Me'));
-        assert.ok(!L.feedAllowed({ name: 'A', by: 'B' }, 0, 'Me'));
-        assert.ok(!L.feedAllowed({ name: 'A', by: 'B' }, 0, ''));
+        assert.ok(L.feedAllowed({ name: 'A', by: 'B' }, 0, 'Me'));
         assert.ok(L.feedAllowed({ name: 'A', by: 'B' }, 1, 'Me'));
     });
 
@@ -285,7 +275,7 @@ function t(name, fn) {
         assert.ok(/if \(!inRaid\(\) \|\| S\.stage >= L\.VETERAN\) \{\s*global\.nxBannerUp = false;/.test(nc), 'no director for veterans');
         // the death card switches on deathCardWanted only; the button says
         // Respawn at every stage (round 4: it used to flip mid-session)
-        assert.ok(app.includes('if (newcomer.deathCardWanted()) return gameDrawDeadNewcomer();'));
+        assert.ok(app.includes('if (newcomer.deathCardWanted()) gameDrawDeadNewcomer(A);'));
         assert.ok(app.includes('return { ready: true, label: "Respawn" };'));
         // scripts/test/newcomer.test.js reads this one
         assert.ok(app.includes('"Respawn in "'));

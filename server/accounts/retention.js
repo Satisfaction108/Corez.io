@@ -103,8 +103,6 @@ function adoptGuest(userId, guestId, now = Date.now()) {
         if (d.get('SELECT 1 AS x FROM daily_track WHERE user_id = ?', userId)) return none;
         const g = d.get('SELECT * FROM daily_track WHERE guest_id = ? AND adopted_by IS NULL', guestId);
         if (!g || !(g.claims > 0)) return none;
-        const conv = d.get('SELECT converted_user_id AS c FROM guests WHERE guest_id = ?', guestId);
-        if (conv && conv.c != null && conv.c !== userId) return none;
         // the guest row closes first (adopted_by IS NULL is the once-only guard)
         if (!d.run('UPDATE daily_track SET adopted_by = ? WHERE id = ? AND adopted_by IS NULL', userId, g.id).changes) return none;
         d.run(`INSERT INTO daily_track (user_id, step, streak, best, claims, last_claim_at, play_min, seen_at, created_at)

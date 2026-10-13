@@ -38,13 +38,15 @@ import * as juice from "./juice.js";
 import * as JM from "./juiceMath.js";
 import * as skyDrop from "./skyDrop.js";
 import * as mineDust from "./mineDust.js";
+import * as eventFx from "./eventFx.js";
 import { shows as nxShows } from "./newcomerLogic.js";
 // the first-raids stage (newcomer.js keeps it fresh); 3 = veteran
 const nx = () => global.nxStage == null ? 3 : global.nxStage;
 
 let A = null;
 export function init(helpers) { A = helpers; juice.init(helpers); skyDrop.init(helpers); }
-export const fallOf = (id) => skyDrop.fallOf(id);
+export const fallOf = (id) => skyDrop.fallOf(id) || eventFx.scaleOf(id);
+export const onBigHit = (id, dmg, x, y, kind, hp) => eventFx.onBigHit(id, dmg, x, y, kind, hp);
 // a supply crate's chest is drawn emerald (app.js drawChestBoulder)
 const CRATE_KIND = { epic: true, emerald: true };
 export function crateKind(id) { return S.crateIds.has(id) ? CRATE_KIND : null; }
@@ -68,7 +70,7 @@ const near = (x, y, d) => Math.hypot(x - global.player.renderx, y - global.playe
 const S = {
     huntSrc: null, huntById: new Map(), mine: 0, hunters: 0,
     threat: 0, threatAt: 0, lowHp: 0, me: null,
-    core: null, coreSeen: 0, coreCracks: null, coreCrackId: -1, coreLastHp: 1, coreHitAt: 0,
+    core: null, coreSeen: 0, coreCracks: null, coreCrackId: -1, coreLastHp: 1, coreHitAt: 0, crackStage: 0, crackStageAt: 0,
     chargeAt: -1e9, chargeMs: 900, chargePulse: false,
     downAt: 0, downX: 0, downY: 0, collAt: -1e9, collMs: 1600, collX: 0, collY: 0, collR: 110,
     safeAt: 0, huntedAt: 0, coreUpAt: 0,
@@ -355,7 +357,7 @@ export function onFX(kind, x, y, extra, extra2, extra3, extra4) {
             return false;
         }
     }
-    return false;
+    return eventFx.onFX(kind, x, y, extra, extra2, extra3, extra4);
 }
 
 // DEAD: you killed someone at (x, y)
@@ -559,6 +561,7 @@ export function drawFloor(c, px, py, ratio) {
     skyDrop.drawGround(c, px, py, ratio);
     drawCoreGround(c, px, py, ratio);
     drawSupplyGround(c, px, py, ratio);
+    eventFx.drawFloor(c, px, py, ratio);
     const core = S.core;
     if (!core || core.s !== "up") return;
     const sx = ratio * core.x - px + global.screenWidth / 2, sy = ratio * core.y - py + global.screenHeight / 2;
@@ -647,35 +650,67 @@ export function isCoreEntity(e) {
     e._isCore = yes;
     return yes;
 }
-// A geode fracture, in units of the Core's radius, fixed per Core: six main
-// cracks from the heart out to the shell between the spikes, each forking
-// once, and a ring crack joining them. Stage 1 (25% down) the inner halves,
-// 2 (50%) to the shell with the forks, 3 (75%) the ring.
-function crackSet(id) {
+function crackNet(id) {
     if (S.coreCrackId === id && S.coreCracks) return S.coreCracks;
     S.coreCrackId = id;
-    const rays = [], forks = [], ring = [];
-    for (let i = 0; i < 6; i++) {
-        const a0 = i * TAU / 6 + (JM.hash01(id, i) - 0.5) * 0.25;
-        const pts = [];
-        for (let k = 0; k <= 4; k++) {
-            const r = 0.18 + 0.21 * k, a = a0 + (JM.hash01(id + k, i * 3) - 0.5) * 0.18;
-            pts.push(Math.cos(a) * r, Math.sin(a) * r);
+    S.crackStage = 0;
+    S.crackStageAt = 0;
+    const segs = [], chips = [];
+    const h = (a, b) => JM.hash01(id + a, b);
+    const N = 7;
+    for (let i = 0; i < N; i++) {
+        const a0 = i * TAU / N + (h(1, i) - 0.5) * 0.55;
+        let x = Math.cos(a0) * 1.04, y = Math.sin(a0) * 1.04;
+        let ang = a0 + Math.PI + (h(3, i) - 0.5) * 0.45;
+        let th = 0.03 + (i / N) * 0.42 + h(9, i) * 0.06;
+        chips.push(a0, th);
+        const steps = 5 + ((h(5, i) * 2) | 0);
+        for (let k = 0; k < steps; k++) {
+            const len = 0.11 + 0.08 * h(7 + k, i * 5);
+            ang += (h(13 + k, i * 3) - 0.5) * 0.85;
+            const nx = x + Math.cos(ang) * len, ny = y + Math.sin(ang) * len;
+            if (Math.hypot(nx, ny) < 0.3) break;
+            const dur = 0.035 + 0.025 * h(17 + k, i * 7);
+            segs.push(x, y, nx, ny, th, dur);
+            if (k === 1 || (k === 3 && h(19, i) < 0.6)) {
+                let bx = nx, by = ny;
+                let ba = ang + (h(23 + k, i) < 0.5 ? -1 : 1) * (0.75 + 0.5 * h(29, i * 11));
+                let bth = th + dur + 0.07 + 0.05 * h(31, i);
+                const bn = 2 + ((h(37 + k, i) * 2) | 0);
+                for (let j = 0; j < bn; j++) {
+                    const bl = 0.07 + 0.06 * h(41 + j, i * 13 + k);
+                    ba += (h(43 + j, i * 17 + k) - 0.5) * 0.9;
+                    const ex = bx + Math.cos(ba) * bl, ey = by + Math.sin(ba) * bl;
+                    if (Math.hypot(ex, ey) > 1.1) break;
+                    const bd = 0.03 + 0.02 * h(47 + j, i);
+                    segs.push(bx, by, ex, ey, bth, bd);
+                    bx = ex; by = ey; bth += bd * 0.9;
+                }
+            }
+            x = nx; y = ny; th += dur * 0.85;
         }
-        rays.push(pts);
-        // a fork from about halfway out, leaning to one side
-        const side = JM.hash01(id, i * 11) < 0.5 ? -1 : 1, af = a0 + side * (0.32 + 0.12 * JM.hash01(id, i * 13));
-        forks.push([pts[4], pts[5], Math.cos(af) * 0.78, Math.sin(af) * 0.78, Math.cos(af + side * 0.1) * 0.98, Math.sin(af + side * 0.1) * 0.98]);
-        ring.push(Math.cos(a0) * 0.6, Math.sin(a0) * 0.6);
     }
-    S.coreCracks = { rays, forks, ring };
+    for (let i = 0; i < 6; i++) {
+        const a = i * TAU / 6 + h(53, i) * 0.6;
+        const r0 = 0.3 + 0.05 * h(59, i), r1 = r0 + 0.12 + 0.06 * h(61, i);
+        const a1 = a + (h(67, i) - 0.5) * 0.5;
+        segs.push(Math.cos(a) * r0, Math.sin(a) * r0, Math.cos(a1) * r1, Math.sin(a1) * r1, 0.62 + i * 0.045, 0.04);
+    }
+    S.coreCracks = { segs: Float32Array.from(segs), chips: Float32Array.from(chips) };
     return S.coreCracks;
 }
-function crackPath(c, x, y, R, pts, upto, ca, sa) {
-    for (let k = 0; k + 1 < pts.length && k / 2 <= upto; k += 2) {
-        const ux = pts[k] * ca - pts[k + 1] * sa, uy = pts[k] * sa + pts[k + 1] * ca;
-        if (k) c.lineTo(x + ux * R, y + uy * R); else c.moveTo(x + ux * R, y + uy * R);
+function crackStroke(c, x, y, R, segs, dmg, ca, sa) {
+    c.beginPath();
+    for (let j = 0; j < segs.length; j += 6) {
+        const th = segs[j + 4];
+        if (dmg <= th) continue;
+        const fr = Math.min(1, (dmg - th) / segs[j + 5]);
+        const ax = segs[j], ay = segs[j + 1];
+        const bx = ax + (segs[j + 2] - ax) * fr, by = ay + (segs[j + 3] - ay) * fr;
+        c.moveTo(x + (ax * ca - ay * sa) * R, y + (ax * sa + ay * ca) * R);
+        c.lineTo(x + (bx * ca - by * sa) * R, y + (bx * sa + by * ca) * R);
     }
+    c.stroke();
 }
 function hexPath(c, x, y, r, rot) {
     c.beginPath();
@@ -685,20 +720,41 @@ function hexPath(c, x, y, r, rot) {
     }
     c.closePath();
 }
-// c: gameplay layer; x, y screen position; isize the entity size
+const CORE_SPIN = 0.00012;
+const CRACK_COL = { deep: "rgba(18,96,128,0.85)", deepHot: "rgba(140,30,120,0.85)", line: "#9ff6ff", lineHot: "#ff9ae6", glowCol: "rgba(92,232,255,0.5)", glowHot: "rgba(255,90,216,0.5)" };
+function crackStageWatch(e, dmg, x0, y0, R, now) {
+    const stage = Math.min(5, Math.floor(dmg * 5 + 0.0001));
+    if (stage <= (S.crackStage | 0)) return;
+    const first = S.crackStageAt === 0;
+    S.crackStage = stage;
+    S.crackStageAt = now;
+    if (first && stage > 1) return;
+    juice.sparks(e.x, e.y, 10 + stage * 3, (e.size || 100) * 1.5, 800, 2, dmg > 0.5 ? "#ff8ae3" : "#9ff6ff", TAU, 0, 6);
+    juice.sparks(e.x, e.y, 8, (e.size || 100) * 1.3, 700, 1, "#2b2433", TAU, 0, 7);
+    if (near(e.x, e.y, 1600)) { try { if (gameSound.rankCrack) gameSound.rankCrack(Math.min(3, Math.max(1, stage - 1))); } catch (err) { } }
+}
 export function drawCore(c, x, y, e, ratio, alpha, isize) {
     const now = performance.now();
-    const R = (isize || e.size || 100) * ratio;
-    const hp = clamp(e.health != null ? e.health : 1);
+    if (eventFx.blastHides(e.x, e.y)) return;
+    let R = (isize || e.size || 100) * ratio;
+    const hi = eventFx.coreHitInfo(e.id);
+    let hp = clamp(e.health != null ? e.health : 1);
+    if (hi && now - hi.at < 2000) hp = Math.min(hp, hi.hp);
     if (hp < S.coreLastHp - 0.0005) S.coreHitAt = now;
     S.coreLastHp = hp;
+    const hitK = hi ? Math.max(0, 1 - (now - hi.at) / 140) : 0;
+    const ra = now - S.beamsAt;
+    if (ra >= 0 && ra < 700 && Math.abs(S.coreX - e.x) < 260 && Math.abs(S.coreY - e.y) < 260) {
+        const k = ra / 700, u = k - 1;
+        R *= 0.3 + 0.7 * (1 + 2.7 * u * u * u + 1.7 * u * u);
+    }
+    if (hitK > 0 && !calm()) R *= 1 - 0.03 * hitK;
     const hot = hp < 0.5;
-    const f = (e.render && e.render.f) || 0;
+    const f = calm() ? 0 : now * CORE_SPIN;
     const beat = calm() ? 0 : Math.sin(now / (hot ? 140 : 320));
     c.save();
     c.globalAlpha = alpha;
     c.lineJoin = "round";
-    // crystal spikes round the shell, breathing
     for (let i = 0; i < 6; i++) {
         const a = f * 0.6 + i * TAU / 6 + Math.PI / 6;
         const len = R * (1.45 + 0.08 * Math.sin(now / 380 + i * 1.7) * (calm() ? 0 : 1));
@@ -713,13 +769,11 @@ export function drawCore(c, x, y, e, ratio, alpha, isize) {
         c.beginPath(); c.moveTo(bx, by); c.lineTo(mx + nx * w, my + ny * w); c.lineTo(tx, ty); c.lineTo(mx - nx * w, my - ny * w); c.closePath();
         c.strokeStyle = "#0c0a0e"; c.lineWidth = Math.max(2, 3.2 * ratio); c.stroke();
     }
-    // the dark shell
     hexPath(c, x, y, R * 1.02, f);
     c.fillStyle = "#1d1630"; c.fill();
     c.strokeStyle = "#0c0a0e"; c.lineWidth = Math.max(2.5, 4.5 * ratio); c.stroke();
     hexPath(c, x, y, R * 0.86, f);
     c.strokeStyle = hot ? "rgba(255,90,216,0.55)" : "rgba(92,232,255,0.5)"; c.lineWidth = Math.max(1.5, 2.5 * ratio); c.stroke();
-    // the heart
     const hr = R * (0.5 + 0.04 * beat);
     if (juice.glowOn() && A && A.haloSprite) {
         const gr = hr * 2.4;
@@ -732,37 +786,52 @@ export function drawCore(c, x, y, e, ratio, alpha, isize) {
     c.strokeStyle = "#0c0a0e"; c.lineWidth = Math.max(2, 3 * ratio); c.stroke();
     hexPath(c, x, y, hr * 0.5, f * 2);
     c.fillStyle = "#ffffff"; c.fill();
-    // the fracture grows in steps (25 / 50 / 75% down), kept inside the
-    // shell and lit from inside: a wide glow, a dark edge, a bright core line
-    const stage = hp > 0.75 ? 0 : hp > 0.5 ? 1 : hp > 0.25 ? 2 : 3;
-    if (stage > 0) {
-        const cr = crackSet(e.id | 0);
+    const dmg = 1 - hp;
+    if (dmg > 0.02) {
+        const net = crackNet(e.id | 0);
+        crackStageWatch(e, dmg, x, y, R, now);
         const ca = Math.cos(f), sa = Math.sin(f);
-        const upto = stage === 1 ? 2 : 4;
         c.save();
-        hexPath(c, x, y, R * 0.98, f);
+        hexPath(c, x, y, R * 0.99, f);
         c.clip();
         c.lineCap = "round"; c.lineJoin = "round";
-        const glow = hot ? "rgba(255,90,216," : "rgba(92,232,255,";
-        const passes = [[glow + (0.35 + 0.15 * Math.max(0, beat)) + ")", 9], ["#0c0a0e", 3.6], [hot ? "#ffd6f6" : "#e8fdff", 1.5]];
-        for (const [col, w] of passes) {
-            c.strokeStyle = col;
-            c.lineWidth = Math.max(1, w * ratio * (stage === 3 && w > 5 ? 1.3 : 1));
+        const ch = net.chips;
+        c.fillStyle = "#0c0a0e";
+        c.globalAlpha = alpha;
+        for (let j = 0; j < ch.length; j += 2) {
+            if (dmg <= ch[j + 1]) continue;
+            const a = ch[j] + f, gx = x + Math.cos(a) * R * 0.95, gy = y + Math.sin(a) * R * 0.95;
+            const dep = R * (0.07 + 0.05 * Math.min(1, (dmg - ch[j + 1]) * 4)), wd = R * 0.08;
+            const nx = -Math.sin(a), ny = Math.cos(a);
             c.beginPath();
-            for (const p of cr.rays) crackPath(c, x, y, R, p, upto, ca, sa);
-            if (stage >= 2) for (const p of cr.forks) crackPath(c, x, y, R, p, 2, ca, sa);
-            if (stage >= 3) {
-                const q = cr.ring;
-                for (let i = 0; i <= 6; i++) {
-                    const j = (i % 6) * 2, ux = q[j] * ca - q[j + 1] * sa, uy = q[j] * sa + q[j + 1] * ca;
-                    if (i) c.lineTo(x + ux * R, y + uy * R); else c.moveTo(x + ux * R, y + uy * R);
-                }
-            }
-            c.stroke();
+            c.moveTo(gx + nx * wd + Math.cos(a) * R * 0.1, gy + ny * wd + Math.sin(a) * R * 0.1);
+            c.lineTo(gx - Math.cos(a) * dep, gy - Math.sin(a) * dep);
+            c.lineTo(gx - nx * wd + Math.cos(a) * R * 0.1, gy - ny * wd + Math.sin(a) * R * 0.1);
+            c.closePath(); c.fill();
         }
+        const wk = Math.max(0.6, ratio) * (0.75 + 0.7 * dmg);
+        if (juice.glowOn()) {
+            c.globalCompositeOperation = "lighter";
+            c.globalAlpha = alpha * (0.22 + 0.25 * dmg + 0.12 * Math.max(0, beat));
+            c.strokeStyle = hot ? CRACK_COL.glowHot : CRACK_COL.glowCol;
+            c.lineWidth = 9 * wk;
+            crackStroke(c, x, y, R, net.segs, dmg, ca, sa);
+            c.globalCompositeOperation = "source-over";
+        }
+        c.globalAlpha = alpha * 0.9;
+        c.strokeStyle = "#05040a"; c.lineWidth = 4.6 * wk;
+        crackStroke(c, x, y, R, net.segs, dmg, ca, sa);
+        c.strokeStyle = hot ? CRACK_COL.deepHot : CRACK_COL.deep; c.lineWidth = 2.6 * wk;
+        crackStroke(c, x, y, R, net.segs, dmg, ca, sa);
+        c.globalAlpha = alpha * (0.75 + 0.25 * Math.max(0, beat));
+        c.strokeStyle = hot ? CRACK_COL.lineHot : CRACK_COL.line; c.lineWidth = 1.25 * wk;
+        crackStroke(c, x, y, R, net.segs, dmg, ca, sa);
+        c.globalAlpha = alpha * 0.55;
+        c.strokeStyle = "#ffffff"; c.lineWidth = Math.max(0.5, 0.45 * wk);
+        crackStroke(c, x, y, R, net.segs, dmg, ca, sa);
         c.restore();
+        c.globalAlpha = alpha;
     }
-    // winding up an attack: the heart flares and a ring closes on the Core
     const ca2 = now - S.chargeAt;
     if (ca2 >= 0 && ca2 < S.chargeMs) {
         const k = ca2 / S.chargeMs;
@@ -777,12 +846,17 @@ export function drawCore(c, x, y, e, ratio, alpha, isize) {
         c.beginPath(); c.arc(x, y, R * (1.15 + (S.chargePulse ? 2.6 : 1.4) * (1 - k)), 0, TAU); c.stroke();
         c.globalAlpha = alpha;
     }
-    // a hit flash
     const ha = now - S.coreHitAt;
-    if (ha < 90) {
-        c.globalAlpha = alpha * 0.35 * (1 - ha / 90);
+    const flash = Math.max(hitK, ha < 90 ? 1 - ha / 90 : 0);
+    if (flash > 0) {
+        c.globalAlpha = alpha * 0.34 * flash;
         hexPath(c, x, y, R * 1.02, f);
         c.fillStyle = "#ffffff"; c.fill();
+        if (juice.glowOn() && A && A.haloSprite) {
+            const gr = hr * (2.2 + 0.6 * flash);
+            c.globalAlpha = alpha * 0.45 * flash;
+            c.drawImage(A.haloSprite(hot ? "coreHeartHot" : "coreHeart", hot ? "255,120,220" : "255,244,194", [[0, 1], [0.35, 0.6], [1, 0]]), x - gr, y - gr, gr * 2, gr * 2);
+        }
     }
     c.restore();
 }
@@ -872,6 +946,7 @@ export function drawWorld(c, px, py, ratio) {
     }
     drawKillPops(c, ratio, now);
     skyDrop.drawAir(c, px, py, ratio);
+    eventFx.drawWorld(c, px, py, ratio);
     juice.drawSparks(c, px, py, ratio);
     mineDust.draw(c, px, py, ratio);
 }
@@ -1217,6 +1292,7 @@ export function calloutCol(kind) {
     switch (kind) {
         case "huntkill": return RED;
         case "corebreak": return GOLD;
+        case "aoaward": return GOLD;
         // the first raids (newcomerDirector.js): out in the storm, back in the raid
         case "nxstorm": return "#b98bff";
         case "nx": return EMERALD;

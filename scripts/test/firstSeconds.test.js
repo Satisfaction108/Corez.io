@@ -38,15 +38,18 @@ function t(name, fn) {
         // the card first, then the rest in order, all inside ~9 s
         assert.ok(p.intro >= 5000 && p.intro <= 6500, "round 8: about 65% longer than 3.4 s");
         assert.ok(p.messages <= p.intro);
-        assert.ok(p.intro <= p.tiles && p.tiles < p.stats && p.stats < p.ability && p.ability < p.coach);
+        assert.equal(p.tiles, 0, 'tank tiles show from the first frame');
+        assert.equal(p.stats, 0, 'stat bars show from the first frame');
+        assert.ok(p.intro <= p.ability && p.ability < p.coach);
         assert.ok(p.coach <= 9500, 'the guide card is not held long');
         // nothing new while the card is up
-        for (const piece of ['tiles', 'stats', 'ability', 'coach']) {
+        for (const piece of ['tiles', 'stats']) assert.equal(L.shows(p, 0, piece, false), true, piece + ' at landing');
+        for (const piece of ['ability', 'coach']) {
             assert.equal(L.shows(p, 0, piece, false), false, piece + ' at landing');
             assert.equal(L.shows(p, p.intro - 1, piece, false), false, piece + ' under the card');
         }
         assert.equal(L.shows(p, p.tiles, 'tiles', false), true);
-        assert.equal(L.shows(p, p.tiles, 'stats', false), false);
+        assert.equal(L.shows(p, p.tiles, 'stats', false), true);
         assert.equal(L.shows(p, p.stats, 'stats', false), true);
         assert.equal(L.shows(p, p.coach, 'coach', false), true);
         for (const piece of L.PIECES) assert.equal(L.shows(p, 20000, piece, false), true, piece + ' later');
@@ -74,7 +77,7 @@ function t(name, fn) {
     t('gates: falling holds, a hit lets everything in', () => {
         const p = L.planFor({ newcomer: true });
         for (const piece of L.PIECES) {
-            assert.equal(L.shows(p, -1, piece, false), false, piece + ' falling');
+            assert.equal(L.shows(p, -1, piece, false), piece === 'tiles' || piece === 'stats', piece + ' falling');
             assert.equal(L.shows(p, 100, piece, true), true, piece + ' released');
         }
         assert.equal(L.waitFor(p, 1000, 'ability', false), p.ability - 1000);
@@ -113,10 +116,11 @@ function t(name, fn) {
     });
     t('nudges: beside a piece for a moment after it comes in', () => {
         const p = L.planFor({ newcomer: true });
-        assert.equal(L.nudgeAlpha(p, p.tiles - 1, 'tiles', false), 0);
-        assert.ok(L.nudgeAlpha(p, p.tiles + 1000, 'tiles', false) > 0.9);
-        assert.equal(L.nudgeAlpha(p, p.tiles + p.nudge + 1, 'tiles', false), 0);
-        assert.equal(L.nudgeAlpha(p, p.tiles + 1000, 'tiles', true), 0, 'not after a hit');
+        const at = L.nudgeAt(p, 'tiles');
+        assert.equal(L.nudgeAlpha(p, at - 1, 'tiles', false), 0);
+        assert.ok(L.nudgeAlpha(p, at + 1000, 'tiles', false) > 0.9);
+        assert.equal(L.nudgeAlpha(p, at + p.nudge + 1, 'tiles', false), 0);
+        assert.equal(L.nudgeAlpha(p, at + 1000, 'tiles', true), 0, 'not after a hit');
     });
 
     t('calm start: card first, then one pointer at a time, then the guide', () => {
@@ -189,6 +193,10 @@ function t(name, fn) {
         assert.equal(listedPlayers({ mode: 'solo', players: 11 }), 11);
         assert.equal(listedPlayers({ mode: undefined, players: 0 }), 0, 'other servers stay true');
         assert.equal(listedPlayers(null), 0);
+        const aoWas = process.env.ROYALE_ALWAYS_ON;
+        process.env.ROYALE_ALWAYS_ON = '1';
+        try { assert.equal(listedPlayers({ mode: 'solo', players: 3 }), 10, 'Always-On lists its ten bots even when they are resting'); }
+        finally { if (aoWas === undefined) delete process.env.ROYALE_ALWAYS_ON; else process.env.ROYALE_ALWAYS_ON = aoWas; }
         const server = fs.readFileSync(path.join(ROOT, 'server/server.js'), 'utf8');
         assert.ok(server.includes('players: listedPlayers({ mode, players: '), 'getServers uses it');
         // the admin side reads the raw numbers
@@ -201,7 +209,7 @@ function t(name, fn) {
         const app = src('app.js');
         assert.ok(app.includes('try { firstSeconds.tick(); }'));
         assert.ok(app.includes('try { firstSeconds.draw(ctx[2], lanes); }'));
-        assert.ok(app.includes('statMenu.set(!firstSeconds.shows("stats") || deathCardUp() ? 0 :'));
+        assert.ok(app.includes('statMenu.set(!firstSeconds.shows("stats") || deathScreenOn() ? 0 :'));
         assert.ok(app.includes('if (gui.upgrades.length > 0 && !firstSeconds.shows("tiles")) {'));
         assert.ok(app.includes('if (!firstSeconds.shows("messages") || global.introCardUp || finHold || (global.mobile && slamShowing())) {'));
         assert.ok(app.includes('shopHint({ banked: global.gems.banked | 0'));

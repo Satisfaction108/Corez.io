@@ -211,6 +211,7 @@ function newRaid() {
 }
 
 function clear() {
+    spewLocal = 0; hpMult = 1; gemsOverride = 0; riseAt = 0;
     if (core && alive(core)) { core._cleared = true; try { core.kill(); } catch { /* */ } }
     core = null;
     if (zone) { zone.until = Date.now(); zone = null; }
@@ -257,6 +258,64 @@ function carveArena(s) {
     return n;
 }
 
+let spewLocal = 0;
+let hpMult = 1;
+let gemsOverride = 0;
+let riseAt = 0;
+let doomed = null;
+const RISE_MS = 1800;
+const LANE_MAX = 800;
+function startAt(x, y, opts = {}) {
+    clear();
+    if (!enabled()) return null;
+    let v = opts.vault || centerVault();
+    if (Math.hypot(v.x - x, v.y - y) > LANE_MAX) v = { x, y };
+    site = { x, y, mid: { x: (x + v.x) / 2, y: (y + v.y) / 2 }, vault: { x: v.x, y: v.y } };
+    state = 'planned';
+    warned = true;
+    hpMult = opts.hpMult > 0 ? +opts.hpMult : 1;
+    gemsOverride = opts.gems > 0 ? opts.gems | 0 : 0;
+    spewLocal = opts.spewR > 0 ? +opts.spewR : 1100;
+    if (opts.riseMs > 0) {
+        state = 'rising';
+        riseAt = Date.now() + opts.riseMs;
+        if (hooks.fxAt) hooks.fxAt(x, y, 'corerise', opts.riseMs | 0, ARENA_R);
+        return site;
+    }
+    return spawnCore();
+}
+function explode(t = Date.now()) {
+    if (state === 'rising') { clear(); return 'rising'; }
+    if (state !== 'up' || !core) return null;
+    const o = core;
+    killBrood();
+    if (hooks.fxAt) hooks.fxAt(o.x, o.y, 'coreblast', Math.round(o.realSize || o.size || 100), PULSE_R);
+    try { require('./eventSpot.js').shove(o.x, o.y, PULSE_R, hooks.fighters ? hooks.fighters() : [], PULSE_PUSH * 0.8); } catch (e) { }
+    o._cleared = true;
+    o.invuln = true;
+    doomed = { o, at: t + 160 };
+    core = null;
+    if (zone) { zone.until = t + AFTER_MS; zone = null; }
+    state = 'idle';
+    charge = null;
+    shards = [];
+    phase = 0;
+    hitters.clear();
+    blast = null;
+    global.royaleCoreTruce = false;
+    return 'blown';
+}
+function tickDoomed(t) {
+    if (!doomed || t < doomed.at) return;
+    const o = doomed.o;
+    doomed = null;
+    try { if (o && !o.isDead?.()) o.kill(); } catch (e) { }
+}
+function hitterList() {
+    let total = 0;
+    for (const h of hitters.values()) total += Math.max(0, h.dmg || 0);
+    return [...hitters.values()].map(h => ({ body: h.body, dmg: h.dmg || 0, share: total > 0 ? Math.max(0, h.dmg || 0) / total : 0, at: h.at }));
+}
 function spawnCore() {
     if (!site || core) return null;
     const f = hooks.fighters ? hooks.fighters() : [];
@@ -281,7 +340,7 @@ function spawnCore() {
     o.regenEvery = 1e9;
     o.settings.leaderboardable = false;
     o.refreshBodyAttributes();
-    const hp = healthFor(humans, bots);
+    const hp = Math.round(healthFor(humans, bots) * hpMult);
     o.health.set(hp);
     o.health.amount = hp;
     if (o.shield) { o.shield.max = 0; o.shield.amount = 0; }
@@ -291,6 +350,7 @@ function spawnCore() {
         const t = Date.now();
         // what this tick lands, split among whoever put it there
         const each = damageInflictor.length ? Math.min(o.damageReceived || 0, o.health.amount + (o.shield ? o.shield.amount : 0)) / damageInflictor.length : 0;
+        try { require('./bigHit.js').note(o, damageInflictor, each * damageInflictor.length, t, 'core'); } catch (e) { }
         for (const src of damageInflictor) {
             let root = src, hops = 0;
             while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
@@ -305,16 +365,17 @@ function spawnCore() {
     });
     o.on('dead', () => { try { onBroken(o); } catch (e) { lastErr = String(e && e.stack || e); } });
     core = o;
-    coreGems = gemsFor(humans, bots);
+    if (spewLocal) { try { require('./eventSpot.js').shove(site.x, site.y, (o.realSize || o.size || 100) + 220, f, 12); } catch (e) { } }
+    coreGems = gemsOverride || gemsFor(humans, bots);
     state = 'up';
     nextPulseAt = Date.now() + PULSE_FIRST_MS;
     nextShardAt = 0;
     nextBoltAt = 0; nextDroneAt = 0; phase = 0;
     stats = freshStats();
     const fmt = (n) => n.toLocaleString('en-US');
-    if (hooks.announce) hooks.announce('core', "THE CORE HAS SURFACED", "Break it open and " + fmt(coreGems) + " gems spill out across the circle. Bank as many as you can grab!", 4800);
+    if (hooks.announce && !spewLocal) hooks.announce('core', "THE CORE HAS SURFACED", "Break it open and " + fmt(coreGems) + " gems spill out across the circle. Bank as many as you can grab!", 4800);
     if (hooks.feed) hooks.feed({ core: 1, spawn: 1, g: coreGems });
-    if (hooks.toast) hooks.toast("The Core is up in the middle of the map. Break it open for a big pile of gems.", 9000);
+    if (hooks.toast && !spewLocal) hooks.toast("The Core is up in the middle of the map. Break it open for a big pile of gems.", 9000);
     if (hooks.fxAt) hooks.fxAt(site.x, site.y, 'coreup');
     return o;
 }
@@ -351,7 +412,8 @@ function spew(x, y, total, t) {
     let mult = (ore) => 1;
     try { const rm = require('./raidMods.js'); mult = (ore) => rm.gemValueMult(ore); } catch { /* */ }
     let cx = x, cy = y, R = 1400;
-    try { const st = storm().snapshot(t); if (st && st.r > 0) { cx = st.cx; cy = st.cy; R = st.r; } } catch { /* */ }
+    if (spewLocal) { cx = x; cy = y; R = spewLocal; }
+    else { try { const st = storm().snapshot(t); if (st && st.r > 0) { cx = st.cx; cy = st.cy; R = st.r; } } catch { } }
     R = Math.min(SPEW_MAX_R, Math.max(500, R * SPEW_EDGE));
     const g = tg();
     const pieces = gems.splitValue(total, { share: { 4: 0.2, 3: 0.4, 2: 0.25, 1: 0.15 }, shardValue: 150, maxPieces: SPEW_PIECES });
@@ -380,7 +442,9 @@ function onBroken(o) {
     if (zone) zone.until = brokeAt + AFTER_MS + COLLAPSE_MS;
     if (o._cleared) return;
     const killer = rootKiller(o);
-    brokeBy = killer ? String(killer.name || "Someone") : "";
+    let lastHitter = null;
+    for (const h of hitters.values()) if (h.body && h.body.name && (!lastHitter || h.at > lastHitter.at)) lastHitter = h;
+    brokeBy = killer && killer.name ? String(killer.name) : lastHitter ? String(lastHitter.body.name) : "";
     // it caves in first; tick() blows it COLLAPSE_MS later
     blast = { x: o.x, y: o.y, at: brokeAt + COLLAPSE_MS, killer };
     if (hooks.fxAt) hooks.fxAt(o.x, o.y, 'corecollapse', COLLAPSE_MS);
@@ -396,7 +460,7 @@ function blow(t) {
     blast = null;
     spew(b.x, b.y, coreGems || CORE_BANK, t);
     if (hooks.fxAt) hooks.fxAt(b.x, b.y, 'coredead');
-    if (hooks.announce) hooks.announce('coredown', "THE CORE IS DOWN", "There are gems everywhere! Grab them and bank them before the storm closes.", 4200, b.killer);
+    if (hooks.announce) hooks.announce('coredown', "THE CORE IS DOWN", spewLocal ? "There are gems everywhere! Grab them and bank them." : "There are gems everywhere! Grab them and bank them before the storm closes.", 4200, b.killer);
     if (hooks.feed) hooks.feed({ core: 1, broke: 1, by: brokeBy, g: coreGems });
     // the lucky drop for the breaker (terrain/coreDrop.js), after its slam
     if (b.killer && b.killer.socket && hooks.loot) { try { hooks.loot(b.killer); } catch (e) { /* */ } }
@@ -786,7 +850,12 @@ function landShards(t, fighters) {
 }
 
 function tick(t, fighters) {
+    tickDoomed(t);
     if (!enabled() || state === 'idle') return;
+    if (state === 'rising') {
+        if (t >= riseAt) { state = 'planned'; spawnCore(); }
+        return;
+    }
     let st;
     try { st = storm().snapshot(t); } catch { return; }
     if (state === 'planned') {
@@ -834,7 +903,7 @@ function frac() {
 // RY: s = soon (the warning), up, down. Positions only once it is announced.
 function snapshot(t = Date.now()) {
     if (!enabled() || !site) return undefined;
-    if (state === 'planned') return warned ? { s: 'soon', x: Math.round(site.x), y: Math.round(site.y) } : undefined;
+    if (state === 'planned' || state === 'rising') return warned ? { s: 'soon', x: Math.round(site.x), y: Math.round(site.y) } : undefined;
     if (state === 'up' && core) {
         return { s: 'up', e: core.id, x: Math.round(core.x), y: Math.round(core.y), r: Math.round(core.realSize || core.size || 100),
             hp: Math.round(frac() * 1000) / 1000, g: coreGems, sh: frac() < RAGE_BELOW ? 2 : frac() < SHARD_BELOW ? 1 : 0,
@@ -873,6 +942,7 @@ module.exports = { onSafePad, projectileHit, SHARD_ATTACK, BOLT_HIT, BOLT_HP, BO
     ON, CORE_OFFSET, ARENA_R, LANE_R, COVER_R, ZONE_R, PULSE_R, SHARD_BELOW, RAGE_BELOW, LAST_HIT_GEMS, LAST_HIT_PTS,
     HP_MAX, CORE_BANK, MIN_SHARE, SPRAY_GEMS, splitPayout, SHARD_DMG, SHARD_RAGE_DMG, PULSE_DMG, CHARGE_MS, SHARD_CHARGE_MS, SHARD_FLIGHT_MS,
     COLLAPSE_MS, SPEW_PIECES, spew,
-    attach, enabled, newRaid, clear, tick, snapshot, current, siteOf, planSite, carveArena, healthFor, gemsFor, erupt,
+    attach, enabled, newRaid, clear, tick, explode, RISE_MS, snapshot, current, siteOf, planSite, carveArena, healthFor, gemsFor, erupt, startAt, hitterList, centerVault,
+    state: () => state,
     debugSpawn, debugHp, _state: () => ({ state, warned, lastErr, shards: shards.length, bolts: bolts.length, drones: drones.length, phase, frac: frac(), charge: charge && charge.kind, stats: { ...stats } }),
 };

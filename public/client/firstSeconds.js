@@ -7,6 +7,7 @@ import * as coach from "./coach.js";
 import * as raidFinale from "./raidFinale.js";
 import { parts as scoreParts } from "./scoreLogic.js";
 import * as L from "./firstSecondsLogic.js";
+import * as aoHud from "./alwaysOn.js";
 
 let A = null;
 const S = {
@@ -166,6 +167,12 @@ export function slamHoldUntil() {
 }
 
 // ── drawing (HUD layer, HUD units) ─────────────────────────────────────
+function aoNextShort() {
+    if (!aoHud.on()) return "";
+    const p = aoHud.panelText();
+    if (!p) return "";
+    return p.live ? p.label + " is on now" : p.label + " " + p.value;
+}
 function lines(t) {
     if (S.lines && t - S.linesAt < 500) return S.lines;
     const r = global.royale || {};
@@ -176,7 +183,8 @@ function lines(t) {
         tanks: r.alive | 0, leftMs: (r.raidLeft | 0) * 1000,
         twist: r.mod && r.mod.name ? String(r.mod.name) : "",
         gunless: myGuns() === 0,
-        newRaid: !!(S.plan && S.plan.newRaid), points: gui.points | 0,
+        newRaid: !global.aoWorld && !!(S.plan && S.plan.newRaid), points: gui.points | 0,
+        ao: !!global.aoWorld, next: aoNextShort(),
         last: S.plan && S.plan.newRaid && S.lastRes && S.lastRes.raidId !== raidNow() ? S.lastRes : null,
     });
     return S.lines;

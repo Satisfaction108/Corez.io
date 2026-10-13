@@ -94,7 +94,7 @@ function restore(opts, now = Date.now()) {
         if (!row) return { ok: false, reason: 'unknown' };
         if (row.used_at != null) return { ok: false, reason: 'used' };
         if (row.expires_at <= now) return { ok: false, reason: 'expired' };
-        if (row.mode !== opts.mode) return { ok: false, reason: 'mode', mode: row.mode };
+        if (row.mode !== opts.mode && !(row.mode === 'duo' && opts.mode === 'solo')) return { ok: false, reason: 'mode', mode: row.mode };
         const tag = ipTag(d, opts.ip);
         const since = now - RESTORE_GAP_MS;
         const clauses = [], args = [];

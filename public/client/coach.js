@@ -583,7 +583,7 @@ function kitKeys() {
     return kbd("KEY_KIT_1", "Z") + " " + kbd("KEY_KIT_2", ",") + " " + kbd("KEY_KIT_3", "N");
 }
 function content(t) {
-    const base = { eyebrow: "First raid", pips: pips() };
+    const base = { eyebrow: global.royale && global.royale.ao && global.royale.ao.on ? "Getting started" : "First raid", pips: pips() };
     if (st.flash) return { ...base, title: "Nice!", text: "On to the next one.", done: true };
     const g = global.gems || {};
     const touch = !!global.mobile;

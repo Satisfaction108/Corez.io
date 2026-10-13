@@ -1,3 +1,4 @@
+function aoWorld() { try { return require('./alwaysOn.js').on(); } catch { return false; } }
 // Save codes, game side: "Save & leave" and "$restore CODE".
 //
 // Saving: the 'SV' packet starts a HOLD_MS hold. The tank has to stay put
@@ -105,7 +106,7 @@ function start(socket) {
     const refuse = (why) => { send(socket, { st: 'off', why }); return false; };
     if (!on()) return refuse("Saving isn't available on this server right now.");
     const body = bodyOf(socket);
-    if (!body) return refuse("You can only save while you're alive in a raid.");
+    if (!body) return refuse(aoWorld() ? "You can only save while you're alive in the game." : "You can only save while you're alive in a raid.");
     if (ctx && ctx.ending()) return refuse("The raid is over, so you'll have to save next raid.");
     const t = Date.now();
     if (t - (socket._lastSaveTry || 0) < SAVE_GAP_MS) return refuse("Please wait a second and try again.");
@@ -234,7 +235,7 @@ function finish(socket, body, t) {
         } catch (e) { logErr('create', e); made = null; }
     }
     if (!made) {
-        send(socket, { st: 'off', why: "Saving failed on our end. You're still in the raid." });
+        send(socket, { st: 'off', why: aoWorld() ? "Saving failed on our end. You're still in the game." : "Saving failed on our end. You're still in the raid." });
         return false;
     }
     console.log('[RAID] ' + (body.name || 'A player') + ' saved and left (' + rec.label + ', ' + rec.score + ' pts).');
@@ -276,7 +277,7 @@ function chat(socket, raw) {
 function restore(socket, code, t = Date.now()) {
     if (!on()) { say(socket, "Restoring isn't available on this server right now."); return { ok: false, reason: 'off' }; }
     const body = bodyOf(socket);
-    if (!body || body.royaleLobby || body.royaleFrozen) { say(socket, "You can restore a save while you're alive in a raid."); return { ok: false, reason: 'dead' }; }
+    if (!body || body.royaleLobby || body.royaleFrozen) { say(socket, aoWorld() ? "You can restore a save while you're alive in the game." : "You can restore a save while you're alive in a raid."); return { ok: false, reason: 'dead' }; }
     if (ctx && ctx.ending()) { say(socket, "The raid is over, so restore it next raid."); return { ok: false, reason: 'ending' }; }
     if (socket._saving) cancel(socket, "Save cancelled.");
     if (!saves().normalize(code)) { say(socket, "That doesn't look like a save code. It's 25 letters and numbers."); return { ok: false, reason: 'format' }; }
@@ -301,7 +302,17 @@ function restore(socket, code, t = Date.now()) {
     }
     // it may have died between the check and here (it can't: this is all one tick)
     const out = apply(socket, body, res.data || {}, t, res.savedBy);
+    carryGuestLevels(socket, res.savedBy);
     return Object.assign({ ok: true }, out);
+}
+
+function carryGuestLevels(socket, savedBy) {
+    const g = savedBy && savedBy.guestId;
+    if (!socket.account || !g || g === socket.guestId) return null;
+    let lv = null;
+    try { lv = require('../../accounts/game/levelHooks').adoptGuest(socket, g, socket.account.id); } catch (e) { logErr('levels', e); return null; }
+    if (lv && lv.moved) say(socket, 'The levels from that guest save came with you. You are Level ' + lv.level + ' now.');
+    return lv;
 }
 
 function applyClass(body, data) {

@@ -377,7 +377,7 @@ function drawStrip(c, o, st, view, now) {
             A.hudTitle(lv, tx + A.hudTitleW((p.name || p.id) + " ", 12), ty, 12, ink || GOLD, "left");
         } else A.hudTitle(lv, tx, ty, 12, ink || GOLD, "left");
         if (o.mouse && L.rectAt([r], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
-            A.queueTip(perkLabel(p), (p.desc || "") + " You have level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + ", and it lasts the whole raid.", r.x + r.w / 2, r.y);
+            A.queueTip(perkLabel(p), (p.desc || "") + " You have level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + (global.aoWorld ? ", and it lasts for the rest of the day." : ", and it lasts the whole raid."), r.x + r.w / 2, r.y);
         }
     }
     // the ones left out, behind a "+N" chip (hover lists them)
@@ -440,7 +440,7 @@ function drawStrip(c, o, st, view, now) {
         if (tot > 0) A.hudTitle(String(tot), cx, cy + 0.5, 11, "#fff3d9", "center");
         else star(c, cx, cy, 5.5, 2.4, "rgba(255,243,217,0.55)");
         if (o.mouse && L.rectAt([b], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
-            A.queueTip("Raid perks", "You get a perk every 5,000 points. Next one at " + L.fmtNum(st.next) + ", you have " + L.fmtNum(score) + ".", cx, b.y);
+            A.queueTip(global.aoWorld ? "Perks" : "Raid perks", "You get a perk every 5,000 points. Next one at " + L.fmtNum(st.next) + ", you have " + L.fmtNum(score) + ".", cx, b.y);
         }
     }
 }
@@ -487,7 +487,7 @@ function drawCards(c, o, st, now) {
     // hover: the whole description and what this pick changes (round 8: "even with
     if (hov >= 0 && A.queueTip && S.picked < 0) {
         const p = offer[hov], r = rects[hov];
-        if (S.tipFor !== p) { S.tipFor = p; S.tip = L.hoverText(p); }
+        if (S.tipFor !== p || S.tipAo !== !!global.aoWorld) { S.tipFor = p; S.tipAo = !!global.aoWorld; S.tip = L.hoverText(p, S.tipAo); }
         if (S.tip) A.queueTip(S.tip.title, S.tip.body, r.x + r.w / 2, r.y - 6);
     }
 }
@@ -772,7 +772,7 @@ const GLYPH = {
 
 // ── the death card ─────────────────────────────────────────────────────
 // app.js: "Your perks stay until the raid ends." with the build's icons
-export function deathLine() { return L.deathLine(build()); }
+export function deathLine() { return L.deathLine(build(), !!global.aoWorld); }
 export function drawDeathIcons(c, x, y, s, a) {
     const b = build();
     if (!A || !b.length) return 0;

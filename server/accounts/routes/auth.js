@@ -13,6 +13,7 @@ const discordOAuth = require('./discordOAuth');
 const referrals = require('../referrals');
 const cookies = require('../cookies');
 const { checkPassword, passwordNeeded } = require('./account');
+const guestAdopt = require('../guestAdopt');
 const { HttpError, bannedError, str } = require('../http');
 
 const PW_MAX = 1024;   // longer than any valid password; validatePassword reports too_long
@@ -34,6 +35,13 @@ function usernameTaken(reason) {
 async function newRecovery() {
     const code = crypto.newRecoveryCode();
     return { code, hash: await crypto.hashPassword(crypto.normalizeRecoveryCode(code)) };
+}
+
+function carryGuest(ctx, user) {
+    const g = ctx.body && ctx.body.guestId;
+    let r = { carried: null, level: null, user: null };
+    try { r = guestAdopt.forAuth(user, g, Date.now()); } catch (e) { console.error('[accounts] guest carry over failed: ' + ((e && e.message) || e)); }
+    return { user: r.user || users.byId(user.id) || user, carried: r.carried, level: r.level };
 }
 
 function kick(userId, reason) {
@@ -123,16 +131,10 @@ async function signup(ctx) {
     users.audit(r.user.id, 'signup', { method: 'password' }, { ip: ctx.ip });
     takeReferral(ctx, r.user, 'password');
     ctx.startSession(r.user, 'signup');
-    ctx.json(201, { user: users.toPublic(r.user), recoveryCode: recovery.code });
+    const c = carryGuest(ctx, r.user);
+    ctx.json(201, { user: users.toPublic(c.user), recoveryCode: recovery.code, carried: c.carried, level: c.level });
 }
 
-// One tap "Keep my stuff": an account from just a username, no password.
-// Same name rules, holds, caps, referral and audit as signup. The browser
-// stays logged in (the usual 60-day session); the recovery code it gets
-// back is how it logs in anywhere else (POST /api/auth/recover with no new
-// password), and a password can be added later in settings. A guest's
-// progress moves over the same way as after signup: on this browser's next
-// game connection (bridge.js onGuestId) and POST /api/achievements.
 async function quickSignup(ctx) {
     ctx.limit('signupTry', ctx.ipKey);
     checkSignupCaps(ctx);
@@ -151,7 +153,8 @@ async function quickSignup(ctx) {
     users.audit(r.user.id, 'signup', { method: 'quick' }, { ip: ctx.ip });
     takeReferral(ctx, r.user, 'quick');
     ctx.startSession(r.user, 'signup');
-    ctx.json(201, { user: users.toPublic(r.user), recoveryCode: recovery.code });
+    const c = carryGuest(ctx, r.user);
+    ctx.json(201, { user: users.toPublic(c.user), recoveryCode: recovery.code, carried: c.carried, level: c.level });
 }
 
 async function login(ctx) {
@@ -189,7 +192,8 @@ async function login(ctx) {
     if (users.isBanned(user, Date.now())) throw bannedError(user);
     ctx.startSession(user, 'password');
     users.touchSeen(user.id);
-    ctx.json(200, { user: users.toPublic(users.byId(user.id)) });
+    const c = carryGuest(ctx, user);
+    ctx.json(200, { user: users.toPublic(c.user), carried: c.carried, level: c.level });
 }
 
 function logout(ctx) {
@@ -291,7 +295,8 @@ async function recover(ctx) {
     ratelimit.clear('recoverUser', lc);
     kick(user.id, 'Your account got recovered on another device. Log in again.');
     ctx.startSession(user, 'recovery');
-    ctx.json(200, { user: users.toPublic(users.byId(user.id)), recoveryCode: recovery.code });
+    const c = carryGuest(ctx, user);
+    ctx.json(200, { user: users.toPublic(c.user), recoveryCode: recovery.code, carried: c.carried, level: c.level });
 }
 
 // recover() for a passwordless account with the right code: logs this
@@ -310,7 +315,8 @@ async function recoveryLogin(ctx, user, lc) {
     ratelimit.clear('recoverUser', lc);
     ctx.startSession(user, 'recovery');
     users.touchSeen(user.id);
-    ctx.json(200, { user: users.toPublic(users.byId(user.id)), recoveryCode: recovery.code });
+    const c = carryGuest(ctx, user);
+    ctx.json(200, { user: users.toPublic(c.user), recoveryCode: recovery.code, carried: c.carried, level: c.level });
 }
 
 async function reset(ctx) {
@@ -376,7 +382,8 @@ async function discordComplete(ctx) {
     takeReferral(ctx, r.user, 'discord');
     ctx.setCookie(discordOAuth.clearPendingCookie());
     ctx.startSession(r.user, 'discord');
-    ctx.json(201, { user: users.toPublic(r.user), recoveryCode: recovery.code });
+    const c = carryGuest(ctx, r.user);
+    ctx.json(201, { user: users.toPublic(c.user), recoveryCode: recovery.code, carried: c.carried, level: c.level });
 }
 
 function register(router) {

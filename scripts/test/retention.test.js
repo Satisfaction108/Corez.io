@@ -343,15 +343,15 @@ test('guests: a guest who signs up brings the track and gets the owed items and 
     assert.equal(retention.adoptGuest(u.id, g, Date.now()).moved, false, 'once');
     assert.equal(errCode(() => retention.claim(G(g), Date.now() + 30 * HOUR)), 'adopted');
     assert.equal(retention.status(G(g), Date.now()).adopted, true);
-    // an older account, or a guest someone else converted, moves nothing
     const g2 = gid();
     guests.seen(g2, T0, null);
     retention.claim(G(g2), T0);
     const old = mkUser({ createdAt: Date.now() - 3 * DAYMS });
-    assert.equal(retention.adoptGuest(old.id, g2, Date.now()).moved, false);
-    const other = mkUser(), mine = mkUser();
-    guests.converted(g2, other.id);
-    assert.equal(retention.adoptGuest(mine.id, g2, Date.now()).moved, false);
+    assert.equal(retention.adoptGuest(old.id, g2, Date.now()).moved, false, 'an older account moves nothing');
+    guests.converted(g2, old.id);
+    const mine = mkUser();
+    assert.equal(retention.adoptGuest(mine.id, g2, Date.now()).moved, true, 'a browser once logged in to an older account still carries over to a new one');
+    assert.equal(retention.adoptGuest(mkUser().id, g2, Date.now()).moved, false, 'and only once');
 });
 
 test('guests: owed dust is capped at a week, and claim rows from the gem days owe nothing', () => {

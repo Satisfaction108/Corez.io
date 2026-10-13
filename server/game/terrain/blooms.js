@@ -16,23 +16,26 @@ function padsBlocked(tg, x, y, minD) {
     return sites.some(s => (s.x - x) ** 2 + (s.y - y) ** 2 < minD * minD);
 }
 
-function start() {
+let auto = true;
+function setAuto(on) { auto = !!on; }
+function start(at = null) {
     const tg = global.gameManager.terrainGrid;
     if (!tg || !tg.rocks) return null;
-    const st = storm().snapshot();
-    const safeR = Math.max(400, (st.r || 1000) * 0.75);
+    const st = at ? { cx: at.x, cy: at.y, r: (at.r || RADIUS) / 0.75 } : storm().snapshot();
+    const safeR = at ? (at.r || RADIUS) : Math.max(400, (st.r || 1000) * 0.75);
+    const R = at && at.r > 0 ? at.r : RADIUS;
+    const dur = at && at.ms > 0 ? at.ms : DURATION_MS;
     const alive = [];
     for (const rock of tg.rocks.values()) {
         if (!rock || !rock.alive || rock.canyon || rock.ore === ORE.EMERALD) continue;
         const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
         if (Math.hypot(rx - st.cx, ry - st.cy) > safeR) continue;
-        if (padsBlocked(tg, rx, ry, 560)) continue;
+        if (padsBlocked(tg, rx, ry, at ? 300 : 560)) continue;
         alive.push(rock);
     }
-    if (alive.length < 8) return null;
-    // richest cluster wins: sample candidates, count alive neighbours
-    let best = null, bestN = -1;
-    for (let i = 0; i < 24; i++) {
+    if (!at && alive.length < 8) return null;
+    let best = at ? { x: at.x, y: at.y } : null, bestN = at ? 1 : -1;
+    for (let i = 0; i < (at ? 0 : 24); i++) {
         const c = alive[(Math.random() * alive.length) | 0];
         const cx = c.worldCx || c.wx, cy = c.worldCy || c.wy;
         let n = 0;
@@ -48,7 +51,7 @@ function start() {
     const keys = [];
     for (const rock of alive) {
         const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
-        if ((rx - best.x) ** 2 + (ry - best.y) ** 2 > RADIUS * RADIUS) continue;
+        if ((rx - best.x) ** 2 + (ry - best.y) ** 2 > R * R) continue;
         const frac = rock.maxHealth > 0 ? Math.min(1, rock.health / rock.maxHealth) : 1;
         const ore = copperOnly ? ORE.COPPER : (Math.random() < 0.28 ? ORE.SHARD : ORE.VEIN);
         rock.ore = ore;
@@ -60,15 +63,15 @@ function start() {
         keys.push(rock.k);
         tg.rockEvents.push({ k: rock.k, h: rock.health / rock.maxHealth, d: 0, ore, bl: 1 });
     }
-    if (!keys.length) return null;
-    bloom = { x: Math.round(best.x), y: Math.round(best.y), r: RADIUS, startedAt: Date.now(), until: Date.now() + DURATION_MS, rocks: keys.length };
+    if (!keys.length && !at) return null;
+    bloom = { x: Math.round(best.x), y: Math.round(best.y), r: R, startedAt: Date.now(), until: Date.now() + dur, rocks: keys.length };
     return bloom;
 }
 
 function tick(t) {
     const st = storm().snapshot(t);
     if (bloom && t > bloom.until) bloom = null;
-    // one bloom per storm cycle, a minute or two into the shrink
+    if (!auto) return;
     if ((st.c | 0) !== lastCycle) {
         lastCycle = st.c | 0;
         nextAt = process.env.ROYALE_DEBUG ? t + 20_000 : t + 60_000 + Math.random() * 90_000;
@@ -83,5 +86,6 @@ function tick(t) {
 function snapshot() { return bloom ? { x: bloom.x, y: bloom.y, r: bloom.r, until: bloom.until } : null; }
 function current() { return bloom; }
 function reset() { bloom = null; lastCycle = -1; nextAt = 0; }
+function stop() { bloom = null; }
 
-module.exports = { tick, snapshot, current, reset, start, RADIUS };
+module.exports = { tick, snapshot, current, reset, start, stop, setAuto, RADIUS };

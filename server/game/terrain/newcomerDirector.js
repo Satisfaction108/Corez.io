@@ -1,3 +1,4 @@
+function aoWorld() { try { return require('./alwaysOn.js').on(); } catch { return false; } }
 // First raids director: a player's first raids are fair, and the first one
 // shows them something new every minute or so instead of plain old arras.
 //
@@ -229,7 +230,7 @@ function keepOnDeath(body, carried) {
     const kept = Math.floor(carried * TUNE.KEEP_SHARE);
     st.kept += kept;
     try {
-        body.socket.talk('m', 9000, "Since it's your first raid, you only dropped half your gems. The other " + kept.toLocaleString('en-US') +
+        body.socket.talk('m', 9000, (aoWorld() ? "Since you're new here, you only dropped half your gems. The other " : "Since it's your first raid, you only dropped half your gems. The other ") + kept.toLocaleString('en-US') +
             " come back with you when you drop in again.");
     } catch { /* */ }
     return kept;
@@ -254,7 +255,7 @@ function onSpawn(body, isRespawn, t = now()) {
         const sub = kept > 0
             ? "You kept " + kept.toLocaleString('en-US') + " gems. Bank them at a vault and they're safe for good."
             : "Your banked gems are still safe, so mine some more and bank them.";
-        say(body, 'nx', "Back in the raid", sub, 4500);
+        say(body, 'nx', aoWorld() ? "Back in the game" : "Back in the raid", sub, 4500);
     }
 }
 

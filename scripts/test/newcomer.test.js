@@ -483,6 +483,7 @@ test('migration: v5 -> v6 keeps every row, writes a backup, adds deaths', () => 
         if (t === 'guests' || t === 'users') { assert.equal(r.bank_gems, 0); delete o.bank_gems; }
         if (t === 'users') for (const k of ['equip_sidekick', 'equip_sd_skin', 'equip_sd_name', 'sidekick_name', 'sidekick_color']) { assert.equal(r[k], null); delete o[k]; }
         if (t === 'shop_rotations') { delete o.sidekicks; }
+        if (t === 'users' || t === 'guests') { for (const k of ['xp', 'level', 'xp_day', 'xp_day_n', 'xp_to']) { if (k in o) assert.equal(o[k], k === 'level' ? 1 : k === 'xp_to' ? null : 0); delete o[k]; } }
         return o;
     });
     for (const t of tables) assert.deepEqual(strip(t, db.all(`SELECT * FROM "${t}"`)), before[t], t + ' unchanged');

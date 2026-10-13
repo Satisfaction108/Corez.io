@@ -219,8 +219,6 @@ function adoptGuest(guestId, userId, now = Date.now()) {
     return d.tx(() => {
         const u = d.get('SELECT created_at FROM users WHERE id = ? AND deleted_at IS NULL', userId);
         if (!u || u.created_at < now - NEW_ACCOUNT_MS) return none;
-        const conv = d.get('SELECT converted_user_id AS c FROM guests WHERE guest_id = ?', guestId);
-        if (conv && conv.c != null && conv.c !== userId) return none;
         const rows = d.all('SELECT achievement_id AS id, progress, unlocked_at AS at, data FROM guest_achievements WHERE guest_id = ?', guestId);
         if (!rows.length) return none;
         const out = { moved: [], rewardMilli: 0, balanceMilli: null, items: [] };

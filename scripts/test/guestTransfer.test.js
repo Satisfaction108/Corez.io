@@ -104,7 +104,7 @@ test('old: logging in to an older account on a guest browser moves nothing', () 
 
 test('wiring: the bridge moves the bank and says so', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'accounts', 'game', 'bridge.js'), 'utf8');
-    assert.match(src, /if \(!guests\.converted\(socket\.guestId, socket\.account\.id\)\) return;/);
+    assert.match(src, /\n\s+guests\.converted\(socket\.guestId, socket\.account\.id\);/);
     assert.match(src, /claimGuest\(socket\.guestId, socket\.account\.id\)/);
     assert.match(src, /Your guest progress came with you/);
 });

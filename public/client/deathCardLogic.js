@@ -66,3 +66,31 @@ export function layoutText(o) {
     }
     return { h: Math.ceil(y + T.bottom), rows };
 }
+
+export const INTRO = {
+    beat: 820,
+    calmBeat: 360,
+    fade: 320,
+    slide: 26,
+    slow: 520,
+    slowSpeed: 0.38,
+};
+
+export function introBeat(calm) { return calm ? INTRO.calmBeat : INTRO.beat; }
+
+export function introK(age, calm) {
+    if (!(age === age)) return 1;
+    const u = (age - introBeat(calm)) / INTRO.fade;
+    if (u <= 0) return 0;
+    if (u >= 1) return 1;
+    return 1 - (1 - u) * (1 - u) * (1 - u);
+}
+
+export function introSlide(k, calm) { return calm ? 0 : (1 - k) * INTRO.slide; }
+
+export function introWarp(age, calm) {
+    if (calm || !(age > 0)) return age > 0 ? age : 0;
+    const S = INTRO.slow, s = INTRO.slowSpeed;
+    if (age >= S) return s * S + (1 - s) * S / 3 + (age - S);
+    return s * age + (1 - s) * age * age * age / (3 * S * S);
+}

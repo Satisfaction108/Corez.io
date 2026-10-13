@@ -213,7 +213,7 @@ test('two banks: the HUD says Bank (spendable), the card and results say Banked 
     assert.ok(!/\["Banked: " \+ util\.formatLargeNumber\(banked\)/.test(app), 'the pill no longer says Banked');
     assert.match(app, /drawText\(scoreText\.BANK \+ "  " \+ util\.formatLargeNumber\(g\.banked \| 0\)/, 'vault panel');
     assert.match(app, /hudTitle\(scoreText\.BANK, bx2 - 8/, 'shop panel');
-    assert.match(app, /queueTip\(scoreText\.BANK_TIP, scoreText\.BANK_TIP_BODY/);
+    assert.match(app, /queueTip\(scoreText\.BANK_TIP, scoreText\.bankTipBody\(aoNow\(\)\)/);
     assert.match(src('raidFinale.js'), /const CELL_LABEL = \["POINTS", "BANKED THIS RAID", "KILLS \+ CROWNS"\]/);
 });
 

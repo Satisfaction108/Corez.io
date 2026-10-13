@@ -730,6 +730,56 @@ CREATE TABLE funnel_visits (
 CREATE INDEX funnel_visits_created ON funnel_visits(created_at);
 `;
 
+const V15 = `
+ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN level INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE users ADD COLUMN xp_day INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN xp_day_n INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE guests ADD COLUMN xp INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE guests ADD COLUMN level INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE guests ADD COLUMN xp_day INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE guests ADD COLUMN xp_day_n INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE guests ADD COLUMN xp_to INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+CREATE TABLE level_grants (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    level      INTEGER NOT NULL CHECK (level BETWEEN 2 AND 50),
+    at         INTEGER NOT NULL,
+    dust_milli INTEGER NOT NULL DEFAULT 0 CHECK (dust_milli >= 0),
+    item_id    TEXT,
+    PRIMARY KEY (user_id, level)
+) STRICT;
+
+CREATE TABLE owned_items_v15 (
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_id     TEXT    NOT NULL,
+    source      TEXT    NOT NULL CHECK (source IN ('purchase', 'gift', 'admin', 'grant', 'level')),
+    purchase_id INTEGER REFERENCES purchases(id) ON DELETE SET NULL,
+    acquired_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, item_id)
+) STRICT;
+INSERT INTO owned_items_v15 (user_id, item_id, source, purchase_id, acquired_at)
+    SELECT user_id, item_id, source, purchase_id, acquired_at FROM owned_items;
+DROP TABLE owned_items;
+ALTER TABLE owned_items_v15 RENAME TO owned_items;
+
+CREATE TABLE dust_ledger_v15 (
+    id            INTEGER PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    delta_milli   INTEGER NOT NULL,
+    balance_milli INTEGER NOT NULL CHECK (balance_milli >= 0),
+    kind          TEXT    NOT NULL CHECK (kind IN ('gems', 'kill', 'placement', 'quest', 'purchase', 'refund', 'gift', 'admin', 'referral', 'streak_play', 'streak_win', 'daily', 'achievement', 'level', 'other')),
+    ref           TEXT,
+    created_at    INTEGER NOT NULL
+) STRICT;
+INSERT INTO dust_ledger_v15 (id, user_id, delta_milli, balance_milli, kind, ref, created_at)
+    SELECT id, user_id, delta_milli, balance_milli, kind, ref, created_at FROM dust_ledger;
+DROP TABLE dust_ledger;
+ALTER TABLE dust_ledger_v15 RENAME TO dust_ledger;
+CREATE INDEX dust_ledger_user ON dust_ledger(user_id, id);
+`;
+
 const MIGRATIONS = [
     { version: 1, up(db) { db.exec(V1); } },
     { version: 2, up(db) { db.exec(V2); } },
@@ -745,6 +795,7 @@ const MIGRATIONS = [
     { version: 12, up(db) { db.exec(V12); } },
     { version: 13, up(db) { db.exec(V13); } },
     { version: 14, up(db) { db.exec(V14); } },
+    { version: 15, up(db) { db.exec(V15); } },
 ];
 
 function latestVersion() {

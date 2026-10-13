@@ -20,12 +20,12 @@ import * as leaderboard from './leaderboard.js';
 import * as dailyQuests from './dailyQuests.js';
 import * as ingameChat from './ingameChat.js';
 import * as gameToasts from './gameToasts.js';
-import * as party from './party.js';
 import * as invite from './invite.js';
 import * as feedback from './feedback.js';
 import * as eventCard from './eventCard.js';
 import * as retention from './retention.js';
 import * as achHome from './achHome.js';
+import * as levels from './levels.js';
 
 const html = document.documentElement;
 const HINT = 'dwAcctHint';
@@ -83,6 +83,7 @@ window.dwAccount = {
         return ui.hasLayers() || html.getAttribute('data-acct') === 'new';
     },
     me() { return store.get('user'); },
+    canSignUp() { return !store.get('offline') && !store.get('user'); },
     // what you have on, as wire numbers: { nameStyle, skin, customColor }
     equippedCos() {
         const u = store.get('user'), eq = u && u.equipped, C = window.DWCosmetics;
@@ -132,8 +133,9 @@ function goGuest() {
     if (inp) setTimeout(() => inp.focus(), 40);
 }
 
-function onAuthed(user) {
+function onAuthed(user, how, data) {
     ss.del('dwPickDismissed');
+    try { levels.carried(user, data); } catch (e) { console.error('[levels] carry over failed', e); }
     setUser(user);
     setMode('user');
 }
@@ -344,8 +346,6 @@ async function boot() {
         onInvite: () => invite.onEvent(),
         onStreak: () => { dailyQuests.refresh(); refresh(true); },
     });
-    // SOLO | DUOS and the duo party panel (guests too)
-    try { party.init(); } catch (e) { console.error('[party] init failed', e); }
     shop.init({
         refreshMe: () => refresh(true),
         onLogin: () => { if (store.get('offline')) ui.toast('Accounts are down right now. Please try again soon.'); else welcome.open('choose', { dismissable: true }); },
@@ -381,6 +381,7 @@ async function boot() {
             onDust(dust) { const u = store.get('user'); if (u && typeof dust === 'number' && u.dust !== dust) setUser(Object.assign({}, u, { dust })); },
         });
     } catch (e) { console.error('[daily] init failed', e); }
+    try { levels.init({ onSignup() { openQuick(); }, refreshMe: () => refresh(true) }); } catch (e) { console.error('[levels] init failed', e); }
     store.on((s, changed) => {
         if (changed.indexOf('user') >= 0 && hub.currentPane() === 'account') hub.refresh('account');
     });
@@ -410,6 +411,7 @@ async function boot() {
     schedule();
     social.sync();
     try { retention.start(); } catch (e) { console.error('[daily] start failed', e); }
+    try { levels.start(); } catch (e) { console.error('[levels] start failed', e); }
     window.addEventListener('hashchange', () => { const t = readResetToken(); if (t) openReset(t); });
 
     document.addEventListener('visibilitychange', () => {

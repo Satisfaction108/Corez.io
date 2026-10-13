@@ -1,3 +1,14 @@
+# Update [2026-10-12] Everyone in one raid
+- Duos is gone for now. With everyone in the same queue, raids fill up faster and there are more real players to fight.
+- If you play as a guest and last 10 minutes or more, the death screen offers to save your gemdust, rank and unlocks with an account.
+- When you die, your tank now flashes and bursts apart before the death screen fades in, and pressing Enter during it still respawns you as soon as you can.
+- Fixed tips and tutorial lines that still talked about bonus gems for the top 10 and the old Play again button.
+- Making an account after playing as a guest keeps your experience, so the game no longer treats you like a brand new player.
+- New players see everything from their first game: the leaderboard, kill feed, shop, abilities, events and bosses.
+- Tank upgrades and stat points show up the moment you spawn instead of a few seconds later.
+- The connecting screen is cleaner and simpler.
+- Fixed name style previews getting cut off and a stray symbol showing up at the end of some feed lines.
+
 # Update [2026-10-11] Smoother and fairer
 - Your tank reacts to your keys right away now, even if you live far from the server.
 - Other tanks move smoothly on a laggy connection instead of freezing and jumping.

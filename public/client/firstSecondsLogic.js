@@ -4,7 +4,7 @@
 // The pointers come one at a time after the card (tilesNudge, then statsNudge),
 // and the guide card after the last one: never more than two new things up.
 export const NEW_PLAN = Object.freeze({
-    intro: 5600, messages: 2600, tiles: 5700, stats: 6700, ability: 7500, coach: 9500, nudge: 1850,
+    intro: 5600, messages: 2600, tiles: 0, stats: 0, ability: 7500, coach: 9500, nudge: 1850,
     tilesNudge: 5700, statsNudge: 7550,
 });
 // Someone who has played before: the raid card, shorter, and nothing held but the
@@ -168,18 +168,18 @@ export function introLines(o) {
             status: bits.join("  ·  "),
         };
     }
-    const goal = s.gunless
-        ? "Ram the colored rocks for gems and bank them at a vault. Whoever has the most points at the end wins."
-        : "Shoot the colored rocks for gems and bank them at a vault. Whoever has the most points at the end wins.";
+    const win = s.ao ? "The top 3 on today's board win gemdust." : "Whoever has the most points at the end wins.";
+    const goal = (s.gunless ? "Ram" : "Shoot") + " the colored rocks for gems and bank them at a vault. " + win;
     const controls = s.mobile
         ? "Left thumb moves  ·  Right thumb aims and fires"
         : (s.keys || "WASD") + " to move  ·  Mouse to aim  ·  Click to shoot";
     const bits = [];
     const n = s.tanks | 0;
-    if (n > 1) bits.push(n + " tanks in this raid");
-    if ((s.leftMs | 0) > 0) bits.push(clock(s.leftMs) + " left");
-    if (s.twist) bits.push("Twist: " + s.twist);
-    return { eyebrow: "Raid started", title: "Mine, Bank, Win", goal, controls, status: bits.join("  ·  ") };
+    if (n > 1) bits.push(n + (s.ao ? " tanks playing" : " tanks in this raid"));
+    if ((s.leftMs | 0) > 0 && !s.ao) bits.push(clock(s.leftMs) + " left");
+    if (s.twist && !s.ao) bits.push("Twist: " + s.twist);
+    if (s.ao && s.next) bits.push(s.next);
+    return { eyebrow: s.ao ? "Welcome in" : "Raid started", title: "Mine, Bank, Win", goal, controls, status: bits.join("  ·  ") };
 }
 
 // Tank tiles: a hull with no guns of its own (Smasher, Spike, ...) digs by

@@ -79,10 +79,11 @@ test('catalog: unique ids/nids, cats, prices from the plan, colour stops readabl
     assert.equal(price('sk_molten_core'), 500000);
     assert.deepEqual(C.byId('ns_sunset').style.stops, ['#ffb347', '#ff6a5c', '#c850c0']);
     // 39 for sale, the invite reward, and 4 achievement rewards (shared/achievements.js `item`)
-    assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle').length, 44);
+    assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle' && !i.lvl).length, 44);
+    assert.equal(C.ITEMS.filter(i => i.lvl && i.exclusive && i.price === 0).length, 10);
     assert.deepEqual(C.ITEMS.filter(i => i.earn).map(i => i.id), ['ns_corebreaker', 'ns_crownkeeper', 'ns_bedrock', 'ns_olive']);
     assert.equal(C.ITEMS.filter(i => i.cat === 'nameStyle' && !i.exclusive).length, 39);
-    assert.equal(C.ITEMS.filter(i => i.cat === 'skin').length, 40);
+    assert.equal(C.ITEMS.filter(i => i.cat === 'skin' && !i.lvl).length, 40);
     // every rarity is stocked in both categories, and wire numbers stay in range
     for (const cat of C.CATS) for (const r of C.RARITY_ORDER) assert.ok(C.ITEMS.some(i => i.cat === cat && i.rarity === r), cat + ' ' + r);
     const NIDS = { nameStyle: [1, 99], skin: [101, 199], sidekick: [201, 299], sdSkin: [301, 399], sdName: [401, 499] };

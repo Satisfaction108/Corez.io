@@ -64,10 +64,11 @@ require('./routes/invite').register(router);
 require('./routes/feedback').register(router);
 require('./routes/retention').register(router);
 require('./routes/funnel').register(router);
+require('./routes/champions').register(router);
+require('./routes/levels').register(router);
 const moveRoutes = require('./routes/move');
 moveRoutes.register(router);
-const partyRoutes = require('./routes/party');
-partyRoutes.register(router);
+require('./routes/duosRemoved').register(router);
 events.register(router);
 
 const state = { initialized: false, enabled: false, role: null, timers: [] };
@@ -128,15 +129,10 @@ function initMain() {
         });
     } catch (e) { console.error('[accounts] broadcast relay failed: ' + ((e && e.stack) || e)); }
     config.load();
-    // Duo parties work for guests too, so they start whether or not accounts
-    // do. The ticket secret is set before any game worker exists (workers
-    // copy process.env when they are constructed).
     try {
-        require('./partyTicket').initMain(config.secretOk ? config.sessionSecret : null);
-        partyRoutes.start();
         ratelimit.start();
     } catch (e) {
-        console.error('[party] init failed: ' + ((e && e.stack) || e));
+        console.error('[accounts] rate limits failed: ' + ((e && e.stack) || e));
     }
     if (!config.accountsFlag) {
         console.log('[accounts] disabled (ACCOUNTS_ENABLED=false); running guest-only');
@@ -319,7 +315,7 @@ const SHARED_DIR = path.join(__dirname, '..', '..', 'shared');
 // production serves the build's obfuscated copies (scripts/build-client.js), same rule as server.js
 const SHARED_BUILT = path.join(__dirname, '..', '..', 'build', 'public', '_shared');
 const SHARED_OBF = (process.env.CLIENT_BUILD || (process.env.NODE_ENV === 'production' ? 'obfuscated' : 'source')) === 'obfuscated';
-const SHARED_FILES = new Set(['ranks.js', 'cosmetics.js', 'events.js', 'profanity.js', 'daily.js', 'rockBiomes.js', 'achievements.js']);
+const SHARED_FILES = new Set(['ranks.js', 'cosmetics.js', 'events.js', 'profanity.js', 'daily.js', 'rockBiomes.js', 'achievements.js', 'levels.js']);
 const sharedCache = new Map();   // name -> {mtimeMs, size, body, etag}
 
 function serveShared(req, res, pathname) {
@@ -419,6 +415,7 @@ module.exports = {
     announce,
     referrals,
     retention,
+    levels: require('./levels'),
     push,
     feedback: require('./feedback'),
     move: moveRoutes,

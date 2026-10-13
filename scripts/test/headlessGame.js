@@ -105,7 +105,7 @@ async function start(opts = {}) {
     const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-headless-'));
     const dataDir = path.join(ROOT, 'data');
     fs.mkdirSync(dataDir, { recursive: true });
-    const env = Object.assign({}, process.env, { ROYALE_DEBUG: '1', SOLO_RAIDS: '1', BOT_CHAT_AI: 'false',
+    const env = Object.assign({}, process.env, { ROYALE_ALWAYS_ON: '0', ROYALE_DEBUG: '1', SOLO_RAIDS: '1', BOT_CHAT_AI: 'false',
         SESSION_SECRET: 'headless-test-secret-0123456789-abcdefgh', DATA_DIR: dataDir, PUBLIC_ORIGIN: origin, PUBLIC_HOST: 'localhost:' + port,
         TRUSTED_PROXIES: '127.0.0.1', SINGLE_PROCESS: 'true', PORT: String(port), BR_PORT: String(port),
         TUT_PORT: String(port + 1), DUO_PORT: String(port + 2), DW_PORT: String(port + 3) }, opts.env || {});

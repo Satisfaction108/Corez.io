@@ -46,6 +46,8 @@ const autoStats = require('../../terrain/autoStats.js');   // unspent stat point
 const raidPerks = require('../../terrain/raidPerks.js');   // a perk pick every 5,000 points, kept until the raid ends
 const crowns = require('../../terrain/crowns.js');         // crowns: the last storm's top 3 wear points-earning, stealable crowns
 const soloColor = require('../../terrain/soloColor.js');
+const alwaysOn = require('../../terrain/alwaysOn.js');
+const AO = () => alwaysOn.on();
 
 // A raid is RAID_CYCLES storm cycles (7 min each, twists included), 21 min,
 // and ends as the last storm shuts (storm.js closes the final circle).
@@ -315,10 +317,15 @@ function ensureStat(body) {
     const key = statKeyFor(body);
     if (!key) return null;
     let s = raidStats.get(key);
+    if (!s && body.socket && AO()) s = aoAdopt(body, key);
     if (!s) {
         s = { key, since: now(), name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, carried: 0, alive: true, id: body.id, isBot: !!body.isBot, lastSeen: now(), revengeOn: null, revengeBonus: 0, extra: 0, streak: 0, bestStreak: 0, bossKills: 0, chests: 0 };
         raidStats.set(key, s);
         if (body.socket) dropStaleRowsOf(s, body.socket);
+    }
+    if (AO() && s.who && body.socket) {
+        const cu = alwaysOn.champUntil(s.who);
+        if (cu > (body.socket._champUntil || 0)) { body.socket._champUntil = cu; body.champUntil = Math.max(body.champUntil || 0, cu); }
     }
     s.name = body.name || s.name;
     s.id = body.id;
@@ -361,12 +368,263 @@ function dropStaleRowsOf(s, socket) {
     if (!who) return;
     let live = null;
     try { live = new Set(connectedClients().map(c => "s:" + c.id)); } catch { return; }
+    if (AO()) {
+        for (const [k, row] of raidStats) if (row !== s && row.who === who && live.has(k)) s.aoDup = true;
+        return;
+    }
     for (const [k, row] of raidStats) {
         if (row === s || row.who !== who || live.has(k)) continue;
         raidStats.delete(k);
     }
 }
 
+const AO_NUM = ['banked', 'kills', 'botKills', 'killPts', 'extra', 'evPts', 'revengeBonus', 'crownPts', 'crownSwing', 'crownLost', 'holds', 'bossKills', 'chests', 'aoPlayMs', 'evWins'];
+function aoApply(s, data, add) {
+    if (!s || !data) return;
+    for (const f of AO_NUM) {
+        const v = +data[f];
+        if (!Number.isFinite(v) || !v) continue;
+        if (f === 'killPts' && s.killPts == null && !add) { s.killPts = v; continue; }
+        s[f] = (add || s[f] != null ? (+s[f] || 0) : 0) + v;
+    }
+    if (data.killPts != null && s.killPts == null) s.killPts = +data.killPts || 0;
+    s.bestStreak = Math.max(s.bestStreak | 0, data.bestStreak | 0);
+    if (data.perks && typeof data.perks === 'object' && (!s.perks || !(s.perks.granted > 0))) s.perks = data.perks;
+}
+function aoData(s) {
+    const d = {};
+    for (const f of AO_NUM) if (s[f]) d[f] = Math.round(+s[f] || 0);
+    if (s.killPts != null) d.killPts = s.killPts | 0;
+    if (s.bestStreak) d.bestStreak = s.bestStreak | 0;
+    if (s.perks && s.perks.granted > 0) d.perks = s.perks;
+    return d;
+}
+function aoAbsorb(s, data) {
+    let before = 0;
+    try { before = rankHooks.basisOf(s); } catch { }
+    aoApply(s, data, true);
+    if (s.lifeOpen) { try { s.lifeBase = (s.lifeBase || 0) + (rankHooks.basisOf(s) - before); } catch { } }
+}
+function aoAdopt(body, key) {
+    const who = whoOf(body.socket);
+    if (!who) return null;
+    const asGuest = body.socket.account && body.socket.account.id && body.socket.guestId ? "g:" + body.socket.guestId : null;
+    let live = null;
+    try { live = new Set(connectedClients().map(c => "s:" + c.id)); } catch { live = new Set(); }
+    for (const pass of [who, asGuest]) {
+        if (!pass) continue;
+        for (const [k, row] of raidStats) {
+            if (row.who !== pass || k === key) continue;
+            if (live.has(k)) return null;
+            raidStats.delete(k);
+            row.key = key;
+            row.alive = true;
+            row.isBot = false;
+            row.aoDup = false;
+            if (pass !== who) { row.who = who; row.name = body.name || row.name; }
+            raidStats.set(key, row);
+            return row;
+        }
+    }
+    const saved = alwaysOn.loadOne(who) || (asGuest ? alwaysOn.loadOne(asGuest) : null);
+    const s = { key, since: now(), name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, carried: 0, alive: true, id: body.id, isBot: false, lastSeen: now(), revengeOn: null, revengeBonus: 0, extra: 0, streak: 0, bestStreak: 0, bossKills: 0, chests: 0, who };
+    if (saved && saved.data) { aoApply(s, saved.data, false); s.aoPlayMs = Math.max(s.aoPlayMs || 0, saved.playMs || 0); }
+    raidStats.set(key, s);
+    return s;
+}
+function aoLoadRows(rows) {
+    for (const r of rows || []) {
+        if (!r || !r.who) continue;
+        let taken = false;
+        for (const row of raidStats.values()) if (row.who === r.who) { taken = true; break; }
+        if (taken) continue;
+        const key = "d:" + r.who;
+        const s = { key, since: now(), name: r.name || "Unnamed", kills: 0, banked: 0, holds: 0, carried: 0, alive: false, id: 0, isBot: false, lastSeen: now(), revengeOn: null, revengeBonus: 0, extra: 0, streak: 0, bestStreak: 0, bossKills: 0, chests: 0, who: r.who };
+        aoApply(s, r.data || {}, false);
+        s.aoPlayMs = Math.max(s.aoPlayMs || 0, r.playMs || 0);
+        raidStats.set(key, s);
+    }
+}
+function aoLink() {
+    const byKey = new Map();
+    for (const c of connectedClients()) if (c && c.id) byKey.set("s:" + c.id, c);
+    for (const s of [...raidStats.values()]) {
+        if (s.isBot || s.who || !s.key.startsWith("s:")) continue;
+        const c = byKey.get(s.key);
+        const who = c ? whoOf(c) : null;
+        if (!who) continue;
+        let other = null;
+        for (const [k, row] of raidStats) if (row !== s && row.who === who) { other = [k, row]; break; }
+        if (other && byKey.has(other[0])) { s.who = who; s.aoDup = true; continue; }
+        if (other) { raidStats.delete(other[0]); aoAbsorb(s, aoData(other[1])); s.aoPlayMs = (s.aoPlayMs || 0); }
+        else { const saved = alwaysOn.loadOne(who); if (saved && saved.data) aoAbsorb(s, saved.data); }
+        s.who = who;
+    }
+}
+function aoSaveRows(all) {
+    try { aoLink(); } catch (e) { guardLog('ao link', e); }
+    const out = [];
+    for (const s of raidStats.values()) {
+        if (s.isBot || !s.who || s.aoDup) continue;
+        const sc = scoreOf(s);
+        const sig = sc + ':' + (s.aoPlayMs | 0) + ':' + (s.name || '') + ':' + ((s.perks && s.perks.v) | 0);
+        if (!all && s._aoSig === sig) continue;
+        s._aoSig = sig;
+        out.push({ who: s.who, name: s.name || "Unnamed", score: Math.max(0, sc), playMs: s.aoPlayMs | 0, data: aoData(s) });
+    }
+    return out;
+}
+function aoHumanRows() {
+    const out = [];
+    for (const s of raidStats.values()) if (!s.isBot && s.who && !s.aoDup) out.push({ who: s.who, name: s.name || "Unnamed", score: Math.max(0, scoreOf(s)) });
+    return out;
+}
+const AO_BOTS = (() => { const n = parseInt(process.env.ROYALE_AO_BOTS, 10); return Number.isFinite(n) && n >= 0 ? n : 10; })();
+function aoBotCap(hs) {
+    const env = parseInt(process.env.ROYALE_AO_TANKS, 10);
+    if (env > 0) return Math.max(0, env - hs);
+    return AO_BOTS;
+}
+function famOfKey(key) {
+    const fam = String(key || "").slice(2);
+    return /^\d+$/.test(fam) ? +fam : fam;
+}
+function aoBotIdentity(id, name) {
+    return {
+        nameKey: id.nameKey || null, name: String(name || id.name || "A bot").slice(0, 32), team: id.team, color: id.color,
+        tank: id.tank || null, ability: id.ability || null, skill: id.skill, temperament: id.temperament, style: id.style,
+        joinedAt: id.joinedAt || 0,
+    };
+}
+function aoSaveBots(all) {
+    const live = new Map();
+    for (const b of enemyBots()) live.set(b.botFamilyId ?? b.id, b);
+    const rows = [];
+    for (const s of raidStats.values()) {
+        if (!s.isBot || !s.key.startsWith("b:ao:")) continue;
+        const fam = famOfKey(s.key);
+        if (!botRoster.inRoster(fam)) continue;
+        const body = live.get(fam);
+        const id = body ? botRoster.entryOf(body, now()) : botRoster.identity(fam);
+        if (!id) continue;
+        const data = { id: aoBotIdentity(id, s.name), stats: aoData(s) };
+        const sig = JSON.stringify(data);
+        if (!all && s._aoSig === sig) continue;
+        s._aoSig = sig;
+        rows.push({ fam, name: s.name || id.name, data });
+    }
+    return { rows, gone: [] };
+}
+function aoLoadBots(rows) {
+    const entries = [];
+    for (const r of rows || []) {
+        const id = r && r.data && r.data.id;
+        if (!id || typeof r.fam !== "string" || !r.fam.startsWith("ao:")) continue;
+        const key = "b:" + r.fam;
+        if (!raidStats.has(key)) {
+            const s = { key, since: now(), name: r.name || id.name || "A bot", kills: 0, banked: 0, holds: 0, carried: 0, alive: false, id: 0, isBot: true, lastSeen: now(), revengeOn: null, revengeBonus: 0, extra: 0, streak: 0, bestStreak: 0, bossKills: 0, chests: 0 };
+            aoApply(s, r.data.stats || {}, false);
+            raidStats.set(key, s);
+        }
+        entries.push(Object.assign(aoBotIdentity(id, r.name), { familyId: r.fam, minnow: false }));
+    }
+    botRoster.seed(entries, now());
+}
+function aoAddEvPts(key, n, why, place, evName) {
+    const s = raidStats.get(key);
+    if (!s || !(n > 0)) return;
+    s.evPts = (s.evPts | 0) + Math.round(n);
+    s.evWins = (s.evWins | 0) + (/ 1st$/.test(String(why)) ? 1 : 0);
+    const c = key.startsWith("s:") ? connectedClients().find(x => "s:" + x.id === key) : null;
+    if (!c) return;
+    const label = String(why || "").slice(0, 40);
+    try { c.talk('KC', 'ptspop', label, Math.round(n)); } catch { }
+    const sub = place > 0 && place <= 3 ? "Top 3, so a crown is yours too!" : "Thanks for joining in!";
+    try { c.talk('KC', 'aoaward', "+" + Math.round(n).toLocaleString('en-US') + " points: " + label, 0, sub, 3400); } catch { }
+}
+function aoBodyOfKey(key) {
+    if (!key) return null;
+    if (key.startsWith("s:")) {
+        const c = connectedClients().find(x => "s:" + x.id === key);
+        const b = c && c.player && c.player.body;
+        return b && !b.isDead?.() && !b.isGhost ? b : null;
+    }
+    for (const b of liveBots()) if (statKeyFor(b) === key) return b;
+    return null;
+}
+function aoKeyPresent(key) {
+    if (!key) return false;
+    if (key.startsWith("s:")) return connectedClients().some(x => "s:" + x.id === key);
+    if (key.startsWith("b:")) {
+        for (const b of liveBots()) if (statKeyFor(b) === key) return true;
+        const fam = key.slice(2);
+        return botRoster.present(/^\d+$/.test(fam) ? +fam : fam);
+    }
+    return false;
+}
+let aoRosterAt = 0;
+function aoRosterTick(t) {
+    if (t - aoRosterAt < 4000) return;
+    aoRosterAt = t;
+    const hs = humans();
+    const seen = (b) => hs.some(h => Math.hypot(h.x - b.x, h.y - b.y) < 1500);
+    const ok = (b) => !b.crowned && !b.vaultDeposit && t - Math.max(b._lastDamageAt || 0, b.hitAt || 0) > 8000 && !seen(b);
+    const b = botRoster.pickLeaver(enemyBots(), t, ok);
+    if (b) {
+        botRoster.logOff(b, t);
+        b._aoLogoff = true;
+        despawnBot(b);
+    }
+    for (const fam of botRoster.takeRetired()) raidStats.delete("b:" + fam);
+}
+function aoEventEnd(ev, awards) {
+    const byKey = new Map();
+    for (const c of connectedClients()) if (c && c.id) byKey.set("s:" + c.id, c);
+    for (const a of awards) {
+        const c = byKey.get(a.key);
+        if (!c) continue;
+        const b = c.player && c.player.body;
+        guard('ao ach', () => achHooks.onRaidEnd(c, { place: a.place, alive: !!(b && !b.isDead?.()) && ev.kind === 'storm', crown: false, played: true }));
+        if (a.place <= 3) guard('ao quest', () => progressHooks.bump(c, 'top10', 1));
+    }
+}
+let aoCurveAt = 0;
+function aoDailyReset(champs, oldDay, newDay) {
+    const t = now();
+    guard('ao crowns', () => crowns.clearAll());
+    guard('ao roster swap', () => botRoster.retireAll(t));
+    for (const [k, s] of [...raidStats]) {
+        if (s.isBot || k.startsWith("d:")) { raidStats.delete(k); continue; }
+        let before = 0;
+        try { before = rankHooks.basisOf(s); } catch { }
+        for (const f of AO_NUM) if (f !== 'aoPlayMs') s[f] = 0;
+        s.killPts = 0;
+        s.aoPlayMs = 0;
+        s.streak = 0; s.bestStreak = 0;
+        s.restoredPts = 0; s.restoredBanked = 0;
+        s.perks = null;
+        s.lastDeath = undefined;
+        s._aoSig = '';
+        if (s.lifeOpen) { try { s.lifeBase = (s.lifeBase || 0) - (before - rankHooks.basisOf(s)); } catch { } }
+    }
+    for (const body of combatants()) guard('perks clear', () => raidPerks.clearBody(body));
+    guard('ao curve', () => rankHooks.newCurve && rankHooks.newCurve());
+    aoCurveAt = t;
+    for (const c of connectedClients()) {
+        const who = whoOf(c);
+        const cu = who ? alwaysOn.champUntil(who) : 0;
+        if (cu > 0) {
+            c._champUntil = cu;
+            const b = c.player && c.player.body;
+            if (b) b.champUntil = cu;
+        }
+        c.raidPB = 0;
+    }
+    const names = (champs || []).slice(0, 3).map((c, i) => (i + 1) + ". " + (c.name || "Unnamed")).join(", ");
+    announceAll('aoday', "A NEW DAY", names ? "Yesterday's champions: " + names + "." : "The daily leaderboard is fresh. Go and top it!", 5200);
+    setToastAndSay(names ? "A new day has started. Yesterday's champions are " + names + ". Congratulations!" : "A new day has started, and the daily leaderboard is fresh.", 8000);
+    try { global.gameManager.socketManager.broadcast(names ? "A new day has started! Yesterday's champions: " + names + "." : "A new day has started!"); } catch { }
+}
 function killScore() { return Math.round(KILL_SCORE * raidMods.num('killScoreMult', 1)); }
 // Round 10: kills are worth more as the raid goes on, the same steps as gems
 // (x1 / x1.5 / x2 by storm stage, storm.gemStageMult), so the late raid still
@@ -392,7 +650,7 @@ function scoreParts(s) {
         const bk = Math.min(s.kills | 0, s.botKills | 0);
         kp = ((s.kills | 0) - bk) * killScore() + bk * botKillScore();
     }
-    const kills = kp + (s.revengeBonus | 0) + (s.extra | 0);
+    const kills = kp + (s.revengeBonus | 0) + (s.extra | 0) + (s.evPts | 0);
     // crown is the net: s.crownLost, what steals took, is already out of it
     return { bank: bankPtsOf(s), kills, crown: (s.crownSwing | 0) + (s.crownPts | 0) };
 }
@@ -751,6 +1009,7 @@ coreFinale.attach({
 });
 crowns.attach({
     keyOf: statKeyFor,
+    keyPresent: (key) => aoKeyPresent(key),
     scoreOf: scoreOfBody,
     // a steal takes from kills + crowns only: banked gems are safe points
     riskOf: (body) => { const k = statKeyFor(body); const st = k ? raidStats.get(k) : null; return st ? atRiskOf(st) : 0; },
@@ -782,6 +1041,25 @@ crowns.attach({
     shownAt: (b) => require('../../terrain/abilities.js').shownAt(b),
 });
 sidekicks.attach({ clients: connectedClients });
+alwaysOn.attach({
+    fighters: () => combatants(), humans, clients: connectedClients, keyOf: statKeyFor,
+    bodyOfKey: (key) => aoBodyOfKey(key), keyPresent: (key) => aoKeyPresent(key),
+    toast: (text, ms) => setToastAndSay(text, ms),
+    feed: (entry) => pushFeed(entry),
+    fxAt: (x, y, kind, ...extra) => fxAt(x, y, kind, ...extra),
+    announceAll: (kind, text, sub, dur) => announceAll(kind, text, sub, dur),
+    addEvPts: (key, n, why, place, evName) => aoAddEvPts(key, n, why, place, evName),
+    onEventEnd: (ev, awards) => aoEventEnd(ev, awards),
+    loadRows: (rows) => aoLoadRows(rows),
+    saveRows: (all) => aoSaveRows(all),
+    loadBots: (rows) => aoLoadBots(rows),
+    saveBots: (all) => aoSaveBots(all),
+    humanRows: () => aoHumanRows(),
+    dailyReset: (champs, oldDay, newDay) => aoDailyReset(champs, oldDay, newDay),
+});
+try {
+    require('../../../accounts/index.js').onShutdown(() => { if (AO()) alwaysOn.saveAll(Date.now(), true); });
+} catch (e) { }
 supplyDrops.attach({
     humans, fighters: () => combatants(), clients: connectedClients,
     idle: (sock) => activity.inputIdleMs(sock) > contracts.IDLE_MS,
@@ -835,7 +1113,8 @@ function broadcast(extra = {}) {
     const fighters = combatants();
     const alive = fighters.length;
     const board = boardSnapshot();
-    const raidLeft = Math.max(0, Math.ceil((raidEndsAt - t) / 1000));
+    const aoOn = AO();
+    const raidLeft = aoOn ? 0 : Math.max(0, Math.ceil((raidEndsAt - t) / 1000));
     // last 90s: chests may land inside the storm too, so they stop piling
     // up in the shrinking centre
     global.royaleFinal90 = raidLeft > 0 && raidLeft <= 90;
@@ -877,7 +1156,8 @@ function broadcast(extra = {}) {
         phase: 'live', left: raidLeft, alive, fill: fillCap(), humans: humanCount, winner: null, storm: st, toast: liveToast,
         feed: killFeed.slice(-8), board, lock, lockLeft, matchId: raidId, raidId, raidLeft, raidMs: RAID_MS,
         occupyMs: OCCUPY_MS, lockoutMs: LOCKOUT_MS, objectives, bloom: bloomSnap, chest: null, chests: chestSnap,
-        boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, lping: pacing.huntSnapshot(t) || undefined, pings, hunt: hunted.snapshot(), core: coreFinale.snapshot(t), supply: supplyDrops.snapshot(t), crowns: crownSnap, results: raidResults, ending, nextIn, nextMs, ...extra,
+        boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, lping: pacing.huntSnapshot(t) || undefined, pings, hunt: hunted.snapshot(), core: coreFinale.snapshot(t), supply: supplyDrops.snapshot(t), crowns: crownSnap, results: raidResults, ending, nextIn, nextMs,
+        ao: aoOn ? alwaysOn.snapshot(t) : undefined, aoStorm: aoOn ? (alwaysOn.stormSnapshot(t) || undefined) : undefined, aom: process.env.ROYALE_ALWAYS_ON === '1' ? 1 : undefined, ...extra,
     });
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
@@ -943,7 +1223,8 @@ function broadcast(extra = {}) {
                 // storm ramp while you're out in it: damage multiplier, 0 when safe
                 // your shots are landing on rock right now (the client's Mining Power tip)
                 dig: bodyLive && t - Math.max(body._rockHitAt || 0, body._grindDigAt || 0) < 1200 ? 1 : undefined,
-                sm: bodyLive && body._inStorm ? Math.round(storm.exposureOf(body, t).mult * 100) / 100 : 0,
+                sm: bodyLive && body._inStorm ? (aoOn ? alwaysOn.exposure(body, t) : Math.round(storm.exposureOf(body, t).mult * 100) / 100) : 0,
+                ao: aoOn && mine ? alwaysOn.youFields(mine.key, t) : undefined,
                 // raid over: the head start your placement bought for the next one
                 nextGems: raidResults && PLACE_BONUS ? (client.raidBonus | 0) : undefined,
                 // hunted: your mark and how many enemies are close
@@ -1337,6 +1618,7 @@ function spawnDanger(self, bodies, t = now()) {
     try { occ = fairPlay.occupiedVaults(self, bodies, vault.getVaults()); } catch { /* */ }
     // the raid boss and its drones / shards / traps (fairPlay.bossZones)
     const zones = spawnBossZones();
+    if (AO()) { try { for (const z of alwaysOn.spawnZones()) zones.push(z); } catch { } }
     if (!set.size && !core && !farm.length && !killers.length && !occ.length && !zones.length) return null;
     // everything to keep clear of, with how readily each gives way when a small
     const T = fairPlay.TUNE;
@@ -1617,6 +1899,8 @@ function careerRecord(socket) {
             if (socket.account && socket.account.id) {
                 known = true;
                 row = d.get('SELECT lives, play_ms AS ms FROM user_stats WHERE user_id = ?', socket.account.id);
+                const g = socket.guestId ? d.get('SELECT games AS lives, play_ms AS ms FROM guests WHERE guest_id = ? AND (converted_user_id IS NULL OR converted_user_id = ?)', socket.guestId, socket.account.id) : null;
+                if (g) row = { lives: Math.max(row ? row.lives | 0 : 0, g.lives | 0), ms: Math.max(row ? +row.ms || 0 : 0, +g.ms || 0) };
             } else if (socket.guestId) {
                 known = true;
                 row = d.get('SELECT games AS lives, play_ms AS ms FROM guests WHERE guest_id = ?', socket.guestId);
@@ -1753,6 +2037,7 @@ function botCapNow() {
     const hs = humansInRaid();
     // duos: a lone player (who may be filled later) still counts as a pair,
     // so 1 or 2 humans both meet 4 bots (two bot duos)
+    if (AO()) return aoBotCap(hs);
     let cap = fillCap() - (Config.royale_duos ? Math.max(2, hs) : hs);
     try {
         const st = storm.snapshot(now());
@@ -1940,6 +2225,12 @@ function spawnRaidBot(back = null) {
     // a plain random id can match a live body's and make the two a team
     const team = plan ? plan.team : back && back.team != null ? back.team : duo.freshTeamId();
     let life = back ? { familyId: back.familyId, nameKey: back.nameKey, respawnsRemaining: 0, tank: back.tank, ability: back.ability } : null;
+    let freshName = null;
+    if (!back && AO()) {
+        const nk = require('../../../lib/random.js').chooseBotName();
+        life = { familyId: "ao:" + nk, nameKey: nk, respawnsRemaining: 0 };
+        freshName = Config.bot_name_prefix + nk;
+    }
     // small fish (fairPlay): while a protected player is in the raid, a couple of
     let minnow = false;
     guard('small fish', () => {
@@ -1950,7 +2241,7 @@ function spawnRaidBot(back = null) {
         minnow = fairPlay.shouldBeMinnow(enemyBots(), prot, fillCap() - 1, backScore);
     });
     if (minnow) life = Object.assign(life || { respawnsRemaining: 0 }, { minnow: true });
-    handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team, back ? back.name : null, life);
+    handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team, back ? back.name : freshName, life);
     const bot = handler.bots[handler.bots.length - 1];
     if (!bot) return;
     bot.team = team;
@@ -1977,6 +2268,10 @@ function spawnRaidBot(back = null) {
     try { grantTwist(bot); } catch { /* */ }
     // a respawned bot keeps its raid perks (same family, same board row)
     applyPerks(bot, ensureStat(bot));
+    if (AO()) {
+        guard('ao roster join', () => botRoster.noteJoin(bot, now(), back));
+        guard('ao crown wait', () => crowns.onSpawn(bot, now()));
+    }
     // bots fall out of the sky too
     guard('bot drop', () => dropIn.landBot(bot));
 }
@@ -2006,6 +2301,7 @@ function fillBots() {
     idleSince = 0;
     if (raidEnding) return;
     trimBots(t);
+    if (AO()) aoRosterTick(t);
     if (t - lastFillAt < 400) return;
     // bots follow the players' rule: nobody (re)spawns in the storm's lock
     if (!canSpawn()) return;
@@ -2019,7 +2315,7 @@ function fillBots() {
     // nobody is waiting on
     const pick = botRoster.next(t);
     if (pick.entry) spawnRaidBot(pick.entry);
-    else if (pick.fresh) spawnRaidBot();
+    else if (pick.fresh && (!AO() || alwaysOn.ready())) spawnRaidBot();
 }
 
 const TEAM_BOT_CATCHUP_D = 1350;     // this far from its human (past the 1300 regroup leash)...
@@ -2119,6 +2415,7 @@ function onBanked(body, amount) {
     const s = ensureStat(body);
     if (!s) return;
     s.banked = (s.banked || 0) + amount;
+    if (AO()) guard('ao bank', () => alwaysOn.onBanked(body, amount));
     // gems from a restored satchel bank like any others, but for the board
     // only: rank and placement leave them out (saveCodes.js)
     const r = Math.min(amount, s.restoredCarry || 0);
@@ -2173,7 +2470,7 @@ function onCombatantDead(body) {
     body.royaleAlive = false;
     if (body.sidekick) guard('sidekick drop', () => sidekicks.drop(body));
     // a raid bot keeps its identity for a respawn (terrain/botRoster.js)
-    if (body.isBot) body._botKeepName = botRoster.onBotGone(body, now(), body.deathCause);
+    if (body.isBot) body._botKeepName = botRoster.onBotGone(body, now(), body._aoLogoff ? 'logoff' : body.deathCause);
     if (body.socket && body.royaleBornAt) body.socket._royalePlayMs = (body.socket._royalePlayMs || 0) + Math.max(0, now() - body.royaleBornAt);
     tankDeathFx(body);
     const key = statKeyFor(body);
@@ -2334,6 +2631,7 @@ function onCombatantDead(body) {
     // contracts: the victim's job ends, and whoever took them down is marked
     // for them (revenge) when they come back
     if (body.socket && !raidEndDeath) guard('contracts death', () => contracts.onDeath(body, bossKill || envKill ? null : killerAny));
+    if (AO() && !raidEndDeath) guard('ao death', () => alwaysOn.onDeath(body, killerBody));
     if (body.socket) {
         // settle the ranked life now; its RK follows the death packet (a
         // raid-end death was settled at endRaid, so this skips it)
@@ -2392,6 +2690,7 @@ function grantReward(body, pts, dustMilli, why = "bonus") {
 }
 
 function onBossDead(o, kind, killer, burrowed, shares = []) {
+    if (AO()) guard('ao boss', () => alwaysOn.onBossDead(o, kind, killer, burrowed));
     if (burrowed) {
         pushFeed({ boss: 1, gone: 1, name: kind.name, c: kind.color });
         setToastAndSay("The " + kind.name + " burrowed back into the wall.", 4000);
@@ -2724,18 +3023,20 @@ function onHumanJoin(body) {
             const mod = raidMods.get();
             try {
                 body.sendMessage("You're shielded for " + Math.round(SPAWN_GRACE_MS / 1000) + " seconds, and it stays up after that until you move or shoot.");
-                if (!mod) body.sendMessage("There's no override this raid.");
+                if (!mod && !AO()) body.sendMessage("There's no override this raid.");
+                if (AO()) body.sendMessage("Everything you score today counts on the daily leaderboard, and there's an event every few minutes.");
             } catch { /* */ }
         }
         try { shop.talkState(body.socket); } catch { /* */ }
         // this life counts toward "new player" from the next spawn on
         if (!resumeSnap) body.socket._royaleLives = (body.socket._royaleLives | 0) + 1;
         body._lifeCounted = true;
-        try { lateJoinNote(body); } catch { /* */ }
+        if (!AO()) { try { lateJoinNote(body); } catch { } }
         // the resume itself waits for sockets.initalizePlayer to finish the
         // level-45 fill, or those level-up points would land on top of the
         // restored build (applyPendingResume)
     }
+    if (AO()) guard('ao crown wait', () => crowns.onSpawn(body, now()));
 }
 
 // ── reconnect / resume ────────────────────────────────────────────────────
@@ -2975,7 +3276,11 @@ function applyResume(body, snap) {
             // back where you were, but not back into the storm (you keep the
             // fresh spawn then)
             let inStorm = false;
-            try { inStorm = storm.inStorm(snap.x, snap.y); } catch { /* */ }
+            try {
+                inStorm = storm.inStorm(snap.x, snap.y);
+                const st2 = aheadSnap(now(), 15);
+                if (!inStorm && st2 && st2.a && st2.r > 0) inStorm = Math.hypot(snap.x - (st2.cx || 0), snap.y - (st2.cy || 0)) > stormRAhead(st2, 15) - 150;
+            } catch (e) { inStorm = !!inStorm; }
             if (!inStorm) guard('resume spot', () => placeResumed(body, snap.x, snap.y));
             else if (snap.growEff > 0) guard('growth room', () => growRoom(body, true));
             body.health.amount = body.health.max * Math.max(0.25, Math.min(1, snap.hp || 1));
@@ -3005,7 +3310,7 @@ function applyResume(body, snap) {
         body.bankedGems = socket.gemBanked || 0;
         try { shop.applyPassives(body); shop.talkState(socket); gems.talkGems(body, 0); } catch { /* */ }
         applyPerks(body, ensureStat(body));
-        try { body.sendMessage(snap.fresh ? "Reconnected. You dropped back in at a new spot." : "Reconnected. Your raid picked up where you left off."); } catch { /* */ }
+        try { body.sendMessage(snap.fresh ? "Reconnected. You dropped back in at a new spot." : AO() ? "Reconnected. You picked up where you left off." : "Reconnected. Your raid picked up where you left off."); } catch (e) { void e; }
         // drop back in from the sky: drawn only, nothing held, smashed or reset
         if (snap.alive) guard('resume drop', () => dropIn.visual(body));
         if (process.env.RESUME_DEBUG) console.log('[RESUME] applied: banked', socket.gemBanked | 0, 'carried', body.carriedGems | 0, 'drill', (shop.stateOf(socket) || {}).drill, 'class', (body.defs || []).join('/'), 'raw', body.skill.raw.join(','), 'pts', body.skill.points, 'pos', Math.round(body.x) + ',' + Math.round(body.y), 'was', Math.round(snap.x) + ',' + Math.round(snap.y));
@@ -3462,13 +3767,16 @@ function startRaid(first) {
         poisCarved = true;
     }
     const prevMod = lastMods;
-    const mod = raidMods.roll();
+    const ao = AO();
+    const mod = ao ? raidMods.clear() : raidMods.roll();
     lastMods = mod;
-    storm.start();
+    guard('ao mode', () => { crowns.setAlwaysOn(ao); blooms.setAuto(!ao); raidEvents.setAuto(!ao); botRoster.setAlwaysOn(ao, now()); });
+    if (ao) storm.stop();
+    else storm.start();
     // the final circle closes on the Core's site (coreFinale.js)
-    guard('core plan', () => coreFinale.newRaid());
-    raidEndsAt = storm.endAt();
-    if (!isFinite(raidEndsAt)) raidEndsAt = raidStartAt + RAID_MS;
+    guard('core plan', () => ao ? coreFinale.clear() : coreFinale.newRaid());
+    raidEndsAt = ao ? Infinity : storm.endAt();
+    if (!isFinite(raidEndsAt) && !ao) raidEndsAt = raidStartAt + RAID_MS;
     try { twistCycleSeen = storm.snapshot(now()).c | 0; } catch { /* */ }
     try { applyModsToWorld(prevMod, mod); } catch (e) { console.error('[RAID] mod apply failed', e && e.message); }
     try { bosses.resetRaid(); } catch { /* */ }
@@ -3552,6 +3860,11 @@ function startRaid(first) {
             client.status.readyToSpawn = true;
         }
     }
+    if (ao) {
+        broadcast({ toast: "The world is open! Mine, bank and fight, and join the events that pop up every few minutes." });
+        toast("Welcome! Your points today count toward the daily leaderboard.", 7000);
+        return;
+    }
     const twist = mod ? (" Twist: " + mod.name + ".") : "";
     broadcast({ toast: (first ? "The raid is live! Grab gems and bank them before the storm reaches you." : "A new raid has started, and the rock is growing back.") + twist });
     toast((first ? "The raid has started!" : "A new raid has started.") + twist, 7000);
@@ -3599,6 +3912,7 @@ function freezeShots() {
 let raidWinners = [];
 function endRaid() {
     raidEndsAt = Infinity;
+    if (AO()) return;
     // crowns stop moving at the bell and pay out (before the board is read)
     let crownTop = [], crownRan = false;
     guard('crown finish', () => { crownRan = crowns.ran(); crownTop = crowns.finish() || []; });
@@ -3743,6 +4057,7 @@ function endRaid() {
 }
 
 // a human was in the raid for at least its last 30 s
+let debugEndForced = false;
 function humansPlayed(endAt) {
     for (const st of raidStats.values()) {
         if (!st.isBot && (st.since || 0) <= endAt - 30000) return true;
@@ -3835,6 +4150,7 @@ function holdForStaging(body) {
     try { intoStageLobby(body); } catch (e) { guardLog('stage lobby move', e); }
 }
 function beginStaging(ms, opts = {}) {
+    if (AO()) return 0;
     ms = Math.max(0, Math.min(30 * 60_000, +ms || 0));
     stageBots = opts.bots !== false;
     // a server that never started a raid would start one mid-wait otherwise
@@ -4124,12 +4440,15 @@ function tick() {
         if (stagingUntil && t - (tick._broadcastAt || 0) >= 500) { tick._broadcastAt = t; guard('broadcast', () => broadcast({ staging: Math.max(0, stagingUntil - t) })); }
         return;
     }
-    twistCycleWatch(t);
-    if (t >= raidEndsAt && !raidResults) {
+    const ao = AO();
+    if (!ao) twistCycleWatch(t);
+    if (!ao && t >= raidEndsAt && !raidResults) {
         // Nobody human played this one (an empty server, or someone who
         // joined in the last few seconds): no RAID OVER for "Nobody", just
         // a fresh raid. Same if the end is long overdue (the loop slept).
-        if (!humansPlayed(raidEndsAt) || t - raidEndsAt > 5000) restartQuietly();
+        const forced = debugEndForced;
+        debugEndForced = false;
+        if (!forced && (!humansPlayed(raidEndsAt) || t - raidEndsAt > 5000)) restartQuietly();
         else endRaid();
         return;
     }
@@ -4152,7 +4471,7 @@ function tick() {
     // Every stage is isolated: one bad stage must never take the raid
     // broadcast (and with it the whole HUD) down with it.
     if (t - (tick._idleAt || 0) >= 1000) { tick._idleAt = t; guard('idle', () => tickIdle(t)); }
-    guard('storm', () => { storm.ensureActive(); storm.tickDamage(t); });
+    if (!ao) guard('storm', () => { storm.ensureActive(); storm.tickDamage(t); });
     guard('spawn rescue', () => tickSpawnRescue(t));
     guard('outposts', () => tickOutpostRules(t));
     guard('vaults', () => tickVaultPinch(t));
@@ -4175,6 +4494,20 @@ function tick() {
     guard('supply', () => supplyDrops.tick(t));
     guard('opening', () => raidOpening.tick(t));
     guard('newcomer', () => newcomer.tick(t));
+    if (ao) {
+        guard('always on', () => alwaysOn.tick(t, fighters));
+        if (!aoCurveAt) aoCurveAt = t;
+        if (t - aoCurveAt >= RAID_MS) { aoCurveAt = t; guard('ao curve', () => rankHooks.newCurve && rankHooks.newCurve()); }
+        if (t - (tick._aoPlayAt || 0) >= 1000) {
+            const dt = tick._aoPlayAt ? Math.min(3000, t - tick._aoPlayAt) : 0;
+            tick._aoPlayAt = t;
+            for (const b of fighters) {
+                if (!b.socket) continue;
+                const k = statKeyFor(b), rs = k ? raidStats.get(k) : null;
+                if (rs) rs.aoPlayMs = (rs.aoPlayMs || 0) + dt;
+            }
+        }
+    }
     if (t - perkTickAt >= PERK_TICK_MS) guard('perks', () => tickPerks(t));
     for (const body of fighters) {
         const key = statKeyFor(body);
@@ -4302,6 +4635,7 @@ global.royaleOnPlayerDamage = (victim, dealt, inflictors) => {
 };
 
 function stormFleePoint(body) {
+    if (AO()) return alwaysOn.stormFlee(body);
     if (!storm.inStorm(body.x, body.y)) return null;
     const r = Math.max(40, storm.radius() - 80);
     const d = Math.hypot(body.x - storm.snapshot().cx, body.y - storm.snapshot().cy) || 1;
@@ -4330,12 +4664,14 @@ module.exports = {
     _fillBots: () => fillBots(), _spawnRaidBot: back => spawnRaidBot(back), _statKeyFor: b => statKeyFor(b),
     // terrain pass: a buried grown hull clears its own room (held, no payout)
     breakOutGrown: (body) => growRoom(body, true),
-    onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout,
+    onBossSpawned, onBossDead, onChestOpened, onBloom, onEvent, onShopBuy, fxAt, callout, fightersNow: () => combatants(),
+    _aoBodyOfKey: (k) => aoBodyOfKey(k), _aoKeyPresent: (k) => aoKeyPresent(k), _aoRosterTick: (t) => { aoRosterAt = 0; aoRosterTick(t); },
     // sockets.js: a solo player keeps one colour through the raid's lives
     raidIdNow: () => raidId,
     FIRST_MINUTES, isNewPlayer, RESPAWN_MS, freshRaidBody, SPAWN_GRACE_MS, RAID_CYCLES, RAID_MS, RESUME_MS,
     // ROYALE_DEBUG only (sockets.js DBG): force a twist, end the raid now
-    debugTwist: (id) => applyNewTwist(id), debugEndRaid: () => { raidEndsAt = now(); },
+    debugTwist: (id) => { if (!AO()) applyNewTwist(id); }, debugEndRaid: () => { if (!AO()) { raidEndsAt = now(); debugEndForced = true; } },
+    alwaysOn: AO, aoDebugDay: () => alwaysOn.doReset(now(), true),
     // tests: a body's board row, and the raid's results once it ends
     _statOf: (body) => { const k = statKeyFor(body); return k ? raidStats.get(k) || null : null; },
     _keepRow: (s) => keepRow(s), _baseDenyText: baseDenyText, _spawnDanger: (self, bodies, t) => spawnDanger(self, bodies, t),
@@ -4404,7 +4740,7 @@ module.exports = {
         label: body.label, caps: body.skill.caps.slice(), raw: body.skill.raw.slice(), ups: (body.upgrades || []).map(u => [].concat(u.class || []).map(c => (c && c.LABEL) || String(c)).join('/')) } : null,
     // the storm jumps into the raid's last cycle too, so the final circle closes on cue
     debugRaidLeft: (sec) => {
-        if (raidEnding || raidResults !== null) return;
+        if (AO() || raidEnding || raidResults !== null) return;
         const end = storm.debugFinal(Math.max(1, sec | 0));
         raidEndsAt = isFinite(end) ? end : now() + Math.max(1, sec | 0) * 1000;
         try { twistCycleSeen = storm.snapshot(now()).c | 0; } catch { /* */ }

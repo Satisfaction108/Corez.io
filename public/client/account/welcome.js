@@ -278,7 +278,7 @@ function loginForm(opts) {
         const r = await api.login(name, pw.value);
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
-            hooks.onAuthed(r.data.user, 'login');
+            hooks.onAuthed(r.data.user, 'login', r.data);
             close();
             toast('Welcome back, ' + r.data.user.username + '!', { kind: 'ok' });
             return;
@@ -305,7 +305,7 @@ function signupForm() {
         const r = await api.signup(uf.value, pp.value);
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
-            hooks.onAuthed(r.data.user, 'signup');
+            hooks.onAuthed(r.data.user, 'signup', r.data);
             show('code', { code: r.data.recoveryCode, username: r.data.user.username, context: 'signup' });
             return;
         }
@@ -351,7 +351,7 @@ function viewQuick(opts) {
         const r = await api.quickSignup(uf.value);
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
-            hooks.onAuthed(r.data.user, 'quick');
+            hooks.onAuthed(r.data.user, 'quick', r.data);
             show('code', { code: r.data.recoveryCode, username: r.data.user.username, context: 'quick' });
             return;
         }
@@ -388,7 +388,7 @@ function viewPick() {
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
             store.set({ pending: null });
-            hooks.onAuthed(r.data.user, 'discord');
+            hooks.onAuthed(r.data.user, 'discord', r.data);
             show('code', { code: r.data.recoveryCode, username: r.data.user.username, context: 'discord' });
             return;
         }
@@ -491,7 +491,7 @@ function viewRecover(opts) {
         const r = await api.recover(name, code, noPw ? '' : pp.value);
         setBusy(go, false);
         if (r.ok && r.data && r.data.user) {
-            hooks.onAuthed(r.data.user, 'recover');
+            hooks.onAuthed(r.data.user, 'recover', r.data);
             show('code', { code: r.data.recoveryCode, username: r.data.user.username, context: 'recover' });
             return;
         }

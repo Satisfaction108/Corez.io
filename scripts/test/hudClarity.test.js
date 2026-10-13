@@ -38,8 +38,8 @@ function t(name, fn) {
     const coach = src('coach.js');
 
     t('death card: the wallet row steps aside while the card is up', () => {
-        assert.ok(/if \(!deathCardUp\(\)\) drawSelfInfo\(max\);/.test(app));
-        const fn = app.slice(app.indexOf('function deathCardUp()'), app.indexOf('function deathCardUp()') + 260);
+        assert.ok(/if \(!deathScreenOn\(\)\) drawSelfInfo\(max\);/.test(app));
+        const fn = app.slice(app.indexOf('function deathScreenOn()'), app.indexOf('function deathScreenOn()') + 260);
         assert.ok(fn.includes('global.royaleDied') && fn.includes('!global.royaleSpectating'), 'spectating keeps the row');
     });
 

@@ -34,7 +34,7 @@ const POOL = [
     { id: 'survive_15', tier: 'medium', event: 'survive',    mode: 'max', goal: 15,   text: 'Stay alive for 15 minutes in one life' },
     { id: 'capture_1',  tier: 'medium', event: 'capture',    mode: 'add', goal: 1,    text: 'Capture a base' },
     { id: 'bank_8k',    tier: 'hard',   event: 'bank',       mode: 'add', goal: 8000, text: 'Bank 8,000 gems' },
-    { id: 'top_10',     tier: 'hard',   event: 'top10',      mode: 'add', goal: 1,    text: 'Finish a raid in the top 10' },
+    { id: 'top_10',     tier: 'hard',   event: 'top10',      mode: 'add', goal: 1,    text: process.env.ROYALE_ALWAYS_ON === '1' ? 'Finish an event in the top 3' : 'Finish a raid in the top 10' },
     { id: 'boss_blow',  tier: 'hard',   event: 'boss',       mode: 'add', goal: 1,    text: 'Land the final hit on a boss' },
 ];
 const BY_ID = new Map(POOL.map(q => [q.id, q]));

@@ -17,7 +17,7 @@ function saveSeen(seen) {
 }
 
 const st = L.createState(loadSeen());
-let scanAt = 0, aliveAt = 0, wasPlaying = false, lastH = 112, shardKey = null, shardSince = 0;
+let scanAt = 0, aliveAt = 0, wasPlaying = false, lastH = 112, shardKey = null, shardSince = 0, goneAt = 0;
 let visible = new Set(), reached = new Set();
 const pinned = new Set();
 let el = null, titleEl = null, bodyEl = null, barEl = null, shownId = null;
@@ -213,7 +213,14 @@ export function hook(avoidFn) {
     }
     if (!wasPlaying) { wasPlaying = true; aliveAt = t; }
     if (t - aliveAt < L.SETTLE_MS) { render(null, null); return; }
-    if (t - scanAt >= SCAN_MS) { scanAt = t; scan(); }
+    if (t - scanAt >= SCAN_MS) {
+        scanAt = t;
+        scan();
+        if (st.cur && !pinned.has(st.cur) && !visible.has(st.cur) && !reached.has(st.cur)) {
+            if (!goneAt) goneAt = t;
+            else if (t - goneAt > 1500) { goneAt = 0; close("gone"); }
+        } else goneAt = 0;
+    }
     if (!st.cur && !st.queue.length) { render(null, null); return; }
     if (t - placeAt >= SCAN_MS) {
         placeAt = t;

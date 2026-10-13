@@ -47,6 +47,8 @@ const ABILITIES = new Set(['grapple', 'burrow', 'shock', 'radar', 'wall', 'smoke
 let bridgeMod = null, dbMod = null;
 function bridge() { return bridgeMod || (bridgeMod = require('./bridge')); }
 function store() { return dbMod || (dbMod = require('../achievements')); }
+let lvMod = null;
+function levels() { return lvMod || (lvMod = require('./levelHooks')); }
 
 // Accounts on in the royale, not a plain ROYALE_DEBUG run (bridge.rankedOn).
 // Tests can force it.
@@ -239,6 +241,7 @@ function onGem(body, ore) {
 
 // Any bank credit (vault chunk, base, Core payout, Flash Vault).
 function onBank(body, amount) {
+    levels().onBank(body, amount);
     const st = stOf(body);
     if (!st || !(amount > 0)) return;
     const s = body.socket;
@@ -352,6 +355,7 @@ function onCoreBreak(body) {
 // dig_royale onCombatantDead, once per death.
 // i: {killer, victimBot, avenged, crown ({how}) , carried, streak, raidEnd, cause}
 function onDeath(victim, i) {
+    levels().onDeath(victim, i);
     const t = Date.now();
     const killer = i.killer;
     if (killer && killer !== victim && killer.socket) {
@@ -388,6 +392,7 @@ function onDeath(victim, i) {
 // endRaid, per connected player: place on the board, alive at the bell,
 // still wearing a crown, and whether they really played this raid.
 function onRaidEnd(socket, r) {
+    levels().onRaidEnd(socket, r);
     const st = stateOf(socket);
     if (!st || !r || !r.played) return;
     if (r.alive) unlock(socket, st, 'raid_survive');
@@ -403,6 +408,7 @@ function onRaidStart(id) { raidNow = id | 0; }
 // ---- the slow loop (dig_royale tick) ----
 
 function tick(t = Date.now()) {
+    levels().tick(t);
     if (t - lastTickAt < TICK_MS) return;
     lastTickAt = t;
     if (!live.size && !escapes.size) return;
@@ -452,6 +458,7 @@ function save(socket, st) {
 }
 
 function onClose(socket) {
+    levels().onClose(socket);
     live.delete(socket);
     const st = socket && socket._ach;
     if (st) save(socket, st);
@@ -476,7 +483,7 @@ function adoptGuest(socket, guestId, userId) {
     return res;
 }
 
-function saveAll() { for (const s of live) if (s._ach) save(s, s._ach); }
+function saveAll() { levels().saveAll(); for (const s of live) if (s._ach) save(s, s._ach); }
 
 function init(h) { hooks = Object.assign({ isFinal: null, humans: null, inStorm: null }, h || {}); }
 

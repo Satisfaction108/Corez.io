@@ -90,9 +90,11 @@ function attach(c) {
     accounts.onShutdown(onShutdown);
 }
 
+const EVENT_RP_SHARE = 0.5;
 function basisOf(s) {
-    return Math.floor(+s.banked || 0) + (s.killPts | 0) + (s.revengeBonus | 0) + (s.extra | 0) + (s.rankOnly | 0) - (s.rankDiscount || 0);
+    return Math.floor(+s.banked || 0) + (s.killPts | 0) + (s.revengeBonus | 0) + (s.extra | 0) + Math.floor((s.evPts | 0) * EVENT_RP_SHARE) + (s.rankOnly | 0) - (s.rankDiscount || 0);
 }
+function newCurve() { raidAcct.clear(); }
 
 function acctFor(userId, t) {
     let a = raidAcct.get(userId);
@@ -574,7 +576,7 @@ function debugPts(socket) {
 }
 
 module.exports = {
-    BOOT_ID, attach, basisOf, raidKey, lifeStart, lifeEnd, onDeath, onKillCredited, onDisconnect, onIdleKick,
+    BOOT_ID, attach, basisOf, newCurve, EVENT_RP_SHARE, raidKey, lifeStart, lifeEnd, onDeath, onKillCredited, onDisconnect, onIdleKick,
     onPlayerDamaged, surviveCheck, onRaidStart, onRaidEnd, onShutdown, tick, debugRank, debugPts, on,
     _raidAcct: raidAcct,
 };

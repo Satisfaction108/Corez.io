@@ -12,6 +12,8 @@ import * as coach from './coach.js';
 import * as firstHints from './firstHints.js';
 import { touch, STICK, touchPref, haptic, AIMED_KIT, mobileFullscreen, touchPrimary } from './touch.js';
 import * as raidFinale from './raidFinale.js';
+import * as levelsHud from './levelsHud.js';
+import * as signupPrompt from './signupPrompt.js';
 import * as stormFx from './stormFx.js';
 import * as abilityFx from './abilityFx.js';
 import * as abilityIntro from './abilityIntro.js';
@@ -23,7 +25,7 @@ import * as scoreText from './scoreLogic.js';
 import * as newcomer from './newcomer.js';
 import * as firstSeconds from './firstSeconds.js';
 import { shopHint, minesBy } from './firstSecondsLogic.js';
-import { full as fxFull, slamShowing, slamUp as juiceSlamUp } from './juice.js';
+import { full as fxFull, slamShowing, slamUp as juiceSlamUp, burst as juiceBurst, ring as juiceRing } from './juice.js';
 import * as autoQ from './autoQuality.js';
 import { ResGovernor, RES, resBudget, resLevels } from './autoQualityLogic.js';
 import * as rankBadges from './account/rankBadges.js';
@@ -46,6 +48,7 @@ import * as upGrid from './upgradeGridLogic.js';
 import * as treeUi from './tankTree.js';
 import { netSmooth } from './netSmooth.js';
 import { predictor } from './predict.js';
+import * as aoHud from './alwaysOn.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -1534,7 +1537,7 @@ import { predictor } from './predict.js';
         if (global.gameLoading) return;
         // a tab left open over a deploy checks the version first and reloads
         // instead of joining on old code (version.js beforePlay)
-        if (!global._reconnecting && !global.duoArmed && !startGame._checked && window.dwVersion && window.dwVersion.beforePlay) {
+        if (!global._reconnecting && !startGame._checked && window.dwVersion && window.dwVersion.beforePlay) {
             if (startGame._asking) return;
             startGame._asking = true;
             window.dwVersion.beforePlay().then((reloading) => {
@@ -1551,13 +1554,6 @@ import { predictor } from './predict.js';
         if (!global._reconnecting && !(window.dwAccount && window.dwAccount.playName && window.dwAccount.playName())) {
             const nameInput = document.getElementById("playerNameInput");
             if (nameInput && !nameCheck.okToPlay(nameInput)) return;
-        }
-        // Duos: the first Play press gets a party ticket from party.js (async)
-        // and re-enters here armed. A reconnect keeps the duo session as is.
-        if (!global.launchingTutorial && !global.launchingDigWars && !global.duoArmed && !global._reconnecting &&
-            window.dwParty && window.dwParty.wantsDuo()) {
-            window.dwParty.arm();
-            return;
         }
         global.gameLoading = true;
         try { rankPanel.clear(); dustHud.reset(); global.acct = null; } catch (e) { /* */ }
@@ -1598,22 +1594,8 @@ import { predictor } from './predict.js';
         if (!global.launchingTutorial && !global.launchingDigWars) {
             global.tutorialMode = false;
             global.tutorialPlot = null;
-            if (global.duoArmed) {
-                // the duo server lives behind this host at /duo
-                if (!global.duoSession) global._soloServerAdd = global.serverAdd;
-                global.duoSession = global.duoArmed;
-                global.serverAdd = location.host;
-                global.serverPath = global.duoArmed.path || "/duo";
-            } else if (!(global._reconnecting && global.duoSession)) {
-                if (global.duoSession && global._soloServerAdd) global.serverAdd = global._soloServerAdd;
-                global.duoSession = null;
-                global.serverPath = "";
-            }
-        } else if (global.duoSession) {
-            if (global._soloServerAdd) global.serverAdd = global._soloServerAdd;
-            global.duoSession = null;
+            global.serverPath = "";
         }
-        global.duoArmed = null;
         global._reconnecting = false;
         global.launchingTutorial = false;
         global.launchingDigWars = false;
@@ -1854,7 +1836,7 @@ import { predictor } from './predict.js';
             let first = textArrayRaw.shift();
             if (!textArrayRaw.length) {
                 textArray.push(first);
-            } else if (textArrayRaw[1]) {
+            } else if (textArrayRaw[1] || textArrayRaw.length === 2) {
                 textArray.push(first, textArrayRaw.shift());
             } else {
                 textArrayRaw.shift();
@@ -4251,7 +4233,7 @@ import { predictor } from './predict.js';
     // one reused object: this runs several times a frame
     const stormView = { a: 0, cx: 0, cy: 0, tx: 0, ty: 0, r: 0, max: 0, to: 0, fin: 0, hold: 0 };
     function stormSnap() {
-        const s = global.royale && global.royale.storm;
+        const s = aoHud.stormView() || (global.royale && global.royale.storm);
         if (!s || !s.a) return null;
         // RY lands every 500ms but n predicts +250ms. Extrapolate past t=1 at
         // the same rate so the edge moves continuously (clamping at 1 makes it
@@ -4265,6 +4247,7 @@ import { predictor } from './predict.js';
         v.cx = s.nx == null ? cx0 : cx0 + (s.nx - cx0) * t;
         v.cy = s.ny == null ? cy0 : cy0 + (s.ny - cy0) * t;
         v.tx = s.tx == null ? v.cx : s.tx; v.ty = s.ty == null ? v.cy : s.ty;
+        v.out = s.out || 0;
         return v;
     }
     function fillStormOnMap(c, mapX, mapY, scale, x, y, w, h) {
@@ -4272,13 +4255,16 @@ import { predictor } from './predict.js';
         if (!s) return;
         const cx = mapX(s.cx || 0), cy = mapY(s.cy || 0);
         const rr = Math.max(2, (s.r || 0) * scale);
+        if (s.out > 0) { c.save(); c.beginPath(); c.arc(cx, cy, Math.max(rr, s.out * scale), 0, Math.PI * 2); c.clip(); }
         stormFx.drawMap(c, cx, cy, rr, x, y, w, h, (s.to || 0) * scale, safeZoneJob(), mapX(s.tx), mapY(s.ty));
+        if (s.out > 0) c.restore();
     }
     function playerInStorm() {
         const s = stormSnap();
         if (!s) return false;
         const px = global.player.renderx, py = global.player.rendery;
         const dx = px - (s.cx || 0), dy = py - (s.cy || 0);
+        if (s.out > 0 && dx * dx + dy * dy > s.out * s.out) return false;
         return dx * dx + dy * dy > (s.r || 0) * (s.r || 0);
     }
     function strokeStormCircle(c, mapX, mapY, scale, x, y, w, h) {
@@ -4291,7 +4277,9 @@ import { predictor } from './predict.js';
         const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
         const ox = roomX + halfW * ratio, oy = roomY + halfH * ratio;
         const rr = Math.max(0, s.r * ratio);
+        if (s.out > 0) { ctx[0].save(); ctx[0].beginPath(); ctx[0].arc(ox + s.cx * ratio, oy + s.cy * ratio, Math.max(rr, s.out * ratio), 0, Math.PI * 2); ctx[0].clip(); }
         stormFx.drawWorld(ctx[0], ox + s.cx * ratio, oy + s.cy * ratio, rr, ox, oy, ratio, global.screenWidth, global.screenHeight);
+        if (s.out > 0) ctx[0].restore();
         // the safe-zone job: the whole edge lights up
         if (safeZoneJob()) stormFx.drawSafeZone(ctx[0], ox + s.cx * ratio, oy + s.cy * ratio, rr, ratio, global.screenWidth, global.screenHeight);
     }
@@ -6211,7 +6199,7 @@ import { predictor } from './predict.js';
 
         // the first seconds of a first raid: the bars slide in a few seconds after landing
         // (the raid death card owns the screen: the bars tuck away under it)
-        statMenu.set(!firstSeconds.shows("stats") || deathCardUp() ? 0 : 0 + (global.died || global.statHover || (global.canSkill && !gui.skills.every(skill => skill.cap === skill.amount))));
+        statMenu.set(!firstSeconds.shows("stats") || deathScreenOn() ? 0 : 0 + (global.died || global.statHover || (global.canSkill && !gui.skills.every(skill => skill.cap === skill.amount))));
         // round 12: a tutorial card about the stats keeps the panel all the way
         // in (it used to sit half off-screen, slid out, while the card talked about it)
         if (global.tutorialMode) statMenu.set(1);
@@ -6348,9 +6336,21 @@ import { predictor } from './predict.js';
         f.x = x; f.y = y; f.w = w; f.h = h;
     }
     // the raid death card (gameDrawDeadRoyale) is on screen
-    function deathCardUp() {
+    function deathScreenOn() {
         return !!(global.died && global.royaleDied && !global.royaleSpectating && !raidFinale.active() && !lastStormCount());
     }
+    function deathCardUp() {
+        return deathScreenOn() && deathIntroK() > 0;
+    }
+    function aoNow() { return aoHud.on() || !!global.aoWorld; }
+    window.dwAoNow = () => aoNow();
+    function deathCalm() { return !!((global.reducedMotion && global.reducedMotion()) || config.graphical.lightSafe); }
+    function deathIntroK() {
+        const at = global.royaleDiedAt || 0;
+        if (!(at > 0) || global.tutorialMode) return 1;
+        return deathText.introK(performance.now() - at, deathCalm());
+    }
+    window.dwDeathIntro = () => ({ k: deathIntroK(), at: global.royaleDiedAt || 0, beat: deathText.introBeat(deathCalm()), fade: deathText.INTRO.fade });
     const BANK_PILL = "#7fb1f2", BANK_PILL_TEXT = "#120e15";
     // the bottom bar's "Tank: <name>" line: your current tank's name, or ""
     const SELF_TANK_LIFT = 18;
@@ -6439,7 +6439,7 @@ import { predictor } from './predict.js';
                 if (royaleActive() && !global.mobile && global.canvas && !global.died) {
                     const cr2 = global.canvas.height / global.screenHeight / global.ratio;
                     const mx2 = global.mouse.x / cr2, my2 = global.mouse.y / cr2;
-                    if (mx2 >= bankX1 - capR && mx2 <= rx2 + capR && my2 >= ry - pillH / 2 && my2 <= ry + pillH / 2) queueTip(scoreText.BANK_TIP, scoreText.BANK_TIP_BODY, (bankX1 + rx2) / 2, ry - pillH / 2, true);
+                    if (mx2 >= bankX1 - capR && mx2 <= rx2 + capR && my2 >= ry - pillH / 2 && my2 <= ry + pillH / 2) queueTip(scoreText.BANK_TIP, scoreText.bankTipBody(aoNow()), (bankX1 + rx2) / 2, ry - pillH / 2, true);
                 }
                 // above your name, never on it (round 7: "+250 banked · milestone 1,000" sat on
                 drawBankPops(global.screenWidth / 2, Math.round(y - 10 - 4) - 1 - 30 - (selfTankName() ? SELF_TANK_LIFT : 0));
@@ -8072,6 +8072,7 @@ import { predictor } from './predict.js';
         else if (!global.died && r.lockout > 0) push(hudNote(1, "padtime", "You can come back in " + r.lockout + "s", color.guiwhite));
         try { push(spawnShieldNote()); } catch (e) { /* */ }
         try { raidHeat.hudNotes(push); } catch (e) { /* */ }
+        try { aoHud.hudNotes(push, hudNote, HUD); } catch (e) { }
         // the Crown Contest: one line when there's no tracker panel (a first
         // raid, a phone), or when you hold a crown
         try { crowns.hudNotes(push, global.mobile || !nxShows("standings") || (global.nxKnown && (global.nxStage | 0) === 0)); } catch (e) { /* */ }
@@ -8164,7 +8165,7 @@ import { predictor } from './predict.js';
             // raid data has not arrived yet
             if (global.digRoyaleMode && global.gameStart && !global.tutorialMode) {
                 if (!hudWaitSince) hudWaitSince = now;
-                else if (now - hudWaitSince > 4000) drawText("Waiting for raid data...", cx, 30, 13, color.grey, "center");
+                else if (now - hudWaitSince > 4000) drawText(global.aoWorld ? "Waiting for the server..." : "Waiting for raid data...", cx, 30, 13, color.grey, "center");
             }
             return;
         }
@@ -8205,6 +8206,7 @@ import { predictor } from './predict.js';
                 y = sy0 + SH + HUD.lip + 8;
                 return;
             }
+            if (r.ao && r.ao.on) { y = aoHud.drawPanel(c, cx, y, aoApi()); return; }
             if (topMin.on) { y = drawTopStrip(c, cx, y, stormTxt, stormCol); return; }
             const PW = 300, rowH = 38, footH = (placeTxt || stormTxt) ? 24 : 0, PH = rowH + footH;
             const px = Math.round(cx - PW / 2), py = y;
@@ -8241,6 +8243,7 @@ import { predictor } from './predict.js';
             y = py + PH + HUD.lip + 8;
         });
         hudSafe("notes", () => { y = drawHudNotes(y); });
+        if (r.ao && r.ao.on) hudSafe("aoResult", () => { y = aoHud.drawResult(ctx[2], cx, y, aoApi()); });
         hudSafe("boss", () => {
             // the boss and the Core share one row of compact cards; the row is
             // reserved in full while a card is visible (alpha fades, nothing
@@ -8295,7 +8298,7 @@ import { predictor } from './predict.js';
             // still inside, but the edge gets here soon: seconds until it does
             hs.near = 0;
             if (!hs.inside && s && !global.died) {
-                const raw = global.royale.storm || {};
+                const raw = aoHud.stormView() || global.royale.storm || {};
                 const speed = raw.n == null ? 0 : ((raw.r || 0) - raw.n) * 4;
                 const px = global.player.renderx, py = global.player.rendery;
                 const gap = s.r - Math.hypot(px - s.cx, py - s.cy);
@@ -8311,6 +8314,25 @@ import { predictor } from './predict.js';
             ctx[2].restore();
         });
         if (hudErrText) drawText("HUD error: " + hudErrText, cx, global.screenHeight - 78, 11, "#ff7a6b", "center");
+    }
+    let aoApiObj = null;
+    function aoApi() {
+        if (aoApiObj) return aoApiObj;
+        aoApiObj = {
+            HUD, fmtNum, hudPanel, hudTitle, hudTitleW, hudTextW, drawText,
+            setClock: (rect) => { hudDrawn.clock = rect; },
+            pops: (x, y) => drawPtsPops(x, y, "left", 1),
+            label: (text, x, y, size, col) => drawText(text, x, y, size, col, "center", true, 0.95),
+            infoDot: (cx, cy) => drawRuleDot(ctx[2], cx, cy),
+            hoverTip: (x, y, w, h, title, body) => {
+                if (global.mobile || !global.canvas || global.died) return false;
+                const cr = global.canvas.height / global.screenHeight / global.ratio;
+                const mx = global.mouse.x / cr, my = global.mouse.y / cr;
+                if (mx >= x && mx <= x + w && my >= y && my <= y + h) { queueTip(title, body, x + w / 2, y + h, false); return true; }
+                return false;
+            },
+        };
+        return aoApiObj;
     }
     const stormHud = { inside: false, near: 0, sm: 0, immune: 0, final: false, dist: 0, dirAng: 0, laneY: 0, yieldText: false, rowY: 0 };
     const STORM_NEAR_S = 15;   // warn this many seconds before the edge reaches you
@@ -8498,7 +8520,8 @@ import { predictor } from './predict.js';
         const r = global.royale;
         if (r.duos && r.teams) return drawTeamStandings();
         // the Crown Contest: the three crowns take the standings' place
-        if (crowns.active()) {
+        const aoOn = !!(r.ao && r.ao.on);
+        if (crowns.active() && !aoOn) {
             const W = Math.min(262, global.screenWidth * 0.3);
             const x = global.screenWidth - HUD.edge - W, y0 = HUD.edge;
             const bottom = crowns.drawTracker(ctx[2], x, y0, W);
@@ -8514,11 +8537,14 @@ import { predictor } from './predict.js';
         const top = board.slice(0, 3);
         const me = myPlace > 3 ? board.find(row => !row.bot && row.place === myPlace) : null;
         const rows = me ? top.concat([me]) : top;
-        const H = 30 + rows.length * rowH + (myPlace > 1 ? 16 : 2);
+        const aoFoot = aoOn ? aoHud.standingsFoot() : null;
+        const aoFootH = aoFoot ? 16 + (aoFoot.line2 ? 15 : 0) : 0;
+        const H = 30 + rows.length * rowH + (myPlace > 1 ? 16 : 2) + aoFootH;
         standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: H + 16 };
         const c = ctx[2];
-        hudTitle("Leaderboard", x + W / 2, y0 + 12, 19, HUD.head, "center");
-        drawRuleDot(c, x + W / 2 + hudTitleW("Leaderboard", 19) / 2 + 14, y0 + 12);
+        const boardTitle = aoOn ? aoHud.standingsTitle() : "Leaderboard";
+        hudTitle(boardTitle, x + W / 2, y0 + 12, 19, HUD.head, "center");
+        drawRuleDot(c, x + W / 2 + hudTitleW(boardTitle, 19) / 2 + 14, y0 + 12);
         pointsRuleTip(x, y0, W, H);
         const myHex = playerHexCol() || color.gold;
         const mineRow = (row) => !row.bot && row.place === myPlace && myPlace > 0;
@@ -8538,11 +8564,24 @@ import { predictor } from './predict.js';
             const tail = " - " + fmtNum(row.score | 0) + (row.streak >= 4 ? " x" + row.streak : "");
             const fit = fitStandingsText(head, shortName(row.name, 18), tail, bw - barH - 4);
             drawText(fit.text, bx + bw / 2, rowMid, fit.ns, color.guiwhite, "center", true);
+            if (aoOn && row.cr) { try { crowns.drawCrownIcon(c, bx + bw - 10, rowMid, 11, "gold", 1); } catch (e) { } }
             ry += rowH;
         }
         if (myPlace > 1 && top[0]) {
             const gap = (top[0].score | 0) - (r.youScore | 0);
             drawText(fmtNum(gap) + " behind #1", x + W / 2, ry + 5, 11, HUD.text2, "center", true);
+            ry += 16;
+        }
+        if (aoFoot) {
+            const fy = myPlace > 1 && top[0] ? ry + 4 : ry + 9;
+            let fs = 11;
+            while (fs > 9 && hudTextW(aoFoot.line1, fs) > W) fs -= 0.5;
+            drawText(aoFoot.line1, x + W / 2, fy, fs, HUD.gold, "center", true);
+            if (aoFoot.line2) {
+                let f2 = 10.5;
+                while (f2 > 8.5 && hudTextW(aoFoot.line2, f2) > W) f2 -= 0.5;
+                drawText(aoFoot.line2, x + W / 2, fy + 15, f2, HUD.text2, "center", true);
+            }
         }
         return y0 + H;
     }
@@ -8559,9 +8598,9 @@ import { predictor } from './predict.js';
         if (global.mobile || !global.canvas || global.died) return;
         const cr = global.canvas.height / global.screenHeight / global.ratio;
         const mx = global.mouse.x / cr, my = global.mouse.y / cr;
-        if (mx >= x && mx <= x + w && my >= y && my <= y + h) queueTip(scoreText.RULE, scoreText.RULE_BODY, x + w / 2, y + h, false);
+        if (mx >= x && mx <= x + w && my >= y && my <= y + h) queueTip(scoreText.RULE, scoreText.ruleBody(aoNow()), x + w / 2, y + h, false);
     }
-    window.dwPointsRule = () => ({ rule: scoreText.RULE, body: scoreText.RULE_BODY });
+    window.dwPointsRule = () => ({ rule: scoreText.RULE, body: scoreText.ruleBody(aoNow()), bank: scoreText.bankTipBody(aoNow()) });
 
     // ── kill feed: one line, one badge at most, quiet ───────────────────
     function feedLine(f) {
@@ -8572,6 +8611,7 @@ import { predictor } from './predict.js';
             return (myHex && (n || "") === myName) ? tag(nm, myHex) : nm;
         };
         let badge = null;
+        if (f.ao) return aoHud.feedLine(f, who, tag);
         const crownLine = crowns.feedLine(f, who, tag);
         if (crownLine) return crownLine;
         const heat = raidHeat.feedLine(f, who, tag);
@@ -8590,7 +8630,9 @@ import { predictor } from './predict.js';
             : "Gem rain over the safe zone", badge: null };
         if (f.storm) return { text: who(f.name, "Someone") + " got caught by the storm", badge: null };
         if (f.rock) return { text: who(f.name, "Someone") + " got crushed by the wall", badge: null };
+        if (!f.name) return null;
         const vic = who(f.name, "someone");
+        if (!f.by) return { text: vic + " went down", badge: null };
         if (f.verb === "was devoured by") return { text: vic + " fed the " + tag(shortName(f.by || "boss", 16), "#c9a8ff"), badge: null };
         const byCol = (myHex && (f.by || "") === myName) ? myHex : "gold";
         const text = tag(shortName(f.by || "Someone", 13), byCol) + "  ›  " + vic;
@@ -8852,7 +8894,7 @@ import { predictor } from './predict.js';
             st.lineHeight = rowH * cssPerUi + "px";
             const ph = global.died ? "Only your teammate can hear you"
                 : duo ? (mob ? (team ? "To your teammate" : "To everyone") : team ? "To your teammate, Tab for everyone" : "To everyone, Tab for your teammate")
-                : "Say something to the raid";
+                : aoNow() ? "Say something to everyone" : "Say something to the raid";
             if (inp.placeholder !== ph) inp.placeholder = ph;
         }
     }
@@ -9236,7 +9278,7 @@ import { predictor } from './predict.js';
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
             const col = raidHeat.calloutCol(t.kind) || (t.kind === "override" || t.kind === "late" ? HUD.copper : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
                 : t.kind === "chest" || t.kind === "dropin" || t.kind === "bounty" || t.kind === "restored" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
-                : t.kind === "tier5" ? HUD.gold
+                : t.kind === "tier5" || t.kind === "level" ? HUD.gold
                 : t.kind === "grown" || t.kind === "contract" ? HUD.emerald : t.kind === "revenge" ? "#ff6b5e" : color.guiwhite);
             // Oct 8: a compact plate in the top lane (it was a 23-unit title over the play area)
             const base = t.kind === "streak" ? 14 : 17, size = base * pop;
@@ -9260,6 +9302,7 @@ import { predictor } from './predict.js';
     let pendingTip = null;
     function queueTip(title, body, ax, ay, above = true) { pendingTip = { title, body, ax, ay, above }; }
     let tipKey = "", tipAt = 0;
+    window.dwTip = () => tipKey;
     function drawTooltips() {
         const tip = pendingTip;
         pendingTip = null;
@@ -10266,7 +10309,7 @@ import { predictor } from './predict.js';
             let ly = dy + 60;
             for (const ln of lines.slice(0, 5)) { drawText(ln, dx + 14, ly, 11.5, HUD.text, "left", true, g); ly += 16; }
             if (sel.cat === "ability") {
-                for (const ln of wrapLines("You keep it for the whole raid, even after you die. You can swap abilities here with Equip.", 10.5, detailW - 28)) {
+                for (const ln of wrapLines(aoNow() ? "You keep it for as long as you stay in the game, even after you die. You can swap abilities here with Equip." : "You keep it for the whole raid, even after you die. You can swap abilities here with Equip.", 10.5, detailW - 28)) {
                     drawText(ln, dx + 14, ly + 2, 10.5, HUD.text2, "left", true, g); ly += 14;
                 }
             }
@@ -10452,6 +10495,16 @@ import { predictor } from './predict.js';
             const s = toScreen(tp.x, tp.y);
             if (!onScreen(s, -30)) marks.push({ pri: 0, s, col: playerHexCol() || HUD.sky, glyph: "mate", name: shortName(dmate.name || "Teammate", 12), d: Math.hypot(tp.x - me.x, tp.y - me.y) });
         }
+        try {
+            if (r.ao && r.ao.on) {
+                aoHud.drawWorld(c, cx - px, cy - py, ratio, aoApi());
+                for (const mk of aoHud.mapMarks()) {
+                    const s = toScreen(mk.x, mk.y);
+                    const d = Math.hypot(mk.x - me.x, mk.y - me.y);
+                    if (d > mk.r * 0.9 && !onScreen(s, -40)) marks.push({ pri: mk.live ? 0 : 1, s, col: mk.col, glyph: "gem", name: String(mk.n || "Event").toUpperCase(), d });
+                }
+            }
+        } catch (e) { }
         raidHeat.worldMarks(marks, toScreen, onScreen, me, trackPos, ratio);
         try { crowns.worldMarks(marks, toScreen, onScreen, me, trackPos); } catch (e) { /* */ }
         // a director moment (first raids): its arrow, or its ring when in view
@@ -10675,8 +10728,9 @@ import { predictor } from './predict.js';
         let hex = null;
         try { hex = gameDraw.modifyColor(b.col); } catch (e) { hex = null; }
         if (!(typeof hex === "string" && hex[0] === "#")) hex = "#c8c8c8";
-        b.shades = [hex, gameDraw.mixColors(hex, "#ffffff", 0.45), gameDraw.mixColors(hex, "#000000", 0.3), "#8d8d98"];
-        const n = fxFull() ? (b.self ? 30 : 12) : (b.self ? 18 : 8);
+        b.shades = [hex, gameDraw.mixColors(hex, "#ffffff", 0.45), gameDraw.mixColors(hex, "#000000", 0.3), "#8d8d98", "#ffd75e"];
+        const lite = !!config.graphical.fewerEffects;
+        const n = fxFull() ? (b.self ? 34 : 16) : (b.self ? 22 : 10);
         b.parts = [];
         for (let i = 0; i < n; i++) {
             b.parts.push({
@@ -10687,10 +10741,45 @@ import { predictor } from './predict.js';
                 sq: 0.55 + Math.random() * 0.45,
                 shade: Math.random() < 0.15 ? 3 : Math.random() < 0.3 ? 2 : Math.random() < 0.5 ? 1 : 0,
                 tri: Math.random() < 0.4,
+                gem: false,
+            });
+        }
+        const gems = b.self && b.gems >= 10 ? Math.min(lite ? 6 : 12, 2 + Math.floor(b.gems / 80)) : 0;
+        for (let i = 0; i < gems; i++) {
+            b.parts.push({
+                ang: Math.random() * Math.PI * 2,
+                sp: 0.55 + Math.random() * 0.75,
+                size: 5 + Math.random() * 4,
+                spin: (Math.random() - 0.5) * 6,
+                sq: 1,
+                shade: 4,
+                tri: false,
+                gem: true,
             });
         }
         b.smoke = [];
         if (b.self) for (let i = 0; i < 7; i++) b.smoke.push({ ang: Math.random() * Math.PI * 2, d: 0.15 + Math.random() * 0.45, r: 0.6 + Math.random() * 0.6 });
+        if (!b.self && !lite) {
+            try {
+                juiceBurst(b.x, b.y, fxFull() ? 8 : 5, b.shades[1], 150 + (b.size || 30) * 2, 520, 2, 4);
+                juiceRing(b.x, b.y, "#ffffff", 8, 60 + (b.size || 30) * 2, 280, 5);
+            } catch (e) { void e; }
+        }
+    }
+    let wreckBlend = 1;
+    const wreckRender = { status: { getFade: () => 1, getColor: () => "#FFFFFF", getBlend: () => wreckBlend, health: { get: () => 1 }, shield: { get: () => 1 } } };
+    const WRECK_HULL_MS = 210;
+    function drawWreckHull(c, b, sx, sy, ratio, eff) {
+        if (!b.type || eff >= WRECK_HULL_MS) return;
+        let pic = null, size = 0;
+        try { pic = mockupPicture(b.type, b.colIdx); size = pic && pic.size; } catch (e) { pic = null; }
+        if (!pic || !(size > 0)) return;
+        const u = eff / WRECK_HULL_MS;
+        wreckBlend = u < 0.3 ? 1 : Math.round((1 - 0.45 * (u - 0.3) / 0.7) * 20) / 20;
+        const swell = 1 + 0.28 * u * u;
+        c.save();
+        try { drawEntity(pic.color, sx, sy, pic, ratio, 1 - u * u, (b.size / size) * swell, 1, b.facing || 0, false, c, false, wreckRender); } catch (e) { void e; }
+        c.restore();
     }
     function drawTankBursts(px, py, ratio) {
         const list = global.tankBursts;
@@ -10698,12 +10787,15 @@ import { predictor } from './predict.js';
         const now = performance.now();
         const c = ctx[2];
         const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
+        const calm = deathCalm();
+        const lite = !!config.graphical.fewerEffects;
         for (let i = list.length - 1; i >= 0; i--) {
             const b = list[i];
             const DUR = b.self ? 1150 : 750;
-            const age = now - b.born;
+            const raw = now - b.born;
+            const age = b.self ? deathText.introWarp(raw, calm) : raw;
             if (age > DUR) { list.splice(i, 1); continue; }
-            if (age < 0) continue;
+            if (raw < 0) continue;
             const sx = ratio * b.x - px + cx, sy = ratio * b.y - py + cy;
             if (sx < -400 || sx > global.screenWidth + 400 || sy < -400 || sy > global.screenHeight + 400) continue;
             if (!b.parts) buildTankBurst(b);
@@ -10711,8 +10803,6 @@ import { predictor } from './predict.js';
             const k = Math.max(0.75, Math.min(2.2, (b.size || 30) / 30)) * ratio;
             const reach = (b.self ? 250 : 140) * k;
             c.save();
-            // the flash of colour behind the wreck: yours big, a kill's smaller
-            // and quicker (Oct 6: kills popped flat against the rock)
             const glowT = b.self ? 0.6 : 0.4;
             if (t < glowT && !config.graphical.noGlow) {
                 if (!b.koKey) {
@@ -10724,14 +10814,18 @@ import { predictor } from './predict.js';
                 c.globalAlpha = (1 - t / glowT) * (b.self ? 0.75 : 0.6);
                 c.drawImage(haloSprite(b.koKey, b.koTint, [[0, 1], [0.45, 0.5], [1, 0]]), sx - hr, sy - hr, hr * 2, hr * 2);
             }
-            for (const sm of config.graphical.fewerEffects ? [] : b.smoke) {
-                const d = sm.d * reach * eo;
-                c.globalAlpha = 0.3 * (1 - t);
-                c.fillStyle = "#1c1720";
-                c.beginPath(); c.arc(sx + Math.cos(sm.ang) * d, sy + Math.sin(sm.ang) * d, sm.r * (18 + 46 * eo) * k, 0, Math.PI * 2); c.fill();
+            if (!lite) {
+                for (let si = 0; si < b.smoke.length; si++) {
+                    const sm = b.smoke[si];
+                    const d = sm.d * reach * eo;
+                    c.globalAlpha = 0.3 * (1 - t);
+                    c.fillStyle = "#1c1720";
+                    c.beginPath(); c.arc(sx + Math.cos(sm.ang) * d, sy + Math.sin(sm.ang) * d, sm.r * (18 + 46 * eo) * k, 0, Math.PI * 2); c.fill();
+                }
             }
-            if (age < 170) {
-                const u = age / 170;
+            const pop0 = b.self && b.type ? 90 : 0;
+            if (age >= pop0 && age < pop0 + 170) {
+                const u = (age - pop0) / 170;
                 c.globalAlpha = (1 - u) * 0.95;
                 c.fillStyle = "#ffffff";
                 c.beginPath(); c.arc(sx, sy, (b.self ? 36 : 22) * k * (0.7 + u), 0, Math.PI * 2); c.fill();
@@ -10749,21 +10843,23 @@ import { predictor } from './predict.js';
             c.strokeStyle = HUD.line;
             c.lineWidth = Math.max(1, 1.6 * k);
             c.lineJoin = "round";
-            for (let pi = 0; pi < b.parts.length; pi += config.graphical.fewerEffects ? 2 : 1) {
+            for (let pi = 0; pi < b.parts.length; pi += lite ? 2 : 1) {
                 const p = b.parts[pi];
-                const d = eo * p.sp * reach;
+                const d = eo * p.sp * reach * (p.gem ? 1.15 : 1);
                 const s2 = p.size * k * (1 - t * 0.45);
                 c.save();
                 c.translate(sx + Math.cos(p.ang) * d, sy + Math.sin(p.ang) * d);
                 c.rotate(p.ang + p.spin * eo);
                 c.fillStyle = b.shades[p.shade];
                 c.beginPath();
-                if (p.tri) { c.moveTo(s2, 0); c.lineTo(-s2 * 0.8, s2 * p.sq); c.lineTo(-s2 * 0.8, -s2 * p.sq); c.closePath(); }
+                if (p.gem) { c.moveTo(0, -s2); c.lineTo(s2 * 0.72, 0); c.lineTo(0, s2); c.lineTo(-s2 * 0.72, 0); c.closePath(); }
+                else if (p.tri) { c.moveTo(s2, 0); c.lineTo(-s2 * 0.8, s2 * p.sq); c.lineTo(-s2 * 0.8, -s2 * p.sq); c.closePath(); }
                 else c.rect(-s2, -s2 * p.sq, s2 * 2, s2 * 2 * p.sq);
                 c.fill(); c.stroke();
                 c.restore();
             }
             c.restore();
+            if (b.self) drawWreckHull(c, b, sx, sy, ratio, age);
         }
     }
     // ── minimap / big map extras ────────────────────────────────────────
@@ -10815,6 +10911,7 @@ import { predictor } from './predict.js';
             gemPath(c, mx, my, dotR * 0.7);
             c.fillStyle = color.gold; c.fill();
         }
+        if (r.ao && r.ao.on) { try { const sc = (T.X(1000) - T.X(0)) / 1000; aoHud.drawMap(c, T.X, T.Y, sc); } catch (e) { } }
         if (r.bloom && r.bloom.until > tnow) {
             const mx = T.X(r.bloom.x), my = T.Y(r.bloom.y);
             if (inside(mx, my)) {
@@ -11266,7 +11363,7 @@ import { predictor } from './predict.js';
                 ? (12.5 + Math.min(6, d.amount * 0.08)) * ratio
                 : (15.5 + Math.min(8, d.amount * 0.1) + (tier >= 2 ? 3.5 : tier >= 1 ? 1.5 : 0) + (finish ? 3 : 0) + Math.min(3, combo * 0.25)) * ratio) * (fxFull() ? 1 : 0.86);
             const size = base * pop;
-            const tint = rock
+            const tint = d.col ? d.col : rock
                 ? (ROCK_ORE_TINT[d.ore | 0] || ROCK_ORE_TINT[0])
                 : d.self
                     ? "#FF5A52"
@@ -12282,10 +12379,11 @@ import { predictor } from './predict.js';
     }
     function drawRoyaleFTabBody(x, y, w, h, tab) {
         const rows = tab === "feed"
-            ? (global.royale.feed || []).slice().reverse().map(f => ({
-                name: feedLine(f).text,
-                extra: f.pts ? ("+" + f.pts) : "",
-            }))
+            ? (global.royale.feed || []).slice().reverse().map(f => {
+                let line = null;
+                try { line = feedLine(f); } catch (e) { line = null; }
+                return line && line.text ? { name: line.text, extra: f.pts ? ("+" + f.pts) : "" } : null;
+            }).filter(Boolean)
             : tab === "alive"
                 ? ((global.royale.board || []).filter(r => r.alive || r.here)).map((r, i) => ({
                     num: (i + 1) + ".", name: r.name || "Unnamed", rk: r.rk | 0, ns: r.ns | 0, nc: r.nc,
@@ -13992,7 +14090,7 @@ import { predictor } from './predict.js';
             ["CARRIED AT DEATH", String(global.finalCarried | 0), "gem"],
             // one meaning per number: this raid's banked in a raid, else the bank
             (global.royale && global.royale.you && global.royale.you.banked != null)
-                ? ["BANKED THIS RAID", String(global.royale.you.banked | 0), "gem"]
+                ? [aoHud.on() ? "BANKED TODAY" : "BANKED THIS RAID", String(global.royale.you.banked | 0), "gem"]
                 : [scoreText.BANK.toUpperCase(), String(global.finalBanked | 0), "gem"],
             ["ROCKS MINED", String(global.finalRocks | 0), "pickaxe"],
             ["SURVIVED", compactTime(global.finalLifetime.get()), "clock"],
@@ -14066,12 +14164,55 @@ import { predictor } from './predict.js';
     }
     // The first raids' death card (newcomer.js stages 0-1): what got you and
     // how to dodge it next time, what you kept, and one big Respawn.
-    const gameDrawDeadNewcomer = () => {
-        const now = performance.now();
-        const A = global.royaleDiedAt ? Math.min(1, (now - global.royaleDiedAt) / 140) : 1;
+    const XP_STRIP_H = 30;
+    function xpStripTexts(d, w) {
+        const key = d.lv + "|" + d.into + "|" + d.need + "|" + d.life + "|" + d.next + "|" + (w | 0);
+        if (d._k === key) return d._t;
+        const lvl = "Lvl " + d.lv;
+        const gain = d.life > 0 ? "+" + d.life.toLocaleString("en-US") + " XP" : "";
+        const mid = levelsHud.xpLine(d);
+        const lvlW = hudTitleW(lvl, 15) + 18;
+        const midW = measureText(mid, 12) + 14;
+        const gainW = gain ? hudTitleW(gain, 14) + 14 : 0;
+        const nextRoom = w >= 560 ? Math.min(300, Math.round(w * 0.36)) : 0;
+        const nx = nextRoom && d.next ? fitLine(d.next, 12.5, 10, nextRoom - 14) : null;
+        d._k = key;
+        d._t = { lvl, gain, mid, lvlW, midW, gainW, nx, nextW: nx ? Math.min(nextRoom, measureText(nx.txt, nx.qs) + 14) : 0 };
+        return d._t;
+    }
+    function drawXpStrip(c, x, y, w, d, A) {
+        const h = XP_STRIP_H, t = xpStripTexts(d, w), my = y + h / 2;
+        c.save();
+        c.globalAlpha = A;
+        hudWell(c, x, y, w, h, 8, "rgba(0,0,0,0.45)", HUD.ink, 2);
+        c.restore();
+        hudTitle(t.lvl, x + 10, my, 15, HUD.gold, "left", A);
+        const bx = x + t.lvlW, bw = Math.max(60, Math.min(360, w - t.lvlW - t.midW - t.gainW - t.nextW - 12)), bh = 14, by = Math.round(my - bh / 2);
+        const k = d.max ? 1 : d.need > 0 ? Math.max(0, Math.min(1, d.into / d.need)) : 0;
+        const k0 = d.max ? 1 : d.need > 0 ? Math.max(0, Math.min(k, (d.from | 0) / d.need)) : 0;
+        c.save();
+        c.globalAlpha = A;
+        roundRectPath(c, bx, by, bw, bh, bh / 2);
+        c.fillStyle = "rgba(0,0,0,0.55)"; c.fill();
+        if (k > 0) {
+            c.save();
+            roundRectPath(c, bx, by, bw, bh, bh / 2);
+            c.clip();
+            c.fillStyle = "#ffe869"; c.fillRect(bx, by, Math.round(bw * k), bh);
+            if (k0 > 0) { c.fillStyle = "#c9a227"; c.fillRect(bx, by, Math.round(bw * k0), bh); }
+            c.restore();
+        }
+        roundRectPath(c, bx, by, bw, bh, bh / 2);
+        c.lineWidth = 2; c.strokeStyle = HUD.ink; c.stroke();
+        c.restore();
+        drawText(t.mid, bx + bw + 10, my, 12, HUD.text, "left", true, A);
+        if (t.gain) hudTitle(t.gain, bx + bw + t.midW + 6, my, 14, "#9dff8a", "left", A);
+        if (t.nx) drawText(t.nx.txt, x + w - 10, my, t.nx.qs, HUD.text, "right", true, A);
+        return h;
+    }
+    const gameDrawDeadNewcomer = (A) => {
         const c = ctx[2];
         const sw = global.screenWidth, sh = global.screenHeight;
-        clearScreen(color.black, 0.34 * A, c);
         const info = newcomer.deathInfo();
         const W = Math.min(620, sw - 32), pad = 22, gap = 14;
         const iw = W - pad * 2;
@@ -14085,14 +14226,18 @@ import { predictor } from './predict.js';
         // raid perks: they come back with you, said under what you kept
         const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
         const PERK_H = perkLine ? 26 : 0;
+        const aoLine = aoHud.deathLine();
+        const AO_H = aoLine ? 24 : 0;
         // the rank card stays for the second raid (placement lives), not the first
         const hasRank = newcomer.stage() >= 1 && rankPanel.hasContent();
         const RANK_H = 106;
+        const lvc = levelsHud.deathCard(global.royaleDiedAt || 0);
+        const XPH = lvc ? XP_STRIP_H + gap : 0;
         const cssK = sh / Math.max(1, window.innerHeight);
         const PLAY_CSS_H = 74;
         const FOOT = Math.round(PLAY_CSS_H * cssK);
         const HEAD = 44;
-        const H = pad + HEAD + TIP_H + gap + KEPT_H + PTS_H + PERK_H + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 14;
+        const H = pad + HEAD + TIP_H + gap + KEPT_H + PTS_H + PERK_H + AO_H + XPH + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 14;
         const BTN = Math.round((40 + 22) * cssK);
         const px = Math.round(sw / 2 - W / 2);
         const py = Math.round(Math.max(12, sh - H - BTN - 12));
@@ -14131,7 +14276,9 @@ import { predictor } from './predict.js';
         const pf = fitLine(dln.head + " (" + dln.lost + ")", 14, 9.5, iw);
         drawText(pf.txt, cx, y + KEPT_H + PTS_H / 2 + 2, pf.qs, dln.hurt ? "#ff9a8c" : HUD.gold, "center", true, A);
         if (perkLine) drawDeathPerkLine(c, perkLine, cx, y + KEPT_H + PTS_H + PERK_H / 2 + 4, iw, A);
-        y += KEPT_H + PTS_H + PERK_H + gap;
+        if (aoLine) { const af = fitLine(aoLine, 14, 9.5, iw); drawText(af.txt, cx, y + KEPT_H + PTS_H + PERK_H + AO_H / 2 + 2, af.qs, HUD.sky, "center", true, A); }
+        y += KEPT_H + PTS_H + PERK_H + AO_H + gap;
+        if (lvc) { drawXpStrip(c, hx, y, iw, lvc, A); y += XPH; }
         if (hasRank) {
             try {
                 rankPanel.draw(c, hx, y, iw, RANK_H,
@@ -14169,19 +14316,35 @@ import { predictor } from './predict.js';
         return deathTank;
     }
     const gameDrawDeadRoyale = () => {
-        if (newcomer.deathCardWanted()) return gameDrawDeadNewcomer();
-        const now = performance.now();
-        const A = global.royaleDiedAt ? Math.min(1, (now - global.royaleDiedAt) / 140) : 1;
+        const A = deathIntroK();
+        if (A <= 0) {
+            global.clickables.royalePrev.hide();
+            global.clickables.royaleNext.hide();
+            global.clickables.deathRespawn.hide();
+            global.clickables.royalePlay.hide();
+            global.clickables.royaleSpectate.hide();
+            return;
+        }
+        const c = ctx[2];
+        clearScreen(color.black, 0.34 * A, c);
+        const dy = deathText.introSlide(A, deathCalm());
+        if (dy) { c.save(); c.translate(0, dy); }
+        try {
+            if (newcomer.deathCardWanted()) gameDrawDeadNewcomer(A);
+            else drawRoyaleDeathCard(A);
+        } finally { if (dy) c.restore(); }
+    };
+    const drawRoyaleDeathCard = (A) => {
         const you = global.royale.you || {};
         const rv = you.revenge || null;
         const c = ctx[2];
-        clearScreen(color.black, 0.34 * A, c);
 
         // ── the words under the tiles (they size the card, deathCardLogic) ──
         const extras = [];
         if ((global.finalInsured | 0) > 0) extras.push("Your insurance saved " + util.formatLargeNumber(global.finalInsured | 0) + " of it");
         if ((global.finalStreak | 0) >= 3) extras.push("Your " + (global.finalStreak | 0) + " kill streak is over");
         if (global.finalDrillLost) extras.push("Your drill dropped a tier");
+        { const aoLine = aoHud.deathLine(); if (aoLine) extras.push(aoLine); }
         // bank.js: only savings from earlier raids pay for a death "Points: 6,942 (lost
         const dln = scoreText.deathLine(you, global.finalCarried | 0, global.finalBankLoss | 0, global.finalNxKept | 0);
         if (dln.savings) extras.push(dln.savings);
@@ -14192,6 +14355,7 @@ import { predictor } from './predict.js';
         const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
         const perkIcons = perkLine ? Math.min(10, raidPerks.build().length) : 0;
         const hasRank = rankPanel.hasContent();
+        const lvc = levelsHud.deathCard(global.royaleDiedAt || 0);
         const HEAD = 64, TILE = 44, NEXT_H = 40, WHO_H = 74, PLAY_CSS_H = 58;
         const RANK_H = hasRank ? rankPanel.panelHeight() : 0;
         const pad = 18, gap = 10, IN = 12;
@@ -14210,7 +14374,7 @@ import { predictor } from './predict.js';
             const tilesH = gridH + gap;
             const leftH = tilesH + block.h;
             const bodyH = two ? leftH : leftH + gap + WHO_H + gap + NEXT_H;
-            const H = pad + HEAD + gap + bodyH + (hasRank ? gap + RANK_H : 0) + gap + FOOT + pad;
+            const H = pad + HEAD + gap + bodyH + (lvc ? gap + XP_STRIP_H : 0) + (hasRank ? gap + RANK_H : 0) + gap + FOOT + pad;
             const BTN = Math.round((40 + 22) * cssK);
             return { W, two, colW, cssK, FOOT, block, gridH, tilesH, leftH, bodyH, H, BTN };
         };
@@ -14287,6 +14451,7 @@ import { predictor } from './predict.js';
         const by = hy + HEAD + gap;
         const half = (colW - gap) / 2;
         const pt = scoreText.tiles(you);
+        if (aoHud.on()) pt[0] = [String(pt[0][0]).replace("THIS RAID", "TODAY"), pt[0][1], pt[0][2]];
         const rows = [
             pt[0],
             pt[1],
@@ -14361,6 +14526,7 @@ import { predictor } from './predict.js';
         drawText(fn.txt, rx + IN + 18, ny, fn.qs, HUD.gold, "left", true, A);
 
         let fy = by + bodyH + gap;
+        if (lvc) { drawXpStrip(c, hx, fy, hw, lvc, A); fy += XP_STRIP_H + gap; }
         if (hasRank) {
             try {
                 rankPanel.draw(c, hx, fy, hw, RANK_H,
@@ -14448,7 +14614,16 @@ import { predictor } from './predict.js';
             if (lab.textContent !== text) lab.textContent = text;
             el.style.width = widthPx;
             setFontSize(el, fs + "px");
-            while (fs > 10 && lab.scrollWidth > lab.clientWidth + 1) { fs -= 1; setFontSize(el, fs + "px"); }
+            if (lab.clientWidth > 0) {
+                while (fs > 10 && lab.scrollWidth > lab.clientWidth + 1) { fs -= 1; setFontSize(el, fs + "px"); }
+            } else c.key = "";
+            const room = (parseFloat(widthPx) || 0) - 30;
+            if (room > 0) {
+                const mc = fitBtnFont.mc || (fitBtnFont.mc = document.createElement("canvas").getContext("2d"));
+                mc.font = "700 " + fs + "px Ubuntu, sans-serif";
+                const tw = mc.measureText(text).width;
+                if (tw > room) { fs = Math.max(10, Math.floor(fs * room / tw)); setFontSize(el, fs + "px"); }
+            }
         } catch (e) { /* */ }
         return (c.fs = fs + "px");
     }
@@ -14667,7 +14842,7 @@ import { predictor } from './predict.js';
         }
         // raid death card: lift the view so the killer shows above the card
         {
-            const want = global.died && global.royaleDied && !global.royaleSpectating && !lastStormCount() ? (global.deathCamLift || 0) * util.getScreenRatio() : 0;
+            const want = global.died && global.royaleDied && !global.royaleSpectating && !lastStormCount() ? (global.deathCamLift || 0) * util.getScreenRatio() * deathIntroK() : 0;
             const dt = Math.min(100, tickMotion || 16.7);
             deathLift += (want - deathLift) * Math.min(1, 1 - Math.pow(0.8, dt / 16.7));
             if (Math.abs(deathLift) < 0.5 && !want) deathLift = 0;
@@ -14768,7 +14943,7 @@ import { predictor } from './predict.js';
             if (global.GUIStatus.renderUpgrades && !finaleHud) drawSkillBars(spacing, alcoveSize);
             if (global.GUIStatus.renderPlayerBars && !finaleHud) {
                 // the death card covers the middle: your name and wallet row under it only leaked
-                if (!deathCardUp()) drawSelfInfo(max);
+                if (!deathScreenOn()) drawSelfInfo(max);
                 drawGemPopups();   // +N numbers + pickup ring over the tank
                 drawMineCombo();    // mining chain meter under the tank
                 drawKitBox(spacing, alcoveSize);
@@ -14982,6 +15157,13 @@ import { predictor } from './predict.js';
     const domEls = {};
     const domEl = (id) => { let e = domEls[id]; if (!e || !e.isConnected) e = domEls[id] = document.getElementById(id); return e; };
     const setStyle = (el, k, v) => { if (el && el.style[k] !== v) el.style[k] = v; };
+    function introStyle(el, k, clicks) {
+        if (!el) return;
+        const y = global.deathIntroY | 0;
+        setStyle(el, "opacity", k >= 1 ? "1" : String(Math.round(k * 100) / 100));
+        setStyle(el, "transform", y ? "translate(-50%, " + y + "px)" : "translateX(-50%)");
+        if (clicks) setStyle(el, "pointerEvents", k < 0.4 ? "none" : "");
+    }
     function updateRoyaleDomButtons() {
         getRoyaleDomButtons();
         const spec = domEl("royaleSpecDom");
@@ -14996,6 +15178,7 @@ import { predictor } from './predict.js';
             setStyle(again, "display", "none");
             setStyle(asBuild, "display", "none");
             setStyle(domEl("royaleDomBuildWhy"), "display", "none");
+            try { signupPrompt.update(false); } catch (e) { }
             return;
         }
         const countdown = lastStormCount();
@@ -15003,6 +15186,15 @@ import { predictor } from './predict.js';
         const deadShow = !!(inGame && global.died && global.royaleDied && !global.royaleSpectating && !countdown);
         setStyle(spec, "display", spectating ? "flex" : "none");
         setStyle(dead, "display", deadShow ? "flex" : "none");
+        const ik = deadShow ? deathIntroK() : 1;
+        global.deathIntroNow = ik;
+        global.deathIntroY = deadShow ? Math.round(deathText.introSlide(ik, deathCalm())) : 0;
+        introStyle(dead, ik, true);
+        introStyle(again, ik, true);
+        introStyle(asBuild, ik, true);
+        introStyle(domEl("royaleDomBuildWhy"), ik, false);
+        let longLifeUp = false;
+        try { longLifeUp = signupPrompt.update(deadShow); } catch (e) { longLifeUp = false; }
         if (again) {
             const pc = global.deathPlayCss;
             const show = deadShow && !!pc;
@@ -15092,7 +15284,7 @@ import { predictor } from './predict.js';
             if (spBtn.textContent !== want) spBtn.textContent = want;
         }
         const signup = domEl("royaleDomSignup");
-        if (signup) setStyle(signup, "display", deadShow && rankPanel.isGuestNudge() ? "" : "none");
+        if (signup) setStyle(signup, "display", deadShow && rankPanel.isGuestNudge() && !longLifeUp ? "" : "none");
         const play = domEl("royaleDomPlay");
         if (play) {
             const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);

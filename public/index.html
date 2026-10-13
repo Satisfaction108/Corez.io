@@ -397,10 +397,10 @@
                     <label class="container"><input id="optReducedInfo" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Reduced info</label>
                     <label class="container" title="Shows your FPS and ping above the minimap"><input id="optShowFps" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>FPS and ping</label>
                     <label class="container"><input id="optRenderGui" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>GUI</label>
-                    <label class="container"><input id="optLeaderIndicators" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Leader indicators</label>
-                    <label class="container"><input id="optWarBar" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Team score bar</label>
-                    <label class="container"><input id="optSatchelWarning" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Danger alerts</label>
-                    <label class="container"><input id="optHitFeedback" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Hit feedback</label>
+                    <label class="container" style="display:none"><input id="optLeaderIndicators" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Leader indicators</label>
+                    <label class="container" style="display:none"><input id="optWarBar" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Team score bar</label>
+                    <label class="container" title="The screen edge glows and pulses when you're carrying a lot of gems"><input id="optSatchelWarning" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Danger alerts</label>
+                    <label class="container" title="Damage numbers and a flash when a shot lands"><input id="optHitFeedback" tabindex="-1" class="checkbox" type="checkbox" checked><span class="checkmark"></span>Hit feedback</label>
                 </div>
                 <div class="sp-label">Extra</div>
                 <div class="sp-checks">
@@ -502,7 +502,6 @@
                     <div class="kb-row"><b data-key="KEY_SIDEARM">X</b><span>Fire sidearm</span></div>
                     <div class="kb-row"><b data-key="KEY_REVERSE_TANK">V</b><span>Reverse tank</span></div>
                     <div class="kb-row"><b data-key="KEY_REVERSE_MOUSE">-</b><span>Reverse mouse</span></div>
-                    <div class="kb-row"><b data-key="KEY_AUTO_ALT">G</b><span>Ping your duo</span></div>
                     <div class="kb-row"><b data-key="KEY_OVER_RIDE">R</b><span>AI override</span></div>
                     <div class="kb-row"><b data-key="KEY_SUICIDE">O</b><span>Self destruct</span></div>
                     <div class="kb-row"><b data-key="KEY_MAX_STAT">F</b><span>Max out a stat</span></div>
@@ -536,7 +535,6 @@
                     <div class="kb-row"><b data-key="KEY_TOGGLE_MAP">M</b><span>Big map</span></div>
                     <div class="kb-row"><b data-key="KEY_SAVE">L</b><span>Save &amp; leave</span></div>
                     <div class="kb-row"><b data-key="KEY_SCREENSHOT">.</b><span>Screenshot</span></div>
-                    <div class="kb-row"><b data-key="KEY_PARTY_ACCEPT">F2</b><span>Accept duo invite</span></div>
                 </div>
                 <p class="kb-note">* Needs a token. Click a key to change it.</p>
             </div>
@@ -601,12 +599,9 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="lv-wrap" id="lvRow" hidden><div class="lv-row"><button type="button" class="lv-bar" title="See every level and what it unlocks"><span class="lv-fill"></span><span class="lv-txt"><span class="lv-lv">Lvl 1</span><span class="lv-xp"></span></span></button><button type="button" class="lv-chip"></button></div><div class="lv-saved" hidden></div></div>
 
-                            <div class="menu-row mode-row">
-                                <div class="mode-toggle" id="modeToggle" role="radiogroup" aria-label="Mode">
-                                    <button type="button" class="mode-opt on" data-mode="solo" role="radio" aria-checked="true"><span class="mode-name">Solo</span><span class="mode-count" data-count="solo"></span></button>
-                                    <button type="button" class="mode-opt" data-mode="duo" role="radio" aria-checked="false"><span class="mode-name">Duos</span><span class="mode-count" data-count="duo"></span></button>
-                                </div>
+                            <div class="menu-row region-row">
                                 <div class="menu-field region-field">
                                     <span class="field-label">Region</span>
                                     <div class="region-dropdown" id="serverDropdown">
@@ -627,7 +622,6 @@
                                     </div>
                                 </div>
                             </div>
-                            <div id="duoPanel" class="duo-panel" hidden></div>
 
                             <input type="text" class="conceal" tabindex="4" placeholder="Token (optional)" id="playerKeyInput" maxlength="64" />
 
@@ -665,11 +659,11 @@
                             <div id="tabControls">
                                 <div style="height:0;overflow:hidden;">
                                     <table class="controlTable" id="controlSettings"><tbody>
-                                        <tr><td><div><b data-key="KEY_UP">W</b><span> - </span>move up</div></td><td><div><b data-key="KEY_DOWN">S</b><span> - </span>move down</div></td><td><div><b data-key="KEY_PARTY_ACCEPT">F2</b><span> - </span>accept duo invite</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_UP">W</b><span> - </span>move up</div></td><td><div><b data-key="KEY_DOWN">S</b><span> - </span>move down</div></td><td><div><b data-key="KEY_ABILITY">Q</b><span> - </span>ability</div></td></tr>
                                         <tr><td><div><b data-key="KEY_LEFT">A</b><span> - </span>move left</div></td><td><div><b data-key="KEY_RIGHT">D</b><span> - </span>move right</div></td><td><div><b data-key="KEY_SAVE">L</b><span> - </span>save &amp; leave</div></td></tr>
                                         <tr><td><div><b data-key="KEY_AUTO_FIRE">E</b><span> - </span>auto-fire</div></td><td><div><b data-key="KEY_AUTO_SPIN">C</b><span> - </span>auto-spin</div></td><td><div><b data-key="KEY_SIDEARM">X</b><span> - </span>fire sidearm</div></td></tr>
                                         <tr><td><div><b data-key="KEY_DASH">Alt</b><span> - </span>dash</div></td><td><div><b data-key="KEY_REVERSE_TANK">V</b><span> - </span>reverse tank</div></td><td><div><b data-key="KEY_REVERSE_MOUSE">-</b><span> - </span>reverse mouse</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_AUTO_ALT">G</b><span> - </span>ping your duo</div></td><td><div><b data-key="KEY_SUICIDE">O</b><span> - </span>self-destruct</div></td><td><div><b data-key="KEY_CLASS_TREE">T</b><span> - </span>tank tree</div></td></tr>
+                                        <tr><td><div><b data-key="KEY_SUICIDE">O</b><span> - </span>self-destruct</div></td><td><div><b data-key="KEY_CLASS_TREE">T</b><span> - </span>tank tree</div></td><td><div></div></td></tr>
                                         <tr><td><div><b data-key="KEY_OVER_RIDE">R</b><span> - </span>AI override</div></td><td><div><b data-key="KEY_MAX_STAT">F</b><span> - </span>max out a stat</div></td><td><div><b data-key="KEY_TOGGLE_MAP">M</b><span> - </span>full map</div></td></tr>
                                         <tr><td><div><b data-key="KEY_TOKEN">-</b><span> - </span>token tank*</div></td><td><div><b data-key="KEY_RECORD">P</b><span> - </span>record video</div></td><td><div><b data-key="KEY_SCREENSHOT">.</b><span> - </span>screenshot</div></td></tr>
                                         <tr><td><div><b data-key="KEY_CHOOSE_1">Y</b><span> - </span>upgrade 1</div></td><td><div><b data-key="KEY_CHOOSE_2">U</b><span> - </span>upgrade 2</div></td><td><div><b data-key="KEY_CHOOSE_3">I</b><span> - </span>upgrade 3</div></td></tr>
@@ -679,7 +673,6 @@
                                         <tr><td><div><b data-key="KEY_UPGRADE_RLD">7</b><span> - </span>skill 7</div></td><td><div><b data-key="KEY_UPGRADE_MOB">8</b><span> - </span>skill 8</div></td><td><div><b data-key="KEY_UPGRADE_RGN">9</b><span> - </span>skill 9</div></td></tr>
                                         <tr><td><div><b data-key="KEY_UPGRADE_MIN">-</b><span> - </span>mining power</div></td><td><div><b data-key="KEY_UPGRADE_SHI">0</b><span> - </span>skill 0</div></td><td><div><b data-key="KEY_FRIEND_CHAT">Esc</b><span> - </span>friend chat</div></td></tr>
                                         <tr><td><div><b data-key="KEY_KIT_1">Z</b><span> - </span>kit slot 1</div></td><td><div><b data-key="KEY_KIT_2">,</b><span> - </span>kit slot 2</div></td><td><div><b data-key="KEY_KIT_3">N</b><span> - </span>kit slot 3</div></td></tr>
-                                        <tr><td><div><b data-key="KEY_ABILITY">Q</b><span> - </span>ability</div></td><td><div></div></td><td><div></div></td></tr>
                                     </tbody></table>
                                 </div>
                             </div>
@@ -753,6 +746,8 @@
     <script src="/shared/cosmetics.js"></script>
     <script src="/shared/events.js"></script>
     <script src="/shared/daily.js"></script>
+    <script src="/shared/levels.js"></script>
+    <script src="./client/levelsEarly.js"></script>
     <script src="/shared/profanity.js"></script>
     <!-- rock biomes, laid out the same way the server does (window.DWBiomes) -->
     <script src="/shared/rockBiomes.js"></script>

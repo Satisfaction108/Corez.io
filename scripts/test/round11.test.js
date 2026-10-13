@@ -183,7 +183,7 @@ test('numbers and small fixes: client source', () => {
     assert.ok(+rf.match(/const END_MS = (\d+);/)[1] > 1600 + 27000);
     assert.ok(rf.includes('if (S.me.next > 0) add("Next raid: +"'), 'the chip only shows a real bonus');
     const app = csrc('app.js');
-    assert.ok(app.includes('["BANKED THIS RAID", String(global.royale.you.banked | 0), "gem"]'));
+    assert.ok(app.includes('[aoHud.on() ? "BANKED TODAY" : "BANKED THIS RAID", String(global.royale.you.banked | 0), "gem"]'));
     assert.ok(app.includes('function fitBtnFont('));
     assert.ok(app.includes('try { coach.mineTipNote(push, hudNote); } catch (e) { /* */ }'));
     // shortRespawn fits the storm-lock countdown

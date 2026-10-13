@@ -76,6 +76,10 @@ const HOT = new Set([
     "client/labelLayout.js",
     "client/netSmooth.js",
     "client/predict.js",
+    "client/signupPrompt.js",
+    "client/signupPromptLogic.js",
+    "client/alwaysOn.js",
+    "client/eventFx.js",
     "client/funnel.js",
 ]);
 

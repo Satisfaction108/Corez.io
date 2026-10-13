@@ -1,3 +1,4 @@
+function aoWorld() { try { return require('./alwaysOn.js').on(); } catch { return false; } }
 // Dig Royale shop pads (four, on the cardinal rays between the Center Vault
 // and each base). Paid from banked gems only; state lives on the socket, so it
 // survives death and resets with the raid.
@@ -25,7 +26,7 @@ const ITEMS = [
     { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 2600, desc: "You mine 115% faster." },
     { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 4000, desc: "You mine 160% faster, and you keep it when you die." },
     // gear: timed (GEAR_MS); `on` is the message shown when it starts
-    { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, desc: "Gives you one extra stat point that you keep after dying. You can buy up to 10 per raid." },
+    { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, desc: "Gives you one extra stat point that you keep after dying. You can buy up to 10 per raid.", aoDesc: "Gives you one extra stat point that you keep after dying. You can buy up to 10." },
     { id: "scanner",   cat: "gear", name: "Ore Scanner",        price: 1000, desc: "Shows shard and emerald veins within 1.5km on your minimap for 5 minutes.", on: "Veins near you now show on your minimap." },
     { id: "magnet",    cat: "gear", name: "Gem Magnet",         price: 900,  desc: "Pulls in gems from almost twice as far away for 5 minutes.", on: "Gems now come to you from much farther away." },
     { id: "satchel",   cat: "gear", name: "Reinforced Satchel", price: 700,  desc: "You can carry 12,000 gems instead of 8,000 for 5 minutes, or 16,000 with Deep Pockets.", on: "Your satchel holds 4,000 more gems now." },
@@ -80,7 +81,8 @@ function offered(item) {
     return abilities.ON ? !item.retired : !item.fresh;
 }
 function catalog() {
-    return ITEMS.filter(offered).map(i => ({ id: i.id, cat: i.cat, tier: i.tier || 0, name: i.name, price: i.price, max: i.max || 0, desc: i.desc, cd: i.cd || 0, place: i.place || 0 }));
+    const ao = aoWorld();
+    return ITEMS.filter(offered).map(i => ({ id: i.id, cat: i.cat, tier: i.tier || 0, name: i.name, price: i.price, max: i.max || 0, desc: ao && i.aoDesc ? i.aoDesc : i.desc, cd: i.cd || 0, place: i.place || 0 }));
 }
 
 function freshState() {
@@ -365,7 +367,7 @@ function canBuy(socket, item) {
         if (item.tier !== s.drill + 1) return { ok: false, why: "Buy Drill " + ["I", "II", "III", "IV", "V"][s.drill] + " first." };
     } else if (item.id === "statpt") {
         const body = socket.player && socket.player.body;
-        if ((s.statPts | 0) >= STATPT_MAX) return { ok: false, why: "That's the most stat points you can buy this raid (" + STATPT_MAX + ")." };
+        if ((s.statPts | 0) >= STATPT_MAX) return { ok: false, why: (aoWorld() ? "That's the most stat points you can buy (" : "That's the most stat points you can buy this raid (") + STATPT_MAX + ")." };
         if (!body || statRoom(body) <= 0) return { ok: false, why: "Every stat is already maxed out, so there's nowhere to put another point." };
     } else if (item.cat === "gear") {
         if (gearActive(s, item.id)) return { ok: false, why: "That one is already running." };
@@ -404,7 +406,7 @@ function buy(socket, itemId) {
     else if (item.id === "statpt") {
         s.statPts = (s.statPts | 0) + 1;
         applyStatPoints(body, s);
-        msg = "You got an extra stat point! Spend it on any stat, and it's yours for the rest of the raid.";
+        msg = aoWorld() ? "You got an extra stat point! Spend it on any stat, and it's yours for as long as you play." : "You got an extra stat point! Spend it on any stat, and it's yours for the rest of the raid.";
     }
     else if (item.cat === "gear") {
         s.gear[item.id] = Date.now() + GEAR_MS;
@@ -426,7 +428,7 @@ function buy(socket, itemId) {
         msg = item.name + " is mounted. Fire it with the sidearm key.";
     } else if (item.cat === "ability") {
         abilities.grant(socket, item.id);
-        msg = item.name + " is yours for the raid. It's in your ability slot.";
+        msg = item.name + (aoWorld() ? " is yours for as long as you play. It's in your ability slot." : " is yours for the raid. It's in your ability slot.");
     }
     body._shopLastBuyAt = Date.now();
     body._shopBought = true;

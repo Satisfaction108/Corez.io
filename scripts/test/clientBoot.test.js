@@ -146,7 +146,7 @@ async function main() {
     const dataDir = path.join(ROOT, 'data');
     fs.mkdirSync(dataDir, { recursive: true });
     const env = { ...process.env, ROYALE_DEBUG: '1', SOLO_RAIDS: '1', BOT_CHAT_AI: 'false',
-        SESSION_SECRET: 'client-boot-test-secret-0123456789-abcdefgh', DATA_DIR: dataDir, PUBLIC_ORIGIN: origin, PUBLIC_HOST: 'localhost:' + port,
+        ROYALE_ALWAYS_ON: process.env.ROYALE_ALWAYS_ON_TEST || '0', SESSION_SECRET: 'client-boot-test-secret-0123456789-abcdefgh', DATA_DIR: dataDir, PUBLIC_ORIGIN: origin, PUBLIC_HOST: 'localhost:' + port,
         TRUSTED_PROXIES: '127.0.0.1', SINGLE_PROCESS: 'true', PORT: String(port), BR_PORT: String(port),
         TUT_PORT: String(port + 1), DUO_PORT: String(port + 2), DW_PORT: String(port + 3) };
     delete env.NODE_ENV;

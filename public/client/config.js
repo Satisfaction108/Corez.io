@@ -115,8 +115,8 @@ global.tips = [[
         "Tip: Your base works as a bank too, but you only keep 80%.",
         "Tip: Chests and bosses pay the most, so grab them fast."
     ], [
-        "Teaming up in solo raids isn't fair to everyone else, and you can get punished for it.",
-        "Hunting one person all raid just to grief them isn't cool, and you can get punished for it.",
+        "Teaming up with other players isn't fair to everyone else, and you can get punished for it.",
+        "Hunting one person over and over just to grief them isn't cool, and you can get punished for it.",
         "Multiboxing (running several tanks with a script) is cheating and will get you banned."
     ]
 ];

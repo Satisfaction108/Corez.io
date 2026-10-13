@@ -264,7 +264,7 @@ function intros(t) {
     S.introAt = t;
     // the one-time ability tour already covers the dash, ability and shop
     const tour = !!global.abilityIntroOn || abilityTourDone();
-    const keys = { ability: keyLabel("KEY_ABILITY", "Q"), kit: L.kitKeysText([keyLabel("KEY_KIT_1", "Z"), keyLabel("KEY_KIT_2", ","), keyLabel("KEY_KIT_3", "N")]), touch: !!global.mobile };
+    const keys = { ability: keyLabel("KEY_ABILITY", "Q"), kit: L.kitKeysText([keyLabel("KEY_KIT_1", "Z"), keyLabel("KEY_KIT_2", ","), keyLabel("KEY_KIT_3", "N")]), touch: !!global.mobile, ao: !!global.aoWorld };
     // the start of raid 2 and raid 3: one quiet line about what just opened up
     const unlock = "unlock" + S.stage;
     if (S.known && S.stage >= 1 && S.stage < L.VETERAN && !seen()[unlock] && !S.introQ.some(q => q.id === unlock) && !(S.intro && S.intro.id === unlock)) {

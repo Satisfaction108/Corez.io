@@ -61,17 +61,23 @@ function withRef(body) {
     return ref ? Object.assign(body, { ref }) : body;
 }
 
-export const signup = (username, password) => post('/api/auth/signup', withRef({ username, password }));
+function withGuest(body) {
+    let g = '';
+    try { g = localStorage.getItem('dwGuestId') || ''; } catch (e) { g = ''; }
+    return /^[a-f0-9]{32}$/.test(g) ? Object.assign(body, { guestId: g }) : body;
+}
+
+export const signup = (username, password) => post('/api/auth/signup', withGuest(withRef({ username, password })));
 // one tap "Keep my stuff": no password, this browser stays logged in
-export const quickSignup = (username) => post('/api/auth/quick', withRef({ username }));
-export const login = (username, password) => post('/api/auth/login', { username, password });
+export const quickSignup = (username) => post('/api/auth/quick', withGuest(withRef({ username })));
+export const login = (username, password) => post('/api/auth/login', withGuest({ username, password }));
 export const logout = () => post('/api/auth/logout', {});
 export const logoutAll = () => post('/api/auth/logout-all', {});
 export const usernameAvailable = (name) => get('/api/auth/username-available?name=' + encodeURIComponent(name));
-export const recover = (username, recoveryCode, newPassword) => post('/api/auth/recover', { username, recoveryCode, newPassword });
+export const recover = (username, recoveryCode, newPassword) => post('/api/auth/recover', withGuest({ username, recoveryCode, newPassword }));
 export const reset = (token, newPassword) => post('/api/auth/reset', { token, newPassword });
 export const reauthPassword = (currentPassword) => post('/api/auth/reauth', { currentPassword });
-export const discordComplete = (username, password) => post('/api/auth/discord/complete', withRef(password ? { username, password } : { username }));
+export const discordComplete = (username, password) => post('/api/auth/discord/complete', withGuest(withRef(password ? { username, password } : { username })));
 
 export const changeUsername = (username, currentPassword) => post('/api/account/username', currentPassword ? { username, currentPassword } : { username });
 export const changePassword = (currentPassword, newPassword) => post('/api/account/password', currentPassword ? { currentPassword, newPassword } : { newPassword });
@@ -120,6 +126,7 @@ export const invite = () => get('/api/invite');
 // id in the body, never in the URL).
 export const daily = (guestId) => post('/api/daily', guestId ? { guestId } : {});
 export const dailyClaim = (guestId) => post('/api/daily/claim', guestId ? { guestId } : {});
+export const levels = (guestId) => post('/api/levels', guestId ? { guestId } : {});
 export const pushSubscribe = (body) => post('/api/push/subscribe', body);
 export const pushUnsubscribe = (endpoint) => post('/api/push/unsubscribe', { endpoint });
 // Server-Sent Events: a URL, since EventSource does its own fetching.

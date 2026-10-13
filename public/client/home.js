@@ -260,7 +260,39 @@
         btn.onclick = function () { launchTutorial(btn); };
     }
 
+    function initChampions() {
+        var holder = document.querySelector('.startButtonHolder');
+        if (!holder || !window.fetch) return;
+        fetch('/api/champions', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+            if (!d || !d.on) return;
+            var champs = d.champs || [], top = d.top || [];
+            if (!champs.length && !top.length) return;
+            var box = document.createElement('div');
+            box.id = 'aoChampions';
+            box.style.cssText = 'margin:10px auto 2px;text-align:center;font-size:13px;line-height:1.5;opacity:.92';
+            if (champs.length) {
+                var a = document.createElement('div');
+                var lab = document.createElement('b');
+                lab.textContent = "Yesterday's champions: ";
+                lab.style.color = '#f2b83c';
+                a.appendChild(lab);
+                a.appendChild(document.createTextNode(champs.map(function (c) { return c.place + '. ' + c.name; }).join(',  ')));
+                box.appendChild(a);
+            }
+            if (top.length) {
+                var b = document.createElement('div');
+                var mins = Math.max(1, Math.ceil((d.resetIn || 0) / 60000));
+                var left = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm';
+                b.textContent = top[0].name + ' leads today with ' + (top[0].score | 0).toLocaleString('en-US') + ' points. The board resets in ' + left + '.';
+                b.style.opacity = '.8';
+                box.appendChild(b);
+            }
+            holder.parentNode.insertBefore(box, holder.nextSibling);
+        }).catch(function () { });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
+        initChampions();
         initMobileNote();
         initTapFullscreen();
         initA2hsTip();

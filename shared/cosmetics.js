@@ -124,6 +124,7 @@
     function sd(nid, id, name, rarity, priceDust, kick, blurb, extra) {
         return Object.assign({ nid, id, cat: 'sidekick', name, rarity, price: Math.round(priceDust * MILLI), kick, blurb }, extra || {});
     }
+    function lv(item, level) { return Object.assign(item, { exclusive: true, lvl: level }); }
     function sds(nid, id, name, rarity, priceDust, look, blurb) {
         return { nid, id, cat: 'sdSkin', name, rarity, price: Math.round(priceDust * MILLI), look, blurb };
     }
@@ -265,6 +266,22 @@
         ns(44, 'ns_olive', 'Olive Branch', 'epic', 0,
             { kind: 'vertical', stops: ['#f2ffe0', '#b9e07a', '#7fae45'], rim: '#1c2e08', halo: '#b9e07a' },
             { exclusive: true, earn: 'pacifist' }),
+        ns(45, 'ns_lv_sprout', 'Sprout', 'common', 0,
+            { kind: 'vertical', stops: ['#eaffd6', '#8fe36a'], rim: '#173d0a' },
+            { exclusive: true, lvl: 3 }),
+        ns(46, 'ns_lv_deep', 'Deep Diver', 'epic', 0,
+            { kind: 'scroll', stops: ['#8fe0ff', '#4a8fff', '#d6f6ff', '#4a8fff', '#8fe0ff'], speed: 0.25, shade: 0.12, rim: '#071a3a', halo: '#4a8fff' },
+            { exclusive: true, lvl: 20 }),
+        ns(47, 'ns_lv_ore', 'Ore Glow', 'rare', 0,
+            { kind: 'vertical', stops: ['#fff1c9', '#ffb347', '#f08a3a'], rim: '#3a1d00', halo: '#ffb347' },
+            { exclusive: true, lvl: 33 }),
+        ns(48, 'ns_lv_sunforge', 'Sunforge', 'epic', 0,
+            { kind: 'scroll', stops: ['#ffe07a', '#ff9a3d', '#fff6d6', '#ff9a3d', '#ffe07a'], speed: 0.3, shade: 0.12, rim: '#3d1a00', halo: '#ffb23d' },
+            { exclusive: true, lvl: 43 }),
+        ns(49, 'ns_lv_legend', 'Legend', 'legendary', 0,
+            { kind: 'prism', stops: ['#ff6b6b', '#ffd84d', '#6bff8f', '#6bd8ff', '#b88cff', '#ff6b6b'], speed: 0.5,
+              saturation: 0.9, lightness: 0.72, shade: 0.1, glint: true, halo: '#ffd84d', pulse: 0.4, glyph: '✪', glyphColor: '#ffe680' },
+            { exclusive: true, lvl: 50 }),
 
         // ---- skins (nid 101..199) ----
         sk(101, 'sk_hazard_stripes', 'Hazard Stripes', 'common', 35,
@@ -351,6 +368,16 @@
             { pattern: 'nova', seed: 1139, colors: ['gold', 'orange'], emissive: { kind: 'pulse', speed: 0.45 } }),
         sk(140, 'sk_void', 'Void', 'legendary', 450,
             { pattern: 'void', seed: 1140, colors: ['void', 'amethyst', 'ghost'], emissive: { kind: 'pulse', speed: 0.35 } }),
+        lv(sk(141, 'sk_lv_pumpkin', 'Pumpkin', 'common', 0,
+            { pattern: 'sunburst', seed: 1141, colors: ['orange', 'ink'], emissive: null }), 8),
+        lv(sk(142, 'sk_lv_coil', 'Copper Coil', 'uncommon', 0,
+            { pattern: 'spiral', seed: 1142, colors: ['copper', 'gold'], arms: 3, emissive: null }), 16),
+        lv(sk(143, 'sk_lv_crust', 'Geode Crust', 'rare', 0,
+            { pattern: 'facets', seed: 1143, colors: ['amethyst'], emissive: null }), 27),
+        lv(sk(144, 'sk_lv_magma', 'Magma Vein', 'epic', 0,
+            { pattern: 'vein', seed: 1144, colors: ['lava'], emissive: { kind: 'pulse', speed: 0.5 } }), 30),
+        lv(sk(145, 'sk_lv_starforged', 'Starforged', 'legendary', 0,
+            { pattern: 'nova', seed: 1145, colors: ['white', 'sapphire'], emissive: { kind: 'pulse', speed: 0.4 } }), 40),
 
         // ---- sidekicks (nid 201..299): plain arras tanks, one smiley each ----
         sd(201, BASIC_SIDEKICK_ID, 'Buddy', 'common', 20,
@@ -585,7 +612,7 @@
         if (!digPrices) {
             digPrices = {};
             for (const it of ITEMS) {
-                if (it.cat !== 'sidekick' || it.retired) continue;
+                if (it.cat !== 'sidekick' || it.retired || it.exclusive) continue;
                 const p = digPrices[it.rarity] || (digPrices[it.rarity] = [Infinity, -Infinity]);
                 p[0] = Math.min(p[0], it.price); p[1] = Math.max(p[1], it.price);
             }

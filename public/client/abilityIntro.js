@@ -52,7 +52,7 @@ function stepText(id) {
         const a = abilityName();
         const how = touch() ? (a.aimed ? "Drag off the button to aim, then lift your finger to use it." : "Tap to use it.")
             : a.aimed ? "Press " + keyName("KEY_ABILITY", "Q") + " to aim, then left click to use it." : "Press " + keyName("KEY_ABILITY", "Q") + " to use it.";
-        return ["Your ability", how + " You have " + a.name + " for this raid."];
+        return ["Your ability", how + " You have " + a.name + (global.aoWorld ? " for as long as you play." : " for this raid.")];
     }
     return ["The shop", "The shop sells more abilities."];
 }

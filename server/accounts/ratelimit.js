@@ -53,6 +53,7 @@ const WINDOWS = {
     push:          { limit: 20,  windowMs: 10 * MIN },  // push subscribe / unsubscribe per IP
     funnel:        { limit: 60,  windowMs: 1 * MIN },   // visit funnel steps per IP (a visit sends about 6)
     achievements:  { limit: 30,  windowMs: 1 * MIN },   // achievement panel loads per IP
+    levels:        { limit: 30,  windowMs: 1 * MIN },
 };
 
 const BACKOFFS = {

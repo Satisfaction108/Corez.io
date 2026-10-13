@@ -35,6 +35,12 @@ function oreGem(x, y, weightsShard) {
     if (gem) gem.gemNoMagnetUntil = Date.now() + 900;
 }
 
+let auto = true;
+function setAuto(on) { auto = !!on; }
+function startMeteorAt(t, x, y, r = 380, hits = 11) {
+    ev = { kind: 'meteor', x: Math.round(x), y: Math.round(y), r, at: t, liveAt: t + WARN_MS, until: t + WARN_MS + 7000, hits: 0, maxHits: hits, nextHit: t + WARN_MS, where: compass(x, y), quiet: true };
+    return ev;
+}
 function startMeteor(t) {
     const tg = global.gameManager.terrainGrid;
     const st = storm().snapshot(t);
@@ -91,17 +97,17 @@ function meteorHit(t) {
 
 function tick(t) {
     const st = storm().snapshot(t);
-    if ((st.c | 0) !== lastCycle) {
+    if (auto && (st.c | 0) !== lastCycle) {
         lastCycle = st.c | 0;
         const chance = Math.min(1, 0.55 * mods().num('eventRateMult', 1));
         plannedAt = process.env.ROYALE_DEBUG ? t + 30_000 : (Math.random() < chance ? t + 40_000 + Math.random() * 200_000 : 0);
     }
     if (ev) {
-        if (ev.kind === 'meteor' && !ev.nextPos && ev.hits < 11 && t >= ev.nextHit - METEOR_FALL_MS) {
+        if (ev.kind === 'meteor' && !ev.nextPos && ev.hits < (ev.maxHits || 11) && t >= ev.nextHit - METEOR_FALL_MS) {
             ev.nextPos = pickMeteor();
             announceFall(ev.nextPos, ev.nextHit - t);
         }
-        if (t >= ev.liveAt && ev.kind === 'meteor' && t >= ev.nextHit && ev.hits < 11) {
+        if (t >= ev.liveAt && ev.kind === 'meteor' && t >= ev.nextHit && ev.hits < (ev.maxHits || 11)) {
             ev.nextHit = t + 550 + Math.random() * 250;
             ev.hits++;
             meteorHit(t);
@@ -115,7 +121,7 @@ function tick(t) {
         if (t > ev.until) ev = null;
         return;
     }
-    if (plannedAt && t >= plannedAt && !storm().locked(t)) {
+    if (auto && plannedAt && t >= plannedAt && !storm().locked(t)) {
         plannedAt = 0;
         const started = Math.random() < 0.6 ? startMeteor(t) : startRain(t);
         if (started) { try { require('../gamemodes/scripts/dig_royale.js').onEvent(started); } catch { /* */ } }
@@ -128,4 +134,4 @@ function snapshot() {
 function current() { return ev; }
 function reset() { ev = null; lastCycle = -1; plannedAt = 0; }
 
-module.exports = { tick, snapshot, current, reset, startMeteor, startRain };
+module.exports = { tick, snapshot, current, reset, startMeteor, startRain, startMeteorAt, setAuto };

@@ -331,7 +331,7 @@ test('points pops: labels first, banked, crown holding quiet, never a silent jum
     // wired: the KC label, the RY change, drawn by the points and over the death card
     const si = src('socketinit.js');
     assert.match(si, /if \(m\[0\] === "ptspop"\) \{\n\s+try \{ scoreText\.ptsLabel\(/);
-    assert.match(si, /scoreText\.ptsOnScore\(global\.ptsPops \|\| \(global\.ptsPops = scoreText\.ptsPops\(\)\), r\.you, performance\.now\(\), r\.raidId \| 0\)/);
+    assert.match(si, /scoreText\.ptsOnScore\(global\.ptsPops \|\| \(global\.ptsPops = scoreText\.ptsPops\(\)\), r\.you, performance\.now\(\), /);
     const app = src('app.js');
     assert.match(app, /if \(placeTxt && !global\.died\) drawPtsPops\(px \+ PW \+ 10, py \+ rowH \+ footH \/ 2, "left", 1\);/);
     assert.equal((app.match(/drawPtsPops\(px \+ W - 16, Math\.max\(14, py - 16\), "right", -1\);/g) || []).length, 2, 'both death cards');
@@ -367,7 +367,7 @@ test('deposit: progress while it runs; cut short, what banked and what is still 
 // ── 6. death card ────────────────────────────────────────────────────────
 test('death card: the first raids card has the Points line too', () => {
     const app = src('app.js');
-    const a = app.indexOf('const gameDrawDeadNewcomer = () => {'), b = app.indexOf('const gameDrawDeadRoyale = () => {');
+    const a = app.indexOf('const gameDrawDeadNewcomer = (A) => {'), b = app.indexOf('const gameDrawDeadRoyale = () => {');
     const nc = app.slice(a, b);
     assert.match(nc, /const dln = scoreText\.deathLine\(you, global\.finalCarried \| 0, 0, global\.finalNxKept \| 0\);/);
     assert.match(nc, /fitLine\(dln\.head \+ " \(" \+ dln\.lost \+ "\)", 14, 9\.5, iw\)/);

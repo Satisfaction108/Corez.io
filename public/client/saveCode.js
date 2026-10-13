@@ -73,7 +73,7 @@ function showBar(on) {
 function toggle() {
     const sock = global.socket;
     if (!inRaid() || global.died || !sock || !sock.talk) {
-        if (global.gameStart && !global.tutorialMode) say("You can only save while you're alive in a raid.");
+        if (global.gameStart && !global.tutorialMode) say(global.aoWorld ? "You can only save while you're alive in the game." : "You can only save while you're alive in a raid.");
         return false;
     }
     sock.talk("SV", st.saving ? 0 : 1);
@@ -135,11 +135,11 @@ function showCode(d) {
     const body = h("div", { class: "sv-modal" },
         h("div", { class: "sv-code", tabindex: "0", text: d.code }),
         h("p", { class: "sv-how" }, "Type ", h("b", { text: "$restore " + d.code }), " in chat next time you play."),
-        h("p", { class: "sv-note", text: "It works once, in a " + mode + " raid while you're alive, and it's good until " + fmtDay(d.exp) + ". Don't share it, because anyone who has it can use it." }),
+        h("p", { class: "sv-note", text: (global.aoWorld ? "It works once, in the game while you're alive" : "It works once, in a " + mode + " raid while you're alive") + ", and it's good until " + fmtDay(d.exp) + ". Don't share it, because anyone who has it can use it." }),
         h("div", { class: "dw-modal-actions" },
             copyBtn,
             h("button", { type: "button", class: "dw-btn", "data-autofocus": "", text: "Done", onclick: () => m.close() })));
-    const m = modal({ title: "Saved! See you later", message: "This code holds your tank, build, satchel, kit and raid points. Your bank is saved either way.", body, dismissable: false, cls: "sv-modal-card" });
+    const m = modal({ title: "Saved! See you later", message: global.aoWorld ? "This code holds your tank, build, satchel and kit. Your bank and today's points are saved either way." : "This code holds your tank, build, satchel, kit and raid points. Your bank is saved either way.", body, dismissable: false, cls: "sv-modal-card" });
 }
 
 // the settings panel's button (desktop and phones)

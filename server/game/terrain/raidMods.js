@@ -44,6 +44,11 @@ function roll(force) {
     return pick;
 }
 
+function clear() {
+    active = null;
+    global.royaleMods = {};
+    return null;
+}
 function get() { return active; }
 function num(key, dflt) {
     const v = active ? active[key] : undefined;
@@ -61,4 +66,4 @@ function gemValueMult(ore) {
     return gv[ore] || 1;
 }
 
-module.exports = { MODS, roll, get, num, snapshot, gemValueMult };
+module.exports = { MODS, roll, clear, get, num, snapshot, gemValueMult };

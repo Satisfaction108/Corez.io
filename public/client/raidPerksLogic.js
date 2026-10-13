@@ -145,14 +145,15 @@ export function baseName(name) { return String(name || "").replace(/\s+(?:I|II|I
 // the level this pick gives you (a perk held at n goes to n + 1)
 export function nextLevel(p) { return Math.max(1, ((p && p.n) | 0) + 1); }
 // hover: the whole description and what changes, never cut
-export function hoverText(p) {
+export function lastsText(ao) { return ao ? "It lasts for the rest of the day." : "It lasts the whole raid."; }
+export function hoverText(p, ao) {
     if (!p) return null;
     const name = baseName(p.name || p.id), lv = nextLevel(p), max = (p.max | 0);
     const have = (p.n | 0);
     const step = have > 0
         ? "You have level " + roman(have) + ". This takes it to " + roman(lv) + (max ? " of " + roman(max) : "") + "."
         : "This is a new perk at level I" + (max > 1 ? " of " + roman(max) + ". Pick it again to stack it." : ".");
-    return { title: name + "  " + roman(lv), body: String(p.desc || "").trim() + " " + step + " It lasts the whole raid." };
+    return { title: name + "  " + roman(lv), body: String(p.desc || "").trim() + " " + step + " " + lastsText(ao) };
 }
 
 // ── the build strip, beside the satchel ────────────────────────────────
@@ -256,7 +257,9 @@ export function progress(score, next, step) {
 
 // ── the death card ─────────────────────────────────────────────────────
 export const DEATH_LINE = "Your perks stay until the raid ends.";
-export function deathLine(build) { return totalPicks(build) > 0 ? DEATH_LINE : ""; }
+export const DEATH_LINE_AO = "Your perks stay until the daily reset.";
+export function deathLine(build, ao) { return totalPicks(build) > 0 ? (ao ? DEATH_LINE_AO : DEATH_LINE) : ""; }
 
 // ── the first offer's intro ────────────────────────────────────────────
 export const INTRO_TEXT = "You get a perk every 5,000 points. It lasts the whole raid.";
+export const INTRO_TEXT_AO = "You get a perk every 5,000 points. It lasts for the rest of the day.";

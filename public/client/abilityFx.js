@@ -127,7 +127,8 @@ function freeSlam(id) {
     const J = window.dwJuice;
     if (!J || global.tutorialMode) return;
     const key = H ? H.keyLabel("KEY_ABILITY", "Q") : "Q";
-    const sub = !learning() ? "Free for this raid" : global.mobile ? "Free for this raid. Tap the ability button to use it." : "Free for this raid. Press " + key + " to use it.";
+    const free = global.aoWorld ? "Yours to keep while you play" : "Free for this raid";
+    const sub = !learning() ? free : global.mobile ? free + ". Tap the ability button to use it." : free + ". Press " + key + " to use it.";
     try { J.slam("YOUR ABILITY: " + shortName(id), sub, AB_COLOR[id] || "#f2b83c", 2600, 44); } catch (e) { /* */ }
 }
 
@@ -2011,7 +2012,7 @@ export function drawHud(c, anchor, mouse) {
         if (mouse && mouse.x >= x && mouse.x <= x + sz && mouse.y >= y && mouse.y <= y + sz) {
             const item = id ? (global.shop.catalog || []).find(i => i.id === id) : null;
             if (item) H.queueTip(item.name + "  ·  " + abKey, item.desc + (item.place ? " Press " + abKey + " to aim, then left click to place it." : "") + (ownedCount() > 1 ? " Swap abilities with Equip in a shop." : ""), mx, y);
-            else H.queueTip("Ability  ·  " + abKey, "Buy one in a shop and you'll keep it for the whole raid.", mx, y);
+            else H.queueTip("Ability  ·  " + abKey, global.aoWorld ? "Buy one in a shop and you'll keep it while you play, even after you die." : "Buy one in a shop and you'll keep it for the whole raid.", mx, y);
         }
     }
     drawChipDrag(c, mouse);
@@ -2068,7 +2069,7 @@ function touchTipText(name) {
     if (name === "dash") return ["Dash", "A quick burst of speed the way you're moving. You have 2 charges, and each one comes back after 5s."];
     if (name === "ability") {
         const it = find(S.eq);
-        if (!it) return ["Ability", "Buy one in a shop and you'll keep it for the whole raid."];
+        if (!it) return ["Ability", global.aoWorld ? "Buy one in a shop and you'll keep it while you play, even after you die." : "Buy one in a shop and you'll keep it for the whole raid."];
         return [it.name, it.desc + (it.place ? " Tap to use it where you aim, or drag off the button to aim it." : " Tap to use it.")];
     }
     if (name === "arm") {
