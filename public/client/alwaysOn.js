@@ -1,7 +1,7 @@
 import { global } from "./global.js";
 
 const KIND_INFO = {
-    storm: "A storm circle closes in over one part of the map, and the storm outside it hurts. You score every second you're inside, faster as it shrinks. A kill inside is worth 150 points, and everyone still inside at the end gets 300.",
+    storm: "The storm closes in from the edge of the map to one small circle over 3 minutes, and the storm outside it hurts. You score every second you're inside, faster as it shrinks. A kill inside is worth 150 points, and everyone still inside at the end gets 300.",
     core: "The Core comes up and shoots back. Everyone who hurts it gets a share of 1,500 points, and the last hit gets 400 more.",
     boss: "A boss shows up. Everyone who hurts it gets a share of 1,200 points, and the last hit gets 400 more.",
     rush: "One area turns rich for a few minutes. Mine the glowing rock there, then bank it: every 2 gems you bank from the rush give you 1 point. If you die first, they stop counting.",
@@ -252,8 +252,6 @@ export function drawWorld(c, ox, oy, ratio, api) {
             c.restore();
             dashedRing(c, sx, sy, rr, col, Math.max(2, 3.5 * ratio), [14 * ratio, 14 * ratio], 0.7);
             api.label(ev.n, sx, sy - rr - 18 * ratio, Math.max(12, 26 * ratio), col);
-        } else if (ev.k === "storm" && ev.R) {
-            dashedRing(c, sx, sy, ev.R * ratio, col, Math.max(1.5, 3 * ratio), [10 * ratio, 16 * ratio], 0.5);
         }
     }
     if (a.nx && a.nx.a && a.nx.x != null) {
@@ -270,7 +268,7 @@ export function mapMarks() {
     const out = [];
     if (!a) return out;
     if (a.ev && a.ev.k !== "storm") out.push({ x: a.ev.x, y: a.ev.y, r: a.ev.r, col: KIND_COL[a.ev.k] || "#ffffff", live: true, k: a.ev.k, n: a.ev.n });
-    if (a.ev && a.ev.k === "storm" && a.ev.R) out.push({ x: a.ev.x, y: a.ev.y, r: a.ev.R, col: KIND_COL.storm, live: true, k: "storm", n: a.ev.n });
+    if (a.ev && a.ev.k === "storm" && (a.ev.rr || a.ev.re)) out.push({ x: a.ev.x, y: a.ev.y, r: a.ev.rr || a.ev.re, col: KIND_COL.storm, live: true, k: "storm", n: a.ev.n });
     if (a.nx && a.nx.a && a.nx.x != null) out.push({ x: a.nx.x, y: a.nx.y, r: a.nx.r || 500, col: KIND_COL[a.nx.k] || "#ffffff", live: false, k: a.nx.k, n: a.nx.n });
     return out;
 }

@@ -159,8 +159,7 @@ const STORM_HOLD_MS = 20_000;
 function stormRadius(ev, t) {
     const d = ev.data;
     const k = Math.max(0, Math.min(1, (t - ev.startAt) / d.shrinkMs));
-    const e = 1 - Math.pow(1 - k, 1.35);
-    return d.R0 - (d.R0 - d.rEnd) * e;
+    return d.R0 - (d.R0 - d.rEnd) * k;
 }
 function stormProgress(ev, t) { return Math.max(0, Math.min(1, (t - ev.startAt) / ev.data.shrinkMs)); }
 function inRing(ev, b, t) {
@@ -255,8 +254,8 @@ function botGoal(b, t = Date.now()) {
             if (bo) g = { kind: 'boss', target: bo, x: bo.x, y: bo.y, fight: true };
             else g = standOff(b, ev.x, ev.y, 820);
         } else if (ev.kind === 'storm' && ev.data && ev.data.R0) {
-            const r = stormRadius(ev, t);
-            g = areaGoal(b, ev.x, ev.y, 0, Math.max(80, r * 0.7), 's' + ev.id + ':' + Math.round(r / 150));
+            const r = Math.min(stormRadius(ev, t) * 0.7, stormRadius(ev, t + 90_000) * 0.8);
+            g = areaGoal(b, ev.x, ev.y, 0, Math.max(80, r), 's' + ev.id + ':' + Math.round(r / 150));
             if (g) g.fight = true;
         } else if (ev.kind === 'rush') {
             if (ev.data && t < ev.data.richUntil) g = areaGoal(b, ev.x, ev.y, 0, ev.r * 0.75, 'r' + ev.id);
@@ -305,11 +304,12 @@ function spotFor(ev, size, offVault) {
 const EVENTS = {
     storm: {
         plan(region, sc) {
-            const p = clampToMap(region.x, region.y, sc.stormR * 0.55);
-            return { x: p.x, y: p.y, r: sc.stormR };
+            const p = clampToMap(region.x, region.y, sc.stormEnd + 500);
+            return { x: p.x, y: p.y, r: sc.stormEnd };
         },
         start(ev, t, sc) {
-            ev.data = { R0: ev.r, rEnd: sc.stormEnd, shrinkMs: Math.max(30_000, ev.ms - STORM_HOLD_MS), lastPt: t };
+            const R0 = mapR() + Math.hypot(ev.x, ev.y) + 150;
+            ev.data = { R0, rEnd: sc.stormEnd, shrinkMs: Math.max(30_000, ev.ms - STORM_HOLD_MS), lastPt: t };
             return true;
         },
         tick(ev, t, fighters) {
@@ -695,9 +695,9 @@ function exposure(body, t = Date.now()) {
 function spawnZones() {
     const out = [];
     const ev = st.cur;
-    if (ev) out.push({ x: ev.x, y: ev.y, r: (ev.kind === 'storm' && ev.data && ev.data.R0 ? ev.data.R0 : ev.r) + 250 });
+    if (ev && ev.kind !== 'storm') out.push({ x: ev.x, y: ev.y, r: ev.r + 250 });
     const n = st.next;
-    if (n && n.announced) out.push({ x: n.x, y: n.y, r: (n.r || 600) + 200 });
+    if (n && n.announced && n.kind !== 'storm') out.push({ x: n.x, y: n.y, r: (n.r || 600) + 200 });
     return out;
 }
 

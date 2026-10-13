@@ -1328,6 +1328,7 @@ function breakAndHold(tg, list, holdMs) {
 // Where the storm edge will be `aheadS` seconds from now (st: storm.snapshot).
 // storm.snapshot with cx/cy moved to where the centre will be aheadS from now
 function aheadSnap(t, aheadS) {
+    if (AO()) { const ao = alwaysOn.stormSnapshot(t); if (ao) return ao; }
     const st = storm.snapshot(t);
     if (!st || !st.a || !storm.centerAt) return st;
     const c = storm.centerAt(t + aheadS * 1000);

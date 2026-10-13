@@ -1,7 +1,7 @@
 'use strict';
 
 const KINDS = {
-    storm: { id: 'storm', name: 'Storm Circle', ms: 190_000, verb: 'Get inside the circle and stay alive.' },
+    storm: { id: 'storm', name: 'Storm Circle', ms: 200_000, verb: 'Get inside the circle and stay alive.' },
     core: { id: 'core', name: 'Core Siege', ms: 240_000, verb: 'Break the Core for a share of its gems.' },
     rush: { id: 'rush', name: 'Gem Rush', ms: 180_000, verb: 'Mine the rich rock and bank what you find.' },
     hill: { id: 'hill', name: 'King of the Vault', ms: 180_000, verb: 'Hold the ground around the vault.' },

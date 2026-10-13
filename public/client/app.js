@@ -6438,7 +6438,7 @@ import * as aoHud from './alwaysOn.js';
                 // what "Bank" means, on hover (it is not the points number)
                 if (royaleActive() && !global.mobile && global.canvas && !global.died) {
                     const cr2 = global.canvas.height / global.screenHeight / global.ratio;
-                    const mx2 = global.mouse.x / cr2, my2 = global.mouse.y / cr2;
+                    const mx2 = global.mouse.x / (cr2 * global.ratio), my2 = global.mouse.y / (cr2 * global.ratio);
                     if (mx2 >= bankX1 - capR && mx2 <= rx2 + capR && my2 >= ry - pillH / 2 && my2 <= ry + pillH / 2) queueTip(scoreText.BANK_TIP, scoreText.bankTipBody(aoNow()), (bankX1 + rx2) / 2, ry - pillH / 2, true);
                 }
                 // above your name, never on it (round 7: "+250 banked · milestone 1,000" sat on
@@ -8327,7 +8327,7 @@ import * as aoHud from './alwaysOn.js';
             hoverTip: (x, y, w, h, title, body) => {
                 if (global.mobile || !global.canvas || global.died) return false;
                 const cr = global.canvas.height / global.screenHeight / global.ratio;
-                const mx = global.mouse.x / cr, my = global.mouse.y / cr;
+                const mx = global.mouse.x / (cr * global.ratio), my = global.mouse.y / (cr * global.ratio);
                 if (mx >= x && mx <= x + w && my >= y && my <= y + h) { queueTip(title, body, x + w / 2, y + h, false); return true; }
                 return false;
             },
@@ -8597,7 +8597,7 @@ import * as aoHud from './alwaysOn.js';
     function pointsRuleTip(x, y, w, h) {
         if (global.mobile || !global.canvas || global.died) return;
         const cr = global.canvas.height / global.screenHeight / global.ratio;
-        const mx = global.mouse.x / cr, my = global.mouse.y / cr;
+        const mx = global.mouse.x / (cr * global.ratio), my = global.mouse.y / (cr * global.ratio);
         if (mx >= x && mx <= x + w && my >= y && my <= y + h) queueTip(scoreText.RULE, scoreText.ruleBody(aoNow()), x + w / 2, y + h, false);
     }
     window.dwPointsRule = () => ({ rule: scoreText.RULE, body: scoreText.ruleBody(aoNow()), bank: scoreText.bankTipBody(aoNow()) });
@@ -8925,7 +8925,7 @@ import * as aoHud from './alwaysOn.js';
         const R = overrideRect;
         if (R && !global.mobile && global.canvas) {
             const cr = global.canvas.height / global.screenHeight / global.ratio;
-            const mx = global.mouse.x / cr, my = global.mouse.y / cr;
+            const mx = global.mouse.x / (cr * global.ratio), my = global.mouse.y / (cr * global.ratio);
             if (mx >= R.x && mx <= R.x + R.w && my >= R.y && my <= R.y + R.h) return false;
         }
         return true;
@@ -9722,7 +9722,7 @@ import * as aoHud from './alwaysOn.js';
         const dragK = global.kitDrag;
         if (dragK) {
             const id = (st.kitOrder || [])[dragK.slot];
-            const mx = global.mouse.x / cr, my = global.mouse.y / cr;
+            const mx = global.mouse.x / (cr * global.ratio), my = global.mouse.y / (cr * global.ratio);
             if (id && Math.hypot(global.mouse.x - dragK.x, global.mouse.y - dragK.y) > 14) {
                 const outside = mx < x || mx > x + W || my < y || my > y + H;
                 const over = global.clickables.kit.check({ x: global.mouse.x, y: global.mouse.y });
@@ -9839,7 +9839,7 @@ import * as aoHud from './alwaysOn.js';
             wallet, bottom, minTop, left, right, blocked, stripLeft, hold: stage,
             score: you && you.score != null ? +you.score : +(global.royale && global.royale.youScore) || 0,
             stage: newcomer.known() ? newcomer.stage() : 3,
-            mouse: global.mobile ? null : { x: global.mouse.x / cr, y: global.mouse.y / cr },
+            mouse: global.mobile ? null : { x: global.mouse.x / (cr * global.ratio), y: global.mouse.y / (cr * global.ratio) },
         });
         perkLay.bottom = bottom; perkLay.minTop = minTop; perkLay.left = left; perkLay.right = right; perkLay.blocked = blocked;
         if (global.mobile) {
@@ -9863,7 +9863,7 @@ import * as aoHud from './alwaysOn.js';
             (global.tutorialMode || nxShows("ability", { owned: newcomer.ownsAbility() }));
         if (!want) return;
         const cr = global.canvas.height / global.screenHeight / global.ratio;
-        abilityBarRect = abilityFx.drawHud(ctx[2], hudDrawn.wallet, { x: global.mouse.x / cr, y: global.mouse.y / cr });
+        abilityBarRect = abilityFx.drawHud(ctx[2], hudDrawn.wallet, { x: global.mouse.x / (cr * global.ratio), y: global.mouse.y / (cr * global.ratio) });
         if (abilityBarRect) hudDrawn.ability = abilityBarRect;
     }
     // ── new ability reveal ─────────────────────────────────────────────
@@ -12474,7 +12474,7 @@ import * as aoHud from './alwaysOn.js';
                 hudTitle(mapTxt, mapLx, mapLy, 11, HUD.head, "right");
                 if (global.canvas && !global.died) {
                     const crm = global.canvas.height / global.screenHeight / global.ratio;
-                    const mxm = global.mouse.x / crm, mym = global.mouse.y / crm;
+                    const mxm = global.mouse.x / (crm * global.ratio), mym = global.mouse.y / (crm * global.ratio);
                     if (Math.hypot(mxm - (mx + len / 2), mym - (my + len / 2)) < len / 2) queueTip("Map  ·  " + keyLabel("KEY_TOGGLE_MAP", "M"), "Press " + keyLabel("KEY_TOGGLE_MAP", "M") + " for the full map.", mx + len / 2, my, true);
                 }
                 const hx = mapLx - hudTitleW(mapTxt, 11) - 10;

@@ -232,7 +232,7 @@ test('runtime: a Storm Circle is announced, runs, scores, ends with a top 3 and 
     ao.tick(t, W.bodies);
     assert.equal(ao.snapshot(t).nx.a, 1, 'announced a minute ahead');
     assert.ok(W.toasts.some(x => /Storm Circle starts in/.test(x)));
-    assert.ok(ao.spawnZones().length >= 1, 'spawns keep clear of where it will be');
+    assert.equal(ao.spawnZones().length, 0, 'a storm never pushes spawns away, it pulls them into the circle');
     t = n.startAt;
     ao.tick(t, W.bodies);
     const ev = ao.current();
@@ -245,6 +245,8 @@ test('runtime: a Storm Circle is announced, runs, scores, ends with a top 3 and 
     assert.equal(out.health.amount, 200, 'outside the circle nothing changes');
     const st = ao.stormSnapshot(t);
     assert.ok(st.a && st.out === Math.round(ev.data.R0) && st.r < st.out, 'the client gets the scoped ring');
+    assert.ok(ev.data.R0 >= 4000 + Math.hypot(ev.x, ev.y), 'it starts past the edge of the whole map');
+    assert.equal(ev.data.shrinkMs, 180_000, 'it closes in over 3 minutes');
     const mid = ao.snapshot(t);
     assert.ok(mid.ev && mid.ev.top.length >= 2, 'a live top 3');
     assert.equal(ao.youFields('s:1', t).epl > 0, true);

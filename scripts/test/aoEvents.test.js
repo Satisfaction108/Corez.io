@@ -207,7 +207,8 @@ test('bot goals: most bots head for each event and help, some keep mining', () =
         assert.ok(ev, kind + ' started');
         const bots = [];
         for (let i = 0; i < 200; i++) bots.push(W.mk(100 + i, ev.x + 2600 * Math.cos(i), ev.y + 2600 * Math.sin(i), true));
-        const goals = bots.map(b => ao.botGoal(b, t0 + 100));
+        const at = kind === 'storm' ? t0 + 60_000 : t0 + 100;
+        const goals = bots.map(b => ao.botGoal(b, at));
         const going = goals.filter(Boolean);
         assert.ok(going.length > 100 && going.length < 190, kind + ': ' + going.length + ' of 200 go');
         for (const g of going) {
@@ -223,7 +224,7 @@ test('bot goals: most bots head for each event and help, some keep mining', () =
         if (kind === 'core' || kind === 'boss') {
             for (const g of going) assert.ok(Math.hypot(g.x - ev.x, g.y - ev.y) > 600, 'they wait off the spot while it rises');
         }
-        assert.deepEqual(goals, bots.map(b => ao.botGoal(b, t0 + 200)).map((g, i) => goals[i] ? g : null), 'the choice sticks for the event');
+        assert.deepEqual(goals, bots.map(b => ao.botGoal(b, at + 100)).map((g, i) => goals[i] ? g : null), 'the choice sticks for the event');
         const human = W.mk(999, ev.x, ev.y);
         assert.equal(ao.botGoal(human, t0), null, 'players get no goals');
         bosses.burrow();
