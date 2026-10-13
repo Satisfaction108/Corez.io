@@ -64,6 +64,7 @@ require('./routes/invite').register(router);
 require('./routes/feedback').register(router);
 require('./routes/retention').register(router);
 require('./routes/funnel').register(router);
+require('./routes/clientErr').register(router);
 require('./routes/champions').register(router);
 require('./routes/levels').register(router);
 const moveRoutes = require('./routes/move');

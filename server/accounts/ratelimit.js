@@ -54,6 +54,7 @@ const WINDOWS = {
     funnel:        { limit: 60,  windowMs: 1 * MIN },   // visit funnel steps per IP (a visit sends about 6)
     achievements:  { limit: 30,  windowMs: 1 * MIN },   // achievement panel loads per IP
     levels:        { limit: 30,  windowMs: 1 * MIN },
+    clientErr:     { limit: 6,   windowMs: 10 * MIN },
 };
 
 const BACKOFFS = {

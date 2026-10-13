@@ -11023,6 +11023,7 @@ import * as aoHud from './alwaysOn.js';
     // or shot.
     const SHIELD_GRACE_MS = 5000;
     const WIND_SHIELD_MS = 10000;   // shop.js WIND_SHIELD_MS
+    const SHIELD_CAP_MS = 25000;
     let shieldOnPrev = false;
     // VU 2 (socketinit) marks the post-bank vault shield, labelled apart from the
     const VAULT_SHIELD_MS = 3000;   // vault.js POST_BANK_SHIELD_MS
@@ -11063,8 +11064,8 @@ import * as aoHud from './alwaysOn.js';
             return hudNote(1, "shield", "Vault shield: safe for " + vl + "s, but shooting drops it", "#ffe9a8");
         }
         const since = performance.now() - (global.spawnedAt || 0);
-        // a few seconds to read it, then the first-raid card (which says to
-        // move) gets the room instead; the shield ring on the tank stays
+        const capLeft = Math.ceil((SHIELD_CAP_MS - since) / 1000);
+        if (capLeft > 0 && capLeft <= 10) return hudNote(1, "shield", "Spawn shield: ends in " + capLeft + "s, sooner if you move or shoot", capLeft <= 3 ? "#ffd166" : "#bff2ff");
         if (global.coachRect && since > 4000) return null;
         const left = Math.ceil((SHIELD_GRACE_MS - since) / 1000);
         // Second Wind (shop gear): moving keeps the shield up to 10 s
@@ -15640,6 +15641,19 @@ import * as aoHud from './alwaysOn.js';
     }
     // One frame of the game, separate from the scheduler so QA tooling can
     // step frames in a background tab where requestAnimationFrame is paused.
+    let frameErrRun = 0;
+    const frameErrSent = new Set();
+    function reportFrameError(e) {
+        const m = String((e && e.message) || e || "error").slice(0, 200);
+        const st = String((e && e.stack) || "").slice(0, 700);
+        const key = m + "|" + st.slice(0, 160);
+        if (frameErrSent.has(key) || frameErrSent.size >= 4) return;
+        frameErrSent.add(key);
+        try {
+            fetch("/api/clienterr", { method: "POST", credentials: "same-origin", keepalive: true, headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ m, s: st, w: "frame", v: String(location.pathname || "") }) }).catch(() => { });
+        } catch (err) { }
+    }
     window.dwRenderFrame = renderFrame;
     function renderFrame(tick) {
         resyncTransforms();
@@ -15792,11 +15806,12 @@ import * as aoHud from './alwaysOn.js';
             if (global.dailyTankAd.renderUI) drawAdScreen();
             drawOptionsMenu(tick, 20, util.getScreenRatio());
 
+            frameErrRun = 0;
         } catch (e) {
-
-            drawErrorScreen();
-
-            throw e;
+            frameErrRun++;
+            reportFrameError(e);
+            if (frameErrRun >= 90) drawErrorScreen();
+            if (frameErrRun === 1 || frameErrRun % 600 === 0) console.error(e);
         }
         let t = performance.now();
         global.metrics.mspt = t - p;
