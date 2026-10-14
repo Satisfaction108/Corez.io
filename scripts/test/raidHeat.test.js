@@ -20,8 +20,6 @@
 //              turns rocks on the rim into soft ore; nothing is handed out
 //   fall       while it falls the tank takes no input (moving, shooting,
 //              dash, kit, upgrades) and the landing lifts only its own freeze
-//   resume     a reload keeps its team and colour and drops back in on screen
-//              only (no hold, no smash)
 //   supply     a crate announced 10 s ahead near a player, falling in, an
 //              epic chest that unlocks an ability; then one a minute or so;
 //              anyone on the spot is rolled off, never left inside it
@@ -309,7 +307,9 @@ test('core: it fights back as it breaks, every attack telegraphed; no mercy for 
     const p = global.gameManager.socketManager.players[0].body;
     const fx = [];
     coreFinale.attach({ humans: () => [p], fighters: () => [p], announce() {}, feed() {}, fxAt: (x, y, k, ...e) => fx.push([k, ...e]), toast() {}, payGems() {}, addPts() {}, callout() {} });
-    const place = () => { p.x = c.x + 300; p.y = c.y; p.velocity.x = 0; p.velocity.y = 0; p.invuln = false; p.spawnGraceUntil = 0; p.padSafe = false; p.botNewness = 0; p.botNewbie = false; p.health.amount = p.health.max; if (p.shield) p.shield.amount = 0; };
+    const hub = centre();
+    const away = hub ? Math.atan2(c.y - hub.y, c.x - hub.x) : 0;
+    const place = () => { p.x = c.x + Math.cos(away) * 300; p.y = c.y + Math.sin(away) * 300; p.velocity.x = 0; p.velocity.y = 0; p.invuln = false; p.spawnGraceUntil = 0; p.padSafe = false; p.botNewness = 0; p.botNewbie = false; p.health.amount = p.health.max; if (p.shield) p.shield.amount = 0; };
     let t = Date.now() + 10_000;
     // run the Core for `ms`; what it did (FX kinds) and the health p lost (share of max)
     const run = (ms) => {
@@ -801,7 +801,7 @@ test('dropin: the raid-end freeze is not lifted by a landing; the hold lifts on 
     p.kill(); q.kill();
 });
 
-test('resume: a reload keeps its team and colour, and drops back in on screen only', () => {
+test('resume: a reload keeps its team and colour, with no drop animation', () => {
     captureRY();
     const sock = fakeSocket({ resumeToken: 'tokHeat' + ids + 'abcdefgh', packets: [] });
     sock.talk = (...a) => sock.packets.push(a);
@@ -827,10 +827,7 @@ test('resume: a reload keeps its team and colour, and drops back in on screen on
     const before = new Set([...grid.rocks.values()].filter(r => r.alive).map(r => r.k));
     royale.applyPendingResume(back);
     const fx = back.packets.filter(p => p[0] === 'FX' && p[3] === 'dropin');
-    assert.equal(fx.length, 1, 'a drop is drawn');
-    assert.equal(fx[0][7], 1, 'marked as just a picture');
-    assert.equal(fx[0][6], dropIn.FALL_MS.first, 'the full first fall, drawn');
-    assert.equal(fx[0][5], dropIn.CRATER_R);
+    assert.equal(fx.length, 0, 'no drop is drawn');
     assert.equal(!!body.royaleFrozen, false, 'nothing held');
     assert.equal(dropIn.inAir(body), false);
     // the resume itself opens up rock that grew into the hull's spot; past
@@ -955,8 +952,15 @@ test('supply: announced 10 s ahead near a player, falls, lands as a crate that u
     chests.openChest(crate, p);
     for (let i = 0; i < 3; i++) handler.gameloop();
     if (abilities.ON) {
+        const drops = require(path.join(SERVER, 'game', 'terrain', 'abilityDrops.js'));
+        const drop = drops.list().find(d => d.kind === 'crate');
+        assert.ok(drop && Math.hypot(drop.x - crate.x, drop.y - crate.y) < 1, 'the crate drops an ability where it broke');
+        assert.equal((abilities.stateOf(sock).own || []).length, before.length, 'nothing until you run over it');
+        p.x = drop.x; p.y = drop.y;
+        drops.tick([{ body: p }], Date.now() + drops.ARM_MS + 1);
         const own = abilities.stateOf(sock).own || [];
         assert.equal(own.length, before.length + 1, 'an ability unlocked');
+        assert.ok(!drops.list().includes(drop), 'picked up');
     }
     supply.tick(at + 100);
     assert.equal(supply.snapshot(at + 100), undefined);

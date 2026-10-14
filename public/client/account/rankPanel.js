@@ -14,6 +14,14 @@ const GAIN = { fill: 'rgba(95,210,76,0.16)', line: 'rgba(95,210,76,0.6)', text: 
 const LOSS = { fill: 'rgba(235,64,52,0.16)', line: 'rgba(235,64,52,0.6)', text: '#ff8b7e' };
 const SOFT = '#9a96a8';   // secondary lines: readable, but quieter than the stats
 const EVEN = { fill: 'rgba(255,255,255,0.06)', line: 'rgba(255,255,255,0.18)', text: '#c9c1ad' };
+function deepInk(hex) {
+    const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ''));
+    if (!m) return '#1f1f1f';
+    const n = parseInt(m[1], 16);
+    const ch = (v) => Math.round(v * 0.55).toString(16).padStart(2, '0');
+    return '#' + ch((n >> 16) & 255) + ch((n >> 8) & 255) + ch(n & 255);
+}
+function lightStyle(st) { return { fill: st.fill, line: st.line, text: st === EVEN ? '#444444' : deepInk(st.text) }; }
 
 const S = {
     acct: false,        // an 'AC' arrived on this socket: an RK is coming
@@ -265,8 +273,9 @@ function bar(c, A, x0, x1, cy, v, col, alpha) {
     c.save();
     c.globalAlpha = alpha;
     c.lineCap = 'round';
-    A.drawBar(x0, x1, cy, 12 + chunk, A.color.black);
-    A.drawBar(x0, x1, cy, 12, '#1d1e25');
+    const light = A.theme === 'light';
+    A.drawBar(x0, x1, cy, 12 + chunk, light ? '#8a8a8a' : A.color.black);
+    A.drawBar(x0, x1, cy, 12, light ? '#d0d0d0' : '#1d1e25');
     const span = x1 - x0;
     if (v.ghost && v.ghost[1] > v.ghost[0] + 0.002) {
         c.globalAlpha = alpha * (v.loss ? 0.55 : 0.35) * (v.ghostK == null ? 1 : v.ghostK);
@@ -325,18 +334,18 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
 
     c.save();
     c.globalAlpha = alpha;
-    // the HUD's recessed well (app.js hudWell): dark fill, ink keyline
     rrect(c, x, y, w, h, 10);
-    c.fillStyle = 'rgba(0,0,0,0.55)';
+    c.fillStyle = 'rgba(0,0,0,0.22)';
     c.fill();
-    c.lineWidth = 2;
-    c.strokeStyle = '#120e15';
-    c.stroke();
     c.restore();
 
     const bx = x + 44, by = y + h / 2;
     const x0 = x + 92, x1 = x + w - 16;
-    const grey = A.color.grey, white = A.color.guiwhite;
+    const light = A.theme === 'light';
+    const grey = light ? '#444444' : A.color.grey, white = light ? '#1f1f1f' : A.color.guiwhite;
+    const soft = light ? '#555555' : SOFT, dust = light ? deepInk(DUST) : DUST;
+    const deep = (h) => light ? deepInk(h) : h;
+    const sty = (st) => light ? lightStyle(st) : st;
 
     if (S.guest) {
         drawBadge(c, bx, by, Math.min(56, h - 24), 'placement', { alpha: alpha * 0.7 });
@@ -345,7 +354,7 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
         A.drawText(t, x0, by, fitSize(A, t, 17, x1 - x0), white, 'left', true, alpha);
         const wb = S.guest.wouldBe;
         const line = wb && wb.name ? 'That game would have put you in ' + wb.name : 'Every raid counts once you’re ranked';
-        A.drawText(line, x0, by + 21, fitSize(A, line, 12, x1 - x0), SOFT, 'left', true, alpha);
+        A.drawText(line, x0, by + 21, fitSize(A, line, 12, x1 - x0), soft, 'left', true, alpha);
         return true;
     }
 
@@ -357,7 +366,7 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
         drawBadge(c, bx, by, 64, 'placement', { alpha: alpha * pulse });
         A.drawText('RANK', x0, y + 30, 10, grey, 'left', true, alpha);
         const dots = '.'.repeat(1 + (Math.floor(now / 380) % 3));
-        A.drawText(waited > 7000 ? 'Your rank will show up in a moment' : 'Counting' + dots, x0, y + 54, 16, SOFT, 'left', true, alpha);
+        A.drawText(waited > 7000 ? 'Your rank will show up in a moment' : 'Counting' + dots, x0, y + 54, 16, soft, 'left', true, alpha);
         return true;
     }
 
@@ -387,7 +396,7 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     }
     const tot = Math.round(total);
     const pillTxt = (tot > 0 ? '+' : tot < 0 ? '−' : '+') + Math.abs(tot) + ' RP';
-    const pw = pill(c, A, pillTxt, x1, y + 30, tot > 0 ? GAIN : tot < 0 ? LOSS : EVEN, alpha);
+    const pw = pill(c, A, pillTxt, x1, y + 30, sty(tot > 0 ? GAIN : tot < 0 ? LOSS : EVEN), alpha);
 
     // label + name
     const placing = v.division == null;
@@ -395,14 +404,14 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     let name = placing ? 'Game ' + Math.min(3, Math.max(1, st.reveal ? 3 : st.a.lives)) + ' of 3' : nameOf(v.division);
     const nameMax = x1 - x0 - pw - 12;
     const ns = fitSize(A, name, 18, nameMax, 12);
-    A.drawText(name, x0, y + 32, ns, col.text, 'left', true, alpha);
+    A.drawText(name, x0, y + 32, ns, deep(col.text), 'left', true, alpha);
     if (v.legend && v.legendNo > 0) {
         const nx = x0 + A.measureText(name, ns) + 10;
         const no = '#' + v.legendNo;
-        A.drawText(no, nx, y + 32, 16, '#ffc665', 'left', true, alpha);
+        A.drawText(no, nx, y + 32, 16, deep('#ffc665'), 'left', true, alpha);
         const was = st.b.legendNo | 0;
         if (was > v.legendNo && st.phase === 'done') {
-            A.drawText('▲' + (was - v.legendNo), nx + A.measureText(no, 16) + 8, y + 32, 11, GAIN.text, 'left', true, alpha);
+            A.drawText('▲' + (was - v.legendNo), nx + A.measureText(no, 16) + 8, y + 32, 11, deep(GAIN.text), 'left', true, alpha);
         }
     }
 
@@ -414,7 +423,7 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
         if (st.reveal && st.phase !== 'wait') line = 'Placements done';
         else if (st.phase !== 'wait' && st.inPlacement && st.a.lives <= st.b.lives) line = 'That game was too short to count. Try to stay alive longer.';
         else line = left <= 0 ? 'Placements done' : left + ' more ' + (left === 1 ? 'game' : 'games') + ' until you get your rank';
-        A.drawText(line, x0 + 96, y + 58, fitSize(A, line, 12, x1 - x0 - 96), SOFT, 'left', true, alpha);
+        A.drawText(line, x0 + 96, y + 58, fitSize(A, line, 12, x1 - x0 - 96), soft, 'left', true, alpha);
         line = '';
     } else {
         bar(c, A, x0 + 6, x1 - 6, y + 58, v, col, alpha);
@@ -427,14 +436,14 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     const dustTxt = S.dustMilli > 0 ? '+' + fmtDust(S.dustMilli) + ' gemdust' : '';
     const dw = dustTxt ? A.measureText(dustTxt, 12) : 0;
     if (line) A.drawText(line, x0, y + 79, fitSize(A, line, 12, x1 - x0 - dw - 14), white, 'left', true, alpha);
-    if (dustTxt) A.drawText(dustTxt, x1, v.pips ? y + 82 : y + 79, 12, DUST, 'right', true, alpha);
+    if (dustTxt) A.drawText(dustTxt, x1, v.pips ? y + 82 : y + 79, 12, dust, 'right', true, alpha);
 
     // where the points came from, small
     const bits = S.parts.filter((p) => p && p[1]).map((p) => p[0] + ' ' + (p[1] > 0 ? '+' : '−') + Math.abs(p[1] | 0));
     if (S.capped) bits.push('Max per game');
     if (bits.length) {
         const t = bits.join('  ·  ');
-        A.drawText(t, x0, y + 97, fitSize(A, t, 10, x1 - x0, 8), SOFT, 'left', true, alpha);
+        A.drawText(t, x0, y + 97, fitSize(A, t, 10, x1 - x0, 8), soft, 'left', true, alpha);
     }
     return true;
 }

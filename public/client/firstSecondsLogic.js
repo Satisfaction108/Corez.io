@@ -28,7 +28,7 @@ export const PIECES = ["messages", "tiles", "stats", "ability", "coach"];
 // o: { newcomer, tutorial, newRaid }
 export function planFor(o) {
     const s = o || {};
-    if (s.tutorial) return null;
+    if (s.tutorial || s.ao) return null;
     if (s.newRaid && s.recap) {
         const p = { ...NEW_RAID_PLAN, newcomer: !!s.newcomer, newRaid: true, recap: RECAP_MS, ...(s.newcomer ? {} : { nudge: 0 }) };
         for (const k of ["intro", "messages", "tiles", "stats", "ability", "coach", "tilesNudge", "statsNudge"]) if (p[k] > 0) p[k] += RECAP_MS;

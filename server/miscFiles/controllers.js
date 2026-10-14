@@ -1457,6 +1457,7 @@ const digWarsChambers = require('../game/terrain/coreChambers.js');
 const padGeom = require('../game/terrain/padGeom.js');
 // per-target bot difficulty (0 new player .. 1 the hardest we allow)
 const botDiff = require('./botDifficulty.js');
+const drive = require('./drive.js');
 const SENSE_MAX_R = 2500;       // the radar ping's reach, the widest a bot ever sees
 const tactics = require('./botTactics.js');
 const bossGuard = require('../game/terrain/bossGuard.js');
@@ -1893,7 +1894,8 @@ class BotNav {
             const reach = radius * 8;
             return { x: body.x + Math.cos(this.heading) * reach, y: body.y + Math.sin(this.heading) * reach, power: 1 };
         }
-        if (distance <= arriveAt) {
+        const lead = distance > 0 && !contact ? drive.coastLead(body, dx / distance, dy / distance, global.gameManager.roomSpeed) : 0;
+        if (distance <= arriveAt + lead) {
             this.arrived = true;
             this.track(now, false);
             return null;
@@ -1976,7 +1978,7 @@ class BotKeys {
         if (p <= 0.35) {
             if (!this.settling) { this.settling = true; this.pressing = false; }
             if (!this.pressing && dist > 60) this.pressing = true;
-            else if (this.pressing && dist < 22) this.pressing = false;
+            else if (this.pressing && dist < 22 + (dist > 0 ? drive.coastLead(body, dx / dist, dy / dist, global.gameManager.roomSpeed) : 0)) this.pressing = false;
             want = this.pressing;
         } else {
             this.settling = false;

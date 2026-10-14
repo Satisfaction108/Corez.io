@@ -192,7 +192,7 @@ import * as aoHud from './alwaysOn.js';
         }
         // a Mac calls that key Option
         if (!keybinds.KEY_DASH && /Mac|iPhone|iPad/.test(navigator.platform)) {
-            for (const b of document.querySelectorAll('b[data-key="KEY_DASH"]')) b.textContent = "Option";
+            for (const b of document.querySelectorAll('b[data-key="KEY_DASH"]')) b.textContent = shortKeyName("Option");
         }
         // Dash, Q (ability), comma (kit slot 2), period (screenshot)
         // and R (AI override) are new defaults: a bind someone saved on one of
@@ -227,6 +227,11 @@ import * as aoHud from './alwaysOn.js';
     function setKeybinds() {
         localStorage.setItem("keybinds", JSON.stringify(keybinds));
     }
+    function shortKeyName(k) {
+        if (!/^(alt|option|altleft|altright)$/i.test(String(k || ""))) return k;
+        return /Mac|iPhone|iPad/.test(navigator.platform) ? "\u2325" : "Alt";
+    }
+    window.dwShortKey = shortKeyName;
 
     function unselectElement() {
         if (window.getSelection) {
@@ -261,6 +266,7 @@ import * as aoHud from './alwaysOn.js';
                 keybinds[otherElement.keyId] = ["", -1];
             }
         }
+        key = shortKeyName(key);
         selectedElement.keyName = key;
         selectedElement.element.innerText = key;
         selectedElement.keyCode = keyCode;
@@ -277,7 +283,7 @@ import * as aoHud from './alwaysOn.js';
                 let key = element.dataset.key;
                 if (storeInDefault) defaultKeybinds[key] = [element.innerText, global[key]];
                 if (kb[key]) {
-                    element.innerText = kb[key][0];
+                    element.innerText = shortKeyName(kb[key][0]);
                     global[key] = kb[key][1];
                     resetButton.classList.add("active");
                 }
@@ -1934,6 +1940,7 @@ import * as aoHud from './alwaysOn.js';
     const spriteScale = (a) => crispOff ? Math.round(a * 20) / 20 : Math.round(a * 100) / 100;
     const spriteSize = (size) => crispOff ? Math.max(1, Math.round(size * 2) / 2) : Math.max(1, Math.round(size * 4) / 4);
     function drawText(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
+        defaultFillStyle = panelInk(defaultFillStyle);
         // offscreen bakes (tiles, icons) are a cache already: text goes in as vector
         if (nameRim || nameHalo || typeof defaultFillStyle !== "string" || typeof rawText !== "string" || !rawText || (!context._tf && !crispOff)) {
             return drawTextDirect(rawText, x, y, size, defaultFillStyle, align, center, fade, stroke, context);
@@ -2011,6 +2018,37 @@ import * as aoHud from './alwaysOn.js';
         const k = base * scale / q;
         context.drawImage(e.cv, 0, 0, e.pw, e.ph, x - e.w * k * 0.5 - e.X0 * k, y - e.Y0 * k, e.W * k, e.H * k);
     }
+    const TEXT_HALO = "rgba(255,255,255,0.92)";
+    const fillLum = new Map();
+    function darkFill(col) {
+        const d = fillInfo(col);
+        return d ? d.dark : false;
+    }
+    function noRimFill(col) {
+        if (HUD.theme !== "light" || rawInkOn) return false;
+        const d = fillInfo(col);
+        return d ? d.lum < 0.5 : false;
+    }
+    function fillInfo(col) {
+        if (typeof col !== "string") return null;
+        let d = fillLum.get(col);
+        if (d !== undefined) return d;
+        let r = -1, g = 0, b = 0;
+        const h = col.trim();
+        if (h[0] === "#") {
+            const x = h.length === 4 ? h.slice(1).split("").map(ch => ch + ch).join("") : h.slice(1, 7);
+            if (x.length === 6) { r = parseInt(x.slice(0, 2), 16); g = parseInt(x.slice(2, 4), 16); b = parseInt(x.slice(4, 6), 16); }
+        } else {
+            const m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/.exec(h);
+            if (m) { r = +m[1]; g = +m[2]; b = +m[3]; }
+        }
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255, spread = Math.max(r, g, b) - Math.min(r, g, b);
+        d = r >= 0 ? { lum, dark: lum < 0.32 || (lum < 0.62 && spread < 48) } : null;
+        if (fillLum.size > 400) fillLum.clear();
+        fillLum.set(col, d);
+        return d;
+    }
+    function inkFor(col) { return darkFill(col) ? TEXT_HALO : HUD.line; }
     function drawTextDirect(rawText, x, y, size, defaultFillStyle, align = "left", center = false, fade = 1, stroke = true, context = ctx[2]) {
         size += config.graphical.fontSizeBoost;
 
@@ -2050,7 +2088,9 @@ import * as aoHud from './alwaysOn.js';
         // a name style's outline / halo (styledName sets them for this one call)
         const rim = nameRim, halo = nameHalo;
         nameRim = nameHalo = null;
-        context.strokeStyle = rim || color.black;
+        const ink = rim || (darkFill(defaultFillStyle) ? TEXT_HALO : color.black);
+        if (!rim && !halo && noRimFill(defaultFillStyle)) stroke = false;
+        context.strokeStyle = ink;
         context.fillStyle = defaultFillStyle;
         context.save();
         if (nativeAlign) context.textAlign = align;
@@ -2068,7 +2108,7 @@ import * as aoHud from './alwaysOn.js';
                 // the style's glow (cosmetics.strokeHalo): a bright core
                 // hugging the outline, two soft steps out
                 cosmetics.strokeHalo(context, renderedFullText, Xoffset, Yoffset, halo);
-                context.strokeStyle = rim || color.black;
+                context.strokeStyle = ink;
             }
             context.strokeText(renderedFullText, Xoffset, Yoffset);
         }
@@ -2235,11 +2275,10 @@ import * as aoHud from './alwaysOn.js';
         else if (type == "bar") drawBarStroke(x - width / 2, y, width, color3 ? color3 : color.black, height);
     }
 
-    // Previews (upgrade tiles, /tanks atlas): the theme's grey barrels and turrets
-    // drawn light with a dark edge, so they read on any tile colour
     let previewGrey = false;
-    const PREVIEW_GREY = "#b4b3bd", PREVIEW_GREY_EDGE = "#55535f";
     window.dwPreviewGrey = (on) => { previewGrey = !!on; };
+    const THEME_GREY_ID = "16 0 1 0 false", THEME_BLACK_ID = "9 0 1 0 false";
+    const SPAWNER_FRONT_MAX = 0.72;
     // An entity's class mockup index, the number before the first "-" of its
     // index string, parsed once per index change instead of a split per call
     // (several times per entity per frame).
@@ -2649,7 +2688,7 @@ import * as aoHud from './alwaysOn.js';
                 h1 = aspect > 0 ? height : -height * aspect;
             const sinT = Math.sin(angle),
                 cosT = Math.cos(angle);
-            const back = -position, front = length * 2 - position;
+            const back = 0, front = length * 2 - position;
             context.globalAlpha = alpha;
 
             context.beginPath();
@@ -2690,6 +2729,7 @@ import * as aoHud from './alwaysOn.js';
         };
         // one options object for every skinned hull, refilled per draw
         const skinOpts = { statusColor: null, blend: 0, flash: false, flashColor: null, hitBlend: 0, hitColor: null, borderless: false, fill: true, lowFx: false, force: false };
+        let rootStroke = 1;
 
         return (baseColor, x, y, instance, ratio, alpha = 1, scale = 1, lineWidthMult = 1, rot = 0, turretsObeyRot = false, assignedContext = false, turretInfo = false, render = instance.render, smoothsize = false) => {
 
@@ -2780,8 +2820,8 @@ import * as aoHud from './alwaysOn.js';
 
             const sharp = config.graphical.sharpEdges;
             const minBorder = config.graphical.mininumBorderChunk;
-            const borderChunk = config.graphical.borderChunk;
-            const initStrokeWidth = lineWidthMult * Math.max(minBorder, ratio * borderChunk);
+            if (turretInfo === false) rootStroke = lineWidthMult * Math.max(minBorder, ratio * gameDraw.entityBorder(scale * (smoothsize || instSize)));
+            const initStrokeWidth = rootStroke;
 
             context.lineCap = sharp ? "miter" : "round";
             context.lineJoin = sharp ? "miter" : "round";
@@ -2839,6 +2879,8 @@ import * as aoHud from './alwaysOn.js';
 
             const sourceGuns = source.guns;
             const gunLength = sourceGuns.length;
+            const themeGrey = gameDraw.modifyColor(THEME_GREY_ID), themeBlack = gameDraw.modifyColor(THEME_BLACK_ID);
+            const barrelSkin = turretInfo === false && instance.skin ? cosmetics.barrelStyleOf(instance.skin) : null;
 
             for (let drawAbove = 0; drawAbove < 2; ++drawAbove) {
 
@@ -2860,30 +2902,40 @@ import * as aoHud from './alwaysOn.js';
                     const gx = g.offset * cosGunAngle;
                     const gy = g.offset * sinGunAngle;
 
-                    let gunColor = g.color == null ? color.grey : gameDraw.modifyColor(g.color, baseColor);
-                    const lightGun = previewGrey && gunColor === color.grey;
-                    if (lightGun) gunColor = PREVIEW_GREY;
+                    let gunColor = g.color == null ? gameDraw.TANK_GUN : gameDraw.modifyColor(g.color, baseColor);
+                    if (gunColor === themeGrey) gunColor = gameDraw.TANK_GUN;
+                    else if (gunColor === themeBlack) gunColor = gameDraw.TANK_SPIKE;
                     const gunAlpha = g.alpha === undefined ? 1 : g.alpha;
                     let mixedColor = gameDraw.mixColors(gunColor, statusColor, blend);
                     global.gameUpdate && instance.invuln !== 0 && 100 > (Date.now() - instance.invuln) % 200 && ((mixedColor = gameDraw.mixColors(gunColor, gameDraw.getColor(6), 0.3)));
                     if (hitBlend > 0) mixedColor = gameDraw.mixColors(mixedColor, hitTint, hitBlend * 0.6);
-                    gameDraw.setColor(context, mixedColor);
-                    if (lightGun) context.strokeStyle = PREVIEW_GREY_EDGE;
+                    gameDraw.setEntityColor(context, mixedColor);
 
+                    const gunX = xx + drawSize * gx, gunY = yy + drawSize * gy;
+                    const gunHalfLen = drawSize * g.length / 2, gunBack = drawSize * positions[i];
+                    const spawnerFront = g.aspect > 1 && g.offset <= 1 && g.length < g.width * 1.2 ? g.width * g.aspect / 2 : 0;
+                    const gunHalfWidth = drawSize * g.width / 2 * (spawnerFront > SPAWNER_FRONT_MAX ? SPAWNER_FRONT_MAX / spawnerFront : 1);
                     drawGun(
                         context,
-                        xx + drawSize * gx,
-                        yy + drawSize * gy,
-                        drawSize * g.length / 2,
-                        drawSize * g.width / 2,
+                        gunX,
+                        gunY,
+                        gunHalfLen,
+                        gunHalfWidth,
                         g.aspect,
                         gAngle,
                         g.borderless,
                         g.drawFill,
                         gunAlpha,
                         g.strokeWidth,
-                        drawSize * positions[i]
+                        gunBack
                     );
+                    if (barrelSkin && g.drawFill && !g.borderless) {
+                        try {
+                            context.globalAlpha = gunAlpha * (1 - hitBlend * 0.6);
+                            cosmetics.paintBarrel(context, gunX, gunY, gunHalfLen, gunHalfWidth, g.aspect, gAngle, gunBack, instance.skin, initStrokeWidth * g.strokeWidth);
+                            context.globalAlpha = 1;
+                        } catch (e) { context.globalAlpha = 1; }
+                    }
                 }
 
                 if (drawAbove === 0) {
@@ -2892,14 +2944,13 @@ import * as aoHud from './alwaysOn.js';
 
                     // bodyBase: the unmixed hull colour (skins are built from it)
                     let bodyBase = gameDraw.modifyColor(instance.color, baseColor);
-                    const lightBody = previewGrey && bodyBase === color.grey;
-                    if (lightBody) bodyBase = PREVIEW_GREY;
+                    if (bodyBase === themeGrey) bodyBase = gameDraw.TANK_GUN;
+                    else if (bodyBase === themeBlack) bodyBase = gameDraw.TANK_SPIKE;
                     const invulnBlink = !!(global.gameUpdate && instance.invuln !== 0 && 100 > (Date.now() - instance.invuln) % 200);
                     let bodyColor = gameDraw.mixColors(bodyBase, statusColor, blend);
                     if (invulnBlink) bodyColor = gameDraw.mixColors(bodyBase, gameDraw.getColor(6), 0.3);
                     if (hitBlend > 0) bodyColor = gameDraw.mixColors(bodyColor, hitTint, hitBlend);
-                    gameDraw.setColor(context, bodyColor);
-                    if (lightBody) context.strokeStyle = PREVIEW_GREY_EDGE;
+                    gameDraw.setEntityColor(context, bodyColor);
 
                     const glow = m.glow;
                     const glowRadius = config.graphical.noGlow ? 0 : glow.radius;
@@ -3120,11 +3171,7 @@ import * as aoHud from './alwaysOn.js';
         } else ctx[2].drawImage(bm.cv, x - bm.pad, y - bm.pad, w + bm.pad * 2, h + bm.pad * 2);
     }
     // state: 0 idle, 1 hover, 2 pressed. key: keycap label or false.
-    // A tile's tank at device pixels with a light rim, drawn once per tank and
-    // tile size (fr: upGrid.tileFrame) and blitted after
-    const TILE_RIM = "rgba(255,243,217,0.9)";
     const tilePrevCache = new Map();
-    let tilePrevHalo = null;
     function tankMockOf(picture) {
         const ids = String(picture.index).split("-").map(i => global.mockups && global.mockups[parseInt(i)]).filter(Boolean);
         if (ids.length < 2) return ids[0] || null;
@@ -3158,30 +3205,13 @@ import * as aoHud from './alwaysOn.js';
             const ox = Math.round(-b.x0 * sc) + P, oy = Math.round(-b.y0 * sc) + P;
             const cv = document.createElement("canvas");
             cv.width = W; cv.height = H;
-            if (!tilePrevHalo) tilePrevHalo = document.createElement("canvas");
-            const hv = tilePrevHalo;
-            if (hv.width < W || hv.height < H) { hv.width = Math.max(W, hv.width); hv.height = Math.max(H, hv.height); }
-            const tank = document.createElement("canvas");
-            tank.width = W; tank.height = H;
-            const c = tank.getContext("2d"), h = hv.getContext("2d"), o = cv.getContext("2d");
+            const c = cv.getContext("2d");
             c.setTransform(a, 0, 0, a, 0, 0);
             c.lineCap = "round";
             c.lineJoin = "round";
             previewGrey = true;
             try { drawEntity(picture.color, ox / a, oy / a, picture, 1, 1, fr.scale / picture.size, lineWidthMult, fr.angle, true, c); }
             finally { previewGrey = false; }
-            h.setTransform(1, 0, 0, 1, 0, 0);
-            h.clearRect(0, 0, hv.width, hv.height);
-            h.drawImage(tank, 0, 0);
-            h.globalCompositeOperation = "source-in";
-            h.fillStyle = TILE_RIM;
-            h.fillRect(0, 0, W, H);
-            h.globalCompositeOperation = "source-over";
-            for (let i = 0; i < 8; i++) {
-                const an = i * Math.PI / 4;
-                o.drawImage(hv, 0, 0, W, H, Math.cos(an) * rim, Math.sin(an) * rim, W, H);
-            }
-            o.drawImage(tank, 0, 0);
             e = { cv, ox, oy };
             if (tilePrevCache.size >= 64) tilePrevCache.delete(tilePrevCache.keys().next().value);
             tilePrevCache.set(key, e);
@@ -3244,7 +3274,7 @@ import * as aoHud from './alwaysOn.js';
             while (size > base * 0.8 && hudTitleW(name, size) > room) size -= 0.5;
             if (rb || hudTitleW(name, size) <= room || words.length < 2) {
                 while (size > 6 && hudTitleW(name, size) > room) size -= 0.5;
-                hudTitle(name, len / 2, mid, size, HUD.head, "center", 1, c);
+                hudTitle(name, len / 2, mid, size, HUD_DARK.head, "center", 1, c);
             } else {
                 // split where the two halves come out most even
                 let best = 1, bestW = Infinity;
@@ -3255,8 +3285,8 @@ import * as aoHud from './alwaysOn.js';
                 const l1 = words.slice(0, best).join(" "), l2 = words.slice(best).join(" ");
                 size = Math.min(base * 0.72, band * 0.46);
                 while (size > 5 && Math.max(hudTitleW(l1, size), hudTitleW(l2, size)) > room) size -= 0.5;
-                hudTitle(l1, len / 2, mid - size * 0.52, size, HUD.head, "center", 1, c);
-                hudTitle(l2, len / 2, mid + size * 0.52, size, HUD.head, "center", 1, c);
+                hudTitle(l1, len / 2, mid - size * 0.52, size, HUD_DARK.head, "center", 1, c);
+                hudTitle(l2, len / 2, mid + size * 0.52, size, HUD_DARK.head, "center", 1, c);
             }
             if (key) hudKey(c, 5 * k, down + 5 * k, key, Math.max(10, 17 * k));
             // the fine keyline last so nothing paints over the edge
@@ -3312,96 +3342,139 @@ import * as aoHud from './alwaysOn.js';
     // QA: one upgrade tile into any 2d context (tile previews, scripts/build-tanks.js checks)
     window.dwUpgradeTile = (c, ...args) => { const o = ctx[2]; ctx[2] = c; try { drawUpgradeTile(...args); } finally { ctx[2] = o; } };
 
-    // Dig Wars: the cavern floor. A seamless flat-fill tile (no gradients):
-    // two-tone earth patches plus a few pebbles outlined like the walls.
-    // Built once offscreen, world-locked, deterministic.
-    let floorPattern = null;
-    function makeFloorPattern(context) {
-        const S = 256;
-        const tile = document.createElement("canvas");
-        tile.width = tile.height = S;
-        const t = tile.getContext("2d");
-        // deterministic hash so every session's floor looks the same
-        let seed = 7;
+    const WORLD_LIGHT = {
+        void: "#a7a7a7",
+        floor: "#cbcbcb",
+        camo: ["rgba(0,0,0,0.035)", "rgba(255,255,255,0.06)", "rgba(0,0,0,0.06)"],
+        grid: "#000000",
+        gridA: 0.075,
+        padTint: 0.45,
+        padTint2: 0.68,
+        padLine: -0.4,
+        padInk: "#555555",
+        padFace: "#f4f4f4",
+        padWell: "#dadada",
+        padBand: "#b4b4b4",
+        padTooth: "#d0d0d0",
+        mapVoid: "#a7a7a7",
+        mapFloor: "#cbcbcb",
+        mapRock: "#e3bf6e",
+        mapRockInk: "rgba(0,0,0,0.35)",
+        chamberWall: "#c4c4c4",
+        chamberInk: "#5c5c5c",
+    };
+    const WORLD_DARK = {
+        void: "#1d1e22",
+        floor: "#2a2b30",
+        camo: ["rgba(0,0,0,0.1)", "rgba(255,255,255,0.03)", "rgba(0,0,0,0.17)"],
+        grid: "#ffffff",
+        gridA: 0.06,
+        padTint: -0.3,
+        padTint2: -0.5,
+        padLine: -0.68,
+        padInk: "#111114",
+        padFace: "#4b4d55",
+        padWell: "#3a3c43",
+        padBand: "#61636c",
+        padTooth: "#6e7079",
+        mapVoid: "#1d1e22",
+        mapFloor: "#2a2b30",
+        mapRock: "#8a6f3c",
+        mapRockInk: "rgba(0,0,0,0.5)",
+        chamberWall: "#4b4d55",
+        chamberInk: "#111114",
+    };
+    let WORLD_ART = WORLD_LIGHT, worldDark = false, worldThemeDirty = true, floorPattern = null;
+    try {
+        new MutationObserver(() => { worldThemeDirty = true; }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    } catch (e) { void e; }
+    function syncWorldTheme() {
+        worldThemeDirty = false;
+        const dark = document.documentElement.getAttribute("data-theme") === "dark";
+        if (dark !== worldDark) {
+            worldDark = dark;
+            WORLD_ART = dark ? WORLD_DARK : WORLD_LIGHT;
+            floorPattern = null;
+            for (const k in vaultSpritesTeam) delete vaultSpritesTeam[k];
+        }
+        if (window.terrainRenderer && window.terrainRenderer.setTheme) window.terrainRenderer.setTheme(dark);
+    }
+    const worldColCache = new Map();
+    function worldMix(hex, k) {
+        let m = worldColCache.get(hex);
+        if (!m) { m = new Map(); worldColCache.set(hex, m); }
+        let v = m.get(k);
+        if (v === undefined) {
+            const rgb = hexToRgb(hex);
+            const f = (ch) => Math.round(k >= 0 ? ch + (255 - ch) * k : ch * (1 + k));
+            v = "rgb(" + f(rgb[0]) + "," + f(rgb[1]) + "," + f(rgb[2]) + ")";
+            m.set(k, v);
+        }
+        return v;
+    }
+    const CAMO_TILE = 768;
+    const CAMO_BLOBS = (() => {
+        const S = CAMO_TILE, out = [];
+        let seed = 11;
         const rng = () => {
             seed = (Math.imul(seed, 1597334677) + 926135893) | 0;
             return ((seed >>> 8) & 0xffffff) / 0x1000000;
         };
-        // three flat tones: base, lighter, darker. Neutral near-black so the
-        // wall and team colours own the contrast.
-        // (Oct 6: lifted a step, the cave read murky; still well under the rocks)
-        const BASE = "#282624", LIGHT = "#2e2c29", DARK = "#222120";
-        t.fillStyle = BASE;
-        t.fillRect(0, 0, S, S);
-        // toroidal draw: paint each feature at all 9 wrap offsets so the
-        // tile is seamless. Randomness is rolled before the 9 copies so
-        // every copy is identical.
-        const wrapped = (draw) => {
-            for (let dx = -1; dx <= 1; dx++)
-                for (let dy = -1; dy <= 1; dy++) {
-                    t.save();
-                    t.translate(dx * S, dy * S);
-                    draw();
-                    t.restore();
-                }
-        };
-        // irregular rounded blob: N points with jittered radius, joined by
-        // quadratic curves
-        const blob = (x, y, r) => {
-            const n = 7 + (rng() * 3 | 0);
-            const pts = [];
+        const blob = (layer, rMin, rMax) => {
+            const x = rng() * S, y = rng() * S, r = rMin + rng() * (rMax - rMin);
+            const stretch = 1 + rng() * 0.9, rot = rng() * Math.PI, ca = Math.cos(rot), sa = Math.sin(rot);
+            const n = 11 + (rng() * 5 | 0), wob = rng() * 6.28, pts = [];
             for (let i = 0; i < n; i++) {
-                const a = (i / n) * Math.PI * 2 + rng() * 0.4;
-                const rr = r * (0.62 + rng() * 0.55);
-                pts.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr]);
+                const a = (i / n) * Math.PI * 2;
+                const rr = r * (0.62 + 0.38 * Math.sin(a * 2 + wob) * 0.5 + rng() * 0.42);
+                const px = Math.cos(a) * rr * stretch, py = Math.sin(a) * rr;
+                pts.push([x + px * ca - py * sa, y + px * sa + py * ca]);
             }
-            return () => {
-                t.beginPath();
-                for (let i = 0; i < n; i++) {
-                    const p = pts[i], q = pts[(i + 1) % n];
-                    const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
-                    i ? t.quadraticCurveTo(p[0], p[1], mx, my)
-                      : t.moveTo((pts[n - 1][0] + p[0]) / 2, (pts[n - 1][1] + p[1]) / 2);
-                    if (i) continue;
-                    t.quadraticCurveTo(p[0], p[1], mx, my);
-                }
-                t.closePath();
-            };
+            out.push({ layer, pts });
         };
-        // layer 1: large earth patches, dark then light
-        for (let i = 0; i < 9; i++) {
-            const path = blob(rng() * S, rng() * S, 26 + rng() * 34);
-            wrapped(() => { path(); t.fillStyle = DARK; t.fill(); });
+        for (let i = 0; i < 13; i++) blob(0, 70, 140);
+        for (let i = 0; i < 11; i++) blob(1, 55, 120);
+        for (let i = 0; i < 12; i++) blob(2, 26, 62);
+        return out;
+    })();
+    const worldIsland = { src: null, gw: 0, gh: 0, path: null };
+    function worldIslandPath(gw, gh) {
+        const tr = window.terrainRenderer;
+        const src = tr && tr.ready && tr.islandPath ? tr.islandPath() : null;
+        if (!src) return null;
+        if (worldIsland.src !== src || worldIsland.gw !== gw || worldIsland.gh !== gh) {
+            const p = new Path2D();
+            p.addPath(src, new DOMMatrix([gw / tr._cols, 0, 0, gh / tr._rows, -gw / 2, -gh / 2]));
+            worldIsland.src = src; worldIsland.gw = gw; worldIsland.gh = gh; worldIsland.path = p;
         }
-        for (let i = 0; i < 9; i++) {
-            const path = blob(rng() * S, rng() * S, 20 + rng() * 28);
-            wrapped(() => { path(); t.fillStyle = LIGHT; t.fill(); });
-        }
-        // layer 2: small light dirt clods on the patches
-        for (let i = 0; i < 26; i++) {
-            const path = blob(rng() * S, rng() * S, 2.5 + rng() * 4.5);
-            const tone = rng() < 0.5 ? "#33312c" : "#1e1d1b";
-            wrapped(() => { path(); t.fillStyle = tone; t.fill(); });
-        }
-        // layer 3: pebbles with the same dark border the rocks wear
-        for (let i = 0; i < 12; i++) {
-            const x = rng() * S, y = rng() * S;
-            const r = 2.2 + rng() * 2.8, rot = rng() * Math.PI;
-            const squish = 0.65 + rng() * 0.3;
-            const col = rng() < 0.5 ? "#44413b" : "#514d44";
-            wrapped(() => {
-                t.save();
-                t.translate(x, y);
-                t.rotate(rot);
-                t.fillStyle = col;
-                t.beginPath();
-                t.ellipse(0, 0, r, r * squish, 0, 0, Math.PI * 2);
-                t.fill();
-                t.lineWidth = 1.4;
-                t.strokeStyle = "rgb(5,4,7)";
-                t.stroke();
-                t.restore();
-            });
+        return worldIsland.path;
+    }
+    function makeFloorPattern(context) {
+        const S = CAMO_TILE;
+        const tile = document.createElement("canvas");
+        tile.width = tile.height = S;
+        const t = tile.getContext("2d");
+        t.fillStyle = WORLD_ART.floor;
+        t.fillRect(0, 0, S, S);
+        for (let layer = 0; layer < 3; layer++) {
+            t.beginPath();
+            for (const b of CAMO_BLOBS) {
+                if (b.layer !== layer) continue;
+                const pts = b.pts, n = pts.length;
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        const ox = dx * S, oy = dy * S;
+                        t.moveTo((pts[n - 1][0] + pts[0][0]) / 2 + ox, (pts[n - 1][1] + pts[0][1]) / 2 + oy);
+                        for (let i = 0; i < n; i++) {
+                            const p = pts[i], q = pts[(i + 1) % n];
+                            t.quadraticCurveTo(p[0] + ox, p[1] + oy, (p[0] + q[0]) / 2 + ox, (p[1] + q[1]) / 2 + oy);
+                        }
+                        t.closePath();
+                    }
+                }
+            }
+            t.fillStyle = WORLD_ART.camo[layer];
+            t.fill();
         }
         return context.createPattern(tile, "repeat");
     }
@@ -3498,12 +3571,11 @@ import * as aoHud from './alwaysOn.js';
         if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
         return m + ":" + String(s).padStart(2, "0");
     }
-    // Door art, baked once per colour: rock-purple faces, one ink outline per
-    // shape, a hard ink drop; the colour is kept to rim, bolts and gem heart.
     function makeVaultSprites(pal = GOLD_PAL) {
         const S = 256, C = S / 2;
-        const INK = "#120e15", LW = 5;
+        const INK = WORLD_ART.padInk, LW = 6;
         const GEM = [[-1, -0.38], [-0.55, -0.95], [0.55, -0.95], [1, -0.38], [0, 0.95]];
+        const gemInk = worldMix(pal.main, -0.4);
         const layer = (draw) => {
             const cv = document.createElement("canvas");
             cv.width = cv.height = S;
@@ -3519,35 +3591,30 @@ import * as aoHud from './alwaysOn.js';
             c.fillStyle = fill; c.fill();
             if (lw) { c.lineWidth = lw; c.strokeStyle = INK; c.stroke(); }
         };
-        // static base: ink drop, flat plate, coloured rim, recessed well
         const plate = layer((c) => {
-            disc(c, S * 0.46, INK, 0, S * 0.024);
-            disc(c, S * 0.46, "#3a3245");
+            disc(c, S * 0.46, WORLD_ART.padFace);
             c.lineWidth = S * 0.032; c.strokeStyle = pal.main;
             c.beginPath(); c.arc(0, 0, S * 0.425, 0, Math.PI * 2); c.stroke();
             c.lineWidth = 3; c.strokeStyle = INK;
             c.beginPath(); c.arc(0, 0, S * 0.405, 0, Math.PI * 2); c.stroke();
-            disc(c, S * 0.325, "#1e1924");
+            disc(c, S * 0.325, WORLD_ART.padWell);
         });
-        // rotating lock ring: a flat purple band with short teeth, every
-        // third one in the door colour
         const cog = layer((c) => {
             c.lineWidth = S * 0.045 + LW; c.strokeStyle = INK;
             c.beginPath(); c.arc(0, 0, S * 0.365, 0, Math.PI * 2); c.stroke();
-            c.lineWidth = S * 0.045; c.strokeStyle = "#4a4156";
+            c.lineWidth = S * 0.045; c.strokeStyle = WORLD_ART.padBand;
             c.stroke();
             for (let i = 0; i < 12; i++) {
                 c.save();
                 c.rotate((i / 12) * Math.PI * 2);
                 c.beginPath();
                 c.rect(S * 0.335, -S * 0.019, S * 0.06, S * 0.038);
-                c.fillStyle = i % 3 === 0 ? pal.main : "#6b5f7a";
+                c.fillStyle = i % 3 === 0 ? pal.main : WORLD_ART.padTooth;
                 c.fill();
                 c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
                 c.restore();
             }
         });
-        // the heart: a gem-cut emblem in the door colour + three handles
         const wheel = layer((c) => {
             const spoke = (w, col) => {
                 c.lineWidth = w; c.strokeStyle = col;
@@ -3560,7 +3627,7 @@ import * as aoHud from './alwaysOn.js';
                 c.stroke();
             };
             spoke(S * 0.045 + LW, INK);
-            spoke(S * 0.045, "#6b5f7a");
+            spoke(S * 0.045, WORLD_ART.padBand);
             const gem = (scale, dy) => {
                 c.beginPath();
                 GEM.forEach((p, i) => {
@@ -3570,14 +3637,12 @@ import * as aoHud from './alwaysOn.js';
                 c.closePath();
             };
             gem(0.15, 0); c.fillStyle = pal.main; c.fill();
-            c.lineWidth = LW; c.strokeStyle = INK; c.stroke();
-            // one flat lighter facet across the crown, like the gem pickups
             c.save();
             gem(0.15, 0); c.clip();
-            c.fillStyle = "rgba(255,255,255,0.28)";
+            c.fillStyle = "rgba(255,255,255,0.35)";
             c.fillRect(-S * 0.15, -S * 0.15, S * 0.3, S * 0.085);
             c.restore();
-            gem(0.15, 0); c.lineWidth = LW; c.strokeStyle = INK; c.stroke();
+            gem(0.15, 0); c.lineWidth = LW; c.strokeStyle = gemInk; c.stroke();
         });
         return { plate, cog, wheel };
     }
@@ -3626,24 +3691,18 @@ import * as aoHud from './alwaysOn.js';
                 : gameDraw.getColor(v.team === -1 ? "blue" : "red");
             const pal = rainbow ? { main: teamCol, light: "#ffffff", high: "#ffffff" }
                 : (v.team === -1 ? BLUE_PAL : RED_PAL);
-            const doorSprites = rainbow ? getVaultSpritesForColor("#c5cad6")
+            const doorSprites = rainbow ? getVaultSpritesForColor(BANK_PILL)
                 : getVaultSpritesForTeam(v.team);
 
             c.save();
             c.translate(sx, sy);
             c.lineJoin = "round";
             const lw = Math.max(1.5, R * 0.035);
-            const hue = hexToRgb(teamCol);
-            // octagonal foundation so the vault doesn't read as a tank: ink
-            // drop, deep team shade, ink outline, bright rim band for the claim
-            polyPath(c, 0, R * 0.07, R * 1.22, 8, Math.PI / 8);
-            c.fillStyle = "rgba(0,0,0,0.6)";
-            c.fill();
             polyPath(c, 0, 0, R * 1.22, 8, Math.PI / 8);
-            c.fillStyle = inkShade(hue, 0.6);
+            c.fillStyle = worldMix(teamCol, WORLD_ART.padTint);
             c.fill();
-            c.lineWidth = lw;
-            c.strokeStyle = HUD.ink;
+            c.lineWidth = lw * 1.6;
+            c.strokeStyle = worldMix(teamCol, WORLD_ART.padLine);
             c.stroke();
             const pulse = 0.5 + 0.5 * Math.sin(now / 650);
             polyPath(c, 0, 0, R * 1.11, 8, Math.PI / 8);
@@ -3815,7 +3874,7 @@ import * as aoHud from './alwaysOn.js';
             const band = Math.max(2, R * 0.065);
             const pulse = 0.5 + 0.5 * Math.sin(now / 650 + o.id);
             const claimed = !!(st.t || st.h);
-            const hue = hexToRgb(claimed ? bodyCol : ownCol);
+            const hueCol = claimed ? bodyCol : ownCol;
             if (claimed) {
                 // the structure: the octagon on the pad (matches the banner
                 // entity's realSize). The banner entity itself is suppressed
@@ -3825,22 +3884,19 @@ import * as aoHud from './alwaysOn.js';
                 if (o._smoothH === undefined) o._smoothH = tgtH;
                 o._smoothH += (tgtH - o._smoothH) * 0.12;
                 const frac = o._smoothH;
-                polyPath(c, 0, R * 0.08, bodyR, 8, 0);
-                c.fillStyle = "rgba(0,0,0,0.6)";
-                c.fill();
                 polyPath(c, 0, 0, bodyR, 8, 0);
-                c.fillStyle = inkShade(hue, 0.6);
+                c.fillStyle = worldMix(hueCol, WORLD_ART.padTint);
                 c.fill();
-                c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
+                c.lineWidth = lw * 1.6; c.strokeStyle = worldMix(hueCol, WORLD_ART.padLine); c.stroke();
                 polyPath(c, 0, 0, bodyR * 0.915, 8, 0);
                 c.globalAlpha = 0.8 + 0.2 * pulse;
                 c.lineWidth = band; c.strokeStyle = bodyCol; c.stroke();
                 c.globalAlpha = 1;
                 // the pad it stands on, one step down
                 polyPath(c, 0, 0, R * 1.02, 8, Math.PI / 8);
-                c.fillStyle = inkShade(hue, 0.74);
+                c.fillStyle = worldMix(hueCol, WORLD_ART.padTint2);
                 c.fill();
-                c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
+                c.lineWidth = lw * 1.6; c.strokeStyle = worldMix(hueCol, WORLD_ART.padLine); c.stroke();
                 // banner HP: the HUD bar bent into a ring round the structure
                 // (ink keyline, dark track, flat cream fill)
                 const ringR = bodyR * 1.1, bw = Math.max(4, R * 0.085);
@@ -3855,13 +3911,10 @@ import * as aoHud from './alwaysOn.js';
                 }
             } else {
                 // neutral pad: the same plate, grey (or the site colour)
-                polyPath(c, 0, R * 0.07, R * 1.08, 8, Math.PI / 8);
-                c.fillStyle = "rgba(0,0,0,0.6)";
-                c.fill();
                 polyPath(c, 0, 0, R * 1.08, 8, Math.PI / 8);
-                c.fillStyle = inkShade(hue, 0.6);
+                c.fillStyle = worldMix(hueCol, WORLD_ART.padTint);
                 c.fill();
-                c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
+                c.lineWidth = lw * 1.6; c.strokeStyle = worldMix(hueCol, WORLD_ART.padLine); c.stroke();
                 polyPath(c, 0, 0, R * 0.97, 8, Math.PI / 8);
                 c.globalAlpha = 0.55 + 0.2 * pulse;
                 c.lineWidth = band; c.strokeStyle = ownCol; c.stroke();
@@ -4074,12 +4127,12 @@ import * as aoHud from './alwaysOn.js';
             c.stroke(art.spokes);
 
             c.globalAlpha = a0;                        // the wall, flat
-            c.fillStyle = "#23262d";
+            c.fillStyle = WORLD_ART.chamberWall;
             c.fill(art.ring, "evenodd");
-            c.strokeStyle = "#111318";
+            c.strokeStyle = WORLD_ART.chamberInk;
             c.lineWidth = wu * 0.5;
             c.stroke(art.outer);
-            c.strokeStyle = "#16181d";
+            c.strokeStyle = WORLD_ART.chamberInk;
             c.lineWidth = wu * 0.34;
             c.stroke(art.inner);
 
@@ -4091,7 +4144,7 @@ import * as aoHud from './alwaysOn.js';
             c.globalAlpha = a0;                        // stud bolts
             c.fillStyle = teamCol;
             c.fill(art.studs);
-            c.strokeStyle = "#111318";
+            c.strokeStyle = WORLD_ART.chamberInk;
             c.lineWidth = wu * 0.22;
             c.stroke(art.studs);
             c.restore();
@@ -4290,17 +4343,15 @@ import * as aoHud from './alwaysOn.js';
     }
 
     function drawFloor(px, py, ratio, tick) {
+        if (worldThemeDirty) syncWorldTheme();
 
-        // out-of-bounds void: even darker than the cavern floor
-        clearScreen("#0d0d0c", 1, ctx[0]);
+        clearScreen(WORLD_ART.void, 1, ctx[0]);
 
         let gameWidth = global.gameWidth = global.player.roomAnim.x.get(tick);
         let gameHeight = global.gameHeight = global.player.roomAnim.y.get(tick);
 
         ctx[0].globalAlpha = 1;
-        // room base = the dirt tile's ground colour, so a failed pattern
-        // still leaves a dark floor
-        ctx[0].fillStyle = "#282624";
+        ctx[0].fillStyle = WORLD_ART.floor;
 
         let roomX = -px + global.screenWidth / 2 - ratio * gameWidth / 2,
             roomY = -py + global.screenHeight / 2 - ratio * gameHeight / 2,
@@ -4326,48 +4377,37 @@ import * as aoHud from './alwaysOn.js';
         // like a small copy of the raid map. Rim rocks overhang it unclipped.
         const island = tutorialIsland();
         if (island) {
-            if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
             ctx[0].save();
             ctx[0].translate(roomX + roomWidth / 2, roomY + roomHeight / 2);
             ctx[0].scale(ratio, ratio);
             ctx[0].beginPath();
             ctx[0].arc(island.x, island.y, island.r + 40, 0, Math.PI * 2);
-            ctx[0].fillStyle = "#282624";
-            ctx[0].fill();
-            ctx[0].fillStyle = floorPattern;
+            if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
+            ctx[0].fillStyle = floorPattern || WORLD_ART.floor;
             ctx[0].fill();
             ctx[0].restore();
         }
         // Square dirt base for normal modes. Royale paints its dirt under
         // the rocks only (below), leaving void at the raw rock edge.
         if (!island && (!royaleMode() || !getMapPaths())) ctx[0].fillRect(roomX, roomY, roomWidth, roomHeight);
-        // Cavern floor: the dirt tile repeated, anchored to world coordinates
-        // and scaled with the camera. Only the visible slice of the room is
-        // pattern-filled.
-        // Royale island: dirt lives only under the rocks (their combined
-        // path), so the void starts exactly at the rocks' raw edge.
         if (royaleMode()) {
-            const islPaths = getMapPaths();
-            if (islPaths) {
-                if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
+            const islPath = worldIslandPath(gameWidth, gameHeight);
+            if (islPath) {
                 ctx[0].save();
                 ctx[0].translate(roomX + roomWidth / 2, roomY + roomHeight / 2);
                 ctx[0].scale(ratio, ratio);
-                ctx[0].fillStyle = "#282624";
-                ctx[0].fill(islPaths.alive);
-                ctx[0].fill(islPaths.dead);
-                ctx[0].fillStyle = floorPattern;
-                ctx[0].fill(islPaths.alive);
-                ctx[0].fill(islPaths.dead);
+                if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
+                ctx[0].fillStyle = floorPattern || WORLD_ART.floor;
+                ctx[0].fill(islPath);
                 ctx[0].restore();
             }
         }
-        if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
         if (!island && (!royaleMode() || !getMapPaths())) {
+            if (!floorPattern) floorPattern = makeFloorPattern(ctx[0]);
             const vx0 = Math.max(roomX, 0), vy0 = Math.max(roomY, 0);
             const vx1 = Math.min(roomX + roomWidth, global.screenWidth);
             const vy1 = Math.min(roomY + roomHeight, global.screenHeight);
-            if (vx1 > vx0 && vy1 > vy0) {
+            if (floorPattern && vx1 > vx0 && vy1 > vy0) {
                 ctx[0].save();
                 ctx[0].translate(roomX, roomY);
                 ctx[0].scale(ratio, ratio);
@@ -4433,9 +4473,8 @@ import * as aoHud from './alwaysOn.js';
         if (config.graphical.showGrid && 2.5 < gridsize) {
             ctx[0].save();
             ctx[0].lineWidth = ratio;
-            // light grid lines - dark ones vanish on the cavern floor
-            ctx[0].strokeStyle = "#ffffff";
-            ctx[0].globalAlpha = 0.035;
+            ctx[0].strokeStyle = WORLD_ART.grid;
+            ctx[0].globalAlpha = WORLD_ART.gridA;
             ctx[0].beginPath();
             for (let x = (global.screenWidth / 2 - px) % gridsize; x < global.screenWidth; x += gridsize) {
                 ctx[0].moveTo(x, 0);
@@ -4454,8 +4493,7 @@ import * as aoHud from './alwaysOn.js';
         if (royaleMode() && circleClip) ctx[0].restore();
         // the rock wall first; vaults and outposts sit on top of it
         if (window.terrainRenderer && window.terrainRenderer.ready) {
-            // near-opaque: a lighter wash melts into the dark cavern floor
-            ctx[0].globalAlpha = 0.9;
+            ctx[0].globalAlpha = 1;
             window.terrainRenderer.draw(ctx[0], px, py, ratio, gameWidth, gameHeight, global.screenWidth, global.screenHeight);
         }
         if (circleClip && !royaleMode()) ctx[0].restore();
@@ -4531,12 +4569,6 @@ import * as aoHud from './alwaysOn.js';
         return p;
     })();
 
-    // Per-class art. body / facet / glow(+radius+alpha) mirror the gemPickup*,
-    // gemFacet* and GLOW values in digwars.js; the rim is
-    // gameDraw.getColorDark(body), as the pipeline does.
-    // `size` is the class's SIZE: the pipeline's outline is a fixed
-    // world-space width (borderChunk * strokeWidth), so the bake divides it
-    // by each class's size.
     const GEM_SPRITE_PAL = {
         gemPickupCopper:      { size: 16, body: "#c96f2e", facet: "#eda766", glow: "#e8a05c", glowR: 0.8,  glowA: 0.3 },
         gemPickupVein:        { size: 20, body: "#3b7ce0", facet: "#7fb1f2", glow: "#6fa3f2", glowR: 1,    glowA: 0.35 },
@@ -4555,13 +4587,12 @@ import * as aoHud from './alwaysOn.js';
     const GEM_SPRITES = {};
     const GEM_SPRITE_HALF = 6.0;    // unit span covered (biggest glow ~2.4)
     const GEM_SPRITE_SCALE = 64;    // px per world unit inside the sprite
-    const GEM_RIM_UNITS = 7.2 * 0.55; // borderChunk * strokeWidth, cut-units per SIZE=1
     function gemSprite(cls) {
         let s = GEM_SPRITES[cls];
         if (s) return s;
         const pal = GEM_SPRITE_PAL[cls] || GEM_SPRITE_PAL.gemPickupVein;
         const body  = gameDraw.modifyColor(pal.body + " 0 1 0 false");
-        const rim   = gameDraw.getColorDark(body);
+        const rim   = gameDraw.entityRim(body);
         const glow  = gameDraw.modifyColor(pal.glow + " 0 1 0 false");
         const facet = gameDraw.modifyColor(pal.facet + " 0 1 0 false");
 
@@ -4585,7 +4616,7 @@ import * as aoHud from './alwaysOn.js';
         // body: stroke first, then fill hides the inner half
         c.lineJoin = "round";
         c.lineCap = "round";
-        c.lineWidth = GEM_RIM_UNITS / (pal.size || 7);
+        c.lineWidth = gameDraw.entityBorder(pal.size || 7) * 0.55 / (pal.size || 7);
         c.strokeStyle = rim;
         c.stroke(GEM_CUT_PATH);
         c.fillStyle = body;
@@ -4749,86 +4780,184 @@ import * as aoHud from './alwaysOn.js';
     function chestStageOf(frac) {
         return frac > 5 / 6 ? 0 : frac > 4 / 6 ? 1 : frac > 3 / 6 ? 2 : frac > 2 / 6 ? 3 : frac > 1 / 6 ? 4 : 5;
     }
-    // Per-chest geometry in unit space (radius 1): faceted body, ore core,
-    // veins and five cumulative crack stages. Seeded by id so nothing flickers.
-    const chestGeoms = new Map();
-    function chestGeom(id, epic) {
-        const key = (id | 0) + (epic ? "e" : "c");
-        let g = chestGeoms.get(key);
-        if (g) return g;
-        const rnd = lcg((id | 0) + (epic ? 977 : 0));
-        const n = epic ? 10 : 9;
-        const pts = [];
-        for (let i = 0; i < n; i++) {
-            const a = (i / n) * Math.PI * 2 + (rnd() - 0.5) * 0.44;
-            const r = 0.84 + rnd() * 0.24;
-            pts.push([Math.cos(a) * r, Math.sin(a) * r]);
-        }
-        const body = new Path2D();
-        pts.forEach((p, i) => i ? body.lineTo(p[0], p[1]) : body.moveTo(p[0], p[1]));
-        body.closePath();
-        // two lighter facets and a darker lower half: flat shading, no texture
-        const facets = new Path2D();
-        for (let f = 0; f < 2; f++) {
-            const i = Math.floor(rnd() * n);
-            const a = pts[i], b = pts[(i + 1) % n];
-            facets.moveTo(0.05, -0.05); facets.lineTo(a[0], a[1]); facets.lineTo(b[0], b[1]); facets.closePath();
-        }
-        const shade = new Path2D();
-        const lower = pts.filter(p => p[0] + p[1] > 0.15);
-        if (lower.length >= 2) {
-            shade.moveTo(0.1, 0.1);
-            for (const p of lower) shade.lineTo(p[0], p[1]);
-            shade.closePath();
-        }
-        g = { body, facets, shade, pts };
-        if (chestGeoms.size > 64) chestGeoms.delete(chestGeoms.keys().next().value);
-        chestGeoms.set(key, g);
-        return g;
-    }
-    const chestSpawnByEnt = new Map();   // entity id -> when it landed (performance clock)
-    const chestGoneAt = (global.chestGoneAt = new Map());   // entity id -> when it broke (set by the FX packet)
-    const CHEST_FALLBACK = {
-        1: { pal: { mid: "rgba(201,111,46,0.95)", light: "rgba(237,167,102,0.95)", core: "rgba(255,233,209,0.9)" }, crack: { deep: "140,62,15", hot: "235,140,60", hair: "255,218,175" } },
-        3: { pal: { mid: "rgba(177,62,207,0.95)", light: "rgba(217,138,240,0.95)", core: "rgba(251,230,255,0.9)" }, crack: { deep: "110,25,140", hot: "200,95,240", hair: "242,205,255" } },
-        4: { pal: { mid: "rgba(46,170,104,0.95)", light: "rgba(111,245,168,0.95)", core: "rgba(225,255,236,0.9)" }, crack: { deep: "14,90,52", hot: "70,220,140", hair: "205,255,225" } },
+    const CHEST_ART = {
+        copper: { body: "#a8683a", bodyDark: "#84502b", lid: "#bd7d48", lidLight: "#d89c66", trim: "#e8953f", trimDark: "#a0561d",
+                  gem: "#ff9a45", gemLight: "#ffd3a6", ink: "#3c2211", crack: "rgba(48,24,8,0.75)", glow: null },
+        epic: { body: "#7a3db2", bodyDark: "#5b2b8a", lid: "#9150cb", lidLight: "#b47fe6", trim: "#f2c14e", trimDark: "#b0811a",
+                gem: "#e889ff", gemLight: "#f8dcff", ink: "#26103c", crack: "rgba(30,10,52,0.75)", glow: "226,160,255" },
+        crate: { wood: "#c6955a", woodDark: "#9c7140", woodLight: "#dcb27a", metal: "#3cc07a", metalDark: "#22784a",
+                 gem: "#7af5b2", gemLight: "#e2ffef", ink: "#2c2013", crack: "rgba(40,26,10,0.75)", glow: "130,250,185" },
     };
+    const CHEST_SPRITE_R = 1.4, CHEST_SPRITE_PX = 512;
+    const CHEST_POLY = {
+        chest: [[-0.88, -0.5], [-0.62, -0.72], [0.62, -0.72], [0.88, -0.5], [0.88, 0.64], [-0.88, 0.64]],
+        crate: [[-0.74, -0.66], [-0.66, -0.74], [0.66, -0.74], [0.74, -0.66], [0.74, 0.66], [0.66, 0.74], [-0.66, 0.74], [-0.74, 0.66]],
+    };
+    const chestSprites = {}, chestUnitPaths = {};
+    const chestKindKey = (kind) => kind.emerald ? "crate" : kind.epic ? "epic" : "copper";
+    function chestRoundRect(c, x, y, w, h, r) {
+        c.beginPath();
+        c.moveTo(x + r, y);
+        c.arcTo(x + w, y, x + w, y + h, r);
+        c.arcTo(x + w, y + h, x, y + h, r);
+        c.arcTo(x, y + h, x, y, r);
+        c.arcTo(x, y, x + w, y, r);
+        c.closePath();
+    }
+    function chestGemStud(c, x, y, r, a, lw) {
+        gemPath(c, x, y, r);
+        c.fillStyle = a.gem; c.fill();
+        c.save(); c.clip();
+        c.fillStyle = a.gemLight;
+        c.beginPath(); c.moveTo(x - r * 0.62, y - r * 0.78); c.lineTo(x + r * 0.15, y - r * 0.78); c.lineTo(x - r * 0.22, y - r * 0.12); c.closePath(); c.fill();
+        c.restore();
+        gemPath(c, x, y, r);
+        c.lineWidth = lw; c.strokeStyle = a.ink; c.stroke();
+    }
+    function paintChest(c, a) {
+        const lw = 0.075;
+        c.lineJoin = "round"; c.lineCap = "round";
+        chestRoundRect(c, -0.86, -0.16, 1.72, 0.82, 0.12);
+        c.fillStyle = a.body; c.fill();
+        c.save(); c.clip();
+        c.fillStyle = a.bodyDark; c.fillRect(-1, 0.42, 2, 0.3);
+        c.strokeStyle = a.bodyDark; c.lineWidth = 0.035;
+        c.beginPath(); c.moveTo(-0.86, 0.13); c.lineTo(0.86, 0.13); c.stroke();
+        c.restore();
+        chestRoundRect(c, -0.86, -0.16, 1.72, 0.82, 0.12);
+        c.lineWidth = lw; c.strokeStyle = a.ink; c.stroke();
+        c.beginPath();
+        c.moveTo(-0.9, -0.08); c.lineTo(-0.9, -0.44);
+        c.quadraticCurveTo(-0.9, -0.74, -0.58, -0.74); c.lineTo(0.58, -0.74);
+        c.quadraticCurveTo(0.9, -0.74, 0.9, -0.44); c.lineTo(0.9, -0.08); c.closePath();
+        c.fillStyle = a.lid; c.fill();
+        c.save(); c.clip();
+        c.fillStyle = a.lidLight; c.fillRect(-1, -0.8, 2, 0.2);
+        c.fillStyle = "rgba(0,0,0,0.14)"; c.fillRect(-1, -0.2, 2, 0.14);
+        c.restore();
+        c.lineWidth = lw; c.strokeStyle = a.ink; c.stroke();
+        for (const sx of [-0.52, 0.52]) {
+            c.beginPath(); c.rect(sx - 0.09, -0.74, 0.18, 1.4);
+            c.fillStyle = a.trim; c.fill();
+            c.fillStyle = "rgba(255,255,255,0.28)"; c.fillRect(sx - 0.09, -0.74, 0.06, 1.4);
+            c.lineWidth = 0.055; c.strokeStyle = a.ink; c.stroke();
+            c.fillStyle = a.trimDark;
+            for (const ry of [-0.6, -0.2, 0.48]) { c.beginPath(); c.arc(sx, ry, 0.035, 0, Math.PI * 2); c.fill(); }
+        }
+        chestRoundRect(c, -0.18, -0.28, 0.36, 0.42, 0.07);
+        c.fillStyle = a.trim; c.fill();
+        c.lineWidth = 0.06; c.strokeStyle = a.ink; c.stroke();
+        c.fillStyle = a.ink;
+        c.beginPath(); c.arc(0, -0.11, 0.05, 0, Math.PI * 2); c.fill();
+        c.fillRect(-0.022, -0.1, 0.044, 0.12);
+        chestGemStud(c, 0, -0.5, 0.17, a, 0.05);
+    }
+    function paintCrate(c, a) {
+        const lw = 0.075;
+        c.lineJoin = "round"; c.lineCap = "round";
+        chestRoundRect(c, -0.76, -0.76, 1.52, 1.52, 0.1);
+        c.fillStyle = a.wood; c.fill();
+        c.save(); c.clip();
+        c.fillStyle = a.woodLight; c.fillRect(-1, -1, 2, 0.36);
+        c.fillStyle = "rgba(0,0,0,0.16)"; c.fillRect(-1, 0.42, 2, 0.6);
+        c.strokeStyle = a.woodDark; c.lineWidth = 0.035;
+        c.beginPath();
+        for (const py of [-0.38, 0, 0.38]) { c.moveTo(-0.8, py); c.lineTo(0.8, py); }
+        c.stroke();
+        c.restore();
+        c.beginPath(); c.moveTo(-0.56, -0.56); c.lineTo(0.56, 0.56); c.moveTo(0.56, -0.56); c.lineTo(-0.56, 0.56);
+        c.lineWidth = 0.27; c.strokeStyle = a.ink; c.stroke();
+        c.lineWidth = 0.17; c.strokeStyle = a.woodLight; c.stroke();
+        chestRoundRect(c, -0.76, -0.76, 1.52, 1.52, 0.1);
+        c.lineWidth = lw; c.strokeStyle = a.ink; c.stroke();
+        for (let q = 0; q < 4; q++) {
+            c.save();
+            c.rotate(q * Math.PI / 2);
+            c.beginPath();
+            c.moveTo(-0.8, -0.8); c.lineTo(-0.36, -0.8); c.lineTo(-0.36, -0.63); c.lineTo(-0.63, -0.63); c.lineTo(-0.63, -0.36); c.lineTo(-0.8, -0.36); c.closePath();
+            c.fillStyle = a.metal; c.fill();
+            c.lineWidth = 0.05; c.strokeStyle = a.ink; c.stroke();
+            c.fillStyle = a.metalDark;
+            c.beginPath(); c.arc(-0.715, -0.715, 0.035, 0, Math.PI * 2); c.fill();
+            c.restore();
+        }
+        c.beginPath(); c.arc(0, 0, 0.27, 0, Math.PI * 2);
+        c.fillStyle = a.metal; c.fill();
+        c.lineWidth = 0.06; c.strokeStyle = a.ink; c.stroke();
+        chestGemStud(c, 0, 0.02, 0.16, a, 0.045);
+    }
+    function chestSprite(key) {
+        let s = chestSprites[key];
+        if (s) return s;
+        s = document.createElement("canvas");
+        s.width = s.height = CHEST_SPRITE_PX;
+        const c = s.getContext("2d");
+        const u = CHEST_SPRITE_PX / (CHEST_SPRITE_R * 2);
+        c.translate(CHEST_SPRITE_PX / 2, CHEST_SPRITE_PX / 2);
+        c.scale(u, u);
+        if (key === "crate") paintCrate(c, CHEST_ART.crate); else paintChest(c, CHEST_ART[key]);
+        chestSprites[key] = s;
+        return s;
+    }
+    function chestUnitPath(key) {
+        const shape = key === "crate" ? "crate" : "chest";
+        let p = chestUnitPaths[shape];
+        if (p) return p;
+        p = new Path2D();
+        CHEST_POLY[shape].forEach((pt, i) => i ? p.lineTo(pt[0], pt[1]) : p.moveTo(pt[0], pt[1]));
+        p.closePath();
+        chestUnitPaths[shape] = p;
+        return p;
+    }
+    const chestSpawnByEnt = new Map();
+    const chestGoneAt = (global.chestGoneAt = new Map());
     const chestCellKey = (id) => -(1000000 + (id | 0));
-    function drawChestBoulder(c, x, y, instance, ratio, alpha, isize, kind) {
+    function drawChestGlint(c, x, y, r, now, phase, alpha) {
+        const t = ((now + phase) % 2600) / 520;
+        if (t >= 1) return;
+        const ga = Math.sin(t * Math.PI), gr = r * ga, spin = t * 0.9;
+        c.globalAlpha = alpha * ga;
+        c.strokeStyle = "#ffffff";
+        c.lineWidth = Math.max(1, gr * 0.3);
+        c.lineCap = "round";
+        c.beginPath();
+        for (let i = 0; i < 4; i++) {
+            const ang = spin + i * Math.PI / 2, arm = gr * (i % 2 ? 1.5 : 2.5);
+            c.moveTo(x, y);
+            c.lineTo(x + Math.cos(ang) * arm, y + Math.sin(ang) * arm);
+        }
+        c.stroke();
+        c.globalAlpha = alpha;
+    }
+    function drawLootChest(c, x, y, instance, ratio, alpha, isize, kind) {
         const now = performance.now();
-        // A fading chest is either broken (the FX packet drew the shatter)
-        // or simply out of view; either way the body stops here.
         if (instance.render.status.getFade() < 1) return;
         const R = isize * ratio;
         if (R < 0.5) return;
         const tr = window.terrainRenderer;
-        const g = chestGeom(instance.id, kind.epic);
-        // a supply crate is emerald (raidHeat.crateKind)
-        const tier = kind.emerald ? 4 : kind.epic ? 3 : 1;
-        const TR = tr && tr.constructor;
-        const cpal = (TR && TR.CRACK_PAL && TR.CRACK_PAL[tier]) || CHEST_FALLBACK[tier].crack;
-        // the chest is a cell of the terrain renderer too: same crack
-        // generator, same fracture net, same caches
-        const key = chestCellKey(instance.id);
+        const key = chestKindKey(kind);
+        const art = CHEST_ART[key];
+        const shape = key === "crate" ? "crate" : "chest";
+        const cellKey = chestCellKey(instance.id);
         let cell = null, tilePx = 0, rockSz = 2.4;
         if (tr && tr.ready && tr._world) {
             const w = tr._world;
             tilePx = ratio * w.s;
             rockSz = Math.min(tr._cols, 120) / 50.0;
-            if (!instance._chestCell || instance._chestCellR !== isize ||
+            if (!instance._chestCell || instance._chestCellR !== isize || instance._chestShape !== shape ||
                 Math.abs(instance._chestCellX - instance.render.x) > 2 || Math.abs(instance._chestCellY - instance.render.y) > 2) {
                 const cx = (instance.render.x + w.hw) / w.s, cy = (instance.render.y + w.hh) / w.s, rt = isize / w.s;
-                const poly = g.pts.map(pt => [cx + pt[0] * rt, cy + pt[1] * rt]);
+                const poly = CHEST_POLY[shape].map(pt => [cx + pt[0] * rt, cy + pt[1] * rt]);
                 const path = new Path2D();
                 poly.forEach((pt, i) => i ? path.lineTo(pt[0], pt[1]) : path.moveTo(pt[0], pt[1]));
                 path.closePath();
-                instance._chestCell = { k: key, poly, cx, cy, path };
-                instance._chestCellR = isize; instance._chestCellX = instance.render.x; instance._chestCellY = instance.render.y;
-                tr.registerCell(key, instance._chestCell);
+                instance._chestCell = { k: cellKey, poly, cx, cy, path };
+                instance._chestCellR = isize; instance._chestShape = shape;
+                instance._chestCellX = instance.render.x; instance._chestCellY = instance.render.y;
+                tr.registerCell(cellKey, instance._chestCell);
             }
             cell = instance._chestCell;
         }
-        // landing: drop in from above, squash on touchdown, one dust ring
         let sx = 1, sy = 1, shadowK = 1, landDust = 0;
         const spawn = chestSpawnByEnt.get(instance.id);
         if (spawn !== undefined) {
@@ -4842,7 +4971,7 @@ import * as aoHud from './alwaysOn.js';
                     const d = Math.hypot(instance.render.x - global.player.renderx, instance.render.y - global.player.rendery);
                     if (d < 700) {
                         shakeCamera(6, 160);
-                        try { gameSound.rockHit(instance.render.x, instance.render.y, 3, false); } catch (e) { /* */ }
+                        try { gameSound.rockHit(instance.render.x, instance.render.y, 3, false); } catch (e) { void e; }
                     }
                 }
                 if (age > 300) landDust = (age - 300) / 220;
@@ -4864,84 +4993,65 @@ import * as aoHud from './alwaysOn.js';
         c.globalAlpha = alpha;
         if (landDust > 0 && landDust < 1) {
             const q = 1 - Math.pow(1 - landDust, 4);
+            c.globalAlpha = alpha * Math.pow(1 - landDust, 1.5) * 0.5;
             c.beginPath(); c.arc(x, y, R * (0.6 + 1.8 * q), 0, Math.PI * 2);
-            c.strokeStyle = "rgba(110,100,125," + (Math.pow(1 - landDust, 1.5) * 0.45).toFixed(3) + ")";
+            c.strokeStyle = "rgb(110,100,125)";
             c.lineWidth = 0.12 * R * (1 - landDust) + 0.5;
             c.stroke();
+            c.globalAlpha = alpha;
         }
-        // drop shadow
-        c.save();
-        c.translate(x + 0.06 * R, y + 0.09 * R);
-        c.scale(R * shadowK, R * shadowK);
-        c.fillStyle = "rgba(0,0,0,0.38)";
-        c.fill(g.body);
-        c.restore();
-        // body: the wall's own palette and border weight
-        c.save();
-        c.translate(x, y);
+        c.fillStyle = "rgba(0,0,0,0.24)";
+        if (shape === "crate") {
+            const hs = 0.76 * R * shadowK;
+            chestRoundRect(c, x + 0.08 * R - hs, y + 0.1 * R - hs, hs * 2, hs * 2, 0.1 * R);
+        } else {
+            c.beginPath();
+            c.ellipse(x + 0.04 * R, y + 0.56 * R, R * 0.94 * shadowK, R * 0.3 * shadowK, 0, 0, Math.PI * 2);
+        }
+        c.fill();
         let trX = 0, trY = 0;
         if (stage >= 5) {
-            trX = Math.sin(now / 17 + (instance.id % 13)) * 0.02 * R; trY = Math.cos(now / 23 + (instance.id % 7)) * 0.02 * R;
-            c.translate(trX, trY);
-            c.scale(1.05, 1.05);
+            trX = Math.sin(now / 17 + (instance.id % 13)) * 0.02 * R;
+            trY = Math.cos(now / 23 + (instance.id % 7)) * 0.02 * R;
         }
+        c.save();
+        c.translate(x + trX, y + trY);
         c.scale(R * sx, R * sy);
-        c.lineJoin = "round"; c.lineCap = "round";
-        c.fillStyle = "rgb(43,39,55)"; c.fill(g.body);
-        c.fillStyle = "rgb(61,55,77)"; c.fill(g.facets);
-        c.fillStyle = "rgba(16,13,22,0.34)"; c.fill(g.shade);
-        if (stage >= 1) { c.fillStyle = "rgba(16,13,22," + (0.07 * stage).toFixed(2) + ")"; c.fill(g.body); }
-        const borderPx = tilePx ? 0.072 * rockSz * tilePx : Math.max(2, 3 * ratio);
-        c.lineWidth = borderPx / R; c.strokeStyle = "rgb(16,13,22)"; c.stroke(g.body);
-        if (hitB > 0) { c.fillStyle = "rgba(255,244,210," + (0.35 * hitB).toFixed(3) + ")"; c.fill(g.body); }
+        c.drawImage(chestSprite(key), -CHEST_SPRITE_R, -CHEST_SPRITE_R, CHEST_SPRITE_R * 2, CHEST_SPRITE_R * 2);
+        const unit = chestUnitPath(key);
+        if (stage >= 1) {
+            c.globalAlpha = alpha * 0.045 * stage;
+            c.fillStyle = "#000000";
+            c.fill(unit);
+        }
+        if (hitB > 0) {
+            c.globalAlpha = alpha * 0.4 * hitB;
+            c.fillStyle = "#fff6dc";
+            c.fill(unit);
+        }
+        c.globalAlpha = alpha;
         c.restore();
-        // cracks: the terrain renderer's, in its tile space
         if (cell && stage >= 1 && tr._getCrackPath) {
-            const path = tr._getCrackPath(key, stage);
+            const path = tr._getCrackPath(cellKey, stage);
             if (path) {
                 c.save();
                 c.translate(x + trX - cell.cx * tilePx, y + trY - cell.cy * tilePx);
                 c.scale(tilePx, tilePx);
                 c.lineCap = "round"; c.lineJoin = "round";
-                const a = 0.30 + 0.035 * stage;
                 const w = 0.035 * rockSz * (0.28 + 0.075 * stage) * (1 + snap);
-                c.strokeStyle = "rgba(5,4,7,0.8)"; c.lineWidth = w * 2.1; c.stroke(path);
-                c.strokeStyle = "rgba(" + cpal.deep + "," + a.toFixed(2) + ")"; c.lineWidth = w * 1.2; c.stroke(path);
-                c.strokeStyle = "rgba(" + cpal.hot + "," + Math.min(1, a * 0.9 + boost * 0.45).toFixed(2) + ")"; c.lineWidth = w * 0.5; c.stroke(path);
-                c.strokeStyle = "rgba(" + cpal.hair + "," + Math.max(0.08 + 0.025 * stage, boost * 0.6).toFixed(2) + ")"; c.lineWidth = w * 0.2; c.stroke(path);
+                c.strokeStyle = art.crack; c.lineWidth = w * 1.7; c.stroke(path);
+                if (boost > 0.02) {
+                    c.globalAlpha = alpha * Math.min(1, boost * 1.2);
+                    c.strokeStyle = "#fff4d6"; c.lineWidth = w * 0.6; c.stroke(path);
+                }
                 c.restore();
             }
         }
-        c.restore();
-        // The prize: one ore gem set into a pocket in the rock, only its
-        // crown showing (no glow), with an inner shadow under the pocket's
-        // top edge and a lip of stone across its foot.
-        const gemK = 0.40 * sy;
-        const gx = x + trX, gy = y + trY, gr = R * gemK;
-        const gpal = kind.emerald ? { body: "#2eaa68", facet: "#6ff5a8", deep: "#145c36" } : kind.epic ? { body: "#b13ecf", facet: "#d98af0", deep: "#6d2287" } : { body: "#c96f2e", facet: "#eda766", deep: "#7a4018" };
-        const pocket = () => gemPath(c, gx, gy + gr * 0.1, gr * 1.28);
-        c.save();
-        c.globalAlpha = alpha;
-        pocket(); c.fillStyle = "rgb(12,10,16)"; c.fill();
-        c.save();
-        pocket(); c.clip();
-        gemPath(c, gx, gy + gr * 0.14, gr * 0.98);
-        c.fillStyle = gpal.deep; c.fill();
-        c.save();
-        gemPath(c, gx, gy + gr * 0.14, gr * 0.98); c.clip();
-        c.fillStyle = gpal.body; c.fillRect(gx - gr, gy - gr, gr * 2, gr * 0.92);
-        c.fillStyle = gpal.facet;
-        c.beginPath(); c.moveTo(gx - gr * 0.55, gy - gr * 0.72); c.lineTo(gx + gr * 0.12, gy - gr * 0.72); c.lineTo(gx - gr * 0.22, gy - gr * 0.18); c.closePath(); c.fill();
-        c.restore();
-        // inner shadow: two flat bands under the pocket's top edge
-        c.fillStyle = "rgba(5,4,7,0.45)"; c.fillRect(gx - gr * 1.4, gy - gr * 1.2, gr * 2.8, gr * 0.55);
-        c.fillStyle = "rgba(5,4,7,0.2)";  c.fillRect(gx - gr * 1.4, gy - gr * 0.65, gr * 2.8, gr * 0.35);
-        // a lip of rock over the gem's foot
-        c.fillStyle = "rgb(43,39,55)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, gr * 1.3);
-        c.fillStyle = "rgba(5,4,7,0.7)"; c.fillRect(gx - gr * 1.5, gy + gr * 0.48, gr * 3, Math.max(1, R * 0.04));
-        c.restore();
-        pocket();
-        c.lineJoin = "round"; c.lineWidth = Math.max(1.5, borderPx * 0.8); c.strokeStyle = "rgb(5,4,7)"; c.stroke();
+        if (art.glow && !config.graphical.noGlow) {
+            const gy = key === "crate" ? y + trY : y + trY - 0.5 * R * sy;
+            drawChestGlint(c, x + trX - 0.08 * R, gy - 0.1 * R, 0.16 * R, now, (instance.id % 17) * 300, alpha);
+            drawChestGlint(c, x + trX + 0.55 * R, y + trY + (key === "crate" ? -0.55 : -0.62) * R, 0.1 * R, now + 1300, (instance.id % 11) * 230, alpha);
+        }
         c.restore();
         drawChestLabel(c, x, y - R * 1.12, R, instance, kind, alpha);
     }
@@ -5104,7 +5214,7 @@ import * as aoHud from './alwaysOn.js';
             }
             const _chest = isLootChestEntity(instance);
             if (_chest) {
-                drawChestBoulder(ctx[1], x, y, instance, ratio, instance.alpha * alpha, isize, raidHeat.crateKind(instance.id) || _chest);
+                drawLootChest(ctx[1], x, y, instance, ratio, instance.alpha * alpha, isize, raidHeat.crateKind(instance.id) || _chest);
                 continue;
             }
             if (isRoyaleBossEntity(instance)) drawBossAura(ctx[1], x, y, instance, ratio, instance.alpha * alpha);
@@ -6227,13 +6337,21 @@ import * as aoHud from './alwaysOn.js';
         const order = [];
         if (gui.skills.length > 10) order.push(10);
         for (let i = 0; i < Math.min(10, gui.skills.length); i++) order.push(i);
+        if (HUD.theme === "light" && statMenu.get() > 0.02) {
+            const rows = order.filter(i => gui.skills[i] && gui.skills[i].softcap).length;
+            const capMax = gui.skills.reduce((m, sk) => Math.max(m, sk.cap), 0);
+            const gains = order.some(i => gui.skills[i] && gui.skills[i].softcap && gui.skills[i].amount > 0);
+            const topY = y - (rows - 1) * (height + vspacing) - (gui.points !== 0 ? 29 : 6);
+            const px0 = x - 6, right = x + save * ska(capMax) + (gains ? 22 : -9);
+            hudPanel(ctx[2], px0, topY, right - px0, y + height + 5 - topY, { fill: HUD.glass, r: HUD.r });
+        }
         for (const i of order) {
             if (i !== 10) ticker--;
             const statIdx = i === 10 ? 10 : ticker - 1;
             let skill = gui.skills[i],
                 name = namedata[statIdx],
                 level = skill.amount,
-                col = color[skill.color],
+                col = HUD.theme === "light" ? statSat(color[skill.color]) : statBright(color[skill.color]),
                 cap = skill.softcap,
                 maxLevel = skill.cap;
 
@@ -6251,20 +6369,22 @@ import * as aoHud from './alwaysOn.js';
                 max = cap;
             }
 
-            drawBar(x + height / 2, x - height / 2 + len * ska(cap) - 14, y + height / 2, height - 2.8 + config.graphical.barChunk, color.black);
-            drawBar(x + height / 2, x + height / 2 + len * ska(cap) - gap, y + height / 2, height - 3, color.grey);
-            drawBar(x + height / 2, x + height / 2 + len * ska(level) - gap, y + height / 2, height - 5.5 + config.graphical.barChunk, color.black);
+            const lightBars = HUD.theme === "light";
+            const barEdge = lightBars ? "#7a7a7a" : color.black, barTrack = lightBars ? "#c4c4c4" : color.grey;
+            drawBar(x + height / 2, x - height / 2 + len * ska(cap) - 14, y + height / 2, height - 2.8 + config.graphical.barChunk, barEdge);
+            drawBar(x + height / 2, x + height / 2 + len * ska(cap) - gap, y + height / 2, height - 3, barTrack);
+            drawBar(x + height / 2, x + height / 2 + len * ska(level) - gap, y + height / 2, height - 5.5 + config.graphical.barChunk, barEdge);
             drawBar(x + height / 2, x + height / 2 + len * ska(level) - gap, y + height / 2, height - 3.5, col);
 
             if (blocking) {
                 ctx[2].lineWidth = 1;
-                ctx[2].strokeStyle = color.grey;
+                ctx[2].strokeStyle = lightBars ? "#c4c4c4" : color.grey;
                 for (let j = cap + 1; j < max; j++) {
                     drawGuiLine(x + len * ska(j) - gap, y + 1.5, x + len * ska(j) - gap, y - 3 + height);
                 }
             }
 
-            ctx[2].strokeStyle = color.black;
+            ctx[2].strokeStyle = lightBars ? "rgba(0,0,0,0.28)" : color.black;
             ctx[2].lineWidth = 1;
             for (let j = 1; j < level + 1; j++) {
                 drawGuiLine(x + len * ska(j) - gap, y + 1.5, x + len * ska(j) - gap, y - 3 + height);
@@ -6280,19 +6400,20 @@ import * as aoHud from './alwaysOn.js';
             // always light text: grey on a coloured fill can't be read, so a
             // stat you can't upgrade right now just fades a little instead
             const dim = textcolor === color.grey && level != maxLevel;
-            hudTitle(name, Math.round(x + len / 2) - 5.5, y + height / 2, nameSize, HUD.head, "center", dim ? 0.72 : 1);
+            hudTitle(name, Math.round(x + len / 2) - 5.5, y + height / 2, nameSize, lightBars ? HUD.head : HUD_DARK.head, "center", dim ? 0.72 : 1);
 
             const keyTxt = statIdx === 10 ? minKeyName : String((statIdx + 1) % 10);
             // fixed column: every key label centred on the same x, so "-"
             // lines up with the digits above it
-            drawText("[" + keyTxt + "]", Math.round(x + save * ska(maxLevel) - height * 0.25) - 22, y + height / 2, height - 7, textcolor === color.grey ? HUD.text2 : textcolor, "center", true);
+            const keyCol = lightBars ? (textcolor === col ? statInk(col) : "#333333") : (textcolor === color.grey ? HUD_DARK.text2 : textcolor);
+            drawText("[" + keyTxt + "]", Math.round(x + save * ska(maxLevel) - height * 0.25) - 22, y + height / 2, height - 7, keyCol, "center", true);
             if (textcolor === color.guiwhite && !tutLocked) {
 
                 global.clickables.stat.place(statIdx, x * clickableRatio, y * clickableRatio, len * clickableRatio, height * clickableRatio);
             }
 
             if (level) {
-                hudTitle("+" + level, Math.round(x + len + 4) - 5.5, y + height / 2, height - 5, col, "left");
+                hudTitle("+" + level, Math.round(x + len + 4) - 5.5, y + height / 2, height - 5, lightBars ? statInk(col) : col, "left");
             }
             ctx[2].globalAlpha = 1;
 
@@ -6305,29 +6426,73 @@ import * as aoHud from './alwaysOn.js';
             global.statPanelBox = { x: 0, y: panelTop, w: Math.max(0, x + save * ska(gui.skills.reduce((m, sk) => Math.max(m, sk.cap), 0)) + 40), h: panelBottom - panelTop, at: performance.now() };
         }
         if (gui.points !== 0) {
-
-            const ptsX = Math.round(x + len - 2) - 13, ptsY = Math.round(y + height - 4) + 2;
-            drawText("x" + gui.points, ptsX, ptsY, 22, color.guiwhite, "right");
-            // round 9: Same stats / Random in one row from the panel's left edge, centred on
+            const maxCap = gui.skills.reduce((m, sk) => Math.max(m, sk.cap), 0);
+            const rightX = Math.round(x + save * ska(maxCap) - 15);
+            const rowY = Math.round(y + height + vspacing - 14);
+            const ptsTxt = "x" + gui.points;
+            hudTitle(ptsTxt, rightX, rowY, 18, HUD.theme === "light" ? HUD.head : HUD_DARK.head, "right");
             const sb = buildBtnLabels.statButtons(global.royale && global.royale.you, gui.points, global.died, global.tutorialMode);
-            if (sb.length && royaleActive()) {
-                const right = ptsX - measureText("x" + gui.points, 22) - 10;
-                const mid = ptsY - 0.35 * (22 + config.graphical.fontSizeBoost) + 3;
-                drawStatBuildButtons(sb, right, mid, x + 1, clickableRatio, true);
-            }
+            if (sb.length && royaleActive()) drawStatBuildButtons(sb, rightX - hudTitleW(ptsTxt, 18) - 12, rowY, Math.round(x), clickableRatio, true);
         }
     }
     // the stat panel's build buttons, right-aligned to `right`, centred on cy
     function drawStatBuildButtons(sb, right, cy, minX, cr, leftAlign = false) {
-        let size = 11.5, bh = 20, gap = 6;
-        const widthAt = (sz) => { let w = 0; for (const b of sb) w += hudTitleW(b.label, sz) + 16; return w + gap * (sb.length - 1); };
+        let size = 11.5;
+        const bh = 20, gap = 6;
+        const cellAt = (sz) => { let m = 0; for (const b of sb) m = Math.max(m, hudTitleW(b.label, sz)); return m + 16; };
+        const widthAt = (sz) => cellAt(sz) * sb.length + gap * (sb.length - 1);
         while (size > 9 && right - widthAt(size) < minX) size -= 0.5;
+        const cw = cellAt(size);
         let bx = leftAlign ? Math.min(right, minX + widthAt(size)) : right;
         for (let i = sb.length - 1; i >= 0; i--) {
-            const b = sb[i], w = hudTitleW(b.label, size) + 16;
-            hudButton(ctx[2], bx - w / 2, cy - bh / 2 - 1, w, bh, b.label, { size, type: "statBtn", index: b.i, cr, textCol: HUD.text, r: 6 });
-            bx -= w + gap;
+            const b = sb[i];
+            hudButton(ctx[2], bx - cw / 2, Math.round(cy - bh / 2), cw, bh, b.label, { size, type: "statBtn", index: b.i, cr, textCol: HUD.head, r: 6 });
+            bx -= cw + gap;
         }
+    }
+    const statBrights = new Map();
+    function hexRgb(h) {
+        const x = String(h || "").trim();
+        if (x[0] !== "#") return null;
+        const v = x.length === 4 ? x.slice(1).split("").map(ch => ch + ch).join("") : x.slice(1, 7);
+        if (v.length !== 6) return null;
+        return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
+    }
+    function mixHex(a, b, t) {
+        const p = hexRgb(a), q = hexRgb(b);
+        if (!p || !q) return a;
+        const m = (i) => Math.round(p[i] + (q[i] - p[i]) * t).toString(16).padStart(2, "0");
+        return "#" + m(0) + m(1) + m(2);
+    }
+    function statBright(col) {
+        let v = statBrights.get(col);
+        if (v !== undefined) return v;
+        v = col;
+        const rgb = hexRgb(col);
+        if (rgb) {
+            let k = 0;
+            const lumOf = (h) => { const q = hexRgb(h); return (0.299 * q[0] + 0.587 * q[1] + 0.114 * q[2]) / 255; };
+            while (lumOf(v) < 0.58 && k < 0.7) { k += 0.1; v = mixHex(col, "#ffffff", k); }
+        }
+        if (statBrights.size > 64) statBrights.clear();
+        statBrights.set(col, v);
+        return v;
+    }
+    function statInk(col) { return mixHex(col, "#000000", 0.45); }
+    const statSats = new Map();
+    function statSat(col) {
+        let v = statSats.get(col);
+        if (v !== undefined) return v;
+        v = col;
+        const q = hexRgb(col);
+        if (q) {
+            const lum = (0.299 * q[0] + 0.587 * q[1] + 0.114 * q[2]) / 255;
+            if (lum > 0.72) v = mixHex(col, "#000000", 0.22);
+            else if (lum < 0.3) v = mixHex(col, "#ffffff", 0.25);
+        }
+        if (statSats.size > 64) statSats.clear();
+        statSats.set(col, v);
+        return v;
     }
 
     // where the death card is, as fractions of the screen
@@ -6352,17 +6517,7 @@ import * as aoHud from './alwaysOn.js';
     }
     window.dwDeathIntro = () => ({ k: deathIntroK(), at: global.royaleDiedAt || 0, beat: deathText.introBeat(deathCalm()), fade: deathText.INTRO.fade });
     const BANK_PILL = "#7fb1f2", BANK_PILL_TEXT = "#120e15";
-    // the bottom bar's "Tank: <name>" line: your current tank's name, or ""
-    const SELF_TANK_LIFT = 18;
-    let selfTankFor = null, selfTankLabel = "";
-    function selfTankName() {
-        if (global.died || !gui.type) return "";
-        if (selfTankFor === gui.type && selfTankLabel) return selfTankLabel;
-        const m = global.mockups && global.mockups[parseInt(String(gui.type).split("-")[0])];
-        selfTankFor = gui.type;
-        selfTankLabel = m && m.name ? String(m.name) : "";
-        return selfTankLabel;
-    }
+    const LEVEL_BAR = "#5ce0d8", LEVEL_BAR_OLD = "#3aa39c", BANKED_PILL = "#d9a032";
     function drawSelfInfo(max) {
 
         // Dig Wars bottom stack (bottom → top): team war bar, wallet row,
@@ -6398,69 +6553,39 @@ import * as aoHud from './alwaysOn.js';
             drawText("Score: " + util.formatLargeNumber(Math.round(gui.__s.getScore())), x + width / 2 + 0.5 - scorelength, y + height / 2 + 6, 13, color.guiwhite, "center");
         } else {
             const g = global.gems;
-            const rx1 = x + scorewidth - scorelength,
-                rx2 = x + width - scorewidth - scorelength,
-                ry = y + height / 2,
-                capR = (height - 3) / 2,
-                mid = rx1 + (rx2 - rx1) * 0.44,
-                carX2 = mid - capR - 3,
-                bankX1 = mid + capR + 3,
-                load = g.cap > 0 ? Math.min(1, g.carried / g.cap) : 0,
+            const rx1 = x + scorewidth - scorelength, rx2 = x + width - scorewidth - scorelength;
+            const ry = y + height / 2, pillH = height + 1, capR = (height - 3) / 2;
+            const left = rx1 - capR, full = rx2 - rx1 + capR * 2, gap = 6;
+            const bankW = Math.round((full - gap) / 2), carW = full - bankW - gap, carX = left + bankW + gap;
+            const load = g.cap > 0 ? Math.min(1, g.carried / g.cap) : 0,
                 blink = load >= 1 && Math.floor(Date.now() / 160) % 2 === 0;
-            const pillH = height + 1;
-            hudDrawn.wallet = { x: rx1 - capR, y: ry - pillH / 2, w: rx2 - rx1 + capR * 2, h: pillH };
-            hudBar(ctx[2], rx1 - capR, ry - pillH / 2, carX2 - rx1 + capR * 2, pillH, load, blink ? HUD.danger : HUD.gold);
-            {
-                // text never leaves its pill: shrink to fit
-                const carTxt = "Carried: " + util.formatLargeNumber(g.carried | 0);
-                let cs2 = 13; while (cs2 > 9 && hudTextW(carTxt, cs2) > (carX2 - rx1) - 10) cs2 -= 0.5;
-                drawText(carTxt, (rx1 + carX2) / 2 + 0.5, ry + 6 - (13 - cs2) * 0.35, cs2, color.guiwhite, "center");
+            hudDrawn.wallet = { x: left, y: ry - pillH / 2, w: full, h: pillH };
+            const banked = g.banked | 0;
+            hudBar(ctx[2], left, ry - pillH / 2, bankW, pillH, 1, BANKED_PILL);
+            const bankTries = ["Banked: " + util.formatLargeNumber(banked), "Banked: " + shortGems(banked)];
+            let bankTxt = bankTries[1];
+            for (const t of bankTries) if (hudTextW(t, 11) <= bankW - 12) { bankTxt = t; break; }
+            let ls = 13; while (ls > 9 && hudTextW(bankTxt, ls) > bankW - 12) ls -= 0.5;
+            drawText(bankTxt, left + bankW / 2 + 0.5, ry + 6 - (13 - ls) * 0.35, ls, color.guiwhite, "center");
+            if (royaleActive() && !global.mobile && global.canvas && !global.died) {
+                const crb = global.canvas.height / global.screenHeight / global.ratio;
+                const mxb = global.mouse.x / (crb * global.ratio), myb = global.mouse.y / (crb * global.ratio);
+                if (mxb >= left && mxb <= left + bankW && myb >= ry - pillH / 2 && myb <= ry + pillH / 2) queueTip(scoreText.BANK_TIP, scoreText.bankTipBody(aoNow()), left + bankW / 2, ry - pillH / 2, true);
             }
-            // azurite, the blue gem's light face: clear of the gold Carried
-            // pill and the teal HUD accents; it takes ink text
-            hudBar(ctx[2], bankX1 - capR, ry - pillH / 2, rx2 - bankX1 + capR * 2, pillH, 1, BANK_PILL);
-            {
-                // the kept part came from earlier raids: spendable, but not score.
-                // Big numbers go short (47.5k), then the kept part drops, so
-                // the text never spills out of the pill.
-                const room = (rx2 - bankX1) - 10, banked = g.banked | 0, kept = g.kept | 0;
-                // "Bank": what you can spend now
-                const BL = scoreText.BANK + ": ";
-                const tries = kept > 0
-                    ? [BL + util.formatLargeNumber(banked) + "  (" + util.formatLargeNumber(kept) + " savings)",
-                        BL + shortGems(banked) + " (" + shortGems(kept) + " savings)",
-                        BL + util.formatLargeNumber(banked), BL + shortGems(banked)]
-                    : [BL + util.formatLargeNumber(banked), BL + shortGems(banked)];
-                let bankTxt = tries[tries.length - 1];
-                for (const t of tries) if (hudTextW(t, 11) <= room) { bankTxt = t; break; }
-                let bs2 = 13; while (bs2 > 9 && hudTextW(bankTxt, bs2) > room) bs2 -= 0.5;
-                drawText(bankTxt, (bankX1 + rx2) / 2 + 0.5, ry + 6 - (13 - bs2) * 0.35, bs2, color.guiwhite, "center");
-                // what "Bank" means, on hover (it is not the points number)
-                if (royaleActive() && !global.mobile && global.canvas && !global.died) {
-                    const cr2 = global.canvas.height / global.screenHeight / global.ratio;
-                    const mx2 = global.mouse.x / (cr2 * global.ratio), my2 = global.mouse.y / (cr2 * global.ratio);
-                    if (mx2 >= bankX1 - capR && mx2 <= rx2 + capR && my2 >= ry - pillH / 2 && my2 <= ry + pillH / 2) queueTip(scoreText.BANK_TIP, scoreText.bankTipBody(aoNow()), (bankX1 + rx2) / 2, ry - pillH / 2, true);
-                }
-                // above your name, never on it (round 7: "+250 banked · milestone 1,000" sat on
-                drawBankPops(global.screenWidth / 2, Math.round(y - 10 - 4) - 1 - 30 - (selfTankName() ? SELF_TANK_LIFT : 0));
-            }
-            // gemdust (accounts): satchel dust under Carried, balance under Banked
-            if (nxShows("cosmetics")) try { dustHud.draw(ctx[2], { carX: (rx1 + carX2) / 2, bankX: (bankX1 + rx2) / 2, y: ry + 19 }, { drawText, measureText }); } catch (e) { /* never break the HUD */ }
+            hudBar(ctx[2], carX, ry - pillH / 2, carW, pillH, load, blink ? HUD.danger : HUD.gold);
+            const carTxt = "Carried: " + util.formatLargeNumber(g.carried | 0);
+            let cs2 = 13; while (cs2 > 9 && hudTextW(carTxt, cs2) > carW - 12) cs2 -= 0.5;
+            drawText(carTxt, carX + carW / 2 + 0.5, ry + 6 - (13 - cs2) * 0.35, cs2, color.guiwhite, "center");
+            drawBankPops(global.screenWidth / 2, Math.round(y - 10 - 4) - 1 - 30);
         }
         ctx[2].lineWidth = 4;
         var name = global.player.name.substring(7, global.player.name.length + 1);
         // your rank badge (placement "?" included) and name, centred as one
         const myCode = name ? nameBadgeCode(myRankCode(), true) : 0;
-        // "Tank: Rhino" in a small line between the name and the wallet row
-        const tankName = selfTankName();
-        const nameX = Math.round(x + width / 2 + nameBadgeRoom(myCode, 31) / 2) + 1.5, nameY = Math.round(y - 10 - 4) - 1 - (tankName ? SELF_TANK_LIFT : 0);
-        if (tankName) {
-            let ts = 15; while (ts > 10 && hudTitleW(tankName, ts) > width - 40) ts -= 0.5;
-            hudTitle(tankName, Math.round(x + width / 2), Math.round(y - 13), ts, HUD.head, "center");
-        }
-        const mySn = styledName(name, global.myNameStyle, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, nameX, 31, "center", ctx[2], nameY);
-        drawText(mySn.text, nameX, nameY, 31, mySn.fill, "center");
-        drawNameBadge(myCode, mySn.text, nameX, nameY, 31, "center", ctx[2]);
+        const nameX = Math.round(x + width / 2 + nameBadgeRoom(myCode, 28) / 2) + 1.5, nameY = Math.round(y - 10 - 4) - 1;
+        const mySn = styledName(name, global.myNameStyle, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, nameX, 28, "center", ctx[2], nameY);
+        drawText(mySn.text, nameX, nameY, 28, mySn.fill, "center");
+        drawNameBadge(myCode, mySn.text, nameX, nameY, 28, "center", ctx[2]);
     }
 
     // Bank pops (bankPopLogic.js): every rise of the Bank says what paid ("+300
@@ -6481,7 +6606,7 @@ import * as aoHud from './alwaysOn.js';
             if (p.w == null || p.wFor !== p.str) { p.w = measureText(p.str, 13) + 22; p.wFor = p.str; }
             const sz = 13 * pop, w = Math.round(p.w), h = 22;
             const yy = y - h / 2 - rise;
-            if (!bankPopOpt) bankPopOpt = [{ r: 11, bevel: false, stroke: HUD.gold }, { r: 11, bevel: false, stroke: HUD.text2 }];
+            if (!bankPopOpt) bankPopOpt = [{ r: 11 }, { r: 11 }];
             c.save();
             c.globalAlpha = a;
             hudPanel(c, Math.round(cx - w / 2), yy - h / 2, w, h, bankPopOpt[p.n < 0 ? 1 : 0]);
@@ -6502,7 +6627,7 @@ import * as aoHud from './alwaysOn.js';
         if (!list.length) return;
         const c = ctx[2];
         let y = y0;
-        if (!ptsPopOpt) ptsPopOpt = [{ r: 11, bevel: false, stroke: HUD.gold }, { r: 11, bevel: false, stroke: "#ff6b5e" }];
+        if (!ptsPopOpt) ptsPopOpt = [{ r: 11 }, { r: 11 }];
         for (let i = list.length - 1; i >= 0; i--) {
             const p = list[i];
             const age = now - p.at, k = age / scoreText.PTS_POP_MS;
@@ -6556,9 +6681,9 @@ import * as aoHud from './alwaysOn.js';
         vaultInput.autocomplete = "off";
         vaultInput.style.cssText =
             "position:fixed;display:none;z-index:40;text-align:center;" +
-            "background:#1e1924;color:#fff3d9;border:1px solid #120e15;" +
-            "border-radius:9px;outline:none;font-family:Rubik,Ubuntu,sans-serif;font-weight:700;" +
-            "box-shadow:inset 0 2px 3px rgba(0,0,0,.35);";
+            "background:rgba(0,0,0,.3);color:#fff;border:0;" +
+            "border-radius:6px;outline:none;font-family:Ubuntu,sans-serif;font-weight:700;" +
+            "box-shadow:none;";
         vaultInput.oninput = () => {
             // digits only, clamped to what's actually carried
             let n = vaultInput.value.replace(/[^0-9]/g, "");
@@ -6962,19 +7087,13 @@ import * as aoHud from './alwaysOn.js';
         return h;
     });
 
-    // ═════════════════════════════════════════════════════════════════════
-    // HUD look: the menu's plates (home.css), drawn on the canvas. Fine
-    // keyline, one top highlight, a soft drop, flat palette fills. Lilita
-    // One for titles, Rubik for labels. Every in-game panel, chip, button
-    // and bar goes through these helpers. Paths only: no shadows or
-    // filters, and per-frame text measurement is cached.
-    // ═════════════════════════════════════════════════════════════════════
     const HUD = {
         ink: "#1a1a1a",
-        panel: "rgba(0,0,0,0.4)",
-        solid: "rgba(18,18,20,0.86)",
-        raised: "rgba(0,0,0,0.28)",
-        well: "rgba(0,0,0,0.3)",
+        panel: "rgba(0,0,0,0.3)",
+        solid: "rgba(0,0,0,0.5)",
+        card: "rgba(0,0,0,0.45)",
+        raised: "rgba(255,255,255,0.08)",
+        well: "rgba(0,0,0,0.22)",
         wellSolid: "#3a3a3a",
         track: "rgba(0,0,0,0.55)",
         face: "#555555", faceDk: "#3a3a3a",
@@ -6984,28 +7103,83 @@ import * as aoHud from './alwaysOn.js';
         gold: "#f2b83c", goldDk: "#a8750f",
         emerald: "#3fcf7a", play: "#4fcf5c", playDk: "#2c8f37",
         danger: "#e0473b", dangerDk: "#9c2a21",
-        lilac: "#b98bff", sky: "#4ec4e8",   // lilac is the storm, nothing else
-        r: 5, rSmall: 4, rBig: 6,
+        lilac: "#b98bff", sky: "#4ec4e8", teal: "#5ce0d8",
+        r: 6, rSmall: 5, rBig: 8,
         lw: 1.5, lip: 0,
         line: "#333333",
         frame: "rgba(0,0,0,0.6)",
         drop: "rgba(0,0,0,0)",
         edge: 25,
         font: 'Ubuntu, sans-serif',
+        display: "'Lilita One', Ubuntu, sans-serif",
         ui: 'Ubuntu, sans-serif',
         titleMin: 15,
     };
-    try { document.fonts && document.fonts.load('700 20px Ubuntu'); } catch (e) { }
-    // A plate: a soft drop under it, flat fill, fine keyline, and a single
-    // highlight along the top edge. o: { fill, r, lw, lip, bevel:false, stroke, alpha }
+    const HUD_DARK = {
+        panel: HUD.panel, solid: HUD.solid, card: HUD.card, raised: HUD.raised, well: HUD.well, track: HUD.track, frame: HUD.frame,
+        face: HUD.face, faceDk: HUD.faceDk, head: HUD.head, text: HUD.text, text2: HUD.text2,
+        cardOff: "rgba(0,0,0,0.25)", cardSel: "rgba(255,255,255,0.16)", chip: "rgba(0,0,0,0.45)", chipOff: "rgba(0,0,0,0.6)",
+        key: "rgba(0,0,0,0.45)", keyLine: "rgba(255,255,255,0.28)", scrim: "#000000", mapScrim: "rgba(0,0,0,0.35)",
+        edgeLine: "", wellLine: "", chipSolid: "#2c2c2c", pipEmpty: "#5a5a5a", pipFill: "#7fd8ff", glass: "rgba(0,0,0,0.4)",
+    };
+    const HUD_LIGHT = {
+        panel: "rgba(255,255,255,0.92)", solid: "rgba(255,255,255,0.95)", card: "rgba(255,255,255,0.95)", raised: "rgba(0,0,0,0.05)",
+        well: "rgba(0,0,0,0.06)", track: "rgba(0,0,0,0.24)", frame: "rgba(0,0,0,0.3)",
+        face: "#f4f4f4", faceDk: "#c9c9c9", head: "#1f1f1f", text: "#2a2a2a", text2: "#555555",
+        cardOff: "rgba(0,0,0,0.04)", cardSel: "rgba(242,184,60,0.24)", chip: "rgba(255,255,255,0.92)", chipOff: "rgba(255,255,255,0.8)",
+        key: "rgba(255,255,255,0.95)", keyLine: "rgba(0,0,0,0.22)", scrim: "#ffffff", mapScrim: "rgba(255,255,255,0.35)",
+        edgeLine: "rgba(0,0,0,0.16)", wellLine: "rgba(0,0,0,0.12)", chipSolid: "#ffffff", pipEmpty: "#d4d4d4", pipFill: "#1f8fd6", glass: "rgba(255,255,255,0.62)",
+    };
+    const INK_LIGHT = { gold: "#8a6200", copper: "#a3460b", teal: "#0b6f78", lilac: "#6a3fc0", red: "#b3261e", green: "#1d7a3e" };
+    const INK_FAMILY = {
+        gold: ["#f2b83c", "#ffd76e", "#ffb347", "#f2c35a", "#ffd37a", "#e9c46a", "#ffe869", "#ffd24a", "#fff1c2", "#ffe9a8", "#ffd166", "#ffd27a"],
+        copper: ["#e07b2e", "#ff9a5c", "#ff9a5a", "#d9904a", "#eda766", "#ff8a5c"],
+        teal: ["#5ce0d8", "#4ec4e8", "#7fb1f2", "#6fd2f2", "#5ce8ff", "#bff2ff", "#7fe3ff"],
+        lilac: ["#b98bff", "#c9a8ff", "#d98af0", "#ff7ad9"],
+        red: ["#e0473b", "#ff9a8c", "#ff6b5e", "#ff7a6b", "#ffb3bb", "#ff8a80", "#ff3b4e"],
+        green: ["#3fcf7a", "#4fcf5c", "#9dff8a", "#6ff5a8"],
+    };
+    let inkMap = null, inkMapKey = "", rawInkOn = 0;
+    function panelInk(col) {
+        if (rawInkOn || HUD.theme !== "light" || typeof col !== "string" || col[0] !== "#") return col;
+        const key = String(color.gold) + "|" + String(color.teal);
+        if (!inkMap || inkMapKey !== key) {
+            inkMap = new Map();
+            inkMapKey = key;
+            for (const fam of Object.keys(INK_FAMILY)) for (const h of INK_FAMILY[fam]) inkMap.set(h, INK_LIGHT[fam]);
+            const pal = { gold: color.gold, teal: color.teal, orange: color.orange, red: color.red, green: color.green, purple: color.purple };
+            const famOf = { gold: "gold", teal: "teal", orange: "copper", red: "red", green: "green", purple: "lilac" };
+            for (const k of Object.keys(pal)) if (typeof pal[k] === "string" && pal[k][0] === "#") inkMap.set(pal[k].toLowerCase(), INK_LIGHT[famOf[k]]);
+        }
+        return inkMap.get(col.toLowerCase()) || col;
+    }
+    function rawInk(on) { rawInkOn = Math.max(0, rawInkOn + (on ? 1 : -1)); }
+    function hudThemeNow() {
+        try { return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light"; } catch (e) { return "light"; }
+    }
+    function applyHudTheme() {
+        const t = hudThemeNow();
+        if (HUD.theme === t) return;
+        Object.assign(HUD, t === "dark" ? HUD_DARK : HUD_LIGHT);
+        HUD.theme = t;
+        global.hudTheme = t;
+        try { textSprites.clear(); textSeen.clear(); } catch (e) { void e; }
+        try { titleSprites.clear(); titleSeen.clear(); } catch (e) { void e; }
+    }
+    applyHudTheme();
+    try { new MutationObserver(applyHudTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) { void e; }
+    window.dwHudTheme = () => HUD.theme;
+    try { document.fonts && document.fonts.load('700 20px Ubuntu'); document.fonts && document.fonts.load("400 20px 'Lilita One'"); } catch (e) { }
     function hudPanel(c, x, y, w, h, o = {}) {
-        const r = Math.min(o.r != null ? o.r : HUD.r, 6, h / 2);
+        const r = Math.min(o.r != null ? o.r : HUD.r, 10, h / 2);
         c.save();
         if (o.alpha != null) c.globalAlpha *= o.alpha;
         roundRectPath(c, x, y, w, h, r);
         c.fillStyle = o.fill || HUD.panel;
         c.fill();
-        if (o.stroke || o.fill === HUD.solid) {
+        const plain = !o.fill || o.fill === HUD.panel || o.fill === HUD.solid || o.fill === HUD.card || o.fill === HUD.chip || o.fill === HUD.chipOff || o.fill === HUD.glass;
+        if (!o.stroke && HUD.edgeLine && plain) { c.lineWidth = 1.25; c.strokeStyle = HUD.edgeLine; c.stroke(); }
+        if (o.stroke) {
             c.lineWidth = 2;
             c.lineJoin = "round";
             c.strokeStyle = o.stroke || HUD.frame;
@@ -7019,6 +7193,7 @@ import * as aoHud from './alwaysOn.js';
         c.fillStyle = fill;
         c.fill();
         if (lw > 0 && line !== HUD.line && line !== HUD.ink) { c.lineWidth = 1.5; c.strokeStyle = line; c.stroke(); }
+        else if (HUD.wellLine && fill === HUD.well) { c.lineWidth = 1; c.strokeStyle = HUD.wellLine; c.stroke(); }
     }
     function hudBar(c, x, y, w, h, frac, col, track = HUD.track) {
         if (track === HUD.wellSolid) track = HUD.track;
@@ -7043,7 +7218,7 @@ import * as aoHud from './alwaysOn.js';
     function hudFont(size) {
         let f = hudFonts.get(size);
         if (f === undefined) {
-            f = "700 " + size + "px " + HUD.font;
+            f = size >= HUD.titleMin ? "400 " + size + "px " + HUD.display : "700 " + size + "px " + HUD.font;
             if (hudFonts.size > 400) hudFonts.clear();
             hudFonts.set(size, f);
         }
@@ -7086,9 +7261,9 @@ import * as aoHud from './alwaysOn.js';
         g.textBaseline = "middle";
         g.lineJoin = "round";
         g.lineWidth = lw;
-        g.strokeStyle = HUD.line;
+        g.strokeStyle = inkFor(col);
         const dy = q * 0.04;
-        g.strokeText(text, pad, H / 2 + dy);
+        if (!noRimFill(col)) g.strokeText(text, pad, H / 2 + dy);
         g.fillStyle = col;
         g.fillText(text, pad, H / 2 + dy);
         e = { cv, w, W, H, pad, pw, ph, used: textFrame };
@@ -7102,6 +7277,7 @@ import * as aoHud from './alwaysOn.js';
     if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", () => titleSprites.clear());
     function hudTitle(text, x, y, size, col, align = "left", alpha = 1, c = ctx[2]) {
         size += config.graphical.fontSizeBoost;
+        col = panelInk(col);
         // offscreen bakes (tiles, icons) are a cache already: drawn as vector
         const t = typeof col === "string" && text !== "" && (c._tf || crispOff) ? tfOf(c) : null;
         const sc = t ? spriteScale(Math.hypot(t.a, t.b)) : 0;
@@ -7138,8 +7314,8 @@ import * as aoHud from './alwaysOn.js';
         c.lineJoin = "round";
         const dy = size * 0.04;
         c.lineWidth = Math.max(1.75, size * 0.19);
-        c.strokeStyle = HUD.line;
-        c.strokeText(text, x, y + dy);
+        c.strokeStyle = inkFor(col);
+        if (!noRimFill(col)) c.strokeText(text, x, y + dy);
         c.fillStyle = col;
         c.fillText(text, x, y + dy);
         c.restore();
@@ -7193,10 +7369,10 @@ import * as aoHud from './alwaysOn.js';
         c.save();
         if (alpha < 1) c.globalAlpha *= alpha;
         roundRectPath(c, x, y, w, h, Math.min(3, h * 0.2));
-        c.fillStyle = "rgba(0,0,0,0.45)";
+        c.fillStyle = HUD.key;
         c.fill();
         c.lineWidth = 1.5;
-        c.strokeStyle = "rgba(255,255,255,0.28)";
+        c.strokeStyle = HUD.keyLine;
         c.stroke();
         c.restore();
         hudTitle(label, x + w / 2, y + h / 2, size, HUD.head, "center", alpha, c);
@@ -7227,7 +7403,11 @@ import * as aoHud from './alwaysOn.js';
         c.fillStyle = fill;
         c.fill();
         if (hover && !down) {
-            c.fillStyle = "rgba(255,255,255,0.14)";
+            c.fillStyle = HUD.theme === "light" && fill === HUD.face ? "rgba(0,0,0,0.07)" : "rgba(255,255,255,0.14)";
+            c.fill();
+        }
+        if (down) {
+            c.fillStyle = "rgba(0,0,0,0.1)";
             c.fill();
         }
         c.lineWidth = 2.5;
@@ -7293,13 +7473,13 @@ import * as aoHud from './alwaysOn.js';
         gemSprite, vignetteSprite, fmtNum, selfId: () => gui.playerid,
         rankHasContent: () => rankPanel.hasContent(),
         rankDraw: (c, x, y, w, h, a) => rankPanel.draw(c, x, y, w, h,
-            { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk }, a),
+            { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk, theme: HUD.theme }, a),
     });
     // distances read as metres everywhere (round 8): "570m", "2.1km"
     function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "km" : Math.round(d) + "m"; }
     stormFx.init({ hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), hudPanel, drawText, fmtDist });
     // hunted marks, the Core, drop-ins and the screen juice (raidHeat.js, juice.js)
-    raidHeat.init({ HUD, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c), cardHold: () => deathCardUp() });
+    raidHeat.init({ HUD, rawInk, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c), cardHold: () => deathCardUp(), crateSprite: () => chestSprite("crate"), crateSpriteR: CHEST_SPRITE_R });
     achCard.init({ HUD, hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, rr: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r) });
     function treeTankPaint(c, key, x, y, w, h) {
         const picture = mockupPicture(String(key), gui.color);
@@ -7407,7 +7587,7 @@ import * as aoHud from './alwaysOn.js';
                 if (el && el.textContent) keyLabelCache.map[k] = el.textContent;
             }
         }
-        return keyLabelCache.map[id] || dflt;
+        return shortKeyName(keyLabelCache.map[id] || dflt);
     }
     function sidearmInput() { return global.mobile ? "round button" : keyLabel("KEY_SIDEARM", "X"); }
     // Off-screen indicator inside a HUD-safe frame: clear of the top cluster,
@@ -7553,6 +7733,10 @@ import * as aoHud from './alwaysOn.js';
     function flushWorldLabels() {
         const S = worldLabel.S;
         if (!S || !S.q.length) return;
+        rawInk(true);
+        try { flushWorldLabelsIn(S); } finally { rawInk(false); }
+    }
+    function flushWorldLabelsIn(S) {
         const rects = royaleActive() && !deathCardUp() ? labelRectsNow() : null;
         layoutLabels(S.q, rects, S.placed);
         for (let i = 0; i < S.q.length; i++) {
@@ -7717,11 +7901,9 @@ import * as aoHud from './alwaysOn.js';
             const lw = Math.max(1.5, R * 0.04);
             // vault plate style on a hexagon (the hitbox): ink drop, deep
             // teal face, ink outline, rim band
-            polyPath(c, 0, R * 0.07, R * 1.16, 6, Math.PI / 6);
-            c.fillStyle = "rgba(0,0,0,0.6)"; c.fill();
             polyPath(c, 0, 0, R * 1.16, 6, Math.PI / 6);
-            c.fillStyle = SHOP_FACE; c.fill();
-            c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
+            c.fillStyle = worldMix(SHOP_ACCENT, WORLD_ART.padTint); c.fill();
+            c.lineWidth = lw * 1.6; c.strokeStyle = worldMix(SHOP_ACCENT, WORLD_ART.padLine); c.stroke();
             polyPath(c, 0, 0, R * 1.0, 6, Math.PI / 6);
             c.lineWidth = Math.max(2, R * 0.065);
             c.globalAlpha = 0.8 + 0.2 * pulse;
@@ -7743,15 +7925,15 @@ import * as aoHud from './alwaysOn.js';
             // the coin: what this pad is for
             const cr = R * 0.24;
             c.beginPath(); c.arc(0, 0, cr, 0, Math.PI * 2);
-            c.fillStyle = HUD.wellSolid; c.fill();
-            c.lineWidth = lw; c.strokeStyle = HUD.ink; c.stroke();
+            c.fillStyle = WORLD_ART.padFace; c.fill();
+            c.lineWidth = lw; c.strokeStyle = WORLD_ART.padInk; c.stroke();
             gemPath(c, 0, cr * 0.05, cr * 0.62);
             c.fillStyle = HUD.gold; c.fill();
             c.save(); c.clip();
             c.fillStyle = "rgba(255,255,255,0.3)";
             c.fillRect(-cr, cr * 0.05 - cr * 0.62, cr * 2, cr * 0.36);
             c.restore();
-            c.lineWidth = Math.max(1.2, R * 0.028); c.strokeStyle = HUD.ink; c.stroke();
+            c.lineWidth = Math.max(1.2, R * 0.028); c.strokeStyle = worldMix(HUD.gold, -0.4); c.stroke();
             c.restore();
             // one label per pad ("North Shop"), above it; none while you stand
             // on it (the shop panel says where you are)
@@ -7899,8 +8081,8 @@ import * as aoHud from './alwaysOn.js';
             noteFit.set(fk, fs);
         }
         const tw = hudTextW(n.text, fs), a = n.pulse ? 0.7 + 0.3 * n.pulse : 1;
-        hudPanel(c, Math.round(cx - tw / 2 - 14), y, tw + 28, NOTE_H, { r: NOTE_H / 2, lw: 2.5, lip: 2.5, bevel: false, alpha: a });
-        drawText(n.text, cx, y + NOTE_H / 2, fs, n.col, "center", true, a);
+        hudPanel(c, Math.round(cx - tw / 2 - 14), y, tw + 28, NOTE_H, { r: NOTE_H / 2, alpha: a });
+        drawText(n.text, cx, y + NOTE_H / 2, fs, n.col === color.guiwhite ? HUD.head : n.col, "center", true, a);
         return y + NOTE_H + NOTE_GAP;
     }
     // hunted: a small red tag and a count, not a whole line
@@ -7932,6 +8114,36 @@ import * as aoHud from './alwaysOn.js';
     const LANE_STALE_MS = 14000;
     // said by a line of its own up here already (the spawn shield note)
     const LANE_DUPE = /^You're shielded for \d+ seconds/i;
+    const LANE_DROP = /^You passed .+ moved up to #|^You moved up to #|passed you\. You're now #|^You dropped to #|^Banked (on fumes|inside the storm|ahead of the storm)|^New raid rule|^Your (vault )?shield is gone|your Mining Power starts at|^Everything you score today counts|^Welcome to Corez/i;
+    const LANE_SIDE = /^Quest complete|^Reconnected|gemdust|^Achievement unlocked|^That's all the XP for today|^Level \d+!/i;
+    function sideToast(text, kind) {
+        const box = document.getElementById("toastContainer");
+        if (!box || !text) return;
+        for (const el of box.children) if (el._dwText === text && !el._gone) return;
+        const t = document.createElement("div");
+        t.className = "toast dw-toast dw-side" + (kind ? " " + kind : "");
+        t.setAttribute("role", "status");
+        const sp = document.createElement("span");
+        sp.className = "dw-toast-msg";
+        sp.textContent = text;
+        t.appendChild(sp);
+        t._dwText = text;
+        box.appendChild(t);
+        setTimeout(() => { t._gone = true; t.classList.add("hide"); setTimeout(() => { if (t.parentNode) t.remove(); }, 240); }, 4200);
+    }
+    global.sideToast = sideToast;
+    window.dwSideToast = sideToast;
+    let toastAnchorPx = -1;
+    function updateToastAnchor() {
+        const mm = hudDrawn.minimap;
+        if (!mm || global.mobile) return;
+        let top = mm.y;
+        if (vitalsRect && vitalsRect.y < top && vitalsRect.y > global.screenHeight * 0.5) top = vitalsRect.y;
+        const px = Math.round((global.screenHeight - top + 10) * window.innerHeight / Math.max(1, global.screenHeight));
+        if (px === toastAnchorPx) return;
+        toastAnchorPx = px;
+        try { document.body.style.setProperty("--dw-toast-bottom", px + "px"); } catch (e) { void e; }
+    }
     const lane = { cur: null, at: 0, shown: false, last: 0, lines: [], fitKey: "", fs: 13 };
     const laneText = (m) => m.textJSON ? m.textJSON.join(" ") : String(m.text == null ? "" : m.text);
     function laneHeld() {
@@ -7945,21 +8157,17 @@ import * as aoHud from './alwaysOn.js';
         if (lane.cur && !lane.shown) lane.at += dt;
         lane.shown = false;
         if (laneHeld()) return;
-        // a side card takes the row first; it runs on its own clock
-        if (sideNotes.length && !global.died) {
-            if (lane.cur) lane.at += dt;
-            const n = hudNote(LANE_PRI, "lane", "side:" + sideNotes[0].title, color.guiwhite);
-            n.draw = drawLaneSide;
-            push(n);
-            return;
-        }
+        try { achCard.pump(sideNotes); } catch (e) { void e; }
+        for (const sn of sideNotes) if (sn.kind === "ach") sideToast(sn.ach && sn.ach.summary ? String(sn.ach.summary) : "Achievement unlocked: " + sn.title, "ach");
+        if (sideNotes.length) sideNotes.length = 0;
         const msgs = global.messages;
         let waiting = 0;
         for (let i = msgs.length - 1; i >= 0; i--) {
             const m = msgs[i];
             if (m === lane.cur) continue;
             if (!m.laneAt) m.laneAt = now;
-            if (!(m.duration > 0) || toastSaid(laneText(m)) || LANE_DUPE.test(laneText(m)) || now - m.laneAt > LANE_STALE_MS) { msgs.splice(i, 1); continue; }
+            if (!m.rich && LANE_SIDE.test(laneText(m))) { sideToast(laneText(m), /^Achievement/i.test(laneText(m)) ? "ach" : "ok"); msgs.splice(i, 1); continue; }
+            if (!(m.duration > 0) || toastSaid(laneText(m)) || LANE_DUPE.test(laneText(m)) || LANE_DROP.test(laneText(m)) || now - m.laneAt > LANE_STALE_MS) { msgs.splice(i, 1); continue; }
             m.time = now;
             waiting++;
         }
@@ -7990,15 +8198,10 @@ import * as aoHud from './alwaysOn.js';
         n.rich = !!m.rich;
         push(n);
     }
-    function drawLaneSide(c, n, cx, y) {
-        lane.shown = true;
-        const y2 = drawSideNote(y, cx);
-        return y2 > y ? y2 - 10 + NOTE_GAP : y;
-    }
     // one or two lines in a pill, the same face as the other notes
     function drawLaneMsg(c, n, cx, y, maxW) {
         lane.shown = true;
-        const room = Math.min(maxW, 620) - 32;
+        const room = Math.min(maxW, 560) - 32;
         const fk = n.text + "|" + (room | 0);
         if (lane.fitKey !== fk) {
             lane.fitKey = fk;
@@ -8017,42 +8220,13 @@ import * as aoHud from './alwaysOn.js';
         for (const l of lines) tw = Math.max(tw, hudTextW(l, fs));
         const H = Math.max(NOTE_H, lines.length * lh + 9);
         const a = Math.max(0, Math.min(1, n.msgAge / 180, (n.msgLife - n.msgAge) / 260));
-        hudPanel(c, Math.round(cx - tw / 2 - 14), y, tw + 28, H, { r: Math.min(H / 2, 12), lw: 2.5, lip: 2.5, bevel: false, alpha: a });
-        for (let i = 0; i < lines.length; i++) drawText(lines[i], cx, y + H / 2 + (i - (lines.length - 1) / 2) * lh, fs, color.guiwhite, "center", true, a);
+        hudPanel(c, Math.round(cx - tw / 2 - 14), y, tw + 28, H, { r: Math.min(H / 2, 12), alpha: a });
+        for (let i = 0; i < lines.length; i++) drawText(lines[i], cx, y + H / 2 + (i - (lines.length - 1) / 2) * lh, fs, HUD.head, "center", true, a);
         return y + H + NOTE_GAP;
     }
     // QA: what's in the lane queue
     window.dwLane = () => ({ cur: lane.cur ? laneText(lane.cur) : "", waiting: (global.messages || []).filter(m => m !== lane.cur).map(laneText), side: sideNotes.length });
 
-    // Rock biomes: the first time in a raid you settle into one, its name
-    // shows for a few seconds at the bottom of the note stack. Quiet on
-    // purpose: lowest priority, it simply doesn't show when the stack is busy.
-    // A raid start resends the map (terrainRenderer.inits), which clears it.
-    const biomeSeen = { inits: -1, seen: new Set(), cur: -1, since: 0, show: null, showAt: 0, checkAt: 0 };
-    const BIOME_SETTLE_MS = 1200, BIOME_NOTE_MS = 3500;
-    function biomeNote() {
-        const tr = window.terrainRenderer, B = window.DWBiomes;
-        if (!tr || !tr._bio || !B || global.tutorialMode) return null;
-        const bs = biomeSeen, now = performance.now();
-        if (bs.inits !== tr.inits) { bs.inits = tr.inits; bs.seen.clear(); bs.cur = -1; bs.show = null; }
-        if (global.died || royaleLobbyPhase()) { bs.cur = -1; return null; }
-        if (now >= bs.checkAt) {
-            bs.checkAt = now + 250;
-            const hw = global.gameWidth / 2, hh = global.gameHeight / 2;
-            if (hw > 0 && hh > 0) {
-                const bio = tr._bio;
-                const b = B.biomeAt(global.player.renderx / hw, global.player.rendery / hh, bio.cols, bio.rows, bio.seed);
-                // a moment inside first, so running along a seam stays quiet
-                if (b !== bs.cur) { bs.cur = b; bs.since = now; }
-                else if (now - bs.since >= BIOME_SETTLE_MS && !bs.seen.has(b)) {
-                    bs.seen.add(b);
-                    bs.show = B.BIOMES[b];
-                    bs.showAt = now;
-                }
-            }
-        }
-        return bs.show && now - bs.showAt < BIOME_NOTE_MS ? bs.show : null;
-    }
     function drawHudNotes(y) {
         const r = global.royale;
         const list = hudNoteList;
@@ -8067,43 +8241,16 @@ import * as aoHud from './alwaysOn.js';
         if (r.lock) push(hudNote(0, "lock", st.fin ? "Last " + Math.max(0, r.lockLeft | 0) + "s of the raid, so nobody respawns now."
             : "The storm shuts in " + Math.max(0, r.lockLeft | 0) + "s, and nobody respawns until it opens.", HUD.lilac));
         else if (r.toast && newcomer.toastAllowed(r.toast)) push(hudNote(NOTE_CRIT.test(r.toast) ? 0 : 2, "toast", r.toast, color.guiwhite));
-        // the pad timers, up top where nothing covers them (round 12)
-        if (!global.died && r.occupy > 0) push(hudNote(1, "padtime", "You can stay " + r.occupy + "s longer", color.gold));
-        else if (!global.died && r.lockout > 0) push(hudNote(1, "padtime", "You can come back in " + r.lockout + "s", color.guiwhite));
-        try { push(spawnShieldNote()); } catch (e) { /* */ }
+        const onVault = !!(global.vault && global.vault.onPad);
+        if (!global.died && r.occupy > 0 && r.occupy <= 5) push(hudNote(1, "padtime", "You can stay " + r.occupy + "s longer", color.guiwhite));
+        else if (!global.died && r.lockout > 0 && onVault) push(hudNote(1, "padtime", "You can come back in " + r.lockout + "s", color.guiwhite));
         try { raidHeat.hudNotes(push); } catch (e) { /* */ }
         try { aoHud.hudNotes(push, hudNote, HUD); } catch (e) { }
-        // the Crown Contest: one line when there's no tracker panel (a first
-        // raid, a phone), or when you hold a crown
         try { crowns.hudNotes(push, global.mobile || !nxShows("standings") || (global.nxKnown && (global.nxStage | 0) === 0)); } catch (e) { /* */ }
-        // the first raids: the goal line, a challenge's clock, NEW intros
         try { newcomer.hudNotes(push, hudNote); } catch (e) { /* */ }
-        try { coach.mineTipNote(push, hudNote); } catch (e) { /* */ }
-        if (teamBankTip && !global.died) {
-            const tn = performance.now();
-            if (!teamBankTip.shownAt && !global.hudCardUp && tn - (global.spawnedAt || 0) > 7000) teamBankTip.shownAt = tn;
-            if (teamBankTip.shownAt && tn - teamBankTip.shownAt < 9000) push(hudNote(2, "teambank", buildBtnLabels.TEAM_BANK_TIP, HUD.gold));
-            else if (teamBankTip.shownAt) teamBankTip = null;
-        }
-        const objs = nxShows("outposts") ? r.objectives || [] : [];
-        for (let i = 0; i < Math.min(2, objs.length); i++) {
-            const o = objs[i];
-            if (o.kind === "contest") push(hudNote(2, "contest" + i, (o.name || "Outpost") + " contested", o.c || color.gold));
-        }
         if (!global.died) {
             const you = r.you || {};
-            if (you.overdrive > 0 || you.anchor > 0) {
-                const parts = [];
-                if (you.overdrive > 0) parts.push("OVERDRIVE " + you.overdrive + "s");
-                if (you.anchor > 0) parts.push("STORM ANCHOR " + you.anchor + "s");
-                push(hudNote(2, "buff", parts.join("   "), color.teal));
-            }
-            // a big satchel with danger around: bank it, it isn't points yet
             const carryN = global.gems && global.gems.carried != null ? global.gems.carried | 0 : you.carried | 0;
-            const cn = scoreText.carryNote({
-                carried: carryN, near: you.hunt ? you.hunt.n | 0 : 0, storm: (you.sm || 0) > 0, noBank: false,
-                hp: global.hurtAt && performance.now() - global.hurtAt < 4000 ? 0.5 : 1,
-            });
             // the vault deposit: how far it got, and what's still carried when it stops short
             const v0 = global.vault;
             if (v0 && (v0.total > 0 || v0.cutAt > 0)) {
@@ -8119,22 +8266,8 @@ import * as aoHud from './alwaysOn.js';
                     if (dn) push(hudNote(0, "deposit", dn.text, dn.hot ? "#ff9a5c" : HUD.gold));
                 }
             }
-            // a full satchel says it once, in the stack (it used to print on its own under it too)
             const gfull = global.gems && global.gems.cap > 0 && (global.gems.carried | 0) >= global.gems.cap;
-            if (gfull && config.game.satchelWarning) {
-                const fn = hudNote(0, "carry", "Your satchel is full. Go bank it.", "#ff7a6b");
-                fn.pulse = 0.5 + 0.5 * Math.sin(performance.now() / 160);
-                push(fn);
-            } else if (cn) {
-                push(hudNote(cn.hot ? 1 : 2, "carry", cn.text + ". " + cn.sub, cn.hot ? "#ffb347" : HUD.gold));
-            }
-            const myStreak = you.streak | 0;
-            if (myStreak >= 4 && nxShows("streaks")) push(hudNote(3, "streak", myStreak + " kill streak! You're on everyone's map now", "#ffb347"));
-            // Raid Night coming up (shared/events.js): a small chip in the last 24 h
-            const evChip = global.tutorialMode || !nxShows("raidNight") ? "" : eventHudTick().chip;
-            if (evChip) push(hudNote(3, "event", evChip, HUD.gold));
-            const biome = biomeNote();
-            if (biome) push(hudNote(3, "biome", biome.name, biome.ui));
+            if (gfull && config.game.satchelWarning) push(hudNote(0, "carry", "Your satchel is full, so go bank it.", HUD.gold));
         }
         // the one message row: server lines, your kills, side cards
         try { laneMessage(push); } catch (e) { /* never break the frame */ }
@@ -8172,6 +8305,7 @@ import * as aoHud from './alwaysOn.js';
         hudWaitSince = 0;
         hudErrText = "";
         tickAdaptiveQuality();
+        updateToastAnchor();
         const r = global.royale;
         if (raidFinale.hidesHud()) { hudTopBottom = HUD.edge; return; }
         if (!global.died) spectateBarBottom = 0;
@@ -8538,10 +8672,11 @@ import * as aoHud from './alwaysOn.js';
         const me = myPlace > 3 ? board.find(row => !row.bot && row.place === myPlace) : null;
         const rows = me ? top.concat([me]) : top;
         const aoFoot = aoOn ? aoHud.standingsFoot() : null;
-        const aoFootH = aoFoot ? 16 + (aoFoot.line2 ? 15 : 0) : 0;
-        const H = 30 + rows.length * rowH + (myPlace > 1 ? 16 : 2) + aoFootH;
+        const aoFootH = aoFoot ? 16 : 0;
+        const H = 30 + rows.length * rowH + 2 + aoFootH;
         standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: H + 16 };
         const c = ctx[2];
+        hudPanel(c, x - 6, y0 - 5, W + 12, H + 4, { fill: HUD.glass, r: HUD.r });
         const boardTitle = aoOn ? aoHud.standingsTitle() : "Leaderboard";
         hudTitle(boardTitle, x + W / 2, y0 + 12, 19, HUD.head, "center");
         drawRuleDot(c, x + W / 2 + hudTitleW(boardTitle, 19) / 2 + 14, y0 + 12);
@@ -8559,29 +8694,21 @@ import * as aoHud from './alwaysOn.js';
             const rk = codeOf(row);
             if (rk) rankBadges.drawBadge(c, x + 7, rowMid, 15, rankBadges.codeToDivision(rk));
             const bx = x + rkCol, bw = W - rkCol;
-            hudBar(c, bx, ry, bw, barH, Math.max(0.05, (row.score | 0) / best), barCol);
+            const frac = Math.max(0.05, (row.score | 0) / best);
+            hudBar(c, bx, ry, bw, barH, frac, barCol);
             const head = row.place > 3 ? "#" + row.place + " " : "";
             const tail = " - " + fmtNum(row.score | 0) + (row.streak >= 4 ? " x" + row.streak : "");
             const fit = fitStandingsText(head, shortName(row.name, 18), tail, bw - barH - 4);
-            drawText(fit.text, bx + bw / 2, rowMid, fit.ns, color.guiwhite, "center", true);
+            const fillInf = fillInfo(barCol);
+            const rowInk = HUD.theme === "light" && !(frac > 0.5 && fillInf && fillInf.lum < 0.45) ? HUD.head : color.guiwhite;
+            drawText(fit.text, bx + bw / 2, rowMid, fit.ns, rowInk, "center", true);
             if (aoOn && row.cr) { try { crowns.drawCrownIcon(c, bx + bw - 10, rowMid, 11, "gold", 1); } catch (e) { } }
             ry += rowH;
         }
-        if (myPlace > 1 && top[0]) {
-            const gap = (top[0].score | 0) - (r.youScore | 0);
-            drawText(fmtNum(gap) + " behind #1", x + W / 2, ry + 5, 11, HUD.text2, "center", true);
-            ry += 16;
-        }
         if (aoFoot) {
-            const fy = myPlace > 1 && top[0] ? ry + 4 : ry + 9;
             let fs = 11;
             while (fs > 9 && hudTextW(aoFoot.line1, fs) > W) fs -= 0.5;
-            drawText(aoFoot.line1, x + W / 2, fy, fs, HUD.gold, "center", true);
-            if (aoFoot.line2) {
-                let f2 = 10.5;
-                while (f2 > 8.5 && hudTextW(aoFoot.line2, f2) > W) f2 -= 0.5;
-                drawText(aoFoot.line2, x + W / 2, fy + 15, f2, HUD.text2, "center", true);
-            }
+            drawText(aoFoot.line1, x + W / 2, ry + 9, fs, HUD.theme === "light" ? "#444444" : HUD_DARK.text2, "center", true);
         }
         return y0 + H;
     }
@@ -8590,7 +8717,7 @@ import * as aoHud from './alwaysOn.js';
     function drawRuleDot(c, cx, cy) {
         c.save();
         c.beginPath(); c.arc(cx, cy, 6.5, 0, Math.PI * 2);
-        c.fillStyle = "rgba(0,0,0,0.45)"; c.fill();
+        c.fillStyle = HUD.key; c.fill();
         c.restore();
         drawText("?", cx, cy + 0.5, 10, HUD.head, "center", true);
     }
@@ -8648,9 +8775,6 @@ import * as aoHud from './alwaysOn.js';
     // big moments (a shutdown, a streak, a boss, a bounty) only when the
     // lane is quiet; everyday kills between other tanks stay on the big map's feed.
     const feedSeen = new Map();
-    function feedNotable(f) {
-        return !!(f.shutdown || f.streak >= 4 || f.bounty || f.hunt || f.cloot || (f.core && f.broke) || (f.boss && f.slain) || f.chest || crowns.feedLine(f, (n) => n || "", (n) => n));
-    }
     function drawRoyaleFeed(yTop) {
         const feed = global.royale.feed || [];
         const now = Date.now(), myName = global.playerName || "";
@@ -8668,7 +8792,7 @@ import * as aoHud from './alwaysOn.js';
             // old news (the first broadcast after joining carries the last few)
             if (now - (f.at || now) > 6000) continue;
             const mine = !!myName && (f.name === myName || f.by === myName);
-            if (!mine && !feedNotable(f)) continue;
+            if (!mine) continue;
             let line = null;
             try { line = feedLine(f); } catch (e) { line = null; }
             if (!line || !line.text) continue;
@@ -8832,7 +8956,7 @@ import * as aoHud from './alwaysOn.js';
         if (global.died && !open && deathCardUp() && dc && x < (dc.x + dc.w) * sw && x + W > dc.x * sw && y < (dc.y + dc.h) * sh && y + H > dc.y * sh) { chatInputHide(); return; }
         const c = ctx[2];
         chatPanelRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
-        hudPanel(c, x, y, W, H, { alpha: A, fill: open ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.3)", r: 4 });
+        hudPanel(c, x, y, W, H, { alpha: A, fill: open ? HUD.card : HUD.panel, r: HUD.r });
         // the lines, oldest first
         let ly = y + CHAT_PAD_Y + lh / 2;
         const teamHex = playerHexCol() || HUD.sky;
@@ -8841,8 +8965,9 @@ import * as aoHud from './alwaysOn.js';
             // a new line comes in quickly instead of popping
             const a = v.a * Math.min(1, (now - v.line.at) / 160 + 0.25);
             let lx = x + CHAT_PAD_X;
-            if (L.tag) { hudTitle(L.tag, lx, ly, fs, teamHex, "left", a); lx += L.tagW; }
-            hudTitle(L.name, lx, ly, fs, chatNameHex(v.line), "left", a);
+            const lightChat = HUD.theme === "light";
+            if (L.tag) { hudTitle(L.tag, lx, ly, fs, lightChat ? mixHex(teamHex, "#000000", 0.45) : teamHex, "left", a); lx += L.tagW; }
+            hudTitle(L.name, lx, ly, fs, lightChat ? mixHex(chatNameHex(v.line), "#000000", 0.45) : chatNameHex(v.line), "left", a);
             lx += L.nameW;
             for (let k = 0; k < L.lines.length; k++) {
                 if (L.lines[k]) hudTitle(L.lines[k], k ? x + CHAT_PAD_X : lx, ly, fs, HUD.text, "left", a);
@@ -8863,7 +8988,7 @@ import * as aoHud from './alwaysOn.js';
             return;
         }
         // the input row: a recessed well, the Team / All pill in duos, the DOM input over the rest
-        hudWell(c, rx, ry, rw, rowH, HUD.rSmall, HUD.wellSolid, HUD.line, 1.5);
+        hudWell(c, rx, ry, rw, rowH, HUD.rSmall, HUD.well, HUD.line, 1.5);
         let pillW = 0;
         const team = duo && (global.died || !global.duoChatAll);
         const hit = duo ? chatModeHit() : (cv.chatModeHit || null);
@@ -8986,7 +9111,7 @@ import * as aoHud from './alwaysOn.js';
         const c = ctx[2];
         if (L.modMin) {
             // folded: "Raid rule" and the name on one line (hover opens it)
-            hudPanel(c, x, y, W, H, { alpha: 0.9 });
+            hudPanel(c, x, y, W, H, { fill: HUD.glass });
             const lw = hudTextW("Raid rule", 10.5);
             drawText("Raid rule", x + 10, y + H / 2, 10.5, HUD.text2, "left", true, 0.95);
             const name = String(mod.name);
@@ -9061,17 +9186,7 @@ import * as aoHud from './alwaysOn.js';
         const W = CARD_W, H = questH(o);
         const now = performance.now();
         const calm = !!(global.reducedMotion && global.reducedMotion());
-        // between contracts: a short row counting down to the next one
-        if (o.st === 3) {
-            const x = L.x, y = L.y + (L.duoOff | 0), w = WAIT_W;
-            questRect = { x: x - 6, y: y - 6, w: w + 12, h: H + 12 };
-            const c = ctx[2];
-            hudPanel(c, x, y, w, H, { alpha: 0.8 });
-            const left = Math.max(0, (o.ms || 0) - (now - (o.at || now)));
-            drawText("Next contract", x + 10, y + H / 2, 10.5, HUD.text2, "left", true, 0.95);
-            drawText(fmtRaidClock(Math.ceil(left / 1000)), x + w - 10, y + H / 2, 11, HUD.gold, "right", true, 0.95);
-            return;
-        }
+        if (o.st === 3) { questRect = null; return; }
         // a new contract slides in from the left
         const bornAge = now - (global.royale.objBornAt || 0);
         const slide = calm || o.st !== 0 ? 0 : Math.max(0, 1 - bornAge / 260);
@@ -9080,7 +9195,7 @@ import * as aoHud from './alwaysOn.js';
         const c = ctx[2];
         const a = 1 - slide;
         const done = o.st === 1, missed = o.st === 2;
-        hudPanel(c, x, y, W, H, { alpha: a });
+        hudPanel(c, x, y, W, H, { alpha: a, fill: HUD.glass });
         // done: a green rim that fades out
         if (done) {
             const k = Math.max(0, 1 - (now - (global.royale.objEndAt || now)) / 1400);
@@ -9270,28 +9385,25 @@ import * as aoHud from './alwaysOn.js';
             const t = list[k];
             const DUR = t.dur || DUR0;
             const age = now - t.born;
-            if (age > DUR || !newcomer.calloutAllowed(t.kind)) { list.splice(k, 1); continue; }
+            if (age > DUR || !newcomer.calloutAllowed(t.kind) || !newcomer.plateWanted(t.kind, t.text)) { list.splice(k, 1); continue; }
             if (age < 0) continue;
             const inT = Math.min(1, age / 160);
             const outT = age > DUR - 500 ? 1 - (age - (DUR - 500)) / 500 : 1;
             const a = (inT * inT * (3 - 2 * inT)) * Math.max(0, outT);
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
-            const col = raidHeat.calloutCol(t.kind) || (t.kind === "override" || t.kind === "late" ? HUD.copper : t.kind === "shutdown" ? "#ff9a5a" : t.kind === "boss" ? "#c9a8ff"
-                : t.kind === "chest" || t.kind === "dropin" || t.kind === "bounty" || t.kind === "restored" ? color.gold : t.kind === "quest" ? color.teal : t.kind === "streak" ? "#ff7a6b"
-                : t.kind === "tier5" || t.kind === "level" ? HUD.gold
-                : t.kind === "grown" || t.kind === "contract" ? HUD.emerald : t.kind === "revenge" ? "#ff6b5e" : color.guiwhite);
+            const col = raidHeat.calloutCol(t.kind) || (t.kind === "tier5" || t.kind === "level" || t.kind === "boss" || t.kind === "coreloot" ? HUD.gold : HUD.head);
             // Oct 8: a compact plate in the top lane (it was a 23-unit title over the play area)
-            const base = t.kind === "streak" ? 14 : 17, size = base * pop;
+            const base = 17, size = base * pop;
             // the points ride on the sub line: one plate, two lines at most
             const subTxt = t.pts ? "+" + fmtNum(t.pts) + " pts" + (t.sub ? "  ·  " + t.sub : "") : t.sub || "";
             const len = (Math.max(hudTitleW(t.text, base), subTxt ? hudTextW(subTxt, 11) : 0) + 32) * pop;
             const ph = size * 1.6 + (subTxt ? 16 * pop : 0);
-            hudPanel(c, cx - len / 2, cy - size * 0.8, len, ph, { alpha: a, fill: "rgba(0,0,0,0.43)", r: HUD.r * pop });
+            hudPanel(c, cx - len / 2, cy - size * 0.8, len, ph, { alpha: a, r: HUD.r * pop });
             // coach.js: this plate sits where its card goes on desktop
             global.hudCalloutUp = true;
             global.hudCalloutAt = performance.now();   // raidPerks: the cards wait for it
             hudTitle(t.text, cx, cy, size, col, "center", a);
-            if (subTxt) drawText(subTxt, cx, cy + size * 0.8 + 6, 11, t.pts ? HUD.gold : t.kind === "contract" || t.kind === "bounty" ? HUD.emerald : "#d8dce6", "center", true, a, 4);
+            if (subTxt) drawText(subTxt, cx, cy + size * 0.8 + 6, 11, t.pts ? HUD.gold : HUD.text, "center", true, a, 4);
             break;
         }
     }
@@ -9600,7 +9712,6 @@ import * as aoHud from './alwaysOn.js';
     function drawKitBox(spacing, alcoveSize) {
         const want = shopUiMode() && !global.died && !global.mobile && global.gems && global.gems.cap > 0 &&
             (!global.tutorialMode || (window.dwTutUi === "kit" || (window.dwTutAllow || "").includes("kit") || (global.shop.state && (global.shop.state.kitOrder || []).length))) &&
-            // a first raid: the box comes in with its first item
             (global.tutorialMode || nxShows("kit", { owned: newcomer.ownsKit() }));
         kitGlide.set(want ? 1 : 0);
         const g = kitGlide.get();
@@ -9624,7 +9735,7 @@ import * as aoHud from './alwaysOn.js';
         global.clickables.kit.hide();
         c.save();
         c.globalAlpha = g;
-        hudPanel(c, x, y, W, H);
+        hudPanel(c, x, y, W, H, { fill: HUD.glass });
         // top row: two equal chips, drill and sidearm, aligned to the slot grid
         const pad = 8, gap = 6;
         const chipY = y + 7, chipH = 17, chipW = (W - pad * 2 - gap) / 2;
@@ -9691,7 +9802,7 @@ import * as aoHud from './alwaysOn.js';
                 kitSlotIcons[item.id] = { x: sx + slotW / 2, y: slotY + 30, w: slotW, h: slotH, sx, sy: slotY, at: now };
                 // the item's card: rounded corners, its own colour, its own glyph
                 if (global.kitUnlockHeld !== item.id) drawKitIcon(c, item.id, sx + slotW / 2, slotY + 30, 26);
-                drawText(labelCase(KIT_SHORT[item.id] || item.name.slice(0, 7)), sx + slotW / 2, slotY + slotH - 8, 9, color.guiwhite, "center", true, g);
+                drawText(labelCase(KIT_SHORT[item.id] || item.name.slice(0, 7)), sx + slotW / 2, slotY + slotH - 8, 9, HUD.head, "center", true, g);
                 global.clickables.kit.place(i, sx * cr, slotY * cr, slotW * cr, slotH * cr);
                 if (hov === i) queueTip(item.name + "  ·  " + keys[i], item.desc + " Drag to move it, or drag it out to throw it away.", sx + slotW / 2, y);
                 if (fl && fl.kind === "use" && flT > 0) {
@@ -9706,10 +9817,10 @@ import * as aoHud from './alwaysOn.js';
             } else {
                 // empty card outline so the slot still reads as a card
                 c.save();
-                c.globalAlpha = g * 0.35;
+                c.globalAlpha = g * 0.5;
                 roundRectPath(c, sx + slotW / 2 - 13, slotY + 17, 26, 26, 6);
                 c.setLineDash([3, 3]);
-                c.lineWidth = 1; c.strokeStyle = "#ffffff"; c.stroke();
+                c.lineWidth = 1; c.strokeStyle = HUD.text2; c.stroke();
                 c.restore();
                 drawText("Empty", sx + slotW / 2, slotY + slotH - 8, 8, HUD.text2, "center", true, g);
                 global.clickables.kit.place(i, sx * cr, slotY * cr, slotW * cr, slotH * cr);
@@ -9747,6 +9858,7 @@ import * as aoHud from './alwaysOn.js';
         // roundRectPath is a const further down: reach it at call time
         HUD, hudPanel, hudWell, hudKey, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, roundRectPath: (...a) => roundRectPath(...a), keyLabel,
         drawKitIcon: (c, id, x, y, sz) => drawKitIcon(c, id, x, y, sz),
+        paintGlyph: (c, id, u) => paintKitGlyph(c, id, u, kitDark(KIT_CARD[id] || "#8a93a6")),
         queueTip: (t, b, x, y) => queueTip(t, b, x, y),
         markSlot: (id, r) => { kitSlotIcons[id] = r; },
         gemClass: (e) => gemSpriteClass(e),
@@ -10147,7 +10259,6 @@ import * as aoHud from './alwaysOn.js';
         }
         c.restore();
     }
-    const SHOP_CARD = HUD.raised, SHOP_CARD_OFF = "#29232f", SHOP_CARD_SEL = "#43384f";
     const shopMeasure = new Map();
     function shopMeasureText(txt, size) {
         const k = txt + "|" + size;
@@ -10157,6 +10268,35 @@ import * as aoHud from './alwaysOn.js';
     }
     let abTabSeen = true, abTabFor = 0, abTabLast = 0;
     try { abTabSeen = tabSeen(localStorage); } catch (e) { abTabSeen = true; }
+    function drawShopPreview(c, sel, x, y, s, a) {
+        c.save();
+        c.globalAlpha *= a;
+        roundRectPath(c, x, y, s, s, 9);
+        c.fillStyle = "#ffffff";
+        c.fill();
+        c.save();
+        c.clip();
+        c.strokeStyle = "rgba(0,0,0,0.07)";
+        c.lineWidth = 1;
+        c.beginPath();
+        for (let k = 8; k < s; k += 8) { c.moveTo(x + k + 0.5, y); c.lineTo(x + k + 0.5, y + s); c.moveTo(x, y + k + 0.5); c.lineTo(x + s, y + k + 0.5); }
+        c.stroke();
+        c.restore();
+        roundRectPath(c, x, y, s, s, 9);
+        c.lineWidth = 1.25;
+        c.strokeStyle = "rgba(0,0,0,0.18)";
+        c.stroke();
+        c.restore();
+        const cx = x + s / 2, cy = y + s / 2;
+        if (sel.cat === "kit" || sel.cat === "ability") { drawKitIcon(c, sel.id, cx, cy, s * 0.62); return; }
+        const tag = sel.cat === "drill" ? (ROMAN[sel.tier] || "I") : sel.cat === "gear" ? (GEAR_TAG[sel.id] || String(sel.name || "").slice(0, 3).toUpperCase()) : String(sel.name || "").slice(0, 3).toUpperCase();
+        const tcol = sel.cat === "drill" ? "#a3460b" : sel.cat === "arm" ? "#6a3fc0" : "#0b6f78";
+        rawInk(true);
+        try {
+            let ts = s * 0.42; while (ts > 10 && hudTitleW(tag, ts) > s - 12) ts -= 1;
+            hudTitle(tag, cx, cy, ts, tcol, "center", a);
+        } finally { rawInk(false); }
+    }
     function drawShopUI() {
         const want = shopOpenWanted();
         shopGlide.set(want ? 1 : 0);
@@ -10190,7 +10330,7 @@ import * as aoHud from './alwaysOn.js';
         const bw2 = hudTitleW(bankTxt, 16) + 40, bh2 = 30, bx2 = x + W - 58 - bw2, by2 = y + 11;
         c.save();
         c.globalAlpha = g;
-        hudWell(c, bx2, by2, bw2, bh2, bh2 / 2, HUD.wellSolid, HUD.ink, 2.5);
+        hudWell(c, bx2, by2, bw2, bh2, bh2 / 2, HUD.well, HUD.ink, 2.5);
         gemPath(c, bx2 + 16, by2 + bh2 / 2, 7);
         c.fillStyle = HUD.gold; c.fill();
         c.lineWidth = 1.5; c.strokeStyle = HUD.ink; c.stroke();
@@ -10239,7 +10379,7 @@ import * as aoHud from './alwaysOn.js';
                 hintH = 44;
                 const hx = x + 20, hy = tabY + tabH + 12, hw = W - 40;
                 c.save(); c.globalAlpha = g;
-                hudWell(c, hx, hy, hw, 38, 10, HUD.wellSolid, HUD.gold, 2);
+                hudWell(c, hx, hy, hw, 38, 10, HUD.well, HUD.gold, 2);
                 gemPath(c, hx + 20, hy + 19, 8);
                 c.fillStyle = HUD.gold; c.fill();
                 c.lineWidth = 1.5; c.strokeStyle = HUD.ink; c.stroke();
@@ -10274,12 +10414,12 @@ import * as aoHud from './alwaysOn.js';
             const hT = hoverEase("card:" + it.id, hov, now);
             const status = shopStatus(it);
             const afford = status.equip || (global.gems.banked | 0) >= it.price;
-            drawFlatTile(c, ix, iy, cardW, cardH, sel ? SHOP_CARD_SEL : status.buy ? SHOP_CARD : SHOP_CARD_OFF, hT, g, sel, HUD.copper);
+            drawFlatTile(c, ix, iy, cardW, cardH, sel ? HUD.cardSel : status.buy ? HUD.raised : HUD.cardOff, hT, g, sel, HUD.copper);
             let nameX = ix + 10;
             if (it.cat === "kit" || it.cat === "ability") { drawKitIcon(c, it.id, ix + 18, iy + Math.min(17, cardH * 0.3), Math.min(18, cardH * 0.34)); nameX = ix + 32; }
             const nameW = cardW - (nameX - ix) - 10;
             let ns = 12; while (ns > 9 && shopMeasureText(it.name, ns) > nameW) ns -= 0.5;
-            drawText(it.name, nameX, iy + Math.min(17, cardH * 0.3), ns, status.buy ? color.guiwhite : HUD.text2, "left", true, g);
+            drawText(it.name, nameX, iy + Math.min(17, cardH * 0.3), ns, status.buy ? HUD.head : HUD.text2, "left", true, g);
             c.save(); c.globalAlpha = g;
             gemPath(c, ix + 12, iy + cardH - 16, 5);
             c.fillStyle = afford ? color.gold : "#7a5a5a"; c.fill();
@@ -10292,29 +10432,35 @@ import * as aoHud from './alwaysOn.js';
         // detail pane
         const dx = x + W - 20 - detailW, dy = gridY, dh = y + H - 32 - gridY;
         c.save(); c.globalAlpha = g;
-        hudWell(c, dx, dy, detailW, dh, 10, HUD.wellSolid, HUD.ink, 2.5);
+        hudWell(c, dx, dy, detailW, dh, 10, HUD.well, HUD.ink, 2.5);
         c.restore();
         const sel = items.find(it => it.id === sh.sel);
         if (sel) {
             const status = shopStatus(sel);
             const catName = (SHOP_TABS.find(t => t[0] === sel.cat) || ["", ""])[1].toUpperCase();
-            let tx = dx + 14;
-            if (sel.cat === "kit" || sel.cat === "ability") { drawKitIcon(c, sel.id, dx + 27, dy + 24, 26); tx = dx + 48; }
+            const PV = 58, pvx = dx + 12, pvy = dy + 12;
+            drawShopPreview(c, sel, pvx, pvy, PV, g);
+            const tx = pvx + PV + 12;
             let ns2 = 18; while (ns2 > 12 && hudTitleW(sel.name, ns2) > dx + detailW - 12 - tx) ns2 -= 0.5;
-            hudTitle(sel.name, tx, dy + 19, ns2, HUD.head, "left", g);
+            hudTitle(sel.name, tx, pvy + 16, ns2, HUD.head, "left", g);
             const abInput = global.mobile ? "BUTTON" : "KEY " + keyLabel("KEY_ABILITY", "Q").toUpperCase();
-            drawText(catName + (sel.cat === "kit" ? "  ·  MAX " + sel.max + " PER SLOT" : sel.cat === "drill" ? "  ·  TIER " + sel.tier : sel.cat === "arm" ? "  ·  " + sidearmInput().toUpperCase()
-                : sel.cat === "ability" ? "  ·  " + Math.round((sel.cd || 0) / 1000) + "S COOLDOWN  ·  " + abInput : "  ·  5 MINUTES"), tx, dy + 37, 9.5, HUD.text2, "left", true, g);
+            const catLine = catName + (sel.cat === "kit" ? "  ·  MAX " + sel.max + " PER SLOT" : sel.cat === "drill" ? "  ·  TIER " + sel.tier : sel.cat === "arm" ? "  ·  " + sidearmInput().toUpperCase()
+                : sel.cat === "ability" ? "  ·  " + Math.round((sel.cd || 0) / 1000) + "S COOLDOWN  ·  " + abInput : "  ·  5 MINUTES");
+            const catLines = wrapLines(catLine, 9.5, dx + detailW - 12 - tx).slice(0, 2);
+            for (let k = 0; k < catLines.length; k++) drawText(catLines[k], tx, pvy + 36 + k * 12, 9.5, HUD.text2, "left", true, g);
             const lines = wrapLines(sel.desc, 11.5, detailW - 28);
-            let ly = dy + 60;
-            for (const ln of lines.slice(0, 5)) { drawText(ln, dx + 14, ly, 11.5, HUD.text, "left", true, g); ly += 16; }
+            let ly = pvy + PV + 16;
+            const maxLy = dy + dh - 76;
+            for (const ln of lines.slice(0, 5)) { if (ly > maxLy) break; drawText(ln, dx + 14, ly, 11.5, HUD.text, "left", true, g); ly += 16; }
             if (sel.cat === "ability") {
                 for (const ln of wrapLines(aoNow() ? "You keep it for as long as you stay in the game, even after you die. You can swap abilities here with Equip." : "You keep it for the whole raid, even after you die. You can swap abilities here with Equip.", 10.5, detailW - 28)) {
+                    if (ly + 2 > maxLy) break;
                     drawText(ln, dx + 14, ly + 2, 10.5, HUD.text2, "left", true, g); ly += 14;
                 }
             }
             if (sel.cat === "kit" && !status.buy && status.text === "KIT FULL") {
                 for (const ln of wrapLines("Your kit only holds 3 kinds of items, so use one up first.", 10.5, detailW - 28)) {
+                    if (ly + 2 > maxLy) break;
                     drawText(ln, dx + 14, ly + 2, 10.5, "#ff9a8c", "left", true, g); ly += 14;
                 }
             }
@@ -10389,9 +10535,7 @@ import * as aoHud from './alwaysOn.js';
         roundRectPath(c, px - pw / 2, py - ph / 2, pw, ph, 10.5);
         c.fillStyle = HUD.panel;
         c.fill();
-        c.lineWidth = 2;
-        c.strokeStyle = HUD.ink;
-        c.stroke();
+        if (HUD.edgeLine) { c.lineWidth = 1.25; c.strokeStyle = HUD.edgeLine; c.stroke(); }
         c.fillStyle = col; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
         const gx = px - pw / 2 + 12, gy = py;
         if (glyph === "boss") { polyPath(c, gx, gy, 6.5, 8, Math.PI / 8); c.fill(); c.stroke(); }
@@ -10403,7 +10547,7 @@ import * as aoHud from './alwaysOn.js';
         else if (glyph.startsWith("ping:")) { c.beginPath(); c.arc(gx, gy, 7, 0, Math.PI * 2); c.fill(); c.stroke(); drawPingGlyph(c, gx, gy, 5, glyph.slice(5)); }
         else { c.beginPath(); c.moveTo(gx, gy - 6); c.lineTo(gx + 6, gy + 5); c.lineTo(gx - 6, gy + 5); c.closePath(); c.fill(); c.stroke(); }
         c.restore();
-        if (label) drawText(label, px - pw / 2 + 23, py + 0.5, 10.5, color.guiwhite, "left", true, c.globalAlpha, 5);
+        if (label) drawText(label, px - pw / 2 + 23, py + 0.5, 10.5, HUD.head, "left", true, c.globalAlpha, 5);
         c.globalAlpha = a0;
     }
     // Damage reads on the chest itself: jagged cracks grow from the centre
@@ -10497,7 +10641,8 @@ import * as aoHud from './alwaysOn.js';
         }
         try {
             if (r.ao && r.ao.on) {
-                aoHud.drawWorld(c, cx - px, cy - py, ratio, aoApi());
+                rawInk(true);
+                try { aoHud.drawWorld(c, cx - px, cy - py, ratio, aoApi()); } finally { rawInk(false); }
                 for (const mk of aoHud.mapMarks()) {
                     const s = toScreen(mk.x, mk.y);
                     const d = Math.hypot(mk.x - me.x, mk.y - me.y);
@@ -10878,12 +11023,13 @@ import * as aoHud from './alwaysOn.js';
         const placed = [];
         for (const v of (global.vaults || [])) { const vx = T.X(v.x), vy = T.Y(v.y); placed.push({ x: vx - labelPx * 2, y: vy - labelPx * 2.6, w: labelPx * 4, h: labelPx * 1.6 }); }
         const mapLabel = (text, mx, my, above, col) => {
+            if (labelPx < 9) return;
             const ly = my + (above ? -1 : 1) * (above ? labelPx * 0.6 + 2 : labelPx * 0.9 + 2);
             const w = text.length * labelPx * 0.62 + 4, h = labelPx + 3;
             const r0 = { x: mx - w / 2, y: ly - h / 2, w, h };
             for (const q of placed) if (r0.x < q.x + q.w && r0.x + r0.w > q.x && r0.y < q.y + q.h && r0.y + r0.h > q.y) return;
             placed.push(r0);
-            drawText(text, mx, ly, labelPx, col, "center", true, 0.95, 4);
+            drawText(text, mx, ly, labelPx * 0.9, col, "center", true, 0.85, 4);
         };
         // duos: your partner, a dot in your colour with a ring and their name
         const dmate = r.duos && r.duo && r.duo.mate;
@@ -11019,67 +11165,83 @@ import * as aoHud from './alwaysOn.js';
         try { crowns.drawMap(c, T, inside, dotR, pulse); } catch (e) { /* */ }
     }
     // ── spawn shield ──────────────────────────────────────────────────────
-    // The server holds the shield for 4 s, then drops it on the first move
-    // or shot.
-    const SHIELD_GRACE_MS = 5000;
-    const WIND_SHIELD_MS = 10000;   // shop.js WIND_SHIELD_MS
-    const SHIELD_CAP_MS = 25000;
-    let shieldOnPrev = false;
     // VU 2 (socketinit) marks the post-bank vault shield, labelled apart from the
     const VAULT_SHIELD_MS = 3000;   // vault.js POST_BANK_SHIELD_MS
     function vaultShieldNow() {
         const at = global.vaultShieldAt || 0;
         return at > (global.spawnedAt || 0) && performance.now() - at < VAULT_SHIELD_MS + 1500;
     }
+    const SPAWN_GRACE_MS = 5000;
+    const SHIELD_CAP_MS = 25000;
+    const WIND_SHIELD_MS = 10000;
+    const shieldWatch = { on: false, moveAt: 0, fireAt: 0, offAt: 0, why: "" };
+    function shieldWindOn() {
+        const wu = global.shop && global.shop.state && global.shop.state.gearUntil && global.shop.state.gearUntil.wind;
+        return wu === true || +wu > Date.now();
+    }
+    function shieldInputs(now) {
+        const cmd = global.socket && global.socket.cmd;
+        if (!cmd || !cmd.getMotion) return;
+        const mv = cmd.getMotion();
+        if (mv.x || mv.y || global.touchMovePacked > 0) shieldWatch.moveAt = now;
+        if ((cmd.firing && cmd.firing()) || global.autofireOn) shieldWatch.fireAt = now;
+    }
     function drawSpawnShield(c, x, y, R, invuln) {
-        const on = !!invuln;
-        if (shieldOnPrev && !on && (vaultShieldNow() || (global.spawnedAt && performance.now() - global.spawnedAt < 120000))) {
-            try { global.createMessage(vaultShieldNow() ? "Your vault shield is gone, so you can be hit now." : "Your shield is gone, so you can be hit now.", 3000); } catch { /* */ }
-        }
-        shieldOnPrev = on;
-        if (!on) return;
-        const vs = vaultShieldNow();
-        global.shieldSeen = true;
         const now = performance.now();
+        const vs = vaultShieldNow();
+        const since = now - (global.spawnedAt || now);
+        const ringR = R * 1.55;
+        if (!invuln) {
+            if (shieldWatch.on) {
+                shieldWatch.on = false;
+                const recent = (t) => now - t < 450;
+                shieldWatch.why = vs ? "Vault shield off" : since >= SHIELD_CAP_MS - 700 ? "Your shield ran out" : recent(shieldWatch.fireAt) ? "Shield off: you fired" : recent(shieldWatch.moveAt) ? "Shield off: you moved" : "Shield off";
+                shieldWatch.offAt = now;
+            }
+            const age = now - shieldWatch.offAt;
+            if (shieldWatch.offAt && age < 1800) {
+                const fade = Math.min(1, (1800 - age) / 500);
+                drawText(shieldWatch.why, x, y - ringR - 20 - age * 0.012, 14, "#ffffff", "center", true, fade, true, c);
+            }
+            return;
+        }
+        shieldInputs(now);
+        shieldWatch.on = true;
+        global.shieldSeen = true;
         const pulse = 0.5 + 0.5 * Math.sin(now / 180);
         c.save();
         c.globalAlpha = 0.18 + 0.1 * pulse;
-        // the vault shield is gold, the spawn shield cyan
         c.fillStyle = vs ? "#ffd166" : "#7fe3ff";
-        c.beginPath(); c.arc(x, y, R * 1.55, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(x, y, ringR, 0, Math.PI * 2); c.fill();
         c.globalAlpha = 0.75;
         c.lineWidth = Math.max(2, R * 0.09);
         c.strokeStyle = vs ? "#ffe9a8" : "#bff2ff";
         c.setLineDash([R * 0.35, R * 0.22]);
         c.lineDashOffset = -now / 40;
-        c.beginPath(); c.arc(x, y, R * 1.55, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.arc(x, y, ringR, 0, Math.PI * 2); c.stroke();
         c.restore();
-    }
-    // The shield's status line is a note-stack row under the clock (Oct 6:
-    // under the tank it printed over chest and crate labels)
-    function spawnShieldNote() {
-        if (global.died || !global.shieldSeen || !shieldOnPrev || raidFinale.active()) return null;
-        if (vaultShieldNow()) {
-            const vl = Math.max(1, Math.ceil((VAULT_SHIELD_MS - (performance.now() - global.vaultShieldAt)) / 1000));
-            return hudNote(1, "shield", "Vault shield: safe for " + vl + "s, but shooting drops it", "#ffe9a8");
+        const total = vs ? VAULT_SHIELD_MS : SHIELD_CAP_MS;
+        const left = vs ? Math.max(0, VAULT_SHIELD_MS - (now - (global.vaultShieldAt || now))) : Math.max(0, SHIELD_CAP_MS - since);
+        const w = Math.max(3, R * 0.11);
+        c.save();
+        c.lineCap = "round";
+        c.lineWidth = w + 3;
+        c.strokeStyle = "rgba(0,0,0,0.35)";
+        c.beginPath(); c.arc(x, y, ringR + w, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (left / total)); c.stroke();
+        c.lineWidth = w;
+        c.strokeStyle = vs ? "#ffd166" : left < 5000 ? "#ffe066" : "#ffffff";
+        c.beginPath(); c.arc(x, y, ringR + w, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (left / total)); c.stroke();
+        c.restore();
+        let label;
+        if (vs) label = "Vault shield: " + Math.ceil(left / 1000) + "s";
+        else {
+            const graceLeft = (shieldWindOn() ? WIND_SHIELD_MS : SPAWN_GRACE_MS) - since;
+            if (global.autofireOn && graceLeft > 0) label = "Autofire is on, so your shield ends in " + Math.ceil(graceLeft / 1000) + "s";
+            else if (graceLeft > 0) label = "Shielded: you can move for " + Math.ceil(graceLeft / 1000) + "s";
+            else label = "Shielded for " + Math.ceil(left / 1000) + "s while you stay still";
         }
-        const since = performance.now() - (global.spawnedAt || 0);
-        const capLeft = Math.ceil((SHIELD_CAP_MS - since) / 1000);
-        if (capLeft > 0 && capLeft <= 10) return hudNote(1, "shield", "Spawn shield: ends in " + capLeft + "s, sooner if you move or shoot", capLeft <= 3 ? "#ffd166" : "#bff2ff");
-        if (global.coachRect && since > 4000) return null;
-        const left = Math.ceil((SHIELD_GRACE_MS - since) / 1000);
-        // Second Wind (shop gear): moving keeps the shield up to 10 s
-        const wu = global.shop && global.shop.state && global.shop.state.gearUntil && global.shop.state.gearUntil.wind;
-        const windLeft = wu === true || +wu > Date.now() ? Math.ceil((WIND_SHIELD_MS - since) / 1000) : 0;
-        const line = windLeft > 0
-            ? (left > 0 ? "Spawn shield: safe for " + left + "s, then shooting drops it" : "Spawn shield: holds while you move for " + windLeft + "s, but shooting drops it")
-            : left > 0
-            ? "Spawn shield: safe for " + left + "s, then moving or shooting drops it"
-            : "Spawn shield: moving or shooting drops it";
-        if (since < 4000) global.hudCardUp = "shield";
-        return hudNote(1, "shield", line, "#bff2ff");
+        drawText(label, x, y + ringR + w * 2 + 14, 13, "#ffffff", "center", true, 0.95, true, c);
     }
-
     // ── raid over: raidFinale.js owns the whole sequence ──────────────────
     function drawRaidEndFx() {
         raidFinale.draw();
@@ -11150,13 +11312,13 @@ import * as aoHud from './alwaysOn.js';
         // units: the centre lanes start below them
         evHud.toastFloor = 0;
         const st = document.getElementById("dwGameToasts");
-        if (st && st.childElementCount) evHud.toastFloor = st.getBoundingClientRect().bottom * global.screenWidth / Math.max(1, window.innerWidth);
+        if (st && st.childElementCount && global.mobile) evHud.toastFloor = st.getBoundingClientRect().bottom * global.screenWidth / Math.max(1, window.innerWidth);
         if (!E) return evHud;
         const now = E.now(), c = E.current(now);
         // in a raid the countdown only shows in the last hour (the menu card has the rest)
         evHud.chip = c && !c.live && c.ms <= Math.min(E.HUD_LEAD_MS, 3600000) ? c.ev.name + " in " + E.countdown(c.ms) : "";
         // callouts wait for a free screen: not dead, not the raid-end finale
-        if (!c || global.died || raidFinale.active()) return evHud;
+        if (!c || global.died || raidFinale.active() || aoNow()) return evHud;
         const id = c.ev.id;
         if (!c.live && c.ms <= E.SOON_MS && c.ms > 60000 && evHud.soonFor !== id) {
             evHud.soonFor = id;
@@ -11175,7 +11337,7 @@ import * as aoHud from './alwaysOn.js';
         evHud.callAt = performance.now();
         try { gameSound.dustBank(); } catch (e) { /* */ }
     }
-    const evPanelOpts = { alpha: 1, r: 13, fill: "rgba(0,0,0,0.55)" };
+    const evPanelOpts = { alpha: 1, r: 6 };
     function drawEventCallout() {
         if (!evHud.callAt) return;
         const age = performance.now() - evHud.callAt;
@@ -11761,11 +11923,11 @@ import * as aoHud from './alwaysOn.js';
         const X = (v) => rx + (v - wx0) * s;
         const Y = (v) => ry + (v - wy0) * s;
 
-        c.fillStyle = "#0e1418";
+        c.fillStyle = WORLD_ART.mapVoid;
         c.fillRect(rx, ry, rw, rh);
         const isl = tutorialIsland();
         if (isl) {
-            c.fillStyle = "#1e1d1b";
+            c.fillStyle = WORLD_ART.mapFloor;
             c.beginPath();
             c.arc(X(isl.x), Y(isl.y), (isl.r + 40) * s, 0, Math.PI * 2);
             c.fill();
@@ -11776,16 +11938,16 @@ import * as aoHud from './alwaysOn.js';
                 c.save();
                 c.translate(rx - wx0 * s, ry - wy0 * s);
                 c.scale(s, s);
-                c.fillStyle = "#1e1d1b";
+                c.fillStyle = WORLD_ART.mapFloor;
                 c.fill(islP.alive);
                 c.fill(islP.dead);
                 c.restore();
             } else {
-                c.fillStyle = "#1e1d1b";
+                c.fillStyle = WORLD_ART.mapFloor;
                 c.fillRect(X(-gw / 2), Y(-gh / 2), gw * s, gh * s);
             }
         } else {
-            c.fillStyle = "#22323b";
+            c.fillStyle = WORLD_ART.mapFloor;
             c.fillRect(X(-gw / 2), Y(-gh / 2), gw * s, gh * s);
         }
 
@@ -11819,7 +11981,7 @@ import * as aoHud from './alwaysOn.js';
             c.save();
             c.translate(rx - wx0 * s, ry - wy0 * s);
             c.scale(s, s);
-            c.fillStyle = "#2b2320";
+            c.fillStyle = WORLD_ART.mapFloor;
             c.fill(paths.dead);
             const BI = paths.aliveBio && window.DWBiomes ? window.DWBiomes.BIOMES : null;
             if (BI) {
@@ -11827,16 +11989,16 @@ import * as aoHud from './alwaysOn.js';
                 // pads and players still sit on top
                 for (let b = 0; b < paths.aliveBio.length; b++) {
                     if (!paths.aliveBio[b]) continue;
-                    c.fillStyle = (BI[b] && BI[b].map) || "#413c4c";
+                    c.fillStyle = (BI[b] && (worldDark ? BI[b].mapDark : BI[b].map)) || WORLD_ART.mapRock;
                     c.fill(paths.aliveBio[b]);
                 }
             } else {
-                c.fillStyle = "#413c4c";
+                c.fillStyle = WORLD_ART.mapRock;
                 c.fill(paths.alive);
             }
             const borderW = 0.09 * (Math.min(tr._cols, 120) / 50.0) * (gw / tr._cols); 
             if (borderW * s > 0.45) {
-                c.strokeStyle = "rgb(8,7,10)";
+                c.strokeStyle = WORLD_ART.mapRockInk;
                 c.lineJoin = "round";
                 c.lineWidth = borderW;
                 c.stroke(paths.alive);
@@ -11912,7 +12074,7 @@ import * as aoHud from './alwaysOn.js';
             }
             // small white label on the big map (hover pass draws gold)
             if (nameSize > 0 && o.id !== hoverOutpostId) {
-                drawText(o.name, Math.round(mx), Math.round(my - s2 - 6), nameSize * 0.85, color.guiwhite, "center");
+                drawText(o.name, Math.round(mx), Math.round(my - s2 - 6), nameSize * 0.75, color.guiwhite, "center", false, 0.75);
             }
         }
 
@@ -12161,7 +12323,7 @@ import * as aoHud from './alwaysOn.js';
             Y: (wy) => y + (wy - wy0) * s2,
             s: s2,
         };
-        drawMapMarkers(T, x, y, size, size, 8.5, 3.4);
+        drawMapMarkers(T, x, y, size, size, 0, 3.4);
         strokeStormCircle(ctx[2], T.X, T.Y, T.s, x, y, size, size);
         ctx[2].restore();
         const c2 = ctx[2];
@@ -12182,7 +12344,7 @@ import * as aoHud from './alwaysOn.js';
         c.rect(x, y, size, size);
         c.clip();
         const T = drawWorldWindow(c, x, y, size, size, -gw / 2, -gh / 2, gw);
-        if (!royaleLobbyPhase()) drawMapMarkers(T, x, y, size, size, 6, 2.8);
+        if (!royaleLobbyPhase()) drawMapMarkers(T, x, y, size, size, 0, 2.8);
         else {
             const px = T.X(global.player.renderx), py = T.Y(global.player.rendery);
             c.fillStyle = color.guiwhite;
@@ -12215,7 +12377,7 @@ import * as aoHud from './alwaysOn.js';
         const sw = global.screenWidth, sh = global.screenHeight;
         ctx[2].save();
         ctx[2].globalAlpha = fade;
-        ctx[2].fillStyle = "rgba(5,6,10,0.55)";
+        ctx[2].fillStyle = HUD.mapScrim;
         ctx[2].fillRect(0, 0, sw, sh);
 
         const pop = 0.97 + 0.03 * fade;
@@ -12471,7 +12633,7 @@ import * as aoHud from './alwaysOn.js';
                 hudDrawn.minimap = { x: mx, y: my, w: len, h: len };
                 const mapTxt = "Map (" + keyLabel("KEY_TOGGLE_MAP", "M") + ")";
                 const mapLx = Math.round(mx - 7), mapLy = Math.round(my + len - 8);
-                hudTitle(mapTxt, mapLx, mapLy, 11, HUD.head, "right");
+                hudTitle(mapTxt, mapLx, mapLy, 11, HUD_DARK.head, "right");
                 if (global.canvas && !global.died) {
                     const crm = global.canvas.height / global.screenHeight / global.ratio;
                     const mxm = global.mouse.x / (crm * global.ratio), mym = global.mouse.y / (crm * global.ratio);
@@ -12738,7 +12900,7 @@ import * as aoHud from './alwaysOn.js';
         let size = Math.max(7, (h - 5) / 1.12 - boost);
         const tw = hudTitleW(text, size);
         if (tw > w - 14) size = Math.max(6, size * (w - 14) / tw);
-        hudTitle(text, x + w / 2, y + h / 2, size, HUD.head, "center", 1, c);
+        hudTitle(text, x + w / 2, y + h / 2, size, HUD_DARK.head, "center", 1, c);
     }
     window.dwVitals = () => ({ rect: vitalsRect, hp: VITAL_W.hpTxt, sh: VITAL_W.shTxt });
 
@@ -13117,11 +13279,11 @@ import * as aoHud from './alwaysOn.js';
 
                     boxWidth = Math.max(boxWidth, hudTitleW(picture.name, alcoveSize / 10));
                     hudPanel(ctx[2], boxX, boxY, boxWidth + boxPadding * 3, alcoveSize * (splitTooltip.length + 1) / 10 + boxPadding * 3, { fill: HUD.solid, r: HUD.rSmall });
-                    hudTitle(picture.name, boxX + boxPadding * 1.5, textY - alcoveSize / 30, alcoveSize / 10, goldOpts ? HUD.gold : HUD.head);
+                    hudTitle(picture.name, boxX + boxPadding * 1.5, textY - alcoveSize / 30, alcoveSize / 10, goldOpts ? HUD.gold : HUD_DARK.head);
 
                     for (let t of splitTooltip) {
                         textY += boxPadding + alcoveSize / 15
-                        drawText(t, boxX + boxPadding * 1.5, textY, alcoveSize / 15, t === "Tier 5" ? HUD.gold : HUD.text);
+                        drawText(t, boxX + boxPadding * 1.5, textY, alcoveSize / 15, t === "Tier 5" ? HUD.gold : HUD_DARK.text);
                     }
                 }
             }
@@ -13155,7 +13317,7 @@ import * as aoHud from './alwaysOn.js';
     function drawT5Ring(c, x, y, st, now, h = 58) {
         const title = upGrid.ringTitle(st), sub = upGrid.ringSub(st);
         const w = Math.round(h + 14 + Math.max(hudTitleW(title, 13), hudTextW(sub, 10.5)) + 16);
-        hudPanel(c, x, y, w, h, { fill: HUD.solid, r: HUD.rSmall });
+        hudPanel(c, x, y, w, h, { fill: HUD.glass, r: HUD.rSmall });
         const cx = x + h / 2 + 2, cy = y + h / 2, rr = h * 0.33;
         c.save();
         c.lineCap = "round";
@@ -13337,7 +13499,7 @@ import * as aoHud from './alwaysOn.js';
                 const n = st.kit[id] | 0;
                 if (n > 1) {
                     const bw = Math.max(20, hudTitleW("x" + n, 11) + 10);
-                    hudWell(c, x + w - bw + 4, y - 6, bw, 17, 8, HUD.wellSolid, HUD.ink, 2);
+                    hudWell(c, x + w - bw + 4, y - 6, bw, 17, 8, HUD.well, HUD.ink, 2);
                     drawText("x" + n, x + w - bw / 2 + 4, y + 2.5, 10.5, color.teal, "center", true);
                 }
                 drawText(labelCase(KIT_SHORT[item.id] || item.name.slice(0, 7)), x + w / 2, y + h - 9, 9, color.guiwhite, "center", true);
@@ -13826,8 +13988,8 @@ import * as aoHud from './alwaysOn.js';
         const c = ctx[2];
         c.save();
         c.globalAlpha = a;
-        c.strokeStyle = color.guiwhite;
-        c.fillStyle = color.guiwhite;
+        c.strokeStyle = HUD.head;
+        c.fillStyle = HUD.head;
         c.lineWidth = 2;
         c.lineCap = "round";
         c.lineJoin = "round";
@@ -13856,7 +14018,7 @@ import * as aoHud from './alwaysOn.js';
                 const r = s * 0.38;
                 c.beginPath(); c.arc(x, y - s * 0.06, r, 0, Math.PI * 2); c.fill();
                 c.fillRect(x - r * 0.55, y + s * 0.02, r * 1.1, s * 0.3);
-                c.fillStyle = "#0d0e14";
+                c.fillStyle = HUD.theme === "dark" ? "#0d0e14" : "#f4f4f4";
                 c.beginPath();
                 c.arc(x - r * 0.38, y - s * 0.1, r * 0.22, 0, Math.PI * 2);
                 c.arc(x + r * 0.38, y - s * 0.1, r * 0.22, 0, Math.PI * 2);
@@ -14185,26 +14347,24 @@ import * as aoHud from './alwaysOn.js';
         const h = XP_STRIP_H, t = xpStripTexts(d, w), my = y + h / 2;
         c.save();
         c.globalAlpha = A;
-        hudWell(c, x, y, w, h, 8, "rgba(0,0,0,0.45)", HUD.ink, 2);
+        hudWell(c, x, y, w, h, 8, HUD.well, HUD.ink, 2);
         c.restore();
-        hudTitle(t.lvl, x + 10, my, 15, HUD.gold, "left", A);
+        hudTitle(t.lvl, x + 10, my, 15, HUD.teal, "left", A);
         const bx = x + t.lvlW, bw = Math.max(60, Math.min(360, w - t.lvlW - t.midW - t.gainW - t.nextW - 12)), bh = 14, by = Math.round(my - bh / 2);
         const k = d.max ? 1 : d.need > 0 ? Math.max(0, Math.min(1, d.into / d.need)) : 0;
         const k0 = d.max ? 1 : d.need > 0 ? Math.max(0, Math.min(k, (d.from | 0) / d.need)) : 0;
         c.save();
         c.globalAlpha = A;
         roundRectPath(c, bx, by, bw, bh, bh / 2);
-        c.fillStyle = "rgba(0,0,0,0.55)"; c.fill();
+        c.fillStyle = HUD.track; c.fill();
         if (k > 0) {
             c.save();
             roundRectPath(c, bx, by, bw, bh, bh / 2);
             c.clip();
-            c.fillStyle = "#ffe869"; c.fillRect(bx, by, Math.round(bw * k), bh);
-            if (k0 > 0) { c.fillStyle = "#c9a227"; c.fillRect(bx, by, Math.round(bw * k0), bh); }
+            c.fillStyle = LEVEL_BAR; c.fillRect(bx, by, Math.round(bw * k), bh);
+            if (k0 > 0) { c.fillStyle = LEVEL_BAR_OLD; c.fillRect(bx, by, Math.round(bw * k0), bh); }
             c.restore();
         }
-        roundRectPath(c, bx, by, bw, bh, bh / 2);
-        c.lineWidth = 2; c.strokeStyle = HUD.ink; c.stroke();
         c.restore();
         drawText(t.mid, bx + bw + 10, my, 12, HUD.text, "left", true, A);
         if (t.gain) hudTitle(t.gain, bx + bw + t.midW + 6, my, 14, "#9dff8a", "left", A);
@@ -14249,7 +14409,7 @@ import * as aoHud from './alwaysOn.js';
             cx: Math.round(cx * window.innerWidth / Math.max(1, sw)),
             top: Math.round((py + H) * window.innerHeight / Math.max(1, sh)) + 10,
         };
-        hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
+        hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.card, r: HUD.rBig + 2 });
         drawPtsPops(px + W - 16, Math.max(14, py - 16), "right", -1);
         const hx = px + pad;
         let y = py + pad;
@@ -14258,7 +14418,7 @@ import * as aoHud from './alwaysOn.js';
         // the tip: an icon for what got you, then how to dodge it
         c.save();
         c.globalAlpha = A;
-        hudWell(c, hx, y, iw, TIP_H, 12, "rgba(242,184,60,0.10)", HUD.ink, 2.5);
+        hudWell(c, hx, y, iw, TIP_H, 12, "rgba(242,184,60,0.16)", HUD.ink, 2.5);
         c.restore();
         const icon = info.kind === "storm" ? "clock" : info.kind === "rock" ? "pickaxe" : info.kind === "raidend" ? "clock" : "skull";
         drawDeathIcon(icon, hx + 34, y + TIP_H / 2, 30, A * 0.9);
@@ -14268,7 +14428,7 @@ import * as aoHud from './alwaysOn.js';
         // what you kept
         c.save();
         c.globalAlpha = A;
-        hudWell(c, hx, y, iw, KEPT_H, 10, "rgba(0,0,0,0.45)", HUD.ink, 2);
+        hudWell(c, hx, y, iw, KEPT_H, 10, HUD.well, HUD.ink, 2);
         c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
         gemPath(c, hx + 22, y + KEPT_H / 2, 7); c.fill(); c.stroke();
         c.restore();
@@ -14283,7 +14443,7 @@ import * as aoHud from './alwaysOn.js';
         if (hasRank) {
             try {
                 rankPanel.draw(c, hx, y, iw, RANK_H,
-                    { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk }, A);
+                    { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk, theme: HUD.theme }, A);
             } catch (e) { /* never break the death screen */ }
             y += RANK_H + gap;
         }
@@ -14327,7 +14487,7 @@ import * as aoHud from './alwaysOn.js';
             return;
         }
         const c = ctx[2];
-        clearScreen(color.black, 0.34 * A, c);
+        clearScreen(HUD.scrim, 0.18 * A, c);
         const dy = deathText.introSlide(A, deathCalm());
         if (dy) { c.save(); c.translate(0, dy); }
         try {
@@ -14400,13 +14560,13 @@ import * as aoHud from './alwaysOn.js';
         };
         if (k !== 1) { c.save(); c.scale(k, k); }
 
-        hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.solid, r: HUD.rBig + 2, lip: 5 });
+        hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.card, r: HUD.rBig + 2 });
         drawPtsPops(px + W - 16, Math.max(14, py - 16), "right", -1);
 
         const hx = px + pad, hy = py + pad, hw = W - pad * 2, hmid = hy + HEAD / 2;
         c.save();
         c.globalAlpha = A;
-        hudWell(c, hx, hy, hw, HEAD, 10, "rgba(242,184,60,0.12)", HUD.ink, 2.5);
+        hudWell(c, hx, hy, hw, HEAD, 10, "rgba(242,184,60,0.16)", HUD.ink, 2.5);
         c.restore();
         const cause = global.finalCause || "";
         const killedBy = cause === "raidend" ? "The raid ended"
@@ -14470,7 +14630,7 @@ import * as aoHud from './alwaysOn.js';
         const ty0 = by + tilesH, lx = hx + IN;
         c.save();
         c.globalAlpha = A;
-        hudWell(c, hx, ty0, colW, block.h, 10, "rgba(0,0,0,0.45)", HUD.ink, 2);
+        hudWell(c, hx, ty0, colW, block.h, 10, HUD.well, HUD.ink, 2);
         c.restore();
         for (const r of block.rows) {
             const ly = ty0 + r.y;
@@ -14490,7 +14650,7 @@ import * as aoHud from './alwaysOn.js';
         const whoH = two ? gridH : WHO_H;
         c.save();
         c.globalAlpha = A;
-        hudWell(c, rx, ry, colW, whoH, 10, rv ? "rgba(255,107,94,0.10)" : "rgba(0,0,0,0.45)", HUD.ink, 2);
+        hudWell(c, rx, ry, colW, whoH, 10, rv ? "rgba(255,107,94,0.16)" : HUD.well, HUD.ink, 2);
         c.restore();
         const wy = ry + whoH / 2, wtx = rx + IN + 44, wRoom = colW - IN * 2 - 44;
         if (rv) {
@@ -14513,7 +14673,7 @@ import * as aoHud from './alwaysOn.js';
         const nextH = two ? block.h : NEXT_H;
         c.save();
         c.globalAlpha = A;
-        hudWell(c, rx, nyTop, colW, nextH, 10, "rgba(0,0,0,0.45)", HUD.ink, 2);
+        hudWell(c, rx, nyTop, colW, nextH, 10, HUD.well, HUD.ink, 2);
         c.restore();
         const ny = nyTop + nextH / 2;
         const nextTxt = you.next ? "Next: " + String(you.next).charAt(0).toLowerCase() + String(you.next).slice(1) : "Next: a new contract when you land";
@@ -14531,7 +14691,7 @@ import * as aoHud from './alwaysOn.js';
         if (hasRank) {
             try {
                 rankPanel.draw(c, hx, fy, hw, RANK_H,
-                    { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk }, A);
+                    { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk, theme: HUD.theme }, A);
             } catch (e) { void e; }
             fy += RANK_H + gap;
         }
@@ -14644,7 +14804,7 @@ import * as aoHud from './alwaysOn.js';
         const barW = Math.min(620, sw - 40);
         const x = (sw - barW) / 2;
         const y = 10;
-        spectateBarBottom = y + 58;
+        spectateBarBottom = Math.max(y + 58, Math.round(104 * global.screenHeight / Math.max(1, window.innerHeight)));
         const h = 36;
         const c = ctx[2];
         hudPanel(c, x, y, barW, h, { fill: HUD.solid });
@@ -14667,7 +14827,7 @@ import * as aoHud from './alwaysOn.js';
             : queued ? "Dropping in..."
             : ("Spectating" + (place > 0 ? ("  #" + place) : "") +
                (global.died ? (waitMs > 0 ? ("  ·  Rejoin in " + Math.ceil(waitMs / 1000) + "s") : "  ·  Press Play to rejoin") : ""));
-        fitText(label, x + barW / 2, y + 24, 14, Math.max(60, barW - 4 * bw - 60), color.guiwhite);
+        fitText(label, x + barW / 2, y + 24, 14, Math.max(60, barW - 4 * bw - 60), HUD.head);
         // DOM buttons (Prev/Next/Play/Home) sit below this bar and take the
         // clicks, so no canvas buttons here.
         if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) {

@@ -13,7 +13,7 @@
 
 export const KEY = "dwCoach_v1";
 export const ABILITY_KEY = "dwAbilityUsed_v1";
-export const ORDER = ["tutorial", "move", "mine", "bank", "upgrade", "ability"];
+export const ORDER = ["move", "mine", "bank", "upgrade"];
 export const ABILITY_NAG_MS = 60000;
 
 export function blank(now) { return { v: 1, status: "", done: {}, at: now || 0 }; }

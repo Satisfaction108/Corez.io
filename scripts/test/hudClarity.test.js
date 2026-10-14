@@ -51,9 +51,9 @@ function t(name, fn) {
         assert.ok(av.includes('abilityBarRect'));
     });
 
-    t('kit pointer: above the box on desktop, a tight ring', () => {
-        assert.ok(/pad\(hudRect\("kit"\), touch \? 6 : 3\)/.test(coach));
-        assert.ok(/"Your kit", touch \? "left" : "up"/.test(coach));
+    t('coach: no kit or ability step, only move, mine, bank and upgrade', () => {
+        assert.ok(!/hudRect\("kit"\)/.test(coach));
+        assert.ok(!/"Your kit"/.test(coach));
     });
 
     t('coach card: holds its place while the mouse is near', () => {
@@ -119,7 +119,7 @@ function t(name, fn) {
         assert.equal(NX.kitKeysText([]), '');
         const line = NX.introText('kit', 1, {}, { kit: NX.kitKeysText(['Z', ',', 'N']) });
         assert.ok(line.includes('Z, comma or N') && line.includes('one-use'), line);
-        assert.ok(src('newcomer.js').includes('L.kitKeysText(['));
+        assert.ok(!src('newcomer.js').includes('NEW FEATURE'), 'the in-raid NEW FEATURE intros are gone');
     });
 
     t('magnet: a small base bump, Ore Magnet on top', () => {
@@ -163,7 +163,7 @@ function t(name, fn) {
         assert.ok(ln.status.includes('9 tanks'));
         assert.ok(!/—/.test(JSON.stringify(ln)), 'no em dashes');
         const fsj = src('firstSeconds.js');
-        assert.ok(fsj.includes('L.isNewRaid(S.raid, rid, S.alive ? 0 : S.raidStart, start)') && fsj.includes('L.planFor({ newRaid: true, recap: missed, newcomer: isNew() })'), 'a new raid card (after the last raid\'s recap when its podium was missed)');
+        assert.ok(fsj.includes('L.isNewRaid(S.raid, rid, S.alive ? 0 : S.raidStart, start)') && fsj.includes('L.planFor({ newRaid: true, recap: missed, newcomer: isNew(), ao: !!global.aoWorld })'), 'a new raid card (after the last raid\'s recap when its podium was missed)');
         assert.ok(fsj.includes('!S.plan.newRaid'), 'the falling re-plan keeps the new raid card');
     });
 

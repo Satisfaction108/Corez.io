@@ -16,7 +16,7 @@ const OUT = process.env.TANKS_OUT || path.join(PUBLIC, 'tanks');
 const MAP_FILE = path.join(__dirname, 'tanks', 'atlas.map.json');
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const ARGS = new Set(process.argv.slice(2));
-const COLOR = '10 0 1 0 false';          // the player's blue, as on the upgrade tiles
+const COLOR = '48 0 1 0 false';
 const CELL = { s: 48, l: 104 }, COLS = 32;
 
 const BRANCH_COLORS = {
@@ -108,7 +108,7 @@ function rendererHash() {
     const app = fs.readFileSync(path.join(PUBLIC, 'client', 'app.js'), 'utf8');
     const a = app.indexOf('const drawEntity = (() => {'), b = app.indexOf('window.dwDrawEntity = drawEntity;');
     const part = a >= 0 && b > a ? app.slice(a, b) : app;
-    return sha([part, ...['gameDraw.js', 'color.js', 'util.js', 'upgradeGridLogic.js'].map(f => fs.readFileSync(path.join(PUBLIC, 'client', f), 'utf8')), JSON.stringify(CELL), COLOR, 'rim1'].join('\n'));
+    return sha([part, ...['gameDraw.js', 'color.js', 'util.js', 'upgradeGridLogic.js'].map(f => fs.readFileSync(path.join(PUBLIC, 'client', f), 'utf8')), JSON.stringify(CELL), COLOR, 'norim'].join('\n'));
 }
 
 // ---- layout --------------------------------------------------------------- Basic top
@@ -255,10 +255,9 @@ async function renderAtlas(list) {
             const s = sc.getContext('2d', { willReadFrequently: true });
             const out = {};
             for (const key of ['s', 'l']) { const cv = document.createElement('canvas'); cv.width = IN.COLS * IN.CELL[key]; cv.height = rows * IN.CELL[key]; out[key] = cv; }
-            // the upgrade tiles' look: front barrels to the upper right, light grey barrels
             window.dwPreviewGrey && window.dwPreviewGrey(true);
-            const r0 = 26, tmp = {}, rimC = {};
-            for (const key of ['s', 'l']) { tmp[key] = document.createElement('canvas'); rimC[key] = document.createElement('canvas'); tmp[key].width = tmp[key].height = rimC[key].width = rimC[key].height = IN.CELL[key]; }
+            const r0 = 26, tmp = {};
+            for (const key of ['s', 'l']) { tmp[key] = document.createElement('canvas'); tmp[key].width = tmp[key].height = IN.CELL[key]; }
             for (const [cell, idx] of IN.list) {
                 const pic = util.getEntityImageFromMockup(String(idx), IN.COLOR);
                 pic.realSize = pic.size;
@@ -271,17 +270,11 @@ async function renderAtlas(list) {
                 if (x1 < x0) { x0 = y0 = W / 2 - r0; x1 = y1 = W / 2 + r0; }
                 const half = Math.max(x1 - x0, y1 - y0) / 2 + 1, mx = (x0 + x1) / 2 - W / 2, my = (y0 + y1) / 2 - W / 2;
                 for (const key of ['s', 'l']) {
-                    // the tank plus a light rim, so dark barrels and spikes read on any theme
                     const C = IN.CELL[key], f = (C * 0.43) / half, c = out[key].getContext('2d');
                     const cx = (cell % IN.COLS) * C, cy = Math.floor(cell / IN.COLS) * C;
-                    const tc = tmp[key].getContext('2d'), hc = rimC[key].getContext('2d');
+                    const tc = tmp[key].getContext('2d');
                     tc.setTransform(1, 0, 0, 1, 0, 0); tc.clearRect(0, 0, C, C); tc.lineCap = tc.lineJoin = 'round';
                     draw(IN.COLOR, C / 2 - mx * f, C / 2 - my * f, pic, 1, 1, r0 * f / pic.size, 1, rot, true, tc);
-                    hc.globalCompositeOperation = 'copy'; hc.drawImage(tmp[key], 0, 0);
-                    hc.globalCompositeOperation = 'source-in'; hc.fillStyle = 'rgba(255,243,217,0.92)'; hc.fillRect(0, 0, C, C);
-                    hc.globalCompositeOperation = 'source-over';
-                    const rw = Math.max(1, C / 56 * 1.3);
-                    for (let i = 0; i < 8; i++) c.drawImage(rimC[key], cx + Math.cos(i * Math.PI / 4) * rw, cy + Math.sin(i * Math.PI / 4) * rw);
                     c.drawImage(tmp[key], cx, cy);
                 }
             }

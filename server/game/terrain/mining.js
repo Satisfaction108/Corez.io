@@ -2,6 +2,7 @@
 // A shot digs by its gun's power (damage x health, 1 for a basic bullet), and
 // a gun slower than a basic one gets its slower reload back as extra dig per
 // shot: heavy shells break a plain rock outright, rapid fire digs by volume.
+const classBalance = require('./classBalance.js');
 const BASIC_POWER = 0.75;       // basic gun damage x health
 const BASIC_RELOAD = 10.5;
 const BASIC_DIG = 0.1;
@@ -47,11 +48,14 @@ function tankBias(owner) {
     return 1;
 }
 
+const HELPER_DIG = 0.3;
+
 function rockDamageFor(owner, projectile) {
     let dig = projectile.digPower || 1;
     if (projectile.fromSidearm) dig = Math.min(dig, SIDEARM_DIG_CAP);
     else dig *= tankBias(owner);
-    return BASIC_DIG * (TYPE_DIG[projectile.type] || 1) * dig;
+    const kind = classBalance.helperShot(projectile) ? HELPER_DIG : (TYPE_DIG[projectile.type] || 1);
+    return BASIC_DIG * kind * dig;
 }
 
 // Shop and event multipliers stacked on top of the skill bar (drills,
@@ -133,4 +137,4 @@ function grindSecondsFor(owner) {
     return sec;
 }
 
-module.exports = { digPower, rockDamageFor, skillFactor, grindSecondsFor, gearMult, MINE_BIAS, BASE_BOOST, FULL_TRIM, SHOT_BARE, SHOT_SPAN, GRIND_BARE, GRIND_SPAN };
+module.exports = { digPower, rockDamageFor, skillFactor, grindSecondsFor, gearMult, MINE_BIAS, HELPER_DIG, TYPE_DIG, BASE_BOOST, FULL_TRIM, SHOT_BARE, SHOT_SPAN, GRIND_BARE, GRIND_SPAN };

@@ -10,27 +10,26 @@
         4: ['rgba(8,66,38,0.92)', 'rgba(31,191,107,0.95)', 'rgba(111,245,168,0.95)', 'rgba(232,255,242,0.95)']
     };
     var ORE_HALO = [0.011, 0.026, 0.041, 0.056, 0.07, 0.085];
-    var CRACK_PAL = {
-        1: { deep: '140,62,15', hot: '235,140,60', hair: '255,218,175' },
-        2: { deep: '20,70,160', hot: '80,150,255', hair: '190,222,255' },
-        3: { deep: '110,25,140', hot: '200,95,240', hair: '242,205,255' },
-        4: { deep: '12,110,60', hot: '60,225,135', hair: '205,255,228' }
-    };
-    var FW_CSS = ['rgb(164,14,14)', 'rgb(230,80,0)', 'rgb(230,119,0)', 'rgb(47,127,51)', 'rgb(23,78,166)', 'rgb(123,31,163)'];
-    var FW_SPOOKY = ['rgb(255,124,28)', 'rgb(238,116,24)', 'rgb(116,72,214)', 'rgb(160,90,240)', 'rgb(255,170,60)'];
     var ORE_FX_CSS = {
         1: ['rgb(201,111,46)', 'rgb(237,167,102)', 'rgb(160,80,30)'],
         2: ['rgb(59,124,224)', 'rgb(127,177,242)', 'rgb(35,90,180)'],
         3: ['rgb(177,62,207)', 'rgb(217,138,240)', 'rgb(130,40,160)'],
         4: ['rgb(31,191,107)', 'rgb(111,245,168)', 'rgb(18,128,72)']
     };
-    var ROCK_INK = 'rgb(16,13,22)';
-    var SIL_W = 0.12, SIL_DROP = 0.012, INK_W = 0.056;
-    var AO_W = [0.396, 0.243, 0.141], AO_CSS = ['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.06)', 'rgba(0,0,0,0.07)'];
-    var TEAM = ['#3f8cff', '#ff5068', '#3fd27a', '#c070ff', '#ffc23a', '#2fd8ea'];
-    var TEAM_SPOOKY = ['#ff8a2e', '#c070ff', '#3fd27a', '#ffc23a', '#3f8cff'];
-    var GUN = '#42404e', BORDER = '#131313', BORDER_K = 0.15;
-    var ORE_ODDS = [0.5, 0.28, 0.16, 0.06], ORE_ODDS_SPOOKY = [0.46, 0.1, 0.36, 0.08];
+    var FLOOR = {
+        light: { floor: '#cbcbcb', camo: ['rgba(0,0,0,0.035)', 'rgba(255,255,255,0.06)', 'rgba(0,0,0,0.06)'], grid: 'rgba(0,0,0,0.075)', ring: 'rgba(60,60,60,0.55)',
+            padInk: '#555555', padFace: '#f4f4f4', padWell: '#dadada', padBand: '#b4b4b4', padTooth: '#d0d0d0', padTint: 0.45, padLine: -0.4 },
+        dark: { floor: '#2a2b30', camo: ['rgba(0,0,0,0.1)', 'rgba(255,255,255,0.03)', 'rgba(0,0,0,0.17)'], grid: 'rgba(255,255,255,0.06)', ring: 'rgba(230,230,240,0.5)',
+            padInk: '#111114', padFace: '#4b4d55', padWell: '#3a3c43', padBand: '#61636c', padTooth: '#6e7079', padTint: -0.3, padLine: -0.68 }
+    };
+    var VAULT_TEAM = '#3d8fff';
+    var OUTLINE_INK = 'rgba(0,0,0,0.5)', BEVEL_LIGHT = 'rgba(255,255,255,0.3)', BEVEL_DARK = 'rgba(0,0,0,0.2)', SEAM_INK = 'rgba(0,0,0,0.5)';
+    var CELL_LIGHT = 'rgba(255,255,255,0.34)', CELL_DARK = 'rgba(0,0,0,0.14)', SIDE_INK = 'rgba(0,0,0,0.42)', SIDE_EDGE_INK = 'rgba(0,0,0,0.5)', SHADOW_INK = 'rgba(0,0,0,0.085)';
+    var CRACK = { base: 'rgba(0,0,0,0.55)', hot: 'rgba(0,0,0,0.3)', fill: 'rgb(0,0,0)', hairCss: [] };
+    for (var cst = 0; cst <= 5; cst++) CRACK.hairCss.push('rgba(255,248,226,' + (0.32 + 0.05 * cst).toFixed(2) + ')');
+    var TEAM = ['#00b2e1', '#f14e54', '#00e16e', '#bf7ff5', '#ffe869', '#2ee8c8'];
+    var GUN = '#999999', BORDER = '#000000', BORDER_K = 0.25;
+    var ORE_ODDS = [0.5, 0.28, 0.16, 0.06];
 
     function mirror(g) { return [g, [g[0], g[1], g[2], g[3], -g[4], -g[5], g[6]]]; }
     var BUILDS = [
@@ -105,12 +104,27 @@
         var x = hexRgb(a), y = hexRgb(b);
         return 'rgb(' + Math.round(x[0] + (y[0] - x[0]) * t) + ',' + Math.round(x[1] + (y[1] - x[1]) * t) + ',' + Math.round(x[2] + (y[2] - x[2]) * t) + ')';
     }
-    function rgbAt(t, o, k) {
-        return Math.min(255, Math.round(t[o] * k)) + ',' + Math.min(255, Math.round(t[o + 1] * k)) + ',' + Math.min(255, Math.round(t[o + 2] * k));
+    function tonesCss(t, o, dark) {
+        var B = window.DWBiomes, out = [];
+        for (var q = 0; q < 5; q++) {
+            var r = t[o + q * 3], g = t[o + q * 3 + 1], b = t[o + q * 3 + 2];
+            if (dark && B && B.deepTone) { var d = B.deepTone([r, g, b]); r = d[0]; g = d[1]; b = d[2]; }
+            out.push('rgb(' + r + ',' + g + ',' + b + ')');
+        }
+        return out;
     }
-    function isSpooky() {
-        var r = document.documentElement;
-        return !!(r && r.classList && r.classList.contains('dw-halloween'));
+    function worldMix(hex, k) {
+        var c = hexRgb(hex);
+        var f = function (v) { return Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)); };
+        return 'rgb(' + f(c[0]) + ',' + f(c[1]) + ',' + f(c[2]) + ')';
+    }
+    function polyPath(c, x, y, r, n, rot) {
+        c.beginPath();
+        for (var i = 0; i < n; i++) {
+            var a = rot + i * TAU / n;
+            if (i) c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); else c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+        }
+        c.closePath();
     }
     function pickOdds(odds) {
         var u = rnd(), acc = 0;
@@ -226,7 +240,7 @@
         var small = Math.min(w, h) < 560;
         var s0 = small ? Math.min(w, h * 1.7) / 8.5 : Math.min(w, h * 1.7) / 21;
         var s = Math.max(small ? 44 : 56, Math.min(84, Math.round(s0 / 4) * 4));
-        var cols = Math.max(8, Math.ceil(w * 1.22 / s / 4) * 4), rows = Math.max(8, Math.ceil(h * 1.22 / s / 4) * 4);
+        var cols = Math.max(16, Math.ceil(w * 1.35 / s / 8) * 8), rows = Math.max(16, Math.ceil(h * 1.35 / s / 8) * 8);
         return { s: s, cols: cols, rows: rows, small: small };
     }
 
@@ -287,10 +301,8 @@
             var ori = ar < 0 ? -1 : 1, la = (hs[0] - 0.5) * 0.8, o = c * 21;
             var cell = { c: c, ii: ii, jj: jj, sx: sx * s, sy: sy * s, poly: poly, path: path, ori: ori, x0: x0, y0: y0, x1: x1, y1: y1,
                 cx: cx / poly.length, cy: cy / poly.length, ldx: Math.sin(la), ldy: -Math.cos(la), up: Math.atan2(-Math.cos(la), Math.sin(la)),
-                ink: 'rgb(' + rgbAt(t, o, 1) + ')', dark: 'rgb(' + rgbAt(t, o + 3, 1) + ')', face: 'rgb(' + rgbAt(t, o + 6, 1) + ')',
-                light: 'rgb(' + rgbAt(t, o + 9, 1) + ')', rimRgb: rgbAt(t, o + 12, 1), rimCss: 'rgb(' + rgbAt(t, o + 12, 1) + ')', rimA: t[o + 18] / 255,
-                inkR: rgbAt(t, o, 0.62), hotR: rgbAt(t, o, 0.42), hairR: rgbAt(t, o + 9, 1.1),
-                px: 0, py: 0, pr: 0, grad: null, gradCtx: null, crk: null, ck: null, ore: 0, dep: null, oBody: null, oFacet: null, oCore: null, kk: ((ii * 100003 + jj) & 0xffff) };
+                tl: tonesCss(t, o, false), td: tonesCss(t, o, true),
+                px: 0, py: 0, pr: 0, crk: null, ore: 0, dep: null, oBody: null, oFacet: null, oCore: null, kk: ((ii * 100003 + jj) & 0xffff) };
             var best = -1, bx = cell.cx, by = cell.cy, stx = (x1 - x0) / 8, sty = (y1 - y0) / 8;
             for (var pass = 0; pass < 3; pass++) {
                 var ccx = bx, ccy = by;
@@ -305,7 +317,7 @@
         }
     }
     function setOre(S, cell, tier) {
-        cell.ore = tier; cell.dep = null; cell.oBody = cell.oFacet = cell.oCore = null; cell.crk = null; cell.ck = null;
+        cell.ore = tier; cell.dep = null; cell.oBody = cell.oFacet = cell.oCore = null; cell.crk = null;
         if (!tier) return;
         var salt = S.salt, kk = cell.kk;
         var dep = depositLayout(tier, cell.poly, cell.cx, cell.cy, S.s, function (i, sv) { return hash(i, kk, (sv + salt) | 0); });
@@ -319,15 +331,8 @@
         }
         cell.dep = dep; cell.oBody = body; cell.oFacet = facet; cell.oCore = core;
     }
-    function crackPal(cell) {
-        if (cell.ck) return cell.ck;
-        var P = CRACK_PAL[cell.ore], ck;
-        if (P) ck = { base: 'rgba(' + P.deep + ',0.85)', hot: 'rgba(' + P.hot + ',0.8)', hair: P.hair, hairCss: [] };
-        else ck = { base: 'rgba(' + cell.inkR + ',0.85)', hot: 'rgba(' + cell.hotR + ',0.8)', hair: cell.hairR, hairCss: [] };
-        for (var st = 0; st <= 5; st++) ck.hairCss.push('rgba(' + ck.hair + ',' + Math.min(1, 0.22 + 0.03 * st) + ')');
-        ck.fill = 'rgba(' + cell.inkR + ',1)';
-        cell.ck = ck;
-        return ck;
+    function crackPal() {
+        return CRACK;
     }
     function crackPath(S, cell, stage) {
         if (!cell.crk) cell.crk = [null, null, null, null, null, null];
@@ -468,9 +473,9 @@
         return SP;
     }
 
-    function newWorld(w, h, spooky) {
+    function newWorld(w, h) {
         var L = layout(w, h);
-        var S = { W: w, H: h, s: L.s, cols: L.cols, rows: L.rows, small: L.small, P: L.cols * L.s, Q: L.rows * L.s, spooky: spooky, light: false, t: 0,
+        var S = { W: w, H: h, s: L.s, cols: L.cols, rows: L.rows, small: L.small, P: L.cols * L.s, Q: L.rows * L.s, light: false, t: 0,
             seed: 1 + ((Math.random() * 97) | 0), salt: (Math.random() * 100000) | 0, ds: L.s * 0.08, cache: null, cacheK: 0, ov: null, ovKey: '', zoneAt: 0, zone: null,
             vs: null, vsD: 0, stat: { breaks: 0, gems: 0, banks: 0, shots: 0, regrows: 0, hits: 0 }, regrowAt: 2, vx: 0, vy: 0 };
         rs = (Math.floor(Math.random() * 2147483646) + 1);
@@ -478,7 +483,7 @@
         S.ST = new Uint8Array(n); S.HP = new Float32Array(n); S.HP0 = new Float32Array(n); S.DUGAT = new Float32Array(n);
         biomeTones(S, S.seed);
         makeCells(S);
-        var odds = spooky ? ORE_ODDS_SPOOKY : ORE_ODDS;
+        var odds = ORE_ODDS;
         for (var c = 0; c < n; c++) {
             setOre(S, S.cell[c], rnd() < 0.11 ? pickOdds(odds) : 0);
             S.HP0[c] = S.HP[c] = hpOf(S.cell[c]);
@@ -492,7 +497,7 @@
         var vxs = S.small ? 0.5 : Math.cos(S.camA) > 0 ? 0.7 : 0.3;
         S.camX = V[0] - w * vxs; S.camY = V[1] - h * (S.small ? 0.8 : 0.72);
         S.vx = fmod(S.camX, S.P); S.vy = fmod(S.camY, S.Q);
-        var nt = L.small ? 3 : w >= 1400 ? 5 : w >= 1000 ? 4 : 3;
+        var nt = L.small ? 4 : w >= 1400 ? 7 : w >= 1000 ? 6 : 5;
         var homes = [], R0 = L.small ? 1.9 : 2.6;
         var a0 = rnd() * TAU;
         homes.push([S.vault[0] + Math.cos(a0) * s * 2.7, S.vault[1] + Math.sin(a0) * s * 2.7, s * (R0 + rnd() * 0.5)]);
@@ -517,7 +522,7 @@
             }
         }
         for (var c2 = 0; c2 < n; c2++) if (S.ST[c2] === SOLID && rnd() < 0.025) { S.ST[c2] = OPEN; }
-        var pool = BUILDS.slice(), pinned = window.dwHomeWorldBuilds, team = spooky ? TEAM_SPOOKY : TEAM;
+        var pool = BUILDS.slice(), pinned = window.dwHomeWorldBuilds, team = TEAM;
         for (var pi = pool.length - 1; pi > 0; pi--) { var pj = (rnd() * (pi + 1)) | 0, tmp = pool[pi]; pool[pi] = pool[pj]; pool[pj] = tmp; }
         S.tanks = [];
         var toff = (rnd() * team.length) | 0;
@@ -529,7 +534,7 @@
         for (var k3 = 0; k3 < nt; k3++) { var tk = S.tanks[k3]; while (tk.wn < AHEAD + 4) appendSeg(S, tk); }
         S.bullets = pool0(40, function () { return { on: 0, x: 0, y: 0, dx: 0, dy: 0, d: 0, tr: 0, v: 0, r: 3, k: 0, kind: 0, c: -1, dmg: 0 }; });
         S.chips = pool0(56, function () { return { on: 0, x: 0, y: 0, vx: 0, vy: 0, rot: 0, vr: 0, t: 0, life: 1, col: '', sz: 0 }; });
-        S.bursts = pool0(6, function () { return { on: 0, t: 0, c: -1, x: 0, y: 0, parts: new Float32Array(46 * 8), sparks: new Float32Array(40 * 3), nS: 0, pal: FW_CSS, cc: null }; });
+        S.bursts = pool0(6, function () { return { on: 0, t: 0, c: -1, x: 0, y: 0, parts: new Float32Array(46 * 8), sparks: new Float32Array(40 * 3), nS: 0, pal: null, cc: null }; });
         S.gems = pool0(48, function () { return { on: 0, kind: 0, x0: 0, y0: 0, px: 0, py: 0, t: 0, dur: 1, tier: 1, rot: 0, vr: 0, r: 4, tk: 0 }; });
         S.dmg = pool0(12, function () { return { on: 0, c: -1, stage: 0, flash: 0, snap: 0 }; });
         S.vaultPulse = 0;
@@ -539,82 +544,80 @@
     function hpOf(cell) { return cell.ore ? 2.8 + cell.ore * 0.5 : 2.1 + hash(cell.ii, cell.jj, 5) * 0.7; }
     function pool0(n, mk) { var a = []; for (var i = 0; i < n; i++) a.push(mk()); return a; }
 
-    function floorTile(F) {
+    function floorTile(F, k, art) {
         var tile = document.createElement('canvas');
         tile.width = tile.height = F;
-        var t = tile.getContext('2d'), S0 = 256, sc = F / S0;
-        var seed = 7;
+        var t = tile.getContext('2d'), seed = 11, area = (F / k) * (F / k) / (768 * 768);
         function rng() { seed = (Math.imul(seed, 1597334677) + 926135893) | 0; return ((seed >>> 8) & 0xffffff) / 0x1000000; }
-        t.setTransform(sc, 0, 0, sc, 0, 0);
-        t.fillStyle = '#282624';
-        t.fillRect(0, 0, S0, S0);
-        function wrapped(fn) {
-            for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) { t.save(); t.translate(dx * S0, dy * S0); fn(); t.restore(); }
-        }
-        function blob(x, y, r) {
-            var n = 7 + (rng() * 3 | 0), pts = [];
-            for (var i = 0; i < n; i++) {
-                var a = (i / n) * TAU + rng() * 0.4, rr = r * (0.62 + rng() * 0.55);
-                pts.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr]);
-            }
-            return function () {
-                t.beginPath();
+        t.fillStyle = art.floor;
+        t.fillRect(0, 0, F, F);
+        var counts = [13, 11, 12], sizes = [[70, 140], [55, 120], [26, 62]];
+        for (var layer = 0; layer < 3; layer++) {
+            t.beginPath();
+            var n0 = Math.max(2, Math.round(counts[layer] * area));
+            for (var b = 0; b < n0; b++) {
+                var x = rng() * F, y = rng() * F, r = (sizes[layer][0] + rng() * (sizes[layer][1] - sizes[layer][0])) * k;
+                var stretch = 1 + rng() * 0.9, rot = rng() * Math.PI, ca = Math.cos(rot), sa = Math.sin(rot);
+                var n = 11 + (rng() * 5 | 0), wob = rng() * 6.28, pts = [];
                 for (var i = 0; i < n; i++) {
-                    var p = pts[i], q = pts[(i + 1) % n], mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
-                    if (i) t.quadraticCurveTo(p[0], p[1], mx, my);
-                    else { t.moveTo((pts[n - 1][0] + p[0]) / 2, (pts[n - 1][1] + p[1]) / 2); t.quadraticCurveTo(p[0], p[1], mx, my); }
+                    var a = (i / n) * TAU, rr = r * (0.62 + 0.38 * Math.sin(a * 2 + wob) * 0.5 + rng() * 0.42);
+                    var px = Math.cos(a) * rr * stretch, py = Math.sin(a) * rr;
+                    pts.push([x + px * ca - py * sa, y + px * sa + py * ca]);
                 }
-                t.closePath();
-            };
-        }
-        function fillWith(path, col) { return function () { path(); t.fillStyle = col; t.fill(); }; }
-        for (var i = 0; i < 9; i++) wrapped(fillWith(blob(rng() * S0, rng() * S0, 26 + rng() * 34), '#222120'));
-        for (var i2 = 0; i2 < 9; i2++) wrapped(fillWith(blob(rng() * S0, rng() * S0, 20 + rng() * 28), '#2e2c29'));
-        for (var i3 = 0; i3 < 26; i3++) {
-            var p3 = blob(rng() * S0, rng() * S0, 2.5 + rng() * 4.5);
-            wrapped(fillWith(p3, rng() < 0.5 ? '#33312c' : '#1e1d1b'));
-        }
-        for (var i4 = 0; i4 < 12; i4++) {
-            var x = rng() * S0, y = rng() * S0, r = 2.2 + rng() * 2.8, rot = rng() * Math.PI, sq = 0.65 + rng() * 0.3, col = rng() < 0.5 ? '#44413b' : '#514d44';
-            wrapped(pebble(t, x, y, r, rot, sq, col));
+                for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
+                    var ox = dx * F, oy = dy * F;
+                    t.moveTo((pts[n - 1][0] + pts[0][0]) / 2 + ox, (pts[n - 1][1] + pts[0][1]) / 2 + oy);
+                    for (var q = 0; q < n; q++) {
+                        var p = pts[q], nx = pts[(q + 1) % n];
+                        t.quadraticCurveTo(p[0] + ox, p[1] + oy, (p[0] + nx[0]) / 2 + ox, (p[1] + nx[1]) / 2 + oy);
+                    }
+                    t.closePath();
+                }
+            }
+            t.fillStyle = art.camo[layer];
+            t.fill();
         }
         return tile;
     }
-    function pebble(t, x, y, r, rot, sq, col) {
-        return function () {
-            t.translate(x, y); t.rotate(rot);
-            t.fillStyle = col; t.beginPath(); t.ellipse(0, 0, r, r * sq, 0, 0, TAU); t.fill();
-            t.lineWidth = 1.4; t.strokeStyle = 'rgb(5,4,7)'; t.stroke();
+    var speckle = null;
+    function speckleTile() {
+        if (speckle) return speckle;
+        var N = 256, cv = document.createElement('canvas');
+        cv.width = cv.height = N;
+        var g = cv.getContext('2d'), seed = 41;
+        var rng = function () { seed = (Math.imul(seed, 1597334677) + 926135893) | 0; return ((seed >>> 8) & 0xffffff) / 0x1000000; };
+        var dot = function (x, y, r) {
+            for (var ox = -N; ox <= N; ox += N) for (var oy = -N; oy <= N; oy += N) {
+                if (x + ox + r < 0 || x + ox - r > N || y + oy + r < 0 || y + oy - r > N) continue;
+                g.moveTo(x + ox + r, y + oy);
+                g.arc(x + ox, y + oy, r, 0, TAU);
+            }
         };
-    }
-    function vnp(x, y, n, sd) {
-        var xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
-        var ux = xf * xf * (3 - 2 * xf), uy = yf * yf * (3 - 2 * yf);
-        var x0 = wrap(xi, n), x1 = wrap(xi + 1, n), y0 = wrap(yi, n), y1 = wrap(yi + 1, n);
-        var a = hash(x0, y0, sd), b = hash(x1, y0, sd), c = hash(x0, y1, sd), d = hash(x1, y1, sd);
-        return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+        for (var pass = 0; pass < 3; pass++) {
+            g.beginPath();
+            var count = pass === 0 ? 70 : pass === 1 ? 900 : 260;
+            for (var i = 0; i < count; i++) {
+                var r = pass === 0 ? 7 + rng() * 14 : pass === 1 ? 0.7 + rng() * 1.3 : 0.6 + rng() * 1.1;
+                dot(rng() * N, rng() * N, r);
+            }
+            g.fillStyle = pass === 0 ? 'rgba(0,0,0,0.035)' : pass === 1 ? 'rgba(0,0,0,0.11)' : 'rgba(255,255,255,0.13)';
+            g.fill();
+        }
+        speckle = cv;
+        return cv;
     }
     function grainTile(T) {
         var cv = document.createElement('canvas');
         cv.width = cv.height = T;
-        var g = cv.getContext('2d'), img = g.createImageData(T, T), d = img.data;
-        for (var y = 0; y < T; y++) for (var x = 0; x < T; x++) {
-            var u = x / T, v = y / T;
-            var mot = vnp(u * 12, v * 12, 12, 3) * 0.62 + vnp(u * 25, v * 25, 25, 4) * 0.38;
-            var grn = vnp(u * 64, v * 64, 64, 5) * 0.6 + vnp(u * 128, v * 128, 128, 6) * 0.4;
-            var f = 0.925 + 0.15 * mot + (grn - 0.5) * 0.11, o = (y * T + x) * 4;
-            if (f < 1) { d[o] = d[o + 1] = d[o + 2] = 0; d[o + 3] = Math.round((1 - f) * 255); }
-            else { d[o] = d[o + 1] = d[o + 2] = 255; d[o + 3] = Math.round((f - 1) * 255 * 0.55); }
-        }
-        g.putImageData(img, 0, 0);
+        cv.getContext('2d').drawImage(speckleTile(), 0, 0, T, T);
         return cv;
     }
 
     function newBake(S, k) {
-        var F = Math.round(S.s * 4 * k), T = F * Math.max(1, Math.round(1024 / F));
+        var F = Math.round(S.s * 8 * k), T = F * Math.max(1, Math.round(1024 / F));
         var Pd = Math.round(S.P * k), Qd = Math.round(S.Q * k);
-        var fl = floorTile(F), gr = grainTile(Math.round(S.s * 2 * k));
-        var B = { k: k, T: T, Pd: Pd, Qd: Qd, fl: fl, gr: gr, tl: [], tiles: [], n: 0, dirty: [], ms: 0, slices: 0, g: null, grainPat: null, floorPat: null, tx: 0, ty: 0, w: 0, h: 0 };
+        var fl = floorTile(F, k, S.light ? FLOOR.light : FLOOR.dark), gr = grainTile(Math.round(S.s * 2 * k));
+        var B = { k: k, light: S.light, T: T, Pd: Pd, Qd: Qd, fl: fl, gr: gr, tl: [], tiles: [], n: 0, dirty: [], ms: 0, slices: 0, g: null, grainPat: null, floorPat: null, tx: 0, ty: 0, w: 0, h: 0 };
         for (var Y = 0; Y < Qd; Y += T) for (var X = 0; X < Pd; X += T) {
             var cv = document.createElement('canvas');
             cv.width = Math.min(T, Pd - X); cv.height = Math.min(T, Qd - Y);
@@ -633,48 +636,6 @@
         g.lineTo(ox + Math.cos(a0 + WA) * R, oy + Math.sin(a0 + WA) * R);
         g.closePath();
     }
-    function drawCell(S, B, cell, ox, oy) {
-        var g = B.g, k = B.k, s = S.s, tx = B.tx, ty = B.ty;
-        g.setTransform(k, 0, 0, k, ox * k - tx, oy * k - ty);
-        g.save();
-        g.clip(cell.path);
-        g.fillStyle = cell.face; g.fill(cell.path);
-        wedge(g, cell.sx, cell.sy, cell.up + Math.PI, 3 * s); g.fillStyle = cell.light; g.fill();
-        wedge(g, cell.sx, cell.sy, cell.up, 3 * s); g.fillStyle = cell.dark; g.fill();
-        g.setTransform(1, 0, 0, 1, 0, 0);
-        g.fillStyle = B.grainPat;
-        var X0 = Math.floor((cell.x0 + ox) * k), Y0 = Math.floor((cell.y0 + oy) * k);
-        g.fillRect(X0 - tx, Y0 - ty, Math.ceil((cell.x1 + ox) * k) - X0, Math.ceil((cell.y1 + oy) * k) - Y0);
-        g.setTransform(k, 0, 0, k, ox * k - tx, oy * k - ty);
-        for (var q = 0; q < 3; q++) { g.lineWidth = AO_W[q] * s; g.strokeStyle = AO_CSS[q]; g.stroke(cell.path); }
-        if (!cell.grad || cell.gradCtx !== g) {
-            var e = 0.25 * s, gd = g.createLinearGradient(cell.sx + cell.ldx * e, cell.sy + cell.ldy * e, cell.sx - cell.ldx * e, cell.sy - cell.ldy * e);
-            gd.addColorStop(0, 'rgba(0,0,0,0.2)');
-            gd.addColorStop(0.5, 'rgba(0,0,0,0)');
-            gd.addColorStop(0.5, 'rgba(' + cell.rimRgb + ',0)');
-            gd.addColorStop(1, 'rgba(' + cell.rimRgb + ',' + ((0.25 + 0.5 * cell.rimA) * 0.6).toFixed(3) + ')');
-            cell.grad = gd; cell.gradCtx = g;
-        }
-        g.strokeStyle = cell.grad;
-        g.lineWidth = 0.196 * s; g.stroke(cell.path);
-        g.lineWidth = 0.126 * s; g.stroke(cell.path);
-        g.restore();
-        g.lineWidth = INK_W * s; g.strokeStyle = cell.ink; g.stroke(cell.path);
-        if (cell.ore && cell.oBody) {
-            g.save();
-            g.clip(cell.path);
-            g.strokeStyle = 'rgb(8,6,12)';
-            g.globalAlpha = 0.3;
-            for (var hI = ORE_HALO.length - 1; hI >= 0; hI--) { g.lineWidth = ORE_HALO[hI] * s; g.stroke(cell.oBody); }
-            g.globalAlpha = 1;
-            var pal = ORE_PAL[cell.ore];
-            g.fillStyle = pal[1]; g.fill(cell.oBody);
-            g.strokeStyle = pal[0]; g.lineWidth = 0.022 * s; g.stroke(cell.oBody);
-            g.fillStyle = pal[2]; g.fill(cell.oFacet);
-            g.fillStyle = pal[3]; g.fill(cell.oCore);
-            g.restore();
-        }
-    }
     function paintRect(S, B, x0, y0, x1, y1) {
         var k = B.k;
         var X0 = Math.max(0, Math.floor(x0 * k)), Y0 = Math.max(0, Math.floor(y0 * k));
@@ -688,7 +649,7 @@
         }
     }
     function paintTile(S, B, X0, Y0, X1, Y1) {
-        var g = B.g, k = B.k, s = S.s, cols = S.cols, rows = S.rows, tx = B.tx, ty = B.ty;
+        var g = B.g, k = B.k, s = S.s, cols = S.cols, rows = S.rows, tx = B.tx, ty = B.ty, art = B.light ? FLOOR.light : FLOOR.dark;
         var wx0 = X0 / k, wy0 = Y0 / k, wx1 = X1 / k, wy1 = Y1 / k;
         g.save();
         g.setTransform(1, 0, 0, 1, 0, 0);
@@ -697,36 +658,94 @@
         g.beginPath(); g.rect(X0 - tx, Y0 - ty, X1 - X0, Y1 - Y0); g.clip();
         g.fillStyle = B.floorPat; g.fillRect(X0 - tx, Y0 - ty, X1 - X0, Y1 - Y0);
         var gp = s / 2, lw = Math.max(1, Math.round(k));
-        g.fillStyle = 'rgba(255,255,255,0.045)';
+        g.fillStyle = art.grid;
         for (var m = Math.floor(wx0 / gp); m * gp <= wx1; m++) g.fillRect(Math.round(m * gp * k) - tx, Y0 - ty, lw, Y1 - Y0);
         for (var m2 = Math.floor(wy0 / gp); m2 * gp <= wy1; m2++) g.fillRect(X0 - tx, Math.round(m2 * gp * k) - ty, X1 - X0, lw);
-        var M = s * 0.2;
+        var M = s * 0.45;
         var ia = Math.max(-1, Math.floor((wx0 - M) / s) - 1), ib = Math.min(cols, Math.floor((wx1 + M) / s) + 1);
         var ja = Math.max(-1, Math.floor((wy0 - M) / s) - 1), jb = Math.min(rows, Math.floor((wy1 + M) / s) + 1);
-        g.lineJoin = 'round';
-        g.lineCap = 'round';
-        g.strokeStyle = ROCK_INK;
-        g.lineWidth = SIL_W * s;
-        var i, j, ii, jj, c, cell, ox, oy;
+        var solid = new Path2D(), open = new Path2D(), list = [], i, j, ii, jj, c, cell, ox, oy;
         for (j = ja; j <= jb; j++) for (i = ia; i <= ib; i++) {
             ii = wrap(i, cols); jj = wrap(j, rows); c = jj * cols + ii;
-            if (S.ST[c] !== SOLID) continue;
             cell = S.cell[c]; ox = (i - ii) * s; oy = (j - jj) * s;
             if (cell.x1 + ox < wx0 - M || cell.x0 + ox > wx1 + M || cell.y1 + oy < wy0 - M || cell.y0 + oy > wy1 + M) continue;
-            g.setTransform(k, 0, 0, k, ox * k - tx, (oy + SIL_DROP * s) * k - ty);
-            g.stroke(cell.path);
+            var mtx = { a: 1, b: 0, c: 0, d: 1, e: ox, f: oy };
+            if (S.ST[c] === SOLID) { solid.addPath(cell.path, mtx); list.push(cell, ox, oy); }
+            else open.addPath(cell.path, mtx);
         }
-        for (j = ja; j <= jb; j++) for (i = ia; i <= ib; i++) {
-            ii = wrap(i, cols); jj = wrap(j, rows); c = jj * cols + ii;
-            if (S.ST[c] !== SOLID) continue;
-            cell = S.cell[c]; ox = (i - ii) * s; oy = (j - jj) * s;
-            if (cell.x1 + ox < wx0 - M || cell.x0 + ox > wx1 + M || cell.y1 + oy < wy0 - M || cell.y0 + oy > wy1 + M) continue;
-            drawCell(S, B, cell, ox, oy);
+        if (list.length) {
+            var sideE = Math.min(5, 0.12 * s), outlineW = Math.min(11.2, 0.26 * s), bevD = Math.min(3.6, 0.16 * s);
+            var seamW = Math.min(3.4, 0.09 * s), bev = Math.min(2.4, 0.06 * s), R = 3 * s, q, tn;
+            g.setTransform(k, 0, 0, k, -tx, -ty);
+            g.lineJoin = 'round';
+            g.lineCap = 'round';
+            g.save();
+            g.translate(sideE * 1.5, sideE * 1.5);
+            g.strokeStyle = SHADOW_INK;
+            g.lineWidth = sideE * 3.4; g.stroke(solid);
+            g.lineWidth = sideE * 1.9; g.stroke(solid);
+            g.restore();
+            g.save();
+            g.translate(sideE, sideE);
+            for (q = 0; q < list.length; q += 3) {
+                cell = list[q];
+                g.save(); g.translate(list[q + 1], list[q + 2]);
+                g.fillStyle = (B.light ? cell.tl : cell.td)[1]; g.fill(cell.path);
+                g.restore();
+            }
+            g.fillStyle = SIDE_INK; g.fill(solid);
+            g.lineWidth = Math.min(2.2, sideE); g.strokeStyle = SIDE_EDGE_INK; g.stroke(solid);
+            g.restore();
+            for (q = 0; q < list.length; q += 3) {
+                cell = list[q]; tn = B.light ? cell.tl : cell.td;
+                g.save();
+                g.translate(list[q + 1], list[q + 2]);
+                g.clip(cell.path);
+                g.fillStyle = tn[2]; g.fill(cell.path);
+                wedge(g, cell.sx, cell.sy, cell.up, R); g.fillStyle = tn[3]; g.fill();
+                wedge(g, cell.sx, cell.sy, cell.up + Math.PI, R); g.fillStyle = tn[1]; g.fill();
+                g.lineWidth = seamW + bev * 2;
+                g.translate(bev, bev); g.strokeStyle = CELL_LIGHT; g.stroke(cell.path);
+                g.translate(-2 * bev, -2 * bev); g.strokeStyle = CELL_DARK; g.stroke(cell.path);
+                g.restore();
+            }
+            g.lineWidth = seamW; g.strokeStyle = SEAM_INK; g.stroke(solid);
+            g.save();
+            g.clip(solid);
+            g.setTransform(1, 0, 0, 1, 0, 0);
+            g.fillStyle = B.grainPat;
+            g.fillRect(X0 - tx, Y0 - ty, X1 - X0, Y1 - Y0);
+            g.restore();
+            for (q = 0; q < list.length; q += 3) {
+                cell = list[q];
+                if (!cell.ore || !cell.oBody) continue;
+                g.save();
+                g.translate(list[q + 1], list[q + 2]);
+                g.clip(cell.path);
+                g.strokeStyle = 'rgb(8,6,12)';
+                g.globalAlpha = 0.3;
+                for (var hI = ORE_HALO.length - 1; hI >= 0; hI--) { g.lineWidth = ORE_HALO[hI] * s; g.stroke(cell.oBody); }
+                g.globalAlpha = 1;
+                var pal = ORE_PAL[cell.ore];
+                g.fillStyle = pal[1]; g.fill(cell.oBody);
+                g.strokeStyle = pal[0]; g.lineWidth = 0.022 * s; g.stroke(cell.oBody);
+                g.fillStyle = pal[2]; g.fill(cell.oFacet);
+                g.fillStyle = pal[3]; g.fill(cell.oCore);
+                g.restore();
+            }
+            g.save();
+            g.clip(solid);
+            g.lineWidth = outlineW + bevD * 2;
+            g.translate(bevD, bevD); g.strokeStyle = BEVEL_LIGHT; g.stroke(open);
+            g.translate(-2 * bevD, -2 * bevD); g.strokeStyle = BEVEL_DARK; g.stroke(open);
+            g.translate(bevD, bevD);
+            g.lineWidth = outlineW; g.strokeStyle = OUTLINE_INK; g.stroke(open);
+            g.restore();
         }
         g.restore();
     }
     function repaint(S, c) {
-        var cell = S.cell[c], m = S.s * 0.2;
+        var cell = S.cell[c], m = S.s * 0.45;
         var x0 = cell.x0 - m, y0 = cell.y0 - m, x1 = cell.x1 + m, y1 = cell.y1 + m;
         for (var a = -1; a <= 1; a++) for (var b = -1; b <= 1; b++) {
             var ax0 = Math.max(0, x0 + a * S.P), ax1 = Math.min(S.P, x1 + a * S.P), ay0 = Math.max(0, y0 + b * S.Q), ay1 = Math.min(S.Q, y1 + b * S.Q);
@@ -736,9 +755,8 @@
         }
     }
 
-    function makeVault(D, R, spooky) {
-        var Sw = R / 0.46, px = Math.max(16, Math.ceil(Sw * D)), S0 = 256, C = 128, INK = '#120e15', LW = 5;
-        var main = spooky ? '#ee7418' : '#8a90a0';
+    function makeVault(D, R, light) {
+        var art = light ? FLOOR.light : FLOOR.dark, Sw = R * 2, px = Math.max(16, Math.ceil(Sw * D)), S0 = 256, C = 128, INK = art.padInk, LW = 6, team = VAULT_TEAM;
         function layer(fn) {
             var cv = document.createElement('canvas');
             cv.width = cv.height = px;
@@ -749,29 +767,28 @@
             fn(c);
             return cv;
         }
-        function disc(c, r, fill, lw, y) {
-            c.beginPath(); c.arc(0, y || 0, r, 0, TAU);
+        function disc(c, r, fill, lw) {
+            c.beginPath(); c.arc(0, 0, r, 0, TAU);
             c.fillStyle = fill; c.fill();
             if (lw) { c.lineWidth = lw; c.strokeStyle = INK; c.stroke(); }
         }
         var plate = layer(function (c) {
-            disc(c, S0 * 0.46, INK, 0, S0 * 0.024);
-            disc(c, S0 * 0.46, '#3a3245', LW);
-            c.lineWidth = S0 * 0.032; c.strokeStyle = main;
+            disc(c, S0 * 0.46, art.padFace, LW);
+            c.lineWidth = S0 * 0.032; c.strokeStyle = team;
             c.beginPath(); c.arc(0, 0, S0 * 0.425, 0, TAU); c.stroke();
             c.lineWidth = 3; c.strokeStyle = INK;
             c.beginPath(); c.arc(0, 0, S0 * 0.405, 0, TAU); c.stroke();
-            disc(c, S0 * 0.325, '#1e1924', LW);
+            disc(c, S0 * 0.325, art.padWell, LW);
         });
         var cog = layer(function (c) {
             c.lineWidth = S0 * 0.045 + LW; c.strokeStyle = INK;
             c.beginPath(); c.arc(0, 0, S0 * 0.365, 0, TAU); c.stroke();
-            c.lineWidth = S0 * 0.045; c.strokeStyle = '#4a4156'; c.stroke();
+            c.lineWidth = S0 * 0.045; c.strokeStyle = art.padBand; c.stroke();
             for (var i = 0; i < 12; i++) {
                 c.save();
                 c.rotate((i / 12) * TAU);
                 c.beginPath(); c.rect(S0 * 0.335, -S0 * 0.019, S0 * 0.06, S0 * 0.038);
-                c.fillStyle = i % 3 === 0 ? main : '#6b5f7a'; c.fill();
+                c.fillStyle = i % 3 === 0 ? team : art.padTooth; c.fill();
                 c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
                 c.restore();
             }
@@ -788,7 +805,7 @@
                 c.stroke();
             }
             spoke(S0 * 0.045 + LW, INK);
-            spoke(S0 * 0.045, '#6b5f7a');
+            spoke(S0 * 0.045, art.padBand);
             function gem() {
                 c.beginPath();
                 for (var i = 0; i < GEM_CUT.length; i++) {
@@ -797,84 +814,33 @@
                 }
                 c.closePath();
             }
-            gem(); c.fillStyle = spooky ? '#ee7418' : '#3fd27a'; c.fill();
-            c.lineWidth = LW; c.strokeStyle = INK; c.stroke();
+            gem(); c.fillStyle = team; c.fill();
             c.save(); gem(); c.clip();
-            c.fillStyle = 'rgba(255,255,255,0.28)';
+            c.fillStyle = 'rgba(255,255,255,0.35)';
             c.fillRect(-S0 * 0.15, -S0 * 0.15, S0 * 0.3, S0 * 0.085);
             c.restore();
-            gem(); c.lineWidth = LW; c.strokeStyle = INK; c.stroke();
+            gem(); c.lineWidth = LW; c.strokeStyle = worldMix(team, -0.4); c.stroke();
         });
-        return { plate: plate, cog: cog, wheel: wheel, Sw: Sw, D: D };
-    }
-
-    function zoneRects() {
-        var out = [], sel = ['.startMenu', '#lobbySide', '#homeLeft'];
-        for (var i = 0; i < sel.length; i++) {
-            var el = document.querySelector(sel[i]);
-            if (!el || (i > 0 && (el.hidden || !el.offsetParent))) continue;
-            var r = el.getBoundingClientRect();
-            if (r.width > 0 && r.height > 0) out.push(Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height));
-        }
-        return out;
-    }
-    function bakeOverlay(S, rects) {
-        var W = S.W, H = S.H, sc = 0.2, ow = Math.max(48, Math.round(W * sc)), oh = Math.max(48, Math.round(H * sc));
-        var cv = S.ov || document.createElement('canvas');
-        cv.width = ow; cv.height = oh;
-        var g = cv.getContext('2d'), L = S.light, sp = S.spooky;
-        g.setTransform(ow / W, 0, 0, oh / H, 0, 0);
-        g.clearRect(0, 0, W, H);
-        g.fillStyle = L ? 'rgba(248,240,222,0.46)' : sp ? 'rgba(16,9,24,0.26)' : 'rgba(10,9,14,0.24)';
-        g.fillRect(0, 0, W, H);
-        var R = Math.hypot(W, H) * 0.62, vg = g.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.3, W / 2, H * 0.45, R);
-        if (L) { vg.addColorStop(0, 'rgba(248,240,222,0)'); vg.addColorStop(1, 'rgba(248,240,222,0.22)'); }
-        else { vg.addColorStop(0, 'rgba(6,5,9,0)'); vg.addColorStop(1, 'rgba(6,5,9,0.4)'); }
-        g.fillStyle = vg;
-        g.fillRect(0, 0, W, H);
-        var off = W * 4;
-        g.shadowOffsetX = off * (ow / W);
-        g.shadowOffsetY = 0;
-        for (var i = 0; i < rects.length; i += 4) {
-            var x = rects[i], y = rects[i + 1], w = rects[i + 2], h = rects[i + 3], main = i === 0, pad = main ? 34 : 18;
-            g.shadowBlur = (main ? 90 : 60) * (ow / W);
-            g.shadowColor = L ? (main ? 'rgba(250,244,230,0.58)' : 'rgba(250,244,230,0.42)') : (main ? 'rgba(14,12,19,0.7)' : 'rgba(14,12,19,0.45)');
-            g.fillStyle = '#000';
-            g.beginPath();
-            if (g.roundRect) g.roundRect(x - pad - off, y - pad, w + pad * 2, h + pad * 2, 40);
-            else g.rect(x - pad - off, y - pad, w + pad * 2, h + pad * 2);
-            g.fill();
-        }
-        g.shadowBlur = 0; g.shadowColor = 'rgba(0,0,0,0)'; g.shadowOffsetX = 0;
-        S.ov = cv;
-    }
-    function checkZone(S, now, force) {
-        if (!force && now - S.zoneAt < 1500) return;
-        S.zoneAt = now;
-        var r = zoneRects(), key = (S.light ? 'L' : 'D') + S.W + 'x' + S.H + ':' + r.join(',');
-        if (key === S.ovKey && S.ov) return;
-        S.ovKey = key;
-        bakeOverlay(S, r);
+        return { plate: plate, cog: cog, wheel: wheel, Sw: Sw, D: D, light: !!light, padFill: worldMix(team, art.padTint), padLine: worldMix(team, art.padLine), lw: Math.max(1.5, R * 0.035) };
     }
 
     function build(w, h, ratio, isLight) {
         var t0 = performance.now();
-        var spooky = isSpooky(), L = layout(w, h), S = world;
-        if (!S || S.s !== L.s || S.cols !== L.cols || S.rows !== L.rows || S.spooky !== spooky) {
+        var L = layout(w, h), S = world;
+        if (!S || S.s !== L.s || S.cols !== L.cols || S.rows !== L.rows) {
             if (S) release();
-            S = world = newWorld(w, h, spooky);
+            S = world = newWorld(w, h);
         }
         S.W = w; S.H = h; S.light = !!isLight;
-        var k = Math.min(ratio || 1, 2), cap = Math.sqrt((S.small ? 6e6 : 14e6) / (S.P * S.Q));
+        var k = Math.min(ratio || 1, 2), cap = Math.sqrt((S.small ? 5e6 : 9e6) / (S.P * S.Q));
         k = Math.max(0.5, Math.floor(Math.min(k, cap) * 4) / 4);
-        if ((!S.cache || S.cacheK !== k) && !(bake && bake.S === S && bake.k === k)) {
+        if ((!S.cache || S.cacheK !== k || S.cacheL !== S.light) && !(bake && bake.S === S && bake.k === k && bake.light === S.light)) {
             if (bake) dropBake(bake);
             bake = newBake(S, k);
             bake.S = S;
         }
-        checkZone(S, performance.now(), true);
         var D = Math.min(window.devicePixelRatio || 1, 2);
-        if (!S.vs || S.vs.D !== D) S.vs = makeVault(D, S.vaultR, spooky);
+        if (!S.vs || S.vs.D !== D || S.vs.light !== S.light) S.vs = makeVault(D, S.vaultR, S.light);
         S.buildMs = performance.now() - t0;
     }
     function dropBake(B) {
@@ -897,7 +863,7 @@
         for (var d = 0; d < B.dirty.length; d++) { var q = B.dirty[d]; paintRect(S, B, q[0], q[1], q[2], q[3]); }
         B.dirty.length = 0;
         if (S.cacheB && S.cacheB !== B) dropBake(S.cacheB);
-        S.cache = B; S.cacheK = B.k; S.cacheB = B;
+        S.cache = B; S.cacheK = B.k; S.cacheB = B; S.cacheL = B.light;
         bake = null;
         B.ms += performance.now() - t0;
         window.dwHomeWorldStat = { bakeMs: Math.round(B.ms * 10) / 10, buildMs: Math.round((S.buildMs || 0) * 10) / 10, slices: B.slices, at: Math.round(performance.now()), px: B.Pd + 'x' + B.Qd, tiles: B.tl.length, T: B.T, cell: S.s, tanks: S.tanks.length, k: B.k };
@@ -992,7 +958,7 @@
         }
     }
     function chipsAt(S, cell, x, y, n, dx, dy) {
-        var cc = [cell.ink, cell.light, cell.rimCss];
+        var tn = S.light ? cell.tl : cell.td, cc = [tn[1], tn[3], tn[2]];
         for (var k = 0; k < n; k++) {
             var a = Math.atan2(-dy, -dx) + (rnd() - 0.5) * 2.2, v = 50 + rnd() * 80;
             spawnChip(S, x, y, Math.cos(a) * v, Math.sin(a) * v, cc[k % 3], 0.3 + rnd() * 0.25, S.s * (0.022 + rnd() * 0.026));
@@ -1051,11 +1017,12 @@
             Pp[o] = rnd() * TAU; Pp[o + 1] = 0.7 + rnd() * 3.6; Pp[o + 2] = 0.018 + rnd() * 0.04; Pp[o + 3] = (rnd() * 3) | 0;
             Pp[o + 4] = (rnd() - 0.5) * 14; Pp[o + 5] = 0.5 + rnd() * 0.5; Pp[o + 6] = (rnd() - 0.5) * 1.1; Pp[o + 7] = (rnd() - 0.5) * 1.1;
         }
-        b.pal = ORE_FX_CSS[cell.ore] || (S.spooky ? FW_SPOOKY : FW_CSS);
+        var tn = S.light ? cell.tl : cell.td;
+        b.pal = ORE_FX_CSS[cell.ore] || [tn[3], tn[4], tn[2]];
         b.nS = cell.ore ? (cell.ore >= 3 ? 38 : 32) : 24;
         for (var q = 0; q < b.nS; q++) { b.sparks[q * 3] = rnd() * TAU; b.sparks[q * 3 + 1] = 1.2 + rnd() * 3.4; b.sparks[q * 3 + 2] = (rnd() * b.pal.length) | 0; }
         b.on = 1; b.t = 0; b.c = cell.c; b.x = cell.px + ox; b.y = cell.py + oy;
-        b.cc = [cell.ink, cell.light, cell.rimCss];
+        b.cc = [tn[1], tn[2], tn[3]];
     }
     function regrow(S) {
         var s = S.s, n = S.cols * S.rows, many = 0, best = -1, bt = Infinity;
@@ -1075,7 +1042,7 @@
         }
         if (best < 0) return;
         var ce = S.cell[best];
-        setOre(S, ce, rnd() < 0.12 ? pickOdds(S.spooky ? ORE_ODDS_SPOOKY : ORE_ODDS) : 0);
+        setOre(S, ce, rnd() < 0.12 ? pickOdds(ORE_ODDS) : 0);
         S.ST[best] = SOLID; S.HP0[best] = S.HP[best] = hpOf(ce);
         S.stat.regrows++;
         repaint(S, best);
@@ -1169,7 +1136,7 @@
     function drawTank(c, x, y, t) {
         var r = t.r * (1 + 0.06 * t.gulp), G = t.build.g;
         c.lineJoin = 'round';
-        c.lineWidth = Math.max(2, t.r * 0.14);
+        c.lineWidth = Math.max(2.5, t.r * 0.17);
         c.fillStyle = GUN; c.strokeStyle = GUN_LINE;
         for (var k = 0; k < G.length; k++) { gunPath(c, x, y, t.ang, G[k], t.r, t.rec[k]); c.fill(); c.stroke(); }
         c.beginPath(); c.arc(x, y, r, 0, TAU);
@@ -1186,7 +1153,7 @@
             c.fill(cell.path);
             c.restore();
         }
-        c.strokeStyle = 'rgb(110,100,125)';
+        c.strokeStyle = S.light ? FLOOR.light.ring : FLOOR.dark.ring;
         for (var rg = 0; rg < 2; rg++) {
             var rt = rg === 0 ? t : (t - 0.07) / 0.93;
             if (rt <= 0 || rt >= 1) continue;
@@ -1262,11 +1229,11 @@
     function draw(c, now, still, alpha) {
         var S = world;
         if (!S || !S.cache) return;
+        var f0 = performance.now();
         var dt = 0;
         if (!still && lastT) dt = Math.min(0.05, Math.max(0, (now - lastT) / 1000));
         lastT = now;
         if (dt > 0) { moveCam(S, dt); simulate(S, dt); }
-        checkZone(S, now, false);
         var A = alpha == null ? 1 : alpha;
         var cw = c.canvas.width, ch = c.canvas.height, D = cw / S.W;
         if (!(D > 0)) D = 1;
@@ -1302,6 +1269,12 @@
             x = scrX(S, S.vault[0]); y = scrY(S, S.vault[1]);
             if (x > -V.Sw && x < S.W + V.Sw && y > -V.Sw && y < S.H + V.Sw) {
                 var h = V.Sw / 2;
+                c.lineJoin = 'round';
+                polyPath(c, x, y, h * 1.22, 8, Math.PI / 8);
+                c.fillStyle = V.padFill; c.fill();
+                c.lineWidth = V.lw * 1.6; c.strokeStyle = V.padLine; c.stroke();
+                polyPath(c, x, y, h * 1.11, 8, Math.PI / 8);
+                c.lineWidth = Math.max(2, h * 0.065); c.strokeStyle = VAULT_TEAM; c.stroke();
                 c.drawImage(V.plate, x - h, y - h, V.Sw, V.Sw);
                 var ra = S.t * 0.25, ca = Math.cos(ra) * D, sa = Math.sin(ra) * D;
                 c.setTransform(ca, sa, -sa, ca, x * D, y * D);
@@ -1381,11 +1354,10 @@
             if (x < -M || x > S.W + M || y < -M || y > S.H + M) continue;
             drawGem(c, x, y, sz, gm.rot, gm.tier);
         }
-        c.setTransform(1, 0, 0, 1, 0, 0);
-        c.globalAlpha = A;
-        if (S.ov) { c.imageSmoothingQuality = 'low'; c.drawImage(S.ov, 0, 0, cw, ch); }
         c.globalAlpha = 1;
-        c.setTransform(D, 0, 0, D, 0, 0);
+        var FT = S.ft || (S.ft = { buf: new Float32Array(120), n: 0 });
+        FT.buf[FT.n % 120] = performance.now() - f0;
+        FT.n++;
     }
 
     function release() {
@@ -1393,12 +1365,17 @@
         var S = world;
         if (S) {
             if (S.cacheB) dropBake(S.cacheB);
-            if (S.ov) S.ov.width = 0;
             if (S.vs) { S.vs.plate.width = 0; S.vs.cog.width = 0; S.vs.wheel.width = 0; }
-            S.cache = null; S.cacheB = null; S.ov = null; S.vs = null;
-            for (var c = 0; c < S.cell.length; c++) { S.cell[c].grad = null; S.cell[c].gradCtx = null; }
+            S.cache = null; S.cacheB = null; S.vs = null;
         }
         world = null; bake = null; lastT = 0;
+    }
+    function frameStat(S) {
+        var FT = S.ft;
+        if (!FT || !FT.n) return null;
+        var n = Math.min(FT.n, 120), a = Array.prototype.slice.call(FT.buf, 0, n).sort(function (x, y) { return x - y; }), sum = 0;
+        for (var i = 0; i < n; i++) sum += a[i];
+        return { avg: Math.round(sum / n * 100) / 100, p95: Math.round(a[Math.min(n - 1, Math.floor(n * 0.95))] * 100) / 100, max: Math.round(a[n - 1] * 100) / 100, n: FT.n };
     }
     function stat() {
         var S = world;
@@ -1406,7 +1383,7 @@
         var on = function (a) { var n = 0; for (var i = 0; i < a.length; i++) n += a[i].on; return n; };
         var dug = 0, solid = 0, ore = 0;
         for (var c = 0; c < S.ST.length; c++) { if (S.ST[c] === SOLID) { solid++; if (S.cell[c].ore) ore++; } else dug++; }
-        return { t: Math.round(S.t * 10) / 10, cam: [Math.round(S.camX * 100) / 100, Math.round(S.camY * 100) / 100], s: S.s, cols: S.cols, rows: S.rows, P: S.P, Q: S.Q, k: S.cacheK, light: S.light, spooky: S.spooky,
+        return { t: Math.round(S.t * 10) / 10, cam: [Math.round(S.camX * 100) / 100, Math.round(S.camY * 100) / 100], s: S.s, cols: S.cols, rows: S.rows, P: S.P, Q: S.Q, k: S.cacheK, light: S.light, frame: frameStat(S),
             dug: dug, solid: solid, ore: ore, bullets: on(S.bullets), chips: on(S.chips), bursts: on(S.bursts), gemsFlying: on(S.gems), damaged: on(S.dmg),
             breaks: S.stat.breaks, gems: S.stat.gems, banks: S.stat.banks, shots: S.stat.shots, hits: S.stat.hits, regrows: S.stat.regrows,
             tanks: S.tanks.map(function (t) { return { sx: Math.round(scrX(S, t.x)), sy: Math.round(scrY(S, t.y)), b: t.build.n, x: Math.round(t.x * 100) / 100, y: Math.round(t.y * 100) / 100, v: Math.round(t.v), ang: Math.round(t.ang * 1000) / 1000, gems: t.gems, tgt: t.tc, stop: t.dStop === Infinity ? -1 : Math.round(t.dStop) }; }) };

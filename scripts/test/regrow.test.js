@@ -1,16 +1,3 @@
-// Rock regrowth timing on a real Dig Royale terrain build, no game server:
-//   node scripts/test/regrow.test.js
-//
-//   timing     a broken cell waits BASE_DELAY_MS (46 s, was 23 s) and rises
-//              over GROW_MS (16 s, was 8 s)
-//   bloom      a bloom cell waits 5 s (was 2.5 s) and rises the last 55% of
-//              the way (8.8 s, was 4.4 s)
-//   near       a tank near a rising cell slows the rise by 20% (and it picks
-//              back up once they leave, with no jump in the shape); the
-//              clients get the new pace (r:3) and their drawn rise matches
-//              the server's collision rise at every step
-//   fast       a Bulwark rise keeps the old 8 s and ignores tanks
-//   cheap      hundreds of tanks and rising rocks cost well under a ms a pass
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -69,38 +56,42 @@ function events(k) { const out = grid.rockEvents.filter(e => e.k === k); return 
 function reset() { grid.rockEvents.length = 0; tanks = []; bloomNow = null; }
 let clock = fakeNow + 10_000;
 
-test('constants: 2x the old wait and rise, mirrored on the client', () => {
-    assert.equal(REGROW.BASE_DELAY_MS, 2 * 23_000);
-    assert.equal(REGROW.MIN_DELAY_MS, 2 * 10_000);
-    assert.equal(REGROW.DEFICIT_MS_PER_GAP, 2 * 300);
-    assert.equal(REGROW.GROW_MS, 2 * 8_000);
-    assert.equal(REGROW.BLOOM_DELAY_MS, 2 * 2_500);
+test('constants: a short wait and a 5 s rise, the shape timeline mirrored on the client', () => {
+    assert.equal(REGROW.BASE_DELAY_MS, 18_000);
+    assert.equal(REGROW.MIN_DELAY_MS, 8_000);
+    assert.equal(REGROW.DEFICIT_MS_PER_GAP, 250);
+    assert.equal(REGROW.GROW_MS, 16_000);
+    assert.equal(REGROW.RISE_MS, 5_000);
+    assert.equal(REGROW.RISE_RATE, REGROW.GROW_MS / REGROW.RISE_MS);
+    assert.equal(REGROW.BLOOM_DELAY_MS, 5_000);
     assert.equal(REGROW.BLOOM_START, 0.45);
+    assert.equal(REGROW.ORPHAN_DELAY_MS, 60_000);
     assert.equal(CLIENT_GROW_MS, REGROW.GROW_MS, 'terrainRenderer GROW_MS');
-    assert.ok(Math.abs(REGROW.NEAR_RATE - 1 / 1.2) < 1e-9);
+    assert.equal(clientRate(REGROW.RISE_RATE), REGROW.RISE_RATE, 'the client draws the full pace');
+    assert.equal(clientRate(REGROW.RISE_RATE * REGROW.NEAR_RATE), REGROW.RISE_RATE * REGROW.NEAR_RATE);
+    assert.ok(Math.abs(REGROW.NEAR_RATE - 1 / 2.4) < 1e-9);
 });
 
-test('timing: waits the delay, then rises over 16 s at full pace', () => {
+test('timing: waits the delay, then rises over 5 s at full pace', () => {
     reset();
     const rock = solidCell();
     const t0 = clock; clock += 200_000;
     kill(rock, t0);
     grid._lastRegrowTick = 0;
-    let startedAt = 0;
-    run(t0, t0 + 50_000, t => { if (!startedAt && rock.growing) startedAt = t; });
-    // one dead cell on its side: the base wait less one DEFICIT step at most
+    let startedAt = 0, doneAt = 0;
+    run(t0, t0 + 30_000, t => {
+        if (!startedAt && rock.growing) startedAt = t;
+        if (startedAt && !doneAt && rock.alive) doneAt = t;
+    });
     const lo = REGROW.BASE_DELAY_MS - REGROW.DEFICIT_MS_PER_GAP;
     assert.ok(startedAt >= t0 + lo && startedAt < t0 + REGROW.BASE_DELAY_MS + 600, 'started at +' + (startedAt - t0));
     const ev = events(rock.k).find(e => e.r === 1);
-    assert.ok(ev && ev.s === 1, 'full pace on the wire');
-    // still rising just before 16 s, landed just after
-    let doneAt = 0;
-    run(t0 + 50_500, startedAt + 17_000, t => { if (!doneAt && rock.alive) doneAt = t; });
-    assert.ok(doneAt >= startedAt + REGROW.GROW_MS && doneAt < startedAt + REGROW.GROW_MS + 600, 'rose in ' + (doneAt - startedAt));
+    assert.ok(ev && ev.s === REGROW.RISE_RATE, 'full pace on the wire');
+    assert.ok(doneAt >= startedAt + REGROW.RISE_MS && doneAt < startedAt + REGROW.RISE_MS + 600, 'rose in ' + (doneAt - startedAt));
     assert.ok(events(rock.k).some(e => e.r === 2));
 });
 
-test('bloom: 5 s wait, then the last 55% of the rise (2x the old bloom pace)', () => {
+test('bloom: 5 s wait, then the last 55% of the rise', () => {
     reset();
     const rock = solidCell();
     bloomNow = { x: rock.wx, y: rock.wy, r: 340, until: Infinity };
@@ -113,16 +104,35 @@ test('bloom: 5 s wait, then the last 55% of the rise (2x the old bloom pace)', (
         if (!doneAt && rock.alive) doneAt = t;
     });
     assert.ok(startedAt >= t0 + 5000 && startedAt < t0 + 5600, 'started at +' + (startedAt - t0));
-    const riseMs = REGROW.GROW_MS * (1 - REGROW.BLOOM_START);
-    assert.equal(riseMs, 2 * 8000 * 0.55);
+    const riseMs = REGROW.RISE_MS * (1 - REGROW.BLOOM_START);
     assert.ok(doneAt - startedAt >= riseMs && doneAt - startedAt < riseMs + 600, 'rose in ' + (doneAt - startedAt));
     const ev = events(rock.k).find(e => e.r === 1);
     assert.equal(ev.e, Math.round(REGROW.GROW_MS * REGROW.BLOOM_START), 'clients start the drawing 45% in');
-    // total from break to landed: 2x the old 2.5 s + 4.4 s
-    assert.ok(Math.abs((doneAt - t0) - 2 * (2500 + 4400)) <= 1100, 'total ' + (doneAt - t0));
+    assert.ok(Math.abs((doneAt - t0) - (REGROW.BLOOM_DELAY_MS + riseMs)) <= 1100, 'total ' + (doneAt - t0));
 });
 
-test('near: a tank close by slows the rise 20%, leaving picks it back up, clients follow exactly', () => {
+test('hold: a cell a tank stands on waits for it to leave, the wall further off still rises slowly', () => {
+    reset();
+    const under = solidCell(), off = solidCell();
+    const t0 = clock; clock += 100_000;
+    kill(under, t0); kill(off, t0);
+    const tank = { x: under.worldCx + 30, y: under.worldCy, size: 24 };
+    const watcher = { x: off.worldCx + 230, y: off.worldCy, size: 24 };
+    tanks = [tank, watcher];
+    grid._lastRegrowTick = 0;
+    run(t0, t0 + REGROW.BASE_DELAY_MS + 4000);
+    assert.equal(under.growing || under.alive, false, 'nothing rises under the tank');
+    assert.ok(off.growing && off.growRate < REGROW.RISE_RATE, 'a cell beside a tank rises, slowed');
+    tank.x += 2000;
+    let startedAt = 0;
+    run(t0 + REGROW.BASE_DELAY_MS + 4500, t0 + REGROW.BASE_DELAY_MS + 8000, t => { if (!startedAt && under.growing) startedAt = t; });
+    assert.ok(startedAt && startedAt <= t0 + REGROW.BASE_DELAY_MS + 5000, 'it rises once the tank has gone');
+    tanks = [];
+    run(t0 + REGROW.BASE_DELAY_MS + 8500, t0 + REGROW.BASE_DELAY_MS + 30_000);
+    assert.ok(under.alive && off.alive);
+});
+
+test('near: a tank close by slows the rise, leaving picks it back up, clients follow exactly', () => {
     reset();
     const rock = solidCell();
     const t0 = clock; clock += 100_000;
@@ -155,13 +165,14 @@ test('near: a tank close by slows the rise 20%, leaving picks it back up, client
         if (rock.growing) assert.ok(Math.abs(grid.riseElapsed(rock, t) - pre) < 1e-6, 'a pace change never jumps the shape');
         feed(t);
         if (rock.growing) {
-            if (rock.growRate < 1) slowSeen = true;
+            if (rock.growRate < REGROW.RISE_RATE) slowSeen = true;
             check(t); check(t + 170); check(t + 330);
         } else if (!doneAt) doneAt = t;
     }
     assert.ok(slowSeen);
     const rise = doneAt - t0;
-    assert.ok(rise >= REGROW.GROW_MS * 1.2 && rise < REGROW.GROW_MS * 1.2 + 600, '20% slower with a tank near: ' + rise);
+    const slowRise = REGROW.RISE_MS / REGROW.NEAR_RATE;
+    assert.ok(rise >= slowRise && rise < slowRise + 600, 'slower with a tank near: ' + rise);
 
     // a second rock: the tank leaves halfway, the rest runs at full pace
     const r2 = solidCell();
@@ -174,16 +185,15 @@ test('near: a tank close by slows the rise 20%, leaving picks it back up, client
     grid._lastRegrowTick = 0;
     let done2 = 0;
     for (let t = t1; t <= t1 + 25_000; t += REGROW.PACING_MS) {
-        if (t === t1 + 8000) { tank.x = r2.worldCx + 290; tank.y = r2.worldCy; }   // inside the hysteresis
-        if (t === t1 + 9000) assert.ok(r2.growRate < 1, 'hysteresis: still slow just past NEAR_R');
+        if (t === t1 + 8000) { tank.x = r2.worldCx + 290; tank.y = r2.worldCy; }
+        if (t === t1 + 9000) assert.ok(r2.growRate < REGROW.RISE_RATE, 'hysteresis: still slow just past NEAR_R');
         if (t === t1 + 9000) { tank.x = r2.worldCx + 2000; }
         tick(t);
         if (!done2 && !r2.growing) done2 = t;
     }
     const s = grid.rockEvents.filter(e => e.k === r2.k && e.r === 3).map(e => e.s);
-    assert.deepEqual(s, [Math.round(REGROW.NEAR_RATE * 1e4) / 1e4, 1], 'one slow down and one speed up on the wire');
-    // 9 s at 1/1.2 is 7.5 s of rise, the other 8.5 s at full pace
-    const want = 9000 + (REGROW.GROW_MS - 9000 * REGROW.NEAR_RATE);
+    assert.deepEqual(s, [Math.round(REGROW.RISE_RATE * REGROW.NEAR_RATE * 1e4) / 1e4, REGROW.RISE_RATE], 'one slow down and one speed up on the wire');
+    const want = 9000 + (REGROW.GROW_MS - 9000 * REGROW.RISE_RATE * REGROW.NEAR_RATE) / REGROW.RISE_RATE;
     assert.ok(Math.abs((done2 - t1) - want) <= 600, 'rose in ' + (done2 - t1) + ', want ~' + Math.round(want));
 
     // join mid-rise: the snapshot carries the pace too
@@ -196,13 +206,13 @@ test('near: a tank close by slows the rise 20%, leaving picks it back up, client
     grid._lastRegrowTick = 0;
     tick(t2 + 3000);
     const snap = grid.rockStateSnapshot().find(e => e.k === r3.k);
-    assert.ok(snap && Math.abs(snap.s - REGROW.NEAR_RATE) < 1e-9, 'pace in the join snapshot');
+    assert.ok(snap && Math.abs(snap.s - REGROW.RISE_RATE * REGROW.NEAR_RATE) < 1e-9, 'pace in the join snapshot');
     const jg = { at: t2 + 3000, e0: snap.r, rate: clientRate(snap.s) };
     const tq = t2 + 7000;
     assert.ok(Math.abs(clientRise(jg, tq) / CLIENT_GROW_MS - grid.growthProgress(r3, tq)) < 1 / 400);
 });
 
-test('fast: a Bulwark rise keeps the old 8 s and ignores the tank next to it', () => {
+test('fast: a wipe or Bulwark rise runs at full pace and ignores the tank next to it', () => {
     reset();
     const rock = solidCell();
     const t0 = clock; clock += 100_000;
@@ -215,7 +225,7 @@ test('fast: a Bulwark rise keeps the old 8 s and ignores the tank next to it', (
     grid._lastRegrowTick = 0;
     let doneAt = 0;
     run(t0, t0 + 12_000, t => { if (!doneAt && rock.alive) doneAt = t; });
-    assert.ok(doneAt - t0 >= 8000 && doneAt - t0 < 8600, 'rose in ' + (doneAt - t0));
+    assert.ok(doneAt - t0 >= REGROW.RISE_MS && doneAt - t0 < REGROW.RISE_MS + 600, 'rose in ' + (doneAt - t0));
     assert.ok(!events(rock.k).some(e => e.r === 3), 'never slowed');
 });
 

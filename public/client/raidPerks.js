@@ -319,6 +319,14 @@ export function drawHud(c, o) {
 }
 
 const cardOpt = { bottom: 0 }, cardO = {};
+function lvPill(c, lv, x, cy, size) {
+    const light = A.HUD.theme === "light";
+    const w = A.hudTitleW(lv, size) + 8, h = size + 4;
+    A.rr(c, x, cy - h / 2, w, h, h / 2);
+    c.fillStyle = light ? "#8a6200" : GOLD; c.fill();
+    c.lineWidth = 1; c.strokeStyle = light ? "rgba(0,0,0,0.25)" : A.HUD.line; c.stroke();
+    A.hudTitle(lv, x + w / 2, cy, size, light ? "#ffffff" : INK, "center");
+}
 // QA: where the strip went
 export function stripBox() { return S.stripBox; }
 // ── the build strip ────────────────────────────────────────────────────
@@ -328,6 +336,13 @@ const PERK_COL = {
     hide: "#a9b4c8", rich: "#3fe0b0", reload: "#ff5ad8", quake: "#d9904a", vamp: "#e0473b",
 };
 function perkCol(p) { return PERK_COL[(p && (p.icon || p.id)) || ""] || "#e9e0cc"; }
+function deepCol(hex) {
+    const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ""));
+    if (!m) return "#333333";
+    const n = parseInt(m[1], 16);
+    const ch = (v) => Math.round(v * 0.6).toString(16).padStart(2, "0");
+    return "#" + ch((n >> 16) & 255) + ch((n >> 8) & 255) + ch(n & 255);
+}
 const ROMAN = ["", "I", "II", "III", "IV", "V"];
 const perkLabel = (p) => (p.name || p.id) + " " + (ROMAN[p.n | 0] || "I");
 
@@ -351,15 +366,13 @@ function drawStrip(c, o, st, view, now) {
     if (S.stripFor !== st || S.stripMinX !== minX || S.stripChip !== chip0 || S.stripWx !== w0.x || S.stripWy !== w0.y) {
         S.stripFor = st; S.stripMinX = minX; S.stripChip = chip0; S.stripWx = w0.x; S.stripWy = w0.y;
         const s0 = L.STRIP.s;
-        const full = st.build.map(p => Math.round(s0 + 4 + A.hudTitleW(perkLabel(p), 12) + 10));
         const lvl = st.build.map(p => Math.round(s0 + 2 + A.hudTitleW(ROMAN[p.n | 0] || "I", 12) + 8));
-        S.strip = L.stripPlan(w0, full, lvl, chip0, minX, 38);
+        S.strip = L.stripPlan(w0, lvl, lvl, chip0, minX, 38);
         S.stripTip = null;
     }
     const lay = S.strip;
     S.stripBox = lay ? lay.box : null;
     if (!lay) return;
-    const mode = lay.mode;
     // icons
     for (let i = 0; i < n; i++) {
         const p = st.build[i], r = lay.icons[i];
@@ -367,15 +380,10 @@ function drawStrip(c, o, st, view, now) {
         S.iconRects.push(r);
         const fl = p.id === S.flashId && now - S.flashAt < 1100 ? 1 - (now - S.flashAt) / 1100 : 0;
         const lift = fl * 6;
-        A.hudPanel(c, r.x, r.y - lift, r.w, r.h, { r: 7, lip: 2, fill: fl > 0.6 ? "#fff3d9" : "rgba(0,0,0,0.54)" });
-        drawPerkIcon(c, p, r.x + r.h / 2, r.y - lift + r.h / 2, r.h * 0.34);
-        // the name in the perk's colour, then its level in gold
-        const lv = ROMAN[p.n | 0] || "I", tx = r.x + r.h + 2, ty = r.y - lift + r.h / 2 + 0.5;
-        const ink = fl > 0.6 ? "#3a2c1a" : null;
-        if (mode === 2) {
-            A.hudTitle(p.name || p.id, tx, ty, 12, ink || "#fff3d9", "left");
-            A.hudTitle(lv, tx + A.hudTitleW((p.name || p.id) + " ", 12), ty, 12, ink || GOLD, "left");
-        } else A.hudTitle(lv, tx, ty, 12, ink || GOLD, "left");
+        A.hudPanel(c, r.x, r.y - lift, r.w, r.h, { r: 7, lip: 2, fill: fl > 0.6 ? "#ffffff" : H.chipSolid, stroke: H.edgeLine || undefined });
+        drawPerkIcon(c, p, r.x + r.h / 2, r.y - lift + r.h / 2, r.h * 0.36);
+        const lv = ROMAN[p.n | 0] || "I", tx = r.x + r.h + 1, ty = r.y - lift + r.h / 2 + 0.5;
+        lvPill(c, lv, tx, ty, 12);
         if (o.mouse && L.rectAt([r], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
             A.queueTip(perkLabel(p), (p.desc || "") + " You have level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + (global.aoWorld ? ", and it lasts for the rest of the day." : ", and it lasts the whole raid."), r.x + r.w / 2, r.y);
         }
@@ -384,7 +392,7 @@ function drawStrip(c, o, st, view, now) {
     if (lay.more) {
         const m = lay.more;
         S.iconRects.push(m);
-        A.hudPanel(c, m.x, m.y, m.w, m.h, { r: 7, lip: 2, fill: "rgba(0,0,0,0.6)" });
+        A.hudPanel(c, m.x, m.y, m.w, m.h, { r: 7, lip: 2, fill: A.HUD.chip });
         A.hudTitle("+" + m.n, m.x + m.w / 2, m.y + m.h / 2 + 0.5, 12, GOLD, "center");
         if (o.mouse && L.rectAt([m], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
             if (!S.stripTip) S.stripTip = lay.hidden.map(i => perkLabel(st.build[i])).join(", ") + ".";
@@ -411,8 +419,8 @@ function drawStrip(c, o, st, view, now) {
         const hov = o.mouse && L.rectAt([b], o.mouse.x, o.mouse.y) >= 0;
         A.hudPanel(c, b.x, b.y, b.w, b.h, { r: b.h / 2, lip: 2.5, fill: hov ? "#c58d1c" : GOLD_DK, stroke: H.line });
         // a little star, then the words, then the key
-        star(c, b.x + 13, b.y + b.h / 2, 6, 2.6, "#fff3d9");
-        A.hudTitle(chipTxt, b.x + 23, b.y + b.h / 2 + 0.5, 13, "#fff3d9", "left");
+        star(c, b.x + 13, b.y + b.h / 2, 6, 2.6, "#ffffff");
+        A.hudTitle(chipTxt, b.x + 23, b.y + b.h / 2 + 0.5, 13, "#ffffff", "left");
         if (!global.mobile) {
             const kx = b.x + 23 + A.hudTitleW(chipTxt, 13) + 7;
             A.hudKey(c, kx, b.y + 5, "Shift+1", b.h - 10);
@@ -422,7 +430,7 @@ function drawStrip(c, o, st, view, now) {
             // how many more are waiting behind this one
             const qx = b.x + 3, qy = b.y + 1;
             c.beginPath(); c.arc(qx, qy, 8, 0, TAU); c.fillStyle = "#e0473b"; c.fill(); c.lineWidth = 1.5; c.strokeStyle = H.line; c.stroke();
-            A.hudTitle(String(q + 1), qx, qy + 0.5, 10, "#fff3d9", "center");
+            A.hudTitle(String(q + 1), qx, qy + 0.5, 10, "#ffffff", "center");
         }
         if (hov && A.queueTip) A.queueTip("Pick a perk", (global.mobile ? "Tap to see your 3 choices." : "Click or press Shift+1 to see your 3 choices."), b.x + b.w / 2, b.y);
     } else if (showBadge) {
@@ -430,14 +438,14 @@ function drawStrip(c, o, st, view, now) {
         // a ring filling toward the next pick, your pick count inside
         const frac = waiting ? 1 : L.progress(score, st.next, st.step);
         const cx = b.x + b.w / 2, cy = b.y + b.h / 2, R = b.w / 2;
-        c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.fillStyle = "rgba(0,0,0,0.57)"; c.fill();
+        c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.fillStyle = A.HUD.chipOff; c.fill();
         c.lineWidth = 1.5; c.strokeStyle = H.line; c.stroke();
         if (frac > 0.01) {
             c.beginPath(); c.arc(cx, cy, R - 3.5, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
             c.lineWidth = 3.5; c.lineCap = "round"; c.strokeStyle = GOLD; c.stroke(); c.lineCap = "butt";
         }
         const tot = L.totalPicks(st.build);
-        if (tot > 0) A.hudTitle(String(tot), cx, cy + 0.5, 11, "#fff3d9", "center");
+        if (tot > 0) A.hudTitle(String(tot), cx, cy + 0.5, 11, "#ffffff", "center");
         else star(c, cx, cy, 5.5, 2.4, "rgba(255,243,217,0.55)");
         if (o.mouse && L.rectAt([b], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
             A.queueTip(global.aoWorld ? "Perks" : "Raid perks", "You get a perk every 5,000 points. Next one at " + L.fmtNum(st.next) + ", you have " + L.fmtNum(score) + ".", cx, b.y);
@@ -514,7 +522,7 @@ function drawHeader(c, hr, st, a, now) {
     const x = Math.round(cx - w / 2), h = hr.h;
     const y = Math.round(cy - h / 2);
     S.headRect = { x, y, w, h };
-    A.hudPanel(c, x, y, w, h, { r: h / 2, lip: 2, alpha: a, fill: "rgba(0,0,0,0.6)" });
+    A.hudPanel(c, x, y, w, h, { r: h / 2, lip: 2, alpha: a, fill: A.HUD.card });
     let tx = x + 12;
     c.save(); c.globalAlpha *= a;
     if (isNew) {
@@ -585,7 +593,7 @@ function drawCard(c, r, p, i, dy, sc, a, lit, compact, now) {
         const g = A.haloSprite("pkcard", "242,184,60", [[0, 0.45], [0.6, 0.12], [1, 0]]);
         c.drawImage(g, x - 30, y - 30, w + 60, h + 60);
     }
-    A.hudPanel(c, x, y, w, h, { r: 12, fill: "rgba(0,0,0,0.55)", lip: 3 });
+    A.hudPanel(c, x, y, w, h, { r: 12, fill: H.solid, lip: 3 });
     // the colour cap along the top
     c.save();
     A.rr(c, x, y, w, h, 12); c.clip();
@@ -600,15 +608,16 @@ function drawCard(c, r, p, i, dy, sc, a, lit, compact, now) {
     const ir = compact ? 15 : 19;
     const ix = x + 12 + ir, iy = y + (compact ? 9 + ir : 12 + ir) + bob;
     c.beginPath(); c.arc(ix, iy, ir, 0, TAU);
-    c.fillStyle = H.wellSolid; c.fill();
-    c.lineWidth = 2.2; c.strokeStyle = col; c.stroke();
-    drawPerkIcon(c, p, ix, iy, ir * 0.6);
+    c.fillStyle = H.chipSolid; c.fill();
+    c.lineWidth = 2.2; c.strokeStyle = H.theme === "light" ? deepCol(col) : col; c.stroke();
+    drawPerkIcon(c, p, ix, iy, ir * 0.62);
     // the level badge on the disc's lower right: what this pick makes it
     const lv = L.roman(L.nextLevel(p));
     const bh = compact ? 15 : 17, bw = Math.max(bh, A.hudTitleW(lv, bh * 0.68) + 9);
     const bx = ix + ir * 0.55, by = iy + ir * 0.5;
-    A.hudPanel(c, bx - bw / 2, by - bh / 2, bw, bh, { r: bh / 2, lip: 1.5, fill: (p.n | 0) > 0 ? GOLD : TEAL, stroke: H.line });
-    A.hudTitle(lv, bx, by + 0.5, bh * 0.68, INK, "center");
+    const lightCard = H.theme === "light";
+    A.hudPanel(c, bx - bw / 2, by - bh / 2, bw, bh, { r: bh / 2, lip: 1.5, fill: lightCard ? ((p.n | 0) > 0 ? "#8a6200" : "#0b6f78") : ((p.n | 0) > 0 ? GOLD : TEAL), stroke: H.line });
+    A.hudTitle(lv, bx, by + 0.5, bh * 0.72, lightCard ? "#ffffff" : INK, "center");
     // the key to press, top right (touch: nothing, the card is the button)
     let kx = x + w - 8;
     if (!global.mobile) {
@@ -633,7 +642,7 @@ function drawCard(c, r, p, i, dy, sc, a, lit, compact, now) {
         for (let k = 0; k < Math.min(max, 6); k++) {
             const px = nx + 4 + k * 12;
             c.beginPath(); c.arc(px, py, 3.8, 0, TAU);
-            c.fillStyle = k < have ? col : k === have ? "#fff3d9" : "rgba(255,255,255,0.12)"; c.fill();
+            c.fillStyle = k < have ? col : k === have ? "#ffffff" : "rgba(255,255,255,0.12)"; c.fill();
             c.lineWidth = 1.1; c.strokeStyle = H.line; c.stroke();
         }
         A.drawText(have > 0 ? "level " + lv + " of " + L.roman(max) : "new", nx + 4 + Math.min(max, 6) * 12 + 4, py + 0.5, 10.5, H.text2, "left", true, 1);
@@ -779,7 +788,7 @@ export function drawDeathIcons(c, x, y, s, a) {
     c.save(); c.globalAlpha *= a;
     let px = x;
     for (const p of b.slice(0, 10)) {
-        A.hudPanel(c, px, y - s / 2, s, s, { r: 5, lip: 1.5, fill: "rgba(0,0,0,0.55)" });
+        A.hudPanel(c, px, y - s / 2, s, s, { r: 5, lip: 1.5, fill: A.HUD.chipSolid, stroke: A.HUD.edgeLine || undefined });
         drawPerkIcon(c, p, px + s / 2, y, s * 0.34);
         px += s + 3;
     }

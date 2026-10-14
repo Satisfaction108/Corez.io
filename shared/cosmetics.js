@@ -369,7 +369,7 @@
         sk(140, 'sk_void', 'Void', 'legendary', 450,
             { pattern: 'void', seed: 1140, colors: ['void', 'amethyst', 'ghost'], emissive: { kind: 'pulse', speed: 0.35 } }),
         lv(sk(141, 'sk_lv_pumpkin', 'Pumpkin', 'common', 0,
-            { pattern: 'sunburst', seed: 1141, colors: ['orange', 'ink'], emissive: null }), 8),
+            { pattern: 'pumpkin', seed: 1141, colors: ['orange', 'ink'], emissive: null }), 8),
         lv(sk(142, 'sk_lv_coil', 'Copper Coil', 'uncommon', 0,
             { pattern: 'spiral', seed: 1142, colors: ['copper', 'gold'], arms: 3, emissive: null }), 16),
         lv(sk(143, 'sk_lv_crust', 'Geode Crust', 'rare', 0,

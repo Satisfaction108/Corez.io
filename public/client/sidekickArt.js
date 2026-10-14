@@ -18,7 +18,7 @@ const D2R = Math.PI / 180;
 // the HUD ink: the face, the outlines' dark end, name tag strokes
 export const INK = '#120e15';
 // arras barrel grey
-export const BARREL = '#a7a7af';
+export const BARREL = '#999999';
 // outline width, in body radii (the game's tank outline at a sidekick's size)
 export const LINE = 0.19;
 
@@ -33,7 +33,7 @@ export function mix(a, b, t) {
     return '#' + h2(x[0] + (y[0] - x[0]) * t) + h2(x[1] + (y[1] - x[1]) * t) + h2(x[2] + (y[2] - x[2]) * t);
 }
 // the outline of anything filled with `col`: a dark shade of it
-export const edgeOf = (col) => mix(col, INK, 0.62);
+export const edgeOf = (col) => mix(col, '#000000', 0.3);
 
 // The body colour actually drawn: the Locker colour, else the design's.
 // A skin never changes it (owner rule, Oct 6 2026); `look` is ignored here.

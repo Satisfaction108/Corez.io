@@ -34,6 +34,7 @@ const SHOPS = OUTPOSTS.filter(o => o.shop).map((o, i) => ({
 // (mapScale.area), so a spawn is never farther from a ready-made gap
 const SPAWN_PITS_REF = 48;
 const mapScale = require('./mapScale.js');
+const OpenLayout = require('./openLayout.js');
 const VAULT_R = 115;
 const OUTPOST_R = 135;
 const SHOP_R = 110;
@@ -109,6 +110,43 @@ function carveDisk(grid, wx, wy, r, canyonKeys) {
     }
 }
 
+function touchesOpen(grid, rock) {
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = grid.rocks.get((rock.vi + di) * 100003 + (rock.vj + dj));
+        if (n && !n.alive) return true;
+    }
+    return false;
+}
+
+function openLayoutPois(grid, circleR, o) {
+    const pois = [];
+    for (const v of grid.vaultSites || []) {
+        const centre = v.x === 0 && v.y === 0;
+        pois.push({ kind: 'vault', x: v.x, y: v.y, r: centre ? o.center_plaza : o.vault_plaza, pad: centre ? CENTER_CLEAR_R + 110 : VAULT_R + 145 });
+    }
+    for (const s of grid.shopSites || []) pois.push({ kind: 'shop', x: s.x, y: s.y, r: o.shop_plaza });
+    for (const spec of OUTPOSTS) {
+        pois.push({
+            kind: 'bank',
+            x: Math.cos(spec.ang) * spec.dist * circleR,
+            y: Math.sin(spec.ang) * spec.dist * circleR,
+            r: o.bank_plaza,
+        });
+    }
+    return pois;
+}
+
+function carveOpenLayout(grid, circleR, canyonKeys, cfg) {
+    const o = OpenLayout.settings(cfg);
+    if (!o) return null;
+    const res = OpenLayout.plan(grid, circleR, openLayoutPois(grid, circleR, o), o);
+    if (!res) return null;
+    for (const rock of res.carve) killRock(rock, canyonKeys);
+    if (o.ore_share > 0) grid.oreShare = o.ore_share;
+    grid.openLayout = { cells: res.cells, open: res.open, forced: res.forced, pillars: res.pillars, links: res.links };
+    return res;
+}
+
 // Deterministic 0..1 roll so ore splits evenly across the disk.
 function hash01(x, y, s) {
     let h = (Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 1284865837) ^
@@ -124,11 +162,15 @@ function hash01(x, y, s) {
 // The rock's biome (bOre, bUp from setBiomes) leans on it a little: fewer
 // rolls hit out in the sandstone, more in the magma and obsidian, and some
 // copper near the centre comes up as vein.
-function radialOre(rock, circleR, salt) {
+const ORE_SHARE = 0.24;
+function oreShareOf(grid) { return grid && grid.oreShare > 0 ? grid.oreShare : ORE_SHARE; }
+
+function radialOre(rock, circleR, salt, share) {
     const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
     const d = Math.min(1, Math.hypot(x, y) / Math.max(1, circleR));
     const r1 = hash01(rock.vi, rock.vj, salt + 101);
-    if (r1 >= 0.24 * (rock.bOre || 1)) return ORE.NONE; // ~24% of rocks hold ore, spread evenly
+    const odds = share > 0 ? share : oreShareOf(global.gameManager && global.gameManager.terrainGrid);
+    if (r1 >= odds * (rock.bOre || 1)) return ORE.NONE;
     if (global.royaleMods && global.royaleMods.ore === 'copper') return ORE.COPPER;
     const t = hash01(rock.vi, rock.vj, salt + 102);
     let ore;
@@ -220,12 +262,15 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         });
     }
 
+    const terrainCfg = typeof Config !== 'undefined' && Config.dig_royale_terrain;
+    if (!tutorial && terrainCfg && terrainCfg.open_layout) carveOpenLayout(grid, circleR, canyonKeys, terrainCfg.open_layout);
+
     // Re-roll ore radially: buildVoronoi assigned 2TDM's horizontal depth
     // tiers, which mean nothing on a circle.
     const salt = grid.oreSalt || 7;
     for (const rock of grid.rocks.values()) {
         if (!rock.alive || canyonKeys.has(rock.k)) continue;
-        const ore = radialOre(rock, circleR, salt);
+        const ore = radialOre(rock, circleR, salt, oreShareOf(grid));
         rock.ore = ore;
         // plain rock too: biome x ore toughness
         rock.maxHealth = grid.plainRockHealth * (ORE_HP[ore] || 1) * rockTough(rock, ore);
@@ -283,9 +328,11 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     }
 
     const candidates = [];
+    const pitsInsideRock = !!grid.openLayout;
     for (const rock of grid.rocks.values()) {
         // a pit is a killed rock: never one of the emeralds placed above
         if (!rock.alive || canyonKeys.has(rock.k) || rock.ore === ORE.EMERALD) continue;
+        if (pitsInsideRock && touchesOpen(grid, rock)) continue;
         const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
         const d = Math.hypot(x, y);
         if (d < CENTER_CLEAR_R + 80 || d > circleR - 160) continue;
@@ -366,4 +413,4 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     } catch { /* spawns stay normal strength */ }
 }
 
-module.exports = { apply, carveMatchPois, OUTPOSTS, SHOPS, ORE, radialOre, setBiomes, hash01, carveDisk, killRock };
+module.exports = { apply, carveMatchPois, carveOpenLayout, openLayoutPois, OUTPOSTS, SHOPS, ORE, ORE_SHARE, oreShareOf, radialOre, setBiomes, hash01, carveDisk, killRock };

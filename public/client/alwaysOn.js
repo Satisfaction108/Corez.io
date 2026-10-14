@@ -16,14 +16,6 @@ const KIND_COL = {
     boss: "#ff8a5c",
     meteor: "#ffb347",
 };
-const KIND_HINT = {
-    storm: "Get inside the circle and stay alive",
-    core: "Break the Core for a share of its gems",
-    rush: "Mine the rich rock and bank what you find",
-    hill: "Hold the ground around the vault",
-    boss: "Hurt the boss and land the last hit",
-    meteor: "Grab the ore the meteors leave behind",
-};
 const RESULT_MS = 9000;
 
 const S = {
@@ -157,25 +149,13 @@ export function hudNotes(push, hudNote, HUD) {
     if (!a) return;
     const r = global.royale || {};
     const yao = (r.you && r.you.ao) || {};
-    if (a.ev) {
-        const ev = a.ev;
-        const col = KIND_COL[ev.k] || HUD.gold;
-        const me = global.player || {};
-        const myName = global.playerName || "";
-        const rivals = ev.k === "hill" && ev.ct ? (ev.ns || []).filter(n => n && n !== myName).slice(0, 2) : [];
-        const onPad = ev.k === "hill" && isFinite(me.renderx) && Math.hypot(me.renderx - ev.x, me.rendery - ev.y) < (ev.pr || 130);
-        if (onPad && !global.died) push(hudNote(1, "aohillpad", "Step off the vault pad into the ring to score", HUD.gold));
-        else if (ev.k === "hill" && ev.ct) push(hudNote(1, "aohill", "The hill is contested" + (rivals.length ? " by " + rivals.join(" and ") : "") + ", so points are halved", HUD.danger));
-        else if (ev.k === "rush" && yao.eh > 0) push(hudNote(1, "aoheld", "Bank your " + num(yao.eh) + " rush gems to score them", HUD.gold));
-        else if (yao.epl > 0) push(hudNote(2, "aome", "You're " + ordinal(yao.epl) + " in " + ev.n + " with " + num(yao.ep) + " points", col));
-        else push(hudNote(2, "aohint", ev.n + " in " + ev.w + ": " + (KIND_HINT[ev.k] || "Join in"), col));
-        return;
-    }
-    if (a.nx) {
-        const left = nextLeft();
-        if (a.nx.a) push(hudNote(1, "aosoon", a.nx.n + " starts in " + clock(left) + " in " + a.nx.w, KIND_COL[a.nx.k] || HUD.gold));
-        else push(hudNote(2.5, "aonext", "Next event in " + clock(left) + ": " + a.nx.n + " in " + a.nx.w, HUD.text2));
-    }
+    if (!a.ev) return;
+    const ev = a.ev;
+    const me = global.player || {};
+    const onPad = ev.k === "hill" && isFinite(me.renderx) && Math.hypot(me.renderx - ev.x, me.rendery - ev.y) < (ev.pr || 130);
+    if (onPad && !global.died) push(hudNote(1, "aohillpad", "Step off the vault pad into the ring to score", HUD.head));
+    else if (ev.k === "hill" && ev.ct) push(hudNote(1, "aohill", "The hill is contested, so points are halved", HUD.head));
+    else if (ev.k === "rush" && yao.eh > 0) push(hudNote(1, "aoheld", "Bank your " + num(yao.eh) + " rush gems to score them", HUD.gold));
 }
 
 export function resultUp() {
@@ -192,7 +172,7 @@ export function drawResult(c, cx, y, api) {
     const A = Math.min(1, age / 250, (RESULT_MS - age) / 400);
     const W = Math.min(340, global.screenWidth - 40), H = 76;
     const x = Math.round(cx - W / 2);
-    api.hudPanel(c, x, y, W, H, { alpha: A, fill: HUD.solid });
+    api.hudPanel(c, x, y, W, H, { alpha: A, fill: HUD.card, r: HUD.rBig });
     const col = KIND_COL[res.k] || HUD.gold;
     api.hudTitle(res.n + " results", cx, y + 15, 15, col, "center", A);
     const top = res.top || [];
@@ -322,10 +302,8 @@ export function standingsFoot() {
     if (!a) return null;
     const place = r.place | 0;
     const left = resetLeft();
-    const line1 = (place > 0 ? "You're " + ordinal(place) + " today" : "Score to get on the board") + "  ·  Resets in " + longClock(left);
-    const ch = a.ch || [];
-    const line2 = ch.length ? "Yesterday's champions: " + ch.map(x => x.n).join(", ") : "";
-    return { line1, line2 };
+    const line1 = place > 0 ? "Resets in " + longClock(left) : "Score points to get on the board";
+    return { line1, line2: "" };
 }
 
 export function onFX(kind) {

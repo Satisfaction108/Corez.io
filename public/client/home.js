@@ -2,24 +2,43 @@
     'use strict';
 
     var THEME_KEY = 'osaHomeTheme';
+    var BAR_COLORS = { light: '#e4e4e4', dark: '#2a2b30' };
     var root = document.documentElement;
 
-    function applyTheme(t) {
-        root.setAttribute('data-theme', t);
-        localStorage.setItem(THEME_KEY, t);
+    function storedTheme() {
+        try { return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light'; } catch (e) { return 'light'; }
+    }
+    function syncThemeChrome() {
+        var t = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
         var icon = document.getElementById('themeIcon');
         if (icon) icon.textContent = t === 'light' ? '\u2600' : '\u263E';
+        var bar = document.querySelector('meta[name="theme-color"]');
+        if (bar) bar.setAttribute('content', BAR_COLORS[t]);
+    }
+    function applyTheme(t) {
+        root.setAttribute('data-theme', t);
+        try { localStorage.setItem(THEME_KEY, t); } catch (e) { }
+        syncThemeChrome();
+    }
+    applyTheme(storedTheme());
+    new MutationObserver(syncThemeChrome).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+
+    function syncFresh() {
+        var F = window.DWFunnel;
+        if (F && F.hasPlayed && F.hasPlayed()) root.classList.remove('dw-fresh');
     }
 
-    // Dark is the default; dwThemeV3 switches everyone to it once, then the
-    // toggle sticks.
-    try {
-        if (!localStorage.getItem('dwThemeV3')) { localStorage.setItem(THEME_KEY, 'dark'); localStorage.setItem('dwThemeV3', '1'); }
-    } catch (e) { /* private mode: default below */ }
-    applyTheme(localStorage.getItem(THEME_KEY) || 'dark'); // immediate, no flash
-    // account gate, see client/account/main.js. Only someone who logged out
-    // ('new' is stored then) gets it on load: a first-time visitor plays as a
-    // guest straight away, and so does a portal frame.
+    var freshLogin = document.getElementById('freshLogin');
+    if (freshLogin) freshLogin.onclick = function () {
+        var a = window.dwAccount, F = window.DWFunnel;
+        if (a && a.openLogin) return a.openLogin();
+        if (F && F.withAccountUi) F.withAccountUi(function (acct) { if (acct.openLogin) acct.openLogin(); });
+    };
+
+    window.dwHomeWorld = window.dwHomeWorld || {
+        ready: function () { return !!document.getElementById('homeBackdrop'); }
+    };
+
     var acctHint = localStorage.getItem('dwAcctHint') || 'guest';
     document.documentElement.setAttribute('data-acct', window.dwEmbed && acctHint === 'new' ? 'guest' : acctHint);
 
@@ -269,12 +288,12 @@
             if (!champs.length && !top.length) return;
             var box = document.createElement('div');
             box.id = 'aoChampions';
-            box.style.cssText = 'margin:10px auto 2px;text-align:center;font-size:13px;line-height:1.5;opacity:.92';
+            box.className = 'ao-champs';
             if (champs.length) {
                 var a = document.createElement('div');
                 var lab = document.createElement('b');
+                lab.className = 'ao-label';
                 lab.textContent = "Yesterday's champions: ";
-                lab.style.color = '#f2b83c';
                 a.appendChild(lab);
                 a.appendChild(document.createTextNode(champs.map(function (c) { return c.place + '. ' + c.name; }).join(',  ')));
                 box.appendChild(a);
@@ -283,8 +302,8 @@
                 var b = document.createElement('div');
                 var mins = Math.max(1, Math.ceil((d.resetIn || 0) / 60000));
                 var left = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm';
+                b.className = 'ao-lead';
                 b.textContent = top[0].name + ' leads today with ' + (top[0].score | 0).toLocaleString('en-US') + ' points. The board resets in ' + left + '.';
-                b.style.opacity = '.8';
                 box.appendChild(b);
             }
             holder.parentNode.insertBefore(box, holder.nextSibling);
@@ -301,7 +320,8 @@
         // #dw no longer routes anywhere (Dig Wars is parked); drop a stale hash.
         if (location.hash === '#dw') { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; } }
 
-        applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+        applyTheme(storedTheme());
+        syncFresh();
 
         var fsBtn = document.getElementById('homeFullscreenBtn');
         if (fsBtn) {
@@ -542,40 +562,27 @@
             };
         });
 
-        var canvas = document.getElementById('snowCanvas');
-        if (!canvas) return;
-        var ctx = canvas.getContext('2d');
-        var W = 0, H = 0, dpr = 1;
-        var homeFxOn = true;
-        var homeFxRaf = 0;
-        var reduceMotion = window.matchMedia &&
-            window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        var world = window.dwHomeWorld || null;
-        var worldIn = 0, worldWanted = false, worldTimer = 0;
+        var world = window.dwHomeWorld && window.dwHomeWorld.build ? window.dwHomeWorld : null;
+        var canvas = document.getElementById('homeWorldCanvas');
+        var ctx = canvas ? canvas.getContext('2d') : null;
+        var W = 0, H = 0, dpr = 1, homeFxOn = true, homeFxRaf = 0, homeFxLast = 0;
+        var reduceMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+        var worldIn = 0, worldWanted = false, worldTimer = 0, bakeGen = 0, bakedOnce = false;
         var idle = window.requestIdleCallback
             ? function (f) { requestIdleCallback(f, { timeout: 500 }); }
             : function (f) { setTimeout(f, 16); };
-        var bakeGen = 0;
-        // the rock is drawn a slice at a time (<= ~8 ms each) in idle moments.
-        // The first bake of a page is a cheap low-detail one (a quarter of the
-        // pixels), so the world is there within a few frames of first paint;
-        // the full one follows and swaps in (same seed, same field).
-        var bakedOnce = false;
         function bakeWorld(lo) {
             worldTimer = 0;
-            if (!world || !homeFxOn) return;
-            var gen = ++bakeGen;
-            var cheap = lo === true || (!bakedOnce && dpr > 0.75);
+            if (!world || !homeFxOn || !ctx) return;
+            var gen = ++bakeGen, cheap = lo === true || (!bakedOnce && dpr > 0.75);
             try { world.build(W, H, cheap ? 0.5 : dpr, root.getAttribute('data-theme') === 'light'); } catch (e) { world = null; return; }
             (function slice() {
                 if (gen !== bakeGen || !world || !homeFxOn) return;
                 var done;
                 try { done = world.step(8); } catch (e) { world = null; return; }
-                // the cheap one doesn't wait for idle time (up to 500 ms a slice while
-                // the game bundle loads); 8 ms slices still leave the page live
                 if (!done) { if (cheap) setTimeout(slice, 0); else idle(slice); return; }
                 bakedOnce = true;
-                if (!homeFxRaf) drawHomeFx();
+                if (!homeFxRaf) drawHomeFx(performance.now());
                 if (cheap) worldTimer = setTimeout(function () { idle(function () { bakeWorld(false); }); }, 400);
             })();
         }
@@ -585,16 +592,8 @@
             clearTimeout(worldTimer);
             worldTimer = setTimeout(function () { idle(bakeWorld); }, delay);
         }
-        // right after first paint, not on 'load' (which waits for the whole
-        // game bundle, fonts and images: playtest 9 saw a plain purple
-        // backdrop for a while). The slices run in idle time, so Play stays live.
-        if (world) {
-            var firstPaint = function () { requestAnimationFrame(function () { setTimeout(function () { wantWorld(0); }, 0); }); };
-            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', firstPaint);
-            else firstPaint();
-        }
-
-        function resize() {
+        function resizeWorld() {
+            if (!ctx) return;
             dpr = Math.min(window.devicePixelRatio || 1, 2);
             W = window.innerWidth;
             H = window.innerHeight;
@@ -602,137 +601,53 @@
             canvas.height = Math.max(1, Math.floor(H * dpr));
             canvas.style.width = W + 'px';
             canvas.style.height = H + 'px';
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             if (worldWanted) wantWorld(150);
-            if (reduceMotion && !homeFxRaf && window.dwCalmZone) drawHomeFx();
+            if (reduceMotion && !homeFxRaf) drawHomeFx(performance.now());
         }
-        resize();
-        window.addEventListener('resize', resize);
-        new MutationObserver(function () {
-            if (worldWanted) wantWorld(0);
-        }).observe(root, {
-            attributes: true, attributeFilter: ['data-theme']
-        });
-
-        // Light theme: a calm patch behind the card and the side notes. The
-        // background canvases cut a soft hole there (the sky behind shows
-        // through), so tanks, candy corn and bursts fade out before they
-        // reach the panels. The mask is baked when the panels move or
-        // resize; a frame is one drawImage per canvas.
-        var calm = { dirty: true, x: 0, y: 0, w: 0, h: 0, spr: null };
-        var CALM_PAD = 64, CALM_MARGIN = 22;
-        function calmPanels() {
-            var a = document.querySelector('.startMenu');
-            var b = document.getElementById('lobbySide');
-            var l = document.getElementById('homeLeft');
-            return [a, b && !b.hidden && b.offsetParent ? b : null, l && l.offsetParent ? l : null];
-        }
-        function bakeCalm() {
-            calm.dirty = false;
-            calm.w = 0;
-            var els = calmPanels();
-            var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-            for (var i = 0; i < els.length; i++) {
-                if (!els[i]) continue;
-                var r = els[i].getBoundingClientRect();
-                if (!(r.width > 0 && r.height > 0)) continue;
-                x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top); x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom);
-            }
-            if (!(x1 > x0)) return;
-            calm.x = x0 - CALM_MARGIN; calm.y = y0 - CALM_MARGIN;
-            calm.w = x1 - x0 + CALM_MARGIN * 2; calm.h = y1 - y0 + CALM_MARGIN * 2;
-            var k = Math.min(dpr, 1);
-            var c = calm.spr || document.createElement('canvas');
-            c.width = Math.ceil((calm.w + CALM_PAD * 2) * k);
-            c.height = Math.ceil((calm.h + CALM_PAD * 2) * k);
-            var g = c.getContext('2d');
-            g.clearRect(0, 0, c.width, c.height);
-            // the blur comes from a shadow cast by a shape drawn off the canvas
-            var off = c.width + 50;
-            g.shadowColor = '#000';
-            g.shadowBlur = CALM_PAD * 0.75 * k;
-            g.shadowOffsetX = off;
-            g.fillStyle = '#000';
-            g.beginPath();
-            if (g.roundRect) g.roundRect(CALM_PAD * k - off, CALM_PAD * k, calm.w * k, calm.h * k, 36 * k);
-            else g.rect(CALM_PAD * k - off, CALM_PAD * k, calm.w * k, calm.h * k);
-            g.fill();
-            calm.spr = c;
-        }
-        function calmOn() { return homeFxOn && root.getAttribute('data-theme') === 'light' && !document.body.classList.contains('in-game'); }
-        window.dwCalmZone = {
-            apply: function (c) {
-                if (!calmOn()) return;
-                if (calm.dirty) bakeCalm();
-                if (!calm.w || !calm.spr) return;
-                c.save();
-                c.globalCompositeOperation = 'destination-out';
-                c.globalAlpha = 0.94;
-                c.drawImage(calm.spr, calm.x - CALM_PAD, calm.y - CALM_PAD, calm.w + CALM_PAD * 2, calm.h + CALM_PAD * 2);
-                c.restore();
-            }
-        };
-        var markCalm = function () { calm.dirty = true; };
-        window.addEventListener('resize', markCalm);
-        window.addEventListener('scroll', markCalm, true);
-        if (window.ResizeObserver) {
-            var ro = new ResizeObserver(markCalm);
-            var els0 = calmPanels();
-            if (els0[0]) ro.observe(els0[0]);
-            var side = document.getElementById('lobbySide');
-            if (side) {
-                ro.observe(side);
-                new MutationObserver(markCalm).observe(side, { attributes: true, attributeFilter: ['hidden'] });
-            }
-            // the come-back card left of the menu: shows up when its Raid Night or daily card
-            var left = document.getElementById('homeLeft');
-            if (left) {
-                ro.observe(left);
-                new MutationObserver(markCalm).observe(left, { attributes: true, subtree: true, attributeFilter: ['hidden'] });
-            }
-        } else setInterval(markCalm, 1000);
-
-        function drawHomeFx() {
+        function drawHomeFx(now) {
             homeFxRaf = 0;
-            if (!homeFxOn) return;
+            if (!homeFxOn || !ctx) return;
+            if (!reduceMotion) homeFxRaf = requestAnimationFrame(drawHomeFx);
+            if (!reduceMotion && now - homeFxLast < 32) return;
+            homeFxLast = now;
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.clearRect(0, 0, W, H);
-            var live = world && world.ready();
-            if (live) {
-                worldIn = reduceMotion ? 1 : Math.min(1, worldIn + 0.05);
-                world.draw(ctx, performance.now(), reduceMotion, worldIn);
+            if (world && world.ready()) {
+                worldIn = reduceMotion ? 1 : Math.min(1, worldIn + 0.1);
+                world.draw(ctx, now, reduceMotion, worldIn);
             }
             ctx.globalAlpha = 1;
-            // reduced motion: one still frame (again on resize and theme)
-            if (!reduceMotion) homeFxRaf = requestAnimationFrame(drawHomeFx);
         }
-        drawHomeFx();
+        if (world && ctx) {
+            resizeWorld();
+            window.addEventListener('resize', resizeWorld);
+            requestAnimationFrame(function () { setTimeout(function () { wantWorld(0); }, 0); });
+            new MutationObserver(function () { if (worldWanted) wantWorld(0); }).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+            drawHomeFx(performance.now());
+        }
 
         var homeUI = [
             document.getElementById('themeToggleBtn'),
             document.getElementById('homeSettingsBtn'),
             document.getElementById('homeChangelogBtn'),
             document.getElementById('homeSidebar'),
-            document.getElementById('snowCanvas'),
-            document.getElementById('homeFireworkCanvas')
+            document.getElementById('homeBackdrop')
         ];
         var smw = document.getElementById('startMenuWrapper');
         if (smw) {
             new MutationObserver(function () {
                 var hidden = smw.style.display === 'none' || parseInt(smw.style.top) < -100;
                 homeUI.forEach(function (el) { if (el) el.style.display = hidden ? 'none' : ''; });
-                // mark in-game so the shared settings panel keeps its dark,
-                // unchangeable look while playing (homepage follows the theme)
                 document.body.classList.toggle('in-game', hidden);
-                if (hidden) { closeCL(); closeP(); setDropdownOpen(false); }
                 homeFxOn = !hidden;
-                // the baked world is a big canvas: let it go while playing
-                if (hidden && world) { world.release(); worldIn = 0; }
-                else if (!hidden && worldWanted) wantWorld(0);
-                if (homeFxOn && !homeFxRaf) drawHomeFx();
-                else if (!homeFxOn && homeFxRaf) {
-                    cancelAnimationFrame(homeFxRaf);
-                    homeFxRaf = 0;
+                if (hidden) {
+                    closeCL(); closeP(); setDropdownOpen(false);
+                    if (homeFxRaf) { cancelAnimationFrame(homeFxRaf); homeFxRaf = 0; }
+                    if (world) { world.release(); worldIn = 0; }
+                } else {
+                    syncFresh();
+                    if (world && worldWanted) wantWorld(0);
+                    if (ctx && !homeFxRaf) drawHomeFx(performance.now());
                 }
             }).observe(smw, { attributes: true, attributeFilter: ['style'] });
         }

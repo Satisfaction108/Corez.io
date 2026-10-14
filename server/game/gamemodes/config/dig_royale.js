@@ -33,5 +33,22 @@ module.exports = {
         // shrink is front-loaded, so few-player raids meet up as before.
         room_width: 20,
         room_height: 20,
+        open_layout: {
+            open_target: 0.26,
+            center_plaza: 460,
+            vault_plaza: 520,
+            shop_plaza: 360,
+            bank_plaza: 440,
+            corridor_width: 560,
+            corridor_wander: 0.1,
+            extra_links: 0,
+            center_links: 2,
+            cave_cells: 8,
+            rim_wall: 400,
+            pillars_per_vault: 0,
+            min_island_cells: 4,
+            min_pocket_cells: 12,
+            ore_share: 0.32,
+        },
     },
 };

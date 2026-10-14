@@ -50,11 +50,10 @@ function openBase(plotIndex) {
     try { require('./terrain/outposts.js').lockSite(plotIndex, false); } catch (e) { }
 }
 
-// Learners are TEAM_BLUE internally (vault and base rules key off it) but wear
-// a Dig Royale palette colour. Red (12) is excluded: practice bots are red.
+const RED_LIKE = new Set([49, 58]);
 function learnerColor(socket) {
     if (socket && socket._tutColor != null) return socket._tutColor;
-    const pal = (global.ROYALE_PALETTE || [10]).filter(c => c !== 12);
+    const pal = (global.ROYALE_PALETTE || [48]).filter(c => !RED_LIKE.has(c));
     const c = pal[Math.floor(Math.random() * pal.length)];
     if (socket) socket._tutColor = c;
     return c;

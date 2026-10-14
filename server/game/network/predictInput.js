@@ -131,8 +131,10 @@ function advert(socket, Config) {
     try { dash = require("../terrain/abilities.js").DASH; } catch (e) { dash = null; }
     const W = gm && gm.room ? gm.room.width : 0, H = gm && gm.room ? gm.room.height : 0;
     const rect = Config.arena_shape !== "circle" && W > 0 && H > 0;
+    const dc = require("../../miscFiles/drive.js").CFG;
     socket.talk("PZ", 1, gm.roomSpeed || 1, rect ? W : 0, rect ? H : 0, rect ? Config.room_bound_force : 0,
-        dash ? dash.mult : 0, dash ? dash.minSpeed : 0, dash ? dash.ms : 0);
+        dash ? dash.mult : 0, dash ? dash.minSpeed : 0, dash ? dash.ms : 0,
+        dc.on ? dc.riseMs : 0, dc.on ? dc.stopMs : 0, dc.on ? dc.turnMs : 0, dc.on ? dc.turnCarry : 0);
 }
 
 module.exports = { enabled, enqueue, legacy, tick, ackWord, advert, applyCommand, forced, SEQ_MOD };

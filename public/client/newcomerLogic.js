@@ -67,6 +67,12 @@ export function calloutAllowed(kind, nx) {
     const min = CALLOUT_STAGE[kind];
     return min == null || nx >= min;
 }
+const PLATE_DROP = { chest: 1, contract: 1, dropin: 1, streak: 1, grown: 1, quest: 1, override: 1, nx: 1, level: 1 };
+export function plateWanted(kind, text) {
+    if (PLATE_DROP[kind]) return false;
+    if (kind === "bounty") return /claimed|outlasted/i.test(String(text || ""));
+    return true;
+}
 // the kill feed before stage 1: only lines with your name in them
 export function feedAllowed(f, nx, myName) {
     if (nx >= MIN_STAGE.feed) return true;

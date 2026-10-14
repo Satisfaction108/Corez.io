@@ -38,6 +38,7 @@ export function init(helpers) { A = helpers; juice.setSlamHold(landAt); }
 
 const TAU = Math.PI * 2;
 const GOLD = "#f2b83c";
+const CRATE_MARK = "#6ff5a8", CRATE_INK = "#2c2013", CHUTE = "#f3efe6", CHUTE_BAND = "#3cc07a";
 const calm = () => !!(global.reducedMotion && global.reducedMotion());
 const lite = () => !!config.graphical.fewerEffects;
 const softGpu = () => { const tr = window.terrainRenderer; return !!(tr && tr._rockQuality != null && tr._rockQuality < 1); };
@@ -296,7 +297,7 @@ export function drawGround(c, px, py, ratio) {
         }
         if (!opened) { c.save(); c.lineCap = "round"; opened = true; }
         const k = age / d.ms, h = heightOf(d, k);
-        const col = self || d.crate ? GOLD : "#ffd9a0";
+        const col = d.crate ? CRATE_MARK : self ? GOLD : "#ffd9a0";
         // the sound barrier, two thirds of the way down: a ring where it is in the air
         if (!d.boom && k > 0.62 && !d.rock) {
             d.boom = true;
@@ -475,18 +476,47 @@ function drawHaze(c, now) {
     c.restore();
 }
 
-// the supply crate in the air: a banded box, tumbling a little
 function drawCrate(c, x, y, s, now) {
+    const spr = A && A.crateSprite ? A.crateSprite() : null;
+    const sway = calm() ? 0 : Math.sin(now / 240) * 0.1;
     c.save();
     c.translate(x, y);
-    c.rotate(calm() ? 0.3 : 0.3 + Math.sin(now / 160) * 0.25);
+    c.rotate(Math.atan2(DIR_Y, DIR_X) - Math.PI / 2 + sway);
     c.lineJoin = "round";
-    c.fillStyle = "#145c36"; c.strokeStyle = "#120e15"; c.lineWidth = Math.max(2, s * 0.14);
-    c.fillRect(-s, -s, s * 2, s * 2); c.strokeRect(-s, -s, s * 2, s * 2);
-    c.fillStyle = "#6ff5a8";
-    c.fillRect(-s, -s * 0.18, s * 2, s * 0.36);
-    c.fillRect(-s * 0.18, -s, s * 0.36, s * 2);
-    c.strokeRect(-s * 0.18, -s * 0.18, s * 0.36, s * 0.36);
+    c.lineCap = "round";
+    const top = -s * 2.3, cw = s * 1.3, ch = s * 0.8, lw = Math.max(1.5, s * 0.09);
+    c.beginPath();
+    c.moveTo(-cw * 0.96, top + ch * 0.05); c.lineTo(-s * 0.62, -s * 0.66);
+    c.moveTo(-cw * 0.34, top + ch * 0.22); c.lineTo(-s * 0.2, -s * 0.74);
+    c.moveTo(cw * 0.34, top + ch * 0.22); c.lineTo(s * 0.2, -s * 0.74);
+    c.moveTo(cw * 0.96, top + ch * 0.05); c.lineTo(s * 0.62, -s * 0.66);
+    c.strokeStyle = CRATE_INK; c.lineWidth = Math.max(1, s * 0.045); c.stroke();
+    c.beginPath();
+    c.moveTo(-cw, top);
+    c.bezierCurveTo(-cw, top - ch * 1.35, cw, top - ch * 1.35, cw, top);
+    for (let i = 3; i >= 0; i--) {
+        const x1 = -cw + (i + 1) * cw / 2, x0 = -cw + i * cw / 2;
+        c.quadraticCurveTo((x0 + x1) / 2, top + ch * 0.32, x0, top);
+    }
+    c.closePath();
+    c.fillStyle = CHUTE; c.fill();
+    c.save(); c.clip();
+    c.fillStyle = CHUTE_BAND;
+    c.fillRect(-cw * 0.62, top - ch * 1.5, cw * 0.38, ch * 2);
+    c.fillRect(cw * 0.24, top - ch * 1.5, cw * 0.38, ch * 2);
+    c.fillStyle = "rgba(0,0,0,0.12)"; c.fillRect(-cw * 1.1, top - ch * 0.25, cw * 2.2, ch);
+    c.restore();
+    c.strokeStyle = CRATE_INK; c.lineWidth = lw; c.stroke();
+    if (spr) {
+        const R = s / 0.78, h = R * (A.crateSpriteR || 1.4);
+        c.drawImage(spr, -h, -h, h * 2, h * 2);
+    } else {
+        c.fillStyle = "#c6955a"; c.strokeStyle = CRATE_INK; c.lineWidth = lw;
+        c.fillRect(-s, -s, s * 2, s * 2); c.strokeRect(-s, -s, s * 2, s * 2);
+        c.fillStyle = CHUTE_BAND;
+        c.fillRect(-s, -s * 0.16, s * 2, s * 0.32);
+        c.fillRect(-s * 0.16, -s, s * 0.32, s * 2);
+    }
     c.restore();
 }
 

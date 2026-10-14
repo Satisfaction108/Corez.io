@@ -1,15 +1,3 @@
-// The raid storm, drawn: a dark sky over everything outside the safe circle
-// with clouds blowing through it, rain, now and then a small lightning bolt,
-// and a bright, crisp edge so it's always obvious where safety starts. Also
-// the "get out" warning (banner, arrow, screen-edge vignette) while you're in
-// it, and the storm on the minimap and the big map.
-//
-// Everything costly is baked once: two cloud tiles (drawn as repeating
-// patterns), the lightning glow and the vignettes. A frame is a clip, a few
-// fills and a handful of strokes, with no allocations.
-//
-// app.js calls drawWorld (floor layer, under the tanks), drawHud (gui layer)
-// and drawMap, and hands over its text helpers through init.
 import { global } from "./global.js";
 import { config } from "./config.js";
 import { gameSound } from "./sound.js";
@@ -21,124 +9,20 @@ const TAU = Math.PI * 2;
 const calm = () => !!(global.reducedMotion && global.reducedMotion());
 const lite = () => !!config.graphical.fewerEffects;
 const glowOn = () => !config.graphical.noGlow && !global.lowFx;
-// software WebGL (the terrain renderer found no GPU): the 2D canvas is almost
-// always software too, and every full-screen fill there costs ~2 ms
 const softGpu = () => { const tr = window.terrainRenderer; return !!(tr && tr._rockQuality != null && tr._rockQuality < 1); };
 
-// wind: the clouds and the rain lean this way (world units per second)
-const WIND_ANG = -0.42;
-const WIND_X = Math.cos(WIND_ANG), WIND_Y = Math.sin(WIND_ANG);
+const WIND_X = Math.cos(-0.42);
 
-// small stable hash, 0..1
 function hash(i, k) {
     const v = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
     return v - Math.floor(v);
 }
 
-// ── baked pieces ───────────────────────────────────────────────────────
-const TILE = 512;
-const SKY = "rgba(30, 20, 66, 0.56)";
-let cloudFar = null, cloudNear = null;
-// Flat cloud shapes: each cloud is a union of circles filled once (no
-// darker overlaps), a shadow tone under a body tone under a highlight. The
-// tile wraps, so every circle is also drawn on the far side of any edge it
-// crosses.
-function bakeClouds(seed, count, rMin, rMax, tones, sky) {
-    const cv = document.createElement("canvas");
-    cv.width = cv.height = TILE;
-    const g = cv.getContext("2d");
-    // the far layer carries the sky tint too ("over" is associative, so
-    // this looks the same as a flat fill under the clouds and saves a fill)
-    if (sky) { g.fillStyle = sky; g.fillRect(0, 0, TILE, TILE); }
-    if ("filter" in g) g.filter = "blur(3px)";
-    const clouds = [];
-    for (let i = 0; i < count; i++) {
-        const x = hash(seed + i, 1) * TILE, y = hash(seed + i, 2) * TILE;
-        const n = 3 + Math.floor(hash(seed + i, 3) * 4);
-        const base = rMin + (rMax - rMin) * hash(seed + i, 4);
-        const puffs = [];
-        for (let j = 0; j < n; j++) {
-            const t = n > 1 ? j / (n - 1) - 0.5 : 0;
-            puffs.push({
-                x: x + t * base * 2.4 + (hash(seed + i, 10 + j) - 0.5) * base * 0.5,
-                y: y + (hash(seed + i, 20 + j) - 0.5) * base * 0.7,
-                r: base * (0.55 + 0.5 * hash(seed + i, 30 + j)) * (1 - Math.abs(t) * 0.6),
-            });
-        }
-        clouds.push(puffs);
-    }
-    for (const tone of tones) {
-        g.fillStyle = tone.col;
-        for (const puffs of clouds) {
-            g.beginPath();
-            for (const p of puffs) {
-                const r = p.r * tone.scale;
-                for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
-                    const x = p.x + tone.dx + ox * TILE, y = p.y + tone.dy + oy * TILE;
-                    if (x + r < 0 || x - r > TILE || y + r < 0 || y - r > TILE) continue;
-                    g.moveTo(x + r, y);
-                    g.arc(x, y, r, 0, TAU);
-                }
-            }
-            g.fill("nonzero");
-        }
-    }
-    return cv;
-}
-function ensureClouds() {
-    if (cloudFar) return;
-    cloudFar = bakeClouds(11, 9, 38, 72, [
-        { col: "rgba(8, 5, 22, 0.42)", scale: 1, dx: 10, dy: 14 },
-        { col: "rgba(78, 66, 150, 0.30)", scale: 1, dx: 0, dy: 0 },
-        { col: "rgba(150, 138, 225, 0.16)", scale: 0.62, dx: -6, dy: -8 },
-    ], SKY);
-    cloudNear = bakeClouds(57, 7, 22, 44, [
-        { col: "rgba(10, 6, 26, 0.30)", scale: 1, dx: 7, dy: 10 },
-        { col: "rgba(120, 110, 205, 0.22)", scale: 1, dx: 0, dy: 0 },
-    ]);
-}
-// A scaled pattern fill is the slow path on a software canvas (about 4x an
-// unscaled one), so each layer is re-baked at its on-screen size and drawn
-// 1:1. Sizes snap to 6% steps, so a zoom change re-bakes rarely (one
-// drawImage) and the clouds end up at most 3% off their world size.
-const layerCv = [null, null], layerPat = [null, null], layerSize = [0, 0], layerCtx = [null, null];
-function layerPattern(c, L, wantPx) {
-    const k = Math.round(Math.log(Math.max(32, Math.min(2048, wantPx))) / Math.log(1.06));
-    const size = Math.round(Math.pow(1.06, k));
-    if (layerSize[L] !== size || !layerPat[L] || layerCtx[L] !== c) {
-        const cv = layerCv[L] || (layerCv[L] = document.createElement("canvas"));
-        if (layerSize[L] !== size) {
-            cv.width = cv.height = size;
-            const g = cv.getContext("2d");
-            g.clearRect(0, 0, size, size);
-            g.drawImage(L ? cloudNear : cloudFar, 0, 0, size, size);
-            layerSize[L] = size;
-        }
-        layerPat[L] = c.createPattern(cv, "repeat");
-        layerCtx[L] = c;
-    }
-    return layerPat[L];
-}
-let flashSpr = null;
-function ensureFlash() {
-    if (flashSpr) return flashSpr;
-    const S = 128;
-    flashSpr = document.createElement("canvas");
-    flashSpr.width = flashSpr.height = S;
-    const g = flashSpr.getContext("2d");
-    const gd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-    gd.addColorStop(0, "rgba(235, 228, 255, 0.9)");
-    gd.addColorStop(0.35, "rgba(170, 150, 255, 0.35)");
-    gd.addColorStop(1, "rgba(120, 90, 255, 0)");
-    g.fillStyle = gd;
-    g.fillRect(0, 0, S, S);
-    return flashSpr;
-}
-// In the storm the screen gets a purple wash and the pulsing edge. Drawn as
-// two full-screen layers that was two passes over every pixel of the HUD
-// canvas, every frame. Both are smooth, so they're composed into one tiny
-// canvas (only when their strengths move) and stretched over the screen in
-// a single pass. Same blend, same look.
+const TINT = "#9b66f2";
+const TINT_A = 0.15, TINT_IN_A = 0.24;
+const EDGE_INK = "#5a2fb0", EDGE_COL = "#a77af6";
+const RAIN_COL = "#6d45cc";
+
 const OV_W = 192;
 const ov = { cv: null, edge: null, w: 0, h: 0, t: -1, e: -1 };
 function overlay(sw, sh, tintA, edgeA) {
@@ -150,9 +34,9 @@ function overlay(sw, sh, tintA, edgeA) {
         const g = ov.edge.getContext("2d");
         const r = Math.hypot(OV_W, h) / 2;
         const gd = g.createRadialGradient(OV_W / 2, h / 2, r * 0.42, OV_W / 2, h / 2, r);
-        gd.addColorStop(0, "rgba(96, 60, 210, 0)");
-        gd.addColorStop(0.55, "rgba(96, 60, 210, 0.35)");
-        gd.addColorStop(1, "rgba(70, 30, 170, 1)");
+        gd.addColorStop(0, "rgba(154, 98, 240, 0)");
+        gd.addColorStop(0.55, "rgba(154, 98, 240, 0.3)");
+        gd.addColorStop(1, "rgba(122, 70, 224, 0.85)");
         g.fillStyle = gd;
         g.fillRect(0, 0, OV_W, h);
     }
@@ -161,22 +45,13 @@ function overlay(sw, sh, tintA, edgeA) {
         ov.t = t; ov.e = e;
         const g = ov.cv.getContext("2d");
         g.clearRect(0, 0, OV_W, h);
-        if (t > 0) { g.globalAlpha = t / 96; g.fillStyle = "#4a2a9c"; g.fillRect(0, 0, OV_W, h); }
+        if (t > 0) { g.globalAlpha = t / 96; g.fillStyle = TINT; g.fillRect(0, 0, OV_W, h); }
         if (e > 0) { g.globalAlpha = e / 96; g.drawImage(ov.edge, 0, 0); }
         g.globalAlpha = 1;
     }
     return ov.cv;
 }
 
-// ── moving parts (preallocated) ────────────────────────────────────────
-const RAIN_N = 70;
-const rainX = new Float32Array(RAIN_N), rainY = new Float32Array(RAIN_N), rainL = new Float32Array(RAIN_N), rainV = new Float32Array(RAIN_N);
-for (let i = 0; i < RAIN_N; i++) {
-    rainX[i] = hash(i, 91); rainY[i] = hash(i, 92);
-    rainL[i] = 10 + 14 * hash(i, 93); rainV[i] = 0.8 + 0.4 * hash(i, 94);
-}
-// the downpour you're standing in (drawn over the whole screen while you're
-// in the storm): more, longer and brighter drops than the world rain
 const POUR_N = 150;
 const pourX = new Float32Array(POUR_N), pourY = new Float32Array(POUR_N), pourL = new Float32Array(POUR_N), pourV = new Float32Array(POUR_N);
 for (let i = 0; i < POUR_N; i++) {
@@ -198,18 +73,42 @@ function drawPour(c, sw, sh, a, now) {
         c.lineTo(x - vx * l, y - vy * l);
     }
     c.globalAlpha = a;
-    c.strokeStyle = "#cfd4ff";
+    c.strokeStyle = RAIN_COL;
     c.lineWidth = 1.6;
-    c.lineCap = "butt";        // round caps on 150 drops only added geometry
+    c.lineCap = "butt";
     c.stroke();
     c.globalAlpha = 1;
 }
 
-// one bolt at a time, points in world units
+let visA0 = 0, visA1 = TAU;
+function visibleArc(cx, cy, rr, sw, sh) {
+    const scx = sw / 2, scy = sh / 2;
+    const d = Math.hypot(scx - cx, scy - cy), hd = Math.hypot(sw, sh) / 2 + 40;
+    if (d <= hd * 1.05) { visA0 = 0; visA1 = TAU; return; }
+    const ac = Math.atan2(scy - cy, scx - cx), span = Math.asin(Math.min(1, hd / d)) + 0.02;
+    visA0 = ac - span; visA1 = ac + span;
+}
+
+let flashSpr = null;
+function ensureFlash() {
+    if (flashSpr) return flashSpr;
+    const S = 128;
+    flashSpr = document.createElement("canvas");
+    flashSpr.width = flashSpr.height = S;
+    const g = flashSpr.getContext("2d");
+    const gd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    gd.addColorStop(0, "rgba(245, 238, 255, 0.95)");
+    gd.addColorStop(0.35, "rgba(180, 150, 255, 0.4)");
+    gd.addColorStop(1, "rgba(130, 90, 255, 0)");
+    g.fillStyle = gd;
+    g.fillRect(0, 0, S, S);
+    return flashSpr;
+}
+
 const BOLT_MAX = 26;
 const bolt = { on: false, at: 0, life: 260, pts: new Float32Array(BOLT_MAX * 2), n: 0, br: 0, brN: 0, mx: 0, my: 0, size: 0 };
 let nextBoltAt = 0, forceBolt = false;
-let rimRot = 0, lastT = 0;
+let rimRot = 0;
 
 function makeBolt(wx, wy, lenW, now) {
     const ang = Math.random() * TAU;
@@ -226,7 +125,6 @@ function makeBolt(wx, wy, lenW, now) {
     bolt.n = segs + 1;
     bolt.br = 0; bolt.brN = 0;
     if (!lite()) {
-        // a short fork off the middle
         const from = 3 + Math.floor(Math.random() * 4);
         const bx = P[from * 2], by = P[from * 2 + 1];
         const side = Math.random() < 0.5 ? -1 : 1;
@@ -244,7 +142,6 @@ function makeBolt(wx, wy, lenW, now) {
     bolt.mx = wx; bolt.my = wy; bolt.size = lenW;
     bolt.at = now; bolt.on = true;
 }
-// brightness over the bolt's short life: a flicker (two peaks), then gone
 function boltEnv(age) {
     if (age < 0 || age > bolt.life) return 0;
     if (age < 50) return 1;
@@ -252,139 +149,6 @@ function boltEnv(age) {
     if (age < 140) return 0.9;
     return 0.9 * (1 - (age - 140) / (bolt.life - 140));
 }
-
-// Visible part of the rim: [a0, a1] in radians, or a full turn when the
-// circle's centre is close to the screen.
-let visA0 = 0, visA1 = TAU;
-function visibleArc(cx, cy, rr, sw, sh) {
-    const scx = sw / 2, scy = sh / 2;
-    const d = Math.hypot(scx - cx, scy - cy), hd = Math.hypot(sw, sh) / 2 + 40;
-    if (d <= hd * 1.05) { visA0 = 0; visA1 = TAU; return; }
-    const ac = Math.atan2(scy - cy, scx - cx), span = Math.asin(Math.min(1, hd / d)) + 0.02;
-    visA0 = ac - span; visA1 = ac + span;
-}
-
-// ── world layer ───────────────────────────────────────────────────────
-// Oct 8 (owner: seeing the rain from outside "makes the game dull"): the
-// sky, clouds, rain and lightning only show while YOU are in the storm.
-// From the safe side it's the edge alone: the bright line, its glow and a
-// soft dark band just past it, so you can see where it is and the screen
-// stays clear and bright. Stepping in fades the weather up (and out again).
-let weatherK = 0;
-const BAND_W = 150;    // world units of soft dark band past the edge, seen from inside
-// (cx, cy, rr): the safe circle on screen; (ox, oy): world (0, 0) on screen.
-export function drawWorld(c, cx, cy, rr, ox, oy, ratio, sw, sh) {
-    const now = performance.now();
-    const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
-    lastT = now;
-    const still = calm();
-    // the weather follows you: up over ~0.3 s when you step in, gone as fast when you step out
-    const wantK = warn.inside ? 1 : 0;
-    weatherK = still ? wantK : weatherK + (wantK - weatherK) * Math.min(1, dt * 7);
-    if (Math.abs(weatherK - wantK) < 0.01) weatherK = wantK;
-    // nothing to draw when the whole screen is inside the circle (band included)
-    const fx = Math.max(Math.abs(cx), Math.abs(sw - cx)), fy = Math.max(Math.abs(cy), Math.abs(sh - cy));
-    if (fx * fx + fy * fy < rr * rr) { bolt.on = false; return; }
-    if (weatherK <= 0) {
-        bolt.on = false;
-        drawBand(c, cx, cy, rr, ratio, sw, sh, 1);
-        drawRim(c, cx, cy, rr, ratio, sw, sh, still ? 0 : dt);
-        return;
-    }
-    const t = still ? 0 : now / 1000;
-    ensureClouds();
-    // stepping in or out: the clear view's band under the fading weather
-    if (weatherK < 1) drawBand(c, cx, cy, rr, ratio, sw, sh, 1 - weatherK);
-
-    c.save();
-    c.globalAlpha = weatherK;
-    c.beginPath();
-    c.rect(-40, -40, sw + 80, sh + 80);
-    c.arc(cx, cy, rr, 0, TAU, true);
-    c.clip("evenodd");
-    // the sky and its clouds: two layers, the near one a little faster and
-    // with a little parallax, both blowing with the wind. Anchored to the
-    // world so they don't swim when the camera moves.
-    // When the storm fills most of the screen (you're out in it, or the
-    // final circle is small) every layer is a full-screen fill, so the near
-    // layer goes; it was the difference between smooth and choppy there.
-    const heavy = warn.inside || rr < Math.hypot(sw, sh) * 0.35;
-    const layers = heavy || lite() || global.lowFx || config.graphical.simpleTerrain || softGpu() ? 1 : 2;
-    for (let L = 0; L < layers; L++) {
-        const worldTile = L ? 900 : 1500;      // world units per tile
-        const par = L ? 1.12 : 1;
-        const speed = L ? 34 : 20;
-        const pat = layerPattern(c, L, worldTile * ratio * par);
-        const tilePx = layerSize[L];
-        let px = ((sw / 2 - (sw / 2 - ox) * par) + WIND_X * speed * t * ratio) % tilePx;
-        let py = ((sh / 2 - (sh / 2 - oy) * par) + WIND_Y * speed * t * ratio) % tilePx;
-        if (px > 0) px -= tilePx;
-        if (py > 0) py -= tilePx;
-        // whole pixels: a fractional offset is a resampled (slow) fill too
-        px = Math.round(px); py = Math.round(py);
-        c.translate(px, py);
-        c.fillStyle = pat;
-        c.fillRect(-40 - px, -40 - py, sw + 80, sh + 80);
-        c.translate(-px, -py);
-    }
-    // rain streaks, leaning with the wind (out in the storm drawHud's
-    // downpour covers the whole screen, so this one sits out)
-    if (!still && !warn.inside) {
-        const n = lite() ? RAIN_N >> 1 : RAIN_N;
-        const W = sw + 60, H = sh + 60;
-        const vx = WIND_X * 0.55 + 0.25, vy = 1;
-        c.beginPath();
-        for (let i = 0; i < n; i++) {
-            const sp = 780 * rainV[i];
-            let x = (rainX[i] * W + t * sp * vx) % W - 30;
-            let y = (rainY[i] * H + t * sp * vy) % H - 30;
-            const l = rainL[i];
-            c.moveTo(x, y);
-            c.lineTo(x - vx * l, y - vy * l);
-        }
-        c.strokeStyle = "rgba(196, 204, 255, 0.22)";
-        c.lineWidth = 1.3;
-        c.lineCap = "round";
-        c.stroke();
-    }
-    // lightning: small bolts in the storm, never more than one every ~2 s
-    if (!still) {
-        if (!bolt.on && (forceBolt || now >= nextBoltAt)) {
-            if (nextBoltAt && !forceBolt) {
-                // pick a spot on screen well out in the storm
-                for (let tries = 0; tries < 8; tries++) {
-                    const sx = sw * (0.08 + 0.84 * Math.random()), sy = sh * (0.08 + 0.84 * Math.random());
-                    const dx = sx - cx, dy = sy - cy;
-                    const m = rr + 90;
-                    if (dx * dx + dy * dy < m * m) continue;
-                    // not on top of your own tank
-                    if (Math.abs(sx - sw / 2) < 110 && Math.abs(sy - sh / 2) < 110) continue;
-                    makeBolt((sx - ox) / ratio, (sy - oy) / ratio, (140 + 120 * Math.random()), now);
-                    break;
-                }
-            } else if (forceBolt) {
-                let sx = sw * 0.5, sy = sh * 0.5;
-                for (let tries = 0; tries < 40; tries++) {
-                    sx = sw * (0.1 + 0.8 * Math.random()); sy = sh * (0.1 + 0.8 * Math.random());
-                    const dx = sx - cx, dy = sy - cy;
-                    if (dx * dx + dy * dy > (rr + 90) * (rr + 90) && (Math.abs(sx - sw / 2) > 110 || Math.abs(sy - sh / 2) > 110)) break;
-                }
-                makeBolt((sx - ox) / ratio, (sy - oy) / ratio, 220, now);
-            }
-            forceBolt = false;
-            nextBoltAt = now + (lite() ? 5500 + 4500 * Math.random() : 2200 + 3000 * Math.random());
-        }
-        if (bolt.on) {
-            const e = boltEnv(now - bolt.at);
-            if (e <= 0 && now - bolt.at > bolt.life) bolt.on = false;
-            else if (e > 0) drawBolt(c, ox, oy, ratio, e);
-        }
-    } else bolt.on = false;
-    c.restore();
-
-    drawRim(c, cx, cy, rr, ratio, sw, sh, still ? 0 : dt);
-}
-
 function boltPath(c, ox, oy, ratio, from, n) {
     const P = bolt.pts;
     for (let i = 0; i < n; i++) {
@@ -392,78 +156,99 @@ function boltPath(c, ox, oy, ratio, from, n) {
         if (i) c.lineTo(x, y); else c.moveTo(x, y);
     }
 }
-function drawBolt(c, ox, oy, ratio, e) {
+function drawBolt(c, ox, oy, ratio, e, k) {
     const sx = ox + bolt.mx * ratio, sy = oy + bolt.my * ratio;
     if (glowOn()) {
         const R = bolt.size * ratio * 1.8;
-        c.globalAlpha = 0.45 * e * weatherK;
+        c.globalAlpha = 0.5 * e * k;
         c.drawImage(ensureFlash(), sx - R, sy - R, R * 2, R * 2);
     }
-    c.globalAlpha = e * weatherK;
+    c.globalAlpha = e * k;
     c.lineJoin = "round";
     c.lineCap = "round";
     c.beginPath();
     boltPath(c, ox, oy, ratio, 0, bolt.n);
     if (bolt.brN) boltPath(c, ox, oy, ratio, bolt.br, bolt.brN);
-    if (glowOn()) {
-        c.strokeStyle = "rgba(160, 130, 255, 0.6)";
-        c.lineWidth = Math.max(6, 10 * ratio);
-        c.stroke();
-    }
-    c.strokeStyle = "#f4f0ff";
+    c.strokeStyle = EDGE_INK;
+    c.lineWidth = Math.max(5, 8 * ratio);
+    c.stroke();
+    c.strokeStyle = "#fbf8ff";
     c.lineWidth = Math.max(2, 3 * ratio);
     c.stroke();
     c.globalAlpha = 1;
 }
-
-// Seen from the safe side: a soft dark band just past the edge (a few wide
-// strokes, darkest at the line), so the storm reads as a place, not a wash.
-function drawBand(c, cx, cy, rr, ratio, sw, sh, a) {
-    if (rr < 1 || a <= 0.01) return;
-    visibleArc(cx, cy, rr, sw, sh);
-    const bw = Math.max(40, BAND_W * ratio), n = 4, w = bw / n;
-    c.save();
-    c.strokeStyle = "rgb(30, 20, 66)";
-    c.lineWidth = w + 1;
-    for (let i = 0; i < n; i++) {
-        c.globalAlpha = a * 0.3 * (1 - i / n) * (1 - i / n);
-        c.beginPath();
-        c.arc(cx, cy, rr + w * (i + 0.5), visA0, visA1);
-        c.stroke();
+function stepBolt(c, cx, cy, rr, ox, oy, ratio, sw, sh, now) {
+    if (!bolt.on && (forceBolt || now >= nextBoltAt)) {
+        if (nextBoltAt || forceBolt) {
+            for (let tries = 0; tries < 12; tries++) {
+                const sx = sw * (0.08 + 0.84 * Math.random()), sy = sh * (0.08 + 0.84 * Math.random());
+                const dx = sx - cx, dy = sy - cy;
+                if (dx * dx + dy * dy < (rr + 90) * (rr + 90)) continue;
+                if (Math.abs(sx - sw / 2) < 110 && Math.abs(sy - sh / 2) < 110) continue;
+                makeBolt((sx - ox) / ratio, (sy - oy) / ratio, forceBolt ? 220 : 140 + 120 * Math.random(), now);
+                break;
+            }
+        }
+        forceBolt = false;
+        nextBoltAt = now + (lite() ? 5500 + 4500 * Math.random() : 2200 + 3000 * Math.random());
     }
-    c.restore();
+    if (!bolt.on) return;
+    const e = boltEnv(now - bolt.at);
+    if (e <= 0 && now - bolt.at > bolt.life) bolt.on = false;
+    else if (e > 0) drawBolt(c, ox, oy, ratio, e, weatherK);
 }
 
-// The edge: soft glow and blowing wisps on the storm side, then one crisp
-// bright line exactly on the boundary.
+let weatherK = 0, lastT = 0;
+export function drawWorld(c, cx, cy, rr, ox, oy, ratio, sw, sh) {
+    const now = performance.now();
+    const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
+    lastT = now;
+    const still = calm();
+    const wantK = warn.inside ? 1 : 0;
+    weatherK = still ? wantK : weatherK + (wantK - weatherK) * Math.min(1, dt * 7);
+    if (Math.abs(weatherK - wantK) < 0.01) weatherK = wantK;
+    const fx = Math.max(Math.abs(cx), Math.abs(sw - cx)), fy = Math.max(Math.abs(cy), Math.abs(sh - cy));
+    if (fx * fx + fy * fy < rr * rr) { bolt.on = false; return; }
+    c.save();
+    c.beginPath();
+    c.rect(-40, -40, sw + 80, sh + 80);
+    c.arc(cx, cy, Math.max(0, rr), 0, TAU, true);
+    c.globalAlpha = TINT_A + (TINT_IN_A - TINT_A) * weatherK;
+    c.fillStyle = TINT;
+    c.fill("evenodd");
+    if (weatherK > 0 && !still) {
+        c.globalAlpha = 1;
+        c.clip("evenodd");
+        stepBolt(c, cx, cy, rr, ox, oy, ratio, sw, sh, now);
+    } else bolt.on = false;
+    c.restore();
+    drawEdge(c, cx, cy, rr, ratio, sw, sh, still ? 0 : dt);
+}
+
 const RIM_K = 512;
-function drawRim(c, cx, cy, rr, ratio, sw, sh, dt) {
+function drawEdge(c, cx, cy, rr, ratio, sw, sh, dt) {
     if (rr < 1) return;
     visibleArc(cx, cy, rr, sw, sh);
     const full = visA1 - visA0 >= TAU - 1e-6;
-    const rw = rr / Math.max(1e-6, ratio);    // radius in world units
+    const rw = rr / Math.max(1e-6, ratio);
     c.save();
-    // the storm front: a darker band right behind the edge
-    c.strokeStyle = "rgba(14, 8, 34, 0.32)";
+    c.strokeStyle = "rgba(160, 112, 250, 0.16)";
     c.lineWidth = Math.max(16, 64 * ratio);
     c.beginPath();
     c.arc(cx, cy, rr + c.lineWidth / 2, visA0, visA1);
     c.stroke();
     if (glowOn()) {
-        c.strokeStyle = "rgba(140, 105, 255, 0.2)";
+        c.strokeStyle = "rgba(150, 105, 255, 0.24)";
         c.lineWidth = Math.max(10, 36 * ratio);
         c.beginPath();
         c.arc(cx, cy, rr + c.lineWidth / 2, visA0, visA1);
         c.stroke();
-        c.strokeStyle = "rgba(185, 155, 255, 0.38)";
-        c.lineWidth = Math.max(4, 10 * ratio);
+        c.strokeStyle = "rgba(190, 150, 255, 0.4)";
+        c.lineWidth = Math.max(4, 12 * ratio);
         c.beginPath();
         c.arc(cx, cy, rr + c.lineWidth / 2, visA0, visA1);
         c.stroke();
     }
-    // wisps: short arcs just outside the edge that drift around the circle
-    // (about 16 world units a second). Fixed slots around the circle, thinned
-    // by powers of two as it shrinks so the survivors never jump.
     rimRot = (rimRot + dt * 16 / Math.max(60, rw)) % TAU;
     const dA = TAU / RIM_K;
     let step = 1;
@@ -489,20 +274,24 @@ function drawRim(c, cx, cy, rr, ratio, sw, sh, dt) {
             any = true;
         }
         if (!any) continue;
-        c.strokeStyle = b === 0 ? "rgba(185, 160, 255, 0.4)" : b === 1 ? "rgba(200, 180, 255, 0.58)" : "rgba(226, 214, 255, 0.78)";
+        c.strokeStyle = b === 0 ? "rgba(118, 70, 220, 0.5)" : b === 1 ? "rgba(160, 112, 250, 0.62)" : "rgba(236, 226, 255, 0.85)";
         c.lineWidth = Math.max(1.4, (b === 2 ? 2.8 : 4.2) * ratio);
         c.stroke();
     }
-    // the line itself: dark underlay, bright core
-    c.beginPath();
-    c.arc(cx, cy, rr + 1, visA0, visA1);
-    c.strokeStyle = "#140a26";
-    c.lineWidth = Math.max(3, 5 * ratio);
-    c.stroke();
+    const w = Math.max(3, 6 * ratio);
+    c.lineCap = "butt";
     c.beginPath();
     c.arc(cx, cy, rr, visA0, visA1);
-    c.strokeStyle = "#e4d8ff";
-    c.lineWidth = Math.max(1.6, 2.4 * ratio);
+    c.strokeStyle = EDGE_INK;
+    c.lineWidth = w + Math.max(3, 4 * ratio);
+    c.stroke();
+    c.strokeStyle = EDGE_COL;
+    c.lineWidth = w;
+    c.stroke();
+    c.beginPath();
+    c.arc(cx, cy, rr - w * 0.15, visA0, visA1);
+    c.strokeStyle = "#efe6ff";
+    c.lineWidth = Math.max(1.2, 1.8 * ratio);
     c.stroke();
     c.restore();
 }
@@ -564,18 +353,17 @@ export function drawMap(c, cx, cy, rr, x, y, w, h, toR, hl, toX, toY) {
     c.beginPath();
     c.rect(x, y, w, h);
     c.arc(cx, cy, rr, 0, TAU, true);
-    c.fillStyle = "rgba(46, 30, 104, 0.5)";
+    c.globalAlpha = 0.28;
+    c.fillStyle = TINT;
     c.fill("evenodd");
-    // glow on the storm side, then the crisp edge
-    c.beginPath();
-    c.arc(cx, cy, rr + 2, 0, TAU);
-    c.strokeStyle = "rgba(150, 120, 255, 0.45)";
-    c.lineWidth = 3;
-    c.stroke();
+    c.globalAlpha = 1;
     c.beginPath();
     c.arc(cx, cy, rr, 0, TAU);
-    c.strokeStyle = "#e4d8ff";
-    c.lineWidth = 1.6;
+    c.strokeStyle = EDGE_INK;
+    c.lineWidth = 3;
+    c.stroke();
+    c.strokeStyle = EDGE_COL;
+    c.lineWidth = 1.5;
     c.stroke();
     // where it's closing to
     // its own centre: the zone slides as it closes)
@@ -584,7 +372,7 @@ export function drawMap(c, cx, cy, rr, x, y, w, h, toR, hl, toX, toY) {
         c.beginPath();
         c.arc(tcx, tcy, toR, 0, TAU);
         c.setLineDash(DASH);
-        c.strokeStyle = "rgba(255, 255, 255, 0.7)";
+        c.strokeStyle = "rgba(70, 36, 140, 0.75)";
         c.lineWidth = 1.2;
         c.stroke();
         c.setLineDash(NO_DASH);
@@ -684,12 +472,12 @@ export function drawHud(c, sw, sh, topY, st) {
     } else {
         if (tintA > 0) {
             c.globalAlpha = tintA;
-            c.fillStyle = "#4a2a9c";
+            c.fillStyle = TINT;
             c.fillRect(0, 0, sw, sh);
         }
         const b = 8 + 14 * L;
         c.globalAlpha = va * 0.6;
-        c.fillStyle = "#5a34c8";
+        c.fillStyle = "#8a52e8";
         c.fillRect(0, 0, sw, b); c.fillRect(0, sh - b, sw, b);
         c.fillRect(0, b, b, sh - 2 * b); c.fillRect(sw - b, b, b, sh - 2 * b);
         c.globalAlpha = 1;

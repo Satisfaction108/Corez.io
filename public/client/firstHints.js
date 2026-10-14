@@ -1,13 +1,12 @@
 import { global } from "./global.js";
 import { util } from "./util.js";
 import * as L from "./firstHintsLogic.js";
-import { isCoreEntity } from "./raidHeat.js";
 import { active as coachActive } from "./coach.js";
 
 const now = () => performance.now();
 const SCAN_MS = 250;
-const CARD_W = 300;
-const CARD_W_TOUCH = 250;
+const CARD_W = 260;
+const CARD_W_TOUCH = 230;
 
 function loadSeen() {
     try { return L.parseSeen(localStorage.getItem(L.KEY)); } catch (e) { return new Set(); }
@@ -17,26 +16,30 @@ function saveSeen(seen) {
 }
 
 const st = L.createState(loadSeen());
-let scanAt = 0, aliveAt = 0, wasPlaying = false, lastH = 112, shardKey = null, shardSince = 0, goneAt = 0;
+let scanAt = 0, aliveAt = 0, wasPlaying = false, lastH = 96, goneAt = 0;
 let visible = new Set(), reached = new Set();
 const pinned = new Set();
 let el = null, titleEl = null, bodyEl = null, barEl = null, shownId = null;
 let placeAt = 0, placed = null, styleKey = "", barShown = -1;
 
-const STYLE = "#dwHint{position:fixed;z-index:42;box-sizing:border-box;padding:10px 34px 12px 14px;border-radius:6px;" +
-    "background:rgba(18,16,22,.58);color:#fff;pointer-events:none;opacity:0;transform:translateX(10px);" +
-    "transition:opacity .22s ease,transform .22s ease;font-family:Ubuntu,Rubik,'Trebuchet MS',sans-serif;}" +
+const STYLE = "#dwHint{position:fixed;z-index:42;box-sizing:border-box;padding:8px 30px 10px 12px;border-radius:6px;" +
+    "background:rgba(0,0,0,.3);color:#fff;pointer-events:none;opacity:0;transform:translateX(10px);" +
+    "transition:opacity .22s ease,transform .22s ease;font-family:Ubuntu,sans-serif;}" +
     "#dwHint.on{opacity:1;transform:none;}" +
-    "#dwHint .dwh-title{font-weight:700;font-size:20px;line-height:1.1;margin:0 0 5px;letter-spacing:.01em;" +
-    "text-shadow:-2px 0 #111,2px 0 #111,0 -2px #111,0 2px #111,-1.4px -1.4px #111,1.4px 1.4px #111,-1.4px 1.4px #111,1.4px -1.4px #111;}" +
-    "#dwHint .dwh-body{font-weight:500;font-size:14px;line-height:1.35;" +
-    "text-shadow:-1px 0 #111,1px 0 #111,0 -1px #111,0 1px #111;}" +
-    "#dwHint .dwh-x{position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;border:0;border-radius:5px;" +
+    "#dwHint .dwh-title{font:400 17px/1.1 'Lilita One',Ubuntu,sans-serif;letter-spacing:.01em;margin:0 0 4px;" +
+    "-webkit-text-stroke:3px #333;paint-order:stroke fill;}" +
+    "#dwHint .dwh-body{font-weight:700;font-size:13px;line-height:1.35;" +
+    "-webkit-text-stroke:2.5px #333;paint-order:stroke fill;}" +
+    "#dwHint .dwh-x{position:absolute;top:5px;right:5px;width:22px;height:22px;padding:0;border:0;border-radius:4px;" +
     "background:rgba(255,255,255,.12);cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center;}" +
     "#dwHint .dwh-x:hover{background:rgba(255,255,255,.24);}" +
     "#dwHint .dwh-bar{position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:0 0 6px 6px;overflow:hidden;}" +
     "#dwHint .dwh-bar i{display:block;height:100%;background:rgba(255,255,255,.55);transform-origin:left center;}" +
-    "body.mobile #dwHint .dwh-title{font-size:17px;}body.mobile #dwHint .dwh-body{font-size:12.5px;}";
+    "body.mobile #dwHint .dwh-title{font-size:15px;}body.mobile #dwHint .dwh-body{font-size:12px;}" +
+    "html[data-theme=light] #dwHint{background:rgba(255,255,255,.92);color:#222;border:1px solid rgba(0,0,0,.16);}" +
+    "html[data-theme=light] #dwHint .dwh-title,html[data-theme=light] #dwHint .dwh-body{-webkit-text-stroke:0;}" +
+    "html[data-theme=light] #dwHint .dwh-x{background:rgba(0,0,0,.08);}html[data-theme=light] #dwHint .dwh-x path{stroke:#333;}" +
+    "html[data-theme=light] #dwHint .dwh-bar i{background:rgba(0,0,0,.3);}";
 
 const X_SVG = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';
 
@@ -94,11 +97,6 @@ function playing() {
         !global.royaleSpectating && !global.royaleDied && !r.ending && !guide);
 }
 
-function terr() {
-    const t = window.terrainRenderer;
-    return (t && t.ready && t._world && t._cellPolys && t._ore) ? t : null;
-}
-
 function view() {
     let ratio = 1;
     try { ratio = util.getRatio(); } catch (e) { }
@@ -120,38 +118,6 @@ function scan() {
     const want = id => !st.seen.has(id) || st.cur === id;
     if (want("vault")) for (const p of global.vaults || []) if (p && inView(v, p.x, p.y, p.r || 95)) { visible.add("vault"); break; }
     if (want("shop")) for (const p of global.shops || []) if (p && inView(v, p.x, p.y, p.r || 95)) { visible.add("shop"); break; }
-    if (want("shard")) {
-        const tr = terr();
-        if (tr) {
-            const w = tr._world;
-            if (st.cur === "shard" && shardKey !== null && tr._rockDead.has(shardKey)) reached.add("shard");
-            let best = null, bd = Infinity;
-            for (const [k, tier] of tr._ore) {
-                if (tier !== 3 || tr._rockDead.has(k)) continue;
-                const c = tr._cellPolys.get(k);
-                if (!c) continue;
-                const x = c.cx * w.s - w.hw, y = c.cy * w.s - w.hh;
-                if (Math.abs(x - v.x) > v.hw * 0.6 || Math.abs(y - v.y) > v.hh * 0.6) continue;
-                const d = Math.hypot(x - v.x, y - v.y);
-                if (d < bd) { bd = d; best = k; }
-            }
-            if (best === null) shardSince = 0;
-            else {
-                const t = now();
-                if (!shardSince) shardSince = t;
-                if (st.cur === "shard" || t - shardSince >= 800) { visible.add("shard"); if (st.cur !== "shard") shardKey = best; }
-            }
-        }
-    }
-    if (want("core")) {
-        const list = global.entities || [];
-        for (let i = 0; i < list.length; i++) {
-            const e = list[i];
-            if (!e || !isCoreEntity(e)) continue;
-            const x = e.render ? e.render.x : e.x, y = e.render ? e.render.y : e.y;
-            if (inView(v, x, y, e.size || 0)) { visible.add("core"); break; }
-        }
-    }
     for (const id of pinned) visible.add(id);
     for (const id of visible) L.notice(st, id);
 }

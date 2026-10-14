@@ -1,7 +1,3 @@
-/* ── first-raid coach (client/coach.js) ──────────────────────────────────
-   A small plate under the raid clock in the in-game style: dark face, ink
-   keyline, soft drop, Lilita title. Sized in em off --dwc-s (CSS px per GUI
-   unit), so it follows the UI Scale option like the canvas HUD. */
 #dwCoach {
     --dwc-s: 1;
     --ink: #0c0a0e; --line: #120e16;
@@ -17,14 +13,14 @@
     left: 50%;
     z-index: 44;
     box-sizing: border-box;
-    width: min(calc(340em / 16), calc(100vw - 24px));
-    padding: .55em .85em .7em;
-    border: 1px solid var(--line);
-    border-radius: .75em;
-    background: rgba(43, 37, 51, 0.96);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 .25em 0 rgba(0,0,0,.32);
+    width: min(calc(250em / 16), calc(100vw - 24px));
+    padding: .4em .7em .55em;
+    border: 0;
+    border-radius: .4em;
+    background: rgba(0, 0, 0, 0.3);
+    box-shadow: none;
     color: var(--text);
-    font: 700 calc(16px * var(--dwc-s))/1.35 var(--ui);
+    font: 700 calc(15px * var(--dwc-s))/1.3 var(--ui);
     transform: translate(-50%, -.6em);
     opacity: 0;
     visibility: hidden;
@@ -40,32 +36,24 @@
     transition: opacity .18s ease, transform .22s cubic-bezier(.3, 1.5, .6, 1);
 }
 .dwc-top { display: flex; align-items: center; gap: .5em; min-width: 0; }
-.dwc-eyebrow {
-    flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: var(--gold); font-size: .78em; letter-spacing: .04em; text-transform: uppercase;
-}
-/* step pips: keycaps like the kit slots' key badges; a done step is the
-   green check badge (CHECK in coach.js) */
+.dwc-eyebrow { display: none; }
 .dwc-pips { flex: 1 1 auto; display: flex; align-items: center; gap: .22em; min-width: 0; }
 .dwc-pips .pip {
     flex: none;
     box-sizing: border-box;
-    width: 1.22em; height: 1.22em;
-    border: 1px solid var(--line);
-    border-radius: .3em;
-    background: var(--face);
-    box-shadow: inset 0 -.14em 0 var(--face-dk);
-    color: var(--text2);
-    font: 400 .76em/1.1 var(--display);
+    width: .62em; height: .62em;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .3);
+    box-shadow: none;
+    color: transparent;
+    font: 400 0/0 var(--display);
     font-style: normal;
-    text-align: center;
+    overflow: hidden;
 }
-.dwc-pips .pip.cur {
-    background: var(--gold);
-    box-shadow: inset 0 -.14em 0 var(--gold-dk);
-    color: var(--ink);
-}
-.dwc-pips .pip.done { border: 0; background: none; box-shadow: none; }
+.dwc-pips .pip.cur { background: #fff; }
+.dwc-pips .pip.done { border: 0; background: var(--play); box-shadow: none; }
+.dwc-pips .pip.done svg { display: none; }
 .dwc-pips .pip svg, .dwc-check svg { display: block; width: 100%; height: 100%; }
 .dwc-pips .pip.sm { width: .9em; height: .9em; border-radius: .24em; }
 .dwc-check { animation: dwcPop .38s cubic-bezier(.2, 1.7, .4, 1); }
@@ -83,33 +71,32 @@
 }
 .dwc-link:hover { color: var(--heading); text-decoration: underline; }
 .dwc-title {
-    margin-top: .2em;
+    margin-top: .15em;
     color: var(--heading);
-    font: 400 1.3em/1.1 var(--display);
-    letter-spacing: .01em;
-    text-shadow: 0 .08em 0 var(--ink);
+    font: 400 1.05em/1.1 var(--display);
+    letter-spacing: 0;
 }
-.dwc-text { margin-top: .22em; font-size: .94em; color: var(--text); }
+.dwc-text { margin-top: .18em; font-size: .84em; color: var(--text); }
 .dwc-text b { color: var(--heading); }
 .dwc-text kbd {
     display: inline-block;
-    min-width: 1.2em;
-    padding: 0 .35em .1em;
-    border: 1px solid var(--ink);
-    border-radius: .3em;
-    background: #4a4156;
-    box-shadow: inset 0 -.14em 0 #2e2837;
+    min-width: 1.1em;
+    padding: 0 .3em .05em;
+    border: 0;
+    border-radius: .25em;
+    background: rgba(255, 255, 255, .18);
+    box-shadow: none;
     color: var(--heading);
-    font: 400 .92em/1.35 var(--display);
+    font: 400 .92em/1.3 var(--display);
     text-align: center;
 }
 .dwc-bar {
     position: relative;
-    height: 1.25em;
-    margin-top: .5em;
-    border: 1px solid var(--ink);
+    height: 1.05em;
+    margin-top: .4em;
+    border: 0;
     border-radius: 999px;
-    background: var(--well);
+    background: rgba(0, 0, 0, .35);
     overflow: hidden;
 }
 .dwc-bar i {
@@ -117,7 +104,7 @@
     width: 0;
     border-radius: 999px;
     background: var(--gold);
-    box-shadow: inset 0 .3em 0 rgba(255,255,255,.22);
+    box-shadow: none;
     transition: width .25s ease-out;
 }
 .dwc-bar span {
@@ -125,8 +112,7 @@
     display: block;
     text-align: center;
     color: #fff;
-    font: 700 .82em/1.5 var(--ui);
-    text-shadow: 0 1px 0 var(--ink), 0 0 .25em rgba(0,0,0,.6);
+    font: 700 .76em/1.4 var(--ui);
 }
 .dwc-row, .dwc-confirm { display: flex; align-items: center; gap: .7em; margin-top: .55em; }
 .dwc-confirm span { flex: 1; font-size: .9em; color: var(--heading); }
@@ -166,9 +152,9 @@ body:not(.in-game) #dwCoach { display: none; }
 
 /* touch: one compact card, a steady readable size (coach.js sets --dwc-s
    from the screen, not the UI Scale), big enough buttons for a thumb */
-#dwCoach.touch { width: min(calc(300em / 16), calc(100vw - 24px)); padding: .5em .8em .6em; }
-#dwCoach.touch .dwc-title { font-size: 1.22em; }
-#dwCoach.touch .dwc-text { font-size: .92em; line-height: 1.3; }
+#dwCoach.touch { width: min(calc(250em / 16), calc(100vw - 24px)); padding: .45em .75em .55em; }
+#dwCoach.touch .dwc-title { font-size: 1.08em; }
+#dwCoach.touch .dwc-text { font-size: .88em; line-height: 1.3; }
 #dwCoach.touch .dwc-link { padding: .35em .3em; margin: -.35em -.3em; }
 #dwCoach.touch .dwc-btn { padding: .45em 1em .55em; }
 #dwCoach.touch .dwc-bar { height: 1.1em; margin-top: .4em; }

@@ -292,17 +292,16 @@ test('client: wired everywhere', () => {
     assert.ok(/queueTip\(scoreText\.RULE, scoreText\.ruleBody\(aoNow\(\)\)/.test(app));
     assert.ok((app.match(/pointsRuleTip\(/g) || []).length >= 4, 'standings, crown tracker, clock plate + the helper');
     assert.ok(/drawText\(scoreText\.RULE \+ "\. Banked gems are safe\."/.test(app));
-    // the carry warning in the note stack
-    assert.ok(/scoreText\.carryNote\(\{/.test(app) && /"carry", cn\.text/.test(app));
+    assert.ok(!/scoreText\.carryNote\(\{/.test(app) && /"carry", "Your satchel is full, so go bank it\."/.test(app), 'only the full satchel says so under the clock');
     // the crown: a moment however it arrives, then a card while you hold it
     assert.ok(/const mc = r\.you && r\.you\.crown && !global\.died/.test(cr));
     assert.ok(/const told = now - S\.slamAt <= 2500/.test(cr) && /if \(!told\)/.test(cr), 'a local slam only when the server one did not land');
-    assert.ok(/const CARD = \{ pri: 0, key: "crowncard"/.test(cr) && /SL\.crownCard\(S\.mine\)/.test(cr));
+    assert.ok(!/const CARD = \{ pri: 0, key: "crowncard"/.test(cr) && /global\.sideToast\(/.test(cr), 'the crown is told once in the side toasts, not as a card under the clock');
     // the results: the cells add up, and a missed podium is recapped
     // round 5: "Banked this raid" everywhere it means points (the HUD's Bank is the spendable one)
     assert.ok(/const CELL_LABEL = \["POINTS", "BANKED THIS RAID", "KILLS \+ CROWNS"\]/.test(fin));
     assert.ok(/export const sawResults/.test(fin) && /S\.seenRaid = S\.raidId/.test(fin));
-    assert.ok(/!raidFinale\.sawResults\(lr\.raidId\)/.test(fs1) && /L\.planFor\(\{ newRaid: true, recap: missed, newcomer: isNew\(\) \}\)/.test(fs1));
+    assert.ok(/!raidFinale\.sawResults\(lr\.raidId\)/.test(fs1) && /L\.planFor\(\{ newRaid: true, recap: missed, newcomer: isNew\(\), ao: !!global\.aoWorld \}\)/.test(fs1));
     // the build keeps the new module on the light profile
     const build = fs.readFileSync(path.join(REPO, 'scripts', 'build-client.js'), 'utf8');
     assert.ok(/"client\/scoreLogic\.js"/.test(build));

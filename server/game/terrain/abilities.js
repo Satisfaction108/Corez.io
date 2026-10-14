@@ -1234,6 +1234,7 @@ function tick(actors) {
     tickWalls(t);
     tickSmoke(t);
     tickOrbs(t);
+    try { drops().tick(actors || [], t); } catch { }
     if (!busy.size) return;
     for (const body of busy) {
         let keep = false;
@@ -1255,7 +1256,9 @@ function resetRaid() {
     }
     busy.clear();
     ledger.clear();
+    try { drops().reset(); } catch { }
 }
+function drops() { return require('./abilityDrops.js'); }
 
 function catalog() {
     return ABILITIES.map(a => ({ id: a.id, cat: "ability", tier: 0, name: a.name, price: a.price, max: 0, desc: a.desc, cd: a.cd, place: a.place || 0 }));

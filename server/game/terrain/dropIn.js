@@ -38,6 +38,9 @@ const VAULT_CLEAR = 1100;          // nobody else this close to the landing (els
 const VAULT_TRIES = 16;
 const ORE_ON_WAY = 4;
 const ORE_SOFT = 0.35;
+const FACE_REACH = 760;
+const FACE_CLUSTER = 300;
+const FACE_PAD_CLEAR = 60;
 
 let hooks = {};
 let queue = [];
@@ -367,11 +370,39 @@ function actionSpot(self, fighters, t = Date.now(), etaWant = 0, avoid = null) {
     return best ? { x: best.x, y: best.y } : null;
 }
 
-// A few soft ore rocks along the way from the landing to the vault.
+function onWallFace(grid, rock) {
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = grid.rocks.get((rock.vi + di) * 100003 + (rock.vj + dj));
+        if (n && n.worldPoly && !n.alive && !n.growing) return true;
+    }
+    return false;
+}
+
+function wallFacePicks(grid, x, y, v, taken, want, ORE) {
+    if (want <= 0) return [];
+    const ex = v.x - x, ey = v.y - y, el = Math.hypot(ex, ey) || 1;
+    const pads = allPads();
+    const cands = [];
+    for (const rock of grid.rocks.values()) {
+        if (!rock || !rock.alive || rock.growing || rock.canyon || rock.ore === ORE.EMERALD || !rock.worldPoly || taken.has(rock)) continue;
+        const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
+        const d = Math.hypot(rx - x, ry - y);
+        if (d > FACE_REACH || !onWallFace(grid, rock)) continue;
+        if (pads.some(p => padGeom.insidePad(p, rx, ry, FACE_PAD_CLEAR))) continue;
+        const toward = d > 1 ? ((rx - x) * ex + (ry - y) * ey) / (d * el) : 0;
+        cands.push({ rock, rx, ry, score: d * (1.25 - 0.5 * Math.max(0, toward)) });
+    }
+    if (!cands.length) return [];
+    cands.sort((a, b) => a.score - b.score);
+    const anchor = cands[0];
+    const gap = (c) => Math.hypot(c.rx - anchor.rx, c.ry - anchor.ry);
+    return cands.filter(c => gap(c) <= FACE_CLUSTER).sort((a, b) => gap(a) - gap(b)).slice(0, want).map(c => c.rock);
+}
+
 function seedOreOnWay(grid, x, y, v) {
     const { ORE, ORE_HP } = require('./terrainGrid.js');
     const ex = v.x - x, ey = v.y - y, l2 = ex * ex + ey * ey || 1;
-    const picks = [];
+    const line = [];
     for (const rock of grid.rocks.values()) {
         if (!rock || !rock.alive || rock.growing || rock.canyon || rock.ore === ORE.EMERALD) continue;
         const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
@@ -379,19 +410,20 @@ function seedOreOnWay(grid, x, y, v) {
         if (k < 0.12 || k > 0.8) continue;
         const off = Math.hypot(rx - (x + k * ex), ry - (y + k * ey));
         if (off > 130) continue;
-        picks.push({ rock, k, off });
+        line.push({ rock, k, off });
     }
-    picks.sort((a, b) => a.off - b.off);
+    line.sort((a, b) => a.off - b.off);
+    const picks = line.slice(0, ORE_ON_WAY).map(p => p.rock);
+    for (const rock of wallFacePicks(grid, x, y, v, new Set(picks), ORE_ON_WAY - picks.length, ORE)) picks.push(rock);
     let n = 0;
-    for (const { rock } of picks) {
-        if (n >= ORE_ON_WAY) break;
+    for (const rock of picks) {
         const ore = n === 0 ? ORE.VEIN : ORE.COPPER;
         if (!rock.ore || rock.ore < ore) {
             rock.ore = ore;
             try { rock.deposits = grid._buildDeposits(rock); } catch { rock.deposits = null; }
         }
         rock.maxHealth = Math.max(10, grid.plainRockHealth * (ORE_HP[rock.ore] || 1) * ORE_SOFT);
-        rock.soft = true;   // the old flat gem pay, whatever the biome
+        rock.soft = true;
         rock.health = rock.maxHealth;
         grid.rockEvents.push({ k: rock.k, h: 1, d: 0, ore: rock.ore, bl: 1 });
         n++;

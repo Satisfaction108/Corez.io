@@ -24,6 +24,14 @@ const TRAP_VS_TANKS = 0.87;
 // every tank that makes them, classic or expanded) hit other tanks 40% softer, by ramming and
 // with their own guns. Rock, chests and bosses take the same as before.
 const MINION_VS_TANKS = 0.6;
+const HELPER_VS_TANKS = 0.75;
+function helperShot(e) {
+    if (!e || e.fromSidearm || e.rockOnly) return false;
+    if (e.type === 'drone' || e.type === 'minion') return true;
+    if (e.type === 'swarm') return e.motionType === 'swarm';
+    const src = e.source;
+    return !!(src && src !== e && src.type === 'minion');
+}
 
 // The expanded tree (entityAddons/tanksExpansion.js)
 let derived = null;
@@ -61,8 +69,9 @@ function intoTank(target, src, amount) {
     if (!root || root === target || root.isRoyaleBoss) return amount;
     if (src.type === 'trap') amount *= TRAP_VS_TANKS;
     if (src.type === 'minion' || (src.master && src.master !== src && src.master.type === 'minion')) amount *= MINION_VS_TANKS;
+    if ((root.isPlayer || root.isBot) && helperShot(src)) amount *= HELPER_VS_TANKS;
     const m = multOf(root.label);
     return m ? amount * m : amount;
 }
 
-module.exports = { intoTank, VS_TANKS, TRAP_VS_TANKS, MINION_VS_TANKS, multOf };
+module.exports = { intoTank, helperShot, VS_TANKS, TRAP_VS_TANKS, MINION_VS_TANKS, HELPER_VS_TANKS, multOf };

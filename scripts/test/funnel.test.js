@@ -277,6 +277,51 @@ test('first-timers: no gate, no daily strip or toast, no tip, no autofocus befor
     assert.match(ret, /function wantAsk\(\)[\s\S]*playedOnce\(\)/);
 });
 
+test('first-timers: the home screen is the logo, name, Play and region until the first raid', () => {
+    const html = read(PUB, 'index.html');
+    const css = read(PUB, 'home.css');
+    const home = read(PUB, 'client', 'home.js');
+    const head = html.slice(0, html.indexOf('</head>'));
+    const m = /<script>\s*(\(function \(\) \{\s*var html = document\.documentElement[\s\S]*?dw-fresh[\s\S]*?)<\/script>/.exec(head);
+    assert.ok(m, 'set in <head>, before the first paint');
+    const run = (data) => {
+        const storage = mem(data);
+        const el = { className: '', attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } };
+        const bar = { content: '', setAttribute(k, v) { this[k] = v; } };
+        new Function('window', 'document', m[1])({ localStorage: storage }, { documentElement: el, querySelector: () => bar });
+        return { fresh: /\bdw-fresh\b/.test(el.className), theme: el.attrs['data-theme'], bar: bar.content, storage };
+    };
+    const kinds = [{}, { dwGuestId: 'a'.repeat(32), dwAcctHint: 'guest' }, { dwPlayed: '1' }, { dwSessions: '2' }, { dwRaidsEnded: '1' },
+        { digRoyaleTutorialDone_v1: '1' }, { dwAcctHint: 'user' }, { dwAcctHint: 'new' }];
+    for (const k of kinds) assert.equal(run(k).fresh, !F.hasPlayed(mem(k)), JSON.stringify(k) + ' agrees with DWFunnel.hasPlayed');
+    assert.equal(run({}).fresh, true);
+    assert.equal(run({}).theme, 'light', 'the light floor is the default');
+    assert.equal(run({}).bar, '#e4e4e4');
+    assert.equal(run({ osaHomeTheme: 'dark', dwThemeV3: '1' }).theme, 'light', 'everyone gets the light floor once');
+    assert.equal(run({ osaHomeTheme: 'dark', dwThemeV4: '1' }).theme, 'dark', 'then the toggle sticks');
+    assert.match(html, /localStorage\.setItem\('osaHomeTheme', t\); localStorage\.setItem\('dwThemeV4', '1'\);/);
+    const rule = /html\.dw-fresh :is\(([^)]*)\) \{ display: none !important; \}/.exec(css);
+    assert.ok(rule, 'one rule hides the rest');
+    const hid = rule[1].split(',').map(x => x.trim());
+    for (const sel of ['#menuNav', '#accountChip', '#inviteBtn', '#homeSidebar', '#themeToggleBtn', '#homeLeft', '#lobbySide', '#lvRow', '.startButtonHolder', '#aoChampions']) {
+        assert.ok(hid.includes(sel), sel + ' waits for the first raid');
+    }
+    for (const sel of ['#startButton', '#playerNameInput', '#serverDropdown', '.region-row', '.menu-credits', '.hero-tag', '.game-title', '.name-row']) {
+        assert.ok(!hid.includes(sel), sel + ' is always there');
+    }
+    const sync = home.slice(home.indexOf('function syncFresh()'), home.indexOf('function syncFresh()') + 200);
+    assert.match(sync, /F\.hasPlayed\(\)\) root\.classList\.remove\('dw-fresh'\)/);
+    assert.match(home, /\} else \{\n\s*syncFresh\(\);/, 'and shows up when they are back from it');
+    assert.ok(html.includes('Developed by <b>ZyroX</b>') && html.includes('id="contributorsLink"'), 'credits kept');
+    assert.ok(html.includes('src="/img/logo.svg"'), 'logo kept');
+    assert.match(html, /<button type="button" id="freshLogin"[^>]*>Log in<\/button>/, 'someone with an account on a new device can still log in');
+    assert.ok(!hid.includes('#freshLogin'));
+    assert.match(css, /#freshLogin \{ display: none; \}\nhtml\.dw-fresh #freshLogin \{/, 'only before the first raid');
+    assert.match(home, /if \(a && a\.openLogin\) return a\.openLogin\(\);\n\s*if \(F && F\.withAccountUi\) F\.withAccountUi\(/);
+    const main = read(PUB, 'client', 'account', 'main.js');
+    assert.match(main, /openLogin\(\) \{[\s\S]{0,240}welcome\.open\('auth', \{ tab: 'login', dismissable: true \}\);/);
+});
+
 // A fake page, enough for funnel.js's boot: the button, the menu, the
 // clock, the timers and fetch are all ours.
 function fakePageWith(extra) { return fakePage({ extra }); }

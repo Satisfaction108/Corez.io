@@ -53,8 +53,62 @@ const HD_AHEAD = 128;
 // How close the zoom must be to the one a layer was shaded for to draw it
 // 1:1: at 2e-4 the far edge of a 4K screen is off by under half a pixel.
 const HD_SNAP = 2e-4;
-// the ore gem's feathered halo: stroke widths (per rockSz), outermost last
-const ORE_HALO = [0.011, 0.026, 0.041, 0.056, 0.07, 0.085];
+const OUTLINE_PX = 5.6, OUTLINE_MAX = 0.26;
+const OUTLINE_INK = 'rgba(0,0,0,0.5)';
+const BEVEL_PX = 3.6;
+const BEVEL_LIGHT = 'rgba(255,255,255,0.3)';
+const BEVEL_DARK = 'rgba(0,0,0,0.2)';
+const SPECKLE_N = 256, SPECKLE_SPAN = 1.6;
+let speckleCanvas = null;
+function speckleTile() {
+    if (speckleCanvas) return speckleCanvas;
+    const N = SPECKLE_N;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = N;
+    const g = cv.getContext('2d');
+    let seed = 41;
+    const rng = () => {
+        seed = (Math.imul(seed, 1597334677) + 926135893) | 0;
+        return ((seed >>> 8) & 0xffffff) / 0x1000000;
+    };
+    const dot = (x, y, r) => {
+        for (let ox = -N; ox <= N; ox += N) {
+            for (let oy = -N; oy <= N; oy += N) {
+                if (x + ox + r < 0 || x + ox - r > N || y + oy + r < 0 || y + oy - r > N) continue;
+                g.moveTo(x + ox + r, y + oy);
+                g.arc(x + ox, y + oy, r, 0, Math.PI * 2);
+            }
+        }
+    };
+    for (let pass = 0; pass < 3; pass++) {
+        g.beginPath();
+        const count = pass === 0 ? 70 : pass === 1 ? 900 : 260;
+        for (let i = 0; i < count; i++) {
+            const r = pass === 0 ? 7 + rng() * 14 : pass === 1 ? 0.7 + rng() * 1.3 : 0.6 + rng() * 1.1;
+            dot(rng() * N, rng() * N, r);
+        }
+        g.fillStyle = pass === 0 ? 'rgba(0,0,0,0.035)' : pass === 1 ? 'rgba(0,0,0,0.11)' : 'rgba(255,255,255,0.13)';
+        g.fill();
+    }
+    speckleCanvas = cv;
+    return cv;
+}
+const SEAM_PX = 3.4, SEAM_MAX = 0.09;
+const SEAM_INK = 'rgba(0,0,0,0.5)';
+const CELL_BEVEL_PX = 2.4, CELL_BEVEL_MAX = 0.06;
+const CELL_LIGHT = 'rgba(255,255,255,0.34)';
+const CELL_DARK = 'rgba(0,0,0,0.14)';
+const SIDE_PX = 5, SIDE_MAX = 0.12;
+const SIDE_TONE = 0.58;
+const SIDE_EDGE_PX = 2.2;
+const SIDE_EDGE_INK = 'rgba(0,0,0,0.5)';
+const SHADOW_INK = 'rgba(0,0,0,0.085)';
+const WEDGE_A = Math.acos(1 / 3);
+const GEM_LINE = 0.028;
+const CRACK_INK = 'rgba(0,0,0,0.45)';
+const CRACK_HOT = 'rgb(255,248,226)';
+const WEAR_INK = 'rgb(0,0,0)';
+const CLASSIC_FILL = [228, 192, 128];
 const hdKey = (i, j) => (i + 4096) * 8192 + (j + 4096);
 
 const GEM_CUT = [
@@ -212,36 +266,13 @@ class TerrainRenderer {
     static ORE_FX_CSS = Object.fromEntries(Object.entries(TerrainRenderer.ORE_FX || {}).map(([k, v]) => [k, v.map(c => 'rgb(' + c + ')')]));
 
     static ORE_PAL = {
-        1: { dark: 'rgba(90,44,14,0.9)',  mid: 'rgba(201,111,46,0.95)',
-             light: 'rgba(237,167,102,0.95)', core: 'rgba(255,233,209,0.9)' },
-        2: { dark: 'rgba(14,44,90,0.9)',  mid: 'rgba(59,124,224,0.95)',
-             light: 'rgba(127,177,242,0.95)', core: 'rgba(226,240,255,0.9)' },
-        3: { dark: 'rgba(61,14,74,0.9)',  mid: 'rgba(177,62,207,0.95)',
-             light: 'rgba(217,138,240,0.95)', core: 'rgba(251,230,255,0.9)' },
-        4: { dark: 'rgba(8,66,38,0.92)',  mid: 'rgba(31,191,107,0.95)',
-             light: 'rgba(111,245,168,0.95)', core: 'rgba(232,255,242,0.95)' },
+        1: { dark: 'rgb(132,72,26)', mid: 'rgb(238,142,62)', light: 'rgb(250,192,128)', core: 'rgba(255,247,234,0.92)' },
+        2: { dark: 'rgb(30,74,150)', mid: 'rgb(66,142,244)', light: 'rgb(150,200,255)', core: 'rgba(240,247,255,0.92)' },
+        3: { dark: 'rgb(102,40,128)', mid: 'rgb(198,94,236)', light: 'rgb(232,172,250)', core: 'rgba(253,240,255,0.92)' },
+        4: { dark: 'rgb(18,110,62)', mid: 'rgb(48,210,126)', light: 'rgb(142,242,188)', core: 'rgba(237,255,246,0.95)' },
     };
 
-    static CRACK_PAL = {
-        0: { deep: '150,35,0',   hot: '255,110,20', hair: '255,225,140' },
-        1: { deep: '140,62,15',  hot: '235,140,60', hair: '255,218,175' },
-        2: { deep: '20,70,160',  hot: '80,150,255', hair: '190,222,255' },
-        3: { deep: '110,25,140', hot: '200,95,240', hair: '242,205,255' },
-        4: { deep: '12,110,60',  hot: '60,225,135', hair: '205,255,228' },
-    };
-
-    // Rock look (cartoon boulders, see the voronoi shader). The shader and
-    // the no-WebGL fallback share these tones; keep them in step.
-    static ROCK_INK  = 'rgb(16,13,22)';
-    // the three facet tones (shadowed / main / lit), see the shader
-    static ROCK_DARK  = 'rgb(29,26,38)';
-    static ROCK_FACE  = 'rgb(43,39,55)';
-    static ROCK_LIGHT = 'rgb(61,55,77)';
-    static ROCK_CHIP = ['rgb(16,13,22)', 'rgb(29,26,38)', 'rgb(43,39,55)'];
-    // silhouette stroke (tile units per rockSz): drawn under the rock and
-    // dropped a hair, so the outline is only faintly heavier on the bottom
-    static SIL_W    = 0.12;
-    static SIL_DROP = 0.012;
+    static ROCK_CHIP  = ['rgb(125,106,70)', 'rgb(232,206,160)', 'rgb(240,222,190)'];
 
     constructor() {
         this.ready       = false;
@@ -253,14 +284,6 @@ class TerrainRenderer {
         this._facets     = null;
         this._minerals   = null;
         this._crackPath  = null;
-        this._noiseTile        = null;
-        this._noiseTileBuilding = false;
-        this._gl               = null;
-        this._glCanvas         = null;
-        this._glOriginU        = null;
-        this._glCellSzU        = null;
-        this._glShU            = null;
-        this._glRockSzU        = null;
         this._bbox             = null;
         this._silFull         = null;
         this._silOuter        = null;
@@ -374,7 +397,6 @@ class TerrainRenderer {
         this._rockMiss = 0;
         this._silStale = 0;
         this.inits = (this.inits | 0) + 1;
-        this._glChecks = 0;            // check the shader's output again
         // Reset rock state, then apply the server snapshot (late join / rejoin)
         this._rockHealth.clear();
         this._rockDead.clear();
@@ -421,7 +443,6 @@ class TerrainRenderer {
 
         this._ore.clear();
         this._veinCache.clear();
-        this._orePk = null;
         this._oreSalt = oreSalt | 0;
         if (oreState) for (const [k, tier] of oreState) {
             if (!this._rockDead.has(k)) this._ore.set(k, tier);
@@ -431,7 +452,6 @@ class TerrainRenderer {
             if (g.tier) this._ore.set(k, g.tier);
         }
         this._setBiomes(biomeSeed | 0, cols, rows);
-        if (!this._noiseTile && !this._noiseTileBuilding) this._buildNoiseTile();
         this._buildContours();
         this._buildFacets();
         this.ready = true;
@@ -1282,28 +1302,6 @@ class TerrainRenderer {
         return out;
     }
 
-    // The gem outlines of every live ore rock in and round the view, as one
-    // path. Made again only when ore or rocks
-    // change or the view leaves the box they were made for.
-    _orePockets(tlx, tly, tlw, tlh) {
-        let P = this._orePk;
-        if (P && P.ver === (this._oreVer | 0) && P.dead === this._rockDead.size && P.size === this._ore.size &&
-            tlx >= P.x0 && tly >= P.y0 && tlx + tlw <= P.x1 && tly + tlh <= P.y1) return P;
-        const mx = tlw * 0.5, my = tlh * 0.5;
-        P = this._orePk = { ver: this._oreVer | 0, dead: this._rockDead.size, size: this._ore.size,
-                            x0: tlx - mx, y0: tly - my, x1: tlx + tlw + mx, y1: tly + tlh + my,
-                            body: new Path2D(), n: 0 };
-        this._ore.forEach((tier, k) => {
-            if (this._rockDead.has(k)) return;
-            const cell = this._cellPolys.get(k);
-            if (!cell || cell.cx < P.x0 - 3 || cell.cx > P.x1 + 3 || cell.cy < P.y0 - 3 || cell.cy > P.y1 + 3) return;
-            const art = this._getVeinArt(k, tier);
-            if (!art) return;
-            P.body.addPath(art.body);
-            P.n++;
-        });
-        return P;
-    }
     _getVeinArt(k, tier) {
         let art = this._veinCache.get(k);
         if (art !== undefined) return art;
@@ -1336,7 +1334,6 @@ class TerrainRenderer {
             put(body,  d.x, d.y, d.r, d.rot, 1,    0,           0);
             put(facet, d.x, d.y, d.r, d.rot, 0.52, 0,           -d.r * 0.12);
             put(core,  d.x, d.y, d.r, d.rot, 0.20, -d.r * 0.22, -d.r * 0.30);
-
             const gc = Math.cos(d.rot), gs = Math.sin(d.rot);
             glintPts.push([d.x + (-0.35 * d.r) * gc - (-0.6 * d.r) * gs,
                            d.y + (-0.35 * d.r) * gs + (-0.6 * d.r) * gc]);
@@ -1567,18 +1564,6 @@ class TerrainRenderer {
         return path;
     }
 
-    // The rock shader's context. Any failure here (no WebGL, a context lost
-    // on the way in, a shader that won't link) leaves this._gl null and the
-    // rocks draw as flat facets; it must never stop init() from finishing,
-    // or the whole rock layer stays empty for the session.
-    _buildNoiseTile() {
-        this._noiseTileBuilding = true;
-        try { this._buildNoiseTileGl(); }
-        catch (e) { this._dropGl('shader setup failed: ' + (e && e.message)); }
-        this._noiseTile = true;
-        this._noiseTileBuilding = false;
-    }
-
     // ── Rock biomes ──
     // Every lattice cell's four tones, worked out once per map from the
     // shared biome function (same seed and lattice as the server, so nothing
@@ -1660,6 +1645,31 @@ class TerrainRenderer {
     // This rock's tones as css [ink, dark, face, light, rim, gem], cached
     // per rock; c.rimA is the rim's strength (0-1), c.glowA the seam
     // glow's, c.veinA the veins'.
+    setTheme(dark) {
+        dark = !!dark;
+        if (dark === !!this._dark) return;
+        this._dark = dark;
+        if (this._bio) this._bio.css.clear();
+        this._classic = null;
+        this._dropRockImage();
+    }
+    _toneCss(r, g, b) {
+        const B = this._dark && typeof window !== 'undefined' ? window.DWBiomes : null;
+        if (B && B.deepTone) { const t = B.deepTone([r, g, b]); r = t[0]; g = t[1]; b = t[2]; }
+        return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+    _classicCss() {
+        if (this._classic) return this._classic;
+        const f = CLASSIC_FILL;
+        const tone = (k, lift) => {
+            const c = f.map(v => Math.round(lift ? v + (255 - v) * k : v * k));
+            return this._toneCss(c[0], c[1], c[2]);
+        };
+        const c = [tone(0.55, false), tone(0.84, false), tone(1, false), tone(0.2, true), tone(0.35, true)];
+        c.chips = [c[0], c[3], c[4]];
+        this._classic = c;
+        return c;
+    }
     _bioCss(k) {
         const bio = this._bio;
         if (!bio) return null;
@@ -1669,43 +1679,15 @@ class TerrainRenderer {
         const i = Math.max(0, Math.min(BIO_N - 1, vi + 8)), j = Math.max(0, Math.min(BIO_N - 1, vj + 8));
         const o = (j * BIO_N * BIO_T + i * BIO_T) * 4, t = bio.tex;
         c = [];
-        for (let q = 0; q < BIO_T; q++) c.push('rgb(' + t[o + q * 4] + ',' + t[o + q * 4 + 1] + ',' + t[o + q * 4 + 2] + ')');
+        for (let q = 0; q < BIO_T; q++) c.push(this._toneCss(t[o + q * 4], t[o + q * 4 + 1], t[o + q * 4 + 2]));
         c.rimA = t[o + BIO_RIM * 4 + 3] / 255;
         c.glowA = t[o + 3] / 255;
         c.veinA = t[o + BIO_GEM * 4 + 3] / 255;
         bio.css.set(k, c);
         return c;
     }
-    // A rock's crack colours: { base (css), deep, hot, hair ('r,g,b') }. An
-    // ore rock's crack shows its ore's colours; a plain one cracks in its own
-    // biome's tones, deeper (dark teal in the crystal, red-black in the
-    // magma, deep brown in the sandstone) with a hairline of its lit tone
-    // along it. The classic rock keeps the classic crack.
-    _crackPal(k) {
-        const tier = this._ore.get(k) | 0;
-        const classic = TerrainRenderer.CRACK_PAL[tier] || TerrainRenderer.CRACK_PAL[0];
-        if (tier || !this._bio) return classic;
-        const c = this._bioCss(k);
-        if (!c) return classic;
-        if (!c.crack) {
-            const bio = this._bio, vi = Math.floor(k / 100003), vj = k - vi * 100003;
-            const i = Math.max(0, Math.min(BIO_N - 1, vi + 8)), j = Math.max(0, Math.min(BIO_N - 1, vj + 8));
-            const o = (j * BIO_N * BIO_T + i * BIO_T) * 4, t = bio.tex;
-            const tone = (q, k2) => Math.round(t[o + q * 4] * k2) + ',' + Math.round(t[o + q * 4 + 1] * k2) + ',' + Math.round(t[o + q * 4 + 2] * k2);
-            c.crack = { base: 'rgba(' + tone(0, 0.62) + ',0.85)', deep: tone(1, 0.72), hot: tone(0, 0.42), hair: tone(3, 1.1) };
-        }
-        return c.crack;
-    }
-    // The ink a worn or bitten rock darkens toward: its own seam colour, or
-    // the classic ink without biomes.
-    _inkOf(k) {
-        const c = this._bio ? this._bioCss(k) : null;
-        return c ? c[0] : TerrainRenderer.ROCK_INK;
-    }
-    // Chips for a rock (a shatter, a hit, a regrow), or null for the classic
-    // ones: its seam ink, its lit face and its bright edge colour, so some
-    // read against the floor and some against the rock round it.
     _bioChips(k) {
+        if (k < 0) return null;
         const c = this._bioCss(k);
         return c ? (c.chips || (c.chips = [c[0], c[3], c[4]])) : null;
     }
@@ -1719,92 +1701,29 @@ class TerrainRenderer {
         if (i < 0 || j < 0 || i >= BIO_N || j >= BIO_N) return -1;
         return bio.dom[j * BIO_N + i];
     }
-    // Point the shader at the tones (uploading them when they changed).
-    // Called before every shading pass; with no biomes it only sets u_bioOn 0.
-    _bioUniforms(gl) {
-        if (!this._glBioOnU) return;
-        const bio = this._bio;
-        if (!bio) { gl.uniform1f(this._glBioOnU, 0); return; }
-        if (this._bioUpload) {
-            gl.activeTexture(gl.TEXTURE1);
-            gl.bindTexture(gl.TEXTURE_2D, this._glBioTex);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, BIO_N * BIO_T, BIO_N, 0, gl.RGBA, gl.UNSIGNED_BYTE, bio.tex);
-            gl.activeTexture(gl.TEXTURE0);
-            this._bioUpload = false;
-        }
-        gl.uniform1f(this._glBioOnU, 1);
-    }
-    // Re-shade just the rocks whose look changed (ore came or went) inside
-    // the cached image: a scissored shader pass per rock and a copy of that
-    // patch, or the flat facets again without WebGL. Only on a frame where a
-    // rock changed, and a handful of rocks at most. A GPU build's image is a
-    // bitmap, which can't be drawn into: the first patch after a build copies
-    // it to a canvas once (measured as cheap to draw every frame as the
-    // bitmap), later ones only touch their own rocks.
     _patchBio(c) {
         const keys = this._bioPatch;
         if (c && c.hd) { this._hdMarkStale(keys); return; }
         const img = c && c.img;
-        const isCanvas = !!img && typeof HTMLCanvasElement !== 'undefined' && img instanceof HTMLCanvasElement;
-        const isBitmap = !!img && typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap;
-        if (!keys.size || !(isCanvas || isBitmap)) { keys.clear(); return; }
+        if (!keys.size || !img || typeof img.getContext !== 'function') { keys.clear(); return; }
         const rockSz = Math.min(this._cols, 120) / 50.0, pad = 0.2 * rockSz;
-        // each changed rock's box in an image's pixels
-        const rectsIn = (c) => {
-            const d = c.density, dY = d * c.ratioY, pw = c.img.width, ph = c.img.height;
-            const rects = [];
-            keys.forEach((k) => {
-                const cell = this._cellPolys.get(k);
-                if (!cell) return;
-                let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-                for (const p of cell.poly) {
-                    if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0];
-                    if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1];
-                }
-                const px0 = Math.max(0, Math.floor((x0 - pad - c.x) * d)), px1 = Math.min(pw, Math.ceil((x1 + pad - c.x) * d));
-                const py0 = Math.max(0, Math.floor((y0 - pad - c.y) * dY)), py1 = Math.min(ph, Math.ceil((y1 + pad - c.y) * dY));
-                if (px1 > px0 && py1 > py0) rects.push([px0, py0, px1 - px0, py1 - py0]);
-            });
-            return rects;
-        };
         const d = c.density, dY = d * c.ratioY, pw = img.width, ph = img.height;
-        const rects = rectsIn(c);
+        const rects = [];
+        keys.forEach((k) => {
+            const cell = this._cellPolys.get(k);
+            if (!cell) return;
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+            for (const p of cell.poly) {
+                if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0];
+                if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1];
+            }
+            const px0 = Math.max(0, Math.floor((x0 - pad - c.x) * d)), px1 = Math.min(pw, Math.ceil((x1 + pad - c.x) * d));
+            const py0 = Math.max(0, Math.floor((y0 - pad - c.y) * dY)), py1 = Math.min(ph, Math.ceil((y1 + pad - c.y) * dY));
+            if (px1 > px0 && py1 > py0) rects.push([px0, py0, px1 - px0, py1 - py0]);
+        });
         keys.clear();
         if (!rects.length) return;
-        let out = img;
-        if (isBitmap) {
-            out = this._bioCanvas || (this._bioCanvas = document.createElement('canvas'));
-            if (out.width !== pw || out.height !== ph) { out.width = pw; out.height = ph; }
-            const g0 = out.getContext('2d');
-            g0.globalCompositeOperation = 'copy';
-            g0.drawImage(img, 0, 0);
-            g0.globalCompositeOperation = 'source-over';
-            c.img = out;
-            img.close();
-        }
-        const g = out.getContext('2d');
-        if (this._gl && !this._gl.isContextLost()) {
-            try {
-                const gl = this._gl, glc = this._glCanvas;
-                if (glc.width !== pw || glc.height !== ph) { glc.width = pw; glc.height = ph; }
-                gl.viewport(0, 0, pw, ph);
-                gl.uniform2f(this._glOriginU, -c.x * d, -c.y * dY);
-                gl.uniform2f(this._glCellSzU, d, dY);
-                gl.uniform1f(this._glShU, ph);
-                gl.uniform1f(this._glRockSzU, rockSz);
-                this._bioUniforms(gl);
-                gl.enable(gl.SCISSOR_TEST);
-                for (const [x, y, w, h] of rects) {
-                    gl.scissor(x, ph - y - h, w, h);
-                    gl.drawArrays(gl.TRIANGLES, 0, 6);
-                }
-                gl.disable(gl.SCISSOR_TEST);
-                for (const [x, y, w, h] of rects) g.drawImage(glc, x, y, w, h, x, y, w, h);
-            } catch (e) {
-                this._dropGl(e && e.message);
-            }
-            return;
-        }
+        const g = img.getContext('2d');
         g.save();
         g.setTransform(d, 0, 0, dY, -c.x * d, -c.y * dY);
         for (const [x, y, w, h] of rects) {
@@ -1813,61 +1732,213 @@ class TerrainRenderer {
             g.beginPath();
             g.rect(tx, ty, tw, th);
             g.clip();
-            // from the same base as a full build, so seams aren't inked twice
-            g.fillStyle = TerrainRenderer.ROCK_FACE;
-            g.fillRect(tx, ty, tw, th);
-            this._drawFlatCells(g, tx, ty, tw, th);
+            g.clearRect(tx, ty, tw, th);
+            this._drawFlatCells(g, tx, ty, tw, th, c.px || this._pxUnit);
             g.restore();
         }
         g.restore();
     }
-    // No WebGL: flat facets from the same lattice polygons, so rocks still
-    // match the collision geometry. g is already in tile coordinates.
-    _drawFlatCells(g, x, y, w, h) {
-        const TR = TerrainRenderer;
+    _drawFlatCells(g, x, y, w, h, px) {
         const rockSz = Math.min(this._cols, 120) / 50.0;
-        // same facets as the shader: per cell a lit and a shadowed
-        // wedge (141deg each) meeting at the seed, main tone between
-        const WA = Math.acos(1 / 3), R = 3 * rockSz;
+        const list = this._flatList || (this._flatList = []);
+        list.length = 0;
+        const vi0 = Math.floor(x / rockSz) - 2, vi1 = Math.ceil((x + w) / rockSz) + 2;
+        const vj0 = Math.floor(y / rockSz) - 2, vj1 = Math.ceil((y + h) / rockSz) + 2;
+        for (let vj = vj0; vj <= vj1; vj++) {
+            for (let vi = vi0; vi <= vi1; vi++) {
+                const cell = this._cellPolys.get(vi * 100003 + vj);
+                if (cell) list.push(cell);
+            }
+        }
+        const bio = !!this._bio, classic = bio ? null : this._classicCss();
+        const unit = px > 0 ? px : 0.02;
+        const seamW = Math.min(SEAM_PX * unit, SEAM_MAX * rockSz), bev = Math.min(CELL_BEVEL_PX * unit, CELL_BEVEL_MAX * rockSz);
+        g.lineJoin = 'round';
+        const R = 3 * rockSz;
         const wedge = (ox, oy, a0) => {
             g.beginPath();
             g.moveTo(ox, oy);
-            for (const da of [-WA, 0, WA]) g.lineTo(ox + Math.cos(a0 + da) * R, oy + Math.sin(a0 + da) * R);
+            g.lineTo(ox + Math.cos(a0 - WEDGE_A) * R, oy + Math.sin(a0 - WEDGE_A) * R);
+            g.lineTo(ox + Math.cos(a0) * R, oy + Math.sin(a0) * R);
+            g.lineTo(ox + Math.cos(a0 + WEDGE_A) * R, oy + Math.sin(a0 + WEDGE_A) * R);
             g.closePath();
             g.fill();
         };
-        g.strokeStyle = TR.ROCK_INK;
-        g.lineWidth = 0.056 * rockSz;
-        g.lineJoin = 'round';
-        for (const cell of this._cellPolys.values()) {
-            if (cell.cx < x - 3 || cell.cx > x + w + 3 || cell.cy < y - 3 || cell.cy > y + h + 3) continue;
-            const bc = this._bio ? this._bioCss(cell.k) : null;
+        for (let i = 0; i < list.length; i++) {
+            const cell = list[i];
+            const bc = bio ? this._bioCss(cell.k) : classic;
+            const vi = Math.floor(cell.k / 100003), vj = cell.k - vi * 100003;
+            const hv = this._vh2(vi, vj);
+            const ox = (vi + hv[0]) * rockSz, oy = (vj + hv[1]) * rockSz;
+            const la = (hv[0] - 0.5) * 0.8;
+            const up = Math.atan2(-Math.cos(la), Math.sin(la));
             g.save();
             g.clip(cell.path);
-            g.fillStyle = bc ? bc[2] : TR.ROCK_FACE;
+            g.fillStyle = bc[2];
             g.fill(cell.path);
-            const vi = Math.floor(cell.k / 100003), vj = cell.k - vi * 100003;
-            const [hx, hy] = this._vh2(vi, vj);
-            const ox = (vi + hx) * rockSz, oy = (vj + hy) * rockSz;
-            const la = (hx - 0.5) * 0.8;
-            const up = Math.atan2(-Math.cos(la), Math.sin(la));   // ldir
-            g.fillStyle = bc ? bc[3] : TR.ROCK_LIGHT; wedge(ox, oy, up + Math.PI);
-            g.fillStyle = bc ? bc[1] : TR.ROCK_DARK;  wedge(ox, oy, up);
-            g.restore();
-            if (bc) g.strokeStyle = bc[0];
+            g.fillStyle = bc[3];
+            wedge(ox, oy, up);
+            g.fillStyle = bc[1];
+            wedge(ox, oy, up + Math.PI);
+            g.lineWidth = seamW + bev * 2;
+            g.translate(bev, bev);
+            g.strokeStyle = CELL_LIGHT;
             g.stroke(cell.path);
+            g.translate(-2 * bev, -2 * bev);
+            g.strokeStyle = CELL_DARK;
+            g.stroke(cell.path);
+            g.restore();
+        }
+        const seams = new Path2D();
+        for (let i = 0; i < list.length; i++) seams.addPath(list[i].path);
+        g.lineJoin = 'round';
+        g.lineWidth = seamW;
+        g.strokeStyle = SEAM_INK;
+        g.stroke(seams);
+        list.length = 0;
+        const pat = this._speckleFor(g, rockSz);
+        if (pat) {
+            g.save();
+            g.globalCompositeOperation = 'source-atop';
+            g.fillStyle = pat;
+            g.fillRect(x, y, w, h);
+            g.restore();
         }
     }
-
-    // Back to the flat facets (and a fresh texture) when the GPU side fails.
-    _dropGl(why) {
-        if (this._gl && !this._glWarned) { this._glWarned = true; console.warn('Rock shader off:', why); }
-        this._gl = null;
-        this._glCanvas = null;
-        this._rockQuality = null;
-        this._dropRockImage();
-        this._glChecks = 0;
+    _localSil(tlx, tly, tlw, tlh) {
+        const lattice = this._voroLattice;
+        if (!lattice || !this._silClip) return null;
+        let L = this._silLocal;
+        if (L && L.sil === this._silClip && L.lat === lattice && L.dark === !!this._dark &&
+            tlx >= L.x0 && tly >= L.y0 && tlx + tlw <= L.x1 && tly + tlh <= L.y1) return L;
+        const rockSz = Math.min(this._cols, 120) / 50.0;
+        const mx = tlw * 0.35 + 2 * rockSz, my = tlh * 0.35 + 2 * rockSz;
+        const x0 = tlx - mx, y0 = tly - my, x1 = tlx + tlw + mx, y1 = tly + tlh + my;
+        const alive = new Path2D(), dead = this._rockDead, segs = [];
+        const vi0 = Math.floor(x0 / rockSz) - 2, vi1 = Math.ceil(x1 / rockSz) + 2;
+        const vj0 = Math.floor(y0 / rockSz) - 2, vj1 = Math.ceil(y1 / rockSz) + 2;
+        for (let vj = vj0; vj <= vj1; vj++) {
+            for (let vi = vi0; vi <= vi1; vi++) {
+                const key = vi * 100003 + vj;
+                if (dead.has(key)) continue;
+                const C = lattice.get(key);
+                if (!C) continue;
+                alive.addPath(C.cell.path);
+                const poly = C.cell.poly, nb = C.nb, n = poly.length;
+                let side = null;
+                for (let e = 0; e < n; e++) {
+                    const nk = nb[e];
+                    if (nk === key || (!dead.has(nk) && lattice.has(nk))) continue;
+                    const a = poly[e], b = poly[(e + 1) % n];
+                    if (side === null) side = this._sideCss(key);
+                    segs.push(a[0], a[1], b[0], b[1], side);
+                }
+            }
+        }
+        L = this._silLocal = { sil: this._silClip, lat: lattice, dark: !!this._dark, x0, y0, x1, y1, alive, segs,
+                               edges: this._chainSegs(segs, false), dr: this._chainSegs(segs, true), sides: null, sidesE: 0 };
+        return L;
     }
+    _chainSegs(segs, downRight) {
+        const Q = 1000, path = new Path2D(), ends = new Map(), used = [];
+        const keyOf = (x, y) => Math.round(x * Q) * 1e6 + Math.round(y * Q);
+        const list = [];
+        for (let i = 0; i < segs.length; i += 5) {
+            if (downRight && (segs[i + 3] - segs[i + 1]) - (segs[i + 2] - segs[i]) <= 0) continue;
+            list.push(i);
+        }
+        for (let s = 0; s < list.length; s++) {
+            const i = list[s];
+            const ka = keyOf(segs[i], segs[i + 1]), kb = keyOf(segs[i + 2], segs[i + 3]);
+            (ends.get(ka) || ends.set(ka, []).get(ka)).push(s);
+            (ends.get(kb) || ends.set(kb, []).get(kb)).push(s);
+            used.push(false);
+        }
+        const nextFrom = (k) => {
+            const at = ends.get(k);
+            if (!at) return -1;
+            for (let q = 0; q < at.length; q++) if (!used[at[q]]) return at[q];
+            return -1;
+        };
+        for (let s = 0; s < list.length; s++) {
+            if (used[s]) continue;
+            used[s] = true;
+            const i = list[s];
+            path.moveTo(segs[i], segs[i + 1]);
+            path.lineTo(segs[i + 2], segs[i + 3]);
+            let k = keyOf(segs[i + 2], segs[i + 3]);
+            for (;;) {
+                const t = nextFrom(k);
+                if (t < 0) break;
+                used[t] = true;
+                const j = list[t];
+                const ja = keyOf(segs[j], segs[j + 1]);
+                if (ja === k) { path.lineTo(segs[j + 2], segs[j + 3]); k = keyOf(segs[j + 2], segs[j + 3]); }
+                else { path.lineTo(segs[j], segs[j + 1]); k = ja; }
+            }
+        }
+        return path;
+    }
+    _sideCss(k) {
+        const bio = this._bio;
+        const map = this._sideCols || (this._sideCols = new Map());
+        let dom = -1;
+        if (bio) {
+            const vi = Math.floor(k / 100003), vj = k - vi * 100003;
+            const i = vi + 8, j = vj + 8;
+            if (i >= 0 && j >= 0 && i < BIO_N && j < BIO_N) dom = bio.dom[j * BIO_N + i];
+        }
+        const id = (this._dark ? 100 : 0) + dom;
+        let css = map.get(id);
+        if (css === undefined) {
+            const B = typeof window !== 'undefined' ? window.DWBiomes : null;
+            const fill = dom >= 0 && B ? B.BIOMES[dom].fill : CLASSIC_FILL;
+            const c = fill.map(v => Math.round(v * SIDE_TONE));
+            css = this._toneCss(c[0], c[1], c[2]);
+            map.set(id, css);
+        }
+        return css;
+    }
+    _sideQuads(L, e) {
+        if (L.sides && Math.abs(L.sidesE - e) < 1e-6) return L.sides;
+        const sides = new Map(), s = L.segs;
+        for (let i = 0; i < s.length; i += 5) {
+            const ax = s[i], ay = s[i + 1], bx = s[i + 2], by = s[i + 3];
+            if ((by - ay) - (bx - ax) <= 0) continue;
+            let p = sides.get(s[i + 4]);
+            if (!p) { p = new Path2D(); sides.set(s[i + 4], p); }
+            p.moveTo(ax, ay); p.lineTo(bx, by); p.lineTo(bx + e, by + e); p.lineTo(ax + e, ay + e); p.closePath();
+        }
+        L.sides = sides;
+        L.sidesE = e;
+        return sides;
+    }
+    islandPath() {
+        const lattice = this._voroLattice;
+        if (!lattice) return null;
+        if (this._island && this._island.lat === lattice) return this._island.path;
+        const dead = this._rockDead, edges = this._silEdges, deadN = this._silDeadN;
+        let path = null;
+        this._rockDead = this._noDead || (this._noDead = new Set());
+        try { path = this._buildVoronoiBoundary(); } finally { this._rockDead = dead; this._silEdges = edges; this._silDeadN = deadN; }
+        this._island = { lat: lattice, path };
+        return path;
+    }
+    _speckleFor(g, rockSz) {
+        const cache = this._specklePats || (this._specklePats = new WeakMap());
+        const k = SPECKLE_SPAN * rockSz / SPECKLE_N;
+        const e = cache.get(g);
+        if (e && e.k === k) return e.pat;
+        let pat = null;
+        try {
+            pat = g.createPattern(speckleTile(), 'repeat');
+            if (pat && typeof pat.setTransform === 'function' && typeof DOMMatrix !== 'undefined') pat.setTransform(new DOMMatrix([k, 0, 0, k, 0, 0]));
+            else pat = null;
+        } catch (err) { pat = null; }
+        cache.set(g, { k, pat });
+        return pat;
+    }
+
     // Forget the cached rock image (and any sharper one being shaded),
     // giving its memory back now.
     _dropRockImage() {
@@ -1880,224 +1951,7 @@ class TerrainRenderer {
         this._hdDropLayer(this._hdLayer);
         this._hdDropLayer(this._hdNext);
         this._hdLayer = this._hdNext = null;
-        this._hdUni = null;
         if (this._rockCache && this._rockCache.hd) this._rockCache = null;
-    }
-
-    _buildNoiseTileGl() {
-        let canvas, gl;
-        // One full-screen quad, no geometry edges and no depth: multisampling
-        // and a depth buffer only cost memory here (the defaults gave the
-        // GPU process ~300 MB extra at 1080p for a 19 MB image).
-        const lean = { antialias: false, depth: false, stencil: false, alpha: true };
-        if (typeof OffscreenCanvas !== 'undefined') {
-            try {
-                canvas = new OffscreenCanvas(1, 1);
-                gl = canvas.getContext('webgl', lean);
-            } catch(e) { gl = null; }
-        }
-        if (!gl) {
-            canvas = document.createElement('canvas');
-            canvas.width = canvas.height = 1;
-            const keep = { ...lean, preserveDrawingBuffer: true, premultipliedAlpha: false };
-            gl = canvas.getContext('webgl', keep) || canvas.getContext('experimental-webgl', keep);
-        }
-        if (!gl || gl.isContextLost()) { this._gl = null; return; }
-
-        const VS = `attribute vec2 a_pos;
-	                void main(){gl_Position=vec4(a_pos,0.,1.);}`;
-
-        const FS = `precision highp float;
-            uniform vec2  u_origin;
-            uniform vec2  u_cellSz;
-            uniform float u_sh;
-            uniform float u_rockSz;
-            uniform sampler2D u_seeds;
-            // rock biomes: each lattice cell's ink/dark/face/light/rim/gem,
-            // 6 texels across per cell (u_bioOn 0 = the classic tones below)
-            uniform float u_bioOn;
-            uniform sampler2D u_bio;
-
-            // Surface grain only (never geometry): a cheap value noise in
-            // world space, so it lands the same in every cached tile and
-            // costs nothing per frame. Float quirks here only move a speck.
-            float hs(vec2 q){
-                vec3 p3=fract(vec3(q.xyx)*.1031);
-                p3+=dot(p3,p3.yzx+33.33);
-                return fract((p3.x+p3.y)*p3.z);
-            }
-            float vn(vec2 q){
-                vec2 i=floor(q), u=fract(q);
-                u=u*u*(3.-2.*u);
-                return mix(mix(hs(i),hs(i+vec2(1.,0.)),u.x),
-                           mix(hs(i+vec2(0.,1.)),hs(i+vec2(1.,1.)),u.x),u.y);
-            }
-
-            // Seed jitter baked on the CPU (same code as collision/polygons)
-            // and read back here - no GPU float math, no chance of desync.
-            vec2 hash2(vec2 p){
-                return texture2D(u_seeds,(p+vec2(8.5))/128.0).rg;
-            }
-
-            void main(){
-                vec2 sc=vec2(gl_FragCoord.x, u_sh-gl_FragCoord.y);
-                vec2 p=((sc-u_origin)/u_cellSz)/u_rockSz;
-                vec2 n=floor(p), f=fract(p);
-
-                float md=8.; vec2 mr=vec2(0.), mg=vec2(0.);
-                for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){
-                    vec2 g=vec2(float(i),float(j));
-                    vec2 r=g+hash2(n+g)-f;
-                    float d=dot(r,r);
-                    if(d<md){md=d;mr=r;mg=g;}
-                }
-
-                // Faceted boulder, style only (cell shapes untouched): the
-                // original rock's three flat facets meeting at the seed, lit
-                // from a per-cell direction, on the calm palette, with one
-                // clean ink line. bd = plain edge distance (ink line).
-                float bd=8.;
-                for(int j=-2;j<=2;j++) for(int i=-2;i<=2;i++){
-                    vec2 g=mg+vec2(float(i),float(j));
-                    vec2 r=g+hash2(n+g)-f;
-                    if(dot(mr-r,mr-r)>1e-4)
-                        bd=min(bd,dot(.5*(mr+r),normalize(r-mr)));
-                }
-                float nl=length(mr);
-                vec2 lh=hash2(n+mg);
-                float la=(lh.x-.5)*.8;
-                vec2 ldir=vec2(sin(la),-cos(la));
-                // signed facet coordinate scaled to distance so the facet
-                // seams anti-alias over one texel like the ink does
-                float lt=dot(mr,ldir);
-                vec3 inkC  =vec3(16.,13.,22.)/255.;
-                vec3 darkC =vec3(29.,26.,38.)/255.;
-                vec3 faceC =vec3(43.,39.,55.)/255.;
-                vec3 lightC=vec3(61.,55.,77.)/255.;
-                vec4 rimC=vec4(0.);
-                vec4 gemC=vec4(0.);
-                float glowA=0.;
-                if(u_bioOn>.5){
-                    // this rock's own tones, read at its seed cell: one
-                    // colour per rock, the blend between biomes is baked in
-                    vec2 bc=n+mg+vec2(8.);
-                    float bx=bc.x*6.+.5, by=(bc.y+.5)/128.;
-                    vec4 inkT=texture2D(u_bio,vec2(bx/768.,by));
-                    inkC  =inkT.rgb;
-                    glowA =inkT.a;
-                    darkC =texture2D(u_bio,vec2((bx+1.)/768.,by)).rgb;
-                    faceC =texture2D(u_bio,vec2((bx+2.)/768.,by)).rgb;
-                    lightC=texture2D(u_bio,vec2((bx+3.)/768.,by)).rgb;
-                    rimC  =texture2D(u_bio,vec2((bx+4.)/768.,by));
-                    gemC  =texture2D(u_bio,vec2((bx+5.)/768.,by));
-                }
-                const float INK=.028;
-                float aa=.6/(u_cellSz.x*u_rockSz);
-                vec3 col=darkC;
-                col=mix(col,faceC, smoothstep(-aa,aa,lt+nl/3.));
-                col=mix(col,lightC,smoothstep(-aa,aa,lt-nl/3.));
-                // e: how far inside the seam's ink line, lit: 1 on the side
-                // of the rock the light catches
-                float e=bd-INK;
-                float lit=smoothstep(-.2,.2,lt);
-                // Stone, not plastic (the pre-biome rock's weight, on the
-                // biome colours): a mottled surface with a fine grain, each
-                // rock its own (offset by its seed, so it breaks at seams)
-                vec2 gq=(n+mg+f)+lh*31.;
-                float mot=vn(gq*6.)*.62+vn(gq*12.7+5.3)*.38;
-                float grn=vn(gq*41.)*.6+vn(gq*83.+2.1)*.4;
-                col*=.91+.15*mot+(grn-.5)*.11;
-                // a chiselled bevel just inside the seam: the edge facing
-                // the light catches it (in the biome's rim tone), the far
-                // edge drops into shade
-                float bev=1.-smoothstep(0.,.07,e);
-                col=mix(col,max(col,rimC.rgb*.85),bev*lit*(.25+.5*rimC.a));
-                col*=1.+bev*(.14*lit-.24*(1.-lit));
-                // and the faces round off into the seams, darker edges
-                float ao=1.-smoothstep(0.,.17,e);
-                col*=1.-.22*ao*ao*(1.-.45*lit);
-                col=mix(col,inkC,1.-smoothstep(INK-aa,INK+aa,bd));
-                gl_FragColor=vec4(col,1.);
-            }`;
-
-        const mkSh = (type, src) => {
-            const s = gl.createShader(type);
-            gl.shaderSource(s, src); gl.compileShader(s);
-            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
-                console.error('Voronoi shader:', gl.getShaderInfoLog(s));
-            return s;
-        };
-        const prog = gl.createProgram();
-        gl.attachShader(prog, mkSh(gl.VERTEX_SHADER,   VS));
-        gl.attachShader(prog, mkSh(gl.FRAGMENT_SHADER, FS));
-        gl.linkProgram(prog);
-        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { this._gl = null; return; }
-        gl.useProgram(prog);
-
-        const buf = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-        gl.bufferData(gl.ARRAY_BUFFER,
-            new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]),
-            gl.STATIC_DRAW);
-        const loc = gl.getAttribLocation(prog, 'a_pos');
-        gl.enableVertexAttribArray(loc);
-        gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-
-        const seedTex = gl.createTexture();
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, seedTex);
-        const sd = new Uint8Array(128 * 128 * 4);
-        for (let j = 0; j < 128; j++) {
-            for (let i = 0; i < 128; i++) {
-                const [rx, ry] = this._vh2(i - 8, j - 8);
-                const o = (j * 128 + i) * 4;
-                sd[o]     = Math.round(rx * 255);
-                sd[o + 1] = Math.round(ry * 255);
-                sd[o + 3] = 255;
-            }
-        }
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 128, 128, 0, gl.RGBA, gl.UNSIGNED_BYTE, sd);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.uniform1i(gl.getUniformLocation(prog, 'u_seeds'), 0);
-
-        // biome tones on unit 1: a 1x1 stand-in until a map with biomes
-        // comes, never read while u_bioOn is 0
-        const bioTex = gl.createTexture();
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, bioTex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.uniform1i(gl.getUniformLocation(prog, 'u_bio'), 1);
-        this._glBioTex  = bioTex;
-        this._glBioOnU  = gl.getUniformLocation(prog, 'u_bioOn');
-        gl.uniform1f(this._glBioOnU, 0);
-        this._bioUpload = true;   // a new context has none of it yet
-
-        this._glCanvas  = canvas;
-        this._gl        = gl;
-        this._glChecks  = 0;
-        this._glOriginU = gl.getUniformLocation(prog, 'u_origin');
-        this._glCellSzU = gl.getUniformLocation(prog, 'u_cellSz');
-        this._glShU     = gl.getUniformLocation(prog, 'u_sh');
-        this._glRockSzU = gl.getUniformLocation(prog, 'u_rockSz');
-        // A GPU reset, or the browser's cap on live contexts, can take it
-        // away mid-raid: flat facets until it is back, then the shader again.
-        if (canvas.addEventListener) {
-            canvas.addEventListener('webglcontextlost', (e) => {
-                e.preventDefault();
-                if (this._gl === gl) this._dropGl('context lost');
-            });
-            canvas.addEventListener('webglcontextrestored', () => {
-                if (!this._gl) this._buildNoiseTile();
-            });
-        }
     }
 
     updateCell(col, row, newType) {
@@ -2678,134 +2532,51 @@ class TerrainRenderer {
         ];
     }
 
-    // The rock texture depends only on world position (the shader has no time
-    // input), so it is rendered once into an image a bit larger than the
-    // screen and reused while panning. Per-frame shading is far too slow on
-    // software WebGL (~220ms at 1080p). Returns the image and the cell-space
-    // rect it covers.
+    _tilesOk() {
+        return !this._tileFail && typeof OffscreenCanvas !== 'undefined' &&
+            typeof OffscreenCanvas.prototype.transferToImageBitmap === 'function';
+    }
     _rockTexture(view, cellW, cellH, S = 1) {
         const q0 = this._rockQuality ?? (this._rockQuality = this._detectRockQuality());
         const simple = config.graphical.simpleTerrain;
-        // A real GPU shades at the screen's own pixels: S of them per unit the
-        // caller draws in (the HUD scale; ~2 on a retina screen). Software
-        // WebGL, no WebGL and "Simple Terrain" (half the shading) keep the
-        // cheaper density they always had, and so does "Fewer Effects": a 1:1
-        // image on a retina screen reads 4x the texels every frame, so the
-        // slow-machine ladder (fewerFx, then simpleTerrain) takes it back.
-        const hd = !!this._gl && q0 >= 1 && !simple && typeof this._glCanvas.transferToImageBitmap === 'function';
-        const want = cellW * q0 * (simple ? 0.5 : 1) * (hd && !config.graphical.fewerEffects ? S : 1);
-        // The sky drop dives from ~0.4x to 1x in a second or so, and every
-        // zoom step re-shaded the whole (7x bigger) view. While it dives the
-        // image may be up to 2.5x coarser than asked, so one build carries
-        // the dive; landing at 1x is back inside the normal range.
+        const hd = q0 >= 1 && !simple && this._tilesOk();
+        const want = cellW * (q0 >= 1 ? 1 : 0.6) * (simple ? 0.5 : 1) * (hd && !config.graphical.fewerEffects ? S : 1);
+        this._pxUnit = 1 / cellW;
         const diving = global.dropZoom !== undefined && global.dropZoom !== 1 && window.dwDropOpt !== false;
         if (!hd && (this._hdLayer || this._hdNext)) this._dropHd();
-        // how many frames the zoom has held still
         const st = this._hdWant || (this._hdWant = { want: 0, n: 0 });
         if (Math.abs(want - st.want) > want * 1e-5) { st.want = want; st.n = 0; } else st.n++;
         if (hd) {
-            if (this._gl.isContextLost()) this._dropGl('context lost');
-            else {
-                try {
-                    // last frame's ore changes: those tiles go stale
-                    if (this._bioPatch.size) this._hdMarkStale(this._bioPatch);
-                    return this._rockCache = this._hdUpdate(view, want, cellH / cellW, st.n >= 8 && !diving, diving);
-                } catch (e) {
-                    this._dropGl(e && e.message);
-                }
+            try {
+                if (this._bioPatch.size) this._hdMarkStale(this._bioPatch);
+                return this._rockCache = this._hdUpdate(view, want, cellH / cellW, st.n >= 8 && !diving, diving);
+            } catch (e) {
+                this._tileFail = true;
+                this._dropHd();
             }
-            return this._rockTexture(view, cellW, cellH, S);   // the GPU side failed: flat facets
+            return this._rockTexture(view, cellW, cellH, S);
         }
         const c = this._rockCache;
-        // compared on the density asked for, not the one built: a big screen
-        // or a wide view caps the texture below `want`, and comparing that
-        // would re-shade it every frame
         const same = c && c.cols === this._cols && !c.hd &&
             (diving ? c.want > want * 0.4 && c.want < want * 3 : c.want > want * 0.8 && c.want < want * 1.25);
         if (same && view.tlx >= c.x && view.tly >= c.y &&
-            view.tlx + view.tlw <= c.x + c.w && view.tly + view.tlh <= c.y + c.h) {
-            // Close to an edge: slide the image along now, while the strip to
-            // shade is still thin, instead of re-shading all of it later.
-            const e = c.m * 0.5;
-            if (!c.pw || (view.tlx - c.x > e && view.tly - c.y > e &&
-                c.x + c.w - view.tlx - view.tlw > e && c.y + c.h - view.tly - view.tlh > e)) return c;
-            return this._slideRockTexture(c, view) || c;
-        }
-        if (same && c.pw) {
-            const slid = this._slideRockTexture(c, view);
-            if (slid) return slid;
-        }
-
-        // margin so ordinary panning stays inside the cache for a while
+            view.tlx + view.tlw <= c.x + c.w && view.tly + view.tlh <= c.y + c.h) return c;
         const m = Math.max(view.tlw, view.tlh) * 0.2;
         const x = view.tlx - m, y = view.tly - m, w = view.tlw + m * 2, h = view.tlh + m * 2;
         const ratioY = cellH / cellW;
-        // the dive's wide view is ~7x the area, under haze and moving fast:
-        // half the density there is a quarter of the shading (a full-size
-        // build was 0.5-1.5 s on a busy GPU); landing makes the sharp one
         let density = diving ? want * 0.5 : want;
         const maxDim = 4096;
         if (w * density > maxDim) density = maxDim / w;
         if (h * density * ratioY > maxDim) density = maxDim / (h * ratioY);
         const pw = Math.max(1, Math.ceil(w * density)), ph = Math.max(1, Math.ceil(h * density * ratioY));
         if (!isFinite(pw) || !isFinite(ph) || pw > maxDim + 1 || ph > maxDim + 1) return c || null;
-        let img = null;
-        // a full shade has every rock's current look, nothing left to patch
         this._bioPatch.clear();
-
-        if (this._gl && this._gl.isContextLost()) this._dropGl('context lost');
-        if (this._gl) {
-            try {
-                const gl = this._gl, glc = this._glCanvas;
-                if (glc.width !== pw || glc.height !== ph) { glc.width = pw; glc.height = ph; }
-                gl.viewport(0, 0, pw, ph);
-                gl.uniform2f(this._glOriginU, -x * density, -y * density * ratioY);
-                gl.uniform2f(this._glCellSzU, density, density * ratioY);
-                gl.uniform1f(this._glShU, ph);
-                gl.uniform1f(this._glRockSzU, Math.min(this._cols, 120) / 50.0);
-                this._bioUniforms(gl);
-                gl.drawArrays(gl.TRIANGLES, 0, 6);
-                // the shader writes opaque rock everywhere: a see-through
-                // pixel in the first few builds (of a context, or since the
-                // last map sync) means it drew nothing. Not every build:
-                // readPixels waits on the GPU.
-                if ((this._glChecks | 0) < 3) {
-                    this._glChecks = (this._glChecks | 0) + 1;
-                    const px = this._glProbe || (this._glProbe = new Uint8Array(4));
-                    gl.readPixels(pw >> 1, ph >> 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-                    if (px[3] === 0) throw new Error('blank shader output');
-                }
-                if (typeof glc.transferToImageBitmap === 'function') img = glc.transferToImageBitmap();
-                else {
-                    const out = (c && c.canvas) || document.createElement('canvas');
-                    out.width = pw; out.height = ph;
-                    out.getContext('2d').drawImage(glc, 0, 0);
-                    img = out;
-                }
-            } catch (e) {
-                this._dropGl(e && e.message);
-                img = null;
-            }
-        }
-        if (!img) {
-            // No WebGL: flat facets from the same lattice polygons, so rocks
-            // still match the collision geometry.
-            const out = (c && c.canvas) || document.createElement('canvas');
-            out.width = pw; out.height = ph;
-            const g = out.getContext('2d');
-            g.fillStyle = TerrainRenderer.ROCK_FACE;
-            g.fillRect(0, 0, pw, ph);
-            g.setTransform(density, 0, 0, density * ratioY, -x * density, -y * density * ratioY);
-            this._drawFlatCells(g, x, y, w, h);
-            img = out;
-        }
-        const prev = this._rockCache;
-        if (prev && prev.img && prev.img !== img && typeof prev.img.close === 'function') prev.img.close();
-        this._rockCache = { img, canvas: img instanceof HTMLCanvasElement ? img : null,
-                            x, y, w: pw / density, h: ph / (density * ratioY), density, want, cols: this._cols,
-                            // pw is only set where sliding pays: software GL, where
-                            // shading is slow (a GPU re-shades the lot in no time)
-                            m, ratioY, pw: this._gl && this._rockQuality < 1 ? pw : 0, ph };
+        const out = (c && c.canvas) || document.createElement('canvas');
+        out.width = pw; out.height = ph;
+        const g = out.getContext('2d');
+        g.setTransform(density, 0, 0, density * ratioY, -x * density, -y * density * ratioY);
+        this._drawFlatCells(g, x, y, w, h, this._pxUnit);
+        this._rockCache = { img: out, canvas: out, x, y, w: pw / density, h: ph / (density * ratioY), density, want, cols: this._cols, m, ratioY, px: this._pxUnit };
         return this._rockCache;
     }
 
@@ -2815,38 +2586,27 @@ class TerrainRenderer {
     // every tile the view needs is in.
     _hdNewLayer(d, ratioY, want, full) {
         return { hd: true, img: true, tiles: new Map(), d, dY: d * ratioY, ratioY, want, full, cols: this._cols,
-                 i0: 0, j0: 0, i1: -1, j1: -1 };
+                 px: this._pxUnit || 0.02, i0: 0, j0: 0, i1: -1, j1: -1 };
     }
     _hdDropLayer(L) {
         if (!L) return;
         L.tiles.forEach((t) => { t.bm.close(); if (t.nb) t.nb.close(); });
         L.tiles.clear();
     }
-    // Shade tile (i, j) of layer L into a new bitmap.
     _hdShadeTile(L, i, j) {
-        const gl = this._gl, glc = this._glCanvas;
-        if (glc.width !== HD_TA || glc.height !== HD_TA) { glc.width = HD_TA; glc.height = HD_TA; }
-        if (this._hdUni !== L) {
-            gl.uniform2f(this._glCellSzU, L.d, L.dY);
-            gl.uniform1f(this._glShU, HD_TA);
-            gl.uniform1f(this._glRockSzU, Math.min(this._cols, 120) / 50.0);
-            this._hdUni = L;
+        let g = this._tileCtx;
+        if (!g) {
+            g = new OffscreenCanvas(HD_TA, HD_TA).getContext('2d');
+            if (!g) throw new Error('no tile context');
+            this._tileCtx = g;
         }
-        this._bioUniforms(gl);
-        gl.viewport(0, 0, HD_TA, HD_TA);
-        // pixel (0, 0) of the tile is world pixel (i * HD_T - 1, j * HD_T - 1)
-        gl.uniform2f(this._glOriginU, 1 - i * HD_T, 1 - j * HD_T);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        // the shader writes opaque rock everywhere: a see-through pixel in
-        // the first few tiles of a context means it drew nothing
-        if ((this._glChecks | 0) < 3) {
-            this._glChecks = (this._glChecks | 0) + 1;
-            const pr = this._glProbe || (this._glProbe = new Uint8Array(4));
-            gl.readPixels(HD_TA >> 1, HD_TA >> 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pr);
-            if (pr[3] === 0) throw new Error('blank shader output');
-        }
+        const x0 = (i * HD_T - 1) / L.d, y0 = (j * HD_T - 1) / L.dY;
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, HD_TA, HD_TA);
+        g.setTransform(L.d, 0, 0, L.dY, -x0 * L.d, -y0 * L.dY);
+        this._drawFlatCells(g, x0, y0, HD_TA / L.d, HD_TA / L.dY, L.px);
         this._hdShaded = (this._hdShaded | 0) + 1;
-        return glc.transferToImageBitmap();
+        return g.canvas.transferToImageBitmap();
     }
     // The tile range of layer L the view needs (grown by pad image pixels).
     _hdRange(L, view, pad, out) {
@@ -3060,75 +2820,25 @@ class TerrainRenderer {
         ctx.drawImage(tmp, 0, 0, w, h, ix0 / L.d, iy0 / L.dY, w / L.d, h / L.dY);
     }
 
-    // Software GL only. Re-centre the cached rock image on the view by whole
-    // pixels: the part still in range is copied across and the shader only
-    // runs over the uncovered edge strips. Same pixels as a full render at
-    // that origin.
-    _slideRockTexture(c, view) {
-        const gl = this._gl, glc = this._glCanvas;
-        if (!gl || !c.img) return null;
-        const d = c.density, dY = d * c.ratioY, pw = c.pw, ph = c.ph;
-        const dx = Math.round((view.tlx + view.tlw / 2 - c.w / 2 - c.x) * d);
-        const dy = Math.round((view.tly + view.tlh / 2 - c.h / 2 - c.y) * dY);
-        if (!dx && !dy) return null;
-        if (Math.abs(dx) >= pw || Math.abs(dy) >= ph) return null;
-        const x = c.x + dx / d, y = c.y + dy / dY;
-        if (view.tlx < x || view.tly < y || view.tlx + view.tlw > x + c.w || view.tly + view.tlh > y + c.h) return null;
-
-        const pair = this._rockSlide || (this._rockSlide = [document.createElement('canvas'), document.createElement('canvas')]);
-        const out = c.img === pair[0] ? pair[1] : pair[0];
-        if (out.width !== pw || out.height !== ph) { out.width = pw; out.height = ph; }
-        const g = out.getContext('2d');
-        g.clearRect(0, 0, pw, ph);
-        g.drawImage(c.img, -dx, -dy);
-
-        // the uncovered columns, then the uncovered rows between them
-        const strips = [];
-        if (dx > 0) strips.push([pw - dx, 0, dx, ph]);
-        else if (dx < 0) strips.push([0, 0, -dx, ph]);
-        const x0 = dx < 0 ? -dx : 0, x1 = dx > 0 ? pw - dx : pw;
-        if (x1 > x0) {
-            if (dy > 0) strips.push([x0, ph - dy, x1 - x0, dy]);
-            else if (dy < 0) strips.push([x0, 0, x1 - x0, -dy]);
-        }
-        if (glc.width !== pw || glc.height !== ph) { glc.width = pw; glc.height = ph; }
-        gl.uniform2f(this._glOriginU, -x * d, -y * dY);
-        gl.uniform2f(this._glCellSzU, d, dY);
-        gl.uniform1f(this._glShU, ph);
-        gl.uniform1f(this._glRockSzU, Math.min(this._cols, 120) / 50.0);
-        this._bioUniforms(gl);
-        for (const [sx, sy, sw, sh] of strips) {
-            gl.viewport(sx, ph - sy - sh, sw, sh);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-        }
-        // read back just the strips (GL rows run bottom up); a transfer
-        // would copy out the whole buffer on the CPU
-        for (const [sx, sy, sw, sh] of strips) {
-            const px = new Uint8Array(sw * sh * 4);
-            gl.readPixels(sx, ph - sy - sh, sw, sh, gl.RGBA, gl.UNSIGNED_BYTE, px);
-            const img = g.createImageData(sw, sh), row = sw * 4;
-            for (let r = 0; r < sh; r++) img.data.set(px.subarray((sh - 1 - r) * row, (sh - r) * row), r * row);
-            g.putImageData(img, sx, sy);
-        }
-
-        if (c.img !== out && typeof c.img.close === 'function') c.img.close();
-        this._rockCache = { img: out, canvas: null, x, y, w: c.w, h: c.h, density: d, want: c.want, cols: c.cols,
-                            m: c.m, ratioY: c.ratioY, pw, ph };
-        return this._rockCache;
-    }
-
-    // Full resolution on a real GPU. Software WebGL shades on the CPU, so it
-    // gets a third of the pixels per axis: the silhouette edges are vector
-    // clips drawn at full resolution anyway, only the facet texture softens.
     _detectRockQuality() {
-        const gl = this._gl;
+        let gl = null;
+        try {
+            const cv = document.createElement('canvas');
+            cv.width = cv.height = 1;
+            gl = cv.getContext('webgl', { antialias: false, depth: false, stencil: false }) || cv.getContext('experimental-webgl');
+        } catch (e) { gl = null; }
         if (!gl) return 0.5;
+        let q = 1;
         try {
             const info = gl.getExtension('WEBGL_debug_renderer_info');
             const name = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
-            if (/swiftshader|llvmpipe|softpipe|software|basic render/i.test(name)) return 0.35;
+            if (/swiftshader|llvmpipe|softpipe|software|basic render/i.test(name)) q = 0.35;
         } catch (e) { }
-        return 1;
+        try {
+            const lose = gl.getExtension('WEBGL_lose_context');
+            if (lose) lose.loseContext();
+        } catch (e) { }
+        return q;
     }
 
     // A throw half way through the rock pass (a lost WebGL context, a
@@ -3155,7 +2865,7 @@ class TerrainRenderer {
         this._recoverAt = t;
         this.recovered = (this.recovered | 0) + 1;
         if (!this._recoverWarned) { this._recoverWarned = true; console.warn('Rock layer rebuilt:', why); }
-        if (this._gl && (this._gl.isContextLost() || this.recovered > 2)) this._dropGl(why);
+        if (this.recovered > 2) this._tileFail = true;
         this._dropRockImage();
         this._damageDirty = true;
         this._damageBatch = null;
@@ -3474,51 +3184,71 @@ class TerrainRenderer {
                     if (cell) shaking.push(cell);
                 }
                 const old = this._damageBatch;
-                const same = old && old.sil === this._silClip && old.shaking.length === shaking.length &&
+                const same = old && old.shaking.length === shaking.length &&
                     shaking.every((cell, i) => old.shaking[i] === cell);
-                if (!same) {
-                    const batch = { holes: null, shaking, sil: this._silClip };
-                    for (const cell of shaking) {
-                        if (!batch.holes) batch.holes = new Path2D(this._silClip);
-                        batch.holes.addPath(cell.path);
-                    }
-                    this._damageBatch = batch;
-                }
+                if (!same) this._damageBatch = { holes: null, holesFor: null, shaking };
             }
             const dmgBatch = this._damageBatch;
+            const local = this._localSil(tlx, tly, tlw, tlh);
+            if (!local) { ctx.restore(); return; }
+            if (dmgBatch.shaking.length && dmgBatch.holesFor !== local.alive) {
+                dmgBatch.holes = new Path2D(local.alive);
+                for (const cell of dmgBatch.shaking) dmgBatch.holes.addPath(cell.path);
+                dmgBatch.holesFor = local.alive;
+            }
 
             const rockSz = Math.min(this._cols, 120) / 50.0;
-            // The wall's outline, stroked UNDER the rock and nudged down: the
-            // rock covers its inner half, leaving one ink line slightly heavier
-            // on the bottom (a drop shadow in a single stroke per frame).
-            ctx.save();
-            ctx.globalAlpha = 1;
-            ctx.lineJoin    = 'round';
-            ctx.lineCap     = 'round';
-            ctx.lineWidth   = TerrainRenderer.SIL_W * rockSz;
-            ctx.strokeStyle = TerrainRenderer.ROCK_INK;
-            ctx.translate(0, TerrainRenderer.SIL_DROP * rockSz);
-            ctx.stroke(this._silClip);
-            ctx.restore();
-
-            // "Simple Terrain": last-stage rocks stay put, so nothing is cut out
             const simple = config.graphical.simpleTerrain;
             const lite = config.graphical.fewerEffects;
-            ctx.save();
-            ctx.clip(simple ? this._silClip : dmgBatch.holes || this._silClip, 'evenodd');
-            ctx.globalAlpha = 1;
-            // An image shaded 1:1 for this zoom goes down on whole device
-            // pixels: a copy, no resampling. Anywhere between two pixels the
-            // filter averages neighbours, which is what made seams look soft.
+            const outlineW = Math.min(OUTLINE_PX * 2 / cellW, OUTLINE_MAX * rockSz);
+            const bevD = Math.min(BEVEL_PX / cellW, OUTLINE_MAX * 0.6 * rockSz);
             let bx = tex.x, by = tex.y;
-            if (tex.hd) this._hdDraw(ctx, tex, originX, originY, cellW, cellH, S);
-            else {
-                if (Math.abs(S * cellW / tex.density - 1) < 1e-6 && Math.abs(S * cellH / (tex.density * tex.ratioY) - 1) < 1e-6) {
-                    bx = (Math.round(S * (originX + tex.x * cellW)) / S - originX) / cellW;
-                    by = (Math.round(S * (originY + tex.y * cellH)) / S - originY) / cellH;
-                }
-                ctx.drawImage(tex.img, bx, by, tex.w, tex.h);
+            if (!tex.hd && Math.abs(S * cellW / tex.density - 1) < 1e-6 && Math.abs(S * cellH / (tex.density * tex.ratioY) - 1) < 1e-6) {
+                bx = (Math.round(S * (originX + tex.x * cellW)) / S - originX) / cellW;
+                by = (Math.round(S * (originY + tex.y * cellH)) / S - originY) / cellH;
             }
+            if (!simple && !lite) {
+                const sideE = Math.min(SIDE_PX / cellW, SIDE_MAX * rockSz);
+                const sides = this._sideQuads(local, sideE);
+                ctx.save();
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = SHADOW_INK;
+                ctx.translate(sideE * 1.5, sideE * 1.5);
+                ctx.lineWidth = sideE * 3.4;
+                ctx.stroke(local.dr);
+                ctx.lineWidth = sideE * 1.9;
+                ctx.stroke(local.dr);
+                ctx.translate(-sideE * 1.5, -sideE * 1.5);
+                this._sideCtx = ctx;
+                sides.forEach(this._fillSide || (this._fillSide = (p, css) => { this._sideCtx.fillStyle = css; this._sideCtx.fill(p); }));
+                ctx.translate(sideE, sideE);
+                ctx.lineWidth = Math.min(SIDE_EDGE_PX * 2 / cellW, sideE);
+                ctx.strokeStyle = SIDE_EDGE_INK;
+                ctx.stroke(local.dr);
+                ctx.restore();
+            }
+            ctx.save();
+            if (!simple && dmgBatch.holes) ctx.clip(dmgBatch.holes, 'evenodd');
+            else ctx.clip(local.alive);
+            ctx.globalAlpha = 1;
+            if (tex.hd) this._hdDraw(ctx, tex, originX, originY, cellW, cellH, S);
+            else ctx.drawImage(tex.img, bx, by, tex.w, tex.h);
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            if (!simple && !lite) {
+                ctx.lineWidth = outlineW + bevD * 2;
+                ctx.translate(bevD, bevD);
+                ctx.strokeStyle = BEVEL_LIGHT;
+                ctx.stroke(local.edges);
+                ctx.translate(-2 * bevD, -2 * bevD);
+                ctx.strokeStyle = BEVEL_DARK;
+                ctx.stroke(local.edges);
+                ctx.translate(bevD, bevD);
+            }
+            ctx.lineWidth = outlineW;
+            ctx.strokeStyle = OUTLINE_INK;
+            ctx.stroke(local.edges);
             ctx.restore();
 
             for (const cell of simple ? [] : dmgBatch.shaking) {
@@ -3533,8 +3263,8 @@ class TerrainRenderer {
                 else ctx.drawImage(tex.img, bx, by, tex.w, tex.h);
 
                 ctx.lineJoin    = 'round';
-                ctx.strokeStyle = TerrainRenderer.ROCK_INK;
-                ctx.lineWidth   = 0.07 * rockSz;
+                ctx.strokeStyle = OUTLINE_INK;
+                ctx.lineWidth   = outlineW;
                 ctx.stroke(cell.path);
                 ctx.restore();
             }
@@ -3549,23 +3279,18 @@ class TerrainRenderer {
                         i ? ctx.lineTo(poly[i][0], poly[i][1]) : ctx.moveTo(poly[i][0], poly[i][1]);
                     ctx.closePath();
                 };
-                // same outline as the wall: dropped ink stroke under the rock
-                const inkUnder = (sc) => {
-                    ctx.save();
-                    ctx.lineWidth = TerrainRenderer.SIL_W * rockSz;
-                    ctx.translate(0, TerrainRenderer.SIL_DROP * rockSz * sc);
-                    ctx.strokeStyle = TerrainRenderer.ROCK_INK;
+                const outlineIn = (sc) => {
+                    ctx.lineWidth = outlineW * Math.max(0.5, sc);
+                    ctx.strokeStyle = OUTLINE_INK;
                     ctx.stroke();
-                    ctx.restore();
                 };
                 const drawRockPoly = (landedCell) => {
-                    inkUnder(1);
                     ctx.save();
                     ctx.clip();
-                    // the tiles under it, on whole pixels like the wall
                     if (tex.hd) this._hdDraw(ctx, tex, originX, originY, cellW, cellH, S,
                         landedCell.cx - 1.5 * rockSz, landedCell.cy - 1.5 * rockSz, landedCell.cx + 1.5 * rockSz, landedCell.cy + 1.5 * rockSz);
                     else ctx.drawImage(tex.img, bx, by, tex.w, tex.h);
+                    outlineIn(1);
                     ctx.restore();
                 };
 
@@ -3617,16 +3342,16 @@ class TerrainRenderer {
                     }
                     tracePoly(spoly);
 
-                    // the ink drop grows in with the rock so a sprouting
-                    // pebble doesn't sit on a slab of shadow
-                    inkUnder(sc);
                     ctx.save();
                     ctx.clip();
+                    ctx.save();
                     ctx.translate(ax2, ay2);
                     ctx.scale(sc, sc);
                     ctx.translate(-g.ax, -g.ay);
                     if (tex.hd) this._hdDrawCell(ctx, tex, cell);
-                else ctx.drawImage(tex.img, bx, by, tex.w, tex.h);
+                    else ctx.drawImage(tex.img, bx, by, tex.w, tex.h);
+                    ctx.restore();
+                    outlineIn(sc);
                     ctx.restore();
 
                     const frac = this._rockHealth.get(k);
@@ -3646,12 +3371,8 @@ class TerrainRenderer {
                             ctx.translate(-g.ax, -g.ay);
                             ctx.lineCap = 'round';
                             const w = 0.035 * rockSz * (0.28 + 0.075 * stage) / sc;
-                            const cpal = this._crackPal(k);
-                            ctx.strokeStyle = cpal.base || 'rgba(16,13,22,0.8)';
-                            ctx.lineWidth = w * 2.1;
-                            ctx.stroke(cpath);
-                            ctx.strokeStyle = cpal._hot04 || (cpal._hot04 = `rgba(${cpal.hot},0.4)`);
-                            ctx.lineWidth = w * 0.5;
+                            ctx.strokeStyle = CRACK_INK;
+                            ctx.lineWidth = w * 1.6;
                             ctx.stroke(cpath);
                             ctx.restore();
                         }
@@ -3723,12 +3444,9 @@ class TerrainRenderer {
                     ctx.save();
                     ctx.clip(cell.path);
 
-                    // worn rock darkens toward its own seam ink (not black,
-                    // so a beaten-up sandstone rock is still sandstone)
-                    const ink = this._inkOf(k);
                     if (stage >= 1) {
-                        ctx.fillStyle = ink;
-                        ctx.globalAlpha = 0.04 * stage + 0.12 * Math.pow(stage / 5, 2);
+                        ctx.fillStyle = WEAR_INK;
+                        ctx.globalAlpha = 0.028 * stage;
                         ctx.fill(cell.path);
                         ctx.globalAlpha = 1;
                     }
@@ -3736,46 +3454,33 @@ class TerrainRenderer {
                     if (stage >= 5 && !simple) this._shakeXform(ctx, cell, nowMs);
 
                     if (bites) {
-                        ctx.fillStyle = ink;
+                        ctx.fillStyle = WEAR_INK;
+                        ctx.globalAlpha = 0.3;
                         ctx.fill(bites);
+                        ctx.globalAlpha = 1;
                     }
                     if (path) {
                         const ht    = this._hitFlash.get(k);
                         const hitB  = ht !== undefined && nowMs - ht < 150 ? 1 - (nowMs - ht) / 150 : 0;
-                        // a new crack flashes white-hot and over-wide, then settles
                         const st    = this._crackSnap.get(k);
                         const snap  = st !== undefined && nowMs - st < 220
                             ? Math.pow(1 - (nowMs - st) / 220, 2) : 0;
                         const boost = Math.max(hitB, snap);
                         const w = 0.035 * rockSz * (0.28 + 0.075 * stage) * (1 + snap);
-
-                        const cpal = this._crackPal(k);
-                        // A clean fracture: a dark split with a darker core
-                        // and a thin lit lip just under it. Mitred, square
-                        // ended: round-capped stacked strokes read as soft
-                        // blurry tubes.
                         ctx.lineJoin = 'miter';
                         ctx.lineCap = 'butt';
                         ctx.miterLimit = 3;
-                        ctx.strokeStyle = cpal.base || 'rgba(16,13,22,0.85)';
-                        ctx.lineWidth   = w * 1.25;
+                        ctx.strokeStyle = CRACK_INK;
+                        ctx.lineWidth   = w * 1.5;
                         ctx.stroke(path);
-                        // simple: just the dark line, not the lit layers on it
                         if (simple) { ctx.restore(); return; }
-                        // (the resting colours are cached on the palette: a string per
-                        // damaged rock per frame otherwise)
-                        ctx.strokeStyle = boost ? `rgba(${cpal.hot},${Math.min(1, 0.75 + boost * 0.25)})`
-                            : cpal._hotRest || (cpal._hotRest = `rgba(${cpal.hot},${Math.min(1, 0.75 + boost * 0.25)})`);
-                        ctx.lineWidth   = w * 0.5;
-                        ctx.stroke(path);
-                        ctx.save();
-                        ctx.translate(0, w * 0.85);
-                        const hairRest = cpal._hairRest || (cpal._hairRest = []);
-                        ctx.strokeStyle = boost ? `rgba(${cpal.hair},${Math.max(0.22 + 0.03 * stage, boost * 0.8)})`
-                            : hairRest[stage] || (hairRest[stage] = `rgba(${cpal.hair},${Math.max(0.22 + 0.03 * stage, boost * 0.8)})`);
-                        ctx.lineWidth   = w * 0.32;
-                        ctx.stroke(path);
-                        ctx.restore();
+                        if (boost > 0.02) {
+                            ctx.globalAlpha = Math.min(1, boost * 1.2);
+                            ctx.strokeStyle = CRACK_HOT;
+                            ctx.lineWidth = w * 0.6;
+                            ctx.stroke(path);
+                            ctx.globalAlpha = 1;
+                        }
                     }
                     ctx.restore();
 
@@ -3807,29 +3512,11 @@ class TerrainRenderer {
                 ctx.restore();
             }
 
-            // ── Ore markings: one crystal per deposit, drawn on the rock
             if (this._ore.size) {
                 ctx.save();
                 ctx.lineJoin = 'round';
                 ctx.lineCap  = 'round';
-                // First every stone's dark halo, all ore rocks near the view
-                // in one path however many there are.
-                const pk = this._orePockets(tlx, tly, tlw, tlh);
-                if (pk.n) {
-                    // A feathered dark halo, black at the gem's edge fading
-                    // out into whatever rock is under it: six faint strokes
-                    // of the one combined path, widest first, each a little
-                    // narrower (they stack, so the dark builds toward the
-                    // edge; the gem's body covers their inner halves). Six
-                    // strokes a frame for every gem on screen, no filters.
-                    ctx.strokeStyle = 'rgb(8,6,12)';
-                    ctx.globalAlpha = 0.3;
-                    for (let i = ORE_HALO.length - 1; i >= 0; i--) {
-                        ctx.lineWidth = ORE_HALO[i] * rockSz;
-                        ctx.stroke(pk.body);
-                    }
-                    ctx.globalAlpha = 1;
-                }
+                const glow = !config.graphical.noGlow;
                 this._ore.forEach((tier, k) => {
                     if (this._rockDead.has(k)) return;
                     const cell = this._cellPolys.get(k);
@@ -3850,32 +3537,24 @@ class TerrainRenderer {
                         else sprout = Math.max(0, st);
                     }
 
-                    // the core crystal's aura bleeds a little past its cell,
-                    // kept faint and slow
-                    if ((tier === 3 || tier === 4) && art.big && !config.graphical.noGlow) {
-                        // emeralds pulse faster, wider and brighter
+                    if ((tier === 3 || tier === 4) && art.big && glow) {
                         const em = tier === 4;
                         const pulse = 0.5 + 0.5 * Math.sin(nowMs / (em ? 1100 : 1400) + (k % 31));
                         const gr = rockSz * (em ? 0.68 + 0.14 * pulse : 0.55 + 0.10 * pulse);
                         const rgb = em ? '111,245,168' : '217,138,240';
-                        // the aura swells in with the crystal, not before it
-                        const a0 = (em ? 0.14 + 0.10 * pulse : 0.10 + 0.07 * pulse)
-                                 * (sprout === null ? 1 : sprout * sprout);
-                        // one unit gradient per colour, scaled into place, with
-                        // the pulse on globalAlpha: a new gradient per crystal
-                        // per frame is garbage the browser has to collect
+                        const a0 = (em ? 0.11 + 0.07 * pulse : 0.08 + 0.05 * pulse) * (sprout === null ? 1 : sprout * sprout);
                         const auras = this._auraGrads || (this._auraGrads = {});
-                        let g = auras[rgb];
-                        if (!g) {
-                            g = auras[rgb] = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-                            g.addColorStop(0, `rgba(${rgb},1)`);
-                            g.addColorStop(1, `rgba(${rgb},0)`);
+                        let ag = auras[rgb];
+                        if (!ag) {
+                            ag = auras[rgb] = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+                            ag.addColorStop(0, `rgba(${rgb},1)`);
+                            ag.addColorStop(1, `rgba(${rgb},0)`);
                         }
                         ctx.save();
                         ctx.translate(art.big[0], art.big[1]);
                         ctx.scale(gr, gr);
                         ctx.globalAlpha *= a0;
-                        ctx.fillStyle = g;
+                        ctx.fillStyle = ag;
                         ctx.beginPath();
                         ctx.arc(0, 0, 1, 0, Math.PI * 2);
                         ctx.fill();
@@ -3885,15 +3564,14 @@ class TerrainRenderer {
                     ctx.save();
                     ctx.clip(cell.path);
                     if (stage >= 5 && !simple) this._shakeXform(ctx, cell, nowMs);
-                    ctx.globalAlpha = 1 - 0.275 * Math.pow(stage / 5, 2);
+                    ctx.globalAlpha = 1 - 0.2 * Math.pow(stage / 5, 2);
                     const baseA = ctx.globalAlpha;
 
                     if (sprout !== null) {
-                        // ── the seam pushing through, one stone at a time
                         const parts = this._getSproutParts(k, tier);
                         if (parts) {
                             for (let di = 0; di < parts.length; di++) {
-                                const dt = (sprout - di * 0.125) / 0.25; // 150ms apart, 300ms each
+                                const dt = (sprout - di * 0.125) / 0.25;
                                 if (dt <= 0) continue;
                                 const d = parts[di];
                                 const e = dt >= 1 ? 1 : 1 - Math.pow(1 - dt, 3);
@@ -3904,14 +3582,13 @@ class TerrainRenderer {
                                 ctx.fillStyle = pal.mid;
                                 ctx.fill(d.body);
                                 ctx.strokeStyle = pal.dark;
-                                ctx.lineWidth = 0.022 * rockSz / os;
+                                ctx.lineWidth = GEM_LINE * rockSz / os;
                                 ctx.stroke(d.body);
                                 ctx.fillStyle = pal.light;
                                 ctx.fill(d.facet);
                                 ctx.fillStyle = pal.core;
                                 ctx.fill(d.core);
                                 ctx.restore();
-                                // the tick of light as it breaks the surface
                                 if (dt < 0.4) {
                                     const fa = 1 - dt / 0.4;
                                     ctx.save();
@@ -3926,47 +3603,43 @@ class TerrainRenderer {
                             }
                         }
                     } else {
-                    // the layered cut: dark rim, mid body, light table, core
-                    ctx.fillStyle = pal.mid;
-                    ctx.fill(art.body);
-                    ctx.strokeStyle = pal.dark;
-                    ctx.lineWidth = 0.022 * rockSz;
-                    ctx.stroke(art.body);
-                    ctx.fillStyle = pal.light;
-                    ctx.fill(art.facet);
-                    ctx.fillStyle = pal.core;
-                    ctx.fill(art.core);
-
-                    const kk = k & 0xffff;
-                    const baseAlpha = ctx.globalAlpha;
-                    for (let gi = 0; gi < (simple ? 0 : art.glintPts.length); gi++) {
-                        const period = (tier === 4 ? 4500 : 9000) + this._h(gi, kk, 240) * (tier === 4 ? 3000 : 6000);
-                        const phase  = this._h(gi, kk, 241) * period;
-                        const tt = ((nowMs + phase) % period) / 520;
-                        if (tt >= 1) continue;
-                        const gp = art.glintPts[gi];
-                        const ga = Math.sin(tt * Math.PI);
-                        const gr2 = 0.05 * rockSz * ga;
-                        const spin = tt * 0.9;
-                        ctx.globalAlpha = baseAlpha * ga;
-                        ctx.fillStyle = 'rgba(255,255,255,0.95)';
-                        ctx.beginPath();
-                        ctx.arc(gp[0], gp[1], gr2 * 0.45, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-                        ctx.lineWidth = gr2 * 0.32;
-                        ctx.beginPath();
-                        for (let a = 0; a < 4; a++) {
-                            const ang = spin + a * Math.PI / 2;
-                            const arm = gr2 * (a % 2 ? 1.6 : 2.6);
-                            ctx.moveTo(gp[0], gp[1]);
-                            ctx.lineTo(gp[0] + Math.cos(ang) * arm,
-                                       gp[1] + Math.sin(ang) * arm);
+                        ctx.fillStyle = pal.mid;
+                        ctx.fill(art.body);
+                        ctx.strokeStyle = pal.dark;
+                        ctx.lineWidth = GEM_LINE * rockSz;
+                        ctx.stroke(art.body);
+                        ctx.fillStyle = pal.light;
+                        ctx.fill(art.facet);
+                        ctx.fillStyle = pal.core;
+                        ctx.fill(art.core);
+                        const kk = k & 0xffff;
+                        for (let gi = 0; gi < (simple ? 0 : art.glintPts.length); gi++) {
+                            const period = (tier === 4 ? 4500 : 9000) + this._h(gi, kk, 240) * (tier === 4 ? 3000 : 6000);
+                            const phase  = this._h(gi, kk, 241) * period;
+                            const tt = ((nowMs + phase) % period) / 520;
+                            if (tt >= 1) continue;
+                            const gp = art.glintPts[gi];
+                            const ga = Math.sin(tt * Math.PI);
+                            const gr2 = 0.05 * rockSz * ga;
+                            const spin = tt * 0.9;
+                            ctx.globalAlpha = baseA * ga;
+                            ctx.fillStyle = 'rgba(255,255,255,0.95)';
+                            ctx.beginPath();
+                            ctx.arc(gp[0], gp[1], gr2 * 0.45, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+                            ctx.lineWidth = gr2 * 0.32;
+                            ctx.beginPath();
+                            for (let a = 0; a < 4; a++) {
+                                const ang = spin + a * Math.PI / 2;
+                                const arm = gr2 * (a % 2 ? 1.6 : 2.6);
+                                ctx.moveTo(gp[0], gp[1]);
+                                ctx.lineTo(gp[0] + Math.cos(ang) * arm, gp[1] + Math.sin(ang) * arm);
+                            }
+                            ctx.stroke();
+                            ctx.globalAlpha = baseA;
                         }
-                        ctx.stroke();
-                        ctx.globalAlpha = baseAlpha;
                     }
-                    }   
                     ctx.restore();
                 });
                 ctx.restore();

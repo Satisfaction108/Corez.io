@@ -24,16 +24,14 @@ const allButAbility = { tutorial: 1, move: 1, mine: 1, bank: 1, upgrade: 1 };
     const tests = [];
     const t = (n, f) => tests.push([n, f]);
 
-    t('a use ends the step, and a new raid (fresh load) never shows it again', () => {
+    t('the guide is move, mine, bank and upgrade; then it is done', () => {
         const s = memStore();
         let rec = L.load(s, 1);
-        Object.assign(rec.done, allButAbility);
-        rec.status = 'on';
-        L.save(s, rec);
-        assert.equal(L.nextStep(rec, () => false), 'ability');
+        assert.deepEqual(L.ORDER, ['move', 'mine', 'bank', 'upgrade']);
+        assert.equal(L.nextStep(rec, () => false), 'move');
+        Object.assign(rec.done, { move: 1, mine: 1, bank: 1, upgrade: 1 });
+        assert.equal(L.nextStep(rec, () => false), 'final', 'no ability step after the basics');
         assert.equal(L.abilityUsed(rec, s), true);
-        assert.equal(L.nextStep(rec, () => false), 'final');
-        // raid 2: a new page, the record read back from storage
         rec = L.load(s, 2);
         assert.equal(rec.done.ability, 1);
         assert.notEqual(L.nextStep(rec, () => false), 'ability');
@@ -89,7 +87,7 @@ const allButAbility = { tutorial: 1, move: 1, mine: 1, bank: 1, upgrade: 1 };
         const co = src('coach.js');
         assert.match(co, /import \* as CL from "\.\/coachLogic\.js"/);
         assert.match(co, /CL\.abilityUsed\(rec, store\(\)\)/);
-        assert.match(co, /CL\.abilityShown\(/);
+        assert.ok(!/case "ability"/.test(co) && !/case "tutorial"/.test(co), 'no ability or tutorial card');
         const cv = src('canvas.js');
         assert.equal((cv.match(/localStorage\.setItem\("dwAbilityUsed_v1", "1"\)/g) || []).length, 2);
         assert.equal(L.ABILITY_KEY, 'dwAbilityUsed_v1');

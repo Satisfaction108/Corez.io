@@ -60,7 +60,7 @@ const REPO = path.join(__dirname, '..', '..');
         assert.ok(!app.includes('String(s.name || "").replace(" Shop", "")'), 'no second shop label');
         assert.ok(app.includes('labelAlpha(it.x, ly, it.w, it.h) * labelNear(it.x, ly)'), 'labels fade toward the edges');
         assert.ok(!app.includes('drawSpawnShieldHint'), 'the shield line left the tank');
-        assert.ok(app.includes('try { push(spawnShieldNote()); }'), 'and is a note under the clock');
+        assert.ok(!app.includes('spawnShieldNote'), 'and is not a line under the clock either');
     });
 
     let ok = 0;

@@ -20,116 +20,46 @@
 })(typeof self !== 'undefined' ? self : this, function () {
     'use strict';
 
-    // Five tones per rock. The first four have the classic shader's roles:
-    // seam ink, the shadowed facet, the main face, the lit facet. rim is a
-    // thin band just inside the seam, rimA how strongly it shows (0 = none),
-    // and it leans to the lit side. It gives each biome its own edge: cool
-    // pale edges in the crystal, lavender ones on the obsidian, a hot dark
-    // red seam in the magma. No glints, no sparkle, nothing animated.
-    // glow: light that seems to come out of the seam itself, the same on
-    // both sides of it, in the rim colour: warm out of the magma's cracks,
-    // cool off the crystal's edges, softer elsewhere (0 = none).
-    // gem and vein: the treasure in the rock. Thin veins and flecks of the
-    // biome's gem colour through each face (gold in the sandstone, emerald
-    // in the moss, cyan in the crystal, embers in the magma, violet in the
-    // obsidian) and a soft light from the rock's heart; vein is how much
-    // (0 = none). Ore rocks carry more of it, though their own ore markings
-    // stay the loudest thing on them. All of it is baked into the cached
-    // rock image like everything else here: nothing moves, nothing sparkles.
-    //
-    // Brightness: faces sit at luminance ~90-120 (0-255; the classic rock is
-    // 41, the floor ~30) with HSV saturation ~0.45-0.6, so a biome reads at a
-    // Basic tank's zoom, while tanks (luminance ~120-140, saturation ~0.75,
-    // dark outlines), bullets and gems stay brighter and louder. Ink stays
-    // dark but tinted, so seams are never plain black.
-    //
-    // vary: how one rock differs from the next inside a biome. Every rock
-    // gets its own brightness (+-VARY_LUM) and a nudge along this colour
-    // direction (per unit, scaled by the tone), both from its lattice cell.
-    // map: the rock fill on the minimap and the big map. ui: the colour of
-    // the biome's name in the HUD note.
-    //
-    // hard: how tough the biome's rock is (health multiplier, and its gems
-    // pay the same factor, see toughness below). ore: multiplier on the
-    // chance a rock holds ore at all. up: share of copper rolls that come up
-    // as vein.
     const BIOMES = [
         {   id: 'sandstone', name: 'Sandstone Flats',
-            // warm tan, the lit facet goes golden
-            ink: [64, 42, 26], dark: [122, 88, 54], face: [158, 118, 74], light: [196, 156, 96],
-            rim: [214, 176, 112], rimA: 0.22, glow: 0.2, vary: [9, 4, -7],
-            gem: [255, 206, 92], vein: 0.5,
-            map: '#7a5f3e', ui: '#e8bf84',
-            hard: 0.80, ore: 0.97, up: 0 },
+            fill: [252, 212, 98], vary: [3, 3, -3], gem: [255, 206, 92], rimA: 0,
+            ui: '#e8bf84', hard: 0.80, ore: 0.97, up: 0 },
         {   id: 'clay', name: 'Red Clay Badlands',
-            ink: [66, 30, 22], dark: [124, 66, 48], face: [162, 92, 66], light: [198, 124, 88],
-            rim: [214, 146, 108], rimA: 0.18, glow: 0.15, vary: [8, -3, -5],
-            gem: [255, 152, 92], vein: 0.42,
-            map: '#8a5838', ui: '#f0a476',
-            hard: 0.85, ore: 0.98, up: 0 },
+            fill: [246, 158, 96], vary: [3, -2, -2], gem: [255, 152, 92], rimA: 0,
+            ui: '#f0a476', hard: 0.85, ore: 0.98, up: 0 },
         {   id: 'moss', name: 'Mossy Hollows',
-            ink: [28, 46, 28], dark: [62, 94, 56], face: [86, 128, 74], light: [120, 162, 90],
-            rim: [150, 186, 108], rimA: 0.18, glow: 0.2, vary: [7, 5, -6],
-            gem: [92, 232, 148], vein: 0.48,
-            map: '#4c6c42', ui: '#9ae0a4',
-            hard: 1.00, ore: 1.06, up: 0 },
+            fill: [140, 214, 106], vary: [2, 3, -3], gem: [92, 232, 148], rimA: 0,
+            ui: '#9ae0a4', hard: 1.00, ore: 1.06, up: 0 },
         {   id: 'crystal', name: 'Crystal Caves',
-            // cool teal-blue, pale icy edges
-            ink: [16, 34, 52], dark: [40, 76, 108], face: [72, 124, 158], light: [124, 186, 218],
-            rim: [150, 214, 240], rimA: 0.32, glow: 0.3, vary: [-6, 4, 9],
-            gem: [104, 220, 246], vein: 0.38,
-            map: '#416c86', ui: '#86d8ee',
-            hard: 1.05, ore: 1.00, up: 0 },
+            fill: [102, 198, 240], vary: [-3, 2, 3], gem: [104, 220, 246], rimA: 0,
+            ui: '#86d8ee', hard: 1.05, ore: 1.00, up: 0 },
         {   id: 'magma', name: 'Magma Veins',
-            // dark red basalt, a hot red seam just inside the ink
-            ink: [92, 18, 12], dark: [96, 36, 34], face: [142, 56, 48], light: [180, 84, 60],
-            rim: [236, 100, 44], rimA: 0.36, glow: 0.85, vary: [10, 2, -4],
-            gem: [255, 132, 48], vein: 0.6,
-            map: '#7a2c28', ui: '#f6836a',
-            hard: 1.30, ore: 1.06, up: 0.08 },
+            fill: [250, 116, 110], vary: [3, 1, -2], gem: [255, 132, 48], rimA: 0,
+            ui: '#f6836a', hard: 1.30, ore: 1.06, up: 0.08 },
         {   id: 'obsidian', name: 'Obsidian Deep',
-            // deep violet, lavender edges
-            ink: [32, 20, 54], dark: [64, 48, 106], face: [94, 72, 144], light: [128, 104, 186],
-            rim: [172, 144, 232], rimA: 0.34, glow: 0.3, vary: [8, -3, 7],
-            gem: [198, 132, 255], vein: 0.45,
-            map: '#584284', ui: '#c2a6f6',
-            hard: 1.50, ore: 1.10, up: 0.12 },
+            fill: [124, 134, 248], vary: [2, -2, 3], gem: [198, 132, 255], rimA: 0,
+            ui: '#c2a6f6', hard: 1.50, ore: 1.10, up: 0.12 },
     ];
-    // Brightness dial. The owner, Oct 4: "about 3.7" on a 1 to 5 scale where 1
-    // is the first, muted biome pass and 5 the full bright one above. Every
-    // tone (and the map tint) sits BRIGHT of the way from muted to bright,
-    // the rim shows BRIGHT as strongly. Turn it to taste: 0 muted, 1 bright.
-    // Oct 5: players missed the old stone look, so 0.6 (a little deeper),
-    // with the shader's grain, bevel and darker seams doing the rest.
-    // Oct 6: "the game looks kinda dull": the stone tones go to 0.8 with a
-    // touch more saturation (POP) while the rim, seam glow and veins stay at
-    // the 0.6 look (EDGE), so it is brighter without glowing.
-    const BRIGHT = 0.8, EDGE = 0.6, POP = 1.1;
-    const MUTED = {
-        sandstone: { ink: [30, 25, 20], dark: [63, 52, 42], face: [84, 70, 56], light: [109, 91, 73], map: '#473d32' },
-        clay: { ink: [31, 22, 18], dark: [64, 46, 38], face: [86, 62, 50], light: [112, 81, 65], map: '#4e3b31' },
-        moss: { ink: [19, 25, 20], dark: [39, 52, 41], face: [52, 70, 55], light: [68, 91, 72], map: '#334235' },
-        crystal: { ink: [17, 24, 28], dark: [34, 50, 58], face: [46, 66, 78], light: [60, 86, 101], map: '#30414b' },
-        magma: { ink: [50, 18, 14], dark: [51, 32, 32], face: [68, 42, 42], light: [88, 55, 55], map: '#553838' },
-        obsidian: { ink: [17, 13, 23], dark: [34, 28, 48], face: [46, 37, 64], light: [60, 48, 83], map: '#45395c' },
-    };
-    const hexMix = (a, b, t) => '#' + [1, 3, 5].map(i => {
-        const x = parseInt(a.slice(i, i + 2), 16), y = parseInt(b.slice(i, i + 2), 16);
-        return Math.round(x + (y - x) * t).toString(16).padStart(2, '0');
-    }).join('');
+    const OUTLINE = 0.55, SHADE = 0.84, LIGHT = 0.2, RIM = 0.35, MAP = 0.92, DEEP = 0.76, DEEP_POP = 1.3;
+    const scaleRgb = (c, k) => c.map(v => Math.round(v * k));
+    const liftRgb = (c, k) => c.map(v => Math.round(v + (255 - v) * k));
+    const hexRgb = (c) => '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+    function deepTone(c) {
+        const r = c[0] * DEEP, g = c[1] * DEEP, b = c[2] * DEEP;
+        const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        const f = (v) => Math.max(0, Math.min(255, Math.round(L + (v - L) * DEEP_POP)));
+        return [f(r), f(g), f(b)];
+    }
     for (const b of BIOMES) {
-        const m = MUTED[b.id];
-        if (!m) continue;
-        for (const k of ['ink', 'dark', 'face', 'light']) {
-            const t = b[k].map((v, i) => m[k][i] + (v - m[k][i]) * BRIGHT);
-            // saturation around the tone's own grey, so the biomes pop
-            const L = 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2];
-            b[k] = t.map(v => Math.max(0, Math.min(255, Math.round(L + (v - L) * POP))));
-        }
-        b.rimA = Math.round(b.rimA * EDGE * 1000) / 1000;
-        b.glow = Math.round(b.glow * EDGE * 1000) / 1000;
-        b.vein = Math.round(b.vein * EDGE * 1000) / 1000;
-        b.map = hexMix(m.map, b.map, BRIGHT);
+        b.ink = scaleRgb(b.fill, OUTLINE);
+        b.dark = scaleRgb(b.fill, SHADE);
+        b.face = b.fill.slice();
+        b.light = liftRgb(b.fill, LIGHT);
+        b.rim = liftRgb(b.fill, RIM);
+        b.glow = 0;
+        b.vein = 0;
+        b.map = hexRgb(scaleRgb(b.fill, MAP));
+        b.mapDark = hexRgb(scaleRgb(deepTone(b.fill), MAP));
     }
 
     // Toughness = biome hard x ORE_TOUGH[ore], on top of the ore's own health
@@ -146,8 +76,7 @@
     function toughness(hard, ore) {
         return (hard || 1) * (ORE_TOUGH[ore | 0] || 1);
     }
-    // per-rock brightness spread, +-
-    const VARY_LUM = 0.06;
+    const VARY_LUM = 0.025;
     const N = BIOMES.length;
     const IDX = {};
     BIOMES.forEach((b, i) => { IDX[b.id] = i; });
@@ -350,12 +279,18 @@
             va += wi * (BIOMES[i].vein || 0);
         }
         for (let t = 0; t < NT; t++) {
-            let r = 0, g = 0, b = 0;
+            let r = 0, g = 0, b = 0, chroma = 0;
             for (let i = 0; i < N; i++) {
                 const wi = w[i];
                 if (!wi) continue;
                 const c = BIOMES[i][TONES[t]];
                 r += wi * c[0]; g += wi * c[1]; b += wi * c[2];
+                chroma += wi * (Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]));
+            }
+            const mixed = Math.max(r, g, b) - Math.min(r, g, b);
+            if (mixed > 0.5 && chroma > mixed) {
+                const L = 0.2126 * r + 0.7152 * g + 0.0722 * b, s = Math.min(1.22, chroma / mixed);
+                r = L + (r - L) * s; g = L + (g - L) * s; b = L + (b - L) * s;
             }
             const k = VARY_K[t], lum = 1 + vl * VARY_LUM * k;
             out[o + t * 3] = clamp8(r * lum + dr * vh * k);
@@ -404,7 +339,7 @@
     return {
         BIOMES, N, IDX, TONES, NT, TONE_BYTES, ORE_TOUGH, ORE_DEEP, ORE_GEM, VARY_LUM,
         EDGE_OBSIDIAN, EDGE_MAGMA, EDGE_CRYSTAL, BLEND,
-        weightsAt, latticeUnit, cellAt, rockWeights, rockBiome, biomeAt, rockStats, tonesFor, rockTones, deepen, oreGem, toughness, dominant,
+        weightsAt, latticeUnit, cellAt, rockWeights, rockBiome, biomeAt, rockStats, tonesFor, rockTones, deepen, oreGem, toughness, dominant, deepTone,
         hash, fbm,
     };
 });

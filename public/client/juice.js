@@ -378,13 +378,15 @@ export function drawSlams(c, cx, cy, k = 1) {
     const base = slamLaneSize(s.size) * k;
     const size = base * pop;
     const jitter = !calm() && full() && glitchOn() && age < 220 ? (JM.hash01(age | 0, 5) - 0.5) * 6 : 0;
-    if (jitter) {
-        // the RGB-split ghosts behind the word for the first beat
-        A.hudTitle(s.text, cx - 2 + jitter, cy, size, "#ff2d6f", "center", a * 0.5, c);
-        A.hudTitle(s.text, cx + 2 - jitter, cy, size, "#2df0ff", "center", a * 0.5, c);
-    }
-    A.hudTitle(s.text, cx + jitter * 0.3, cy, size, s.col, "center", a, c);
-    if (s.sub) A.drawText(s.sub, cx, cy + base * 0.5 + 11 * Math.max(0.85, k), 12 * Math.max(0.85, k), "#f2eef8", "center", true, a, 4);
+    if (A.rawInk) A.rawInk(true);
+    try {
+        if (jitter) {
+            A.hudTitle(s.text, cx - 2 + jitter, cy, size, "#ff2d6f", "center", a * 0.5, c);
+            A.hudTitle(s.text, cx + 2 - jitter, cy, size, "#2df0ff", "center", a * 0.5, c);
+        }
+        A.hudTitle(s.text, cx + jitter * 0.3, cy, size, s.col, "center", a, c);
+        if (s.sub) A.drawText(s.sub, cx, cy + base * 0.5 + 11 * Math.max(0.85, k), 12 * Math.max(0.85, k), "#ffffff", "center", true, a, 4);
+    } finally { if (A.rawInk) A.rawInk(false); }
 }
 // The lane size for a slam asked for at `size` (32..80): the order between
 // them stays (a SHUTDOWN still reads bigger than a +250), but nothing goes

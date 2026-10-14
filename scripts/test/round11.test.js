@@ -185,7 +185,7 @@ test('numbers and small fixes: client source', () => {
     const app = csrc('app.js');
     assert.ok(app.includes('[aoHud.on() ? "BANKED TODAY" : "BANKED THIS RAID", String(global.royale.you.banked | 0), "gem"]'));
     assert.ok(app.includes('function fitBtnFont('));
-    assert.ok(app.includes('try { coach.mineTipNote(push, hudNote); } catch (e) { /* */ }'));
+    assert.ok(!app.includes('coach.mineTipNote('), 'no Mining Power tip in the note stack');
     // shortRespawn fits the storm-lock countdown
     const m = app.match(/function shortRespawn\(label\) \{[\s\S]*?\n    \}/);
     const shortRespawn = new Function(m[0] + '\nreturn shortRespawn;')();
@@ -193,7 +193,7 @@ test('numbers and small fixes: client source', () => {
     assert.equal(shortRespawn('Storm resetting (12s)'), 'Respawn 12s');
     assert.equal(shortRespawn('Storm resetting: you drop in (7s)'), 'Drop in 7s');
     assert.ok(!csrc('raidHeat.js').includes('"LOCKED"'), 'the lock-on label is plain words');
-    assert.ok(csrc('coach.js').includes('CL.abilityShown(rec, store(), dt, raidNow(), Date.now())'));
+    assert.ok(!csrc('coach.js').includes('case "ability"'), 'the guide has no ability step');
 });
 
 function memStore() {

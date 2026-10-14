@@ -1,6 +1,7 @@
 // Global Variables (These must come before we import from the modules folder.)
 let EventEmitter = require('events');
 const HashGrid = require('../lib/hashgrid.js');
+const drive = require('../miscFiles/drive.js');
 global.Events = new EventEmitter();
 global.Config = require("../config.js");
 
@@ -76,7 +77,7 @@ global.getTeamName = team => [...global.teamNames, , "DREADNOUGHT"][-team - 1] ?
 // teamColors (they would fall through to yellow). Colours are handed out from
 // a palette at spawn instead; a dead team frees its colour.
 global.royaleTeamColors = new Map();
-global.ROYALE_PALETTE = [10, 12, 11, 25, 15, 28, 26, 43, 44, 45, 46, 47, 5, 27];
+global.ROYALE_PALETTE = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61];
 // Duos: a team shares one colour. The duo server holds a team's colour for
 // as long as the team exists (royaleHeldTeamColors), even while both
 // partners are dead, so nobody else is handed it in the meantime.
@@ -292,6 +293,10 @@ global.runMove = (() => {
                 my.maxSpeed = 0;
                 if (my.topSpeed) {
                     my.damp = a / my.topSpeed;
+                }
+                if (drive.applies(my, a)) {
+                    drive.motor(my, g.x, g.y, gactive, a, global.gameManager.roomSpeed);
+                    break;
                 }
                 if (gactive) {
                     let len = Math.sqrt(g.x * g.x + g.y * g.y);

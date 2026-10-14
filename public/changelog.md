@@ -1,4 +1,22 @@
-# Update [2026-10-12] Everyone in one raid
+# Update [2026-10-14] A more... brighter world
+- The whole game has a new look: bright rocks with bold outlines, a camo floor under the grid instead of dirt, and a softer purple storm. Dark mode on the home page now makes the game dark too. And light mode makes it light. Obviously :)
+- Tanks look like classic diep tanks, with brighter player colours, thicker outlines, and barrels that actually "kick" back when they fire. You no longer always spawn as blue.
+- Every skin has been redrawn in the same clean cartoon style.
+- The map has bigger open areas around the vaults and shops, joined by wide paths, so more fights happen out in the open. Mined rock grows back much faster now.
+- Movement is smoother, with a little more weight when you start and stop.
+- Chests and supply crates now drop an ability you can drive over to pick up. Chests and the supply crate also have new art.
+- Drone and minion tanks are weaker, and their drones and minions mine much more slowly.
+- Your spawn shield shows a countdown ring, and it tells you why it ended.
+- The HUD is much quieter, and every screen and menu matches your light or dark theme. Level ups and other news now show up in a small stack on the right.
+- The home page is simpler, with a live world behind it where bots mine through the rocks. New players just see their name, Play and the region, and everything else shows up after their first game.
+- The game is now one world that is always on, with a new event every few minutes and a daily leaderboard. The same 10 bots stick around for the whole day.
+- Storm Circle now closes in from the edge of the map over 3 minutes.
+- King of the Vault always pays while you are inside it. If someone else is on the hill, everyone on it earns half.
+- Reloading the page puts you right back where you were, without the drop animation.
+- Fixed the question mark tooltips not showing on Mac screens.
+ - psst try out light mode :D
+
+# Update [2026-10-12] Everyone in one raid :D
 - Duos is gone for now. With everyone in the same queue, raids fill up faster and there are more real players to fight.
 - If you play as a guest and last 10 minutes or more, the death screen offers to save your gemdust, rank and unlocks with an account.
 - When you die, your tank now flashes and bursts apart before the death screen fades in, and pressing Enter during it still respawns you as soon as you can.
@@ -9,7 +27,7 @@
 - The connecting screen is cleaner and simpler.
 - Fixed name style previews getting cut off and a stray symbol showing up at the end of some feed lines.
 
-# Update [2026-10-11] Smoother and fairer
+# Update [2026-10-11] Smoother and WAY more fairer
 - Your tank reacts to your keys right away now, even if you live far from the server.
 - Other tanks move smoothly on a laggy connection instead of freezing and jumping.
 - The game runs faster on weaker laptops. If it does need to cut back, it drops screen shake and effects first and lowers resolution only as a last resort.

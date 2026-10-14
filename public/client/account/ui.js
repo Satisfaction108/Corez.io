@@ -316,7 +316,8 @@ export function toast(message, opts) {
         t.appendChild(h('button', { type: 'button', class: 'dw-toast-act', text: a.label, onclick: () => { dismiss(); a.onClick && a.onClick(); } }));
     });
     box.appendChild(t);
-    setTimeout(dismiss, opts.duration || (opts.actions && opts.actions.length ? 7000 : 3600));
+    const ms = opts.duration || (opts.actions && opts.actions.length ? 7000 : 3600);
+    setTimeout(dismiss, document.body.classList.contains('in-game') ? Math.min(ms, 4500) : ms);
     return { dismiss };
 }
 

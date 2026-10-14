@@ -17,6 +17,7 @@ import { config } from "./config.js";
 import { gameSound } from "./sound.js";
 import { sparks as jSparks } from "./juice.js";
 import * as chipOrder from "./chipOrder.js";
+import * as drops from "./abilityDrops.js";
 
 // one colour per ability (the HUD icon tiles use the same, app.js KIT_CARD)
 export const AB_COLOR = {
@@ -34,7 +35,7 @@ const S = global.abil = {
 };
 
 let H = null;
-export function init(helpers) { H = helpers; }
+export function init(helpers) { H = helpers; drops.init(helpers, AB_COLOR); }
 // Until someone has dashed once, the chip (and the touch button) pulses.
 const SEEN_KEY = "dwDashSeen_v1";
 let dashSeen = true;
@@ -46,11 +47,28 @@ export function hud() { return H; }
 export const chips = { dash: { x: 0, y: 0, w: 0, h: 0, at: 0 }, ability: { x: 0, y: 0, w: 0, h: 0, at: 0 } };
 
 const fewer = () => !!(config.graphical && config.graphical.fewerEffects);
+let abDark = false;
+try {
+    const syncAbTheme = () => { abDark = document.documentElement.getAttribute("data-theme") === "dark"; };
+    syncAbTheme();
+    new MutationObserver(syncAbTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+} catch (e) { void e; }
+const AB_WORLD = {
+    light: { ink: "#2a2a2e", shadow: "rgba(0,0,0,0.2)", pad: { face: "#f7c843", light: "#ffe28a", side: "#a87d16" }, padFoe: { face: "#ff7d62", light: "#ffb39f", side: "#a83b2a" },
+             wall: "#9fb0c6", wallLine: "#2a2a2e", chev: "#ffffff",
+             cloud: ["#6c6c78", "#9c9ca8", "#c6c6d0"], canister: "#7d7f8e" },
+    dark: { ink: "#0c0c10", shadow: "rgba(0,0,0,0.38)", pad: { face: "#e0b23a", light: "#f5cf6e", side: "#7a5a0e" }, padFoe: { face: "#e86a50", light: "#f59a86", side: "#7a2a1c" },
+            wall: "#6f7e94", wallLine: "#0c0c10", chev: "#fff6e0",
+            cloud: ["#2c2c34", "#52525c", "#7c7c88"], canister: "#5c5e6c" },
+};
+const abw = () => abDark ? AB_WORLD.dark : AB_WORLD.light;
+const abInk = () => abDark ? AB_WORLD.dark.ink : AB_WORLD.light.ink;
 const calm = () => !!(global.reducedMotion && global.reducedMotion());
 
 // ── packets ─────────────────────────────────────────────────────────────
 export function onState(d) {
     if (!d) return;
+    if (d.msg) d.msg = drops.touchText(d.msg);
     const t = performance.now();
     const prevOwn = S.own, prevTrial = S.trialId, prevTw = S.tw, prevEq = S.eq, prevD = S.d, prevCd = S.cdAt;
     S.on = true;
@@ -74,11 +92,9 @@ export function onState(d) {
     if (S.trialId && S.trialId !== prevTrial) fresh = S.trialId;
     else if (S.tw && S.tw !== prevTw) fresh = S.tw;
     else for (const id of S.own) if (!prevOwn.includes(id)) { fresh = id; break; }
-    // the raid's free ability gets its own slam after the landing instead
     if (d.fn && d.fr) {
         fresh = null;
         unlockSeen("ab:" + d.fr);
-        freeSlam(d.fr);
     }
     // a first raid (newcomer.js stage 0): a trial comes from a director
     // moment, whose banner says it; the icon only glides into its slot
@@ -118,27 +134,15 @@ export function glide(id, text) {
     q.push({ id, text: text || "", start: 0 });
     if (q.length > 6) q.shift();
 }
-// "YOUR ABILITY: GRAPPLE", big in the middle; juice.js holds a slam until
-// the sky drop has landed.
-// Oct 8: it's a line in the top lane now (juice.js), and the key hint is
-// for the first raids only
-const learning = () => (global.nxStage == null ? 3 : global.nxStage | 0) < 3;
-function freeSlam(id) {
-    const J = window.dwJuice;
-    if (!J || global.tutorialMode) return;
-    const key = H ? H.keyLabel("KEY_ABILITY", "Q") : "Q";
-    const free = global.aoWorld ? "Yours to keep while you play" : "Free for this raid";
-    const sub = !learning() ? free : global.mobile ? free + ". Tap the ability button to use it." : free + ". Press " + key + " to use it.";
-    try { J.slam("YOUR ABILITY: " + shortName(id), sub, AB_COLOR[id] || "#f2b83c", 2600, 44); } catch (e) { /* */ }
-}
 
 // a new raid or a fresh join: the next state is a baseline, not news
-export function reset() { S.ready = false; S.radar = []; fx.length = 0; pads.length = 0; }
+export function reset() { S.ready = false; S.radar = []; fx.length = 0; pads.length = 0; drops.reset(); }
 
 const fx = [];
 const pads = [];
 export function onFx(m, punch) {
     const kind = String(m[0] || "");
+    if (kind === "abget") { drops.onGet(+m[1] || 0, +m[2] || 0, m[4] | 0, m[5] | 0); return; }
     const f = { k: kind, x: +m[1] || 0, y: +m[2] || 0, a: +m[3] || 0, b: +m[4] || 0, id: m[5] | 0, born: performance.now() };
     const me = global.player || { renderx: 0, rendery: 0 };
     const near = Math.hypot(f.x - me.renderx, f.y - me.rendery);
@@ -349,7 +353,7 @@ export function onRadar(list) {
 }
 
 let myIdFn = () => -1;
-export function setSelf(fn) { myIdFn = fn; }
+export function setSelf(fn) { myIdFn = fn; drops.setSelf(fn); }
 function myId() { try { return myIdFn(); } catch (e) { return -1; } }
 
 // ── local prediction ────────────────────────────────────────────────────
@@ -555,6 +559,7 @@ function drawMagnet(c, px, py, ratio, now) {
 export function drawFloor(c, px, py, ratio) {
     const now = performance.now();
     try { drawMagnet(c, px, py, ratio, now); } catch (e) { /* */ }
+    try { drops.drawFloor(c, px, py, ratio); } catch (e) { }
     if (!pads.length) return;
     const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
     for (let i = pads.length - 1; i >= 0; i--) {
@@ -572,27 +577,37 @@ export function drawFloor(c, px, py, ratio) {
         const pop = Math.min(1, age / 180) * (0.85 + 0.15 * gone);
         const fade = Math.min(1, (p.b - age) / 600) * gone;
         const blink = p.b - age < 2000 && (now % 400) < 200 ? 0.55 : 1;
+        const W = abw(), pc = p.id && p.id === myId() ? W.pad : W.padFoe;
+        const lw = Math.max(3, 5 * ratio), dep = Math.max(2, 4 * ratio);
         c.save();
         c.globalAlpha = fade * blink;
         c.translate(sx, sy);
-        c.rotate(p.a);
         c.scale(pop, pop);
-        // the plate: dark ring, gold face, ink keyline
+        c.fillStyle = W.shadow;
+        c.beginPath(); c.ellipse(dep * 1.4, dep * 1.9, R * 1.04, R * 0.98, 0, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(dep * 0.6, dep, R, 0, Math.PI * 2);
+        c.fillStyle = pc.side; c.fill();
+        c.lineWidth = lw; c.strokeStyle = W.ink; c.stroke();
         c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2);
-        c.fillStyle = "rgba(0,0,0,0.75)"; c.fill();
-        c.beginPath(); c.arc(0, 0, R * 0.82, 0, Math.PI * 2);
-        c.fillStyle = "rgba(242,184,60,0.28)"; c.fill();
-        c.lineWidth = Math.max(1.5, 3 * ratio); c.strokeStyle = AB_COLOR.pad; c.stroke();
-        // three chevrons racing toward the launch direction
+        c.fillStyle = pc.face; c.fill();
+        c.lineWidth = lw; c.strokeStyle = W.ink; c.stroke();
+        c.beginPath(); c.arc(0, 0, R * 0.74, 0, Math.PI * 2);
+        c.fillStyle = pc.light; c.fill();
+        c.lineWidth = Math.max(1.5, 2.5 * ratio); c.strokeStyle = pc.side; c.stroke();
+        c.globalAlpha = fade * blink * 0.5;
+        c.lineWidth = Math.max(1.5, 3 * ratio); c.strokeStyle = "#ffffff"; c.lineCap = "round";
+        c.beginPath(); c.arc(0, 0, R - lw, Math.PI * 1.05, Math.PI * 1.55); c.stroke();
+        c.rotate(p.a);
         const run = calm() ? 0 : (now / 260) % 1;
-        c.lineWidth = Math.max(2, 5 * ratio); c.lineCap = "round"; c.lineJoin = "round";
+        c.lineCap = "round"; c.lineJoin = "round";
         for (let k = 0; k < 3; k++) {
             const u = (k / 3 + run) % 1;
-            const ox = (-0.5 + u) * R * 1.1;
+            const ox = (-0.5 + u) * R * 1.0;
             c.globalAlpha = fade * blink * (0.35 + 0.65 * Math.sin(Math.PI * u));
             c.beginPath();
-            c.moveTo(ox - R * 0.18, -R * 0.32); c.lineTo(ox + R * 0.16, 0); c.lineTo(ox - R * 0.18, R * 0.32);
-            c.strokeStyle = "#fff3d9"; c.stroke();
+            c.moveTo(ox - R * 0.16, -R * 0.3); c.lineTo(ox + R * 0.15, 0); c.lineTo(ox - R * 0.16, R * 0.3);
+            c.lineWidth = Math.max(4, 9 * ratio); c.strokeStyle = W.ink; c.stroke();
+            c.lineWidth = Math.max(2, 5 * ratio); c.strokeStyle = W.chev; c.stroke();
         }
         c.restore();
     }
@@ -600,6 +615,7 @@ export function drawFloor(c, px, py, ratio) {
 
 export function drawWorld(c, px, py, ratio) {
     const now = performance.now();
+    try { drops.drawPops(c, px, py, ratio); } catch (e) { }
     const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
     const sw = global.screenWidth, sh = global.screenHeight;
     for (let i = fx.length - 1; i >= 0; i--) {
@@ -842,6 +858,15 @@ export function drawWorld(c, px, py, ratio) {
                     c.globalAlpha = (1 - u) * 0.55;
                     c.drawImage(glowSprite("shock", "154,134,255"), sx - fr, sy - fr, fr * 2, fr * 2);
                 }
+                {
+                    const u = t;
+                    if (u < 1) {
+                        c.globalAlpha = (1 - u) * 0.8;
+                        c.strokeStyle = abInk();
+                        c.lineWidth = Math.max(3, 26 * (1 - u) * ratio);
+                        c.beginPath(); c.arc(sx, sy, R * (0.12 + 0.88 * ease(u)), 0, Math.PI * 2); c.stroke();
+                    }
+                }
                 for (let k = 0; k < 3; k++) {
                     const u = Math.max(0, (t - k * 0.1) / (1 - k * 0.1));
                     if (u <= 0 || u >= 1) continue;
@@ -962,10 +987,14 @@ export function drawWorld(c, px, py, ratio) {
                     c.beginPath(); c.moveTo(es.x, es.y); c.lineTo(es.x + Math.cos(a0) * sr, es.y + Math.sin(a0) * sr); c.stroke();
                 }
                 const R = f.b * ratio * ease(t);
-                c.globalAlpha = (1 - t) * 0.6;
+                c.globalAlpha = (1 - t) * 0.7;
+                c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2);
+                c.strokeStyle = abInk();
+                c.lineWidth = Math.max(3, 7 * (1 - t) * ratio);
+                c.stroke();
                 c.strokeStyle = AB_COLOR.radar;
                 c.lineWidth = Math.max(1.5, 4 * (1 - t) * ratio);
-                c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2); c.stroke();
+                c.stroke();
                 c.globalAlpha = (1 - t) * 0.3;
                 c.beginPath(); c.arc(sx, sy, R * 0.7, 0, Math.PI * 2); c.stroke();
                 break;
@@ -1011,8 +1040,8 @@ export function drawWorld(c, px, py, ratio) {
                 c.save();
                 c.translate(gx, gy - Math.sin(Math.PI * u) * lift); c.rotate(u * 8);
                 H.roundRectPath(c, -cr * 0.7, -cr, cr * 1.4, cr * 2, cr * 0.4);
-                c.fillStyle = "#4a4156"; c.fill();
-                c.lineWidth = Math.max(1.5, 2.2 * ratio); c.strokeStyle = "#120e15"; c.stroke();
+                c.fillStyle = abw().canister; c.fill();
+                c.lineWidth = Math.max(1.5, 2.6 * ratio); c.strokeStyle = abInk(); c.stroke();
                 c.fillStyle = smokeFriend(f) ? SMOKE_TINT.friend : SMOKE_TINT.foe;
                 c.fillRect(-cr * 0.7, -cr * 0.25, cr * 1.4, cr * 0.5);
                 c.restore();
@@ -1157,7 +1186,7 @@ export function drawWorld(c, px, py, ratio) {
                     c.translate(gx, gy); c.rotate(u * 9);
                     H.roundRectPath(c, -8 * ratio, -5 * ratio, 16 * ratio, 10 * ratio, 3 * ratio);
                     c.fillStyle = "#e07c2f"; c.fill();
-                    c.lineWidth = Math.max(1, 1.8 * ratio); c.strokeStyle = "#120e15"; c.stroke();
+                    c.lineWidth = Math.max(1.5, 2.4 * ratio); c.strokeStyle = abInk(); c.stroke();
                     c.restore();
                     c.fillStyle = "#fff3a0";
                     c.beginPath(); c.arc(gx, gy - 7 * ratio, 2.5 * ratio * (1 + 0.5 * Math.sin(now / 20)), 0, Math.PI * 2); c.fill();
@@ -1208,7 +1237,7 @@ export function drawWorld(c, px, py, ratio) {
                     const cx2 = x + Math.cos(a) * r * 1.2, cy2 = y + Math.sin(a) * r * 0.7 - (20 + 70 * lt) * ratio;
                     const s3 = 7 * ratio * (1 - lt * 0.3), w3 = 3 * ratio;
                     c.globalAlpha = 1 - lt;
-                    c.fillStyle = "#120e15";
+                    c.fillStyle = abInk();
                     c.fillRect(cx2 - w3 / 2 - 1.5, cy2 - s3 - 1.5, w3 + 3, s3 * 2 + 3);
                     c.fillRect(cx2 - s3 - 1.5, cy2 - w3 / 2 - 1.5, s3 * 2 + 3, w3 + 3);
                     c.fillStyle = "#6ff5a8";
@@ -1284,9 +1313,10 @@ export function drawWorld(c, px, py, ratio) {
                     const a = now / 700 + k * Math.PI / 2;
                     const tw = calm() ? 0.7 : 0.5 + 0.5 * Math.sin(now / 160 + k * 1.7);
                     const gx = es.x + Math.cos(a) * es.r * 1.35, gy = es.y + Math.sin(a) * es.r * 1.35, gs = 5 * ratio * (0.6 + 0.6 * tw);
-                    c.globalAlpha = fade * (0.35 + 0.5 * tw);
+                    c.globalAlpha = fade * (0.45 + 0.5 * tw);
                     c.fillStyle = "#ffd75e";
-                    c.beginPath(); c.moveTo(gx, gy - gs * 1.6); c.lineTo(gx + gs * 0.45, gy); c.lineTo(gx, gy + gs * 1.6); c.lineTo(gx - gs * 0.45, gy); c.closePath(); c.fill();
+                    c.beginPath(); c.moveTo(gx, gy - gs * 1.6); c.lineTo(gx + gs * 0.45, gy); c.lineTo(gx, gy + gs * 1.6); c.lineTo(gx - gs * 0.45, gy); c.closePath();
+                    c.lineJoin = "round"; c.lineWidth = Math.max(1.5, 2 * ratio); c.strokeStyle = abInk(); c.stroke(); c.fill();
                 }
                 break;
             }
@@ -1414,16 +1444,19 @@ function drawPlacement(c, px, py, ratio, now) {
     if (plan) drawWallCells(c, px, py, ratio, plan, pulse);
     c.translate(sx, sy); c.rotate(spot.ang);
     if (a.id === "pad") {
-        const R = 62 * ratio;
-        c.globalAlpha = 0.28 + 0.12 * pulse;
-        c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col; c.fill();
+        const R = 62 * ratio, W = abw();
+        c.globalAlpha = 0.4 + 0.15 * pulse;
+        c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = ok ? W.pad.face : col; c.fill();
         c.globalAlpha = 0.9;
-        c.lineWidth = Math.max(2, 3 * ratio); c.strokeStyle = col; c.stroke();
-        c.lineCap = "round"; c.lineJoin = "round"; c.lineWidth = Math.max(2, 5 * ratio); c.strokeStyle = "#fff3d9";
+        c.lineWidth = Math.max(3, 5 * ratio); c.strokeStyle = W.ink; c.stroke();
+        c.lineWidth = Math.max(1.5, 2.5 * ratio); c.strokeStyle = ok ? W.pad.light : col;
+        c.beginPath(); c.arc(0, 0, R - Math.max(3, 5 * ratio), 0, Math.PI * 2); c.stroke();
+        c.lineCap = "round"; c.lineJoin = "round";
         for (let k = -1; k <= 1; k++) {
             c.beginPath();
             c.moveTo(k * R * 0.35 - R * 0.14, -R * 0.3); c.lineTo(k * R * 0.35 + R * 0.14, 0); c.lineTo(k * R * 0.35 - R * 0.14, R * 0.3);
-            c.stroke();
+            c.lineWidth = Math.max(4, 9 * ratio); c.strokeStyle = W.ink; c.stroke();
+            c.lineWidth = Math.max(2, 5 * ratio); c.strokeStyle = W.chev; c.stroke();
         }
     } else if (a.id === "shock") {
         // the blast it will make: shattered in the middle, launched out to the rim
@@ -1431,6 +1464,7 @@ function drawPlacement(c, px, py, ratio, now) {
         c.globalAlpha = 0.12 + 0.08 * pulse;
         c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col; c.fill();
         c.globalAlpha = 0.85;
+        c.lineWidth = Math.max(4, 6 * ratio); c.strokeStyle = abInk(); c.stroke();
         c.setLineDash(BLAST_DASH);
         c.lineDashOffset = calm() ? 0 : -now / 50;
         c.lineWidth = Math.max(2, 3 * ratio); c.strokeStyle = col; c.stroke();
@@ -1465,8 +1499,8 @@ function drawPlacement(c, px, py, ratio, now) {
         c.setLineDash(NO_DASH);
         c.globalAlpha = 0.95;
         H.roundRectPath(c, -7 * ratio, -10 * ratio, 14 * ratio, 20 * ratio, 4 * ratio);
-        c.fillStyle = "#4a4156"; c.fill();
-        c.lineWidth = Math.max(1, 2 * ratio); c.strokeStyle = "#120e15"; c.stroke();
+        c.fillStyle = abw().canister; c.fill();
+        c.lineWidth = Math.max(1.5, 2.6 * ratio); c.strokeStyle = abInk(); c.stroke();
     }
     c.restore();
     // aim mode (desktop): what the next click does, right by the cursor, and how to
@@ -1478,7 +1512,7 @@ function drawPlacement(c, px, py, ratio, now) {
         c.save();
         c.globalAlpha *= pop;
         pill(c, ux, yy, hint.main, 15, "#ffd76e");
-        pill(c, ux, yy + 25, hint.cancel, 11, "#fff3d9");
+        pill(c, ux, yy + 25, hint.cancel, 11, "#ffffff");
         c.restore();
     }
 }
@@ -1518,7 +1552,7 @@ function drawChain(c, x0, y0, x1, y1, ratio, now, slack) {
             const face = (q & 1) === 0;
             c.beginPath();
             c.ellipse(lx, ly, link * 0.62, face ? link * 0.36 : link * 0.12, ang, 0, Math.PI * 2);
-            if (pass === 0) { c.lineWidth = Math.max(2.5, 4.6 * ratio); c.strokeStyle = "#120e15"; }
+            if (pass === 0) { c.lineWidth = Math.max(2.5, 4.6 * ratio); c.strokeStyle = abInk(); }
             else { c.lineWidth = Math.max(1.2, 2.2 * ratio); c.strokeStyle = face ? "#c3cad6" : "#8a93a3"; }
             c.stroke();
         }
@@ -1544,8 +1578,8 @@ function drawHookHead(c, x, y, ang, ratio) {
         c.quadraticCurveTo(k * 0.78, sd * k * 0.44, k * 0.58, sd * k * 0.22);
         c.closePath();
     }
-    c.lineWidth = Math.max(3.5, 5 * ratio); c.strokeStyle = "#120e15"; c.stroke();
-    c.fillStyle = "#8f98a8"; c.fill();
+    c.lineWidth = Math.max(3.5, 5 * ratio); c.strokeStyle = abInk(); c.stroke();
+    c.fillStyle = "#9aa4b5"; c.fill();
     // highlight along the top edges
     c.beginPath();
     c.moveTo(-k * 0.8, -k * 0.09); c.lineTo(k * 0.45, -k * 0.11);
@@ -1554,8 +1588,8 @@ function drawHookHead(c, x, y, ang, ratio) {
     c.lineWidth = Math.max(1.2, 2 * ratio); c.strokeStyle = "#e3e8f0"; c.stroke();
     // the eye
     c.beginPath(); c.arc(-k * 1.25, 0, k * 0.34, 0, Math.PI * 2);
-    c.lineWidth = Math.max(3, 4.4 * ratio); c.strokeStyle = "#120e15"; c.stroke();
-    c.lineWidth = Math.max(1.5, 2.2 * ratio); c.strokeStyle = "#a7b0be"; c.stroke();
+    c.lineWidth = Math.max(3, 4.4 * ratio); c.strokeStyle = abInk(); c.stroke();
+    c.lineWidth = Math.max(1.5, 2.2 * ratio); c.strokeStyle = "#b4bdcb"; c.stroke();
     c.restore();
 }
 
@@ -1586,16 +1620,18 @@ function drawWallCells(c, px, py, ratio, plan, pulse) {
     c.translate(global.screenWidth / 2 - px - ratio * w.hw, global.screenHeight / 2 - py - ratio * w.hh);
     c.scale(k, k);
     c.lineJoin = "round";
+    const W = abw();
     for (let pass = 0; pass < 2; pass++) {
         const keys = pass ? plan.r : plan.g;
-        const col = pass ? "#ff5a48" : AB_COLOR.wall;
+        const col = pass ? "#ff5a48" : W.wall;
         for (let i = 0; i < keys.length; i++) {
             const cell = tr._cellPolys.get(keys[i]);
             if (!cell || !cell.path) continue;
-            c.globalAlpha = pass ? 0.22 : 0.3 + 0.15 * pulse;
+            c.globalAlpha = pass ? 0.35 : 0.45 + 0.15 * pulse;
             c.fillStyle = col; c.fill(cell.path);
             c.globalAlpha = 0.95;
-            c.lineWidth = 3 / k; c.strokeStyle = pass ? col : "#e3e8f0"; c.stroke(cell.path);
+            c.lineWidth = 5 / k; c.strokeStyle = W.wallLine; c.stroke(cell.path);
+            c.lineWidth = 2 / k; c.strokeStyle = pass ? col : "#ffffff"; c.stroke(cell.path);
         }
     }
     c.restore();
@@ -1754,8 +1790,10 @@ function drawCloud(f, R, age, grow, out) {
     cv._half = half;
     const still = calm();
     const spin = still ? 0 : age / 16000;
-    for (const tone of CLOUD_TONES) {
-        g.fillStyle = tone.col;
+    const toneCols = abw().cloud;
+    for (let ti = 0; ti < CLOUD_TONES.length; ti++) {
+        const tone = CLOUD_TONES[ti];
+        g.fillStyle = toneCols[ti] || tone.col;
         g.beginPath();
         for (let q = 0; q < n * PUFF_W; q += PUFF_W) {
             const d0 = P[q], a0 = P[q + 1], sz = P[q + 2], ph = P[q + 3], delay = P[q + 5];
@@ -1809,9 +1847,10 @@ function drawRadar(c, px, py, ratio, now, sw, sh, cx, cy) {
         const x = ratio * r[0] - px + cx, y = ratio * r[1] - py + cy;
         const m = 36;
         if (x > m && y > m && x < sw - m && y < sh - m) {
-            c.globalAlpha = 0.55 + 0.35 * pulse;
-            c.strokeStyle = col; c.lineWidth = 2.5;
-            c.beginPath(); c.arc(x, y, (f & 4 ? 70 : 34) * ratio + 6 * pulse, 0, Math.PI * 2); c.stroke();
+            c.globalAlpha = 0.6 + 0.35 * pulse;
+            c.beginPath(); c.arc(x, y, (f & 4 ? 70 : 34) * ratio + 6 * pulse, 0, Math.PI * 2);
+            c.strokeStyle = abInk(); c.lineWidth = 5.5; c.stroke();
+            c.strokeStyle = col; c.lineWidth = 3; c.stroke();
             continue;
         }
         // edge arrow
@@ -1821,7 +1860,7 @@ function drawRadar(c, px, py, ratio, now, sw, sh, cx, cy) {
         c.globalAlpha = 0.85;
         c.save();
         c.translate(ex, ey); c.rotate(a);
-        c.fillStyle = col; c.strokeStyle = "#120e15"; c.lineWidth = 2; c.lineJoin = "round";
+        c.fillStyle = col; c.strokeStyle = abInk(); c.lineWidth = 2.5; c.lineJoin = "round";
         const s = (f & 1) ? 1.25 : 1;
         c.beginPath(); c.moveTo(10 * s, 0); c.lineTo(-6 * s, -7 * s); c.lineTo(-3 * s, 0); c.lineTo(-6 * s, 7 * s); c.closePath();
         c.fill(); c.stroke();
@@ -1868,14 +1907,23 @@ function pill(c, cx, cy, text, size, col) {
         pillW.set(font + text, w);
     }
     const h = size + 7, pw = w + size * 1.1;
+    const light = !!(H.HUD && H.HUD.theme === "light");
     c.save();
     H.roundRectPath(c, cx - pw / 2, cy - h / 2, pw, h, h / 2);
-    c.fillStyle = "rgba(0,0,0,0.92)"; c.fill();
-    c.lineWidth = 1.25; c.strokeStyle = col; c.stroke();
+    c.fillStyle = light ? "rgba(255,255,255,0.96)" : "rgba(0,0,0,0.92)"; c.fill();
+    c.lineWidth = 1.25; c.strokeStyle = light ? "rgba(0,0,0,0.2)" : col; c.stroke();
     c.font = font; c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillStyle = col;
+    c.fillStyle = light ? pillInk(col) : col;
     c.fillText(text, cx, cy + 0.5);
     c.restore();
+}
+function pillInk(col) {
+    const m = /^#([0-9a-f]{6})$/i.exec(String(col || ""));
+    if (!m) return "#2a2a2a";
+    const n = parseInt(m[1], 16), k = 0.5;
+    if (((n >> 16) & 255) > 220 && ((n >> 8) & 255) > 220 && (n & 255) > 220) return "#2a2a2a";
+    const ch = (v) => Math.round(v * (1 - k)).toString(16).padStart(2, "0");
+    return "#" + ch((n >> 16) & 255) + ch((n >> 8) & 255) + ch(n & 255);
 }
 function fmtSec(ms) { return String(Math.max(1, Math.ceil(ms / 1000))); }
 function fmtClock(ms) { const s = Math.ceil(ms / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
@@ -1890,7 +1938,7 @@ function dashGlyph(c, x, y, s, alpha) {
         c.beginPath();
         c.moveTo(ox - s * 0.2, y - s * 0.36); c.lineTo(ox + s * 0.16, y); c.lineTo(ox - s * 0.2, y + s * 0.36);
         c.lineWidth = s * 0.26; c.strokeStyle = "#120e15"; c.stroke();
-        c.lineWidth = s * 0.15; c.strokeStyle = DASH_COL; c.stroke();
+        c.lineWidth = s * 0.15; c.strokeStyle = H && H.HUD && H.HUD.theme === "light" ? H.HUD.pipFill : DASH_COL; c.stroke();
     }
     c.restore();
 }
@@ -1920,9 +1968,13 @@ function ownedCount() { return S.own.length + (S.tw && !S.own.includes(S.tw) ? 1
 export function drawHud(c, anchor, mouse) {
     if (!S.on || !H || !anchor) return null;
     const now = performance.now();
-    const sz = 52, gap = 10;
-    const x0 = anchor.x + anchor.w + 22;
-    const y0 = anchor.y + anchor.h - sz + 2;
+    const sz = 44, gap = 16;
+    const x0 = anchor.x + anchor.w + 18;
+    const y0 = anchor.y + anchor.h - sz - 8;
+    const keyCap = (label, cx, top, alpha) => {
+        const kh = 14, kw = Math.max(kh, H.hudTitleW(label, kh * 0.62) + kh * 0.55);
+        H.hudKey(c, Math.round(cx - kw / 2), top, label, kh, alpha);
+    };
     const dashKey = H.keyLabel("KEY_DASH", "Alt"), abKey = H.keyLabel("KEY_ABILITY", "Q");
     // the order is the player's (drag one chip onto the other to swap)
     const dashX = x0 + chipSlot("dash") * (sz + gap), abX = x0 + chipSlot("ability") * (sz + gap);
@@ -1933,35 +1985,31 @@ export function drawHud(c, anchor, mouse) {
         const x = dashX, y = y0, mx = x + sz / 2, my = y + sz / 2;
         const used = now - S.dashAt, got = now - S.gotAt;
         const press = used < 120 ? 2 : 0;
-        H.hudPanel(c, x, y + press, sz, sz, { r: 5, fill: S.d > 0 ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.6)" });
+        H.hudPanel(c, x, y + press, sz, sz, { r: 8, fill: H.HUD.chipSolid, stroke: H.HUD.edgeLine || undefined });
         if (got < 500) {
             c.save(); c.globalAlpha = 1 - got / 500;
             H.roundRectPath(c, x - 3, y - 3 + press, sz + 6, sz + 6, 14);
             c.lineWidth = 2.5; c.strokeStyle = DASH_COL; c.stroke(); c.restore();
         }
-        dashGlyph(c, mx, my - 5 + press, 22, S.d > 0 ? 1 : 0.45);
+        dashGlyph(c, mx, my - 4 + press, 22, S.d > 0 ? 1 : 0.45);
         // charge pips; the one refilling shows how far along it is
-        const pipW = 14, pipH = 5, pg = 4, pw = S.dm * pipW + (S.dm - 1) * pg;
+        const pipW = 15, pipH = 6, pg = 4, pw = S.dm * pipW + (S.dm - 1) * pg;
         const frac = S.drAt ? 1 - Math.max(0, S.drAt - now) / S.drm : 1;
         for (let i = 0; i < S.dm; i++) {
             const px = mx - pw / 2 + i * (pipW + pg), py = y + sz - 12 + press;
-            H.roundRectPath(c, px, py, pipW, pipH, 2.5);
-            c.fillStyle = "rgba(0,0,0,0.75)"; c.fill();
+            H.roundRectPath(c, px, py, pipW, pipH, 3);
+            c.fillStyle = H.HUD.pipEmpty; c.fill();
             const fill = i < S.d ? 1 : i === S.d ? Math.max(0, Math.min(1, frac)) : 0;
             if (fill > 0) {
-                H.roundRectPath(c, px, py, Math.max(pipH, pipW * fill), pipH, 2.5);
-                c.fillStyle = fill >= 1 ? DASH_COL : "rgba(191,239,255,0.45)"; c.fill();
+                c.save();
+                if (fill < 1) c.globalAlpha *= 0.5;
+                H.roundRectPath(c, px, py, Math.max(pipH, pipW * fill), pipH, 3);
+                c.fillStyle = H.HUD.pipFill; c.fill();
+                c.restore();
             }
         }
-        H.hudKey(c, x - 6, y - 8 + press, dashKey, 16);
-        // first raids only (Oct 8): a veteran who never dashes isn't nagged every raid
-        if (!dashSeen && !global.tutorialMode && learning()) {
-            const k = calm() ? 0.6 : 0.5 + 0.5 * Math.sin(now / 220);
-            c.save(); c.globalAlpha = 0.5 + 0.5 * k;
-            H.roundRectPath(c, x - 4 - 3 * k, y - 4 - 3 * k, sz + 8 + 6 * k, sz + 8 + 6 * k, 15);
-            c.lineWidth = 2.5; c.strokeStyle = DASH_COL; c.stroke(); c.restore();
-            H.hudTitle("Try it!", mx, y - 20, 12, DASH_COL, "center", 1, c);
-        }
+        keyCap(dashKey, mx, y - 16, 1);
+        H.drawText("Dash", mx, y + sz + 8, 9, H.HUD.head, "center", true);
         if (mouse && mouse.x >= x && mouse.x <= x + sz && mouse.y >= y && mouse.y <= y + sz) {
             H.queueTip("Dash  ·  " + dashKey, "A quick burst of speed the way you're moving. You have 2 charges, and each one comes back after 5s.", mx, y);
         }
@@ -1972,17 +2020,17 @@ export function drawHud(c, anchor, mouse) {
         const id = S.eq;
         const cd = Math.max(0, S.cdAt - now), cdFrac = S.cdm ? cd / S.cdm : 0;
         const col = id ? (AB_COLOR[id] || "#f2b83c") : null;
-        H.hudPanel(c, x, y, sz, sz, { r: 5, fill: id && !cd ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.6)" });
+        H.hudPanel(c, x, y, sz, sz, { r: 8, fill: H.HUD.chipSolid, stroke: H.HUD.edgeLine || undefined });
         if (id) {
             H.markSlot(id, { x: mx, y: my - 4, w: sz, h: sz, sx: x, sy: y, at: now });
-            if (global.kitUnlockHeld !== id) H.drawKitIcon(c, id, mx, my - 4, 30);
+            if (global.kitUnlockHeld !== id) H.drawKitIcon(c, id, mx, my, 28);
             c.save();
             H.roundRectPath(c, x + 2, y + 2, sz - 4, sz - 4, 10); c.clip();
             sweep(c, mx, my, sz, cdFrac);
             c.restore();
-            if (cd > 0) H.hudTitle(fmtSec(cd), mx, my - 4, 16, "#fff3d9", "center", 1, c);
+            if (cd > 0) H.hudTitle(fmtSec(cd), mx, my, 16, "#ffffff", "center", 1, c);
             const down = S.act === "burrow" && S.actAt > now;
-            H.drawText(down ? "Surface" : chipCase(shortName(id)), mx, y + sz - 7, 8.5, down ? "#ffd37a" : cd ? H.HUD.text2 : "#ffffff", "center", true);
+            H.drawText(down ? "Surface" : chipCase(shortName(id)), mx, y + sz + 8, 9, down ? "#ffd37a" : cd ? H.HUD.text2 : H.HUD.head, "center", true);
             // ready again: a flash in its colour
             const rd = now - S.readyAt;
             if (rd < 600) {
@@ -1999,15 +2047,15 @@ export function drawHud(c, anchor, mouse) {
             }
         } else {
             c.save(); c.globalAlpha = 0.45;
-            H.roundRectPath(c, mx - 13, my - 17, 26, 26, 6);
-            c.setLineDash([3, 3]); c.lineWidth = 1; c.strokeStyle = "#ffffff"; c.stroke(); c.setLineDash(NO_DASH);
+            H.roundRectPath(c, mx - 13, my - 13, 26, 26, 6);
+            c.setLineDash([3, 3]); c.lineWidth = 1; c.strokeStyle = H.HUD.text2; c.stroke(); c.setLineDash(NO_DASH);
             c.restore();
-            H.drawText("None", mx, y + sz - 7, 8.5, H.HUD.text2, "center", true);
+            H.drawText("None", mx, y + sz + 8, 9, H.HUD.text2, "center", true);
         }
-        H.hudKey(c, x - 6, y - 8, abKey, 16, id ? 1 : 0.55);
+        keyCap(abKey, mx, y - 16, id ? 1 : 0.55);
         // a trial: its time left over the chip
         if (S.trialId && S.trialAt > now) {
-            pill(c, mx, y - 20, "Trial " + fmtClock(S.trialAt - now), 10.5, "#f2c35a");
+            pill(c, mx, y - 30, "Trial " + fmtClock(S.trialAt - now), 10.5, "#f2c35a");
         }
         if (mouse && mouse.x >= x && mouse.x <= x + sz && mouse.y >= y && mouse.y <= y + sz) {
             const item = id ? (global.shop.catalog || []).find(i => i.id === id) : null;
@@ -2016,7 +2064,7 @@ export function drawHud(c, anchor, mouse) {
         }
     }
     drawChipDrag(c, mouse);
-    return { x: x0 - 8, y: y0 - 28, w: sz * 2 + gap + 14, h: sz + 30 };
+    return { x: x0 - 8, y: y0 - 30, w: sz * 2 + gap + 16, h: sz + 46 };
 }
 
 // ── rearranging the chips (desktop drag, touch long-press drag) ──
@@ -2161,7 +2209,7 @@ export function drawTouch(c, L, k, held) {
             H.markSlot(id, { x, y, w: r * 2, h: r * 2, sx: x - r, sy: y - r, at: now });
             if (global.kitUnlockHeld !== id) H.drawKitIcon(c, id, x, y + (down ? 2 : 0), r * 1.1);
             sweep(c, x, y, r, cdFrac);
-            if (cd > 0) H.hudTitle(fmtSec(cd), x, y, Math.max(14, r * 0.5), "#fff3d9", "center", 1, c);
+            if (cd > 0) H.hudTitle(fmtSec(cd), x, y, Math.max(14, r * 0.5), "#ffffff", "center", 1, c);
             ring(c, x, y, r + 4, 1 - cdFrac, AB_COLOR[id] || "#f2b83c", 4);
             if (S.trialId && S.trialAt > now) pill(c, x, y - r - 14, "Trial " + fmtClock(S.trialAt - now), 12, "#f2c35a");
         } else {

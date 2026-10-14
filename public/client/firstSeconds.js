@@ -97,7 +97,7 @@ export function tick() {
         if (!S.used) {
             S.used = true;
             S.relAt = 0;
-            S.plan = L.planFor({ newcomer: isNew(), tutorial: global.tutorialMode });
+            S.plan = L.planFor({ newcomer: isNew(), tutorial: global.tutorialMode, ao: !!global.aoWorld });
         } else if (newRaid && !global.tutorialMode) {
             S.relAt = 0;
             S.lines = null;
@@ -105,7 +105,7 @@ export function tick() {
             const lr = S.lastRes;
             const missed = !!lr && lr.raidId === (S.raid | 0) && !raidFinale.sawResults(lr.raidId);
             S.recap = missed ? lr : null;
-            S.plan = L.planFor({ newRaid: true, recap: missed, newcomer: isNew() });
+            S.plan = L.planFor({ newRaid: true, recap: missed, newcomer: isNew(), ao: !!global.aoWorld });
         } else S.plan = null;
     }
     if (on && rid) S.raid = rid;

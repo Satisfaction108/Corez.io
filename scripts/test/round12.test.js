@@ -191,9 +191,7 @@ function memStore() {
         assert.equal(dig({ dig: 0, show: 0 }, s2, { t: 0, alive: true, dig: true, mp: 0 }, 41), 'show');
         assert.ok(/3 stat points/.test(CL.mineTipText(false, '-', 3)));
         assert.ok(!/—/.test(CL.mineTipText(false, '-', 3) + CL.mineTipText(true, '', 2)));
-        const coach = csrc('coach.js');
-        assert.ok(coach.includes('push(mk(-1, "minetip"'), 'top of the note stack');
-        assert.ok(coach.includes('tut: !!global.tutorialMode'));
+        assert.ok(!csrc('coach.js').includes('"minetip"'), 'the tip is no longer drawn in a raid');
     });
 
     test('tutorial offer: first minute of a first raid only', () => {
@@ -205,7 +203,7 @@ function memStore() {
         const rec2 = CL.blank(0); rec2.done.move = 1; rec2.done.mine = 1;
         assert.equal(CL.tutorialOfferOpen(rec2, 0), false, 'first-raid steps done: never');
         const coach = csrc('coach.js');
-        assert.ok(coach.includes('!CL.tutorialOfferOpen(rec, Date.now())'));
+        assert.ok(!coach.includes('CL.tutorialOfferOpen('), 'the guide no longer offers the tutorial');
         assert.ok(coach.includes('if (!(rec.t0 > 0)) { rec.t0 = Date.now(); save(); }'));
     });
 

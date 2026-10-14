@@ -51,6 +51,7 @@ const HOT = new Set([
     "client/juice.js",
     "client/juiceMath.js",
     "client/hitFx.js",
+    "client/gunKick.js",
     "client/skyDrop.js",
     "client/raidShare.js",
     "client/chatPanelLogic.js",
@@ -80,6 +81,7 @@ const HOT = new Set([
     "client/signupPromptLogic.js",
     "client/alwaysOn.js",
     "client/eventFx.js",
+    "client/abilityDrops.js",
     "client/funnel.js",
 ]);
 

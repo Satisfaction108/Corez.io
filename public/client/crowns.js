@@ -379,15 +379,17 @@ export function drawTeamEdge(c, x, y0, W, H) {
 // panel. push(note) like raidHeat.hudNotes.
 const NOTE = { pri: 1, key: "crown", text: "", sub: "", col: GOLD, pulse: 0, badge: true };
 // You wear a crown: a gold card at the top of the note stack for as long as you
-const CARD = { pri: 0, key: "crowncard", text: "YOU HAVE A CROWN", sub: "", col: GOLD, pulse: 1, badge: false, draw: null, card: null };
-CARD.draw = (c, n, cx, y, maxW) => drawCrownCard(c, n.card, cx, y, maxW);
 export function hudNotes(push, compact) {
     if (!active() || global.died) return;
     const me = global.player;
     const mineRow = CL.mine(S.c, gui.playerid);
     if (S.mine && A) {
-        CARD.card = SL.crownCard(S.mine);
-        push(CARD);
+        if (S.toldAt !== S.gotAt && typeof global.sideToast === "function") {
+            S.toldAt = S.gotAt;
+            const lose = Math.max(0, S.mine.lose | 0);
+            global.sideToast(lose > 0 ? "You have a crown. If you're killed, you lose " + lose.toLocaleString("en-US") + " pts. Banked gems stay safe."
+                : "You have a crown. If you're killed, you lose it, but banked gems stay safe.", "crown");
+        }
         // coach.js: its card steps aside while a new crown's card has the top
         if (cardFresh()) global.crownCardAt = performance.now();
         return;
@@ -405,38 +407,6 @@ export function hudNotes(push, compact) {
 const HOW_MS = 8000;
 // a crown just landed: its card has the middle (raidPerks waits for it)
 export function cardFresh() { return !!S.mine && performance.now() - S.gotAt < HOW_MS; }
-function drawCrownCard(c, card, cx, y, maxW) {
-    const HUD = A.HUD;
-    const now = performance.now();
-    const age = now - S.gotAt;
-    const sd = !!(S.mine && S.mine.sd);
-    const col = sd ? RED : GOLD;
-    const tSz = 15, lSz = 11.5;
-    // the first seconds say how you got it, then what it is
-    const title = age < HOW_MS && S.mine ? CL.howLine(S.mine).card : card.title;
-    const w = Math.min(maxW, Math.max(A.hudTitleW(title, tSz), A.hudTitleW(card.title, tSz), A.hudTextW(card.line1, lSz), A.hudTextW(card.line2, lSz)) + 72);
-    const h = 58, x = Math.round(cx - w / 2);
-    // it lands with a pop, then breathes
-    const pop = calm() ? 1 : age < 380 ? 1 + 0.18 * Math.sin(Math.PI * age / 380) : 1;
-    const breathe = calm() ? 1 : 0.8 + 0.2 * Math.sin(now / (sd ? 140 : 320));
-    c.save();
-    c.translate(cx, y + h / 2);
-    c.scale(pop, pop);
-    c.translate(-cx, -(y + h / 2));
-    A.hudPanel(c, x, y, w, h, { fill: "rgba(43,33,20,0.94)", r: 12 });
-    c.globalAlpha = breathe;
-    c.strokeStyle = col; c.lineWidth = 3;
-    A.roundRectPath(c, x + 1.5, y + 1.5, w - 3, h - 3, 11);
-    c.stroke();
-    c.globalAlpha = 1;
-    drawCrownIcon(c, x + 28, y + h / 2 - 1, 26);
-    const tx = x + 50;
-    A.hudTitle(title, tx, y + 15, tSz, col, "left");
-    A.drawText(card.line1, tx, y + 32, lSz, HUD.head, "left", true);
-    A.drawText(card.line2, tx, y + 47, lSz, sd ? "#ffb3bb" : "#ffe3a3", "left", true);
-    c.restore();
-    return y + h + 8;
-}
 
 // ── screen: the sudden death edge pulse ────────────────────────────────
 export function drawScreen(c) {

@@ -15,11 +15,15 @@ const ORE_HP = { [ORE.NONE]: 1, [ORE.COPPER]: 1.8, [ORE.VEIN]: 2.2,
                  [ORE.SHARD]: 3, [ORE.EMERALD]: 6 };
 
 // Mirrored on the client: terrainRenderer.js GROW_MS / GROW_SCALE0.
+const GROW_TIMELINE_MS = 16_000;
+const RISE_MS = 5_000;
 const REGROW = {
-    BASE_DELAY_MS:      46_000, // dead this long before it starts to rise (was 23 s)
-    MIN_DELAY_MS:       20_000, // the side that's losing more wall waits down to this (was 10 s)
-    DEFICIT_MS_PER_GAP:    600, 
-    GROW_MS:            16_000, // the rise at full pace (was 8 s)
+    BASE_DELAY_MS:      18_000,
+    MIN_DELAY_MS:        8_000,
+    DEFICIT_MS_PER_GAP:    250,
+    GROW_MS:  GROW_TIMELINE_MS,
+    RISE_MS,
+    RISE_RATE: GROW_TIMELINE_MS / RISE_MS,
     START_SCALE:          0.15, 
     HP_FLOOR:             0.25, 
 
@@ -39,15 +43,15 @@ const REGROW = {
     // hysteresis before it speeds back up.
     NEAR_R:                260,
     NEAR_OFF_R:            300,
-    NEAR_RATE:          1 / 1.2, // 20% longer rise
+    NEAR_RATE:          1 / 2.4,
+    START_CLEAR:            40,
     // a grown tank (growth.js) slows it more: the rate divides by 1 + GROWN_SLOW
     // per 1x it has gained (in 0.25x steps), so a 3x hull isn't closed in
     GROWN_SLOW:              1,
     NEAR_BUCKET:           512,
-    // rock raised by a Bulwark or the between-raids wipe keeps the old pace
-    // and ignores nearby tanks (it's meant to go up around you)
-    FAST_RATE:               2,
+    FAST_RATE: GROW_TIMELINE_MS / RISE_MS,
     EMERALD_RESPAWN_MS: 60_000, 
+    ORPHAN_DELAY_MS:    60_000,
     ORE_GEN_STRIDE:       7919, 
 };
 
@@ -870,7 +874,7 @@ class TerrainGrid {
         for (const e of tanks) add(e);
         for (const rock of list) {
             if (rock.growFast) continue;
-            const slow = rock.growRate !== 1;
+            const slow = rock.growRate !== REGROW.RISE_RATE;
             const R = (slow ? REGROW.NEAR_OFF_R : REGROW.NEAR_R);
             const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
             const reach = R + maxSize;
@@ -888,8 +892,15 @@ class TerrainGrid {
                 }
             }
             const gq = Math.round(g * 4) / 4;
-            this._setRiseRate(rock, now, near ? REGROW.NEAR_RATE / (1 + REGROW.GROWN_SLOW * Math.max(0, gq - 1)) : 1);
+            this._setRiseRate(rock, now, near ? REGROW.RISE_RATE * REGROW.NEAR_RATE / (1 + REGROW.GROWN_SLOW * Math.max(0, gq - 1)) : REGROW.RISE_RATE);
         }
+    }
+
+    static _arenaBodies() {
+        const out = [];
+        try { const b = require('./bosses.js').current(); if (b) out.push(b); } catch { }
+        try { const c = require('./coreFinale.js').current(); if (c) out.push(c); } catch { }
+        return out;
     }
 
     // Players and bots (never shots, gems or props).
@@ -1093,7 +1104,7 @@ class TerrainGrid {
         rock.gen++;
         rock.growing    = true;
         rock.growFast   = !!(opts && opts.fast);
-        rock.growRate   = rock.growFast ? ((opts && opts.rate) || REGROW.FAST_RATE) : 1;
+        rock.growRate   = rock.growFast ? ((opts && opts.rate) || REGROW.FAST_RATE) : REGROW.RISE_RATE;
         rock.growAt     = now;
         rock.growE0     = elapsed > 0 ? elapsed : 0;
         rock.growDamage = 0;
@@ -1243,6 +1254,8 @@ class TerrainGrid {
         this._regrowDelay[0] = delayFor(gap0, gap1);
         this._regrowDelay[1] = delayFor(gap1, gap0);
 
+        const orphansRegrow = this._orphanRegrowOn();
+        let tankIndex = null;
         for (const rock of this.rocks.values()) {
             if (rock.alive || rock.growing || !rock.diedAt || !rock.worldPoly) continue;
             const side = this._sideOf(rock);
@@ -1259,8 +1272,11 @@ class TerrainGrid {
             if (now - rock.diedAt < (bloomRock ? REGROW.BLOOM_DELAY_MS : delay)) continue;
             if (rock.noRegrowUntil && now < rock.noRegrowUntil) continue;
             if (this._inNoRegrowZone(rock, now)) continue;
-            if (!bloomRock && !this._hasLivingNeighbour(rock)) continue;
-            // a bloom rock starts 45% of the way up, so it rises in about 9 s
+            if (!bloomRock && !this._hasLivingNeighbour(rock)) {
+                if (!orphansRegrow || now - rock.diedAt < REGROW.ORPHAN_DELAY_MS || this._hasGrowingNeighbour(rock)) continue;
+            }
+            if (!tankIndex) tankIndex = this._tankIndex();
+            if (this._tankOnCell(tankIndex, rock)) continue;
             this.startRegrow(rock, now, bloomRock ? REGROW.GROW_MS * REGROW.BLOOM_START : 0);
         }
 
@@ -1269,6 +1285,58 @@ class TerrainGrid {
             this._emeraldTickAt = now;
             this._tickEmeraldRespawns(now);
         }
+    }
+
+    _tankIndex() {
+        const B = REGROW.NEAR_BUCKET;
+        const buckets = new Map();
+        let maxSize = 0;
+        const tanks = (this.tankSource ? this.tankSource() : TerrainGrid._defaultTanks()) || [];
+        const bigs = Config.dig_royale ? TerrainGrid._arenaBodies() : [];
+        for (const e of bigs.length ? tanks.concat(bigs) : tanks) {
+            if (!e || e.isGhost || (e.isDead && e.isDead())) continue;
+            if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
+            const key = Math.floor(e.x / B) * 65536 + Math.floor(e.y / B);
+            const list = buckets.get(key);
+            if (list) list.push(e); else buckets.set(key, [e]);
+            if ((e.size || 0) > maxSize) maxSize = e.size || 0;
+        }
+        return { B, buckets, maxSize };
+    }
+
+    _tankOnCell(index, rock) {
+        if (!index || !index.buckets.size) return false;
+        const { B, buckets, maxSize } = index;
+        const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
+        const base = (rock.maxPolyRadius || this._cellWorld || 100) + REGROW.START_CLEAR;
+        const reach = base + maxSize;
+        const bx0 = Math.floor((x - reach) / B), bx1 = Math.floor((x + reach) / B);
+        const by0 = Math.floor((y - reach) / B), by1 = Math.floor((y + reach) / B);
+        for (let bx = bx0; bx <= bx1; bx++) {
+            for (let by = by0; by <= by1; by++) {
+                const list = buckets.get(bx * 65536 + by);
+                if (!list) continue;
+                for (const e of list) {
+                    const rr = base + (e.size || 0);
+                    if ((e.x - x) ** 2 + (e.y - y) ** 2 <= rr * rr) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    _orphanRegrowOn() {
+        if (!Config.dig_royale || Config.tutorial) return false;
+        try { return !!require('./alwaysOn.js').on(); } catch { return false; }
+    }
+
+    _hasGrowingNeighbour(rock) {
+        const { vi, vj } = rock;
+        for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const r = this.rocks.get((vi + di) * 100003 + (vj + dj));
+            if (r && r.growing) return true;
+        }
+        return false;
     }
 
     _hasLivingNeighbour(rock) {

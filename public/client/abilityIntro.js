@@ -16,7 +16,7 @@ import { holding as coachHolding } from "./coach.js";
 
 let store = null;
 try { store = window.localStorage; } catch (e) { store = null; }
-let done = store ? L.introDone(store) : true;
+let done = true;
 
 const T = { on: false, step: 0, stepAt: 0, landedAt: 0, sawFall: false, firstSeen: 0, dashAt: 0, abAt: 0, perCss: 1,
     next: { x: 0, y: 0, w: 0, h: 0 }, skip: { x: 0, y: 0, w: 0, h: 0 }, spot: { x: 0, y: 0, r: 0 } };

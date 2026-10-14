@@ -459,6 +459,13 @@ function onDestroyed(chest) {
         else if (socket) { bonus = 150; itemMsg = "Your kit was full, so you got 150 gems instead"; }
     }
     eruptGems(chest.x, chest.y, chest.chestGems + bonus, body, chest.chestRare);
+    let drop = null;
+    try { drop = require('./abilityDrops.js').fromChest(chest, body); } catch { drop = null; }
+    if (drop) {
+        const def = require('./abilities.js').AB_BY_ID.get(drop.ab);
+        const dropMsg = (def ? def.name : "An ability") + " dropped";
+        itemMsg = itemMsg ? itemMsg + ". " + dropMsg : dropMsg;
+    }
     // a supply crate (supplyDrops.js) adds its own prize to the message
     if (chest.onOpened && body) { try { const extra = chest.onOpened(body); if (extra) itemMsg = itemMsg ? itemMsg + ", " + extra : extra; } catch (e) { /* */ } }
     if (Config.dig_royale) try {

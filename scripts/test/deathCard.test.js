@@ -6,8 +6,6 @@
 //                out: room under the tiles, lines wrap and are never cut, the
 //                card grows with them, and a card taller than the screen is
 //                drawn scaled down so the buttons below stay clear
-//   home         the menu shows a slice of a raid (homeWorld.js) baked in
-//                idle slices after load; no tank parade, no fireworks
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -72,24 +70,34 @@ test('death card: app.js sizes the card from the block and fits it on screen', (
     assert.match(card, /global\.deathCamLift = Math\.max\(0, sh \/ 2 - Math\.max\(110, py \/ 2 \+ 10\)\) \* k;/);
 });
 
-test('home: a raid behind the menu, baked in idle slices, still under reduced motion', () => {
+test('home: a live mining world behind the menu in the in-game rock art, capped and paused, still under reduced motion', () => {
     const html = fs.readFileSync(path.join(REPO, 'public', 'index.html'), 'utf8');
+    const css = fs.readFileSync(path.join(REPO, 'public', 'home.css'), 'utf8');
     assert.ok(html.indexOf('/shared/rockBiomes.js') < html.indexOf('./client/homeWorld.js'), 'biomes first');
     assert.ok(html.indexOf('./client/homeWorld.js') < html.indexOf('./client/home.js'));
-    assert.match(html, /<ol class="hero-loop"/);
+    assert.match(html, /<div id="homeBackdrop" aria-hidden="true">\s*<canvas id="homeWorldCanvas"/);
+    assert.ok(!/<ol class="hero-loop"/.test(html), 'the Mine > Bank > Win strip is gone');
+    const hw = src('homeWorld.js');
+    for (const fn of ['simulate', 'simTank', 'hitCell', 'breakCell', 'regrow', 'bank', 'repaint']) assert.match(hw, new RegExp('function ' + fn + '\\('), fn);
+    assert.match(hw, /g\.fillStyle = SIDE_INK; g\.fill\(solid\);/, 'raised side face');
+    assert.match(hw, /g\.lineWidth = outlineW; g\.strokeStyle = OUTLINE_INK; g\.stroke\(open\);/, 'bold silhouette outline');
+    assert.match(hw, /var CRACK = \{ base: 'rgba\(0,0,0,0\.55\)'/, 'the game dark cracks');
+    assert.match(hw, /polyPath\(c, x, y, h \* 1\.22, 8, Math\.PI \/ 8\);/, 'the in-game octagon vault');
+    assert.match(hw, /S\.cacheL !== S\.light/, 'a theme switch rebakes');
+    assert.match(hw, /var TEAM = \['#00b2e1', '#f14e54'/, 'diep player colours');
+    assert.match(hw, /frame: frameStat\(S\)/, 'per frame cost is measured');
+    assert.ok(!/requestAnimationFrame/.test(hw), 'home.js owns the loop');
+    assert.match(css, /#homeBackdrop::after \{[^}]*radial-gradient/, 'a static calm patch behind the menu');
+    assert.match(css, /html\[data-theme\] #dwJoin:not\(\.see\) \{\n    background-image: var\(--home-gems\)/, 'the connecting screen keeps the CSS floor');
     const home = src('home.js');
-    assert.match(home, /done = world\.step\(8\);/);
-    // playtest 9: right after first paint (not 'load'), a cheap low-detail bake first
-    assert.match(home, /requestAnimationFrame\(function \(\) \{ setTimeout\(function \(\) \{ wantWorld\(0\); \}, 0\); \}\)/);
-    assert.ok(!/addEventListener\('load', function \(\) \{ wantWorld/.test(home), 'no wait for the whole page to load');
-    assert.match(home, /world\.build\(W, H, cheap \? 0\.5 : dpr,/);
-    assert.match(home, /if \(!reduceMotion\) homeFxRaf = requestAnimationFrame\(drawHomeFx\);/);
-    assert.match(home, /if \(hidden && world\) \{ world\.release\(\); worldIn = 0; \}/);
-    assert.ok(!/TANK_KINDS/.test(home), 'the tank parade is gone');
+    assert.match(home, /if \(!reduceMotion && now - homeFxLast < 32\) return;/, 'capped near 30 fps');
+    assert.match(home, /world\.build\(W, H, cheap \? 0\.5 : dpr, root\.getAttribute\('data-theme'\) === 'light'\)/);
+    assert.match(home, /done = world\.step\(8\);/, 'baked in idle slices');
+    assert.match(home, /if \(world\) \{ world\.release\(\); worldIn = 0; \}/, 'let go while a game runs');
+    assert.match(home, /window\.dwHomeWorld = window\.dwHomeWorld \|\| \{/);
     assert.match(src('app.js'), /if \(!global\.mobile && !window\.dwHomeWorld\) \{/);
     const b = fs.readFileSync(path.join(REPO, 'scripts', 'build-client.js'), 'utf8');
     assert.match(b, /"client\/homeWorld\.js",/);
-    assert.match(b, /"client\/deathCardLogic\.js",/);
 });
 
 (async () => {

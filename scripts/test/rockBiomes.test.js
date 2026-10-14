@@ -146,10 +146,9 @@ test('smooth: seams blend over a few rocks, no hard jumps', () => {
     assert.ok(pairs > 3000, 'checked the whole map');
     assert.equal(jumps, 0, 'a pure biome never touches another pure one');
     assert.ok(worstW <= 0.55, 'a biome weight moves at most about half way per rock (worst ' + worstW.toFixed(2) + ')');
-    // the palettes sit up to ~90 apart a channel (sandstone vs crystal
-    // blue) and the seam leans to the biome ahead (squared weights, so no
-    // grey in-between rocks), so one step across a seam can be ~70
-    assert.ok(worstFace <= 76, 'neighbouring faces differ by at most 76 a channel (worst ' + worstFace + ')');
+    let spread = 0;
+    for (const a of B.BIOMES) for (const b of B.BIOMES) for (let ch = 0; ch < 3; ch++) spread = Math.max(spread, Math.abs(a.face[ch] - b.face[ch]));
+    assert.ok(worstFace <= spread * 0.9, 'a seam never jumps the whole palette in one rock (worst ' + worstFace + ' of ' + spread + ')');
     // the bands blend over more than one rock: count rocks clearly in between
     let mixed = 0;
     for (const r of raidRocks) { const wt = w(r); if (Math.max(...wt) < 0.8) mixed++; }
@@ -410,7 +409,7 @@ test('numbers: biome x ore toughness, paid back in gems', () => {
 // existed. The biomes must never move a vertex; if rock geometry is changed
 // on purpose some day, update this pin along with it.
 const GEOMETRY_PIN = '9384d55b71ced151';
-const SOURCE_PINS = { glslGeometry: 'a188445866c30408', vh2: 'c3379e0cb7db54f6', boundary: 'e0c73cfd5fbad76d' };
+const SOURCE_PINS = { vh2: 'c3379e0cb7db54f6', boundary: '1f2e2678a2617f57' };
 test('geometry: the same rock polygons before and after', () => {
     const polys = (g) => {
         const h = crypto.createHash('sha256');
@@ -433,17 +432,12 @@ test('geometry: the same rock polygons before and after', () => {
     assert.equal(polys(ref16), GEOMETRY_PIN, 'rock polygons match the pre-biome build');
     if (TILES === 16) assert.equal(polys(grid), GEOMETRY_PIN);
     global.gameManager.terrainGrid = grid;
-    // the client's copies: seed jitter, silhouette, the shader's voronoi
     const src = fs.readFileSync(path.join(REPO, 'public', 'client', 'terrainRenderer.js'), 'utf8');
     const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); assert.ok(i >= 0 && j > i, a); return src.slice(i, j); };
     const sh = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
-    assert.equal(sh(cut('vec2 hash2(vec2 p){', 'float nl=length(mr);')), SOURCE_PINS.glslGeometry, 'shader voronoi untouched');
     assert.equal(sh(cut('    _vh2(i, j) {', '    _buildVoronoiDebugSegs() {')), SOURCE_PINS.vh2, 'client seed jitter untouched');
-    assert.equal(sh(cut('    _buildVoronoiBoundary() {', '    _buildNoiseTile() {')), SOURCE_PINS.boundary, 'client silhouette untouched');
-    // and the colour block only picks tones, read at the rock's own seed cell
-    const fs2 = cut('if(u_bioOn>.5){', 'const float INK');
-    assert.ok(/vec2 bc=n\+mg\+vec2\(8\.\);/.test(fs2), 'tones read at the seed cell');
-    assert.ok(!/\b(md|mr|mg|bd|nl|lt)\s*=/.test(fs2.replace(/vec2 bc=n\+mg\+vec2\(8\.\);/, '')), 'nothing geometric assigned');
+    assert.equal(sh(cut('    _buildVoronoiBoundary() {', '        this._silDeadN = dead.size;')), SOURCE_PINS.boundary, 'client silhouette untouched');
+    assert.ok(!/u_seeds|vec2 hash2\(/.test(src), 'rocks are drawn from the lattice polygons, no shader copy of the voronoi');
 });
 
 test('wiring: served, loaded, passed through, drawn', () => {
@@ -456,7 +450,7 @@ test('wiring: served, loaded, passed through, drawn', () => {
     assert.ok(/terrainRenderer\.init\(cells, cols, rows, rockState, oreState, oreSalt, m\[11\] \| 0\)/.test(si), 'TG seed reaches init');
     const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
     assert.ok(/paths\.aliveBio/.test(app) && /tr\.biomeOf\(k\)/.test(app), 'maps tint by biome');
-    assert.ok(/push\(hudNote\(3, "biome", biome\.name, biome\.ui\)\)/.test(app), 'quiet note, lowest priority');
+    assert.ok(!/hudNote\(3, "biome"/.test(app), 'no biome name line under the clock');
 });
 
 (async () => {

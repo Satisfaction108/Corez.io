@@ -2,7 +2,7 @@
     --face-c: #5a5a5a;
     --lip-c: #3a3a3a;
     border: 3px solid #3a3a3a !important;
-    border-radius: 5px !important;
+    border-radius: 6px !important;
     background: #5a5a5a !important;
     background-image: none !important;
     box-shadow: none !important;
@@ -28,7 +28,7 @@
 .dw-igbtn.accent:hover:not(:disabled) { background: #ea8a3e !important; }
 .dw-igbtn.play:not(:disabled) { background: #4fcf5c !important; border-color: #2c8f37 !important; }
 .dw-igbtn.play:not(:disabled):hover { background: #5edb6b !important; }
-.dw-igbtn.play { font: 700 24px/1 Ubuntu, sans-serif !important; -webkit-text-stroke: 4px #333; }
+.dw-igbtn.play { font: 400 25px/1 'Lilita One', Ubuntu, sans-serif !important; letter-spacing: .01em !important; -webkit-text-stroke: 4px #333; }
 .dw-igbtn.play .pa-key { font: 700 12px/1 Ubuntu, sans-serif; -webkit-text-stroke: 0; padding: 4px 6px; border-radius: 3px; background: rgba(0,0,0,.3); color: #fff; }
 .dw-igbtn.play:disabled { background: #4a4a4a !important; border-color: #333 !important; color: #cfcfcf !important; font-size: 21px !important; }
 #royaleDomPlayAgain, #royaleDomPlayBuild { padding: 0 14px; align-items: center; justify-content: center; }
@@ -47,51 +47,51 @@ body #dwCoach {
     --display: Ubuntu, sans-serif;
     --ui: Ubuntu, sans-serif;
     --text: #f2f2f2; --text2: #cfcfcf; --heading: #fff;
-    --well: rgba(0, 0, 0, .55);
+    --well: rgba(0, 0, 0, .35);
     border: 0;
-    border-radius: 5px;
-    background: rgba(0, 0, 0, 0.5);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.3);
     box-shadow: none;
 }
-#dwCoach .dwc-eyebrow { text-transform: none; letter-spacing: 0; font-size: .86em; }
-#dwCoach .dwc-title { font: 700 1.22em/1.15 Ubuntu, sans-serif; text-shadow: none; -webkit-text-stroke: .16em #333; paint-order: stroke fill; }
-#dwCoach .dwc-text kbd { border: 2px solid #333; border-radius: 3px; background: #5a5a5a; box-shadow: none; font: 700 .9em/1.3 Ubuntu, sans-serif; }
-#dwCoach .dwc-bar { border: 2px solid rgba(0, 0, 0, .6); background: rgba(0, 0, 0, .55); }
+#dwCoach .dwc-title { font: 400 1.12em/1.15 'Lilita One', Ubuntu, sans-serif; letter-spacing: .01em; text-shadow: none; -webkit-text-stroke: .18em #333; paint-order: stroke fill; }
+#dwCoach .dwc-text { -webkit-text-stroke: .16em #333; paint-order: stroke fill; }
+#dwCoach .dwc-text kbd { border: 0; border-radius: 3px; background: rgba(255, 255, 255, .18); box-shadow: none; font: 700 .9em/1.3 Ubuntu, sans-serif; -webkit-text-stroke: 0; }
+#dwCoach .dwc-bar { border: 0; background: rgba(0, 0, 0, .35); }
 #dwCoach .dwc-bar i { box-shadow: none; border-radius: 999px; }
 #dwCoach .dwc-bar span { text-shadow: none; -webkit-text-stroke: .2em #333; paint-order: stroke fill; }
+#dwCoach .dwc-link { -webkit-text-stroke: .16em #333; paint-order: stroke fill; color: #e8e8e8; }
 #dwCoach .dwc-btn { border: 3px solid #2c8f37; border-radius: 4px; box-shadow: none; background-image: none; }
 #dwCoach .dwc-btn.dwc-danger { border-color: #9c2a21; box-shadow: none; }
-#dwCoach .dwc-btn.dwc-alt { border-color: #3a3a3a; background: #5a5a5a; box-shadow: none; }
 
 .gt-card {
     border: 0;
-    border-radius: 5px;
-    background: rgba(0, 0, 0, 0.5);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.35);
     box-shadow: none;
 }
 .gt-tag { border: 0; border-radius: 3px; letter-spacing: 0; }
-.gt-title { letter-spacing: 0; -webkit-text-stroke: 3px #333; paint-order: stroke fill; color: #fff; }
+.gt-title { font-family: 'Lilita One', Ubuntu, sans-serif; font-weight: 400; letter-spacing: .01em; -webkit-text-stroke: 3px #333; paint-order: stroke fill; color: #fff; }
 .gt-btn { border: 2px solid #3a3a3a; border-radius: 4px; background: #5a5a5a; box-shadow: none; letter-spacing: 0; }
 .gt-btn.primary { border-color: #2c8f37; background: #4fcf5c; box-shadow: none; background-image: none; }
 
 body.in-game .igc {
     border: 0;
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.6);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.5);
     box-shadow: none;
 }
-body.in-game .igc-title { font: 700 19px Ubuntu, sans-serif; letter-spacing: 0; -webkit-text-stroke: 3px #333; paint-order: stroke fill; color: #fff; }
+body.in-game .igc-title { font: 400 20px 'Lilita One', Ubuntu, sans-serif; letter-spacing: .01em; -webkit-text-stroke: 3px #333; paint-order: stroke fill; color: #fff; }
 
 #dwFinaleDiscord, #dwKeepNudge, #dwShareNote {
-    border: 2px solid rgba(0, 0, 0, .6);
-    border-radius: 5px;
-    background: rgba(18, 18, 20, .86);
+    border: 0;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, .5);
     box-shadow: none;
     color: #fff;
     font-family: Ubuntu, sans-serif;
 }
 #dwFinaleDiscord small, #dwKeepNudge .kn-p { color: #cfcfcf; font-family: Ubuntu, sans-serif; }
-#dwKeepNudge .kn-h { font-family: Ubuntu, sans-serif; color: #fff; -webkit-text-stroke: 3px #333; paint-order: stroke fill; }
+#dwKeepNudge .kn-h { font-family: 'Lilita One', Ubuntu, sans-serif; font-weight: 400; letter-spacing: .01em; color: #fff; -webkit-text-stroke: 3px #333; paint-order: stroke fill; }
 #dwShareBtn, #dwKeepNudge .kn-go, #dwShareNote .dw-btn {
     border: 3px solid #2c8f37 !important;
     border-radius: 5px !important;
@@ -127,14 +127,14 @@ body.in-game .igc-title { font: 700 19px Ubuntu, sans-serif; letter-spacing: 0; 
     display: none; flex-direction: column; align-items: center; gap: 6px;
     width: max-content; max-width: min(440px, calc(100vw - 32px));
     padding: 12px 20px 14px; box-sizing: border-box;
-    border: 3px solid rgba(0, 0, 0, .6); border-radius: 5px;
-    background: rgba(18, 18, 20, .88);
+    border: 0; border-radius: 8px;
+    background: rgba(0, 0, 0, .5);
     color: #fff; text-align: center; font-family: Ubuntu, sans-serif;
     transform: translate(-50%, -100%);
     pointer-events: auto;
 }
 #dwLongLife.open { display: flex; }
-#dwLongLife .ll-h { font: 700 24px/1.15 Ubuntu, sans-serif; color: #fff; -webkit-text-stroke: 4px #333; paint-order: stroke fill; }
+#dwLongLife .ll-h { font: 400 25px/1.15 'Lilita One', Ubuntu, sans-serif; letter-spacing: .01em; color: #fff; -webkit-text-stroke: 4px #333; paint-order: stroke fill; }
 #dwLongLife .ll-p { max-width: 380px; font: 700 14px/1.35 Ubuntu, sans-serif; color: #e8e8e8; }
 #dwLongLife .ll-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px; }
 #dwLongLife button {
@@ -167,3 +167,178 @@ body.in-game .igc-title { font: 700 19px Ubuntu, sans-serif; letter-spacing: 0; 
     #dwLongLife button { height: 34px; padding: 0 12px; font-size: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { #dwLongLife.open { animation: none; } }
+
+html[data-theme="light"] body #dwCoach {
+    --text: #333333; --text2: #666666; --heading: #262626;
+    --well: rgba(0, 0, 0, .08);
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(0, 0, 0, .16);
+    color: #2a2a2a;
+}
+html[data-theme="light"] #dwCoach .dwc-title,
+html[data-theme="light"] #dwCoach .dwc-text,
+html[data-theme="light"] #dwCoach .dwc-link,
+html[data-theme="light"] #dwCoach .dwc-confirm span { -webkit-text-stroke: 0; }
+html[data-theme="light"] #dwCoach .dwc-link { color: #555555; }
+html[data-theme="light"] #dwCoach .dwc-text kbd { background: rgba(0, 0, 0, .08); color: #262626; }
+html[data-theme="light"] #dwCoach .dwc-bar { background: rgba(0, 0, 0, .14); }
+html[data-theme="light"] #dwCoach .dwc-pips .pip { background: rgba(0, 0, 0, .18); }
+html[data-theme="light"] #dwCoach .dwc-pips .pip.cur { background: #262626; }
+html[data-theme="light"] #dwCoach .dwc-pips .pip.done { background: var(--play); }
+
+html[data-theme="light"] .gt-card,
+html[data-theme="light"] body.in-game .igc,
+html[data-theme="light"] #dwFinaleDiscord,
+html[data-theme="light"] #dwKeepNudge,
+html[data-theme="light"] #dwShareNote,
+html[data-theme="light"] #dwLongLife {
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(0, 0, 0, .16);
+    color: #222222;
+}
+html[data-theme="light"] .gt-title,
+html[data-theme="light"] body.in-game .igc-title,
+html[data-theme="light"] #dwKeepNudge .kn-h,
+html[data-theme="light"] #dwLongLife .ll-h { color: #262626; -webkit-text-stroke: 0; }
+html[data-theme="light"] #dwFinaleDiscord small,
+html[data-theme="light"] #dwKeepNudge .kn-p,
+html[data-theme="light"] #dwKeepNudge .kn-no,
+html[data-theme="light"] #dwLongLife .ll-p { color: #555555; }
+html[data-theme="light"] #chatInput { color: #262626; caret-color: #262626; }
+html[data-theme="light"] #chatInput::placeholder { color: #666666; }
+
+html[data-theme="light"] body #homeSettingsPanel.open {
+    background: #ffffff;
+    border-color: rgba(0, 0, 0, 0.16);
+    color: #333333;
+}
+html[data-theme="dark"] body #homeSettingsPanel.open {
+    background: #34363c;
+    border-color: rgba(0, 0, 0, 0.4);
+    color: #ececec;
+}
+html[data-theme] body #homeSettingsPanel.open :is(.sp-header > span, .sp-label, .kb-header > span, .kb-section, .container, .sp-tab, .kb-row span, .kb-note, .sp-slider b, .sp-save-note, #homeSettingsClose) {
+    -webkit-text-stroke: 0;
+    text-shadow: none;
+}
+html[data-theme="light"] body #homeSettingsPanel.open :is(.sp-header > span, .sp-label, .kb-header > span, .kb-section) { color: #262626; }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-body :is(.container, .kb-row span) { color: #333333; }
+html[data-theme="light"] body #homeSettingsPanel.open :is(.kb-note, .sp-slider b, .sp-save-note, #homeSettingsClose) { color: #555555; }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-tabs .sp-tab { color: #444444; }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-tabs .sp-tab.active { background: #333333; border-color: #333333; color: #ffffff; }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-body .kb-row { background: #f5f5f5; border-color: #dddddd; }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-body .kb-row b { background: #ffffff; border-color: #c4c4c4; color: #262626; }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-body select { background: #ffffff; color: #111111; border-color: #bdbdbd; }
+html[data-theme="dark"] body #homeSettingsPanel.open :is(.sp-header > span, .sp-label, .kb-header > span, .kb-section) { color: #ffffff; }
+html[data-theme="dark"] body #homeSettingsPanel.open .sp-body :is(.container, .kb-row span) { color: #ececec; }
+html[data-theme="dark"] body #homeSettingsPanel.open :is(.kb-note, .sp-slider b, .sp-save-note, #homeSettingsClose) { color: #c4c6cc; }
+html[data-theme="dark"] body #homeSettingsPanel.open .sp-tabs .sp-tab { color: #dddddd; }
+html[data-theme="dark"] body #homeSettingsPanel.open .sp-tabs .sp-tab.active { background: #ececec; border-color: #ececec; color: #222222; }
+html[data-theme="dark"] body #homeSettingsPanel.open .sp-body .kb-row { background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.1); }
+html[data-theme="dark"] body #homeSettingsPanel.open .sp-body .kb-row b { background: #26272c; border-color: #1d1e22; color: #ffffff; }
+html[data-theme="dark"] body #homeSettingsPanel.open .sp-body select { background: #26272c; color: #ececec; border-color: #1d1e22; }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-save-note b { color: #9c6c06; -webkit-text-stroke: 0; }
+html[data-theme="light"] #dwCoach .dwc-text b { color: #1f1f1f; }
+html[data-theme="light"] #dwCoach .dwc-bar i { background: #c99a1e; }
+
+html[data-theme] body.in-game:not(.mobile) #toastContainer.toast-container {
+    top: auto;
+    left: auto;
+    right: 14px;
+    bottom: var(--dw-toast-bottom, 260px);
+    width: auto;
+    max-width: min(320px, calc(100vw - 28px));
+    transform: none;
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 6px;
+    z-index: 36;
+}
+html[data-theme] body.in-game:not(.mobile) #toastContainer .toast {
+    max-width: min(320px, calc(100vw - 28px));
+    gap: 8px;
+    padding: 6px 10px 7px 10px;
+    border: 1px solid rgba(0, 0, 0, .16);
+    border-radius: 8px;
+    box-shadow: none;
+    font: 700 12.5px/1.3 Ubuntu, sans-serif;
+    -webkit-text-stroke: 0;
+    text-shadow: none;
+    animation: dwToastSlide .22s ease-out forwards;
+}
+html[data-theme] body.in-game:not(.mobile) #toastContainer .toast.hide { animation: dwToastAway .2s ease-in forwards; }
+html[data-theme] body.in-game:not(.mobile) #toastContainer .toast:nth-last-child(n+4) { display: none; }
+html[data-theme] body.in-game:not(.mobile) #toastContainer .toast.dw-toast::before { width: 8px; height: 8px; }
+html[data-theme] body.in-game:not(.mobile) #toastContainer .dw-toast-act { height: 22px; padding: 0 8px; margin: 0 -4px 0 0; border-radius: 6px; font: 700 12px/1 Ubuntu, sans-serif; box-shadow: none; }
+html[data-theme="light"] body.in-game:not(.mobile) #toastContainer .toast { background: rgba(255, 255, 255, 0.95); color: #1f1f1f; }
+html[data-theme="light"] body.in-game:not(.mobile) #toastContainer .toast * { color: inherit; -webkit-text-stroke: 0; }
+html[data-theme="light"] body.in-game:not(.mobile) #toastContainer .dw-toast-act { color: #ffffff; }
+html[data-theme="dark"] body.in-game:not(.mobile) #toastContainer .toast { background: rgba(24, 24, 24, 0.86); border-color: rgba(255, 255, 255, .1); color: #ffffff; }
+html[data-theme="dark"] body.in-game:not(.mobile) #toastContainer .toast * { color: inherit; }
+html[data-theme="dark"] body.in-game:not(.mobile) #toastContainer .dw-toast-act { color: #ffffff; }
+@keyframes dwToastSlide { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes dwToastAway { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(28px); } }
+body.in-game:not(.mobile) .gt-stack {
+    left: auto;
+    right: 14px;
+    top: auto !important;
+    bottom: calc(var(--dw-toast-bottom, 260px) + 118px);
+    transform: none;
+    align-items: flex-end;
+    max-width: min(320px, calc(100vw - 28px));
+}
+html[data-theme="light"] .gt-card { border: 1px solid rgba(0, 0, 0, .16); }
+html[data-theme="light"] .gt-card :is(.gt-title, .gt-sub, .gt-hint, .gt-count) { color: #1f1f1f; -webkit-text-stroke: 0; }
+html[data-theme="light"] :is(#ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn):not(.play):not(.accent) {
+    border-color: #c4c4c4 !important;
+    background: #f4f4f4 !important;
+    color: #1f1f1f !important;
+    -webkit-text-stroke: 0;
+}
+html[data-theme="light"] :is(#ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn):not(.play):not(.accent):hover:not(:disabled) { background: #ffffff !important; }
+html[data-theme="light"] :is(#ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn):not(.play):not(.accent):active:not(:disabled) { background: #e6e6e6 !important; }
+html[data-theme="light"] :is(#ingameSettingsBtn, #ingameFullscreenBtn) .dw-ic { filter: none; }
+html[data-theme="light"] .dw-igbtn.play:disabled { background: #e6e6e6 !important; border-color: #c4c4c4 !important; color: #555555 !important; -webkit-text-stroke: 0; }
+html[data-theme] body.in-game:not(.mobile) #toastContainer .toast.dw-toast.ach::before { background: #f2b83c; border-radius: 3px; transform: rotate(45deg); }
+
+html[data-theme] #dwAchHome .ah-card,
+html[data-theme] #dwAchHome .ah-wait {
+    border-width: 1px;
+    border-radius: 10px;
+    box-shadow: none;
+}
+html[data-theme] #dwAchHome .ah-title { font: 400 22px/1.1 'Lilita One', Ubuntu, sans-serif; letter-spacing: .01em; }
+html[data-theme] #dwAchHome :is(.ah-label, .ah-reward, .ah-jar, .ah-foot) { font-family: Ubuntu, sans-serif; text-shadow: none; }
+html[data-theme] #dwAchHome .ah-icon { border-radius: 10px; transform: none; }
+html[data-theme] #dwAchHome .ah-keep { border-radius: 8px; background: #4fcf5c; box-shadow: none; border: 2px solid #2c8f37; text-shadow: none; font-family: Ubuntu, sans-serif; }
+html[data-theme="light"] #dwAchHome .ah-card,
+html[data-theme="light"] #dwAchHome .ah-wait { background: rgba(255, 255, 255, 0.92); border-color: rgba(0, 0, 0, 0.16); color: #1f1f1f; }
+html[data-theme="light"] #dwAchHome .ah-label,
+html[data-theme="light"] #dwAchHome .ah-foot { color: #555555; }
+html[data-theme="light"] #dwAchHome .ah-title { color: #1f1f1f; }
+html[data-theme="light"] #dwAchHome .ah-reward { color: #7a2f96; }
+html[data-theme="light"] #dwAchHome .ah-reward.item { color: #8a6200; }
+html[data-theme="light"] #dwAchHome .ah-icon { background: rgba(0, 0, 0, 0.06); border-color: rgba(0, 0, 0, 0.12); color: #8a6200; }
+html[data-theme="light"] #dwAchHome .ah-jar { color: #5a2470; }
+html[data-theme="light"] #dwAchHome .ah-jar b { color: #7a2f96; }
+html[data-theme="dark"] #dwAchHome .ah-card,
+html[data-theme="dark"] #dwAchHome .ah-wait { background: rgba(24, 24, 24, 0.88); border-color: rgba(255, 255, 255, 0.1); color: #ffffff; }
+html[data-theme="dark"] #dwAchHome .ah-label,
+html[data-theme="dark"] #dwAchHome .ah-foot { color: #cfcfcf; }
+html[data-theme="dark"] #dwAchHome .ah-title { color: #ffffff; }
+html[data-theme="dark"] #dwAchHome .ah-icon { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.1); }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-body :is(.sp-slider span, .sp-mix-row span) { color: #2a2a2a; -webkit-text-stroke: 0; text-shadow: none; }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-body :is(.sp-slider b, .sp-mix-row b) { color: #555555; -webkit-text-stroke: 0; text-shadow: none; }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-body input[type=range] { accent-color: #3a3a3a; }
+html[data-theme="dark"] body #homeSettingsPanel.open .sp-body :is(.sp-slider span, .sp-mix-row span) { color: #ececec; -webkit-text-stroke: 0; text-shadow: none; }
+html[data-theme="dark"] body #homeSettingsPanel.open .sp-body :is(.sp-slider b, .sp-mix-row b) { color: #c4c6cc; -webkit-text-stroke: 0; text-shadow: none; }
+html[data-theme="dark"] body #homeSettingsPanel.open .sp-body input[type=range] { accent-color: #e6e6e6; }
+html[data-theme] body #homeSettingsPanel.open #sp-sound.is-muted #sfxMix { opacity: 1; }
+html[data-theme="light"] body #homeSettingsPanel.open #sp-sound.is-muted :is(#sfxMix span, #sfxMix b, .sp-slider span, .sp-slider b) { color: #808080; }
+html[data-theme="light"] body #homeSettingsPanel.open #sp-sound.is-muted :is(#sfxMix, .sp-slider) input[type=range] { accent-color: #9a9a9a; }
+html[data-theme="dark"] body #homeSettingsPanel.open #sp-sound.is-muted :is(#sfxMix span, #sfxMix b, .sp-slider span, .sp-slider b) { color: #9a9a9a; }
+html[data-theme="dark"] body #homeSettingsPanel.open #sp-sound.is-muted :is(#sfxMix, .sp-slider) input[type=range] { accent-color: #8a8a8a; }
+html[data-theme] body #homeSettingsPanel.open #sp-sound.is-muted #sfxMix .checkmark { opacity: .6; }
+html[data-theme="light"] body #homeSettingsPanel.open .sp-body .container:has(input:disabled) { color: #808080; opacity: 1; }
+html[data-theme="dark"] body #homeSettingsPanel.open .sp-body .container:has(input:disabled) { color: #9a9a9a; opacity: 1; }
+html[data-theme] body #homeSettingsPanel.open .sp-body input[type=range]:disabled { opacity: .7; }

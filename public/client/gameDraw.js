@@ -277,6 +277,9 @@ var gameDraw = {
             if (colorNumber[0] == '#') return colorNumber;
             if (util.isNumeric(colorNumber)) colorNumber = parseInt(colorNumber);
         }
+        if (colorNumber >= gameDraw.TANK_PALETTE_BASE && colorNumber < gameDraw.TANK_PALETTE_BASE + gameDraw.tankPalette.length) {
+            return gameDraw.tankPalette[colorNumber - gameDraw.TANK_PALETTE_BASE];
+        }
         // Gradient color
         if (colorNumber.gradient && ctx) {
             try {
@@ -538,6 +541,20 @@ var gameDraw = {
             case "border":
                 return gameDraw.mixColors(gameDraw.color.white, gameDraw.color.guiblack, 1 / 3);
         }
+    },
+    tankPalette: Object.freeze(['#00b2e1', '#f14e54', '#00e16e', '#bf7ff5', '#ffe869', '#ff9a3d', '#2ee8c8',
+        '#ff63c3', '#768dfc', '#b2e84a', '#fc8f8a', '#5cd6ff', '#ffc7a6', '#f0f0f5']),
+    TANK_PALETTE_BASE: 48,
+    TANK_GUN: '#999999',
+    TANK_SPIKE: '#555555',
+    TANK_EDGE_MIX: 0.25,
+    entityBorder: (size) => config.graphical.borderChunk * Math.min(1.5, Math.max(0.55, Math.pow(Math.max(0, size) / 24, 0.75))),
+    entityEdge: (givenColor) => gameDraw.mixColors(givenColor, '#000000', gameDraw.TANK_EDGE_MIX),
+    entityRim: (givenColor) => (config.graphical.neon || config.graphical.darkBorders) ? gameDraw.getColorDark(givenColor) : gameDraw.entityEdge(givenColor),
+    setEntityColor: (context, givenColor) => {
+        if (config.graphical.neon || config.graphical.darkBorders) return gameDraw.setColor(context, givenColor);
+        context.fillStyle = givenColor;
+        context.strokeStyle = gameDraw.entityEdge(givenColor);
     },
     getColorDark: (givenColor) => {
         let dark = config.graphical.neon ? gameDraw.color.white : gameDraw.color.black;

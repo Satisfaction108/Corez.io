@@ -156,7 +156,7 @@ test('crown moment: the must-see slam jumps the queue, is never dropped, and sta
     const cr = src('crowns.js');
     assert.match(cr, /S\.slam = juice\.slamMust\(text, sub, GOLD, dur \|\| 4200, 64, 2800\)/);
     assert.match(cr, /if \(has && !S\.hadMine\) S\.popAt = performance\.now\(\)/, 'the pop starts when the crown lands on your tank');
-    assert.match(cr, /const title = age < HOW_MS && S\.mine \? CL\.howLine\(S\.mine\)\.card : card\.title/);
+    assert.match(cr, /global\.sideToast\(lose > 0 \? "You have a crown\. If you're killed, you lose "/, 'the crown and its risk are told once in the side toasts');
 });
 
 test('bank pops: every Bank rise has a label, deposits stay quiet, purchases say spent', async () => {
@@ -209,11 +209,9 @@ test('two banks: the HUD says Bank (spendable), the card and results say Banked 
     assert.match(SL.BANK_TIP_BODY, /never your points/);
     assert.equal(SL.tiles({ pts: { b: 1997, k: 90, c: 0 } })[0][0], 'BANKED THIS RAID');
     const app = src('app.js');
-    assert.match(app, /const BL = scoreText\.BANK \+ ": ";/);
-    assert.ok(!/\["Banked: " \+ util\.formatLargeNumber\(banked\)/.test(app), 'the pill no longer says Banked');
+    assert.ok(!/const BL = scoreText\.BANK \+ ": ";/.test(app), 'the player bar no longer carries a Spendable pill');
     assert.match(app, /drawText\(scoreText\.BANK \+ "  " \+ util\.formatLargeNumber\(g\.banked \| 0\)/, 'vault panel');
     assert.match(app, /hudTitle\(scoreText\.BANK, bx2 - 8/, 'shop panel');
-    assert.match(app, /queueTip\(scoreText\.BANK_TIP, scoreText\.bankTipBody\(aoNow\(\)\)/);
     assert.match(src('raidFinale.js'), /const CELL_LABEL = \["POINTS", "BANKED THIS RAID", "KILLS \+ CROWNS"\]/);
 });
 

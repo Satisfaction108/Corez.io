@@ -101,6 +101,11 @@ window.dwAccount = {
         if (inGame()) { signupOnMenu = opts || {}; return; }
         openQuick(opts);
     },
+    openLogin() {
+        if (store.get('user')) return openAccount();
+        if (store.get('offline')) return ui.toast('Accounts are down right now. Please try again soon.');
+        welcome.open('auth', { tab: 'login', dismissable: true });
+    },
 };
 let signupOnMenu = null;
 // The raid's achievements replay on the home screen (achHome.js), once the

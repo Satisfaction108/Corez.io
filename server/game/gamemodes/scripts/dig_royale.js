@@ -36,6 +36,7 @@ const coreFinale = require('../../terrain/coreFinale.js'); // the last storm's o
 const sidekicks = require('../../terrain/sidekicks.js');   // Locker sidekicks: a table, drawn by the clients
 const dropIn = require('../../terrain/dropIn.js');         // meteor landings, first spawn near a vault
 const supplyDrops = require('../../terrain/supplyDrops.js'); // crates out of the sky every minute or so
+const abilityDrops = require('../../terrain/abilityDrops.js');
 const raidOpening = require('../../terrain/raidOpening.js'); // early ore and the 1:30 meteor rush
 const newcomer = require('../../terrain/newcomerDirector.js'); // first raids: fair, and something new every minute
 const fairPlay = require('../../terrain/fairPlay.js');     // vaults, small fish, kept builds, struggling players
@@ -1156,7 +1157,7 @@ function broadcast(extra = {}) {
         phase: 'live', left: raidLeft, alive, fill: fillCap(), humans: humanCount, winner: null, storm: st, toast: liveToast,
         feed: killFeed.slice(-8), board, lock, lockLeft, matchId: raidId, raidId, raidLeft, raidMs: RAID_MS,
         occupyMs: OCCUPY_MS, lockoutMs: LOCKOUT_MS, objectives, bloom: bloomSnap, chest: null, chests: chestSnap,
-        boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, lping: pacing.huntSnapshot(t) || undefined, pings, hunt: hunted.snapshot(), core: coreFinale.snapshot(t), supply: supplyDrops.snapshot(t), crowns: crownSnap, results: raidResults, ending, nextIn, nextMs,
+        boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, lping: pacing.huntSnapshot(t) || undefined, pings, hunt: hunted.snapshot(), core: coreFinale.snapshot(t), supply: supplyDrops.snapshot(t), abd: abilityDrops.snapshot(t), crowns: crownSnap, results: raidResults, ending, nextIn, nextMs,
         ao: aoOn ? alwaysOn.snapshot(t) : undefined, aoStorm: aoOn ? (alwaysOn.stormSnapshot(t) || undefined) : undefined, aom: process.env.ROYALE_ALWAYS_ON === '1' ? 1 : undefined, ...extra,
     });
     for (const client of connectedClients()) {
@@ -3774,6 +3775,7 @@ function startRaid(first) {
     guard('drop in reset', () => dropIn.reset());
     guard('fair raid', () => fairPlay.newRaid());
     guard('supply reset', () => supplyDrops.reset());
+    guard('ability drops reset', () => abilityDrops.reset());
     guard('opening', () => raidOpening.newRaid());
     try { blooms.reset(); } catch { /* */ }
     try { raidEvents.reset(); } catch { /* */ }
@@ -4151,6 +4153,7 @@ function beginStaging(ms, opts = {}) {
     guard('staging bosses', () => bosses.resetRaid());
     guard('staging chests', () => chests.clearAll());
     guard('staging supply', () => supplyDrops.reset());
+    guard('staging ability drops', () => abilityDrops.reset());
     guard('staging events', () => raidEvents.reset());
     guard('staging blooms', () => blooms.reset());
     guard('staging contracts', () => contracts.reset());

@@ -227,7 +227,7 @@ test('respawn: the death packet tells the client the same wait', () => {
     // the death card goes up with the death packet, no killer cam in front of it
     assert.ok(/The death card shows at once[\s\S]{0,300}global\.royaleDied = true;/.test(client));
     const app = fs.readFileSync(path.join(REPO, 'public', 'client', 'app.js'), 'utf8');
-    assert.ok(/const SHIELD_GRACE_MS = 5000;/.test(app), 'client shield hint counts down from 5');
+    assert.ok(!/Spawn shield: safe for/.test(app), 'no spawn shield line in the note stack');
 });
 
 test('softBots: soft players are skipped unless close or shooting, and bots never start the fight', () => {

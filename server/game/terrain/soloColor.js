@@ -16,6 +16,18 @@ function palette() {
     return Array.isArray(p) && p.length ? p : [10];
 }
 
+function hashOf(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+}
+
+function firstTry(n, socket) {
+    const who = whoOf(socket);
+    if (who && raidNow) return hashOf(who + '|' + raidNow) % n;
+    return Math.floor(Math.random() * n);
+}
+
 function norm(c) {
     if (typeof c === 'number') return c;
     if (typeof c === 'string' && /^\d+$/.test(c)) return +c;
@@ -74,10 +86,15 @@ function assign(team, socket) {
     for (const t of [...tc.keys()]) if (t !== team && !teams.has(t) && !(held && held.has(t))) tc.delete(t);
     const res = reserved(team, socket);
     const pal = palette();
-    let pick = pal.find(c => !live.has(c) && !res.has(c));
+    const start = firstTry(pal.length, socket);
+    let pick;
+    for (let i = 0; i < pal.length && pick === undefined; i++) {
+        const c = pal[(start + i) % pal.length];
+        if (!live.has(c) && !res.has(c)) pick = c;
+    }
     if (pick === undefined) {
         const load = c => (live.get(c) || 0) + (res.get(c) || 0);
-        pick = pal.slice().sort((a, b) => load(a) - load(b))[0];
+        pick = pal.slice(start).concat(pal.slice(0, start)).sort((a, b) => load(a) - load(b))[0];
     }
     tc.set(team, pick);
     return pick;

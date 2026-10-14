@@ -47,7 +47,6 @@ let A = null;
 export function init(helpers) { A = helpers; juice.init(helpers); skyDrop.init(helpers); }
 export const fallOf = (id) => skyDrop.fallOf(id) || eventFx.scaleOf(id);
 export const onBigHit = (id, dmg, x, y, kind, hp) => eventFx.onBigHit(id, dmg, x, y, kind, hp);
-// a supply crate's chest is drawn emerald (app.js drawChestBoulder)
 const CRATE_KIND = { epic: true, emerald: true };
 export function crateKind(id) { return S.crateIds.has(id) ? CRATE_KIND : null; }
 export const camZoom = (ratio) => skyDrop.camZoom(ratio);
@@ -97,6 +96,10 @@ function addKillPop(text, pts, big, now) {
 }
 function drawKillPops(c, ratio, now) {
     if (!A || global.died) return;
+    if (A.rawInk) A.rawInk(true);
+    try { drawKillPopsIn(c, ratio, now); } finally { if (A.rawInk) A.rawInk(false); }
+}
+function drawKillPopsIn(c, ratio, now) {
     const me = S.me;
     const lift = ((me && me.size) || 30) * ratio + 58;
     let row = 0;
@@ -144,7 +147,6 @@ export function onRY(r) {
     if (b && b.id !== S.bossSeen) {
         S.bossSeen = b.id; S.bossUpAt = fresh ? -1e9 : now; S.bossX = b.x; S.bossY = b.y;
         if (!global.died && !fresh && nxShows("boss", nx(), { near: near(b.x, b.y, 1800) })) {
-            juice.slam(String(b.name || "BOSS").toUpperCase(), "Whoever kills it gets " + fmt(b.gems | 0) + " gems!", b.c || "#c9a8ff", 2800, 50);
             juice.glitch(0.8, 420, true);
             juice.rumble(900, 8);
             juice.lightLeak("201,168,255", 1300);
@@ -156,7 +158,6 @@ export function onRY(r) {
     if (st && st.a) {
         const c = st.c | 0;
         if (S.stormCycle >= 0 && c !== S.stormCycle && !global.died && !r.ending) {
-            juice.slam(st.fin ? "LAST STORM" : "STORM CLOSING", st.fin ? "It closes all the way, so get to the middle" : "Stay inside the circle", "#b98bff", 2600, 56);
             juice.glitch(0.9, 520);
             juice.rumble(700, 6);
             juice.flash("#b98bff", 260, 0.2);
@@ -174,35 +175,22 @@ export function onKC(m) {
     switch (kind) {
         case "hunted":
             S.huntedAt = now;
-            juice.slam(text, sub, RED, 2600, 58);
             juice.shake(34, 420);
             juice.glitch(0.85, 420);
             sfx("alarm");
             return true;
         case "toptarget":
             S.huntedAt = now;
-            juice.slam(text, sub, RED, 2800, 62);
             juice.shake(40, 480);
             juice.glitch(1, 520);
             sfx("alarm");
             return true;
         case "safe":
             S.safeAt = now;
-            juice.slam(text, sub, EMERALD, 1700, 60);
             sfx("relief");
             return true;
         case "core":
             S.coreUpAt = now;
-            if (!nxShows("core", nx())) {
-                // before stage 2: one plain line, a lighter shake
-                juice.slam("A giant Core is up in the middle", "Everyone who hits it gets paid", CORE, 3800, 40);
-                juice.shake(20, 500);
-                juice.rumble(1200, 5);
-                juice.lightLeak(CORE_RGB, 1800);
-                sfx("core");
-                return true;
-            }
-            juice.slam(text, sub, CORE, 4200, 50);
             juice.shake(44, 700);
             juice.rumble(1800, 9);
             juice.glitch(1, 700, true);
@@ -211,11 +199,21 @@ export function onKC(m) {
             sfx("core");
             return true;
         case "coredown":
-            juice.slam(text, sub, GOLD, 3200, 52);
             juice.glitch(0.8, 500);
             return true;
+        case "aoaward": {
+            const aw = /^\+([\d,]+) points: (.+) (\d+)(st|nd|rd|th)$/.exec(text);
+            const place = aw ? aw[3] | 0 : 0;
+            if (place >= 1 && place <= 3) {
+                juice.slam(place === 1 ? "You won " + aw[2] + "!" : aw[3] + aw[4] + " in " + aw[2] + "!", "+" + aw[1] + " points and a crown", GOLD, 3600, place === 1 ? 78 : 64);
+                juice.lightLeak("242,184,60", 1600);
+                juice.flash("#fff1c2", 220, 0.25);
+                juice.shake(26, 380);
+                sfx("win");
+            }
+            return true;
+        }
         case "corepay": {
-            // your share of the Core, banked: the number rolls up
             const n = +String(text).replace(/[^0-9]/g, "") || 0;
             juice.slamRoll("BANKED +", 0, n, sub, GOLD, 3200, 62, fmt);
             juice.lightLeak("242,184,60", 1400);
@@ -1151,10 +1149,7 @@ export function drawCoreMini(c, x, y, w) {
     c.restore();
     A.hudBar(c, x + 15, y - 3, w - 15, 6, core.hp, col);
 }
-// Lines for the notification stack under the clock (app.js hudNotes): the
-// storm's last seconds (critical) and your hunted status, a compact badge.
 const NOTE_CD = { pri: 0, key: "stormcd", text: "", col: "#b98bff", pulse: 0, badge: false };
-const NOTE_HUNT = { pri: 1, key: "hunted", text: "", col: RED, pulse: 0, badge: true, sub: "" };
 export function hudNotes(push) {
     const r = global.royale;
     if (!r || global.died) return;
@@ -1165,13 +1160,6 @@ export function hudNotes(push) {
         if (n !== S.cdLast) { S.cdLast = n; NOTE_CD.text = "Storm moves in " + n; try { if (gameSound.uiClick) gameSound.uiClick(); } catch (e) { /* */ } }
         NOTE_CD.pulse = 1 - (performance.now() / 1000) % 1;
         push(NOTE_CD);
-    }
-    if (S.mine) {
-        const blink = calm() ? 1 : 0.72 + 0.28 * Math.sin(performance.now() / (S.threat > 0.5 ? 110 : 220));
-        NOTE_HUNT.text = S.mine >= 2 ? "TOP TARGET" : "HUNTED";
-        NOTE_HUNT.sub = S.hunters > 0 ? S.hunters + " near" : "Bank to shake them off";
-        NOTE_HUNT.pulse = blink;
-        push(NOTE_HUNT);
     }
 }
 
@@ -1272,6 +1260,7 @@ export const SLAM_RISE = juice.SLAM_RISE;
 // the bank milestones (MS) take a turn in the slam lane in a raid
 // title: the rung ("100"), bonus: "+25"
 export function slamBanked(title, bonus) {
+    if ((+String(title).replace(/[^0-9]/g, "") || 0) < 100000) return;
     if (bonus) juice.slam(bonus + " BONUS", "You've banked " + title + " gems total", GOLD, 2600, 54);
     else juice.slam("MILESTONE", "You've banked " + title + " gems total", GOLD, 2600, 54);
 }

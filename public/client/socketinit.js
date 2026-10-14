@@ -24,6 +24,7 @@ import * as mineDust from "./mineDust.js";
 import * as levelsHud from "./levelsHud.js";
 import { chatLog, pushMessage as pushChat } from "./chatPanelLogic.js";
 import { netSmooth } from "./netSmooth.js";
+import * as gunKick from "./gunKick.js";
 import { predictor } from "./predict.js";
 import * as aoHud from "./alwaysOn.js";
 import * as deathText from "./deathCardLogic.js";
@@ -361,32 +362,20 @@ const get = {
         }
     }
 };
-function physics(g) {
-    g.isUpdated = true;
-    if (g.motion || g.position) {
-        const targetFrameTime = 33.33;
-        const actualFrameTime = global.metrics.rendergap || targetFrameTime;
-        const dt = actualFrameTime / targetFrameTime;
-        const baseDecay = 0.2;
-        g.motion -= (baseDecay * g.position) * dt;
-        g.position += g.motion * dt;
-        if (g.position < 0) {
-            g.position = 0;
-            g.motion = -g.motion;
-        }
-        if (g.motion > 0) {
-            g.motion *= Math.pow(0.5, dt);
-        }
-    }
+function physics(g, now) {
+    const ms = now - g.kickT;
+    if (ms >= gunKick.KICK_MS || !(ms >= 0)) { g.position = 0; return; }
+    g.position = gunKick.kickAt(ms, g.kickFrom) * gunKick.KICK_SHARE * g.length;
 }
 
 const GunContainer = n => {
     let a = [];
     for (let i = 0; i < n; i++) {
         a.push({
-            motion: 0,
             position: 0,
-            isUpdated: true,
+            kickT: -1e9,
+            kickFrom: 0,
+            shotT: -1,
             configLoaded: false,
             color: "",
             borderless: false,
@@ -429,13 +418,16 @@ const GunContainer = n => {
             }
         },
         update: () => {
-            for (let instance of a) {
-                physics(instance);
-            }
+            const now = performance.now();
+            for (let i = 0; i < a.length; i++) physics(a[i], now);
         },
-        fire: (i, power) => {
-            if (a[i].isUpdated) a[i].motion += Math.sqrt(power) / 20;
-            a[i].isUpdated = false;
+        fire: (i, time) => {
+            const g = a[i];
+            if (time === g.shotT) return;
+            g.shotT = time;
+            const full = gunKick.KICK_SHARE * g.length;
+            g.kickFrom = full > 0 ? Math.min(1, g.position / full) : 0;
+            g.kickT = performance.now();
         },
         length: a.length,
     };
@@ -927,7 +919,7 @@ const process = (z = {}) => {
             offset = get.next();
         z.guns.setConfig(i, {color, alpha, strokeWidth, borderless, drawFill, drawAbove, length, width, aspect, angle, direction, offset});
         if (time > global.player.lastUpdate - global.metrics.rendergap) {
-            z.guns.fire(i, power);
+            z.guns.fire(i, time);
             if (z.x !== undefined) {
                 if (gunIsDrone(z, i)) gameSound.droneSpawn(z.x, z.y);
                 else gameSound.shoot(z.x, z.y, power);
@@ -1435,6 +1427,7 @@ let incoming = async function(message, socket) {
                     r.hunt = d.hunt || null;
                     r.core = d.core || null;
                     r.supply = d.supply || null;
+                    r.abd = d.abd || null;
                     r.ao = d.ao || null;
                     r.aoStorm = d.aoStorm || null;
                     {
@@ -2134,6 +2127,8 @@ let incoming = async function(message, socket) {
                 }
             } break;
         case 'm': {
+            if (m[1] === "Autofire enabled.") global.autofireOn = true;
+            else if (m[1] === "Autofire disabled.") global.autofireOn = false;
             global.createMessage(m[1], m[0]);
         } break;
         case "Em": {

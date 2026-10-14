@@ -5,13 +5,10 @@ import * as CL from "./coachLogic.js";
 
 // First-raid coach: a light do-it guide for new players in real raids.
 //
-//   tutorial offer the tutorial              (skipped once it's been played)
 //   move     drive and shoot                 (a short warm-up)
 //   mine     carry 250 gems                  (nearby ore rocks outlined)
 //   bank     finish a deposit                (arrow to the nearest vault, the minimap)
 //   upgrade  a new tank or a stat point      (waits while neither is on offer)
-//   ability  use your ability or a kit item  (buy one at a shop first; a
-//            first bank often hands out a free ability trial)
 //
 // Progress lives in localStorage, so a death, reload, resume or new raid
 // carries on from the current step. Anything done early (a deposit during the
@@ -22,10 +19,6 @@ import * as CL from "./coachLogic.js";
 // spawn shield line, kit placement, raid results), a director moment's banner
 // (newcomer.js global.nxBannerUp), the shop panel or the map.
 //
-// First raids (newcomer.js, the server's stage): the goal line under the clock
-// follows this guide's step, stage 0 skips the shop/ability step until a
-// later raid (or a director moment hands out an ability), and once the server
-// sends a stage it decides who gets the guide (stages 0-1).
 //
 // Contracts (the server's one-job-at-a-time card) wait while the guide runs:
 // the CO packet tells the server whether it's on, and the first contract
@@ -36,29 +29,19 @@ import * as CL from "./coachLogic.js";
 // gives the HUD rects and the edge marker.
 
 const ORDER = CL.ORDER;
-// the numbered steps; the tutorial offer is an intro card
-const STEPS = ORDER.filter(id => id !== "tutorial");
-const TUT_DONE_KEY = "digRoyaleTutorialDone_v1";   // tutorial.js / home.js
-const TUT_AFTER_KEY = "dwCoachTutorial";            // sessionStorage: open the tutorial once the menu loads
-const TUT_PROMPT_MS = 25000;  // an ignored offer turns into "Maybe later"
+const STEPS = ORDER;
 const MINE_GOAL = 250;
 const MOVE_GOAL = 250;         // world units driven on the warm-up step
 const FLASH_MS = 1300;
-const FINAL_MS = 9000;
+const FINAL_MS = 3500;
 const SETTLE_MS = 1200;       // after a spawn the tank's type and stats are still arriving
 const VAULT_MIN = 15;
 const GOLD = "#f2b83c";
-const SHOP_COL = "#5ce0d8";
 const INK = "#0c0a0e";
 const ORE_RGB = { 1: "237,167,102", 2: "127,177,242", 3: "217,138,240", 4: "111,245,168" };
-// The HUD's check badge: a green keycap (face over its darker lip, ink
-// keyline) with a chunky ink-rimmed tick.
 const CHECK = '<svg viewBox="0 0 20 20" aria-hidden="true">' +
-    '<rect x=".75" y=".75" width="18.5" height="18.5" rx="5" fill="#2c8f37"/>' +
-    '<rect x=".75" y=".75" width="18.5" height="16" rx="5" fill="#4fcf5c"/>' +
-    '<rect x=".75" y=".75" width="18.5" height="18.5" rx="5" fill="none" stroke="#120e15" stroke-width="1.5"/>' +
-    '<path d="M5.4 9.6l3.1 3.1 6-6.4" fill="none" stroke="#120e15" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '<path d="M5.4 9.6l3.1 3.1 6-6.4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    '<circle cx="10" cy="10" r="9.25" fill="#4fcf5c"/>' +
+    '<path d="M5.6 10.2l3 3 5.8-6.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 
 const now = () => performance.now();
@@ -77,7 +60,8 @@ function keyName(id, dflt) {
         } catch (e) { }
     }
     const k = keyCache[id];
-    return (k && k[0]) || dflt;
+    const name = (k && k[0]) || dflt;
+    return window.dwShortKey ? window.dwShortKey(name) : name;
 }
 
 // ── persisted progress ─────────────────────────────────────────────────
@@ -115,7 +99,6 @@ const st = {
     dropped: false,      // died with gems on the mine/bank step: say so on the mine step
     tutAt: 0,
     cdWas: 0,            // the ability cooldown's end last frame (abilityUsed)
-    shownAt: 0,          // the card's last visible frame (noteShown)
     left: "",            // style.left written when the card moved clear of the tank grid
     baseTop: 0,
     wroteTop: -1,
@@ -187,11 +170,6 @@ function nearest(list) {
         if (score < bs) { bs = score; bd = d; best = v; }
     }
     return best ? { x: best.x, y: best.y, r: best.r || 95, d: bd } : null;
-}
-function cheapestPrice() {
-    let min = Infinity;
-    for (const it of (global.shop && global.shop.catalog) || []) if (it && it.cat === "kit" && it.price > 0) min = Math.min(min, it.price);
-    return isFinite(min) ? min : 0;
 }
 function terr() {
     const t = window.terrainRenderer;
@@ -287,30 +265,11 @@ function abilityUsed(t) {
 }
 function checkAbility(t) {
     if (rec.done.ability || !abilityUsed(t)) return;
-    const on = st.step === "ability";
     CL.abilityUsed(rec, store());
-    if (on) { st.flash = { until: now() + FLASH_MS }; sfxDone(); }
-}
-// the step's time on screen: it retires itself after a while, or when a new
-// raid starts after it was already shown (coachLogic.js)
-function raidNow() { const r = global.royale || {}; return (r.raidId | 0) || ((r.results && r.results.raidId) | 0); }
-function noteShown(t) {
-    const dt = st.shownAt > 0 && t - st.shownAt < 250 ? t - st.shownAt : 0;
-    st.shownAt = t;
-    if (st.step === "ability" && !st.flash && CL.abilityShown(rec, store(), dt, raidNow(), Date.now())) st.step = null;
 }
 
 // A step that can't be done right now is skipped over and comes back later.
 function waiting(id) {
-    if (id === "tutorial" && tutorialPlayed()) { markDone("tutorial"); return false; }
-    // round 12: only in the first minute of a first raid, never later (quietly)
-    if (id === "tutorial" && !CL.tutorialOfferOpen(rec, Date.now())) {
-        if (!rec.done.tutorial) { rec.done.tutorial = 1; save(); }
-        return false;
-    }
-    // a first raid (stage 0) has no shops yet: the ability step waits for the
-    // next raid, unless a director moment already handed one out
-    if (id === "ability" && global.nxKnown && (global.nxStage | 0) === 0 && !ownsKit()) return true;
     if (id === "upgrade" && !(gui.upgrades || []).length && !canStat()) {
         const n = tankName();
         if ((n && n !== "Basic") || skillSum() > 0) { markDone("upgrade"); return false; }
@@ -321,46 +280,7 @@ function waiting(id) {
 function canStat() {
     return (gui.points | 0) > 0 && (gui.skills || []).some(s => s && s.softcap > 0 && s.amount < s.cap);
 }
-function ownsAbility() { return !!(global.abil && global.abil.on && global.abil.eq); }
-function ownsKit() { return ownsAbility() || !!((global.shop && global.shop.state && global.shop.state.kitOrder) || []).filter(Boolean).length; }
 function pickStep() { return CL.nextStep(rec, waiting); }
-
-// ── the tutorial offer ─────────────────────────────────────────────────
-function tutorialPlayed() {
-    try { return localStorage.getItem(TUT_DONE_KEY) === "1"; } catch (e) { return false; }
-}
-function tutorialLater() {
-    rec.done.tutorial = 1;
-    save();
-    st.step = null;
-}
-// A raid socket can't switch servers, so leave for the menu (like the
-// tutorial's own send-off) and press its Tutorial button from there.
-function tutorialPlay() {
-    tutorialLater();
-    try { sessionStorage.setItem(TUT_AFTER_KEY, "1"); } catch (e) { }
-    // app.js asks "leave site?" while a game is live
-    try { window.onbeforeunload = null; } catch (e) { }
-    try { global.canvas.socket.close(); } catch (e) { }
-    global.gameStart = false;
-    ui.show(false);
-    setTimeout(() => {
-        try { location.replace(location.pathname); } catch (e) { try { location.reload(); } catch (e2) { } }
-    }, 150);
-}
-(function tutorialAfterReload() {
-    let want = false;
-    try { want = sessionStorage.getItem(TUT_AFTER_KEY) === "1"; sessionStorage.removeItem(TUT_AFTER_KEY); } catch (e) { }
-    if (!want) return;
-    let n = 0;
-    (function tick() {
-        const g = window.global, b = document.getElementById("tutorialButton");
-        const blocked = window.dwAccount && window.dwAccount.blocksEnter && window.dwAccount.blocksEnter();
-        // home.js wires the button on DOMContentLoaded
-        if (g && g.startGame && b && b.onclick && !b.disabled && !g.gameStart && !g.gameLoading && !blocked) { b.click(); return; }
-        if (++n < 150) setTimeout(tick, 100);
-    })();
-})();
 
 // ── HUD rects (app.js) ─────────────────────────────────────────────────
 function hudRect(kind) {
@@ -407,8 +327,6 @@ const ui = {
             '<div class="dwc-title"></div>' +
             '<div class="dwc-text"></div>' +
             '<div class="dwc-bar"><i></i><span></span></div>' +
-            '<div class="dwc-row"><button class="dwc-btn dwc-next" type="button">Next</button>' +
-            '<button class="dwc-btn dwc-alt" type="button"></button></div>' +
             '<div class="dwc-confirm"><span>Skip the guide?</span>' +
             '<button class="dwc-btn dwc-danger dwc-yes" type="button">Skip it</button>' +
             '<button class="dwc-link dwc-no" type="button">Keep going</button></div>';
@@ -418,7 +336,6 @@ const ui = {
         this.el = {
             eyebrow: q(".dwc-eyebrow"), pips: q(".dwc-pips"), title: q(".dwc-title"), text: q(".dwc-text"),
             bar: q(".dwc-bar"), fill: q(".dwc-bar i"), barTxt: q(".dwc-bar span"),
-            row: q(".dwc-row"), next: q(".dwc-next"), alt: q(".dwc-alt"),
             confirm: q(".dwc-confirm"), quit: q(".dwc-quit"),
         };
         // clicks stay on the panel, keys go back to the game
@@ -426,11 +343,6 @@ const ui = {
             root.addEventListener(ev, e => e.stopPropagation(), ev === "touchstart" || ev === "wheel" ? { passive: true } : undefined);
         }
         const on = (b, fn) => b.addEventListener("click", e => { e.preventDefault(); fn(); focusGame(); });
-        on(this.el.next, () => {
-            if (st.step === "tutorial") tutorialPlay();
-            else if (st.step === "final") closeFinal();
-        });
-        on(this.el.alt, () => { if (st.step === "tutorial") tutorialLater(); });
         on(this.el.quit, () => { st.confirm = true; });
         on(q(".dwc-no"), () => { st.confirm = false; });
         on(q(".dwc-yes"), () => {
@@ -446,9 +358,8 @@ const ui = {
         this.root.classList.toggle("on", on);
         if (!on) { global.coachRect = null; global.coachPointing = ""; restoreTop(); }
     },
-    // content: { eyebrow, pips, title, text, bar:{frac,label}|null, next, alt, done }
     render(o) {
-        const k = [o.eyebrow, o.pips, o.title, o.text, !!o.bar, o.next || "", o.alt || "", !!o.done, st.confirm].join("|");
+        const k = [o.eyebrow, o.pips, o.title, o.text, !!o.bar, !!o.done, st.confirm].join("|");
         const e = this.el;
         if (k !== this.key) {
             this.key = k;
@@ -457,11 +368,6 @@ const ui = {
             e.title.innerHTML = (o.done ? '<i class="dwc-check">' + CHECK + "</i>" : "") + esc(o.title || "");
             e.text.innerHTML = o.text || "";
             e.bar.style.display = o.bar ? "" : "none";
-            e.row.style.display = (o.next || o.alt) && !st.confirm ? "" : "none";
-            e.next.style.display = o.next ? "" : "none";
-            e.next.textContent = o.next || "";
-            e.alt.style.display = o.alt ? "" : "none";
-            e.alt.textContent = o.alt || "";
             e.confirm.style.display = st.confirm ? "" : "none";
             e.quit.style.visibility = st.confirm || st.step === "final" ? "hidden" : "";
             this.root.classList.toggle("done", !!o.done);
@@ -579,18 +485,12 @@ function pips() {
     });
     return s;
 }
-function kitKeys() {
-    return kbd("KEY_KIT_1", "Z") + " " + kbd("KEY_KIT_2", ",") + " " + kbd("KEY_KIT_3", "N");
-}
 function content(t) {
-    const base = { eyebrow: global.royale && global.royale.ao && global.royale.ao.on ? "Getting started" : "First raid", pips: pips() };
+    const base = { eyebrow: "", pips: pips() };
     if (st.flash) return { ...base, title: "Nice!", text: "On to the next one.", done: true };
     const g = global.gems || {};
     const touch = !!global.mobile;
     switch (st.step) {
-        case "tutorial":
-            return { ...base, title: "New here?", text: "The tutorial takes about 10 minutes.",
-                next: "Play the tutorial", alt: "Maybe later" };
         case "move":
             return { ...base, title: "Drive and shoot",
                 text: touch ? "Drive with your left thumb and shoot with your right." : "Drive with " + kbd("KEY_UP", "W") + kbd("KEY_LEFT", "A") + kbd("KEY_DOWN", "S") + kbd("KEY_RIGHT", "D") + " and click to shoot.",
@@ -631,36 +531,8 @@ function content(t) {
             else text = tiles && stat ? "Pick a tank from the tiles at the top left, or click a stat bar." : tiles ? "Pick a new tank from the tiles at the top left." : "Click a stat bar, or press its number key.";
             return { ...base, title: "Upgrade your tank", text };
         }
-        case "ability": {
-            const sh = global.shop || {};
-            const tg = st.target;
-            if (ownsAbility()) {
-                const it = (sh.catalog || []).find(i => i.id === global.abil.eq);
-                const name = it ? "<b>" + it.name + "</b>" : "ability";
-                const aimed = !!(it && it.place);
-                return { ...base, title: "Use your ability",
-                    text: touch
-                        ? (aimed ? "Drag off the ability button by your right thumb to aim your " + name + ", then lift your finger to place it." : "Tap the ability button by your right thumb to fire your " + name + ".")
-                        : aimed ? "Press " + kbd("KEY_ABILITY", "Q") + " to aim your " + name + ", then left click to place it." : "Press " + kbd("KEY_ABILITY", "Q") + " to fire your " + name + ". It aims at your mouse." };
-            }
-            if (ownsKit()) {
-                return { ...base, title: "Use a kit item",
-                    text: touch ? "Tap a kit button on the right." : "Press " + kitKeys() + " to use your kit items." };
-            }
-            const price = cheapestPrice();
-            const banked = g.banked | 0;
-            let text = "Follow the <b>SHOP</b> arrow.";
-            if (sh.onPad) text = "Pick an item, then " + (touch ? "tap" : "hit") + " <b>Buy</b>.";
-            else if (price && banked < price) text = "The cheapest ability costs " + fmtNum(price) + " banked gems, so bank some more first.";
-            else if (!tg) text = "Find a shop on the minimap. " + mapOpens();
-            else if (tg.on) text = "Drive onto the shop pad.";
-            return { ...base, title: "Buy an ability", text };
-        }
         case "final":
-            return { ...base, title: "You're set",
-                // contracts only show from the third raid (newcomer.js)
-                text: global.nxKnown && (global.nxStage | 0) < 2 ? "That's the basics! Keep mining and banking." : "Contracts now show up at the top left, and they pay gems.",
-                next: "Let's go", done: true };
+            return { ...base, title: "You're all set", text: "Keep mining and banking to climb the leaderboard.", done: true };
     }
     return null;
 }
@@ -695,24 +567,14 @@ function stepAside() {
     if (global.hudCalloutUp && !lowTouch()) return true;
     // the storm banner (stormFx.js) takes the top middle
     if (now() - (global.stormBannerAt || -1e9) < 250) return true;
-    // the shop panel fills the middle; only the ability step talks over it
-    if (sh.onPad && !sh.dismissed && st.step !== "ability") return true;
-    // the tutorial offer never sits on the tank grid: it waits for room
-    if (st.step === "tutorial" && !global.mobile && st.size.w > 0) {
-        const k = window.innerWidth / Math.max(1, SW());
-        const top = st.top > 0 ? st.top : Math.max(48, (global.hudTopPx | 0) + 6);
-        if (gridClearX(top, st.size.w, st.size.h, k) === null) return true;
-    }
+    if (sh.onPad && !sh.dismissed) return true;
     // the tank picker and the stat panel cover the middle of a phone
     if (global.mobile && (global.touchTilesOpen || global.touchPanelRight > 0) && lowTouch()) return true;
     return false;
 }
 // a first raid is in progress (raidHeat.js keeps the HUD calm until the first bank)
 export function active() { return rec.status === "on"; }
-// the step on now ("move", "mine", "bank", "upgrade", "ability", "final" or
-// ""), for newcomer.js's goal line
 export function stepId() { return rec.status === "on" || st.step === "final" ? (st.step || "") : ""; }
-// still teaching, or hasn't decided yet whether it will (the ability tour waits)
 export function holding() { return !rec.status || rec.status === "on"; }
 
 export function hook() {
@@ -770,13 +632,11 @@ export function hook() {
         ui.show(false);
         return;
     }
-    if (st.step === "tutorial" && !st.flash && !st.confirm && t - st.tutAt > TUT_PROMPT_MS) tutorialLater();
     const o = st.step ? content(t) : null;
     if (!o) { ui.show(false); return; }
     ui.show(true);
     ui.render(o);
     place(t);
-    noteShown(t);
     // app.js: the touch chips' first-time pointers stay quiet while this card
     // points elsewhere, and on the upgrade step they are its pointer
     global.coachPointing = st.flash ? "flash" : (st.step || "");
@@ -916,19 +776,17 @@ export function drawWorld(px, py, ratio) {
     const broke = st.step === "bank" && ((global.gems && global.gems.carried) | 0) < VAULT_MIN;
     if (st.step === "mine" || broke) { drawRocks(c, px, py, ratio, t); return; }
     if (st.rocks.length || st.oreFar) { st.rocks = []; st.oreFar = null; }
-    const shopStep = st.step === "ability" && !ownsKit();
-    if (st.step !== "bank" && !shopStep) return;
-    const site = st.step === "bank" ? nearest(global.vaults) : nearest(global.shops);
+    if (st.step !== "bank") return;
+    const site = nearest(global.vaults);
     if (!site) return;
-    const onPad = st.step === "bank" ? global.vault && global.vault.onPad : global.shop && global.shop.onPad;
+    const onPad = global.vault && global.vault.onPad;
     const sp = w2s(site.x, site.y, px, py, ratio);
-    const R = Math.max(40, site.r * ratio * (st.step === "bank" ? 1.45 : 1.35));
+    const R = Math.max(40, site.r * ratio * 1.45);
     const on = sp.x > -R * 0.5 && sp.x < SW() + R * 0.5 && sp.y > -R * 0.5 && sp.y < SH() + R * 0.5;
     st.target = { x: site.x, y: site.y, d: site.d, dx: sp.x - SW() / 2, dy: sp.y - SH() / 2, on };
-    const col = st.step === "bank" ? GOLD : SHOP_COL;
     if (onPad) return;
-    drawTrail(c, sp, col, t);
-    if (on) drawPadRing(c, sp, R, col, t);
+    drawTrail(c, sp, GOLD, t);
+    if (on) drawPadRing(c, sp, R, GOLD, t);
 }
 
 // ── HUD layer: highlights, edge arrow ──────────────────
@@ -1001,10 +859,6 @@ export function drawIndicators() {
             if (tiles) { outline(c, tiles, t); tag(c, tiles, "Pick a tank", "right", t); }
             else { const b = pad(clickRect("stat", 11) || hudRect("stats"), 6); if (b) { outline(c, b, t); tag(c, b, "Click a bar", "right", t); } }
         }
-    } else if (st.step === "ability" && ownsKit()) {
-        // desktop: a tight ring (a wider one ran into the stat bars' header) and the tag
-        const b = pad(hudRect("kit"), touch ? 6 : 3);
-        if (b) { outline(c, b, t); tag(c, b, touch ? "Tap one" : "Your kit", touch ? "left" : "up", t); }
     } else if (st.step === "bank" && !st.target && (((global.gems && global.gems.carried) | 0) >= VAULT_MIN)) {
         // no vault known on screen: the minimap has them
         const b = pad(hudRect("minimap"), 4);
@@ -1014,10 +868,9 @@ export function drawIndicators() {
         const e = window.dwHud.edgePoint((f.x - p.x) * st.ratio, (f.y - p.y) * st.ratio);
         window.dwHud.edgeMarker(c, e, "rgb(" + (ORE_RGB[f.tier] || ORE_RGB[1]) + ")", "gem", "ORE", fmtDist(f.d), []);
     }
-    if ((st.step === "bank" || (st.step === "ability" && !ownsKit())) && st.target && !st.target.on && window.dwHud) {
+    if (st.step === "bank" && st.target && !st.target.on && window.dwHud) {
         const e = window.dwHud.edgePoint(st.target.dx, st.target.dy);
-        const bank = st.step === "bank";
-        window.dwHud.edgeMarker(c, e, bank ? GOLD : SHOP_COL, bank ? "gem" : "shop", bank ? "VAULT" : "SHOP", fmtDist(st.target.d), []);
+        window.dwHud.edgeMarker(c, e, GOLD, "gem", "VAULT", fmtDist(st.target.d), []);
     }
 }
 
@@ -1040,23 +893,3 @@ window.dwCoach = {
         return true;
     },
 };
-
-// Round 11: a one-time Mining Power tip in the HUD note stack (app.js
-// drawHudNotes) the first time you dig a while with 0 points in it.
-// Oct 6 2026: priority -1, above every 0 note (lock, storm toast, deposit,
-// challenge clock), so its one showing is never pushed past NOTE_ROWS.
-const mineSt = { dig: 0, show: 0, at: 0 };
-export function mineTipNote(push, mk) {
-    const t = now();
-    const dt = mineSt.at > 0 ? t - mineSt.at : 0;
-    mineSt.at = t;
-    const you = (global.royale && global.royale.you) || {};
-    const sk = (gui.skills || [])[10];
-    const pts = gui.points | 0;
-    const on = CL.mineTip(mineSt, store(), {
-        t, dt, alive: !global.died && !!sk, dig: you.dig === 1, mp: sk ? sk.amount | 0 : 0,
-        // a maxed Mining Power has nothing to add
-        pts: sk && (sk.amount | 0) < (sk.cap | 0) ? pts : 0, tut: !!global.tutorialMode,
-    });
-    if (on) push(mk(-1, "minetip", CL.mineTipText(!!global.mobile, keyName("KEY_UPGRADE_MIN", "-"), sk && (sk.amount | 0) > 0 ? pts : 0), "#ffd27a"));
-}

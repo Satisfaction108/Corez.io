@@ -16,8 +16,8 @@ import * as skMath from '../sidekickMath.js';
 export const FLOOR = '#1e1d1b';
 // The 11 team colours of the swatch row, as game colour strings.
 export const TEAM_COLORS = [
-    ['Blue', 10], ['Green', 11], ['Red', 12], ['Purple', 15], ['Violet', 14], ['Yellow', 25],
-    ['Orange', 26], ['Brown', 27], ['Cyan', 28], ['Lemon', 3], ['Grey', 17],
+    ['Blue', 48], ['Green', 50], ['Red', 49], ['Purple', 51], ['Yellow', 52], ['Orange', 53],
+    ['Aqua', 54], ['Pink', 55], ['Periwinkle', 56], ['Lime', 57], ['Sky', 59],
 ].map(([name, n]) => ({ name, col: n + ' 0 1 0 false' }));
 export const TANKS = [
     ['basic', 'Basic'], ['twin', 'Twin'], ['sniper', 'Sniper'], ['machineGun', 'Machine Gun'],
@@ -41,6 +41,7 @@ export function ready() {
 export function teamHex(col) {
     return withTheme(() => gameDraw.modifyColor(col));
 }
+const hexOf = (col) => (typeof col === 'string' && col && col[0] !== '#' ? teamHex(col) : col || null);
 function withTheme(fn) {
     const had = gameDraw.color;
     if (!had) gameDraw.color = themes.dark;
@@ -289,7 +290,7 @@ export function sidekickPreview(opts) {
     const rp = opts.r || Math.min(w, h) * 0.2;
     const px = opts.px || Math.max(11, Math.round(rp * 0.6));
     const live = !opts.still && !reducedMotion();
-    const col = opts.col || null, body = skArt.bodyColor(kick.kick, look, col);
+    const col = hexOf(opts.col), body = skArt.bodyColor(kick.kick, look, col);
     const S = newShow(kick, (Math.random() * 1e6) | 0);
     const k = rp / (skMath.R * (kick.kick.size || 1));
     return mount(cv, (c, t) => {
@@ -334,7 +335,7 @@ export function sidekickStage(opts) {
     const R = opts.r || Math.min(h * 0.17, w * 0.12);
     const OR = 30, k = R / OR;           // the tank is radius 30 in world units
     const live = !reducedMotion();
-    const col = opts.col || null, body = skArt.bodyColor(kick.kick, look, col);
+    const col = hexOf(opts.col), body = skArt.bodyColor(kick.kick, look, col);
     const size = kick.kick.size || 1, rp = skMath.R * size * k;
     const px = Math.max(12, Math.round(R * 0.36));
     const S = newShow(kick, 7, 'show');

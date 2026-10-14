@@ -94,6 +94,12 @@ function t(name, fn) {
         }
         for (const k of ['chest', 'dropin', 'restored', 'grown', 'mystery']) assert.ok(L.calloutAllowed(k, 0), k);
     });
+    t('plates: only your own big moments get a plate', () => {
+        for (const k of ['chest', 'contract', 'dropin', 'streak', 'grown', 'quest', 'override', 'nx', 'level']) assert.ok(!L.plateWanted(k, 'x'), k);
+        assert.ok(!L.plateWanted('bounty', "You're the target"));
+        assert.ok(L.plateWanted('bounty', 'Bounty claimed'));
+        for (const k of ['tier5', 'boss', 'coreloot', 'nxstorm', 'restored', 'mystery']) assert.ok(L.plateWanted(k, 'x'), k);
+    });
     t('feed: the whole kill feed from the first game', () => {
         assert.ok(L.feedAllowed({ name: 'Me', by: 'Bot' }, 0, 'Me'));
         assert.ok(L.feedAllowed({ name: 'A', by: 'B' }, 0, 'Me'));
@@ -271,7 +277,7 @@ function t(name, fn) {
         const nc = src('newcomer.js');
         assert.ok(/export function hudNotes[\s\S]{0,120}S\.stage >= L\.VETERAN\) return;/.test(nc), 'notes are off for veterans');
         assert.ok(/export function deathCardWanted\(\) \{ return S\.stage <= 1; \}/.test(nc));
-        assert.ok(/if \(S\.stage !== 0\) return true;/.test(nc), 'the shop only waits on stage 0');
+        assert.ok(/export function shopOpen\(\) \{ return true; \}/.test(nc), 'the shop never waits for the guide');
         assert.ok(/if \(!inRaid\(\) \|\| S\.stage >= L\.VETERAN\) \{\s*global\.nxBannerUp = false;/.test(nc), 'no director for veterans');
         // the death card switches on deathCardWanted only; the button says
         // Respawn at every stage (round 4: it used to flip mid-session)
@@ -285,8 +291,7 @@ function t(name, fn) {
         // other modules: stage 0 needs the server (or a forced) stage
         const coach = src('coach.js');
         assert.ok(coach.includes('const nxEarly = global.nxKnown && (global.nxStage | 0) < 3;'));
-        assert.ok(coach.includes('if (id === "ability" && global.nxKnown && (global.nxStage | 0) === 0 && !ownsKit()) return true;'));
-        assert.ok(coach.includes('global.nxKnown && (global.nxStage | 0) < 2 ?'));
+        assert.ok(!coach.includes('case "ability"'), 'the guide has no ability step');
         const heat = src('raidHeat.js');
         assert.ok(heat.includes('const nx = () => global.nxStage == null ? 3 : global.nxStage;'));
         assert.ok(heat.includes('if (global.nxKnown && nx() === 0) calmHud = true;'));

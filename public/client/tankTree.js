@@ -444,7 +444,7 @@ export function draw(c, w, h) {
     c.save();
     c.scale(1 / k, 1 / k);
     c.globalAlpha = 1;
-    c.fillStyle = "rgba(10,10,12,0.84)";
+    c.fillStyle = D.HUD.theme === "dark" ? "rgba(16,16,18,0.72)" : "rgba(238,238,238,0.82)";
     c.fillRect(0, 0, W, H);
     const ready = D.ready() && ensureGraph();
     if (ready) {
@@ -455,7 +455,7 @@ export function draw(c, w, h) {
         drawTree(c);
     } else {
         D.hudPanel(c, W / 2 - 150, H / 2 - 30, 300, 60, { fill: D.HUD.solid });
-        D.hudTitle("Loading the tank tree...", W / 2, H / 2, 17, "#ffffff", "center", 1, c);
+        D.hudTitle("Loading the tank tree...", W / 2, H / 2, 17, D.HUD.head, "center", 1, c);
     }
     drawHeader(c, ready);
     if (ready && tip) drawTip(c);
@@ -501,7 +501,7 @@ function drawTree(c) {
     for (let j = 0; j < 4; j++) budget[j] = BUILD_BUDGET[j];
 
     const lw = Math.max(1, Math.min(4, 3 * z));
-    strokeSegs(c, box.segs, "rgba(235,235,235,0.55)", lw);
+    strokeSegs(c, box.segs, D.HUD.theme === "dark" ? "rgba(235,235,235,0.55)" : "rgba(60,60,60,0.45)", lw);
     strokeSegs(c, box.hiSegs, D.HUD.gold, lw * 1.6);
 
     c.imageSmoothingEnabled = true;
@@ -569,7 +569,7 @@ function drawTierLabels(c, oy, z) {
         const label = tierLabel(t);
         const w = D.hudTitleW(label, fs) + 16;
         D.hudPanel(c, 8, y - 11, w, 22, { r: 4, alpha: 0.9 });
-        D.hudTitle(label, 16, y, fs, t >= L.T5_TIER ? D.HUD.gold : "#ffffff", "left", 1, c);
+        D.hudTitle(label, 16, y, fs, t >= L.T5_TIER ? D.HUD.gold : D.HUD.head, "left", 1, c);
     }
 }
 
@@ -589,7 +589,7 @@ function lighten(col) {
 function drawHeader(c, ready) {
     const mob = D.mobile();
     const hh = headH();
-    D.hudPanel(c, 0, 0, W, hh, { fill: "rgba(0,0,0,0.5)", r: 0 });
+    D.hudPanel(c, 0, 0, W, hh, { fill: D.HUD.panel, r: 0 });
     const bh = mob ? 40 : 34, by = (mob ? (hh - bh) / 2 : 10);
     const closeW = bh + (mob ? 6 : 0);
     const bx = W - 12 - closeW;
@@ -602,7 +602,7 @@ function drawHeader(c, ready) {
         const w2 = D.hudTitleW(l2, 15) + 26;
         drawButton(c, 2, bx - 20 - w1 - w2, by, w2, bh, l2, "#4a9a4f", 15);
     } else { btn[6] = 0; btn[10] = 0; }
-    D.hudTitle("Tank Tree", W / 2, W >= 900 ? (mob ? 17 : 19) : hh / 2, mob ? 19 : 22, "#ffffff", "center", 1, c);
+    D.hudTitle("Tank Tree", W / 2, W >= 900 ? (mob ? 17 : 19) : hh / 2, mob ? 19 : 22, D.HUD.head, "center", 1, c);
     const sub = !ready ? "" : whole ? "Every tank in the game. Zoom in to read the names." : "Your path is gold. Faded tanks are the other choices.";
     if (sub && W >= 900) D.hudTitle(sub, W / 2, mob ? 38 : 42, mob ? 11 : 13, "#d8d8d8", "center", 1, c);
     if (ready) {
@@ -610,7 +610,7 @@ function drawHeader(c, ready) {
         const fs = mob ? 11 : 12;
         const w = Math.min(W - 16, D.hudTitleW(hint, fs) + 24);
         D.hudPanel(c, W / 2 - w / 2, H - 30, w, 24, { fill: "rgba(0,0,0,0.6)", r: 5 });
-        D.hudTitle(hint, W / 2, H - 18, fs, "#e0e0e0", "center", 1, c);
+        D.hudTitle(hint, W / 2, H - 18, fs, D.HUD.text2, "center", 1, c);
     }
 }
 const HINT = "Drag or use the arrow keys to move. Scroll to zoom. Click a tank to centre it, E shows its upgrades. Tab: whole tree. Esc or T closes.";
@@ -626,9 +626,9 @@ function drawTip(c) {
     if (y + tip.h > H - 36) y = n.y * z + oy - tip.h - 10;
     x = Math.max(8, Math.min(W - tip.w - 8, x));
     y = Math.max(headH() + 6, Math.min(H - tip.h - 36, y));
-    D.hudPanel(c, x, y, tip.w, tip.h, { fill: "#202022", stroke: "rgba(0,0,0,0.8)" });
-    D.hudTitle(tip.name, x + 12, y + 17, 16, n.tier >= L.T5_TIER ? D.HUD.gold : "#ffffff", "left", 1, c);
-    for (let j = 0; j < tip.lines.length; j++) D.hudTitle(tip.lines[j], x + 12, y + 38 + j * 17, 12, j === 0 ? "#ffffff" : "#d0d0d0", "left", 1, c);
+    D.hudPanel(c, x, y, tip.w, tip.h, { fill: D.HUD.solid });
+    D.hudTitle(tip.name, x + 12, y + 17, 16, n.tier >= L.T5_TIER ? D.HUD.gold : D.HUD.head, "left", 1, c);
+    for (let j = 0; j < tip.lines.length; j++) D.hudTitle(tip.lines[j], x + 12, y + 38 + j * 17, 12, j === 0 ? D.HUD.head : D.HUD.text2, "left", 1, c);
 }
 
 export function stats() {

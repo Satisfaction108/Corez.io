@@ -1066,7 +1066,7 @@ test('free ability: one random fun one on the first spawn of a raid, kept for th
     const ex = fs.readFileSync(path.join(SERVER, '.env.example'), 'utf8');
     assert.match(ex, /ROYALE_FREE_ABILITY=1/);
     const fxSrc = fs.readFileSync(path.join(REPO, 'public', 'client', 'abilityFx.js'), 'utf8');
-    assert.match(fxSrc, /J\.slam\("YOUR ABILITY: "/);
+    assert.ok(!/YOUR ABILITY: /.test(fxSrc), 'the free ability arrives without a slam');
 });
 
 test('shockwave from a bot: thrown at a player, it launches them (a grown one clearly) and tells them', () => {
@@ -1114,8 +1114,10 @@ test('found abilities (supply crate) join what you own; they only take an empty 
     t.vaultOnPad = false; t.shopOnPad = true;
     assert.equal(ab.cycle(s), false, 'nor on a shop pad: Equip only');
     assert.equal(ab.equipped(t), 'radar');
+    const cs = fs.readFileSync(path.join(SERVER, 'game', 'terrain', 'chests.js'), 'utf8');
+    assert.match(cs, /require\('\.\/abilityDrops\.js'\)\.fromChest\(chest, body\)/);
     const sd = fs.readFileSync(path.join(SERVER, 'game', 'terrain', 'supplyDrops.js'), 'utf8');
-    assert.match(sd, /abilities\.addFound\(body\.socket, pick\.id\)/);
+    assert.doesNotMatch(sd, /addFound\(|giveBot\(/, 'the crate drops a pickup instead of handing the ability over');
     t.shopOnPad = false; t.padSafe = false;
     cleanup(t);
 });
@@ -1213,7 +1215,7 @@ test('bulwark: raises the dug-out ring out to 420 fast, and speeds up rock alrea
     const slow = ring[0];
     slow.noRegrowUntil = 0;
     grid.startRegrow(slow, clock, 0);
-    assert.equal(slow.growRate, 1, 'rising at the normal pace');
+    assert.equal(slow.growRate, require(path.join(SERVER, 'game', 'terrain', 'terrainGrid.js')).REGROW.RISE_RATE, 'rising at the normal pace');
     const n = shop.bulwarkRaise(grid, t, clock);
     assert.ok(n >= Math.min(B.max, ring.length), 'raised ' + n);
     assert.ok(slow.growFast && slow.growRate === B.rate, 'the slow one sped up: ' + slow.growRate);

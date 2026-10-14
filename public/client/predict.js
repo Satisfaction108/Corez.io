@@ -206,6 +206,56 @@ function pointInRock(tr, wx, wy) {
     return !tr._rockDead.has(bi * 100003 + bj);
 }
 
+function driveRates(rise, stop, turn, carry) {
+    const t = 1000 / 30, r = ms => Math.pow(0.1, t / Math.max(t, ms));
+    return { rise: r(rise), stop: r(stop), turn: r(turn), carry: carry > 0 ? carry : 0 };
+}
+
+function driveInto(s, gx, gy, power, a) {
+    const R = P.srv.drive;
+    const keep = 1 / (1 + s.damp / P.srv.rs);
+    const top = gx !== 0 || gy !== 0 ? Math.max(0, power) * a / (1 - keep) : 0;
+    const d = s.drv || { x: 0, y: 0, ax: 0, ay: 0, ex: 0, ey: 0 };
+    let ox = d.x, oy = d.y, nx, ny, cx = 0, cy = 0;
+    if (top > 0) {
+        const len = Math.sqrt(gx * gx + gy * gy), ux = gx / len, uy = gy / len;
+        let p = ox * ux + oy * uy;
+        const sx = ox - p * ux, sy = oy - p * uy;
+        const wx = sx * R.turn, wy = sy * R.turn;
+        if (s.dj >= 0) p = Math.max(p, Math.min(top, s.vx * ux + s.vy * uy));
+        const r = p > top ? keep : p < 0 ? R.stop : R.rise;
+        p += (top - p) * (1 - r);
+        if (p >= 0 && p < top) {
+            const bx = (s.vx - d.ax) / keep, by = (s.vy - d.ay) / keep;
+            const bp = bx * ux + by * uy, qx = bx - bp * ux, qy = by - bp * uy;
+            p = Math.min(top, p + Math.min(Math.sqrt(sx * sx + sy * sy), Math.sqrt(qx * qx + qy * qy)) * (1 - R.turn) * R.carry);
+        }
+        nx = p * ux + wx;
+        ny = p * uy + wy;
+    } else {
+        const e2 = d.ex * d.ex + d.ey * d.ey;
+        if (e2 > 1e-9) {
+            const share = Math.max(0, Math.min(1, ((s.vx - d.ax) * d.ex + (s.vy - d.ay) * d.ey) / e2));
+            if (share < 1) {
+                cx = (1 - share) * d.ax;
+                cy = (1 - share) * d.ay;
+                ox *= share;
+                oy *= share;
+            }
+        } else if (ox * ox + oy * oy > 0) {
+            ox = 0;
+            oy = 0;
+        }
+        nx = ox * R.stop;
+        ny = oy * R.stop;
+        if (nx * nx + ny * ny < 1e-4) { nx = 0; ny = 0; }
+    }
+    const ax = nx - keep * (ox + cx), ay = ny - keep * (oy + cy);
+    s.ax += ax;
+    s.ay += ay;
+    s.drv = { x: nx, y: ny, ax, ay, ex: keep * (ox + cx), ey: keep * (oy + cy) };
+}
+
 function engineInto(s, e) {
     const rs = P.srv.rs;
     const a = P.accel / rs;
@@ -220,6 +270,10 @@ function engineInto(s, e) {
         const c = e.bits;
         gx = (s.x + ((c >> 3) & 1) - ((c >> 2) & 1)) - s.x;
         gy = (s.y + ((c >> 1) & 1) - (c & 1)) - s.y;
+    }
+    if (P.srv.drive && P.top > 0 && a > 0 && s.damp > 0) {
+        driveInto(s, gx, gy, power, a);
+        return;
     }
     if (gx !== 0 || gy !== 0) {
         const len = Math.sqrt(gx * gx + gy * gy);
@@ -302,6 +356,7 @@ function startDash(s, e, tr) {
 function stepEntry(s, e, tr) {
     if (e.dash) startDash(s, e, tr);
     physics(s);
+    e.drvIn = s.drv ? Object.assign({}, s.drv) : null;
     engineInto(s, e);
     e.px = s.x; e.py = s.y;
     e.dj = s.dj; e.dsx = s.dsx; e.dsy = s.dsy; e.dEnd = s.dEnd;
@@ -409,7 +464,8 @@ function pump(now) {
 
 function onAdvert(m) {
     if (!m || m[0] !== 1) { P.srv = null; stop("off"); return; }
-    P.srv = { rs: +m[1] || 1, bw: +m[2] || 0, bh: +m[3] || 0, bf: +m[4] || 0, dmult: +m[5] || 0, dmin: +m[6] || 0, dms: +m[7] || 0 };
+    P.srv = { rs: +m[1] || 1, bw: +m[2] || 0, bh: +m[3] || 0, bf: +m[4] || 0, dmult: +m[5] || 0, dmin: +m[6] || 0, dms: +m[7] || 0,
+        drive: +m[8] > 0 ? driveRates(+m[8], +m[9], +m[10], +m[11]) : null };
 }
 
 function onSnapshot(word, x, y, vx, vy, accel, top, size) {
@@ -453,7 +509,7 @@ function onSnapshot(word, x, y, vx, vy, accel, top, size) {
     } else {
         P.forced = false;
         const s = { x, y, vx: +vx || 0, vy: +vy || 0, ax: 0, ay: 0, damp: P.damp,
-            dj: dashing ? eN.dj : -1, dsx: eN.dsx, dsy: eN.dsy, dEnd: eN.dEnd };
+            dj: dashing ? eN.dj : -1, dsx: eN.dsx, dsy: eN.dsy, dEnd: eN.dEnd, drv: eN.drvIn ? Object.assign({}, eN.drvIn) : null };
         engineInto(s, eN);
         eN.px = x; eN.py = y; eN.dj = s.dj;
         post(s, tr);

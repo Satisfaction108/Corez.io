@@ -149,7 +149,7 @@ test('post-bank: banking during a visit gives a 3 s vault shield on every exit',
     const src = read('server/game/terrain/vault.js');
     assert.ok(/body\._bankedVisit = true;/.test(src) && /grantTimedShield\(body, POST_BANK_SHIELD_MS, now\)/.test(src));
     assert.ok(/talk\('VU', 2\)/.test(src), 'the client hears it is a vault shield');
-    assert.ok(/Vault shield: safe for/.test(read('public/client/app.js')), 'labelled Vault shield');
+    assert.ok(/function vaultShieldNow\(\)/.test(read('public/client/app.js')), 'the vault shield ring is told apart');
     const body = { invuln: false };
     const t = Date.now();
     vault.grantTimedShield(body, vault.POST_BANK_SHIELD_MS, t);

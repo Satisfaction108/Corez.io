@@ -190,24 +190,6 @@ function smash(x, y) {
     try { require('./spawnReach.js').invalidate(); } catch { /* */ }
 }
 
-// what's in it on top of the chest's own kit item and gems
-function reward(body) {
-    const abilities = require('./abilities.js');
-    if (!abilities.ON || !alive(body)) return "";
-    const pool = abilities.ABILITIES.filter(a => {
-        if (body.socket) { const st = abilities.stateOf(body.socket); return !(st.own || []).includes(a.id); }
-        return true;
-    });
-    if (!pool.length) return "";
-    const pick = pool[(Math.random() * pool.length) | 0];
-    if (body.socket) {
-        // owned for the raid; it only takes the slot if the slot is empty
-        if (abilities.addFound) abilities.addFound(body.socket, pick.id);
-        else abilities.grant(body.socket, pick.id);
-    } else abilities.giveBot(body, pick.id);
-    return pick.name + " unlocked";
-}
-
 // tanks (players and bots) over the landing spot
 function onSpot(p, extra) {
     const out = [];
@@ -288,7 +270,6 @@ function land(t) {
     if (o) {
         o.supplyDrop = true;
         o.isSupplyCrate = true;
-        o.onOpened = (body) => reward(body);
         // called for one player (requestNear): bots leave it to them for a while
         if (p.reserve) o._botClaim = { id: p.reserve.id, until: t + p.reserve.ms };
         crate = o;

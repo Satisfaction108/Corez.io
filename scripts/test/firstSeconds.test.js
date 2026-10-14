@@ -149,7 +149,8 @@ function t(name, fn) {
         const co = fs.readFileSync(path.join(CLIENT, 'coach.js'), 'utf8');
         assert.match(co, /if \(\(global\.kitUsedAt \|\| 0\) > 0 \|\| \(global\.abilityUsedAt \|\| 0\) > 0\) return true;/);
         assert.match(co, /syncServer\(\);\s*checkAbility\(t\);/);
-        assert.match(co, /st\.step === "tutorial" && !global\.mobile[\s\S]{0,240}gridClearX\(top, st\.size\.w, st\.size\.h, k\) === null\) return true;/);
+        assert.ok(!/st\.step === "tutorial"/.test(co), 'no tutorial offer card in the guide');
+        assert.equal(L.planFor({ newcomer: true, ao: true }), null, 'the Always-On world has no raid card');
         const fsj = fs.readFileSync(path.join(CLIENT, 'firstSeconds.js'), 'utf8');
         assert.ok(fsj.includes('S.age > L.planEnd(p) + 500'));
     });
