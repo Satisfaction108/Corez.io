@@ -522,6 +522,8 @@ class io_nearestDifferentMaster extends IO {
         if (e.health.amount <= 0) return false;
         if (theirMaster.team === myMaster.team || theirMaster.team === TEAM_ROOM) return false;
         if (theirMaster.ignoredByAi || theirMaster.adminSpec) return false;
+        if (myMaster.isBot && theirMaster.isPlayer && (myMaster._aoLockUntil || 0) > Date.now() &&
+            !(myMaster._lastDamageSource === theirMaster && Date.now() - (myMaster._lastDamageAt || 0) < 2500)) return false;
         if (e.bond) return false;
         if (e.invuln || e.godmode || theirMaster.godmode || theirMaster.passive || myMaster.passive) return false;
         // a bot's auto turrets / drones, and raid bosses, honour a fresh
@@ -2869,9 +2871,10 @@ class io_digWarsGoals extends IO {
                 return { kind: 'regroup', mate: human, expiresAt: now + 6000 };
         }
 
-        // round 12 leader hunt: close in on a runaway #1 we can see from afar
+        const aoEv = Config.dig_royale && !human ? this.eventGoal(now, health) : null;
+        const aoLock = !!aoEv && this.eventLocks(aoEv);
         body._leaderHuntId = 0;
-        const lhunt = Config.dig_royale && view.enemy && !human ? leaderHunt(view.enemy, now) : null;
+        const lhunt = Config.dig_royale && view.enemy && !human && !aoLock ? leaderHunt(view.enemy, now) : null;
         if (lhunt && health > 0.45 && view.enemyDistance < LEADER_R &&
             view.enemyDistance >= (view.enemy.isPlayer ? botDiff.initRange(botDiff.of(view.enemy, now)) : 1400) &&
             !inEnemyBase(body.team, view.enemy.x, view.enemy.y) &&
@@ -2880,7 +2883,7 @@ class io_digWarsGoals extends IO {
             const e = view.enemy, a = Math.atan2(body.y - e.y, body.x - e.x);
             return { kind: 'explore', point: { ...this.safePoint(e.x + Math.cos(a) * 500, e.y + Math.sin(a) * 500), until: now + 3500 }, hunt: 1 };
         }
-        if (Config.dig_royale && view.enemy &&
+        if (Config.dig_royale && view.enemy && !aoLock &&
             view.enemyDistance < (view.enemy.isPlayer ? botDiff.initRange(botDiff.of(view.enemy, now)) * botDiff.gentleRange(botDiff.gentle(view.enemy)) : 1400) &&
             now - (this._enemySeenAt || 0) >= (this.reactionMs || 250) &&
             this.canInitiateFight(view.enemy, now))
@@ -2913,7 +2916,7 @@ class io_digWarsGoals extends IO {
             const mo = fairPlay.moveOnPoint(body, now);
             if (mo) return { kind: 'explore', point: { ...this.safePoint(mo.x, mo.y), until: mo.until }, vaultLeave: true };
         }
-        const back = this.comebackTarget(now, health);
+        const back = aoLock ? null : this.comebackTarget(now, health);
         if (back) return { kind: 'fight', target: back };
         // bank on threshold, and also periodically
         const bankOverdue = (body.carriedGems || 0) >= 25 &&
@@ -2934,6 +2937,7 @@ class io_digWarsGoals extends IO {
         if (attackedBy && !(outnumbered && health < 0.55) &&
             !(this.feared(attackedBy, now) && health < 0.85))
             return { kind: 'fight', target: attackedBy };
+        if (aoLock) return aoEv;
         // no hanging round a vault without banking (fairPlay): move on
         if (Config.dig_royale && !human) {
             const leave = fairPlay.lingerCheck(body, false, now);
@@ -2961,10 +2965,7 @@ class io_digWarsGoals extends IO {
             return { kind: 'rally', point: this.safePoint(marker.x, marker.y), expiresAt: marker.expiresAt };
         if (view.allyInTrouble)
             return { kind: 'rally', point: this.safePoint(view.allyInTrouble.x, view.allyInTrouble.y), expiresAt: now + 6000 };
-        if (Config.dig_royale && !human) {
-            const ev = this.eventGoal(now, health);
-            if (ev) return ev;
-        }
+        if (aoEv) return aoEv;
         // never chase someone into their own base (the tiles kill us)
         if (view.enemy && view.enemyDistance < this.engageRange() && !outnumbered &&
             !inEnemyBase(body.team, view.enemy.x, view.enemy.y) &&
@@ -3047,6 +3048,20 @@ class io_digWarsGoals extends IO {
         return boss;
     }
 
+    eventLocks(ev) {
+        if (!ev) return false;
+        const lock = ev.kind === 'aoshoot' || (ev.kind === 'fight' && ev.target && ev.target.isRoyaleBoss);
+        if (lock) { this.body._aoLockUntil = Date.now() + 2000; this.body._aoLockTarget = ev.target; }
+        return lock;
+    }
+
+    fightBackFrom(now) {
+        const src = this.body._lastDamageSource;
+        if (!src || now - (this.body._lastDamageAt || 0) > 2500 || src.isRoyaleBoss || !(src.isPlayer || src.isBot)) return null;
+        if ((src.isDead && src.isDead()) || !(src.health && src.health.amount > 0)) return null;
+        return src;
+    }
+
     eventGoal(now, health) {
         const body = this.body;
         if (body.isTeamBot || health < 0.4) return null;
@@ -3066,6 +3081,18 @@ class io_digWarsGoals extends IO {
         }
         if (g.kind === 'go') return { kind: 'aogo', point: this.safePoint(g.x, g.y), arrive: g.arrive || 150, until: now + 9000 };
         return null;
+    }
+
+    coreDroneNear(r) {
+        let list = [];
+        try { list = require('../game/terrain/coreFinale.js').liveDrones(); } catch { return null; }
+        const body = this.body;
+        let best = null, bd = r * r;
+        for (const e of list) {
+            const d = (e.x - body.x) ** 2 + (e.y - body.y) ** 2;
+            if (d < bd) { bd = d; best = e; }
+        }
+        return best;
     }
 
     nearChest(now) {
@@ -3738,13 +3765,20 @@ class io_digWarsGoals extends IO {
                 : goal.kind === 'mine' && goal.rock ? { x: goal.rock.wx, y: goal.rock.wy } : null;
             return { target: target ? { x: target.x - body.x, y: target.y - body.y } : forward(), fire: false };
         }
-        if (goal.kind === 'aoshoot' && goal.target && !goal.target.isDead?.() && now - (body._lastDamageAt || 0) > 2500 &&
-            this.distanceTo(goal.target) < this.weaponRange() + (goal.r || 100) * 0.8) {
-            if (this.clearShot(goal.target))
-                return { target: this.aimVector(goal.target.x - body.x, goal.target.y - body.y, now), fire: true };
-            const rock = this.firstRockAlong(goal.target);
-            if (rock && rock.alive)
-                return { target: this.aimVector(rock.wx - body.x, rock.wy - body.y, now), fire: true };
+        const locked = (goal.kind === 'aoshoot' || (goal.kind === 'fight' && goal.target && goal.target.isRoyaleBoss && goal.target === body._aoLockTarget)) &&
+            goal.target && !goal.target.isDead?.() && !this.fightBackFrom(now);
+        if (locked) {
+            const drone = goal.kind === 'aoshoot' ? this.coreDroneNear(360) : null;
+            if (drone && this.clearShot(drone))
+                return { target: this.aimVector(drone.x - body.x, drone.y - body.y, now), fire: true };
+            if (this.distanceTo(goal.target) < this.weaponRange() + (goal.r || goal.target.realSize || 100) * 0.8) {
+                if (this.clearShot(goal.target))
+                    return { target: goal.kind === 'fight' ? this.leadAim(goal.target, now) : this.aimVector(goal.target.x - body.x, goal.target.y - body.y, now), fire: true };
+                const rock = this.firstRockAlong(goal.target);
+                if (rock && rock.alive)
+                    return { target: this.aimVector(rock.wx - body.x, rock.wy - body.y, now), fire: true };
+            }
+            return { target: this.aimVector(goal.target.x - body.x, goal.target.y - body.y, now), fire: false };
         }
         const enemy = this.view.enemy;
         // Any enemy inside weapon range gets shot at; etiquette (mercy,

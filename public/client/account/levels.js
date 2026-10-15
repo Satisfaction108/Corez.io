@@ -12,7 +12,8 @@ const SEEN_KEY = 'dwLvSeen';
 const LAST_KEY = 'dwLvLast';
 
 let hooks = { onSignup() {}, refreshMe() {} };
-let row = null, bar = null, fill = null, lvTxt = null, xpTxt = null, chip = null, saved = null;
+let row = null, bar = null, fill = null, lvTxt = null, xpTxt = null, chip = null, saved = null, gainEl = null, startXp = null;
+const GAIN_KEY = 'dwLvGain', XP_KEY = 'dwLvXp', GAIN_MS = 3 * 86400000;
 let st = null, booted = false, loadSeq = 0, ownerSig = '', panel = null, pre = null, preKey = '', preAt = 0, lateAdopt = null;
 const PRE_MS = 5000;
 
@@ -132,7 +133,7 @@ export function init(hs) {
         const now = inGame();
         if (now === was) return;
         was = now;
-        if (now) { pre = null; if (panel) panel.close(); return; }
+        if (now) { pre = null; startXp = st && !st.early && typeof st.xp === 'number' ? st.xp : null; if (panel) panel.close(); return; }
         setTimeout(refresh, 600);
     }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 }
@@ -154,6 +155,14 @@ export async function refresh() {
     if (seq !== loadSeq || inGame()) return;
     if (!r.ok || !r.data || !r.data.on) { if (!r.ok && st && st.early) return; st = null; paint(); return; }
     st = Object.assign({}, r.data, { key });
+    if (typeof st.xp === 'number') {
+        let seen = null;
+        try { const v = JSON.parse(ls.get(XP_KEY) || 'null'); if (v && v.key === key) seen = v.xp; } catch (e) { void e; }
+        const base = startXp != null ? startXp : seen;
+        if (base != null && st.xp > base) ls.set(GAIN_KEY, JSON.stringify({ key, xp: st.xp - base, at: Date.now() }));
+        ls.set(XP_KEY, JSON.stringify({ key, xp: st.xp }));
+    }
+    startXp = null;
     const adopted = st.adoptedNow || lateAdopt;
     lateAdopt = null;
     remember(st, key);
@@ -262,6 +271,21 @@ function noteLevelUp() {
     popBar();
 }
 
+function lastGain(key) {
+    try {
+        const g = JSON.parse(ls.get(GAIN_KEY) || 'null');
+        if (g && g.key === key && g.xp > 0 && Date.now() - g.at < GAIN_MS) return g.xp | 0;
+    } catch (e) { void e; }
+    return 0;
+}
+function paintGain() {
+    const xp = st && !st.early ? lastGain(st.key) : 0;
+    if (!xp) { if (gainEl) gainEl.hidden = true; return; }
+    if (!gainEl) { gainEl = h('div', { class: 'lv-gain' }); row.insertBefore(gainEl, saved); }
+    gainEl.hidden = false;
+    const togo = st.max ? 0 : st.need - st.into, left = togo > 0 ? ' ' + fmt(togo) + ' XP to Lvl ' + (st.level + 1) + '.' : '';
+    gainEl.textContent = '+' + fmt(xp) + ' XP last game.' + left;
+}
 function paint() {
     if (!row) return;
     if (!st) { row.hidden = true; return; }
@@ -285,7 +309,13 @@ function paint() {
         if (sv.dustMilli > 0) what.push(dustTxt(sv.dustMilli) + ' gemdust');
         saved.append(h('span', { text: 'Saved for when you sign up: ' + listText(what) + '. ' }),
             h('button', { type: 'button', class: 'lv-link', text: 'Sign up to keep them', onclick: () => hooks.onSignup() }));
+    } else if (st.owner === 'guest') {
+        clear(saved);
+        saved.hidden = false;
+        saved.append(h('span', { text: 'A free account keeps your level, gemdust and skins. ' }),
+            h('button', { type: 'button', class: 'lv-link', text: 'Make an account', onclick: () => hooks.onSignup() }));
     } else saved.hidden = true;
+    paintGain();
 }
 
 function catWord(cat) {

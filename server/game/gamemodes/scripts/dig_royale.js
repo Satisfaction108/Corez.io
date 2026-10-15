@@ -1339,6 +1339,15 @@ function stormRAhead(st, aheadS) {
     const rNow = st.r || 0;
     return Math.max(0, rNow - Math.max(0, rNow - (st.n || rNow)) * (aheadS * 4));
 }
+const SPAWN_SAFE_SLACK = 60;
+function spawnSafeAt(x, y, t = now()) {
+    const FM = FIRST_MINUTES;
+    const st = aheadSnap(t, FM.SPAWN_STORM_AHEAD_S);
+    if (!st || !st.a) return true;
+    const r = stormRAhead(st, FM.SPAWN_STORM_AHEAD_S);
+    const margin = Math.min(FM.SPAWN_EDGE_MARGIN, r * FM.SPAWN_EDGE_MARGIN_FRAC);
+    return Math.hypot(x - (st.cx || 0), y - (st.cy || 0)) < Math.max(80, r - margin) + SPAWN_SAFE_SLACK;
+}
 
 // With `zone` (spawn reachability on) the pocket also gets an exit tunnel of
 // plain rock to the nearest open region (spawnReach.exitPath: never through
@@ -2196,10 +2205,10 @@ function mateReachTest(tg) {
     const t = now();
     let st = null;
     try { st = storm.snapshot(t); } catch { return () => true; }
-    const sa = aheadSnap(now(), FIRST_MINUTES.SPAWN_STORM_AHEAD_S);
-    const zone = { x: sa.cx || 0, y: sa.cy || 0, r: stormRAhead(st, FIRST_MINUTES.SPAWN_STORM_AHEAD_S) };
+    const sa = aheadSnap(now(), FIRST_MINUTES.SPAWN_STORM_AHEAD_S) || st;
+    const zone = { x: sa.cx || 0, y: sa.cy || 0, r: stormRAhead(sa, FIRST_MINUTES.SPAWN_STORM_AHEAD_S) };
     const margin = Math.min(FIRST_MINUTES.SPAWN_EDGE_MARGIN, zone.r * FIRST_MINUTES.SPAWN_EDGE_MARGIN_FRAC);
-    const digR = stormRAhead(st, FIRST_MINUTES.SPAWN_STORM_AHEAD_DIG_S) - margin;
+    const digR = stormRAhead(sa, FIRST_MINUTES.SPAWN_STORM_AHEAD_DIG_S) - margin;
     return (x, y) => {
         const res = spawnReach.check(tg, x, y, { zone, now: t });
         if (!res.ok) return false;
@@ -2934,7 +2943,7 @@ function onHumanJoin(body) {
     if (home) {
         let inStorm = false;
         try {
-            inStorm = storm.inStorm(home.x, home.y) || !fairPlay.edgeSafe(home.x, home.y, storm.snapshot());
+            inStorm = storm.inStorm(home.x, home.y) || !fairPlay.edgeSafe(home.x, home.y, storm.snapshot()) || !spawnSafeAt(home.x, home.y);
             // nor into a boss's lap or next to a tank that farmed them: fairPlay)
             if (!inStorm && body.socket) { const dg = spawnDanger(body, combatants(), now()); if (dg && dg.homeBad(home.x, home.y)) inStorm = true; }
             const want = body.socket ? fairPlay.spawnEtaWant(spawnProt, true) : 0;
@@ -2981,6 +2990,14 @@ function onHumanJoin(body) {
             moveTo(body, o.x, o.y);
         }
     } catch { /* */ }
+    guard('spawn storm check', () => {
+        if (spawnSafeAt(body.x, body.y)) return;
+        const h = safeSpawnSpot(body, !body.socket);
+        if (!h || !spawnSafeAt(h.x, h.y)) return;
+        moveTo(body, h.x, h.y);
+        const tgK = global.gameManager.terrainGrid;
+        if (tgK && tgK.pointInRock && tgK.pointInRock(body.x, body.y)) { const o = openGroundNear(tgK, body.x, body.y); moveTo(body, o.x, o.y); }
+    });
     // a grown respawn needs more room than a spawn pocket gives
     guard('growth room', () => growRoom(body, true));
     keepOnMap(body);
@@ -4671,7 +4688,7 @@ module.exports = {
     // tests: one pass of the idle watch at time t; a twist's hand-outs
     _tickIdle: (t) => tickIdle(t), _grantTwist: (b) => grantTwist(b),
     // tests (fairPlay): a spawn pick with a storm-time floor, the storm rescue pass
-    _safeSpawnSpot: (self, forBot, eta) => safeSpawnSpot(self, forBot, eta), _tickSpawnRescue: (t) => tickSpawnRescue(t),
+    _safeSpawnSpot: (self, forBot, eta) => safeSpawnSpot(self, forBot, eta), _spawnSafeAt: (x, y, t) => spawnSafeAt(x, y, t), _tickSpawnRescue: (t) => tickSpawnRescue(t),
     _raidId: () => raidId,
     _stampRunaways: (f) => stampRunaways(f),
     _stampBotDifficulty: (b) => stampBotDifficulty(b), _checkFairOut: (b) => checkFairOut(b),

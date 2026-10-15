@@ -556,6 +556,11 @@ function syncServer() {
 function stepAside() {
     const sh = global.shop || {};
     if (global.showBigMap || global.hudCardUp) return true;
+    if (global.nxKnown && (global.nxStage | 0) === 0) {
+        if (now() - (global.spawnedAt || now()) < 10000) return true;
+        const gates = window.dwNxGates ? window.dwNxGates() : null;
+        if (gates && gates.fresh && gates.panel <= 0) return true;
+    }
     // the raid card and the HUD coming in, the first seconds (firstSeconds.js)
     if (global.introHold) return true;
     // a director moment's banner (newcomer.js) has the middle

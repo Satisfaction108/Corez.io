@@ -21,10 +21,14 @@ let handlers = { onChip() {}, onNameBox() {}, onNav() {}, onLogin() {} };
 // The shop opens for guests too, on its look-only View all (log in to buy)
 const GUEST_OPEN = { shop: 'Shop (log in to buy)' };
 const LOCKED = {
-    shop: { tip: 'Shop (log in first)', title: 'You need an account for the shop' },
-    locker: { tip: 'Locker (log in first)', title: 'You need an account for your locker' },
-    friends: { tip: 'Friends (log in first)', title: 'You need an account for friends' },
-    profile: { tip: 'Profile (log in first)', title: 'You need an account for a profile' },
+    shop: { tip: 'Shop: make a free account to buy', tag: 'Shop', title: 'Make a free account to shop',
+        msg: 'Spend your gemdust on skins and sidekicks. Your level and rank come with you.' },
+    locker: { tip: 'Your Locker holds the skins and sidekicks you own. Make a free account to unlock it.', tag: 'Locker: free account', title: 'Your Locker keeps your skins and sidekicks',
+        msg: 'Make a free account to unlock it. Your level, gemdust and rank come with you.' },
+    friends: { tip: 'Add friends and see when they are playing. Make a free account to unlock it.', tag: 'Friends: free account', title: 'Play with your friends',
+        msg: 'Make a free account to add friends and see when they are playing.' },
+    profile: { tip: 'Your profile shows your rank, medals and stats. Make a free account to unlock it.', tag: 'Profile: free account', title: 'Show off your rank and medals',
+        msg: 'Make a free account to get a profile. Your level, gemdust and rank come with you.' },
 };
 
 export function init(hs) {
@@ -54,10 +58,10 @@ function lockedPrompt(pane) {
     if (store.get('offline')) { toast('Accounts are down right now. Please try again soon.'); return; }
     const m = modal({
         title: L.title, cls: 'dw-modal-sm dw-modal-lock',
-        message: 'It’s free and keeps your rank and gemdust safe.',
+        message: L.msg,
         body: h('div', { class: 'dw-modal-actions' },
             h('button', { type: 'button', class: 'dw-btn', text: 'Later', onclick: () => m.close() }),
-            h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Log in', onclick: () => { m.close(); handlers.onLogin(); } })),
+            h('button', { type: 'button', class: 'dw-btn primary', 'data-autofocus': '', text: 'Sign up or log in', onclick: () => { m.close(); handlers.onLogin(); } })),
     });
 }
 
@@ -133,7 +137,9 @@ function renderNameBox(name, rank, st) {
 function renderNav(s) {
     const guest = s.mode !== 'user';
     nav.querySelectorAll('.dw-nav-btn').forEach((b) => {
-        const L = LOCKED[b.dataset.pane];
+        const L = LOCKED[b.dataset.pane], tag = b.querySelector('span:not(.dw-nav-count)');
+        if (tag && !tag.dataset.base) tag.dataset.base = tag.textContent;
+        if (tag) tag.textContent = guest && L && !GUEST_OPEN[b.dataset.pane] && !s.offline ? L.tag : tag.dataset.base;
         if (!L) {
             // open to everyone (the leaderboard)
             if (READY.has(b.dataset.pane)) { b.removeAttribute('aria-disabled'); b.classList.remove('locked'); b.title = ''; }

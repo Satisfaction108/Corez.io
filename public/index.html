@@ -359,11 +359,12 @@
             <span class="sp-tab active" data-tab="sp-options">Options</span>
             <span class="sp-tab" data-tab="sp-sound">Sound</span>
             <span class="sp-tab sp-desktop-only" data-tab="sp-keybinds">Keybinds</span>
+            <span class="sp-tab" data-tab="sp-look">Theme</span>
         </div>
         <div class="sp-body">
 
             <div id="sp-theme" class="sp-pane">
-                <div class="sp-label">Theme</div>
+                <div class="sp-label">Colour palette</div>
                 <select id="optColors" tabindex="-1" onchange="document.getElementById('optCustom').style.display = this.value === 'custom' ? 'block' : 'none'" onfocus="document.getElementById('optCustom').style.display = this.value === 'custom' ? 'block' : 'none'">
                     <option value="normal">Light (by Neph/CX)</option>
                     <option value="dark" selected>Dark (by Neph/CX)</option>
@@ -392,6 +393,11 @@
                     <option value="custom">Custom</option>
                 </select>
                 <input style="display: none;" placeholder="Paste custom theme JSON" id="optCustom" />
+            </div>
+
+            <div id="sp-look" class="sp-pane">
+                <div class="sp-label">Theme</div>
+                <div id="spThemeCards" class="sp-theme-cards" role="radiogroup" aria-label="Theme"></div>
             </div>
 
             <div id="sp-options" class="sp-pane active">

@@ -362,6 +362,7 @@ class Gun extends EventEmitter {
             o.parentID = this.body.id;
             o.color.base = o.color.base ?? this.body.master.color.base;
             o.SIZE = (this.shotBodySize() * this.width * this.settings.size) / 2;
+            o._growG = this.growG();
             o.velocity = s;
             o.facing = o.velocity.direction;
             o.refreshBodyAttributes();
@@ -454,6 +455,7 @@ class Gun extends EventEmitter {
         }, false);
         o.color.base = o.color.base ?? this.body.master.color.base;
         o.SIZE = this.fixedBulletSize ? this.basicBulletSize() : (this.shotBodySize() * this.width * this.settings.size) / 2;
+        if (!this.fixedBulletSize) o._growG = this.growG();
         if (this.rockOnly) o.rockOnly = true;
         // Keep track of it and give it the function it needs to deutil.log itself upon death
         if (this.countsOwnKids) {
@@ -623,7 +625,7 @@ class Gun extends EventEmitter {
     basicBulletSize() {
         const b = this.body, base = (typeof Class !== 'undefined' && Class.genericTank && Class.genericTank.SIZE) || 12;
         const lvl = b.settings && b.settings.healthWithLevel ? 1 + Math.min(45, b.level | 0) / 45 : 1;
-        return (base * lvl * 8 * this.settings.size) / 2;
+        return (base * lvl * 0.8 * this.settings.size) / 2;
     }
     getPhotoInfo() {
         let p = this._photo;
@@ -650,9 +652,12 @@ class Gun extends EventEmitter {
     // drones and minions grow with growth^0.5, not all of it (Oct 9: 3x
     // makes shots about 1.7x)
     shotBodySize() {
-        const tank = this.body && this.body.master && this.body.master.growthMult > 1 ? this.body.master : this.body;
-        const g = tank && tank.growthMult > 1 ? tank.growthMult : 1;
+        const g = this.growG();
         return g > 1 ? this.body.size / Math.pow(g, 0.5) : this.body.size;
+    }
+    growG() {
+        const tank = this.body && this.body.master && this.body.master.growthMult > 1 ? this.body.master : this.body;
+        return tank && tank.growthMult > 1 ? tank.growthMult : 1;
     }
 
     interpret() {

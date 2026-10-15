@@ -25,13 +25,15 @@ const TRAP_VS_TANKS = 0.87;
 // with their own guns. Rock, chests and bosses take the same as before.
 const MINION_VS_TANKS = 0.6;
 const HELPER_VS_TANKS = 0.75;
-function helperShot(e) {
-    if (!e || e.fromSidearm || e.rockOnly) return false;
-    if (e.type === 'drone' || e.type === 'minion') return true;
-    if (e.type === 'swarm') return e.motionType === 'swarm';
+const SWARM_VS_TANKS = 1.1;
+function helperKind(e) {
+    if (!e || e.fromSidearm || e.rockOnly) return null;
+    if (e.type === 'drone' || e.type === 'minion') return e.type;
+    if (e.type === 'swarm') return e.motionType === 'swarm' ? 'swarm' : null;
     const src = e.source;
-    return !!(src && src !== e && src.type === 'minion');
+    return src && src !== e && src.type === 'minion' ? 'minion' : null;
 }
+function helperShot(e) { return !!helperKind(e); }
 
 // The expanded tree (entityAddons/tanksExpansion.js)
 let derived = null;
@@ -69,9 +71,12 @@ function intoTank(target, src, amount) {
     if (!root || root === target || root.isRoyaleBoss) return amount;
     if (src.type === 'trap') amount *= TRAP_VS_TANKS;
     if (src.type === 'minion' || (src.master && src.master !== src && src.master.type === 'minion')) amount *= MINION_VS_TANKS;
-    if ((root.isPlayer || root.isBot) && helperShot(src)) amount *= HELPER_VS_TANKS;
+    if (root.isPlayer || root.isBot) {
+        const kind = helperKind(src);
+        if (kind) amount *= kind === 'swarm' ? SWARM_VS_TANKS : HELPER_VS_TANKS;
+    }
     const m = multOf(root.label);
     return m ? amount * m : amount;
 }
 
-module.exports = { intoTank, helperShot, VS_TANKS, TRAP_VS_TANKS, MINION_VS_TANKS, HELPER_VS_TANKS, multOf };
+module.exports = { intoTank, helperShot, helperKind, SWARM_VS_TANKS, VS_TANKS, TRAP_VS_TANKS, MINION_VS_TANKS, HELPER_VS_TANKS, multOf };

@@ -30,7 +30,7 @@ const MINE_BIAS = {
     hexaTank: 1.2,
     // a rammer whose only gun is one small turret
     autoSmasher: 4,
-    commander: 0.75, beekeeper: 0.7, battleship: 0.8,
+    commander: 0.75, beekeeper: 0.7, battleship: 0.8, carrier: 1.4,
 };
 
 function digPower(settings) {
@@ -49,12 +49,14 @@ function tankBias(owner) {
 }
 
 const HELPER_DIG = 0.3;
+const SWARM_DIG = 0.6;
 
 function rockDamageFor(owner, projectile) {
     let dig = projectile.digPower || 1;
     if (projectile.fromSidearm) dig = Math.min(dig, SIDEARM_DIG_CAP);
     else dig *= tankBias(owner);
-    const kind = classBalance.helperShot(projectile) ? HELPER_DIG : (TYPE_DIG[projectile.type] || 1);
+    const helper = classBalance.helperKind(projectile);
+    const kind = helper === 'swarm' ? SWARM_DIG : helper ? HELPER_DIG : (TYPE_DIG[projectile.type] || 1);
     return BASIC_DIG * kind * dig;
 }
 
@@ -137,4 +139,4 @@ function grindSecondsFor(owner) {
     return sec;
 }
 
-module.exports = { digPower, rockDamageFor, skillFactor, grindSecondsFor, gearMult, MINE_BIAS, HELPER_DIG, TYPE_DIG, BASE_BOOST, FULL_TRIM, SHOT_BARE, SHOT_SPAN, GRIND_BARE, GRIND_SPAN };
+module.exports = { digPower, rockDamageFor, skillFactor, grindSecondsFor, gearMult, MINE_BIAS, HELPER_DIG, SWARM_DIG, TYPE_DIG, BASE_BOOST, FULL_TRIM, SHOT_BARE, SHOT_SPAN, GRIND_BARE, GRIND_SPAN };

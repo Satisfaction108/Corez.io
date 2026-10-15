@@ -44,6 +44,15 @@ let gameAt = 0, freshLoad = true, booted = false, ownerSig = '';
 
 const inGame = () => document.body.classList.contains('in-game');
 const embedded = () => !!window.dwEmbed;
+let skinFrom = null;
+function cheapestSkin() {
+    if (skinFrom != null) return skinFrom;
+    const C = window.DWCosmetics;
+    let best = 0;
+    if (C && Array.isArray(C.ITEMS)) for (const it of C.ITEMS) if (it.cat === 'skin' && it.price > 0 && !it.exclusive && (!best || it.price < best)) best = it.price;
+    skinFrom = best ? dustTxt(best) : '';
+    return skinFrom;
+}
 const dustTxt = (milli) => { const v = (+milli || 0) / 1000; return Number.isInteger(v) ? String(v) : String(+v.toFixed(2)); };
 
 function guestId() {
@@ -291,7 +300,9 @@ function paintReasons() {
     const bal = dustBalance();
     if (bal != null) bits.push(['Gemdust ', fmtDust(bal)]);
     else if (st.owedMilli > 0) bits.push(['Saved for when you sign up: ', dustTxt(st.owedMilli) + ' gemdust']);
-    if (st.shop) bits.push(['In the shop: ', st.shop.name]);
+    const from = cheapestSkin();
+    if (from) bits.push(['Skins from ', from + ' gemdust']);
+    if (st.shop) bits.push(['In the shop: ', st.shop.name + (st.shop.price > 0 ? ' (' + st.shop.price + ' gemdust)' : '')]);
     const card = document.getElementById('eventCard');
     const c = EV && (!card || card.hidden) ? EV.current(EV.now()) : null;
     if (c && !c.live && c.ms < 21 * 864e5) bits.push([c.ev.name + ' ', EV.localWhen(c.ev, EV.now()) + ' (in ' + EV.countdown(c.ms) + ')']);

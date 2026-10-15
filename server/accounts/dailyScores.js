@@ -218,6 +218,16 @@ function adoptGuest(guestId, userId, now = Date.now()) {
     return paid;
 }
 
+function placeOf(day, who) {
+    const d = h();
+    if (!d || !validWho(who)) return null;
+    const me = d.get('SELECT score FROM ao_daily_scores WHERE day = ? AND who = ?', String(day), who);
+    if (!me || !(me.score > 0)) return null;
+    const above = d.get('SELECT COUNT(*) AS n FROM ao_daily_scores WHERE day = ? AND score > ?', String(day), me.score | 0);
+    const all = d.get('SELECT COUNT(*) AS n FROM ao_daily_scores WHERE day = ? AND score > 0', String(day));
+    return { place: ((above && above.n) | 0) + 1, of: (all && all.n) | 0, score: me.score | 0 };
+}
+
 function dailyPlacement(day, now = Date.now(), minMs = 5 * 60 * 1000) {
     const d = h();
     if (!d) return [];
@@ -239,4 +249,4 @@ function dailyPlacement(day, now = Date.now(), minMs = 5 * 60 * 1000) {
     return out;
 }
 
-module.exports = { CHAMP_DUST_MILLI, available, validWho, save, saveBots, loadBots, dropBots, pruneBots, loadOne, loadWorld, top, champs, settleDay, owedFor, adoptGuest, dailyPlacement, _ensure: ensure };
+module.exports = { CHAMP_DUST_MILLI, available, validWho, placeOf, save, saveBots, loadBots, dropBots, pruneBots, loadOne, loadWorld, top, champs, settleDay, owedFor, adoptGuest, dailyPlacement, _ensure: ensure };

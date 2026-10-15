@@ -1543,6 +1543,83 @@ test('engage: once protection ends, real bots near a player pick and shoot them 
     log('     left be (brand new): ' + JSON.stringify(fresh));
 });
 
+test('core siege and boss hunt: bots in the event go for the Core or the boss, not a player nearby, unless that player shoots them', () => {
+    const G = ioTypes.digWarsGoals;
+    const ao = require(path.join(SERVER, 'game', 'terrain', 'alwaysOn.js'));
+    const realGoal = ao.botGoal;
+    const st = storm.snapshot();
+    const x = st.cx + 200, y = st.cy - 150;
+    const core = { id: 99001, x: x + 420, y, realSize: 90, size: 90, health: { amount: 5000, max: 5000 }, isDead: () => false };
+    const b = bot('basic', x, y);
+    const p = spawn(120, x - 260, y);
+    bare(p);
+    const c = new G(b);
+    try {
+        ao.botGoal = () => ({ kind: 'shoot', target: core, x: core.x, y: core.y, r: 90, fight: true });
+        loop(1); waitScan();
+        let now = Date.now();
+        c.view.enemy = p; c.view.enemyDistance = 260; c.view.enemies = 1; c.view.allies = 0;
+        b._lastDamageSource = null; b._lastDamageAt = 0;
+        const cand = c.candidate(now);
+        assert.equal(cand.kind, 'aoshoot', 'the Core, not the player: ' + cand.kind);
+        c.goal = cand;
+        const w = c.weapon(now);
+        const ang = Math.atan2(w.target.y, w.target.x);
+        assert.ok(w.fire && Math.abs(ang) < 0.35, 'aims and fires at the Core: ' + ang.toFixed(2));
+        b._lastDamageSource = p; b._lastDamageAt = now;
+        const back = c.candidate(now);
+        assert.ok(back.kind === 'fight' && back.target === p, 'shot by that player: it fights back');
+        b._lastDamageAt = now - 3000;
+        assert.equal(c.candidate(now).kind, 'aoshoot', 'and returns to the Core');
+        const ndm = new ioTypes.nearestDifferentMaster(b);
+        const sq = 5000 * 5000;
+        assert.equal(ndm.validate(p, b, b, sq, sq), false, 'its drones and turrets leave the player be too');
+        const boss = bot('basic', x + 500, y);
+        boss.isBot = false; boss.isRoyaleBoss = true;
+        ao.botGoal = () => ({ kind: 'boss', target: boss, x: boss.x, y: boss.y, fight: true });
+        b._lastDamageSource = null; b._lastDamageAt = 0;
+        const bc = c.candidate(now);
+        assert.ok(bc.kind === 'fight' && bc.target === boss, 'boss hunt: on the boss: ' + bc.kind);
+        boss.kill();
+    } finally { ao.botGoal = realGoal; }
+    b.kill(); p.kill(); loop(2);
+});
+
+test('spawns: never inside the Always-On storm or the ring it shrinks over in the next seconds', () => {
+    const ao = require(path.join(SERVER, 'game', 'terrain', 'alwaysOn.js'));
+    const realSnap = ao.stormSnapshot, realEnv = process.env.ROYALE_ALWAYS_ON;
+    const cx = 300, cy = -200;
+    try {
+        process.env.ROYALE_ALWAYS_ON = '1';
+        ao.stormSnapshot = () => ({ a: 1, ao: 1, cx, cy, r: 900, n: 898 });
+        assert.equal(royale._spawnSafeAt(cx, cy), true, 'the middle is fine');
+        assert.equal(royale._spawnSafeAt(cx + 880, cy), false, 'just inside the edge is not');
+        assert.equal(royale._spawnSafeAt(cx + 1500, cy), false, 'the storm is not');
+        for (let i = 0; i < 12; i++) {
+            const h = royale._safeSpawnSpot(null, i % 2 === 0, 0);
+            assert.ok(royale._spawnSafeAt(h.x, h.y), 'every pick is inside: ' + Math.round(Math.hypot(h.x - cx, h.y - cy)));
+        }
+    } finally { ao.stormSnapshot = realSnap; if (realEnv == null) delete process.env.ROYALE_ALWAYS_ON; else process.env.ROYALE_ALWAYS_ON = realEnv; }
+    const src = require('fs').readFileSync(path.join(SERVER, 'game', 'gamemodes', 'scripts', 'dig_royale.js'), 'utf8');
+    assert.match(src, /guard\('spawn storm check', \(\) => \{\s+if \(spawnSafeAt\(body\.x, body\.y\)\) return;/, 'every spawn path ends with the storm check');
+    assert.match(src, /!fairPlay\.edgeSafe\(home\.x, home\.y, storm\.snapshot\(\)\) \|\| !spawnSafeAt\(home\.x, home\.y\)/, 'a base spawn too');
+});
+
+test('drills: a death never costs a tier', () => {
+    const shop = require(path.join(SERVER, 'game', 'terrain', 'shop.js'));
+    const s = fakeSocket(120);
+    const p = spawn(120, V.x + 1500, V.y, s);
+    const ss = shop.stateOf(s);
+    for (const tier of [1, 3, 4, 5]) {
+        ss.drill = tier;
+        const r = shop.onDeath(p);
+        assert.equal(ss.drill, tier, 'still Drill ' + tier);
+        assert.equal(r.drillLost, 0);
+    }
+    assert.ok(!shop.catalog().some(i => /keep it when you die|lose a tier/i.test(i.desc || '')), 'the shop no longer says drills drop');
+    p.kill(); loop(1);
+});
+
 let failed = 0;
 for (const t of tests) {
     try { t.fn(); console.log('ok   ' + t.name); }

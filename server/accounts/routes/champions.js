@@ -31,8 +31,27 @@ function getChampions(ctx) {
     ctx.json(200, { ...cache.body, resetIn: Math.max(0, S.nextResetAt(now) - now) });
 }
 
+function postMine(ctx) {
+    ctx.limit('levels', ctx.ipKey);
+    const now = Date.now(), out = { on: process.env.ROYALE_ALWAYS_ON === '1', yesterday: null, today: null };
+    let ds = null;
+    try { ds = require('../dailyScores'); } catch (e) { return ctx.json(200, out); }
+    if (!out.on || !ds.available()) return ctx.json(200, out);
+    let a = null;
+    try { a = ctx.accountsOn ? ctx.auth() : null; } catch (e) { a = null; }
+    const g = ctx.body && ctx.body.guestId;
+    const who = a ? 'a:' + a.user.id : (typeof g === 'string' && /^[a-f0-9]{32}$/.test(g) ? 'g:' + g : null);
+    if (!who) return ctx.json(200, out);
+    try {
+        out.yesterday = ds.placeOf(S.dayKey(now - S.DAY_MS), who);
+        out.today = ds.placeOf(S.dayKey(now), who);
+    } catch (e) { }
+    ctx.json(200, out);
+}
+
 function register(router) {
     router.add('GET', '/api/champions', getChampions, { alwaysOn: true });
+    router.add('POST', '/api/champions/me', postMine, { alwaysOn: true });
 }
 
 module.exports = { register, build };

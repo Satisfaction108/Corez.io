@@ -166,7 +166,7 @@ test('the tutorial and the off switch drop nothing', () => {
     assert.ok(drops.fromChest({ x: 0, y: 0, supplyDrop: true }, null, () => 0));
 });
 
-test('drone nerf: every drone, swarm and minion hits other tanks 25% softer, stacked on the old nerfs', () => {
+test('drone nerf: every drone and minion hits other tanks 25% softer, stacked on the old nerfs; swarm drones hit 10% harder', () => {
     assert.equal(classBalance.HELPER_VS_TANKS, 0.75);
     const tank = (label, extra = {}) => { const r = { label, isPlayer: true, team: 1, ...extra }; r.master = r; return r; };
     const hit = (root, src, target = { isPlayer: true, team: 2 }) => classBalance.intoTank(target, Object.assign(src, { master: root }), 100);
@@ -180,7 +180,10 @@ test('drone nerf: every drone, swarm and minion hits other tanks 25% softer, sta
     const sp = tank('Spawner');
     near(hit(sp, { type: 'bullet', source: { type: 'minion', source: sp } }), 75);
     const bee = tank('Beekeeper');
-    near(hit(bee, { type: 'swarm', motionType: 'swarm', source: bee }), 100 * 0.72 * 0.75);
+    assert.equal(classBalance.SWARM_VS_TANKS, 1.1);
+    near(hit(bee, { type: 'swarm', motionType: 'swarm', source: bee }), 100 * 0.72 * 1.1);
+    const cr = tank('Cruiser');
+    near(hit(cr, { type: 'swarm', motionType: 'swarm', source: cr }), 110, 'the cruiser line');
     const sg = tank('Shotgun');
     near(hit(sg, { type: 'swarm', motionType: 'motor', source: sg }), 80, 'shotgun shells are typed swarm but are no drones');
     const botRoot = tank('Overseer', { isPlayer: false, isBot: true });
@@ -192,13 +195,13 @@ test('drone nerf: every drone, swarm and minion hits other tanks 25% softer, sta
     near(hit(ov, { type: 'drone', source: ov }, { isLootChest: true }), 100, 'chests take the same');
 });
 
-test('drone mining: a drone, swarm, minion or minion bullet digs 30% of a normal bullet', () => {
+test('drone mining: a drone, minion or minion bullet digs 30% of a normal bullet, a swarm drone 60%', () => {
     assert.equal(mining.HELPER_DIG, 0.3);
     const owner = { defs: ['basic'] };
     const normal = mining.rockDamageFor(owner, { type: 'bullet', digPower: 1 });
     const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, a + ' vs ' + b);
     near(mining.rockDamageFor(owner, { type: 'drone', digPower: 1 }), normal * 0.3);
-    near(mining.rockDamageFor(owner, { type: 'swarm', motionType: 'swarm', digPower: 1 }), normal * 0.3);
+    near(mining.rockDamageFor(owner, { type: 'swarm', motionType: 'swarm', digPower: 1 }), normal * 0.6);
     near(mining.rockDamageFor(owner, { type: 'swarm', motionType: 'motor', digPower: 1 }), normal * 0.8);
     near(mining.rockDamageFor(owner, { type: 'bullet', digPower: 1, source: { type: 'minion' } }), normal * 0.3);
     near(mining.rockDamageFor(owner, { type: 'trap', digPower: 1 }), normal * 0.8);

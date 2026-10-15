@@ -266,7 +266,16 @@ test('balance: damage perks stay small, every max is sane', () => {
     assert.equal(twin.length, 2);
     // round 10: the Twin Drill barrel shows, Drone Bay's stay hidden; both
     // only drill rock, twin shots are a Basic bullet at 0 score
-    for (const d of twin) { assert.ok(!d.PROPERTIES.HIDDEN, 'twin barrel visible'); assert.equal(d.PROPERTIES.FIXED_BULLET_SIZE, true); }
+    for (const d of twin) { assert.equal(d.PROPERTIES.HIDDEN, true, 'no extra barrel drawn'); assert.ok(!d.PROPERTIES.FIXED_BULLET_SIZE); }
+    const real = { canShoot: true, bulletType: { TYPE: 'bullet' }, settings: { reload: 12, size: 1.3, speed: 4.4, maxSpeed: 4.4, range: 1.1 }, length: 1.9, width: 0.85, aspect: 1, offset: 0.5, direction: Math.PI / 2, angle: 0.2 };
+    const twinOn = perks.gunDefs(fx, { guns: new Map([[1, real]]) }).filter(d => d.PROPERTIES.LABEL === 'Twin Drill');
+    for (const d of twinOn) {
+        const [len, wid, asp, x, y, ang] = d.POSITION;
+        assert.ok(Math.abs(len - 19) < 1e-9 && Math.abs(wid - 8.5) < 1e-9 && asp === 1, 'out of the real barrel');
+        assert.ok(Math.abs(x) < 1e-9 && Math.abs(y - 5) < 1e-9 && Math.abs(Math.abs(ang - 0.2 * 180 / Math.PI) - 5) < 1e-9, 'with a small angle off it');
+        const st = d.PROPERTIES.SHOOT_SETTINGS;
+        assert.ok(st.size === 1.3 && st.speed === 4.4 && st.maxSpeed === 4.4 && st.range === 1.1 && st.recoil === 0, 'the same bullet as the real barrel');
+    }
     const bay = defs.filter(d => d.PROPERTIES.LABEL === 'Drone Bay');
     assert.equal(bay.length, 4);
     for (const d of bay) { assert.equal(d.PROPERTIES.HIDDEN, true); assert.ok(d.PROPERTIES.MAX_CHILDREN >= 4, 'a bigger swarm, not stronger drones'); }
@@ -320,10 +329,12 @@ test('raid: the build and an open offer survive death; every new body gets it', 
     {
         const tg = perkGuns(p)[0];
         assert.equal(tg.rockOnly, true);
-        assert.ok(!tg.hidden && tg.alpha > 0, 'drawn on the tank');
-        const sz = tg.basicBulletSize();
+        assert.ok(tg.hidden && tg.alpha === 0, 'no extra barrel drawn');
+        const real = [...p.guns.values()].find(g => !g.isRaidPerk && g.canShoot);
+        const shot = (g) => g.shotBodySize() * g.width * g.settings.size / 2;
+        assert.ok(Math.abs(shot(tg) - shot(real)) < 1e-9, 'the same size as the tank\'s own bullet: ' + shot(tg) + ' vs ' + shot(real));
         const g0 = p.growthMult; p.growthMult = 2;
-        assert.equal(tg.basicBulletSize(), sz, 'not scaled by raid growth');
+        assert.ok(Math.abs(shot(tg) - shot(real)) < 1e-9, 'and still after raid growth');
         p.growthMult = g0;
     }
     const maxHp = p.health.max;

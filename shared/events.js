@@ -23,40 +23,40 @@
             name: 'Raid Night',
             start: '2026-10-04T03:00:00Z',   // Sat Oct 3, 8:00 PM Pacific
             durationMin: 60,
-            blurb: 'Every Saturday we all play one raid together for prizes!',
-            liveBlurb: 'Everyone is in one raid. Hit Play to jump in.',
+            blurb: 'Every Saturday we all play together for prizes!',
+            liveBlurb: 'Everyone is playing together now. Hit Play to jump in.',
         },
         {
             id: 'raid-night-2',
             name: 'Raid Night',
             start: '2026-10-11T03:00:00Z',   // Sat Oct 10, 8:00 PM Pacific
             durationMin: 60,
-            blurb: 'Every Saturday we all play one raid together for prizes!',
-            liveBlurb: 'Everyone is in one raid. Hit Play to jump in.',
+            blurb: 'Every Saturday we all play together for prizes!',
+            liveBlurb: 'Everyone is playing together now. Hit Play to jump in.',
         },
         {
             id: 'raid-night-3',
             name: 'Raid Night',
             start: '2026-10-18T03:00:00Z',   // Sat Oct 17, 8:00 PM Pacific
             durationMin: 60,
-            blurb: 'Every Saturday we all play one raid together for prizes!',
-            liveBlurb: 'Everyone is in one raid. Hit Play to jump in.',
+            blurb: 'Every Saturday we all play together for prizes!',
+            liveBlurb: 'Everyone is playing together now. Hit Play to jump in.',
         },
         {
             id: 'raid-night-4',
             name: 'Raid Night',
             start: '2026-10-25T03:00:00Z',   // Sat Oct 24, 8:00 PM Pacific
             durationMin: 60,
-            blurb: 'Every Saturday we all play one raid together for prizes!',
-            liveBlurb: 'Everyone is in one raid. Hit Play to jump in.',
+            blurb: 'Every Saturday we all play together for prizes!',
+            liveBlurb: 'Everyone is playing together now. Hit Play to jump in.',
         },
         {
             id: 'raid-night-5',
             name: 'Raid Night',
             start: '2026-11-01T03:00:00Z',   // Sat Oct 31, 8:00 PM Pacific
             durationMin: 60,
-            blurb: 'Every Saturday we all play one raid together for prizes!',
-            liveBlurb: 'Everyone is in one raid. Hit Play to jump in.',
+            blurb: 'Every Saturday we all play together for prizes!',
+            liveBlurb: 'Everyone is playing together now. Hit Play to jump in.',
         },
     ];
 

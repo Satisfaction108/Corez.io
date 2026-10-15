@@ -262,6 +262,22 @@ test('rammer', () => {
     assert.ok(mining.grindSecondsFor(owner(12, 12)) < mining.grindSecondsFor(owner(9, 12)));
 });
 
+test('drones and minions already out grow with the tank, the same as fresh ones (growth^0.5)', () => {
+    const kid = (g) => ({ SIZE: 10, coreSize: 10, _growG: g, isDead: () => false });
+    const a = kid(1), b = kid(1), c = kid(1.5625), shell = { SIZE: 10, coreSize: 10, isDead: () => false };
+    const turret = { guns: new Map([[2, { children: [b] }]]), turrets: new Map() };
+    const body = { growthMult: 2.25, guns: new Map([[1, { children: [a, c, shell] }]]), turrets: new Map([[3, turret]]) };
+    growth.resizeKids(body);
+    assert.ok(Math.abs(a.SIZE - 15) < 1e-9 && Math.abs(a.coreSize - 15) < 1e-9, 'hull drone ' + a.SIZE);
+    assert.ok(Math.abs(b.SIZE - 15) < 1e-9, 'turret drone ' + b.SIZE);
+    assert.ok(Math.abs(c.SIZE - 12) < 1e-9, 'one made mid-growth ' + c.SIZE);
+    assert.equal(shell.SIZE, 10, 'children with no growth stamp are left alone');
+    growth.resizeKids(body);
+    assert.ok(Math.abs(a.SIZE - 15) < 1e-9, 'idempotent');
+    const gun = require('fs').readFileSync(path.join(SERVER, 'game', 'entities', 'gun.js'), 'utf8');
+    assert.equal((gun.match(/o\._growG = this\.growG\(\);/g) || []).length, 2, 'every shot is stamped with the growth it was made at');
+});
+
 let failed = 0;
 for (const t of tests) {
     try { t.fn(); console.log('ok   ' + t.name); }

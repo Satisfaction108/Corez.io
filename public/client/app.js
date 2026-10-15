@@ -4247,7 +4247,8 @@ import * as aoHud from './alwaysOn.js';
             const fs = Math.min(30, Math.max(13, R * 0.4));
             const top = (st.t || st.h) ? R * 1.33 * 1.1 + Math.max(4, R * 0.085) : R * 1.08;
             const ty = sy - top - fs * 0.5 - Math.max(6, R * 0.12);
-            worldLabel(c, o.name, sx, ty, fs, o.color || st.c || HUD.head, 1, 1, fs * o.name.length * 0.55, fs * 1.4);
+            const oName = padName(o.name);
+            worldLabel(c, oName, sx, ty, fs, o.color || st.c || HUD.head, 1, 1, fs * oName.length * 0.55, fs * 1.4);
             // contested: callout + the banner's remaining HP, shown to both sides
             if (st.cont && (st.h || 0) < 0.5) {
                 const blink = 0.65 + 0.35 * Math.sin(performance.now() / 240);
@@ -6351,7 +6352,7 @@ import * as aoHud from './alwaysOn.js';
             let skill = gui.skills[i],
                 name = namedata[statIdx],
                 level = skill.amount,
-                col = HUD.theme === "light" ? statSat(color[skill.color]) : statBright(color[skill.color]),
+                col = statBright(color[skill.color]),
                 cap = skill.softcap,
                 maxLevel = skill.cap;
 
@@ -6373,8 +6374,15 @@ import * as aoHud from './alwaysOn.js';
             const barEdge = lightBars ? "#7a7a7a" : color.black, barTrack = lightBars ? "#c4c4c4" : color.grey;
             drawBar(x + height / 2, x - height / 2 + len * ska(cap) - 14, y + height / 2, height - 2.8 + config.graphical.barChunk, barEdge);
             drawBar(x + height / 2, x + height / 2 + len * ska(cap) - gap, y + height / 2, height - 3, barTrack);
-            drawBar(x + height / 2, x + height / 2 + len * ska(level) - gap, y + height / 2, height - 5.5 + config.graphical.barChunk, barEdge);
-            drawBar(x + height / 2, x + height / 2 + len * ska(level) - gap, y + height / 2, height - 3.5, col);
+            if (level > 0) {
+                drawBar(x + height / 2, x + height / 2 + len * ska(level) - gap, y + height / 2, height - 5.5 + config.graphical.barChunk, barEdge);
+                drawBar(x + height / 2, x + height / 2 + len * ska(level) - gap, y + height / 2, height - 3.5, col);
+            } else {
+                ctx[2].save();
+                roundRectPath(ctx[2], x + 2, y + 2.5, 6, height - 5, 2);
+                ctx[2].fillStyle = col; ctx[2].fill();
+                ctx[2].restore();
+            }
 
             if (blocking) {
                 ctx[2].lineWidth = 1;
@@ -6479,21 +6487,6 @@ import * as aoHud from './alwaysOn.js';
         return v;
     }
     function statInk(col) { return mixHex(col, "#000000", 0.45); }
-    const statSats = new Map();
-    function statSat(col) {
-        let v = statSats.get(col);
-        if (v !== undefined) return v;
-        v = col;
-        const q = hexRgb(col);
-        if (q) {
-            const lum = (0.299 * q[0] + 0.587 * q[1] + 0.114 * q[2]) / 255;
-            if (lum > 0.72) v = mixHex(col, "#000000", 0.22);
-            else if (lum < 0.3) v = mixHex(col, "#ffffff", 0.25);
-        }
-        if (statSats.size > 64) statSats.clear();
-        statSats.set(col, v);
-        return v;
-    }
 
     // where the death card is, as fractions of the screen
     function deathCardFrac(x, y, w, h) {
@@ -6560,6 +6553,10 @@ import * as aoHud from './alwaysOn.js';
             const load = g.cap > 0 ? Math.min(1, g.carried / g.cap) : 0,
                 blink = load >= 1 && Math.floor(Date.now() / 160) % 2 === 0;
             hudDrawn.wallet = { x: left, y: ry - pillH / 2, w: full, h: pillH };
+            const kPill = gatePills();
+            ctx[2].save();
+            ctx[2].globalAlpha *= kPill;
+            ctx[2].translate(0, (1 - kPill) * 8);
             const banked = g.banked | 0;
             hudBar(ctx[2], left, ry - pillH / 2, bankW, pillH, 1, BANKED_PILL);
             const bankTries = ["Banked: " + util.formatLargeNumber(banked), "Banked: " + shortGems(banked)];
@@ -6576,6 +6573,7 @@ import * as aoHud from './alwaysOn.js';
             const carTxt = "Carried: " + util.formatLargeNumber(g.carried | 0);
             let cs2 = 13; while (cs2 > 9 && hudTextW(carTxt, cs2) > carW - 12) cs2 -= 0.5;
             drawText(carTxt, carX + carW / 2 + 0.5, ry + 6 - (13 - cs2) * 0.35, cs2, color.guiwhite, "center");
+            ctx[2].restore();
             drawBankPops(global.screenWidth / 2, Math.round(y - 10 - 4) - 1 - 30);
         }
         ctx[2].lineWidth = 4;
@@ -6771,7 +6769,7 @@ import * as aoHud from './alwaysOn.js';
         c.save();
         c.globalAlpha *= alpha;
         c.translate(cx, y + h / 2); c.scale(k, k); c.translate(-cx, -(y + h / 2));
-        hudPanel(c, cx - w / 2, y, w, h, { fill: "rgba(43,33,20,0.95)", r: 14 });
+        hudPanel(c, cx - w / 2, y, w, h, { fill: HUD.theme === "light" ? HUD.card : "rgba(43,33,20,0.95)", r: 14 });
         c.strokeStyle = HUD.gold; c.lineWidth = 3;
         roundRectPath(c, cx - w / 2 + 1.5, y + 1.5, w - 3, h - 3, 13);
         c.stroke();
@@ -6836,11 +6834,11 @@ import * as aoHud from './alwaysOn.js';
         c.save();
         c.globalAlpha = glide;
         hudPanel(c, x, y, W, H, { fill: HUD.solid, r: HUD.r + 2 });
-        hudTitle(v.isOutpost ? "Team Bank · 80% credit" : (royaleActive() ? "Vault · 100% credit" : "Team vault"),
+        hudTitle(v.isOutpost ? (aoNow() ? "Bank · 80% credit" : "Team Bank · 80% credit") : (royaleActive() ? "Vault · 100% credit" : "Team vault"),
                  x + W / 2, y + 19, 17, teamCol, "center");
         // the first Team Bank you stand on says what it is (round 9)
-        if (v.isOutpost && buildBtnLabels.firstTime("teamBank", () => window.localStorage)) global.createMessage(buildBtnLabels.TEAM_BANK_TIP, 7000);
-        c.fillStyle = "rgba(0,0,0,0.6)";
+        if (v.isOutpost && !aoNow() && buildBtnLabels.firstTime("teamBank", () => window.localStorage)) global.createMessage(buildBtnLabels.TEAM_BANK_TIP, 7000);
+        c.fillStyle = HUD.theme === "light" ? "rgba(0,0,0,0.15)" : "rgba(0,0,0,0.6)";
         c.fillRect(x + 14, y + 33, W - 28, 2);
         drawText(scoreText.BANK + "  " + util.formatLargeNumber(g.banked | 0), x + 16, y + 49, 12, color.teal, "left", true);
         drawText("Carried  " + util.formatLargeNumber(g.carried | 0), x + W - 16, y + 49, 12, HUD.gold, "right", true);
@@ -6950,7 +6948,7 @@ import * as aoHud from './alwaysOn.js';
             const rise  = base + 42 * (1 - Math.pow(1 - t, 2.2));
             const alpha = t < 0.55 ? 1 : 1 - (t - 0.55) / 0.45;
             const heat  = Math.min(1, (p.combo || 0) / 8);
-            const size  = 16 + Math.min(10, p.value / 25) + Math.min(6, (p.combo || 0));
+            const size  = 14 + Math.min(6, p.value / 40) + Math.min(4, (p.combo || 0) / 2);
             ctx[2].save();
             ctx[2].globalAlpha = alpha;
             drawText("+" + p.value,
@@ -6979,13 +6977,15 @@ import * as aoHud from './alwaysOn.js';
         const a = Math.min(1, left * 3) * (raidHeat.slamUp() ? 0.45 : 0.85);
         const c = ctx[2];
         c.save();
-        drawText("Mining x" + n + "  ·  +" + bonus + "% gems", cx, cy, 11.5, "#f2d69a", "center", true, a, 4);
-        const bw = 80, bx = cx - bw / 2, by = cy + 9;
+        const label = "Mining x" + n + "  ·  +" + bonus + "% gems";
+        const pw = Math.max(110, hudTextW(label, 11) + 22), ph = 28, px = Math.round(cx - pw / 2), py = Math.round(cy - 10);
+        hudPanel(c, px, py, pw, ph, { alpha: a, r: 8 });
+        drawText(label, cx, py + 10, 11, HUD.gold, "center", true, a);
+        const bw = pw - 20, bx = px + 10, by = py + ph - 8;
         c.globalAlpha = a;
-        c.fillStyle = "rgba(0,0,0,0.55)";
-        c.fillRect(bx - 1, by - 1, bw + 2, 6);
-        c.fillStyle = "#ffd75e";
-        c.fillRect(bx, by, bw * Math.max(0, left), 4);
+        roundRectPath(c, bx, by, bw, 4, 2);
+        c.fillStyle = HUD.track; c.fill();
+        if (left > 0) { roundRectPath(c, bx, by, Math.max(4, bw * left), 4, 2); c.fillStyle = HUD.theme === "light" ? "#c99a1e" : "#ffd75e"; c.fill(); }
         c.restore();
     }
 
@@ -7169,6 +7169,88 @@ import * as aoHud from './alwaysOn.js';
     applyHudTheme();
     try { new MutationObserver(applyHudTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) { void e; }
     window.dwHudTheme = () => HUD.theme;
+    const nxUnlocks = new Map();
+    function nxFresh() { return !!(global.nxKnown && (global.nxStage | 0) === 0 && !global.tutorialMode); }
+    function nxGate(key, cond) {
+        if (!nxFresh()) return 1;
+        const now = performance.now();
+        let t = nxUnlocks.get(key);
+        if (t == null) {
+            if (!cond) return 0;
+            t = now;
+            nxUnlocks.set(key, t);
+        }
+        return Math.min(1, (now - t) / 320);
+    }
+    function nxAliveMs() { return global.died ? 0 : performance.now() - (global.spawnedAt || performance.now()); }
+    function nxEventNear() { const a = global.royale && global.royale.ao; return !!(a && (a.ev || (a.nx && a.nx.a))); }
+    function gatePanel() { return nxGate("panel", nxAliveMs() > 25000 || nxEventNear()); }
+    const pillBase = { at: -1, carried: 0 };
+    function gatePills() {
+        const g = global.gems || {};
+        if (pillBase.at !== (global.spawnedAt || 0)) { pillBase.at = global.spawnedAt || 0; pillBase.carried = g.carried | 0; }
+        if (nxAliveMs() < 3000) pillBase.carried = Math.max(pillBase.carried, g.carried | 0);
+        return nxGate("pills", (g.carried | 0) > pillBase.carried || (g.banked | 0) > 0);
+    }
+    function gateKit() { return nxGate("kit", !!(global.vault && global.vault.doneAt > 0) || (global.abilityUsedAt || 0) > 0 || (global.kitUsedAt || 0) > 0 || (global.abil && global.abil.dashAt > 0) || nxAliveMs() > 40000); }
+    window.dwNxGates = () => ({ fresh: nxFresh(), panel: gatePanel(), pills: gatePills(), kit: gateKit() });
+    function padName(n) { return aoNow() ? String(n || "").replace(/ Team Bank$/, " Bank") : n; }
+    const SITE_THEMES = [
+        { id: "light", name: "Light", note: "Bright panels, dark text", bg: "#e4e4e4", panel: "#ffffff", ink: "#1f1f1f" },
+        { id: "dark", name: "Dark", note: "Dark panels, light text", bg: "#2a2b30", panel: "#3a3c42", ink: "#f2f2f2" },
+    ];
+    function setSiteTheme(id) {
+        const t = SITE_THEMES.find(x => x.id === id) ? id : "light";
+        try { document.documentElement.setAttribute("data-theme", t); } catch (e) { void e; }
+        try { localStorage.setItem("osaHomeTheme", t); localStorage.setItem("dwThemeV4", "1"); } catch (e) { void e; }
+        try { const bar = document.querySelector('meta[name="theme-color"]'); if (bar) bar.setAttribute("content", t === "dark" ? "#2a2b30" : "#e4e4e4"); } catch (e) { void e; }
+    }
+    function syncThemeCards() {
+        const box = document.getElementById("spThemeCards");
+        if (!box) return;
+        const now = hudThemeNow();
+        for (const el of box.children) {
+            const on = el.dataset.theme === now;
+            el.classList.toggle("on", on);
+            el.setAttribute("aria-checked", on ? "true" : "false");
+        }
+    }
+    function buildThemeCards() {
+        const box = document.getElementById("spThemeCards");
+        if (!box || box.dataset.ready) return;
+        box.dataset.ready = "1";
+        for (const t of SITE_THEMES) {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.className = "sp-theme-card";
+            b.dataset.theme = t.id;
+            b.setAttribute("role", "radio");
+            const pv = document.createElement("span");
+            pv.className = "sp-theme-preview";
+            pv.style.background = t.bg;
+            const pp = document.createElement("i");
+            pp.style.background = t.panel;
+            const pl = document.createElement("b");
+            pl.style.background = t.ink;
+            pp.appendChild(pl);
+            pv.appendChild(pp);
+            const nm = document.createElement("span");
+            nm.className = "sp-theme-name";
+            nm.textContent = t.name;
+            const nt = document.createElement("span");
+            nt.className = "sp-theme-note";
+            nt.textContent = t.note;
+            b.append(pv, nm, nt);
+            b.addEventListener("click", (e) => { e.stopPropagation(); setSiteTheme(t.id); syncThemeCards(); });
+            box.appendChild(b);
+        }
+        syncThemeCards();
+    }
+    try {
+        if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", buildThemeCards);
+        else buildThemeCards();
+        new MutationObserver(syncThemeCards).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    } catch (e) { void e; }
     try { document.fonts && document.fonts.load('700 20px Ubuntu'); document.fonts && document.fonts.load("400 20px 'Lilita One'"); } catch (e) { }
     function hudPanel(c, x, y, w, h, o = {}) {
         const r = Math.min(o.r != null ? o.r : HUD.r, 10, h / 2);
@@ -7477,7 +7559,7 @@ import * as aoHud from './alwaysOn.js';
     });
     // distances read as metres everywhere (round 8): "570m", "2.1km"
     function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "km" : Math.round(d) + "m"; }
-    stormFx.init({ hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), hudPanel, drawText, fmtDist });
+    stormFx.init({ HUD, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), hudPanel, drawText, fmtDist });
     // hunted marks, the Core, drop-ins and the screen juice (raidHeat.js, juice.js)
     raidHeat.init({ HUD, rawInk, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c), cardHold: () => deathCardUp(), crateSprite: () => chestSprite("crate"), crateSpriteR: CHEST_SPRITE_R });
     achCard.init({ HUD, hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, rr: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r) });
@@ -8093,12 +8175,13 @@ import * as aoHud from './alwaysOn.js';
         const a = 0.82 + 0.18 * (n.pulse || 1);
         c.save();
         c.globalAlpha = a;
+        const light = HUD.theme === "light";
         roundRectPath(c, x, y, w, h, h / 2);
-        c.fillStyle = "#3a0d14"; c.fill();
-        c.lineWidth = 2.5; c.strokeStyle = n.col; c.stroke();
+        c.fillStyle = light ? "rgba(255,255,255,0.92)" : "#3a0d14"; c.fill();
+        c.lineWidth = 2.5; c.strokeStyle = light ? panelInk(n.col) : n.col; c.stroke();
         c.restore();
-        hudTitle(n.text, x + 11, y + h / 2, 12, n.col, "left", a);
-        if (n.sub) drawText(n.sub, x + 11 + tw + 10, y + h / 2, 11, "#ffd0d6", "left", true, a);
+        hudTitle(n.text, x + 11, y + h / 2, 12, light ? panelInk(n.col) : n.col, "left", a);
+        if (n.sub) drawText(n.sub, x + 11 + tw + 10, y + h / 2, 11, light ? "#444" : "#ffd0d6", "left", true, a);
         return y + h + NOTE_GAP;
     }
     // ── the lane message ───────────────────────────────────────────────
@@ -8165,7 +8248,10 @@ import * as aoHud from './alwaysOn.js';
         for (let i = msgs.length - 1; i >= 0; i--) {
             const m = msgs[i];
             if (m === lane.cur) continue;
-            if (!m.laneAt) m.laneAt = now;
+            if (!m.laneAt) {
+                m.laneAt = now;
+                if (aoNow() && !m.rich && typeof m.text === "string") m.text = m.text.replace(/ Team Bank/g, " Bank").replace(/\s*Break its banner[^.]*\./g, "");
+            }
             if (!m.rich && LANE_SIDE.test(laneText(m))) { sideToast(laneText(m), /^Achievement/i.test(laneText(m)) ? "ach" : "ok"); msgs.splice(i, 1); continue; }
             if (!(m.duration > 0) || toastSaid(laneText(m)) || LANE_DUPE.test(laneText(m)) || LANE_DROP.test(laneText(m)) || now - m.laneAt > LANE_STALE_MS) { msgs.splice(i, 1); continue; }
             m.time = now;
@@ -8272,6 +8358,7 @@ import * as aoHud from './alwaysOn.js';
         // the one message row: server lines, your kills, side cards
         try { laneMessage(push); } catch (e) { /* never break the frame */ }
         list.sort((a, b) => a.pri - b.pri);
+        if (gatePanel() <= 0) for (let i = list.length - 1; i >= 0; i--) if (list[i].pri > 0) list.splice(i, 1);
         const c = ctx[2], cx = global.screenWidth / 2, maxW = noteMaxW();
         // a badge (hunted) goes left of the clock plate, level with its top row
         const ck = hudDrawn.clock;
@@ -8340,7 +8427,15 @@ import * as aoHud from './alwaysOn.js';
                 y = sy0 + SH + HUD.lip + 8;
                 return;
             }
-            if (r.ao && r.ao.on) { y = aoHud.drawPanel(c, cx, y, aoApi()); return; }
+            if (r.ao && r.ao.on) {
+                const kP = gatePanel();
+                if (kP <= 0) return;
+                c.save();
+                c.globalAlpha *= kP;
+                c.translate(0, (1 - kP) * -10);
+                try { y = aoHud.drawPanel(c, cx, y, aoApi()); } finally { c.restore(); }
+                return;
+            }
             if (topMin.on) { y = drawTopStrip(c, cx, y, stormTxt, stormCol); return; }
             const PW = 300, rowH = 38, footH = (placeTxt || stormTxt) ? 24 : 0, PH = rowH + footH;
             const px = Math.round(cx - PW / 2), py = y;
@@ -8874,6 +8969,7 @@ import * as aoHud from './alwaysOn.js';
         chatPanelRect = null;
         const cv = global.canvas;
         const open = !!(global.showChat && cv && cv.chatInput);
+        if (!open && !global.mobile && gatePanel() <= 0) return;
         const duo = !!(global.royale && global.royale.duos);
         // dead in solo: nobody to talk to until you drop again
         if (open && global.died && !duo) { try { cv.chatListener("chatInput", { keyCode: global.KEY_ESC, preventDefault() { } }); } catch (e) { /* */ } }
@@ -9712,7 +9808,7 @@ import * as aoHud from './alwaysOn.js';
     function drawKitBox(spacing, alcoveSize) {
         const want = shopUiMode() && !global.died && !global.mobile && global.gems && global.gems.cap > 0 &&
             (!global.tutorialMode || (window.dwTutUi === "kit" || (window.dwTutAllow || "").includes("kit") || (global.shop.state && (global.shop.state.kitOrder || []).length))) &&
-            (global.tutorialMode || nxShows("kit", { owned: newcomer.ownsKit() }));
+            (global.tutorialMode || nxShows("kit", { owned: newcomer.ownsKit() })) && gateKit() > 0;
         kitGlide.set(want ? 1 : 0);
         const g = kitGlide.get();
         kitBoxTop = 0;
@@ -9973,9 +10069,13 @@ import * as aoHud from './alwaysOn.js';
         const want = shopUiMode() && !global.died && !global.mobile && global.gems && global.gems.cap > 0 && hudDrawn.wallet &&
             // a first raid: the dash and ability chips come in with an ability
             (global.tutorialMode || nxShows("ability", { owned: newcomer.ownsAbility() }));
-        if (!want) return;
+        const kAb = gateKit();
+        if (!want || kAb <= 0) return;
         const cr = global.canvas.height / global.screenHeight / global.ratio;
-        abilityBarRect = abilityFx.drawHud(ctx[2], hudDrawn.wallet, { x: global.mouse.x / (cr * global.ratio), y: global.mouse.y / (cr * global.ratio) });
+        ctx[2].save();
+        ctx[2].globalAlpha *= kAb;
+        ctx[2].translate((1 - kAb) * 14, 0);
+        try { abilityBarRect = abilityFx.drawHud(ctx[2], hudDrawn.wallet, { x: global.mouse.x / (cr * global.ratio), y: global.mouse.y / (cr * global.ratio) }); } finally { ctx[2].restore(); }
         if (abilityBarRect) hudDrawn.ability = abilityBarRect;
     }
     // ── new ability reveal ─────────────────────────────────────────────
@@ -10317,7 +10417,7 @@ import * as aoHud from './alwaysOn.js';
         c.save();
         c.globalAlpha = g;
         hudPanel(c, x, y, W, H, { fill: HUD.solid, r: HUD.rBig });
-        c.fillStyle = "rgba(0,0,0,0.6)";
+        c.fillStyle = HUD.theme === "light" ? "rgba(0,0,0,0.15)" : "rgba(0,0,0,0.6)";
         c.fillRect(x + 14, y + 50, W - 28, 2);
         gemPath(c, x + 28, y + 26, 10);
         c.fillStyle = HUD.gold; c.fill();
@@ -12074,7 +12174,7 @@ import * as aoHud from './alwaysOn.js';
             }
             // small white label on the big map (hover pass draws gold)
             if (nameSize > 0 && o.id !== hoverOutpostId) {
-                drawText(o.name, Math.round(mx), Math.round(my - s2 - 6), nameSize * 0.75, color.guiwhite, "center", false, 0.75);
+                drawText(padName(o.name), Math.round(mx), Math.round(my - s2 - 6), nameSize * 0.75, color.guiwhite, "center", false, 0.75);
             }
         }
 

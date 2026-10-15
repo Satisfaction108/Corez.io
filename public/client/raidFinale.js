@@ -598,7 +598,7 @@ export function draw() {
     if (t < TITLE_OUT + 300) {
         const k = Math.min(1, t / 200) * (t > FREEZE_OUT - 300 ? clamp((FREEZE_OUT + 200 - t) / 500) : 1);
         c.globalAlpha = 0.34 * k;
-        c.fillStyle = "#1a1526";
+        c.fillStyle = A.HUD && A.HUD.theme === "light" ? "#ffffff" : "#1a1526";
         c.fillRect(0, 0, W, H);
         if (t < 160) {
             c.globalAlpha = (still ? 0.3 : 0.6) * (1 - t / 160);
@@ -1169,7 +1169,7 @@ function drawDock() {
     const k = clamp((now - D.at) / 250) * clamp((D.at + DOCK_MS - now) / 600);
     c.save();
     c.globalAlpha = 0.5 * k;
-    c.fillStyle = "#0d0b12";
+    c.fillStyle = HUD && HUD.theme === "light" ? "#ffffff" : "#0d0b12";
     c.fillRect(0, 0, W, H);
     c.globalAlpha = k;
     // everything fully in: no slide, no tally

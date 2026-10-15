@@ -1,15 +1,10 @@
-// The hint under the guest name box on the home screen: names need 5
-// characters and nothing rude (shared/profanity.js, window.DWProfanity, the
-// same check the server makes). A typed name that fails holds Play until
-// it's fixed or cleared; an empty box gets a random name.
-
 const P = () => window.DWProfanity;
 
 function hintFor(value) {
     const p = P();
     const s = String(value || "").trim();
     if (!s) return "";
-    if (!p) return Array.from(s).length < 5 ? "Names need at least 5 characters." : "";
+    if (!p) return Array.from(s).length < 2 ? "Names need at least 2 characters." : "";
     const why = p.nameProblem(s);
     if (why === "short") return "Names need at least " + p.MIN_NAME + " characters.";
     if (why === "rude") return "Pick a different name.";

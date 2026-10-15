@@ -19,12 +19,11 @@ const SATCHEL_STEP = 4000;
 // already has them (old saves, twists, the tutorial). `fresh`: only sold
 // with the ability system on.
 const ITEMS = [
-    // drills: one tier at a time, lose a tier on death
     { id: "drill1", cat: "drill", tier: 1, name: "Drill I",   price: 400,  desc: "You mine 25% faster." },
     { id: "drill2", cat: "drill", tier: 2, name: "Drill II",  price: 900,  desc: "You mine 50% faster." },
     { id: "drill3", cat: "drill", tier: 3, name: "Drill III", price: 1600, desc: "You mine 80% faster." },
     { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 2600, desc: "You mine 115% faster." },
-    { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 4000, desc: "You mine 160% faster, and you keep it when you die." },
+    { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 4000, desc: "You mine 160% faster, and you dig at full speed right after you respawn." },
     // gear: timed (GEAR_MS); `on` is the message shown when it starts
     { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, desc: "Gives you one extra stat point that you keep after dying. You can buy up to 10 per raid.", aoDesc: "Gives you one extra stat point that you keep after dying. You can buy up to 10." },
     { id: "scanner",   cat: "gear", name: "Ore Scanner",        price: 1000, desc: "Shows shard and emerald veins within 1.5km on your minimap for 5 minutes.", on: "Veins near you now show on your minimap." },
@@ -245,7 +244,20 @@ function armOf(body) {
     if (s) return s.arm || null;
     return (body && body._twistArm) || null;
 }
-function sidearmDef(id) {
+const POD_LAYOUTS = [[90, 270], [135, 225], [45, 315], [160, 200]];
+function podAngles(body) {
+    const taken = [];
+    if (body && body.guns) {
+        for (const gun of body.guns.values()) {
+            if (!gun || gun.isSidearm || gun.isRaidPerk || gun.hidden) continue;
+            taken.push(((gun.angle * 180 / Math.PI) % 360 + 360) % 360);
+        }
+    }
+    const gap = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
+    for (const layout of POD_LAYOUTS) if (layout.every(a => taken.every(t => gap(a, t) >= 30))) return layout;
+    return POD_LAYOUTS[0];
+}
+function sidearmDef(id, body) {
     const { combineStats } = require('../../lib/definitions/facilitators.js');
     const g = require('../../lib/definitions/gunvals.js');
     // hidden guns: the shot appears at the hull and flies at the cursor
@@ -267,14 +279,17 @@ function sidearmDef(id) {
     // Two battleship barrels a side. Gun X/Y are in the gun's rotated frame
     // (offset is rotated by direction + angle), so for a sideways gun X is the
     // distance out on the flank and Y is fore/aft.
-    if (id === "pod") return [[7, -4.5, 90, 0], [7, 4.5, 90, 0.5], [7, 4.5, 270, 0.25], [7, -4.5, 270, 0.75]].map(([x, y, ang, delay]) => ({
-        POSITION: [9, 7, 0.7, x, y, ang, delay],
-        PROPERTIES: {
-            SHOOT_SETTINGS: combineStats([g.swarm, g.battleship, { reload: 1.15, damage: 1.15, health: 1.1 }]),
-            TYPE: "swarm", ALT_FIRE: true, LABEL: "Swarm Barrel", COLOR: 16,
-            STAT_CALCULATOR: "swarm",
-        },
-    }));
+    if (id === "pod") {
+        const [a1, a2] = podAngles(body);
+        return [[7, -4.5, a1, 0], [7, 4.5, a1, 0.5], [7, 4.5, a2, 0.25], [7, -4.5, a2, 0.75]].map(([x, y, ang, delay]) => ({
+            POSITION: [9, 7, 0.7, x, y, ang, delay],
+            PROPERTIES: {
+                SHOOT_SETTINGS: combineStats([g.swarm, g.battleship, { reload: 1.15, damage: 1.15, health: 1.1 }]),
+                TYPE: "swarm", ALT_FIRE: true, LABEL: "Swarm Barrel", COLOR: 16,
+                STAT_CALCULATOR: "swarm", MAX_CHILDREN: 40,
+            },
+        }));
+    }
     return null;
 }
 
@@ -300,7 +315,7 @@ function detachSidearm(body) {
 
 function attachSidearm(body, id) {
     if (!body || body.isDead?.()) return false;
-    const def = sidearmDef(id);
+    const def = sidearmDef(id, body);
     if (!def) return false;
     if (body.sidearmGun && body.guns.get(body.sidearmGun.id) === body.sidearmGun && body.sidearmId === id) return true;
     detachSidearm(body);
@@ -792,10 +807,8 @@ function useKit(socket, slot, tx, ty, itemId) {
 function onDeath(body) {
     const s = shopOf(body);
     if (!s) return { drillLost: 0 };
-    let drillLost = 0;
-    if (s.drill > 0 && s.drill < 5) { s.drill--; drillLost = 1; }
-    if (body.socket) talkState(body.socket, drillLost ? "Your drill dropped a tier." : "");
-    return { drillLost };
+    if (body.socket) talkState(body.socket, "");
+    return { drillLost: 0 };
 }
 
 // ── pad tick ───────────────────────────────────────────────────────────

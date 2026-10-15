@@ -47,18 +47,20 @@ test('chat: bad words become asterisks, the rest of the line stays', () => {
     assert.equal(P.mask(''), '');
 });
 
-test('guest names: at least 5 characters and nothing rude, else "Guest#1234"', () => {
-    assert.equal(P.MIN_NAME, 5);
+test('guest names: at least 2 characters and nothing rude, else "Guest#1234"', () => {
+    assert.equal(P.MIN_NAME, 2);
     const isGuest = (n) => /^Guest#\d{4}$/.test(n);
-    assert.ok(isGuest(P.guestName('abcd')), 'four characters');
-    assert.ok(isGuest(P.guestName('   abc   ')), 'trimmed first');
+    assert.equal(P.guestName('abcd'), 'abcd', 'short normal names are fine');
+    assert.equal(P.guestName('   Al   '), 'Al', 'trimmed first');
+    assert.ok(isGuest(P.guestName('a')), 'one character');
     assert.ok(isGuest(P.guestName('')), 'empty');
     assert.equal(P.guestName('  Bobby '), 'Bobby');
     assert.ok(isGuest(P.guestName('ShitLord')), 'rude');
     // the same player keeps the same number
     const sock = {};
-    assert.equal(P.guestName('', sock), P.guestName('abc', sock));
-    assert.equal(P.nameProblem('abc'), 'short');
+    assert.equal(P.guestName('', sock), P.guestName('a', sock));
+    assert.equal(P.nameProblem('a'), 'short');
+    assert.equal(P.nameProblem('Zed'), null);
     assert.equal(P.nameProblem('Fuckface'), 'rude');
     assert.equal(P.nameProblem('Grapple'), null);
 });

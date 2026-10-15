@@ -44,7 +44,7 @@ const CATALOG = [
     { id: 'hide',    name: 'Thick Hide',      icon: 'hide',    max: 3, w: 2, kind: 'tough', desc: 'You get 7% more max health.' },
     { id: 'regen',   name: 'Field Repair',    icon: 'regen',   max: 2, w: 2, kind: 'tough', desc: 'After 5 seconds out of a fight, you heal 1.2% of your health per second.' },
     { id: 'vamp',    name: 'Gem Leech',       icon: 'vamp',    max: 2, w: 2, kind: 'tough', desc: 'Every gem you pick up heals you a little.' },
-    { id: 'twin',    name: 'Twin Drill',      icon: 'twin',    max: 2, w: 1, kind: 'fight', desc: 'Adds a small extra barrel that only drills rock.' },
+    { id: 'twin',    name: 'Twin Drill',      icon: 'twin',    max: 2, w: 1, kind: 'fight', desc: 'Your barrels fire an extra shot that only drills rock.' },
     { id: 'drones',  name: 'Drone Bay',       icon: 'drones',  max: 2, w: 1, kind: 'fight', desc: 'Adds swarm drones that only chew rock.' },
     { id: 'reload',  name: 'Overclock',       icon: 'reload',  max: 3, w: 1, kind: 'fight', desc: 'You reload 5% faster.' },
 ];
@@ -235,19 +235,46 @@ function clearBody(body) {
 }
 
 // Extra barrels
-function gunDefs(fx) {
+function mainBarrels(body) {
+    const out = [];
+    if (!body || !body.guns) return out;
+    for (const gun of body.guns.values()) {
+        if (!gun || gun.isRaidPerk || gun.isSidearm || !gun.canShoot || gun.hidden) continue;
+        if (!gun.bulletType || gun.bulletType.TYPE !== 'bullet' || !gun.settings || !(gun.settings.reload > 0)) continue;
+        out.push(gun);
+    }
+    return out;
+}
+const TWIN_SPREAD = 5;
+function twinDef(src, i, stats) {
+    const side = i % 2 ? -1 : 1;
+    const delay = i ? 0.75 : 0.25;
+    const settings = { ...stats, recoil: 0 };
+    if (!src) return { POSITION: [16, 8, 1, 0, 0, side * TWIN_SPREAD, delay], settings };
+    const len = src.offset * 10;
+    settings.size = src.settings.size;
+    settings.speed = src.settings.speed;
+    settings.maxSpeed = src.settings.maxSpeed;
+    settings.range = src.settings.range;
+    return {
+        POSITION: [src.length * 10, src.width * 10, src.aspect, len * Math.cos(src.direction), len * Math.sin(src.direction), src.angle * 180 / Math.PI + side * TWIN_SPREAD, delay],
+        settings,
+    };
+}
+function gunDefs(fx, body) {
     const { combineStats } = require('../../lib/definitions/facilitators.js');
     const g = require('../../lib/definitions/gunvals.js');
     const out = [];
     if (!fx) return out;
-    const twinSlots = [[6, 16, 0.5], [-6, -16, 0.25]];
+    const real = mainBarrels(body);
+    const stats = combineStats([g.basic, { reload: 1.15, damage: 0.5 }]);
     for (let i = 0; i < Math.min(2, fx.twin); i++) {
-        const [y, ang, delay] = twinSlots[i];
+        const d = twinDef(real.length ? real[i % real.length] : null, i, stats);
         out.push({
-            POSITION: [16, 6.5, 1, 0, y, ang, delay],
+            POSITION: d.POSITION,
             PROPERTIES: {
-                SHOOT_SETTINGS: combineStats([g.basic, { reload: 1.15, damage: 0.5 }]),
-                TYPE: "bullet", LABEL: "Twin Drill", COLOR: "mirror", ROCK_ONLY: true, FIXED_BULLET_SIZE: true,
+                SHOOT_SETTINGS: d.settings,
+                TYPE: "bullet", LABEL: "Twin Drill", COLOR: "mirror", HIDDEN: true, ROCK_ONLY: true,
             },
         });
     }
@@ -287,7 +314,7 @@ function attachGuns(body) {
     if (body._pkGunKey === want && live) return;
     detachGuns(body);
     body._pkGunKey = want;
-    for (const def of gunDefs(body._pkfx)) {
+    for (const def of gunDefs(body._pkfx, body)) {
         const gun = new Gun(body, def);
         gun.isRaidPerk = true;
         body.guns.set(gun.id, gun);

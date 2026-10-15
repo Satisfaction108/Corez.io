@@ -99,6 +99,25 @@ function applyPerks(body) {
     body.damage *= damageMult(g);
 }
 
+function gunsOf(e, out, depth = 0) {
+    if (!e || depth > 4) return out;
+    if (e.guns) for (const g of e.guns.values()) out.push(g);
+    if (e.turrets) for (const t of e.turrets.values()) gunsOf(t, out, depth + 1);
+    return out;
+}
+function resizeKids(body) {
+    const g = body && body.growthMult > 1 ? body.growthMult : 1;
+    for (const gun of gunsOf(body, [])) {
+        for (const kid of gun.children || []) {
+            if (!kid || kid.isGhost || !(kid._growG > 0) || kid._growG === g || (kid.isDead && kid.isDead())) continue;
+            const f = Math.sqrt(g / kid._growG);
+            kid.SIZE *= f;
+            if (kid.coreSize) kid.coreSize *= f;
+            kid._growG = g;
+        }
+    }
+}
+
 function stageOf(g) {
     let i = 0;
     while (i < STAGES.length && g >= STAGES[i] - 1e-6) i++;
@@ -119,6 +138,7 @@ function onSpawn(body, score, keep) {
     body._growRefreshed = body.growthMult;
     body.sizeMultiplier = body.growthMult;
     try { body.refreshBodyAttributes(); } catch { /* */ }
+    try { resizeKids(body); } catch { }
 }
 
 // Every raid tick. scoreFor(body) -> raid score (a bot's counts double).
@@ -160,6 +180,7 @@ function tick(t, bodies, scoreFor, onStage, onRefit) {
         if (Math.abs(g - body._growRefreshed) >= REFRESH_STEP || g === target) {
             body._growRefreshed = g;
             try { body.refreshBodyAttributes(); } catch { /* */ }
+            try { resizeKids(body); } catch { }
             if (onRefit) { try { onRefit(body, false); } catch { /* */ } }
         }
         const st = stageOf(g);
@@ -174,5 +195,5 @@ module.exports = {
     RESPAWN_SHARE, RESPAWN_CAP, STAGES, CAP_SCORE,
     BOT_SCORE_MULT, enabled, multFor, spawnEff, scoreMult, onSpawn, tick, applyPerks, stageOf,
     speedMult, healthMult, damageMult, bodyDamageMult, statMult, fovMult, viewMult, mineMult,
-    SCALE, GAIN, STAT_AT_100K, MAX_GROWTH, VIEW_POW, botDimAdd, BOT_DIM_AT,
+    SCALE, GAIN, STAT_AT_100K, MAX_GROWTH, VIEW_POW, botDimAdd, BOT_DIM_AT, resizeKids,
 };

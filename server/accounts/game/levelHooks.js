@@ -22,6 +22,11 @@ function on() {
     if (OFF) return false;
     try { return bridge().rankedOn(); } catch (e) { return false; }
 }
+function guestsOn() {
+    if (forced != null) return forced;
+    if (OFF) return false;
+    try { return bridge().active(); } catch (e) { return false; }
+}
 
 let errAt = 0;
 function logErr(what, e) {
@@ -64,9 +69,9 @@ function send(socket, st, res, extra) {
 }
 
 function stateOf(socket) {
-    if (!socket || socket.terminated || !on()) return null;
+    if (!socket || socket.terminated) return null;
     const owner = ownerOf(socket);
-    if (!owner) return null;
+    if (!owner || !(on() || (owner.kind === 'g' && guestsOn()))) return null;
     const key = keyOf(owner);
     let st = socket._lv;
     if (st && st.key === key) return st;
@@ -177,7 +182,7 @@ function tick(t = Date.now()) {
     if (t - lastTickAt < TICK_MS) return;
     const dt = lastTickAt ? Math.min(2 * TICK_MS, t - lastTickAt) : 0;
     lastTickAt = t;
-    if (!on()) return;
+    if (!on() && !guestsOn()) return;
     for (const s of clients()) {
         if (!s || s.terminated) continue;
         const b = s.player && s.player.body;

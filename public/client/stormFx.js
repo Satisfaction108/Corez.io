@@ -430,7 +430,7 @@ function drawNear(c, sw, sh, st) {
     c.save();
     A.hudPanel(c, x, by, W, H, { r: H / 2, bevel: false, stroke: col });
     A.hudTitle(head, x + 15, by + H / 2, 14, col, "left", 1);
-    A.drawText(tail, x + 15 + hw, by + H / 2, 12, "#efe6d0", "left", true, 1);
+    A.drawText(tail, x + 15 + hw, by + H / 2, 12, A.HUD && A.HUD.theme === "light" ? "#333333" : "#efe6d0", "left", true, 1);
     c.restore();
     const pulse = still ? 1 : 0.75 + 0.25 * Math.sin(now / 220);
     edgeArrow(c, sw, sh, st.dirAng, col, pulse, "Safe");
@@ -502,7 +502,7 @@ export function drawHud(c, sw, sh, topY, st) {
     c.globalAlpha = pop;
     A.hudPanel(c, x, by, W, H, { r: H / 2, bevel: false, stroke: col === "#efe6ff" ? undefined : col });
     A.hudTitle(head, x + 15, by + H / 2, 15, col, "left", pop);
-    A.drawText("  ·  " + warn.distTxt, x + 15 + hw, by + H / 2, 12, "#d9cff0", "left", true, pop);
+    A.drawText("  ·  " + warn.distTxt, x + 15 + hw, by + H / 2, 12, A.HUD && A.HUD.theme === "light" ? "#333333" : "#d9cff0", "left", true, pop);
     c.restore();
     // the arrow toward safety, circling your tank
     const bob = still ? 0 : Math.sin(now / 160) * 5;

@@ -91,7 +91,7 @@ function step(e, t) {
     if (!d) d = e.dig = { rock: null, searchAt: t + (b.id % 8) * 50, fireAt: t + FIRE_MS / 2, hitAt: 0, hitRock: null, hitDmg: 0 };
     if (d.hitRock && t >= d.hitAt) { const r = d.hitRock; d.hitRock = null; land(tg, r, d.hitDmg, b); }
     const before = d.rock;
-    if (!tg || e.hidden || b.royaleLobby || b.royaleFrozen || !(tg.baseRockHealth > 0)) {
+    if (!tg || e.hidden || b.royaleLobby || b.royaleFrozen || b.invuln || !(tg.baseRockHealth > 0)) {
         d.rock = null;
         return before !== null;
     }

@@ -279,16 +279,36 @@
         btn.onclick = function () { launchTutorial(btn); };
     }
 
+    function ordinal(n) {
+        var t = n % 100, u = n % 10;
+        return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th');
+    }
     function initChampions() {
         var holder = document.querySelector('.startButtonHolder');
         if (!holder || !window.fetch) return;
-        fetch('/api/champions', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+        var guest = '';
+        try { guest = localStorage.getItem('dwGuestId') || ''; } catch (e) { }
+        var json = function (r) { return r.ok ? r.json() : null; };
+        var none = function () { return null; };
+        Promise.all([
+            fetch('/api/champions', { credentials: 'same-origin' }).then(json, none),
+            fetch('/api/champions/me', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-DW': '1' }, body: JSON.stringify(/^[a-f0-9]{32}$/.test(guest) ? { guestId: guest } : {}) }).then(json, none)
+        ]).then(function (res) {
+            var d = res[0], me = res[1];
             if (!d || !d.on) return;
-            var champs = d.champs || [], top = d.top || [];
-            if (!champs.length && !top.length) return;
+            var champs = d.champs || [], top = d.top || [], mine = [];
+            if (me && me.yesterday && me.yesterday.place) mine.push('You were ' + ordinal(me.yesterday.place) + ' yesterday.');
+            if (me && me.today && me.today.place) mine.push((mine.length ? 'Today' : 'Today you are') + ' ' + ordinal(me.today.place) + ' of ' + me.today.of + ' so far.');
+            if (!champs.length && !top.length && !mine.length) return;
             var box = document.createElement('div');
             box.id = 'aoChampions';
             box.className = 'ao-champs';
+            if (mine.length) {
+                var y = document.createElement('div');
+                y.className = 'ao-you';
+                y.textContent = mine.join(' ');
+                box.appendChild(y);
+            }
             if (champs.length) {
                 var a = document.createElement('div');
                 var lab = document.createElement('b');

@@ -244,7 +244,7 @@ test('bot goals: most bots head for each event and help, some keep mining', () =
     } finally { cf.current = was; }
     const ctl = rd('server/miscFiles/controllers.js');
     assert.ok(/aoshoot: 52, aogo: 50/.test(ctl), 'event goals rank over mining and chests');
-    assert.ok(ctl.includes('const ev = this.eventGoal(now, health);'), 'the brain asks for them');
+    assert.ok(/this\.eventGoal\(now, health\)/.test(ctl), 'the brain asks for them');
     assert.ok(ctl.includes("if (fish && g.fight) return null;"), 'small fish and bait stay out of the fights');
 });
 

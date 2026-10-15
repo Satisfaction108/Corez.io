@@ -67,6 +67,8 @@ function setUser(user) {
     if (user) {
         ls.set(HINT, 'user');
         ls.set(NAME, user.username);
+        ls.set('dwPlayed', '1');
+        try { document.documentElement.classList.remove('dw-fresh'); } catch (e) { void e; }
         setMode('user');
     }
 }

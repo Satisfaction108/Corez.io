@@ -628,6 +628,39 @@ test('barricade: 5 rocks in a row where you aim (up to 600), across the aim line
     cleanup(t);
 });
 
+test('barricade: carved floor (open layout canyon cells) is placeable and green, a tank only blocks the cell it stands on, the floor never regrows after', () => {
+    clearDisc(AX, AY, 1000);
+    const { s, t } = owner(AX, AY, 'wall');
+    const ring = [...grid.rocks.values()].filter(r => r.worldPoly && Math.hypot(r.worldCx - (AX + 450), r.worldCy - AY) < 330);
+    for (const r of ring) r.canyon = true;
+    ab.stateOf(s).eq = 'wall';
+    ab.preview(s, AX + 450, AY);
+    let aw = JSON.parse(s.packets.filter(p => p[0] === 'AW').pop()[1]);
+    assert.equal(aw.r.length, 0, 'nothing red on open floor');
+    assert.ok(aw.g.length >= 4, 'green: ' + aw.g.length);
+    const blocker = tank(AX + 450, AY, null);
+    s._abPreviewAt = 0;
+    ab.preview(s, AX + 450, AY);
+    aw = JSON.parse(s.packets.filter(p => p[0] === 'AW').pop()[1]);
+    assert.ok(aw.r.length >= 1 && aw.r.length <= 2, 'only the cells under the tank: ' + aw.r.length);
+    assert.ok(aw.g.length >= 3, 'the rest stays green: ' + aw.g.length);
+    blocker.kill(); step(1);
+    s._abPreviewAt = 0;
+    ab.preview(s, AX + 450, AY);
+    aw = JSON.parse(s.packets.filter(p => p[0] === 'AW').pop()[1]);
+    assert.ok(ab.use(t, AX + 450, AY), 'it builds');
+    const raised = aw.g.map(k => grid.rocks.get(k));
+    assert.ok(raised.length >= 4 && raised.every(r => r.growing && !r.canyon), 'a wall of rock on the floor');
+    for (const w of ab.walls) grid.completeRegrow(w.rock);
+    clock += 21000;
+    step(1);
+    assert.ok(raised.every(r => !r.alive && !r.growing && r.canyon), 'gone after 20 s, carved floor again');
+    for (const r of raised) assert.equal(grid.startRegrow(r, clock), false, 'and it never regrows on its own');
+    for (const r of ring) r.canyon = false;
+    clearDisc(AX, AY, 1000);
+    cleanup(t);
+});
+
 test('smoke: thrown to the aim (550), a big cloud for 8 s where it lands, a second of grace on the trigger', () => {
     clearDisc(AX, AY, 1000);
     const { s, t } = owner(AX, AY, 'smoke');

@@ -5779,6 +5779,10 @@ html[data-theme] #startMenuWrapper #tutorialButton b { color: var(--home-ink); -
 html[data-theme] #startMenuWrapper .tut-badge { font-size: 11px; }
 .ao-champs { margin: 14px auto 0; color: var(--home-ink2); font-size: 13px; line-height: 1.5; text-align: center; }
 .ao-champs .ao-label { color: var(--home-gold); }
+.ao-champs .ao-you { color: var(--home-ink); font-size: 14px; }
+.lv-gain { margin: 7px 2px 0; color: var(--home-ink); font-size: 13px; line-height: 1.35; text-align: center; }
+.lv-gain[hidden] { display: none; }
+html[data-theme] #startMenuWrapper .lv-saved { color: var(--home-ink2); }
 html[data-theme] #startMenuWrapper .menu-credits { margin-top: 18px; color: var(--home-ink2); }
 html[data-theme] #startMenuWrapper .menu-credits .dev-by b { color: var(--home-ink); }
 html[data-theme] #startMenuWrapper .menu-credits .contrib-link { color: var(--home-link); }

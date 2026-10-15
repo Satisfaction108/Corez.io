@@ -936,7 +936,9 @@ function debugHp(f, by) {
     return frac();
 }
 
-module.exports = { onSafePad, projectileHit, SHARD_ATTACK, BOLT_HIT, BOLT_HP, BOLT_SPEED, BOLT_TRAP_MULT, sweptTouch, DRONE_HIT, DRONE_MAX, DRONE_RAGE_MAX, CAP_S, CAP_BURST, PULSE_RAGE_DMG,
+function liveDrones() { return drones.filter(d => d.e && !d.e.isGhost && !(d.e.isDead && d.e.isDead())).map(d => d.e); }
+
+module.exports = { liveDrones, onSafePad, projectileHit, SHARD_ATTACK, BOLT_HIT, BOLT_HP, BOLT_SPEED, BOLT_TRAP_MULT, sweptTouch, DRONE_HIT, DRONE_MAX, DRONE_RAGE_MAX, CAP_S, CAP_BURST, PULSE_RAGE_DMG,
     _brood: () => ({ bolts: bolts.map(b => b.e), boltHp: bolts.map(b => b.hp), drones: drones.map(d => d.e) }),
     _debugDrone: (x, y, t = Date.now()) => { if (!core) return null; const o = spawnDrone(t); if (o) { o.x = x; o.y = y; o.velocity.x = 0; o.velocity.y = 0; } return o; },
     ON, CORE_OFFSET, ARENA_R, LANE_R, COVER_R, ZONE_R, PULSE_R, SHARD_BELOW, RAGE_BELOW, LAST_HIT_GEMS, LAST_HIT_PTS,

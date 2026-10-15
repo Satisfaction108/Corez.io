@@ -142,7 +142,7 @@
 
     // Guests and raid names: at least MIN_NAME characters and nothing rude,
     // else the fallback.
-    const MIN_NAME = 5;
+    const MIN_NAME = 2;
     const FALLBACK = 'Guest';
     // "Guest#4821": the number sticks to `holder` (a socket) so a player keeps
     // the same one for the session

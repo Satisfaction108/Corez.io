@@ -16,6 +16,14 @@ const KIND_COL = {
     boss: "#ff8a5c",
     meteor: "#ffb347",
 };
+const KIND_GOAL = {
+    storm: "Stay inside the circle",
+    core: "Hit the Core",
+    rush: "Mine the rich rock, then bank it",
+    hill: "Stand in the gold ring",
+    boss: "Hit the boss",
+    meteor: "Grab the meteor ore",
+};
 const RESULT_MS = 9000;
 
 const S = {
@@ -99,14 +107,9 @@ export function drawPanel(c, cx, y, api) {
     const pt = panelText();
     const you = (r && r.you) || {};
     const yao = you.ao || {};
-    const placeTxt = r.place > 0 ? "#" + r.place + " today  ·  " + api.fmtNum(r.youScore | 0) + " pts" : r.youScore > 0 ? api.fmtNum(r.youScore | 0) + " pts today" : "";
-    let footR = "";
-    let footCol = HUD.lilac;
-    if (a.ev) {
-        if (yao.epl > 0) { footR = "You're " + ordinal(yao.epl) + ", " + num(yao.ep) + " pts"; footCol = HUD.gold; }
-        else { footR = "In " + a.ev.w; footCol = HUD.text2; }
-    } else if (a.nx) { footR = "In " + a.nx.w; footCol = HUD.text2; }
-    const PW = 320, rowH = 38, footH = 24, PH = rowH + footH;
+    const goalTxt = "Today: " + api.fmtNum(r.youScore | 0) + " pts  ·  " + goalLine(r);
+    const evTxt = a.ev ? (KIND_GOAL[a.ev.k] || "Join in") + " in " + a.ev.w + (yao.ep > 0 ? "  ·  +" + num(yao.ep) + " event pts" : "") : "";
+    const PW = 340, rowH = 38, footH = 24, evH = evTxt ? 18 : 0, PH = rowH + footH + evH;
     const px = Math.round(cx - PW / 2), py = y;
     api.hudPanel(c, px, py, PW, PH);
     const ls = 15, vs = 21;
@@ -135,13 +138,28 @@ export function drawPanel(c, cx, y, api) {
         api.hoverTip(px, py, PW, rowH, title, info + " The top 3 get 500, 300 and 200 bonus points and a crown.");
     }
     const fy = py + rowH + footH / 2 - 3;
-    if (placeTxt && footR) {
-        api.drawText(placeTxt, px + 14, fy, 12, HUD.gold, "left", true);
-        api.drawText(footR, px + PW - 14, fy, 12, footCol, "right", true);
-    } else if (placeTxt || footR) api.drawText(placeTxt || footR, cx, fy, 12, placeTxt ? HUD.gold : footCol, "center", true);
+    let gs = 12;
+    while (gs > 9.5 && api.hudTextW(goalTxt, gs) > PW - 24) gs -= 0.5;
+    api.drawText(goalTxt, cx, fy, gs, HUD.gold, "center", true);
+    if (evTxt) {
+        let es = 11.5;
+        while (es > 9 && api.hudTextW(evTxt, es) > PW - 24) es -= 0.5;
+        api.drawText(evTxt, cx, fy + 17, es, a.ev && KIND_COL[a.ev.k] ? KIND_COL[a.ev.k] : HUD.text2, "center", true);
+    }
     api.setClock({ x: px, y: py, w: PW, h: PH });
-    if (placeTxt && !global.died && api.pops) api.pops(px + PW + 10, py + rowH + footH / 2);
+    if (!global.died && api.pops) api.pops(px + PW + 10, py + rowH + footH / 2);
     return py + PH + HUD.lip + 8;
+}
+
+function goalLine(r) {
+    const score = r.youScore | 0, place = r.place | 0;
+    const board = r.board || [];
+    if (place > 1) {
+        const ahead = board.find(row => row && row.place === place - 1);
+        if (ahead) return "Next: beat " + String(ahead.name || "them").slice(0, 14) + " (#" + ahead.place + ") at " + num((ahead.score | 0) + 1);
+    }
+    const step = 5000, target = Math.max(step, Math.ceil((score + 1) / step) * step);
+    return place === 1 ? "You lead. Reach " + num(target) + " pts" : "Reach " + num(target) + " pts today";
 }
 
 export function hudNotes(push, hudNote, HUD) {
@@ -188,6 +206,87 @@ export function drawResult(c, cx, y, api) {
     return y + H + 10;
 }
 
+let hillDark = false;
+try {
+    const syncHillTheme = () => { hillDark = document.documentElement.getAttribute("data-theme") === "dark"; };
+    syncHillTheme();
+    new MutationObserver(syncHillTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+} catch (e) { void e; }
+const HILL_RED = "#ff4d42", HILL_STRIPE = 28;
+const hillStripes = {};
+function hillStripe(c, col) {
+    let s = hillStripes[col];
+    if (s && s.ctx === c) return s.pat;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = HILL_STRIPE;
+    const g = cv.getContext("2d");
+    g.fillStyle = col;
+    g.globalAlpha = 0.55;
+    g.beginPath();
+    for (let o = -HILL_STRIPE; o <= HILL_STRIPE; o += HILL_STRIPE) {
+        g.moveTo(o, HILL_STRIPE); g.lineTo(o + HILL_STRIPE * 0.5, HILL_STRIPE); g.lineTo(o + HILL_STRIPE * 1.5, 0); g.lineTo(o + HILL_STRIPE, 0); g.closePath();
+    }
+    g.fill();
+    s = hillStripes[col] = { ctx: c, pat: c.createPattern(cv, "repeat") };
+    return s.pat;
+}
+function drawHill(c, ev, sx, sy, ratio, now, api, col) {
+    const rr = ev.r * ratio, pr = (ev.pr || 130) * ratio;
+    const band = ev.ct ? HILL_RED : col;
+    const ink = hillDark ? "#0c0c10" : "#26262b";
+    const pulse = 0.5 + 0.5 * Math.sin(now / 450);
+    const off = (now / 40) % HILL_STRIPE;
+    c.save();
+    c.beginPath();
+    c.arc(sx, sy, rr, 0, Math.PI * 2);
+    c.arc(sx, sy, pr, 0, Math.PI * 2, true);
+    c.globalAlpha = 0.2 + 0.08 * pulse;
+    c.fillStyle = band;
+    c.fill("evenodd");
+    c.globalAlpha = 0.9;
+    c.translate(off, 0);
+    c.beginPath();
+    c.arc(sx - off, sy, rr, 0, Math.PI * 2);
+    c.arc(sx - off, sy, pr, 0, Math.PI * 2, true);
+    c.fillStyle = hillStripe(c, band);
+    c.fill("evenodd");
+    c.translate(-off, 0);
+    c.beginPath();
+    c.arc(sx, sy, pr, 0, Math.PI * 2);
+    c.globalAlpha = 0.34;
+    c.fillStyle = hillDark ? "#000000" : "#6b6b6b";
+    c.fill();
+    c.globalAlpha = 0.5;
+    c.lineCap = "round";
+    c.lineWidth = Math.max(2, 5 * ratio);
+    c.strokeStyle = ink;
+    const k = pr * 0.42;
+    c.beginPath();
+    c.moveTo(sx - k, sy - k); c.lineTo(sx + k, sy + k);
+    c.moveTo(sx + k, sy - k); c.lineTo(sx - k, sy + k);
+    c.stroke();
+    c.globalAlpha = 1;
+    c.beginPath();
+    c.arc(sx, sy, rr, 0, Math.PI * 2);
+    c.moveTo(sx + pr, sy);
+    c.arc(sx, sy, pr, 0, Math.PI * 2);
+    c.lineWidth = Math.max(4, 9 * ratio);
+    c.strokeStyle = ink;
+    c.stroke();
+    c.lineWidth = Math.max(2, 4.5 * ratio);
+    c.strokeStyle = band;
+    c.stroke();
+    c.restore();
+    api.label(ev.ct ? "The hill (contested)" : "The hill", sx, sy - rr - 18 * ratio, Math.max(12, 26 * ratio), ev.ct ? "#ff8a80" : col);
+    const me = global.player;
+    if (!me || global.died || !isFinite(me.renderx)) return;
+    const dx = me.renderx - ev.x, dy = me.rendery - ev.y, d = Math.hypot(dx, dy);
+    const inBand = d >= (ev.pr || 130) && d <= ev.r;
+    if (inBand || d > ev.r + 700) return;
+    const a = d > 1 ? Math.atan2(dy, dx) : -Math.PI / 2, mid = (rr + pr) / 2;
+    api.label("Stand here to score", sx + Math.cos(a) * mid, sy + Math.sin(a) * mid, Math.max(12, 18 * ratio), ev.ct ? "#ff8a80" : "#ffffff");
+}
+
 function dashedRing(c, x, y, r, col, w, dash, alpha) {
     c.save();
     c.globalAlpha = alpha;
@@ -210,17 +309,7 @@ export function drawWorld(c, ox, oy, ratio, api) {
         const col = KIND_COL[ev.k] || "#ffffff";
         const sx = ox + ev.x * ratio, sy = oy + ev.y * ratio;
         if (ev.k === "hill") {
-            const rr = ev.r * ratio;
-            c.save();
-            c.globalAlpha = 0.12 + 0.06 * pulse;
-            c.fillStyle = ev.ct ? "#e0473b" : col;
-            c.beginPath();
-            c.arc(sx, sy, rr, 0, Math.PI * 2);
-            c.arc(sx, sy, (ev.pr || 130) * ratio, 0, Math.PI * 2, true);
-            c.fill("evenodd");
-            c.restore();
-            dashedRing(c, sx, sy, rr, ev.ct ? "#e0473b" : col, Math.max(2, 4 * ratio), [18 * ratio, 12 * ratio], 0.85);
-            api.label(ev.ct ? "The hill (contested)" : "The hill", sx, sy - rr - 18 * ratio, Math.max(12, 26 * ratio), ev.ct ? "#ff8a80" : col);
+            drawHill(c, ev, sx, sy, ratio, now, api, col);
         } else if (ev.k === "rush" || ev.k === "meteor") {
             const rr = ev.r * ratio;
             c.save();
@@ -247,7 +336,7 @@ export function mapMarks() {
     const a = S.ao;
     const out = [];
     if (!a) return out;
-    if (a.ev && a.ev.k !== "storm") out.push({ x: a.ev.x, y: a.ev.y, r: a.ev.r, col: KIND_COL[a.ev.k] || "#ffffff", live: true, k: a.ev.k, n: a.ev.n });
+    if (a.ev && a.ev.k !== "storm") out.push({ x: a.ev.x, y: a.ev.y, r: a.ev.r, pr: a.ev.pr || 130, ct: !!a.ev.ct, col: KIND_COL[a.ev.k] || "#ffffff", live: true, k: a.ev.k, n: a.ev.n });
     if (a.ev && a.ev.k === "storm" && (a.ev.rr || a.ev.re)) out.push({ x: a.ev.x, y: a.ev.y, r: a.ev.rr || a.ev.re, col: KIND_COL.storm, live: true, k: "storm", n: a.ev.n });
     if (a.nx && a.nx.a && a.nx.x != null) out.push({ x: a.nx.x, y: a.nx.y, r: a.nx.r || 500, col: KIND_COL[a.nx.k] || "#ffffff", live: false, k: a.nx.k, n: a.nx.n });
     return out;
@@ -259,6 +348,22 @@ export function drawMap(c, mapX, mapY, scale) {
     const now = performance.now();
     for (const mk of marks) {
         const x = mapX(mk.x), y = mapY(mk.y), r = Math.max(4, mk.r * scale);
+        if (mk.k === "hill" && mk.live) {
+            const ir = Math.max(1.5, mk.pr * scale), band = mk.ct ? HILL_RED : mk.col;
+            c.save();
+            c.beginPath();
+            c.arc(x, y, (r + ir) / 2, 0, Math.PI * 2);
+            c.lineWidth = Math.max(3, r - ir) + 2;
+            c.strokeStyle = hillDark ? "#0c0c10" : "#26262b";
+            c.globalAlpha = 0.6;
+            c.stroke();
+            c.lineWidth = Math.max(2, r - ir);
+            c.strokeStyle = band;
+            c.globalAlpha = 0.75 + 0.25 * Math.sin(now / 300);
+            c.stroke();
+            c.restore();
+            continue;
+        }
         c.save();
         c.globalAlpha = mk.live ? 0.9 : 0.5 + 0.4 * Math.sin(now / 250);
         c.strokeStyle = mk.col;

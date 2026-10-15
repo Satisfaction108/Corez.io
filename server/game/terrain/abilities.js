@@ -426,8 +426,8 @@ function wallPlan(body, tx, ty) {
     const P = placeAt(body, tx, ty, AB_BY_ID.get('wall').place);
     const ux = -P.dir.y, uy = P.dir.x;              // along the wall
     const size = (g._voroRockSz || 1) * (g.cellSize || 100);
-    const rockR = size * 0.62;
     const near = tanks().filter(o => Math.hypot(o.x - P.x, o.y - P.y) < size * WALL.count + 400);
+    const pads = padsNear(P.x, P.y, size * WALL.count + 600);
     const cellAt = require('./spawnReach.js').cellAt;
     const rise = [], blocked = [], seen = new Set();
     // the cells under count points spaced a cell apart across the aim line
@@ -438,12 +438,39 @@ function wallPlan(body, tx, ty) {
         if (rock && seen.has(rock.k)) rock = cellAt(g, P.x + ux * off * 1.15, P.y + uy * off * 1.15);
         if (!rock || seen.has(rock.k)) continue;
         seen.add(rock.k);
-        if (rock.alive || rock.growing || rock.canyon || !rock.worldPoly) continue;     // rock already, or never rock
-        const wx = rock.worldCx || rock.wx, wy = rock.worldCy || rock.wy;
-        if (rock.chestLock || rock._chestHolds > 0 || near.some(o => Math.hypot(o.x - wx, o.y - wy) < rockR + radiusOf(o))) { blocked.push(rock); continue; }
+        if (rock.alive || rock.growing || !rock.worldPoly) continue;
+        if (wallBlocked(g, rock, near, pads)) { blocked.push(rock); continue; }
         rise.push(rock);
     }
     return { x: P.x, y: P.y, ang: Math.atan2(P.dir.y, P.dir.x), rise, blocked };
+}
+function padsNear(x, y, R) {
+    const out = [];
+    const add = (list) => { for (const p of list || []) if (p && Math.hypot(p.x - x, p.y - y) < R + (p.r || 120) * 1.5) out.push(p); };
+    try { if (Config.dig_royale) add(require('./vault.js').getVaults()); } catch { }
+    try { add(require('./outposts.js').getOutposts()); } catch { }
+    try { add(require('./shop.js').getShops()); } catch { }
+    return out;
+}
+function wallBlocked(g, rock, near, pads) {
+    if (rock.chestLock || rock._chestHolds > 0) return true;
+    const wx = rock.worldCx || rock.wx, wy = rock.worldCy || rock.wy;
+    const face = g.constructor && g.constructor._polyFace;
+    for (const o of near) {
+        const r = radiusOf(o);
+        if ((o.x - wx) ** 2 + (o.y - wy) ** 2 > (r + (rock.maxPolyRadius || 120)) ** 2) continue;
+        if (!face) { if (Math.hypot(o.x - wx, o.y - wy) < r + 40) return true; continue; }
+        const f = face(rock.worldPoly, o.x, o.y);
+        if (f.inside || f.dist < r * 0.9) return true;
+    }
+    if (pads.length) {
+        const padGeom = require('./padGeom.js');
+        for (const p of pads) {
+            if (padGeom.insidePad(p, wx, wy, 10)) return true;
+            for (const q of rock.worldPoly) if (padGeom.insidePad(p, q[0], q[1], 0)) return true;
+        }
+    }
+    return false;
 }
 // ['ab', 3, x, y] while the Barricade is aimed: the plan, a few times a second
 function preview(socket, tx, ty) {
@@ -534,10 +561,12 @@ const USES = {
         let n = 0;
         for (const rock of plan.rise) {
             rock.noRegrowUntil = 0;
+            const canyon = !!rock.canyon;
+            rock.canyon = false;
             let ok = false;
             try { ok = g.startRegrow(rock, t + n * WALL.gapMs, 0, { fast: true, rate }) !== false; } catch { ok = false; }
-            if (!ok) continue;
-            walls.push({ rock, gen: rock.gen, until: t + WALL.ms });
+            if (!ok) { rock.canyon = canyon; continue; }
+            walls.push({ rock, gen: rock.gen, until: t + WALL.ms, canyon });
             n++;
         }
         if (!n) return { ok: false, msg: "There's nothing to raise there. Aim at ground you've dug out." };
@@ -1218,11 +1247,13 @@ function tickWalls(t) {
     const g = tg();
     for (let i = walls.length - 1; i >= 0; i--) {
         const w = walls[i];
-        if (t < w.until) continue;
-        walls.splice(i, 1);
         const rock = w.rock;
-        if (!g || !rock || rock.gen !== w.gen || (!rock.alive && !rock.growing)) continue;
-        try { g.damageRock(rock, rock.health + 1, rock.worldCx || rock.wx, rock.worldCy || rock.wy, false, null); } catch { /* */ }
+        const mine = !!rock && rock.gen === w.gen;
+        const up = mine && (rock.alive || rock.growing);
+        if (up && t < w.until) continue;
+        walls.splice(i, 1);
+        if (up && g) { try { g.damageRock(rock, rock.health + 1, rock.worldCx || rock.wx, rock.worldCy || rock.wy, false, null); } catch { } }
+        if (w.canyon && rock) rock.canyon = true;
     }
 }
 
@@ -1246,6 +1277,7 @@ function tick(actors) {
 // New raid: pads, walls and running effects go.
 function resetRaid() {
     pads.length = 0;
+    for (const w of walls) if (w.canyon && w.rock) w.rock.canyon = true;
     walls.length = 0;
     orbs.length = 0;
     clouds.length = 0;
