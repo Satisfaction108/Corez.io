@@ -97,8 +97,28 @@ function mergeLocalTankRecords(rows) {
     const u = store.get('user');
     const myName = (u && u.username) || (typeof localStorage !== 'undefined' && localStorage.getItem('playerNameInput')) || 'You';
     const myId = u ? u.userId : null;
+    const eq = u && u.equipped;
+    const C = typeof window !== 'undefined' ? window.DWCosmetics : null;
+    const ns = eq && C && typeof C.byId === 'function' ? C.byId(eq.nameStyle) : null;
+    let myStyleNid = (ns ? (ns.nid | 0) : 0) || (u && u.nameStyleNid | 0) || 0;
+    let myNameColor = (eq && eq.customColor) || (u && u.nameColor) || null;
+    if (!myStyleNid && myId && Array.isArray(rows)) {
+        const ownRow = rows.find(r => r && r.userId === myId && r.nameStyleNid);
+        if (ownRow) {
+            myStyleNid = ownRow.nameStyleNid | 0;
+            if (!myNameColor && ownRow.nameColor) myNameColor = ownRow.nameColor;
+        }
+    }
     const byTank = new Map();
-    for (const r of rows || []) byTank.set(r.tank, Object.assign({}, r));
+    for (const r of rows || []) {
+        const copy = Object.assign({}, r);
+        if (myId && copy.userId === myId) {
+            if (myStyleNid) copy.nameStyleNid = myStyleNid;
+            if (myNameColor) copy.nameColor = myNameColor;
+            if (u && u.username) copy.username = u.username;
+        }
+        byTank.set(copy.tank, copy);
+    }
     try {
         const local = window.tankRecords && typeof window.tankRecords.allRecords === 'function' ? window.tankRecords.allRecords() : [];
         for (const rec of local) {
@@ -115,6 +135,8 @@ function mergeLocalTankRecords(rows) {
                     score: rec.score | 0,
                     kills: rec.kills | 0,
                     playMs: rec.playMs | 0,
+                    nameStyleNid: myStyleNid,
+                    nameColor: myNameColor,
                     localMine: true,
                 });
             } else if ((rec.score | 0) > (cur.score | 0)) {
@@ -123,7 +145,9 @@ function mergeLocalTankRecords(rows) {
                 cur.username = myName;
                 cur.score = rec.score | 0;
                 cur.kills = rec.kills | 0;
-                cur.playMs = rec.playMs | 0;
+                cur.playMs = (rec.playMs | 0) || (cur.playMs | 0);
+                cur.nameStyleNid = myStyleNid || cur.nameStyleNid || 0;
+                cur.nameColor = myNameColor || cur.nameColor || null;
                 cur.localMine = true;
             }
         }
@@ -295,7 +319,7 @@ function tankRow(r, mine, clickable) {
     });
     const playerCell = hasRec
         ? h('span', { class: 'lb-player', role: 'cell' },
-            nameEl(r.username || 'Unnamed', r.nameStyleNid, r.nameColor, 13, 'lb-name'),
+            nameEl(r.username || 'Unnamed', r.nameStyleNid, r.nameColor, 14, 'lb-name'),
             mine ? h('span', { class: 'lb-you', text: 'You' }) : null)
         : h('span', { class: 'lb-player', role: 'cell', style: { opacity: '0.5', fontStyle: 'italic' }, text: 'Unclaimed' });
     const timeCell = h('span', {

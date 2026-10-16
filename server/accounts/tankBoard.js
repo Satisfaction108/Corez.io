@@ -165,25 +165,55 @@ function getAllRows() {
     }
     const list = catalog.length ? catalog : [...byTank.keys()].map(t => ({ tank: t, tier: 1 }));
     const R = require('../../shared/ranks.js');
+    let usersMod = null, storeMod = null, rankStoreMod = null;
+    try {
+        usersMod = require('./users');
+        storeMod = require('./store');
+        rankStoreMod = require('./rankStore');
+    } catch {}
+    const userCosCache = new Map();
+    const resolveUser = (uid) => {
+        if (!uid || !usersMod) return null;
+        if (userCosCache.has(uid)) return userCosCache.get(uid);
+        let info = null;
+        try {
+            const uRow = usersMod.byId(uid);
+            if (uRow) {
+                const cos = storeMod ? storeMod.cosmeticsFor(uRow) : null;
+                const snap = rankStoreMod ? rankStoreMod.snapshot(uRow) : null;
+                info = {
+                    publicId: uRow.public_id || null,
+                    username: uRow.username || null,
+                    division: snap && snap.division != null ? snap.division : null,
+                    legendNo: snap ? (snap.legendNo | 0) : 0,
+                    nameStyleNid: cos ? (cos.nameStyleNid | 0) : 0,
+                    nameColor: cos ? (cos.nameColor || null) : null,
+                };
+            }
+        } catch {}
+        userCosCache.set(uid, info);
+        return info;
+    };
     return list.map((item, idx) => {
         const rec = byTank.get(item.tank) || null;
-        const div = rec && rec.division != null ? rec.division : null;
+        const liveUser = rec && rec.userId ? resolveUser(rec.userId) : null;
+        const div = liveUser && liveUser.division != null ? liveUser.division : (rec && rec.division != null ? rec.division : null);
         return {
             place: idx + 1,
             tank: item.tank,
             tankTier: item.tier || 1,
             hasRecord: !!(rec && rec.score > 0),
-            userId: rec ? (rec.publicId || null) : null,
-            username: rec ? rec.username : null,
+            userId: (liveUser && liveUser.publicId) || (rec ? (rec.publicId || null) : null),
+            username: (liveUser && liveUser.username) || (rec ? rec.username : null),
             score: rec ? (rec.score | 0) : 0,
             kills: rec ? (rec.kills | 0) : 0,
             playMs: rec ? (rec.playMs | 0) : 0,
             division: div,
             name: div != null ? R.nameOf(div) : '',
             tier: div != null ? R.tierOf(div) : '',
-            legendNo: rec ? (rec.legendNo | 0) : 0,
-            nameStyleNid: rec ? (rec.nameStyleNid | 0) : 0,
-            nameColor: rec ? rec.nameColor : null,
+            legendNo: liveUser ? liveUser.legendNo : (rec ? (rec.legendNo | 0) : 0),
+            nameStyleNid: liveUser ? liveUser.nameStyleNid : (rec ? (rec.nameStyleNid | 0) : 0),
+            nameColor: liveUser ? liveUser.nameColor : (rec ? rec.nameColor : null),
         };
     });
 }
