@@ -886,7 +886,8 @@ const process = (z = {}) => {
         z.render.yAnim.add(z.y);
         z.render.faceAnim.add(z.facing);
         if (!z.render.ns) z.render.ns = netSmooth.track();
-        netSmooth.push(z.render.ns, global.player.lastUpdate, z.x, z.y, z.facing);
+        const tickMs = Math.max(10, netSmooth.S.tick / Math.max(0.1, config.roomSpeed || 1));
+        netSmooth.push(z.render.ns, global.player.lastUpdate, z.x, z.y, z.facing, (z.vx || 0) / tickMs, (z.vy || 0) / tickMs, (z.vfacing || 0) / tickMs);
 
         if (!isNew && z.oldIndex !== z.index) isNew = true;
         z.oldIndex = z.index;

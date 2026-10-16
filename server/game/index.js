@@ -611,6 +611,14 @@ class gameHandler {
         }
         logs.entities.mark();
         logs.master.mark();
+        if (this.terrainPass) {
+            try { this.terrainPass(); } catch (e) {
+                if (Date.now() - (this._terrainErrAt || 0) > 10000) {
+                    this._terrainErrAt = Date.now();
+                    console.error('[TERRAIN] pass failed:', e && e.stack || e);
+                }
+            }
+        }
         const _tGaze0 = performance.now();
         this._tickEntMs = _tGaze0 - (this._tickStart || _tGaze0);
         // lastCycle is stamped on an even grid (one cycleSpeed per tick, drifting 10%
@@ -1769,15 +1777,6 @@ class gameHandler {
                 try {
                     this._lifeProf = null; this._collideMs = 0; this._stageProf = null; global.botProf = {};
                     this.gameloop();
-                    // Terrain, gems, pads and the raid clock run right after the entity step on
-                    // the same 30 Hz beat; a separate timer would compete with this one and redo
-                    // work on positions that had not moved.
-                    try { terrainPass(); } catch (e) {
-                        if (Date.now() - (this._terrainErrAt || 0) > 10000) {
-                            this._terrainErrAt = Date.now();
-                            console.error('[TERRAIN] pass failed:', e && e.stack || e);
-                        }
-                    }
                     const tEnt = this._tickEntMs || 0, tGaze = this._tickGazeMs || 0;
                     const tA = performance.now();
                     if (Config.bot_soak_mode) {
@@ -1898,7 +1897,7 @@ class gameHandler {
         let chestsMod = null, digRoyaleMod = null, abilitiesMod = null;
         // Called from the game loop above once per tick (that callback only runs
         // after run() returns, so this const exists by then).
-        const terrainPass = () => {
+        const terrainPass = this.terrainPass = () => {
             if (!this.active) return;
             const _tg = global.gameManager.terrainGrid;
             if (!_tg || !_tg._voronoiMap) return;
@@ -1931,6 +1930,7 @@ class gameHandler {
                         gems.tickGem(instance, _tg, gemActors);
                         if (growingNow) _tg.pushCircleFromGrowing(instance, instance.realSize, tickNow);
                     }
+                    if (!instance.isDead?.() && instance.activation.active) instance.takeSelfie();
                     continue;
                 }
                 if (instance.type !== 'tank' && instance.type !== 'miniboss' && instance.type !== 'minion' &&
@@ -1992,6 +1992,7 @@ class gameHandler {
                         instance.grindTouchUntil = nowT + 300;
                         instance.grindNx = nx;
                         instance.grindNy = ny;
+                        if (instance.activation.active || instance.isPlayer) instance.takeSelfie();
                     }
 
                     if (instance.type === 'tank' && instance.grindTouchUntil > nowT) {

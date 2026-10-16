@@ -1243,24 +1243,13 @@
         c.imageSmoothingEnabled = true;
         var C = S.cache, k = S.cacheK, Pd = C.Pd, Qd = C.Qd, TL = C.tl, ti, tl, X, Y;
         var ox = fmod(S.camX, S.P), oy = fmod(S.camY, S.Q), xx, yy;
-        if (Math.abs(D / k - 1) < 1e-6) {
-            var bx = -Math.round(ox * D), by = -Math.round(oy * D);
-            S.vx = -bx / D; S.vy = -by / D;
-            for (yy = by; yy < ch; yy += Qd) for (xx = bx; xx < cw; xx += Pd) for (ti = 0; ti < TL.length; ti++) {
-                tl = TL[ti]; X = xx + tl.X; Y = yy + tl.Y;
-                if (X + tl.w <= 0 || X >= cw || Y + tl.h <= 0 || Y >= ch) continue;
-                c.drawImage(tl.cv, X, Y);
-            }
-        } else {
-            var sc = D / k, pw = S.P * D, qh = S.Q * D;
-            S.vx = ox; S.vy = oy;
-            c.imageSmoothingQuality = 'low';
-            for (yy = -oy * D; yy < ch; yy += qh) for (xx = -ox * D; xx < cw; xx += pw) for (ti = 0; ti < TL.length; ti++) {
-                tl = TL[ti]; X = Math.round(xx + tl.X * sc); Y = Math.round(yy + tl.Y * sc);
-                var X2 = Math.round(xx + (tl.X + tl.w) * sc), Y2 = Math.round(yy + (tl.Y + tl.h) * sc);
-                if (X2 <= 0 || X >= cw || Y2 <= 0 || Y >= ch) continue;
-                c.drawImage(tl.cv, X, Y, X2 - X, Y2 - Y);
-            }
+        var sc = D / k, pw = S.P * D, qh = S.Q * D;
+        S.vx = ox; S.vy = oy;
+        for (yy = -oy * D; yy < ch; yy += qh) for (xx = -ox * D; xx < cw; xx += pw) for (ti = 0; ti < TL.length; ti++) {
+            tl = TL[ti]; X = xx + tl.X * sc; Y = yy + tl.Y * sc;
+            var W2 = tl.w * sc + 0.5, H2 = tl.h * sc + 0.5;
+            if (X + W2 <= 0 || X >= cw || Y + H2 <= 0 || Y >= ch) continue;
+            c.drawImage(tl.cv, X, Y, W2, H2);
         }
         c.setTransform(D, 0, 0, D, 0, 0);
         var s = S.s, M = s * 1.6, i, x, y;

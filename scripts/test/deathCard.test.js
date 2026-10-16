@@ -90,7 +90,7 @@ test('home: a live mining world behind the menu in the in-game rock art, capped 
     assert.match(css, /#homeBackdrop::after \{[^}]*radial-gradient/, 'a static calm patch behind the menu');
     assert.match(css, /html\[data-theme\] #dwJoin:not\(\.see\) \{\n    background-image: var\(--home-gems\)/, 'the connecting screen keeps the CSS floor');
     const home = src('home.js');
-    assert.match(home, /if \(!reduceMotion && now - homeFxLast < 32\) return;/, 'capped near 30 fps');
+    assert.match(home, /if \(!reduceMotion\) homeFxRaf = requestAnimationFrame\(drawHomeFx\);/);
     assert.match(home, /world\.build\(W, H, cheap \? 0\.5 : dpr, root\.getAttribute\('data-theme'\) === 'light'\)/);
     assert.match(home, /done = world\.step\(8\);/, 'baked in idle slices');
     assert.match(home, /if \(world\) \{ world\.release\(\); worldIn = 0; \}/, 'let go while a game runs');

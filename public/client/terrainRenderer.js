@@ -2704,11 +2704,10 @@ class TerrainRenderer {
         // A sharper layer, once the zoom holds still on one this layer
         // wasn't shaded for (or this is a coarse one). Dropped if the zoom
         // moves again before it is done.
-        const sharp = L.full && Math.abs(L.want / want - 1) < HD_SNAP;
+        const sharp = L.full && Math.abs(L.want / want - 1) < 0.08;
         let N = this._hdNext;
-        // (a kept denser layer: the replacement starts at once, zoom moving or not)
-        if (N && L.keep && !stable && Math.abs(N.want / want - 1) < 0.25) { /* keep filling it */ }
-        else if (N && (sharp || !stable || Math.abs(N.want / want - 1) >= HD_SNAP || N.ratioY !== ratioY || N.cols !== this._cols)) { this._hdDropLayer(N); N = this._hdNext = null; }
+        if (N && L.keep && !stable && Math.abs(N.want / want - 1) < 0.25) {}
+        else if (N && (sharp || !stable || Math.abs(N.want / want - 1) >= 0.04 || N.ratioY !== ratioY || N.cols !== this._cols)) { this._hdDropLayer(N); N = this._hdNext = null; }
         if (!N && !sharp && (stable || L.keep)) N = this._hdNext = this._hdNewLayer(want, ratioY, want, true);
         // background shading, inside the frame's budget
         const t0 = performance.now();
@@ -2765,25 +2764,19 @@ class TerrainRenderer {
     // whole device pixels, so tiles meet without a seam, and at 1:1 every
     // tile is a straight copy.
     _hdDraw(ctx, L, ox, oy, cellW, cellH, S, x0, y0, x1, y1) {
-        const kx = S * cellW / L.d, ky = S * cellH / L.dY;      // device px per image px
-        const bx = S * ox, by = S * oy;                        // device position of world pixel 0
         let i0 = L.i0, j0 = L.j0, i1 = L.i1, j1 = L.j1;
         if (x0 !== undefined) {
             i0 = Math.max(i0, Math.floor(x0 * L.d / HD_T)); i1 = Math.min(i1, Math.floor(x1 * L.d / HD_T));
             j0 = Math.max(j0, Math.floor(y0 * L.dY / HD_T)); j1 = Math.min(j1, Math.floor(y1 * L.dY / HD_T));
         }
-        const one = Math.abs(kx - 1) < HD_SNAP && Math.abs(ky - 1) < HD_SNAP;
-        const rbx = Math.round(bx), rby = Math.round(by);
         const frame = this._hdFrame | 0;
+        const tw = (HD_T + 1) / L.d, th = (HD_T + 1) / L.dY;
         for (let j = j0; j <= j1; j++) {
-            const Y0 = one ? rby + j * HD_T : Math.round(by + j * HD_T * ky), Y1 = one ? Y0 + HD_T : Math.round(by + (j + 1) * HD_T * ky);
-            if (Y1 <= Y0) continue;
+            const ty = (j * HD_T - 0.5) / L.dY;
             for (let i = i0; i <= i1; i++) {
                 const t = L.tiles.get(hdKey(i, j));
                 if (!t || t.at > frame) continue;
-                const X0 = one ? rbx + i * HD_T : Math.round(bx + i * HD_T * kx), X1 = one ? X0 + HD_T : Math.round(bx + (i + 1) * HD_T * kx);
-                if (X1 <= X0) continue;
-                ctx.drawImage(t.bm, 1, 1, HD_T, HD_T, (X0 / S - ox) / cellW, (Y0 / S - oy) / cellH, (X1 - X0) / S / cellW, (Y1 - Y0) / S / cellH);
+                ctx.drawImage(t.bm, 0.5, 0.5, HD_T + 1, HD_T + 1, (i * HD_T - 0.5) / L.d, ty, tw, th);
             }
         }
     }
@@ -3202,11 +3195,7 @@ class TerrainRenderer {
             const lite = config.graphical.fewerEffects;
             const outlineW = Math.min(OUTLINE_PX * 2 / cellW, OUTLINE_MAX * rockSz);
             const bevD = Math.min(BEVEL_PX / cellW, OUTLINE_MAX * 0.6 * rockSz);
-            let bx = tex.x, by = tex.y;
-            if (!tex.hd && Math.abs(S * cellW / tex.density - 1) < 1e-6 && Math.abs(S * cellH / (tex.density * tex.ratioY) - 1) < 1e-6) {
-                bx = (Math.round(S * (originX + tex.x * cellW)) / S - originX) / cellW;
-                by = (Math.round(S * (originY + tex.y * cellH)) / S - originY) / cellH;
-            }
+            const bx = tex.x, by = tex.y;
             if (!simple && !lite) {
                 const sideE = Math.min(SIDE_PX / cellW, SIDE_MAX * rockSz);
                 const sides = this._sideQuads(local, sideE);

@@ -85,12 +85,12 @@ function track() {
     return { h: [], ex: 0, ey: 0, px: NaN, py: NaN, pvx: 0, pvy: 0, pt: 0, cut: true, x: 0, y: 0, f: 0 };
 }
 
-function push(tr, stamp, x, y, f) {
+function push(tr, stamp, x, y, f, vx, vy, vf) {
     if (!tr || !isFinite(x) || !isFinite(y)) return;
     const h = tr.h;
     const last = h.length ? h[h.length - 1] : null;
     if (last && stamp <= last[0]) {
-        last[1] = x; last[2] = y; last[3] = f;
+        last[1] = x; last[2] = y; last[3] = f; last[4] = vx; last[5] = vy; last[6] = vf;
         return;
     }
     if (last && Math.hypot(x - last[1], y - last[2]) > CFG.cutDist * Math.max(1, (stamp - last[0]) / S.tick / 3)) {
@@ -100,9 +100,9 @@ function push(tr, stamp, x, y, f) {
     }
     if (h.length >= CFG.histMax) {
         const r = h.shift();
-        r[0] = stamp; r[1] = x; r[2] = y; r[3] = f;
+        r[0] = stamp; r[1] = x; r[2] = y; r[3] = f; r[4] = vx; r[5] = vy; r[6] = vf;
         h.push(r);
-    } else h.push([stamp, x, y, f]);
+    } else h.push([stamp, x, y, f, vx, vy, vf]);
 }
 
 function angLerp(a, b, t) {
@@ -119,18 +119,21 @@ function sample(tr, R) {
     const last = h[n - 1];
     if (n === 1 || R >= last[0]) {
         let vx = 0, vy = 0;
-        if (n > 1) {
+        const hasV = Number.isFinite(last[4]) && Number.isFinite(last[5]);
+        if (hasV) {
+            vx = last[4]; vy = last[5];
+        } else if (n > 1) {
             const p = h[n - 2], dt = last[0] - p[0];
             if (dt > 0 && dt < 260) { vx = (last[1] - p[1]) / dt; vy = (last[2] - p[2]) / dt; }
         }
-        const over = n > 1 ? Math.max(0, R - last[0]) : 0;
+        const over = (n > 1 || hasV) ? Math.max(0, R - last[0]) : 0;
         const ahead = Math.min(over, CFG.extrapMs);
         if (over > CFG.extrapMs) stats.hold++; else if (over > 0) stats.extrap++;
         out.x = last[1] + vx * ahead;
         out.y = last[2] + vy * ahead;
         out.vx = over >= CFG.extrapMs ? 0 : vx;
         out.vy = over >= CFG.extrapMs ? 0 : vy;
-        out.f = last[3];
+        out.f = last[3] + (Number.isFinite(last[6]) ? last[6] * ahead : 0);
         return out;
     }
     if (R <= h[0][0]) {
@@ -158,7 +161,7 @@ function resolve(tr, R, now) {
         const dx = s.x - cx, dy = s.y - cy;
         const d = Math.hypot(dx, dy);
         if (d > CFG.snapDist) { tr.ex = 0; tr.ey = 0; stats.snapped++; }
-        else if (d > 1.5) { tr.ex -= dx; tr.ey -= dy; stats.eased++; }
+        else if (d > 0.001) { tr.ex -= dx; tr.ey -= dy; stats.eased++; }
     } else if (tr.cut) { tr.ex = 0; tr.ey = 0; }
     tr.cut = false;
     if (dt > 0) {

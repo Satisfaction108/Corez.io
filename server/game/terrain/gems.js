@@ -53,7 +53,7 @@ const MAGNET_REACH = 135;
 // stay just outside the touch ring for its whole flyby.
 const PICKUP_SLOP  = 1.0;
 
-const GEM_MAX_SPEED = 6;
+const GEM_MAX_SPEED = 10;
 
 // Round 9 mining feel
 const COMBO_STEP = 0.1, COMBO_CAP = 1;
@@ -612,58 +612,12 @@ function tickGem(gem, tg, players) {
         const ttl = gem.gemLootFromPlayer ? GEM_TTL_PLAYER_MS * (long ? LONG_MULT : 1) : GEM_TTL_MS * (long ? LONG_MULT : 1);
         const idle = now - gem.gemRestAt;
         if (idle > ttl || now - (gem.gemBornAt || now) > GEM_MAX_LIFE_MS * (long ? LONG_MULT : 1)) { gem.kill(); return; }
-        // the client blinks invuln entities: that is the fade-out warning
         const fading = idle > ttl - GEM_FADE_MS;
         if (fading !== !!gem.invuln) gem.invuln = fading;
-    }
-    const p = tg.pushCircleFromVoronoi(gem, gem.realSize);
-    if (p.dx !== 0 || p.dy !== 0) {
-        const pl = Math.hypot(p.dx, p.dy);
-        const nx = p.dx / pl, ny = p.dy / pl;
-        const vDot = gem.velocity.x * nx + gem.velocity.y * ny;
-        if (vDot < 0) {
-            gem.velocity.x -= vDot * nx;
-            gem.velocity.y -= vDot * ny;
-        }
-    }
-
-    if (tg.pointInRock(gem.x, gem.y)) {
-        const safeStillOpen = gem.gemSafeX !== undefined && !tg.pointInRock(gem.gemSafeX, gem.gemSafeY);
-        if (safeStillOpen) {
-            gem.x = gem.gemSafeX;
-            gem.y = gem.gemSafeY;
-        } else {
-            // rock regrew over the last open spot: search outward for free ground
-            const now = Date.now();
-            if (now - (gem.gemDigOutAt || 0) > 400) {
-                gem.gemDigOutAt = now;
-                const step = Math.max(18, gem.realSize * 2);
-                let freed = false;
-                for (let ring = 1; ring <= 6 && !freed; ring++) {
-                    for (let i = 0; i < 12; i++) {
-                        const a = (i / 12) * Math.PI * 2 + ring * 0.26;
-                        const x = gem.x + Math.cos(a) * step * ring;
-                        const y = gem.y + Math.sin(a) * step * ring;
-                        if (tg.pointInRock(x, y)) continue;
-                        gem.x = x; gem.y = y;
-                        gem.gemSafeX = x; gem.gemSafeY = y;
-                        freed = true;
-                        break;
-                    }
-                }
-            }
-        }
-        gem.velocity.x = 0;
-        gem.velocity.y = 0;
-    } else {
-        gem.gemSafeX = gem.x;
-        gem.gemSafeY = gem.y;
     }
 
     if (!(gem.gemValue > 0)) return;
 
-    // Magnet target (best) and toucher are tracked separately: anyone touching
-    // a gem collects it, whoever it is flying toward.
     let best = null, bestD = Infinity, bestScore = Infinity;
     let toucher = null, toucherD = Infinity;
     const bias = gem.chamberBias;
@@ -764,37 +718,74 @@ function tickGem(gem, tg, players) {
         gem.velocity.x *= GEM_MAX_SPEED / spNow;
         gem.velocity.y *= GEM_MAX_SPEED / spNow;
     }
-    // round 9: a broken rock's gems fly straight to the breaker for PULL_MS
-    if (puller && (puller.carriedGems | 0) < (puller.gemCap | 0 || SATCHEL_CAP)) {
+    const pulling = !!(puller && (puller.carriedGems | 0) < (puller.gemCap | 0 || SATCHEL_CAP));
+    if (pulling) {
         const dx = puller.x - gem.x, dy = puller.y - gem.y, d = Math.hypot(dx, dy) || 1;
         if (d < PULL_REACH) {
-            const sp = Math.min(PULL_SPEED, 3 + d * 0.05);
+            const sp = Math.min(PULL_SPEED, 3.5 + d * 0.055);
             gem.velocity.x += ((dx / d) * sp - gem.velocity.x) * 0.5;
             gem.velocity.y += ((dy / d) * sp - gem.velocity.y) * 0.5;
-            // still flying when the window ends: let the magnet finish it off
-            if (now + 100 > gem.gemPullUntil && d > 60) gem.gemPullUntil = Math.min(now + 400, gem.gemBornAt + PULL_MS * 2);
+            if (now + 120 > gem.gemPullUntil) gem.gemPullUntil = Math.min(now + 400, gem.gemBornAt + PULL_MS * 2.5);
             return;
         }
     }
-    if (!best) return;
-    // boss eruptions and chest bursts fly free for a beat before the magnet grabs them
-    if (gem.gemNoMagnetUntil && now < gem.gemNoMagnetUntil) return;
-
-    let magBoost = 1;
-    if (best.socket) { try { magBoost = shopMod().magnetMult(best); } catch { /* */ } }
-    else if (best._pkfx) magBoost = best._pkfx.magnet || 1;     // a bot's Ore Magnet perk
-    const magR = (best.realSize * 2.6 + MAGNET_REACH) * (bias ? 1.45 : 1) * magBoost;
-    if (bestD < magR) {
+    let magR = 0, magnetized = false;
+    if (best && !(gem.gemNoMagnetUntil && now < gem.gemNoMagnetUntil)) {
+        let magBoost = 1;
+        if (best.socket) { try { magBoost = shopMod().magnetMult(best); } catch {} }
+        else if (best._pkfx) magBoost = best._pkfx.magnet || 1;
+        magR = (best.realSize * 2.6 + MAGNET_REACH) * (bias ? 1.45 : 1) * magBoost;
+        magnetized = bestD < magR;
+    }
+    if (!magnetized) {
+        const p = tg.pushCircleFromVoronoi(gem, gem.realSize);
+        if (p.dx !== 0 || p.dy !== 0) {
+            const pl = Math.hypot(p.dx, p.dy);
+            const nx = p.dx / pl, ny = p.dy / pl;
+            const vDot = gem.velocity.x * nx + gem.velocity.y * ny;
+            if (vDot < 0) {
+                gem.velocity.x -= vDot * nx;
+                gem.velocity.y -= vDot * ny;
+            }
+        }
+        if (tg.pointInRock(gem.x, gem.y)) {
+            const safeStillOpen = gem.gemSafeX !== undefined && !tg.pointInRock(gem.gemSafeX, gem.gemSafeY);
+            if (safeStillOpen) {
+                gem.x = gem.gemSafeX;
+                gem.y = gem.gemSafeY;
+            } else if (now - (gem.gemDigOutAt || 0) > 400) {
+                gem.gemDigOutAt = now;
+                const step = Math.max(18, gem.realSize * 2);
+                let freed = false;
+                for (let ring = 1; ring <= 6 && !freed; ring++) {
+                    for (let i = 0; i < 12; i++) {
+                        const a = (i / 12) * Math.PI * 2 + ring * 0.26;
+                        const x = gem.x + Math.cos(a) * step * ring;
+                        const y = gem.y + Math.sin(a) * step * ring;
+                        if (tg.pointInRock(x, y)) continue;
+                        gem.x = x; gem.y = y;
+                        gem.gemSafeX = x; gem.gemSafeY = y;
+                        freed = true;
+                        break;
+                    }
+                }
+            }
+            gem.velocity.x = 0;
+            gem.velocity.y = 0;
+        } else {
+            gem.gemSafeX = gem.x;
+            gem.gemSafeY = gem.y;
+        }
+    }
+    if (!best || (gem.gemNoMagnetUntil && now < gem.gemNoMagnetUntil)) return;
+    if (magnetized) {
         const pull  = 1 - bestD / magR;
-        const speed = 1.4 * pull + 4 * pull * pull;
+        const speed = 2.2 * pull + 4.8 * pull * pull;
         const ux = (best.x - gem.x) / bestD, uy = (best.y - gem.y) / bestD;
-        // curl in sideways while still far out, straight in for the last bit,
-        // so a pile of gems arrives as a spiral rather than a stack
         const swirl = (gem.gemSwirl || 0) * (1 - pull) * (1 - pull);
         const wx = ux - uy * swirl, wy = uy + ux * swirl;
-        gem.velocity.x += (wx * speed - gem.velocity.x) * 0.4;   // 30 Hz tick
-        gem.velocity.y += (wy * speed - gem.velocity.y) * 0.4;
-        // keep its own spin; aligning to the path makes a haul look like one block
+        gem.velocity.x += (wx * speed - gem.velocity.x) * 0.45;
+        gem.velocity.y += (wy * speed - gem.velocity.y) * 0.45;
         if (gem.facingType !== 'spin') { gem.facingType = 'spin'; gem.facingTypeArgs = { speed: gem.gemSpin || 0.02 }; }
     } else if (gem.facingType !== 'spin') {
         gem.facingType = 'spin';

@@ -628,7 +628,6 @@
             homeFxRaf = 0;
             if (!homeFxOn || !ctx) return;
             if (!reduceMotion) homeFxRaf = requestAnimationFrame(drawHomeFx);
-            if (!reduceMotion && now - homeFxLast < 32) return;
             homeFxLast = now;
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.clearRect(0, 0, W, H);

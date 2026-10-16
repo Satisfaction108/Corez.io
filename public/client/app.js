@@ -14989,17 +14989,16 @@ import * as tankRecords from './tankRecords.js';
             if (lab.textContent !== text) lab.textContent = text;
             el.style.width = widthPx;
             setFontSize(el, fs + "px");
-            if (lab.clientWidth > 0) {
-                while (fs > 10 && lab.scrollWidth > lab.clientWidth - 4) { fs -= 1; setFontSize(el, fs + "px"); }
-            } else c.key = "";
-            const room = (parseFloat(widthPx) || 0) - 36;
+            const kbd = el.querySelector && el.querySelector(".pa-key");
+            const kbdW = kbd && kbd.style.display !== "none" && kbd.textContent ? (kbd.offsetWidth || 56) + 12 : 0;
+            const room = (parseFloat(widthPx) || 0) - 32 - kbdW;
             if (room > 0) {
                 const mc = fitBtnFont.mc || (fitBtnFont.mc = document.createElement("canvas").getContext("2d"));
                 mc.font = "400 " + fs + "px 'Lilita One', Ubuntu, sans-serif";
-                const tw = mc.measureText(text).width + 8;
-                if (tw > room) { fs = Math.max(10, Math.floor(fs * room / tw)); setFontSize(el, fs + "px"); }
+                const tw = mc.measureText(text).width + 6;
+                if (tw > room) { fs = Math.max(14, Math.floor(fs * room / tw)); setFontSize(el, fs + "px"); }
             }
-        } catch (e) { /* */ }
+        } catch (e) {}
         return (c.fs = fs + "px");
     }
     window.dwPlayAgain = () => { const st = playAgainState(); return { label: st.label, ready: !!st.ready, ended: !!st.ended, font: global.deathPlayCss ? playAgainFont(st, global.deathPlayCss, "") : "" }; };
@@ -15604,7 +15603,7 @@ import * as tankRecords from './tankRecords.js';
                     const gap = pc.gap || 12, wa = pc.split ? Math.max(60, Math.min(pc.split, pc.w - gap - 60)) : Math.round((pc.w - gap) * 0.4), wb = pc.w - gap - wa;
                     const x0 = pc.cx - pc.w / 2;
                     pcA = { cx: Math.round(x0 + wa / 2), top: pc.top, w: wa, h: pc.h, big: pc.big };
-                    const bfs = Math.max(12, Math.min(pc.big ? 26 : 22, Math.floor((wb - 28) / (Math.max(1, ra.label.length) * 0.55)))) + "px";
+                    const bfs = (pc.big ? 26 : 22) + "px";
                     const wantB = { left: Math.round(x0 + wa + gap + wb / 2) + "px", top: pc.top + "px", width: wb + "px", height: pc.h + "px" };
                     for (const k in wantB) if (asBuild.style[k] !== wantB[k]) asBuild.style[k] = wantB[k];
                     setFontSize(asBuild, fitBtnFont(asBuild, asBuild.firstChild, ra.label, wb + "px", bfs));
