@@ -85,7 +85,7 @@ function recordRun(body, tankName, score, kills, playMs, now = Date.now()) {
             const users = require('./users');
             const uRow = users.byId(acct.id);
             if (uRow && boardHide.isHidden(uRow)) return false;
-        } catch { /* */ }
+        } catch {}
     }
     const who = acct ? ('a:' + acct.id) : (sock.guestId ? ('g:' + sock.guestId) : ('s:' + (sock.id || '0')));
     const username = String((acct && acct.username) || body.name || 'Unnamed').trim().slice(0, 32) || 'Unnamed';
@@ -104,7 +104,7 @@ function recordRun(body, tankName, score, kills, playMs, now = Date.now()) {
                 const cos = store.cosmeticsFor(uRow);
                 if (cos) { nameStyleNid = cos.nameStyleNid | 0; nameColor = cos.nameColor || null; }
             }
-        } catch { /* */ }
+        } catch {}
     }
 
     const curMem = memRecords.get(tank);
@@ -129,7 +129,7 @@ function recordRun(body, tankName, score, kills, playMs, now = Date.now()) {
                        name_style_nid = excluded.name_style_nid, name_color = excluded.name_color, updated_at = excluded.updated_at`,
                 tank, who, userId, publicId, username, score, kills, playMs, division, legendNo, nameStyleNid, nameColor, now);
         }
-    } catch { /* */ }
+    } catch {}
     return true;
 }
 
@@ -161,7 +161,7 @@ function getAllRows() {
                     });
                 }
             }
-        } catch { /* */ }
+        } catch {}
     }
     const list = catalog.length ? catalog : [...byTank.keys()].map(t => ({ tank: t, tier: 1 }));
     const R = require('../../shared/ranks.js');

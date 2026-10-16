@@ -76,7 +76,7 @@ function localTankFallbackRows() {
                 }
             }
         }
-    } catch { /* */ }
+    } catch {}
     if (!out.length) {
         const pool = (window.tankRecords && typeof window.tankRecords.dailyFeaturedFor === 'function')
             ? ['Basic', 'Twin', 'Sniper', 'Machine Gun', 'Flank Guard', 'Director', 'Pounder', 'Trapper', 'Splitter',
@@ -127,7 +127,7 @@ function mergeLocalTankRecords(rows) {
                 cur.localMine = true;
             }
         }
-    } catch { /* */ }
+    } catch {}
     return [...byTank.values()];
 }
 

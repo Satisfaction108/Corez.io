@@ -1,8 +1,3 @@
-// Client-side Personal Best (PB) records per tank class (best single-life score & kills)
-// Stored in localStorage under "dwTankPB" as { [tankName]: { s: bestScore, k: bestKills } }
-// Also provides the deterministic Daily Featured Tanks list (matching server/game/terrain/dailyTanks.js)
-// so the homepage and in-game HUD always have today's 3 featured tanks (+25% pts).
-
 const KEY = "dwTankPB";
 let cache = null;
 
@@ -56,13 +51,13 @@ function load() {
             const obj = JSON.parse(raw);
             if (obj && typeof obj === "object") cache = obj;
         }
-    } catch { /* */ }
+    } catch {}
     return cache;
 }
 
 function save() {
     if (!cache) return;
-    try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch { /* */ }
+    try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch {}
 }
 
 export function get(tankName) {
@@ -89,8 +84,6 @@ export function allRecords() {
     return out;
 }
 
-// Records a life's score, kills and playMs for `tankName` (live or at death).
-// Returns { newPB: boolean, prevScore: number, score: number, kills: number, playMs: number, tank: string }
 export function recordLife(tankName, score, kills, playMs) {
     const name = String(tankName || "").trim();
     score = Math.max(0, score | 0);
@@ -112,7 +105,7 @@ export function recordLife(tankName, score, kills, playMs) {
             if (typeof window !== "undefined" && typeof window.renderHomeDailyAndRecords === "function") {
                 window.renderHomeDailyAndRecords();
             }
-        } catch { /* */ }
+        } catch {}
     }
     return { newPB, prevScore, score: map[name] ? map[name].s : score, kills: map[name] ? map[name].k : kills, playMs: map[name] ? (map[name].t | 0) : playMs, tank: name };
 }

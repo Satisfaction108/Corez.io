@@ -1,11 +1,8 @@
-// Daily Featured Tanks (+25% score & gemdust bonus on 3 rotating tank classes each UTC day)
 'use strict';
 
 const BONUS_MULT = 1.25;
 const BONUS_PCT = 25;
 
-// Curated pool of iconic, distinct Arras Tier-4 tank labels across all playstyles
-// (spammers, snipers, ambushers, drones, trappers, rammers/flankers)
 const FEATURED_POOL = [
     'Annihilator', 'Hybrid', 'Skimmer', 'Destroyer',
     'Overlord', 'Manager', 'Factory', 'Battleship',
@@ -63,7 +60,6 @@ function forDay(dayKey) {
     return cachedList;
 }
 
-// Expands today's 3 featured tanks to also include all of their upgrades (e.g. Tier 5 children)
 function expandedSetForDay(dayKey) {
     const list = forDay(dayKey);
     const dk = cachedDay;
@@ -100,7 +96,6 @@ function expandedSetForDay(dayKey) {
     return full;
 }
 
-// True if `body` is currently one of today's featured tanks OR any upgrade of today's featured tanks
 function isFeaturedBody(body, dayKey) {
     if (!body) return false;
     const set = expandedSetForDay(dayKey);
