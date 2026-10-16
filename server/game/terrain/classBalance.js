@@ -4,27 +4,25 @@
 // ROYALE_CLASS_BALANCE=0 turns it off.
 const enabled = process.env.ROYALE_CLASS_BALANCE !== '0';
 
-const POUNDER = 0.8;   // the pounder line hits players too hard
+const POUNDER = 1.0;   // Arras pounder/destroyer line hits cleanly
 const VS_TANKS = {
-    'Pounder': 0.85, 'Destroyer': POUNDER, 'Artillery': 0.85, 'Launcher': 0.85,
+    'Pounder': 1.0, 'Destroyer': POUNDER, 'Artillery': 1.0, 'Launcher': 1.0,
     'Shotgun': POUNDER, 'Eagle': POUNDER, 'Conqueror': POUNDER, 'Hybrid': POUNDER,
-    'Annihilator': 0.7, 'Mortar': POUNDER, 'Ordnance': POUNDER, 'Beekeeper': 0.72,
+    'Annihilator': 0.95, 'Mortar': POUNDER, 'Ordnance': POUNDER, 'Beekeeper': 0.9,
     'Field Gun': POUNDER, 'Skimmer': POUNDER, 'Twister': POUNDER, 'Swarmer': POUNDER, 'Sidewinder': POUNDER,
-    'Constructor': 0.8,
-    'Octo Tank': 0.88,
-    'Penta Shot': 1.12,
-    'Factory': 0.5, 'Flotilla': 0.5, 'Kumquat': 0.5, 'Pomelo': 0.5,
+    'Constructor': 0.92,
+    'Octo Tank': 0.95,
+    'Penta Shot': 1.0,
+    'Factory': 0.72, 'Flotilla': 0.72, 'Kumquat': 0.72, 'Pomelo': 0.72,
 };
-// Oct 7 2026 (owner: "nerf traps a little bit please"): every trap and block (any projectile of
-// type 'trap': Trapper's triangles, Builder/Architect blocks, boomerangs, pillbox bodies), from
-// every tank, classic or expanded, player or bot, lands 13% softer on other tanks. Rock, chests
-// and bosses take the same as before.
-const TRAP_VS_TANKS = 0.87;
-// Oct 8 2026 (owner: "nerf the factory/spawner branch, holy op"): minions (Spawner, Factory and
-// every tank that makes them, classic or expanded) hit other tanks 40% softer, by ramming and
-// with their own guns. Rock, chests and bosses take the same as before.
-const MINION_VS_TANKS = 0.6;
-const HELPER_VS_TANKS = 0.75;
+// Traps hit like Arras traps while keeping pillbox/block spam fair.
+const TRAP_VS_TANKS = 0.96;
+// Minions (Spawner, Factory, etc.) have 6 basic-gun turrets; keep minion PvP
+// damage measured so 6 minions don't instagib or steamroll everything.
+const MINION_VS_TANKS = 0.72;
+// Drones (Overseer/Overlord branch) keep a modest PvP trim so 8 drones don't
+// one-shot big tanks in a single claw.
+const HELPER_VS_TANKS = 0.82;
 const SWARM_VS_TANKS = 1.1;
 function helperKind(e) {
     if (!e || e.fromSidearm || e.rockOnly) return null;

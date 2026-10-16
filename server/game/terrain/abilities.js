@@ -54,12 +54,12 @@ const ABILITIES = [
       desc: "Lets you dig underground through rock for up to 10 seconds. You're slower and can't shoot, and you can press it again to come up." },
     { id: "shock",   name: "Shockwave",    price: 900,  cd: 14000, trial: true, place: 550,
       desc: "Throws a shock grenade up to 550m away that shatters rock and launches every tank in the blast, including you. Only enemies take damage." },
-    { id: "radar",   name: "Radar Ping",   price: 600,  cd: 22000,
+    { id: "radar",   name: "Radar Ping",   price: 600,  cd: 22000, retired: true,
       desc: "Shows every tank within 2.5km on your screen and minimap for 10 seconds. Tanks carrying lots of gems glow gold." },
     { id: "wall",    name: "Barricade",    price: 700,  cd: 18000, place: 600,
       desc: "Raises a wall of rock where you aim, almost instantly. It stands for 20 seconds." },
-    { id: "smoke",   name: "Smoke Bomb",   price: 800,  cd: 22000, trial: true, place: 550,
-      desc: "Throws a smoke bomb up to 550m away that hides anyone inside the cloud for 8 seconds. Shooting gives you away." },
+    { id: "smoke",   name: "Smoke Bomb",   price: 600,  cd: 14000, trial: true, place: 550,
+      desc: "Throws a smoke bomb up to 550m away that hides anyone inside the cloud for 11 seconds, boosts speed by 30%, and heals you." },
     { id: "rush",    name: "Adrenaline",   price: 1000, cd: 24000, trial: true,
       desc: "You fire 60% faster and move 30% faster for 10 seconds." },
     { id: "pad",     name: "Launch Pad",   price: 600,  cd: 16000, trial: true, place: 600,
@@ -89,7 +89,7 @@ const RADAR = { radius: 2500, ms: 10000, everyMs: 500, carrier: 400 };
 const WALL = { count: 5, ms: 20000, riseMs: 300, gapMs: 20 };
 // thrown (throwSpeed units per ms); the cloud hides anyone standing in it
 // for cloudMs, except while they shoot (the thrower gets graceMs first)
-const SMOKE = { ms: 8000, cloudMs: 8000, radius: 300, graceMs: 1000, throwSpeed: 1.1 };
+const SMOKE = { ms: 11000, cloudMs: 11000, radius: 380, graceMs: 1400, throwSpeed: 1.35, speedMult: 1.3, healPerTick: 0.0025 };
 const RUSH = { ms: 10000, fire: 1.6, speed: 1.3 };
 const PAD = { ms: 30000, armMs: 250, radius: 62, launchMs: 400, mult: 4.5, perOwner: 2, againMs: 900 };
 const PLACE_CLEAR = 46;     // a pad needs this much open ground under it
@@ -583,6 +583,7 @@ const USES = {
         if (clouds.length > 16) clouds.shift();
         body.smokeAt = t + fly;
         body.smokeUntil = t + fly + SMOKE.cloudMs;
+        refresh(body);
         busy.add(body);
         fx('smokethrow', body.x, body.y, Math.atan2(P.dir.y, P.dir.x), P.d, body.id);
         return { ok: true };
@@ -865,8 +866,8 @@ function onBanked(body, amount) {
     const st = stateOf(body.socket);
     if (st.trialUsed || st.own.length || st.twist || equippedOf(st)) return null;
     st.trialUsed = true;
-    // a second, different one to try
-    const pool = ABILITIES.filter(a => a.trial && !st.own.includes(a.id));
+    // the cells under count points spaced a cell apart across the aim line
+    const pool = ABILITIES.filter(a => a.trial && !a.retired && !st.own.includes(a.id));
     if (!pool.length) return null;
     const pick = pool[(Math.random() * pool.length) | 0];
     st.trial = { id: pick.id, until: now() + TRIAL_MS };
@@ -1020,6 +1021,7 @@ function speedMult(body, t = now()) {
     if (body.rushUntil > t) m *= RUSH.speed;
     if (body.burrowUntil > t) m *= BURROW.speedMult;
     if (body.rocketUntil > t) m *= ROCKET.speed;
+    if (body.smokeHidden || body.smokeUntil > t) m *= SMOKE.speedMult;
     return m;
 }
 // Reload boost (gun.js), on top of the kit Overdrive's.
@@ -1097,19 +1099,23 @@ const clouds = [];
 const hidden = new Set();
 function hideBody(body) {
     // where it went in: HUD marks (hunted, bounty, revenge, streaks) hold there
-    if (!hidden.has(body)) { body._smokeX = body.x; body._smokeY = body.y; }
+    const wasHidden = hidden.has(body);
+    if (!wasHidden) { body._smokeX = body.x; body._smokeY = body.y; }
     if (body._smokeAlpha == null) body._smokeAlpha = body.alpha == null ? 1 : body.alpha;
     body.alpha = 0;
     body.smokeHidden = true;
     hidden.add(body);
+    if (!wasHidden) refresh(body);
 }
 function unhideBody(body) {
+    const wasHidden = hidden.has(body);
     hidden.delete(body);
     body.smokeHidden = false;
     if (body._smokeAlpha != null) {
         body.alpha = body.burrowUntil > now() ? Math.min(body._smokeAlpha, BURROW.alpha) : body._smokeAlpha;
         body._smokeAlpha = null;
     }
+    if (wasHidden) refresh(body);
 }
 // Who sees a tank the smoke hides (sockets.js view): -1 = not sent at all,
 // else the alpha to draw it at. Its own player and teammates see it as a
@@ -1149,7 +1155,12 @@ function tickSmoke(t) {
         if (!live(b)) { if (hidden.has(b)) unhideBody(b); continue; }
         const grace = b.smokeUntil > t && t - (b.smokeAt || 0) < SMOKE.graceMs;
         const hide = !b.isRoyaleBoss && inCloud(b, t) && (grace || !firing(b));
-        if (hide) { if (!hidden.has(b) || b.alpha !== 0) hideBody(b); }
+        if (hide) {
+            if (!hidden.has(b) || b.alpha !== 0) hideBody(b);
+            if (b.health && b.health.max > 0 && b.health.amount < b.health.max) {
+                b.health.amount = Math.min(b.health.max, b.health.amount + b.health.max * SMOKE.healPerTick);
+            }
+        }
         else if (hidden.has(b)) {
             unhideBody(b);
             if (inCloud(b, t) && t - (b._unsmokeAt || 0) > 600) { b._unsmokeAt = t; fx('unsmoke', b.x, b.y, 0, 0, b.id); }
@@ -1202,7 +1213,10 @@ function tickBody(body, t) {
         if (body.burrowUntil > t) { tickBurrow(body, t); more = true; }
         else endBurrow(body, t);
     }
-    if (body.smokeUntil > t) more = true;
+    if (body.smokeUntil) {
+        if (body.smokeUntil > t) more = true;
+        else { body.smokeUntil = 0; refresh(body); }
+    }
     if (body.rushUntil) {
         if (body.rushUntil > t) more = true;
         else { body.rushUntil = 0; refresh(body); }
@@ -1293,7 +1307,7 @@ function resetRaid() {
 function drops() { return require('./abilityDrops.js'); }
 
 function catalog() {
-    return ABILITIES.map(a => ({ id: a.id, cat: "ability", tier: 0, name: a.name, price: a.price, max: 0, desc: a.desc, cd: a.cd, place: a.place || 0 }));
+    return ABILITIES.filter(a => !a.retired).map(a => ({ id: a.id, cat: "ability", tier: 0, name: a.name, price: a.price, max: 0, desc: a.desc, cd: a.cd, place: a.place || 0 }));
 }
 
 module.exports = {

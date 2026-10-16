@@ -3,7 +3,7 @@
 const RAID_FLOOR = 4;
 
 function aoFloor() {
-    if (process.env.ROYALE_ALWAYS_ON !== '1') return 0;
+    if (process.env.ROYALE_ALWAYS_ON === '0') return 0;
     const tanks = parseInt(process.env.ROYALE_AO_TANKS, 10);
     if (tanks > 0) return tanks;
     const bots = parseInt(process.env.ROYALE_AO_BOTS, 10);

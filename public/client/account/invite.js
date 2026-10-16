@@ -73,6 +73,12 @@ function place() {
     const r = chip.getBoundingClientRect();
     if (!r.width) return;
     btn.classList.remove('stacked');
+    if (r.left < window.innerWidth - r.right) {
+        btn.style.left = Math.round(r.right + 8) + 'px';
+        btn.style.right = 'auto';
+        return;
+    }
+    btn.style.left = '';
     btn.style.right = Math.round(window.innerWidth - r.left + GAP) + 'px';
     const n = nav ? nav.getBoundingClientRect() : null;
     const b = btn.getBoundingClientRect();

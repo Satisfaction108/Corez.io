@@ -5,7 +5,7 @@ const flag = (k) => process.env[k] !== '0';
 const SW = {
     all: flag('ROYALE_FAIR_PLAY'),
     vault: flag('ROYALE_FAIR_VAULT'),
-    minnow: flag('ROYALE_SMALL_FISH'),
+    minnow: process.env.ROYALE_SMALL_FISH === '1',
     // a respawn keeping its tank and build: off unless ROYALE_KEEP_BUILD=1
     build: process.env.ROYALE_KEEP_BUILD === '1',
     struggle: flag('ROYALE_FAIR_STRUGGLE'),
@@ -14,10 +14,10 @@ const SW = {
     first: flag('ROYALE_FAIR_FIRST_KILL'),
     bossSpawn: flag('ROYALE_FAIR_BOSS_SPAWN'),
     spawnSafe: flag('ROYALE_SPAWN_SAFE'),
-    fodder: flag('ROYALE_FAIR_FODDER'),
+    fodder: process.env.ROYALE_FAIR_FODDER === '1',
     bankCover: flag('ROYALE_BANK_COVER'),
     // round 9: a protected player is fought once they've dealt 25% of a bot's max
-    hit25: flag('ROYALE_FAIR_HIT25'),
+    hit25: process.env.ROYALE_FAIR_HIT25 === '1',
     // round 10: every tank that killed you lately, not just a repeat killer
     pack: flag('ROYALE_FAIR_PACK'),
 };
@@ -346,7 +346,6 @@ function spared(bot, target, t = now()) {
     if (!target._fpProtect) return false;
     if (vaultGuarded(target, t)) return true;
     if (!isProtected(target, t)) return false;
-    if (isBig(bot)) return true;
     if (!on('bots')) return false;
     // a bot running away with the raid, or one that keeps killing them
     if (bot._fpRunaway || farmed(bot, target, t)) return true;

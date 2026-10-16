@@ -32,8 +32,8 @@
 .dw-igbtn.play .pa-key { font: 700 12px/1 Ubuntu, sans-serif; -webkit-text-stroke: 0; padding: 4px 6px; border-radius: 3px; background: rgba(0,0,0,.3); color: #fff; }
 .dw-igbtn.play:disabled { background: #4a4a4a !important; border-color: #333 !important; color: #cfcfcf !important; font-size: 21px !important; }
 #royaleDomPlayAgain, #royaleDomPlayBuild { padding: 0 14px; align-items: center; justify-content: center; }
-#royaleDomPlayBuild .pb-label { max-width: 100%; overflow: hidden; white-space: nowrap; }
-#royaleDomPlayBuild .pb-sub { font: 700 13px/1 Ubuntu, sans-serif !important; -webkit-text-stroke: 3px #333; }
+#royaleDomPlayAgain .pa-label, #royaleDomPlayBuild .pb-label { max-width: 100%; overflow: visible; white-space: nowrap; padding: 0 4px; box-sizing: border-box; }
+#royaleDomPlayBuild .pb-sub { font: 700 13px/1 Ubuntu, sans-serif !important; -webkit-text-stroke: 3px #333; padding: 0 4px; }
 
 #chatInput {
     color: #fff;

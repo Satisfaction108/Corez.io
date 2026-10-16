@@ -9,14 +9,14 @@
 // point earned in the new life.
 
 const RESPAWN_SHARE = 0.25;
-const RESPAWN_CAP = 2;
-const GAIN = 0.64;
-const SCALE = 1100;          // 2x at ~4.1k score (was 1500: ~5.7k)
+const RESPAWN_CAP = 1.45;
+const GAIN = 0.36;
+const SCALE = 1500;          // 1.45x at ~3.7k score, smooth tail to 1.85x
 // Bots grow from BOT_SCORE_MULT times their score, so a server has big
 // tanks around to chase. Growth only: the board keeps the real score.
 const BOT_SCORE_MULT = 2;
 // the "you grew" card fires when a life crosses one of these
-const STAGES = [1.25, 1.5, 1.75, 2, 2.3, 2.6, 2.9];
+const STAGES = [1.15, 1.3, 1.45, 1.6, 1.75];
 const REFRESH_STEP = 0.03;   // stats are recomputed every time size moves this much
 const EASE_MS = 900;
 
@@ -24,17 +24,17 @@ function enabled() {
     return !!(Config.dig_royale && Config.royale_growth && !Config.tutorial);
 }
 
-// 1 + GAIN*ln(1 + s/SCALE) up to 2x, so early points show. Past 2x it
-// eases toward MAX_GROWTH with the same slope at the join (Oct 7: the old
-// square root tail had no ceiling, ~4.5x at 100k)
-const MAX_GROWTH = 3;   // Oct 7: 4x with its health was far too tanky, back to 3x
-const TAIL_AT = SCALE * (Math.exp(1 / GAIN) - 1);           // score where the log reaches 2x
-const TAIL_TAU = (MAX_GROWTH - 2) * (SCALE + TAIL_AT) / GAIN;
+// 1 + GAIN*ln(1 + s/SCALE) up to KNEE_GROWTH, then eases toward MAX_GROWTH
+// with the same slope at the join so tanks stay agile in rock corridors.
+const MAX_GROWTH = 1.85;
+const KNEE_GROWTH = 1.45;
+const TAIL_AT = SCALE * (Math.exp((KNEE_GROWTH - 1) / GAIN) - 1);
+const TAIL_TAU = (MAX_GROWTH - KNEE_GROWTH) * (SCALE + TAIL_AT) / GAIN;
 function multFor(score) {
     const s = Math.max(0, score || 0);
     if (s <= TAIL_AT) return 1 + GAIN * Math.log(1 + s / SCALE);
-    const x = s - TAIL_AT;   // Oct 9: a slower tail than exp, same slope at 2x
-    return 2 + (MAX_GROWTH - 2) * x / (x + TAIL_TAU);
+    const x = s - TAIL_AT;
+    return KNEE_GROWTH + (MAX_GROWTH - KNEE_GROWTH) * x / (x + TAIL_TAU);
 }
 
 // the growth score that lands exactly on RESPAWN_CAP
@@ -58,23 +58,16 @@ function spawnEff(score) {
 }
 
 // Trade-offs, all 1 at normal size.
-function speedMult(g) { return 1 / (1 + 0.28 * (g - 1)); }
-// Health and damage creep up with size, slowly, following ln(size): the
-// same per size as before the ceiling (1.6 at the old 4.47x), so 1.44 at 3x.
-// Damage covers everything the tank deals: shots and rams into tanks,
-// chests and rock.
+// Gentle speed curve (~9% max speed change at 1.85x) so big players still move and dodge well.
+function speedMult(g) { return 1 / (1 + 0.12 * (g - 1)); }
 const STAT_AT_100K = 1.6;
 const STAT_K = (STAT_AT_100K - 1) / Math.log(4.4716);
 function statMult(g) { return 1 + STAT_K * Math.log(Math.max(1, g)); }
-// Health grows a little faster than damage: 1.2x at 2x, 1.4x at the 3x
-// ceiling, where it stops (Oct 7: 0.4 per x and a 4x ceiling made big tanks
-// shrug off an Annihilator)
-const HEALTH_PER_X = 0.1;   // Oct 9: 0.2 still one-shot late joiners; 1.2x at 3x
+// Health and damage scale noticeably but fairly (+24% HP and +10% Damage at 1.85x ceiling)
+// so growing feels rewarding without making big players unkillable.
+const HEALTH_PER_X = 0.28;
 function healthMult(g) { return 1 + HEALTH_PER_X * (Math.min(MAX_GROWTH, Math.max(1, g)) - 1); }
-// Damage (shots and rams) grows gently and stops at the ceiling: 1.2x at 3x
-// (Oct 8: it was 1.44x, and a grown Factory melted everything); digging keeps
-// the old curve (mineMult)
-const DAMAGE_PER_X = 0;     // Oct 9: growing makes you bigger, not hit harder
+const DAMAGE_PER_X = 0.12;
 function damageMult(g) { return 1 + DAMAGE_PER_X * (Math.min(MAX_GROWTH, Math.max(1, g)) - 1); }
 function bodyDamageMult(g) { return damageMult(g); }
 // The camera: arras' own sqrt(size) times this, so the view follows
@@ -110,7 +103,7 @@ function resizeKids(body) {
     for (const gun of gunsOf(body, [])) {
         for (const kid of gun.children || []) {
             if (!kid || kid.isGhost || !(kid._growG > 0) || kid._growG === g || (kid.isDead && kid.isDead())) continue;
-            const f = Math.sqrt(g / kid._growG);
+            const f = Math.pow(g / kid._growG, 0.8);
             kid.SIZE *= f;
             if (kid.coreSize) kid.coreSize *= f;
             kid._growG = g;

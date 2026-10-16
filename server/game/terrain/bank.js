@@ -30,11 +30,13 @@
 const crypto = require('crypto');
 
 const CHECKPOINT_MS = 15 * 1000;
-const DEATH_SHARE = 0.10;
-const DEATH_MAX = 2500;
-// Banked gems are 100% safe on death by default (playtests: "dying feels like
-// a tax"). ROYALE_SAVINGS_DEATH_LOSS=1 brings the savings tax back.
-let deathLossOn = process.env.ROYALE_SAVINGS_DEATH_LOSS === '1';
+const DEATH_SHARE = 0.75;       // On death, you keep 25% of your banked gems as a starter stash for the next life
+const DEATH_MAX = 50000;
+const SESSION_KEEP_SHARE = 0.25;
+const SESSION_KEEP_MAX = 800;
+// Dying trims banked shop gems down to a 25% starter stash (up to 800) so
+// every life starts hungry while still rewarding your previous life's banking.
+let deathLossOn = process.env.ROYALE_SAVINGS_DEATH_LOSS !== '0';
 function setDeathLoss(v) { deathLossOn = !!v; }
 function deathLossEnabled() { return deathLossOn; }
 
@@ -95,9 +97,11 @@ function checkOut(socket) {
     socket._bankLease = lease;
     socket._bankOwner = owner;
     socket._bankSavedAt = Date.now();
-    socket.gemBanked = Math.max(0, (socket.gemBanked || 0) | 0) + got;
-    socket.bankKept = (socket.bankKept | 0) + got;
-    return got;
+    // Spawn in with a modest starter portion (25%, up to 800) of previous session's banked gems
+    const starter = got > 0 ? Math.min(got, Math.min(SESSION_KEEP_MAX, Math.max(50, Math.round(got * SESSION_KEEP_SHARE)))) : 0;
+    socket.gemBanked = Math.max(0, (socket.gemBanked || 0) | 0) + starter;
+    socket.bankKept = (socket.bankKept | 0) + starter;
+    return starter;
 }
 
 // holder: a socket, or a resume snapshot's sock copy
@@ -153,18 +157,21 @@ function deathLossFor(body) {
     // already out of the raid (a disconnect or idle kick drops the satchel
     // after the cleanup): leaving is not dying
     if (body.royaleAlive === false || body.socket.leftOnPurpose || body.socket._drCleaned) return 0;
-    // the promise on every screen: gems banked this raid are safe
     try { if (require('./fairPlay.js').isProtected(body)) return 0; } catch { /* */ }
-    return Math.min(DEATH_MAX, Math.floor(kept(body.socket) * DEATH_SHARE));
+    const b = Math.max(0, (body.socket.gemBanked || 0) | 0);
+    if (b <= 0) return 0;
+    const keepStarter = Math.min(SESSION_KEEP_MAX, Math.round(b * (1 - DEATH_SHARE)));
+    return Math.max(0, Math.min(DEATH_MAX, b - keepStarter));
 }
 
-// Takes a death's loss off the bank, out of the savings part (deathLossFor only
+// Takes a death's loss off the bank, leaving the starter portion for the next life
 function takeDeathLoss(socket, loss) {
     if (!socket) return 0;
     const b = Math.max(0, (socket.gemBanked || 0) | 0);
     loss = Math.max(0, Math.min(b, loss | 0));
-    socket.bankKept = Math.max(0, kept(socket) - loss);
-    return b - loss;
+    const rem = b - loss;
+    socket.bankKept = Math.min(kept(socket), rem);
+    return rem;
 }
 
 // shutdown: every lease this thread holds goes back now

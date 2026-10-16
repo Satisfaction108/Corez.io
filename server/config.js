@@ -41,7 +41,7 @@ module.exports = {
 
             region: "Local",
             gamemode: ['dig_royale'],
-            player_cap: 20,
+            player_cap: 0,
 
             featured: true,
             unlisted: false,
@@ -322,7 +322,8 @@ module.exports = {
 {
     const solo = module.exports.servers.find(s => s.id === 'br');
     const wanted = parseInt(process.env.SOLO_RAIDS);
-    const total = Math.max(1, Math.min(8, isFinite(wanted) ? wanted : (process.env.NODE_ENV === 'production' ? 4 : 1)));
+    const aoOn = process.env.ROYALE_ALWAYS_ON !== '0';
+    const total = Math.max(1, Math.min(8, isFinite(wanted) ? wanted : (aoOn ? 1 : (process.env.NODE_ENV === 'production' ? 4 : 1))));
     const basePort = parseInt(process.env.SOLO_OVERFLOW_PORT) || ((parseInt(process.env.DUO_PORT) || 3102) + 1);
     for (let i = 1; i < total && solo; i++) {
         module.exports.servers.push({

@@ -25,6 +25,7 @@ const REBOUND_KEEP = 0.85;    // how much of the shot's speed survives the bounc
 const BOT_SHOT_MULT = 0.8;
 const botDiff = require('../miscFiles/botDifficulty.js');
 const fairPlay = require('./terrain/fairPlay.js');
+const tier5 = require('./terrain/tier5.js');
 const botTanks = require('../miscFiles/botTanks.js');
 const botTactics = require('../miscFiles/botTactics.js');
 const activity = require('./network/activity.js');
@@ -1005,6 +1006,10 @@ class gameHandler {
         if (!choice) return false;
         o.botRammerAllowed = false;
         if (!botTanks.climb(o, pathOf(choice))) return false;
+        // When Tier 5 is unlocked from spawn (T5_GROWTH <= 1), ~55% of non-minnow bots also step into a Tier 5 tank for variety
+        if (!o.botMinnow && tier5.T5_GROWTH <= 1 && Math.random() < 0.55) {
+            try { botTanks.tier5Up(o, this, counts); } catch { /* */ }
+        }
         o.leftoverUpgrades = 0;
         this.configureBotStats(o);
         return true;
@@ -1247,8 +1252,15 @@ class gameHandler {
                     FACING_TYPE: next.FACING_TYPE ? next.FACING_TYPE : Class.bot.FACING_TYPE,
                     AI: Class.bot.AI,
                 }, false, true, false);
+            } else {
+                const wantControllers = (next && next.CONTROLLERS)
+                    ? [...Class.bot.CONTROLLERS, ...next.CONTROLLERS]
+                    : Class.bot.CONTROLLERS;
+                if (!o.controllers || !o.controllers.length) {
+                    o.define({ CONTROLLERS: wantControllers }, false, true, false);
+                }
             }
-            o.define({ FACING_TYPE: next.FACING_TYPE ? next.FACING_TYPE : Class.bot.FACING_TYPE, AI: Class.bot.AI, }, false, true, false);
+            o.define({ FACING_TYPE: next && next.FACING_TYPE ? next.FACING_TYPE : Class.bot.FACING_TYPE, AI: Class.bot.AI, }, false, true, false);
             this.configureBotStats(o);
         });
     }
@@ -1275,7 +1287,9 @@ class gameHandler {
         // A few bots are playful instead of perfectly task-focused. Their
         // showoff moments are brief and never interrupt an actual player fight.
         o.botStyle = ran.choose(['normal', 'normal', 'normal', 'dancer', 'spinner']);
-        o.botTemperament = ran.choose(['aggressive', 'aggressive', 'balanced', 'balanced', 'passive']);
+        o.botTemperament = Config.dig_royale
+            ? ran.choose(['aggressive', 'aggressive', 'aggressive', 'balanced'])
+            : ran.choose(['aggressive', 'aggressive', 'balanced', 'balanced', 'passive']);
         // Body-only tanks are rare (about one rammer in fifty bots). The upgrade
         // picker below forces the body branch only for this group.
         o.botRammerAllowed = ran.chance(0.02);
@@ -1286,7 +1300,7 @@ class gameHandler {
         o.name = botName;
         o.invuln = true;
         o.leftoverUpgrades = ran.chooseChance(...Config.bot_class_upgrade_chances);
-        o.botWakeAt = Date.now() + 2000;
+        o.botWakeAt = Config.dig_royale ? 0 : Date.now() + 2000;
         o.botNextUpgradeAt = o.botWakeAt;
         o.botArmed = false;
         o.botDidUpgrade = false;
@@ -1304,7 +1318,11 @@ class gameHandler {
         this.configureBotStats(o);
         o.botStatsFixed = true;
         // Dig Royale: straight into a final tank from the bot pool
-        if (Config.dig_royale && botTanks.isEnabled()) this.botStartTank(o, lifecycle?.tank);
+        if (Config.dig_royale && botTanks.isEnabled()) {
+            this.botStartTank(o, lifecycle?.tank);
+            o.leftoverUpgrades = 0;
+            this.armBot(o);
+        }
         // ...with dash and one secondary ability (miscFiles/botTactics.js)
         if (Config.dig_royale) botTactics.equipBot(o, this.bots, Math.random, lifecycle?.ability);
         if (Config.dig_royale) o.botRespawnsRemaining = 0;

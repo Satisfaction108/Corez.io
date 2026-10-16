@@ -1282,7 +1282,7 @@ body.in-game .igc, body.in-game .igc-pip, .gt-stack {
 /* the death card's Play again (app.js updateRoyaleDomButtons): the menu's
    big green key; greyed while the 3 s wait counts down */
 .dw-igbtn.play { gap: 12px; border-radius: 14px; font: 400 26px/1 var(--display); letter-spacing: .02em; }
-.dw-igbtn.play .pa-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dw-igbtn.play .pa-label, .dw-igbtn.play .pb-label { white-space: nowrap; overflow: visible; padding: 0 4px; min-width: 0; }
 .dw-igbtn.play { justify-content: center; }
 .dw-igbtn.play .pa-key { font: 700 12px/1 var(--ui); letter-spacing: .04em; padding: 5px 7px 4px; border-radius: 6px; background: rgba(0,0,0,.22); color: rgba(255,255,255,.9); text-shadow: none; }
 .dw-igbtn.play:disabled { cursor: default; font-size: 22px; color: var(--text2); text-shadow: none; filter: none; transform: none; }
@@ -3378,9 +3378,29 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 .lb-pin { position: sticky; bottom: -20px; margin-top: 10px; padding-bottom: 6px; border-radius: 14px; background: var(--hub-bg); }
 .lb-pin .lb-row { border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 3px 0 var(--drop); }
 .lb-guest { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 10px 12px 10px 14px; border-radius: 12px; background: var(--surface2); border: 2.5px dashed var(--ink); color: var(--text2); font: 600 12.5px var(--ui); }
+.lb-row.lb-tank-row {
+    grid-template-columns: 44px minmax(110px, 1.15fr) minmax(100px, 1fr) 76px 92px;
+}
+.lb-tank-col {
+    color: var(--heading);
+    font: 700 14px var(--ui);
+    min-width: 0;
+}
+.lb-head .lb-tank-col {
+    color: var(--text2);
+    font: 700 15px var(--ui);
+}
 @media (max-width: 560px) {
     .lb-row { grid-template-columns: 44px minmax(0, 1fr) 84px; }
-    .lb-rank { display: none; }
+    .lb-row:not(.lb-tank-row) .lb-rank { display: none; }
+    .lb-row.lb-tank-row {
+        grid-template-columns: 38px minmax(85px, 1.1fr) minmax(75px, 1fr) 54px 72px;
+        gap: 6px;
+        padding: 0 8px 0 6px;
+        font-size: 12px;
+    }
+    .lb-row.lb-tank-row .lb-tank-col { font-size: 12.5px; }
+    .lb-row.lb-tank-row .lb-rp { font-size: 14px; }
 }
 
 /* ── Raid Night card above Play (client/account/eventCard.js) ──
@@ -6058,3 +6078,522 @@ html[data-theme] body:not(.in-game) :is(#dwHub, #dwModalRoot, #dwWelcome, #homeS
 html[data-theme] body:not(.in-game) :is(#dwHub, #dwModalRoot, #dwWelcome, #homeSettingsPanel, #homeChangelogPanel, #contributorsPanel) :is(.lb-guest, .wl-code) { border-width: 2px; border-radius: 10px; }
 html[data-theme] body:not(.in-game) :is(#dwHub, #dwModalRoot, #dwWelcome, #homeSettingsPanel, #homeChangelogPanel, #contributorsPanel) .wl-or::before,
 html[data-theme] body:not(.in-game) :is(#dwHub, #dwModalRoot, #dwWelcome, #homeSettingsPanel, #homeChangelogPanel, #contributorsPanel) .wl-or::after { border-top-width: 1px; }
+
+/* ── Daily Featured Tanks & Tank PB card (#homeDailyAndRecords) ─────── */
+html[data-theme] #startMenuWrapper #homeDailyAndRecords {
+    margin: 10px 0 0;
+    padding: 9px 11px;
+    background: var(--home-card);
+    border: 1.5px solid var(--home-card-edge);
+    border-radius: 8px;
+    box-shadow: 0 2px 0 var(--home-card-edge);
+    color: var(--home-ink);
+    text-align: center;
+    box-sizing: border-box;
+}
+html[data-theme] #startMenuWrapper #homeDailyAndRecords:empty { display: none; }
+html[data-theme] #startMenuWrapper #aoChampions:not(:empty) {
+    margin: 10px 0 0;
+    padding: 6px 10px;
+    background: var(--home-card);
+    border: 1.5px solid var(--home-card-edge);
+    border-radius: 8px;
+    box-shadow: 0 2px 0 var(--home-card-edge);
+    color: var(--home-ink2);
+    text-align: center;
+    box-sizing: border-box;
+}
+#homeDailyAndRecords .hdr-head {
+    font-size: 10.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--home-ink2);
+    margin-bottom: 5px;
+}
+#homeDailyAndRecords .hdr-head-sub { margin-top: 7px; margin-bottom: 4px; }
+#homeDailyAndRecords .hdr-bonus { color: var(--io-green-dk); font-weight: 900; }
+html[data-theme="dark"] #homeDailyAndRecords .hdr-bonus { color: #5fd05a; }
+#homeDailyAndRecords .hdr-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    justify-content: center;
+}
+#homeDailyAndRecords .hdr-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 800;
+    line-height: 1.25;
+    color: var(--home-ink);
+    background: var(--home-pill);
+    border: 1.5px solid var(--home-card-edge);
+}
+#homeDailyAndRecords .hdr-pill-ft {
+    background: rgba(60, 184, 74, 0.13);
+    border-color: rgba(60, 184, 74, 0.55);
+}
+#homeDailyAndRecords .hdr-star { color: #3cb84a; }
+#homeDailyAndRecords .hdr-pill-sub { opacity: 0.85; font-weight: 800; }
+#homeDailyAndRecords .hdr-pills-scroll {
+    max-height: 82px;
+    overflow-y: auto;
+    padding: 2px 3px;
+    scrollbar-width: thin;
+}
+#homeDailyAndRecords .hdr-pill-pb {
+    background: rgba(240, 181, 58, 0.22);
+    border-color: rgba(214, 152, 24, 0.78);
+    color: var(--home-ink);
+}
+html[data-theme="light"] #homeDailyAndRecords .hdr-pill-pb {
+    background: #fff5d6;
+    border-color: #d69818;
+    color: #1f1a0c;
+}
+#homeDailyAndRecords .hdr-pb-tank { font-weight: 800; color: var(--home-ink); }
+#homeDailyAndRecords .hdr-pb-val { font-weight: 900; color: #b57600; }
+html[data-theme="dark"] #homeDailyAndRecords .hdr-pb-val { color: #ffd45e; }
+
+/* ── Mobile & Responsive Homescreen Fixes ──────────────────────────── */
+@media (max-width: 640px) {
+    html[data-theme] body:not(.mobile) #startMenuWrapper .startMenu .hero-tag,
+    html[data-theme] body.mobile #startMenuWrapper .startMenu .hero-tag {
+        max-width: 100%;
+        margin-left: auto;
+        margin-right: auto;
+    }
+}
+
+/* Mobile Portrait & Narrow Viewports (<= 560px) */
+@media (max-width: 560px) {
+    :root, html[data-theme] {
+        --bar-top: 10px;
+        --bar-h: 40px;
+        --bar-gap: 6px;
+    }
+    html[data-theme] body.mobile,
+    html[data-theme] body:not(.mobile) {
+        --mw-top: calc(102px + var(--sa-t));
+        --mw-bot: calc(58px + var(--sa-b));
+        --mw-pb: 8px;
+    }
+    html.dw-fresh[data-theme] body.mobile,
+    html.dw-fresh[data-theme] body:not(.mobile) {
+        --mw-top: calc(18px + var(--sa-t));
+        --mw-bot: 0px;
+        --mw-pb: calc(16px + var(--sa-b));
+    }
+    html[data-theme] body.mobile .mainWrapper,
+    html[data-theme] body:not(.mobile) .mainWrapper {
+        padding-top: var(--mw-top);
+        padding-bottom: var(--mw-pb);
+        padding-left: max(12px, var(--sa-l));
+        padding-right: max(12px, var(--sa-r));
+        bottom: var(--mw-bot);
+        scrollbar-gutter: auto;
+    }
+    #homeBackdrop::after {
+        background: radial-gradient(ellipse 90% 80% at 50% 48%, var(--home-calm) 0%, var(--home-calm) 62%, transparent 100%);
+    }
+
+    /* Row 1: Top-left nav buttons + top-right theme toggle */
+    html[data-theme] body #menuNav#menuNav {
+        top: calc(var(--bar-top) + var(--sa-t));
+        left: calc(var(--bar-top) + var(--sa-l));
+        right: auto;
+        transform: none;
+        padding: 0;
+        gap: 5px;
+    }
+    html[data-theme] body #menuNav .dw-nav-btn,
+    html[data-theme] body #menuNav .dw-nav-btn:hover,
+    html[data-theme] body #menuNav .dw-nav-btn.active,
+    html[data-theme] body #themeToggleBtn#themeToggleBtn,
+    html[data-theme] body #themeToggleBtn#themeToggleBtn:hover {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
+        padding: 0;
+        border-width: 2.5px;
+        border-bottom-width: 4.5px;
+        border-radius: 7px;
+    }
+    html[data-theme] body #menuNav .dw-nav-btn .dw-nav-label { display: none; }
+    html[data-theme] body #themeToggleBtn#themeToggleBtn {
+        top: calc(var(--bar-top) + var(--sa-t));
+        right: calc(var(--bar-top) + var(--sa-r));
+        left: auto;
+    }
+
+    /* Row 2: Account chip + Invite button side-by-side */
+    html[data-theme] body #accountChip,
+    html[data-theme] body #accountChip:hover {
+        top: calc(var(--bar-top) + var(--bar-h) + var(--bar-gap) + var(--sa-t));
+        left: calc(var(--bar-top) + var(--sa-l));
+        right: auto;
+        height: 38px;
+        min-height: 38px;
+        padding: 0 11px 0 6px;
+        border-width: 2.5px;
+        border-bottom-width: 4px;
+    }
+    html[data-theme] body #accountChip .dw-ava { width: 24px !important; height: 24px !important; }
+    html[data-theme] body #accountChip .ac-name { font-size: 12.5px; max-width: 120px; }
+    html[data-theme] body #accountChip .ac-sub { font-size: 10.5px; }
+    html[data-theme] body #inviteBtn#inviteBtn,
+    html[data-theme] body #inviteBtn#inviteBtn:hover:not(:disabled) {
+        top: calc(var(--bar-top) + var(--bar-h) + var(--bar-gap) + var(--sa-t));
+        height: 38px;
+        min-height: 38px;
+        padding: 0 11px;
+        font-size: 12.5px;
+        border-width: 2.5px;
+        border-bottom-width: 4px;
+    }
+    html[data-theme] body #inviteBtn .ib-label { display: inline; }
+
+    /* Bottom Dock: Sidebar tools + social buttons */
+    html[data-theme] body #homeSidebar {
+        top: auto;
+        bottom: calc(8px + var(--sa-b));
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        flex-direction: row;
+        gap: 6px;
+    }
+    html[data-theme] body #homeSidebar .sidebar-sep {
+        width: 2px;
+        height: 22px;
+        margin: 0 1px;
+    }
+    html[data-theme] body #homeSidebar .social-buttons {
+        flex-direction: row;
+        gap: 6px;
+    }
+    html[data-theme] body :is(#homeSettingsBtn, #homeChangelogBtn, #homeSidebar .social-btn),
+    html[data-theme] body :is(#homeSettingsBtn, #homeChangelogBtn, #homeSidebar .social-btn):hover {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
+        border-width: 2.5px;
+        border-bottom-width: 4.5px;
+        border-radius: 7px;
+    }
+    html[data-theme] body #homeSidebar#homeSidebar .dw-ic { width: 21px; height: 21px; }
+
+    /* Center Menu Card Stack */
+    html[data-theme] body #startMenuWrapper {
+        max-width: 380px;
+        width: 100%;
+        margin: 0 auto;
+    }
+    html[data-theme] body #startMenuWrapper .startMenu {
+        max-width: 380px;
+        width: 100%;
+    }
+    html[data-theme] body #startMenuWrapper .startMenuSlidingContent {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        column-gap: 8px;
+        row-gap: 7px;
+        align-items: center;
+    }
+    html[data-theme] body #startMenuWrapper .startMenuSlidingContent > * {
+        grid-column: 1 / -1;
+        margin-top: 0 !important;
+    }
+    html[data-theme] #startMenuWrapper .startMenu .game-title {
+        gap: 7px;
+        margin: 0 !important;
+    }
+    html[data-theme] #startMenuWrapper .startMenu .game-logo,
+    html[data-theme] #startMenuWrapper .startMenu .game-title-logo {
+        width: 34px;
+        height: 34px;
+    }
+    html[data-theme] #startMenuWrapper .startMenu .game-title h1,
+    html[data-theme] #startMenuWrapper .startMenu .wordmark {
+        font-size: clamp(26px, 8vw, 34px);
+    }
+    html[data-theme] #startMenuWrapper .startMenu .hero-tag {
+        font-size: 13.5px;
+        line-height: 1.25;
+        margin: -2px auto 2px !important;
+        max-width: 310px;
+    }
+    html[data-theme] #startMenuWrapper .startMenu .field-label {
+        font-size: 12px;
+        margin-bottom: 4px;
+    }
+    html[data-theme] #startMenuWrapper .name-play { gap: 7px; }
+    html[data-theme] #startMenuWrapper .name-play > :is(#playerNameInput, #acctNameBox) {
+        height: 42px;
+        font-size: 15px;
+    }
+    html[data-theme] #startMenuWrapper #startButton,
+    html[data-theme] #startMenuWrapper #startButton:hover,
+    html[data-theme] #startMenuWrapper #startButton:active {
+        height: 48px;
+        font-size: 24px;
+        border-width: 2.5px;
+        border-bottom-width: 5px;
+    }
+    html[data-theme] #startMenuWrapper .lv-wrap { padding: 6px 9px; }
+    html[data-theme] #startMenuWrapper .lv-gain { display: none !important; }
+
+    /* Region & Tutorial side-by-side in Portrait (full width when Tutorial is hidden on dw-fresh) */
+    html:not(.dw-fresh)[data-theme] body #startMenuWrapper .menu-row.region-row {
+        grid-column: 1;
+    }
+    html:not(.dw-fresh)[data-theme] body #startMenuWrapper .startButtonHolder {
+        grid-column: 2;
+    }
+    html[data-theme] body #startMenuWrapper .region-row .field-label { display: none; }
+    html[data-theme] #startMenuWrapper :is(.region-dropdown-trigger, #tutorialButton),
+    html[data-theme] #startMenuWrapper :is(.region-dropdown-trigger, #tutorialButton):hover,
+    html[data-theme] #startMenuWrapper .region-dropdown.open .region-dropdown-trigger {
+        height: 38px;
+        font-size: 13.5px;
+    }
+    html[data-theme] #startMenuWrapper .tut-badge { display: none !important; }
+    html[data-theme] #startMenuWrapper .mobile-note {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+    html[data-theme] #startMenuWrapper #aoChampions:not(:empty) {
+        padding: 5px 8px;
+        font-size: 12px;
+    }
+    html[data-theme] #startMenuWrapper #homeDailyAndRecords {
+        padding: 6px 8px;
+    }
+    #homeDailyAndRecords .hdr-head { font-size: 10px; margin-bottom: 4px; }
+    #homeDailyAndRecords .hdr-pill { font-size: 11px; padding: 2px 7px; }
+    html[data-theme] #startMenuWrapper .menu-credits { font-size: 11.5px; }
+    html[data-theme] #startMenuWrapper .home-left {
+        margin-top: 8px;
+        gap: 6px;
+    }
+    html[data-theme] #startMenuWrapper :is(.ev-card, .dy-strip, .q-card) {
+        padding: 8px 10px;
+    }
+}
+
+@media (max-width: 380px) {
+    html[data-theme] body :is(#homeSettingsBtn, #homeChangelogBtn, #homeSidebar .social-btn),
+    html[data-theme] body :is(#homeSettingsBtn, #homeChangelogBtn, #homeSidebar .social-btn):hover {
+        width: 38px;
+        height: 38px;
+        min-width: 38px;
+        min-height: 38px;
+    }
+    html[data-theme] body #homeSidebar { gap: 5px; }
+    html[data-theme] body #homeSidebar .social-buttons { gap: 5px; }
+}
+
+/* Mobile Landscape (short landscape screens <= 500px tall) */
+@media (orientation: landscape) and (max-height: 500px) {
+    :root, html[data-theme] {
+        --bar-top: 8px;
+        --bar-h: 36px;
+        --bar-gap: 6px;
+    }
+    html[data-theme] body.mobile,
+    html[data-theme] body:not(.mobile) {
+        --mw-top: calc(48px + var(--sa-t));
+        --mw-bot: 0px;
+        --mw-pb: calc(8px + var(--sa-b));
+    }
+    html.dw-fresh[data-theme] body.mobile,
+    html.dw-fresh[data-theme] body:not(.mobile) {
+        --mw-top: calc(10px + var(--sa-t));
+    }
+    html[data-theme] body.mobile .mainWrapper,
+    html[data-theme] body:not(.mobile) .mainWrapper {
+        padding-top: var(--mw-top);
+        padding-bottom: var(--mw-pb);
+        padding-left: calc(54px + var(--sa-l));
+        padding-right: calc(14px + var(--sa-r));
+        align-items: flex-start;
+        justify-content: center;
+    }
+    html.dw-fresh[data-theme] body.mobile .mainWrapper,
+    html.dw-fresh[data-theme] body:not(.mobile) .mainWrapper {
+        padding-left: calc(16px + var(--sa-l));
+    }
+
+    /* Compact top bar in landscape */
+    html[data-theme] body #menuNav .dw-nav-btn,
+    html[data-theme] body #menuNav .dw-nav-btn:hover,
+    html[data-theme] body #menuNav .dw-nav-btn.active,
+    html[data-theme] body #themeToggleBtn#themeToggleBtn,
+    html[data-theme] body #themeToggleBtn#themeToggleBtn:hover {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        min-height: 36px;
+        padding: 0;
+        border-width: 2px;
+        border-bottom-width: 4px;
+    }
+    html[data-theme] body #menuNav .dw-nav-btn .dw-nav-label { display: none; }
+    html[data-theme] body #accountChip,
+    html[data-theme] body #accountChip:hover,
+    html[data-theme] body #inviteBtn#inviteBtn,
+    html[data-theme] body #inviteBtn#inviteBtn:hover:not(:disabled) {
+        height: 36px;
+        min-height: 36px;
+        border-width: 2px;
+        border-bottom-width: 4px;
+    }
+
+    /* Compact left sidebar rail in landscape so all 7 buttons fit inside 390px height */
+    html[data-theme] body #homeSidebar {
+        top: calc(48px + var(--sa-t));
+        bottom: auto;
+        left: calc(8px + var(--sa-l));
+        right: auto;
+        transform: none;
+        flex-direction: column;
+        gap: 4px;
+    }
+    html[data-theme] body #homeSidebar .sidebar-sep { display: none; }
+    html[data-theme] body #homeSidebar .social-buttons {
+        flex-direction: column;
+        gap: 4px;
+    }
+    html[data-theme] body :is(#homeSettingsBtn, #homeChangelogBtn, #homeSidebar .social-btn),
+    html[data-theme] body :is(#homeSettingsBtn, #homeChangelogBtn, #homeSidebar .social-btn):hover {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        min-height: 36px;
+        border-width: 2px;
+        border-bottom-width: 3.5px;
+        border-radius: 6px;
+    }
+    html[data-theme] body #homeSidebar#homeSidebar .dw-ic { width: 19px; height: 19px; }
+
+    /* Balanced 2-Column Center Grid in Landscape */
+    html[data-theme] body #startMenuWrapper {
+        max-width: 560px;
+        width: 100%;
+        margin: 0 auto;
+    }
+    html[data-theme] body #startMenuWrapper .startMenu {
+        max-width: 560px;
+        width: 100%;
+    }
+    html[data-theme] body #startMenuWrapper .startMenuSlidingContent {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        column-gap: 12px;
+        row-gap: 6px;
+        align-items: start;
+    }
+    html[data-theme] body #startMenuWrapper .startMenuSlidingContent > * {
+        margin-top: 0 !important;
+    }
+    html[data-theme] body #startMenuWrapper .startMenu .game-title {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        margin: 0 !important;
+        gap: 6px;
+    }
+    html[data-theme] body #startMenuWrapper .startMenu .game-logo,
+    html[data-theme] body #startMenuWrapper .startMenu .game-title-logo {
+        width: 28px;
+        height: 28px;
+    }
+    html[data-theme] body #startMenuWrapper .startMenu .game-title h1,
+    html[data-theme] body #startMenuWrapper .startMenu .wordmark {
+        font-size: 24px;
+    }
+    html[data-theme] body #startMenuWrapper .startMenu .hero-tag {
+        display: none !important;
+    }
+    html[data-theme] body #startMenuWrapper .startMenu .field-label {
+        display: none !important;
+    }
+    html[data-theme] body #startMenuWrapper .menu-row.name-row {
+        grid-column: 1;
+        grid-row: 2 / span 2;
+    }
+    html[data-theme] body #startMenuWrapper .name-play { gap: 6px; }
+    html[data-theme] body #startMenuWrapper .name-play > :is(#playerNameInput, #acctNameBox) {
+        height: 38px;
+        font-size: 14.5px;
+    }
+    html[data-theme] body #startMenuWrapper #startButton,
+    html[data-theme] body #startMenuWrapper #startButton:hover,
+    html[data-theme] body #startMenuWrapper #startButton:active {
+        height: 42px;
+        font-size: 21px;
+        border-width: 2px;
+        border-bottom-width: 4px;
+    }
+    html[data-theme] body #startMenuWrapper .menu-row.region-row {
+        grid-column: 2;
+        grid-row: 2;
+        align-self: start;
+    }
+    html[data-theme] body #startMenuWrapper .startButtonHolder {
+        grid-column: 2;
+        grid-row: 3;
+        align-self: end;
+    }
+    html[data-theme] body #startMenuWrapper .region-dropdown-trigger,
+    html[data-theme] body #startMenuWrapper .region-dropdown-trigger:hover,
+    html[data-theme] body #startMenuWrapper .region-dropdown.open .region-dropdown-trigger {
+        height: 38px;
+        font-size: 13.5px;
+    }
+    html[data-theme] body #startMenuWrapper #tutorialButton,
+    html[data-theme] body #startMenuWrapper #tutorialButton:hover {
+        height: 42px;
+        font-size: 14px;
+    }
+    html[data-theme] body #startMenuWrapper .tut-badge {
+        position: static;
+        transform: none;
+        margin-left: 6px;
+        padding: 2px 6px;
+        font-size: 10px;
+    }
+    html[data-theme] body #startMenuWrapper #lvRow {
+        grid-column: 1 / -1;
+        grid-row: 4;
+        padding: 4px 8px;
+    }
+    html[data-theme] body #startMenuWrapper .lv-gain { display: none !important; }
+    html[data-theme] body #startMenuWrapper #mobileNote { display: none !important; }
+    html[data-theme] body #startMenuWrapper #homeDailyAndRecords {
+        grid-column: 1 / -1;
+        grid-row: 5;
+        padding: 5px 8px;
+    }
+    html[data-theme] body #startMenuWrapper #aoChampions {
+        grid-column: 1 / -1;
+        grid-row: 6;
+        padding: 4px 8px;
+        font-size: 11.5px;
+    }
+    html[data-theme] body #startMenuWrapper .menu-credits {
+        grid-column: 1 / -1;
+        grid-row: 7;
+        font-size: 11px;
+    }
+    html[data-theme] body #startMenuWrapper .home-left {
+        margin-top: 6px;
+        gap: 6px;
+    }
+}
+

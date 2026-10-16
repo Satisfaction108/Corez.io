@@ -107,13 +107,35 @@ export function drawPanel(c, cx, y, api) {
     const pt = panelText();
     const you = (r && r.you) || {};
     const yao = you.ao || {};
-    const goalTxt = "Today: " + api.fmtNum(r.youScore | 0) + " pts  ·  " + goalLine(r);
+    const runBit = (you.br | 0) > 0 ? "  ·  Best run: " + api.fmtNum(you.br | 0) : "";
+    let tankBit = "";
+    try {
+        const tankName = global.player && global.player.name ? "" : "";
+        const curTank = (window.gui && window.gui.__tankLabel) || "";
+        const rec = curTank && window.tankRecords && window.tankRecords.getRecord(curTank);
+        if (rec && rec.score > 0) tankBit = "  ·  " + curTank + " PB: " + api.fmtNum(rec.score);
+    } catch { /* */ }
+    const goalTxt = "Today: " + api.fmtNum(r.youScore | 0) + " pts" + runBit + tankBit + "  ·  " + goalLine(r);
     const evTxt = a.ev ? (KIND_GOAL[a.ev.k] || "Join in") + " in " + a.ev.w + (yao.ep > 0 ? "  ·  +" + num(yao.ep) + " event pts" : "") : "";
-    const PW = 340, rowH = 38, footH = 24, evH = evTxt ? 18 : 0, PH = rowH + footH + evH;
-    const px = Math.round(cx - PW / 2), py = y;
-    api.hudPanel(c, px, py, PW, PH);
     const ls = 15, vs = 21;
     let lw = api.hudTitleW(pt.label, ls), vw = api.hudTitleW(pt.value, vs);
+    let gs = 11.5;
+    const maxPW = Math.max(360, Math.min(620, (global.screenWidth || 1000) - 40));
+    while (gs > 8.5 && api.hudTextW(goalTxt, gs) + 36 > maxPW) gs -= 0.5;
+    let es = 11.5;
+    if (evTxt) {
+        while (es > 8.5 && api.hudTextW(evTxt, es) + 36 > maxPW) es -= 0.5;
+    }
+    const wantW = Math.max(
+        340,
+        Math.ceil(lw + vw + 56),
+        Math.ceil(api.hudTextW(goalTxt, gs) + 36),
+        evTxt ? Math.ceil(api.hudTextW(evTxt, es) + 36) : 0
+    );
+    const PW = Math.min(maxPW, wantW);
+    const rowH = 38, footH = 26, evH = evTxt ? 22 : 0, PH = rowH + footH + evH;
+    const px = Math.round(cx - PW / 2), py = y;
+    api.hudPanel(c, px, py, PW, PH);
     let k = 1;
     while (lw + vw + 8 > PW - 40 && k > 0.7) { k -= 0.05; lw = api.hudTitleW(pt.label, ls * k); vw = api.hudTitleW(pt.value, vs * k); }
     const x0 = cx - (lw + 8 + vw) / 2;
@@ -137,14 +159,10 @@ export function drawPanel(c, cx, y, api) {
         const title = a.ev ? a.ev.n : a.nx.n;
         api.hoverTip(px, py, PW, rowH, title, info + " The top 3 get 500, 300 and 200 bonus points and a crown.");
     }
-    const fy = py + rowH + footH / 2 - 3;
-    let gs = 12;
-    while (gs > 9.5 && api.hudTextW(goalTxt, gs) > PW - 24) gs -= 0.5;
+    const fy = py + rowH + 14;
     api.drawText(goalTxt, cx, fy, gs, HUD.gold, "center", true);
     if (evTxt) {
-        let es = 11.5;
-        while (es > 9 && api.hudTextW(evTxt, es) > PW - 24) es -= 0.5;
-        api.drawText(evTxt, cx, fy + 17, es, a.ev && KIND_COL[a.ev.k] ? KIND_COL[a.ev.k] : HUD.text2, "center", true);
+        api.drawText(evTxt, cx, fy + 18, es, a.ev && KIND_COL[a.ev.k] ? KIND_COL[a.ev.k] : HUD.text2, "center", true);
     }
     api.setClock({ x: px, y: py, w: PW, h: PH });
     if (!global.died && api.pops) api.pops(px + PW + 10, py + rowH + footH / 2);
@@ -407,8 +425,64 @@ export function standingsFoot() {
     if (!a) return null;
     const place = r.place | 0;
     const left = resetLeft();
+    const you = r.you || {};
     const line1 = place > 0 ? "Resets in " + longClock(left) : "Score points to get on the board";
-    return { line1, line2: "" };
+    const line2 = (you.br | 0) > 0 ? "Best run: " + num(you.br | 0) + " pts" : "";
+    return { line1, line2 };
+}
+
+export function featuredList() {
+    const a = S.ao;
+    if (a && Array.isArray(a.ft) && a.ft.length) return a.ft;
+    if (typeof window !== "undefined" && window.tankRecords && typeof window.tankRecords.dailyFeaturedFor === "function") {
+        return window.tankRecords.dailyFeaturedFor(a && a.day);
+    }
+    return [];
+}
+
+let featCacheKey = "";
+let featExpandedSet = null;
+
+export function isFeatured(tankName) {
+    if (!tankName) return false;
+    const list = featuredList();
+    if (!list.length) return false;
+    const name = String(tankName);
+    if (list.includes(name)) return true;
+    const mockups = global.mockups;
+    if (Array.isArray(mockups) && mockups.length > 0) {
+        const key = mockups.length + ":" + list.join(",");
+        if (key !== featCacheKey || !featExpandedSet) {
+            featCacheKey = key;
+            featExpandedSet = new Set(list);
+            const queue = [];
+            const seenIdx = new Set();
+            for (let i = 0; i < mockups.length; i++) {
+                const m = mockups[i];
+                if (!m) continue;
+                const mName = String(m.upgradeName || m.name || "");
+                if (featExpandedSet.has(mName) || (m.name && featExpandedSet.has(String(m.name)))) {
+                    queue.push(m);
+                    seenIdx.add(m.index != null ? m.index : i);
+                }
+            }
+            while (queue.length) {
+                const cur = queue.shift();
+                if (!Array.isArray(cur.upgrades)) continue;
+                for (const u of cur.upgrades) {
+                    if (!u || u.index == null || seenIdx.has(u.index)) continue;
+                    seenIdx.add(u.index);
+                    const child = mockups[u.index];
+                    if (!child) continue;
+                    if (child.name) featExpandedSet.add(String(child.name));
+                    if (child.upgradeName) featExpandedSet.add(String(child.upgradeName));
+                    queue.push(child);
+                }
+            }
+        }
+        return featExpandedSet.has(name);
+    }
+    return false;
 }
 
 export function onFX(kind) {

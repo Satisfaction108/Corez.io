@@ -81,8 +81,8 @@ function isEnabled() { return ON; }
 
 const MIN = 60_000;
 const TUNE = {
-    SOFT_MS: [180_000, 150_000],         // bot soft window per life
-    SCARY_MS: [5 * MIN, 2 * MIN],        // from the first spawn in the raid
+    SOFT_MS: [0, 0],                     // bot soft window per life
+    SCARY_MS: [0, 0],                    // from the first spawn in the raid
     SCARY_HIT_MS: 4000,                  // a scary bot they shot fights back this long
     STAGE_MIN: [3, 7, 12],               // minutes played: under each, stage 0, 1, 2 (checked again mid-raid)
     RECHECK_MS: 15_000,                  // how often the stage is looked at again during a raid

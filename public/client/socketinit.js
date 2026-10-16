@@ -1010,6 +1010,10 @@ const convert = {
             gui.type = get.next();
             gui.color = get.next();
             gui.playerid = get.next();
+            try {
+                const m = global.mockups && global.mockups[parseInt(gui.type)];
+                if (m && m.name) gui.__tankLabel = m.name;
+            } catch { /* */ }
         }
         if (indices.score) {
             let score = JSON.parse(get.next());
@@ -1403,8 +1407,25 @@ let incoming = async function(message, socket) {
                         else if (due < r.nextAt) r.nextAt = due;
                     } else r.nextAt = 0;
                     r.you = d.you || null;
-                    // every points change gets a labelled pop (scoreLogic.js), dead or alive
-                    if (r.you) { try { scoreText.ptsOnScore(global.ptsPops || (global.ptsPops = scoreText.ptsPops()), r.you, performance.now(), d.ao && d.ao.day ? (r.raidId | 0) + ":" + d.ao.day : r.raidId | 0); } catch (e) { } }
+                    // Sync our score with our row on the leaderboard so the bottom Score bar and Leaderboard never disagree
+        if (r.you && r.board && r.board.length) {
+            const myPlace = r.place | 0;
+            const myRow = myPlace > 0 ? r.board.find(row => !row.bot && row.place === myPlace) : null;
+            if (myRow && (myRow.score | 0) > (r.youScore | 0)) {
+                r.youScore = myRow.score | 0;
+            }
+        }
+        // every points change gets a labelled pop (scoreLogic.js), dead or alive
+                    if (r.you) {
+                        try { scoreText.ptsOnScore(global.ptsPops || (global.ptsPops = scoreText.ptsPops()), r.you, performance.now(), d.ao && d.ao.day ? (r.raidId | 0) + ":" + d.ao.day : r.raidId | 0); } catch (e) { }
+                        try {
+                            const tk = r.you.tk || (window.gui && window.gui.__tankLabel) || "";
+                            if (tk && window.gui) window.gui.__tankLabel = tk;
+                            if (tk && (r.you.run | 0) > 0 && window.tankRecords && typeof window.tankRecords.recordRun === "function") {
+                                window.tankRecords.recordRun(tk, r.you.run | 0, r.you.lk | 0, r.you.tms | 0);
+                            }
+                        } catch (e) { }
+                    }
                     r.duos = d.duos | 0;
                     r.teams = d.teams || null;
                     r.duo = d.duo || null;

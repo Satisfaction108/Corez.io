@@ -62,7 +62,7 @@ function getVaults() {
         const tg = global.gameManager && global.gameManager.terrainGrid;
         if (!tg || !tg.vaultSites || !tg.vaultSites.length) return [];
         vaults = tg.vaultSites.map(s => ({
-            x: s.x, y: s.y, r: s.r || PAD_RADIUS, team: 0, rainbow: true,
+            x: s.x, y: s.y, r: s.r || PAD_RADIUS, team: 0, rainbow: true, name: s.name || "Vault",
         }));
         return vaults;
     }
@@ -76,15 +76,15 @@ function getVaults() {
     if (!room || !room.width) return [];
     const tileW = room.width / (room.xgrid || 15);
     vaults = [
-        { x: -room.width / 2 + tileW / 2, y: 0, r: PAD_RADIUS, team: TEAM_BLUE },
-        { x:  room.width / 2 - tileW / 2, y: 0, r: PAD_RADIUS, team: TEAM_RED  },
+        { x: -room.width / 2 + tileW / 2, y: 0, r: PAD_RADIUS, team: TEAM_BLUE, name: "Vault" },
+        { x:  room.width / 2 - tileW / 2, y: 0, r: PAD_RADIUS, team: TEAM_RED,  name: "Vault" },
     ];
     return vaults;
 }
 
 // Compact list for the TG snapshot.
 function snapshot() {
-    return getVaults().map(v => ({ x: v.x, y: v.y, r: v.r, team: v.team, rainbow: !!v.rainbow }));
+    return getVaults().map(v => ({ x: v.x, y: v.y, r: v.r, team: v.team, rainbow: !!v.rainbow, name: v.name || "Vault" }));
 }
 
 function talkProgress(body) {

@@ -173,6 +173,10 @@ function getLeaderboard(ctx) {
     const a = ctx.auth();
     const user = a ? (users.byId(a.user.id) || a.user) : null;
     const hidden = boardHide.isHidden(user);
+    if (type === 'tanks') {
+        const tankBoard = require('../tankBoard');
+        return ctx.json(200, { type: 'tanks', updatedAt: now, rows: tankBoard.getAllRows(), me: null, hidden });
+    }
     if (STAT_BOARDS[type]) {
         const c = statRows(type, now);
         return ctx.json(200, { type, updatedAt: c.at, rows: c.rows.slice(0, lim), me: myStatRow(type, user, now), hidden });

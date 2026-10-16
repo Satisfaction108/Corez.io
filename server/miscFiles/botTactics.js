@@ -205,10 +205,10 @@ function abApi() {
 }
 // secondary ability pools by build
 const KITS = {
-    sniper:    ['smoke', 'grapple', 'radar', 'wall'],
+    sniper:    ['smoke', 'grapple', 'wall'],
     brawler:   ['shock', 'rush', 'pad', 'grapple'],
     spray:     ['rush', 'shock', 'wall', 'pad', 'burrow'],
-    artillery: ['wall', 'smoke', 'burrow', 'radar'],
+    artillery: ['wall', 'smoke', 'burrow'],
 };
 function kitOf(body) {
     const defs = (body.defs || []).join(' ').toLowerCase();

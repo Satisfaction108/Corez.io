@@ -1,7 +1,7 @@
 // Tier 5 unlock
 'use strict';
 
-const T5_GROWTH = (() => { const v = parseFloat(process.env.ROYALE_T5_GROWTH); return v > 1 ? v : 2; })();
+const T5_GROWTH = (() => { const v = parseFloat(process.env.ROYALE_T5_GROWTH); return Number.isFinite(v) && v >= 1 ? v : 1; })();
 const T5_ENGINE_TIER = 4;      // upgrade.tier of a Tier 5 option (UPGRADES_TIER_4)
 const T4_LEVEL = 45;           // a Tier 4 tank's level (Config.tier_multiplier * 3)
 
@@ -10,13 +10,15 @@ function setRaidOf(fn) { if (typeof fn === 'function') raidOf = fn; }
 
 function cfg() { return typeof Config !== 'undefined' ? Config : {}; }
 function expanded() { return typeof Class !== 'undefined' && !!Class.xp_splitter; }
+function gated() { return T5_GROWTH > 1 && process.env.ROYALE_TANKS_T5_FREE !== '1'; }
 function active() {
     const C = cfg();
-    return !!(C.dig_royale && !C.tutorial && expanded() && process.env.ROYALE_TANKS_T5_FREE !== '1');
+    return !!(C.dig_royale && !C.tutorial && expanded());
 }
 
-// earned this life: a flag on the body (a respawn is a new body)
+// earned this life: a flag on the body (a respawn is a new body). When T5_GROWTH <= 1, Tier 5 is open from spawn.
 function has(body) {
+    if (!gated()) return !!body;
     return !!(body && body._t5Life === true && body._t5Raid === raidOf());
 }
 function grant(body) {
@@ -29,8 +31,9 @@ function growthOf(body) {
     const g = body._growTarget != null ? body._growTarget : body.growthMult;
     return g > 0 ? g : 1;
 }
-// growth tick: true the first time this life reaches the mark
+// growth tick: true the first time this life reaches the mark (only when gated > 1x)
 function note(body) {
+    if (!gated()) return false;
     if (!body || growthOf(body) < T5_GROWTH - 1e-6) return false;
     if (!active() || has(body)) return false;
     grant(body);

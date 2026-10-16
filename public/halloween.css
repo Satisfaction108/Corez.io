@@ -24,21 +24,10 @@ html.dw-halloween[data-theme="light"] body:not(.in-game) {
     background-color: #eecba3 !important;
 }
 
-/* a web in the card's top-left corner, the same weight as the ink lines */
+/* the startMenu is cardless now, so don't float a corner web in mid-air */
 html.dw-halloween .startMenu::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 78px;
-    height: 78px;
-    border-top-left-radius: 5px;
-    background: var(--hw-web);
-    -webkit-mask: var(--hw-web-shape) no-repeat 0 0 / 100% 100%;
-    mask: var(--hw-web-shape) no-repeat 0 0 / 100% 100%;
-    pointer-events: none;
+    display: none;
 }
-html.dw-halloween body.mobile .startMenu::before { width: 54px; height: 54px; }
 
 /* PLAY: pumpkin orange. Same box and lip, and the letters inked like
    the wordmark so they stay readable */

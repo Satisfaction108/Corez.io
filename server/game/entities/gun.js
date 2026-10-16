@@ -141,11 +141,17 @@ class Gun extends EventEmitter {
         if (this.canShoot && !this.body.settings.hasNoRecoil) {
             // Apply recoil to motion
             if (this.motion > 0 || this.body.settings.hasNoReloadDelay) {
-                let recoilForce = (-this.position * this.trueRecoil * this.body.recoilMultiplier * 1.08 / this.body.size) / global.gameManager.roomSpeed;
-                // Dig Royale: shots landing on rock just now (index.js terrain pass stamps
-                if (this.body._rockHitAt && Date.now() - this.body._rockHitAt < MINING_RECOIL_MS) recoilForce *= MINING_RECOIL;
-                this.body.accel.x += recoilForce * Math.cos(this.recoilDir);
-                this.body.accel.y += recoilForce * Math.sin(this.recoilDir);
+                const baseSize = this.body.size / (this.body.growthMult > 1 ? this.body.growthMult : 1);
+                let recoilForce = (-this.position * this.trueRecoil * this.body.recoilMultiplier * 1.08 / baseSize) / global.gameManager.roomSpeed;
+                const rx = Math.cos(this.recoilDir), ry = Math.sin(this.recoilDir);
+                // Dig Royale: only dampen recoil when shots hit rock AND the recoil pushes against movement (mining), never on rear thrusters boosting forward
+                if (this.body._rockHitAt && Date.now() - this.body._rockHitAt < MINING_RECOIL_MS) {
+                    const gx = (this.body.control && this.body.control.goal) ? this.body.control.goal.x - this.body.x : 0;
+                    const gy = (this.body.control && this.body.control.goal) ? this.body.control.goal.y - this.body.y : 0;
+                    if (rx * gx + ry * gy < 0) recoilForce *= MINING_RECOIL;
+                }
+                this.body.accel.x += recoilForce * rx;
+                this.body.accel.y += recoilForce * ry;
             }
         }
     }
@@ -648,12 +654,11 @@ class Gun extends EventEmitter {
         return p;
     }
 
-    // The body size a shot is sized from: a grown tank's (raid growth) shots,
-    // drones and minions grow with growth^0.5, not all of it (Oct 9: 3x
-    // makes shots about 1.7x)
+    // The body size a shot is sized from: a grown tank's shots, drones and
+    // minions scale at growth^0.8 so projectiles match barrel widths.
     shotBodySize() {
         const g = this.growG();
-        return g > 1 ? this.body.size / Math.pow(g, 0.5) : this.body.size;
+        return g > 1 ? this.body.size / Math.pow(g, 0.2) : this.body.size;
     }
     growG() {
         const tank = this.body && this.body.master && this.body.master.growthMult > 1 ? this.body.master : this.body;

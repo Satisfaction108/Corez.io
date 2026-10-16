@@ -518,11 +518,12 @@ function dropGemsOnDeath(body, killers = []) {
         body.socket.gemDeathBankLoss = raidBankLoss;
     }
     if (raidBankLoss > 0) {
-        // savings only: this raid's banked gems are never touched (bank.js)
         let after = banked - raidBankLoss;
         try { after = bankMod().takeDeathLoss(body.socket, raidBankLoss); } catch { /* */ }
         setBanked(body, after);
-        try { body.socket.talk('m', 6000, "Dying cost you " + raidBankLoss.toLocaleString('en-US') + " gems from your savings, but the gems you banked this raid are safe."); } catch { /* */ }
+        if (after > 0) {
+            try { body.socket.talk('m', 6000, "You kept " + after.toLocaleString('en-US') + " banked gems for your next life (your leaderboard score is safe)."); } catch { /* */ }
+        }
     }
     if (carried <= 0 && bankLoss <= 0) {
         if (raidBankLoss > 0) talkGems(body, 0);

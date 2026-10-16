@@ -632,9 +632,9 @@ class Entity extends EventEmitter {
         if (this.settings.reloadToAcceleration) this.acceleration *= this.skill.acl;
         this.topSpeed = (1 * global.gameManager.runSpeed * this.SPEED * this.skill.mob) / speedReduce;
         if (this.settings.reloadToAcceleration) this.topSpeed /= Math.sqrt(this.skill.acl);
-        // Dig Wars: carried gems slow the tank, scaling to -20% at a full satchel.
+        // Dig Wars: carried gems slow the tank gently, scaling to -10% at a full satchel.
         if (this.carriedGems > 0 && this.gemCap) {
-            const gemSlow = 1 - 0.2 * Math.min(1, this.carriedGems / this.gemCap);
+            const gemSlow = 1 - 0.1 * Math.min(1, this.carriedGems / this.gemCap);
             this.acceleration *= gemSlow;
             this.topSpeed *= gemSlow;
         }

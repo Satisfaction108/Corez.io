@@ -9,11 +9,11 @@ const KINDS = {
     meteor: { id: 'meteor', name: 'Meteor Shower', ms: 100_000, verb: 'Grab the ore the meteors leave behind.' },
 };
 const ORDER = ['storm', 'core', 'rush', 'hill', 'boss', 'meteor'];
-const WARN_MS = 60_000;
-const GAP_MIN_MS = 6 * 60_000;
-const GAP_MAX_MS = 8 * 60_000;
-const BREATHER_MS = 75_000;
-const FIRST_MS = 90_000;
+const WARN_MS = 45_000;
+const GAP_MIN_MS = Math.round(2.5 * 60_000);
+const GAP_MAX_MS = Math.round(3.5 * 60_000);
+const BREATHER_MS = 35_000;
+const FIRST_MS = 45_000;
 const PODIUM = [500, 300, 200];
 const ACTIVITY_CAP = 2000;
 

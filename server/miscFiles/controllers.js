@@ -540,10 +540,10 @@ class io_nearestDifferentMaster extends IO {
         if (myMaster.isBot && theirMaster.isPlayer && fairPlay.farmed(myMaster, theirMaster, Date.now())) return false;
         if (myMaster.isBot && theirMaster.isBot && myMaster !== theirMaster &&
             ((theirMaster._fpBait && fairPlay.baitOnDuty(theirMaster)) || (myMaster._fpBait && fairPlay.baitOnDuty(myMaster)))) return false;
-        // Core truce (coreFinale.js): a bot's guns and drones leave players
-        // alone unless that player hit the bot in the last few seconds
-        // (a crowned player is never under it: crowns are fair game)
+        // Core truce (coreFinale.js): only spare players who are right next to the Core
+        // actively fighting it, unless they shot us recently
         if (myMaster.isBot && theirMaster.isPlayer && global.royaleCoreTruce && !theirMaster.crowned &&
+            Math.hypot(theirMaster.x - myMaster.x, theirMaster.y - myMaster.y) > 550 &&
             !(myMaster._lastDamageSource === theirMaster && Date.now() - (myMaster._lastDamageAt || 0) < 3000)) return false;
         if (isNaN(e.dangerValue)) return false;
         if (!(aiSettings.seeInvisible || this.body.isArenaCloser || e.alpha > 0.5)) return false;
@@ -1489,9 +1489,10 @@ const wrapAngle = a => {
 };
 
 // Base tiles kill any wrong-team entity outright, so to a bot every enemy
-// base tile is a wall.
+// base tile is a wall. (Dig Royale has no team bases.)
 const baseTileCache = { room: null, owners: null };
 function baseTileOwner(x, y) {
+    if (typeof Config !== 'undefined' && Config.dig_royale) return undefined;
     const room = global.gameManager && global.gameManager.room;
     if (!room || !room.getAt) return undefined;
     if (baseTileCache.room !== room) {
@@ -1538,10 +1539,10 @@ function inBotGrace(root, now) {
 // farther off as targets and bots take longer to react. Fighting back is
 // never blocked. 0 turns it off.
 function envNum(k, d) { const v = parseFloat(process.env[k]); return Number.isFinite(v) && v >= 0 ? v : d; }
-const OPEN_GRACE_MS = envNum('ROYALE_OPEN_GRACE_S', 180) * 1000;
-const OPEN_SHARE = Math.min(1, envNum('ROYALE_OPEN_SHARE', 0.3));
+const OPEN_GRACE_MS = envNum('ROYALE_OPEN_GRACE_S', 0) * 1000;
+const OPEN_SHARE = Math.min(1, envNum('ROYALE_OPEN_SHARE', 1));
 const OPEN_CLOSE_R = 360;
-const OPEN_TARGET_PENALTY = 500;
+const OPEN_TARGET_PENALTY = 0;
 const OPEN_REACT = 1.6;
 function raidOpening(now) {
     if (!OPEN_GRACE_MS || typeof Config === 'undefined' || !Config.dig_royale || Config.tutorial) return false;
@@ -1903,11 +1904,11 @@ class BotNav {
             return null;
         }
         // Arrival is sticky; drifting waypoints (orbits around a rock or a
-        // fight) are followed at low throttle rather than stop-then-lurch.
+        // fight) are followed smoothly rather than stop-then-lurch.
         if (this.arrived) {
-            if (distance < arriveAt * 2 + 25) {
+            if (distance < arriveAt * 1.4 + 12) {
                 this.track(now, false);
-                return { x: destination.x, y: destination.y, power: 0.3 };
+                return { x: destination.x, y: destination.y, power: 0.5 };
             }
             this.arrived = false;
         }
@@ -1979,8 +1980,8 @@ class BotKeys {
         let want = true;
         if (p <= 0.35) {
             if (!this.settling) { this.settling = true; this.pressing = false; }
-            if (!this.pressing && dist > 60) this.pressing = true;
-            else if (this.pressing && dist < 22 + (dist > 0 ? drive.coastLead(body, dx / dist, dy / dist, global.gameManager.roomSpeed) : 0)) this.pressing = false;
+            if (!this.pressing && dist > 28) this.pressing = true;
+            else if (this.pressing && dist < 12 + (dist > 0 ? drive.coastLead(body, dx / dist, dy / dist, global.gameManager.roomSpeed) : 0)) this.pressing = false;
             want = this.pressing;
         } else {
             this.settling = false;
@@ -2371,10 +2372,6 @@ class io_digWarsGoals extends IO {
             // fresh spawn in bot grace: not a target, not even counted
             if (inBotGrace(root, now)) continue;
             if (root.adminSpec) continue;
-            // the Core is up: bots leave players to it (one who shoots us
-            // still gets fought, through the attacker override below)
-            // (a crowned player is fair game: the Crown Contest)
-            if (root.isPlayer && global.royaleCoreTruce && !root.crowned) continue;
             // soft window (first minutes of a life, or a new player): only
             // if they come right up to us or shoot us
             if (!lh && softSpared(body, root, now)) continue;
@@ -3101,10 +3098,12 @@ class io_digWarsGoals extends IO {
         this.chestPick = null;
         if (now < (this.chestSkipUntil || 0)) return null;
         let list = [];
-        try { list = require('../game/terrain/chests.js').alive(); } catch { return null; }
+        try { list = require('../game/terrain/chests.js').alive(); } catch { list = []; }
+        let nestList = [];
+        try { nestList = require('../game/terrain/pentagonNest.js').alive(); } catch { nestList = []; }
         const body = this.body;
         let best = null, bd = 900 * 900;
-        for (const c of list) {
+        for (const c of list.concat(nestList)) {
             if (!c || c._opened || c.isDead?.()) continue;
             if (c._botClaim && c._botClaim.id !== body.id && c._botClaim.until > now) continue;
             const d = (c.x - body.x) ** 2 + (c.y - body.y) ** 2;
@@ -3905,6 +3904,10 @@ class io_digWarsGoals extends IO {
                         digWarsVault.depositFor(body, body.carriedGems);
                         body._lastBankAt = now;
                     }
+                    if (!body.vaultDeposit) {
+                        destination = this.explorePoint(now);
+                        arrive = 120;
+                    }
                     break;
                 }
                 destination = vault;
@@ -4030,13 +4033,13 @@ class io_digWarsGoals extends IO {
         const body = this.body, now = Date.now();
         if (!out || !out.goal || body.royaleFrozen) return out;
         // Occasional brief distraction, only when calm (no enemy near,
-        // nothing urgent).
+        // nothing urgent) and only after the bot has been alive a while.
         const kind = this.goal && this.goal.kind;
         const calm = this.view.enemyDistance > 1300 && kind !== 'survive' && kind !== 'fight' && kind !== 'defend';
-        if (!this.distractAt) this.distractAt = now + 15000 + Math.random() * 40000;
+        if (!this.distractAt) this.distractAt = now + 45000 + Math.random() * 60000;
         if (calm && now > this.distractAt) {
-            this.distractUntil = now + 450 + Math.random() * 1300;
-            this.distractAt = now + 25000 + Math.random() * 60000;
+            this.distractUntil = now + 250 + Math.random() * 450;
+            this.distractAt = now + 50000 + Math.random() * 80000;
         }
         if (now < (this.distractUntil || 0)) {
             if (!calm) this.distractUntil = 0;

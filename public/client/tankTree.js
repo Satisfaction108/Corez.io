@@ -352,6 +352,26 @@ function buildSprite(n, lvl) {
         c.stroke();
         D.hudTitle(D.t5Label(), ox + TILE - 13.5, 10.2, 7.5, D.HUD.gold, "center", 1, c);
     }
+    if (D.isFeatured && D.isFeatured(t.name)) {
+        D.rr(c, ox + 4, 4, 24, 12, 4);
+        c.fillStyle = "rgba(0,0,0,0.78)";
+        c.fill();
+        c.lineWidth = 1.2;
+        c.strokeStyle = "#9dff8a";
+        c.stroke();
+        D.hudTitle("+25%", ox + 16, 10.2, 7, "#9dff8a", "center", 1, c);
+    }
+    const pb = D.tankPB && D.tankPB(t.name);
+    if (pb && pb.s > 0) {
+        const pbTxt = pb.s >= 10000 ? Math.round(pb.s / 1000) + "k" : String(pb.s);
+        D.rr(c, ox + 4, TILE - 15, 28, 12, 4);
+        c.fillStyle = "rgba(0,0,0,0.82)";
+        c.fill();
+        c.lineWidth = 1.1;
+        c.strokeStyle = "#ffd166";
+        c.stroke();
+        D.hudTitle(pbTxt, ox + 18, TILE - 8.8, 7, "#ffd166", "center", 1, c);
+    }
     if (lvl > 0) D.hudTitle(t.name, CELL / 2, TILE + NAME_H / 2 + 1, nameSize(t.name, CELL - 4, 11.5), "#ffffff", "center", 1, c);
     return { cv, lvl };
 }
@@ -408,7 +428,11 @@ function buildTip(i) {
     for (const p of t.parents) { const pt = g.tanks.get(p); if (pt) from.push(pt.name); }
     for (const k of t.up || []) { const kt = g.tanks.get(k); if (kt) to.push(kt.name); }
     const lines = [];
-    lines.push("Tier " + n.tier + (n.tier >= L.T5_TIER ? ", needs " + D.t5Label() + " growth this life" : ""));
+    const lbl = D.t5Label();
+    lines.push("Tier " + n.tier + (n.tier >= L.T5_TIER && lbl && lbl !== "T5" ? ", needs " + lbl + " growth this life" : ""));
+    if (D.isFeatured && D.isFeatured(t.name)) lines.push("Featured today: +25% bonus score");
+    const pb = D.tankPB && D.tankPB(t.name);
+    if (pb && pb.s > 0) lines.push("Personal best: " + pb.s.toLocaleString("en-US") + " pts" + (pb.k > 0 ? " · " + pb.k + " KOs" : ""));
     lines.push(from.length ? "From: " + L.listNames(from, 4) : "Every tank starts here");
     lines.push(to.length ? "Upgrades to: " + L.listNames(to, 5) : "No more upgrades after this one");
     if (i === cur) lines.push("This is your tank");
@@ -554,7 +578,10 @@ function plusLabel(n) {
 const tierCache = [];
 function tierLabel(t) {
     let s = tierCache[t];
-    if (!s) s = tierCache[t] = t >= L.T5_TIER ? "Tier " + t + " (" + D.t5Label() + ")" : "Tier " + t;
+    if (!s) {
+        const lbl = D.t5Label();
+        s = tierCache[t] = t >= L.T5_TIER && lbl && lbl !== "T5" ? "Tier " + t + " (" + lbl + ")" : "Tier " + t;
+    }
     return s;
 }
 

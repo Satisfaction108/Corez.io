@@ -22,7 +22,7 @@ function nameOf(id) { const d = abilities().AB_BY_ID.get(id); return d ? d.name 
 
 function pickFor(body, rand = Math.random) {
     const ab = abilities();
-    const all = ab.ABILITIES.map(a => a.id);
+    const all = ab.ABILITIES.filter(a => !a.retired).map(a => a.id);
     let have = [];
     if (body && body.socket) {
         const st = ab.stateOf(body.socket);

@@ -116,7 +116,7 @@
         A('abilities', 'ab_smoke',       'Now You See Me',  'Throw a Smoke Bomb',    'smoke', 1),
         A('abilities', 'ab_rush',        'Zoomies',         'Use Adrenaline',        'rush', 1),
         A('abilities', 'ab_pad',         'Liftoff',         'Drop a Launch Pad',     'pad', 1),
-        A('abilities', 'ab_all',         'Swiss Army Tank', 'Use every ability',     'star', 3, { track: 'abils', mode: 'set', goal: 8, solo: true }),
+        A('abilities', 'ab_all',         'Swiss Army Tank', 'Use every ability',     'star', 3, { track: 'abils', mode: 'set', goal: 7, solo: true }),
         A('abilities', 'pad_kill',       'Air Mail',        'Knock out a tank you sent flying with your Launch Pad', 'pad', 4),
         A('abilities', 'grapple_escape', 'Great Escape',    'Grapple away on low health and survive', 'hook', 3),
         A('abilities', 'fling_storm',    'Get Out',         'Shockwave a tank out into the storm', 'wave', 4),

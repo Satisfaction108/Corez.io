@@ -19,15 +19,16 @@ const MINE_BIAS = {
     annihilator: 1.2,
     underseer: 5, necromancer: 2.8, maleficitor: 3, infestor: 1.5,
     // minions orbit and only shoot the rock part of the time
-    // (factory and autoSpawner offset their minion gun damage changes)
-    spawner: 3, factory: 3.125, autoSpawner: 1.8,
+    spawner: 2.2, factory: 2.0, autoSpawner: 1.6,
     manager: 1.4,
     rifle: 1.6, revolver: 1.6, bushwhacker: 1.5, musket: 1.3,
     minigun: 1.2, nailgun: 1.8, vulture: 1.5, focal: 1.2, phoenix: 1.2,
     desmos: 1.2, swarmer: 1.6,
     triAngle: 1.2, fighter: 1.2, booster: 1.2, bomber: 1.2, falcon: 1.2,
     barricade: 1.8, boomer: 2, gunnerTrapper: 1.9, triTrapper: 1.3, trapGuard: 1.2,
-    hexaTank: 1.2,
+    hexaTank: 1.25, octoTank: 1.35, cyclone: 1.35,
+    pentaShot: 1.35, spreadshot: 1.35, bentDouble: 1.35, tripleShot: 1.25,
+    xp_g175: 1.5, // Fiddle
     // a rammer whose only gun is one small turret
     autoSmasher: 4,
     commander: 0.75, beekeeper: 0.7, battleship: 0.8, carrier: 1.4,
@@ -48,8 +49,8 @@ function tankBias(owner) {
     return 1;
 }
 
-const HELPER_DIG = 0.3;
-const SWARM_DIG = 0.6;
+const HELPER_DIG = 0.45;
+const SWARM_DIG = 0.8;
 
 function rockDamageFor(owner, projectile) {
     let dig = projectile.digPower || 1;
@@ -87,8 +88,8 @@ function gearMult(owner) {
 //   grind:  0.55x -> 2.0x became  0.7425x -> 1.90x
 // ROYALE_MINE_BASE_BOOST=1 with ROYALE_MINE_FULL_TRIM=1 is the old curve.
 const envNum = (k, d) => { const v = parseFloat(process.env[k]); return Number.isFinite(v) && v > 0 ? v : d; };
-const BASE_BOOST = envNum('ROYALE_MINE_BASE_BOOST', 1.35);
-const FULL_TRIM = envNum('ROYALE_MINE_FULL_TRIM', 0.95);
+const BASE_BOOST = envNum('ROYALE_MINE_BASE_BOOST', 2.4);
+const FULL_TRIM = envNum('ROYALE_MINE_FULL_TRIM', 1.25);
 const SHOT_BARE = 0.4 * BASE_BOOST, SHOT_SPAN = 2.0 * FULL_TRIM - SHOT_BARE;
 const GRIND_BARE = 0.55 * BASE_BOOST, GRIND_SPAN = 2.0 * FULL_TRIM - GRIND_BARE;
 

@@ -49,6 +49,7 @@ import * as treeUi from './tankTree.js';
 import { netSmooth } from './netSmooth.js';
 import { predictor } from './predict.js';
 import * as aoHud from './alwaysOn.js';
+import * as tankRecords from './tankRecords.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -1412,6 +1413,14 @@ import * as aoHud from './alwaysOn.js';
         try { loadSettings(); } catch (e) { resizeEvent(); }
     }
     global.setTouchMode = setTouchMode;
+    try {
+        if (window.matchMedia) {
+            const coarseMq = window.matchMedia("(pointer: coarse)");
+            const onPtrChange = () => setTouchMode(touchPrimary(global.inputEnv()));
+            if (coarseMq.addEventListener) coarseMq.addEventListener("change", onPtrChange);
+            else if (coarseMq.addListener) coarseMq.addListener(onPtrChange);
+        }
+    } catch (e) { }
 
     function loadSettings() {
         config.graphical.fancyAnimations = document.getElementById("optFancy").checked;
@@ -3295,16 +3304,16 @@ import * as aoHud from './alwaysOn.js';
             c.strokeStyle = HUD.line;
             roundRectPath(c, 0, down, len, height - down, r);
             c.stroke();
-            // "RAMS ROCK": a small chip under the name, inside the band
+            // "RAMS ROCK": a bold chip under the name, inside the band
             if (rb) {
                 const b = rb;
                 roundRectPath(c, b.x, b.y, b.w, b.h, b.h / 2);
-                c.fillStyle = "rgba(0,0,0,0.92)";
+                c.fillStyle = "rgba(18, 14, 0, 0.96)";
                 c.fill();
-                c.lineWidth = Math.max(1, 1.2 * k);
-                c.strokeStyle = HUD.gold;
+                c.lineWidth = Math.max(1.3, 1.6 * k);
+                c.strokeStyle = "#ffd84d";
                 c.stroke();
-                hudTitle("RAMS ROCK", len / 2, b.y + b.h / 2, b.size, HUD.gold, "center", 1, c);
+                hudTitle("RAMS ROCK", len / 2, b.y + b.h / 2, b.size, "#ffe26a", "center", 1, c);
             }
         });
 
@@ -3694,6 +3703,25 @@ import * as aoHud from './alwaysOn.js';
             const doorSprites = rainbow ? getVaultSpritesForColor(BANK_PILL)
                 : getVaultSpritesForTeam(v.team);
 
+            const isCenterNest = v.x === 0 && v.y === 0 && royaleMode();
+            if (isCenterNest) {
+                const nestR = 380 * ratio;
+                c.save();
+                c.translate(sx, sy);
+                c.lineJoin = "round";
+                polyPath(c, 0, 0, nestR, 5, -Math.PI / 2);
+                c.fillStyle = "rgba(122, 82, 224, 0.14)";
+                c.fill();
+                c.lineWidth = Math.max(2, 3.5 * ratio);
+                c.strokeStyle = "rgba(148, 104, 246, 0.45)";
+                c.stroke();
+                polyPath(c, 0, 0, nestR * 0.65, 5, -Math.PI / 2 + Math.PI / 5);
+                c.lineWidth = Math.max(1.5, 2 * ratio);
+                c.strokeStyle = "rgba(148, 104, 246, 0.25)";
+                c.stroke();
+                c.restore();
+            }
+
             c.save();
             c.translate(sx, sy);
             c.lineJoin = "round";
@@ -3778,8 +3806,9 @@ import * as aoHud from './alwaysOn.js';
                 }
             }
             // the name floats above the door in the HUD's display face
+            const vLabel = (v.x === 0 && v.y === 0 && royaleMode()) ? "Gem Nest · Vault" : (v.name || "Vault");
             const vls = Math.max(13, R * 0.28);
-            let vly = padLabelY(sx, sy - R * 1.42, hudTitleW("Vault", vls), vls);
+            let vly = padLabelY(sx, sy - R * 1.42, hudTitleW(vLabel, vls), vls);
             let vla = labelAlpha(sx, vly, 60, 24);
             // under a banner: the name moves below the pad instead of hiding (round 9 bug 4
             if (vla < 1 && !deathCardUp()) {
@@ -3788,7 +3817,7 @@ import * as aoHud from './alwaysOn.js';
             }
             // standing on it: the deposit panel says it, so the name steps aside
             const onThis = global.vault.onPad && !global.vault.isOutpost && Math.hypot(sx - global.screenWidth / 2, sy - global.screenHeight / 2) < R;
-            if (!onThis) worldLabel(c, "Vault", sx, vly, vls, HUD.head, 1, 0, hudTitleW("Vault", vls) + 8, vls + 6);
+            if (!onThis) worldLabel(c, vLabel, sx, vly, vls, HUD.head, 1, 0, hudTitleW(vLabel, vls) + 8, vls + 6);
 
             if (doneFlash > 0) {
                 // completion burst: one-off ring of gold sparks
@@ -6535,10 +6564,7 @@ import * as aoHud from './alwaysOn.js';
             scorelength = 72.5;
             scorewidth = 120;
         }
-        // ── Dig Wars wallet row, in the score bar's footprint ────────────
-        // Two pills: a gold carried-meter filling with satchel load (blinks
-        // red at cap) and a teal banked pill. Modes without GEM data (cap 0)
-        // draw the stock score bar.
+        // ── Score / Total Points bar below player name ────────────
         if (!global.gems || !(global.gems.cap > 0)) {
             drawBar(x + scorewidth - scorelength, x + width - scorewidth - scorelength, y + height / 2, height - 3 + config.graphical.barChunk, color.black);
             drawBar(x + scorewidth - scorelength, x + width - scorewidth - scorelength, y + height / 2, height - 3, color.grey);
@@ -6546,33 +6572,48 @@ import * as aoHud from './alwaysOn.js';
             drawText("Score: " + util.formatLargeNumber(Math.round(gui.__s.getScore())), x + width / 2 + 0.5 - scorelength, y + height / 2 + 6, 13, color.guiwhite, "center");
         } else {
             const g = global.gems;
+            const r = global.royale || {};
+            const you = r.you || {};
             const rx1 = x + scorewidth - scorelength, rx2 = x + width - scorewidth - scorelength;
             const ry = y + height / 2, pillH = height + 1, capR = (height - 3) / 2;
-            const left = rx1 - capR, full = rx2 - rx1 + capR * 2, gap = 6;
-            const bankW = Math.round((full - gap) / 2), carW = full - bankW - gap, carX = left + bankW + gap;
-            const load = g.cap > 0 ? Math.min(1, g.carried / g.cap) : 0,
+            const left = rx1 - capR, full = rx2 - rx1 + capR * 2;
+            const banked = g.banked | 0;
+            const carried = g.carried | 0;
+            const myPlace = r.place | 0;
+            const myRow = myPlace > 0 && r.board ? r.board.find(row => !row.bot && row.place === myPlace) : null;
+            const boardScore = Math.max(
+                r.youScore | 0,
+                you.score | 0,
+                myRow ? (myRow.score | 0) : 0
+            );
+            const liveBankDelta = you.banked != null
+                ? Math.max(0, (banked - (g.kept | 0)) - (you.banked | 0))
+                : 0;
+            const baseScore = boardScore > 0 || you.banked != null
+                ? Math.max(0, boardScore + liveBankDelta)
+                : Math.max(0, banked - (g.kept | 0));
+            const totalPts = Math.max(0, baseScore);
+            const topBoardScore = r.board && r.board[0] ? (r.board[0].score | 0) : 0;
+            const refMax = Math.max(max || 0, topBoardScore, totalPts + carried, 1000);
+            const scoreFill = (totalPts + carried) > 0 ? Math.max(0.06, Math.min(1, (totalPts + carried) / refMax)) : 0;
+            const load = g.cap > 0 ? Math.min(1, carried / g.cap) : 0,
                 blink = load >= 1 && Math.floor(Date.now() / 160) % 2 === 0;
             hudDrawn.wallet = { x: left, y: ry - pillH / 2, w: full, h: pillH };
             const kPill = gatePills();
             ctx[2].save();
             ctx[2].globalAlpha *= kPill;
             ctx[2].translate(0, (1 - kPill) * 8);
-            const banked = g.banked | 0;
-            hudBar(ctx[2], left, ry - pillH / 2, bankW, pillH, 1, BANKED_PILL);
-            const bankTries = ["Banked: " + util.formatLargeNumber(banked), "Banked: " + shortGems(banked)];
-            let bankTxt = bankTries[1];
-            for (const t of bankTries) if (hudTextW(t, 11) <= bankW - 12) { bankTxt = t; break; }
-            let ls = 13; while (ls > 9 && hudTextW(bankTxt, ls) > bankW - 12) ls -= 0.5;
-            drawText(bankTxt, left + bankW / 2 + 0.5, ry + 6 - (13 - ls) * 0.35, ls, color.guiwhite, "center");
+            hudBar(ctx[2], left, ry - pillH / 2, full, pillH, scoreFill, blink ? HUD.danger : LEVEL_BAR);
+            const scoreTxt = carried > 0
+                ? "Score: " + util.formatLargeNumber(totalPts) + " pts (+" + util.formatLargeNumber(carried) + " carried)"
+                : "Score: " + util.formatLargeNumber(totalPts) + " pts";
+            let ls = 13; while (ls > 9 && hudTextW(scoreTxt, ls) > full - 14) ls -= 0.5;
+            drawText(scoreTxt, left + full / 2 + 0.5, ry + 6 - (13 - ls) * 0.35, ls, color.guiwhite, "center");
             if (royaleActive() && !global.mobile && global.canvas && !global.died) {
                 const crb = global.canvas.height / global.screenHeight / global.ratio;
                 const mxb = global.mouse.x / (crb * global.ratio), myb = global.mouse.y / (crb * global.ratio);
-                if (mxb >= left && mxb <= left + bankW && myb >= ry - pillH / 2 && myb <= ry + pillH / 2) queueTip(scoreText.BANK_TIP, scoreText.bankTipBody(aoNow()), left + bankW / 2, ry - pillH / 2, true);
+                if (mxb >= left && mxb <= left + full && myb >= ry - pillH / 2 && myb <= ry + pillH / 2) queueTip(scoreText.BANK_TIP, scoreText.bankTipBody(aoNow()), left + full / 2, ry - pillH / 2, true);
             }
-            hudBar(ctx[2], carX, ry - pillH / 2, carW, pillH, load, blink ? HUD.danger : HUD.gold);
-            const carTxt = "Carried: " + util.formatLargeNumber(g.carried | 0);
-            let cs2 = 13; while (cs2 > 9 && hudTextW(carTxt, cs2) > carW - 12) cs2 -= 0.5;
-            drawText(carTxt, carX + carW / 2 + 0.5, ry + 6 - (13 - cs2) * 0.35, cs2, color.guiwhite, "center");
             ctx[2].restore();
             drawBankPops(global.screenWidth / 2, Math.round(y - 10 - 4) - 1 - 30);
         }
@@ -7587,7 +7628,9 @@ import * as aoHud from './alwaysOn.js';
         devScale: () => Math.hypot(tfOf(ctx[2]).a, tfOf(ctx[2]).b) || 1,
         click: () => { try { gameSound.uiClick(); } catch (e) { } },
         mix: (a, b, t) => gameDraw.mixColors(a, b, t),
-        t5Label: () => { const st = upGrid.t5State(global.royale && global.royale.you); const at = st && st.at > 1 ? st.at : 2; return (Math.round(at * 100) / 100) + "x"; },
+        t5Label: () => { const st = upGrid.t5State(global.royale && global.royale.you); const at = st && st.at != null ? st.at : 1; return at > 1 ? (Math.round(at * 100) / 100) + "x" : "T5"; },
+        isFeatured: (name) => aoHud.isFeatured(name),
+        tankPB: (name) => tankRecords.get(name),
     });
     global.treeUi = treeUi;
     window.dwTree = treeUi;
@@ -12110,6 +12153,18 @@ import * as aoHud from './alwaysOn.js';
         for (const v of global.vaults) {
             const vx = X(v.x), vy = Y(v.y);
             const vr = Math.max(3, (v.r || 95) * s);
+            if (v.x === 0 && v.y === 0 && royaleMode()) {
+                const nr = Math.max(7, 380 * s);
+                c.save();
+                c.translate(vx, vy);
+                polyPath(c, 0, 0, nr, 5, -Math.PI / 2);
+                c.fillStyle = "rgba(138, 92, 240, 0.24)";
+                c.fill();
+                c.lineWidth = Math.max(1.2, nr * 0.08);
+                c.strokeStyle = "rgba(166, 124, 255, 0.65)";
+                c.stroke();
+                c.restore();
+            }
 
             const vc = v.team === -2 ? color.red : color.blue;
             c.beginPath();
@@ -12573,10 +12628,11 @@ import * as aoHud from './alwaysOn.js';
             if (royaleLobbyPhase()) break;
             const mx = T.X(v.x), my = T.Y(v.y);
             const vr = Math.max(6, v.r * (bm._panel.s || 1));
+            const vName = (v.x === 0 && v.y === 0 && royaleMode()) ? "Gem Nest" : (v.name || "Vault");
             if (Math.hypot(mx - hx, my - hy) < Math.max(18, vr)) {
-                drawText("Vault", Math.round(mx), Math.round(my - vr - 10), 16, color.gold, "center");
+                drawText(vName, Math.round(mx), Math.round(my - vr - 10), 16, color.gold, "center");
             } else {
-                drawText("Vault", Math.round(mx), Math.round(my - vr - 6), 10, color.guiwhite, "center");
+                drawText(vName, Math.round(mx), Math.round(my - vr - 6), 10, color.guiwhite, "center");
             }
         }
         } // end map-tab world draw
@@ -13097,6 +13153,35 @@ import * as aoHud from './alwaysOn.js';
 
     // Royale standings above the minimap (F to toggle, tabs sort by gems/kills).
     // Replaces the top-right leaderboard in BR.
+    function drawDailyPip(c, x, y, w) {
+        const k = (w || 100) / 100;
+        const pw = Math.round(38 * k), ph = Math.round(20 * k), px = x + w - pw - Math.round(4 * k), py = y + Math.round(4 * k);
+        c.save();
+        roundRectPath(c, px, py, pw, ph, Math.round(6 * k));
+        c.fillStyle = "rgba(8, 28, 12, 0.95)";
+        c.fill();
+        c.lineWidth = Math.max(1.5, 2 * k);
+        c.strokeStyle = "#5eff7a";
+        c.stroke();
+        hudTitle("+25%", px + pw / 2, py + ph / 2 + 0.5, Math.max(9.5, 11.5 * k), "#7aff91", "center", 1, c);
+        c.restore();
+    }
+    function drawPBPip(c, x, y, w, h, score) {
+        if (!(score > 0)) return;
+        const k = (w || 100) / 100;
+        const txt = score >= 10000 ? "PB " + (score / 1000).toFixed(1).replace(/\.0$/, "") + "k" : "PB " + util.formatLargeNumber(score | 0);
+        const fs = Math.max(8, 9 * k), ph = Math.round(15 * k);
+        const bw = Math.min(w - 8, Math.max(40 * k, hudTitleW(txt, fs) + 12 * k));
+        c.save();
+        roundRectPath(c, x + (w - bw) / 2, y + h - Math.round(37 * k), bw, ph, Math.round(5 * k));
+        c.fillStyle = "rgba(18, 14, 0, 0.92)";
+        c.fill();
+        c.lineWidth = Math.max(1.2, 1.5 * k);
+        c.strokeStyle = "#ffd84d";
+        c.stroke();
+        hudTitle(txt, x + w / 2, y + h - Math.round(37 * k) + ph / 2 + 0.5, fs, "#ffe26a", "center", 1, c);
+        c.restore();
+    }
     function drawRoyaleBoard() {
         if (!global.showBigMap) global.clickables.royaleTab.hide();
         if (!global.royaleSpectating) {
@@ -13270,7 +13355,13 @@ import * as aoHud from './alwaysOn.js';
 
                 const tileState = !global.mobile && i == upgradeHoverIndex ? (global.clickables.clicked ? 2 : 1) : 0;
                 drawUpgradeTile(model, x, y, len, height, colorIndex++, !global.mobile ? upgradeKey : false, tileState, upgradeSpin, 1, 1, true);
-                if (goldOpts) drawT5Pip(ctx[2], x, y + (tileState === 2 ? 2 * len / 100 : 0), len, height);
+                const tileY = y + (tileState === 2 ? 2 * len / 100 : 0);
+                if (goldOpts) drawT5Pip(ctx[2], x, tileY, len, height);
+                if (model && model.name && aoHud.isFeatured(model.name)) drawDailyPip(ctx[2], x, tileY, len);
+                if (model && model.name) {
+                    const mpb = tankRecords.get(model.name);
+                    if (mpb && mpb.s > 0) drawPBPip(ctx[2], x, tileY, len, height, mpb.s);
+                }
 
                 ticker++;
                 upgradeNum++;
@@ -13365,8 +13456,15 @@ import * as aoHud from './alwaysOn.js';
 
             if (upgradeHoverIndex >= pg.start && upgradeHoverIndex < pg.end && upgradeHoverIndex < gui.upgrades.length && !global.mobile) {
                 let picture = gui.upgrades[upgradeHoverIndex][2];
-                // the name always (long ones shrink on the tile), Tier 5 says so
-                const tipText = (goldOpts ? "Tier 5" + (picture.upgradeTooltip ? "\n" : "") : "") + (picture.upgradeTooltip || "");
+                // the name always (long ones shrink on the tile), Tier 5 and Daily Featured say so
+                const feat = picture && picture.name && aoHud.isFeatured(picture.name);
+                const pb = picture && picture.name ? tankRecords.get(picture.name) : null;
+                const extraTips = [];
+                if (goldOpts) extraTips.push("Tier 5");
+                if (feat) extraTips.push("Featured today: +25% score");
+                if (pb && pb.s > 0) extraTips.push("Best run: " + util.formatLargeNumber(pb.s) + " pts" + (pb.k > 0 ? " (" + pb.k + " KOs)" : ""));
+                if (picture && picture.upgradeTooltip) extraTips.push(picture.upgradeTooltip);
+                const tipText = extraTips.join("\n");
                 if (picture && picture.name) {
                     let boxWidth = measureText(picture.name, alcoveSize / 10),
                         boxX = global.mouse.x * global.screenWidth / global.canvas.width + 2,
@@ -14595,6 +14693,19 @@ import * as aoHud from './alwaysOn.js';
             else drawRoyaleDeathCard(A);
         } finally { if (dy) c.restore(); }
     };
+    let deathRecAt = -1, deathRec = null;
+    function deathTankRecordOf(you) {
+        const at = global.royaleDiedAt || 0;
+        const dl = you && you.dl;
+        if (!dl || dl.run == null) return null;
+        if (at !== deathRecAt) {
+            deathRecAt = at;
+            const dt = deathTankOf();
+            const tk = (dt && dt.name) || dl.tk || "";
+            deathRec = tankRecords.recordLife(tk, dl.run | 0, dl.lk | 0);
+        }
+        return deathRec;
+    }
     const drawRoyaleDeathCard = (A) => {
         const you = global.royale.you || {};
         const rv = you.revenge || null;
@@ -14602,6 +14713,9 @@ import * as aoHud from './alwaysOn.js';
 
         // ── the words under the tiles (they size the card, deathCardLogic) ──
         const extras = [];
+        const tRec = deathTankRecordOf(you);
+        if (tRec && tRec.newPB) extras.push("New " + tRec.tank + " personal best: " + util.formatLargeNumber(tRec.score) + " pts this life!");
+        else if (you.dl && (you.dl.run | 0) > 0 && global.aoWorld) extras.push("This life: " + util.formatLargeNumber(you.dl.run | 0) + " pts" + ((you.br | 0) > (you.dl.run | 0) ? " (Best run today: " + util.formatLargeNumber(you.br | 0) + ")" : ""));
         if ((global.finalInsured | 0) > 0) extras.push("Your insurance saved " + util.formatLargeNumber(global.finalInsured | 0) + " of it");
         if ((global.finalStreak | 0) >= 3) extras.push("Your " + (global.finalStreak | 0) + " kill streak is over");
         if (global.finalDrillLost) extras.push("Your drill dropped a tier");
@@ -14876,13 +14990,13 @@ import * as aoHud from './alwaysOn.js';
             el.style.width = widthPx;
             setFontSize(el, fs + "px");
             if (lab.clientWidth > 0) {
-                while (fs > 10 && lab.scrollWidth > lab.clientWidth + 1) { fs -= 1; setFontSize(el, fs + "px"); }
+                while (fs > 10 && lab.scrollWidth > lab.clientWidth - 4) { fs -= 1; setFontSize(el, fs + "px"); }
             } else c.key = "";
-            const room = (parseFloat(widthPx) || 0) - 30;
+            const room = (parseFloat(widthPx) || 0) - 36;
             if (room > 0) {
                 const mc = fitBtnFont.mc || (fitBtnFont.mc = document.createElement("canvas").getContext("2d"));
-                mc.font = "700 " + fs + "px Ubuntu, sans-serif";
-                const tw = mc.measureText(text).width;
+                mc.font = "400 " + fs + "px 'Lilita One', Ubuntu, sans-serif";
+                const tw = mc.measureText(text).width + 8;
                 if (tw > room) { fs = Math.max(10, Math.floor(fs * room / tw)); setFontSize(el, fs + "px"); }
             }
         } catch (e) { /* */ }

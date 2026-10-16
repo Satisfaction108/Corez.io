@@ -242,6 +242,8 @@ function finish(socket, body, t) {
     send(socket, { st: 'done', code: made.code, exp: made.expiresAt, mode: rec.mode });
     // nothing drops and nothing is lost: it's all in the code now
     body.carriedGems = 0;
+    if (socket) { socket.gemBanked = 0; socket.bankKept = 0; }
+    body.bankedGems = 0;
     body._savedOut = true;
     body.deathCause = 'saved';
     try { dust().stash(body); } catch (e) { /* */ }
@@ -421,6 +423,15 @@ function apply(socket, body, data, t, savedBy) {
     applySkills(body, data);
     try { body.refreshBodyAttributes(); if (body.syncSkillsToGuns) body.syncSkillsToGuns(); } catch (e) { /* */ }
     applyShop(socket, body, data.shop, t);
+    // banked shop gems from the save code come back with the build
+    const savedBanked = Math.max(0, Math.min(50000, data.banked | 0));
+    const savedKept = Math.max(0, Math.min(savedBanked, data.kept | 0));
+    if (savedBanked > 0) {
+        try {
+            socket.bankKept = Math.max(socket.bankKept | 0, savedKept);
+            gems().setBanked(body, ((socket.gemBanked || 0) | 0) + savedBanked);
+        } catch (e) { /* */ }
+    }
     // the satchel, up to what it holds now
     let cap = body.gemCap | 0;
     try { cap = shop().satchelCap(body) | 0; } catch (e) { /* */ }
@@ -459,12 +470,13 @@ function apply(socket, body, data, t, savedBy) {
     const parts = [];
     if (classOk && data.label) parts.push(data.label);
     if (pts) parts.push(fmt(pts) + " points");
+    if (savedBanked) parts.push(fmt(savedBanked) + " banked gems");
     if (carried) parts.push(fmt(carried) + " gems in your satchel");
     say(socket, "Save restored" + (parts.length ? ": " + parts.join(", ") : "") + ". Only what you earn from here counts for rank.", 9000);
     if (carried < (data.carried | 0)) say(socket, "Your satchel was too full for " + fmt((data.carried | 0) - carried) + " of the saved gems.", 7000);
     try { socket.talk('KC', 'restored', 'Save restored', 0, pts ? fmt(pts) + " points back" : ""); } catch (e) { /* */ }
     console.log('[RAID] ' + (body.name || 'A player') + ' restored a save (' + (data.label || '?') + ', ' + pts + ' pts).');
-    return { pts, carried, classOk, growEff };
+    return { pts, carried, banked: savedBanked, classOk, growEff };
 }
 
 module.exports = { HOLD_MS, THREAD_TAG, attach, onPacket, start, cancel, interrupt, tick, chat, restore, buildRecord, applyShop, shopRecord };

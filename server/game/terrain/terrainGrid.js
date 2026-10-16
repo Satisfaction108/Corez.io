@@ -11,15 +11,15 @@ const ORE_CHANCE = 0.22;
 
 const EMERALD_COUNT = 3;
 
-const ORE_HP = { [ORE.NONE]: 1, [ORE.COPPER]: 1.8, [ORE.VEIN]: 2.2,
-                 [ORE.SHARD]: 3, [ORE.EMERALD]: 6 };
+const ORE_HP = { [ORE.NONE]: 1, [ORE.COPPER]: 1.5, [ORE.VEIN]: 1.85,
+                 [ORE.SHARD]: 2.1, [ORE.EMERALD]: 4.2 };
 
 // Mirrored on the client: terrainRenderer.js GROW_MS / GROW_SCALE0.
 const GROW_TIMELINE_MS = 16_000;
 const RISE_MS = 5_000;
 const REGROW = {
-    BASE_DELAY_MS:      18_000,
-    MIN_DELAY_MS:        8_000,
+    BASE_DELAY_MS:      42_000,
+    MIN_DELAY_MS:       22_000,
     DEFICIT_MS_PER_GAP:    250,
     GROW_MS:  GROW_TIMELINE_MS,
     RISE_MS,

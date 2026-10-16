@@ -44,16 +44,16 @@ const activity = require('../game/network/activity.js');
 const Ranks = require('../../shared/ranks.js');
 
 const NEUTRAL = 0.5;
-const RANK_LO = 0.2, RANK_HI = 0.95, RANK_PERF = 0.08;
-const GUEST_LO = 0.15, GUEST_HI = 0.85, PLACEMENT_HI = 0.5;
+const RANK_LO = 0.45, RANK_HI = 0.95, RANK_PERF = 0.08;
+const GUEST_LO = 0.55, GUEST_HI = 0.90, PLACEMENT_HI = 0.7;
 const PERF_SCORE = 10000, PERF_KILLS = 10;
 const SESSION_KEEP = 0.6;
-const MERCY_MAX = 0.15;
+const MERCY_MAX = 0.45;
 // the difficulty climbs Bronze I .. Legend I and stays at the top past it
 const LEGEND = Ranks.LEGEND;
-const TIME_HI = 0.6, TIME_TAU_MS = 15 * 60_000;
-const NEW_FULL_MS = 5 * 60_000, NEW_END_MS = 12 * 60_000;
-const NEW_FULL_LIVES = 5, NEW_END_LIVES = 9;
+const TIME_HI = 0.75, TIME_TAU_MS = 10 * 60_000;
+const NEW_FULL_MS = 0, NEW_END_MS = 1;
+const NEW_FULL_LIVES = 0, NEW_END_LIVES = 1;
 const LOCK_FULL_MS = 15 * 60_000, LOCK_FROM = 0.55, LOCK_PERF = 1.5, LOCK_KEEP = 0.9;
 // rich veterans: this much carried (or hunted level 2) lets a third bot on
 const RICH_CARRY = 1500;
@@ -201,7 +201,7 @@ function tactics(d) { return lockShare(d); }
 // bit later, aim a bit worse and lock on a bit slower when the target is a
 // player. Player stats are never touched. ROYALE_BOTS_GENTLE (0..0.5,
 // default 0.2; 0 turns it off).
-const GENTLE_DEFAULT = 0.2;
+const GENTLE_DEFAULT = 0;
 let gentleShare = (() => {
     const v = parseFloat(process.env.ROYALE_BOTS_GENTLE);
     return Number.isFinite(v) ? Math.max(0, Math.min(0.5, v)) : GENTLE_DEFAULT;
@@ -232,7 +232,7 @@ const gentleTurret = g => 1 - 0.5 * g;     // auto turrets turn x0.9
 // human PREFER_R farther. ROYALE_BOTS_PREFER_BOT (0..1, default 0.5).
 const PREFER_BOT = (() => {
     const v = parseFloat(process.env.ROYALE_BOTS_PREFER_BOT);
-    return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.5;
+    return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
 })();
 let preferBotShare = PREFER_BOT;
 function setPreferBot(v) { preferBotShare = Math.max(0, Math.min(1, +v || 0)); }

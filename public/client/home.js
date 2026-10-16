@@ -653,6 +653,103 @@
             document.getElementById('homeSidebar'),
             document.getElementById('homeBackdrop')
         ];
+
+        function dailyFeaturedTanks() {
+            if (window.tankRecords && typeof window.tankRecords.dailyFeaturedFor === 'function') {
+                return window.tankRecords.dailyFeaturedFor();
+            }
+            var pool = [
+                'Annihilator', 'Hybrid', 'Skimmer', 'Destroyer',
+                'Overlord', 'Manager', 'Factory', 'Battleship',
+                'Penta Shot', 'Spreadshot', 'Triplet', 'Streamliner',
+                'Predator', 'Ranger', 'Stalker', 'Crossbow',
+                'Fighter', 'Booster', 'Bomber', 'Auto-Tri-Angle',
+                'Auto-Gunner', 'Nailgun', 'Minigun', 'Sprayer',
+                'Builder', 'Architect', 'Gunner Trapper', 'Boomer'
+            ];
+            var dk = new Date(Math.floor(Date.now() / 86400000) * 86400000).toISOString().slice(0, 10);
+            var str = 'dw-featured-' + dk, h = 0x811c9dc5;
+            for (var i = 0; i < str.length; i++) {
+                h ^= str.charCodeAt(i);
+                h = Math.imul(h, 0x01000193);
+            }
+            var a = h >>> 0;
+            function rand() {
+                a = (a + 0x6D2B79F5) >>> 0;
+                var t = Math.imul(a ^ (a >>> 15), 1 | a);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            }
+            var picked = [];
+            while (picked.length < 3 && pool.length) {
+                var idx = Math.floor(rand() * pool.length) % pool.length;
+                picked.push(pool.splice(idx, 1)[0]);
+            }
+            return picked;
+        }
+
+        function loadTankRecordsList() {
+            if (window.tankRecords && typeof window.tankRecords.allRecords === 'function') {
+                return window.tankRecords.allRecords();
+            }
+            var out = [];
+            try {
+                var raw = localStorage.getItem('dwTankPB');
+                if (raw) {
+                    var obj = JSON.parse(raw);
+                    if (obj && typeof obj === 'object') {
+                        Object.keys(obj).forEach(function (tk) {
+                            var rec = obj[tk];
+                            if (rec && ((rec.s | 0) > 0 || (rec.k | 0) > 0)) {
+                                out.push({ tank: tk, score: rec.s | 0, kills: rec.k | 0 });
+                            }
+                        });
+                    }
+                }
+            } catch (e) { }
+            out.sort(function (x, y) { return (y.score - x.score) || (y.kills - x.kills); });
+            return out;
+        }
+
+        function escHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function renderHomeDailyAndRecords() {
+            var box = document.getElementById('homeDailyAndRecords');
+            if (!box) return;
+            var featured = dailyFeaturedTanks();
+            var recs = loadTankRecordsList();
+            var ftPills = featured.map(function (name) {
+                var rec = recs.find(function (r) { return r.tank === name; });
+                var pbSub = rec && rec.score > 0 ? ' <span class="hdr-pill-sub">· PB ' + rec.score.toLocaleString('en-US') + '</span>' : '';
+                return '<span class="hdr-pill hdr-pill-ft">' +
+                    '<span class="hdr-star">★</span><span>' + escHtml(name) + '</span>' + pbSub + '</span>';
+            }).join('');
+
+            var pbHtml = '';
+            if (recs.length > 0) {
+                var topRecs = recs.map(function (r) {
+                    var kBit = r.kills > 0 ? ' · ' + r.kills + ' KO' + (r.kills === 1 ? '' : 's') : '';
+                    return '<span class="hdr-pill hdr-pill-pb">' +
+                        '<span class="hdr-pb-tank">' + escHtml(r.tank) + ':</span><span class="hdr-pb-val">' + r.score.toLocaleString('en-US') + ' pts' + escHtml(kBit) + '</span></span>';
+                }).join('');
+                pbHtml = '<div class="hdr-pb-sec">' +
+                    '<div class="hdr-head hdr-head-sub">Your Best Runs by Tank (' + recs.length + ')</div>' +
+                    '<div class="hdr-pills hdr-pills-scroll">' + topRecs + '</div>' +
+                    '</div>';
+            }
+
+            box.removeAttribute('style');
+            box.innerHTML =
+                '<div class="hdr-head">' +
+                'Today\'s Featured Tanks <span class="hdr-bonus">(+25% Bonus Pts)</span></div>' +
+                '<div class="hdr-pills">' + ftPills + '</div>' +
+                pbHtml;
+        }
+        window.renderHomeDailyAndRecords = renderHomeDailyAndRecords;
+        renderHomeDailyAndRecords();
+
         var smw = document.getElementById('startMenuWrapper');
         if (smw) {
             new MutationObserver(function () {
@@ -666,6 +763,7 @@
                     if (world) { world.release(); worldIn = 0; }
                 } else {
                     syncFresh();
+                    renderHomeDailyAndRecords();
                     if (world && worldWanted) wantWorld(0);
                     if (ctx && !homeFxRaf) drawHomeFx(performance.now());
                 }

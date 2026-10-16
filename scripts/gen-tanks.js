@@ -848,6 +848,46 @@ for (const t of [...tanks].sort((a, b) => a.tier - b.tier)) {
     t.f = flatW(t.w); t.f.key = t.key;
     toBlocks.push(t.label);
 }
+// Marksman / Fork / Deadeye razor fins: keep side razors visible when a heavy barrel widens over them,
+// and carry razor fins onto shared Fork / Deadeye children (Crosshair, Needle).
+for (const t of tanks) {
+    if (!t.isNew || !t.w || !t.w.guns) continue;
+    const bs = t.w.guns.filter(ssOf);
+    let changed = false;
+    let guns = t.w.guns.map(gn => {
+        if (ssOf(gn)) return gn;
+        const P = gn.POSITION;
+        const b = bs.find(x => Math.abs(N.na(x.POSITION.ANGLE - P.ANGLE)) < 1 && Math.abs(x.POSITION.Y - P.Y) < 0.5);
+        if (!b) return gn;
+        if (Math.abs(P.ASPECT - 2.2) < 0.05 && b.POSITION.WIDTH * 1.375 > P.WIDTH * P.ASPECT + 0.1) {
+            changed = true;
+            return { ...gn, POSITION: { ...P, WIDTH: r3(b.POSITION.WIDTH * 5 / 8) } };
+        }
+        if (Math.abs(P.ASPECT + 2.2) < 0.05 && P.WIDTH < b.POSITION.WIDTH) {
+            changed = true;
+            return { ...gn, POSITION: { ...P, WIDTH: b.POSITION.WIDTH } };
+        }
+        return gn;
+    });
+    if (!guns.some(gn => !ssOf(gn) && Math.abs(gn.POSITION.ASPECT - 2.2) < 0.05) && (t.parents.includes('fork') || t.parents.includes('deadeye'))) {
+        const xs = t.parents.includes('fork') ? [15, 10, 5, 0] : [7, 2];
+        const refL = t.parents.includes('fork') ? 29 : 24;
+        const fins = [];
+        for (const b of bs) {
+            const bp = b.POSITION, kL = Math.min(1, bp.LENGTH / refL), wFin = r3(bp.WIDTH * 5 / 8);
+            for (const x0 of xs) {
+                fins.push({ POSITION: { LENGTH: r3(13 * kL), WIDTH: wFin, ASPECT: 2.2, X: r3(x0 * kL), Y: bp.Y, ANGLE: bp.ANGLE, DELAY: bp.DELAY || 0 } });
+            }
+        }
+        if (fins.length) { guns = [...fins, ...guns]; changed = true; }
+    }
+    if (changed) {
+        t.wLook = t.wLook || t.w;
+        t.wPrev = t.wPrev || t.w;
+        t.w = { ...t.w, guns };
+        t.f = flatW(t.w); t.f.key = t.key;
+    }
+}
 // invisibility runs in the family: anything under Stalker, Manager or Landmine
 const invOf = k => { const t = byKey[k]; if (t && t.isNew) return t.w.invisible || null; const v = B.get(Class[k], 'INVISIBLE'); return Array.isArray(v) && (v[0] || v[1]) ? v : null; };
 for (const tr of [4, 5]) for (const t of tanks) if (t.isNew && t.tier === tr) { const v = t.parents.map(invOf).find(Boolean); if (v) t.w.invisible = clone(v); else delete t.w.invisible; }

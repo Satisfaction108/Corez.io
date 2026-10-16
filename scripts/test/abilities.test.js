@@ -517,7 +517,7 @@ test('equip: crossing a shop pad with the ability key held never changes the slo
     s.gemBanked = 5000;
     t.shopOnPad = true; t.padSafe = true;
     assert.ok(shop.buy(s, 'grapple'));
-    assert.ok(shop.buy(s, 'radar'));
+    assert.ok(shop.buy(s, 'pad'));
     assert.ok(shop.buy(s, 'grapple'), 'Equip');
     assert.equal(ab.equipped(t), 'grapple');
     // Q held / mashed while on the pad and riding over it, plus a shop tick each step
@@ -685,7 +685,7 @@ test('smoke: thrown to the aim (550), a big cloud for 8 s where it lands, a seco
     s.player.command.lmb = 1;
     step(2);
     assert.equal(t.alpha, 0, 'grace');
-    clock += 1000;
+    clock += 1400;
     step(2);
     assert.equal(t.alpha, 1, 'after it, shooting gives you away');
     s.player.command.lmb = 0;
@@ -695,7 +695,7 @@ test('smoke: thrown to the aim (550), a big cloud for 8 s where it lands, a seco
     step(2);
     assert.equal(t.alpha, 1);
     assert.equal(t.smokeHidden, false);
-    clock += 7500; step(1);
+    clock += 10500; step(1);
     assert.equal(friend.alpha, 1, 'and it runs out');
     const so = fs.readFileSync(path.join(SERVER, 'game', 'network', 'sockets.js'), 'utf8');
     assert.match(so, /other\.smokeHidden \? 150 : 300/, 'only a faint peek up close');
@@ -889,7 +889,8 @@ test('shop: the new shelves (4 gear with the magnet back plus the Stat Point, mo
     assert.equal(cat.filter(i => i.cat === 'gear').length, 5);
     for (const keep of ['statpt', 'scanner', 'magnet', 'insurance', 'satchel', 'charge', 'medkit', 'flash', 'barrage', 'decoy', 'bulwark', 'rocket', 'flare', 'flak', 'lance', 'pod']) assert.ok(ids.includes(keep), keep);
     const abil = cat.filter(i => i.cat === 'ability');
-    assert.equal(abil.length, 8);
+    assert.equal(abil.length, 7);
+    assert.ok(!ids.includes('radar'), 'radar retired');
     for (const a of abil) {
         assert.ok(a.cd >= 8000 && a.cd <= (a.id === 'burrow' ? 45000 : 25000), a.id + ' cd');
         assert.ok(a.desc && !/—/.test(a.desc), a.id + ' desc');

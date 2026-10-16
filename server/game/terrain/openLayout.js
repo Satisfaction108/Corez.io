@@ -265,7 +265,8 @@ function plan(grid, circleR, pois, cfg) {
     for (let i = 0; i < ringCount; i++) {
         const mid = (i + 0.5) / ringCount;
         const rim = Math.max(0, Math.min(1, (mid - o.rim_start) / Math.max(0.01, 1 - o.rim_start)));
-        rings[i].weight = Math.max(0, 1 - o.rim_pull * rim);
+        const nestKeep = mid < 0.16 ? 0.55 : 1;
+        rings[i].weight = Math.max(0, (1 - o.rim_pull * rim) * nestKeep);
         rings[i].free.sort((a, b) => b.score - a.score);
     }
     const goal = Math.round(cells.length * o.open_target);

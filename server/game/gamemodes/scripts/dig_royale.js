@@ -48,6 +48,9 @@ const raidPerks = require('../../terrain/raidPerks.js');   // a perk pick every 
 const crowns = require('../../terrain/crowns.js');         // crowns: the last storm's top 3 wear points-earning, stealable crowns
 const soloColor = require('../../terrain/soloColor.js');
 const alwaysOn = require('../../terrain/alwaysOn.js');
+const dailyTanks = require('../../terrain/dailyTanks.js');
+const tankBoard = require('../../../accounts/tankBoard.js');
+const pentagonNest = require('../../terrain/pentagonNest.js');
 const AO = () => alwaysOn.on();
 
 // A raid is RAID_CYCLES storm cycles (7 min each, twists included), 21 min,
@@ -69,7 +72,7 @@ const KILL_VERBS = ["killed", "slaughtered", "demolished", "wrecked", "ended", "
 // Every death waits this long before the next drop, measured here from the
 // death itself; the death card needs it to show (sockets.js spawn loop).
 const RESPAWN_MS = 3000;
-const WEAK_DRILL_MS = 30_000;
+const WEAK_DRILL_MS = 0;
 const STARTER_GEMS = 75;
 // ROYALE_PLACE_BONUS=1: the top 10 start the next raid with extra gems again
 const PLACE_BONUS = process.env.ROYALE_PLACE_BONUS === '1';
@@ -125,9 +128,9 @@ const FIRST_MINUTES = {
     // Bot grace: bots neither target nor shoot a fresh spawn for this long,
     // unless that player damages a bot first (on top of the spawn shield).
     // Bot behaviour only: nothing about the player changes
-    BOT_GRACE_MS: 15_000,
-    BOT_GRACE_NEW_MS: 30_000,     // new players
-    BOT_GRACE_BOT_MS: 12_000,     // a fresh bot, from other bots
+    BOT_GRACE_MS: 4_000,
+    BOT_GRACE_NEW_MS: 6_000,      // new players
+    BOT_GRACE_BOT_MS: 3_000,      // a fresh bot, from other bots
     // Who is new: botDifficulty.newness, from total play time (account or
     // guest play_ms + this session) and lives started. Fully new = botNewbie.
     // Soft window (controllers.js botSoft): for the start of every life, and
@@ -135,8 +138,8 @@ const FIRST_MINUTES = {
     // unless you come within SOFT_CLOSE_R or shoot them, and aim worse. The
     // window runs BOT_SOFT_MS for a new player, BOT_SOFT_SHORT_MS for anyone
     // else, in between while newness fades
-    BOT_SOFT_MS: 120_000,
-    BOT_SOFT_SHORT_MS: 25_000,
+    BOT_SOFT_MS: 0,
+    BOT_SOFT_SHORT_MS: 0,
     SOFT_CLOSE_R: 320,
     SOFT_HIT_MS: 4000,            // a bot you hit fights back for this long
     NEW_TARGET_PENALTY: 600,      // bots rank a soft player as if this much farther away
@@ -319,6 +322,9 @@ function ensureStat(body) {
     if (!key) return null;
     let s = raidStats.get(key);
     if (!s && body.socket && AO()) s = aoAdopt(body, key);
+    if (s && !s.who && body.socket && AO() && whoOf(body.socket)) {
+        try { aoLink(); } catch (e) { guardLog('ao link', e); }
+    }
     if (!s) {
         s = { key, since: now(), name: body.name || "Unnamed", kills: 0, banked: 0, holds: 0, carried: 0, alive: true, id: body.id, isBot: !!body.isBot, lastSeen: now(), revengeOn: null, revengeBonus: 0, extra: 0, streak: 0, bestStreak: 0, bossKills: 0, chests: 0 };
         raidStats.set(key, s);
@@ -390,6 +396,7 @@ function aoApply(s, data, add) {
     }
     if (data.killPts != null && s.killPts == null) s.killPts = +data.killPts || 0;
     s.bestStreak = Math.max(s.bestStreak | 0, data.bestStreak | 0);
+    s.bestRun = Math.max(s.bestRun | 0, data.bestRun | 0);
     if (data.perks && typeof data.perks === 'object' && (!s.perks || !(s.perks.granted > 0))) s.perks = data.perks;
 }
 function aoData(s) {
@@ -397,6 +404,7 @@ function aoData(s) {
     for (const f of AO_NUM) if (s[f]) d[f] = Math.round(+s[f] || 0);
     if (s.killPts != null) d.killPts = s.killPts | 0;
     if (s.bestStreak) d.bestStreak = s.bestStreak | 0;
+    if (s.bestRun) d.bestRun = s.bestRun | 0;
     if (s.perks && s.perks.granted > 0) d.perks = s.perks;
     return d;
 }
@@ -651,7 +659,11 @@ function scoreParts(s) {
         const bk = Math.min(s.kills | 0, s.botKills | 0);
         kp = ((s.kills | 0) - bk) * killScore() + bk * botKillScore();
     }
-    const kills = kp + (s.revengeBonus | 0) + (s.extra | 0) + (s.evPts | 0);
+    let liveEv = 0;
+    if (s && s.key && AO()) {
+        try { liveEv = alwaysOn.liveEventPts ? (alwaysOn.liveEventPts(s.key) | 0) : 0; } catch { liveEv = 0; }
+    }
+    const kills = kp + (s.revengeBonus | 0) + (s.extra | 0) + (s.evPts | 0) + liveEv;
     // crown is the net: s.crownLost, what steals took, is already out of it
     return { bank: bankPtsOf(s), kills, crown: (s.crownSwing | 0) + (s.crownPts | 0) };
 }
@@ -1095,6 +1107,22 @@ dropIn.attach({
     live: () => !raidEnding,
     carve: (tg, x, y, r, zone) => carveSpawnPocket(tg, x, y, r, zone),
 });
+pentagonNest.setHooks({
+    onScore: (body, pts, label) => {
+        if (!body) return;
+        const s = ensureStat(body);
+        if (!s) return;
+        const mult = body.socket && !body.isBot ? dailyTanks.multForBody(body) : 1;
+        const bonus = Math.max(1, Math.round((pts | 0) * mult));
+        s.extra = (s.extra | 0) + bonus;
+        const runPts = Math.max(0, scoreOf(s) - (s.lifeScore0 | 0));
+        if (runPts > (s.bestRun | 0)) s.bestRun = runPts;
+        if (body.socket) {
+            notePts(body, bonus, label || "Pentagon");
+            if (bonus >= 200) callout(body, "chest", (label || "Pentagon") + " Destroyed!", bonus);
+        }
+    },
+});
 
 // ── broadcast ─────────────────────────────────────────────────────────────
 function oreRocksForScan() {
@@ -1158,7 +1186,7 @@ function broadcast(extra = {}) {
         feed: killFeed.slice(-8), board, lock, lockLeft, matchId: raidId, raidId, raidLeft, raidMs: RAID_MS,
         occupyMs: OCCUPY_MS, lockoutMs: LOCKOUT_MS, objectives, bloom: bloomSnap, chest: null, chests: chestSnap,
         boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, lping: pacing.huntSnapshot(t) || undefined, pings, hunt: hunted.snapshot(), core: coreFinale.snapshot(t), supply: supplyDrops.snapshot(t), abd: abilityDrops.snapshot(t), crowns: crownSnap, results: raidResults, ending, nextIn, nextMs,
-        ao: aoOn ? alwaysOn.snapshot(t) : undefined, aoStorm: aoOn ? (alwaysOn.stormSnapshot(t) || undefined) : undefined, aom: process.env.ROYALE_ALWAYS_ON === '1' ? 1 : undefined, ...extra,
+        ao: aoOn ? alwaysOn.snapshot(t) : undefined, aoStorm: aoOn ? (alwaysOn.stormSnapshot(t) || undefined) : undefined, aom: aoOn ? 1 : undefined, ...extra,
     });
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
@@ -1234,7 +1262,16 @@ function broadcast(extra = {}) {
                 cs: (client._crownStreak | 0) || undefined,
                 // your max shield (the HUD's HP / shield bars
                 shm: bodyLive && body.shield && body.shield.max > 0 ? Math.round(body.shield.max) : undefined,
+                // current single-life score and best single-life run today
+                run: Math.max(0, scoreOf(mine) - (mine.lifeScore0 | 0)),
+                lk: Math.max(0, (mine.kills | 0) - (mine.lifeKills0 | 0)),
+                tk: bodyLive && body.label ? body.label : undefined,
+                tms: bodyLive ? Math.max(1000, t - (body._tankUpgradeAt || body.royaleBornAt || mine.lifeStartAt || t)) : undefined,
+                br: Math.max(mine.bestRun | 0, Math.max(0, scoreOf(mine) - (mine.lifeScore0 | 0))),
             } : null;
+        if (you && bodyLive && body.socket && !body.isBot && (you.run | 0) > 0) {
+            try { tankBoard.recordRun(body, body.label, you.run | 0, you.lk | 0, you.tms || 1000, t); } catch { /* */ }
+        }
         // first raids (newcomerDirector.js): nx, nxEvent, nxKept
         if (you) { try { const nx = newcomer.youFields(client, t); if (nx) Object.assign(you, nx); } catch (e) { guardLog('newcomer you', e); } }
         // build buttons: lt (last tank), ltu (tank button climbs), ls (spread saved)
@@ -2249,7 +2286,7 @@ function spawnRaidBot(back = null) {
         for (const c of connectedClients()) if (c._fpProtect || c._fpFirst) prot++;
         let backScore = 0;
         if (back) { for (const r of raidStats.values()) if (r.isBot && r.name === back.name) backScore = Math.max(backScore, scoreOf(r)); }
-        minnow = fairPlay.shouldBeMinnow(enemyBots(), prot, fillCap() - 1, backScore);
+        minnow = fairPlay.shouldBeMinnow(enemyBots(), prot, Math.max(0, botCapNow() - 1), backScore);
     });
     if (minnow) life = Object.assign(life || { respawnsRemaining: 0 }, { minnow: true });
     handler.spawnBots({ x: hole.x + (Math.random() - 0.5) * 40, y: hole.y + (Math.random() - 0.5) * 40 }, team, back ? back.name : freshName, life);
@@ -2274,15 +2311,30 @@ function spawnRaidBot(back = null) {
     // the share of its satchel it kept through the death (gems.carryKeepFor)
     if (back && (back.carry | 0) > 0) {
         try { bot.carriedGems = (bot.carriedGems | 0) + (back.carry | 0); gems.updateSatchel(bot); } catch { /* */ }
+    } else {
+        try { bot.carriedGems = Math.max(bot.carriedGems | 0, STARTER_GEMS); gems.updateSatchel(bot); } catch { /* */ }
     }
     try { bot.refreshBodyAttributes(); } catch { /* */ }
     try { grantTwist(bot); } catch { /* */ }
     // a respawned bot keeps its raid perks (same family, same board row)
-    applyPerks(bot, ensureStat(bot));
+    const botSt = ensureStat(bot);
+    applyPerks(bot, botSt);
     if (AO()) {
         guard('ao roster join', () => botRoster.noteJoin(bot, now(), back));
         guard('ao crown wait', () => crowns.onSpawn(bot, now()));
     }
+    guard('bot growth spawn', () => {
+        let gScore = growthScore(bot);
+        if (gScore < 1200) {
+            let maxHumanG = 0;
+            for (const h of humans()) {
+                if (h && !h.isDead?.()) maxHumanG = Math.max(maxHumanG, growthScore(h));
+            }
+            const baseFloor = Math.max(1200, Math.round(maxHumanG * (0.65 + Math.random() * 0.45)));
+            gScore = Math.max(gScore, baseFloor);
+        }
+        growth.onSpawn(bot, gScore);
+    });
     // bots fall out of the sky too
     guard('bot drop', () => dropIn.landBot(bot));
 }
@@ -2426,6 +2478,21 @@ function onBanked(body, amount) {
     const s = ensureStat(body);
     if (!s) return;
     s.banked = (s.banked || 0) + amount;
+    // Daily Featured Tank (+25% bonus score on banked gems)
+    if (body.socket && !body.isBot) {
+        try {
+            const fm = dailyTanks.multForBody(body);
+            if (fm > 1) {
+                const fBonus = Math.round(amount * (fm - 1));
+                if (fBonus > 0) {
+                    s.extra = (s.extra | 0) + fBonus;
+                    notePts(body, fBonus, "Daily tank +" + dailyTanks.BONUS_PCT + "%");
+                }
+            }
+        } catch { /* */ }
+    }
+    const curRun = Math.max(0, scoreOf(s) - (s.lifeScore0 | 0));
+    if (curRun > (s.bestRun | 0)) s.bestRun = curRun;
     if (AO()) guard('ao bank', () => alwaysOn.onBanked(body, amount));
     // gems from a restored satchel bank like any others, but for the board
     // only: rank and placement leave them out (saveCodes.js)
@@ -2529,7 +2596,8 @@ function onCombatantDead(body) {
         if (killerBody.socket && victimBot) guard('fair beat', () => fairPlay.noteBeat(killerBody, body));
         if (ks) {
             ks.kills = (ks.kills | 0) + 1;
-            const kp0 = Math.round((victimBot ? botKillScore() : killScore()) * killStageMult());
+            const featMult = killerBody.socket && !killerBody.isBot ? dailyTanks.multForBody(killerBody) : 1;
+            const kp0 = Math.round((victimBot ? botKillScore() : killScore()) * killStageMult() * featMult);
             const kp = killerBody._fpFodder ? Math.round(kp0 * fairPlay.fodderShare(killerBody)) : kp0;
             if (victimBot) ks.botKills = (ks.botKills | 0) + 1;
             pts += kp;
@@ -2577,6 +2645,8 @@ function onCombatantDead(body) {
             }
             // ranked kill filters (bot half, same victim, spawn kill) + kill dust
             try { rankHooks.onKillCredited(killerBody, ks, body, s, pts); } catch (e) { guardLog('rank kill', e); }
+            const kRun = Math.max(0, scoreOf(ks) - (ks.lifeScore0 | 0));
+            if (kRun > (ks.bestRun | 0)) ks.bestRun = kRun;
         }
         // the bounty (pacing.js) pays whoever takes the target down
         guard('bounty kill', () => pacing.onKill(killerBody, body, vk));
@@ -2600,11 +2670,21 @@ function onCombatantDead(body) {
     // the death card's "Points: X (lost Y: why)": the only points a death can cost is
     if (s && body.socket && !raidEndDeath) {
         const lostPts = crownRes && crownRes.stolen > 0 ? crownRes.stolen | 0 : 0;
+        const lifeRun = Math.max(0, scoreOf(s) - (s.lifeScore0 | 0));
+        const lifeKills = Math.max(0, (s.kills | 0) - (s.lifeKills0 | 0));
+        const lifePlayMs = Math.max(1000, now() - (body._tankUpgradeAt || body.royaleBornAt || s.lifeStartAt || now()));
+        if (lifeRun > (s.bestRun | 0)) s.bestRun = lifeRun;
+        if (lifeRun > 0) {
+            try { tankBoard.recordRun(body, body.label, lifeRun, lifeKills, lifePlayMs, now()); } catch { /* */ }
+        }
         s.lastDeath = {
             p: lostPts,
             by: lostPts && crownRes.killer ? String(crownRes.killer.name || "Someone").slice(0, 24) : undefined,
             cr: crownRes ? 1 : undefined,
             c: carriedAtDeath | 0,
+            run: lifeRun,
+            lk: lifeKills,
+            tk: String(body.label || "Basic"),
         };
     }
     // achievements: the killer's and the victim's (O(1), sockets only)
@@ -2905,10 +2985,14 @@ function onHumanJoin(body) {
     if (body.socket && !body.socket._bankOut) guard('bank checkout', () => { bankIn = bank.checkOut(body.socket); });
     // size first: every placement below pushes the hull out of rock by it
     guard('growth spawn', () => growth.onSpawn(body, growthScore(body)));
-    // achievements: tank upgrades and stat points on this body
+        // achievements: tank upgrades and stat points on this body
+    body._tankUpgradeAt = now();
     if (body.socket && !body._achWired && typeof body.on === 'function') {
         body._achWired = true;
-        body.on('upgrade', (e) => guard('ach upgrade', () => achHooks.onUpgrade(body, e && e.tier, body.label)));
+        body.on('upgrade', (e) => {
+            body._tankUpgradeAt = now();
+            guard('ach upgrade', () => achHooks.onUpgrade(body, e && e.tier, body.label));
+        });
         // Tier 4: build its Tier 5 mockups ahead (terrain/tier5.js warm)
         body.on('upgrade', () => guard('t5 warm', () => tier5.warm(body)));
         body.on('skillUp', (stat) => guard('ach skill', () => achHooks.onSkillUp(body, stat)));
@@ -3016,6 +3100,10 @@ function onHumanJoin(body) {
     // full dash charges every life, and the HUD hears about the ability slot
     guard('abilities spawn', () => require('../../terrain/abilities.js').onSpawn(body));
     const joinStat = ensureStat(body);
+    if (joinStat && !resuming) {
+        joinStat.lifeScore0 = scoreOf(joinStat);
+        joinStat.lifeKills0 = joinStat.kills | 0;
+    }
     // the raid's perks come back on every new body, and the HUD hears it again
     applyPerks(body, joinStat);
     if (body.socket) body.socket._pkSentV = -2;
@@ -3797,6 +3885,7 @@ function startRaid(first) {
     try { blooms.reset(); } catch { /* */ }
     try { raidEvents.reset(); } catch { /* */ }
     try { chests.clearAll(); } catch { /* */ }
+    try { pentagonNest.populateInitial(); } catch { /* */ }
     try { contracts.reset(); } catch { /* */ }
     guard('newcomer reset', () => newcomer.newRaid());
     try { pacing.reset(); pacing.note('raid'); } catch { /* */ }
@@ -4491,6 +4580,7 @@ function tick() {
     try { blooms.tick(t); } catch (e) { /* */ }
     try { raidEvents.tick(t); } catch (e) { /* */ }
     try { chests.schedule(); } catch (e) { /* */ }
+    try { pentagonNest.tick(); } catch (e) { /* */ }
     guard('contracts', () => contracts.tick(t));
     guard('pacing', () => pacing.tick(t));
     guard('hunted', () => hunted.tick(t, fighters));

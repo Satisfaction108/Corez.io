@@ -3,7 +3,7 @@
 const S = require('./aoSchedule.js');
 
 function on() {
-    return process.env.ROYALE_ALWAYS_ON === '1' && !!(global.Config && Config.dig_royale) && !Config.tutorial && !Config.royale_duos;
+    return process.env.ROYALE_ALWAYS_ON !== '0' && !!(global.Config && Config.dig_royale) && !Config.tutorial && !Config.royale_duos;
 }
 
 let hooks = {};
@@ -708,9 +708,13 @@ function topOf(ev, n = 3) {
 function snapshot(t = Date.now()) {
     if (!on()) return undefined;
     const n = st.next, ev = st.cur, res = st.res;
+    const dayKey = daily.day || S.dayKey(t + daily.offset * S.DAY_MS);
+    let ft = undefined;
+    try { ft = m('dailyTanks').forDay(dayKey); } catch { /* */ }
     const out = {
-        on: 1, day: daily.day || S.dayKey(t + daily.offset * S.DAY_MS), rs: Math.max(0, resetAt(t) - t),
+        on: 1, day: dayKey, rs: Math.max(0, resetAt(t) - t),
         ch: daily.champs.slice(0, 3).map(c => ({ n: String(c.name || 'Unnamed').slice(0, 16), p: c.score | 0 })),
+        ft,
     };
     if (n) {
         out.nx = { k: n.kind, n: S.KINDS[n.kind].name, w: n.where, in: Math.max(0, n.startAt - t), a: n.announced ? 1 : 0 };
@@ -723,6 +727,12 @@ function snapshot(t = Date.now()) {
     if (res && t - res.at < 14_000) out.res = { id: res.id, k: res.k, n: res.n, top: res.top, ago: t - res.at, count: res.count };
     return out;
 }
+function liveEventPts(key) {
+    if (!on() || !key || !st.cur) return 0;
+    const e = st.cur.scores.get(key);
+    return e && e.pts > 0 ? Math.min(S.ACTIVITY_CAP, Math.round(e.pts)) : 0;
+}
+
 function youFields(key, t = Date.now()) {
     if (!on() || !key) return undefined;
     const out = {};
@@ -898,7 +908,7 @@ function _reset() {
 }
 
 module.exports = {
-    on, attach, tick, botGoal, crownsFor, shareScores, BOT_SHARE, onDeath, onBanked, onBossDead, current, nextEvent, snapshot, youFields, stormSnapshot, stormFlee, exposure, spawnZones,
+    on, attach, tick, botGoal, crownsFor, shareScores, BOT_SHARE, onDeath, onBanked, onBossDead, current, nextEvent, snapshot, youFields, liveEventPts, stormSnapshot, stormFlee, exposure, spawnZones,
     deathText, resetAt, dayNow, ready, champUntil, champPlace, loadOne, saveAll, doReset, worldId,
     debugStart, debugNext, debugPlan, debugLeft, debugScore, debugState, finish, EVENTS, _st: st, _daily: daily, _reset, _stormRadius: stormRadius,
 };

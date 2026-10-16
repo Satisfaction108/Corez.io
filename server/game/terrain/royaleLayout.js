@@ -15,9 +15,9 @@ const OUTPOSTS = [
 
 const SIDE_VAULT_DIST = 0.52;
 const VAULTS = [
-    { name: "Center Vault", x: 0, y: 0, lobby: true },
-    { name: "Ridge Vault",  x: Math.cos(-3 * Math.PI / 4) * SIDE_VAULT_DIST, y: Math.sin(-3 * Math.PI / 4) * SIDE_VAULT_DIST },
-    { name: "Basin Vault",  x: Math.cos(Math.PI / 4) * SIDE_VAULT_DIST,      y: Math.sin(Math.PI / 4) * SIDE_VAULT_DIST },
+    { name: "Gem Nest",      x: 0, y: 0, lobby: true },
+    { name: "Ridge Vault",   x: Math.cos(-3 * Math.PI / 4) * SIDE_VAULT_DIST, y: Math.sin(-3 * Math.PI / 4) * SIDE_VAULT_DIST },
+    { name: "Basin Vault",   x: Math.cos(Math.PI / 4) * SIDE_VAULT_DIST,      y: Math.sin(Math.PI / 4) * SIDE_VAULT_DIST },
 ];
 
 // One shop per cardinal base, halfway out on the same ray.
@@ -38,7 +38,8 @@ const OpenLayout = require('./openLayout.js');
 const VAULT_R = 115;
 const OUTPOST_R = 135;
 const SHOP_R = 110;
-const CENTER_CLEAR_R = 150;
+const CENTER_CLEAR_R = 145;
+const NEST_R_FRAC = 0.16; // Center rich ore zone (~670 world units radius)
 
 function nearestRock(grid, wx, wy) {
     let best = null, bestD = Infinity;
@@ -168,15 +169,19 @@ function oreShareOf(grid) { return grid && grid.oreShare > 0 ? grid.oreShare : O
 function radialOre(rock, circleR, salt, share) {
     const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
     const d = Math.min(1, Math.hypot(x, y) / Math.max(1, circleR));
+    if (global.royaleMods && global.royaleMods.ore === 'copper') return ORE.COPPER;
+    const t = hash01(rock.vi, rock.vj, salt + 102);
+    // Central Pentagon Nest (d <= NEST_R_FRAC): every rock in the center has ore —
+    // mostly Core Shard (52%) and Emerald (24%), with Azurite Vein (16%) and Copper (8%).
+    if (d <= NEST_R_FRAC) {
+        return t < 0.24 ? ORE.EMERALD : t < 0.76 ? ORE.SHARD : t < 0.92 ? ORE.VEIN : ORE.COPPER;
+    }
     const r1 = hash01(rock.vi, rock.vj, salt + 101);
     const odds = share > 0 ? share : oreShareOf(global.gameManager && global.gameManager.terrainGrid);
     if (r1 >= odds * (rock.bOre || 1)) return ORE.NONE;
-    if (global.royaleMods && global.royaleMods.ore === 'copper') return ORE.COPPER;
-    const t = hash01(rock.vi, rock.vj, salt + 102);
     let ore;
-    if (d <= 0.35) ore = t < 0.70 ? ORE.COPPER : ORE.NONE;                    // plaza ring: copper only
-    else if (d <= 0.65) ore = t < 0.35 ? ORE.VEIN : t < 0.85 ? ORE.COPPER : ORE.NONE; // mid: vein + copper
-    else ore = t < 0.10 ? ORE.SHARD : t < 0.50 ? ORE.VEIN : t < 0.90 ? ORE.COPPER : ORE.NONE; // rim: shards live here
+    if (d <= 0.65) ore = t < 0.35 ? ORE.VEIN : t < 0.85 ? ORE.COPPER : ORE.NONE; // mid: vein + copper
+    else ore = t < 0.12 ? ORE.SHARD : t < 0.52 ? ORE.VEIN : t < 0.90 ? ORE.COPPER : ORE.NONE; // rim: shards live here
     if (ore === ORE.COPPER && rock.bUp > 0 && hash01(rock.vi, rock.vj, salt + 103) < rock.bUp) ore = ORE.VEIN;
     return ore;
 }
@@ -232,8 +237,8 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         if (!touches) killRock(rock, canyonKeys);
     }
 
-    // Sites are recorded now, but their holes are not punched until scatter
-    // (the lobby is plaza-only).
+    // Sites are recorded now, and their holes are carved before open_layout
+    // plans plazas/corridors and before spawnPits are sampled.
     grid.vaultSites = VAULTS.map((v, i) => {
         const x = v.x * circleR, y = v.y * circleR;
         return { id: i, name: v.name, x, y, r: 95, team: 0, rainbow: true };
@@ -247,12 +252,17 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         color: s.color,
     }));
     carveDisk(grid, 0, 0, CENTER_CLEAR_R, canyonKeys);
+    for (const v of grid.vaultSites) {
+        if (v.x !== 0 || v.y !== 0) carveDisk(grid, v.x, v.y, VAULT_R, canyonKeys);
+    }
+    for (const s of grid.shopSites) carveDisk(grid, s.x, s.y, SHOP_R, canyonKeys);
 
     chamberCells.length = 0;
     outpostCells.length = 0;
     for (const spec of OUTPOSTS) {
         const x = Math.cos(spec.ang) * spec.dist * circleR;
         const y = Math.sin(spec.ang) * spec.dist * circleR;
+        carveDisk(grid, x, y, OUTPOST_R, canyonKeys);
         const rock = nearestRock(grid, x, y) || { k: 0, worldCx: x, worldCy: y };
         outpostCells.push({
             key: rock.k,
@@ -395,7 +405,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     // h stays 1 so no crack visuals.
     try {
         const step = grid.cellSize || 200;
-        const zones = [{ x: 0, y: 0, r: CENTER_CLEAR_R + step * 1.4 }];
+        const zones = [];
         for (const p of grid.spawnPits) zones.push({ x: p.x, y: p.y, r: step * 1.6 });
         for (const rock of grid.rocks.values()) {
             if (!rock.alive || rock.ore === ORE.EMERALD) continue;
