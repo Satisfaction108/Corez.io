@@ -80,6 +80,7 @@ const HOT = new Set([
     "client/signupPrompt.js",
     "client/signupPromptLogic.js",
     "client/alwaysOn.js",
+    "client/tankRecords.js",
     "client/eventFx.js",
     "client/abilityDrops.js",
     "client/funnel.js",
