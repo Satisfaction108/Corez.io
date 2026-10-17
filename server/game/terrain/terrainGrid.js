@@ -1538,10 +1538,20 @@ class TerrainGrid {
             ev.x = Math.round((wx + halfW) / this.cellSize * 100) / 100;
             ev.y = Math.round((wy + halfH) / this.cellSize * 100) / 100;
         }
-        // chip numbers (0-100 of this cell) go only to the shooter; not for grinds
-        if (!grind && owner && rock.maxHealth > 0) {
+        if (!grind && owner && owner.socket && rock.maxHealth > 0) {
             ev.n = Math.max(1, Math.round(100 * dmg / rock.maxHealth));
             ev.u = owner.id;
+        }
+        if (!destroyed && this.rockEvents.length) {
+            for (let i = this.rockEvents.length - 1; i >= 0; i--) {
+                const prev = this.rockEvents[i];
+                if (prev.k !== rock.k || prev.d || prev.r) continue;
+                prev.h = ev.h;
+                if (ev.x !== undefined) { prev.x = ev.x; prev.y = ev.y; }
+                if (ev.n && prev.u === ev.u) prev.n = (prev.n || 0) + ev.n;
+                else if (ev.n && !prev.u) { prev.n = ev.n; prev.u = ev.u; }
+                return false;
+            }
         }
         this.rockEvents.push(ev);
         return destroyed;

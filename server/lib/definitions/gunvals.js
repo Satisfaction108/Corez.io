@@ -392,11 +392,11 @@ module.exports = {
         density: 1.2
     },
     cyclone: {
-        health: 1.3,
-        damage: 1.3,
-        pen: 1.1,
-        speed: 1.5,
-        maxSpeed: 1.15
+        health: 1.18,
+        damage: 1.18,
+        pen: 1.05,
+        speed: 1.4,
+        maxSpeed: 1.1
     },
     triAngle: {
         recoil: 0.9,

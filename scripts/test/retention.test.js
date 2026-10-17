@@ -240,19 +240,21 @@ test('table: no in-game gems; a week of dust buys a cheap lobby item, and stays 
     const commonTank = C.ITEMS.filter(it => it.cat === 'skin' && it.rarity === 'common' && !it.retired && !it.exclusive).map(it => it.price);
     assert.ok(2 * week >= Math.min(...commonTank), 'two weeks buy a common tank skin');
     assert.ok(week < 0.5 * R_DAILY_CAP(), 'a week is under half of one day\'s capped raid dust');
-    const ids = DY.TRACK.filter(e => e.item && e.item !== 'day7').map(e => e.item).concat(DY.DAY7_ITEMS);
+    const ids = DY.TRACK.filter(e => e.item && e.item !== 'day7').map(e => e.item).concat(DY.DAY3_ITEMS || [], DY.DAY7_ITEMS);
     for (const id of ids) {
         const it = C.byId(id);
         assert.ok(it && !it.retired, id);
-        assert.equal(R[it.rarity], 0, id + ' is ' + it.rarity);
-        assert.ok(it.price <= 25 * C.MILLI, id + ' costs ' + it.price);
+        assert.ok(R[it.rarity] <= 2, id + ' is ' + it.rarity);
+        assert.ok(it.price <= 75 * C.MILLI, id + ' costs ' + it.price);
     }
 });
 function R_DAILY_CAP() { return require('../../shared/ranks.js').DAILY_SOFT_CAP_MILLI; }
 
-test('claim: an item they already own pays the fallback dust instead', () => {
+test('claim: an item they already own rotates to the next unowned item or pays fallback dust when all are owned', () => {
     const u = mkUser();
-    d().run("INSERT INTO owned_items (user_id, item_id, source, acquired_at) VALUES (?, 'sd_buddy', 'purchase', ?)", u.id, T0);
+    for (const id of (DY.DAY3_ITEMS || ['sd_buddy'])) {
+        d().run("INSERT INTO owned_items (user_id, item_id, source, acquired_at) VALUES (?, ?, 'purchase', ?)", u.id, id, T0);
+    }
     for (let i = 0; i < 2; i++) retention.claim(A(u), T0 + i * 21 * HOUR);
     const st = retention.status(A(u), T0 + 2 * 21 * HOUR);
     assert.equal(st.today.item, null);

@@ -238,14 +238,14 @@ test('runtime: a Storm Circle is announced, runs, scores, ends with a top 3 and 
     const ev = ao.current();
     assert.ok(ev && ev.kind === 'storm', 'started');
     assert.ok(W.announced.some(x => /^aostart:STORM CIRCLE/.test(x)));
-    ring.x = n.x + ev.data.R0 - 30; ring.y = n.y;
-    out.x = n.x + ev.data.R0 + 400; out.y = n.y;
+    ring.x = ev.data.R0 - 30; ring.y = 0;
+    out.x = ev.data.R0 + 400; out.y = 0;
     for (let i = 0; i < 40; i++) { t += 1000; ao.tick(t, W.bodies); }
     assert.ok(ring.health.amount < 200, 'the ring hurts');
     assert.equal(out.health.amount, 200, 'outside the circle nothing changes');
     const st = ao.stormSnapshot(t);
     assert.ok(st.a && st.out === Math.round(ev.data.R0) && st.r < st.out, 'the client gets the scoped ring');
-    assert.ok(ev.data.R0 >= 4000 + Math.hypot(ev.x, ev.y), 'it starts past the edge of the whole map');
+    assert.equal(ev.data.R0, 4192, 'it starts at the circle of the map');
     assert.equal(ev.data.shrinkMs, 180_000, 'it closes in over 3 minutes');
     const mid = ao.snapshot(t);
     assert.ok(mid.ev && mid.ev.top.length >= 2, 'a live top 3');

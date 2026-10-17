@@ -4,7 +4,12 @@ export const dustTxt = (milli) => { const v = (+milli || 0) / 1000; return Numbe
 
 export function itemWords(it) {
     if (!it) return '';
-    return it.cat === 'sidekick' ? it.name + ' sidekick' : it.cat === 'sdSkin' ? it.name + ' sidekick skin' : it.name;
+    if (it.cat === 'sidekick') return it.name + ' sidekick';
+    if (it.cat === 'sdSkin') return it.name + ' sidekick skin';
+    if (it.cat === 'sdName') return it.name + ' sidekick name';
+    if (it.cat === 'nameStyle') return it.name + ' name style';
+    if (it.cat === 'skin') return it.name + ' skin';
+    return it.name;
 }
 
 const hours = (ms) => Math.round(ms / 3600000);

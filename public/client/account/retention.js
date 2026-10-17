@@ -26,6 +26,7 @@ import * as store from './state.js';
 import { h, icon, clear, modal, toast, animate, reducedMotion, hasLayers, fmtDust, T_MID } from './ui.js';
 import { achIcon } from './achievements.js';
 import * as skArt from '../sidekickArt.js';
+import * as pv from './previews.js';
 import * as view from './dailyView.js';
 
 const DY = window.DWDaily, EV = window.DWEvents, C = window.DWCosmetics;
@@ -160,7 +161,12 @@ async function claim(opts = {}) {
 /* ── words ──────────────────────────────────────────────────────────── */
 function itemName(it) {
     if (!it) return '';
-    return it.cat === 'sidekick' ? it.name + ' sidekick' : it.cat === 'sdSkin' ? it.name + ' skin' : it.name;
+    if (it.cat === 'sidekick') return it.name + ' sidekick';
+    if (it.cat === 'sdSkin') return it.name + ' skin';
+    if (it.cat === 'sdName') return it.name + ' sidekick name';
+    if (it.cat === 'nameStyle') return it.name + ' name style';
+    if (it.cat === 'skin') return it.name + ' skin';
+    return it.name;
 }
 // "1.5 gemdust", "Buddy sidekick" (an item day pays dust only when the item is
 export function rewardText(r, opts = {}) {
@@ -188,6 +194,10 @@ const dustIcon = () => icon('dust', 'dy-dust');
 function itemArt(it, size) {
     const item = it && C ? C.byId(it.id) : null;
     if (!item) return dustIcon();
+    try {
+        if (item.cat === 'nameStyle') return pv.nameCanvas('Aa', item, { px: Math.max(12, Math.round(size * 0.48)), stroke: true, h: size, maxW: Math.max(size, 36), cls: 'dy-art dw-name-cv' });
+        if (item.cat === 'skin') return pv.tankPreview({ w: size, h: size, skin: item, color: pv.TEAM_COLORS[0].col, size: size * 0.29, rot: -0.55, cls: 'dy-art dw-prev' });
+    } catch (e) { void e; }
     const kickItem = item.cat === 'sidekick' ? item : C.byId(C.BASIC_SIDEKICK_ID);
     const look = item.cat === 'sdSkin' ? item.look : null;
     const dpr = Math.min(2, window.devicePixelRatio || 1);

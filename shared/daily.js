@@ -39,9 +39,21 @@
         Object.freeze({ day: 6, dustMilli: 3000 }),
         Object.freeze({ day: 7, dustMilli: 0, item: 'day7', fallbackMilli: 4000 }),
     ]);
-    // common sidekick skins only (the uncommon and rare ones stay in the shop)
-    const DAY7_ITEMS = Object.freeze(['sds_stripes', 'sds_dots', 'sds_twotone']);
-    // a full week of dust with every item already owned (the most a week pays in dust
+    const DAY3_ITEMS = Object.freeze([
+        'sd_buddy', 'ns_sunset', 'sdn_sticker', 'ns_frost', 'sk_racer',
+        'ns_lemon', 'sd_flanky', 'ns_seafoam', 'sk_polka', 'ns_ash',
+        'ns_coral', 'ns_lilac',
+    ]);
+    const DAY7_ITEMS = Object.freeze([
+        'sds_stripes', 'sds_dots', 'ns_glacier', 'sds_twotone', 'ns_candy',
+        'sk_bullseye', 'ns_mint_rush', 'sd_bonk', 'ns_bubblegum', 'sds_checker',
+        'ns_tangerine', 'sk_chevron', 'sdn_bubbly', 'ns_lagoon', 'sds_camo',
+        'ns_ember', 'sd_zippy',
+    ]);
+    function weekBonusMilli(week) {
+        const w = Math.max(0, week | 0);
+        return Math.min(4000, w * 500);
+    }
     const WEEK_DUST_MILLI = TRACK.reduce((s, e) => s + e.dustMilli + (e.fallbackMilli | 0), 0);
 
     // Where a track stands at `now`. st: {step, streak, claims, lastClaimAt}
@@ -127,7 +139,7 @@
     }
 
     return Object.freeze({
-        HOUR, UNLOCK_MS, GRACE_MS, DROP_BACK, DAYS, TRACK, DAY7_ITEMS, WEEK_DUST_MILLI,
-        evaluate, afterClaim, nextDay, countdown, leftMs, smoothMinute, minuteOf, pingAt,
+        HOUR, UNLOCK_MS, GRACE_MS, DROP_BACK, DAYS, TRACK, DAY3_ITEMS, DAY7_ITEMS, WEEK_DUST_MILLI,
+        weekBonusMilli, evaluate, afterClaim, nextDay, countdown, leftMs, smoothMinute, minuteOf, pingAt,
     });
 });

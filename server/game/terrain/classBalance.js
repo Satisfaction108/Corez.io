@@ -11,6 +11,7 @@ const VS_TANKS = {
     'Annihilator': 0.95, 'Mortar': POUNDER, 'Ordnance': POUNDER, 'Beekeeper': 0.9,
     'Field Gun': POUNDER, 'Skimmer': POUNDER, 'Twister': POUNDER, 'Swarmer': POUNDER, 'Sidewinder': POUNDER,
     'Constructor': 0.92,
+    'Cyclone': 0.9,
     'Octo Tank': 0.95,
     'Penta Shot': 1.0,
     'Factory': 0.72, 'Flotilla': 0.72, 'Kumquat': 0.72, 'Pomelo': 0.72,

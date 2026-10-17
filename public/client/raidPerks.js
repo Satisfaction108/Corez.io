@@ -79,7 +79,7 @@ export function onState(raw) {
     if (prev) {
         for (const p of st.build) {
             const old = prev.build.find(q => q.id === p.id);
-            if (!old || old.n < p.n) { S.flashId = p.id; S.flashAt = now; S.gotName = (p.name || p.id) + (p.n > 1 ? " " + ["", "I", "II", "III", "IV", "V"][p.n] : ""); }
+            if (!old || old.n < p.n) { S.flashId = p.id; S.flashAt = now; S.gotName = (p.name || p.id) + (p.n > 1 ? " " + (L.ROMAN[p.n] || p.n) : ""); }
         }
     }
     if (key !== S.key) {
@@ -334,6 +334,9 @@ const PERK_COL = {
     twin: "#f2b83c", blast: "#ff6a3d", magnet: "#ff4a5a", drill: "#e9c46a", chain: "#8fd3ff", drones: "#b98bff",
     satchel: "#d39a5a", regen: "#3fcf7a", speed: "#4ec4e8", pierce: "#ff9f43", crit: "#ffd76e",
     hide: "#a9b4c8", rich: "#3fe0b0", reload: "#ff5ad8", quake: "#d9904a", vamp: "#e0473b",
+    grind: "#ff8c42", prospector: "#f4d35e", shatter: "#ff5c5c", chipper: "#5cd6c8",
+    tractor: "#6ab0ff", stormward: "#9d7bff", surge: "#52e5a5", plating: "#c2a878",
+    aegis: "#5ce0ff", velocity: "#ff7eb6",
 };
 function perkCol(p) { return PERK_COL[(p && (p.icon || p.id)) || ""] || "#e9e0cc"; }
 function deepCol(hex) {
@@ -343,7 +346,7 @@ function deepCol(hex) {
     const ch = (v) => Math.round(v * 0.6).toString(16).padStart(2, "0");
     return "#" + ch((n >> 16) & 255) + ch((n >> 8) & 255) + ch(n & 255);
 }
-const ROMAN = ["", "I", "II", "III", "IV", "V"];
+const ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 const perkLabel = (p) => (p.name || p.id) + " " + (ROMAN[p.n | 0] || "I");
 
 function drawStrip(c, o, st, view, now) {
@@ -776,6 +779,68 @@ const GLYPH = {
         c.arc(0, r * 0.3, r * 0.8, 0, Math.PI); c.bezierCurveTo(-r * 0.8, -r * 0.05, -r * 0.35, -r * 0.45, 0, -r); c.closePath();
         F();
         c.fillStyle = "rgba(255,255,255,0.45)"; c.beginPath(); c.arc(-r * 0.3, r * 0.3, r * 0.17, 0, TAU); c.fill();
+    },
+    grind(c, r, F) {
+        c.beginPath();
+        for (let i = 0; i < 16; i++) {
+            const a = i / 16 * TAU, rr = i % 2 ? r * 0.68 : r * 1.02;
+            c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+        }
+        c.closePath(); F();
+        c.beginPath(); c.arc(0, 0, r * 0.32, 0, TAU); c.fillStyle = A.HUD.line; c.fill();
+    },
+    prospector(c, r, F, S) {
+        c.beginPath(); c.moveTo(-r * 0.65, r * 0.75); c.lineTo(r * 0.35, -r * 0.25); S(r * 0.26);
+        c.beginPath(); c.moveTo(-r * 0.25, -r * 0.85); c.quadraticCurveTo(r * 0.35, -r * 0.35, r * 0.85, r * 0.25);
+        c.lineTo(r * 0.55, r * 0.45); c.quadraticCurveTo(r * 0.15, -r * 0.05, -r * 0.45, -r * 0.55); c.closePath(); F();
+    },
+    shatter(c, r, F, S) {
+        c.beginPath();
+        c.moveTo(0, -r * 0.95); c.lineTo(r * 0.85, -r * 0.35); c.lineTo(r * 0.55, r * 0.85);
+        c.lineTo(-r * 0.65, r * 0.75); c.lineTo(-r * 0.9, -r * 0.25); c.closePath(); F();
+        c.beginPath(); c.moveTo(0, -r * 0.9); c.lineTo(-r * 0.15, 0); c.lineTo(r * 0.5, r * 0.8);
+        c.moveTo(-r * 0.15, 0); c.lineTo(-r * 0.8, -r * 0.2); S(r * 0.14);
+    },
+    chipper(c, r, F) {
+        const dia = (x, y, s) => {
+            c.beginPath(); c.moveTo(x, y - s); c.lineTo(x + s * 0.75, y); c.lineTo(x, y + s); c.lineTo(x - s * 0.75, y); c.closePath(); F();
+        };
+        dia(-r * 0.38, -r * 0.25, r * 0.48);
+        dia(r * 0.42, -r * 0.15, r * 0.38);
+        dia(0, r * 0.45, r * 0.42);
+    },
+    tractor(c, r, F, S) {
+        c.beginPath(); c.arc(0, r * 0.65, r * 0.26, 0, TAU); F();
+        c.beginPath(); c.arc(0, r * 0.65, r * 0.7, -Math.PI * 0.78, -Math.PI * 0.22); S(r * 0.18);
+        c.beginPath(); c.arc(0, r * 0.65, r * 1.15, -Math.PI * 0.75, -Math.PI * 0.25); S(r * 0.18);
+    },
+    stormward(c, r, F, S) {
+        c.beginPath(); c.arc(0, r * 0.05, r * 0.85, Math.PI, 0, false); c.closePath(); F();
+        c.beginPath(); c.moveTo(0, r * 0.05); c.lineTo(0, r * 0.8); c.arc(-r * 0.2, r * 0.8, r * 0.2, 0, Math.PI, false); S(r * 0.2);
+    },
+    surge(c, r, F) {
+        c.beginPath(); c.moveTo(-r * 0.2, -r * 0.95); c.lineTo(r * 0.55, 0); c.lineTo(-r * 0.2, r * 0.95); c.lineTo(-r * 0.85, 0); c.closePath(); F();
+        c.beginPath(); c.moveTo(r * 0.35, -r * 0.55); c.lineTo(r * 0.95, 0); c.lineTo(r * 0.35, r * 0.55); c.closePath(); F();
+    },
+    plating(c, r, F) {
+        c.beginPath();
+        for (let i = 0; i < 6; i++) {
+            const a = i / 6 * TAU - Math.PI / 6;
+            c.lineTo(Math.cos(a) * r * 0.95, Math.sin(a) * r * 0.95);
+        }
+        c.closePath(); F();
+        c.beginPath(); c.arc(0, 0, r * 0.42, 0, TAU); F();
+    },
+    aegis(c, r, F, S) {
+        c.beginPath(); c.arc(0, 0, r * 0.88, 0, TAU); S(r * 0.22);
+        c.beginPath();
+        c.moveTo(0, -r * 0.55); c.lineTo(r * 0.48, -r * 0.25); c.lineTo(r * 0.35, r * 0.45);
+        c.lineTo(0, r * 0.65); c.lineTo(-r * 0.35, r * 0.45); c.lineTo(-r * 0.48, -r * 0.25); c.closePath(); F();
+    },
+    velocity(c, r, F, S) {
+        c.beginPath(); c.moveTo(r * 0.95, 0); c.lineTo(-r * 0.15, -r * 0.52); c.lineTo(r * 0.08, 0); c.lineTo(-r * 0.15, r * 0.52); c.closePath(); F();
+        c.beginPath(); c.moveTo(-r * 0.95, -r * 0.32); c.lineTo(-r * 0.25, -r * 0.32);
+        c.moveTo(-r * 0.95, r * 0.32); c.lineTo(-r * 0.25, r * 0.32); S(r * 0.18);
     },
 };
 

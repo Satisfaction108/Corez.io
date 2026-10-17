@@ -514,29 +514,21 @@ class TerrainRenderer {
     applyRockEvents(events) {
         if (!this.ready || !events) return;
         const now = performance.now();
-        let rebuilt = false;
+        let rebuilt = false, rebuiltNear = false;
         if (events.length) this._damageDirty = true;
         for (const ev of events) {
-            // ── THE LIVING WALL ──
-            // A rising cell stays in _rockDead while it grows, so everything
-            // that treats it as a hole (silhouette, damage batch, ore markings,
-            // both maps) still does; the growth is drawn as a layer on top and
-            // rejoins the rock when it lands.
             if (ev.r === 1) {
-                // regrow implies the server considers this cell DEAD; mark it
-                // dead here too in case a destroy event was missed
                 if (!this._rockDead.has(ev.k)) {
                     this._rockDead.add(ev.k);
                     this.mapDirty = true;
                     rebuilt = true;
+                    const cell = this._cellPolys.get(ev.k);
+                    if (!cell || !this._view || this._onScreen(cell.cx, cell.cy)) rebuiltNear = true;
                 }
-                // ev.e: the server's rise is already this far along (ms)
                 const riseE = Number.isFinite(ev.e) ? Math.max(-GROW_MS, Math.min(GROW_MS, ev.e)) : 0;
                 this._beginGrowth(ev.k, ev.o | 0, ev.gen | 0, now, ev.ax, ev.ay, riseE, riseRate(ev.s));
                 continue;
             }
-            // the rise changed pace (a tank came near it or left): pick it up
-            // from where the server says it is
             if (ev.r === 3) {
                 const g = this._growing.get(ev.k);
                 if (g) {
@@ -548,7 +540,6 @@ class TerrainRenderer {
             }
             if (ev.r === 2) { this._finishGrowth(ev.k, now); continue; }
             if (ev.e === 1) { this._revealOre(ev.k, 4, now); continue; }
-            // bloom / raid twist: an alive rock changes ore tier in place
             if (ev.bl === 1) {
                 if (ev.ore) this._revealOre(ev.k, ev.ore | 0, now);
                 else { this._ore.delete(ev.k); this._veinCache.delete(ev.k); this._sproutArt.delete(ev.k); this._oreSprout.delete(ev.k); this._oreLook(ev.k); }
@@ -558,7 +549,9 @@ class TerrainRenderer {
             }
             if (ev.d && this._growing.has(ev.k)) {
                 this._collapseGrowth(ev.k, now);
-                rebuilt = true;   
+                rebuilt = true;
+                const cell = this._cellPolys.get(ev.k);
+                if (!cell || !this._view || this._onScreen(cell.cx, cell.cy)) rebuiltNear = true;
                 continue;
             }
             const prev = this._rockHealth.get(ev.k);
@@ -576,11 +569,12 @@ class TerrainRenderer {
                 this._ore.delete(ev.k);
                 if (cell) {
                     const onscreen = this._onScreen(cell.cx, cell.cy);
+                    if (onscreen || !this._view) rebuiltNear = true;
                     const delay = onscreen ? 55 : 0;
                     this._spawnShatter(cell, now + delay, tier);
                     this._oreLook(ev.k);
                     if (onscreen) this._shakeNearCell(cell, tier ? 5 : 4, 240, delay);
-                    if (this._world) {
+                    if (onscreen && this._world) {
                         const w = this._world;
                         const wx = cell.cx * w.s - w.hw, wy = cell.cy * w.s - w.hh;
                         if (tier && config.game.gemSounds) gameSound.oreBreak(wx, wy, tier);
@@ -589,12 +583,13 @@ class TerrainRenderer {
                 }
                 rebuilt = true;
             } else if (!ev.d) {
+                const cell = this._cellPolys.get(ev.k);
+                const onscreen = !cell || !this._view || this._onScreen(cell.cx, cell.cy);
+                if (!onscreen) continue;
                 this._hitFlash.set(ev.k, now);
                 const stagedUp = this._stageOf(ev.h) > oldStage;
                 if (stagedUp) {
                     this._crackSnap.set(ev.k, now);
-
-                    const cell = this._cellPolys.get(ev.k);
                     if (cell) this._shakeNearCell(cell, 2, 140);
                 }
                 if (ev.x !== undefined) {
@@ -604,7 +599,6 @@ class TerrainRenderer {
                                           this._stageOf(ev.h), !!ev.g, this._ore.get(ev.k) || 0);
                     }
 
-                    const cell = this._cellPolys.get(ev.k);
                     let dx = 1, dy = 0;
                     if (cell) {
                         dx = ev.x - cell.cx; dy = ev.y - cell.cy;
@@ -613,7 +607,6 @@ class TerrainRenderer {
                     }
                     this._impacts.push({ x: ev.x, y: ev.y, dx, dy, born: now,
                                          small: !!ev.g,
-                                         // chips in the hit rock's tones
                                          chips: this._bio ? this._bioChips(ev.k) : null,
                                          seed: (ev.k + Math.round(ev.x * 97) + (ev.g ? (now | 0) : 0)) & 0xffff });
                     if (this._impacts.length > 16) this._impacts.shift();
@@ -621,12 +614,11 @@ class TerrainRenderer {
             }
         }
         if (rebuilt) {
-            // Deferred: one silhouette rebuild per burst, from draw(). The
-            // shatter effect covers the gap.
             this._debugVoronoiSegs = null;
             this._landed.clear();
             const nowR = performance.now();
-            this._silRebuildAt = this._silRebuildAt ? Math.min(this._silRebuildAt, nowR + 40) : nowR + 40;
+            const delayMs = rebuiltNear ? 40 : 400;
+            this._silRebuildAt = this._silRebuildAt ? Math.min(this._silRebuildAt, nowR + delayMs) : nowR + delayMs;
         }
     }
 
@@ -2704,10 +2696,10 @@ class TerrainRenderer {
         // A sharper layer, once the zoom holds still on one this layer
         // wasn't shaded for (or this is a coarse one). Dropped if the zoom
         // moves again before it is done.
-        const sharp = L.full && Math.abs(L.want / want - 1) < 0.08;
+        const sharp = L.full && Math.abs(L.want / want - 1) < 0.005;
         let N = this._hdNext;
         if (N && L.keep && !stable && Math.abs(N.want / want - 1) < 0.25) {}
-        else if (N && (sharp || !stable || Math.abs(N.want / want - 1) >= 0.04 || N.ratioY !== ratioY || N.cols !== this._cols)) { this._hdDropLayer(N); N = this._hdNext = null; }
+        else if (N && (sharp || !stable || Math.abs(N.want / want - 1) >= 0.005 || N.ratioY !== ratioY || N.cols !== this._cols)) { this._hdDropLayer(N); N = this._hdNext = null; }
         if (!N && !sharp && (stable || L.keep)) N = this._hdNext = this._hdNewLayer(want, ratioY, want, true);
         // background shading, inside the frame's budget
         const t0 = performance.now();
@@ -2769,16 +2761,20 @@ class TerrainRenderer {
             i0 = Math.max(i0, Math.floor(x0 * L.d / HD_T)); i1 = Math.min(i1, Math.floor(x1 * L.d / HD_T));
             j0 = Math.max(j0, Math.floor(y0 * L.dY / HD_T)); j1 = Math.min(j1, Math.floor(y1 * L.dY / HD_T));
         }
+        const rx0 = Math.round(ox * S), ry0 = Math.round(oy * S), scX = S * cellW / L.d, scY = S * cellH / L.dY;
         const frame = this._hdFrame | 0;
-        const tw = (HD_T + 1) / L.d, th = (HD_T + 1) / L.dY;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         for (let j = j0; j <= j1; j++) {
-            const ty = (j * HD_T - 0.5) / L.dY;
+            const yA = Math.round(j * HD_T * scY), dy = ry0 + yA, dh = Math.round((j + 1) * HD_T * scY) - yA;
             for (let i = i0; i <= i1; i++) {
                 const t = L.tiles.get(hdKey(i, j));
                 if (!t || t.at > frame) continue;
-                ctx.drawImage(t.bm, 0.5, 0.5, HD_T + 1, HD_T + 1, (i * HD_T - 0.5) / L.d, ty, tw, th);
+                const xA = Math.round(i * HD_T * scX), dx = rx0 + xA, dw = Math.round((i + 1) * HD_T * scX) - xA;
+                ctx.drawImage(t.bm, 1, 1, HD_T, HD_T, dx, dy, dw, dh);
             }
         }
+        ctx.restore();
     }
     // Image pixels [ix0, iy0, w, h] of layer L as one small flat canvas
     // (for a rock drawn scaled: a trembling or rising one).
@@ -3247,8 +3243,7 @@ class TerrainRenderer {
                 ctx.globalAlpha = 1;
                 ctx.clip(cell.path);
                 this._shakeXform(ctx, cell, nowMs);
-                if (tex.hd) this._hdDraw(ctx, tex, originX, originY, cellW, cellH, S,
-                    cell.cx - 1.5 * rockSz, cell.cy - 1.5 * rockSz, cell.cx + 1.5 * rockSz, cell.cy + 1.5 * rockSz);
+                if (tex.hd) this._hdDrawCell(ctx, tex, cell);
                 else ctx.drawImage(tex.img, bx, by, tex.w, tex.h);
 
                 ctx.lineJoin    = 'round';

@@ -5,7 +5,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
     'use strict';
 
-    const MAX_LEVEL = 50;
+    const MAX_LEVEL = 100;
     const DAY_MS = 24 * 60 * 60 * 1000;
     const DAY_CAP = 1000;
 
@@ -87,6 +87,16 @@
         Object.freeze({ level: 40, title: 'Champion' }),
         Object.freeze({ level: 45, title: 'Master Miner' }),
         Object.freeze({ level: 50, title: 'Legend' }),
+        Object.freeze({ level: 55, title: 'Core Warden' }),
+        Object.freeze({ level: 60, title: 'Earthshaker' }),
+        Object.freeze({ level: 65, title: 'Grand Master' }),
+        Object.freeze({ level: 70, title: 'Mythic Miner' }),
+        Object.freeze({ level: 75, title: 'Voidwalker' }),
+        Object.freeze({ level: 80, title: 'Starbreaker' }),
+        Object.freeze({ level: 85, title: 'Apex Titan' }),
+        Object.freeze({ level: 90, title: 'Immortal' }),
+        Object.freeze({ level: 95, title: 'Sovereign' }),
+        Object.freeze({ level: 100, title: 'Overlord' }),
     ]);
     const TITLE_AT = new Map(TITLES.map(t => [t.level, t.title]));
 
@@ -106,8 +116,23 @@
         43: Object.freeze({ item: 'ns_lv_sunforge' }),
         47: Object.freeze({ item: 'sds_gold', fallbackMilli: 10000 }),
         50: Object.freeze({ item: 'ns_lv_legend' }),
+        53: Object.freeze({ item: 'ns_lv_plasma' }),
+        57: Object.freeze({ item: 'sd_quaddy', fallbackMilli: 12000 }),
+        60: Object.freeze({ item: 'sk_lv_cobalt' }),
+        63: Object.freeze({ item: 'ns_lv_nebula' }),
+        67: Object.freeze({ item: 'sdn_candy', fallbackMilli: 15000 }),
+        70: Object.freeze({ item: 'sk_lv_tempest' }),
+        73: Object.freeze({ item: 'ns_lv_solar' }),
+        77: Object.freeze({ item: 'sd_octo', fallbackMilli: 18000 }),
+        80: Object.freeze({ item: 'sk_lv_abyssal' }),
+        83: Object.freeze({ item: 'ns_lv_celestial' }),
+        87: Object.freeze({ item: 'sdn_pixel', fallbackMilli: 24000 }),
+        90: Object.freeze({ item: 'sk_lv_astral' }),
+        93: Object.freeze({ item: 'sk_lv_eternal' }),
+        97: Object.freeze({ item: 'sds_galaxy', fallbackMilli: 35000 }),
+        100: Object.freeze({ item: 'ns_lv_overlord' }),
     });
-    const MILESTONE_DUST = Object.freeze({ 10: 5000, 20: 8000, 30: 10000, 40: 12000, 50: 25000 });
+    const MILESTONE_DUST = Object.freeze({ 10: 5000, 20: 8000, 30: 10000, 40: 12000, 50: 25000, 60: 30000, 70: 35000, 80: 45000, 90: 60000, 100: 100000 });
     const LEVEL_ITEMS = Object.freeze(Object.keys(ITEMS_AT).map(k => ITEMS_AT[k].item).filter(id => /_lv_/.test(id)));
 
     function plainDust(level) {
@@ -115,7 +140,12 @@
         if (level < 20) return 1500;
         if (level < 30) return 2000;
         if (level < 40) return 2500;
-        return 3000;
+        if (level < 50) return 3000;
+        if (level < 60) return 4000;
+        if (level < 70) return 5000;
+        if (level < 80) return 6500;
+        if (level < 90) return 8000;
+        return 10000;
     }
 
     const REWARDS = [];

@@ -162,9 +162,14 @@ function stormRadius(ev, t) {
     return d.R0 - (d.R0 - d.rEnd) * k;
 }
 function stormProgress(ev, t) { return Math.max(0, Math.min(1, (t - ev.startAt) / ev.data.shrinkMs)); }
+function stormCenter(ev, t) {
+    const k = stormProgress(ev, t);
+    return { x: ev.x * k, y: ev.y * k };
+}
 function inRing(ev, b, t) {
-    const d = Math.hypot(b.x - ev.x, b.y - ev.y);
-    return d <= ev.data.R0 && d > stormRadius(ev, t);
+    if (Math.hypot(b.x, b.y) > ev.data.R0) return false;
+    const c = stormCenter(ev, t);
+    return Math.hypot(b.x - c.x, b.y - c.y) > stormRadius(ev, t);
 }
 
 function stormDamage(ev, t, fighters) {
@@ -254,8 +259,11 @@ function botGoal(b, t = Date.now()) {
             if (bo) g = { kind: 'boss', target: bo, x: bo.x, y: bo.y, fight: true };
             else g = standOff(b, ev.x, ev.y, 820);
         } else if (ev.kind === 'storm' && ev.data && ev.data.R0) {
-            const r = Math.min(stormRadius(ev, t) * 0.7, stormRadius(ev, t + 90_000) * 0.8);
-            g = areaGoal(b, ev.x, ev.y, 0, Math.max(80, r), 's' + ev.id + ':' + Math.round(r / 150));
+            const c = stormCenter(ev, t);
+            const rNow = stormRadius(ev, t);
+            if (stormProgress(ev, t) >= 0.75 && !inside(b, c.x, c.y, rNow * 1.15) && !botJoins(b, ev.id + ':fin', 0.35)) return null;
+            const r = Math.min(rNow * 0.7, stormRadius(ev, t + 90_000) * 0.8);
+            g = areaGoal(b, c.x, c.y, 0, Math.max(80, r), 's' + ev.id + ':' + Math.round(r / 150));
             if (g) g.fight = true;
         } else if (ev.kind === 'rush') {
             if (ev.data && t < ev.data.richUntil) g = areaGoal(b, ev.x, ev.y, 0, ev.r * 0.75, 'r' + ev.id);
@@ -308,35 +316,39 @@ const EVENTS = {
             return { x: p.x, y: p.y, r: sc.stormEnd };
         },
         start(ev, t, sc) {
-            const R0 = mapR() + Math.hypot(ev.x, ev.y) + 150;
+            const R0 = mapR();
             ev.data = { R0, rEnd: sc.stormEnd, shrinkMs: Math.max(30_000, ev.ms - STORM_HOLD_MS), lastPt: t };
             return true;
         },
         tick(ev, t, fighters) {
             stormDamage(ev, t, fighters);
-            const r = stormRadius(ev, t);
+            const r = stormRadius(ev, t), c = stormCenter(ev, t);
             if (t - ev.data.lastPt < 1000) return false;
             const secs = Math.min(3, (t - ev.data.lastPt) / 1000);
             ev.data.lastPt = t;
             const k = stormProgress(ev, t);
             for (const b of fighters) {
-                if (!alive(b) || b.royaleFrozen || !inside(b, ev.x, ev.y, r)) continue;
+                if (!alive(b) || b.royaleFrozen || !inside(b, c.x, c.y, r)) continue;
                 score(ev, b, (2 + 4 * k) * secs);
             }
             return false;
         },
         onDeath(ev, victim, killer, t) {
             if (!killer || !alive(killer)) return;
-            if (!inside(victim, ev.x, ev.y, ev.data.R0)) return;
-            if (!inside(killer, ev.x, ev.y, stormRadius(ev, t) + 60)) return;
+            if (!inside(victim, 0, 0, ev.data.R0)) return;
+            const c = stormCenter(ev, t);
+            if (!inside(killer, c.x, c.y, stormRadius(ev, t) + 60)) return;
             score(ev, killer, 150);
         },
         end(ev, t, fighters, natural) {
-            const r = stormRadius(ev, t);
-            if (natural) for (const b of fighters) if (alive(b) && !b.royaleFrozen && inside(b, ev.x, ev.y, r)) score(ev, b, 300);
+            const r = stormRadius(ev, t), c = stormCenter(ev, t);
+            if (natural) for (const b of fighters) if (alive(b) && !b.royaleFrozen && inside(b, c.x, c.y, r)) score(ev, b, 300);
             clearStormMarks(fighters);
         },
-        snap(ev, t) { return { R: Math.round(ev.data.R0), rr: Math.round(stormRadius(ev, t)), re: Math.round(ev.data.rEnd) }; },
+        snap(ev, t) {
+            const c = stormCenter(ev, t);
+            return { R: Math.round(ev.data.R0), rr: Math.round(stormRadius(ev, t)), re: Math.round(ev.data.rEnd), cx: Math.round(c.x), cy: Math.round(c.y) };
+        },
     },
     core: {
         plan(region) {
@@ -675,16 +687,17 @@ function stormSnapshot(t = Date.now()) {
     const ev = st.cur;
     if (!ev || ev.kind !== 'storm' || !ev.data || !ev.data.R0) return null;
     const r = stormRadius(ev, t), n = stormRadius(ev, t + 250);
+    const c = stormCenter(ev, t), nc = stormCenter(ev, t + 250);
     const hold = t - ev.startAt >= ev.data.shrinkMs;
-    return { a: 1, ao: 1, cx: ev.x, cy: ev.y, nx: ev.x, ny: ev.y, tx: ev.x, ty: ev.y, r: Math.round(r), n: Math.round(n), max: Math.round(ev.data.R0), out: Math.round(ev.data.R0),
+    return { a: 1, ao: 1, cx: Math.round(c.x), cy: Math.round(c.y), nx: Math.round(nc.x), ny: Math.round(nc.y), tx: ev.x, ty: ev.y, r: Math.round(r), n: Math.round(n), max: Math.round(ev.data.R0), out: Math.round(ev.data.R0),
         to: Math.round(ev.data.rEnd), c: 0, cn: 0, fin: 0, hold: hold ? 1 : 0, left: Math.max(0, Math.ceil((ev.until - t) / 1000)), lock: 0, lockLeft: 0, gmul: 1 };
 }
 function stormFlee(body, t = Date.now()) {
     const ev = st.cur;
     if (!ev || ev.kind !== 'storm' || !body || !inRing(ev, body, t)) return null;
-    const r = Math.max(40, stormRadius(ev, t) - 90);
-    const d = Math.hypot(body.x - ev.x, body.y - ev.y) || 1;
-    return { x: ev.x + (body.x - ev.x) / d * r, y: ev.y + (body.y - ev.y) / d * r };
+    const r = Math.max(40, stormRadius(ev, t) - 90), c = stormCenter(ev, t);
+    const d = Math.hypot(body.x - c.x, body.y - c.y) || 1;
+    return { x: c.x + (body.x - c.x) / d * r, y: c.y + (body.y - c.y) / d * r };
 }
 function exposure(body, t = Date.now()) {
     const ev = st.cur;
@@ -710,7 +723,7 @@ function snapshot(t = Date.now()) {
     const n = st.next, ev = st.cur, res = st.res;
     const dayKey = daily.day || S.dayKey(t + daily.offset * S.DAY_MS);
     let ft = undefined;
-    try { ft = m('dailyTanks').forDay(dayKey); } catch { /* */ }
+    try { ft = m('dailyTanks').forDay(dayKey); } catch { }
     const out = {
         on: 1, day: dayKey, rs: Math.max(0, resetAt(t) - t),
         ch: daily.champs.slice(0, 3).map(c => ({ n: String(c.name || 'Unnamed').slice(0, 16), p: c.score | 0 })),

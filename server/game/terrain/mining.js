@@ -63,20 +63,20 @@ function rockDamageFor(owner, projectile) {
 
 // Shop and event multipliers stacked on top of the skill bar (drills,
 // overdrive, raid modifiers).
+let _shopMod = null, _raidMods = null;
 function gearMult(owner) {
     let m = 1;
     if (!owner) return m;
     try {
-        const shop = require('./shop.js');
-        m *= shop.miningMult(owner);
-    } catch { /* shop not loaded yet */ }
+        _shopMod ||= require('./shop.js');
+        m *= _shopMod.miningMult(owner);
+    } catch { }
     if (owner.overdriveUntil && Date.now() < owner.overdriveUntil) m *= 2;
-    // Power Drill (raidPerks.js)
     if (owner._pkfx) m *= owner._pkfx.mine || 1;
     try {
-        const mods = require('./raidMods.js');
-        m *= mods.num('miningMult', 1);
-    } catch { /* */ }
+        _raidMods ||= require('./raidMods.js');
+        m *= _raidMods.num('miningMult', 1);
+    } catch { }
     return m;
 }
 
@@ -136,6 +136,7 @@ function grindSecondsFor(owner) {
     }
     if (owner.settings && owner.settings.reloadToAcceleration) sec /= RAM_DIG;
     if (owner.weakDrillUntil && Date.now() < owner.weakDrillUntil) sec *= 1.8;
+    if (owner && owner._pkfx && owner._pkfx.grind > 1) sec /= owner._pkfx.grind;
     sec /= Math.max(0.25, gearMult(owner));
     return sec;
 }

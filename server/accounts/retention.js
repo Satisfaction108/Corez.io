@@ -59,20 +59,23 @@ function itemView(id) {
 // first skin the account doesn't own (a guest is shown the first).
 function itemFor(entry, owned) {
     if (!entry.item) return null;
+    if (entry.item === 'sd_buddy' || entry.item === 'day3') {
+        const pool = D.DAY3_ITEMS || ['sd_buddy'];
+        if (!owned) return pool[0];
+        return pool.find(id => !owned.has(id)) || pool[0];
+    }
     if (entry.item !== 'day7') return entry.item;
     if (!owned) return D.DAY7_ITEMS[0];
     return D.DAY7_ITEMS.find(id => !owned.has(id)) || D.DAY7_ITEMS[0];
 }
-// What claiming `day` pays this owner. owned: the account's owned set, or
-// null for a guest
-//   item    {id, name, cat, rarity} | null
-// signup true for a guest: the dust and the item only come with an account (owed
-function rewardFor(day, owned) {
+function rewardFor(day, owned, week = 0) {
     const e = D.TRACK[Math.max(1, Math.min(D.DAYS, day | 0)) - 1];
+    const bonus = D.weekBonusMilli ? D.weekBonusMilli(week) : 0;
+    const baseDust = e.dustMilli > 0 ? e.dustMilli + bonus : 0;
     const id = itemFor(e, owned);
-    if (!owned) return { day: e.day, dustMilli: e.dustMilli, item: itemView(id), signup: true };
-    if (id && owned.has(id)) return { day: e.day, dustMilli: e.dustMilli + (e.fallbackMilli | 0), item: null, signup: false, had: itemView(id) };
-    return { day: e.day, dustMilli: e.dustMilli, item: itemView(id), signup: false };
+    if (!owned) return { day: e.day, dustMilli: baseDust, item: itemView(id), signup: true };
+    if (id && owned.has(id)) return { day: e.day, dustMilli: baseDust + (e.fallbackMilli | 0) + bonus, item: null, signup: false, had: itemView(id) };
+    return { day: e.day, dustMilli: baseDust, item: itemView(id), signup: false };
 }
 // The dust a guest track is owed so far (its claim rows), capped at a week
 function owedDust(d, trackId) {
@@ -161,10 +164,12 @@ function status(o, now = Date.now(), opts = {}) {
     const st = stateOf(row);
     const ev = D.evaluate(st, now);
     const owned = ownedOf(o);
+    const streakNow = ev.missed ? 0 : (st ? st.streak : 0);
+    const week = Math.floor(Math.max(0, streakNow) / D.DAYS);
     const track = [];
-    for (let i = 1; i <= D.DAYS; i++) track.push(rewardFor(i, owned));
-    // the day after the next claim, for "Tomorrow: ..." once today is claimed
+    for (let i = 1; i <= D.DAYS; i++) track.push(rewardFor(i, owned, week));
     const nextAfter = ev.ready ? D.nextDay(ev.day) : ev.day;
+    const nextWeek = ev.ready && ev.day === D.DAYS ? Math.floor((streakNow + 1) / D.DAYS) : week;
     return {
         on: true,
         owner: o.kind === 'a' ? 'account' : 'guest',
@@ -174,12 +179,13 @@ function status(o, now = Date.now(), opts = {}) {
         expiresAt: ev.expiresAt,
         missed: ev.missed,
         from: ev.from,
-        streak: ev.missed ? 0 : (st ? st.streak : 0),
+        streak: streakNow,
         best: st ? st.best : 0,
         claims: st ? st.claims : 0,
         step: st ? st.step : 0,
-        today: rewardFor(ev.day, owned),
-        tomorrow: rewardFor(nextAfter, owned),
+        week,
+        today: rewardFor(ev.day, owned, week),
+        tomorrow: rewardFor(nextAfter, owned, nextWeek),
         track,
         owed: row && o.kind === 'g' ? owedOf(row).map(itemView) : [],
         owedMilli: row && o.kind === 'g' && !row.adopted_by ? owedDust(d, row.id) : 0,
@@ -217,16 +223,16 @@ function claim(o, now = Date.now(), opts = {}) {
             next.step, next.streak, next.best, next.claims, now, now, D.smoothMinute(row.play_min, D.minuteOf(now)), row.id, st.claims).changes;
         if (!moved) throw new HttpError(409, 'already_claimed', 'You already claimed this one!');
         const owned = ownedOf(o);
-        const reward = rewardFor(ev.day, owned);
+        const week = Math.floor(Math.max(0, ev.streak | 0) / D.DAYS);
+        const reward = rewardFor(ev.day, owned, week);
         let dustMilli = 0, balanceMilli = null, itemId = null;
         if (o.kind === 'a') {
             if (reward.item) {
                 if (grantItem(d, o.id, reward.item.id, now)) itemId = reward.item.id;
                 else {
-                    // it can't be granted after all (got it some other way): the fallback dust
                     reward.had = reward.item;
                     reward.item = null;
-                    reward.dustMilli += D.TRACK[ev.day - 1].fallbackMilli | 0;
+                    reward.dustMilli += (D.TRACK[ev.day - 1].fallbackMilli | 0) + (D.weekBonusMilli ? D.weekBonusMilli(week) : 0);
                 }
             }
             if (reward.dustMilli > 0) {

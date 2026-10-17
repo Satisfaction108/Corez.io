@@ -4338,7 +4338,7 @@ import * as tankRecords from './tankRecords.js';
         if (!s) return;
         const cx = mapX(s.cx || 0), cy = mapY(s.cy || 0);
         const rr = Math.max(2, (s.r || 0) * scale);
-        if (s.out > 0) { c.save(); c.beginPath(); c.arc(cx, cy, Math.max(rr, s.out * scale), 0, Math.PI * 2); c.clip(); }
+        if (s.out > 0) { c.save(); c.beginPath(); c.arc(mapX(0), mapY(0), Math.max(rr, s.out * scale), 0, Math.PI * 2); c.clip(); }
         stormFx.drawMap(c, cx, cy, rr, x, y, w, h, (s.to || 0) * scale, safeZoneJob(), mapX(s.tx), mapY(s.ty));
         if (s.out > 0) c.restore();
     }
@@ -4347,7 +4347,7 @@ import * as tankRecords from './tankRecords.js';
         if (!s) return false;
         const px = global.player.renderx, py = global.player.rendery;
         const dx = px - (s.cx || 0), dy = py - (s.cy || 0);
-        if (s.out > 0 && dx * dx + dy * dy > s.out * s.out) return false;
+        if (s.out > 0 && px * px + py * py > s.out * s.out) return false;
         return dx * dx + dy * dy > (s.r || 0) * (s.r || 0);
     }
     function strokeStormCircle(c, mapX, mapY, scale, x, y, w, h) {
@@ -4360,7 +4360,7 @@ import * as tankRecords from './tankRecords.js';
         const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
         const ox = roomX + halfW * ratio, oy = roomY + halfH * ratio;
         const rr = Math.max(0, s.r * ratio);
-        if (s.out > 0) { ctx[0].save(); ctx[0].beginPath(); ctx[0].arc(ox + s.cx * ratio, oy + s.cy * ratio, Math.max(rr, s.out * ratio), 0, Math.PI * 2); ctx[0].clip(); }
+        if (s.out > 0) { ctx[0].save(); ctx[0].beginPath(); ctx[0].arc(ox, oy, Math.max(rr, s.out * ratio), 0, Math.PI * 2); ctx[0].clip(); }
         stormFx.drawWorld(ctx[0], ox + s.cx * ratio, oy + s.cy * ratio, rr, ox, oy, ratio, global.screenWidth, global.screenHeight);
         if (s.out > 0) ctx[0].restore();
         // the safe-zone job: the whole edge lights up
@@ -5167,7 +5167,7 @@ import * as tankRecords from './tankRecords.js';
                 motion.set(instance.render.lastRender, instance.render.interval);
             }
             let isize = instance.render.size.get(tick, 1 !== rst);
-            const nsT = nsOn && instance.render.ns ? netSmooth.entity(instance.render.ns, nsNow) : null;
+            const nsT = nsOn && instance.render.ns ? netSmooth.entity(instance.render.ns, nsNow, 1 !== rst) : null;
             instance.render.x = !config.graphical.interpolation ?
                 motion.predict(instance.render.lastx, instance.x, instance.render.lastvx, instance.vx) :
                 config.graphical.lerpAnimations ?

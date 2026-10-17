@@ -671,6 +671,9 @@ class Entity extends EventEmitter {
         if (this.bonusHealthMult && this.bonusHealthMult !== 1) {
             this.health.set(this.health.max * this.bonusHealthMult);
         }
+        if (this.bonusShieldMult && this.bonusShieldMult !== 1) {
+            this.shield.set(this.shield.max * this.bonusShieldMult, this.shield.regen * this.bonusShieldMult);
+        }
         if ((this.isPlayer || this.isBot) && global.royaleMods) {
             const rm = global.royaleMods;
             if (rm.speedMult && rm.speedMult !== 1) { this.topSpeed *= rm.speedMult; this.acceleration *= rm.speedMult; }

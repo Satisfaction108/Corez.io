@@ -31,22 +31,32 @@ const OFFER_N = 3;
 // utility 3, survival 2, anything that adds damage to a fight 1).
 // icon: the client's glyph key (raidPerks.js GLYPH).
 const CATALOG = [
-    { id: 'drill',   name: 'Power Drill',     icon: 'drill',   max: 3, w: 3, kind: 'mine',  desc: 'You mine 20% faster.' },
-    { id: 'blast',   name: 'Blast Rounds',    icon: 'blast',   max: 3, w: 3, kind: 'mine',  desc: 'Shots that hit rock crack the rock around them.' },
-    { id: 'rich',    name: 'Rich Veins',      icon: 'rich',    max: 3, w: 3, kind: 'mine',  desc: 'Ore you break drops 12% more gems.' },
-    { id: 'magnet',  name: 'Ore Magnet',      icon: 'magnet',  max: 3, w: 3, kind: 'util',  desc: 'Gems fly to you from 40% farther away.' },
-    { id: 'quake',   name: 'Seismic Pulse',   icon: 'quake',   max: 2, w: 3, kind: 'mine',  desc: 'Every few seconds a pulse cracks the rock around you.' },
-    { id: 'chain',   name: 'Chain Spark',     icon: 'chain',   max: 3, w: 3, kind: 'mine',  desc: 'Hitting rock can send a spark into nearby rock.' },
-    { id: 'pierce',  name: 'Piercing Rounds', icon: 'pierce',  max: 3, w: 3, kind: 'mine',  desc: 'Shots punch through one more rock.' },
-    { id: 'crit',    name: 'Lucky Strike',    icon: 'crit',    max: 3, w: 3, kind: 'mine',  desc: '12% of your shots hit rock for triple damage.' },
-    { id: 'satchel', name: 'Deep Pockets',    icon: 'satchel', max: 1, w: 3, kind: 'util',  desc: 'Your satchel holds 12,000 gems, or 16,000 with a Reinforced Satchel.' },
-    { id: 'speed',   name: 'Swift Treads',    icon: 'speed',   max: 3, w: 3, kind: 'move',  desc: 'You move 6% faster.' },
-    { id: 'hide',    name: 'Thick Hide',      icon: 'hide',    max: 3, w: 2, kind: 'tough', desc: 'You get 7% more max health.' },
-    { id: 'regen',   name: 'Field Repair',    icon: 'regen',   max: 2, w: 2, kind: 'tough', desc: 'After 5 seconds out of a fight, you heal 1.2% of your health per second.' },
-    { id: 'vamp',    name: 'Gem Leech',       icon: 'vamp',    max: 2, w: 2, kind: 'tough', desc: 'Every gem you pick up heals you a little.' },
-    { id: 'twin',    name: 'Twin Drill',      icon: 'twin',    max: 2, w: 1, kind: 'fight', desc: 'Your barrels fire an extra shot that only drills rock.' },
-    { id: 'drones',  name: 'Drone Bay',       icon: 'drones',  max: 2, w: 1, kind: 'fight', desc: 'Adds swarm drones that only chew rock.' },
-    { id: 'reload',  name: 'Overclock',       icon: 'reload',  max: 3, w: 1, kind: 'fight', desc: 'You reload 5% faster.' },
+    { id: 'drill',      name: 'Power Drill',     icon: 'drill',      max: 5, w: 3, kind: 'mine',  desc: 'You mine 20% faster.' },
+    { id: 'blast',      name: 'Blast Rounds',    icon: 'blast',      max: 5, w: 3, kind: 'mine',  desc: 'Shots that hit rock crack the rock around them.' },
+    { id: 'rich',       name: 'Rich Veins',      icon: 'rich',       max: 5, w: 3, kind: 'mine',  desc: 'Ore you break drops 12% more gems.' },
+    { id: 'magnet',     name: 'Ore Magnet',      icon: 'magnet',     max: 5, w: 3, kind: 'util',  desc: 'Gems fly to you from 40% farther away.' },
+    { id: 'quake',      name: 'Seismic Pulse',   icon: 'quake',      max: 4, w: 3, kind: 'mine',  desc: 'Every few seconds a pulse cracks the rock around you.' },
+    { id: 'chain',      name: 'Chain Spark',     icon: 'chain',      max: 5, w: 3, kind: 'mine',  desc: 'Hitting rock can send a spark into nearby rock.' },
+    { id: 'pierce',     name: 'Piercing Rounds', icon: 'pierce',     max: 5, w: 3, kind: 'mine',  desc: 'Shots punch through one more rock.' },
+    { id: 'crit',       name: 'Lucky Strike',    icon: 'crit',       max: 5, w: 3, kind: 'mine',  desc: '12% of your shots hit rock for triple damage.' },
+    { id: 'grind',      name: 'Hull Grinder',    icon: 'grind',      max: 5, w: 3, kind: 'mine',  desc: 'Ramming rock grinds it down 25% faster.' },
+    { id: 'prospector', name: 'Prospector',      icon: 'prospector', max: 5, w: 3, kind: 'mine',  desc: 'Plain rocks you break have a higher chance to drop bonus copper.' },
+    { id: 'shatter',    name: 'Quake Shatter',   icon: 'shatter',    max: 5, w: 3, kind: 'mine',  desc: 'Breaking a rock blasts neighboring rocks for 18% of their health.' },
+    { id: 'chipper',    name: 'Chip Collector',  icon: 'chipper',    max: 5, w: 3, kind: 'mine',  desc: 'Chipping ore rocks pays out 25% more gems right into your satchel.' },
+    { id: 'satchel',    name: 'Deep Pockets',    icon: 'satchel',    max: 3, w: 3, kind: 'util',  desc: 'Your satchel holds 4,000 more gems per stack.' },
+    { id: 'tractor',    name: 'Tractor Beam',    icon: 'tractor',    max: 5, w: 3, kind: 'util',  desc: 'Gems pulled by your magnet fly into your tank 30% faster.' },
+    { id: 'stormward',  name: 'Storm Ward',      icon: 'stormward',  max: 5, w: 2, kind: 'util',  desc: 'You take 15% less damage from the storm circle.' },
+    { id: 'speed',      name: 'Swift Treads',    icon: 'speed',      max: 5, w: 3, kind: 'move',  desc: 'You move 6% faster.' },
+    { id: 'surge',      name: 'Gem Surge',       icon: 'surge',      max: 5, w: 3, kind: 'move',  desc: 'Picking up a gem boosts your speed by 8% for 3 seconds.' },
+    { id: 'hide',       name: 'Thick Hide',      icon: 'hide',       max: 5, w: 2, kind: 'tough', desc: 'You get 7% more max health.' },
+    { id: 'regen',      name: 'Field Repair',    icon: 'regen',      max: 4, w: 2, kind: 'tough', desc: 'After 5 seconds out of a fight, you heal 1.2% of your health per second.' },
+    { id: 'vamp',       name: 'Gem Leech',       icon: 'vamp',       max: 4, w: 2, kind: 'tough', desc: 'Every gem you pick up heals you a little.' },
+    { id: 'plating',    name: 'Ore Plating',     icon: 'plating',    max: 5, w: 2, kind: 'tough', desc: 'Breaking an ore rock repairs 4% of your max health and shield.' },
+    { id: 'aegis',      name: 'Aegis Shield',    icon: 'aegis',      max: 5, w: 2, kind: 'tough', desc: 'Your shield holds 15% more and recovers faster.' },
+    { id: 'twin',       name: 'Twin Drill',      icon: 'twin',       max: 3, w: 1, kind: 'fight', desc: 'Your barrels fire an extra shot that only drills rock.' },
+    { id: 'drones',     name: 'Drone Bay',       icon: 'drones',     max: 3, w: 1, kind: 'fight', desc: 'Adds swarm drones that only chew rock.' },
+    { id: 'reload',     name: 'Overclock',       icon: 'reload',     max: 5, w: 1, kind: 'fight', desc: 'You reload 5% faster.' },
+    { id: 'velocity',   name: 'High Velocity',   icon: 'velocity',   max: 5, w: 1, kind: 'fight', desc: 'Your shots fly 6% faster and reach farther.' },
 ];
 const BY_ID = new Map(CATALOG.map(p => [p.id, p]));
 
@@ -100,7 +110,7 @@ function rollOffer(build, rng = Math.random) {
     return out;
 }
 
-function roman(n) { return ['', 'I', 'II', 'III', 'IV', 'V'][n] || String(n); }
+function roman(n) { return ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][n] || String(n); }
 // The offer as the client gets it: a perk you already hold says which
 // level this pick takes it to ("Power Drill II").
 function describeOffer(build) {
@@ -187,10 +197,9 @@ function computeFx(perks) {
     const mine = 1 + 0.2 * n('drill');
     return {
         mine,
-        // the per-second dig budget (game/index.js): more barrels dig more
         budget: mine * (1 + 0.2 * n('twin') + 0.15 * n('drones')),
         magnet: 1 + 0.4 * n('magnet'),
-        satchel: n('satchel'),          // held: +4,000 (shop.satchelCap)
+        satchel: n('satchel'),
         speed: 1 + 0.06 * n('speed'),
         health: 1 + 0.07 * n('hide'),
         reload: 1 + 0.05 * n('reload'),
@@ -198,12 +207,22 @@ function computeFx(perks) {
         blastR: n('blast') ? 60 + 30 * n('blast') : 0,
         chain: n('chain'),
         pierce: n('pierce'),
-        crit: Math.min(0.5, 0.12 * n('crit')),
+        crit: Math.min(0.6, 0.12 * n('crit')),
         regen: 0.012 * n('regen'),
         quake: n('quake'),
         vamp: n('vamp'),
         twin: n('twin'),
         drones: n('drones'),
+        grind: 1 + 0.25 * n('grind'),
+        prospector: n('prospector'),
+        shatter: 0.18 * n('shatter'),
+        chipper: 1 + 0.25 * n('chipper'),
+        tractor: 1 + 0.3 * n('tractor'),
+        stormward: Math.max(0.2, 1 - 0.15 * n('stormward')),
+        surge: 0.08 * n('surge'),
+        plating: 0.04 * n('plating'),
+        aegis: 1 + 0.15 * n('aegis'),
+        velocity: 1 + 0.06 * n('velocity'),
     };
 }
 
@@ -248,7 +267,7 @@ function mainBarrels(body) {
 const TWIN_SPREAD = 5;
 function twinDef(src, i, stats) {
     const side = i % 2 ? -1 : 1;
-    const delay = i ? 0.75 : 0.25;
+    const delay = i === 2 ? 0.5 : (i ? 0.75 : 0.25);
     const settings = { ...stats, recoil: 0 };
     if (!src) return { POSITION: [16, 8, 1, 0, 0, side * TWIN_SPREAD, delay], settings };
     const len = src.offset * 10;
@@ -268,7 +287,7 @@ function gunDefs(fx, body) {
     if (!fx) return out;
     const real = mainBarrels(body);
     const stats = combineStats([g.basic, { reload: 1.15, damage: 0.5 }]);
-    for (let i = 0; i < Math.min(2, fx.twin); i++) {
+    for (let i = 0; i < Math.min(3, fx.twin); i++) {
         const d = twinDef(real.length ? real[i % real.length] : null, i, stats);
         out.push({
             POSITION: d.POSITION,
@@ -278,9 +297,8 @@ function gunDefs(fx, body) {
             },
         });
     }
-    // a pair a stack, one each flank (X/Y are in the gun's rotated frame)
-    const droneSlots = [[7, -4.5, 90, 0], [7, 4.5, 270, 0.5], [7, 4.5, 90, 0.25], [7, -4.5, 270, 0.75]];
-    for (let i = 0; i < Math.min(4, fx.drones * 2); i++) {
+    const droneSlots = [[7, -4.5, 90, 0], [7, 4.5, 270, 0.5], [7, 4.5, 90, 0.25], [7, -4.5, 270, 0.75], [6, -6, 120, 0.12], [6, 6, 240, 0.62]];
+    for (let i = 0; i < Math.min(6, fx.drones * 2); i++) {
         const [x, y, ang, delay] = droneSlots[i];
         out.push({
             POSITION: [9, 7, 0.7, x, y, ang, delay],
@@ -356,13 +374,28 @@ function fxNear(x, y, kind, ...extra) {
 // broken by a splash doesn't count toward rocksMined: that counter also
 // drives the dry-streak copper (gems.pityBurst), and a blast breaking five
 // rocks at once would farm it.
+function onOreBreak(body) {
+    const fx = body && body._pkfx;
+    if (!fx || !(fx.plating > 0)) return;
+    if (body.health && body.health.max > 0) {
+        body.health.amount = Math.min(body.health.max, body.health.amount + body.health.max * fx.plating);
+    }
+    if (body.shield && body.shield.max > 0) {
+        body.shield.amount = Math.min(body.shield.max, body.shield.amount + body.shield.max * fx.plating);
+    }
+}
+
 function breakRock(tg, rock, dmg, owner, x, y) {
     if (!rock || !(rock.alive || rock.growing) || !(dmg > 0)) return false;
     const gems = require('./gems.js');
     const wasGrowing = rock.growing;
     const destroyed = tg.damageRock(rock, dmg, x, y, false, owner);
     if (destroyed && !wasGrowing && rock.ore) {
-        if (owner) { owner.rocksMined = (owner.rocksMined || 0) + 1; owner.gemsMined = (owner.gemsMined || 0) + 1; }
+        if (owner) {
+            owner.rocksMined = (owner.rocksMined || 0) + 1;
+            owner.gemsMined = (owner.gemsMined || 0) + 1;
+            onOreBreak(owner);
+        }
         gems.spawnOreBurst(rock, owner);
     }
     return destroyed;
@@ -405,6 +438,22 @@ function afterRockHit(shot, owner, hitRocks, tg, raw) {
     if (!fx || !tg || owner.royaleLobby) return false;
     const t = Date.now();
     const x = shot.x, y = shot.y;
+    if ((fx.shatter > 0 || fx.plating > 0) && hitRocks.length) {
+        for (const hr of hitRocks) {
+            if (!hr || hr.alive || hr.growing) continue;
+            if (fx.plating > 0 && hr.ore) onOreBreak(owner);
+            if (fx.shatter > 0 && tg.rocksHitByCircle) {
+                const hx = rockX(hr), hy = rockY(hr);
+                scratch.length = 0;
+                const nbs = tg.rocksHitByCircle(hx, hy, 110, scratch).slice();
+                scratch.length = 0;
+                for (const nb of nbs) {
+                    if (nb === hr || hitRocks.includes(nb)) continue;
+                    breakRock(tg, nb, (nb.maxHealth || raw) * fx.shatter, owner, rockX(nb), rockY(nb));
+                }
+            }
+        }
+    }
     if (fx.blastR > 0 && t - (owner._pkBlastAt || 0) >= 90) {
         owner._pkBlastAt = t;
         scratch.length = 0;
@@ -456,6 +505,10 @@ const REGEN_CALM_MS = 5000;
 function tickBody(body, t, dt) {
     const fx = body && body._pkfx;
     if (!fx || !alive(body) || body.royaleLobby || body.royaleFrozen) return;
+    if (body._pkSurgeUntil && t >= body._pkSurgeUntil) {
+        body._pkSurgeUntil = 0;
+        try { require('./shop.js').applyPassives(body); } catch { /* */ }
+    }
     if (fx.regen > 0 && body.health && body.health.amount < body.health.max &&
         t - Math.max(body._lastDamageAt || 0, body.hitAt || 0) >= REGEN_CALM_MS) {
         body.health.amount = Math.min(body.health.max, body.health.amount + body.health.max * fx.regen * dt / 1000);
@@ -464,7 +517,6 @@ function tickBody(body, t, dt) {
         if (!body._pkQuakeAt) body._pkQuakeAt = t + 2500;
         if (t >= body._pkQuakeAt) {
             body._pkQuakeAt = t + (fx.quake >= 2 ? 5000 : 7000);
-            // not while burrowed, on a pad, or shielded at a fresh spawn
             if (body.burrowUntil && t < body.burrowUntil) return;
             if (body.padSafe || body.onVaultPad || body.vaultOnPad) return;
             const tg = tgOf();
@@ -482,16 +534,22 @@ function tickBody(body, t, dt) {
     }
 }
 
-// Gem Leech: a little health back on every pickup.
 function onGemHeal(body) {
     const fx = body && body._pkfx;
-    if (!fx || !(fx.vamp > 0) || !body.health) return;
-    body.health.amount = Math.min(body.health.max, body.health.amount + body.health.max * 0.004 * fx.vamp);
+    if (!fx) return;
+    if (fx.vamp > 0 && body.health) {
+        body.health.amount = Math.min(body.health.max, body.health.amount + body.health.max * 0.004 * fx.vamp);
+    }
+    if (fx.surge > 0) {
+        const had = !!(body._pkSurgeUntil && Date.now() < body._pkSurgeUntil);
+        body._pkSurgeUntil = Date.now() + 3000;
+        if (!had) { try { require('./shop.js').applyPassives(body); } catch { /* */ } }
+    }
 }
 
 module.exports = {
     STEP, OFFER_N, UPGRADE_W, CATALOG, BY_ID, earnedAt, nextAt, newBuild, rollOffer, describeOffer, perkList, totalPicks,
     grant, syncScore, pick, botPick, snapshot, computeFx,
     applyToBody, clearBody, attachGuns, detachGuns, gunDefs,
-    critMult, skipPassed, afterRockHit, breakRock, tickBody, onGemHeal, fxNear, PIERCE_TANK_DAMAGE,
+    critMult, skipPassed, afterRockHit, breakRock, onOreBreak, tickBody, onGemHeal, fxNear, PIERCE_TANK_DAMAGE,
 };

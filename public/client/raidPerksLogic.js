@@ -139,9 +139,9 @@ export function tankFloor(H, tankR) {
 
 // ── a card's words ─────────────────────────────────────────────────────
 // The server names a perk you already hold with the level this pick takes it to
-export const ROMAN = ["", "I", "II", "III", "IV", "V", "VI"];
+export const ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 export function roman(n) { return ROMAN[n | 0] || String(n | 0); }
-export function baseName(name) { return String(name || "").replace(/\s+(?:I|II|III|IV|V|VI)$/, ""); }
+export function baseName(name) { return String(name || "").replace(/\s+(?:I|II|III|IV|V|VI|VII|VIII|IX|X)$/, ""); }
 // the level this pick gives you (a perk held at n goes to n + 1)
 export function nextLevel(p) { return Math.max(1, ((p && p.n) | 0) + 1); }
 // hover: the whole description and what changes, never cut

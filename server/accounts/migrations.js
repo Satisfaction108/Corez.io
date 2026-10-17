@@ -744,7 +744,7 @@ ALTER TABLE guests ADD COLUMN xp_to INTEGER REFERENCES users(id) ON DELETE SET N
 
 CREATE TABLE level_grants (
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    level      INTEGER NOT NULL CHECK (level BETWEEN 2 AND 50),
+    level      INTEGER NOT NULL CHECK (level BETWEEN 2 AND 100),
     at         INTEGER NOT NULL,
     dust_milli INTEGER NOT NULL DEFAULT 0 CHECK (dust_milli >= 0),
     item_id    TEXT,

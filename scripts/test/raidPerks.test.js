@@ -170,7 +170,7 @@ test('offers: three different perks with room left; only what was offered can be
     assert.equal(perks.pick(b, id, r), false, 'no offer, no pick');
     // a maxed perk is never offered again
     const full = perks.newBuild();
-    full.perks.drill = 3;
+    full.perks.drill = perks.BY_ID.get('drill').max;
     for (let i = 0; i < 300; i++) assert.ok(!perks.rollOffer(full, rng(i)).includes('drill'));
     // with everything maxed there is nothing to offer, and the queue empties
     const all = perks.newBuild();
@@ -217,22 +217,18 @@ test('offers: a perk you hold below its max comes up as an upgrade on every offe
         assert.ok(k <= 2, 'and something new: ' + o);
         ups += k; n += 3;
     }
-    // with 5 of 16 held, an even roll would put ~0.94 upgrades on an offer
-    assert.ok(ups / (n / 3) > 1.25, 'upgrades come up often: ' + (ups / (n / 3)).toFixed(2) + ' per offer');
-    // a maxed one is not an upgrade; nothing held: all new, as before
+    assert.ok(ups / (n / 3) > 1.15, 'upgrades come up often: ' + (ups / (n / 3)).toFixed(2) + ' per offer');
     const maxed = perks.newBuild();
-    maxed.perks.drill = 3;
+    maxed.perks.drill = perks.BY_ID.get('drill').max;
     for (let i = 0; i < 200; i++) assert.ok(!perks.rollOffer(maxed, rng(i)).includes('drill'));
     assert.equal(owned(perks.newBuild(), perks.rollOffer(perks.newBuild(), rng(5))).length, 0);
-    // everything new is gone: three upgrades
     const late = perks.newBuild();
     for (const p of perks.CATALOG) late.perks[p.id] = 1;
     const lo = perks.rollOffer(late, rng(2));
     assert.equal(lo.length, 3);
-    // only upgrades left and fewer than three: what there is
     const end = perks.newBuild();
     for (const p of perks.CATALOG) end.perks[p.id] = p.max;
-    end.perks.drill = 2; end.perks.hide = 1;
+    end.perks.drill = perks.BY_ID.get('drill').max - 1; end.perks.hide = 1;
     assert.deepEqual(perks.rollOffer(end, rng(3)).sort(), ['drill', 'hide']);
 });
 
@@ -285,10 +281,10 @@ test('balance: damage perks stay small, every max is sane', () => {
     assert.ok(/instance\.rockOnly && other\.type !== "wall"/.test(idx), 'collide lets rock-only shots pass entities');
     for (const d of defs) assert.ok(!d.PROPERTIES.AUTOFIRE, 'perk barrels fire with you, never on their own');
     assert.ok(perks.PIERCE_TANK_DAMAGE < 1, 'a shot through rock hits a tank softer');
-    // (Deep Pockets is one step: +4,000, see raidMods.test satchel caps)
-    for (const p of perks.CATALOG) assert.ok(p.id === 'satchel' ? p.max === 1 : p.max >= 2 && p.max <= 3, p.id);
+    for (const p of perks.CATALOG) assert.ok(p.max >= 3 && p.max <= 5, p.id);
     assert.equal(perks.computeFx({ satchel: 1 }).satchel, 1);
-    assert.ok(perks.CATALOG.length >= 12 && perks.CATALOG.length <= 17);
+    assert.equal(perks.computeFx({ satchel: 3 }).satchel, 3);
+    assert.equal(perks.CATALOG.length, 26);
 });
 
 // ── in a raid ───────────────────────────────────────────────────────────

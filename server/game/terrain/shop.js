@@ -208,27 +208,29 @@ function deepPockets(body) {
     return !!(global.royaleMods && global.royaleMods.satchelDeep) || ((body && body._pkfx && body._pkfx.satchel) | 0) > 0;
 }
 function satchelCap(body) {
-    return SATCHEL_BASE + (hasGear(body, "satchel") ? SATCHEL_STEP : 0) + (deepPockets(body) ? SATCHEL_STEP : 0);
+    const pkStacks = Math.max(0, (body && body._pkfx && body._pkfx.satchel) | 0);
+    const deepBonus = pkStacks > 0 ? pkStacks * SATCHEL_STEP : (deepPockets(body) ? SATCHEL_STEP : 0);
+    return SATCHEL_BASE + (hasGear(body, "satchel") ? SATCHEL_STEP : 0) + deepBonus;
 }
 function depositRateMult(body) { return hasGear(body, "express") ? 2 : 1; }
 function stormDamageMult(body) {
     if (body && body.stormAnchorUntil && Date.now() < body.stormAnchorUntil) return 0;
-    return hasGear(body, "cloak") ? 0.5 : 1;
+    const ward = (body && body._pkfx && body._pkfx.stormward) || 1;
+    return (hasGear(body, "cloak") ? 0.5 : 1) * ward;
 }
-// Second Wind: how long a fresh spawn's shield survives movement
 const WIND_SHIELD_MS = 10000;
 function spawnMoveShieldMs(body) { return hasGear(body, "wind") ? WIND_SHIELD_MS : 0; }
 function killBonus(body) { return hasGear(body, "mark") ? 100 : 0; }
 function keepsDrillOnRespawn(body) { const s = shopOf(body); return !!(s && s.drill >= 5); }
 
-// Body multipliers the entity applies at the end of refreshBodyAttributes.
 function applyPassives(body) {
     if (!body) return;
     const s = shopOf(body);
-    // raid perks (raidPerks.js): Swift Treads and Thick Hide
     const pk = body._pkfx;
-    body.bonusSpeedMult = (hasGear(body, "boots") ? 1.25 : 1) * abilities.speedMult(body) * ((pk && pk.speed) || 1);
+    const surge = (pk && pk.surge > 0 && body._pkSurgeUntil && Date.now() < body._pkSurgeUntil) ? (1 + pk.surge) : 1;
+    body.bonusSpeedMult = (hasGear(body, "boots") ? 1.25 : 1) * abilities.speedMult(body) * ((pk && pk.speed) || 1) * surge;
     body.bonusHealthMult = (hasGear(body, "plating") ? 1.25 : 1) * ((pk && pk.health) || 1);
+    body.bonusShieldMult = (pk && pk.aegis) || 1;
     body.gemCap = satchelCap(body);
     applyStatPoints(body, s);
     try { body.refreshBodyAttributes(); } catch { /* */ }

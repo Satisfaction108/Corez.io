@@ -1916,8 +1916,8 @@ class gameHandler {
             this._terrainRegrowMs = performance.now() - _terrainT0;
             const growingNow = _tg.growingRocks().length > 0;
             const gemActors = this.gemActors();
-            // Loose gems run every pass, at 30 Hz (the magnet blend in gems.tickGem is
-            // tuned for it).
+            const raidPads = Config.dig_royale ? vault.getVaults() : null;
+            const shopPads = Config.dig_royale ? shop.getShops() : null;
             const gemsThisTick = true;
             for (const instance of global.entities.values()) {
                 if (!instance) continue;
@@ -1939,11 +1939,10 @@ class gameHandler {
                 if (instance.isDead?.()) continue;
                 if (instance.noclip || instance.godmode || instance.isArenaCloser) continue;
                 if (instance.isOutpostBanner || instance.isCoreChamber) continue;
-                if (Config.dig_royale && instance.type === 'minion') {
-                    const pads = vault.getVaults();
+                if (raidPads && instance.type === 'minion') {
                     const root = instance.master;
-                    for (let vi = 0; vi < pads.length; vi++) {
-                        const v = pads[vi];
+                    for (let vi = 0; vi < raidPads.length; vi++) {
+                        const v = raidPads[vi];
                         if (vault.onPadShape(v, instance.x - v.x, instance.y - v.y)) {
                             if (!root || !root.vaultOnPad) {
                                 instance.kill();
@@ -2043,33 +2042,30 @@ class gameHandler {
                 } else if (instance.type === 'bullet' || instance.type === 'drone' ||
                            instance.type === 'trap'   || instance.type === 'satellite' ||
                            instance.type === 'swarm') {
-                    // Raid vaults are hard cover. Every projectile dies at the
-                    // pad, including drones. Step out to fight.
-                    if (Config.dig_royale) {
-                        const pads = vault.getVaults();
-                        for (let vi = 0; vi < pads.length; vi++) {
-                            const v = pads[vi];
+                    if (raidPads) {
+                        for (let vi = 0; vi < raidPads.length; vi++) {
+                            const v = raidPads[vi];
                             const vdx = instance.x - v.x, vdy = instance.y - v.y;
                             const vr = v.r * 1.15 + 8 + (instance.realSize || 0);
-                            if (vdx * vdx + vdy * vdy > vr * vr) continue;   // cheap reject before the octagon test
+                            if (vdx * vdx + vdy * vdy > vr * vr) continue;
                             if (vault.onPadShape(v, vdx, vdy, 8)) {
                                 instance.velocity.x = 0; instance.velocity.y = 0;
                                 instance.accel.x = 0;    instance.accel.y = 0;
+                                if (instance.cameraInfo) { instance.cameraInfo.vx = 0; instance.cameraInfo.vy = 0; }
                                 instance.kill();
                                 break;
                             }
                         }
                         if (instance.isDead?.()) continue;
-                        // shop pads too (round 10): every projectile, any owner (players, bots, bosses)
-                        const sps = shop.getShops();
-                        for (let si = 0; si < sps.length; si++) {
-                            const sp = sps[si];
+                        for (let si = 0; si < shopPads.length; si++) {
+                            const sp = shopPads[si];
                             const sdx = instance.x - sp.x, sdy = instance.y - sp.y;
                             const sr = sp.r * 1.25 + 8 + (instance.realSize || 0);
                             if (sdx * sdx + sdy * sdy > sr * sr) continue;
                             if (padGeom.insidePad(sp, instance.x, instance.y, 8)) {
                                 instance.velocity.x = 0; instance.velocity.y = 0;
                                 instance.accel.x = 0;    instance.accel.y = 0;
+                                if (instance.cameraInfo) { instance.cameraInfo.vx = 0; instance.cameraInfo.vy = 0; }
                                 instance.kill();
                                 break;
                             }
@@ -2134,6 +2130,7 @@ class gameHandler {
 
                         instance.velocity.x = 0; instance.velocity.y = 0;
                         instance.accel.x = 0;    instance.accel.y = 0;
+                        if (instance.cameraInfo) { instance.cameraInfo.vx = 0; instance.cameraInfo.vy = 0; }
                         instance.kill();
                     }
                 }

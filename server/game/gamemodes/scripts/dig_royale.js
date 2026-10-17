@@ -2083,19 +2083,28 @@ function humansInRaid() {
 function botCapNow() {
     const FM = FIRST_MINUTES;
     const hs = humansInRaid();
-    // duos: a lone player (who may be filled later) still counts as a pair,
-    // so 1 or 2 humans both meet 4 bots (two bot duos)
-    if (AO()) return aoBotCap(hs);
+    if (AO()) {
+        let cap = aoBotCap(hs);
+        try {
+            const st = alwaysOn.stormSnapshot(now());
+            if (st && st.a) {
+                const finR = st.to || 600;
+                if (st.hold || st.r <= finR * 1.35) cap = Math.min(cap, Math.max(1, 3 - hs));
+                else if (st.r < finR * 2.2) cap = Math.min(cap, Math.max(2, Math.floor((st.r / FM.DENSITY_R) ** 2) - hs));
+            }
+        } catch { }
+        return Math.max(0, cap);
+    }
     let cap = fillCap() - (Config.royale_duos ? Math.max(2, hs) : hs);
     try {
         const st = storm.snapshot(now());
         if (st && st.a) {
-            // bot teammates are fighters too: they share the closing circle
             const total = Math.floor(((st.r || 0) / FM.DENSITY_R) ** 2) - teamBots().length;
             cap = Math.min(cap, Math.max(hs ? FM.DENSITY_MIN_BOTS : 0, total - hs));
+            const finR = st.to || 600;
+            if (st.fin || st.hold || (st.r || 0) <= finR * 1.35) cap = Math.min(cap, Math.max(1, 3 - hs));
         }
-    } catch { /* */ }
-    // duos: bots come in pairs, so an even number (no lone bot row on the team board)
+    } catch { }
     if (Config.royale_duos) cap -= ((cap % 2) + 2) % 2;
     return Math.max(0, cap);
 }
@@ -2146,7 +2155,7 @@ function trimBots(t) {
         let d = Infinity;
         for (const h of hs) { const dd = Math.hypot(h.x - b.x, h.y - b.y); if (dd < d) d = dd; }
         let lost = false;
-        try { lost = storm.inStorm(b.x, b.y); } catch { /* */ }
+        try { lost = !!(b._inStorm || storm.inStorm(b.x, b.y)); } catch { }
         if (d >= FM.DENSITY_TRIM_AWAY || lost) {
             const score = (lost ? 1e6 : 0) + d;
             if (score > bestScore) { bestScore = score; best = b; }
@@ -2369,6 +2378,10 @@ function fillBots() {
     // bots follow the players' rule: nobody (re)spawns in the storm's lock
     if (!canSpawn()) return;
     const cap = botCapNow(), alive = enemyBots().length;
+    try {
+        const st = AO() ? alwaysOn.stormSnapshot(t) : storm.snapshot(t);
+        if (st && st.a && (st.fin || st.hold || (st.r || 0) <= (st.to || 600) * 1.25) && alive >= 2) return;
+    } catch { }
     botRoster.trimTo(cap - alive);
     if (alive >= cap) return;
     // a death never refills on the spot

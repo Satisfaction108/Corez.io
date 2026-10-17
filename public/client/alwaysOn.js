@@ -114,7 +114,7 @@ export function drawPanel(c, cx, y, api) {
         const curTank = (window.gui && window.gui.__tankLabel) || "";
         const rec = curTank && window.tankRecords && window.tankRecords.getRecord(curTank);
         if (rec && rec.score > 0) tankBit = "  ·  " + curTank + " PB: " + api.fmtNum(rec.score);
-    } catch { /* */ }
+    } catch { }
     const goalTxt = "Today: " + api.fmtNum(r.youScore | 0) + " pts" + runBit + tankBit + "  ·  " + goalLine(r);
     const evTxt = a.ev ? (KIND_GOAL[a.ev.k] || "Join in") + " in " + a.ev.w + (yao.ep > 0 ? "  ·  +" + num(yao.ep) + " event pts" : "") : "";
     const ls = 15, vs = 21;
@@ -355,7 +355,7 @@ export function mapMarks() {
     const out = [];
     if (!a) return out;
     if (a.ev && a.ev.k !== "storm") out.push({ x: a.ev.x, y: a.ev.y, r: a.ev.r, pr: a.ev.pr || 130, ct: !!a.ev.ct, col: KIND_COL[a.ev.k] || "#ffffff", live: true, k: a.ev.k, n: a.ev.n });
-    if (a.ev && a.ev.k === "storm" && (a.ev.rr || a.ev.re)) out.push({ x: a.ev.x, y: a.ev.y, r: a.ev.rr || a.ev.re, col: KIND_COL.storm, live: true, k: "storm", n: a.ev.n });
+    if (a.ev && a.ev.k === "storm" && (a.ev.rr || a.ev.re)) out.push({ x: a.ev.cx ?? a.ev.x, y: a.ev.cy ?? a.ev.y, r: a.ev.rr || a.ev.re, col: KIND_COL.storm, live: true, k: "storm", n: a.ev.n });
     if (a.nx && a.nx.a && a.nx.x != null) out.push({ x: a.nx.x, y: a.nx.y, r: a.nx.r || 500, col: KIND_COL[a.nx.k] || "#ffffff", live: false, k: a.nx.k, n: a.nx.n });
     return out;
 }
@@ -365,6 +365,7 @@ export function drawMap(c, mapX, mapY, scale) {
     if (!marks.length) return;
     const now = performance.now();
     for (const mk of marks) {
+        if (mk.k === "storm" && mk.live) continue;
         const x = mapX(mk.x), y = mapY(mk.y), r = Math.max(4, mk.r * scale);
         if (mk.k === "hill" && mk.live) {
             const ir = Math.max(1.5, mk.pr * scale), band = mk.ct ? HILL_RED : mk.col;

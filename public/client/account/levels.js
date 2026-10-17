@@ -386,7 +386,7 @@ export function openPanel() {
         : h('p', { class: 'lvd-su', text: 'Unlocked items go straight to your Locker.' });
     const body = h('div', { class: 'lvd' }, head, list, foot);
     const m = modal({ cls: 'lvd-modal', title: null, body, dismissable: true, onClose: () => { pv.stopUnder(list); panel = null; } });
-    m.card.setAttribute('aria-label', 'Levels 1 to 50 and what each one unlocks');
+    m.card.setAttribute('aria-label', 'Levels 1 to ' + LV.MAX_LEVEL + ' and what each one unlocks');
     m.card.prepend(h('button', { type: 'button', class: 'wl-x lvd-x', 'aria-label': 'Close', 'data-autofocus': '', onclick: () => m.close() }, icon('close')));
     panel = m;
     if (nextEl) requestAnimationFrame(() => { try { list.scrollTop = Math.max(0, nextEl.offsetTop - list.offsetTop - 90); } catch (e) { void e; } });

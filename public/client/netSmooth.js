@@ -54,7 +54,7 @@ function onSnapshot(stamp, now) {
     } else if (off < bk[bk.length - 1].v) bk[bk.length - 1].v = off;
     let m = Infinity;
     for (let i = 0; i < bk.length; i++) if (bk[i].v < m) m = bk[i].v;
-    if (S.offMin === null || m < S.offMin || Math.abs(m - S.offMin) > 0.5) S.offMin = m;
+    if (S.offMin === null || m < S.offMin || m > S.offMin + 5) S.offMin = m;
     const late = Math.min(Math.max(0, off - S.offMin), S.tick * 4);
     if (late > S.tick) stats.late++;
     S.jit += (late - S.jit) * (late > S.jit ? 0.25 : 0.015);
@@ -85,12 +85,12 @@ function track() {
     return { h: [], ex: 0, ey: 0, px: NaN, py: NaN, pvx: 0, pvy: 0, pt: 0, cut: true, x: 0, y: 0, f: 0 };
 }
 
-function push(tr, stamp, x, y, f, vx, vy, vf) {
+function push(tr, stamp, x, y, f) {
     if (!tr || !isFinite(x) || !isFinite(y)) return;
     const h = tr.h;
     const last = h.length ? h[h.length - 1] : null;
     if (last && stamp <= last[0]) {
-        last[1] = x; last[2] = y; last[3] = f; last[4] = vx; last[5] = vy; last[6] = vf;
+        last[1] = x; last[2] = y; last[3] = f;
         return;
     }
     if (last && Math.hypot(x - last[1], y - last[2]) > CFG.cutDist * Math.max(1, (stamp - last[0]) / S.tick / 3)) {
@@ -100,9 +100,9 @@ function push(tr, stamp, x, y, f, vx, vy, vf) {
     }
     if (h.length >= CFG.histMax) {
         const r = h.shift();
-        r[0] = stamp; r[1] = x; r[2] = y; r[3] = f; r[4] = vx; r[5] = vy; r[6] = vf;
+        r[0] = stamp; r[1] = x; r[2] = y; r[3] = f;
         h.push(r);
-    } else h.push([stamp, x, y, f, vx, vy, vf]);
+    } else h.push([stamp, x, y, f]);
 }
 
 function angLerp(a, b, t) {
@@ -112,28 +112,25 @@ function angLerp(a, b, t) {
 }
 
 const _s = { x: 0, y: 0, f: 0, vx: 0, vy: 0 };
-function sample(tr, R) {
+function sample(tr, R, dead) {
     const h = tr.h, n = h.length;
     const out = _s;
     if (!n) return null;
     const last = h[n - 1];
     if (n === 1 || R >= last[0]) {
         let vx = 0, vy = 0;
-        const hasV = Number.isFinite(last[4]) && Number.isFinite(last[5]);
-        if (hasV) {
-            vx = last[4]; vy = last[5];
-        } else if (n > 1) {
+        if (!dead && n > 1) {
             const p = h[n - 2], dt = last[0] - p[0];
             if (dt > 0 && dt < 260) { vx = (last[1] - p[1]) / dt; vy = (last[2] - p[2]) / dt; }
         }
-        const over = (n > 1 || hasV) ? Math.max(0, R - last[0]) : 0;
+        const over = (!dead && n > 1) ? Math.max(0, R - last[0]) : 0;
         const ahead = Math.min(over, CFG.extrapMs);
         if (over > CFG.extrapMs) stats.hold++; else if (over > 0) stats.extrap++;
         out.x = last[1] + vx * ahead;
         out.y = last[2] + vy * ahead;
         out.vx = over >= CFG.extrapMs ? 0 : vx;
         out.vy = over >= CFG.extrapMs ? 0 : vy;
-        out.f = last[3] + (Number.isFinite(last[6]) ? last[6] * ahead : 0);
+        out.f = last[3];
         return out;
     }
     if (R <= h[0][0]) {
@@ -152,8 +149,8 @@ function sample(tr, R) {
     return out;
 }
 
-function resolve(tr, R, now) {
-    const s = sample(tr, R);
+function resolve(tr, R, now, dead) {
+    const s = sample(tr, R, dead);
     if (!s) return null;
     const dt = tr.pt ? Math.min(250, Math.max(0, now - tr.pt)) : 0;
     if (!tr.cut && isFinite(tr.px) && dt > 0) {
@@ -161,7 +158,7 @@ function resolve(tr, R, now) {
         const dx = s.x - cx, dy = s.y - cy;
         const d = Math.hypot(dx, dy);
         if (d > CFG.snapDist) { tr.ex = 0; tr.ey = 0; stats.snapped++; }
-        else if (d > 0.001) { tr.ex -= dx; tr.ey -= dy; stats.eased++; }
+        else if (d > 1.5) { tr.ex -= dx; tr.ey -= dy; stats.eased++; }
     } else if (tr.cut) { tr.ex = 0; tr.ey = 0; }
     tr.cut = false;
     if (dt > 0) {
@@ -175,9 +172,9 @@ function resolve(tr, R, now) {
     return tr;
 }
 
-function entity(tr, now) {
+function entity(tr, now, dead) {
     if (!tr || S.R === null) return null;
-    return resolve(tr, S.R, now);
+    return resolve(tr, S.R, now, dead);
 }
 
 const cam = track();

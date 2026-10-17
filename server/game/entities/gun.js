@@ -340,7 +340,8 @@ class Gun extends EventEmitter {
         }
         spread *= Math.PI / 180;
         // Find speed
-        let vecLength = (this.negRecoil ? -1 : 1) * this.settings.speed * global.gameManager.runSpeed * sk.spd * (1 + shudder),
+        const pkVel = (this.body.master && this.body.master._pkfx && this.body.master._pkfx.velocity) || 1;
+        let vecLength = (this.negRecoil ? -1 : 1) * this.settings.speed * global.gameManager.runSpeed * sk.spd * pkVel * (1 + shudder),
           vecAngle = this.angle + this.body.facing + spread,
           s = new Vector(
             vecLength * Math.cos(vecAngle),

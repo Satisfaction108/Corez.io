@@ -54,34 +54,34 @@ const guestRow = (g) => D().get('SELECT xp, level, xp_day_n AS dayXp, xp_to FROM
 const owned = (id) => D().all('SELECT item_id, source FROM owned_items WHERE user_id = ? ORDER BY item_id', id);
 const ledger = (id) => D().all("SELECT delta_milli, ref FROM dust_ledger WHERE user_id = ? AND kind = 'level' ORDER BY id", id);
 
-test('curve: level 2 in a first session, level 5 in two light days, later levels slower, 50 at the top', () => {
-    assert.equal(L.MAX_LEVEL, 50);
-    assert.equal(L.NEED.length, 51);
+test('curve: level 2 in a first session, level 5 in two light days, later levels slower, 100 at the top', () => {
+    assert.equal(L.MAX_LEVEL, 100);
+    assert.equal(L.NEED.length, 101);
     for (let l = 2; l < L.MAX_LEVEL; l++) assert.ok(L.NEED[l] >= L.NEED[l - 1], 'need grows at ' + l);
-    assert.ok(L.NEED[49] > 10 * L.NEED[1], 'the last levels are much slower');
-    assert.equal(L.NEED[50], 0);
+    assert.ok(L.NEED[99] > 10 * L.NEED[1], 'the last levels are much slower');
+    assert.equal(L.NEED[100], 0);
     const session = (min, gems, botKills) => min * L.XP.minute + gems / L.XP.gemsPerXp + botKills * L.XP.botKill + L.XP.raidPlayed;
     assert.ok(session(6, 300, 2) >= L.START[2], 'six minutes and a small bank reach level 2: ' + session(6, 300, 2) + ' vs ' + L.START[2]);
     const lightDay = session(20, 1200, 5);
     assert.ok(2 * lightDay >= L.START[5] && lightDay < L.START[5], 'level 5 takes about two light days: ' + lightDay + ' a day vs ' + L.START[5]);
-    assert.ok(L.TOTAL / L.DAY_CAP >= 25, 'nobody reaches 50 in under 25 days: ' + L.TOTAL);
+    assert.ok(L.TOTAL / L.DAY_CAP >= 50, 'nobody reaches 100 in under 50 days: ' + L.TOTAL);
     assert.deepEqual(L.levelOf(0), { level: 1, into: 0, need: L.NEED[1], total: 0, max: false });
     assert.equal(L.levelOf(L.START[2] - 1).level, 1);
     assert.equal(L.levelOf(L.START[2]).level, 2);
     assert.equal(L.levelOf(L.START[7] + 5).into, 5);
-    assert.equal(L.levelOf(L.TOTAL).level, 50);
+    assert.equal(L.levelOf(L.TOTAL).level, 100);
     assert.equal(L.levelOf(L.TOTAL * 3).max, true);
     assert.equal(L.levelOf(-5).level, 1);
 });
 
 test('table: every level gives something, only cosmetics, gemdust and titles, no stat buffs', () => {
-    assert.equal(L.REWARDS.length, 49);
+    assert.equal(L.REWARDS.length, 99);
     const KEYS = ['level', 'dustMilli', 'item', 'fallbackMilli', 'title', 'milestone'].sort();
     let lastCos = 1;
     for (const r of L.REWARDS) {
         assert.deepEqual(Object.keys(r).sort(), KEYS, 'level ' + r.level + ' only has reward fields');
         assert.ok(r.dustMilli > 0 || r.item || r.title, 'level ' + r.level + ' gives something');
-        assert.ok(r.dustMilli >= 0 && r.dustMilli <= 25000, 'level ' + r.level + ' dust is small');
+        assert.ok(r.dustMilli >= 0 && r.dustMilli <= 100000, 'level ' + r.level + ' dust is bounded');
         if (r.item) {
             const it = C.byId(r.item);
             assert.ok(it && C.CATS.includes(it.cat) && !it.retired, r.item + ' is a catalog cosmetic');
@@ -94,12 +94,12 @@ test('table: every level gives something, only cosmetics, gemdust and titles, no
     assert.doesNotMatch(JSON.stringify(L.REWARDS), /damage|health|speed|reload|regen|penetrat|boost|buff|mult|shield|armor|gems/i);
     const LOOK = new Set(['nid', 'id', 'cat', 'name', 'rarity', 'price', 'style', 'skin', 'kick', 'look', 'blurb', 'exclusive', 'permanent', 'retired', 'lvl']);
     for (const r of L.REWARDS.filter(x => x.item)) for (const k of Object.keys(C.byId(r.item))) assert.ok(LOOK.has(k), r.item + ' has only look fields, not ' + k);
-    for (const l of [10, 20, 30, 40, 50]) {
+    for (const l of [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]) {
         const r = L.rewardAt(l);
         assert.ok(r.milestone && r.item && r.title && r.dustMilli >= 5000, 'milestone ' + l);
         assert.ok(C.byId(r.item).exclusive || l === 10, l + ' gives a level-only item');
     }
-    assert.ok(L.DUST_TOTAL < 150 * 1000, 'all 50 levels pay under 150 gemdust: ' + L.DUST_TOTAL);
+    assert.ok(L.DUST_TOTAL < 600 * 1000, 'all 100 levels pay under 600 gemdust: ' + L.DUST_TOTAL);
     for (const id of L.LEVEL_ITEMS) {
         const it = C.byId(id);
         assert.ok(it.exclusive && it.price === 0, id);
@@ -109,12 +109,13 @@ test('table: every level gives something, only cosmetics, gemdust and titles, no
     assert.equal(L.titleFor(1), 'Rookie');
     assert.equal(L.titleFor(12), 'Prospector');
     assert.equal(L.titleFor(50), 'Legend');
+    assert.equal(L.titleFor(100), 'Overlord');
     const copy = L.REWARDS.map(r => L.upLine(r, C, false) + L.upLine(r, C, true) + L.rewardText(r, C)).join(' ') + L.TITLES.map(t => t.title).join(' ');
     assert.doesNotMatch(copy, /[\u2013\u2014]/);
     assert.equal(L.upLine(L.rewardAt(8), C, false), 'Level 8! You unlocked the Pumpkin skin.');
     assert.equal(L.upLine(L.rewardAt(8), C, true), 'Level 8! The Pumpkin skin is saved for when you sign up.');
     assert.equal(L.nextLine(7, C), 'Next: Pumpkin skin at Lvl 8');
-    assert.equal(L.nextLine(50, C), '');
+    assert.equal(L.nextLine(100, C), '');
 });
 
 test('xp rules: raid and event places, the per day cap', () => {
@@ -325,7 +326,7 @@ test('migration: v14 -> v15 keeps owned items and the ledger, adds the level sou
     assert.deepEqual([g.xp, g.level, g.xp_to], [0, 1, null]);
     m.run('INSERT INTO level_grants (user_id, level, at) VALUES (1, 2, 3)');
     assert.throws(() => m.run('INSERT INTO level_grants (user_id, level, at) VALUES (1, 2, 4)'), /UNIQUE|PRIMARY/);
-    assert.throws(() => m.run('INSERT INTO level_grants (user_id, level, at) VALUES (1, 51, 4)'), /CHECK/);
+    assert.throws(() => m.run('INSERT INTO level_grants (user_id, level, at) VALUES (1, 101, 4)'), /CHECK/);
     assert.match(m.get("SELECT sql FROM sqlite_master WHERE name = 'owned_items'").sql, /STRICT\s*$/);
     assert.ok(m.get("SELECT 1 AS x FROM sqlite_master WHERE name = 'dust_ledger_user'"));
     m.close();

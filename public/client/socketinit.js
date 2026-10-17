@@ -623,6 +623,18 @@ global.pushRockDamage = (x, y, amount, ownerId, ore) => {
     if (!(amount >= 1)) return;
     const now = performance.now();
     const list = global.damageNumbers;
+    for (let i = list.length - 1; i >= 0; i--) {
+        const d = list[i];
+        if (d.kind === "rock" && now - d.comboAt < 180 && Math.hypot(d.x - x, d.y - y) < 48) {
+            d.amount += amount;
+            d.comboAt = now;
+            d.born = now;
+            d.x = x;
+            d.y = y;
+            if (ore) d.ore = Math.max(d.ore | 0, ore | 0);
+            return;
+        }
+    }
     list.push({
         id: 0,
         x, y,
@@ -886,8 +898,7 @@ const process = (z = {}) => {
         z.render.yAnim.add(z.y);
         z.render.faceAnim.add(z.facing);
         if (!z.render.ns) z.render.ns = netSmooth.track();
-        const tickMs = Math.max(10, netSmooth.S.tick / Math.max(0.1, config.roomSpeed || 1));
-        netSmooth.push(z.render.ns, global.player.lastUpdate, z.x, z.y, z.facing, (z.vx || 0) / tickMs, (z.vy || 0) / tickMs, (z.vfacing || 0) / tickMs);
+        netSmooth.push(z.render.ns, global.player.lastUpdate, z.x, z.y, z.facing);
 
         if (!isNew && z.oldIndex !== z.index) isNew = true;
         z.oldIndex = z.index;

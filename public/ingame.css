@@ -188,10 +188,28 @@ html[data-theme="light"] #dwCoach .dwc-pips .pip.done { background: var(--play);
 
 html[data-theme="light"] .gt-card,
 html[data-theme="light"] body.in-game .igc,
+html[data-theme="light"] body.in-game .igc-pip,
+html[data-theme="light"] .gt-stack,
 html[data-theme="light"] #dwFinaleDiscord,
 html[data-theme="light"] #dwKeepNudge,
 html[data-theme="light"] #dwShareNote,
 html[data-theme="light"] #dwLongLife {
+    --surface: #f4f4f6;
+    --surface2: #e8e8ec;
+    --panel-bg: rgba(255, 255, 255, 0.95);
+    --hub-bg: #ffffff;
+    --border: #d0d0d6;
+    --line: #222222;
+    --text: #222222;
+    --text2: #555555;
+    --heading: #161616;
+    --input-bg: #ffffff;
+    --input-fg: #1a1a1a;
+    --input-bd: #222222;
+    --face: #ececf0;
+    --face-dk: #d4d4dc;
+    --card-bg: #f7f7f9;
+    --row-hover: rgba(0, 0, 0, 0.05);
     background: rgba(255, 255, 255, 0.92);
     border: 1px solid rgba(0, 0, 0, .16);
     color: #222222;

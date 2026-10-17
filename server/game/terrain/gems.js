@@ -97,7 +97,8 @@ function chipHit(rock, owner, dmg, x, y, wasGrowing) {
     let n = 0;
     if (CHIPS && rock.ore && dmg > 0) {
         const max = rock.maxHealth || 1;
-        const budget = Math.floor(payoutOf(rock, owner) * CHIP_SHARE);
+        const chipMult = (owner._pkfx && owner._pkfx.chipper) || 1;
+        const budget = Math.floor(payoutOf(rock, owner) * CHIP_SHARE * chipMult);
         const paid = rock._chipPaid || 0;
         rock._chipAcc = Math.min(budget, (rock._chipAcc || 0) + budget * Math.min(1, dmg / max));
         n = Math.max(0, Math.floor(rock._chipAcc) - paid);
@@ -159,8 +160,10 @@ function spawnGem(x, y, value, cls, size, vx = 0, vy = 0, ore = null) {
 function pityBurst(rock, breaker) {
     if (!rock || rock.ore || rock.growing) return false;
     if (!breaker || breaker.isDead?.() || breaker.royaleLobby) return false;
-    if ((breaker.carriedGems | 0) >= 60) return false;
-    if (((breaker.rocksMined | 0) - (breaker.gemsMined | 0)) < 3) return false;
+    const prosp = (breaker._pkfx && breaker._pkfx.prospector) | 0;
+    if ((breaker.carriedGems | 0) >= 60 + prosp * 60) return false;
+    const needDry = Math.max(1, 3 - Math.ceil(prosp / 2));
+    if (((breaker.rocksMined | 0) - (breaker.gemsMined | 0)) < needDry) return false;
     const { ORE, ORE_HP, rockTough } = require('./terrainGrid.js');
     const tg = global.gameManager && global.gameManager.terrainGrid;
     rock.ore = ORE.COPPER;
@@ -722,7 +725,8 @@ function tickGem(gem, tg, players) {
     if (pulling) {
         const dx = puller.x - gem.x, dy = puller.y - gem.y, d = Math.hypot(dx, dy) || 1;
         if (d < PULL_REACH) {
-            const sp = Math.min(PULL_SPEED, 3.5 + d * 0.055);
+            const tr = (puller._pkfx && puller._pkfx.tractor) || 1;
+            const sp = Math.min(PULL_SPEED * tr, (3.5 + d * 0.055) * tr);
             gem.velocity.x += ((dx / d) * sp - gem.velocity.x) * 0.5;
             gem.velocity.y += ((dy / d) * sp - gem.velocity.y) * 0.5;
             if (now + 120 > gem.gemPullUntil) gem.gemPullUntil = Math.min(now + 400, gem.gemBornAt + PULL_MS * 2.5);
