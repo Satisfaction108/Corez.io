@@ -53,7 +53,7 @@ const MAGNET_REACH = 135;
 // stay just outside the touch ring for its whole flyby.
 const PICKUP_SLOP  = 1.0;
 
-const GEM_MAX_SPEED = 10;
+const GEM_MAX_SPEED = 6;
 
 // Round 9 mining feel
 const COMBO_STEP = 0.1, COMBO_CAP = 1;
@@ -726,10 +726,10 @@ function tickGem(gem, tg, players) {
         const dx = puller.x - gem.x, dy = puller.y - gem.y, d = Math.hypot(dx, dy) || 1;
         if (d < PULL_REACH) {
             const tr = (puller._pkfx && puller._pkfx.tractor) || 1;
-            const sp = Math.min(PULL_SPEED * tr, (3.5 + d * 0.055) * tr);
+            const sp = Math.min(PULL_SPEED * tr, (3 + d * 0.05) * tr);
             gem.velocity.x += ((dx / d) * sp - gem.velocity.x) * 0.5;
             gem.velocity.y += ((dy / d) * sp - gem.velocity.y) * 0.5;
-            if (now + 120 > gem.gemPullUntil) gem.gemPullUntil = Math.min(now + 400, gem.gemBornAt + PULL_MS * 2.5);
+            if (now + 100 > gem.gemPullUntil && d > 60) gem.gemPullUntil = Math.min(now + 400, gem.gemBornAt + PULL_MS * 2);
             return;
         }
     }
@@ -784,12 +784,12 @@ function tickGem(gem, tg, players) {
     if (!best || (gem.gemNoMagnetUntil && now < gem.gemNoMagnetUntil)) return;
     if (magnetized) {
         const pull  = 1 - bestD / magR;
-        const speed = 2.2 * pull + 4.8 * pull * pull;
+        const speed = 1.4 * pull + 4 * pull * pull;
         const ux = (best.x - gem.x) / bestD, uy = (best.y - gem.y) / bestD;
         const swirl = (gem.gemSwirl || 0) * (1 - pull) * (1 - pull);
         const wx = ux - uy * swirl, wy = uy + ux * swirl;
-        gem.velocity.x += (wx * speed - gem.velocity.x) * 0.45;
-        gem.velocity.y += (wy * speed - gem.velocity.y) * 0.45;
+        gem.velocity.x += (wx * speed - gem.velocity.x) * 0.4;
+        gem.velocity.y += (wy * speed - gem.velocity.y) * 0.4;
         if (gem.facingType !== 'spin') { gem.facingType = 'spin'; gem.facingTypeArgs = { speed: gem.gemSpin || 0.02 }; }
     } else if (gem.facingType !== 'spin') {
         gem.facingType = 'spin';

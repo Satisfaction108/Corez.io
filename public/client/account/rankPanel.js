@@ -443,7 +443,7 @@ export function draw(c, x, y, w, h, A, alpha = 1, nowIn) {
     if (S.capped) bits.push('Max per game');
     if (bits.length) {
         const t = bits.join('  ·  ');
-        A.drawText(t, x0, y + 97, fitSize(A, t, 10, x1 - x0, 8), soft, 'left', true, alpha);
+        A.drawText(t, Math.round(x0), Math.round(y + 97), fitSize(A, t, 12, x1 - x0, 11), soft, 'left', true, alpha, 14);
     }
     return true;
 }

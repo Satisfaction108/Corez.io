@@ -5167,7 +5167,7 @@ import * as tankRecords from './tankRecords.js';
                 motion.set(instance.render.lastRender, instance.render.interval);
             }
             let isize = instance.render.size.get(tick, 1 !== rst);
-            const nsT = nsOn && instance.render.ns ? netSmooth.entity(instance.render.ns, nsNow, 1 !== rst) : null;
+            const nsT = nsOn && instance.render.ns ? netSmooth.entity(instance.render.ns, nsNow, 1 !== rst && !gemSpriteClass(instance)) : null;
             instance.render.x = !config.graphical.interpolation ?
                 motion.predict(instance.render.lastx, instance.x, instance.render.lastvx, instance.vx) :
                 config.graphical.lerpAnimations ?
