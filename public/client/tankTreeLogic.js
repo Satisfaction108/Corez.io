@@ -76,6 +76,30 @@ export function buildGraph(mockups, rootKeys) {
         const i = add(roots[r], -1, 1, r, 0);
         walk(i, new Set([roots[r]]));
     }
+    const placed = new Set();
+    for (const n of inst) placed.add(n.tank.key);
+    let grew = true;
+    for (let guard = 0; grew && guard < 8 && inst.length < MAX_INST * 3; guard++) {
+        grew = false;
+        for (const t of tanks.values()) {
+            if (placed.has(t.key) || inst.length >= MAX_INST * 3) continue;
+            let host = -1, tier = 0, ci = 0;
+            for (let n = 0; n < inst.length; n++) {
+                const p = inst[n].tank;
+                const j = p.kids.indexOf(t.key);
+                if (j < 0) continue;
+                const nt = p.kidTiers[j] + 1;
+                if (nt <= inst[n].tier) continue;
+                host = inst[n].i; tier = nt; ci = j;
+                break;
+            }
+            if (host < 0) continue;
+            const c = add(t.key, host, tier, ci, inst[host].depth + 1);
+            inst[host].kids.push(c);
+            placed.add(t.key);
+            grew = true;
+        }
+    }
     for (const n of inst) if (n.parent >= 0) { const pk = inst[n.parent].tank.key; if (n.tank.parents.indexOf(pk) === -1) n.tank.parents.push(pk); }
     for (const t of tanks.values()) {
         const real = [];

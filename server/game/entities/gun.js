@@ -341,7 +341,7 @@ class Gun extends EventEmitter {
         spread *= Math.PI / 180;
         // Find speed
         const pkVel = (this.body.master && this.body.master._pkfx && this.body.master._pkfx.velocity) || 1;
-        let vecLength = (this.negRecoil ? -1 : 1) * this.settings.speed * global.gameManager.runSpeed * sk.spd * pkVel * (1 + shudder),
+        let vecLength = (this.negRecoil ? -1 : 1) * this.settings.speed * global.gameManager.runSpeed * sk.spd * pkVel * (1 + shudder) * this.cheeseMul(1.15),
           vecAngle = this.angle + this.body.facing + spread,
           s = new Vector(
             vecLength * Math.cos(vecAngle),
@@ -368,7 +368,7 @@ class Gun extends EventEmitter {
             this.bulletInitIndependent(o);
             o.parentID = this.body.id;
             o.color.base = o.color.base ?? this.body.master.color.base;
-            o.SIZE = (this.shotBodySize() * this.width * this.settings.size) / 2;
+            o.SIZE = (this.shotBodySize() * this.width * this.settings.size * this.cheeseMul(1.22)) / 2;
             o._growG = this.growG();
             o.velocity = s;
             o.facing = o.velocity.direction;
@@ -461,7 +461,7 @@ class Gun extends EventEmitter {
             SKILL: this.getSkillRaw(),
         }, false);
         o.color.base = o.color.base ?? this.body.master.color.base;
-        o.SIZE = this.fixedBulletSize ? this.basicBulletSize() : (this.shotBodySize() * this.width * this.settings.size) / 2;
+        o.SIZE = this.fixedBulletSize ? this.basicBulletSize() : (this.shotBodySize() * this.width * this.settings.size * this.cheeseMul(1.22)) / 2;
         if (!this.fixedBulletSize) o._growG = this.growG();
         if (this.rockOnly) o.rockOnly = true;
         // Keep track of it and give it the function it needs to deutil.log itself upon death
@@ -655,6 +655,13 @@ class Gun extends EventEmitter {
         return p;
     }
 
+    cheeseMul(m) {
+        if (this.calculator !== "drone") return 1;
+        const b = this.body;
+        const root = b && b.master && b.master !== b ? b.master : b;
+        const label = root && root.label;
+        return label === "Big Cheese" || label === "Chieftain" || label === "Puppeteer" || label === "Sultan" ? m : 1;
+    }
     // The body size a shot is sized from: a grown tank's shots, drones and
     // minions scale at growth^0.8 so projectiles match barrel widths.
     shotBodySize() {
@@ -718,8 +725,8 @@ class Gun extends EventEmitter {
             case "drone":
                 out.PUSHABILITY = 1;
                 out.PENETRATION = Math.max(1, shoot.pen * (0.5 * (sk.pen - 1) + 1));
-                out.HEALTH = (shoot.health * sk.str + sizeFactor) / Math.pow(sk.pen, 0.8);
-                out.DAMAGE = shoot.damage * sk.dam * Math.sqrt(sizeFactor) * Math.sqrt(shoot.pen * sk.pen);
+                out.HEALTH = (shoot.health * sk.str + sizeFactor) / Math.pow(sk.pen, 0.8) * this.cheeseMul(1.5);
+                out.DAMAGE = shoot.damage * sk.dam * Math.sqrt(sizeFactor) * Math.sqrt(shoot.pen * sk.pen) * this.cheeseMul(1.4);
                 break;
         }
         if (this.independentChildren) return;

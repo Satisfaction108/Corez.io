@@ -1625,10 +1625,10 @@ Class.bigCheese = {
     GUNS: [
         {
             POSITION: {
-                LENGTH: 14,
-                WIDTH: 17,
-                ASPECT: 1.3,
-                X: 2
+                LENGTH: 16,
+                WIDTH: 16,
+                ASPECT: 1.4,
+                X: 0
             },
             PROPERTIES: {
                 SHOOT_SETTINGS: combineStats([g.drone, g.bigCheese]),

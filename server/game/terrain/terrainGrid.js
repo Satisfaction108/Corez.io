@@ -1213,6 +1213,10 @@ class TerrainGrid {
     regrowTick(now) {
         if (!this._voronoiMap) return;
         if (Config.dig_royale) { try { this._bloomNow = require('./blooms.js').current(); } catch { this._bloomNow = null; } }
+        const gap = this._rgWall ? now - this._rgWall : 0;
+        this._rgWall = now;
+        const budget = gap > 80 ? 1e9 : 800;
+        if (this._rg) { this._regrowSlice(now, budget); return; }
         if (now - this._lastRegrowTick < REGROW.PACING_MS) return;
         this._lastRegrowTick = now;
 
@@ -1226,64 +1230,77 @@ class TerrainGrid {
             rock.health = Math.max(1, target - rock.growDamage);
         }
 
-        let gap0 = 0, gap1 = 0;
-        for (const rock of this.rocks.values()) {
-            if (rock.alive) {
-                if (rock.health < rock.maxHealth &&
-                    now - (rock.lastHitAt || 0) >= REGROW.HEAL_IDLE_MS) {
-                    rock.health = Math.min(rock.maxHealth,
-                        rock.health + rock.maxHealth * REGROW.HEAL_RATE * (REGROW.PACING_MS / 1000));
-                    // broadcast only when the healed fraction crosses a 1/24 bucket
-                    const h = rock.health / rock.maxHealth;
-                    const bucket = h >= 1 ? 999 : (h * 24) | 0;
-                    if (bucket !== rock._healBucket) {
-                        rock._healBucket = bucket;
-                        // hl flag: clients update quietly (no hit flash)
-                        this.rockEvents.push({ k: rock.k, h, hl: 1 });
+        const keys = [];
+        for (const k of this.rocks.keys()) keys.push(k);
+        this._rg = { keys, i: 0, gap0: 0, gap1: 0, pass: 0, tankIndex: null, orphans: this._orphanRegrowOn() };
+        this._regrowSlice(now, budget);
+    }
+
+    _regrowSlice(now, budget) {
+        while (this._rg && budget > 0) {
+            const rg = this._rg;
+            const end = Math.min(rg.keys.length, rg.i + budget);
+            const start = rg.i;
+            for (; rg.i < end; rg.i++) {
+                const rock = this.rocks.get(rg.keys[rg.i]);
+                if (!rock) continue;
+                if (rg.pass === 0) {
+                    if (rock.alive) {
+                        if (rock.health < rock.maxHealth &&
+                            now - (rock.lastHitAt || 0) >= REGROW.HEAL_IDLE_MS) {
+                            rock.health = Math.min(rock.maxHealth,
+                                rock.health + rock.maxHealth * REGROW.HEAL_RATE * (REGROW.PACING_MS / 1000));
+                            const h = rock.health / rock.maxHealth;
+                            const bucket = h >= 1 ? 999 : (h * 24) | 0;
+                            if (bucket !== rock._healBucket) {
+                                rock._healBucket = bucket;
+                                this.rockEvents.push({ k: rock.k, h, hl: 1 });
+                            }
+                        }
+                        continue;
                     }
+                    if (rock.growing || !rock.diedAt) continue;
+                    const side = this._sideOf(rock);
+                    if (side === 0) rg.gap0++; else if (side === 1) rg.gap1++;
+                    continue;
                 }
+                if (rock.alive || rock.growing || !rock.diedAt || !rock.worldPoly) continue;
+                const side = this._sideOf(rock);
+                const delay = side === -1
+                    ? Math.min(this._regrowDelay[0], this._regrowDelay[1])
+                    : this._regrowDelay[side];
+                let bloomRock = false;
+                if (Config.dig_royale) {
+                    const bl = this._bloomNow || null;
+                    if (bl && ((rock.wx - bl.x) ** 2 + (rock.wy - bl.y) ** 2) <= bl.r * bl.r) bloomRock = true;
+                }
+                if (now - rock.diedAt < (bloomRock ? REGROW.BLOOM_DELAY_MS : delay)) continue;
+                if (rock.noRegrowUntil && now < rock.noRegrowUntil) continue;
+                if (this._inNoRegrowZone(rock, now)) continue;
+                if (!bloomRock && !this._hasLivingNeighbour(rock)) {
+                    if (!rg.orphans || now - rock.diedAt < REGROW.ORPHAN_DELAY_MS || this._hasGrowingNeighbour(rock)) continue;
+                }
+                if (!rg.tankIndex) rg.tankIndex = this._tankIndex();
+                if (this._tankOnCell(rg.tankIndex, rock)) continue;
+                this.startRegrow(rock, now, bloomRock ? REGROW.GROW_MS * REGROW.BLOOM_START : 0);
+            }
+            budget -= rg.i - start;
+            if (rg.i < rg.keys.length) return;
+            if (rg.pass === 0) {
+                const delayFor = (mine, theirs) => Math.max(REGROW.MIN_DELAY_MS,
+                    Math.min(REGROW.BASE_DELAY_MS,
+                        REGROW.BASE_DELAY_MS - REGROW.DEFICIT_MS_PER_GAP * Math.max(0, mine - theirs)));
+                this._regrowDelay[0] = delayFor(rg.gap0, rg.gap1);
+                this._regrowDelay[1] = delayFor(rg.gap1, rg.gap0);
+                rg.pass = 1;
+                rg.i = 0;
                 continue;
             }
-            if (rock.growing || !rock.diedAt) continue;
-            const side = this._sideOf(rock);
-            if (side === 0) gap0++; else if (side === 1) gap1++;
-        }
-        const delayFor = (mine, theirs) => Math.max(REGROW.MIN_DELAY_MS,
-            Math.min(REGROW.BASE_DELAY_MS,
-                REGROW.BASE_DELAY_MS - REGROW.DEFICIT_MS_PER_GAP * Math.max(0, mine - theirs)));
-        this._regrowDelay[0] = delayFor(gap0, gap1);
-        this._regrowDelay[1] = delayFor(gap1, gap0);
-
-        const orphansRegrow = this._orphanRegrowOn();
-        let tankIndex = null;
-        for (const rock of this.rocks.values()) {
-            if (rock.alive || rock.growing || !rock.diedAt || !rock.worldPoly) continue;
-            const side = this._sideOf(rock);
-            const delay = side === -1
-                ? Math.min(this._regrowDelay[0], this._regrowDelay[1])
-                : this._regrowDelay[side];
-            // inside a live ore bloom the wall heals in seconds, so the
-            // patch keeps paying until the bloom ends
-            let bloomRock = false;
-            if (Config.dig_royale) {
-                const bl = this._bloomNow || null;
-                if (bl && ((rock.wx - bl.x) ** 2 + (rock.wy - bl.y) ** 2) <= bl.r * bl.r) bloomRock = true;
+            this._rg = null;
+            if (this._pendingEmeralds.length && now - (this._emeraldTickAt || 0) > 2000) {
+                this._emeraldTickAt = now;
+                this._tickEmeraldRespawns(now);
             }
-            if (now - rock.diedAt < (bloomRock ? REGROW.BLOOM_DELAY_MS : delay)) continue;
-            if (rock.noRegrowUntil && now < rock.noRegrowUntil) continue;
-            if (this._inNoRegrowZone(rock, now)) continue;
-            if (!bloomRock && !this._hasLivingNeighbour(rock)) {
-                if (!orphansRegrow || now - rock.diedAt < REGROW.ORPHAN_DELAY_MS || this._hasGrowingNeighbour(rock)) continue;
-            }
-            if (!tankIndex) tankIndex = this._tankIndex();
-            if (this._tankOnCell(tankIndex, rock)) continue;
-            this.startRegrow(rock, now, bloomRock ? REGROW.GROW_MS * REGROW.BLOOM_START : 0);
-        }
-
-        // the replant scans every rock twice; twice a second is more than enough
-        if (this._pendingEmeralds.length && now - (this._emeraldTickAt || 0) > 2000) {
-            this._emeraldTickAt = now;
-            this._tickEmeraldRespawns(now);
         }
     }
 

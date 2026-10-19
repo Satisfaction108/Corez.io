@@ -157,6 +157,29 @@ test('countdown: zero minutes starts right away (after the reset deaths)', () =>
     assert.equal(royale.staging(), false);
 });
 
+test('event: the lobby wait still runs, then the raid lasts the assigned time and crowns a winner', () => {
+    spawnTank(0, 0);
+    const t0 = Date.now();
+    const until = royale.beginStaging(0, { lengthMs: 5 * 60_000, bots: false });
+    assert.ok(until > 0, 'the lobby is scheduled');
+    assert.equal(royale.eventOn(), false, 'the timer starts when the raid does');
+    const realNow = Date.now;
+    try {
+        Date.now = () => t0 + 100; royale.tick();
+        Date.now = () => t0 + 1500; royale.tick();
+        assert.equal(royale.staging(), false, 'started');
+        assert.equal(royale.eventOn(), true);
+        const end = royale.raidEndAt();
+        assert.ok(end > t0 + 1500 + 4 * 60_000 && end <= t0 + 1500 + 5 * 60_000 + 2000, 'about 5 minutes: ' + (end - t0));
+        spawnTank(100, 0);
+        royale.tick();
+        Date.now = () => end + 1000;
+        royale.tick();
+        const res = royale.raidResultsNow();
+        assert.ok(res && Array.isArray(res.top), 'the winner is crowned');
+    } finally { Date.now = realNow; }
+});
+
 test('bots off: the staged raid runs humans only, the next one fills again', () => {
     spawnTank(0, 0);
     const t0 = Date.now();

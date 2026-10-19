@@ -39,6 +39,9 @@ export function opened() { return isOpen; }
 export function open() {
     isOpen = true;
     whole = false;
+    searchQ = "";
+    if (searchEl) searchEl.value = "";
+    if (listEl) listEl.style.display = "none";
     expanded = new Map();
     dirty = true;
     sel = -1; hover = -1; tip = null;
@@ -51,6 +54,8 @@ export function open() {
 
 export function close() {
     isOpen = false;
+    if (searchEl) searchEl.style.display = "none";
+    if (listEl) listEl.style.display = "none";
     mouse.down = false; mouse.owned = false;
     touches.clear(); pinch = null;
     tip = null;
@@ -613,6 +618,108 @@ function lighten(col) {
     return v;
 }
 
+let searchEl = null, listEl = null, searchQ = "";
+function ensureSearch() {
+    if (searchEl) return;
+    searchEl = document.createElement("input");
+    searchEl.type = "search";
+    searchEl.placeholder = "Search tanks";
+    searchEl.autocomplete = "off";
+    searchEl.spellcheck = false;
+    searchEl.setAttribute("aria-label", "Search tanks");
+    searchEl.style.cssText = "position:fixed;z-index:40;box-sizing:border-box;border:0;border-radius:6px;padding:0 10px;font:600 14px Ubuntu,sans-serif;color:#111;background:#f4f4f4;outline:none;";
+    listEl = document.createElement("div");
+    listEl.style.cssText = "position:fixed;z-index:40;display:none;overflow:auto;border-radius:6px;background:#1c1c1f;box-shadow:0 8px 24px rgba(0,0,0,.45);";
+    searchEl.addEventListener("input", () => { searchQ = searchEl.value; paintSearch(); });
+    searchEl.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            if (searchEl.value) { searchEl.value = ""; searchQ = ""; paintSearch(); return; }
+            searchEl.blur();
+            global.tankTree("exit");
+            return;
+        }
+        if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            const hits = tankMatches(searchQ);
+            if (hits.length) jumpTo(hits[0]);
+        }
+    });
+    document.body.appendChild(searchEl);
+    document.body.appendChild(listEl);
+}
+function tankMatches(q) {
+    const s = String(q || "").trim().toLowerCase();
+    if (!s || !g) return [];
+    const seen = new Set(), out = [];
+    for (const n of g.inst) {
+        const name = n.tank.name;
+        if (!name || name === "?" || seen.has(name)) continue;
+        if (name.toLowerCase().indexOf(s) === -1) continue;
+        seen.add(name);
+        out.push(name);
+    }
+    out.sort((a, b) => a.localeCompare(b));
+    return out.slice(0, 8);
+}
+function jumpTo(name) {
+    if (!g) return;
+    const q = String(name).toLowerCase();
+    let i = -1;
+    for (const n of g.inst) if (n.tank.name.toLowerCase() === q) { i = n.i; break; }
+    if (i < 0) return;
+    if (!vis || !vis[i]) { if (!whole) { whole = true; relayout(false); } }
+    sel = i;
+    centreOn(i, 0.9);
+    if (listEl) listEl.style.display = "none";
+    try { if (global.canvas && global.canvas.cv) global.canvas.cv.focus(); } catch (e) { /* */ }
+}
+function paintSearch() {
+    if (!listEl || !searchEl) return;
+    const hits = tankMatches(searchQ);
+    listEl.textContent = "";
+    if (!hits.length || searchEl.style.display === "none") { listEl.style.display = "none"; return; }
+    const r = searchEl.getBoundingClientRect();
+    listEl.style.display = "block";
+    listEl.style.left = r.left + "px";
+    listEl.style.top = (r.bottom + 4) + "px";
+    listEl.style.width = r.width + "px";
+    listEl.style.maxHeight = "240px";
+    for (const name of hits) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = name;
+        b.style.cssText = "display:block;width:100%;text-align:left;border:0;background:transparent;color:#fff;font:600 14px Ubuntu,sans-serif;padding:8px 10px;cursor:pointer;";
+        b.addEventListener("mousedown", (e) => { e.preventDefault(); jumpTo(name); });
+        listEl.appendChild(b);
+    }
+}
+function placeSearch(ready) {
+    ensureSearch();
+    if (!isOpen || !ready) { searchEl.style.display = "none"; listEl.style.display = "none"; return; }
+    const mob = D.mobile();
+    const hh = headH();
+    const w = Math.max(120, Math.min(220, W * 0.22));
+    const h = mob ? 36 : 32;
+    const x = 12, y = Math.max(8, (hh - h) / 2);
+    const cv = global.canvas && global.canvas.cv;
+    const r = cv ? cv.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth || W, height: window.innerHeight || H };
+    const sx = r.width / Math.max(1, W), sy = r.height / Math.max(1, H);
+    const left = r.left + x * sx, top = r.top + y * sy;
+    searchEl.style.display = "block";
+    searchEl.style.left = left + "px";
+    searchEl.style.top = top + "px";
+    searchEl.style.width = (w * sx) + "px";
+    searchEl.style.height = (h * sy) + "px";
+    if (listEl.style.display !== "none") {
+        listEl.style.left = left + "px";
+        listEl.style.top = (top + h * sy + 4) + "px";
+        listEl.style.width = (w * sx) + "px";
+    }
+}
+
 function drawHeader(c, ready) {
     const mob = D.mobile();
     const hh = headH();
@@ -629,9 +736,10 @@ function drawHeader(c, ready) {
         const w2 = D.hudTitleW(l2, 15) + 26;
         drawButton(c, 2, bx - 20 - w1 - w2, by, w2, bh, l2, "#4a9a4f", 15);
     } else { btn[6] = 0; btn[10] = 0; }
+    placeSearch(ready);
     D.hudTitle("Tank Tree", W / 2, W >= 900 ? (mob ? 17 : 19) : hh / 2, mob ? 19 : 22, D.HUD.head, "center", 1, c);
     const sub = !ready ? "" : whole ? "Every tank in the game. Zoom in to read the names." : "Your path is gold. Faded tanks are the other choices.";
-    if (sub && W >= 900) D.hudTitle(sub, W / 2, mob ? 38 : 42, mob ? 11 : 13, "#d8d8d8", "center", 1, c);
+    if (sub && W >= 1180) D.hudTitle(sub, W / 2, mob ? 38 : 42, mob ? 11 : 13, "#d8d8d8", "center", 1, c);
     if (ready) {
         const hint = mob ? HINT_TOUCH : HINT;
         const fs = mob ? 11 : 12;
@@ -640,7 +748,7 @@ function drawHeader(c, ready) {
         D.hudTitle(hint, W / 2, H - 18, fs, D.HUD.text2, "center", 1, c);
     }
 }
-const HINT = "Drag or use the arrow keys to move. Scroll to zoom. Click a tank to centre it, E shows its upgrades. Tab: whole tree. Esc or T closes.";
+const HINT = "Search at the top left. Drag to move, scroll to zoom. Click a tank, E for upgrades. Tab: whole tree. Esc closes.";
 const HINT_TOUCH = "Drag to move, pinch to zoom. Tap a tank twice to show its upgrades.";
 
 function drawTip(c) {

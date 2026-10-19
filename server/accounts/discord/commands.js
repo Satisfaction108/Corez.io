@@ -61,6 +61,7 @@ const ADMIN_COMMANDS = [
     {
         name: 'raidreset', description: 'Reset the raid now and start it after a safe wait (Raid Night)', options: [
             { type: T.INTEGER, name: 'minutes', description: 'Wait before the raid starts (0 = start right away)', required: false, min_value: 0, max_value: 30 },
+            { type: T.INTEGER, name: 'length', description: 'How long the raid runs after the lobby, in minutes', required: false, min_value: 5, max_value: 180 },
             { type: T.BOOLEAN, name: 'bots', description: 'Bots in the raid once it starts (default on)', required: false },
         ],
     },
@@ -291,16 +292,18 @@ function relink(i, caller) {
 async function raidReset(i, caller) {
     const raw = opt(i, 'minutes');
     const minutes = raw == null ? 10 : Math.max(0, Math.min(30, Math.round(Number(raw))));
+    const lengthRaw = opt(i, 'length');
+    const length = lengthRaw == null ? 45 : Math.max(5, Math.min(180, Math.round(Number(lengthRaw))));
     const bots = opt(i, 'bots') !== false;
     const reqId = 'r' + Date.now().toString(36) + '.' + (++raidReq);
     const expect = raidServerCount();
-    const got = await askGames({ t: 'raidReset', reqId, ms: minutes * 60_000, bots }, 'raidResetDone', list => expect > 0 && list.length >= expect);
+    const got = await askGames({ t: 'raidReset', reqId, ms: minutes * 60_000, lengthMs: length * 60_000, bots }, 'raidResetDone', list => expect > 0 && list.length >= expect);
     audit(caller, null, 'admin_raid_reset', { minutes, bots, servers: got.length });
     if (!got.length) return reply("No raid server answered. Is the game running?", { ephemeral: true });
     const players = got.reduce((n, g) => n + (g.players | 0), 0);
     const until = Math.max(...got.map(g => +g.until || 0));
     const when = minutes ? `It starts <t:${Math.round(until / 1000)}:R> (<t:${Math.round(until / 1000)}:t>).` : 'It started right away.';
-    return reply(`Reset ${got.length} raid server${got.length === 1 ? '' : 's'} (${players} connected). ${when} Until then nobody can get hurt, and there are no bots, bosses, storm or abilities. Bots in the raid: ${bots ? 'on' : 'off'}.`, { ephemeral: true });
+    return reply(`Reset ${got.length} raid server${got.length === 1 ? '' : 's'} (${players} connected). ${when} It then runs for ${length} minutes, the leaderboard is on, and the winner is crowned at the end. Until it starts nobody can get hurt, and there are no bots, bosses, storm or abilities. Bots in the raid: ${bots ? 'on' : 'off'}.`, { ephemeral: true });
 }
 
 // A prize: the item lands in their Locker (source 'admin') and goes on.

@@ -2656,7 +2656,7 @@ body.in-game #dwModalRoot { display: none !important; }
     --r-legendary: #ffb23d;
     --dw-floor: #1e1d1b;
 }
-[data-theme="light"] { --r-common: #8a8f96; --r-uncommon: #2f9e3a; --r-rare: #2f7fd6; --r-epic: #8a45d6; --r-legendary: #c77f0a; }
+[data-theme="light"] { --r-common: #8a8f96; --r-uncommon: #2f9e3a; --r-rare: #2f7fd6; --r-epic: #8a45d6; --r-legendary: #c77f0a; --dw-floor: #ffffff; }
 .r-common { --rc: var(--r-common); }
 .r-uncommon { --rc: var(--r-uncommon); }
 .r-rare { --rc: var(--r-rare); }
@@ -2805,6 +2805,7 @@ body.in-game #dwModalRoot { display: none !important; }
 .shop-sw.on { transform: scale(1.2); box-shadow: 0 0 0 2px var(--hub-bg), 0 0 0 4.5px var(--ink); }
 .lk-swatches .shop-sw { border-color: #0c0a0e; }
 .lk-swatches .shop-sw.on { box-shadow: 0 0 0 2px var(--dw-floor), 0 0 0 4px #f2f2f2; }
+[data-theme="light"] .lk-swatches .shop-sw.on { box-shadow: 0 0 0 2px var(--dw-floor), 0 0 0 4px #2b2b2b; }
 .shop-tankrow { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--text2); font: 700 15px var(--ui); letter-spacing: .02em; }
 select.dw-input {
     height: 34px; padding: 0 10px;
@@ -2977,6 +2978,7 @@ input.dw-input.lk-sk-input.bad { border-color: var(--danger); }
 .lk-sk-chip:hover { border-color: var(--text2); }
 .lk-sk-chip.on { box-shadow: 0 0 0 2px var(--hub-bg), 0 0 0 4px var(--copper); }
 .lk-sk-cname { color: #f2f2f2; font: 700 11px/1.2 var(--ui); white-space: nowrap; }
+[data-theme="light"] .lk-sk-cname { color: var(--text); }
 .lk-sk-more { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; color: var(--text2); font: 600 12px var(--ui); }
 @media (max-width: 680px) {
     .lk-sk-row { flex-direction: column; gap: 4px; }
@@ -3263,6 +3265,7 @@ input.dw-input.fr-chat-in { width: 100%; height: 44px; box-sizing: border-box; p
 .pf-tank { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0 0 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--dw-floor); }
 .pf-tankcv { display: block; }
 .pf-tank-l { max-width: 138px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d9d0bb; font: 700 14px var(--ui); letter-spacing: .03em; }
+[data-theme="light"] .pf-tank-l { color: var(--text); }
 .pf-acts { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .pf-acts:empty { display: none; }
 .pf-note { margin-right: auto; color: var(--text2); font: 600 12.5px var(--ui); }

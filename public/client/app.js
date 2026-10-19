@@ -2287,7 +2287,7 @@ import * as tankRecords from './tankRecords.js';
     let previewGrey = false;
     window.dwPreviewGrey = (on) => { previewGrey = !!on; };
     const THEME_GREY_ID = "16 0 1 0 false", THEME_BLACK_ID = "9 0 1 0 false";
-    const SPAWNER_FRONT_MAX = 0.72;
+    const SPAWNER_FRONT_MAX = 1.15;
     // An entity's class mockup index, the number before the first "-" of its
     // index string, parsed once per index change instead of a split per call
     // (several times per entity per frame).
@@ -14376,6 +14376,19 @@ import * as tankRecords from './tankRecords.js';
         }
         // dead in the last storm when the raid's last ten seconds start: no
         // card, just the fight and the countdown, then the results
+        if (global.royaleDied && lastStormCount()) {
+            global.clickables.royaleSpectate.hide();
+            global.clickables.deathRespawn.hide();
+            global.clickables.royalePrev.hide();
+            global.clickables.royaleNext.hide();
+            global.clickables.royalePlay.hide();
+            return;
+        }
+        if (!global.royaleDied && (global.digRoyaleMode || global.aoWorld || (global.royale && (global.royale.at > 0 || global.royale.raidId || global.royale.matchId)))) {
+            global.royaleDied = true;
+            if (!(global.royaleDiedAt > 0)) global.royaleDiedAt = performance.now();
+            if (!(global.raidRespawnAt > 0)) global.raidRespawnAt = performance.now() + (global.raidRespawnWaitMs > 0 ? global.raidRespawnWaitMs : 3000);
+        }
         if (global.royaleDied && lastStormCount()) {
             global.clickables.royaleSpectate.hide();
             global.clickables.deathRespawn.hide();

@@ -361,4 +361,5 @@ async function main() {
     console.log(`[tanks] ${real} tanks (+${tanks.length - real} copies), ${branches.length} lines, layout ${lay.W}x${lay.H}, ${note}, ${(size / 1048576).toFixed(2)} MB in ${path.relative(REPO, OUT) || OUT}, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 
-main().then(() => process.exit(0), (e) => { console.error('[tanks] build failed: ' + (e && e.stack || e)); process.exit(1); });
+module.exports = { loadTree, buildMockups };
+if (require.main === module) main().then(() => process.exit(0), (e) => { console.error('[tanks] build failed: ' + (e && e.stack || e)); process.exit(1); });

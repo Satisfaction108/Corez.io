@@ -1510,9 +1510,10 @@ let incoming = async function(message, socket) {
                     if (placeNow > 0) r.lastPlace = placeNow;
                     // Died before the first RY: promote to the raid screen now.
                     // Killer cam owns the first 3s after F, so hands off here.
-                    if (global.died && !global.royaleDied && !raidFinale.active() && !(global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) && (d.raidId || d.matchId)) {
+                    if (global.died && !global.royaleDied && !raidFinale.active() && !(global.royaleKillerCamUntil && performance.now() < global.royaleKillerCamUntil) && (d.raidId || d.matchId || global.digRoyaleMode || global.aoWorld || d.ao || d.aom)) {
                         global.royaleDied = true;
                         global.royaleSpectating = false;
+                        if (!(global.royaleDiedAt > 0)) global.royaleDiedAt = performance.now();
                         if (!global.raidRespawnAt) global.raidRespawnAt = performance.now() + 3000;
                         try {
                             global.vault.onPad = false;
@@ -2410,7 +2411,7 @@ let incoming = async function(message, socket) {
                 global.player.rendery = dy;
             } catch { /* */ }
             try { selfKnockout(); } catch { /* */ }
-            if (global.royale && (global.royale.at > 0 || global.royale.raidId || global.royale.matchId)) {
+            if (global.digRoyaleMode || global.aoWorld || (global.royale && (global.royale.at > 0 || global.royale.raidId || global.royale.matchId))) {
                 // The death card shows at once, whole; Play again unlocks after
                 // the server's wait (3 s from the death, respawn() refuses sooner).
                 // The killer cam runs behind it: the server keeps the camera

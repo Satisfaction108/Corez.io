@@ -87,7 +87,7 @@ const ok = (name) => { passed++; console.log('ok   ' + name); };
             C.paintBarrel(ctx, 0, 0, 20, 8, 1.2, 0.3, 2, it.nid, 6);
             assert.ok(fills.includes(DWCosmetics.SKIN_SWATCHES[it.skin.colors[0]][0]), it.id + ' barrel uses its main colour');
         }
-        assert.ok(styled >= 6 && styled <= 16, styled + ' skins dress their barrels');
+        assert.equal(styled, DWCosmetics.ITEMS.filter(i => i.cat === 'skin').length, styled + ' skins dress their barrels');
         assert.equal(C.barrelStyleOf(0), null);
         ok('skin barrels');
     }

@@ -15,6 +15,7 @@ const VS_TANKS = {
     'Octo Tank': 0.95,
     'Penta Shot': 1.0,
     'Factory': 0.72, 'Flotilla': 0.72, 'Kumquat': 0.72, 'Pomelo': 0.72,
+    'Big Cheese': 1.22,
 };
 // Traps hit like Arras traps while keeping pillbox/block spam fair.
 const TRAP_VS_TANKS = 0.96;

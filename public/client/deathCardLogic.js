@@ -80,10 +80,9 @@ export function introBeat(calm) { return calm ? INTRO.calmBeat : INTRO.beat; }
 
 export function introK(age, calm) {
     if (!(age === age)) return 1;
-    const u = (age - introBeat(calm)) / INTRO.fade;
-    if (u <= 0) return 0;
-    if (u >= 1) return 1;
-    return 1 - (1 - u) * (1 - u) * (1 - u);
+    const u = Math.max(0, age) / INTRO.fade;
+    const e = u >= 1 ? 1 : 1 - (1 - u) * (1 - u) * (1 - u);
+    return 0.4 + 0.6 * e;
 }
 
 export function introSlide(k, calm) { return calm ? 0 : (1 - k) * INTRO.slide; }

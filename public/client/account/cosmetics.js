@@ -373,7 +373,6 @@ function bands(c, list, fill, edge) {
     for (const [pts, w] of list) line(c, pts, w + 2 * OW, edge);
     for (const [pts, w] of list) line(c, pts, w, fill);
 }
-function band(c, pts, w, fill, edge) { bands(c, [[pts, w]], fill, edge); }
 function star(c, n, r0, r1, rot) {
     const pts = [];
     for (let i = 0; i < n * 2; i++) pts.push(pol(i & 1 ? r0 : r1, rot + (i * Math.PI) / n));
@@ -382,7 +381,7 @@ function star(c, n, r0, r1, rot) {
 function blob(c, rnd, x, y, r) {
     const n = 8, pts = [];
     for (let i = 0; i < n; i++) {
-        const a = (i / n) * TAU, rr = r * (0.88 + 0.2 * rnd());
+        const a = (i / n) * TAU, rr = r * (0.9 + 0.16 * rnd());
         pts.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr]);
     }
     c.beginPath();
@@ -395,8 +394,8 @@ function blob(c, rnd, x, y, r) {
 }
 function wave(c, yc, h, amp, fr, ph) {
     c.beginPath();
-    for (let x = -1.4; x <= 1.41; x += 0.1) c.lineTo(x, yc - h + amp * Math.sin(fr * x + ph));
-    for (let x = 1.4; x >= -1.41; x -= 0.1) c.lineTo(x, yc + h + amp * Math.sin(fr * x + ph + 0.5));
+    for (let x = -1.4; x <= 1.41; x += 0.05) c.lineTo(x, yc - h + amp * Math.cos(fr * x + ph));
+    for (let x = 1.4; x >= -1.41; x -= 0.05) c.lineTo(x, yc + h + amp * Math.cos(fr * x + ph));
     c.closePath();
 }
 const BOLT = [[0.1, -1], [-0.35, 0.1], [-0.02, 0.1], [-0.15, 1], [0.35, -0.15], [0.02, -0.15], [0.25, -1]];
@@ -404,10 +403,10 @@ function bolt(c, k, rot) {
     const cs = Math.cos(rot), sn = Math.sin(rot);
     poly(c, BOLT.map(([x, y]) => [(x * cs - y * sn) * k, (x * sn + y * cs) * k]));
 }
-function spiralArm(k, arms, turn) {
-    const pts = [];
+function spiralArm(k, arms, turn, r0) {
+    const pts = [], start = r0 == null ? 0.15 : r0;
     for (let i = 0; i <= 36; i++) {
-        const f = i / 36, a = (k / arms) * TAU + f * turn, r = 0.15 + f * 1.25;
+        const f = i / 36, a = (k / arms) * TAU + f * turn, r = start + f * (1.4 - start);
         pts.push(pol(r, a));
     }
     return pts;
@@ -426,6 +425,7 @@ function paletteFor(it, teamHex) {
 }
 const fl = (c, X, w) => paint(c, X.f, X.k, w);
 const fd = (c, X, w) => paint(c, X.d, X.k, w);
+const lit = (c, X, w) => paint(c, X.l, X.k, w);
 function studs(c, X, n, rr, sz, rot) {
     for (let i = 0; i < n; i++) {
         const p = pol(rr, (rot || 0) + (i / n) * TAU);
@@ -443,62 +443,6 @@ function heartPath(c, k) {
     c.bezierCurveTo(0.42 * k, -0.62 * k, 0.62 * k, -0.08 * k, 0, 0.32 * k);
     c.closePath();
 }
-function crackSeams() {
-    const out = [];
-    for (const a of [0.3, 1.55, 2.75, 3.95, 5.1]) out.push([pol(0.2, a), pol(0.52, a + 0.28), pol(0.88, a - 0.1), pol(1.5, a + 0.14)]);
-    return out;
-}
-function cloud(c) {
-    c.beginPath();
-    c.moveTo(-1.4, -1.4); c.lineTo(-1.4, -0.34);
-    for (let i = 0; i < 4; i++) {
-        const x0 = -1.4 + i * 0.7;
-        c.quadraticCurveTo(x0 + 0.35, 0.02 + (i & 1 ? -0.08 : 0.06), x0 + 0.7, -0.34);
-    }
-    c.lineTo(1.4, -1.4);
-    c.closePath();
-}
-function eyePath(c, w, h) {
-    c.beginPath();
-    c.moveTo(-w, 0);
-    c.quadraticCurveTo(0, -h * 2, w, 0);
-    c.quadraticCurveTo(0, h * 2, -w, 0);
-    c.closePath();
-}
-function tigerStripes(c, w) {
-    c.beginPath();
-    for (let k = -2; k <= 2; k++) {
-        for (const sg of [-1, 1]) {
-            const x = k * 0.56 + (sg > 0 ? 0.28 : 0), len = (k + sg) & 1 ? 0.8 : 1.05;
-            const y0 = sg * 1.35, tip = sg * (1.35 - len), bend = 0.14;
-            c.moveTo(x - w, y0);
-            c.quadraticCurveTo(x - w * 0.8 + bend, (y0 + tip) / 2, x + bend * 1.5, tip);
-            c.quadraticCurveTo(x + w * 0.6 + bend, (y0 + tip) / 2, x + w, y0);
-            c.closePath();
-        }
-    }
-}
-const STRATA = [-0.62, 0, 0.62];
-function strataBand(c, i) { wave(c, STRATA[i], 0.14, 0.09, 2.4, i * 1.7); }
-const AURORA = [-0.52, 0, 0.52];
-function auroraBand(c, i) { wave(c, AURORA[i], 0.13, 0.13, 2.2, i * 1.3); }
-function sunRays(c) {
-    const n = 8, w = (TAU / n) * 0.42;
-    c.beginPath();
-    for (let i = 0; i < n; i++) { const a = (i / n) * TAU; c.moveTo(0, 0); c.arc(0, 0, 2, a - w / 2, a + w / 2); c.closePath(); }
-}
-function vaultSpokes(c) {
-    c.beginPath();
-    for (let i = 0; i < 3; i++) { const a = (i / 3) * TAU - Math.PI / 2, cs = Math.cos(a), sn = Math.sin(a); c.moveTo(-0.09 * sn, 0.09 * cs); c.lineTo(0.68 * cs - 0.09 * sn, 0.68 * sn + 0.09 * cs); c.lineTo(0.68 * cs + 0.09 * sn, 0.68 * sn - 0.09 * cs); c.lineTo(0.09 * sn, -0.09 * cs); c.closePath(); }
-}
-function blade(c, k, s) {
-    const a = (k / 3) * TAU;
-    poly(c, [pol(0.16, a - 0.44 * s), pol(0.74, a - 0.22 * s), pol(1.3, a), pol(0.74, a + 0.22 * s), pol(0.16, a + 0.44 * s)]);
-}
-function prismWedge(c, i) {
-    const n = 12, a0 = (i / n) * TAU, a1 = ((i + 1) / n) * TAU;
-    c.beginPath(); c.arc(0, 0, 0.9, a0, a1); c.arc(0, 0, 0.5, a1, a0, true); c.closePath();
-}
 function diamond(c, x, y, k, a) {
     const cs = Math.cos(a), sn = Math.sin(a), q = (px, py) => [x + px * cs - py * sn, y + px * sn + py * cs];
     poly(c, [q(0, -k), q(k * 0.55, 0), q(0, k * 0.75), q(-k * 0.55, 0)]);
@@ -508,43 +452,178 @@ function facetLines(c, n, r, R, rot, col) {
     for (let i = 0; i < n; i++) { const p = pol(r, rot + (i / n) * TAU), q = pol(R, rot + (i / n) * TAU); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); }
     c.lineWidth = OW * 0.7; c.strokeStyle = col; c.stroke();
 }
+function spun(c, n, rot, fn) {
+    for (let i = 0; i < n; i++) { c.save(); c.rotate((rot || 0) + (i / n) * TAU); fn(i); c.restore(); }
+}
+function stripeSet(c, h) {
+    c.beginPath();
+    for (let k = -6; k <= 6; k++) {
+        const x = k * 0.56;
+        c.moveTo(x - 0.13 + 0.25, -h - 0.1); c.lineTo(x + 0.13 + 0.25, -h - 0.1);
+        c.lineTo(x + 0.13 - 0.25, h + 0.1); c.lineTo(x - 0.13 - 0.25, h + 0.1); c.closePath();
+    }
+}
+function sector(c, r0, r1, a0, a1) {
+    c.beginPath();
+    c.arc(0, 0, r1, a0, a1);
+    if (r0 > 0) c.arc(0, 0, r0, a1, a0, true); else c.lineTo(0, 0);
+    c.closePath();
+}
+function crackPts(a) {
+    return [pol(0.24, a), pol(0.46, a + 0.2), pol(0.66, a - 0.1), pol(0.86, a + 0.12), pol(1.3, a - 0.04)];
+}
+function veinArms(a) {
+    const fork = pol(0.5, a);
+    return [[pol(0.16, a), fork], [fork, pol(0.78, a - 0.3), pol(1.3, a - 0.42)], [fork, pol(0.78, a + 0.3), pol(1.3, a + 0.42)]];
+}
+const VEINS = [0, 1, 2].map(i => veinArms((i / 3) * TAU + Math.PI / 3));
+function chip(c, k) {
+    c.beginPath();
+    c.roundRect ? c.roundRect(-k, -k, 2 * k, 2 * k, k * 0.22) : c.rect(-k, -k, 2 * k, 2 * k);
+}
+function circuitTraces() {
+    const out = [];
+    for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * TAU, cs = Math.cos(a), sn = Math.sin(a), q = (u, v) => [u * cs - v * sn, u * sn + v * cs];
+        for (const s of [-1, 1]) out.push([q(0.28, s * 0.14), q(0.5, s * 0.14), q(0.66, s * 0.32)]);
+    }
+    return out;
+}
+const TRACES = circuitTraces();
+function fluteEdge(base, f, lead) {
+    return pol(0.14 + f * 1.2, base + (lead ? 0 : 0.95) + f * 1.25);
+}
+function flute(c, base) {
+    c.beginPath();
+    for (let i = 0; i <= 24; i++) { const p = fluteEdge(base, i / 24, true); if (i) c.lineTo(p[0], p[1]); else c.moveTo(p[0], p[1]); }
+    for (let i = 24; i >= 0; i--) { const p = fluteEdge(base, i / 24, false); c.lineTo(p[0], p[1]); }
+    c.closePath();
+}
+function wisp(c, base) {
+    const n = 28, left = [], right = [];
+    for (let i = 0; i <= n; i++) {
+        const f = i / n, a = base + f * 2.3, r = 0.16 + f * 0.95;
+        const w = 0.3 * Math.pow(1 - f, 0.6) + 0.02;
+        const p = pol(r, a), d = pol(1, a + Math.PI / 2 - 0.5);
+        left.push([p[0] + d[0] * w, p[1] + d[1] * w]);
+        right.push([p[0] - d[0] * w, p[1] - d[1] * w]);
+    }
+    poly(c, left.concat(right.reverse()));
+}
+function wispSpine(base) {
+    const pts = [];
+    for (let i = 0; i <= 20; i++) { const f = i / 20 * 0.8; pts.push(pol(0.16 + f * 0.95, base + f * 2.3)); }
+    return pts;
+}
+function cloudPath(c) {
+    c.beginPath();
+    for (let i = 0; i < 10; i++) {
+        const p = pol(0.64, (i / 10) * TAU + (i & 1 ? 0.04 : 0)), r = i & 1 ? 0.17 : 0.21;
+        c.moveTo(p[0] + r, p[1]);
+        c.arc(p[0], p[1], r, 0, TAU);
+    }
+    c.moveTo(0.74, 0);
+    c.arc(0, 0, 0.74, 0, TAU);
+    c.moveTo(0.54, 0);
+    c.arc(0, 0, 0.54, 0, TAU, true);
+}
+function cloudRing(c, X) {
+    cloudPath(c); c.lineWidth = OW * 2; c.strokeStyle = X.k; c.stroke();
+    cloudPath(c); c.fillStyle = X.f; c.fill();
+}
+function wavyRing(c, r0, r1, n, amp, ph) {
+    c.beginPath();
+    for (let i = 0; i <= 96; i++) { const a = (i / 96) * TAU, r = r1 + amp * Math.sin(n * a + ph); c.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+    c.closePath();
+    if (r0 > 0) {
+        for (let i = 0; i <= 96; i++) { const a = -(i / 96) * TAU, r = r0 + amp * Math.sin(n * a + ph); if (i) c.lineTo(Math.cos(a) * r, Math.sin(a) * r); else c.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+        c.closePath();
+    }
+}
+const AURORA = [[0.66, 0.9], [0.4, 0.56], [0, 0.3]];
+function prismCells(c, i, outer) {
+    const a0 = (i / 6) * TAU - Math.PI / 6, a1 = ((i + 1) / 6) * TAU - Math.PI / 6;
+    if (outer) poly(c, [pol(0.6, a0), pol(0.94, a0), pol(0.94, a1), pol(0.6, a1)]);
+    else poly(c, [pol(0.24, a0), pol(0.6, a0), pol(0.6, a1), pol(0.24, a1)]);
+}
+function toothRing(c, n, r0, r1, rot) {
+    c.beginPath();
+    for (let i = 0; i < n; i++) {
+        const a = rot + (i / n) * TAU, w = TAU / n * 0.36, tip = i & 1 ? r0 + 0.08 : r0;
+        const p = pol(r1, a - w), q = pol(tip, a), s = pol(r1, a + w);
+        c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.lineTo(s[0], s[1]); c.closePath();
+    }
+}
+function tigerStripes(c) {
+    c.beginPath();
+    for (const sg of [-1, 1]) {
+        for (let k = -2; k <= 2; k++) {
+            const x = k * 0.42 + (sg > 0 ? 0.21 : 0), tip = sg * ((k & 1) ? 0.36 : 0.16), base = sg * 1.15, w = 0.16, bend = 0.12;
+            c.moveTo(x - w, base);
+            c.quadraticCurveTo(x - w * 0.6 + bend, (base + tip) / 2, x + bend * 1.4, tip);
+            c.quadraticCurveTo(x + w * 0.9 + bend, (base + tip) / 2, x + w, base);
+            c.closePath();
+        }
+    }
+}
+function pinBlade(c, a) {
+    const p = pol(0.96, a), q = pol(0.96, a + 1.05), k = pol(0.42, a + 1.25);
+    c.beginPath();
+    c.moveTo(0, 0); c.lineTo(p[0], p[1]);
+    c.arc(0, 0, 0.96, a, a + 1.05);
+    c.quadraticCurveTo(k[0], k[1], 0, 0);
+    c.closePath();
+}
+function chevron(c, x) {
+    poly(c, [[x - 0.4, -0.62], [x - 0.12, -0.62], [x + 0.2, 0], [x - 0.12, 0.62], [x - 0.4, 0.62], [x - 0.08, 0]]);
+}
+function camoBlobs(c, P, seed, big) {
+    spun(c, 3, 0, () => {
+        const rnd = mulberry32(seed);
+        if (big) { blob(c, rnd, 0.56, 0, 0.34); fl(c, P.a); }
+        else { c.rotate(Math.PI / 3); blob(c, rnd, 0.68, 0, 0.24); fl(c, P.b); }
+    });
+}
 
 const PAINT = {
     stripes(c, P, s) {
-        c.rotate(((s.angle == null ? 45 : s.angle) * Math.PI) / 180);
-        c.beginPath(); c.rect(-3, -0.36, 6, 0.72); paint(c, P.a.f, null);
-        c.save(); c.clip();
-        c.beginPath();
-        for (let x = -3; x < 3; x += 0.6) { c.moveTo(x, -0.4); c.lineTo(x + 0.28, -0.4); c.lineTo(x + 0.02, 0.4); c.lineTo(x - 0.26, 0.4); c.closePath(); }
-        paint(c, P.b.f, null);
-        c.restore();
-        c.beginPath(); c.rect(-3, -0.36, 6, 0.72); paint(c, null, P.a.k);
+        c.rotate(((s.angle == null ? 90 : s.angle) * Math.PI) / 180);
+        const h = 0.42;
+        c.beginPath(); c.rect(-3, -h, 6, 2 * h); paint(c, P.a.f, null);
+        c.save(); c.clip(); stripeSet(c, h); paint(c, P.b.f, null); c.restore();
+        c.beginPath(); c.rect(-3, -h, 6, 2 * h); paint(c, null, P.b.f, OW * 1.2);
+    },
+    rim(c, P, s) {
+        annulus(c, 0.5, 0.86); fl(c, P.a);
+        studs(c, P.b, s.rivets || 8, 0.68, 0.075, Math.PI / (s.rivets || 8));
+        disc(c, 0, 0, 0.27); fl(c, P.a);
+        c.beginPath(); c.rect(-0.17, -0.045, 0.34, 0.09); paint(c, P.a.k, null);
     },
     racer(c, P) {
-        c.beginPath(); c.rect(-3, -0.44, 6, 0.24); c.rect(-3, 0.2, 6, 0.24);
-        fl(c, P.a);
+        c.beginPath(); c.rect(-3, -0.44, 6, 0.24); c.rect(-3, 0.2, 6, 0.24); fl(c, P.a);
+        c.beginPath(); c.rect(-3, -0.07, 6, 0.14); fl(c, P.b, OW * 0.8);
     },
     halves(c, P) {
-        c.lineJoin = 'miter';
-        band(c, [[-1.5, 0.14], [-0.6, -0.16], [0.3, 0.14], [1.2, -0.16], [1.6, 0]], 0.24, P.a.f, P.a.k);
-        c.lineJoin = 'round';
-        for (const [x, y] of [[-0.6, -0.16], [0.3, 0.14]]) { disc(c, x, y, 0.12); fl(c, P.b); }
+        c.beginPath(); c.rect(-3, -0.34, 6, 0.34); paint(c, P.a.f, null);
+        c.beginPath(); c.rect(-3, 0, 6, 0.34); paint(c, P.b.f, null);
+        c.beginPath(); c.rect(-3, -0.34, 6, 0.68); paint(c, null, P.b.k);
+        c.beginPath(); c.arc(0, 0, 0.3, Math.PI, TAU); c.closePath(); paint(c, P.b.f, null);
+        c.beginPath(); c.arc(0, 0, 0.3, 0, Math.PI); c.closePath(); paint(c, P.a.f, null);
+        disc(c, 0, 0, 0.3); paint(c, null, P.b.k);
     },
     rings(c, P) {
-        annulus(c, 0.56, 0.8); fl(c, P.a);
-        annulus(c, 0.24, 0.4); fl(c, P.b);
-        disc(c, 0, 0, 0.12); fl(c, P.a);
+        annulus(c, 0.6, 0.86); fl(c, P.a);
+        annulus(c, 0.3, 0.48); fl(c, P.b);
+        disc(c, 0, 0, 0.16); fl(c, P.a);
     },
     dots(c, P) {
-        const spots = [[0, 0, 0.18]];
-        for (let i = 0; i < 6; i++) { const p = pol(0.58, (i / 6) * TAU + 0.3); spots.push([p[0], p[1], 0.15]); }
-        for (let i = 0; i < 9; i++) { const p = pol(1.08, (i / 9) * TAU); spots.push([p[0], p[1], 0.17]); }
         c.beginPath();
-        for (const [x, y, r] of spots) { c.moveTo(x + r, y); c.arc(x, y, r, 0, TAU); }
+        c.moveTo(0.2, 0); c.arc(0, 0, 0.2, 0, TAU);
+        for (let i = 0; i < 6; i++) { const p = pol(0.6, (i / 6) * TAU); c.moveTo(p[0] + 0.16, p[1]); c.arc(p[0], p[1], 0.16, 0, TAU); }
         fl(c, P.a);
     },
     checker(c, P) {
-        const cs = 0.32;
+        const cs = 0.3;
         c.beginPath();
         for (let j = -1; j < 1; j++) for (let i = -8; i < 8; i++) if ((i + j) & 1) c.rect(i * cs, j * cs, cs, cs);
         paint(c, P.a.f, null);
@@ -554,140 +633,118 @@ const PAINT = {
         c.beginPath(); c.rect(-3, -cs, 6, 2 * cs); paint(c, null, P.b.k);
     },
     core(c, P) {
-        disc(c, 0, 0, 0.44); fl(c, P.a);
-        disc(c, 0, 0, 0.2); fd(c, P.a);
+        disc(c, 0, 0, 0.2); fl(c, P.a);
+        for (let i = 0; i < 4; i++) { const p = pol(0.6, (i / 4) * TAU + Math.PI / 4); disc(c, p[0], p[1], 0.17); fl(c, P.a); }
     },
     sash(c, P, s) {
         c.rotate(((s.angle == null ? -35 : s.angle) * Math.PI) / 180);
-        c.beginPath(); c.rect(-3, -0.22, 6, 0.44); fl(c, P.a);
-        disc(c, 0, 0, 0.28); fl(c, P.b);
-        star(c, 5, 0.09, 0.2, -Math.PI / 2); fd(c, P.b, OW * 0.7);
+        c.beginPath(); c.rect(-3, -0.24, 6, 0.48); fl(c, P.a);
+        c.beginPath(); c.rect(-3, -0.03, 6, 0.06); paint(c, P.b.f, null);
+        disc(c, 0, 0, 0.32); fl(c, P.b);
+        star(c, 5, 0.1, 0.22, -Math.PI / 2); fd(c, P.b, OW * 0.7);
     },
-    rim(c, P) {
-        annulus(c, 0.54, 0.82); fl(c, P.a);
-        studs(c, P.b, 6, 0.68, 0.1, Math.PI / 6);
+    pumpkin(c, P) {
+        c.save(); c.rotate(Math.PI / 2);
+        const face = (pts) => { poly(c, pts); paint(c, P.b.f, P.a.f, OW * 1.2); };
+        face([[-0.52, -0.08], [-0.3, -0.48], [-0.08, -0.08]]);
+        face([[0.08, -0.08], [0.3, -0.48], [0.52, -0.08]]);
+        face([[-0.6, 0.12], [-0.42, 0.26], [-0.26, 0.14], [-0.1, 0.3], [0.1, 0.3], [0.26, 0.14], [0.42, 0.26], [0.6, 0.12], [0.42, 0.5], [0, 0.62], [-0.42, 0.5]]);
+        c.restore();
     },
-    trim(c, P) {
-        for (let i = 0; i < 4; i++) {
-            c.save(); c.rotate((i / 4) * TAU + Math.PI / 4);
-            c.beginPath(); c.rect(0.62, -0.13, 0.36, 0.26); fd(c, P.a);
-            c.restore();
-        }
-        annulus(c, 0.72, 0.88); fl(c, P.a);
-        disc(c, 0, 0, 0.3); fl(c, P.a);
-        disc(c, 0, 0, 0.12); fd(c, P.a);
-    },
-    camo(c, P, s, rnd) {
-        const B = [[-0.5, -0.45, 0.38, 0], [0.52, -0.55, 0.32, 1], [0.15, 0.3, 0.38, 0], [-0.72, 0.52, 0.3, 1], [0.95, 0.38, 0.3, 1], [-0.05, -1.12, 0.3, 0]];
-        for (const [x, y, r, k] of B) { blob(c, rnd, x, y, r); fl(c, k ? P.b : P.a); }
+    camo(c, P, s) {
+        camoBlobs(c, P, s.seed | 0, true);
+        camoBlobs(c, P, (s.seed | 0) + 9, false);
+        disc(c, 0, 0, 0.18); fl(c, P.b);
     },
     strata(c, P) {
-        for (let i = 0; i < 3; i++) { strataBand(c, i); fl(c, i === 1 ? P.b : P.a); }
+        const Y = [-0.56, 0, 0.56];
+        for (let i = 0; i < 3; i++) { wave(c, Y[i], 0.15, 0.07, 3, 0); fl(c, i === 1 ? P.b : P.a); }
     },
     hex(c, P) {
-        const R = 0.44, w = Math.sqrt(3) * R;
-        for (let row = -3; row <= 3; row++) {
-            for (let col = -3; col <= 3; col++) {
-                const x = col * w + (row & 1 ? w / 2 : 0), y = row * 1.5 * R;
-                if (x * x + y * y > 2.4) continue;
-                hexagon(c, x, y, R * 0.84, Math.PI / 6);
-                const on = (row === 0 && col === 0) || (((row + col * 2) % 3) + 3) % 3 === 0;
-                paint(c, on ? P.a.f : null, P.a.k, OW * 0.8);
-            }
-        }
+        const R = 0.29, d = R * Math.sqrt(3) * 1.04;
+        for (let i = 0; i < 6; i++) { const p = pol(d, (i / 6) * TAU + Math.PI / 6); hexagon(c, p[0], p[1], R * 0.92, Math.PI / 6); fl(c, P.a, OW * 0.8); }
+        hexagon(c, 0, 0, R * 0.92, Math.PI / 6); fl(c, P.b, OW * 0.8);
+        hexagon(c, 0, 0, R * 0.42, Math.PI / 6); paint(c, P.b.l, null);
     },
     chevrons(c, P) {
         c.lineJoin = 'miter';
-        for (const x0 of [-0.3, 0.32]) band(c, [[x0 - 0.38, -1.3], [x0 + 0.24, 0], [x0 - 0.38, 1.3]], 0.24, P.a.f, P.a.k);
+        chevron(c, -0.26); fl(c, P.a);
+        chevron(c, 0.16); fl(c, P.b);
+        chevron(c, 0.58); fl(c, P.a);
         c.lineJoin = 'round';
     },
+    trim(c, P, s) {
+        spun(c, 4, Math.PI / 4, () => { c.beginPath(); c.rect(0.6, -0.14, 0.4, 0.28); fd(c, P.a); });
+        annulus(c, 0.68, 0.88); fl(c, P.a);
+        studs(c, P.a, s.rivets || 6, 0.78, 0.05, 0);
+        disc(c, 0, 0, 0.3); fl(c, P.a);
+        disc(c, 0, 0, 0.13); fd(c, P.a);
+    },
     sunburst(c, P) {
-        sunRays(c); fl(c, P.a, OW * 0.8);
-        disc(c, 0, 0, 0.32); fl(c, P.b);
+        star(c, 10, 0.4, 1.02, 0); fl(c, P.a);
+        disc(c, 0, 0, 0.36); fl(c, P.b);
+        disc(c, 0, 0, 0.16); fl(c, P.a);
     },
     quarters(c, P) {
         c.rotate(Math.PI / 4);
-        c.beginPath();
-        c.moveTo(0, 0); c.arc(0, 0, 0.72, 0, Math.PI / 2); c.closePath();
-        c.moveTo(0, 0); c.arc(0, 0, 0.72, Math.PI, Math.PI * 1.5); c.closePath();
-        fl(c, P.a);
-        disc(c, 0, 0, 0.72); paint(c, null, P.a.k);
-        disc(c, 0, 0, 0.15); fl(c, P.a);
+        sector(c, 0, 0.66, 0, Math.PI / 2); fl(c, P.a);
+        sector(c, 0, 0.66, Math.PI, Math.PI * 1.5); fl(c, P.a);
+        annulus(c, 0.66, 0.84); fl(c, P.a);
+        disc(c, 0, 0, 0.14); fl(c, P.a);
     },
     pinwheel(c, P) {
-        for (let i = 0; i < 4; i++) {
-            const a = (i / 4) * TAU;
-            c.beginPath();
-            c.moveTo(0, 0); c.lineTo(Math.cos(a) * 1.5, Math.sin(a) * 1.5); c.arc(0, 0, 1.5, a, a + 0.55);
-            const q = pol(0.6, a + 0.75); c.quadraticCurveTo(q[0], q[1], 0, 0); c.closePath();
-            fl(c, i & 1 ? P.b : P.a);
-        }
-        disc(c, 0, 0, 0.18); fl(c, P.c);
+        for (let i = 0; i < 4; i++) { pinBlade(c, (i / 4) * TAU); fl(c, i & 1 ? P.b : P.a); }
+        disc(c, 0, 0, 0.2); fl(c, P.c);
+        disc(c, 0, 0, 0.07); fd(c, P.c, OW * 0.6);
     },
     tiger(c, P) {
-        tigerStripes(c, 0.22); fl(c, P.a);
-        tigerStripes(c, 0.08); paint(c, P.b.f, null);
+        tigerStripes(c); paint(c, P.b.f, P.a.f, OW * 0.9);
     },
     circuit(c, P) {
-        const traces = [];
-        for (let i = 0; i < 4; i++) {
-            const a = (i / 4) * TAU + Math.PI / 4, cs = Math.cos(a), sn = Math.sin(a), q = (u, v) => [u * cs - v * sn, u * sn + v * cs];
-            traces.push([[q(0.3, 0), q(0.56, 0), q(0.72, 0.2)], 0.12]);
-        }
-        bands(c, traces, P.a.f, P.a.k);
-        for (const [pts] of traces) { disc(c, pts[2][0], pts[2][1], 0.13); fl(c, P.b); }
-        c.beginPath(); c.rect(-0.34, -0.34, 0.68, 0.68); fl(c, P.c);
-        c.beginPath(); c.rect(-0.15, -0.15, 0.3, 0.3); fl(c, P.b);
+        bands(c, TRACES.map(p => [p, 0.09]), P.a.f, P.a.k);
+        for (const p of TRACES) { disc(c, p[2][0], p[2][1], 0.1); fl(c, P.b, OW * 0.8); }
+        chip(c, 0.3); fl(c, P.c);
+        chip(c, 0.13); fl(c, P.b, OW * 0.7);
     },
     facets(c, P) {
-        for (let i = 0; i < 4; i++) {
-            const a = (i / 4) * TAU + Math.PI / 4;
-            poly(c, [pol(0.68, a), pol(0.84, a + 0.2), pol(1.02, a), pol(0.84, a - 0.2)]);
-            fl(c, P.a, OW * 0.8);
-        }
-        const n = 8, R = 0.58, r = 0.28, rot = Math.PI / 8;
+        for (let i = 0; i < 8; i++) { diamond(c, ...pol(0.82, (i / 8) * TAU), 0.13, (i / 8) * TAU + Math.PI / 2); fl(c, P.a, OW * 0.7); }
+        const n = 8, R = 0.62, r = 0.3, rot = Math.PI / 8;
         poly(c, ring(n, R, rot)); fl(c, P.a);
         poly(c, ring(n, r, rot)); paint(c, P.a.l, null);
         facetLines(c, n, r, R, rot, P.a.k);
         poly(c, ring(n, r, rot)); paint(c, null, P.a.k, OW * 0.7);
     },
-    vein(c, P, s, rnd) {
-        const V = [[[-1.3, 0.5], [-0.6, 0.2], [-0.1, 0.42], [0.5, -0.1], [1.3, -0.3]], [[-0.6, 0.2], [-0.5, -0.5], [-0.8, -1.1]], [[0.5, -0.1], [0.7, 0.6], [0.5, 1.2]]];
-        bands(c, V.map(p => [p, 0.15]), P.a.f, P.a.k);
-        for (const [x, y, r] of [[-0.6, 0.2, 0.18], [0.5, -0.1, 0.21], [-0.1, 0.42, 0.15]]) { blob(c, rnd, x, y, r); fl(c, P.a); }
+    vein(c, P) {
+        for (const arm of VEINS) bands(c, arm.map(p => [p, 0.14]), P.a.f, P.a.k);
+        for (const arm of VEINS) for (const p of arm) line(c, p, 0.045, P.a.l);
+        for (const arm of VEINS) { disc(c, arm[0][1][0], arm[0][1][1], 0.13); fl(c, P.a); }
+        disc(c, 0, 0, 0.24); fl(c, P.a);
+        disc(c, 0, 0, 0.1); paint(c, P.a.l, null);
     },
     gem(c, P) {
-        annulus(c, 0.74, 0.88); fl(c, P.a);
-        const R = 0.54, r = 0.26, rot = Math.PI / 6;
+        annulus(c, 0.72, 0.9); fl(c, P.a);
+        studs(c, WHITE_SW, 6, 0.81, 0.045, 0);
+        const R = 0.56, r = 0.26, rot = Math.PI / 6;
         hexagon(c, 0, 0, R, rot); fl(c, P.a);
         hexagon(c, 0, 0, r, rot); paint(c, P.a.l, null);
         facetLines(c, 6, r, R, rot, P.a.k);
         hexagon(c, 0, 0, r, rot); paint(c, null, P.a.k, OW * 0.7);
     },
     geode(c, P) {
-        annulus(c, 0.66, 0.88); fl(c, P.b);
-        for (let i = 0; i < 10; i++) {
-            const a = (i / 10) * TAU;
-            poly(c, [pol(0.71, a - 0.25), pol(0.36, a), pol(0.71, a + 0.25)]);
-            fl(c, P.a, OW * 0.8);
-        }
-    },
-    gear(c, P) {
-        const n = 10;
-        for (let i = 0; i < n; i++) { c.save(); c.rotate((i / n) * TAU); c.beginPath(); c.rect(0.7, -0.12, 0.27, 0.24); fl(c, P.a); c.restore(); }
-        annulus(c, 0.58, 0.8); fl(c, P.a);
-        for (const [x, y, k, a] of [[0, -0.12, 0.36, 0], [-0.22, 0.17, 0.26, -0.5], [0.22, 0.17, 0.26, 0.5]]) { diamond(c, x, y, k, a); fl(c, P.b, OW * 0.8); }
+        annulus(c, 0.68, 0.92); fl(c, P.b);
+        toothRing(c, 12, 0.36, 0.7, 0); fl(c, P.a, OW * 0.8);
+        diamond(c, 0, 0, 0.22, 0); fl(c, P.a, OW * 0.8);
     },
     bolt(c, P) {
-        disc(c, 0, 0, 0.62); fl(c, P.b);
-        bolt(c, 0.74, 0.25); fl(c, P.a);
+        annulus(c, 0.62, 0.9); fl(c, P.b);
+        bolt(c, 0.84, 0.3); fl(c, P.a);
     },
     spiral(c, P, s) {
-        const arms = s.arms || 2, list = [];
-        for (let k = 0; k < arms; k++) list.push([spiralArm(k, arms, 3.2), 0.18]);
+        const arms = s.arms || 2, w = arms > 3 ? 0.15 : 0.2, list = [];
+        for (let k = 0; k < arms; k++) list.push([spiralArm(k, arms, 3.4, 0.24), w]);
         bands(c, list, P.a.f, P.a.k);
-        disc(c, 0, 0, 0.28); fl(c, P.b);
-        disc(c, 0, 0, 0.11); fl(c, P.a);
+        for (const [pts] of list) line(c, pts, w * 0.32, P.b.f);
+        annulus(c, 0.14, 0.3); fl(c, P.b);
     },
     molten(c, P, s) {
         const arms = s.arms || 3, list = [];
@@ -698,138 +755,150 @@ const PAINT = {
         disc(c, 0, 0, 0.13); fl(c, P.a);
     },
     crosshair(c, P) {
-        c.beginPath();
-        for (let i = 0; i < 4; i++) { const a = (i / 4) * TAU + Math.PI / 4, cs = Math.cos(a), sn = Math.sin(a); c.moveTo(0.24 * cs + 0.1 * sn, 0.24 * sn - 0.1 * cs); c.lineTo(1.05 * cs + 0.1 * sn, 1.05 * sn - 0.1 * cs); c.lineTo(1.05 * cs - 0.1 * sn, 1.05 * sn + 0.1 * cs); c.lineTo(0.24 * cs - 0.1 * sn, 0.24 * sn + 0.1 * cs); c.closePath(); }
-        fl(c, P.a, OW * 0.8);
-        annulus(c, 0.52, 0.72); fl(c, P.a);
-        disc(c, 0, 0, 0.14); fl(c, P.b);
+        spun(c, 4, 0, () => { c.beginPath(); c.rect(0.24, -0.09, 0.82, 0.18); fl(c, P.a, OW * 0.8); });
+        annulus(c, 0.5, 0.7); fl(c, P.a);
+        spun(c, 4, Math.PI / 4, () => { disc(c, 0.6, 0, 0.06); paint(c, P.b.f, null); });
+        disc(c, 0, 0, 0.15); fl(c, P.b);
     },
     vault(c, P) {
         annulus(c, 0.68, 0.88); fl(c, P.a);
-        studs(c, P.b, 4, 0.78, 0.09, Math.PI / 4);
-        vaultSpokes(c); fl(c, P.a, OW * 0.8);
-        disc(c, 0, 0, 0.25); fl(c, P.b);
+        studs(c, P.b, 8, 0.78, 0.055, Math.PI / 8);
+        spun(c, 3, -Math.PI / 2, () => { c.beginPath(); c.rect(0, -0.09, 0.68, 0.18); fl(c, P.a, OW * 0.8); disc(c, 0.62, 0, 0.11); fl(c, P.b, OW * 0.8); });
+        disc(c, 0, 0, 0.26); fl(c, P.b);
         disc(c, 0, 0, 0.1); fd(c, P.b);
     },
     cracks(c, P) {
-        const seams = crackSeams();
-        for (const p of seams) line(c, p, 0.13 + 2 * OW, P.a.k);
-        for (const p of seams) line(c, p, 0.13, P.a.f);
-        disc(c, 0, 0, 0.28); fl(c, P.a);
-        disc(c, 0, 0, 0.13); fl(c, P.b);
+        const seams = [];
+        for (let i = 0; i < 6; i++) seams.push(crackPts((i / 6) * TAU));
+        for (const p of seams) line(c, p, 0.14 + 2 * OW, P.a.k);
+        for (const p of seams) line(c, p, 0.14, P.a.f);
+        for (const p of seams) line(c, p, 0.05, P.b.f);
+        disc(c, 0, 0, 0.3); fl(c, P.a);
+        disc(c, 0, 0, 0.14); fl(c, P.b);
     },
     frost(c, P) {
         const arms = [];
         for (let i = 0; i < 6; i++) {
             const a = (i / 6) * TAU, cs = Math.cos(a), sn = Math.sin(a), q = (u, v) => [u * cs - v * sn, u * sn + v * cs];
-            arms.push([[q(0.2, 0), q(0.9, 0)], 0.12], [[q(0.5, 0), q(0.7, 0.2)], 0.09], [[q(0.5, 0), q(0.7, -0.2)], 0.09]);
+            arms.push([[q(0.2, 0), q(0.9, 0)], 0.13], [[q(0.44, 0), q(0.62, 0.2)], 0.1], [[q(0.44, 0), q(0.62, -0.2)], 0.1], [[q(0.66, 0), q(0.8, 0.14)], 0.08], [[q(0.66, 0), q(0.8, -0.14)], 0.08]);
         }
         bands(c, arms, P.a.f, P.a.k);
         hexagon(c, 0, 0, 0.28, 0); fl(c, P.b);
+        hexagon(c, 0, 0, 0.12, 0); paint(c, P.a.f, null);
     },
     drill(c, P) {
-        const n = 6;
-        for (let i = 0; i < n; i += 2) {
-            const a = (i / n) * TAU;
-            c.beginPath();
-            c.moveTo(0, 0);
-            const p1 = pol(1.5, a), cp = pol(0.9, a + 0.55), p2 = pol(1.5, a + TAU / n * 0.6);
-            c.quadraticCurveTo(cp[0] * 0.6, cp[1] * 0.6, p1[0], p1[1]);
-            c.lineTo(p2[0], p2[1]);
-            c.quadraticCurveTo(cp[0] * 0.75, cp[1] * 0.75, 0, 0);
-            c.closePath();
-            fl(c, P.a);
-        }
-        disc(c, 0, 0, 0.26); fl(c, P.b);
-        disc(c, 0, 0, 0.1); fd(c, P.b);
+        for (let i = 0; i < 3; i++) { flute(c, (i / 3) * TAU); fl(c, P.a); }
+        annulus(c, 0.8, 0.96); fl(c, P.a);
+        studs(c, P.b, 6, 0.88, 0.045, 0.3);
+        for (let i = 0; i < 3; i++) { const pts = []; for (let j = 0; j <= 20; j++) pts.push(fluteEdge((i / 3) * TAU + 0.12, j / 20, true)); line(c, pts, 0.06, P.a.l); }
+        hexagon(c, 0, 0, 0.27, 0); fl(c, P.b);
+        hexagon(c, 0, 0, 0.11, 0); fd(c, P.b, OW * 0.7);
+    },
+    druse(c, P) {
+        annulus(c, 0.64, 0.94); fl(c, P.a);
+        toothRing(c, 14, 0.3, 0.66, 0); fl(c, P.b, OW * 0.8);
+        studs(c, P.a, 7, 0.79, 0.05, 0.2);
+        hexagon(c, 0, 0, 0.14, 0); fl(c, P.b, OW * 0.8);
     },
     shards(c, P) {
-        for (let k = 0; k < 3; k++) {
-            blade(c, k, 1); fl(c, P.a);
-            blade(c, k, 0.3); paint(c, P.b.f, null);
-        }
-        disc(c, 0, 0, 0.22); fl(c, P.b);
+        for (let k = 0; k < 3; k++) { wisp(c, (k / 3) * TAU); fl(c, P.a); }
+        for (let k = 0; k < 3; k++) line(c, wispSpine((k / 3) * TAU), 0.06, P.b.f);
+        disc(c, 0, 0, 0.24); fl(c, P.b);
+        disc(c, 0, 0, 0.1); paint(c, P.a.f, null);
     },
     storm(c, P) {
-        cloud(c); fl(c, P.a);
-        c.save(); c.translate(0.04, 0.32); bolt(c, 0.44, 0.2); fl(c, P.b); c.restore();
+        cloudRing(c, P.a);
+        bolt(c, 0.56, 0.3); fl(c, P.b);
     },
     gilded(c, P) {
-        annulus(c, 0.68, 0.86); fl(c, P.a);
-        studs(c, P.b, 6, 0.77, 0.08, 0);
-        star(c, 5, 0.26, 0.56, -Math.PI / 2); fl(c, P.a);
+        annulus(c, 0.68, 0.88); fl(c, P.a);
+        studs(c, P.b, 8, 0.78, 0.06, 0);
+        star(c, 5, 0.26, 0.58, -Math.PI / 2); fl(c, P.a);
+        disc(c, 0, 0, 0.12); fl(c, P.b, OW * 0.7);
     },
     heart(c, P) {
-        annulus(c, 0.7, 0.88); fl(c, P.b);
-        studs(c, P.a, 6, 0.79, 0.08, Math.PI / 6);
+        annulus(c, 0.7, 0.9); fl(c, P.b);
+        studs(c, P.a, 8, 0.8, 0.055, Math.PI / 8);
         c.save(); c.rotate(Math.PI / 2); heartPath(c, 1.08); fl(c, P.a);
         heartPath(c, 0.5); fd(c, P.a, OW * 0.7); c.restore();
     },
     aurora(c, P) {
         const cols = [P.a, P.b, P.c];
-        for (let i = 0; i < 3; i++) { auroraBand(c, i); fl(c, cols[i]); }
+        for (let i = 0; i < 3; i++) { wavyRing(c, AURORA[i][0], AURORA[i][1], 6, 0.035, i * 0.9); fl(c, cols[i]); }
     },
     prism(c, P) {
         const cols = [P.a, P.b, P.c];
-        for (let i = 0; i < 12; i += 2) { prismWedge(c, i); fl(c, cols[(i / 2) % 3], OW * 0.8); }
-        hexagon(c, 0, 0, 0.27, 0); fl(c, WHITE_SW);
+        for (let i = 0; i < 6; i++) { prismCells(c, i, true); fl(c, cols[(i + 1) % 3], OW * 0.8); }
+        for (let i = 0; i < 6; i++) { prismCells(c, i, false); fl(c, cols[i % 3], OW * 0.8); }
+        hexagon(c, 0, 0, 0.24, Math.PI / 6); fl(c, WHITE_SW, OW * 0.8);
     },
     nova(c, P) {
-        annulus(c, 0.8, 0.92); fl(c, P.b);
-        star(c, 8, 0.28, 0.64, 0); fl(c, P.a);
-        disc(c, 0, 0, 0.17); fl(c, P.b);
+        star(c, 8, 0.5, 0.98, Math.PI / 8); fl(c, P.b);
+        star(c, 8, 0.3, 0.7, 0); fl(c, P.a);
+        disc(c, 0, 0, 0.18); fl(c, WHITE_SW, OW * 0.8);
     },
     void(c, P) {
-        annulus(c, 0.8, 0.94); fl(c, P.a);
-        c.save(); c.rotate(Math.PI / 2);
-        eyePath(c, 0.7, 0.31); fl(c, P.c);
-        disc(c, 0, 0, 0.3); fl(c, P.b);
-        disc(c, 0, 0, 0.13); paint(c, P.a.f, null);
-        c.restore();
-    },
-    pumpkin(c, P) {
-        c.save(); c.rotate(Math.PI / 2);
-        const face = (pts) => { poly(c, pts); paint(c, P.a.f, P.b.f, OW * 1.1); };
-        face([[-0.5, -0.1], [-0.28, -0.5], [-0.08, -0.1]]);
-        face([[0.08, -0.1], [0.28, -0.5], [0.5, -0.1]]);
-        face([[-0.6, 0.1], [-0.4, 0.24], [-0.24, 0.12], [-0.08, 0.28], [0.08, 0.12], [0.24, 0.28], [0.4, 0.12], [0.6, 0.1], [0.42, 0.5], [0, 0.62], [-0.42, 0.5]]);
-        c.restore();
+        const list = [];
+        for (let k = 0; k < 4; k++) list.push([spiralArm(k, 4, 2.6, 0.44), 0.13]);
+        bands(c, list, P.b.f, P.b.k);
+        for (const [pts] of list) line(c, pts, 0.045, P.c.f);
+        disc(c, 0, 0, 0.46); fl(c, P.c);
+        disc(c, 0, 0, 0.34); fl(c, P.a);
     },
 };
 const LIT = {
+    circuit(g, P) {
+        for (const p of TRACES) line(g, p, 0.05, P.a.l);
+        for (const p of TRACES) { disc(g, p[2][0], p[2][1], 0.1); lit(g, P.b, OW * 0.8); }
+        chip(g, 0.13); lit(g, P.b, OW * 0.7);
+    },
+    vein(g, P) {
+        for (const arm of VEINS) for (const p of arm) line(g, p, 0.07, P.a.l);
+        for (const arm of VEINS) { disc(g, arm[0][1][0], arm[0][1][1], 0.13); lit(g, P.a); }
+        disc(g, 0, 0, 0.24); lit(g, P.a);
+    },
+    bolt(g, P) {
+        bolt(g, 0.84, 0.3); lit(g, P.a);
+    },
     cracks(g, P) {
-        for (const p of crackSeams()) line(g, p, 0.07, P.b.l);
-        disc(g, 0, 0, 0.13); paint(g, P.b.l, null);
+        for (let i = 0; i < 6; i++) line(g, crackPts((i / 6) * TAU), 0.08, P.b.l);
+        disc(g, 0, 0, 0.14); paint(g, P.b.l, null);
     },
     shards(g, P) {
-        for (let k = 0; k < 3; k++) { blade(g, k, 1); paint(g, P.a.l, P.a.k); }
+        for (let k = 0; k < 3; k++) { wisp(g, (k / 3) * TAU); lit(g, P.a); }
+        disc(g, 0, 0, 0.24); lit(g, P.b);
     },
     storm(g, P) {
-        g.translate(0.04, 0.32); bolt(g, 0.44, 0.2); paint(g, P.b.l, P.b.k);
+        bolt(g, 0.56, 0.3); lit(g, P.b);
+    },
+    gilded(g, P) {
+        star(g, 5, 0.26, 0.58, -Math.PI / 2); lit(g, P.a);
+    },
+    heart(g, P) {
+        g.rotate(Math.PI / 2); heartPath(g, 1.08); lit(g, P.a);
+        heartPath(g, 0.5); paint(g, P.a.f, P.a.k, OW * 0.7);
     },
     molten(g, P, s) {
         const arms = s.arms || 3;
         for (let k = 0; k < arms; k++) line(g, spiralArm(k, arms, 3.0), 0.07, P.b.l);
-        disc(g, 0, 0, 0.32); paint(g, P.b.l, P.b.k);
+        disc(g, 0, 0, 0.32); lit(g, P.b);
     },
     aurora(g, P, s, alt) {
         const cols = alt ? [P.b, P.c, P.a] : [P.a, P.b, P.c];
-        for (let i = 0; i < 3; i++) { auroraBand(g, i); paint(g, alt ? cols[i].f : cols[i].l, cols[i].k); }
+        for (let i = 0; i < 3; i++) { wavyRing(g, AURORA[i][0], AURORA[i][1], 6, 0.035, i * 0.9); paint(g, alt ? cols[i].f : cols[i].l, cols[i].k); }
+    },
+    prism(g, P) {
+        const cols = [P.a, P.b, P.c];
+        for (let i = 0; i < 6; i++) { prismCells(g, i, false); lit(g, cols[i % 3], OW * 0.8); }
+        hexagon(g, 0, 0, 0.24, Math.PI / 6); paint(g, '#ffffff', WHITE_SW.k, OW * 0.8);
     },
     nova(g, P) {
-        star(g, 8, 0.28, 0.64, 0); paint(g, P.a.l, P.a.k);
+        star(g, 8, 0.28, 0.66, 0); lit(g, P.a);
+        disc(g, 0, 0, 0.17); paint(g, '#ffffff', WHITE_SW.k, OW * 0.8);
     },
     void(g, P) {
-        g.rotate(Math.PI / 2);
-        disc(g, 0, 0, 0.3); paint(g, P.b.l, P.b.k);
-        disc(g, 0, 0, 0.13); paint(g, P.a.f, null);
-    },
-    gilded(g, P) {
-        star(g, 5, 0.26, 0.56, -Math.PI / 2); paint(g, P.a.l, P.a.k);
-    },
-    heart(g, P) {
-        g.rotate(Math.PI / 2); heartPath(g, 1.08); paint(g, P.a.l, P.a.k);
-        heartPath(g, 0.5); paint(g, P.a.f, P.a.k, OW * 0.7);
+        for (let k = 0; k < 4; k++) line(g, spiralArm(k, 4, 2.6, 0.44), 0.07, P.b.l);
+        annulus(g, 0.34, 0.46); lit(g, P.c);
     },
 };
 
@@ -1003,8 +1072,12 @@ export function paintHull(c, x, y, r, shape, rot, nid, baseHex, o) {
     c.translate(x, y);
     c.rotate(rot);
     c.globalAlpha = a0 * (s.opacity == null ? 1 : s.opacity);
-    // spin turns the pattern; spiral turns it the other way, glow and all
-    if (em && t && (em.kind === 'spin' || em.kind === 'spiral')) c.rotate((em.kind === 'spiral' ? -1 : 1) * t * (em.speed || 0.1) * TAU);
+    if (em && t) {
+        let turn = em.spin || 0;
+        if (em.kind === 'spin') turn += em.speed || 0.1;
+        else if (em.kind === 'spiral') turn -= em.speed || 0.1;
+        if (turn) c.rotate(t * turn * TAU);
+    }
     c.drawImage(tile.cv, -R, -R, 2 * R, 2 * R);
     if (em) {
         const sp = em.speed || 1;
@@ -1058,7 +1131,13 @@ export function paintHull(c, x, y, r, shape, rot, nid, baseHex, o) {
     }
 }
 
-const BARREL_KIND = { stripes: 'hazard', racer: 'stripe', checker: 'checker', rim: 'collar', trim: 'collar', vault: 'collar', gilded: 'collar', drill: 'drill', molten: 'tip', cracks: 'tip' };
+const BARREL_KIND = {
+    stripes: 'hazard', rim: 'collar', racer: 'stripe', halves: 'split', rings: 'bands', dots: 'dots', checker: 'checker', core: 'dots',
+    sash: 'bands', pumpkin: 'tip', camo: 'bands', strata: 'bands', hex: 'collar', chevrons: 'chevron', trim: 'collar', sunburst: 'tip',
+    quarters: 'split', pinwheel: 'bands', tiger: 'hazard', circuit: 'dots', facets: 'gem', vein: 'tip', gem: 'gem', geode: 'gem',
+    bolt: 'tip', spiral: 'bands', molten: 'tip', crosshair: 'bands', vault: 'collar', cracks: 'tip', frost: 'collar', drill: 'drill',
+    druse: 'gem', shards: 'tip', storm: 'tip', gilded: 'collar', heart: 'gem', aurora: 'bands', prism: 'gem', nova: 'tip', void: 'tip',
+};
 const barrelStyles = new Map();
 export function barrelStyleOf(nid) {
     let st = barrelStyles.get(nid);
@@ -1089,19 +1168,28 @@ export function paintBarrel(c, x, y, halfLen, halfWidth, aspect, angle, position
     const back = 0, front = halfLen * 2 - position, L = front - back;
     if (!(L > 0)) return;
     const cs = Math.cos(angle), sn = Math.sin(angle), slope = (h0 - h1) / L;
+    const wAt = (u) => h1 + (u - back) * slope;
     const A = st.a, B = st.b;
     const edge = lw * 0.5;
     c.lineWidth = edge;
     c.lineJoin = 'round';
+    const ring4 = (u0, u1, k, X) => {
+        local4(c, x, y, cs, sn, u0, -wAt(u0) * k, u1, -wAt(u1) * k, u1, wAt(u1) * k, u0, wAt(u0) * k);
+        c.fillStyle = X.f; c.fill();
+        c.strokeStyle = X.k; c.stroke();
+    };
     if (st.kind === 'collar' || st.kind === 'tip') {
         const d0 = front - L * (st.kind === 'tip' ? 0.16 : 0.2), k = st.kind === 'tip' ? 1.14 : 1.3;
-        const w0 = (h1 + (d0 - back) * slope) * k, w1 = h0 * k;
+        const w0 = wAt(d0) * k, w1 = h0 * k;
         local4(c, x, y, cs, sn, d0, -w0, front, -w1, front, w1, d0, w0);
         c.fillStyle = A.f; c.fill();
         c.strokeStyle = A.k; c.stroke();
+    } else if (st.kind === 'bands') {
+        ring4(front - L * 0.42, front - L * 0.3, 1, B);
+        ring4(front - L * 0.2, front - L * 0.04, 1, A);
     } else if (st.kind === 'hazard' || st.kind === 'checker') {
         const d0 = front - L * 0.3, d1 = front - L * 0.05;
-        const w0 = h1 + (d0 - back) * slope, w1 = h1 + (d1 - back) * slope;
+        const w0 = wAt(d0), w1 = wAt(d1);
         local4(c, x, y, cs, sn, d0, -w0, d1, -w1, d1, w1, d0, w0);
         c.fillStyle = A.f; c.fill();
         c.fillStyle = B.f;
@@ -1114,7 +1202,7 @@ export function paintBarrel(c, x, y, halfLen, halfWidth, aspect, angle, position
             }
         } else {
             for (let i = 0; i < 5; i++) {
-                const u = d0 + t * i, v = (i & 1) ? -1 : 1, wm = h1 + (u + t / 2 - back) * slope;
+                const u = d0 + t * i, v = (i & 1) ? -1 : 1, wm = wAt(u + t / 2);
                 local4(c, x, y, cs, sn, u, 0, u + t, 0, u + t, v * wm, u, v * wm);
                 c.fill();
             }
@@ -1126,19 +1214,58 @@ export function paintBarrel(c, x, y, halfLen, halfWidth, aspect, angle, position
         local4(c, x, y, cs, sn, d0, -w, d1, -w, d1, w, d0, w);
         c.fillStyle = A.f; c.fill();
         c.lineWidth = edge * 0.7; c.strokeStyle = A.k; c.stroke();
+        if (B.f !== A.d) {
+            const v = w * 0.34;
+            local4(c, x, y, cs, sn, d0, -v, d1, -v, d1, v, d0, v);
+            c.fillStyle = B.f; c.fill();
+        }
+    } else if (st.kind === 'split') {
+        const d0 = back + L * 0.34, d1 = front;
+        local4(c, x, y, cs, sn, d0, 0, d1, 0, d1, -wAt(d1), d0, -wAt(d0));
+        c.fillStyle = A.f; c.fill();
+        local4(c, x, y, cs, sn, d0, 0, d1, 0, d1, wAt(d1), d0, wAt(d0));
+        c.fillStyle = B.f; c.fill();
+        local4(c, x, y, cs, sn, d0, -wAt(d0), d1, -wAt(d1), d1, wAt(d1), d0, wAt(d0));
+        c.lineWidth = edge * 0.8; c.strokeStyle = B.k; c.stroke();
+    } else if (st.kind === 'dots') {
+        const r = Math.min(h0, h1) * 0.42;
+        for (const f of [0.3, 0.66]) {
+            const u = front - L * f + r * 0.2;
+            c.beginPath(); c.arc(x + u * cs, y + u * sn, r, 0, TAU);
+            c.fillStyle = A.f; c.fill();
+            c.lineWidth = edge * 0.8; c.strokeStyle = A.k; c.stroke();
+        }
+    } else if (st.kind === 'chevron') {
+        const u0 = front - L * 0.46, u1 = front - L * 0.12, t = L * 0.12;
+        const at = (u, v) => [x + u * cs - v * sn, y + u * sn + v * cs];
+        const pts = [at(u0, -wAt(u0)), at(u0 + t, -wAt(u0)), at(u1, 0), at(u0 + t, wAt(u0)), at(u0, wAt(u0)), at(u1 - t, 0)];
+        c.beginPath(); c.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+        c.closePath();
+        c.fillStyle = A.f; c.fill();
+        c.lineWidth = edge * 0.8; c.strokeStyle = A.k; c.stroke();
+    } else if (st.kind === 'gem') {
+        const d0 = front - L * 0.2;
+        ring4(d0, front, 1.16, A);
+        const um = (d0 + front) / 2, hl = (front - d0) * 0.32, hw = wAt(um) * 0.62;
+        local4(c, x, y, cs, sn, um - hl, 0, um, -hw, um + hl, 0, um, hw);
+        c.fillStyle = A.l; c.fill();
+        c.lineWidth = edge * 0.6; c.strokeStyle = A.k; c.stroke();
     } else if (st.kind === 'drill') {
         const d0 = front - L * 0.18;
-        const w0 = h1 + (d0 - back) * slope;
+        const w0 = wAt(d0);
         local4(c, x, y, cs, sn, d0, -w0, front, -h0, front, h0, d0, w0);
         c.fillStyle = A.f; c.fill();
         c.strokeStyle = A.k; c.stroke();
         c.beginPath();
-        for (let i = 0; i < 2; i++) {
-            const u = front - L * (0.32 + i * 0.16), w = h1 + (u - back) * slope;
+        for (let i = 0; i < 3; i++) {
+            const u = front - L * (0.34 + i * 0.16), w = wAt(u);
             c.moveTo(x + u * cs + w * sn, y + u * sn - w * cs);
             c.lineTo(x + (u + L * 0.1) * cs - w * sn, y + (u + L * 0.1) * sn + w * cs);
         }
         c.lineWidth = edge; c.strokeStyle = A.k; c.stroke();
+        local4(c, x, y, cs, sn, d0 - L * 0.04, -w0 * 0.3, d0, -w0 * 0.3, d0, w0 * 0.3, d0 - L * 0.04, w0 * 0.3);
+        c.fillStyle = B.f; c.fill();
     }
 }
 

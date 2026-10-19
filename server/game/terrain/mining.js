@@ -21,6 +21,8 @@ const MINE_BIAS = {
     // minions orbit and only shoot the rock part of the time
     spawner: 2.2, factory: 2.0, autoSpawner: 1.6,
     manager: 1.4,
+    bigCheese: 1.8, 'Big Cheese': 1.8, Chieftain: 1.8, Puppeteer: 1.8, Sultan: 1.8,
+    xp_g139: 1.8, xp_g140: 1.8, xp_g141: 1.8,
     rifle: 1.6, revolver: 1.6, bushwhacker: 1.5, musket: 1.3,
     minigun: 1.2, nailgun: 1.8, vulture: 1.5, focal: 1.2, phoenix: 1.2,
     desmos: 1.2, swarmer: 1.6,
@@ -41,11 +43,14 @@ function digPower(settings) {
 }
 
 function tankBias(owner) {
-    if (!owner || !Array.isArray(owner.defs)) return 1;
-    for (let i = owner.defs.length - 1; i >= 0; i--) {
-        const d = owner.defs[i];
-        if (typeof d === 'string' && MINE_BIAS[d]) return MINE_BIAS[d];
+    if (!owner) return 1;
+    if (Array.isArray(owner.defs)) {
+        for (let i = owner.defs.length - 1; i >= 0; i--) {
+            const d = owner.defs[i];
+            if (typeof d === 'string' && MINE_BIAS[d]) return MINE_BIAS[d];
+        }
     }
+    if (owner.label && MINE_BIAS[owner.label]) return MINE_BIAS[owner.label];
     return 1;
 }
 

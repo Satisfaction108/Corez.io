@@ -23,13 +23,17 @@ export const TANKS = [
     ['basic', 'Basic'], ['twin', 'Twin'], ['sniper', 'Sniper'], ['machineGun', 'Machine Gun'],
     ['flankGuard', 'Flank Guard'], ['pounder', 'Pounder'], ['director', 'Director'], ['smasher', 'Smasher'],
 ];
+export function tankList() {
+    if (PM && Array.isArray(PM.tanks) && PM.tanks.length) return PM.tanks;
+    return TANKS.map(([k, label], i) => [k, label, i ? 2 : 1]);
+}
 
 let PM = null, pmLoad = null;
 export function ready() {
     if (!pmLoad) {
         // versioned and revalidated: a bad copy cached once (the server used
         // to answer this with the home page) can't stick around
-        pmLoad = fetch(new URL('./preview-mockups.json?v=2', import.meta.url), { cache: 'no-cache' })
+        pmLoad = fetch(new URL('./preview-mockups.json?v=3', import.meta.url), { cache: 'no-cache' })
             .then((r) => r.json())
             .then((j) => { PM = j; return true; })
             .catch((e) => { console.warn('[previews] no mockups', e); return false; });
@@ -48,12 +52,21 @@ function withTheme(fn) {
     try { return fn(); } finally { if (!had) { gameDraw.color = had; gameDraw.colorCache = {}; } }
 }
 
+function spanOf(m) {
+    return m && m.position && m.position.axis > 0 ? m.position.axis / (m.size || 1) : 0;
+}
+function fitOf(idx) {
+    const span = spanOf(PM.mockups[idx]), base = spanOf(PM.mockups[PM.names.basic]);
+    return span && base ? Math.min(1, base / span) : 1;
+}
+
 // Draw a tank centred at (x, y) with body radius r, facing `rot`.
 export function drawTank(c, x, y, r, opts) {
     const draw = window.dwDrawEntity;
     if (!PM || !draw) return false;
     const col = opts.color || TEAM_COLORS[0].col;
-    const idx = PM.names[opts.tank] || PM.names.basic;
+    const idx = (opts.tank && PM.names[opts.tank]) || PM.names.basic;
+    r *= fitOf(idx);
     const saved = global.mockups;
     global.mockups = PM.mockups;
     try {
@@ -132,16 +145,76 @@ new MutationObserver(kick).observe(document.body, { attributes: true, attributeF
 
 // Draw now, and again every frame while `animated` (and motion is allowed);
 // smooth: every frame rather than every other.
-function mount(cv, draw, animated, smooth) {
-    const run = (t) => draw(begin(cv), t);
+const SPIN_SPEED = 0.9;
+const SPIN_HOVER = '.shop-card, .lk-tile, .shop-mprev, .lk-stagewrap, .pf-tank, .lvd-row, .iv-rw-art';
+const spinning = new Set();
+let hoverEl = null;
+function hoverOf(target) {
+    if (!target || !target.closest) return null;
+    return target.closest(SPIN_HOVER) || (target.tagName === 'CANVAS' && target._dwSpin ? target : null);
+}
+function setHover(el) {
+    if (el === hoverEl) return;
+    hoverEl = el;
+    for (const sp of spinning) if (!el || !el.contains(sp.cv)) sp.stop();
+    if (el) {
+        if (el._dwSpin) el._dwSpin.start();
+        el.querySelectorAll('canvas').forEach((cv) => { if (cv._dwSpin) cv._dwSpin.start(); });
+    }
+}
+document.addEventListener('pointerover', (e) => { if (e.pointerType !== 'touch') setHover(hoverOf(e.target)); });
+document.addEventListener('pointerout', (e) => { if (!e.relatedTarget) setHover(null); });
+window.addEventListener('blur', () => setHover(null));
+
+function mount(cv, draw, animated, smooth, spins) {
+    const S = { a: 0, on: false, last: 0 };
+    const run = (t) => draw(begin(cv), t, S.a);
     ready().then(() => run(0));
-    if (animated && !reducedMotion()) {
-        const L = { cv, draw: run, seen: false, born: performance.now(), smooth: !!smooth, vis: true };
+    const anim = animated && !reducedMotion();
+    let L = null;
+    const add = () => {
+        if (!L) L = { cv, draw: run, seen: false, born: performance.now(), smooth: !!smooth, vis: true };
+        if (live.has(L)) return;
         live.add(L);
         if (seen) { cv._dwLive = L; seen.observe(cv); }
         kick();
-        cv._dwStop = () => { live.delete(L); if (seen) seen.unobserve(cv); };
+    };
+    const drop = () => { if (!L) return; live.delete(L); if (seen) seen.unobserve(cv); };
+    if (anim) add();
+    if (spins && !reducedMotion()) {
+        const sp = {
+            cv,
+            start() {
+                if (S.on) return;
+                S.on = true;
+                S.last = 0;
+                spinning.add(sp);
+                add();
+                L.smooth = true;
+                L.draw = step;
+            },
+            stop() { S.on = false; S.last = 0; },
+        };
+        const step = (t) => {
+            const dt = S.last ? Math.min(0.05, t - S.last) : 0;
+            S.last = t;
+            if (S.on) S.a = (S.a + dt * SPIN_SPEED) % (Math.PI * 2);
+            else {
+                const back = S.a > Math.PI ? Math.PI * 2 - S.a : -S.a;
+                S.a += back * Math.min(1, dt * 7);
+                if (Math.abs(back) < 0.004) {
+                    S.a = 0;
+                    spinning.delete(sp);
+                    L.smooth = !!smooth;
+                    L.draw = run;
+                    if (!anim) drop();
+                }
+            }
+            run(t);
+        };
+        cv._dwSpin = sp;
     }
+    if (anim || spins) cv._dwStop = () => { drop(); if (cv._dwSpin) spinning.delete(cv._dwSpin); };
     return cv;
 }
 
@@ -158,9 +231,10 @@ export function tankPreview(opts) {
     const cv = canvas(w, h, opts.cls || 'dw-prev');
     const it = typeof opts.skin === 'number' ? cos.skinOf(opts.skin) : itemOf(opts.skin);
     const r = opts.size || Math.min(w, h) * 0.26;
-    return mount(cv, (c, t) => {
-        drawTank(c, w / 2 - r * 0.25, h / 2 + r * 0.08, r, { tank: opts.tank, color: opts.color, skin: it ? it.nid : 0, rot: opts.rot });
-    }, animatedItem(it));
+    const rot = opts.rot == null ? -Math.PI / 4 : opts.rot;
+    return mount(cv, (c, t, spin) => {
+        drawTank(c, w / 2 - r * 0.25 * Math.cos(spin), h / 2 + r * 0.08 - r * 0.25 * Math.sin(spin), r, { tank: opts.tank, color: opts.color, skin: it ? it.nid : 0, rot: rot + spin });
+    }, animatedItem(it), false, opts.spin !== false);
 }
 
 // Nameplate preview: a styled name over a small tank.
@@ -172,12 +246,13 @@ export function namePreview(opts) {
     const sk = typeof opts.skin === 'number' ? cos.skinOf(opts.skin) : itemOf(opts.skin);
     const px = opts.px || Math.round(Math.min(26, h * 0.17));
     const r = opts.r || Math.min(h * 0.2, w * 0.14);
-    return mount(cv, (c, t) => {
+    const rot = opts.rot == null ? -Math.PI / 4 : opts.rot;
+    return mount(cv, (c, t, spin) => {
         const ty = h * 0.66;
-        drawTank(c, w / 2 - r * 0.25, ty, r, { tank: opts.tank, color: opts.color, skin: sk ? sk.nid : 0, rot: opts.rot });
+        drawTank(c, w / 2 - r * 0.25 * Math.cos(spin), ty - r * 0.25 * Math.sin(spin), r, { tank: opts.tank, color: opts.color, skin: sk ? sk.nid : 0, rot: rot + spin });
         const fallback = opts.custom || '#f2f2f2';
         cos.drawStyledName(c, opts.name || 'Player', w / 2, ty - r * 2.15, px, st, fallback, { align: 'center', stroke: true, time: t });
-    }, animatedItem(st) || animatedItem(sk));
+    }, animatedItem(st) || animatedItem(sk), false, opts.spin !== false);
 }
 
 // A styled name alone (name box, chip, tiles). The canvas is sized to the

@@ -322,6 +322,17 @@ export function storeError(res) {
 }
 const staleDay = (res) => { const c = res && res.data && res.data.error && res.data.error.code; return c === 'shop_rotated' || c === 'not_in_shop'; };
 
+function tankOptions(list) {
+    const tiers = new Map();
+    for (const [k, label, tier] of list) {
+        if (!tiers.has(tier)) tiers.set(tier, []);
+        tiers.get(tier).push([k, label]);
+    }
+    return [...tiers.keys()].sort((a, b) => a - b).map((tier) => h('optgroup', { label: 'Tier ' + tier },
+        tiers.get(tier).sort((a, b) => (a[0] === 'basic' ? -1 : b[0] === 'basic' ? 1 : a[1].localeCompare(b[1])))
+            .map(([k, label]) => h('option', { value: k, text: label }))));
+}
+
 export function openItem(raw) {
     const it = full(raw);
     let colorIdx = 0, tank = 'basic';
@@ -343,7 +354,14 @@ export function openItem(raw) {
             },
         })));
     const tankSel = h('select', { class: 'dw-input shop-tanksel', 'aria-label': 'Tank', onchange: (e) => { tank = e.target.value; drawStage(); } },
-        pv.TANKS.map(([k, label]) => h('option', { value: k, text: label })));
+        tankOptions(pv.tankList()));
+    pv.ready().then(() => {
+        const list = pv.tankList();
+        if (list.length <= tankSel.options.length) return;
+        clear(tankSel);
+        tankSel.append(...tankOptions(list));
+        tankSel.value = tank;
+    });
     const alert = h('div', { class: 'dw-alert', role: 'alert' });
     const actions = h('div', { class: 'shop-mact' });
     const note = h('div', { class: 'shop-mnote' });

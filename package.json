@@ -4,7 +4,7 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node --no-lazy index",
-    "build": "node scripts/build-tanks.js && node scripts/build-client.js",
+    "build": "node scripts/build-tanks.js && node scripts/build-preview-mockups.js && node scripts/build-client.js",
     "bot:soak": "node scripts/bot-soak.js"
   },
   "dependencies": {
