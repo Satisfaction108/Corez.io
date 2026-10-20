@@ -51,6 +51,12 @@ const REGROW = {
     NEAR_BUCKET:           512,
     FAST_RATE: GROW_TIMELINE_MS / RISE_MS,
     EMERALD_RESPAWN_MS: 60_000, 
+    EMERALD_PENDING_MAX:    48,
+    EMERALD_PLANTS_PER_PASS: 4,
+    EMERALD_GAP:             6,
+    REGROW_SLICE:          800,
+    REGROW_SLICE_TICK_MS:   33,
+    EVENT_MERGE_LOOKBACK:   64,
     ORPHAN_DELAY_MS:    60_000,
     ORE_GEN_STRIDE:       7919, 
 };
@@ -1215,7 +1221,7 @@ class TerrainGrid {
         if (Config.dig_royale) { try { this._bloomNow = require('./blooms.js').current(); } catch { this._bloomNow = null; } }
         const gap = this._rgWall ? now - this._rgWall : 0;
         this._rgWall = now;
-        const budget = gap > 80 ? 1e9 : 800;
+        const budget = gap > 80 ? Math.ceil(REGROW.REGROW_SLICE * gap / REGROW.REGROW_SLICE_TICK_MS) : REGROW.REGROW_SLICE;
         if (this._rg) { this._regrowSlice(now, budget); return; }
         if (now - this._lastRegrowTick < REGROW.PACING_MS) return;
         this._lastRegrowTick = now;
@@ -1366,19 +1372,40 @@ class TerrainGrid {
     }
 
     _tickEmeraldRespawns(now) {
-        for (let i = this._pendingEmeralds.length - 1; i >= 0; i--) {
-            if (this._pendingEmeralds[i].at > now) continue;
-            if (this._plantEmerald()) this._pendingEmeralds.splice(i, 1);
+        const pending = this._pendingEmeralds;
+        let due = false;
+        for (const p of pending) if (p.at <= now) { due = true; break; }
+        if (!due) return;
+        const blocked = this._emeraldBlocked();
+        let planted = 0;
+        for (let i = pending.length - 1; i >= 0 && planted < REGROW.EMERALD_PLANTS_PER_PASS; i--) {
+            if (pending[i].at > now) continue;
+            if (!this._plantEmerald(blocked)) break;
+            pending.splice(i, 1);
+            planted++;
         }
     }
 
-    _plantEmerald() {
+    _blockAroundEmerald(blocked, vi, vj) {
+        const g = REGROW.EMERALD_GAP, g2 = g * g;
+        for (let di = 1 - g; di < g; di++) {
+            for (let dj = 1 - g; dj < g; dj++) {
+                if (di * di + dj * dj < g2) blocked.add((vi + di) * 100003 + (vj + dj));
+            }
+        }
+    }
+
+    _emeraldBlocked() {
+        const blocked = new Set();
+        for (const rock of this.rocks.values()) {
+            if (rock.ore === ORE.EMERALD && (rock.alive || rock.growing)) this._blockAroundEmerald(blocked, rock.vi, rock.vj);
+        }
+        return blocked;
+    }
+
+    _plantEmerald(blocked = this._emeraldBlocked()) {
         const viLo = this._voroViLo, viHi = this._voroViHi;
         const halfSpan = Math.max(1, (viHi - viLo) / 2);
-        const current = [];
-        for (const rock of this.rocks.values()) {
-            if (rock.ore === ORE.EMERALD && (rock.alive || rock.growing)) current.push(rock);
-        }
         const salt = this.oreSalt + 13 + (++this._emeraldRespawns) * 104729;
         let best = null, bestScore = Infinity;
         for (const rock of this.rocks.values()) {
@@ -1386,16 +1413,12 @@ class TerrainGrid {
             if (this._canyonNearKeys && this._canyonNearKeys.has(rock.k)) continue;
             const depth = Math.min(rock.vi - viLo, viHi - rock.vi) / halfSpan;
             if (depth < 0.7) continue;
-            let ok = true;
-            for (const c of current) {
-                const di = rock.vi - c.vi, dj = rock.vj - c.vj;
-                if (di * di + dj * dj < 36) { ok = false; break; } 
-            }
-            if (!ok) continue;
+            if (blocked.has(rock.vi * 100003 + rock.vj)) continue;
             const score = this._oreRoll(rock.vi, rock.vj, salt);
             if (score < bestScore) { bestScore = score; best = rock; }
         }
         if (!best) { this._emeraldRespawns--; return false; }
+        this._blockAroundEmerald(blocked, best.vi, best.vj);
         const oldMax = best.maxHealth || 1;
         const frac = Math.min(1, best.health / oldMax);
         best.ore       = ORE.EMERALD;
@@ -1537,7 +1560,7 @@ class TerrainGrid {
             rock.growDamage = 0;
             rock.diedAt = Date.now();
 
-            if (!wasGrowing && rock.ore === ORE.EMERALD)
+            if (!wasGrowing && rock.ore === ORE.EMERALD && this._pendingEmeralds.length < REGROW.EMERALD_PENDING_MAX)
                 this._pendingEmeralds.push({ at: rock.diedAt + ((global.royaleMods && global.royaleMods.emeraldRespawnMs) || REGROW.EMERALD_RESPAWN_MS) });
             // achievements (accounts/game/achHooks.js): a player broke it
             if (!wasGrowing && owner && owner.socket && global.royaleAch) global.royaleAch.onRock(owner, rock);
@@ -1560,9 +1583,11 @@ class TerrainGrid {
             ev.u = owner.id;
         }
         if (!destroyed && this.rockEvents.length) {
-            for (let i = this.rockEvents.length - 1; i >= 0; i--) {
+            const stop = Math.max(0, this.rockEvents.length - REGROW.EVENT_MERGE_LOOKBACK);
+            for (let i = this.rockEvents.length - 1; i >= stop; i--) {
                 const prev = this.rockEvents[i];
-                if (prev.k !== rock.k || prev.d || prev.r) continue;
+                if (prev.k !== rock.k) continue;
+                if (prev.d || prev.r || prev.e || prev.bl) break;
                 prev.h = ev.h;
                 if (ev.x !== undefined) { prev.x = ev.x; prev.y = ev.y; }
                 if (ev.n && prev.u === ev.u) prev.n = (prev.n || 0) + ev.n;
