@@ -51,7 +51,7 @@ const FEATURED_WEIGHT = { epic: 2, legendary: 1 };
 const DAILY_RARITIES = new Set(['common', 'uncommon', 'rare']);
 const SIDEKICK_COUNT = 4;
 const SIDEKICK_SKINS = 3;
-const SIDEKICK_NAMES = 2;
+const SIDEKICK_NAMES = 0;
 const SIDEKICK_EXTRAS = SIDEKICK_SKINS + SIDEKICK_NAMES;
 const TANK_CATS = new Set(C.TANK_CATS);
 // Locker slot -> users column

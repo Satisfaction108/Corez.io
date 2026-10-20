@@ -1694,7 +1694,7 @@ let incoming = async function(message, socket) {
                 // raid perks: blast, chain spark, seismic pulse, lucky strike
                 if (typeof kindF === "string" && kindF.startsWith("pk")) { try { if (raidPerks.onFX(m)) break; } catch (e) { /* */ } }
                 // round 9: your shot chipped rock (server gems.js chipHit): dust flies into your
-                if (kindF === "mchip") { try { mineDust.burst(fx.x, fx.y, m[3] | 0, m[4] | 0); } catch (e) { /* */ } break; }
+                if (kindF === "mchip") { try { mineDust.burst(fx.x, fx.y, m[3] | 0); } catch (e) { /* */ } break; }
                 // a rich vein near you (server quietVein.js): an edge arrow for a while (app.js
                 if (kindF === "veinping") {
                     global.veinPing = { x: fx.x, y: fx.y, until: nowF + Math.max(3000, Math.min(30000, (m[3] | 0) || 12000)) };
@@ -2048,6 +2048,9 @@ let incoming = async function(message, socket) {
             case 'SVS': {
                 // Save & leave: the countdown, a stop, or the code (saveCode.js)
                 try { saveCode.onPacket(JSON.parse(m[0])); } catch (e) { /* */ }
+            } break;
+            case 'UPD': {
+                global.serverUpdatingAt = Date.now();
             } break;
             case 'KO': {
                 // Account kicked this socket (logged in elsewhere, banned):
@@ -2703,13 +2706,29 @@ const socketInit = () => {
         // A drop mid-game (proxy reload, wifi blip) reconnects on its own; the
         // server keeps your raid for 45 seconds under the tab's resume token.
         const tries = global.autoReconnect ? global.autoReconnect.tries : 0;
+        const updating = global.serverUpdatingAt > 0 && Date.now() - global.serverUpdatingAt < 15000;
+        global.serverUpdatingAt = 0;
+        if (updating && (global.gameStart || global.autoReconnect) && !global.noAutoReconnect) {
+            global.autoReconnect = { tries: 0, at: Date.now(), update: true };
+            global.message = "";
+            const back = () => { if (global.autoReconnect && global.autoReconnect.update) global.reconnect(); };
+            const giveUp = () => {
+                if (!global.autoReconnect || !global.autoReconnect.update) return;
+                global.autoReconnect = null;
+                global.disconnected = true;
+                global.message = "The update is taking longer than usual. Press Reconnect to try again.";
+            };
+            if (window.dwVersion && window.dwVersion.afterUpdate) window.dwVersion.afterUpdate(back, giveUp);
+            else setTimeout(back, 3000);
+            return;
+        }
         if ((global.gameStart || global.autoReconnect) && !global.noAutoReconnect && tries < RECONNECT_TRIES) {
-            global.autoReconnect = { tries: tries + 1, at: Date.now() };
+            global.autoReconnect = { tries: tries + 1, at: Date.now(), update: !!(global.autoReconnect && global.autoReconnect.update) };
             const wait = Math.min(4000, 500 + tries * 500);
             setTimeout(() => {
                 if (!global.autoReconnect) return;
                 global.reconnect();
-                global.message = "Connection dropped. Reconnecting (try " + global.autoReconnect.tries + " of " + RECONNECT_TRIES + ")...";
+                global.message = global.autoReconnect.update ? "" : "Connection dropped. Reconnecting (try " + global.autoReconnect.tries + " of " + RECONNECT_TRIES + ")...";
             }, wait);
             return;
         }

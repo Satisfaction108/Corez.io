@@ -794,11 +794,8 @@ test('looks: twenty plain tanks with one smiley, body-only skins, sidekick-only 
     const art = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekickArt.js'), 'utf8');
     assert.match(art, /export function drawFace\(c, r\)/, 'the face takes no options');
     assert.match(art, /drawFace\(c, r\);\n\}/, 'and every body ends with it');
-    // name styles of their own
-    const names = C.ITEMS.filter(i => i.cat === 'sdName');
-    assert.ok(names.length >= 4 && names.length <= 5);
-    const kinds = new Set(C.ITEMS.filter(i => i.cat === 'nameStyle').map(i => i.style.kind));
-    for (const n of names) assert.ok(!kinds.has(n.style.kind), n.id + ' is not a player name style');
+    // no sidekick name styles on sale
+    assert.equal(C.ITEMS.filter(i => i.cat === 'sdName').length, 0);
 });
 
 // ── lifecycle ─────────────────────────────────────────────────────────
@@ -1037,7 +1034,7 @@ test('shop: a daily Sidekicks shelf (4 sidekicks, 3 skins, 2 name styles), Basic
     const rot = store.rotationFor(TODAY, 2, NOW);
     assert.equal(rot.sidekicks.length, store.SIDEKICK_COUNT + store.SIDEKICK_EXTRAS);
     const cats = rot.sidekicks.map(id => C.byId(id).cat);
-    assert.deepEqual(cats, ['sidekick', 'sidekick', 'sidekick', 'sidekick', 'sdSkin', 'sdSkin', 'sdSkin', 'sdName', 'sdName']);
+    assert.deepEqual(cats, ['sidekick', 'sidekick', 'sidekick', 'sidekick', 'sdSkin', 'sdSkin', 'sdSkin']);
     assert.ok(!rot.sidekicks.includes(C.BASIC_SIDEKICK_ID), 'Basic sits on the shelf every day instead');
     assert.ok(![...rot.featured, ...rot.daily].some(id => C.SIDEKICK_CATS.includes(C.byId(id).cat)), 'Featured and Daily stay tank items');
     // it changes day to day, and it's stored
@@ -1047,7 +1044,7 @@ test('shop: a daily Sidekicks shelf (4 sidekicks, 3 skins, 2 name styles), Basic
     store.rotationFor(TODAY - 5, 2, NOW);
     d().run('UPDATE shop_rotations SET sidekicks = NULL WHERE day = ?', TODAY - 5);
     const old = store.readRotation(TODAY - 5);
-    assert.equal(old.sidekicks.length, 9);
+    assert.equal(old.sidekicks.length, 7);
     assert.deepEqual(store.readRotation(TODAY - 5).sidekicks, old.sidekicks);
     // every sidekick, face and name style turns up within a season
     const seen = new Set();
@@ -1079,7 +1076,7 @@ test('shop: buying anything puts it on, sidekicks included; gifts and refunds be
     const want = {
         skin: rot.daily.find(id => C.byId(id).cat === 'skin') || rot.featured.find(id => C.byId(id).cat === 'skin'),
         nameStyle: rot.daily.find(id => C.byId(id).cat === 'nameStyle') || rot.featured.find(id => C.byId(id).cat === 'nameStyle'),
-        sidekick: rot.sidekicks[1], sdSkin: rot.sidekicks[4], sdName: rot.sidekicks[7],
+        sidekick: rot.sidekicks[1], sdSkin: rot.sidekicks[4],
     };
     for (const [slot, id] of Object.entries(want)) {
         if (!id) continue;
@@ -1092,7 +1089,7 @@ test('shop: buying anything puts it on, sidekicks included; gifts and refunds be
     assert.equal(store.equippedOf(users.byId(u.id)).sidekick, C.BASIC_SIDEKICK_ID);
     // what the game gets at spawn
     const sf = store.sidekickFor(users.byId(u.id));
-    assert.deepEqual(sf, { nid: C.byId(C.BASIC_SIDEKICK_ID).nid, skin: C.byId(want.sdSkin).nid, ns: C.byId(want.sdName).nid, name: 'Buddy', color: '' });
+    assert.deepEqual(sf, { nid: C.byId(C.BASIC_SIDEKICK_ID).nid, skin: C.byId(want.sdSkin).nid, ns: 0, name: 'Buddy', color: '' });
     // Custom Color goes on once it has a colour
     const r = store.purchase(u.id, { itemId: 'ns_custom', day: TODAY, idempotencyKey: key(), color: '#7ad3ff' }, { now: NOW });
     assert.equal(r.equipped.nameStyle, 'ns_custom');
@@ -1180,6 +1177,39 @@ test('migration v11: retired items are refunded once at what was paid, ledger ad
     assert.equal(users.byId(u.id).dust_milli, after.dust_milli);
     // the shelves are drawn again from the new catalog
     assert.ok(!store.readRotation(TODAY).sidekicks.includes('sd_spooky'));
+});
+
+test('migration v16: every sidekick name style is refunded, taken back and taken off, level ones pay their fallback', () => {
+    const up = migrations.MIGRATIONS.find(m => m.version === 16).up;
+    assert.deepEqual(migrations.V16_RETIRED, ['sdn_sticker', 'sdn_bubbly', 'sdn_candy', 'sdn_pixel', 'sdn_sparkle']);
+    const u = mkUser(1000), leveled = mkUser(2000), daily = mkUser(3000);
+    let pid = 0;
+    const purchase = (buyer, item, price) => Number(d().run('INSERT INTO purchases (user_id, idem_key, item_id, price_milli, day, is_gift, recipient_id, gift_message, created_at) VALUES (?, ?, ?, ?, ?, 0, NULL, NULL, ?)',
+        buyer.id, 'v16-' + (++pid), item, price, TODAY, NOW - DAY).lastInsertRowid);
+    const own = (who, item, source, p) => d().run('INSERT INTO owned_items (user_id, item_id, source, purchase_id, acquired_at) VALUES (?, ?, ?, ?, ?)', who.id, item, source, p, NOW - DAY);
+    const p1 = purchase(u, 'sdn_sparkle', 160000), p2 = purchase(u, 'sdn_sticker', 15000);
+    own(u, 'sdn_sparkle', 'purchase', p1); own(u, 'sdn_sticker', 'purchase', p2);
+    own(u, 'sd_octo', 'purchase', purchase(u, 'sd_octo', 90000));
+    d().run("UPDATE users SET equip_sd_name = 'sdn_sparkle' WHERE id = ?", u.id);
+    own(leveled, 'sdn_candy', 'level', null); own(leveled, 'sdn_pixel', 'level', null);
+    d().run("UPDATE users SET equip_sd_name = 'sdn_pixel' WHERE id = ?", leveled.id);
+    own(daily, 'sdn_bubbly', 'grant', null);
+    const before = users.byId(u.id).dust_milli, lBefore = users.byId(leveled.id).dust_milli, dBefore = users.byId(daily.id).dust_milli;
+    up(d());
+    const after = users.byId(u.id);
+    assert.equal(after.dust_milli - before, 160000 + 15000, 'what was paid');
+    assert.equal(users.byId(leveled.id).dust_milli - lBefore, 15000 + 24000, 'level ones pay the level fallback');
+    assert.equal(users.byId(daily.id).dust_milli, dBefore, 'free grants pay nothing');
+    assert.deepEqual(store.lockerView(after).owned.map(i => i.id), ['sd_octo']);
+    for (const who of [u, leveled, daily]) {
+        assert.equal(users.byId(who.id).equip_sd_name, null, 'taken off');
+        assert.equal(d().get("SELECT COUNT(*) AS n FROM owned_items WHERE user_id = ? AND item_id LIKE 'sdn_%'", who.id).n, 0, 'taken back');
+    }
+    assert.equal(store.sidekickFor(users.byId(leveled.id)), null);
+    assert.equal(store.history(u.id, NOW).entries.find(e => e.purchaseId === p1).name, 'Sparkle', 'old receipts keep their names');
+    up(d());
+    assert.equal(users.byId(u.id).dust_milli, after.dust_milli, 'once only');
+    assert.equal(users.byId(leveled.id).dust_milli - lBefore, 15000 + 24000);
 });
 
 // ── switch ────────────────────────────────────────────────────────────

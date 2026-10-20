@@ -235,7 +235,7 @@ test('table: no in-game gems; a week of dust buys a cheap lobby item, and stays 
     // the cheapest lobby items on sale: one every week or two, never much more
     const shop = C.ITEMS.filter(it => !it.exclusive && !it.retired && it.price > 0 && it.id !== C.CUSTOM_COLOR_ID).map(it => it.price).sort((a, b) => a - b);
     const cheapest = shop[0];
-    assert.ok(week >= cheapest, 'a week (' + week + ') buys the cheapest item (' + cheapest + ')');
+    assert.ok(2 * week >= cheapest, 'two weeks (' + 2 * week + ') buy the cheapest item (' + cheapest + ')');
     assert.ok(week >= 15 * C.MILLI && week <= 25 * C.MILLI, 'a week is 15 to 25 dust, got ' + week);
     const commonTank = C.ITEMS.filter(it => it.cat === 'skin' && it.rarity === 'common' && !it.retired && !it.exclusive).map(it => it.price);
     assert.ok(2 * week >= Math.min(...commonTank), 'two weeks buy a common tank skin');

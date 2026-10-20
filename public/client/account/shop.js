@@ -158,7 +158,6 @@ function paint(el) {
             // Buddy (the Basic one) is always first on the shelf
             body.appendChild(section('Sidekicks', perm.filter((it) => it.cat === 'sidekick').concat(of(shelf, 'sidekick')).map((it) => card(it, 'side')), 'side'));
             body.appendChild(section('Sidekick skins', of(shelf, 'sdSkin').map((it) => card(it, 'side')), 'side'));
-            body.appendChild(section('Sidekick name styles', of(shelf, 'sdName').map((it) => card(it, 'side')), 'side'));
             return;
         }
         body.appendChild(section('Today’s featured items', data.featured.map((it) => card(it, 'feat')), 'feat'));

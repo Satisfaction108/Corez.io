@@ -11356,7 +11356,7 @@ import * as tankRecords from './tankRecords.js';
         return at > (global.spawnedAt || 0) && performance.now() - at < VAULT_SHIELD_MS + 1500;
     }
     const SPAWN_GRACE_MS = 5000;
-    const SHIELD_CAP_MS = 25000;
+    const SHIELD_CAP_MS = 45000;
     const WIND_SHIELD_MS = 10000;
     const shieldWatch = { on: false, moveAt: 0, fireAt: 0, offAt: 0, why: "" };
     function shieldWindOn() {
@@ -15728,6 +15728,9 @@ import * as tankRecords from './tankRecords.js';
             }
             return { mode: "down", title, line: msg || "Connection closed. Press Reconnect to get back in.",
                 back: true, re: true, dots: false, see: !!global.gameStart };
+        }
+        if (ra && ra.update) {
+            return { mode: "update", title: "Updating server...", line: "Reconnecting...", back: true, dots: true, see: !!global.gameStart };
         }
         if (ra) {
             return { mode: "retry", title: "Lost connection", line: "Trying again (" + (ra.tries | 0) + "/8)", back: true, dots: true, see: !!global.gameStart };

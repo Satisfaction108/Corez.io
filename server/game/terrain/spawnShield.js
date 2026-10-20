@@ -1,6 +1,6 @@
 'use strict';
 
-const CAP_MS = 25000;
+const CAP_MS = 45000;
 const UI_HOLD_MS = 3000;
 
 function arm(body, t = Date.now()) {

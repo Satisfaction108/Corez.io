@@ -3,7 +3,6 @@ import { global } from "./global.js";
 import { config } from "./config.js";
 
 const CAP = 120;            // specks alive at once
-const POP_CAP = 6;
 const px0 = new Float32Array(CAP), py0 = new Float32Array(CAP);
 const ox = new Float32Array(CAP), oy = new Float32Array(CAP);
 const born = new Float64Array(CAP), life = new Float32Array(CAP), sz = new Float32Array(CAP);
@@ -11,11 +10,6 @@ const col = new Uint8Array(CAP);
 let head = 0, live = 0;
 // 0 plain rock, then the ore tiers (copper .. diamond)
 export const COLS = ["#c8b79c", "#e0864a", "#dfe4ec", "#f2c94c", "#3fcf7a", "#ff5a6a", "#8fe8ff"];
-const pops = [];
-for (let i = 0; i < POP_CAP; i++) pops.push({ on: false, x: 0, y: 0, at: 0, text: "" });
-const popText = new Map();
-let popHead = 0;
-const FONT = "bold 15px Ubuntu, sans-serif";
 
 const easeOut = (k) => 1 - (1 - k) * (1 - k);
 function count(ore) {
@@ -23,7 +17,7 @@ function count(ore) {
     return config.graphical.fewerEffects || global.lowFx ? Math.ceil(n / 2) : n;
 }
 // one rock hit: x, y in world units
-export function burst(x, y, ore, n) {
+export function burst(x, y, ore) {
     ore = Math.max(0, Math.min(COLS.length - 1, ore | 0));
     const now = performance.now();
     const k = count(ore);
@@ -39,19 +33,12 @@ export function burst(x, y, ore, n) {
         col[j] = ore;
     }
     live = Math.min(CAP, live + k);
-    if ((n | 0) > 0) {
-        let t = popText.get(n | 0);
-        if (!t) { t = "+" + (n | 0) + ((n | 0) === 1 ? " gem" : " gems"); if (popText.size < 64) popText.set(n | 0, t); }
-        const p = pops[popHead];
-        popHead = (popHead + 1) % POP_CAP;
-        p.on = true; p.x = x; p.y = y; p.at = now; p.text = t;
-    }
 }
 export function alive() { return live; }
 
 // c: the world-layer context
 export function draw(c, px, py, ratio) {
-    if (!live && !popsOn()) return;
+    if (!live) return;
     const now = performance.now();
     const cx = global.screenWidth / 2, cy = global.screenHeight / 2;
     const me = global.player;
@@ -78,27 +65,7 @@ export function draw(c, px, py, ratio) {
         c.fillRect(sx - s, sy - s, s * 2, s * 2);
     }
     live = n;
-    // "+N gems" rises off the hit and fades
-    c.font = FONT;
-    c.textAlign = "center";
-    c.textBaseline = "middle";
-    c.lineJoin = "round";
-    for (let i = 0; i < POP_CAP; i++) {
-        const p = pops[i];
-        if (!p.on) continue;
-        const age = now - p.at;
-        if (age > 900) { p.on = false; continue; }
-        const k = age / 900;
-        const sx = ratio * p.x - px + cx, sy = ratio * p.y - py + cy - 18 - 34 * easeOut(k);
-        c.globalAlpha = k > 0.6 ? (1 - k) / 0.4 : 1;
-        c.lineWidth = 4;
-        c.strokeStyle = "#120e15";
-        c.strokeText(p.text, sx, sy);
-        c.fillStyle = "#4fe08a";
-        c.fillText(p.text, sx, sy);
-    }
     c.restore();
 }
-function popsOn() { for (let i = 0; i < POP_CAP; i++) if (pops[i].on) return true; return false; }
 // QA / standalone renders
 window.dwMineDust = { burst, alive };

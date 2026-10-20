@@ -40,14 +40,14 @@
         Object.freeze({ day: 7, dustMilli: 0, item: 'day7', fallbackMilli: 4000 }),
     ]);
     const DAY3_ITEMS = Object.freeze([
-        'sd_buddy', 'ns_sunset', 'sdn_sticker', 'ns_frost', 'sk_racer',
+        'sd_buddy', 'ns_sunset', 'ns_frost', 'sk_racer',
         'ns_lemon', 'sd_flanky', 'ns_seafoam', 'sk_polka', 'ns_ash',
         'ns_coral', 'ns_lilac',
     ]);
     const DAY7_ITEMS = Object.freeze([
         'sds_stripes', 'sds_dots', 'ns_glacier', 'sds_twotone', 'ns_candy',
         'sk_bullseye', 'ns_mint_rush', 'sd_bonk', 'ns_bubblegum', 'sds_checker',
-        'ns_tangerine', 'sk_chevron', 'sdn_bubbly', 'ns_lagoon', 'sds_camo',
+        'ns_tangerine', 'sk_chevron', 'ns_lagoon', 'sds_camo',
         'ns_ember', 'sd_zippy',
     ]);
     function weekBonusMilli(week) {

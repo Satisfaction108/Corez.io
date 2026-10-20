@@ -1,3 +1,5 @@
+const nodeFs = require('fs');
+const nodePath = require('path');
 const storm = require('../../terrain/storm.js');
 const vault = require('../../terrain/vault.js');
 const spawnShield = require('../../terrain/spawnShield.js');
@@ -3224,7 +3226,7 @@ function heldBanks() {
     for (const v of resumeStore.values()) if (v && v.sock && v.sock._bankLease && !out.includes(v.sock)) out.push(v.sock);
     return out;
 }
-function saveResume(socket, body) {
+function saveResume(socket, body, all = false) {
     const keys = resumeKeysFor(socket);
     if (!keys.length) return;
     const token = keys[0];
@@ -3288,7 +3290,7 @@ function saveResume(socket, body) {
         snap.botSoftLeft = Math.max(0, (body.botSoftUntil || 0) - t);
         snap.botNewbie = !!body.botNewbie;
         snap.growEff = body._growEff || 0;
-        if (hitAgo > RESUME_SAFE_MS || snap.fresh) {
+        if (all || hitAgo > RESUME_SAFE_MS || snap.fresh) {
             snap.carried = (body.carriedGems | 0);
             body.carriedGems = 0;     // kept for the resume, so it must not also drop
             // its gemdust goes with it
@@ -3302,9 +3304,59 @@ function saveResume(socket, body) {
     if (process.env.RESUME_DEBUG) console.log('[RESUME] saved', token.slice(0, 6), 'alive', snap.alive, 'banked', snap.sock.gemBanked, 'carried', snap.carried, 'drill', snap.sock.shop && snap.sock.shop.drill, 'raw', (snap.skillRaw || []).join(','), 'pts', snap.points, 'raid', raidId);
     return snap;
 }
+const UPDATE_RESUME_MS = 3 * 60 * 1000;
+let updLoaded = false;
+function updateFile() {
+    let dir = null;
+    try { dir = require('../../../accounts/config.js').dataDir; } catch { /* */ }
+    const port = String((global.gameManager && global.gameManager.port) || 'main').replace(/[^\w-]/g, '');
+    return nodePath.join(dir || nodePath.join(__dirname, '..', '..', '..', '..', 'data'), 'update-resume-' + port + '.json');
+}
+function saveForUpdate() {
+    if (!Config.dig_royale || Config.tutorial || Config.royale_duos) return 0;
+    const out = [];
+    for (const c of connectedClients()) {
+        if (!c || c.leftOnPurpose) continue;
+        try { c.talk('UPD'); } catch { /* */ }
+        if (!c.resumeToken) continue;
+        const b = c.player && c.player.body;
+        const snap = saveResume(c, b && b.socket === c ? b : null, true);
+        if (snap && !out.includes(snap)) out.push(snap);
+    }
+    for (const v of resumeStore.values()) if (!out.includes(v)) out.push(v);
+    const rows = out.map(v => {
+        const bankStored = !!(v.sock && v.sock._bankLease) && bank.release(v.sock) != null;
+        return Object.assign({}, v, { bankStored, baseKey: null, _colorHeld: false, sock: Object.assign({}, v.sock, { _bankLease: null, revenge: null }) });
+    });
+    nodeFs.writeFileSync(updateFile(), JSON.stringify({ at: now(), rows }), { mode: 0o600 });
+    console.log('[RAID] Saved ' + rows.length + ' players for the update.');
+    return rows.length;
+}
+function loadForUpdate() {
+    if (updLoaded) return;
+    updLoaded = true;
+    if (!Config.dig_royale || Config.tutorial || Config.royale_duos) return;
+    const file = updateFile();
+    let data = null;
+    try { data = JSON.parse(nodeFs.readFileSync(file, 'utf8')); } catch { return; }
+    try { nodeFs.unlinkSync(file); } catch { /* */ }
+    if (!raidId) startRaid(true);
+    const t = now();
+    if (!data || !Array.isArray(data.rows) || !(t - (data.at || 0) < UPDATE_RESUME_MS)) return;
+    let n = 0;
+    for (const v of data.rows) {
+        if (!v || !Array.isArray(v.keys) || !v.keys.length || !v.sock) continue;
+        const snap = Object.assign(v, { at: t, raidId, upd: true });
+        for (const k of snap.keys) resumeStore.set(k, snap);
+        holdSnapColor(snap);
+        n++;
+    }
+    console.log('[RAID] ' + n + ' players from before the update can pick up where they were.');
+}
 // Called when a new socket presents its token (before it spawns).
 function claimResume(socket, token) {
     if (!Config.dig_royale || !socket || !token) return false;
+    loadForUpdate();
     const myId = (socket.account && socket.account.id) || null;
     // a guest's raid never becomes an account's, and never someone else's;
     // a token holding another identity's raid falls through to the account's
@@ -3323,6 +3375,7 @@ function claimResume(socket, token) {
     // and then claimed): the snapshot's lease wins, this one goes back
     if (socket._bankLease && socket._bankLease !== (snap.sock && snap.sock._bankLease)) bank.release(socket);
     Object.assign(socket, snap.sock);
+    if (snap.upd && snap.bankStored) { socket._bankOut = false; socket._updKept = socket.bankKept | 0; socket.gemBanked = 0; socket.bankKept = 0; }
     // the base kept for this raid follows the player onto the new socket;
     // onHumanJoin rebinds it to the new body (ownerId, banner team, colour)
     if (snap.baseKey) { try { outposts.rekeyOwner(snap.baseKey, "s:" + socket.id); } catch { /* */ } }
@@ -4568,6 +4621,7 @@ function tick() {
     if (!Config.dig_royale) return;
     const t = now();
     if (!raidId) startRaid(true);
+    if (!updLoaded) guard('update resume load', () => loadForUpdate());
     if (stagingUntil) {
         guard('staging', () => tickStaging(t));
         // the wipe empties everyone's build: bodies and HUDs catch up here
@@ -4756,7 +4810,10 @@ saveCodes.attach({
 });
 // a clean shutdown puts every bank back at once
 try {
-    require('../../../accounts/index.js').onShutdown(() => bank.releaseAll(connectedClients(), heldBanks()));
+    require('../../../accounts/index.js').onShutdown(() => {
+        guard('update resume', () => saveForUpdate());
+        bank.releaseAll(connectedClients(), heldBanks());
+    });
 } catch (e) { /* accounts not loaded */ }
 
 // entity.contemplationOfMortality calls this when a real player takes damage
@@ -4825,6 +4882,8 @@ module.exports = {
     // tests (fairPlay): a spawn pick with a storm-time floor, the storm rescue pass
     _safeSpawnSpot: (self, forBot, eta) => safeSpawnSpot(self, forBot, eta), _spawnSafeAt: (x, y, t) => spawnSafeAt(x, y, t), _tickSpawnRescue: (t) => tickSpawnRescue(t),
     _raidId: () => raidId,
+    _saveForUpdate: () => saveForUpdate(),
+    _bootForUpdate: () => { resumeStore.clear(); updLoaded = false; loadForUpdate(); },
     _stampRunaways: (f) => stampRunaways(f),
     _stampBotDifficulty: (b) => stampBotDifficulty(b), _checkFairOut: (b) => checkFairOut(b),
     // DBG spawnaudit [n] [trap|reset]: the spawn audit so far, after `n` extra

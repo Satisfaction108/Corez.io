@@ -92,8 +92,9 @@ global.XMLHttpRequest = function () { fetches.push(['xhr']); throw new Error('th
         const ids = g.flatMap((x) => x.items.map((y) => y.item.id));
         assert.equal(ids.length, live.length);
         assert.equal(new Set(ids).size, ids.length);
-        for (const cat of C.CATS) assert.ok(g.some((x) => x.cat === cat), 'missing category ' + cat);
-        assert.deepEqual(g.map((x) => x.cat), L.CAT_ORDER.filter((c) => C.CATS.includes(c)));
+        const liveCats = C.CATS.filter((cat) => live.some((it) => it.cat === cat));
+        for (const cat of liveCats) assert.ok(g.some((x) => x.cat === cat), 'missing category ' + cat);
+        assert.deepEqual(g.map((x) => x.cat), L.CAT_ORDER.filter((c) => liveCats.includes(c)));
         assert.deepEqual(L.counts(C.ITEMS).all, live.length);
     });
     await test('retired items are left out, unknown categories go last', () => {

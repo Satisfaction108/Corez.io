@@ -144,8 +144,8 @@
     const SKIN_FILLS = Object.freeze({ stripes: 1, dots: 1, twoTone: 1, checker: 1, camo: 1, frost: 1, gold: 1, galaxy: 1 });
     const NAME_KINDS = Object.freeze({ sticker: 1, bubbly: 1, candy: 1, pixel: 1, sparkle: 1 });
     const INK_RIM = '#120e15';   // the HUD ink
-    // Sidekick items that were in an earlier catalog (refunded by migration
-    // v11, accounts/migrations.js), by id: their names for old receipts.
+    // Sidekick items that were in an earlier catalog (refunded by migrations
+    // v11 and v16, accounts/migrations.js), by id: their names for old receipts.
     const RETIRED = Object.freeze({
         sd_squint: 'Squint', sd_boxer: 'Boxer', sd_pebble: 'Pebble', sd_sprout: 'Sprout', sd_bubbles: 'Bubbles', sd_chip: 'Chip',
         sd_prickles: 'Prickles', sd_robo: 'Robo', sd_frosty: 'Frosty', sd_candy: 'Candy Twin', sd_drillbit: 'Drillbit',
@@ -154,6 +154,7 @@
         sds_shades: 'Cool Shades', sds_sleepy: 'Sleepy', sds_blush: 'Blushing', sds_hearts: 'Heart Eyes', sds_wink: 'Cheeky',
         sds_grumpy: 'Grumpy', sds_starry: 'Starstruck', sds_party: 'Party Hat',
         sdn_bubble: 'Bubble', sdn_lemonade: 'Lemonade', sdn_mint: 'Minty', sdn_berry: 'Berry', sdn_sunbeam: 'Sunbeam', sdn_starlight: 'Starlight',
+        sdn_sticker: 'Sticker', sdn_bubbly: 'Bubbly', sdn_candy: 'Candy', sdn_pixel: 'Pixel', sdn_sparkle: 'Sparkle',
     });
 
     const RAW = [
@@ -481,18 +482,6 @@
         sds(316, 'sds_frost', 'Frosted', 'rare', 70, { fill: 'frost' }, 'A frosted rim and an icy cap, in its own colour.'),
         sds(309, 'sds_gold', 'Solid Gold', 'epic', 140, { fill: 'gold' }, 'A gilded rim with studs and a little shine.'),
         sds(310, 'sds_galaxy', 'Galaxy', 'legendary', 260, { fill: 'galaxy' }, 'An orbit ring and twinkling stars over its own colour.'),
-
-        // ---- sidekick name styles (nid 401..499): their own looks ----
-        sdn(407, 'sdn_sticker', 'Sticker', 'common', 15,
-            { kind: 'sticker', fill: '#ff6fa5', edge: '#ffffff', rim: INK_RIM }, 'Your name as a die-cut sticker.'),
-        sdn(408, 'sdn_bubbly', 'Bubbly', 'uncommon', 25,
-            { kind: 'bubbly', fill: '#ffffff', puff: '#7cc8ff', rim: '#123660' }, 'Round puffy letters, like a balloon.'),
-        sdn(409, 'sdn_candy', 'Candy', 'rare', 40,
-            { kind: 'candy', stops: ['#ff8fc8', '#ffd36e', '#8ff0c8'], rim: '#3a1030' }, 'Sweet candy colours, left to right.'),
-        sdn(410, 'sdn_pixel', 'Pixel', 'epic', 80,
-            { kind: 'pixel', fill: '#9dff6a', rim: '#0f2a12' }, 'Chunky pixels, straight out of an old game.'),
-        sdn(411, 'sdn_sparkle', 'Sparkle', 'legendary', 160,
-            { kind: 'sparkle', stops: ['#ffffff', '#e5d4ff'], rim: '#3b2370', star: '#ffe27a' }, 'A soft glow with little stars around it.'),
     ];
 
     // A catalog mistake should stop the server at boot, not show up as a

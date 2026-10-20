@@ -175,6 +175,28 @@ test('banks: guests keyed by guest id on the guests row; bad owners are refused'
     assert.equal(banks.parseOwner('g:' + gid(1)).kind, 'g');
 });
 
+test('banks: a deploy restart checks the whole bank back out, not the starter share', () => {
+    const bank = require('../../server/game/terrain/bank.js');
+    const hadConfig = 'Config' in global, oldConfig = global.Config;
+    global.Config = Object.assign({}, oldConfig || {}, { dig_royale: true, tutorial: false });
+    try {
+        const g = gid(4242);
+        banks.checkout('g:' + g, 'upd-seed'); banks.release('upd-seed', 5000);
+        const s = { guestId: g, gemBanked: 0, bankKept: 0, _updKept: 3000 };
+        assert.equal(bank.checkOut(s), 5000);
+        assert.equal(s.gemBanked, 5000, 'all of it');
+        assert.equal(s.bankKept, 3000);
+        assert.equal(s._updKept, null);
+        bank.release(s);
+        assert.equal(banks.peek('g:' + g), 5000, 'and all of it goes back');
+        const t = { guestId: g, gemBanked: 0, bankKept: 0 };
+        assert.ok(bank.checkOut(t) < 5000, 'a normal session still starts with the starter share');
+        bank.release(t);
+    } finally {
+        if (hadConfig) global.Config = oldConfig; else delete global.Config;
+    }
+});
+
 test('saves: 25 random Crockford characters, only the hash stored, audited without an IP', () => {
     const u = mkUser();
     const made = saves.create({ mode: 'solo', userId: u.id, data: { v: 1, label: 'Sniper', carried: 400, pts: 900 }, score: 1100, ip: '203.0.113.9' });

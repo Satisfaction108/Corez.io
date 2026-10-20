@@ -97,10 +97,12 @@ function checkOut(socket) {
     socket._bankLease = lease;
     socket._bankOwner = owner;
     socket._bankSavedAt = Date.now();
+    const full = socket._updKept != null;
     // Spawn in with a modest starter portion (25%, up to 800) of previous session's banked gems
-    const starter = got > 0 ? Math.min(got, Math.min(SESSION_KEEP_MAX, Math.max(50, Math.round(got * SESSION_KEEP_SHARE)))) : 0;
+    const starter = full ? got : got > 0 ? Math.min(got, Math.min(SESSION_KEEP_MAX, Math.max(50, Math.round(got * SESSION_KEEP_SHARE)))) : 0;
     socket.gemBanked = Math.max(0, (socket.gemBanked || 0) | 0) + starter;
-    socket.bankKept = (socket.bankKept | 0) + starter;
+    socket.bankKept = (socket.bankKept | 0) + (full ? Math.min(got, socket._updKept | 0) : starter);
+    socket._updKept = null;
     return starter;
 }
 

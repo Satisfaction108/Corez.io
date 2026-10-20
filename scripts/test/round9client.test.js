@@ -246,10 +246,11 @@ test('dust: pooled, capped, light profile, no per-frame allocation', () => {
     const m = src('mineDust.js');
     assert.match(m, /const CAP = 120;/);
     assert.match(m, /new Float32Array\(CAP\)/);
-    const draw = m.slice(m.indexOf('export function draw'), m.indexOf('function popsOn'));
+    const draw = m.slice(m.indexOf('export function draw'), m.indexOf('// QA'));
     assert.ok(!/new |\[\]|\{ *\w+:/.test(draw.replace(/\/\/.*$/gm, '')), 'draw() allocates nothing');
+    assert.ok(!/fillText|strokeText/.test(m), 'no "+N gems" text on the rock');
     assert.match(fs.readFileSync(path.join(REPO, 'scripts', 'build-client.js'), 'utf8'), /"client\/mineDust\.js",/);
-    assert.match(src('socketinit.js'), /if \(kindF === "mchip"\) \{ try \{ mineDust\.burst\(fx\.x, fx\.y, m\[3\] \| 0, m\[4\] \| 0\); \}/);
+    assert.match(src('socketinit.js'), /if \(kindF === "mchip"\) \{ try \{ mineDust\.burst\(fx\.x, fx\.y, m\[3\] \| 0\); \}/);
     assert.match(src('raidHeat.js'), /mineDust\.draw\(c, px, py, ratio\);/);
 });
 

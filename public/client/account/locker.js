@@ -313,27 +313,21 @@ function paint(el) {
             }))),
             h('div', { class: 'lk-sk-hint', text: (sk.color || null) === null ? 'Matches your tank colour in each raid.' : (sk.color === OWN ? 'Uses the sidekick\'s own colour.' : '') })));
 
-        // skin and name style: what you own, plus the default
+        // skin: what you own, plus the default
         const skins = owned.filter((x) => x.cat === 'sdSkin');
         bar.appendChild(chips('Skin', [{ id: null, label: 'Plain', el: pv.sidekickPreview({ w: 60, h: 54, kick, col: skCol(sk.color), r: 12, still: true }) }]
             .concat(skins.map((f) => ({ id: f.id, label: f.name, el: pv.sidekickPreview({ w: 60, h: 54, kick, look: f, col: skCol(sk.color), r: 12, still: true }) }))),
         sk.sdSkin, (id) => { sk.sdSkin = id; paintBar(); drawStage(); }));
-        const styles = owned.filter((x) => x.cat === 'sdName');
-        const shown = cleanName(sk.name) || kick.name;
-        const tag = (s) => pv.sidekickName(shown, s, { px: 14, h: 30, maxW: 120, kick, col: skCol(sk.color), look: sk.sdSkin });
-        bar.appendChild(chips('Name style', [{ id: null, label: 'Plain', el: tag(null) }]
-            .concat(styles.map((s) => ({ id: s.id, label: s.name, el: tag(s) }))),
-        sk.sdName, (id) => { sk.sdName = id; paintBar(); drawStage(); }));
-        if (!skins.length || !styles.length) {
+        if (!skins.length) {
             bar.appendChild(h('div', { class: 'lk-sk-more' },
-                h('span', { text: 'You can find more skins and name styles in the shop’s Sidekicks tab.' }),
+                h('span', { text: 'You can find more skins in the shop’s Sidekicks tab.' }),
                 h('button', { type: 'button', class: 'dw-link', text: 'Go to the shop', onclick: () => handlers.openShop() })));
         }
     }
     async function skSave(btn) {
         if (nameProblem(sk.name)) return;
         setBusy(btn, true, 'Saving...');
-        const r = await api.saveSidekick({ sidekick: sk.sidekick, sdSkin: sk.sdSkin, sdName: sk.sdName, name: cleanName(sk.name), color: sk.color });
+        const r = await api.saveSidekick({ sidekick: sk.sidekick, sdSkin: sk.sdSkin, sdName: null, name: cleanName(sk.name), color: sk.color });
         setBusy(btn, false);
         if (!r.ok) {
             const code = r.data && r.data.error && r.data.error.code;

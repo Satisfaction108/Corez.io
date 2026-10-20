@@ -28,7 +28,7 @@ async function landed(page) {
 
 async function age(page) {
     const me = await H.dbgMe(page);
-    return { me, age: me && me.cap ? 25000 - me.cap : null };
+    return { me, age: me && me.cap ? 45000 - me.cap : null };
 }
 
 (async () => {
@@ -38,10 +38,10 @@ async function age(page) {
     try {
         await H.play(page, origin);
         results = await H.runChecks([
-            ['spawn: the shield is up after landing, capped near 25 s', async () => {
+            ['spawn: the shield is up after landing, capped near 45 s', async () => {
                 const me = await landed(page);
                 await sleep(2500);
-                assert.ok(me.cap > 15000 && me.cap <= 25000, 'cap left ' + me.cap);
+                assert.ok(me.cap > 35000 && me.cap <= 45000, 'cap left ' + me.cap);
                 await page.eval(FIRE_WATCH);
                 return 'cap left ' + me.cap + ' ms';
             }],
@@ -113,9 +113,9 @@ async function age(page) {
                 assert.ok(a > 5200, 'still inside the 5 s grace (' + a + '), the check proves nothing');
                 return 'shielded ' + (a / 1000).toFixed(1) + ' s after the spawn, past the grace';
             }],
-            ['cap: idling with the shield ends it by about 25 s', async () => {
+            ['cap: idling with the shield ends it by about 45 s', async () => {
                 let me = null;
-                for (let i = 0; i < 80; i++) {
+                for (let i = 0; i < 120; i++) {
                     me = await H.dbgMe(page);
                     if (!me.invuln) break;
                     await sleep(500);

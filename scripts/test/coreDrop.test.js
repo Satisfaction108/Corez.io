@@ -89,7 +89,7 @@ test('chance: 0.2 by default, env override, clamped', () => {
 test('pool: lobby shop items only, never an owned or excluded one', () => {
     assert.ok(CD.POOL.length > 20, 'pool ' + CD.POOL.length);
     const cats = new Set(CD.POOL.map(it => it.cat));
-    for (const c of ['nameStyle', 'skin', 'sidekick', 'sdSkin', 'sdName']) assert.ok(cats.has(c), 'has ' + c);
+    for (const c of ['nameStyle', 'skin', 'sidekick', 'sdSkin']) assert.ok(cats.has(c), 'has ' + c);
     for (const it of CD.POOL) {
         assert.ok(!it.retired && !it.exclusive && !it.earn, it.id + ' excluded kind');
         assert.ok(it.price > 0, it.id + ' free');

@@ -29,6 +29,9 @@ const DEAD_SETTLE_MS = 400;   // dead: the card already had its time
 const TYPING_MS = 5000;       // menu: no reload this soon after a key press
 const LOOP_MS = 60000;
 const GUARD_KEY = "dwReloadFor";
+const REJOIN_KEY = "dwRejoinAfterUpdate";
+const UPDATE_POLL_MS = 1500;
+const UPDATE_WAIT_MS = 180000;
 
 const meta = document.querySelector('meta[name="client-version"]');
 let running = meta ? meta.getAttribute("content") || "" : "";
@@ -114,8 +117,9 @@ function moment() {
     return "later";
 }
 
-function reload() {
+function reload(rejoin) {
     try { sessionStorage.setItem(GUARD_KEY, JSON.stringify({ v: pending, at: Date.now() })); } catch (e) { /* */ }
+    if (rejoin) { try { sessionStorage.setItem(REJOIN_KEY, String(Date.now())); } catch (e) { /* */ } }
     stopWatch();
     // app.js asks "leave site?" while a game is live
     try { window.onbeforeunload = null; } catch (e) { /* */ }
@@ -132,7 +136,7 @@ function note() {
 function step() {
     if (!pending) return stopWatch();
     const m = moment();
-    if (m === "menu" || m === "now") return reload();
+    if (m === "menu" || m === "now") return reload(m === "now");
     // dead with an update waiting: the reload comes once the card's 3 s are
     // up, so Play again stays off from the moment you die (app.js, canvas.js)
     global.updateHoldsRespawn = (m === "later" || m === "hold") && global.died;
@@ -166,6 +170,24 @@ export function beforePlay() {
     return Promise.race([asked, late]);
 }
 
+export function afterUpdate(onSame, onFail) {
+    const from = Date.now();
+    const poll = () => {
+        fetchVersion().then((v) => {
+            if (!v) {
+                if (Date.now() - from > UPDATE_WAIT_MS) { if (onFail) onFail(); return; }
+                setTimeout(poll, UPDATE_POLL_MS);
+                return;
+            }
+            checkedAt = Date.now();
+            if (running && v !== running && !reloadedRecently(v)) { pending = v; reload(true); return; }
+            if (!running) running = v;
+            onSame();
+        });
+    };
+    setTimeout(poll, UPDATE_POLL_MS);
+}
+
 function init() {
     addEventListener("keydown", () => { lastKeyAt = Date.now(); }, true);
     setInterval(() => { if (!document.hidden) check(); }, CHECK_MS);
@@ -175,7 +197,7 @@ function init() {
     });
     if (!running) check();
     window.dwVersion = {
-        check, onSocketOpen, beforePlay,
+        check, onSocketOpen, beforePlay, afterUpdate,
         // QA: what this tab runs, what it is waiting to load, and why not yet
         state: () => ({ running, pending, moment: pending ? moment() : "", safeFor: safeSince ? Date.now() - safeSince : 0 }),
     };

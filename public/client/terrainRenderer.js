@@ -606,7 +606,7 @@ class TerrainRenderer {
                         dx /= dl; dy /= dl;
                     }
                     this._impacts.push({ x: ev.x, y: ev.y, dx, dy, born: now,
-                                         small: !!ev.g,
+                                         small: !!ev.g, noChips: true,
                                          chips: this._bio ? this._bioChips(ev.k) : null,
                                          seed: (ev.k + Math.round(ev.x * 97) + (ev.g ? (now | 0) : 0)) & 0xffff });
                     if (this._impacts.length > 16) this._impacts.shift();
@@ -2965,8 +2965,9 @@ class TerrainRenderer {
                         ctx.restore();
                     }
                 }
-                if (im.ticksOnly) {
+                if (im.ticksOnly || im.noChips) {
                     ctx.globalAlpha = 1;
+                    if (im.noChips && dt >= 400) this._impacts.splice(i, 1);
                     continue;
                 }
                 // rock chips flying out fast off the rock

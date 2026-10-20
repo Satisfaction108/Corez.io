@@ -565,6 +565,31 @@ function v11(db, now = Date.now()) {
     db.run('UPDATE shop_rotations SET sidekicks = NULL');
 }
 
+const V16_RETIRED = ['sdn_sticker', 'sdn_bubbly', 'sdn_candy', 'sdn_pixel', 'sdn_sparkle'];
+const V16_LEVEL_MILLI = { sdn_candy: 15000, sdn_pixel: 24000 };
+function v16(db, now = Date.now()) {
+    const ids = V16_RETIRED, marks = ids.map(() => '?').join(', ');
+    const rows = db.all(`SELECT o.user_id, o.item_id, o.source, p.id AS pid, p.price_milli, p.is_gift, p.refunded_at
+                         FROM owned_items o LEFT JOIN purchases p ON p.id = o.purchase_id
+                         WHERE o.item_id IN (${marks}) ORDER BY o.user_id, o.item_id`, ...ids);
+    for (const r of rows) {
+        const paid = r.pid != null && r.refunded_at == null && (r.source === 'purchase' || r.source === 'gift');
+        const pay = paid ? Math.max(0, r.price_milli | 0) : r.source === 'level' ? (V16_LEVEL_MILLI[r.item_id] | 0) : 0;
+        if (pay > 0) {
+            db.run('UPDATE users SET dust_milli = dust_milli + ? WHERE id = ?', pay, r.user_id);
+            const bal = db.get('SELECT dust_milli FROM users WHERE id = ?', r.user_id);
+            db.run("INSERT INTO dust_ledger (user_id, delta_milli, balance_milli, kind, ref, created_at) VALUES (?, ?, ?, 'refund', ?, ?)",
+                r.user_id, pay, bal.dust_milli, 'retired:' + (r.pid != null ? r.pid : r.item_id), now);
+            db.run("INSERT INTO audit_log (at, user_id, actor, action, detail) VALUES (?, ?, 'system', 'store_retired_refund', ?)",
+                now, r.user_id, JSON.stringify({ itemId: r.item_id, purchaseId: r.pid, priceMilli: pay, source: r.source }));
+        }
+        if (r.pid != null && !r.is_gift && r.refunded_at == null) db.run('UPDATE purchases SET refunded_at = ? WHERE id = ?', now, r.pid);
+    }
+    db.run(`DELETE FROM owned_items WHERE item_id IN (${marks})`, ...ids);
+    db.run(`UPDATE users SET equip_sd_name = NULL WHERE equip_sd_name IN (${marks})`, ...ids);
+    db.run('UPDATE shop_rotations SET sidekicks = NULL');
+}
+
 // v12: the daily rewards track and web push (retention.js, push.js).
 //
 // daily_track: one row per account or guest browser (exactly one of user_id /
@@ -796,6 +821,7 @@ const MIGRATIONS = [
     { version: 13, up(db) { db.exec(V13); } },
     { version: 14, up(db) { db.exec(V14); } },
     { version: 15, up(db) { db.exec(V15); } },
+    { version: 16, up(db) { v16(db); } },
 ];
 
 function latestVersion() {
@@ -837,4 +863,4 @@ function apply(db, opts = {}) {
     return result;
 }
 
-module.exports = { apply, latestVersion, MIGRATIONS, V11_RETIRED };
+module.exports = { apply, latestVersion, MIGRATIONS, V11_RETIRED, V16_RETIRED };

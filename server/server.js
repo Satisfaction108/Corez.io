@@ -931,7 +931,6 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
         const workers = global.gameWorkers ? global.gameWorkers.size : 0;
         if (workers) { try { accounts.bus.toGame({ t: "shutdown" }); } catch (e) { /* */ } }
         try { accounts.shutdown(); } catch (e) { console.error("[accounts] shutdown failed: " + ((e && e.stack) || e)); }
-        if (workers) setTimeout(() => process.exit(0), 300);
-        else process.exit(0);
+        setTimeout(() => process.exit(0), 300);
     });
 }

@@ -275,6 +275,37 @@ test('reload: you come back where you were with no drop animation, build, bank a
         body.kill(); loop(2);
     }
 });
+test('update: a deploy restart tells everyone, saves them to disk and puts them back where they were', () => {
+    const sock = mkSocket();
+    const tank = spawnTank(sock);
+    tank.upgrades = [];
+    tank.define('twin'); tank.refreshBodyAttributes();
+    const raw = tank.skill.raw.slice();
+    for (let i = 0; i < 6; i++) grid.pushCircleFromVoronoi(tank, tank.realSize);
+    const x0 = tank.x, y0 = tank.y;
+    sock.gemBanked = 900;
+    tank.carriedGems = 130;
+    tank._lastDamageAt = Date.now() - 2000;
+    assert.ok(royale._saveForUpdate() >= 1, 'saved');
+    assert.ok(sock.packets.some(a => a[0] === 'UPD'), 'told it is an update');
+    const file = fs.readdirSync(process.env.DATA_DIR).find(f => /^update-resume-.*\.json$/.test(f));
+    assert.ok(file, 'written to disk');
+    tank.kill(); loop(2);
+    royale._bootForUpdate();
+    assert.ok(!fs.readdirSync(process.env.DATA_DIR).some(f => /^update-resume-/.test(f)), 'read once');
+    const back = mkSocket({ resumeToken: sock.resumeToken });
+    assert.equal(royale.claimResume(back, sock.resumeToken), true, 'claimed after the restart');
+    const body = spawnTank(back);
+    royale.applyPendingResume(back);
+    assert.ok(Math.hypot(body.x - x0, body.y - y0) < 30, 'same spot');
+    assert.deepEqual(body.defs, tank.defs, 'same tank');
+    assert.deepEqual(body.skill.raw, raw, 'same build');
+    assert.equal(back.gemBanked, 900, 'bank kept');
+    assert.equal(body.carriedGems, 130, 'satchel kept, even just after a hit');
+    const again = mkSocket({ resumeToken: sock.resumeToken });
+    assert.equal(royale.claimResume(again, sock.resumeToken), false, 'only once');
+    body.kill(); loop(2);
+});
 test('emerald: a hull that would land on one goes to the nearest spot it fits', () => {
     // an emerald well inside the map (one is planted if the build has none there)
     let emerald = [...grid.rocks.values()].find(rk => rk.ore === 4 && rk.alive && Math.abs(rk.worldCx) < 1800 && Math.abs(rk.worldCy) < 1100);

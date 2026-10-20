@@ -249,6 +249,11 @@
     function playAfterTutorial() {
         var want = false;
         try { want = sessionStorage.getItem(PLAY_AFTER_KEY) === '1'; sessionStorage.removeItem(PLAY_AFTER_KEY); } catch (e) { }
+        try {
+            var rejoinAt = +sessionStorage.getItem('dwRejoinAfterUpdate') || 0;
+            sessionStorage.removeItem('dwRejoinAfterUpdate');
+            if (rejoinAt && Date.now() - rejoinAt < 120000) want = true;
+        } catch (e) { }
         if (!want) return;
         var n = 0;
         (function tick() {
