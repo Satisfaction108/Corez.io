@@ -56,17 +56,25 @@ test('death card: room under the tiles, rows never overlap, the block grows', as
     assert.ok(many.rows.some(r => r.kind === 'icons') || many.rows.some(r => r.kind === 'perk' && r.iconsW));
 });
 
-test('death card: app.js sizes the card from the block and fits it on screen', () => {
+test('death card: one short card, no essay, still fits on screen', () => {
     const app = src('app.js');
-    const a = app.indexOf('const gameDrawDeadRoyale = () => {'), b = app.indexOf('function playAgainState()');
+    const a = app.indexOf('const drawRoyaleDeathCard = (A) => {'), b = app.indexOf('function playAgainState()');
     const card = app.slice(a, b);
+    assert.ok(a > 0 && b > a);
     assert.match(app, /import \* as deathText from '\.\/deathCardLogic\.js';/);
-    assert.match(card, /const leftH = tilesH \+ block\.h;/);
+    assert.ok(!/layoutText\(/.test(card), 'the essay block is gone');
+    assert.ok(!/Banked gems are safe/.test(card) && !/Bank sooner/.test(card));
+    assert.match(card, /scoreText\.cardPoints\(you\)/);
+    assert.match(card, /scoreText\.tiles\(you\)/);
+    assert.match(card, /\["DROPPED"/);
+    assert.match(card, /\["KILLS"/);
+    assert.match(card, /Kept /);
+    assert.match(card, /rankPanel\.draw\(/);
+    assert.match(card, /deathScreenGuest\(\)/);
+    assert.match(card, /global\.deathSignupCss/);
     assert.match(card, /k = Math\.max\(0\.62, k \* room \/ need\);/);
     assert.match(card, /if \(k !== 1\) \{ c\.save\(\); c\.scale\(k, k\); \}/);
     assert.match(card, /if \(k !== 1\) c\.restore\(\);\n    \};/);
-    assert.ok(!/fitLine\(ex/.test(card) && !/drawDeathPerkLine\(c, perkLine, hx/.test(card), 'the old one-line fit is gone');
-    // the camera lift is in real GUI units
     assert.match(card, /global\.deathCamLift = Math\.max\(0, sh \/ 2 - Math\.max\(110, py \/ 2 \+ 10\)\) \* k;/);
 });
 

@@ -12,7 +12,6 @@ import * as coach from './coach.js';
 import * as firstHints from './firstHints.js';
 import { touch, STICK, touchPref, haptic, AIMED_KIT, mobileFullscreen, touchPrimary } from './touch.js';
 import * as raidFinale from './raidFinale.js';
-import * as levelsHud from './levelsHud.js';
 import * as signupPrompt from './signupPrompt.js';
 import * as stormFx from './stormFx.js';
 import * as abilityFx from './abilityFx.js';
@@ -24,7 +23,7 @@ import * as crowns from './crowns.js';
 import * as scoreText from './scoreLogic.js';
 import * as newcomer from './newcomer.js';
 import * as firstSeconds from './firstSeconds.js';
-import { shopHint, minesBy } from './firstSecondsLogic.js';
+import { shopHint, minesBy, openingWanted, OPEN_LINE, bankUrgent, bankLine } from './firstSecondsLogic.js';
 import { full as fxFull, slamShowing, slamUp as juiceSlamUp, burst as juiceBurst, ring as juiceRing } from './juice.js';
 import * as autoQ from './autoQuality.js';
 import { ResGovernor, RES, resBudget, resLevels } from './autoQualityLogic.js';
@@ -8356,6 +8355,16 @@ import * as tankRecords from './tankRecords.js';
     // QA: what's in the lane queue
     window.dwLane = () => ({ cur: lane.cur ? laneText(lane.cur) : "", waiting: (global.messages || []).filter(m => m !== lane.cur).map(laneText), side: sideNotes.length });
 
+    function nearestVault() {
+        const x = global.player.renderx, y = global.player.rendery;
+        let best = null, bd = Infinity;
+        for (const v of global.vaults || []) {
+            if (!v || !isFinite(v.x) || !isFinite(v.y)) continue;
+            const dx = v.x - x, dy = v.y - y, d = Math.hypot(dx, dy);
+            if (d < bd) { bd = d; best = { x: v.x, y: v.y, dx, dy, d }; }
+        }
+        return best;
+    }
     function drawHudNotes(y) {
         const r = global.royale;
         const list = hudNoteList;
@@ -8395,9 +8404,28 @@ import * as tankRecords from './tankRecords.js';
                     if (dn) push(hudNote(0, "deposit", dn.text, dn.hot ? "#ff9a5c" : HUD.gold));
                 }
             }
-            const gfull = global.gems && global.gems.cap > 0 && (global.gems.carried | 0) >= global.gems.cap;
-            if (gfull && config.game.satchelWarning) push(hudNote(0, "carry", "Your satchel is full, so go bank it.", HUD.gold));
-        }
+            const g = global.gems;
+            if (g) {
+                if (!g.lifeAt) g.lifeAt = performance.now();
+                const gfull = g.cap > 0 && (g.carried | 0) >= g.cap;
+                const onPad = !!(global.vault && global.vault.onPad);
+                const aim = gfull ? nearestVault() : null;
+                const urgent = config.game.satchelWarning && bankUrgent({
+                    full: gfull, died: false, onPad,
+                    fullAge: performance.now() - (g.fullAt || -1e9),
+                });
+                if (urgent) {
+                    const n = hudNote(0, "carry", aim ? bankLine(aim.dx, aim.dy, aim.d) : "Go bank.", "#ff5a4a");
+                    n.pulse = 0.35 + 0.65 * Math.abs(Math.sin(performance.now() / 180));
+                    push(n);
+                } else if (gfull && config.game.satchelWarning) push(hudNote(0, "carry", "Your satchel is full, so go bank it.", HUD.gold));
+                else if (openingWanted({
+                    tutorial: !!global.tutorialMode, died: false, onPad, full: gfull,
+                    age: performance.now() - g.lifeAt, banked: g.banked | 0, kept: g.kept | 0,
+                    known: !!global.nxKnown, stage: global.nxStage | 0,
+                })) push(hudNote(0, "open", OPEN_LINE, HUD.gold));
+            }
+        } else if (global.gems) global.gems.lifeAt = 0;
         // the one message row: server lines, your kills, side cards
         try { laneMessage(push); } catch (e) { /* never break the frame */ }
         list.sort((a, b) => a.pri - b.pri);
@@ -10712,6 +10740,19 @@ import * as tankRecords from './tankRecords.js';
         const onScreen = (s, m) => s.x > -m && s.x < global.screenWidth + m && s.y > -m && s.y < global.screenHeight + m;
         const me = { x: global.player.renderx, y: global.player.rendery };
         const marks = [];
+        if (config.game.satchelWarning && !global.tutorialMode && !global.died) {
+            const g = global.gems;
+            const onPad = !!(global.vault && global.vault.onPad);
+            const gfull = !!(g && g.cap > 0 && (g.carried | 0) >= g.cap);
+            if (bankUrgent({ full: gfull, died: false, onPad, fullAge: g ? performance.now() - (g.fullAt || -1e9) : -1 })) {
+                const aim = nearestVault();
+                if (aim) {
+                    const s = toScreen(aim.x, aim.y);
+                    if (!onScreen(s, -40)) marks.push({ pri: -4, s, col: "#ff5a4a", glyph: "gem", name: "GO BANK", d: aim.d });
+                    else if (aim.d > 160) drawContractRing(c, s.x, s.y, 54 * ratio, now);
+                }
+            }
+        }
         // the contract's target: a ring on it when it's in view, else the
         // first edge marker
         const ob = r.you && nxShows("contracts") ? r.you.obj : null;
@@ -14516,166 +14557,12 @@ import * as tankRecords from './tankRecords.js';
         }
     };
     // ── Raid death screen ────────────────────────────────────────────────
-    // The whole card is there from the first frame (one short fade, nothing
-    // staggered). One wide card, low and centred: the life in numbers on the
-    // left, who got you and what's next on the right. The camera follows your
-    // killer meanwhile and lifts (deathCamLift, see drawGameplay) so they
-    // stay in view above the card. The footer is the Play again button (DOM,
-    // updateRoyaleDomButtons): it counts down the server's 3 s wait, then
-    // waits for a click, Enter, Space or RT. Nothing drops you in on its own;
-    // the raid end queues everyone itself (raidFinale.js).
+    // One short card: who got you, your points, then rank or create an account.
+    // The camera lifts (deathCamLift) so the killer stays above it. Respawn is
+    // the DOM button (updateRoyaleDomButtons): it counts down the 3 s wait,
+    // then waits for a click, Enter, Space or RT. Nothing drops you in on its
+    // own; the raid end queues everyone itself (raidFinale.js).
     const lastStormCount = () => !!(global.died && global.royale && global.royale.lock && raidFinale.countdownUp());
-    // "Your perks stay until the raid ends." centred on cx, your build's
-    // icons in front of it (raidPerks.js)
-    function drawDeathPerkLine(c, line, cx, y, maxW, A) {
-        const n = Math.min(10, raidPerks.build().length), s = 16;
-        const iconsW = n ? n * (s + 3) + 5 : 0;
-        const f = fitLine(line, 12.5, 9.5, Math.max(80, maxW - iconsW));
-        const tw = hudTextW(f.txt, f.qs);
-        const x0 = cx - (iconsW + tw) / 2;
-        if (n) raidPerks.drawDeathIcons(c, x0, y, s, A);
-        drawText(f.txt, x0 + iconsW, y, f.qs, HUD.gold, "left", true, A);
-    }
-    // The first raids' death card (newcomer.js stages 0-1): what got you and
-    // how to dodge it next time, what you kept, and one big Respawn.
-    const XP_STRIP_H = 30;
-    function xpStripTexts(d, w) {
-        const key = d.lv + "|" + d.into + "|" + d.need + "|" + d.life + "|" + d.next + "|" + (w | 0);
-        if (d._k === key) return d._t;
-        const lvl = "Lvl " + d.lv;
-        const gain = d.life > 0 ? "+" + d.life.toLocaleString("en-US") + " XP" : "";
-        const mid = levelsHud.xpLine(d);
-        const lvlW = hudTitleW(lvl, 15) + 18;
-        const midW = measureText(mid, 12) + 14;
-        const gainW = gain ? hudTitleW(gain, 14) + 14 : 0;
-        const nextRoom = w >= 560 ? Math.min(300, Math.round(w * 0.36)) : 0;
-        const nx = nextRoom && d.next ? fitLine(d.next, 12.5, 10, nextRoom - 14) : null;
-        d._k = key;
-        d._t = { lvl, gain, mid, lvlW, midW, gainW, nx, nextW: nx ? Math.min(nextRoom, measureText(nx.txt, nx.qs) + 14) : 0 };
-        return d._t;
-    }
-    function drawXpStrip(c, x, y, w, d, A) {
-        const h = XP_STRIP_H, t = xpStripTexts(d, w), my = y + h / 2;
-        c.save();
-        c.globalAlpha = A;
-        hudWell(c, x, y, w, h, 8, HUD.well, HUD.ink, 2);
-        c.restore();
-        hudTitle(t.lvl, x + 10, my, 15, HUD.teal, "left", A);
-        const bx = x + t.lvlW, bw = Math.max(60, Math.min(360, w - t.lvlW - t.midW - t.gainW - t.nextW - 12)), bh = 14, by = Math.round(my - bh / 2);
-        const k = d.max ? 1 : d.need > 0 ? Math.max(0, Math.min(1, d.into / d.need)) : 0;
-        const k0 = d.max ? 1 : d.need > 0 ? Math.max(0, Math.min(k, (d.from | 0) / d.need)) : 0;
-        c.save();
-        c.globalAlpha = A;
-        roundRectPath(c, bx, by, bw, bh, bh / 2);
-        c.fillStyle = HUD.track; c.fill();
-        if (k > 0) {
-            c.save();
-            roundRectPath(c, bx, by, bw, bh, bh / 2);
-            c.clip();
-            c.fillStyle = LEVEL_BAR; c.fillRect(bx, by, Math.round(bw * k), bh);
-            if (k0 > 0) { c.fillStyle = LEVEL_BAR_OLD; c.fillRect(bx, by, Math.round(bw * k0), bh); }
-            c.restore();
-        }
-        c.restore();
-        drawText(t.mid, bx + bw + 10, my, 12, HUD.text, "left", true, A);
-        if (t.gain) hudTitle(t.gain, bx + bw + t.midW + 6, my, 14, "#9dff8a", "left", A);
-        if (t.nx) drawText(t.nx.txt, x + w - 10, my, t.nx.qs, HUD.text, "right", true, A);
-        return h;
-    }
-    const gameDrawDeadNewcomer = (A) => {
-        const c = ctx[2];
-        const sw = global.screenWidth, sh = global.screenHeight;
-        const info = newcomer.deathInfo();
-        const W = Math.min(620, sw - 32), pad = 22, gap = 14;
-        const iw = W - pad * 2;
-        const tipLines = wrapLines(info.tip, 17, iw - 70).slice(0, 3);
-        const TIP_H = Math.max(64, 26 + tipLines.length * 23);
-        const KEPT_H = 44;
-        // the Points line, every death (playtest 5: the first two cards had none, later
-        const you = (global.royale && global.royale.you) || {};
-        const dln = scoreText.deathLine(you, global.finalCarried | 0, 0, global.finalNxKept | 0);
-        const PTS_H = 26;
-        // raid perks: they come back with you, said under what you kept
-        const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
-        const PERK_H = perkLine ? 26 : 0;
-        const aoLine = aoHud.deathLine();
-        const AO_H = aoLine ? 24 : 0;
-        // the rank card stays for the second raid (placement lives), not the first
-        const hasRank = newcomer.stage() >= 1 && rankPanel.hasContent();
-        const RANK_H = 106;
-        const lvc = levelsHud.deathCard(global.royaleDiedAt || 0);
-        const XPH = lvc ? XP_STRIP_H + gap : 0;
-        const cssK = sh / Math.max(1, window.innerHeight);
-        const PLAY_CSS_H = 74;
-        const FOOT = Math.round(PLAY_CSS_H * cssK);
-        const HEAD = 44;
-        const H = pad + HEAD + TIP_H + gap + KEPT_H + PTS_H + PERK_H + AO_H + XPH + (hasRank ? gap + RANK_H : 0) + gap + FOOT + 14;
-        const BTN = Math.round((40 + 22) * cssK);
-        const px = Math.round(sw / 2 - W / 2);
-        const py = Math.round(Math.max(12, sh - H - BTN - 12));
-        const cx = sw / 2;
-        global.deathCamLift = Math.max(0, sh / 2 - Math.max(110, py / 2 + 10));
-        deathCardFrac(px / sw, py / sh, W / sw, (H + BTN) / sh);
-        global.deathPanelCss = {
-            cx: Math.round(cx * window.innerWidth / Math.max(1, sw)),
-            top: Math.round((py + H) * window.innerHeight / Math.max(1, sh)) + 10,
-        };
-        hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.card, r: HUD.rBig + 2 });
-        drawPtsPops(px + W - 16, Math.max(14, py - 16), "right", -1);
-        const hx = px + pad;
-        let y = py + pad;
-        hudTitle("You died", cx, y + 16, 30, HUD.gold, "center", A);
-        y += HEAD;
-        // the tip: an icon for what got you, then how to dodge it
-        c.save();
-        c.globalAlpha = A;
-        hudWell(c, hx, y, iw, TIP_H, 12, "rgba(242,184,60,0.16)", HUD.ink, 2.5);
-        c.restore();
-        const icon = info.kind === "storm" ? "clock" : info.kind === "rock" ? "pickaxe" : info.kind === "raidend" ? "clock" : "skull";
-        drawDeathIcon(icon, hx + 34, y + TIP_H / 2, 30, A * 0.9);
-        let ty = y + TIP_H / 2 - (tipLines.length - 1) * 11.5;
-        for (const ln of tipLines) { drawText(ln, hx + 64, ty, 17, HUD.head, "left", true, A); ty += 23; }
-        y += TIP_H + gap;
-        // what you kept
-        c.save();
-        c.globalAlpha = A;
-        hudWell(c, hx, y, iw, KEPT_H, 10, HUD.well, HUD.ink, 2);
-        c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
-        gemPath(c, hx + 22, y + KEPT_H / 2, 7); c.fill(); c.stroke();
-        c.restore();
-        const kf = fitLine(info.kept, 15, 10, iw - 54);
-        drawText(kf.txt, hx + 40, y + KEPT_H / 2, kf.qs, HUD.gold, "left", true, A);
-        const pf = fitLine(dln.head + " (" + dln.lost + ")", 14, 9.5, iw);
-        drawText(pf.txt, cx, y + KEPT_H + PTS_H / 2 + 2, pf.qs, dln.hurt ? "#ff9a8c" : HUD.gold, "center", true, A);
-        if (perkLine) drawDeathPerkLine(c, perkLine, cx, y + KEPT_H + PTS_H + PERK_H / 2 + 4, iw, A);
-        if (aoLine) { const af = fitLine(aoLine, 14, 9.5, iw); drawText(af.txt, cx, y + KEPT_H + PTS_H + PERK_H + AO_H / 2 + 2, af.qs, HUD.sky, "center", true, A); }
-        y += KEPT_H + PTS_H + PERK_H + AO_H + gap;
-        if (lvc) { drawXpStrip(c, hx, y, iw, lvc, A); y += XPH; }
-        if (hasRank) {
-            try {
-                rankPanel.draw(c, hx, y, iw, RANK_H,
-                    { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk, theme: HUD.theme }, A);
-            } catch (e) { /* never break the death screen */ }
-            y += RANK_H + gap;
-        }
-        // the big Respawn (DOM, placed here)
-        const playW = iw;
-        const toCssX = window.innerWidth / Math.max(1, sw), toCssY = window.innerHeight / Math.max(1, sh);
-        global.deathPlayCss = { cx: Math.round(cx * toCssX), top: Math.round(y * toCssY), w: Math.round(playW * toCssX), h: PLAY_CSS_H, big: true };
-        global.clickables.royalePrev.hide();
-        global.clickables.royaleNext.hide();
-        global.clickables.deathRespawn.hide();
-        if (typeof royaleDomBuilt !== "undefined" && royaleDomBuilt) { global.clickables.royalePlay.hide(); return; }
-        if (!global.disconnected) {
-            const cr = global.canvas.height / global.screenHeight / global.ratio;
-            const st = playAgainState();
-            drawButton(cx, y, playW, FOOT, st.ready ? A : A * 0.5, "rect", st.label, 26, false, false, false, st.ready, "royalePlay", cr, 0);
-            if (!st.ready) global.clickables.royalePlay.hide();
-            const bty = py + H + 12;
-            drawButton(cx - 90, bty, 150, 32, A, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
-            drawButton(cx + 90, bty, 150, 32, A, "rect", "Home", 15, false, false, false, true, "exitGame", cr, 0);
-        }
-    };
     // the tank this life ended in, kept from the moment of death
     let deathTankAt = -1, deathTank = null;
     function deathTankOf() {
@@ -14695,6 +14582,7 @@ import * as tankRecords from './tankRecords.js';
             global.clickables.deathRespawn.hide();
             global.clickables.royalePlay.hide();
             global.clickables.royaleSpectate.hide();
+            global.deathSignupCss = null;
             return;
         }
         const c = ctx[2];
@@ -14702,8 +14590,8 @@ import * as tankRecords from './tankRecords.js';
         const dy = deathText.introSlide(A, deathCalm());
         if (dy) { c.save(); c.translate(0, dy); }
         try {
-            if (newcomer.deathCardWanted()) gameDrawDeadNewcomer(A);
-            else drawRoyaleDeathCard(A);
+            global.deathSignupCss = null;
+            drawRoyaleDeathCard(A);
         } finally { if (dy) c.restore(); }
     };
     let deathRecAt = -1, deathRec = null;
@@ -14719,52 +14607,69 @@ import * as tankRecords from './tankRecords.js';
         }
         return deathRec;
     }
+    function deathScreenGuest() {
+        if (global.tutorialMode || window.dwEmbed) return false;
+        if (global.acct) return false;
+        try {
+            const a = window.dwAccount;
+            if (a && a.me && a.me()) return false;
+        } catch (e) { void e; }
+        return true;
+    }
+    function deathWhoLine() {
+        const cause = global.finalCause || "";
+        if (cause === "raidend") return "The raid ended";
+        if (cause === "rock") return "Crushed by the rock";
+        if (cause === "storm") return "Lost in the storm";
+        if (cause === "base") return "Shot by a base";
+        if (cause === "core") return "Killed by the Core";
+        const names = global.finalKillers || [];
+        return names.length ? "Killed by " + names.join(" and ") : "";
+    }
     const drawRoyaleDeathCard = (A) => {
-        const you = global.royale.you || {};
-        const rv = you.revenge || null;
+        const you = (global.royale && global.royale.you) || {};
         const c = ctx[2];
-
-        // ── the words under the tiles (they size the card, deathCardLogic) ──
-        const extras = [];
-        const tRec = deathTankRecordOf(you);
-        if (tRec && tRec.newPB) extras.push("New " + tRec.tank + " personal best: " + util.formatLargeNumber(tRec.score) + " pts this life!");
-        else if (you.dl && (you.dl.run | 0) > 0 && global.aoWorld) extras.push("This life: " + util.formatLargeNumber(you.dl.run | 0) + " pts" + ((you.br | 0) > (you.dl.run | 0) ? " (Best run today: " + util.formatLargeNumber(you.br | 0) + ")" : ""));
-        if ((global.finalInsured | 0) > 0) extras.push("Your insurance saved " + util.formatLargeNumber(global.finalInsured | 0) + " of it");
-        if ((global.finalStreak | 0) >= 3) extras.push("Your " + (global.finalStreak | 0) + " kill streak is over");
-        if (global.finalDrillLost) extras.push("Your drill dropped a tier");
-        { const aoLine = aoHud.deathLine(); if (aoLine) extras.push(aoLine); }
-        // bank.js: only savings from earlier raids pay for a death "Points: 6,942 (lost
-        const dln = scoreText.deathLine(you, global.finalCarried | 0, global.finalBankLoss | 0, global.finalNxKept | 0);
-        if (dln.savings) extras.push(dln.savings);
-        // past the soft line: the BANKED PTS tile's gems (scoreLogic.bankSoftLine)
-        { const bsl = scoreText.bankSoftLine(scoreText.parts(you)); if (bsl) extras.push(bsl); }
-        // raid perks: one more line under the stats, with your build's icons
-        // (not when it was the raid ending that took everyone down)
-        const perkLine = global.finalCause === "raidend" ? "" : raidPerks.deathLine();
-        const perkIcons = perkLine ? Math.min(10, raidPerks.build().length) : 0;
-        const hasRank = rankPanel.hasContent();
-        const lvc = levelsHud.deathCard(global.royaleDiedAt || 0);
-        const HEAD = 64, TILE = 44, NEXT_H = 40, WHO_H = 74, PLAY_CSS_H = 58;
-        const RANK_H = hasRank ? rankPanel.panelHeight() : 0;
-        const pad = 18, gap = 10, IN = 12;
+        deathTankRecordOf(you);
+        const guest = deathScreenGuest();
+        const who = deathWhoLine();
+        const dTank = deathTankOf();
+        const whoLine = who && dTank && dTank.name ? who + " · " + dTank.name : (who || (dTank && dTank.name) || "");
+        const place = (you.place || (global.royale && global.royale.place) || 0) | 0;
+        const score = you.score != null || you.pts ? scoreText.cardPoints(you) : ((global.royale && global.royale.youScore) | 0);
+        const scoreTxt = util.formatLargeNumber(Math.round(score));
+        const kills = (you.kills != null ? you.kills : global.finalKillCount) | 0;
+        const lived = compactTime(global.finalLifeSecs || 0);
+        const dropped = global.finalCarried | 0;
+        const kept = (global.finalInsured | 0) + (global.finalNxKept | 0);
+        const lostPts = (you.dl && you.dl.p) | 0;
+        const pt = scoreText.tiles(you);
+        if (aoHud.on()) pt[0] = [String(pt[0][0]).replace("THIS RAID", "TODAY"), pt[0][1], pt[0][2]];
+        const tileRows = [
+            pt[0],
+            pt[1],
+            pt[2],
+            ["DROPPED", util.formatLargeNumber(dropped), "gem"],
+            ["KILLS", util.formatLargeNumber(kills), "skull"],
+            ["SURVIVED", lived, "clock"],
+        ];
+        const notes = [];
+        if (kept > 0) notes.push("Kept " + util.formatLargeNumber(kept));
+        if (lostPts > 0) notes.push("Crown -" + util.formatLargeNumber(lostPts));
+        const noteLine = notes.join("  ·  ");
+        const hasRank = !guest && rankPanel.hasContent();
+        const rankH = hasRank ? rankPanel.panelHeight() : 0;
+        const acctH = guest ? 46 : 0;
+        const titleH = 36, whoH = whoLine ? 24 : 0, scoreH = 58;
+        const TILE = 46, tileGap = 8, gridH = 2 * TILE + tileGap, noteH = noteLine ? 22 : 0;
+        const pad = 20, gap = 12, PLAY_CSS_H = 58;
         const cardLayout = (sw, sh) => {
-            const W = Math.min(1040, sw - 32);
-            const two = W >= 820;
-            const colW = two ? Math.floor((W - pad * 2 - gap) / 2) : W - pad * 2;
+            const W = Math.min(680, sw - 32);
             const cssK = sh / Math.max(1, window.innerHeight);
             const FOOT = Math.round(PLAY_CSS_H * cssK);
-            const block = deathText.layoutText({
-                pts: dln.head + " (" + dln.lost + ")", extras,
-                sub: dln.sub || "Banked gems are safe, and carried gems only count once you bank them.",
-                perkLine, perkIcons, w: colW - IN * 2, measure: hudTextW,
-            });
-            const gridH = 3 * TILE + 2 * gap;
-            const tilesH = gridH + gap;
-            const leftH = tilesH + block.h;
-            const bodyH = two ? leftH : leftH + gap + WHO_H + gap + NEXT_H;
-            const H = pad + HEAD + gap + bodyH + (lvc ? gap + XP_STRIP_H : 0) + (hasRank ? gap + RANK_H : 0) + gap + FOOT + pad;
+            const extra = rankH ? gap + rankH + gap : acctH ? gap + acctH + gap : gap;
+            const H = pad + titleH + whoH + 4 + scoreH + gridH + noteH + extra + FOOT + pad;
             const BTN = Math.round((40 + 22) * cssK);
-            return { W, two, colW, cssK, FOOT, block, gridH, tilesH, leftH, bodyH, H, BTN };
+            return { W, cssK, FOOT, H, BTN };
         };
         const SW = global.screenWidth, SH = global.screenHeight;
         let k = 1, Lc = cardLayout(SW, SH);
@@ -14775,10 +14680,11 @@ import * as tankRecords from './tankRecords.js';
             Lc = cardLayout(SW / k, SH / k);
         }
         const sw = SW / k, sh = SH / k;
-        const { W, two, colW, cssK, FOOT, block, gridH, tilesH, leftH, bodyH, H, BTN } = Lc;
+        const { W, FOOT, H, BTN } = Lc;
         const px = Math.round(sw / 2 - W / 2);
         const py = Math.round(Math.max(12, sh - H - BTN - 12));
         const cx = sw / 2;
+        const iw = W - pad * 2, hx = px + pad;
         global.deathCamLift = Math.max(0, sh / 2 - Math.max(110, py / 2 + 10)) * k;
         deathCardFrac(px / sw, py / sh, W / sw, (H + BTN) / sh);
         global.deathPanelCss = {
@@ -14786,154 +14692,60 @@ import * as tankRecords from './tankRecords.js';
             top: Math.round((py + H) * window.innerHeight / Math.max(1, sh)) + 10,
         };
         if (k !== 1) { c.save(); c.scale(k, k); }
-
         hudPanel(c, px, py, W, H, { alpha: A, fill: HUD.card, r: HUD.rBig + 2 });
         drawPtsPops(px + W - 16, Math.max(14, py - 16), "right", -1);
-
-        const hx = px + pad, hy = py + pad, hw = W - pad * 2, hmid = hy + HEAD / 2;
-        c.save();
-        c.globalAlpha = A;
-        hudWell(c, hx, hy, hw, HEAD, 10, "rgba(242,184,60,0.16)", HUD.ink, 2.5);
-        c.restore();
-        const cause = global.finalCause || "";
-        const killedBy = cause === "raidend" ? "The raid ended"
-            : cause === "rock" ? "Crushed by the living rock"
-            : cause === "storm" ? "Lost in the storm"
-            : cause === "base" ? "Shot by the enemy base"
-            : cause === "core" ? "Killed by the Core"
-            : global.finalKillers.length
-                ? "Killed by " + global.finalKillers.join(" and ")
-                : "Nobody finished you off";
-        const place = (you.place || global.royale.place) | 0;
-        const score = you.score != null || you.pts ? scoreText.cardPoints(you) : (global.royale.youScore | 0);
-        const placeTxt = place > 0 ? "#" + place : "";
-        const placeW = placeTxt ? hudTitleW(placeTxt, 28) : 0;
-        const scoreTxt = util.formatLargeNumber(Math.round(score));
-        const scoreR = hx + hw - IN - 4 - (placeW ? placeW + 22 : 0);
-        const scoreW = Math.max(hudTitleW(scoreTxt, 26), hudTextW("POINTS", 11));
-        const dTank = deathTankOf();
-        const PORT = dTank ? HEAD - 16 : 0, tx0 = PORT ? hx + 8 + PORT + IN : hx + IN + 4;
-        if (dTank) {
-            c.save();
-            c.globalAlpha = A;
-            hudWell(c, hx + 8, hy + 8, PORT, PORT, 9, HUD.well, HUD.ink, 2);
+        let y = py + pad;
+        hudTitle("You died", cx, y + 16, 28, HUD.gold, "center", A);
+        if (place > 0) hudTitle("#" + place, px + W - pad, y + 16, 22, HUD.head, "right", A);
+        y += titleH;
+        if (whoLine) {
+            const kb = fitLine(whoLine, 15, 11, iw);
+            drawText(kb.txt, cx, y + 10, kb.qs, HUD.text, "center", true, A);
+            y += whoH;
+        }
+        y += 4;
+        hudTitle(scoreTxt, cx, y + 16, 32, HUD.gold, "center", A);
+        drawText("points", cx, y + 40, 13, HUD.text2, "center", true, A);
+        y += scoreH;
+        const colW = (iw - tileGap * 2) / 3;
+        for (let i = 0; i < tileRows.length; i++) {
+            deathStat(tileRows[i][0], tileRows[i][1], tileRows[i][2], hx + (i % 3) * (colW + tileGap), y + ((i / 3) | 0) * (TILE + tileGap), colW, A, TILE);
+        }
+        y += gridH;
+        if (noteLine) {
+            const ff = fitLine(noteLine, 13, 11, iw);
+            drawText(ff.txt, cx, y + 10, ff.qs, HUD.text2, "center", true, A);
+            y += noteH;
+        }
+        y += gap;
+        let acctY = 0;
+        if (rankH) {
             try {
-                const picture = mockupPicture(dTank.type, dTank.color);
-                const position = global.mockups[parseInt(String(dTank.type).split("-")[0])].position;
-                const sc = (PORT * 0.8) / position.axis, ang = -Math.PI / 4;
-                const pcx = hx + 8 + PORT / 2 - sc * (position.middle.x * Math.cos(ang) - position.middle.y * Math.sin(ang));
-                const pcy = hy + 8 + PORT / 2 - sc * (position.middle.x * Math.sin(ang) + position.middle.y * Math.cos(ang));
-                drawEntity(picture.color, pcx, pcy, picture, 1, 1, sc / picture.size, 1, ang, true, c);
-            } catch (e) { void e; }
-            c.restore();
-        }
-        hudTitle("You died", tx0, hmid - 9, 28, HUD.gold, "left", A);
-        const textRoom = Math.max(120, scoreR - scoreW - 24 - tx0);
-        const whoLine = killedBy + (dTank && dTank.name ? " · " + dTank.name : "");
-        const kb = fitLine(whoLine, 13, 10, textRoom);
-        drawText(kb.txt, tx0, hmid + 14, kb.qs, HUD.text, "left", true, A);
-        drawText("Points", scoreR, hmid - 11, 12, HUD.text2, "right", true, A);
-        hudTitle(scoreTxt, scoreR, hmid + 9, 26, HUD.gold, "right", A);
-        if (placeTxt) hudTitle(placeTxt, hx + hw - IN - 4, hmid, 28, HUD.head, "right", A);
-
-        const by = hy + HEAD + gap;
-        const half = (colW - gap) / 2;
-        const pt = scoreText.tiles(you);
-        if (aoHud.on()) pt[0] = [String(pt[0][0]).replace("THIS RAID", "TODAY"), pt[0][1], pt[0][2]];
-        const rows = [
-            pt[0],
-            pt[1],
-            pt[2],
-            ["DROPPED (NOT PTS)", util.formatLargeNumber(global.finalCarried | 0), "gem"],
-            ["KILLS", String((you.kills != null ? you.kills : global.finalKillCount) | 0), "skull"],
-            ["SURVIVED", compactTime(global.finalLifeSecs || 0), "clock"],
-        ];
-        c.save();
-        c.globalAlpha = A;
-        for (let i = 0; i < rows.length; i++) {
-            deathStat(rows[i][0], rows[i][1], rows[i][2], hx + (i % 2) * (half + gap), by + ((i / 2) | 0) * (TILE + gap), half, A, TILE);
-        }
-        c.restore();
-        const ty0 = by + tilesH, lx = hx + IN;
-        c.save();
-        c.globalAlpha = A;
-        hudWell(c, hx, ty0, colW, block.h, 10, HUD.well, HUD.ink, 2);
-        c.restore();
-        for (const r of block.rows) {
-            const ly = ty0 + r.y;
-            if (r.kind === "pts") drawText(r.text, lx, ly, r.size, dln.hurt ? "#ff9a8c" : HUD.gold, "left", true, A);
-            else if (r.kind === "ex") drawText(r.text, lx, ly, r.size, color.gold, "left", true, A);
-            else if (r.kind === "sub") drawText(r.text, lx, ly, r.size, HUD.text2, "left", true, A);
-            else if (r.kind === "icons") raidPerks.drawDeathIcons(c, lx, ly, deathText.TEXT.icon, A);
-            else if (r.kind === "perk") {
-                const piw = r.iconsW || 0;
-                if (piw) raidPerks.drawDeathIcons(c, lx, ly, deathText.TEXT.icon, A);
-                drawText(r.text, lx + piw, ly, r.size, HUD.gold, "left", true, A);
-            }
-        }
-
-        const rx = two ? hx + colW + gap : hx;
-        const ry = two ? by : by + leftH + gap;
-        const whoH = two ? gridH : WHO_H;
-        c.save();
-        c.globalAlpha = A;
-        hudWell(c, rx, ry, colW, whoH, 10, rv ? "rgba(255,107,94,0.16)" : HUD.well, HUD.ink, 2);
-        c.restore();
-        const wy = ry + whoH / 2, wtx = rx + IN + 44, wRoom = colW - IN * 2 - 44;
-        if (rv) {
-            drawSkull(c, rx + IN + 20, wy, 13, "#ff6b5e");
-            drawText(rv.tough ? "Too strong for now" : "Revenge", wtx, wy - 24, 12, HUD.text2, "left", true, A);
-            const nm = shortName(rv.name || "Unnamed", 18);
-            let ns = 24; while (ns > 14 && hudTitleW(nm, ns) > wRoom) ns -= 1;
-            hudTitle(nm, wtx, wy + 2, ns, "#ff9a8c", "left", A);
-            const sub = rv.tough ? "They're much stronger than you. Get bigger first, then get them back."
-                : rv.alive ? "They're marked for you. Get them for +" + fmtNum(rv.bonus || 200) + " gems." : "They'll be marked for you once they're back.";
-            const sf = fitLine(sub, 12, 9.5, wRoom);
-            drawText(sf.txt, wtx, wy + 25, sf.qs, HUD.text, "left", true, A);
-        } else {
-            drawDeathIcon(cause === "storm" ? "clock" : "skull", rx + IN + 20, wy, 22, A * 0.8);
-            const t1 = fitLine(killedBy, 15, 10, wRoom);
-            drawText(t1.txt, wtx, wy - 9, t1.qs, HUD.head, "left", true, A);
-            drawText("No one to get revenge on.", wtx, wy + 13, 12, HUD.text2, "left", true, A);
-        }
-        const nyTop = two ? ty0 : ry + whoH + gap;
-        const nextH = two ? block.h : NEXT_H;
-        c.save();
-        c.globalAlpha = A;
-        hudWell(c, rx, nyTop, colW, nextH, 10, HUD.well, HUD.ink, 2);
-        c.restore();
-        const ny = nyTop + nextH / 2;
-        const nextTxt = you.next ? "Next: " + String(you.next).charAt(0).toLowerCase() + String(you.next).slice(1) : "Next: a new contract when you land";
-        const fn = fitLine(nextTxt, 12, 9.5, colW - IN * 2 - 18);
-        c.save();
-        c.globalAlpha = A;
-        c.fillStyle = HUD.gold; c.strokeStyle = HUD.ink; c.lineWidth = 1.5;
-        c.beginPath(); c.arc(rx + IN + 6, ny, 5.5, 0, Math.PI * 2); c.fill(); c.stroke();
-        c.beginPath(); c.arc(rx + IN + 6, ny, 2, 0, Math.PI * 2); c.fillStyle = HUD.ink; c.fill();
-        c.restore();
-        drawText(fn.txt, rx + IN + 18, ny, fn.qs, HUD.gold, "left", true, A);
-
-        let fy = by + bodyH + gap;
-        if (lvc) { drawXpStrip(c, hx, fy, hw, lvc, A); fy += XP_STRIP_H + gap; }
-        if (hasRank) {
-            try {
-                rankPanel.draw(c, hx, fy, hw, RANK_H,
+                rankPanel.draw(c, hx, y, iw, rankH,
                     { drawText, measureText, drawBar, color, barChunk: config.graphical.barChunk, theme: HUD.theme }, A);
             } catch (e) { void e; }
-            fy += RANK_H + gap;
+            y += rankH + gap;
+        } else if (acctH) {
+            acctY = y;
+            y += acctH + gap;
         }
-
+        const fy = y;
         const pair = !!buildBtnLabels.respawnAs(you, global.diedAsTank);
-        const playW = pair ? hw : Math.min(colW, Math.round(380 * cssK));
         const toCssX = window.innerWidth / Math.max(1, sw), toCssY = window.innerHeight / Math.max(1, sh);
         global.deathPlayCss = {
             cx: Math.round(cx * toCssX),
             top: Math.round(fy * toCssY),
-            w: Math.round(playW * toCssX),
+            w: Math.round(iw * toCssX),
             h: PLAY_CSS_H,
             gap: Math.round(gap * toCssX),
-            split: pair ? Math.round(colW * toCssX) : 0,
+            split: pair ? Math.round(iw * 0.38 * toCssX) : 0,
         };
+        global.deathSignupCss = acctH ? {
+            cx: Math.round(cx * toCssX),
+            top: Math.round(acctY * toCssY),
+            w: Math.round(iw * toCssX),
+            h: Math.round(acctH * toCssY),
+        } : null;
         global.clickables.royalePrev.hide();
         global.clickables.royaleNext.hide();
         global.clickables.deathRespawn.hide();
@@ -14941,7 +14753,7 @@ import * as tankRecords from './tankRecords.js';
         else if (!global.disconnected) {
             const cr = global.canvas.height / global.screenHeight / global.ratio;
             const st = playAgainState();
-            drawButton(cx, fy, playW, FOOT, st.ready ? A : A * 0.5, "rect", st.label, 22, false, false, false, st.ready, "royalePlay", cr, 0);
+            drawButton(cx, fy, iw, FOOT, st.ready ? A : A * 0.5, "rect", st.label, 22, false, false, false, st.ready, "royalePlay", cr, 0);
             if (!st.ready) global.clickables.royalePlay.hide();
             const bty = py + H + 12;
             drawButton(cx - 90, bty, 150, 32, A, "rect", "Spectate", 15, false, false, false, true, "royaleSpectate", cr, 0);
@@ -15494,12 +15306,12 @@ import * as tankRecords from './tankRecords.js';
         const homeD = royaleDomBtn("royaleDomHomeDead", "Home");
         sp.onclick = () => royaleDomAct("spectate");
         homeD.onclick = () => royaleDomAct("home");
-        // guests: the rank card's nudge has its button here, with the others
-        const signup = royaleDomBtn("royaleDomSignup", "Get an account");
+        const signup = royaleDomBtn("royaleDomSignup", "Create an account");
         signup.classList.add("accent");
-        signup.style.display = "none";
+        signup.style.cssText = "position:fixed;z-index:32;display:none;transform:translateX(-50%);justify-content:center;align-items:center;font-size:16px;";
         signup.onclick = () => royaleDomAct("signup");
-        dead.append(sp, homeD, signup);
+        document.body.appendChild(signup);
+        dead.append(sp, homeD);
         document.body.appendChild(dead);
         // the death card's footer: big, green, counts the wait down first
         const again = royaleDomBtn("royaleDomPlayAgain", "Respawn");
@@ -15565,6 +15377,7 @@ import * as tankRecords from './tankRecords.js';
             setStyle(again, "display", "none");
             setStyle(asBuild, "display", "none");
             setStyle(domEl("royaleDomBuildWhy"), "display", "none");
+            setStyle(domEl("royaleDomSignup"), "display", "none");
             try { signupPrompt.update(false); } catch (e) { }
             return;
         }
@@ -15671,7 +15484,17 @@ import * as tankRecords from './tankRecords.js';
             if (spBtn.textContent !== want) spBtn.textContent = want;
         }
         const signup = domEl("royaleDomSignup");
-        if (signup) setStyle(signup, "display", deadShow && rankPanel.isGuestNudge() && !longLifeUp ? "" : "none");
+        if (signup) {
+            const sc = global.deathSignupCss;
+            const showSu = deadShow && !longLifeUp && !!sc;
+            setStyle(signup, "display", showSu ? "inline-flex" : "none");
+            if (showSu) {
+                introStyle(signup, ik, true);
+                const want = { left: sc.cx + "px", top: sc.top + "px", width: sc.w + "px", height: sc.h + "px" };
+                for (const k in want) if (signup.style[k] !== want[k]) signup.style[k] = want[k];
+                if (signup.textContent !== "Create an account") signup.textContent = "Create an account";
+            }
+        }
         const play = domEl("royaleDomPlay");
         if (play) {
             const locked = !!(global.royale && global.royale.lock && global.royale.at > 0);

@@ -187,6 +187,40 @@ export function minesBy(gunCount) {
     return (gunCount | 0) > 0 ? "gun" : "ram";
 }
 
+export const OPEN_MS = 120000;
+export const BANK_URGENT_MS = 15000;
+export const OPEN_LINE = "Shoot the colored rocks. Bank the gems at a vault.";
+const COMPASS = ["east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast"];
+
+export function compassWord(dx, dy) {
+    const a = Math.atan2(+dy || 0, +dx || 0);
+    const i = Math.round(((a + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8;
+    return COMPASS[i];
+}
+
+export function openingWanted(o) {
+    const s = o || {};
+    if (s.tutorial || s.died || s.onPad || s.full) return false;
+    const age = +s.age;
+    if (!(age >= 0) || age >= OPEN_MS) return false;
+    if ((s.banked | 0) > (s.kept | 0)) return false;
+    if (s.known && (s.stage | 0) >= 2) return false;
+    if (!s.known && (s.kept | 0) > 0) return false;
+    return true;
+}
+
+export function bankUrgent(o) {
+    const s = o || {};
+    if (s.died || s.onPad || !s.full) return false;
+    const age = +s.fullAge;
+    return age >= 0 && age < BANK_URGENT_MS;
+}
+
+export function bankLine(dx, dy, dist) {
+    if (!(+dist > 220)) return "Go bank. The vault is right here.";
+    return "Go bank. Vault is " + compassWord(dx, dy) + ".";
+}
+
 // The shop with nothing to spend: how to get there, not a wall of locks
 export function shopHint(o) {
     const s = o || {};

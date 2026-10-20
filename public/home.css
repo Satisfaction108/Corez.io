@@ -5739,9 +5739,17 @@ html[data-theme] body:not(.mobile) .mainWrapper {
     display: flex;
     flex-direction: column;
     padding: calc(var(--bar-top) + var(--bar-h) + 16px) 20px 28px;
+    overflow-x: clip;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+html[data-theme] body:not(.mobile) .mainWrapper::before,
+html[data-theme] body:not(.mobile) .mainWrapper::after {
+    content: "";
+    flex: 1 0 0;
 }
 html.dw-fresh[data-theme] body:not(.mobile) .mainWrapper { padding-top: 28px; padding-bottom: 44px; }
-html[data-theme] body:not(.mobile) #startMenuWrapper { width: 100%; margin: auto; }
+html[data-theme] body:not(.mobile) #startMenuWrapper { width: 100%; margin: 0 auto; flex: 0 0 auto; }
 html.dw-fresh[data-theme] body.mobile { --mw-top: calc(12px + var(--sa-t)); --mw-bot: 0px; --mw-pb: calc(16px + var(--sa-b)); }
 
 html[data-theme] #startMenuWrapper .startMenu,

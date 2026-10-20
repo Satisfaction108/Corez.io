@@ -279,9 +279,10 @@ function t(name, fn) {
         assert.ok(/export function deathCardWanted\(\) \{ return S\.stage <= 1; \}/.test(nc));
         assert.ok(/export function shopOpen\(\) \{ return true; \}/.test(nc), 'the shop never waits for the guide');
         assert.ok(/if \(!inRaid\(\) \|\| S\.stage >= L\.VETERAN\) \{\s*global\.nxBannerUp = false;/.test(nc), 'no director for veterans');
-        // the death card switches on deathCardWanted only; the button says
-        // Respawn at every stage (round 4: it used to flip mid-session)
-        assert.ok(app.includes('if (newcomer.deathCardWanted()) gameDrawDeadNewcomer(A);'));
+        // one death card at every stage (the first-raid essay is gone); the
+        // button says Respawn at every stage (round 4: it used to flip mid-session)
+        assert.ok(app.includes('drawRoyaleDeathCard(A);'));
+        assert.ok(!app.includes('gameDrawDeadNewcomer'));
         assert.ok(app.includes('return { ready: true, label: "Respawn" };'));
         // scripts/test/newcomer.test.js reads this one
         assert.ok(app.includes('"Respawn in "'));

@@ -390,7 +390,7 @@ test('rule 2: everyone keeps 30% of the satchel through a death, 70% drops as lo
     const SL = await import(path.join(REPO, 'public', 'client', 'scoreLogic.js'));
     assert.equal(SL.deathLine({ pts: { b: 0, k: 0, c: 0 }, dl: { p: 0 } }, 700, 0, 300).sub,
         'You kept 300 carried gems and dropped 700. Bank sooner to keep them all.');
-    assert.ok(/scoreText\.deathLine\(you, global\.finalCarried \| 0, global\.finalBankLoss \| 0, global\.finalNxKept \| 0\)/.test(read('public/client/app.js')));
+    assert.ok(/global\.finalNxKept \| 0/.test(read('public/client/app.js')) && /Kept /.test(read('public/client/app.js')), 'the death card says what you kept');
 });
 
 test('rule 3: bots are 20% gentler on every human and fight each other about half the time', () => {

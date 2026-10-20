@@ -77,7 +77,7 @@ test('wiring: the death card drives it, it sits above the card, the other prompt
     const app = read('public', 'client', 'app.js');
     assert.match(app, /import \* as signupPrompt from '\.\/signupPrompt\.js';/);
     assert.match(app, /longLifeUp = signupPrompt\.update\(deadShow\)/);
-    assert.match(app, /rankPanel\.isGuestNudge\(\) && !longLifeUp/, 'the small "Get an account" button hides while the card is up');
+    assert.match(app, /!longLifeUp && !!sc/, 'the create-account button hides while the long-life card is up');
     assert.match(app, /raidFinale\.active\(\)\) \{[\s\S]{0,400}signupPrompt\.update\(false\)/, 'never over the raid results');
     const sp = read('public', 'client', 'signupPrompt.js');
     assert.match(sp, /keepNudge\.wanted\(\)/, 'the raid results card wins');

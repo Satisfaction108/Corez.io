@@ -282,12 +282,12 @@ test('client: the recap before FRESH START, and the last raid on the card', asyn
 test('client: wired everywhere', () => {
     const read = (f) => fs.readFileSync(path.join(CLIENT, f), 'utf8');
     const app = read('app.js'), cr = read('crowns.js'), fin = read('raidFinale.js'), fs1 = read('firstSeconds.js');
-    // the death card: the parts, then "Points: X (lost Y: why)"
-    assert.ok(/const pt = scoreText\.tiles\(you\)/.test(app));
-    assert.ok(/scoreText\.deathLine\(you, global\.finalCarried \| 0, 0, global\.finalNxKept \| 0\)/.test(app));
-    assert.ok(/dln\.head \+ " \(" \+ dln\.lost \+ "\)"/.test(app));
+    // the death card: the points number and the stat tiles, not the essay
+    assert.ok(/scoreText\.cardPoints\(you\)/.test(app));
+    assert.ok(/scoreText\.tiles\(you\)/.test(app));
+    assert.ok(!/dln\.head \+ " \(" \+ dln\.lost \+ "\)"/.test(app));
     assert.ok(!/CARRIED \(50% PTS\)/.test(app) && !/50% carried/.test(app), 'the half-points satchel is gone from the HUD');
-    assert.ok(/drawText\("POINTS", scoreR/i.test(app), 'the card calls it points, like the standings');
+    assert.ok(/drawText\("points", cx,/.test(app), 'the card calls it points, like the standings');
     // the rule on hover (standings, the clock plate's points) and in the F tab
     assert.ok(/queueTip\(scoreText\.RULE, scoreText\.ruleBody\(aoNow\(\)\)/.test(app));
     assert.ok((app.match(/pointsRuleTip\(/g) || []).length >= 4, 'standings, crown tracker, clock plate + the helper');
