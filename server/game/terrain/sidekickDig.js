@@ -3,7 +3,7 @@
 
 const C = require('../../../shared/cosmetics.js');
 
-const ON = process.env.ROYALE_SIDEKICK_DIG !== '0';
+const ON = process.env.ROYALE_SIDEKICK_DIG !== '0' && process.env.ROYALE_SIDEKICK_SHOTS === '1';
 // 0.1 (a basic shot's dig) x 4 (a Pounder gun's dig power, mining.digPower) x
 // a bare Mining Power bar (mining.SHOT_BARE: 0.4 before the base boost, 0.54
 // now), so a sidekick keeps digging like a bare Pounder as the base moves

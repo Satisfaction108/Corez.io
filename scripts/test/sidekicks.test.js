@@ -42,6 +42,7 @@
 // everything passes. No game server.
 'use strict';
 
+if (process.argv[2] !== '--shots-paused') process.env.ROYALE_SIDEKICK_SHOTS = '1';
 const emit = process.emitWarning;
 process.emitWarning = (w, ...a) => { if (!/MODULE_TYPELESS|module syntax/.test(String(w) + a.join(' '))) emit.call(process, w, ...a); };
 
@@ -55,8 +56,8 @@ const { spawnSync } = require('child_process');
 const REPO = path.join(__dirname, '..', '..');
 const SERVER = path.join(REPO, 'server');
 
-if (process.argv[2] === '--dig-off') {
-    process.env.ROYALE_SIDEKICK_DIG = '0';
+if (process.argv[2] === '--dig-off' || process.argv[2] === '--shots-paused') {
+    if (process.argv[2] === '--dig-off') process.env.ROYALE_SIDEKICK_DIG = '0';
     global.Config = { dig_royale: true };
     const dig = require(path.join(SERVER, 'game', 'terrain', 'sidekickDig.js'));
     const hits = [];
@@ -1001,6 +1002,10 @@ test('digging: cheap: one shot in the air each, a per-tick cap across the raid, 
     assert.equal(r.status, 0, r.stderr);
     assert.deepEqual(JSON.parse(r.stdout), { on: false, hits: 0, changed: 0 });
     assert.match(fs.readFileSync(path.join(SERVER, '.env.example'), 'utf8'), /^ROYALE_SIDEKICK_DIG=1$/m);
+    const p = spawnSync(process.execPath, ['--no-warnings', __filename, '--shots-paused'], { encoding: 'utf8', env: { ...process.env, ROYALE_SIDEKICK_SHOTS: '' } });
+    assert.equal(p.status, 0, p.stderr);
+    assert.deepEqual(JSON.parse(p.stdout), { on: false, hits: 0, changed: 0 }, 'paused unless ROYALE_SIDEKICK_SHOTS=1');
+    assert.match(fs.readFileSync(path.join(SERVER, '.env.example'), 'utf8'), /^ROYALE_SIDEKICK_SHOTS=0$/m);
 });
 
 test('digging: the client aims at the rock and fires a shot a second that flies all the way there', async () => {
@@ -1225,7 +1230,7 @@ test('dig: a shot hits the first rock on its line, not a rock behind it', () => 
 // every sidekick shot under Low effects / Fewer Effects / lowFx, and the auto
 // low-end trim's first rung is Low effects, so on most machines they never
 // fired. The real runtime, on a recording canvas, must fire at every level.
-test('shots: fired and drawn at every effects level (Low, Fewer Effects, the auto trim)', () => {
+test('shots: paused on the client, none fired at any effects level', () => {
     const run = (lvl) => {
         const r = spawnSync(process.execPath, ['--no-warnings', __filename, '--client-shots', lvl], { encoding: 'utf8' });
         assert.equal(r.status, 0, r.stderr);
@@ -1235,8 +1240,7 @@ test('shots: fired and drawn at every effects level (Low, Fewer Effects, the aut
         const o = run(lvl);
         assert.equal(o.rows, 1, lvl + ': the row is there');
         assert.deepEqual(o.dig, { x: 260, y: 40 }, lvl + ': it knows its rock');
-        // a shot a second while mining: ~5 in 6 s, each drawn for several frames
-        assert.ok(o.arcs >= 20, lvl + ': shots drawn, ' + o.arcs + ' arc calls');
+        assert.equal(o.arcs, 0, lvl + ': no shots drawn');
     }
     const rt = fs.readFileSync(path.join(REPO, 'public', 'client', 'sidekicks.js'), 'utf8');
     assert.ok(!/lowFx|fxLevel|fewerEffects/.test(rt), 'no effects gate on its shots');

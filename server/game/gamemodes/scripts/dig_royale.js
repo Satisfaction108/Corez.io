@@ -2908,12 +2908,29 @@ function sendPerks(client, build) {
 }
 // PKP: the client picked `id`. Anything not on its current offer is refused
 // and the real offer is sent again, so a stale card can't stick.
+const PERK_LOG_GAP_MS = 5000;
+function perkRefused(socket, id, why, s, b) {
+    const t = now();
+    if (socket && t - (socket._pkLogAt || 0) < PERK_LOG_GAP_MS) return;
+    if (socket) socket._pkLogAt = t;
+    const lvl = b && b.perks && typeof id === 'string' ? b.perks[id] | 0 : 0;
+    console.log('[PERK] refused', JSON.stringify(String(id).slice(0, 16)), why,
+        'sock', socket && socket.id, 'acct', !!(socket && socket.account && socket.account.id),
+        'row', s ? s.key : '-', 'who', s && s.who ? String(s.who).slice(0, 2) : '-', 'dup', !!(s && s.aoDup),
+        'offer', b && b.offer ? b.offer.join(',') : '-', 'have', lvl, 'q', b ? b.pending | 0 : '-', 'v', b ? b.v | 0 : '-',
+        'ending', raidEnding, 'staging', staging(), 'ao', worldAo());
+}
 function pickPerk(socket, id) {
-    if (!PERKS_ON || !socket || typeof id !== 'string' || raidEnding || staging()) return false;
+    if (!PERKS_ON || !socket || typeof id !== 'string') return false;
+    if (raidEnding || staging()) { perkRefused(socket, id, raidEnding ? 'raid-ending' : 'staging', null, null); return false; }
     const s = socket.id ? raidStats.get("s:" + socket.id) : null;
     const b = s ? perkBuildOf(s) : null;
-    if (!b) return false;
-    if (!raidPerks.pick(b, id)) { sendPerks(socket, b); return false; }
+    if (!b) { perkRefused(socket, id, 'no-row', s, null); return false; }
+    if (!raidPerks.pick(b, id)) {
+        perkRefused(socket, id, !b.offer ? 'no-offer' : !b.offer.includes(id) ? 'not-on-offer' : 'maxed', s, b);
+        sendPerks(socket, b);
+        return false;
+    }
     const body = socket.player && socket.player.body;
     if (body && !body.isDead?.()) applyPerks(body, s);
     sendPerks(socket, b);

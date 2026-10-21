@@ -55,6 +55,7 @@ for (let r = 6; r <= 96; r = Math.max(r + 1, Math.round(r * 1.07))) RUNGS.push(r
 const SPRITE_PX_BUDGET = 3e6; // baked pixels across every sidekick sprite (~12 MB)
 const MAX_SHOTS = 64;
 const SHOT_GAP_MS = 40;       // across every sidekick on screen
+const SHOTS_ON = false;
 
 const table = new Map();      // owner entity id -> entry
 const sprites = new Map();    // nid:skin:colour:radius -> sprite | null
@@ -270,10 +271,10 @@ export function draw(c, ratio, px, py, tick, me) {
         c.globalAlpha = 1;
         e.sx = sx; e.sy = y;
         drawLabel(c, e, ratio, fade, s.sc);
-        // always: its shots are how you see it mining, and they are a fixed
-        // pool of tiny arcs (Low effects used to drop them, and the auto
-        // low-end trim's first rung is Low, so most machines saw none)
-        if (now - lastShotAt >= SHOT_GAP_MS) {
+        // at every effects level when SHOTS_ON: a fixed pool of tiny arcs
+        // (Low effects used to drop them, and the auto low-end trim's first
+        // rung is Low, so most machines saw none)
+        if (SHOTS_ON && now - lastShotAt >= SHOT_GAP_MS) {
             const a = M.shotDue(s, t, Math.random);
             if (a === a) { lastShotAt = now; fire(e, a, t); }
         }

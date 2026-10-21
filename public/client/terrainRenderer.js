@@ -473,7 +473,8 @@ class TerrainRenderer {
     // the tiles (scaled 1.05 it was resampled: the soft look of a cracked
     // rock); the old image path keeps the slight swell.
     _shakeXform(ctx, cell, nowMs) {
-        const [ox, oy] = this._trembleOf(cell.k, nowMs);
+        let [ox, oy] = this._trembleOf(cell.k, nowMs);
+        ox *= 0.4; oy *= 0.4;
         if (this._shakeHd) {
             ctx.translate(Math.round(ox * this._devPxX) / this._devPxX, Math.round(oy * this._devPxY) / this._devPxY);
             return;
@@ -573,7 +574,7 @@ class TerrainRenderer {
                     const delay = onscreen ? 55 : 0;
                     this._spawnShatter(cell, now + delay, tier);
                     this._oreLook(ev.k);
-                    if (onscreen) this._shakeNearCell(cell, tier ? 5 : 4, 240, delay);
+                    if (onscreen) this._shakeNearCell(cell, tier ? 2 : 1.5, 160, delay);
                     if (onscreen && this._world) {
                         const w = this._world;
                         const wx = cell.cx * w.s - w.hw, wy = cell.cy * w.s - w.hh;
@@ -588,10 +589,7 @@ class TerrainRenderer {
                 if (!onscreen) continue;
                 this._hitFlash.set(ev.k, now);
                 const stagedUp = this._stageOf(ev.h) > oldStage;
-                if (stagedUp) {
-                    this._crackSnap.set(ev.k, now);
-                    if (cell) this._shakeNearCell(cell, 2, 140);
-                }
+                if (stagedUp) this._crackSnap.set(ev.k, now);
                 if (ev.x !== undefined) {
                     if (this._world) {
                         const w = this._world;
@@ -2936,34 +2934,12 @@ class TerrainRenderer {
 
                 const ts = dt / 280;
                 if (!im.ticksOnly && ts < 1) {
-                    ctx.globalAlpha = (1 - ts) * (im.small ? 0.45 : 0.9);
+                    ctx.globalAlpha = (1 - ts) * (im.small ? 0.25 : 0.45);
                     ctx.fillStyle = 'rgb(255,235,180)';
                     ctx.beginPath();
-                    ctx.arc(im.x, im.y, 0.13 * rockSz * isc * (1 - ts * 0.6), 0, Math.PI * 2);
+                    ctx.arc(im.x, im.y, 0.08 * rockSz * isc * (1 - ts * 0.6), 0, Math.PI * 2);
                     ctx.fill();
                     ctx.globalAlpha = 1;
-                }
-                // rock hits are one-shot, no combo. skip grind scrapes.
-                if (!im.small) {
-                    const tickT = dt / 400;
-                    if (tickT < 1) {
-                        const ha = (1 - tickT) * (1 - tickT) * 0.85;
-                        const spread = (0.16 + 0.28 * tickT) * rockSz;
-                        ctx.save();
-                        ctx.globalAlpha = ha;
-                        ctx.strokeStyle = "rgba(255,244,210,0.95)";
-                        ctx.lineWidth = Math.max(0.035, 0.042 * rockSz);
-                        ctx.lineCap = "round";
-                        for (let k = 0; k < 4; k++) {
-                            const ang = Math.PI / 4 + k * Math.PI / 2;
-                            const ca = Math.cos(ang), sa = Math.sin(ang);
-                            ctx.beginPath();
-                            ctx.moveTo(im.x + ca * spread * 0.42, im.y + sa * spread * 0.42);
-                            ctx.lineTo(im.x + ca * spread, im.y + sa * spread);
-                            ctx.stroke();
-                        }
-                        ctx.restore();
-                    }
                 }
                 if (im.ticksOnly || im.noChips) {
                     ctx.globalAlpha = 1;
@@ -3030,33 +3006,31 @@ class TerrainRenderer {
                 const fade = t < 0.5 ? 1 : 1 - (t - 0.5) / 0.5;
                 // hard white flash filling the rock's silhouette
                 if (t < 0.12) {
-                    ctx.globalAlpha = (1 - t / 0.12) * 0.9;
+                    ctx.globalAlpha = (1 - t / 0.12) * 0.4;
                     ctx.fillStyle = 'rgb(240,232,250)';
                     ctx.fill(fx.path);
                 }
-                // fast double dust ring
+                // one soft dust ring
                 ctx.strokeStyle = 'rgb(110,100,125)';
-                for (let rgi = 0; rgi < 2; rgi++) {
-                    const rt = rgi === 0 ? t : (t - 0.07) / 0.93;
-                    if (rt <= 0 || rt >= 1) continue;
-                    const rq = 1 - Math.pow(1 - rt, 4);          // easeOutQuart
-                    ctx.globalAlpha = Math.pow(1 - rt, 1.5) * 0.6;
+                {
+                    const rq = 1 - Math.pow(1 - t, 4);          // easeOutQuart
+                    ctx.globalAlpha = Math.pow(1 - t, 1.5) * 0.3;
                     ctx.beginPath();
-                    ctx.arc(fx.cx, fx.cy, (0.25 + (rgi ? 1.9 : 3.0) * rq) * rockSz, 0, Math.PI * 2);
-                    ctx.lineWidth   = 0.12 * rockSz * (1 - rt) + 0.01;
+                    ctx.arc(fx.cx, fx.cy, (0.25 + 1.6 * rq) * rockSz, 0, Math.PI * 2);
+                    ctx.lineWidth   = 0.07 * rockSz * (1 - t) + 0.01;
                     ctx.stroke();
                 }
-                // colored firework streaks flying out with the debris
-                const pal = fx.colors, S = fx.sparks, nS = lite ? fx.nSparks >> 1 : fx.nSparks;
+                // a few coloured streaks flying out with the debris
+                const pal = fx.colors, S = fx.sparks, nS = Math.ceil(fx.nSparks / (lite ? 6 : 3));
                 ctx.lineCap = 'round';
-                ctx.lineWidth = 0.028 * rockSz * (1 - t * 0.5);
-                ctx.globalAlpha = fade * 0.9;
+                ctx.lineWidth = 0.022 * rockSz * (1 - t * 0.5);
+                ctx.globalAlpha = fade * 0.7;
                 for (let ci = 0; ci < pal.length; ci++) {
                     let any = false;
                     for (let e = 0; e < nS; e++) {
                         if (S[e * 3 + 2] !== ci) continue;
                         if (!any) { any = true; ctx.beginPath(); }
-                        const r2 = eo * S[e * 3 + 1] * rockSz, r1 = r2 * 0.6;
+                        const r2 = eo * S[e * 3 + 1] * rockSz * 0.6, r1 = r2 * 0.6;
                         const ca = Math.cos(S[e * 3]), sa = Math.sin(S[e * 3]);
                         ctx.moveTo(fx.cx + ca * r1, fx.cy + sa * r1);
                         ctx.lineTo(fx.cx + ca * r2, fx.cy + sa * r2);
@@ -3066,13 +3040,13 @@ class TerrainRenderer {
                 // rock chips: little turned oblongs, one path per shade
                 ctx.globalAlpha = fade;
                 const P = fx.parts, chips = fx.chips || CHIPS;
-                const step = lite ? 2 : 1, shrink = 1 - t * 0.6;
+                const step = lite ? 4 : 2, shrink = 1 - t * 0.6;
                 for (let sh = 0; sh < 3; sh++) {
                     ctx.beginPath();
                     for (let e = 0; e < SHATTER_CHIPS; e += step) {
                         const o = e * 8;
                         if (P[o + 3] !== sh) continue;
-                        const ang = P[o], dist = eo * P[o + 1] * rockSz;
+                        const ang = P[o], dist = eo * P[o + 1] * rockSz * 0.6;
                         const px = fx.cx + P[o + 6] + Math.cos(ang) * dist;
                         const py = fx.cy + P[o + 7] + Math.sin(ang) * dist;
                         const hw = P[o + 2] * rockSz * shrink, hh = hw * P[o + 5];
@@ -3451,7 +3425,7 @@ class TerrainRenderer {
                         const snap  = st !== undefined && nowMs - st < 220
                             ? Math.pow(1 - (nowMs - st) / 220, 2) : 0;
                         const boost = Math.max(hitB, snap);
-                        const w = 0.035 * rockSz * (0.28 + 0.075 * stage) * (1 + snap);
+                        const w = 0.035 * rockSz * (0.28 + 0.075 * stage);
                         ctx.lineJoin = 'miter';
                         ctx.lineCap = 'butt';
                         ctx.miterLimit = 3;
@@ -3460,7 +3434,7 @@ class TerrainRenderer {
                         ctx.stroke(path);
                         if (simple) { ctx.restore(); return; }
                         if (boost > 0.02) {
-                            ctx.globalAlpha = Math.min(1, boost * 1.2);
+                            ctx.globalAlpha = boost * 0.5;
                             ctx.strokeStyle = CRACK_HOT;
                             ctx.lineWidth = w * 0.6;
                             ctx.stroke(path);
@@ -3468,29 +3442,6 @@ class TerrainRenderer {
                         }
                     }
                     ctx.restore();
-
-                    if (stage >= 5 && !simple && !lite && this._pebbles.length < 80) {
-                        const lt = this._lastTrickle.get(k) || 0;
-                        if (nowMs - lt > 120) {
-                            this._lastTrickle.set(k, nowMs);
-                            const kk = k & 0xffff;
-                            const seq = Math.floor(nowMs / 120) & 0xff;
-                            for (let pi = 0; pi < 2; pi++) {
-                                const ei = Math.floor(this._h(seq * 2 + pi, kk, 150) * cell.poly.length);
-                                const A = cell.poly[ei], B = cell.poly[(ei + 1) % cell.poly.length];
-                                const tt = this._h(seq * 2 + pi, kk, 151);
-                                const px = A[0] + (B[0] - A[0]) * tt;
-                                const py = A[1] + (B[1] - A[1]) * tt;
-                                const dl = Math.hypot(px - cell.cx, py - cell.cy) || 1;
-                                this._pebbles.push({
-                                    x: px, y: py,
-                                    dx: (px - cell.cx) / dl, dy: (py - cell.cy) / dl,
-                                    born: nowMs, seed: (kk + seq * 31 + pi * 47) & 0xffff,
-                                    chips: this._bio ? this._bioChips(k) : null,
-                                });
-                            }
-                        }
-                    }
                 };
                 const near = this._rockHealth.inView(tlx - 3, tly - 3, tlx + tlw + 3, tly + tlh + 3);
                 for (let ni = 0; ni < near.length; ni++) drawDamage(this._rockHealth.get(near[ni]), near[ni]);
