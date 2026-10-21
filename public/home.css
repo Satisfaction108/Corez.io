@@ -4904,6 +4904,40 @@ body.mobile #dwWelcome { padding: calc(16px + var(--sa-t)) calc(12px + var(--sa-
 [data-theme="light"] #dwSaveBar .sv-ring-n { fill: #1f1f1f; }
 [data-theme="light"] #dwSaveBar .sv-sub { color: #555555; }
 body.mobile #dwSaveBar { top: calc(max(8px, env(safe-area-inset-top)) + 56px); }
+#dwInspect {
+    position: fixed;
+    top: 72px;
+    left: 16px;
+    z-index: 40;
+    width: 300px;
+    max-height: calc(100vh - 120px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 8px;
+    background: rgba(18,18,18,.95);
+    color: #ffffff;
+    font: 500 13px/1.3 Rubik, Ubuntu, sans-serif;
+}
+#dwInspect .ins-top { display: flex; align-items: flex-start; gap: 8px; padding: 10px 10px 8px 14px; border-bottom: 1px solid rgba(255,255,255,.14); }
+#dwInspect .ins-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+#dwInspect .ins-title b { font: 400 19px/1.1 'Lilita One', Rubik, sans-serif; letter-spacing: .02em; overflow-wrap: anywhere; }
+#dwInspect .ins-sub { font-size: 12px; color: #cfcfcf; }
+#dwInspect .ins-x { flex-shrink: 0; width: 26px; height: 26px; border: 0; border-radius: 6px; background: rgba(255,255,255,.12); color: inherit; font: 600 18px/1 Rubik, sans-serif; cursor: pointer; }
+#dwInspect .ins-x:hover { background: rgba(255,255,255,.22); }
+#dwInspect .ins-body { overflow-y: auto; padding: 4px 14px 12px; }
+#dwInspect .ins-h { margin: 10px 0 4px; font: 400 14px/1 'Lilita One', Rubik, sans-serif; letter-spacing: .03em; color: #ffd166; }
+#dwInspect .ins-row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+#dwInspect .ins-k { color: #cfcfcf; }
+#dwInspect .ins-v { text-align: right; font-variant-numeric: tabular-nums; }
+#dwInspect .ins-none { color: #9a9a9a; padding: 2px 0; }
+[data-theme="light"] #dwInspect { background: rgba(255,255,255,.95); color: #1f1f1f; box-shadow: 0 0 0 1px rgba(0,0,0,.16); }
+[data-theme="light"] #dwInspect .ins-top { border-bottom-color: rgba(0,0,0,.1); }
+[data-theme="light"] #dwInspect .ins-sub,
+[data-theme="light"] #dwInspect .ins-k { color: #555555; }
+[data-theme="light"] #dwInspect .ins-x { background: rgba(0,0,0,.07); }
+[data-theme="light"] #dwInspect .ins-x:hover { background: rgba(0,0,0,.14); }
+[data-theme="light"] #dwInspect .ins-h { color: #a86b00; }
+[data-theme="light"] #dwInspect .ins-none { color: #888888; }
 .sv-modal { text-align: center; }
 .sv-code {
     margin: 4px 0 12px;

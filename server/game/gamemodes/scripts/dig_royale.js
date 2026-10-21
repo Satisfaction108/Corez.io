@@ -2898,6 +2898,56 @@ function applyPerks(body, s) {
     const st = s || (statKeyFor(body) ? raidStats.get(statKeyFor(body)) : null);
     guard('perks apply', () => raidPerks.applyToBody(body, PERKS_ON && st ? perkBuildOf(st) : null));
 }
+
+// The owner's spectator (bridge.js $spec): ` + G on a tank sends everything
+// about it as one INS packet (keyCommands.js, client inspect.js).
+const INSPECT_STATS = [[6, 'Body Damage'], [7, 'Max Health'], [4, 'Bullet Speed'], [2, 'Bullet Health'], [1, 'Bullet Penetration'], [3, 'Bullet Damage'], [0, 'Reload'], [9, 'Movement Speed'], [8, 'Shield Regeneration'], [5, 'Shield Capacity'], [10, 'Mining Power']];
+function inspectOf(body, t = now()) {
+    if (!body) return null;
+    const k = statKeyFor(body), s = k ? raidStats.get(k) : null;
+    const sock = body.socket || null;
+    const abil = require('../../terrain/abilities.js');
+    let ab = null;
+    try { ab = abil.stateFor(body); } catch { ab = null; }
+    const abName = (id) => (abil.AB_BY_ID.get(id) || {}).name || id;
+    const itemName = (id) => (shop.BY_ID.get(id) || {}).name || id;
+    const eq = ab ? abil.equippedOf(ab, t) : null;
+    const sh = sock && sock.shop ? sock.shop : null;
+    const sk = body.skill || {};
+    const raw = sk.raw || [], caps = sk.caps || [];
+    return {
+        name: body.name || 'Unnamed',
+        id: body.id,
+        who: body.isBot ? 'Bot' : sock && sock.account ? 'Account ' + (sock.account.username || sock.account.id) : sock && sock.guestId ? 'Guest' : 'Player',
+        tank: body.label || '',
+        level: sk.level | 0,
+        score: s ? scoreOf(s) : 0,
+        run: s ? Math.max(0, scoreOf(s) - (s.lifeScore0 | 0)) : 0,
+        kills: s ? s.kills | 0 : 0,
+        botKills: s ? s.botKills | 0 : 0,
+        streak: s ? s.streak | 0 : 0,
+        bestStreak: s ? s.bestStreak | 0 : 0,
+        lives: sock ? sock._royaleLives | 0 : 0,
+        banked: sock ? (sock.gemBanked || 0) | 0 : (body.botBanked || 0) | 0,
+        carried: (body.carriedGems || 0) | 0,
+        hp: body.health ? [Math.round(body.health.amount), Math.round(body.health.max)] : null,
+        shield: body.shield && body.shield.max > 0 ? [Math.round(body.shield.amount), Math.round(body.shield.max)] : null,
+        perks: s && s.perks ? raidPerks.perkList(s.perks).map(p => [p.name, p.n, p.max]) : [],
+        ability: eq ? abName(eq) : null,
+        abilities: ab ? ab.own.filter(id => id !== eq).map(abName) : [],
+        twist: ab && ab.twist ? abName(ab.twist) : null,
+        trial: ab && ab.trial && ab.trial.until > t ? abName(ab.trial.id) : null,
+        kit: sh && sh.kit ? (sh.kitOrder || []).filter(id => id && sh.kit[id] > 0).map(id => [itemName(id), sh.kit[id] | 0]) : [],
+        arm: sh && sh.arm ? itemName(sh.arm) : null,
+        gear: sh && sh.gear ? Object.keys(sh.gear).filter(id => !(sh.gear[id] > 0) || sh.gear[id] > t).map(id => [itemName(id), sh.gear[id] > t ? sh.gear[id] - t : 0]) : [],
+        drill: sh ? sh.drill | 0 : 0,
+        stats: INSPECT_STATS.filter(([i]) => i < raw.length).map(([i, n]) => [n, raw[i] | 0, caps[i] | 0]),
+        points: sk.points | 0,
+        lifeMs: body.royaleBornAt ? Math.max(0, t - body.royaleBornAt) : 0,
+        tankMs: Math.max(0, t - (body._tankUpgradeAt || body.royaleBornAt || t)),
+        playMs: s ? (worldAo() ? s.aoPlayMs || 0 : Math.max(0, t - (s.since || t))) : 0,
+    };
+}
 // The PK packet: the offer (if any), how many wait behind it, the build and
 // the next milestone. Sent whenever any of it changes.
 function sendPerks(client, build) {
@@ -3307,6 +3357,14 @@ function saveResume(socket, body, all = false) {
         snap.botSoftLeft = Math.max(0, (body.botSoftUntil || 0) - t);
         snap.botNewbie = !!body.botNewbie;
         snap.growEff = body._growEff || 0;
+        // the tank board's run (its time and points on this tank) goes on
+        // across a reload or an update instead of starting over
+        snap.tankAge = Math.max(0, t - (body._tankUpgradeAt || body.royaleBornAt || t));
+        const ls = raidStats.get(statKeyFor(body));
+        if (ls) {
+            snap.lifeRun = Math.max(0, scoreOf(ls) - (ls.lifeScore0 | 0));
+            snap.lifeKills = Math.max(0, (ls.kills | 0) - (ls.lifeKills0 | 0));
+        }
         if (all || hitAgo > RESUME_SAFE_MS || snap.fresh) {
             snap.carried = (body.carriedGems | 0);
             body.carriedGems = 0;     // kept for the resume, so it must not also drop
@@ -3458,6 +3516,16 @@ function applyResume(body, snap) {
             if (body.syncSkillsToGuns) body.syncSkillsToGuns();
             // a reload is not a respawn: the size comes back as it was
             if (snap.growEff > 0) guard('growth resume', () => growth.onSpawn(body, growthScore(body), snap.growEff));
+        }
+        if (snap.alive) {
+            if (snap.tankAge > 0) body._tankUpgradeAt = now() - snap.tankAge;
+            if (snap.lifeRun != null) {
+                const ls = ensureStat(body);
+                if (ls) {
+                    ls.lifeScore0 = Math.max(0, scoreOf(ls) - (snap.lifeRun | 0));
+                    ls.lifeKills0 = Math.max(0, (ls.kills | 0) - (snap.lifeKills | 0));
+                }
+            }
         }
         if (snap.alive && snap.defs && snap.defs.length) {
             // back where you were, but not back into the storm (you keep the
@@ -4872,7 +4940,7 @@ module.exports = {
     // round 10: late-raid kill points, the leader bounty, no cross-raid head start
     killStageMult, PLACE_BONUS, KILL_SCORE, STREAK_EARLY_PTS, bankShownOf, bankWeight, bankPtsOf, BANK_SOFT, BANK_SOFT_RATE, _leaderInfo: () => leaderInfo(), _payAny: (b, n, why) => payAny(b, n, why),
     // raid perks: PKP (sockets.js), and the tests
-    pickPerk, _tickPerks: (t, frozen) => tickPerks(t, frozen), _perkBuild: (body) => { const k = statKeyFor(body); return k ? perkBuildOf(raidStats.get(k)) : null; },
+    pickPerk, inspectOf, _tickPerks: (t, frozen) => tickPerks(t, frozen), _perkBuild: (body) => { const k = statKeyFor(body); return k ? perkBuildOf(raidStats.get(k)) : null; },
     // bot roster (scripts/test/botRoster.test.js)
     _fillBots: () => fillBots(), _spawnRaidBot: back => spawnRaidBot(back), _statKeyFor: b => statKeyFor(b),
     // terrain pass: a buried grown hull clears its own room (held, no payout)

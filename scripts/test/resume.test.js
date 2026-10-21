@@ -286,6 +286,7 @@ test('update: a deploy restart tells everyone, saves them to disk and puts them 
     sock.gemBanked = 900;
     tank.carriedGems = 130;
     tank._lastDamageAt = Date.now() - 2000;
+    tank._tankUpgradeAt = Date.now() - 600000;
     assert.ok(royale._saveForUpdate() >= 1, 'saved');
     assert.ok(sock.packets.some(a => a[0] === 'UPD'), 'told it is an update');
     const file = fs.readdirSync(process.env.DATA_DIR).find(f => /^update-resume-.*\.json$/.test(f));
@@ -302,6 +303,7 @@ test('update: a deploy restart tells everyone, saves them to disk and puts them 
     assert.deepEqual(body.skill.raw, raw, 'same build');
     assert.equal(back.gemBanked, 900, 'bank kept');
     assert.equal(body.carriedGems, 130, 'satchel kept, even just after a hit');
+    assert.ok(Date.now() - body._tankUpgradeAt >= 590000, 'time on this tank kept for the tank board');
     const again = mkSocket({ resumeToken: sock.resumeToken });
     assert.equal(royale.claimResume(again, sock.resumeToken), false, 'only once');
     body.kill(); loop(2);

@@ -28,6 +28,7 @@ import * as gunKick from "./gunKick.js";
 import { predictor } from "./predict.js";
 import * as aoHud from "./alwaysOn.js";
 import * as deathText from "./deathCardLogic.js";
+import * as inspectSheet from "./inspect.js";
 // callouts (KC) that make your sidekick bounce about
 const SIDEKICK_CHEERS = { kill: 1, revenge: 1, huntkill: 1, shutdown: 1, bounty: 1, boss: 1, streak: 1, quest: 1, contract: 1 };
 window.fakeLagMS = 0;
@@ -1543,6 +1544,9 @@ let incoming = async function(message, socket) {
                 try { global.shop.catalog = JSON.parse(m[0]) || []; } catch (e) { global.shop.catalog = []; }
                 // touch screens aim with a stick, there is no cursor
                 if (global.mobile) for (const it of global.shop.catalog) if (it && typeof it.desc === "string") it.desc = it.desc.replace(/at your cursor/g, "where you aim").replace(/your cursor/g, "where you aim");
+            } break;
+            case 'INS': {
+                inspectSheet.onPacket(m[0]);
             } break;
             case 'SHP': {
                 try {

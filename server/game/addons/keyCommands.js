@@ -953,12 +953,28 @@ function init() {
             }
         },
     ];
+    // The owner's spectator (bridge.js $spec): ` + G on a tank opens its sheet
+    function inspect(socket, player) {
+        if (Date.now() - (socket._inspectAt || 0) < 400) return;
+        socket._inspectAt = Date.now();
+        const t = target(player);
+        const found = nearest(entities, t, (o, d2) =>
+            o !== player.body && (o.isPlayer || o.isBot) && !o.adminSpec && !o.isDead() && d2 < (o.size + 40) ** 2);
+        if (!found) return socket.talk("m", 3_000, "Point at a tank first.");
+        let sheet = null;
+        try { sheet = require("../gamemodes/scripts/dig_royale.js").inspectOf(found); } catch (e) { console.error("inspect", e); }
+        if (sheet) socket.talk("INS", JSON.stringify(sheet));
+    }
     global.runKeyCommand = (socket, keyCodes) => {
         if (!socket?.player?.body) return 1;
 
         let permsLevel = socket.permissions?.level;
         if (!permsLevel) permsLevel = 0;
         if (!keyCodes.length) keyCodes = ["default"];
+        if (socket.player.body.adminSpec && keyCodes[0] === 71) {
+            try { inspect(socket, socket.player); } catch (e) { console.error("inspect", e); }
+            return;
+        }
         let command = commands.find((command) =>
           command.keys.some((keys) =>
             keys.every((key, index) => key[0] === keyCodes[index])
